@@ -12052,11 +12052,11 @@
     {
       "id": "N-143",
       "title": "A camera that follows an entity without a body goes to the world origin, and holds while nothing awake publishes",
-      "status": "open",
-      "statusText": "filed 2026-11-12; fixed on networking_cars (2dc726e3, with a test) and never brought to main; that test fails 2 of 4 on main",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (3d370959, R-0917)",
       "date": "2026-11-12",
-      "result": "followEntity holds the camera while the physics publish frame is unchanged, and the drawn camera snaps to the followed entity's latched pose slot. Only bodies have one: an entity without a body reads 0, 0 (the view at the world origin), and with every body asleep the publish frame never changes (the hold never ends).",
-      "next": "Bring 2dc726e3 to main: _alignToSnapshot and publishFrozen for bodies only, with cameraFollowBodyless.test.js; test:node and test:demos. Hygiene, nothing to time.",
+      "result": "fixed 2026-11-12 (3d370959): both follow rules for bodies only; cameraFollowBodyless.test.js",
+      "next": "Done.",
       "area": "engine",
       "kind": "bug",
       "refs": [
@@ -12071,16 +12071,18 @@
         "networking_cars",
         "camera follow"
       ],
-      "records": []
+      "records": [
+        "R-0917"
+      ]
     },
     {
       "id": "N-144",
       "title": "An asset load that fails on a browser cache error is not tried again (two tabs loading a 16 MB tilemap)",
-      "status": "open",
-      "statusText": "filed 2026-11-12; fixed for tilemaps on networking_cars (36870ce0, fetchRetry.js) and never brought to main; read in the code",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (b82561fe, R-0918)",
       "date": "2026-11-12",
-      "result": "Two tabs of one browser loading the 16 MB roads tilemap at once failed one with net::ERR_CACHE_WRITE_FAILURE: the body read rejected though the server answered. Main loads every asset through fetchAsset (DX-GUARDS C6), which reports the failure and does not retry.",
-      "next": "The branch's rule inside fetchAsset: on a network TypeError, fetch and read once more with cache: 'no-store' (HTTP errors and bad JSON not retried), the retry covering the body read the callers do after it returns; C6's messages kept; the branch's fetchRetry.test.js cases.",
+      "result": "fixed 2026-11-12 (b82561fe): fetchAssetRead retries a network failure with cache no-store; every asset loader reads through it",
+      "next": "Done.",
       "area": "assets",
       "kind": "bug",
       "refs": [
@@ -12094,7 +12096,9 @@
         "tilemap load",
         "networking_cars"
       ],
-      "records": []
+      "records": [
+        "R-0918"
+      ]
     },
     {
       "id": "E-214",
@@ -21104,6 +21108,30 @@
       "text": "**The bundles of ea1dfc54 (N-142, DX-POST and the worktree cleanup merged): tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `99579904`.\n\n- Node 2504 of 2504, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 0 failures on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 04:16 to 04:23: NEUTRAL.** Spatial -4.7 % (1/4 worse), physics -6.9 % (1/4); logic 2.705 → 2.465 ms and pre-render 2.820 → 2.865 ms under the floor.\n- **Boids, 8 pairs, 04:23 to 04:35: NEUTRAL.** Spatial -0.7 % (3/8), physics -0.8 % (2/8).\n\nThe first sitting with the cleanup: it removed 153 raw result entries older than 7 days and 2 stale worktrees before measuring, and its own worktrees at exit; main's node_modules intact. Main pushed.",
       "commits": [
         "99579904"
+      ]
+    },
+    {
+      "id": "R-0917",
+      "date": "2026-11-12",
+      "time": "04:50",
+      "timeFrom": "recorded",
+      "title": "N-143 fixed: the camera follows an entity without a body by its Transform (ported from networking_cars)",
+      "verdict": "kept-hygiene",
+      "text": "**N-143 fixed: the camera follows an entity without a body by its Transform.** `3d370959`, merged in the fix/n143 merge; ported from networking_cars `2dc726e3` (2026-10-26), which main never got.\n\n- **Cause:** `Camera.followEntity` held the camera while the physics publish frame was unchanged, and the drawn camera snapped to the followed entity's latched pose slot. Only bodies have one: an entity without a body read 0, 0 (the view at the world origin), and with every body asleep the publish frame never changed, so the hold never ended.\n- **Fix:** both rules for bodies only: `_alignToSnapshot` returns the SAB camera for an entity without an active RigidBody, and `publishFrozen` needs a body.\n- **Checks:** `cameraFollowBodyless.test.js` fails 2 of 4 on main's camera (the two bodiless cases) and passes with the fix; the camera tests 33 of 33; Node 2501 of 2503 in a worktree without node_modules (pixiDrawGarbage and pixiShaderSync import a file inside node_modules by path), demos 101 of 101.\n- Hygiene, nothing to time (a test per followed entity a frame).",
+      "commits": [
+        "3d370959"
+      ]
+    },
+    {
+      "id": "R-0918",
+      "date": "2026-11-12",
+      "time": "04:51",
+      "timeFrom": "recorded",
+      "title": "N-144 fixed: asset fetches and their body reads tried once more past the HTTP cache",
+      "verdict": "kept-hygiene",
+      "text": "**N-144 fixed: an asset fetch and its body read are tried once more past the HTTP cache.** `b82561fe`, merged in the fix/n143 merge.\n\n- **Cause:** two tabs of one browser loading the 16 MB roads tilemap at once failed one with `net::ERR_CACHE_WRITE_FAILURE`: the body read rejected though the server had answered. networking_cars retried tilemaps (`36870ce0`, `fetchRetry.js`); main loads every asset through `fetchAsset` (DX-GUARDS C6), which did not retry, and its callers read the body after it returned.\n- **Fix:** `fetchAssetRead(url, what, read)` fetches and reads; on a network failure of either (a TypeError) both once more with `cache: 'no-store'`. An HTTP error and a body the caller rejects (bad JSON) are answers, not retried; the errors keep C6's wording. `fetchAssetJson` reads through it; the baked bigAtlas PNG, a tileset, a sound and a worker's image now read inside it.\n- **Checks:** `fetchAsset.test.js` (the branch's four cases: a failed request, a failed body read, an HTTP error and bad JSON not retried, a second failure named), 8 of 8. A cache write failure cannot be made in Node or headless Chromium on demand: the retry is tested with a fetch that fails as it does.\n- Hygiene, nothing to time (asset load only).",
+      "commits": [
+        "b82561fe"
       ]
     }
   ],
