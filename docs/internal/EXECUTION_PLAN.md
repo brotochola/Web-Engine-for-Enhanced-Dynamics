@@ -3529,8 +3529,8 @@ copies the stamp it consumed into what it publishes, physics, pre-render and the
 read, and Pixi records its submit time minus the stamp, in ms and frames. The runner prints median and p95. A tool, in
 its own commit before E-198, the first change it measures. Owner: the bench runner.
 **Result:** built 2026-11-12 (`da79c6fb`, R-0924): `RENDERER_STATS.INPUT_LAG_MS`, `INPUT_LAG_P95_MS`, `INPUT_LAG_N`;
-`runIntegratedWorkerBenchmark --input-every <ms>`. Boids, a move every 100 ms: 67.1 ms median, p95 68.1 ms (4.03 frames). Predator's
-gate NEUTRAL.
+`runIntegratedWorkerBenchmark --input-every <ms>`. Boids, a move every 100 ms: 50.6 ms median (3.04 frames), after
+`5434da27` (logic publishes its stamp at its frame's end; it read 67.1 ms, a frame high, before). Predator's gate NEUTRAL.
 
 ### E-198 The wake chain: each stage waits for this vsync's output of the one before it
 
@@ -3543,6 +3543,10 @@ same way. Each link waits only while the measured chain fits the frame, a switch
 publish. The wait counts in WAIT_MS. The judge is latency (E-197), not STEP_MS: STEP_MS − WAIT_MS must not get 3 %
 worse and the frames drawn must hold. Risk: a link that waits and misses its vsync drops a frame; the timeout bounds it.
 Owner: latency in Boids and Predator, Predator's gate for the workers.
+**Step 0 answered 2026-11-12 (R-0925, branch `speed/e198`):** the three waits built (Pixi for the queue, pre-render
+for the pose, physics for every logic worker) never wait in Boids: each stage's upstream is out when its frame starts,
+and the lag stays 50.4 ms (3 frames: an input reaches logic about a frame late, Chrome dispatching pointers with its
+frame; two frames lie between logic and pre-render without a wait). Next: the frame clock as a timeline.
 
 ### E-199 Neighbour aggregates published by the spatial kernel
 
