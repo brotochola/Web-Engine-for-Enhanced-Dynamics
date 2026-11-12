@@ -16,6 +16,10 @@ function applyLight(le, spec) {
   if (spec.offsetX !== undefined) le.offsetX = spec.offsetX;
   if (spec.offsetY !== undefined) le.offsetY = spec.offsetY;
   if (spec.layer) le.glowLayer = spec.layer;
+  // DX-SPOT (lightGalleryScene ?cones=1): a revision without cones keeps these as plain properties.
+  if (spec.coneAngle !== undefined) le.coneAngle = spec.coneAngle;
+  if (spec.coneSoftness !== undefined) le.coneSoftness = spec.coneSoftness;
+  if (spec.direction !== undefined) le.direction = spec.direction;
 }
 
 /** A lamp with a Collider: `spec.range` is its shadowRange (left out: its radius). */

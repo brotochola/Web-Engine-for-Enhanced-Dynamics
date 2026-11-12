@@ -10,7 +10,8 @@ const { Scene, Camera, LAYER_KIND, BLEND_MODES } = WEED;
  * block it. compareCaptures.mjs compares this scene written in one API against the same lamps written in another.
  *
  * `?raycast=1`, `?groundScaleY=` (default 1), `?backend=webgpu`, `?glowMode=sprite` (lighting.lightGlow), `?ambient=`
- * (default 0.05).
+ * (default 0.05). `?cones=1` (DX-SPOT): lamp 1 takes a cone of 360 degrees (it must draw as the point light it was),
+ * lamps 4, 7 and 11 real cones (a hard edge turned by `direction`, a soft one on a turned entity, a fully soft one).
  */
 const WORLD_W = 1280;
 const WORLD_H = 720;
@@ -34,6 +35,15 @@ export const GROUND_SCALE_Y = queryNumber('groundScaleY', 1);
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 export const GLOW_MODE = query('glowMode') === 'sprite' ? 'sprite' : 'add';
 export const AMBIENT = queryNumber('ambient', 0.05);
+export const CONES = queryNumber('cones', 0) === 1;
+
+/** ?cones=1: the cone fields some lamps take (by index). */
+const CONE_LAMPS = {
+  1: { coneAngle: Math.PI * 2 },
+  4: { coneAngle: Math.PI / 2, coneSoftness: 0, direction: Math.PI / 2 },
+  7: { coneAngle: Math.PI / 3, coneSoftness: 0.3 },
+  11: { coneAngle: 1.2, coneSoftness: 1 },
+};
 
 /**
  * The lamps, one per cell of a 4 × 3 grid (320 × 240 px). `bare`: no Collider. `range`: the Collider's visualRange
@@ -62,7 +72,7 @@ const PROP_OFFSETS = [[70, 30], [-60, 50], [20, -70]];
 const BLOCK_OFFSETS = [[-80, -30], [90, -50]];
 
 export const stressSceneConfig = {
-  requested: { raycast: RAYCAST ? 1 : 0, groundScaleY: GROUND_SCALE_Y, backend: BACKEND, glowMode: GLOW_MODE, ambient: AMBIENT },
+  requested: { raycast: RAYCAST ? 1 : 0, groundScaleY: GROUND_SCALE_Y, backend: BACKEND, glowMode: GLOW_MODE, ambient: AMBIENT, cones: CONES ? 1 : 0 },
 };
 
 export class LightGalleryScene extends Scene {
@@ -113,7 +123,7 @@ export class LightGalleryScene extends Scene {
     for (let i = 0; i < LAMPS.length; i++) {
       const cx = 160 + (i % 4) * 320;
       const cy = 120 + Math.floor(i / 4) * 240;
-      const spec = { ...LAMPS[i], x: cx, y: cy };
+      const spec = { ...LAMPS[i], ...(CONES ? CONE_LAMPS[i] : null), x: cx, y: cy };
       if (spec.bare) GalleryBareLamp.spawn(spec);
       else GalleryLamp.spawn(spec);
       for (const [dx, dy] of PROP_OFFSETS) GalleryProp.spawn({ x: cx + dx, y: cy + dy });
