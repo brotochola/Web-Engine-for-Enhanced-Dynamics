@@ -65,15 +65,16 @@ about 1 % at its radius, fades on past it, and is culled when that circle leaves
 **Glow:** alpha `glow × brightness`, size 0.85·R as today, culled by its own size (N-150).
 
 **Shadows:** reach `shadowRange` (0: the radius). A light with `castShadows = 0` enters neither the stamp nor the sweep
-(raycast gives it the 32-gon full circle with no gather and no sweep). **Not built yet: brightness in a shadow's
-darkness.** Folding min(brightness, 1) per caster (`I'' = f·I·D²/(I + D² − f·I)` gives `f·alpha` in the unchanged shader)
-needs the floor distance D² the shader uses, so the stamp kernel needs groundScaleY: it measures screen distances
-today. A dim colour casts as dark a shadow as a bright one did before too, so this is no regression; DX-SPOT's soft edge
-needs the same fold, so it comes with B3.
+(raycast gives it the 32-gon full circle with no gather and no sweep). **Brightness in a shadow's darkness** (basic
+lighting, built after B3): the stamp folds f = min(brightness, 1) into each caster row of a dim light,
+`I'' = f·I·D²/(I + D² − f·I)`, which the unchanged shader turns into `f·alpha` (D² on the floor: the light table carries
+1/groundScaleY², the same column DX-SPOT's soft edge uses, and the two fold together, f = shade × edge). A full light
+(brightness ≥ 1) runs the loops it always ran, so its rows are the same bits. Under raycast a dim light's umbra is not
+folded yet.
 
-**Flash** keeps fading its reach (radius·√left, glow·left), the old look: fading brightness instead would leave its
-shadows full until the fold above exists. Its glow now shrinks with its reach (it kept its spawn size before, through
-the stale `sqrtLightIntensity`).
+**Flash** keeps fading its reach (radius·√left, glow·left), the old look. Fading brightness instead is possible now that
+the fold exists; it is a visible change, to decide by filming both. Its glow now shrinks with its reach (it kept its
+spawn size before, through the stale `sqrtLightIntensity`).
 
 **Reach without a Collider:** a light's shadows and occluders reach `shadowRange` (0 = its radius). Today that reach is
 the light entity's `Collider.visualRange` (the stamp's `rangeSq`, the raycast neighbour list), a number the guide asks
@@ -121,7 +122,7 @@ Measurement tools go in their own commit before what they measure. One change pe
   `buildVisibilityPolygons`, the glow layer), the emit kernel (`glow_row`, `EMIT_GLOW_COLUMNS`) and its JS reference,
   the debug renderer, particle and LiquidFun lights, the light helpers, the types.
 - **A2, the honest-radius falloff: dropped** (R-0935, above): it darkened lit scenes.
-- **A3, `castShadows`** (741b616c, N-149): the filter in the stamp and the sweep. The brightness fold waits for B3 (above).
+- **A3, `castShadows`** (741b616c, N-149): the filter in the stamp and the sweep. The brightness fold came after B3 (above).
 - **A4, `shadowRange`** (5b1d716b, N-153): the stamp's range, and the spatial worker's search for a casting light under
   raycast, (shadowRange or radius) plus its offset. A light with neither a sprite nor a Collider is not in the spatial
   grid, so under raycast it still finds no occluder (a pre-render walk of the grid for those is open).

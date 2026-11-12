@@ -1255,7 +1255,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, `raycasted
 | You want | You write |
 | --- | --- |
 | A lamp | `this.lightEmitter.radius = 300` (px it reaches) and `color = 0xffcc88` |
-| A dimmer or an overbright light | `brightness = 0.5` (default 1; it scales the colour and the halo) |
+| A dimmer or an overbright light | `brightness = 0.5` (default 1; it scales the colour and the halo, and under 1 lightens its sprite shadows too) |
 | A halo on the bulb | `glow = 0.6` (default 0: none), `glowOffsetY = -40` (40 px up the screen), `glowLayer = 'glows'` |
 | A lamp post's even pool | `elevation = 110` (the bulb's height above the floor: a wider, flatter pool, same reach) |
 | The light ahead of the entity (headlights) | `offsetX = 60` (local px, turned with the entity) |

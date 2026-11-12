@@ -56,15 +56,24 @@ function inCone(dx, dy, L) {
   return c >= 0 ? (dot > 0 && dot * dot > c2) : (dot >= 0 || dot * dot < c2);
 }
 
-/** DX-SPOT, as cone_intensity: the intensity a cone light's caster row takes (f × the alpha on its soft edge). */
+/** The shade a light's shadows take (DX-LIGHTAPI: min(brightness, 1)); a light without the field is full. */
+function shadeOf(L) {
+  return L.shade < 1 ? L.shade : 1;
+}
+
+/** DX-SPOT, as cone_intensity: the intensity a cone or dim light's caster row takes (f × the alpha). */
 function coneIntensity(dx, dy, intensity, L) {
   const fd2 = dx * dx + dy * dy * L.invG2;
-  if (fd2 === 0) return intensity;
-  const cosA = (dx * L.coneDirX + dy * L.coneDirYW) / Math.sqrt(fd2);
-  let t = (cosA - L.coneCos) * L.coneInvSpan;
-  if (t >= 1) return intensity;
-  if (t < 0) t = 0;
-  const f = t * t * (3 - 2 * t);
+  let f = shadeOf(L);
+  if (L.coneCos > -1 && fd2 !== 0) {
+    const cosA = (dx * L.coneDirX + dy * L.coneDirYW) / Math.sqrt(fd2);
+    let t = (cosA - L.coneCos) * L.coneInvSpan;
+    if (t < 1) {
+      if (t < 0) t = 0;
+      f *= t * t * (3 - 2 * t);
+    }
+  }
+  if (f >= 1) return intensity;
   return f * intensity * fd2 / (intensity + fd2 - f * intensity);
 }
 
@@ -326,7 +335,7 @@ export function stampLightRange({
     const written = appendStampedCasters(
       stamp, stampFloats, cursor, sun, sf, keepIdx, m, lightVec, cap, 0
     );
-    if (cone) {
+    if (cone || shadeOf(L) < 1) {
       for (let k = cursor; k < written; k++) {
         const b = keepIdx[k - cursor] * sf;
         stamp[k * stampFloats + CASTER_LIGHT_FLOAT + 2] = coneIntensity(sun[b] - lx, sun[b + 1] - ly, L.intensity, L);
@@ -352,7 +361,7 @@ export function stampLightRange({
       const written = appendStampedCasters(
         stamp, stampFloats, cursor, sun, sf, keepIdx, 1, lightVec, cap, 0
       );
-      if (written > cursor && L.coneCos > -1) {
+      if (written > cursor && (L.coneCos > -1 || shadeOf(L) < 1)) {
         const b = c * sf;
         stamp[cursor * stampFloats + CASTER_LIGHT_FLOAT + 2] = coneIntensity(sun[b] - L.x, sun[b + 1] - L.y, L.intensity, L);
       }

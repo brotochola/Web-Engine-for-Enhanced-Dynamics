@@ -3813,7 +3813,10 @@ export declare class LightEmitter extends Component {
    * (`config.lighting.groundScaleY`): full at its centre, about 1 % at the radius.
    */
   static radius: Float32Array;
-  /** Times the colour and the glow. 1 by default. */
+  /**
+   * Times the colour and the glow. 1 by default. Under 1 its sprite shadows (basic lighting) are that much lighter too:
+   * a light at 0.5 casts shadows of half the darkness.
+   */
   static brightness: Float32Array;
   /**
    * The source's height above the floor, in px. Widens and flattens the pool without moving it or changing its

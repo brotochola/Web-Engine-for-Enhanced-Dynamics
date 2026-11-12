@@ -1310,6 +1310,8 @@ class PreRenderWorker extends AbstractWorker {
                     id: 0, x: NaN, y: NaN, intensity: NaN, rangeSq: NaN, sqrtI: NaN, distSq: NaN, maxShadows: 0,
                     // DX-SPOT: the cone on the floor (coneCos -2: none), as the stamp's light table takes it.
                     coneDirX: NaN, coneDirYW: NaN, coneCos: NaN, coneInvSpan: NaN, invG2: NaN,
+                    // DX-LIGHTAPI: min(brightness, 1), how dark its shadows are; its brightness for the cookie.
+                    shade: NaN, brightness: NaN,
                 };
             }
         }
@@ -3336,6 +3338,7 @@ class PreRenderWorker extends AbstractWorker {
         const lightShadowRange = LightEmitter.shadowRange;
         const lightConeCos = LightEmitter.coneCos;
         const lightConeInvSpan = LightEmitter.coneInvSpan;
+        const lightBrightness = LightEmitter.brightness;
         const lightDirC = LightEmitter.dirC;
         const lightDirS = LightEmitter.dirS;
         // DX-SPOT: a cone is measured on the floor (y over groundScaleY).
@@ -3413,6 +3416,9 @@ class PreRenderWorker extends AbstractWorker {
                 slot.coneInvSpan = 0;
             }
             slot.invG2 = invG * invG;
+            const brightness = lightBrightness[id];
+            slot.brightness = brightness;
+            slot.shade = brightness < 1 ? brightness : 1;
             n++;
         }
         this._stampLightCount = n;

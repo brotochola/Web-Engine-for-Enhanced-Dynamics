@@ -12,7 +12,7 @@ const FULL_TURN = Math.PI * 2;
  *
  * - `radius` (px) is how far it reaches. Its falloff is I / (I + d²) with I = (radius / 10)², measured on the floor
  *   (config.lighting.groundScaleY), so it is full at its centre and about 1 % at the radius.
- * - `brightness` (1 by default) multiplies its colour and its glow.
+ * - `brightness` (1 by default) multiplies its colour and its glow; under 1 its sprite shadows are that much lighter.
  * - `color` is 0xRRGGBB.
  * - `elevation` lifts the source off the floor without moving its pool: the falloff becomes I / (I + h² + d²), a wider,
  *   flatter pool with the same reach (a lamp post rather than a torch on the ground).
@@ -39,7 +39,7 @@ export class LightEmitter extends Component {
     active: Uint8Array, // 0 = entity doesn't have this component, 1 = active
     color: Uint32Array,
     radius: Float32Array, // px: how far the light reaches
-    brightness: Float32Array, // times the colour and the glow
+    brightness: Float32Array, // times the colour and the glow; under 1, lighter sprite shadows
     elevation: Float32Array, // the source's height above the floor: widens and flattens the pool, does not move it
     glow: Float32Array, // the halo's alpha; 0 = no halo
     glowOffsetY: Float32Array, // screen px from the light to its halo; negative is up

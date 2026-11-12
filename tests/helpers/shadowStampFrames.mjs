@@ -116,6 +116,16 @@ export function frame(r, k, caps, dst) {
       L.invG2 = invG * invG;
     }
   }
+  // DX-LIGHTAPI: dim lights (brightness under 1) on frames that are 1 mod 3, cone or not, their own generator too.
+  if (k % 3 === 1) {
+    const rs = rng(0x5ade + k);
+    const invG = 1 / [1, 0.7, 0.5][k % 3];
+    for (const L of lights) {
+      if (!L || rs() >= 0.5) continue;
+      L.shade = rs();
+      if (!(L.invG2 > 0)) L.invG2 = invG * invG;
+    }
+  }
   return {
     nSun,
     lights,

@@ -168,6 +168,11 @@ export function stampLightRangeWasm(b, spec) {
     table[at + 6] = coneCos > -1 ? light.coneDirYW : 0;
     table[at + 8] = coneCos > -1 ? light.coneInvSpan : 0;
     table[at + 9] = coneCos > -1 ? light.invG2 : 0;
+    // DX-LIGHTAPI: how dark its shadows are, min(brightness, 1) (a record without the field: 1). A dim light's rows fold
+    // it in, measured on the floor (1 / groundScaleY²).
+    const shade = light.shade < 1 ? light.shade : 1;
+    table[at + 10] = shade;
+    if (shade < 1) table[at + 9] = light.invG2;
   }
   return b.stampRange(b.tableByte);
 }

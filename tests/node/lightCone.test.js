@@ -189,3 +189,31 @@ test('the shadow stamp: a cone light keeps the casters inside its cone, full ins
   const got = edge.I / (edge.I + 100 * 100);
   assert.ok(Math.abs(got - want) < 1e-5, `alpha ${got} vs f × alpha ${want}`);
 });
+
+test('the shadow stamp: a light of brightness 0.5 casts shadows of half the alpha, a full one as before', () => {
+  const sf = GPU_CASTER_FLOATS;
+  const casters = [[100, 0], [0, 60]];
+  const sun = new Float32Array(casters.length * sf);
+  casters.forEach(([x, y], c) => { sun[c * sf] = x; sun[c * sf + 1] = y; });
+  const run = (shade) => {
+    const L = { x: 0, y: 0, intensity: 900, rangeSq: 400 * 400, maxShadows: 0, coneCos: -2, invG2: 1, shade };
+    const stamp = new Float32Array(8 * sf);
+    const n = stampLightRange({
+      sun, sunN: 2, sunFloats: sf, lights: [L], lightBegin: 0, lightEnd: 1, lightStride: 1,
+      maxPerLight: 0, maxPerEntity: 0, tmpIdx: new Uint32Array(8), dist: new Float64Array(8), order: new Uint32Array(8),
+      keepIdx: new Uint32Array(8), gridCounts: null, gridStarts: null, gridItems: null,
+      stamp, stampFloats: sf, stampCap: 8, stampBase: 0, stampLightIdx: null, lightVec: new Float32Array(4),
+    });
+    return Array.from({ length: n }, (_, k) => ({ x: stamp[k * sf], y: stamp[k * sf + 1], I: stamp[k * sf + GPU_CASTER_LIGHT_FLOAT + 2] }));
+  };
+  const full = run(1);
+  const dim = run(0.5);
+  assert.equal(dim.length, 2, 'a dim light keeps its casters');
+  for (const r of full) assert.equal(r.I, 900);
+  for (const r of dim) {
+    const d2 = r.x * r.x + r.y * r.y;
+    const alpha = r.I / (r.I + d2);
+    const want = 0.5 * (900 / (900 + d2));
+    assert.ok(Math.abs(alpha - want) < 1e-6, `alpha ${alpha} vs half ${want}`);
+  }
+});
