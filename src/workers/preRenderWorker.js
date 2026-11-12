@@ -399,6 +399,9 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueBuffers = [null, null];
         this.renderQueueCameraBuffers = [null, null];
         this.renderQueuePoseReadyBuffers = [null, null];
+        // E-197: each queue buffer's latency stamp, and the one being written.
+        this.renderQueueStampBuffers = [null, null];
+        this.renderQueueStamp = null;
 
         // Sync buffer for coordination: [readyFrame, consumedFrame]
         this.renderQueueSync = null;
@@ -983,6 +986,7 @@ class PreRenderWorker extends AbstractWorker {
                 const camViews = createRenderQueueCameraViews(cameraSABs[bufIdx]);
                 this.renderQueueCameraBuffers[bufIdx] = camViews ? camViews.camera : null;
                 this.renderQueuePoseReadyBuffers[bufIdx] = camViews ? camViews.poseReady : null;
+                this.renderQueueStampBuffers[bufIdx] = camViews ? camViews.stamp : null;
             }
 
             // Set initial write buffer (will be updated each frame)
@@ -1480,6 +1484,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTileMulY = buffer.tileMulY;
         this.renderQueueCamera = this.renderQueueCameraBuffers[bufferIdx];
         this.renderQueuePoseReady = this.renderQueuePoseReadyBuffers[bufferIdx];
+        this.renderQueueStamp = this.renderQueueStampBuffers[bufferIdx];
 
         // Swap custom layer write buffers in sync
         const entries = this._customLayerEntries;
@@ -1495,6 +1500,15 @@ class PreRenderWorker extends AbstractWorker {
     latchPhysicsPose() {
         this._latchPose();
         if (this.renderQueuePoseReady) this.renderQueuePoseReady[0] = this._poseReadyFrame;
+        // E-197: this queue shows the newer of the input logic has acted on (bodiless entities, read live) and the one
+        // the latched pose was stepped with.
+        if (this.renderQueueStamp && this._latency !== null) {
+            const sync = this.poseSync;
+            const ready = this._poseReadyFrame;
+            const pose = sync && sync.length >= 4 && ready > 0 ? sync[2 + ((ready - 1) & 1)] : 0;
+            const logic = Atomics.load(this._latency.i32, 3);
+            this.renderQueueStamp[0] = pose > logic ? pose : logic;
+        }
     }
 
     collectVisibleLights() {

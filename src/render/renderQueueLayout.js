@@ -53,9 +53,10 @@ const FIELDS = [
     ['staticGen',   Uint32Array,            4,   1],
 ];
 
-/** Sibling SAB: Float32 zoom/x/y/rotation + Int32 poseReady (not stuffed in a float). */
-export const RENDER_QUEUE_CAMERA_BYTES = 20;
+/** Sibling SAB: Float32 zoom/x/y/rotation + Int32 poseReady (not stuffed in a float) + Int32 E-197 latency stamp. */
+export const RENDER_QUEUE_CAMERA_BYTES = 24;
 export const RENDER_QUEUE_POSE_READY_OFFSET = 16;
+export const RENDER_QUEUE_STAMP_OFFSET = 20;
 
 /**
  * @param {SharedArrayBuffer|null|undefined} sab
@@ -66,6 +67,7 @@ export function createRenderQueueCameraViews(sab) {
     return {
         camera: new Float32Array(sab, 0, 4),
         poseReady: new Int32Array(sab, RENDER_QUEUE_POSE_READY_OFFSET, 1),
+        stamp: sab.byteLength >= RENDER_QUEUE_STAMP_OFFSET + 4 ? new Int32Array(sab, RENDER_QUEUE_STAMP_OFFSET, 1) : null,
     };
 }
 

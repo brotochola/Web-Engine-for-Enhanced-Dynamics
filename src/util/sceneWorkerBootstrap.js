@@ -178,6 +178,8 @@ export function buildSceneSharedBuffers(scene) {
     activeEntitiesData: scene.buffers.activeEntitiesData,
     visibleLightsData: scene.buffers.visibleLightsData || null,
     inputData: scene.buffers.inputData,
+    // E-197: the input-to-screen latency stamp.
+    latencyStamp: scene.buffers.latencyStamp || null,
     cameraData: scene.buffers.cameraData,
     clockData: scene.buffers.clockData,
     poolExhaustionData: scene.buffers.poolExhaustionData,
@@ -372,6 +374,8 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
       dataAByte: scene.buffers.poseDataAByte | 0,
       dataBByte: scene.buffers.poseDataBByte | 0,
       sync: scene.buffers.poseSync,
+      // E-197: logic's stamp, carried into the pose slot physics writes.
+      latency: scene.buffers.latencyStamp || null,
       capacity: scene.poseCapacity || scene.totalEntityCount,
     },
     textureMetadata: scene.textureMetadata,

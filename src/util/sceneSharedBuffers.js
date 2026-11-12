@@ -103,6 +103,7 @@ import { impactRingBytes } from './impactRing.js';
 import { createPublishedList } from './publishedList.js';
 import { visibilityMemoryBytes, visibilityMemoryOpts } from './visibilityMemory.js';
 import { Messages } from '../core/messages.js';
+import { bindInputStamp, createLatencyStampBuffer } from './latencyStamp.js';
 
 /** Cell count ceiling. Not an entity id. 2^20 covers a 4096 px world at a 4 px cell. */
 export const MAX_SPATIAL_CELLS = 1 << 20;
@@ -237,6 +238,10 @@ function initializeCoreEntityAndComponentBuffers(scene) {
 
   buffers.gamepadData = new SharedArrayBuffer(Gamepad.BUFFER_SIZE);
   Gamepad.initialize(buffers.gamepadData);
+
+  // E-197: the input-to-screen latency stamp (main stamps inputs into it; logic, physics, pre-render and Pixi carry it).
+  buffers.latencyStamp = createLatencyStampBuffer();
+  bindInputStamp(buffers.latencyStamp);
 
   const spatialOn = (config.spatial.numberOfSpatialWorkers | 0) > 0;
   scene.spatialPublish = null;
@@ -933,7 +938,8 @@ function initializeLightingAndRenderBuffers(scene) {
     buffers.poseDataBByte = 0;
   }
   buffers.poseCapacity = poseN;
-  buffers.poseSync = new SharedArrayBuffer(8);
+  // [readyFrame, consumedFrame, E-197's stamp of slot 0, of slot 1]
+  buffers.poseSync = new SharedArrayBuffer(16);
   new Int32Array(buffers.poseSync)[0] = 0;
   new Int32Array(buffers.poseSync)[1] = 0;
   scene.poseCapacity = poseN;

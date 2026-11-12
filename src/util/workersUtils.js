@@ -82,8 +82,15 @@ export const RENDERER_STATS = Object.freeze({
    * E-06 in docs/internal/EXECUTION_PLAN.md.
    */
   IDLE_MS: 38,
-  STRIDE_FLOATS: 39,
-  BUFFER_SIZE: 39 * 4,
+  /**
+   * E-197: ms from an input to the first frame Pixi drew with it (median and 95th percentile of the last 64 inputs
+   * drawn), and how many inputs were drawn. Always on; 0 samples without inputs.
+   */
+  INPUT_LAG_MS: 39,
+  INPUT_LAG_P95_MS: 40,
+  INPUT_LAG_N: 41,
+  STRIDE_FLOATS: 42,
+  BUFFER_SIZE: 42 * 4,
 });
 
 /**

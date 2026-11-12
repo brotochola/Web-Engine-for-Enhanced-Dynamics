@@ -319,6 +319,7 @@ import {
   PROXY, PROXY_CAMERA, PROXY_KIND, PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, localProxyHalf, proxyView,
 } from '../render/gpuParticleProxies.js';
 import { EntityChunks, RegionQuads } from '../render/gpuParticleChunks.js';
+import { LagMeter, stampNow } from '../util/latencyStamp.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
@@ -732,6 +733,10 @@ class PixiRenderer extends AbstractWorker {
     this._sortKeyU32 = null;
     this.renderQueueCameraBuffers = [null, null];
     this.renderQueuePoseReadyBuffers = [null, null];
+    // E-197: each queue buffer's latency stamp, the one of the queue drawn, and the meter.
+    this.renderQueueStampBuffers = [null, null];
+    this._queueStamp = 0;
+    this._lagMeter = new LagMeter();
 
     // Sync buffer for coordination: [readyFrame, consumedFrame]
     this.renderQueueSync = null;
@@ -1170,6 +1175,8 @@ class PixiRenderer extends AbstractWorker {
     this._sortKeyU32 = this._sortKeyU32ByBuf[bufferIdx];
     this.renderQueueCamera = this.renderQueueCameraBuffers[bufferIdx];
     this.renderQueuePoseReady = this.renderQueuePoseReadyBuffers[bufferIdx];
+    const stampView = this.renderQueueStampBuffers[bufferIdx];
+    this._queueStamp = stampView ? stampView[0] : 0;
     this._gpuQueueRead = this.gpuQueueBuffers ? this.gpuQueueBuffers[bufferIdx] : null;
   }
 
@@ -1406,7 +1413,15 @@ class PixiRenderer extends AbstractWorker {
   reportFPS() {
     // A paced tick did no work; like a pre-render skip, it leaves the last drawn frame's meters.
     if (this._pacedTick) return;
+    // E-197: this frame drew the queue it consumed; its stamp, if newer than any drawn, is an input reaching the screen.
+    if (this._queueStamp > 0 && this._latency !== null) this._lagMeter.note(this._queueStamp, stampNow(this._latency));
     if (this.stats) {
+      if (this.stats.length > RENDERER_STATS.INPUT_LAG_N) {
+        const lag = this._lagMeter;
+        this.stats[RENDERER_STATS.INPUT_LAG_MS] = lag.count ? lag.median : 0;
+        this.stats[RENDERER_STATS.INPUT_LAG_P95_MS] = lag.count ? lag.p95 : 0;
+        this.stats[RENDERER_STATS.INPUT_LAG_N] = lag.count;
+      }
       // The renderer never blocks on a sibling (it has no sync query API), so
       // WAIT_MS is 0 by construction; IDLE_MS is the real number.
       this._writeFrameMeters(RENDERER_STATS);
@@ -7410,6 +7425,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const camViews = createRenderQueueCameraViews(cameraSABs[bufIdx]);
         this.renderQueueCameraBuffers[bufIdx] = camViews ? camViews.camera : null;
         this.renderQueuePoseReadyBuffers[bufIdx] = camViews ? camViews.poseReady : null;
+        this.renderQueueStampBuffers[bufIdx] = camViews ? camViews.stamp : null;
       }
 
       // Set initial read buffer (frame 0 uses buffer 0)
