@@ -3774,6 +3774,11 @@ collect kernel reads only its own memory.
 copy. The snapshots rotate without a reader's mark today (`readPublishedQuerySnapshot`), and the copy is what keeps a
 long collect safe from a publish that comes back round to its copy: the query moves to N-112's published-list protocol
 (a reading mark the writer skips) for that one query. Owner: BunnyMark C 200 000's pre-render; logic not 3 % worse.
+**Result:** kept 2026-11-12 (`ef03a7a1`, R-0911), by a simpler road than the plan: logic republishes the list only when
+the population changes, so a publish sequence in the query header (its reserved int, stored after the index) lets the
+reader hand back the same view while nothing was published, and the collect keeps the copy it holds. BunnyMark C 200 000,
+4 pairs: **KEPT (product)**, pre-render 5.629 → 5.163 ms (-8.1 %, worse 0/4). Predator's gate NEUTRAL. A scene whose
+population changes every frame still copies each frame; the plan's pointer at the published copy stays open for it.
 
 ### E-218 tickAll reads a view of the active list when every listed entity is active
 
