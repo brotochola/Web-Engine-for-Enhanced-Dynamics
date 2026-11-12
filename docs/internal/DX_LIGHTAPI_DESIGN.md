@@ -2,7 +2,7 @@
 
 Written 2026-11-12, after the owner asked for cone lights (platformer flashlights, top-down headlights) and then for the
 light and shadow API to be made clear first. The owner's terms: we choose the clearest API; no demo gets worse in speed
-or look (better is fine); no backwards compatibility, every demo, test, guide page and Conurbano moves to the new API;
+or look (better is fine); no backwards compatibility, every demo, test and guide page moves to the new API (Conurbano, another project, later);
 read all the code carefully; build every scene needed to check the result by eye; measure and trace everything, with no
 new allocation in a hot loop. Rows: [REVIEW_PLAN.md#DX-LIGHTAPI](./REVIEW_PLAN.md#DX-LIGHTAPI),
 [REVIEW_PLAN.md#DX-SPOT](./REVIEW_PLAN.md#DX-SPOT), and the bugs found on the way, N-149 to N-154.
@@ -131,8 +131,8 @@ Measurement tools go in their own commit before what they measure. One change pe
 - **Measured:** Predator and `visPolyStressScene ?lights=720`, the old API (91248f19) against 5b1d716b: ties (R-0936,
   R-0937).
 - **A6, migration and docs:** demos, tests, a "Lights and shadows" section in the bible with a "what you want → what you
-  write" table, FLASHES.md, PARTICLE_LIGHTS.md, COMPONENT_STORAGE.md (examples must run). Conurbano's migration diff is
-  prepared; it is committed there with the owner's OK when a new bundle is copied in.
+  write" table, FLASHES.md, PARTICLE_LIGHTS.md, COMPONENT_STORAGE.md (examples must run). Conurbano is another project:
+  nothing there is touched from this work (the owner, 2026-11-12); its move to the new API is for later, its call.
 
 ### Part B: cone lights (DX-SPOT)
 
