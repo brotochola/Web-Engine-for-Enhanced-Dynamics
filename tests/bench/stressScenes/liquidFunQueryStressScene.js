@@ -36,7 +36,8 @@ export class LiquidFunQueryStressScene extends WEED.Scene {
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      maxVisibleRenderables: 16000,
+      // Every particle LiquidFun may hold (the box makes about 19 700): at 16 000 the last 3 700 were not drawn.
+      maxVisibleRenderables: 24000,
     },
     preRender: {
       packGpuSprites: 'pixi',
