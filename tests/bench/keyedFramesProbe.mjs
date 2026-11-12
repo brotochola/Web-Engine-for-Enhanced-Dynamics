@@ -81,7 +81,7 @@ try {
             let zero = 0;
             let rowsSeen = 0;
             for (let k = 0; k < n; k++) {
-              const key = Math.round(b._slotData[k * 2]);
+              const key = Math.round(b._slotData[k]); // GPU_INDEXED_SLOT_FLOATS: one a slot
               if (key >= 1024 * 4) continue;
               rowsSeen++;
               if (out[key * 12] === 0 && out[key * 12 + 1] === 0) zero++;
