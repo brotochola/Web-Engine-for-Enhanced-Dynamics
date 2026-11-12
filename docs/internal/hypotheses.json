@@ -12247,6 +12247,28 @@
       "records": [
         "R-0906"
       ]
+    },
+    {
+      "id": "E-219",
+      "title": "Logic reads an input a frame after Chrome dispatches it",
+      "status": "open",
+      "statusText": "filed 2026-11-12 from E-198 (R-0927); not measured",
+      "date": "2026-11-12",
+      "rank": 27,
+      "result": "Filed from E-198: of the 24 ms an input still takes to reach the screen, about 16 lie before logic reads it.",
+      "next": "Step 0: where main's input handlers run against the frame clock's vsync (the E-197 stamp and the frame clock). Then logic reads input once main has dispatched the frame's events (a word main writes, a budgeted wait), or main wakes the workers after its handlers. Owner: E-197's latency in Boids and Predator.",
+      "area": "engine",
+      "kind": "speed",
+      "refs": [
+        "EXECUTION_PLAN.md#E-219"
+      ],
+      "aliases": [
+        "input latency",
+        "input lag",
+        "pointer dispatch",
+        "frame clock"
+      ],
+      "records": []
     }
   ],
   "records": [
