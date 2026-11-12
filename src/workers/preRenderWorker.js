@@ -1539,6 +1539,9 @@ class PreRenderWorker extends AbstractWorker {
         if (Atomics.load(sync, 1) < ready) Atomics.store(sync, 1, ready);
         const r = Atomics.wait(sync, 0, ready, budget);
         addWaitMs(performance.now() - now);
+        // Only a timeout turns the waits off. Windows rounds a wait of a millisecond or more up to its timer period
+        // (about 15 ms), so a pose a little past the budget is taken: turning the waits off for it cost
+        // liquidFunQueryStressScene its chain (N-146: input lag 35 -> 50 ms, the frames presented the same).
         if (r === 'timed-out') this._poseWaitOffUntil = frame + 120;
     }
 

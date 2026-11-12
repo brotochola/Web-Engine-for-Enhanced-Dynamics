@@ -2840,6 +2840,7 @@
     }
   }
 
+  // chain-wait-start (tests/node/physicsChainWait.test.js runs this block as shipped)
   /**
    * E-198: wait until every logic worker has finished a frame since the last step (each adds one to the chain at its
    * frame's end), at most the frame period less this step's average and 6 ms for pre-render and Pixi. Physics starts
@@ -2867,23 +2868,25 @@
       const budget = Math.min(period - step - 6, period * 0.4);
       if (budget > 0.5) {
         const end = now + budget;
-        // In slices, answering the sync queries between them: a logic worker blocked on one (a ray, an AABB) finishes
-        // its frame only once physics answers, and the idle wake (Atomics.waitAsync) cannot run under this wait.
+        // N-146: asleep on the chain's bell ([2]), answering the sync queries each time it rings: a logic worker rings
+        // it at its frame's end and when it posts a query (a ray, an AABB: it finishes its frame only once physics
+        // answers, and the idle wake, Atomics.waitAsync, cannot run under this wait). The bell is read before each
+        // service pass, so a ring after it ends the next wait at once. This waited in 0.25 ms slices, and below 1 ms
+        // V8's Atomics.wait spins on Windows: physics burned a core for as long as it waited.
+        let bell = Atomics.load(chainI32, 2);
+        serviceChainQueries();
+        cur = Atomics.load(chainI32, 0);
         while (cur < target) {
           const left = end - performance.now();
-          if (!(left > 0)) {
-            chainOffUntil = chainSteps + 120;
-            break;
-          }
-          Atomics.wait(chainI32, 0, cur, left < 0.25 ? left : 0.25);
-          serviceQueryAabb();
-          serviceOverlapCircle();
-          serviceRayCast();
-          serviceCastRayAll();
-          serviceLiquidFunQuery();
-          serviceLiquidFunExtract();
+          if (!(left > 0)) break;
+          Atomics.wait(chainI32, 2, bell, left);
+          bell = Atomics.load(chainI32, 2);
+          serviceChainQueries();
           cur = Atomics.load(chainI32, 0);
         }
+        // Past the budget: a timeout, or logic's ring during the time Windows adds to one (its timer rounds a wait of a
+        // millisecond or more up to its period, about 15 ms). Either way the chain did not fit the frame.
+        if (performance.now() > end) chainOffUntil = chainSteps + 120;
         chainWaited = performance.now() - now;
         const meter = globalThis.__weedWaitMeter || (globalThis.__weedWaitMeter = { ms: 0 });
         meter.ms += chainWaited;
@@ -2891,6 +2894,28 @@
     }
     chainSeen = cur;
   }
+
+  /**
+   * N-146: the sync queries a logic worker may be blocked on while physics waits for its frame. Their bursts end on
+   * the short spin, as in the idle wake: the bell wakes this wait for a later request, and a step burst's timed wait for
+   * one more sleeps on the query's own word, through logic's ring (on Windows up to its timer period, about 15 ms).
+   */
+  function serviceChainQueries() {
+    const slot = globalThis.Box2dSyncSlot;
+    if (slot) slot.setWakeService(true);
+    try {
+      serviceQueryAabb();
+      serviceOverlapCircle();
+      serviceRayCast();
+      serviceCastRayAll();
+      serviceLiquidFunQuery();
+      serviceLiquidFunExtract();
+    } finally {
+      if (slot) slot.setWakeService(false);
+    }
+  }
+
+  // chain-wait-end
 
   /** E-198: this step's own time (its wait for logic left out), for the next wait's budget. */
   function noteChainStep(stepStart) {

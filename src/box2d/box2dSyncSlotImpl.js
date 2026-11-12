@@ -117,10 +117,25 @@
     Atomics.notify(i32, HDR_STATUS);
   }
 
+  // N-146: the frame chain's bell (an Int32Array, its [CHAIN_BELL]), when this thread has one. Physics's wait for the
+  // logic workers' frame (weedjsPost's waitForLogic) sleeps on it, and a worker blocked on a request finishes its
+  // frame only once physics answers: a post rings it.
+  var CHAIN_BELL = 2;
+  var chainBell = null;
+
+  /** A worker: the frame chain whose bell its posts ring (null: none). */
+  function setChainBell(i32) {
+    chainBell = i32 && i32.length > CHAIN_BELL ? i32 : null;
+  }
+
   /** Request side: the request is written; hand it to physics. */
   function post(i32) {
     Atomics.store(i32, HDR_STATUS, STATUS_PENDING);
     Atomics.notify(i32, HDR_STATUS);
+    if (chainBell !== null) {
+      Atomics.add(chainBell, CHAIN_BELL, 1);
+      Atomics.notify(chainBell, CHAIN_BELL);
+    }
   }
 
   /** Physics: the answer is written (DONE) or the service threw (ERROR). */
@@ -222,6 +237,8 @@
     isError: isError,
     isPending: isPending,
     release: release,
+    CHAIN_BELL: CHAIN_BELL,
+    setChainBell: setChainBell,
     post: post,
     answer: answer,
     waitForNextRequest: waitForNextRequest,

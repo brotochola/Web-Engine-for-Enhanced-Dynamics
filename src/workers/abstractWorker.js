@@ -827,6 +827,8 @@ export class AbstractWorker {
 
     this._latency = bindLatencyStamp(data.buffers?.latencyStamp);
     this._frameChain = data.buffers?.frameChain ? new Int32Array(data.buffers.frameChain) : null;
+    // N-146: this worker's sync query posts ring the chain's bell (physics may be asleep on it, waiting for logic).
+    if (globalThis.Box2dSyncSlot) globalThis.Box2dSyncSlot.setChainBell(this._frameChain);
 
     // Initialize common shared buffers using Buffer->Data naming pattern
     if (data.buffers?.inputData) {
