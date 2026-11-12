@@ -723,6 +723,8 @@ async function main() {
       ...(args['camera-zoom'] ? ['--camera-zoom', String(args['camera-zoom'])] : []),
       // --browser firefox: both sides in the installed Firefox (stockFirefox.mjs); playwright-firefox for Playwright's.
       ...(args.browser ? ['--browser', String(args.browser)] : []),
+      // E-197: --input-every <ms> moves the mouse that often in each run, so each side's renderer reports INPUT_LAG_MS.
+      ...(args['input-every'] ? ['--input-every', String(Number(args['input-every']))] : []),
     ],
   };
   const scene = resolveScene(args);
