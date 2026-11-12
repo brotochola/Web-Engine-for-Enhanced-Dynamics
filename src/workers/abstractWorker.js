@@ -326,6 +326,9 @@ export class AbstractWorker {
    * from the shared meter). Subclasses call it first in reportFPS().
    * @param {{ FPS: number, STEP_MS: number, IDLE_MS: number, WAIT_MS: number }} schema
    */
+  /** After the frame's update, inside its step (E-197: logic publishes its latency stamp here). */
+  afterUpdate() {}
+
   _writeFrameMeters(schema) {
     const stats = this.stats;
     const waitMs = waitMeterMs();
@@ -407,6 +410,7 @@ export class AbstractWorker {
     // Call the worker-specific update logic; STEP_MS = wall time of that work only
     const t0 = performance.now();
     this.update(timing.deltaTime, timing.dtRatio, resuming);
+    this.afterUpdate();
     this.stepTimeThisFrame = performance.now() - t0;
     this._lastFrameEndAt = performance.now();
     if (this._frameClock) {

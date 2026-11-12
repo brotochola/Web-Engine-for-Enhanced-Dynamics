@@ -134,7 +134,7 @@ const LIST_UPDATE_MAX_BATCH_PENDING = 2048;
 class LogicWorker extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
-    // E-197: the input stamp this frame acts on (published at the next frame's start).
+    // E-197: the input stamp this frame acts on (published by afterUpdate, once the frame's work is out).
     this._latencyActing = 0;
 
     // Logic worker needs to CREATE GameObject instances (all workers get scripts/components)
@@ -992,6 +992,16 @@ class LogicWorker extends AbstractWorker {
     );
   }
 
+  /**
+   * E-197 (logic0): the input this frame read is now in what logic published (Transform, the bodies' forces): its
+   * stamp goes to the word physics and pre-render read. At the frame's end, so a stage that runs after logic in the
+   * same vsync takes this frame's stamp with this frame's data (published at the next frame's start it read one a
+   * frame old, and the meter counted a frame that was not there).
+   */
+  afterUpdate() {
+    if (this.workerIndex === 0 && this._latency !== null) Atomics.store(this._latency.i32, STAMP_LOGIC, this._latencyActing);
+  }
+
   update(deltaTime, dtRatio, resuming) {
     if (this.collectDetailedStats) this.frameStartTime = performance.now();
     // DX-GUARDS E2 (debug build): once a second, a field first written after onSpawned.
@@ -1019,12 +1029,8 @@ class LogicWorker extends AbstractWorker {
     // each once, however the two workers' frames fall (N-129).
     if (this._impactRing !== null) this._pollImpacts();
 
-    // E-197 (logic0): the input the last frame acted on is now in what it published; take the input this frame reads.
-    if (this.workerIndex === 0 && this._latency !== null) {
-      const i32 = this._latency.i32;
-      Atomics.store(i32, STAMP_LOGIC, this._latencyActing);
-      this._latencyActing = Atomics.load(i32, STAMP_INPUT);
-    }
+    // E-197 (logic0): the input this frame reads; it is published once the frame's work is out (afterUpdate).
+    if (this.workerIndex === 0 && this._latency !== null) this._latencyActing = Atomics.load(this._latency.i32, STAMP_INPUT);
 
     // ========================================
     // PHASE 0: PROCESS LIST UPDATES (logic0 only)
