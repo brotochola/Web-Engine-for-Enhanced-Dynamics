@@ -345,6 +345,12 @@ export const BOX2D_MAX_WORKERS = SIM_MAX_WORKERS;
 
 export const PHYSICS_DEFAULTS = Object.freeze({
   /**
+   * E-198: physics waits for the logic workers to finish this vsync's frame before it steps (up to the frame less its
+   * own step and room for pre-render and Pixi), so the forces and teleports logic wrote are stepped the same vsync,
+   * not the next: a frame less from an input to the screen. A wait that times out turns the waits off for two seconds.
+   */
+  waitForLogic: true,
+  /**
    * Default true. false = do not create box2dWasm.js; Transform pose binds to a Weed SAB.
    * RigidBody vel, Collider, Joint, LiquidFun, and Box2d query/explode APIs need true.
    */
@@ -633,6 +639,12 @@ export const RENDERER_DEFAULTS = Object.freeze({
    */
   interpolation: false,
   /**
+   * E-198: when this vsync's render queue is not out yet as a frame starts, Pixi waits for it (up to the frame less
+   * its own work) instead of drawing the one pre-render published a vsync earlier: a frame less from an input to the
+   * screen. A wait that times out turns the waits off for two seconds. false draws the newest queue out at once.
+   */
+  waitForQueue: true,
+  /**
    * Explicit MeshRenderer vertex arena (local x,y). 0 = off. Up to 65535 the vertex counts and
    * triangle indices are Uint16; past that they are Uint32, up to 1048576 (2^20). One mesh may
    * take the whole arena.
@@ -785,6 +797,12 @@ export const LAYER_DEFAULTS = Object.freeze({
 // ============================================================================
 
 export const PRE_RENDER_DEFAULTS = Object.freeze({
+  /**
+   * E-198: when the physics pose of this vsync is not out yet as a frame starts, pre-render waits for it (up to the
+   * frame less its own work and room for Pixi) instead of drawing the one physics published a vsync earlier: a frame
+   * less from an input to the screen in a scene with bodies. A wait that times out turns the waits off for two seconds.
+   */
+  waitForPose: true,
   noLimitFPS: false,
   fixedFps: 0,
   /** When true, skip packing if >1 frame ahead of pixi (Atomics sync). */

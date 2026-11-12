@@ -208,6 +208,17 @@
   // E-197: the latency stamp buffer (logic's word, index 3) and the stamp the next published pose carries.
   let latencyI32 = null;
   let poseStamp = 0;
+  // E-198: the frame chain ([0] the logic workers' frames done), how many logic workers add to it, the count seen at
+  // the last step, the step it may wait again from after a timeout, and this worker's step and frame period averages.
+  let chainI32 = null;
+  let chainLogicWorkers = 0;
+  let chainSeen = 0;
+  let chainOffUntil = 0;
+  let chainSteps = 0;
+  let chainStepMs = NaN;
+  let chainPeriodMs = NaN;
+  let chainLastStart = NaN;
+  let chainWaited = 0;
   let poseBuffers = [null, null]; // { x, y, rotC, rotS } Float32Array views
   let poseCapacity = 0;
   let poseFrame = 0;
@@ -498,6 +509,9 @@
     poseCapacity = n;
     poseSync = new Int32Array(pose.sync);
     latencyI32 = pose.latency && pose.latency.byteLength >= 16 ? new Int32Array(pose.latency, 0, 4) : null;
+    chainI32 = pose.chain ? new Int32Array(pose.chain) : null;
+    chainLogicWorkers = pose.logicWorkers | 0;
+    chainSeen = chainI32 ? Atomics.load(chainI32, 0) : 0;
     // 4 channels: x,y,rotC,rotS, from each buffer's byte (a region of Box2D's block, Phase 4; else 0).
     const bytesPerBuf = n * 4 * 4;
     for (let i = 0; i < 2; i++) {
@@ -2826,7 +2840,67 @@
     }
   }
 
+  /**
+   * E-198: wait until every logic worker has finished a frame since the last step (each adds one to the chain at its
+   * frame's end), at most the frame period less this step's average and 6 ms for pre-render and Pixi. Physics starts
+   * on the same vsync as logic, so it stepped the forces logic wrote a vsync earlier; waiting the 2 or 3 ms logic
+   * takes steps them the same vsync. The wait goes into WAIT_MS. A timeout (logic slower than the frame allows, or
+   * paused) turns the waits off for 120 steps.
+   */
+  function waitForLogic() {
+    chainWaited = 0;
+    if (chainI32 === null || !(chainLogicWorkers > 0)) return;
+    const now = performance.now();
+    if (chainLastStart === chainLastStart) {
+      const gap = now - chainLastStart;
+      if (gap > 0 && gap < 100) chainPeriodMs = chainPeriodMs === chainPeriodMs ? chainPeriodMs * 0.9 + gap * 0.1 : gap;
+    }
+    chainLastStart = now;
+    chainSteps++;
+    // The workers wake together, so the logic frames done at this step's start are a vsync old: wait for each logic
+    // worker to finish this vsync's.
+    let cur = Atomics.load(chainI32, 0);
+    const target = cur + chainLogicWorkers;
+    if (cur < target && chainSteps >= chainOffUntil) {
+      const period = chainPeriodMs === chainPeriodMs ? chainPeriodMs : 1000 / 60;
+      const step = chainStepMs === chainStepMs ? chainStepMs : period;
+      const budget = Math.min(period - step - 6, period * 0.4);
+      if (budget > 0.5) {
+        const end = now + budget;
+        // In slices, answering the sync queries between them: a logic worker blocked on one (a ray, an AABB) finishes
+        // its frame only once physics answers, and the idle wake (Atomics.waitAsync) cannot run under this wait.
+        while (cur < target) {
+          const left = end - performance.now();
+          if (!(left > 0)) {
+            chainOffUntil = chainSteps + 120;
+            break;
+          }
+          Atomics.wait(chainI32, 0, cur, left < 0.25 ? left : 0.25);
+          serviceQueryAabb();
+          serviceOverlapCircle();
+          serviceRayCast();
+          serviceCastRayAll();
+          serviceLiquidFunQuery();
+          serviceLiquidFunExtract();
+          cur = Atomics.load(chainI32, 0);
+        }
+        chainWaited = performance.now() - now;
+        const meter = globalThis.__weedWaitMeter || (globalThis.__weedWaitMeter = { ms: 0 });
+        meter.ms += chainWaited;
+      }
+    }
+    chainSeen = cur;
+  }
+
+  /** E-198: this step's own time (its wait for logic left out), for the next wait's budget. */
+  function noteChainStep(stepStart) {
+    const own = performance.now() - stepStart - chainWaited;
+    if (own > 0) chainStepMs = chainStepMs === chainStepMs ? chainStepMs * 0.9 + own * 0.1 : own;
+  }
+
   function doStep() {
+    const stepStart = performance.now();
+    waitForLogic();
     // E-197: the newest input logic had acted on before this step reads its bodies.
     if (latencyI32 !== null) poseStamp = Atomics.load(latencyI32, 3);
     const entityCount = hostEntityCount | 0;
@@ -2862,6 +2936,7 @@
       stepWorld(dt, solverSteps);
       maybePublishPose(entityCount);
       afterStep();
+      noteChainStep(stepStart);
       writePhysicsStats(0, 0, 0, 0, 0, 0, 0, 0, 0);
       return;
     }
@@ -2887,6 +2962,7 @@
     maybePublishPose(entityCount);
     afterStep();
     const t6 = performance.now();
+    noteChainStep(stepStart);
     writePhysicsStats(
       t1 - t0,
       t3 - t2,

@@ -241,6 +241,8 @@ function initializeCoreEntityAndComponentBuffers(scene) {
 
   // E-197: the input-to-screen latency stamp (main stamps inputs into it; logic, physics, pre-render and Pixi carry it).
   buffers.latencyStamp = createLatencyStampBuffer();
+  // E-198: the frame chain: [0] the logic workers' frames done (each adds one at its frame's end).
+  buffers.frameChain = new SharedArrayBuffer(16);
   bindInputStamp(buffers.latencyStamp);
 
   const spatialOn = (config.spatial.numberOfSpatialWorkers | 0) > 0;

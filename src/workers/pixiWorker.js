@@ -320,6 +320,7 @@ import {
 } from '../render/gpuParticleProxies.js';
 import { EntityChunks, RegionQuads } from '../render/gpuParticleChunks.js';
 import { LagMeter, stampNow } from '../util/latencyStamp.js';
+import { addWaitMs, waitMeterMs } from '../util/waitMeter.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
@@ -709,6 +710,13 @@ class PixiRenderer extends AbstractWorker {
     // pre_render skips a frame if >1 ahead (backpressure)
     this.renderQueueEnabled = false;
     this._queueBackpressure = true;
+    // E-198: whether Pixi waits for this vsync's queue (renderer.waitForQueue), the frame it may wait again from after a
+    // timeout, its own step without the wait (an average), and the wall time between its frames (an average).
+    this._queueWait = false;
+    this._queueWaitOffUntil = 0;
+    this._queueWaitStepMs = NaN;
+    this._queueWaitPeriodMs = NaN;
+    this._queueWaitLastStart = NaN;
     this._queueInterp = false;
     /** N-138: pre-render's lists of the poses its sprites that have a mesh were drawn at, one per queue buffer. */
     this._meshPoseLists = [];
@@ -1413,6 +1421,9 @@ class PixiRenderer extends AbstractWorker {
   reportFPS() {
     // A paced tick did no work; like a pre-render skip, it leaves the last drawn frame's meters.
     if (this._pacedTick) return;
+    // E-198: Pixi's own step (without its wait for the queue), for the next wait's budget.
+    const own = this.stepTimeThisFrame - waitMeterMs();
+    if (own > 0) this._queueWaitStepMs = this._queueWaitStepMs === this._queueWaitStepMs ? this._queueWaitStepMs * 0.9 + own * 0.1 : own;
     // E-197: this frame drew the queue it consumed; its stamp, if newer than any drawn, is an input reaching the screen.
     if (this._queueStamp > 0 && this._latency !== null) this._lagMeter.note(this._queueStamp, stampNow(this._latency));
     if (this.stats) {
@@ -2605,7 +2616,35 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * Swap to the oldest unread render queue. Pixi never waits.
+   * E-198: wait for pre-render's next queue (it notifies on publishFrame), at most the frame period less Pixi's own
+   * step and a millisecond, so the frame is still drawn on its vsync. Each frame drew the queue pre-render published a
+   * vsync earlier (Pixi starts before it publishes, about 2 ms in): waiting takes that frame off the input's way to the
+   * screen. The wait goes into WAIT_MS. A timeout (pre-render slower than the frame allows) turns the waits off for
+   * 120 frames. Returns the ready frame after it.
+   */
+  _waitForQueue(readyFrame) {
+    const frame = this.frameNumber | 0;
+    const now = performance.now();
+    const last = this._queueWaitLastStart;
+    this._queueWaitLastStart = now;
+    if (last === last) {
+      const gap = now - last;
+      if (gap > 0 && gap < 100) this._queueWaitPeriodMs = this._queueWaitPeriodMs === this._queueWaitPeriodMs
+        ? this._queueWaitPeriodMs * 0.9 + gap * 0.1 : gap;
+    }
+    if (frame < this._queueWaitOffUntil) return readyFrame;
+    const period = this._queueWaitPeriodMs === this._queueWaitPeriodMs ? this._queueWaitPeriodMs : 1000 / 60;
+    const step = this._queueWaitStepMs === this._queueWaitStepMs ? this._queueWaitStepMs : period;
+    const budget = period - step - 1;
+    if (!(budget > 0.5)) return readyFrame;
+    const r = Atomics.wait(this.renderQueueSync, 0, readyFrame, budget > period * 0.75 ? period * 0.75 : budget);
+    addWaitMs(performance.now() - now);
+    if (r === 'timed-out') this._queueWaitOffUntil = frame + 120;
+    return Atomics.load(this.renderQueueSync, 0);
+  }
+
+  /**
+   * Swap to the oldest unread render queue. Pixi never waits (but see _waitForQueue, E-198).
    * Pre-render publishes ~2 ms into the same vsync pixi reads in. Jumping to
    * the newest skips a queue when it wins that race, then repeats one the next
    * frame. Backpressure keeps pre-render at most one queue ahead, so the older
@@ -2617,7 +2656,16 @@ class PixiRenderer extends AbstractWorker {
     if (!this.renderQueueSync) return false;
     const started = this.collectDetailedStats ? performance.now() : 0;
     let readyFrame = Atomics.load(this.renderQueueSync, 0);
-    if (this._queueBackpressure && this.lastReadFrame > 0 && readyFrame > this.lastReadFrame + 1) {
+    // E-198: every worker wakes on the vsync together (runFramePhase: within 0.2 ms), so the queue out at this frame's
+    // start is the one pre-render published a vsync earlier. Wait for this vsync's, and draw it (the older one unread
+    // is skipped, once: from then on each frame draws the queue of its own vsync).
+    let waitedNew = false;
+    if (this._queueWait && this.lastReadFrame > 0) {
+      const after = this._waitForQueue(readyFrame);
+      waitedNew = after > readyFrame;
+      readyFrame = after;
+    }
+    if (!waitedNew && this._queueBackpressure && this.lastReadFrame > 0 && readyFrame > this.lastReadFrame + 1) {
       readyFrame = this.lastReadFrame + 1;
     }
     let consumedNewFrame = false;
@@ -7198,6 +7246,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._ySort = ySortEnabled(this._ySortMode);
     const preCfg = this.config.preRender || {};
     this._queueBackpressure = preCfg.backpressure !== false;
+    this._queueWait = rendererConfig.waitForQueue !== false && !this._queueInterp;
     const spritePipe = resolveSpritePipeline({
       ySort: this._ySortMode,
       packGpuSprites: preCfg.packGpuSprites,
