@@ -3478,6 +3478,10 @@ renderer.
 ms/s (the records, 7.7 ns a row, read in order). Next: a dense u16 per particle with the compare epoch it was last checked
 at, so the emit reads a record only after a Pixi resync or a LiquidFun statics change physics reports. N-142 first: the
 statics do not follow LiquidFun's compaction today.
+**Result:** kept 2026-11-12 (`84e06cc1`, R-0920) with step 2: physics counts its changes to the statics (`staticsEpoch`,
+the render buffer header's free word) and the emit keeps a u32 per particle with the epoch its record was last
+checked at. liquidFunQueryStressScene `?lf=60000`, 8 pairs: renderer 2.192 → 1.028 ms (-51.7 %, worse 0/8, under the
+floor: the scene's limit), pre-render +1.1 % (5/8), physics -0.7 %.
 
 ### E-195 The shadow stamp's candidate test in float32x4, decided in Chrome
 
