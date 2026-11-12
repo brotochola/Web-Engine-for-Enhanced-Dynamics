@@ -8,6 +8,8 @@
  *
  *   node tests/bench/runFramePhase.mjs
  *   node tests/bench/runFramePhase.mjs --warmup-ms 10000 --capture-ms 5000
+ *   node tests/bench/runFramePhase.mjs --scene /demos/boidsScene/boidsScene.js --scene-export BoidsScene
+ * (--scene and --scene-export: another scene than Predator, E-198.)
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -24,6 +26,8 @@ const args = parseArgs(process.argv.slice(2));
 const warmupMs = Number(args['warmup-ms'] ?? 10000);
 const captureMs = Number(args['capture-ms'] ?? 5000);
 const outDir = path.resolve(repoRoot, String(args.output ?? 'tests/results/e24-frame-phase'));
+const sceneModule = String(args.scene ?? '/demos/predatorScene/predatorScene.js');
+const sceneExport = String(args['scene-export'] ?? 'PredatorScene');
 
 function median(values) {
   return values.length === 0 ? null : benchMedian(values);
@@ -60,7 +64,7 @@ function phaseTable(samples) {
 const server = await createStaticBenchmarkServer(repoRoot);
 const url =
   `http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html?src=1` +
-  '&scene=/demos/predatorScene/predatorScene.js&sceneExport=PredatorScene';
+  `&scene=${sceneModule}&sceneExport=${sceneExport}`;
 const browser = await chromium.launch({
   headless: false,
   channel: 'chrome',
@@ -82,16 +86,16 @@ try {
   page.on('pageerror', (err) => console.error('[page error]', err));
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, { timeout: 30000 });
-  await page.evaluate(() =>
+  await page.evaluate((s) =>
     window.__WEED_BENCHMARK__.prepare({
       warmupMs: 1000,
       durationMs: 1000,
       sampleIntervalMs: 250,
-      sceneModule: '/demos/predatorScene/predatorScene.js',
-      sceneExport: 'PredatorScene',
+      sceneModule: s.sceneModule,
+      sceneExport: s.sceneExport,
       collectDetailedStats: false,
       collectGpuStats: false,
-    })
+    }), { sceneModule, sceneExport }
   );
   await page.waitForTimeout(warmupMs);
   await page.evaluate(() => {
@@ -109,7 +113,7 @@ try {
   const summary = summarizePhase(samples);
   const table = phaseTable(samples);
   const payload = {
-    scene: 'PredatorScene',
+    scene: sceneExport,
     headed: true,
     src: true,
     collectDetailedStats: false,
