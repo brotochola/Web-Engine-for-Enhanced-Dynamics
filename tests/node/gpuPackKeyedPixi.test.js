@@ -65,7 +65,7 @@ function rng(seed) {
   };
 }
 
-function pixiScene(backend) {
+function pixiScene(backend, renderer = {}) {
   Query.reset();
   const scene = {
     totalEntityCount: ENTITIES,
@@ -91,7 +91,7 @@ function pixiScene(backend) {
       logic: { staggeredUpdates: false },
       debug: { maxDebugDrawEntries: 1 },
       navigation: { enabled: false },
-      renderer: { maxVisibleRenderables: MAX, ySort: true, backend },
+      renderer: { maxVisibleRenderables: MAX, ySort: true, backend, ...renderer },
       preRender: { packGpuSprites: 'pixi', sortSprites: 'pixi' },
       layers: {},
       wasm: { ...WASM_DEFAULTS },
@@ -153,6 +153,20 @@ async function bindPixi(px, scene, webgpu) {
       tex.scattered += count + (texCount | 0);
     },
   });
+  if (webgpu) {
+    // E-187: the storage buffer's compute pass, as the shader writes it (staticsScatterGpu.js), into a copy of the buffer.
+    px.pixiApp = { renderer: { gpu: { device: { limits: { maxStorageBufferBindingSize: 1 << 27 } } } } };
+    px._scatterStaticsGpu = (source, updates, count, texUpdates, texCount) => {
+      tex.source = source;
+      tex.texels ||= new Uint32Array(source.data.length);
+      for (let u = 0; u < count; u++) {
+        const at = u * GPU_KEYED_ROW_WORDS;
+        tex.texels.set(updates.subarray(at, at + GPU_INDEXED_STATIC_FLOATS), updates[at + GPU_KEYED_KEY_WORD] * GPU_INDEXED_STATIC_FLOATS);
+      }
+      for (let u = 0; u < (texCount | 0); u++) tex.texels[texUpdates[2 * u] * GPU_INDEXED_STATIC_FLOATS + 6] = texUpdates[2 * u + 1];
+      tex.scattered += count + (texCount | 0);
+    };
+  }
   await px._bindPixiGpuPack(data);
   await px._bindPainterRadix(data);
   px.createEntitiesInstancedBatch(MAX);
@@ -245,18 +259,26 @@ function rowStatics(q, i) {
   return u;
 }
 
-test('Pixi draws a WebGL scene\'s sprites as keyed frames: poses in the painter\'s order, statics by key', async () => {
+for (const backend of ['webgl', 'webgpu']) test(`Pixi draws a scene's sprites as keyed frames (${backend}): poses in the painter's order, statics by key`, async () => {
+  const webgpu = backend === 'webgpu';
   const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
-  const scene = await quietly(() => pixiScene('webgl'));
+  const scene = await quietly(() => pixiScene(backend));
   const layout = scene.renderQueueMemory.layout;
   assert.equal(layout.pixiKeyBase, ENTITIES, 'the scene lays out the keyed regions');
   assert.equal(layout.pixiKeyRows, gpuIndexedStaticRows(ENTITIES + MAX));
   assert.ok(layout.pixiKeyHeaderByte >= 0 && layout.pixiKeyHeaderByte === layout.emit.keyHeaderByte, 'one resync header');
-  const tex = await quietly(() => bindPixi(px, scene, false));
+  const tex = await quietly(() => bindPixi(px, scene, webgpu));
   const batch = px.entitiesBatch;
   assert.equal(batch.keyed, true, 'the entity batch goes keyed');
-  assert.equal(tex.made.length, 1, 'one statics texture');
-  assert.equal(tex.made[0].height, layout.pixiKeyRows / 1024, 'a row for every key');
+  if (webgpu) {
+    // E-187: a storage buffer of a row for every key, which Pixi must never make again from its CPU copy (zeros).
+    assert.equal(tex.made.length, 0, 'no statics texture');
+    assert.equal(batch._staticsSource.data.length, layout.pixiKeyRows * GPU_INDEXED_STATIC_FLOATS, 'a row for every key');
+    assert.equal(batch._staticsSource.autoGarbageCollect, false, 'out of Pixi\'s resource GC');
+  } else {
+    assert.equal(tex.made.length, 1, 'one statics texture');
+    assert.equal(tex.made[0].height, layout.pixiKeyRows / 1024, 'a row for every key');
+  }
   let order = null;
   px._pixiEntityPack.afterSprites = (n, idx) => {
     order = idx ? Uint32Array.from(idx.subarray(0, n)) : null;
@@ -310,12 +332,13 @@ test('Pixi draws a WebGL scene\'s sprites as keyed frames: poses in the painter\
   for (const f of [3, 4, 5, 6, 7, 8, 12]) assert.ok(scattered[f] < MAX / 5, `frame ${f}: ${scattered[f]} scattered`);
 });
 
-test('on WebGPU the entity batch stays split', async () => {
-  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
-  const scene = await quietly(() => pixiScene('webgpu'));
-  assert.equal(scene.renderQueueMemory.layout.pixiKeyRows, 0, 'no keyed regions');
-  px.pixiApp = { renderer: { gpu: { device: { limits: { maxStorageBufferBindingSize: 1 << 27 } } } } };
-  await quietly(() => bindPixi(px, scene, true));
-  assert.equal(px.entitiesBatch.keyed, false);
-  assert.equal(px.entitiesBatch.split, true);
+test('a scene whose renderer turns indexed sprites off keeps split frames on either backend', async () => {
+  for (const backend of ['webgl', 'webgpu']) {
+    const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+    const scene = await quietly(() => pixiScene(backend, { indexedSprites: false }));
+    assert.equal(scene.renderQueueMemory.layout.pixiKeyRows, 0, `${backend}: no keyed regions`);
+    await quietly(() => bindPixi(px, scene, backend === 'webgpu'));
+    assert.equal(px.entitiesBatch.keyed, false, backend);
+    assert.equal(px.entitiesBatch.split, true, backend);
+  }
 });

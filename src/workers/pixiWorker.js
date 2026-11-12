@@ -270,6 +270,7 @@ import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
 import { GPU_KEYED_ROW_WORDS, bindGpuPack } from '../render/gpuPackClient.js';
 import { createStaticsScatterGl, scatterStaticsGl } from '../render/webgl/staticsScatterGl.js';
+import { createStaticsScatterGpu, scatterStaticsGpu } from '../render/webgpu/staticsScatterGpu.js';
 import { createPrivateArena } from '../render/sharedCopy.js';
 import { GpuFramePacer } from '../render/gpuFramePacer.js';
 
@@ -563,6 +564,8 @@ class PixiRenderer extends AbstractWorker {
     this._keyedRowsRefusedWarned = false;
     // The statics scatter's GL objects (_scatterStaticsGl), made on its first call.
     this._staticsScatterGl = null;
+    // E-187: the keyed statics scatter's pipelines and buffers on WebGPU (staticsScatterGpu.js), made on first use.
+    this._staticsScatterGpu = null;
     // The glow batch's rows in the render-queue memory (pixi pack mode), or null.
     this._pixiGlowRows = null;
     // W30. The batches Pixi fills from the render-queue memory keep their arrays in private WebAssembly.Memories, copied
@@ -2239,6 +2242,20 @@ class PixiRenderer extends AbstractWorker {
     scatterStaticsGl(this._staticsScatterGl, renderer, texture, updates, count, width, height, texUpdates, texCount);
   }
 
+  /**
+   * E-187: `count` updates and `texCount` texture updates of a keyed batch's statics into its storage buffer on WebGPU
+   * (staticsScatterGpu.js: a compute pass, submitted before the frame's render), the pipelines made on the first call.
+   */
+  _scatterStaticsGpu(source, updates, count, texUpdates = null, texCount = 0) {
+    const renderer = this.pixiApp?.renderer;
+    const device = renderer?.gpu?.device;
+    if (!device || !renderer.buffer || (count <= 0 && texCount <= 0)) return;
+    if (this._staticsScatterGpu === null || this._staticsScatterGpu.device !== device) {
+      this._staticsScatterGpu = createStaticsScatterGpu(device);
+    }
+    scatterStaticsGpu(this._staticsScatterGpu, renderer.buffer.getGPUBuffer(source), updates, count, texUpdates, texCount);
+  }
+
   /** Every frame: new GPU particle records up, each ring's live window and clock set. */
   updateGpuParticleLayers() {
     const batches = this._gpuParticleBatches;
@@ -2529,8 +2546,9 @@ class PixiRenderer extends AbstractWorker {
     this._rqIdxGlow = painterWasm ? painterSlotList(painterWasm, 'glow', maxItems) : new Uint32Array(maxItems);
     this._painter = this._ySort ? this._newEntityPainter() : null;
     const gpuCaps = this.gpuQueueBuffers && this.gpuQueueBuffers[0] ? this.gpuQueueBuffers[0].caps : null;
-    // E-177: keyed frames where Pixi packs into the render-queue memory and the scene laid out their regions (WebGL).
-    const keyed = this._pixiKeyed !== null && this._pixiInstanceRows !== null && !this._useWebGpu ? this._pixiKeyed : null;
+    // E-177: keyed frames where Pixi packs into the render-queue memory and the scene laid out their regions (on WebGPU
+    // too since E-187: the scatter a compute pass).
+    const keyed = this._pixiKeyed !== null && this._pixiInstanceRows !== null ? this._pixiKeyed : null;
     const indexed = !!(gpuCaps && gpuCaps.indexedSprites) || keyed !== null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
@@ -2551,11 +2569,16 @@ class PixiRenderer extends AbstractWorker {
       // pose, which the split kernel does not pack, so it keeps 15-float rows.
       split: !this._queueInterp && this.atlasScaleMode !== 'nearest',
       // E-162: with the queue's indexed frames (renderer.indexedSprites), where their statics go: a texture through the
-      // record texture helper (WebGL), or a storage buffer within the device's binding size (WebGPU).
+      // record texture helper (WebGL), or a storage buffer within the device's binding size (WebGPU), which a keyed
+      // batch's compute pass scatters into (E-187).
       statics: !indexed
         ? null
         : this._useWebGpu
-          ? { maxStorageBytes: this.pixiApp?.renderer?.gpu?.device?.limits?.maxStorageBufferBindingSize ?? WEBGPU_DEFAULT_STORAGE_BINDING }
+          ? {
+              maxStorageBytes: this.pixiApp?.renderer?.gpu?.device?.limits?.maxStorageBufferBindingSize ?? WEBGPU_DEFAULT_STORAGE_BINDING,
+              scatter: (source, updates, count, width, height, texUpdates, texCount) =>
+                this._scatterStaticsGpu(source, updates, count, texUpdates, texCount),
+            }
           : this._gpuRecordTexture(),
       keyed,
       // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot

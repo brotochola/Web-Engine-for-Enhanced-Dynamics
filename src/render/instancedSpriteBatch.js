@@ -746,6 +746,9 @@ export class InstancedSpriteBatch {
       usage: BufferUsage.STORAGE | BufferUsage.COPY_DST,
       label: `${name}-statics`,
     });
+    // E-187: a keyed batch's statics live on the GPU alone (its scatter's compute pass writes them; this copy stays at
+    // zeros): Pixi must never make the buffer again from it, as its resource GC would after a minute undrawn.
+    if (this.keyed) this._staticsSource.autoGarbageCollect = false;
     const shaders = this._engineShaders;
     const gpuProgram = instancedSpriteIndexedGpuProgram(
       GpuProgram,

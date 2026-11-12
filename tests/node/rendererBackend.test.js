@@ -235,12 +235,23 @@ test('fetch failure message names the asset and HTTP status', () => {
   );
 });
 
-test('E-177: keyed sprite frames where Pixi packs on WebGL without interpolation, unless indexedSprites is off', async () => {
-  const { keyedSpritesEnabled, INDEXED_SPRITES_MAX_WEBGL } = await import('../../src/render/rendererBackend.js');
+test('E-177: keyed sprite frames where Pixi packs without interpolation, unless indexedSprites is off', async () => {
+  const { keyedSpritesEnabled, keyedStaticsMax, keyedDecorationsFit, keyedLiquidFunFit, INDEXED_SPRITES_MAX_WEBGL,
+    INDEXED_SPRITES_MAX_WEBGPU } = await import('../../src/render/rendererBackend.js');
   const config = (renderer, packGpuSprites = 'pixi') => ({ renderer, preRender: { packGpuSprites } });
   assert.equal(keyedSpritesEnabled(config({ backend: 'webgl' }), 40000, 20000), true);
-  assert.equal(keyedSpritesEnabled(config({ backend: 'webgpu' }), 40000, 20000), false, 'WebGPU keeps split frames');
-  assert.equal(keyedSpritesEnabled(config({}), 40000, 20000), false, 'the default backend is WebGPU');
+  // E-187: on WebGPU too, the scatter a compute pass over the statics storage buffer.
+  assert.equal(keyedSpritesEnabled(config({ backend: 'webgpu' }), 40000, 20000), true, 'WebGPU too (E-187)');
+  assert.equal(keyedSpritesEnabled(config({}), 40000, 20000), true, 'the default backend, WebGPU');
+  assert.equal(keyedStaticsMax(config({})), INDEXED_SPRITES_MAX_WEBGPU);
+  assert.equal(keyedStaticsMax(config({ backend: 'webgl' })), INDEXED_SPRITES_MAX_WEBGL);
+  assert.equal(keyedSpritesEnabled(config({ backend: 'webgpu' }), INDEXED_SPRITES_MAX_WEBGPU, 1), false, 'past the binding');
+  assert.equal(keyedSpritesEnabled(config({ backend: 'webgpu' }), INDEXED_SPRITES_MAX_WEBGPU - 1, 1), true, 'up to it');
+  assert.equal(keyedSpritesEnabled(config({ backend: 'webgl' }), INDEXED_SPRITES_MAX_WEBGPU, 1), true, 'WebGL holds more');
+  assert.equal(keyedDecorationsFit(INDEXED_SPRITES_MAX_WEBGPU, 10, 1), true, 'WebGL\'s keys by default');
+  assert.equal(keyedDecorationsFit(INDEXED_SPRITES_MAX_WEBGPU, 10, 1, INDEXED_SPRITES_MAX_WEBGPU), false, 'the backend\'s');
+  assert.equal(keyedLiquidFunFit(INDEXED_SPRITES_MAX_WEBGPU, 0, 10, 1), true);
+  assert.equal(keyedLiquidFunFit(INDEXED_SPRITES_MAX_WEBGPU, 0, 10, 1, INDEXED_SPRITES_MAX_WEBGPU), false);
   assert.equal(keyedSpritesEnabled(config({ backend: 'webgl' }, 'prerender'), 40000, 20000), false, 'pre-render packs');
   assert.equal(keyedSpritesEnabled(config({ backend: 'webgl', interpolation: true }), 40000, 20000), false, 'pose batches');
   assert.equal(keyedSpritesEnabled(config({ backend: 'webgl', indexedSprites: false }), 40000, 20000), false, 'switched off');
