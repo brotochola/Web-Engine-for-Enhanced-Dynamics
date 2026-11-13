@@ -13629,6 +13629,48 @@
       "records": []
     },
     {
+      "id": "E-275",
+      "title": "Each tween asks every frame whether its entity paints a sprite or a mesh (tweenStressScene: paintTarget 135 ms, all on SpriteRenderer.active[ent])",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 91,
+      "result": "CPU sweep: tweenStressScene's logic spends 135 ms of the window in paintTarget (tween.js), 100 % on its first line, the SpriteRenderer.active read of the tweened entity (a scattered byte per tween), called from the tween's apply paths every frame.",
+      "next": "Keep the target kind in the tween's record when it starts and re-read it only when the entity's sprite or mesh changes (a generation, or the setter that changes them); the tween kernel, then tweenStress's logic STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-275"
+      ],
+      "aliases": [
+        "paintTarget",
+        "tween paint",
+        "tween apply"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-276",
+      "title": "A flowfield lookup scans every slot with Atomics.load (navStressScene: 81 % of _findFlowfieldSlot on it)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 92,
+      "result": "CPU sweep: navStressScene's logic spends 88 ms of the window in NavGrid._findFlowfieldSlot, 81 % on `Atomics.load(u32, idx + 2) === FLOWFIELD_STATUS.READY && u32[idx] === targetCell` over all maxFlowfields slots, each lookup.",
+      "next": "Compare targetCell with a plain read first and load the status only on a match (then read targetCell again after it, for the publication order), or a small map from target cell to slot kept per worker; the nav kernel, then navStress's logic STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-276"
+      ],
+      "aliases": [
+        "_findFlowfieldSlot",
+        "flowfield slot",
+        "navGrid lookup"
+      ],
+      "records": []
+    },
+    {
       "date": "2026-11-12",
       "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
