@@ -4268,6 +4268,9 @@ in Predator.
 **Reading the code:** the walk visits every tracked pair each frame for liveness, generations and stay listeners;
 with few stay-listening types most of it is the liveness purge, which could run on ring events only.
 
+**Answered 2026-11-13 (R-0978):** the walk is about a third of the contact flow (kernel, no-inlining profile); purging on
+events would save about 3 % of a logic worker and stop exits for entities gone inactive before their end event. Not done.
+
 ### E-253 The FSM's tick takes 7 to 9 % of a logic worker in Predator
 
 **Premise:** `fsm.tick` 15.9 ms/s (7.0 %) and 17.9 ms/s (8.8 %) of the two logic workers, besides the states' own code:
