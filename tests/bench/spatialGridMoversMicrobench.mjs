@@ -15,6 +15,8 @@
  * variant that does not. Each case runs in its own worker_thread (its own JIT and Grid), after
  * short calls on a 512-entity slice of the same world so the timed code is a normal TurboFan
  * compile, not OSR. `moversShare` is the share of timed frames that took the movers path.
+ * `--shape box` (E-245) gives every body a 16 x 12 box collider turned by its own angle instead of the circle: the
+ * Boids scene's colliders, whose bounds come from getColliderBounds' box branch.
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/spatialGridMoversMicrobench.mjs --variants base,movers
  *   node tests/bench/spatialGridMoversMicrobench.mjs [--variant movers] [--cases 5,100] [--n 60000] [--output path]
@@ -45,7 +47,7 @@ function fnv(h, v) {
   return Math.imul(h ^ (v >>> 0), 16777619) >>> 0;
 }
 
-async function runCase({ pct, variant, n, seed }) {
+async function runCase({ pct, variant, n, seed, shape = 'circle' }) {
   const rows = Math.ceil(n / COLS);
   const spatial = {
     worldWidth: COLS * SPACING + 400,
@@ -73,8 +75,19 @@ async function runCase({ pct, variant, n, seed }) {
     Transform.rotC[i] = 1;
     Transform.rotS[i] = 0;
     Collider.active[i] = 1;
-    Collider.shapeType[i] = ShapeType.Circle;
-    Collider.radius[i] = 8;
+    if (shape === 'box') {
+      // A 16 x 12 box at its own angle (golden-ratio steps, so every angle class is there).
+      const a = (i * 2.399963229728653) % (2 * Math.PI);
+      Transform.rotC[i] = Math.cos(a);
+      Transform.rotS[i] = Math.sin(a);
+      Collider.shapeType[i] = ShapeType.Box;
+      Collider.width[i] = 16;
+      Collider.height[i] = 12;
+      Collider.radius[i] = 0;
+    } else {
+      Collider.shapeType[i] = ShapeType.Circle;
+      Collider.radius[i] = 8;
+    }
     Collider.offsetX[i] = 0;
     Collider.offsetY[i] = 0;
     Collider.visualRange[i] = 0;
@@ -189,7 +202,7 @@ async function runCase({ pct, variant, n, seed }) {
     if (ms >= STEP_MS_FLOOR || iterations >= 1 << 20) break;
     iterations = Math.max(iterations + 1, Math.ceil(((iterations * STEP_MS_FLOOR) / Math.max(ms, 1e-6)) * 1.15));
   }
-  const label = `grid step ${variant}, ${pct} % movers (n=${n})`;
+  const label = `grid step ${variant}, ${pct} % movers (n=${n}${shape === 'box' ? ', boxes' : ''})`;
   const opsPerSec = (iterations / ms) * 1000;
   return {
     case: { label, ms, opsPerSec, iterations, reps, moversShare: moversFrames / frames, movers: moverCount },
@@ -214,12 +227,14 @@ async function main() {
   if (!(variant in VARIANTS)) throw new Error(`unknown variant ${variant} (${Object.keys(VARIANTS).join(', ')})`);
   const n = Number(args.n ?? 60000);
   const seed = Number(args.seed ?? 0xe126);
+  const shape = String(args.shape || 'circle');
+  if (shape !== 'circle' && shape !== 'box') throw new Error(`unknown shape ${shape} (circle, box)`);
   const pcts = args.cases === undefined ? CASES : String(args.cases).split(',').map(Number);
   const cases = {};
   let checksum = 2166136261;
   // One case at a time: each thread is the only one running.
   for (const pct of pcts) {
-    const r = await runCaseThread({ pct, variant, n, seed });
+    const r = await runCaseThread({ pct, variant, n, seed, shape });
     cases[`movers${pct}`] = r.case;
     checksum = fnv(checksum, r.checksum);
     console.log(
@@ -233,6 +248,7 @@ async function main() {
     functions: ['SpatialWorker._rebuildGrid', 'SpatialWorker.rebuildOwnedRows', 'SpatialWorker._rebuildMovedRows'],
     n,
     seed,
+    shape,
     workers: 1,
     checksum,
     tier: 'TurboFan normal compile (warmNormalCompile on a 512-entity slice)',
