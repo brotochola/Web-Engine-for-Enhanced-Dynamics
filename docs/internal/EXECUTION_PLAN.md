@@ -4102,6 +4102,10 @@ the engine's row size, aligned to 64 bytes and not; if the aligned rows read fas
 to whole lines. Also whether the getter is inlined into the game's loops (E-222's graph of the demo's caller). Owner:
 logic's STEP_MS in Predator.
 
+**Refined (reading, 2026-11-13):** Predator's rows are 1025 ids (`maxNeighbors` 1024, about 2 KB), so alignment can save at most
+one line where a short list's count and first ids straddle two (about 17 % of them); the rest is the lists' volume
+crossing cores. The kernel will say how much the padding is worth.
+
 ### E-241 The LiquidFun density splat boxes three doubles per particle: 1464 KB/s in the LiquidFun demo's Pixi
 
 **Premise:** heapSampleWorkers over the LiquidFun demo (10 s after 15 s): Pixi 1569 KB/s, of which 1464 in
@@ -4158,6 +4162,10 @@ engine, the demo's in the demo (public APIs). Owner: logic's KB/s in Boids and t
 **Plan:** E-222's sites for each (boxes, checks, calls not inlined, TDZ in their loops); the cheap fixes first; then
 whether a pass belongs in the WASM kernels beside them (a hypothesis of its own, measured as W-rows were). Owner: the
 spatial worker's STEP_MS in Predator and Boids.
+
+**From the sites (R-0965):** `rebuildOwnedRows` calls `getColliderBounds(i, _boundsResult)` for every non-circle entity, out
+of line, and reads its four results from an object; the circle path is already inline. Candidate: the box path inline
+too, results through a Float64Array.
 
 ### E-246 Physics' JS around the step: publishPose, snapshotPrevPose, publishMovedBodies
 
@@ -4224,6 +4232,9 @@ workers' self time: the dispatch of each contact begin and end to the entities' 
 **Plan:** E-222's sites for it; its per-contact work against the number of contacts a frame (the ring's counts); then
 the cheapest of a narrower dispatch (only the types with callbacks) or fewer lookups per contact. Owner: logic's STEP_MS
 in Predator.
+
+**Reading the code:** the walk visits every tracked pair each frame for liveness, generations and stay listeners;
+with few stay-listening types most of it is the liveness purge, which could run on ring events only.
 
 ### E-253 The FSM's tick takes 7 to 9 % of a logic worker in Predator
 

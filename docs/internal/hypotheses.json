@@ -12834,7 +12834,7 @@
       "kind": "speed",
       "rank": 60,
       "result": "get neighborCount 710 ms (12.0 %), getNeighbor 483 ms (8.2 %) of a logic worker over 26 s: a field test and one shared-buffer read each.",
-      "next": "A two-thread kernel with the engine's row size, 64-byte aligned and not; then padded rows if aligned reads win; and whether the getter inlines into the game's loops.",
+      "next": "Predator rows are 1025 ids (maxNeighbors 1024, about 2 KB): alignment can save at most a line where the count and first ids straddle two (about 17 % of short lists). The two-thread kernel with that row size, padded rows (+3 % memory) against not; the rest is the lists' volume crossing cores (game code reads every neighbour).",
       "refs": [
         "EXECUTION_PLAN.md#E-240"
       ],
@@ -12962,7 +12962,7 @@
       "kind": "speed",
       "rank": 65,
       "result": "_findNeighbors 31.7 ms/s (11.2 %), rebuildOwnedRows 31.7 (11.2 %), _rebuildMovedRows 16.5 (5.8 %) of 283.",
-      "next": "E-222 sites for each; cheap fixes; then whether a pass joins the WASM kernels.",
+      "next": "rebuildOwnedRows calls getColliderBounds(i, _boundsResult) per non-circle entity, out of line (a large function), its results through an object: the box path inline beside the circle's, results through a Float64Array (E-66); measured by the spatial kernel, then the spatial worker's STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-245"
       ],
@@ -13130,7 +13130,7 @@
       "kind": "speed",
       "rank": 72,
       "result": "_processBox2dCollisionCallbacks 18.6 ms/s (8.2 %) and 24.3 ms/s (11.9 %) of the two logic workers.",
-      "next": "E-222 sites; work per contact against contacts a frame; a narrower dispatch or fewer lookups.",
+      "next": "The walk visits every tracked pair every frame (liveness, generations, stay listeners). Count pairs a frame and stay-listening types in Predator; if few listen, purge dead pairs on ring events only and dispatch stay from a per-type list.",
       "refs": [
         "EXECUTION_PLAN.md#E-252"
       ],
