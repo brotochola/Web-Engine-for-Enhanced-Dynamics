@@ -12388,7 +12388,8 @@
         "R-0949",
         "R-0951",
         "R-0952",
-        "R-0953"
+        "R-0953",
+        "R-0954"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-LIGHTAPI",
@@ -22106,6 +22107,15 @@
         "df2167b3",
         "5ce5a85b"
       ]
+    },
+    {
+      "id": "R-0954",
+      "date": "2026-11-13",
+      "time": "01:48",
+      "timeFrom": "recorded",
+      "title": "Part A alone against main: the scoreboard sitting is void (rows of untouched code moved up to 201 %); the merged tree's sitting stands",
+      "verdict": "note",
+      "text": "**DX-LIGHTAPI part A alone (ca50fe9a) against main: the scoreboard's sitting is void.**\n2026-11-13, 00:30 to 01:48 (the log's and the report's times), `runScoreboard.mjs --vs main --full-rev` from a worktree of ca50fe9a with HEAD's scoreboard tools, the 46 rows main has. AC power.\n\nRows whose code part A does not touch (no diff between main and ca50fe9a in their modules) moved far past any noise seen before: meshFillMoving kernel +201.2 %, audioStorm kernel +124.4 %, shadowStamp kernel +91.0 %, gameObjectAccess +42.2 %, swayBuckets -20.9 %, preRenderWorker -13.0 %, audioSlots -11.2 %, steadyCombat logic0 -18.3 %. Its \"5 rows FAIL/WORSE\" (spawn logic0 +18.0 %, audioSlots, preRenderWorker, textureUpload, audioStorm) are read as that noise: the machine was not quiet. During the sitting this session ran the demo suite (every scene built once, for the Headlights demo) and another session was running its own captures in Chrome on the same machine.\n\nNot run again: part A alone is a tree that will not merge, and the tree that will (A and B together) was measured against main on a quiet sitting (R-0951 to R-0953): spawn kernel -1.2 %, logic0 -3.3 %; preRenderWorker +0.4 %; audioSlots +2.1 %; textureUpload a tie (not confirmed over 4 pairs). A sitting of A cannot change that verdict."
     }
   ],
   "leads": [
