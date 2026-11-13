@@ -67,6 +67,56 @@ test('the grid rewritten for what changed is the full rebuild, byte for byte (au
   assert.ok(forced.overfull > 0, 'some cell held more entities than its cap');
 });
 
+// E-266: without a physics worker the rewrite finds what changed by comparing each collider's bounds with the ones
+// its cells were written from; the same world, its poses changed by the script, no list bound or published.
+test('without a physics list the rewrite finds what changed itself, byte for byte (auto and forced)', async () => {
+  const [base, auto, forced] = await Promise.all([
+    run({ mode: OFF, noPhysics: true }),
+    run({ mode: AUTO, noPhysics: true }),
+    run({ mode: FORCE, noPhysics: true }),
+  ]);
+  assert.equal(firstDiff(base, auto), -1, `auto differs from the full rebuild from frame ${firstDiff(base, auto)}`);
+  assert.equal(firstDiff(base, forced), -1, `forced differs from the full rebuild from frame ${firstDiff(base, forced)}`);
+  for (const path of forced.paths) {
+    const movers = path.reduce((s, v) => s + v, 0);
+    assert.ok(movers >= path.length * 0.6, `forced rewrote ${movers} of ${path.length} frames`);
+  }
+  for (const path of auto.paths) {
+    const movers = path.reduce((s, v) => s + v, 0);
+    assert.ok(movers >= path.length / 3, `auto rewrote ${movers} of ${path.length} frames`);
+  }
+});
+
+const SCAN_MUTANTS = {
+  identity: [],
+  // Miss an entity that lost its collider.
+  lostCollider: [['let changed = colliderActive[i] === 0;', 'let changed = false;']],
+  // Compare the position only, so a turned box that keeps its centre is missed.
+  extent: [
+    [
+      '          (halfW !== bw ? halfW === halfW || bw === bw : halfW === 0 && 1 / halfW !== 1 / bw) ||\n          (halfH !== bh ? halfH === halfH || bh === bh : halfH === 0 && 1 / halfH !== 1 / bh);',
+      '          false;',
+    ],
+  ],
+  // Compare with ===, so 0 and -0 look alike.
+  signOfZero: [['(posX !== bx ? posX === posX || bx === bx : posX === 0 && 1 / posX !== 1 / bx)', '(posX !== bx && (posX === posX || bx === bx))']],
+};
+
+test('a mutant of the scan is caught, the unedited variant is not', async () => {
+  const names = Object.keys(SCAN_MUTANTS);
+  const [base, ...runs] = await Promise.all([
+    run({ mode: OFF, noPhysics: true }),
+    ...names.map((name) =>
+      run({ mode: FORCE, noPhysics: true, patches: [{ method: '_scanColliderBounds', edits: SCAN_MUTANTS[name] }] }),
+    ),
+  ]);
+  for (let m = 0; m < names.length; m++) {
+    const diff = firstDiff(base, runs[m]);
+    if (names[m] === 'identity') assert.equal(diff, -1, `the unedited scan differs from frame ${diff}: its scope is stale`);
+    else assert.notEqual(diff, -1, `scan mutant ${names[m]} was not caught`);
+  }
+});
+
 test('with detailed stats (the no-body count) the rewrite is the full rebuild', async () => {
   const [base, forced] = await Promise.all([run({ mode: OFF, detailed: true }), run({ mode: FORCE, detailed: true })]);
   assert.ok(base.noBody > 0, 'there are sprites without a body');

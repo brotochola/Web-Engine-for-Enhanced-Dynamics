@@ -26,7 +26,8 @@ import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 import { variantClass } from '../bench/methodVariant.mjs';
 import { setupSpatialKernel } from '../bench/spatialWorkerMicrobench.mjs';
 
-const { mode, detailed = false, patches = null, frames = 90 } = workerData;
+// noPhysics (E-266): no physics worker, so no moved list is bound or published; the poses change as before.
+const { mode, detailed = false, patches = null, frames = 90, noPhysics = false } = workerData;
 
 const N = 3000;
 const MAX_PER_CELL = 32;
@@ -62,6 +63,7 @@ const SCOPE = {
   MV_OWNED: 4,
   MV_LOOSE: 8,
   MV_SPRITE: 16,
+  MOVED_SCAN: -2,
 };
 
 const k = await setupSpatialKernel({
@@ -74,7 +76,7 @@ const k = await setupSpatialKernel({
 });
 const { workers } = k;
 const movedSab = createMovedBodiesSab(N);
-bindMovedBodies(movedSab);
+if (!noPhysics) bindMovedBodies(movedSab);
 const movedHeader = viewsFromSab(movedSab).hdrI32;
 const queryVersion = new Int32Array(new SharedArrayBuffer(4));
 for (const w of workers) {
@@ -312,6 +314,33 @@ function frameWorld(f) {
         list1(i);
       }
     }
+    // A sleeping circle grown and a sleeping box widened in place (GEOMETRY lists them): the bounds change, the
+    // centre does not, so without a physics list only a comparison of the extent sees it (E-266). No rng draw.
+    if (f === 44 || f === 66) {
+      for (const first of [0, 6]) {
+        for (let i = first; i < 60; i += 12) {
+          if (!present[i] || !Collider.active[i]) continue;
+          if (first === 0) Collider.radius[i] += 9;
+          else Collider.width[i] += 90;
+          list1(i);
+          break;
+        }
+      }
+    }
+    // A sleeping box turned half a turn with no offset, at x = 0 and then at x = -0: c * ox is -0, so its centre's X
+    // is 0 and then -0, the same bin and a different pose (E-266's scan compares bits). No rng draw.
+    if (f === 48 || f === 52) {
+      for (let i = 6; i < 60; i += 12) {
+        if (!present[i] || !Collider.active[i]) continue;
+        Transform.rotC[i] = -1;
+        Transform.rotS[i] = 0;
+        Collider.offsetX[i] = 0;
+        Collider.offsetY[i] = 0;
+        Transform.x[i] = f === 48 ? 0 : -0;
+        list1(i);
+        break;
+      }
+    }
     // A body at NaN, and back.
     if (f === 30) {
       Transform.y[12] = NaN;
@@ -394,9 +423,11 @@ function frameWorld(f) {
       list[a] = list[b];
       list[b] = t;
     }
-    publishMovedBodies(list, null, listCount, null, 0, null);
-    // Two publishes between two spatial frames: the first list is lost to the movers path.
-    if (f === 40) publishMovedBodies(list, null, 0, null, 0, null);
+    if (!noPhysics) {
+      publishMovedBodies(list, null, listCount, null, 0, null);
+      // Two publishes between two spatial frames: the first list is lost to the movers path.
+      if (f === 40) publishMovedBodies(list, null, 0, null, 0, null);
+    }
   }
 }
 

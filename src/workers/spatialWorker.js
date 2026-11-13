@@ -83,6 +83,8 @@ const MOVERS_MAX_FRACTION = 0.2;
 // SpatialWorker._gridMoversMode.
 const GRID_MOVERS_AUTO = 0; // by the moved fraction
 const GRID_MOVERS_OFF = 1; // the full rebuild every frame
+// E-266: _rebuildMovedRows' movedCount with no physics list: it compares every collider's bounds with the latch.
+const MOVED_SCAN = -2;
 const GRID_MOVERS_FORCE = 2; // the movers path whenever its state allows (kernels, tests)
 // SpatialWorker._mvState bits: each entity as the grid holds it.
 const MV_PRESENT = 1; // in the active list the state was built from
@@ -260,6 +262,7 @@ class SpatialWorker extends AbstractWorker {
     // Per cell:
     /** Entities that cover the cell, uncapped (the cell holds the first maxEntitiesPerCell). */
     this._mvTrue = new Int32Array(0);
+    this._mvBounds = new Float64Array(0);
     this._mvLeaves = new Int32Array(0);
     this._mvCellMark = new Uint8Array(0);
     this._mvTouched = new Int32Array(0);
@@ -672,22 +675,30 @@ class SpatialWorker extends AbstractWorker {
     const head = this._mvHead;
     const activeData = this.activeEntitiesData;
     this._gridMoversThisFrame = 0;
-    // No physics worker (no moved list): nothing tells which bodies moved.
-    if (mode === GRID_MOVERS_OFF || !activeData || !readMovedBodiesHeader(head)) {
+    if (mode === GRID_MOVERS_OFF || !activeData) {
       this._mvSeeded = false;
       this.rebuildOwnedRows();
       return;
     }
-    const gen = head[0];
-    const count = head[1];
-    const seq = head[2];
+    // E-266: no physics worker, so no moved list: the rewrite compares every collider's bounds with the ones its
+    // cells were written from (_scanColliderBounds) instead of reading which bodies moved.
+    const listed = readMovedBodiesHeader(head);
+    const gen = listed ? head[0] : 0;
+    const count = listed ? head[1] : 0;
+    const seq = listed ? head[2] : 0;
     const auto = mode === GRID_MOVERS_AUTO;
     const limit = auto ? activeData[0] * MOVERS_MAX_FRACTION : this.globalEntityCount;
     if (this._mvSeeded) {
       // Bodies physics moved since the state: none when it has not published since, its list
       // when it published once (and not while the header was being written).
-      const moved = gen === this._mvGen ? 0 : gen === ((this._mvGen + 1) | 0) && seq >= 0 ? count : -1;
-      if (moved >= 0 && moved <= limit && this._rebuildMovedRows(moved, seq, limit)) {
+      const moved = !listed
+        ? MOVED_SCAN
+        : gen === this._mvGen
+          ? 0
+          : gen === ((this._mvGen + 1) | 0) && seq >= 0
+            ? count
+            : -1;
+      if (moved !== -1 && moved <= limit && this._rebuildMovedRows(moved, seq, limit)) {
         this._mvGen = gen;
         this._gridMoversThisFrame = 1;
         this._mvFailures = 0;
@@ -719,6 +730,7 @@ class SpatialWorker extends AbstractWorker {
     if (this._mvState.length === n && this._mvTrue.length === cells) return;
     this._mvState = new Uint8Array(n);
     this._mvRange = new Int32Array(n * 4);
+    this._mvBounds = new Float64Array(n * 4);
     this._mvLoosePos = new Float64Array(n * 2);
     this._mvLoose = new Int32Array(n);
     this._mvActive = new Int32Array(n + 1);
@@ -788,6 +800,7 @@ class SpatialWorker extends AbstractWorker {
     const n = this.globalEntityCount;
     const state = this._mvState;
     const range = this._mvRange;
+    const bounds = this._mvBounds;
     const loosePos = this._mvLoosePos;
     const loose = this._mvLoose;
     let looseCount = 0;
@@ -872,6 +885,12 @@ class SpatialWorker extends AbstractWorker {
         if (countNoBody && !(rigidActive && rigidActive[i])) noBody++;
       }
       state[i] = s;
+      // E-266: what _scanColliderBounds compares with.
+      const b4 = i * 4;
+      bounds[b4] = posX;
+      bounds[b4 + 1] = posY;
+      bounds[b4 + 2] = halfW;
+      bounds[b4 + 3] = halfH;
 
       if (posX !== posX || posY !== posY) continue;
 
@@ -946,6 +965,88 @@ class SpatialWorker extends AbstractWorker {
     this._ownedEntityCount = ownedCount;
     this._mvLooseCount = looseCount;
     return ascending;
+  }
+
+  /**
+   * E-266. Without a physics worker nothing lists the bodies that moved: each present entity with a collider whose
+   * bounds differ from the ones its cells were written from (the latch, or its last rebin in step 4), bit for bit as
+   * step 3 compares a loose entity's position, or that lost its collider, joins the changed ones. Entities without a
+   * collider are step 3's. A copy of the bounds math, not a call (hot loops: R8).
+   * @param {number} nd the changed count so far
+   * @param {number} limit past it the rewrite gives up, so the scan stops there
+   * @returns {number} the changed count
+   */
+  _scanColliderBounds(nd, limit) {
+    const state = this._mvState;
+    const dirty = this._mvDirty;
+    const dirtyIds = this._mvDirtyIds;
+    const bounds = this._mvBounds;
+    const active = this._mvActive;
+    const activeCount = active[0];
+    const x = Transform.x;
+    const y = Transform.y;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
+    const boxWidth = Collider.width;
+    const boxHeight = Collider.height;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
+    const colliderActive = Collider.active;
+    for (let j = 1; j <= activeCount; j++) {
+      const i = active[j];
+      if (dirty[i] !== 0 || (state[i] & MV_LOOSE) !== 0) continue;
+      let changed = colliderActive[i] === 0;
+      if (!changed) {
+        let posX;
+        let posY;
+        let halfW = 0;
+        let halfH = 0;
+        if (shapeType[i] === SHAPE_CIRCLE) {
+          posX = x[i] + (offsetX[i] || 0);
+          posY = y[i] + (offsetY[i] || 0);
+          halfW = radius[i] || 0;
+          halfH = halfW;
+        } else if (shapeType[i] === SHAPE_BOX) {
+          const c = rotC ? rotC[i] : 1;
+          const sn = rotS ? rotS[i] : 0;
+          const ox = offsetX[i] || 0;
+          const oy = offsetY[i] || 0;
+          posX = x[i] + c * ox - sn * oy;
+          posY = y[i] + sn * ox + c * oy;
+          const hw = (boxWidth[i] || 0) * 0.5;
+          const hh = (boxHeight[i] || 0) * 0.5;
+          const ac = c < 0 ? -c : c;
+          const as = sn < 0 ? -sn : sn;
+          halfW = ac * hw + as * hh;
+          halfH = as * hw + ac * hh;
+        } else {
+          getColliderBounds(i, _boundsResult);
+          posX = _boundsResult.posX;
+          posY = _boundsResult.posY;
+          halfW = _boundsResult.halfW;
+          halfH = _boundsResult.halfH;
+        }
+        const b4 = i * 4;
+        const bx = bounds[b4];
+        const by = bounds[b4 + 1];
+        const bw = bounds[b4 + 2];
+        const bh = bounds[b4 + 3];
+        // Changed bits: two NaNs bin alike, 0 and -0 do not (the pose keeps the sign).
+        changed =
+          (posX !== bx ? posX === posX || bx === bx : posX === 0 && 1 / posX !== 1 / bx) ||
+          (posY !== by ? posY === posY || by === by : posY === 0 && 1 / posY !== 1 / by) ||
+          (halfW !== bw ? halfW === halfW || bw === bw : halfW === 0 && 1 / halfW !== 1 / bw) ||
+          (halfH !== bh ? halfH === halfH || bh === bh : halfH === 0 && 1 / halfH !== 1 / bh);
+      }
+      if (changed) {
+        dirty[i] = 1;
+        dirtyIds[nd++] = i;
+        if (nd > limit) return nd;
+      }
+    }
+    return nd;
   }
 
   /**
@@ -1070,6 +1171,8 @@ class SpatialWorker extends AbstractWorker {
         dirtyIds[nd++] = e;
       }
     }
+    // E-266: no physics list: the colliders whose bounds changed (or that lost their collider).
+    if (movedCount === MOVED_SCAN) nd = this._scanColliderBounds(nd, limit);
     if (nd > limit) return false;
 
     // 4. Each changed entity binned again: its pose, its state, and the owned cells it leaves and joins.
@@ -1081,6 +1184,7 @@ class SpatialWorker extends AbstractWorker {
     const rowOwnership = this.rowOwnership;
     const entityPosData = this.entityPosData;
     const range = this._mvRange;
+    const bounds = this._mvBounds;
     const leaves = this._mvLeaves;
     const mark = this._mvCellMark;
     const touched = this._mvTouched;
@@ -1152,6 +1256,11 @@ class SpatialWorker extends AbstractWorker {
           if (spriteRendererActive[i]) ns |= MV_SPRITE;
           else binned = false;
         }
+        // E-266: what _scanColliderBounds compares with.
+        bounds[r4] = posX;
+        bounds[r4 + 1] = posY;
+        bounds[r4 + 2] = halfW;
+        bounds[r4 + 3] = halfH;
         if (binned) {
           if (posX === posX && posY === posY) {
             isIn = true;
