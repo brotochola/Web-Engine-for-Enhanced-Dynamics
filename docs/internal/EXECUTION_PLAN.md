@@ -1,3 +1,11 @@
+**Answered 2026-11-13 (R-0961): a trace artifact; in a plain run the per-frame code is in Maglev or TurboFan.**
+The counts above came from the `--trace-turbo --no-concurrent-recompilation` run, whose compiles are slow and late. A
+plain run (`--log-code` only, 20 s and 10 s) joined with a CPU trace of the same scene and length: logic's time is
+half TurboFan, a tenth Maglev; spatial and the particle worker mostly TurboFan and WASM. Maglev's large rows are the waits
+(`_waitForQueue` 277 ms/s, `_waitForPose` 157, `waitForLogic` 102, `beforeUpdate`'s input wait 10: V8 counts
+Atomics.wait as busy). Without them the lower tiers hold 1 to 10 ms/s per worker (0.02 to 0.17 ms a frame). Lesson: tiers
+are read from a plain run, never from a TurboFan trace run.
+
 # Execution plan — frame-schedule and hot-path campaign, October 2026
 
 **Opened:** 2026-10-18. **Anchor rev:** `d4933190`.
@@ -4060,6 +4068,18 @@ small KB/s rows of N-158 and R-0958 are mostly theirs) and run slower. It is als
 Maglev code. If it matters: the per-frame glue made hot enough to tier (fewer, larger functions that loop), and the
 sittings' warm-up checked against the time the owner's hot functions reach TurboFan. Owner: each worker's STEP_MS; the
 tiers' share of it.
+
+### E-240 Logic reads its neighbour rows a core away: `get neighborCount` 12 % and `getNeighbor` 8 % of Predator's logic
+
+**Premise:** a CPU trace of Predator (26 s, the first logic worker): `get neighborCount` 710 ms self (12.0 %), `getNeighbor`
+483 ms (8.2 %), each a field test and one read of the neighbour row in Grid's shared buffer. The spatial worker wrote those
+rows this frame on another core, so the first read of each row (and of each line a row spans) waits for the line to
+move between cores. Rows are `maxNeighbors + 1` ids (the count first), not aligned to 64 bytes, so a row and its count
+can sit across two lines.
+**Plan:** a two-thread kernel (one writes rows each round, one reads the count and the first ids of random rows) with
+the engine's row size, aligned to 64 bytes and not; if the aligned rows read faster, the neighbour buffer's rows padded
+to whole lines. Also whether the getter is inlined into the game's loops (E-222's graph of the demo's caller). Owner:
+logic's STEP_MS in Predator.
 
 ## Not doing (read the log first)
 

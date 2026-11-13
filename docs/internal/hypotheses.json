@@ -12488,7 +12488,10 @@
         "p95",
         "jank"
       ],
-      "records": []
+      "records": [
+        "R-0961"
+      ],
+      "result": "First reading (R-0961): GC per worker over a 26 s Predator CPU trace is 1 to 25 ms in all, under 0.1 % of each worker; the frame histogram join is still to do."
     },
     {
       "id": "E-226",
@@ -12790,14 +12793,12 @@
     {
       "id": "E-239",
       "title": "Per-frame engine code stays in V8's lower tiers for minutes (64 of 1706 engine functions in TurboFan after 25 s)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from Predator's E-222 run, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13: a trace-run artifact; plain runs have the per-frame code in Maglev or TurboFan",
       "date": "2026-11-13",
       "area": "engine",
       "kind": "speed",
-      "rank": 60,
-      "result": "Predator 25 s: 64 TurboFan, 214 Maglev, 606 Sparkplug, 822 Ignition; _runFrame Maglev at 92 s; the physics host's frame code interpreted.",
-      "next": "A CPU trace with each function's tier: self ms per worker in each tier; then hotter glue, and the sittings' warm-up checked against tier-up.",
+      "result": "Plain run: logic half TurboFan; Maglev rows are Atomics.wait time (_waitForQueue 277 ms/s, _waitForPose 157, waitForLogic 102); other lower-tier time 1 to 10 ms/s per worker. Tiers are read from a plain run.",
       "refs": [
         "EXECUTION_PLAN.md#E-239"
       ],
@@ -12811,7 +12812,34 @@
         "tiering"
       ],
       "records": [
-        "R-0960"
+        "R-0960",
+        "R-0961"
+      ]
+    },
+    {
+      "id": "E-240",
+      "title": "Logic reads its neighbour rows a core away: get neighborCount 12 % and getNeighbor 8 % of Predator's logic",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from a Predator CPU trace, not tested",
+      "date": "2026-11-13",
+      "area": "spatial",
+      "kind": "speed",
+      "rank": 60,
+      "result": "get neighborCount 710 ms (12.0 %), getNeighbor 483 ms (8.2 %) of a logic worker over 26 s: a field test and one shared-buffer read each.",
+      "next": "A two-thread kernel with the engine's row size, 64-byte aligned and not; then padded rows if aligned reads win; and whether the getter inlines into the game's loops.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-240"
+      ],
+      "aliases": [
+        "neighborCount",
+        "getNeighbor",
+        "neighbour rows",
+        "cache line",
+        "cross-core",
+        "Grid neighborData"
+      ],
+      "records": [
+        "R-0961"
       ]
     },
     {
@@ -22649,6 +22677,15 @@
       "title": "E-222's first full run, Predator: Pixi 1271 KB/s (934 in the shader plan), physics 634 (576 in Box2D's clock), 64 of 1706 functions in TurboFan",
       "verdict": "note",
       "text": "**E-222's first full run, Predator: where the engine allocates, by worker and by line, and which tier each function ran in.**\n2026-11-13, gc/n158 at 3baea389 + b1873069 (the tool). Two runs, AC power, no other bench browser: heapSampleWorkers over every worker (12 s after 15 s), then the same scene with `--trace-turbo --no-concurrent-recompilation --log-code --log-deopt` (5 s after 20 s): 122 traces (2 cut short), 725 MB, removed after reading.\n\n- **Allocation by worker:** Pixi 1270.8 KB/s, physics 634.1, logic 151.0 and 152.2 (two workers), particle 51.7, pre-render 42.8, spatial 7.2.\n- **Pixi:** 933.7 KB/s in `Lg`, E-148's shader sync polyfill, rebuilding its plan at nearly every bind (E-236); then `updateLighting` 46.5, Pixi's own buffer events and render target binds.\n- **Physics:** 576.4 KB/s in the Box2D glue's `_emscripten_get_now` (timeOrigin at every call, ~800 calls a frame: E-235).\n- **Logic:** `set` under `_applyContactBegin` 37.3 (E-237); the particle emit path about 30 (E-238); the demo's FSM code.\n- **Tiers** (V8's code log, `+'` and `*'` read as Maglev and TurboFan): 64 of 1706 engine functions reached TurboFan, 214 Maglev, 606 Sparkplug, 822 Ignition. The per-frame functions never reached TurboFan in the run; the physics host's frame functions stayed interpreted (E-239).\n- **TurboFan's final graphs** (64 engine functions): 54 allocation sites, 5 generic ICs, 22 map migrations, 181 TDZ checks, 41 calls not inlined. Allocation sites are cross-checked with the heap sample before any is called garbage: `checkRotCS`'s `isFinite` sites are behind an assertion flag and never run.\n- **E-221** (the typed array length division) answered the same morning: a shift (R-0959).\n\nHypotheses written down before any is tested: E-235 to E-239; N-158's leftovers named."
+    },
+    {
+      "id": "R-0961",
+      "date": "2026-11-13",
+      "time": "04:53",
+      "timeFrom": "recorded",
+      "title": "Predator by tier: E-239 a trace artifact (plain runs are Maglev/TurboFan, waits aside); GC under 0.1 %; neighbour reads 20 % of logic (E-240)",
+      "verdict": "answered",
+      "text": "**Predator's CPU trace by tier: the lower-tier counts were a trace artifact; GC is small; the neighbour reads are logic's second cost.**\n2026-11-13, about 04:50 to 05:00. Two plain runs of Predator (20 s warm-up, 10 s), AC power: one with `--trace-cpu` (summarizeChromeCpuTrace over 26 s), one with `--log-code` only (with the CPU profiler on, V8 stops logging code after start-up: 64 JS events a worker). Each function's self time joined with the tier its twin run's log gives it.\n\n- **E-239 answered:** logic's time is about half TurboFan and a tenth Maglev (the rest the demo's code); spatial and particle mostly TurboFan and WASM. Maglev's large rows are waits counted as busy: Pixi `_waitForQueue` 277 ms/s, pre-render `_waitForPose` 157, physics `waitForLogic` 102, logic `beforeUpdate` (E-219's input wait) 10. Without the waits, the lower tiers hold 1 to 10 ms/s a worker. R-0960's 64-of-1706 came from the `--trace-turbo --no-concurrent-recompilation` run, whose compiles are slow: tiers are read from plain runs.\n- **E-225, first reading:** GC per worker over the 26 s is 1 to 25 ms in all (logic 18 and 10, Pixi 17, spatial 17, pre-render 15, particle 11, physics 1 to 8), under 0.1 % each.\n- **E-240, new:** in the first logic worker `get neighborCount` is 710 ms self (12.0 %) and `getNeighbor` 483 ms (8.2 %), after the demo's `findACivilianToShoot` (14.2 %): one shared-buffer read each, of rows the spatial worker wrote this frame on another core. Written down before testing.\n- Also in logic: `_tickIntervalBucket` 8.7 %, `_processBox2dCollisionCallbacks` 8.1 %, `fsm.tick` 7.0 %, `copyTypeActiveListToBuffer` 3.6 %."
     }
   ],
   "leads": [
