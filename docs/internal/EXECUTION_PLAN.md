@@ -4557,60 +4557,73 @@ on every worker of every scene, so allocation work now pays only where it also s
 access patterns (spatial's rows and cells), copies before uploads, and per-entity calls. The order (the register's ranks
 follow it):
 
-| # | Row | Tier | Why there |
-| --- | --- | --- | --- |
-| 1 | E-256 | debt | Balls heavy (physics over the 6 ms floor) |
-| 2 | E-268 | 1 | spatial 40 % in stationarySpatialWide; WaterAndBoxes (a demo) 91–96 % of _findNeighbors |
-| 3 | E-266 | 1 | spatial 48–51 % in stationarySpatialWide |
-| 4 | E-274 | 1 | planetScene: 79 % of the rebuild |
-| 5 | E-267 | 1 | Boids 28–32 %, stationarySpatialWide 48–51 % of spatial |
-| 6 | E-145 | 1 | Adobe: pre-render 52 + 25 %, Pixi updateBuffer 42 % |
-| 7 | E-269 | 1 | meshApiStressScene: all of uploadRange |
-| 8 | E-262 | 1 | WaterAndBoxes logic 2.8 MB/s; every entity tick |
-| 9 | E-240 | 1 | logic 11–23 % in Predator and littleCity |
-| 10 | E-270 | 1 | decal scenes: the copy 100 %, the upload 68–89 % |
-| 11 | E-271 | 2 | painter scenes: 125–145 ms of the window |
-| 12 | E-272 | 2 | carScene Pixi |
-| 13 | E-273 | 2 | decoChurn logic |
-| 14 | E-275 | 2 | tweenStress logic |
-| 15 | E-276 | 2 | navStress logic |
-| 16 | E-265 | 2 | queries with a literal per call |
-| 17 | E-263 | 2 | wide pools and 32-bit ids; weigh the ABA window |
-| 18 | E-264 | 2 | 179 fields typed Any; only those read per entity |
-| 19 | E-253 | 2 | FSM 7–9 % of Predator logic |
-| 20 | E-193 | 2 | Pixi keyed pack |
-| 21 | E-185 | 2 | keyed frames |
-| 22 | E-199 | 2 | neighbour aggregates |
-| 23 | E-201 | 2 | keyed poses on the GPU |
-| 24 | E-202 | 2 | decals on the GPU |
-| 25 | E-257 | 3 | physics JS ~65 KB/s |
-| 26 | E-246 | 3 | physics JS around the step |
-| 27 | E-247 | 3 | particle decoration passes |
-| 28 | E-238 | 3 | emit path allocations |
-| 29 | E-242 | 3 | raycast polygon allocations |
-| 30 | E-244 | 3 | tick path allocations |
-| 31 | E-227 | 3 | Pixi allocations |
-| 32 | N-158 | 3 | per-frame allocations left |
-| 33 | N-163 | bug | WebGPU sprite-masked self-lit edges |
-| 34 | N-38 | bug | lit chunk edges |
-| 35 | N-155 | bug | WebGL / WebGPU light gallery |
-| 36 | N-147 | bug | prod bundle spatial |
-| 37 | N-156 | bug | flaky physicsChainWait test |
-| 38 | N-161 | bug | audioStorm catalog row |
-| 39 | DX-VOLLIGHTS | feature | approved feature |
-| 40 | E-222 | tool | kept running in each harvest |
-| 41 | E-230 | tool | kept running in each harvest |
-| 42 | E-223 | tool | critical path |
-| 43 | E-224 | tool | scaling curves |
-| 44 | E-226 | tool | false sharing |
-| 45 | E-231 | tool | trace diff |
-| 46 | E-225 | tool | GC against long frames |
-| 47 | E-228 | blocked | ETW / WPA |
-| 48 | E-229 | blocked | VTune / uProf |
+| # | Row | Tier | Why there | Prepared on |
+| --- | --- | --- | --- | --- |
+| 1 | E-256 | debt | Balls heavy (physics over the 6 ms floor) | 12e1acaf (on the branch) |
+| 2 | E-268 | 1 | spatial 40 % in stationarySpatialWide; WaterAndBoxes (a demo) 91–96 % of _findNeighbors | w14/e268 |
+| 3 | E-266 | 1 | spatial 48–51 % in stationarySpatialWide | w14/e266 |
+| 4 | E-274 | 1 | planetScene: 79 % of the rebuild | w14/e274 |
+| 5 | E-267 | 1 | Boids 28–32 %, stationarySpatialWide 48–51 % of spatial |  |
+| 6 | E-269 | 1 | meshApiStressScene: all of uploadRange (not E-123's route) |  |
+| 7 | E-262 | 1 | WaterAndBoxes logic 2.8 MB/s; every entity tick | w14/e262 |
+| 8 | E-240 | 1 | logic 11–23 % in Predator and littleCity |  |
+| 9 | E-270 | 1 | decal scenes: the copy 100 %, the upload 68–89 % (a C change) |  |
+| 10 | E-277 | 2 | collider fill: 13.9 MB/s destructibleTerrain, 3.2 planetPhysics (Pixi) | w14/e277 |
+| 11 | E-284 | 2 | bulletStress pre-render 8.0 MB/s | w14/e284 |
+| 12 | E-285 | 2 | audioStorm logic 7.3 MB/s | w14/e285 |
+| 13 | E-271 | 2 | painter scenes: 125–145 ms of the window | w14/e271 |
+| 14 | E-272 | 2 | carScene Pixi | w14/e272 |
+| 15 | E-273 | 2 | decoChurn logic | w14/e273 |
+| 16 | E-276 | 2 | navStress logic | w14/e276 |
+| 17 | E-265 | 2 | queries with a literal per call | w14/e265 |
+| 18 | E-278 | 2 | rng 4.1 MB/s littleCity, randomRange 1.4 particleIntegrate | w14/e278 (step 1) |
+| 19 | E-275 | 2 | tweenStress logic (needs a sprite-change signal) |  |
+| 20 | E-286 | 2 | options literals in spawn calls (an API-keeping entry) |  |
+| 21 | E-264 | 2 | 179 fields typed Any; three read in per-frame loops | w14/e264 (spatial's) |
+| 22 | E-263 | 2 | wide pools and 32-bit ids; weigh the ABA window |  |
+| 23 | E-253 | 2 | FSM 7–9 % of Predator logic |  |
+| 24 | E-193 | 2 | Pixi keyed pack |  |
+| 25 | E-185 | 2 | keyed frames |  |
+| 26 | E-199 | 2 | neighbour aggregates |  |
+| 27 | E-201 | 2 | keyed poses on the GPU |  |
+| 28 | E-202 | 2 | decals on the GPU |  |
+| 29 | E-280 | demo | destructibleTerrain / planetPhysics logic 52 and 35.5 MB/s while carving |  |
+| 30 | E-257 | 3 | physics JS ~65 KB/s |  |
+| 31 | E-246 | 3 | physics JS around the step |  |
+| 32 | E-247 | 3 | particle decoration passes |  |
+| 33 | E-238 | 3 | emit path allocations |  |
+| 34 | E-242 | 3 | raycast polygon allocations |  |
+| 35 | E-244 | 3 | tick path allocations |  |
+| 36 | E-227 | 3 | Pixi allocations |  |
+| 37 | E-279 | 3 | packBox2dBodies 278 KB/s |  |
+| 38 | E-282 | 3 | collision pair Map 140 KB/s |  |
+| 39 | E-283 | 3 | collect boundary doubles 242 KB/s (a C change) |  |
+| 40 | E-281 | 3 | bunnyMark tickAll 1.5 MB/s (demo; tier first) |  |
+| 41 | N-158 | 3 | per-frame allocations left |  |
+| 42 | N-163 | bug | WebGPU sprite-masked self-lit edges |  |
+| 43 | N-38 | bug | lit chunk edges |  |
+| 44 | N-155 | bug | WebGL / WebGPU light gallery |  |
+| 45 | N-147 | bug | prod bundle spatial |  |
+| 46 | N-156 | bug | flaky physicsChainWait test |  |
+| 47 | N-161 | bug | audioStorm catalog row |  |
+| 48 | DX-VOLLIGHTS | feature | approved feature |  |
+| 49 | E-222 | tool | kept running in each harvest |  |
+| 50 | E-230 | tool | kept running in each harvest |  |
+| 51 | E-223 | tool | critical path |  |
+| 52 | E-224 | tool | scaling curves |  |
+| 53 | E-226 | tool | false sharing |  |
+| 54 | E-231 | tool | trace diff |  |
+| 55 | E-225 | tool | GC against long frames |  |
+| 56 | E-228 | blocked | ETW / WPA (owner's OK to install) |  |
+| 57 | E-229 | blocked | VTune / uProf (owner's OK to install) |  |
+| 58 | E-145 | held | Adobe on the GPU: the owner keeps Adobe out (2026-10-29) |  |
 
-Still to harvest before the campaign starts: the heap pass over all 65 scenes, Box2D's functions by name in the physics
-scenes (a profiling build, as R-0719), and the sweep's deopt pass, which logged no deopt in any scene (a tool fault to
-find first).
+The harvest's last passes (R-0980): the heap pass over all 65 scenes wrote E-277 to E-286; the deopt pass found no
+new steady deopt loop (only E-251's pattern). Box2D by name ran after them. The changes marked "Prepared on" were
+written on branches of their own while the passes ran, each with its tests, none measured yet; each sitting runs on
+its branch rebased onto the scene knobs' commit (w14s/…). The owner scenes' baselines were probed first: several
+stress scenes run far under the 6 ms floor at their default load and take their knob (stationarySpatialWide
+?entities=145000, spawnStorm ?storm=6000, navStress ?agents=, decoChurn ?churn= ?liveCap=, bulletStress ?bullets=).
 
 ## Not doing (read the log first)
 
