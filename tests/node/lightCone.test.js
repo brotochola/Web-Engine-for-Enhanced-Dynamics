@@ -32,7 +32,9 @@ test('the setters store cos/sin and the cone\'s cosines; 2π is no cone', () => 
   assert.equal(LightEmitter.coneCos[1], NO_CONE, 'no cone by default');
   L.coneAngle = Math.PI / 2;
   assert.ok(Math.abs(LightEmitter.coneCos[1] - Math.cos(Math.PI / 4)) < 1e-7);
-  assert.ok(LightEmitter.coneInvSpan[1] >= 1 / 0.002 - 1, 'a hard edge: the narrowest span');
+  // A hard edge: a quarter of a degree across it, sin(half) times that in cosine.
+  const quarter = (0.25 * Math.PI) / 180;
+  assert.ok(Math.abs(LightEmitter.coneInvSpan[1] - 1 / (Math.sin(Math.PI / 4) * quarter)) < 0.05, 'a hard edge: a quarter degree');
   L.coneSoftness = 0.5;
   const inner = Math.cos((Math.PI / 4) * 0.5);
   assert.ok(Math.abs(LightEmitter.coneInvSpan[1] - 1 / (inner - Math.cos(Math.PI / 4))) < 1e-3);
@@ -271,4 +273,25 @@ test('updateLighting reads each light\'s coneCos once: a light the logic worker 
   } finally {
     LightEmitter.coneCos = column;
   }
+});
+
+test('a narrow cone is at full light on its axis: the soft edge never reaches past it', () => {
+  lights();
+  const L = new LightEmitter(1);
+  const term = (angleOff) => {
+    const cone = [1, 0, LightEmitter.coneCos[1], LightEmitter.coneInvSpan[1]];
+    return coneTerm(cone, Math.cos(angleOff), Math.sin(angleOff));
+  };
+  for (const deg of [0.5, 2, 4, 7, 15]) {
+    L.coneAngle = (deg * Math.PI) / 180;
+    L.coneSoftness = 0;
+    assert.equal(term(0), 1, `${deg} degrees, hard: full on its axis`);
+    assert.equal(term((deg * Math.PI) / 180), 0, `${deg} degrees: nothing past its edge`);
+    L.coneSoftness = 1;
+    // Fully soft, the edge ends on the axis: full there but for float32 rounding (the shader's too).
+    assert.ok(term(0) > 1 - 1e-6, `${deg} degrees, fully soft: full on its axis (${term(0)})`);
+  }
+  // A cone of no width lights nothing but its axis.
+  L.coneAngle = 0;
+  assert.equal(term(0.01), 0);
 });

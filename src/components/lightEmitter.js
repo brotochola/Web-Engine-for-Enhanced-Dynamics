@@ -3,8 +3,13 @@ import { Layer } from '../core/layer.js';
 
 /** coneCos of a light with no cone: below any cosine, so every direction is inside (DX-SPOT). */
 export const NO_CONE = -2;
-/** The narrowest soft edge, in cosine: a hard edge over about a quarter of a degree, not a jagged one. */
-const CONE_MIN_SPAN = 0.002;
+/**
+ * The narrowest soft edge, as an angle across the edge: a hard edge over a quarter of a degree, not a jagged one. In
+ * cosine that is sin(half aperture) times it (the cosine's slope at the edge), so a narrow cone keeps its edge narrow.
+ */
+const CONE_EDGE_MIN_ANGLE = (0.25 * Math.PI) / 180;
+/** coneInvSpan of a cone with no width (coneAngle 0): nothing but its axis is inside, and that only at 0. */
+const CONE_NO_WIDTH_INV_SPAN = 1e30;
 const FULL_TURN = Math.PI * 2;
 
 /**
@@ -171,9 +176,17 @@ export class LightEmitter extends Component {
     }
     const outer = Math.cos(half);
     const inner = Math.cos(half * (1 - LightEmitter.coneSoftness[i]));
-    const span = inner - outer;
+    // The soft edge in cosine: what the softness asks, at least a quarter of a degree wide, and no wider than the
+    // whole cone (1 - outer), so its axis is always at full light (a 4-degree beam peaked at 22 % with a fixed
+    // minimum of 0.002 in cosine).
+    let span = inner - outer;
+    const least = Math.sin(half) * CONE_EDGE_MIN_ANGLE;
+    if (span < least) span = least;
+    // From the float32 cosine the column keeps, so the axis reaches the end of the edge with it.
+    const most = 1 - Math.fround(outer);
+    if (span > most) span = most;
     LightEmitter.coneCos[i] = outer;
-    LightEmitter.coneInvSpan[i] = 1 / (span > CONE_MIN_SPAN ? span : CONE_MIN_SPAN);
+    LightEmitter.coneInvSpan[i] = span > 0 ? 1 / span : CONE_NO_WIDTH_INV_SPAN;
   }
 
   /** The light's local x mirrored: GameObject calls it when a followFlip light's entity changes its flipX. */
