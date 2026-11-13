@@ -12423,7 +12423,8 @@
       "records": [
         "R-0959",
         "R-0960",
-        "R-0962"
+        "R-0962",
+        "R-0963"
       ],
       "result": "The tool exists (summarizeTurboSites.mjs, uncommitted); a first run on flashlightStressScene found E-221."
     },
@@ -12701,7 +12702,7 @@
       "area": "physics",
       "kind": "speed",
       "rank": 56,
-      "result": "heapSampleWorkers: physics 634 KB/s, 576 in _emscripten_get_now (box2dWasm.js), from WASM and stepWorld.",
+      "result": "heapSampleWorkers: physics 634 KB/s, 576 in _emscripten_get_now (box2dWasm.js), from WASM and stepWorld. CPU: 29.5 ms/s of the physics thread (7.1 %) in Predator's trace.",
       "next": "Count the calls a step; the clock read once per realm in the glue, or Box2D's profiling timers off in our build (both builds).",
       "refs": [
         "EXECUTION_PLAN.md#E-235"
@@ -12715,7 +12716,8 @@
       ],
       "records": [
         "R-0960",
-        "R-0962"
+        "R-0962",
+        "R-0963"
       ]
     },
     {
@@ -12939,6 +12941,100 @@
       ],
       "records": [
         "R-0962"
+      ]
+    },
+    {
+      "id": "E-245",
+      "title": "Spatial's JS passes take 28 % of the spatial worker in Predator (_findNeighbors, rebuildOwnedRows, _rebuildMovedRows)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's CPU trace, not tested",
+      "date": "2026-11-13",
+      "area": "spatial",
+      "kind": "speed",
+      "rank": 65,
+      "result": "_findNeighbors 31.7 ms/s (11.2 %), rebuildOwnedRows 31.7 (11.2 %), _rebuildMovedRows 16.5 (5.8 %) of 283.",
+      "next": "E-222 sites for each; cheap fixes; then whether a pass joins the WASM kernels.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-245"
+      ],
+      "aliases": [
+        "_findNeighbors",
+        "rebuildOwnedRows",
+        "_rebuildMovedRows",
+        "spatial JS"
+      ],
+      "records": [
+        "R-0963"
+      ]
+    },
+    {
+      "id": "E-246",
+      "title": "Physics' JS around the step: publishPose 3.6 %, snapshotPrevPose 1.4 %, publishMovedBodies 1.0 %",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's CPU trace, not tested",
+      "date": "2026-11-13",
+      "area": "physics",
+      "kind": "speed",
+      "rank": 66,
+      "result": "publishPose 14.8 ms/s, snapshotPrevPose 6.0, publishMovedBodies 4.2 of the physics thread's 417.",
+      "next": "E-222 sites; a kernel each against its current form.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-246"
+      ],
+      "aliases": [
+        "publishPose",
+        "snapshotPrevPose",
+        "publishMovedBodies"
+      ],
+      "records": [
+        "R-0963"
+      ]
+    },
+    {
+      "id": "E-247",
+      "title": "The particle worker's JS decoration passes: a third of the worker in Predator",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's CPU trace, not tested",
+      "date": "2026-11-13",
+      "area": "particle",
+      "kind": "speed",
+      "rank": 67,
+      "result": "decorationScreenBranchless 5.4 ms/s, updateDerivedProperties 5.3, resolveAttachedDecorations 3.0, copyDecorationScratch 1.1 of 42.",
+      "next": "E-222 sites; a kernel for the largest.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-247"
+      ],
+      "aliases": [
+        "decorationScreenBranchless",
+        "updateDerivedProperties",
+        "resolveAttachedDecorations"
+      ],
+      "records": [
+        "R-0963"
+      ]
+    },
+    {
+      "id": "E-248",
+      "title": "The main thread scans every audio slot each frame for metrics (2048 Atomics.load) and polls absent gamepads",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's CPU trace, not tested",
+      "date": "2026-11-13",
+      "area": "engine",
+      "kind": "speed",
+      "rank": 68,
+      "result": "getActiveSlotCount 2.6 ms/s, Gamepad.poll 1.9 ms/s of Predator's main thread.",
+      "next": "The active count kept by the worklet or read on demand; poll writes a disconnected pad once.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-248"
+      ],
+      "aliases": [
+        "getActiveSlotCount",
+        "getMetrics",
+        "Gamepad.poll",
+        "main thread"
+      ],
+      "records": [
+        "R-0963"
       ]
     },
     {
@@ -22794,6 +22890,15 @@
       "title": "E-222's heap samples over BunnyMark, Boids, LiquidFun and the flashlights: LiquidFun's splat 1464 KB/s, tickAll 10 KB a call, raycast 311",
       "verdict": "note",
       "text": "**E-222's heap samples over four more scenes: where each one's garbage is.**\n2026-11-13, 05:00 to 05:06 (the log's times). heapSampleWorkers over every worker, 10 s after 15 s each, AC power, no other bench browser.\n\n| Scene | By worker (KB/s) | The top site |\n|---|---|---|\n| BunnyMark | logic 615, Pixi 49, pre-render 24, particle 14 | the demo's `Bunny.tickAll` 599 (about 10 KB a call: E-243) |\n| Boids | four logic workers 462 to 485 each, physics 165, Pixi 71, pre-render 39 | the demo's `Boid.tick` about 460 a worker (E-244); Box2D's clock 81 (E-235) |\n| LiquidFun demo | Pixi 1569, physics 81, pre-render 42, logic 16 | `LiquidFunDensitySplat.upload` 1464 (E-241); Box2D's clock 48 |\n| flashlights `?cone=1&lights=360&crates=320` | pre-render 343, logic 279, Pixi 129, physics 80, spatial 35 | `_buildVisibilityPolygonsSwept` 311 (E-242: about 1 in R-0958's runs); logic `_tickNonDecimatedOneNoBody` 263 (E-244) |\n\nBox2D's clock (E-235) is in every scene with physics. E-236's shader plan does not show outside Predator (its meshes and graphics swap bind groups each draw). Hypotheses E-241 to E-244 written down before testing."
+    },
+    {
+      "id": "R-0963",
+      "date": "2026-11-13",
+      "time": "05:03",
+      "timeFrom": "recorded",
+      "title": "Predator's CPU trace, every worker: spatial's JS 28 %, Box2D's clock 7 % of physics, the main thread's audio scan",
+      "verdict": "note",
+      "text": "**Predator's CPU trace, every worker (26 s, 04:50 run): what each one spends its time on.**\n\n- **Pixi** (410 ms/s busy; 277 of it `_waitForQueue`, a wait): `pack_sprites_keyed` 15.6, `radix_simd` 8.0, Pixi's `updateBuffer` 7.7, a second WASM module's function 7.4, `scatterStaticsGl` 4.3, E-236's `Fg` and `Lg` 3.7 together.\n- **pre-render** (353; `_waitForPose` 157): `emit_rows` 63.2, `stamp_light_range` 46.9, `collect_sprites` 39.5, `quickselect_order` 6.7; its JS under 2 ms/s a function.\n- **spatial** (283): `gather_batch` 111.6, `publish_batch` 68.5, then JS `_findNeighbors` 31.7, `rebuildOwnedRows` 31.7, `_rebuildMovedRows` 16.5 (E-245).\n- **particle** (42): `sway_decorations_f32x4` 11.3, then JS `decorationScreenBranchless` 5.4, `updateDerivedProperties` 5.3, `resolveAttachedDecorations` 3.0 (E-247).\n- **physics** (417; `waitForLogic` 102): Box2D's WASM, `_emscripten_get_now` 29.5 (7.1 %: E-235), `publishPose` 14.8, `snapshotPrevPose` 6.0, `publishMovedBodies` 4.2 (E-246).\n- **main**: the scene's per-frame `SoundManager.getMetrics` scanning 2048 slots, 2.6 ms/s; `Gamepad.poll` 1.9 (E-248).\n- **logic** (R-0961): the demo's FSM code, `get neighborCount` and `getNeighbor` 20 % (E-240), `_tickIntervalBucket` 8.7 %, `_processBox2dCollisionCallbacks` 8.1 %.\n\nWritten down before testing: E-245 to E-248; E-235's CPU share."
     }
   ],
   "leads": [

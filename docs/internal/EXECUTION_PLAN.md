@@ -4027,6 +4027,9 @@ post-build patch of box2dWasm.js, or an `emscripten_get_now` of our own in the b
 profiling timers off in our build (both builds, SIMD and no-SIMD, in the Box2d_3.2 repo). Owner: physics' STEP_MS and
 KB/s in Predator and Balls.
 
+**CPU too (R-0963):** in Predator's CPU trace `_emscripten_get_now` is 29.5 ms/s of the physics thread's
+417 (7.1 %): about 0.5 ms a frame, besides the garbage.
+
 ### E-236 The WebGL shader sync's plan is rebuilt at nearly every bind: 934 KB/s in Predator's Pixi worker
 
 **Premise:** Pixi's worker allocates 1271 KB/s in Predator; 934 of it in `Lg` (pixi.min.js: E-148's WebGL shader sync,
@@ -4118,6 +4121,39 @@ some calls, not all); flashlightStressScene: logic's `_tickNonDecimatedOneNoBody
 the engine's per-entity loop). Boids is a gate scene: that garbage is in its logic numbers.
 **Plan:** E-222's sites for `Boid.tick` and `_tickNonDecimatedOneNoBody` with their callers; the engine side fixed in the
 engine, the demo's in the demo (public APIs). Owner: logic's KB/s in Boids and the flashlight scene.
+
+### E-245 Spatial's JS passes take 28 % of the spatial worker in Predator
+
+**Premise:** Predator's CPU trace (26 s): of the spatial worker's 283 ms/s, `_findNeighbors` 31.7 (11.2 %),
+`rebuildOwnedRows` 31.7 (11.2 %), `_rebuildMovedRows` 16.5 (5.8 %), `getCellRange` 3.9; the rest is WASM
+(`gather_batch` 112, `publish_batch` 69). Those three JS passes run per entity or per row each frame.
+**Plan:** E-222's sites for each (boxes, checks, calls not inlined, TDZ in their loops); the cheap fixes first; then
+whether a pass belongs in the WASM kernels beside them (a hypothesis of its own, measured as W-rows were). Owner: the
+spatial worker's STEP_MS in Predator and Boids.
+
+### E-246 Physics' JS around the step: publishPose, snapshotPrevPose, publishMovedBodies
+
+**Premise:** of the physics thread's 417 ms/s in Predator, `publishPose` 14.8 (3.6 %), `snapshotPrevPose` 6.0 (1.4 %),
+`publishMovedBodies` 4.2 (1.0 %): per-body copies in JS each step.
+**Plan:** E-222's sites; a kernel each against its current form (`publishPose` has one, E-76's publishPose row). Owner:
+physics' STEP_MS in Predator and Balls.
+
+### E-247 The particle worker's JS decoration passes
+
+**Premise:** of the particle worker's 42 ms/s in Predator, `decorationScreenBranchless` 5.4, `updateDerivedProperties`
+5.3, `resolveAttachedDecorations` 3.0, `copyDecorationScratch` 1.1: a third of the worker, beside
+`sway_decorations_f32x4` (11.3).
+**Plan:** E-222's sites for each; then a kernel for the largest. Owner: the particle worker's STEP_MS in a decoration
+scene (decorationSwayStressScene) and Predator.
+
+### E-248 The main thread scans every audio slot each frame for metrics, and polls absent gamepads
+
+**Premise:** `scene.updateInternal` calls `SoundManager.getMetrics` every frame, and its `getActiveSlotCount` reads each
+of `audio.maxSlots` slots with `Atomics.load` (2048 in Predator): 2.6 ms/s of the main thread in Predator's trace.
+`Gamepad.poll` writes every axis and button of every absent pad back to 0 each frame (1.9 ms/s). The main thread
+dispatches input: its frame is E-219's latency.
+**Plan:** the active count kept by the worklet (one word it updates) or read only when `scene.audioMetrics` is read;
+`poll` writing a disconnected pad once. Owner: the main thread's self ms in Predator's trace.
 
 ## Not doing (read the log first)
 
