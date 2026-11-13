@@ -1869,7 +1869,8 @@
       "aliases": [],
       "records": [
         "R-0362",
-        "R-0385"
+        "R-0385",
+        "R-0944"
       ]
     },
     {
@@ -12622,6 +12623,53 @@
         "N-146"
       ],
       "records": []
+    },
+    {
+      "id": "N-157",
+      "title": "_sortPrefix handed a list that filled its array to Array.prototype.sort: garbage every frame at the light cap, and slower",
+      "status": "kept-kernel",
+      "statusText": "fixed 2026-11-12 (06740b03; R-0944)",
+      "date": "2026-11-12",
+      "area": "render",
+      "kind": "speed",
+      "result": "No native sort. Kernel n360 full random 57.0 → 21.9 µs (3/3); pre-render 153.4 → 69.7 KB/s. Scene (flashlightStressScene ?cone=1&lights=360, ABAB 4 pairs against 815562c9, R-0944): pre-render 3.115 → 3.028 ms, -2.8 %, worse 1/4, NEUTRAL: kept on the kernel.",
+      "next": "Done.",
+      "refs": [
+        "REVIEW_PLAN.md#N-157"
+      ],
+      "aliases": [
+        "_sortPrefix",
+        "Array.prototype.sort",
+        "E-08",
+        "light sort",
+        "GC"
+      ],
+      "records": [
+        "R-0944"
+      ]
+    },
+    {
+      "id": "N-158",
+      "title": "Per-frame allocations left in pre-render (70 KB/s) and Pixi in the flashlight trace: frame loop, waits, camera bounds, gather columns",
+      "status": "open",
+      "statusText": "found 2026-11-12 in DX-SPOT's engine trace",
+      "date": "2026-11-12",
+      "area": "engine",
+      "kind": "speed",
+      "rank": 28,
+      "result": "_runFrame 7–9 KB/s per worker, _waitForPose/_waitForQueue 6–8, pre-render camera bounds ~20 (doubles in shared-map objects), writeGatherColumns put closure 4.9, renderVisibilityLighting clear colour and options 5.4.",
+      "next": "One at a time with heapSampleWorkers: module Float64Arrays for the bounds (E-66), a module function for put, kept options and colour in the light pass, then the frame loop.",
+      "refs": [
+        "REVIEW_PLAN.md#N-158"
+      ],
+      "aliases": [
+        "GC",
+        "heap numbers",
+        "garbage",
+        "heapSampleWorkers",
+        "camera bounds"
+      ],
+      "records": []
     }
   ],
   "records": [
@@ -21855,6 +21903,19 @@
       "text": "**DX-SPOT B1 to B4 and Flash's cone on Predator: NEUTRAL (the owner under the floor), with the whole machine drifting between runs.**\n2026-11-12, 20:41 to 20:52, `runPredatorAbab.mjs --name dxspot-predator --vs ca50fe9a --hyp-rev 5dcb45b3 --owner preRender --pairs 4` (ca50fe9a: the branch before B1; 5dcb45b3: the cone fields, the pool, the stamp's cone walk and brightness fold, the raycast cone batches and wedge cut, Flash's cone), headed, on AC power (no Kernel-Power events), the owner at the machine.\n\n- **preRender** (owner) 2.950 → 2.782 ms, **Pixi** 1.952 → 1.826 ms: both under the 3 ms floor, not judged; both medians lower.\n- **Every worker moved together, pair by pair**, the ones the change cannot reach too: pair 0 (AB) and pair 3 (BA) every worker 15 to 120 % higher on B (physics 3.53 → 4.55, 3.17 → 6.95), pair 1 (BA) every worker higher on A (physics 11.21 → 3.22). Paired: logic +11.8 % (cv 33 %), spatial +12.9 % (cv 32 %), physics +32.4 % (cv 59 %), none blocking; against the others logic -10.9 %, spatial -9.2 %, physics +20.1 % (lower 1/4). Drift, not the change: physics and spatial run no code it touched.\n- Load keys within 3 % (GPU_CASTERS +2.6 %, GPU_SHADOW_LIGHTS +2.6 %, VISIBLE_ENTITIES +0.6 %); presented 60.0 → 59.9.\n\nNo pairs appended: the scoreboard against main at the part's close times every scene together.",
       "commits": [
         "5dcb45b3"
+      ]
+    },
+    {
+      "id": "R-0944",
+      "date": "2026-11-12",
+      "time": "21:04",
+      "timeFrom": "recorded",
+      "title": "N-157: no native sort for a full light list: kernel 2.2–8.9× faster (3/3), pre-render 153 → 70 KB/s; scene NEUTRAL (-2.8 %)",
+      "verdict": "kept",
+      "text": "**N-157: _sortPrefix no longer hands a full list to Array.prototype.sort. Kept on the kernel; the scene NEUTRAL.**\n2026-11-12, the scene's result files from 21:04. Found in DX-SPOT's engine trace: `heapSampleWorkers.mjs` on flashlightStressScene `?cone=1&lights=360&crates=320` (every light visible at maxLights 360) put 83.6 of pre-render's 153.4 KB/s in `sort`, from `_sortPrefix` and `_collectVisibleLights`: a list that filled its array went to the native sort, which copies the array to sort with a comparator.\n\n- **Kernel** (`sortPrefixMicrobench`, full cases added in 815562c9), 3 alternating rounds against 815562c9, medians, checksums equal: n360_full random 57.02 → 21.87 µs, cells 30.75 → 4.22, sorted 7.94 → 1.91; n128_full random 14.80 → 6.81, cells 8.89 → 1.00, sorted 2.83 → 0.67; every full case faster 3/3. The cases with a pooled tail run the same code and tie within 6 %.\n- **Allocation:** pre-render 153.4 → 69.7 KB/s; `sort` gone from the profile.\n- **Scene:** `runPredatorAbab.mjs --name sortprefix-full --vs 815562c9 --hyp-rev 06740b03 --scene flashlightStressScene --query cone=1&lights=360&crates=320 --owner preRender --pairs 4`: preRender 3.115 → 3.028 ms, paired -2.8 %, worse 1/4, cv 12/15 %; NEUTRAL (the saving, about 0.04 to 0.1 ms a frame, is under the scene's detection). Load keys the same.\n\nKept on the kernel win (the scene is not 3 % worse).",
+      "commits": [
+        "815562c9",
+        "06740b03"
       ]
     }
   ],
