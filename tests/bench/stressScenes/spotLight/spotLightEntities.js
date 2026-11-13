@@ -22,6 +22,9 @@ export class SpotCar extends GameObject {
 
   onSpawned(spec = {}) {
     this.setSprite('car');
+    // Seen from straight above, the car turns about its centre (the default anchor is the picture's bottom, the
+    // feet of a figure seen from the front, which put the headlight on the windshield).
+    this.setAnchor(0.5, 0.5);
     this.setScale(CAR_SCALE);
     const light = this.lightEmitter;
     light.radius = spec.radius ?? 420;
@@ -63,6 +66,7 @@ export class SpotProp extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 12;
     this.setSprite(spec.texture || 'rock1');
+    this.setAnchor(0.5, 0.5);
     this.setScale(spec.scale ?? 1);
     this.rotation = spec.rotation ?? 0;
     // Low things seen from above: short shadows.
