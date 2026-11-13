@@ -12952,14 +12952,12 @@
     {
       "id": "E-245",
       "title": "Spatial's JS passes take 28 % of the spatial worker in Predator (_findNeighbors, rebuildOwnedRows, _rebuildMovedRows)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from Predator's CPU trace, not tested",
+      "status": "kept-kernel",
+      "statusText": "kept 2026-11-13 on the kernel: a box's bounds inline in the grid passes",
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 65,
-      "result": "_findNeighbors 31.7 ms/s (11.2 %), rebuildOwnedRows 31.7 (11.2 %), _rebuildMovedRows 16.5 (5.8 %) of 283.",
-      "next": "rebuildOwnedRows calls getColliderBounds(i, _boundsResult) per non-circle entity, out of line (a large function), its results through an object: the box path inline beside the circle's, results through a Float64Array (E-66); measured by the spatial kernel, then the spatial worker's STEP_MS.",
+      "result": "Grid rebuild with 40 000 turned boxes +21.7 % (847–860 → 1017–1044 ops/s, checksums equal); Boids spatial 6.373 → 6.152 ms (−1.1 %, NEUTRAL). 7bcc5d8a.",
       "refs": [
         "EXECUTION_PLAN.md#E-245"
       ],
@@ -12970,7 +12968,8 @@
         "spatial JS"
       ],
       "records": [
-        "R-0963"
+        "R-0963",
+        "R-0974"
       ]
     },
     {
@@ -13069,14 +13068,12 @@
     {
       "id": "E-250",
       "title": "The spatial worker changes shape after it starts (TryMigrateInstance in _findNeighbors)",
-      "status": "open",
-      "statusText": "fixed 2026-11-13 (564351fd), timed with the next Predator gate",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-13: late fields declared in the constructors",
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "bug",
-      "rank": 70,
-      "result": "The shape test on spatial, particle and logic found 9 logic fields born after the constructor (the detailed-stats times first written as the Smi 0 by update), spatial _noBodyCount, particle _swayBucketCacheK; declared in the constructors. The width-dependent lists stay born in initialize (E-71).",
-      "next": "The next Predator gate (with E-251) times it.",
+      "result": "9 logic fields, spatial _noBodyCount, particle _swayBucketCacheK declared in the constructors; the shape test covers the three workers. Predator gate unreadable (pairs ±25 %), no worker worse where readable. 564351fd.",
       "refs": [
         "EXECUTION_PLAN.md#E-250"
       ],
@@ -13087,7 +13084,8 @@
         "map deprecation"
       ],
       "records": [
-        "R-0965"
+        "R-0965",
+        "R-0974"
       ]
     },
     {
@@ -23181,6 +23179,20 @@
       "title": "E-254 dropped: with Maglev off Predator's spatial is 5.4 % slower (3/4 pairs); Maglev helps",
       "verdict": "dropped",
       "text": "**E-254 dropped: Predator runs slower with Maglev off, not faster.** 2026-11-13, 06:37 to 06:43.\n\n`runPredatorAbab --name e243-nomaglev-predator --vs HEAD --js-flags-b --no-maglev --pairs 4`: one build (37eb1306) on both\nsides, both in the installed Chrome, side B with `--js-flags=--no-maglev`; 10 s window after 10 s of warm-up, headed, `--src`.\n- Spatial 3.280 → 3.455 ms (+5.4 % paired, 3/4 pairs worse, cv 4/3 %): REGRESSION.\n- Physics 3.249 → 3.451 ms (−2.8 % paired, 2/4, cv 9/19 %).\n- Under the floor, all higher without Maglev: logic 2.377 → 2.501, renderer 1.220 → 1.373, particle 0.663 → 0.859,\n  pre-render 1.883 → 1.966. Load keys within 1 %.\n\nWithout Maglev a function waits in Sparkplug for TurboFan; with it, it waits in Maglev. The kernel's slow stretch (R-0971)\nwas Maglev against TurboFan, and Sparkplug is slower still. A stock Chrome gives no other lever than structure, and the\nengine's structure (big loops inside the per-frame functions, run in TurboFan OSR code from the first seconds) is already\nthe one that gets TurboFan earliest. Session noise: Balls' A/A +2.8 % (R-0969)."
+    },
+    {
+      "id": "R-0974",
+      "date": "2026-11-13",
+      "time": "13:38",
+      "timeFrom": "recorded",
+      "title": "E-245 kept on the kernel: boxes' bounds inline, grid rebuild +21.7 % for boxes, Boids not worse; E-250 hygiene keep; Predator A/A ~4 %",
+      "verdict": "kept",
+      "text": "**E-245 kept on its kernel (+21.7 % for boxes); E-250 and E-245 gated in Predator; an A/A for the session.** 2026-11-13, 12:45 to 13:38.\n\n**Change** (`7bcc5d8a`): the three grid passes (`rebuildOwnedRows`, `_rebuildOwnedRowsLatched`, `_rebuildMovedRows`) compute a\nbox collider's bounds inline, in `getColliderBounds`' box order (bit-identical), instead of calling it (out of line: chains,\npolygons and their vertex loop) and reading four results from an object. Polygons and chains still call it.\n`spatialBoxBounds.test.js` checks every box's pose against `getColliderBounds` in the three passes.\n\n**Kernel** (`spatialGridMoversMicrobench --shape box`, tool `9b5f45c3`: 40 000 turned 16 × 12 boxes, the full rebuild;\nthree rounds alternated with the parent's src in a worktree, checksums equal: boxes 1492952192, circles 2916327926):\n- boxes 847.2 / 858.0 / 859.9 → 1016.6 / 1043.8 / 1043.8 ops/s, **median +21.7 %**;\n- circles 1272.2 / 1202.9 / 1239.3 → 1284.7 / 1262.7 / 1179.2, median +1.9 % (a tie: the new branch does not touch them).\n\n**Owner scene, Boids** (40 000 boxes; `--vs 7bcc5d8a^ --hyp-rev 7bcc5d8a`, 4 pairs):\n- First sitting (`e245-boids`, to 13:00): every worker on B 3 to 65 % higher in pair 1 and higher in the rest, physics\n  (unreachable) +11.1 %, spatial +7.6 %: a disturbed sitting, not a reading.\n- Second (`e245-boids-2`, to 13:38): spatial 6.373 → 6.152 ms (−1.1 % paired, 1/4 pairs worse, cv 10/4 %), physics −0.5 %:\n  NEUTRAL, the scene not worse.\n\n**Predator gate for E-250 and E-245** (`gate4-predator`, `--vs d7ddd168 --hyp-rev 7bcc5d8a`, to 13:09): NEUTRAL, but pairs\nswung ±25 to 39 % on every worker (physics cv 14/21 %): read nothing from it. **A/A** (`aa2-predator`, 3ed0c280 on both\nsides, to 13:30): spatial −4.1 % (1/4 worse, cv 14/8 %), logic −2.3 %, physics +1.4 % (cv 35/17 %): Predator resolves\nabout 4 % on spatial in this session, physics nothing.\n\n**Verdicts.** E-245: kept on the kernel (+21.7 %), the owner scene not worse (Boids −1.1 %). E-250: hygiene keep (fields\ndeclared earlier; no worker worse where the sittings could read).",
+      "commits": [
+        "7bcc5d8a",
+        "9b5f45c3",
+        "564351fd"
+      ]
     }
   ],
   "leads": [
