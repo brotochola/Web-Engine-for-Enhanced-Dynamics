@@ -289,3 +289,25 @@ test('E-162: indexed frames unless turned off, for a queue every GPU of the back
   assert.equal(indexedSpritesEnabled({ backend: 'webgl' }, INDEXED_SPRITES_MAX_WEBGPU + 1), true);
   assert.equal(indexedSpritesEnabled({ backend: 'webgl' }, INDEXED_SPRITES_MAX_WEBGL + 1), false);
 });
+
+// E-271: the identity fill writes only past the rows an earlier identity fill left, and a filtered fill of the same
+// array makes the next identity fill write them all again.
+test('fillQueueIndices keeps an identity and rewrites it after a filtered fill', () => {
+  const out = new Uint32Array(8).fill(99);
+  assert.equal(fillQueueIndices(null, 5, -1, -1, out), 5);
+  assert.deepEqual([...out], [0, 1, 2, 3, 4, 99, 99, 99]);
+  // Rows the identity holds are not written again: a stray value there would stay (only this function writes them).
+  out[1] = 77;
+  assert.equal(fillQueueIndices(null, 7, -1, -1, out), 7);
+  assert.deepEqual([...out], [0, 77, 2, 3, 4, 5, 6, 99]);
+  out[1] = 1;
+  // A filtered fill overwrites the front, and the next identity fill writes every row.
+  const types = new Uint8Array([3, 0, 3, 0, 0, 0, 0, 0]);
+  assert.equal(fillQueueIndices(types, 8, -1, 3, out), 6);
+  assert.deepEqual([...out.subarray(0, 6)], [1, 3, 4, 5, 6, 7]);
+  assert.equal(fillQueueIndices(null, 8, -1, -1, out), 8);
+  assert.deepEqual([...out], [0, 1, 2, 3, 4, 5, 6, 7]);
+  // A shorter identity is the front of the longer one.
+  assert.equal(fillQueueIndices(null, 3, -1, -1, out), 3);
+  assert.deepEqual([...out], [0, 1, 2, 3, 4, 5, 6, 7]);
+});

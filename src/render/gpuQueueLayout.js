@@ -303,6 +303,18 @@ export function makePackContext(q, opts, capacity, out) {
   return ctx;
 }
 
+// E-271: per index array, how many leading rows already hold 0, 1, 2, … from fillIdentity, unchanged since: only
+// fillQueueIndices writes these lists (the painter's kernel reads its slot list), and its filtered fills forget the
+// count. The painter scenes' pre-render spent 125 to 145 ms of the window rewriting the same identity every frame.
+const _identityRows = new WeakMap();
+
+function fillIdentity(outIdx, limit) {
+  const held = _identityRows.get(outIdx) | 0;
+  for (let i = held; i < limit; i++) outIdx[i] = i;
+  if (limit > held) _identityRows.set(outIdx, limit);
+  return limit;
+}
+
 export function fillQueueIndices(typeArr, count, includeType, excludeType, outIdx) {
   const cap = outIdx.length;
   const inc = includeType | 0;
@@ -313,19 +325,14 @@ export function fillQueueIndices(typeArr, count, includeType, excludeType, outId
   const limit = nSrc < cap ? nSrc : cap;
   let n = 0;
 
-  if (!hasInc && !hasExc) {
-    for (let i = 0; i < limit; i++) outIdx[i] = i;
-    return limit;
-  }
+  if (!hasInc && !hasExc) return fillIdentity(outIdx, limit);
 
   if (hasInc && !hasExc) {
     if (!typeArr) {
-      if (inc === 0) {
-        for (let i = 0; i < limit; i++) outIdx[i] = i;
-        return limit;
-      }
+      if (inc === 0) return fillIdentity(outIdx, limit);
       return 0;
     }
+    _identityRows.delete(outIdx);
     for (let i = 0; i < limit; i++) {
       if (typeArr[i] === inc) outIdx[n++] = i;
     }
@@ -334,12 +341,10 @@ export function fillQueueIndices(typeArr, count, includeType, excludeType, outId
 
   if (!hasInc && hasExc) {
     if (!typeArr) {
-      if (exc !== 0) {
-        for (let i = 0; i < limit; i++) outIdx[i] = i;
-        return limit;
-      }
+      if (exc !== 0) return fillIdentity(outIdx, limit);
       return 0;
     }
+    _identityRows.delete(outIdx);
     for (let i = 0; i < limit; i++) {
       if (typeArr[i] !== exc) outIdx[n++] = i;
     }
@@ -347,12 +352,10 @@ export function fillQueueIndices(typeArr, count, includeType, excludeType, outId
   }
 
   if (!typeArr) {
-    if (inc === 0 && exc !== 0) {
-      for (let i = 0; i < limit; i++) outIdx[i] = i;
-      return limit;
-    }
+    if (inc === 0 && exc !== 0) return fillIdentity(outIdx, limit);
     return 0;
   }
+  _identityRows.delete(outIdx);
   for (let i = 0; i < limit; i++) {
     const t = typeArr[i];
     if (t === inc && t !== exc) outIdx[n++] = i;
