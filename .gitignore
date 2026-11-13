@@ -17,8 +17,6 @@ Thumbs.db
 *.swo
 *~
 
-package-lock.json
-
 # Generated files
 docs/internal/hypotheses.html
 src/index.bundle.js

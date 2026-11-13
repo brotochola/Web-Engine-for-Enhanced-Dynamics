@@ -2,13 +2,14 @@
 //
 // The one place the version changes; commits leave it alone. In order, stopping at the first failure:
 //  1. checks: on main, a clean tree, not behind origin/main, logged in to npm;
-//  2. the new version into package.json and src/version.js, and the create-weed-game template's
-//     engine range (^x.y.z), so a new game asks for the engine just published;
+//  2. the new version into package.json, package-lock.json and src/version.js, and the
+//     create-weed-game template's engine range (^x.y.z), so a new game asks for the engine just
+//     published;
 //  3. the 8 bundles (make_bundle), then every check: check:dist, the embed and browser smokes, the
 //     node tests against the bundles, and the node suite;
 //  4. one commit, "release vX.Y.Z", with exactly those files, and the tag vX.Y.Z;
 //  5. npm publish, then git push of main and the tag.
-// Before step 4 nothing is committed: `git checkout -- package.json src/version.js dist
+// Before step 4 nothing is committed: `git checkout -- package.json package-lock.json src/version.js dist
 // packages/create-weed-game/template/package.json` undoes a failed run.
 
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -83,6 +84,11 @@ function main() {
   // 2. the version, and the template's engine range
   pkg.version = version;
   fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+  const lockPath = path.join(root, 'package-lock.json');
+  const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+  lock.version = version;
+  lock.packages[''].version = version;
+  fs.writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
   step('src/version.js', process.execPath, ['scripts/syncVersion.js']);
   const templatePath = path.join(root, TEMPLATE_PACKAGE);
   const template = fs.readFileSync(templatePath, 'utf8');
@@ -99,7 +105,7 @@ function main() {
   step('node suite', 'npm', ['run', 'test:node']);
 
   // 4. commit and tag
-  step('stage the release', 'git', ['add', 'package.json', 'src/version.js', 'dist', TEMPLATE_PACKAGE]);
+  step('stage the release', 'git', ['add', 'package.json', 'package-lock.json', 'src/version.js', 'dist', TEMPLATE_PACKAGE]);
   step('commit', 'git', ['commit', '-m', `release v${version}`]);
   step('tag', 'git', ['tag', '-a', `v${version}`, '-m', `release v${version}`]);
 
