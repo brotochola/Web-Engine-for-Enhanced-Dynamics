@@ -12891,20 +12891,21 @@
         "run to run"
       ],
       "records": [
-        "R-0962"
+        "R-0962",
+        "R-0964"
       ]
     },
     {
       "id": "E-243",
-      "title": "A loop the engine calls once a frame starts each call in a lower tier (OSR each time): BunnyMark's tickAll 599 KB/s",
+      "title": "Big once-a-frame loops run below TurboFan for long stretches (OSR from Maglev; full TurboFan after ~3000 calls, ~50 s): KB/s and maybe the sittings' warm-up",
       "status": "open",
       "statusText": "proposed 2026-11-13 from E-222's heap samples, not tested",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 63,
-      "result": "Bunny.tickAll allocates 599 KB/s, about 10 KB a call at 200 000 bunnies: not per bunny.",
-      "next": "V8's code log for tickAll (tiers, OSR code); KB/s per call against the count; a 2-minute sample; what keeps such loops optimized from the start.",
+      "rank": 7,
+      "result": "BunnyMark tickAll 599 KB/s (10 KB a call); Predator spatial _rebuildMovedRows 220 KB/s with Math.fround called as a function (unoptimized code) in one run and near 0 in another; the raycast's 311 vs ~1 (E-242).",
+      "next": "A 2-minute Predator run: each per-frame loop's tiers over time (V8 code log) and every worker's STEP_MS at 20 s against 90 s; if they differ, the sittings' warm-up and how such loops reach TurboFan sooner.",
       "refs": [
         "EXECUTION_PLAN.md#E-243"
       ],
@@ -12916,7 +12917,8 @@
         "tier-up"
       ],
       "records": [
-        "R-0962"
+        "R-0962",
+        "R-0964"
       ]
     },
     {
@@ -22899,6 +22901,15 @@
       "title": "Predator's CPU trace, every worker: spatial's JS 28 %, Box2D's clock 7 % of physics, the main thread's audio scan",
       "verdict": "note",
       "text": "**Predator's CPU trace, every worker (26 s, 04:50 run): what each one spends its time on.**\n\n- **Pixi** (410 ms/s busy; 277 of it `_waitForQueue`, a wait): `pack_sprites_keyed` 15.6, `radix_simd` 8.0, Pixi's `updateBuffer` 7.7, a second WASM module's function 7.4, `scatterStaticsGl` 4.3, E-236's `Fg` and `Lg` 3.7 together.\n- **pre-render** (353; `_waitForPose` 157): `emit_rows` 63.2, `stamp_light_range` 46.9, `collect_sprites` 39.5, `quickselect_order` 6.7; its JS under 2 ms/s a function.\n- **spatial** (283): `gather_batch` 111.6, `publish_batch` 68.5, then JS `_findNeighbors` 31.7, `rebuildOwnedRows` 31.7, `_rebuildMovedRows` 16.5 (E-245).\n- **particle** (42): `sway_decorations_f32x4` 11.3, then JS `decorationScreenBranchless` 5.4, `updateDerivedProperties` 5.3, `resolveAttachedDecorations` 3.0 (E-247).\n- **physics** (417; `waitForLogic` 102): Box2D's WASM, `_emscripten_get_now` 29.5 (7.1 %: E-235), `publishPose` 14.8, `snapshotPrevPose` 6.0, `publishMovedBodies` 4.2 (E-246).\n- **main**: the scene's per-frame `SoundManager.getMetrics` scanning 2048 slots, 2.6 ms/s; `Gamepad.poll` 1.9 (E-248).\n- **logic** (R-0961): the demo's FSM code, `get neighborCount` and `getNeighbor` 20 % (E-240), `_tickIntervalBucket` 8.7 %, `_processBox2dCollisionCallbacks` 8.1 %.\n\nWritten down before testing: E-245 to E-248; E-235's CPU share."
+    },
+    {
+      "id": "R-0964",
+      "date": "2026-11-13",
+      "time": "05:07",
+      "timeFrom": "recorded",
+      "title": "E-243's evidence grows: Predator's spatial 311 KB/s in one sample (220 in _rebuildMovedRows, Math.fround called), 7 in another",
+      "verdict": "note",
+      "text": "2026-11-13, Predator's heap sample of the E-222 captures (12 s after 15 s): spatial 311.2 KB/s, _rebuildMovedRows 220.5, _rebuildOwnedRowsLatched 68.3, fround 9.2 (called from both: unoptimized code); R-0960's sample of the same scene had spatial at 7.2. With E-242 (the raycast, 311 vs about 1) and BunnyMark's tickAll (10 KB a call), the once-a-frame loops are below TurboFan for part of a run. Hypothesis, before testing: whole-function TurboFan after about 3000 calls (about 50 s at 60 a second), Maglev with OSR before; a sitting's 10 to 20 s warm-up would measure that. E-243 ranked first."
     }
   ],
   "leads": [

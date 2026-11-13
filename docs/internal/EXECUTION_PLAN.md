@@ -4114,6 +4114,13 @@ loops left in JS) would pay that start each frame.
 confirmed, whether the whole function reaches TurboFan later in a long run (a 2-minute sample), and what keeps such
 loops optimized from their first iteration. Owner: logic's KB/s and STEP_MS in BunnyMark.
 
+**More evidence (R-0964), before testing:** Predator's spatial worker, in one 12 s heap sample after 15 s, allocated 311 KB/s,
+220 of it in `_rebuildMovedRows` and 68 in `_rebuildOwnedRowsLatched`, with `Math.fround` called as a function (9 KB/s): code
+TurboFan had not optimized, since its `fround` is an instruction. An earlier sample of the same scene had spatial at 7 KB/s.
+V8 optimizes a whole function with TurboFan after about 3000 calls (about 50 s at 60 a second); before that a
+once-a-frame function enters Maglev each call and its loop jumps into optimized code by OSR. Sittings warm up 10 to 20 s.
+First test: a 2-minute run, tiers over time and STEP_MS at 20 s against 90 s. Ranked first.
+
 ### E-244 Per-entity tick paths allocate on some calls (Boids, the flashlight walkers)
 
 **Premise:** Boids: each of four logic workers allocates about 460 KB/s in the demo's `Boid.tick` (1.5 bytes a call:
