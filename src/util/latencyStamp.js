@@ -11,13 +11,15 @@
  * The stamp buffer (LATENCY_STAMP_BYTES): f64 the base (wall ms) at byte 0, i32 the newest input at index
  * STAMP_INPUT, i32 the newest input logic has acted on at STAMP_LOGIC.
  */
+import { TIME_ORIGIN } from './frameClock.js';
+
 export const LATENCY_STAMP_BYTES = 16;
 export const STAMP_INPUT = 2;
 export const STAMP_LOGIC = 3;
 
 /** Wall ms, the same clock in every thread (each realm's timeOrigin differs). */
 export function wallMs() {
-  return performance.timeOrigin + performance.now();
+  return TIME_ORIGIN + performance.now();
 }
 
 /** The scene's stamp buffer, its base the wall time now. */

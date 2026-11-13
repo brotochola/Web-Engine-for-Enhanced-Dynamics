@@ -90,6 +90,7 @@ import { GpuParticles } from '../core/gpuParticles.js';
 import { gpuLogicWriterSlot } from '../util/gpuParticleLayout.js';
 import { auditFields } from '../core/debug/devChecks.js';
 import { STAMP_INPUT, STAMP_LOGIC } from '../util/latencyStamp.js';
+import { TIME_ORIGIN } from '../util/frameClock.js';
 import { addWaitMs } from '../util/waitMeter.js';
 
 /** DX-GUARDS E2: the instance devChecks audits for a class. */
@@ -1035,7 +1036,7 @@ class LogicWorker extends AbstractWorker {
     // cannot tell this vsync's frame from the last one's, which main made after this worker's frame began whenever it
     // runs after the workers: the waits stopped for seconds at a time (the first sittings, lag 7 or 22 ms by turns).
     const gen = Atomics.load(chain, 1);
-    if (performance.timeOrigin + now - clock.f64[0] < period * 0.5) return;
+    if (TIME_ORIGIN + now - clock.f64[0] < period * 0.5) return;
     const frame = this.frameNumber | 0;
     if (frame < this._inputWaitOffUntil) return;
     const eighth = period * 0.125;
