@@ -3429,12 +3429,10 @@ class PreRenderWorker extends AbstractWorker {
     _sortPrefix(arr, count, compare) {
         const n = count | 0;
         if (n <= 1) return;
-        if (n === arr.length) {
-            arr.sort(compare);
-            return;
-        }
-        // Slots at n and past it are pooled and must stay put, so this cannot
-        // hand the whole array to sort. Insertion sort costs ~n on a nearly
+        // Not Array.prototype.sort, even for a list that fills its array (every light visible at the light cap): with
+        // a comparator V8 copied the array to sort it, 84 KB/s of garbage in flashlightStressScene at 360 lights, and
+        // took 2 to 6 times as long as the path below (sortPrefixMicrobench's full cases).
+        // Slots at n and past it are pooled and must stay put. Insertion sort costs ~n on a nearly
         // sorted list (lights spawned in rows: 3.4 µs at 360) and n²/4 moves on
         // one far from sorted (moving lights in entity order: 54 µs at 360).
         // Past SORT_PREFIX_INSERTION_MAX it gets a budget of 16 moves per item;
