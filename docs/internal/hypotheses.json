@@ -13667,13 +13667,12 @@
     {
       "id": "E-276",
       "title": "A flowfield lookup scans every slot with Atomics.load (navStressScene: 81 % of _findFlowfieldSlot on it)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 16,
-      "result": "CPU sweep: navStressScene's logic spends 88 ms of the window in NavGrid._findFlowfieldSlot, 81 % on `Atomics.load(u32, idx + 2) === FLOWFIELD_STATUS.READY && u32[idx] === targetCell` over all maxFlowfields slots, each lookup.",
+      "result": "navStress ?agents=6144: logic 6.204 → 3.018 ms (−51.3 %, 4/4), flowfields 40/40 both sides.",
       "next": "Compare targetCell with a plain read first and load the status only on a match (then read targetCell again after it, for the publication order), or a small map from target cell to slot kept per worker; the nav kernel, then navStress's logic STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-276"
@@ -13683,7 +13682,9 @@
         "flowfield slot",
         "navGrid lookup"
       ],
-      "records": []
+      "records": [
+        "R-0989"
+      ]
     },
     {
       "date": "2026-11-12",
@@ -24100,6 +24101,15 @@
       "title": "Wave 14's three spatial keeps together: stationarySpatialWide's spatial 7.671 to 2.320 ms (-69.6 %)",
       "verdict": "kept",
       "text": "**Wave 14's three spatial keeps together (E-268, E-266, E-274): stationarySpatialWide's spatial 7.671 → 2.320 ms (−69.6 %,\n4/4).** 2026-11-13, 19:04 to 19:11. The total measured, not added: one branch with the three (`w14s/spatial3`\n`8eebe30c` on `e6e146b8`: E-268 `eb6f4404`, E-266 `ac39ed10`, E-274 cherry-picked with its constructor fields beside\nE-268's), `test:node` green but for the two tests that need pixi.js in a worktree.\n\n**Scene** (`w14-spatial3-statwide`: stationarySpatialWideScene `?entities=145000`, two spatial workers, physics off,\n`--vs e6e146b8 --hyp-rev 8eebe30c --owner spatial`, 4 pairs): **KEPT (product)**, spatial **7.671 → 2.320 ms, −69.6 %\npaired, worse 0/4, cv 3/3 %**; ENTITIES_PROCESSED 73 372 and VISIBLE_ENTITIES 23 142 on both sides; pre-render 2.227 →\n2.299 (under the floor).\n\nAlone each took 39.1 % (E-268) and 34.1 % (E-266) on the same scene, E-274 a tie: the two large ones remove different\nwork (the rows' heads in `_findNeighbors`, the rebuild), so together the worker loses both, and what is left of it is\nthe neighbour search itself and the publish."
+    },
+    {
+      "id": "R-0989",
+      "date": "2026-11-13",
+      "time": "19:18",
+      "timeFrom": "recorded",
+      "title": "E-276 kept: the flowfield slot lookup compares the target first; navStress' logic -51.3 %",
+      "verdict": "kept",
+      "text": "**E-276 kept: the flowfield slot lookup compares the target before it loads the status; navStress' logic 6.204 →\n3.018 ms (−51.3 %, 4/4).** 2026-11-13, 19:11 to 19:18.\n\n**Change** (sitting branch `w14s/e276` `c7817c98` on `e6e146b8`; `w14/e276` `590b643a`): `NavGrid._findFlowfieldSlot`\nscanned every slot with `Atomics.load` of its status, then compared the target (the CPU sweep: 81 % of the function on\nthat load). A plain read of the slot's target filters first; on a match the status is loaded (the publication gate, as\nbefore) and the target read again after it. Nav tests and the suite pass.\n\n**Scene** (`w14-e276-navstress`: navStressScene `?agents=6144` (e6e146b8's knob), one logic worker, 64 flowfield slots,\n`--vs e6e146b8 --hyp-rev c7817c98 --owner logic`, 4 pairs): **KEPT (product)**, logic **6.204 → 3.018 ms, −51.3 % paired,\nworse 0/4, cv 1/8 %**; ENTITIES_PROCESSED 6 144, FLOWFIELDS_COMPUTED and FLOWFIELDS_SERVICED 40 on both sides; particle\n(which computes the fields) 3.919 → 3.826, under the floor.\n\n**Verdict: kept.** Every agent looks its field up every frame, so the scan was per agent times 64 slots; half of the\nlogic worker was those loads."
     }
   ],
   "leads": [
