@@ -13487,7 +13487,7 @@
       "area": "spatial",
       "kind": "speed",
       "rank": 84,
-      "result": "CPU sweep, stationarySpatialWideScene (2 spatial workers, 70 000 entities nobody reads): _findNeighbors is 40 to 42 % of spatial, 91 % of it on `} else if (sharedRows && neighborData[entityA * stride] !== 0) {`, the row head read that keeps a row another worker may have published clear. Rows are maxNeighbors + 1 ids apart (about 2 KB here), so each read is a cache line of its own. One spatial worker (Predator) never reads it.",
+      "result": "CPU sweep, stationarySpatialWideScene (2 spatial workers, 70 000 entities nobody reads): _findNeighbors is 40 to 42 % of spatial, 91 % of it on `} else if (sharedRows && neighborData[entityA * stride] !== 0) {`, the row head read that keeps a row another worker may have published clear. Rows are maxNeighbors + 1 ids apart (about 2 KB here), so each read is a cache line of its own. One spatial worker (Predator) never reads it. A second row-head read per entity: littleCityScene's _findNeighbors spends 41 to 43 % on candCountOf[entityA] = cand[entityA * stride] (2 spatial workers).",
       "next": "Read it only when it can be set: a dense per-worker byte per entity (this worker cleared the row and owned it since), or the row's owner change from rebuildOwnedRows' owned list; the spatial kernel with --types and two workers, then stationarySpatialWide's spatial STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-268"
@@ -13497,6 +13497,50 @@
         "sharedRows",
         "unread rows",
         "_findNeighbors cache miss"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-269",
+      "title": "Mesh UV fills copy their rows from the mesh memory into Pixi's buffer every frame (meshApiStressScene: uploadRange 100 % on data.set(rows.subarray(...)))",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "date": "2026-11-13",
+      "area": "pixi",
+      "kind": "speed",
+      "rank": 85,
+      "result": "CPU sweep, meshApiStressScene: MeshUvFillBatch.uploadRange (meshUvFillBatch.js) spends 990 ms of the window (100 % of its self time) on `if (this.rows !== this.data) this.data.set(this.rows.subarray(from, past * MESH_UV_FILL_FLOATS), from)`: the corner kernel writes the rows in the mesh memory (W11), and they are copied into the Pixi buffer's own array before its upload; a subarray each time.",
+      "next": "Give the Pixi buffer the rows' own view (WebGL's bufferSubData and WebGPU's writeBuffer take a SharedArrayBuffer view), no copy; if a backend refuses it, upload the range from the view. meshApiStressScene's Pixi STEP_MS; colliderFillBatch.js's same copy (uploadFill) with it.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-269"
+      ],
+      "aliases": [
+        "uploadRange",
+        "meshUvFillBatch",
+        "mesh rows copy",
+        "data.set subarray"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-270",
+      "title": "Decal tiles are premultiplied into a scratch, copied into the tile's array, and uploaded whole (texSubImage2D of the full tile) for any stamp",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "date": "2026-11-13",
+      "area": "pixi",
+      "kind": "speed",
+      "rank": 86,
+      "result": "CPU sweep: decalStampStressScene's Pixi spends 173 ms in _uploadDecalRgba8 (89 % on its texSubImage2D of the whole tile) and 157 ms in premultiplyDecalTile (100 % on dst.set(b.scratch)); decalBlitStressScene 415 ms in the upload (68 %).",
+      "next": "Upload from the premultiplied scratch (no copy), and only the rows (or rect) a stamp touched; the decal kernels and the two decal stress scenes' Pixi STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-270"
+      ],
+      "aliases": [
+        "_uploadDecalRgba8",
+        "premultiplyDecalTile",
+        "decal upload",
+        "dirty rect"
       ],
       "records": []
     },
