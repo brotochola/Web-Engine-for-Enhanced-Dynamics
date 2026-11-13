@@ -13165,14 +13165,12 @@
     {
       "id": "E-254",
       "title": "Maglev holds per-frame engine code below TurboFan for minutes in Chrome (once-a-frame functions with loops)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from E-251's kernel, test running",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-13: Maglev off makes Predator slower",
       "date": "2026-11-13",
       "area": "all",
       "kind": "speed",
-      "rank": 74,
-      "result": "Kernel: a loop in its own function called once a frame runs 29 µs a call for ~16 000 calls in Chrome, then 20.4 µs (TurboFan); the same loop inline, re-entering cached TurboFan OSR code, 20.9 µs from the start.",
-      "next": "Predator ABAB, same build, B with --js-flags=--no-maglev; then the functions that sit in Maglev, and a structure that tiers them up early in stock Chrome.",
+      "result": "Predator ABAB, one build, B with --no-maglev: spatial +5.4 % (3/4 worse), the workers under the floor all higher, physics -2.8 % (cv 9/19 %). Maglev is better than waiting in Sparkplug; the engine's inline loops already reach TurboFan OSR early.",
       "refs": [
         "EXECUTION_PLAN.md#E-254"
       ],
@@ -13184,7 +13182,8 @@
         "invocation count"
       ],
       "records": [
-        "R-0971"
+        "R-0971",
+        "R-0972"
       ]
     },
     {
@@ -23127,6 +23126,15 @@
       "title": "E-251 dropped: its deopt loops are TurboFan OSR code re-entered each frame; the split fix runs Maglev for ~16 000 calls (+55 % in Chrome). E-254 written",
       "verdict": "dropped",
       "text": "**E-251's deopt loops are the price of running a once-a-frame loop in TurboFan's OSR code, and the restructure it proposed (each loop in a function of its own) is slower: dropped. E-254 written down from it.** 2026-11-13, 06:25 to 06:36.\n\n**Predator, 100 s, V8's code and deopt log** (`stepOverTime.mjs`, its first tab fixed in ea8cf1b4; to 06:30). Deopts by the code\nthat fell (scratch deoptCycles): the spawn batch (`logicWorker.js` 871 and 882, R-0966's 856/867 moved by E-250) 124 and 127\ndeopts, all between 9 and 12 s; `box2dMovedBodiesImpl.js:186` 28 from 10 to 38 s; nothing steady after 40 s. Three runs, three\npictures (R-0966, R-0967): the loops are real and come and go with the game.\n\n**Tiers in the same log** (scratch tierNormal over `--log-code`; a quote on the marker is a context-specialized, OSR code):\nPredator's big per-frame functions never get a normal TurboFan compile in 100 s: `rebuildOwnedRows`, `_rebuildMovedRows`,\n`_rebuildOwnedRowsLatched`, `_findNeighbors`, `publishPose`, `_processSpawnSoA`, pre-render's `_collectVisibleLights`,\n`_collectStampLights`, `_collectEntityGlowRows`, `collectRenderable`, Pixi's `collectRenderables` all have only Maglev OSR and\nTurboFan OSR code (one each, `_rebuildMovedRows` five); logic's `update` gets a normal TurboFan compile at 69 to 72 s. Each\nframe such a function starts in Sparkplug, enters the cached TurboFan OSR code at its loop, and runs its tail there or, where\nthe tail had no feedback when that code was compiled, deopts to the interpreter for the tail (E-251's loops).\n\n**Kernel of the pattern** (scratch: a publish with `bits.fill`, a 4 000 to 10 000-entry loop and three Atomics after it, as\n`publishMovedBodies`; first call 2^20 entries so it OSRs before its tail ran, then thousands of calls):\n- Node, `--trace-deopt`: the loop inline deopts 435 times in 6 001 calls (insufficient feedback at the tail's Atomics); with\n  the loop in a function of its own, 0.\n- Steady time, inline against split: Node 22.9 to 23.2 µs a call against 27.1 to 27.9 (split +19 %); Chrome 20.9 to 21.7 µs\n  against 32.6 to 33.7 (split +55 %). The split loop's own function gets a normal compile and stays in a slower tier: over\n  30 000 calls in Chrome it runs 29.3, 29.1, 29.0 µs a call per 5 000 and drops to 20.8, 20.3, 20.4 after about 16 000 calls,\n  the inline form's speed from the start. Passing the arrays as arguments does not change it (32.65); the inline form after\n  400 short warm-up calls (a normal compile first) runs 20.55.\n\n**Verdict on E-251: dropped.** The deopts cost a tail in the interpreter each; the fix moves the loop into a function that,\ncalled once a frame, would run in Maglev for minutes (16 000 calls is 4.4 min at 60 Hz). The scratch restructures of\n`publishMovedBodies`, `publishPose` and the spawn batch are not applied.\n\n**E-254 (new, written before its test):** Maglev may cost the engine more than the deopt loops: per-frame code that gets a\nnormal Maglev compile runs below TurboFan for minutes. First test: Predator ABAB, the same build, side B with\n`--js-flags=--no-maglev` (runPredatorAbab's `--js-flags-b`, 37eb1306). If B is faster, find which functions sit in Maglev and\nwhat structure gets them to TurboFan early in a stock Chrome."
+    },
+    {
+      "id": "R-0972",
+      "date": "2026-11-13",
+      "time": "06:43",
+      "timeFrom": "recorded",
+      "title": "E-254 dropped: with Maglev off Predator's spatial is 5.4 % slower (3/4 pairs); Maglev helps",
+      "verdict": "dropped",
+      "text": "**E-254 dropped: Predator runs slower with Maglev off, not faster.** 2026-11-13, 06:37 to 06:43.\n\n`runPredatorAbab --name e243-nomaglev-predator --vs HEAD --js-flags-b --no-maglev --pairs 4`: one build (37eb1306) on both\nsides, both in the installed Chrome, side B with `--js-flags=--no-maglev`; 10 s window after 10 s of warm-up, headed, `--src`.\n- Spatial 3.280 → 3.455 ms (+5.4 % paired, 3/4 pairs worse, cv 4/3 %): REGRESSION.\n- Physics 3.249 → 3.451 ms (−2.8 % paired, 2/4, cv 9/19 %).\n- Under the floor, all higher without Maglev: logic 2.377 → 2.501, renderer 1.220 → 1.373, particle 0.663 → 0.859,\n  pre-render 1.883 → 1.966. Load keys within 1 %.\n\nWithout Maglev a function waits in Sparkplug for TurboFan; with it, it waits in Maglev. The kernel's slow stretch (R-0971)\nwas Maglev against TurboFan, and Sparkplug is slower still. A stock Chrome gives no other lever than structure, and the\nengine's structure (big loops inside the per-frame functions, run in TurboFan OSR code from the first seconds) is already\nthe one that gets TurboFan earliest. Session noise: Balls' A/A +2.8 % (R-0969)."
     }
   ],
   "leads": [
