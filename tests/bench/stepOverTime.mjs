@@ -26,7 +26,7 @@ export async function stepOverTime(opts) {
   let userDataDir = null;
   if (opts.v8LogDir) {
     fs.mkdirSync(opts.v8LogDir, { recursive: true });
-    args.push(`--js-flags=--logfile=${path.join(opts.v8LogDir, 'v8.log').replace(/\\/g, '/')} --log-code`, '--no-sandbox');
+    args.push(`--js-flags=--logfile=${path.join(opts.v8LogDir, 'v8.log').replace(/\\/g, '/')} --log-code --log-deopt`, '--no-sandbox');
   }
   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-step-'));
   const context = await chromium.launchPersistentContext(userDataDir, { headless: false, channel: 'chrome', args, viewport: { width: 1280, height: 720 } });
