@@ -4455,6 +4455,18 @@ spinning in `_lockActiveList`.
 loop's `gridCounts[byteOffset] = localCounts[cellIndex]`, a cache line per cell, empty cells included.
 **Plan:** write only changed counts (or touched cells); the grid kernel with a sparse world, then planetScene. Owner: spatial.
 
+### E-275 Each tween asks every frame what its entity paints
+
+**Premise (the CPU sweep's hot lines):** tweenStressScene's logic: `paintTarget` 135 ms of the window, all on
+the tweened entity's `SpriteRenderer.active` read.
+**Plan:** the target kind in the tween's record, re-read on a sprite or mesh change; the tween kernel, then tweenStress. Owner: logic.
+
+### E-276 A flowfield lookup scans every slot with Atomics.load
+
+**Premise (the CPU sweep's hot lines):** navStressScene's logic: 81 % of `_findFlowfieldSlot` on the status load over
+every slot.
+**Plan:** a plain targetCell compare first, the status load only on a match; navStress's logic. Owner: logic.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
