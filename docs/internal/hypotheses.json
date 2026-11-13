@@ -13462,7 +13462,8 @@
         "E-126"
       ],
       "records": [
-        "R-0984"
+        "R-0984",
+        "R-0988"
       ]
     },
     {
@@ -13507,7 +13508,8 @@
         "_findNeighbors cache miss"
       ],
       "records": [
-        "R-0983"
+        "R-0983",
+        "R-0988"
       ]
     },
     {
@@ -13637,7 +13639,8 @@
         "sparse world grid"
       ],
       "records": [
-        "R-0985"
+        "R-0985",
+        "R-0988"
       ]
     },
     {
@@ -24088,6 +24091,15 @@
       "title": "Wave 14's allocation rows, heap A/B in Chrome: E-262, E-277, E-284, E-285 take their sites to zero; E-278's step 1 changes nothing",
       "verdict": "note",
       "text": "**Wave 14's allocation rows, heap A against B in Chrome: E-262, E-277, E-284 and E-285 take their sites to zero (−81\nto −99 % of their worker's garbage), E-265 its small one; E-278's first step changes nothing.** 2026-11-13, 18:46 to\n19:00. `heapSampleWorkers.mjs` (8 s after 8 s of warm-up, one worker), A the main folder (its src/ is the sittings'\nbase, e6e146b8), B the scratch worktree at each sitting branch (`--root`, 9d5f0520), A B A B. KB/s of the worker:\n\n| Row | Scene, worker | A | B | The site |\n| --- | --- | --- | --- | --- |\n| E-262 | WaterAndBoxes, logic | 2 799, 2 825 | **27, 29** | `update` 2 781, 2 799 → 6, 5 |\n| E-277 | planetPhysics, Pixi | 3 474, 3 532 | **343, 334** | `packColliderFill` 3 115, 3 219 → 0 |\n| E-284 | bulletStress (40 000), pre-render | 697, 651 | **61, 64** | `collectVisibleBullets` 626, 589 → 0 |\n| E-285 | audioStorm, logic | 9 026, 9 037 | **1 722, 1 710** | `_writeSlotListed` 7 326, 7 330 → 0 |\n| E-265 | spawnStorm `?storm=6000`, logic | 7 084, 7 152 | 7 045, 7 076 | `generateQueryMask` 7, 8 → 0; `join` 1 → 0 |\n| E-278 (step 1) | littleCity, logic | 9 016, 10 423 | 8 085, 7 922 | `rng` 2 757, 4 142 → 2 795, 2 776 |\n\nE-278's first step (rng's cold paths out, 201 → 146 bytes of bytecode) leaves rng boxing as much as before: the\ntick still does not inline it. Not merged; its next step is the callers' (the emitter draws inline, randomRange read\nonce per burst). The others' verdicts wait for their timing: owner sittings where the owner reaches the floor\n(bulletStress at 300 000, audioStorm at 34 000) and Predator's gate with every keep together."
+    },
+    {
+      "id": "R-0988",
+      "date": "2026-11-13",
+      "time": "19:11",
+      "timeFrom": "recorded",
+      "title": "Wave 14's three spatial keeps together: stationarySpatialWide's spatial 7.671 to 2.320 ms (-69.6 %)",
+      "verdict": "kept",
+      "text": "**Wave 14's three spatial keeps together (E-268, E-266, E-274): stationarySpatialWide's spatial 7.671 → 2.320 ms (−69.6 %,\n4/4).** 2026-11-13, 19:04 to 19:11. The total measured, not added: one branch with the three (`w14s/spatial3`\n`8eebe30c` on `e6e146b8`: E-268 `eb6f4404`, E-266 `ac39ed10`, E-274 cherry-picked with its constructor fields beside\nE-268's), `test:node` green but for the two tests that need pixi.js in a worktree.\n\n**Scene** (`w14-spatial3-statwide`: stationarySpatialWideScene `?entities=145000`, two spatial workers, physics off,\n`--vs e6e146b8 --hyp-rev 8eebe30c --owner spatial`, 4 pairs): **KEPT (product)**, spatial **7.671 → 2.320 ms, −69.6 %\npaired, worse 0/4, cv 3/3 %**; ENTITIES_PROCESSED 73 372 and VISIBLE_ENTITIES 23 142 on both sides; pre-render 2.227 →\n2.299 (under the floor).\n\nAlone each took 39.1 % (E-268) and 34.1 % (E-266) on the same scene, E-274 a tie: the two large ones remove different\nwork (the rows' heads in `_findNeighbors`, the rebuild), so together the worker loses both, and what is left of it is\nthe neighbour search itself and the publish."
     }
   ],
   "leads": [
