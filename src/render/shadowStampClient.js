@@ -91,8 +91,45 @@ export async function bindShadowStamp(memory, stamp) {
 }
 
 /**
- * stampLightRange(spec) through the kernel. The lights go into the light table first, as five doubles
- * each (NaN rangeSq for an empty slot, which the JS skips as it skips a missing light).
+ * The light records into the kernel's light table, STAMP_LIGHT_DOUBLES each: x, y, intensity, rangeSq, maxShadows,
+ * the cone (its floor direction, coneCos with -2 for none, coneInvSpan, 1 / groundScaleY²) and the shade
+ * (min(brightness, 1)). An empty slot gets a NaN rangeSq, which the kernel skips as the JS skips a missing light.
+ * The bench harnesses write through it too (tests/bench/shadowStampKernel.mjs), so they feed the kernel what
+ * pre-render does.
+ * @param {Float64Array} table the light table (bindShadowStamp's `lights`)
+ * @param {Array<object|null>} lights the stamp's light records
+ * @param {number} count how many slots to write
+ */
+export function writeStampLights(table, lights, count) {
+  const capL = count | 0;
+  for (let i = 0, at = 0; i < capL; i++, at += STAMP_LIGHT_DOUBLES) {
+    const light = lights[i];
+    if (!light) {
+      table[at + 3] = NaN;
+      continue;
+    }
+    table[at] = light.x;
+    table[at + 1] = light.y;
+    table[at + 2] = light.intensity;
+    table[at + 3] = light.rangeSq;
+    table[at + 4] = light.maxShadows;
+    // DX-SPOT: the cone on the floor; a light without one (or a record without the fields) reads as none.
+    const coneCos = light.coneCos;
+    table[at + 7] = coneCos > -1 ? coneCos : -2;
+    table[at + 5] = coneCos > -1 ? light.coneDirX : 0;
+    table[at + 6] = coneCos > -1 ? light.coneDirYW : 0;
+    table[at + 8] = coneCos > -1 ? light.coneInvSpan : 0;
+    table[at + 9] = coneCos > -1 ? light.invG2 : 0;
+    // DX-LIGHTAPI: how dark its shadows are, min(brightness, 1) (a record without the field: 1). A dim light's rows fold
+    // it in, measured on the floor (1 / groundScaleY²).
+    const shade = light.shade < 1 ? light.shade : 1;
+    table[at + 10] = shade;
+    if (shade < 1) table[at + 9] = light.invG2;
+  }
+}
+
+/**
+ * stampLightRange(spec) through the kernel. The lights go into the light table first (writeStampLights).
  * @returns {number} the stamp cursor; throws when the kernel cannot take the call
  */
 export function stampLightRangeWasm(b, spec) {
@@ -148,31 +185,6 @@ export function stampLightRangeWasm(b, spec) {
   t[STAMP_BASE] = base;
   t[STAMP_LIGHT_IDX] = lightIdx ? lightIdx.byteOffset : 0;
 
-  const lights = spec.lights;
-  const table = b.lights;
-  for (let i = 0, at = 0; i < capL; i++, at += STAMP_LIGHT_DOUBLES) {
-    const light = lights[i];
-    if (!light) {
-      table[at + 3] = NaN;
-      continue;
-    }
-    table[at] = light.x;
-    table[at + 1] = light.y;
-    table[at + 2] = light.intensity;
-    table[at + 3] = light.rangeSq;
-    table[at + 4] = light.maxShadows;
-    // DX-SPOT: the cone on the floor; a light without one (or a record without the fields) reads as none.
-    const coneCos = light.coneCos;
-    table[at + 7] = coneCos > -1 ? coneCos : -2;
-    table[at + 5] = coneCos > -1 ? light.coneDirX : 0;
-    table[at + 6] = coneCos > -1 ? light.coneDirYW : 0;
-    table[at + 8] = coneCos > -1 ? light.coneInvSpan : 0;
-    table[at + 9] = coneCos > -1 ? light.invG2 : 0;
-    // DX-LIGHTAPI: how dark its shadows are, min(brightness, 1) (a record without the field: 1). A dim light's rows fold
-    // it in, measured on the floor (1 / groundScaleY²).
-    const shade = light.shade < 1 ? light.shade : 1;
-    table[at + 10] = shade;
-    if (shade < 1) table[at + 9] = light.invG2;
-  }
+  writeStampLights(b.lights, spec.lights, capL);
   return b.stampRange(b.tableByte);
 }
