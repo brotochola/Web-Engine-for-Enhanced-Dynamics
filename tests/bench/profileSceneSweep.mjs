@@ -9,14 +9,19 @@
  *   heap   a sampling heap profile of every worker the page starts, the Box2D worker (box2dWasm.js)
  *          included (heapSampleWorkers.mjs): KB/s
  *          allocated per worker and the sites that allocate it
+ *   code   the run with V8's code log (bytecode, tiers, inlining), summarized by summarizeV8Code.mjs against
+ *          the cpu pass's summary: calls TurboFan left out of hot code and why, hot functions below
+ *          TurboFan, recompiles, allocating bytecodes; each hot function's bytecode, with its source lines,
+ *          goes to <out>/<name>/code/bytecode/<worker>/
  *
  * For each scene, <out>/<name>/ gets the cpu pass's stress.json, cpu-summary.json, hot-lines.md and
- * summary.txt, <out>/<name>/deopt/deopt.json and <out>/<name>/heap/heap.json. <out>/inventory.md then
+ * summary.txt, <out>/<name>/deopt/deopt.json, <out>/<name>/heap/heap.json and <out>/<name>/code/code.json
+ * (run the cpu pass first: the code pass ranks by it). <out>/inventory.md then
  * lists, per scene, every busy worker's ms/s, GC ms/s and hottest engine functions (src/ and the
  * engine's own wasm://), with game and bench code (demos/, tests/) added up apart since that code
  * stays in JS, and the engine's steady-state deopts and allocation rates when those passes ran.
  *
- *   node tests/bench/profileSceneSweep.mjs [--pass cpu|deopt|heap|boot] [--set demos|stress|all]
+ *   node tests/bench/profileSceneSweep.mjs [--pass cpu|deopt|heap|code|boot] [--set demos|stress|all]
  *        [--only name,name] [--warmup-ms 6000] [--duration-ms 8000] [--out tests/results/wasm-q1b]
  *        [--inventory-only] [--keep-traces] [--browser firefox] [--dist]
  *
@@ -81,7 +86,7 @@ const SCENE_EXPORTS = {
   particleEmitStressScene: 'ParticleEmitStressScene3W',
 };
 
-const PASSES = ['cpu', 'deopt', 'heap', 'boot'];
+const PASSES = ['cpu', 'deopt', 'heap', 'code', 'boot'];
 
 /** The scene class a module exports: SCENE_EXPORTS's, or the first exported class named …Scene…. */
 export function sceneExport(file) {
@@ -150,6 +155,26 @@ function deoptPass(file, dir, opts) {
   return '';
 }
 
+/** Like the deopt pass, the code log stops once the CPU profiler starts: no trace here, the cpu pass's summary ranks. */
+function codePass(file, dir, opts) {
+  const logs = path.join(dir, 'v8');
+  const bytecode = path.join(dir, 'bytecode');
+  fs.rmSync(logs, { recursive: true, force: true });
+  fs.rmSync(bytecode, { recursive: true, force: true });
+  const run = runScene(file, dir, opts, ['--js-flags', '--log-code --log-code-disassemble', '--v8-log-dir', logs], { traceCpu: false });
+  if (run.status !== 0 || !fs.existsSync(logs)) return failed(run);
+  const cpu = path.join(path.dirname(dir), 'cpu-summary.json');
+  const sum = spawn([
+    bench('summarizeV8Code.mjs'), logs, '--output', path.join(dir, 'code.json'), '--dump', bytecode,
+    ...(fs.existsSync(cpu) ? ['--cpu', cpu] : []),
+  ], opts);
+  fs.writeFileSync(path.join(dir, 'code.md'), sum.stdout || sum.stderr || '');
+  if (sum.status !== 0) return 'summary failed';
+  // About 70 MB a scene.
+  if (!opts.keepTraces) fs.rmSync(logs, { recursive: true, force: true });
+  return '';
+}
+
 function heapPass(file, dir, opts) {
   const name = sceneName(file);
   const run = spawn([
@@ -189,6 +214,7 @@ function profileScene(file, opts) {
   const t0 = Date.now();
   const why = opts.pass === 'deopt' ? deoptPass(file, dir, opts)
     : opts.pass === 'heap' ? heapPass(file, dir, opts)
+    : opts.pass === 'code' ? codePass(file, dir, opts)
     : opts.pass === 'boot' ? bootPass(file, dir, opts)
     : cpuPass(file, dir, opts);
   return { name, file, ok: !why, why, seconds: (Date.now() - t0) / 1000 };
@@ -232,6 +258,20 @@ export function heapRows(report, { top = 4 } = {}) {
     .sort((a, b) => b.kbPerS - a.kbPerS);
 }
 
+/** Per worker, from a code pass: calls left out of hot optimized code, hot functions below TurboFan, recompiles. */
+export function codeRows(report, { top = 3 } = {}) {
+  const short = (key) => key.replace(/ \/src\//, ' ');
+  return (report?.kinds || [])
+    .map((k) => ({
+      kind: k.kind,
+      calls: k.calls.filter((c) => !c.maybeBuiltin && c.file.startsWith('/src/')).slice(0, top)
+        .map((c) => `\`${short(c.caller)}\` → \`${c.callee}\` L${c.line} (${c.reason})`),
+      stuck: k.stuck.filter((s) => s.selfMs != null).slice(0, top).map((s) => `\`${short(s.key)}\` ${s.top} ${s.bytecode} B`),
+      reopt: k.reopt.filter((r) => r.compiles >= 3).slice(0, top).map((r) => `\`${short(r.key)}\` ×${r.compiles}`),
+    }))
+    .filter((k) => k.calls.length || k.stuck.length || k.reopt.length);
+}
+
 function writeInventory(out, results) {
   const lines = [
     '# Scene profile inventory (E-76 Q1b)',
@@ -267,6 +307,19 @@ function writeInventory(out, results) {
     if (heap) {
       const rows = heapRows(heap);
       lines.push(`Allocation: ${rows.length ? rows.map((w) => `${w.worker} ${w.kbPerS} KB/s${w.sites.length ? ` (${w.sites.map((s) => `${s.site.replace(/ src\//, ' ')} ${s.kbPerS}`).join(', ')})` : ''}`).join('; ') : 'none sampled'}.`, '');
+    }
+    const code = readJson(path.join(out, r.name, 'code', 'code.json'));
+    if (code) {
+      const rows = codeRows(code);
+      if (!rows.length) lines.push('Code: every hot engine function in TurboFan, nothing left out.', '');
+      for (const k of rows) {
+        const parts = [];
+        if (k.calls.length) parts.push(`not inlined: ${k.calls.join('; ')}`);
+        if (k.stuck.length) parts.push(`hot below TurboFan: ${k.stuck.join('; ')}`);
+        if (k.reopt.length) parts.push(`recompiled: ${k.reopt.join('; ')}`);
+        lines.push(`Code, ${k.kind}: ${parts.join('. ')}.`);
+      }
+      if (rows.length) lines.push('');
     }
   }
   fs.writeFileSync(path.join(out, 'inventory.md'), lines.join('\n'));
