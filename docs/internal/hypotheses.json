@@ -13210,6 +13210,29 @@
       "records": []
     },
     {
+      "id": "E-256",
+      "title": "Box2D's b2Yield is sched_yield, which reads the clock under Emscripten: the clock reads left after E-255 (217 KB/s)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from reading Emscripten's sched_yield, not tested",
+      "date": "2026-11-13",
+      "area": "physics",
+      "kind": "speed",
+      "rank": 75,
+      "result": "Emscripten's sched_yield is _emscripten_yield(emscripten_get_now()): a call out to JavaScript and a heap number every yield, and the time goes to a timer check that is a no-op in this build. b2Yield runs in b2SchedulerFinishTask's wait (each time the main thread finds no work) and in the solver's stage sync (every 6 turns). After E-255 emscripten_get_now is still 217 KB/s in Predator's physics, all under the step call.",
+      "next": "b2Yield under Emscripten: emscripten_current_thread_process_queued_calls() (the queue sched_yield would process), no clock. Heap sample, then Balls' and Predator's physics. Both Box2D builds.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-256"
+      ],
+      "aliases": [
+        "b2Yield",
+        "sched_yield",
+        "_emscripten_yield",
+        "emscripten_get_now",
+        "clock reads"
+      ],
+      "records": []
+    },
+    {
       "date": "2026-11-12",
       "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
