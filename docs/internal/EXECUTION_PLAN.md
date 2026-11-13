@@ -1,3 +1,6 @@
+**Dropped 2026-11-13 (R-0972).** With `--no-maglev` on side B, Predator's spatial ran 5.4 % slower (3/4 pairs) and every worker
+under the floor higher: without Maglev, code waits in Sparkplug. The inline loops already reach TurboFan OSR code early.
+
 **Answered 2026-11-13 (R-0961): a trace artifact; in a plain run the per-frame code is in Maglev or TurboFan.**
 The counts above came from the `--trace-turbo --no-concurrent-recompilation` run, whose compiles are slow and late. A
 plain run (`--log-code` only, 20 s and 10 s) joined with a CPU trace of the same scene and length: logic's time is
