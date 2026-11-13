@@ -81,6 +81,40 @@ const QUERY_VERSION_BUFFER_SIZE = Int32Array.BYTES_PER_ELEMENT;
 /** Reusable empty result view for query misses */
 const EMPTY_QUERY_RESULT = new Uint16Array(0);
 
+// E-265: query masks by the classes themselves, for a classes array the identity cache has not seen (a literal written
+// in a tick, `Query.queryActiveEntities([SpriteRenderer])`, is a new array every call): one Map level per class, in
+// the order given, the mask under MASK_LEAF at the end. No ids array, sort or string key per call (spawnStorm's logic
+// built all three every call). Only arrays, and only masks whose classes all had an id (one registered later is
+// looked up again).
+const MASK_LEAF = Symbol('queryMask');
+
+function maskFromTrie(trie, componentClasses) {
+  if (!Array.isArray(componentClasses)) return undefined;
+  let node = trie;
+  const n = componentClasses.length;
+  for (let k = 0; k < n; k++) {
+    node = node.get(componentClasses[k]);
+    if (node === undefined) return undefined;
+  }
+  return node.get(MASK_LEAF);
+}
+
+function maskIntoTrie(trie, componentClasses, mask) {
+  if (!Array.isArray(componentClasses)) return;
+  let node = trie;
+  const n = componentClasses.length;
+  for (let k = 0; k < n; k++) {
+    const C = componentClasses[k];
+    let next = node.get(C);
+    if (next === undefined) {
+      next = new Map();
+      node.set(C, next);
+    }
+    node = next;
+  }
+  node.set(MASK_LEAF, mask);
+}
+
 // =============================================================================
 // SAB LAYOUT HELPERS
 // =============================================================================
@@ -387,6 +421,8 @@ export class QuerySystem {
      * ponytail: do not mutate the array after the first query — WeakMap would go stale. Rebuild a new array instead.
      */
     this.queryMaskByClasses = new WeakMap();
+    /** E-265: masks by the classes themselves (maskFromTrie), for arrays the identity cache has not seen. */
+    this.queryMaskByTrie = new Map();
 
     // Typed array views into SABs
     this.entityMetadataView = null;
@@ -705,6 +741,8 @@ export class QuerySystem {
   _generateQueryMask(componentClasses) {
     const identityHit = this.queryMaskByClasses.get(componentClasses);
     if (identityHit !== undefined) return identityHit;
+    const trieHit = maskFromTrie(this.queryMaskByTrie, componentClasses);
+    if (trieHit !== undefined) return trieHit;
 
     // Extract and validate component IDs (cheap number operations)
     const ids = [];
@@ -733,6 +771,7 @@ export class QuerySystem {
     const cached = this.queryMaskCache.get(cacheKey);
     if (cached !== undefined) {
       this.queryMaskByClasses.set(componentClasses, cached);
+      if (ids.length === componentClasses.length) maskIntoTrie(this.queryMaskByTrie, componentClasses, cached);
       return cached;
     }
 
@@ -745,6 +784,7 @@ export class QuerySystem {
     // Cache and return
     this.queryMaskCache.set(cacheKey, mask);
     this.queryMaskByClasses.set(componentClasses, mask);
+    if (ids.length === componentClasses.length) maskIntoTrie(this.queryMaskByTrie, componentClasses, mask);
     return mask;
   }
 
@@ -1068,6 +1108,8 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
   const queryMaskCache = new Map();
   // Identity cache for hoisted componentClasses arrays (see QuerySystem.queryMaskByClasses)
   const queryMaskByClasses = new WeakMap();
+  // E-265: by the classes themselves (maskFromTrie).
+  const queryMaskByTrie = new Map();
 
   // Cache per-type active list SAB views once entity classes are attached to global scope.
   const cachedTypeActiveLists = new Array(entityMetadata.length);
@@ -1087,6 +1129,8 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
   function generateQueryMask(componentClasses) {
     const identityHit = queryMaskByClasses.get(componentClasses);
     if (identityHit !== undefined) return identityHit;
+    const trieHit = maskFromTrie(queryMaskByTrie, componentClasses);
+    if (trieHit !== undefined) return trieHit;
 
     // Extract and validate component IDs (cheap number operations)
     const ids = [];
@@ -1112,6 +1156,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     const cached = queryMaskCache.get(cacheKey);
     if (cached !== undefined) {
       queryMaskByClasses.set(componentClasses, cached);
+      if (ids.length === componentClasses.length) maskIntoTrie(queryMaskByTrie, componentClasses, cached);
       return cached;
     }
 
@@ -1124,6 +1169,7 @@ export function createWorkerQueryFunctions(queryData, buffers, activeEntitiesDat
     // Cache and return
     queryMaskCache.set(cacheKey, mask);
     queryMaskByClasses.set(componentClasses, mask);
+    if (ids.length === componentClasses.length) maskIntoTrie(queryMaskByTrie, componentClasses, mask);
     return mask;
   }
 

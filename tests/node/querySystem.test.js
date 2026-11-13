@@ -538,3 +538,38 @@ test('worker queries visit a sparse 64-type mask in ascending type order', () =>
   queryFunctions.publishPrecomputedActiveQueries(1);
   assert.deepEqual(Array.from(queryFunctions.queryActiveEntities([QueryTestComponentA, QueryTestComponentB])), activeMatches);
 });
+
+// E-265: a classes array the identity cache has not seen (a literal written in a tick) finds its mask by the classes
+// themselves; the same mask as the hoisted array's and as the string key's, in any order; an iterable that is not an
+// array and a class without an id still take the slow path every time.
+test('a fresh classes literal gets the same query mask without the string key', () => {
+  const querySystem = new QuerySystem();
+  const hoisted = [QueryTestComponentA, QueryTestComponentB];
+  const mask = querySystem._generateQueryMask(hoisted);
+  assert.equal(mask, (1n << 0n) | (1n << 1n));
+  let cacheSize = querySystem.queryMaskCache.size;
+  assert.equal(querySystem._generateQueryMask([QueryTestComponentA, QueryTestComponentB]), mask);
+  assert.equal(querySystem._generateQueryMask([QueryTestComponentB, QueryTestComponentA]), mask);
+  assert.equal(querySystem._generateQueryMask([QueryTestComponentA]), 1n << 0n);
+  assert.equal(querySystem._generateQueryMask([QueryTestComponentA]), 1n << 0n);
+  assert.equal(querySystem._generateQueryMask(new Set([QueryTestComponentB])), 1n << 1n);
+  assert.equal(querySystem._generateQueryMask(new Set([QueryTestComponentA, QueryTestComponentB])), mask);
+  // No new string key for an order already seen: the second literal found the trie.
+  assert.ok(querySystem.queryMaskCache.size <= cacheSize + 2);
+  cacheSize = querySystem.queryMaskCache.size;
+  for (let k = 0; k < 5; k++) querySystem._generateQueryMask([QueryTestComponentB, QueryTestComponentA]);
+  assert.equal(querySystem.queryMaskCache.size, cacheSize);
+
+  // A class with no id yet is not remembered: once it has one, the mask includes it.
+  class Late {}
+  Late.componentId = null;
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(querySystem._generateQueryMask([QueryTestComponentA, Late]), 1n << 0n);
+  } finally {
+    console.warn = warn;
+  }
+  Late.componentId = 5;
+  assert.equal(querySystem._generateQueryMask([QueryTestComponentA, Late]), (1n << 0n) | (1n << 5n));
+});
