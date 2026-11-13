@@ -13479,6 +13479,28 @@
       "records": []
     },
     {
+      "id": "E-268",
+      "title": "With several spatial workers, an entity whose type nobody reads has its row's head read every frame to see it is clear: a cache miss each (91 % of _findNeighbors in stationarySpatialWide)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "date": "2026-11-13",
+      "area": "spatial",
+      "kind": "speed",
+      "rank": 84,
+      "result": "CPU sweep, stationarySpatialWideScene (2 spatial workers, 70 000 entities nobody reads): _findNeighbors is 40 to 42 % of spatial, 91 % of it on `} else if (sharedRows && neighborData[entityA * stride] !== 0) {`, the row head read that keeps a row another worker may have published clear. Rows are maxNeighbors + 1 ids apart (about 2 KB here), so each read is a cache line of its own. One spatial worker (Predator) never reads it.",
+      "next": "Read it only when it can be set: a dense per-worker byte per entity (this worker cleared the row and owned it since), or the row's owner change from rebuildOwnedRows' owned list; the spatial kernel with --types and two workers, then stationarySpatialWide's spatial STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-268"
+      ],
+      "aliases": [
+        "neighborData row head",
+        "sharedRows",
+        "unread rows",
+        "_findNeighbors cache miss"
+      ],
+      "records": []
+    },
+    {
       "date": "2026-11-12",
       "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
