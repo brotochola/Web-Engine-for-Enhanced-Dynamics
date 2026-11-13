@@ -4288,6 +4288,15 @@ turn (E-144): a call out to JavaScript and a heap number each.
 and no clock inside the spin. Heap sample (physics' KB/s), then Balls' and Predator's physics STEP_MS. Both Box2D builds
 (SIMD and not). Owner: physics.
 
+### E-256 Box2D's b2Yield reads the clock under Emscripten
+
+**Premise:** after E-255, `emscripten_get_now` is still 217 KB/s of Predator's physics heap, all under the step call. Emscripten's
+`sched_yield` is `_emscripten_yield(emscripten_get_now())`, and Box2D's `b2Yield` is `sched_yield`: it runs whenever the main
+thread waits for a task with no work of its own (`b2SchedulerFinishTask`) and every 6 turns of the solver's stage sync. The
+time it reads only feeds a timer check that is a no-op in this build.
+**Plan:** under Emscripten, `b2Yield` runs `emscripten_current_thread_process_queued_calls()` (the queue the yield processes)
+and reads no clock. Heap sample, then Balls' and Predator's physics STEP_MS. Both Box2D builds. Owner: physics.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
