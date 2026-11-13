@@ -14104,14 +14104,14 @@
     },
     {
       "id": "E-277",
-      "title": "The collider fill fan passes each outset vertex through module lets (destructibleTerrain Pixi: 13.9 MB/s)",
+      "title": "The collider fill passes its doubles through module lets and calls TurboFan leaves out (Pixi: 13.9 MB/s in destructibleTerrain, 3.2 in planetPhysics)",
       "status": "open",
       "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "result": "Heap pass: destructibleTerrainScene's Pixi allocates 14.7 MB/s, 13.9 of it in `fanLocalVerts` (colliderFillBatch.js) and 318 KB/s in `packColliderFill`. `radialOutset` returns its point in the module lets `_ox`/`_oy`; inlined into the fan loop, each store of a double into a module context slot makes a heap number: six per triangle.",
-      "next": "The point in a module Float64Array (E-85, E-261's MESH_POSE), and check that writeFillTri inlines into the fan (its 17 arguments are doubles); the collider fill kernel, then destructibleTerrain's Pixi STEP_MS and its heap. It is the only module let holding a double in src/ (a grep of `^let x = <number>` there).",
+      "result": "Heap pass: destructibleTerrainScene's Pixi allocates 14.7 MB/s, 13.9 of it in `fanLocalVerts` (colliderFillBatch.js); planetPhysicsScene's 3.6 MB/s, 3.2 in `packColliderFill` itself. `radialOutset` returns its point in the module lets `_ox`/`_oy` (inlined in the fan loop, each double stored into a module context slot is a heap number, six per triangle), and `writeFillTri` (17 arguments) and `fanLocalVerts` take doubles: from a caller too large to inline them, each call boxes them (the mesh-index path: eight per triangle).",
+      "next": "The point and the triangle's corners in a module Float64Array, integer arguments only (E-85, E-261's MESH_POSE), and `--trace-turbo-inlining` on the pack to confirm what stays a call; the collider fill kernel, then destructibleTerrain's and planetPhysics' Pixi STEP_MS and heap. No other module let in src/ holds a double (a grep of `^let x = <number>`).",
       "refs": [
         "EXECUTION_PLAN.md#E-277"
       ],
@@ -14125,14 +14125,14 @@
     },
     {
       "id": "E-278",
-      "title": "rng() boxes its result when a big tick does not inline it (littleCity logic: 4.1 MB/s)",
+      "title": "rng() and randomRange() box their result when a big caller does not inline them (littleCity logic 4.1 MB/s, particleIntegrate 1.4)",
       "status": "open",
       "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "result": "Heap pass: littleCityScene's logic allocates 6.6 MB/s, 4.1 of it in `rng` (utils.js), called twice per person per frame from `CityPerson.tick`. A function that returns a double and is not inlined boxes it; rng's bytecode carries its cold paths (a function generator, the uninitialised warning that seeds one).",
-      "next": "Move the cold paths into their own function so the fast path is a few dozen bytes, and read `--trace-turbo-inlining` on the tick; a kernel of a large tick that calls rng (heap and ns per call), then littleCity's logic STEP_MS and heap.",
+      "result": "Heap pass: littleCityScene's logic allocates 6.6 MB/s, 4.1 of it in `rng` (utils.js), called twice per person per frame from `CityPerson.tick`. A function that returns a double and is not inlined boxes it; rng's bytecode carries its cold paths (a function generator, the uninitialised warning that seeds one). The same in the engine's own emitter: particleIntegrateStressScene's logic spends 1.4 MB/s in `randomRange` (utils.js), called from `ParticleEmitter._spawn` for each particle.",
+      "next": "Move the cold paths into their own function so the fast path is a few dozen bytes, and read `--trace-turbo-inlining` on the tick; a kernel of a large tick that calls rng (heap and ns per call), then littleCity's logic STEP_MS and heap. randomRange too (its { min, max } branch calls rng): the emitter can read its ranges once per burst into a Float64Array and draw inline.",
       "refs": [
         "EXECUTION_PLAN.md#E-278"
       ],
@@ -14165,13 +14165,13 @@
     },
     {
       "id": "E-280",
-      "title": "destructibleTerrain's marching squares allocate objects per cell (logic: 52 MB/s while it carves)",
+      "title": "destructibleTerrain's marching squares allocate objects per cell (logic: 52 MB/s in destructibleTerrain, 35.5 in planetPhysics)",
       "status": "open",
       "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
       "date": "2026-11-13",
       "area": "demo",
       "kind": "speed",
-      "result": "Heap pass: destructibleTerrainScene's logic allocates 52 MB/s while terrain is carved: `cellCorners` 31.8 MB/s (four edge points, four corner objects and the result per cell), `cellSolidParts` 8.7, `stitchContours` 3.4, `extractIslands` 3.3. Three callers read only `.caseId` from cellCorners.",
+      "result": "Heap pass: destructibleTerrainScene's logic allocates 52 MB/s while terrain is carved: `cellCorners` 31.8 MB/s (four edge points, four corner objects and the result per cell), `cellSolidParts` 8.7, `stitchContours` 3.4, `extractIslands` 3.3. Three callers read only `.caseId` from cellCorners. planetPhysicsScene runs the same worldGrid: its logic 35.5 MB/s, `cellCorners` 24.0, `cellSolidParts` 6.0, `extractIslands` 2.7.",
       "next": "A `cellCaseId()` that allocates nothing for the callers that read only the case, and corner and edge points from reused scratch in the rest, kept readable (it is a demo: the official API, code a reader can follow); logic's STEP_MS on the frames that carve (its maximum and p95) and the heap.",
       "refs": [
         "EXECUTION_PLAN.md#E-280"
@@ -14241,6 +14241,67 @@
         "_collectVisibleEntitiesWasm",
         "collectSprites",
         "collect boundary"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-284",
+      "title": "collectVisibleBullets carries a double from one bullet to the next (bulletStress pre-render: 8.0 MB/s)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "date": "2026-11-13",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "Heap pass: bulletStressScene's pre-render allocates 8.1 MB/s, 8.0 of it in `collectVisibleBullets`, about one heap number per bullet a frame: every array it writes is typed, and the loop carries `lastKey` (a double) from one bullet to the next for the COLLECT_Y it leaves behind; a long loop entered once a frame (OSR) may also keep it tagged.",
+      "next": "The last bullet's index carried instead (an integer), its key computed once after the loop; the deopt pass and `--trace-osr` on it first; bulletStress' pre-render heap and STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-284"
+      ],
+      "aliases": [
+        "collectVisibleBullets",
+        "bullet collect garbage",
+        "lastKey"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-285",
+      "title": "Each sound played builds a closure over its arguments (audioStorm logic: 7.3 MB/s)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "date": "2026-11-13",
+      "area": "audio",
+      "kind": "speed",
+      "result": "Heap pass: audioStormScene's logic allocates 9.1 MB/s, 7.3 of it in `SoundManager._writeSlotListed`: it builds `const claim = (slot, from) => …` on every play, a context holding the fifteen values it captures (volume, pitch and pan as heap numbers) and the closure itself; each play also scans the slots with Atomics.load until a free one.",
+      "next": "claim as a static method with integer arguments, the play's doubles in a module Float64Array (E-85); then the free-slot scan (a free list or the high-water start); a kernel of plays per frame, then audioStorm's logic heap and STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-285"
+      ],
+      "aliases": [
+        "_writeSlotListed",
+        "soundManager claim closure",
+        "audio garbage"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-286",
+      "title": "Spawn calls with an options object allocate it when the engine is not inlined (bullet drivers 1.9 MB/s a worker, decal stamps 4.7)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Heap pass: the stress drivers' ticks allocate where they call the engine with an options literal: `BulletPool.spawn({ x, y, vx, vy, … })` 1.9 MB/s in each of bulletStress' three logic workers, `Decal.stamp({ texture, x, y, … })` 4.7 MB/s in decalStamp's and 4.9 in decalBlit's, spawnStorm 2.1. A literal TurboFan cannot see through (the callee is not inlined) is built, and its doubles boxed, on every call; games call these APIs the same way.",
+      "next": "Keep the API: a small entry that TurboFan inlines into the caller, which copies the options' numbers into a module Float64Array and calls the body with integers, so escape analysis removes the literal; `--trace-turbo-inlining` on a driver, then a kernel of spawns per frame, then bulletStress' and decalStamp's logic heap and STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-286"
+      ],
+      "aliases": [
+        "BulletPool.spawn options",
+        "Decal.stamp options",
+        "spawn config object",
+        "options object allocation"
       ],
       "records": []
     }
