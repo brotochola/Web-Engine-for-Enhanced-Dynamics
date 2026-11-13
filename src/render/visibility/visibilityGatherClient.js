@@ -9,6 +9,7 @@ import { loadWasmKernel } from '../../util/wasmKernel.js';
 import { GATHER_EVENT_BYTES, GATHER_TABLE_SLOTS } from '../../util/wasmMemoryMap.js';
 import { ShapeType } from '../../box2d/box2dConstants.js';
 import { engineWasmUrl } from '../../wasm/engine.js';
+import { putColumn } from '../../util/wasmColumnTable.js';
 
 
 /** wasm/visibilityGather.c's column table, slot for slot. */
@@ -95,63 +96,53 @@ export async function bindVisibilityGather(memory, v, vm) {
 export function writeGatherColumns(b, worker, Grid, Transform, Collider, LightOccluder, ColliderFixture, selfLit) {
   const t = b.table;
   const buffer = b.buffer;
-  let ok = true;
   // A column the scene has must be in the memory; one it lacks is 0, which the kernel reads as absent.
-  const put = (slot, a, required) => {
-    if (!a) {
-      t[SLOT[slot]] = 0;
-      if (required) ok = false;
-    } else if (a.buffer === buffer) {
-      t[SLOT[slot]] = a.byteOffset;
-    } else {
-      ok = false;
-    }
-  };
+  let ok = 1;
   const rows = Grid.neighborData;
   const stride = Grid._stride | 0;
-  put('nRows', rows, true);
-  if (!(stride > 0) || stride - 1 > b.events) ok = false;
+  ok &= putColumn(t, SLOT.nRows, rows, true, buffer);
+  if (!(stride > 0) || stride - 1 > b.events) ok = 0;
   t[SLOT.nStride] = stride;
   b.gather = rows instanceof Uint32Array ? b.gather32 : b.gather16;
   b.gatherCone = rows instanceof Uint32Array ? b.gatherCone32 : b.gatherCone16;
-  put('tActive', Transform.active, true);
-  put('tX', Transform.x, true);
-  put('tY', Transform.y, true);
-  put('tRotC', Transform.rotC, false);
-  put('tRotS', Transform.rotS, false);
-  put('oActive', LightOccluder.active, true);
-  put('oBlock', LightOccluder.block, false);
-  put('cActive', Collider.active, true);
-  put('cShape', Collider.shapeType, true);
-  put('cRadius', Collider.radius, true);
-  put('cWidth', Collider.width, true);
-  put('cHeight', Collider.height, true);
-  put('cOffX', Collider.offsetX, true);
-  put('cOffY', Collider.offsetY, true);
-  put('cPolyCount', Collider.polyCount, true);
-  put('cPolyX', Collider.polyVertexX, true);
-  put('cPolyY', Collider.polyVertexY, true);
-  put('cCentroidX', Collider.polyCentroidX, false);
-  put('cCentroidY', Collider.polyCentroidY, false);
+  ok &= putColumn(t, SLOT.tActive, Transform.active, true, buffer);
+  ok &= putColumn(t, SLOT.tX, Transform.x, true, buffer);
+  ok &= putColumn(t, SLOT.tY, Transform.y, true, buffer);
+  ok &= putColumn(t, SLOT.tRotC, Transform.rotC, false, buffer);
+  ok &= putColumn(t, SLOT.tRotS, Transform.rotS, false, buffer);
+  ok &= putColumn(t, SLOT.oActive, LightOccluder.active, true, buffer);
+  ok &= putColumn(t, SLOT.oBlock, LightOccluder.block, false, buffer);
+  ok &= putColumn(t, SLOT.cActive, Collider.active, true, buffer);
+  ok &= putColumn(t, SLOT.cShape, Collider.shapeType, true, buffer);
+  ok &= putColumn(t, SLOT.cRadius, Collider.radius, true, buffer);
+  ok &= putColumn(t, SLOT.cWidth, Collider.width, true, buffer);
+  ok &= putColumn(t, SLOT.cHeight, Collider.height, true, buffer);
+  ok &= putColumn(t, SLOT.cOffX, Collider.offsetX, true, buffer);
+  ok &= putColumn(t, SLOT.cOffY, Collider.offsetY, true, buffer);
+  ok &= putColumn(t, SLOT.cPolyCount, Collider.polyCount, true, buffer);
+  ok &= putColumn(t, SLOT.cPolyX, Collider.polyVertexX, true, buffer);
+  ok &= putColumn(t, SLOT.cPolyY, Collider.polyVertexY, true, buffer);
+  ok &= putColumn(t, SLOT.cCentroidX, Collider.polyCentroidX, false, buffer);
+  ok &= putColumn(t, SLOT.cCentroidY, Collider.polyCentroidY, false, buffer);
   // The fixture counts and the pool's head list's length: the JS takes a collider for a compound solid only
   // with both; the kernel reads the counts, and the heads only for their length.
   const heads = ColliderFixture.head;
-  put('cFixtures', heads ? Collider.fixtureCount : null, false);
+  ok &= putColumn(t, SLOT.cFixtures, heads ? Collider.fixtureCount : null, false, buffer);
   t[SLOT.fHeads] = heads ? heads.length : 0;
   const bodies = worker._poseX && worker._rbActive ? worker._rbActive : null;
   const live = bodies !== null;
-  put('bActive', bodies, false);
-  put('pX', live ? worker._poseX : null, live);
-  put('pY', live ? worker._poseY : null, live);
-  put('pRotC', live ? worker._poseRotC : null, live);
-  put('pRotS', live ? worker._poseRotS : null, live);
+  ok &= putColumn(t, SLOT.bActive, bodies, false, buffer);
+  ok &= putColumn(t, SLOT.pX, live ? worker._poseX : null, live, buffer);
+  ok &= putColumn(t, SLOT.pY, live ? worker._poseY : null, live, buffer);
+  ok &= putColumn(t, SLOT.pRotC, live ? worker._poseRotC : null, live, buffer);
+  ok &= putColumn(t, SLOT.pRotS, live ? worker._poseRotS : null, live, buffer);
   // The generation before it: none until the second publish (0, and the kernel does not interpolate).
   const prev = live && Boolean(worker._prevPoseX);
-  put('qX', prev ? worker._prevPoseX : null, false);
-  put('qY', prev ? worker._prevPoseY : null, prev);
-  put('qRotC', prev ? worker._prevPoseRotC : null, prev);
-  put('qRotS', prev ? worker._prevPoseRotS : null, prev);
+  ok &= putColumn(t, SLOT.qX, prev ? worker._prevPoseX : null, false, buffer);
+  ok &= putColumn(t, SLOT.qY, prev ? worker._prevPoseY : null, prev, buffer);
+  ok &= putColumn(t, SLOT.qRotC, prev ? worker._prevPoseRotC : null, prev, buffer);
+  ok &= putColumn(t, SLOT.qRotS, prev ? worker._prevPoseRotS : null, prev, buffer);
   t[SLOT.bInterpolate] = worker.interpolatePhysicsPose ? 1 : 0;
   t[SLOT.eSelfLit] = selfLit ? 1 : 0;
-  return ok;
+  return ok === 1;
 }

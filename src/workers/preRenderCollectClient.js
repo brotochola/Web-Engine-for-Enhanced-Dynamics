@@ -8,6 +8,7 @@
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { COLLECT_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
 import { engineWasmUrl } from '../wasm/engine.js';
+import { putColumn } from '../util/wasmColumnTable.js';
 
 
 /** wasm/preRenderCollect.c's column table, slot for slot. */
@@ -58,72 +59,62 @@ export async function bindPreRenderCollect(memory, collect) {
 export function writeCollectColumns(b, worker, Transform, SpriteRenderer, Collider) {
   const t = b.table;
   const buffer = b.buffer;
-  let ok = true;
   // A column the scene has must be in the memory; one it lacks is 0, which the kernel reads as absent.
-  const put = (slot, a, required) => {
-    if (!a) {
-      t[SLOT[slot]] = 0;
-      if (required) ok = false;
-    } else if (a.buffer === buffer) {
-      t[SLOT[slot]] = a.byteOffset;
-    } else {
-      ok = false;
-    }
-  };
-  put('tActive', Transform.active, true);
-  put('tX', Transform.x, true);
-  put('tY', Transform.y, true);
-  put('tRotC', Transform.rotC, false);
-  put('tRotS', Transform.rotS, false);
-  put('sActive', SpriteRenderer.active, true);
-  put('sVisible', SpriteRenderer.renderVisible, true);
-  put('sHalfW', SpriteRenderer.boundsHalfW, false);
-  put('sHalfH', SpriteRenderer.boundsHalfH, false);
-  put('sSheet', SpriteRenderer.spritesheetId, false);
-  put('sMask', SpriteRenderer.layerMask, false);
-  put('cVisualRange', Collider.visualRange, false);
-  put('oY', worker._renderableY, true);
-  put('oType', worker._renderableType, true);
-  put('oIndex', worker._renderableIndex, true);
-  put('oX', worker._collectPx, true);
-  put('oPy', worker._collectPy, true);
-  put('oRotC', worker._collectRotC, true);
-  put('oRotS', worker._collectRotS, true);
+  let ok = 1;
+  ok &= putColumn(t, SLOT.tActive, Transform.active, true, buffer);
+  ok &= putColumn(t, SLOT.tX, Transform.x, true, buffer);
+  ok &= putColumn(t, SLOT.tY, Transform.y, true, buffer);
+  ok &= putColumn(t, SLOT.tRotC, Transform.rotC, false, buffer);
+  ok &= putColumn(t, SLOT.tRotS, Transform.rotS, false, buffer);
+  ok &= putColumn(t, SLOT.sActive, SpriteRenderer.active, true, buffer);
+  ok &= putColumn(t, SLOT.sVisible, SpriteRenderer.renderVisible, true, buffer);
+  ok &= putColumn(t, SLOT.sHalfW, SpriteRenderer.boundsHalfW, false, buffer);
+  ok &= putColumn(t, SLOT.sHalfH, SpriteRenderer.boundsHalfH, false, buffer);
+  ok &= putColumn(t, SLOT.sSheet, SpriteRenderer.spritesheetId, false, buffer);
+  ok &= putColumn(t, SLOT.sMask, SpriteRenderer.layerMask, false, buffer);
+  ok &= putColumn(t, SLOT.cVisualRange, Collider.visualRange, false, buffer);
+  ok &= putColumn(t, SLOT.oY, worker._renderableY, true, buffer);
+  ok &= putColumn(t, SLOT.oType, worker._renderableType, true, buffer);
+  ok &= putColumn(t, SLOT.oIndex, worker._renderableIndex, true, buffer);
+  ok &= putColumn(t, SLOT.oX, worker._collectPx, true, buffer);
+  ok &= putColumn(t, SLOT.oPy, worker._collectPy, true, buffer);
+  ok &= putColumn(t, SLOT.oRotC, worker._collectRotC, true, buffer);
+  ok &= putColumn(t, SLOT.oRotS, worker._collectRotS, true, buffer);
   let mode = 0;
   const bodies = worker._poseX && worker._rbActive ? worker._rbActive : null;
   const live = bodies !== null;
-  put('bActive', bodies, false);
-  put('pX', live ? worker._poseX : null, live);
-  put('pY', live ? worker._poseY : null, live);
-  put('pRotC', live ? worker._poseRotC : null, live);
-  put('pRotS', live ? worker._poseRotS : null, live);
+  ok &= putColumn(t, SLOT.bActive, bodies, false, buffer);
+  ok &= putColumn(t, SLOT.pX, live ? worker._poseX : null, live, buffer);
+  ok &= putColumn(t, SLOT.pY, live ? worker._poseY : null, live, buffer);
+  ok &= putColumn(t, SLOT.pRotC, live ? worker._poseRotC : null, live, buffer);
+  ok &= putColumn(t, SLOT.pRotS, live ? worker._poseRotS : null, live, buffer);
   // The generation before it: none until the second publish (0, and the kernel does not interpolate).
   const prev = live && Boolean(worker._prevPoseX);
-  put('qX', prev ? worker._prevPoseX : null, false);
-  put('qY', prev ? worker._prevPoseY : null, prev);
-  put('qRotC', prev ? worker._prevPoseRotC : null, prev);
-  put('qRotS', prev ? worker._prevPoseRotS : null, prev);
+  ok &= putColumn(t, SLOT.qX, prev ? worker._prevPoseX : null, false, buffer);
+  ok &= putColumn(t, SLOT.qY, prev ? worker._prevPoseY : null, prev, buffer);
+  ok &= putColumn(t, SLOT.qRotC, prev ? worker._prevPoseRotC : null, prev, buffer);
+  ok &= putColumn(t, SLOT.qRotS, prev ? worker._prevPoseRotS : null, prev, buffer);
   t[SLOT.bInterpolate] = worker.interpolatePhysicsPose ? 1 : 0;
   if (live) mode |= COLLECT_MODE_BODIES;
   const sortY = Boolean(worker._entitySortY);
   const emit = sortY ? worker._emitWasm : null;
-  if (sortY && !emit) ok = false;
+  if (sortY && !emit) ok = 0;
   // N-140: the anchors serve the cull's reach as well as the sort line.
-  put('sAnchorX', SpriteRenderer.anchorX, sortY);
-  put('sAnchorY', SpriteRenderer.anchorY, sortY);
-  put('sScaleX', sortY ? SpriteRenderer.scaleX : null, sortY);
-  put('sScaleY', sortY ? SpriteRenderer.scaleY : null, sortY);
+  ok &= putColumn(t, SLOT.sAnchorX, SpriteRenderer.anchorX, sortY, buffer);
+  ok &= putColumn(t, SLOT.sAnchorY, SpriteRenderer.anchorY, sortY, buffer);
+  ok &= putColumn(t, SLOT.sScaleX, sortY ? SpriteRenderer.scaleX : null, sortY, buffer);
+  ok &= putColumn(t, SLOT.sScaleY, sortY ? SpriteRenderer.scaleY : null, sortY, buffer);
   const inherit = sortY ? SpriteRenderer.inheritTransformRotation : null;
-  put('sInherit', inherit, false);
-  put('sFaceC', inherit ? SpriteRenderer.spriteRotC : null, Boolean(inherit));
-  put('sFaceS', inherit ? SpriteRenderer.spriteRotS : null, Boolean(inherit));
-  put('eLastTexture', sortY ? worker.entityLastTextureId : null, sortY);
+  ok &= putColumn(t, SLOT.sInherit, inherit, false, buffer);
+  ok &= putColumn(t, SLOT.sFaceC, inherit ? SpriteRenderer.spriteRotC : null, Boolean(inherit), buffer);
+  ok &= putColumn(t, SLOT.sFaceS, inherit ? SpriteRenderer.spriteRotS : null, Boolean(inherit), buffer);
+  ok &= putColumn(t, SLOT.eLastTexture, sortY ? worker.entityLastTextureId : null, sortY, buffer);
   t[SLOT.eFrameW] = emit ? emit.layout.frameWidthByte : 0;
   t[SLOT.eFrameH] = emit ? emit.layout.frameHeightByte : 0;
   t[SLOT.eFrames] = emit ? emit.frames : 0;
   if (sortY) mode |= COLLECT_MODE_SORT_Y;
   b.mode = mode;
-  return ok;
+  return ok === 1;
 }
 
 /**
