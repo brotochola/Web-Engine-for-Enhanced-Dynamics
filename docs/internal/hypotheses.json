@@ -12383,7 +12383,8 @@
         "R-0936",
         "R-0937",
         "R-0938",
-        "R-0941"
+        "R-0941",
+        "R-0945"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-LIGHTAPI",
@@ -12420,7 +12421,10 @@
         "R-0940",
         "R-0941",
         "R-0942",
-        "R-0943"
+        "R-0943",
+        "R-0945",
+        "R-0946",
+        "R-0947"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-SPOT",
@@ -12632,7 +12636,7 @@
       "date": "2026-11-12",
       "area": "render",
       "kind": "speed",
-      "result": "No native sort. Kernel n360 full random 57.0 → 21.9 µs (3/3); pre-render 153.4 → 69.7 KB/s. Scene (flashlightStressScene ?cone=1&lights=360, ABAB 4 pairs against 815562c9, R-0944): pre-render 3.115 → 3.028 ms, -2.8 %, worse 1/4, NEUTRAL: kept on the kernel.",
+      "result": "No native sort. Kernel n360 full random 57.0 → 21.9 µs (3/3); pre-render 275.8 → 60.6 KB/s at 360 cone lights (sort 215.5 KB/s gone; R-0948 corrects R-0944's sample). Scene (flashlightStressScene ?cone=1&lights=360, ABAB 4 pairs against 815562c9, R-0944): pre-render 3.115 → 3.028 ms, -2.8 %, worse 1/4, NEUTRAL: kept on the kernel.",
       "next": "Done.",
       "refs": [
         "REVIEW_PLAN.md#N-157"
@@ -12645,12 +12649,13 @@
         "GC"
       ],
       "records": [
-        "R-0944"
+        "R-0944",
+        "R-0948"
       ]
     },
     {
       "id": "N-158",
-      "title": "Per-frame allocations left in pre-render (70 KB/s) and Pixi in the flashlight trace: frame loop, waits, camera bounds, gather columns",
+      "title": "Per-frame allocations left in pre-render (61 KB/s) and Pixi in the flashlight trace: frame loop, waits, camera bounds, gather columns",
       "status": "open",
       "statusText": "found 2026-11-12 in DX-SPOT's engine trace",
       "date": "2026-11-12",
@@ -21917,6 +21922,56 @@
         "815562c9",
         "06740b03"
       ]
+    },
+    {
+      "id": "R-0945",
+      "date": "2026-11-12",
+      "title": "code-review high: 9 findings; 7 fixed with tests, the old-name warnings rejected by the owner, the per-pass cone direction kept",
+      "verdict": "passed",
+      "text": "**DX-LIGHTAPI and DX-SPOT: `/code-review high` on dx/light-api, nine findings, and what became of each.**\n2026-11-12, the branch against main (a fork of the session read it).\n\n1. and 2. **Pixi read a light's `coneCos` twice a frame** (count, then slot or batch) while the logic worker may write it: a cone set mid-frame could put two lights in a slot and leave a ghost (updateLighting), or under raycast write into a cone batch never made (a TypeError). **Fixed** (a417a98c): one read a pass, into scratch kept across frames; tests with a column that changes after its first read fail on the code before.\n3. **Narrow cones never reached full light** (the soft edge's least width, 0.002 in cosine, passed a 4-degree beam's whole width: 22 % on its axis). **Fixed** (076a5e49): a quarter of a degree across the edge, never wider than the cone; hard cone edges move 373 pixels up to 7/255 in lightGalleryScene.\n4. **Under raycast a light widened its entity's neighbour list**, which a class may read (a hero with a flashlight would see enemies as far as the beam). **Fixed** (73993b79): only a light whose class reads no neighbours widens; one that does keeps its visualRange list, as before the light API; lightNeighborReach.test.js on a real spatial worker.\n5. **The cookie ignored the cone and the brightness.** **Fixed** (70ab7b9e, 27e64e1f): a cone up to 180 degrees takes `_lightGradientHalf`, the gradient's half disc turned along it; every cookie takes min(brightness, 1). dxCaptureScene `?lampCone=90` at noon: the sun's shadows behind the lamps stay (up to 38/255). The new atlas frame costs a few hundred pixels of every scene 1/255 of sampling.\n6. **The removed 0.13 names are ignored silently.** **Rejected by the owner** (2026-11-12: no backwards compatibility or fallbacks; the demos show the new API). A warning layer was written and reverted, unshipped. The demos' leftover `visualRange` ritual on lights went instead (fe9278bd), and the guide's names (15c64e58).\n7. **The cone's direction is computed in each pass** (four in Pixi, two in pre-render). **Kept:** a rotation and a root per cone light per pass, from the same Transform columns, so the passes agree.\n8. and 9. **N-151's order measured from the entity, not the light, and broke ties with `a - b`.** **Fixed** (b401fd13), with a test.\n\nSuites: test:node 2561/2561 and test:demos 101/101 after the fixes.",
+      "commits": [
+        "a417a98c",
+        "076a5e49",
+        "73993b79",
+        "70ab7b9e",
+        "27e64e1f",
+        "b401fd13",
+        "fe9278bd",
+        "15c64e58"
+      ]
+    },
+    {
+      "id": "R-0946",
+      "date": "2026-11-12",
+      "time": "22:25",
+      "timeFrom": "recorded",
+      "title": "A cone costs less than its round light in basic lighting: spotLightStressScene pre-render 5.89 → 3.70 ms (-36.5 %, 4/4)",
+      "verdict": "kept",
+      "text": "**What a cone costs in basic lighting: less than the same round light. spotLightStressScene, cone 0 against 1, pre-render 5.89 → 3.70 ms.**\n2026-11-12, result files from 22:25, `runPredatorAbab.mjs --name dxspot-cone-cost-spot --vs 0650fd0f --scene spotLightStressScene --query cars=256&props=2000&shadowLights=256 --query-a cone=0 --query-b cone=1 --owner preRender --pairs 4` (one build, the knob the only difference), headed, on AC power. `?shadowLights=` (0650fd0f) lifts the 48-light stamp cap that held pre-render near 1 ms.\n\n- **preRender** 5.894 → 3.704 ms, paired -36.5 %, worse 0/4, cv 30/18 % (pairs 4.88 → 3.46, 6.64 → 3.86, 9.11 → 5.01, 5.15 → 3.55): a cone light stamps only the casters in its cone (the stamp's cone walk drops the rest before maxShadowsPerLight).\n- **Pixi** 0.955 → 0.767 ms (under the floor); drawn 57.0 → 60.0 fps (+3.3 %), presented 59.8 → 60.0.\n- Load: BODY_COUNT, VISIBLE_ENTITIES the same; GPU_CASTERS and GPU_SHADOW_LIGHTS +4.7 % (the cone side kept all 256 lights stamped every frame; the round side 244.6 on average), within the 5 % rule.",
+      "commits": [
+        "0650fd0f"
+      ]
+    },
+    {
+      "id": "R-0947",
+      "date": "2026-11-12",
+      "time": "22:32",
+      "timeFrom": "recorded",
+      "title": "A cone costs far less than its round light under raycast: flashlightStressScene pre-render 10.36 → 3.20 ms (-68.7 %, 4/4)",
+      "verdict": "kept",
+      "text": "**What a cone costs under raycast: much less than the same round light. flashlightStressScene, cone 0 against 1, pre-render 10.36 → 3.20 ms.**\n2026-11-12, result files from 22:32, `runPredatorAbab.mjs --name dxspot-cone-cost-flash --vs 0650fd0f --scene flashlightStressScene --query lights=360&crates=320 --query-a cone=0 --query-b cone=1 --owner preRender --pairs 4`, headed, on AC power.\n\n- **preRender** 10.362 → 3.204 ms, paired -68.7 %, worse 0/4, cv 17/11 % (pairs 9.57 → 2.99, 9.60 → 3.01, 11.13 → 3.76, 13.44 → 3.40): a cone gathers only the occluders that can shadow its wedge and its polygon is cut to it (R-0939).\n- **Pixi** 1.640 → 1.091 ms (under the floor): the fans and self-lit fills cover the wedges alone.\n- Load keys the same (VISIBLE_ENTITIES 360, BODY_COUNT 320); presented 60.0 → 59.9.",
+      "commits": [
+        "0650fd0f"
+      ]
+    },
+    {
+      "id": "R-0948",
+      "date": "2026-11-12",
+      "time": "22:40",
+      "timeFrom": "recorded",
+      "title": "N-157 correction: at 360 cone lights pre-render allocated 275.8 KB/s (sort 215.5) before, 60.6 after",
+      "verdict": "note",
+      "text": "**N-157, a correction: the allocation numbers in R-0944 came from the wrong configuration; the right one shows a bigger saving.**\n2026-11-12, about 22:45. `heapSampleWorkers.mjs` keeps only the last `--query` it is given, so the samples R-0944 quotes as `?cone=1&lights=360&crates=320` ran with `crates=320` alone (120 round lights at maxLights 120, also a full list, so the finding stands). Taken again with the query as one string, flashlightStressScene `?cone=1&lights=360&crates=320`, pre-render only:\n\n- the code before 06740b03 (its change reverted in place for the run): 275.8 KB/s, of which `sort` from `_collectVisibleLights` 215.5 KB/s (a first, noisier run: 629.8 and 207.5);\n- 06740b03 and after: 60.6 KB/s, no `sort`.\n\nThe kernel numbers and the scene sitting in R-0944 used the right configuration (the sitting's query was one string) and stand."
     }
   ],
   "leads": [
