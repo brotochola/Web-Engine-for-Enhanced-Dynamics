@@ -4244,6 +4244,11 @@ the function spends its time in lower tiers between compiles (E-243's allocation
 branch moved into a function of its own (out of the hot function's graph) and the counts again; owners: physics',
 spatial's and logic's STEP_MS in Predator, and their KB/s.
 
+**Dropped 2026-11-13 (R-0971).** The loops are the cached TurboFan OSR code each frame re-enters, falling to the interpreter
+for a tail compiled without feedback. A kernel of the pattern: with the loop in a function of its own (the proposed fix) the
+loop runs +19 % in Node and +55 % in Chrome for about 16 000 calls, a normal compile held in Maglev, then reaches the inline
+form's speed. Not applied; E-254 follows the Maglev lead.
+
 ### E-252 Box2D's collision callbacks take 8 to 12 % of a logic worker in Predator
 
 **Premise:** Predator's CPU trace: `_processBox2dCollisionCallbacks` 18.6 ms/s (8.2 %) and 24.3 ms/s (11.9 %) of the two logic
@@ -4262,6 +4267,14 @@ each entity's FSM dispatches its state's onUpdate through `.call` on a table, a 
 its own function), with its time and `dt` passed along.
 **Plan:** E-222's sites and a kernel of the dispatch with Predator's state counts; then what is left to cut (the per-call
 lookups, the arguments). Owner: logic's STEP_MS in Predator.
+
+### E-254 Maglev holds per-frame engine code below TurboFan for minutes in Chrome
+
+**Premise (R-0971):** in Chrome a once-a-frame function with a loop that gets a normal compile runs in Maglev for about
+16 000 calls (4.4 min at 60 Hz) before TurboFan: a kernel ran 29 µs a call there and 20.4 after. Predator's big per-frame
+functions only have OSR code in 100 s (their loops in TurboFan); smaller ones with loops may sit in Maglev.
+**Plan:** Predator ABAB, one build, side B with `--js-flags=--no-maglev` (`runPredatorAbab --js-flags-b`). If B is faster:
+the functions in Maglev (`--log-code`), and a structure that reaches TurboFan early in a stock Chrome. Owner: every worker.
 
 ## Not doing (read the log first)
 
