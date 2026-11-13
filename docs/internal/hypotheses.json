@@ -9997,7 +9997,8 @@
         "R-0921",
         "R-0923",
         "R-0926",
-        "R-0931"
+        "R-0931",
+        "R-0955"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -12376,7 +12377,7 @@
     },
     {
       "date": "2026-11-12",
-      "result": "",
+      "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
         "R-0934",
         "R-0935",
@@ -12398,8 +12399,8 @@
       "id": "DX-LIGHTAPI",
       "title": "A clear light API: radius and brightness for lightIntensity, color, glow, glowLayer, glowOffsetY, elevation, castShadows and shadowRange per light",
       "status": "open",
-      "statusText": "Planned 2026-11-12 with the owner (DX_LIGHTAPI_DESIGN.md), being built on dx/light-api",
-      "next": "A0: the inventory (done), lightGalleryScene and lightMotionScene, captures and films of every lit demo before. Then A1 names and radius byte for byte, A2 the honest-radius falloff, A3 brightness and castShadows, A4 shadowRange without a Collider, A5 the quality fixes, A6 migration and docs.",
+      "statusText": "done on dx/light-api 2026-11-13 (A0–A6), every check passed; waiting for the owner's merge",
+      "next": "Merge to main (the owner's OK); then the register status kept.",
       "area": "render",
       "kind": "dx",
       "aliases": [
@@ -12420,7 +12421,7 @@
     },
     {
       "date": "2026-11-12",
-      "result": "Cone lights in basic lighting (pool, sprite shadows from the casters in the cone) and under raycast (fans, discs, self-lit cut to the wedge); point lights draw what they drew. Flashlights under raycast: pre-render 12.0 → 4.8 ms with the wedge cut (R-0939).",
+      "result": "Cone lights in basic lighting and under raycast; point lights draw what they drew. A cone costs less than its round light: headlights pre-render 5.89 → 3.70 ms, flashlights 10.36 → 3.20 ms (R-0946, R-0947); trace clean (R-0949); scoreboard against main no row worse (R-0953); the Headlights demo.",
       "records": [
         "R-0939",
         "R-0940",
@@ -12443,8 +12444,8 @@
       "id": "DX-SPOT",
       "title": "Cone lights as LightEmitter fields: direction, coneAngle, coneSoftness (headlights, flashlights)",
       "status": "running",
-      "statusText": "being built on dx/light-api: B1–B4 done 2026-11-12 (R-0939, R-0940, R-0941)",
-      "next": "The gates: visPolyStressScene ?lights=720 (Pixi and pre-render, point lights) and Predator (the stamp and the lighting pass), then the scoreboard against main; the cost of a cone (spotLightStressScene, flashlightStressScene cone 0 against 1); the engine trace on both scenes. Open: the cookie stays round (matters only for lamps under a sun); Flash.spawn's cone options; B5 only if a cone's box cull pays.",
+      "statusText": "done on dx/light-api 2026-11-13 (B0–B4, Flash cones, the review's fixes), every check passed; waiting for the owner's merge",
+      "next": "Merge to main (the owner's OK). Open beside it: N-155, N-156, N-158, N-161.",
       "area": "render",
       "kind": "dx",
       "aliases": [
@@ -22116,6 +22117,18 @@
       "title": "Part A alone against main: the scoreboard sitting is void (rows of untouched code moved up to 201 %); the merged tree's sitting stands",
       "verdict": "note",
       "text": "**DX-LIGHTAPI part A alone (ca50fe9a) against main: the scoreboard's sitting is void.**\n2026-11-13, 00:30 to 01:48 (the log's and the report's times), `runScoreboard.mjs --vs main --full-rev` from a worktree of ca50fe9a with HEAD's scoreboard tools, the 46 rows main has. AC power.\n\nRows whose code part A does not touch (no diff between main and ca50fe9a in their modules) moved far past any noise seen before: meshFillMoving kernel +201.2 %, audioStorm kernel +124.4 %, shadowStamp kernel +91.0 %, gameObjectAccess +42.2 %, swayBuckets -20.9 %, preRenderWorker -13.0 %, audioSlots -11.2 %, steadyCombat logic0 -18.3 %. Its \"5 rows FAIL/WORSE\" (spawn logic0 +18.0 %, audioSlots, preRenderWorker, textureUpload, audioStorm) are read as that noise: the machine was not quiet. During the sitting this session ran the demo suite (every scene built once, for the Headlights demo) and another session was running its own captures in Chrome on the same machine.\n\nNot run again: part A alone is a tree that will not merge, and the tree that will (A and B together) was measured against main on a quiet sitting (R-0951 to R-0953): spawn kernel -1.2 %, logic0 -3.3 %; preRenderWorker +0.4 %; audioSlots +2.1 %; textureUpload a tie (not confirmed over 4 pairs). A sitting of A cannot change that verdict."
+    },
+    {
+      "id": "R-0955",
+      "date": "2026-11-13",
+      "time": "03:13",
+      "timeFrom": "recorded",
+      "title": "The bundles of 3a04e5dd (DX-LIGHTAPI, DX-SPOT) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of 3a04e5dd (DX-LIGHTAPI, DX-SPOT and the Headlights demo, on dx/light-api before its merge): tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `b9f74736`.\n\n- Node 2562 of 2562, demos 101 of 101.\n- `check:dist` passes (inputs d17026f23aa31478); embed and browser smokes OK on all 8.\n- `test:node:bundle` 301 of 301 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, no other bench browser:\n- **Predator, 4 pairs, 02:52 to 03:01: NEUTRAL.** Spatial 3.554 → 3.680 ms (paired -0.0 %, 2/4 worse), physics 3.783 → 3.792 ms (paired -8.4 %, 1/4); logic 2.407 → 2.040, pre-render 2.228 → 2.273 and the renderer 1.598 → 1.577 ms under the floor; loads within 0.5 %.\n- **Boids, 8 pairs, 03:01 to 03:13: NEUTRAL.** Spatial 5.263 → 5.325 ms (paired +5.2 %, 5/8 worse, cv 23/21 %), physics 4.708 → 5.032 ms (paired +2.8 %, 5/8, cv 38/33 %): neither reaches 75 % of the pairs; the same code read -3 to +10 % before (bundle against source is noisy).",
+      "commits": [
+        "b9f74736"
+      ]
     }
   ],
   "leads": [
