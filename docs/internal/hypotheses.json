@@ -12390,7 +12390,8 @@
         "R-0951",
         "R-0952",
         "R-0953",
-        "R-0954"
+        "R-0954",
+        "R-0957"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-LIGHTAPI",
@@ -12398,9 +12399,8 @@
       ],
       "id": "DX-LIGHTAPI",
       "title": "A clear light API: radius and brightness for lightIntensity, color, glow, glowLayer, glowOffsetY, elevation, castShadows and shadowRange per light",
-      "status": "open",
-      "statusText": "done on dx/light-api 2026-11-13 (A0–A6), every check passed; waiting for the owner's merge",
-      "next": "Merge to main (the owner's OK); then the register status kept.",
+      "status": "kept",
+      "statusText": "merged 2026-11-13 (ff255c01)",
       "area": "render",
       "kind": "dx",
       "aliases": [
@@ -12416,8 +12416,7 @@
         "shadowRange",
         "castShadows",
         "light API"
-      ],
-      "rank": 34
+      ]
     },
     {
       "date": "2026-11-12",
@@ -12436,7 +12435,8 @@
         "R-0951",
         "R-0952",
         "R-0953",
-        "R-0956"
+        "R-0956",
+        "R-0957"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-SPOT",
@@ -12444,9 +12444,8 @@
       ],
       "id": "DX-SPOT",
       "title": "Cone lights as LightEmitter fields: direction, coneAngle, coneSoftness (headlights, flashlights)",
-      "status": "running",
-      "statusText": "done on dx/light-api 2026-11-13 (B0–B4, Flash cones, the review's fixes), every check passed; waiting for the owner's merge",
-      "next": "Merge to main (the owner's OK). Open beside it: N-155, N-156, N-158, N-161.",
+      "status": "kept",
+      "statusText": "merged 2026-11-13 (ff255c01)",
       "area": "render",
       "kind": "dx",
       "aliases": [
@@ -12458,8 +12457,7 @@
         "direction",
         "linterna",
         "faros"
-      ],
-      "rank": 35
+      ]
     },
     {
       "date": "2026-11-12",
@@ -22164,6 +22162,18 @@
       "text": "**N-162 fixed: a raycasted light batch that drew nothing kept its GPU indices, and the next frame drew every earlier light again.**\n2026-11-13, found by the owner in the Headlights demo (despawn every lamp and car, spawn one lamp). A probe of the demo read pre-render publishing 1 light and 1 polygon while the renderer drew the old lamps' pools and the cars' shadows; main's Sun Street draws the same leftovers (the same code). Fixed in ee2647e4 (details in REVIEW_PLAN.md#N-162); the probe then shows one lamp's light only. lightBatchEmptyFrame.test.js fails on the code before. Hygiene: a frame that draws runs what it ran; an empty frame skips a fill. test:node 2564/2564, test:demos 101/101.",
       "commits": [
         "ee2647e4"
+      ]
+    },
+    {
+      "id": "R-0957",
+      "date": "2026-11-13",
+      "time": "04:01",
+      "timeFrom": "recorded",
+      "title": "DX-LIGHTAPI and DX-SPOT merged into main (ff255c01)",
+      "verdict": "kept",
+      "text": "**DX-LIGHTAPI and DX-SPOT merged into main** (ff255c01, --no-ff, the branch's tree: main had not moved since fa59073a).\n\nWhat merged: the light API (radius, brightness, color, glow, glowLayer, glowOffsetY, elevation, castShadows, shadowRange; no old names), cone lights (direction, coneAngle, coneSoftness, followFlip; basic lighting and raycast), the Headlights demo, and the fixes found on the way (N-149 to N-153, N-157, N-159, N-160, N-162).\n\nThe checks it merged on: test:node 2564/2564, test:demos 101/101; check:dist (inputs 527dd2741a63dfc1), browser smokes on all 8 bundles and test:node:bundle 301/301 on each (dist 32a2840d); the scoreboard against main with no row worse (R-0951 to R-0953); a cone's cost (R-0946, R-0947); the engine trace (R-0949); the prod bundle against its sources NEUTRAL on Predator and Boids (R-0955). The owner tried the Headlights demo (N-162 came from it) and asked for the merge. Not pushed.",
+      "commits": [
+        "ff255c01"
       ]
     }
   ],
