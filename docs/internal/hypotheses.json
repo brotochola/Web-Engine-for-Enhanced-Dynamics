@@ -13300,6 +13300,28 @@
       ]
     },
     {
+      "id": "E-260",
+      "title": "The self-lit sprite-mask pass draws a mesh per sprite and light, each with its own buffer uploads and uniforms (Sun Street 168 draws, 329 bufferSubData a frame)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from glFrameRecorder, not tested",
+      "date": "2026-11-13",
+      "area": "pixi",
+      "kind": "speed",
+      "rank": 77,
+      "result": "glFrameRecorder per frame: Sun Street 1396 GL calls, 168 drawElements, 329 bufferSubData (about 190 B each), 173 uniform2f; Headlights 1016, 123, 242, 128. _renderSelfLitSpriteMasks: for each (sprite, light) item it fills the mesh's position and UV buffers, calls update() on both, sets the light uniforms and draws; it also makes two arrays per item (corners, uvArr).",
+      "next": "Step 1: the per-item arrays into a module scratch (garbage; heap sample). Step 2: one instanced draw for the pass (per instance: the 4 corners, the UV rect, the light index or its uniforms), as the other batches do. GL calls a frame, then Pixi STEP_MS in Sun Street and Headlights.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-260"
+      ],
+      "aliases": [
+        "_renderSelfLitSpriteMasks",
+        "self-lit sprite masks",
+        "maskMode sprite",
+        "per-sprite mesh"
+      ],
+      "records": []
+    },
+    {
       "date": "2026-11-12",
       "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
