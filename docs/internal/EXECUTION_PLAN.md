@@ -4402,6 +4402,14 @@ list and E-126's movers path cannot run.
 skips or feeds `_rebuildMovedRows`; or logic's setters publish them); the grid kernel with bodiless entities, then the
 scene's spatial STEP_MS. Owner: spatial.
 
+### E-267 The full grid rebuild writes its cells in entity order
+
+**Premise (the CPU sweep):** `rebuildOwnedRows` is 28 to 32 % of Boids' spatial and 48 to 51 % of stationarySpatialWide's; Boids' hot
+lines are scattered cell accesses (the owned-list append absorbing the loads' stalls 26 %, `localCounts[cellIndex]` 22 %). W6's C
+port (+10.9 % in its kernel, 1.48x on a mix of shapes) was screened when the rebuild was 12.5 % of Predator's spatial.
+**Plan:** W6's port again and a cell-ordered pass (bin by cell, then write each cell in one run) on the grid kernel; the winner
+on Boids' and stationarySpatialWide's spatial STEP_MS. Owner: spatial.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
