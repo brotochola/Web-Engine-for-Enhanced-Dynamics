@@ -54,7 +54,7 @@ import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
 import { EntityIdArray, SPATIAL_STAMP_FRAME_MASK } from '../util/entityIdWidth.js';
 import { bindSpatialGather, bindSpatialPublish } from './spatialPublishClient.js';
 import { SPATIAL_MAX_CELL_RADIUS } from '../util/spatialPublishMemory.js';
-import { getColliderBounds as getColliderBoundsImport, getCellRange as getCellRangeImport, _boundsResult as _boundsResultImport, _cellRangeResult as _cellRangeResultImport, SHAPE_CIRCLE as SHAPE_CIRCLEImport } from '../util/colliderUtils.js';
+import { getColliderBounds as getColliderBoundsImport, getCellRange as getCellRangeImport, _boundsResult as _boundsResultImport, _cellRangeResult as _cellRangeResultImport, SHAPE_CIRCLE as SHAPE_CIRCLEImport, SHAPE_BOX as SHAPE_BOXImport } from '../util/colliderUtils.js';
 import { readMovedBodiesHeader, copyMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { tickBucketPhase } from '../util/logicOwner.js';
 
@@ -72,6 +72,7 @@ const getCellRange = getCellRangeImport;
 const _boundsResult = _boundsResultImport;
 const _cellRangeResult = _cellRangeResultImport;
 const SHAPE_CIRCLE = SHAPE_CIRCLEImport;
+const SHAPE_BOX = SHAPE_BOXImport;
 
 // E-126 (grid movers only). In a frame where physics moved at most this share of the active
 // entities, the grid is rewritten for the entities that changed (_rebuildMovedRows) instead of
@@ -500,6 +501,10 @@ class SpatialWorker extends AbstractWorker {
     const offsetY = Collider.offsetY;
     const shapeType = Collider.shapeType;
     const radius = Collider.radius;
+    const boxWidth = Collider.width;
+    const boxHeight = Collider.height;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
     const colliderActive = Collider.active;
     const spriteRendererActive = SpriteRenderer.active;
     const rigidActive = RigidBody.active;
@@ -563,6 +568,20 @@ class SpatialWorker extends AbstractWorker {
         posY = y[i] + (offsetY[i] || 0);
         halfW = radius[i] || 0;
         halfH = halfW;
+      } else if (colliderActive[i] && shapeType[i] === SHAPE_BOX) {
+        // E-245: getColliderBounds' box branch, without the call (the world box of the turned box).
+        const c = rotC ? rotC[i] : 1;
+        const sn = rotS ? rotS[i] : 0;
+        const ox = offsetX[i] || 0;
+        const oy = offsetY[i] || 0;
+        posX = x[i] + c * ox - sn * oy;
+        posY = y[i] + sn * ox + c * oy;
+        const hw = (boxWidth[i] || 0) * 0.5;
+        const hh = (boxHeight[i] || 0) * 0.5;
+        const ac = c < 0 ? -c : c;
+        const as = sn < 0 ? -sn : sn;
+        halfW = ac * hw + as * hh;
+        halfH = as * hw + ac * hh;
       } else if (colliderActive[i]) {
         getColliderBounds(i, _boundsResult);
         posX = _boundsResult.posX;
@@ -730,6 +749,10 @@ class SpatialWorker extends AbstractWorker {
     const offsetY = Collider.offsetY;
     const shapeType = Collider.shapeType;
     const radius = Collider.radius;
+    const boxWidth = Collider.width;
+    const boxHeight = Collider.height;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
     const colliderActive = Collider.active;
     const spriteRendererActive = SpriteRenderer.active;
     const rigidActive = RigidBody.active;
@@ -810,6 +833,20 @@ class SpatialWorker extends AbstractWorker {
         posY = y[i] + (offsetY[i] || 0);
         halfW = radius[i] || 0;
         halfH = halfW;
+      } else if (colliderActive[i] && shapeType[i] === SHAPE_BOX) {
+        // E-245: getColliderBounds' box branch, without the call (the world box of the turned box).
+        const c = rotC ? rotC[i] : 1;
+        const sn = rotS ? rotS[i] : 0;
+        const ox = offsetX[i] || 0;
+        const oy = offsetY[i] || 0;
+        posX = x[i] + c * ox - sn * oy;
+        posY = y[i] + sn * ox + c * oy;
+        const hw = (boxWidth[i] || 0) * 0.5;
+        const hh = (boxHeight[i] || 0) * 0.5;
+        const ac = c < 0 ? -c : c;
+        const as = sn < 0 ? -sn : sn;
+        halfW = ac * hw + as * hh;
+        halfH = as * hw + ac * hh;
       } else if (colliderActive[i]) {
         getColliderBounds(i, _boundsResult);
         posX = _boundsResult.posX;
@@ -996,6 +1033,10 @@ class SpatialWorker extends AbstractWorker {
     const offsetY = Collider.offsetY;
     const shapeType = Collider.shapeType;
     const radius = Collider.radius;
+    const boxWidth = Collider.width;
+    const boxHeight = Collider.height;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
     const colliderActive = Collider.active;
     const spriteRendererActive = SpriteRenderer.active;
 
@@ -1077,6 +1118,20 @@ class SpatialWorker extends AbstractWorker {
           posY = y[i] + (offsetY[i] || 0);
           halfW = radius[i] || 0;
           halfH = halfW;
+        } else if (colliderActive[i] && shapeType[i] === SHAPE_BOX) {
+          // E-245: getColliderBounds' box branch, without the call (the world box of the turned box).
+          const c = rotC ? rotC[i] : 1;
+          const sn = rotS ? rotS[i] : 0;
+          const ox = offsetX[i] || 0;
+          const oy = offsetY[i] || 0;
+          posX = x[i] + c * ox - sn * oy;
+          posY = y[i] + sn * ox + c * oy;
+          const hw = (boxWidth[i] || 0) * 0.5;
+          const hh = (boxHeight[i] || 0) * 0.5;
+          const ac = c < 0 ? -c : c;
+          const as = sn < 0 ? -sn : sn;
+          halfW = ac * hw + as * hh;
+          halfH = as * hw + ac * hh;
         } else if (colliderActive[i]) {
           getColliderBounds(i, _boundsResult);
           posX = _boundsResult.posX;

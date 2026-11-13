@@ -13,7 +13,7 @@ import { Collider } from '../../src/components/collider.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Grid } from '../../src/core/grid.js';
 import { ShapeType } from '../../src/util/configDefaults.js';
-import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE } from '../../src/util/colliderUtils.js';
+import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE, SHAPE_BOX } from '../../src/util/colliderUtils.js';
 import {
   bindMovedBodies,
   copyMovedBodies,
@@ -55,6 +55,7 @@ const SCOPE = {
   _boundsResult,
   _cellRangeResult,
   SHAPE_CIRCLE,
+  SHAPE_BOX,
   copyMovedBodies,
   MV_PRESENT: 1,
   MV_IN_GRID: 2,
