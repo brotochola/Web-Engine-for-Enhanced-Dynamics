@@ -116,5 +116,5 @@ test('200 000 bullets: 32-bit slots through the pool, the tick and the visible l
 });
 
 test('the scene refuses a bullet pool past MAX_POOL_SLOTS', () => {
-  assert.throws(() => buildPoolScene({ bullets: MAX_POOL_SLOTS + 1 }), /bullet\.maxBullets must be an integer in \[0, 524287\]/);
+  assert.throws(() => buildPoolScene({ bullets: MAX_POOL_SLOTS + 1 }), /bullet\.maxBullets must be an integer in \[0, 1048575\]/);
 });

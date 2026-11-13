@@ -43,8 +43,8 @@ export function resolveParticleLights(particleLights, raycasted) {
 }
 
 /**
- * Upper bound for lighting.particleLights.max: the particle pool's own ceiling (E-129: 524 287 slots, 8 MB of
- * instances), so a pool past 65 535 can light every particle; it was LiquidFun's 65 535.
+ * Upper bound for lighting.particleLights.max: the particle pool's own ceiling (MAX_POOL_SLOTS: 1 048 575 slots,
+ * 16 MB of instances at that size), so a pool past 65 535 can light every particle; it was LiquidFun's 65 535.
  */
 export const PARTICLE_LIGHT_MAX = MAX_POOL_SLOTS;
 /** Drop quads whose projected alpha is at or under this. */

@@ -10,16 +10,16 @@
 //
 // Entities: popEntity / pushEntity / resetEntity, bound once in bindEntityIdWidth.
 // Width 16 uses the same u16 Treiber. Width 32 uses FL4: one Int32 CAS,
-// 19-bit (local+1) + 13-bit tag. Product ceiling 500000 fits in 19 index bits (524287).
-// Tag window is 8192 ops.
+// 20-bit (local+1) + 12-bit tag. The wide pools go up to 1 048 575 slots (poolSlotWidth.js, DX-DECO1M: a million
+// decorations); entities stop at 500000. Tag window is 4096 ops (it was 8192 with 19 index bits).
 //
 // top u16: Int32Array[2] over 8 bytes. [0]=packed head, [1]=free count.
 // top u32: Int32Array[4] over 16 bytes. [0]=FL4 head, [2]=free count.
 // links: next = (localIndex + 1), 0 = end. Values are LOCAL.
 
-const FL4_INDEX_BITS = 19;
+const FL4_INDEX_BITS = 20;
 const FL4_INDEX_MASK = (1 << FL4_INDEX_BITS) - 1;
-const FL4_TAG_MASK = 0x1fff;
+const FL4_TAG_MASK = 0xfff;
 
 function chainLinks(links, count, interleaveFactor) {
   let headPlusOne = 0;

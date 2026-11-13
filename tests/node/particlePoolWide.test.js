@@ -111,5 +111,5 @@ test('a 200 000-particle pool boots with 32-bit slot ids and the stress driver f
 });
 
 test('the scene refuses a particle pool past MAX_POOL_SLOTS', async () => {
-  await assert.rejects(boot({ n: MAX_POOL_SLOTS + 1 }), /particle\.maxParticles must be an integer in \[0, 524287\]/);
+  await assert.rejects(boot({ n: MAX_POOL_SLOTS + 1 }), /particle\.maxParticles must be an integer in \[0, 1048575\]/);
 });

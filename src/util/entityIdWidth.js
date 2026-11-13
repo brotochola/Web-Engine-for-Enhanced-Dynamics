@@ -4,7 +4,7 @@
  * Bind once at SAB create / worker init. Hot loops call packPair / popEntity,
  * never `width === 32`.
  *
- * Spatial pair stamp shares FL4's 19-bit id ceiling (500000 < 2^19 = 524288).
+ * Spatial pair stamp: 19 id bits (500000 < 2^19 = 524288).
  * Frame lives in the high 13 bits (8192 frames, then the marker buffer is cleared).
  */
 
@@ -18,7 +18,7 @@ export const ENTITY_ID_NONE_U16 = 0xffff;
 export const ENTITY_ID_NONE_U32 = 0xffffffff;
 export const PAIR_U32_STRIDE = 4294967296;
 
-/** Id bits in the spatial processed-pair stamp. Same ceiling as FL4. */
+/** Id bits in the spatial processed-pair stamp: room for MAX_ENTITIES_U32. */
 export const SPATIAL_STAMP_ID_BITS = 19;
 export const SPATIAL_STAMP_ID_MASK = (1 << SPATIAL_STAMP_ID_BITS) - 1;
 export const SPATIAL_STAMP_FRAME_MASK = 0x1fff;
