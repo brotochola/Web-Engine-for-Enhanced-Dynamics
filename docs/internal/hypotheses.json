@@ -12587,7 +12587,7 @@
       "id": "E-230",
       "title": "What the GPU does in a frame (Spector.js on WebGL, timestamp queries on WebGPU)",
       "status": "open",
-      "statusText": "proposed 2026-11-13 (Wave 13), not tested",
+      "statusText": "tool working 2026-11-13 (R-0976): Predator read; E-258 and E-259 from it",
       "date": "2026-11-13",
       "area": "renderer",
       "kind": "gpu",
@@ -12602,7 +12602,9 @@
         "draw calls",
         "timestamp query"
       ],
-      "records": []
+      "records": [
+        "R-0976"
+      ]
     },
     {
       "id": "E-231",
@@ -13273,19 +13275,19 @@
         "glFrameRecorder",
         "860 KB"
       ],
-      "records": []
+      "records": [
+        "R-0976"
+      ]
     },
     {
       "id": "E-259",
       "title": "Pixi re-creates its float data textures every frame: texImage2D twice for the light data (Pixi's own upload, then ours), plus pixelStorei and texParameteri each time",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from glFrameRecorder and _uploadRgba32FloatGl, not tested",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-13: float data textures written in place",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 78,
-      "result": "Predator: texImage2D 2 calls a frame on the 256 x 3 RGBA32F light data texture (24 KB); _uploadRgba32FloatGl calls source.update() and texSys.bind (Pixi uploads the source) and then gl.texImage2D, with 3 pixelStorei and 4 texParameteri, every frame; the same path serves the texture LUT, the animation start table and each batch's pose texture.",
-      "next": "Allocate once (texImage2D or texStorage2D on a size change), then texSubImage2D of the rows written; no source.update after the first; parameters set once. Kernel: GL calls a frame (glFrameRecorder); Pixi STEP_MS in the flashlight and headlight scenes.",
+      "result": "Predator per frame: texImage2D 2 → 0, texParameteri 4 → 0, GL calls 533 → 507.5, texture uploads 80 → 32 KB (fbe0824f).",
       "refs": [
         "EXECUTION_PLAN.md#E-259"
       ],
@@ -13295,7 +13297,9 @@
         "light data texture",
         "texSubImage2D"
       ],
-      "records": []
+      "records": [
+        "R-0976"
+      ]
     },
     {
       "date": "2026-11-12",
@@ -23271,6 +23275,20 @@
       "text": "**E-255 kept (hygiene): Box2D's scheduler spin counts its turns; physics' clock garbage −34 %.** 2026-11-13, 13:08 to 13:47.\n\n**Change** (Box2D `weedjs/e255` `157c52e`, WeedJS `3ed0c280`): under Emscripten, `b2SchedulerSpin` measures one spin in 256\n(and the first ones) with the clock every 64th turn, records the turns that reached its 0.05 ms deadline, and the other\nspins run that many turns with no clock call. Other platforms unchanged. Both Box2D builds compile; the glue is unchanged,\nthe wasm 416 966 → 417 105 bytes. `test:node` 2574/2574.\n\n**Heap** (`heapSampleWorkers`, Predator, box2d and physics, 12 s after 15 s; the before is R-0969's E-235 sample):\n`_emscripten_get_now` 331.4 → **217.4 KB/s**, all of physics 403.7 → **300.6 KB/s** (13:15). The rest is no longer the spin:\nit all sits under the step call, from `b2Yield`, which is Emscripten's `sched_yield` and reads the clock each time (E-256).\n\n**Balls** (`e255-balls`, `--vs 3ed0c280^ --hyp-rev 3ed0c280`, 4 pairs, to 13:47): physics 6.788 → 6.344 ms (−3.1 % paired,\n2/4 pairs worse, cv 10/8 %): NEUTRAL, not worse. Session noise: Balls' A/A +2.8 % (R-0969), Predator's spatial 4 % (R-0974).\n\n**Verdict:** hygiene keep (garbage −34 %, no worker worse).",
       "commits": [
         "3ed0c280"
+      ]
+    },
+    {
+      "id": "R-0976",
+      "date": "2026-11-13",
+      "time": "14:11",
+      "timeFrom": "recorded",
+      "title": "E-230's GL recorder on Predator: 533 GL calls, 860 KB of buffer uploads a frame; E-259 fixed (texImage2D 2 → 0 a frame)",
+      "verdict": "kept-hygiene",
+      "text": "**E-230's recorder run on Predator, and E-259 fixed from it.** 2026-11-13, 14:03 to 14:12.\n\n**The tool** (`glFrameRecorder.mjs`): it threw \"Illegal invocation\" reading the WebGL prototype's getters (`944b1532`, only\nmethods are wrapped now) and now lists uploads and queries in detail (`ad387f54`: calls and KB a frame per texture size\nand format, per buffer object, per pname). Headed Chrome, Predator, 3 s recorded after 15 s.\n\n**Predator, per frame (14:06):** 533 GL calls, 27 draws (32 984 instances), 30 redundant calls, 860 KB of buffer uploads,\n80 KB of texture uploads, 6.9 calls that can wait for the GPU (`getParameter`, `getSyncParameter`); timer queries\n(EXT_disjoint_timer_query_webgl2) are there. By call: `bindTexture` 181.7, `activeTexture` 165, `uniformMatrix3fv` 28,\n`drawElements` 20.3, `bindVertexArray` 19, `uniform1i` 16.6 (15.9 redundant), `useProgram` 12, `bufferSubData` 8.\nUploads: one `bufferSubData` of 374 KB (buffer 4), one of 195 KB (buffer 6), 108 + 27 KB on two alternating pairs (E-258);\n`texImage2D` twice a frame on the 256 x 3 RGBA32F light data texture (E-259); 128 x 128 decal tiles now and then.\n\n**E-259** (`fbe0824f`): `_uploadRgba32FloatGl` called `source.update()` (Pixi re-specified the texture with no data) and then\n`gl.texImage2D` with the data and four `texParameteri`, every upload. Now a texture that holds the size is bound and written\nwith `texSubImage2D`; a new size or a texture Pixi made again goes the old way. `floatTextureUpload.test.js` fails on the\nold code. Recorder after it (14:11): `texImage2D` 2 → 0, `texParameteri` 4 → 0, `pixelStorei` 5.6 → 3.9, GL calls 533 →\n507.5, texture uploads 80 → 32 KB a frame (the light data now one 12 KB `texSubImage2D`). Kept (hygiene) on the call\ncounts; Pixi's STEP_MS in Predator is under the floor, so the next Predator gate guards it.",
+      "commits": [
+        "944b1532",
+        "ad387f54",
+        "fbe0824f"
       ]
     }
   ],
