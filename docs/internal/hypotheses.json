@@ -13302,14 +13302,12 @@
     {
       "id": "E-260",
       "title": "The self-lit sprite-mask pass draws a mesh per sprite and light, each with its own buffer uploads and uniforms (Sun Street 168 draws, 329 bufferSubData a frame)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from glFrameRecorder, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-13: one mesh per texture source for the sprite-masked self-lit fills",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 77,
-      "result": "glFrameRecorder per frame: Sun Street 1396 GL calls, 168 drawElements, 329 bufferSubData (about 190 B each), 173 uniform2f; Headlights 1016, 123, 242, 128. _renderSelfLitSpriteMasks: for each (sprite, light) item it fills the mesh's position and UV buffers, calls update() on both, sets the light uniforms and draws; it also makes two arrays per item (corners, uvArr).",
-      "next": "Step 1: the per-item arrays into a module scratch (garbage; heap sample). Step 2: one instanced draw for the pass (per instance: the 4 corners, the UV rect, the light index or its uniforms), as the other batches do. GL calls a frame, then Pixi STEP_MS in Sun Street and Headlights.",
+      "result": "visPolyStressScene ?mask=sprite&selfLit=20000: Pixi 10.353 → 1.381 ms (−86.8 %, 0/4 worse, cv 3/9 %); pixels identical on WebGL and WebGPU; Sun Street Pixi heap 2701 → 1399 KB/s (step 1). 9c96671c, 5c18b9d0.",
       "refs": [
         "EXECUTION_PLAN.md#E-260"
       ],
@@ -13319,7 +13317,9 @@
         "maskMode sprite",
         "per-sprite mesh"
       ],
-      "records": []
+      "records": [
+        "R-0977"
+      ]
     },
     {
       "date": "2026-11-12",
@@ -13748,7 +13748,9 @@
         "maskMode sprite WebGPU",
         "bracket edges"
       ],
-      "records": []
+      "records": [
+        "R-0977"
+      ]
     }
   ],
   "records": [
@@ -23330,6 +23332,21 @@
         "944b1532",
         "ad387f54",
         "fbe0824f"
+      ]
+    },
+    {
+      "id": "R-0977",
+      "date": "2026-11-13",
+      "time": "15:05",
+      "timeFrom": "recorded",
+      "title": "E-260 kept: sprite-masked self-lit fills batched, Pixi 10.353 → 1.381 ms (−86.8 %, 4/4) in visPolyStressScene ?mask=sprite; pixels identical on both backends",
+      "verdict": "kept",
+      "text": "**E-260 kept: the sprite-masked self-lit pass in one mesh per texture source; Pixi 10.353 → 1.381 ms (−86.8 %) where it is the load, pixels identical on WebGL and WebGPU.** 2026-11-13, 14:12 to 15:05.\n\n**Found by glFrameRecorder** (R-0976's tool, 14:13): Sun Street 1396 GL calls a frame, 168 `drawElements`, 329 `bufferSubData` of\nabout 190 B and 173 `uniform2f`; Headlights 1016, 123, 242, 128. `_renderSelfLitSpriteMasks` made a Pixi mesh per (sprite,\nlight) item, with its own uniforms and two buffer uploads, and rendered once per light; it also made two arrays per item.\n\n**Step 1** (`9c96671c`): the item's corners and UVs in module Float64Arrays. Sun Street, Pixi's heap (heapSampleWorkers, 10 s\nafter 12 s, 14:17): 2701.2 → 1399.1 KB/s, the function's own 1693.1 → 360.9 KB/s (the rest: two doubles stored per item into\nPixi's uniform objects, and removeChildren / addChild).\n\n**The cost before step 2** (`visPolyStressScene ?selfLit=20000`, the knob `?mask=sprite` added for it in `5d475d4f`, one run\neach, 14:43): Pixi 1.97 ms STEP (1.3 own) with collider-masked fills (the batched E-96b pass), 11.0 STEP (10.3 own) with\nsprite-masked ones.\n\n**Step 2** (`5c18b9d0`): the quads of every light go into one mesh per texture source, the light's and the body's terms as\nflat vertex attributes (18 floats a vertex; the same arithmetic in the GLSL and WGSL), added to the light container after\nthe collider fills: the order the pass per light drew them in, in the same render. No object per item, one draw.\n- Pixels: `compareCaptures --vs 5c18b9d0^` on `?mask=sprite&selfLit=20000`: WebGL 0 of 921 600 differ (14:49); WebGPU\n  (`?backend=webgpu`, `7fc840b4`) 0 of 921 600 (15:03).\n- Timing (`e260-vispoly-sprite`, `--vs 5c18b9d0^ --hyp-rev 5c18b9d0`, 4 pairs, to 14:59): **Pixi 10.353 → 1.381 ms, −86.8 %\n  paired, 0/4 pairs worse, cv 3/9 %**; spatial 1.502 → 1.346 and pre-render 3.455 → 3.095 (under the floor); BODY_COUNT\n  equal. Presented frames 60 on both sides.\n\n**Found on the way:** N-163, on WebGPU the sprite-masked fills draw two bright edges on each occluder where WebGL fills them\n(WebGL against WebGPU 64 951 pixels differ, 15:05); the pass before and after E-260 draws the same there, so it predates it.\n\n**Verdict:** kept (speed): −86.8 % on the owner scene, 4/4 pairs, pixels identical on both backends.",
+      "commits": [
+        "9c96671c",
+        "5c18b9d0",
+        "5d475d4f",
+        "7fc840b4"
       ]
     }
   ],
