@@ -12901,14 +12901,12 @@
     {
       "id": "E-243",
       "title": "Big once-a-frame loops run below TurboFan for long stretches (OSR from Maglev; full TurboFan after ~3000 calls, ~50 s): KB/s and maybe the sittings' warm-up",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from E-222's heap samples, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13 from R-0971 and R-0972: the loops run in TurboFan OSR code early",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 7,
-      "result": "BunnyMark tickAll 599 KB/s (10 KB a call); Predator spatial _rebuildMovedRows 220 KB/s with Math.fround called as a function (unoptimized code) in one run and near 0 in another; the raycast's 311 vs ~1 (E-242).",
-      "next": "A steady-load scene (BunnyMark, a stress scene) over 150 s with stepOverTime: own ms per 10 s against tier-ups; Predator's load drifts too much (R-0967).",
+      "result": "Predator's big per-frame functions have only OSR codes for 100 s (Maglev OSR, then TurboFan OSR) and re-enter the cached TurboFan OSR code at their loops each frame (R-0971); a loop moved into a function of its own waits ~16 000 calls in Maglev (+55 % in Chrome), and with Maglev off Predator is 5 % slower (R-0972). Nothing a stock Chrome lets the engine's structure gain.",
       "refs": [
         "EXECUTION_PLAN.md#E-243"
       ],
@@ -12924,7 +12922,8 @@
         "R-0964",
         "R-0965",
         "R-0967",
-        "R-0971"
+        "R-0971",
+        "R-0972"
       ]
     },
     {
