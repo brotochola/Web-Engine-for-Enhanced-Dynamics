@@ -13391,6 +13391,28 @@
       "records": []
     },
     {
+      "id": "E-264",
+      "title": "179 worker fields start null and hold a typed array in Predator (E-71): the ones a per-entity loop reads through this",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from fieldTypeAudit on Predator, not tested",
+      "date": "2026-11-13",
+      "area": "all",
+      "kind": "speed",
+      "rank": 80,
+      "result": "fieldTypeAudit (Predator): Pixi 57 of 92 typed-array fields start null, pre-render 43 of 111, logic 27 of 58, particle 27 of 46, spatial 25 of 61; twelve more are added after the constructor (the width-bound lists E-250 left to initialize, _gpuIdxEntity, _gpuIdxGlow, _gpuCasterIdx, frameWidth, frameHeight). E-71: 15 % of the emit kernel where per-entity code tested such a field; E-73: loops that index a hoisted local tie.",
+      "next": "Cross the list with the per-entity loops that read this.X[i] (not a hoisted local): declare those as empty arrays of their class (not the width-bound ones); kernel of the hottest loop, then its owner. The rest stay as they are.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-264"
+      ],
+      "aliases": [
+        "fieldTypeAudit",
+        "null typed array fields",
+        "field type Any",
+        "E-71"
+      ],
+      "records": []
+    },
+    {
       "date": "2026-11-12",
       "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
