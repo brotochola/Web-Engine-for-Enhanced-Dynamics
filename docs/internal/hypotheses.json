@@ -13728,6 +13728,27 @@
       "records": [
         "R-0956"
       ]
+    },
+    {
+      "id": "N-163",
+      "title": "WebGPU: the sprite-masked self-lit fills draw bright L-shaped edges on the occluders; WebGL fills them",
+      "status": "open",
+      "statusText": "found 2026-11-13 checking E-260 on WebGPU, not read in the code yet",
+      "date": "2026-11-13",
+      "area": "render",
+      "kind": "bug",
+      "result": "visPolyStressScene ?mask=sprite&selfLit=20000: WebGL against WebGPU 64 951 of 921 600 pixels differ (max 141); on WebGPU each sprite-masked occluder shows two bright edges, on WebGL none. Collider masks on WebGPU show none. The pass before E-260 and after it draw the same on WebGPU (0 pixels differ): it predates E-260.",
+      "next": "The UVs the pass writes against what the WebGPU texture source holds (a frame of the atlas, its y orientation), the sampler (clamp, filtering at the frame's edge) and the texture bound; a capture with the occluders' picture made opaque in a frame of its own.",
+      "refs": [
+        "REVIEW_PLAN.md#N-163"
+      ],
+      "aliases": [
+        "self-lit sprite mask WebGPU",
+        "bright edges",
+        "maskMode sprite WebGPU",
+        "bracket edges"
+      ],
+      "records": []
     }
   ],
   "records": [
