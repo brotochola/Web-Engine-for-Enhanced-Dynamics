@@ -4564,6 +4564,23 @@ body_set_transform 0.8 %, bodies_apply_accelerations 0.6 %: the glue applies eac
 **Plan:** the batch on the body sims by index, the public calls' semantics kept; a glue kernel, then Boids' physics; both
 builds. Owner: physics.
 
+### E-289 GameObject's instance getters read their fields through megamorphic loads in a scene of many classes
+
+**Premise (machine code, Node 22's `--print-opt-code` through neighborAccessMicrobench):** `get neighborCount`, shared by
+every entity class through GameObject.prototype, reads `_neighborOffset`, `_neighborReaderMarked` and `_markNeighborReader`
+with megamorphic load calls (each class its own map), and stores `_neighborReaderMarked` with a megamorphic store.
+Predator's logic: neighborCount 12 %, getNeighbor 8 % (E-240).
+**Plan:** the offset from `index` and the stride, the reader mark per type: one instance load (`index`); the machine code
+first (no megamorphic call left), then E-240's kernel and Predator's logic. Owner: logic.
+
+### E-290 Binding an instance to its entity slot runs megamorphic stores and loads and allocates
+
+**Premise (machine code, componentGetterMicrobench):** the GameObject constructor: 3 megamorphic stores, 5 megamorphic
+loads, 2 allocations; `bindToEntitySlot`: 10 megamorphic stores, 9 loads, 4 keyed stores, 6 allocations, for every
+instance `_makeInstance` makes.
+**Plan:** count the binds per second in Predator and the spawn scenes first; if they matter, one shape for every class's
+instances; the machine code again. Owner: logic.
+
 ## Wave 14 (2026-11-13): the campaign order after a full harvest
 
 The owner asked to gather every hypothesis first, without measuring, then run them all in a new campaign. The harvest:
