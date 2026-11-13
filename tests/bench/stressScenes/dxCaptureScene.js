@@ -6,7 +6,8 @@ const { Scene, Camera, Sun, Decoration, LAYER_KIND, BLEND_MODES } = WEED;
 
 /**
  * A still, seeded scene for byte-for-byte captures (compareCaptures.mjs): sprites that cast shadows over a light
- * ground, point lights, the sun stopped at an hour. A revision without a knob ignores its key, so the defaults compare
+ * ground, point lights, the sun stopped at an hour. `?lampCone=` degrees: the lamps as cones (DX-SPOT), pointing away from
+ * the view's centre. A revision without a knob ignores its key, so the defaults compare
  * across revisions, and a knob compares against its own absence.
  *
  * `?hour=` (default 12), `?lights=` (default 8), `?backend=webgpu`, `?raycast=1`, `?night=1` (lighting.sun.night),

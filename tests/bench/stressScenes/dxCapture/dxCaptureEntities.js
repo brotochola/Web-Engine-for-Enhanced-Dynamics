@@ -4,6 +4,8 @@ const { GameObject, Collider, SpriteRenderer, ShadowCaster, LightEmitter, MeshRe
 const { ShapeType } = enums;
 
 const LAMP_OFFSET = Number(WEED.params?.get('lampOffset') ?? 0);
+/** `?lampCone=` degrees (DX-SPOT): each lamp a cone that aperture wide, soft 0.3, pointing away from the view's centre. */
+const LAMP_CONE = Number(WEED.params?.get('lampCone') ?? 0);
 
 /** A still sprite that casts shadows. */
 export class DxCaptureProp extends GameObject {
@@ -57,6 +59,12 @@ export class DxCaptureLamp extends GameObject {
     const intensity = Number(WEED.params?.get('lampIntensity') ?? config.intensity ?? 20000);
     this.lightEmitter.radius = 10 * Math.sqrt(intensity);
     this.lightEmitter.glow = intensity / 50000;
+    if (LAMP_CONE > 0) {
+      // Its direction from where it stands (no random draw, so the lamps stand where they always did).
+      this.lightEmitter.coneAngle = (LAMP_CONE * Math.PI) / 180;
+      this.lightEmitter.coneSoftness = 0.3;
+      this.lightEmitter.direction = Math.atan2((config.y ?? 360) - 360, (config.x ?? 640) - 640);
+    }
   }
 
   /** A body's rotation is the physics worker's after it is created, so the turn goes in here. */
