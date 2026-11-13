@@ -11,7 +11,8 @@ const { Scene, Camera, LAYER_KIND } = WEED;
  * `?softness=`, default 0.3), `?cone=0` (the default) leaves the same lights round: the arm to measure a cone's cost
  * against.
  *
- * `?cars=` (default 48), `?props=` (default 300), `?cone=`, `?aperture=`, `?softness=`, `?shadowRange=` (default 0: the
+ * `?cars=` (default 48), `?props=` (default 300), `?shadowLights=` (default 48: lighting.maxShadowCastingLights, at most
+ * the cars; raise it with the cars to load the stamp), `?cone=`, `?aperture=`, `?softness=`, `?shadowRange=` (default 0: the
  * radius), `?groundScaleY=` (default 1: straight down), `?backend=webgpu`, `?faces=1` (lighting.faces on, no face
  * decorations: the faces branch's cost alone).
  */
@@ -40,6 +41,7 @@ function queryNumber(key, fallback) {
 
 export const CARS = Math.max(1, Math.floor(queryNumber('cars', 48)));
 export const PROPS = Math.max(0, Math.floor(queryNumber('props', 300)));
+export const SHADOW_LIGHTS = Math.max(1, Math.floor(queryNumber('shadowLights', 48)));
 export const CONE = queryNumber('cone', 0) === 1;
 export const APERTURE = (queryNumber('aperture', 60) * Math.PI) / 180;
 export const SOFTNESS = queryNumber('softness', 0.3);
@@ -76,7 +78,7 @@ export class SpotLightStressScene extends Scene {
       maxLights: CARS,
       shadowsEnabled: true,
       groundScaleY: GROUND_SCALE_Y,
-      maxShadowCastingLights: Math.min(CARS, 48),
+      maxShadowCastingLights: Math.min(CARS, SHADOW_LIGHTS),
       maxShadowsPerLight: 64,
       ...(FACES ? { faces: { enabled: true } } : {}),
       sun: { enabled: false },
