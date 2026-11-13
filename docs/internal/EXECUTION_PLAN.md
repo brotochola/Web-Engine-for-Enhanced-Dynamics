@@ -4432,6 +4432,29 @@ kernel with two workers, then the scene's spatial STEP_MS. Owner: spatial.
 **Plan:** upload from the premultiplied scratch, only the rows or rect a stamp touched; the decal scenes' Pixi STEP_MS.
 Owner: Pixi.
 
+### E-271 fillQueueIndices writes the same identity every frame
+
+**Premise (the CPU sweep's hot lines):** the painter scenes' pre-render spend 125 to 145 ms of the window in it,
+all on `outIdx[i] = i` over the whole queue.
+**Plan:** write only past what the array already holds; the pack kernel, then the painter scenes. Owner: pre-render.
+
+### E-272 updateDecalTiles reads every tile's dirty flag with Atomics each frame
+
+**Premise (the CPU sweep's hot lines):** carScene's Pixi: 92 % of it on `Atomics.load(this.decalsTilesDirty, i)` over every tile.
+**Plan:** a dirty count the stamping side bumps, or plain reads first; the decal scenes. Owner: Pixi.
+
+### E-273 Logic workers take turns on the decoration list's lock
+
+**Premise (the CPU sweep's hot lines):** decoChurnStressScene's two logic workers spend 65 and 70 ms of the window
+spinning in `_lockActiveList`.
+**Plan:** per-worker pending lists merged once a frame, or a lock-free append; decoChurn's logic. Owner: logic.
+
+### E-274 The full grid rebuild writes every owned cell's count every frame
+
+**Premise (the CPU sweep's hot lines):** planetScene's spatial: 79 % of `rebuildOwnedRows` on the closing
+loop's `gridCounts[byteOffset] = localCounts[cellIndex]`, a cache line per cell, empty cells included.
+**Plan:** write only changed counts (or touched cells); the grid kernel with a sparse world, then planetScene. Owner: spatial.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
