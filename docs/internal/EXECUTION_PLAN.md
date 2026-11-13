@@ -4305,6 +4305,14 @@ time it reads only feeds a timer check that is a no-op in this build.
 **Plan:** under Emscripten, `b2Yield` runs `emscripten_current_thread_process_queued_calls()` (the queue the yield processes)
 and reads no clock. Heap sample, then Balls' and Predator's physics STEP_MS. Both Box2D builds. Owner: physics.
 
+### E-257 Physics' JS service loop allocates about 65 KB/s
+
+**Premise:** with Box2D's clock quiet (E-255, E-256), Predator's physics makes 87.5 KB/s, most of it in the JS loop around the
+step: `serviceChainQueries` 17.1, `serviceLiquidFunQuery` 13.1, `pumpQueryWake` 8.2, `serviceLiquidFunExtract` 7.9, `gameLoop` 7.3,
+`waitForLogic` 6.8 KB/s.
+**Plan:** E-222's sites for those functions (closures, boxed numbers, the wake's promises); fix the cheap ones; heap sample.
+Owner: physics.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
