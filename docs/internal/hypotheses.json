@@ -13187,14 +13187,12 @@
     {
       "id": "E-255",
       "title": "Box2D's scheduler spin reads the clock every 64 turns: the ~460 clock calls a frame left after E-235 (331 KB/s of physics' garbage)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from reading scheduler.c, not tested",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-13: the spin counts its turns",
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
-      "rank": 74,
-      "result": "b2SchedulerSpin waits up to 0.05 ms for a task, reading b2GetMilliseconds every 64th turn: each read is a call out to JavaScript that returns a heap number. E-235 left emscripten_get_now at 331 KB/s in Predator's physics, about 460 reads a frame.",
-      "next": "Spin by count: the turns that fit 0.05 ms measured once (or from the last spin) and no clock inside the spin; heap sample and Balls/Predator physics. Both Box2D builds (SIMD and not).",
+      "result": "Predator physics heap 403.7 → 300.6 KB/s (emscripten_get_now 331.4 → 217.4); Balls physics 6.788 → 6.344 ms (−3.1 %, 2/4 worse, NEUTRAL). Box2D 157c52e, WeedJS 3ed0c280. The rest is b2Yield's (E-256).",
       "refs": [
         "EXECUTION_PLAN.md#E-255"
       ],
@@ -13205,7 +13203,9 @@
         "clock reads",
         "B2_SCHEDULER_SPIN_MILLISECONDS"
       ],
-      "records": []
+      "records": [
+        "R-0975"
+      ]
     },
     {
       "id": "E-256",
@@ -23192,6 +23192,18 @@
         "7bcc5d8a",
         "9b5f45c3",
         "564351fd"
+      ]
+    },
+    {
+      "id": "R-0975",
+      "date": "2026-11-13",
+      "time": "13:47",
+      "timeFrom": "recorded",
+      "title": "E-255 kept (hygiene): the scheduler spin counts its turns; emscripten_get_now 331 → 217 KB/s, Balls physics −3.1 % (neutral)",
+      "verdict": "kept-hygiene",
+      "text": "**E-255 kept (hygiene): Box2D's scheduler spin counts its turns; physics' clock garbage −34 %.** 2026-11-13, 13:08 to 13:47.\n\n**Change** (Box2D `weedjs/e255` `157c52e`, WeedJS `3ed0c280`): under Emscripten, `b2SchedulerSpin` measures one spin in 256\n(and the first ones) with the clock every 64th turn, records the turns that reached its 0.05 ms deadline, and the other\nspins run that many turns with no clock call. Other platforms unchanged. Both Box2D builds compile; the glue is unchanged,\nthe wasm 416 966 → 417 105 bytes. `test:node` 2574/2574.\n\n**Heap** (`heapSampleWorkers`, Predator, box2d and physics, 12 s after 15 s; the before is R-0969's E-235 sample):\n`_emscripten_get_now` 331.4 → **217.4 KB/s**, all of physics 403.7 → **300.6 KB/s** (13:15). The rest is no longer the spin:\nit all sits under the step call, from `b2Yield`, which is Emscripten's `sched_yield` and reads the clock each time (E-256).\n\n**Balls** (`e255-balls`, `--vs 3ed0c280^ --hyp-rev 3ed0c280`, 4 pairs, to 13:47): physics 6.788 → 6.344 ms (−3.1 % paired,\n2/4 pairs worse, cv 10/8 %): NEUTRAL, not worse. Session noise: Balls' A/A +2.8 % (R-0969), Predator's spatial 4 % (R-0974).\n\n**Verdict:** hygiene keep (garbage −34 %, no worker worse).",
+      "commits": [
+        "3ed0c280"
       ]
     }
   ],
