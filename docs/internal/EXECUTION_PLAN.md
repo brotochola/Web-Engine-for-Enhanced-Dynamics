@@ -4381,6 +4381,14 @@ the emit kernel where per-entity code tested one (E-71); a loop that indexes a h
 **Plan:** cross the list with per-entity loops that read `this.X[i]`; declare those as empty arrays of their class (not the
 width-bound ones); a kernel of the hottest, then its owner. Owner: per worker.
 
+### E-265 A query with a fresh array of classes misses the identity cache
+
+**Premise:** `generateQueryMask` caches masks by the classes array's identity; game code that passes a literal each call
+(`Query.queryActiveEntities([SpriteRenderer])` in a tick) misses it, and every call builds an ids array, sorts it and joins
+a string key for the second cache (spawnStorm's logic: 11.2 KB/s, and 1 KB/s in `join`).
+**Plan:** a second-level cache keyed by the classes themselves (no string); a kernel of a query with a fresh literal
+against a kept array; then a demo that queries in its ticks. Owner: logic.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
