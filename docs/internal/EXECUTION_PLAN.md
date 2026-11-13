@@ -4349,6 +4349,12 @@ batches. GL calls a frame, then Pixi's STEP_MS in Sun Street and Headlights. Own
 `9c96671c`): Pixi 10.353 → 1.381 ms (−86.8 %, 4/4) in `visPolyStressScene ?mask=sprite&selfLit=20000`, pixels identical on
 WebGL and WebGPU. N-163 found on the way.
 
+### E-261 The mesh fill pose goes through a scratch object
+
+**Premise (round 2's heap sample, Sun Street):** `copyMeshFillPoseScratch` 62.8 KB/s of Pixi's 375: `readMeshFillPose` writes x, y,
+c, s into the module object `_livePose` for every mesh every frame (E-66: such fields go tagged, a heap number a store).
+**Plan:** a module Float64Array, the seven callers reading [0..3]; heap sample; the mesh parity tests. Owner: Pixi.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
