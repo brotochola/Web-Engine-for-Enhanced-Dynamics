@@ -4373,6 +4373,14 @@ numbers); a kernel of the tick loop (KB/s and ns a tick); then WaterAndBoxes' an
 **Plan:** a Chrome kernel of pop and push against a head kept in the Smi range (E-87's sign trick, a 10 or 11 bit tag),
 weighing the smaller ABA window; then a spawn-heavy scene with a wide pool. Owner: whoever spawns (logic, particle).
 
+### E-264 179 worker fields start null and hold a typed array in Predator
+
+**Premise (fieldTypeAudit, Predator):** Pixi 57 of 92 typed-array fields start null, pre-render 43 of 111, logic 27 of 58,
+particle 27 of 46, spatial 25 of 61, and twelve are added after the constructor. A field declared null is typed Any: 15 % of
+the emit kernel where per-entity code tested one (E-71); a loop that indexes a hoisted local ties (E-73).
+**Plan:** cross the list with per-entity loops that read `this.X[i]`; declare those as empty arrays of their class (not the
+width-bound ones); a kernel of the hottest, then its owner. Owner: per worker.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
