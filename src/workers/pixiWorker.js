@@ -378,6 +378,11 @@ const SELF_LIT_NO_FACING = 1e30;
  */
 const CONE_FLOATS = 4;
 /**
+ * E-260. Floats per vertex of a sprite-masked self-lit batch: x, y; u, v; the light's x, y, intensity and the body's
+ * radius; the light's r, g, b and the attenuation scale; the body's centre; the light's cone (as CONE_FLOATS).
+ */
+const SELF_LIT_SPRITE_FLOATS = 18;
+/**
  * E-96c. The transmit wedge's doubles. Neither _emitTransmitWedge nor _pushWedge inlines into the
  * self-lit batch, so each double passed to them was a heap number (6.5 MB/s with every occluder
  * calling, even at block 1). The caller writes them here and passes the entity.
@@ -1080,13 +1085,15 @@ class PixiRenderer extends AbstractWorker {
     this._visPolyDisplaySprite = null; // Sprite displaying the RT with multiply blend
     this._selfLitBuffers = [null, null];
     this._selfLitItemBytes = 28;
-    this._selfLitContainer = null;
     // E-96b. Every light's self-lit fills and transmit wedges in one mesh, drawn in the light pass:
     // { mesh, geometry, vbuf, data, indices, uniforms, vertCap, idxCap, idxUsed, gpuReady }.
     this._selfLitBatch = null;
     // DX-SPOT. The cone lights' self-lit fills and wedges, as _visConeBatch is to _visBatch.
     this._selfLitConeBatch = null;
-    this._selfLitSpriteMeshes = [];
+    // E-260. The sprite-masked self-lit fills, a batch per texture source ({ mesh, geometry, vbuf, data, cbuf: null,
+    // indices, uniforms, vertCap, idxCap, idxUsed, gpuReady, source, quads }), and the same batches in a list.
+    this._selfLitSpriteBatches = new Map();
+    this._selfLitSpriteBatchList = [];
     this._selfLitCircleSegs = 16;
     // The circle fan's fixed angles, cos/sin built with the loop's own expression
     // so a lookup is the same double as the call it replaces (E-60).
@@ -3924,7 +3931,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
     // Container for all light meshes (additive blend)
     this._visPolyContainer = new PIXI.Container();
-    this._selfLitContainer = new PIXI.Container();
 
     // RenderTexture for the visibility-polygon lighting
     const res = this.lightingResolution || 1.0;
@@ -4583,16 +4589,16 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     clearColor[1] = Math.min(ambient + night[1], 1.0);
     clearColor[2] = Math.min(ambient + night[2], 1.0);
 
-    // Restore unoccluded light under occluder footprints (no self-darken), after the fans.
+    // Restore unoccluded light under occluder footprints (no self-darken), after the fans; then the sprite-masked
+    // occluders' (E-260: in the same pass, after them, as their pass per light drew after it).
     const spriteMasks = this._buildSelfLitBatch(readBufferIdx);
+    this._buildSelfLitSpriteBatches(spriteMasks ? readBufferIdx : -1);
 
     const renderOptions = this._visRenderOpts;
     renderOptions.transform = null;
     renderOptions.container = container;
     renderOptions.target = this._visPolyRT;
     this._submitRender(renderOptions);
-
-    if (spriteMasks) this._renderSelfLitSpriteMasks(readBufferIdx);
   }
 
   /**
@@ -4600,8 +4606,8 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
    * Collider footprint): every light's fills, then its transmit wedges (the order its two meshes drew
    * in when each light was a pass of its own), into one mesh the light pass draws after the fans. A
    * pass per light was 46 % of Pixi in visPolyStressScene, most of it Pixi's setup per render.
-   * Returns whether an occluder uses its sprite's alpha as the mask (maskMode=sprite), which still
-   * draws a pass per light (_renderSelfLitSpriteMasks).
+   * Returns whether an occluder uses its sprite's alpha as the mask (maskMode=sprite), whose fills
+   * _buildSelfLitSpriteBatches writes.
    */
   _buildSelfLitBatch(readBufferIdx) {
     const buf = this._selfLitBuffers[readBufferIdx];
@@ -4935,12 +4941,26 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
   }
 
   /**
-   * The self-lit pass for occluders whose sprite's alpha is the mask (maskMode=sprite): a mesh per
-   * sprite, a pass per light, after the light pass.
+   * E-260. The self-lit fills of occluders whose sprite's alpha is the mask (maskMode=sprite): every light's quads in one
+   * mesh per texture source, drawn in the light pass after the collider fills, in the order the pass per light drew
+   * them. The light's and the body's terms are vertex attributes. Each was a Pixi mesh with its own uniforms, two buffer
+   * uploads and a render per light (Sun Street: 168 draws and 329 uploads a frame; visPolyStressScene ?mask=sprite
+   * &selfLit=20000: Pixi 1.3 ms with collider masks, 10.3 ms with sprite masks). `readBufferIdx` -1: none this frame.
    */
-  _renderSelfLitSpriteMasks(readBufferIdx) {
-    const buf = this._selfLitBuffers[readBufferIdx];
-    const count = buf.header[0] | 0;
+  _buildSelfLitSpriteBatches(readBufferIdx) {
+    const list = this._selfLitSpriteBatchList;
+    for (let b = 0; b < list.length; b++) list[b].quads = 0;
+    const buf = readBufferIdx >= 0 && this._selfLitSpriteProgramOpts ? this._selfLitBuffers[readBufferIdx] : null;
+    const count = buf ? buf.header[0] | 0 : 0;
+    if (count > 0) this._writeSelfLitSpriteQuads(buf, count);
+    for (let b = 0; b < list.length; b++) {
+      const batch = list[b];
+      this._finishLightBatch(batch, batch.quads * 4, batch.quads * 6, SELF_LIT_SPRITE_FLOATS, false);
+    }
+  }
+
+  /** E-260. _buildSelfLitSpriteBatches' quads: per light run, each sprite-masked occluder it lights from outside. */
+  _writeSelfLitSpriteQuads(buf, count) {
     const i32 = buf.i32;
     const f32 = buf.f32;
     const u16 = buf.u16;
@@ -4954,14 +4974,17 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const offsetY = LightEmitter.offsetY;
     const rotC = Transform.rotC;
     const rotS = Transform.rotS;
-    const zoom = this._renderZoom;
-    const cameraX = this._renderCameraX;
-    const cameraY = this._renderCameraY;
     const lightConeCos = LightEmitter.coneCos;
     const lightConeInvSpan = LightEmitter.coneInvSpan;
     const lightDirC = LightEmitter.dirC;
     const lightDirS = LightEmitter.dirS;
     const groundInvY = this._groundInvScaleY || 1;
+    const textures = this.flatTextures;
+    const spriteActive = SpriteRenderer.active;
+    const boxX = this._selfLitBoxScratchX;
+    const boxY = this._selfLitBoxScratchY;
+    const corners = MASK_CORNERS;
+    const uvArr = MASK_UVS;
 
     let i = 0;
     while (i < count) {
@@ -4973,10 +4996,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         j++;
       }
 
-      const ox = offsetX[lightIdx];
-      const oy = offsetY[lightIdx];
-      const lx = Transform.x[lightIdx] + ox * rotC[lightIdx] - oy * rotS[lightIdx];
-      const ly = Transform.y[lightIdx] + ox * rotS[lightIdx] + oy * rotC[lightIdx];
+      const lox = offsetX[lightIdx];
+      const loy = offsetY[lightIdx];
+      const lx = Transform.x[lightIdx] + lox * rotC[lightIdx] - loy * rotS[lightIdx];
+      const ly = Transform.y[lightIdx] + lox * rotS[lightIdx] + loy * rotC[lightIdx];
       // elevation as in updateLighting: I' = I + h², the colour times brightness · I / I'.
       const lightR = lightRadius[lightIdx];
       let intensity = (lightR * lightR) / 100;
@@ -5008,221 +5031,229 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       }
       const coneInvSpan = coneCos > -1 ? lightConeInvSpan[lightIdx] : 0;
 
-      // --- Sprite mask fills for this light ---
-      if (this._selfLitSpriteProgramOpts) {
-        let spriteMeshIdx = 0;
-        const container = this._selfLitContainer;
-        if (container.children.length > 0) container.removeChildren();
+      for (let e = i; e < j; e++) {
+        const byteOff = 4 + e * itemBytes;
+        if (u8[byteOff + 26] !== LIGHT_OCCLUDER_MASK_SPRITE) continue;
 
-        for (let e = i; e < j; e++) {
-          const byteOff = 4 + e * itemBytes;
-          const maskMode = u8[byteOff + 26];
-          if (maskMode !== LIGHT_OCCLUDER_MASK_SPRITE) continue;
+        const i32Off = byteOff >> 2;
+        const entityIdx = i32[i32Off];
+        const texId = u16[(byteOff >> 1) + 12];
+        if (texId === 0xFFFF || !textures || !textures[texId]) {
+          this._warnMissingSelfLitTexture(texId, entityIdx);
+          continue;
+        }
+        if (!Transform.active[entityIdx] || !spriteActive?.[entityIdx]) continue;
 
-          const i32Off = byteOff >> 2;
-          const entityIdx = i32[i32Off];
-          const texId = u16[(byteOff >> 1) + 12];
-          if (texId === 0xFFFF || !this.flatTextures || !this.flatTextures[texId]) {
-            if (!this._missingTextureWarns) this._missingTextureWarns = new Set();
-            const key = `selfLit:${texId}`;
-            if (!this._missingTextureWarns.has(key)) {
-              this._missingTextureWarns.add(key);
-              console.warn(
-                `[PIXI] self-lit occluder missing textureId=${texId} (entity=${entityIdx}); skipping`
-              );
-            }
-            continue;
+        // The body: its centre and radius for the facing term, and whether the light is inside it (no fill then).
+        const ox = f32[i32Off + 2];
+        const oy = f32[i32Off + 3];
+        const bodyCx = ox + (Collider.offsetX[entityIdx] || 0);
+        const bodyCy = oy + (Collider.offsetY[entityIdx] || 0);
+        // H-03: sqrt, not Math.hypot.
+        const ubw = (Collider.width[entityIdx] || 0) * 0.5;
+        const ubh = (Collider.height[entityIdx] || 0) * 0.5;
+        let bodyR = Math.sqrt(ubw * ubw + ubh * ubh);
+        let lightInside = false;
+        if (Collider.shapeType[entityIdx] === ShapeType.Circle) {
+          const circleR = Collider.radius[entityIdx];
+          if (circleR > 0) bodyR = circleR;
+          const sdx = lx - bodyCx;
+          const sdy = ly - bodyCy;
+          lightInside = sdx * sdx + sdy * sdy <= bodyR * bodyR;
+        } else {
+          const bw = Collider.width[entityIdx];
+          const bh = Collider.height[entityIdx];
+          if (bw > 0 && bh > 0) {
+            writeOrientedBoxVerts(
+              boxX, boxY, 0,
+              ox, oy, bw, bh, f32[i32Off + 4], f32[i32Off + 5],
+              Collider.offsetX[entityIdx] || 0, Collider.offsetY[entityIdx] || 0
+            );
+            lightInside = pointInConvex(lx, ly, boxX, boxY, 4);
           }
-          if (!Transform.active[entityIdx] || !SpriteRenderer.active?.[entityIdx]) continue;
+        }
+        if (lightInside) continue;
 
-          const tex = this.flatTextures[texId];
-          const entry = this._getSelfLitSpriteMesh(spriteMeshIdx++, tex);
-          if (!entry) continue;
-
-          const { mesh, geometry, shader } = entry;
-          const ox = f32[i32Off + 2];
-          const oy = f32[i32Off + 3];
-          const sx = SpriteRenderer.scaleX[entityIdx];
-          const sy = SpriteRenderer.scaleY[entityIdx];
-          const ax = SpriteRenderer.anchorX[entityIdx];
-          const ay = SpriteRenderer.anchorY[entityIdx];
-          const inherit = SpriteRenderer.inheritTransformRotation[entityIdx];
-          let c, s;
-          if (inherit) {
-            c = f32[i32Off + 4];
-            s = f32[i32Off + 5];
-          } else {
-            c = SpriteRenderer.spriteRotC[entityIdx];
-            s = SpriteRenderer.spriteRotS[entityIdx];
-          }
-
-          const orig = tex.orig;
-          const ow = (orig && orig.width) || tex.width || 0;
-          const oh = (orig && orig.height) || tex.height || 0;
-          const hw = ow * sx;
-          const hh = oh * sy;
-
-          // Local corners relative to anchor, then rotate+translate
-          const x0 = -ax * hw;
-          const y0 = -ay * hh;
-          const x1 = (1 - ax) * hw;
-          const y1 = (1 - ay) * hh;
-          const corners = MASK_CORNERS;
-          corners[0] = x0;
-          corners[1] = y0;
-          corners[2] = x1;
-          corners[3] = y0;
-          corners[4] = x1;
-          corners[5] = y1;
-          corners[6] = x0;
-          corners[7] = y1;
-          const uvArr = MASK_UVS;
-          const uvs = tex.uvs;
-          if (uvs) {
-            uvArr[0] = uvs.x0;
-            uvArr[1] = uvs.y0;
-            uvArr[2] = uvs.x1 !== undefined ? uvs.x1 : uvs.x2;
-            uvArr[3] = uvs.y0;
-            uvArr[4] = uvs.x2;
-            uvArr[5] = uvs.y2;
-            uvArr[6] = uvs.x3 !== undefined ? uvs.x3 : uvs.x0;
-            uvArr[7] = uvs.y3 !== undefined ? uvs.y3 : uvs.y2;
-          } else {
-            uvArr[0] = 0;
-            uvArr[1] = 0;
-            uvArr[2] = 1;
-            uvArr[3] = 0;
-            uvArr[4] = 1;
-            uvArr[5] = 1;
-            uvArr[6] = 0;
-            uvArr[7] = 1;
-          }
-
-          const posBuf = geometry.attributes.aPosition.buffer;
-          const uvBuf = geometry.attributes.aUV.buffer;
-          const pos = posBuf.data;
-          const uv = uvBuf.data;
-          for (let v = 0; v < 4; v++) {
-            const lxocal = corners[v * 2];
-            const lyocal = corners[v * 2 + 1];
-            pos[v * 2] = ox + c * lxocal - s * lyocal;
-            pos[v * 2 + 1] = oy + s * lxocal + c * lyocal;
-            uv[v * 2] = uvArr[v * 2];
-            uv[v * 2 + 1] = uvArr[v * 2 + 1];
-          }
-          posBuf.update();
-          uvBuf.update();
-
-          const uniforms = shader.resources.uniforms.uniforms;
-          this._stampLightCamera(uniforms, cameraX, cameraY, zoom);
-          uniforms.uCanvasSize[0] = this.canvasWidth;
-          uniforms.uCanvasSize[1] = this.canvasHeight;
-          uniforms.uLightPos[0] = lx;
-          uniforms.uLightPos[1] = ly;
-          uniforms.uLightIntensity = intensity;
-          uniforms.uLightColor[0] = cr;
-          uniforms.uLightColor[1] = cg;
-          uniforms.uLightColor[2] = cb;
-          const uCone = uniforms.uCone;
-          uCone[0] = coneX;
-          uCone[1] = coneY;
-          uCone[2] = coneCos;
-          uCone[3] = coneInvSpan;
-          const bodyCx = ox + (Collider.offsetX[entityIdx] || 0);
-          const bodyCy = oy + (Collider.offsetY[entityIdx] || 0);
-          uniforms.uBodyCenter[0] = bodyCx;
-          uniforms.uBodyCenter[1] = bodyCy;
-          // H-03: sqrt, not Math.hypot - same rationale as bodyR above.
-          const ubw = (Collider.width[entityIdx] || 0) * 0.5;
-          const ubh = (Collider.height[entityIdx] || 0) * 0.5;
-          uniforms.uBodyRadius = Math.sqrt(ubw * ubw + ubh * ubh);
-          if (Collider.shapeType[entityIdx] === ShapeType.Circle) {
-            const cr = Collider.radius[entityIdx];
-            if (cr > 0) uniforms.uBodyRadius = cr;
-          }
-          let lightInside = false;
-          if (Collider.shapeType[entityIdx] === ShapeType.Circle) {
-            const sdx = lx - bodyCx;
-            const sdy = ly - bodyCy;
-            const bodyR = uniforms.uBodyRadius;
-            lightInside = sdx * sdx + sdy * sdy <= bodyR * bodyR;
-          } else {
-            const bw = Collider.width[entityIdx];
-            const bh = Collider.height[entityIdx];
-            if (bw > 0 && bh > 0) {
-              writeOrientedBoxVerts(
-                this._selfLitBoxScratchX, this._selfLitBoxScratchY, 0,
-                ox, oy, bw, bh, f32[i32Off + 4], f32[i32Off + 5],
-                Collider.offsetX[entityIdx] || 0, Collider.offsetY[entityIdx] || 0
-              );
-              lightInside = pointInConvex(lx, ly, this._selfLitBoxScratchX, this._selfLitBoxScratchY, 4);
-            }
-          }
-          if (lightInside) continue;
-
-          container.addChild(mesh);
+        // The sprite's quad, rotated and placed as the pass per light placed its mesh.
+        const tex = textures[texId];
+        const sx = SpriteRenderer.scaleX[entityIdx];
+        const sy = SpriteRenderer.scaleY[entityIdx];
+        const ax = SpriteRenderer.anchorX[entityIdx];
+        const ay = SpriteRenderer.anchorY[entityIdx];
+        let c;
+        let s;
+        if (SpriteRenderer.inheritTransformRotation[entityIdx]) {
+          c = f32[i32Off + 4];
+          s = f32[i32Off + 5];
+        } else {
+          c = SpriteRenderer.spriteRotC[entityIdx];
+          s = SpriteRenderer.spriteRotS[entityIdx];
+        }
+        const orig = tex.orig;
+        const ow = (orig && orig.width) || tex.width || 0;
+        const oh = (orig && orig.height) || tex.height || 0;
+        const hw = ow * sx;
+        const hh = oh * sy;
+        const x0 = -ax * hw;
+        const y0 = -ay * hh;
+        const x1 = (1 - ax) * hw;
+        const y1 = (1 - ay) * hh;
+        corners[0] = x0;
+        corners[1] = y0;
+        corners[2] = x1;
+        corners[3] = y0;
+        corners[4] = x1;
+        corners[5] = y1;
+        corners[6] = x0;
+        corners[7] = y1;
+        const uvs = tex.uvs;
+        if (uvs) {
+          uvArr[0] = uvs.x0;
+          uvArr[1] = uvs.y0;
+          uvArr[2] = uvs.x1 !== undefined ? uvs.x1 : uvs.x2;
+          uvArr[3] = uvs.y0;
+          uvArr[4] = uvs.x2;
+          uvArr[5] = uvs.y2;
+          uvArr[6] = uvs.x3 !== undefined ? uvs.x3 : uvs.x0;
+          uvArr[7] = uvs.y3 !== undefined ? uvs.y3 : uvs.y2;
+        } else {
+          uvArr[0] = 0;
+          uvArr[1] = 0;
+          uvArr[2] = 1;
+          uvArr[3] = 0;
+          uvArr[4] = 1;
+          uvArr[5] = 1;
+          uvArr[6] = 0;
+          uvArr[7] = 1;
         }
 
-        if (container.children.length > 0) {
-          this._submitRender({
-            container,
-            target: this._visPolyRT,
-            clear: false,
-          });
+        const batch = this._selfLitSpriteBatchFor(tex.source);
+        const q = batch.quads;
+        const data = batch.data;
+        let o = q * 4 * SELF_LIT_SPRITE_FLOATS;
+        for (let v = 0; v < 4; v++) {
+          const lxo = corners[v * 2];
+          const lyo = corners[v * 2 + 1];
+          data[o] = ox + c * lxo - s * lyo;
+          data[o + 1] = oy + s * lxo + c * lyo;
+          data[o + 2] = uvArr[v * 2];
+          data[o + 3] = uvArr[v * 2 + 1];
+          data[o + 4] = lx;
+          data[o + 5] = ly;
+          data[o + 6] = intensity;
+          data[o + 7] = bodyR;
+          data[o + 8] = cr;
+          data[o + 9] = cg;
+          data[o + 10] = cb;
+          data[o + 11] = VIS_REST;
+          data[o + 12] = bodyCx;
+          data[o + 13] = bodyCy;
+          data[o + 14] = coneX;
+          data[o + 15] = coneY;
+          data[o + 16] = coneCos;
+          data[o + 17] = coneInvSpan;
+          o += SELF_LIT_SPRITE_FLOATS;
         }
+        const indices = batch.indices;
+        const base = q * 4;
+        const k = q * 6;
+        indices[k] = base;
+        indices[k + 1] = base + 1;
+        indices[k + 2] = base + 2;
+        indices[k + 3] = base;
+        indices[k + 4] = base + 2;
+        indices[k + 5] = base + 3;
+        batch.quads = q + 1;
       }
 
       i = j;
     }
   }
 
-  _getSelfLitSpriteMesh(index, texture) {
-    if (!this._selfLitSpriteProgramOpts) return null;
+  /** E-260. The batch of a texture source with room for one more quad (made, or grown keeping its quads). */
+  _selfLitSpriteBatchFor(source) {
+    const batch = this._selfLitSpriteBatches.get(source);
+    if (batch !== undefined && batch.quads < batch.quadCap) return batch;
+    return this._ensureSelfLitSpriteBatch(source, batch === undefined ? 0 : batch.quads);
+  }
 
-    if (!this._selfLitSpriteMeshes[index]) {
-      const geometry = new PIXI.Geometry({
-        attributes: {
-          aPosition: { buffer: this._dynBuf(new Float32Array(8), BufferUsage.VERTEX), size: 2 },
-          aUV: { buffer: this._dynBuf(new Float32Array(8), BufferUsage.VERTEX), size: 2 },
-        },
-        indexBuffer: this._dynBuf(new Uint16Array([0, 1, 2, 0, 2, 3]), BufferUsage.INDEX),
-      });
-
-      const shader = new PIXI.Shader({
-        ...this._selfLitSpriteProgramOpts,
-        resources: {
-          uniforms: {
-            uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-            uZoom: { value: 1.0, type: 'f32' },
-            uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
-            uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
-            uLightPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-            uLightIntensity: { value: 1000, type: 'f32' },
-            uLightColor: { value: new Float32Array([1, 1, 1]), type: 'vec3<f32>' },
-            uBodyCenter: { value: new Float32Array(2), type: 'vec2<f32>' },
-            uBodyRadius: { value: 0, type: 'f32' },
-            uAttenScale: { value: VIS_REST, type: 'f32' },
-            uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
-            // DX-SPOT: the light's cone; z -2 (the default) has none.
-            uCone: { value: new Float32Array([1, 0, -2, 0]), type: 'vec4<f32>' },
-          },
-          uTexture: texture.source,
-          uSampler: texture.source.style,
-        },
-      });
-
-      const mesh = new PIXI.Mesh({ geometry, shader });
-      mesh.blendMode = 'add';
-      this._selfLitSpriteMeshes[index] = { mesh, geometry, shader, texture };
+  _ensureSelfLitSpriteBatch(source, keepQuads) {
+    const old = this._selfLitSpriteBatches.get(source);
+    const quadCap = Math.ceil(Math.max(keepQuads + 1, old ? old.quadCap : 0, 64) * 1.25);
+    const data = new Float32Array(quadCap * 4 * SELF_LIT_SPRITE_FLOATS);
+    const indices = new Uint32Array(quadCap * 6);
+    if (old) {
+      data.set(old.data.subarray(0, keepQuads * 4 * SELF_LIT_SPRITE_FLOATS));
+      indices.set(old.indices.subarray(0, keepQuads * 6));
     }
-
-    const entry = this._selfLitSpriteMeshes[index];
-    if (entry.texture !== texture) {
-      entry.shader.resources.uTexture = texture.source;
-      entry.shader.resources.uSampler = texture.source.style;
-      entry.texture = texture;
+    const vbuf = new Buffer({ data, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST, shrinkToFit: false });
+    const stride = SELF_LIT_SPRITE_FLOATS * 4;
+    const geometry = new PIXI.Geometry({
+      attributes: {
+        aPosition: { buffer: vbuf, format: 'float32x2', stride, offset: 0 },
+        aUV: { buffer: vbuf, format: 'float32x2', stride, offset: 8 },
+        aLight: { buffer: vbuf, format: 'float32x4', stride, offset: 16 },
+        aColor: { buffer: vbuf, format: 'float32x4', stride, offset: 32 },
+        aBody: { buffer: vbuf, format: 'float32x2', stride, offset: 48 },
+        aCone: { buffer: vbuf, format: 'float32x4', stride, offset: 56 },
+      },
+      indexBuffer: this._dynBuf(indices, BufferUsage.INDEX),
+    });
+    // The camera and the texture, in the WGSL struct's order.
+    const shader = new PIXI.Shader({
+      ...this._selfLitSpriteProgramOpts,
+      resources: {
+        uniforms: {
+          uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
+          uZoom: { value: 1.0, type: 'f32' },
+          uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
+          uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
+          uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
+        },
+        uTexture: source,
+        uSampler: source.style,
+      },
+    });
+    const mesh = new PIXI.Mesh({ geometry, shader });
+    mesh.blendMode = 'add';
+    const batch = {
+      mesh,
+      geometry,
+      vbuf,
+      data,
+      cbuf: null,
+      coneData: null,
+      indices,
+      uniforms: shader.resources.uniforms.uniforms,
+      vertCap: quadCap * 4,
+      idxCap: quadCap * 6,
+      // The new index buffer is zero past what was copied: nothing of an earlier frame to clear.
+      idxUsed: keepQuads * 6,
+      gpuReady: false,
+      source,
+      quads: keepQuads,
+      quadCap,
+    };
+    const list = this._selfLitSpriteBatchList;
+    if (old) {
+      list[list.indexOf(old)] = batch;
+      if (old.mesh.parent) old.mesh.parent.removeChild(old.mesh);
+      old.mesh.destroy();
+      old.geometry.destroy();
+    } else {
+      list.push(batch);
     }
-    return entry;
+    this._selfLitSpriteBatches.set(source, batch);
+    return batch;
+  }
+
+  /** One warning per texture id for a sprite-masked occluder whose texture is missing. Error path only. */
+  _warnMissingSelfLitTexture(texId, entityIdx) {
+    if (!this._missingTextureWarns) this._missingTextureWarns = new Set();
+    const key = `selfLit:${texId}`;
+    if (this._missingTextureWarns.has(key)) return;
+    this._missingTextureWarns.add(key);
+    console.warn(`[PIXI] self-lit occluder missing textureId=${texId} (entity=${entityIdx}); skipping`);
   }
 
   /* =====================
