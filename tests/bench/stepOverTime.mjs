@@ -37,7 +37,9 @@ export async function stepOverTime(opts) {
     await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__));
     await page.evaluate(({ m, e }) => window.__WEED_BENCHMARK__.prepare({ warmupMs: 3600000, durationMs: 3600000, sampleIntervalMs: 1000,
       sceneModule: m, sceneExport: e, collectDetailedStats: false, collectGpuStats: false }), { m: opts.scene, e: opts.sceneExport });
-    await page.waitForFunction(() => window.scene && window.scene.frameNumber > 10, undefined, { timeout: 120000 });
+    // The scene is up once its workers' stats buffers exist; give its first frames a moment.
+    await page.waitForFunction(() => Boolean(window.scene?.buffers?.rendererStats && window.scene?.buffers?.preRenderStats), undefined, { timeout: 120000 });
+    await page.waitForTimeout(2000);
     // Sampled in the page: each worker's STEP_MS and WAIT_MS from its stats buffer, ten times a second.
     const buckets = await page.evaluate(async ({ seconds, bucketS }) => {
       const U = await import('/src/util/workersUtils.js');
