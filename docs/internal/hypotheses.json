@@ -13440,13 +13440,12 @@
     {
       "id": "E-266",
       "title": "A scene with physics disabled gives the spatial grid no mover list: it rebuilds every row every frame though nothing moves (stationarySpatialWide: rebuildOwnedRows 51 % of spatial)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-13 from the CPU sweep, not tested",
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 3,
-      "result": "CPU sweep (2026-11-13): stationarySpatialWideScene (physics.enabled false) spends 48 and 51 % of its two spatial workers in rebuildOwnedRows, the full rebuild: _rebuildGrid takes E-126's movers path only from physics' mover list, and with no physics worker there is none. With physics on, collider-only entities get an implicit static body and a setter's move is published as a teleport, so the path sees them. Grid kernel (--no-physics, 20 000 entities, nothing moving): the full rebuild every frame, ~2 400 ops/s, against ~7.6 M ops/s on the movers path with physics publishing an empty list.",
+      "result": "stationarySpatialWide ?entities=145000 (physics off): spatial 7.375 → 4.880 ms (−34.1 %, 4/4); kernel --no-physics 2.6x at rest, +41 % at 5 % moving.",
       "next": "A mover source with physics off: logic's position setters (or the spatial worker's own pose scan against the latched poses) feed _rebuildMovedRows, a frame with no move costing nothing; the grid kernel --no-physics, then stationarySpatialWide's spatial STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-266"
@@ -13458,7 +13457,9 @@
         "movers path",
         "E-126"
       ],
-      "records": []
+      "records": [
+        "R-0984"
+      ]
     },
     {
       "id": "E-267",
@@ -24041,6 +24042,15 @@
       "title": "E-268 kept: a kept-clear row's head read only for an entity that just arrived; stationarySpatialWide's spatial -39.1 %",
       "verdict": "kept",
       "text": "**E-268 kept: a kept-clear row's head is read only for an entity that just arrived; stationarySpatialWide's spatial\n7.365 → 4.459 ms (−39.1 %, 4/4).** 2026-11-13, kernel 18:04, scene 18:11 to 18:18.\n\n**Change** (sitting branch `w14s/e268` `eb6f4404` on `e6e146b8`; `w14/e268` `df903e3b`): with several spatial workers,\n`_findNeighbors` read the head of every unread entity's neighbour row each frame (a cache line per entity, rows about\n2 KB apart) to see that no other worker had published it. Only the owner publishes a row, so a row this worker kept\nclear the frame before is still clear: a per-worker byte per entity (`_clearHeld`, the frame mod 254 it was last kept\nclear) says so, and every 254 frames every head is read once more. `spatialKeptRowSkip.test.js` (with its\n`noSharedClear` mutant) and the suite pass.\n\n**Kernel** (`spatialWorkerMicrobench --unread`, 3 workers, n 16 500, no type's neighbours read; Node, A B A B): 598, 650\n→ 848, 808 ops/s, **+31 %** (2/2); checksums equal.\n\n**Scene** (`w14-e268-statwide`: stationarySpatialWideScene `?entities=145000`, two spatial workers, no physics,\n`--vs e6e146b8 --hyp-rev eb6f4404 --owner spatial`, 4 pairs): **KEPT (product)**, spatial **7.365 → 4.459 ms, −39.1 %\npaired, worse 0/4, cv 2/1 %**; ENTITIES_PROCESSED 73 372 and VISIBLE_ENTITIES 23 142 on both sides; every other worker\nunder the floor and level (pre-render 2.110 → 2.128).\n\n**Verdict: kept.** Predator's gate comes with the batch of Wave 14 keeps."
+    },
+    {
+      "id": "R-0984",
+      "date": "2026-11-13",
+      "time": "18:25",
+      "timeFrom": "recorded",
+      "title": "E-266 kept: without a physics list the grid finds what changed itself; stationarySpatialWide's spatial -34.1 %",
+      "verdict": "kept",
+      "text": "**E-266 kept: without a physics list the spatial grid finds what changed itself; stationarySpatialWide's spatial 7.375\n→ 4.880 ms (−34.1 %, 4/4).** 2026-11-13, kernel 18:04, scene 18:18 to 18:25.\n\n**Change** (sitting branch `w14s/e266` `99f619f2` on `e6e146b8`; `w14/e266` `49594d77`): with no physics worker no moved\nlist is bound, and `_rebuildGrid` rebuilt the whole grid every frame. The movers path now runs there too:\n`_scanColliderBounds` compares each present collider's bounds, bit for bit, with the ones its cells were written from\n(latched by the rebuild and by each rebin in `_rebuildMovedRows`), and marks the ones that changed or lost their\ncollider; entities without a collider stay step 3's. `spatialGridMovers.test.js` runs its scripted world without a\nphysics list as well (auto and forced, byte for byte against the full rebuild) with three mutants of the scan (a lost\ncollider, the extent, the sign of zero), and the world gains a collider reshaped in place and a box whose centre goes\nfrom 0 to −0.\n\n**Kernel** (`spatialGridMoversMicrobench --variant auto --no-physics`, n 60 000, Node, A B A B; checksums equal):\n0 % moving 839, 797 → 2 107, 2 156 ops/s (**2.6x**); 5 % moving 828, 838 → 1 118, 1 232 (**+41 %**).\n\n**Scene** (`w14-e266-statwide`: stationarySpatialWideScene `?entities=145000`, physics off, `--vs e6e146b8 --hyp-rev\n99f619f2 --owner spatial`, 4 pairs): **KEPT (product)**, spatial **7.375 → 4.880 ms, −34.1 % paired, worse 0/4, cv\n1/1 %**; ENTITIES_PROCESSED 73 372 and VISIBLE_ENTITIES 23 142 on both sides; the other workers under the floor and level.\n\n**Verdict: kept.** E-268 (the rows) and E-266 (the rebuild) take different parts of the same worker: their sum is\nmeasured in one sitting with both, not added."
     }
   ],
   "leads": [
