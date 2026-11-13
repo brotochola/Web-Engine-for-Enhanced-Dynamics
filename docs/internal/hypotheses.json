@@ -13457,6 +13457,28 @@
       "records": []
     },
     {
+      "id": "E-267",
+      "title": "The full grid rebuild writes its cells in entity order: a cell-ordered pass (bin, then write) or W6's C port where the rebuild is a third to a half of spatial (Boids, stationarySpatialWide)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "date": "2026-11-13",
+      "area": "spatial",
+      "kind": "speed",
+      "rank": 83,
+      "result": "CPU sweep: rebuildOwnedRows is 28 to 32 % of Boids' spatial and 48 to 51 % of stationarySpatialWide's (12.5 % in Predator when W6 was screened). Boids' hot lines: the owned-list append 26 % (the stall of the loads before it), localCounts[cellIndex] 22 %, the cell write 6 %: scattered cell accesses. W6's bit-exact C port ran +10.9 % in its kernel on Predator's mix and 1.48x on a mix of every shape, screened then because the rebuild was small in Predator.",
+      "next": "Two candidates on spatialGridMoversMicrobench --shape box and a stationary case: (a) W6's C port again, (b) a counting pass that bins the entities by cell and then writes each cell's ids in one run; the winner on Boids' and stationarySpatialWide's spatial STEP_MS (E-266 first for the stationary scene).",
+      "refs": [
+        "EXECUTION_PLAN.md#E-267"
+      ],
+      "aliases": [
+        "rebuildOwnedRows",
+        "cell order",
+        "W6 revisited",
+        "counting sort grid"
+      ],
+      "records": []
+    },
+    {
       "date": "2026-11-12",
       "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
