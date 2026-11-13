@@ -13510,7 +13510,7 @@
       "kind": "speed",
       "rank": 7,
       "result": "CPU sweep, meshApiStressScene: MeshUvFillBatch.uploadRange (meshUvFillBatch.js) spends 990 ms of the window (100 % of its self time) on `if (this.rows !== this.data) this.data.set(this.rows.subarray(from, past * MESH_UV_FILL_FLOATS), from)`: the corner kernel writes the rows in the mesh memory (W11), and they are copied into the Pixi buffer's own array before its upload; a subarray each time.",
-      "next": "Give the Pixi buffer the rows' own view (WebGL's bufferSubData and WebGPU's writeBuffer take a SharedArrayBuffer view), no copy; if a backend refuses it, upload the range from the view. meshApiStressScene's Pixi STEP_MS; colliderFillBatch.js's same copy (uploadFill) with it.",
+      "next": "Not the upload from the shared view: E-123 (R-0563) tried that for the sprite rows and every other worker paid about 6 % (physics +9.5 %, spatial +6.3 %), which the copy into a private array removed. Instead: copy only the rows whose mesh changed (the corner kernel knows which), or have the kernel write into a non-shared memory Pixi owns; meshApiStressScene's Pixi STEP_MS with the unreachable workers read against an A/A (the E-123 cost is on them), colliderFillBatch.js's same copy with it.",
       "refs": [
         "EXECUTION_PLAN.md#E-269"
       ],
