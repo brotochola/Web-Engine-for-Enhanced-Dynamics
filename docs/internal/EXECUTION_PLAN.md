@@ -4007,6 +4007,60 @@ check, and older objects migrate on access.
 and E-222's tool to find other `TryMigrateInstance` sites. Owner: Pixi's STEP_MS in the flashlight scene; the count of
 migration sites before and after.
 
+### E-235 Box2D's clock reads performance.timeOrigin at every call: 576 KB/s in Predator's physics
+
+**Premise:** heapSampleWorkers over Predator's physics worker (12 s after 15 s): 634 KB/s, of which 576 in the Box2D
+glue's `_emscripten_get_now` (`performance.timeOrigin + performance.now()`, box2dWasm.js), called from WASM (377) and
+`stepWorld` (200). A read of `performance.timeOrigin` makes a 12-byte heap number (R-0958's probe), so this is about
+48 000 calls a second, some 800 a frame: Box2D's profiling timers (b2GetTicks around its stages). Each is also a
+WASM-to-JS call.
+**Plan:** count the calls a step and where Box2D makes them; then either the clock read once per realm in the glue (a
+post-build patch of box2dWasm.js, or an `emscripten_get_now` of our own in the build's JS library) or Box2D's
+profiling timers off in our build (both builds, SIMD and no-SIMD, in the Box2d_3.2 repo). Owner: physics' STEP_MS and
+KB/s in Predator and Balls.
+
+### E-236 E-148's shader plan is rebuilt at nearly every bind: 934 KB/s in Predator's Pixi worker
+
+**Premise:** Pixi's worker allocates 1271 KB/s in Predator; 934 of it in `Lg` (pixi.min.js: E-148's WebGL shader sync,
+`scripts/pixi-stubs/shaderSyncPolyfill.mjs`), reached from `bind` (785) and `execute` (149). The plan per shader is
+valid while every group slot holds the same BindGroup object and none gained a key; a slot that holds another BindGroup
+each draw (likely the batcher's texture group, one per batch, on the same shader) fails the check and the plan, three
+arrays, an Int32Array and an object, is built again at that bind. The plan depends only on the groups' keys, not on
+which BindGroup holds them.
+**Plan:** step 0: which shader and which slot changes (count rebuilds per shader in the worker); then validate a plan
+by each slot's key list (`_weedKeyList` contents) instead of its BindGroup's identity, or keep a plan per key layout.
+Owner: Pixi's KB/s and STEP_MS in Predator; E-148's parity (the same binds, the same units) by its tests.
+
+### E-237 Logic's contact begin calls a Map or Set `set` per contact: 37 KB/s per logic worker in Predator
+
+**Premise:** in each of Predator's two logic workers, `set` (a native Map or Set method) under `_applyContactBegin`
+allocates 37 KB/s: a new entry (or a new key object) per contact that begins.
+**Plan:** read `_applyContactBegin`'s collection; a typed or pooled structure for the contact pairs if it is one per
+contact. Owner: logic's KB/s and STEP_MS in Predator.
+
+### E-238 The particle emit path from game code allocates about 30 KB/s in Predator's logic
+
+**Premise:** `ParticleEmitter._spawn` 17 KB/s, `rng` 6, `randomRange` 5, `copyEmitFields` 4 per logic worker
+(Predator's soldiers' sparks): heap numbers from the emit config's ranges and the random draws, in functions that run in
+Maglev (`_spawn`, `copyEmitFields`) or reached TurboFan late.
+**Plan:** E-222's tool on the emit path once it is in TurboFan; the doubles into the config's Float64Array scratch
+(E-85's pattern) where they cross calls. Owner: logic's KB/s in Predator and a particle stress scene.
+
+### E-239 Per-frame engine code stays in V8's lower tiers for minutes
+
+**Premise:** V8's code log over a Predator run (25 s): of 1706 engine functions that ran, 64 reached TurboFan, 214 Maglev,
+606 Sparkplug and 822 stayed in the interpreter. The functions called once a frame never reached TurboFan:
+`_runFrame` reached Maglev after 92 s, Pixi's `updateLighting` after 8.5 s, and logic's `update`, pre-render's
+`reportFPS`, `_waitForPose`, `resetFrameCounters` and the camera's helpers stayed in Sparkplug; the physics host's
+`gameLoop`, `doStep`, `waitForLogic` and `serviceLiquidFunQuery` stayed in Ignition. V8 tiers up by how much of a
+function's bytecode runs, and these spend their calls in WASM or in waits. Lower tiers box every double they compute (the
+small KB/s rows of N-158 and R-0958 are mostly theirs) and run slower. It is also a measuring question: a sitting's
+10 s warm-up measures such code before it is optimized.
+**Plan:** a CPU trace of the same run with each function's tier: the self ms per worker spent in Ignition, Sparkplug and
+Maglev code. If it matters: the per-frame glue made hot enough to tier (fewer, larger functions that loop), and the
+sittings' warm-up checked against the time the owner's hot functions reach TurboFan. Owner: each worker's STEP_MS; the
+tiers' share of it.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any

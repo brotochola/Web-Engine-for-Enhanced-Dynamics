@@ -175,21 +175,34 @@ export async function readTiers(logPath) {
   const files = fs.statSync(logPath).isDirectory()
     ? fs.readdirSync(logPath).filter((f) => /\.log$/i.test(f)).map((f) => path.join(logPath, f))
     : [logPath];
-  const re = /^code-creation,JS,\d+,\d+,0x[0-9a-f]+,\d+,(.*) (\S+):(\d+):(\d+),0x[0-9a-f]+,([~^+*])$/;
+  // The marker may carry a quote (V8 marks code it compiled for on-stack replacement or with a variant that way): `+'`.
+  const re = /^code-creation,JS,\d+,(\d+),0x[0-9a-f]+,\d+,(.*) (\S+):(\d+):(\d+),0x[0-9a-f]+,([~^+*])('?)$/;
   for (const f of files) {
     const rl = readline.createInterface({ input: fs.createReadStream(f), crlfDelay: Infinity });
     for await (const line of rl) {
       if (!line.startsWith('code-creation,JS,')) continue;
       const m = re.exec(line);
       if (!m) continue;
-      const rel = localFile(m[2]);
+      const rel = localFile(m[3]);
       if (!rel) continue;
-      const key = `${rel}:${m[3]} ${m[1]}`;
-      const r = rank[m[5]];
-      const prev = tiers.get(key);
-      if (prev === undefined || r > prev.rank) tiers.set(key, { rank: r, tier: names[r], rel, line: Number(m[3]), fn: m[1] });
+      const key = `${rel}:${m[4]} ${m[2]}`;
+      const r = rank[m[6]];
+      const us = Number(m[1]);
+      let t = tiers.get(key);
+      if (t === undefined) {
+        t = { rank: r, tier: names[r], rel, line: Number(m[4]), fn: m[2], firstUs: us, reachedUs: [null, null, null, null] };
+        tiers.set(key, t);
+      }
+      if (us < t.firstUs) t.firstUs = us;
+      if (t.reachedUs[r] === null || us < t.reachedUs[r]) t.reachedUs[r] = us;
+      if (r > t.rank) {
+        t.rank = r;
+        t.tier = names[r];
+      }
     }
   }
+  // Seconds from a function's first code to each tier it reached (per isolate the clock starts at its own start).
+  for (const t of tiers.values()) t.secondsTo = t.reachedUs.map((us) => (us === null ? null : Math.round((us - t.firstUs) / 1e5) / 10));
   return tiers;
 }
 

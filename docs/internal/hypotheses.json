@@ -12421,7 +12421,8 @@
         "line-level"
       ],
       "records": [
-        "R-0959"
+        "R-0959",
+        "R-0960"
       ],
       "result": "The tool exists (summarizeTurboSites.mjs, uncommitted); a first run on flashlightStressScene found E-221."
     },
@@ -12686,6 +12687,132 @@
         "light batch"
       ],
       "records": []
+    },
+    {
+      "id": "E-235",
+      "title": "Box2D's clock reads performance.timeOrigin at every call: 576 KB/s, ~800 WASM-to-JS calls a frame in Predator's physics",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's E-222 run, not tested",
+      "date": "2026-11-13",
+      "area": "physics",
+      "kind": "speed",
+      "rank": 56,
+      "result": "heapSampleWorkers: physics 634 KB/s, 576 in _emscripten_get_now (box2dWasm.js), from WASM and stepWorld.",
+      "next": "Count the calls a step; the clock read once per realm in the glue, or Box2D's profiling timers off in our build (both builds).",
+      "refs": [
+        "EXECUTION_PLAN.md#E-235"
+      ],
+      "aliases": [
+        "emscripten_get_now",
+        "b2GetTicks",
+        "Box2D profile",
+        "timeOrigin",
+        "physics garbage"
+      ],
+      "records": [
+        "R-0960"
+      ]
+    },
+    {
+      "id": "E-236",
+      "title": "E-148's shader plan is rebuilt at nearly every bind: 934 KB/s in Predator's Pixi worker",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's E-222 run, not tested",
+      "date": "2026-11-13",
+      "area": "pixi",
+      "kind": "speed",
+      "rank": 57,
+      "result": "Pixi 1271 KB/s in Predator, 934 in Lg (shaderSyncPolyfill), from bind and execute.",
+      "next": "Step 0: which shader and slot changes; validate the plan by each slot's key list instead of the BindGroup's identity.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-236"
+      ],
+      "aliases": [
+        "shaderSyncPolyfill",
+        "Lg",
+        "bind group",
+        "shader sync",
+        "E-148",
+        "Pixi garbage"
+      ],
+      "records": [
+        "R-0960"
+      ]
+    },
+    {
+      "id": "E-237",
+      "title": "Logic's contact begin calls a Map or Set set per contact: 37 KB/s per logic worker in Predator",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's E-222 run, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 58,
+      "result": "set under _applyContactBegin, 37 KB/s in each logic worker.",
+      "next": "Read the collection; a typed or pooled structure if it is one entry per contact.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-237"
+      ],
+      "aliases": [
+        "_applyContactBegin",
+        "contact begin",
+        "Map set",
+        "logic garbage"
+      ],
+      "records": [
+        "R-0960"
+      ]
+    },
+    {
+      "id": "E-238",
+      "title": "The particle emit path from game code allocates about 30 KB/s in Predator's logic",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's E-222 run, not tested",
+      "date": "2026-11-13",
+      "area": "particle",
+      "kind": "speed",
+      "rank": 59,
+      "result": "_spawn 17, rng 6, randomRange 5, copyEmitFields 4 KB/s per logic worker.",
+      "next": "E-222 on the emit path once optimized; the doubles into a Float64Array scratch where they cross calls.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-238"
+      ],
+      "aliases": [
+        "ParticleEmitter._spawn",
+        "copyEmitFields",
+        "randomRange",
+        "emit garbage"
+      ],
+      "records": [
+        "R-0960"
+      ]
+    },
+    {
+      "id": "E-239",
+      "title": "Per-frame engine code stays in V8's lower tiers for minutes (64 of 1706 engine functions in TurboFan after 25 s)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's E-222 run, not tested",
+      "date": "2026-11-13",
+      "area": "engine",
+      "kind": "speed",
+      "rank": 60,
+      "result": "Predator 25 s: 64 TurboFan, 214 Maglev, 606 Sparkplug, 822 Ignition; _runFrame Maglev at 92 s; the physics host's frame code interpreted.",
+      "next": "A CPU trace with each function's tier: self ms per worker in each tier; then hotter glue, and the sittings' warm-up checked against tier-up.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-239"
+      ],
+      "aliases": [
+        "tier-up",
+        "Sparkplug",
+        "Maglev",
+        "Ignition",
+        "interpreter",
+        "warm-up",
+        "tiering"
+      ],
+      "records": [
+        "R-0960"
+      ]
     },
     {
       "date": "2026-11-12",
@@ -12985,7 +13112,7 @@
       "kind": "speed",
       "rank": 28,
       "result": "_runFrame 7–9 KB/s per worker, _waitForPose/_waitForQueue 6–8, pre-render camera bounds ~20 (doubles in shared-map objects), writeGatherColumns put closure 4.9, renderVisibilityLighting clear colour and options 5.4.",
-      "next": "One at a time with heapSampleWorkers: module Float64Arrays for the bounds (E-66), a module function for put, kept options and colour in the light pass, then the frame loop.",
+      "next": "Left (Predator, R-0960): subarray per frame in bulletPool._tickWasm, _collectVisibleEntitiesWasm, _collectEntityGlowRows; camera bounds (resetFrameCounters, calculateCameraScreenBounds, _readFollowSnapshot); most per-frame rows are lower-tier boxing (E-239).",
       "refs": [
         "REVIEW_PLAN.md#N-158"
       ],
@@ -12997,7 +13124,8 @@
         "camera bounds"
       ],
       "records": [
-        "R-0958"
+        "R-0958",
+        "R-0960"
       ]
     },
     {
@@ -22512,6 +22640,15 @@
       "title": "E-221 answered: the typed array length's division is a shift in the final graph; the final graph shows E-232 to E-234",
       "verdict": "answered",
       "text": "**E-221 answered: no division per access; the final graph is the one to read.**\n2026-11-13, about 04:45. flashlightStressScene `?cone=1&lights=360&crates=320`, Chrome 157, `--trace-turbo` (a short run, 8 s warm-up and 3 s).\n\n- The simplified-lowering graph of Pixi's `_buildSelfLitBatch` holds 57 `Uint64Div` (byte length / 4) feeding `CheckedUint64Bounds`, on the component arrays and the self-lit views.\n- Step 0: in every worker, `Transform.x`, `Collider.width` and `LightEmitter.radius` are fixed-length Float32Arrays on one SharedArrayBuffer of 140 640 256 bytes, `growable` false, `maxByteLength` its size.\n- A one-loop microbench (Node and Chrome, page and worker, a function of its own per backing: closures of one literal share feedback, which first showed a false +72 %) found every backing at about 1.5 ns an element.\n- The final graph (Turboshaft, after machine lowering) holds no division: 41 `ShiftRightLogical, Word64`. An access is a load, a shift and a compare.\n\nWhat the final graph does show in that function, as calls left in the optimized code: 16 `Allocate` sites (some are slow paths that never run: the heap sample decides), `LoadWithVector` x3 and `StoreWithVector` x1 in `_stampLightCamera` (E-233), `TryMigrateInstance` x5 on the light batch objects (E-234), `ThrowAccessedUninitializedVariable` x10 on imported bindings, four in the per-occluder loop (E-232), 8 JS calls not inlined. E-232 to E-234 were written down before any is tested."
+    },
+    {
+      "id": "R-0960",
+      "date": "2026-11-13",
+      "time": "04:48",
+      "timeFrom": "recorded",
+      "title": "E-222's first full run, Predator: Pixi 1271 KB/s (934 in the shader plan), physics 634 (576 in Box2D's clock), 64 of 1706 functions in TurboFan",
+      "verdict": "note",
+      "text": "**E-222's first full run, Predator: where the engine allocates, by worker and by line, and which tier each function ran in.**\n2026-11-13, gc/n158 at 3baea389 + b1873069 (the tool). Two runs, AC power, no other bench browser: heapSampleWorkers over every worker (12 s after 15 s), then the same scene with `--trace-turbo --no-concurrent-recompilation --log-code --log-deopt` (5 s after 20 s): 122 traces (2 cut short), 725 MB, removed after reading.\n\n- **Allocation by worker:** Pixi 1270.8 KB/s, physics 634.1, logic 151.0 and 152.2 (two workers), particle 51.7, pre-render 42.8, spatial 7.2.\n- **Pixi:** 933.7 KB/s in `Lg`, E-148's shader sync polyfill, rebuilding its plan at nearly every bind (E-236); then `updateLighting` 46.5, Pixi's own buffer events and render target binds.\n- **Physics:** 576.4 KB/s in the Box2D glue's `_emscripten_get_now` (timeOrigin at every call, ~800 calls a frame: E-235).\n- **Logic:** `set` under `_applyContactBegin` 37.3 (E-237); the particle emit path about 30 (E-238); the demo's FSM code.\n- **Tiers** (V8's code log, `+'` and `*'` read as Maglev and TurboFan): 64 of 1706 engine functions reached TurboFan, 214 Maglev, 606 Sparkplug, 822 Ignition. The per-frame functions never reached TurboFan in the run; the physics host's frame functions stayed interpreted (E-239).\n- **TurboFan's final graphs** (64 engine functions): 54 allocation sites, 5 generic ICs, 22 map migrations, 181 TDZ checks, 41 calls not inlined. Allocation sites are cross-checked with the heap sample before any is called garbage: `checkRotCS`'s `isFinite` sites are behind an assertion flag and never run.\n- **E-221** (the typed array length division) answered the same morning: a shift (R-0959).\n\nHypotheses written down before any is tested: E-235 to E-239; N-158's leftovers named."
     }
   ],
   "leads": [
