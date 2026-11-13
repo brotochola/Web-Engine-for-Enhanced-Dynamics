@@ -4320,6 +4320,9 @@ alternating pairs: every row, about 52 MB/s, for 33 000 instances in 27 draws.
 **Plan:** which batch each buffer is; the share of rows unchanged since the last frame (static scenery, E-188's keyed
 decorations); upload changed ranges only, or keep static rows in a buffer of their own. Owner: Pixi (and the GPU process).
 
+**Answered 2026-11-13 from the record:** the 374 KB is E-82's pose stream, 24 B for each of about 16 000 visible rows;
+statics already go up only when they change. Keeping static rows in place was tried twice and cost more (both dropped).
+
 ### E-259 Pixi re-creates its float data textures every frame
 
 **Premise (glFrameRecorder and the code):** `_uploadRgba32FloatGl` calls `source.update()` and `texSys.bind` (Pixi uploads the
