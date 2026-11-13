@@ -110,6 +110,11 @@ function instanceAtIndex(index) {
  * LogicWorker - Handles game logic and AI for all entities
  * Extends AbstractWorker for common worker functionality
  */
+
+// E-262: the frame's dtRatio, deltaTime and accumulated time as heap numbers, boxed once a frame (update). A tagged array:
+// what is stored stays the value a load gives back, so every tick call passes the same three.
+const TICK_ARGS = [null, null, null];
+
 /** Stale pairs owned by another logic worker are dropped at least this often. */
 const FOREIGN_SWEEP_FRAMES = 30;
 
@@ -1154,7 +1159,15 @@ class LogicWorker extends AbstractWorker {
 
     // Cache hot references outside all loops
     const gameObjects = this.gameObjects;
-    const accTime = this.accumulatedTime;
+    // E-262: every entity's tick gets the frame's doubles through a call TurboFan does not inline (each class has its
+    // own tick), and a double held unboxed was boxed again for each call (WaterAndBoxes' logic: 2.8 MB/s in update).
+    // Boxed here once; read back from the tagged array, they are passed on as they are.
+    TICK_ARGS[0] = dtRatio;
+    TICK_ARGS[1] = deltaTime;
+    TICK_ARGS[2] = this.accumulatedTime;
+    const tickDtRatio = TICK_ARGS[0];
+    const tickDeltaTime = TICK_ARGS[1];
+    const accTime = TICK_ARGS[2];
     const frameNum = this.frameNumber;
     const transformActive = Transform.active; // Cache for active check
 
@@ -1191,7 +1204,7 @@ class LogicWorker extends AbstractWorker {
       if (!typeInfo.hasRigidBody) {
         activeCount += this._tickNonDecimatedTypeNoBody(
           activeList, count, needsScreenCallbacks, typeForced,
-          dtRatio, deltaTime, accTime, frameNum, transformActive, gameObjects,
+          tickDtRatio, tickDeltaTime, accTime, frameNum, transformActive, gameObjects,
           totalWorkers, myIndex, forceProcessOnLogicWorker, collectDetailed
         );
         if (collectDetailed) tickMs += this._lastTickMs;
@@ -1217,7 +1230,7 @@ class LogicWorker extends AbstractWorker {
                 continue;
               }
               const n = this._tickNonDecimatedOne(
-                entityIndex, dtRatio, deltaTime, accTime, frameNum,
+                entityIndex, tickDtRatio, tickDeltaTime, accTime, frameNum,
                 needsScreenCallbacks, transformActive, gameObjects,
                 rbAx, rbAy, rbAa, collectDetailed
               );
@@ -1246,7 +1259,7 @@ class LogicWorker extends AbstractWorker {
             for (; idx < to; idx += step) {
               const entityIndex = activeList[1 + idx];
               const n = this._tickNonDecimatedOne(
-                entityIndex, dtRatio, deltaTime, accTime, frameNum,
+                entityIndex, tickDtRatio, tickDeltaTime, accTime, frameNum,
                 needsScreenCallbacks, transformActive, gameObjects,
                 rbAx, rbAy, rbAa, collectDetailed
               );
@@ -1289,7 +1302,7 @@ class LogicWorker extends AbstractWorker {
         ) {
           activeCount += this._tickIntervalBucket(
             typeInfo, activeList, count, tickInterval, frameNum,
-            dtRatio, deltaTime, accTime, transformActive, gameObjects,
+            tickDtRatio, tickDeltaTime, accTime, transformActive, gameObjects,
             rbAx, rbAy, rbAa, totalWorkers, myIndex
           );
           continue;
@@ -1312,7 +1325,7 @@ class LogicWorker extends AbstractWorker {
                   continue;
                 }
                 const n = this._tickDecimatedOne(
-                  entityIndex, dtRatio, deltaTime, accTime, frameNum,
+                  entityIndex, tickDtRatio, tickDeltaTime, accTime, frameNum,
                   tickInterval, needsScreenCallbacks, transformActive, gameObjects,
                   rbAx, rbAy, rbAa, nextTick, collectDetailed
                 );
@@ -1344,7 +1357,7 @@ class LogicWorker extends AbstractWorker {
               for (; idx < to; idx += step) {
                 const entityIndex = activeList[1 + idx];
                 const n = this._tickDecimatedOne(
-                  entityIndex, dtRatio, deltaTime, accTime, frameNum,
+                  entityIndex, tickDtRatio, tickDeltaTime, accTime, frameNum,
                   tickInterval, needsScreenCallbacks, transformActive, gameObjects,
                   rbAx, rbAy, rbAa, nextTick, collectDetailed
                 );
