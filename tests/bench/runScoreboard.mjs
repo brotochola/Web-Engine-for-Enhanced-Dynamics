@@ -5,6 +5,7 @@
  *   pnpm bench:scoreboard --vs 0695a8d
  *   pnpm bench:scoreboard --only box2d,emit,spatial --smoke
  *   pnpm bench:scoreboard --vs 0695a8d --headed-only box2d,visPoly,steadyCombat
+ *   pnpm bench:scoreboard --vs main --full-rev   (an API change: each side runs its own scenes and kernel scripts)
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -489,8 +490,8 @@ function main() {
   const args = parseMeasureArgs(process.argv.slice(2));
   const features = filterFeatures(args.only);
   fs.mkdirSync(outRoot, { recursive: true });
-  const baseline = ensureRevWorktree(args.vs);
-  console.log(`baseline worktree ${baseline.root} (${baseline.sha.slice(0, 8)})`);
+  const baseline = ensureRevWorktree(args.vs, { srcOnly: !args.fullRev });
+  console.log(`baseline worktree ${baseline.root} (${baseline.sha.slice(0, 8)})${args.fullRev ? ', the whole revision' : ''}`);
   const rows = [];
   const sceneCache = new Map();
 

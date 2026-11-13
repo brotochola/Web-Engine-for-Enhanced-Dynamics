@@ -373,6 +373,9 @@ export function parseMeasureArgs(argv, extras = {}) {
     else if (a === '--skip-scenes') out.skipScenes = true;
     else if (a === '--skip-lockstep') out.skipLockstep = true;
     else if (a === '--skip-node') out.skipNode = true;
+    // --full-rev: the --vs worktree holds the whole revision (its scenes, demos and kernel scripts too), not only its
+    // src/: for an API change, where each side's scenes are written in its own API.
+    else if (a === '--full-rev') out.fullRev = true;
     else if (a === '--headless') out.headlessAll = true;
     else if (a === '--detailed-stats') out.detailedStats = true;
     else if (a === '--no-recheck') out.noRecheck = true;
