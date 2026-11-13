@@ -554,6 +554,20 @@ function nodeAmount(field, x, y, clip) {
   return field.amount[i];
 }
 
+/**
+ * The marching-squares case of a cell: which of its four corners are solid (8 top-left, 4 top-right, 2 bottom-right,
+ * 1 bottom-left), cellCorners' caseId without building the cell's points. The scans that only ask whether a cell is
+ * empty call this: cellCorners makes nine objects a call, and while terrain is carved it was most of the logic
+ * worker's garbage (52 MB/s here, 35.5 in planetPhysics).
+ */
+function cellCaseId(field, cx, cy, clip) {
+  const a = nodeAmount(field, cx, cy, clip) >= ISO ? 8 : 0;
+  const b = nodeAmount(field, cx + 1, cy, clip) >= ISO ? 4 : 0;
+  const c = nodeAmount(field, cx + 1, cy + 1, clip) >= ISO ? 2 : 0;
+  const d = nodeAmount(field, cx, cy + 1, clip) >= ISO ? 1 : 0;
+  return a | b | c | d;
+}
+
 function cellCorners(field, cx, cy, clip) {
   const cs = field.cellSize;
   const x0 = cx * cs;
@@ -1222,7 +1236,7 @@ function hasUnstitchedEmpty(field, outer, holes) {
   const cy1 = Math.min(field.msRows - 1, Math.floor(maxY / cs));
   for (let cy = cy0; cy <= cy1; cy++) {
     for (let cx = cx0; cx <= cx1; cx++) {
-      if (cellCorners(field, cx, cy).caseId !== 0) continue;
+      if (cellCaseId(field, cx, cy) !== 0) continue;
       const px = (cx + 0.5) * cs;
       const py = (cy + 0.5) * cs;
       if (!pointInPolygon(px, py, outer)) continue;
@@ -1266,7 +1280,7 @@ function anyTriCoversEmpty(field, island, tris) {
   const cy1 = Math.min(field.msRows - 1, island.maxY | 0);
   for (let cy = cy0; cy <= cy1; cy++) {
     for (let cx = cx0; cx <= cx1; cx++) {
-      if (cellCorners(field, cx, cy).caseId !== 0) continue;
+      if (cellCaseId(field, cx, cy) !== 0) continue;
       const px = (cx + 0.5) * cs;
       const py = (cy + 0.5) * cs;
       for (let t = 0; t < tris.length; t++) {
@@ -1625,7 +1639,7 @@ function extractIslands(field, box, opts) {
             }
           }
           if (!ownedParts.length) continue;
-          const caseId = cellCorners(field, cx, cy, clip).caseId;
+          const caseId = cellCaseId(field, cx, cy, clip);
           cellsMeta.push({ cx, cy, caseId, parts: ownedParts });
           if (parts.length === ownedParts.length && caseId > 0 && caseId < 15) {
             const segs = cellSegments(field, cx, cy, clip);
