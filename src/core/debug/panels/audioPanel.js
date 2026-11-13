@@ -256,6 +256,8 @@ export class AudioPanel {
   update() {
     const metrics = this.debugUI.scene?.audioMetrics;
     if (!metrics) return;
+    // E-248: the scene no longer fills them each frame; the panel does while it is shown.
+    SoundManager.getMetrics(metrics);
 
     this._updateStrip(metrics);
     const levels = SoundManager.sampleOutputLevels();

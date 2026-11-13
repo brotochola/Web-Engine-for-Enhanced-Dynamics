@@ -2713,8 +2713,8 @@ class Scene {
     const dtRatio = simMs / 16.67;
     const wallRatio = deltaTime / 16.67;
 
-    // Update audio metrics from AudioWorklet (worklet handles playback directly via SAB)
-    SoundManager.getMetrics(this.audioMetrics);
+    // E-248: this.audioMetrics is filled by the debug panels that show it (SoundManager.getMetrics scans every audio
+    // slot: 2048 Atomics loads a frame in Predator, for metrics nothing read without the panels).
 
     // Camera pose comes from Camera SAB getters (workers call Camera.follow*).
     this.updateCameraBuffer();
