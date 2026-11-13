@@ -13616,13 +13616,12 @@
     {
       "id": "E-274",
       "title": "The full grid rebuild writes every owned cell's count every frame, a cache line per cell, empty ones included (planetScene: 79 % of rebuildOwnedRows on it)",
-      "status": "open",
+      "status": "kept-kernel",
       "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 4,
-      "result": "CPU sweep: planetScene's spatial spends 286 ms of the window in rebuildOwnedRows, 79 % on `gridCounts[byteOffset] = localCounts[cellIndex];`: the closing loop over every cell of the owned rows, the grid's counts cellByteSize apart, written whether they changed or not; a big world with few entities has far more cells than entities.",
+      "result": "Kernel --sparse full rebuild +34 % (0 and 5 % moving), dense a tie; stationarySpatialWide (dense) spatial 7.341 → 7.351 ms NEUTRAL.",
       "next": "Write a count only when it changed (compare with the previous frame's, kept dense), or only for the cells this frame or the last touched; the grid kernel with a sparse world, then planetScene's spatial STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-274"
@@ -13632,7 +13631,9 @@
         "rebuildOwnedRows counts",
         "sparse world grid"
       ],
-      "records": []
+      "records": [
+        "R-0985"
+      ]
     },
     {
       "id": "E-275",
@@ -24051,6 +24052,15 @@
       "title": "E-266 kept: without a physics list the grid finds what changed itself; stationarySpatialWide's spatial -34.1 %",
       "verdict": "kept",
       "text": "**E-266 kept: without a physics list the spatial grid finds what changed itself; stationarySpatialWide's spatial 7.375\n→ 4.880 ms (−34.1 %, 4/4).** 2026-11-13, kernel 18:04, scene 18:18 to 18:25.\n\n**Change** (sitting branch `w14s/e266` `99f619f2` on `e6e146b8`; `w14/e266` `49594d77`): with no physics worker no moved\nlist is bound, and `_rebuildGrid` rebuilt the whole grid every frame. The movers path now runs there too:\n`_scanColliderBounds` compares each present collider's bounds, bit for bit, with the ones its cells were written from\n(latched by the rebuild and by each rebin in `_rebuildMovedRows`), and marks the ones that changed or lost their\ncollider; entities without a collider stay step 3's. `spatialGridMovers.test.js` runs its scripted world without a\nphysics list as well (auto and forced, byte for byte against the full rebuild) with three mutants of the scan (a lost\ncollider, the extent, the sign of zero), and the world gains a collider reshaped in place and a box whose centre goes\nfrom 0 to −0.\n\n**Kernel** (`spatialGridMoversMicrobench --variant auto --no-physics`, n 60 000, Node, A B A B; checksums equal):\n0 % moving 839, 797 → 2 107, 2 156 ops/s (**2.6x**); 5 % moving 828, 838 → 1 118, 1 232 (**+41 %**).\n\n**Scene** (`w14-e266-statwide`: stationarySpatialWideScene `?entities=145000`, physics off, `--vs e6e146b8 --hyp-rev\n99f619f2 --owner spatial`, 4 pairs): **KEPT (product)**, spatial **7.375 → 4.880 ms, −34.1 % paired, worse 0/4, cv\n1/1 %**; ENTITIES_PROCESSED 73 372 and VISIBLE_ENTITIES 23 142 on both sides; the other workers under the floor and level.\n\n**Verdict: kept.** E-268 (the rows) and E-266 (the rebuild) take different parts of the same worker: their sum is\nmeasured in one sitting with both, not added."
+    },
+    {
+      "id": "R-0985",
+      "date": "2026-11-13",
+      "time": "18:32",
+      "timeFrom": "recorded",
+      "title": "E-274 kept on its kernel: the closing loops write only changed counts; sparse rebuild +34 %, dense scene a tie",
+      "verdict": "kept-kernel",
+      "text": "**E-274 kept on its kernel: the grid's closing loops write a cell's count only when it changed; the sparse world's\nrebuild +34 %, the dense scene a tie.** 2026-11-13, kernel 18:04, scene 18:25 to 18:32.\n\n**Change** (sitting branch `w14s/e274` `e4997c37` on `e6e146b8`; `w14/e274` `82e02b31`): the full rebuild's and the latched\nrebuild's closing loops wrote every owned cell's count into the shared grid each frame, a cache line per cell, empty\ncells included (planetScene's spatial: 79 % of `rebuildOwnedRows` on that line). Only a row's owner writes its counts and\nrows are owned from init on, so a per-worker copy of the written counts (`_writtenCounts`, Uint16, unwritten 0xffff;\nthe movers path's per-cell rewrite keeps it too) says which changed. `spatialGridMovers.test.js` catches a mutant that\nskips a count going to 0 (three tests fail).\n\n**Kernel** (`spatialGridMoversMicrobench --variant base`, the full rebuild every frame, n 60 000, Node, A B A B;\nchecksums equal): sparse world (`--sparse`: 16 times the area) 0 % moving 503, 537 → 675, 716 ops/s (**+34 %**), 5 %\nmoving 555, 566 → 770, 730 (**+34 %**); the dense world 771, 833 → 820, 791 and 781, 900 → 886, 886 (a tie).\n\n**Scene** (`w14-e274-statwide`: stationarySpatialWideScene `?entities=145000`, a dense lattice, `--vs e6e146b8\n--hyp-rev e4997c37 --owner spatial`, 4 pairs): **NEUTRAL**, spatial 7.341 → 7.351 ms (−0.4 % paired, worse 2/4, cv\n1/1 %), load keys equal. Its owner scene, planetScene (sparse), runs spatial at 0.88 ms: under the floor, no knob.\n\n**Verdict: kept on its kernel** (the kernel wins, the scene is not 3 % worse). It joins E-268 and E-266 in the combined\nspatial sitting."
     }
   ],
   "leads": [
