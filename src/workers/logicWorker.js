@@ -90,6 +90,7 @@ import { GpuParticles } from '../core/gpuParticles.js';
 import { gpuLogicWriterSlot } from '../util/gpuParticleLayout.js';
 import { auditFields } from '../core/debug/devChecks.js';
 import { STAMP_INPUT, STAMP_LOGIC } from '../util/latencyStamp.js';
+import { TIME_ORIGIN } from '../util/frameClock.js';
 import { addWaitMs } from '../util/waitMeter.js';
 
 /** DX-GUARDS E2: the instance devChecks audits for a class. */
@@ -171,7 +172,22 @@ class LogicWorker extends AbstractWorker {
     this.entitiesProcessedThisFrame = 0; // Track actual entities processed
     this.systemsExecutedThisFrame = 0; // Track number of distinct update phases executed
     this.frameStartTime = 0; // For timing diagnostics
-    this.queryPublishMsThisFrame = 0;
+    // E-250: the frame's detailed-stats times, here from the start. update() first wrote them as the Smi 0 on the first
+    // frame, which added them then, and a measured double later moved the worker to a new map again (N-32). -0 is a
+    // double zero, so each is a double field from the start; update() still resets them every frame.
+    this.queryPublishMsThisFrame = -0;
+    this.entityTimeThisFrame = -0;
+    this.raycastMsThisFrame = -0;
+    this.box2dRaycastMsThisFrame = -0;
+    this.decimateMsThisFrame = -0;
+    this.tickMsThisFrame = -0;
+    this._lastTickMs = -0;
+    this._lastDecimateMs = -0;
+    this.raycastCountThisFrame = 0;
+    this.box2dRaycastCountThisFrame = 0;
+    // Set by createGameObjectInstances (the types whose instances mark activity) and once the instances exist.
+    this.markActiveTypes = [];
+    this._gameObjectInstancesCreated = false;
 
     // Collision tracking (Unity-style Enter/Stay/Exit from Box2D contacts)
 
@@ -1035,7 +1051,7 @@ class LogicWorker extends AbstractWorker {
     // cannot tell this vsync's frame from the last one's, which main made after this worker's frame began whenever it
     // runs after the workers: the waits stopped for seconds at a time (the first sittings, lag 7 or 22 ms by turns).
     const gen = Atomics.load(chain, 1);
-    if (performance.timeOrigin + now - clock.f64[0] < period * 0.5) return;
+    if (TIME_ORIGIN + now - clock.f64[0] < period * 0.5) return;
     const frame = this.frameNumber | 0;
     if (frame < this._inputWaitOffUntil) return;
     const eighth = period * 0.125;

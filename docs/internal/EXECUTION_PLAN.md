@@ -1,3 +1,14 @@
+**Dropped 2026-11-13 (R-0972).** With `--no-maglev` on side B, Predator's spatial ran 5.4 % slower (3/4 pairs) and every worker
+under the floor higher: without Maglev, code waits in Sparkplug. The inline loops already reach TurboFan OSR code early.
+
+**Answered 2026-11-13 (R-0961): a trace artifact; in a plain run the per-frame code is in Maglev or TurboFan.**
+The counts above came from the `--trace-turbo --no-concurrent-recompilation` run, whose compiles are slow and late. A
+plain run (`--log-code` only, 20 s and 10 s) joined with a CPU trace of the same scene and length: logic's time is
+half TurboFan, a tenth Maglev; spatial and the particle worker mostly TurboFan and WASM. Maglev's large rows are the waits
+(`_waitForQueue` 277 ms/s, `_waitForPose` 157, `waitForLogic` 102, `beforeUpdate`'s input wait 10: V8 counts
+Atomics.wait as busy). Without them the lower tiers hold 1 to 10 ms/s per worker (0.02 to 0.17 ms a frame). Lesson: tiers
+are read from a plain run, never from a TurboFan trace run.
+
 # Execution plan — frame-schedule and hot-path campaign, October 2026
 
 **Opened:** 2026-10-18. **Anchor rev:** `d4933190`.
@@ -3859,6 +3870,776 @@ sun hours and sunMeshParityScene against main. Owner: Predator `?backend=webgpu&
 0/4, -17.5 % against the others), renderer -22.3 % (0/4, -26.2 %); logic, spatial and physics +5 to +9 % together, drift
 on a machine in use (every worker about twice the E-187 sitting's an hour before): a sitting on a quiet machine would
 give the clean figure. WebGPU captures of dxCaptureScene (9, 17, 22 h, prop shadows) and sunMeshParityScene equal to main.
+
+## Wave 13 — TurboFan's own graphs, and other ways to find work (2026-11-13)
+
+The heap profiler names the function that allocates, never the line, and charges an inlined callee's allocations to its
+caller (a probe, R-0958). TurboFan's JSON trace (`--js-flags="--trace-turbo --trace-turbo-path=<dir>"`) holds each
+optimized function's graph, every node with its source position: the boxes, allocations, calls it did not inline,
+checks and deopt points, by line (`tests/bench/summarizeTurboSites.mjs`). The first short run (flashlightStressScene)
+already showed E-221. The rest of this wave are hypotheses about where the engine's time goes, and tools that would
+find more; each is open until a sitting decides it.
+
+### E-221 A typed array's length is recomputed by a 64-bit division at each access
+
+**Premise:** in Chrome 157's graph of Pixi's `_buildSelfLitBatch` (flashlightStressScene `?cone=1&lights=360`), 57
+`Uint64Div` nodes, each `LoadField[byte length] / Int64Constant[4]` feeding a `CheckedUint64Bounds`: the bounds of a
+typed array access are checked against a length computed from the buffer's byte length, not loaded. Their lines are
+the component arrays (`Transform.x`, `Collider.width`, `LightEmitter.offsetX`, `Transform.active`) and the self-lit
+queue's views. V8 does that for a typed array it treats as variable-length (on a growable or resizable buffer, or a
+length-tracking view). A 64-bit division is tens of cycles; at every component access of every hot JS loop it would be
+an engine-wide cost. A first microbench in Chrome and Node (one loop, five backings, a function each) found every
+backing as fast (about 1.5 ns an element): there the division is hoisted out of the loop, so it costs only where
+accesses are scattered (an index from a list, stores in between), which is the engine's pattern.
+**Plan:** step 0: which buffer the component arrays sit on in a running scene (`self.WEED.Transform.x.buffer`:
+`growable`, `maxByteLength`, a WebAssembly.Memory's), and whether the view is length-tracking; then a Chrome kernel with
+the engine's access pattern (ids from a list, several arrays, a store each) on each backing, its graph counted for
+`Uint64Div`. If the backing is the cause: fixed-length views on a fixed buffer, or the arrays' lengths made provable
+(locals hoisted with a length test before the loop). Owner: the workers whose hot JS reads components (pre-render's
+glue, Pixi's batches, logic's game code); the graph's `Uint64Div` count per function before and after.
+
+**Answered 2026-11-13 (R-0959): no division.** Step 0: the component arrays sit on one fixed SharedArrayBuffer of
+140 MB in every worker (`growable` false, `maxByteLength` its size), fixed-length views. The `Uint64Div` of the
+simplified-lowering graph is how V8 computes a typed array's length (its byte length over the element size); the final
+graph (Turboshaft, after machine lowering) holds no division in `_buildSelfLitBatch`: 41 `ShiftRightLogical, Word64`.
+An access is a load, a shift and a compare, as before. The final graph is the one to read (E-222).
+
+### E-222 A line-level audit of every hot function in TurboFan's graphs
+
+**Premise:** E-66, E-71, E-85, E-95 and E-59 were each a boxed double, an Any-typed field or a call left out of line,
+found by hand one at a time. The graph shows all of them at once: `ChangeFloat64ToTagged` (a box), `Allocate`/`JSCreate*`
+(an object, closure or context), `JSCall` left after inlining (a call; its doubles boxed), the `Check*` nodes left in a
+loop (bounds, maps: polymorphism, Smi), `Deoptimize` points and their reasons, and each node's line.
+**Plan:** the tool (`summarizeTurboSites.mjs`, its own commit) over Predator, flashlightStressScene, BunnyMark,
+Boids and LiquidFun, joined with heapSampleWorkers' KB/s and the CPU trace's self ms per function; `--log-code` for the
+tier each function reached (a once-a-frame function left in Sparkplug or Maglev boxes every double it loads), and
+`--no-concurrent-recompilation` so no trace is cut when the browser closes. Each finding becomes its own hypothesis or
+N- row. Owner: per finding.
+
+### E-223 The frame's critical path: which worker gates each frame
+
+**Premise:** a millisecond saved in a worker that waits for another changes nothing; one saved on the worker the
+others wait for moves the frame. The frame clock (E-24) stamps every worker's step start and end each frame, and the
+wait meters say who waited, but nothing reads them as a chain per frame.
+**Plan:** a tool that reads the frame clock's slots over a window and says, per frame, which worker finished last on
+the chain (logic → physics → pre-render → Pixi), and how often each one gates; then the scenes' owners ranked by the
+frames they gate. Owner: a tool (the scenes' rankings are its result).
+
+### E-224 Scaling curves: each worker's STEP_MS against the entity count
+
+**Premise:** a worker's cost per entity is assumed flat. A knee in STEP_MS against N, where the hot columns stop fitting
+the L2 or L3 cache, or a curve steeper than linear (a sort, a quadratic pass), would point at layout or algorithm work
+no single sitting shows.
+**Plan:** each stress scene's own load knob at N = 1k, 2k … 64k (one short run each), STEP_MS per worker against N, the
+cost per 1000 entities and where it bends. Owner: a tool; findings become hypotheses.
+
+### E-225 GC pauses against the long frames
+
+**Premise:** the garbage left (R-0958: pre-render 39 KB/s, Pixi 140 KB/s) is small, but each scavenge pauses its
+worker. Whether those pauses are the p95/p99 frames is not known.
+**Plan:** `--js-flags=--trace-gc-nvp` with the frame totals' histogram per worker over the same window: each pause's
+time against the worker's frame times; the share of frames over the budget that held a GC. Owner: the frame
+histogram's tail per worker.
+
+### E-226 Two workers writing the same cache line of a shared buffer (false sharing)
+
+**Premise:** words written by different workers that sit in one 64-byte cache line make each write invalidate the
+line in the other core. The frame clock's slots are 32 bytes (two workers a line), and other shared layouts (stats
+blocks, query headers, free-list heads, the frame chain) were laid out for size, not by writer.
+**Plan:** read every SharedArrayBuffer layout for words with different writers within 64 bytes; for each one written
+per frame or per entity, a kernel with two threads writing it as the engine does, padded and not. Owner: per layout.
+
+### E-227 Pixi's own allocations: fewer render calls and buffer updates a frame
+
+**Premise:** most of Pixi's 140 KB/s of garbage is Pixi's (R-0958): buffer update events (`ge.emit` 31 KB/s, from each
+`buffer.update`), render target binds (19), render passes (13), `push`, `Fa`. Each `renderer.render()` and each buffer
+update costs a few objects; the light pass alone updates three or four buffers and renders two or three times a frame.
+**Plan:** count Pixi's render calls and buffer updates per frame per scene; skip the updates of an unchanged buffer
+(the cone buffer with no cone light, the self-lit buffers with no occluder), and merge render calls where two passes
+share a target. Owner: Pixi's KB/s and the renderer's STEP_MS.
+
+### E-228 The OS's view: scheduling, wake-ups and core moves (ETW)
+
+**Premise:** N-146 and E-219 found Windows' timer and wait behaviour by its side effects. An ETW trace (WPR, part of
+Windows; WPA to read it, from the Windows ADK) shows each worker thread's context switches, the time from an
+Atomics.notify to the wake-up, the cores it ran on and the CPU's frequency.
+**Plan:** WPR's CPU and scheduling profile over a Predator run; per worker, the wake latency after a notify, the
+migrations, the frequency. Needs the owner's OK to install the ADK's WPA.
+
+### E-229 Hardware counters: cache misses, mispredicts and IPC per function
+
+**Premise:** the CPU trace gives time, not why. AMD uProf or Intel VTune give cache misses, branch mispredicts and
+instructions per cycle per function and show false sharing (E-226) directly.
+**Plan:** a profile of Predator's and BunnyMark's hot workers; functions with low IPC or a high miss rate become
+layout hypotheses. Needs the owner's OK to install the profiler.
+
+### E-230 What the GPU does in a frame
+
+**Premise:** GPU-bound scenes are judged by drawn frames (the renderer's FPS can read 60 with fewer drawn). Spector.js
+(WebGL) lists each call of a frame: state changes, draw calls, redundant binds; WebGPU timestamp queries time each pass.
+**Plan:** one captured frame of Predator, Sun Street and the Headlights demo on each backend; redundant state and the
+passes' GPU times. Owner: drawn FPS of a GPU-bound scene.
+
+### E-231 A CPU-trace diff between two revisions
+
+**Premise:** a regression is found by the scoreboard's rows, after the fact. Two CPU traces of the same scene, one per
+revision, compared function by function (self ms and its share), name what moved before a sitting is set up.
+**Plan:** a tool over `summarizeChromeCpuTrace`'s output for two traces; the functions whose share moved most. Owner:
+a tool.
+
+### E-232 Imported bindings read in hot loops carry a hole check each time
+
+**Premise:** an ES module's imported binding (a component class, a constant, a helper) can be uninitialized while
+modules load (a cycle), so TurboFan checks it against the hole wherever it cannot prove it initialized: in Pixi's
+`_buildSelfLitBatch`, 10 `ThrowAccessedUninitializedVariable` sites, four of them in the per-occluder loop
+(`LIGHT_OCCLUDER_MASK_SPRITE`, `Transform.active`, `ShapeType.Circle`, `writeOrientedBoxVerts`). A load, a compare and a
+branch each access; if the pattern is engine-wide, every hot JS loop over components pays it per entity.
+**Plan:** count the sites per hot function over the scenes (E-222's tool); a Chrome kernel with an imported constant and
+class read in a loop against the same read through a local taken before the loop; then the hot loops' imports into
+locals (a const before the loop). Owner: the worker whose hot loop moves.
+
+**Answered 2026-11-13 (R-0970): small.** In Chrome an imported binding read inside a loop costs 0.1 to 0.17 ns a pass
+(imports against locals +19 to 24 % in a 1.5 ns/entity kernel). The hot loops hoist theirs already; the TDZ sites left are
+per call (setters, the body sync's module state, `getColliderBounds`), none near 1 % of a worker.
+
+### E-233 Pixi's uniform writes go through generic inline caches and box their doubles
+
+**Premise:** `_stampLightCamera` writes `uniforms.uZoom`, `uniforms.uCameraPos[0..1]` and reads `uCameraRot` on Pixi's
+uniform objects, of several shapes (one per shader): in the final graph a `LoadWithVector` and `StoreWithVector` call
+each (the inline cache's generic stub) and an `Allocate` for the zoom (a double boxed for the generic store), per light
+batch per frame. Other per-frame uniform writers likely do the same.
+**Plan:** E-222's tool for every `LoadWithVector`/`StoreWithVector` left in hot functions; for the uniforms, write them
+through a typed view kept per batch (Pixi's `uniforms` hold Float32Arrays for vectors) or a monomorphic setter per
+shader. Owner: Pixi's KB/s and the renderer's STEP_MS.
+
+**Also (R-0965):** `_applyLightingViewport` writes the lighting shader's uniforms the same way: seven generic inline-cache
+calls and the inverse resolution boxed, once a frame (flashlightStressScene's `updateLighting`).
+
+**Answered 2026-11-13 (R-0968): too small to change.** The uniform writers run a few times a frame (one call per light batch,
+one viewport per pass): neither `_stampLightCamera` nor `_applyLightingViewport` shows in Predator's or the flashlights'
+CPU traces, and their boxed doubles are a handful of heap numbers a frame.
+
+### E-234 Light batch objects change shape after they are made (map migrations each frame)
+
+**Premise:** `_finishLightBatch` reads `batch.geometry`, `batch.vbuf`, `batch.cbuf` behind `TryMigrateInstance` checks:
+the batch objects' maps were deprecated, a field generalized after objects were made (likely `cbuf` null in the point
+batch and a Buffer in the cone batch, from one literal: DX-SPOT's). Each access of a migrated object's field pays the
+check, and older objects migrate on access.
+**Plan:** the batch objects made by one class whose fields keep one type (an empty Buffer stand-in, or two classes),
+and E-222's tool to find other `TryMigrateInstance` sites. Owner: Pixi's STEP_MS in the flashlight scene; the count of
+migration sites before and after.
+
+**Answered 2026-11-13 (R-0968): no running cost.** `TryMigrateInstance` is the slow path of a map check: an object
+migrates once, then the check passes. No CPU or KB/s row names the batch functions for it.
+
+### E-235 Box2D's clock reads performance.timeOrigin at every call: 576 KB/s in Predator's physics
+
+**Premise:** heapSampleWorkers over Predator's physics worker (12 s after 15 s): 634 KB/s, of which 576 in the Box2D
+glue's `_emscripten_get_now` (`performance.timeOrigin + performance.now()`, box2dWasm.js), called from WASM (377) and
+`stepWorld` (200). A read of `performance.timeOrigin` makes a 12-byte heap number (R-0958's probe), so this is about
+48 000 calls a second, some 800 a frame: Box2D's profiling timers (b2GetTicks around its stages). Each is also a
+WASM-to-JS call.
+**Plan:** count the calls a step and where Box2D makes them; then either the clock read once per realm in the glue (a
+post-build patch of box2dWasm.js, or an `emscripten_get_now` of our own in the build's JS library) or Box2D's
+profiling timers off in our build (both builds, SIMD and no-SIMD, in the Box2d_3.2 repo). Owner: physics' STEP_MS and
+KB/s in Predator and Balls.
+
+**CPU too (R-0963):** in Predator's CPU trace `_emscripten_get_now` is 29.5 ms/s of the physics thread's
+417 (7.1 %): about 0.5 ms a frame, besides the garbage.
+
+**Kept (hygiene) 2026-11-13 (R-0969):** the origin read once and the fine profile timers constant under `B2_COARSE_PROFILE`:
+physics' heap 634 / 743 → 403.7 KB/s in Predator. Balls with E-235 alone: physics −0.3 % (an A/A read +2.8 %). About 460
+clock reads a frame remain, outside the profile.
+
+### E-236 The WebGL shader sync's plan is rebuilt at nearly every bind: 934 KB/s in Predator's Pixi worker
+
+**Premise:** Pixi's worker allocates 1271 KB/s in Predator; 934 of it in `Lg` (pixi.min.js: E-148's WebGL shader sync,
+`scripts/pixi-stubs/shaderSyncPolyfill.mjs`), reached from `bind` (785) and `execute` (149). The plan per shader is
+valid while every group slot holds the same BindGroup object and none gained a key; a slot that holds another BindGroup
+each draw (likely the batcher's texture group, one per batch, on the same shader) fails the check and the plan, three
+arrays, an Int32Array and an object, is built again at that bind. The plan depends only on the groups' keys, not on
+which BindGroup holds them.
+**Plan:** step 0: which shader and which slot changes (count rebuilds per shader in the worker); then validate a plan
+by each slot's key list (`_weedKeyList` contents) instead of its BindGroup's identity, or keep a plan per key layout.
+Owner: Pixi's KB/s and STEP_MS in Predator; E-148's parity (the same binds, the same units) by its tests.
+
+**Kept (hygiene) 2026-11-13 (R-0969):** Pixi's heap in Predator 1271 / 1297 → 269 KB/s; Predator gate neutral.
+
+### E-237 Logic's contact begin calls a Map or Set `set` per contact: 37 KB/s per logic worker in Predator
+
+**Premise:** in each of Predator's two logic workers, `set` (a native Map or Set method) under `_applyContactBegin`
+allocates 37 KB/s: a new entry (or a new key object) per contact that begins.
+**Plan:** read `_applyContactBegin`'s collection; a typed or pooled structure for the contact pairs if it is one per
+contact. Owner: logic's KB/s and STEP_MS in Predator.
+
+**The site (R-0965):** `_onContactRingEvent` inlines `_applyContactBegin`/`_removePairSlot`/`_removeForeignSlot`, whose
+`this._pairSlot.set(collisionPairKey(minE, maxE), ...)` and `.delete(key)` are the allocation sites: a Map keyed by
+the packed pair, which past the Smi range is a heap number each time.
+
+**Answered 2026-11-13 (R-0968): small.** The pair key `((minE & 0xffff) << 16) | (maxE & 0xffff)` passes the Smi range
+when minE is 16384 or more (Predator has about 17 000 entities): about 50 boxed keys a frame per logic worker (37 KB/s),
+a few microseconds, and GC is under 0.1 % of a worker (R-0961). A Map of typed keys is not worth its code.
+
+### E-238 The particle emit path from game code allocates about 30 KB/s in Predator's logic
+
+**Premise:** `ParticleEmitter._spawn` 17 KB/s, `rng` 6, `randomRange` 5, `copyEmitFields` 4 per logic worker
+(Predator's soldiers' sparks): heap numbers from the emit config's ranges and the random draws, in functions that run in
+Maglev (`_spawn`, `copyEmitFields`) or reached TurboFan late.
+**Plan:** E-222's tool on the emit path once it is in TurboFan; the doubles into the config's Float64Array scratch
+(E-85's pattern) where they cross calls. Owner: logic's KB/s in Predator and a particle stress scene.
+
+### E-239 Per-frame engine code stays in V8's lower tiers for minutes
+
+**Premise:** V8's code log over a Predator run (25 s): of 1706 engine functions that ran, 64 reached TurboFan, 214 Maglev,
+606 Sparkplug and 822 stayed in the interpreter. The functions called once a frame never reached TurboFan:
+`_runFrame` reached Maglev after 92 s, Pixi's `updateLighting` after 8.5 s, and logic's `update`, pre-render's
+`reportFPS`, `_waitForPose`, `resetFrameCounters` and the camera's helpers stayed in Sparkplug; the physics host's
+`gameLoop`, `doStep`, `waitForLogic` and `serviceLiquidFunQuery` stayed in Ignition. V8 tiers up by how much of a
+function's bytecode runs, and these spend their calls in WASM or in waits. Lower tiers box every double they compute (the
+small KB/s rows of N-158 and R-0958 are mostly theirs) and run slower. It is also a measuring question: a sitting's
+10 s warm-up measures such code before it is optimized.
+**Plan:** a CPU trace of the same run with each function's tier: the self ms per worker spent in Ignition, Sparkplug and
+Maglev code. If it matters: the per-frame glue made hot enough to tier (fewer, larger functions that loop), and the
+sittings' warm-up checked against the time the owner's hot functions reach TurboFan. Owner: each worker's STEP_MS; the
+tiers' share of it.
+
+### E-240 Logic reads its neighbour rows a core away: `get neighborCount` 12 % and `getNeighbor` 8 % of Predator's logic
+
+**Premise:** a CPU trace of Predator (26 s, the first logic worker): `get neighborCount` 710 ms self (12.0 %), `getNeighbor`
+483 ms (8.2 %), each a field test and one read of the neighbour row in Grid's shared buffer. The spatial worker wrote those
+rows this frame on another core, so the first read of each row (and of each line a row spans) waits for the line to
+move between cores. Rows are `maxNeighbors + 1` ids (the count first), not aligned to 64 bytes, so a row and its count
+can sit across two lines.
+**Plan:** a two-thread kernel (one writes rows each round, one reads the count and the first ids of random rows) with
+the engine's row size, aligned to 64 bytes and not; if the aligned rows read faster, the neighbour buffer's rows padded
+to whole lines. Also whether the getter is inlined into the game's loops (E-222's graph of the demo's caller). Owner:
+logic's STEP_MS in Predator.
+
+**Refined (reading, 2026-11-13):** Predator's rows are 1025 ids (`maxNeighbors` 1024, about 2 KB), so alignment can save at most
+one line where a short list's count and first ids straddle two (about 17 % of them); the rest is the lists' volume
+crossing cores. The kernel will say how much the padding is worth.
+
+### E-241 The LiquidFun density splat boxes three doubles per particle: 1464 KB/s in the LiquidFun demo's Pixi
+
+**Premise:** heapSampleWorkers over the LiquidFun demo (10 s after 15 s): Pixi 1569 KB/s, of which 1464 in
+`LiquidFunDensitySplat.upload` (liquidFunDensitySplat.js). Both of its per-particle loops call `this._writeInst(x, y,
+tint, alpha)`, a method over TurboFan's inlining size for one that takes doubles (E-59), so each call boxes x, y and
+alpha: about 36 bytes a particle a frame.
+**Plan:** E-222's graph of `upload` to confirm the call is left out of line; then the write takes the source arrays and
+an index (no double crosses the call), or each loop writes the row itself. Owner: Pixi's KB/s and STEP_MS in the
+LiquidFun demo; the splat's parity (the rows written) by a test.
+
+**Confirmed in the graph (R-0965):** line 180, `this._writeInst(xArr[i], yArr[i], packed, a)`, holds 8 allocation sites
+and 2 calls left out of line in the LiquidFun demo's trace.
+
+**Kept (hygiene) 2026-11-13 (R-0969):** Pixi's heap in the LiquidFun demo 1569 → 108 KB/s. The demo runs under the 3 ms
+floor, so the timing gate was Predator's.
+
+### E-242 The raycast's polygon build allocates 311 KB/s in one run and about 1 in another
+
+**Premise:** flashlightStressScene `?cone=1&lights=360&crates=320`: pre-render 342.6 KB/s, 311.1 of it in
+`_buildVisibilityPolygonsSwept`, where R-0958's samples of the same scene and query, an hour earlier, had it near 1 KB/s
+(pre-render 39 to 45 KB/s in all). A deopt that leaves the function in a lower tier, or an inlining decision that
+differs run to run, would box its doubles.
+**Plan:** three runs with `--log-deopt` and `--log-code`: the function's tier and deopts against its KB/s each run;
+E-222's sites for it when optimized. Owner: pre-render's KB/s and STEP_MS in the flashlight scene.
+
+### E-243 A loop the engine calls once a frame starts each call in a lower tier (on-stack replacement each time)
+
+**Premise:** BunnyMark's `Bunny.tickAll` (200 000 bunnies a call, plain typed-array arithmetic) allocates 599 KB/s:
+about 10 KB a call, not per bunny. A function called once a frame reaches TurboFan late (its invocations are few), so
+each call starts in Sparkplug or Maglev, boxes its doubles until the loop's back edge enters the optimized code built
+for on-stack replacement, and runs there. Every large once-a-frame loop (game `tickAll`s, the engine's own per-frame
+loops left in JS) would pay that start each frame.
+**Plan:** V8's code log for `tickAll` (its tiers, its OSR code) and the KB/s per call against the bunny count; if
+confirmed, whether the whole function reaches TurboFan later in a long run (a 2-minute sample), and what keeps such
+loops optimized from their first iteration. Owner: logic's KB/s and STEP_MS in BunnyMark.
+
+**More evidence (R-0964), before testing:** Predator's spatial worker, in one 12 s heap sample after 15 s, allocated 311 KB/s,
+220 of it in `_rebuildMovedRows` and 68 in `_rebuildOwnedRowsLatched`, with `Math.fround` called as a function (9 KB/s): code
+TurboFan had not optimized, since its `fround` is an instruction. An earlier sample of the same scene had spatial at 7 KB/s.
+V8 optimizes a whole function with TurboFan after about 3000 calls (about 50 s at 60 a second); before that a
+once-a-frame function enters Maglev each call and its loop jumps into optimized code by OSR. Sittings warm up 10 to 20 s.
+First test: a 2-minute run, tiers over time and STEP_MS at 20 s against 90 s. Ranked first.
+
+**Answered 2026-11-13 (R-0971, R-0972):** the per-frame functions run their loops in cached TurboFan OSR code from the first
+seconds; a loop moved into a function of its own waits in Maglev for ~16 000 calls, and Maglev off is slower. Nothing to
+change.
+
+### E-244 Per-entity tick paths allocate on some calls (Boids, the flashlight walkers)
+
+**Premise:** Boids: each of four logic workers allocates about 460 KB/s in the demo's `Boid.tick` (1.5 bytes a call:
+some calls, not all); flashlightStressScene: logic's `_tickNonDecimatedOneNoBody` 263 KB/s (the walkers' tick inlined in
+the engine's per-entity loop). Boids is a gate scene: that garbage is in its logic numbers.
+**Plan:** E-222's sites for `Boid.tick` and `_tickNonDecimatedOneNoBody` with their callers; the engine side fixed in the
+engine, the demo's in the demo (public APIs). Owner: logic's KB/s in Boids and the flashlight scene.
+
+### E-245 Spatial's JS passes take 28 % of the spatial worker in Predator
+
+**Premise:** Predator's CPU trace (26 s): of the spatial worker's 283 ms/s, `_findNeighbors` 31.7 (11.2 %),
+`rebuildOwnedRows` 31.7 (11.2 %), `_rebuildMovedRows` 16.5 (5.8 %), `getCellRange` 3.9; the rest is WASM
+(`gather_batch` 112, `publish_batch` 69). Those three JS passes run per entity or per row each frame.
+**Plan:** E-222's sites for each (boxes, checks, calls not inlined, TDZ in their loops); the cheap fixes first; then
+whether a pass belongs in the WASM kernels beside them (a hypothesis of its own, measured as W-rows were). Owner: the
+spatial worker's STEP_MS in Predator and Boids.
+
+**From the sites (R-0965):** `rebuildOwnedRows` calls `getColliderBounds(i, _boundsResult)` for every non-circle entity, out
+of line, and reads its four results from an object; the circle path is already inline. Candidate: the box path inline
+too, results through a Float64Array.
+
+**Kept on the kernel 2026-11-13 (R-0974):** a box's bounds inline in the three grid passes (`7bcc5d8a`): the full
+rebuild with 40 000 turned boxes +21.7 %, checksums equal; Boids' spatial 6.373 → 6.152 ms (−1.1 %, NEUTRAL).
+
+### E-246 Physics' JS around the step: publishPose, snapshotPrevPose, publishMovedBodies
+
+**Premise:** of the physics thread's 417 ms/s in Predator, `publishPose` 14.8 (3.6 %), `snapshotPrevPose` 6.0 (1.4 %),
+`publishMovedBodies` 4.2 (1.0 %): per-body copies in JS each step.
+**Plan:** E-222's sites; a kernel each against its current form (`publishPose` has one, E-76's publishPose row). Owner:
+physics' STEP_MS in Predator and Balls.
+
+### E-247 The particle worker's JS decoration passes
+
+**Premise:** of the particle worker's 42 ms/s in Predator, `decorationScreenBranchless` 5.4, `updateDerivedProperties`
+5.3, `resolveAttachedDecorations` 3.0, `copyDecorationScratch` 1.1: a third of the worker, beside
+`sway_decorations_f32x4` (11.3).
+**Plan:** E-222's sites for each; then a kernel for the largest. Owner: the particle worker's STEP_MS in a decoration
+scene (decorationSwayStressScene) and Predator.
+
+### E-248 The main thread scans every audio slot each frame for metrics, and polls absent gamepads
+
+**Premise:** `scene.updateInternal` calls `SoundManager.getMetrics` every frame, and its `getActiveSlotCount` reads each
+of `audio.maxSlots` slots with `Atomics.load` (2048 in Predator): 2.6 ms/s of the main thread in Predator's trace.
+`Gamepad.poll` writes every axis and button of every absent pad back to 0 each frame (1.9 ms/s). The main thread
+dispatches input: its frame is E-219's latency.
+**Plan:** the active count kept by the worklet (one word it updates) or read only when `scene.audioMetrics` is read;
+`poll` writing a disconnected pad once. Owner: the main thread's self ms in Predator's trace.
+
+**Kept (hygiene) 2026-11-13 (R-0969):** main thread only; Predator gate neutral.
+
+### E-249 `this._hasComponents.X` is a megamorphic load in per-entity API calls
+
+**Premise:** `_hasComponents` is an object whose keys differ per entity class, so a read of
+`this._hasComponents.SpriteRenderer` in `setAnimation`, `setAnimationState` and `setScale` is a generic inline-cache
+call (`LoadWithVector` in Predator's final graphs), each time game code calls them for any entity. The same read guards
+`_makeComponent` and other accessors.
+**Plan:** count the `_hasComponents` reads in hot paths; a kernel of `setAnimation` over several entity classes against
+the same with a per-class bit mask (an integer on the class, tested with `&`) or a fixed-shape flags object with every
+component's key; then the change if it pays. Owner: logic's STEP_MS in Predator (its persons change animation often).
+
+**Answered 2026-11-13 (R-0968): small.** In Predator's CPU trace `setAnimation` is 0.45 to 0.66 % of a logic
+worker and `setAnimationSpeed` 0.54 to 0.78 %: the megamorphic load is a fraction of that.
+
+### E-250 The spatial worker changes shape after it starts (a map migration in `_findNeighbors`)
+
+**Premise:** Predator's final graph of `_findNeighbors` checks `TryMigrateInstance` twice at
+`this.cellsCheckedThisFrame += g.gather(...)`: the worker object's map was deprecated after construction (a field
+added later or one whose representation changed). workerShape.test.js enforces the constructor's fields for pre-render
+and Pixi only.
+**Plan:** workerShape's check run on the spatial, particle and logic workers; each field declared in the constructor
+with its final representation. Owner: hygiene (the spatial worker's STEP_MS not 3 % worse); the migration sites gone.
+
+**Fixed 2026-11-13 (564351fd):** the shape test on the three workers found logic's detailed-stats times first written as
+the Smi 0 by `update()` (and turned double later), spatial's `_noBodyCount` and particle's `_swayBucketCacheK`: declared
+in the constructors. The lists `initialize` binds by width stay there (E-71). Timed with the next Predator gate.
+
+**Kept (hygiene) 2026-11-13 (R-0974).**
+
+### E-251 Steady deopt loops in per-frame engine functions
+
+**Premise:** V8's deopt log over Predator (30 s; summarizeV8Deopt, after the first 10 s): `weedjsPost.js:610` 333 deopts
+(`publishPose`'s N-86 branch, `Atomics.load(poseGenEpoch, 0)`: insufficient type feedback for the call), about one
+every 4 frames; `spatialWorker.js:1558` 157 (`_flushWasmPublish`'s `this._wasmPub.queued`, insufficient feedback for
+a named access); `logicWorker.js:867` and `:856` about 50 each (the spawn batch's sort and merge). A soft deopt for
+missing feedback should happen once; hundreds mean the optimized code keeps meeting code whose feedback it lacks, and
+the function spends its time in lower tiers between compiles (E-243's allocation, E-246's `publishPose` 3.6 % of physics).
+**Plan:** the deopting function at each site and the cycle (V8's code and deopt log of one long run); then the rare
+branch moved into a function of its own (out of the hot function's graph) and the counts again; owners: physics',
+spatial's and logic's STEP_MS in Predator, and their KB/s.
+
+**Dropped 2026-11-13 (R-0971).** The loops are the cached TurboFan OSR code each frame re-enters, falling to the interpreter
+for a tail compiled without feedback. A kernel of the pattern: with the loop in a function of its own (the proposed fix) the
+loop runs +19 % in Node and +55 % in Chrome for about 16 000 calls, a normal compile held in Maglev, then reaches the inline
+form's speed. Not applied; E-254 follows the Maglev lead.
+
+### E-252 Box2D's collision callbacks take 8 to 12 % of a logic worker in Predator
+
+**Premise:** Predator's CPU trace: `_processBox2dCollisionCallbacks` 18.6 ms/s (8.2 %) and 24.3 ms/s (11.9 %) of the two logic
+workers' self time: the dispatch of each contact begin and end to the entities' callbacks.
+**Plan:** E-222's sites for it; its per-contact work against the number of contacts a frame (the ring's counts); then
+the cheapest of a narrower dispatch (only the types with callbacks) or fewer lookups per contact. Owner: logic's STEP_MS
+in Predator.
+
+**Reading the code:** the walk visits every tracked pair each frame for liveness, generations and stay listeners;
+with few stay-listening types most of it is the liveness purge, which could run on ring events only.
+
+**Answered 2026-11-13 (R-0978):** the walk is about a third of the contact flow (kernel, no-inlining profile); purging on
+events would save about 3 % of a logic worker and stop exits for entities gone inactive before their end event. Not done.
+
+### E-253 The FSM's tick takes 7 to 9 % of a logic worker in Predator
+
+**Premise:** `fsm.tick` 15.9 ms/s (7.0 %) and 17.9 ms/s (8.8 %) of the two logic workers, besides the states' own code:
+each entity's FSM dispatches its state's onUpdate through `.call` on a table, a call TurboFan cannot inline (each state
+its own function), with its time and `dt` passed along.
+**Plan:** E-222's sites and a kernel of the dispatch with Predator's state counts; then what is left to cut (the per-call
+lookups, the arguments). Owner: logic's STEP_MS in Predator.
+
+### E-254 Maglev holds per-frame engine code below TurboFan for minutes in Chrome
+
+**Premise (R-0971):** in Chrome a once-a-frame function with a loop that gets a normal compile runs in Maglev for about
+16 000 calls (4.4 min at 60 Hz) before TurboFan: a kernel ran 29 µs a call there and 20.4 after. Predator's big per-frame
+functions only have OSR code in 100 s (their loops in TurboFan); smaller ones with loops may sit in Maglev.
+**Plan:** Predator ABAB, one build, side B with `--js-flags=--no-maglev` (`runPredatorAbab --js-flags-b`). If B is faster:
+the functions in Maglev (`--log-code`), and a structure that reaches TurboFan early in a stock Chrome. Owner: every worker.
+
+### E-255 Box2D's scheduler spin reads the clock every 64 turns
+
+**Premise:** after E-235, Predator's physics still makes 331 KB/s in `emscripten_get_now` (about 460 reads a frame).
+`b2SchedulerSpin` (scheduler.c) spins up to `B2_SCHEDULER_SPIN_MILLISECONDS` (0.05 ms) for a task and reads the clock every 64th
+turn (E-144): a call out to JavaScript and a heap number each.
+**Plan:** spin by count: the turns that fit 0.05 ms, measured once at the scheduler's start (or carried from the last spin),
+and no clock inside the spin. Heap sample (physics' KB/s), then Balls' and Predator's physics STEP_MS. Both Box2D builds
+(SIMD and not). Owner: physics.
+
+**Kept (hygiene) 2026-11-13 (R-0975):** `emscripten_get_now` 331.4 → 217.4 KB/s in Predator's physics; Balls' physics −3.1 %
+(NEUTRAL). The rest comes from `b2Yield` (E-256).
+
+### E-256 Box2D's b2Yield reads the clock under Emscripten
+
+**Premise:** after E-255, `emscripten_get_now` is still 217 KB/s of Predator's physics heap, all under the step call. Emscripten's
+`sched_yield` is `_emscripten_yield(emscripten_get_now())`, and Box2D's `b2Yield` is `sched_yield`: it runs whenever the main
+thread waits for a task with no work of its own (`b2SchedulerFinishTask`) and every 6 turns of the solver's stage sync. The
+time it reads only feeds a timer check that is a no-op in this build.
+**Plan:** under Emscripten, `b2Yield` runs `emscripten_current_thread_process_queued_calls()` (the queue the yield processes)
+and reads no clock. Heap sample, then Balls' and Predator's physics STEP_MS. Both Box2D builds. Owner: physics.
+
+### E-257 Physics' JS service loop allocates about 65 KB/s
+
+**Premise:** with Box2D's clock quiet (E-255, E-256), Predator's physics makes 87.5 KB/s, most of it in the JS loop around the
+step: `serviceChainQueries` 17.1, `serviceLiquidFunQuery` 13.1, `pumpQueryWake` 8.2, `serviceLiquidFunExtract` 7.9, `gameLoop` 7.3,
+`waitForLogic` 6.8 KB/s.
+**Plan:** E-222's sites for those functions (closures, boxed numbers, the wake's promises); fix the cheap ones; heap sample.
+Owner: physics.
+
+### E-258 Pixi uploads about 860 KB of instance data a frame in Predator
+
+**Premise (glFrameRecorder, 2026-11-13):** per frame one `bufferSubData` of 374 KB, one of 195 KB, and 108 + 27 KB on two
+alternating pairs: every row, about 52 MB/s, for 33 000 instances in 27 draws.
+**Plan:** which batch each buffer is; the share of rows unchanged since the last frame (static scenery, E-188's keyed
+decorations); upload changed ranges only, or keep static rows in a buffer of their own. Owner: Pixi (and the GPU process).
+
+**Answered 2026-11-13 from the record:** the 374 KB is E-82's pose stream, 24 B for each of about 16 000 visible rows;
+statics already go up only when they change. Keeping static rows in place was tried twice and cost more (both dropped).
+
+### E-259 Pixi re-creates its float data textures every frame
+
+**Premise (glFrameRecorder and the code):** `_uploadRgba32FloatGl` calls `source.update()` and `texSys.bind` (Pixi uploads the
+source) and then `gl.texImage2D`, with 3 `pixelStorei` and 4 `texParameteri`, every frame: two `texImage2D` a frame on the light
+data texture in Predator. The same path serves the texture LUT, the animation start table and each batch's pose texture.
+**Plan:** allocate once, then `texSubImage2D` of the rows written; parameters once. GL calls a frame, then Pixi's STEP_MS in
+the light-heavy scenes. Owner: Pixi.
+
+**Kept (hygiene) 2026-11-13 (R-0976):** written in place with `texSubImage2D` (`fbe0824f`): Predator per frame `texImage2D` 2 → 0,
+`texParameteri` 4 → 0, GL calls 533 → 507.5, texture uploads 80 → 32 KB.
+
+### E-260 The self-lit sprite-mask pass draws a mesh per sprite and light
+
+**Premise (glFrameRecorder, 2026-11-13):** Sun Street makes 1396 GL calls a frame, 168 `drawElements`, 329 `bufferSubData` of about
+190 B and 173 `uniform2f`; Headlights 1016, 123, 242, 128. `_renderSelfLitSpriteMasks` fills each (sprite, light) item's mesh
+buffers, calls `update()` on both, sets the light's uniforms and draws; it also makes two arrays per item.
+**Plan:** the per-item arrays into a module scratch first (heap sample); then one instanced draw for the pass, as the other
+batches. GL calls a frame, then Pixi's STEP_MS in Sun Street and Headlights. Owner: Pixi.
+
+**Kept 2026-11-13 (R-0977):** one mesh per texture source, the terms as flat vertex attributes (`5c18b9d0`; step 1
+`9c96671c`): Pixi 10.353 → 1.381 ms (−86.8 %, 4/4) in `visPolyStressScene ?mask=sprite&selfLit=20000`, pixels identical on
+WebGL and WebGPU. N-163 found on the way.
+
+### E-261 The mesh fill pose goes through a scratch object
+
+**Premise (round 2's heap sample, Sun Street):** `copyMeshFillPoseScratch` 62.8 KB/s of Pixi's 375: `readMeshFillPose` writes x, y,
+c, s into the module object `_livePose` for every mesh every frame (E-66: such fields go tagged, a heap number a store).
+**Plan:** a module Float64Array, the seven callers reading [0..3]; heap sample; the mesh parity tests. Owner: Pixi.
+
+**Kept (hygiene) 2026-11-13 (R-0979):** `60a43855`, Sun Street's Pixi 375.1 → 279.9 KB/s.
+
+### E-262 Every entity tick boxes its three doubles
+
+**Premise (round 2, WaterAndBoxes):** logic makes 2807 KB/s, 2796 in `update`; its TurboFan graph allocates at
+`_tickNonDecimatedOne`'s `obj.tick(dtRatio, deltaTime, accTime, frameNum)`. Each class has its own `tick`, so the call is not
+inlined, and the frame's three doubles become heap numbers for every entity, every frame.
+**Plan:** box them once a frame (a generic array or tagged fields the loop reads, so the call passes the same heap
+numbers); a kernel of the tick loop (KB/s and ns a tick); then WaterAndBoxes' and Predator's logic. Owner: logic.
+
+### E-263 FL4's head is outside the Smi range
+
+**Premise (from reading the free list):** FL4 packs (tag << 19) | (index + 1) in an Int32 (20 index bits on
+`deco/1m`), so most heads pass 2^30; E-87 measured that Chrome then returns a heap number from every `Atomics.load` and
+`compareExchange` (~14 ns an op), and fixed only the 16-bit stack. Wide pools and 32-bit entity ids pop and push through FL4.
+**Plan:** a Chrome kernel of pop and push against a head kept in the Smi range (E-87's sign trick, a 10 or 11 bit tag),
+weighing the smaller ABA window; then a spawn-heavy scene with a wide pool. Owner: whoever spawns (logic, particle).
+
+### E-264 179 worker fields start null and hold a typed array in Predator
+
+**Premise (fieldTypeAudit, Predator):** Pixi 57 of 92 typed-array fields start null, pre-render 43 of 111, logic 27 of 58,
+particle 27 of 46, spatial 25 of 61, and twelve are added after the constructor. A field declared null is typed Any: 15 % of
+the emit kernel where per-entity code tested one (E-71); a loop that indexes a hoisted local ties (E-73).
+**Plan:** cross the list with per-entity loops that read `this.X[i]`; declare those as empty arrays of their class (not the
+width-bound ones); a kernel of the hottest, then its owner. Owner: per worker.
+
+### E-265 A query with a fresh array of classes misses the identity cache
+
+**Premise:** `generateQueryMask` caches masks by the classes array's identity; game code that passes a literal each call
+(`Query.queryActiveEntities([SpriteRenderer])` in a tick) misses it, and every call builds an ids array, sorts it and joins
+a string key for the second cache (spawnStorm's logic: 11.2 KB/s, and 1 KB/s in `join`).
+**Plan:** a second-level cache keyed by the classes themselves (no string); a kernel of a query with a fresh literal
+against a kept array; then a demo that queries in its ticks. Owner: logic.
+
+### E-266 Entities without a body give the spatial grid no mover list
+
+**Premise (the CPU sweep, 2026-11-13):** `stationarySpatialWideScene's` spatial workers spend 48 and 51 % in `rebuildOwnedRows`, the
+full rebuild, though nothing moves: its entities have a Collider and a sprite but no body, so physics publishes no mover
+list and E-126's movers path cannot run.
+**Plan:** a mover list for bodiless collider entities (spatial compares their pose against the latched one in a scan and
+skips or feeds `_rebuildMovedRows`; or logic's setters publish them); the grid kernel with bodiless entities, then the
+scene's spatial STEP_MS. Owner: spatial.
+
+### E-267 The full grid rebuild writes its cells in entity order
+
+**Premise (the CPU sweep):** `rebuildOwnedRows` is 28 to 32 % of Boids' spatial and 48 to 51 % of stationarySpatialWide's; Boids' hot
+lines are scattered cell accesses (the owned-list append absorbing the loads' stalls 26 %, `localCounts[cellIndex]` 22 %). W6's C
+port (+10.9 % in its kernel, 1.48x on a mix of shapes) was screened when the rebuild was 12.5 % of Predator's spatial.
+**Plan:** W6's port again and a cell-ordered pass (bin by cell, then write each cell in one run) on the grid kernel; the winner
+on Boids' and stationarySpatialWide's spatial STEP_MS. Owner: spatial.
+
+### E-268 With several spatial workers, unread rows are read every frame to see they are clear
+
+**Premise (the CPU sweep's hot lines, stationarySpatialWide, 2 spatial workers):** `_findNeighbors` is 40 to 42 % of spatial,
+91 % of it on the read of a row's head (`sharedRows && neighborData[entityA * stride] !== 0`) that keeps a row another worker may
+have published clear, for every entity whose type nobody reads; rows are about 2 KB apart, a cache line each.
+**Plan:** read it only when it can be set (a dense per-worker byte, or an owner change from the owned list); the spatial
+kernel with two workers, then the scene's spatial STEP_MS. Owner: spatial.
+
+### E-269 Mesh UV fills copy their rows into Pixi's buffer every frame
+
+**Premise (the CPU sweep's hot lines):** meshApiStressScene's `uploadRange` spends all its self time (990 ms of the window) on
+`data.set(rows.subarray(...))`: the corner kernel's rows in the mesh memory copied into the Pixi buffer's array before upload.
+**Plan:** not the upload from the shared view: E-123 (R-0563) tried it for the sprite rows and every other worker paid
+about 6 %, which the private copy removed. Copy only the rows whose mesh changed, or let the kernel write into a
+non-shared memory Pixi owns; meshApiStressScene's Pixi STEP_MS, the other workers read against an A/A. Owner: Pixi.
+
+### E-270 Decal tiles are copied and uploaded whole for any stamp
+
+**Premise (the CPU sweep's hot lines):** decalStampStressScene's Pixi: `_uploadDecalRgba8` 89 % on the whole tile's
+`texSubImage2D`, `premultiplyDecalTile` 100 % on `dst.set(b.scratch)`; decalBlitStressScene's upload 415 ms.
+**Plan:** upload from the premultiplied scratch, only the rows or rect a stamp touched; the decal scenes' Pixi STEP_MS.
+Owner: Pixi.
+
+### E-271 fillQueueIndices writes the same identity every frame
+
+**Premise (the CPU sweep's hot lines):** the painter scenes' pre-render spend 125 to 145 ms of the window in it,
+all on `outIdx[i] = i` over the whole queue.
+**Plan:** write only past what the array already holds; the pack kernel, then the painter scenes. Owner: pre-render.
+
+### E-272 updateDecalTiles reads every tile's dirty flag with Atomics each frame
+
+**Premise (the CPU sweep's hot lines):** carScene's Pixi: 92 % of it on `Atomics.load(this.decalsTilesDirty, i)` over every tile.
+**Plan:** a dirty count the stamping side bumps, or plain reads first; the decal scenes. Owner: Pixi.
+
+### E-273 Logic workers take turns on the decoration list's lock
+
+**Premise (the CPU sweep's hot lines):** decoChurnStressScene's two logic workers spend 65 and 70 ms of the window
+spinning in `_lockActiveList`.
+**Plan:** per-worker pending lists merged once a frame, or a lock-free append; decoChurn's logic. Owner: logic.
+
+### E-274 The full grid rebuild writes every owned cell's count every frame
+
+**Premise (the CPU sweep's hot lines):** planetScene's spatial: 79 % of `rebuildOwnedRows` on the closing
+loop's `gridCounts[byteOffset] = localCounts[cellIndex]`, a cache line per cell, empty cells included.
+**Plan:** write only changed counts (or touched cells); the grid kernel with a sparse world, then planetScene. Owner: spatial.
+
+### E-275 Each tween asks every frame what its entity paints
+
+**Premise (the CPU sweep's hot lines):** tweenStressScene's logic: `paintTarget` 135 ms of the window, all on
+the tweened entity's `SpriteRenderer.active` read.
+**Plan:** the target kind in the tween's record, re-read on a sprite or mesh change; the tween kernel, then tweenStress. Owner: logic.
+
+### E-276 A flowfield lookup scans every slot with Atomics.load
+
+**Premise (the CPU sweep's hot lines):** navStressScene's logic: 81 % of `_findFlowfieldSlot` on the status load over
+every slot.
+**Plan:** a plain targetCell compare first, the status load only on a match; navStress's logic. Owner: logic.
+
+### E-277 The collider fill passes its doubles through module lets and calls TurboFan leaves out
+
+**Premise (the heap pass over all scenes, 2026-11-13):** destructibleTerrainScene's Pixi allocates 14.7 MB/s, 13.9 of it in
+`fanLocalVerts` and 318 KB/s in `packColliderFill`. `radialOutset` hands its point back in the module lets `_ox`/`_oy`;
+inlined into the fan loop, each double stored into a module context slot is a new heap number, six per triangle. No other
+module let in `src/` holds a double. planetPhysicsScene's Pixi spends 3.2 MB/s in `packColliderFill` itself: its mesh-index
+path calls `writeFillTri` (17 arguments) with eight doubles per triangle, from a caller too large to inline it.
+**Plan:** the point in a module `Float64Array` (E-85; E-261's `MESH_POSE`), and `--trace-turbo-inlining` on
+`writeFillTri` (17 arguments, most of them doubles); the collider fill kernel, then destructibleTerrain's Pixi STEP_MS and
+heap. Owner: Pixi.
+
+### E-278 rng() and randomRange() box their result when a big caller does not inline them
+
+**Premise (the heap pass):** littleCityScene's logic allocates 6.6 MB/s, 4.1 of it in `rng`, which `CityPerson.tick`
+calls twice per person per frame. A callee that returns a double and is not inlined boxes it; rng's bytecode carries its
+cold paths (a function generator, the warning that seeds an uninitialised one), and the tick is large. The engine's
+emitter does the same: particleIntegrateStressScene's logic, 1.4 MB/s in `randomRange` from `ParticleEmitter._spawn`.
+**Plan:** the cold paths in their own function (the fast path a few dozen bytes), `--trace-turbo-inlining` on the tick;
+a kernel of a large tick calling rng, then littleCity's logic STEP_MS and heap. Owner: logic.
+
+### E-279 packBox2dBodies allocates 278 KB/s in a loop with no object
+
+**Premise (the heap pass):** burningBoxesScene's Pixi allocates 902 KB/s, 278 in `packBox2dBodies`, whose loop makes no
+object (`PACK_OUT` and the options are reused). Likely boxed doubles: `writeBody` takes 17 arguments, 13 doubles.
+**Plan:** read the pack's inlining and deopts; if writeBody stays a call, its stores in the loop (or a module
+`Float64Array`); burningBoxes' Pixi heap and STEP_MS. Owner: Pixi.
+
+### E-280 destructibleTerrain's marching squares allocate objects per cell
+
+**Premise (the heap pass):** destructibleTerrainScene's logic allocates 52 MB/s while terrain is carved: `cellCorners`
+31.8 MB/s (four edge points, four corners and the result per cell), `cellSolidParts` 8.7, `stitchContours` 3.4,
+`extractIslands` 3.3. Three callers read only `.caseId`. planetPhysicsScene runs the same worldGrid: 35.5 MB/s.
+**Plan:** a `cellCaseId()` with no allocation for those three, reused scratch for the rest, still readable (a demo); logic
+STEP_MS on the carving frames (max and p95) and the heap. Owner: the demo.
+
+### E-281 BunnyMark's tickAll allocates 1.5 MB/s in a typed-array loop
+
+**Premise (the heap pass):** bunnyMarkScene's logic allocates 1.54 MB/s, 1.51 in `Bunny.tickAll`, a typed-array loop
+that should allocate nothing: likely the tier it runs in (after a deopt, or entered by OSR each frame).
+**Plan:** the deopt pass and `--trace-opt --trace-deopt` on tickAll first; the fix where that points (the engine if it
+is how logic calls tickAll); bunnyMark's logic STEP_MS. Owner: logic or the demo.
+
+### E-282 Collision pairs live in a Map keyed by a number
+
+**Premise (the heap pass):** littleCityScene's logic spends 140 KB/s in `Map.prototype.set` from `_applyContactBegin`:
+`_pairSlot` maps each begun pair to its slot (the table grows and rehashes; a Cantor key over 2^31 is a heap number).
+**Plan:** an open-addressing table on typed arrays; the contact kernel, then littleCity's and carScene's logic. Owner:
+logic.
+
+### E-283 Pre-render's collect re-enters its wasm kernel per non-sprite with ten doubles
+
+**Premise (the heap pass):** mamushkaDigScene's pre-render allocates 342 KB/s, 242 in `_collectVisibleEntitiesWasm`:
+the kernel stops at each entity that is not a plain sprite, and each new call passes the camera's doubles again.
+**Plan:** the camera's doubles in the kernel's memory once a frame, integers per call; the collect kernel with stops,
+then mamushkaDig's pre-render. Owner: pre-render.
+
+### E-284 collectVisibleBullets carries a double from one bullet to the next
+
+**Premise (the heap pass):** bulletStressScene's pre-render allocates 8.1 MB/s, 8.0 in `collectVisibleBullets`, about a
+heap number per bullet a frame. Every array it writes is typed; the loop carries `lastKey`, a double, to the end.
+**Plan:** carry the last bullet's index and compute its key after the loop; the deopt pass and `--trace-osr` first;
+bulletStress' pre-render heap and STEP_MS. Owner: pre-render.
+
+### E-285 Each sound played builds a closure over its arguments
+
+**Premise (the heap pass):** audioStormScene's logic allocates 9.1 MB/s, 7.3 in `SoundManager._writeSlotListed`, which
+builds the `claim` arrow on every play: a context with the fifteen values it captures (volume, pitch, pan boxed) and the
+closure. Each play also scans the slots with `Atomics.load` for a free one.
+**Plan:** claim as a static method on integers, the doubles in a module `Float64Array`; then the free-slot scan; a plays
+kernel, then audioStorm's logic. Owner: logic (audio).
+
+### E-286 Spawn calls with an options object allocate it when the engine is not inlined
+
+**Premise (the heap pass):** the stress drivers allocate where they call the engine with an options literal:
+`BulletPool.spawn({ … })` 1.9 MB/s per logic worker in bulletStress, `Decal.stamp({ … })` 4.7 MB/s (decalStamp) and 4.9
+(decalBlit), spawnStorm 2.1. A literal passed to a callee TurboFan does not inline is built, its doubles boxed, each call.
+**Plan:** the API kept; a small entry that inlines into the caller and copies the numbers into a module `Float64Array`
+before calling the body with integers (escape analysis drops the literal); a spawn kernel, then the two scenes' logic.
+Owner: logic.
+
+### E-287 b2SolverTask's own time: the solver's stage barrier between blocks
+
+**Premise (Box2D by name, a --profiling-funcs build of weedjs/e256 swapped in for one CPU pass):** ballsHeavy's physics
+threads: b2ExecuteBlock 25.6 % (the solver's blocks, stage functions inlined), b2CollideTask 8.4 %, b2SolverTask's own code
+7.7 %, b2FinalizeBodiesTask 4.2 %, the rest a futex wait; gearChain 9.5, 4.2 and 4.6 %. b2SolverTask's own time is most
+likely the workers polling the stage's sync bits between blocks.
+**Plan:** a counted build first (spins per stage, stage lengths, blocks per worker); then fewer workers on small islands,
+bigger blocks, or the main thread alone under a size; both builds (SIMD, no-SIMD); ballsHeavy's physics. Owner: physics.
+
+### E-288 Logic's accelerations reach Box2D one public call per body
+
+**Premise (Box2D by name):** Boids' physics (65 000 bodies): b2FinalizeBodiesTask 6.2 %, b2Body_ApplyForceToCenter 1.3 %,
+body_set_transform 0.8 %, bodies_apply_accelerations 0.6 %: the glue applies each acceleration through the public API.
+**Plan:** the batch on the body sims by index, the public calls' semantics kept; a glue kernel, then Boids' physics; both
+builds. Owner: physics.
+
+## Wave 14 (2026-11-13): the campaign order after a full harvest
+
+The owner asked to gather every hypothesis first, without measuring, then run them all in a new campaign. The harvest:
+TurboFan's sites and the heap sample over 12 scenes (E-222, two rounds), the GL recorder over 10 (E-230), the CPU sweep
+over 65 scenes with each function's hot lines, fieldTypeAudit on Predator. One reading across all of it: GC is under 5 ms/s
+on every worker of every scene, so allocation work now pays only where it also saves CPU; the large costs left are memory
+access patterns (spatial's rows and cells), copies before uploads, and per-entity calls. The order (the register's ranks
+follow it):
+
+| # | Row | Tier | Why there | Prepared on |
+| --- | --- | --- | --- | --- |
+| 1 | E-256 | debt | Balls heavy (physics over the 6 ms floor) | 12e1acaf (on the branch) |
+| 2 | E-268 | 1 | spatial 40 % in stationarySpatialWide; WaterAndBoxes (a demo) 91–96 % of _findNeighbors | w14/e268 |
+| 3 | E-266 | 1 | spatial 48–51 % in stationarySpatialWide | w14/e266 |
+| 4 | E-274 | 1 | planetScene: 79 % of the rebuild | w14/e274 |
+| 5 | E-267 | 1 | Boids 28–32 %, stationarySpatialWide 48–51 % of spatial |  |
+| 6 | E-269 | 1 | meshApiStressScene: all of uploadRange (not E-123's route) |  |
+| 7 | E-262 | 1 | WaterAndBoxes logic 2.8 MB/s; every entity tick | w14/e262 |
+| 8 | E-240 | 1 | logic 11–23 % in Predator and littleCity |  |
+| 9 | E-270 | 1 | decal scenes: the copy 100 %, the upload 68–89 % (a C change) |  |
+| 10 | E-277 | 2 | collider fill: 13.9 MB/s destructibleTerrain, 3.2 planetPhysics (Pixi) | w14/e277 |
+| 11 | E-284 | 2 | bulletStress pre-render 8.0 MB/s | w14/e284 |
+| 12 | E-285 | 2 | audioStorm logic 7.3 MB/s | w14/e285 |
+| 13 | E-271 | 2 | painter scenes: 125–145 ms of the window | w14/e271 |
+| 14 | E-272 | 2 | carScene Pixi | w14/e272 |
+| 15 | E-273 | 2 | decoChurn logic | w14/e273 |
+| 16 | E-276 | 2 | navStress logic | w14/e276 |
+| 17 | E-265 | 2 | queries with a literal per call | w14/e265 |
+| 18 | E-278 | 2 | rng 4.1 MB/s littleCity, randomRange 1.4 particleIntegrate | w14/e278 (step 1) |
+| 19 | E-275 | 2 | tweenStress logic (needs a sprite-change signal) |  |
+| 20 | E-286 | 2 | options literals in spawn calls (an API-keeping entry) |  |
+| 21 | E-264 | 2 | 179 fields typed Any; three read in per-frame loops | w14/e264 (spatial's) |
+| 22 | E-263 | 2 | wide pools and 32-bit ids; weigh the ABA window |  |
+| 23 | E-253 | 2 | FSM 7–9 % of Predator logic |  |
+| 24 | E-193 | 2 | Pixi keyed pack |  |
+| 25 | E-185 | 2 | keyed frames |  |
+| 26 | E-199 | 2 | neighbour aggregates |  |
+| 27 | E-201 | 2 | keyed poses on the GPU |  |
+| 28 | E-202 | 2 | decals on the GPU |  |
+| 29 | E-280 | demo | destructibleTerrain / planetPhysics logic 52 and 35.5 MB/s while carving |  |
+| 30 | E-257 | 3 | physics JS ~65 KB/s |  |
+| 31 | E-246 | 3 | physics JS around the step |  |
+| 32 | E-247 | 3 | particle decoration passes |  |
+| 33 | E-238 | 3 | emit path allocations |  |
+| 34 | E-242 | 3 | raycast polygon allocations |  |
+| 35 | E-244 | 3 | tick path allocations |  |
+| 36 | E-227 | 3 | Pixi allocations |  |
+| 37 | E-279 | 3 | packBox2dBodies 278 KB/s |  |
+| 38 | E-282 | 3 | collision pair Map 140 KB/s |  |
+| 39 | E-283 | 3 | collect boundary doubles 242 KB/s (a C change) |  |
+| 40 | E-281 | 3 | bunnyMark tickAll 1.5 MB/s (demo; tier first) |  |
+| 41 | N-158 | 3 | per-frame allocations left |  |
+| 42 | N-163 | bug | WebGPU sprite-masked self-lit edges |  |
+| 43 | N-38 | bug | lit chunk edges |  |
+| 44 | N-155 | bug | WebGL / WebGPU light gallery |  |
+| 45 | N-147 | bug | prod bundle spatial |  |
+| 46 | N-156 | bug | flaky physicsChainWait test |  |
+| 47 | N-161 | bug | audioStorm catalog row |  |
+| 48 | DX-VOLLIGHTS | feature | approved feature |  |
+| 49 | E-222 | tool | kept running in each harvest |  |
+| 50 | E-230 | tool | kept running in each harvest |  |
+| 51 | E-223 | tool | critical path |  |
+| 52 | E-224 | tool | scaling curves |  |
+| 53 | E-226 | tool | false sharing |  |
+| 54 | E-231 | tool | trace diff |  |
+| 55 | E-225 | tool | GC against long frames |  |
+| 56 | E-228 | blocked | ETW / WPA (owner's OK to install) |  |
+| 57 | E-229 | blocked | VTune / uProf (owner's OK to install) |  |
+| 58 | E-145 | held | Adobe on the GPU: the owner keeps Adobe out (2026-10-29) |  |
+
+The harvest's last passes (R-0980): the heap pass over all 65 scenes wrote E-277 to E-286; the deopt pass found no
+new steady deopt loop (only E-251's pattern). Box2D by name ran after them. The changes marked "Prepared on" were
+written on branches of their own while the passes ran, each with its tests, none measured yet; each sitting runs on
+its branch rebased onto the scene knobs' commit (w14s/…). The owner scenes' baselines were probed first: several
+stress scenes run far under the 6 ms floor at their default load and take their knob (stationarySpatialWide
+?entities=145000, spawnStorm ?storm=6000, navStress ?agents=, decoChurn ?churn= ?liveCap=, bulletStress ?bullets=).
 
 ## Not doing (read the log first)
 

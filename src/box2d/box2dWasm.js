@@ -1074,7 +1074,9 @@ var __emscripten_thread_set_strongref = thread => {};
 
 var timers = {};
 
-var _emscripten_get_now = () => performance.timeOrigin + performance.now();
+var weedTimeOrigin = 0;
+
+var _emscripten_get_now = () => weedTimeOrigin + performance.now();
 
 function __setitimer_js(which, timeout_ms) {
   if (ENVIRONMENT_IS_PTHREAD) return proxyToMainThread(3, 0, 1, which, timeout_ms);
@@ -1445,6 +1447,8 @@ var stringToUTF8OnStack = str => {
 /** @type {!Float32Array} */ var HEAPF32;
 
 PThread.init();
+
+weedTimeOrigin = performance.timeOrigin;
 
 // End JS library code
 // include: postlibrary.js

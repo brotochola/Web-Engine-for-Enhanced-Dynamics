@@ -8,6 +8,7 @@ import { entityIdBytes } from '../util/entityIdWidth.js';
 import { ShapeType } from '../box2d/box2dConstants.js';
 import { BULLET_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
 import { engineWasmUrl } from '../wasm/engine.js';
+import { putColumn } from '../util/wasmColumnTable.js';
 
 
 /** The kernel's variants (one walk, the same bytes): the shipped tick takes BULLET_TICK_VARIANT. */
@@ -82,56 +83,47 @@ export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIA
 export function writeBulletColumns(b, BulletComponent, Transform, Collider, Grid) {
   const t = b.table;
   const buffer = b.buffer;
-  let ok = true;
-  const put = (slot, a, required) => {
-    if (!a) {
-      t[SLOT[slot]] = 0;
-      if (required) ok = false;
-    } else if (a.buffer === buffer) {
-      t[SLOT[slot]] = a.byteOffset;
-    } else {
-      ok = false;
-    }
-  };
+  // A column the scene has must be in the memory; one it lacks is 0, which the kernel reads as absent.
+  let ok = 1;
   const bc = BulletComponent;
-  put('bActive', bc.active, true);
-  put('bX', bc.x, true);
-  put('bY', bc.y, true);
-  put('bPrevX', bc.prevX, true);
-  put('bPrevY', bc.prevY, true);
-  put('bVx', bc.vx, true);
-  put('bVy', bc.vy, true);
-  put('bSpeed', bc.speed, true);
-  put('bRotC', bc.bulletRotC, true);
-  put('bRotS', bc.bulletRotS, true);
-  put('bDamage', bc.damage, true);
-  put('bOwner', bc.ownerId, true);
-  put('bShooter', bc.shooterEntityType, true);
+  ok &= putColumn(t, SLOT.bActive, bc.active, true, buffer);
+  ok &= putColumn(t, SLOT.bX, bc.x, true, buffer);
+  ok &= putColumn(t, SLOT.bY, bc.y, true, buffer);
+  ok &= putColumn(t, SLOT.bPrevX, bc.prevX, true, buffer);
+  ok &= putColumn(t, SLOT.bPrevY, bc.prevY, true, buffer);
+  ok &= putColumn(t, SLOT.bVx, bc.vx, true, buffer);
+  ok &= putColumn(t, SLOT.bVy, bc.vy, true, buffer);
+  ok &= putColumn(t, SLOT.bSpeed, bc.speed, true, buffer);
+  ok &= putColumn(t, SLOT.bRotC, bc.bulletRotC, true, buffer);
+  ok &= putColumn(t, SLOT.bRotS, bc.bulletRotS, true, buffer);
+  ok &= putColumn(t, SLOT.bDamage, bc.damage, true, buffer);
+  ok &= putColumn(t, SLOT.bOwner, bc.ownerId, true, buffer);
+  ok &= putColumn(t, SLOT.bShooter, bc.shooterEntityType, true, buffer);
   const Ids = b.wideIds ? Uint32Array : Uint16Array;
-  if (!(bc.ownerId instanceof Ids)) ok = false;
-  put('tActive', Transform.active, true);
-  put('tX', Transform.x, true);
-  put('tY', Transform.y, true);
-  put('tRotC', Transform.rotC, false);
-  put('tRotS', Transform.rotS, false);
-  put('cActive', Collider.active, true);
-  put('cShape', Collider.shapeType, true);
-  put('cLayer', Collider.collisionLayer, true);
-  put('cOffX', Collider.offsetX, true);
-  put('cOffY', Collider.offsetY, true);
-  put('cRadius', Collider.radius, true);
-  put('cWidth', Collider.width, true);
-  put('cHeight', Collider.height, true);
-  put('cPolyCount', Collider.polyCount, true);
-  put('cFixtureCount', Collider.fixtureCount, false);
-  put('cPvx', Collider.polyVertexX, true);
-  put('cPvy', Collider.polyVertexY, true);
-  put('cPnx', Collider.polyNormalX, true);
-  put('cPny', Collider.polyNormalY, true);
+  if (!(bc.ownerId instanceof Ids)) ok = 0;
+  ok &= putColumn(t, SLOT.tActive, Transform.active, true, buffer);
+  ok &= putColumn(t, SLOT.tX, Transform.x, true, buffer);
+  ok &= putColumn(t, SLOT.tY, Transform.y, true, buffer);
+  ok &= putColumn(t, SLOT.tRotC, Transform.rotC, false, buffer);
+  ok &= putColumn(t, SLOT.tRotS, Transform.rotS, false, buffer);
+  ok &= putColumn(t, SLOT.cActive, Collider.active, true, buffer);
+  ok &= putColumn(t, SLOT.cShape, Collider.shapeType, true, buffer);
+  ok &= putColumn(t, SLOT.cLayer, Collider.collisionLayer, true, buffer);
+  ok &= putColumn(t, SLOT.cOffX, Collider.offsetX, true, buffer);
+  ok &= putColumn(t, SLOT.cOffY, Collider.offsetY, true, buffer);
+  ok &= putColumn(t, SLOT.cRadius, Collider.radius, true, buffer);
+  ok &= putColumn(t, SLOT.cWidth, Collider.width, true, buffer);
+  ok &= putColumn(t, SLOT.cHeight, Collider.height, true, buffer);
+  ok &= putColumn(t, SLOT.cPolyCount, Collider.polyCount, true, buffer);
+  ok &= putColumn(t, SLOT.cFixtureCount, Collider.fixtureCount, false, buffer);
+  ok &= putColumn(t, SLOT.cPvx, Collider.polyVertexX, true, buffer);
+  ok &= putColumn(t, SLOT.cPvy, Collider.polyVertexY, true, buffer);
+  ok &= putColumn(t, SLOT.cPnx, Collider.polyNormalX, true, buffer);
+  ok &= putColumn(t, SLOT.cPny, Collider.polyNormalY, true, buffer);
   const counts = Grid._gridCounts;
-  if (!counts || counts.buffer !== buffer || !(Grid._gridEntities instanceof Ids)) ok = false;
+  if (!counts || counts.buffer !== buffer || !(Grid._gridEntities instanceof Ids)) ok = 0;
   else t[SLOT.gGrid] = counts.byteOffset;
-  return ok;
+  return ok === 1;
 }
 
 /** Ray numbers left before the stamps wrap; past it they are cleared, as Ray._beginRayGen clears its own. */

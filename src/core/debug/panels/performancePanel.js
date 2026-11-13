@@ -1,6 +1,7 @@
 // PerformancePanel.js — Full-width worker rows (expandable details), pools, audio
 
 import { createPanel, createStat } from '../ui/debugDom.js';
+import { SoundManager } from '../../soundManager.js';
 import { formatNumber } from '../../../util/utils.js';
 import { DecorationPool } from '../../decorationPool.js';
 import { BulletPool } from '../../bulletPool.js';
@@ -394,6 +395,8 @@ export class PerformancePanel {
       this.elements.mainFPS.textContent = fmtFps(mainFPSRounded / 100);
     }
 
+    // E-248: the scene no longer fills them each frame; the panel does while it is shown.
+    if (scene.audioMetrics) SoundManager.getMetrics(scene.audioMetrics);
     this._updateAudioStats(scene.audioMetrics, stats);
 
     for (const type of WORKER_ROW_ORDER) {

@@ -104,11 +104,14 @@ function failed(run) {
   return run.error ? run.error.message : `exit ${run.status}`;
 }
 
-/** The benchmark runner on one scene, with a CPU trace and any extra flags. */
-function runScene(file, dir, opts, extra = []) {
+/**
+ * The benchmark runner on one scene, with a CPU trace (unless `traceCpu` is false) and any extra flags. V8 stops writing
+ * its log (--log-deopt, --log-ic) once the CPU profiler starts, so the deopt pass runs without the trace.
+ */
+function runScene(file, dir, opts, extra = [], { traceCpu = true } = {}) {
   const name = sceneName(file);
   const run = spawn([
-    bench('runIntegratedWorkerBenchmark.mjs'), '--src', '--headed', '--trace-cpu', '--no-collect-detailed-stats',
+    bench('runIntegratedWorkerBenchmark.mjs'), '--src', '--headed', ...(traceCpu ? ['--trace-cpu'] : []), '--no-collect-detailed-stats',
     '--scene', file, '--scene-export', sceneExport(file), '--warmup-ms', String(opts.warmupMs),
     '--duration-ms', String(opts.durationMs), '--output', path.join(dir, 'stress.json'),
     ...(SCENE_ARGS[name] || []), ...extra,
@@ -131,10 +134,10 @@ function cpuPass(file, dir, opts) {
 function deoptPass(file, dir, opts) {
   const logs = path.join(dir, 'v8');
   fs.rmSync(logs, { recursive: true, force: true });
-  const run = runScene(file, dir, opts, ['--js-flags', '--log-deopt --log-ic', '--v8-log-dir', logs]);
+  const run = runScene(file, dir, opts, ['--js-flags', '--log-deopt --log-ic', '--v8-log-dir', logs], { traceCpu: false });
   const trace = path.join(dir, 'engine_trace.json');
   if (run.status !== 0 || !fs.existsSync(logs)) return failed(run);
-  const sum = spawn([bench('summarizeV8Deopt.mjs'), logs, '--warmup-ms', String(opts.warmupMs), '--trace', trace], opts);
+  const sum = spawn([bench('summarizeV8Deopt.mjs'), logs, '--warmup-ms', String(opts.warmupMs), ...(fs.existsSync(trace) ? ['--trace', trace] : [])], opts);
   fs.writeFileSync(path.join(dir, 'deopt.txt'), sum.stdout || sum.stderr || '');
   const summary = path.join(logs, 'summary.json');
   if (sum.status !== 0 || !fs.existsSync(summary)) return 'summary failed';

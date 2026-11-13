@@ -18,6 +18,8 @@
 
   var MAX_POLYGON_VERTICES = 8;
   var MAX_BODIES_HINT = 65535;
+  // This realm's time origin, read once (N-158: each read of performance.timeOrigin makes a heap number in Chrome).
+  var TIME_ORIGIN = typeof performance.timeOrigin === 'number' ? performance.timeOrigin : 0;
 
   // Defaults and the validator: physicsConfigImpl.js, loaded by weedjsPost.js (N-15).
   var PhysicsConfig = global.WeedPhysicsConfig;
@@ -1218,7 +1220,7 @@
     // else so it cannot absorb the step it sits beside. This is the number
     // E-06 needs and the physics host could not report it at all before.
     var frameStart = performance.now();
-    var frameStartAbs = (typeof performance.timeOrigin === 'number' ? performance.timeOrigin : 0) + frameStart;
+    var frameStartAbs = TIME_ORIGIN + frameStart;
     if (state.stats && state._lastFrameEndAt > 0) {
       state.stats[PS.IDLE_MS] = Math.max(0, frameStart - state._lastFrameEndAt);
     }
@@ -1274,7 +1276,7 @@
     fcStamp(
       state,
       frameStartAbs,
-      (typeof performance.timeOrigin === 'number' ? performance.timeOrigin : 0) + state._lastFrameEndAt
+      TIME_ORIGIN + state._lastFrameEndAt
     );
 
     writeFPS();

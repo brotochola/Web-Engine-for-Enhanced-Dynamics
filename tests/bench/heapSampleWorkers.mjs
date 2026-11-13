@@ -8,6 +8,9 @@
  *     --scene-export PredatorScene --workers preRenderWorker,logicWorker [--query k=v] \
  *     [--warmup-ms 10000] [--sample-ms 8000] [--camera-zoom min|<zoom>] [--output heap.json]
  *
+ * `--root <dir>` serves another checkout (a worktree, which has no node_modules of its own), so one script samples
+ * both sides of a change, base and branch, with the same scene and flags.
+ *
  * From Git Bash set MSYS_NO_PATHCONV=1, as for the benchmark runner. Prints, per
  * worker, the top allocating functions in KB/s and their callers. Sampling, so a
  * site is accurate to about samplingInterval (1 KB) per sample; compare totals
@@ -40,7 +43,7 @@ function parseArgs(argv) {
 
 const args = parseArgs(process.argv.slice(2));
 if (!args.scene || !args['scene-export'] || !args.workers) {
-  console.error('usage: heapSampleWorkers.mjs --scene <module> --scene-export <Class> --workers <a,b> [--query k=v] [--warmup-ms N] [--sample-ms N] [--output file]');
+  console.error('usage: heapSampleWorkers.mjs --scene <module> --scene-export <Class> --workers <a,b> [--query k=v] [--warmup-ms N] [--sample-ms N] [--root dir] [--output file]');
   process.exit(2);
 }
 const sceneModule = args.scene;
@@ -49,7 +52,9 @@ const wanted = String(args.workers).split(',');
 const warmupMs = Number(args['warmup-ms'] ?? 10000);
 const sampleMs = Number(args['sample-ms'] ?? 8000);
 
-const server = await createStaticBenchmarkServer(repoRoot);
+// --root: the tree whose src/ and scenes are served (default this checkout).
+const serveRoot = typeof args.root === 'string' ? path.resolve(args.root) : repoRoot;
+const server = await createStaticBenchmarkServer(serveRoot);
 const launchArgs = ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'];
 if (os.platform() === 'win32') launchArgs.push('--disable-features=CalculateNativeWinOcclusion');
 const browser = await chromium.launch({ channel: 'chrome', headless: true, args: launchArgs });

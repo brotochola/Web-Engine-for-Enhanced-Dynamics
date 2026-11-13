@@ -89,6 +89,43 @@ test('a BindGroup swapped into a slot, or a resource slot added, rebuilds the pl
   assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'a slot replaced');
 });
 
+// E-236: Pixi's batcher, meshes and graphics put another BindGroup in a slot at each batch or draw, with the same keys
+// (a batch's textures, a mesh's local uniforms). The plan holds for it (in Predator it was rebuilt at nearly every bind:
+// 934 KB/s of Pixi's garbage); the calls stay Pixi's, in its order, whichever group the slot holds.
+test('E-236: BindGroups with the same keys taking turns in a slot make Pixi\'s calls, each bind', () => {
+  const upstream = generateShaderSyncPolyfill();
+  const batch = (a, b) => new BundledBindGroup({ 0: texture(a), 1: texture(b) });
+  const globals = new BundledBindGroup({ 0: uniforms(1) });
+  const groups = { 0: globals, 1: batch('A', 'B') };
+  const bindMap = { 0: { 0: 'uOne' }, 1: { 0: 'uA', 1: 'uB' } };
+  const shader = shaderOf(groups, bindMap);
+  const turns = [batch('C', 'D'), batch('E', 'F'), batch('C', 'D'), new BundledBindGroup({ 0: uniforms(5) })];
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'first bind');
+  for (let k = 0; k < turns.length - 1; k++) {
+    groups[1] = turns[k];
+    assert.deepEqual(run(syncShader, shader), run(upstream, shader), `batch ${k}`);
+  }
+  // The globals slot swapped too (a new pass), with a group of the same keys.
+  groups[0] = turns[3];
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'globals swapped');
+});
+
+test('E-236: a BindGroup with other keys, or the same keys in another order, rebuilds the plan', () => {
+  const upstream = generateShaderSyncPolyfill();
+  const groups = { 0: new BundledBindGroup({ 0: uniforms(1) }), 1: new BundledBindGroup({ 0: texture('A'), 1: texture('B') }) };
+  const bindMap = { 0: { 0: 'uOne', 1: 'uTwo', 5: 'uFive' }, 1: { 0: 'uA', 1: 'uB', 2: 'uC' } };
+  const shader = shaderOf(groups, bindMap);
+  run(syncShader, shader);
+  groups[1] = new BundledBindGroup({ 0: texture('C'), 1: texture('D'), 2: texture('E') });
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'a key more');
+  groups[1] = new BundledBindGroup({ 1: texture('F') });
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'a key less');
+  const reordered = new BundledBindGroup({ 5: uniforms(3) });
+  reordered.setResource(uniforms(4), 0);
+  groups[0] = reordered;
+  assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'other keys in the globals slot');
+});
+
 // N-109: Pixi's batcher declares sixteen float samplers and binds only the units its batch uses; WebGL2 drops a draw
 // whose sampler finds an integer texture in its unit. Integer textures take the top units, counting down, and leave the
 // low ones to float textures, numbered as before.

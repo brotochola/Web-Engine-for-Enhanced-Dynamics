@@ -39,7 +39,7 @@ import { Ray } from '../core/ray.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
 import { resetWaitMeter, waitMeterMs } from '../util/waitMeter.js';
-import { bindFrameClock, stampStep } from '../util/frameClock.js';
+import { bindFrameClock, stampStep, TIME_ORIGIN } from '../util/frameClock.js';
 import { addFrame, bindFrameTotals } from '../util/frameTotals.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { DebugDraw } from '../core/debug/debugDraw.js';
@@ -397,7 +397,7 @@ export class AbstractWorker {
     // so it cannot absorb any of the step it is meant to sit beside.
     const frameStart = performance.now();
     // Absolute ms. performance.now() alone is not comparable with other workers.
-    const frameStartAbs = performance.timeOrigin + frameStart;
+    const frameStartAbs = TIME_ORIGIN + frameStart;
     // This frame's clock reads take its start (E-174): the sim clock moves by frames, and asking the wall clock is slow.
     Time._noteFrameWall(frameStartAbs);
     this.idleTimeThisFrame = this._lastFrameEndAt > 0 ? Math.max(0, frameStart - this._lastFrameEndAt) : 0;
@@ -429,7 +429,7 @@ export class AbstractWorker {
         this._frameClock,
         this._frameClockSlot,
         frameStartAbs,
-        performance.timeOrigin + this._lastFrameEndAt
+        TIME_ORIGIN + this._lastFrameEndAt
       );
     }
 

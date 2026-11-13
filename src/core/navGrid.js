@@ -873,10 +873,12 @@ export class NavGrid {
 
     for (let i = 0; i < this._maxFlowfields; i++) {
       const idx = baseIndex + i * slotStride;
-      // Status is the publication gate: Atomics.load gives a happens-before
-      // edge with the writer's Atomics.store(READY), so targetCell and the
-      // vector data written before it are guaranteed visible.
+      // E-276: a plain read of the slot's target first, so only a match pays the Atomics.load (navStressScene's logic
+      // spent 81 % of this scan on it, over every slot, every lookup). Then, as before: status is the publication
+      // gate (Atomics.load gives a happens-before edge with the writer's Atomics.store(READY), so targetCell and the
+      // vector data written before it are visible), and the target read again after it is the one that counts.
       if (
+        u32[idx] === targetCell &&
         Atomics.load(u32, idx + 2) === FLOWFIELD_STATUS.READY &&
         u32[idx] === targetCell
       ) {

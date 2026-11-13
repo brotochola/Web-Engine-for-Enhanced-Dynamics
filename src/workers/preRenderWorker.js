@@ -2325,7 +2325,8 @@ class PreRenderWorker extends AbstractWorker {
         // Layer.resolveSubscriptions) goes to the main collector, its rows (and its trail's) written here as
         // _writeRenderable writes them, without collectRenderable's dispatch and bit scan (E-98c and E-98e for
         // sprites); other masks take that path. `n` is the collector's count, synced around that call and after
-        // the loop. The last key goes back to COLLECT_Y, where the loop left it before.
+        // the loop. The last key goes back to COLLECT_Y, where the loop left it before: computed once after the loop
+        // from the last bullet's index (E-284: a double carried from one bullet to the next was a heap number each).
         const layerMask = BulletComponent.layerMask || null;
         const entitiesBit = Layer.entitiesId != null ? Layer.entitiesMask() : 0;
         const rY = this._renderableY;
@@ -2333,14 +2334,14 @@ class PreRenderWorker extends AbstractWorker {
         const rIndex = this._renderableIndex;
         const maxItems = this.renderQueueMaxItems;
         let n = this._renderableCount;
-        let lastKey = COLLECT_Y[0];
+        let last = -1;
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
             if (!active[i]) continue;
             const key = y[i] * Y_SORT_K;
             const trail = trailWidth[i] > 0;
-            lastKey = trail ? key - 1 : key;
+            last = i;
             const mask = layerMask === null ? 0 : layerMask[i];
             if (mask === 0 || mask === entitiesBit) {
                 if (n < maxItems) {
@@ -2373,7 +2374,10 @@ class PreRenderWorker extends AbstractWorker {
             }
         }
         this._renderableCount = n;
-        COLLECT_Y[0] = lastKey;
+        if (last >= 0) {
+            const key = y[last] * Y_SORT_K;
+            COLLECT_Y[0] = trailWidth[last] > 0 ? key - 1 : key;
+        }
     }
 
     _entityYSort() {

@@ -149,3 +149,25 @@ test('poll is no-op without navigator.getGamepads', () => {
   if (prev !== undefined) globalThis.navigator = prev;
   Gamepad.initialize(null);
 });
+
+// E-248: an absent pad's rows are written to zero once (when it goes), not every frame; a pad that comes back is read.
+test('E-248: a pad that disconnects is cleared once; polling an absent pad writes nothing more', () => {
+  const buffer = new SharedArrayBuffer(Gamepad.BUFFER_SIZE);
+  Gamepad.initialize(buffer);
+  const data = new Float32Array(buffer);
+  const base = Gamepad._padBase(0);
+  withGamepads([makeFakePad({ axes: [0.9, 0, 0, 0], buttons: [1] })], () => Gamepad.poll());
+  assert.equal(data[base + Gamepad._CONNECTED], 1);
+  assert.ok(data[base + Gamepad._AXIS0] > 0.5);
+  withGamepads([null], () => Gamepad.poll());
+  assert.equal(data[base + Gamepad._CONNECTED], 0, 'cleared when it goes');
+  assert.equal(data[base + Gamepad._AXIS0], 0);
+  // Anything written into the absent pad's rows now stays: poll leaves a cleared pad alone.
+  data[base + Gamepad._AXIS0] = 0.25;
+  withGamepads([null], () => Gamepad.poll());
+  assert.equal(data[base + Gamepad._AXIS0], 0.25, 'not written again');
+  withGamepads([makeFakePad({ axes: [0, 0.8, 0, 0] })], () => Gamepad.poll());
+  assert.equal(data[base + Gamepad._CONNECTED], 1, 'back');
+  assert.ok(data[base + Gamepad._AXIS0 + 1] > 0.5);
+  Gamepad.initialize(null);
+});

@@ -11,7 +11,11 @@ export const DEFAULT_DURATION_MS = 10_000;
 export const DEFAULT_SAMPLE_INTERVAL_MS = 100;
 
 /**
- * Stress A/B: primary worker ms below this is timer noise (3% of 0.3 ms is 9 µs).
- * Kernel `timeIt` uses the same floor for each timed sample. Gameplay scenes skip it.
+ * Stress A/B: a primary worker's baseline under this is not judged. 3 ms until 2026-11-13 (3 % of 0.3 ms is 9 µs of
+ * timer noise); the owner raised it to 6 so a claim rests on a worker doing real work, not on fixed costs and the
+ * timer. Gameplay scenes skip it.
  */
-export const STEP_MS_FLOOR = 3;
+export const STEP_MS_FLOOR = 6;
+
+/** Kernels: each timed sample lasts at least this long (`timeIt`, the grid kernel's reps). */
+export const KERNEL_SAMPLE_MS = 3;

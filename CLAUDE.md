@@ -104,7 +104,7 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
   `warmNormalCompile` in `microbenchHelpers.mjs`, and `tests/bench/kernelTierAudit.mjs` checks).
 - Scene pair: ABAB with both sides from worktrees (`runPredatorAbab.mjs --vs <base> --hyp-rev <rev>`,
   never the main folder: M13), `--src`, detailed stats off, the window visible. Primary = the owning
-  worker's `STEP_MS − WAIT_MS`; baseline ≥ 3 ms or the row fails (raise the scene's own load knob).
+  worker's `STEP_MS − WAIT_MS`; baseline ≥ 6 ms or the row fails (raise the scene's own load knob; 3 ms until 2026-11-13).
   Speed keep: ≥ 3 % and ≥ 75 % of pairs, load keys within 5 %. A kernel claim needs the kernel win and
   the scene must not get 3 % worse. Predator is a regression guard (8–13 % run to run per worker), not
   the ruler for a 3 % claim: that is the owner scene's job.

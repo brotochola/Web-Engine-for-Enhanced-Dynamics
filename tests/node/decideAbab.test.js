@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { decideAbab, predatorMetrics } from '../../tests/bench/runPredatorAbab.mjs';
+import { STEP_MS_FLOOR } from '../../tests/bench/benchmarkDefaults.mjs';
 
 /**
  * The gate is the last thing standing between a hypothesis and a verdict written
@@ -68,13 +69,15 @@ test('a real regression on a deep owner is REGRESSION', () => {
 });
 
 test('exactly at the floor counts as interpretable', () => {
-  const pairs = pairsWith('renderer', [3.0, 3.0, 3.0, 3.0], [3.0, 3.0, 3.0, 3.0]);
+  const f = STEP_MS_FLOOR;
+  const pairs = pairsWith('renderer', [f, f, f, f], [f, f, f, f]);
   const d = decideAbab(pairs, 'renderer');
   assert.equal(d.kinds.renderer.interpretable, true, 'the floor is inclusive');
 });
 
 test('just under the floor is not', () => {
-  const pairs = pairsWith('renderer', [2.99, 2.99, 2.99, 2.99], [2.99, 2.99, 2.99, 2.99]);
+  const u = STEP_MS_FLOOR - 0.01;
+  const pairs = pairsWith('renderer', [u, u, u, u], [u, u, u, u]);
   const d = decideAbab(pairs, 'renderer');
   assert.equal(d.kinds.renderer.interpretable, false);
 });
@@ -290,7 +293,7 @@ test('each judged kind is read against the median of the others in the same pair
     const A = {};
     const B = {};
     for (const k of KINDS) {
-      A[`${k}_STEP_MS`] = k === 'particle' ? 0.5 : 5;
+      A[`${k}_STEP_MS`] = k === 'particle' ? 0.5 : STEP_MS_FLOOR + 2;
       B[`${k}_STEP_MS`] = A[`${k}_STEP_MS`] * swing * (k === 'renderer' ? 0.95 : 1);
     }
     return { A, B };

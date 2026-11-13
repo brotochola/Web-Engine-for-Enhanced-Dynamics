@@ -76,6 +76,7 @@ import {
   stampStep,
   readPhaseSample,
   frameClockSlot,
+  TIME_ORIGIN,
 } from '../util/frameClock.js';
 import { addFrame, bindFrameTotals } from '../util/frameTotals.js';
 import { Query } from './query.js';
@@ -2647,7 +2648,7 @@ class Scene {
       // E-24. Publish the display frame before any worker of this vsync is
       // expected to stamp, including while the scene is paused, so a paused
       // main thread does not freeze the generation workers still read.
-      const frameAbs = performance.timeOrigin + performance.now();
+      const frameAbs = TIME_ORIGIN + performance.now();
       // Sample before the new publish. Main's rAF is registered before the
       // workers', so at this moment their latest stamp is the generation still
       // in the header — the one they ran just after the previous main callback.
@@ -2689,7 +2690,7 @@ class Scene {
         this.mainFPS = 1000 / averageFrameTime;
 
         if (clock) {
-          stampStep(clock, mainSlot, frameAbs, performance.timeOrigin + performance.now());
+          stampStep(clock, mainSlot, frameAbs, TIME_ORIGIN + performance.now());
         }
       } else {
         // updateInternal does not run; a handler's write to the sun still goes out.
@@ -2712,8 +2713,8 @@ class Scene {
     const dtRatio = simMs / 16.67;
     const wallRatio = deltaTime / 16.67;
 
-    // Update audio metrics from AudioWorklet (worklet handles playback directly via SAB)
-    SoundManager.getMetrics(this.audioMetrics);
+    // E-248: this.audioMetrics is filled by the debug panels that show it (SoundManager.getMetrics scans every audio
+    // slot: 2048 Atomics loads a frame in Predator, for metrics nothing read without the panels).
 
     // Camera pose comes from Camera SAB getters (workers call Camera.follow*).
     this.updateCameraBuffer();

@@ -29,7 +29,7 @@ function isMsPrimaryMetric(key) {
 }
 
 /**
- * Stress keep/drop only. Gameplay (`kind: 'gameplay'`, or a demo path) skips the 3 ms floor.
+ * Stress keep/drop only. Gameplay (`kind: 'gameplay'`, or a demo path) skips the floor (STEP_MS_FLOOR).
  * Campaigns that omit `kind` still count as stress when the path is under stressScenes.
  */
 export function usesStressStepFloor(scene) {

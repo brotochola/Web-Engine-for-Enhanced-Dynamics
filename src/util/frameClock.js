@@ -28,6 +28,12 @@
 // ponytail: logic slots are 8 and spatial slots are 8. A scene that asks for more
 // gets no stamp on the extra workers (upgrade: size the table from the config).
 
+/**
+ * This realm's performance.timeOrigin, read once: it never changes, and in Chrome each read makes a 12-byte heap number
+ * (N-158: the frame loop read it twice a frame in every worker). Absolute ms are TIME_ORIGIN + performance.now().
+ */
+export const TIME_ORIGIN = performance.timeOrigin;
+
 export const HEADER_BYTES = 32;
 export const SLOT_BYTES = 32;
 export const MAX_LOGIC = 8;

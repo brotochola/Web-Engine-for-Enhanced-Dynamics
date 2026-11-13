@@ -22,6 +22,8 @@
  */
 export class Gamepad {
   static _data = null;
+  /** E-248: 1 while a pad's rows hold zeros (absent and cleared). */
+  static _padCleared = new Uint8Array(4).fill(1);
 
   static MAX_PADS = 4;
   static AXES_PER_PAD = 4;
@@ -85,6 +87,8 @@ export class Gamepad {
     } else {
       this._data = buffer;
     }
+    // E-248: each pad's rows are all zero (a new buffer); poll writes an absent pad's zeros once, not every frame.
+    this._padCleared = new Uint8Array(this.MAX_PADS).fill(1);
 
     const count = this.MAX_PADS * this.BUTTONS_PER_PAD;
     this._lastPressCounts = new Float32Array(count);
@@ -148,6 +152,8 @@ export class Gamepad {
       const gp = pads && pads[pad] ? pads[pad] : null;
 
       if (!gp) {
+        if (this._padCleared[pad] === 1) continue;
+        this._padCleared[pad] = 1;
         data[base + this._CONNECTED] = 0;
         for (let a = 0; a < this.AXES_PER_PAD; a++) {
           data[base + this._AXIS0 + a] = 0;
@@ -160,6 +166,7 @@ export class Gamepad {
       }
 
       data[base + this._CONNECTED] = 1;
+      this._padCleared[pad] = 0;
 
       for (let a = 0; a < this.AXES_PER_PAD; a++) {
         const raw = gp.axes && a < gp.axes.length ? gp.axes[a] : 0;
