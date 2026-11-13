@@ -13097,6 +13097,31 @@
       ]
     },
     {
+      "id": "E-251",
+      "title": "Steady deopt loops in per-frame engine functions (publishPose every ~4 frames, _flushWasmPublish, the spawn batch)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's deopt log, not tested",
+      "date": "2026-11-13",
+      "area": "engine",
+      "kind": "speed",
+      "rank": 71,
+      "result": "Steady (after 10 s, ~20 s): weedjsPost.js:610 333 deopts, spatialWorker.js:1558 157, logicWorker.js:867 53 and :856 51, all insufficient type feedback.",
+      "next": "The deopting function and cycle from one long run's code and deopt log; the rare branch into its own function; deopt counts, STEP_MS and KB/s again.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-251"
+      ],
+      "aliases": [
+        "deopt loop",
+        "insufficient type feedback",
+        "soft deopt",
+        "publishPose",
+        "_flushWasmPublish"
+      ],
+      "records": [
+        "R-0966"
+      ]
+    },
+    {
       "date": "2026-11-12",
       "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
@@ -22976,6 +23001,15 @@
       "title": "E-222's TurboFan sites over five scenes, read against the heap samples: real sites, lower-tier allocation, sites that never run",
       "verdict": "note",
       "text": "**E-222's TurboFan sites over five scenes, read function by function.**\n2026-11-13, 05:10 to 05:30 (the captures' log). Each scene: `--trace-turbo --no-concurrent-recompilation --log-code`, 5 s after 20 s, summarized against its own heap sample, raw traces removed.\n\n| Scene | Engine functions in TurboFan | alloc | ic | migrate | tdz | calls |\n|---|---|---|---|---|---|---|\n| Predator | 73 | 60 | 8 | 15 | 200 | 38 |\n| flashlights | 32 | 81 | 19 | 13 | 89 | 41 |\n| BunnyMark | 30 | 36 | 2 | 0 | 93 | 21 |\n| Boids | 58 | 82 | 2 | 0 | 223 | 32 |\n| LiquidFun | 16 | 12 | 0 | 2 | 13 | 8 |\n\nRead against the heap samples:\n- Real allocation sites: LiquidFun's splat (line 180, 8 sites: E-241 confirmed), Box2D's clock (E-235), the contact Map keyed by the packed pair (E-237's sites), Pixi's uniform writers (`_stampLightCamera`, `_applyLightingViewport`: E-233), `rng`'s boxed return where its caller does not inline it (E-238).\n- Large KB/s with no matching site in TurboFan code: the raycast's polygon build, spatial's row rebuilds, BunnyMark's tickAll: their allocation is from lower-tier code (E-243).\n- Sites that never run: integer slow paths (`mergeSortPrefix`, `getCellRange`, the free lists' pops), `checkRotCS` behind its assertion flag, `_makeComponent` behind the component getters' cache, `fsm.tick`'s `dt` (no KB/s).\n- Generic ICs on paths that run: `_hasComponents.X` in `setAnimation`/`setScale` (E-249); the FSM's `onExit`/`onEnter` on transitions (each state its own shape; transitions only).\n- Map migrations: the light batch objects (E-234), the spatial worker itself in `_findNeighbors` (E-250), particle configs in `resolveParticleOp` (E-238).\n- TDZ checks: 13 to 223 a scene, mostly on imported component classes and constants (E-232: a kernel decides whether they cost).\n\nWritten down before testing: E-249, E-250, and details for E-233, E-237, E-241."
+    },
+    {
+      "id": "R-0966",
+      "date": "2026-11-13",
+      "time": "05:13",
+      "timeFrom": "recorded",
+      "title": "E-251 written down: steady deopt loops (publishPose every ~4 frames, _flushWasmPublish, the spawn batch)",
+      "verdict": "note",
+      "text": "2026-11-13, Predator's deopt run (30 s, --log-deopt --log-ic; summarizeV8Deopt): steady deopts after 10 s at weedjsPost.js:610 (333), spatialWorker.js:1558 (157), logicWorker.js:867 (53) and :856 (51), all insufficient type feedback, in rare branches of per-frame functions. The 1850 megamorphic loads in Component.initializeArrays are warm-up only. Written down before testing."
     }
   ],
   "leads": [

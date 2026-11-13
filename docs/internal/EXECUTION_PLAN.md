@@ -4191,6 +4191,18 @@ and Pixi only.
 **Plan:** workerShape's check run on the spatial, particle and logic workers; each field declared in the constructor
 with its final representation. Owner: hygiene (the spatial worker's STEP_MS not 3 % worse); the migration sites gone.
 
+### E-251 Steady deopt loops in per-frame engine functions
+
+**Premise:** V8's deopt log over Predator (30 s; summarizeV8Deopt, after the first 10 s): `weedjsPost.js:610` 333 deopts
+(`publishPose`'s N-86 branch, `Atomics.load(poseGenEpoch, 0)`: insufficient type feedback for the call), about one
+every 4 frames; `spatialWorker.js:1558` 157 (`_flushWasmPublish`'s `this._wasmPub.queued`, insufficient feedback for
+a named access); `logicWorker.js:867` and `:856` about 50 each (the spawn batch's sort and merge). A soft deopt for
+missing feedback should happen once; hundreds mean the optimized code keeps meeting code whose feedback it lacks, and
+the function spends its time in lower tiers between compiles (E-243's allocation, E-246's `publishPose` 3.6 % of physics).
+**Plan:** the deopting function at each site and the cycle (V8's code and deopt log of one long run); then the rare
+branch moved into a function of its own (out of the hot function's graph) and the counts again; owners: physics',
+spatial's and logic's STEP_MS in Predator, and their KB/s.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
