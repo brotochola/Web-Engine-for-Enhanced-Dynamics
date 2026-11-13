@@ -4019,7 +4019,7 @@ post-build patch of box2dWasm.js, or an `emscripten_get_now` of our own in the b
 profiling timers off in our build (both builds, SIMD and no-SIMD, in the Box2d_3.2 repo). Owner: physics' STEP_MS and
 KB/s in Predator and Balls.
 
-### E-236 E-148's shader plan is rebuilt at nearly every bind: 934 KB/s in Predator's Pixi worker
+### E-236 The WebGL shader sync's plan is rebuilt at nearly every bind: 934 KB/s in Predator's Pixi worker
 
 **Premise:** Pixi's worker allocates 1271 KB/s in Predator; 934 of it in `Lg` (pixi.min.js: E-148's WebGL shader sync,
 `scripts/pixi-stubs/shaderSyncPolyfill.mjs`), reached from `bind` (785) and `execute` (149). The plan per shader is

@@ -12715,7 +12715,7 @@
     },
     {
       "id": "E-236",
-      "title": "E-148's shader plan is rebuilt at nearly every bind: 934 KB/s in Predator's Pixi worker",
+      "title": "The WebGL shader sync's plan (E-148's polyfill) is rebuilt at nearly every bind: 934 KB/s in Predator's Pixi worker",
       "status": "open",
       "statusText": "proposed 2026-11-13 from Predator's E-222 run, not tested",
       "date": "2026-11-13",
