@@ -4162,6 +4162,10 @@ V8 optimizes a whole function with TurboFan after about 3000 calls (about 50 s a
 once-a-frame function enters Maglev each call and its loop jumps into optimized code by OSR. Sittings warm up 10 to 20 s.
 First test: a 2-minute run, tiers over time and STEP_MS at 20 s against 90 s. Ranked first.
 
+**Answered 2026-11-13 (R-0971, R-0972):** the per-frame functions run their loops in cached TurboFan OSR code from the first
+seconds; a loop moved into a function of its own waits in Maglev for ~16 000 calls, and Maglev off is slower. Nothing to
+change.
+
 ### E-244 Per-entity tick paths allocate on some calls (Boids, the flashlight walkers)
 
 **Premise:** Boids: each of four logic workers allocates about 460 KB/s in the demo's `Boid.tick` (1.5 bytes a call:
