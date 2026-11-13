@@ -4293,6 +4293,9 @@ turn (E-144): a call out to JavaScript and a heap number each.
 and no clock inside the spin. Heap sample (physics' KB/s), then Balls' and Predator's physics STEP_MS. Both Box2D builds
 (SIMD and not). Owner: physics.
 
+**Kept (hygiene) 2026-11-13 (R-0975):** `emscripten_get_now` 331.4 → 217.4 KB/s in Predator's physics; Balls' physics −3.1 %
+(NEUTRAL). The rest comes from `b2Yield` (E-256).
+
 ### E-256 Box2D's b2Yield reads the clock under Emscripten
 
 **Premise:** after E-255, `emscripten_get_now` is still 217 KB/s of Predator's physics heap, all under the step call. Emscripten's
