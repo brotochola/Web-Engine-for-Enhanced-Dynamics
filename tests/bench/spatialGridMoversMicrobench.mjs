@@ -30,7 +30,7 @@ import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Grid } from '../../src/core/grid.js';
 import { ShapeType } from '../../src/util/configDefaults.js';
 import { bindMovedBodies, createMovedBodiesSab, publishMovedBodies } from '../../src/box2d/box2dMovedBodies.js';
-import { STEP_MS_FLOOR } from './benchmarkDefaults.mjs';
+import { KERNEL_SAMPLE_MS } from './benchmarkDefaults.mjs';
 import { isCli, mulberry32, parseArgs, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { setupSpatialKernel } from './spatialWorkerMicrobench.mjs';
 
@@ -175,7 +175,7 @@ async function runCase({ pct, variant, n, seed, shape = 'circle' }) {
   }
 
   // Each rep: `iterations` frames, timing the grid step only (the moves and the publish are
-  // physics' work). Iterations grow until a rep lasts STEP_MS_FLOOR, as in timeIt.
+  // physics' work). Iterations grow until a rep lasts KERNEL_SAMPLE_MS, as in timeIt.
   let moversFrames = 0;
   let frames = 0;
   function rep(iterations) {
@@ -199,8 +199,8 @@ async function runCase({ pct, variant, n, seed, shape = 'circle' }) {
     for (let r = 0; r < reps; r++) times.push(rep(iterations));
     times.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
     ms = times[reps >> 1];
-    if (ms >= STEP_MS_FLOOR || iterations >= 1 << 20) break;
-    iterations = Math.max(iterations + 1, Math.ceil(((iterations * STEP_MS_FLOOR) / Math.max(ms, 1e-6)) * 1.15));
+    if (ms >= KERNEL_SAMPLE_MS || iterations >= 1 << 20) break;
+    iterations = Math.max(iterations + 1, Math.ceil(((iterations * KERNEL_SAMPLE_MS) / Math.max(ms, 1e-6)) * 1.15));
   }
   const label = `grid step ${variant}, ${pct} % movers (n=${n}${shape === 'box' ? ', boxes' : ''})`;
   const opsPerSec = (iterations / ms) * 1000;

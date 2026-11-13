@@ -318,12 +318,13 @@ verdict reads the median of those deltas.
 
 ### Floors
 
-- **The 3 ms timer floor.** A stress-scene primary in milliseconds needs a **baseline** median of at least
-  3 ms: 3 % of 0.3 ms is timer noise. Below it the pair fails; raise the scene's own load knob (more
-  particles, bodies, decorations, rays). A faster side that falls under 3 ms is a keep that ate the timer.
-  `STEP_MS_FLOOR` in [`benchmarkDefaults.mjs`](../../tests/bench/benchmarkDefaults.mjs); kernel `timeIt`
-  uses the same floor per sample. The gate reports a worker kind whose baseline is under the floor and does
-  not judge it, in any scene.
+- **The 6 ms floor** (3 ms until 2026-11-13; the owner raised it). A stress-scene primary in milliseconds needs a
+  **baseline** median of at least 6 ms, so a claim rests on a worker doing real work rather than on fixed costs and the
+  timer. Below it the pair fails; raise the scene's own load knob (more particles, bodies, decorations, rays; Predator:
+  `?crowd=1.5`). A faster side that falls under the floor is a keep that ate it. `STEP_MS_FLOOR` in
+  [`benchmarkDefaults.mjs`](../../tests/bench/benchmarkDefaults.mjs). A kernel's timed sample still lasts 3 ms
+  (`KERNEL_SAMPLE_MS`, `timeIt`). The gate reports a worker kind whose baseline is under the floor and does not judge
+  it, in any scene; the session's A/A still sets what a scene can resolve (E-126: a real −24 % at 5.3 ms).
 - **No 8 ms floor.** The old campaign floor (a baseline of 8 ms before any verdict) stood in for the
   sampler's poor precision. It is replaced by the detection limit above: a primary is judged when the
   session's A/A says the scene can resolve 3 % for it. A large effect under 8 ms is a result (E-126

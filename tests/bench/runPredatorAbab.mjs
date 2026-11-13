@@ -917,7 +917,7 @@ function printDecision(name, decision) {
     return;
   }
   for (const [kind, k] of Object.entries(decision.kinds)) {
-    // A percentage on a base under the 3 ms floor is the H-14 spatial "-21%":
+    // A percentage on a base under the floor (STEP_MS_FLOOR) is the H-14 spatial "-21%":
     // the milliseconds are real, the percent is not a result. Print the times
     // and withhold the percent.
     if (!k.interpretable) {

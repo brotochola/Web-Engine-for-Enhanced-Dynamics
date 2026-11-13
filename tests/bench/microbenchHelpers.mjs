@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { STEP_MS_FLOOR } from './benchmarkDefaults.mjs';
+import { KERNEL_SAMPLE_MS } from './benchmarkDefaults.mjs';
 
 const TIMEIT_MAX_ITERATIONS = 50_000_000;
 
@@ -62,7 +62,7 @@ export function warmNormalCompile(short, calls = 3000) {
 
 /**
  * Time `fn(iterations)` over `reps` runs; return median ms and ops/s.
- * Each sample must last at least `STEP_MS_FLOOR` ms (same 3 ms noise floor as
+ * Each sample must last at least `KERNEL_SAMPLE_MS` ms (3 ms; the scene floor was the same 3 ms until 2026-11-13, as
  * stress STEP_MS). If the median is cheaper, iterations grow up to
  * TIMEIT_MAX_ITERATIONS. Arity-0 `fn` is invoked that many times per sample.
  * Pass `minMs: 0` to skip the floor (unit tests / one-shot probes).
@@ -71,7 +71,7 @@ export function warmNormalCompile(short, calls = 3000) {
  * @param {{ iterations?: number, warmup?: number, reps?: number, silent?: boolean, minMs?: number, maxIterations?: number }} [opts]
  */
 export function timeIt(label, fn, opts = {}) {
-  const minMs = opts.minMs === undefined ? STEP_MS_FLOOR : Number(opts.minMs);
+  const minMs = opts.minMs === undefined ? KERNEL_SAMPLE_MS : Number(opts.minMs);
   const maxIterations = opts.maxIterations ?? TIMEIT_MAX_ITERATIONS;
   const reps = opts.reps ?? 5;
   const loopArity0 = fn.length === 0;
