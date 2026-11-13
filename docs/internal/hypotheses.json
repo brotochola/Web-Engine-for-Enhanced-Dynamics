@@ -12627,14 +12627,12 @@
     {
       "id": "E-232",
       "title": "Imported bindings read in hot loops carry a hole (TDZ) check each access",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from TurboFan's final graph (E-222), not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13: small (0.1 to 0.17 ns per imported binding a pass)",
       "date": "2026-11-13",
       "area": "engine",
       "kind": "speed",
-      "rank": 53,
-      "result": "10 ThrowAccessedUninitializedVariable sites in Pixi's _buildSelfLitBatch, four in its per-occluder loop.",
-      "next": "Count the sites per hot function (E-222); a Chrome kernel import read in a loop vs a local; hot loops' imports into locals.",
+      "result": "Imports vs locals +19 to 24 % in a 1.3 to 1.9 ns/entity kernel (Node and Chrome): 0.1 to 0.17 ns per imported binding read a pass. The TDZ sites left are per-call (setters, body sync, getColliderBounds' constants): under 1 % of any worker.",
       "refs": [
         "EXECUTION_PLAN.md#E-232"
       ],
@@ -12646,7 +12644,8 @@
         "module import"
       ],
       "records": [
-        "R-0965"
+        "R-0965",
+        "R-0970"
       ]
     },
     {
@@ -23085,6 +23084,15 @@
         "912e9f44",
         "9f446dc5"
       ]
+    },
+    {
+      "id": "R-0970",
+      "date": "2026-11-13",
+      "time": "06:22",
+      "timeFrom": "recorded",
+      "title": "E-232 answered small: an imported binding in a loop is 0.1 to 0.17 ns a pass in Chrome; the hot loops hoist theirs already",
+      "verdict": "answered",
+      "text": "**E-232 answered: an imported binding read inside a loop costs about 0.1 to 0.17 ns a pass in Chrome; the engine's hot loops already hoist theirs, and the TDZ sites left are per-call paths.** 2026-11-13, 06:16 to 06:22.\n\n**Kernel** (scratch, not kept: a 65 536-entity loop over a class's two typed arrays and a constant from another\nmodule, the engine's `Comp.active[i]` pattern; normal compiles after 300 short calls; best of 9 × 40 calls, two rounds):\n\n| ns / entity | everything by import | class in a local | only the constant by import | everything local |\n| --- | --- | --- | --- | --- |\n| Node 22 (two runs) | 1.603, 1.620 | 1.439, 1.429 | 1.513, 1.480 | 1.364, 1.330 |\n| Chrome (`chromeKernel.mjs`, two runs) | 1.783, 1.881 | 1.694, 1.783 | 1.642, 1.734 | 1.503, 1.564 |\n\nChecksums equal. Imports against locals: +19 to 24 %, about 0.1 to 0.17 ns for each imported binding read in the loop (the\nimport cell's load and hole check), and about 0.08 ns for a static array read from a class held in a local.\n\n**Where the engine has them** (E-222's TDZ sites over five scenes): the per-entity loops hoist their arrays already\n(E-73); what is left is per call: entity setters (`gameObject.js` 918 to 921 call `staticSceneryChangedAt` and\n`isCommandRingBound`), the body sync's module state (`box2dBodySync.js` `pendingList`, `pendingFlags`, `dirtyFlags`),\n`getColliderBounds`' shape constants (E-245 takes the box path out of it), and one static per renderable in pre-render\n(`Layer._spriteQueueBits`, 14 000 a frame in Predator: about 2 µs). At 0.1 to 0.17 ns each, a few per call, none\nreaches 1 % of a worker. **Answered: small; no change.** A new per-entity loop keeps hoisting its imports."
     }
   ],
   "leads": [
