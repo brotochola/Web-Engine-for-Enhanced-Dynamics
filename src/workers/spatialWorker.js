@@ -156,7 +156,9 @@ class SpatialWorker extends AbstractWorker {
     this._entityLastY = null;
     this._entityLastHalfExtent = null;
     this._entityLastVisualRange = null;
-    this._entityReuseInitialized = null;
+    // E-264: an empty array of its class, not null: _canReuseNeighbors indexes it per entity through `this`, and a field
+    // declared null is typed any value (E-71: 15 % of the emit kernel where per-entity code read one).
+    this._entityReuseInitialized = new Uint8Array(0);
 
     // Visual ranges up to ~1500 px at cellSize 128; the WASM gather's pattern table is sized by it.
     this._maxCellRadius = SPATIAL_MAX_CELL_RADIUS;
