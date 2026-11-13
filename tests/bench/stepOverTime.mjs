@@ -31,7 +31,9 @@ export async function stepOverTime(opts) {
   userDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-step-'));
   const context = await chromium.launchPersistentContext(userDataDir, { headless: false, channel: 'chrome', args, viewport: { width: 1280, height: 720 } });
   try {
-    const page = context.pages()[0] || (await context.newPage());
+    // A new tab: the persistent context's first one took 12 to over 30 s to fire load on the bench page (Chrome's
+    // start-up work in it), a new one 36 ms.
+    const page = await context.newPage();
     page.on('pageerror', (e) => console.error('[page error]', e.message));
     await page.goto(`http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html?src=1${opts.query ? `&${opts.query}` : ''}`);
     await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__));
