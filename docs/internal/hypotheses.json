@@ -13323,14 +13323,12 @@
     {
       "id": "E-261",
       "title": "The mesh fill pose goes through a scratch object (_livePose): 62.8 KB/s of Pixi's garbage in Sun Street (E-66's pattern)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from round 2's heap sample, not tested",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-13: the mesh fill pose through a Float64Array",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 77,
-      "result": "Sun Street, Pixi 375.1 KB/s after E-260: copyMeshFillPoseScratch 62.8 KB/s (colliderFillBatch.js), from readMeshFillPose writing x, y, c, s into the module object _livePose for every mesh every frame; seven callers read it back.",
-      "next": "The four doubles into a module Float64Array (E-85), the callers reading [0..3]; heap sample of Sun Street's Pixi; meshApi's and the mesh kernels' parity tests.",
+      "result": "Sun Street Pixi heap 375.1 → 279.9 KB/s (copyMeshFillPoseScratch's 62.8 gone); 60a43855.",
       "refs": [
         "EXECUTION_PLAN.md#E-261"
       ],
@@ -13340,6 +13338,31 @@
         "copyMeshFillPoseScratch",
         "sampleMeshFillPose",
         "mesh fill pose"
+      ],
+      "records": [
+        "R-0979"
+      ]
+    },
+    {
+      "id": "E-262",
+      "title": "Every entity tick boxes dtRatio, deltaTime and accTime: obj.tick is never inlined, so its three doubles become heap numbers per call (2.8 MB/s of logic's garbage in WaterAndBoxes)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from round 2 (heap and TurboFan sites), not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 78,
+      "result": "WaterAndBoxes: logic 2807.2 KB/s, 2796.1 of it in update (logicWorker.js), whose TurboFan graph has an allocation at _tickNonDecimatedOne's obj.tick(dtRatio, deltaTime, accTime, frameNum): each class has its own tick, so the call is not inlined and the frame's three doubles are boxed for every entity, every frame.",
+      "next": "Box them once a frame: the three values in a generic (PACKED_ELEMENTS) array or kept tagged fields read in the loop, so the call passes the same heap numbers; kernel on the tick loop (heap and ns a tick), then WaterAndBoxes' and Predator's logic.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-262"
+      ],
+      "aliases": [
+        "obj.tick",
+        "dtRatio",
+        "tick arguments",
+        "boxed tick doubles",
+        "_tickNonDecimatedOne"
       ],
       "records": []
     },
@@ -23379,6 +23402,18 @@
       "title": "E-252 answered: the pair walk is about a third of the contact flow (kernel profile); a lazy purge ~3 % of logic, changes exits",
       "verdict": "answered",
       "text": "**E-252 answered: the per-frame pair walk is about a third of the contact flow; a lazy purge would save about 3 % of a logic worker and move when exits fire.** 2026-11-13, 15:09 to 15:12.\n\n**Kernel** (`contactsMicrobench --no-stays`: the real LogicWorker, Predator's fixture pairs, 2 % churn a frame), profiled with\n`--cpu-prof`. With inlining on, the frame inlines into the harness's `timeIt` and the profile cannot split it; with\n`--no-turbo-inlining` (distorted, read as shares only), of the busy time: `_processBox2dCollisionCallbacks` 9.1 % (the walk:\nliveness and generations of each own pair), `_onContactRingEvent` 7.1 %, `_applyContactBegin` 4.5 %, `_applyContactEnd`\n2.3 %, `drainContactRing` 2.0 % (the events: 15.9 %). The walk is about a third of the contact flow.\n\n**Reading the code** (R-0968's note): in Predator no type defines `onCollisionStay`, so the walk only purges pairs whose\nentity went inactive or whose body changed. Purging on events instead (on begin, end, `isCollidingWith` and a sweep, as\nforeign pairs since L2) would take that third away, but an end event that arrives after the entity went inactive would no\nlonger fire `onCollisionExit` (the walk purges after the drain today), a change games can see.\n\n**Answered:** at 8 to 12 % of a logic worker for the whole dispatch, the walk's third is about 3 %; not worth a semantic\nchange to contact exits. The earlier work stands (L2, E-131, E-146)."
+    },
+    {
+      "id": "R-0979",
+      "date": "2026-11-13",
+      "time": "15:22",
+      "timeFrom": "recorded",
+      "title": "E-261 kept (hygiene): mesh fill pose through a Float64Array; Sun Street Pixi 375.1 → 279.9 KB/s",
+      "verdict": "kept-hygiene",
+      "text": "**E-261 kept (hygiene): the mesh fill pose through a Float64Array; Sun Street's Pixi garbage 375.1 → 279.9 KB/s.** 2026-11-13, 15:09 to 15:22.\n\nRound 2's heap sample of Sun Street (after E-260) put `copyMeshFillPoseScratch` at 62.8 KB/s of Pixi's 375.1; its TurboFan graph\n(round 2's sites) has allocations at `readMeshFillPose`'s stores into the module object `_livePose` (E-66's pattern). `60a43855`:\nthe four doubles go through `MESH_POSE`, a module Float64Array, and its eight readers read [0..3]. Heap (heapSampleWorkers,\nPixi, 12 s after 15 s): 375.1 → 279.9 KB/s, the site gone. `test:node` 2576/2576, `test:demos` 101/101. Sun Street's Pixi over\nthe day: 2701 (before E-260) → 280 KB/s. Timed with the next Predator gate (Pixi is under the floor in Sun Street).",
+      "commits": [
+        "60a43855"
+      ]
     }
   ],
   "leads": [
