@@ -13360,7 +13360,8 @@
       "records": [
         "R-0961",
         "R-0992",
-        "R-0994"
+        "R-0994",
+        "R-0995"
       ]
     },
     {
@@ -14535,7 +14536,8 @@
       ],
       "records": [
         "R-0992",
-        "R-0994"
+        "R-0994",
+        "R-0995"
       ]
     },
     {
@@ -24367,6 +24369,15 @@
         "22790062",
         "aa3128cc"
       ]
+    },
+    {
+      "id": "R-0995",
+      "date": "2026-11-13",
+      "time": "20:51",
+      "timeFrom": "recorded",
+      "title": "d8 16 (Chrome's V8): the shared neighbour getters' megamorphic loads are an inline map cache check kept in the loop, not LoadIC_Megamorphic calls",
+      "verdict": "note",
+      "text": "**Chrome's V8 (d8 16.0.39) does not call LoadIC_Megamorphic for the shared neighbour getters: TurboFan inlines a\nsmall map cache check, kept inside the loop on every read. E-289 still holds, for less than Node's code suggested.**\n2026-11-13, 20:47 to 20:51.\n\n**How.** `neighborAccessMicrobench` bundled for d8 with esbuild (node:* modules stubbed, `process` shimmed, each module\nkeeping its own `import.meta.url`; the engine code is bundled as is, not minified), run in `D:\\perf-tools\\v8\\debug\\v8-debug.exe\n--no-debug-code --print-opt-code --code-comments --print-opt-code-filter=sumShipped|sumRow --trace-turbo`. d8 16 is\nChrome's V8 or newer; R-0992 read the same kernel in Node 22 (V8 12.4).\n\n**Read (Soldier's, Boid's and Ant's `sumShipped`, TurboFan):**\n- `this._neighborOffset`, `this._onPage` and `this._neighborReaderMarked`, from `get neighborCount` and `getNeighbor`\n  inlined into the class's method, compile to an inline megamorphic cache: the receiver's map, `(map >> 2) & 7` into an\n  8-entry table, a compare with the weak map. On a miss: the map's first descriptor key compared with the name, the\n  field's details checked, the map stored into the table (with a write barrier). No `LoadIC_Megamorphic` or\n  `StoreIC_Megamorphic` call is left (16 such checks on `_neighborOffset`, 6 on `_onPage`, 6 on\n  `_neighborReaderMarked` over the three code objects).\n- The hit is about 11 instructions and stays in the loop for every neighbour read: the miss path's store into the\n  table keeps the check from being hoisted, although `this` cannot change map inside the loop. The loop body is about\n  25 instructions against about 10 for `sumRow` (the row read without the getters), and the code objects are 3.0 to\n  3.4 KB against 1.2 KB.\n- Both keep an overflow check on each Smi add, a bounds check on the neighbour read (the typed array's length is a\n  constant: `Grid._neighborData` is constant-folded) and the loop's interrupt check.\n\n**For E-289.** The fix it proposes (the getters read columns indexed by the entity, so `this` gives one load) removes\nthese checks, but each one is now an inline compare, not a builtin call: expect less than Node's code implied. The\nkernel's timing on this machine was noise during another session's Chrome runs (d8 release, `row` read 12.6 then 3.6 ns a\nneighbour in two runs): time it again on a quiet machine before deciding. Machine code and Turbolizer files (not\nkept in the repo): `C:\\weed-traces\\d8-predator\\neighbors\\`."
     }
   ],
   "leads": [
