@@ -4410,6 +4410,14 @@ port (+10.9 % in its kernel, 1.48x on a mix of shapes) was screened when the reb
 **Plan:** W6's port again and a cell-ordered pass (bin by cell, then write each cell in one run) on the grid kernel; the winner
 on Boids' and stationarySpatialWide's spatial STEP_MS. Owner: spatial.
 
+### E-268 With several spatial workers, unread rows are read every frame to see they are clear
+
+**Premise (the CPU sweep's hot lines, stationarySpatialWide, 2 spatial workers):** `_findNeighbors` is 40 to 42 % of spatial,
+91 % of it on the read of a row's head (`sharedRows && neighborData[entityA * stride] !== 0`) that keeps a row another worker may
+have published clear, for every entity whose type nobody reads; rows are about 2 KB apart, a cache line each.
+**Plan:** read it only when it can be set (a dense per-worker byte, or an owner change from the owned list); the spatial
+kernel with two workers, then the scene's spatial STEP_MS. Owner: spatial.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
