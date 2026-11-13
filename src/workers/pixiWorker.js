@@ -862,6 +862,8 @@ class PixiRenderer extends AbstractWorker {
     this.lightingDisplaySprite = null; // Sprite to display the lightingRT on stage
     this._lightDataFloats = null; // Float32Array RGBA32F payload (maxLights x 2)
     this._lightDataSource = null; // BufferImageSource uploading _lightDataFloats
+    // E-259: each float data source's GL texture once allocated, and its size: later uploads are a texSubImage2D on it.
+    this._floatTexHeld = new WeakMap();
     // config.lighting.groundScaleY and its inverse: light falloff measures the floor distance
     // sqrt(dx² + (dy / groundScaleY)²). Doubles from the start (NaN until the config is read).
     this._groundScaleY = NaN;
@@ -2057,6 +2059,25 @@ class PixiRenderer extends AbstractWorker {
     const gl = renderer?.gl;
     if (!gl || !source || !data || !renderer?.texture) return;
 
+    // E-259: the texture this source already has, at this size: write its texels in place. source.update() would have
+    // Pixi re-specify it (a texImage2D with no data) before ours, and ours re-specified it again: two reallocations a
+    // frame, with the sampling parameters set again each time.
+    const texSys0 = renderer.texture;
+    const held = this._floatTexHeld.get(source);
+    if (held !== undefined && held.width === width && held.height === height) {
+      const current = typeof texSys0.getGlSource === 'function' ? texSys0.getGlSource(source) : null;
+      if (current && current.texture === held.texture) {
+        const prevHeld = gl.getParameter(gl.TEXTURE_BINDING_2D);
+        gl.bindTexture(held.target, held.texture);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+        if (gl.UNPACK_FLIP_Y_WEBGL != null) gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
+        if (gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL != null) gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+        gl.texSubImage2D(held.target, 0, 0, 0, width, height, gl.RGBA, gl.FLOAT, data);
+        gl.bindTexture(held.target, prevHeld);
+        return;
+      }
+    }
+
     source.update();
 
     const texSys = renderer.texture;
@@ -2098,6 +2119,7 @@ class PixiRenderer extends AbstractWorker {
     gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.bindTexture(target, prev);
+    if (glSource?.texture) this._floatTexHeld.set(source, { texture: glSource.texture, target, width, height });
   }
 
   _bindLutToBatches() {
