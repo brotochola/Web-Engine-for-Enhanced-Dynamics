@@ -1434,9 +1434,11 @@ class SpatialWorker extends AbstractWorker {
 
       let myVisualRange = visualRange[entityA];
       // DX-LIGHTAPI: a light searches its own reach (shadowRange, or its radius) past its offset from the entity, so
-      // no Collider.visualRange has to cover it.
+      // no Collider.visualRange has to cover it. Not when its class reads its neighbours: the row is that code's list
+      // too, and the light's reach would widen what it sees (a hero with a flashlight would find enemies 1500 px off).
+      // Such a light finds its occluders within the entity's visualRange, as every light did before.
       const isLight = lightActive !== null && lightActive[entityA] !== 0 && lightCasts[entityA] !== 0;
-      if (isLight) {
+      if (isLight && readers !== null && readers[entityType[entityA]] === 0) {
         const sr = lightShadowRange[entityA];
         const ox = lightOffsetX[entityA];
         const oy = lightOffsetY[entityA];

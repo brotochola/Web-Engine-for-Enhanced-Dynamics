@@ -3852,7 +3852,8 @@ export declare class LightEmitter extends Component {
   static castShadows: Uint8Array;
   /**
    * How far its shadows reach, in px; 0 (the default) is its radius. Sprite shadows in basic lighting, occluders under
-   * raycast (the light finds them itself: no Collider.visualRange to set). A shorter reach costs less.
+   * raycast (the light finds them itself: no Collider.visualRange to set, unless its class reads its neighbours, whose
+   * list stays what its visualRange gives; the light's occluders are then within it). A shorter reach costs less.
    */
   static shadowRange: Float32Array;
   /** The cone's direction as cosine and sine, relative to the entity (1, 0 by default). Set it with `direction`. */

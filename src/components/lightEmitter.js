@@ -26,7 +26,8 @@ const FULL_TURN = Math.PI * 2;
  * - `shadowRange` (px; 0, the default, is the radius) is how far its shadows reach: the sprite shadows it stamps in
  *   basic lighting, the occluders it gathers under raycast. A shorter one costs less. Under raycast the light finds
  *   its occluders by itself (a light with a sprite or a Collider is in the spatial grid): no Collider.visualRange to
- *   set for it.
+ *   set for it, unless its class reads its neighbours. That entity's neighbour list is its code's, so it stays what
+ *   its visualRange gives, and the light finds its occluders within it.
  * - DX-SPOT, a cone: `coneAngle` (radians, the whole aperture; 2π, the default, is a point light), `coneSoftness` (0..1:
  *   how much of the cone's edge fades), `direction` (radians, where it points relative to the entity's facing: the
  *   entity's rotation turns it, as it turns the offset), `followFlip` (0 by default: 1 mirrors the light's offsetX and

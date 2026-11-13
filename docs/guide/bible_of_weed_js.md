@@ -1449,6 +1449,8 @@ With `lighting.raycasted: true` each visible light gets a visibility polygon. A 
 
 The light finds those bodies by itself: there is no `Collider.visualRange` to set for it. It needs to be in the spatial grid, which an entity with a sprite or a `Collider` is; a light with neither finds no occluders. A light with `castShadows = 0` gathers none at all (its polygon is the full circle), which costs least.
 
+One exception: a light on an entity whose class reads its neighbours (`this.neighbors`, `getNeighborCount`). That list is the entity's own, and the light's reach would change what its code sees (a hero with a 1500 px flashlight would find enemies 1500 px away). So it stays what the entity's `visualRange` gives, and the light finds its occluders within it: give such an entity a `visualRange` as long as its light should cast, or carry the light on an entity of its own.
+
 ```javascript
 this.lightEmitter.radius = 1183;
 this.lightEmitter.shadowRange = 600; // optional: occluders farther than 600 px do not stop it (cheaper)

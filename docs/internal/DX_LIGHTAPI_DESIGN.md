@@ -81,7 +81,9 @@ the light entity's `Collider.visualRange` (the stamp's `rangeSq`, the raycast ne
 games to copy from `influenceRadius`, and that Predator sets to 400 on purpose (its 300 lamps reach 1414 px; their
 shadows stop at 400, a speed and look choice). `shadowRange` keeps that choice explicit and needs no Collider. The basic
 stamp uses it as its range. Under raycast the spatial worker searches each casting light's neighbours with
-`max(visualRange, shadowRange)` (a light whose class reads its own neighbours keeps its list); a light with neither
+`max(visualRange, shadowRange)`, except for a light whose class reads its own neighbours: that row is its code's list,
+so it keeps the range its `visualRange` gives and the light's occluders are within it (the review of 2026-11-12: a hero
+with a flashlight would otherwise see enemies as far as the beam; `lightNeighborReach.test.js`); a light with neither
 Collider nor sprite becomes a search source without entering the cells, so no game list sees new lamps. Under basic
 lighting no light list is built (N-153).
 
