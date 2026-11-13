@@ -3674,11 +3674,8 @@ class PreRenderWorker extends AbstractWorker {
         if (!cq || capL <= 0 || !caps || !(caps.maxCookie > 0)) return 0;
         const texId = this._resolveBuiltinTextureId('_lightGradient');
         // DX-SPOT: a cone light up to 180 degrees takes the gradient's half disc, turned along its cone, so its cookie
-        // does not lighten the sun's shadows behind it (an atlas without the frame keeps the round one).
-        const names = this.animationNameToIndex;
-        const halfId = names && names._lightGradientHalf !== undefined
-            ? this._resolveBuiltinTextureId('_lightGradientHalf')
-            : INVALID_TEXTURE_ID;
+        // does not lighten the sun's shadows behind it.
+        const halfId = this._resolveBuiltinTextureId('_lightGradientHalf');
         let n = 0;
         const room = cq.x.length;
         const shadowRes = this.config.lighting?.shadowResolution;
@@ -3694,7 +3691,7 @@ class PreRenderWorker extends AbstractWorker {
             // DX-LIGHTAPI: a dim light lightens the sun's shadows as much less as its own shadows are lighter.
             const shade = L.shade < 1 ? L.shade : 1;
             cq.alpha[n] = (L.intensity / 50000) * shade;
-            if (L.coneCos >= 0 && halfId !== INVALID_TEXTURE_ID) {
+            if (L.coneCos >= 0) {
                 // The cone's axis on the screen (the floor direction, y times groundScaleY) and the floor's
                 // perpendicular there: the half disc's length along each.
                 const fx = L.coneDirX;
