@@ -300,7 +300,9 @@ function meshFillPoseSource(i, views) {
   return dx * dx + dy * dy > MESH_LIVE_POSE_SLACK_SQ ? POSE_LIVE : POSE_LATCHED;
 }
 
-const _livePose = { x: 0, y: 0, c: 1, s: 0 };
+// E-261: a mesh's pose as readMeshFillPose last read it: x, y, cos, sin. A module Float64Array: an object's fields went
+// tagged and each store made a heap number (E-66), 62.8 KB/s of Pixi's garbage in Sun Street.
+const MESH_POSE = new Float64Array(4);
 
 export function sampleMeshFillPose(i, views) {
   return readMeshFillPose(i, views, meshFillPoseSource(i, views));
@@ -310,20 +312,20 @@ function readMeshFillPose(i, views, source) {
   if (source === POSE_QUEUE) {
     const q = views.queuePose;
     const o = i * 4;
-    _livePose.x = q[o];
-    _livePose.y = q[o + 1];
-    _livePose.c = q[o + 2];
-    _livePose.s = q[o + 3];
-    return _livePose;
+    MESH_POSE[0] = q[o];
+    MESH_POSE[1] = q[o + 1];
+    MESH_POSE[2] = q[o + 2];
+    MESH_POSE[3] = q[o + 3];
+    return MESH_POSE;
   }
   const useLive = source === POSE_LIVE;
-  _livePose.x = useLive ? views.liveX[i] : views.x[i];
-  _livePose.y = useLive ? views.liveY[i] : views.y[i];
-  if (useLive && views.liveRotC) _livePose.c = views.liveRotC[i];
-  else _livePose.c = views.rotC ? views.rotC[i] : 1;
-  if (useLive && views.liveRotS) _livePose.s = views.liveRotS[i];
-  else _livePose.s = views.rotS ? views.rotS[i] : 0;
-  return _livePose;
+  MESH_POSE[0] = useLive ? views.liveX[i] : views.x[i];
+  MESH_POSE[1] = useLive ? views.liveY[i] : views.y[i];
+  if (useLive && views.liveRotC) MESH_POSE[2] = views.liveRotC[i];
+  else MESH_POSE[2] = views.rotC ? views.rotC[i] : 1;
+  if (useLive && views.liveRotS) MESH_POSE[3] = views.liveRotS[i];
+  else MESH_POSE[3] = views.rotS ? views.rotS[i] : 0;
+  return MESH_POSE;
 }
 
 export function copyMeshFillPoseScratch(views, prevPose) {
@@ -339,10 +341,10 @@ export function copyMeshFillPoseScratch(views, prevPose) {
   const visible = views.meshVisible;
   for (let i = 0; i < n; i++) {
     const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
-    px[i] = pose.x;
-    py[i] = pose.y;
-    pc[i] = pose.c;
-    ps[i] = pose.s;
+    px[i] = pose[0];
+    py[i] = pose[1];
+    pc[i] = pose[2];
+    ps[i] = pose[3];
     pa[i] = active[i];
     pv[i] = visible[i];
   }
@@ -370,7 +372,7 @@ export function meshFillPoseOrPresenceChanged(views, prevPose) {
     if ((pa[i] | 0) !== a || (pv[i] | 0) !== vis) return true;
     if (!a || !vis) continue;
     const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
-    if (pose.x !== px[i] || pose.y !== py[i] || pose.c !== pc[i] || pose.s !== ps[i]) return true;
+    if (pose[0] !== px[i] || pose[1] !== py[i] || pose[2] !== pc[i] || pose[3] !== ps[i]) return true;
   }
   return false;
 }
@@ -503,12 +505,12 @@ export function packColliderFill(out, cap, layerId, views) {
     bindMeshPaint(i, views);
     const outset = _outset;
     const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
-    const c = pose.c;
-    const s = pose.s;
+    const c = pose[2];
+    const s = pose[3];
     const ox = offsetX ? offsetX[i] : 0;
     const oy = offsetY ? offsetY[i] : 0;
-    const wx = pose.x + c * ox - s * oy;
-    const wy = pose.y + s * ox + c * oy;
+    const wx = pose[0] + c * ox - s * oy;
+    const wy = pose[1] + s * ox + c * oy;
 
     let a = meshAlpha ? meshAlpha[i] : 1;
     if (a < 0) a = 0;
@@ -540,7 +542,7 @@ export function packColliderFill(out, cap, layerId, views) {
             mx[meshAt + ia], my[meshAt + ia],
             mx[meshAt + ib], my[meshAt + ib],
             mx[meshAt + icx], my[meshAt + icx],
-            pose.x, pose.y, c, s, packed,
+            pose[0], pose[1], c, s, packed,
           );
           if (nextW < 0) return written;
           written = nextW;
@@ -551,7 +553,7 @@ export function packColliderFill(out, cap, layerId, views) {
       if (vcount >= 3 && mx && my) {
         const fan = fanLocalVerts(
           out, outU32, base, written, maxOut, depthDenom,
-          mx, my, meshAt, vcount, pose.x, pose.y, c, s, packed, 0,
+          mx, my, meshAt, vcount, pose[0], pose[1], c, s, packed, 0,
         );
         written = fan.written;
         base = fan.base;
@@ -697,14 +699,14 @@ export function packColliderFillPoseOnly(out, cap, count, entityOfInstance, view
     const i = entityOfInstance[k] | 0;
     bindMeshPaint(i, views);
     const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
-    const c = pose.c;
-    const s = pose.s;
+    const c = pose[2];
+    const s = pose[3];
     const explicit = explicitMeshOffset(i, views) >= 0;
     const ox = !explicit && offsetX ? offsetX[i] : 0;
     const oy = !explicit && offsetY ? offsetY[i] : 0;
     const base = k * step;
-    out[base + 6] = pose.x + c * ox - s * oy;
-    out[base + 7] = pose.y + s * ox + c * oy;
+    out[base + 6] = pose[0] + c * ox - s * oy;
+    out[base + 7] = pose[1] + s * ox + c * oy;
     out[base + 8] = c;
     out[base + 9] = s;
     let a = meshAlpha ? meshAlpha[i] : 1;
@@ -799,8 +801,8 @@ export function packMeshUvFill(out, cap, layerId, views) {
     // DX-VOLUME: a volume has no tiles, and its floor scale goes to the shader in the row's tile offset.
     if (floorScale !== null && floorScale[i] > 0) _paint.tou = floorScale[i];
     const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
-    const rc = pose.c;
-    const rs = pose.s;
+    const rc = pose[2];
+    const rs = pose[3];
     let a = meshAlpha ? meshAlpha[i] : 1;
     if (a < 0) a = 0;
     else if (a > 1) a = 1;
@@ -822,7 +824,7 @@ export function packMeshUvFill(out, cap, layerId, views) {
         const nextW = writeUvTri(
           out, outU32, base, written, maxOut, depthDenom,
           mx[a0], my[a0], mx[b0], my[b0], mx[c0], my[c0],
-          pose.x, pose.y, rc, rs, packed,
+          pose[0], pose[1], rc, rs, packed,
           mu[a0], mv[a0], mu[b0], mv[b0], mu[c0], mv[c0],
         );
         if (nextW < 0) {
@@ -842,7 +844,7 @@ export function packMeshUvFill(out, cap, layerId, views) {
       const nextW = writeUvTri(
         out, outU32, base, written, maxOut, depthDenom,
         mx[a0], my[a0], mx[b0], my[b0], mx[c0], my[c0],
-        pose.x, pose.y, rc, rs, packed,
+        pose[0], pose[1], rc, rs, packed,
         mu[a0], mv[a0], mu[b0], mv[b0], mu[c0], mv[c0],
       );
       if (nextW < 0) {
@@ -1045,10 +1047,10 @@ export class ColliderFillBatch {
       gen[i] = stamp;
       const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
       const o = i * 4;
-      table[o] = pose.x;
-      table[o + 1] = pose.y;
-      table[o + 2] = pose.c;
-      table[o + 3] = pose.s;
+      table[o] = pose[0];
+      table[o + 1] = pose[1];
+      table[o + 2] = pose[2];
+      table[o + 3] = pose[3];
     }
     this._poseWidth = width;
     this._poseHeight = height;

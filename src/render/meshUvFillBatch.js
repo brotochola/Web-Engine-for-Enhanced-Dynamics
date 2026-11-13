@@ -208,10 +208,10 @@ export class MeshUvFillBatch {
       gen[i] = stamp;
       const pose = sampleMeshFillPose(i, views);
       const o = i * 4;
-      table[o] = pose.x;
-      table[o + 1] = pose.y;
-      table[o + 2] = pose.c;
-      table[o + 3] = pose.s;
+      table[o] = pose[0];
+      table[o + 1] = pose[1];
+      table[o + 2] = pose[2];
+      table[o + 3] = pose[3];
     }
     this._poseWidth = width;
     this._poseHeight = height;
