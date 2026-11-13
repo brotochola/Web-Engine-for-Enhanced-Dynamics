@@ -3,6 +3,14 @@ import { NavStressAgent } from './navStress/navStressAgent.js';
 
 const { Scene, Camera } = WEED;
 
+/** `?agents=N`: the load knob (default 256, laid out as before); more agents go on a wider square grid. */
+const AGENTS = (() => {
+  const n = Number(WEED.params?.get('agents'));
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 256;
+})();
+const AGENT_COLS = AGENTS <= 256 ? 8 : Math.ceil(Math.sqrt(AGENTS));
+const AGENT_SPACING = AGENTS <= 256 ? 40 : Math.min(40, 1880 / AGENT_COLS);
+
 export class NavStressScene extends Scene {
   static config = {
     worldWidth: 2048,
@@ -35,17 +43,17 @@ export class NavStressScene extends Scene {
     lighting: { enabled: false },
   };
 
-  static entities = [[NavStressAgent, 256]];
+  static entities = [[NavStressAgent, AGENTS]];
 
   create() {
     const targets = 24;
-    for (let i = 0; i < 256; i++) {
+    for (let i = 0; i < AGENTS; i++) {
       const t = i % targets;
       const col = t % 6;
       const row = (t / 6) | 0;
       NavStressAgent.spawn({
-        x: 80 + (i % 8) * 40,
-        y: 80 + ((i / 8) | 0) * 40,
+        x: 80 + (i % AGENT_COLS) * AGENT_SPACING,
+        y: 80 + ((i / AGENT_COLS) | 0) * AGENT_SPACING,
         tx: 400 + col * 220,
         ty: 400 + row * 220,
       });

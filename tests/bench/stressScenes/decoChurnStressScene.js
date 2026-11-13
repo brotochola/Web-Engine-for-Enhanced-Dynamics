@@ -7,9 +7,15 @@ const SEED = 0xdec0c4;
 const WORLD_W = 4000;
 const WORLD_H = 3000;
 const DRIVERS = 8;
-const SPAWN_PER_TICK = 8;
-const DESPAWN_PER_TICK = 8;
-const LIVE_CAP = 500;
+/** `?churn=N`: spawns and despawns per driver tick (default 8); `?liveCap=N`: each driver's live decorations (default
+ * 500, at most 2500: eight drivers within maxDecorations). The despawn cost grows with both. */
+const knob = (name, fallback, max) => {
+  const n = Number(WEED.params?.get(name));
+  return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), max) : fallback;
+};
+const SPAWN_PER_TICK = knob('churn', 8, 256);
+const DESPAWN_PER_TICK = SPAWN_PER_TICK;
+const LIVE_CAP = knob('liveCap', 500, 2500);
 
 function churnConfig(numberOfLogicWorkers) {
   return {
