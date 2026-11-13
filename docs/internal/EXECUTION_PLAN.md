@@ -4467,21 +4467,23 @@ the tweened entity's `SpriteRenderer.active` read.
 every slot.
 **Plan:** a plain targetCell compare first, the status load only on a match; navStress's logic. Owner: logic.
 
-### E-277 The collider fill fan passes each outset vertex through module lets
+### E-277 The collider fill passes its doubles through module lets and calls TurboFan leaves out
 
 **Premise (the heap pass over all scenes, 2026-11-13):** destructibleTerrainScene's Pixi allocates 14.7 MB/s, 13.9 of it in
 `fanLocalVerts` and 318 KB/s in `packColliderFill`. `radialOutset` hands its point back in the module lets `_ox`/`_oy`;
 inlined into the fan loop, each double stored into a module context slot is a new heap number, six per triangle. No other
-module let in `src/` holds a double.
+module let in `src/` holds a double. planetPhysicsScene's Pixi spends 3.2 MB/s in `packColliderFill` itself: its mesh-index
+path calls `writeFillTri` (17 arguments) with eight doubles per triangle, from a caller too large to inline it.
 **Plan:** the point in a module `Float64Array` (E-85; E-261's `MESH_POSE`), and `--trace-turbo-inlining` on
 `writeFillTri` (17 arguments, most of them doubles); the collider fill kernel, then destructibleTerrain's Pixi STEP_MS and
 heap. Owner: Pixi.
 
-### E-278 rng() boxes its result when a big tick does not inline it
+### E-278 rng() and randomRange() box their result when a big caller does not inline them
 
 **Premise (the heap pass):** littleCityScene's logic allocates 6.6 MB/s, 4.1 of it in `rng`, which `CityPerson.tick`
 calls twice per person per frame. A callee that returns a double and is not inlined boxes it; rng's bytecode carries its
-cold paths (a function generator, the warning that seeds an uninitialised one), and the tick is large.
+cold paths (a function generator, the warning that seeds an uninitialised one), and the tick is large. The engine's
+emitter does the same: particleIntegrateStressScene's logic, 1.4 MB/s in `randomRange` from `ParticleEmitter._spawn`.
 **Plan:** the cold paths in their own function (the fast path a few dozen bytes), `--trace-turbo-inlining` on the tick;
 a kernel of a large tick calling rng, then littleCity's logic STEP_MS and heap. Owner: logic.
 
@@ -4496,7 +4498,7 @@ object (`PACK_OUT` and the options are reused). Likely boxed doubles: `writeBody
 
 **Premise (the heap pass):** destructibleTerrainScene's logic allocates 52 MB/s while terrain is carved: `cellCorners`
 31.8 MB/s (four edge points, four corners and the result per cell), `cellSolidParts` 8.7, `stitchContours` 3.4,
-`extractIslands` 3.3. Three callers read only `.caseId`.
+`extractIslands` 3.3. Three callers read only `.caseId`. planetPhysicsScene runs the same worldGrid: 35.5 MB/s.
 **Plan:** a `cellCaseId()` with no allocation for those three, reused scratch for the rest, still readable (a demo); logic
 STEP_MS on the carving frames (max and p95) and the heap. Owner: the demo.
 
@@ -4520,6 +4522,30 @@ logic.
 the kernel stops at each entity that is not a plain sprite, and each new call passes the camera's doubles again.
 **Plan:** the camera's doubles in the kernel's memory once a frame, integers per call; the collect kernel with stops,
 then mamushkaDig's pre-render. Owner: pre-render.
+
+### E-284 collectVisibleBullets carries a double from one bullet to the next
+
+**Premise (the heap pass):** bulletStressScene's pre-render allocates 8.1 MB/s, 8.0 in `collectVisibleBullets`, about a
+heap number per bullet a frame. Every array it writes is typed; the loop carries `lastKey`, a double, to the end.
+**Plan:** carry the last bullet's index and compute its key after the loop; the deopt pass and `--trace-osr` first;
+bulletStress' pre-render heap and STEP_MS. Owner: pre-render.
+
+### E-285 Each sound played builds a closure over its arguments
+
+**Premise (the heap pass):** audioStormScene's logic allocates 9.1 MB/s, 7.3 in `SoundManager._writeSlotListed`, which
+builds the `claim` arrow on every play: a context with the fifteen values it captures (volume, pitch, pan boxed) and the
+closure. Each play also scans the slots with `Atomics.load` for a free one.
+**Plan:** claim as a static method on integers, the doubles in a module `Float64Array`; then the free-slot scan; a plays
+kernel, then audioStorm's logic. Owner: logic (audio).
+
+### E-286 Spawn calls with an options object allocate it when the engine is not inlined
+
+**Premise (the heap pass):** the stress drivers allocate where they call the engine with an options literal:
+`BulletPool.spawn({ … })` 1.9 MB/s per logic worker in bulletStress, `Decal.stamp({ … })` 4.7 MB/s (decalStamp) and 4.9
+(decalBlit), spawnStorm 2.1. A literal passed to a callee TurboFan does not inline is built, its doubles boxed, each call.
+**Plan:** the API kept; a small entry that inlines into the caller and copies the numbers into a module `Float64Array`
+before calling the body with integers (escape analysis drops the literal); a spawn kernel, then the two scenes' logic.
+Owner: logic.
 
 ## Wave 14 (2026-11-13): the campaign order after a full harvest
 
