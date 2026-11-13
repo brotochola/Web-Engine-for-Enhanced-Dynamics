@@ -12460,6 +12460,29 @@
       ]
     },
     {
+      "id": "DX-DECO1M",
+      "title": "Pools up to 1 048 575 slots: a million decorations (FL4 with a 20-bit index)",
+      "status": "kept",
+      "statusText": "built 2026-11-13 on deco/1m, not merged",
+      "date": "2026-11-13",
+      "area": "core",
+      "kind": "dx",
+      "result": "MAX_POOL_SLOTS 524 287 → 1 048 575 (FL4: 20-bit index, 12-bit tag). A million decorations through the pool, the hash and culling (test, 386 ms); drawn at 60 fps in decoFixedStressScene (particle 8.4 ms, pre-render 3.6, Pixi 2.4).",
+      "refs": [
+        "REVIEW_PLAN.md#DX-DECO1M"
+      ],
+      "aliases": [
+        "million decorations",
+        "1M decorations",
+        "MAX_POOL_SLOTS",
+        "FL4",
+        "maxDecorations"
+      ],
+      "records": [
+        "R-0973"
+      ]
+    },
+    {
       "date": "2026-11-12",
       "result": "Flash.spawn({ castShadows: false }) now writes LightEmitter.castShadows 0: the flash leaves the shadow stamp (no cookie, no casters) and, under raycast, gathers nothing. lightCastShadows.test.js",
       "records": [],
@@ -22174,6 +22197,19 @@
       "text": "**DX-LIGHTAPI and DX-SPOT merged into main** (ff255c01, --no-ff, the branch's tree: main had not moved since fa59073a).\n\nWhat merged: the light API (radius, brightness, color, glow, glowLayer, glowOffsetY, elevation, castShadows, shadowRange; no old names), cone lights (direction, coneAngle, coneSoftness, followFlip; basic lighting and raycast), the Headlights demo, and the fixes found on the way (N-149 to N-153, N-157, N-159, N-160, N-162).\n\nThe checks it merged on: test:node 2564/2564, test:demos 101/101; check:dist (inputs 527dd2741a63dfc1), browser smokes on all 8 bundles and test:node:bundle 301/301 on each (dist 32a2840d); the scoreboard against main with no row worse (R-0951 to R-0953); a cone's cost (R-0946, R-0947); the engine trace (R-0949); the prod bundle against its sources NEUTRAL on Predator and Boids (R-0955). The owner tried the Headlights demo (N-162 came from it) and asked for the merge. Not pushed.",
       "commits": [
         "ff255c01"
+      ]
+    },
+    {
+      "id": "R-0973",
+      "date": "2026-11-13",
+      "time": "12:35",
+      "timeFrom": "recorded",
+      "title": "DX-DECO1M: pools up to 1 048 575 slots; a million decorations drawn at 60 fps",
+      "verdict": "kept",
+      "text": "**DX-DECO1M: pools up to 1 048 575 slots, a million decorations drawn.** 2026-11-13, branch `deco/1m` from main. Asked on\nthe owner's behalf by the buenos-aires session: up to a million decorations (the ceiling was 524 287).\n\n**The change** (`5b5842bf`): the wide pools (decorations, particles, bullets past 65 535) hand out slots through FL4, a\nTreiber stack whose Int32 head packed a 19-bit (index + 1) and a 13-bit ABA tag. It now packs 20 and 12: `MAX_POOL_SLOTS`\nis 2^20 − 1 = 1 048 575, and the tag repeats every 4 096 operations instead of 8 192 (a stale CAS needs a thread held\nbetween its load and its exchange while 4 096 others pass and the same slot is back on top). Entities keep their 500 000\nceiling; the spatial pair stamp keeps its own 19 id bits. Nothing else packed a pool slot narrower: the emit kernel's\ndecoration keys are `entities + slot` under 2^30, the lists and the hash are u32 past 65 535 (E-129).\n\n**Tests:** a million decorations through the real pool (every slot once, FL4 at 20 bits; the hash finds, moves and drops\nslots 524 287, 524 288 and 999 999; 1 001 freed slots come back exactly; the particle worker culls 569 908 into view,\n271 227 of them past slot 524 287): 386 ms. Pool tests 38/38; `test:node` 2565/2565, `test:demos` 101/101.\n\n**In the browser** (headed, `--src`): `decorationSwayStressScene?decorations=1000000` (no textures, the sway's CPU):\nACTIVE_DECORATIONS 1 000 000, 60 fps, particle 4.23 ms, the others under 0.3. `decoFixedStressScene?maxDecorations=1000000&\nplant=1000000` (its new knobs, `241dc605`; to 12:35): a million drawn at 60 fps, particle 8.41 ms (sway and the screen test of\nthe million), pre-render 3.58, Pixi 2.40; the queue at the scene's 20 000 cap. The screenshot shows the field covered.\n\n**For the game:** a bundle built from this branch takes `decoration.maxDecorations` up to 1 048 575. The branch is not\nmerged: main gets it with the owner's OK.",
+      "commits": [
+        "5b5842bf",
+        "241dc605"
       ]
     }
   ],
