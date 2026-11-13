@@ -13213,13 +13213,12 @@
     {
       "id": "E-256",
       "title": "Box2D's b2Yield is sched_yield, which reads the clock under Emscripten: the clock reads left after E-255 (217 KB/s)",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-13 from reading Emscripten's sched_yield, not tested",
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
-      "rank": 1,
-      "result": "Emscripten's sched_yield is _emscripten_yield(emscripten_get_now()): a call out to JavaScript and a heap number every yield, and the time goes to a timer check that is a no-op in this build. b2Yield runs in b2SchedulerFinishTask's wait (each time the main thread finds no work) and in the solver's stage sync (every 6 turns). After E-255 emscripten_get_now is still 217 KB/s in Predator's physics, all under the step call.",
+      "result": "Physics' garbage in Predator 300.6 → 87.5 KB/s (_emscripten_get_now 217.4 → 14.2); Balls heavy's physics 7.352 → 7.344 ms (NEUTRAL, worse 2/4); Predator NEUTRAL.",
       "next": "b2Yield under Emscripten: emscripten_current_thread_process_queued_calls() (the queue sched_yield would process), no clock. Heap sample, then Balls' and Predator's physics. Both Box2D builds.",
       "refs": [
         "EXECUTION_PLAN.md#E-256"
@@ -13231,7 +13230,9 @@
         "emscripten_get_now",
         "clock reads"
       ],
-      "records": []
+      "records": [
+        "R-0982"
+      ]
     },
     {
       "id": "E-257",
@@ -24021,6 +24022,15 @@
       "title": "Box2D by name in five physics scenes: the solver's blocks, its stage barrier, the glue's per-body calls; E-287 and E-288 written",
       "verdict": "note",
       "text": "**Box2D by name in five physics scenes: the solver's blocks, its stage barrier and the glue's per-body calls; E-287 and\nE-288 written.** 2026-11-13, 18:00 to 18:04. A `--profiling-funcs` build of the Box2D repo's weedjs/e256 (the shipped\ncode, names kept) swapped into `src/box2d` for one CPU pass (`profileSceneSweep.mjs --pass cpu --only …`), the shipped\npair put back by `git checkout` after it (never committed). Self time per function over the physics threads; the futex\nwait is a blocked thread, which V8's profile counts as busy.\n\n| Scene | futex wait | b2ExecuteBlock | b2CollideTask | b2SolverTask (own) | b2FinalizeBodiesTask |\n| --- | --- | --- | --- | --- | --- |\n| ballsHeavyStressScene | 39.0 % | 25.6 % | 8.4 % | 7.7 % | 4.2 % |\n| ballsScene | 55.3 % | 19.7 % | 6.1 % | 5.3 % | 2.7 % |\n| gearChainScene | 72.8 % | 9.5 % | 4.2 % | 4.6 % | 1.1 % |\n| littleCityScene | 77.3 % | 1.8 % | 2.3 % | 0.6 % | 2.6 % |\n| boidsScene | 81.3 % | 1.8 % | — | 0.3 % | 6.2 % |\n\nAlso: ballsHeavy's b2CollideCrossPairs 2.1 %, b2DynamicTree_Rebuild 2.0 %, b2FlushCandidatePairs 1.6 %, b2PartitionMid\n1.4 %, emscripten_futex_wake 1.2 %, b2SplitIsland 1.1 %; gearChain's pthread_mutex_lock 1.8 % inside the step; Boids'\nb2Body_ApplyForceToCenter 1.3 %, body_set_transform 0.8 %, bodies_apply_accelerations 0.6 %; littleCity's and Boids'\nwaitForLogic 5.5 and 2.5 % (JS, physics waiting on logic).\n\n**Rows.** E-287: b2SolverTask's own time, with the stage functions inlined into b2ExecuteBlock, is most likely its\nworkers polling the stage's sync bits between blocks: a counted build decides. E-288: the WeedJS glue applies each body's\nacceleration through the public API (lookup and checks per call); a batch on the body sims by index."
+    },
+    {
+      "id": "R-0982",
+      "date": "2026-11-13",
+      "time": "18:11",
+      "timeFrom": "recorded",
+      "title": "E-256 kept (hygiene): b2Yield reads no clock; physics garbage 300.6 to 87.5 KB/s, Balls heavy's physics a tie",
+      "verdict": "kept-hygiene",
+      "text": "**E-256 kept (hygiene): b2Yield reads no clock; Predator's physics garbage 300.6 → 87.5 KB/s (634 / 743 this morning).** 2026-11-13, 13:55 to 18:11.\n\n**Change** (Box2D `weedjs/e256` `c8aa04d`, WeedJS `12e1acaf`): Emscripten's `sched_yield` is `_emscripten_yield(emscripten_get_now())`:\na call out to JavaScript that makes a heap number on every yield, to feed a timer check this build does not have. Box2D's\n`b2Yield` is `sched_yield`, run whenever the main thread waits for a task with no work of its own (`b2SchedulerFinishTask`) and\nevery 6 turns of the solver's stage sync. Under Emscripten it now runs `emscripten_current_thread_process_queued_calls()`,\nthe queue the yield processes. Both Box2D builds compile; the glue is unchanged, the wasm 417 105 → 417 103 bytes;\n`test:node` 2574/2574.\n\n**Heap** (`heapSampleWorkers`, Predator, box2d and physics, 12 s after 15 s, 14:01): `_emscripten_get_now` 217.4 → **14.2 KB/s**\n(what is left: the coarse profile's ten reads a step), all of physics 300.6 → **87.5 KB/s**. Over the day (E-235, E-255,\nE-256): 634 / 743 → 87.5 KB/s. What physics makes now is its JS loop around the step (E-257).\n\n**Timing:**\n- Balls (`e256-balls`, to 14:28): physics 5.582 → 5.610 ms, under the 6 ms floor (44c264ae, set that afternoon): not judged.\n- Predator `?crowd=1.5` (`gate6-predator`, `--vs 12e1acaf^ --hyp-rev 9c96671c`: E-256, E-259 and E-260 step 1, to 14:35):\n  NEUTRAL; physics 8.310 → 8.050 ms (−0.9 % paired, 0/4 worse, cv 5/5 %); the rest under the floor, all but particle lower\n  (logic 4.449 → 4.226, spatial 5.947 → 5.735, pre-render 3.530 → 3.462, Pixi 2.216 → 2.204, particle 0.801 → 0.896).\n  Load keys within 1 % (BODY_COUNT 24 781 at crowd 1.5).\n- Balls heavy (`w14-e256-ballsheavy`, 12 004 bodies, `--vs 12e1acaf^ --hyp-rev 12e1acaf`, 4 pairs, 18:04 to 18:11): **NEUTRAL**,\n  physics 7.352 → 7.344 ms (−1.5 % paired, worse 2/4, cv 5/5 %), the only worker over the floor; BODY_COUNT and the\n  other load keys equal.\n\n**Verdict: kept as hygiene.** It takes physics' garbage from 300.6 to 87.5 KB/s in Predator and no worker over the floor\nis worse (Balls heavy's physics a tie at 7.35 ms; Predator's NEUTRAL with physics 0/4 worse)."
     }
   ],
   "leads": [
