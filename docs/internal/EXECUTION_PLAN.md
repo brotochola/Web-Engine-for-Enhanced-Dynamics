@@ -4008,6 +4008,10 @@ shader. Owner: Pixi's KB/s and the renderer's STEP_MS.
 **Also (R-0965):** `_applyLightingViewport` writes the lighting shader's uniforms the same way: seven generic inline-cache
 calls and the inverse resolution boxed, once a frame (flashlightStressScene's `updateLighting`).
 
+**Answered 2026-11-13 (R-0968): too small to change.** The uniform writers run a few times a frame (one call per light batch,
+one viewport per pass): neither `_stampLightCamera` nor `_applyLightingViewport` shows in Predator's or the flashlights'
+CPU traces, and their boxed doubles are a handful of heap numbers a frame.
+
 ### E-234 Light batch objects change shape after they are made (map migrations each frame)
 
 **Premise:** `_finishLightBatch` reads `batch.geometry`, `batch.vbuf`, `batch.cbuf` behind `TryMigrateInstance` checks:
@@ -4017,6 +4021,9 @@ check, and older objects migrate on access.
 **Plan:** the batch objects made by one class whose fields keep one type (an empty Buffer stand-in, or two classes),
 and E-222's tool to find other `TryMigrateInstance` sites. Owner: Pixi's STEP_MS in the flashlight scene; the count of
 migration sites before and after.
+
+**Answered 2026-11-13 (R-0968): no running cost.** `TryMigrateInstance` is the slow path of a map check: an object
+migrates once, then the check passes. No CPU or KB/s row names the batch functions for it.
 
 ### E-235 Box2D's clock reads performance.timeOrigin at every call: 576 KB/s in Predator's physics
 
@@ -4055,6 +4062,10 @@ contact. Owner: logic's KB/s and STEP_MS in Predator.
 **The site (R-0965):** `_onContactRingEvent` inlines `_applyContactBegin`/`_removePairSlot`/`_removeForeignSlot`, whose
 `this._pairSlot.set(collisionPairKey(minE, maxE), ...)` and `.delete(key)` are the allocation sites: a Map keyed by
 the packed pair, which past the Smi range is a heap number each time.
+
+**Answered 2026-11-13 (R-0968): small.** The pair key `((minE & 0xffff) << 16) | (maxE & 0xffff)` passes the Smi range
+when minE is 16384 or more (Predator has about 17 000 entities): about 50 boxed keys a frame per logic worker (37 KB/s),
+a few microseconds, and GC is under 0.1 % of a worker (R-0961). A Map of typed keys is not worth its code.
 
 ### E-238 The particle emit path from game code allocates about 30 KB/s in Predator's logic
 
@@ -4182,6 +4193,9 @@ call (`LoadWithVector` in Predator's final graphs), each time game code calls th
 the same with a per-class bit mask (an integer on the class, tested with `&`) or a fixed-shape flags object with every
 component's key; then the change if it pays. Owner: logic's STEP_MS in Predator (its persons change animation often).
 
+**Answered 2026-11-13 (R-0968): small.** In Predator's CPU trace `setAnimation` is 0.45 to 0.66 % of a logic
+worker and `setAnimationSpeed` 0.54 to 0.78 %: the megamorphic load is a fraction of that.
+
 ### E-250 The spatial worker changes shape after it starts (a map migration in `_findNeighbors`)
 
 **Premise:** Predator's final graph of `_findNeighbors` checks `TryMigrateInstance` twice at
@@ -4202,6 +4216,22 @@ the function spends its time in lower tiers between compiles (E-243's allocation
 **Plan:** the deopting function at each site and the cycle (V8's code and deopt log of one long run); then the rare
 branch moved into a function of its own (out of the hot function's graph) and the counts again; owners: physics',
 spatial's and logic's STEP_MS in Predator, and their KB/s.
+
+### E-252 Box2D's collision callbacks take 8 to 12 % of a logic worker in Predator
+
+**Premise:** Predator's CPU trace: `_processBox2dCollisionCallbacks` 18.6 ms/s (8.2 %) and 24.3 ms/s (11.9 %) of the two logic
+workers' self time: the dispatch of each contact begin and end to the entities' callbacks.
+**Plan:** E-222's sites for it; its per-contact work against the number of contacts a frame (the ring's counts); then
+the cheapest of a narrower dispatch (only the types with callbacks) or fewer lookups per contact. Owner: logic's STEP_MS
+in Predator.
+
+### E-253 The FSM's tick takes 7 to 9 % of a logic worker in Predator
+
+**Premise:** `fsm.tick` 15.9 ms/s (7.0 %) and 17.9 ms/s (8.8 %) of the two logic workers, besides the states' own code:
+each entity's FSM dispatches its state's onUpdate through `.call` on a table, a call TurboFan cannot inline (each state
+its own function), with its time and `dt` passed along.
+**Plan:** E-222's sites and a kernel of the dispatch with Predator's state counts; then what is left to cut (the per-call
+lookups, the arguments). Owner: logic's STEP_MS in Predator.
 
 ## Not doing (read the log first)
 

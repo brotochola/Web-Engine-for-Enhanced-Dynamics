@@ -12652,14 +12652,12 @@
     {
       "id": "E-233",
       "title": "Pixi's uniform writes go through generic inline caches and box their doubles (_stampLightCamera)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from TurboFan's final graph (E-222), not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13: too small to change",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 54,
-      "result": "LoadWithVector, StoreWithVector and an Allocate (the zoom boxed) per light batch per frame in the final graph. Also _applyLightingViewport: seven generic IC calls and a boxed inverse resolution per frame.",
-      "next": "All LoadWithVector/StoreWithVector left in hot functions (E-222); uniforms through a kept typed view or a monomorphic setter.",
+      "result": "Neither _stampLightCamera nor _applyLightingViewport shows in the CPU traces; a few boxed doubles a frame.",
       "refs": [
         "EXECUTION_PLAN.md#E-233"
       ],
@@ -12672,20 +12670,19 @@
         "generic IC"
       ],
       "records": [
-        "R-0965"
+        "R-0965",
+        "R-0968"
       ]
     },
     {
       "id": "E-234",
       "title": "Light batch objects change shape after they are made (TryMigrateInstance each frame)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from TurboFan's final graph (E-222), not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13: no running cost",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 55,
-      "result": "TryMigrateInstance behind batch.geometry, batch.vbuf, batch.cbuf in _finishLightBatch: deprecated maps (cbuf null vs Buffer from one literal, likely).",
-      "next": "Batch objects of one class with fields of one type; E-222 for other migration sites.",
+      "result": "TryMigrateInstance is the slow path of a map check: one migration per object, then the check passes.",
       "refs": [
         "EXECUTION_PLAN.md#E-234"
       ],
@@ -12696,7 +12693,9 @@
         "field generalization",
         "light batch"
       ],
-      "records": []
+      "records": [
+        "R-0968"
+      ]
     },
     {
       "id": "E-235",
@@ -12754,14 +12753,12 @@
     {
       "id": "E-237",
       "title": "Logic's contact begin calls a Map or Set set per contact: 37 KB/s per logic worker in Predator",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from Predator's E-222 run, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13: small",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 58,
-      "result": "set under _applyContactBegin, 37 KB/s in each logic worker. The sites: _pairSlot.set/delete keyed by collisionPairKey (a heap number past the Smi range).",
-      "next": "Read the collection; a typed or pooled structure if it is one entry per contact.",
+      "result": "Pair keys past the Smi range (minE >= 16384): about 50 boxed keys a frame per logic worker, microseconds; GC under 0.1 %.",
       "refs": [
         "EXECUTION_PLAN.md#E-237"
       ],
@@ -12773,7 +12770,8 @@
       ],
       "records": [
         "R-0960",
-        "R-0965"
+        "R-0965",
+        "R-0968"
       ]
     },
     {
@@ -13051,14 +13049,12 @@
     {
       "id": "E-249",
       "title": "this._hasComponents.X is a megamorphic load in per-entity API calls (setAnimation, setScale)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from E-222's sites, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13: small",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 69,
-      "result": "LoadWithVector at _hasComponents.SpriteRenderer in setAnimation, setAnimationState and setScale (Predator's final graphs).",
-      "next": "A kernel over several entity classes: the per-class object against a bit mask or a fixed-shape flags object.",
+      "result": "setAnimation 0.45 to 0.66 %, setAnimationSpeed 0.54 to 0.78 % of a logic worker in Predator's CPU trace.",
       "refs": [
         "EXECUTION_PLAN.md#E-249"
       ],
@@ -13070,7 +13066,8 @@
         "component flags"
       ],
       "records": [
-        "R-0965"
+        "R-0965",
+        "R-0968"
       ]
     },
     {
@@ -13121,6 +13118,53 @@
       "records": [
         "R-0966",
         "R-0967"
+      ]
+    },
+    {
+      "id": "E-252",
+      "title": "Box2D's collision callbacks take 8 to 12 % of a logic worker in Predator (_processBox2dCollisionCallbacks)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's CPU trace, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 72,
+      "result": "_processBox2dCollisionCallbacks 18.6 ms/s (8.2 %) and 24.3 ms/s (11.9 %) of the two logic workers.",
+      "next": "E-222 sites; work per contact against contacts a frame; a narrower dispatch or fewer lookups.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-252"
+      ],
+      "aliases": [
+        "_processBox2dCollisionCallbacks",
+        "collision callbacks",
+        "contact dispatch"
+      ],
+      "records": [
+        "R-0968"
+      ]
+    },
+    {
+      "id": "E-253",
+      "title": "The FSM's tick takes 7 to 9 % of a logic worker in Predator (fsm.tick dispatch)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's CPU trace, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 73,
+      "result": "fsm.tick 15.9 ms/s (7.0 %) and 17.9 ms/s (8.8 %) of the two logic workers.",
+      "next": "E-222 sites and a dispatch kernel with Predator's state counts.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-253"
+      ],
+      "aliases": [
+        "fsm.tick",
+        "FSM dispatch",
+        "onUpdate",
+        "state machine"
+      ],
+      "records": [
+        "R-0968"
       ]
     },
     {
@@ -23021,6 +23065,15 @@
       "title": "A 150 s Predator run: its load drifts too much for E-243; E-251's deopt loops steady, sites change (box2dMovedBodies 200 deopts over 100 s)",
       "verdict": "note",
       "text": "**E-243 and E-251, a 150 s Predator run (stepOverTime, V8's code and deopt log): Predator's load drifts too much to read a tier-up; the deopt loops are steady but their sites change run to run.**\n2026-11-13, about 05:35 to 05:38.\n\n- **Own ms (STEP - WAIT) per 10 s:** physics 6.5, 5.7, 4.2, 3.5, 5.5, 5.1, 9.4, 4.9, 6.6, 9.1, 7.9, 9.0, 14.4, 7.9, 2.6; logic 7.3 down to 5.0 by 30 s, then 5.7 to 7.9 with the battle; the others alike. The game's load (fights, spawns, deaths) moves every worker together; no step down near 50 s (whole-function TurboFan) can be told from it. E-243 needs a scene of steady load (BunnyMark, a stress scene) and its load keys.\n- **Deopts by the code that fell** (deoptCycles over the same log): `box2dMovedBodiesImpl.js:186:13` (`Atomics.store(hdrI32, HDR_COUNT, count)`, after the publish's loops) 200 deopts from 11 to 111 s, insufficient type feedback for a named access, in a line that runs every step; `logicWorker.js:867/856` about 150 each between 9 and 13 s; `publishPose`'s 610 and spatial's 1558 (R-0966's run) did not deopt this run.\n- **Refined, untested:** a function with long loops gets OSR code before the code after its loops has run in the interpreter; that code reaches the loop's end without feedback and deopts, and a reused OSR code deopts again. The sites move with what the game does first."
+    },
+    {
+      "id": "R-0968",
+      "date": "2026-11-13",
+      "time": "05:37",
+      "timeFrom": "recorded",
+      "title": "Four small ones answered from the traces (E-233, E-234, E-237, E-249); E-252 and E-253 written down",
+      "verdict": "answered",
+      "text": "2026-11-13, from Predator's CPU trace (R-0963's) and E-222's sites and heap samples. E-233: the uniform writers run a few times a frame and show in no CPU trace. E-234: TryMigrateInstance is a map check's slow path, once per object. E-237: the contact pair key passes the Smi range when minE >= 16384; about 50 boxed keys a frame per logic worker (37 KB/s), microseconds, GC under 0.1 %. E-249: setAnimation 0.45 to 0.66 % and setAnimationSpeed 0.54 to 0.78 % of a logic worker. None worth its code. New, before testing: E-252 (_processBox2dCollisionCallbacks 8.2 and 11.9 % of the two logic workers) and E-253 (fsm.tick 7.0 and 8.8 %)."
     }
   ],
   "leads": [
