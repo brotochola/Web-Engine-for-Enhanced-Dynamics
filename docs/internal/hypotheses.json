@@ -13367,6 +13367,30 @@
       "records": []
     },
     {
+      "id": "E-263",
+      "title": "FL4's head is outside the Smi range: every pop and push of a wide pool or a 32-bit entity id gets heap numbers back from its Atomics (E-87 fixed only the 16-bit stack)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from reading atomicFreeList.js against E-87, not tested",
+      "date": "2026-11-13",
+      "area": "core",
+      "kind": "speed",
+      "rank": 79,
+      "result": "FL4's Int32 head is (tag << 19, 20 on deco/1m) | (index + 1): with a 13 (12) bit tag most heads pass 2^30, outside a Smi, and E-87 measured that Chrome then returns a heap number from every Atomics.load and compareExchange (~14 ns an op). The wide pools (decorations, particles and bullets past 65 535) and 32-bit entity ids pop and push through FL4.",
+      "next": "A kernel of popFl4 / pushFl4 in Chrome (ns an op, heap) against a head kept in the Smi range (E-87's sign trick: 20 index bits and 10 or 11 tag bits, bit 31 copying bit 30); weigh the smaller ABA window. Then a spawn-heavy scene with a wide pool.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-263"
+      ],
+      "aliases": [
+        "FL4",
+        "popFl4",
+        "pushFl4",
+        "Smi range",
+        "heap number Atomics",
+        "free list head"
+      ],
+      "records": []
+    },
+    {
       "date": "2026-11-12",
       "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
