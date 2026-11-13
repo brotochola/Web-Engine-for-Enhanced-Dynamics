@@ -1,7 +1,7 @@
 import WEED from '/src/index.js';
 import { VisPolyAlbedo } from './visPoly/visPolyAlbedo.js';
 import { VisPolyLight } from './visPoly/visPolyLight.js';
-import { VisPolyOccluder } from './visPoly/visPolyOccluder.js';
+import { VisPolyOccluder, VisPolySpriteOccluder } from './visPoly/visPolyOccluder.js';
 
 const { Scene, Camera } = WEED;
 
@@ -40,6 +40,18 @@ export const SELF_LIT = (() => {
 })();
 
 /**
+ * `?mask=sprite` (E-260): the occluders carry a white picture of their size and their self-lit fills are masked by it
+ * (`maskMode` sprite, as a house in the Headlights demo): the self-lit sprite-mask pass, one mesh per occluder and light.
+ */
+export const SPRITE_MASK = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get('mask') === 'sprite' ? 1 : 0;
+  } catch {
+    return 0;
+  }
+})();
+
+/**
  * `?block=X`: the occluders' `LightOccluder.block` (default 1). Under 1 each occluder lets part of the
  * light through and adds a transmit wedge per light, which no other scene draws (E-96c).
  */
@@ -54,7 +66,7 @@ export const BLOCK = (() => {
 })();
 
 export const stressSceneConfig = {
-  requested: { occluderShape: OCCLUDER_SHAPE, selfLit: SELF_LIT, block: BLOCK, lights: LIGHTS },
+  requested: { occluderShape: OCCLUDER_SHAPE, selfLit: SELF_LIT, block: BLOCK, lights: LIGHTS, mask: SPRITE_MASK ? 'sprite' : 'collider' },
 };
 
 /** Bench scene: raycasted lights + occluders. Predator default leaves this path off. */
@@ -93,7 +105,9 @@ export class VisPolyStressScene extends Scene {
   static entities = [
     [VisPolyAlbedo, 1],
     [VisPolyLight, LIGHTS],
-    [VisPolyOccluder, OCCLUDERS],
+    // Both listed: a worker reads this list without the page's query, and the pool it does not use is empty.
+    [VisPolyOccluder, SPRITE_MASK ? 0 : OCCLUDERS],
+    [VisPolySpriteOccluder, SPRITE_MASK ? OCCLUDERS : 0],
   ];
 
   create() {
@@ -117,7 +131,7 @@ export class VisPolyStressScene extends Scene {
       });
     }
     for (let i = 0; i < OCCLUDERS; i++) {
-      VisPolyOccluder.spawn({
+      (SPRITE_MASK ? VisPolySpriteOccluder : VisPolyOccluder).spawn({
         x: 80 + rng() * (w - 160),
         y: 80 + rng() * (h - 160),
         width: 32 + rng() * 48,
