@@ -3860,6 +3860,116 @@ sun hours and sunMeshParityScene against main. Owner: Predator `?backend=webgpu&
 on a machine in use (every worker about twice the E-187 sitting's an hour before): a sitting on a quiet machine would
 give the clean figure. WebGPU captures of dxCaptureScene (9, 17, 22 h, prop shadows) and sunMeshParityScene equal to main.
 
+## Wave 13 — TurboFan's own graphs, and other ways to find work (2026-11-13)
+
+The heap profiler names the function that allocates, never the line, and charges an inlined callee's allocations to its
+caller (a probe, R-0958). TurboFan's JSON trace (`--js-flags="--trace-turbo --trace-turbo-path=<dir>"`) holds each
+optimized function's graph, every node with its source position: the boxes, allocations, calls it did not inline,
+checks and deopt points, by line (`tests/bench/summarizeTurboSites.mjs`). The first short run (flashlightStressScene)
+already showed E-221. The rest of this wave are hypotheses about where the engine's time goes, and tools that would
+find more; each is open until a sitting decides it.
+
+### E-221 A typed array's length is recomputed by a 64-bit division at each access
+
+**Premise:** in Chrome 157's graph of Pixi's `_buildSelfLitBatch` (flashlightStressScene `?cone=1&lights=360`), 57
+`Uint64Div` nodes, each `LoadField[byte length] / Int64Constant[4]` feeding a `CheckedUint64Bounds`: the bounds of a
+typed array access are checked against a length computed from the buffer's byte length, not loaded. Their lines are
+the component arrays (`Transform.x`, `Collider.width`, `LightEmitter.offsetX`, `Transform.active`) and the self-lit
+queue's views. V8 does that for a typed array it treats as variable-length (on a growable or resizable buffer, or a
+length-tracking view). A 64-bit division is tens of cycles; at every component access of every hot JS loop it would be
+an engine-wide cost. A first microbench in Chrome and Node (one loop, five backings, a function each) found every
+backing as fast (about 1.5 ns an element): there the division is hoisted out of the loop, so it costs only where
+accesses are scattered (an index from a list, stores in between), which is the engine's pattern.
+**Plan:** step 0: which buffer the component arrays sit on in a running scene (`self.WEED.Transform.x.buffer`:
+`growable`, `maxByteLength`, a WebAssembly.Memory's), and whether the view is length-tracking; then a Chrome kernel with
+the engine's access pattern (ids from a list, several arrays, a store each) on each backing, its graph counted for
+`Uint64Div`. If the backing is the cause: fixed-length views on a fixed buffer, or the arrays' lengths made provable
+(locals hoisted with a length test before the loop). Owner: the workers whose hot JS reads components (pre-render's
+glue, Pixi's batches, logic's game code); the graph's `Uint64Div` count per function before and after.
+
+### E-222 A line-level audit of every hot function in TurboFan's graphs
+
+**Premise:** E-66, E-71, E-85, E-95 and E-59 were each a boxed double, an Any-typed field or a call left out of line,
+found by hand one at a time. The graph shows all of them at once: `ChangeFloat64ToTagged` (a box), `Allocate`/`JSCreate*`
+(an object, closure or context), `JSCall` left after inlining (a call; its doubles boxed), the `Check*` nodes left in a
+loop (bounds, maps: polymorphism, Smi), `Deoptimize` points and their reasons, and each node's line.
+**Plan:** the tool (`summarizeTurboSites.mjs`, its own commit) over Predator, flashlightStressScene, BunnyMark,
+Boids and LiquidFun, joined with heapSampleWorkers' KB/s and the CPU trace's self ms per function; `--log-code` for the
+tier each function reached (a once-a-frame function left in Sparkplug or Maglev boxes every double it loads), and
+`--no-concurrent-recompilation` so no trace is cut when the browser closes. Each finding becomes its own hypothesis or
+N- row. Owner: per finding.
+
+### E-223 The frame's critical path: which worker gates each frame
+
+**Premise:** a millisecond saved in a worker that waits for another changes nothing; one saved on the worker the
+others wait for moves the frame. The frame clock (E-24) stamps every worker's step start and end each frame, and the
+wait meters say who waited, but nothing reads them as a chain per frame.
+**Plan:** a tool that reads the frame clock's slots over a window and says, per frame, which worker finished last on
+the chain (logic → physics → pre-render → Pixi), and how often each one gates; then the scenes' owners ranked by the
+frames they gate. Owner: a tool (the scenes' rankings are its result).
+
+### E-224 Scaling curves: each worker's STEP_MS against the entity count
+
+**Premise:** a worker's cost per entity is assumed flat. A knee in STEP_MS against N, where the hot columns stop fitting
+the L2 or L3 cache, or a curve steeper than linear (a sort, a quadratic pass), would point at layout or algorithm work
+no single sitting shows.
+**Plan:** each stress scene's own load knob at N = 1k, 2k … 64k (one short run each), STEP_MS per worker against N, the
+cost per 1000 entities and where it bends. Owner: a tool; findings become hypotheses.
+
+### E-225 GC pauses against the long frames
+
+**Premise:** the garbage left (R-0958: pre-render 39 KB/s, Pixi 140 KB/s) is small, but each scavenge pauses its
+worker. Whether those pauses are the p95/p99 frames is not known.
+**Plan:** `--js-flags=--trace-gc-nvp` with the frame totals' histogram per worker over the same window: each pause's
+time against the worker's frame times; the share of frames over the budget that held a GC. Owner: the frame
+histogram's tail per worker.
+
+### E-226 Two workers writing the same cache line of a shared buffer (false sharing)
+
+**Premise:** words written by different workers that sit in one 64-byte cache line make each write invalidate the
+line in the other core. The frame clock's slots are 32 bytes (two workers a line), and other shared layouts (stats
+blocks, query headers, free-list heads, the frame chain) were laid out for size, not by writer.
+**Plan:** read every SharedArrayBuffer layout for words with different writers within 64 bytes; for each one written
+per frame or per entity, a kernel with two threads writing it as the engine does, padded and not. Owner: per layout.
+
+### E-227 Pixi's own allocations: fewer render calls and buffer updates a frame
+
+**Premise:** most of Pixi's 140 KB/s of garbage is Pixi's (R-0958): buffer update events (`ge.emit` 31 KB/s, from each
+`buffer.update`), render target binds (19), render passes (13), `push`, `Fa`. Each `renderer.render()` and each buffer
+update costs a few objects; the light pass alone updates three or four buffers and renders two or three times a frame.
+**Plan:** count Pixi's render calls and buffer updates per frame per scene; skip the updates of an unchanged buffer
+(the cone buffer with no cone light, the self-lit buffers with no occluder), and merge render calls where two passes
+share a target. Owner: Pixi's KB/s and the renderer's STEP_MS.
+
+### E-228 The OS's view: scheduling, wake-ups and core moves (ETW)
+
+**Premise:** N-146 and E-219 found Windows' timer and wait behaviour by its side effects. An ETW trace (WPR, part of
+Windows; WPA to read it, from the Windows ADK) shows each worker thread's context switches, the time from an
+Atomics.notify to the wake-up, the cores it ran on and the CPU's frequency.
+**Plan:** WPR's CPU and scheduling profile over a Predator run; per worker, the wake latency after a notify, the
+migrations, the frequency. Needs the owner's OK to install the ADK's WPA.
+
+### E-229 Hardware counters: cache misses, mispredicts and IPC per function
+
+**Premise:** the CPU trace gives time, not why. AMD uProf or Intel VTune give cache misses, branch mispredicts and
+instructions per cycle per function and show false sharing (E-226) directly.
+**Plan:** a profile of Predator's and BunnyMark's hot workers; functions with low IPC or a high miss rate become
+layout hypotheses. Needs the owner's OK to install the profiler.
+
+### E-230 What the GPU does in a frame
+
+**Premise:** GPU-bound scenes are judged by drawn frames (the renderer's FPS can read 60 with fewer drawn). Spector.js
+(WebGL) lists each call of a frame: state changes, draw calls, redundant binds; WebGPU timestamp queries time each pass.
+**Plan:** one captured frame of Predator, Sun Street and the Headlights demo on each backend; redundant state and the
+passes' GPU times. Owner: drawn FPS of a GPU-bound scene.
+
+### E-231 A CPU-trace diff between two revisions
+
+**Premise:** a regression is found by the scoreboard's rows, after the fact. Two CPU traces of the same scene, one per
+revision, compared function by function (self ms and its share), name what moved before a sitting is set up.
+**Plan:** a tool over `summarizeChromeCpuTrace`'s output for two traces; the functions whose share moved most. Owner:
+a tool.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any

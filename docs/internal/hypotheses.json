@@ -12376,6 +12376,246 @@
       ]
     },
     {
+      "id": "E-221",
+      "title": "A typed array's length recomputed by a 64-bit division at each access (Uint64Div → CheckedUint64Bounds on component arrays)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 (Wave 13), not tested",
+      "date": "2026-11-13",
+      "area": "engine",
+      "kind": "speed",
+      "rank": 42,
+      "next": "Step 0: the component arrays' buffer in a running scene (growable? length-tracking?); a Chrome kernel with the engine's scattered access pattern on each backing, its Uint64Div counted.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-221"
+      ],
+      "aliases": [
+        "Uint64Div",
+        "CheckedUint64Bounds",
+        "growable",
+        "length-tracking",
+        "typed array length",
+        "byteLength"
+      ],
+      "records": [],
+      "result": "Seen in TurboFan's graph of Pixi's _buildSelfLitBatch (57 Uint64Div on Transform, Collider, LightEmitter and the self-lit views); a first one-loop microbench found no backing slower (the division hoisted)."
+    },
+    {
+      "id": "E-222",
+      "title": "A line-level audit of every hot function in TurboFan's graphs (boxes, allocations, calls not inlined, checks, deopt points)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 (Wave 13), not tested",
+      "date": "2026-11-13",
+      "area": "tools",
+      "kind": "speed",
+      "rank": 43,
+      "next": "Predator, flashlights, BunnyMark, Boids, LiquidFun with --no-concurrent-recompilation and --log-code, joined with heap KB/s and CPU self ms; each finding its own row.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-222"
+      ],
+      "aliases": [
+        "trace-turbo",
+        "turbo sites",
+        "turbolizer",
+        "boxing sites",
+        "ChangeFloat64ToTagged",
+        "line-level"
+      ],
+      "records": [],
+      "result": "The tool exists (summarizeTurboSites.mjs, uncommitted); a first run on flashlightStressScene found E-221."
+    },
+    {
+      "id": "E-223",
+      "title": "The frame's critical path: which worker gates each frame (from the frame clock)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 (Wave 13), not tested",
+      "date": "2026-11-13",
+      "area": "tools",
+      "kind": "speed",
+      "rank": 44,
+      "next": "A tool reading the frame clock per frame: who finished last on the chain, how often each worker gates.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-223"
+      ],
+      "aliases": [
+        "critical path",
+        "frame chain",
+        "gating worker",
+        "frame clock"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-224",
+      "title": "Scaling curves: each worker's STEP_MS against the entity count (knees as cache cliffs)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 (Wave 13), not tested",
+      "date": "2026-11-13",
+      "area": "tools",
+      "kind": "speed",
+      "rank": 45,
+      "next": "Each stress scene's load knob at 1k..64k, STEP_MS per worker against N, the cost per 1000 and where it bends.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-224"
+      ],
+      "aliases": [
+        "scaling curve",
+        "cache cliff",
+        "per-entity cost",
+        "knee"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-225",
+      "title": "GC pauses against the long frames (--trace-gc-nvp with the frame histogram)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 (Wave 13), not tested",
+      "date": "2026-11-13",
+      "area": "engine",
+      "kind": "speed",
+      "rank": 46,
+      "next": "Each scavenge's time against the worker's frame times; the share of over-budget frames that held a GC.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-225"
+      ],
+      "aliases": [
+        "trace-gc",
+        "scavenge",
+        "GC pause",
+        "p95",
+        "jank"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-226",
+      "title": "False sharing: words of different writers in one 64-byte cache line of a shared buffer",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 (Wave 13), not tested",
+      "date": "2026-11-13",
+      "area": "engine",
+      "kind": "speed",
+      "rank": 47,
+      "next": "Read every SAB layout for words with different writers within 64 bytes (the frame clock's 32-byte slots first); a two-thread kernel padded and not.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-226"
+      ],
+      "aliases": [
+        "false sharing",
+        "cache line",
+        "padding",
+        "SharedArrayBuffer layout"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-227",
+      "title": "Pixi's own allocations (~140 KB/s): fewer render calls and buffer updates a frame",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 (Wave 13), not tested",
+      "date": "2026-11-13",
+      "area": "pixi",
+      "kind": "speed",
+      "rank": 48,
+      "next": "Count render calls and buffer updates per frame; skip an unchanged buffer's update, merge render calls on one target.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-227"
+      ],
+      "aliases": [
+        "ge.emit",
+        "buffer update",
+        "render calls",
+        "Pixi garbage"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-228",
+      "title": "The OS's view (ETW): context switches, wake latency after a notify, core moves, frequency",
+      "status": "blocked",
+      "statusText": "proposed 2026-11-13; needs an install the owner approves",
+      "date": "2026-11-13",
+      "area": "tools",
+      "kind": "speed",
+      "rank": 49,
+      "next": "WPR's scheduling profile over Predator, read in WPA. Needs the owner's OK to install the Windows ADK's WPA.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-228"
+      ],
+      "aliases": [
+        "ETW",
+        "WPR",
+        "WPA",
+        "scheduling",
+        "wake latency",
+        "context switch"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-229",
+      "title": "Hardware counters per function: cache misses, mispredicts, IPC (uProf / VTune)",
+      "status": "blocked",
+      "statusText": "proposed 2026-11-13; needs an install the owner approves",
+      "date": "2026-11-13",
+      "area": "tools",
+      "kind": "speed",
+      "rank": 50,
+      "next": "A profile of Predator's and BunnyMark's hot workers. Needs the owner's OK to install the profiler.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-229"
+      ],
+      "aliases": [
+        "uProf",
+        "VTune",
+        "IPC",
+        "cache misses",
+        "hardware counters"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-230",
+      "title": "What the GPU does in a frame (Spector.js on WebGL, timestamp queries on WebGPU)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 (Wave 13), not tested",
+      "date": "2026-11-13",
+      "area": "renderer",
+      "kind": "gpu",
+      "rank": 51,
+      "next": "One captured frame of Predator, Sun Street and Headlights per backend: redundant state, draw calls, each pass's GPU time.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-230"
+      ],
+      "aliases": [
+        "Spector",
+        "GPU capture",
+        "draw calls",
+        "timestamp query"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-231",
+      "title": "A CPU-trace diff between two revisions, function by function",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 (Wave 13), not tested",
+      "date": "2026-11-13",
+      "area": "tools",
+      "kind": "speed",
+      "rank": 52,
+      "next": "A tool over two summarizeChromeCpuTrace outputs: the functions whose share moved most.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-231"
+      ],
+      "aliases": [
+        "trace diff",
+        "regression finder",
+        "cpu trace"
+      ],
+      "records": []
+    },
+    {
       "date": "2026-11-12",
       "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
@@ -12684,7 +12924,9 @@
         "heapSampleWorkers",
         "camera bounds"
       ],
-      "records": []
+      "records": [
+        "R-0958"
+      ]
     },
     {
       "id": "N-159",
@@ -22174,6 +22416,20 @@
       "text": "**DX-LIGHTAPI and DX-SPOT merged into main** (ff255c01, --no-ff, the branch's tree: main had not moved since fa59073a).\n\nWhat merged: the light API (radius, brightness, color, glow, glowLayer, glowOffsetY, elevation, castShadows, shadowRange; no old names), cone lights (direction, coneAngle, coneSoftness, followFlip; basic lighting and raycast), the Headlights demo, and the fixes found on the way (N-149 to N-153, N-157, N-159, N-160, N-162).\n\nThe checks it merged on: test:node 2564/2564, test:demos 101/101; check:dist (inputs 527dd2741a63dfc1), browser smokes on all 8 bundles and test:node:bundle 301/301 on each (dist 32a2840d); the scoreboard against main with no row worse (R-0951 to R-0953); a cone's cost (R-0946, R-0947); the engine trace (R-0949); the prod bundle against its sources NEUTRAL on Predator and Boids (R-0955). The owner tried the Headlights demo (N-162 came from it) and asked for the merge. Not pushed.",
       "commits": [
         "ff255c01"
+      ]
+    },
+    {
+      "id": "R-0958",
+      "date": "2026-11-13",
+      "time": "04:28",
+      "timeFrom": "recorded",
+      "title": "N-158 round 1: column-writer closures, the light pass's options and timeOrigin out; pre-render 44.8 → 39.1 KB/s, gate NEUTRAL",
+      "verdict": "kept-hygiene",
+      "text": "**N-158, round 1: three garbage sources out of pre-render and Pixi; the rest needs line-level sites.**\n2026-11-13, gc/n158 (off main c9b981cf). Allocation by heapSampleWorkers.mjs (Chrome), flashlightStressScene `?cone=1&lights=360&crates=320`, 10 s after 10 s, before (the merged tree) and after the three commits:\n\n- **Column writers** (f47d6e63): writeCollectColumns, writeGatherColumns and writeBulletColumns made a `put` closure and its context every call; now `putColumn`, a module function. Pre-render writeCollectColumns 3.9 → 0 KB/s, writeGatherColumns 2.2 → 0.\n- **Pixi's light pass** (595d5aca): a clear-colour array and an options object every frame; now kept (its own object, `transform` back to null each frame as Pixi's render() fills it in; Pixi compares the clear colour by value). renderVisibilityLighting 5.4 → 0 KB/s.\n- **performance.timeOrigin read once per realm** (b496b1e5, `TIME_ORIGIN` in frameClock.js; physics reads its own at load). A probe in Chrome (2 000 000 calls each, optimized code): performance.timeOrigin 12.10 bytes a call, Date.now() 11.97, performance.now() 0.00. `_runFrame` 6.9 → 5.2 KB/s in pre-render and in Pixi.\n- Totals: pre-render 44.8 → 39.1 KB/s; Pixi 145.1 → 139.5 (most of what is left is Pixi's own: buffer update events 31, render target binds 19, render passes 13).\n\nFound on the way: Chrome's sampling heap profiler charges an inlined callee's allocations to its caller (a probe: an object made in a small inlined function shows under the caller only), so a row is the function and all it inlined.\n\n**Hygiene gate**, flashlightStressScene against main, 4 pairs (04:13 to 04:28): at `lights=360` pre-render's baseline was 2.916 ms, under the 3 ms floor (not judged); again at `lights=480`: pre-render 4.551 → 4.580 ms, paired -4.6 %, worse 2/4, cv 48/41 %: NEUTRAL. Kept.\n\nLeft (KB/s): pre-render reportFPS 5.9, _waitForPose 5.6, _runFrame 5.2, the camera's advanceShake 2.3 and _readFollowSnapshot 1.9; Pixi _waitForQueue 5.9, _runFrame 5.2, _applySceneryCamera 2.4. Candidates, unproven: the Atomics.wait timeout (a fractional double, boxed into the runtime call: left as it is, its timing was tuned in N-146), update(deltaTime, dtRatio) taking its doubles across a call TurboFan does not inline, scratch objects of a shape shared with other `{x, y}` objects. Next: TurboFan's own graphs (`--trace-turbo`) give each boxing site its line (summarizeTurboSites.mjs).",
+      "commits": [
+        "f47d6e63",
+        "595d5aca",
+        "b496b1e5"
       ]
     }
   ],
