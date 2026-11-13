@@ -4183,6 +4183,9 @@ spatial worker's STEP_MS in Predator and Boids.
 of line, and reads its four results from an object; the circle path is already inline. Candidate: the box path inline
 too, results through a Float64Array.
 
+**Kept on the kernel 2026-11-13 (R-0974):** a box's bounds inline in the three grid passes (`7bcc5d8a`): the full
+rebuild with 40 000 turned boxes +21.7 %, checksums equal; Boids' spatial 6.373 → 6.152 ms (−1.1 %, NEUTRAL).
+
 ### E-246 Physics' JS around the step: publishPose, snapshotPrevPose, publishMovedBodies
 
 **Premise:** of the physics thread's 417 ms/s in Predator, `publishPose` 14.8 (3.6 %), `snapshotPrevPose` 6.0 (1.4 %),
@@ -4234,6 +4237,8 @@ with its final representation. Owner: hygiene (the spatial worker's STEP_MS not 
 **Fixed 2026-11-13 (564351fd):** the shape test on the three workers found logic's detailed-stats times first written as
 the Smi 0 by `update()` (and turned double later), spatial's `_noBodyCount` and particle's `_swayBucketCacheK`: declared
 in the constructors. The lists `initialize` binds by width stay there (E-71). Timed with the next Predator gate.
+
+**Kept (hygiene) 2026-11-13 (R-0974).**
 
 ### E-251 Steady deopt loops in per-frame engine functions
 
