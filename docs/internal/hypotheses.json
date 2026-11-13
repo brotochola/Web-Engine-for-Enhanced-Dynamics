@@ -13374,8 +13374,8 @@
       "area": "core",
       "kind": "speed",
       "rank": 79,
-      "result": "FL4's Int32 head is (tag << 19, 20 on deco/1m) | (index + 1): with a 13 (12) bit tag most heads pass 2^30, outside a Smi, and E-87 measured that Chrome then returns a heap number from every Atomics.load and compareExchange (~14 ns an op). The wide pools (decorations, particles and bullets past 65 535) and 32-bit entity ids pop and push through FL4.",
-      "next": "A kernel of popFl4 / pushFl4 in Chrome (ns an op, heap) against a head kept in the Smi range (E-87's sign trick: 20 index bits and 10 or 11 tag bits, bit 31 copying bit 30); weigh the smaller ABA window. Then a spawn-heavy scene with a wide pool.",
+      "result": "FL4's Int32 head is (tag << 19, 20 on deco/1m) | (index + 1): with a 13 (12) bit tag most heads pass 2^30, outside a Smi, and E-87 measured that Chrome then returns a heap number from every Atomics.load and compareExchange (~14 ns an op). The wide pools (decorations, particles and bullets past 65 535) and 32-bit entity ids pop and push through FL4. E-87 left FL4 as it was on purpose (\"its window is already small\") after measuring 70 against 28.5 ns a step with values past 2^30 in a Chrome worker.",
+      "next": "A Chrome kernel (scratch fl4/kernel.mjs: 20 index bits, a 12-bit tag against a 10-bit one under 2^30) in ns an op and heap; then weigh the ABA window (4 096 against 1 024 operations held between one thread's load and its exchange) before any change.",
       "refs": [
         "EXECUTION_PLAN.md#E-263"
       ],
