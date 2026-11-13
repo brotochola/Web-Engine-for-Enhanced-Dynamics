@@ -555,7 +555,7 @@
     {
       "id": "W7",
       "title": "W5 + W6 + the existing publish",
-      "status": "screened",
+      "status": "open",
       "statusText": "screened 2026-10-28: a port's ceiling is a few per cent of spatial",
       "date": null,
       "result": "The JS decision loop is about 8 % of the spatial frame (kernel profile); the rebuild in C ties (+2.0 % / −2.2 %); the loop's counter writes in locals tie (−0.2 % / −0.9 %).",
@@ -567,7 +567,8 @@
       "aliases": [],
       "next": "Nothing pending.",
       "records": [
-        "R-0685"
+        "R-0685",
+        "R-0991"
       ]
     },
     {
@@ -7949,7 +7950,7 @@
     {
       "id": "E-99",
       "title": "Caster positions in bin order for the shadow stamp",
-      "status": "rejected",
+      "status": "open",
       "statusText": "rejected in the kernel 2026-10-23",
       "date": "2026-10-23",
       "result": "buildStampGrid copied caster x, y in bin order for the light walk. shadowStampMicrobench 666 → 658 ops/s (−1.2 %, a tie): the rows fit in cache, the profile's samples were load stalls.",
@@ -7960,7 +7961,8 @@
       ],
       "aliases": [],
       "records": [
-        "R-0490"
+        "R-0490",
+        "R-0991"
       ]
     },
     {
@@ -9376,10 +9378,11 @@
     {
       "aliases": [],
       "records": [
-        "R-0733"
+        "R-0733",
+        "R-0991"
       ],
       "date": "2026-10-29",
-      "status": "dropped",
+      "status": "open",
       "statusText": "dropped 2026-10-29 (R-0733)",
       "result": "Dropped: fsmTickMicrobench +8.3 % at 3 000 owners, -2.4 % (tie) at 20 000; 1-2 % of Predator's logic at best.",
       "next": "Only if a scene shows the FSM tick bound by that read.",
@@ -14063,13 +14066,13 @@
     {
       "id": "E-271",
       "title": "fillQueueIndices writes the identity 0..n-1 into the same index array every frame (painter scenes: 100 % of it on outIdx[i] = i)",
-      "status": "tie",
-      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "status": "open",
+      "statusText": "recheck 2026-11-13: −1.2 % with no pair worse (R-0986); in the pre-render small-gains group (R-0991)",
       "date": "2026-11-13",
       "area": "preRender",
       "kind": "speed",
       "result": "painterSort pre-render 10.285 → 10.141 ms (−1.2 %, worse 0/4): the size the trace predicted, under 3 %; not merged, branch kept.",
-      "next": "Keep how far each index array already holds the identity (a module WeakMap or the caller's state) and write only past it; the pack kernel, then the painter scenes' pre-render STEP_MS.",
+      "next": "Sit again with the pre-render small-gains group (E-99, H11, the shadow rows) on one branch: kept with the group if it wins 3 % or more on pre-render with no worker worse.",
       "refs": [
         "EXECUTION_PLAN.md#E-271"
       ],
@@ -14079,8 +14082,10 @@
         "packSpriteLayer"
       ],
       "records": [
-        "R-0986"
-      ]
+        "R-0986",
+        "R-0991"
+      ],
+      "rank": 61
     },
     {
       "id": "E-272",
@@ -24215,6 +24220,15 @@
       "title": "E-284 kept as hygiene: the bullet collect's garbage gone (626 to 0 KB/s), bulletStress' pre-render a tie",
       "verdict": "kept-hygiene",
       "text": "**E-284 kept as hygiene: the bullet collect carries the last bullet's index; its garbage gone (626 → 0 KB/s), bulletStress'\npre-render a tie (6.399 → 6.391 ms).** 2026-11-13, heap 18:52 to 18:54, scene 19:18 to 19:24.\n\n**Change** (sitting branch `w14s/e284` `50e64a06` on `e6e146b8`; `w14/e284` `baca8049`): `collectVisibleBullets` carried\n`lastKey`, a double, from one bullet to the next for the COLLECT_Y it leaves behind; the last active bullet's index is\ncarried instead and its key computed once after the loop (the same value: `bulletCollectShortcut.test.js` compares it\nwith the loop as it was).\n\n**Heap** (R-0987: bulletStress at 40 000, pre-render): 697, 651 → 61, 64 KB/s; `collectVisibleBullets` 626, 589 → 0.\n\n**Scene** (`w14-e284-bulletstress`: bulletStressScene `?bullets=300000`, `--vs e6e146b8 --hyp-rev 50e64a06 --owner\npreRender`, 4 pairs): **NEUTRAL**, pre-render 6.399 → 6.391 ms (−0.2 % paired, worse 2/4, cv 0/2 %); particle 14.267 →\n14.208 (−0.2 %, 2/4); RENDER_QUEUE_SIZE 163 106 → 162 523 (−0.4 %), the other keys equal.\n\n**Verdict: kept as hygiene** (the garbage gone, no worker worse), as E-107 and E-108 were. Predator's gate with the batch\nof keeps is the regression guard."
+    },
+    {
+      "id": "R-0991",
+      "date": "2026-11-13",
+      "time": "19:55",
+      "timeFrom": "recorded",
+      "title": "E-271 back to open to recheck; the small gains left behind gathered for one combined sitting per owner",
+      "verdict": "note",
+      "text": "**E-271 back to open, to recheck; the small gains left behind are gathered for one combined sitting.** 2026-11-13, owner's\nrequest: a 1.2 % that is real and costs no regression and no harm to the code may stay; and the ties and drops that each\ngained a little might add up.\n\n**E-271.** Its sitting (R-0986) read −1.2 % with no pair worse, the size the CPU sweep predicted for the line it removes.\nUnder 3 % a single 4-pair sitting cannot tell it from the noise, so it was not merged; it is open again with the branch\n(`w14/e271`) kept.\n\n**The small gains in the register** (a rough read of each closed row's result line for a time 0.5 to 3 % lower with no\n3/4 or 4/4 worse; 14 rows, some of them measurements rather than changes): the batch spawn/despawn ECB (−2.8 %,\ndropped), E-171 the FSM's per-instance ms as a small integer (−2.4 %), W7 (−2.2 %, screened), Nav N1 `cellY | 0`\n(−1.5 %), E-99 casters in bin order (−1.2 %, rejected), E-271 (−1.2 %), useZBuffer on Bunny (−1.2 %), H11's hoist in\n`_writeQueueShadow`, the stamp grid on lights, `gpuShadowPath=batch` and shadows under 2 px (−0.5 to −0.6 %).\n\n**How they are judged** (HOW_WE_MEASURE's \"a total is measured, not added\"): gains only add on the same worker in the same\nscene, so the candidates are grouped by owner (pre-render: E-271, E-99, H11 and the shadow ones; logic: E-171 and the\nECB; spatial: W7), each group's code brought up to date on one branch, and the group sat once against its base. A group\nthat wins 3 % or more on its owner, no worker worse, is kept whole; one that does not is read row by row from the same\nsitting. Each row first gets a look at whether its code still applies and does not make the code worse to read."
     }
   ],
   "leads": [
