@@ -13305,7 +13305,8 @@
         "emit garbage"
       ],
       "records": [
-        "R-0960"
+        "R-0960",
+        "R-0994"
       ]
     },
     {
@@ -13358,7 +13359,8 @@
       ],
       "records": [
         "R-0961",
-        "R-0992"
+        "R-0992",
+        "R-0994"
       ]
     },
     {
@@ -13671,7 +13673,8 @@
       ],
       "records": [
         "R-0968",
-        "R-0992"
+        "R-0992",
+        "R-0994"
       ]
     },
     {
@@ -14269,7 +14272,8 @@
       ],
       "records": [
         "R-0980",
-        "R-0987"
+        "R-0987",
+        "R-0994"
       ],
       "rank": 18
     },
@@ -14530,7 +14534,8 @@
         "instance field loads"
       ],
       "records": [
-        "R-0992"
+        "R-0992",
+        "R-0994"
       ]
     },
     {
@@ -14554,6 +14559,52 @@
       ],
       "records": [
         "R-0992"
+      ]
+    },
+    {
+      "id": "E-291",
+      "title": "_boxRayDistance is 493 bytes of bytecode, over TurboFan's 460: never inlined, it stays in Sparkplug and boxes its doubles (Predator logic 20 KB/s)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's code pass, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 64,
+      "result": "Code pass (summarizeV8Code, Chrome 151): `_shapeRayDistance` is in TurboFan and inlines `_circleRayDistance` (358 B), but `_boxRayDistance` (493 B) is over the 460-byte limit, so every box a ray tests is a real call. Called too rarely to tier up on its own, it stayed in Sparkplug for the whole run (Ignition 2.98 s, Sparkplug 3.49 s, nothing above), and Sparkplug keeps every double in a HeapNumber: the heap pass's 20.4 KB/s at `_boxRayDistance` in a Predator logic worker.",
+      "next": "Bring it under 460 bytes so `_shapeRayDistance` inlines it (358 of 920 bytes of budget spent there); the code pass shows it inlined, the heap pass the site at zero, then a hygiene gate on a ray scene. The same check for `_polygonRayDistance` and `_chainRayDistance` (six doubles passed to `ChainPoints.rayDistance`).",
+      "refs": [
+        "EXECUTION_PLAN.md#E-291"
+      ],
+      "aliases": [
+        "boxRayDistance",
+        "ray inline limit",
+        "Sparkplug boxing"
+      ],
+      "records": [
+        "R-0994"
+      ]
+    },
+    {
+      "id": "E-292",
+      "title": "Hot functions that stay in Maglev pay about 30 % (Predator logic with no JS in TurboFan: +29/+30 %); civilianBehaviorFsm's second neighbour loop never gets there",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from Predator's code pass, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 65,
+      "result": "Code pass: the game's neighbour loop `civilianBehaviorFsm.js:63` (334 B) stayed in Maglev for the whole run, its sibling at line 38 reached TurboFan at 2.5 s. One run with `--efficiency-mode=false` (to test V8's efficiency-mode TurboFan delay) left every JS function below TurboFan, wasm still tiering: logic STEP_MS 3.51/3.19 → 4.53/4.15 ms, particle 0.66 → 0.94, renderer 6.58 → 7.62, physics a tie (one run a side, both with the code log: an estimate, not a verdict). That flag cannot test the delay.",
+      "next": "The code pass over the owner scenes: hot functions (≥ 1 % self) that end a run below TurboFan; engine ones, why (OSR from Maglev, deopts, size); demo loops, whether the per-entity body as its own function tiers up sooner. Then a kernel or scene for the largest.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-292"
+      ],
+      "aliases": [
+        "Maglev",
+        "tier-up",
+        "efficiency mode"
+      ],
+      "records": [
+        "R-0994"
       ]
     }
   ],
@@ -24302,6 +24353,19 @@
       "commits": [
         "a4ff6acd",
         "67703509"
+      ]
+    },
+    {
+      "id": "R-0994",
+      "date": "2026-11-13",
+      "time": "20:42",
+      "timeFrom": "recorded",
+      "title": "Predator's code pass: Chrome's bytecode, tiers and inlining (summarizeV8Code); _spawn's randomRange calls, _boxRayDistance in Sparkplug, TurboFan worth ~30 % of logic",
+      "verdict": "note",
+      "text": "**Predator's code pass: Chrome's own bytecode, tiers and inlining, read for the first time (summarizeV8Code).**\n2026-11-13, 20:42 to 20:50 (result files' times), `main` at aa3128cc, from source, headed, detailed stats off:\n`profileSceneSweep.mjs --pass cpu` then `--pass code --only predatorScene` (6 s warm-up, 8 s window), then one run with\n`--efficiency-mode=false` added. No timing verdict: these passes say where the time and the garbage come from.\n\n**Where Predator's time goes (cpu pass, busy ms/s):** three physics threads at 1000 (Box2D wasm), Pixi 592 (75 % its\nqueue wait), pre-render 458 (59 % its pose wait), spatial 301 (two thirds wasm gather/publish), the two logic workers 239\nand 226, nearly all JavaScript: the place where reading bytecode pays.\n\n**Logic, what TurboFan did with the hot code:**\n- `ParticleEmitter._spawn` (4733 B of bytecode, 23.9 KB of machine code) spent 782 of its 920 bytes of inlining budget\n  on six callees; its ten `randomRange` calls per particle (75 B, itself in TurboFan with `rng` inlined) stay real calls\n  and return boxed doubles; `checkEmit` (501 B) is over the 460-byte limit. The heap pass's top logic sites in Predator\n  are these: `_spawn` 54 to 65 KB/s, `rng` 18 to 25, `randomRange` 16 a worker (E-278, E-238: the per-burst ranges).\n- `_boxRayDistance` (493 B) is over the limit: never inlined into `_shapeRayDistance` (TurboFan), it stayed in\n  Sparkplug for the whole run and boxes its doubles there: 20.4 KB/s a worker (new: E-291).\n- `_tickIntervalBucket` → each entity's `tick`: eight classes, never inlined (E-253).\n- `get neighborCount` and `getNeighbor` (20 % of logic) are inlined into the game's neighbour loops\n  (`civilianBehaviorFsm.js:38` in TurboFan, `:63` in Maglev); inlining keeps the getter's own feedback, so E-289's\n  megamorphic loads stand; the rest is the read itself (E-240).\n- `civilianBehaviorFsm.js:63` (334 B) stayed in Maglev for the whole run (E-292).\n- `_processBox2dCollisionCallbacks` was compiled by TurboFan six times between 3.3 and 4.0 s, then held: warm-up only.\n  No steady deopt loop.\n- Ruled out: `beforeUpdate` (the input wait's `Atomics.wait`), `_waitForQueue` and `_waitForPose` are waits; the\n  `ToString`s in `_spawn` are in its `console.warn` paths.\n\n**TurboFan's worth (one run a side, both with the code log, an estimate):** `--efficiency-mode=false` left every JS\nfunction below TurboFan (wasm still tiered): logic STEP_MS 3.51 / 3.19 → 4.53 / 4.15 ms (+29 / +30 %), particle\n0.66 → 0.94, renderer 6.58 → 7.62, spatial 4.27 → 4.57, physics 7.38 → 7.27, pre-render a tie (wait-bound). The flag\ncannot test V8's efficiency-mode delay of TurboFan.\n\nThe readable bytecode (each function with its source lines, inlined and left-out calls) was left on the owner's C: under\n`weed-traces\\predator-1113`; the raw logs are not kept.",
+      "commits": [
+        "22790062",
+        "aa3128cc"
       ]
     }
   ],
