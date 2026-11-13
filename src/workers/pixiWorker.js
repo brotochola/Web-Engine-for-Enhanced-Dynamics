@@ -1056,6 +1056,10 @@ class PixiRenderer extends AbstractWorker {
     // DX-SPOT. The cone lights' umbra discs and fans: the light batch's layout and a second buffer of CONE_FLOATS a
     // vertex (cbuf, coneData), drawn with the shader's CONE variant, so a point light pays nothing for cones.
     this._visConeBatch = null;
+    // DX-SPOT: each light's coneCos as this frame read it, once (the logic worker may write the column meanwhile): the
+    // fans' slots (renderVisibilityLighting) and the visible lights (updateLighting). Grown, never per frame.
+    this._visConeCosSeen = new Float32Array(0);
+    this._lightConeCosSeen = new Float32Array(0);
     this._visPolyRT = null;          // RenderTexture for visibility lighting
     this._visPolyDisplaySprite = null; // Sprite displaying the RT with multiply blend
     this._selfLitBuffers = [null, null];
@@ -4375,11 +4379,17 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     let needIdx = 0;
     let coneVerts = 0;
     let coneIdx = 0;
+    // Each slot's coneCos, read once: the count and the write below must agree on which batch a light takes, or a
+    // light the logic worker turns into a cone in between lands in a batch sized without it.
+    if (this._visConeCosSeen.length < lightCount) this._visConeCosSeen = new Float32Array(Math.max(lightCount, this._visPolyMaxLights | 0));
+    const coneCosSeen = this._visConeCosSeen;
     for (let li = 0; li < lightCount; li++) {
       const base = (4 + li * slotBytes) >> 2;
       const vc = i32[base + 3];
+      const seen = lightConeCos[i32[base]];
+      coneCosSeen[li] = seen;
       if (vc < 3) continue;
-      if (lightConeCos[i32[base]] > -1) {
+      if (seen > -1) {
         coneVerts += vc + 5;
         coneIdx += vc * 3 + 6;
       } else {
@@ -4407,7 +4417,8 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const vertCount = i32[baseIndex + 3];
 
       if (vertCount < 3) continue;
-      const cone = lightConeCos[lightIdx] > -1;
+      const coneCos = coneCosSeen[li];
+      const cone = coneCos > -1;
       if (cone !== inCone) {
         const v = vtx;
         const c = iCount;
@@ -4500,7 +4511,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         const len = Math.sqrt(wx * wx + wy * wy);
         const fx = len > 0 ? wx / len : 1;
         const fy = len > 0 ? wy / len : 0;
-        const coneCos = lightConeCos[lightIdx];
         const invSpan = lightConeInvSpan[lightIdx];
         const cd = batch.coneData;
         for (let v = disc; v < vtx; v++) {
@@ -4641,7 +4651,9 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const cg = (((color >> 8) & 0xff) / 255) * colorScale;
       const cb = ((color & 0xff) / 255) * colorScale;
 
-      const cone = lightConeCos[light] > -1;
+      // Its coneCos, read once for the batch and the terms (the logic worker may write it meanwhile).
+      const runConeCos = lightConeCos[light];
+      const cone = runConeCos > -1;
       if (cone !== inCone) {
         const v = vtx;
         const c = iCount;
@@ -4864,14 +4876,13 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         const len = Math.sqrt(wx * wx + wy * wy);
         const fx = len > 0 ? wx / len : 1;
         const fy = len > 0 ? wy / len : 0;
-        const coneCos = lightConeCos[light];
         const invSpan = lightConeInvSpan[light];
         const cd = batch.coneData;
         for (let v = lightBase; v < vtx; v++) {
           const o = v * CONE_FLOATS;
           cd[o] = fx;
           cd[o + 1] = fy;
-          cd[o + 2] = coneCos;
+          cd[o + 2] = runConeCos;
           cd[o + 3] = invSpan;
         }
       }
@@ -5326,8 +5337,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightConeInvSpan = LightEmitter.coneInvSpan;
     const lightDirC = LightEmitter.dirC;
     const lightDirS = LightEmitter.dirS;
+    // Each light's coneCos, read once: the count and the slots must agree, or a light the logic worker turns into a cone
+    // in between takes a slot twice and leaves one with last frame's light.
+    if (this._lightConeCosSeen.length < countToRender) this._lightConeCosSeen = new Float32Array(Math.max(countToRender, maxLights | 0));
+    const coneCosSeen = this._lightConeCosSeen;
     let coneCount = 0;
-    for (let i = 0; i < countToRender; i++) if (lightConeCos[visibleLights[i].entityId] > -1) coneCount++;
+    for (let i = 0; i < countToRender; i++) {
+      const seen = lightConeCos[visibleLights[i].entityId];
+      coneCosSeen[i] = seen;
+      if (seen > -1) coneCount++;
+    }
     let coneSlot = 0;
     let pointSlot = coneCount;
 
@@ -5335,7 +5354,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const entityIndex = visibleLights[i].entityId;
       const color = lightColor[entityIndex];
       const range = vr ? (vr[entityIndex] || 0) : 0;
-      const isCone = lightConeCos[entityIndex] > -1;
+      const coneCos = coneCosSeen[i];
+      const isCone = coneCos > -1;
       const slot = isCone ? coneSlot++ : pointSlot++;
 
       // A source h above the floor: I / (I + h² + d²) = k * I' / (I' + d²) with I' = I + h², k = I / I'.
@@ -5379,7 +5399,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const i2 = row2 + i0;
         lightData[i2] = len > 0 ? wx / len : 1;
         lightData[i2 + 1] = len > 0 ? wy / len : 0;
-        lightData[i2 + 2] = lightConeCos[entityIndex];
+        lightData[i2 + 2] = coneCos;
         lightData[i2 + 3] = lightConeInvSpan[entityIndex];
       }
     }

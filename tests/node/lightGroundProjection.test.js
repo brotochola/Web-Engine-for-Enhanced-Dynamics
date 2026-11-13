@@ -317,3 +317,67 @@ test('DX-SPOT: under raycast a cone light\'s umbra disc and fan go to the cone b
   assert.ok(made.point.mesh.visible && made.cone.mesh.visible);
   assert.deepEqual(children.map((m) => m.cone), [false, true], 'the point lights\' batch first, the cone lights\' after');
 });
+
+test('DX-SPOT: under raycast each slot\'s coneCos is read once: a light turned into a cone mid-frame draws as the count saw it', async () => {
+  bindComponents();
+  light(0, 200, 300, 900, 0xff0000);
+  // No cone in view yet, so no cone batch exists; light 0 becomes a cone after its first read.
+  const column = LightEmitter.coneCos;
+  const reads = new Map();
+  LightEmitter.coneCos = new Proxy(column, {
+    get(t, k) {
+      if (typeof k === 'string' && /^\d+$/.test(k)) {
+        const i = +k;
+        reads.set(i, (reads.get(i) || 0) + 1);
+        if (i === 0 && reads.get(i) > 1) return Math.fround(Math.cos(0.5));
+        return t[i];
+      }
+      const v = t[k];
+      return typeof v === 'function' ? v.bind(t) : v;
+    },
+  });
+  try {
+    const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+    px._groundScaleY = 1;
+    px._groundInvScaleY = 1;
+    px._visPolyEnabled = true;
+    px.renderQueueSync = null;
+    const maxVerts = 8;
+    const slotBytes = (4 + maxVerts * 2) * 4;
+    const ab = new ArrayBuffer(4 + slotBytes);
+    const i32 = new Int32Array(ab);
+    const f32 = new Float32Array(ab);
+    i32[0] = 1;
+    i32[1] = 0;
+    f32[2] = 200;
+    f32[3] = 300;
+    i32[4] = 3;
+    for (let v = 0; v < 3; v++) {
+      f32[5 + v] = 200 + 50 * Math.cos(v * 2);
+      f32[5 + maxVerts + v] = 300 + 50 * Math.sin(v * 2);
+    }
+    px._visPolyBuffers = [{ header: i32, i32, f32 }];
+    px._visPolyMaxVerts = maxVerts;
+    px._visPolySlotBytes = slotBytes;
+    px._visPolyContainer = { addChildAt(m) { m.parent = this; }, addChild(m) { m.parent = this; } };
+    px._visPolyRT = {};
+    const made = {};
+    px._ensureVisBatch = (verts, idx, cone) => {
+      made[cone ? 'cone' : 'point'] = {
+        data: new Float32Array(verts * 10), cbuf: cone ? { update() {} } : null, coneData: cone ? new Float32Array(verts * 4) : null,
+        indices: new Uint32Array(idx), idxUsed: 0, gpuReady: true, vbuf: { update() {} },
+        geometry: { indexBuffer: { update() {} } }, mesh: { visible: false, parent: null }, uniforms: { uCanvasSize: new Float32Array(2) },
+      };
+      return made[cone ? 'cone' : 'point'];
+    };
+    px._stampLightCamera = () => {};
+    px._buildSelfLitBatch = () => false;
+    px._submitRender = () => {};
+    px.renderVisibilityLighting();
+    assert.equal(made.point.idxUsed, 6 + 3 * 3, 'drawn in the point batch the count sized');
+    assert.equal(made.cone, undefined, 'no cone batch for it this frame');
+    assert.equal(reads.get(0), 1, 'its coneCos read once');
+  } finally {
+    LightEmitter.coneCos = column;
+  }
+});

@@ -217,3 +217,58 @@ test('the shadow stamp: a light of brightness 0.5 casts shadows of half the alph
     assert.ok(Math.abs(alpha - want) < 1e-6, `alpha ${alpha} vs half ${want}`);
   }
 });
+
+test('updateLighting reads each light\'s coneCos once: a light the logic worker turns into a cone mid-frame takes one slot', async () => {
+  lights();
+  Transform.active = new Uint8Array(N).fill(1);
+  Transform.x = new Float32Array([100, 200, 300, 0]);
+  Transform.y = new Float32Array([10, 20, 30, 0]);
+  Transform.rotC = new Float32Array(N).fill(1);
+  Transform.rotS = new Float32Array(N);
+  Collider.visualRange = new Float32Array(N);
+  LightEmitter.active.fill(1);
+  LightEmitter.radius.set([400, 400, 400, 0]);
+  LightEmitter.color.set([0xffffff, 0xffffff, 0xffffff, 0]);
+  new LightEmitter(0).coneAngle = Math.PI / 3;
+  // Light 1 becomes a cone after its first read (the logic worker's setter landing between Pixi's two passes).
+  const column = LightEmitter.coneCos;
+  const reads = new Map();
+  const cos = Math.fround(Math.cos(Math.PI / 6));
+  LightEmitter.coneCos = new Proxy(column, {
+    get(t, k) {
+      if (typeof k === 'string' && /^\d+$/.test(k)) {
+        const i = +k;
+        reads.set(i, (reads.get(i) || 0) + 1);
+        if (i === 1 && reads.get(i) > 1) return cos;
+        return t[i];
+      }
+      const v = t[k];
+      return typeof v === 'function' ? v.bind(t) : v;
+    },
+  });
+  try {
+    const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+    px.lightingEnabled = true;
+    px._groundScaleY = 1;
+    px._groundInvScaleY = 1;
+    px.maxLights = MAX_LIGHTS;
+    px._lightDataFloats = new Float32Array(lightDataTextureFloatCount(MAX_LIGHTS)).fill(-7);
+    px._lightDataSource = null;
+    px._visibleLightsAll = [{ entityId: 0, distSq: 0 }, { entityId: 1, distSq: 0 }, { entityId: 2, distSq: 0 }];
+    px._visibleLightsAllCount = 3;
+    px._stampLightCamera = () => {};
+    px._applyLightingViewport = () => {};
+    px.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0, uConeCount: 0 }, update() {} } } };
+    px.updateLighting();
+    const d = px._lightDataFloats;
+    const u = px.lightingShader.resources.uniforms.uniforms;
+    assert.equal(u.uConeCount, 1, 'the cone count of the one read');
+    // Each light in exactly one of the three slots, none left with the old fill.
+    const xs = [d[0], d[4], d[8]].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    assert.deepEqual(xs, [100, 200, 300]);
+    assert.equal(d[0], 100, 'the cone light first');
+    for (const i of [0, 1, 2]) assert.equal(reads.get(i), 1, `light ${i}'s coneCos read once`);
+  } finally {
+    LightEmitter.coneCos = column;
+  }
+});
