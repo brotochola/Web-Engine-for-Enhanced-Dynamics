@@ -32,6 +32,7 @@ const scenes = [
   { name: '⛰️ Destructible Terrain', url: '/demos/destructibleTerrainScene/destructibleTerrainScene.js' },
   { name: '⚙️ Gear Chain', url: '/demos/gearChainScene/gearChainScene.js' },
   { name: '🌌 GPU Galaxy', url: '/demos/gpuGalaxyScene/gpuGalaxyScene.js', export: 'GpuGalaxyScene' },
+  { name: '🚘 Headlights', url: '/demos/headlightsScene/headlightsScene.js', export: 'HeadlightsScene' },
   { name: '🌊 LiquidFun Fluid', url: '/demos/liquidFunDemoScene/liquidFunDemoScene.js' },
   { name: '🧪 LiquidFun Stress (bench)', url: '/tests/bench/stressScenes/liquidFunStressScene.js' },
   { name: '🏙️ Little City', url: '/demos/littleCity/littleCityScene.js' },
