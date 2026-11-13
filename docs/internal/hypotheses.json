@@ -13487,7 +13487,7 @@
       "area": "spatial",
       "kind": "speed",
       "rank": 84,
-      "result": "CPU sweep, stationarySpatialWideScene (2 spatial workers, 70 000 entities nobody reads): _findNeighbors is 40 to 42 % of spatial, 91 % of it on `} else if (sharedRows && neighborData[entityA * stride] !== 0) {`, the row head read that keeps a row another worker may have published clear. Rows are maxNeighbors + 1 ids apart (about 2 KB here), so each read is a cache line of its own. One spatial worker (Predator) never reads it. A second row-head read per entity: littleCityScene's _findNeighbors spends 41 to 43 % on candCountOf[entityA] = cand[entityA * stride] (2 spatial workers).",
+      "result": "CPU sweep, stationarySpatialWideScene (2 spatial workers, 70 000 entities nobody reads): _findNeighbors is 40 to 42 % of spatial, 91 % of it on `} else if (sharedRows && neighborData[entityA * stride] !== 0) {`, the row head read that keeps a row another worker may have published clear. Rows are maxNeighbors + 1 ids apart (about 2 KB here), so each read is a cache line of its own. One spatial worker (Predator) never reads it. A second row-head read per entity: littleCityScene's _findNeighbors spends 41 to 43 % on candCountOf[entityA] = cand[entityA * stride] (2 spatial workers). The demo WaterAndBoxes too: 91 to 96 % of its _findNeighbors on that line.",
       "next": "Read it only when it can be set: a dense per-worker byte per entity (this worker cleared the row and owned it since), or the row's owner change from rebuildOwnedRows' owned list; the spatial kernel with --types and two workers, then stationarySpatialWide's spatial STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-268"
@@ -13541,6 +13541,90 @@
         "premultiplyDecalTile",
         "decal upload",
         "dirty rect"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-271",
+      "title": "fillQueueIndices writes the identity 0..n-1 into the same index array every frame (painter scenes: 100 % of it on outIdx[i] = i)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "date": "2026-11-13",
+      "area": "preRender",
+      "kind": "speed",
+      "rank": 87,
+      "result": "CPU sweep: painterSortStressScene's pre-render 145 ms of the window and painterMoveStressScene's 125 ms in fillQueueIndices (gpuQueueLayout.js), 99 to 100 % on the no-filter loop for (i < limit) outIdx[i] = i, called by packSpriteLayer for the whole queue each frame.",
+      "next": "Keep how far each index array already holds the identity (a module WeakMap or the caller's state) and write only past it; the pack kernel, then the painter scenes' pre-render STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-271"
+      ],
+      "aliases": [
+        "fillQueueIndices",
+        "identity indices",
+        "packSpriteLayer"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-272",
+      "title": "updateDecalTiles reads every tile's dirty flag with Atomics.load each frame to count them (carScene: 92 % of it)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "date": "2026-11-13",
+      "area": "pixi",
+      "kind": "speed",
+      "rank": 88,
+      "result": "CPU sweep: carScene's Pixi spends 77 ms of the window in updateDecalTiles, 92 % on `if (Atomics.load(this.decalsTilesDirty, i)) dirtyN++;` over every tile, every frame, before it knows whether any is dirty.",
+      "next": "A dirty count the stamping side bumps (or a plain read first and Atomics only on a set flag, or a word per 32 tiles); the decal scenes' Pixi STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-272"
+      ],
+      "aliases": [
+        "updateDecalTiles",
+        "decalsTilesDirty",
+        "tile dirty scan"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-273",
+      "title": "Logic workers that spawn or despawn decorations take turns on _lockActiveList's spin (decoChurnStressScene: 100 % of it on the compareExchange loop)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 89,
+      "result": "CPU sweep: decoChurnStressScene's two logic workers spend 65 and 70 ms of the window in DecorationPool._lockActiveList, all of it on `while (Atomics.compareExchange(lock, 0, 0, 1) !== 0)`: the active list's lock, contended when both churn decorations each frame.",
+      "next": "Per-worker pending lists merged by one owner once a frame (as entity spawns go through queueSpawnListUpdate), or a lock-free append; the decoration churn kernel, then decoChurn's logic STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-273"
+      ],
+      "aliases": [
+        "_lockActiveList",
+        "decoration lock",
+        "decoChurn"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-274",
+      "title": "The full grid rebuild writes every owned cell's count every frame, a cache line per cell, empty ones included (planetScene: 79 % of rebuildOwnedRows on it)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "date": "2026-11-13",
+      "area": "spatial",
+      "kind": "speed",
+      "rank": 90,
+      "result": "CPU sweep: planetScene's spatial spends 286 ms of the window in rebuildOwnedRows, 79 % on `gridCounts[byteOffset] = localCounts[cellIndex];`: the closing loop over every cell of the owned rows, the grid's counts cellByteSize apart, written whether they changed or not; a big world with few entities has far more cells than entities.",
+      "next": "Write a count only when it changed (compare with the previous frame's, kept dense), or only for the cells this frame or the last touched; the grid kernel with a sparse world, then planetScene's spatial STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-274"
+      ],
+      "aliases": [
+        "gridCounts",
+        "rebuildOwnedRows counts",
+        "sparse world grid"
       ],
       "records": []
     },
