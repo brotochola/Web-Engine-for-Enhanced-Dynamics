@@ -4334,6 +4334,14 @@ the light-heavy scenes. Owner: Pixi.
 **Kept (hygiene) 2026-11-13 (R-0976):** written in place with `texSubImage2D` (`fbe0824f`): Predator per frame `texImage2D` 2 → 0,
 `texParameteri` 4 → 0, GL calls 533 → 507.5, texture uploads 80 → 32 KB.
 
+### E-260 The self-lit sprite-mask pass draws a mesh per sprite and light
+
+**Premise (glFrameRecorder, 2026-11-13):** Sun Street makes 1396 GL calls a frame, 168 `drawElements`, 329 `bufferSubData` of about
+190 B and 173 `uniform2f`; Headlights 1016, 123, 242, 128. `_renderSelfLitSpriteMasks` fills each (sprite, light) item's mesh
+buffers, calls `update()` on both, sets the light's uniforms and draws; it also makes two arrays per item.
+**Plan:** the per-item arrays into a module scratch first (heap sample); then one instanced draw for the pass, as the other
+batches. GL calls a frame, then Pixi's STEP_MS in Sun Street and Headlights. Owner: Pixi.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
