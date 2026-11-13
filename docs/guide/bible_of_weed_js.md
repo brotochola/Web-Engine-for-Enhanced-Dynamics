@@ -1269,6 +1269,8 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, `raycasted
 | A wall that stops lamps under raycast | `LightOccluder` and a `Collider` (`lighting.raycasted: true`) |
 | Particles or liquid that light the floor | `lightRadius` on an emit (`lighting.particleLights`), or on `LiquidFun.emit` |
 
+The Headlights demo (`demos/headlightsScene/`) puts most of this table on one street at night, under raycasted lighting: cone headlights on carScene's cars, round lamps, houses with a volume for the sun and an occluder for the beams, and a key for each field.
+
 A light's falloff is `I / (I + d²)` with `I = (radius / 10)²`, on the floor: full at its centre, about 1 % at its radius, where it is culled. The two lighting modes differ in what stops a lamp: in basic lighting (the default) the sprite shadows of `ShadowCaster`s, stamped for the `lighting.maxShadowCastingLights` lights nearest the camera; under `raycasted: true` the `LightOccluder`s, through a visibility polygon per light (no sprite shadows from lamps, and no `lighting.faces`).
 
 ```javascript
