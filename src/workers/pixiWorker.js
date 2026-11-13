@@ -4135,15 +4135,18 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
    * the point lights' fans), or hidden when it drew nothing. `floats` per vertex in its first buffer.
    */
   _finishLightBatch(batch, vtx, iCount, floats, first) {
-    const indices = batch.indices;
-    const prevIdx = batch.idxUsed;
-    if (iCount < prevIdx) indices.fill(0, iCount, prevIdx);
-    batch.idxUsed = iCount;
     const mesh = batch.mesh;
+    // N-162: a frame that draws nothing only hides the mesh. Its buffers and idxUsed stay as they are, so the next frame
+    // that draws zeroes and uploads the whole tail the last drawn frame left: with idxUsed at 0 it uploaded only its own
+    // indices, and the GPU kept every earlier light's triangles past them.
     if (iCount === 0) {
       mesh.visible = false;
       return;
     }
+    const indices = batch.indices;
+    const prevIdx = batch.idxUsed;
+    if (iCount < prevIdx) indices.fill(0, iCount, prevIdx);
+    batch.idxUsed = iCount;
     const indexBuffer = batch.geometry.indexBuffer;
     const cbuf = batch.cbuf;
     if (!batch.gpuReady) {

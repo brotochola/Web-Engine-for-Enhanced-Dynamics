@@ -308,10 +308,12 @@ test('DX-SPOT: a cone light\'s fills go to the cone batch with its cone, the sam
     assert.deepEqual(Array.from(cone.coneData.subarray(v * 4, v * 4 + 4)), want);
   }
 
-  // Back to a point light: the cone batch draws nothing and hides.
+  // Back to a point light: the cone batch draws nothing and hides (N-162: it keeps the count it last drew, which the
+  // next frame that draws zeroes and uploads).
   LightEmitter.coneCos[1] = -2;
+  const coneUsed = px._selfLitConeBatch.idxUsed;
   px._buildSelfLitBatch(0);
-  assert.equal(px._selfLitConeBatch.idxUsed, 0);
   assert.equal(px._selfLitConeBatch.mesh.visible, false);
+  assert.equal(px._selfLitConeBatch.idxUsed, coneUsed);
   assert.deepEqual(lightTriangles(px._selfLitBatch, 900), allPoint.b);
 });
