@@ -213,7 +213,7 @@
   "bugs": {
     "url": "https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/issues"
   },
-  "homepage": "https://multithreaded-game-engine.vercel.app/demos",
+  "homepage": "https://web-engine-for-enhanced-dynamics.vercel.app/demos",
   "devDependencies": {
     "@babel/core": "^7.24.0",
     "@babel/preset-env": "^7.24.0",
