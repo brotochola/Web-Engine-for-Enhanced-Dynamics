@@ -4393,6 +4393,15 @@ a string key for the second cache (spawnStorm's logic: 11.2 KB/s, and 1 KB/s in 
 **Plan:** a second-level cache keyed by the classes themselves (no string); a kernel of a query with a fresh literal
 against a kept array; then a demo that queries in its ticks. Owner: logic.
 
+### E-266 Entities without a body give the spatial grid no mover list
+
+**Premise (the CPU sweep, 2026-11-13):** `stationarySpatialWideScene's` spatial workers spend 48 and 51 % in `rebuildOwnedRows`, the
+full rebuild, though nothing moves: its entities have a Collider and a sprite but no body, so physics publishes no mover
+list and E-126's movers path cannot run.
+**Plan:** a mover list for bodiless collider entities (spatial compares their pose against the latched one in a scan and
+skips or feeds `_rebuildMovedRows`; or logic's setters publish them); the grid kernel with bodiless entities, then the
+scene's spatial STEP_MS. Owner: spatial.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
