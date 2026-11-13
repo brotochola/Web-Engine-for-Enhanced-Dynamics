@@ -95,6 +95,8 @@ const MV_SPRITE = 16; // a loose entity's SpriteRenderer.active when it was binn
 // E-200: a typed list comes this many logic frames before its tick. Logic publishes the frame it ticks as it
 // starts, before or after this worker reads it on the same vsync; two frames ahead is before the tick either way.
 const TYPED_NEIGHBOR_LEAD = 2;
+// E-274: _writtenCounts before a cell's first write (a count is a byte).
+const COUNT_UNWRITTEN = 0xffff;
 // E-136. The pose generation moves by 2, so it is always even: a row marked with this was cleared and
 // is published again.
 const POSE_GEN_NONE = 1;
@@ -145,6 +147,8 @@ class SpatialWorker extends AbstractWorker {
     // E-268: per entity, the frame (mod 254) this worker last kept its row clear; see _findNeighbors.
     this._clearHeld = new Uint8Array(0);
     this._clearHeldFrame = 1;
+    // E-274: per cell, the count this worker last wrote into the shared grid (COUNT_UNWRITTEN before its first rebuild).
+    this._writtenCounts = new Uint16Array(0);
     // Local cell counts for race-free grid rebuilding
     // We build counts locally, then copy to grid at the end (avoids mid-clear races)
     this._localCellCounts = null; // Uint8Array(totalCells)
@@ -337,6 +341,7 @@ class SpatialWorker extends AbstractWorker {
 
     // Initialize local cell counts array for race-free grid rebuilding
     this._localCellCounts = new Uint8Array(this.totalCells);
+    this._writtenCounts = new Uint16Array(this.totalCells).fill(COUNT_UNWRITTEN);
     this._entityLastX = new Float32Array(this.globalEntityCount);
     this._entityLastY = new Float32Array(this.globalEntityCount);
     this._entityLastHalfExtent = new Float32Array(this.globalEntityCount);
@@ -649,13 +654,20 @@ class SpatialWorker extends AbstractWorker {
       }
     }
 
+    // E-274: a count is written only when it changed. Each cell's count is a cache line of the shared grid (an empty
+    // world's cells too); this worker's copy of what it wrote is a dense array, and only the owner writes a count.
+    const writtenCounts = this._writtenCounts;
+    const cellByteSize = Grid.cellByteSize;
     for (let r = 0; r < ownedRowCount; r++) {
       const row = ownedRows[r];
       const rowBase = row * gridWidth;
       for (let col = 0; col < gridWidth; col++) {
         const cellIndex = rowBase + col;
-        const byteOffset = cellIndex * Grid.cellByteSize;
-        gridCounts[byteOffset] = localCounts[cellIndex];
+        const count = localCounts[cellIndex];
+        if (writtenCounts[cellIndex] !== count) {
+          gridCounts[cellIndex * cellByteSize] = count;
+          writtenCounts[cellIndex] = count;
+        }
       }
     }
     if (poseChanged) this._poseChanged = true;
@@ -951,13 +963,20 @@ class SpatialWorker extends AbstractWorker {
       }
     }
 
+    // E-274: a count is written only when it changed. Each cell's count is a cache line of the shared grid (an empty
+    // world's cells too); this worker's copy of what it wrote is a dense array, and only the owner writes a count.
+    const writtenCounts = this._writtenCounts;
+    const cellByteSize = Grid.cellByteSize;
     for (let r = 0; r < ownedRowCount; r++) {
       const row = ownedRows[r];
       const rowBase = row * gridWidth;
       for (let col = 0; col < gridWidth; col++) {
         const cellIndex = rowBase + col;
-        const byteOffset = cellIndex * Grid.cellByteSize;
-        gridCounts[byteOffset] = localCounts[cellIndex];
+        const count = localCounts[cellIndex];
+        if (writtenCounts[cellIndex] !== count) {
+          gridCounts[cellIndex * cellByteSize] = count;
+          writtenCounts[cellIndex] = count;
+        }
       }
     }
     if (poseChanged) this._poseChanged = true;
@@ -1357,6 +1376,7 @@ class SpatialWorker extends AbstractWorker {
     const cellByteSize = Grid.cellByteSize;
     const maxPerCell = Grid.maxEntitiesPerCell;
     const localCounts = this._localCellCounts;
+    const writtenCounts = this._writtenCounts;
     const trueCount = this._mvTrue;
     const scratch = this._mvCellScratch;
     for (let t = 0; t < touchedCount; t++) {
@@ -1407,6 +1427,7 @@ class SpatialWorker extends AbstractWorker {
       const count = merged < maxPerCell ? merged : maxPerCell;
       for (let k = 0; k < count; k++) gridEntities[base + k] = scratch[k];
       gridCounts[byteOffset] = count;
+      writtenCounts[cell] = count;
       localCounts[cell] = count;
       trueCount[cell] = total - leaves[cell] + joins;
       leaves[cell] = 0;
