@@ -4548,6 +4548,22 @@ kernel, then audioStorm's logic. Owner: logic (audio).
 before calling the body with integers (escape analysis drops the literal); a spawn kernel, then the two scenes' logic.
 Owner: logic.
 
+### E-287 b2SolverTask's own time: the solver's stage barrier between blocks
+
+**Premise (Box2D by name, a --profiling-funcs build of weedjs/e256 swapped in for one CPU pass):** ballsHeavy's physics
+threads: b2ExecuteBlock 25.6 % (the solver's blocks, stage functions inlined), b2CollideTask 8.4 %, b2SolverTask's own code
+7.7 %, b2FinalizeBodiesTask 4.2 %, the rest a futex wait; gearChain 9.5, 4.2 and 4.6 %. b2SolverTask's own time is most
+likely the workers polling the stage's sync bits between blocks.
+**Plan:** a counted build first (spins per stage, stage lengths, blocks per worker); then fewer workers on small islands,
+bigger blocks, or the main thread alone under a size; both builds (SIMD, no-SIMD); ballsHeavy's physics. Owner: physics.
+
+### E-288 Logic's accelerations reach Box2D one public call per body
+
+**Premise (Box2D by name):** Boids' physics (65 000 bodies): b2FinalizeBodiesTask 6.2 %, b2Body_ApplyForceToCenter 1.3 %,
+body_set_transform 0.8 %, bodies_apply_accelerations 0.6 %: the glue applies each acceleration through the public API.
+**Plan:** the batch on the body sims by index, the public calls' semantics kept; a glue kernel, then Boids' physics; both
+builds. Owner: physics.
+
 ## Wave 14 (2026-11-13): the campaign order after a full harvest
 
 The owner asked to gather every hypothesis first, without measuring, then run them all in a new campaign. The harvest:
