@@ -4467,6 +4467,70 @@ the tweened entity's `SpriteRenderer.active` read.
 every slot.
 **Plan:** a plain targetCell compare first, the status load only on a match; navStress's logic. Owner: logic.
 
+## Wave 14 (2026-11-13): the campaign order after a full harvest
+
+The owner asked to gather every hypothesis first, without measuring, then run them all in a new campaign. The harvest:
+TurboFan's sites and the heap sample over 12 scenes (E-222, two rounds), the GL recorder over 10 (E-230), the CPU sweep
+over 65 scenes with each function's hot lines, fieldTypeAudit on Predator. One reading across all of it: GC is under 5 ms/s
+on every worker of every scene, so allocation work now pays only where it also saves CPU; the large costs left are memory
+access patterns (spatial's rows and cells), copies before uploads, and per-entity calls. The order (the register's ranks
+follow it):
+
+| # | Row | Tier | Why there |
+| --- | --- | --- | --- |
+| 1 | E-256 | debt | Balls heavy (physics over the 6 ms floor) |
+| 2 | E-268 | 1 | spatial 40 % in stationarySpatialWide; WaterAndBoxes (a demo) 91–96 % of _findNeighbors |
+| 3 | E-266 | 1 | spatial 48–51 % in stationarySpatialWide |
+| 4 | E-274 | 1 | planetScene: 79 % of the rebuild |
+| 5 | E-267 | 1 | Boids 28–32 %, stationarySpatialWide 48–51 % of spatial |
+| 6 | E-145 | 1 | Adobe: pre-render 52 + 25 %, Pixi updateBuffer 42 % |
+| 7 | E-269 | 1 | meshApiStressScene: all of uploadRange |
+| 8 | E-262 | 1 | WaterAndBoxes logic 2.8 MB/s; every entity tick |
+| 9 | E-240 | 1 | logic 11–23 % in Predator and littleCity |
+| 10 | E-270 | 1 | decal scenes: the copy 100 %, the upload 68–89 % |
+| 11 | E-271 | 2 | painter scenes: 125–145 ms of the window |
+| 12 | E-272 | 2 | carScene Pixi |
+| 13 | E-273 | 2 | decoChurn logic |
+| 14 | E-275 | 2 | tweenStress logic |
+| 15 | E-276 | 2 | navStress logic |
+| 16 | E-265 | 2 | queries with a literal per call |
+| 17 | E-263 | 2 | wide pools and 32-bit ids; weigh the ABA window |
+| 18 | E-264 | 2 | 179 fields typed Any; only those read per entity |
+| 19 | E-253 | 2 | FSM 7–9 % of Predator logic |
+| 20 | E-193 | 2 | Pixi keyed pack |
+| 21 | E-185 | 2 | keyed frames |
+| 22 | E-199 | 2 | neighbour aggregates |
+| 23 | E-201 | 2 | keyed poses on the GPU |
+| 24 | E-202 | 2 | decals on the GPU |
+| 25 | E-257 | 3 | physics JS ~65 KB/s |
+| 26 | E-246 | 3 | physics JS around the step |
+| 27 | E-247 | 3 | particle decoration passes |
+| 28 | E-238 | 3 | emit path allocations |
+| 29 | E-242 | 3 | raycast polygon allocations |
+| 30 | E-244 | 3 | tick path allocations |
+| 31 | E-227 | 3 | Pixi allocations |
+| 32 | N-158 | 3 | per-frame allocations left |
+| 33 | N-163 | bug | WebGPU sprite-masked self-lit edges |
+| 34 | N-38 | bug | lit chunk edges |
+| 35 | N-155 | bug | WebGL / WebGPU light gallery |
+| 36 | N-147 | bug | prod bundle spatial |
+| 37 | N-156 | bug | flaky physicsChainWait test |
+| 38 | N-161 | bug | audioStorm catalog row |
+| 39 | DX-VOLLIGHTS | feature | approved feature |
+| 40 | E-222 | tool | kept running in each harvest |
+| 41 | E-230 | tool | kept running in each harvest |
+| 42 | E-223 | tool | critical path |
+| 43 | E-224 | tool | scaling curves |
+| 44 | E-226 | tool | false sharing |
+| 45 | E-231 | tool | trace diff |
+| 46 | E-225 | tool | GC against long frames |
+| 47 | E-228 | blocked | ETW / WPA |
+| 48 | E-229 | blocked | VTune / uProf |
+
+Still to harvest before the campaign starts: the heap pass over all 65 scenes, Box2D's functions by name in the physics
+scenes (a profiling build, as R-0719), and the sweep's deopt pass, which logged no deopt in any scene (a tool fault to
+find first).
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
