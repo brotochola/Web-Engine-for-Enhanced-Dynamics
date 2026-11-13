@@ -4328,6 +4328,9 @@ data texture in Predator. The same path serves the texture LUT, the animation st
 **Plan:** allocate once, then `texSubImage2D` of the rows written; parameters once. GL calls a frame, then Pixi's STEP_MS in
 the light-heavy scenes. Owner: Pixi.
 
+**Kept (hygiene) 2026-11-13 (R-0976):** written in place with `texSubImage2D` (`fbe0824f`): Predator per frame `texImage2D` 2 → 0,
+`texParameteri` 4 → 0, GL calls 533 → 507.5, texture uploads 80 → 32 KB.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
