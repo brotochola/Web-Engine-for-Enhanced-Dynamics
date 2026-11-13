@@ -4365,6 +4365,14 @@ inlined, and the frame's three doubles become heap numbers for every entity, eve
 **Plan:** box them once a frame (a generic array or tagged fields the loop reads, so the call passes the same heap
 numbers); a kernel of the tick loop (KB/s and ns a tick); then WaterAndBoxes' and Predator's logic. Owner: logic.
 
+### E-263 FL4's head is outside the Smi range
+
+**Premise (from reading the free list):** FL4 packs (tag << 19) | (index + 1) in an Int32 (20 index bits on
+`deco/1m`), so most heads pass 2^30; E-87 measured that Chrome then returns a heap number from every `Atomics.load` and
+`compareExchange` (~14 ns an op), and fixed only the 16-bit stack. Wide pools and 32-bit entity ids pop and push through FL4.
+**Plan:** a Chrome kernel of pop and push against a head kept in the Smi range (E-87's sign trick, a 10 or 11 bit tag),
+weighing the smaller ABA window; then a spawn-heavy scene with a wide pool. Owner: whoever spawns (logic, particle).
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
