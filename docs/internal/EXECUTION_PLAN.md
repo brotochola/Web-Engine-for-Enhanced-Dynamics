@@ -3995,6 +3995,10 @@ branch each access; if the pattern is engine-wide, every hot JS loop over compon
 class read in a loop against the same read through a local taken before the loop; then the hot loops' imports into
 locals (a const before the loop). Owner: the worker whose hot loop moves.
 
+**Answered 2026-11-13 (R-0970): small.** In Chrome an imported binding read inside a loop costs 0.1 to 0.17 ns a pass
+(imports against locals +19 to 24 % in a 1.5 ns/entity kernel). The hot loops hoist theirs already; the TDZ sites left are
+per call (setters, the body sync's module state, `getColliderBounds`), none near 1 % of a worker.
+
 ### E-233 Pixi's uniform writes go through generic inline caches and box their doubles
 
 **Premise:** `_stampLightCamera` writes `uniforms.uZoom`, `uniforms.uCameraPos[0..1]` and reads `uCameraRot` on Pixi's
