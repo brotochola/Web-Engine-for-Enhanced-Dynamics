@@ -12811,14 +12811,14 @@
     },
     {
       "id": "N-165",
-      "title": "A fresh clone is 606 MB: trailer2.mp4 (70 MB) is still tracked despite .gitignore, unused files, node_modules and old bundles in the history, no lockfile",
+      "title": "A fresh clone is 606 MB: unused files, node_modules and old bundles in the history, and no lockfile (lockfile done)",
       "status": "open",
       "statusText": "found 2026-11-13 cloning GitHub main to check a friend's report that demos failed; owner: put the repo in order; backlog",
       "date": "2026-11-13",
       "area": "build",
       "kind": "dx",
       "result": "git clone of GitHub main (fa59073a): 330 MB of .git and 271 MB of checkout. trailer2.mp4 (70.2 MB, referenced by nothing) came in with d18ddb55 (\"ok\", 2026-10-06); 038b2fde put it in .gitignore the same day, which does not untrack a tracked file. Referenced by nothing either: _extra/ (7 logos, 4.9 MB) and screenshot2.jpg (0.6 MB); demos/fla/*.fla are Adobe Animate sources (1 MB). 150.7 MB of the pack are blobs no longer at HEAD: the dist versions (N-164), an older screen-capture.gif (15.5 MB; the README shows the current 13.9 MB one), a committed node_modules (typescript, a rollup binary: 9.4 MB), engine_trace.json, js_docs. package-lock.json is gitignored while pnpm-lock.yaml (last changed 2026-09-30) is committed, so every clone's npm i resolves new versions (the clone got playwright-core 1.65.0; this machine has 1.62.1).",
-      "next": "`git rm --cached trailer2.mp4`; _extra/ and screenshot2.jpg out of the repo; one lockfile committed (package-lock.json, pnpm-lock.yaml removed); a lighter README GIF. Then, once N-164 is in and every branch is merged (only the owner's friend has cloned, owner 2026-11-13), one `git filter-repo` pass that drops the history of dist/, trailer2.mp4, node_modules/, engine_trace.json and js_docs/, rewrites the commit hashes the register and the docs cite through filter-repo's commit map, and force-pushes; the friend clones again.",
+      "next": "trailer2.mp4 stays tracked, at HEAD and in the history (owner 2026-11-13: the public repo serves it). Lockfile done (R-0993). Next: _extra/, screenshot2.jpg and the unused littleCity layers export out, once the owner says nothing outside uses them; a lighter README GIF; a node test that fails on a new tracked file over ~10 MB that is not on an allowlist. Then, once N-164 is in and no session has a branch or worktree open, one history rewrite (no git filter-repo here: a portable Python on D: or BFG on the installed Java) that drops the history of dist/, node_modules/, engine_trace.json, js_docs/ and the old README GIFs, keeps trailer2.mp4, rewrites the commit hashes the register and the docs cite through the commit map, and force-pushes after the owner says so; the friend clones again.",
       "refs": [
         "REVIEW_PLAN.md#N-165"
       ],
@@ -12832,7 +12832,9 @@
         "pnpm-lock",
         "_extra"
       ],
-      "records": []
+      "records": [
+        "R-0993"
+      ]
     },
     {
       "id": "N-166",
@@ -24288,6 +24290,19 @@
       "title": "The machine-code harvest, first pass: Chrome's build has no disassembler; Node's code through the kernels; E-289, E-290 written",
       "verdict": "note",
       "text": "**The machine-code harvest, first pass: Chrome's release build cannot show its code; Node's can, through the kernels\nthat call the shipped functions. E-289 and E-290 written, E-240, E-253 and E-277 annotated.** 2026-11-13, 19:41 to 19:43.\n\n**Chrome.** `--log-code --log-code-disassemble` on Predator (8 s, 86 MB of V8 logs) writes every code object's header and\nno instruction: Chrome's V8 is built without the disassembler, as are Chromium's snapshots, Chrome for Testing and\nPlaywright's Chromium (all release builds), so `--print-opt-code` prints nothing there either. Chrome's own code needs a\nV8 with the disassembler: `d8` (V8's shell, from jsvu, at Chrome's V8 or newer) or a Chromium debug build. `d8` is an\ninstall: it waits for the owner's OK.\n\n**Node 22 (V8 12.4).** `--print-opt-code --code-comments` over fourteen kernels (spatialWorkerMicrobench with and without\n`--unread`, spatialGridMoversMicrobench with and without `--no-physics`, tickLoopKernel, fsmTickMicrobench,\ncomponentGetterMicrobench, neighborAccessMicrobench, preRenderCollectKernel, gpuPackKeyedMicrobench,\npublishPoseMicrobench, colliderFillPackMicrobench, meshApiMicrobench, particleLightPackMicrobench), summarised per\nTurboFan function by a scratch reader (size, inlined functions, deopt points and reasons, builtins called, and each\ngeneric IC, call or allocation with the name in the comment above it). Node's V8 is older than Chrome's, so this shows\nstructure (what is not inlined, what is generic, what allocates), not Chrome's exact code.\n\n**Read:**\n- `get neighborCount`: `_neighborOffset`, `_neighborReaderMarked` and `_markNeighborReader` through LoadIC_Megamorphic,\n  the mark's store through StoreIC_Megamorphic: a getter shared by every class sees every class's map (E-289; E-240).\n- The FSM: `onUpdate` reads `fsm`, `changeState` reads `stateIndex` megamorphically; the state's tick is a\n  Call_ReceiverIsAny (E-253).\n- The GameObject constructor and `bindToEntitySlot`: megamorphic stores and loads and allocations per bind (E-290).\n- `fanLocalVerts` (6 allocations, 6 write barriers) and `packColliderFill` (4) on main: E-277's heap numbers, still in\n  main until its gate.\n- `_findNeighbors`, `rebuildOwnedRows`, `_rebuildMovedRows`, `_scanColliderBounds`, `publishPose`, the collect and the\n  pack: no allocation and no generic access in their loops; `_findNeighbors`' five generic loads (`posByte`,\n  `rangeByte`, `candByte`, `gridByte`) are in its prologue, once a call."
+    },
+    {
+      "id": "R-0993",
+      "date": "2026-11-13",
+      "time": "20:09",
+      "timeFrom": "recorded",
+      "title": "Lockfile committed, pnpm-lock.yaml removed; trailer2.mp4 stays in the public repo (owner)",
+      "verdict": "note",
+      "text": "**note** — first step of N-165 done; trailer2.mp4 stays.\n\n- **Owner decision (2026-11-13):** trailer2.mp4 stays tracked, at HEAD and in the history: the public repo serves it and the owner uses it from there. The cleanup no longer removes it, and the history rewrite leaves it. It costs each clone about 140 MB (70 MB in `.git`, 70 MB checked out).\n- **Lockfile** (`a4ff6acd`): package-lock.json is committed and pnpm-lock.yaml is gone. The committed lock is the one this machine's node_modules came from, with no install: its 496 entries match `node_modules/.package-lock.json` version for version, and the 26 it lists that this machine lacks are other platforms' optional esbuild/fsevents binaries. Its dependencies match package.json's; only its two version fields changed (0.12.210 → 0.14.0). release.mjs now writes the version into the lock and stages it.\n- **.gitignore** (`67703509`): `*.mp4` plus `!trailer2.mp4`, so the file no longer contradicts what git tracks.\n- **Next, unchanged otherwise:** the unused files (`_extra/`, `screenshot2.jpg`, `demos/littleCity/layers_208x104_1790114630334.json`, a map-editor export nothing loads, 2.2 MB). Ask the owner first: like the trailer, they may be used from outside the repo. Then a lighter README GIF, a test that fails on a new tracked file over ~10 MB that is not on an allowlist, N-164, and the history rewrite (without the trailer). The pnpm commands in README, the guides and the bench scripts' messages still say `pnpm …`. They work as a runner, so they can wait.\n- Node suite: 2578/2578 on the second and third runs. The first run had one failure, not captured, during an 88 s run on a loaded machine (other sessions' work).",
+      "commits": [
+        "a4ff6acd",
+        "67703509"
+      ]
     }
   ],
   "leads": [
