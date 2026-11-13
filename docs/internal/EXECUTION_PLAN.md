@@ -4313,6 +4313,21 @@ step: `serviceChainQueries` 17.1, `serviceLiquidFunQuery` 13.1, `pumpQueryWake` 
 **Plan:** E-222's sites for those functions (closures, boxed numbers, the wake's promises); fix the cheap ones; heap sample.
 Owner: physics.
 
+### E-258 Pixi uploads about 860 KB of instance data a frame in Predator
+
+**Premise (glFrameRecorder, 2026-11-13):** per frame one `bufferSubData` of 374 KB, one of 195 KB, and 108 + 27 KB on two
+alternating pairs: every row, about 52 MB/s, for 33 000 instances in 27 draws.
+**Plan:** which batch each buffer is; the share of rows unchanged since the last frame (static scenery, E-188's keyed
+decorations); upload changed ranges only, or keep static rows in a buffer of their own. Owner: Pixi (and the GPU process).
+
+### E-259 Pixi re-creates its float data textures every frame
+
+**Premise (glFrameRecorder and the code):** `_uploadRgba32FloatGl` calls `source.update()` and `texSys.bind` (Pixi uploads the
+source) and then `gl.texImage2D`, with 3 `pixelStorei` and 4 `texParameteri`, every frame: two `texImage2D` a frame on the light
+data texture in Predator. The same path serves the texture LUT, the animation start table and each batch's pose texture.
+**Plan:** allocate once, then `texSubImage2D` of the rows written; parameters once. GL calls a frame, then Pixi's STEP_MS in
+the light-heavy scenes. Owner: Pixi.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
