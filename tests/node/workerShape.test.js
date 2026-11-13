@@ -23,12 +23,13 @@ function fieldsWrittenAfterBoot(file, className) {
   const indent = lines.slice(start + 1).find((l) => l.trim()).match(/^ */)[0].length;
   const header = new RegExp(`^ {${indent}}(?:static\\s+|async\\s+)*([A-Za-z_$][\\w$]*)\\s*\\([^)]*\\)\\s*\\{\\s*$`);
   const write = /this\.([A-Za-z_$][\w$]*)\s*(?:=(?!=)|\|\|=|\?\?=)/g;
+  const comment = /^\s*(?:\/\/|\*|\/\*)/;
   const out = new Map();
   let method = null;
   for (let i = start + 1; i < lines.length && !/^}/.test(lines[i]); i++) {
     const m = lines[i].match(header);
     if (m && !/^(if|for|while|switch|catch)$/.test(m[1])) method = m[1];
-    if (method === 'constructor' || method === 'initialize') continue;
+    if (method === 'constructor' || method === 'initialize' || comment.test(lines[i])) continue;
     for (const w of lines[i].matchAll(write)) {
       if (!out.has(w[1])) out.set(w[1], `${method}, line ${i + 1}`);
     }
@@ -46,15 +47,27 @@ function quietly(fn) {
   }
 }
 
-for (const [file, selfKey, className] of [
-  ['preRenderWorker.js', 'preRenderWorker', 'PreRenderWorker'],
-  ['pixiWorker.js', 'pixiRenderer', 'PixiRenderer'],
+// E-250: spatial, particle and logic run per-frame methods on `this` too. A few of their fields are bound once by
+// initialize (AbstractWorker's or a method it calls) as a typed array whose class follows the pool's or the entity
+// id's width, Uint16Array or Uint32Array: declared before that, as null or a guessed class, V8 would type the field
+// Any (E-71), so they are born in initialize, before the frame loop, and listed here.
+const BOUND_BY_INITIALIZE = {
+  ParticleWorker: ['activeParticlesData', 'visibleParticlesData', 'visibleDecorationsData', 'visibleBulletsData'],
+  LogicWorker: ['_tickAllScratch'],
+};
+for (const [file, selfKey, className, minFields] of [
+  ['preRenderWorker.js', 'preRenderWorker', 'PreRenderWorker', 40],
+  ['pixiWorker.js', 'pixiRenderer', 'PixiRenderer', 40],
+  ['spatialWorker.js', 'spatialWorker', 'SpatialWorker', 10],
+  ['particleWorker.js', 'particleWorker', 'ParticleWorker', 10],
+  ['logicWorker.js', 'logicWorker', 'LogicWorker', 10],
 ]) {
   test(`${className}: every field a later path writes exists from the constructor`, async () => {
     const worker = await loadWorker(file, selfKey);
     const written = fieldsWrittenAfterBoot(file, className);
-    assert.ok(written.size > 40, `the scan found the frame paths (${written.size} fields)`);
-    const missing = [...written].filter(([name]) => !Object.hasOwn(worker, name));
+    assert.ok(written.size > minFields, `the scan found the frame paths (${written.size} fields)`);
+    const bound = BOUND_BY_INITIALIZE[className] || [];
+    const missing = [...written].filter(([name]) => !Object.hasOwn(worker, name) && !bound.includes(name));
     assert.deepEqual(
       missing.map(([name, at]) => `${name} (${at})`),
       [],

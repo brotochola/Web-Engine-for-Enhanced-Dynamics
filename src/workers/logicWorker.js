@@ -172,7 +172,22 @@ class LogicWorker extends AbstractWorker {
     this.entitiesProcessedThisFrame = 0; // Track actual entities processed
     this.systemsExecutedThisFrame = 0; // Track number of distinct update phases executed
     this.frameStartTime = 0; // For timing diagnostics
-    this.queryPublishMsThisFrame = 0;
+    // E-250: the frame's detailed-stats times, here from the start. update() first wrote them as the Smi 0 on the first
+    // frame, which added them then, and a measured double later moved the worker to a new map again (N-32). -0 is a
+    // double zero, so each is a double field from the start; update() still resets them every frame.
+    this.queryPublishMsThisFrame = -0;
+    this.entityTimeThisFrame = -0;
+    this.raycastMsThisFrame = -0;
+    this.box2dRaycastMsThisFrame = -0;
+    this.decimateMsThisFrame = -0;
+    this.tickMsThisFrame = -0;
+    this._lastTickMs = -0;
+    this._lastDecimateMs = -0;
+    this.raycastCountThisFrame = 0;
+    this.box2dRaycastCountThisFrame = 0;
+    // Set by createGameObjectInstances (the types whose instances mark activity) and once the instances exist.
+    this.markActiveTypes = [];
+    this._gameObjectInstancesCreated = false;
 
     // Collision tracking (Unity-style Enter/Stay/Exit from Box2D contacts)
 

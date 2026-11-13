@@ -386,6 +386,8 @@ class ParticleWorker extends AbstractWorker {
     this._swayWasm = null;
     // _swayRefused said its reason.
     this._swayRefusedWarned = false;
+    // The bucket count the sway's frequency cache was filled for; -1 until it is (no k is -1).
+    this._swayBucketCacheK = -1;
 
     // Navigation
     this.navEnabled = false;

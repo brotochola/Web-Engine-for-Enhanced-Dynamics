@@ -204,6 +204,8 @@ class SpatialWorker extends AbstractWorker {
     /** Entities whose home row is this worker's, listed by rebuildOwnedRows for findNeighbors. */
     this._ownedEntityList = null;
     this._ownedEntityCount = 0;
+    /** Sprites without a collider or a body this frame (detailed stats), counted by the grid passes. */
+    this._noBodyCount = 0;
     this._neighborCandidateTruncated = null;
     this._entityFramesSinceBuild = null;
 
