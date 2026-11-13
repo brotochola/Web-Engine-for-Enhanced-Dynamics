@@ -12384,7 +12384,8 @@
         "R-0937",
         "R-0938",
         "R-0941",
-        "R-0945"
+        "R-0945",
+        "R-0949"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-LIGHTAPI",
@@ -12424,7 +12425,8 @@
         "R-0943",
         "R-0945",
         "R-0946",
-        "R-0947"
+        "R-0947",
+        "R-0949"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-SPOT",
@@ -21972,6 +21974,15 @@
       "title": "N-157 correction: at 360 cone lights pre-render allocated 275.8 KB/s (sort 215.5) before, 60.6 after",
       "verdict": "note",
       "text": "**N-157, a correction: the allocation numbers in R-0944 came from the wrong configuration; the right one shows a bigger saving.**\n2026-11-12, about 22:45. `heapSampleWorkers.mjs` keeps only the last `--query` it is given, so the samples R-0944 quotes as `?cone=1&lights=360&crates=320` ran with `crates=320` alone (120 round lights at maxLights 120, also a full list, so the finding stands). Taken again with the query as one string, flashlightStressScene `?cone=1&lights=360&crates=320`, pre-render only:\n\n- the code before 06740b03 (its change reverted in place for the run): 275.8 KB/s, of which `sort` from `_collectVisibleLights` 215.5 KB/s (a first, noisier run: 629.8 and 207.5);\n- 06740b03 and after: 60.6 KB/s, no `sort`.\n\nThe kernel numbers and the scene sitting in R-0944 used the right configuration (the sitting's query was one string) and stand."
+    },
+    {
+      "id": "R-0949",
+      "date": "2026-11-12",
+      "time": "22:38",
+      "timeFrom": "recorded",
+      "title": "Engine trace: no new garbage site, no steady deopt in light code, GC per thread ≤ main on Predator, no Any-typed field",
+      "verdict": "passed",
+      "text": "**The engine trace of DX-LIGHTAPI and DX-SPOT: no new garbage site, no steady deopt in the light code, GC per thread no higher than main, no field typed Any.**\n2026-11-12, 22:38 to 22:49 (the files' times), headless unless said, at 0650fd0f and after (the trace looks at code; the commits since only touch demos, docs and the register).\n\n- **Allocation** (`heapSampleWorkers.mjs`, Chrome): flashlightStressScene `?cone=1&lights=360&crates=320`, pre-render 60.6 KB/s, Pixi 156.1 KB/s (most of it Pixi's own render and buffer events: `ge.emit` 34.1, of which renderVisibilityLighting's batch uploads 7.7); spotLightStressScene `?cone=1&cars=256&props=2000&shadowLights=256`, pre-render 50.9 KB/s, Pixi 168.4. The light code's only line: `stampLightRangeWasm` 3.7 KB/s (about 60 bytes a frame, a few numbers a call, not per light). What remains is listed in N-158 (frame loop, waits, camera bounds).\n- **Deopts** (`--log-deopt --log-ic`, `summarizeV8Deopt.mjs`): headlights 75 deopt lines, flashlights 55; after the warm-up none in pre-render's light code, Pixi's light passes, the stamp client, the gather client or LightEmitter: the steady ones are one-offs in input, scene and queue code, 0 ms of CPU each.\n- **CPU and GC per thread** (`bench:headed:trace-cpu` + `trace:summary`, headed), Predator, main (a full worktree of fa59073a) against the branch: GC ms per second pre-render 0 → 0, Pixi 1 → 1, spatial 3 → 0, physics 5 → 1, logic 1/1 → 1/2, main 2/3 → 0/2; busy Pixi 574 → 544 ms/s, pre-render 473 → 457, spatial 228 → 221.\n- **Field types** (`fieldTypeAudit.mjs`), both scenes: none of the new worker fields starts null as a typed array (the cone scratch arrays start as empty Float32Arrays; the cone batches are objects)."
     }
   ],
   "leads": [
