@@ -1034,6 +1034,17 @@ class PixiRenderer extends AbstractWorker {
       target: null,
       clear: false,
     };
+    // N-158: the raycasted light pass's render options and clear colour (ambient, sun and night), kept: they were a new
+    // object and array every frame. Its own object, so no other pass inherits its clear colour.
+    this._visClearColor = [0.5, 0.5, 0.5, 1]; // doubles from the start
+    this._visRenderOpts = {
+      container: null,
+      target: null,
+      // Pixi's render() fills in the container's transform when none is given: null each frame, so it does again.
+      transform: null,
+      clear: true,
+      clearColor: this._visClearColor,
+    };
 
     // OPTIMIZED: Preallocated RGB object to avoid allocation per light per frame
     this._rgbResult = { r: 0, g: 0, b: 0 };
@@ -4542,22 +4553,19 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const night = this._nightRGB;
     if (sunOn) Sun.nightLightRGB(night);
     else night.fill(0);
-    const clearColor = [
-      Math.min(ambient + night[0], 1.0),
-      Math.min(ambient + night[1], 1.0),
-      Math.min(ambient + night[2], 1.0),
-      1.0,
-    ];
+    const clearColor = this._visClearColor;
+    clearColor[0] = Math.min(ambient + night[0], 1.0);
+    clearColor[1] = Math.min(ambient + night[1], 1.0);
+    clearColor[2] = Math.min(ambient + night[2], 1.0);
 
     // Restore unoccluded light under occluder footprints (no self-darken), after the fans.
     const spriteMasks = this._buildSelfLitBatch(readBufferIdx);
 
-    this._submitRender({
-      container,
-      target: this._visPolyRT,
-      clear: true,
-      clearColor,
-    });
+    const renderOptions = this._visRenderOpts;
+    renderOptions.transform = null;
+    renderOptions.container = container;
+    renderOptions.target = this._visPolyRT;
+    this._submitRender(renderOptions);
 
     if (spriteMasks) this._renderSelfLitSpriteMasks(readBufferIdx);
   }
