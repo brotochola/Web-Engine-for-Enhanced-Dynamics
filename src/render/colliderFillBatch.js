@@ -114,14 +114,23 @@ function entityHasDrawableCollider(i, views) {
 }
 
 const _paint = { texId: -1, tix: 0, tiy: 0, tou: 0, tov: 0 };
-let _outset = 0;
-let _ox = 0;
-let _oy = 0;
 
-function radialOutset(x, y, outset) {
+// E-277: the triangle being written and its pose, read by writeFillTri and fanLocalVerts, which take integers only: a
+// double passed to (or stored by) a call TurboFan leaves out is a heap number (E-85; destructibleTerrain's Pixi made
+// 13.9 MB/s of them here). Corners 0..5 (x0, y0, x1, y1, x2, y2), the pose 6..9 (wx, wy, c, s), FILL_OUTSET the
+// entity's visual outset.
+const FILL_F = new Float64Array(11);
+const FILL_POSE = 6;
+const FILL_OUTSET = 10;
+// The packed alpha and tint: an int32 that is not a small integer for alphas 64..191.
+const FILL_PACKED = new Int32Array(1);
+
+/** (x, y) pushed out from the shape's centre by FILL_F[FILL_OUTSET], into FILL_F[at], FILL_F[at + 1]. */
+function radialOutset(x, y, at) {
+  const outset = FILL_F[FILL_OUTSET];
   if (!(outset > 0)) {
-    _ox = x;
-    _oy = y;
+    FILL_F[at] = x;
+    FILL_F[at + 1] = y;
     return;
   }
   // H-03: sqrt, not Math.hypot - the overflow/underflow guard is wasted here.
@@ -133,13 +142,13 @@ function radialOutset(x, y, outset) {
   // Do not reintroduce hypot here without measuring it again.
   const len = Math.sqrt(x * x + y * y);
   if (len < 1e-6) {
-    _ox = x;
-    _oy = y;
+    FILL_F[at] = x;
+    FILL_F[at + 1] = y;
     return;
   }
   const k = 1 + outset / len;
-  _ox = x * k;
-  _oy = y * k;
+  FILL_F[at] = x * k;
+  FILL_F[at + 1] = y * k;
 }
 
 function bindMeshPaint(i, views) {
@@ -172,25 +181,26 @@ function bindMeshPaint(i, views) {
   const ov = views.meshTileOffV;
   _paint.tou = ou ? (ou[i] & 65535) / 65535 : 0;
   _paint.tov = ov ? (ov[i] & 65535) / 65535 : 0;
-  _outset = views.meshVisualOutset ? views.meshVisualOutset[i] : 0;
+  FILL_F[FILL_OUTSET] = views.meshVisualOutset ? views.meshVisualOutset[i] : 0;
 }
 
 /**
- * Write one fan triangle. Returns new written count, or -1 if cap hit.
+ * Write one triangle: its corners FILL_F[0..5], its pose FILL_F[FILL_POSE..+3], its colour FILL_PACKED[0]. Returns the
+ * new written count, or -1 if the cap is hit.
  */
-function writeFillTri(out, outU32, base, written, maxOut, depthDenom, x0, y0, x1, y1, x2, y2, wx, wy, c, s, packed) {
+function writeFillTri(out, outU32, base, written, maxOut, depthDenom) {
   if (written >= maxOut) return -1;
-  out[base] = x0;
-  out[base + 1] = y0;
-  out[base + 2] = x1;
-  out[base + 3] = y1;
-  out[base + 4] = x2;
-  out[base + 5] = y2;
-  out[base + 6] = wx;
-  out[base + 7] = wy;
-  out[base + 8] = c;
-  out[base + 9] = s;
-  outU32[base + 10] = packed >>> 0;
+  out[base] = FILL_F[0];
+  out[base + 1] = FILL_F[1];
+  out[base + 2] = FILL_F[2];
+  out[base + 3] = FILL_F[3];
+  out[base + 4] = FILL_F[4];
+  out[base + 5] = FILL_F[5];
+  out[base + 6] = FILL_F[FILL_POSE];
+  out[base + 7] = FILL_F[FILL_POSE + 1];
+  out[base + 8] = FILL_F[FILL_POSE + 2];
+  out[base + 9] = FILL_F[FILL_POSE + 3];
+  outU32[base + 10] = FILL_PACKED[0] >>> 0;
   out[base + 11] = 1.0 - (written + 1) / depthDenom;
   out[base + 12] = _paint.texId;
   out[base + 13] = _paint.tix;
@@ -224,21 +234,14 @@ function packOutU32(out, views) {
   return _packOutU32;
 }
 
-function fanLocalVerts(out, outU32, base, written, maxOut, depthDenom, vx, vy, vb, n, wx, wy, c, s, packed, outset) {
-  radialOutset(vx[vb], vy[vb], outset);
-  const x0 = _ox;
-  const y0 = _oy;
+/** A fan of the polygon at vx/vy[vb..vb + n), its pose and colour already in the scratch (writeFillTri). */
+function fanLocalVerts(out, outU32, base, written, maxOut, depthDenom, vx, vy, vb, n) {
+  radialOutset(vx[vb], vy[vb], 0);
   const fans = n - 2;
   for (let t = 0; t < fans; t++) {
-    radialOutset(vx[vb + t + 1], vy[vb + t + 1], outset);
-    const x1 = _ox;
-    const y1 = _oy;
-    radialOutset(vx[vb + t + 2], vy[vb + t + 2], outset);
-    const next = writeFillTri(
-      out, outU32, base, written, maxOut, depthDenom,
-      x0, y0, x1, y1, _ox, _oy,
-      wx, wy, c, s, packed,
-    );
+    radialOutset(vx[vb + t + 1], vy[vb + t + 1], 2);
+    radialOutset(vx[vb + t + 2], vy[vb + t + 2], 4);
+    const next = writeFillTri(out, outU32, base, written, maxOut, depthDenom);
     if (next < 0) {
       _fanOut.written = written;
       _fanOut.base = base;
@@ -503,7 +506,6 @@ export function packColliderFill(out, cap, layerId, views) {
     }
 
     bindMeshPaint(i, views);
-    const outset = _outset;
     const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
     const c = pose[2];
     const s = pose[3];
@@ -516,9 +518,16 @@ export function packColliderFill(out, cap, layerId, views) {
     if (a < 0) a = 0;
     else if (a > 1) a = 1;
     const a8 = (a * 255 + 0.5) | 0;
-    const packed = ((a8 & 255) << 24) | ((meshTint[i] >>> 0) & 0xffffff);
+    FILL_PACKED[0] = ((a8 & 255) << 24) | ((meshTint[i] >>> 0) & 0xffffff);
+    // The collider paths' pose (offset by the collider's); the mesh paths set their own below.
+    FILL_F[FILL_POSE] = wx;
+    FILL_F[FILL_POSE + 1] = wy;
+    FILL_F[FILL_POSE + 2] = c;
+    FILL_F[FILL_POSE + 3] = s;
 
     if (meshAt >= 0) {
+      FILL_F[FILL_POSE] = pose[0];
+      FILL_F[FILL_POSE + 1] = pose[1];
       if (views.meshHasUv && views.meshHasUv[i]) {
         views.layerHasVertexUv = 1;
         continue;
@@ -537,13 +546,13 @@ export function packColliderFill(out, cap, layerId, views) {
           const ib = indices[o + 1] | 0;
           const icx = indices[o + 2] | 0;
           if (ia < 0 || ib < 0 || icx < 0 || ia >= vcount || ib >= vcount || icx >= vcount) continue;
-          const nextW = writeFillTri(
-            out, outU32, base, written, maxOut, depthDenom,
-            mx[meshAt + ia], my[meshAt + ia],
-            mx[meshAt + ib], my[meshAt + ib],
-            mx[meshAt + icx], my[meshAt + icx],
-            pose[0], pose[1], c, s, packed,
-          );
+          FILL_F[0] = mx[meshAt + ia];
+          FILL_F[1] = my[meshAt + ia];
+          FILL_F[2] = mx[meshAt + ib];
+          FILL_F[3] = my[meshAt + ib];
+          FILL_F[4] = mx[meshAt + icx];
+          FILL_F[5] = my[meshAt + icx];
+          const nextW = writeFillTri(out, outU32, base, written, maxOut, depthDenom);
           if (nextW < 0) return written;
           written = nextW;
           base += COLLIDER_FILL_FLOATS;
@@ -551,10 +560,9 @@ export function packColliderFill(out, cap, layerId, views) {
         continue;
       }
       if (vcount >= 3 && mx && my) {
-        const fan = fanLocalVerts(
-          out, outU32, base, written, maxOut, depthDenom,
-          mx, my, meshAt, vcount, pose[0], pose[1], c, s, packed, 0,
-        );
+        // An explicit mesh is drawn as given, with no outset.
+        FILL_F[FILL_OUTSET] = 0;
+        const fan = fanLocalVerts(out, outU32, base, written, maxOut, depthDenom, mx, my, meshAt, vcount);
         written = fan.written;
         base = fan.base;
         if (fan.full) return written;
@@ -575,10 +583,7 @@ export function packColliderFill(out, cap, layerId, views) {
           cur = next[cur];
           continue;
         }
-        const fan = fanLocalVerts(
-          out, outU32, base, written, maxOut, depthDenom,
-          vx, vy, cur * MAX_POLYGON_VERTICES, n, wx, wy, c, s, packed, outset,
-        );
+        const fan = fanLocalVerts(out, outU32, base, written, maxOut, depthDenom, vx, vy, cur * MAX_POLYGON_VERTICES, n);
         written = fan.written;
         base = fan.base;
         if (fan.full) return written;
@@ -593,7 +598,6 @@ export function packColliderFill(out, cap, layerId, views) {
       const fan = fanLocalVerts(
         out, outU32, base, written, maxOut, depthDenom,
         primaryPolyVertexX, primaryPolyVertexY, i * MAX_POLYGON_VERTICES, n,
-        wx, wy, c, s, packed, outset,
       );
       written = fan.written;
       base = fan.base;
@@ -605,29 +609,18 @@ export function packColliderFill(out, cap, layerId, views) {
       const hw = primaryWidth[i] * 0.5;
       const hh = primaryHeight[i] * 0.5;
       if (hw > 0 && hh > 0) {
-        radialOutset(-hw, -hh, outset);
-        const x0 = _ox;
-        const y0 = _oy;
-        radialOutset(hw, -hh, outset);
-        const x1 = _ox;
-        const y1 = _oy;
-        radialOutset(hw, hh, outset);
-        const x2 = _ox;
-        const y2 = _oy;
-        radialOutset(-hw, hh, outset);
-        const x3 = _ox;
-        const y3 = _oy;
-        let nextW = writeFillTri(
-          out, outU32, base, written, maxOut, depthDenom,
-          x0, y0, x1, y1, x2, y2, wx, wy, c, s, packed,
-        );
+        // Corners 0, 1, 2, then 0, 2, 3.
+        radialOutset(-hw, -hh, 0);
+        radialOutset(hw, -hh, 2);
+        radialOutset(hw, hh, 4);
+        let nextW = writeFillTri(out, outU32, base, written, maxOut, depthDenom);
         if (nextW < 0) return written;
         written = nextW;
         base += COLLIDER_FILL_FLOATS;
-        nextW = writeFillTri(
-          out, outU32, base, written, maxOut, depthDenom,
-          x0, y0, x2, y2, x3, y3, wx, wy, c, s, packed,
-        );
+        FILL_F[2] = FILL_F[4];
+        FILL_F[3] = FILL_F[5];
+        radialOutset(-hw, hh, 4);
+        nextW = writeFillTri(out, outU32, base, written, maxOut, depthDenom);
         if (nextW < 0) return written;
         written = nextW;
         base += COLLIDER_FILL_FLOATS;
@@ -640,17 +633,18 @@ export function packColliderFill(out, cap, layerId, views) {
       if (r > 0) {
         const n = MAX_POLYGON_VERTICES;
         const step = TWO_PI / n;
+        const outset = FILL_F[FILL_OUTSET];
         const sr = r + (outset > 0 ? outset : 0);
-        const x0 = sr;
-        const y0 = 0;
+        FILL_F[0] = sr;
+        FILL_F[1] = 0;
         for (let t = 0; t < n - 2; t++) {
           const a1 = (t + 1) * step;
           const a2 = (t + 2) * step;
-          const nextW = writeFillTri(
-            out, outU32, base, written, maxOut, depthDenom,
-            x0, y0, sr * Math.cos(a1), sr * Math.sin(a1), sr * Math.cos(a2), sr * Math.sin(a2),
-            wx, wy, c, s, packed,
-          );
+          FILL_F[2] = sr * Math.cos(a1);
+          FILL_F[3] = sr * Math.sin(a1);
+          FILL_F[4] = sr * Math.cos(a2);
+          FILL_F[5] = sr * Math.sin(a2);
+          const nextW = writeFillTri(out, outU32, base, written, maxOut, depthDenom);
           if (nextW < 0) return written;
           written = nextW;
           base += COLLIDER_FILL_FLOATS;
