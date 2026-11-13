@@ -20,6 +20,8 @@
  *
  *   node tests/bench/spatialWorkerMicrobench.mjs
  *   node tests/bench/spatialWorkerMicrobench.mjs --n 16500 --output tests/results/spatial-worker.json
+ * `--unread` (E-268): no logic reads any type's neighbours (Grid.neighborReaders all 0), so the three workers keep every
+ * row clear: stationarySpatialWideScene's and WaterAndBoxes' regime.
  *   node tests/bench/spatialWorkerMicrobench.mjs --still --skin 0.04 --max-frames 15 --tick 1
  *   node tests/bench/spatialWorkerMicrobench.mjs --types boids
  */
@@ -194,6 +196,9 @@ export async function setupSpatialKernel(opts = {}) {
     });
   }
   let logicFrame = 0;
+  // --unread (E-268): no logic reads any type's neighbours, so each row is kept clear (with several workers, its head
+  // is read to see it is).
+  if (opts.unread) Grid.neighborReaders = new Uint8Array(Math.max(1, classes.length));
 
   bindPoseColumns(n);
   const rng = mulberry32(seed);
@@ -316,17 +321,19 @@ async function main() {
   if (args['max-frames'] !== undefined) spatial.neighborReuseMaxFrames = Number(args['max-frames']);
   if (args.tick !== undefined) spatial.neighborTickInterval = Number(args.tick);
   const types = args.types !== undefined ? String(args.types) : null;
-  const k = await setupSpatialKernel({ n: Number(args.n ?? 16500), seed: Number(args.seed ?? 0x5a71a1), variant, still, spatial, types });
+  const unread = Boolean(args.unread);
+  const k = await setupSpatialKernel({ n: Number(args.n ?? 16500), seed: Number(args.seed ?? 0x5a71a1), variant, still, spatial, types, unread });
   // 45 frames: every entity passes a full rebuild and the stagger at least twice.
   for (let f = 0; f < 45; f++) k.frame();
   const checksum = k.checksum();
   let pairs = 0;
   for (let i = 0; i < k.n; i++) pairs += Grid.neighborData[i * Grid._stride];
-  assert.ok(pairs > 0, 'no neighbors published');
+  if (unread) assert.equal(pairs, 0, 'an unread row was published');
+  else assert.ok(pairs > 0, 'no neighbors published');
   // 60 frames: a whole number of every preset's periods (4, 6, 15, 30, and their multiples up to 30).
   const rates = k.listRates(60);
 
-  const label = `spatial frame ${variant}${still ? ' still' : ''}${types ? ` types=${types}` : ''}`;
+  const label = `spatial frame ${variant}${still ? ' still' : ''}${types ? ` types=${types}` : ''}${unread ? ' unread' : ''}`;
   const cases = {
     frame: timeIt(`${label} (${k.workers.length} workers, n=${k.n})`, () => k.frame(), { iterations: 20, warmup: 30 }),
   };
