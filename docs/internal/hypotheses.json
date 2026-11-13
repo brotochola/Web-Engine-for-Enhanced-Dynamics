@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-12",
+  "updated": "2026-11-13",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -12385,7 +12385,10 @@
         "R-0938",
         "R-0941",
         "R-0945",
-        "R-0949"
+        "R-0949",
+        "R-0951",
+        "R-0952",
+        "R-0953"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-LIGHTAPI",
@@ -12427,7 +12430,10 @@
         "R-0946",
         "R-0947",
         "R-0949",
-        "R-0950"
+        "R-0950",
+        "R-0951",
+        "R-0952",
+        "R-0953"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-SPOT",
@@ -12678,6 +12684,77 @@
         "camera bounds"
       ],
       "records": []
+    },
+    {
+      "id": "N-159",
+      "title": "The stamp's bench harness wrote five doubles a light while the kernel reads eleven (the scoreboard's shadowStamp +108.7 % was a misread fixture)",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-11-13 reading DX-SPOT's scoreboard against main",
+      "date": "2026-11-13",
+      "area": "harness",
+      "kind": "bug",
+      "result": "The harness writes through the product's writeStampLights (41987e0f, e1feda6d); 708 → 7877 rows on the fixture, wasm = JS checksum 2692520044; shadowStampHarness.test.js pins it. Measured right, the branch's stamp was 3.4 % slower (fixed in 5ce5a85b).",
+      "refs": [
+        "REVIEW_PLAN.md#N-159"
+      ],
+      "aliases": [
+        "shadowStampKernel",
+        "LIGHT_DOUBLES",
+        "STAMP_LIGHT_DOUBLES",
+        "writeStampLights",
+        "stamp harness"
+      ],
+      "records": [
+        "R-0951",
+        "R-0952",
+        "R-0953"
+      ]
+    },
+    {
+      "id": "N-160",
+      "title": "The catalog's tilemap row asked for cases.getTileId.opsPerSec, renamed shipped in 44bdf560: it failed every sitting",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-11-13 in the same scoreboard",
+      "date": "2026-11-13",
+      "area": "harness",
+      "kind": "bug",
+      "result": "df2167b3: the row reads cases.shipped.opsPerSec; then kernel -0.5 %, logic0 +1.8 %, a tie.",
+      "refs": [
+        "REVIEW_PLAN.md#N-160"
+      ],
+      "aliases": [
+        "tilemap row",
+        "getTileId",
+        "engineFeatureCatalog"
+      ],
+      "records": [
+        "R-0951",
+        "R-0952"
+      ]
+    },
+    {
+      "id": "N-161",
+      "title": "The catalog's audioStorm row cannot decide: its load key BODY_COUNT is 0 in a scene without bodies, and logic0 sits at 0.56 ms",
+      "status": "open",
+      "statusText": "found 2026-11-13 in the same scoreboard",
+      "date": "2026-11-13",
+      "area": "harness",
+      "kind": "bug",
+      "rank": 41,
+      "result": "load not comparable (median 0 on both sides) and under the 3 ms floor at ?plays=1200.",
+      "next": "A load count the scene publishes (plays a tick or voices playing) as the load key, and ?plays= high enough for logic0 past 3 ms.",
+      "refs": [
+        "REVIEW_PLAN.md#N-161"
+      ],
+      "aliases": [
+        "audioStorm row",
+        "BODY_COUNT",
+        "engineFeatureCatalog"
+      ],
+      "records": [
+        "R-0951",
+        "R-0952"
+      ]
     }
   ],
   "records": [
@@ -21996,6 +22073,39 @@
       ],
       "time": "22:52",
       "timeFrom": "recorded"
+    },
+    {
+      "id": "R-0951",
+      "date": "2026-11-13",
+      "time": "00:10",
+      "timeFrom": "recorded",
+      "title": "Scoreboard against `main` (full, 46 rows)",
+      "verdict": "note",
+      "text": "ray: FAIL, rayVsBox2d: FAIL, decals: FAIL, emit: FAIL, integrate: FAIL, particleLists: TIE, particleListsZoomed: TIE, spatial: FAIL, box2d: TIE, liquidfun: TIE, liquidfunCouple: TIE, liquidfunQuery: TIE, queryAabb: FAIL, nav: FAIL, visPoly: TIE, tilemap: FAIL, tilemapGid: FAIL, contactDrain: FAIL, box2dRayJs: TIE, queryPublish: FAIL, preRender: FAIL, compute: FAIL, decorations: KEPT, bullets: FAIL, spawn: FAIL, steadyCombat: TIE, decalBlit: TIE, sceneryCam: FAIL, meshFillMoving: KEPT, meshFillPan: FAIL, meshFillLook: FAIL, audioStorm: FAIL, audioSlots: TIE, gameObjectAccess: TIE, shadowStamp: KEPT, gpuQueuePack: TIE, decalPremultiply: TIE, painterRadix: TIE, publishPose: KEPT, preRenderWorker: TIE, swayBuckets: TIE, decorationCollect: TIE, decorationCollectYSort: TIE, attachedSway: TIE, attachedWalls: TIE, textureUpload: TIE.\n\nNo. 2 row(s) FAIL/WORSE. Do not claim a better WeedJS. 12 row(s) are a protocol ceiling (not claimed). 6 row(s) are under the 3 ms floor (not a regression). A tree is the fastest WeedJS only when every catalog row is kept or a tie and none is worse or failed. The rows' numbers are in the local report (`tests/results/scoreboard/report.md`, not kept)."
+    },
+    {
+      "id": "R-0952",
+      "date": "2026-11-13",
+      "time": "00:22",
+      "timeFrom": "recorded",
+      "title": "Scoreboard against `main` (full, 2 rows)",
+      "verdict": "note",
+      "text": "tilemap: TIE, shadowStamp: KEPT.\n\nYes, on the rows that were measured: shadowStamp kept and none worse. A tree is the fastest WeedJS only when every catalog row is kept or a tie and none is worse or failed. The rows' numbers are in the local report (`tests/results/scoreboard/report.md`, not kept)."
+    },
+    {
+      "id": "R-0953",
+      "date": "2026-11-13",
+      "time": "00:33",
+      "timeFrom": "recorded",
+      "title": "The scoreboard against main read: no row worse once the stamp is measured right (its +108.7 % was the harness; -3.4 % fixed to -0.3 %)",
+      "verdict": "passed",
+      "text": "**DX-LIGHTAPI and DX-SPOT against main: the scoreboard (46 rows, both sides' whole trees), read; no row worse once the stamp is measured right.**\n2026-11-13, dx/light-api at 8ec87e93 against main (fa59073a), `runScoreboard.mjs --vs main --full-rev` (each side runs its own revision's scenes and kernels), every catalog row but the two light rows main lacks (spotLights, flashlights). AC power, no other browser. Times from the files: the sitting 23:02 to 00:10 (R-0951), the two rows again 00:19 to 00:22 (R-0952), the stamp kernel ABABs 00:24 to 00:25 and 00:26 to 00:27.\n\n- **The scoreboard (R-0951):** \"2 rows FAIL/WORSE\", neither the light work's. 22 ties, 12 protocol ceilings, 6 rows under the 3 ms floor, 4 KEPT. Under the floor, ray's kernel read -4.6 % from one sample a side on code the branch does not touch (src/core/ray.js is main's), its scene -1.2 %. The two:\n  - `tilemap` failed on a stale key (N-160, `df2167b3`); read again, kernel -0.5 %, logic0 8.304 → 8.452 ms (+1.8 %): a tie (R-0952).\n  - `audioStorm` cannot decide on any tree: its load key is 0 in a scene without bodies, and logic0 is 0.56 ms (N-161, open). Its kernel: +2.3 %, a tie.\n- **`shadowStamp` KEPT +108.7 % was false (N-159):** the bench harness wrote 5 doubles a light, the kernel reads 11 since B3. On the branch it stamped 708 rows for 7877. Fixed (`41987e0f`, `e1feda6d`), the R-0952 row read +6.7 % from one sample a side.\n- **The stamp, measured right** (shadowStampWasmMicrobench on the Predator fixture, Node, main's tree from a worktree against the working tree, a discarded warm-up process each, 4 alternating pairs, checksums 2692520044 on both sides):\n  - at `e1feda6d`: main 2644.4, branch 2554.8 ops/s, **-3.4 %, worse in 3/4 pairs**. With maxShadowsPerEntity on (Predator's 3) every per-entity row tested its light's cone and shade.\n  - at `5ce5a85b` (a call without a cone or dim light runs main's per-entity loop; the folded rows their own copy): main 2633.2, branch 2626.5 ops/s, **-0.3 %, 2/4: a tie**.\n- **The other KEPT rows** are not the light work's (decorations kernel +11.9 %, meshFillMoving pixi -19.6 %, publishPose kernel +5.0 %): one sample a side on code the branch does not touch, so not claimed.\n- **Gates of the sitting:** test:node and the lockstep scenes (balls, liquidfun, lfstress, particles) passed on the branch; the rerun skipped them (the suite was green on that tree, 2562/2562).\n\nDetection limit: main's four pairs spread 5.0 % in the first ABAB (2548.1 to 2675.5 ops/s) and 3.9 % in the second (2554.7 to 2656.1), so -3.4 % at 3/4 sat on the keep rule's edge and -0.3 % at 2/4 is a tie; the scene rows carry their own in R-0951.",
+      "commits": [
+        "41987e0f",
+        "e1feda6d",
+        "df2167b3",
+        "5ce5a85b"
+      ]
     }
   ],
   "leads": [
