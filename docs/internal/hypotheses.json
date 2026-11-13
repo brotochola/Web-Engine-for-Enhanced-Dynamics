@@ -23486,6 +23486,11 @@
       "source": "N-115's build comparison (R-0825, 2026-11-04)",
       "finding": "webpack 5.109.2 (the tracked pnpm-lock.yaml's) inlines exported constants across modules, numbers and strings; 5.105.0 (the untracked package-lock.json that builds dist here) reads them through webpack's getters, the cost E-77 worked around by hand. The two locks also give different browser lists, so babel's output differs.",
       "next": "Time a prod bundle built with the tracked lock against main's dist (--full-rev), then pick one lock for dist. That changes how the bundles are made: every bundle test and the bundle sittings run again."
+    },
+    {
+      "source": "Owner request (2026-11-13), not measured",
+      "finding": "Objects are slow: every place the engine keeps per-entity or per-frame numbers in objects is a candidate for a typed array, short-lived objects (literals, returned {x, y}, option bags) and cached scratch objects alike. The pattern has paid each time it was tried: E-66 (pre-render's pose scratch, 17.6 MB/s), E-85 and E-90 (the ray path, castAll's hits), E-261 (the mesh fill pose's _livePose). Pixi itself builds objects on the paths we call every frame (buffer update events, render target binds, render passes, options and clear colours: N-158 round 1).",
+      "next": "An inventory, not a sitting: every object the engine allocates or reuses per frame or per entity (src/ workers, render, spatial, particle, logic), and every Pixi call on the frame path that builds or reads objects. For each: what a typed array or a kept value would replace, and the heap sample or deopt line that shows it (heapSampleWorkers.mjs, fieldTypeAudit.mjs, summarizeTurboSites.mjs). The ones with a visible cost become E-xx rows; the Pixi ones that need Pixi's internals go through what we pass it (kept objects, our own batches) before any patch of Pixi."
     }
   ],
   "howToFindNew": [
