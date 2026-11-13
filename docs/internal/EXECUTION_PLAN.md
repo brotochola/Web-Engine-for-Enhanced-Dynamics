@@ -4581,6 +4581,27 @@ instance `_makeInstance` makes.
 **Plan:** count the binds per second in Predator and the spawn scenes first; if they matter, one shape for every class's
 instances; the machine code again. Owner: logic.
 
+### E-291 _boxRayDistance is over TurboFan's 460-byte inlining limit: it stays in Sparkplug and boxes its doubles
+
+**Premise (Predator's code pass, summarizeV8Code, Chrome 151):** `_shapeRayDistance` reaches TurboFan and inlines
+`_circleRayDistance` (358 B), but `_boxRayDistance` is 493 B of bytecode, so each box a ray tests is a real call. Called
+too rarely to tier up on its own, it stayed in Sparkplug for the whole run, which keeps every double in a HeapNumber: the
+heap pass's 20.4 KB/s at `_boxRayDistance` in a Predator logic worker.
+**Plan:** bring it under 460 bytes so `_shapeRayDistance` inlines it (358 of its 920 bytes of budget spent); the code
+pass shows it inlined, the heap pass shows the site at zero, then a hygiene gate on a ray scene. The same check for
+`_polygonRayDistance` and `_chainRayDistance` (six doubles passed to `ChainPoints.rayDistance`). Owner: logic.
+
+### E-292 Hot functions that stay in Maglev pay about 30 %
+
+**Premise (Predator's code pass):** the game's second neighbour loop (`civilianBehaviorFsm.js:63`, 334 B) stayed in
+Maglev for the whole run while its sibling at line 38 reached TurboFan at 2.5 s. One run with `--efficiency-mode=false`
+(meant to test V8's efficiency-mode delay of TurboFan) left every JS function below TurboFan, wasm still tiering: logic
+STEP_MS 3.51 / 3.19 → 4.53 / 4.15 ms, particle 0.66 → 0.94, renderer 6.58 → 7.62, physics a tie (one run a side, both
+with the code log: an estimate). That flag cannot test the delay.
+**Plan:** the code pass over the owner scenes lists the hot functions (≥ 1 % self) that end below TurboFan; for engine
+ones find why (OSR from Maglev, deopts, size), for demo loops whether the per-entity body as its own function tiers up
+sooner; then a kernel or scene for the largest. Owner: logic.
+
 ## Wave 14 (2026-11-13): the campaign order after a full harvest
 
 The owner asked to gather every hypothesis first, without measuring, then run them all in a new campaign. The harvest:
