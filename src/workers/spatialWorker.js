@@ -140,6 +140,9 @@ class SpatialWorker extends AbstractWorker {
     // Top 13 bits = frame counter, low 19 bits = entityA (packSpatialPairStamp). Avoids fill() every frame.
     this.processedMarker = null; // Int32Array
     this._processedFrameCounter = 0;
+    // E-268: per entity, the frame (mod 254) this worker last kept its row clear; see _findNeighbors.
+    this._clearHeld = new Uint8Array(0);
+    this._clearHeldFrame = 1;
     // Local cell counts for race-free grid rebuilding
     // We build counts locally, then copy to grid at the end (avoids mid-clear races)
     this._localCellCounts = null; // Uint8Array(totalCells)
@@ -327,6 +330,7 @@ class SpatialWorker extends AbstractWorker {
     // and a Uint32Array element read back as unsigned never equalled it, so the dedup failed for
     // half of every 8191-frame cycle and candidates in several cells were appended once per cell.
     this.processedMarker = new Int32Array(this.globalEntityCount);
+    this._clearHeld = new Uint8Array(this.globalEntityCount);
 
     // Initialize local cell counts array for race-free grid rebuilding
     this._localCellCounts = new Uint8Array(this.totalCells);
@@ -1475,6 +1479,18 @@ class SpatialWorker extends AbstractWorker {
     }
     const stampFrame = this._processedFrameCounter;
 
+    // E-268: only the worker that owns an entity publishes its row, so a row this worker kept clear the frame before
+    // is still clear: the read of its head (a cache line per entity, rows ~2 KB apart) is needed only for an entity
+    // that just arrived or came back. Every 254 frames every head is read once more.
+    let clearFrame = this._clearHeldFrame + 1;
+    if (clearFrame > 255) {
+      this._clearHeld.fill(0);
+      clearFrame = 2;
+    }
+    this._clearHeldFrame = clearFrame;
+    const clearHeld = this._clearHeld;
+    const clearHeldBefore = clearFrame - 1;
+
     let rebuilds = 0;
     const ownedList = this._ownedEntityList;
     const ownedCount = this._ownedEntityCount;
@@ -1513,9 +1529,10 @@ class SpatialWorker extends AbstractWorker {
         if (rowPoseGen[entityA] !== POSE_GEN_NONE) {
           neighborData[entityA * stride] = 0;
           rowPoseGen[entityA] = POSE_GEN_NONE;
-        } else if (sharedRows && neighborData[entityA * stride] !== 0) {
+        } else if (sharedRows && clearHeld[entityA] !== clearHeldBefore && neighborData[entityA * stride] !== 0) {
           neighborData[entityA * stride] = 0;
         }
+        clearHeld[entityA] = clearFrame;
         continue;
       }
 
