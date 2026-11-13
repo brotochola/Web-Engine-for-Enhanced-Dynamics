@@ -4355,6 +4355,16 @@ WebGL and WebGPU. N-163 found on the way.
 c, s into the module object `_livePose` for every mesh every frame (E-66: such fields go tagged, a heap number a store).
 **Plan:** a module Float64Array, the seven callers reading [0..3]; heap sample; the mesh parity tests. Owner: Pixi.
 
+**Kept (hygiene) 2026-11-13 (R-0979):** `60a43855`, Sun Street's Pixi 375.1 → 279.9 KB/s.
+
+### E-262 Every entity tick boxes its three doubles
+
+**Premise (round 2, WaterAndBoxes):** logic makes 2807 KB/s, 2796 in `update`; its TurboFan graph allocates at
+`_tickNonDecimatedOne`'s `obj.tick(dtRatio, deltaTime, accTime, frameNum)`. Each class has its own `tick`, so the call is not
+inlined, and the frame's three doubles become heap numbers for every entity, every frame.
+**Plan:** box them once a frame (a generic array or tagged fields the loop reads, so the call passes the same heap
+numbers); a kernel of the tick loop (KB/s and ns a tick); then WaterAndBoxes' and Predator's logic. Owner: logic.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
