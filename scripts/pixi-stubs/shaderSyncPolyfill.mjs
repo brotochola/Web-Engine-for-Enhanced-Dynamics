@@ -22,9 +22,12 @@ import { TextureView } from '../../node_modules/pixi.js/lib/rendering/renderers/
 /** @type {WeakMap<object, { pairs: Int32Array, count: number, slots: Array<number | object> }>} */
 const plans = new WeakMap();
 
+/** Entries per group slot in a plan's `slots`: the slot, its BindGroup, that group's `_weedKeys`, a copy of its keys. */
+const SLOT_STRIDE = 4;
+
 /**
- * The shader's [group, binding] pairs in for…in order, and per group slot its BindGroup and `_weedKeys`, to
- * validate the plan on later binds.
+ * The shader's [group, binding] pairs in for…in order, and per group slot its BindGroup, `_weedKeys` and a copy of its
+ * key list (`_weedKeyList`, kept in for…in order by the BindGroup patch), to validate the plan on later binds.
  */
 function buildPlan(shader) {
   const groupIndex = [];
@@ -32,7 +35,8 @@ function buildPlan(shader) {
   const slots = [];
   for (const i in shader.groups) {
     const bindGroup = shader.groups[i];
-    slots.push(Number(i), bindGroup, bindGroup ? bindGroup._weedKeys : 0);
+    const keyList = bindGroup && bindGroup._weedKeyList ? bindGroup._weedKeyList.slice() : null;
+    slots.push(Number(i), bindGroup, bindGroup ? bindGroup._weedKeys : 0, keyList);
     if (!bindGroup) continue;
     for (const j in bindGroup.resources) {
       groupIndex.push(Number(i));
@@ -47,14 +51,30 @@ function buildPlan(shader) {
   return { pairs, count: groupIndex.length, slots };
 }
 
-/** The plan still matches the shader: the same BindGroup in every slot, none with a new resource slot. */
+/**
+ * The plan still matches the shader: every slot holds a BindGroup with the plan's keys in the plan's order, none with a
+ * new resource slot. E-236: Pixi's batcher, meshes, graphics and tiling sprites put another BindGroup in a slot at each
+ * batch or draw (a batch's textures, a mesh's local uniforms, the pass's globals) with the same keys; the plan holds
+ * for it, and the slot remembers that group, so its next bind takes the identity test. A group without a key list
+ * (not the bundle's BindGroup) rebuilds the plan as before.
+ */
 function planMatches(plan, shader) {
   const slots = plan.slots;
   const groups = shader.groups;
-  for (let s = 0; s < slots.length; s += 3) {
+  for (let s = 0; s < slots.length; s += SLOT_STRIDE) {
     const bindGroup = groups[slots[s]];
-    if (bindGroup !== slots[s + 1]) return false;
-    if (bindGroup && bindGroup._weedKeys !== slots[s + 2]) return false;
+    const held = slots[s + 1];
+    if (bindGroup === held) {
+      if (bindGroup && bindGroup._weedKeys !== slots[s + 2]) return false;
+      continue;
+    }
+    if (!bindGroup || !held) return false;
+    const keys = bindGroup._weedKeyList;
+    const planKeys = slots[s + 3];
+    if (!keys || !planKeys || keys.length !== planKeys.length) return false;
+    for (let k = 0; k < keys.length; k++) if (keys[k] !== planKeys[k]) return false;
+    slots[s + 1] = bindGroup;
+    slots[s + 2] = bindGroup._weedKeys;
   }
   return true;
 }
