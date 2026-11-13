@@ -13367,7 +13367,9 @@
         "boxed tick doubles",
         "_tickNonDecimatedOne"
       ],
-      "records": []
+      "records": [
+        "R-0987"
+      ]
     },
     {
       "id": "E-263",
@@ -13435,7 +13437,9 @@
         "query cache",
         "array literal query"
       ],
-      "records": []
+      "records": [
+        "R-0987"
+      ]
     },
     {
       "id": "E-266",
@@ -14130,7 +14134,8 @@
         "collider fill garbage"
       ],
       "records": [
-        "R-0980"
+        "R-0980",
+        "R-0987"
       ],
       "rank": 10
     },
@@ -14153,7 +14158,8 @@
         "cityPerson tick"
       ],
       "records": [
-        "R-0980"
+        "R-0980",
+        "R-0987"
       ],
       "rank": 18
     },
@@ -14292,7 +14298,8 @@
         "lastKey"
       ],
       "records": [
-        "R-0980"
+        "R-0980",
+        "R-0987"
       ],
       "rank": 11
     },
@@ -14315,7 +14322,8 @@
         "audio garbage"
       ],
       "records": [
-        "R-0980"
+        "R-0980",
+        "R-0987"
       ],
       "rank": 12
     },
@@ -24071,6 +24079,15 @@
       "title": "E-271 a tie: the identity written only past what the list holds; painterSort's pre-render -1.2 %, under the bar",
       "verdict": "tie",
       "text": "**E-271 a tie: fillQueueIndices writing the identity only past what it holds takes painterSort's pre-render 10.285 →\n10.141 ms (−1.2 %, worse 0/4), under the 3 % a speed keep needs.** 2026-11-13, 18:32 to 18:39.\n\n**Change** (sitting branch `w14s/e271` `3f347d4a` on `e6e146b8`; `w14/e271` `ff72a044`): the fillAll pack wrote\n`outIdx[i] = i` over the whole queue every frame (the painter scenes' pre-render: 125 to 145 ms of the CPU sweep's\nwindow on that line, about 1.3 % of the worker). A WeakMap keeps how many leading rows of each list already hold the\nidentity (only fillQueueIndices writes these lists; the painter's kernel reads its slot list) and the filtered fills\nforget it; a test covers both.\n\n**Scene** (`w14-e271-paintersort`: painterSortStressScene, 300 000 rows, `--vs e6e146b8 --hyp-rev 3f347d4a --owner\npreRender`, 4 pairs): **NEUTRAL**, pre-render 10.285 → 10.141 ms (−1.2 % paired, worse 0/4, cv 3/1 %); VISIBLE_ENTITIES and\nRENDER_QUEUE_SIZE 300 000 on both sides. The size the trace predicted, real but under the bar.\n\n**Verdict: a tie, not merged.** The branch stays; if a later change makes the fill a larger share (more rows sorted with\nfillAll), it is a candidate again."
+    },
+    {
+      "id": "R-0987",
+      "date": "2026-11-13",
+      "time": "19:00",
+      "timeFrom": "recorded",
+      "title": "Wave 14's allocation rows, heap A/B in Chrome: E-262, E-277, E-284, E-285 take their sites to zero; E-278's step 1 changes nothing",
+      "verdict": "note",
+      "text": "**Wave 14's allocation rows, heap A against B in Chrome: E-262, E-277, E-284 and E-285 take their sites to zero (−81\nto −99 % of their worker's garbage), E-265 its small one; E-278's first step changes nothing.** 2026-11-13, 18:46 to\n19:00. `heapSampleWorkers.mjs` (8 s after 8 s of warm-up, one worker), A the main folder (its src/ is the sittings'\nbase, e6e146b8), B the scratch worktree at each sitting branch (`--root`, 9d5f0520), A B A B. KB/s of the worker:\n\n| Row | Scene, worker | A | B | The site |\n| --- | --- | --- | --- | --- |\n| E-262 | WaterAndBoxes, logic | 2 799, 2 825 | **27, 29** | `update` 2 781, 2 799 → 6, 5 |\n| E-277 | planetPhysics, Pixi | 3 474, 3 532 | **343, 334** | `packColliderFill` 3 115, 3 219 → 0 |\n| E-284 | bulletStress (40 000), pre-render | 697, 651 | **61, 64** | `collectVisibleBullets` 626, 589 → 0 |\n| E-285 | audioStorm, logic | 9 026, 9 037 | **1 722, 1 710** | `_writeSlotListed` 7 326, 7 330 → 0 |\n| E-265 | spawnStorm `?storm=6000`, logic | 7 084, 7 152 | 7 045, 7 076 | `generateQueryMask` 7, 8 → 0; `join` 1 → 0 |\n| E-278 (step 1) | littleCity, logic | 9 016, 10 423 | 8 085, 7 922 | `rng` 2 757, 4 142 → 2 795, 2 776 |\n\nE-278's first step (rng's cold paths out, 201 → 146 bytes of bytecode) leaves rng boxing as much as before: the\ntick still does not inline it. Not merged; its next step is the callers' (the emitter draws inline, randomRange read\nonce per burst). The others' verdicts wait for their timing: owner sittings where the owner reaches the floor\n(bulletStress at 300 000, audioStorm at 34 000) and Predator's gate with every keep together."
     }
   ],
   "leads": [
