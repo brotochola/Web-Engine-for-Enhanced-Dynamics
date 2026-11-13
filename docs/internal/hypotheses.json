@@ -12921,7 +12921,8 @@
         "R-0962",
         "R-0964",
         "R-0965",
-        "R-0967"
+        "R-0967",
+        "R-0971"
       ]
     },
     {
@@ -13092,14 +13093,12 @@
     {
       "id": "E-251",
       "title": "Steady deopt loops in per-frame engine functions (publishPose every ~4 frames, _flushWasmPublish, the spawn batch)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from Predator's deopt log, not tested",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-13: the loops are cached TurboFan OSR code; the split fix is slower",
       "date": "2026-11-13",
       "area": "engine",
       "kind": "speed",
-      "rank": 71,
-      "result": "Steady (after 10 s, ~20 s): weedjsPost.js:610 333 deopts, spatialWorker.js:1558 157, logicWorker.js:867 53 and :856 51, all insufficient type feedback. A 150 s run (R-0967): box2dMovedBodiesImpl.js:186 (Atomics.store after the publish loops) 200 deopts from 11 to 111 s; the sites change run to run. Refined: OSR code compiled before the code after its loops has feedback.",
-      "next": "Restructure one site (the loop in its own function, or the tail run once before OSR) and count its deopts again; then the owners' STEP_MS.",
+      "result": "Deopt loops come and go with the game (three runs). Kernel: the loop in its own function +19 % (Node) / +55 % (Chrome) for ~16 000 calls (Maglev), while the inline form re-enters TurboFan OSR code from the start. Not applied.",
       "refs": [
         "EXECUTION_PLAN.md#E-251"
       ],
@@ -13112,7 +13111,8 @@
       ],
       "records": [
         "R-0966",
-        "R-0967"
+        "R-0967",
+        "R-0971"
       ]
     },
     {
@@ -13160,6 +13160,31 @@
       ],
       "records": [
         "R-0968"
+      ]
+    },
+    {
+      "id": "E-254",
+      "title": "Maglev holds per-frame engine code below TurboFan for minutes in Chrome (once-a-frame functions with loops)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from E-251's kernel, test running",
+      "date": "2026-11-13",
+      "area": "all",
+      "kind": "speed",
+      "rank": 74,
+      "result": "Kernel: a loop in its own function called once a frame runs 29 µs a call for ~16 000 calls in Chrome, then 20.4 µs (TurboFan); the same loop inline, re-entering cached TurboFan OSR code, 20.9 µs from the start.",
+      "next": "Predator ABAB, same build, B with --js-flags=--no-maglev; then the functions that sit in Maglev, and a structure that tiers them up early in stock Chrome.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-254"
+      ],
+      "aliases": [
+        "Maglev",
+        "tier-up",
+        "no-maglev",
+        "OSR cache",
+        "invocation count"
+      ],
+      "records": [
+        "R-0971"
       ]
     },
     {
@@ -23093,6 +23118,15 @@
       "title": "E-232 answered small: an imported binding in a loop is 0.1 to 0.17 ns a pass in Chrome; the hot loops hoist theirs already",
       "verdict": "answered",
       "text": "**E-232 answered: an imported binding read inside a loop costs about 0.1 to 0.17 ns a pass in Chrome; the engine's hot loops already hoist theirs, and the TDZ sites left are per-call paths.** 2026-11-13, 06:16 to 06:22.\n\n**Kernel** (scratch, not kept: a 65 536-entity loop over a class's two typed arrays and a constant from another\nmodule, the engine's `Comp.active[i]` pattern; normal compiles after 300 short calls; best of 9 × 40 calls, two rounds):\n\n| ns / entity | everything by import | class in a local | only the constant by import | everything local |\n| --- | --- | --- | --- | --- |\n| Node 22 (two runs) | 1.603, 1.620 | 1.439, 1.429 | 1.513, 1.480 | 1.364, 1.330 |\n| Chrome (`chromeKernel.mjs`, two runs) | 1.783, 1.881 | 1.694, 1.783 | 1.642, 1.734 | 1.503, 1.564 |\n\nChecksums equal. Imports against locals: +19 to 24 %, about 0.1 to 0.17 ns for each imported binding read in the loop (the\nimport cell's load and hole check), and about 0.08 ns for a static array read from a class held in a local.\n\n**Where the engine has them** (E-222's TDZ sites over five scenes): the per-entity loops hoist their arrays already\n(E-73); what is left is per call: entity setters (`gameObject.js` 918 to 921 call `staticSceneryChangedAt` and\n`isCommandRingBound`), the body sync's module state (`box2dBodySync.js` `pendingList`, `pendingFlags`, `dirtyFlags`),\n`getColliderBounds`' shape constants (E-245 takes the box path out of it), and one static per renderable in pre-render\n(`Layer._spriteQueueBits`, 14 000 a frame in Predator: about 2 µs). At 0.1 to 0.17 ns each, a few per call, none\nreaches 1 % of a worker. **Answered: small; no change.** A new per-entity loop keeps hoisting its imports."
+    },
+    {
+      "id": "R-0971",
+      "date": "2026-11-13",
+      "time": "06:36",
+      "timeFrom": "recorded",
+      "title": "E-251 dropped: its deopt loops are TurboFan OSR code re-entered each frame; the split fix runs Maglev for ~16 000 calls (+55 % in Chrome). E-254 written",
+      "verdict": "dropped",
+      "text": "**E-251's deopt loops are the price of running a once-a-frame loop in TurboFan's OSR code, and the restructure it proposed (each loop in a function of its own) is slower: dropped. E-254 written down from it.** 2026-11-13, 06:25 to 06:36.\n\n**Predator, 100 s, V8's code and deopt log** (`stepOverTime.mjs`, its first tab fixed in ea8cf1b4; to 06:30). Deopts by the code\nthat fell (scratch deoptCycles): the spawn batch (`logicWorker.js` 871 and 882, R-0966's 856/867 moved by E-250) 124 and 127\ndeopts, all between 9 and 12 s; `box2dMovedBodiesImpl.js:186` 28 from 10 to 38 s; nothing steady after 40 s. Three runs, three\npictures (R-0966, R-0967): the loops are real and come and go with the game.\n\n**Tiers in the same log** (scratch tierNormal over `--log-code`; a quote on the marker is a context-specialized, OSR code):\nPredator's big per-frame functions never get a normal TurboFan compile in 100 s: `rebuildOwnedRows`, `_rebuildMovedRows`,\n`_rebuildOwnedRowsLatched`, `_findNeighbors`, `publishPose`, `_processSpawnSoA`, pre-render's `_collectVisibleLights`,\n`_collectStampLights`, `_collectEntityGlowRows`, `collectRenderable`, Pixi's `collectRenderables` all have only Maglev OSR and\nTurboFan OSR code (one each, `_rebuildMovedRows` five); logic's `update` gets a normal TurboFan compile at 69 to 72 s. Each\nframe such a function starts in Sparkplug, enters the cached TurboFan OSR code at its loop, and runs its tail there or, where\nthe tail had no feedback when that code was compiled, deopts to the interpreter for the tail (E-251's loops).\n\n**Kernel of the pattern** (scratch: a publish with `bits.fill`, a 4 000 to 10 000-entry loop and three Atomics after it, as\n`publishMovedBodies`; first call 2^20 entries so it OSRs before its tail ran, then thousands of calls):\n- Node, `--trace-deopt`: the loop inline deopts 435 times in 6 001 calls (insufficient feedback at the tail's Atomics); with\n  the loop in a function of its own, 0.\n- Steady time, inline against split: Node 22.9 to 23.2 µs a call against 27.1 to 27.9 (split +19 %); Chrome 20.9 to 21.7 µs\n  against 32.6 to 33.7 (split +55 %). The split loop's own function gets a normal compile and stays in a slower tier: over\n  30 000 calls in Chrome it runs 29.3, 29.1, 29.0 µs a call per 5 000 and drops to 20.8, 20.3, 20.4 after about 16 000 calls,\n  the inline form's speed from the start. Passing the arrays as arguments does not change it (32.65); the inline form after\n  400 short warm-up calls (a normal compile first) runs 20.55.\n\n**Verdict on E-251: dropped.** The deopts cost a tail in the interpreter each; the fix moves the loop into a function that,\ncalled once a frame, would run in Maglev for minutes (16 000 calls is 4.4 min at 60 Hz). The scratch restructures of\n`publishMovedBodies`, `publishPose` and the spawn batch are not applied.\n\n**E-254 (new, written before its test):** Maglev may cost the engine more than the deopt loops: per-frame code that gets a\nnormal Maglev compile runs below TurboFan for minutes. First test: Predator ABAB, the same build, side B with\n`--js-flags=--no-maglev` (runPredatorAbab's `--js-flags-b`, 37eb1306). If B is faster, find which functions sit in Maglev and\nwhat structure gets them to TurboFan early in a stock Chrome."
     }
   ],
   "leads": [
