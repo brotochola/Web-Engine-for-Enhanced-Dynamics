@@ -4418,6 +4418,20 @@ have published clear, for every entity whose type nobody reads; rows are about 2
 **Plan:** read it only when it can be set (a dense per-worker byte, or an owner change from the owned list); the spatial
 kernel with two workers, then the scene's spatial STEP_MS. Owner: spatial.
 
+### E-269 Mesh UV fills copy their rows into Pixi's buffer every frame
+
+**Premise (the CPU sweep's hot lines):** meshApiStressScene's `uploadRange` spends all its self time (990 ms of the window) on
+`data.set(rows.subarray(...))`: the corner kernel's rows in the mesh memory copied into the Pixi buffer's array before upload.
+**Plan:** the Pixi buffer on the rows' own view (no copy), or the upload from it; meshApiStressScene's Pixi STEP_MS, and
+`colliderFillBatch.js's` same copy with it. Owner: Pixi.
+
+### E-270 Decal tiles are copied and uploaded whole for any stamp
+
+**Premise (the CPU sweep's hot lines):** decalStampStressScene's Pixi: `_uploadDecalRgba8` 89 % on the whole tile's
+`texSubImage2D`, `premultiplyDecalTile` 100 % on `dst.set(b.scratch)`; decalBlitStressScene's upload 415 ms.
+**Plan:** upload from the premultiplied scratch, only the rows or rect a stamp touched; the decal scenes' Pixi STEP_MS.
+Owner: Pixi.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
