@@ -13118,14 +13118,12 @@
     {
       "id": "E-252",
       "title": "Box2D's collision callbacks take 8 to 12 % of a logic worker in Predator (_processBox2dCollisionCallbacks)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from Predator's CPU trace, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13: the walk is a third of the flow; a lazy purge changes exits",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 72,
-      "result": "_processBox2dCollisionCallbacks 18.6 ms/s (8.2 %) and 24.3 ms/s (11.9 %) of the two logic workers.",
-      "next": "The walk visits every tracked pair every frame (liveness, generations, stay listeners). Count pairs a frame and stay-listening types in Predator; if few listen, purge dead pairs on ring events only and dispatch stay from a per-type list.",
+      "result": "contactsMicrobench --no-stays, no-inlining profile: the walk 9.1 % against the events 15.9 % of busy time. A purge on events would save about 3 % of a logic worker and stop exits for entities gone inactive before their end event; not done.",
       "refs": [
         "EXECUTION_PLAN.md#E-252"
       ],
@@ -13135,7 +13133,8 @@
         "contact dispatch"
       ],
       "records": [
-        "R-0968"
+        "R-0968",
+        "R-0978"
       ]
     },
     {
@@ -23348,6 +23347,15 @@
         "5d475d4f",
         "7fc840b4"
       ]
+    },
+    {
+      "id": "R-0978",
+      "date": "2026-11-13",
+      "time": "15:11",
+      "timeFrom": "recorded",
+      "title": "E-252 answered: the pair walk is about a third of the contact flow (kernel profile); a lazy purge ~3 % of logic, changes exits",
+      "verdict": "answered",
+      "text": "**E-252 answered: the per-frame pair walk is about a third of the contact flow; a lazy purge would save about 3 % of a logic worker and move when exits fire.** 2026-11-13, 15:09 to 15:11.\n\n**Kernel** (`contactsMicrobench --no-stays`: the real LogicWorker, Predator's fixture pairs, 2 % churn a frame), profiled with\n`--cpu-prof`. With inlining on, the frame inlines into the harness's `timeIt` and the profile cannot split it; with\n`--no-turbo-inlining` (distorted, read as shares only), of the busy time: `_processBox2dCollisionCallbacks` 9.1 % (the walk:\nliveness and generations of each own pair), `_onContactRingEvent` 7.1 %, `_applyContactBegin` 4.5 %, `_applyContactEnd`\n2.3 %, `drainContactRing` 2.0 % (the events: 15.9 %). The walk is about a third of the contact flow.\n\n**Reading the code** (R-0968's note): in Predator no type defines `onCollisionStay`, so the walk only purges pairs whose\nentity went inactive or whose body changed. Purging on events instead (on begin, end, `isCollidingWith` and a sweep, as\nforeign pairs since L2) would take that third away, but an end event that arrives after the entity went inactive would no\nlonger fire `onCollisionExit` (the walk purges after the drain today), a change games can see.\n\n**Answered:** at 8 to 12 % of a logic worker for the whole dispatch, the walk's third is about 3 %; not worth a semantic\nchange to contact exits. The earlier work stands (L2, E-131, E-146)."
     }
   ],
   "leads": [
