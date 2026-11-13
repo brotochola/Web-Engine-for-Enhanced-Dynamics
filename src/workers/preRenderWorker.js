@@ -290,7 +290,7 @@ let LIGHT_NEAR_DIST = new Float32Array(0);
 /** Nearest the view's centre first (LIGHT_NEAR_DIST), then by id: a sign, not a difference. */
 function lightNearOrder(a, b) {
     const d = LIGHT_NEAR_DIST[a] - LIGHT_NEAR_DIST[b];
-    return d > 0 ? 1 : d < 0 ? -1 : a - b;
+    return d > 0 ? 1 : d < 0 ? -1 : a > b ? 1 : a < b ? -1 : 0;
 }
 
 /** Nearest first, then id: `a.distSq - b.distSq || a.id - b.id`, unboxed. */
@@ -4140,21 +4140,22 @@ class PreRenderWorker extends AbstractWorker {
                     '_warnedVisibleLightsCap',
                     `[PRE_RENDER] visible light list full (${maxWrite}). Increase lighting.maxLights or reduce visible lights.`
                 );
-                // N-151: keep the lights nearest the view's centre (it kept the top of the screen's), persistent first.
+                // N-151: keep the lights nearest the view's centre (it kept the top of the screen's), persistent first,
+                // measured from where each light is (its offset turned with the entity), as the cull above.
                 if (this._lightNearDist.length < Transform.x.length) this._lightNearDist = new Float32Array(Transform.x.length);
                 const near = this._lightNearDist;
                 const cx = (viewMinX + viewMaxX) * 0.5;
                 const cy = (viewMinY + viewMaxY) * 0.5;
                 for (let k = 0; k < persistN; k++) {
                     const id = persistScratch[k];
-                    const dx = worldX[id] - cx;
-                    const dy = worldY[id] - cy;
+                    const dx = worldX[id] + offsetX[id] * rotC[id] - offsetY[id] * rotS[id] - cx;
+                    const dy = worldY[id] + offsetX[id] * rotS[id] + offsetY[id] * rotC[id] - cy;
                     near[id] = dx * dx + dy * dy;
                 }
                 for (let k = 0; k < flashN; k++) {
                     const id = flashScratch[k];
-                    const dx = worldX[id] - cx;
-                    const dy = worldY[id] - cy;
+                    const dx = worldX[id] + offsetX[id] * rotC[id] - offsetY[id] * rotS[id] - cx;
+                    const dy = worldY[id] + offsetX[id] * rotS[id] + offsetY[id] * rotC[id] - cy;
                     near[id] = dx * dx + dy * dy;
                 }
                 LIGHT_NEAR_DIST = near;

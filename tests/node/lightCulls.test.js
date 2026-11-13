@@ -67,6 +67,33 @@ test('N-151: over maxLights, the lights nearest the view\'s centre are kept, wha
   });
 });
 
+test('N-151: the nearest are measured from where the light is, its offset included, as the cull does', async () => {
+  // Lights 0 and 1 sit at the view's centre's sides; light 2's entity is far off to the left, but its light is
+  // 600 px ahead of it (an arm's lamp, a headlight), at the centre: it is kept, light 1 (farther) is not.
+  bind([300, 600, -200, 0, 0, 0], [300, 300, 300, 0, 0, 0]);
+  LightEmitter.offsetX[2] = 600;
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  await withLights([0, 1, 2], async () => {
+    pre._queryLightEmitter = 1;
+    pre.visibleLightsData = new Uint16Array(3);
+    pre._sortedLightEntities = new Array(2);
+    pre._lightPersistScratch = new Array(4);
+    pre._lightFlashScratch = new Array(4);
+    pre.cameraData = null;
+    pre.canvasWidth = 800;
+    pre.canvasHeight = 600;
+    pre.cullingRatio = 1;
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      pre._collectVisibleLights();
+    } finally {
+      console.warn = warn;
+    }
+    assert.deepEqual(Array.from(pre.visibleLightsData.subarray(1)).sort(), [0, 2]);
+  });
+});
+
 test('N-150: a light whose entity is off screen still has its glow collected when the glow reaches the view', async () => {
   // Light 0 is 300 px left of a 0..800 view with a radius of 1000: its glow (850 px) covers the view. Light 1 is as far
   // with a radius of 100 (85 px): its glow does not reach.
