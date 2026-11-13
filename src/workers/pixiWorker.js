@@ -385,6 +385,9 @@ const CONE_FLOATS = 4;
  * then for _pushWedge: 10 scale, 11–14 the edge a, b.
  */
 const WEDGE_IN = new Float64Array(15);
+// E-260: a self-lit sprite mask's four corners and UVs, written and read per item (they were two arrays per item a frame).
+const MASK_CORNERS = new Float64Array(8);
+const MASK_UVS = new Float64Array(8);
 
 function crossOrigin(ox, oy, ax, ay, bx, by) {
   return (ax - ox) * (by - oy) - (ay - oy) * (bx - ox);
@@ -5064,19 +5067,36 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           const y0 = -ay * hh;
           const x1 = (1 - ax) * hw;
           const y1 = (1 - ay) * hh;
-          const corners = [
-            x0, y0,
-            x1, y0,
-            x1, y1,
-            x0, y1,
-          ];
-          const uvs = tex.uvs || { x0: 0, y0: 0, x1: 1, y1: 0, x2: 1, y2: 1, x3: 0, y3: 1 };
-          const uvArr = [
-            uvs.x0, uvs.y0,
-            uvs.x1 !== undefined ? uvs.x1 : uvs.x2, uvs.y0,
-            uvs.x2, uvs.y2,
-            uvs.x3 !== undefined ? uvs.x3 : uvs.x0, uvs.y3 !== undefined ? uvs.y3 : uvs.y2,
-          ];
+          const corners = MASK_CORNERS;
+          corners[0] = x0;
+          corners[1] = y0;
+          corners[2] = x1;
+          corners[3] = y0;
+          corners[4] = x1;
+          corners[5] = y1;
+          corners[6] = x0;
+          corners[7] = y1;
+          const uvArr = MASK_UVS;
+          const uvs = tex.uvs;
+          if (uvs) {
+            uvArr[0] = uvs.x0;
+            uvArr[1] = uvs.y0;
+            uvArr[2] = uvs.x1 !== undefined ? uvs.x1 : uvs.x2;
+            uvArr[3] = uvs.y0;
+            uvArr[4] = uvs.x2;
+            uvArr[5] = uvs.y2;
+            uvArr[6] = uvs.x3 !== undefined ? uvs.x3 : uvs.x0;
+            uvArr[7] = uvs.y3 !== undefined ? uvs.y3 : uvs.y2;
+          } else {
+            uvArr[0] = 0;
+            uvArr[1] = 0;
+            uvArr[2] = 1;
+            uvArr[3] = 0;
+            uvArr[4] = 1;
+            uvArr[5] = 1;
+            uvArr[6] = 0;
+            uvArr[7] = 1;
+          }
 
           const posBuf = geometry.attributes.aPosition.buffer;
           const uvBuf = geometry.attributes.aUV.buffer;
