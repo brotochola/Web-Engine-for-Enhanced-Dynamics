@@ -13413,6 +13413,28 @@
       "records": []
     },
     {
+      "id": "E-265",
+      "title": "A query with a fresh array of classes misses the identity cache: each call builds an ids array, sorts it and joins a string key (Query.queryActiveEntities([A]) in a tick)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from round 2 (spawnStorm's heap) and querySystem.js, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 81,
+      "result": "generateQueryMask caches masks by the classes array's identity; an array literal per call (the usual game code, e.g. spawnStormDriver's queryActiveEntities([SpriteRenderer]) each tick) misses it, so every call makes an ids array, sorts it and joins a string for the second cache: 11.2 KB/s (generateQueryMask) and 1 KB/s (join) of spawnStorm's logic.",
+      "next": "A second-level cache that needs no string: a small table keyed by the classes themselves (the first class, then a short list compared element by element), or a numeric key from the component ids; a kernel of queryActiveEntities with a fresh literal against a kept array (ns a call, KB/s); then a demo that queries in its ticks.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-265"
+      ],
+      "aliases": [
+        "generateQueryMask",
+        "queryActiveEntities",
+        "query cache",
+        "array literal query"
+      ],
+      "records": []
+    },
+    {
       "date": "2026-11-12",
       "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
