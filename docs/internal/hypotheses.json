@@ -12426,7 +12426,8 @@
         "R-0945",
         "R-0946",
         "R-0947",
-        "R-0949"
+        "R-0949",
+        "R-0950"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-SPOT",
@@ -21983,6 +21984,18 @@
       "title": "Engine trace: no new garbage site, no steady deopt in light code, GC per thread ≤ main on Predator, no Any-typed field",
       "verdict": "passed",
       "text": "**The engine trace of DX-LIGHTAPI and DX-SPOT: no new garbage site, no steady deopt in the light code, GC per thread no higher than main, no field typed Any.**\n2026-11-12, 22:38 to 22:49 (the files' times), headless unless said, at 0650fd0f and after (the trace looks at code; the commits since only touch demos, docs and the register).\n\n- **Allocation** (`heapSampleWorkers.mjs`, Chrome): flashlightStressScene `?cone=1&lights=360&crates=320`, pre-render 60.6 KB/s, Pixi 156.1 KB/s (most of it Pixi's own render and buffer events: `ge.emit` 34.1, of which renderVisibilityLighting's batch uploads 7.7); spotLightStressScene `?cone=1&cars=256&props=2000&shadowLights=256`, pre-render 50.9 KB/s, Pixi 168.4. The light code's only line: `stampLightRangeWasm` 3.7 KB/s (about 60 bytes a frame, a few numbers a call, not per light). What remains is listed in N-158 (frame loop, waits, camera bounds).\n- **Deopts** (`--log-deopt --log-ic`, `summarizeV8Deopt.mjs`): headlights 75 deopt lines, flashlights 55; after the warm-up none in pre-render's light code, Pixi's light passes, the stamp client, the gather client or LightEmitter: the steady ones are one-offs in input, scene and queue code, 0 ms of CPU each.\n- **CPU and GC per thread** (`bench:headed:trace-cpu` + `trace:summary`, headed), Predator, main (a full worktree of fa59073a) against the branch: GC ms per second pre-render 0 → 0, Pixi 1 → 1, spatial 3 → 0, physics 5 → 1, logic 1/1 → 1/2, main 2/3 → 0/2; busy Pixi 574 → 544 ms/s, pre-render 473 → 457, spatial 228 → 221.\n- **Field types** (`fieldTypeAudit.mjs`), both scenes: none of the new worker fields starts null as a typed array (the cone scratch arrays start as empty Float32Arrays; the cone batches are objects)."
+    },
+    {
+      "id": "R-0950",
+      "date": "2026-11-12",
+      "title": "Filmed in motion: headlights and flashlights, round against cone; the headlights' scene anchored its cars at the rear (fixed, 6ec2e68d)",
+      "verdict": "passed",
+      "text": "**DX-SPOT in motion: headlights and flashlights filmed, round against cone; the headlights' scene had its cars anchored at their rear.**\n2026-11-12, 22:52 to 23:01, the films' times (`filmScene.mjs`, CDP screencast, 8 s a side, the two sides filmed apart from the main folder and set side by side with ffmpeg: filmed through `--vs`, the worktree's side gave 3 frames, the screencast problem seen before on worktree sides).\n\n- **spotLightStressScene** (48 cars, 300 props): round, every car lights a disc around it; cone, each lights a beam ahead with the rocks' shadows in it. Zoomed, the cone side showed each car's own hood lit (the owner's remark earlier). A probe of one parked car found the cause in the scene, not the engine: the sprite anchor defaults to the picture's bottom, so the car was drawn from its rear forward and the headlight (half the car's length plus 9 px from its position) sat on the windshield. 6ec2e68d anchors the cars and props at their centre; filmed again, the hoods stay dark and the beams start at the bumpers; lighting at resolution 0.25 draws the parked car as 1.0 does (0 pixels differ).\n- **flashlightStressScene** (48 walkers): round, the lit area is one wash; cone, wedges cut by the crates, turning with the walkers.\n\nThe films stay in the session's scratch (not kept).",
+      "commits": [
+        "6ec2e68d"
+      ],
+      "time": "22:52",
+      "timeFrom": "recorded"
     }
   ],
   "leads": [
