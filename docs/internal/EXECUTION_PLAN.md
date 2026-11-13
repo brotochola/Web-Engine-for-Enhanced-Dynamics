@@ -3887,6 +3887,12 @@ the engine's access pattern (ids from a list, several arrays, a store each) on e
 (locals hoisted with a length test before the loop). Owner: the workers whose hot JS reads components (pre-render's
 glue, Pixi's batches, logic's game code); the graph's `Uint64Div` count per function before and after.
 
+**Answered 2026-11-13 (R-0959): no division.** Step 0: the component arrays sit on one fixed SharedArrayBuffer of
+140 MB in every worker (`growable` false, `maxByteLength` its size), fixed-length views. The `Uint64Div` of the
+simplified-lowering graph is how V8 computes a typed array's length (its byte length over the element size); the final
+graph (Turboshaft, after machine lowering) holds no division in `_buildSelfLitBatch`: 41 `ShiftRightLogical, Word64`.
+An access is a load, a shift and a compare, as before. The final graph is the one to read (E-222).
+
 ### E-222 A line-level audit of every hot function in TurboFan's graphs
 
 **Premise:** E-66, E-71, E-85, E-95 and E-59 were each a boxed double, an Any-typed field or a call left out of line,
@@ -3969,6 +3975,37 @@ passes' GPU times. Owner: drawn FPS of a GPU-bound scene.
 revision, compared function by function (self ms and its share), name what moved before a sitting is set up.
 **Plan:** a tool over `summarizeChromeCpuTrace`'s output for two traces; the functions whose share moved most. Owner:
 a tool.
+
+### E-232 Imported bindings read in hot loops carry a hole check each time
+
+**Premise:** an ES module's imported binding (a component class, a constant, a helper) can be uninitialized while
+modules load (a cycle), so TurboFan checks it against the hole wherever it cannot prove it initialized: in Pixi's
+`_buildSelfLitBatch`, 10 `ThrowAccessedUninitializedVariable` sites, four of them in the per-occluder loop
+(`LIGHT_OCCLUDER_MASK_SPRITE`, `Transform.active`, `ShapeType.Circle`, `writeOrientedBoxVerts`). A load, a compare and a
+branch each access; if the pattern is engine-wide, every hot JS loop over components pays it per entity.
+**Plan:** count the sites per hot function over the scenes (E-222's tool); a Chrome kernel with an imported constant and
+class read in a loop against the same read through a local taken before the loop; then the hot loops' imports into
+locals (a const before the loop). Owner: the worker whose hot loop moves.
+
+### E-233 Pixi's uniform writes go through generic inline caches and box their doubles
+
+**Premise:** `_stampLightCamera` writes `uniforms.uZoom`, `uniforms.uCameraPos[0..1]` and reads `uCameraRot` on Pixi's
+uniform objects, of several shapes (one per shader): in the final graph a `LoadWithVector` and `StoreWithVector` call
+each (the inline cache's generic stub) and an `Allocate` for the zoom (a double boxed for the generic store), per light
+batch per frame. Other per-frame uniform writers likely do the same.
+**Plan:** E-222's tool for every `LoadWithVector`/`StoreWithVector` left in hot functions; for the uniforms, write them
+through a typed view kept per batch (Pixi's `uniforms` hold Float32Arrays for vectors) or a monomorphic setter per
+shader. Owner: Pixi's KB/s and the renderer's STEP_MS.
+
+### E-234 Light batch objects change shape after they are made (map migrations each frame)
+
+**Premise:** `_finishLightBatch` reads `batch.geometry`, `batch.vbuf`, `batch.cbuf` behind `TryMigrateInstance` checks:
+the batch objects' maps were deprecated, a field generalized after objects were made (likely `cbuf` null in the point
+batch and a Buffer in the cone batch, from one literal: DX-SPOT's). Each access of a migrated object's field pays the
+check, and older objects migrate on access.
+**Plan:** the batch objects made by one class whose fields keep one type (an empty Buffer stand-in, or two classes),
+and E-222's tool to find other `TryMigrateInstance` sites. Owner: Pixi's STEP_MS in the flashlight scene; the count of
+migration sites before and after.
 
 ## Not doing (read the log first)
 

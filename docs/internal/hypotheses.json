@@ -12378,13 +12378,11 @@
     {
       "id": "E-221",
       "title": "A typed array's length recomputed by a 64-bit division at each access (Uint64Div → CheckedUint64Bounds on component arrays)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 (Wave 13), not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13: no division (a shift in the final graph)",
       "date": "2026-11-13",
       "area": "engine",
       "kind": "speed",
-      "rank": 42,
-      "next": "Step 0: the component arrays' buffer in a running scene (growable? length-tracking?); a Chrome kernel with the engine's scattered access pattern on each backing, its Uint64Div counted.",
       "refs": [
         "EXECUTION_PLAN.md#E-221"
       ],
@@ -12396,8 +12394,10 @@
         "typed array length",
         "byteLength"
       ],
-      "records": [],
-      "result": "Seen in TurboFan's graph of Pixi's _buildSelfLitBatch (57 Uint64Div on Transform, Collider, LightEmitter and the self-lit views); a first one-loop microbench found no backing slower (the division hoisted)."
+      "records": [
+        "R-0959"
+      ],
+      "result": "The component arrays sit on a fixed 140 MB SharedArrayBuffer; the Uint64Div of the simplified-lowering graph becomes ShiftRightLogical Word64 in the final graph (41 in _buildSelfLitBatch). A typed array access costs what it did."
     },
     {
       "id": "E-222",
@@ -12420,7 +12420,9 @@
         "ChangeFloat64ToTagged",
         "line-level"
       ],
-      "records": [],
+      "records": [
+        "R-0959"
+      ],
       "result": "The tool exists (summarizeTurboSites.mjs, uncommitted); a first run on flashlightStressScene found E-221."
     },
     {
@@ -12612,6 +12614,76 @@
         "trace diff",
         "regression finder",
         "cpu trace"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-232",
+      "title": "Imported bindings read in hot loops carry a hole (TDZ) check each access",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from TurboFan's final graph (E-222), not tested",
+      "date": "2026-11-13",
+      "area": "engine",
+      "kind": "speed",
+      "rank": 53,
+      "result": "10 ThrowAccessedUninitializedVariable sites in Pixi's _buildSelfLitBatch, four in its per-occluder loop.",
+      "next": "Count the sites per hot function (E-222); a Chrome kernel import read in a loop vs a local; hot loops' imports into locals.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-232"
+      ],
+      "aliases": [
+        "TDZ",
+        "hole check",
+        "ThrowAccessedUninitializedVariable",
+        "imported binding",
+        "module import"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-233",
+      "title": "Pixi's uniform writes go through generic inline caches and box their doubles (_stampLightCamera)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from TurboFan's final graph (E-222), not tested",
+      "date": "2026-11-13",
+      "area": "pixi",
+      "kind": "speed",
+      "rank": 54,
+      "result": "LoadWithVector, StoreWithVector and an Allocate (the zoom boxed) per light batch per frame in the final graph.",
+      "next": "All LoadWithVector/StoreWithVector left in hot functions (E-222); uniforms through a kept typed view or a monomorphic setter.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-233"
+      ],
+      "aliases": [
+        "megamorphic",
+        "LoadWithVector",
+        "StoreWithVector",
+        "uniforms",
+        "_stampLightCamera",
+        "generic IC"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-234",
+      "title": "Light batch objects change shape after they are made (TryMigrateInstance each frame)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from TurboFan's final graph (E-222), not tested",
+      "date": "2026-11-13",
+      "area": "pixi",
+      "kind": "speed",
+      "rank": 55,
+      "result": "TryMigrateInstance behind batch.geometry, batch.vbuf, batch.cbuf in _finishLightBatch: deprecated maps (cbuf null vs Buffer from one literal, likely).",
+      "next": "Batch objects of one class with fields of one type; E-222 for other migration sites.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-234"
+      ],
+      "aliases": [
+        "TryMigrateInstance",
+        "map deprecation",
+        "shape change",
+        "field generalization",
+        "light batch"
       ],
       "records": []
     },
@@ -22431,6 +22503,15 @@
         "595d5aca",
         "b496b1e5"
       ]
+    },
+    {
+      "id": "R-0959",
+      "date": "2026-11-13",
+      "time": "04:38",
+      "timeFrom": "recorded",
+      "title": "E-221 answered: the typed array length's division is a shift in the final graph; the final graph shows E-232 to E-234",
+      "verdict": "answered",
+      "text": "**E-221 answered: no division per access; the final graph is the one to read.**\n2026-11-13, about 04:45. flashlightStressScene `?cone=1&lights=360&crates=320`, Chrome 157, `--trace-turbo` (a short run, 8 s warm-up and 3 s).\n\n- The simplified-lowering graph of Pixi's `_buildSelfLitBatch` holds 57 `Uint64Div` (byte length / 4) feeding `CheckedUint64Bounds`, on the component arrays and the self-lit views.\n- Step 0: in every worker, `Transform.x`, `Collider.width` and `LightEmitter.radius` are fixed-length Float32Arrays on one SharedArrayBuffer of 140 640 256 bytes, `growable` false, `maxByteLength` its size.\n- A one-loop microbench (Node and Chrome, page and worker, a function of its own per backing: closures of one literal share feedback, which first showed a false +72 %) found every backing at about 1.5 ns an element.\n- The final graph (Turboshaft, after machine lowering) holds no division: 41 `ShiftRightLogical, Word64`. An access is a load, a shift and a compare.\n\nWhat the final graph does show in that function, as calls left in the optimized code: 16 `Allocate` sites (some are slow paths that never run: the heap sample decides), `LoadWithVector` x3 and `StoreWithVector` x1 in `_stampLightCamera` (E-233), `TryMigrateInstance` x5 on the light batch objects (E-234), `ThrowAccessedUninitializedVariable` x10 on imported bindings, four in the per-occluder loop (E-232), 8 JS calls not inlined. E-232 to E-234 were written down before any is tested."
     }
   ],
   "leads": [
