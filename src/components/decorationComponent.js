@@ -72,6 +72,11 @@ export class DecorationComponent extends Component {
     // above the floor, in 1/FACE_Z_UNITS px (src/render/faceMap.js).
     faceOct: Uint16Array,
     faceZ: Uint16Array,
+
+    // === Place in the active list (E-273) ===
+    // DecorationPool's activeDecorationsData row this decoration sits in, plus 1 (0: not listed), so a despawn swaps it
+    // out without walking the list under its lock (decoChurn's logic workers spun 65 and 70 ms of the window there).
+    listPos: Uint32Array,
   };
 
   // Static pool tracking (set during initialization)

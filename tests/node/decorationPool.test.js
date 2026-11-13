@@ -298,3 +298,44 @@ test('a scene asking for more than 255 attachments per entity gets 255, with a w
   assert.deepEqual(run(128), { got: 128, warnings: [] });
   assert.deepEqual(run(0), { got: 1, warnings: [] });
 });
+
+// E-273: a despawn finds its row from DecorationComponent.listPos (the row plus 1). Through a churn of spawns and
+// despawns the list holds exactly the live decorations and every live one's listPos points at its row; a column that
+// disagrees with the list falls back to the walk.
+test('the active list and listPos stay in step through a churn', { concurrency: false }, () => {
+  const restore = setupDecorationPool(64);
+  try {
+    let seed = 0x273;
+    const rnd = () => {
+      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+      return seed / 4294967296;
+    };
+    const live = new Set();
+    const data = DecorationPool.activeDecorationsData;
+    const listPos = DecorationComponent.listPos;
+    for (let step = 0; step < 2000; step++) {
+      if (live.size > 0 && (rnd() < 0.5 || live.size === 64)) {
+        const pick = [...live][(rnd() * live.size) | 0];
+        assert.equal(DecorationPool.despawn(pick), true);
+        live.delete(pick);
+        assert.equal(listPos[pick], 0);
+      } else {
+        const i = DecorationPool.spawn({});
+        assert.ok(i >= 0);
+        live.add(i);
+      }
+      const count = data[0];
+      assert.equal(count, live.size);
+      for (let r = 0; r < count; r++) assert.equal(listPos[data[1 + r]], r + 1, `row ${r}`);
+    }
+    // A stale column: the despawn walks the list and still removes the right one.
+    const some = [...live][0];
+    listPos[some] = 1 + data[0] + 5;
+    assert.equal(DecorationPool.despawn(some), true);
+    live.delete(some);
+    assert.equal(data[0], live.size);
+    for (let r = 0; r < data[0]; r++) assert.ok(live.has(data[1 + r]));
+  } finally {
+    restore();
+  }
+});

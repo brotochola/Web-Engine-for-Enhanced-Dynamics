@@ -357,16 +357,31 @@ export class DecorationPool extends SharedAtomicPool {
     if (this.activeDecorationsData) {
       this._lockActiveList();
       try {
-        const count = this.activeDecorationsData[0];
-        for (let i = 0; i < count; i++) {
-          if (this.activeDecorationsData[1 + i] === index) {
-            const last = count - 1;
-            this.activeDecorationsData[1 + i] = this.activeDecorationsData[1 + last];
-            this.activeDecorationsData[1 + last] = 0;
-            this.activeDecorationsData[0] = last;
-            this._countListChange();
-            break;
+        const data = this.activeDecorationsData;
+        const listPos = DecorationComponent.listPos;
+        const count = data[0];
+        // E-273: its row from listPos (0: not listed); the walk only if the column disagrees with the list.
+        let at = listPos ? listPos[index] - 1 : -1;
+        if (at < 0 || at >= count || data[1 + at] !== index) {
+          at = -1;
+          for (let i = 0; i < count; i++) {
+            if (data[1 + i] === index) {
+              at = i;
+              break;
+            }
           }
+        }
+        if (at >= 0) {
+          const last = count - 1;
+          const moved = data[1 + last];
+          data[1 + at] = moved;
+          data[1 + last] = 0;
+          data[0] = last;
+          if (listPos) {
+            listPos[moved] = at + 1;
+            listPos[index] = 0;
+          }
+          this._countListChange();
         }
       } finally {
         this._unlockActiveList();
@@ -590,6 +605,7 @@ export class DecorationPool extends SharedAtomicPool {
         const slot = this.activeDecorationsData[0];
         this.activeDecorationsData[1 + slot] = i;
         this.activeDecorationsData[0] = slot + 1;
+        if (DecorationComponent.listPos) DecorationComponent.listPos[i] = slot + 1;
         this._countListChange();
       } finally {
         this._unlockActiveList();
@@ -736,6 +752,7 @@ export class DecorationPool extends SharedAtomicPool {
       this._lockActiveList();
       try {
         this.activeDecorationsData[0] = 0;
+        if (DecorationComponent.listPos) DecorationComponent.listPos.fill(0);
         // N-141: no decoration left, no reach.
         if (this._activeListLock !== null && this._activeListLock.length > DECORATION_MAX_REACH) {
           Atomics.store(this._activeListLock, DECORATION_MAX_REACH, 0);
