@@ -13321,6 +13321,29 @@
       ]
     },
     {
+      "id": "E-261",
+      "title": "The mesh fill pose goes through a scratch object (_livePose): 62.8 KB/s of Pixi's garbage in Sun Street (E-66's pattern)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from round 2's heap sample, not tested",
+      "date": "2026-11-13",
+      "area": "pixi",
+      "kind": "speed",
+      "rank": 77,
+      "result": "Sun Street, Pixi 375.1 KB/s after E-260: copyMeshFillPoseScratch 62.8 KB/s (colliderFillBatch.js), from readMeshFillPose writing x, y, c, s into the module object _livePose for every mesh every frame; seven callers read it back.",
+      "next": "The four doubles into a module Float64Array (E-85), the callers reading [0..3]; heap sample of Sun Street's Pixi; meshApi's and the mesh kernels' parity tests.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-261"
+      ],
+      "aliases": [
+        "_livePose",
+        "readMeshFillPose",
+        "copyMeshFillPoseScratch",
+        "sampleMeshFillPose",
+        "mesh fill pose"
+      ],
+      "records": []
+    },
+    {
       "date": "2026-11-12",
       "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
