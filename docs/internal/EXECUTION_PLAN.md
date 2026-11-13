@@ -4279,6 +4279,15 @@ functions only have OSR code in 100 s (their loops in TurboFan); smaller ones wi
 **Plan:** Predator ABAB, one build, side B with `--js-flags=--no-maglev` (`runPredatorAbab --js-flags-b`). If B is faster:
 the functions in Maglev (`--log-code`), and a structure that reaches TurboFan early in a stock Chrome. Owner: every worker.
 
+### E-255 Box2D's scheduler spin reads the clock every 64 turns
+
+**Premise:** after E-235, Predator's physics still makes 331 KB/s in `emscripten_get_now` (about 460 reads a frame).
+`b2SchedulerSpin` (scheduler.c) spins up to `B2_SCHEDULER_SPIN_MILLISECONDS` (0.05 ms) for a task and reads the clock every 64th
+turn (E-144): a call out to JavaScript and a heap number each.
+**Plan:** spin by count: the turns that fit 0.05 ms, measured once at the scheduler's start (or carried from the last spin),
+and no clock inside the spin. Heap sample (physics' KB/s), then Balls' and Predator's physics STEP_MS. Both Box2D builds
+(SIMD and not). Owner: physics.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
