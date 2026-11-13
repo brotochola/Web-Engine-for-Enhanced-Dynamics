@@ -17,6 +17,9 @@
  * compile, not OSR. `moversShare` is the share of timed frames that took the movers path.
  * `--shape box` (E-245) gives every body a 16 x 12 box collider turned by its own angle instead of the circle: the
  * Boids scene's colliders, whose bounds come from getColliderBounds' box branch.
+ * `--no-physics` (E-266): no physics worker, so no mover list is bound or published and nothing tells the grid which
+ * entities moved (stationarySpatialWideScene, `physics.enabled: false`). `--sparse` (E-274): the world 4 times as wide and as tall, the
+ * entities in its first sixteenth as before, so most of the owned cells are empty.
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/spatialGridMoversMicrobench.mjs --variants base,movers
  *   node tests/bench/spatialGridMoversMicrobench.mjs [--variant movers] [--cases 5,100] [--n 60000] [--output path]
@@ -47,11 +50,12 @@ function fnv(h, v) {
   return Math.imul(h ^ (v >>> 0), 16777619) >>> 0;
 }
 
-async function runCase({ pct, variant, n, seed, shape = 'circle' }) {
+async function runCase({ pct, variant, n, seed, shape = 'circle', noPhysics = false, sparse = false }) {
   const rows = Math.ceil(n / COLS);
+  const grow = sparse ? 4 : 1;
   const spatial = {
-    worldWidth: COLS * SPACING + 400,
-    worldHeight: rows * SPACING + 400,
+    worldWidth: (COLS * SPACING + 400) * grow,
+    worldHeight: (rows * SPACING + 400) * grow,
     cellSize: 128,
     maxNeighbors: 32,
     maxEntitiesPerCell: 32,
@@ -66,7 +70,7 @@ async function runCase({ pct, variant, n, seed, shape = 'circle' }) {
   worker._gridMoversMode = VARIANTS[variant];
   const queryVersion = new Int32Array(new SharedArrayBuffer(4));
   worker.queryVersionData = queryVersion;
-  bindMovedBodies(createMovedBodiesSab(n));
+  if (!noPhysics) bindMovedBodies(createMovedBodiesSab(n));
 
   for (let i = 0; i < n; i++) {
     Transform.active[i] = 1;
@@ -92,7 +96,7 @@ async function runCase({ pct, variant, n, seed, shape = 'circle' }) {
     Collider.offsetY[i] = 0;
     Collider.visualRange[i] = 0;
     SpriteRenderer.active[i] = 1;
-    RigidBody.active[i] = 1;
+    RigidBody.active[i] = noPhysics ? 0 : 1;
   }
   const active = worker.activeEntitiesData;
   function setActive(count) {
@@ -144,7 +148,8 @@ async function runCase({ pct, variant, n, seed, shape = 'circle' }) {
       x[i] = px;
       y[i] = py;
     }
-    publishMovedBodies(list, null, list.length, null, 0, null);
+    // --no-physics: nobody publishes which entities moved.
+    if (!noPhysics) publishMovedBodies(list, null, list.length, null, 0, null);
   }
 
   // Normal compiles of every function the step runs, from short calls.
@@ -202,7 +207,7 @@ async function runCase({ pct, variant, n, seed, shape = 'circle' }) {
     if (ms >= KERNEL_SAMPLE_MS || iterations >= 1 << 20) break;
     iterations = Math.max(iterations + 1, Math.ceil(((iterations * KERNEL_SAMPLE_MS) / Math.max(ms, 1e-6)) * 1.15));
   }
-  const label = `grid step ${variant}, ${pct} % movers (n=${n}${shape === 'box' ? ', boxes' : ''})`;
+  const label = `grid step ${variant}, ${pct} % movers (n=${n}${shape === 'box' ? ', boxes' : ''}${noPhysics ? ', no physics' : ''}${sparse ? ', sparse' : ''})`;
   const opsPerSec = (iterations / ms) * 1000;
   return {
     case: { label, ms, opsPerSec, iterations, reps, moversShare: moversFrames / frames, movers: moverCount },
@@ -228,13 +233,15 @@ async function main() {
   const n = Number(args.n ?? 60000);
   const seed = Number(args.seed ?? 0xe126);
   const shape = String(args.shape || 'circle');
+  const noPhysics = Boolean(args['no-physics']);
+  const sparse = Boolean(args.sparse);
   if (shape !== 'circle' && shape !== 'box') throw new Error(`unknown shape ${shape} (circle, box)`);
   const pcts = args.cases === undefined ? CASES : String(args.cases).split(',').map(Number);
   const cases = {};
   let checksum = 2166136261;
   // One case at a time: each thread is the only one running.
   for (const pct of pcts) {
-    const r = await runCaseThread({ pct, variant, n, seed, shape });
+    const r = await runCaseThread({ pct, variant, n, seed, shape, noPhysics, sparse });
     cases[`movers${pct}`] = r.case;
     checksum = fnv(checksum, r.checksum);
     console.log(
@@ -249,6 +256,8 @@ async function main() {
     n,
     seed,
     shape,
+    noPhysics,
+    sparse,
     workers: 1,
     checksum,
     tier: 'TurboFan normal compile (warmNormalCompile on a 512-entity slice)',
