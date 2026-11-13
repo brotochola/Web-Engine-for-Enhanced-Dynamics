@@ -13485,13 +13485,12 @@
     {
       "id": "E-268",
       "title": "With several spatial workers, an entity whose type nobody reads has its row's head read every frame to see it is clear: a cache miss each (91 % of _findNeighbors in stationarySpatialWide)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 2,
-      "result": "CPU sweep, stationarySpatialWideScene (2 spatial workers, 70 000 entities nobody reads): _findNeighbors is 40 to 42 % of spatial, 91 % of it on `} else if (sharedRows && neighborData[entityA * stride] !== 0) {`, the row head read that keeps a row another worker may have published clear. Rows are maxNeighbors + 1 ids apart (about 2 KB here), so each read is a cache line of its own. One spatial worker (Predator) never reads it. A second row-head read per entity: littleCityScene's _findNeighbors spends 41 to 43 % on candCountOf[entityA] = cand[entityA * stride] (2 spatial workers). The demo WaterAndBoxes too: 91 to 96 % of its _findNeighbors on that line.",
+      "result": "stationarySpatialWide ?entities=145000: spatial 7.365 → 4.459 ms (−39.1 %, 4/4); kernel --unread +31 %.",
       "next": "Read it only when it can be set: a dense per-worker byte per entity (this worker cleared the row and owned it since), or the row's owner change from rebuildOwnedRows' owned list; the spatial kernel with --types and two workers, then stationarySpatialWide's spatial STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-268"
@@ -13502,7 +13501,9 @@
         "unread rows",
         "_findNeighbors cache miss"
       ],
-      "records": []
+      "records": [
+        "R-0983"
+      ]
     },
     {
       "id": "E-269",
@@ -24031,6 +24032,15 @@
       "title": "E-256 kept (hygiene): b2Yield reads no clock; physics garbage 300.6 to 87.5 KB/s, Balls heavy's physics a tie",
       "verdict": "kept-hygiene",
       "text": "**E-256 kept (hygiene): b2Yield reads no clock; Predator's physics garbage 300.6 → 87.5 KB/s (634 / 743 this morning).** 2026-11-13, 13:55 to 18:11.\n\n**Change** (Box2D `weedjs/e256` `c8aa04d`, WeedJS `12e1acaf`): Emscripten's `sched_yield` is `_emscripten_yield(emscripten_get_now())`:\na call out to JavaScript that makes a heap number on every yield, to feed a timer check this build does not have. Box2D's\n`b2Yield` is `sched_yield`, run whenever the main thread waits for a task with no work of its own (`b2SchedulerFinishTask`) and\nevery 6 turns of the solver's stage sync. Under Emscripten it now runs `emscripten_current_thread_process_queued_calls()`,\nthe queue the yield processes. Both Box2D builds compile; the glue is unchanged, the wasm 417 105 → 417 103 bytes;\n`test:node` 2574/2574.\n\n**Heap** (`heapSampleWorkers`, Predator, box2d and physics, 12 s after 15 s, 14:01): `_emscripten_get_now` 217.4 → **14.2 KB/s**\n(what is left: the coarse profile's ten reads a step), all of physics 300.6 → **87.5 KB/s**. Over the day (E-235, E-255,\nE-256): 634 / 743 → 87.5 KB/s. What physics makes now is its JS loop around the step (E-257).\n\n**Timing:**\n- Balls (`e256-balls`, to 14:28): physics 5.582 → 5.610 ms, under the 6 ms floor (44c264ae, set that afternoon): not judged.\n- Predator `?crowd=1.5` (`gate6-predator`, `--vs 12e1acaf^ --hyp-rev 9c96671c`: E-256, E-259 and E-260 step 1, to 14:35):\n  NEUTRAL; physics 8.310 → 8.050 ms (−0.9 % paired, 0/4 worse, cv 5/5 %); the rest under the floor, all but particle lower\n  (logic 4.449 → 4.226, spatial 5.947 → 5.735, pre-render 3.530 → 3.462, Pixi 2.216 → 2.204, particle 0.801 → 0.896).\n  Load keys within 1 % (BODY_COUNT 24 781 at crowd 1.5).\n- Balls heavy (`w14-e256-ballsheavy`, 12 004 bodies, `--vs 12e1acaf^ --hyp-rev 12e1acaf`, 4 pairs, 18:04 to 18:11): **NEUTRAL**,\n  physics 7.352 → 7.344 ms (−1.5 % paired, worse 2/4, cv 5/5 %), the only worker over the floor; BODY_COUNT and the\n  other load keys equal.\n\n**Verdict: kept as hygiene.** It takes physics' garbage from 300.6 to 87.5 KB/s in Predator and no worker over the floor\nis worse (Balls heavy's physics a tie at 7.35 ms; Predator's NEUTRAL with physics 0/4 worse)."
+    },
+    {
+      "id": "R-0983",
+      "date": "2026-11-13",
+      "time": "18:18",
+      "timeFrom": "recorded",
+      "title": "E-268 kept: a kept-clear row's head read only for an entity that just arrived; stationarySpatialWide's spatial -39.1 %",
+      "verdict": "kept",
+      "text": "**E-268 kept: a kept-clear row's head is read only for an entity that just arrived; stationarySpatialWide's spatial\n7.365 → 4.459 ms (−39.1 %, 4/4).** 2026-11-13, kernel 18:04, scene 18:11 to 18:18.\n\n**Change** (sitting branch `w14s/e268` `eb6f4404` on `e6e146b8`; `w14/e268` `df903e3b`): with several spatial workers,\n`_findNeighbors` read the head of every unread entity's neighbour row each frame (a cache line per entity, rows about\n2 KB apart) to see that no other worker had published it. Only the owner publishes a row, so a row this worker kept\nclear the frame before is still clear: a per-worker byte per entity (`_clearHeld`, the frame mod 254 it was last kept\nclear) says so, and every 254 frames every head is read once more. `spatialKeptRowSkip.test.js` (with its\n`noSharedClear` mutant) and the suite pass.\n\n**Kernel** (`spatialWorkerMicrobench --unread`, 3 workers, n 16 500, no type's neighbours read; Node, A B A B): 598, 650\n→ 848, 808 ops/s, **+31 %** (2/2); checksums equal.\n\n**Scene** (`w14-e268-statwide`: stationarySpatialWideScene `?entities=145000`, two spatial workers, no physics,\n`--vs e6e146b8 --hyp-rev eb6f4404 --owner spatial`, 4 pairs): **KEPT (product)**, spatial **7.365 → 4.459 ms, −39.1 %\npaired, worse 0/4, cv 2/1 %**; ENTITIES_PROCESSED 73 372 and VISIBLE_ENTITIES 23 142 on both sides; every other worker\nunder the floor and level (pre-render 2.110 → 2.128).\n\n**Verdict: kept.** Predator's gate comes with the batch of Wave 14 keeps."
     }
   ],
   "leads": [
