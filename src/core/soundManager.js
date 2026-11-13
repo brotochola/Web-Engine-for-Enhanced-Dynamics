@@ -21,6 +21,10 @@ import { rng } from '../util/utils.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { fetchAssetRead } from '../util/fetchAsset.js';
 
+// E-285: the play being written (volume, pitch, pan), for _claimListed and _claimScanned: the slot writers once built a
+// closure over their arguments per play (a context, the arrow, the doubles boxed: audioStorm's logic 7.3 MB/s).
+const PLAY_F = new Float64Array(3);
+
 export class SoundManager {
   static _enabled = true;
   static _nameToId = new Map();
@@ -1164,7 +1168,6 @@ export class SoundManager {
 
   static _writeSlotListed(audioId, volume, pitch, pan, loop, bus, tail, maxV) {
     const i32 = this._i32;
-    const f32 = this._f32;
     const chI = this._channelI32;
     const chF = this._channelF32;
     const H = this.HEADER_SIZE;
@@ -1174,43 +1177,9 @@ export class SoundManager {
     const PLAYING = this.STATE_PLAYING;
 
     this._reclaimDeadVoices(bus, tail);
-
-    const claim = (slot, from) => {
-      if (slot < 0) return -1;
-      const b = H + slot * S;
-      let idx;
-      let word7 = 0;
-      if (from === FREE) {
-        idx = chI[tail + 1] | 0;
-      } else {
-        // Steal only a voice this bus still owns: the cached quietest slot can be
-        // one the audio thread freed and another bus re-claimed.
-        word7 = i32[b + 7] | 0;
-        idx = word7 >>> 8;
-        if ((word7 & 0xff) !== bus || idx >= (chI[tail + 1] | 0) || (chI[tail + this.TAIL_META + idx] | 0) !== slot) {
-          return -1;
-        }
-      }
-      if (Atomics.compareExchange(i32, b, from, this.STATE_CLAIMING) !== from) return -1;
-      // Between the ownership read and the CAS the audio thread can free the slot and
-      // another bus can re-claim it (PLAYING again: ABA). Word 7 tells; hand it back.
-      if (from !== FREE && (i32[b + 7] | 0) !== word7) {
-        Atomics.store(i32, b, PLAYING);
-        return -1;
-      }
-      // Word 7 is final before _fillSlot publishes PLAYING.
-      this._fillSlot(b, audioId, volume, pitch, pan, loop, bus | (idx << 8));
-      const stored = f32[b + 4];
-      if (from === FREE) {
-        chI[tail + this.TAIL_META + idx] = slot;
-        chI[tail + 1] = idx + 1;
-        this._rememberVoice(bus, tail, slot, stored);
-      } else {
-        this._retuneStolen(tail, slot, stored);
-      }
-      this._raiseHighWater(slot);
-      return slot;
-    };
+    PLAY_F[0] = volume;
+    PLAY_F[1] = pitch;
+    PLAY_F[2] = pan;
 
     const count = chI[tail + 1] | 0;
     if (count >= maxV) {
@@ -1222,14 +1191,14 @@ export class SoundManager {
         Atomics.add(i32, this.HEADER_DROPPED, 1);
         return -1;
       }
-      let got = claim(chI[tail + 2], PLAYING);
+      let got = this._claimListed(chI[tail + 2], PLAYING, audioId, loop, bus, tail);
       if (got >= 0) return got;
       // The cached voice ended or changed hands. Rebuild; if that left room on the
       // bus, fall through and take a free slot instead of dropping.
       this._publishQuiet(bus, tail);
       if ((chI[tail + 1] | 0) >= maxV) {
         if (volume > chF[tail + 3]) {
-          got = claim(chI[tail + 2], PLAYING);
+          got = this._claimListed(chI[tail + 2], PLAYING, audioId, loop, bus, tail);
           if (got >= 0) return got;
         }
         Atomics.add(i32, this.HEADER_DROPPED, 1);
@@ -1249,19 +1218,93 @@ export class SoundManager {
       }
     }
     if (free >= 0) {
-      const got = claim(free, FREE);
+      const got = this._claimListed(free, FREE, audioId, loop, bus, tail);
       if (got >= 0) return got;
     } else if (hw < max) {
-      const got = claim(hw, FREE);
+      const got = this._claimListed(hw, FREE, audioId, loop, bus, tail);
       if (got >= 0) return got;
     }
     if ((chI[tail + 2] | 0) < 0) this._publishQuiet(bus, tail);
     if ((chI[tail + 2] | 0) >= 0 && volume > chF[tail + 3]) {
-      const got = claim(chI[tail + 2], PLAYING);
+      const got = this._claimListed(chI[tail + 2], PLAYING, audioId, loop, bus, tail);
       if (got >= 0) return got;
     }
     Atomics.add(i32, this.HEADER_DROPPED, 1);
     return -1;
+  }
+
+  /**
+   * Claim `slot` (from FREE, or steal it from PLAYING) for the play in PLAY_F on a listed bus; the slot or -1.
+   * @param {number} slot
+   * @param {number} from STATE_FREE or STATE_PLAYING
+   * @param {number} audioId
+   * @param {boolean} loop
+   * @param {number} bus
+   * @param {number} tail the bus's tail word
+   * @returns {number}
+   */
+  static _claimListed(slot, from, audioId, loop, bus, tail) {
+    if (slot < 0) return -1;
+    const i32 = this._i32;
+    const f32 = this._f32;
+    const chI = this._channelI32;
+    const b = this.HEADER_SIZE + slot * this.SLOT_SIZE;
+    let idx;
+    let word7 = 0;
+    if (from === this.STATE_FREE) {
+      idx = chI[tail + 1] | 0;
+    } else {
+      // Steal only a voice this bus still owns: the cached quietest slot can be
+      // one the audio thread freed and another bus re-claimed.
+      word7 = i32[b + 7] | 0;
+      idx = word7 >>> 8;
+      if ((word7 & 0xff) !== bus || idx >= (chI[tail + 1] | 0) || (chI[tail + this.TAIL_META + idx] | 0) !== slot) {
+        return -1;
+      }
+    }
+    if (Atomics.compareExchange(i32, b, from, this.STATE_CLAIMING) !== from) return -1;
+    // Between the ownership read and the CAS the audio thread can free the slot and
+    // another bus can re-claim it (PLAYING again: ABA). Word 7 tells; hand it back.
+    if (from !== this.STATE_FREE && (i32[b + 7] | 0) !== word7) {
+      Atomics.store(i32, b, this.STATE_PLAYING);
+      return -1;
+    }
+    // Word 7 is final before _fillSlot publishes PLAYING.
+    this._fillSlot(b, audioId, PLAY_F[0], PLAY_F[1], PLAY_F[2], loop, bus | (idx << 8));
+    const stored = f32[b + 4];
+    if (from === this.STATE_FREE) {
+      chI[tail + this.TAIL_META + idx] = slot;
+      chI[tail + 1] = idx + 1;
+      this._rememberVoice(bus, tail, slot, stored);
+    } else {
+      this._retuneStolen(tail, slot, stored);
+    }
+    this._raiseHighWater(slot);
+    return slot;
+  }
+
+  /**
+   * Claim `slot` (from FREE, or from PLAYING when the scan saw it on this bus) for the play in PLAY_F; the slot or -1.
+   * @param {number} slot
+   * @param {number} from STATE_FREE or STATE_PLAYING
+   * @param {number} audioId
+   * @param {boolean} loop
+   * @param {number} bus
+   * @returns {number}
+   */
+  static _claimScanned(slot, from, audioId, loop, bus) {
+    const i32 = this._i32;
+    const b = this.HEADER_SIZE + slot * this.SLOT_SIZE;
+    if (Atomics.compareExchange(i32, b, from, this.STATE_CLAIMING) !== from) return -1;
+    // The scan saw this slot on this bus; if it was freed and re-claimed by another
+    // bus before the CAS (PLAYING again), give it back untouched.
+    if (from === this.STATE_PLAYING && ((i32[b + 7] | 0) & 0xff) !== bus) {
+      Atomics.store(i32, b, this.STATE_PLAYING);
+      return -1;
+    }
+    this._fillSlot(b, audioId, PLAY_F[0], PLAY_F[1], PLAY_F[2], loop, bus);
+    this._raiseHighWater(slot);
+    return slot;
   }
 
   static _writeSlotScan(audioId, volume, pitch, pan, loop, channelIndex = 0) {
@@ -1318,33 +1361,22 @@ export class SoundManager {
       }
     }
 
-    const claim = (slot, from) => {
-      const b = H + slot * S;
-      if (Atomics.compareExchange(i32, b, from, CLAIMING) !== from) return -1;
-      // The scan saw this slot on this bus; if it was freed and re-claimed by another
-      // bus before the CAS (PLAYING again), give it back untouched.
-      if (from === PLAYING && ((i32[b + 7] | 0) & 0xff) !== bus) {
-        Atomics.store(i32, b, PLAYING);
-        return -1;
-      }
-      this._fillSlot(b, audioId, volume, pitch, pan, loop, bus);
-      this._raiseHighWater(slot);
-      return slot;
-    };
-
+    PLAY_F[0] = volume;
+    PLAY_F[1] = pitch;
+    PLAY_F[2] = pan;
     if (onBus < maxV) {
       if (free >= 0) {
-        const got = claim(free, FREE);
+        const got = this._claimScanned(free, FREE, audioId, loop, bus);
         if (got >= 0) return got;
       } else if (hw < max) {
-        const got = claim(hw, FREE);
+        const got = this._claimScanned(hw, FREE, audioId, loop, bus);
         if (got >= 0) return got;
       }
     }
     // Bus is at its mix cap. A louder shot replaces the quietest one on this bus
     // instead of piling up a silent slot that blocks every later play().
     if (quietSlot >= 0 && volume > quietVol) {
-      const got = claim(quietSlot, PLAYING);
+      const got = this._claimScanned(quietSlot, PLAYING, audioId, loop, bus);
       if (got >= 0) return got;
     }
     Atomics.add(i32, this.HEADER_DROPPED, 1);
