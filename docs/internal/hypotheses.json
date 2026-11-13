@@ -12700,14 +12700,12 @@
     {
       "id": "E-235",
       "title": "Box2D's clock reads performance.timeOrigin at every call: 576 KB/s, ~800 WASM-to-JS calls a frame in Predator's physics",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from Predator's E-222 run, not tested",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-13: the origin read once, the fine profile timers constant (B2_COARSE_PROFILE)",
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
-      "rank": 56,
-      "result": "heapSampleWorkers: physics 634 KB/s, 576 in _emscripten_get_now (box2dWasm.js), from WASM and stepWorld. CPU: 29.5 ms/s of the physics thread (7.1 %) in Predator's trace.",
-      "next": "Count the calls a step; the clock read once per realm in the glue, or Box2D's profiling timers off in our build (both builds).",
+      "result": "Physics in Predator 634 / 743 KB/s → 403.7 KB/s (emscripten_get_now 576 → 331); 912e9f44 + Box2D weedjs/e235 7c1165c. Balls alone: physics −0.3 % (neutral). About 460 clock reads a frame remain outside the profile.",
       "refs": [
         "EXECUTION_PLAN.md#E-235"
       ],
@@ -12721,20 +12719,19 @@
       "records": [
         "R-0960",
         "R-0962",
-        "R-0963"
+        "R-0963",
+        "R-0969"
       ]
     },
     {
       "id": "E-236",
       "title": "The WebGL shader sync's plan (E-148's polyfill) is rebuilt at nearly every bind: 934 KB/s in Predator's Pixi worker",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from Predator's E-222 run, not tested",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-13: the plan survives a new BindGroup with its keys",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 57,
-      "result": "Pixi 1271 KB/s in Predator, 934 in Lg (shaderSyncPolyfill), from bind and execute.",
-      "next": "Step 0: which shader and slot changes; validate the plan by each slot's key list instead of the BindGroup's identity.",
+      "result": "Pixi in Predator 1270.8 / 1297.3 KB/s → 269.2 KB/s (the polyfill's 933.7 gone); 922271e5. Predator gate neutral.",
       "refs": [
         "EXECUTION_PLAN.md#E-236"
       ],
@@ -12747,7 +12744,8 @@
         "Pixi garbage"
       ],
       "records": [
-        "R-0960"
+        "R-0960",
+        "R-0969"
       ]
     },
     {
@@ -12853,14 +12851,12 @@
     {
       "id": "E-241",
       "title": "The LiquidFun density splat boxes three doubles per particle: 1464 KB/s in the LiquidFun demo's Pixi",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from E-222's heap samples, not tested",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-13: the splat write takes its doubles through a Float64Array",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 61,
-      "result": "Pixi 1569 KB/s in the LiquidFun demo, 1464 in LiquidFunDensitySplat.upload (_writeInst(x, y, tint, alpha) per particle). Confirmed in the graph: line 180 holds 8 allocation sites and 2 calls left out of line.",
-      "next": "Confirm the call is out of line (E-222); the write takes arrays and an index, or each loop writes its row.",
+      "result": "Pixi in the LiquidFun demo 1569.4 KB/s → 107.5 KB/s; 5cdfdce9. The demo's workers are under the 3 ms floor: timed nowhere, gated by Predator.",
       "refs": [
         "EXECUTION_PLAN.md#E-241"
       ],
@@ -12872,7 +12868,8 @@
       ],
       "records": [
         "R-0962",
-        "R-0965"
+        "R-0965",
+        "R-0969"
       ]
     },
     {
@@ -13025,14 +13022,12 @@
     {
       "id": "E-248",
       "title": "The main thread scans every audio slot each frame for metrics (2048 Atomics.load) and polls absent gamepads",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from Predator's CPU trace, not tested",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-13: audio metrics filled by the panels; an absent gamepad cleared once",
       "date": "2026-11-13",
       "area": "engine",
       "kind": "speed",
-      "rank": 68,
-      "result": "getActiveSlotCount 2.6 ms/s, Gamepad.poll 1.9 ms/s of Predator's main thread.",
-      "next": "The active count kept by the worklet or read on demand; poll writes a disconnected pad once.",
+      "result": "9f446dc5; main thread only, Predator gate neutral.",
       "refs": [
         "EXECUTION_PLAN.md#E-248"
       ],
@@ -13043,7 +13038,8 @@
         "main thread"
       ],
       "records": [
-        "R-0963"
+        "R-0963",
+        "R-0969"
       ]
     },
     {
@@ -13074,13 +13070,13 @@
       "id": "E-250",
       "title": "The spatial worker changes shape after it starts (TryMigrateInstance in _findNeighbors)",
       "status": "open",
-      "statusText": "proposed 2026-11-13 from E-222's sites, not tested",
+      "statusText": "fixed 2026-11-13 (564351fd), timed with the next Predator gate",
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "bug",
       "rank": 70,
-      "result": "TryMigrateInstance x2 at this.cellsCheckedThisFrame in _findNeighbors (Predator).",
-      "next": "workerShape's check on spatial, particle and logic; every field declared in the constructor.",
+      "result": "The shape test on spatial, particle and logic found 9 logic fields born after the constructor (the detailed-stats times first written as the Smi 0 by update), spatial _noBodyCount, particle _swayBucketCacheK; declared in the constructors. The width-dependent lists stay born in initialize (E-71).",
+      "next": "The next Predator gate (with E-251) times it.",
       "refs": [
         "EXECUTION_PLAN.md#E-250"
       ],
@@ -23074,6 +23070,21 @@
       "title": "Four small ones answered from the traces (E-233, E-234, E-237, E-249); E-252 and E-253 written down",
       "verdict": "answered",
       "text": "2026-11-13, from Predator's CPU trace (R-0963's) and E-222's sites and heap samples. E-233: the uniform writers run a few times a frame and show in no CPU trace. E-234: TryMigrateInstance is a map check's slow path, once per object. E-237: the contact pair key passes the Smi range when minE >= 16384; about 50 boxed keys a frame per logic worker (37 KB/s), microseconds, GC under 0.1 %. E-249: setAnimation 0.45 to 0.66 % and setAnimationSpeed 0.54 to 0.78 % of a logic worker. None worth its code. New, before testing: E-252 (_processBox2dCollisionCallbacks 8.2 and 11.9 % of the two logic workers) and E-253 (fsm.tick 7.0 and 8.8 %)."
+    },
+    {
+      "id": "R-0969",
+      "date": "2026-11-13",
+      "time": "06:14",
+      "timeFrom": "recorded",
+      "title": "Four garbage fixes kept (E-236 Pixi 1271 → 269 KB/s, E-241 1569 → 108, E-235 physics 634 → 404, E-248); gate neutral, Balls' flag is drift (A/A +2.8 %)",
+      "verdict": "kept-hygiene",
+      "text": "**Four garbage fixes from E-222's sites, each heap-sampled, then one timing gate for the batch.** 2026-11-13. gc/n158:\nE-236 (922271e5), E-241 (5cdfdce9), E-235 (912e9f44, with Box2D's weedjs/e235 7c1165c) and E-248 (9f446dc5). AC\npower, no other bench browser.\n\n**What each one changed, and its heap sample** (`heapSampleWorkers.mjs`, 12 s after 15 s, the owner worker; the before is\nR-0960's run of the same scene):\n- **E-236, Pixi, Predator.** The shader sync polyfill (E-148) rebuilt its plan whenever a bind group was a new object with the\n  same keys. The plan now also holds each slot's key list, and a slot whose bind group changed but whose keys match keeps the\n  plan (it adopts the new group). Pixi's heap: 1270.8 and 1297.3 KB/s before (933.7 in the polyfill), **269.2 KB/s** after\n  (05:24). Two new tests in `pixiShaderSync.test.js` (a new group with the same keys keeps the plan; a changed key rebuilds).\n- **E-241, Pixi, LiquidFun.** The density splat's per-particle write passed four doubles to `_writeInst`, which TurboFan\n  left out of line: a heap number each. They go through a module `Float64Array` now (E-85). Pixi's heap: 1569.4 KB/s\n  before, **107.5 KB/s** after (05:25). New test: `liquidFunDensitySplat.test.js`.\n- **E-235, physics, Predator.** Box2D's clock (`emscripten_get_now`) read `performance.timeOrigin`, which allocates in\n  Chrome, on every call: the origin is read once now (`wasm/weed_lib.js`). Then the profile's finer timers, which WeedJS\n  never reads, became constants under `B2_COARSE_PROFILE` (step, collide, solve, sleepIslands and sensors stay). Physics'\n  heap: 634 / 743 KB/s before, 551 after the origin step (05:34), **403.7 KB/s** after the profile step (05:37);\n  `emscripten_get_now`'s own share 576 → 479 → 331 KB/s. About 460 clock reads a frame are left, from callers outside the\n  profile (the scheduler's spin reads it every 64 turns since E-144; emscripten's timed waits).\n- **E-248, main thread.** `scene.js` filled the audio metrics every frame for the debug panels, which read them only when\n  shown: the audio and performance panels fill them now. An absent gamepad was cleared on every poll; now it is cleared once\n  (`_padCleared`). Test: `gamepad.test.js`.\n\n**Timing gate** (`runPredatorAbab.mjs --vs main --hyp-rev HEAD --pairs 4`, both sides from worktrees, headed, `--src`):\n- **Predator** (gate1-predator, 05:43 to 05:48), main against HEAD (all four): NEUTRAL. Spatial 3.307 → 3.258 ms (−3.3 %,\n  1/4 pairs worse), physics 3.964 → 3.641 (−7.1 %, 1/4, cv 12/9 %); logic 2.392 → 2.413, renderer 1.441 → 1.438, pre-render\n  2.051 → 2.081, particle below the 3 ms floor. Load keys within 1 %.\n- **LiquidFun demo** (gate1-liquidfun, to 05:54): every worker under the 3 ms floor (physics 1.04, Pixi 0.39), so nothing\n  judged; the row FAILs on load (13 → 14 entities in view, +7.7 %). All six workers read 9 to 12 % higher on B, those E-241\n  and E-236 cannot reach (physics, pre-render) as much as Pixi: drift, and this scene cannot time E-241. Its claim is the\n  heap number above.\n- **Balls** (gate1-balls, to 06:00): REGRESSION on physics, 5.286 → 5.503 ms (+5.9 %, 3/4 pairs worse, cv 3/5 %); the\n  workers under the floor read +3 to +10 % on B too. E-235 is the only change that reaches physics, so two more sittings:\n  - **E-235 alone** (e235-balls, `--vs 5f615297 --hyp-rev 912e9f44`, to 06:07): NEUTRAL, physics 5.176 → 5.191 ms (−0.3 %\n    paired, 2/4 worse, cv 4/4 %).\n  - **A/A** (aa-balls, 5f615297 on both sides, to 06:14): physics 5.411 → 5.516 ms (+2.8 %, 3/4 worse, cv 2/2 %): the\n    session's noise reference: with identical code on both sides, B read 2.8 % high.\n  So the gate's +5.9 % is drift on top of a B side that reads ~3 % high here, not E-235: its own pair reads −0.3 %.\n\n**Verdict.** Hygiene keep for all four: no primary worker 3 % worse where it can be read (Predator neutral; Balls' physics flag traced to drift by E-235's own pair and the A/A; LiquidFun under the floor). Detection limit this session: about 3 % on Balls' physics (A/A +2.8 %). The garbage numbers\nare the claim; the timing gate only says nothing got slower.",
+      "commits": [
+        "922271e5",
+        "5cdfdce9",
+        "912e9f44",
+        "9f446dc5"
+      ]
     }
   ],
   "leads": [
