@@ -51,7 +51,8 @@ async function recordInWorker({ ms }) {
   const viewBytes = (v) => (v && typeof v.byteLength === 'number' ? v.byteLength : 0);
   const wrapped = [];
   const wrap = (name, before) => {
-    const orig = proto[name];
+    // The descriptor's value: reading proto[name] runs a getter (canvas, drawingBufferWidth) on the prototype and throws.
+    const orig = Object.getOwnPropertyDescriptor(proto, name)?.value;
     if (typeof orig !== 'function') return;
     const fn = function (...args) {
       counts[name] = (counts[name] || 0) + 1;
@@ -65,7 +66,7 @@ async function recordInWorker({ ms }) {
     redundant[name] = (redundant[name] || 0) + 1;
   };
   for (const name of Object.getOwnPropertyNames(proto)) {
-    if (typeof proto[name] !== 'function' || name === 'constructor') continue;
+    if (typeof Object.getOwnPropertyDescriptor(proto, name)?.value !== 'function' || name === 'constructor') continue;
     let hook = null;
     if (name === 'drawElements' || name === 'drawArrays') hook = () => { draws++; instances++; };
     else if (name === 'drawElementsInstanced') hook = (a) => { draws++; instances += a[4] | 0; };
