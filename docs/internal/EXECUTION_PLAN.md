@@ -4040,6 +4040,10 @@ KB/s in Predator and Balls.
 **CPU too (R-0963):** in Predator's CPU trace `_emscripten_get_now` is 29.5 ms/s of the physics thread's
 417 (7.1 %): about 0.5 ms a frame, besides the garbage.
 
+**Kept (hygiene) 2026-11-13 (R-0969):** the origin read once and the fine profile timers constant under `B2_COARSE_PROFILE`:
+physics' heap 634 / 743 → 403.7 KB/s in Predator. Balls with E-235 alone: physics −0.3 % (an A/A read +2.8 %). About 460
+clock reads a frame remain, outside the profile.
+
 ### E-236 The WebGL shader sync's plan is rebuilt at nearly every bind: 934 KB/s in Predator's Pixi worker
 
 **Premise:** Pixi's worker allocates 1271 KB/s in Predator; 934 of it in `Lg` (pixi.min.js: E-148's WebGL shader sync,
@@ -4051,6 +4055,8 @@ which BindGroup holds them.
 **Plan:** step 0: which shader and which slot changes (count rebuilds per shader in the worker); then validate a plan
 by each slot's key list (`_weedKeyList` contents) instead of its BindGroup's identity, or keep a plan per key layout.
 Owner: Pixi's KB/s and STEP_MS in Predator; E-148's parity (the same binds, the same units) by its tests.
+
+**Kept (hygiene) 2026-11-13 (R-0969):** Pixi's heap in Predator 1271 / 1297 → 269 KB/s; Predator gate neutral.
 
 ### E-237 Logic's contact begin calls a Map or Set `set` per contact: 37 KB/s per logic worker in Predator
 
@@ -4118,6 +4124,9 @@ LiquidFun demo; the splat's parity (the rows written) by a test.
 
 **Confirmed in the graph (R-0965):** line 180, `this._writeInst(xArr[i], yArr[i], packed, a)`, holds 8 allocation sites
 and 2 calls left out of line in the LiquidFun demo's trace.
+
+**Kept (hygiene) 2026-11-13 (R-0969):** Pixi's heap in the LiquidFun demo 1569 → 108 KB/s. The demo runs under the 3 ms
+floor, so the timing gate was Predator's.
 
 ### E-242 The raycast's polygon build allocates 311 KB/s in one run and about 1 in another
 
@@ -4191,6 +4200,8 @@ dispatches input: its frame is E-219's latency.
 **Plan:** the active count kept by the worklet (one word it updates) or read only when `scene.audioMetrics` is read;
 `poll` writing a disconnected pad once. Owner: the main thread's self ms in Predator's trace.
 
+**Kept (hygiene) 2026-11-13 (R-0969):** main thread only; Predator gate neutral.
+
 ### E-249 `this._hasComponents.X` is a megamorphic load in per-entity API calls
 
 **Premise:** `_hasComponents` is an object whose keys differ per entity class, so a read of
@@ -4212,6 +4223,10 @@ added later or one whose representation changed). workerShape.test.js enforces t
 and Pixi only.
 **Plan:** workerShape's check run on the spatial, particle and logic workers; each field declared in the constructor
 with its final representation. Owner: hygiene (the spatial worker's STEP_MS not 3 % worse); the migration sites gone.
+
+**Fixed 2026-11-13 (564351fd):** the shape test on the three workers found logic's detailed-stats times first written as
+the Smi 0 by `update()` (and turned double later), spatial's `_noBodyCount` and particle's `_swayBucketCacheK`: declared
+in the constructors. The lists `initialize` binds by width stay there (E-71). Timed with the next Predator gate.
 
 ### E-251 Steady deopt loops in per-frame engine functions
 
