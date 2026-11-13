@@ -4467,6 +4467,60 @@ the tweened entity's `SpriteRenderer.active` read.
 every slot.
 **Plan:** a plain targetCell compare first, the status load only on a match; navStress's logic. Owner: logic.
 
+### E-277 The collider fill fan passes each outset vertex through module lets
+
+**Premise (the heap pass over all scenes, 2026-11-13):** destructibleTerrainScene's Pixi allocates 14.7 MB/s, 13.9 of it in
+`fanLocalVerts` and 318 KB/s in `packColliderFill`. `radialOutset` hands its point back in the module lets `_ox`/`_oy`;
+inlined into the fan loop, each double stored into a module context slot is a new heap number, six per triangle. No other
+module let in `src/` holds a double.
+**Plan:** the point in a module `Float64Array` (E-85; E-261's `MESH_POSE`), and `--trace-turbo-inlining` on
+`writeFillTri` (17 arguments, most of them doubles); the collider fill kernel, then destructibleTerrain's Pixi STEP_MS and
+heap. Owner: Pixi.
+
+### E-278 rng() boxes its result when a big tick does not inline it
+
+**Premise (the heap pass):** littleCityScene's logic allocates 6.6 MB/s, 4.1 of it in `rng`, which `CityPerson.tick`
+calls twice per person per frame. A callee that returns a double and is not inlined boxes it; rng's bytecode carries its
+cold paths (a function generator, the warning that seeds an uninitialised one), and the tick is large.
+**Plan:** the cold paths in their own function (the fast path a few dozen bytes), `--trace-turbo-inlining` on the tick;
+a kernel of a large tick calling rng, then littleCity's logic STEP_MS and heap. Owner: logic.
+
+### E-279 packBox2dBodies allocates 278 KB/s in a loop with no object
+
+**Premise (the heap pass):** burningBoxesScene's Pixi allocates 902 KB/s, 278 in `packBox2dBodies`, whose loop makes no
+object (`PACK_OUT` and the options are reused). Likely boxed doubles: `writeBody` takes 17 arguments, 13 doubles.
+**Plan:** read the pack's inlining and deopts; if writeBody stays a call, its stores in the loop (or a module
+`Float64Array`); burningBoxes' Pixi heap and STEP_MS. Owner: Pixi.
+
+### E-280 destructibleTerrain's marching squares allocate objects per cell
+
+**Premise (the heap pass):** destructibleTerrainScene's logic allocates 52 MB/s while terrain is carved: `cellCorners`
+31.8 MB/s (four edge points, four corners and the result per cell), `cellSolidParts` 8.7, `stitchContours` 3.4,
+`extractIslands` 3.3. Three callers read only `.caseId`.
+**Plan:** a `cellCaseId()` with no allocation for those three, reused scratch for the rest, still readable (a demo); logic
+STEP_MS on the carving frames (max and p95) and the heap. Owner: the demo.
+
+### E-281 BunnyMark's tickAll allocates 1.5 MB/s in a typed-array loop
+
+**Premise (the heap pass):** bunnyMarkScene's logic allocates 1.54 MB/s, 1.51 in `Bunny.tickAll`, a typed-array loop
+that should allocate nothing: likely the tier it runs in (after a deopt, or entered by OSR each frame).
+**Plan:** the deopt pass and `--trace-opt --trace-deopt` on tickAll first; the fix where that points (the engine if it
+is how logic calls tickAll); bunnyMark's logic STEP_MS. Owner: logic or the demo.
+
+### E-282 Collision pairs live in a Map keyed by a number
+
+**Premise (the heap pass):** littleCityScene's logic spends 140 KB/s in `Map.prototype.set` from `_applyContactBegin`:
+`_pairSlot` maps each begun pair to its slot (the table grows and rehashes; a Cantor key over 2^31 is a heap number).
+**Plan:** an open-addressing table on typed arrays; the contact kernel, then littleCity's and carScene's logic. Owner:
+logic.
+
+### E-283 Pre-render's collect re-enters its wasm kernel per non-sprite with ten doubles
+
+**Premise (the heap pass):** mamushkaDigScene's pre-render allocates 342 KB/s, 242 in `_collectVisibleEntitiesWasm`:
+the kernel stops at each entity that is not a plain sprite, and each new call passes the camera's doubles again.
+**Plan:** the camera's doubles in the kernel's memory once a frame, integers per call; the collect kernel with stops,
+then mamushkaDig's pre-render. Owner: pre-render.
+
 ## Wave 14 (2026-11-13): the campaign order after a full harvest
 
 The owner asked to gather every hypothesis first, without measuring, then run them all in a new campaign. The harvest:
