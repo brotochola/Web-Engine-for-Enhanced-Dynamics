@@ -14286,12 +14286,12 @@
     {
       "id": "E-284",
       "title": "collectVisibleBullets carries a double from one bullet to the next (bulletStress pre-render: 8.0 MB/s)",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
       "date": "2026-11-13",
       "area": "pre-render",
       "kind": "speed",
-      "result": "Heap pass: bulletStressScene's pre-render allocates 8.1 MB/s, 8.0 of it in `collectVisibleBullets`, about one heap number per bullet a frame: every array it writes is typed, and the loop carries `lastKey` (a double) from one bullet to the next for the COLLECT_Y it leaves behind; a long loop entered once a frame (OSR) may also keep it tagged.",
+      "result": "Heap: collectVisibleBullets 626/589 → 0 KB/s; bulletStress ?bullets=300000 pre-render 6.399 → 6.391 ms (NEUTRAL).",
       "next": "The last bullet's index carried instead (an integer), its key computed once after the loop; the deopt pass and `--trace-osr` on it first; bulletStress' pre-render heap and STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-284"
@@ -14303,9 +14303,9 @@
       ],
       "records": [
         "R-0980",
-        "R-0987"
-      ],
-      "rank": 11
+        "R-0987",
+        "R-0990"
+      ]
     },
     {
       "id": "E-285",
@@ -24110,6 +24110,15 @@
       "title": "E-276 kept: the flowfield slot lookup compares the target first; navStress' logic -51.3 %",
       "verdict": "kept",
       "text": "**E-276 kept: the flowfield slot lookup compares the target before it loads the status; navStress' logic 6.204 →\n3.018 ms (−51.3 %, 4/4).** 2026-11-13, 19:11 to 19:18.\n\n**Change** (sitting branch `w14s/e276` `c7817c98` on `e6e146b8`; `w14/e276` `590b643a`): `NavGrid._findFlowfieldSlot`\nscanned every slot with `Atomics.load` of its status, then compared the target (the CPU sweep: 81 % of the function on\nthat load). A plain read of the slot's target filters first; on a match the status is loaded (the publication gate, as\nbefore) and the target read again after it. Nav tests and the suite pass.\n\n**Scene** (`w14-e276-navstress`: navStressScene `?agents=6144` (e6e146b8's knob), one logic worker, 64 flowfield slots,\n`--vs e6e146b8 --hyp-rev c7817c98 --owner logic`, 4 pairs): **KEPT (product)**, logic **6.204 → 3.018 ms, −51.3 % paired,\nworse 0/4, cv 1/8 %**; ENTITIES_PROCESSED 6 144, FLOWFIELDS_COMPUTED and FLOWFIELDS_SERVICED 40 on both sides; particle\n(which computes the fields) 3.919 → 3.826, under the floor.\n\n**Verdict: kept.** Every agent looks its field up every frame, so the scan was per agent times 64 slots; half of the\nlogic worker was those loads."
+    },
+    {
+      "id": "R-0990",
+      "date": "2026-11-13",
+      "time": "19:24",
+      "timeFrom": "recorded",
+      "title": "E-284 kept as hygiene: the bullet collect's garbage gone (626 to 0 KB/s), bulletStress' pre-render a tie",
+      "verdict": "kept-hygiene",
+      "text": "**E-284 kept as hygiene: the bullet collect carries the last bullet's index; its garbage gone (626 → 0 KB/s), bulletStress'\npre-render a tie (6.399 → 6.391 ms).** 2026-11-13, heap 18:52 to 18:54, scene 19:18 to 19:24.\n\n**Change** (sitting branch `w14s/e284` `50e64a06` on `e6e146b8`; `w14/e284` `baca8049`): `collectVisibleBullets` carried\n`lastKey`, a double, from one bullet to the next for the COLLECT_Y it leaves behind; the last active bullet's index is\ncarried instead and its key computed once after the loop (the same value: `bulletCollectShortcut.test.js` compares it\nwith the loop as it was).\n\n**Heap** (R-0987: bulletStress at 40 000, pre-render): 697, 651 → 61, 64 KB/s; `collectVisibleBullets` 626, 589 → 0.\n\n**Scene** (`w14-e284-bulletstress`: bulletStressScene `?bullets=300000`, `--vs e6e146b8 --hyp-rev 50e64a06 --owner\npreRender`, 4 pairs): **NEUTRAL**, pre-render 6.399 → 6.391 ms (−0.2 % paired, worse 2/4, cv 0/2 %); particle 14.267 →\n14.208 (−0.2 %, 2/4); RENDER_QUEUE_SIZE 163 106 → 162 523 (−0.4 %), the other keys equal.\n\n**Verdict: kept as hygiene** (the garbage gone, no worker worse), as E-107 and E-108 were. Predator's gate with the batch\nof keeps is the regression guard."
     }
   ],
   "leads": [
