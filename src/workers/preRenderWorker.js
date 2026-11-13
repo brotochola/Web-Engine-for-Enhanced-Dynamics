@@ -64,9 +64,9 @@ import { Sun } from '../core/sun.js';
 import {
     calculateCameraScreenBounds,
     screenBoundsToWorldBounds,
-    lightInfluenceRadius,
     lightCookieScale,
     resolveGroundScaleY,
+    LIGHT_GLOW_EXTENT,
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
@@ -282,6 +282,15 @@ function mergeSortPrefix(arr, tmp, n, compare) {
 function lightYOrder(a, b) {
     const d = Transform.y[a] - Transform.y[b];
     return d > 0 ? 1 : d < 0 ? -1 : d;
+}
+
+/** N-151: the squared distance of each candidate light to the view's centre, by entity, for lightNearOrder. */
+let LIGHT_NEAR_DIST = new Float32Array(0);
+
+/** Nearest the view's centre first (LIGHT_NEAR_DIST), then by id: a sign, not a difference. */
+function lightNearOrder(a, b) {
+    const d = LIGHT_NEAR_DIST[a] - LIGHT_NEAR_DIST[b];
+    return d > 0 ? 1 : d < 0 ? -1 : a > b ? 1 : a < b ? -1 : 0;
 }
 
 /** Nearest first, then id: `a.distSq - b.distSq || a.id - b.id`, unboxed. */
@@ -619,6 +628,9 @@ class PreRenderWorker extends AbstractWorker {
         this._lightPersistScratch = [];
         this._lightFlashScratch = [];
         this._lightYComparator = lightYOrder;
+        this._lightNearComparator = lightNearOrder;
+        /** N-151: each light's squared distance to the view's centre, by entity, on the overflow path only. */
+        this._lightNearDist = new Float32Array(0);
         this._sortPrefixTmp = null;
 
         // Stats tracking
@@ -1296,6 +1308,10 @@ class PreRenderWorker extends AbstractWorker {
             for (let i = 0; i < lightCap; i++) {
                 this._stampLights[i] = {
                     id: 0, x: NaN, y: NaN, intensity: NaN, rangeSq: NaN, sqrtI: NaN, distSq: NaN, maxShadows: 0,
+                    // DX-SPOT: the cone on the floor (coneCos -2: none), as the stamp's light table takes it.
+                    coneDirX: NaN, coneDirYW: NaN, coneCos: NaN, coneInvSpan: NaN, invG2: NaN,
+                    // DX-LIGHTAPI: min(brightness, 1), how dark its shadows are and how strong its cookie.
+                    shade: NaN,
                 };
             }
         }
@@ -1963,7 +1979,7 @@ class PreRenderWorker extends AbstractWorker {
         this._renderableCount = res[0];
         if (res[2]) this._collectorFull();
         this.visibleEntitiesCount += visible + res[1];
-        this._collectEntityGlow(Transform.x, Transform.y, Collider.visualRange, zoom, cb.cameraOffsetX,
+        this._collectEntityGlow(Transform.x, Transform.y, zoom, cb.cameraOffsetX,
             cb.cameraOffsetY, cb.minX, cb.maxX, cb.minY, cb.maxY);
     }
 
@@ -2016,27 +2032,24 @@ class PreRenderWorker extends AbstractWorker {
         return grid.walk(spriteEntities, spriteEntities.length, minX, minY, maxX, maxY);
     }
 
-    _collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+    _collectEntityGlow(x, y, camZoom, cameraOffsetX, cameraOffsetY,
         screenMinX, screenMaxX, screenMinY, screenMaxY) {
         const rowsBefore = this._renderableCount;
-        this._collectEntityGlowRows(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+        this._collectEntityGlowRows(x, y, camZoom, cameraOffsetX, cameraOffsetY,
             screenMinX, screenMaxX, screenMinY, screenMaxY);
         // E-216: the only rows of type 3 the collect makes.
         this._frameGlowRows += this._renderableCount - rowsBefore;
     }
 
-    _collectEntityGlowRows(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+    _collectEntityGlowRows(x, y, camZoom, cameraOffsetX, cameraOffsetY,
         screenMinX, screenMaxX, screenMinY, screenMaxY) {
-        const MIN_GLOW_INTENSITY = 50;
-        const MIN_GLOW_RANGE = 2.5;
         this._syncGlowLayer();
-        if (this._glowEmit && this._queryLightEmitter && LightEmitter.active && LightEmitter.hasGlowSprite) {
+        if (this._glowEmit && this._queryLightEmitter && LightEmitter.active && LightEmitter.glow) {
             const lights = Query.queryActiveEntities(this._queryLightEmitter);
             if (lights && lights.length > 0) {
                 const leActive = LightEmitter.active;
-                const leGlow = LightEmitter.hasGlowSprite;
-                const leIntensity = LightEmitter.lightIntensity;
-                const leSqrt = LightEmitter.sqrtLightIntensity;
+                const leGlow = LightEmitter.glow;
+                const leRadius = LightEmitter.radius;
                 // H-19, same hoist as collectVisibleEntities, and worse here:
                 // `SpriteRenderer.boundsHalfW?.[i]` was a static property lookup
                 // plus an optional chain PER LIGHT, not just a truthiness test.
@@ -2045,23 +2058,24 @@ class PreRenderWorker extends AbstractWorker {
                 const glowHalfH = SpriteRenderer.boundsHalfH;
                 const glowOffsetX = LightEmitter.offsetX;
                 const glowOffsetY = LightEmitter.offsetY;
+                const glowScreenY = LightEmitter.glowOffsetY;
                 const glowRotC = Transform.rotC;
                 const glowRotS = Transform.rotS;
                 for (let li = 0; li < lights.length; li++) {
                     const i = lights[li];
-                    if (!leActive[i] || !leGlow[i]) continue;
-                    if (leIntensity[i] < MIN_GLOW_INTENSITY) continue;
-                    if ((visualRange[i] || leSqrt[i] || 200) < MIN_GLOW_RANGE) continue;
+                    if (!leActive[i] || !leGlow[i] || !(leRadius[i] > 0)) continue;
                     if (!skipCull) {
                         const ox = glowOffsetX[i];
                         const oy = glowOffsetY[i];
                         const sx = (x[i] + ox * glowRotC[i] - oy * glowRotS[i]) * camZoom - cameraOffsetX;
-                        const sy = (y[i] + ox * glowRotS[i] + oy * glowRotC[i]) * camZoom - cameraOffsetY;
-                        let halfExtent = 0;
+                        const sy = (y[i] + ox * glowRotS[i] + oy * glowRotC[i] + (glowScreenY[i] || 0)) * camZoom - cameraOffsetY;
+                        // N-150: the halo's own size (it was the sprite's, or the visualRange: a big halo on a small
+                        // sprite popped in at the screen's edge), at least the sprite's.
+                        let halfExtent = leRadius[i] * LIGHT_GLOW_EXTENT;
                         const halfW = glowHalfW ? (glowHalfW[i] ?? 0) : 0;
                         const halfH = glowHalfH ? (glowHalfH[i] ?? 0) : 0;
-                        if (halfW > 0 || halfH > 0) halfExtent = halfW > halfH ? halfW : halfH;
-                        if (halfExtent <= 0) halfExtent = visualRange[i] || 0;
+                        if (halfW > halfExtent) halfExtent = halfW;
+                        if (halfH > halfExtent) halfExtent = halfH;
                         const extent = halfExtent * camZoom;
                         if (
                             sx < screenMinX - extent || sx > screenMaxX + extent ||
@@ -2391,7 +2405,7 @@ class PreRenderWorker extends AbstractWorker {
         else if (type === 7) mask = this.liquidFun?.layerMask?.[index] | 0;
         else if (type === 2) mask = DecorationComponent.layerMask ? DecorationComponent.layerMask[index] | 0 : 0;
         else if (type === 3) {
-            const g = LightEmitter.layerIdOfGlowSprite[index] | 0;
+            const g = LightEmitter.glowLayerId[index] | 0;
             if (g) mask = 1 << g;
             else mask = SpriteRenderer.layerMask ? SpriteRenderer.layerMask[index] | 0 : 0;
         } else if (type === 4 || type === 5) {
@@ -3319,14 +3333,20 @@ class PreRenderWorker extends AbstractWorker {
         const worldX = Transform.x;
         const worldY = Transform.y;
         const lightEnabled = LightEmitter.active;
-        const lightIntensity = LightEmitter.lightIntensity;
-        const sqrtI = LightEmitter.sqrtLightIntensity;
-        const lightHeight = LightEmitter.height;
+        const lightRadius = LightEmitter.radius;
+        const lightCasts = LightEmitter.castShadows;
+        const lightShadowRange = LightEmitter.shadowRange;
+        const lightConeCos = LightEmitter.coneCos;
+        const lightConeInvSpan = LightEmitter.coneInvSpan;
+        const lightBrightness = LightEmitter.brightness;
+        const lightDirC = LightEmitter.dirC;
+        const lightDirS = LightEmitter.dirS;
+        // DX-SPOT: a cone is measured on the floor (y over groundScaleY).
+        const invG = 1 / resolveGroundScaleY(this.config.lighting?.groundScaleY);
         const offsetX = LightEmitter.offsetX;
         const offsetY = LightEmitter.offsetY;
         const rotC = Transform.rotC;
         const rotS = Transform.rotS;
-        const vr = Collider.visualRange;
         const zoom = this._frameCameraZoom || 1;
         const camX = this._frameCameraX || 0;
         const camY = this._frameCameraY || 0;
@@ -3345,13 +3365,13 @@ class PreRenderWorker extends AbstractWorker {
             : Query.queryActiveEntities(this._queryLightEmitter);
         for (let i = 0; i < raw.length; i++) {
             const id = raw[i];
-            if (!lightEnabled[id]) continue;
-            if (!(sqrtI[id] > 0)) continue;
+            if (!lightEnabled[id] || !lightCasts[id]) continue;
+            const influence = lightRadius[id];
+            if (!(influence > 0)) continue;
             const ox = offsetX[id];
             const oy = offsetY[id];
             const x = worldX[id] + ox * rotC[id] - oy * rotS[id];
-            const y = worldY[id] + ox * rotS[id] + oy * rotC[id] - (lightHeight[id] || 0);
-            const influence = lightInfluenceRadius(sqrtI[id]);
+            const y = worldY[id] + ox * rotS[id] + oy * rotC[id];
             if (
                 x + influence < viewLeft ||
                 x - influence > viewRight ||
@@ -3362,18 +3382,42 @@ class PreRenderWorker extends AbstractWorker {
             }
             const dx = x - cx;
             const dy = y - cy;
-            const vrRange = vr ? (vr[id] || 0) : 0;
-            const range = vrRange > 0 ? vrRange : influence;
+            // DX-LIGHTAPI: how far its shadows reach (0: its radius).
+            const shadowRange = lightShadowRange[id];
+            const range = shadowRange > 0 ? shadowRange : influence;
             const slot = out[n];
             if (!slot) break;
             slot.id = id;
             slot.x = x;
             slot.y = y;
-            slot.intensity = lightIntensity[id];
+            // The falloff's I = (radius / 10)², divided so a whole radius gives it exactly.
+            slot.intensity = (influence * influence) / 100;
             slot.rangeSq = range * range;
-            slot.sqrtI = sqrtI[id];
+            slot.sqrtI = influence / 10;
             slot.distSq = dx * dx + dy * dy;
             slot.maxShadows = 0;
+            const coneCos = lightConeCos[id];
+            if (coneCos > -1) {
+                // The entity's facing turns the light's own direction; on the floor, unit length; its y over groundScaleY
+                // too, so the stamp's dot product takes world offsets.
+                const dc = lightDirC[id];
+                const ds = lightDirS[id];
+                const wx = rotC[id] * dc - rotS[id] * ds;
+                const wy = (rotS[id] * dc + rotC[id] * ds) * invG;
+                const len = Math.sqrt(wx * wx + wy * wy);
+                slot.coneDirX = len > 0 ? wx / len : 1;
+                slot.coneDirYW = len > 0 ? (wy / len) * invG : 0;
+                slot.coneCos = coneCos;
+                slot.coneInvSpan = lightConeInvSpan[id];
+            } else {
+                slot.coneDirX = 1;
+                slot.coneDirYW = 0;
+                slot.coneCos = -2;
+                slot.coneInvSpan = 0;
+            }
+            slot.invG2 = invG * invG;
+            const brightness = lightBrightness[id];
+            slot.shade = brightness < 1 ? brightness : 1;
             n++;
         }
         this._stampLightCount = n;
@@ -3384,12 +3428,10 @@ class PreRenderWorker extends AbstractWorker {
     _sortPrefix(arr, count, compare) {
         const n = count | 0;
         if (n <= 1) return;
-        if (n === arr.length) {
-            arr.sort(compare);
-            return;
-        }
-        // Slots at n and past it are pooled and must stay put, so this cannot
-        // hand the whole array to sort. Insertion sort costs ~n on a nearly
+        // Not Array.prototype.sort, even for a list that fills its array (every light visible at the light cap): with
+        // a comparator V8 copied the array to sort it, 84 KB/s of garbage in flashlightStressScene at 360 lights, and
+        // took 2 to 6 times as long as the path below (sortPrefixMicrobench's full cases).
+        // Slots at n and past it are pooled and must stay put. Insertion sort costs ~n on a nearly
         // sorted list (lights spawned in rows: 3.4 µs at 360) and n²/4 moves on
         // one far from sorted (moving lights in entity order: 54 µs at 360).
         // Past SORT_PREFIX_INSERTION_MAX it gets a budget of 16 moves per item;
@@ -3631,6 +3673,9 @@ class PreRenderWorker extends AbstractWorker {
         const capL = lights ? Math.min(this._stampLightCount | 0, this.maxShadowCastingLights | 0) : 0;
         if (!cq || capL <= 0 || !caps || !(caps.maxCookie > 0)) return 0;
         const texId = this._resolveBuiltinTextureId('_lightGradient');
+        // DX-SPOT: a cone light up to 180 degrees takes the gradient's half disc, turned along its cone, so its cookie
+        // does not lighten the sun's shadows behind it.
+        const halfId = this._resolveBuiltinTextureId('_lightGradientHalf');
         let n = 0;
         const room = cq.x.length;
         const shadowRes = this.config.lighting?.shadowResolution;
@@ -3643,10 +3688,33 @@ class PreRenderWorker extends AbstractWorker {
             cq.x[n] = L.x;
             cq.y[n] = L.y;
             const scale = lightCookieScale(L.sqrtI);
-            cq.scaleX[n] = scale;
-            cq.scaleY[n] = scale * groundY;
-            cq.alpha[n] = L.intensity / 50000;
-            cq.textureId[n] = texId;
+            // DX-LIGHTAPI: a dim light lightens the sun's shadows as much less as its own shadows are lighter.
+            const shade = L.shade < 1 ? L.shade : 1;
+            cq.alpha[n] = (L.intensity / 50000) * shade;
+            if (L.coneCos >= 0) {
+                // The cone's axis on the screen (the floor direction, y times groundScaleY) and the floor's
+                // perpendicular there: the half disc's length along each.
+                const fx = L.coneDirX;
+                const fy = L.coneDirYW * groundY;
+                const ax = fx;
+                const ay = fy * groundY;
+                const la = Math.sqrt(ax * ax + ay * ay);
+                const px = -fy;
+                const py = fx * groundY;
+                cq.rotC[n] = ax / la;
+                cq.rotS[n] = ay / la;
+                cq.scaleX[n] = scale * la;
+                cq.scaleY[n] = scale * Math.sqrt(px * px + py * py);
+                cq.anchorX[n] = 0;
+                cq.textureId[n] = halfId;
+            } else {
+                cq.rotC[n] = 1;
+                cq.rotS[n] = 0;
+                cq.scaleX[n] = scale;
+                cq.scaleY[n] = scale * groundY;
+                cq.anchorX[n] = 0.5;
+                cq.textureId[n] = texId;
+            }
             n++;
         }
         cq.count = n;
@@ -4043,8 +4111,7 @@ class PreRenderWorker extends AbstractWorker {
             const offsetY = LightEmitter.offsetY;
             const rotC = Transform.rotC;
             const rotS = Transform.rotS;
-            const lightIntensity = LightEmitter.lightIntensity;
-            const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+            const lightRadius = LightEmitter.radius;
             const flashActive = FlashComponent.active;
             const zoom = this.cameraData ? this._frameCameraZoom : 1;
             const camX = this.cameraData ? this._frameCameraX : 0;
@@ -4073,14 +4140,13 @@ class PreRenderWorker extends AbstractWorker {
                 const lightIdx = lightEntitiesRaw[i];
                 if (!lightEnabled[lightIdx]) continue;
 
-                const intensity = lightIntensity[lightIdx];
-                if (!(intensity > 0)) continue;
+                const lightInfluenceR = lightRadius[lightIdx];
+                if (!(lightInfluenceR > 0)) continue;
 
                 const ox = offsetX[lightIdx];
                 const oy = offsetY[lightIdx];
                 const lightX = worldX[lightIdx] + ox * rotC[lightIdx] - oy * rotS[lightIdx];
                 const lightY = worldY[lightIdx] + ox * rotS[lightIdx] + oy * rotC[lightIdx];
-                const lightInfluenceR = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
                 if (lightX + lightInfluenceR < viewMinX || lightX - lightInfluenceR > viewMaxX ||
                     lightY + lightInfluenceR < viewMinY || lightY - lightInfluenceR > viewMaxY) {
                     continue;
@@ -4099,8 +4165,27 @@ class PreRenderWorker extends AbstractWorker {
                     '_warnedVisibleLightsCap',
                     `[PRE_RENDER] visible light list full (${maxWrite}). Increase lighting.maxLights or reduce visible lights.`
                 );
-                this._sortPrefix(persistScratch, persistN, this._lightYComparator);
-                this._sortPrefix(flashScratch, flashN, this._lightYComparator);
+                // N-151: keep the lights nearest the view's centre (it kept the top of the screen's), persistent first,
+                // measured from where each light is (its offset turned with the entity), as the cull above.
+                if (this._lightNearDist.length < Transform.x.length) this._lightNearDist = new Float32Array(Transform.x.length);
+                const near = this._lightNearDist;
+                const cx = (viewMinX + viewMaxX) * 0.5;
+                const cy = (viewMinY + viewMaxY) * 0.5;
+                for (let k = 0; k < persistN; k++) {
+                    const id = persistScratch[k];
+                    const dx = worldX[id] + offsetX[id] * rotC[id] - offsetY[id] * rotS[id] - cx;
+                    const dy = worldY[id] + offsetX[id] * rotS[id] + offsetY[id] * rotC[id] - cy;
+                    near[id] = dx * dx + dy * dy;
+                }
+                for (let k = 0; k < flashN; k++) {
+                    const id = flashScratch[k];
+                    const dx = worldX[id] + offsetX[id] * rotC[id] - offsetY[id] * rotS[id] - cx;
+                    const dy = worldY[id] + offsetX[id] * rotS[id] + offsetY[id] * rotC[id] - cy;
+                    near[id] = dx * dx + dy * dy;
+                }
+                LIGHT_NEAR_DIST = near;
+                this._sortPrefix(persistScratch, persistN, this._lightNearComparator);
+                this._sortPrefix(flashScratch, flashN, this._lightNearComparator);
                 const persistTake = Math.min(persistN, maxWrite);
                 for (let i = 0; i < persistTake; i++) lightEntities[written++] = persistScratch[i];
                 const flashTake = Math.min(flashN, maxWrite - written);
@@ -4177,8 +4262,8 @@ class PreRenderWorker extends AbstractWorker {
         const fixturePoolMax = ColliderFixture.maxCount | 0;
         const fixtureRevision = ColliderFixture.revision;
         const lightEnabled = LightEmitter.active;
-        const lightIntensity = LightEmitter.lightIntensity;
-        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+        const lightRadius = LightEmitter.radius;
+        const lightCasts = LightEmitter.castShadows;
 
         const neighborData = Grid.neighborData;
         const stride = Grid._stride;
@@ -4204,6 +4289,12 @@ class PreRenderWorker extends AbstractWorker {
         const lightOffsetY = LightEmitter.offsetY;
         const lightRotC = Transform.rotC;
         const lightRotS = Transform.rotS;
+        // DX-SPOT: a cone light gathers only what can shadow its wedge and publishes its polygon cut to the wedge.
+        const lightConeCos = LightEmitter.coneCos;
+        const lightDirC = LightEmitter.dirC;
+        const lightDirS = LightEmitter.dirS;
+        const groundY = resolveGroundScaleY(this.config.lighting?.groundScaleY);
+        const groundInvY = 1 / groundY;
         const sweepK = this._visSweep;
         const sweepLight = sweepK.sweep;
         const sweepTable = sweepK.table;
@@ -4252,8 +4343,8 @@ class PreRenderWorker extends AbstractWorker {
             const lightIdx = visibleLights[1 + li];
             if (!lightEnabled[lightIdx]) continue;
 
-            const intensity = lightIntensity[lightIdx];
-            if (intensity <= 0) continue;
+            const influenceRadius = lightRadius[lightIdx];
+            if (!(influenceRadius > 0)) continue;
 
             // Same display pose as sprites (post-step publish), not live Transform
             this._displayPose(lightIdx, pose);
@@ -4261,23 +4352,60 @@ class PreRenderWorker extends AbstractWorker {
             const oy = lightOffsetY[lightIdx];
             const lx = pose[0] + ox * lightRotC[lightIdx] - oy * lightRotS[lightIdx];
             const ly = pose[1] + ox * lightRotS[lightIdx] + oy * lightRotC[lightIdx];
-            const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
             SOLID_ARGS[6] = lx;
             SOLID_ARGS[7] = ly;
             SOLID_ARGS[8] = influenceRadius * influenceRadius;
+            // DX-SPOT: a cone light's wedge in world space, as Pixi's cone shader sees it: the floor direction (the
+            // entity's facing turned by the light's own) turned by minus and plus the half aperture, then y times
+            // groundScaleY. e1 starts it and e2 ends it counter-clockwise, the sweep's increasing atan2.
+            const coneCos = lightConeCos[lightIdx];
+            const cone = coneCos > -1;
+            let e1x = 1;
+            let e1y = 0;
+            let e2x = 1;
+            let e2y = 0;
+            if (cone) {
+                const dc = lightDirC[lightIdx];
+                const ds = lightDirS[lightIdx];
+                const rc = lightRotC[lightIdx];
+                const rs = lightRotS[lightIdx];
+                const wx = rc * dc - rs * ds;
+                const wy = (rs * dc + rc * ds) * groundInvY;
+                const len = Math.sqrt(wx * wx + wy * wy);
+                const fx = len > 0 ? wx / len : 1;
+                const fy = len > 0 ? wy / len : 0;
+                const c2 = 1 - coneCos * coneCos;
+                const sinH = c2 > 0 ? Math.sqrt(c2) : 0;
+                e1x = fx * coneCos + fy * sinH;
+                e1y = (fy * coneCos - fx * sinH) * groundY;
+                e2x = fx * coneCos - fy * sinH;
+                e2y = (fy * coneCos + fx * sinH) * groundY;
+                const l1 = Math.sqrt(e1x * e1x + e1y * e1y);
+                const l2 = Math.sqrt(e2x * e2x + e2y * e2y);
+                e1x /= l1;
+                e1y /= l1;
+                e2x /= l2;
+                e2y /= l2;
+            }
 
             let occCount = 0;
             let vertPool = 0;
             let occluderLimitHit = false;
-            if (!gatherOn) clearPolarBins(influenceRadius);
+            // A light that casts no shadow (LightEmitter.castShadows 0) gathers nothing: its sweep is the full circle.
+            const casts = lightCasts[lightIdx] !== 0;
+            if (!gatherOn && casts) clearPolarBins(influenceRadius);
             const selfLitStart = selfLitCount;
             let solidsLit = 0;
 
-            if (gatherOn) {
+            if (!casts) {
+                skipPolarBins();
+            } else if (gatherOn) {
                 // The bins are cleared before the light's first solid rasters; a light with none leaves them.
                 skipPolarBins();
                 let binsCleared = false;
-                occCount = gk.gather(gk.tableByte, lightIdx, lx, ly, influenceRadius, this._poseAlpha);
+                occCount = cone
+                    ? gk.gatherCone(gk.tableByte, lightIdx, lx, ly, influenceRadius, this._poseAlpha, e1x, e1y, e2x, e2y, coneCos < 0 ? 1 : 0)
+                    : gk.gather(gk.tableByte, lightIdx, lx, ly, influenceRadius, this._poseAlpha);
                 occluderLimitHit = gatherRes[3] !== 0;
                 const events = gatherRes[2];
                 for (let e = 0; e < events; e++) {
@@ -4578,9 +4706,64 @@ class PreRenderWorker extends AbstractWorker {
             const xStart = baseIndex + 4;
             const yStart = xStart + maxVerts;
             const copyCount = vertCount < maxVerts ? vertCount : maxVerts; // subarray clamped too
-            for (let v = 0; v < copyCount; v++) {
-                f32[xStart + v] = outX[v];
-                f32[yStart + v] = outY[v];
+            // DX-SPOT: a cone light's polygon is cut to its wedge (the walk below), so Pixi fills the cone only.
+            let enter = -1;
+            if (cone && copyCount >= 3) {
+                // The edge where the walk enters the wedge: cross(e1, P - L) turns from negative to not there (it turns
+                // back half a turn later, behind the light).
+                let aPrev = e1x * (outY[copyCount - 1] - ly) - e1y * (outX[copyCount - 1] - lx);
+                for (let v = 0; v < copyCount; v++) {
+                    const a = e1x * (outY[v] - ly) - e1y * (outX[v] - lx);
+                    if (aPrev < 0 && a >= 0) {
+                        enter = v === 0 ? copyCount - 1 : v - 1;
+                        break;
+                    }
+                    aPrev = a;
+                }
+            }
+            if (enter < 0) {
+                for (let v = 0; v < copyCount; v++) {
+                    f32[xStart + v] = outX[v];
+                    f32[yStart + v] = outY[v];
+                }
+            } else {
+                // The light, the point where edge `enter` crosses e1, the vertices inside, and the point where the walk
+                // crosses e2 (cross(P - L, e2) turns from not negative to negative): a fan over the wedge alone, whose
+                // first and closing triangles are flat.
+                f32[xStart] = lx;
+                f32[yStart] = ly;
+                const next = enter + 1 === copyCount ? 0 : enter + 1;
+                let curX = outX[enter];
+                let curY = outY[enter];
+                const aK = e1x * (curY - ly) - e1y * (curX - lx);
+                const aN = e1x * (outY[next] - ly) - e1y * (outX[next] - lx);
+                const t = aK / (aK - aN);
+                curX += t * (outX[next] - curX);
+                curY += t * (outY[next] - curY);
+                f32[xStart + 1] = curX;
+                f32[yStart + 1] = curY;
+                let published = 2;
+                let j = next;
+                for (let step = 0; step < copyCount && published < maxVerts; step++) {
+                    const tx = outX[j];
+                    const ty = outY[j];
+                    const bc = (curX - lx) * e2y - (curY - ly) * e2x;
+                    const bt = (tx - lx) * e2y - (ty - ly) * e2x;
+                    if (bc >= 0 && bt < 0) {
+                        const s = bc / (bc - bt);
+                        f32[xStart + published] = curX + s * (tx - curX);
+                        f32[yStart + published] = curY + s * (ty - curY);
+                        published++;
+                        break;
+                    }
+                    f32[xStart + published] = tx;
+                    f32[yStart + published] = ty;
+                    published++;
+                    curX = tx;
+                    curY = ty;
+                    j = j + 1 === copyCount ? 0 : j + 1;
+                }
+                i32[baseIndex + 3] = published;
             }
 
             lightsWritten++;

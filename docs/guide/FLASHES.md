@@ -2,7 +2,7 @@
 
 Flashes are short-lived pooled lights (muzzle flashes, sparks, impacts). Each slot is a real `GameObject` with `LightEmitter` + `FlashComponent` — not a particle. Intensity fades linearly over `lifespan`, then the entity despawns.
 
-Flash has **no Collider**, so it never enters the spatial grid. Point-shadow gathering for a flash uses a direct grid query around the flash position in `preRenderWorker`.
+Flash has **no Collider**, so it never enters the spatial grid. Its point shadows come from the shadow stamp in `preRenderWorker`, which grids the casters itself.
 
 ## Setup
 
@@ -25,24 +25,32 @@ lighting: {
 Flash.spawn({
   x,
   y,
-  z: 30,              // light height (also glowHeightOffset)
+  z: 30,              // drawn 30 px up the screen, pool and glow (offsetY -30)
   lifespan: 100,      // ms; default 100
   color: 0xffaa00,    // 0xRRGGBB; default 0xffffff
-  intensity: 10000,   // starting LightEmitter intensity; default 10000
-  hasGlowSprite: 0.5, // 0 = off; 0.5 = default alpha; 1 = twice the alpha
+  radius: 1000,       // starting reach in px; default 1000
+  brightness: 1,      // times the colour and the glow; default 1
+  glow: 0.2,          // starting halo alpha, 0 = none; default 0.2
   castShadows: true,  // point shadows; default true
+  coneAngle: Math.PI / 2, // a cone, its whole aperture in radians; default 2π (round)
+  coneSoftness: 0.5,  // 0..1, how much of its edge fades; default 0
+  direction: aim,     // radians, where the cone points (a flash never turns: the world's frame); default 0
 });
 ```
 
 | Field | Default | Notes |
 | --- | --- | --- |
 | `x`, `y` | required | World position. Off-screen spawns return `null` (`Camera.isOnScreen` + margin). |
-| `z` | `0` | Height of the light / glow offset. |
+| `z` | `0` | How far up the screen the flash is drawn, pool and glow (its `LightEmitter.offsetY` is `-z`). |
 | `lifespan` | `100` | Milliseconds until auto-despawn. |
 | `color` | `0xffffff` | Packed RGB. |
-| `intensity` | `10000` | Initial intensity; fades to 0 over lifespan. |
-| `hasGlowSprite` | `0.5` | Glow strength `0..1`. `0` off, `0.5` current alpha (`intensity / 50000`), `1` twice that alpha. |
-| `castShadows` | `true` | `false` / `0` = still lights the scene, skips flash shadow grid work. |
+| `radius` | `1000` | Initial reach in px (`LightEmitter.radius`). |
+| `brightness` | `1` | Times the colour and the glow. |
+| `glow` | `0.2` | Initial halo alpha (`LightEmitter.glow`); `0` draws none. |
+| `castShadows` | `true` | `false` / `0` = still lights the scene, casts nothing (`LightEmitter.castShadows` 0: the flash is not one of the stamp's lights). |
+| `coneAngle` | `2π` | A cone's whole aperture in radians, as `LightEmitter.coneAngle`: a muzzle flash that lights ahead of the barrel only. |
+| `coneSoftness` | `0` | 0..1, how much of the cone's edge fades. |
+| `direction` | `0` | Radians, where the cone points, in the world's frame (a flash never turns). |
 
 Returns a `Flash` instance, or `null` if the pool is exhausted, not initialized, off-screen, or spawn was routed away.
 
@@ -57,7 +65,7 @@ Flash.spawn({
   z: 30,
   lifespan: 18,
   color: 0xffaa00,
-  intensity: 40000,
+  radius: 2000,
   castShadows: false,
 });
 ```
@@ -67,9 +75,9 @@ Keep `castShadows: true` (default) for longer / dramatic flashes (explosions, li
 ## Lifecycle
 
 1. `Flash.spawn` fills an internal spawn scratch and calls `GameObject.spawn` (not `this.spawn`, which would recurse).
-2. `onSpawned` writes `LightEmitter` + `FlashComponent` (including `castShadows`).
-3. Logic `tick` advances `currentLife`, sets `lightIntensity = initialIntensity * (1 - life/lifespan)`, despawns when expired.
-4. `onDespawned` clears light/flash active flags; pool clear also zeros SoA fields (`castShadows` → `0`).
+2. `onSpawned` writes `LightEmitter` (including `castShadows`) + `FlashComponent`.
+3. Logic `tick` advances `currentLife`, fades the light (`radius = initialRadius * sqrt(left)`, `glow = initialGlow * left`, with `left = 1 - life/lifespan`), despawns when expired.
+4. `onDespawned` clears light/flash active flags; the pool's reset puts the light's defaults back (`castShadows` → `1`).
 
 ## Lighting budget (`preRenderWorker`)
 
@@ -85,7 +93,7 @@ If TallLights / lamps flicker under heavy fire, raise `maxLights` and/or `maxFla
 
 For each visible light that casts point shadows:
 
-- If the light is a flash and `FlashComponent.castShadows[i] === 0`, skip the flash grid-query and shadow sprites.
+- A light with `LightEmitter.castShadows[i] === 0` (a flash spawned with `castShadows: false`, or any light) is left out of the stamp: no cookie, no shadow sprites. Under raycasted lighting it gathers no occluders and its polygon is the full circle.
 - The flash remains in the visible-lights / lighting texture path.
 
 So `castShadows: false` is “light without shadow cost,” not “invisible flash.”
@@ -102,7 +110,7 @@ preRenderWorker
   → lighting texture
   → optional point-shadow pass (skipped when castShadows === 0)
 pixiWorker
-  → draw lighting (+ glow sprite scaled by hasGlowSprite)
+  → draw lighting (+ glow sprite at LightEmitter.glow)
 ```
 
 ## Related
@@ -110,4 +118,4 @@ pixiWorker
 - [`flash.js`](../../src/core/flash.js)
 - [`flashComponent.js`](../../src/components/flashComponent.js)
 - [`lightEmitter.js`](../../src/components/lightEmitter.js)
-- Demo: [`person.js`](../../demos/predatorScene/gameObjects/person.js) (muzzle `castShadows: false`), [`PredatorScene.js`](../../demos/predatorScene/predatorScene.js) (`maxFlashes`)
+- Demo: [`PredatorScene.js`](../../demos/predatorScene/predatorScene.js) (`maxFlashes`)

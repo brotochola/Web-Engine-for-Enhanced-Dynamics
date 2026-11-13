@@ -5,7 +5,7 @@
 import WEED from '/src/index.js';
 import { CAR_MODELS } from './carModels.js';
 import {
-  META, RAYCAST, HEADLIGHT_COLOR, OFF, isOff, CarState, WalkerState, LightHours, lightBorn, lightTick, lightReach,
+  META, RAYCAST, HEADLIGHT_COLOR, OFF, isOff, CarState, WalkerState, LightHours, lightBorn, lightTick,
 } from './town.js';
 
 const {
@@ -110,20 +110,17 @@ export class Car extends GameObject {
     A.headlights = c.headlights ? 1 : 0;
     if (c.headlights) {
       // One light ahead of the car (LightEmitter.offsetX turns with it) and two glows on the front, decorations 0 and 1.
-      L.lightColor = HEADLIGHT_COLOR;
-      L.height = 0;
-      L.hasGlowSprite = 0;
-      L.lightIntensity = 700;
+      L.color = HEADLIGHT_COLOR;
+      L.radius = 265;
       L.offsetX = A.hl + HEADLIGHT_AHEAD;
       L.offsetY = 0;
       L.active = 1;
-      if (RAYCAST) this.collider.visualRange = lightReach(L.lightIntensity) + A.hl + HEADLIGHT_AHEAD;
       for (let k = 0; k < 2; k++) {
         this.addDecoration('_lightGradient', 0, 0, 0.18, 0.18, 1, { tint: HEADLIGHT_COLOR, alpha: 0.9, anchorX: 0.5, anchorY: 0.5, offsetY: -8 });
       }
       lightBorn(this, OFF.HEADLIGHTS, 2, 0.9, 0.9, c.x, c.y);
     } else {
-      L.lightIntensity = 0;
+      L.radius = 0;
       L.offsetX = 0;
       L.offsetY = 0;
       L.active = 0;

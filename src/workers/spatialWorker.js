@@ -171,6 +171,11 @@ class SpatialWorker extends AbstractWorker {
 
     /** Fraction of visualRange (0 = off). */
     this._neighborReuseSkin = 0;
+    /**
+     * Raycasted lighting: lights take neighbour lists (its occluder gather reads them). In basic lighting nothing reads
+     * a light's list, so a light takes one only when its class reads its neighbours (N-153).
+     */
+    this._raycastLights = false;
     /** Full candidate rebuild every N frames (1 = every frame). */
     this._neighborTickInterval = 1;
     // spatial.gatherCellOrder: the WASM gather walks its batch in home-cell order.
@@ -329,6 +334,7 @@ class SpatialWorker extends AbstractWorker {
     this._entityReuseInitialized = new Uint8Array(this.globalEntityCount);
 
     const spatialCfg = this.config?.spatial || {};
+    this._raycastLights = this.config?.lighting?.enabled === true && this.config?.lighting?.raycasted === true;
     this._neighborReuseSkin = Number(spatialCfg.neighborReuseSkin) > 0 ? Number(spatialCfg.neighborReuseSkin) : 0;
     // Max frames to keep a candidate list (bounds B drift). Override via spatial.neighborReuseMaxFrames.
     const maxFrames = Number(spatialCfg.neighborReuseMaxFrames);
@@ -1360,10 +1366,16 @@ class SpatialWorker extends AbstractWorker {
   _findNeighbors() {
     const visualRange = Collider.visualRange;
     const active = Transform.active;
-    // E-176: lists only for types whose code reads them, and for active lights (pre-render reads theirs).
+    // E-176: lists only for types whose code reads them, and under raycasted lighting for active lights that cast
+    // shadows (pre-render gathers their occluders from them; N-153: nothing reads a light's list in basic lighting).
     const readers = Grid.neighborReaders;
     const entityType = Transform.entityType;
-    const lightActive = LightEmitter.active || null; // null: the scene has no lights
+    const lightActive = this._raycastLights ? LightEmitter.active || null : null; // null: no light takes a list
+    const lightCasts = lightActive !== null ? LightEmitter.castShadows : null;
+    const lightRadius = lightActive !== null ? LightEmitter.radius : null;
+    const lightShadowRange = lightActive !== null ? LightEmitter.shadowRange : null;
+    const lightOffsetX = lightActive !== null ? LightEmitter.offsetX : null;
+    const lightOffsetY = lightActive !== null ? LightEmitter.offsetY : null;
     const maxNeighbors = Grid.maxNeighbors;
     const stride = Grid._stride;
     const skinFrac = this._neighborReuseSkin;
@@ -1420,10 +1432,23 @@ class SpatialWorker extends AbstractWorker {
 
       this.entitiesProcessedThisFrame++;
 
-      const myVisualRange = visualRange[entityA];
+      let myVisualRange = visualRange[entityA];
+      // DX-LIGHTAPI: a light searches its own reach (shadowRange, or its radius) past its offset from the entity, so
+      // no Collider.visualRange has to cover it. Not when its class reads its neighbours: the row is that code's list
+      // too, and the light's reach would widen what it sees (a hero with a flashlight would find enemies 1500 px off).
+      // Such a light finds its occluders within the entity's visualRange, as every light did before.
+      const isLight = lightActive !== null && lightActive[entityA] !== 0 && lightCasts[entityA] !== 0;
+      if (isLight && readers !== null && readers[entityType[entityA]] === 0) {
+        const sr = lightShadowRange[entityA];
+        const ox = lightOffsetX[entityA];
+        const oy = lightOffsetY[entityA];
+        const reach = (sr > 0 ? sr : lightRadius[entityA]) + Math.sqrt(ox * ox + oy * oy);
+        // A float32, as the column the reuse signature keeps (a double would never match it).
+        if (reach > myVisualRange) myVisualRange = Math.fround(reach);
+      }
       if (
         myVisualRange <= 0 ||
-        (readers !== null && readers[entityType[entityA]] === 0 && !(lightActive !== null && lightActive[entityA]))
+        (readers !== null && readers[entityType[entityA]] === 0 && !isLight)
       ) {
         // A row this worker cleared stays clear: only its publish writes it. Its own write each frame
         // dirtied a cache line per entity (130 bytes a row at maxNeighbors 64). With other spatial
@@ -1441,7 +1466,7 @@ class SpatialWorker extends AbstractWorker {
       let scheduleSkipRebuild = false;
       if (tickInterval > 1) {
         const tc = typedClass[entityA];
-        if (tc !== 0 && (lightActive === null || lightActive[entityA] === 0)) {
+        if (tc !== 0 && !isLight) {
           // E-200: logic frames since this slot's last refresh frame (_setupTypedNeighborStagger); due if that
           // frame came since the last search. Stateless, so a slot whose row changed owner keeps its phase.
           let since = typedNow[tc] - typedOffset[entityA];
@@ -1515,7 +1540,8 @@ class SpatialWorker extends AbstractWorker {
         pub.list[pub.queued++] = entityA;
         if (!truncatedOf[entityA]) {
           const b = entityA * 4;
-          this._storeNeighborReuseSignature(entityA, entityPosData[b], entityPosData[b + 1], entityPosData[b + 2], visualRange[entityA]);
+          // The range searched (a light's own reach, else its visualRange), as the next frame compares it.
+          this._storeNeighborReuseSignature(entityA, entityPosData[b], entityPosData[b + 1], entityPosData[b + 2], pub.range[entityA]);
         } else {
           // Skin reuse stays off (incomplete list), but schedule stagger needs age reset
           this._entityReuseInitialized[entityA] = 0;

@@ -32,17 +32,16 @@ export class Fire extends GameObject {
     // Store initial radius for fade calculations
 
     Collider.radius[this.index] = FireComponent.baseRadius[this.index] = 40 * scale;
-    this.collider.visualRange = 400;
+    this.lightEmitter.shadowRange = 400;
 
-    this.lightEmitter.lightColor = randomColor({
+    this.lightEmitter.color = randomColor({
       min: 0xffff00,
       max: 0xff9900,
     });
-    this.lightEmitter.lightIntensity = 10000;
-    this.lightEmitter.glowHeightOffset = this.collider.radius * 0.5 * scale;
-    this.lightEmitter.height = 0;
+    this.lightEmitter.radius = 1000;
+    this.lightEmitter.glow = 0.2;
+    this.lightEmitter.glowOffsetY = -this.collider.radius * 0.5 * scale;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0.5;
     this.setAlpha(0.6 + rng() * 0.2);
 
     this.setSpritesheet('fire');
@@ -94,13 +93,16 @@ export class Fire extends GameObject {
 
     const intensity = (baseIntensity + intensityVariation) * totalFlicker;
     const radius = Collider.radius;
-    LightEmitter.lightIntensity[this.index] = Math.max(500, intensity) * fadeFactor;
+    // The fire's strength s sets its light's reach, 10·√s, and its glow, s / 50000.
+    const strength = Math.max(500, intensity) * fadeFactor;
+    LightEmitter.radius[this.index] = 10 * Math.sqrt(strength);
+    LightEmitter.glow[this.index] = strength / 50000;
 
     // Update radius based on fade factor
     radius[this.index] = FireComponent.baseRadius[this.index] * fadeFactor;
 
-    // Update visual range so glow sprite shrinks with the fire
-    Collider.visualRange[this.index] = 400 * fadeFactor;
+    // Its shadows reach less as it dies
+    LightEmitter.shadowRange[this.index] = 400 * fadeFactor;
 
     // Update scale based on fade factor (visual shrinking) with flickering
     const currentScale = this.fireComponent.baseScale * fadeFactor;
@@ -120,8 +122,8 @@ export class Fire extends GameObject {
     // Update alpha based on fade factor
     this.setAlpha(0.9 * fadeFactor);
 
-    // Update glow height offset based on current radius
-    this.lightEmitter.glowHeightOffset = radius[this.index] * 0.5 * this.fireComponent.baseScale;
+    // The glow rises with the flame
+    this.lightEmitter.glowOffsetY = -radius[this.index] * 0.5 * this.fireComponent.baseScale;
 
     // Mark dirty to keep animation advancing
     const myRadius = radius[this.index];

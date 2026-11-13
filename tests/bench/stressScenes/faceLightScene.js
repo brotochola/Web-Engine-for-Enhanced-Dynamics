@@ -51,11 +51,10 @@ class FaceLamp extends GameObject {
   onSpawned(config = {}) {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 4;
-    this.collider.visualRange = 900;
-    this.lightEmitter.lightColor = 0xffffff;
-    this.lightEmitter.lightIntensity = config.intensity ?? 4000;
-    this.lightEmitter.sourceHeight = config.height ?? 0;
-    this.lightEmitter.hasGlowSprite = 0;
+    this.lightEmitter.shadowRange = 900;
+    this.lightEmitter.color = 0xffffff;
+    this.lightEmitter.radius = config.radius ?? 630;
+    this.lightEmitter.elevation = config.elevation ?? 0;
   }
 }
 
@@ -120,7 +119,7 @@ export class FaceLightScene extends Scene {
       });
     }
     for (let i = 0; i < LAMPS; i++) {
-      FaceLamp.spawn({ x: rng() * CELL_W, y: rng() * CELL_H, intensity: 3000, height: 40 });
+      FaceLamp.spawn({ x: rng() * CELL_W, y: rng() * CELL_H, radius: 550, elevation: 40 });
     }
     for (let cy = 0; cy < ROWS; cy++) {
       for (let cx = 0; cx < COLUMNS; cx++) {
@@ -155,7 +154,7 @@ export class FaceLightScene extends Scene {
           });
         }
         for (const l of LAYOUT.lamps) {
-          FaceLamp.spawn({ x: dx + l.x, y: dy + l.y * GROUND, intensity: l.intensity, height: l.height });
+          FaceLamp.spawn({ x: dx + l.x, y: dy + l.y * GROUND, radius: l.radius, elevation: l.elevation });
         }
       }
     }

@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-12",
+  "updated": "2026-11-13",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -1869,7 +1869,8 @@
       "aliases": [],
       "records": [
         "R-0362",
-        "R-0385"
+        "R-0385",
+        "R-0944"
       ]
     },
     {
@@ -9996,7 +9997,8 @@
         "R-0921",
         "R-0923",
         "R-0926",
-        "R-0931"
+        "R-0931",
+        "R-0955"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -12371,6 +12373,413 @@
       ],
       "records": [
         "R-0933"
+      ]
+    },
+    {
+      "date": "2026-11-12",
+      "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
+      "records": [
+        "R-0934",
+        "R-0935",
+        "R-0936",
+        "R-0937",
+        "R-0938",
+        "R-0941",
+        "R-0945",
+        "R-0949",
+        "R-0951",
+        "R-0952",
+        "R-0953",
+        "R-0954"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#DX-LIGHTAPI",
+        "DX_LIGHTAPI_DESIGN.md"
+      ],
+      "id": "DX-LIGHTAPI",
+      "title": "A clear light API: radius and brightness for lightIntensity, color, glow, glowLayer, glowOffsetY, elevation, castShadows and shadowRange per light",
+      "status": "open",
+      "statusText": "done on dx/light-api 2026-11-13 (A0–A6), every check passed; waiting for the owner's merge",
+      "next": "Merge to main (the owner's OK); then the register status kept.",
+      "area": "render",
+      "kind": "dx",
+      "aliases": [
+        "lightIntensity",
+        "radius",
+        "brightness",
+        "hasGlowSprite",
+        "glow",
+        "sourceHeight",
+        "elevation",
+        "glowHeightOffset",
+        "influenceRadius",
+        "shadowRange",
+        "castShadows",
+        "light API"
+      ],
+      "rank": 34
+    },
+    {
+      "date": "2026-11-12",
+      "result": "Cone lights in basic lighting and under raycast; point lights draw what they drew. A cone costs less than its round light: headlights pre-render 5.89 → 3.70 ms, flashlights 10.36 → 3.20 ms (R-0946, R-0947); trace clean (R-0949); scoreboard against main no row worse (R-0953); the Headlights demo.",
+      "records": [
+        "R-0939",
+        "R-0940",
+        "R-0941",
+        "R-0942",
+        "R-0943",
+        "R-0945",
+        "R-0946",
+        "R-0947",
+        "R-0949",
+        "R-0950",
+        "R-0951",
+        "R-0952",
+        "R-0953",
+        "R-0956"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#DX-SPOT",
+        "DX_LIGHTAPI_DESIGN.md"
+      ],
+      "id": "DX-SPOT",
+      "title": "Cone lights as LightEmitter fields: direction, coneAngle, coneSoftness (headlights, flashlights)",
+      "status": "running",
+      "statusText": "done on dx/light-api 2026-11-13 (B0–B4, Flash cones, the review's fixes), every check passed; waiting for the owner's merge",
+      "next": "Merge to main (the owner's OK). Open beside it: N-155, N-156, N-158, N-161.",
+      "area": "render",
+      "kind": "dx",
+      "aliases": [
+        "spot light",
+        "cone light",
+        "headlights",
+        "flashlight",
+        "coneAngle",
+        "direction",
+        "linterna",
+        "faros"
+      ],
+      "rank": 35
+    },
+    {
+      "date": "2026-11-12",
+      "result": "Flash.spawn({ castShadows: false }) now writes LightEmitter.castShadows 0: the flash leaves the shadow stamp (no cookie, no casters) and, under raycast, gathers nothing. lightCastShadows.test.js",
+      "records": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-149"
+      ],
+      "id": "N-149",
+      "title": "Flash.spawn({ castShadows: false }) does nothing: FlashComponent.castShadows is written and never read",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (741b616c): LightEmitter.castShadows",
+      "area": "engine",
+      "kind": "bug",
+      "aliases": [
+        "Flash",
+        "castShadows",
+        "muzzle flash"
+      ],
+      "next": "Done."
+    },
+    {
+      "date": "2026-11-12",
+      "result": "The glow is culled by its own size (0.85 of the radius) past its glowOffsetY, at least the sprite's; still captures unchanged (R-0938)",
+      "records": [
+        "R-0938"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#N-150"
+      ],
+      "id": "N-150",
+      "title": "A light's glow is culled by its sprite's bounds, not by the glow's own size: big glows pop in at the screen's edge",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (5d9fd026)",
+      "area": "render",
+      "kind": "bug",
+      "aliases": [
+        "glow cull",
+        "hasGlowSprite",
+        "pop-in"
+      ],
+      "next": "Done."
+    },
+    {
+      "date": "2026-11-12",
+      "result": "Over maxLights pre-render keeps the lights nearest the view's centre, as Pixi does (R-0938)",
+      "records": [
+        "R-0938"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#N-151"
+      ],
+      "id": "N-151",
+      "title": "Over lighting.maxLights, pre-render keeps lights by screen y, not by distance to the camera",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (921a255d)",
+      "area": "render",
+      "kind": "bug",
+      "aliases": [
+        "maxLights",
+        "visible lights",
+        "overflow"
+      ],
+      "next": "Done."
+    },
+    {
+      "date": "2026-11-12",
+      "result": "writeRgba32Float pads rows with a copy loop: no subarray per row per frame (R-0938)",
+      "records": [
+        "R-0938"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#N-152"
+      ],
+      "id": "N-152",
+      "title": "writeRgba32Float makes a subarray per row every frame (WebGPU light data upload)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (61779fb3)",
+      "area": "render",
+      "kind": "bug",
+      "aliases": [
+        "subarray",
+        "pinGpuTexture",
+        "light data texture"
+      ],
+      "next": "Done."
+    },
+    {
+      "date": "2026-11-12",
+      "result": "A light takes a neighbour list only under raycast or when its class reads its neighbours. Predator: spatial 3.286 → 3.266 ms, no measurable gain there (R-0936)",
+      "records": [
+        "R-0936"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#N-153"
+      ],
+      "id": "N-153",
+      "title": "The spatial worker builds neighbour lists for every active light, but only raycasted lighting reads them",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (5b1d716b, with shadowRange)",
+      "area": "spatial",
+      "kind": "speed",
+      "aliases": [
+        "neighbour lists",
+        "E-176",
+        "lights",
+        "visualRange"
+      ],
+      "next": "Done."
+    },
+    {
+      "date": "2026-11-12",
+      "result": "Skipping the cookie pass changes up to 44/255 (dxCaptureScene at noon): a lamp's cookie lightens the sun's shadows in its pool. It stays.",
+      "records": [
+        "R-0938"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#N-154"
+      ],
+      "id": "N-154",
+      "title": "The cookie pass may change no pixel: a white premultiplied cookie cancels under the MULTIPLY of castedShadows",
+      "status": "answered",
+      "statusText": "answered 2026-11-12: the cookie is not dead (R-0938)",
+      "area": "render",
+      "kind": "bug",
+      "aliases": [
+        "cookie",
+        "_lightGradient",
+        "shadowRT",
+        "castedShadows"
+      ],
+      "next": "Done."
+    },
+    {
+      "id": "N-155",
+      "title": "lightGalleryScene draws differently on WebGL and WebGPU: up to 52/255 on about 80 000 to 98 000 pixels",
+      "status": "open",
+      "statusText": "found 2026-11-12 checking DX-SPOT on both backends; not read in the code yet",
+      "date": "2026-11-12",
+      "area": "render",
+      "kind": "bug",
+      "rank": 30,
+      "result": "The same count with and without cones (raycast 79 499 both; basic 97 951 and 96 252); traced in the session to the lamp whose halo is on its own layer (glowLayer); predates the light API change.",
+      "next": "A capture with that lamp's glowLayer cleared on both backends; then the custom layer's composite on WebGPU (its blend or premultiplication) against WebGL's.",
+      "refs": [
+        "REVIEW_PLAN.md#N-155"
+      ],
+      "aliases": [
+        "glowLayer",
+        "WebGPU",
+        "WebGL",
+        "backend difference",
+        "custom layer"
+      ],
+      "records": [
+        "R-0940"
+      ]
+    },
+    {
+      "id": "N-156",
+      "title": "physicsChainWait.test.js's first test fails now and then under the full suite (a wall-clock budget)",
+      "status": "open",
+      "statusText": "found 2026-11-12 on dx/light-api: 1 of 2550 in two full runs, 4 of 4 alone",
+      "date": "2026-11-12",
+      "area": "tests",
+      "kind": "bug",
+      "rank": 40,
+      "result": "Its ringer thread rings at 3, 6 and 9 ms against a 16 ms budget; under the suite's load it ran late, the wait gave up and turned the chain off (121 !== 0).",
+      "next": "A wider budget (a longer period) or a deadline given ahead, as the other publish tests do.",
+      "refs": [
+        "REVIEW_PLAN.md#N-156"
+      ],
+      "aliases": [
+        "physicsChainWait",
+        "flaky test",
+        "chain wait",
+        "N-146"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-157",
+      "title": "_sortPrefix handed a list that filled its array to Array.prototype.sort: garbage every frame at the light cap, and slower",
+      "status": "kept-kernel",
+      "statusText": "fixed 2026-11-12 (06740b03; R-0944)",
+      "date": "2026-11-12",
+      "area": "render",
+      "kind": "speed",
+      "result": "No native sort. Kernel n360 full random 57.0 → 21.9 µs (3/3); pre-render 275.8 → 60.6 KB/s at 360 cone lights (sort 215.5 KB/s gone; R-0948 corrects R-0944's sample). Scene (flashlightStressScene ?cone=1&lights=360, ABAB 4 pairs against 815562c9, R-0944): pre-render 3.115 → 3.028 ms, -2.8 %, worse 1/4, NEUTRAL: kept on the kernel.",
+      "next": "Done.",
+      "refs": [
+        "REVIEW_PLAN.md#N-157"
+      ],
+      "aliases": [
+        "_sortPrefix",
+        "Array.prototype.sort",
+        "E-08",
+        "light sort",
+        "GC"
+      ],
+      "records": [
+        "R-0944",
+        "R-0948"
+      ]
+    },
+    {
+      "id": "N-158",
+      "title": "Per-frame allocations left in pre-render (61 KB/s) and Pixi in the flashlight trace: frame loop, waits, camera bounds, gather columns",
+      "status": "open",
+      "statusText": "found 2026-11-12 in DX-SPOT's engine trace",
+      "date": "2026-11-12",
+      "area": "engine",
+      "kind": "speed",
+      "rank": 28,
+      "result": "_runFrame 7–9 KB/s per worker, _waitForPose/_waitForQueue 6–8, pre-render camera bounds ~20 (doubles in shared-map objects), writeGatherColumns put closure 4.9, renderVisibilityLighting clear colour and options 5.4.",
+      "next": "One at a time with heapSampleWorkers: module Float64Arrays for the bounds (E-66), a module function for put, kept options and colour in the light pass, then the frame loop.",
+      "refs": [
+        "REVIEW_PLAN.md#N-158"
+      ],
+      "aliases": [
+        "GC",
+        "heap numbers",
+        "garbage",
+        "heapSampleWorkers",
+        "camera bounds"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-159",
+      "title": "The stamp's bench harness wrote five doubles a light while the kernel reads eleven (the scoreboard's shadowStamp +108.7 % was a misread fixture)",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-11-13 reading DX-SPOT's scoreboard against main",
+      "date": "2026-11-13",
+      "area": "harness",
+      "kind": "bug",
+      "result": "The harness writes through the product's writeStampLights (41987e0f, e1feda6d); 708 → 7877 rows on the fixture, wasm = JS checksum 2692520044; shadowStampHarness.test.js pins it. Measured right, the branch's stamp was 3.4 % slower (fixed in 5ce5a85b).",
+      "refs": [
+        "REVIEW_PLAN.md#N-159"
+      ],
+      "aliases": [
+        "shadowStampKernel",
+        "LIGHT_DOUBLES",
+        "STAMP_LIGHT_DOUBLES",
+        "writeStampLights",
+        "stamp harness"
+      ],
+      "records": [
+        "R-0951",
+        "R-0952",
+        "R-0953"
+      ]
+    },
+    {
+      "id": "N-160",
+      "title": "The catalog's tilemap row asked for cases.getTileId.opsPerSec, renamed shipped in 44bdf560: it failed every sitting",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-11-13 in the same scoreboard",
+      "date": "2026-11-13",
+      "area": "harness",
+      "kind": "bug",
+      "result": "df2167b3: the row reads cases.shipped.opsPerSec; then kernel -0.5 %, logic0 +1.8 %, a tie.",
+      "refs": [
+        "REVIEW_PLAN.md#N-160"
+      ],
+      "aliases": [
+        "tilemap row",
+        "getTileId",
+        "engineFeatureCatalog"
+      ],
+      "records": [
+        "R-0951",
+        "R-0952"
+      ]
+    },
+    {
+      "id": "N-161",
+      "title": "The catalog's audioStorm row cannot decide: its load key BODY_COUNT is 0 in a scene without bodies, and logic0 sits at 0.56 ms",
+      "status": "open",
+      "statusText": "found 2026-11-13 in the same scoreboard",
+      "date": "2026-11-13",
+      "area": "harness",
+      "kind": "bug",
+      "rank": 41,
+      "result": "load not comparable (median 0 on both sides) and under the 3 ms floor at ?plays=1200.",
+      "next": "A load count the scene publishes (plays a tick or voices playing) as the load key, and ?plays= high enough for logic0 past 3 ms.",
+      "refs": [
+        "REVIEW_PLAN.md#N-161"
+      ],
+      "aliases": [
+        "audioStorm row",
+        "BODY_COUNT",
+        "engineFeatureCatalog"
+      ],
+      "records": [
+        "R-0951",
+        "R-0952"
+      ]
+    },
+    {
+      "id": "N-162",
+      "title": "A raycasted light batch that drew nothing kept its GPU indices: the next frame drew every earlier light again (despawn all lamps, spawn one)",
+      "status": "kept-hygiene",
+      "statusText": "found by the owner and fixed 2026-11-13 (Headlights demo)",
+      "date": "2026-11-13",
+      "area": "render",
+      "kind": "bug",
+      "result": "ee2647e4: an empty frame only hides the mesh and keeps idxUsed, so the next frame zeroes and uploads the old tail; lightBatchEmptyFrame.test.js fails on the code before. In main since E-96.",
+      "refs": [
+        "REVIEW_PLAN.md#N-162"
+      ],
+      "aliases": [
+        "_finishLightBatch",
+        "idxUsed",
+        "stale light fans",
+        "ghost lights",
+        "E-96"
+      ],
+      "records": [
+        "R-0956"
       ]
     }
   ],
@@ -21484,6 +21893,277 @@
       "commits": [
         "6610ad7a",
         "4cfde245"
+      ]
+    },
+    {
+      "id": "R-0934",
+      "date": "2026-11-12",
+      "time": "17:06",
+      "timeFrom": "recorded",
+      "title": "A1: the new light API draws the old API's pixels (gallery 0 of 921600 in four modes)",
+      "verdict": "kept",
+      "text": "**DX-LIGHTAPI A1 (names, heights and radius): the new API draws the old API's pixels.**\n2026-11-12, commit 86f3ee9f against 91248f19 (lightGalleryScene written in the old API there), `compareCaptures.mjs --vs 91248f19 --full-rev` (a new flag: each side runs its own revision's scene), headed Chrome, the owner's GPU.\n\n- **lightGalleryScene** (still: twelve lamps, every field of the API, barrels casting): 0 of 921 600 pixels differ on WebGL, WebGPU, `groundScaleY=0.7` and `lightGlow: 'sprite'` (17:06 to 17:09). The gallery's intensities are (r/10)² for whole r and its glows binary fractions, so the mapping is exact.\n- **Raycast** (17:16): 138 726 pixels differ, max 66/255, all from the two lamps with a `height`: their fan is now swept from the light's own point, where their pool is drawn (it was swept from the foot, which drew rays leaking past the boxes). No demo under raycast sets a height.\n- **dxCaptureScene**: 0 differ by default, raycast and `lampOffset=40`; 9 pixels by 1/255 at hour 22 (its I 20000 is no whole radius: 1414.21 in float32).\n- **selfLitFillTriangles golden**: the old code with I 24964 and height 12 gives the same two hashes as the new code with radius 1580 and offsetY -12 (651987311, 4154422693).\n\nNothing timed: the change moves per-light arithmetic only (I = r²/100 per light per frame), measured with the part's gate.",
+      "commits": [
+        "86f3ee9f"
+      ]
+    },
+    {
+      "id": "R-0935",
+      "date": "2026-11-12",
+      "time": "17:23",
+      "timeFrom": "recorded",
+      "title": "A2: a falloff ending at the radius darkens lit scenes (mean luma -7.5 %, max 25/255): dropped",
+      "verdict": "dropped",
+      "text": "**DX-LIGHTAPI A2 (a falloff that ends at the radius) dropped: it darkens lit scenes.**\n2026-11-12, the change on top of 86f3ee9f (not committed): the basic pass and the particle and LiquidFun splats took off each light's value at its radius, max(I/(I+d²) - ε, 0)/(1 - ε), ε = I/(I+R²) = 1/101, so a light would end at its radius instead of fading on at about 1 %.\n\n- **lightGalleryScene against 86f3ee9f** (17:23 to 17:27): 899 048 of 921 600 pixels differ, max 25/255, on WebGL and WebGPU alike; mean luma 111.9 → 103.5 (-7.5 %). `ambient=0` 909 179 pixels, max 25.\n- **dxCaptureScene at hour 22**: 731 152 pixels differ, max 20/255; by day 0 (the sun dominates).\n\nWhy: each light's tail is about 1 % of its colour across its whole pool, and the tails of every overlapping light add up to a part of the scene's light. Cutting them changes the look of every lit scene at night, against the owner's bar (no demo worse in look). The radius stays what the engine always drew: the light is about 1 % there, and it is culled when that circle leaves the view. Reverted; A3 is next."
+    },
+    {
+      "id": "R-0936",
+      "date": "2026-11-12",
+      "time": "17:56",
+      "timeFrom": "recorded",
+      "title": "A1+A3+A4 on Predator: NEUTRAL (spatial 3.286 → 3.266 ms, physics in its noise)",
+      "verdict": "tie",
+      "text": "**DX-LIGHTAPI A1 + A3 + A4 on Predator: NEUTRAL, the new light API costs nothing there.**\n2026-11-12, 17:56 to 18:01, `runPredatorAbab.mjs --name dxlightapi-predator --vs 91248f19 --hyp-rev HEAD --full-rev --pairs 4 --owner spatial` (HEAD 5b1d716b: names and radius, castShadows, shadowRange and lights' neighbour lists only under raycast), each side its own revision's scene (old API against new), headed, on AC power, the owner's Chrome idle.\n\n- spatial 3.286 → 3.266 ms (paired +1.0 %, 2/4 worse, cv 3/4 %): N-153 (no neighbour list for a light in basic lighting) shows no gain here: Predator's lights are a small part of its spatial work.\n- physics 3.899 → 4.057 ms (+4.3 %, 2/4, cv 13/19 %): inside its noise, not blocking.\n- logic 2.27 → 2.44, renderer 1.39 → 1.47, preRender 1.89 → 1.96, particle 0.72 → 0.71 ms: under the 3 ms floor, not judged.\n- presented 60.0 both; load keys within 0.2 % (BODY_COUNT, GPU_CASTERS 13618 → 13630, GPU_SHADOW_LIGHTS 48 both, VISIBLE_ENTITIES).\n\nDetection limit about 3 % on spatial (cv 3-4 %), 15 % on physics. No session A/A this time: Predator's own spread from R-0829 (spatial 1 %, physics 5 %).",
+      "commits": [
+        "5b1d716b"
+      ]
+    },
+    {
+      "id": "R-0937",
+      "date": "2026-11-12",
+      "time": "18:03",
+      "timeFrom": "recorded",
+      "title": "A1+A3+A4 on visPolyStressScene ?lights=720: NEUTRAL (pre-render +1.5 %, 3/4)",
+      "verdict": "tie",
+      "text": "**DX-LIGHTAPI A1 + A3 + A4 on visPolyStressScene ?lights=720 (raycast): NEUTRAL.**\n2026-11-12, 18:03 to 18:07, `runPredatorAbab.mjs --name dxlightapi-vispoly --vs 91248f19 --hyp-rev HEAD --full-rev --pairs 4 --owner preRender --scene /tests/bench/stressScenes/visPolyStressScene.js --scene-export VisPolyStressScene --query lights=720`, each side its own scene (the lights' visualRange 900 became shadowRange 900, the same search), headed, on AC power.\n\n- preRender 4.841 → 4.874 ms (paired +1.5 %, 3/4 worse, cv 2/1 %): under the 3 % bar. The new per-light work is a division (I = r²/100) and a castShadows read per light.\n- spatial 2.161 → 2.151, renderer 1.225 → 1.226 ms: under the floor. presented 60.0 both; BODY_COUNT 1420 both.\n\nDetection limit about 2 % on pre-render (cv 1-2 %).",
+      "commits": [
+        "5b1d716b"
+      ]
+    },
+    {
+      "id": "R-0938",
+      "date": "2026-11-12",
+      "time": "18:20",
+      "timeFrom": "recorded",
+      "title": "A5: glow culled by its size, nearest lights kept over maxLights, no subarray per row; the cookie is not dead (up to 44/255)",
+      "verdict": "kept",
+      "text": "**DX-LIGHTAPI A5: three quality fixes kept, the cookie stays (it is not dead).**\n2026-11-12, captures after the visPoly sitting (18:07), on 61779fb3.\n\n- **N-154, the cookie:** a probe build that skips the cookie pass (`?noCookie=1`, not committed) against the same build: lightGalleryScene 50 687 pixels differ, max 2/255 (WebGL; WebGPU 50 267, max 2); dxCaptureScene at noon 77 643 pixels, max 44/255; at hour 22, 74 804, max 3. The algebra in N-154 missed that the cookies draw over the sun's shadows in the same target: a lamp's cookie lightens the sun's shadow in its pool. It is not dead code: it stays.\n- **N-150** (5d9fd026): the glow is culled by its own size (0.85 of the radius) past its glowOffsetY, at least the sprite's. **N-151** (921a255d): over maxLights, the lights nearest the view's centre stay. lightCulls.test.js holds both (each fails on the old code). **N-152** (61779fb3): a copy loop instead of a subarray per row per frame.\n- Still captures against 5b1d716b: lightGalleryScene 0 pixels (WebGL, WebGPU), dxCaptureScene at hour 22 0 pixels.\n- **A correction to the A4 commit (5b1d716b):** the one pixel by 1/255 under raycast is run-to-run noise, not the offset lamp's list: three A/A captures of lightGalleryScene `?raycast=1` read 1, 0 and 0 pixels.",
+      "commits": [
+        "5d9fd026",
+        "921a255d",
+        "61779fb3"
+      ]
+    },
+    {
+      "id": "R-0939",
+      "date": "2026-11-12",
+      "time": "20:17",
+      "timeFrom": "recorded",
+      "title": "B4: a cone light gathers and publishes only its wedge under raycast: KEPT, flashlights' pre-render 12.0 → 4.8 ms",
+      "verdict": "kept",
+      "text": "**DX-SPOT B4: under raycast a cone light gathers only what can shadow its wedge and publishes its polygon cut to it. KEPT: pre-render 12.0 → 4.8 ms in flashlightStressScene.**\n2026-11-12, 20:17 to 20:26, `runPredatorAbab.mjs --name dxspot-b4-cull --vs 26f74ed2 --hyp-rev ad7a49db (the commit, reworded with these numbers as 087a17ac) --scene flashlightStressScene --query cone=1&lights=360&crates=320 --owner preRender --pairs 4`, headed, on AC power (the scene's default 120 lights put pre-render at 1.5 ms, under the 3 ms floor, so 360).\n\n- **preRender** (owner) STEP_MS 12.009 → 4.807 ms, paired -59.9 %, worse 0/4, cv 7/17 %. Pairs: 12.52 → 5.13, 11.45 → 5.12, 13.14 → 3.51, 11.50 → 4.50.\n- **Pixi** 2.238 → 1.114 ms (under the floor, not judged): the fan covers the cone alone and the occluders outside it get no self-lit fill.\n- Every load key the same (VISIBLE_ENTITIES 360, RENDER_QUEUE_SIZE 720, BODY_COUNT 320). Presented 59.9 both; drawn 59.4 → 56.0 fps (reported, not judged).\n- A slip: a 2-minute grep of a session transcript ran on one core during pair 1 (20:21 to 20:23); that pair reads as the others do.\n\nWhat changed: visibilityGather.wasm's cone exports drop occluders whose bounding disc lies wholly outside the wedge (occlusion runs along rays from the light), and pre-render cuts the swept polygon to the wedge. The picture: lightGalleryScene `?raycast=1&cones=1` against 26f74ed2, 47 pixels by 1/255 on WebGL and WebGPU; visibilityConeWired.test.js checks the cut polygons light 18 400 cone points as the full gather does (2 and 5 differ, on shadow edges).",
+      "commits": [
+        "087a17ac"
+      ]
+    },
+    {
+      "id": "R-0940",
+      "date": "2026-11-12",
+      "time": "19:50",
+      "timeFrom": "recorded",
+      "title": "B4 picture: cone lights under raycast draw as cones; point lights as before (1 pixel by 1/255, the noise)",
+      "verdict": "passed",
+      "text": "**DX-SPOT B4, the picture: cone lights under raycast draw as cones (fans, umbra discs, self-lit fills, sprite masks); point lights draw what they drew.**\n2026-11-12, 19:50 to 19:55, `compareCaptures.mjs`, headed Chrome, the owner's GPU; commit 26f74ed2 against ee220efe.\n\n- **Point lights:** lightGalleryScene `?raycast=1` against ee220efe: 1 pixel by 1/255 on WebGL and on WebGPU (the raycast's run-to-run noise, R-0938). The point programs are the batch shaders with their `// #if CONE` blocks cut, which is the old source character for character; the self-lit goldens hold.\n- **Cones:** `?raycast=1&cones=1` against ee220efe: 897 163 pixels differ, max 184 (the three cone lamps were drawn round before; looked at: wedges cut by the boxes). flashlightStressScene `?lights=24`, cone 0 against 1: the flashlights draw as cones, blocked by the crates.\n- **Backends:** WebGL against WebGPU with cones, 79 499 pixels up to 52/255; without cones the same 79 499 (N-155, the glowLayer difference): the cone passes add nothing between backends.\n\nNot timed here: Pixi's point path gains a per-light check (to measure in visPolyStressScene). R-0939 times the wedge cut that came next.",
+      "commits": [
+        "26f74ed2"
+      ]
+    },
+    {
+      "id": "R-0941",
+      "date": "2026-11-12",
+      "title": "B1–B3 and the brightness fold: cone lights in basic lighting; without cones 0 of 921 600 pixels change",
+      "verdict": "passed",
+      "text": "**DX-SPOT B1 to B3 and the brightness fold: cone lights in basic lighting, point lights unchanged.**\n2026-11-12, on dx/light-api (the captures' times are not kept: each was taken just before its commit).\n\n- **B1** (a3afb7e7): `direction`, `coneAngle`, `coneSoftness`, `followFlip` store what a frame reads (dirC/dirS, coneCos with -2 for none, coneInvSpan); followFlip (0 by default, the owner's call) mirrors offsetX and the direction once per flipX change. lightCone.test.js.\n- **B2, the pool** (7f36fd4a): a third row in the light texture, cone lights packed first and looped apart in the lighting shader (plain and faces, GLSL and WGSL); `uConeCount` a float (on WebGPU Pixi writes an i32 uniform as a float's bits: every light ran as a cone). Without cones against 5d7fa1ee: lightGalleryScene 0 of 921 600 (WebGL, WebGPU, groundScaleY 0.7), dxCaptureScene at hour 22 0, faceLightScene 0.\n- **B3, the headlights' shadows** (bd8eae70): the stamp's cone walk drops casters outside the cone before maxShadowsPerLight and folds the soft edge into each row's intensity, f·I·D²/(I + D² − f·I); the JS reference matches bit for bit on random frames. Without cones against 7f36fd4a: lightGalleryScene (WebGL, WebGPU) and dxCaptureScene ?propShadow 0 of 921 600.\n- **Brightness in shadows** (d3417763, DX-LIGHTAPI): the same fold with f = min(brightness, 1); a full light runs its old loops.\n- **spotLightStressScene** (281b7138): redrawn from straight above after the owner's look (terrain tilemap, rocks, parked cars; the headlight 9 px past the bumper so the 4 px lighting texels do not bleed onto the hood).\n\nNothing timed yet: point lights run the paths they ran; the gates (Predator for the stamp and the lighting pass, visPolyStressScene for Pixi and pre-render) come at the part's close.",
+      "commits": [
+        "a3afb7e7",
+        "7f36fd4a",
+        "bd8eae70",
+        "d3417763"
+      ]
+    },
+    {
+      "id": "R-0942",
+      "date": "2026-11-12",
+      "time": "20:28",
+      "timeFrom": "recorded",
+      "title": "B4 on point lights (visPolyStressScene ?lights=720): NEUTRAL, pre-render 5.83 → 5.76 ms, Pixi 1.386 → 1.384",
+      "verdict": "tie",
+      "text": "**DX-SPOT B4 on point lights under raycast: NEUTRAL, the cone batches and the wedge cut cost nothing there.**\n2026-11-12, 20:28 to 20:38, `runPredatorAbab.mjs --name dxspot-b4-vispoly --vs ee220efe --hyp-rev 087a17ac --scene visPolyStressScene --query lights=720 --owner renderer --pairs 4`, headed, on AC power. ee220efe is the branch before B4: the base has no cone batch, no per-light cone check in Pixi's fan and self-lit loops, no cone check in pre-render's light loop.\n\n- **preRender** 5.832 → 5.755 ms, paired -3.4 %, worse 1/4, cv 8/18 % (pairs 5.82 → 5.45, 5.85 → 7.82, 6.68 → 5.88, 5.66 → 5.63): no regression.\n- **Pixi** (the claim's owner) 1.386 → 1.384 ms: under the 3 ms floor in this scene, so not judged; it does not move.\n- Load keys the same (BODY_COUNT 1420, ENTITIES_PROCESSED 1421); presented 60.0 both.",
+      "commits": [
+        "26f74ed2",
+        "087a17ac"
+      ]
+    },
+    {
+      "id": "R-0943",
+      "date": "2026-11-12",
+      "time": "20:41",
+      "timeFrom": "recorded",
+      "title": "Predator gate for B1–B4 and Flash's cone: NEUTRAL (owner under the floor; every worker drifted together)",
+      "verdict": "tie",
+      "text": "**DX-SPOT B1 to B4 and Flash's cone on Predator: NEUTRAL (the owner under the floor), with the whole machine drifting between runs.**\n2026-11-12, 20:41 to 20:52, `runPredatorAbab.mjs --name dxspot-predator --vs ca50fe9a --hyp-rev 5dcb45b3 --owner preRender --pairs 4` (ca50fe9a: the branch before B1; 5dcb45b3: the cone fields, the pool, the stamp's cone walk and brightness fold, the raycast cone batches and wedge cut, Flash's cone), headed, on AC power (no Kernel-Power events), the owner at the machine.\n\n- **preRender** (owner) 2.950 → 2.782 ms, **Pixi** 1.952 → 1.826 ms: both under the 3 ms floor, not judged; both medians lower.\n- **Every worker moved together, pair by pair**, the ones the change cannot reach too: pair 0 (AB) and pair 3 (BA) every worker 15 to 120 % higher on B (physics 3.53 → 4.55, 3.17 → 6.95), pair 1 (BA) every worker higher on A (physics 11.21 → 3.22). Paired: logic +11.8 % (cv 33 %), spatial +12.9 % (cv 32 %), physics +32.4 % (cv 59 %), none blocking; against the others logic -10.9 %, spatial -9.2 %, physics +20.1 % (lower 1/4). Drift, not the change: physics and spatial run no code it touched.\n- Load keys within 3 % (GPU_CASTERS +2.6 %, GPU_SHADOW_LIGHTS +2.6 %, VISIBLE_ENTITIES +0.6 %); presented 60.0 → 59.9.\n\nNo pairs appended: the scoreboard against main at the part's close times every scene together.",
+      "commits": [
+        "5dcb45b3"
+      ]
+    },
+    {
+      "id": "R-0944",
+      "date": "2026-11-12",
+      "time": "21:04",
+      "timeFrom": "recorded",
+      "title": "N-157: no native sort for a full light list: kernel 2.2–8.9× faster (3/3), pre-render 153 → 70 KB/s; scene NEUTRAL (-2.8 %)",
+      "verdict": "kept",
+      "text": "**N-157: _sortPrefix no longer hands a full list to Array.prototype.sort. Kept on the kernel; the scene NEUTRAL.**\n2026-11-12, the scene's result files from 21:04. Found in DX-SPOT's engine trace: `heapSampleWorkers.mjs` on flashlightStressScene `?cone=1&lights=360&crates=320` (every light visible at maxLights 360) put 83.6 of pre-render's 153.4 KB/s in `sort`, from `_sortPrefix` and `_collectVisibleLights`: a list that filled its array went to the native sort, which copies the array to sort with a comparator.\n\n- **Kernel** (`sortPrefixMicrobench`, full cases added in 815562c9), 3 alternating rounds against 815562c9, medians, checksums equal: n360_full random 57.02 → 21.87 µs, cells 30.75 → 4.22, sorted 7.94 → 1.91; n128_full random 14.80 → 6.81, cells 8.89 → 1.00, sorted 2.83 → 0.67; every full case faster 3/3. The cases with a pooled tail run the same code and tie within 6 %.\n- **Allocation:** pre-render 153.4 → 69.7 KB/s; `sort` gone from the profile.\n- **Scene:** `runPredatorAbab.mjs --name sortprefix-full --vs 815562c9 --hyp-rev 06740b03 --scene flashlightStressScene --query cone=1&lights=360&crates=320 --owner preRender --pairs 4`: preRender 3.115 → 3.028 ms, paired -2.8 %, worse 1/4, cv 12/15 %; NEUTRAL (the saving, about 0.04 to 0.1 ms a frame, is under the scene's detection). Load keys the same.\n\nKept on the kernel win (the scene is not 3 % worse).",
+      "commits": [
+        "815562c9",
+        "06740b03"
+      ]
+    },
+    {
+      "id": "R-0945",
+      "date": "2026-11-12",
+      "title": "code-review high: 9 findings; 7 fixed with tests, the old-name warnings rejected by the owner, the per-pass cone direction kept",
+      "verdict": "passed",
+      "text": "**DX-LIGHTAPI and DX-SPOT: `/code-review high` on dx/light-api, nine findings, and what became of each.**\n2026-11-12, the branch against main (a fork of the session read it).\n\n1. and 2. **Pixi read a light's `coneCos` twice a frame** (count, then slot or batch) while the logic worker may write it: a cone set mid-frame could put two lights in a slot and leave a ghost (updateLighting), or under raycast write into a cone batch never made (a TypeError). **Fixed** (a417a98c): one read a pass, into scratch kept across frames; tests with a column that changes after its first read fail on the code before.\n3. **Narrow cones never reached full light** (the soft edge's least width, 0.002 in cosine, passed a 4-degree beam's whole width: 22 % on its axis). **Fixed** (076a5e49): a quarter of a degree across the edge, never wider than the cone; hard cone edges move 373 pixels up to 7/255 in lightGalleryScene.\n4. **Under raycast a light widened its entity's neighbour list**, which a class may read (a hero with a flashlight would see enemies as far as the beam). **Fixed** (73993b79): only a light whose class reads no neighbours widens; one that does keeps its visualRange list, as before the light API; lightNeighborReach.test.js on a real spatial worker.\n5. **The cookie ignored the cone and the brightness.** **Fixed** (70ab7b9e, 27e64e1f): a cone up to 180 degrees takes `_lightGradientHalf`, the gradient's half disc turned along it; every cookie takes min(brightness, 1). dxCaptureScene `?lampCone=90` at noon: the sun's shadows behind the lamps stay (up to 38/255). The new atlas frame costs a few hundred pixels of every scene 1/255 of sampling.\n6. **The removed 0.13 names are ignored silently.** **Rejected by the owner** (2026-11-12: no backwards compatibility or fallbacks; the demos show the new API). A warning layer was written and reverted, unshipped. The demos' leftover `visualRange` ritual on lights went instead (fe9278bd), and the guide's names (15c64e58).\n7. **The cone's direction is computed in each pass** (four in Pixi, two in pre-render). **Kept:** a rotation and a root per cone light per pass, from the same Transform columns, so the passes agree.\n8. and 9. **N-151's order measured from the entity, not the light, and broke ties with `a - b`.** **Fixed** (b401fd13), with a test.\n\nSuites: test:node 2561/2561 and test:demos 101/101 after the fixes.",
+      "commits": [
+        "a417a98c",
+        "076a5e49",
+        "73993b79",
+        "70ab7b9e",
+        "27e64e1f",
+        "b401fd13",
+        "fe9278bd",
+        "15c64e58"
+      ]
+    },
+    {
+      "id": "R-0946",
+      "date": "2026-11-12",
+      "time": "22:25",
+      "timeFrom": "recorded",
+      "title": "A cone costs less than its round light in basic lighting: spotLightStressScene pre-render 5.89 → 3.70 ms (-36.5 %, 4/4)",
+      "verdict": "kept",
+      "text": "**What a cone costs in basic lighting: less than the same round light. spotLightStressScene, cone 0 against 1, pre-render 5.89 → 3.70 ms.**\n2026-11-12, result files from 22:25, `runPredatorAbab.mjs --name dxspot-cone-cost-spot --vs 0650fd0f --scene spotLightStressScene --query cars=256&props=2000&shadowLights=256 --query-a cone=0 --query-b cone=1 --owner preRender --pairs 4` (one build, the knob the only difference), headed, on AC power. `?shadowLights=` (0650fd0f) lifts the 48-light stamp cap that held pre-render near 1 ms.\n\n- **preRender** 5.894 → 3.704 ms, paired -36.5 %, worse 0/4, cv 30/18 % (pairs 4.88 → 3.46, 6.64 → 3.86, 9.11 → 5.01, 5.15 → 3.55): a cone light stamps only the casters in its cone (the stamp's cone walk drops the rest before maxShadowsPerLight).\n- **Pixi** 0.955 → 0.767 ms (under the floor); drawn 57.0 → 60.0 fps (+3.3 %), presented 59.8 → 60.0.\n- Load: BODY_COUNT, VISIBLE_ENTITIES the same; GPU_CASTERS and GPU_SHADOW_LIGHTS +4.7 % (the cone side kept all 256 lights stamped every frame; the round side 244.6 on average), within the 5 % rule.",
+      "commits": [
+        "0650fd0f"
+      ]
+    },
+    {
+      "id": "R-0947",
+      "date": "2026-11-12",
+      "time": "22:32",
+      "timeFrom": "recorded",
+      "title": "A cone costs far less than its round light under raycast: flashlightStressScene pre-render 10.36 → 3.20 ms (-68.7 %, 4/4)",
+      "verdict": "kept",
+      "text": "**What a cone costs under raycast: much less than the same round light. flashlightStressScene, cone 0 against 1, pre-render 10.36 → 3.20 ms.**\n2026-11-12, result files from 22:32, `runPredatorAbab.mjs --name dxspot-cone-cost-flash --vs 0650fd0f --scene flashlightStressScene --query lights=360&crates=320 --query-a cone=0 --query-b cone=1 --owner preRender --pairs 4`, headed, on AC power.\n\n- **preRender** 10.362 → 3.204 ms, paired -68.7 %, worse 0/4, cv 17/11 % (pairs 9.57 → 2.99, 9.60 → 3.01, 11.13 → 3.76, 13.44 → 3.40): a cone gathers only the occluders that can shadow its wedge and its polygon is cut to it (R-0939).\n- **Pixi** 1.640 → 1.091 ms (under the floor): the fans and self-lit fills cover the wedges alone.\n- Load keys the same (VISIBLE_ENTITIES 360, BODY_COUNT 320); presented 60.0 → 59.9.",
+      "commits": [
+        "0650fd0f"
+      ]
+    },
+    {
+      "id": "R-0948",
+      "date": "2026-11-12",
+      "time": "22:40",
+      "timeFrom": "recorded",
+      "title": "N-157 correction: at 360 cone lights pre-render allocated 275.8 KB/s (sort 215.5) before, 60.6 after",
+      "verdict": "note",
+      "text": "**N-157, a correction: the allocation numbers in R-0944 came from the wrong configuration; the right one shows a bigger saving.**\n2026-11-12, about 22:45. `heapSampleWorkers.mjs` keeps only the last `--query` it is given, so the samples R-0944 quotes as `?cone=1&lights=360&crates=320` ran with `crates=320` alone (120 round lights at maxLights 120, also a full list, so the finding stands). Taken again with the query as one string, flashlightStressScene `?cone=1&lights=360&crates=320`, pre-render only:\n\n- the code before 06740b03 (its change reverted in place for the run): 275.8 KB/s, of which `sort` from `_collectVisibleLights` 215.5 KB/s (a first, noisier run: 629.8 and 207.5);\n- 06740b03 and after: 60.6 KB/s, no `sort`.\n\nThe kernel numbers and the scene sitting in R-0944 used the right configuration (the sitting's query was one string) and stand."
+    },
+    {
+      "id": "R-0949",
+      "date": "2026-11-12",
+      "time": "22:38",
+      "timeFrom": "recorded",
+      "title": "Engine trace: no new garbage site, no steady deopt in light code, GC per thread ≤ main on Predator, no Any-typed field",
+      "verdict": "passed",
+      "text": "**The engine trace of DX-LIGHTAPI and DX-SPOT: no new garbage site, no steady deopt in the light code, GC per thread no higher than main, no field typed Any.**\n2026-11-12, 22:38 to 22:49 (the files' times), headless unless said, at 0650fd0f and after (the trace looks at code; the commits since only touch demos, docs and the register).\n\n- **Allocation** (`heapSampleWorkers.mjs`, Chrome): flashlightStressScene `?cone=1&lights=360&crates=320`, pre-render 60.6 KB/s, Pixi 156.1 KB/s (most of it Pixi's own render and buffer events: `ge.emit` 34.1, of which renderVisibilityLighting's batch uploads 7.7); spotLightStressScene `?cone=1&cars=256&props=2000&shadowLights=256`, pre-render 50.9 KB/s, Pixi 168.4. The light code's only line: `stampLightRangeWasm` 3.7 KB/s (about 60 bytes a frame, a few numbers a call, not per light). What remains is listed in N-158 (frame loop, waits, camera bounds).\n- **Deopts** (`--log-deopt --log-ic`, `summarizeV8Deopt.mjs`): headlights 75 deopt lines, flashlights 55; after the warm-up none in pre-render's light code, Pixi's light passes, the stamp client, the gather client or LightEmitter: the steady ones are one-offs in input, scene and queue code, 0 ms of CPU each.\n- **CPU and GC per thread** (`bench:headed:trace-cpu` + `trace:summary`, headed), Predator, main (a full worktree of fa59073a) against the branch: GC ms per second pre-render 0 → 0, Pixi 1 → 1, spatial 3 → 0, physics 5 → 1, logic 1/1 → 1/2, main 2/3 → 0/2; busy Pixi 574 → 544 ms/s, pre-render 473 → 457, spatial 228 → 221.\n- **Field types** (`fieldTypeAudit.mjs`), both scenes: none of the new worker fields starts null as a typed array (the cone scratch arrays start as empty Float32Arrays; the cone batches are objects)."
+    },
+    {
+      "id": "R-0950",
+      "date": "2026-11-12",
+      "title": "Filmed in motion: headlights and flashlights, round against cone; the headlights' scene anchored its cars at the rear (fixed, 6ec2e68d)",
+      "verdict": "passed",
+      "text": "**DX-SPOT in motion: headlights and flashlights filmed, round against cone; the headlights' scene had its cars anchored at their rear.**\n2026-11-12, 22:52 to 23:01, the films' times (`filmScene.mjs`, CDP screencast, 8 s a side, the two sides filmed apart from the main folder and set side by side with ffmpeg: filmed through `--vs`, the worktree's side gave 3 frames, the screencast problem seen before on worktree sides).\n\n- **spotLightStressScene** (48 cars, 300 props): round, every car lights a disc around it; cone, each lights a beam ahead with the rocks' shadows in it. Zoomed, the cone side showed each car's own hood lit (the owner's remark earlier). A probe of one parked car found the cause in the scene, not the engine: the sprite anchor defaults to the picture's bottom, so the car was drawn from its rear forward and the headlight (half the car's length plus 9 px from its position) sat on the windshield. 6ec2e68d anchors the cars and props at their centre; filmed again, the hoods stay dark and the beams start at the bumpers; lighting at resolution 0.25 draws the parked car as 1.0 does (0 pixels differ).\n- **flashlightStressScene** (48 walkers): round, the lit area is one wash; cone, wedges cut by the crates, turning with the walkers.\n\nThe films stay in the session's scratch (not kept).",
+      "commits": [
+        "6ec2e68d"
+      ],
+      "time": "22:52",
+      "timeFrom": "recorded"
+    },
+    {
+      "id": "R-0951",
+      "date": "2026-11-13",
+      "time": "00:10",
+      "timeFrom": "recorded",
+      "title": "Scoreboard against `main` (full, 46 rows)",
+      "verdict": "note",
+      "text": "ray: FAIL, rayVsBox2d: FAIL, decals: FAIL, emit: FAIL, integrate: FAIL, particleLists: TIE, particleListsZoomed: TIE, spatial: FAIL, box2d: TIE, liquidfun: TIE, liquidfunCouple: TIE, liquidfunQuery: TIE, queryAabb: FAIL, nav: FAIL, visPoly: TIE, tilemap: FAIL, tilemapGid: FAIL, contactDrain: FAIL, box2dRayJs: TIE, queryPublish: FAIL, preRender: FAIL, compute: FAIL, decorations: KEPT, bullets: FAIL, spawn: FAIL, steadyCombat: TIE, decalBlit: TIE, sceneryCam: FAIL, meshFillMoving: KEPT, meshFillPan: FAIL, meshFillLook: FAIL, audioStorm: FAIL, audioSlots: TIE, gameObjectAccess: TIE, shadowStamp: KEPT, gpuQueuePack: TIE, decalPremultiply: TIE, painterRadix: TIE, publishPose: KEPT, preRenderWorker: TIE, swayBuckets: TIE, decorationCollect: TIE, decorationCollectYSort: TIE, attachedSway: TIE, attachedWalls: TIE, textureUpload: TIE.\n\nNo. 2 row(s) FAIL/WORSE. Do not claim a better WeedJS. 12 row(s) are a protocol ceiling (not claimed). 6 row(s) are under the 3 ms floor (not a regression). A tree is the fastest WeedJS only when every catalog row is kept or a tie and none is worse or failed. The rows' numbers are in the local report (`tests/results/scoreboard/report.md`, not kept)."
+    },
+    {
+      "id": "R-0952",
+      "date": "2026-11-13",
+      "time": "00:22",
+      "timeFrom": "recorded",
+      "title": "Scoreboard against `main` (full, 2 rows)",
+      "verdict": "note",
+      "text": "tilemap: TIE, shadowStamp: KEPT.\n\nYes, on the rows that were measured: shadowStamp kept and none worse. A tree is the fastest WeedJS only when every catalog row is kept or a tie and none is worse or failed. The rows' numbers are in the local report (`tests/results/scoreboard/report.md`, not kept)."
+    },
+    {
+      "id": "R-0953",
+      "date": "2026-11-13",
+      "time": "00:33",
+      "timeFrom": "recorded",
+      "title": "The scoreboard against main read: no row worse once the stamp is measured right (its +108.7 % was the harness; -3.4 % fixed to -0.3 %)",
+      "verdict": "passed",
+      "text": "**DX-LIGHTAPI and DX-SPOT against main: the scoreboard (46 rows, both sides' whole trees), read; no row worse once the stamp is measured right.**\n2026-11-13, dx/light-api at 8ec87e93 against main (fa59073a), `runScoreboard.mjs --vs main --full-rev` (each side runs its own revision's scenes and kernels), every catalog row but the two light rows main lacks (spotLights, flashlights). AC power, no other browser. Times from the files: the sitting 23:02 to 00:10 (R-0951), the two rows again 00:19 to 00:22 (R-0952), the stamp kernel ABABs 00:24 to 00:25 and 00:26 to 00:27.\n\n- **The scoreboard (R-0951):** \"2 rows FAIL/WORSE\", neither the light work's. 22 ties, 12 protocol ceilings, 6 rows under the 3 ms floor, 4 KEPT. Under the floor, ray's kernel read -4.6 % from one sample a side on code the branch does not touch (src/core/ray.js is main's), its scene -1.2 %. The two:\n  - `tilemap` failed on a stale key (N-160, `df2167b3`); read again, kernel -0.5 %, logic0 8.304 → 8.452 ms (+1.8 %): a tie (R-0952).\n  - `audioStorm` cannot decide on any tree: its load key is 0 in a scene without bodies, and logic0 is 0.56 ms (N-161, open). Its kernel: +2.3 %, a tie.\n- **`shadowStamp` KEPT +108.7 % was false (N-159):** the bench harness wrote 5 doubles a light, the kernel reads 11 since B3. On the branch it stamped 708 rows for 7877. Fixed (`41987e0f`, `e1feda6d`), the R-0952 row read +6.7 % from one sample a side.\n- **The stamp, measured right** (shadowStampWasmMicrobench on the Predator fixture, Node, main's tree from a worktree against the working tree, a discarded warm-up process each, 4 alternating pairs, checksums 2692520044 on both sides):\n  - at `e1feda6d`: main 2644.4, branch 2554.8 ops/s, **-3.4 %, worse in 3/4 pairs**. With maxShadowsPerEntity on (Predator's 3) every per-entity row tested its light's cone and shade.\n  - at `5ce5a85b` (a call without a cone or dim light runs main's per-entity loop; the folded rows their own copy): main 2633.2, branch 2626.5 ops/s, **-0.3 %, 2/4: a tie**.\n- **The other KEPT rows** are not the light work's (decorations kernel +11.9 %, meshFillMoving pixi -19.6 %, publishPose kernel +5.0 %): one sample a side on code the branch does not touch, so not claimed.\n- **Gates of the sitting:** test:node and the lockstep scenes (balls, liquidfun, lfstress, particles) passed on the branch; the rerun skipped them (the suite was green on that tree, 2562/2562).\n\nDetection limit: main's four pairs spread 5.0 % in the first ABAB (2548.1 to 2675.5 ops/s) and 3.9 % in the second (2554.7 to 2656.1), so -3.4 % at 3/4 sat on the keep rule's edge and -0.3 % at 2/4 is a tie; the scene rows carry their own in R-0951.",
+      "commits": [
+        "41987e0f",
+        "e1feda6d",
+        "df2167b3",
+        "5ce5a85b"
+      ]
+    },
+    {
+      "id": "R-0954",
+      "date": "2026-11-13",
+      "time": "01:48",
+      "timeFrom": "recorded",
+      "title": "Part A alone against main: the scoreboard sitting is void (rows of untouched code moved up to 201 %); the merged tree's sitting stands",
+      "verdict": "note",
+      "text": "**DX-LIGHTAPI part A alone (ca50fe9a) against main: the scoreboard's sitting is void.**\n2026-11-13, 00:30 to 01:48 (the log's and the report's times), `runScoreboard.mjs --vs main --full-rev` from a worktree of ca50fe9a with HEAD's scoreboard tools, the 46 rows main has. AC power.\n\nRows whose code part A does not touch (no diff between main and ca50fe9a in their modules) moved far past any noise seen before: meshFillMoving kernel +201.2 %, audioStorm kernel +124.4 %, shadowStamp kernel +91.0 %, gameObjectAccess +42.2 %, swayBuckets -20.9 %, preRenderWorker -13.0 %, audioSlots -11.2 %, steadyCombat logic0 -18.3 %. Its \"5 rows FAIL/WORSE\" (spawn logic0 +18.0 %, audioSlots, preRenderWorker, textureUpload, audioStorm) are read as that noise: the machine was not quiet. During the sitting this session ran the demo suite (every scene built once, for the Headlights demo) and another session was running its own captures in Chrome on the same machine.\n\nNot run again: part A alone is a tree that will not merge, and the tree that will (A and B together) was measured against main on a quiet sitting (R-0951 to R-0953): spawn kernel -1.2 %, logic0 -3.3 %; preRenderWorker +0.4 %; audioSlots +2.1 %; textureUpload a tie (not confirmed over 4 pairs). A sitting of A cannot change that verdict."
+    },
+    {
+      "id": "R-0955",
+      "date": "2026-11-13",
+      "time": "03:13",
+      "timeFrom": "recorded",
+      "title": "The bundles of 3a04e5dd (DX-LIGHTAPI, DX-SPOT) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of 3a04e5dd (DX-LIGHTAPI, DX-SPOT and the Headlights demo, on dx/light-api before its merge): tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `b9f74736`.\n\n- Node 2562 of 2562, demos 101 of 101.\n- `check:dist` passes (inputs d17026f23aa31478); embed and browser smokes OK on all 8.\n- `test:node:bundle` 301 of 301 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, no other bench browser:\n- **Predator, 4 pairs, 02:52 to 03:01: NEUTRAL.** Spatial 3.554 → 3.680 ms (paired -0.0 %, 2/4 worse), physics 3.783 → 3.792 ms (paired -8.4 %, 1/4); logic 2.407 → 2.040, pre-render 2.228 → 2.273 and the renderer 1.598 → 1.577 ms under the floor; loads within 0.5 %.\n- **Boids, 8 pairs, 03:01 to 03:13: NEUTRAL.** Spatial 5.263 → 5.325 ms (paired +5.2 %, 5/8 worse, cv 23/21 %), physics 4.708 → 5.032 ms (paired +2.8 %, 5/8, cv 38/33 %): neither reaches 75 % of the pairs; the same code read -3 to +10 % before (bundle against source is noisy).",
+      "commits": [
+        "b9f74736"
+      ]
+    },
+    {
+      "id": "R-0956",
+      "date": "2026-11-13",
+      "time": "03:53",
+      "timeFrom": "recorded",
+      "title": "N-162 fixed: an empty light frame left the GPU's indices, and the next frame drew every earlier light",
+      "verdict": "kept-hygiene",
+      "text": "**N-162 fixed: a raycasted light batch that drew nothing kept its GPU indices, and the next frame drew every earlier light again.**\n2026-11-13, found by the owner in the Headlights demo (despawn every lamp and car, spawn one lamp). A probe of the demo read pre-render publishing 1 light and 1 polygon while the renderer drew the old lamps' pools and the cars' shadows; main's Sun Street draws the same leftovers (the same code). Fixed in ee2647e4 (details in REVIEW_PLAN.md#N-162); the probe then shows one lamp's light only. lightBatchEmptyFrame.test.js fails on the code before. Hygiene: a frame that draws runs what it ran; an empty frame skips a fill. test:node 2564/2564, test:demos 101/101.",
+      "commits": [
+        "ee2647e4"
       ]
     }
   ],

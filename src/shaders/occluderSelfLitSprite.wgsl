@@ -26,6 +26,8 @@ struct SelfLitUniforms {
   uAttenScale: f32,
   // 1 / config.lighting.groundScaleY: distances to the light are measured on the floor.
   uGroundInvScaleY: f32,
+  // DX-SPOT: the light's cone (its direction on the floor, the cosine of its half aperture, 1 / its soft edge); z -2: none.
+  uCone: vec4<f32>,
 }
 @group(2) @binding(0) var<uniform> uniforms: SelfLitUniforms;
 @group(2) @binding(1) var uTexture: texture_2d<f32>;
@@ -61,6 +63,14 @@ fn mainVert(
   return out;
 }
 
+// As lightingBasic's: 1 inside the cone, 0 outside, smooth across its soft edge; 1 at the light itself.
+fn coneFactor(delta: vec2<f32>, cone: vec4<f32>) -> f32 {
+  let len2 = dot(delta, delta);
+  let cosA = select(1.0, dot(delta, cone.xy) * inverseSqrt(len2), len2 > 0.0);
+  let t = clamp((cosA - cone.z) * cone.w, 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}
+
 @fragment
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let a = textureSample(uTexture, uSampler, in.vUV).a;
@@ -84,6 +94,9 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     let nP = select(nL, toPix / pixLen, pixLen > 0.0001);
     mask = smoothstep(-0.15, 0.45, dot(nP, nL));
   }
-  let rgb = uniforms.uLightColor * attenuation * uniforms.uAttenScale * mask * a;
+  var rgb = uniforms.uLightColor * attenuation * uniforms.uAttenScale * mask * a;
+  if (uniforms.uCone.z > -1.0) {
+    rgb *= coneFactor(delta, uniforms.uCone);
+  }
   return vec4<f32>(rgb, a);
 }

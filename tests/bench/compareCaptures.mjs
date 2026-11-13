@@ -9,6 +9,8 @@
  *
  * --vs <rev>: side A is src/ from that revision, in a worktree (revWorktree.mjs). Without it both sides are this tree,
  * which with --query-b compares a knob. --hyp-rev <rev>: side B is that revision, in a worktree, instead of this tree.
+ * --full-rev: those worktrees hold the whole revision, its scenes and tests too, not only its src/ (an API change,
+ * where each side's scene is written in its own API).
  * --query k=v (repeatable): page parameters, both sides. --query-a / --query-b: one side only.
  * --expect-diff: pass when the sides differ, for a knob that must change the picture.
  * --tolerance <n>: pass when no channel of any pixel differs by more than n of 255 (default 0).
@@ -43,6 +45,7 @@ function parseCli(argv) {
     else if (arg === '--tolerance') opts.tolerance = Number(next());
     else if (arg === '--expect-diff') opts.expectDiff = true;
     else if (arg === '--headless') opts.headless = true;
+    else if (arg === '--full-rev') opts.fullRev = true;
     else if (arg === '--save') opts.save = next();
     else throw new Error(`compareCaptures: unknown argument ${arg}`);
   }
@@ -94,8 +97,9 @@ async function capture(browser, root, opts, sideQuery) {
 
 async function main() {
   const opts = parseCli(process.argv.slice(2));
-  const rootA = opts.vs ? ensureRevWorktree(opts.vs).root ?? ensureRevWorktree(opts.vs) : repoRoot;
-  const rootB = opts.hypRev ? ensureRevWorktree(opts.hypRev).root ?? ensureRevWorktree(opts.hypRev) : repoRoot;
+  const wt = { srcOnly: !opts.fullRev };
+  const rootA = opts.vs ? ensureRevWorktree(opts.vs, wt).root : repoRoot;
+  const rootB = opts.hypRev ? ensureRevWorktree(opts.hypRev, { ...wt, tag: 'hyp' }).root : repoRoot;
   const browser = await chromium.launch({
     headless: opts.headless,
     channel: 'chrome',

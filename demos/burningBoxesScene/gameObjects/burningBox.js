@@ -5,7 +5,9 @@ const { ShapeType } = enums;
 
 const HEAT = 1;
 const IGNITE_RANGE_SQ = 80 * 80;
+/** The fire's light strength s: its reach is 10·√s, its glow s / 50000. */
 const LIGHT_BASE = 9000;
+/** How far a burning box's light finds the occluders that stop it. */
 const LIGHT_RANGE = 640;
 const HOT = new Int32Array(4096);
 const SCRATCH = new Int32Array(4096);
@@ -30,16 +32,17 @@ export class BurningBox extends GameObject {
   ignite() {
     this.setFeedBits(this.getFeedBits() | HEAT);
     this.lightEmitter.active = 1;
-    this.lightEmitter.lightColor = 0xff9944;
-    this.lightEmitter.lightIntensity = LIGHT_BASE;
-    this.collider.visualRange = LIGHT_RANGE;
+    this.lightEmitter.color = 0xff9944;
+    this.lightEmitter.radius = 10 * Math.sqrt(LIGHT_BASE);
+    this.lightEmitter.glow = LIGHT_BASE / 50000;
+    this.lightEmitter.shadowRange = LIGHT_RANGE;
     this.lightOccluder.active = 0
     return this;
   }
 
   extinguish() {
     this.setFeedBits(this.getFeedBits() & ~HEAT);
-    this.lightEmitter.lightIntensity = 0;
+    this.lightEmitter.radius = 0;
     this.lightEmitter.active = 0;
     this.lightOccluder.active = 1
     return this;
@@ -56,7 +59,6 @@ export class BurningBox extends GameObject {
     this.collider.radius = 0;
     this.collider.shapeType = ShapeType.Box;
     this.collider.friction = config.friction ?? 0.6;
-    this.collider.visualRange = Math.sqrt(width * width + height * height) / 2 + 200;
     this.rigidBody.linearDamping = 0.01;
 
     const origW = this.spriteRenderer.originalWidth || 100;
@@ -68,10 +70,8 @@ export class BurningBox extends GameObject {
 
     this.rigidBody.static = config.static ? 1 : 0;
     this.lightEmitter.active = 0;
-    this.lightEmitter.hasGlowSprite = 0.5;
-    this.lightEmitter.height = 0;
-    this.lightEmitter.glowHeightOffset = height * 0.25;
-    this.lightEmitter.lightIntensity = 0;
+    this.lightEmitter.glowOffsetY = -height * 0.25;
+    this.lightEmitter.radius = 0;
     this.setLayer('fire');
     if (config.startIgnited) this.ignite();
     else this.extinguish();
@@ -81,7 +81,9 @@ export class BurningBox extends GameObject {
     if (this.getFeedBits() & HEAT) {
       const t = (accTime || 0) * 0.001;
       const flick = 1 + Math.sin(t * 8 + this.index) * 0.15 + Math.sin(t * 12.7 + this.index * 1.7) * 0.1;
-      this.lightEmitter.lightIntensity = Math.max(400, LIGHT_BASE * flick);
+      const strength = Math.max(400, LIGHT_BASE * flick);
+      this.lightEmitter.radius = 10 * Math.sqrt(strength);
+      this.lightEmitter.glow = strength / 50000;
       if (BurningBox._meltAcc !== accTime) {
         BurningBox._meltAcc = accTime;
         BurningBox.meltIce(deltaTime);

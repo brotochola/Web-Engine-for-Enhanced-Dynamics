@@ -29,6 +29,7 @@ tried, what is planned, and the journal of building the engine. They are not the
 | [`WASM_HYPOTHESES.md`](./WASM_HYPOTHESES.md) | The WebAssembly migration (E-76): the candidates W1 to W28, the premises, the phases and the order. |
 | [`REVIEW_PLAN.md`](./REVIEW_PLAN.md) | Review items (bugs, cleanups, docs: B, M, D, R, G, V, N, DOC), open and closed. |
 | [`NEXT_RELEASE.md`](./NEXT_RELEASE.md) | What a game will see change in behaviour at the next release, for its notes. |
+| [`DX_LIGHTAPI_DESIGN.md`](./DX_LIGHTAPI_DESIGN.md) | The light API made clear (radius, brightness, glow, elevation, castShadows, shadowRange; DX-LIGHTAPI), then cone lights (DX-SPOT): the mapping from the old API, the phases, how they are measured. |
 | [`DX_SUNMASK_DESIGN.md`](./DX_SUNMASK_DESIGN.md) | A design, not built: the sun's shadow inside the light sum, for the owner to decide. |
 | [`DX_NORMALS_DESIGN.md`](./DX_NORMALS_DESIGN.md) | A design, not built: light by the way a surface faces (normal maps), for the owner to decide. |
 | [`DX_VOLLIGHTS_DESIGN.md`](./DX_VOLLIGHTS_DESIGN.md) | A plan, not built: lamps and headlights cast a `VolumeShadowCaster`'s shadow, in basic and raycasted lighting (DX-VOLUME's phase 3), for the owner to decide on. |

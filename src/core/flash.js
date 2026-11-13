@@ -3,9 +3,9 @@
 // They fade out over their lifespan and auto-despawn when expired
 // Updated via tick() like any other GameObject
 //
-// NOT in the spatial grid: Flash has no Collider, so it is never inserted into
-// grid cells and never receives neighbor data.  The pre_render_worker finds
-// shadow casters near a flash via a direct grid query instead.
+// NOT in the spatial grid: Flash has no Collider, so it is never inserted into grid cells and never receives
+// neighbor data. Its point shadows come from the shadow stamp, which grids the casters itself; castShadows: false
+// (LightEmitter.castShadows 0) keeps it out of the stamp.
 
 import { GameObject } from './gameObject.js';
 import { LightEmitter } from '../components/lightEmitter.js';
@@ -32,12 +32,16 @@ export class Flash extends GameObject {
     x: 0,
     y: 0,
     z: 0,
-    glowHeightOffset: 0,
     lifespan: 100,
     color: 0xffffff,
-    intensity: 10000,
-    hasGlowSprite: 0.5,
+    radius: 1000,
+    brightness: 1,
+    glow: 0.2,
     castShadows: 1,
+    // DX-SPOT: a cone. Doubles from the start (NaN until a spawn writes them), so the payload keeps one shape.
+    direction: NaN,
+    coneAngle: Math.PI * 2,
+    coneSoftness: NaN,
   };
 
   /**
@@ -73,12 +77,16 @@ export class Flash extends GameObject {
    * @param {Object} config - Flash configuration
    * @param {number} config.x - X position in world coordinates
    * @param {number} config.y - Y position in world coordinates
-   * @param {number} [config.z=0] - Height of the light source
+   * @param {number} [config.z=0] - How far up the screen the flash is drawn, pool and glow (its offsetY is -z)
    * @param {number} [config.lifespan=100] - Duration in milliseconds
    * @param {number} [config.color=0xFFFFFF] - Light color (0xRRGGBB)
-   * @param {number} [config.intensity=10000] - Initial light intensity
-   * @param {number} [config.hasGlowSprite=0.5] - Glow sprite strength (0 = off, 0.5 = default alpha, 1 = twice)
+   * @param {number} [config.radius=1000] - Initial reach in px
+   * @param {number} [config.brightness=1] - Times the colour and the glow
+   * @param {number} [config.glow=0.2] - Initial halo alpha (0 = no halo)
    * @param {boolean|number} [config.castShadows=true] - Point shadows (false/0 = lighting only)
+   * @param {number} [config.coneAngle=2π] - A cone's whole aperture in radians (2π: round), as LightEmitter's
+   * @param {number} [config.coneSoftness=0] - 0..1, how much of the cone's edge fades
+   * @param {number} [config.direction=0] - Radians, where the cone points (a flash never turns: in the world's frame)
    * @returns {Flash|null} - The spawned flash instance, or null if pool exhausted/off-screen
    *
    * @example
@@ -88,9 +96,13 @@ export class Flash extends GameObject {
    *   z: 30,
    *   lifespan: 80,
    *   color: 0xFFAA00,
-   *   intensity: 40000,
+   *   radius: 2000,
    *   castShadows: false,
    * });
+   *
+   * @example
+   * // A muzzle flash that lights ahead of the barrel only.
+   * Flash.spawn({ x: muzzleX, y: muzzleY, radius: 900, coneAngle: Math.PI / 2, coneSoftness: 0.6, direction: aim });
    */
   static spawn(config) {
     if (!this.initialized) {
@@ -107,13 +119,16 @@ export class Flash extends GameObject {
     s.x = config.x;
     s.y = config.y;
     s.z = config.z ?? 0;
-    s.glowHeightOffset = config.z ?? 0;
     s.lifespan = config.lifespan ?? 100;
     s.color = config.color ?? 0xffffff;
-    s.intensity = config.intensity ?? 10000;
-    s.hasGlowSprite = config.hasGlowSprite ?? 0.5;
+    s.radius = config.radius ?? 1000;
+    s.brightness = config.brightness ?? 1;
+    s.glow = config.glow ?? 0.2;
     s.castShadows =
       config.castShadows !== 0 && config.castShadows !== false ? 1 : 0;
+    s.direction = config.direction ?? 0;
+    s.coneAngle = config.coneAngle ?? Math.PI * 2;
+    s.coneSoftness = config.coneSoftness ?? 0;
 
     return super.spawn(s);
   }
@@ -127,20 +142,24 @@ export class Flash extends GameObject {
     this.x = spawnConfig.x ?? 0;
     this.y = spawnConfig.y ?? 0;
 
-    // Set light emitter properties
-    this.lightEmitter.height = spawnConfig.z ?? 0;
-    this.lightEmitter.glowHeightOffset = spawnConfig.glowHeightOffset ?? 0;
-    this.lightEmitter.lightColor = spawnConfig.color ?? 0xffffff;
-    this.lightEmitter.lightIntensity = spawnConfig.intensity ?? 10000;
+    // Set light emitter properties: z lifts the pool and the glow together (offsetY is local, a flash never turns).
+    this.lightEmitter.offsetY = -(spawnConfig.z ?? 0);
+    this.lightEmitter.color = spawnConfig.color ?? 0xffffff;
+    this.lightEmitter.radius = spawnConfig.radius ?? 1000;
+    this.lightEmitter.brightness = spawnConfig.brightness ?? 1;
+    this.lightEmitter.glow = spawnConfig.glow ?? 0.2;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = spawnConfig.hasGlowSprite ?? 0.5;
 
     // Set flash component properties
     this.flashComponent.lifespan = spawnConfig.lifespan ?? 100;
     this.flashComponent.currentLife = 0;
-    this.flashComponent.initialIntensity = spawnConfig.intensity ?? 10000;
-    this.flashComponent.castShadows =
-      spawnConfig.castShadows !== 0 && spawnConfig.castShadows !== false ? 1 : 0;
+    this.flashComponent.initialRadius = this.lightEmitter.radius;
+    this.flashComponent.initialGlow = this.lightEmitter.glow;
+    this.lightEmitter.castShadows = spawnConfig.castShadows !== 0 && spawnConfig.castShadows !== false ? 1 : 0;
+    // DX-SPOT: its cone (2π, the default, is round); a flash never turns, so the direction is the world's.
+    this.lightEmitter.coneAngle = spawnConfig.coneAngle ?? Math.PI * 2;
+    this.lightEmitter.coneSoftness = spawnConfig.coneSoftness ?? 0;
+    this.lightEmitter.direction = spawnConfig.direction ?? 0;
     this.flashComponent.active = 1;
   }
 
@@ -182,9 +201,11 @@ export class Flash extends GameObject {
       return;
     }
 
-    // Update light intensity (linear fade)
+    // Fade: the reach as the square root of what is left, the glow linearly (the falloff's I = (radius / 10)² falls
+    // linearly).
     const remaining = 1 - (nextLife / lifespan);
-    const newIntensity = fc.initialIntensity[i] * remaining;
-    LightEmitter.lightIntensity[i] = Number.isFinite(newIntensity) && newIntensity > 0 ? newIntensity : 0;
+    const left = Number.isFinite(remaining) && remaining > 0 ? remaining : 0;
+    LightEmitter.radius[i] = fc.initialRadius[i] * Math.sqrt(left);
+    LightEmitter.glow[i] = fc.initialGlow[i] * left;
   }
 }

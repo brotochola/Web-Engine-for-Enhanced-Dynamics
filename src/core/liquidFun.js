@@ -116,7 +116,9 @@ function resolveEmit(options) {
   }
   const life = resolveLifespanSec(o.lifespan, _lifeScratch);
   const viscousScale = o.viscousScale != null ? o.viscousScale : 1;
-  const lightIntensity = o.lightIntensity > 0 ? +o.lightIntensity : 0;
+  // lightRadius (px) is the option; the group column holds the falloff's I = (radius / 10)².
+  const lightRadius = o.lightRadius > 0 ? +o.lightRadius : 0;
+  const lightIntensity = (lightRadius * lightRadius) / 100;
   const layerMask = Layer.resolveSubscriptions(o);
   const dest = _emitScratch;
   dest.posX = o.posX;

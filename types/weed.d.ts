@@ -816,8 +816,8 @@ export interface ParticleEmitConfig {
   layers?: string | number | Array<string | number>;
   /** Truthy = drawn by the render pass only. */
   renderOnly?: boolean;
-  /** Light emitted by the particle: a number or a spawn `{min,max}` range (no over-life form). */
-  lightIntensity?: WeedNumOrRange;
+  /** Reach (px) of the light the particle emits: a number or a spawn `{min,max}` range (no over-life form). */
+  lightRadius?: WeedNumOrRange;
 }
 
 /** An ease: a {@link PARTICLE_EASE} value (particles' over-life ops and Tween). Anything else throws. */
@@ -912,12 +912,26 @@ export declare const PARTICLE_EASE: {
 export interface FlashCreateConfig {
   x: number;
   y: number;
+  /** How far up the screen the flash is drawn, pool and glow (its offsetY is -z). */
   z?: number;
-  glowHeightOffset?: number;
+  /** ms. Default 100. */
   lifespan?: number;
+  /** 0xRRGGBB. Default 0xffffff. */
   color?: number;
-  intensity?: number;
-  hasGlowSprite?: number;
+  /** Initial reach in px. Default 1000. */
+  radius?: number;
+  /** Times the colour and the glow. Default 1. */
+  brightness?: number;
+  /** Initial halo alpha, 0 = none. Default 0.2. */
+  glow?: number;
+  /** Point shadows. Default true. */
+  castShadows?: boolean;
+  /** A cone's whole aperture in radians, as LightEmitter.coneAngle. Default 2π (round). */
+  coneAngle?: number;
+  /** 0..1, how much of the cone's edge fades. Default 0. */
+  coneSoftness?: number;
+  /** Radians, where the cone points, in the world's frame (a flash never turns). Default 0. */
+  direction?: number;
 }
 
 export interface DecorationSpawnConfig {
@@ -3785,45 +3799,103 @@ export declare class DecorationComponent extends Component {
 export declare class LightEmitter extends Component {
   static readonly ARRAY_SCHEMA: {
     active: typeof Uint8Array;
-    lightColor: typeof Uint32Array;
-    lightIntensity: typeof Float32Array;
-    sqrtLightIntensity: typeof Float32Array;
-    height: typeof Float32Array;
-    glowHeightOffset: typeof Float32Array;
-    sourceHeight: typeof Float32Array;
-    hasGlowSprite: typeof Float32Array;
+    color: typeof Uint32Array;
+    radius: typeof Float32Array;
+    brightness: typeof Float32Array;
+    elevation: typeof Float32Array;
+    glow: typeof Float32Array;
+    glowOffsetY: typeof Float32Array;
+    glowLayerId: typeof Uint8Array;
     offsetX: typeof Float32Array;
     offsetY: typeof Float32Array;
-    layerIdOfGlowSprite: typeof Uint8Array;
+    castShadows: typeof Uint8Array;
+    shadowRange: typeof Float32Array;
+    dirC: typeof Float32Array;
+    dirS: typeof Float32Array;
+    coneHalf: typeof Float32Array;
+    coneSoftness: typeof Float32Array;
+    coneCos: typeof Float32Array;
+    coneInvSpan: typeof Float32Array;
+    followFlip: typeof Uint8Array;
   };
   static active: Uint8Array;
-  static lightColor: Uint32Array;
-  static lightIntensity: Float32Array;
-  static sqrtLightIntensity: Float32Array;
-  /** Moves the whole light (pool centre included) up the screen by this many px. */
-  static height: Float32Array;
-  /** Moves only the glow sprite up (put it on the bulb). */
-  static glowHeightOffset: Float32Array;
+  /** 0xRRGGBB. */
+  static color: Uint32Array;
   /**
-   * The source's height above the floor, in px. Widens and softens the pool without moving it or
-   * changing its reach: falloff I / (I + h² + d²). 0 = a light on the floor (I / (I + d²)).
-   * The floor's foreshortening is `config.lighting.groundScaleY`.
+   * How far the light reaches, in px. Its falloff is I / (I + d²) with I = (radius / 10)², measured on the floor
+   * (`config.lighting.groundScaleY`): full at its centre, about 1 % at the radius.
    */
-  static sourceHeight: Float32Array;
-  static hasGlowSprite: Float32Array;
+  static radius: Float32Array;
+  /**
+   * Times the colour and the glow. 1 by default. Under 1 its sprite shadows (basic lighting) are that much lighter too:
+   * a light at 0.5 casts shadows of half the darkness.
+   */
+  static brightness: Float32Array;
+  /**
+   * The source's height above the floor, in px. Widens and flattens the pool without moving it or changing its
+   * reach: falloff I / (I + h² + d²). 0 = a light on the floor.
+   */
+  static elevation: Float32Array;
+  /** The halo's alpha; 0 (the default) draws none. The halo is about 0.85 of the radius wide. */
+  static glow: Float32Array;
+  /** Screen px from the light to its halo; negative is up (put the halo on the bulb). */
+  static glowOffsetY: Float32Array;
+  /** The halo's layer id; 0 = the entity's layers. Set it by name with `glowLayer`. */
+  static glowLayerId: Uint8Array;
   /** Local px from the entity's centre; the entity's rotation turns them. Pool, glow, shadows and culling follow. */
   static offsetX: Float32Array;
   static offsetY: Float32Array;
-  static layerIdOfGlowSprite: Uint8Array;
-  get lightIntensity(): number;
-  set lightIntensity(value: number);
-  /** World radius this light reaches. Occluders past Collider.visualRange do not block it. */
-  get influenceRadius(): number;
-  get lightColor(): number;
-  set lightColor(value: number);
-  /** Glow strength in [0, 1]. 0 off, 0.5 default alpha, 1 twice that alpha. */
-  get hasGlowSprite(): number;
-  set hasGlowSprite(value: number);
+  /**
+   * 1 (the default) casts point shadows: sprite shadows in basic lighting, occluders under raycast. 0 lights the scene
+   * and casts nothing, which costs less.
+   */
+  static castShadows: Uint8Array;
+  /**
+   * How far its shadows reach, in px; 0 (the default) is its radius. Sprite shadows in basic lighting, occluders under
+   * raycast (the light finds them itself: no Collider.visualRange to set, unless its class reads its neighbours, whose
+   * list stays what its visualRange gives; the light's occluders are then within it). A shorter reach costs less.
+   */
+  static shadowRange: Float32Array;
+  /** The cone's direction as cosine and sine, relative to the entity (1, 0 by default). Set it with `direction`. */
+  static dirC: Float32Array;
+  static dirS: Float32Array;
+  /** Half the cone's aperture, radians (π: no cone). Set it with `coneAngle`. */
+  static coneHalf: Float32Array;
+  /** 0..1, the share of the half aperture that fades. */
+  static coneSoftness: Float32Array;
+  /** cos(coneHalf), or -2 without a cone: what the frame compares against. Written by the setters. */
+  static coneCos: Float32Array;
+  /** 1 / the soft edge's width in cosine. Written by the setters. */
+  static coneInvSpan: Float32Array;
+  /** 1: offsetX and the direction mirror with the entity's flipX. */
+  static followFlip: Uint8Array;
+  /** The halo's alpha, at least 0. */
+  get glow(): number;
+  set glow(value: number);
+  /** The layer the halo is drawn on, by name; null follows the entity's layers. */
+  get glowLayer(): string | null;
+  set glowLayer(name: string | null);
+  /** Local px ahead of the entity, as written (a mirrored followFlip light reads back what was set). */
+  get offsetX(): number;
+  set offsetX(value: number);
+  /**
+   * Radians, where a cone points relative to the entity's facing (0, the default: where it faces). The entity's rotation
+   * turns it, as it turns the offset; measured on the floor.
+   */
+  get direction(): number;
+  set direction(angle: number);
+  /** Radians, the cone's whole aperture; 2π (the default) is a point light, the same light it always was. */
+  get coneAngle(): number;
+  set coneAngle(angle: number);
+  /** 0..1: 0 (the default) a hard edge, 1 a cone that fades from its axis to its edge. */
+  get coneSoftness(): number;
+  set coneSoftness(value: number);
+  /**
+   * 0 (the default) leaves the light alone when the entity's flipX changes (a car whose flip is art); 1 mirrors its offsetX
+   * and direction with it (a flashlight in a platformer hero's hand).
+   */
+  get followFlip(): number;
+  set followFlip(on: number | boolean);
 }
 
 /**
@@ -3929,12 +4001,14 @@ export declare class FlashComponent extends Component {
     active: typeof Uint8Array;
     lifespan: typeof Float32Array;
     currentLife: typeof Float32Array;
-    initialIntensity: typeof Float32Array;
+    initialRadius: typeof Float32Array;
+    initialGlow: typeof Float32Array;
   };
   static active: Uint8Array;
   static lifespan: Float32Array;
   static currentLife: Float32Array;
-  static initialIntensity: Float32Array;
+  static initialRadius: Float32Array;
+  static initialGlow: Float32Array;
 }
 
 /** Marker: enables `onScreenEnter` / `onScreenExit` on the entity class. No SoA schema. */
@@ -4073,7 +4147,7 @@ export declare class ParticleEmitter extends SharedAtomicPool {
 /** {@link ParticleEmitter.emitGpu}: the closed-form keys of {@link ParticleEmitConfig}, plus the GPU ones. */
 export interface ParticleGpuEmitConfig extends Omit<ParticleEmitConfig,
   'fadeOnTheFloor' | 'stayOnTheFloor' | 'despawnOnGroundContact' | 'bounces' | 'bounciness' | 'bounceFriction'
-  | 'layer' | 'layers' | 'renderOnly' | 'lightIntensity' | 'blendMode' | 'rotC' | 'rotS' | 'gravity'> {
+  | 'layer' | 'layers' | 'renderOnly' | 'lightRadius' | 'blendMode' | 'rotC' | 'rotS' | 'gravity'> {
   /** A `LAYER_KIND.GPU_PARTICLES` layer's name or id. */
   layer: string | number;
   /** emit's height model: the ground point moves, `z` / `vz` / `gravity` act on the height (`z < 0` is up), drawn at `y + z`. No floor: `z` stops at 0. Default false (emitFlat's model: gravity on `vy`). */

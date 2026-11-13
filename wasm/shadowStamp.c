@@ -3,8 +3,13 @@
    runs without a per-entity cap, takeClosest's quickselect + quicksort, the per-caster nearest lights
    with maxShadowsPerEntity, and the append of caster rows with the light vec4. Every array is a byte
    offset into the render-queue memory (src/render/shadowStampClient.js writes the table: the sun rows and the
-   stamp output are GPU-queue regions, the scratch and the lights the stamp regions); the lights are a table of five
-   doubles each (x, y, intensity, rangeSq, maxShadows), NaN rangeSq for an empty slot. Arithmetic as the
+   stamp output are GPU-queue regions, the scratch and the lights the stamp regions); the lights are a table of eleven
+   doubles each (x, y, intensity, rangeSq, maxShadows, then DX-SPOT's cone: the direction on the floor as x and as y over
+   groundScaleY, the cosine of the half aperture (-2: no cone), 1 / the soft edge's width, 1 / groundScaleY²; then the
+   shade, min(brightness, 1)), NaN rangeSq for an empty slot. A cone light keeps only the casters inside its cone
+   (before maxShadowsPerLight); a caster on its soft edge, or any caster of a light dimmer than 1, takes the intensity
+   that gives f × the shadow's alpha (f the edge's smoothstep times the shade): a full light runs the loops it always
+   ran. Arithmetic as the
    JS does it: positions and distances in double, stored as float where the JS stores into a
    Float32Array, Math.floor(..) | 0 through an exact ToInt32. Returns the stamp cursor.
    E-160: the grid also packs the casters' x and y in its own order (two float arrays), so a light's walk reads them
@@ -28,7 +33,7 @@ enum {
   SLOT_COUNT
 };
 
-#define LIGHT_DOUBLES 5
+#define LIGHT_DOUBLES 11
 
 /* ECMAScript ToInt32 (V8's DoubleToInt32): in range a truncation, else the low 32 bits. */
 INLINE int32_t js_to_int32(double x) {
@@ -337,6 +342,35 @@ INLINE void copy_row(float *d, const float *s, uint32_t sf, uint32_t df) {
   for (uint32_t f = 0; f < row; f++) d[f] = s[f];
 }
 
+/* DX-SPOT: is a caster at (dx, dy) from a cone light inside its cone (factor above 0)? On the floor, with no root:
+   cos > coneCos as dot > 0 and dot² > coneCos²·d² (aperture up to 180°), or dot ≥ 0 or dot² < coneCos²·d² (wider). */
+INLINE int in_cone(double dx, double dy, const double *L) {
+  const double fd2 = dx * dx + dy * dy * L[9];
+  if (fd2 == 0.0) return 1;
+  const double dot = dx * L[5] + dy * L[6];
+  const double c = L[7];
+  const double c2 = c * c * fd2;
+  return c >= 0.0 ? (dot > 0.0 && dot * dot > c2) : (dot >= 0.0 || dot * dot < c2);
+}
+
+/* DX-SPOT: the intensity a caster row of a cone or dim light takes: f·I·D² / (I + D² − f·I), which the unchanged shader
+   turns into f × the alpha I / (I + D²) (D on the floor), f the cone's soft edge (1 without a cone) times the shade
+   (DX-LIGHTAPI: min(brightness, 1)). At f 1, the light's own. */
+INLINE double cone_intensity(double dx, double dy, double intensity, const double *L) {
+  const double fd2 = dx * dx + dy * dy * L[9];
+  double f = L[10];
+  if (L[7] > -1.0 && fd2 != 0.0) {
+    const double cosA = (dx * L[5] + dy * L[6]) / __builtin_sqrt(fd2);
+    double t = (cosA - L[7]) * L[8];
+    if (t < 1.0) {
+      if (t < 0.0) t = 0.0;
+      f *= t * t * (3.0 - 2.0 * t);
+    }
+  }
+  if (f >= 1.0) return intensity;
+  return f * intensity * fd2 / (intensity + fd2 - f * intensity);
+}
+
 /* appendStampedCasters for one light vec4 (already float, as the JS Float32Array lightVec holds it). */
 INLINE int32_t append_stamped(float *dst, uint32_t df, int32_t out, const float *src, uint32_t sf, const uint32_t *indices,
                               uint32_t n, const float *lightVec, int32_t cap, uint32_t lightAt) {
@@ -346,6 +380,23 @@ INLINE int32_t append_stamped(float *dst, uint32_t df, int32_t out, const float 
     d[lightAt] = lightVec[0];
     d[lightAt + 1] = lightVec[1];
     d[lightAt + 2] = lightVec[2];
+    d[lightAt + 3] = lightVec[3];
+    out++;
+  }
+  return out;
+}
+
+/* append_stamped for a cone light: each row's intensity from where its caster stands in the cone (cone_intensity). */
+INLINE int32_t append_stamped_cone(float *dst, uint32_t df, int32_t out, const float *src, uint32_t sf,
+                                   const uint32_t *indices, uint32_t n, const float *lightVec, int32_t cap,
+                                   uint32_t lightAt, double lx, double ly, double intensity, const double *L) {
+  for (uint32_t k = 0; k < n && out < cap; k++) {
+    float *d = dst + (uint32_t)out * df;
+    const float *s = src + indices[k] * sf;
+    copy_row(d, s, sf, df);
+    d[lightAt] = lightVec[0];
+    d[lightAt + 1] = lightVec[1];
+    d[lightAt + 2] = (float)cone_intensity((double)s[0] - lx, (double)s[1] - ly, intensity, L);
     d[lightAt + 3] = lightVec[3];
     out++;
   }
@@ -397,6 +448,8 @@ int32_t stamp_light_range(uint32_t table) {
     ? build_grid_packed(sun, nSun, sf, gridCounts, gridStarts, gridItems, t[T_GRID_COUNTS_CAP], t[T_GRID_ITEMS_CAP], &g,
                         dist, (float *)tmpIdx, px, py, cellOf)
     : 0;
+  /* Whether a light this call took is a cone or dim: the per-entity rows then go through their own copy of the loop. */
+  int anyFolded = 0;
   for (int32_t i = begin; i < capL && (maxPE > 0 || cursor < cap); i += stride) {
     const double *L = lights + (uint32_t)i * LIGHT_DOUBLES;
     const double lx = L[0];
@@ -413,7 +466,51 @@ int32_t stamp_light_range(uint32_t table) {
       lim = maxPL > 0 ? maxPL : (int32_t)nSun;
     }
     uint32_t m = 0;
-    if (grid) {
+    /* DX-SPOT: a cone light gathers in its own copy of the walk, which drops the casters outside its cone; it and a dim
+       light (shade under 1) write their rows in their own copy too. */
+    const int cone = L[7] > -1.0;
+    const int folded = cone || L[10] < 1.0;
+    anyFolded |= folded;
+    if (cone && grid) {
+      const double r = __builtin_sqrt(rangeSq);
+      int32_t col0 = floor_int32((lx - r - g.minX) / STAMP_CELL);
+      int32_t col1 = floor_int32((lx + r - g.minX) / STAMP_CELL);
+      int32_t row0 = floor_int32((ly - r - g.minY) / STAMP_CELL);
+      int32_t row1 = floor_int32((ly + r - g.minY) / STAMP_CELL);
+      if (col0 < 0) col0 = 0;
+      if (row0 < 0) row0 = 0;
+      if (col1 >= g.gw) col1 = g.gw - 1;
+      if (row1 >= g.gh) row1 = g.gh - 1;
+      for (int32_t row = row0; row <= row1 && m < tmpCap; row++) {
+        const int32_t rowBase = row * g.gw;
+        for (int32_t col = col0; col <= col1 && m < tmpCap; col++) {
+          const int32_t cell = rowBase + col;
+          const int32_t from = gridStarts[cell];
+          const int32_t to = gridStarts[cell + 1];
+          for (int32_t p = from; p < to && m < tmpCap; p++) {
+            const double dx = (double)px[p] - lx;
+            const double dy = (double)py[p] - ly;
+            const double d2 = dx * dx + dy * dy;
+            if (d2 > rangeSq || !in_cone(dx, dy, L)) continue;
+            tmpIdx[m] = gridItems[p];
+            dist[m] = (float)d2;
+            d64[m] = d2;
+            m++;
+          }
+        }
+      }
+    } else if (cone) {
+      for (uint32_t c = 0; c < nSun && m < tmpCap; c++) {
+        const double dx = (double)sun[c * sf] - lx;
+        const double dy = (double)sun[c * sf + 1] - ly;
+        const double d2 = dx * dx + dy * dy;
+        if (d2 > rangeSq || !in_cone(dx, dy, L)) continue;
+        tmpIdx[m] = c;
+        dist[m] = (float)d2;
+        d64[m] = d2;
+        m++;
+      }
+    } else if (grid) {
       const double r = __builtin_sqrt(rangeSq);
       int32_t col0 = floor_int32((lx - r - g.minX) / STAMP_CELL);
       int32_t col1 = floor_int32((lx + r - g.minX) / STAMP_CELL);
@@ -475,11 +572,38 @@ int32_t stamp_light_range(uint32_t table) {
     lightVec[1] = (float)ly;
     lightVec[2] = (float)intensity;
     lightVec[3] = (float)rangeSq;
-    const int32_t written = append_stamped(stamp, df, cursor, sun, sf, keep, m, lightVec, cap, lightAt);
+    const int32_t written = folded
+      ? append_stamped_cone(stamp, df, cursor, sun, sf, keep, m, lightVec, cap, lightAt, lx, ly, intensity, L)
+      : append_stamped(stamp, df, cursor, sun, sf, keep, m, lightVec, cap, lightAt);
     if (stampLightIdx) for (int32_t k = cursor; k < written; k++) stampLightIdx[k] = (uint16_t)i;
     cursor = written;
   }
   if (maxPE == 0) return cursor;
+  if (!anyFolded) {
+    /* Point lights at full shade only: each row is its caster's with the light's vec4. */
+    for (uint32_t c = 0; c < nSun && cursor < cap; c++) {
+      const uint32_t n = nearCount[c];
+      const uint32_t base = c * maxPE;
+      for (uint32_t k = 0; k < n && cursor < cap; k++) {
+        const int32_t li = nearSlot[base + k];
+        const double *L = lights + (uint32_t)li * LIGHT_DOUBLES;
+        lightVec[0] = (float)L[0];
+        lightVec[1] = (float)L[1];
+        lightVec[2] = (float)L[2];
+        lightVec[3] = (float)L[3];
+        float *d = stamp + (uint32_t)cursor * df;
+        copy_row(d, sun + c * sf, sf, df);
+        d[lightAt] = lightVec[0];
+        d[lightAt + 1] = lightVec[1];
+        d[lightAt + 2] = lightVec[2];
+        d[lightAt + 3] = lightVec[3];
+        if (stampLightIdx) stampLightIdx[cursor] = (uint16_t)li;
+        cursor++;
+      }
+    }
+    return cursor;
+  }
+  /* DX-SPOT: a call with a cone or dim light; that light's rows take their caster's place in the cone and its shade. */
   for (uint32_t c = 0; c < nSun && cursor < cap; c++) {
     const uint32_t n = nearCount[c];
     const uint32_t base = c * maxPE;
@@ -491,10 +615,12 @@ int32_t stamp_light_range(uint32_t table) {
       lightVec[2] = (float)L[2];
       lightVec[3] = (float)L[3];
       float *d = stamp + (uint32_t)cursor * df;
-      copy_row(d, sun + c * sf, sf, df);
+      const float *s = sun + c * sf;
+      copy_row(d, s, sf, df);
       d[lightAt] = lightVec[0];
       d[lightAt + 1] = lightVec[1];
-      d[lightAt + 2] = lightVec[2];
+      d[lightAt + 2] = L[7] > -1.0 || L[10] < 1.0
+        ? (float)cone_intensity((double)s[0] - L[0], (double)s[1] - L[1], L[2], L) : lightVec[2];
       d[lightAt + 3] = lightVec[3];
       if (stampLightIdx) stampLightIdx[cursor] = (uint16_t)li;
       cursor++;

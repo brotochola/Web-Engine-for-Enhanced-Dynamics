@@ -68,14 +68,14 @@ export class BluePlatformerPlayer extends GameObject {
 
     this.collider.radius = 30;
     this.collider.visualRange = 120;
+    this.lightEmitter.shadowRange = 120;
     this.setFixedRotation(1);
     this.platformerCharacterComponent.isItStandingOnPlatform = -1
 
-    this.lightEmitter.lightColor = 0xffffff;
-    this.lightEmitter.lightIntensity = 30000;
-    this.lightEmitter.height = 0;
+    this.lightEmitter.color = 0xffffff;
+    this.lightEmitter.radius = 1732;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0.5;
+    this.lightEmitter.glow = 0.6;
 
     this.x = spawnConfig.x ?? 100;
     this.y = spawnConfig.y ?? 100;

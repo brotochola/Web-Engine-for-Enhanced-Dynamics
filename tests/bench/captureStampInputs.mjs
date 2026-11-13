@@ -6,8 +6,8 @@
  * what pre-render really passes, frame after frame.
  *
  * It wraps pre-render's `_stampRange` through the worker's global (`self.preRenderWorker`) and copies, on every
- * `--every`-th call until it has `--frames`: the sun caster rows, the light table (five doubles a light, as
- * shadowStampClient.js writes it), the call's limits and capacities, the stamp it wrote (rows and light indices)
+ * `--every`-th call until it has `--frames`: the sun caster rows, the light table (as shadowStampClient.js's
+ * writeStampLights wrote it for the call: STAMP_LIGHT_DOUBLES a light), the call's limits and capacities, the stamp it wrote (rows and light indices)
  * and the call's own time. The wrapper is an own property of the worker, so the worker's methods deoptimize once:
  * `--settle-ms` waits that out before the first copy. Nothing the scene reads is written. A capture is large and
  * local: it stays under tests/results/ (format: stampCapture.mjs).
@@ -61,20 +61,10 @@ function installCapture({ max, every: k }) {
     const sf = spec.sunFloats | 0;
     const df = spec.stampFloats | 0;
     const capL = spec.lightEnd | 0;
-    const lights = new Float64Array(capL * 5);
-    for (let i = 0; i < capL; i++) {
-      const L = spec.lights ? spec.lights[i] : null;
-      if (!L) {
-        lights[i * 5 + 3] = NaN;
-        continue;
-      }
-      lights[i * 5] = L.x;
-      lights[i * 5 + 1] = L.y;
-      lights[i * 5 + 2] = L.intensity;
-      lights[i * 5 + 3] = L.rangeSq;
-      lights[i * 5 + 4] = L.maxShadows;
-    }
     const b = this._stampWasm;
+    // The table the call just read, record for record (its record size is the table's over its slots).
+    const perLight = b ? b.lights.length / b.maxLights : 0;
+    const lights = b ? b.lights.slice(0, capL * perLight) : new Float64Array(0);
     const base = stampBase | 0;
     cap.frames.push({
       ms,
@@ -96,6 +86,7 @@ function installCapture({ max, every: k }) {
       regionMaxSun: b ? b.maxSun : 0,
       regionMaxPerEntity: b ? b.maxPerEntity : 0,
       regionMaxLights: b ? b.maxLights : 0,
+      lightDoubles: perLight,
       sun: spec.sun && n > 0 ? spec.sun.slice(0, n * sf) : new Float32Array(0),
       lights,
       stamp: written > base ? spec.stamp.slice(base * df, written * df) : new Float32Array(0),

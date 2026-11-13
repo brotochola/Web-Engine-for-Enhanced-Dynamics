@@ -14,15 +14,13 @@ export class CompoundVisLight extends GameObject {
     this.y = y;
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 6;
-    this.collider.visualRange = 2200;
+    this.lightEmitter.shadowRange = 2200;
     this.rigidBody.static = 0;
     this.rigidBody.linearDamping = 0;
     this.rigidBody.angularDamping = 0;
-    this.lightEmitter.lightColor = 0xfff2d0;
-    this.lightEmitter.lightIntensity = 22500;
-    this.lightEmitter.height = 0;
+    this.lightEmitter.color = 0xfff2d0;
+    this.lightEmitter.radius = 1500;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0;
     this.setVelocity(vx, vy);
     this.setAwake(true);
   }

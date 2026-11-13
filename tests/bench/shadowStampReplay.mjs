@@ -19,11 +19,10 @@
 import { GPU_CASTER_LIGHT_FLOAT } from '../../src/render/gpuQueueLayout.js';
 import { STAMP_SLOTS } from '../../src/render/shadowStampClient.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
-import { layoutRegions, NULL_GUARD_BYTES, STAMP_GRID_CELLS, STAMP_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
+import { layoutRegions, NULL_GUARD_BYTES, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
 import { decodeStampCapture } from './stampCapture.mjs';
 
 const SLOT = Object.fromEntries(STAMP_SLOTS.map((name, k) => [name, k]));
-const LIGHT_DOUBLES = 5;
 
 /** The variants: a module's export of the stamp (the shipped kernel is engine.wasm's). */
 export const STAMP_REPLAY_VARIANTS = {
@@ -60,6 +59,9 @@ export async function createStampReplay(capture, kernelUrl) {
   let maxCap = 1;
   let floats = 1;
   for (const f of frames) {
+    if (f.lightDoubles !== STAMP_LIGHT_DOUBLES) {
+      throw new Error(`shadowStampReplay: a capture with ${f.lightDoubles ?? 5} doubles a light; the kernel reads ${STAMP_LIGHT_DOUBLES}: capture again`);
+    }
     maxSun = Math.max(maxSun, f.sunN, f.regionMaxSun, f.tmpLen, f.gridItemsLen);
     maxPE = Math.max(maxPE, f.maxPerEntity, f.regionMaxPerEntity);
     maxCap = Math.max(maxCap, f.stampCap);

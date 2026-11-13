@@ -35,6 +35,9 @@ struct LightingUniforms {
   uNightR: f32,
   uNightG: f32,
   uNightB: f32,
+  // DX-SPOT: the first uConeCount lights are cones, with a third row (direction on the floor, cos of the half aperture,
+  // 1 / the soft edge's width); they loop apart, so a point light runs the loop it always ran. A float (see pixiWorker).
+  uConeCount: f32,
 // #if FACES
   uFaceLight: vec4<f32>, // heightScaleY, wrap, gain, sunDirect
   uFaceSun: vec4<f32>, // towards the sun in the floor's space; w: 1 / its height, so a flat surface reads as the floor
@@ -70,6 +73,15 @@ fn weedScreenToWorld(screenPos: vec2<f32>) -> vec2<f32> {
   ) / uniforms.uZoom;
 }
 
+// DX-SPOT: how far inside its cone a point at floor offset delta from the light is: 1 inside, 0 outside, smooth across
+// the soft edge. At the light itself, 1.
+fn coneFactor(delta: vec2<f32>, cone: vec4<f32>) -> f32 {
+  let len2 = dot(delta, delta);
+  let cosA = select(1.0, dot(delta, cone.xy) * inverseSqrt(len2), len2 > 0.0);
+  let t = clamp((cosA - cone.z) * cone.w, 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}
+
 // #if FACES
 fn faceLight(world: vec2<f32>, face: vec4<f32>) -> vec3<f32> {
   let f = (face.rg * 255.0 - 127.0) / 126.0;
@@ -85,9 +97,26 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>) -> vec3<f32> {
   var total = vec3<f32>(uniforms.uBaseAmbient) + vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB);
   total += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * (1.0 - lit.w + lit.w * sunDirect);
   let nLights = uniforms.uLightCount;
+  let nCones = i32(uniforms.uConeCount);
   let texW = i32(uniforms.uLightTexWidth);
   let DISTANCE_SCALE = 1.0 / 1024.0;
+  // The cones first, then every other light as before.
   for (var i = 0; i < MAX_LIGHTS; i++) {
+    if (i >= nCones || i >= texW) { break; }
+    let posInt = textureLoad(uLightData, vec2<i32>(i, 0), 0);
+    if (posInt.z <= 0.0) { continue; }
+    let col = textureLoad(uLightData, vec2<i32>(i, 1), 0);
+    let toLight = vec3<f32>(posInt.xy, col.a) - p;
+    let d = length(toLight);
+    let cosine = (dot(n, toLight) / max(d, 0.001) + lit.y) / (1.0 + lit.y);
+    if (cosine <= 0.0) { continue; }
+    let scaled = DISTANCE_SCALE * DISTANCE_SCALE;
+    let intensityScaled = posInt.z * scaled;
+    let cone = coneFactor(p.xy - posInt.xy, textureLoad(uLightData, vec2<i32>(i, 2), 0));
+    total += col.rgb * cosine * lit.z * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+  }
+  for (var j = 0; j < MAX_LIGHTS; j++) {
+    let i = j + nCones;
     if (i >= nLights || i >= texW) { break; }
     let posInt = textureLoad(uLightData, vec2<i32>(i, 0), 0);
     if (posInt.z <= 0.0) { continue; }
@@ -126,8 +155,24 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   totalLight += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity;
   totalLight += vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB);
   let nLights = uniforms.uLightCount;
+  let nCones = i32(uniforms.uConeCount);
   let texW = i32(uniforms.uLightTexWidth);
+  // The cones first (each times its cone), then every other light as before.
   for (var i = 0; i < MAX_LIGHTS; i++) {
+    if (i >= nCones || i >= texW) { break; }
+    let posInt = textureLoad(uLightData, vec2<i32>(i, 0), 0);
+    if (posInt.z <= 0.0) { continue; }
+    let col = textureLoad(uLightData, vec2<i32>(i, 1), 0);
+    let cone = textureLoad(uLightData, vec2<i32>(i, 2), 0);
+    let DISTANCE_SCALE = 1.0 / 1024.0;
+    let deltaScaled = (fragWorld - posInt.xy) * DISTANCE_SCALE;
+    let d2Scaled = dot(deltaScaled, deltaScaled);
+    let intensityScaled = posInt.z * DISTANCE_SCALE * DISTANCE_SCALE;
+    let attenuation = intensityScaled / (intensityScaled + d2Scaled);
+    totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
+  }
+  for (var j = 0; j < MAX_LIGHTS; j++) {
+    let i = j + nCones;
     if (i >= nLights || i >= texW) { break; }
     let posInt = textureLoad(uLightData, vec2<i32>(i, 0), 0);
     let col = textureLoad(uLightData, vec2<i32>(i, 1), 0);

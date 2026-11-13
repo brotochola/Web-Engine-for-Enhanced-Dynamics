@@ -369,7 +369,7 @@ Flash.spawn({
   z: 30,
   lifespan: 50,
   color: 0xffaa00,
-  intensity: 10000,
+  radius: 1000,
   castShadows: false, // muzzle: skip point-shadow work
 });
 

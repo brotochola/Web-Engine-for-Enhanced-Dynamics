@@ -22,12 +22,11 @@ import {
   GPU_KEYED_STAMP_FLOATS,
 } from '../../src/render/gpuQueueLayout.js';
 import { stampLightRange } from '../reference/shadowStamp.mjs';
-import { STAMP_SLOTS } from '../../src/render/shadowStampClient.js';
+import { STAMP_SLOTS, writeStampLights } from '../../src/render/shadowStampClient.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
-import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
+import { layoutRegions, NULL_GUARD_BYTES, STAMP_LIGHT_DOUBLES } from '../../src/util/wasmMemoryMap.js';
 import { parsePredatorFixture } from './predatorFixtureParse.mjs';
 
-const LIGHT_DOUBLES = 5;
 const SLOT = Object.fromEntries(STAMP_SLOTS.map((name, k) => [name, k]));
 
 export function setupStamp(fx, opts = {}) {
@@ -124,7 +123,7 @@ export async function createStampKernel(fx, opts, kernelUrl) {
   for (const a of arrays) regions.push({ name: a, owner: 'pre-render', bytes: spec[a].byteLength });
   regions.push(
     { name: 'lightVec', owner: 'pre-render', bytes: 16 },
-    { name: 'lights', owner: 'pre-render', bytes: spec.lights.length * LIGHT_DOUBLES * 8 },
+    { name: 'lights', owner: 'pre-render', bytes: spec.lights.length * STAMP_LIGHT_DOUBLES * 8 },
     { name: 'nearDist', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 4 },
     { name: 'nearSlot', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 4 },
     { name: 'nearCount', owner: 'pre-render', bytes: Math.max(1, s.sunN) },
@@ -144,7 +143,7 @@ export async function createStampKernel(fx, opts, kernelUrl) {
     spec[a] = view;
   }
   spec.lightVec = new Float32Array(buffer, R.lightVec.byte, 4);
-  const lights = new Float64Array(buffer, R.lights.byte, spec.lights.length * LIGHT_DOUBLES);
+  const lights = new Float64Array(buffer, R.lights.byte, spec.lights.length * STAMP_LIGHT_DOUBLES);
   const t = new Uint32Array(buffer, R.table.byte, STAMP_SLOTS.length);
   const put = (slot, v) => { t[SLOT[slot]] = v; };
   put('sun', spec.sun.byteOffset);
@@ -181,22 +180,9 @@ export async function createStampKernel(fx, opts, kernelUrl) {
   put('dist64', R.dist64.byte);
 
   const { stamp_light_range: stampRange } = await loadWasmKernel('shadowStamp', kernelUrl, memory, ['stamp_light_range']);
-  /** The product wrapper: the light objects into the table, then one call of `fn` (a variant's export). */
+  /** The product wrapper: the light objects into the table (the product's writer), then one call of `fn` (a variant's export). */
   const stampWith = (fn) => {
-    const L = spec.lights;
-    const n = spec.lightEnd | 0;
-    for (let i = 0, at = 0; i < n; i++, at += LIGHT_DOUBLES) {
-      const light = L[i];
-      if (!light) {
-        lights[at + 3] = NaN;
-        continue;
-      }
-      lights[at] = light.x;
-      lights[at + 1] = light.y;
-      lights[at + 2] = light.intensity;
-      lights[at + 3] = light.rangeSq;
-      lights[at + 4] = light.maxShadows;
-    }
+    writeStampLights(lights, spec.lights, spec.lightEnd | 0);
     return fn(R.table.byte);
   };
   return { ...s, spec, memory, stampWasm: () => stampWith(stampRange), stampWith, stampRange };

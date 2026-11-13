@@ -394,8 +394,11 @@ export const SWAY_TABLE_SLOTS = 32;
 
 /** The stamp grid's cells: gpuShadowCasters.js's STAMP_GRID_MAX_CELLS, the length of its counts array. */
 export const STAMP_GRID_CELLS = 128 * 128;
-/** A light in the stamp's light table: x, y, intensity, rangeSq, maxShadows (doubles). */
-export const STAMP_LIGHT_DOUBLES = 5;
+/**
+ * A light in the stamp's light table (doubles): x, y, intensity, rangeSq, maxShadows, then DX-SPOT's cone (dir x, dir y
+ * over groundScaleY, cos, 1/span, 1/g²), then its shade (min(brightness, 1)).
+ */
+export const STAMP_LIGHT_DOUBLES = 11;
 /** Room for the stamp kernel's column table (shadowStampClient.js STAMP_SLOTS). */
 export const STAMP_TABLE_SLOTS = 32;
 

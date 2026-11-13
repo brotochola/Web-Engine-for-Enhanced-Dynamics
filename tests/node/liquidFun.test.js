@@ -500,7 +500,7 @@ test('LiquidFun enqueues SET_LIQUIDFUN_LIGHT and forces trackGroup', () => {
     posX: 0,
     posY: 0,
     radius: 20,
-    lightIntensity: 5000,
+    lightRadius: 700,
   });
 
   const received = [];
@@ -522,8 +522,8 @@ test('LiquidFun enqueues SET_LIQUIDFUN_LIGHT and forces trackGroup', () => {
     received.map((r) => r.type),
     ['setLiquidFunEmit', 'setLiquidFunLight', 'createParticleGroupCircle'],
   );
-  assert.ok(received[0].packed & (1 << 16), 'lightIntensity forces trackGroup');
-  assert.ok(Math.abs(received[1].lightIntensity - 5000) < 1e-6);
+  assert.ok(received[0].packed & (1 << 16), 'lightRadius forces trackGroup');
+  assert.ok(Math.abs(received[1].lightIntensity - 4900) < 1e-6, 'the group holds I = (radius / 10)²');
 });
 
 test('LiquidFun enqueues join/split/force ring commands', () => {

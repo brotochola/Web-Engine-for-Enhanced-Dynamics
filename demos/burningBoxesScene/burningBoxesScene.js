@@ -227,7 +227,7 @@ export class BurningBoxesScene extends WEED.Scene {
       viscousScale: 9,
       tint: 0x6b3a1f,
       userData: burning ? 255 : 0,
-      lightIntensity: burning ? 100 : 0,
+      lightRadius: burning ? 100 : 0,
       shape: 'circle',
       posX: x,
       posY: y,

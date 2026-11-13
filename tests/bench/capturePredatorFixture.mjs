@@ -111,7 +111,7 @@ try {
       shadowActive: copy(ShadowCaster.active, n),
       shadowH: copy(ShadowCaster.heightMultiplier, n),
       lightActive: copy(LightEmitter.active, n),
-      lightIntensity: copy(LightEmitter.lightIntensity, n),
+      lightRadius: copy(LightEmitter.radius, n),
     };
   });
 
@@ -131,7 +131,7 @@ try {
     shadowActive: u8(snap.shadowActive),
     shadowH: f32(snap.shadowH),
     lightActive: u8(snap.lightActive),
-    lightIntensity: f32(snap.lightIntensity),
+    lightRadius: f32(snap.lightRadius),
   };
   let active = 0;
   let casters = 0;

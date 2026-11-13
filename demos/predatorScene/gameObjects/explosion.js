@@ -42,18 +42,17 @@ export class Explosion extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 1; // Start at 1px
 
-    this.collider.visualRange = 250;
+    this.collider.visualRange = 250; // its neighbours (the blast reads them)
+    this.lightEmitter.shadowRange = 250;
 
-    this.lightEmitter.lightColor = randomColor({
+    this.lightEmitter.color = randomColor({
       min: 0xffff00,
       max: 0xff9900,
     });
-    this.lightEmitter.lightIntensity = 0; // Start at 0
-    this.lightEmitter.glowHeightOffset = this.collider.radius * 0.5 * ec.baseScale;
-
-    this.lightEmitter.height = 0;
+    this.lightEmitter.radius = 0; // Start dark
+    this.lightEmitter.glow = 0;
+    this.lightEmitter.glowOffsetY = -this.collider.radius * 0.5 * ec.baseScale;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0.5;
     this.setAlpha(0.6 + rng() * 0.2);
 
     // Animation at 30fps (animationSpeed is relative to 60fps base, so 30fps = 0.5)
@@ -102,11 +101,13 @@ export class Explosion extends GameObject {
       this.collider.radius = ec.maxRadius * (1 - t);
     }
 
-    // Update light intensity: 0 → wantedIntensity (at 50%) → 0
-    this.lightEmitter.lightIntensity = ec.wantedIntensity * factor;
+    // The light's strength s goes 0 → wantedIntensity (at 50%) → 0: its reach is 10·√s, its glow s / 50000.
+    const strength = ec.wantedIntensity * factor;
+    this.lightEmitter.radius = 10 * Math.sqrt(strength);
+    this.lightEmitter.glow = strength / 50000;
 
-    // Update glow height offset based on current radius
-    this.lightEmitter.glowHeightOffset = this.collider.radius * 0.5 * ec.baseScale;
+    // The glow rises with the blast
+    this.lightEmitter.glowOffsetY = -this.collider.radius * 0.5 * ec.baseScale;
 
     // Despawn when animation is complete
 

@@ -8,10 +8,10 @@ import {
   clearUnusedLightDataTexels,
 } from '../../src/util/utils.js';
 
-test('light data texture pack/read matches 2-row RGBA32F layout', () => {
+test('light data texture pack/read matches the RGBA32F layout (row 2: DX-SPOT\'s cones)', () => {
   const maxLights = 4;
-  assert.equal(LIGHT_DATA_TEX_HEIGHT, 2);
-  assert.equal(lightDataTextureFloatCount(maxLights), maxLights * 2 * 4);
+  assert.equal(LIGHT_DATA_TEX_HEIGHT, 3);
+  assert.equal(lightDataTextureFloatCount(maxLights), maxLights * 3 * 4);
 
   const data = new Float32Array(lightDataTextureFloatCount(maxLights));
   packLightDataTexel(data, maxLights, 0, 10, 20, 5000, 1, 0.5, 0.25);
@@ -73,6 +73,17 @@ test('clearUnusedLightDataTexels zeros leftover compact slots after shrink', () 
     assert.equal(slot.r, 0);
     assert.equal(slot.g, 0);
     assert.equal(slot.b, 0);
+  }
+});
+
+test('clearUnusedLightDataTexels zeros the cone row\'s leftover slots too', () => {
+  const maxLights = 4;
+  const data = new Float32Array(lightDataTextureFloatCount(maxLights)).fill(7);
+  clearUnusedLightDataTexels(data, maxLights, 1);
+  for (let row = 0; row < 3; row++) {
+    const base = row * maxLights * 4;
+    assert.deepEqual(Array.from(data.subarray(base, base + 4)), [7, 7, 7, 7], `row ${row}: the live slot stays`);
+    assert.deepEqual(Array.from(data.subarray(base + 4, base + 16)), new Array(12).fill(0), `row ${row}: the rest cleared`);
   }
 });
 

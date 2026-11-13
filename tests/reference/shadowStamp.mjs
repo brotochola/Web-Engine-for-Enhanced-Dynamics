@@ -43,6 +43,40 @@ export function appendStampedCasters(dst, dstFloats, dstBase, src, srcFloats, in
   return out;
 }
 
+/**
+ * DX-SPOT, as wasm/shadowStamp.c's in_cone: is a caster at (dx, dy) from cone light L inside its cone? On the floor
+ * (L.invG2 = 1 / groundScaleY², L.coneDirYW the direction's y over groundScaleY), with no root.
+ */
+function inCone(dx, dy, L) {
+  const fd2 = dx * dx + dy * dy * L.invG2;
+  if (fd2 === 0) return true;
+  const dot = dx * L.coneDirX + dy * L.coneDirYW;
+  const c = L.coneCos;
+  const c2 = c * c * fd2;
+  return c >= 0 ? (dot > 0 && dot * dot > c2) : (dot >= 0 || dot * dot < c2);
+}
+
+/** The shade a light's shadows take (DX-LIGHTAPI: min(brightness, 1)); a light without the field is full. */
+function shadeOf(L) {
+  return L.shade < 1 ? L.shade : 1;
+}
+
+/** DX-SPOT, as cone_intensity: the intensity a cone or dim light's caster row takes (f × the alpha). */
+function coneIntensity(dx, dy, intensity, L) {
+  const fd2 = dx * dx + dy * dy * L.invG2;
+  let f = shadeOf(L);
+  if (L.coneCos > -1 && fd2 !== 0) {
+    const cosA = (dx * L.coneDirX + dy * L.coneDirYW) / Math.sqrt(fd2);
+    let t = (cosA - L.coneCos) * L.coneInvSpan;
+    if (t < 1) {
+      if (t < 0) t = 0;
+      f *= t * t * (3 - 2 * t);
+    }
+  }
+  if (f >= 1) return intensity;
+  return f * intensity * fd2 / (intensity + fd2 - f * intensity);
+}
+
 /** World-unit bins for the per-light caster walk. Larger than a character, smaller than the zoom-0.4 view. */
 const STAMP_CELL = 256;
 /** ponytail: above this the bin grid is skipped and the full caster scan runs. Raise the arrays if a map is wider than 128 cells. */
@@ -233,6 +267,7 @@ export function stampLightRange({
     const lx = L.x;
     const ly = L.y;
     const rangeSq = L.rangeSq;
+    const cone = L.coneCos > -1;
     if (grid) {
       const r = Math.sqrt(rangeSq);
       let col0 = Math.floor((lx - r - grid.minX) / STAMP_CELL) | 0;
@@ -255,7 +290,7 @@ export function stampLightRange({
             const dx = sun[b] - lx;
             const dy = sun[b + 1] - ly;
             const d2 = dx * dx + dy * dy;
-            if (d2 > rangeSq) continue;
+            if (d2 > rangeSq || (cone && !inCone(dx, dy, L))) continue;
             tmpIdx[m] = c;
             dist[m] = d2;
             m++;
@@ -268,7 +303,7 @@ export function stampLightRange({
         const dx = sun[b] - lx;
         const dy = sun[b + 1] - ly;
         const d2 = dx * dx + dy * dy;
-        if (d2 > rangeSq) continue;
+        if (d2 > rangeSq || (cone && !inCone(dx, dy, L))) continue;
         tmpIdx[m] = c;
         dist[m] = d2;
         m++;
@@ -300,6 +335,12 @@ export function stampLightRange({
     const written = appendStampedCasters(
       stamp, stampFloats, cursor, sun, sf, keepIdx, m, lightVec, cap, 0
     );
+    if (cone || shadeOf(L) < 1) {
+      for (let k = cursor; k < written; k++) {
+        const b = keepIdx[k - cursor] * sf;
+        stamp[k * stampFloats + CASTER_LIGHT_FLOAT + 2] = coneIntensity(sun[b] - lx, sun[b + 1] - ly, L.intensity, L);
+      }
+    }
     if (stampLightIdx) {
       for (let k = cursor; k < written; k++) stampLightIdx[k] = i;
     }
@@ -320,6 +361,10 @@ export function stampLightRange({
       const written = appendStampedCasters(
         stamp, stampFloats, cursor, sun, sf, keepIdx, 1, lightVec, cap, 0
       );
+      if (written > cursor && (L.coneCos > -1 || shadeOf(L) < 1)) {
+        const b = c * sf;
+        stamp[cursor * stampFloats + CASTER_LIGHT_FLOAT + 2] = coneIntensity(sun[b] - L.x, sun[b + 1] - L.y, L.intensity, L);
+      }
       if (stampLightIdx && written > cursor) stampLightIdx[cursor] = li;
       cursor = written;
     }

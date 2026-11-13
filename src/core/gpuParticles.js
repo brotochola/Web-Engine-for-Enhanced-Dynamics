@@ -49,7 +49,7 @@ const DEFAULT_HALF_SIZE = 32;
 /** CPU emit keys GPU particles do not have; each is reported once. */
 export const UNSUPPORTED_KEYS = [
   'fadeOnTheFloor', 'stayOnTheFloor', 'despawnOnGroundContact', 'bounces', 'bounciness', 'bounceFriction',
-  'lightIntensity', 'layers', 'renderOnly', 'blendMode', 'rotC', 'rotS', 'wind', 'turbulence',
+  'lightRadius', 'layers', 'renderOnly', 'blendMode', 'rotC', 'rotS', 'wind', 'turbulence',
 ];
 
 /** Samplers: a key's value, or the range it is drawn from per particle (randomRange's rule). */
@@ -400,7 +400,7 @@ export class GpuParticles {
       cfg.bounces !== undefined ||
       cfg.bounciness !== undefined ||
       cfg.bounceFriction !== undefined ||
-      cfg.lightIntensity !== undefined ||
+      cfg.lightRadius !== undefined ||
       cfg.layers !== undefined ||
       cfg.renderOnly !== undefined ||
       cfg.blendMode !== undefined ||

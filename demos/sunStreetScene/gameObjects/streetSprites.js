@@ -9,11 +9,10 @@ const { ShapeType } = enums;
 // ?carSpeed= reaches this module on the logic worker through WEED.params: `location` there is the worker script's.
 const CAR_SPEED = Number(WEED.params?.get('carSpeed') ?? 4);
 const LANE = -28; // inside of the centre line
-const LAMP_INTENSITY = 9000;
-const HEADLIGHT_INTENSITY = 9000;
-// A light's occluders come from its neighbours: its visualRange must cover all it reaches (LightEmitter.influenceRadius).
-const LAMP_REACH = Math.sqrt(LAMP_INTENSITY) * 10;
-const HEADLIGHT_REACH = Math.sqrt(HEADLIGHT_INTENSITY) * 10;
+// The lights' reach at night; by day it shrinks with Sun.nightFactor (as √nightFactor), and their glow fades with it.
+const LAMP_RADIUS = 949;
+const HEADLIGHT_RADIUS = 949;
+const NIGHT_GLOW = 0.18;
 // carScene's cars: a drawn frame every 7.5 degrees, named by its heading, instead of one picture that turns.
 const CAR_FRAMES = Array.from({ length: 48 }, (_, i) => String(i * 7.5));
 const CAR_FRAME_STEP = (Math.PI * 2) / CAR_FRAMES.length;
@@ -89,17 +88,18 @@ export class StreetLamp extends GameObject {
   onSpawned() {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 6;
-    this.collider.visualRange = LAMP_REACH;
     this.setSprite('tallLight');
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 1;
-    this.lightEmitter.lightColor = 0xffc98a;
-    this.lightEmitter.lightIntensity = 0;
-    this.lightEmitter.sourceHeight = 40;
+    this.lightEmitter.color = 0xffc98a;
+    this.lightEmitter.radius = 0;
+    this.lightEmitter.elevation = 40;
   }
 
   tick() {
-    this.lightEmitter.lightIntensity = LAMP_INTENSITY * Sun.nightFactor;
+    const night = Sun.nightFactor;
+    this.lightEmitter.radius = LAMP_RADIUS * Math.sqrt(night);
+    this.lightEmitter.glow = NIGHT_GLOW * night;
   }
 }
 
@@ -148,7 +148,6 @@ export class StreetCar extends GameObject {
     this.collider.shapeType = ShapeType.Box;
     this.collider.width = 78;
     this.collider.height = 38;
-    this.collider.visualRange = HEADLIGHT_REACH;
     this.distance = config.distance + 0.5;
     this.setSpritesheet(config.sheet);
     this.setAnimation(CAR_FRAMES[0]);
@@ -157,8 +156,8 @@ export class StreetCar extends GameObject {
     // The frame shows the heading: the entity turns, the picture does not.
     this.spriteRenderer.inheritTransformRotation = 0;
     this.spriteRenderer.spriteRotation = 0;
-    this.lightEmitter.lightColor = 0xfff1c4;
-    this.lightEmitter.lightIntensity = 0;
+    this.lightEmitter.color = 0xfff1c4;
+    this.lightEmitter.radius = 0;
     this.lightEmitter.offsetX = config.offset;
     this.lightOccluder.maskMode = LIGHT_OCCLUDER_MASK_SPRITE;
     this.volumeShadowCaster.addLevel(CAR_BODY, 0, CAR_BODY_HEIGHT, CAR_BODY, { floorScaleY: CAR_FLOOR_SCALE });
@@ -177,7 +176,9 @@ export class StreetCar extends GameObject {
       this.frame = frame;
       this.setAnimation(CAR_FRAMES[frame]);
     }
-    this.lightEmitter.lightIntensity = HEADLIGHT_INTENSITY * Sun.nightFactor;
+    const night = Sun.nightFactor;
+    this.lightEmitter.radius = HEADLIGHT_RADIUS * Math.sqrt(night);
+    this.lightEmitter.glow = NIGHT_GLOW * night;
   }
 }
 

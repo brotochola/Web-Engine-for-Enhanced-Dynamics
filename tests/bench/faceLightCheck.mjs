@@ -44,12 +44,13 @@ function lightAt(p, n, env, lamps) {
   for (const lamp of lamps) {
     const lx = lamp.x - p[0];
     const ly = lamp.y - p[1];
-    const lz = lamp.height - p[2];
+    const lz = lamp.elevation - p[2];
     const d2 = lx * lx + ly * ly + lz * lz;
     const d = Math.sqrt(d2);
     const cosine = ((n[0] * lx + n[1] * ly + n[2] * lz) / d + env.wrap) / (1 + env.wrap);
     if (cosine <= 0) continue;
-    const a = (env.gain * cosine * lamp.intensity) / (lamp.intensity + d2);
+    const I = (lamp.radius * lamp.radius) / 100;
+    const a = (env.gain * cosine * I) / (I + d2);
     for (let i = 0; i < 3; i++) out[i] += a;
   }
   return out.map((v) => Math.min(v, 1));

@@ -107,7 +107,7 @@ export class Lantern extends GameObject {
   onSpawned({ size = 22, color = 0xffc070, range = 520 } = {}) {
     this.collider.width = size * 0.8;
     this.collider.height = size;
-    this.collider.visualRange = range; // how far its light reaches
+    this.lightEmitter.shadowRange = range; // how far its shadows reach
     this.rigidBody.linearDamping = 0.3;
     this.rigidBody.angularDamping = 0.8;
     this.setSprite('_whiteCircle');
@@ -116,11 +116,9 @@ export class Lantern extends GameObject {
     this.setTint(0xfff0c0);
     const light = this.lightEmitter;
     light.active = 1;
-    light.lightColor = color;
-    light.lightIntensity = 14000;
-    light.height = 0;
-    light.glowHeightOffset = 0;
-    light.hasGlowSprite = 0.7;
+    light.color = color;
+    light.radius = 1183;
+    light.glow = 0.392;
   }
 
   tick() {

@@ -180,6 +180,27 @@ function warnDespawnOtherClassOnce(className, index) {
   );
 }
 
+/** A LightEmitter row's defaults (spawn and despawn): no light until its radius is set, brightness 1, no glow. */
+function resetLightEmitterRow(i) {
+  LightEmitter.color[i] = 0xffffff;
+  LightEmitter.radius[i] = 0;
+  LightEmitter.brightness[i] = 1;
+  LightEmitter.elevation[i] = 0;
+  LightEmitter.glow[i] = 0;
+  LightEmitter.glowOffsetY[i] = 0;
+  LightEmitter.glowLayerId[i] = 0;
+  LightEmitter.offsetX[i] = 0;
+  LightEmitter.offsetY[i] = 0;
+  LightEmitter.castShadows[i] = 1;
+  LightEmitter.shadowRange[i] = 0;
+  LightEmitter.resetCone(i);
+}
+
+// DX-SPOT: whether entity i is flipped left-right, for LightEmitter's followFlip (it does not import the sprite modules).
+LightEmitter.isFlippedX = (i) =>
+  ((SpriteRenderer.flip ? SpriteRenderer.flip[i] : 0) & 1) !== 0 ||
+  ((AdobeAnimComponent.flip ? AdobeAnimComponent.flip[i] : 0) & 1) !== 0;
+
 export class GameObject {
   // Entity class metadata (for spawning system)
   static startIndex = 0; // Starting index in arrays for this entity type
@@ -1271,6 +1292,9 @@ export class GameObject {
 
   _setFlipBit(bit, on) {
     const i = this.index;
+    // DX-SPOT: a light that follows the flip mirrors its local x when the entity's flipX changes.
+    const followsFlip = bit === 1 && this._hasComponents.LightEmitter && LightEmitter.followFlip[i] !== 0;
+    const wasFlipped = followsFlip && LightEmitter.isFlippedX(i);
     if (this._hasComponents.SpriteRenderer && ((SpriteRenderer.flip[i] & bit) !== 0) !== on) {
       SpriteRenderer.flip[i] ^= bit;
       if (bit === 1) SpriteRenderer.scaleX[i] = -SpriteRenderer.scaleX[i];
@@ -1285,6 +1309,7 @@ export class GameObject {
       else AdobeAnimComponent.scaleY[i] = -AdobeAnimComponent.scaleY[i];
       AdobeAnimComponent.applyClipBounds(i);
     }
+    if (followsFlip && LightEmitter.isFlippedX(i) !== wasFlipped) LightEmitter.mirrorX(i);
   }
 
   /** Is this entity's position inside the camera box? */
@@ -2446,26 +2471,15 @@ export class GameObject {
     if (AdobeAnimComponent.active) AdobeAnimComponent.active[i] = 0;
     if (LightEmitter.active) {
       LightEmitter.active[i] = 0;
-      LightEmitter.lightColor[i] = 0xffffff;
-      LightEmitter.lightIntensity[i] = 0;
-      LightEmitter.sqrtLightIntensity[i] = 0;
-      LightEmitter.height[i] = 0;
-      LightEmitter.glowHeightOffset[i] = 0;
-      if (LightEmitter.sourceHeight) LightEmitter.sourceHeight[i] = 0;
-      if (LightEmitter.offsetX) {
-        LightEmitter.offsetX[i] = 0;
-        LightEmitter.offsetY[i] = 0;
-      }
-      LightEmitter.hasGlowSprite[i] = 0.5;
-      LightEmitter.layerIdOfGlowSprite[i] = 0;
+      resetLightEmitterRow(i);
     }
     if (ShadowCaster.active) ShadowCaster.active[i] = 0;
     if (FlashComponent.active) {
       FlashComponent.active[i] = 0;
       FlashComponent.lifespan[i] = 0;
       FlashComponent.currentLife[i] = 0;
-      FlashComponent.initialIntensity[i] = 0;
-      FlashComponent.castShadows[i] = 0;
+      FlashComponent.initialRadius[i] = 0;
+      FlashComponent.initialGlow[i] = 0;
     }
     if (LightOccluder.active) LightOccluder.active[i] = 0;
   }
@@ -3063,18 +3077,7 @@ export class GameObject {
 
     if (has.LightEmitter) {
       LightEmitter.active[i] = 1;
-      LightEmitter.lightColor[i] = 0xffffff;
-      LightEmitter.lightIntensity[i] = 0;
-      LightEmitter.sqrtLightIntensity[i] = 0;
-      LightEmitter.height[i] = 0;
-      LightEmitter.glowHeightOffset[i] = 0;
-      if (LightEmitter.sourceHeight) LightEmitter.sourceHeight[i] = 0;
-      if (LightEmitter.offsetX) {
-        LightEmitter.offsetX[i] = 0;
-        LightEmitter.offsetY[i] = 0;
-      }
-      LightEmitter.hasGlowSprite[i] = 0.5;
-      LightEmitter.layerIdOfGlowSprite[i] = 0;
+      resetLightEmitterRow(i);
     }
 
     if (has.ShadowCaster) {
@@ -3089,8 +3092,8 @@ export class GameObject {
       FlashComponent.active[i] = 1;
       FlashComponent.lifespan[i] = 0;
       FlashComponent.currentLife[i] = 0;
-      FlashComponent.initialIntensity[i] = 0;
-      FlashComponent.castShadows[i] = 1; // default on; Flash.onSpawned may override
+      FlashComponent.initialRadius[i] = 0;
+      FlashComponent.initialGlow[i] = 0;
     }
 
     if (has.LightOccluder) {

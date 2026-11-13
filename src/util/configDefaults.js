@@ -772,7 +772,7 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * Applies to point lights, raycasted lights, particle / LiquidFun lights and point-light shadows.
    */
   groundScaleY: 1,
-  /** Additive radial quads for ParticleEmitter `lightIntensity`. Off unless a scene opts in. */
+  /** Additive radial quads for ParticleEmitter `lightRadius`. Off unless a scene opts in. */
   particleLights: Object.freeze({
     enabled: false,
     max: 256,

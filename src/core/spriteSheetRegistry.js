@@ -5,6 +5,7 @@
 import {
   create2dCanvas,
   createCircularGradientCanvas,
+  createHalfCircularGradientCanvas,
   createMetaballCanvas,
   createBulletTrailCanvas,
   LIGHT_GRADIENT_TEXTURE_RADIUS,
@@ -1255,6 +1256,25 @@ class SpriteSheetRegistry {
 
     // Sort images by size (largest first) for better packing
     imagesToPack.sort((a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height));
+
+    // DX-SPOT: a cone light's cookie, the light gradient's half disc. Packed after the sort, last, so no earlier frame
+    // moves in the atlas, and its animation is the last built-in, so every earlier one keeps its index. The atlas
+    // with it still samples a few hundred pixels of a scene 1/255 differently (any frame added does: dxCaptureScene
+    // 389 to 519 of 921 600), the price of the frame.
+    const lightGradientHalfCanvas = createHalfCircularGradientCanvas(LIGHT_GRADIENT_TEXTURE_RADIUS, 0xffffff);
+    imagesToPack.push({
+      name: '_lightGradientHalf',
+      sourceImg: lightGradientHalfCanvas,
+      sourceRect: null,
+      width: lightGradientHalfCanvas.width,
+      height: lightGradientHalfCanvas.height,
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: lightGradientHalfCanvas.width,
+      sourceHeight: lightGradientHalfCanvas.height,
+      isSpritesheetFrame: false,
+    });
+    animations['_lightGradientHalf'] = ['_lightGradientHalf'];
 
     // No need to wait for intermediate images anymore!
     // We now store references to source images and draw directly to final atlas.

@@ -27,7 +27,7 @@ const BODY_RADIUS = 30;
 const LASER_COOLDOWN_MS = 30;
 const LASER_RANGE = 10000;
 const LASER_DAMAGE = 0.5;
-const HELMET_INTENSITY = 3000;
+const HELMET_RADIUS = 548;
 const ASSET = 'blue_character';
 const CLIPS = Object.freeze({
   idle: 'idle',
@@ -48,15 +48,14 @@ export class Digger extends GameObject {
     this.rigidBody.static = 0;
     this.rigidBody.linearDamping = 0.12;
     this.collider.radius = BODY_RADIUS;
-    this.collider.visualRange = 700;
+    this.lightEmitter.shadowRange = 700;
     this.collider.friction = 0.5
     this.setFixedRotation(1);
-    this.lightEmitter.lightColor = 0xffe8c0;
-    this.lightEmitter.lightIntensity = HELMET_INTENSITY;
-    this.lightEmitter.height = 0;
-    this.lightEmitter.glowHeightOffset = 10;
+    this.lightEmitter.color = 0xffe8c0;
+    this.lightEmitter.radius = HELMET_RADIUS;
+    this.lightEmitter.glowOffsetY = -10;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0.5;
+    this.lightEmitter.glow = 0.06;
     this._grounded = 0;
     this._lastFireAt = 0;
     this._laserArmed = 0;
@@ -73,7 +72,7 @@ export class Digger extends GameObject {
     this.y = spawnConfig.y ?? 100;
     this.setVelocity(0, 0);
     this.lightEmitter.active = 1;
-    this.lightEmitter.lightIntensity = HELMET_INTENSITY;
+    this.lightEmitter.radius = HELMET_RADIUS;
 
     const clip = this._resolveClip(CLIPS.idle, CLIPS.running);
     this.adobeAnimComponent.setAsset(ASSET, clip, {

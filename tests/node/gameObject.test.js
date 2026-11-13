@@ -22,6 +22,24 @@ import {
   SPAWN_CMD_KIND,
 } from '../../src/util/spawnCommandRing.js';
 
+/** DX-SPOT: LightEmitter's cone columns, which the pooled reset writes. */
+const CONE_COLUMNS = ["dirC","dirS","coneHalf","coneSoftness","coneCos","coneInvSpan","followFlip"];
+function bindCone(n) {
+  for (const k of CONE_COLUMNS) LightEmitter[k] = k === 'followFlip' ? new Uint8Array(n).fill(1) : new Float32Array(n).fill(9);
+}
+/** The reset rows hold the cone defaults; `untouched` (or -1) is a row left as bindCone wrote it. */
+function assertConeReset(rows, untouched) {
+  for (const i of rows) {
+    assert.equal(LightEmitter.dirC[i], 1);
+    assert.equal(LightEmitter.dirS[i], 0);
+    assert.equal(LightEmitter.coneHalf[i], Math.fround(Math.PI));
+    assert.equal(LightEmitter.coneCos[i], -2);
+    assert.equal(LightEmitter.coneInvSpan[i], 0);
+    assert.equal(LightEmitter.followFlip[i], 0);
+  }
+  if (untouched >= 0) assert.equal(LightEmitter.coneCos[untouched], 9);
+}
+
 test('Scene.preInitializeEntityTypeArrays fills registered ranges directly', { concurrency: false }, () => {
   class RangeFillA extends GameObject {}
   class RangeFillB extends GameObject {}
@@ -58,18 +76,23 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
   const previousRigidBodyActive = RigidBody.active;
   const previousRigidBodySleeping = RigidBody.sleeping;
   const previousLightEmitterActive = LightEmitter.active;
-  const previousLightEmitterColor = LightEmitter.lightColor;
-  const previousLightEmitterIntensity = LightEmitter.lightIntensity;
-  const previousLightEmitterSqrtIntensity = LightEmitter.sqrtLightIntensity;
-  const previousLightEmitterHeight = LightEmitter.height;
-  const previousLightEmitterGlowHeightOffset = LightEmitter.glowHeightOffset;
-  const previousLightEmitterHasGlowSprite = LightEmitter.hasGlowSprite;
-  const previousLightEmitterGlowLayerId = LightEmitter.layerIdOfGlowSprite;
+  const previousLightEmitterColor = LightEmitter.color;
+  const previousLightEmitterRadius = LightEmitter.radius;
+  const previousLightEmitterBrightness = LightEmitter.brightness;
+  const previousLightEmitterElevation = LightEmitter.elevation;
+  const previousLightEmitterGlowOffsetY = LightEmitter.glowOffsetY;
+  const previousLightEmitterGlow = LightEmitter.glow;
+  const previousLightEmitterGlowLayerId = LightEmitter.glowLayerId;
+  const previousLightEmitterOffsetX = LightEmitter.offsetX;
+  const previousLightEmitterOffsetY = LightEmitter.offsetY;
   const previousFlashActive = FlashComponent.active;
   const previousFlashLifespan = FlashComponent.lifespan;
   const previousFlashCurrentLife = FlashComponent.currentLife;
-  const previousFlashInitialIntensity = FlashComponent.initialIntensity;
-  const previousFlashCastShadows = FlashComponent.castShadows;
+  const previousFlashInitialRadius = FlashComponent.initialRadius;
+  const previousFlashInitialGlow = FlashComponent.initialGlow;
+  const previousLightCastShadows = LightEmitter.castShadows;
+  const previousLightShadowRange = LightEmitter.shadowRange;
+  const previousLightCone = CONE_COLUMNS.map((k) => LightEmitter[k]);
   const previousClearAttached = DecorationPool.clearAttachedAndDespawnAll;
 
   const onDespawnedCalls = [];
@@ -79,18 +102,23 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
   RigidBody.active = new Uint8Array([1, 0, 1]);
   RigidBody.sleeping = new Uint8Array([1, 7, 1]);
   LightEmitter.active = new Uint8Array([1, 0, 1]);
-  LightEmitter.lightColor = new Uint32Array([0x112233, 0x010203, 0x445566]);
-  LightEmitter.lightIntensity = new Float32Array([900, 25, 400]);
-  LightEmitter.sqrtLightIntensity = new Float32Array([30, 5, 20]);
-  LightEmitter.height = new Float32Array([7, 1, 9]);
-  LightEmitter.glowHeightOffset = new Float32Array([3, 2, 8]);
-  LightEmitter.hasGlowSprite = new Float32Array([0, 1, 0]);
-  LightEmitter.layerIdOfGlowSprite = new Uint8Array([4, 5, 6]);
+  LightEmitter.color = new Uint32Array([0x112233, 0x010203, 0x445566]);
+  LightEmitter.radius = new Float32Array([900, 25, 400]);
+  LightEmitter.brightness = new Float32Array([30, 5, 20]);
+  LightEmitter.elevation = new Float32Array([7, 1, 9]);
+  LightEmitter.glowOffsetY = new Float32Array([3, 2, 8]);
+  LightEmitter.glow = new Float32Array([0, 1, 0]);
+  LightEmitter.glowLayerId = new Uint8Array([4, 5, 6]);
+  LightEmitter.offsetX = new Float32Array([2, 4, 6]);
+  LightEmitter.offsetY = new Float32Array([1, 3, 5]);
   FlashComponent.active = new Uint8Array([1, 0, 1]);
   FlashComponent.lifespan = new Float32Array([90, 12, 45]);
   FlashComponent.currentLife = new Float32Array([10, 3, 20]);
-  FlashComponent.initialIntensity = new Float32Array([1000, 50, 600]);
-  FlashComponent.castShadows = new Uint8Array([1, 0, 1]);
+  FlashComponent.initialRadius = new Float32Array([1000, 50, 600]);
+  FlashComponent.initialGlow = new Float32Array([0.5, 0.25, 0.75]);
+  LightEmitter.castShadows = new Uint8Array([0, 0, 0]);
+  LightEmitter.shadowRange = new Float32Array([40, 50, 60]);
+  bindCone(3);
 
   DecorationPool.clearAttachedAndDespawnAll = (entityIndex) => {
     clearedAttachments.push(entityIndex);
@@ -119,35 +147,45 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
     assert.deepEqual(Array.from(RigidBody.active), [0, 0, 0]);
     assert.deepEqual(Array.from(RigidBody.sleeping), [0, 7, 0]);
     assert.deepEqual(Array.from(LightEmitter.active), [0, 0, 0]);
-    assert.deepEqual(Array.from(LightEmitter.lightColor), [0xffffff, 0x010203, 0xffffff]);
-    assert.deepEqual(Array.from(LightEmitter.lightIntensity), [0, 25, 0]);
-    assert.deepEqual(Array.from(LightEmitter.sqrtLightIntensity), [0, 5, 0]);
-    assert.deepEqual(Array.from(LightEmitter.height), [0, 1, 0]);
-    assert.deepEqual(Array.from(LightEmitter.glowHeightOffset), [0, 2, 0]);
-    assert.deepEqual(Array.from(LightEmitter.hasGlowSprite), [0.5, 1, 0.5]);
-    assert.deepEqual(Array.from(LightEmitter.layerIdOfGlowSprite), [0, 5, 0]);
+    assert.deepEqual(Array.from(LightEmitter.color), [0xffffff, 0x010203, 0xffffff]);
+    assert.deepEqual(Array.from(LightEmitter.radius), [0, 25, 0]);
+    assert.deepEqual(Array.from(LightEmitter.brightness), [1, 5, 1]);
+    assert.deepEqual(Array.from(LightEmitter.elevation), [0, 1, 0]);
+    assert.deepEqual(Array.from(LightEmitter.glowOffsetY), [0, 2, 0]);
+    assert.deepEqual(Array.from(LightEmitter.glow), [0, 1, 0]);
+    assert.deepEqual(Array.from(LightEmitter.glowLayerId), [0, 5, 0]);
+    assert.deepEqual(Array.from(LightEmitter.offsetX), [0, 4, 0]);
+    assert.deepEqual(Array.from(LightEmitter.offsetY), [0, 3, 0]);
     assert.deepEqual(Array.from(FlashComponent.active), [0, 0, 0]);
     assert.deepEqual(Array.from(FlashComponent.lifespan), [0, 12, 0]);
     assert.deepEqual(Array.from(FlashComponent.currentLife), [0, 3, 0]);
-    assert.deepEqual(Array.from(FlashComponent.initialIntensity), [0, 50, 0]);
-    assert.deepEqual(Array.from(FlashComponent.castShadows), [0, 0, 0]);
+    assert.deepEqual(Array.from(FlashComponent.initialRadius), [0, 50, 0]);
+    assert.deepEqual(Array.from(FlashComponent.initialGlow), [0, 0.25, 0]);
+    assert.deepEqual(Array.from(LightEmitter.castShadows), [1, 0, 1], 'a reset light casts again');
+    assert.deepEqual(Array.from(LightEmitter.shadowRange), [0, 50, 0]);
+    assertConeReset([0, 2], 1);
   } finally {
     Transform.active = previousTransformActive;
     RigidBody.active = previousRigidBodyActive;
     RigidBody.sleeping = previousRigidBodySleeping;
     LightEmitter.active = previousLightEmitterActive;
-    LightEmitter.lightColor = previousLightEmitterColor;
-    LightEmitter.lightIntensity = previousLightEmitterIntensity;
-    LightEmitter.sqrtLightIntensity = previousLightEmitterSqrtIntensity;
-    LightEmitter.height = previousLightEmitterHeight;
-    LightEmitter.glowHeightOffset = previousLightEmitterGlowHeightOffset;
-    LightEmitter.hasGlowSprite = previousLightEmitterHasGlowSprite;
-    LightEmitter.layerIdOfGlowSprite = previousLightEmitterGlowLayerId;
+    LightEmitter.color = previousLightEmitterColor;
+    LightEmitter.radius = previousLightEmitterRadius;
+    LightEmitter.brightness = previousLightEmitterBrightness;
+    LightEmitter.elevation = previousLightEmitterElevation;
+    LightEmitter.glowOffsetY = previousLightEmitterGlowOffsetY;
+    LightEmitter.glow = previousLightEmitterGlow;
+    LightEmitter.glowLayerId = previousLightEmitterGlowLayerId;
+    LightEmitter.offsetX = previousLightEmitterOffsetX;
+    LightEmitter.offsetY = previousLightEmitterOffsetY;
     FlashComponent.active = previousFlashActive;
     FlashComponent.lifespan = previousFlashLifespan;
     FlashComponent.currentLife = previousFlashCurrentLife;
-    FlashComponent.initialIntensity = previousFlashInitialIntensity;
-    FlashComponent.castShadows = previousFlashCastShadows;
+    FlashComponent.initialRadius = previousFlashInitialRadius;
+    FlashComponent.initialGlow = previousFlashInitialGlow;
+    LightEmitter.castShadows = previousLightCastShadows;
+    LightEmitter.shadowRange = previousLightShadowRange;
+    CONE_COLUMNS.forEach((k, n) => { LightEmitter[k] = previousLightCone[n]; });
     DecorationPool.clearAttachedAndDespawnAll = previousClearAttached;
   }
 });
@@ -157,34 +195,44 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
 
   const previousTransformActive = Transform.active;
   const previousLightEmitterActive = LightEmitter.active;
-  const previousLightEmitterColor = LightEmitter.lightColor;
-  const previousLightEmitterIntensity = LightEmitter.lightIntensity;
-  const previousLightEmitterSqrtIntensity = LightEmitter.sqrtLightIntensity;
-  const previousLightEmitterHeight = LightEmitter.height;
-  const previousLightEmitterGlowHeightOffset = LightEmitter.glowHeightOffset;
-  const previousLightEmitterHasGlowSprite = LightEmitter.hasGlowSprite;
-  const previousLightEmitterGlowLayerId = LightEmitter.layerIdOfGlowSprite;
+  const previousLightEmitterColor = LightEmitter.color;
+  const previousLightEmitterRadius = LightEmitter.radius;
+  const previousLightEmitterBrightness = LightEmitter.brightness;
+  const previousLightEmitterElevation = LightEmitter.elevation;
+  const previousLightEmitterGlowOffsetY = LightEmitter.glowOffsetY;
+  const previousLightEmitterGlow = LightEmitter.glow;
+  const previousLightEmitterGlowLayerId = LightEmitter.glowLayerId;
+  const previousLightEmitterOffsetX = LightEmitter.offsetX;
+  const previousLightEmitterOffsetY = LightEmitter.offsetY;
   const previousFlashActive = FlashComponent.active;
   const previousFlashLifespan = FlashComponent.lifespan;
   const previousFlashCurrentLife = FlashComponent.currentLife;
-  const previousFlashInitialIntensity = FlashComponent.initialIntensity;
-  const previousFlashCastShadows = FlashComponent.castShadows;
+  const previousFlashInitialRadius = FlashComponent.initialRadius;
+  const previousFlashInitialGlow = FlashComponent.initialGlow;
+  const previousLightCastShadows = LightEmitter.castShadows;
+  const previousLightShadowRange = LightEmitter.shadowRange;
+  const previousLightCone = CONE_COLUMNS.map((k) => LightEmitter[k]);
   const previousClearAttached = DecorationPool.clearAttachedAndDespawnAll;
 
   Transform.active = new Uint8Array([1]);
   LightEmitter.active = new Uint8Array([1]);
-  LightEmitter.lightColor = new Uint32Array([0x123456]);
-  LightEmitter.lightIntensity = new Float32Array([777]);
-  LightEmitter.sqrtLightIntensity = new Float32Array([27.87472]);
-  LightEmitter.height = new Float32Array([13]);
-  LightEmitter.glowHeightOffset = new Float32Array([4]);
-  LightEmitter.hasGlowSprite = new Float32Array([0]);
-  LightEmitter.layerIdOfGlowSprite = new Uint8Array([9]);
+  LightEmitter.color = new Uint32Array([0x123456]);
+  LightEmitter.radius = new Float32Array([777]);
+  LightEmitter.brightness = new Float32Array([27.87472]);
+  LightEmitter.elevation = new Float32Array([13]);
+  LightEmitter.glowOffsetY = new Float32Array([4]);
+  LightEmitter.glow = new Float32Array([0]);
+  LightEmitter.glowLayerId = new Uint8Array([9]);
+  LightEmitter.offsetX = new Float32Array([8]);
+  LightEmitter.offsetY = new Float32Array([9]);
   FlashComponent.active = new Uint8Array([1]);
   FlashComponent.lifespan = new Float32Array([120]);
   FlashComponent.currentLife = new Float32Array([45]);
-  FlashComponent.initialIntensity = new Float32Array([8000]);
-  FlashComponent.castShadows = new Uint8Array([1]);
+  FlashComponent.initialRadius = new Float32Array([8000]);
+  FlashComponent.initialGlow = new Float32Array([0.5]);
+  LightEmitter.castShadows = new Uint8Array([0]);
+  LightEmitter.shadowRange = new Float32Array([70]);
+  bindCone(1);
 
   DecorationPool.clearAttachedAndDespawnAll = () => {};
 
@@ -204,33 +252,43 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
 
     assert.deepEqual(Array.from(Transform.active), [0]);
     assert.deepEqual(Array.from(LightEmitter.active), [0]);
-    assert.deepEqual(Array.from(LightEmitter.lightColor), [0xffffff]);
-    assert.deepEqual(Array.from(LightEmitter.lightIntensity), [0]);
-    assert.deepEqual(Array.from(LightEmitter.sqrtLightIntensity), [0]);
-    assert.deepEqual(Array.from(LightEmitter.height), [0]);
-    assert.deepEqual(Array.from(LightEmitter.glowHeightOffset), [0]);
-    assert.deepEqual(Array.from(LightEmitter.hasGlowSprite), [0.5]);
-    assert.deepEqual(Array.from(LightEmitter.layerIdOfGlowSprite), [0]);
+    assert.deepEqual(Array.from(LightEmitter.color), [0xffffff]);
+    assert.deepEqual(Array.from(LightEmitter.radius), [0]);
+    assert.deepEqual(Array.from(LightEmitter.brightness), [1]);
+    assert.deepEqual(Array.from(LightEmitter.elevation), [0]);
+    assert.deepEqual(Array.from(LightEmitter.glowOffsetY), [0]);
+    assert.deepEqual(Array.from(LightEmitter.glow), [0]);
+    assert.deepEqual(Array.from(LightEmitter.glowLayerId), [0]);
+    assert.deepEqual(Array.from(LightEmitter.offsetX), [0]);
+    assert.deepEqual(Array.from(LightEmitter.offsetY), [0]);
     assert.deepEqual(Array.from(FlashComponent.active), [0]);
     assert.deepEqual(Array.from(FlashComponent.lifespan), [0]);
     assert.deepEqual(Array.from(FlashComponent.currentLife), [0]);
-    assert.deepEqual(Array.from(FlashComponent.initialIntensity), [0]);
-    assert.deepEqual(Array.from(FlashComponent.castShadows), [0]);
+    assert.deepEqual(Array.from(FlashComponent.initialRadius), [0]);
+    assert.deepEqual(Array.from(FlashComponent.initialGlow), [0]);
+    assert.deepEqual(Array.from(LightEmitter.castShadows), [1]);
+    assert.deepEqual(Array.from(LightEmitter.shadowRange), [0]);
+    assertConeReset([0], -1);
   } finally {
     Transform.active = previousTransformActive;
     LightEmitter.active = previousLightEmitterActive;
-    LightEmitter.lightColor = previousLightEmitterColor;
-    LightEmitter.lightIntensity = previousLightEmitterIntensity;
-    LightEmitter.sqrtLightIntensity = previousLightEmitterSqrtIntensity;
-    LightEmitter.height = previousLightEmitterHeight;
-    LightEmitter.glowHeightOffset = previousLightEmitterGlowHeightOffset;
-    LightEmitter.hasGlowSprite = previousLightEmitterHasGlowSprite;
-    LightEmitter.layerIdOfGlowSprite = previousLightEmitterGlowLayerId;
+    LightEmitter.color = previousLightEmitterColor;
+    LightEmitter.radius = previousLightEmitterRadius;
+    LightEmitter.brightness = previousLightEmitterBrightness;
+    LightEmitter.elevation = previousLightEmitterElevation;
+    LightEmitter.glowOffsetY = previousLightEmitterGlowOffsetY;
+    LightEmitter.glow = previousLightEmitterGlow;
+    LightEmitter.glowLayerId = previousLightEmitterGlowLayerId;
+    LightEmitter.offsetX = previousLightEmitterOffsetX;
+    LightEmitter.offsetY = previousLightEmitterOffsetY;
     FlashComponent.active = previousFlashActive;
     FlashComponent.lifespan = previousFlashLifespan;
     FlashComponent.currentLife = previousFlashCurrentLife;
-    FlashComponent.initialIntensity = previousFlashInitialIntensity;
-    FlashComponent.castShadows = previousFlashCastShadows;
+    FlashComponent.initialRadius = previousFlashInitialRadius;
+    FlashComponent.initialGlow = previousFlashInitialGlow;
+    LightEmitter.castShadows = previousLightCastShadows;
+    LightEmitter.shadowRange = previousLightShadowRange;
+    CONE_COLUMNS.forEach((k, n) => { LightEmitter[k] = previousLightCone[n]; });
     DecorationPool.clearAttachedAndDespawnAll = previousClearAttached;
   }
 });
@@ -243,18 +301,23 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   const previousTransformY = Transform.y;
   const previousTransformRotation = Transform.rotation;
   const previousLightEmitterActive = LightEmitter.active;
-  const previousLightEmitterColor = LightEmitter.lightColor;
-  const previousLightEmitterIntensity = LightEmitter.lightIntensity;
-  const previousLightEmitterSqrtIntensity = LightEmitter.sqrtLightIntensity;
-  const previousLightEmitterHeight = LightEmitter.height;
-  const previousLightEmitterGlowHeightOffset = LightEmitter.glowHeightOffset;
-  const previousLightEmitterHasGlowSprite = LightEmitter.hasGlowSprite;
-  const previousLightEmitterGlowLayerId = LightEmitter.layerIdOfGlowSprite;
+  const previousLightEmitterColor = LightEmitter.color;
+  const previousLightEmitterRadius = LightEmitter.radius;
+  const previousLightEmitterBrightness = LightEmitter.brightness;
+  const previousLightEmitterElevation = LightEmitter.elevation;
+  const previousLightEmitterGlowOffsetY = LightEmitter.glowOffsetY;
+  const previousLightEmitterGlow = LightEmitter.glow;
+  const previousLightEmitterGlowLayerId = LightEmitter.glowLayerId;
+  const previousLightEmitterOffsetX = LightEmitter.offsetX;
+  const previousLightEmitterOffsetY = LightEmitter.offsetY;
   const previousFlashActive = FlashComponent.active;
   const previousFlashLifespan = FlashComponent.lifespan;
   const previousFlashCurrentLife = FlashComponent.currentLife;
-  const previousFlashInitialIntensity = FlashComponent.initialIntensity;
-  const previousFlashCastShadows = FlashComponent.castShadows;
+  const previousFlashInitialRadius = FlashComponent.initialRadius;
+  const previousFlashInitialGlow = FlashComponent.initialGlow;
+  const previousLightCastShadows = LightEmitter.castShadows;
+  const previousLightShadowRange = LightEmitter.shadowRange;
+  const previousLightCone = CONE_COLUMNS.map((k) => LightEmitter[k]);
   const previousNextTick = GameObject.nextTick;
 
   Transform.active = new Uint8Array([0]);
@@ -262,18 +325,23 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   Transform.y = new Float32Array([88]);
   Transform.rotation = new Float32Array([77]);
   LightEmitter.active = new Uint8Array([0]);
-  LightEmitter.lightColor = new Uint32Array([0xabcdef]);
-  LightEmitter.lightIntensity = new Float32Array([555]);
-  LightEmitter.sqrtLightIntensity = new Float32Array([23.558437]);
-  LightEmitter.height = new Float32Array([17]);
-  LightEmitter.glowHeightOffset = new Float32Array([6]);
-  LightEmitter.hasGlowSprite = new Float32Array([0]);
-  LightEmitter.layerIdOfGlowSprite = new Uint8Array([7]);
+  LightEmitter.color = new Uint32Array([0xabcdef]);
+  LightEmitter.radius = new Float32Array([555]);
+  LightEmitter.brightness = new Float32Array([23.558437]);
+  LightEmitter.elevation = new Float32Array([17]);
+  LightEmitter.glowOffsetY = new Float32Array([6]);
+  LightEmitter.glow = new Float32Array([0]);
+  LightEmitter.glowLayerId = new Uint8Array([7]);
+  LightEmitter.offsetX = new Float32Array([8]);
+  LightEmitter.offsetY = new Float32Array([9]);
   FlashComponent.active = new Uint8Array([0]);
   FlashComponent.lifespan = new Float32Array([120]);
   FlashComponent.currentLife = new Float32Array([45]);
-  FlashComponent.initialIntensity = new Float32Array([8000]);
-  FlashComponent.castShadows = new Uint8Array([0]);
+  FlashComponent.initialRadius = new Float32Array([8000]);
+  FlashComponent.initialGlow = new Float32Array([0.5]);
+  LightEmitter.castShadows = new Uint8Array([0]);
+  LightEmitter.shadowRange = new Float32Array([70]);
+  bindCone(1);
   GameObject.nextTick = null;
 
   // Treiber-stack free list: links array + [head, count] header
@@ -306,18 +374,23 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
     assert.deepEqual(Array.from(Transform.y), [0]);
     assert.deepEqual(Array.from(Transform.rotation), [0]);
     assert.deepEqual(Array.from(LightEmitter.active), [1]);
-    assert.deepEqual(Array.from(LightEmitter.lightColor), [0xffffff]);
-    assert.deepEqual(Array.from(LightEmitter.lightIntensity), [0]);
-    assert.deepEqual(Array.from(LightEmitter.sqrtLightIntensity), [0]);
-    assert.deepEqual(Array.from(LightEmitter.height), [0]);
-    assert.deepEqual(Array.from(LightEmitter.glowHeightOffset), [0]);
-    assert.deepEqual(Array.from(LightEmitter.hasGlowSprite), [0.5]);
-    assert.deepEqual(Array.from(LightEmitter.layerIdOfGlowSprite), [0]);
+    assert.deepEqual(Array.from(LightEmitter.color), [0xffffff]);
+    assert.deepEqual(Array.from(LightEmitter.radius), [0]);
+    assert.deepEqual(Array.from(LightEmitter.brightness), [1]);
+    assert.deepEqual(Array.from(LightEmitter.elevation), [0]);
+    assert.deepEqual(Array.from(LightEmitter.glowOffsetY), [0]);
+    assert.deepEqual(Array.from(LightEmitter.glow), [0]);
+    assert.deepEqual(Array.from(LightEmitter.glowLayerId), [0]);
+    assert.deepEqual(Array.from(LightEmitter.offsetX), [0]);
+    assert.deepEqual(Array.from(LightEmitter.offsetY), [0]);
     assert.deepEqual(Array.from(FlashComponent.active), [1]);
     assert.deepEqual(Array.from(FlashComponent.lifespan), [0]);
     assert.deepEqual(Array.from(FlashComponent.currentLife), [0]);
-    assert.deepEqual(Array.from(FlashComponent.initialIntensity), [0]);
-    assert.deepEqual(Array.from(FlashComponent.castShadows), [1]);
+    assert.deepEqual(Array.from(FlashComponent.initialRadius), [0]);
+    assert.deepEqual(Array.from(FlashComponent.initialGlow), [0]);
+    assert.deepEqual(Array.from(LightEmitter.castShadows), [1]);
+    assert.deepEqual(Array.from(LightEmitter.shadowRange), [0]);
+    assertConeReset([0], -1);
     assert.equal(freeListTop[1], 0); // free count drained
     assert.equal(freeListTop[0] & 0xffff, 0); // stack head empty
   } finally {
@@ -326,18 +399,23 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
     Transform.y = previousTransformY;
     Transform.rotation = previousTransformRotation;
     LightEmitter.active = previousLightEmitterActive;
-    LightEmitter.lightColor = previousLightEmitterColor;
-    LightEmitter.lightIntensity = previousLightEmitterIntensity;
-    LightEmitter.sqrtLightIntensity = previousLightEmitterSqrtIntensity;
-    LightEmitter.height = previousLightEmitterHeight;
-    LightEmitter.glowHeightOffset = previousLightEmitterGlowHeightOffset;
-    LightEmitter.hasGlowSprite = previousLightEmitterHasGlowSprite;
-    LightEmitter.layerIdOfGlowSprite = previousLightEmitterGlowLayerId;
+    LightEmitter.color = previousLightEmitterColor;
+    LightEmitter.radius = previousLightEmitterRadius;
+    LightEmitter.brightness = previousLightEmitterBrightness;
+    LightEmitter.elevation = previousLightEmitterElevation;
+    LightEmitter.glowOffsetY = previousLightEmitterGlowOffsetY;
+    LightEmitter.glow = previousLightEmitterGlow;
+    LightEmitter.glowLayerId = previousLightEmitterGlowLayerId;
+    LightEmitter.offsetX = previousLightEmitterOffsetX;
+    LightEmitter.offsetY = previousLightEmitterOffsetY;
     FlashComponent.active = previousFlashActive;
     FlashComponent.lifespan = previousFlashLifespan;
     FlashComponent.currentLife = previousFlashCurrentLife;
-    FlashComponent.initialIntensity = previousFlashInitialIntensity;
-    FlashComponent.castShadows = previousFlashCastShadows;
+    FlashComponent.initialRadius = previousFlashInitialRadius;
+    FlashComponent.initialGlow = previousFlashInitialGlow;
+    LightEmitter.castShadows = previousLightCastShadows;
+    LightEmitter.shadowRange = previousLightShadowRange;
+    CONE_COLUMNS.forEach((k, n) => { LightEmitter[k] = previousLightCone[n]; });
     GameObject.nextTick = previousNextTick;
   }
 });

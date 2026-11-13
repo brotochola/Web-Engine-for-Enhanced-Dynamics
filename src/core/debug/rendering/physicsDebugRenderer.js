@@ -16,7 +16,7 @@ import { ColliderFixture } from '../../colliderFixture.js';
 import { ChainPoints } from '../../chainPoints.js';
 import { DebugDraw } from '../debugDraw.js';
 import { DEBUG_FLAGS } from '../debugFlags.js';
-import { distanceSq2D, lightInfluenceRadius } from '../../../util/utils.js';
+import { distanceSq2D } from '../../../util/utils.js';
 import { viewWorldBounds } from '../../../util/viewBounds.js';
 import { ShapeType } from '../../../util/configDefaults.js';
 import { getColliderBounds, _boundsResult } from '../../../util/colliderUtils.js';
@@ -1212,7 +1212,7 @@ export class PhysicsDebugRenderer {
         ctx.arc(sx, sy, 4, 0, Math.PI * 2);
         ctx.fill();
         const range = Collider.visualRange?.[i] || 0;
-        const influence = lightInfluenceRadius(LightEmitter.sqrtLightIntensity?.[i] || 0);
+        const influence = LightEmitter.radius?.[i] || 0;
         const r = (range > influence ? range : influence) * zoom;
         if (r > 2) {
           ctx.beginPath();

@@ -113,7 +113,7 @@ function copyEmitFields(s, c) {
   s.layer = c.layer;
   s.layers = c.layers;
   s.renderOnly = c.renderOnly;
-  s.lightIntensity = c.lightIntensity;
+  s.lightRadius = c.lightRadius;
 }
 
 /** A scratch with every merged key declared: one shape, a fast object (not a dictionary). */
@@ -128,7 +128,7 @@ function emitScratch() {
     flipX: undefined, flipY: undefined, fadeOnTheFloor: undefined, stayOnTheFloor: undefined,
     despawnOnGroundContact: undefined,
     bounces: undefined, bounciness: undefined, bounceFriction: undefined, blendMode: undefined, layer: undefined,
-    layers: undefined, renderOnly: undefined, lightIntensity: undefined,
+    layers: undefined, renderOnly: undefined, lightRadius: undefined,
   };
 }
 
@@ -154,7 +154,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     'rotC', 'rotS', 'rotation', 'angularVelocity', 'flipX', 'flipY',
     'fadeOnTheFloor', 'stayOnTheFloor', 'despawnOnGroundContact',
     'bounces', 'bounciness', 'bounceFriction',
-    'blendMode', 'layer', 'layers', 'renderOnly', 'lightIntensity',
+    'blendMode', 'layer', 'layers', 'renderOnly', 'lightRadius',
   ];
   static _alongLineScratch = emitScratch();
   static _acquireBatch = ACQUIRE_BATCH_U16;
@@ -318,9 +318,10 @@ export class ParticleEmitter extends SharedAtomicPool {
     let lightLo = 0;
     let lightHi = 0;
     let lightRange = false;
-    const rawLight = cfg.lightIntensity;
+    // lightRadius (px), stored as sqrt(I) = radius / 10, the splat's reach over 10.
+    const rawLight = cfg.lightRadius;
     if (typeof rawLight === 'number') {
-      if (Number.isFinite(rawLight) && rawLight > 0) lightSqrtConst = Math.sqrt(rawLight);
+      if (Number.isFinite(rawLight) && rawLight > 0) lightSqrtConst = rawLight / 10;
     } else if (rawLight && typeof rawLight === 'object') {
       const lo = +rawLight.min;
       const hi = +rawLight.max;
@@ -643,7 +644,7 @@ export class ParticleEmitter extends SharedAtomicPool {
         let s = lightSqrtConst;
         if (lightRange) {
           const v = lightLo + rng() * (lightHi - lightLo);
-          s = v > 0 ? Math.sqrt(v) : 0;
+          s = v > 0 ? v / 10 : 0;
         }
         lightSqrt[i] = s;
       }

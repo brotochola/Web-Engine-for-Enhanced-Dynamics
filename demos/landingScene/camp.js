@@ -95,19 +95,17 @@ export class CampLight extends GameObject {
   onSpawned({ range = 600 } = {}) {
     this.collider.radius = 4;
     this.collider.isTrigger = 1;
-    this.collider.visualRange = range; // how far the light reaches
+    this.lightEmitter.shadowRange = range; // how far its shadows reach
     const light = this.lightEmitter;
     light.active = 1;
-    light.lightColor = 0xff9a40;
-    light.lightIntensity = 16000;
-    light.height = 0;
-    light.hasGlowSprite = 0;
+    light.color = 0xff9a40;
+    light.radius = 1265;
   }
 
   tick(dtRatio, deltaTimeMs, accTime) {
     const t = accTime * 0.001;
     const flick = 1 + Math.sin(t * 9) * 0.1 + Math.sin(t * 13.7 + 1.3) * 0.08 + Math.sin(t * 23.1) * 0.05;
-    this.lightEmitter.lightIntensity = 16000 * flick;
+    this.lightEmitter.radius = 1265 * Math.sqrt(flick);
   }
 }
 

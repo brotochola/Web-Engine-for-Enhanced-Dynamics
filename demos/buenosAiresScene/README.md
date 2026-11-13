@@ -14,7 +14,7 @@ Open it from the demo menu (Buenos Aires), or `demos/index.html?scene=buenosaire
 | `lighting.faces`: each wall lit as the surface it is | the houses: one decoration per flat face, with its normal (`faceNormalX/Y/Z`, `faceHeight`) |
 | `VolumeShadowCaster` | houses (`setHull`, from the editor's shadow points) and cars (`setBox`, with a roof smaller than the floor) |
 | `ShadowCaster` | people, street props and trees (`setTexture`: the whole tree's silhouette) |
-| `LightEmitter` | street lamps and wooden posts (`sourceHeight`), headlights (`offsetX`, ahead of each car), on by the hour |
+| `LightEmitter` | street lamps and wooden posts (`elevation`), headlights (`offsetX`, ahead of each car), on by the hour |
 | `lighting.sun` with a day cycle | an 8-minute day, the sun on the camera's side, no higher than 60° |
 | a `worldRect` shader layer | the floor, painted pixel by pixel from the editor's baked data (`floor.frag`, `barrio/piso.bin`) |
 | `alphaBySun` | the props' baked shadows fade at dusk |

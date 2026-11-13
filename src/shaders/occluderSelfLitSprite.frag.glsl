@@ -9,7 +9,17 @@ uniform float uBodyRadius;
 uniform float uAttenScale;
 // 1 / config.lighting.groundScaleY: distances to the light are measured on the floor.
 uniform float uGroundInvScaleY;
+// DX-SPOT: the light's cone (its direction on the floor, the cosine of its half aperture, 1 / its soft edge); z -2: none.
+uniform vec4 uCone;
 uniform sampler2D uTexture;
+
+// As lightingBasic's: 1 inside the cone, 0 outside, smooth across its soft edge; 1 at the light itself.
+float coneFactor(vec2 delta, vec4 cone) {
+  float len2 = dot(delta, delta);
+  float cosA = len2 > 0.0 ? dot(delta, cone.xy) * inversesqrt(len2) : 1.0;
+  float t = clamp((cosA - cone.z) * cone.w, 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}
 
 void main() {
   float a = texture2D(uTexture, vUV).a;
@@ -32,5 +42,6 @@ void main() {
     mask = smoothstep(-0.15, 0.45, dot(nP, nL));
   }
   vec3 rgb = uLightColor * attenuation * uAttenScale * mask * a;
+  if (uCone.z > -1.0) rgb *= coneFactor(delta, uCone);
   gl_FragColor = vec4(rgb, a);
 }
