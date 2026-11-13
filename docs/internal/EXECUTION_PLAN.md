@@ -4422,8 +4422,9 @@ kernel with two workers, then the scene's spatial STEP_MS. Owner: spatial.
 
 **Premise (the CPU sweep's hot lines):** meshApiStressScene's `uploadRange` spends all its self time (990 ms of the window) on
 `data.set(rows.subarray(...))`: the corner kernel's rows in the mesh memory copied into the Pixi buffer's array before upload.
-**Plan:** the Pixi buffer on the rows' own view (no copy), or the upload from it; meshApiStressScene's Pixi STEP_MS, and
-`colliderFillBatch.js's` same copy with it. Owner: Pixi.
+**Plan:** not the upload from the shared view: E-123 (R-0563) tried it for the sprite rows and every other worker paid
+about 6 %, which the private copy removed. Copy only the rows whose mesh changed, or let the kernel write into a
+non-shared memory Pixi owns; meshApiStressScene's Pixi STEP_MS, the other workers read against an A/A. Owner: Pixi.
 
 ### E-270 Decal tiles are copied and uploaded whole for any stamp
 
