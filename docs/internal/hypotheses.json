@@ -8429,7 +8429,7 @@
       "date": "2026-10-26",
       "area": "pre-render",
       "kind": "gpu",
-      "rank": 7,
+      "rank": 6,
       "result": "Wave 7 sweep (R-0645): at the minimum zoom emit_rows is 44 % and pack_sprites_split 28 % of a 696 ms/s pre-render, and W27b showed the expansion bound by its stores. One row per character, with the piece tables on the GPU, writes far fewer bytes and drops most of Pixi's 15 MB copy (W30).",
       "next": "The prototype in ADOBE_GPU_PLAN.md's order: the piece table texture, the record writer, the Adobe batch in Pixi, the sitting on adobeAnimateScene."
     },
@@ -9671,7 +9671,7 @@
         "EXECUTION_PLAN.md#E-185"
       ],
       "statusText": "open: E-188 keyed the decorations (R-0810); particles, glows and bullets remain",
-      "rank": 19,
+      "rank": 21,
       "area": "render",
       "result": "",
       "next": "The rows still without a key (particles, glows, bullets: about 200 a Predator frame) go up every frame at keyBase plus their slot. A slot-indexed fingerprint, read in slot order, would send only the slots whose occupant changed: about 13 KB a frame at most, small unless a scene puts thousands of such rows in the main queue (LiquidFun: E-194)."
@@ -10047,7 +10047,7 @@
       "kind": "bug",
       "result": "",
       "next": "Planet demo with the covering ranges (the chunks around the shaft). A fill lit only near its visible surface (a depth falloff from the polygon edge, in Pixi's self-lit shader) would hide the seams.",
-      "rank": 20
+      "rank": 34
     },
     {
       "aliases": [],
@@ -10071,7 +10071,7 @@
       "area": "render",
       "result": "E-211 (R-0868): the shadow terms out of the keyed pack, pack_sprites_keyed 79-119 -> 57-59 ms/s, renderer -4.5 % at Predator crowd 1.5",
       "next": "Fewer bytes a row still: a pose only for a row that moved. Owner: Predator crowd 1.5's renderer.",
-      "rank": 12
+      "rank": 20
     },
     {
       "aliases": [],
@@ -11260,7 +11260,7 @@
         "R-0854",
         "R-0898"
       ],
-      "rank": 28
+      "rank": 22
     },
     {
       "id": "E-200",
@@ -11310,7 +11310,7 @@
       "records": [
         "R-0854"
       ],
-      "rank": 30
+      "rank": 23
     },
     {
       "id": "E-202",
@@ -11333,7 +11333,7 @@
       "records": [
         "R-0854"
       ],
-      "rank": 31
+      "rank": 24
     },
     {
       "id": "E-203",
@@ -11721,7 +11721,7 @@
       "records": [
         "R-0860"
       ],
-      "rank": 33
+      "rank": 39
     },
     {
       "id": "DX-GUARDS",
@@ -12166,7 +12166,7 @@
       "status": "open",
       "statusText": "found 2026-11-12 (R-0927, R-0931); not explained",
       "date": "2026-11-12",
-      "rank": 25,
+      "rank": 36,
       "result": "Boids spatial +4.1 % (13/16) and +4.2 % (7/8) bundle against source since E-198; Windows per-thread CPU of spatial and physics 3 to 15 % more in the bundle; same wasm bytes and weedjsPost.",
       "next": "Bisect: bundles at E-198's own commits, or one E-198 wait off at a time in both builds; then the wasm loaded by URL in the bundle (code caching, tier-up).",
       "area": "engine",
@@ -12407,7 +12407,7 @@
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
-      "rank": 43,
+      "rank": 40,
       "next": "Predator, flashlights, BunnyMark, Boids, LiquidFun with --no-concurrent-recompilation and --log-code, joined with heap KB/s and CPU self ms; each finding its own row.",
       "refs": [
         "EXECUTION_PLAN.md#E-222"
@@ -12437,7 +12437,7 @@
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
-      "rank": 44,
+      "rank": 42,
       "next": "A tool reading the frame clock per frame: who finished last on the chain, how often each worker gates.",
       "refs": [
         "EXECUTION_PLAN.md#E-223"
@@ -12458,7 +12458,7 @@
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
-      "rank": 45,
+      "rank": 43,
       "next": "Each stress scene's load knob at 1k..64k, STEP_MS per worker against N, the cost per 1000 and where it bends.",
       "refs": [
         "EXECUTION_PLAN.md#E-224"
@@ -12504,7 +12504,7 @@
       "date": "2026-11-13",
       "area": "engine",
       "kind": "speed",
-      "rank": 47,
+      "rank": 44,
       "next": "Read every SAB layout for words with different writers within 64 bytes (the frame clock's 32-byte slots first); a two-thread kernel padded and not.",
       "refs": [
         "EXECUTION_PLAN.md#E-226"
@@ -12525,7 +12525,7 @@
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 48,
+      "rank": 31,
       "next": "Count render calls and buffer updates per frame; skip an unchanged buffer's update, merge render calls on one target.",
       "refs": [
         "EXECUTION_PLAN.md#E-227"
@@ -12546,7 +12546,7 @@
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
-      "rank": 49,
+      "rank": 47,
       "next": "WPR's scheduling profile over Predator, read in WPA. Needs the owner's OK to install the Windows ADK's WPA.",
       "refs": [
         "EXECUTION_PLAN.md#E-228"
@@ -12569,7 +12569,7 @@
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
-      "rank": 50,
+      "rank": 48,
       "next": "A profile of Predator's and BunnyMark's hot workers. Needs the owner's OK to install the profiler.",
       "refs": [
         "EXECUTION_PLAN.md#E-229"
@@ -12591,7 +12591,7 @@
       "date": "2026-11-13",
       "area": "renderer",
       "kind": "gpu",
-      "rank": 51,
+      "rank": 41,
       "next": "One captured frame of Predator, Sun Street and Headlights per backend: redundant state, draw calls, each pass's GPU time.",
       "refs": [
         "EXECUTION_PLAN.md#E-230"
@@ -12614,7 +12614,7 @@
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
-      "rank": 52,
+      "rank": 45,
       "next": "A tool over two summarizeChromeCpuTrace outputs: the functions whose share moved most.",
       "refs": [
         "EXECUTION_PLAN.md#E-231"
@@ -12781,7 +12781,7 @@
       "date": "2026-11-13",
       "area": "particle",
       "kind": "speed",
-      "rank": 59,
+      "rank": 28,
       "result": "_spawn 17, rng 6, randomRange 5, copyEmitFields 4 KB/s per logic worker.",
       "next": "E-222 on the emit path once optimized; the doubles into a Float64Array scratch where they cross calls.",
       "refs": [
@@ -12831,7 +12831,7 @@
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 60,
+      "rank": 9,
       "result": "get neighborCount 710 ms (12.0 %), getNeighbor 483 ms (8.2 %) of a logic worker over 26 s: a field test and one shared-buffer read each.",
       "next": "Predator rows are 1025 ids (maxNeighbors 1024, about 2 KB): alignment can save at most a line where the count and first ids straddle two (about 17 % of short lists). The two-thread kernel with that row size, padded rows (+3 % memory) against not; the rest is the lists' volume crossing cores (game code reads every neighbour).",
       "refs": [
@@ -12881,7 +12881,7 @@
       "date": "2026-11-13",
       "area": "preRender",
       "kind": "speed",
-      "rank": 62,
+      "rank": 29,
       "result": "flashlightStressScene: _buildVisibilityPolygonsSwept 311.1 KB/s; R-0958's samples of the same query had pre-render at 39 to 45 KB/s in all.",
       "next": "Three runs with --log-deopt and --log-code: tier and deopts against KB/s per run; E-222 sites.",
       "refs": [
@@ -12934,7 +12934,7 @@
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 64,
+      "rank": 30,
       "result": "Boids: about 460 KB/s in each of four logic workers in Boid.tick (1.5 bytes a call); flashlights: _tickNonDecimatedOneNoBody 263 KB/s.",
       "next": "E-222 sites for both; engine side in the engine, the demo's in the demo.",
       "refs": [
@@ -12981,7 +12981,7 @@
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
-      "rank": 66,
+      "rank": 26,
       "result": "publishPose 14.8 ms/s, snapshotPrevPose 6.0, publishMovedBodies 4.2 of the physics thread's 417.",
       "next": "E-222 sites; a kernel each against its current form.",
       "refs": [
@@ -13004,7 +13004,7 @@
       "date": "2026-11-13",
       "area": "particle",
       "kind": "speed",
-      "rank": 67,
+      "rank": 27,
       "result": "decorationScreenBranchless 5.4 ms/s, updateDerivedProperties 5.3, resolveAttachedDecorations 3.0, copyDecorationScratch 1.1 of 42.",
       "next": "E-222 sites; a kernel for the largest.",
       "refs": [
@@ -13144,7 +13144,7 @@
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 73,
+      "rank": 19,
       "result": "fsm.tick 15.9 ms/s (7.0 %) and 17.9 ms/s (8.8 %) of the two logic workers.",
       "next": "E-222 sites and a dispatch kernel with Predator's state counts.",
       "refs": [
@@ -13215,7 +13215,7 @@
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
-      "rank": 75,
+      "rank": 1,
       "result": "Emscripten's sched_yield is _emscripten_yield(emscripten_get_now()): a call out to JavaScript and a heap number every yield, and the time goes to a timer check that is a no-op in this build. b2Yield runs in b2SchedulerFinishTask's wait (each time the main thread finds no work) and in the solver's stage sync (every 6 turns). After E-255 emscripten_get_now is still 217 KB/s in Predator's physics, all under the step call.",
       "next": "b2Yield under Emscripten: emscripten_current_thread_process_queued_calls() (the queue sched_yield would process), no clock. Heap sample, then Balls' and Predator's physics. Both Box2D builds.",
       "refs": [
@@ -13238,7 +13238,7 @@
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
-      "rank": 76,
+      "rank": 25,
       "result": "Predator, physics after E-256 (87.5 KB/s in all): serviceChainQueries 17.1, serviceLiquidFunQuery 13.1, pumpQueryWake 8.2, serviceLiquidFunExtract 7.9, gameLoop 7.3, waitForLogic 6.8, doStep 4.6 KB/s.",
       "next": "E-222 sites of the service loop (which allocation each is: closures, boxed numbers, the wake's promises); fix the cheap ones; heap sample again.",
       "refs": [
@@ -13350,7 +13350,7 @@
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 78,
+      "rank": 8,
       "result": "WaterAndBoxes: logic 2807.2 KB/s, 2796.1 of it in update (logicWorker.js), whose TurboFan graph has an allocation at _tickNonDecimatedOne's obj.tick(dtRatio, deltaTime, accTime, frameNum): each class has its own tick, so the call is not inlined and the frame's three doubles are boxed for every entity, every frame.",
       "next": "Box them once a frame: the three values in a generic (PACKED_ELEMENTS) array or kept tagged fields read in the loop, so the call passes the same heap numbers; kernel on the tick loop (heap and ns a tick), then WaterAndBoxes' and Predator's logic.",
       "refs": [
@@ -13373,7 +13373,7 @@
       "date": "2026-11-13",
       "area": "core",
       "kind": "speed",
-      "rank": 79,
+      "rank": 17,
       "result": "FL4's Int32 head is (tag << 19, 20 on deco/1m) | (index + 1): with a 13 (12) bit tag most heads pass 2^30, outside a Smi, and E-87 measured that Chrome then returns a heap number from every Atomics.load and compareExchange (~14 ns an op). The wide pools (decorations, particles and bullets past 65 535) and 32-bit entity ids pop and push through FL4. E-87 left FL4 as it was on purpose (\"its window is already small\") after measuring 70 against 28.5 ns a step with values past 2^30 in a Chrome worker.",
       "next": "A Chrome kernel (scratch fl4/kernel.mjs: 20 index bits, a 12-bit tag against a 10-bit one under 2^30) in ns an op and heap; then weigh the ABA window (4 096 against 1 024 operations held between one thread's load and its exchange) before any change.",
       "refs": [
@@ -13397,7 +13397,7 @@
       "date": "2026-11-13",
       "area": "all",
       "kind": "speed",
-      "rank": 80,
+      "rank": 18,
       "result": "fieldTypeAudit (Predator): Pixi 57 of 92 typed-array fields start null, pre-render 43 of 111, logic 27 of 58, particle 27 of 46, spatial 25 of 61; twelve more are added after the constructor (the width-bound lists E-250 left to initialize, _gpuIdxEntity, _gpuIdxGlow, _gpuCasterIdx, frameWidth, frameHeight). E-71: 15 % of the emit kernel where per-entity code tested such a field; E-73: loops that index a hoisted local tie.",
       "next": "Cross the list with the per-entity loops that read this.X[i] (not a hoisted local): declare those as empty arrays of their class (not the width-bound ones); kernel of the hottest loop, then its owner. The rest stay as they are.",
       "refs": [
@@ -13419,7 +13419,7 @@
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 81,
+      "rank": 16,
       "result": "generateQueryMask caches masks by the classes array's identity; an array literal per call (the usual game code, e.g. spawnStormDriver's queryActiveEntities([SpriteRenderer]) each tick) misses it, so every call makes an ids array, sorts it and joins a string for the second cache: 11.2 KB/s (generateQueryMask) and 1 KB/s (join) of spawnStorm's logic.",
       "next": "A second-level cache that needs no string: a small table keyed by the classes themselves (the first class, then a short list compared element by element), or a numeric key from the component ids; a kernel of queryActiveEntities with a fresh literal against a kept array (ns a call, KB/s); then a demo that queries in its ticks.",
       "refs": [
@@ -13441,7 +13441,7 @@
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 82,
+      "rank": 3,
       "result": "CPU sweep (2026-11-13): stationarySpatialWideScene's spatial workers spend 127 and 134 ms/s (48 and 51 %) in rebuildOwnedRows, the full rebuild; its 70 000 entities have a Collider and a SpriteRenderer but no RigidBody, so physics publishes no moved bodies and E-126's movers path (rewrite only the rows of what moved) cannot run. Boids 28 to 32 % (bodies, but most move).",
       "next": "A mover list for bodiless collider entities: spatial compares their x/y (and extent) against the latched pose in a scan, skips the frame when none changed and feeds the changed ones to _rebuildMovedRows; or logic's position setters publish them as physics does. spatialGridMoversMicrobench with bodiless entities, then stationarySpatialWide's spatial STEP_MS.",
       "refs": [
@@ -13464,7 +13464,7 @@
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 83,
+      "rank": 5,
       "result": "CPU sweep: rebuildOwnedRows is 28 to 32 % of Boids' spatial and 48 to 51 % of stationarySpatialWide's (12.5 % in Predator when W6 was screened). Boids' hot lines: the owned-list append 26 % (the stall of the loads before it), localCounts[cellIndex] 22 %, the cell write 6 %: scattered cell accesses. W6's bit-exact C port ran +10.9 % in its kernel on Predator's mix and 1.48x on a mix of every shape, screened then because the rebuild was small in Predator.",
       "next": "Two candidates on spatialGridMoversMicrobench --shape box and a stationary case: (a) W6's C port again, (b) a counting pass that bins the entities by cell and then writes each cell's ids in one run; the winner on Boids' and stationarySpatialWide's spatial STEP_MS (E-266 first for the stationary scene).",
       "refs": [
@@ -13486,7 +13486,7 @@
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 84,
+      "rank": 2,
       "result": "CPU sweep, stationarySpatialWideScene (2 spatial workers, 70 000 entities nobody reads): _findNeighbors is 40 to 42 % of spatial, 91 % of it on `} else if (sharedRows && neighborData[entityA * stride] !== 0) {`, the row head read that keeps a row another worker may have published clear. Rows are maxNeighbors + 1 ids apart (about 2 KB here), so each read is a cache line of its own. One spatial worker (Predator) never reads it. A second row-head read per entity: littleCityScene's _findNeighbors spends 41 to 43 % on candCountOf[entityA] = cand[entityA * stride] (2 spatial workers). The demo WaterAndBoxes too: 91 to 96 % of its _findNeighbors on that line.",
       "next": "Read it only when it can be set: a dense per-worker byte per entity (this worker cleared the row and owned it since), or the row's owner change from rebuildOwnedRows' owned list; the spatial kernel with --types and two workers, then stationarySpatialWide's spatial STEP_MS.",
       "refs": [
@@ -13508,7 +13508,7 @@
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 85,
+      "rank": 7,
       "result": "CPU sweep, meshApiStressScene: MeshUvFillBatch.uploadRange (meshUvFillBatch.js) spends 990 ms of the window (100 % of its self time) on `if (this.rows !== this.data) this.data.set(this.rows.subarray(from, past * MESH_UV_FILL_FLOATS), from)`: the corner kernel writes the rows in the mesh memory (W11), and they are copied into the Pixi buffer's own array before its upload; a subarray each time.",
       "next": "Give the Pixi buffer the rows' own view (WebGL's bufferSubData and WebGPU's writeBuffer take a SharedArrayBuffer view), no copy; if a backend refuses it, upload the range from the view. meshApiStressScene's Pixi STEP_MS; colliderFillBatch.js's same copy (uploadFill) with it.",
       "refs": [
@@ -13530,7 +13530,7 @@
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 86,
+      "rank": 10,
       "result": "CPU sweep: decalStampStressScene's Pixi spends 173 ms in _uploadDecalRgba8 (89 % on its texSubImage2D of the whole tile) and 157 ms in premultiplyDecalTile (100 % on dst.set(b.scratch)); decalBlitStressScene 415 ms in the upload (68 %).",
       "next": "Upload from the premultiplied scratch (no copy), and only the rows (or rect) a stamp touched; the decal kernels and the two decal stress scenes' Pixi STEP_MS.",
       "refs": [
@@ -13552,7 +13552,7 @@
       "date": "2026-11-13",
       "area": "preRender",
       "kind": "speed",
-      "rank": 87,
+      "rank": 11,
       "result": "CPU sweep: painterSortStressScene's pre-render 145 ms of the window and painterMoveStressScene's 125 ms in fillQueueIndices (gpuQueueLayout.js), 99 to 100 % on the no-filter loop for (i < limit) outIdx[i] = i, called by packSpriteLayer for the whole queue each frame.",
       "next": "Keep how far each index array already holds the identity (a module WeakMap or the caller's state) and write only past it; the pack kernel, then the painter scenes' pre-render STEP_MS.",
       "refs": [
@@ -13573,7 +13573,7 @@
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 88,
+      "rank": 12,
       "result": "CPU sweep: carScene's Pixi spends 77 ms of the window in updateDecalTiles, 92 % on `if (Atomics.load(this.decalsTilesDirty, i)) dirtyN++;` over every tile, every frame, before it knows whether any is dirty.",
       "next": "A dirty count the stamping side bumps (or a plain read first and Atomics only on a set flag, or a word per 32 tiles); the decal scenes' Pixi STEP_MS.",
       "refs": [
@@ -13594,7 +13594,7 @@
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 89,
+      "rank": 13,
       "result": "CPU sweep: decoChurnStressScene's two logic workers spend 65 and 70 ms of the window in DecorationPool._lockActiveList, all of it on `while (Atomics.compareExchange(lock, 0, 0, 1) !== 0)`: the active list's lock, contended when both churn decorations each frame.",
       "next": "Per-worker pending lists merged by one owner once a frame (as entity spawns go through queueSpawnListUpdate), or a lock-free append; the decoration churn kernel, then decoChurn's logic STEP_MS.",
       "refs": [
@@ -13615,7 +13615,7 @@
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 90,
+      "rank": 4,
       "result": "CPU sweep: planetScene's spatial spends 286 ms of the window in rebuildOwnedRows, 79 % on `gridCounts[byteOffset] = localCounts[cellIndex];`: the closing loop over every cell of the owned rows, the grid's counts cellByteSize apart, written whether they changed or not; a big world with few entities has far more cells than entities.",
       "next": "Write a count only when it changed (compare with the previous frame's, kept dense), or only for the cells this frame or the last touched; the grid kernel with a sparse world, then planetScene's spatial STEP_MS.",
       "refs": [
@@ -13636,7 +13636,7 @@
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 91,
+      "rank": 14,
       "result": "CPU sweep: tweenStressScene's logic spends 135 ms of the window in paintTarget (tween.js), 100 % on its first line, the SpriteRenderer.active read of the tweened entity (a scattered byte per tween), called from the tween's apply paths every frame.",
       "next": "Keep the target kind in the tween's record when it starts and re-read it only when the entity's sprite or mesh changes (a generation, or the setter that changes them); the tween kernel, then tweenStress's logic STEP_MS.",
       "refs": [
@@ -13657,7 +13657,7 @@
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 92,
+      "rank": 15,
       "result": "CPU sweep: navStressScene's logic spends 88 ms of the window in NavGrid._findFlowfieldSlot, 81 % on `Atomics.load(u32, idx + 2) === FLOWFIELD_STATUS.READY && u32[idx] === targetCell` over all maxFlowfields slots, each lookup.",
       "next": "Compare targetCell with a plain read first and load the status only on a match (then read targetCell again after it, for the publication order), or a small map from target cell to slot kept per worker; the nav kernel, then navStress's logic STEP_MS.",
       "refs": [
@@ -13894,7 +13894,7 @@
       "date": "2026-11-12",
       "area": "render",
       "kind": "bug",
-      "rank": 30,
+      "rank": 35,
       "result": "The same count with and without cones (raycast 79 499 both; basic 97 951 and 96 252); traced in the session to the lamp whose halo is on its own layer (glowLayer); predates the light API change.",
       "next": "A capture with that lamp's glowLayer cleared on both backends; then the custom layer's composite on WebGPU (its blend or premultiplication) against WebGL's.",
       "refs": [
@@ -13919,7 +13919,7 @@
       "date": "2026-11-12",
       "area": "tests",
       "kind": "bug",
-      "rank": 40,
+      "rank": 37,
       "result": "Its ringer thread rings at 3, 6 and 9 ms against a 16 ms budget; under the suite's load it ran late, the wait gave up and turned the chain off (121 !== 0).",
       "next": "A wider budget (a longer period) or a deadline given ahead, as the other publish tests do.",
       "refs": [
@@ -13966,7 +13966,7 @@
       "date": "2026-11-12",
       "area": "engine",
       "kind": "speed",
-      "rank": 28,
+      "rank": 32,
       "result": "_runFrame 7–9 KB/s per worker, _waitForPose/_waitForQueue 6–8, pre-render camera bounds ~20 (doubles in shared-map objects), writeGatherColumns put closure 4.9, renderVisibilityLighting clear colour and options 5.4.",
       "next": "Left (Predator, R-0960): subarray per frame in bulletPool._tickWasm, _collectVisibleEntitiesWasm, _collectEntityGlowRows; camera bounds (resetFrameCounters, calculateCameraScreenBounds, _readFollowSnapshot); most per-frame rows are lower-tier boxing (E-239).",
       "refs": [
@@ -14039,7 +14039,7 @@
       "date": "2026-11-13",
       "area": "harness",
       "kind": "bug",
-      "rank": 41,
+      "rank": 38,
       "result": "load not comparable (median 0 on both sides) and under the 3 ms floor at ?plays=1200.",
       "next": "A load count the scene publishes (plays a tick or voices playing) as the load key, and ?plays= high enough for logic0 past 3 ms.",
       "refs": [
@@ -14099,7 +14099,8 @@
       ],
       "records": [
         "R-0977"
-      ]
+      ],
+      "rank": 33
     }
   ],
   "records": [
