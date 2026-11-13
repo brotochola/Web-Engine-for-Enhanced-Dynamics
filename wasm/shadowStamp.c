@@ -448,6 +448,8 @@ int32_t stamp_light_range(uint32_t table) {
     ? build_grid_packed(sun, nSun, sf, gridCounts, gridStarts, gridItems, t[T_GRID_COUNTS_CAP], t[T_GRID_ITEMS_CAP], &g,
                         dist, (float *)tmpIdx, px, py, cellOf)
     : 0;
+  /* Whether a light this call took is a cone or dim: the per-entity rows then go through their own copy of the loop. */
+  int anyFolded = 0;
   for (int32_t i = begin; i < capL && (maxPE > 0 || cursor < cap); i += stride) {
     const double *L = lights + (uint32_t)i * LIGHT_DOUBLES;
     const double lx = L[0];
@@ -468,6 +470,7 @@ int32_t stamp_light_range(uint32_t table) {
        light (shade under 1) write their rows in their own copy too. */
     const int cone = L[7] > -1.0;
     const int folded = cone || L[10] < 1.0;
+    anyFolded |= folded;
     if (cone && grid) {
       const double r = __builtin_sqrt(rangeSq);
       int32_t col0 = floor_int32((lx - r - g.minX) / STAMP_CELL);
@@ -576,6 +579,31 @@ int32_t stamp_light_range(uint32_t table) {
     cursor = written;
   }
   if (maxPE == 0) return cursor;
+  if (!anyFolded) {
+    /* Point lights at full shade only: each row is its caster's with the light's vec4. */
+    for (uint32_t c = 0; c < nSun && cursor < cap; c++) {
+      const uint32_t n = nearCount[c];
+      const uint32_t base = c * maxPE;
+      for (uint32_t k = 0; k < n && cursor < cap; k++) {
+        const int32_t li = nearSlot[base + k];
+        const double *L = lights + (uint32_t)li * LIGHT_DOUBLES;
+        lightVec[0] = (float)L[0];
+        lightVec[1] = (float)L[1];
+        lightVec[2] = (float)L[2];
+        lightVec[3] = (float)L[3];
+        float *d = stamp + (uint32_t)cursor * df;
+        copy_row(d, sun + c * sf, sf, df);
+        d[lightAt] = lightVec[0];
+        d[lightAt + 1] = lightVec[1];
+        d[lightAt + 2] = lightVec[2];
+        d[lightAt + 3] = lightVec[3];
+        if (stampLightIdx) stampLightIdx[cursor] = (uint16_t)li;
+        cursor++;
+      }
+    }
+    return cursor;
+  }
+  /* DX-SPOT: a call with a cone or dim light; that light's rows take their caster's place in the cone and its shade. */
   for (uint32_t c = 0; c < nSun && cursor < cap; c++) {
     const uint32_t n = nearCount[c];
     const uint32_t base = c * maxPE;
@@ -591,7 +619,6 @@ int32_t stamp_light_range(uint32_t table) {
       copy_row(d, s, sf, df);
       d[lightAt] = lightVec[0];
       d[lightAt + 1] = lightVec[1];
-      /* DX-SPOT: a cone or dim light's row takes its caster's place in the cone and the light's shade. */
       d[lightAt + 2] = L[7] > -1.0 || L[10] < 1.0
         ? (float)cone_intensity((double)s[0] - L[0], (double)s[1] - L[1], L[2], L) : lightVec[2];
       d[lightAt + 3] = lightVec[3];
