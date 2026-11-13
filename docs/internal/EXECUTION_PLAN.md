@@ -4342,6 +4342,10 @@ buffers, calls `update()` on both, sets the light's uniforms and draws; it also 
 **Plan:** the per-item arrays into a module scratch first (heap sample); then one instanced draw for the pass, as the other
 batches. GL calls a frame, then Pixi's STEP_MS in Sun Street and Headlights. Owner: Pixi.
 
+**Kept 2026-11-13 (R-0977):** one mesh per texture source, the terms as flat vertex attributes (`5c18b9d0`; step 1
+`9c96671c`): Pixi 10.353 → 1.381 ms (−86.8 %, 4/4) in `visPolyStressScene ?mask=sprite&selfLit=20000`, pixels identical on
+WebGL and WebGPU. N-163 found on the way.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
