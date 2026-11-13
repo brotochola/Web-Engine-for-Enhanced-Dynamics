@@ -288,7 +288,7 @@ export const ENGINE_FEATURES = [
     id: 'tilemap',
     name: 'TileMap queries',
     module: 'src/core/tileMap.js',
-    kernel: { script: 'tests/bench/tileMapMicrobench.mjs', opsKey: 'cases.getTileId.opsPerSec' },
+    kernel: { script: 'tests/bench/tileMapMicrobench.mjs', opsKey: 'cases.shipped.opsPerSec' },
     scene: {
       key: 'tilemapStress',
       path: '/tests/bench/stressScenes/tilemapStressScene.js',
