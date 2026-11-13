@@ -6,6 +6,62 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Friday 13 November 2026 (evening) — Collect Every Lead First, Then Measure Them All
+
+Until today each idea was found, coded and measured on the spot. Today it went the other way: first a harvest with no
+measuring at all, then a campaign that takes the list in order. The harvest ran every scene the engine has, 65 of them,
+through four lenses: where each worker spends its CPU, line by line; where it makes garbage; where V8 throws compiled
+code away; and Box2D's own functions by name, from a build that keeps them. It wrote twelve new leads. The deopt pass found
+no new loop, only one already known and already judged not worth its fix.
+
+While the passes ran, the changes were written on branches of their own, each with its tests. Then the owner scenes were
+probed: a verdict now needs the owning worker at 6 ms or more, and many stress scenes ran far under it at their default
+load, so they got knobs.
+
+The spatial worker was the big one. With two spatial workers, each re-read the head of every neighbour row nobody reads,
+a cache line per entity, just to see it was still empty; only a row's owner writes it, so a byte per entity now remembers
+that it was empty last frame (-39 %). Without a physics worker nobody said which entities moved, so the grid was rebuilt
+whole every frame; now the worker compares each collider's bounds with the ones it last binned and rewrites only what
+changed, byte for byte the same grid (-34 %). And the grid stopped writing the count of every empty cell (+34 % in a
+sparse world's kernel). Together, 145 000 still entities: the spatial worker from 7.67 to 2.32 ms, -70 %.
+
+The navigation lookup scanned all 64 flowfield slots with an atomic load each, for every agent, every frame. A plain read
+of the slot's target first, and the atomic only on a match: logic in the nav stress scene from 6.20 to 3.02 ms, -51 %.
+
+Garbage went too. A tick's three doubles were boxed again for every entity (2.8 MB/s to 28 KB/s); the collider fill passed
+its corners through module variables (3.5 MB/s to 0.3); each sound played built a closure (7.3 MB/s to nothing); the
+bullet collect carried a double from one bullet to the next (650 KB/s to 60). Where that was timed, the frame did not
+move, GC was already cheap, and nothing got slower. The bullet one went into main; the other three wait on a branch
+for Predator's gate with every keep together. Two ideas lost honestly: rewriting the painter's index list only past what it holds saved
+1.2 %, exactly what the trace said and under the 3 % bar, and a smaller `rng()` still was not inlined.
+
+## Friday 13 November 2026 (afternoon) — Lights Masked by Sprites in One Batch, and a Million Decorations
+
+A self-lit sprite with a mask drew one mesh per sprite and light, each with its own buffer uploads and uniforms: Sun
+Street made 168 draws and 329 buffer uploads a frame for it. Now every masked sprite goes into one batch per texture, with
+its own small shader on both backends. In a stress scene with 20 000 of them, Pixi went from 10.35 to 1.38 ms, -86.8 %,
+and the pixels came out identical on WebGL and WebGPU. Pixi also stopped re-creating its float data textures every frame:
+the light data was uploaded twice per frame with `texImage2D`, now it updates in place.
+
+The decoration pool learned to hold a million: the free list's index grew to 20 bits, its tag shrank to fit. That went
+into a bundle for the Buenos Aires game, on a branch of its own.
+
+The bar moved too: a speed verdict now needs the owning worker at 6 ms, not 3. Under that, the noise is a large share of
+the number.
+
+## Friday 13 November 2026 (morning) — Physics That Stops Asking the Time
+
+Box2D asked JavaScript for the time about 800 times a frame in Predator, and each answer was a fresh number on the heap:
+the profiler's clock read `performance.timeOrigin` on every call, the scheduler's spin read the clock every 64 turns, and
+every yield read it for a timer this build does not have. Three fixes in Box2D's C, both of its builds: the origin read
+once, the spin counting turns instead of time, the yield processing its queue without a clock. The physics worker's
+garbage in Predator went from 634 KB/s to 87.5. On the clock it is a tie, and that is fine: it was never the time, it was
+the garbage.
+
+The same hunt elsewhere: the WebGL shader sync rebuilt its plan at nearly every bind (Pixi 1.27 MB/s to 0.27), the
+LiquidFun splat boxed three doubles per particle (1.57 MB/s to 0.11), the mesh fill's pose went through a scratch object.
+And the spatial passes learned to bound a turned box without a call, +21.7 % in their kernel.
+
 ## Sunday 1 November 2026 (afternoon) — Shadows That Know Who Cast Them, and Grass With a Name
 
 The keyed frames left the shadows behind. Each caster is a sprite whose statics are already in Pixi's texture, yet
