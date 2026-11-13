@@ -166,9 +166,13 @@ take their own copied loop or batch.
   With cones, WebGL and WebGPU differ exactly as they do without (the glowLayer difference, N-155). *The sweep (open):*
   a cone light still gathers and sweeps its whole circle; sweeping only the cone's interval
   (`wasm/visibilitySweep.c`, `visibilityGather.c`, SIMD and f32 variants) is the saving to measure.
-- **Known limit, the cookie:** with a sun, a cone light's cookie still lightens the sun's shadows in its whole round
-  pool, behind the car too. Pregenerated cone frames in the atlas, rotated per row, would fix it; it matters only for
-  lamps under a sun.
+- **The cookie** (the review of 2026-11-12): the round cookie is a bright blob around the bulb (its gradient halves
+  every fiftieth of the radius, so nearly all of it lies within a tenth of the radius), which lightens the sun's
+  shadows there. A cone light up to 180 degrees takes the gradient's half disc instead (`_lightGradientHalf`, one
+  100 × 200 frame packed last in the atlas), turned along the cone on the screen, so the shadows behind it stay; a
+  wider cone keeps the round one. Every cookie's alpha takes the light's shade (min(brightness, 1)). The frame costs a
+  few hundred pixels of every scene 1/255 of sampling (any frame added to the atlas does); dxCaptureScene
+  `?lampCone=90` at noon: the props' sun shadows behind the lamps, up to 38/255 darker, as they should be.
 - **B5,** cull by the cone's box only if the headlight scene shows it pays. `Flash.spawn` takes the cone too.
 
 ## Measurement

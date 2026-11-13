@@ -1310,8 +1310,8 @@ class PreRenderWorker extends AbstractWorker {
                     id: 0, x: NaN, y: NaN, intensity: NaN, rangeSq: NaN, sqrtI: NaN, distSq: NaN, maxShadows: 0,
                     // DX-SPOT: the cone on the floor (coneCos -2: none), as the stamp's light table takes it.
                     coneDirX: NaN, coneDirYW: NaN, coneCos: NaN, coneInvSpan: NaN, invG2: NaN,
-                    // DX-LIGHTAPI: min(brightness, 1), how dark its shadows are; its brightness for the cookie.
-                    shade: NaN, brightness: NaN,
+                    // DX-LIGHTAPI: min(brightness, 1), how dark its shadows are and how strong its cookie.
+                    shade: NaN,
                 };
             }
         }
@@ -3417,7 +3417,6 @@ class PreRenderWorker extends AbstractWorker {
             }
             slot.invG2 = invG * invG;
             const brightness = lightBrightness[id];
-            slot.brightness = brightness;
             slot.shade = brightness < 1 ? brightness : 1;
             n++;
         }
@@ -3674,6 +3673,12 @@ class PreRenderWorker extends AbstractWorker {
         const capL = lights ? Math.min(this._stampLightCount | 0, this.maxShadowCastingLights | 0) : 0;
         if (!cq || capL <= 0 || !caps || !(caps.maxCookie > 0)) return 0;
         const texId = this._resolveBuiltinTextureId('_lightGradient');
+        // DX-SPOT: a cone light up to 180 degrees takes the gradient's half disc, turned along its cone, so its cookie
+        // does not lighten the sun's shadows behind it (an atlas without the frame keeps the round one).
+        const names = this.animationNameToIndex;
+        const halfId = names && names._lightGradientHalf !== undefined
+            ? this._resolveBuiltinTextureId('_lightGradientHalf')
+            : INVALID_TEXTURE_ID;
         let n = 0;
         const room = cq.x.length;
         const shadowRes = this.config.lighting?.shadowResolution;
@@ -3686,10 +3691,33 @@ class PreRenderWorker extends AbstractWorker {
             cq.x[n] = L.x;
             cq.y[n] = L.y;
             const scale = lightCookieScale(L.sqrtI);
-            cq.scaleX[n] = scale;
-            cq.scaleY[n] = scale * groundY;
-            cq.alpha[n] = L.intensity / 50000;
-            cq.textureId[n] = texId;
+            // DX-LIGHTAPI: a dim light lightens the sun's shadows as much less as its own shadows are lighter.
+            const shade = L.shade < 1 ? L.shade : 1;
+            cq.alpha[n] = (L.intensity / 50000) * shade;
+            if (L.coneCos >= 0 && halfId !== INVALID_TEXTURE_ID) {
+                // The cone's axis on the screen (the floor direction, y times groundScaleY) and the floor's
+                // perpendicular there: the half disc's length along each.
+                const fx = L.coneDirX;
+                const fy = L.coneDirYW * groundY;
+                const ax = fx;
+                const ay = fy * groundY;
+                const la = Math.sqrt(ax * ax + ay * ay);
+                const px = -fy;
+                const py = fx * groundY;
+                cq.rotC[n] = ax / la;
+                cq.rotS[n] = ay / la;
+                cq.scaleX[n] = scale * la;
+                cq.scaleY[n] = scale * Math.sqrt(px * px + py * py);
+                cq.anchorX[n] = 0;
+                cq.textureId[n] = halfId;
+            } else {
+                cq.rotC[n] = 1;
+                cq.rotS[n] = 0;
+                cq.scaleX[n] = scale;
+                cq.scaleY[n] = scale * groundY;
+                cq.anchorX[n] = 0.5;
+                cq.textureId[n] = texId;
+            }
             n++;
         }
         cq.count = n;

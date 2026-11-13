@@ -1060,6 +1060,18 @@ export function create2dCanvas(width = 1, height = 1) {
   throw new Error('No canvas API available');
 }
 
+/**
+ * DX-SPOT: the right half of createCircularGradientCanvas's disc (radius wide, 2·radius tall), its centre on the left
+ * edge's middle: a cone light's cookie, turned along the cone (anchor 0, 0.5).
+ */
+export function createHalfCircularGradientCanvas(radius = LIGHT_GRADIENT_TEXTURE_RADIUS, color = 0xffffff) {
+  radius = Math.round(radius);
+  const full = createCircularGradientCanvas(radius, color);
+  const canvas = create2dCanvas(radius, radius * 2);
+  canvas.getContext('2d').drawImage(full, radius, 0, radius, radius * 2, 0, 0, radius, radius * 2);
+  return canvas;
+}
+
 export function createCircularGradientCanvas(radius = LIGHT_GRADIENT_TEXTURE_RADIUS, color = 0xffffff) {
   radius = Math.round(radius);
   const size = radius * 2;

@@ -295,3 +295,60 @@ test('a narrow cone is at full light on its axis: the soft edge never reaches pa
   L.coneAngle = 0;
   assert.equal(term(0.01), 0);
 });
+
+test('the shadow cookie: a cone up to 180 degrees takes the half disc turned along it; a dim light a fainter cookie', async () => {
+  const { computeBufferSize, createViews } = await import('../../src/render/renderQueueLayout.js');
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const cv = createViews(new SharedArrayBuffer(computeBufferSize(8)), 8, 0);
+  cv.rotC.fill(1);
+  cv.anchorX.fill(0.5);
+  cv.anchorY.fill(0.5);
+  pre._gpuCookieQ = {
+    count: 0, x: cv.x, y: cv.y, scaleX: cv.scaleX, scaleY: cv.scaleY, rotC: cv.rotC, rotS: cv.rotS, alpha: cv.alpha,
+    tint: cv.tint, textureId: cv.textureId, anchorX: cv.anchorX, anchorY: cv.anchorY, tileMulX: cv.tileMulX,
+    tileMulY: cv.tileMulY, tileOffsetU: cv.tileOffsetU, tileOffsetV: cv.tileOffsetV, shadowH: cv.shadowH,
+    shadowOffX: cv.shadowOffX, shadowOffY: cv.shadowOffY,
+  };
+  pre.gpuQueueCaps = { maxCookie: 8 };
+  pre.maxShadowCastingLights = 8;
+  pre.config = { lighting: { groundScaleY: 0.5 } };
+  pre.canvasWidth = 800;
+  pre.animationNameToIndex = { _lightGradient: 0, _lightGradientHalf: 1 };
+  pre._resolveBuiltinTextureId = (name) => (name === '_lightGradient' ? 5 : name === '_lightGradientHalf' ? 9 : -1);
+  pre._gpuPackOpts = {};
+  pre._resetGpuPackOpts = () => {};
+  pre._packRows = () => 0;
+  const g = 0.5;
+  const light = (over) => ({
+    id: 0, x: 100, y: 100, intensity: 10000, rangeSq: 1e6, sqrtI: 100, distSq: 0, maxShadows: 0,
+    coneDirX: 1, coneDirYW: 0, coneCos: -2, coneInvSpan: 0, invG2: 4, shade: 1, ...over,
+  });
+  pre._stampLights = [
+    light({}), // a point light
+    light({ shade: 0.5 }), // a dim one
+    light({ coneDirX: 0, coneDirYW: 1 / g, coneCos: Math.cos(Math.PI / 6), coneInvSpan: 4 }), // a cone down the floor
+    light({ coneCos: Math.cos((Math.PI * 2) / 3), coneInvSpan: 4 }), // a cone of 240 degrees
+  ];
+  pre._stampLightCount = 4;
+  pre._packGpuCookies({ cookie: new Float32Array(0), cookieU32: new Uint32Array(0) });
+  const q = pre._gpuCookieQ;
+  const { lightCookieScale } = await import('../../src/util/utils.js');
+  const s = lightCookieScale(100);
+  // The point light: the round cookie, unturned, R across and R·g tall.
+  assert.equal(q.textureId[0], 5);
+  assert.deepEqual([q.rotC[0], q.rotS[0], q.anchorX[0]], [1, 0, 0.5]);
+  assert.equal(q.scaleX[0], Math.fround(s));
+  assert.equal(q.scaleY[0], Math.fround(s * g));
+  assert.equal(q.alpha[0], Math.fround(10000 / 50000));
+  // Dim: half the alpha.
+  assert.equal(q.alpha[1], Math.fround((10000 / 50000) * 0.5));
+  // The cone down the floor: the half disc from the light (anchor 0), turned down the screen, R·g along its axis and R
+  // across it.
+  assert.equal(q.textureId[2], 9);
+  assert.equal(q.anchorX[2], 0);
+  assert.ok(Math.abs(q.rotC[2]) < 1e-7 && Math.abs(q.rotS[2] - 1) < 1e-7, `${q.rotC[2]}, ${q.rotS[2]}`);
+  assert.ok(Math.abs(q.scaleX[2] - s * g) < 1e-5 && Math.abs(q.scaleY[2] - s) < 1e-5);
+  // Past 180 degrees: the round cookie.
+  assert.equal(q.textureId[3], 5);
+  assert.equal(q.anchorX[3], 0.5);
+});
