@@ -13341,7 +13341,7 @@
       "area": "spatial",
       "kind": "speed",
       "rank": 8,
-      "result": "get neighborCount 710 ms (12.0 %), getNeighbor 483 ms (8.2 %) of a logic worker over 26 s: a field test and one shared-buffer read each.",
+      "result": "get neighborCount 710 ms (12.0 %), getNeighbor 483 ms (8.2 %) of a logic worker over 26 s: a field test and one shared-buffer read each. Machine code (Node 22, R-0992): neighborCount reads `_neighborOffset` and `_neighborReaderMarked` through megamorphic loads (E-289), so part of the cost may be the generic load, not only the row crossing cores.",
       "next": "Predator rows are 1025 ids (maxNeighbors 1024, about 2 KB): alignment can save at most a line where the count and first ids straddle two (about 17 % of short lists). The two-thread kernel with that row size, padded rows (+3 % memory) against not; the rest is the lists' volume crossing cores (game code reads every neighbour).",
       "refs": [
         "EXECUTION_PLAN.md#E-240"
@@ -13355,7 +13355,8 @@
         "Grid neighborData"
       ],
       "records": [
-        "R-0961"
+        "R-0961",
+        "R-0992"
       ]
     },
     {
@@ -13655,7 +13656,7 @@
       "area": "logic",
       "kind": "speed",
       "rank": 23,
-      "result": "fsm.tick 15.9 ms/s (7.0 %) and 17.9 ms/s (8.8 %) of the two logic workers.",
+      "result": "fsm.tick 15.9 ms/s (7.0 %) and 17.9 ms/s (8.8 %) of the two logic workers. Machine code (Node 22, R-0992): the FSM's `onUpdate` reads `fsm` and `changeState` reads `stateIndex` through megamorphic loads; the state's tick is a call TurboFan does not inline (Call_ReceiverIsAny).",
       "next": "E-222 sites and a dispatch kernel with Predator's state counts.",
       "refs": [
         "EXECUTION_PLAN.md#E-253"
@@ -13667,7 +13668,8 @@
         "state machine"
       ],
       "records": [
-        "R-0968"
+        "R-0968",
+        "R-0992"
       ]
     },
     {
@@ -14227,7 +14229,7 @@
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "result": "Heap pass: destructibleTerrainScene's Pixi allocates 14.7 MB/s, 13.9 of it in `fanLocalVerts` (colliderFillBatch.js); planetPhysicsScene's 3.6 MB/s, 3.2 in `packColliderFill` itself. `radialOutset` returns its point in the module lets `_ox`/`_oy` (inlined in the fan loop, each double stored into a module context slot is a heap number, six per triangle), and `writeFillTri` (17 arguments) and `fanLocalVerts` take doubles: from a caller too large to inline them, each call boxes them (the mesh-index path: eight per triangle).",
+      "result": "Heap pass: destructibleTerrainScene's Pixi allocates 14.7 MB/s, 13.9 of it in `fanLocalVerts` (colliderFillBatch.js); planetPhysicsScene's 3.6 MB/s, 3.2 in `packColliderFill` itself. `radialOutset` returns its point in the module lets `_ox`/`_oy` (inlined in the fan loop, each double stored into a module context slot is a heap number, six per triangle), and `writeFillTri` (17 arguments) and `fanLocalVerts` take doubles: from a caller too large to inline them, each call boxes them (the mesh-index path: eight per triangle). Machine code on main (Node 22, R-0992): fanLocalVerts calls AllocateInYoungGeneration 6 times with 6 write barriers, packColliderFill 4: the heap numbers E-277 removes.",
       "next": "The point and the triangle's corners in a module Float64Array, integer arguments only (E-85, E-261's MESH_POSE), and `--trace-turbo-inlining` on the pack to confirm what stays a call; the collider fill kernel, then destructibleTerrain's and planetPhysics' Pixi STEP_MS and heap. No other module let in src/ holds a double (a grep of `^let x = <number>`).",
       "refs": [
         "EXECUTION_PLAN.md#E-277"
@@ -14240,7 +14242,8 @@
       ],
       "records": [
         "R-0980",
-        "R-0987"
+        "R-0987",
+        "R-0992"
       ],
       "rank": 10
     },
@@ -14502,6 +14505,53 @@
       ],
       "records": [
         "R-0981"
+      ]
+    },
+    {
+      "id": "E-289",
+      "title": "GameObject's instance getters read their fields through megamorphic loads in a scene of many classes (neighborCount: _neighborOffset, _neighborReaderMarked)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the machine-code harvest, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 62,
+      "result": "Machine code (Node 22, neighborAccessMicrobench): `get neighborCount`, a getter on GameObject.prototype that every entity class shares, compiles its `this._neighborOffset`, `this._neighborReaderMarked` and `this._markNeighborReader` as LoadIC_Megamorphic calls and its store of `_neighborReaderMarked` as StoreIC_Megamorphic: each class has its own map, so the shared getter sees many. Predator's logic spends 12 % in neighborCount and 8 % in getNeighbor (E-240).",
+      "next": "Read the per-entity values from columns indexed by the entity (the neighbour row's offset from `index` and the stride, the reader mark per type), so the getter loads `this.index` once and nothing else from the instance; check the machine code shows no megamorphic call left, then E-240's kernel and Predator's logic.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-289"
+      ],
+      "aliases": [
+        "megamorphic getters",
+        "neighborCount megamorphic",
+        "_neighborOffset",
+        "instance field loads"
+      ],
+      "records": [
+        "R-0992"
+      ]
+    },
+    {
+      "id": "E-290",
+      "title": "Binding an instance to its entity slot runs megamorphic stores and loads and allocates (GameObject + bindToEntitySlot)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the machine-code harvest, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 63,
+      "result": "Machine code (Node 22, componentGetterMicrobench): the GameObject constructor makes 3 megamorphic stores and 5 megamorphic loads (`_ensureComponentAccessors`, `_componentSlotCount`, `_c0`, `_c1`, `bindToEntitySlot`) and 2 allocations; `bindToEntitySlot` 10 megamorphic stores, 9 megamorphic loads, 4 megamorphic keyed stores and 6 allocations. Each lazily made instance (`_makeInstance`, a spawn's first tick or callback) pays them.",
+      "next": "Count instance binds per second in Predator and the spawn-heavy scenes first (a counter, not a trace); if they matter, give every class's instances one shape (fields declared in GameObject's constructor in one order, component slots in a fixed array) and check the machine code again.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-290"
+      ],
+      "aliases": [
+        "bindToEntitySlot",
+        "instance creation megamorphic",
+        "_makeInstance cost"
+      ],
+      "records": [
+        "R-0992"
       ]
     }
   ],
@@ -24229,6 +24279,15 @@
       "title": "E-271 back to open to recheck; the small gains left behind gathered for one combined sitting per owner",
       "verdict": "note",
       "text": "**E-271 back to open, to recheck; the small gains left behind are gathered for one combined sitting.** 2026-11-13, owner's\nrequest: a 1.2 % that is real and costs no regression and no harm to the code may stay; and the ties and drops that each\ngained a little might add up.\n\n**E-271.** Its sitting (R-0986) read −1.2 % with no pair worse, the size the CPU sweep predicted for the line it removes.\nUnder 3 % a single 4-pair sitting cannot tell it from the noise, so it was not merged; it is open again with the branch\n(`w14/e271`) kept.\n\n**The small gains in the register** (a rough read of each closed row's result line for a time 0.5 to 3 % lower with no\n3/4 or 4/4 worse; 14 rows, some of them measurements rather than changes): the batch spawn/despawn ECB (−2.8 %,\ndropped), E-171 the FSM's per-instance ms as a small integer (−2.4 %), W7 (−2.2 %, screened), Nav N1 `cellY | 0`\n(−1.5 %), E-99 casters in bin order (−1.2 %, rejected), E-271 (−1.2 %), useZBuffer on Bunny (−1.2 %), H11's hoist in\n`_writeQueueShadow`, the stamp grid on lights, `gpuShadowPath=batch` and shadows under 2 px (−0.5 to −0.6 %).\n\n**How they are judged** (HOW_WE_MEASURE's \"a total is measured, not added\"): gains only add on the same worker in the same\nscene, so the candidates are grouped by owner (pre-render: E-271, E-99, H11 and the shadow ones; logic: E-171 and the\nECB; spatial: W7), each group's code brought up to date on one branch, and the group sat once against its base. A group\nthat wins 3 % or more on its owner, no worker worse, is kept whole; one that does not is read row by row from the same\nsitting. Each row first gets a look at whether its code still applies and does not make the code worse to read."
+    },
+    {
+      "id": "R-0992",
+      "date": "2026-11-13",
+      "time": "19:43",
+      "timeFrom": "recorded",
+      "title": "The machine-code harvest, first pass: Chrome's build has no disassembler; Node's code through the kernels; E-289, E-290 written",
+      "verdict": "note",
+      "text": "**The machine-code harvest, first pass: Chrome's release build cannot show its code; Node's can, through the kernels\nthat call the shipped functions. E-289 and E-290 written, E-240, E-253 and E-277 annotated.** 2026-11-13, 19:41 to 19:43.\n\n**Chrome.** `--log-code --log-code-disassemble` on Predator (8 s, 86 MB of V8 logs) writes every code object's header and\nno instruction: Chrome's V8 is built without the disassembler, as are Chromium's snapshots, Chrome for Testing and\nPlaywright's Chromium (all release builds), so `--print-opt-code` prints nothing there either. Chrome's own code needs a\nV8 with the disassembler: `d8` (V8's shell, from jsvu, at Chrome's V8 or newer) or a Chromium debug build. `d8` is an\ninstall: it waits for the owner's OK.\n\n**Node 22 (V8 12.4).** `--print-opt-code --code-comments` over fourteen kernels (spatialWorkerMicrobench with and without\n`--unread`, spatialGridMoversMicrobench with and without `--no-physics`, tickLoopKernel, fsmTickMicrobench,\ncomponentGetterMicrobench, neighborAccessMicrobench, preRenderCollectKernel, gpuPackKeyedMicrobench,\npublishPoseMicrobench, colliderFillPackMicrobench, meshApiMicrobench, particleLightPackMicrobench), summarised per\nTurboFan function by a scratch reader (size, inlined functions, deopt points and reasons, builtins called, and each\ngeneric IC, call or allocation with the name in the comment above it). Node's V8 is older than Chrome's, so this shows\nstructure (what is not inlined, what is generic, what allocates), not Chrome's exact code.\n\n**Read:**\n- `get neighborCount`: `_neighborOffset`, `_neighborReaderMarked` and `_markNeighborReader` through LoadIC_Megamorphic,\n  the mark's store through StoreIC_Megamorphic: a getter shared by every class sees every class's map (E-289; E-240).\n- The FSM: `onUpdate` reads `fsm`, `changeState` reads `stateIndex` megamorphically; the state's tick is a\n  Call_ReceiverIsAny (E-253).\n- The GameObject constructor and `bindToEntitySlot`: megamorphic stores and loads and allocations per bind (E-290).\n- `fanLocalVerts` (6 allocations, 6 write barriers) and `packColliderFill` (4) on main: E-277's heap numbers, still in\n  main until its gate.\n- `_findNeighbors`, `rebuildOwnedRows`, `_rebuildMovedRows`, `_scanColliderBounds`, `publishPose`, the collect and the\n  pack: no allocation and no generic access in their loops; `_findNeighbors`' five generic loads (`posByte`,\n  `rangeByte`, `candByte`, `gridByte`) are in its prologue, once a call."
     }
   ],
   "leads": [
