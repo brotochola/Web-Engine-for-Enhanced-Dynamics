@@ -4081,6 +4081,44 @@ the engine's row size, aligned to 64 bytes and not; if the aligned rows read fas
 to whole lines. Also whether the getter is inlined into the game's loops (E-222's graph of the demo's caller). Owner:
 logic's STEP_MS in Predator.
 
+### E-241 The LiquidFun density splat boxes three doubles per particle: 1464 KB/s in the LiquidFun demo's Pixi
+
+**Premise:** heapSampleWorkers over the LiquidFun demo (10 s after 15 s): Pixi 1569 KB/s, of which 1464 in
+`LiquidFunDensitySplat.upload` (liquidFunDensitySplat.js). Both of its per-particle loops call `this._writeInst(x, y,
+tint, alpha)`, a method over TurboFan's inlining size for one that takes doubles (E-59), so each call boxes x, y and
+alpha: about 36 bytes a particle a frame.
+**Plan:** E-222's graph of `upload` to confirm the call is left out of line; then the write takes the source arrays and
+an index (no double crosses the call), or each loop writes the row itself. Owner: Pixi's KB/s and STEP_MS in the
+LiquidFun demo; the splat's parity (the rows written) by a test.
+
+### E-242 The raycast's polygon build allocates 311 KB/s in one run and about 1 in another
+
+**Premise:** flashlightStressScene `?cone=1&lights=360&crates=320`: pre-render 342.6 KB/s, 311.1 of it in
+`_buildVisibilityPolygonsSwept`, where R-0958's samples of the same scene and query, an hour earlier, had it near 1 KB/s
+(pre-render 39 to 45 KB/s in all). A deopt that leaves the function in a lower tier, or an inlining decision that
+differs run to run, would box its doubles.
+**Plan:** three runs with `--log-deopt` and `--log-code`: the function's tier and deopts against its KB/s each run;
+E-222's sites for it when optimized. Owner: pre-render's KB/s and STEP_MS in the flashlight scene.
+
+### E-243 A loop the engine calls once a frame starts each call in a lower tier (on-stack replacement each time)
+
+**Premise:** BunnyMark's `Bunny.tickAll` (200 000 bunnies a call, plain typed-array arithmetic) allocates 599 KB/s:
+about 10 KB a call, not per bunny. A function called once a frame reaches TurboFan late (its invocations are few), so
+each call starts in Sparkplug or Maglev, boxes its doubles until the loop's back edge enters the optimized code built
+for on-stack replacement, and runs there. Every large once-a-frame loop (game `tickAll`s, the engine's own per-frame
+loops left in JS) would pay that start each frame.
+**Plan:** V8's code log for `tickAll` (its tiers, its OSR code) and the KB/s per call against the bunny count; if
+confirmed, whether the whole function reaches TurboFan later in a long run (a 2-minute sample), and what keeps such
+loops optimized from their first iteration. Owner: logic's KB/s and STEP_MS in BunnyMark.
+
+### E-244 Per-entity tick paths allocate on some calls (Boids, the flashlight walkers)
+
+**Premise:** Boids: each of four logic workers allocates about 460 KB/s in the demo's `Boid.tick` (1.5 bytes a call:
+some calls, not all); flashlightStressScene: logic's `_tickNonDecimatedOneNoBody` 263 KB/s (the walkers' tick inlined in
+the engine's per-entity loop). Boids is a gate scene: that garbage is in its logic numbers.
+**Plan:** E-222's sites for `Boid.tick` and `_tickNonDecimatedOneNoBody` with their callers; the engine side fixed in the
+engine, the demo's in the demo (public APIs). Owner: logic's KB/s in Boids and the flashlight scene.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any

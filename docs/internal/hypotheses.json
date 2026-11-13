@@ -12422,7 +12422,8 @@
       ],
       "records": [
         "R-0959",
-        "R-0960"
+        "R-0960",
+        "R-0962"
       ],
       "result": "The tool exists (summarizeTurboSites.mjs, uncommitted); a first run on flashlightStressScene found E-221."
     },
@@ -12713,7 +12714,8 @@
         "physics garbage"
       ],
       "records": [
-        "R-0960"
+        "R-0960",
+        "R-0962"
       ]
     },
     {
@@ -12840,6 +12842,103 @@
       ],
       "records": [
         "R-0961"
+      ]
+    },
+    {
+      "id": "E-241",
+      "title": "The LiquidFun density splat boxes three doubles per particle: 1464 KB/s in the LiquidFun demo's Pixi",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from E-222's heap samples, not tested",
+      "date": "2026-11-13",
+      "area": "pixi",
+      "kind": "speed",
+      "rank": 61,
+      "result": "Pixi 1569 KB/s in the LiquidFun demo, 1464 in LiquidFunDensitySplat.upload (_writeInst(x, y, tint, alpha) per particle).",
+      "next": "Confirm the call is out of line (E-222); the write takes arrays and an index, or each loop writes its row.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-241"
+      ],
+      "aliases": [
+        "liquidFunDensitySplat",
+        "_writeInst",
+        "density splat",
+        "LiquidFun garbage"
+      ],
+      "records": [
+        "R-0962"
+      ]
+    },
+    {
+      "id": "E-242",
+      "title": "The raycast's polygon build allocates 311 KB/s in one run and about 1 in another",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from E-222's heap samples, not tested",
+      "date": "2026-11-13",
+      "area": "preRender",
+      "kind": "speed",
+      "rank": 62,
+      "result": "flashlightStressScene: _buildVisibilityPolygonsSwept 311.1 KB/s; R-0958's samples of the same query had pre-render at 39 to 45 KB/s in all.",
+      "next": "Three runs with --log-deopt and --log-code: tier and deopts against KB/s per run; E-222 sites.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-242"
+      ],
+      "aliases": [
+        "_buildVisibilityPolygonsSwept",
+        "raycast garbage",
+        "deopt",
+        "run to run"
+      ],
+      "records": [
+        "R-0962"
+      ]
+    },
+    {
+      "id": "E-243",
+      "title": "A loop the engine calls once a frame starts each call in a lower tier (OSR each time): BunnyMark's tickAll 599 KB/s",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from E-222's heap samples, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 63,
+      "result": "Bunny.tickAll allocates 599 KB/s, about 10 KB a call at 200 000 bunnies: not per bunny.",
+      "next": "V8's code log for tickAll (tiers, OSR code); KB/s per call against the count; a 2-minute sample; what keeps such loops optimized from the start.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-243"
+      ],
+      "aliases": [
+        "OSR",
+        "on-stack replacement",
+        "tickAll",
+        "once a frame",
+        "tier-up"
+      ],
+      "records": [
+        "R-0962"
+      ]
+    },
+    {
+      "id": "E-244",
+      "title": "Per-entity tick paths allocate on some calls (Boids' Boid.tick 460 KB/s a logic worker; the flashlight walkers 263)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from E-222's heap samples, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 64,
+      "result": "Boids: about 460 KB/s in each of four logic workers in Boid.tick (1.5 bytes a call); flashlights: _tickNonDecimatedOneNoBody 263 KB/s.",
+      "next": "E-222 sites for both; engine side in the engine, the demo's in the demo.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-244"
+      ],
+      "aliases": [
+        "Boid.tick",
+        "_tickNonDecimatedOneNoBody",
+        "tick garbage",
+        "Boids"
+      ],
+      "records": [
+        "R-0962"
       ]
     },
     {
@@ -22686,6 +22785,15 @@
       "title": "Predator by tier: E-239 a trace artifact (plain runs are Maglev/TurboFan, waits aside); GC under 0.1 %; neighbour reads 20 % of logic (E-240)",
       "verdict": "answered",
       "text": "**Predator's CPU trace by tier: the lower-tier counts were a trace artifact; GC is small; the neighbour reads are logic's second cost.**\n2026-11-13, about 04:50 to 05:00. Two plain runs of Predator (20 s warm-up, 10 s), AC power: one with `--trace-cpu` (summarizeChromeCpuTrace over 26 s), one with `--log-code` only (with the CPU profiler on, V8 stops logging code after start-up: 64 JS events a worker). Each function's self time joined with the tier its twin run's log gives it.\n\n- **E-239 answered:** logic's time is about half TurboFan and a tenth Maglev (the rest the demo's code); spatial and particle mostly TurboFan and WASM. Maglev's large rows are waits counted as busy: Pixi `_waitForQueue` 277 ms/s, pre-render `_waitForPose` 157, physics `waitForLogic` 102, logic `beforeUpdate` (E-219's input wait) 10. Without the waits, the lower tiers hold 1 to 10 ms/s a worker. R-0960's 64-of-1706 came from the `--trace-turbo --no-concurrent-recompilation` run, whose compiles are slow: tiers are read from plain runs.\n- **E-225, first reading:** GC per worker over the 26 s is 1 to 25 ms in all (logic 18 and 10, Pixi 17, spatial 17, pre-render 15, particle 11, physics 1 to 8), under 0.1 % each.\n- **E-240, new:** in the first logic worker `get neighborCount` is 710 ms self (12.0 %) and `getNeighbor` 483 ms (8.2 %), after the demo's `findACivilianToShoot` (14.2 %): one shared-buffer read each, of rows the spatial worker wrote this frame on another core. Written down before testing.\n- Also in logic: `_tickIntervalBucket` 8.7 %, `_processBox2dCollisionCallbacks` 8.1 %, `fsm.tick` 7.0 %, `copyTypeActiveListToBuffer` 3.6 %."
+    },
+    {
+      "id": "R-0962",
+      "date": "2026-11-13",
+      "time": "05:06",
+      "timeFrom": "recorded",
+      "title": "E-222's heap samples over BunnyMark, Boids, LiquidFun and the flashlights: LiquidFun's splat 1464 KB/s, tickAll 10 KB a call, raycast 311",
+      "verdict": "note",
+      "text": "**E-222's heap samples over four more scenes: where each one's garbage is.**\n2026-11-13, 05:00 to 05:06 (the log's times). heapSampleWorkers over every worker, 10 s after 15 s each, AC power, no other bench browser.\n\n| Scene | By worker (KB/s) | The top site |\n|---|---|---|\n| BunnyMark | logic 615, Pixi 49, pre-render 24, particle 14 | the demo's `Bunny.tickAll` 599 (about 10 KB a call: E-243) |\n| Boids | four logic workers 462 to 485 each, physics 165, Pixi 71, pre-render 39 | the demo's `Boid.tick` about 460 a worker (E-244); Box2D's clock 81 (E-235) |\n| LiquidFun demo | Pixi 1569, physics 81, pre-render 42, logic 16 | `LiquidFunDensitySplat.upload` 1464 (E-241); Box2D's clock 48 |\n| flashlights `?cone=1&lights=360&crates=320` | pre-render 343, logic 279, Pixi 129, physics 80, spatial 35 | `_buildVisibilityPolygonsSwept` 311 (E-242: about 1 in R-0958's runs); logic `_tickNonDecimatedOneNoBody` 263 (E-244) |\n\nBox2D's clock (E-235) is in every scene with physics. E-236's shader plan does not show outside Predator (its meshes and graphics swap bind groups each draw). Hypotheses E-241 to E-244 written down before testing."
     }
   ],
   "leads": [
