@@ -14101,6 +14101,148 @@
         "R-0977"
       ],
       "rank": 33
+    },
+    {
+      "id": "E-277",
+      "title": "The collider fill fan passes each outset vertex through module lets (destructibleTerrain Pixi: 13.9 MB/s)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "date": "2026-11-13",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "Heap pass: destructibleTerrainScene's Pixi allocates 14.7 MB/s, 13.9 of it in `fanLocalVerts` (colliderFillBatch.js) and 318 KB/s in `packColliderFill`. `radialOutset` returns its point in the module lets `_ox`/`_oy`; inlined into the fan loop, each store of a double into a module context slot makes a heap number: six per triangle.",
+      "next": "The point in a module Float64Array (E-85, E-261's MESH_POSE), and check that writeFillTri inlines into the fan (its 17 arguments are doubles); the collider fill kernel, then destructibleTerrain's Pixi STEP_MS and its heap. It is the only module let holding a double in src/ (a grep of `^let x = <number>` there).",
+      "refs": [
+        "EXECUTION_PLAN.md#E-277"
+      ],
+      "aliases": [
+        "fanLocalVerts",
+        "radialOutset",
+        "_ox _oy",
+        "collider fill garbage"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-278",
+      "title": "rng() boxes its result when a big tick does not inline it (littleCity logic: 4.1 MB/s)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Heap pass: littleCityScene's logic allocates 6.6 MB/s, 4.1 of it in `rng` (utils.js), called twice per person per frame from `CityPerson.tick`. A function that returns a double and is not inlined boxes it; rng's bytecode carries its cold paths (a function generator, the uninitialised warning that seeds one).",
+      "next": "Move the cold paths into their own function so the fast path is a few dozen bytes, and read `--trace-turbo-inlining` on the tick; a kernel of a large tick that calls rng (heap and ns per call), then littleCity's logic STEP_MS and heap.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-278"
+      ],
+      "aliases": [
+        "rng boxing",
+        "rng inline",
+        "cityPerson tick"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-279",
+      "title": "packBox2dBodies allocates 278 KB/s in a loop with no object (burningBoxes Pixi)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "date": "2026-11-13",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "Heap pass: burningBoxesScene's Pixi allocates 902 KB/s, 278 of it in `packBox2dBodies` (box2dBodyPack.js), whose loop builds no object: PACK_OUT and the pack options are reused. The likely source is boxed doubles: `writeBody` takes 17 arguments, 13 of them doubles, called twice in the loop.",
+      "next": "`--trace-turbo-inlining` and `--trace-deopt` on the pack; if writeBody does not inline, write the body's floats in the loop (or through a module Float64Array); burningBoxes' Pixi heap and STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-279"
+      ],
+      "aliases": [
+        "packBox2dBodies",
+        "writeBody",
+        "computeLayer pack"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-280",
+      "title": "destructibleTerrain's marching squares allocate objects per cell (logic: 52 MB/s while it carves)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "date": "2026-11-13",
+      "area": "demo",
+      "kind": "speed",
+      "result": "Heap pass: destructibleTerrainScene's logic allocates 52 MB/s while terrain is carved: `cellCorners` 31.8 MB/s (four edge points, four corner objects and the result per cell), `cellSolidParts` 8.7, `stitchContours` 3.4, `extractIslands` 3.3. Three callers read only `.caseId` from cellCorners.",
+      "next": "A `cellCaseId()` that allocates nothing for the callers that read only the case, and corner and edge points from reused scratch in the rest, kept readable (it is a demo: the official API, code a reader can follow); logic's STEP_MS on the frames that carve (its maximum and p95) and the heap.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-280"
+      ],
+      "aliases": [
+        "cellCorners",
+        "cellSolidParts",
+        "worldGrid",
+        "destructible terrain garbage",
+        "extractIslands"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-281",
+      "title": "BunnyMark's tickAll allocates 1.5 MB/s in a typed-array loop",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "date": "2026-11-13",
+      "area": "demo",
+      "kind": "speed",
+      "result": "Heap pass: bunnyMarkScene's logic allocates 1.54 MB/s, 1.51 of it in `Bunny.tickAll`, a loop over typed arrays that should allocate nothing; likely a tier (interpreted or Maglev code after a deopt, or an OSR entry each frame).",
+      "next": "The sweep's deopt pass (fixed in 9d9908d6) on bunnyMark first; then `--trace-opt --trace-deopt` on tickAll; the fix where the reading points (engine if the cause is how logic calls tickAll); bunnyMark's logic STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-281"
+      ],
+      "aliases": [
+        "bunnyMark tickAll",
+        "Bunny.tickAll"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-282",
+      "title": "Collision pairs live in a Map keyed by a number (littleCity logic: 140 KB/s in Map.set)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Heap pass: littleCityScene's logic spends 140 KB/s in `Map.prototype.set` from `_applyContactBegin`: `_pairSlot` maps a pair key to its slot, and every begun contact adds an entry (the table grows and rehashes; a Cantor key over 2^31 under 32-bit ids is a heap number).",
+      "next": "An open-addressing table on typed arrays (key halves in two Uint32Arrays, slot in an Int32Array), or the Map kept with a Smi key under 16-bit ids; the contact kernel, then littleCity's and carScene's logic.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-282"
+      ],
+      "aliases": [
+        "_pairSlot",
+        "collision pair map",
+        "collisionPairKey"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-283",
+      "title": "Pre-render's collect re-enters its wasm kernel per non-sprite with ten doubles (mamushkaDig: 242 KB/s)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "date": "2026-11-13",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "Heap pass: mamushkaDigScene's pre-render allocates 342 KB/s, 242 of it in `_collectVisibleEntitiesWasm`: the kernel stops at each entity that is not a plain sprite, JS collects it, and the next call passes the camera's doubles again (zoom, offsets, bounds, alpha).",
+      "next": "The camera's doubles in the kernel's memory once a frame, integer arguments per call (one boundary call per batch, HOW_WE_MEASURE); the collect kernel with stops, then mamushkaDig's pre-render.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-283"
+      ],
+      "aliases": [
+        "_collectVisibleEntitiesWasm",
+        "collectSprites",
+        "collect boundary"
+      ],
+      "records": []
     }
   ],
   "records": [
