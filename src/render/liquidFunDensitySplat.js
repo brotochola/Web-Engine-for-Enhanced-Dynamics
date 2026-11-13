@@ -19,6 +19,12 @@ import { packLiquidFunLightSlabs } from './liquidFunLightSplat.js';
 import { ParticleComponent } from '../components/particleComponent.js';
 import { snapshotParticleFeed } from '../util/layerFeed.js';
 
+// E-241: a particle's x, y, tint and alpha reach _writeInst through this scratch, not as arguments. The method is over
+// TurboFan's inlining size for one that takes doubles, so each double argument was a heap number per particle per
+// frame (1464 KB/s of Pixi's garbage in the LiquidFun demo). The tint rides as a double: a packed colour can pass the
+// Smi range.
+const INST = new Float64Array(4);
+
 export const LF_SPLAT_FLOATS = 4;
 export const LF_SPLAT_STRIDE = LF_SPLAT_FLOATS * 4;
 
@@ -177,7 +183,11 @@ export class LiquidFunDensitySplat {
         if (baseAlpha) a *= baseAlpha[i];
         if (alphaArr) a *= alphaArr[i];
         const packed = colorArr && colorArr[i] ? colorArr[i] : (tintArr ? tintArr[i] : 0);
-        this._writeInst(xArr[i], yArr[i], packed, a);
+        INST[0] = xArr[i];
+        INST[1] = yArr[i];
+        INST[2] = packed;
+        INST[3] = a;
+        this._writeInst();
       }
     }
 
@@ -196,7 +206,11 @@ export class LiquidFunDensitySplat {
         const i = feedIdx ? feedIdx[f] : f;
         if (!active[i]) continue;
         if (cpuMask && !(cpuMask[i] & want)) continue;
-        this._writeInst(px[i], py[i], cpuTint ? cpuTint[i] : 0, cpuAlpha ? cpuAlpha[i] : 1);
+        INST[0] = px[i];
+        INST[1] = py[i];
+        INST[2] = cpuTint ? cpuTint[i] : 0;
+        INST[3] = cpuAlpha ? cpuAlpha[i] : 1;
+        this._writeInst();
       }
     }
 
@@ -213,7 +227,12 @@ export class LiquidFunDensitySplat {
     return out;
   }
 
-  _writeInst(wx, wy, tint, alphaMul) {
+  /** One instance from INST (x, y, tint, alpha), culled, tinted and packed at the next row. */
+  _writeInst() {
+    const wx = INST[0];
+    const wy = INST[1];
+    const tint = INST[2];
+    const alphaMul = INST[3];
     let sx;
     let sy;
     if (this._rot) {
@@ -246,7 +265,7 @@ export class LiquidFunDensitySplat {
         b = t & 0xff;
       }
     }
-    let a = this._intensity * (alphaMul != null ? alphaMul : 1);
+    let a = this._intensity * alphaMul;
     let ai = (a * 255 + 0.5) | 0;
     if (ai < 0) ai = 0;
     else if (ai > 255) ai = 255;
