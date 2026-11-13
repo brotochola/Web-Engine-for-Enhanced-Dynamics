@@ -13231,6 +13231,29 @@
       "records": []
     },
     {
+      "id": "E-257",
+      "title": "Physics' JS service loop allocates about 65 KB/s once Box2D's clock is quiet (serviceChainQueries, LiquidFun queries, pumpQueryWake, waitForLogic)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the heap sample after E-256, not tested",
+      "date": "2026-11-13",
+      "area": "physics",
+      "kind": "speed",
+      "rank": 76,
+      "result": "Predator, physics after E-256 (87.5 KB/s in all): serviceChainQueries 17.1, serviceLiquidFunQuery 13.1, pumpQueryWake 8.2, serviceLiquidFunExtract 7.9, gameLoop 7.3, waitForLogic 6.8, doStep 4.6 KB/s.",
+      "next": "E-222 sites of the service loop (which allocation each is: closures, boxed numbers, the wake's promises); fix the cheap ones; heap sample again.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-257"
+      ],
+      "aliases": [
+        "serviceChainQueries",
+        "pumpQueryWake",
+        "waitForLogic",
+        "serviceLiquidFunQuery",
+        "physics garbage"
+      ],
+      "records": []
+    },
+    {
       "date": "2026-11-12",
       "result": "radius/brightness/color/glow/glowLayer/glowOffsetY/elevation/castShadows/shadowRange; every demo moved, no old names. A1 draws the old pixels (0 of 921 600); A2 (falloff ending at the radius) dropped; Predator, visPoly and the scoreboard against main: no row worse (R-0936, R-0937, R-0953); bundles NEUTRAL (R-0955).",
       "records": [
