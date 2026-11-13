@@ -41,6 +41,12 @@ async function recordInWorker({ ms }) {
   let bytesBuffer = 0;
   let bytesTexture = 0;
   const bound = { program: null, vao: null, fbo: new Map(), rbo: null, unit: 0, tex: new Map(), buf: new Map() };
+  // What the uploads and queries were: calls and bytes per texture size and format, per buffer object, per pname.
+  const detail = new Map();
+  const ids = new WeakMap();
+  let nextId = 1;
+  const idOf = (o) => { if (!o) return 0; let i = ids.get(o); if (!i) ids.set(o, (i = nextId++)); return i; };
+  const note = (key, bytes) => { const d = detail.get(key) || { calls: 0, bytes: 0 }; d.calls++; d.bytes += bytes; detail.set(key, d); };
   const state = new Map(); // a state call's last arguments, by name and first argument
   const uniformLast = new Map();
   const bpp = (format, type) => {
@@ -71,6 +77,7 @@ async function recordInWorker({ ms }) {
     if (name === 'drawElements' || name === 'drawArrays') hook = () => { draws++; instances++; };
     else if (name === 'drawElementsInstanced') hook = (a) => { draws++; instances += a[4] | 0; };
     else if (name === 'drawArraysInstanced') hook = (a) => { draws++; instances += a[3] | 0; };
+    else if (name === 'getParameter' || name === 'isEnabled') hook = (a) => note(`${name} 0x${(a[0] >>> 0).toString(16)}`, 0);
     else if (name === 'useProgram') hook = (a) => { if (bound.program === a[0]) redo(name); bound.program = a[0]; };
     else if (name === 'bindVertexArray') hook = (a) => { if (bound.vao === a[0]) redo(name); bound.vao = a[0]; };
     else if (name === 'activeTexture') hook = (a) => { if (bound.unit === a[0]) redo(name); bound.unit = a[0]; };
@@ -78,15 +85,18 @@ async function recordInWorker({ ms }) {
     else if (name === 'bindBuffer') hook = (a) => { if (bound.buf.get(a[0]) === a[1]) redo(name); bound.buf.set(a[0], a[1]); };
     else if (name === 'bindFramebuffer') hook = (a) => { if (bound.fbo.get(a[0]) === a[1]) redo(name); bound.fbo.set(a[0], a[1]); };
     else if (name === 'bindRenderbuffer') hook = (a) => { if (bound.rbo === a[1]) redo(name); bound.rbo = a[1]; };
-    else if (name === 'bufferData') hook = (a) => { bytesBuffer += typeof a[1] === 'number' ? a[1] : viewBytes(a[1]); };
-    else if (name === 'bufferSubData') hook = (a) => { bytesBuffer += a[4] ? (a[4] | 0) * (a[2].BYTES_PER_ELEMENT || 1) : viewBytes(a[2]); };
+    else if (name === 'bufferData') hook = (a) => { const b = typeof a[1] === 'number' ? a[1] : viewBytes(a[1]); bytesBuffer += b; note(`bufferData buffer#${idOf(bound.buf.get(a[0]))} target ${a[0]}`, b); };
+    else if (name === 'bufferSubData') hook = (a) => { const b = a[4] ? (a[4] | 0) * (a[2].BYTES_PER_ELEMENT || 1) : viewBytes(a[2]); bytesBuffer += b; note(`bufferSubData buffer#${idOf(bound.buf.get(a[0]))} target ${a[0]}`, b); };
     else if (name === 'texImage2D' || name === 'texSubImage2D' || name === 'texImage3D' || name === 'texSubImage3D') {
       hook = (a) => {
         const view = a.find((x) => x && typeof x.byteLength === 'number');
+        const before = bytesTexture;
         if (view) bytesTexture += view.byteLength;
         else if (name === 'texSubImage2D' && typeof a[4] === 'number' && typeof a[5] === 'number') bytesTexture += a[4] * a[5] * bpp(a[6], a[7]);
         else if (name === 'texImage2D' && typeof a[3] === 'number' && typeof a[4] === 'number') bytesTexture += a[3] * a[4] * bpp(a[6], a[7]);
         else if (a[a.length - 1] && a[a.length - 1].width) bytesTexture += a[a.length - 1].width * a[a.length - 1].height * 4;
+        const dims = name === 'texSubImage2D' ? `${a[4]}x${a[5]}` : name === 'texImage2D' ? `${a[3]}x${a[4]}` : '';
+        note(`${name} texture#${idOf(bound.tex.get(`${bound.unit}:${a[0]}`))} ${dims} format ${a[name === 'texSubImage2D' ? 6 : 6]} type ${a[7]}`, bytesTexture - before);
       };
     } else if (name === 'uniform1i' || name === 'uniform1f') {
       hook = (a) => { const k = a[0]; if (k && uniformLast.get(k) === a[1]) redo(name); uniformLast.set(k, a[1]); };
@@ -123,6 +133,9 @@ async function recordInWorker({ ms }) {
       syncCalls: per(['readPixels', 'getError', 'finish', 'clientWaitSync', 'getQueryParameter', 'getBufferSubData', 'getParameter'].reduce((s, n) => s + (counts[n] || 0), 0)),
     },
     top,
+    detail: [...detail]
+      .map(([key, d]) => ({ key, perFrame: per(d.calls), kbPerFrame: Math.round((d.bytes / 1024 / Math.max(1, frames)) * 10) / 10 }))
+      .sort((x, y) => y.kbPerFrame - x.kbPerFrame || y.perFrame - x.perFrame),
   };
 }
 
@@ -168,6 +181,8 @@ async function main() {
     `${p.redundant} redundant, ${(p.bytesBuffer / 1024).toFixed(1)} KB buffers, ${(p.bytesTexture / 1024).toFixed(1)} KB textures, ` +
     `${p.syncCalls} calls that wait for the GPU; timer queries: ${r.timerQuery ? 'yes' : 'no'}`);
   for (const row of r.top.slice(0, 30)) console.log(`  ${String(row.perFrame).padStart(7)}  ${row.name}${row.redundantPerFrame ? `  (${row.redundantPerFrame} redundant)` : ''}`);
+  console.log('uploads and queries, per frame:');
+  for (const row of r.detail.slice(0, 20)) console.log(`  ${String(row.perFrame).padStart(6)} calls ${String(row.kbPerFrame).padStart(7)} KB  ${row.key}`);
   if (args.output) fs.writeFileSync(String(args.output), JSON.stringify(r, null, 1));
 }
 
