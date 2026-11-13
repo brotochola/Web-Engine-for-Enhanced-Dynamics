@@ -59,7 +59,6 @@ export class BurningBox extends GameObject {
     this.collider.radius = 0;
     this.collider.shapeType = ShapeType.Box;
     this.collider.friction = config.friction ?? 0.6;
-    this.collider.visualRange = Math.sqrt(width * width + height * height) / 2 + 200;
     this.rigidBody.linearDamping = 0.01;
 
     const origW = this.spriteRenderer.originalWidth || 100;

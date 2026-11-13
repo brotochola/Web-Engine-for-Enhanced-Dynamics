@@ -46,7 +46,6 @@ export class House extends GameObject {
       this.collider.shapeType = ShapeType.Circle;
       this.collider.radius = c.r || 3;
     }
-    this.collider.visualRange = 260;
     if (c.sp && c.sp.length >= 12) {
       const points = Float32Array.from(c.sp);
       for (let q = 2; q < points.length; q += 3) points[q] *= HEIGHT_PX;
@@ -91,7 +90,6 @@ export class StreetProp extends GameObject {
     this.setScale(c.fl ? -e : e, e);
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = Math.max(1.5, c.r);
-    this.collider.visualRange = 200;
     this.shadowCaster.heightMultiplier = 0.8;
     const L = this.lightEmitter;
     const top = this.spriteRenderer.originalHeight * anchor[1] * e;
