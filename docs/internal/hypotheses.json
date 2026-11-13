@@ -13435,15 +13435,15 @@
     },
     {
       "id": "E-266",
-      "title": "Entities without a body give the spatial grid no mover list: a scene where nothing moves rebuilds every row every frame (stationarySpatialWide: rebuildOwnedRows 51 % of spatial)",
+      "title": "A scene with physics disabled gives the spatial grid no mover list: it rebuilds every row every frame though nothing moves (stationarySpatialWide: rebuildOwnedRows 51 % of spatial)",
       "status": "open",
       "statusText": "proposed 2026-11-13 from the CPU sweep, not tested",
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
       "rank": 3,
-      "result": "CPU sweep (2026-11-13): stationarySpatialWideScene's spatial workers spend 127 and 134 ms/s (48 and 51 %) in rebuildOwnedRows, the full rebuild; its 70 000 entities have a Collider and a SpriteRenderer but no RigidBody, so physics publishes no moved bodies and E-126's movers path (rewrite only the rows of what moved) cannot run. Boids 28 to 32 % (bodies, but most move).",
-      "next": "A mover list for bodiless collider entities: spatial compares their x/y (and extent) against the latched pose in a scan, skips the frame when none changed and feeds the changed ones to _rebuildMovedRows; or logic's position setters publish them as physics does. spatialGridMoversMicrobench with bodiless entities, then stationarySpatialWide's spatial STEP_MS.",
+      "result": "CPU sweep (2026-11-13): stationarySpatialWideScene (physics.enabled false) spends 48 and 51 % of its two spatial workers in rebuildOwnedRows, the full rebuild: _rebuildGrid takes E-126's movers path only from physics' mover list, and with no physics worker there is none. With physics on, collider-only entities get an implicit static body and a setter's move is published as a teleport, so the path sees them. Grid kernel (--no-physics, 20 000 entities, nothing moving): the full rebuild every frame, ~2 400 ops/s, against ~7.6 M ops/s on the movers path with physics publishing an empty list.",
+      "next": "A mover source with physics off: logic's position setters (or the spatial worker's own pose scan against the latched poses) feed _rebuildMovedRows, a frame with no move costing nothing; the grid kernel --no-physics, then stationarySpatialWide's spatial STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-266"
       ],
