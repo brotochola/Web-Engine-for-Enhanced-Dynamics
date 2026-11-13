@@ -12425,7 +12425,8 @@
         "R-0960",
         "R-0962",
         "R-0963",
-        "R-0965"
+        "R-0965",
+        "R-0980"
       ],
       "result": "The tool exists (summarizeTurboSites.mjs, uncommitted); a first run on flashlightStressScene found E-221."
     },
@@ -13111,7 +13112,8 @@
       "records": [
         "R-0966",
         "R-0967",
-        "R-0971"
+        "R-0971",
+        "R-0980"
       ]
     },
     {
@@ -14121,7 +14123,9 @@
         "_ox _oy",
         "collider fill garbage"
       ],
-      "records": []
+      "records": [
+        "R-0980"
+      ]
     },
     {
       "id": "E-278",
@@ -14141,7 +14145,9 @@
         "rng inline",
         "cityPerson tick"
       ],
-      "records": []
+      "records": [
+        "R-0980"
+      ]
     },
     {
       "id": "E-279",
@@ -14161,7 +14167,9 @@
         "writeBody",
         "computeLayer pack"
       ],
-      "records": []
+      "records": [
+        "R-0980"
+      ]
     },
     {
       "id": "E-280",
@@ -14183,7 +14191,9 @@
         "destructible terrain garbage",
         "extractIslands"
       ],
-      "records": []
+      "records": [
+        "R-0980"
+      ]
     },
     {
       "id": "E-281",
@@ -14202,7 +14212,9 @@
         "bunnyMark tickAll",
         "Bunny.tickAll"
       ],
-      "records": []
+      "records": [
+        "R-0980"
+      ]
     },
     {
       "id": "E-282",
@@ -14222,7 +14234,9 @@
         "collision pair map",
         "collisionPairKey"
       ],
-      "records": []
+      "records": [
+        "R-0980"
+      ]
     },
     {
       "id": "E-283",
@@ -14242,7 +14256,9 @@
         "collectSprites",
         "collect boundary"
       ],
-      "records": []
+      "records": [
+        "R-0980"
+      ]
     },
     {
       "id": "E-284",
@@ -14262,7 +14278,9 @@
         "bullet collect garbage",
         "lastKey"
       ],
-      "records": []
+      "records": [
+        "R-0980"
+      ]
     },
     {
       "id": "E-285",
@@ -14282,7 +14300,9 @@
         "soundManager claim closure",
         "audio garbage"
       ],
-      "records": []
+      "records": [
+        "R-0980"
+      ]
     },
     {
       "id": "E-286",
@@ -14303,7 +14323,9 @@
         "spawn config object",
         "options object allocation"
       ],
-      "records": []
+      "records": [
+        "R-0980"
+      ]
     }
   ],
   "records": [
@@ -23922,6 +23944,15 @@
       "commits": [
         "60a43855"
       ]
+    },
+    {
+      "id": "R-0980",
+      "date": "2026-11-13",
+      "time": "17:48",
+      "timeFrom": "recorded",
+      "title": "The harvest's heap and deopt passes over all 65 scenes: E-277 to E-286 written, no new steady deopt loop",
+      "verdict": "note",
+      "text": "**The harvest's heap and deopt passes over all 65 scenes: ten new rows (E-277 to E-286), no new steady deopt loop.**\n2026-11-13, heap pass 16:29 to 17:06, deopt pass 17:08 to 17:48 (`profileSceneSweep.mjs --pass heap|deopt --set all`,\nheaded, from source, detailed stats off; the deopt pass with 9d9908d6's fix, so V8 logs its deopts). No timing: these\npasses say where garbage and deopts come from, not STEP_MS.\n\n**Heap, by worker (KB/s, src/ and demos/, vendor apart).** The engine's largest:\n- destructibleTerrain's Pixi 13 900 in `fanLocalVerts`, planetPhysics' 3 230 in `packColliderFill` (E-277: module lets\n  and double arguments; the only module let holding a double in src/).\n- bulletStress' pre-render 7 975 in `collectVisibleBullets` (E-284: a double carried per bullet).\n- audioStorm's logic 7 323 in `SoundManager._writeSlotListed` (E-285: a closure per play).\n- littleCity's logic 4 182 in `rng`, particleIntegrate's 1 397 in `randomRange` (E-278).\n- burningBoxes' Pixi 278 in `packBox2dBodies` (E-279), mamushkaDig's pre-render 242 in the collect (E-283), littleCity's\n  logic 140 in the collision pair Map (E-282).\n- The stress drivers' calls with an options literal: `BulletPool.spawn` 1 900 a logic worker, `Decal.stamp` 4 700 to\n  4 900, spawnStorm 2 100 (E-286).\n- Demo code: destructibleTerrain's logic 52 MB/s and planetPhysics' 35.5 MB/s while terrain is carved (E-280, the shared\n  worldGrid's marching squares), bunnyMark's `tickAll` 1 507 in a typed-array loop (E-281), littleCity's ticks, Boids'\n  `boid.tick` ~475 a worker (E-244).\n\n**Deopts, steady state (after warm-up), not vendor.** Only E-251's pattern (TurboFan OSR code re-entered each frame, its\ntail compiled without feedback): `publishPose`'s `Atomics.load` after its loop (`weedjsPost.js:610`, 150 in\nadobeAnimate, 66 in ballsHeavy, 5 in Boids), `publishMovedBodies` (`box2dMovedBodiesImpl.js:186`, 93 in Balls, 27 in\nballsHeavy), the spawn batch (`logicWorker.js:871/882`, 111 and 113 in Predator); and a demo's `mamushkaPack.js:12`\n(exit from an OSR'd inner loop, 78). The megamorphic ICs counted as steady (`component.js:114`, 78 to 231 a scene, a\nfixed number) are workers initialising late, not per-frame code. E-251's kernel had one variant never proposed: 400 short\ncalls before the first long one gave a normal TurboFan compile with the tail's feedback, as fast as the inline form;\nthese functions publish (frames, Atomics), so a dry run at init needs a mode of their own, for a gain of about 20 tails a\nsecond in the interpreter. Not written as a row.\n\n**Also from the reading:** E-269's route (the upload straight from the shared rows) is the one E-123 measured and left\n(R-0563: the other workers paid about 6 %); its row now says so. E-145 (Adobe on the GPU) is ranked 6 in Wave 14, but the\nowner keeps Adobe out for now (2026-10-29): it moves to the end of the wave when the wave's table is rebuilt."
     }
   ],
   "leads": [
