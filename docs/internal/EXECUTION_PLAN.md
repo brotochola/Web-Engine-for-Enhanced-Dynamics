@@ -4005,6 +4005,9 @@ batch per frame. Other per-frame uniform writers likely do the same.
 through a typed view kept per batch (Pixi's `uniforms` hold Float32Arrays for vectors) or a monomorphic setter per
 shader. Owner: Pixi's KB/s and the renderer's STEP_MS.
 
+**Also (R-0965):** `_applyLightingViewport` writes the lighting shader's uniforms the same way: seven generic inline-cache
+calls and the inverse resolution boxed, once a frame (flashlightStressScene's `updateLighting`).
+
 ### E-234 Light batch objects change shape after they are made (map migrations each frame)
 
 **Premise:** `_finishLightBatch` reads `batch.geometry`, `batch.vbuf`, `batch.cbuf` behind `TryMigrateInstance` checks:
@@ -4048,6 +4051,10 @@ Owner: Pixi's KB/s and STEP_MS in Predator; E-148's parity (the same binds, the 
 allocates 37 KB/s: a new entry (or a new key object) per contact that begins.
 **Plan:** read `_applyContactBegin`'s collection; a typed or pooled structure for the contact pairs if it is one per
 contact. Owner: logic's KB/s and STEP_MS in Predator.
+
+**The site (R-0965):** `_onContactRingEvent` inlines `_applyContactBegin`/`_removePairSlot`/`_removeForeignSlot`, whose
+`this._pairSlot.set(collisionPairKey(minE, maxE), ...)` and `.delete(key)` are the allocation sites: a Map keyed by
+the packed pair, which past the Smi range is a heap number each time.
 
 ### E-238 The particle emit path from game code allocates about 30 KB/s in Predator's logic
 
@@ -4093,6 +4100,9 @@ alpha: about 36 bytes a particle a frame.
 **Plan:** E-222's graph of `upload` to confirm the call is left out of line; then the write takes the source arrays and
 an index (no double crosses the call), or each loop writes the row itself. Owner: Pixi's KB/s and STEP_MS in the
 LiquidFun demo; the splat's parity (the rows written) by a test.
+
+**Confirmed in the graph (R-0965):** line 180, `this._writeInst(xArr[i], yArr[i], packed, a)`, holds 8 allocation sites
+and 2 calls left out of line in the LiquidFun demo's trace.
 
 ### E-242 The raycast's polygon build allocates 311 KB/s in one run and about 1 in another
 
@@ -4161,6 +4171,25 @@ of `audio.maxSlots` slots with `Atomics.load` (2048 in Predator): 2.6 ms/s of th
 dispatches input: its frame is E-219's latency.
 **Plan:** the active count kept by the worklet (one word it updates) or read only when `scene.audioMetrics` is read;
 `poll` writing a disconnected pad once. Owner: the main thread's self ms in Predator's trace.
+
+### E-249 `this._hasComponents.X` is a megamorphic load in per-entity API calls
+
+**Premise:** `_hasComponents` is an object whose keys differ per entity class, so a read of
+`this._hasComponents.SpriteRenderer` in `setAnimation`, `setAnimationState` and `setScale` is a generic inline-cache
+call (`LoadWithVector` in Predator's final graphs), each time game code calls them for any entity. The same read guards
+`_makeComponent` and other accessors.
+**Plan:** count the `_hasComponents` reads in hot paths; a kernel of `setAnimation` over several entity classes against
+the same with a per-class bit mask (an integer on the class, tested with `&`) or a fixed-shape flags object with every
+component's key; then the change if it pays. Owner: logic's STEP_MS in Predator (its persons change animation often).
+
+### E-250 The spatial worker changes shape after it starts (a map migration in `_findNeighbors`)
+
+**Premise:** Predator's final graph of `_findNeighbors` checks `TryMigrateInstance` twice at
+`this.cellsCheckedThisFrame += g.gather(...)`: the worker object's map was deprecated after construction (a field
+added later or one whose representation changed). workerShape.test.js enforces the constructor's fields for pre-render
+and Pixi only.
+**Plan:** workerShape's check run on the spatial, particle and logic workers; each field declared in the constructor
+with its final representation. Owner: hygiene (the spatial worker's STEP_MS not 3 % worse); the migration sites gone.
 
 ## Not doing (read the log first)
 

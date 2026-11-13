@@ -12424,7 +12424,8 @@
         "R-0959",
         "R-0960",
         "R-0962",
-        "R-0963"
+        "R-0963",
+        "R-0965"
       ],
       "result": "The tool exists (summarizeTurboSites.mjs, uncommitted); a first run on flashlightStressScene found E-221."
     },
@@ -12644,7 +12645,9 @@
         "imported binding",
         "module import"
       ],
-      "records": []
+      "records": [
+        "R-0965"
+      ]
     },
     {
       "id": "E-233",
@@ -12655,7 +12658,7 @@
       "area": "pixi",
       "kind": "speed",
       "rank": 54,
-      "result": "LoadWithVector, StoreWithVector and an Allocate (the zoom boxed) per light batch per frame in the final graph.",
+      "result": "LoadWithVector, StoreWithVector and an Allocate (the zoom boxed) per light batch per frame in the final graph. Also _applyLightingViewport: seven generic IC calls and a boxed inverse resolution per frame.",
       "next": "All LoadWithVector/StoreWithVector left in hot functions (E-222); uniforms through a kept typed view or a monomorphic setter.",
       "refs": [
         "EXECUTION_PLAN.md#E-233"
@@ -12668,7 +12671,9 @@
         "_stampLightCamera",
         "generic IC"
       ],
-      "records": []
+      "records": [
+        "R-0965"
+      ]
     },
     {
       "id": "E-234",
@@ -12755,7 +12760,7 @@
       "area": "logic",
       "kind": "speed",
       "rank": 58,
-      "result": "set under _applyContactBegin, 37 KB/s in each logic worker.",
+      "result": "set under _applyContactBegin, 37 KB/s in each logic worker. The sites: _pairSlot.set/delete keyed by collisionPairKey (a heap number past the Smi range).",
       "next": "Read the collection; a typed or pooled structure if it is one entry per contact.",
       "refs": [
         "EXECUTION_PLAN.md#E-237"
@@ -12767,7 +12772,8 @@
         "logic garbage"
       ],
       "records": [
-        "R-0960"
+        "R-0960",
+        "R-0965"
       ]
     },
     {
@@ -12855,7 +12861,7 @@
       "area": "pixi",
       "kind": "speed",
       "rank": 61,
-      "result": "Pixi 1569 KB/s in the LiquidFun demo, 1464 in LiquidFunDensitySplat.upload (_writeInst(x, y, tint, alpha) per particle).",
+      "result": "Pixi 1569 KB/s in the LiquidFun demo, 1464 in LiquidFunDensitySplat.upload (_writeInst(x, y, tint, alpha) per particle). Confirmed in the graph: line 180 holds 8 allocation sites and 2 calls left out of line.",
       "next": "Confirm the call is out of line (E-222); the write takes arrays and an index, or each loop writes its row.",
       "refs": [
         "EXECUTION_PLAN.md#E-241"
@@ -12867,7 +12873,8 @@
         "LiquidFun garbage"
       ],
       "records": [
-        "R-0962"
+        "R-0962",
+        "R-0965"
       ]
     },
     {
@@ -12918,7 +12925,8 @@
       ],
       "records": [
         "R-0962",
-        "R-0964"
+        "R-0964",
+        "R-0965"
       ]
     },
     {
@@ -13037,6 +13045,55 @@
       ],
       "records": [
         "R-0963"
+      ]
+    },
+    {
+      "id": "E-249",
+      "title": "this._hasComponents.X is a megamorphic load in per-entity API calls (setAnimation, setScale)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from E-222's sites, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 69,
+      "result": "LoadWithVector at _hasComponents.SpriteRenderer in setAnimation, setAnimationState and setScale (Predator's final graphs).",
+      "next": "A kernel over several entity classes: the per-class object against a bit mask or a fixed-shape flags object.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-249"
+      ],
+      "aliases": [
+        "_hasComponents",
+        "megamorphic",
+        "setAnimation",
+        "setScale",
+        "component flags"
+      ],
+      "records": [
+        "R-0965"
+      ]
+    },
+    {
+      "id": "E-250",
+      "title": "The spatial worker changes shape after it starts (TryMigrateInstance in _findNeighbors)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from E-222's sites, not tested",
+      "date": "2026-11-13",
+      "area": "spatial",
+      "kind": "bug",
+      "rank": 70,
+      "result": "TryMigrateInstance x2 at this.cellsCheckedThisFrame in _findNeighbors (Predator).",
+      "next": "workerShape's check on spatial, particle and logic; every field declared in the constructor.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-250"
+      ],
+      "aliases": [
+        "workerShape",
+        "TryMigrateInstance",
+        "spatial worker fields",
+        "map deprecation"
+      ],
+      "records": [
+        "R-0965"
       ]
     },
     {
@@ -22910,6 +22967,15 @@
       "title": "E-243's evidence grows: Predator's spatial 311 KB/s in one sample (220 in _rebuildMovedRows, Math.fround called), 7 in another",
       "verdict": "note",
       "text": "2026-11-13, Predator's heap sample of the E-222 captures (12 s after 15 s): spatial 311.2 KB/s, _rebuildMovedRows 220.5, _rebuildOwnedRowsLatched 68.3, fround 9.2 (called from both: unoptimized code); R-0960's sample of the same scene had spatial at 7.2. With E-242 (the raycast, 311 vs about 1) and BunnyMark's tickAll (10 KB a call), the once-a-frame loops are below TurboFan for part of a run. Hypothesis, before testing: whole-function TurboFan after about 3000 calls (about 50 s at 60 a second), Maglev with OSR before; a sitting's 10 to 20 s warm-up would measure that. E-243 ranked first."
+    },
+    {
+      "id": "R-0965",
+      "date": "2026-11-13",
+      "time": "05:11",
+      "timeFrom": "recorded",
+      "title": "E-222's TurboFan sites over five scenes, read against the heap samples: real sites, lower-tier allocation, sites that never run",
+      "verdict": "note",
+      "text": "**E-222's TurboFan sites over five scenes, read function by function.**\n2026-11-13, 05:10 to 05:30 (the captures' log). Each scene: `--trace-turbo --no-concurrent-recompilation --log-code`, 5 s after 20 s, summarized against its own heap sample, raw traces removed.\n\n| Scene | Engine functions in TurboFan | alloc | ic | migrate | tdz | calls |\n|---|---|---|---|---|---|---|\n| Predator | 73 | 60 | 8 | 15 | 200 | 38 |\n| flashlights | 32 | 81 | 19 | 13 | 89 | 41 |\n| BunnyMark | 30 | 36 | 2 | 0 | 93 | 21 |\n| Boids | 58 | 82 | 2 | 0 | 223 | 32 |\n| LiquidFun | 16 | 12 | 0 | 2 | 13 | 8 |\n\nRead against the heap samples:\n- Real allocation sites: LiquidFun's splat (line 180, 8 sites: E-241 confirmed), Box2D's clock (E-235), the contact Map keyed by the packed pair (E-237's sites), Pixi's uniform writers (`_stampLightCamera`, `_applyLightingViewport`: E-233), `rng`'s boxed return where its caller does not inline it (E-238).\n- Large KB/s with no matching site in TurboFan code: the raycast's polygon build, spatial's row rebuilds, BunnyMark's tickAll: their allocation is from lower-tier code (E-243).\n- Sites that never run: integer slow paths (`mergeSortPrefix`, `getCellRange`, the free lists' pops), `checkRotCS` behind its assertion flag, `_makeComponent` behind the component getters' cache, `fsm.tick`'s `dt` (no KB/s).\n- Generic ICs on paths that run: `_hasComponents.X` in `setAnimation`/`setScale` (E-249); the FSM's `onExit`/`onEnter` on transitions (each state its own shape; transitions only).\n- Map migrations: the light batch objects (E-234), the spatial worker itself in `_findNeighbors` (E-250), particle configs in `resolveParticleOp` (E-238).\n- TDZ checks: 13 to 223 a scene, mostly on imported component classes and constants (E-232: a kernel decides whether they cost).\n\nWritten down before testing: E-249, E-250, and details for E-233, E-237, E-241."
     }
   ],
   "leads": [
