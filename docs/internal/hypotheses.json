@@ -13258,14 +13258,12 @@
     {
       "id": "E-258",
       "title": "Pixi uploads about 860 KB of instance data a frame in Predator: every row, changed or not (glFrameRecorder)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from glFrameRecorder, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13 from the record: E-82's design",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 77,
-      "result": "Predator, per frame: one bufferSubData of 374 KB (buffer 4), one of 195 KB (buffer 6), 108 + 27 KB on two alternating pairs; 860 KB/frame, about 52 MB/s, with 33 000 instances in 27 draws.",
-      "next": "Which batch each buffer is (sprites, decorations, shadows); the share of rows unchanged since the last frame (static scenery, keyed decorations E-188); upload changed ranges only, or keep static rows in a buffer of their own. Measure Pixi STEP_MS and the GPU process.",
+      "result": "The 374 KB a frame is E-82's pose stream: 24 B for each of about 16 000 visible rows (statics go up only when they change). Keeping static rows in place was tried twice and cost more (\"Fixed slot, only x and y\", \"Pose in a separate buffer\", both dropped). Nothing new to try from this reading.",
       "refs": [
         "EXECUTION_PLAN.md#E-258"
       ],
