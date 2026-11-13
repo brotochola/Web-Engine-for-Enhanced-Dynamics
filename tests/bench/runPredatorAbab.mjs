@@ -36,6 +36,10 @@
  * directory, the runtime switch the only difference (`--vs HEAD --query-a wasmOff=particleIntegrateF32` times the
  * double integrate against the float32 one).
  *
+ * --js-flags-a <flags>, --js-flags-b <flags>: V8 flags for one side (E-243: `--vs HEAD --js-flags-b --no-maglev` times
+ * the same code with and without Maglev). Both sides then run the installed Chrome (the bench runs a side with V8 flags
+ * in Playwright's Chromium otherwise), and like --query-a/-b they need --vs (one build).
+ *
  * Verdict per kind: median of the paired deltas (B−A)/A. REGRESSION if any
  * kind is ≥ +3 % and its cv is ≤ 10 % (or it is the owner kind), if the frames
  * the page presents (main-thread FPS) drop ≥ 3 % in ≥ 75 % of the pairs, or a
@@ -325,6 +329,13 @@ export function predatorMetrics(report) {
 }
 
 /** `--query` with one side's parameters on top: a key the side names replaces the shared one. */
+/** The argument after `flag` on the command line, as typed ("" when absent): V8 flags start with --. */
+function rawArgValue(flag) {
+  const argv = process.argv;
+  const at = argv.indexOf(flag);
+  return at >= 0 && at + 1 < argv.length ? String(argv[at + 1]).trim() : '';
+}
+
 export function sideQuery(shared, side) {
   const base = String(shared || '').replace(/^\?/, '');
   if (!side) return base;
@@ -702,6 +713,10 @@ async function main() {
     // The query each side runs with (--query plus --query-a or --query-b).
     queryA: sideQuery(typeof args.query === 'string' ? args.query : '', typeof args['query-a'] === 'string' ? args['query-a'] : ''),
     queryB: sideQuery(typeof args.query === 'string' ? args.query : '', typeof args['query-b'] === 'string' ? args['query-b'] : ''),
+    // V8 flags for one side (--js-flags-a / --js-flags-b).
+    // Read verbatim from argv: parseArgs takes a value that starts with -- for the next flag.
+    jsFlagsA: rawArgValue('--js-flags-a'),
+    jsFlagsB: rawArgValue('--js-flags-b'),
     // Canvas size, forwarded as extra args rather than as new options.
     //
     // `runIntegratedOnce` already accepts `extraArgs` and forwards them verbatim,
@@ -765,10 +780,11 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   // --hyp-rev <rev>: B from its own worktree, apart from the main folder (see the header).
   const hypSide = args['hyp-rev'] ? ensureRevWorktree(String(args['hyp-rev']), { tag: 'b', srcOnly: !fullRev }) : null;
   // Per-side queries without --hyp-rev: B runs A's worktree, so the two sides are one build.
-  const perSide = opts.queryA !== opts.queryB;
+  const perSide = opts.queryA !== opts.queryB || opts.jsFlagsA !== opts.jsFlagsB;
   if (perSide && !hypSide && !args.vs) {
-    throw new Error('--query-a/--query-b compare one build: pass --vs <rev> (both sides run its worktree), or --hyp-rev too.');
+    throw new Error('--query-a/--query-b and --js-flags-a/-b compare one build: pass --vs <rev> (both sides run its worktree), or --hyp-rev too.');
   }
+  if (opts.jsFlagsA || opts.jsFlagsB) console.log(`side A V8 flags "${opts.jsFlagsA}", side B V8 flags "${opts.jsFlagsB}" (both in the installed Chrome)`);
   const hypRoot = hypSide ? hypSide.root : perSide ? baseline.root : repoRoot;
   if (hypSide) console.log(`hypothesis worktree ${hypSide.root}`);
   // E-210: the save each side starts from, in its own tree (the page fetches it from the tree it is served from).
@@ -812,7 +828,11 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     for (const [side, root] of order) {
       console.log(`\n======== ${name} pair ${p + 1}/${first + nPairs} side ${side} ========`);
       const query = side === 'A' ? opts.queryA : opts.queryB;
-      const res = runIntegratedWithRetry(scene, path.join(outDir, `${side}-p${p}.json`), { ...opts, root, query });
+      const sideFlags = side === 'A' ? opts.jsFlagsA : opts.jsFlagsB;
+      const extraArgs = opts.jsFlagsA || opts.jsFlagsB
+        ? [...opts.extraArgs, ...(sideFlags ? ['--js-flags', sideFlags] : []), '--channel', 'chrome']
+        : opts.extraArgs;
+      const res = runIntegratedWithRetry(scene, path.join(outDir, `${side}-p${p}.json`), { ...opts, root, query, extraArgs });
       if (!res.ok) throw new Error(`${side} p${p}: ${res.error}`);
       pair[side] = predatorMetrics(res.report);
     }
