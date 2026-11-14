@@ -4818,6 +4818,13 @@ thread), b2Body_GetAngularVelocity and b2ExportBodyVelocity (5.4 ms/s) for every
 for LiquidFun's coupling (E-182). Owner: physics.
 **Kept 2026-11-14 (R-1021), kernel claim:** skipped without LiquidFun (Box2D `6cbd009`, WeedJS `92bae6a0`): bodyAccelerationsMicrobench
 +2 to +13 %, a 3000-box pile bit-identical, ballsHeavy physics 8 pairs paired -1.6 % (neutral).
+### E-308 The step's export rewrites an unchanged rotation
+
+**Premise (Predator crowd 2.5):** the finalize exports ~19 000 moved bodies a step, each with an atan2 and writes of its
+angle, rotC and rotS; civilians and soldiers have a fixed rotation, so the writes repeat what the columns hold and take
+the lines from the readers' caches (pre-render, logic). Owner: physics.
+**Kept 2026-11-14 (R-1036):** Box2D f053121, WeedJS 6cdaad9c: only the step's export skips (commands still write all).
+Predator crowd=2.5, 4 pairs: physics -3.2 % (0/4 worse), logic -10.1 %, preRender -7.8 %; pile bit-identical; kernel tie.
 ### E-307 The gather publishes the rows it rebuilds
 
 **Premise (Predator at crowd 2.5, spatial one worker at ~15 ms):** publish_batch reads each rebuilt row's candidates and their
