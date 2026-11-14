@@ -14842,7 +14842,7 @@
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "result": "kept: contactsMicrobench --no-stays +46 % contact / +36 % dense, checksums equal; Predator gate clean (physics -3.8 %), logic 4.377 -> 3.823 ms (-12.7 %, unjudged).",
+      "result": "kept (kernel claim): contactsMicrobench --no-stays +46 % contact / +36 % dense, checksums equal; Predator gate clean. Its gate read logic -12.7 % unjudged, but the night total (R-1005) reads logic -1.9 %: in Predator the gain is within noise.",
       "next": "Split the function's time between the ring drain and the walk, count pairs walked and removed per frame; if the walk weighs, skip it when no type listens to stay and nothing was despawned or rebuilt since the last walk, keeping `frameCollisions` exact for its readers.",
       "refs": [
         "EXECUTION_PLAN.md#E-302"
