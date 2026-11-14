@@ -12,6 +12,10 @@ import WEED from '/src/index.js';
 
 const { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } = WEED;
 
+// ?water=f: the water block's height and LiquidFun's maxCount times f (1 by default), the scene's load knob: physics
+// runs ~5.5 ms at 1, under the 6 ms floor of a speed verdict.
+const WATER = Number(WEED.params?.get('water')) > 0 ? Number(WEED.params.get('water')) : 1;
+
 export class LiquidFunStressScene extends WEED.Scene {
   static config = {
     worldWidth: 6000,
@@ -41,7 +45,7 @@ export class LiquidFunStressScene extends WEED.Scene {
       noLimitFPS: false,
       gravity: { x: 0, y: 980 },
       sleeping: false,
-      liquidFun: { enabled: true, radius: 8, maxCount: 15000, subSteps: 1, strictContactCheck: false },
+      liquidFun: { enabled: true, radius: 8, maxCount: Math.ceil(15000 * WATER), subSteps: 1, strictContactCheck: false },
     },
 
     renderer: {
@@ -81,7 +85,7 @@ export class LiquidFunStressScene extends WEED.Scene {
       posX: 1600,
       posY: 800,
       halfWidth: 1200,
-      halfHeight: 300,
+      halfHeight: 300 * WATER,
       texture: '_whiteCircle',
     });
 
