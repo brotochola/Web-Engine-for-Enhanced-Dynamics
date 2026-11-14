@@ -14932,6 +14932,25 @@
         "R-0997",
         "R-1008"
       ]
+    },
+    {
+      "id": "E-305",
+      "title": "The step's move export reads every moved body's velocities back from Box2D, which the finalize exported already (Predator: b2Body_GetLinearVelocity 22.8 ms/s of the physics thread)",
+      "status": "kept",
+      "statusText": "proposed 2026-11-14 from a Box2D names build without LTO",
+      "date": "2026-11-14",
+      "area": "physics",
+      "kind": "speed",
+      "result": "kept (R-1021), kernel claim: Box2D 6cbd009, WeedJS 92bae6a0: the velocity read-back after the finalize's export skipped without LiquidFun; bodyAccelerationsMicrobench 165-175 -> 173-189 ops/s; a 3000-box pile bit-identical; ballsHeavy 8 pairs paired -1.6 %.",
+      "next": "Skip the read-back without LiquidFun; bodyAccelerationsMicrobench, then ballsHeavy physics.",
+      "refs": [],
+      "aliases": [
+        "velocity read-back",
+        "export_body_move_events"
+      ],
+      "records": [
+        "R-1021"
+      ]
     }
   ],
   "records": [
@@ -24992,6 +25011,18 @@
       "text": "**N-168 fixed: hot swap pairs an FSM's states through its states object.**\n2026-11-14, e31ca038. pairClasses now walks plain-object statics one level (an FSM's `states`), so states a module does\nnot export pair with their running classes and patchClass copies their stateIndex; before, only `initial` paired and\nevery changeState after a swap wrote state 0. fsmHotSwap.test.js gained the unexported-states case (fails before the\nfix, passes after); test:node 2619/2619, test:demos 101/101. Debug-only path (hot swap), no timing.",
       "commits": [
         "e31ca038"
+      ]
+    },
+    {
+      "id": "R-1021",
+      "date": "2026-11-14",
+      "time": "04:20",
+      "timeFrom": "recorded",
+      "title": "E-305 kept (kernel claim): without LiquidFun the move export skips reading moved bodies' velocities back; kernel +2-13 %, ballsHeavy 8 pairs -1.6 % (neutral), simulation bit-identical",
+      "verdict": "kept",
+      "text": "**E-305 kept (kernel claim): without LiquidFun the step's move export no longer reads each moved body's velocities back.**\n2026-11-14, Box2D 6cbd009 (weedjs/e305, on weedjs/e288); WeedJS 92bae6a0.\n\nFound with a Box2D build that keeps function names without LTO (C:\\weed-traces\\b2nolto, Predator CPU pass): the serial part\nof the step that LTO folds into step_world holds export_body_move_events, which for every moved body called\nb2Body_GetLinearVelocity (22.8 ms/s of the physics thread) and b2Body_GetAngularVelocity, then b2ExportBodyVelocity\n(5.4 ms/s), to re-export velocities the finalize had exported (E-182 kept the read-back for LiquidFun's coupling, which\nchanges them after the finalize). Continuous collision changes a velocity only together with the pose, which takes the\nfull export, so without LiquidFun the read-back is skipped for bodies whose pose is the finalize's.\n\n- Equivalence: bodyVelocityExport.wasm.test.js (velocity channels of a coasting pushed box and a spinning one); a pile\n  of 3000 boxes (gravity, contacts, restitution 0.3, sleep) for 240 steps gives the same checksum of all eight channels\n  on both builds (3623816403).\n- Kernel (bodyAccelerationsMicrobench, Node, 25 000 bodies, 4 alternating rounds against main, same checksum):\n  165-175 -> 173-189 ops/s (+2 to +13 %, 4/4).\n- ballsHeavyStressScene, owner physics, 8 pairs (04:05 to 04:26): 7.512 -> 7.714 ms mean, paired -1.6 %, 3/8 worse,\n  cv 10/22 %, NEUTRAL. The first 4 pairs read +31.5 % (B about 10.5 ms in three of them); the 4 appended had B ahead or\n  level in each; with the simulation bit-identical and no work added, the first four were a disturbance of the machine.",
+      "commits": [
+        "92bae6a0"
       ]
     }
   ],
