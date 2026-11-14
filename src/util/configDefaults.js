@@ -674,9 +674,10 @@ export const RENDERER_DEFAULTS = Object.freeze({
   /**
    * E-201: keyed frames (the entity sprites' statics kept by key) drawn by queue row on WebGL: each instance carries its
    * queue row and the vertex shader fetches its pose from the queue's own pose columns, uploaded as a texture, instead of
-   * a pose stream Pixi gathers in the painter's order. WebGPU and interpolated frames keep the pose stream.
+   * a pose stream Pixi gathers in the painter's order. WebGPU and interpolated frames keep the pose stream. On by default
+   * (Predator: the keyed pack's refills from beyond L2 -70 %, Pixi about -0.16 ms a frame); false keeps the stream.
    */
-  keyedPosesByRow: false,
+  keyedPosesByRow: true,
 });
 
 // ============================================================================

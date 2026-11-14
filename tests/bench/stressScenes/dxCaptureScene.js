@@ -10,7 +10,7 @@ const { Scene, Camera, Sun, Decoration, LAYER_KIND, BLEND_MODES } = WEED;
  * the view's centre. A revision without a knob ignores its key, so the defaults compare
  * across revisions, and a knob compares against its own absence.
  *
- * `?posesByRow=1` (renderer.keyedPosesByRow, E-201). `?hour=` (default 12), `?lights=` (default 8), `?backend=webgpu`, `?raycast=1`, `?night=1` (lighting.sun.night),
+ * `?posesByRow=0` (renderer.keyedPosesByRow off, E-201). `?hour=` (default 12), `?lights=` (default 8), `?backend=webgpu`, `?raycast=1`, `?night=1` (lighting.sun.night),
  * `?colors=1` (lighting.sun.colors), `?propSprite=`, `?propAlpha=` and `?propShadow=` (lighting.shadowTextures). `?shade=1`: overlapping black squares on a MESH layer, `?shadeLook=1` with a look
  * shader that passes its RT through, `?shadeAlpha=` (default 1) the layer's alpha, `?shadeMeshAlpha=` (default 1) each
  * mesh's, `?shadeSun=` its alphaBySun (shadow, night, or ramp for { from: 0.1, to: 0.4 }). `?deco=1`: decorations on a
@@ -87,7 +87,7 @@ export class DxCaptureScene extends Scene {
       maxVisibleRenderables: 4000,
       maxMeshVerts: 4096,
       maxMeshIndices: 8192,
-      ...(query('posesByRow') === '1' ? { keyedPosesByRow: true } : {}),
+      ...(query('posesByRow') === '0' ? { keyedPosesByRow: false } : {}),
     },
     preRender: { noLimitFPS: false, packGpuSprites: 'pixi', sortSprites: 'pixi' },
     layers: {

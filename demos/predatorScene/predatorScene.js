@@ -208,8 +208,8 @@ export class PredatorScene extends WEED.Scene {
       interpolation: false,
       // E-177: `?indexedSprites=0` draws the entities as split frames, without E-162's indexed and E-177's keyed ones.
       ...(predatorSearchParam('indexedSprites') === '0' ? { indexedSprites: false } : {}),
-      // E-201: `?posesByRow=1` draws the keyed frames by queue row (renderer.keyedPosesByRow).
-      ...(predatorSearchParam('posesByRow') === '1' ? { keyedPosesByRow: true } : {}),
+      // E-201: `?posesByRow=0` draws the keyed frames from a pose stream instead of by queue row (renderer.keyedPosesByRow).
+      ...(predatorSearchParam('posesByRow') === '0' ? { keyedPosesByRow: false } : {}),
       // atlasScaleMode: 'linear',
     },
     preRender: {
