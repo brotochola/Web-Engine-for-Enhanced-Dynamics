@@ -4446,6 +4446,8 @@ all on `outIdx[i] = i` over the whole queue.
 **Premise (the CPU sweep's hot lines):** carScene's Pixi: 92 % of it on `Atomics.load(this.decalsTilesDirty, i)` over every tile.
 **Plan:** a dirty count the stamping side bumps, or plain reads first; the decal scenes. Owner: Pixi.
 
+**Kept 2026-11-14 (R-1039), hygiene:** the count in Uint32 words with plain loads and a flag read before the claim's
+exchange (e6eb5177, merged 03f0d1b9); carScene renderer 0.466 -> 0.349 ms, under the floor, no worker worse.
 ### E-273 Logic workers take turns on the decoration list's lock
 
 **Premise (the CPU sweep's hot lines):** decoChurnStressScene's two logic workers spend 65 and 70 ms of the window
