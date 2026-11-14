@@ -1,7 +1,7 @@
 import WEED from '/src/index.js';
 import { mulberry32 } from '../benchMath.js';
 
-const { Scene, GameObject, Collider, SpriteRenderer, LightEmitter, Camera, Sun, enums } = WEED;
+const { Scene, GameObject, Collider, SpriteRenderer, ShadowCaster, LightEmitter, Camera, Sun, Decoration, enums } = WEED;
 const { ShapeType } = enums;
 
 function queryNumber(key, fallback) {
@@ -21,17 +21,19 @@ export const RES = queryNumber('res', 0.5);
 /** `?hour=`: the sun's hour (default 22, night: the lamps show the normals). */
 export const HOUR = queryNumber('hour', 22);
 const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+/** `?sunShadows=map`: the sun's shadows from its shadow map (DX-SHADOW3D); default 'sprite'. */
+export const SUN_SHADOWS = WEED.params?.get('sunShadows') === 'map' ? 'map' : 'sprite';
 const W = 1600;
 const H = 1000;
 const SHAPES = ['sphere', 'pillar', 'crate'];
 
 export const stressSceneConfig = {
-  requested: { maps: MAPS, n: N, lights: LIGHTS, res: RES, hour: HOUR, backend: BACKEND },
+  requested: { maps: MAPS, n: N, lights: LIGHTS, res: RES, hour: HOUR, backend: BACKEND, sunShadows: SUN_SHADOWS },
 };
 
 /** A shape of tests/bench/stressScenes/maps (ray-traced at pitch 45: makeShapes.mjs), standing on its foot. */
 class Shape extends GameObject {
-  static components = [SpriteRenderer];
+  static components = [SpriteRenderer, ShadowCaster];
 
   onSpawned({ shape = 0 } = {}) {
     this.setSpritesheet('shapes');
@@ -81,6 +83,7 @@ export class SpriteMapsStressScene extends Scene {
     logic: { numberOfLogicWorkers: 1, noLimitFPS: false },
     physics: { subStepCount: 1, noLimitFPS: false, gravity: { x: 0, y: 0 } },
     particle: { maxParticles: 0, decals: false },
+    decoration: { maxDecorations: 4 },
     renderer: { backend: BACKEND, ySort: true, noLimitFPS: false, maxVisibleRenderables: N + 64 },
     preRender: { noLimitFPS: false },
     camera: { pitch: 45 },
@@ -89,6 +92,8 @@ export class SpriteMapsStressScene extends Scene {
       baseAmbient: 0.06,
       maxLights: Math.max(16, LIGHTS + 4),
       resolution: RES,
+      shadowsEnabled: true,
+      sunShadows: SUN_SHADOWS,
       sun: { enabled: true, angle: 135, elevation: 40, intensity: 1, startHour: HOUR, dayCycle: { enabled: false } },
     },
   };
@@ -100,6 +105,8 @@ export class SpriteMapsStressScene extends Scene {
     Sun.setTimeOfDay(HOUR);
     Camera.setZoom(1);
     Camera.centerOn(W / 2, H / 2);
+    // The floor: a grey sheet under everything, for the shadows to fall on.
+    Decoration.spawn({ x: W / 2, y: H / 2, texture: '_white', scaleX: (W + 8) / 8, scaleY: (H + 8) / 8, anchorX: 0.5, anchorY: 0.5, tint: 0x8c8a80, sortOffsetY: -H });
     const rng = mulberry32(0x5ba9e);
     const cols = Math.ceil(Math.sqrt((N * W) / H));
     const rows = Math.ceil(N / cols);
