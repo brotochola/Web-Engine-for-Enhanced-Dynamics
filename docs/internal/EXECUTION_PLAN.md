@@ -4646,6 +4646,21 @@ soldier that has a live target keeps it and rescans every few frames, staggered 
 (Predator is the gate scene: the change moves its baseline, so it goes in alone and the gate is rerun after). Owner:
 logic.
 
+### E-298 Box2D's pool threads sleep most of the step: the serial part on the physics thread bounds physics
+
+**Premise (Predator; Chrome's CPU trace with the names build, R-0985's b2names pass; R-0997's hardware counters):** the
+three pool threads spend 63 to 92 % of their busy time in `_do_futex_wait`, and the counters show that function
+retires almost no instructions (absent from the top 25 by instructions): they sleep, they do not spin. Each pool thread
+retires about 39 % of the physics thread's instructions (133 000 against 345 000 TotalIssues samples in the window);
+the physics thread runs `step_world`, `b2FinalizeBodiesTask`, the body sync (`body_set_transform`,
+`bodies_apply_accelerations`, `b2Body_ApplyForceToCenter`), `publishPose` and the logic wait. Physics own STEP is the
+largest worker in Predator (7.8 to 8.4 ms at crowd=1.5).
+**Plan:** with the names build, time each phase of a step on the physics thread against the pool's work (a per-phase
+timer in the C or the CPU trace split by function and thread); move the serial pieces that are per-body loops (the
+acceleration and force application, finalize's pose copy, the pose publish) onto Box2D's task system or batch them;
+both builds (SIMD, no-SIMD) in the Box2d_3.2 repo; ballsHeavy (physics 8.6 ms) as the owner scene, then Predator.
+Owner: physics.
+
 ### E-300 The tick dispatch reads obj.tick twice per entity, each a megamorphic load call
 
 **Premise (bytecode, Chrome 151, Predator's code pass; machine code, d8 16):** `_tickIntervalBucket` loads `obj.tick`
