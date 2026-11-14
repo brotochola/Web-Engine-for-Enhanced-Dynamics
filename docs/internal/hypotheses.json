@@ -13531,7 +13531,8 @@
         "R-0963",
         "R-1014",
         "R-1019",
-        "R-1022"
+        "R-1022",
+        "R-1023"
       ]
     },
     {
@@ -14502,7 +14503,8 @@
       ],
       "records": [
         "R-0980",
-        "R-1017"
+        "R-1017",
+        "R-1023"
       ]
     },
     {
@@ -14550,7 +14552,8 @@
       ],
       "records": [
         "R-0981",
-        "R-1018"
+        "R-1018",
+        "R-1023"
       ]
     },
     {
@@ -14577,7 +14580,8 @@
         "R-0994",
         "R-0995",
         "R-0997",
-        "R-1010"
+        "R-1010",
+        "R-1023"
       ]
     },
     {
@@ -14788,7 +14792,8 @@
       "records": [
         "R-1000",
         "R-1006",
-        "R-1007"
+        "R-1007",
+        "R-1023"
       ]
     },
     {
@@ -14859,7 +14864,8 @@
       ],
       "records": [
         "R-0996",
-        "R-1016"
+        "R-1016",
+        "R-1023"
       ]
     },
     {
@@ -14952,7 +14958,8 @@
         "export_body_move_events"
       ],
       "records": [
-        "R-1021"
+        "R-1021",
+        "R-1023"
       ]
     }
   ],
@@ -25040,6 +25047,15 @@
         "f0c7b9e5",
         "01273e20"
       ]
+    },
+    {
+      "id": "R-1023",
+      "date": "2026-11-14",
+      "time": "04:42",
+      "timeFrom": "recorded",
+      "title": "The total since 00:58 on Predator: physics -17 % paired (0/4 worse), logic -18 %, spatial -6 %",
+      "verdict": "note",
+      "text": "**The total since 00:58 on Predator (one sitting, every engine change together): physics -17 % paired (0/4 worse), logic -18 %.**\n2026-11-14, 04:45 to 04:57, runPredatorAbab --vs aa1aa783 (main at R-1005's total) --hyp-rev main (b66d6482) --query\ncrowd=1.5 --pairs 4 (src from each side, demos from HEAD on both). Engine changes between them: E-298 step 1 (Box2D\nworkers spin through a step), E-289 (per-class neighbour reads), E-246 steps 1 and 2 (pose copies by slot runs), E-301\n(FSM transition hooks by state), E-286 (spawn and stamp fronts), E-288 (accelerations in Box2D's solver), E-305 (no\nvelocity read-back), N-168 (hot swap).\n\n| worker (own) | aa1aa783 | main | |\n| --- | --- | --- | --- |\n| physics | 6.717 ms | 5.603 | paired -17.0 %, 0/4 worse, cv 11/6 % |\n| logic | 3.568 | 2.911 | -18.4 %, under the floor (logic0 lower in 4/4) |\n| spatial | 5.199 | 4.908 | -5.6 %, under the floor |\n| pre-render | 2.965 | 2.589 | under the floor |\n| renderer | 2.179 | 1.836 | under the floor |\n\nLoad keys within 1 % (bodies 24 807 / 24 794, queue 23 674 / 23 472). Physics now waits 1.8 to 3.2 ms a frame on the hyp\nside (0.03 to 1.8 on the base): it is no longer what gates Predator's frame chain."
     }
   ],
   "leads": [
