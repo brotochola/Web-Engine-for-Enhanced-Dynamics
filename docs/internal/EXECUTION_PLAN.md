@@ -4843,6 +4843,12 @@ Owner: spatial.
 gather alone 9.45 -> 9.52 ms a frame with the skip off). The skipped visits were the cheap ones (predicted rejects whose
 lines the next entity loads anyway). Ablation of the gather: without the dedup marks -15 %, without the row writes -17 %;
 ids numbered in home-cell order (the locality ceiling) -8 % of the frame.
+### E-311 Pixi's updateLighting boxes a double per light
+
+**Premise (the day's heap pass, Predator crowd 1.5):** updateLighting 54.5 KB/s of Pixi's 302.7, about one heap number per
+visible light a frame; its only explicit allocation is cold. Owner: Pixi.
+**Kept 2026-11-14 (R-1043), hygiene:** the per-light pack (_packLightData) and the sun uniforms (_writeSunUniforms) in methods
+of their own (4a5e962d): Pixi 302.7 -> 251.1 KB/s; Predator crowd=1.5 neutral, no worker worse.
 ### E-310 Spatial workers at scale
 
 **Premise (R-1034):** at 57 600 entities one spatial worker spends ~12 ms a frame; the total over 2 workers is 14.6 ms and
