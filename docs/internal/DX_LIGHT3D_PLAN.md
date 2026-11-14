@@ -663,6 +663,26 @@ barrido que lo reemplaza (`setWall`) llega con el `ShadowCaster` único: pasa a 
 `directionalSpriteStressScene` no empeora el pre-render más allá del límite de la sesión contra el selector hecho a mano
 de las demos.
 
+**Cómo quedó (rama):**
+
+- `src/core/spriteDirections.js` arma la tabla de cada sheet en el hilo principal al instalar el atlas (`assets` →
+  json → animaciones `<nombre>_<dirección>`, que es lo que tienen los LPC: no hay que declarar nada). Formas: nombres,
+  grados, `{ anim, flipX }`, `mirrorX: true` (rellena el costado espejado: los autos) y la forma `count`/`anims`.
+  **La forma `frames` (un cuadro por dirección) no está:** el cuadro lo elige el kernel de emisión del pre-render, no la
+  lógica; queda para cuando un sheet la pida.
+- **La resolución corre en la lógica, no en el pre-render** (cambio contra §6.3): así hay un solo escritor de
+  `animationState` entre los hilos que lo escriben (la lógica), `direction` está al día en el mismo tick que lo pidió, y
+  `onDirectionChanged` (gancho nuevo) corre donde corre el juego. Se resuelve en los setters y en una pasada después de los
+  ticks, repartida como los ticks. El pre-render la leerá para las sombras (F6/F7) desde la misma tabla.
+- `facing` está en radianes del mundo (la pantalla). Un juego con el piso acortado que quiere elegir por el rumbo en el
+  piso escribe `facing = atan2(vy / floorScaleY, vx)` (los peatones de Buenos Aires). Cuando la cámara de F1 sea oblicua
+  por defecto en más escenas, se puede agregar `facingFrom: 'floorVelocity'`.
+- Velocidad sin atan2: mientras el rumbo sigue dentro de su dirección (producto punto contra cos² de medio hueco más medio
+  margen), no se calcula el ángulo. Kernel: 26 ns por entidad con 4 direcciones, 46 con 32 (R-1043).
+- Migraron: autos y peatones de Buenos Aires (se van `frame()`, la tabla de rumbos y el selector de octantes),
+  la gente de Predator (FSM con nombres sin dirección; disparar y pegar miran al blanco), el jugador y la persona de
+  carScene. Capturas de Predator iguales a ojo; Buenos Aires se mueve (no hay captura byte a byte posible).
+
 ### F3. Mapas (DX-MAPS)
 
 - `heightMap` / `normalMap` en assets, la página gemela, normales deducidas, corrección de contornos, tabla de
@@ -984,4 +1004,5 @@ Lo que está hecho en la rama, fase por fase, con su commit. Se actualiza con ca
 | Fase | Estado | Commits | Notas |
 | --- | --- | --- | --- |
 | Plan en el repo | hecho | e77f734 | este archivo, filas DX-* en REVIEW_PLAN |
-| F1 `camera` | hecho | (este commit) | `raycasted` pasa a F9; `frameChainWait` (presupuesto de reloj) falla a veces en esta máquina de 2 núcleos, también en la base |
+| F1 `camera` | hecho | af40188 | `raycasted` pasa a F9; `frameChainWait` (presupuesto de reloj) falla a veces en esta máquina de 2 núcleos, también en la base |
+| F2 `DirectionalSprite` | hecho (falta el ABAB del dueño) | 4bf4d21 … f439060 | resolución en la lógica, no en el pre-render; forma `frames` pendiente; R-1043: empate contra el selector a mano en esta VM |
