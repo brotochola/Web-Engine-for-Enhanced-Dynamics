@@ -81,6 +81,8 @@
   let denseList = null;
   let densePositions = null;
   let denseCount = 0;
+  /** E-246: runs of consecutive slots that hold a body, kept by addDenseBody and removeDenseBody. */
+  let denseRuns = 0;
   let lastBodySyncVisited = 0;
   let bodyDirtyFlags = null;
   let bodyDirtyWords = null;
@@ -539,16 +541,24 @@
     }
   }
 
-  // E-246: when at least 3/4 of the slots hold a body, publishPose and snapshotPrevPose walk the slots in order and copy
+  // E-246: when the bodies sit in long runs of slots, publishPose and snapshotPrevPose walk the slots in order and copy
   // each run of RUN_COPY_MIN or more slots with a body with set(), one call per column, instead of a load and a store per
   // body and column in the dense list's order (which despawns and respawns shuffle). Shorter runs keep the per-slot copy:
   // each set() makes subarray views, so a run must be long enough to pay for them.
   const RUN_COPY_MIN = 256;
+  /** E-246: the slot walk pays when the average run holds this many bodies or more (scattered holes do not). */
+  const RUN_WALK_MIN = 32;
 
-  /** E-246: whether most slots hold a body (densePositions >= 0), so walking the slots beats the dense list. */
+  /**
+   * E-246: whether walking the slots beats the dense list: 3/4 of the slots or more with a body (the walk reads them in
+   * order, short runs too), or runs of RUN_WALK_MIN bodies or more on average (an entity pool's slots: Predator's 24 800
+   * bodies in 42 600 slots) with a quarter of the slots or more holding one, so the walk never crosses a vast empty table.
+   */
   function slotsMostlyBodies() {
     const has = densePositions;
-    return has !== null && denseCount * 4 >= has.length * 3;
+    if (has === null) return false;
+    const slots = has.length;
+    return denseCount * 4 >= slots * 3 || (denseCount * 4 >= slots && denseRuns * RUN_WALK_MIN <= denseCount);
   }
 
   /** Snapshot prev pose before world.step. Live bodies only (denseList). */
@@ -1097,8 +1107,15 @@
     }
   }
 
+  /** E-246: 1 when slot i holds a body (out of range: none). */
+  function slotHasBody(i) {
+    return i >= 0 && i < densePositions.length && densePositions[i] >= 0;
+  }
+
   function addDenseBody(i) {
     if (densePositions[i] >= 0) return;
+    // A body between two runs joins them, next to one extends it, alone starts one.
+    denseRuns += 1 - (slotHasBody(i - 1) ? 1 : 0) - (slotHasBody(i + 1) ? 1 : 0);
     densePositions[i] = denseCount;
     denseList[denseCount++] = i;
   }
@@ -1113,6 +1130,7 @@
       densePositions[lastEntity] = position;
     }
     densePositions[i] = -1;
+    denseRuns -= 1 - (slotHasBody(i - 1) ? 1 : 0) - (slotHasBody(i + 1) ? 1 : 0);
   }
 
   function syncBodySlot(i, flags) {
@@ -3389,6 +3407,7 @@
     denseList = allocDenseList(entityCount);
     densePositions = new Int32Array(entityCount);
     densePositions.fill(-1);
+    denseRuns = 0;
     seenBodyGeneration = new Int32Array(entityCount);
     pendingTeleportBits = new Uint8Array(entityCount);
     pendingTeleportList = new Uint32Array(entityCount);
@@ -3642,7 +3661,13 @@
     poseBuffers = state.poseBuffers;
     denseList = state.denseList;
     denseCount = state.denseCount | 0;
-    if (state.densePositions) densePositions = state.densePositions;
+    if (state.densePositions) {
+      densePositions = state.densePositions;
+      denseRuns = 0;
+      for (let i = 0; i < densePositions.length; i++) {
+        if (densePositions[i] >= 0 && (i === 0 || densePositions[i - 1] < 0)) denseRuns++;
+      }
+    }
     views = state.views;
     bodyGeneration = state.bodyGeneration;
     seenBodyGeneration = state.seenBodyGeneration;
