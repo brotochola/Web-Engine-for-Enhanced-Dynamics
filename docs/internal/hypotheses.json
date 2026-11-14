@@ -14078,12 +14078,12 @@
     {
       "id": "E-271",
       "title": "fillQueueIndices writes the identity 0..n-1 into the same index array every frame (painter scenes: 100 % of it on outIdx[i] = i)",
-      "status": "open",
+      "status": "kept",
       "statusText": "recheck 2026-11-13: −1.2 % with no pair worse (R-0986); in the pre-render small-gains group (R-0991)",
       "date": "2026-11-13",
       "area": "preRender",
       "kind": "speed",
-      "result": "painterSort pre-render 10.285 → 10.141 ms (−1.2 %, worse 0/4): the size the trace predicted, under 3 %; not merged, branch kept.",
+      "result": "kept (hygiene): painterSort pre-render 10.725 -> 10.688 ms (-1.0 %, 2/8 worse) and earlier -1.2 % (0/4): the redundant identity writes gone.",
       "next": "Sit again with the pre-render small-gains group (E-99, H11, the shadow rows) on one branch: kept with the group if it wins 3 % or more on pre-render with no worker worse.",
       "refs": [
         "EXECUTION_PLAN.md#E-271"
@@ -14095,9 +14095,9 @@
       ],
       "records": [
         "R-0986",
-        "R-0991"
-      ],
-      "rank": 61
+        "R-0991",
+        "R-1004"
+      ]
     },
     {
       "id": "E-272",
@@ -24762,6 +24762,18 @@
       "commits": [
         "0ef7db4b",
         "0a0c76cb"
+      ]
+    },
+    {
+      "id": "R-1004",
+      "date": "2026-11-14",
+      "time": "00:44",
+      "timeFrom": "recorded",
+      "title": "E-271 kept as hygiene: painterSort pre-render -1.0 % on 8 pairs (after -1.2 % on 4)",
+      "verdict": "kept",
+      "text": "**E-271 kept as hygiene: a second painterSort sitting reads -1.0 % on pre-render (8 pairs), the first read -1.2 %.**\n2026-11-14 00:44 to 00:56, runPredatorAbab --scene painterSortStressScene --owner preRender --pairs 8, w14s/e271b (rebased on\nmain) against main: pre-render own 10.725 -> 10.688 ms, paired -1.0 %, 2/8 worse, cv 2/2 %; renderer 1.391 -> 1.479 (under the\nfloor); NEUTRAL. With R-0986 (-1.2 %, 0/4 worse), two sittings in the same direction at about 1 %: under the 3 % bar for a\nspeed keep, kept as hygiene (the identity it no longer rewrites was redundant work; no worker worse). A stray file search\non another repo overlapped the last pair. Commit 76844fe7; test:node 2594/2594.",
+      "commits": [
+        "76844fe7"
       ]
     }
   ],
