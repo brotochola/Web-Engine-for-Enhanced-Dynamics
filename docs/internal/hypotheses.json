@@ -14760,13 +14760,12 @@
     {
       "id": "E-299",
       "title": "The neighbour publish walks its batch in id order: reorder it by cell, as the gather's rebuild list (publish_batch 2.1x refills per instruction)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-14 from the hardware counters; kernel +10 to +19 % at 60 000 entities; gate running",
       "date": "2026-11-14",
       "area": "spatial",
       "kind": "speed",
-      "rank": 77,
-      "result": "spatialPublishWasmMicrobench --case predator, id vs cell order: 16 500 entities 921 / 1 004 vs 1 001 / 1 008 ops/s (poses fit L2, a tie); 60 000 entities 76 / 72 vs 84 / 86 ops/s (+10.5 / +19.4 %), the same 3 450 823 neighbours.",
+      "result": "kept (kernel claim): spatialPublishWasmMicrobench 60 000 entities 76/72 -> 84/86 ops/s (+10.5/+19.4 %), 16 500 a tie; Predator gate: spatial -0.7 % (tie), no row worse.",
       "next": "Predator's gate (spatial on its hot path); a spatial scene past 6 ms with poses past L2 would show the scene gain.",
       "refs": [
         "EXECUTION_PLAN.md#E-299"
@@ -14776,7 +14775,9 @@
         "cell order",
         "publish_batch"
       ],
-      "records": []
+      "records": [
+        "R-1003"
+      ]
     },
     {
       "id": "E-300",
@@ -24749,6 +24750,19 @@
       "commits": [
         "07bbea7a",
         "049dfd36"
+      ]
+    },
+    {
+      "id": "R-1003",
+      "date": "2026-11-14",
+      "time": "00:22",
+      "timeFrom": "recorded",
+      "title": "E-299 kept as a kernel claim: publish batch in cell order +10.5/+19.4 % at 60 000 entities, a tie in Predator's gate",
+      "verdict": "kept",
+      "text": "**E-299 kept as a kernel claim: the publish batch in cell order (+10.5 / +19.4 % on 60 000 entities, a tie on 16 500 and in Predator).**\n\nKernel (2026-11-14 00:22 to 00:28), spatialPublishWasmMicrobench --case predator, --order id against cell, two rounds each:\n16 500 entities 921 / 1 004 vs 1 001 / 1 008 ops/s (poses 264 KB, in L2: a tie); 60 000 entities 76 / 72 vs 84 / 86 ops/s\n(+10.5 / +19.4 %), the same 3 450 823 neighbours published. The order is the shipped order_batch_by_cell on the batch\nbefore publish_batch, behind gatherCellOrder; its scratch was already sized for every entity.\n\nPredator's gate (crowd=1.5, 4 pairs, 00:33 to 00:43): spatial own 6.556 -> 5.995 ms, paired -0.7 % (2/4 worse, cv 15/10 %:\na tie; each of the three spatial workers publishes ~8 000 rows whose poses fit in cache), physics -6.4 % (2/4, cv 22 %),\nlogic 4.362 -> 4.034, pre-render 4.374 -> 3.780 (unjudged); load keys within 0.2 %. NEUTRAL: no row worse, so kept as a\nkernel claim for scenes whose poses pass L2 (the engine's target). test:node 2593/2593. Commit 0ef7db4b.",
+      "commits": [
+        "0ef7db4b",
+        "0a0c76cb"
       ]
     }
   ],
