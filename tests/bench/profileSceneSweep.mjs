@@ -23,7 +23,9 @@
  *
  *   node tests/bench/profileSceneSweep.mjs [--pass cpu|deopt|heap|code|boot] [--set demos|stress|all]
  *        [--only name,name] [--warmup-ms 6000] [--duration-ms 8000] [--out tests/results/wasm-q1b]
- *        [--inventory-only] [--keep-traces] [--browser firefox] [--dist]
+ *        [--inventory-only] [--keep-traces] [--browser firefox] [--dist] [--query k=v&k=v]
+ *
+ * --query goes to every scene of the run, after its own SCENE_ARGS (with --only, one scene's knob: Predator's crowd=2.5).
  *
  * The boot pass only starts each scene and checks it ran (exit status, page errors), in --browser's browser; with
  * --dist on the dist/ bundle (weed.bundle.esm.min.js, which must be fresh), not the source.
@@ -77,6 +79,11 @@ const SCENE_ARGS = {
   particleIntegrateStressScene: ['--query', 'tween=1'],
 };
 
+/** A scene's runner flags: its SCENE_ARGS, then --query when the sweep has one. */
+function sceneArgs(name, opts) {
+  return [...(SCENE_ARGS[name] || []), ...(opts.query ? ['--query', opts.query] : [])];
+}
+
 /** Modules that export more than one scene: the one the sweep runs (the heaviest variant). */
 const SCENE_EXPORTS = {
   bulletStormScene: 'BulletStormScene3W',
@@ -119,7 +126,7 @@ function runScene(file, dir, opts, extra = [], { traceCpu = true } = {}) {
     bench('runIntegratedWorkerBenchmark.mjs'), '--src', '--headed', ...(traceCpu ? ['--trace-cpu'] : []), '--no-collect-detailed-stats',
     '--scene', file, '--scene-export', sceneExport(file), '--warmup-ms', String(opts.warmupMs),
     '--duration-ms', String(opts.durationMs), '--output', path.join(dir, 'stress.json'),
-    ...(SCENE_ARGS[name] || []), ...extra,
+    ...sceneArgs(name, opts), ...extra,
   ], opts);
   fs.writeFileSync(path.join(dir, 'run.log'), `${run.stdout || ''}\n${run.stderr || ''}`);
   return run;
@@ -180,7 +187,7 @@ function heapPass(file, dir, opts) {
   const run = spawn([
     bench('heapSampleWorkers.mjs'), '--scene', file, '--scene-export', sceneExport(file), '--workers', 'Worker,box2d',
     '--warmup-ms', String(opts.warmupMs), '--sample-ms', String(opts.durationMs), '--output', path.join(dir, 'heap.json'),
-    ...(SCENE_ARGS[name] || []),
+    ...sceneArgs(name, opts),
   ], opts);
   fs.writeFileSync(path.join(dir, 'run.log'), `${run.stdout || ''}\n${run.stderr || ''}`);
   return run.status === 0 && fs.existsSync(path.join(dir, 'heap.json')) ? '' : failed(run);
@@ -198,7 +205,7 @@ function bootPass(file, dir, opts) {
     ...(opts.browser ? ['--browser', opts.browser] : []),
     '--scene', file, '--scene-export', sceneExport(file), '--warmup-ms', String(opts.warmupMs),
     '--duration-ms', String(opts.durationMs), '--output', path.join(dir, 'boot.json'),
-    ...(SCENE_ARGS[name] || []),
+    ...sceneArgs(name, opts),
   ], opts);
   const out = `${run.stdout || ''}\n${run.stderr || ''}`;
   fs.writeFileSync(path.join(dir, 'run.log'), out);
@@ -338,6 +345,7 @@ function main() {
   const opts = {
     pass,
     out: path.resolve(repoRoot, String(args.out || 'tests/results/wasm-q1b')),
+    query: typeof args.query === 'string' ? args.query : '',
     warmupMs: Number(args['warmup-ms'] ?? 6000),
     durationMs: Number(args['duration-ms'] ?? 8000),
     timeoutMs: Number(args['timeout-ms'] ?? 180000),
