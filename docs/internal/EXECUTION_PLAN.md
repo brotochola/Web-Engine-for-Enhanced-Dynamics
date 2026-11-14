@@ -4818,6 +4818,29 @@ thread), b2Body_GetAngularVelocity and b2ExportBodyVelocity (5.4 ms/s) for every
 for LiquidFun's coupling (E-182). Owner: physics.
 **Kept 2026-11-14 (R-1021), kernel claim:** skipped without LiquidFun (Box2D `6cbd009`, WeedJS `92bae6a0`): bodyAccelerationsMicrobench
 +2 to +13 %, a 3000-box pile bit-identical, ballsHeavy physics 8 pairs paired -1.6 % (neutral).
+### E-307 The gather publishes the rows it rebuilds
+
+**Premise (Predator at crowd 2.5, spatial one worker at ~15 ms):** publish_batch reads each rebuilt row's candidates and their
+poses again right after the gather stored them; gather_publish_batch would test the entity's own range as it stores each
+candidate. Owner: spatial.
+**Dropped 2026-11-14 (R-1032):** same rows, kernel tie (57 600 entities: 76.3 -> 76.6 ops/s); the CPU profile moves the cost
+(publish_batch 387 -> 45 ms, the gather 1822 -> 2052 ms): what the publish paid for was writing the rows, which stays.
+### E-309 The gather skips pattern cells too far for any candidate
+
+**Premise:** a home cell's circle pattern covers the worst position in the cell; a cell header holding its largest half
+extent lets the gather skip cells farther than searchRange + (1 + sqrt 2) x that bound: the same rows in the same order.
+Owner: spatial.
+**Dropped 2026-11-14 (R-1033):** 29 % fewer visits and 30 % fewer cells walked, gather time unchanged (kernel A/B tie; the
+gather alone 9.45 -> 9.52 ms a frame with the skip off). The skipped visits were the cheap ones (predicted rejects whose
+lines the next entity loads anyway). Ablation of the gather: without the dedup marks -15 %, without the row writes -17 %;
+ids numbered in home-cell order (the locality ceiling) -8 % of the frame.
+### E-310 Spatial workers at scale
+
+**Premise (R-1034):** at 57 600 entities one spatial worker spends ~12 ms a frame; the total over 2 workers is 14.6 ms and
+over 3 15.2 ms (each rebuilds the grid for all entities), so in parallel ~7.3 and ~5 ms a worker. Predator sets one
+worker. Step 1: a crowd knob for Predator's spatial workers and a scene pair at crowd=2.5 (spatial and the workers that
+share its cores). Step 2, if it holds: an engine choice by entity count (numberOfSpatialWorkers 'auto'), and E-267's
+counting pass for the rebuild every worker repeats. Owner: spatial.
 ### Wave 14, the night of 2026-11-13/14: new readings, kept rows, what is left (R-0994 to R-1003)
 
 New readings: Chrome's own bytecode, tiers and inlining (summarizeV8Code, profileSceneSweep --pass code), hardware
