@@ -14268,13 +14268,13 @@
     {
       "id": "E-278",
       "title": "rng() and randomRange() box their result when a big caller does not inline them (littleCity logic 4.1 MB/s, particleIntegrate 1.4)",
-      "status": "open",
-      "statusText": "step 1 dropped 2026-11-14 (R-1011): a smaller rng moved the garbage into the tick; step 2 (the emitter) open",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-14 (R-1011, R-1012)",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "result": "Step 1 dropped (R-1011): rng 201 -> 146 bytes; littleCity logic 7.1 -> 8.1 / 12.9 MB/s (rng 5.6 -> 2.8, CityPerson.tick 0.27 -> 3.9 / 7.6): the tick is past its inlining budget, so other callees boxed instead.",
-      "next": "Step 2: ParticleEmitter._spawn (budget 943 of 920) resolves each range once per emit and draws a batch with rngFill into a module Float64Array, same draw order; particleIntegrateStress logic heap and STEP_MS.",
+      "result": "dropped (R-1011, R-1012): a smaller rng moved littleCity's garbage into the tick (total up); inline draws in ParticleEmitter._spawn made the emit kernel slower (emitFlat 117-123 -> 137-187 ms).",
+      "next": "Not doing.",
       "refs": [
         "EXECUTION_PLAN.md#E-278"
       ],
@@ -14288,9 +14288,9 @@
         "R-0987",
         "R-0994",
         "R-0996",
-        "R-1011"
-      ],
-      "rank": 18
+        "R-1011",
+        "R-1012"
+      ]
     },
     {
       "id": "E-279",
@@ -24867,6 +24867,15 @@
       "commits": [
         "4e86cffe"
       ]
+    },
+    {
+      "id": "R-1012",
+      "date": "2026-11-14",
+      "time": "02:42",
+      "timeFrom": "recorded",
+      "title": "E-278 dropped: drawing the emitter's ranges inline is slower than the calls (emitFlat kernel 117-123 -> 137-187 ms)",
+      "verdict": "dropped",
+      "text": "**E-278 step 2's ceiling is negative: drawing the emitter's ranges inline is slower than the calls.**\n2026-11-14 ~02:45, particleEmitMicrobench (Node, 4096 particles, 2000 bursts of 256). A local hack (never committed)\ndrew x, y, vx, vy and lifespan inline in ParticleEmitter._spawn on rng's own state, same generator and order, no call:\nemitFlat burst 116.9 / 123.4 ms (main) -> 186.7 / 137.4 ms; one particle a call 421.9 / 429.9 -> 617.9 / 778.1 ms. The\nextra code in a 4 733-byte function costs more than the five calls and boxed returns it removes, so a batch through\nrngFill (more code still, and resolveParticleOp's own draws to thread through) is not worth building. With step 1\ndropped (R-1011), E-278 is dropped. Reference: particleEmitStressScene's logic runs 1.9 ms (its 65 535-particle pool\ncaps the emits), so no scene could judge a few per cent here either."
     }
   ],
   "leads": [
