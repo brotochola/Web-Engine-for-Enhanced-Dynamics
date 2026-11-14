@@ -13493,14 +13493,13 @@
     {
       "id": "E-246",
       "title": "Physics' JS around the step: publishPose 3.6 %, snapshotPrevPose 1.4 %, publishMovedBodies 1.0 %",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from Predator's CPU trace, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-14 (R-1014), kernel claim; Predator gate pending in a batch",
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
-      "rank": 31,
-      "result": "publishPose 14.8 ms/s, snapshotPrevPose 6.0, publishMovedBodies 4.2 of the physics thread's 417.",
-      "next": "E-222 sites; a kernel each against its current form.",
+      "result": "kept (R-1014), kernel claim: runs of body slots copied with set() when 3/4 of the slots hold a body (8cb36b50): publishPoseMicrobench 5.4k -> 27k ops/s (shared columns), ballsHeavy physics 7.124 -> 7.034 ms (neutral); Predator gate in the next batch.",
+      "next": "Predator batch gate. publishMovedBodies (1.0 %) left.",
       "refs": [
         "EXECUTION_PLAN.md#E-246"
       ],
@@ -13510,7 +13509,8 @@
         "publishMovedBodies"
       ],
       "records": [
-        "R-0963"
+        "R-0963",
+        "R-1014"
       ]
     },
     {
@@ -14516,7 +14516,7 @@
       "kind": "speed",
       "rank": 60,
       "result": "Box2D by name: Boids' physics (65 000 bodies, no contacts to speak of) spends 6.2 % in b2FinalizeBodiesTask, 1.3 % in b2Body_ApplyForceToCenter, 0.8 % in body_set_transform and 0.6 % in bodies_apply_accelerations: the WeedJS glue applies each body's acceleration through the public API (the id's lookup and checks per call).",
-      "next": "The batch on the body sims directly (the awake set's arrays, by index), keeping the public calls' semantics (wake, zero force skipped); a kernel of the glue on Boids' counts, then Boids' physics STEP_MS. Both Box2D builds.",
+      "next": "Estimated about 1 % of physics (R-1014): the weed build is Release, the cost is the random body and body-sim reads a direct path makes too. Low priority.",
       "refs": [
         "EXECUTION_PLAN.md#E-288"
       ],
@@ -24886,6 +24886,20 @@
       "title": "E-303 answered: spatial's recompiles are E-251's deopt loop at _flushWasmPublish (391 steady deopts in 30 s); not doing",
       "verdict": "note",
       "text": "**E-303 answered: the spatial recompiles are E-251's deopt loop at _flushWasmPublish, nothing new to try.**\n2026-11-14 ~02:50, profileSceneSweep --pass deopt --only predatorScene --warmup-ms 6000 --duration-ms 30000 (headed, from\nsource, detailed stats off), main 7b87d1fc. Spatial's only steady deopt: `spatialWorker.js:1800:16`, the load of\n`this.collectDetailedStats` in `_flushWasmPublish` (inlined at the end of `_findNeighbors`), \"Insufficient type feedback\nfor generic named access\", 394 in the run, 391 after warm-up (about 13 a second). That is E-251's pattern and site: cached\nTurboFan OSR code re-entered each frame, its tail compiled without feedback; E-251's kernel showed the split fix slower\n(+19 % Node, +55 % Chrome), so it was dropped. The repeated TurboFan compiles of `_findNeighbors` E-303 counted are the\nsame code. The other steady deopts of this run: logic's spawn batch (`logicWorker.js:881/892`, 137 and 140, E-251 too)\nand `box2dMovedBodiesImpl.js:186` (69). Not doing; E-251's untried variant (short warm-up calls before the first long one)\nneeds a dry-run mode for functions that publish, for about 13 deopts a second."
+    },
+    {
+      "id": "R-1014",
+      "date": "2026-11-14",
+      "time": "03:08",
+      "timeFrom": "recorded",
+      "title": "E-246 kept (kernel claim): publishPose and snapshotPrevPose copy runs of body slots with set(); kernel 5.4k -> 27k ops/s, ballsHeavy physics -0.5 % (neutral)",
+      "verdict": "kept",
+      "text": "**E-246 kept (kernel claim, publishPose and snapshotPrevPose part): runs of body slots copied with set().**\n2026-11-14, main 8cb36b50 (kernel tools 0d947e2d, d52e7f3f).\n\nChange: with 3/4 of the slots or more holding a body (densePositions), publishPose (when no slot was respawned) and\nsnapshotPrevPose walk the slots in order and copy each run of 256 or more with set(), one call per column; shorter runs\nkeep the per-slot copy; otherwise the dense list as before. The dense list's order (shuffled by despawns and respawns)\nno longer matters. tests/node/publishPoseBySlot.test.js (4 tests, mutation-checked); test:node 2602/2602, test:demos 101/101.\n\n- Kernel (publishPoseMicrobench, Node, 25 000 bodies): base 5.0-5.5k ops/s. A first variant that followed the dense\n  list's own runs reached 37k in slot order but tied at churn 0.05 and lost 20 % at 0.3, so the slots are walked instead:\n  42.5k at any churn with every slot a body (27k with shared columns, as the worker's are), 2.6k -> 6.1k with 10 %\n  random holes, and the dense list's path (a tie) at 30 %.\n- ballsHeavyStressScene, owner physics, 4 pairs, 03:00 to 03:10: 7.124 -> 7.034 ms, -0.5 %, 2/4 worse, cv 4/10 %,\n  NEUTRAL: the scene is not worse (publishPose is about 1 % of its physics). An earlier sitting (02:49 to 02:58) read\n  +13.1 % with one run at 60.7 ms over 177 frames: the parallel agent's test suite ran during it. Discarded; my sittings\n  now hold C:\\weed-traces\\SITTING.lock and the agent waits on it.\n- Predator's gate: in the next batch gate with the other kept changes.\n\nNot done: publishMovedBodies (1.0 %) and E-288's force glue. Box2D by name in Predator puts b2Body_ApplyForceToCenter\n3.5 % and bodies_apply_accelerations 2.4 % on the physics main thread, but the weed build is Release (no asserts) and\nthe cost is the random reads of each body and body sim, which a direct path would make too: about 1 %, not worth a C\nchange and two builds.",
+      "commits": [
+        "8cb36b50",
+        "0d947e2d",
+        "d52e7f3f"
+      ]
     }
   ],
   "leads": [
