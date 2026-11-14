@@ -539,6 +539,18 @@
     }
   }
 
+  // E-246: when at least 3/4 of the slots hold a body, publishPose and snapshotPrevPose walk the slots in order and copy
+  // each run of RUN_COPY_MIN or more slots with a body with set(), one call per column, instead of a load and a store per
+  // body and column in the dense list's order (which despawns and respawns shuffle). Shorter runs keep the per-slot copy:
+  // each set() makes subarray views, so a run must be long enough to pay for them.
+  const RUN_COPY_MIN = 256;
+
+  /** E-246: whether most slots hold a body (densePositions >= 0), so walking the slots beats the dense list. */
+  function slotsMostlyBodies() {
+    const has = densePositions;
+    return has !== null && denseCount * 4 >= has.length * 3;
+  }
+
   /** Snapshot prev pose before world.step. Live bodies only (denseList). */
   function snapshotPrevPose(entityCount) {
     if (!views.px) return;
@@ -557,11 +569,36 @@
       }
       return;
     }
+    if (slotsMostlyBodies()) {
+      snapshotPrevPoseBySlot(x, y, px, py);
+      return;
+    }
     const n = denseCount | 0;
     for (let d = 0; d < n; d++) {
       const i = list[d];
       px[i] = x[i];
       py[i] = y[i];
+    }
+  }
+
+  /** E-246: snapshotPrevPose over the slots in order, runs of bodies copied with set(). */
+  function snapshotPrevPoseBySlot(x, y, px, py) {
+    const has = densePositions;
+    const slots = has.length;
+    let i = 0;
+    while (i < slots) {
+      while (i < slots && has[i] < 0) i++;
+      const start = i;
+      while (i < slots && has[i] >= 0) i++;
+      if (i - start >= RUN_COPY_MIN) {
+        px.set(x.subarray(start, i), start);
+        py.set(y.subarray(start, i), start);
+      } else {
+        for (let k = start; k < i; k++) {
+          px[k] = x[k];
+          py[k] = y[k];
+        }
+      }
     }
   }
 
@@ -588,7 +625,9 @@
     // A skip must not latch the epoch, or the next frame would publish the stale slot.
     const epochSame = poseGenEpoch ? epoch === (seenPoseGenEpoch | 0) : false;
     let skipped = 0;
-    for (let d = 0; d < n; d++) {
+    // E-246: nobody respawned, so every body publishes: by slot when most slots hold one.
+    if (epochSame && slotsMostlyBodies()) publishPoseBySlot(x, y, rotC, rotS, outX, outY, outC, outS);
+    else for (let d = 0; d < n; d++) {
       const i = list[d];
       if (
         !epochSame &&
@@ -622,6 +661,31 @@
     poseFrame++;
     Atomics.store(poseSync, 0, poseFrame);
     Atomics.notify(poseSync, 0, 1);
+  }
+
+  /** E-246: publishPose's copy over the slots in order, runs of bodies copied with set(). */
+  function publishPoseBySlot(x, y, rotC, rotS, outX, outY, outC, outS) {
+    const has = densePositions;
+    const slots = has.length;
+    let i = 0;
+    while (i < slots) {
+      while (i < slots && has[i] < 0) i++;
+      const start = i;
+      while (i < slots && has[i] >= 0) i++;
+      if (i - start >= RUN_COPY_MIN) {
+        outX.set(x.subarray(start, i), start);
+        outY.set(y.subarray(start, i), start);
+        outC.set(rotC.subarray(start, i), start);
+        outS.set(rotS.subarray(start, i), start);
+      } else {
+        for (let k = start; k < i; k++) {
+          outX[k] = x[k];
+          outY[k] = y[k];
+          outC[k] = rotC[k];
+          outS[k] = rotS[k];
+        }
+      }
+    }
   }
 
   /**
@@ -3578,6 +3642,7 @@
     poseBuffers = state.poseBuffers;
     denseList = state.denseList;
     denseCount = state.denseCount | 0;
+    if (state.densePositions) densePositions = state.densePositions;
     views = state.views;
     bodyGeneration = state.bodyGeneration;
     seenBodyGeneration = state.seenBodyGeneration;
@@ -3587,6 +3652,7 @@
   }
 
   globalThis.weedjsPublishPose = publishPose;
+  globalThis.weedjsSnapshotPrevPose = snapshotPrevPose;
   globalThis.weedjsBindPoseBench = weedjsBindPoseBench;
   globalThis.weedjsSnapshotLiquidFun = weedjsSnapshotLiquidFun;
   globalThis.weedjsRestoreLiquidFun = weedjsRestoreLiquidFun;
