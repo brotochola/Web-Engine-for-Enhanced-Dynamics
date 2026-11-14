@@ -124,11 +124,12 @@ export class BuenosAiresScene extends Scene {
     renderer: { backend: BACKEND, ySort: true },
     // The houses are decorations: they do not fade out as the camera goes back.
     preRender: { startFadingDecorationsAtZoom: 0.2, hideDecorationsAtZoom: 0.1, cullingRatio: 0.3 },
+    // The floor is drawn at SYN (0.5), so the lamps' pools are ellipses; a px of height rises CZ on the screen.
+    camera: { floorScaleY: META.SYN, heightScaleY: META.CZ },
     lighting: {
-      // The floor is drawn at SYN (0.5), so the lamps' pools are ellipses.
-      enabled: true, raycasted: RAYCAST, lightGlow: 'sprite', baseAmbient: 0.04, maxLights: 1024, groundScaleY: META.SYN,
-      // heightScaleY: what a px of height rises on the screen. sunDirect 0.5: a face in the shade keeps half, as the editor lit it.
-      faces: { enabled: FACES, heightScaleY: META.CZ, wrap: 0.15, gain: 1.3, sunDirect: 0.5 },
+      enabled: true, raycasted: RAYCAST, lightGlow: 'sprite', baseAmbient: 0.04, maxLights: 1024,
+      // sunDirect 0.5: a face in the shade keeps half, as the editor lit it.
+      faces: { enabled: FACES, wrap: 0.15, gain: 1.3, sunDirect: 0.5 },
       shadowsEnabled: true, maxShadowCastingLights: 16, maxShadowsPerLight: 64, maxShadowsPerEntity: 2, shadowTextures: true,
       resolution: RESOLUTION, shadowResolution: RESOLUTION,
       // The sun on the camera's side (shadowAngleOffset 0), or every wall the camera sees would be against the light, and no

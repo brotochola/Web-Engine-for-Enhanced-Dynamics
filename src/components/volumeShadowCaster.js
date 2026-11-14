@@ -205,7 +205,7 @@ export class VolumeShadowCaster extends Component {
     return [MeshRenderer];
   }
 
-  /** config.lighting.groundScaleY, validated, on each thread: a new volume's floorScaleY. */
+  /** config.camera.floorScaleY, validated, on each thread: a new volume's floorScaleY. */
   static defaultFloorScaleY = 1;
 
   static initializeArrays(buffer, count, byteOffset = 0) {
@@ -239,7 +239,7 @@ export class VolumeShadowCaster extends Component {
     markMeshPaint(i);
   }
 
-  /** How tall the floor is drawn against its width, in (0, 1]: `config.lighting.groundScaleY` unless a volume says. */
+  /** How tall the floor is drawn against its width, in (0, 1]: `config.camera.floorScaleY` unless a volume says. */
   get floorScaleY() {
     return VolumeShadowCaster.floorScaleY[this.index];
   }

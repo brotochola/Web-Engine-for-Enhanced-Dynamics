@@ -18,6 +18,7 @@ import {
   ASSETS_DEFAULTS,
   AUDIO_DEFAULTS,
   BULLET_DEFAULTS,
+  CAMERA_DEFAULTS,
   DEBUG_DEFAULTS,
   DECORATION_DEFAULTS,
   LAYER_DEFAULTS,
@@ -84,7 +85,7 @@ export const SCENE_CONFIG_SCHEMA = Object.freeze({
   preRender: keys(PRE_RENDER_DEFAULTS),
   lighting: {
     ...keys(LIGHTING_DEFAULTS),
-    faces: keys(LIGHTING_DEFAULTS.faces, ['gain', 'heightScaleY', 'sunDirect', 'wrap']),
+    faces: keys(LIGHTING_DEFAULTS.faces, ['gain', 'sunDirect', 'wrap']),
     particleLights: keys(LIGHTING_DEFAULTS.particleLights),
     sun: {
       ...keys(SUN_DEFAULTS),
@@ -93,6 +94,7 @@ export const SCENE_CONFIG_SCHEMA = Object.freeze({
       colors: ANY,
     },
   },
+  camera: keys(CAMERA_DEFAULTS),
   navigation: keys(NAVIGATION_DEFAULTS),
   debug: keys(DEBUG_DEFAULTS),
   layers: { [NAMED]: LAYER },
@@ -102,6 +104,8 @@ export const SCENE_CONFIG_SCHEMA = Object.freeze({
 export const RETIRED_CONFIG_KEYS = Object.freeze({
   'renderer.tilemapCull': 'tilemaps upload once, there is no chunk stream',
   'preRender.numberOfPreRenderWorkers': 'there is one pre-render worker',
+  'lighting.groundScaleY': 'the floor\'s foreshortening is config.camera.floorScaleY now, or camera.pitch (DX-CAMERA)',
+  'lighting.faces.heightScaleY': 'the px a px of height rises is config.camera.heightScaleY now, or camera.pitch (DX-CAMERA)',
 });
 
 /** Optimal string alignment distance, letters compared without case. */

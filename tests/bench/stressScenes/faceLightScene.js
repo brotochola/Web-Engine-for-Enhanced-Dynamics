@@ -78,15 +78,14 @@ export class FaceLightScene extends Scene {
       maxVisibleRenderables: 8000 + TOWN,
     },
     preRender: { noLimitFPS: false, ...(query('pack') === 'pixi' ? { packGpuSprites: 'pixi', sortSprites: 'pixi' } : {}) },
+    camera: { floorScaleY: GROUND, heightScaleY: HEIGHT },
     lighting: {
       enabled: true,
       baseAmbient: 0.1,
       maxLights: 64,
-      groundScaleY: GROUND,
       resolution: RESOLUTION,
       faces: {
         enabled: FACES,
-        heightScaleY: HEIGHT,
         wrap: queryNumber('wrap', 0),
         gain: queryNumber('gain', 1),
         sunDirect: queryNumber('sunDirect', 0.6),

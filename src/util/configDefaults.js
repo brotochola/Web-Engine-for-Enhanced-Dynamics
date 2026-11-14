@@ -763,7 +763,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   /**
    * DX-FACES: decorations with a normal are lit as surfaces (Decoration.spawn's faceNormalX, ...). A second draw of the
    * entity batch into a map at `resolution`, and the light pass reads it. Off, a scene pays nothing.
-   * { enabled, heightScaleY, wrap, gain, sunDirect }: src/render/faceMap.js. Not with raycasted lighting.
+   * { enabled, wrap, gain, sunDirect }: src/render/faceMap.js; a px of height rises config.camera.heightScaleY. Not with
+   * raycasted lighting.
    */
   faces: Object.freeze({ enabled: false }),
   /**
@@ -772,19 +773,35 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * Source-over, so the soft edge can gray, and lighting multiply sits on top.
    */
   lightGlow: 'add',
-  /**
-   * How much the floor is foreshortened vertically on screen, in (0, 1]. Light pools are measured on
-   * the floor, so a light reaches R across and R * groundScaleY up and down: an ellipse.
-   * 1 = straight down (round pools), ~0.7 = a 3/4 top-down view, 0.5 = 2:1 isometric.
-   * Applies to point lights, raycasted lights, particle / LiquidFun lights and point-light shadows.
-   */
-  groundScaleY: 1,
   /** Additive radial quads for ParticleEmitter `lightRadius`. Off unless a scene opts in. */
   particleLights: Object.freeze({
     enabled: false,
     max: 256,
   }),
   sun: SUN_DEFAULTS,
+});
+
+// ============================================================================
+// CAMERA DEFAULTS (DX-CAMERA)
+// ============================================================================
+
+/**
+ * What the scene's camera is (src/util/cameraView.js resolves it). Unset, the picture WeedJS always drew: a floor that is
+ * not foreshortened and heights that rise as many px as they measure.
+ * - pitch: degrees from the horizon, 90 straight down, 0 from the side. Gives floorScaleY = sin(pitch) and
+ *   heightScaleY = cos(pitch) unless they are set.
+ * - floorScaleY: how tall the floor is drawn against its width, in (0, 1]. Light pools are measured on the floor, so a
+ *   light reaches R across and R * floorScaleY up and down: an ellipse. 1 = straight down (round pools), ~0.7 = a 3/4
+ *   top-down view, 0.5 = 2:1 isometric. Point, raycasted, particle and LiquidFun lights, cones, point-light shadows and
+ *   VolumeShadowCaster's default floorScaleY read it.
+ * - heightScaleY: screen px that a px of height rises (lighting.faces).
+ * - yaw: degrees the view turns about the vertical (45 for an isometric diamond). Read by nothing yet.
+ */
+export const CAMERA_DEFAULTS = Object.freeze({
+  pitch: null,
+  yaw: 0,
+  floorScaleY: null,
+  heightScaleY: null,
 });
 
 // ============================================================================

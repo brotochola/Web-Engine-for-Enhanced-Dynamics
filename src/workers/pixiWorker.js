@@ -8,6 +8,7 @@ self.postMessage({
 
 // Import engine dependencies
 
+import { cameraFloorScaleY } from '../util/cameraView.js';
 import { Transform } from '../components/transform.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { RigidBody } from '../components/rigidBody.js';
@@ -96,7 +97,6 @@ import {
   sortByY,
   normalizeAngleDifference,
   extractRGBNormalizedMut,
-  resolveGroundScaleY,
   lightDataTextureFloatCount,
   clearUnusedLightDataTexels,
   LIGHT_DATA_TEX_HEIGHT,
@@ -878,7 +878,7 @@ class PixiRenderer extends AbstractWorker {
     this._lightDataSource = null; // BufferImageSource uploading _lightDataFloats
     // E-259: each float data source's GL texture once allocated, and its size: later uploads are a texSubImage2D on it.
     this._floatTexHeld = new WeakMap();
-    // config.lighting.groundScaleY and its inverse: light falloff measures the floor distance
+    // config.camera.floorScaleY and its inverse: light falloff measures the floor distance
     // sqrt(dx² + (dy / groundScaleY)²). Doubles from the start (NaN until the config is read).
     this._groundScaleY = NaN;
     this._groundInvScaleY = NaN;
@@ -7912,13 +7912,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightingConfig = this.config.lighting || {};
     if (lightingConfig.enabled && data.buffers.componentData.LightEmitter) {
       this.lightingEnabled = true;
-      this._groundScaleY = resolveGroundScaleY(lightingConfig.groundScaleY);
+      this._groundScaleY = cameraFloorScaleY(this.config);
       this._groundInvScaleY = 1 / this._groundScaleY;
       this.visibleLightsData = data.buffers.visibleLightsData
         ? new Uint16Array(data.buffers.visibleLightsData)
         : null;
       this.lightingResolution = lightingConfig.resolution || 1.0;
-      this._faces = resolveFaces(lightingConfig);
+      this._faces = resolveFaces(lightingConfig, this.config.camera);
       if (lightingConfig.faces?.enabled && !this._faces.enabled) {
         console.warn('WeedJS: lighting.faces does not work with raycasted lighting yet: faces are off');
       }

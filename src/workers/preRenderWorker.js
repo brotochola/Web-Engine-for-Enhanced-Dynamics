@@ -2,6 +2,7 @@
 // Handles all visual calculations AFTER physics, BEFORE pixi_worker renders
 // This worker is purely visual - no physics or game logic
 
+import { cameraFloorScaleY } from '../util/cameraView.js';
 import { ParticleComponent as ParticleComponentImport } from '../components/particleComponent.js';
 import { DecorationComponent as DecorationComponentImport } from '../components/decorationComponent.js';
 import { BulletComponent as BulletComponentImport } from '../components/bulletComponent.js';
@@ -65,7 +66,6 @@ import {
     calculateCameraScreenBounds,
     screenBoundsToWorldBounds,
     lightCookieScale,
-    resolveGroundScaleY,
     LIGHT_GLOW_EXTENT,
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
@@ -3346,7 +3346,7 @@ class PreRenderWorker extends AbstractWorker {
         const lightDirC = LightEmitter.dirC;
         const lightDirS = LightEmitter.dirS;
         // DX-SPOT: a cone is measured on the floor (y over groundScaleY).
-        const invG = 1 / resolveGroundScaleY(this.config.lighting?.groundScaleY);
+        const invG = 1 / cameraFloorScaleY(this.config);
         const offsetX = LightEmitter.offsetX;
         const offsetY = LightEmitter.offsetY;
         const rotC = Transform.rotC;
@@ -3685,7 +3685,7 @@ class PreRenderWorker extends AbstractWorker {
         const shadowRes = this.config.lighting?.shadowResolution;
         const res = rtPixelScale(this.canvasWidth, rtPixelSize(this.canvasWidth, shadowRes));
         // The cookie covers the light's pool on the floor: R across, R * groundScaleY tall.
-        const groundY = resolveGroundScaleY(this.config.lighting?.groundScaleY);
+        const groundY = cameraFloorScaleY(this.config);
         for (let i = 0; i < capL && n < room; i++) {
             const L = lights[i];
             if (!(L.rangeSq > 0) || !(L.intensity > 0)) continue;
@@ -4297,7 +4297,7 @@ class PreRenderWorker extends AbstractWorker {
         const lightConeCos = LightEmitter.coneCos;
         const lightDirC = LightEmitter.dirC;
         const lightDirS = LightEmitter.dirS;
-        const groundY = resolveGroundScaleY(this.config.lighting?.groundScaleY);
+        const groundY = cameraFloorScaleY(this.config);
         const groundInvY = 1 / groundY;
         const sweepK = this._visSweep;
         const sweepLight = sweepK.sweep;

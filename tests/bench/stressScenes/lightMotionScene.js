@@ -70,6 +70,7 @@ export class LightMotionScene extends Scene {
     layers: {
       ground: { kind: LAYER_KIND.TILING, texture: 'ground', tileScale: 1, parallax: 1, zIndex: 0 },
     },
+    camera: { floorScaleY: GROUND_SCALE_Y },
     lighting: {
       enabled: true,
       baseAmbient: AMBIENT,
@@ -77,7 +78,6 @@ export class LightMotionScene extends Scene {
       maxFlashes: 16,
       shadowsEnabled: true,
       raycasted: RAYCAST,
-      groundScaleY: GROUND_SCALE_Y,
       maxShadowCastingLights: 16,
       maxShadowsPerLight: 32,
       maxPolygonVertices: 2048,

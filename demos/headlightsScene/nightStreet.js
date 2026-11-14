@@ -50,7 +50,7 @@ const CAR_BODY_HEIGHT = 13;
 const CAR_CABIN = [16, -17, 16, 17, -30, 17, -30, -17];
 const CAR_ROOF = [2, -13, 2, 13, -22, 13, -22, -13];
 const CAR_ROOF_HEIGHT = 27;
-// carScene's pictures are drawn with the floor 0.7 as tall (the scene's lighting.groundScaleY), and the picture's
+// carScene's pictures are drawn with the floor 0.7 as tall (the scene's camera.floorScaleY), and the picture's
 // centre sits 7 px above the car's spot on the floor.
 const CAR_FLOOR_SCALE = 0.7;
 const CAR_FLOOR_DROP = 7;

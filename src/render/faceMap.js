@@ -16,11 +16,13 @@
  */
 
 /** Height steps a px. 16 bits hold 8 191 px. */
+import { resolveHeightScaleY } from '../util/cameraView.js';
+
 export const FACE_Z_UNITS = 8;
 
 export const FACE_DEFAULTS = Object.freeze({
   enabled: false,
-  /** Screen px a px of height rises: cos of the view's tilt from the horizon. 1 = as many as it measures. */
+  /** Screen px a px of height rises: config.camera.heightScaleY (resolveFaces fills it in). */
   heightScaleY: 1,
   /** A light's cosine lifted past the terminator: 0 = hard Lambert, 1 = half-Lambert. */
   wrap: 0,
@@ -131,10 +133,11 @@ export function shaderWithFlag(source, name, on) {
 }
 
 /** config.lighting.faces over its defaults. */
-export function resolveFaces(lighting) {
+export function resolveFaces(lighting, camera = null) {
   const faces = lighting?.faces;
-  if (!faces?.enabled || lighting.raycasted) return { ...FACE_DEFAULTS };
-  return { ...FACE_DEFAULTS, ...faces };
+  const heightScaleY = resolveHeightScaleY(camera);
+  if (!faces?.enabled || lighting.raycasted) return { ...FACE_DEFAULTS, heightScaleY };
+  return { ...FACE_DEFAULTS, ...faces, heightScaleY };
 }
 
 /**

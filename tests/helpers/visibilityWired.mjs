@@ -240,8 +240,9 @@ export async function bootPreRenderGather(scene, {
       worldHeight: WORLD_H,
       lighting: {
         enabled: true, raycasted: true, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false,
-        maxOccluderSelfLit: selfLit, groundScaleY,
+        maxOccluderSelfLit: selfLit,
       },
+      camera: { floorScaleY: groundScaleY },
       physics: { maxFixturePoolSize: withPool ? fixturePool : 0 },
       wasm: { ...wasm },
     },

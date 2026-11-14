@@ -270,7 +270,7 @@ A call that cannot make a volume warns once for each kind of mistake and leaves 
 
 x looks the way the entity looks and y goes across it, both on the floor, in world px. Heights are in screen px, as on a `ShadowCaster`'s sprite, so houses, people and trees cast to the same point.
 
-`floorScaleY` (default `lighting.groundScaleY`) is how tall the floor is drawn against its width. A car whose pictures flatten the floor to 0.7 says so on a floor of 0.5. The shader applies it, so a car that turns rewrites no vertex, and it keeps the entity's rotation as what the screen shows: the car's long side stays on its path at every heading. Points already measured on the screen take `floorScaleY: 1`.
+`floorScaleY` (default `config.camera.floorScaleY`) is how tall the floor is drawn against its width. A car whose pictures flatten the floor to 0.7 says so on a floor of 0.5. The shader applies it, so a car that turns rewrites no vertex, and it keeps the entity's rotation as what the screen shows: the car's long side stays on its path at every heading. Points already measured on the screen take `floorScaleY: 1`.
 
 ```javascript
 // A car, x forward. Its cabin's roof is smaller than its base.

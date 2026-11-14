@@ -2,6 +2,7 @@
 // Handles workers, SharedArrayBuffers, entity registration, and scene lifecycle
 // GameEngine owns canvas / page lifecycle; Scene owns the running world.
 
+import { cameraFloorScaleY, resolveCamera } from '../util/cameraView.js';
 import { GameObject } from './gameObject.js';
 import { popEntity } from '../util/atomicFreeList.js';
 import { resolveForceProcessOnLogicWorker } from '../util/logicOwner.js';
@@ -23,7 +24,6 @@ import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js'
 import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
-import { resolveGroundScaleY } from '../util/lightRadius.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { ParticleComponent } from '../components/particleComponent.js';
 import { DecorationComponent } from '../components/decorationComponent.js';
@@ -423,7 +423,7 @@ class Scene {
     ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
     VolumeShadowCaster.componentId = null;
     VolumeShadowCaster.clearArrays();
-    VolumeShadowCaster.defaultFloorScaleY = resolveGroundScaleY(this.config.lighting?.groundScaleY);
+    VolumeShadowCaster.defaultFloorScaleY = cameraFloorScaleY(this.config);
     FlashComponent.componentId = null;
     FlashComponent.clearArrays();
     LightOccluder.componentId = null;
@@ -951,6 +951,12 @@ class Scene {
     // Compute shadowsEnabled (requires both enabled and shadowsEnabled)
     this.config.lighting.shadowsEnabled =
       this.config.lighting.enabled && this.config.lighting.shadowsEnabled !== false;
+
+    // DX-CAMERA: what the camera is, resolved once, every key a number (src/util/cameraView.js). The floor's
+    // foreshortening and the px a px of height rises are read from here by lights, cones, faces and volumes.
+    const cameraProblems = [];
+    this.config.camera = resolveCamera(this.config.camera, cameraProblems);
+    for (const text of cameraProblems) warnOnce(`${sceneName}.config.${text}`, 'camera', `${sceneName}.config.${text}`);
 
     // Navigation defaults from centralized config
     this.config.navigation = {

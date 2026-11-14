@@ -1250,7 +1250,7 @@ What a turned camera changes:
 
 ### Lights and shadows: what you want, what you write
 
-Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, `raycasted`, `groundScaleY`, …). Each light is an entity with `LightEmitter` in its `static components`; a light turns and moves with its entity.
+Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, `raycasted`, …), and what the camera is, `config.camera` (`pitch`, `floorScaleY`, `heightScaleY`). Each light is an entity with `LightEmitter` in its `static components`; a light turns and moves with its entity.
 
 | You want | You write |
 | --- | --- |
@@ -1290,19 +1290,30 @@ class StreetLamp extends GameObject {
 }
 ```
 
-### Light pools on the floor: `groundScaleY` and `elevation`
+### The camera, and light pools on the floor: `config.camera` and `elevation`
 
 A light reaches `LightEmitter.radius` px. Its falloff is `I / (I + d²)` with `I = (radius / 10)²` and `d` measured in world px: full at the centre, about 1 % at the radius. Two knobs make that `d` a distance on the floor of a top-down or isometric game.
 
-`config.lighting.groundScaleY` (default `1`) is how much the floor is foreshortened vertically on screen. A circle on the floor is drawn `groundScaleY` times as tall as it is wide, so a light reaches `R` across and `R * groundScaleY` up and down: an ellipse.
+`config.camera` says what the camera is, once for the scene:
 
-| View | `groundScaleY` |
+| Key | What it is | Default |
+| --- | --- | --- |
+| `pitch` | degrees from the horizon: `90` straight down, `0` from the side | unset |
+| `floorScaleY` | how much the floor is foreshortened vertically on screen | `sin(pitch)`, or `1` without a pitch |
+| `heightScaleY` | screen px that a px of height rises (`lighting.faces`) | `cos(pitch)`, or `1` without a pitch |
+| `yaw` | degrees the view turns about the vertical (45 for an isometric diamond); read by nothing yet | `0` |
+
+`floorScaleY` and `heightScaleY` are keys of their own because pictures do not always follow the trigonometry: LPC characters and carScene's cars are drawn with a floor of `0.736` and heights of `0.752`. Write `pitch` alone when your pictures follow it, the two scales when they do not.
+
+A circle on the floor is drawn `floorScaleY` times as tall as it is wide, so a light reaches `R` across and `R * floorScaleY` up and down: an ellipse.
+
+| View | `floorScaleY` |
 | --- | --- |
 | Straight down (zenithal) | `1` (round pools, the old behaviour) |
 | 3/4 top-down (people and walls drawn from the front) | about `0.7` |
 | 2:1 isometric / dimetric | `0.5` |
 
-It is one number for the scene, read when the scene loads. Values are clamped to `[0.05, 1]`; anything that is not a positive number gives `1`. It applies to every light that draws a pool: point lights, raycasted lights (`lighting.raycasted`), LiquidFun and particle lights, the cookies of shadow-casting lights, and the fade and reach of point-light shadows. The reach `R` (the radius) and every cull built on it do not change (the ellipse fits inside the circle). Glow sprites stay round: they are the bulb, not the floor.
+It is read when the scene loads. Values are clamped to `[0.05, 1]`; anything that is not a positive number gives `1`. It applies to every light that draws a pool: point lights, raycasted lights (`lighting.raycasted`), LiquidFun and particle lights, the cookies of shadow-casting lights, and the fade and reach of point-light shadows. The reach `R` (the radius) and every cull built on it do not change (the ellipse fits inside the circle). Glow sprites stay round: they are the bulb, not the floor.
 
 `LightEmitter.elevation` (default `0`, world px) is how high the source sits above the floor. The falloff becomes `I / (I + h² + d²)`: the pool keeps its centre and its reach, but it is flatter, like a lamp post rather than a torch on the ground. A floor light is at full strength at its foot; a raised one peaks at `I / (I + h²)` (a radius of 20h gives 0.8), so raise the radius when the foot gets too dim. Where things go:
 
@@ -1312,7 +1323,7 @@ It is one number for the scene, read when the scene loads. Values are clamped to
 
 ```javascript
 // Scene config: a 3/4 top-down view.
-static config = { lighting: { enabled: true, groundScaleY: 0.7 } };
+static config = { camera: { floorScaleY: 0.7 }, lighting: { enabled: true } };
 
 // A street lamp whose bulb is 110 px above its foot.
 this.lightEmitter.radius = 1732;         // I = 30000: peaks at 30000 / (30000 + 110²) ≈ 0.71 at the foot
@@ -1321,7 +1332,7 @@ this.lightEmitter.glow = 0.6;            // a halo on the bulb...
 this.lightEmitter.glowOffsetY = -110;    // ...110 px up the screen
 ```
 
-Costs: `groundScaleY` is one multiply per pixel in the lighting pass (none per light) and smaller quads for raycasted lights and splats. `elevation` is folded into the intensity and colour each light is uploaded with, so the shaders do no extra work. Both are worth knowing about for upright sprites: the lighting pass treats every pixel as floor, so the top of a tall sprite north of a light is lit as the floor further north. A smaller `groundScaleY` makes that gradient steeper; an `elevation` flattens it.
+Costs: `floorScaleY` is one multiply per pixel in the lighting pass (none per light) and smaller quads for raycasted lights and splats. `elevation` is folded into the intensity and colour each light is uploaded with, so the shaders do no extra work. Both are worth knowing about for upright sprites: the lighting pass treats every pixel as floor, so the top of a tall sprite north of a light is lit as the floor further north. A smaller `floorScaleY` makes that gradient steeper; an `elevation` flattens it.
 
 ### Faces that light as surfaces: `lighting.faces`
 
@@ -1329,12 +1340,11 @@ In an oblique or isometric view a wall is a sprite, and the light pass reads eac
 
 ```javascript
 static config = {
+  camera: { floorScaleY: 0.5, heightScaleY: 0.866 }, // or camera: { pitch: 30 }
   lighting: {
     enabled: true,
-    groundScaleY: 0.5,
     faces: {
       enabled: true,
-      heightScaleY: 0.866, // screen px that a px of height rises. Default 1.
       wrap: 0.15,          // a lamp's light past the terminator: 0 stops hard, 1 is half-Lambert. Default 0.
       gain: 1.3,           // a lamp's strength on a face against the floor's. Default 1.
       sunDirect: 0.5,      // how much of the sun's light depends on where a face looks; the rest is sky. Default 0.6.
@@ -1385,7 +1395,7 @@ A light with `coneAngle` under 2π lights a cone instead of a circle: car headli
 
 - `coneAngle` (radians) is the whole aperture: `Math.PI / 3` is 60 degrees, 30 each side of its axis. 2π, the default, is a round light.
 - `coneSoftness` (0..1, default 0) is how much of each half fades out: 0 is a hard edge, 1 fades all the way from the axis.
-- `direction` (radians, default 0) is where the cone points relative to the way the entity faces. The entity's `rotation` turns it, as it turns `offsetX`, so a car's headlights follow its heading with no code per frame. Like the pool, the cone is measured on the floor (`lighting.groundScaleY`).
+- `direction` (radians, default 0) is where the cone points relative to the way the entity faces. The entity's `rotation` turns it, as it turns `offsetX`, so a car's headlights follow its heading with no code per frame. Like the pool, the cone is measured on the floor (`camera.floorScaleY`).
 - `followFlip` (default 0): with 1, a change of the entity's `flipX` mirrors the light's `offsetX` and `direction`, so a flashlight in a hero's hand points the way the hero looks. With 0 a flip leaves the light alone (a car whose mirrored frame is only art). The getters read back what you wrote.
 
 ```javascript

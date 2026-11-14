@@ -3823,7 +3823,7 @@ export declare class LightEmitter extends Component {
   static color: Uint32Array;
   /**
    * How far the light reaches, in px. Its falloff is I / (I + d²) with I = (radius / 10)², measured on the floor
-   * (`config.lighting.groundScaleY`): full at its centre, about 1 % at the radius.
+   * (`config.camera.floorScaleY`): full at its centre, about 1 % at the radius.
    */
   static radius: Float32Array;
   /**
@@ -3909,7 +3909,7 @@ export declare class VolumeShadowCaster extends Component {
   static readonly requires: readonly [typeof MeshRenderer];
   static floorScaleY: Float32Array;
   /**
-   * How tall the floor is drawn against its width, in (0, 1]; `config.lighting.groundScaleY` unless a volume says. The
+   * How tall the floor is drawn against its width, in (0, 1]; `config.camera.floorScaleY` unless a volume says. The
    * entity's rotation stays what the screen shows: a car keeps its long side on its path, and a turn rewrites no vertex.
    */
   floorScaleY: number;

@@ -231,10 +231,10 @@ static config = {
 
 | Campo | Qué es | Por defecto |
 | --- | --- | --- |
-| `pitch` | Inclinación de la cámara desde el horizonte | `90` (cenital: la escena de hoy) |
+| `pitch` | Inclinación de la cámara desde el horizonte | sin definir (la escena de hoy) |
 | `yaw` | Giro alrededor de la vertical (45 para isométrico de rombos) | `0` |
-| `floorScaleY` | Cuánto se acorta el piso en pantalla | `sin(pitch)` |
-| `heightScaleY` | Cuántos px de pantalla sube un px de altura | `cos(pitch)` |
+| `floorScaleY` | Cuánto se acorta el piso en pantalla | `sin(pitch)`, o `1` sin `pitch` |
+| `heightScaleY` | Cuántos px de pantalla sube un px de altura | `cos(pitch)`, o `1` sin `pitch` |
 
 - `floorScaleY` y `heightScaleY` existen porque el arte no siempre sigue la trigonometría: los LPC y los autos
   de Minzinn se dibujan con piso a 0.736 y altura a 0.752, que no son seno y coseno del mismo ángulo. Quien tiene ese
@@ -244,7 +244,8 @@ static config = {
   plan. `lighting.raycasted` desaparece.
 - Reemplaza a `lighting.groundScaleY`, `lighting.faces.heightScaleY` y el valor por defecto de
   `VolumeShadowCaster.floorScaleY`. `CAMERA_TYPES` de las partículas se deriva de la cámara.
-- Sin `camera`, todo es como hoy: `pitch` 90, piso sin acortar, nada 3D.
+- Sin `camera`, todo es como hoy: piso sin acortar, alturas a 1 (lo que `lighting.faces` usaba por defecto), nada 3D.
+  No es lo mismo que `pitch: 90`, que da alturas a 0: por eso el valor por defecto es "sin definir" (F1).
 
 ### 5.2 Los assets
 
@@ -640,6 +641,15 @@ dueño, y cada stress scene llega al piso de 6 ms en su worker dueño con su kno
 
 **Hecho cuando** cada demo migrada captura igual que antes de migrar.
 
+**Cómo quedó (rama):** `src/util/cameraView.js` resuelve la cámara una vez (`Scene._applyConfigDefaults`, con un aviso
+por valor recortado o ignorado); `config.camera` queda resuelto (`pitch`, `yaw`, `floorScaleY`, `heightScaleY`,
+`oblique`) y cada worker lee `cameraFloorScaleY(config)` / `resolveFaces(lighting, camera)`. `lighting.groundScaleY` y
+`lighting.faces.heightScaleY` son claves retiradas: el aviso de claves desconocidas dice adónde se fueron. Las demos
+(Predator, Buenos Aires, headlights) y las stress scenes de luz migraron; los knobs de URL (`?groundScaleY=`) siguen
+igual y ahora escriben `camera.floorScaleY`, así que las capturas no cambian (los mismos números llegan a los mismos
+shaders). **`raycasted` no sale todavía:** derivarlo de `pitch` cambiaría escenas cenitales que hoy no lo usan, y el
+barrido que lo reemplaza (`setWall`) llega con el `ShadowCaster` único: pasa a F9.
+
 ### F2. `DirectionalSprite` (DX-DIRSPRITE)
 
 - `directions` en assets y en el json; tabla de direcciones.
@@ -706,6 +716,7 @@ costo por pixel con 1, 2 y 4 rayos para elegir.
 
 - La API de §5.5, `.sun` / `.lamps`, valores por defecto por asset, `opacity`, `setWall`.
 - `VolumeShadowCaster` y `LightOccluder` salen; Sun Street, Headlights, Buenos Aires y Predator migran.
+- `lighting.raycasted` sale (venía de F1): `camera.pitch` 90 o 0 eligen el barrido de `setWall`.
 
 **Hecho cuando** cada demo migrada captura igual (o mejor, con film y aprobación) y la tabla "what you want, what you
 write" de la guía está reescrita.
@@ -972,4 +983,5 @@ Lo que está hecho en la rama, fase por fase, con su commit. Se actualiza con ca
 
 | Fase | Estado | Commits | Notas |
 | --- | --- | --- | --- |
-| Plan en el repo | hecho | — | este archivo, filas DX-* en REVIEW_PLAN |
+| Plan en el repo | hecho | e77f734 | este archivo, filas DX-* en REVIEW_PLAN |
+| F1 `camera` | hecho | (este commit) | `raycasted` pasa a F9; `frameChainWait` (presupuesto de reloj) falla a veces en esta máquina de 2 núcleos, también en la base |
