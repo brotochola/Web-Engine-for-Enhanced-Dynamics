@@ -3,11 +3,10 @@
 
 import WEED from '/src/index.js';
 
-
 import { Destination } from './destination.js';
 import { Lootable } from './lootable.js';
 import { LootableComponent } from '../components/lootableComponent.js';
-import { PersonComponent, DIRECTION_DOWN, DIRECTION_NAMES } from '../components/personComponent.js';
+import { PersonComponent } from '../components/personComponent.js';
 import { PersonAnimationFSM, WALK_SPEED_THRESHOLD } from '../fsm/personAnimationFsm.js';
 import {
   ParticleEmitter,
@@ -15,14 +14,13 @@ import {
   Ray,
   Flash,
   SoundManager,
-  getDirectionFromVector,
   GameObject,
   Decal,
   BulletPool,
   randomColor,
 } from '/src/index.js';
 
-const { LightOccluder, ShadowCaster, RigidBody, Collider, SpriteRenderer, Transform, rng, NavGrid } = WEED;
+const { LightOccluder, ShadowCaster, RigidBody, Collider, DirectionalSprite, Transform, rng, NavGrid } = WEED;
 
 export class Person extends Lootable {
   static deriveSpeed = true;
@@ -45,7 +43,7 @@ export class Person extends Lootable {
     ...Lootable.components,
     RigidBody,
     Collider,
-    SpriteRenderer,
+    DirectionalSprite,
     ShadowCaster,
     // LightOccluder,
     PersonComponent,
@@ -120,8 +118,9 @@ export class Person extends Lootable {
     // resistance now uses static class property (Person.resistance)
     this.lootableComponent.dropMoney = 0//100;
 
-    // Initialize facing direction (default: down)
-    PersonComponent.facingDirection[this.index] = DIRECTION_DOWN;
+    // Facing south. The walk follows the velocity (PersonAnimationFSM), with no margin at the borders.
+    this.directionalSprite.turnMargin = 0;
+    this.directionalSprite.facing = Math.PI / 2;
 
     // Reset dead flag (entity indices are reused)
     PersonComponent.dead[this.index] = 0;
@@ -282,11 +281,9 @@ export class Person extends Lootable {
       dirY = dy * inv;
     }
 
-    const direction = getDirectionFromVector(dx, dy);
-    const dirIndex = DIRECTION_NAMES.indexOf(direction);
-    if (dirIndex >= 0) {
-      PersonComponent.facingDirection[this.index] = dirIndex;
-    }
+    // Face the target (the shooting state keeps the facing; the walk takes it from the velocity again).
+    this.directionalSprite.facingFrom = 'manual';
+    if (lenSq > 1e-12) this.directionalSprite.facing = Math.atan2(dy, dx);
 
     // Record shot time
     PersonComponent.lastShotTime[this.index] = performance.now();
@@ -440,13 +437,8 @@ export class Person extends Lootable {
     PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.PUNCHING);
 
     // Face the target
-    const targetX = Transform.x[targetEntityIndex];
-    const targetY = Transform.y[targetEntityIndex];
-    const direction = getDirectionFromVector(targetX - this.x, targetY - this.y);
-    const dirIndex = DIRECTION_NAMES.indexOf(direction);
-    if (dirIndex >= 0) {
-      PersonComponent.facingDirection[this.index] = dirIndex;
-    }
+    this.directionalSprite.facingFrom = 'manual';
+    this.directionalSprite.lookAt(Transform.x[targetEntityIndex], Transform.y[targetEntityIndex]);
 
     const target = GameObject.get(targetEntityIndex);
     if (target && target.recieveDamage) {

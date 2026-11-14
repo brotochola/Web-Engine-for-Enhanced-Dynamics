@@ -44,7 +44,7 @@ export class MySoldier extends Person {
   onSpawned(spawnConfig = {}) {
     // Set spritesheet and animation before super.onSpawned()
     this.setSpritesheet('poli');
-    this.setAnimation('idle_down');
+    this.setAnimation('idle');
 
     super.onSpawned(spawnConfig);
 
