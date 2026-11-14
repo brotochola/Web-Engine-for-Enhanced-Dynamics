@@ -14,6 +14,12 @@ import { Ray } from './ray.js';
 import { Grid } from './grid.js';
 import { readyBulletStamps, writeBulletColumns } from './bulletTickClient.js';
 
+// E-286: one spawn's numbers from spawn() to its body (x, y, vx, vy, damage, ownerId, shooterEntityType, trailWidth,
+// scale, alpha, tint, anchorX, anchorY, offsetY, then the sprite's facing: cos, sin, angle).
+const SPAWN_IN = new Float64Array(17);
+// The layer subscription for Layer.resolveSubscriptions, which reads `layers` and `layer`; cleared after each spawn.
+const SPAWN_SUBSCRIPTION = { layers: undefined, layer: undefined };
+
 export class BulletPool extends SharedAtomicPool {
   static poolName = 'BulletPool';
   // E-129: 32-bit slot ids past 65 535 bullets.
@@ -58,6 +64,49 @@ export class BulletPool extends SharedAtomicPool {
    * @returns {number} Bullet index or -1 if pool full
    */
   static spawn(config) {
+    // E-286: the options' numbers go to the body through SPAWN_IN, the rest as arguments, so the body never sees the
+    // object. Games pass a literal here, and a literal handed to a function TurboFan does not inline (the body is too
+    // big) is allocated, with a heap number for each double field, on every call; this front is small enough to be
+    // inlined into the caller, where escape analysis then removes the literal. The defaults are the body's, as before.
+    const f = SPAWN_IN;
+    f[0] = config.x;
+    f[1] = config.y;
+    f[2] = config.vx;
+    f[3] = config.vy;
+    f[4] = config.damage;
+    f[5] = config.ownerId;
+    f[6] = config.shooterEntityType ?? 0;
+    f[7] = config.trailWidth ?? 0;
+    f[8] = config.scale ?? 1;
+    f[9] = config.alpha ?? 1;
+    f[10] = config.tint ?? 0xffffff;
+    f[11] = config.anchorX ?? 0;
+    f[12] = config.anchorY ?? 0.5;
+    f[13] = config.offsetY ?? 0;
+    // The sprite's facing: 1 = given as cos and sin, 2 = as an angle, 0 = the velocity's.
+    let facing = 0;
+    const rotC = config.spriteRotC;
+    const rotS = config.spriteRotS;
+    if (rotC != null && rotS != null) {
+      f[14] = rotC;
+      f[15] = rotS;
+      facing = 1;
+    } else {
+      const angle = config.spriteRotation ?? config.rotation;
+      if (angle != null) {
+        f[16] = angle;
+        facing = 2;
+      }
+    }
+    return this._spawnIn(config.texture, config.layers, config.layer, facing);
+  }
+
+  /**
+   * spawn()'s body (E-286): the numbers in SPAWN_IN; the texture name, the layer subscription (`layers`, `layer`) and
+   * the facing's kind as arguments.
+   * @private
+   */
+  static _spawnIn(texture, layers, layer, facing) {
     const i = this.acquireIndex();
     if (i < 0) {
       if (!this._warnedPoolExhausted) {
@@ -93,48 +142,37 @@ export class BulletPool extends SharedAtomicPool {
     const anchorY = BulletComponent.anchorY;
     const offsetY = BulletComponent.offsetY;
     const trailWidth = BulletComponent.trailWidth;
-    const px = config.x;
-    const py = config.y;
+    // Every number is read before the calls below (texture, layers), which could reach another spawn.
+    const f = SPAWN_IN;
+    const px = f[0];
+    const py = f[1];
+    const pvx = f[2];
+    const pvy = f[3];
     x[i] = px;
     y[i] = py;
 
     startX[i] = px;
     startY[i] = py;
 
-    trailWidth[i] = config.trailWidth ?? 0;
+    trailWidth[i] = f[7];
 
     prevX[i] = px;
     prevY[i] = py;
-    vx[i] = config.vx;
-    vy[i] = config.vy;
-    damage[i] = config.damage;
-    ownerId[i] = config.ownerId;
-    shooterEntityType[i] = config.shooterEntityType ?? 0;
+    vx[i] = pvx;
+    vy[i] = pvy;
+    damage[i] = f[4];
+    ownerId[i] = f[5];
+    shooterEntityType[i] = f[6];
 
-    let texId = 0;
-    if (config.texture) {
-      const resolvedTextureId = SpriteSheetRegistry.getAnimationIndex('bigAtlas', config.texture);
-      if (resolvedTextureId === undefined) {
-        if (!this._warnedMissingTextures.has(config.texture)) {
-          this._warnedMissingTextures.add(config.texture);
-          console.warn(
-            `BulletPool.spawn: texture "${config.texture}" not found in bigAtlas; using textureId 0.`
-          );
-        }
-      } else {
-        texId = resolvedTextureId;
-      }
-    }
-    textureId[i] = texId;
-    scale[i] = config.scale ?? 1;
-    alpha[i] = config.alpha ?? 1;
-    tint[i] = config.tint ?? 0xffffff;
+    scale[i] = f[8];
+    alpha[i] = f[9];
+    tint[i] = f[10];
     {
-      const speedSq = config.vx * config.vx + config.vy * config.vy;
+      const speedSq = pvx * pvx + pvy * pvy;
       if (speedSq > 1e-12) {
         const inv = 1 / Math.sqrt(speedSq);
-        bulletRotC[i] = config.vx * inv;
-        bulletRotS[i] = config.vy * inv;
+        bulletRotC[i] = pvx * inv;
+        bulletRotS[i] = pvy * inv;
         speed[i] = speedSq * inv;
       } else {
         bulletRotC[i] = 1;
@@ -142,21 +180,42 @@ export class BulletPool extends SharedAtomicPool {
         speed[i] = 0;
       }
     }
-    if (config.spriteRotC != null && config.spriteRotS != null) {
-      spriteRotC[i] = config.spriteRotC;
-      spriteRotS[i] = config.spriteRotS;
-    } else if (config.spriteRotation == null && config.rotation == null) {
+    if (facing === 1) {
+      spriteRotC[i] = f[14];
+      spriteRotS[i] = f[15];
+    } else if (facing === 0) {
       spriteRotC[i] = bulletRotC[i];
       spriteRotS[i] = bulletRotS[i];
     } else {
-      const a = config.spriteRotation ?? config.rotation ?? 0;
+      const a = f[16];
       spriteRotC[i] = Math.cos(a);
       spriteRotS[i] = Math.sin(a);
     }
-    anchorX[i] = config.anchorX ?? 0;
-    anchorY[i] = config.anchorY ?? 0.5;
-    offsetY[i] = config.offsetY ?? 0;
-    BulletComponent.layerMask[i] = Layer.resolveSubscriptions(config);
+    anchorX[i] = f[11];
+    anchorY[i] = f[12];
+    offsetY[i] = f[13];
+
+    let texId = 0;
+    if (texture) {
+      const resolvedTextureId = SpriteSheetRegistry.getAnimationIndex('bigAtlas', texture);
+      if (resolvedTextureId === undefined) {
+        if (!this._warnedMissingTextures.has(texture)) {
+          this._warnedMissingTextures.add(texture);
+          console.warn(
+            `BulletPool.spawn: texture "${texture}" not found in bigAtlas; using textureId 0.`
+          );
+        }
+      } else {
+        texId = resolvedTextureId;
+      }
+    }
+    textureId[i] = texId;
+    const subscription = SPAWN_SUBSCRIPTION;
+    subscription.layers = layers;
+    subscription.layer = layer;
+    BulletComponent.layerMask[i] = Layer.resolveSubscriptions(subscription);
+    subscription.layers = undefined;
+    subscription.layer = undefined;
     BulletComponent.isItOnScreen[i] = 0;
     BulletComponent.active[i] = 1;
 
