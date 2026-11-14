@@ -1374,6 +1374,33 @@ this.lightEmitter.glowOffsetY = -110;    // ...110 px up the screen
 
 Costs: `floorScaleY` is one multiply per pixel in the lighting pass (none per light) and smaller quads for raycasted lights and splats. `elevation` is folded into the intensity and colour each light is uploaded with, so the shaders do no extra work. Both are worth knowing about for upright sprites: the lighting pass treats every pixel as floor, so the top of a tall sprite north of a light is lit as the floor further north. A smaller `floorScaleY` makes that gradient steeper; an `elevation` flattens it.
 
+### Sprites lit as surfaces: `heightMap` and `normalMap`
+
+A spritesheet can bring two twins of itself, same frames in the same places: how high each pixel is above the floor, and which way it looks. With lighting on, its sprites are then lit as those surfaces: the side of a barrel away from a lamp stays dark, a crate's lid and its front take different light, and the sun shades them by the hour.
+
+```javascript
+static config = {
+  camera: { pitch: 45 },               // how the pictures were drawn (or floorScaleY / heightScaleY)
+  lighting: { enabled: true },
+};
+static assets = {
+  spritesheets: {
+    props: {
+      json: 'props.json', png: 'props.png',
+      heightMap: 'props_h.png',         // R·256 + G in 1/64 px above the floor; or { png: 'props_h.png', gray: 120 }
+      normalMap: 'props_n.png',         // optional: RGB in the camera's space, x right, y up, z out of the screen
+    },
+  },
+};
+```
+
+- Without `normalMap` the normals come from the heights (a Sobel gradient): good for relief, rougher on outlines.
+- With `normalMap` alone the pixels are lit by their normal at floor height.
+- The maps are packed into a second page the atlas's size, at each frame's own rectangle (one more texture on the GPU), with the outline pixels a height map mixed with the background raised to the surface they border.
+- The normals are turned from the camera's space into the floor's with `config.camera`: give it the pitch the pictures were drawn at.
+- They go through the same pass as `lighting.faces` (which a sheet with maps turns on). A prebaked `assets.bigAtlas` does not carry them yet, and raycasted lighting lights them flat.
+- `tests/bench/stressScenes/maps/makeShapes.mjs` writes a sheet and both maps from shapes it ray-traces: a model of what an exporter writes.
+
 ### Faces that light as surfaces: `lighting.faces`
 
 In an oblique or isometric view a wall is a sprite, and the light pass reads each pixel as the floor under it: a lamp's pool climbs every wall alike, and a roof lights up when a lamp stands behind the house. With `lighting.faces` a decoration can say it is a flat face of a volume: where it looks and how high it is. Each of its pixels is then lit as that point in 3D. A lamp lights the wall that looks at it and not the one past the corner, a wall no light reaches stays dark, a roof above the lamp stays dark, and the sun lights each face by its own angle as the day goes by.

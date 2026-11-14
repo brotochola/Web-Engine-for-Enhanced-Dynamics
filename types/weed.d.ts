@@ -754,6 +754,14 @@ export interface SceneSpritesheetAsset extends Record<string, unknown> {
    * json `directions`, else its animations named `<name>_<direction>` (walk_up, walk_left…). `false`: none.
    */
   directions?: Record<string, SpriteDirectionGroup> | false;
+  /**
+   * DX-MAPS: a twin of the sheet (same frames, same places) with each pixel's height above the floor: R·256 + G in 1/64
+   * px, or `{ png, gray }` for a greyscale picture whose white is `gray` px. With lighting, the sheet's sprites are lit as
+   * the surface it says (and the normals come from it when there is no normalMap).
+   */
+  heightMap?: string | { png: string; gray?: number };
+  /** DX-MAPS: a twin of the sheet with each pixel's normal, RGB in the camera's space (x right, y up, z out of the screen). */
+  normalMap?: string;
 }
 
 export interface SceneAssetsManifest {
