@@ -13532,7 +13532,8 @@
         "R-1014",
         "R-1019",
         "R-1022",
-        "R-1023"
+        "R-1023",
+        "R-1024"
       ]
     },
     {
@@ -14553,7 +14554,8 @@
       "records": [
         "R-0981",
         "R-1018",
-        "R-1023"
+        "R-1023",
+        "R-1024"
       ]
     },
     {
@@ -14793,7 +14795,8 @@
         "R-1000",
         "R-1006",
         "R-1007",
-        "R-1023"
+        "R-1023",
+        "R-1024"
       ]
     },
     {
@@ -14959,7 +14962,8 @@
       ],
       "records": [
         "R-1021",
-        "R-1023"
+        "R-1023",
+        "R-1024"
       ]
     }
   ],
@@ -25056,6 +25060,15 @@
       "title": "The total since 00:58 on Predator: physics -17 % paired (0/4 worse), logic -18 %, spatial -6 %",
       "verdict": "note",
       "text": "**The total since 00:58 on Predator (one sitting, every engine change together): physics -17 % paired (0/4 worse), logic -18 %.**\n2026-11-14, 04:45 to 04:57, runPredatorAbab --vs aa1aa783 (main at R-1005's total) --hyp-rev main (b66d6482) --query\ncrowd=1.5 --pairs 4 (src from each side, demos from HEAD on both). Engine changes between them: E-298 step 1 (Box2D\nworkers spin through a step), E-289 (per-class neighbour reads), E-246 steps 1 and 2 (pose copies by slot runs), E-301\n(FSM transition hooks by state), E-286 (spawn and stamp fronts), E-288 (accelerations in Box2D's solver), E-305 (no\nvelocity read-back), N-168 (hot swap).\n\n| worker (own) | aa1aa783 | main | |\n| --- | --- | --- | --- |\n| physics | 6.717 ms | 5.603 | paired -17.0 %, 0/4 worse, cv 11/6 % |\n| logic | 3.568 | 2.911 | -18.4 %, under the floor (logic0 lower in 4/4) |\n| spatial | 5.199 | 4.908 | -5.6 %, under the floor |\n| pre-render | 2.965 | 2.589 | under the floor |\n| renderer | 2.179 | 1.836 | under the floor |\n\nLoad keys within 1 % (bodies 24 807 / 24 794, queue 23 674 / 23 472). Physics now waits 1.8 to 3.2 ms a frame on the hyp\nside (0.03 to 1.8 on the base): it is no longer what gates Predator's frame chain."
+    },
+    {
+      "id": "R-1024",
+      "date": "2026-11-14",
+      "time": "04:49",
+      "timeFrom": "recorded",
+      "title": "The total since 00:58 on ballsHeavy: physics -3.4 % paired (1/4 worse), KEPT (product)",
+      "verdict": "note",
+      "text": "**The total since 00:58 on ballsHeavy (physics owner): -3.4 % paired, KEPT (product).**\n2026-11-14, 04:42 to 04:54, runPredatorAbab --vs aa1aa783 --hyp-rev main (470d5031) --scene ballsHeavyStressScene\n--owner physics --pairs 4: physics own 6.874 -> 6.637 ms, paired -3.4 %, 1/4 worse, cv 3/2 %. Every other worker under\nthe floor. The same changes as R-1023; E-298 alone read -7.7 % at 01:10 from a 10.07 ms baseline: the machine has run\nthese scenes in different states through the night, and this sitting is the one that measures them together."
     }
   ],
   "leads": [
