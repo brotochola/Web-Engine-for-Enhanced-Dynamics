@@ -10,10 +10,14 @@
  *   --writer other  a worker thread rewrites them and signals (fresh data, written on another core), then the pack
  *
  *   node tests/bench/gpuPackKeyedCrossCoreMicrobench.mjs [--writer none|same|other] [--order random|near|queue]
- *     [--pack gather|scatter]
+ *     [--pack gather|scatter|table]
  *     [--rows 14000] [--entities 42600] [--frames 61] [--output path]
  *
  * Node only (worker_threads). `queue` packs in the queue's own order (no gather): the bound for an inverse.
+ * `--pack table` (E-201's ceiling): no keyed pack; a per-entity pose table (4 floats an entity, in the same shared memory,
+ * rewritten by the writer like the queue's columns) is copied whole into Pixi's own array, and the slot stream is each
+ * drawn row's key in the painter's order: what Pixi would do if pre-render kept the poses by key. The statics updates
+ * are left out on this side (a twentieth of the rows), so it reads a little low.
  */
 import { Worker } from 'node:worker_threads';
 
@@ -53,22 +57,31 @@ export async function run({ writer = 'none', order = 'random', pack: packKind = 
   const s = await setup(rows | 0, entities | 0, order === 'queue' ? 'near' : order);
   // gather: the painter's order (the binding without its inverse); scatter: E-193's, through the inverse, where the
   // tree's gpuPack has it.
-  if (packKind === 'gather') s.b = { ...s.b, keyedInverseByte: 0 };
+  if (packKind === 'gather' || packKind === 'table') s.b = { ...s.b, keyedInverseByte: 0 };
   else if (!s.b.spritesKeyedScatter) throw new Error('this tree has no pack_sprites_keyed_scatter');
+  // E-201: the pose table by key, in the queue's shared memory (so the writer rewrites it), and Pixi's private copy.
+  const tableShared = packKind === 'table' ? new Float32Array(new SharedArrayBuffer(entities * 4 * 4)) : null;
+  const tablePrivate = packKind === 'table' ? new Float32Array(entities * 4) : null;
+  if (tableShared) for (let i = 0; i < tableShared.length; i++) tableShared[i] = (i % 97) * 0.5;
   if (order === 'queue') for (let i = 0; i < rows; i++) s.order[i] = i;
   const opts = { space: GPU_SPACE_WORLD, indices: s.order, indexCount: rows, type: s.q.type };
   const ctx = () => makePackContext(s.q, opts, rows, {});
   const changes = Math.round(rows * 0.05);
   const columns = queueColumns(s.q);
+  const tableColumn = tableShared ? { name: 'poseTable', byteOffset: 0, length: tableShared.length, bytes: 4 } : null;
   const sameViews = columns.map((c) => s.q[c.name]);
 
   let worker = null;
+  let worker2 = null;
   let flag = null;
+  const control2 = new SharedArrayBuffer(16);
+  const flag2 = new Int32Array(control2);
   if (writer === 'other') {
     // The queue lives in the pack's shared WebAssembly memory: its buffer is a SharedArrayBuffer.
     const control = new SharedArrayBuffer(16);
     flag = new Int32Array(control);
     worker = new Worker(WRITER, { eval: true, workerData: { buffer: s.q.x.buffer, control, columns } });
+    if (tableColumn) worker2 = new Worker(WRITER, { eval: true, workerData: { buffer: tableShared.buffer, control: control2, columns: [tableColumn] } });
   }
 
   const change = () => {
@@ -83,6 +96,12 @@ export async function run({ writer = 'none', order = 'random', pack: packKind = 
       Atomics.notify(flag, 0);
       while (Atomics.load(flag, 0) !== 2) Atomics.wait(flag, 0, 1, 50);
       Atomics.store(flag, 0, 0);
+      if (worker2) {
+        Atomics.store(flag2, 0, 1);
+        Atomics.notify(flag2, 0);
+        while (Atomics.load(flag2, 0) !== 2) Atomics.wait(flag2, 0, 1, 50);
+        Atomics.store(flag2, 0, 0);
+      }
     }
   };
 
@@ -90,10 +109,22 @@ export async function run({ writer = 'none', order = 'random', pack: packKind = 
     tableByte: s.keyTable.byteOffset, stampByte: s.stamps.byteOffset, keyBase: entities, epoch: 0,
     updatesByte: s.updates.byteOffset, updates: 0,
   };
-  const pack = () => {
-    keyed.epoch = (keyed.epoch + 1) >>> 0 || 1;
-    return client.packKeyedRowsWasm(s.b, s.q, ctx(), s.pose, s.slots, keyed, rows);
-  };
+  const keyCol = s.q.key;
+  const pack = packKind === 'table'
+    ? () => {
+        tablePrivate.set(tableShared);
+        const slots = s.slots;
+        const order = s.order;
+        for (let k = 0; k < rows; k++) {
+          const key = keyCol[order[k]];
+          slots[k] = key < entities ? key : entities + k;
+        }
+        return rows;
+      }
+    : () => {
+        keyed.epoch = (keyed.epoch + 1) >>> 0 || 1;
+        return client.packKeyedRowsWasm(s.b, s.q, ctx(), s.pose, s.slots, keyed, rows);
+      };
   if (pack() !== rows) throw new Error('the keyed pack did not take the frame');
   const warm = 20;
   for (let f = 0; f < warm; f++) {
@@ -112,6 +143,11 @@ export async function run({ writer = 'none', order = 'random', pack: packKind = 
     Atomics.store(flag, 0, 3);
     Atomics.notify(flag, 0);
     await worker.terminate();
+  }
+  if (worker2) {
+    Atomics.store(flag2, 0, 3);
+    Atomics.notify(flag2, 0);
+    await worker2.terminate();
   }
   let check = 0;
   for (let k = 0; k < s.pose.length; k += 97) check += s.pose[k];
