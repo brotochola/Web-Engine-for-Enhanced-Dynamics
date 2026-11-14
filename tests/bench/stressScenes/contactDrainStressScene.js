@@ -1,10 +1,13 @@
 import WEED from '/src/index.js';
-import { ContactDrainBody } from './contactDrain/contactDrainBody.js';
+import { ContactDrainBody, ContactDrainBodyNoStay } from './contactDrain/contactDrainBody.js';
 
 const { Scene, Camera } = WEED;
 
 const SEED = 0xc0a7;
-const BALLS = 2048;
+// ?balls=N: the pile's size (2048). ?stay=0: bodies without onCollisionStay, as in Predator, so the logic worker
+// keeps no stay walk (E-302's owner scene).
+const BALLS = Number(WEED.params?.get('balls')) > 0 ? Math.floor(Number(WEED.params.get('balls'))) : 2048;
+const Body = WEED.params?.get('stay') === '0' ? ContactDrainBodyNoStay : ContactDrainBody;
 const WORLD_W = 2400;
 const WORLD_H = 2400;
 
@@ -40,7 +43,7 @@ export class ContactDrainStressScene extends Scene {
     textures: { ball: '/demos/img/bola.png' },
   };
 
-  static entities = [[ContactDrainBody, BALLS + 3]];
+  static entities = [[Body, BALLS + 3]];
 
   create() {
     let a = SEED >>> 0;
@@ -52,7 +55,7 @@ export class ContactDrainStressScene extends Scene {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 
-    ContactDrainBody.spawn({
+    Body.spawn({
       x: WORLD_W * 0.5,
       y: WORLD_H - 24,
       shape: 'box',
@@ -60,7 +63,7 @@ export class ContactDrainStressScene extends Scene {
       height: 48,
       isStatic: true,
     });
-    ContactDrainBody.spawn({
+    Body.spawn({
       x: 24,
       y: WORLD_H * 0.5,
       shape: 'box',
@@ -68,7 +71,7 @@ export class ContactDrainStressScene extends Scene {
       height: WORLD_H,
       isStatic: true,
     });
-    ContactDrainBody.spawn({
+    Body.spawn({
       x: WORLD_W - 24,
       y: WORLD_H * 0.5,
       shape: 'box',
@@ -82,7 +85,7 @@ export class ContactDrainStressScene extends Scene {
     for (let i = 0; i < BALLS; i++) {
       const col = i % 32;
       const row = (i / 32) | 0;
-      ContactDrainBody.spawn({
+      Body.spawn({
         x: cx - 240 + col * 15 + rng() * 4,
         y: pileTop + row * 13 + rng() * 4,
         radius: 8 + rng() * 4,
