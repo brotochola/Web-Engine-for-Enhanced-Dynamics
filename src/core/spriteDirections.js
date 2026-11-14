@@ -20,8 +20,15 @@ export function directionNameAngle(name) {
   return a === undefined ? NaN : a;
 }
 
-/** An angle in [0, 2π). */
+/** An angle in [0, 2π). One turn either way takes no division (atan2's range, a sum of two of them). */
 export function wrapAngle(a) {
+  if (a >= 0) {
+    if (a < TWO_PI) return a;
+    if (a < 2 * TWO_PI) return a - TWO_PI;
+  } else if (a >= -TWO_PI) {
+    const w = a + TWO_PI;
+    return w < TWO_PI ? w : 0;
+  }
   const w = a % TWO_PI;
   return w < 0 ? w + TWO_PI : w;
 }
@@ -242,6 +249,7 @@ export function pickDirection(t, facing, current, margin) {
     const step = t.step;
     const k = Math.round(wrapAngle(facing - t.start) / step);
     best = k >= count ? k - count : k;
+    if (best === current) return current;
     bestD = angleDistance(facing, t.angles[best]);
   } else {
     best = 0;

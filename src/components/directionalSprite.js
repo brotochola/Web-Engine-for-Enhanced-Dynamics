@@ -10,7 +10,7 @@
 
 import { Component } from '../core/component.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
-import { pickDirection, wrapAngle } from '../core/spriteDirections.js';
+import { angleDistance, pickDirection, wrapAngle } from '../core/spriteDirections.js';
 import { warnOnce } from '../util/dxWarn.js';
 import { LightEmitter } from './lightEmitter.js';
 import { RigidBody } from './rigidBody.js';
@@ -63,7 +63,23 @@ function tableOf(sheetId) {
       hasFlip: src.hasFlip === true,
       groupOfAnim: Int16Array.from(src.groupOfAnim),
       margin: TURN_MARGIN_SHARE * ((Math.PI * 2) / src.count),
+      cos: Float64Array.from(src.angles, Math.cos),
+      sin: Float64Array.from(src.angles, Math.sin),
+      // A heading stays in its direction while within half the gap to its nearer neighbour plus half the margin (the
+      // margin is spent on both sides of a border): cos² of that, per direction, for the test without atan2; with the
+      // default margin and with 0. A side 90° or wider does not hold the test: 2 (never kept that way).
+      keepCos2: new Float64Array(src.count),
+      keepCos2Zero: new Float64Array(src.count),
     };
+    for (let k = 0; k < t.count; k++) {
+      const n = t.count;
+      const prev = n > 1 ? angleDistance(t.angles[k], t.angles[(k + n - 1) % n]) : Math.PI * 2;
+      const next = n > 1 ? angleDistance(t.angles[k], t.angles[(k + 1) % n]) : Math.PI * 2;
+      const gap = (prev < next ? prev : next) * 0.5;
+      const withMargin = gap + t.margin * 0.5;
+      t.keepCos2[k] = withMargin < Math.PI * 0.5 ? Math.cos(withMargin) ** 2 : 2;
+      t.keepCos2Zero[k] = gap < Math.PI * 0.5 ? Math.cos(gap) ** 2 : 2;
+    }
   }
   cache[sheetId] = t;
   return t;
@@ -72,8 +88,10 @@ function tableOf(sheetId) {
 export class DirectionalSprite extends Component {
   static ARRAY_SCHEMA = {
     active: Uint8Array,
-    facing: Float32Array, // radians in the world (y down: π/2 looks south, at the camera)
+    facing: Float32Array, // radians in the world (y down: π/2 looks south, at the camera); with a source, at the last turn
     facingFrom: Uint8Array, // FACING_FROM
+    aimX: Float32Array, // with 'velocity' or 'rotation': the vector the facing is, kept without an atan2 a frame
+    aimY: Float32Array,
     turnMargin: Float32Array, // radians past the border before the direction changes; NaN = TURN_MARGIN_SHARE of a step
     mode: Uint8Array, // MODE_*
     animation: Uint8Array, // the group (MODE_GROUP) or the sheet's animation (MODE_PINNED)
@@ -102,6 +120,8 @@ export class DirectionalSprite extends Component {
     DirectionalSprite.facing[i] = Math.PI / 2;
     DirectionalSprite.facingFrom[i] = FACING_FROM.MANUAL;
     DirectionalSprite.turnMargin[i] = Number.NaN;
+    DirectionalSprite.aimX[i] = 0;
+    DirectionalSprite.aimY[i] = 0;
     DirectionalSprite.mode[i] = MODE_NONE;
     DirectionalSprite.animation[i] = 0;
     DirectionalSprite.directionIndex[i] = NO_DIRECTION;
@@ -117,13 +137,21 @@ export class DirectionalSprite extends Component {
 
   /** Where it looks, in world radians (like `rotation`): π/2 is south. With facingFrom 'velocity' or 'rotation', read-only in effect. */
   get facing() {
-    return DirectionalSprite.facing[this.index];
+    const i = this.index;
+    if (DirectionalSprite.facingFrom[i] !== FACING_FROM.MANUAL) {
+      const x = DirectionalSprite.aimX[i];
+      const y = DirectionalSprite.aimY[i];
+      if (x !== 0 || y !== 0) return Math.atan2(y, x);
+    }
+    return DirectionalSprite.facing[i];
   }
   set facing(radians) {
     const i = this.index;
     const v = +radians;
     if (v !== v) return;
     DirectionalSprite.facing[i] = v;
+    DirectionalSprite.aimX[i] = 0;
+    DirectionalSprite.aimY[i] = 0;
     DirectionalSprite.resolve(i);
   }
 
@@ -244,16 +272,23 @@ export class DirectionalSprite extends Component {
     const t = tableOf(sheetId);
     const count = t.count;
     if (count === 0) return NO_DIRECTION;
-    let facing = DirectionalSprite.facing[i];
+    const cur = DirectionalSprite.directionIndex[i];
+    const m = DirectionalSprite.turnMargin[i];
     const from = DirectionalSprite.facingFrom[i];
-    if (from === FACING_FROM.VELOCITY) {
+    let dir = cur;
+    if (from === FACING_FROM.MANUAL) {
+      dir = pickDirection(t, DirectionalSprite.facing[i], cur, m === m ? m : t.margin);
+    } else {
       let vx;
       let vy;
-      let min;
-      if (RigidBody.active && RigidBody.active[i]) {
+      let moved = true;
+      if (from === FACING_FROM.ROTATION) {
+        vx = Transform.rotC[i];
+        vy = Transform.rotS[i];
+      } else if (RigidBody.active && RigidBody.active[i]) {
         vx = RigidBody.vx[i];
         vy = RigidBody.vy[i];
-        min = FACING_MIN_SPEED;
+        moved = vx * vx + vy * vy > FACING_MIN_SPEED * FACING_MIN_SPEED;
       } else {
         const x = Transform.x[i];
         const y = Transform.y[i];
@@ -261,19 +296,26 @@ export class DirectionalSprite extends Component {
         vy = y - DirectionalSprite.lastY[i];
         DirectionalSprite.lastX[i] = x;
         DirectionalSprite.lastY[i] = y;
-        min = FACING_MIN_STEP;
+        moved = vx * vx + vy * vy > FACING_MIN_STEP * FACING_MIN_STEP;
       }
-      if (vx * vx + vy * vy > min * min) {
-        facing = Math.atan2(vy, vx);
-        DirectionalSprite.facing[i] = facing;
+      if (moved) {
+        DirectionalSprite.aimX[i] = vx;
+        DirectionalSprite.aimY[i] = vy;
+        // Still within the current direction: a dot product says so, without the angle (most frames of most entities).
+        let kept = false;
+        if (cur < count && (m !== m || m === 0)) {
+          const dot = vx * t.cos[cur] + vy * t.sin[cur];
+          kept = dot > 0 && dot * dot >= (vx * vx + vy * vy) * (m === 0 ? t.keepCos2Zero[cur] : t.keepCos2[cur]);
+        }
+        if (!kept) {
+          const facing = Math.atan2(vy, vx);
+          DirectionalSprite.facing[i] = facing;
+          dir = pickDirection(t, facing, cur, m === m ? m : t.margin);
+        }
+      } else if (cur >= count) {
+        dir = pickDirection(t, DirectionalSprite.facing[i], cur, m === m ? m : t.margin);
       }
-    } else if (from === FACING_FROM.ROTATION) {
-      facing = Math.atan2(Transform.rotS[i], Transform.rotC[i]);
-      DirectionalSprite.facing[i] = facing;
     }
-    const cur = DirectionalSprite.directionIndex[i];
-    const m = DirectionalSprite.turnMargin[i];
-    const dir = pickDirection(t, facing, cur, m === m ? m : t.margin);
     if (dir !== cur) DirectionalSprite.directionIndex[i] = dir;
     const g = DirectionalSprite.animation[i];
     const k = (g < t.groups.length ? g : 0) * count + dir;
