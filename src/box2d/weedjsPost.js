@@ -635,9 +635,12 @@
     // A skip must not latch the epoch, or the next frame would publish the stale slot.
     const epochSame = poseGenEpoch ? epoch === (seenPoseGenEpoch | 0) : false;
     let skipped = 0;
-    // E-246: nobody respawned, so every body publishes: by slot when most slots hold one.
+    // E-246: nobody respawned, so every body publishes: by slot when most slots hold one. After a respawn (a crowd
+    // that dies and respawns does every frame) each body's generation is checked, in slot order too.
     if (epochSame && slotsMostlyBodies()) publishPoseBySlot(x, y, rotC, rotS, outX, outY, outC, outS);
-    else for (let d = 0; d < n; d++) {
+    else if (!epochSame && bodyGeneration && seenBodyGeneration && slotsMostlyBodies()) {
+      skipped = publishPoseBySlotChecked(x, y, rotC, rotS, outX, outY, outC, outS);
+    } else for (let d = 0; d < n; d++) {
       const i = list[d];
       if (
         !epochSame &&
@@ -695,6 +698,53 @@
           outS[k] = rotS[k];
         }
       }
+    }
+  }
+
+  /**
+   * E-246: publishPose's copy over the slots in order after a respawn: a slot whose body is not the one this worker last
+   * saw (its generation moved) is skipped, as the dense list's loop skips it. Returns the slots skipped.
+   */
+  function publishPoseBySlotChecked(x, y, rotC, rotS, outX, outY, outC, outS) {
+    const has = densePositions;
+    const slots = has.length;
+    const gen = bodyGeneration;
+    const seen = seenBodyGeneration;
+    let skipped = 0;
+    let i = 0;
+    while (i < slots) {
+      while (i < slots && has[i] < 0) i++;
+      let start = i;
+      while (i < slots && has[i] >= 0) {
+        // A plain read: the writer bumps a generation (Atomics.add) before the epoch (Atomics.add), and publishPose read
+        // the epoch with Atomics.load first, so every bump behind that epoch is visible; one landing during this loop
+        // moves the epoch again and is caught on the next publish, as with Atomics.load here.
+        if ((seen[i] | 0) !== (gen[i] | 0)) {
+          copyPoseRange(start, i, x, y, rotC, rotS, outX, outY, outC, outS);
+          skipped++;
+          start = i + 1;
+        }
+        i++;
+      }
+      copyPoseRange(start, i, x, y, rotC, rotS, outX, outY, outC, outS);
+    }
+    return skipped;
+  }
+
+  /** E-246: slots [start, end) of the pose columns into the publish buffer: with set() when the stretch is long. */
+  function copyPoseRange(start, end, x, y, rotC, rotS, outX, outY, outC, outS) {
+    if (end - start >= RUN_COPY_MIN) {
+      outX.set(x.subarray(start, end), start);
+      outY.set(y.subarray(start, end), start);
+      outC.set(rotC.subarray(start, end), start);
+      outS.set(rotS.subarray(start, end), start);
+      return;
+    }
+    for (let k = start; k < end; k++) {
+      outX[k] = x[k];
+      outY[k] = y[k];
+      outC[k] = rotC[k];
+      outS[k] = rotS[k];
     }
   }
 
