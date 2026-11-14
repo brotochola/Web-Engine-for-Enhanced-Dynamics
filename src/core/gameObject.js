@@ -3,7 +3,7 @@
 
 import { syncRotCSFromAngle } from '../box2d/box2dHotFields.js';
 import { Camera } from './camera.js';
-import { markEngineAccessor } from './engineAccessors.js';
+import { isEngineAccessor, markEngineAccessor } from './engineAccessors.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
@@ -114,6 +114,59 @@ const FIELD_GETTERS = [
 ];
 FIELD_GETTERS.forEach(markEngineAccessor);
 const NO_COMPONENT_SLOTS = [];
+
+/** False once compiling the neighbour reads has thrown (a CSP without 'unsafe-eval'): GameObject's from then on. */
+let compileNeighborReads = true;
+
+/**
+ * E-289: neighborCount and getNeighbor compiled for one entity class, with GameObject's bodies. GameObject's are one
+ * getter and one method every class inherits, so their loads of `_neighborOffset`, `_neighborReaderMarked` and
+ * `_onPage` saw every class's map and were megamorphic (LoadIC_Megamorphic calls in the machine code); a copy of one's
+ * own has its own feedback (E-170 compiles component fields apart for the same reason). Null under a CSP without
+ * 'unsafe-eval'. tests/node/neighborReadsPerClass.test.js holds them to GameObject's.
+ * @returns {{ neighborCount: PropertyDescriptor, getNeighbor: PropertyDescriptor } | null}
+ */
+function compiledNeighborReads() {
+  if (!compileNeighborReads) return null;
+  let reads = null;
+  try {
+    reads = new Function(
+      'Grid',
+      `return {
+  get neighborCount() {
+    const nd = Grid._neighborData;
+    const o = this._neighborOffset;
+    if (nd === null || o < 0) return 0;
+    if (!this._neighborReaderMarked) this._markNeighborReader();
+    else if (this._onPage) Grid.markNeighborReader(this.index);
+    return nd[o];
+  },
+  getNeighbor(i) {
+    return Grid._neighborData[this._neighborOffset + 1 + i];
+  },
+};`,
+    )(Grid);
+  } catch {
+    compileNeighborReads = false;
+    return null;
+  }
+  const count = Object.getOwnPropertyDescriptor(reads, 'neighborCount');
+  const get = Object.getOwnPropertyDescriptor(reads, 'getNeighbor');
+  markEngineAccessor(count.get);
+  markEngineAccessor(get.value);
+  return {
+    neighborCount: { get: count.get, enumerable: false, configurable: true },
+    getNeighbor: { value: get.value, writable: true, enumerable: false, configurable: true },
+  };
+}
+
+/** True when `proto` reads `key` from GameObject or from an engine copy (E-289): no game class wrote its own. */
+function inheritsEngineMember(proto, key) {
+  let p = proto;
+  while (p !== null && !Object.prototype.hasOwnProperty.call(p, key)) p = Object.getPrototypeOf(p);
+  if (p === null) return false;
+  return p === GameObject.prototype || isEngineAccessor(Object.getOwnPropertyDescriptor(p, key));
+}
 /** The constructor's config when none is given: one object, not a new one per entity. */
 const EMPTY_CONFIG = Object.freeze({});
 
@@ -872,6 +925,18 @@ export class GameObject {
         enumerable: true,
         configurable: true,
       });
+    }
+
+    // E-289: this class's own neighborCount and getNeighbor, unless it or a class between it and GameObject wrote one.
+    if (this !== GameObject) {
+      const proto = this.prototype;
+      const readsCount = inheritsEngineMember(proto, 'neighborCount');
+      const readsGet = inheritsEngineMember(proto, 'getNeighbor');
+      const reads = readsCount || readsGet ? compiledNeighborReads() : null;
+      if (reads !== null) {
+        if (readsCount) Object.defineProperty(proto, 'neighborCount', reads.neighborCount);
+        if (readsGet) Object.defineProperty(proto, 'getNeighbor', reads.getNeighbor);
+      }
     }
 
     // Mark as created
