@@ -14965,6 +14965,26 @@
         "R-1023",
         "R-1024"
       ]
+    },
+    {
+      "id": "E-306",
+      "title": "Box2D refits nearly every walking body every step: a person's AABB margin is 1 px and it walks 1-2 px a frame (crowd 2.5: tree rebuild ~75 ms/s a physics thread)",
+      "status": "open",
+      "rank": 30,
+      "statusText": "proposed 2026-11-14 from Box2D by name at crowd 2.5; probe -5 % at x2",
+      "date": "2026-11-14",
+      "area": "physics",
+      "kind": "speed",
+      "result": "Probe (scratch build, 38 000 walkers, one thread): margin x2 -5 % of the step, x4 -4 %, x8 none.",
+      "next": "B2_AABB_MARGIN_FRACTION 0.25 in the weed build (both builds); Predator crowd=2.5 physics.",
+      "refs": [],
+      "aliases": [
+        "aabb margin",
+        "fat AABB margin"
+      ],
+      "records": [
+        "R-1026"
+      ]
     }
   ],
   "records": [
@@ -25078,6 +25098,15 @@
       "title": "E-294 answered by E-193's records: the keyed pack pays for lines from pre-render's core, not their order",
       "verdict": "note",
       "text": "**E-294 answered by E-193's records: the keyed pack pays for the lines it brings from pre-render's core, not their order.**\n2026-11-14, reading only. E-294's 5.1x refills per instruction (R-0997) is the cross-core hand-off E-193 measured: reading\nthe queue in its own order through an inverse (pack_sprites_keyed_scatter, R-0864) cost the same in Pixi's worker, and\nR-0867 found the pack's time is Pixi's CPU paying for about 28 000 lines a frame, not their order. A pass that gathers each\nrow's fields into a contiguous record first would read the same lines; the lever is fewer bytes a row (E-193's next: a\npose only for a row that moved). Not doing E-294 as a reorder."
+    },
+    {
+      "id": "R-1026",
+      "date": "2026-11-14",
+      "time": "13:41",
+      "timeFrom": "recorded",
+      "title": "E-306 probe: Box2D's AABB margin x2 saves ~5 % of the step with 38 000 walkers (x8 none)",
+      "verdict": "note",
+      "text": "**E-306 probe: doubling Box2D's AABB margin saves about 5 % of the step with 38 000 walking bodies; more gives it back.**\n2026-11-14 ~13:50, Node (one thread, Box2D's tasks inline), a scratch Box2D build (branch scratch/aabb-margin on weedjs/e305:\na runtime scale on b2ComputeShapeMargin, never shipped), 38 000 circles of radius 8 at 100 units a metre walking 60-120 px/s\nin a 9000 px square (Predator at crowd 2.5's density), no gravity, sleeping off, 1/60 s with 4 substeps, two rounds:\nstep median x1 20.41 / 20.33 ms, x2 19.33 / 19.35 (-5 %), x4 19.08 / 19.94, x8 20.43 / 20.50.\n\nWhy it was asked: at crowd 2.5 (Box2D by name, b2names-crowd25) each physics thread spends about 75 ms/s in the dynamic\ntree's rebuild (b2PlaceLeaf, b2DynamicTree_Rebuild, b2PartitionMid) and 45 in b2ComputeFatShapeAABB: a person's margin is\nmin(0.05 m, 0.125 x its extent) = 1 px at 100 units a metre, and it walks 1-2 px a frame, so nearly every body leaves its\nfat box every step. Box2D's own note says a small margin was tuned to keep contacts few; the probe agrees past x4.\nNext: B2_AABB_MARGIN_FRACTION 0.25 in the weed build (both builds), Predator crowd=2.5 physics as the owner (12.4 ms there)."
     }
   ],
   "leads": [
