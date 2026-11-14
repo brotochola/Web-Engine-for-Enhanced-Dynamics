@@ -257,6 +257,7 @@ import {
   errorMissingGpuDevice,
   errorCompileFailed,
   errorShaderFetchFailed,
+  shaderSourceLf,
   pixiRendererTypeName,
   RENDERER_BACKEND_WEBGPU,
   ySortEnabled,
@@ -280,7 +281,7 @@ let embeddedEngineShaders = null;
 
 function fetchEngineShader(path) {
   if (embeddedEngineShaders !== null && embeddedEngineShaders[path] !== undefined) {
-    return Promise.resolve(embeddedEngineShaders[path]);
+    return Promise.resolve(shaderSourceLf(embeddedEngineShaders[path]));
   }
   const slash = path.lastIndexOf('/');
   const name = slash >= 0 ? path.slice(slash + 1) : path;
@@ -292,7 +293,7 @@ function fetchEngineShader(path) {
     if (!r.ok) throw errorShaderFetchFailed(name, path, r.status);
     const s = await r.text();
     if (!String(s).trim()) throw errorShaderFetchFailed(name, path, 'empty');
-    return s;
+    return shaderSourceLf(s);
   });
 }
 

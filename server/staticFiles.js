@@ -54,6 +54,13 @@ export const MIME_TYPES = {
   '.wasm': 'application/wasm',
 };
 
+/**
+ * Files read fresh on every request: code, and what code expects to match its own version. Box2D's worker script is
+ * asked with a `?v=` and its .wasm is not: an hour's cached box2dWasm.wasm beside a fresh box2dWasm.js lacks the
+ * exports the script names ("__emscripten_thread_init is not a function", review N-169). Images and sounds keep an hour.
+ */
+const FRESH_EXTENSIONS = new Set(['.js', '.mjs', '.html', '.wasm', '.glsl', '.wgsl', '.vert', '.frag']);
+
 function plain(res, status, text, headers = {}) {
   res.writeHead(status, { 'Content-Type': 'text/plain', ...headers });
   res.end(text);
@@ -115,14 +122,14 @@ export function serveStaticFile(req, res, { root, headers = {}, special = null, 
       }
       return;
     }
+    const fresh = FRESH_EXTENSIONS.has(ext);
     res.writeHead(200, {
       'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
       ...headers,
       'Access-Control-Allow-Origin': '*',
-      // Scripts (workers above all) are read fresh every time.
-      'Cache-Control': ext === '.js' ? 'no-cache, no-store, must-revalidate' : 'public, max-age=3600',
-      Pragma: ext === '.js' ? 'no-cache' : '',
-      Expires: ext === '.js' ? '0' : '',
+      'Cache-Control': fresh ? 'no-cache, no-store, must-revalidate' : 'public, max-age=3600',
+      Pragma: fresh ? 'no-cache' : '',
+      Expires: fresh ? '0' : '',
     });
     res.end(content, 'utf-8');
   });

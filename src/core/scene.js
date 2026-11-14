@@ -138,6 +138,7 @@ import {
   errorShaderFetchFailed,
   resolveShaderPath,
   shaderFragmentKey,
+  shaderSourceLf,
   resolveSpritePipeline,
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
@@ -1689,7 +1690,7 @@ class Scene {
             return res.text();
           })
           .then((source) => {
-            this._loadedShaderSources[shaderName] = source;
+            this._loadedShaderSources[shaderName] = shaderSourceLf(source);
           })
       );
     }
@@ -1713,7 +1714,7 @@ class Scene {
                 return res.text();
               })
               .then((source) => {
-                this._loadedShaderSources[fragRef] = source;
+                this._loadedShaderSources[fragRef] = shaderSourceLf(source);
               })
           );
         }

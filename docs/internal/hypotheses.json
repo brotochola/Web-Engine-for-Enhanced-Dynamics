@@ -12907,6 +12907,32 @@
       ]
     },
     {
+      "id": "N-169",
+      "title": "A clone made with Git for Windows defaults could not start a demo: its CR LF shaders broke the sprite rewrite, and the dev server let a cached box2dWasm.wasm meet a fresh box2dWasm.js",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-14 from a friend's fresh clone on Windows; fixed the same day",
+      "date": "2026-11-14",
+      "area": "build",
+      "kind": "bug",
+      "result": "fixed (79917247, 54140f87, e55a2135): .gitattributes checks *.glsl and *.wgsl out with LF; shaderSourceLf reads CR LF shaders as LF where the engine fetches them; the dev server sends wasm, shaders, modules and pages with no-store.",
+      "next": "None.",
+      "refs": [
+        "REVIEW_PLAN.md#N-169"
+      ],
+      "aliases": [
+        "autocrlf",
+        "CRLF",
+        "line endings",
+        "needs one \"void main() {\"",
+        "__emscripten_thread_init is not a function",
+        "cached wasm",
+        "fresh clone on Windows"
+      ],
+      "records": [
+        "R-1042"
+      ]
+    },
+    {
       "id": "E-221",
       "title": "A typed array's length recomputed by a 64-bit division at each access (Uint64Div → CheckedUint64Bounds on component arrays)",
       "status": "answered",
@@ -25367,6 +25393,20 @@
       "title": "Box2D inside at Predator crowd 2.5 (no-inline names build): collide 24 % (manifolds 0.1 %: reaching shapes and bodies), solver 21 %, waiting and spin 19 %, finalize 17 %, tree 6 %",
       "verdict": "note",
       "text": "**Box2D inside, at Predator crowd 2.5: where the physics threads go, with builds that keep the functions apart.**\n2026-11-14, 17:23 to 17:31 (result files). Box2D main f053121 built three ways, each swapped into src/box2d for a CPU pass\n(profileSceneSweep --pass cpu --query crowd=2.5, 12 s warm-up, 10 s window; git restored the shipped pair after):\nLTO with names (C:\\weed-traces\\b2names), no LTO with names (b2nolto), and no LTO with `-fno-inline` and\n`-sINLINING_LIMIT=1` (b2noinline, new: slower, but more functions apart). Shares of the four physics threads' samples:\n\n| part | no-inline build | |\n| --- | --- | --- |\n| b2CollideTask | 23.9 % | narrowphase loop; b2CircleManifold itself 0.1 %: the cost is reaching each contact's shapes and bodies |\n| b2ExecuteBlock | 20.9 % | the solver's stages; the contact stages (_Wide) are forced inline |\n| futex wait, b2SchedulerHasPending, b2SchedulerWorkerMain | 13.8 + 3.1 + 2.3 % | waiting and E-298's spin |\n| b2FinalizeBodiesTask, b2ComputeFatShapeAABB, b2InvMulWorldTransforms, MarkProxyMoved | 9.7 + 5.4 + 1.1 + 1.0 % | the finalize |\n| tree: Rebuild, PartitionMid, MakeInternalNode, PlaceLeaf, Refit, BumpPair | ~5.6 % | broadphase upkeep |\n| step_world, b2SplitIsland, b2SolverTask | 1.9, 1.6, 1.1 % | |\n\nHardware counters for the same scene (R-1034): b2ExecuteBlock 1.7 and b2CollideTask 2.0 refills an instruction, the\nfinalize 2.1: the hot Box2D code waits on memory reached through ids (shapes, body sims), not on arithmetic.\nEven without LTO, binaryen's single-caller inlining keeps b2ExecuteBlock and b2CollideTask whole; Chrome's profile has\nno position inside a wasm function (every sample is line 1), so finer splits need noinline builds like this one.\n\nReading: no cheap lever left inside Box2D at this scale; what is left is data layout (contacts reaching shapes and\nbodies by id), the work of a Box2D change of its own, and E-287 (the stage barrier)."
+    },
+    {
+      "id": "R-1042",
+      "date": "2026-11-14",
+      "time": "17:33",
+      "timeFrom": "recorded",
+      "title": "N-169 fixed: a Git for Windows clone's CR LF shaders and a cached Box2D wasm stopped every demo",
+      "verdict": "kept-hygiene",
+      "text": "**N-169 fixed: a clone made with Git for Windows' defaults could not start a demo.**\n2026-11-14, from a friend's fresh clone: the renderer stopped with `the sprite vertex shader needs one \"void main() {\"` and the Box2D worker with `__emscripten_thread_init is not a function`. Git for Windows installs with core.autocrlf=true, and the clone wrote every shader with CR LF (a scratch clone with autocrlf=true: 73 CR in instancedSprite.vert.glsl, 0 after the fix); the sprite rewrites look for 'void main() {\\n'. The Box2D error is a wasm from another build than its script: the repo's pair matches (216 of 216 exports), and the dev server let the browser keep box2dWasm.wasm an hour while the script comes fresh with ?v=, so a cached wasm is the likely cause. Fixed in 79917247 (.gitattributes: *.glsl and *.wgsl check out with LF), 54140f87 (shaderSourceLf where the engine fetches shaders; shaderSourceLf.test.js) and e55a2135 (the dev server sends wasm, shaders, modules and pages with no-store; staticFiles.test.js). Details in REVIEW_PLAN.md#N-169. Hygiene: shader loads only, nothing per frame. test:node 2617/2619 in a worktree without node_modules (the two failures import node_modules/pixi.js directly; the full suite runs in the main folder after the merge), test:demos 101/101.",
+      "commits": [
+        "79917247",
+        "54140f87",
+        "e55a2135"
+      ]
     }
   ],
   "leads": [
