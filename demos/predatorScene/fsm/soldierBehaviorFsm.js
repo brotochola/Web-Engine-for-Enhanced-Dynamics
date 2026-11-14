@@ -26,6 +26,9 @@ const _shootCandDistSq = new Float64Array(SHOOT_LOS_CANDIDATE_K);
 /** Reuse LOS for same target this many logic frames. */
 const LOS_CACHE_FRAMES = 4;
 
+/** An idle soldier whose scan found nobody scans again after this many logic frames (~67 ms at 60 fps). */
+const IDLE_RESCAN_FRAMES = 4;
+
 // ==========================================
 // HELPER: Find closest civilian in neighbors
 // ==========================================
@@ -184,9 +187,14 @@ function getDestination() {
 class IdleSoldierState extends FSMState {
   static onEnter(owner, i, fromState) {
     clearTarget(i);
+    owner._idleScanAt = 0;
   }
 
   static onUpdate(owner, i, dt) {
+    // A scan walks every neighbour (and casts rays with a gun): when the last one found nobody, wait a few frames.
+    const frame = owner._logicFrame | 0;
+    if (frame < owner._idleScanAt) return;
+
     // Scan for civilians: gun → need LOS; no gun → closest (melee)
     const closest = owner.hasGun() ? findACivilianToShoot(owner) : findClosestCivilian(owner);
 
@@ -212,6 +220,7 @@ class IdleSoldierState extends FSMState {
       return;
     }
 
+    owner._idleScanAt = frame + IDLE_RESCAN_FRAMES;
   }
 
 }

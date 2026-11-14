@@ -38,6 +38,8 @@ export class MySoldier extends Person {
   _losCacheTarget = -1;
   _losCacheClear = 0;
   _losCacheUntilFrame = 0;
+  /** The logic frame from which an idle soldier that found nobody scans its neighbours again (IdleSoldierState). */
+  _idleScanAt = 0;
 
   onSpawned(spawnConfig = {}) {
     // Set spritesheet and animation before super.onSpawned()
