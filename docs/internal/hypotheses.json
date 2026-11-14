@@ -13886,7 +13886,8 @@
       ],
       "records": [
         "R-0987",
-        "R-0999"
+        "R-0999",
+        "R-1005"
       ]
     },
     {
@@ -13933,7 +13934,8 @@
         "E-71"
       ],
       "records": [
-        "R-1001"
+        "R-1001",
+        "R-1005"
       ]
     },
     {
@@ -13957,7 +13959,8 @@
       ],
       "records": [
         "R-0987",
-        "R-0999"
+        "R-0999",
+        "R-1005"
       ]
     },
     {
@@ -14096,7 +14099,8 @@
       "records": [
         "R-0986",
         "R-0991",
-        "R-1004"
+        "R-1004",
+        "R-1005"
       ]
     },
     {
@@ -14139,7 +14143,8 @@
         "decoChurn"
       ],
       "records": [
-        "R-1001"
+        "R-1001",
+        "R-1005"
       ]
     },
     {
@@ -14255,7 +14260,8 @@
         "R-0980",
         "R-0987",
         "R-0992",
-        "R-0999"
+        "R-0999",
+        "R-1005"
       ]
     },
     {
@@ -14445,7 +14451,8 @@
       "records": [
         "R-0980",
         "R-0987",
-        "R-0999"
+        "R-0999",
+        "R-1005"
       ]
     },
     {
@@ -14775,7 +14782,8 @@
         "publish_batch"
       ],
       "records": [
-        "R-1003"
+        "R-1003",
+        "R-1005"
       ]
     },
     {
@@ -14847,7 +14855,8 @@
       ],
       "records": [
         "R-0996",
-        "R-0999"
+        "R-0999",
+        "R-1005"
       ]
     },
     {
@@ -24775,6 +24784,15 @@
       "commits": [
         "76844fe7"
       ]
+    },
+    {
+      "id": "R-1005",
+      "date": "2026-11-14",
+      "time": "00:58",
+      "timeFrom": "recorded",
+      "title": "The night's total on Predator (b8105181 vs main): within its noise (logic -1.9 %, physics NEUTRAL); E-302's -12.7 % gate read was mostly noise",
+      "verdict": "note",
+      "text": "**The night's total on Predator (one sitting, every change together): within Predator's noise.**\n2026-11-14 00:58 to 01:07, runPredatorAbab --vs b8105181 (main before the night) --hyp-rev main (aa1aa783) --query crowd=1.5\n--pairs 4 (src from each side; demos from HEAD on both, so E-280 and E-297 sit on both sides).\n\n| worker (own) | b8105181 | main | |\n| --- | --- | --- | --- |\n| logic | 4.059 ms | 3.983 | -1.9 %, under the floor |\n| spatial | 5.811 | 5.843 | +0.6 %, under the floor |\n| physics | 8.211 | 8.104 | paired +5.7 %, 2/4 worse, cv 15/8 % (the judged row: NEUTRAL) |\n| pre-render | 3.568 | 4.088 | +14.6 %, under the floor |\n\nLoad keys within 0.3 %. Reading: the night's changes do not move Predator at crowd=1.5 beyond its run-to-run noise.\nE-302's gate read logic -12.7 % (R-0999), unjudged under the floor; this sitting reads -1.9 %: most of that was noise, as\nHOW_WE_MEASURE warns for a keep read near its threshold. Pre-render swung -20 %, -14 %, +15 % across tonight's gates with\nno change reaching it (wait-bound in Predator). What stands is each change's own measure: decoChurn logic -89.5 % (E-273),\ncontactsMicrobench +36/+46 % (E-302), the publish +10/+19 % past L2 (E-299), the heap rows (E-262, E-277, E-285, E-265,\nE-280). No kept change is reverted: none made a judged row worse."
     }
   ],
   "leads": [
