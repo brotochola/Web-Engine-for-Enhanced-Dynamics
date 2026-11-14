@@ -5399,12 +5399,13 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
 UPDATE LIGHTING (NO ZOOM SCALING)
 ===================== */
 
-  updateLighting() {
-    if (!this.lightingEnabled || !this.lightingShader) return;
-
-    const uniformGroup = this.lightingShader.resources.uniforms;
-
-    // Cache component arrays
+  /**
+   * E-311. updateLighting's per-light pack: each visible light's texels (packLightDataTexel's layout, E-109), the cone
+   * lights first. In its own method because inside updateLighting (1 395 bytecode bytes, 21 functions inlined)
+   * TurboFan left a double boxed per light per frame (Predator crowd 1.5: 54.5 KB/s, a sixth of Pixi's allocation);
+   * compiled alone the loop allocates nothing.
+   */
+  _packLightData(countToRender, visibleLights, coneCosSeen, coneCount, lightData, row1, row2, groundInvY, vr) {
     const worldX = Transform.x;
     const worldY = Transform.y;
     const lightColor = LightEmitter.color;
@@ -5415,47 +5416,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const offsetY = LightEmitter.offsetY;
     const rotC = Transform.rotC;
     const rotS = Transform.rotS;
-    // The floor's foreshortening: the shader scales the fragment's world y by this once, the lights' y here.
-    const groundInvY = this._groundInvScaleY || 1;
-
-    const zoom = this._renderZoom;
-    const cameraX = this._renderCameraX;
-    const cameraY = this._renderCameraY;
-
-    // Update camera uniforms (vec2 types)
-    this._stampLightCamera(uniformGroup.uniforms, cameraX, cameraY, zoom);
-    this._applyLightingViewport(this.canvasWidth, this.canvasHeight);
-
-    const lightData = this._lightDataFloats;
-    const maxLights = this.maxLights;
-
-    // Use pre-computed visible lights (computed in computeVisibleLights())
-    const visibleLights = this._visibleLightsAll;
-    const countToRender = Math.min(this._visibleLightsAllCount, maxLights);
-
-    const rgb = this._rgbResult; // the sun's colour, once a frame
-    const vr = Collider.visualRange;
-    const row1 = maxLights * 4;
-    const row2 = maxLights * 8;
-    // DX-SPOT: the cone lights take the first slots, so the shader loops them apart and a point light pays nothing; with
-    // no cone in view the slots are the visible order, as before.
-    const lightConeCos = LightEmitter.coneCos;
     const lightConeInvSpan = LightEmitter.coneInvSpan;
     const lightDirC = LightEmitter.dirC;
     const lightDirS = LightEmitter.dirS;
-    // Each light's coneCos, read once: the count and the slots must agree, or a light the logic worker turns into a cone
-    // in between takes a slot twice and leaves one with last frame's light.
-    if (this._lightConeCosSeen.length < countToRender) this._lightConeCosSeen = new Float32Array(Math.max(countToRender, maxLights | 0));
-    const coneCosSeen = this._lightConeCosSeen;
-    let coneCount = 0;
-    for (let i = 0; i < countToRender; i++) {
-      const seen = lightConeCos[visibleLights[i].entityId];
-      coneCosSeen[i] = seen;
-      if (seen > -1) coneCount++;
-    }
     let coneSlot = 0;
     let pointSlot = coneCount;
-
     for (let i = 0; i < countToRender; i++) {
       const entityIndex = visibleLights[i].entityId;
       const color = lightColor[entityIndex];
@@ -5510,6 +5475,85 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
 
+  }
+
+  /**
+   * E-311. updateLighting's sun and night uniforms. In its own method for the reason _packLightData is: inside
+   * updateLighting TurboFan boxed more of these doubles (12 KB/s with the pack already out, about 3 alone).
+   */
+  _writeSunUniforms(uniforms, rgb) {
+    if (Sun.isInitialized && Sun.enabled) {
+      const sunIntensity = Sun.intensity;
+      const sunColor = Sun.color;
+
+      uniforms.uSunIntensity = sunIntensity;
+
+      // Extract sun color RGB
+      extractRGBNormalizedMut(sunColor, rgb);
+      if (this.faceRT !== null) this._writeFaceSun();
+      uniforms.uSunR = rgb.r;
+      uniforms.uSunG = rgb.g;
+      uniforms.uSunB = rgb.b;
+
+      // Night light: its own term, so Sun.intensity (shadows, game logic) never hears of it
+      const night = this._nightRGB;
+      Sun.nightLightRGB(night);
+      uniforms.uNightR = night[0];
+      uniforms.uNightG = night[1];
+      uniforms.uNightB = night[2];
+    } else {
+      // Sun disabled - no sun contribution
+      uniforms.uSunIntensity = 0;
+      uniforms.uNightR = 0;
+      uniforms.uNightG = 0;
+      uniforms.uNightB = 0;
+    }
+
+  }
+
+  updateLighting() {
+    if (!this.lightingEnabled || !this.lightingShader) return;
+
+    const uniformGroup = this.lightingShader.resources.uniforms;
+
+    // The floor's foreshortening: the shader scales the fragment's world y by this once, the lights' y here.
+    const groundInvY = this._groundInvScaleY || 1;
+
+    const zoom = this._renderZoom;
+    const cameraX = this._renderCameraX;
+    const cameraY = this._renderCameraY;
+
+    // Update camera uniforms (vec2 types)
+    this._stampLightCamera(uniformGroup.uniforms, cameraX, cameraY, zoom);
+    this._applyLightingViewport(this.canvasWidth, this.canvasHeight);
+
+    const lightData = this._lightDataFloats;
+    const maxLights = this.maxLights;
+
+    // Use pre-computed visible lights (computed in computeVisibleLights())
+    const visibleLights = this._visibleLightsAll;
+    const countToRender = Math.min(this._visibleLightsAllCount, maxLights);
+
+    const rgb = this._rgbResult; // the sun's colour, once a frame
+    const vr = Collider.visualRange;
+    const row1 = maxLights * 4;
+    const row2 = maxLights * 8;
+    // DX-SPOT: the cone lights take the first slots, so the shader loops them apart and a point light pays nothing; with
+    // no cone in view the slots are the visible order, as before.
+    const lightConeCos = LightEmitter.coneCos;
+    // Each light's coneCos, read once: the count and the slots must agree, or a light the logic worker turns into a cone
+    // in between takes a slot twice and leaves one with last frame's light.
+    if (this._lightConeCosSeen.length < countToRender) this._lightConeCosSeen = new Float32Array(Math.max(countToRender, maxLights | 0));
+    const coneCosSeen = this._lightConeCosSeen;
+    let coneCount = 0;
+    for (let i = 0; i < countToRender; i++) {
+      const seen = lightConeCos[visibleLights[i].entityId];
+      coneCosSeen[i] = seen;
+      if (seen > -1) coneCount++;
+    }
+    // E-311: the per-light pack in its own method (see _packLightData).
+    this._packLightData(countToRender, visibleLights, coneCosSeen, coneCount, lightData, row1, row2, groundInvY, vr);
+
     clearUnusedLightDataTexels(lightData, maxLights, countToRender);
 
     if (this._lightDataSource) {
@@ -5524,32 +5568,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // SUN UNIFORMS
     // ========================================
     // Sun provides global ambient light that varies with time of day
-    if (Sun.isInitialized && Sun.enabled) {
-      const sunIntensity = Sun.intensity;
-      const sunColor = Sun.color;
-
-      uniformGroup.uniforms.uSunIntensity = sunIntensity;
-
-      // Extract sun color RGB
-      extractRGBNormalizedMut(sunColor, rgb);
-      if (this.faceRT !== null) this._writeFaceSun();
-      uniformGroup.uniforms.uSunR = rgb.r;
-      uniformGroup.uniforms.uSunG = rgb.g;
-      uniformGroup.uniforms.uSunB = rgb.b;
-
-      // Night light: its own term, so Sun.intensity (shadows, game logic) never hears of it
-      const night = this._nightRGB;
-      Sun.nightLightRGB(night);
-      uniformGroup.uniforms.uNightR = night[0];
-      uniformGroup.uniforms.uNightG = night[1];
-      uniformGroup.uniforms.uNightB = night[2];
-    } else {
-      // Sun disabled - no sun contribution
-      uniformGroup.uniforms.uSunIntensity = 0;
-      uniformGroup.uniforms.uNightR = 0;
-      uniformGroup.uniforms.uNightG = 0;
-      uniformGroup.uniforms.uNightB = 0;
-    }
+    // E-311: in its own method, as the per-light pack.
+    this._writeSunUniforms(uniformGroup.uniforms, rgb);
 
     if (typeof uniformGroup.update === 'function') uniformGroup.update();
   }
