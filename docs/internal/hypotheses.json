@@ -13007,7 +13007,8 @@
         "frame clock"
       ],
       "records": [
-        "R-1029"
+        "R-1029",
+        "R-1044"
       ]
     },
     {
@@ -15077,7 +15078,8 @@
       ],
       "records": [
         "R-1034",
-        "R-1035"
+        "R-1035",
+        "R-1044"
       ],
       "id": "E-310",
       "title": "Spatial workers at scale: at 57 600 entities two spatial workers would each spend ~7.3 ms where one spends ~12 ms (Predator sets one)",
@@ -15092,12 +15094,12 @@
     {
       "id": "E-308",
       "title": "Box2D's step export rewrites the angle (an atan2), rotC and rotS of every moved body, also when it did not turn (Predator's people have a fixed rotation)",
-      "status": "kept",
-      "statusText": "kept 2026-11-14 (R-1036)",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-14 (R-1036, read against the crowd-2.5 A/A in R-1044)",
       "date": "2026-11-14",
       "area": "physics",
       "kind": "speed",
-      "result": "kept (R-1036): Box2D f053121, WeedJS 6cdaad9c: the step's export writes angle/rotC/rotS only when the rotation changed (commands still write all); Predator crowd 2.5: physics -3.2 %, logic -10.1 %, preRender -7.8 % (0/4 worse each); pile bit-identical; kernel tie.",
+      "result": "kept-hygiene (R-1036, R-1044): the step's export writes angle/rotC/rotS only when the rotation changed; Predator crowd 2.5 physics -3.2 %, logic -10.1 %, preRender -7.8 %, all within the crowd-2.5 A/A's B-side bias (-3.1, -8.0, -6.3 %); no worker worse, reader refills down (one capture a side); pile bit-identical.",
       "next": "None.",
       "refs": [
         "EXECUTION_PLAN.md#E-308"
@@ -15109,7 +15111,8 @@
       "records": [
         "R-1036",
         "R-1037",
-        "R-1040"
+        "R-1040",
+        "R-1044"
       ]
     },
     {
@@ -25441,6 +25444,15 @@
         "bf320cd7",
         "4a5e962d"
       ]
+    },
+    {
+      "id": "R-1044",
+      "date": "2026-11-14",
+      "time": "18:16",
+      "timeFrom": "recorded",
+      "title": "A/A at Predator crowd 2.5 with --pool reads B faster in every worker (preRender -6.3 %, logic -8 %, physics -3.1 %, spatial -2.1 %): E-308's gains are within it",
+      "verdict": "note",
+      "text": "**A/A at Predator crowd 2.5 with --pool: identical code reads the B side faster in every worker (2 to 8 %); today's crowd-2.5 verdicts read against it.**\n2026-11-14, 18:11:11 to 18:16:37, runPredatorAbab --vs main --hyp-rev main (416a24d2) --query crowd=2.5 --owner preRender\n--pool --pairs 4 (the runner orders the pairs AB BA AB BA). The runner called it KEPT:\n\n| worker (own) | A | B | |\n| --- | --- | --- | --- |\n| preRender | 7.340 ms | 6.996 | paired -6.3 %, 1/4 worse, cv 8/3 % |\n| logic | 6.837 | 6.288 | -8.0 %, 1/4 |\n| physics | 14.100 | 13.681 | -3.1 %, 1/4 |\n| spatial | 10.927 | 10.367 | -2.1 %, 1/4 |\n\nPer run, A was slower in three pairs of four whether it ran first or second (preRender A 6.65 / 7.70 / 8.09 / 6.95, B\n7.10 / 6.80 / 7.23 / 6.60), and the sitting's first run was not the slow one: the bias goes with the side (pool-a for\n--vs, pool-b for --hyp-rev), not with the order. Cause not found. Until it is, a crowd-2.5 reading needs to clear these\nmargins, and a two-pair --early stop can be fooled (the E-312 ceiling's first sitting stopped at 2 pairs with every worker\n12 to 16 % lower).\n\nToday's crowd-2.5 readings against it:\n- E-308 (R-1036): physics -3.2 % (A/A -3.1 %), logic -10.1 % (-8.0 %), preRender -7.8 % (-6.3 %): within the margins. The\n  change stays (no worker worse, the counters' reader refills down), as hygiene, not as a speed keep.\n- E-310 step 1 (R-1035): spatial -32.3 % clears it; logic +8.3 % runs against it, so that cost is real.\n- E-312's ceiling (scratch b7f8cfa9, 18:05:22 to 18:10:40, 4 pairs): preRender -17.1 % (0/4), -8.2 % against the other\n  workers, which fell 9 to 16 %: about 10 % past the A/A's -6.3 %."
     }
   ],
   "leads": [
