@@ -14559,7 +14559,8 @@
         "R-0981",
         "R-1018",
         "R-1023",
-        "R-1024"
+        "R-1024",
+        "R-1037"
       ]
     },
     {
@@ -14800,7 +14801,8 @@
         "R-1006",
         "R-1007",
         "R-1023",
-        "R-1024"
+        "R-1024",
+        "R-1037"
       ]
     },
     {
@@ -14967,7 +14969,8 @@
       "records": [
         "R-1021",
         "R-1023",
-        "R-1024"
+        "R-1024",
+        "R-1037"
       ]
     },
     {
@@ -15072,7 +15075,8 @@
         "unchanged rotation"
       ],
       "records": [
-        "R-1036"
+        "R-1036",
+        "R-1037"
       ]
     }
   ],
@@ -25307,6 +25311,15 @@
         "5ccca35d",
         "6cdaad9c"
       ]
+    },
+    {
+      "id": "R-1037",
+      "date": "2026-11-14",
+      "time": "17:04",
+      "timeFrom": "recorded",
+      "title": "The day's Box2D changes on LiquidFun: liquidFunStress physics -2.2 % (0/4 worse), liquidFunBodyCouple -1.7 % (2/4): neutral, no row worse",
+      "verdict": "note",
+      "text": "**The day's Box2D and engine changes on LiquidFun scenes: neutral, no row worse.**\n2026-11-14, 16:54:13 to 17:04:24, runPredatorAbab --vs aa1aa783 (main at 00:58) --hyp-rev main (7261a0b2) --owner physics\n--pool --early, 4 pairs each (the owner asked whether the Box2D changes were tried on LiquidFun). Between the two:\nE-298 step 1 (Box2D workers spin through a world step), E-288 (accelerations in the solver), E-305 (no velocity\nread-back without LiquidFun), E-308 (the step's export skips an unchanged rotation), and the engine's JS changes.\n\n| scene | physics (own) | |\n| --- | --- | --- |\n| liquidFunStressScene ?water=1.5 | 7.094 -> 6.954 ms | paired -2.2 %, 0/4 worse, cv 2/1 % |\n| liquidFunBodyCoupleStressScene | 6.586 -> 6.507 ms | paired -1.7 %, 2/4 worse, cv 3/3 % |\n\nEvery other worker under its floor; presented 60 fps on both sides. Neither scene loses what Predator and ballsHeavy\ngained; E-298 step 2's regression (R-1007) stays the only LiquidFun cost seen, and it was dropped."
     }
   ],
   "leads": [
