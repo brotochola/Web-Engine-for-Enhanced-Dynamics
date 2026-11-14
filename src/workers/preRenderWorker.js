@@ -14,6 +14,8 @@ import { LightEmitter as LightEmitterImport } from '../components/lightEmitter.j
 import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRenderer.js';
 import { AdobeAnimComponent as AdobeAnimComponentImport } from '../components/adobeAnimComponent.js';
 import { ShadowCaster as ShadowCasterImport } from '../components/shadowCaster.js';
+import { DirectionalSprite } from '../components/directionalSprite.js';
+import { pickDirection } from '../core/spriteDirections.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
 import { FlashComponent as FlashComponentImport } from '../components/flashComponent.js';
 import { LightOccluder as LightOccluderImport, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
@@ -169,6 +171,28 @@ const LightEmitter = LightEmitterImport;
 const SpriteRenderer = SpriteRendererImport;
 const AdobeAnimComponent = AdobeAnimComponentImport;
 const ShadowCaster = ShadowCasterImport;
+
+/** DX-SHADOW3D: the direction tables the scene sent (by sheet id), as _applySunFrames reads them; null when none. */
+function sunFrameTables(byId) {
+    if (!byId) return null;
+    const out = [];
+    let any = false;
+    for (const [id, src] of Object.entries(byId)) {
+        if (!src || !(src.count > 0)) continue;
+        out[id | 0] = {
+            count: src.count,
+            uniform: src.uniform === true,
+            start: +src.start,
+            step: +src.step,
+            angles: Float64Array.from(src.angles),
+            anim: Uint8Array.from(src.anim),
+            flip: Uint8Array.from(src.flip),
+            groups: src.groups.length,
+        };
+        any = true;
+    }
+    return any ? out : null;
+}
 const FlashComponent = FlashComponentImport;
 const LightOccluder = LightOccluderImport;
 const Query = QueryImport;
@@ -490,6 +514,8 @@ class PreRenderWorker extends AbstractWorker {
         /** E-177: the scene keys its main queue's frames (the resync header laid out): the emit writes the key column. */
         this._keyedFrames = false;
         this._shadowTextures = false; // config.lighting.shadowTextures
+        // DX-SHADOW3D: a directional sprite's sun shadow shows the frame the sun sees (directionTables, by sheet id).
+        this._sunFrameTables = null;
         this._faces = false; // config.lighting.faces: decoration rows carry their face in the tile offsets
         this._collectedRows = 0; // the rows the last sprite queue's collect held
         /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
@@ -1282,6 +1308,7 @@ class PreRenderWorker extends AbstractWorker {
         ) {
             this.shadowsEnabled = true;
             this._shadowTextures = this.config?.lighting?.shadowTextures === true;
+            this._sunFrameTables = sunFrameTables(data.directionTables);
             this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
             this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
             this.maxShadowsPerEntity = data.shadows.maxShadowsPerEntity || 0;
@@ -3505,6 +3532,7 @@ class PreRenderWorker extends AbstractWorker {
                 ? this._packRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
                 : 0;
             if (this._shadowTextures && sunN > 0) this._applyShadowTextures(q, dst.sun, sunN);
+            if (this._sunFrameTables !== null && sunN > 0 && DirectionalSprite.active) this._applySunFrames(q, dst.sun, sunN);
         }
         return sunN;
     }
@@ -3541,6 +3569,51 @@ class PreRenderWorker extends AbstractWorker {
             if (ax === ax) rows[at + GPU_ROW_ANCHOR_X] = ax;
             if (ay === ay) rows[at + GPU_ROW_ANCHOR_X + 1] = ay;
             rows[at + GPU_ROW_TEXTURE] = id - 1;
+        }
+    }
+
+    /**
+     * DX-SHADOW3D: a directional sprite's sun row draws the frame the sun sees: its facing turned by the angle between
+     * the camera's view (north) and the sun's (along the shadows, on the floor), its animation in that direction, the
+     * same frame of the cycle, that direction's flip. Full rows only (a keyed row reads the sprite's own statics).
+     */
+    _applySunFrames(q, rows, sunN) {
+        if ((q.count | 0) !== this._collectedRows || !Sun.isInitialized) return;
+        const tables = this._sunFrameTables;
+        const casters = this._gpuCasterIdx;
+        const types = this._renderableType;
+        const entities = this._renderableIndex;
+        const proxy = this.proxyToGlobalAnim;
+        const starts = this.animationFrameStart;
+        const counts = this.animationFrameCount;
+        const frames = this.entityFrameIndex;
+        if (!proxy || !starts || !counts) return;
+        const turn = -Math.PI / 2 - Math.atan2(Sun.shadowDirY / cameraFloorScaleY(this.config), Sun.shadowDirX);
+        for (let k = 0; k < sunN; k++) {
+            const row = casters[k];
+            if (types[row] !== 0) continue;
+            const e = entities[row];
+            if (!DirectionalSprite.active[e] || DirectionalSprite.mode[e] !== 1) continue;
+            const sheet = SpriteRenderer.spritesheetId[e];
+            const t = tables[sheet];
+            if (t === undefined) continue;
+            const ax = DirectionalSprite.aimX[e];
+            const ay = DirectionalSprite.aimY[e];
+            const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
+            const d = pickDirection(t, facing + turn, 255, 0);
+            const g = DirectionalSprite.animation[e];
+            const slot = (g < t.groups ? g : 0) * t.count + d;
+            const map = proxy[sheet];
+            const global = map ? map[t.anim[slot]] : undefined;
+            if (global === undefined) continue;
+            const n = counts[global] | 0;
+            let f = frames ? frames[e] | 0 : 0;
+            if (f < 0 || f >= n) f = 0;
+            const at = k * GPU_CASTER_FLOATS;
+            rows[at + GPU_ROW_TEXTURE] = (starts[global] | 0) + f;
+            const sx = rows[at + GPU_ROW_SCALE_X];
+            const flipped = t.flip[slot] === 1;
+            rows[at + GPU_ROW_SCALE_X] = flipped === (sx < 0) ? sx : -sx;
         }
     }
 
