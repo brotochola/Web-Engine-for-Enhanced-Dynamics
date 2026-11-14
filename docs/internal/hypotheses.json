@@ -14744,13 +14744,13 @@
       "id": "E-298",
       "title": "Box2D's pool threads sleep 63 to 92 % of the step in Predator: the serial part on the physics thread bounds physics",
       "status": "open",
-      "statusText": "proposed 2026-11-13 from the names-build CPU trace and the hardware counters, not tested",
+      "statusText": "step 1 kept 2026-11-14 (R-1006); step 2 (LiquidFun inside the mark) open",
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
       "rank": 76,
-      "result": "The pool threads' `_do_futex_wait` is 63 to 92 % of their busy time and retires almost no instructions (they sleep, no spin); each pool thread retires ~39 % of the physics thread's instructions. The physics thread runs step_world, b2FinalizeBodiesTask, the body sync and publishPose: physics own STEP 7.8 to 8.4 ms in Predator (crowd=1.5), the largest worker.",
-      "next": "Time each step phase on the physics thread against the pool's work (names build); move the per-body serial loops (acceleration and force application, finalize's pose copy, the pose publish) onto Box2D's tasks or batch them; both builds; ballsHeavy then Predator.",
+      "result": "step 1 kept: workers spin through a world step (Box2D e78f1dd): ballsHeavy physics 10.069 -> 9.062 ms (-7.7 % paired, 1/8 worse); Predator gate clean (physics -2.4 %, spatial -1.3 %).",
+      "next": "Step 2: a nesting count raised by step_world around b2World_Step and lfParticleSystem_Step (LiquidFun uses the same task system after the mark is off); a LiquidFun scene past 6 ms of physics.",
       "refs": [
         "EXECUTION_PLAN.md#E-298"
       ],
@@ -14760,7 +14760,8 @@
         "physics parallelism"
       ],
       "records": [
-        "R-1000"
+        "R-1000",
+        "R-1006"
       ]
     },
     {
@@ -24793,6 +24794,18 @@
       "title": "The night's total on Predator (b8105181 vs main): within its noise (logic -1.9 %, physics NEUTRAL); E-302's -12.7 % gate read was mostly noise",
       "verdict": "note",
       "text": "**The night's total on Predator (one sitting, every change together): within Predator's noise.**\n2026-11-14 00:58 to 01:07, runPredatorAbab --vs b8105181 (main before the night) --hyp-rev main (aa1aa783) --query crowd=1.5\n--pairs 4 (src from each side; demos from HEAD on both, so E-280 and E-297 sit on both sides).\n\n| worker (own) | b8105181 | main | |\n| --- | --- | --- | --- |\n| logic | 4.059 ms | 3.983 | -1.9 %, under the floor |\n| spatial | 5.811 | 5.843 | +0.6 %, under the floor |\n| physics | 8.211 | 8.104 | paired +5.7 %, 2/4 worse, cv 15/8 % (the judged row: NEUTRAL) |\n| pre-render | 3.568 | 4.088 | +14.6 %, under the floor |\n\nLoad keys within 0.3 %. Reading: the night's changes do not move Predator at crowd=1.5 beyond its run-to-run noise.\nE-302's gate read logic -12.7 % (R-0999), unjudged under the floor; this sitting reads -1.9 %: most of that was noise, as\nHOW_WE_MEASURE warns for a keep read near its threshold. Pre-render swung -20 %, -14 %, +15 % across tonight's gates with\nno change reaching it (wait-bound in Predator). What stands is each change's own measure: decoChurn logic -89.5 % (E-273),\ncontactsMicrobench +36/+46 % (E-302), the publish +10/+19 % past L2 (E-299), the heap rows (E-262, E-277, E-285, E-265,\nE-280). No kept change is reverted: none made a judged row worse."
+    },
+    {
+      "id": "R-1006",
+      "date": "2026-11-14",
+      "time": "01:10",
+      "timeFrom": "recorded",
+      "title": "E-298 kept (step 1): Box2D workers spin through a world step; ballsHeavy physics 10.069 -> 9.062 ms (-7.7 % paired, 8 pairs); Predator gate clean",
+      "verdict": "kept",
+      "text": "**E-298 kept (step 1): Box2D's workers spin through a world step; ballsHeavy physics -7.7 % paired (10.069 -> 9.062 ms).\n\nChange (Box2D e78f1dd on weedjs/e298, from weedjs/e256; WeedJS abb28846, the SIMD build): b2World_Step marks the scheduler\nas stepping; a worker with no task keeps spinning while the mark is set instead of sleeping on the semaphore after its\n50 us spin. Why: waking a worker from Atomics.wait took up to ~1.5 ms on Windows, longer than a step's phases, so the\nphysics thread ran them nearly alone (names build: 42 % of the physics thread in solver blocks against 16 % on each pool\nthread, which slept 63 % in _do_futex_wait; R-0997: _do_futex_wait retires almost no instructions). build_for_weed.bat\nbuilt both variants (no-SIMD checked, not shipped); test:node 2594/2594, test:demos 101/101.\n\n- ballsHeavyStressScene, owner physics, 8 pairs (4, then --append 4), 2026-11-14 01:10 to 01:28: physics own\n  10.069 -> 9.062 ms, paired -7.7 %, 1/8 worse, cv 10/13 %, KEPT (the first 4 alone: -2.3 %, NEUTRAL).\n- Predator's gate (crowd=1.5, 4 pairs, 01:28 to 01:35): physics 9.397 -> 9.062 (-2.4 %, 1/4 worse), spatial 6.610 ->\n  6.438 (-1.3 %, 0/4 worse), logic 4.347 -> 4.142, pre-render 5.121 -> 4.928 (unjudged); load keys within 0.7 %: the\n  spinning workers took no measurable CPU from the other workers.\n\nStep 2 left: LiquidFun's step runs after b2World_Step on the same task system, with the mark already off: a nesting\ncount raised by step_world around both steps would cover it (a LiquidFun scene to measure).",
+      "commits": [
+        "abb28846"
+      ]
     }
   ],
   "leads": [
