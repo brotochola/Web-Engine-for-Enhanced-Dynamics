@@ -2,6 +2,7 @@
 // Provides string->index mapping for animations without runtime overhead
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
+import { frameTwinTexels } from '../render/spriteMaps.js';
 import {
   create2dCanvas,
   createCircularGradientCanvas,
@@ -973,7 +974,7 @@ class SpriteSheetRegistry {
       for (const [sheetName, config] of Object.entries(assetsConfig.spritesheets)) {
         spritesheetPromises.push(
           this._loadSpritesheet(sheetName, config).then((sheetData) => {
-            const { img, jsonData } = sheetData;
+            const { img, jsonData, maps } = sheetData;
             const excluded = config.excludeAnimations || [];
 
             // 1. Determine which animations and frames are actually needed
@@ -1071,6 +1072,8 @@ class SpriteSheetRegistry {
                 pivot: frameData.pivot,
                 isSpritesheetFrame: true,
                 isTrimmed: trimmed,
+                // DX-MAPS: the sheet's height and normal maps (one object per sheet), read through the same sourceRect.
+                maps,
               });
             }
 
@@ -1368,6 +1371,9 @@ class SpriteSheetRegistry {
       }
     }
 
+    // DX-MAPS: the twin page, when a sheet has maps.
+    const mapsCanvas = this._paintMapsPage(imagesToPack, actualWidth, actualHeight);
+
     // Register individual texture names as spritesheet IDs
     // This allows setSpritesheet("ball") to work for static textures
     const individualTextures = [];
@@ -1387,6 +1393,7 @@ class SpriteSheetRegistry {
         scale: 1,
         proxySheets,
         individualTextures,
+        maps: mapsCanvas !== null,
       },
     };
 
@@ -1408,10 +1415,64 @@ class SpriteSheetRegistry {
 
     return {
       canvas: canvas,
+      mapsCanvas,
       json: atlasJson,
       proxySheets: proxySheets,
       individualTextures: individualTextures, // For reference
     };
+  }
+
+  /**
+   * DX-MAPS: the atlas's twin page (spriteMaps.js): each frame of a sheet with maps gets its heights and normals at its
+   * own rectangle. Each sheet's colour and maps are read back once, each frame cut out of them in memory.
+   * @returns {HTMLCanvasElement|OffscreenCanvas|null} null when no sheet has maps
+   */
+  static _paintMapsPage(imagesToPack, width, height) {
+    const withMaps = imagesToPack.filter((d) => d.maps && d.rect && d.sourceRect);
+    if (withMaps.length === 0) return null;
+    const page = create2dCanvas(width, height);
+    const ctx = page.getContext('2d', { willReadFrequently: true });
+    const read = new Map();
+    const pixelsOf = (img) => {
+      if (!img) return null;
+      let px = read.get(img);
+      if (px === undefined) read.set(img, (px = this._readImagePixels(img)));
+      return px;
+    };
+    const cut = (px, sr) => {
+      const out = new Uint8ClampedArray(sr.w * sr.h * 4);
+      for (let y = 0; y < sr.h; y++) {
+        const sy = sr.y + y - px.y;
+        if (sy < 0 || sy >= px.height) continue;
+        for (let x = 0; x < sr.w; x++) {
+          const sx = sr.x + x - px.x;
+          if (sx < 0 || sx >= px.width) continue;
+          const s = (sy * px.width + sx) * 4;
+          const d = (y * sr.w + x) * 4;
+          out[d] = px.data[s];
+          out[d + 1] = px.data[s + 1];
+          out[d + 2] = px.data[s + 2];
+          out[d + 3] = px.data[s + 3];
+        }
+      }
+      return out;
+    };
+    for (const d of withMaps) {
+      const sr = d.sourceRect;
+      const w = sr.w | 0;
+      const h = sr.h | 0;
+      if (w <= 0 || h <= 0 || w !== d.rect.width || h !== d.rect.height) continue;
+      const texels = frameTwinTexels({
+        color: cut(pixelsOf(d.sourceImg), sr),
+        height: d.maps.heightImg ? cut(pixelsOf(d.maps.heightImg), sr) : null,
+        normal: d.maps.normalImg ? cut(pixelsOf(d.maps.normalImg), sr) : null,
+        w,
+        h,
+        gray: d.maps.gray,
+      });
+      if (texels !== null) ctx.putImageData(new ImageData(texels, w, h), d.rect.x, d.rect.y);
+    }
+    return page;
   }
 
   /**
@@ -1596,10 +1657,19 @@ class SpriteSheetRegistry {
     }
 
     // DX-GUARDS C6: a 404 used to reach .json() and read "Unexpected token '<'".
-    const jsonData = await fetchAssetJson(config.json, `spritesheet "${name}" JSON`);
-    const img = await this._loadImage(config.png);
-
-    return { img, jsonData };
+    const heightSpec = config.heightMap;
+    const heightUrl = typeof heightSpec === 'string' ? heightSpec : heightSpec?.png;
+    const [jsonData, img, heightImg, normalImg] = await Promise.all([
+      fetchAssetJson(config.json, `spritesheet "${name}" JSON`),
+      this._loadImage(config.png),
+      // DX-MAPS: the sheet's twins, same frames in the same places.
+      heightUrl ? this._loadImage(heightUrl) : null,
+      config.normalMap ? this._loadImage(config.normalMap) : null,
+    ]);
+    const maps = heightImg || normalImg
+      ? { heightImg, normalImg, gray: Number(heightSpec?.gray) > 0 ? Number(heightSpec.gray) : 0 }
+      : null;
+    return { img, jsonData, maps };
   }
 
   /**

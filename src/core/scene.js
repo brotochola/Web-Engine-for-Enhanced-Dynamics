@@ -1581,7 +1581,7 @@ class Scene {
    * @param {object} [compiledAdobeAssets]
    */
   _installBigAtlas(atlas, compiledAdobeAssets = {}) {
-    const { json, imageBitmap, canvas } = atlas;
+    const { json, imageBitmap, canvas, mapsBitmap = null } = atlas;
     // A copy: bigAtlas's chunk sheets (ED-74) are added to it, not to the JSON a bake writes out.
     const proxySheets = { ...(json?.meta?.proxySheets || {}) };
     addBigAtlasChunks(json, proxySheets);
@@ -1590,6 +1590,7 @@ class Scene {
     this.loadedSpritesheets['bigAtlas'] = {
       json,
       imageBitmap,
+      mapsBitmap,
     };
 
     SpriteSheetRegistry.register('bigAtlas', json);
@@ -1663,8 +1664,12 @@ class Scene {
 
   async _packBigAtlasOnMainThread(assetsToLoad, options) {
     const packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, options);
-    const imageBitmap = await createImageBitmap(packed.canvas);
-    return { json: packed.json, imageBitmap, canvas: packed.canvas };
+    const [imageBitmap, mapsBitmap] = await Promise.all([
+      createImageBitmap(packed.canvas),
+      // DX-MAPS: the twin page goes to the renderer as data: no premultiplied alpha, no colour space.
+      packed.mapsCanvas ? createImageBitmap(packed.mapsCanvas, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }) : null,
+    ]);
+    return { json: packed.json, imageBitmap, mapsBitmap, canvas: packed.canvas };
   }
 
   async _loadTilemapsParallel(tilemaps) {

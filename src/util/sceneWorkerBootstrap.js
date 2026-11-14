@@ -603,6 +603,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     offscreenCanvas,
     ...Object.values(scene.loadedTextures),
     ...Object.values(scene.loadedSpritesheets).map((sheet) => sheet.imageBitmap),
+    ...Object.values(scene.loadedSpritesheets).map((sheet) => sheet.mapsBitmap).filter(Boolean),
     ...Object.values(tilesetBitmaps),
     ...(workerPorts.renderer ? Object.values(workerPorts.renderer) : []),
   ];

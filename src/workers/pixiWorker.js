@@ -868,6 +868,7 @@ class PixiRenderer extends AbstractWorker {
     this.lightingResolution = 1.0; // Resolution multiplier for lighting (e.g. 0.5 for half res)
     this.lightingRT = null; // RenderTexture for low-res lighting
     this.faceRT = null; // DX-FACES: the face map (src/render/faceMap.js)
+    this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
     this._faces = resolveFaces(null);
     this._faceSun = new Float32Array(4); // towards the sun, once a frame
     this._faceRtLayer = { resolution: 1 }; // _writeCameraRtTransform's layer for the face map
@@ -5963,6 +5964,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (name === 'bigAtlas') {
           for (const [frameName, texture] of Object.entries(frameTextures)) {
             this.textures[frameName] = texture;
+          }
+          // DX-MAPS: the atlas's twin page (heights and normals at the same rectangles), data: nearest, no mipmaps,
+          // no premultiplied alpha. The G-buffer pass samples it with the colour's UV.
+          if (data.mapsBitmap) {
+            this.atlasMapsSource = new PIXI.ImageSource({
+              resource: data.mapsBitmap,
+              autoGenerateMipmaps: false,
+              scaleMode: 'nearest',
+              alphaMode: 'no-premultiply-alpha',
+            });
           }
 
           const textureKeys = Object.keys(frameTextures);
