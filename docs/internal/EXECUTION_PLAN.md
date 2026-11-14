@@ -4827,6 +4827,8 @@ angle, rotC and rotS; civilians and soldiers have a fixed rotation, so the write
 the lines from the readers' caches (pre-render, logic). Owner: physics.
 **Kept 2026-11-14 (R-1036):** Box2D f053121, WeedJS 6cdaad9c: only the step's export skips (commands still write all).
 Predator crowd=2.5, 4 pairs: physics -3.2 % (0/4 worse), logic -10.1 %, preRender -7.8 %; pile bit-identical; kernel tie.
+**Read again 2026-11-14 (R-1044):** a crowd-2.5 A/A with --pool reads B -3.1 % physics, -8.0 % logic, -6.3 % preRender on
+identical code, so those gains are within the margin: kept as hygiene (no worker worse, reader refills down).
 ### E-307 The gather publishes the rows it rebuilds
 
 **Premise (Predator at crowd 2.5, spatial one worker at ~15 ms):** publish_batch reads each rebuilt row's candidates and their
