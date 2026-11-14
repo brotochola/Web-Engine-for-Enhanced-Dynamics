@@ -14659,7 +14659,8 @@
         "memory-bound"
       ],
       "records": [
-        "R-0997"
+        "R-0997",
+        "R-1000"
       ]
     },
     {
@@ -14682,18 +14683,18 @@
         "memory-bound"
       ],
       "records": [
-        "R-0997"
+        "R-0997",
+        "R-1000"
       ]
     },
     {
       "id": "E-296",
       "title": "_processSpawnSoA deopts in steady state: about 110 eager deopts each at two lines without type feedback (Predator)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the hardware-counter and trace harvest, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13: small (~14 deopts a second at ~16 µs, under 0.1 % of logic)",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 74,
       "result": "Predator's deopt pass: ~110 steady-state eager deopts each at logicWorker.js lines 871 and 882 ('Insufficient type feedback for generic named access / compare operation') inside `_processSpawnSoA`, compiled by TurboFan at 2.35 s and again at 5.38 s: branches first taken after warm-up.",
       "next": "Name the branches; give them feedback early or move the rare path to its own function so the hot one keeps its code; the deopt pass again, then the spawn scenes logic STEP_MS.",
       "refs": [
@@ -14705,7 +14706,8 @@
         "insufficient type feedback"
       ],
       "records": [
-        "R-0997"
+        "R-0997",
+        "R-1000"
       ]
     },
     {
@@ -14728,6 +14730,29 @@
       ],
       "records": [
         "R-0997"
+      ]
+    },
+    {
+      "id": "E-298",
+      "title": "Box2D's pool threads sleep 63 to 92 % of the step in Predator: the serial part on the physics thread bounds physics",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the names-build CPU trace and the hardware counters, not tested",
+      "date": "2026-11-13",
+      "area": "physics",
+      "kind": "speed",
+      "rank": 76,
+      "result": "The pool threads' `_do_futex_wait` is 63 to 92 % of their busy time and retires almost no instructions (they sleep, no spin); each pool thread retires ~39 % of the physics thread's instructions. The physics thread runs step_world, b2FinalizeBodiesTask, the body sync and publishPose: physics own STEP 7.8 to 8.4 ms in Predator (crowd=1.5), the largest worker.",
+      "next": "Time each step phase on the physics thread against the pool's work (names build); move the per-body serial loops (acceleration and force application, finalize's pose copy, the pose publish) onto Box2D's tasks or batch them; both builds; ballsHeavy then Predator.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-298"
+      ],
+      "aliases": [
+        "Box2D threads",
+        "_do_futex_wait",
+        "physics parallelism"
+      ],
+      "records": [
+        "R-1000"
       ]
     },
     {
@@ -24666,6 +24691,15 @@
         "98cb0278",
         "e6fb1845"
       ]
+    },
+    {
+      "id": "R-1000",
+      "date": "2026-11-13",
+      "time": "23:45",
+      "timeFrom": "recorded",
+      "title": "E-294 and E-295 read in their C sources (random reads keyed by entity id); E-296 answered small; E-298 written (Box2D's pool threads sleep)",
+      "verdict": "note",
+      "text": "**E-294, E-295 read in their C sources; E-296 answered small: what the memory-bound kernels wait on, and the plan.**\n2026-11-13, 23:45 to 23:55, reading `wasm/gpuPack.c`, `wasm/spatialGather.c`, `wasm/spatialPublish.c` against R-0997's\nhardware-counter samples and Predator's CPU trace.\n\n**E-295 (spatial, the largest engine share in Predator: gather_batch ~37 % and publish_batch ~29 % of spatial's busy\ntime, about 1.9 and 1.4 ms a frame at crowd=1.5).** `gather` already reorders each rebuild list by home cell (two radix\npasses, `order_by_cell`) so the cells' ids stay in cache. What each candidate still reads at random is keyed by entity\nid, not by place: `marker[entityB]` (read and written, the dedup stamp) and `pos[entityB * 4 .. + 2]` (16 bytes); the\npublish reads `pos[b]` again for every candidate of every entity it publishes, every frame. Entity ids carry no\nspatial order, so both arrays are walked at random (Predator: 24 800 entities, pos 397 KB, markers 99 KB, next to the\ngrid). The fix is structural: (a) a cell-ordered copy of x, y and halfExtent written while the grid is rebuilt, with\ncells holding slots into it, so gather and publish read neighbours' positions near each other; or (b) the positions in\nthe cell entries themselves; dedup stamps by slot. Both change the grid's layout in C and JS (rebuildOwnedRows, the\npublish's readers): a campaign of its own, with spatialGatherWasmMicrobench and spatialPublishWasmMicrobench first and\nstationarySpatialWide (spatial ~7 ms) as the owner scene. Not started tonight.\n\n**E-294 (Pixi's pack_sprites_keyed, 5.1x the average refills per instruction, ~0.3 ms a frame).** `pack_keyed` walks the\nqueue rows in painter order (`idx[k]`) and reads about twelve columns at each row (pose columns, key, type, shadowH,\nshadowOffX/Y, and on a send the scale, anchor, alpha, tint, texture and tile columns): twelve cache lines a row at\nrandom over a ~1 MB table. Options: emit the queue rows in painter order upstream (the collect), or gather the per-row\nfields once in row order into an interleaved scratch and read that in painter order. Smaller than E-295; after it.\n\n**E-296 answered small.** ~110 steady deopts in 8 s at two lines of `_processSpawnSoA`'s multi-spawn path (the single\nspawn has its own fast path): about 14 a second at ~16 µs, 0.2 ms a second, under 0.1 % of a logic worker."
     }
   ],
   "leads": [
