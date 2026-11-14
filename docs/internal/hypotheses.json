@@ -15041,18 +15041,18 @@
         "spatial worker count"
       ],
       "records": [
-        "R-1034"
+        "R-1034",
+        "R-1035"
       ],
       "id": "E-310",
       "title": "Spatial workers at scale: at 57 600 entities two spatial workers would each spend ~7.3 ms where one spends ~12 ms (Predator sets one)",
-      "status": "open",
-      "statusText": "proposed 2026-11-14 (R-1034)",
+      "status": "mixed",
+      "statusText": "mixed 2026-11-14 (R-1035)",
       "date": "2026-11-14",
       "area": "spatial",
       "kind": "speed",
-      "result": "",
-      "next": "A crowd knob for Predator's spatial workers, a scene pair at crowd=2.5; then numberOfSpatialWorkers 'auto' by entity count, and E-267's counting pass for the rebuild each worker repeats.",
-      "rank": 5
+      "result": "mixed (R-1035): crowd 2.5, 2 spatial workers: spatial 10.767 -> 7.336 ms (-32.3 %, 4/4), logic +8.3 % (4/4 worse), physics +2.6 %; physics limits the frame there. Knob kept (55e0cdaa), no 'auto' default.",
+      "next": "When spatial is the longest step (past crowd 2.5, or once physics is faster): numberOfSpatialWorkers by entity count, and E-267's counting pass for the rebuild each worker repeats."
     }
   ],
   "records": [
@@ -25260,6 +25260,18 @@
       "title": "Predator at crowd 2.5 with every tool: spatial (one worker, ~15 ms) limits it; two spatial workers would each spend ~7.3 ms where one spends ~12 (kernel total work)",
       "verdict": "note",
       "text": "**Predator at crowd 2.5 with every tool: spatial is the worker that limits it; the lever there is a second spatial worker.**\n2026-11-14, 15:18 to 16:15 (result files). Predator at crowd=2.5 (57 633 entities, 39 999 with neighbours, one spatial worker) with\nBox2D's names build (scaleDiag: CPU, code and deopt passes, then refills and instructions per function from WPR, 15:18 to\n15:28), then the spatial kernel set to the same scale (spatialGatherWasmMicrobench --n 57600 --workers 1 --per-cell 32 --types predator: 14 ms a frame, the scene's\nspatial step about 15 ms).\n\n- Hardware counters, share of Chrome's refills / instructions: gather_batch 17.3 % / 6.1 % (2.8 refills an instruction, the\n  largest), b2ExecuteBlock 13.6 / 8.9, b2CollideTask 9.5 / 5.6, publish_batch 4.5 / 4.4, b2FinalizeBodiesTask 4.0 / 2.1,\n  b2ComputeFatShapeAABB 3.8 / 2.0. Steady deopts: only E-251's loop.\n- The scene: spatial busy 768 ms/s at 42-54 fps on its one thread (gather_batch 42 %, publish_batch 28 %,\n  rebuildOwnedRows 14 %, _findNeighbors 12 %); the other workers have room (physics on four Box2D threads).\n- E-307 (R-1032) and E-309 (R-1033), both exact, both kernel ties; ids in home-cell order, the locality ceiling, -8 %.\n- Spatial workers (the kernel runs them one after the other in one thread, so this is their total work; 2 runs each):\n  1 worker 236 ms per 20 frames, 2 workers 292, 3 workers 304. Each worker rebuilds the grid over every entity, the rest\n  splits by rows: in parallel about 11.8 -> 7.3 ms (2) and 5.1 ms (3) a worker.\n\nNext (E-310): a crowd knob for Predator's spatial workers and a scene pair at crowd=2.5 (spatial, and the workers that\nshare its cores); then an engine choice by entity count and E-267's counting pass for the rebuild each worker repeats."
+    },
+    {
+      "id": "R-1035",
+      "date": "2026-11-14",
+      "time": "16:25",
+      "timeFrom": "recorded",
+      "title": "E-310 step 1: two spatial workers at crowd 2.5: spatial -32.3 % (4/4), logic +8.3 % (4/4 worse); physics (14-16 ms) limits the frame there, so no engine default",
+      "verdict": "mixed",
+      "text": "**E-310 step 1: two spatial workers at crowd 2.5 take spatial -32 % and cost logic +8 %; physics limits the frame there.**\n2026-11-14, 16:19:37 to 16:25:14, runPredatorAbab --vs HEAD (9396c7c4, the knob 55e0cdaa) --query crowd=2.5 --query-b\nspatialWorkers=2 --owner spatial --pool --early --pairs 4 (both sides the same tree; ran to 4 pairs).\n\n| worker (own) | 1 spatial worker | 2 | |\n| --- | --- | --- | --- |\n| spatial (spatial0) | 10.767 ms | 7.336 | paired -32.3 %, 0/4 worse, cv 10/6 % (spatial1 6.5 to 7.8) |\n| logic | 6.675 | 7.104 | +8.3 %, 4/4 worse |\n| physics | 14.250 | 14.925 | +2.6 %, 2/4 worse |\n| preRender | 6.956 | 7.861 | +4.3 %, 2/4 worse |\n| presented | 60.0 fps | 60.0 | |\n\nThe runner's FAIL (load) is ENTITIES_PROCESSED -49.4 %: each worker searches its own rows, the split itself. Unprofiled,\none spatial worker at crowd 2.5 runs 9.3 to 11.2 ms (R-1034's 15 ms had the CPU profiler and Box2D's names build on),\nunder physics' 14 to 16 ms, the worker that limits the frame there. The second worker spends ~14.7 ms of CPU in all\nfor 3.4 ms off spatial's path and takes time from logic (the same cores).\n\nReading: not an engine default now (no 'auto'); the knob stays for scaling runs. It pays once spatial is the longest\nstep, which at Predator's mix starts past crowd 2.5 or with physics faster. Next at this scale: physics (Box2D).",
+      "commits": [
+        "55e0cdaa"
+      ]
     }
   ],
   "leads": [
