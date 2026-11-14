@@ -39,6 +39,14 @@
  * mid-play), copied into each side's tree and named to the page as ?restore=, so the two measure the same moment of
  * an emergent scene instead of two runs that drifted apart.
  *
+ * --aa <name>[,<name>]: the session's A/A sittings of this scene (their tests/results/predator-abab/<name>/summary.json),
+ *   pooled: each worker kind's detection limit, 2.5 times the spread of its A/A paired deltas over the square root of
+ *   this sitting's pairs (HOW_WE_MEASURE rule 7), raw and against the other workers. A keep or a regression must then
+ *   also clear it (the against-others reading where the kind has one, the reading HOW_WE_MEASURE says resolves a
+ *   Predator change); a delta inside it is neither. Printed beside each kind. Two A/As of Predator crowd=2.5 on
+ *   2026-11-14 read pre-render -6.3 % and +4.7 % on identical code, both past the 3 % bar (R-1044, R-1046).
+ *   With --decide-only it re-judges a sitting already run.
+ *
  * --query-a <q>, --query-b <q>: scene parameters for one side only, on top of --query (a key the side names
  * replaces the shared one). Without --hyp-rev, both sides then run the --vs worktree: one build, one
  * directory, the runtime switch the only difference (`--vs HEAD --query-a wasmOff=particleIntegrateF32` times the
@@ -400,12 +408,39 @@ function sittingStamp(scene, opts, args, baseline, hypSide = null) {
  * function for --decide-only and readjudicateAbab, which used to read
  * protocol.owner / protocol.metric, fields nothing writes (review M9).
  */
-export function redecide(summary, owner = null) {
+export function redecide(summary, owner = null, limits = null) {
   return decideAbab(
     summary.pairs,
     owner ?? summary.owner ?? summary.decision?.owner ?? null,
     summary.probe?.metric ?? summary.decision?.metric ?? null,
+    limits,
   );
+}
+
+/**
+ * --aa: the named A/A sittings' pairs, pooled, and the limits they give a sitting of nPairs pairs. Warns when an A/A ran
+ * another scene or query than this sitting (its spread then describes another regime).
+ * @param {string} names comma-separated sitting names under tests/results/predator-abab
+ * @param {number} nPairs
+ * @param {null | { scene?: unknown, query?: string }} [stamp] this sitting's stamp, to compare
+ */
+export function loadAaLimits(names, nPairs, stamp = null) {
+  const list = String(names).split(',').map((x) => x.trim()).filter(Boolean);
+  const pooled = [];
+  for (const n of list) {
+    const file = path.join(repoRoot, 'tests/results/predator-abab', n, 'summary.json');
+    if (!fs.existsSync(file)) throw new Error(`--aa: no sitting ${n} (${file})`);
+    const aa = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (stamp && aa.stamp) {
+      for (const key of ['scene', 'query']) {
+        if (JSON.stringify(aa.stamp[key] ?? null) !== JSON.stringify(stamp[key] ?? null)) {
+          console.warn(`--aa: ${n} ran another ${key} than this sitting; its limits describe that one`);
+        }
+      }
+    }
+    pooled.push(...aa.pairs);
+  }
+  return { names: list, limits: detectionLimits(pooled, nPairs) };
 }
 
 /** The stamp fields where an earlier sitting differs; empty when its pairs may be pooled. */
@@ -432,27 +467,80 @@ export function sittingKey(pairs, base) {
 /**
  * --early's look after its first pairs: why the sitting can stop, or null to go on. A kind is judged when its base median
  * clears the floor; each of its deltas must clear the bar (twice the 3 % keep and regression bars, ±2 % for a clean gate).
+ * With --aa limits (for this many pairs), a stop on a keep or a regression must also clear the kind's limit.
  * @param {Array<{A: object, B: object}>} pairs
  * @param {string|null} owner
+ * @param {object|null} [limits] detectionLimits for pairs.length
  * @returns {string|null}
  */
-export function earlyStop(pairs, owner) {
+export function earlyStop(pairs, owner, limits = null) {
   if (pairs.length < 2) return null;
-  const decision = decideAbab(pairs, owner);
+  const decision = decideAbab(pairs, owner, null, limits);
   const judged = Object.entries(decision.kinds).filter(([, k]) => k.interpretable && k.deltas.length === pairs.length);
   if (!judged.length) return null;
   const all = (k, test) => k.deltas.every(test);
-  const worse = judged.filter(([, k]) => all(k, (d) => d >= 6));
+  const worse = judged.filter(([, k]) => all(k, (d) => d >= 6) && clearsLimit(k, k.limit ?? null, 1));
   if (worse.length) return `${worse.map(([n]) => n).join(', ')} at least +6 % in every pair`;
   const own = owner ? judged.find(([n]) => n === owner) : null;
-  if (own && all(own[1], (d) => d <= -6) && !judged.some(([n, k]) => n !== owner && all(k, (d) => d >= 3))) {
+  if (own && all(own[1], (d) => d <= -6) && clearsLimit(own[1], own[1].limit ?? null, -1)
+    && !judged.some(([n, k]) => n !== owner && all(k, (d) => d >= 3))) {
     return `${owner} at least -6 % in every pair, no other kind +3 % in every pair`;
   }
   if (judged.every(([, k]) => all(k, (d) => Math.abs(d) <= 2))) return 'every judged kind within ±2 % in every pair';
   return null;
 }
 
-export function decideAbab(pairs, owner, metric = null) {
+/** Sample standard deviation (n - 1). */
+function spread(values) {
+  const n = values.length;
+  if (n < 2) return null;
+  let mean = 0;
+  for (const v of values) mean += v;
+  mean /= n;
+  let ss = 0;
+  for (const v of values) ss += (v - mean) * (v - mean);
+  return Math.sqrt(ss / (n - 1));
+}
+
+/**
+ * HOW_WE_MEASURE rule 7: each worker kind's detection limit from A/A pairs (identical code on both sides), for a sitting of
+ * nPairs pairs: 2.5 x the spread (sample standard deviation) of the A/A's paired deltas / sqrt(nPairs), raw and against
+ * the other judged kinds. A kind the A/A could not judge (under the floor) gets none.
+ * @param {Array<{A: object, B: object}>} aaPairs the A/A sittings' pairs, pooled
+ * @param {number} nPairs
+ */
+export function detectionLimits(aaPairs, nPairs) {
+  const d = decideAbab(aaPairs, null);
+  const root = Math.sqrt(Math.max(1, nPairs));
+  const limits = {};
+  for (const [kind, k] of Object.entries(d.kinds)) {
+    if (!k.interpretable) continue;
+    const raw = spread(k.deltas);
+    if (raw === null) continue;
+    const rel = k.againstOthers ? spread(k.againstOthers.deltas) : null;
+    limits[kind] = {
+      aaPairs: k.deltas.length,
+      aaMedianPct: k.pairedDeltaPct,
+      spreadPct: raw,
+      limitPct: (2.5 * raw) / root,
+      againstSpreadPct: rel,
+      againstLimitPct: rel === null ? null : (2.5 * rel) / root,
+    };
+  }
+  return limits;
+}
+
+/**
+ * Whether kind k's move clears its detection limit in the direction `sign` (-1 cheaper, +1 dearer): its against-others
+ * median past the against-others limit where both exist, else its raw median past the raw limit. True without a limit.
+ */
+export function clearsLimit(k, limit, sign) {
+  if (!limit) return true;
+  if (k.againstOthers && limit.againstLimitPct !== null) return sign * k.againstOthers.medianPct > limit.againstLimitPct;
+  return sign * k.pairedDeltaPct > limit.limitPct;
+}
+
+export function decideAbab(pairs, owner, metric = null, limits = null) {
   const kinds = {};
   for (const kind of KINDS) {
     const { key, source } = sittingKey(pairs, `${kind}_STEP_MS`);
@@ -513,6 +601,7 @@ export function decideAbab(pairs, owner, metric = null) {
       };
     }
   }
+  if (limits) for (const kind of KINDS) kinds[kind].limit = limits[kind] ?? null;
   const load = {};
   const reasons = [];
   const muted = [];
@@ -586,8 +675,9 @@ export function decideAbab(pairs, owner, metric = null) {
     const quiet = Math.max(k.cvBase, k.cvHyp) <= 0.1;
     const consistent = k.worseFraction >= CONSISTENT;
     const tag = `${kind} +${k.pairedDeltaPct.toFixed(1)}% (${Math.round(k.worseFraction * k.deltas.length)}/${k.deltas.length} pairs worse, cv ${(Math.max(k.cvBase, k.cvHyp) * 100).toFixed(0)}%)`;
-    if (consistent && (quiet || kind === owner)) regress.push(tag);
-    else noisy.push(`${tag}, not blocking`);
+    const inside = limits && !clearsLimit(k, k.limit, 1);
+    if (consistent && (quiet || kind === owner) && !inside) regress.push(tag);
+    else noisy.push(`${tag}${inside ? ', within the detection limit' : ''}, not blocking`);
   }
   // Higher is better here. Judged only when every pair has it (sittings written
   // before it was collected are re-decided without it).
@@ -666,7 +756,7 @@ export function decideAbab(pairs, owner, metric = null) {
   else if (!ownerJudged && o) verdict = 'NEUTRAL (below floor)';
   else if (regress.length) verdict = 'REGRESSION';
   else if (ownerJudged && o.pairedDeltaPct <= -3 && 1 - o.worseFraction >= CONSISTENT) {
-    verdict = 'KEPT (product)';
+    verdict = limits && !clearsLimit(o, o.limit, -1) ? 'NEUTRAL (within the detection limit)' : 'KEPT (product)';
   } else if (owner === 'presented' && presented && presented.pairedDeltaPct >= 3
     && presented.higherFraction >= CONSISTENT) {
     verdict = 'KEPT (product)';
@@ -793,7 +883,9 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   const summaryPath = path.join(outDir, 'summary.json');
   if (args['decide-only']) {
     const prev = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
-    prev.decision = redecide(prev, owner);
+    const aaD = args.aa ? loadAaLimits(args.aa, prev.pairs.length, prev.stamp ?? null) : null;
+    prev.decision = redecide(prev, owner, aaD ? aaD.limits : null);
+    if (aaD) prev.decision.aa = aaD.names;
     writeJson(summaryPath, prev);
     printDecision(name, prev.decision);
     return;
@@ -871,7 +963,7 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     }
     pairs.push(pair);
     if (args.early && p === first + 1) {
-      const why = earlyStop(pairs, owner);
+      const why = earlyStop(pairs, owner, args.aa ? loadAaLimits(args.aa, pairs.length, stamp).limits : null);
       if (why) {
         console.log(`\n  --early: stopping after ${pairs.length} pairs (${why})`);
         break;
@@ -927,7 +1019,10 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     }
   }
 
-  const decision = decideAbab(pairs, owner, probeVerdict?.metric ?? null);
+  // --aa: the session's A/A sets each kind's detection limit (HOW_WE_MEASURE rule 7).
+  const aaLimits = args.aa ? loadAaLimits(args.aa, pairs.length, stamp) : null;
+  const decision = decideAbab(pairs, owner, probeVerdict?.metric ?? null, aaLimits ? aaLimits.limits : null);
+  if (aaLimits) decision.aa = aaLimits.names;
   const summary = {
     name,
     owner,
@@ -973,9 +1068,14 @@ function printDecision(name, decision) {
         (k.againstOthers
           ? `  vs the others ${k.againstOthers.medianPct >= 0 ? '+' : ''}${k.againstOthers.medianPct.toFixed(1)}% ` +
             `(lower ${Math.round(k.againstOthers.lowerFraction * k.againstOthers.deltas.length)}/${k.againstOthers.deltas.length})`
+          : '') +
+        (k.limit
+          ? `  limit ±${k.limit.limitPct.toFixed(1)}%` +
+            (k.limit.againstLimitPct !== null ? ` (vs the others ±${k.limit.againstLimitPct.toFixed(1)}%)` : '')
           : ''),
     );
   }
+  if (decision.aa) console.log(`detection limits from the A/A sitting${decision.aa.length > 1 ? 's' : ''} ${decision.aa.join(', ')}`);
   if (decision.throughput) {
     const tp = decision.throughput;
     console.log(
