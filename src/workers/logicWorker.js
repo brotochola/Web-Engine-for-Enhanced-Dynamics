@@ -226,6 +226,11 @@ class LogicWorker extends AbstractWorker {
     this._foreignGenMin = new Uint32Array(0);
     this._foreignGenMax = new Uint32Array(0);
     this._foreignSweepIn = FOREIGN_SWEEP_FRAMES;
+
+    // E-302: when no type defines onCollisionStay, own pairs are treated like foreign ones: no walk each frame, a
+    // check when has() asks, a sweep every FOREIGN_SWEEP_FRAMES. _lazyPairs says this frame runs that way.
+    this._lazyPairs = false;
+    this._ownSweepIn = FOREIGN_SWEEP_FRAMES;
     // Latest completed frame's pairs, for isCollidingWith (has(key)).
     const pairView = { has: (key) => this._hasPair(key) };
     this.frameCollisions = pairView;
@@ -2072,11 +2077,27 @@ class LogicWorker extends AbstractWorker {
       : this._foreignGenMin[slot] === 0 && this._foreignGenMax[slot] === 0;
   }
 
-  /** isCollidingWith: own pairs were validated this frame; foreign ones are checked here. */
+  /** An own pair still holds: both entities active, both bodies the ones it began with (the stay walk's test). */
+  _ownPairValid(slot) {
+    const minE = this._pairMin[slot];
+    const maxE = this._pairMax[slot];
+    const active = Transform.active;
+    if (!active[minE] || !active[maxE]) return false;
+    const gen = this.bodyGeneration;
+    return gen
+      ? (gen[minE] >>> 0) === this._pairGenMin[slot] && (gen[maxE] >>> 0) === this._pairGenMax[slot]
+      : this._pairGenMin[slot] === 0 && this._pairGenMax[slot] === 0;
+  }
+
+  /** isCollidingWith: own pairs were validated this frame unless it skipped the walk (E-302); foreign ones are checked here. */
   _hasPair(key) {
     const v = this._pairSlot.get(key);
     if (v === undefined) return false;
-    if (v >= 0) return true;
+    if (v >= 0) {
+      if (!this._lazyPairs || this._ownPairValid(v)) return true;
+      this._removePairSlot(v, key);
+      return false;
+    }
     const slot = -v - 1;
     if (this._foreignValid(slot)) return true;
     this._removeForeignSlot(slot, key);
@@ -2100,6 +2121,12 @@ class LogicWorker extends AbstractWorker {
     if (slot === undefined) return;
     if (slot < 0) {
       this._removeForeignSlot(-slot - 1, key);
+      return;
+    }
+    // E-302: without the walk, a pair whose entity went inactive or whose body was replaced is still here; the walk
+    // would have dropped it silently, so does this (no exit on a despawned entity).
+    if (this._lazyPairs && !this._ownPairValid(slot)) {
+      this._removePairSlot(slot, key);
       return;
     }
     const match =
@@ -2157,8 +2184,11 @@ class LogicWorker extends AbstractWorker {
       return;
     }
     let slot = this._pairSlot.get(key);
-    const isNew = slot === undefined;
-    if (isNew) {
+    let isNew = slot === undefined;
+    // E-302: without the walk, the slot may be a stale pair of a despawned or rebuilt body at the same index: this
+    // begin is a new contact and fires enter (the walk would have dropped the slot first).
+    if (!isNew && this._lazyPairs && !this._ownPairValid(slot)) isNew = true;
+    if (slot === undefined) {
       if (this._pairCount === this._pairCapacity) this._growPairColumns();
       slot = this._pairCount++;
       this._pairSlot.set(key, slot);
@@ -2208,6 +2238,11 @@ class LogicWorker extends AbstractWorker {
 
     // Every slot is stamped when its pair begins, so a fresh stamp starts the frame empty.
     const frame = (this._contactFrame = (this._contactFrame + 1) >>> 0);
+    // E-302: with no stay listener the walk below only drops dead pairs, which has(), begin and end check for
+    // themselves this frame (_lazyPairs); it then runs as a sweep every FOREIGN_SWEEP_FRAMES. Set before the drain.
+    const stayFlags = this.collisionStayByType;
+    const lazy = stayFlags === null || stayFlags.indexOf(1) === -1;
+    this._lazyPairs = lazy;
 
     const result = drainContactRing(
       this.box2dContactRingI32,
@@ -2231,10 +2266,14 @@ class LogicWorker extends AbstractWorker {
       }
     }
 
+    if (lazy) {
+      if (--this._ownSweepIn > 0) return;
+      this._ownSweepIn = FOREIGN_SWEEP_FRAMES;
+    }
+
     const gameObjects = this.gameObjects;
     const entityType = Transform.entityType;
     const active = Transform.active;
-    const stayFlags = this.collisionStayByType;
     const gen = this.bodyGeneration;
     const pairMin = this._pairMin;
     const pairMax = this._pairMax;
