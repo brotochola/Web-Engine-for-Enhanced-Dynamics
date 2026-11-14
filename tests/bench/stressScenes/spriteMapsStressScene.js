@@ -23,12 +23,14 @@ export const HOUR = queryNumber('hour', 22);
 const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 /** `?sunShadows=map`: the sun's shadows from its shadow map (DX-SHADOW3D); default 'sprite'. */
 export const SUN_SHADOWS = WEED.params?.get('sunShadows') === 'map' ? 'map' : 'sprite';
+/** `?selfShadow=1`: lighting.selfShadow (DX-SELFSHADOW). */
+export const SELF_SHADOW = WEED.params?.get('selfShadow') === '1';
 const W = 1600;
 const H = 1000;
 const SHAPES = ['sphere', 'pillar', 'crate'];
 
 export const stressSceneConfig = {
-  requested: { maps: MAPS, n: N, lights: LIGHTS, res: RES, hour: HOUR, backend: BACKEND, sunShadows: SUN_SHADOWS },
+  requested: { maps: MAPS, n: N, lights: LIGHTS, res: RES, hour: HOUR, backend: BACKEND, sunShadows: SUN_SHADOWS, selfShadow: SELF_SHADOW ? 1 : 0 },
 };
 
 /** A shape of tests/bench/stressScenes/maps (ray-traced at pitch 45: makeShapes.mjs), standing on its foot. */
@@ -94,6 +96,7 @@ export class SpriteMapsStressScene extends Scene {
       resolution: RES,
       shadowsEnabled: true,
       sunShadows: SUN_SHADOWS,
+      selfShadow: SELF_SHADOW,
       sun: { enabled: true, angle: 135, elevation: 40, intensity: 1, startHour: HOUR, dayCycle: { enabled: false } },
     },
   };
