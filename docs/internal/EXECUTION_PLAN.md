@@ -4845,6 +4845,14 @@ Owner: spatial.
 gather alone 9.45 -> 9.52 ms a frame with the skip off). The skipped visits were the cheap ones (predicted rejects whose
 lines the next entity loads anyway). Ablation of the gather: without the dedup marks -15 %, without the row writes -17 %;
 ids numbered in home-cell order (the locality ceiling) -8 % of the frame.
+### E-312 The emit writes every sprite row's statics, read only for changed keys
+
+**Premise (R-1045):** emit_rows is 42 to 45 % of pre-render; sprite_row reads six statics per sprite and writes them to
+the queue every frame, while the keyed pack reads them only for changed keys. The persist path never takes a frame in
+Predator (631 tries, 0 hits). Ceiling (scratch b7f8cfa9): preRender -17.1 % at crowd 2.5, about -10 % past the A/A.
+**Plan:** Pixi still draws split frames (first frame, a gap, the keyed pause, refused keyed passes) that read every row's
+statics: make E-177's flags cumulative since the frame Pixi last drew keyed and request a full resend before any split,
+then skip unchanged rows' statics. Owner: pre-render.
 ### E-311 Pixi's updateLighting boxes a double per light
 
 **Premise (the day's heap pass, Predator crowd 1.5):** updateLighting 54.5 KB/s of Pixi's 302.7, about one heap number per
