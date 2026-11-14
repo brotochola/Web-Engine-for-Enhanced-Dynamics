@@ -4800,6 +4800,19 @@ its branch rebased onto the scene knobs' commit (w14s/…). The owner scenes' ba
 stress scenes run far under the 6 ms floor at their default load and take their knob (stationarySpatialWide
 ?entities=145000, spawnStorm ?storm=6000, navStress ?agents=, decoChurn ?churn= ?liveCap=, bulletStress ?bullets=).
 
+### Wave 14, the night of 2026-11-13/14: new readings, kept rows, what is left (R-0994 to R-1003)
+
+New readings: Chrome's own bytecode, tiers and inlining (summarizeV8Code, profileSceneSweep --pass code), hardware
+counters per JS and wasm function (Windows' recorder with V8's code log: E-228 done; uProf cannot see JIT code: E-229
+answered), d8 16's machine code (R-0995, R-0996). Kept on main: E-302 (Predator logic -12.7 %), E-273 (decoChurn logic
+-89.5 %), E-299 (kernel +10 to +19 % past L2), E-262, E-277, E-285, E-265, E-264 (hygiene), E-280 and E-297 (demos).
+Closed from the logs without sittings: E-291, E-293, E-296, E-300 (= E-215). What the counters changed: E-240's premise
+(memory a core away) does not hold for the neighbour loops, which are instruction-bound (E-289, E-304 are the route);
+E-294's reorder was E-193's step 1 (no gain). Left by size: E-298 (Box2D's pool threads sleep; physics is the largest
+worker), E-295 + E-267 (spatial's reads and rebuild by entity id: W6's C port needs the rebuild's columns in one
+memory), E-269 (the mesh rows are copied because every mesh changes: the kernel writing Pixi's own buffer), E-253 and
+E-301 (FSM), E-275 (tweens). These are campaigns of their own, each with its kernel first.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
