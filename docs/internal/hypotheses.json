@@ -14537,7 +14537,8 @@
         "b2ExecuteMainStage"
       ],
       "records": [
-        "R-0981"
+        "R-0981",
+        "R-1041"
       ]
     },
     {
@@ -14806,7 +14807,8 @@
         "R-1007",
         "R-1023",
         "R-1024",
-        "R-1037"
+        "R-1037",
+        "R-1041"
       ]
     },
     {
@@ -25356,6 +25358,15 @@
       "title": "The afternoon's engine changes together, Predator crowd 1.5: spatial -2.4 %, physics -2.3 % (1/4 worse each), preRender -20 %, renderer -10 %, logic -5.5 % (under the floor); no worker higher",
       "verdict": "note",
       "text": "**The afternoon's engine changes together on Predator crowd 1.5: every worker lower, the judged two by 2.3 to 2.4 %.**\n2026-11-14, 17:17:05 to 17:22:42, runPredatorAbab --vs b66d6482 (main at 04:40, R-1023's total) --hyp-rev main (b297f19e)\n--query crowd=1.5 --pool --pairs 4. Engine changes between them: E-201 step 1 (keyed frames by queue row, on by default),\nE-308 (Box2D's step export skips an unchanged rotation), E-272 (dirty decal tiles counted in words); E-310's knob and the\nkernels' knobs are demo and bench code (off by default).\n\n| worker (own) | 04:40 | now | |\n| --- | --- | --- | --- |\n| spatial | 6.091 ms | 5.780 | paired -2.4 %, 1/4 worse, cv 12/5 % |\n| physics | 7.687 | 7.173 | -2.3 %, 1/4 worse, cv 15/7 % |\n| preRender | 3.768 | 3.019 | -20 %, under the floor |\n| logic | 3.851 | 3.639 | -5.5 %, under the floor |\n| renderer | 2.263 | 2.038 | -10 %, under the floor |\n| presented | 60.0 fps | 60.0 | |\n\nNEUTRAL by the bars (the two judged workers under 3 %); no worker higher. At crowd 2.5, E-308's own pair read physics\n-3.2 %, logic -10.1 %, preRender -7.8 % (R-1036)."
+    },
+    {
+      "id": "R-1041",
+      "date": "2026-11-14",
+      "time": "17:31",
+      "timeFrom": "recorded",
+      "title": "Box2D inside at Predator crowd 2.5 (no-inline names build): collide 24 % (manifolds 0.1 %: reaching shapes and bodies), solver 21 %, waiting and spin 19 %, finalize 17 %, tree 6 %",
+      "verdict": "note",
+      "text": "**Box2D inside, at Predator crowd 2.5: where the physics threads go, with builds that keep the functions apart.**\n2026-11-14, 17:23 to 17:31 (result files). Box2D main f053121 built three ways, each swapped into src/box2d for a CPU pass\n(profileSceneSweep --pass cpu --query crowd=2.5, 12 s warm-up, 10 s window; git restored the shipped pair after):\nLTO with names (C:\\weed-traces\\b2names), no LTO with names (b2nolto), and no LTO with `-fno-inline` and\n`-sINLINING_LIMIT=1` (b2noinline, new: slower, but more functions apart). Shares of the four physics threads' samples:\n\n| part | no-inline build | |\n| --- | --- | --- |\n| b2CollideTask | 23.9 % | narrowphase loop; b2CircleManifold itself 0.1 %: the cost is reaching each contact's shapes and bodies |\n| b2ExecuteBlock | 20.9 % | the solver's stages; the contact stages (_Wide) are forced inline |\n| futex wait, b2SchedulerHasPending, b2SchedulerWorkerMain | 13.8 + 3.1 + 2.3 % | waiting and E-298's spin |\n| b2FinalizeBodiesTask, b2ComputeFatShapeAABB, b2InvMulWorldTransforms, MarkProxyMoved | 9.7 + 5.4 + 1.1 + 1.0 % | the finalize |\n| tree: Rebuild, PartitionMid, MakeInternalNode, PlaceLeaf, Refit, BumpPair | ~5.6 % | broadphase upkeep |\n| step_world, b2SplitIsland, b2SolverTask | 1.9, 1.6, 1.1 % | |\n\nHardware counters for the same scene (R-1034): b2ExecuteBlock 1.7 and b2CollideTask 2.0 refills an instruction, the\nfinalize 2.1: the hot Box2D code waits on memory reached through ids (shapes, body sims), not on arithmetic.\nEven without LTO, binaryen's single-caller inlining keeps b2ExecuteBlock and b2CollideTask whole; Chrome's profile has\nno position inside a wasm function (every sample is line 1), so finer splits need noinline builds like this one.\n\nReading: no cheap lever left inside Box2D at this scale; what is left is data layout (contacts reaching shapes and\nbodies by id), the work of a Box2D change of its own, and E-287 (the stage barrier)."
     }
   ],
   "leads": [
