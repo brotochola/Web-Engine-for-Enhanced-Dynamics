@@ -10,6 +10,8 @@
  * in order (densePositions) and each run of 256 or more slots with a body is copied with set(); the dense list's order no longer
  * matters.
  * `--holes f`: f of the bodies removed from the dense list for good (empty slots between the runs).
+ * `--runs r [--occupancy 0.58]`: the bodies (occupancy of the slots) in r runs spread over the table with gaps between,
+ * as entity pools hold them (Predator: 24 800 bodies in 42 600 slots), the dense list in a shuffled order.
  * `--churn f`: f of the bodies swap-removed from the dense list and added back at its end, as despawns and respawns
  * leave it (0: the list in slot order).
  *
@@ -154,7 +156,7 @@ export function loadPost(variant) {
   return globalThis.weedjsPublishPose;
 }
 
-function setup(n, seed, churn = 0, holes = 0, shared = false) {
+function setup(n, seed, churn = 0, holes = 0, shared = false, runs = 0, occupancy = 0.58) {
   const rng = mulberry32(seed);
   const list = new Int32Array(n);
   // --shared: every column on a SharedArrayBuffer, as the worker's are (Box2D's memory, the pose buffers).
@@ -190,6 +192,23 @@ function setup(n, seed, churn = 0, holes = 0, shared = false) {
   for (let m = 0; m < gone && count > 1; m++) {
     const pos = (rng() * count) | 0;
     list[pos] = list[--count];
+  }
+  if (runs > 0) {
+    // r runs of bodies, gaps between them; the dense list a shuffle of those slots.
+    const bodies = Math.round(n * occupancy);
+    const run = Math.max(1, Math.floor(bodies / runs));
+    const gap = Math.floor((n - run * runs) / runs);
+    count = 0;
+    for (let r = 0; r < runs; r++) {
+      const start = r * (run + gap);
+      for (let k = 0; k < run && start + k < n; k++) list[count++] = start + k;
+    }
+    for (let k = count - 1; k > 0; k--) {
+      const j = (rng() * (k + 1)) | 0;
+      const t = list[k];
+      list[k] = list[j];
+      list[j] = t;
+    }
   }
   const densePositions = new Int32Array(n).fill(-1);
   for (let d = 0; d < count; d++) densePositions[list[d]] = d;
@@ -248,8 +267,10 @@ function main() {
   const churn = Number(args.churn ?? 0);
   const holes = Number(args.holes ?? 0);
   const shared = Boolean(args.shared);
+  const runs = Number(args.runs ?? 0);
+  const occupancy = Number(args.occupancy ?? 0.58);
   loadPost(variant);
-  const k = setup(n, seed, churn, holes, shared);
+  const k = setup(n, seed, churn, holes, shared, runs, occupancy);
   const checksum = k.checksum();
   const cases = {
     publish: timeIt(`publishPose ${variant} (n=${n})`, () => k.frame(), { iterations: 40, warmup: 10 }),
@@ -267,7 +288,7 @@ function main() {
     cases,
   };
   if (args.output) writeReport(String(args.output), report);
-  else console.log(`checksum ${checksum} publish ${variant}${shared ? ' shared' : ''} churn ${churn} holes ${holes} ${cases.publish.opsPerSec.toFixed(1)} ops/s`);
+  else console.log(`checksum ${checksum} publish ${variant}${shared ? ' shared' : ''} churn ${churn} holes ${holes}${runs ? ` runs ${runs} occupancy ${occupancy}` : ''} ${cases.publish.opsPerSec.toFixed(1)} ops/s`);
 }
 
 if (isCli(import.meta.url)) main();
