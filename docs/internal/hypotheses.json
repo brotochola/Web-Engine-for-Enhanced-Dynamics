@@ -12886,6 +12886,23 @@
       "records": []
     },
     {
+      "id": "N-168",
+      "title": "Hot-swapping an FSM module whose states are not exported pairs only the initial state: the running FSM gets fresh, unlinked state classes and every changeState writes state 0",
+      "status": "open",
+      "statusText": "found 2026-11-14 by the E-301 work (a parallel agent), not fixed",
+      "date": "2026-11-14",
+      "area": "engine",
+      "kind": "bug",
+      "result": "hotSwap.js pairClasses walks a module's exports and arrays but not plain-object statics such as an FSM's states, so in Predator's style (states declared in the FSM module, not exported) only initial is paired with its running class. After the swap the FSM's states holds the new classes, which _linkStates never numbered, so changeState(i, this.fsm.states.X) stores undefined -> state 0.",
+      "next": "Walk plain-object statics in pairClasses (states: { A, B }); a hot-swap test on an FSM module with unexported states, then the E-301 hook refresh (dd6b4741) covers their hooks.",
+      "refs": [],
+      "aliases": [
+        "hot swap fsm states",
+        "pairClasses states"
+      ],
+      "records": []
+    },
+    {
       "id": "E-221",
       "title": "A typed array's length recomputed by a 64-bit division at each access (Uint64Div → CheckedUint64Bounds on component arrays)",
       "status": "answered",
