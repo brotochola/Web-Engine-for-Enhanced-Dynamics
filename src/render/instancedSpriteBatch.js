@@ -1273,9 +1273,10 @@ export class InstancedSpriteBatch {
    * again with a program that writes what each pixel is. Made on first use.
    * @param {number} heightScaleY
    * @param {number} groundScaleY
+   * @param {import('pixi.js').TextureSource} maps the atlas's twin page (DX-MAPS), or an empty one
    * @returns {Mesh|null}
    */
-  faceMesh(heightScaleY, groundScaleY) {
+  faceMesh(heightScaleY, groundScaleY, maps) {
     // One mesh a geometry, none swapped: the ring swaps the geometry every frame, and Mesh's setter makes garbage.
     const geometry = this.mesh.geometry;
     const meshes = this._faceMeshes;
@@ -1291,7 +1292,7 @@ export class InstancedSpriteBatch {
       };
       if (this._twoStreams) uniforms.uPoseAlpha = { value: 1, type: 'f32' };
       const r = this.shader.resources;
-      const resources = { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uniforms };
+      const resources = { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: maps, uniforms };
       const name = `${this._label}-face`;
       if (this._useWebGpu) {
         const source = faceMapWgsl(this._twoStreams ? shaders.spritePose : shaders.sprite);

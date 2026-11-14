@@ -1,4 +1,5 @@
 /** DX-FACES: what a decoration says about its face, what the shaders are made of, on the real sources. */
+import { HEIGHT_UNITS } from '../../src/render/spriteMaps.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -101,7 +102,10 @@ test('the height scale of the shaders is the encoder\'s', () => {
   const scale = Number(faceMapVertex(shader('instancedSprite.vert.glsl')).match(/aInstTileOff\.y \* ([\d.]+)/)[1]);
   const code = encodeFaceHeight(100);
   assert.ok(Math.abs((code / 65535) * scale - 100) < 1e-3);
-  assert.match(shader('faceMap.frag.glsl'), /vFaceZ \* 8\.0/);
+  assert.match(shader('faceMap.frag.glsl'), /clamp\(z \* 8\.0/);
+  // DX-MAPS: a twin texel's height is in spriteMaps.js's units.
+  assert.match(shader('faceMap.frag.glsl'), new RegExp(`\\) / ${HEIGHT_UNITS}\\.0;`));
+  assert.match(faceMapWgsl(shader('instancedSprite.wgsl')), new RegExp(`\\) / ${HEIGHT_UNITS}\\.0;`));
   assert.match(shader('lightingBasic.frag.glsl'), /\/ 8\.0;/);
 });
 

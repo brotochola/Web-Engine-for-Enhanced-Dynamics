@@ -114,13 +114,44 @@ export function faceMapWgsl(source) {
   return (
     out +
     `
+// DX-MAPS: the atlas's twin page (spriteMaps.js). Binding 5: the indexed program takes 4.
+@group(2) @binding(5) var uMaps: texture_2d<f32>;
+
+fn faceOctDecode(bytes: vec2<f32>) -> vec3<f32> {
+  let f = (bytes - 127.0) / 126.0;
+  var n = vec3<f32>(f, 1.0 - abs(f.x) - abs(f.y));
+  let t = max(-n.z, 0.0);
+  n.x += select(t, -t, n.x >= 0.0);
+  n.y += select(t, -t, n.y >= 0.0);
+  return normalize(n);
+}
+
+fn faceOctEncode(v: vec3<f32>) -> vec2<f32> {
+  let n = v / (abs(v.x) + abs(v.y) + abs(v.z));
+  var p = n.xy;
+  if (n.z < 0.0) {
+    p = (1.0 - abs(p.yx)) * vec2<f32>(select(-1.0, 1.0, p.x >= 0.0), select(-1.0, 1.0, p.y >= 0.0));
+  }
+  return floor(p * 126.0 + 127.5) / 255.0;
+}
+
 // DX-FACES: faceMap.frag.glsl
 @fragment
 fn mainFragFace(in: VertexOut) -> @location(0) vec4<f32> {
-  let t = textureSample(uTexture, uSampler, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff));
+  let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
+  let t = textureSample(uTexture, uSampler, uv);
+  let m = textureLoad(uMaps, vec2<i32>(uv * vec2<f32>(textureDimensions(uMaps, 0))), 0);
   if (t.a * in.vColor.a < 0.5) { discard; }
-  let q = floor(clamp(in.vFaceZ * ${FACE_Z_UNITS}.0, 0.0, 65535.0));
-  return vec4<f32>(in.vFaceOct, floor(q / 256.0) / 255.0, (q % 256.0) / 255.0);
+  var oct = in.vFaceOct;
+  var z = in.vFaceZ;
+  if (all(oct == vec2<f32>(0.0)) && m.b + m.a > 0.0) {
+    let n = faceOctDecode(floor(m.ba * 255.0 + 0.5));
+    let sc = normalize(vec2<f32>(uniforms.uFaceSpace.y, uniforms.uFaceSpace.x));
+    oct = faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x));
+    z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0;
+  }
+  let q = floor(clamp(z * ${FACE_Z_UNITS}.0, 0.0, 65535.0));
+  return vec4<f32>(oct, floor(q / 256.0) / 255.0, (q % 256.0) / 255.0);
 }
 `
   );

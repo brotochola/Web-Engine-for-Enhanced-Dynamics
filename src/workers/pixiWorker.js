@@ -869,6 +869,7 @@ class PixiRenderer extends AbstractWorker {
     this.lightingRT = null; // RenderTexture for low-res lighting
     this.faceRT = null; // DX-FACES: the face map (src/render/faceMap.js)
     this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
+    this._noMapsSource = null; // DX-MAPS: its stand-in when none has (_emptyMapsSource)
     this._faces = resolveFaces(null);
     this._faceSun = new Float32Array(4); // towards the sun, once a frame
     this._faceRtLayer = { resolution: 1 }; // _writeCameraRtTransform's layer for the face map
@@ -2987,10 +2988,28 @@ class PixiRenderer extends AbstractWorker {
     if (res) res.uFaceMap = this.faceRT.source;
   }
 
+  /** DX-MAPS: a 1 × 1 twin page that says "no map", for the faces' pass when no sheet has maps. */
+  _emptyMapsSource() {
+    if (this._noMapsSource === null) {
+      this._noMapsSource = PIXI.TextureSource.from({
+        resource: new Uint8Array(4),
+        width: 1,
+        height: 1,
+        format: 'rgba8unorm',
+        scaleMode: 'nearest',
+        addressMode: 'clamp-to-edge',
+        autoGenerateMipmaps: false,
+        alphaMode: 'no-premultiply-alpha',
+      });
+    }
+    return this._noMapsSource;
+  }
+
   /** DX-FACES: what each pixel of this frame is, in painter order, for the light pass. */
   _renderFaceMap() {
     const batch = this.entitiesBatch;
-    const mesh = batch !== null ? batch.faceMesh(this._faces.heightScaleY, this._groundScaleY || 1) : null;
+    const maps = this.atlasMapsSource ?? this._emptyMapsSource();
+    const mesh = batch !== null ? batch.faceMesh(this._faces.heightScaleY, this._groundScaleY || 1, maps) : null;
     const opts = this._rtRenderOpts;
     opts.container = mesh !== null && batch.mesh.visible ? mesh : this._rtEmptyContainer;
     opts.target = this.faceRT;
@@ -7932,6 +7951,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._faces = resolveFaces(lightingConfig, this.config.camera);
       if (lightingConfig.faces?.enabled && !this._faces.enabled) {
         console.warn('WeedJS: lighting.faces does not work with raycasted lighting yet: faces are off');
+      }
+      // DX-MAPS: a sprite with height and normal maps is lit as the surface they say, through the faces' pass.
+      if (this.atlasMapsSource !== null && !this._faces.enabled) {
+        if (lightingConfig.raycasted) {
+          console.warn('WeedJS: sprites with height or normal maps are lit flat with raycasted lighting');
+        } else {
+          this._faces = { ...this._faces, enabled: true };
+        }
       }
       // baseAmbient is the night/minimum light level (when sun is down)
       this.baseAmbient = lightingConfig.baseAmbient !== undefined ? lightingConfig.baseAmbient : 0.05;
