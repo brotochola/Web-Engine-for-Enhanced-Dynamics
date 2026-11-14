@@ -13511,12 +13511,12 @@
       "id": "E-246",
       "title": "Physics' JS around the step: publishPose 3.6 %, snapshotPrevPose 1.4 %, publishMovedBodies 1.0 %",
       "status": "kept",
-      "statusText": "kept 2026-11-14 (R-1014), kernel claim; Predator gate pending in a batch",
+      "statusText": "kept 2026-11-14 (R-1014), kernel claim; Predator batch gate clean (R-1019)",
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
       "result": "kept (R-1014), kernel claim: runs of body slots copied with set() when 3/4 of the slots hold a body (8cb36b50): publishPoseMicrobench 5.4k -> 27k ops/s (shared columns), ballsHeavy physics 7.124 -> 7.034 ms (neutral); Predator gate in the next batch.",
-      "next": "Predator batch gate. publishMovedBodies (1.0 %) left.",
+      "next": "publishMovedBodies (1.0 %) left.",
       "refs": [
         "EXECUTION_PLAN.md#E-246"
       ],
@@ -13527,7 +13527,8 @@
       ],
       "records": [
         "R-0963",
-        "R-1014"
+        "R-1014",
+        "R-1019"
       ]
     },
     {
@@ -13683,7 +13684,7 @@
       "kind": "speed",
       "rank": 23,
       "result": "fsm.tick 15.9 ms/s (7.0 %) and 17.9 ms/s (8.8 %) of the two logic workers. Machine code (Node 22, R-0992): the FSM's `onUpdate` reads `fsm` and `changeState` reads `stateIndex` through megamorphic loads; the state's tick is a call TurboFan does not inline (Call_ReceiverIsAny).",
-      "next": "E-222 sites and a dispatch kernel with Predator's state counts.",
+      "next": "E-301 took the transitions (R-1016). Left: the per-tick onUpdate dispatch (one indirect call a tick, the minimum for 17 targets) and changeState's megamorphic stateIndex load.",
       "refs": [
         "EXECUTION_PLAN.md#E-253"
       ],
@@ -14480,13 +14481,13 @@
     {
       "id": "E-286",
       "title": "Spawn calls with an options object allocate it when the engine is not inlined (bullet drivers 1.9 MB/s a worker, decal stamps 4.7)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-14 (R-1017), kernel claim",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "result": "Heap pass: the stress drivers' ticks allocate where they call the engine with an options literal: `BulletPool.spawn({ x, y, vx, vy, … })` 1.9 MB/s in each of bulletStress' three logic workers, `Decal.stamp({ texture, x, y, … })` 4.7 MB/s in decalStamp's and 4.9 in decalBlit's, spawnStorm 2.1. A literal TurboFan cannot see through (the callee is not inlined) is built, and its doubles boxed, on every call; games call these APIs the same way.",
-      "next": "Keep the API: a small entry that TurboFan inlines into the caller, which copies the options' numbers into a module Float64Array and calls the body with integers, so escape analysis removes the literal; `--trace-turbo-inlining` on a driver, then a kernel of spawns per frame, then bulletStress' and decalStamp's logic heap and STEP_MS.",
+      "result": "kept (R-1017), kernel claim: small fronts write the options into a Float64Array (1c3c4763, ccf750e8): spawnOptionsMicrobench bullet 147.3 -> 3.2-4.4 bytes a call and faster, decalBlit 139.5 -> 3.5-3.8, decal a tie (its driver's budget); Predator batch gate clean. GameObject.spawn cannot (the object reaches user code).",
+      "next": "Scene heap A/B on bulletStress and decalBlit when convenient; GameObject.spawn cannot.",
       "refs": [
         "EXECUTION_PLAN.md#E-286"
       ],
@@ -14497,9 +14498,9 @@
         "options object allocation"
       ],
       "records": [
-        "R-0980"
-      ],
-      "rank": 20
+        "R-0980",
+        "R-1017"
+      ]
     },
     {
       "id": "E-287",
@@ -14528,14 +14529,13 @@
     {
       "id": "E-288",
       "title": "Logic's accelerations reach Box2D one public call per body (Boids: b2Body_ApplyForceToCenter 1.3 %, body_set_transform 0.8 %)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from Box2D by name, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-14 (R-1018)",
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
-      "rank": 60,
-      "result": "Box2D by name: Boids' physics (65 000 bodies, no contacts to speak of) spends 6.2 % in b2FinalizeBodiesTask, 1.3 % in b2Body_ApplyForceToCenter, 0.8 % in body_set_transform and 0.6 % in bodies_apply_accelerations: the WeedJS glue applies each body's acceleration through the public API (the id's lookup and checks per call).",
-      "next": "Estimated about 1 % of physics (R-1014): the weed build is Release, the cost is the random body and body-sim reads a direct path makes too. Low priority.",
+      "result": "kept (R-1018): Box2D 88e247b (weedjs/e288), WeedJS f44815c0: the force glue moved into b2IntegrateVelocitiesTask's first substep; by name in Predator b2Body_ApplyForceToCenter 33.5 -> 0 and bodies_apply_accelerations 30.4 -> 9.4 ms/s on the physics thread; same velocities bit for bit; Predator batch gate physics -2.4 % paired, no row worse.",
+      "next": "None in the glue. The serial step_world part (15.6 % of the physics thread by name) is the next physics item.",
       "refs": [
         "EXECUTION_PLAN.md#E-288"
       ],
@@ -14546,7 +14546,8 @@
         "batched body writes"
       ],
       "records": [
-        "R-0981"
+        "R-0981",
+        "R-1018"
       ]
     },
     {
@@ -14837,14 +14838,13 @@
     {
       "id": "E-301",
       "title": "FSM transitions read onExit and onEnter twice each through LoadIC_Megamorphic (four builtin calls a transition)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the bytecode and d8 machine-code harvest, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-14 (R-1016), kernel claim",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 67,
-      "result": "d8 16 machine code (fsmTickMicrobench): `_executeTransition`, inlined into `FSM.tick`, calls `LoadIC_Megamorphic` four times, all for `OldState.onExit` / `NewState.onEnter` (each loaded for the test and the call); states are classes, 17 in Predator's three FSMs. `onUpdate` already goes through `_onUpdates`.",
-      "next": "Count Predator's transitions per second; then per-state `_onExits` / `_onEnters` arrays built with `_onUpdates`, called with `.call`; machine code, then fsmTickMicrobench with transitions.",
+      "result": "kept (R-1016), kernel claim: _onExits/_onEnters by state number (ed0469d4): no LoadIC_Megamorphic left in a transition; fsmTickMicrobench +17 % (Predator's rate), +50-60 % (a transition a tick), +26 % (no hooks); Predator batch gate clean. Hot swap refreshes the hooks (12afcaa2).",
+      "next": "changeState's stateIndex load stays megamorphic (no cheap fix). N-168 for hot swap.",
       "refs": [
         "EXECUTION_PLAN.md#E-301"
       ],
@@ -14855,7 +14855,8 @@
         "FSM transition"
       ],
       "records": [
-        "R-0996"
+        "R-0996",
+        "R-1016"
       ]
     },
     {
@@ -24928,6 +24929,56 @@
       "title": "E-267's ceiling: cell-ordered ids make rebuildOwnedRows 15 % faster (16 500 and 60 000); about 2-7 % of spatial, the campaign waits",
       "verdict": "note",
       "text": "**E-267's ceiling: rebuildOwnedRows with the entities numbered in cell order runs 15 % faster; not worth the campaign now.**\n2026-11-14 ~03:10, Node, the Predator-like kernel world (setupSpatialKernel, 3 workers, gatherCellOrder, 45 frames of\ndrift), `rebuildOwnedRows` of the three workers timed alone (9 samples of 40 calls, median), ids as drawn against\n`cellOrderIds` (c07e3707), two rounds:\n\n| entities | ids as drawn | cell-ordered ids |\n| --- | --- | --- |\n| 16 500 | 1.039 / 1.041 ms | 0.888 / 0.885 ms (-15 %) |\n| 60 000 | 3.857 / 3.932 ms | 3.258 / 3.391 ms (-15 %) |\n\nReading: perfect locality, free to keep, takes 15 % off the rebuild; a counting pass (bin by cell, then write) adds passes\nand gets part of that. With the rebuild at 12.5 % of Predator's spatial, 28-32 % of Boids' and 48-51 % of\nstationarySpatialWide's, the ceiling is about 2 %, 5 % and 7 % of those workers, and W6's C port needs the component\ncolumns in the grid's memory first (one memory per module). Together with E-295's ceiling (R-1009), the spatial layout\ncampaign waits until scenes run tens of thousands of entities per worker. Seen on the way: each spatial worker computes\nthe bounds of every active entity and writes only its own rows, so with three workers the bounds are computed three times."
+    },
+    {
+      "id": "R-1016",
+      "date": "2026-11-14",
+      "time": "03:51",
+      "timeFrom": "recorded",
+      "title": "E-301 kept (kernel claim): FSM transitions read their hooks from per-state arrays; fsmTickMicrobench +17 % at Predator's rate, +50-60 % a transition a tick; batch gate clean; hot-swap fix on the way",
+      "verdict": "kept",
+      "text": "**E-301 (with E-253's transition part): FSM transitions read onExit and onEnter from per-state arrays; a hot-swap fix on the way.**\n2026-11-14. Prepared by a parallel agent in its own worktree (branch w14a/e301), measured here; on main as 84ec5a0c\n(kernel), 12afcaa2 (hot swap), ed0469d4 (E-301), through the batch w14s/batch2.\n\nChange: each FSM class keeps `_onExits` and `_onEnters` by state number, filled with `_onUpdates` when it links;\n`_executeTransition` and `initializeEntity` call them with `.call(StateClass, …)` (same this, arguments, order); a state\nwith no hook of its own (or only FSMState's empty one) holds null and makes no call. Hot swap (12afcaa2, a bug since\nE-146: a swapped state's onUpdate never ran): `FSM._refreshStateHooks` re-reads the hooks of every linked FSM after a\nswap. tests: fsmTransition.test.js, fsmHotSwap.test.js (fail on main, on onUpdate). Not covered: assigning\n`State.onExit = fn` at run time after linking (nothing in src, demos or docs does it).\n\n- Machine code (Node 22, fsmTickMicrobench --hooks predator --stay-scale 0): FSM.tick with _executeTransition inlined,\n  4 LoadIC_Megamorphic (onExit x2, onEnter x2) and 2 Call_ReceiverIsNotNullOrUndefined -> none, 3 Call_ReceiverIsAny;\n  3424 -> 3092 bytes.\n- Kernel (fsmTickMicrobench, 4 alternating rounds, worktrees at 95a24ea7 and deb3da44, checksums equal): --hooks\n  predator (838 transitions an op) 6.26-6.78k -> 7.71-7.90k ops/s (+17 %); --stay-scale 0 (5 990) 1.82-2.15k ->\n  2.94-3.05k (+50-60 %); --hooks none (E-146's kernel) 6.41-7.00k -> 8.50-8.91k (+26 %, no call for an empty hook).\n- changeState's `StateClass.stateIndex` load stays megamorphic: any load from a state class is (17 classes), and an\n  identity scan of _stateArray would grow a function inlined into every onUpdate; not done.\n\nFound on the way, not fixed: N-168 (hot swap pairs only an FSM's initial state when its states are not exported).\n\n- Predator's batch gate (w14s/batch2 = E-246 + E-301 + E-286 + E-288 against d52e7f3f, crowd=1.5, 4 pairs, 03:40 to\n  03:50): NEUTRAL, no judged row worse. Physics 10.878 -> 9.516 ms (paired -2.4 %, 2/4 worse, cv 16/17 %), spatial\n  7.218 -> 6.717 (paired +1.1 %, 3/4, under 3 %); unjudged logic 4.569 -> 4.095, pre-render 5.796 -> 5.193, renderer\n  3.037 -> 2.732 (the unreachable rows fell about as much: drift). Load keys within 0.2 %. Suites on the batch: test:node\n  2618/2618, test:demos 101/101.",
+      "commits": [
+        "84ec5a0c",
+        "12afcaa2",
+        "ed0469d4"
+      ]
+    },
+    {
+      "id": "R-1017",
+      "date": "2026-11-14",
+      "time": "03:51",
+      "timeFrom": "recorded",
+      "title": "E-286 kept (kernel claim): BulletPool.spawn and Decal.stamp fronts remove the caller's literal; bullet 147 -> 4 bytes a call (+12 %), decalBlit 140 -> 4 (+2-15 %); batch gate clean",
+      "verdict": "kept",
+      "text": "**E-286: BulletPool.spawn and Decal.stamp get a small front, so a caller's options literal is removed.**\n2026-11-14. Prepared by a parallel agent in its own worktree (branch w14a/e286), measured here; on main as 98e79a6e\n(spawnOptionsMicrobench), 1c3c4763 (BulletPool), ccf750e8 (Decal), through the batch w14s/batch2.\n\nChange: `BulletPool.spawn` (1015 bytes, never inlined) is a 337-byte front that reads every option once, writes the\nnumbers (defaults applied) into a module Float64Array and calls `_spawnIn` with the texture, layers and facing kind; the\npool slot is taken after the options are read (a config that throws no longer leaks a slot). `Decal.stamp` (474 bytes,\njust over 460) is a 325-byte front: plain numbers go through a Float64Array to `_stampPlain`, a range or from/to to\n`_stampFields` (the old loop). Neither body sees the object, so once the front is inlined escape analysis removes the\nliteral. Same columns, records, defaults and return values: bulletSpawnOptions.test.js (61 configs against the old\ncode) and decalStampOptions.test.js (25 configs, the rng seeded the same).\n\n- Kernel (spawnOptionsMicrobench, 4 alternating rounds against 8ab7e539, checksums equal):\n  bullet 147.3 -> 3.2-4.4 bytes a call, 27.3-31.5k -> 31.6-34.7k ops/s; decalBlit 139.5 -> 3.5-3.8 bytes a call,\n  36.1-41.9k -> 41.7-43.5k ops/s; decal 169.4 -> 17.4 / 49.4 bytes a call or unchanged, speed a tie: that driver's\n  tick cannot hold its five `_rng` calls (118 bytes each) and the front in its 920-byte budget, so what TurboFan inlines\n  varies run to run (the driver's budget, not the engine's).\n- spawnStorm's `GameObject.spawn(config)` cannot shed its literal: the object reaches user code by contract\n  (onSpawned, the for-in copy, the page, postMessage).\n- Risk: a front pays only where the caller has budget left; in a big caller it is one more small call, the same\n  allocation as before.\n\n- Predator's batch gate (w14s/batch2 = E-246 + E-301 + E-286 + E-288 against d52e7f3f, crowd=1.5, 4 pairs, 03:40 to\n  03:50): NEUTRAL, no judged row worse. Physics 10.878 -> 9.516 ms (paired -2.4 %, 2/4 worse, cv 16/17 %), spatial\n  7.218 -> 6.717 (paired +1.1 %, 3/4, under 3 %); unjudged logic 4.569 -> 4.095, pre-render 5.796 -> 5.193, renderer\n  3.037 -> 2.732 (the unreachable rows fell about as much: drift). Load keys within 0.2 %. Suites on the batch: test:node\n  2618/2618, test:demos 101/101.",
+      "commits": [
+        "98e79a6e",
+        "1c3c4763",
+        "ccf750e8"
+      ]
+    },
+    {
+      "id": "R-1018",
+      "date": "2026-11-14",
+      "time": "03:51",
+      "timeFrom": "recorded",
+      "title": "E-288 kept: logic's accelerations applied in Box2D's first-substep velocity integration, in parallel; 0.9 ms a frame off Predator's physics thread (by name); batch gate physics -2.4 % paired",
+      "verdict": "kept",
+      "text": "**E-288: logic's accelerations applied inside Box2D's solver, in the first substep's parallel velocity integration.**\n2026-11-14. Box2D 88e247b (weedjs/e288, from weedjs/e298); WeedJS f44815c0 (the SIMD build, through w14s/batch2);\nkernel 32d4fb73.\n\nPremise corrected: R-1014 put the force glue at about 1 %. Box2D by name after E-298 (b2names-1114b, Predator) says\notherwise: on the physics thread b2Body_ApplyForceToCenter 33.5 ms/s and bodies_apply_accelerations 30.4 ms/s, about\n1 ms a frame of serial work for 25 000 bodies (the random body and body-sim reads behind each public call).\n\nChange: bodies_apply_accelerations binds the RigidBody columns for the next step (b2BindWeedAccelerations) and keeps only\nthe static clear and the wake of sleeping dynamic bodies that have something to apply (the sleeping paint: step export,\nfellAsleep, and now body_set_awake); the solver takes the binding once per step and, in the first substep's\nb2IntegrateVelocitiesTask, adds ax, ay times the mass and angularAccel times the inertia to each awake dynamic body's\nforce and torque (same float arithmetic; later substeps see the same accumulated force). Both builds (SIMD, no-SIMD) built\nwithout warnings in the touched files. Tests: bodyAccelerationsBatch.wasm.test.js still bit for bit against the\nper-body calls; bodyAccelerationsWake.wasm.test.js (a body that fell asleep, one body_set_awake put to sleep: both\nwake and move in the step; one without acceleration stays asleep).\n\n- Box2D by name, Predator (b2names-e288 against b2names-1114b, different runs of an emergent scene): on the physics\n  thread b2Body_ApplyForceToCenter 33.5 -> 0 ms/s, bodies_apply_accelerations 30.4 -> 9.4 ms/s: about 0.9 ms a frame\n  off the serial path.\n- bodyAccelerationsMicrobench (Node, one thread, 25 000 bodies, 4 rounds against main, same checksum): 172-179 ->\n  176-188 ops/s: the total work about the same; the gain is the spread over the pool.\n- Predator, 4 pairs (03:18 to 03:28): physics paired +8.7 %, 2/4 worse, cv 16/14 %, NEUTRAL, with every unreachable\n  worker up 16 to 33 % on the same side (drift). Boids, 4 pairs: physics 4.221 -> 4.135 ms, under the floor.\n\n- Predator's batch gate (w14s/batch2 = E-246 + E-301 + E-286 + E-288 against d52e7f3f, crowd=1.5, 4 pairs, 03:40 to\n  03:50): NEUTRAL, no judged row worse. Physics 10.878 -> 9.516 ms (paired -2.4 %, 2/4 worse, cv 16/17 %), spatial\n  7.218 -> 6.717 (paired +1.1 %, 3/4, under 3 %); unjudged logic 4.569 -> 4.095, pre-render 5.796 -> 5.193, renderer\n  3.037 -> 2.732 (the unreachable rows fell about as much: drift). Load keys within 0.2 %. Suites on the batch: test:node\n  2618/2618, test:demos 101/101.",
+      "commits": [
+        "f44815c0",
+        "32d4fb73"
+      ]
+    },
+    {
+      "id": "R-1019",
+      "date": "2026-11-14",
+      "time": "03:51",
+      "timeFrom": "recorded",
+      "title": "E-246's Predator gate (batch with E-301, E-286, E-288): no judged row worse, physics -2.4 % paired",
+      "verdict": "note",
+      "text": "**E-246's Predator gate: in the batch with E-301, E-286 and E-288, no judged row worse.**\n\n- Predator's batch gate (w14s/batch2 = E-246 + E-301 + E-286 + E-288 against d52e7f3f, crowd=1.5, 4 pairs, 03:40 to\n  03:50): NEUTRAL, no judged row worse. Physics 10.878 -> 9.516 ms (paired -2.4 %, 2/4 worse, cv 16/17 %), spatial\n  7.218 -> 6.717 (paired +1.1 %, 3/4, under 3 %); unjudged logic 4.569 -> 4.095, pre-render 5.796 -> 5.193, renderer\n  3.037 -> 2.732 (the unreachable rows fell about as much: drift). Load keys within 0.2 %. Suites on the batch: test:node\n  2618/2618, test:demos 101/101."
     }
   ],
   "leads": [
