@@ -4661,6 +4661,15 @@ acceleration and force application, finalize's pose copy, the pose publish) onto
 both builds (SIMD, no-SIMD) in the Box2d_3.2 repo; ballsHeavy (physics 8.6 ms) as the owner scene, then Predator.
 Owner: physics.
 
+### E-299 The neighbour publish walks its batch in id order: reorder it by cell, as the gather's rebuild list
+
+**Premise (R-0997's counters; spatialPublish.c):** publish_batch reads every candidate's pose by entity id, 2.1 times
+the process's refills per instruction in Predator, and its batch (the reused rows whose poses moved, then the rebuilt
+ones) arrives in owned id order, so consecutive entities walk unrelated poses. The gather already reorders its rebuild
+list by home cell (order_batch_by_cell, whose per-worker scratch is sized for every entity). **Plan:** the same order on
+the publish batch before publish_batch; spatialPublishWasmMicrobench in id against cell order at 16 500 and 60 000
+entities (past L2), then Predator's gate. Owner: spatial.
+
 ### E-300 The tick dispatch reads obj.tick twice per entity, each a megamorphic load call
 
 **Premise (bytecode, Chrome 151, Predator's code pass; machine code, d8 16):** `_tickIntervalBucket` loads `obj.tick`
