@@ -11,6 +11,10 @@
  *   wasmKeyed  the same with E-177's keyed frames on: SpriteRenderer.keyedDirty and the queue's key column bound, so
  *         the emit writes each sprite's key and takes its flag (every sprite flagged on the first frame, as spawns leave
  *         them)
+ *   wasmKeyedV2  wasmKeyed with E-312's change frames bound (keyed frames v2): each call is the next queue frame, Pixi
+ *         having drawn the one before, so a key is marked for a change after it (the same marks as wasmKeyed)
+ *   wasmKeyedSkip  wasmKeyedV2 told nothing reads an unmarked row's statics (E-312 step 2, K_SKIP): their six columns
+ *         are left as the frame before wrote them, the same values here (no setter runs), so the checksum holds
  *
  * The emit reads SpriteRenderer, ShadowCaster and DecorationComponent columns, pre-render's animation
  * state and collector, and the texture metadata; the kernel needs all of them in the memory it
@@ -189,8 +193,10 @@ function regionList(tex) {
   col('rForeign', Uint32Array, 2 * MAX_ITEMS);
   col('rCounts', Uint32Array, 8);
   col('table', Uint32Array, SLOTS.length);
-  // E-177: the sprites' keyed flags (bound only by the wasmKeyed variant).
+  // E-177: the sprites' keyed flags (bound only by the wasmKeyed variants).
   col('sKeyedDirty', Uint8Array, N);
+  // E-312: each entity's change frames, statics and texture (bound only by wasmKeyedV2 and wasmKeyedSkip).
+  col('kChange', Uint32Array, 2 * N);
   return list.map((r) => ({ ...r, owner: 'preRender' }));
 }
 
@@ -408,6 +414,19 @@ export async function setupEmitKernel(opts = {}) {
     at('sKeyedDirty', regions.sKeyedDirty.byte);
     at('qKey', worker.renderQueueKey.byteOffset);
   }
+  // E-312: the change frames, and the frames each call writes and counts its marks from.
+  let keyFrame = 0;
+  if (opts.keyFrames) {
+    if (!SLOTS.includes('kChange')) throw new Error('this tree has no keyed frames v2 (E-312)');
+    if (opts.keySkip && !SLOTS.includes('kSkip')) throw new Error('this tree has no K_SKIP (E-312 step 2)');
+    at('kChange', regions.kChange.byte);
+  }
+  const nextKeyFrame = () => {
+    keyFrame++;
+    at('kFrame', keyFrame);
+    at('kSince', keyFrame - 1);
+    if (opts.keySkip) at('kSkip', keyFrame > 1 ? 1 : 0);
+  };
 
   const source = () => worker._fillEmitSource(count, MAX_ITEMS, cY, cType, cIndex, qX, qY, qRotC, qRotS, false, true, true);
   source();
@@ -421,6 +440,7 @@ export async function setupEmitKernel(opts = {}) {
   let declined = 0;
   /** What a product wrapper does around the kernel: the JS emit when declined, then the ends and warnings. */
   const emitWasm = (rows = count) => {
+    if (opts.keyFrames) nextKeyFrame();
     const written = emitRows(regions.table.byte, rows, MAX_ITEMS, flags(), DT / 1000, worker._decorationZoomAlpha, worker._zBand) >>> 0;
     if (written === DECLINED) {
       declined++;
@@ -460,9 +480,12 @@ function hashBytes(h, bytes) {
 async function main() {
   const args = parseArgs();
   const variant = String(args.variant || 'wasm');
-  if (!['js', 'wasm', 'wasmKeyed'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  if (!['js', 'wasm', 'wasmKeyed', 'wasmKeyedV2', 'wasmKeyedSkip'].includes(variant)) throw new Error(`unknown variant ${variant}`);
   const kernel = variant !== 'js';
-  const k = await setupEmitKernel({ seed: Number(args.seed ?? 0x5e1d), keyed: variant === 'wasmKeyed' });
+  const k = await setupEmitKernel({
+    seed: Number(args.seed ?? 0x5e1d), keyed: variant.startsWith('wasmKeyed'),
+    keyFrames: variant === 'wasmKeyedV2' || variant === 'wasmKeyedSkip', keySkip: variant === 'wasmKeyedSkip',
+  });
   const emit = kernel ? () => k.emitWasm() : () => k.emitJs();
 
   // 45 frames from the fixture's state: the animation clocks advance, play-once sprites end.
