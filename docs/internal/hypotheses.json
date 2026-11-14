@@ -15058,7 +15058,7 @@
       "date": "2026-11-14",
       "area": "spatial",
       "kind": "speed",
-      "result": "mixed (R-1035): crowd 2.5, 2 spatial workers: spatial 10.767 -> 7.336 ms (-32.3 %, 4/4), logic +8.3 % (4/4 worse), physics +2.6 %; physics limits the frame there. Knob kept (55e0cdaa), no 'auto' default.",
+      "result": "mixed (R-1035): crowd 2.5, 2 spatial workers: spatial 10.767 -> 7.336 ms (-32.3 %, 4/4), logic +8.3 % (4/4 worse), physics +2.6 %; physics limits the frame there. Knob kept (55e0cdaa), no 'auto' default. The same trade as 2026-10-06's worker count (R-0325: spatial 2 vs 1 -35.5 %, renderer +8.1 %).",
       "next": "When spatial is the longest step (past crowd 2.5, or once physics is faster): numberOfSpatialWorkers by entity count, and E-267's counting pass for the rebuild each worker repeats."
     },
     {
