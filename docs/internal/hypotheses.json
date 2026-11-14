@@ -11313,7 +11313,8 @@
       "records": [
         "R-0854",
         "R-1030",
-        "R-1031"
+        "R-1031",
+        "R-1040"
       ]
     },
     {
@@ -14154,7 +14155,8 @@
         "tile dirty scan"
       ],
       "records": [
-        "R-1039"
+        "R-1039",
+        "R-1040"
       ]
     },
     {
@@ -15078,7 +15080,8 @@
       ],
       "records": [
         "R-1036",
-        "R-1037"
+        "R-1037",
+        "R-1040"
       ]
     }
   ],
@@ -25344,6 +25347,15 @@
         "e6eb5177",
         "03f0d1b9"
       ]
+    },
+    {
+      "id": "R-1040",
+      "date": "2026-11-14",
+      "time": "17:22",
+      "timeFrom": "recorded",
+      "title": "The afternoon's engine changes together, Predator crowd 1.5: spatial -2.4 %, physics -2.3 % (1/4 worse each), preRender -20 %, renderer -10 %, logic -5.5 % (under the floor); no worker higher",
+      "verdict": "note",
+      "text": "**The afternoon's engine changes together on Predator crowd 1.5: every worker lower, the judged two by 2.3 to 2.4 %.**\n2026-11-14, 17:17:05 to 17:22:42, runPredatorAbab --vs b66d6482 (main at 04:40, R-1023's total) --hyp-rev main (b297f19e)\n--query crowd=1.5 --pool --pairs 4. Engine changes between them: E-201 step 1 (keyed frames by queue row, on by default),\nE-308 (Box2D's step export skips an unchanged rotation), E-272 (dirty decal tiles counted in words); E-310's knob and the\nkernels' knobs are demo and bench code (off by default).\n\n| worker (own) | 04:40 | now | |\n| --- | --- | --- | --- |\n| spatial | 6.091 ms | 5.780 | paired -2.4 %, 1/4 worse, cv 12/5 % |\n| physics | 7.687 | 7.173 | -2.3 %, 1/4 worse, cv 15/7 % |\n| preRender | 3.768 | 3.019 | -20 %, under the floor |\n| logic | 3.851 | 3.639 | -5.5 %, under the floor |\n| renderer | 2.263 | 2.038 | -10 %, under the floor |\n| presented | 60.0 fps | 60.0 | |\n\nNEUTRAL by the bars (the two judged workers under 3 %); no worker higher. At crowd 2.5, E-308's own pair read physics\n-3.2 %, logic -10.1 %, preRender -7.8 % (R-1036)."
     }
   ],
   "leads": [
