@@ -40,12 +40,16 @@ function predatorNumberParam(name, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-// E-191: `?crowd=<f>` scales the civilians and soldiers spawned (1 by default; their pools hold 1.5 times as many), so
-// the renderer can be loaded past the 3 ms floor.
+// E-191: `?crowd=<f>` scales the civilians and soldiers spawned (1 by default), so the workers can be loaded past their
+// floors. Their pools hold crowd 1.5's spawn, and grow with the crowd above it (scaling runs, E-224) up to 2.5, where
+// the scene's 57 600 entities still fit 16-bit ids.
+const PREDATOR_CROWD_MAX = 2.5;
 function predatorCrowd() {
   const f = predatorNumberParam('crowd', 1);
-  return f > 0 ? Math.min(f, 1.5) : 1;
+  return f > 0 ? Math.min(f, PREDATOR_CROWD_MAX) : 1;
 }
+const PREDATOR_CIVILIAN_POOL = Math.max(15000, Math.ceil(10000 * predatorCrowd()));
+const PREDATOR_SOLDIER_POOL = Math.max(10000, Math.ceil(6000 * predatorCrowd()));
 
 function predatorHourPin() {
   const q = predatorSearchParam('hour');
@@ -189,6 +193,8 @@ export class PredatorScene extends WEED.Scene {
       subStepCount: 0,
       numberOfPhysicsWorkers: 4,
       noLimitFPS: predatorNoLimitFPS,
+      // A crowd past 1.5 (scaling runs) needs more than Box2D's default memory for its bodies.
+      ...(predatorCrowd() > 1.5 ? { wasmMemoryMB: 256 } : {}),
 
       gravity: { x: 0, y: 0 },
     },
@@ -412,13 +418,13 @@ export class PredatorScene extends WEED.Scene {
     // [Player, 1],
     [House, 2000],
     [TallLight, 300],
-    [Civilian, 15000], // FSM-based civilians
+    [Civilian, PREDATOR_CIVILIAN_POOL], // FSM-based civilians
     [Tree, 5000],
     [Barrel, 1000],
     [Rock, 5000],
     [Fire, 100],
     [Explosion, 100],
-    [MySoldier, 10000],
+    [MySoldier, PREDATOR_SOLDIER_POOL],
     // [Cloud, 100],
     [Destination, 1],
     [DropMoney, 1000],
