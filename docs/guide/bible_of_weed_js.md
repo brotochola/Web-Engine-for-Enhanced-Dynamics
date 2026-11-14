@@ -1401,6 +1401,23 @@ static assets = {
 - They go through the same pass as `lighting.faces` (which a sheet with maps turns on). A prebaked `assets.bigAtlas` does not carry them yet, and raycasted lighting lights them flat.
 - `tests/bench/stressScenes/maps/makeShapes.mjs` writes a sheet and both maps from shapes it ray-traces: a model of what an exporter writes.
 
+### The sun's shadows from a shadow map: `lighting.sunShadows: 'map'`
+
+By default a ShadowCaster's sun shadow is its picture skewed on the screen, in the `castedShadows` layer, and it darkens every light. With `sunShadows: 'map'` the sun draws its casters into a shadow map instead, and the light pass looks each pixel up in it:
+
+- the sun's shadow takes out the sun alone: a lamp still lights the ground inside it;
+- it falls on what has height where that is: the shadow of a pillar climbs a crate's front and stops at its lid, if the crate is a face or has a height map;
+- it costs one map a frame whatever the number of casters.
+
+```javascript
+static config = {
+  camera: { pitch: 45 },
+  lighting: { enabled: true, shadowsEnabled: true, sunShadows: 'map' },
+};
+```
+
+Each caster is a card standing on its foot, facing the sun, cut out by its picture's alpha. A sheet with a `heightMap` gives the card's depth from it. The shadows of the lamps are as before. WebGL only for now (on WebGPU it warns and keeps `'sprite'`), and not with raycasted lighting.
+
 ### Faces that light as surfaces: `lighting.faces`
 
 In an oblique or isometric view a wall is a sprite, and the light pass reads each pixel as the floor under it: a lamp's pool climbs every wall alike, and a roof lights up when a lamp stands behind the house. With `lighting.faces` a decoration can say it is a flat face of a volume: where it looks and how high it is. Each of its pixels is then lit as that point in 3D. A lamp lights the wall that looks at it and not the one past the corner, a wall no light reaches stays dark, a roof above the lamp stays dark, and the sun lights each face by its own angle as the day goes by.
