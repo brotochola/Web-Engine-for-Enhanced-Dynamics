@@ -15111,6 +15111,46 @@
         "R-1037",
         "R-1040"
       ]
+    },
+    {
+      "aliases": [
+        "config.camera"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#DX-CAMERA",
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "records": [],
+      "date": "2026-11-14",
+      "area": "engine",
+      "kind": "dx",
+      "result": "config.camera { pitch, yaw, floorScaleY, heightScaleY } replaces lighting.groundScaleY and lighting.faces.heightScaleY (retired keys that point to it); no camera keeps floor 1 and heights 1, so pictures do not change. Not timed: the same numbers reach the same shaders.",
+      "next": "raycasted goes in F9 with setWall.",
+      "id": "DX-CAMERA",
+      "title": "config.camera: what the camera is, once for the scene (DX-LIGHT3D F1)",
+      "status": "kept-hygiene",
+      "statusText": "built 2026-11-14 on dx/light3d (af40188)"
+    },
+    {
+      "aliases": [
+        "DirectionalSprite"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#DX-DIRSPRITE",
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "records": [
+        "R-1043"
+      ],
+      "date": "2026-11-14",
+      "area": "engine",
+      "kind": "dx",
+      "result": "",
+      "next": "Owner: an ABAB with worktrees on a quiet machine (directionalSpriteStressScene ?mode=hand|ds, logic), and Predator's gate.",
+      "id": "DX-DIRSPRITE",
+      "title": "DirectionalSprite: a sprite drawn from several directions, from its facing (DX-LIGHT3D F2)",
+      "status": "running",
+      "statusText": "built 2026-11-14 on dx/light3d; measured on a 2-core VM only"
     }
   ],
   "records": [
@@ -25406,6 +25446,20 @@
         "79917247",
         "54140f87",
         "e55a2135"
+      ]
+    },
+    {
+      "id": "R-1043",
+      "date": "2026-11-14",
+      "time": "20:02",
+      "timeFrom": "recorded",
+      "title": "DirectionalSprite against the hand selector: kernel and owner scene on the cloud VM",
+      "verdict": "tie",
+      "text": "DirectionalSprite against Predator's hand-written selector, on the cloud VM this branch was built on (2 cores, SwiftShader, headless Chrome): not a quiet machine, and the scene runs were not from worktrees.\n\nKernel (`node tests/bench/directionalSpriteMicrobench.mjs`, Node 22, n = 5000, every heading turning 0.02 rad a frame, TurboFan after warmNormalCompile): the pass DirectionalSprite.resolve over all entities costs, per frame and on top of the step,\n- hand4 (octant by comparisons, a write on a change): 0.010 ms (2 ns an entity);\n- ds4 (4 directions from the velocity, margin 0): 0.128 ms (26 ns) after ea688a5, 0.540 ms (108 ns) before it (an atan2 and five modulos per entity);\n- ds32 (32 from the rotation): 0.230 ms (46 ns), 0.511 before;\n- ds32odd (one direction moved half a degree: no uniform step): 0.287 ms (57 ns), 2.40 before.\nhand4 and ds4 draw the same animations after 120 frames (checksum).\n\nScene (`directionalSpriteStressScene`, n = 20 000, logic0 STEP_MS, 3 pairs, warm-up 4 s, 8 s each): hand 8.34 / 8.14 / 8.83 ms, ds 8.82 / 8.25 / 7.86 ms: +5.8 %, +1.3 %, −11 %, a mean of −1.4 %. No regression this sitting can see; its pairs spread ±8 %, so that is its detection limit. Logic's baseline is above the 6 ms floor.\n\nNot decided here: a keep needs the owner's ABAB with worktrees on a quiet machine, and Predator's gate (its people now resolve in the pass).",
+      "commits": [
+        "4bf4d21",
+        "f556f6d",
+        "ea688a5"
       ]
     }
   ],
