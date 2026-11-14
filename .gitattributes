@@ -1,2 +1,7 @@
 # The register merges by key, not as text: scripts/mergeRegister.mjs, defined once per clone as that file says.
 docs/internal/hypotheses.json merge=hypotheses
+
+# Shaders check out with LF whatever core.autocrlf says (Git for Windows sets it to true): the engine's rewrites find
+# their lines by "\n", and a CR LF clone threw 'the sprite vertex shader needs one "void main() {"' (review N-169).
+*.glsl text eol=lf
+*.wgsl text eol=lf
