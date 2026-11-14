@@ -57,7 +57,9 @@ import {
 import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
-import { resolveFaces, shaderWithFlag } from '../render/faceMap.js';
+import { lightingSource, resolveFaces, shaderWithFlag } from '../render/faceMap.js';
+import { sunMapTerms, sunMapVertex } from '../render/sunShadowMap.js';
+import { instancedSpriteGlProgram } from '../render/webgl/instancedSpriteGlsl.js';
 import { TileMap } from '../core/tileMap.js';
 import {
   listGidPages,
@@ -869,6 +871,15 @@ class PixiRenderer extends AbstractWorker {
     this.lightingRT = null; // RenderTexture for low-res lighting
     this.faceRT = null; // DX-FACES: the face map (src/render/faceMap.js)
     this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
+    // DX-SHADOW3D: lighting.sunShadows 'map' (src/render/sunShadowMap.js): the sun's shadow map, its pass and terms.
+    this._sunMapOn = false;
+    this.sunMapRT = null;
+    this._sunMapMesh = null;
+    this._sunMapUniforms = null;
+    this._sunMapTerms = new Float32Array(4);
+    this._sunMapK = new Float32Array(4);
+    this._sunMapDrew = false;
+    this._sunMapClear = false;
     this._noMapsSource = null; // DX-MAPS: its stand-in when none has (_emptyMapsSource)
     this._faces = resolveFaces(null);
     this._faceSun = new Float32Array(4); // towards the sun, once a frame
@@ -3722,7 +3733,11 @@ LIGHTING SYSTEM SETUP
       lightingResources.uniforms.uFaceSun = { value: this._faceSun, type: 'vec4<f32>' };
       lightingResources.uFaceMap = PIXI.Texture.EMPTY.source;
     }
-    const lightingSrc = shaderWithFlag(this._engineShaders?.lightingFrag || '', 'FACES', facesOn).replace(
+    if (this._sunMapOn) {
+      lightingResources.uniforms.uSunMapK = { value: this._sunMapK, type: 'vec4<f32>' };
+      lightingResources.uSunMap = PIXI.Texture.EMPTY.source;
+    }
+    const lightingSrc = lightingSource(this._engineShaders?.lightingFrag || '', { faces: facesOn, sunMap: this._sunMapOn }).replace(
       /MAX_LIGHTS/g,
       String(this.maxLights | 0 || 64)
     );
@@ -5733,7 +5748,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * entity batch's keyed uploads tell pre-render (its header's LIVE word), which then writes such rows.
    */
   _ensureKeyedCasters(sunShader) {
-    if (this._keyedCastersTried) return;
+    // DX-SHADOW3D: the sun's map reads pre-render's full rows.
+    if (this._keyedCastersTried || this._sunMapOn) return;
     this._keyedCastersTried = true;
     const b = this.entitiesBatch;
     const casters = this.gpuCasterBatch;
@@ -5763,6 +5779,100 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (geometry === null) return null;
     mesh.geometry = geometry;
     return mesh;
+  }
+
+  /** DX-SHADOW3D: the sun's shadow map, the size of the sprite shadows' layer, bound to the light pass. */
+  _createSunMap(width, height) {
+    if (this.sunMapRT) this.sunMapRT.destroy(true);
+    this.sunMapRT = PIXI.RenderTexture.create({ width, height, scaleMode: 'nearest' });
+    const res = this.lightingShader?.resources;
+    if (res) res.uSunMap = this.sunMapRT.source;
+  }
+
+  /**
+   * DX-SHADOW3D: this frame's sun rows drawn into the sun's map (max blending): the caster batch's geometry with the map's
+   * program (instancedSpriteShadow.vert.glsl turned by sunMapVertex), made on first use.
+   * @returns {boolean} whether it drew
+   */
+  _drawSunMap(batch, gpu, sunN, screenScale) {
+    const shaders = this._engineShaders;
+    // Made here: the shadow layer is created before the lighting config is read.
+    if (!this.sunMapRT && this.shadowRT) this._createSunMap(this.shadowRT.width, this.shadowRT.height);
+    if (!this.sunMapRT || !shaders?.shadowVert || !shaders?.sunMapFrag) return false;
+    if (this._sunMapMesh === null) {
+      const r = batch.shadowShader.resources;
+      const uniforms = {
+        uTileWorld: { value: new Float32Array([0, 0, 0, 0]), type: 'vec4<f32>' },
+        uSun: { value: new Float32Array(4), type: 'vec4<f32>' },
+        uLight: { value: new Float32Array(4), type: 'vec4<f32>' },
+        uCam: { value: new Float32Array(4), type: 'vec4<f32>' },
+        uPointScale: { value: 0, type: 'f32' },
+        uGroundInvScaleY: { value: 1, type: 'f32' },
+        uSunK: { value: new Float32Array(4), type: 'vec4<f32>' },
+        uSunPerp: { value: new Float32Array(4), type: 'vec4<f32>' },
+      };
+      const glProgram = instancedSpriteGlProgram(PIXI.GlProgram, sunMapVertex(shaders.shadowVert), shaders.sunMapFrag, 'sun-map');
+      const shader = new PIXI.Shader({
+        glProgram,
+        resources: { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: this.atlasMapsSource ?? this._emptyMapsSource(), uniforms },
+      });
+      // Pixi made the group from the object.
+      this._sunMapUniforms = shader.resources.uniforms;
+      const state = new PIXI.State();
+      state.blend = true;
+      state.blendMode = 'max';
+      state.depthTest = false;
+      state.depthMask = false;
+      state.culling = false;
+      this._sunMapMesh = new PIXI.Mesh({ geometry: batch.mesh.geometry, shader, state, label: 'sun-map' });
+    }
+    if (!this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS)) return false;
+    const mesh = this._sunMapMesh;
+    mesh.geometry = batch.mesh.geometry;
+    const u = this._sunMapUniforms.uniforms;
+    this._writeFaceSun();
+    sunMapTerms(this._faceSun, this._sunMapTerms);
+    u.uCam[0] = this._renderCameraX;
+    u.uCam[1] = this._renderCameraY;
+    u.uCam[2] = screenScale;
+    u.uSun[3] = 1;
+    u.uGroundInvScaleY = this._groundInvScaleY || 1;
+    u.uSunK[0] = this._sunMapTerms[0];
+    u.uSunK[1] = this._sunMapTerms[1];
+    u.uSunK[3] = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
+    u.uSunPerp[0] = this._sunMapTerms[2];
+    u.uSunPerp[1] = this._sunMapTerms[3];
+    this._sunMapUniforms.update();
+    const k = this._sunMapK;
+    k[0] = this._sunMapTerms[0];
+    k[1] = this._sunMapTerms[1];
+    k[2] = this._groundScaleY || 1;
+    k[3] = Sun.shadowOpacity;
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.container = mesh;
+    rtOpts.target = this.sunMapRT;
+    rtOpts.clear = true;
+    rtOpts.clearColor = this._clearTransparent;
+    this._submitRender(rtOpts);
+    rtOpts.target = this.shadowRT;
+    this._gpuPassesThisFrame++;
+    return true;
+  }
+
+  /** DX-SHADOW3D: a frame with no sun rows clears the sun's map (once). */
+  _clearSunMapIfEmpty() {
+    if (this._sunMapDrew || !this.sunMapRT || this._sunMapClear === true) {
+      if (this._sunMapDrew) this._sunMapClear = false;
+      return;
+    }
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.container = this._rtEmptyContainer;
+    rtOpts.target = this.sunMapRT;
+    rtOpts.clear = true;
+    rtOpts.clearColor = this._clearTransparent;
+    this._submitRender(rtOpts);
+    rtOpts.target = this.shadowRT;
+    this._sunMapClear = true;
   }
 
   _drawGpuCasterShadows() {
@@ -5817,7 +5927,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.clearColor = this._clearTransparent;
 
     batch.setTargetSpace(false, 0, 0, 1);
-    if (u.uSun[3] > 0 && sunN > 0) {
+    this._sunMapDrew = false;
+    if (this._sunMapOn) {
+      // DX-SHADOW3D: the sun's rows go to its shadow map, not to the sprite shadows' layer.
+      if (u.uSun[3] > 0 && sunN > 0 && this._drawSunMap(batch, gpu, sunN, zoom * res)) this._sunMapDrew = true;
+      this._clearSunMapIfEmpty();
+    } else if (u.uSun[3] > 0 && sunN > 0) {
       // E-211: pre-render's keyed sun rows when it wrote them (it packs them for the stamps in any case): 28 bytes a
       // caster, read in order, where the instances cost the keyed pack 12 bytes a sprite gathered from three more
       // queue columns and 12 more written. Else (E-191) the entity batch's own instances, when this frame's pack wrote
@@ -7003,6 +7118,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       );
       if (this.shadowDisplaySprite) this.shadowDisplaySprite.scale.set(width / sw, height / sh);
       this._bindLightingShadowMap();
+      if (this.sunMapRT) this._createSunMap(sw, sh);
     }
 
     if (this._visPolyRT) {
@@ -7514,6 +7630,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         fetchEngineShader('/src/shaders/faceMap.frag.glsl').then((s) => {
           sh.faceFrag = s;
         }),
+        fetchEngineShader('/src/shaders/sunShadowMap.frag.glsl').then((s) => {
+          sh.sunMapFrag = s;
+        }),
         fetchEngineShader('/src/shaders/lightingBasic.frag.glsl').then((s) => {
           sh.lightingFrag = s;
         }),
@@ -7951,6 +8070,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._faces = resolveFaces(lightingConfig, this.config.camera);
       if (lightingConfig.faces?.enabled && !this._faces.enabled) {
         console.warn('WeedJS: lighting.faces does not work with raycasted lighting yet: faces are off');
+      }
+      // DX-SHADOW3D: the sun's shadows from a shadow map, the sun's term alone (WebGL for now).
+      if (lightingConfig.sunShadows === 'map') {
+        if (this._useWebGpu || lightingConfig.raycasted) {
+          console.warn(`WeedJS: lighting.sunShadows 'map' works on WebGL without raycasted lighting for now: the sun's shadows are sprites`);
+        } else {
+          this._sunMapOn = true;
+        }
       }
       // DX-MAPS: a sprite with height and normal maps is lit as the surface they say, through the faces' pass.
       if (this.atlasMapsSource !== null && !this._faces.enabled) {

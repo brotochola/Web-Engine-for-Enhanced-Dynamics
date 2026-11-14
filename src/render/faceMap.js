@@ -163,6 +163,16 @@ export function shaderWithFlag(source, name, on) {
   return source.replace(block, on ? '$1' : '');
 }
 
+/**
+ * The light pass's source with its blocks kept or cut: FACES (DX-FACES and DX-MAPS) and SUNMAP / !SUNMAP (DX-SHADOW3D's
+ * sun map, WebGL only for now).
+ * @param {string} source lightingBasic.frag.glsl or lightingBasic.wgsl
+ * @param {{ faces: boolean, sunMap: boolean }} flags
+ */
+export function lightingSource(source, { faces, sunMap }) {
+  return shaderWithFlag(shaderWithFlag(shaderWithFlag(source, 'FACES', faces), 'SUNMAP', sunMap), '!SUNMAP', !sunMap);
+}
+
 /** config.lighting.faces over its defaults. */
 export function resolveFaces(lighting, camera = null) {
   const faces = lighting?.faces;

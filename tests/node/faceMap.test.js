@@ -6,6 +6,7 @@ import fs from 'node:fs';
 
 import {
   FACE_DEFAULTS,
+  lightingSource,
   decodeFaceNormal,
   encodeFaceHeight,
   encodeFaceNormal,
@@ -71,9 +72,9 @@ test('resolveFaces: off without the option or with raycasted lighting, and the d
 test('without faces the light pass is the old one: no face code left in either shader', () => {
   for (const name of ['lightingBasic.frag.glsl', 'lightingBasic.wgsl']) {
     const source = shader(name);
-    const off = shaderWithFlag(source, 'FACES', false);
-    assert.doesNotMatch(off, /uFace|faceLight|#if|#endif/, name);
-    const on = shaderWithFlag(source, 'FACES', true);
+    const off = lightingSource(source, { faces: false, sunMap: false });
+    assert.doesNotMatch(off, /uFace|faceLight|uSunMap|#if|#endif/, name);
+    const on = lightingSource(source, { faces: true, sunMap: false });
     assert.match(on, /uFaceMap/, name);
     assert.doesNotMatch(on, /#if|#endif/, name);
   }

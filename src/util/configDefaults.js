@@ -768,6 +768,12 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   faces: Object.freeze({ enabled: false }),
   /**
+   * DX-SHADOW3D: how the sun casts the ShadowCasters' shadows. 'sprite' (default): each caster's picture skewed on the
+   * screen, darkening every light. 'map': a shadow map in the floor's terms (src/render/sunShadowMap.js) that takes out the
+   * sun alone, falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit. WebGL for now.
+   */
+  sunShadows: 'sprite',
+  /**
    * 'add' — type 3 glows go to the lightGlows ADD mesh.
    * 'sprite' — same quads join the entity list (sort bias already above the body).
    * Source-over, so the soft edge can gray, and lighting multiply sits on top.

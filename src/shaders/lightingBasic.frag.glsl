@@ -41,6 +41,34 @@ float coneFactor(vec2 delta, vec4 cone) {
   return t * t * (3.0 - 2.0 * t);
 }
 
+// #if SUNMAP
+// DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the sprite shadows' layer is.
+uniform sampler2D uSunMap;
+uniform vec4 uSunMapK; // kx, ky (a px of height's landing shift on the floor), groundScaleY, the shadow's opacity
+
+vec2 weedWorldToNorm(vec2 world) {
+  vec2 focus = uCameraPos + uFullCanvasSize / (2.0 * uZoom);
+  vec2 d = (world - focus) * uZoom;
+  vec2 sxy = vec2(uCameraRot.x * d.x - uCameraRot.y * d.y, uCameraRot.y * d.x + uCameraRot.x * d.y);
+  return (sxy + uFullCanvasSize * 0.5) / uFullCanvasSize;
+}
+
+// How much of the sun reaches floor point p (x, y on the floor, z up): 1 lit, 1 - opacity in the shade, five taps.
+float sunVisibility(vec3 p) {
+  vec2 land = p.xy - p.z * uSunMapK.xy;
+  vec2 uv = weedWorldToNorm(vec2(land.x, land.y * uSunMapK.z));
+  vec2 texel = 1.0 / uViewport;
+  float bias = 4.0 + p.z * 0.03;
+  float lit = 0.0;
+  lit += texture2D(uSunMap, uv).r * 512.0 > p.z + bias ? 0.0 : 1.0;
+  lit += texture2D(uSunMap, uv + vec2(texel.x, 0.0)).r * 512.0 > p.z + bias ? 0.0 : 1.0;
+  lit += texture2D(uSunMap, uv - vec2(texel.x, 0.0)).r * 512.0 > p.z + bias ? 0.0 : 1.0;
+  lit += texture2D(uSunMap, uv + vec2(0.0, texel.y)).r * 512.0 > p.z + bias ? 0.0 : 1.0;
+  lit += texture2D(uSunMap, uv - vec2(0.0, texel.y)).r * 512.0 > p.z + bias ? 0.0 : 1.0;
+  return 1.0 - uSunMapK.w * (1.0 - lit * 0.2);
+}
+// #endif SUNMAP
+
 // #if FACES
 // DX-FACES: this pixel's face, in the face map, drawn at this pass's size.
 uniform sampler2D uFaceMap;
@@ -57,6 +85,9 @@ vec3 faceLight(vec2 world, vec4 face) {
   float z = (floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5)) / 8.0;
   vec3 p = vec3(world.x, (world.y + z * uFaceLight.x) * uGroundInvScaleY, z);
   float sunDirect = min(max(dot(n, uFaceSun.xyz), 0.0) * uFaceSun.w, 1.6);
+// #if SUNMAP
+  sunDirect *= sunVisibility(p);
+// #endif SUNMAP
   vec3 total = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB);
   total += vec3(uSunR, uSunG, uSunB) * uSunIntensity * (1.0 - uFaceLight.w + uFaceLight.w * sunDirect);
   const float DISTANCE_SCALE = 1.0 / 1024.0;
@@ -124,7 +155,12 @@ void main() {
   fragWorld.y *= uGroundInvScaleY;
   vec3 totalLight = vec3(uBaseAmbient);
   vec3 sunColor = vec3(uSunR, uSunG, uSunB);
+// #if SUNMAP
+  totalLight += sunColor * uSunIntensity * sunVisibility(vec3(fragWorld, 0.0));
+// #endif SUNMAP
+// #if !SUNMAP
   totalLight += sunColor * uSunIntensity;
+// #endif !SUNMAP
   totalLight += vec3(uNightR, uNightG, uNightB);
 
   // The cones first (each times its cone), then every other light as before.
