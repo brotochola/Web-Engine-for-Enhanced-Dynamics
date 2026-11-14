@@ -51,8 +51,13 @@ for (let i = 0; i < (META.hojasCaras || 0); i++) SHEETS['caras' + i] = { json: B
 for (const name of PEOPLE_SHEETS) {
   SHEETS[name] = { json: '/demos/img/civil1.json', png: `/demos/img/people/${name}.png`, excludeAnimations: LPC_EXCLUDE };
 }
+// A car sheet draws the headings that look right, each an animation named by its degrees; the others are those mirrored.
 for (const name of new Set([...DRIVING_SHEETS, ...PARKED_SHEETS, ...WRECKED_SHEETS])) {
-  SHEETS['car_' + name] = { json: `/demos/buenosAiresScene/img/cars/${name}.json`, png: `/demos/buenosAiresScene/img/cars/${name}.png` };
+  const drive = { mirrorX: true };
+  for (const a of Object.keys(CAR_MODELS[name].anchorY)) drive[a] = a;
+  SHEETS['car_' + name] = {
+    json: `/demos/buenosAiresScene/img/cars/${name}.json`, png: `/demos/buenosAiresScene/img/cars/${name}.png`, directions: { drive },
+  };
 }
 // The editor writes the flowfields as .bin (WeedJS's binary format) when META.ffExt says so, as JSON otherwise.
 const FF_EXT = META.ffExt || '.json';

@@ -4,7 +4,7 @@
 import WEED from '/src/index.js';
 import { META, OFF, isOff, CarState, WalkerState } from './town.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, ShadowCaster, NavGrid, Transform, rng } = WEED;
+const { GameObject, RigidBody, Collider, DirectionalSprite, ShadowCaster, NavGrid, Transform, rng } = WEED;
 
 /** demos/img/people: LPC characters on one sheet layout (demos/img/civil1.json). */
 export const PEOPLE_SHEETS = [
@@ -15,22 +15,23 @@ export const PEOPLE_SHEETS = [
 export const LPC_EXCLUDE = ['spellcast', 'thrust', 'slash', 'shoot', 'jump', 'sit', 'emote', 'run', 'combat', '1h_slash', '1h_halfslash'];
 
 export const WALK_FIELDS = Array.from({ length: META.peatones }, (_, i) => 'peaton' + i).concat(['veredas']);
-const DIRECTIONS = ['up', 'left', 'down', 'right'];
-const WALK = DIRECTIONS.map((d) => 'walk_' + d);
-const IDLE = DIRECTIONS.map((d) => 'idle_' + d);
 const _v = { x: 0, y: 0 };
 const _w = { x: 0, y: 0 };
 
 export class Walker extends GameObject {
   static deriveSpeed = true;
   static tickInterval = 2;
-  static components = [RigidBody, Collider, SpriteRenderer, ShadowCaster, WalkerState];
+  static components = [RigidBody, Collider, DirectionalSprite, ShadowCaster, WalkerState];
 
+  /** 1 walking, 0 standing, -1 neither yet: setAnimation only when it changes. */
   animation = -1;
 
   onSpawned(c = {}) {
     this.setSpritesheet(PEOPLE_SHEETS[(rng() * PEOPLE_SHEETS.length) | 0]);
-    this.setAnimation('idle_down');
+    // Facing south; it changes at the borders between the four walks, with no margin.
+    this.directionalSprite.turnMargin = 0;
+    this.directionalSprite.facing = Math.PI / 2;
+    this.setAnimation('idle');
     this.rigidBody.linearDamping = 3;
     this.setFixedRotation(1);
     this.spriteRenderer.anchorX = 0.5;
@@ -46,7 +47,6 @@ export class Walker extends GameObject {
     w.walking = 0;
     w.timer = rng() * 4;
     w.speed = 17 + rng() * 9;
-    w.facing = 2;
     this.shadowCaster.heightMultiplier = 1.2;
     this.animation = -1;
   }
@@ -128,21 +128,18 @@ export class Walker extends GameObject {
       }
     }
     if (sx || sy) this.addAcceleration(sx * 120, sy * 120);
-    // Walk or stand, facing the way the screen shows the walker going.
+    // Walk or stand, facing the way the walker goes on the floor (drawn at half height: a screen px down is two on the floor).
     const s2 = vx * vx + vy * vy;
     if (s2 > 16) {
-      const ax = Math.abs(vx);
-      const ay = Math.abs(vy) * 2;
-      W.facing[i] = ax > ay ? (vx > 0 ? 3 : 1) : vy > 0 ? 2 : 0;
-      const want = W.facing[i];
-      if (this.animation !== want) {
-        this.animation = want;
-        this.setAnimation(WALK[want]);
+      this.directionalSprite.facing = Math.atan2(vy * 2, vx);
+      if (this.animation !== 1) {
+        this.animation = 1;
+        this.setAnimation('walk');
       }
       this.setAnimationSpeed(Math.sqrt(s2) * 0.0045);
-    } else if (this.animation !== 10 + W.facing[i]) {
-      this.animation = 10 + W.facing[i];
-      this.setAnimation(IDLE[W.facing[i]]);
+    } else if (this.animation !== 0) {
+      this.animation = 0;
+      this.setAnimation('idle');
       this.setAnimationSpeed(0.03);
     }
   }

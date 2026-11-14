@@ -37,7 +37,7 @@ export const isOff = (which) => TownSwitches.off.load(which) === 1;
 
 /** A walker's state. `speed` above 0 marks a person for the cars, which wait for people instead of steering round them. */
 export class WalkerState extends Component {
-  static ARRAY_SCHEMA = { field: Uint8Array, still: Uint8Array, walking: Uint8Array, timer: Float32Array, speed: Float32Array, facing: Uint8Array };
+  static ARRAY_SCHEMA = { field: Uint8Array, still: Uint8Array, walking: Uint8Array, timer: Float32Array, speed: Float32Array };
 }
 
 /**
@@ -47,7 +47,7 @@ export class WalkerState extends Component {
 export class CarState extends Component {
   static ARRAY_SCHEMA = {
     active: Uint8Array, driveForce: Float32Array, lateralFriction: Float32Array, turnTorque: Float32Array, minSteerSpeed: Float32Array,
-    minSteerFactor: Float32Array, maxSteerSpeed: Float32Array, lastKey: Int16Array, hl: Float32Array, hw: Float32Array, ha: Float32Array,
+    minSteerFactor: Float32Array, maxSteerSpeed: Float32Array, hl: Float32Array, hw: Float32Array, ha: Float32Array,
     hb: Float32Array, headlights: Uint8Array, laneX: Float32Array, laneY: Float32Array, stuck: Float32Array, free: Float32Array,
     stopped: Float32Array, startX: Float32Array, startY: Float32Array, startRot: Float32Array, pace: Float32Array,
   };
