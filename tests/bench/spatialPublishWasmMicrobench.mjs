@@ -15,7 +15,11 @@
  *   predator  the candidate rows the real gather builds for one worker's owned entities, on
  *             spatialWorkerMicrobench's Predator mix (16 500 entities, 3 workers, 45 frames)
  *
- *   node tests/bench/spatialPublishWasmMicrobench.mjs [--case uniform|predator] [--rounds 9] [--output path]
+ * --entities N (predator only): the mix's entity count (16 500); 60 000 puts the poses past L2.
+ * --order cell (predator only): the batch reordered by home cell with the shipped order_batch_by_cell before anything
+ *   runs, the order the gather already gives its rebuild list (a publish batch in id order against one in cell order).
+ *
+ *   node tests/bench/spatialPublishWasmMicrobench.mjs [--case uniform|predator] [--order id|cell] [--rounds 9] [--output path]
  *   node --allow-natives-syntax tests/bench/spatialPublishWasmMicrobench.mjs   (also checks the WASM tier)
  */
 import assert from 'node:assert/strict';
@@ -91,8 +95,8 @@ function jsSide(pos, cand, count, maxN) {
 }
 
 /** Candidate rows from the real gather, copied into a product memory of their own for the WASM. */
-async function predatorCase() {
-  const k = await setupSpatialKernel({ n: 16500, workers: 3 });
+async function predatorCase(order = 'id', n = 16500) {
+  const k = await setupSpatialKernel({ n, workers: 3 });
   for (let f = 0; f < 45; f++) k.frame();
   const worker = k.workers[0];
   const maxN = Grid.maxNeighbors;
@@ -104,7 +108,9 @@ async function predatorCase() {
     const a = worker._ownedEntityList[i];
     if (visualRange[a] > 0) ids.push(a);
   }
-  const mem = createSpatialPublishMemory(count, maxN, 1);
+  // --order cell needs the gather's regions (its order scratch): the memory is laid out with the worker's grid.
+  const grid = order === 'cell' ? { totalCells: worker.gridWidth * worker.gridHeight, cellByteSize: Grid.cellByteSize } : null;
+  const mem = createSpatialPublishMemory(count, maxN, 1, grid);
   assert.ok(mem, 'publish memory (16-bit ids)');
   const m = memoryViews(mem, count, maxN);
   m.pos.set(worker.entityPosData.subarray(0, count * 4));
@@ -113,6 +119,12 @@ async function predatorCase() {
     const base = ids[i] * stride;
     m.list[i] = ids[i];
     m.cand.set(worker._neighborCandidateData.subarray(base, base + 1 + worker._neighborCandidateData[base]), base);
+  }
+  if (order === 'cell') {
+    const { order_batch_by_cell: orderByCell } = instantiateKernel('spatialGather', mem.memory);
+    const done = orderByCell(ids.length, mem.listByte, mem.posByte, worker.invCellSize, worker.gridWidth, worker.gridHeight, mem.orderByte);
+    assert.equal(done, 1, 'the batch was reordered by cell');
+    for (let i = 0; i < ids.length; i++) ids[i] = m.list[i];
   }
   const range = Float32Array.from(visualRange.subarray(0, count));
   return { mem, m, js: jsSide(m.pos, m.cand, count, maxN), range, list: Uint16Array.from(ids), n: ids.length, count, maxN };
@@ -133,7 +145,7 @@ async function main() {
   const args = parseArgs();
   const caseName = String(args.case || 'uniform');
   const rounds = Number(args.rounds ?? 9);
-  const setup = caseName === 'uniform' ? await uniformCase() : caseName === 'predator' ? await predatorCase() : null;
+  const setup = caseName === 'uniform' ? await uniformCase() : caseName === 'predator' ? await predatorCase(String(args.order || 'id'), Number(args.entities ?? 16500)) : null;
   if (!setup) throw new Error(`unknown case ${caseName}`);
   const { mem, m, js: side, range, list, n, maxN } = setup;
   const stride = 1 + maxN;
@@ -171,6 +183,7 @@ async function main() {
   const report = {
     feature: 'spatial-publish-wasm',
     case: caseName,
+    order: caseName === 'predator' ? String(args.order || 'id') : 'random',
     functions: ['_publishFilteredNeighbors (tests/reference)', 'spatialPublish.publish_batch'],
     n,
     seed: caseName === 'uniform' ? UNIFORM.seed : 0x5a71a1,
