@@ -91,6 +91,13 @@ function isClass(value) {
   return typeof value === 'function' && /^class[\s{]/.test(Function.prototype.toString.call(value));
 }
 
+/** An object literal (or Object.create(null)): an FSM's states, for one. */
+function isPlainObject(value) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
+}
+
 /** JSON of a value with classes and functions by name: compares shapes, not identities. */
 function shapeOf(value) {
   try {
@@ -122,6 +129,10 @@ export function pairClasses(oldNs, freshNs) {
           if (Array.isArray(ov[i]) && Array.isArray(fv[i])) visit(ov[i][0], fv[i][0]);
           else visit(ov[i], fv[i]);
         }
+      } else if (isPlainObject(ov) && isPlainObject(fv)) {
+        // N-168: an FSM's states ({ IDLE, RUN }) pair through it when the module does not export them, so they keep
+        // their state numbers (patchClass copies stateIndex onto the new classes the FSM's states then hold).
+        for (const name of Object.keys(fv)) if (hasOwn(ov, name)) visit(ov[name], fv[name]);
       } else {
         visit(ov, fv);
       }
