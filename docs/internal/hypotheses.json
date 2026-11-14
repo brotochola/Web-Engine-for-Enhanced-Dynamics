@@ -14937,13 +14937,15 @@
       "id": "E-305",
       "title": "The step's move export reads every moved body's velocities back from Box2D, which the finalize exported already (Predator: b2Body_GetLinearVelocity 22.8 ms/s of the physics thread)",
       "status": "kept",
-      "statusText": "proposed 2026-11-14 from a Box2D names build without LTO",
+      "statusText": "kept 2026-11-14 (R-1021), kernel claim",
       "date": "2026-11-14",
       "area": "physics",
       "kind": "speed",
       "result": "kept (R-1021), kernel claim: Box2D 6cbd009, WeedJS 92bae6a0: the velocity read-back after the finalize's export skipped without LiquidFun; bodyAccelerationsMicrobench 165-175 -> 173-189 ops/s; a 3000-box pile bit-identical; ballsHeavy 8 pairs paired -1.6 %.",
-      "next": "Skip the read-back without LiquidFun; bodyAccelerationsMicrobench, then ballsHeavy physics.",
-      "refs": [],
+      "next": "None.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-305"
+      ],
       "aliases": [
         "velocity read-back",
         "export_body_move_events"
