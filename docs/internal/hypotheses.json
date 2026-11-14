@@ -14269,12 +14269,12 @@
       "id": "E-278",
       "title": "rng() and randomRange() box their result when a big caller does not inline them (littleCity logic 4.1 MB/s, particleIntegrate 1.4)",
       "status": "open",
-      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "statusText": "step 1 dropped 2026-11-14 (R-1011): a smaller rng moved the garbage into the tick; step 2 (the emitter) open",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "result": "Heap pass: littleCityScene's logic allocates 6.6 MB/s, 4.1 of it in `rng` (utils.js), called twice per person per frame from `CityPerson.tick`. A function that returns a double and is not inlined boxes it; rng's bytecode carries its cold paths (a function generator, the uninitialised warning that seeds one). The same in the engine's own emitter: particleIntegrateStressScene's logic spends 1.4 MB/s in `randomRange` (utils.js), called from `ParticleEmitter._spawn` for each particle.",
-      "next": "Move the cold paths into their own function so the fast path is a few dozen bytes, and read `--trace-turbo-inlining` on the tick; a kernel of a large tick that calls rng (heap and ns per call), then littleCity's logic STEP_MS and heap. randomRange too (its { min, max } branch calls rng): the emitter can read its ranges once per burst into a Float64Array and draw inline.",
+      "result": "Step 1 dropped (R-1011): rng 201 -> 146 bytes; littleCity logic 7.1 -> 8.1 / 12.9 MB/s (rng 5.6 -> 2.8, CityPerson.tick 0.27 -> 3.9 / 7.6): the tick is past its inlining budget, so other callees boxed instead.",
+      "next": "Step 2: ParticleEmitter._spawn (budget 943 of 920) resolves each range once per emit and draws a batch with rngFill into a module Float64Array, same draw order; particleIntegrateStress logic heap and STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-278"
       ],
@@ -14287,7 +14287,8 @@
         "R-0980",
         "R-0987",
         "R-0994",
-        "R-0996"
+        "R-0996",
+        "R-1011"
       ],
       "rank": 18
     },
@@ -24853,6 +24854,18 @@
       "text": "**E-289 kept (kernel claim): each entity class compiles its own neighborCount and getNeighbor.**\n2026-11-14, `main` 0024582f.\n\nChange: GameObject's `neighborCount` getter and `getNeighbor` method are shared by every entity class, so their loads of\n`_neighborOffset`, `_neighborReaderMarked` and `_onPage` saw every class's map and went megamorphic. `_ensureComponentAccessors`\nnow gives each class a copy with GameObject's bodies, compiled apart with `new Function` (E-170's way; GameObject's under a\nCSP without 'unsafe-eval'), unless the class or one between it and GameObject wrote its own; `isEngineAccessor` counts the\nmethod too, so hot swap keeps the copies. tests/node/neighborReadsPerClass.test.js (4 tests); test:node 2598/2598,\ntest:demos 101/101.\n\n- Kernel (neighborAccessMicrobench, Node, 2000 entities, 12 neighbours, 5 classes, 3 runs a side): 4.4-4.9 -> 3.0-3.3 ns a\n  neighbour read (-33 %); the bare row read is 2.4-2.5 ns, so about two thirds of the getters' overhead went.\n- Predator's gate (runPredatorAbab --vs main --hyp-rev, crowd=1.5, 4 pairs, 02:17 to 02:27): no row worse. Spatial\n  7.030 -> 6.470 ms (-6.0 %, 0/4 worse), physics 10.062 -> 9.278 (-8.5 %, 1/4): both unreachable, so the sitting drifted\n  down; logic 4.329 -> 3.945 (-8.9 %, unjudged under the floor; read against the drift it is not separable). Load keys\n  within 0.3 %. Predator's crowd is capped at 1.5 (its pools), so its logic cannot reach the 6 ms floor.\n\nSame idea checked for the component getters (FIELD_GETTERS, shared `this._cN` loads): 0.4 % of Predator's logic self time\n(b2names-1114 CPU pass), so not done. The CPU pass also put `_tickIntervalBucket` at 8.5 %, but E-215 already showed its\ndispatch is not the cost (R-0899).",
       "commits": [
         "0024582f"
+      ]
+    },
+    {
+      "id": "R-1011",
+      "date": "2026-11-14",
+      "time": "02:38",
+      "timeFrom": "recorded",
+      "title": "E-278 step 1 dropped: a smaller rng() moves littleCity's garbage into CityPerson.tick (logic 7.1 -> 8.1/12.9 MB/s); the emitter's batch draws stay open",
+      "verdict": "dropped",
+      "text": "**E-278 step 1 dropped: a smaller rng() moved littleCity's garbage into CityPerson.tick and raised the total.**\n2026-11-14, 02:35 to 02:38 (result files), heapSampleWorkers on littleCityScene's logic worker, A B A B: A = main\n(ac727cbe), B = w14s/e278r (4e86cffe: the earlier session's a9633482 on today's main: rng's generator-without-state and\nuninitialised paths moved to rngWithoutState, rng 201 -> 146 bytes of bytecode). 8 s warm-up, 8 s sample.\n\n| side | logic total KB/s | rng | CityPerson.tick | facingFromVelocity |\n| --- | --- | --- | --- | --- |\n| A1 | 7 141 | 5 576 | 274 | - |\n| B1 | 8 141 | 2 800 | 3 935 | - |\n| A2 | 7 070 | 5 568 | 270 | - |\n| B2 | 12 882 | 2 723 | 7 609 | 1 312 |\n\nReading: CityPerson.tick (1 278 bytes of bytecode) already spends TurboFan's 920-byte inlining budget. With rng small\nenough to inline at some of its four call sites, other callees it inlined before (addAcceleration with its double\narguments, facingFromVelocity) no longer fit and box what crosses them; rng's own sites halve but the total rises\n(+14 % and +82 %, and the inlining decisions vary run to run). A callee's size is not the lever in a tick past its\nbudget. What stays open in E-278 is the engine's own case: ParticleEmitter._spawn (4 733 bytes, budget 943 of 920 in\nlittleCity's code pass) calls randomRange and rng per particle without inlining them, so each draw comes back boxed;\nthe emitter can resolve each range once per emit and draw a batch with rngFill.",
+      "commits": [
+        "4e86cffe"
       ]
     }
   ],
