@@ -13630,7 +13630,8 @@
         "R-0967",
         "R-0971",
         "R-0980",
-        "R-0998"
+        "R-0998",
+        "R-1013"
       ]
     },
     {
@@ -14866,14 +14867,13 @@
     {
       "id": "E-303",
       "title": "Spatial's _findNeighbors is recompiled after warm-up (seven TurboFan compiles, the last at 13.2 s)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the bytecode and d8 machine-code harvest, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-14 (R-1013): E-251's loop",
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 69,
-      "result": "Predator's code pass (Chrome 151): `_findNeighbors` (1783 B, 376 ms self) compiled by TurboFan seven times, the last at 13.2 s; `rebuildOwnedRows` three times, all in warm-up. A steady-state deopt in spatial's hottest JS.",
-      "next": "A deopt pass on Predator with a 30 s window to name the site and reason; if it repeats, move the rare case to its own function and check one compile in the code pass.",
+      "result": "answered (R-1013): E-251's deopt loop (cached OSR code, tail without feedback) at _flushWasmPublish's collectDetailedStats load, 391 steady deopts in 30 s of Predator; E-251's split was slower, nothing new.",
+      "next": "Not doing (E-251).",
       "refs": [
         "EXECUTION_PLAN.md#E-303"
       ],
@@ -14883,7 +14883,8 @@
         "steady deopt"
       ],
       "records": [
-        "R-0996"
+        "R-0996",
+        "R-1013"
       ]
     },
     {
@@ -24876,6 +24877,15 @@
       "title": "E-278 dropped: drawing the emitter's ranges inline is slower than the calls (emitFlat kernel 117-123 -> 137-187 ms)",
       "verdict": "dropped",
       "text": "**E-278 step 2's ceiling is negative: drawing the emitter's ranges inline is slower than the calls.**\n2026-11-14 ~02:45, particleEmitMicrobench (Node, 4096 particles, 2000 bursts of 256). A local hack (never committed)\ndrew x, y, vx, vy and lifespan inline in ParticleEmitter._spawn on rng's own state, same generator and order, no call:\nemitFlat burst 116.9 / 123.4 ms (main) -> 186.7 / 137.4 ms; one particle a call 421.9 / 429.9 -> 617.9 / 778.1 ms. The\nextra code in a 4 733-byte function costs more than the five calls and boxed returns it removes, so a batch through\nrngFill (more code still, and resolveParticleOp's own draws to thread through) is not worth building. With step 1\ndropped (R-1011), E-278 is dropped. Reference: particleEmitStressScene's logic runs 1.9 ms (its 65 535-particle pool\ncaps the emits), so no scene could judge a few per cent here either."
+    },
+    {
+      "id": "R-1013",
+      "date": "2026-11-14",
+      "time": "02:44",
+      "timeFrom": "recorded",
+      "title": "E-303 answered: spatial's recompiles are E-251's deopt loop at _flushWasmPublish (391 steady deopts in 30 s); not doing",
+      "verdict": "note",
+      "text": "**E-303 answered: the spatial recompiles are E-251's deopt loop at _flushWasmPublish, nothing new to try.**\n2026-11-14 ~02:50, profileSceneSweep --pass deopt --only predatorScene --warmup-ms 6000 --duration-ms 30000 (headed, from\nsource, detailed stats off), main 7b87d1fc. Spatial's only steady deopt: `spatialWorker.js:1800:16`, the load of\n`this.collectDetailedStats` in `_flushWasmPublish` (inlined at the end of `_findNeighbors`), \"Insufficient type feedback\nfor generic named access\", 394 in the run, 391 after warm-up (about 13 a second). That is E-251's pattern and site: cached\nTurboFan OSR code re-entered each frame, its tail compiled without feedback; E-251's kernel showed the split fix slower\n(+19 % Node, +55 % Chrome), so it was dropped. The repeated TurboFan compiles of `_findNeighbors` E-303 counted are the\nsame code. The other steady deopts of this run: logic's spawn batch (`logicWorker.js:881/892`, 137 and 140, E-251 too)\nand `box2dMovedBodiesImpl.js:186` (69). Not doing; E-251's untried variant (short warm-up calls before the first long one)\nneeds a dry-run mode for functions that publish, for about 13 deopts a second."
     }
   ],
   "leads": [
