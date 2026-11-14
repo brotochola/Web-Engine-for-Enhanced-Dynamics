@@ -15,6 +15,14 @@
 
 import { Component } from './component.js';
 
+// Every FSM class whose states are linked in this realm: a hot swap reads their states' hooks again (_refreshStateHooks).
+const linkedFsms = [];
+
+/** A state's hooks, stored by its number where tick reads them (E-146). */
+function storeStateHooks(FSMClass, index, StateClass) {
+  FSMClass._onUpdates[index] = StateClass.onUpdate;
+}
+
 export class FSM extends Component {
   static isFSM = true;
   // ==========================================
@@ -110,7 +118,7 @@ export class FSM extends Component {
       // Store in array for index-based access
       this._stateArray[index] = StateClass;
       this._stateNames[index] = name;
-      this._onUpdates[index] = StateClass.onUpdate;
+      storeStateHooks(this, index, StateClass);
 
       // Store name->index mapping
       this._stateNameToIndex.set(name, index);
@@ -125,6 +133,20 @@ export class FSM extends Component {
     }
 
     this._statesLinked = true;
+    linkedFsms.push(this);
+  }
+
+  /**
+   * Read every linked FSM's state hooks again, whichever class it is called on. An FSM keeps its states' hooks in
+   * arrays by state number, read when it links, so a state class whose methods change in place (a hot swap:
+   * core/debug/hotSwap.js) runs its new code only after this.
+   * @private
+   */
+  static _refreshStateHooks() {
+    for (const FSMClass of linkedFsms) {
+      const states = FSMClass._stateArray;
+      for (let index = 0; index < states.length; index++) storeStateHooks(FSMClass, index, states[index]);
+    }
   }
 
   // ==========================================

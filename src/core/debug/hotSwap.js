@@ -245,9 +245,21 @@ export function swapModule(oldNs, freshNs) {
     if (why) return { swapped: [], reload: why };
   }
   const swapped = [];
+  let fsm = null;
   for (const [old, fresh] of pairs) {
     patchClass(old, fresh);
     swapped.push(old.name);
+    fsm ??= linkedFsm(old);
   }
+  // An FSM reads its states' hooks from arrays it filled when it linked (fsm.js): without this the patched states'
+  // old onUpdate, onEnter and onExit would keep running.
+  if (fsm) fsm._refreshStateHooks();
   return { swapped, reload: null };
+}
+
+/** The FSM class itself, or the FSM a state class is linked to; null for other classes. */
+function linkedFsm(C) {
+  if (typeof C._refreshStateHooks === 'function') return C;
+  const link = Object.getOwnPropertyDescriptor(C, 'fsm');
+  return link && typeof link.value?._refreshStateHooks === 'function' ? link.value : null;
 }
