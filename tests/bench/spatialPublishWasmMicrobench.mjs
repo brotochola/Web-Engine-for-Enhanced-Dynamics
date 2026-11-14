@@ -16,6 +16,8 @@
  *             spatialWorkerMicrobench's Predator mix (16 500 entities, 3 workers, 45 frames)
  *
  * --entities N (predator only): the mix's entity count (16 500); 60 000 puts the poses past L2.
+ * --order renumber (predator only, E-295's ceiling): every entity renumbered in home-cell order (poses, ranges, candidate
+ *   rows and the batch in the new ids), as a spatial layout that kept poses by place would hold them.
  * --order cell (predator only): the batch reordered by home cell with the shipped order_batch_by_cell before anything
  *   runs, the order the gather already gives its rebuild list (a publish batch in id order against one in cell order).
  *
@@ -126,7 +128,48 @@ async function predatorCase(order = 'id', n = 16500) {
     assert.equal(done, 1, 'the batch was reordered by cell');
     for (let i = 0; i < ids.length; i++) ids[i] = m.list[i];
   }
-  const range = Float32Array.from(visualRange.subarray(0, count));
+  let range = Float32Array.from(visualRange.subarray(0, count));
+  if (order === 'renumber') {
+    // Rank every entity by home cell (stable), then rewrite poses, ranges, candidate rows and the batch in the new ids.
+    const inv = worker.invCellSize;
+    const gw = worker.gridWidth;
+    const maxRow = worker.gridHeight - 1;
+    const maxCol = gw - 1;
+    const key = new Uint32Array(count);
+    for (let e = 0; e < count; e++) {
+      const r = Math.min(maxRow, Math.max(0, (m.pos[e * 4 + 1] * inv) | 0));
+      const c = Math.min(maxCol, Math.max(0, (m.pos[e * 4] * inv) | 0));
+      key[e] = r * gw + c;
+    }
+    const byCell = Array.from({ length: count }, (_, e) => e).sort((a, b) => key[a] - key[b] || a - b);
+    const newId = new Uint32Array(count);
+    for (let r = 0; r < count; r++) newId[byCell[r]] = r;
+    const pos = Float32Array.from(m.pos.subarray(0, count * 4));
+    const cand = Uint16Array.from(m.cand.subarray(0, count * stride));
+    const oldRange = range;
+    range = new Float32Array(count);
+    for (let e = 0; e < count; e++) {
+      const d = newId[e];
+      m.pos[d * 4] = pos[e * 4];
+      m.pos[d * 4 + 1] = pos[e * 4 + 1];
+      m.pos[d * 4 + 2] = pos[e * 4 + 2];
+      m.pos[d * 4 + 3] = pos[e * 4 + 3];
+      range[d] = oldRange[e];
+      m.range[d] = oldRange[e];
+    }
+    m.cand.fill(0);
+    for (let i = 0; i < ids.length; i++) {
+      const a = ids[i];
+      const from = a * stride;
+      const to = newId[a] * stride;
+      const c = cand[from];
+      m.cand[to] = c;
+      for (let j = 1; j <= c; j++) m.cand[to + j] = newId[cand[from + j]];
+    }
+    for (let i = 0; i < ids.length; i++) ids[i] = newId[ids[i]];
+    ids.sort((a, b) => a - b);
+    for (let i = 0; i < ids.length; i++) m.list[i] = ids[i];
+  }
   return { mem, m, js: jsSide(m.pos, m.cand, count, maxN), range, list: Uint16Array.from(ids), n: ids.length, count, maxN };
 }
 
