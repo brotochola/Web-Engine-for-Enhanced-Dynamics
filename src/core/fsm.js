@@ -14,13 +14,21 @@
 //   }
 
 import { Component } from './component.js';
+import { FSMState } from './fsmState.js';
 
 // Every FSM class whose states are linked in this realm: a hot swap reads their states' hooks again (_refreshStateHooks).
 const linkedFsms = [];
 
-/** A state's hooks, stored by its number where tick reads them (E-146). */
+/**
+ * A state's hooks, stored by its number where tick and transitions read them (E-146, E-301). onExit and onEnter are
+ * null where the state has none, or only FSMState's empty ones: a transition then makes no call.
+ */
 function storeStateHooks(FSMClass, index, StateClass) {
   FSMClass._onUpdates[index] = StateClass.onUpdate;
+  const onExit = StateClass.onExit;
+  FSMClass._onExits[index] = onExit && onExit !== FSMState.onExit ? onExit : null;
+  const onEnter = StateClass.onEnter;
+  FSMClass._onEnters[index] = onEnter && onEnter !== FSMState.onEnter ? onEnter : null;
 }
 
 export class FSM extends Component {
@@ -58,6 +66,11 @@ export class FSM extends Component {
 
   // Each state's onUpdate by state number: tick reads it from this one array, not from 17 state classes (E-146)
   static _onUpdates = null;
+
+  // Each state's onExit and onEnter by state number, null where it has none: a transition reads them here, not from the
+  // state classes (E-301)
+  static _onExits = null;
+  static _onEnters = null;
 
   // Map of state name -> state index (for fast lookups)
   static _stateNameToIndex = null;
@@ -104,6 +117,8 @@ export class FSM extends Component {
     this._stateArray = [];
     this._stateNames = [];
     this._onUpdates = [];
+    this._onExits = [];
+    this._onEnters = [];
     this._stateNameToIndex = new Map();
 
     for (let index = 0; index < stateEntries.length; index++) {
@@ -237,10 +252,11 @@ export class FSM extends Component {
     const oldStateName = this._stateNames[oldStateIndex] || null;
     const newStateName = this._stateNames[newStateIndex] || null;
 
+    // The hooks come from the per-state arrays, called with the state class as `this`: loaded from the state classes
+    // (Predator: 17), each was a megamorphic load, twice per hook (E-301).
     // Call onExit on old state (pass next state name)
-    if (OldState && OldState.onExit) {
-      OldState.onExit(owner, i, newStateName);
-    }
+    const onExit = this._onExits[oldStateIndex];
+    if (onExit) onExit.call(OldState, owner, i, newStateName);
 
     // Update state
     this.state[i] = newStateIndex;
@@ -248,9 +264,8 @@ export class FSM extends Component {
     this.nextState[i] = -1; // Clear pending transition
 
     // Call onEnter on new state (pass previous state name)
-    if (NewState && NewState.onEnter) {
-      NewState.onEnter(owner, i, oldStateName);
-    }
+    const onEnter = this._onEnters[newStateIndex];
+    if (onEnter) onEnter.call(NewState, owner, i, oldStateName);
   }
 
   // ==========================================
@@ -327,9 +342,7 @@ export class FSM extends Component {
     this.nextState[i] = -1;
 
     // Call onEnter for initial state (fromState = null since it's initialization)
-    const InitialState = this._stateArray[initialIndex];
-    if (InitialState && InitialState.onEnter) {
-      InitialState.onEnter(owner, i, null);
-    }
+    const onEnter = this._onEnters[initialIndex];
+    if (onEnter) onEnter.call(this._stateArray[initialIndex], owner, i, null);
   }
 }
