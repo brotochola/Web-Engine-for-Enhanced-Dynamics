@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-13",
+  "updated": "2026-11-14",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -13917,13 +13917,12 @@
     {
       "id": "E-264",
       "title": "179 worker fields start null and hold a typed array in Predator (E-71): the ones a per-entity loop reads through this",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from fieldTypeAudit on Predator, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-14 (R-1001), hygiene",
       "date": "2026-11-13",
       "area": "all",
       "kind": "speed",
-      "rank": 21,
-      "result": "fieldTypeAudit (Predator): Pixi 57 of 92 typed-array fields start null, pre-render 43 of 111, logic 27 of 58, particle 27 of 46, spatial 25 of 61; twelve more are added after the constructor (the width-bound lists E-250 left to initialize, _gpuIdxEntity, _gpuIdxGlow, _gpuCasterIdx, frameWidth, frameHeight). E-71: 15 % of the emit kernel where per-entity code tested such a field; E-73: loops that index a hoisted local tie.",
+      "result": "kept (hygiene): the field typed from the constructor; Predator gate clean.",
       "next": "Cross the list with the per-entity loops that read this.X[i] (not a hoisted local): declare those as empty arrays of their class (not the width-bound ones); kernel of the hottest loop, then its owner. The rest stay as they are.",
       "refs": [
         "EXECUTION_PLAN.md#E-264"
@@ -13934,7 +13933,9 @@
         "field type Any",
         "E-71"
       ],
-      "records": []
+      "records": [
+        "R-1001"
+      ]
     },
     {
       "id": "E-265",
@@ -14123,13 +14124,12 @@
     {
       "id": "E-273",
       "title": "Logic workers that spawn or despawn decorations take turns on _lockActiveList's spin (decoChurnStressScene: 100 % of it on the compareExchange loop)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-14 (R-1001)",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 15,
-      "result": "CPU sweep: decoChurnStressScene's two logic workers spend 65 and 70 ms of the window in DecorationPool._lockActiveList, all of it on `while (Atomics.compareExchange(lock, 0, 0, 1) !== 0)`: the active list's lock, contended when both churn decorations each frame.",
+      "result": "kept: decoChurnStressScene 1W (churn=256, liveCap=2000) logic 14.352 -> 1.506 ms (-89.5 %, 0/4 worse); Predator gate clean.",
       "next": "Per-worker pending lists merged by one owner once a frame (as entity spawns go through queueSpawnListUpdate), or a lock-free append; the decoration churn kernel, then decoChurn's logic STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-273"
@@ -14139,7 +14139,9 @@
         "decoration lock",
         "decoChurn"
       ],
-      "records": []
+      "records": [
+        "R-1001"
+      ]
     },
     {
       "id": "E-274",
@@ -14713,13 +14715,12 @@
     {
       "id": "E-297",
       "title": "Predator's soldiers scan every neighbour for a target each frame: findACivilianToShoot is 9.6 % of Chrome's instructions",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the hardware-counter and trace harvest, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-14 (R-1001), demo",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 75,
-      "result": "WPR samples: the demo's `findACivilianToShoot` is the largest single consumer of instructions in Chrome (9.6 %), with getNeighbor, get neighborCount and hasLineOfSight inlined; 0.19 refills per instruction, so instruction-bound, not memory-bound (the read count costs: E-289, E-304).",
+      "result": "kept (demo, small): Predator logic 3.733 -> 3.627 ms (-2.8 %, unjudged); idle soldiers finding nobody were not most of the scan.",
       "next": "Demo code, public API: a soldier with a live target keeps it and rescans every few frames, staggered by index; Predator logic STEP_MS. Predator is the gate scene: the change moves its baseline, so it goes in alone and the gate reruns after.",
       "refs": [
         "EXECUTION_PLAN.md#E-297"
@@ -14729,7 +14730,8 @@
         "Predator soldier scan"
       ],
       "records": [
-        "R-0997"
+        "R-0997",
+        "R-1001"
       ]
     },
     {
@@ -24700,6 +24702,20 @@
       "title": "E-294 and E-295 read in their C sources (random reads keyed by entity id); E-296 answered small; E-298 written (Box2D's pool threads sleep)",
       "verdict": "note",
       "text": "**E-294, E-295 read in their C sources; E-296 answered small: what the memory-bound kernels wait on, and the plan.**\n2026-11-13, 23:45 to 23:55, reading `wasm/gpuPack.c`, `wasm/spatialGather.c`, `wasm/spatialPublish.c` against R-0997's\nhardware-counter samples and Predator's CPU trace.\n\n**E-295 (spatial, the largest engine share in Predator: gather_batch ~37 % and publish_batch ~29 % of spatial's busy\ntime, about 1.9 and 1.4 ms a frame at crowd=1.5).** `gather` already reorders each rebuild list by home cell (two radix\npasses, `order_by_cell`) so the cells' ids stay in cache. What each candidate still reads at random is keyed by entity\nid, not by place: `marker[entityB]` (read and written, the dedup stamp) and `pos[entityB * 4 .. + 2]` (16 bytes); the\npublish reads `pos[b]` again for every candidate of every entity it publishes, every frame. Entity ids carry no\nspatial order, so both arrays are walked at random (Predator: 24 800 entities, pos 397 KB, markers 99 KB, next to the\ngrid). The fix is structural: (a) a cell-ordered copy of x, y and halfExtent written while the grid is rebuilt, with\ncells holding slots into it, so gather and publish read neighbours' positions near each other; or (b) the positions in\nthe cell entries themselves; dedup stamps by slot. Both change the grid's layout in C and JS (rebuildOwnedRows, the\npublish's readers): a campaign of its own, with spatialGatherWasmMicrobench and spatialPublishWasmMicrobench first and\nstationarySpatialWide (spatial ~7 ms) as the owner scene. Not started tonight.\n\n**E-294 (Pixi's pack_sprites_keyed, 5.1x the average refills per instruction, ~0.3 ms a frame).** `pack_keyed` walks the\nqueue rows in painter order (`idx[k]`) and reads about twelve columns at each row (pose columns, key, type, shadowH,\nshadowOffX/Y, and on a send the scale, anchor, alpha, tint, texture and tile columns): twelve cache lines a row at\nrandom over a ~1 MB table. Options: emit the queue rows in painter order upstream (the collect), or gather the per-row\nfields once in row order into an interleaved scratch and read that in painter order. Smaller than E-295; after it.\n\n**E-296 answered small.** ~110 steady deopts in 8 s at two lines of `_processSpawnSoA`'s multi-spawn path (the single\nspawn has its own fast path): about 14 a second at ~16 µs, 0.2 ms a second, under 0.1 % of a logic worker."
+    },
+    {
+      "id": "R-1001",
+      "date": "2026-11-14",
+      "time": "00:01",
+      "timeFrom": "recorded",
+      "title": "E-273 kept (decoChurn 1W logic 14.352 -> 1.506 ms, -89.5 %); Predator gate passed for E-273, E-264, E-297 (physics -7.6 %, logic -2.8 % unjudged)",
+      "verdict": "kept",
+      "text": "**E-273 kept on its owner scene (logic -89.5 %); Predator's gate passed for E-273, E-264 and E-297 together; all three on main.**\n\n**E-273's sitting** (2026-11-13 23:51 to 2026-11-14 00:00): `runPredatorAbab.mjs --name w14-e273-deco1w --vs main --hyp-rev\nw14s/e273b --scene decoChurnStressScene.js --scene-export DecoChurnStressScene1W --query \"churn=256&liveCap=2000\" --owner\nlogic --pairs 4`. The 3W export's logic0 stayed at 4.0 to 4.5 ms (churn is capped at 256, liveCap at 2400); the 1W\nexport puts the eight drivers on one worker: logic0 14.7 ms at liveCap 2000. Result: logic own 14.352 -> 1.506 ms\n(-89.5 %, 0/4 worse, cv 1/2 %), KEPT; ACTIVE_DECORATIONS 15 997 / 16 000, RENDER_QUEUE_SIZE 8 000 both.\n\n**Gate 3** (2026-11-14 00:01 to 00:09, crowd=1.5, 4 pairs, w14s/gate3 = main + the three): physics 7.763 -> 7.126 ms\n(-7.6 %, 1/4 worse, cv 15 %: the judged row), logic 3.733 -> 3.627 (-2.8 %), spatial 5.694 -> 5.311, pre-render\n3.262 -> 2.593, renderer 2.211 -> 1.830 (none of these judged: under 6 ms); load keys within 0.1 %. NEUTRAL: no row\nworse.\n\n- **E-273 kept** (speed): a16614d3.\n- **E-264 kept** (hygiene, field typed as a Uint8Array from the constructor): 9bf7c511.\n- **E-297 kept** (demo, small): 0f4a2413. Predator's logic -2.8 % (unjudged): idle soldiers that find nobody were not\n  most of findACivilianToShoot's cost; most scans find a target and leave IDLE. A soldier reacts at most ~67 ms later.\n  The rest of the scan's cost is the per-neighbour reads (E-289, E-304) and the rays.\n\ntest:node 2592/2592, test:demos 101/101 on the gate branch's code.",
+      "commits": [
+        "a16614d3",
+        "9bf7c511",
+        "0f4a2413"
+      ]
     }
   ],
   "leads": [
