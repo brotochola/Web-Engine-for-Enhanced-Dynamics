@@ -36,6 +36,8 @@
  * --check: the checksum frames only, no timing.
  * --cell-ids (E-295's ceiling): the entities numbered in home-cell order (setupSpatialKernel's cellOrderIds), so
  *   neighbours' poses, markers and rows sit near each other, as a layout that kept entities by place would hold them.
+ * --workers N (default 3), --per-cell N (spatial.maxEntitiesPerCell, default 128), --types predator (E-200's typed
+ *   stagger: setupSpatialKernel's `types`): Predator at crowd=2.5 is --n 57600 --workers 1 --per-cell 32 --types predator.
  */
 import { Grid } from '../../src/core/grid.js';
 import { isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
@@ -64,10 +66,12 @@ async function main() {
   if (!v) throw new Error(`unknown variant ${variant} (${Object.keys(GATHER_VARIANTS).join(', ')})`);
   const spatial = config === 'rebuild' ? { neighborReuseSkin: 0, neighborTickInterval: 1 } : config === 'predator' ? {} : null;
   if (!spatial) throw new Error(`unknown config ${config}`);
+  const perCell = args['per-cell'] !== undefined ? { maxEntitiesPerCell: Number(args['per-cell']) } : {};
   const k = await setupSpatialKernel({
     n: Number(args.n ?? 16500),
-    workers: 3,
-    spatial: { ...spatial, gatherCellOrder: v.ordered },
+    workers: Number(args.workers ?? 3),
+    spatial: { ...spatial, ...perCell, gatherCellOrder: v.ordered },
+    ...(args.types ? { types: String(args.types) } : {}),
     js: v.gather ? null : { publish: 'kernel' },
     cellOrderIds: Boolean(args['cell-ids']),
   });
@@ -110,6 +114,9 @@ async function main() {
     variant,
     config,
     cellOrderIds: Boolean(args['cell-ids']),
+    workers: k.workers.length,
+    maxEntitiesPerCell: Grid.maxEntitiesPerCell,
+    types: args.types ? String(args.types) : null,
     functions: ['findNeighborsForOwnedEntities (tests/reference)', 'SpatialWorker._findNeighbors', v.fn ? `spatialGatherF32.${v.fn}` : 'spatialGather.gather_batch'],
     n: k.n,
     seed: 0x5a71a1,
