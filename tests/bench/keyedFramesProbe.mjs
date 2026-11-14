@@ -58,6 +58,9 @@ try {
           keyFrame: b._keyFrame,
           keyPause: b._keyPause,
           drawsKeyed: b.mesh ? b.mesh.shader === b._indexedShader : null,
+          // E-201: a batch drawing its keyed frames by queue row, and whether this frame did.
+          posesByRow: b.posesByRow === true,
+          drawsRows: b.mesh && b._rowShader ? b.mesh.shader === b._rowShader : false,
           instances: b.geometry ? b.geometry.instanceCount : null,
           scatterGpu: px._staticsScatterGpu !== null && px._staticsScatterGpu !== undefined,
           statics: (() => {
