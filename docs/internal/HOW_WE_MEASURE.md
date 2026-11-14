@@ -24,9 +24,17 @@ Plans, this document, records and reports are written in English, in full senten
    presents are a guard on every sitting.
 3. **Both sides come from worktrees of committed revisions** (`--vs <base> --hyp-rev <rev>`), or from one
    worktree with a switch on one side (`--vs <rev> --query-a …`), never from the main folder, which ran
-   slower than a worktree on the same code and is edited by other sessions while sittings run.
+   slower than a worktree on the same code and is edited by other sessions while sittings run. Run them with
+   `--pool`: two fixed worktrees (`../weed-ab/pool-a`, `pool-b`) checked out to each sitting's revisions, about
+   2 minutes faster than making and removing two per sitting (a 4-pair sitting: about 7 to 9.5 minutes before,
+   about 5 after, 2026-11-14).
 4. **Pairs, counterbalanced:** 4 pairs to start (AB, BA, AB, BA), 4 more with `--append` only when the
-   first 4 do not decide. Detailed stats off. The window stays visible and unminimized.
+   first 4 do not decide. `--early` runs 2 first and stops there only when every pair clears twice the bar
+   (a judged kind +6 % in both: regression; the owner −6 % in both with no other kind +3 % in both: the speed
+   reading; every judged kind within ±2 % in both: a clean gate), else it runs to 4. Detailed stats off. The
+   window stays visible and unminimized. Warm-up and window stay 10 s each: 5 s and 6 s saved a minute a
+   sitting but an A/A in ballsHeavy then read a false −8.7 % (cv 10/7 % against 3/2 % at 10 s, 2026-11-14), so by
+   rule 7 they are not used.
 5. **The load must match:** every load key within 5 % and a coefficient of variation under 50 %, or the
    pair does not exist.
 6. **Speed keep:** the owner's median paired delta at least 3 % cheaper, at least 75 % of the pairs on that
