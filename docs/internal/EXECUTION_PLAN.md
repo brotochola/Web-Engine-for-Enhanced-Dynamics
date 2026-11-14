@@ -4810,6 +4810,14 @@ its branch rebased onto the scene knobs' commit (w14s/…). The owner scenes' ba
 stress scenes run far under the 6 ms floor at their default load and take their knob (stationarySpatialWide
 ?entities=145000, spawnStorm ?storm=6000, navStress ?agents=, decoChurn ?churn= ?liveCap=, bulletStress ?bullets=).
 
+
+### E-305 The step's move export reads every moved body's velocities back from Box2D
+
+**Premise (Box2D by name without LTO, Predator):** export_body_move_events calls b2Body_GetLinearVelocity (22.8 ms/s of the physics
+thread), b2Body_GetAngularVelocity and b2ExportBodyVelocity (5.4 ms/s) for every moved body, re-exporting what the finalize exported,
+for LiquidFun's coupling (E-182). Owner: physics.
+**Kept 2026-11-14 (R-1021), kernel claim:** skipped without LiquidFun (Box2D `6cbd009`, WeedJS `92bae6a0`): bodyAccelerationsMicrobench
++2 to +13 %, a 3000-box pile bit-identical, ballsHeavy physics 8 pairs paired -1.6 % (neutral).
 ### Wave 14, the night of 2026-11-13/14: new readings, kept rows, what is left (R-0994 to R-1003)
 
 New readings: Chrome's own bytecode, tiers and inlining (summarizeV8Code, profileSceneSweep --pass code), hardware
