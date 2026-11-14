@@ -599,7 +599,25 @@ function cellCorners(field, cx, cy, clip) {
   };
 }
 
+/** cellSolidParts' answer for an empty cell: its callers only read the length. */
+const NO_PARTS = Object.freeze([]);
+
 function cellSolidParts(field, cx, cy, clip) {
+  // An empty cell has no part and a full one is its four corners: neither needs cellCorners' edge points, which the
+  // island scan built for every cell of its box (E-280).
+  const quickCase = cellCaseId(field, cx, cy, clip);
+  if (quickCase === 0) return NO_PARTS;
+  if (quickCase === 15) {
+    const cs = field.cellSize;
+    const x0 = cx * cs;
+    const y0 = cy * cs;
+    const x1 = x0 + cs;
+    const y1 = y0 + cs;
+    return [{
+      verts: [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }],
+      solidNodes: [{ x: cx, y: cy }, { x: cx + 1, y: cy }, { x: cx + 1, y: cy + 1 }, { x: cx, y: cy + 1 }],
+    }];
+  }
   const c = cellCorners(field, cx, cy, clip);
   const { caseId, edges, TL, TR, BR, BL } = c;
   const [T, R, B, L] = edges;
