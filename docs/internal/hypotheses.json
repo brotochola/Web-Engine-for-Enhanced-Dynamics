@@ -14311,12 +14311,12 @@
     {
       "id": "E-280",
       "title": "destructibleTerrain's marching squares allocate objects per cell (logic: 52 MB/s in destructibleTerrain, 35.5 in planetPhysics)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
       "date": "2026-11-13",
       "area": "demo",
       "kind": "speed",
-      "result": "Heap pass: destructibleTerrainScene's logic allocates 52 MB/s while terrain is carved: `cellCorners` 31.8 MB/s (four edge points, four corner objects and the result per cell), `cellSolidParts` 8.7, `stitchContours` 3.4, `extractIslands` 3.3. Three callers read only `.caseId` from cellCorners. planetPhysicsScene runs the same worldGrid: its logic 35.5 MB/s, `cellCorners` 24.0, `cellSolidParts` 6.0, `extractIslands` 2.7.",
+      "result": "kept (demo hygiene): planetPhysics logic garbage 35 960 / 37 745 -> 17 280 / 16 044 KB/s (-55 %), cellCorners 24 -> 2.3 MB/s.",
       "next": "A `cellCaseId()` that allocates nothing for the callers that read only the case, and corner and edge points from reused scratch in the rest, kept readable (it is a demo: the official API, code a reader can follow); logic's STEP_MS on the frames that carve (its maximum and p95) and the heap.",
       "refs": [
         "EXECUTION_PLAN.md#E-280"
@@ -14329,9 +14329,9 @@
         "extractIslands"
       ],
       "records": [
-        "R-0980"
-      ],
-      "rank": 29
+        "R-0980",
+        "R-1002"
+      ]
     },
     {
       "id": "E-281",
@@ -24715,6 +24715,19 @@
         "a16614d3",
         "9bf7c511",
         "0f4a2413"
+      ]
+    },
+    {
+      "id": "R-1002",
+      "date": "2026-11-14",
+      "time": "00:11",
+      "timeFrom": "recorded",
+      "title": "E-280 kept (demo hygiene): planetPhysics logic garbage 36.9 -> 16.7 MB/s (-55 %) with cellCaseId and cellSolidParts' empty and full cells",
+      "verdict": "kept",
+      "text": "**E-280 kept (demo hygiene): destructibleTerrain's worldGrid builds no cell geometry it does not keep; planetPhysics' logic garbage -55 %.**\n2026-11-14, heap A/B in Chrome (heapSampleWorkers, planetPhysicsScene, logic worker, 8 s after 8 s, A = main, B = the branch, A B A B).\n\n- Step 1 (cellCaseId for the scans that only ask the case; prepared on 2026-11-13): 37 323 / 35 387 -> 21 580 / 20 641 KB/s, the cell sites 30 678 / 29 908 -> 15 181 / 14 633 (00:11 to 00:13).\n- Step 2 (cellSolidParts answers an empty cell with a shared empty list and a full one with its corners, without cellCorners): with step 1, 35 960 / 37 745 -> 17 280 / 16 044 KB/s, cellCorners 23 587 / 24 567 -> 2 314 / 2 254 (00:14 to 00:16).\n- Left: the geometry the demo keeps (full cells' corner parts 8 MB/s, extractIslands, stitchContours). The parts are the same values in the same order; test:demos 101/101. Demo code only: no engine worker reached, no gate.\n\nCommits on main: 07bbea7a, 049dfd36.",
+      "commits": [
+        "07bbea7a",
+        "049dfd36"
       ]
     }
   ],
