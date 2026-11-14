@@ -14969,21 +14969,21 @@
     {
       "id": "E-306",
       "title": "Box2D refits nearly every walking body every step: a person's AABB margin is 1 px and it walks 1-2 px a frame (crowd 2.5: tree rebuild ~75 ms/s a physics thread)",
-      "status": "open",
-      "rank": 30,
-      "statusText": "proposed 2026-11-14 from Box2D by name at crowd 2.5; probe -5 % at x2",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-14 (R-1027)",
       "date": "2026-11-14",
       "area": "physics",
       "kind": "speed",
-      "result": "Probe (scratch build, 38 000 walkers, one thread): margin x2 -5 % of the step, x4 -4 %, x8 none.",
-      "next": "B2_AABB_MARGIN_FRACTION 0.25 in the weed build (both builds); Predator crowd=2.5 physics.",
+      "result": "dropped (R-1027): fraction 0.25 (Box2D 63151e4) at crowd 2.5: physics 13.212 -> 13.215 ms, paired +2.9 %, 2/4 worse; the one-thread probe's -5 % (R-1026) does not survive the pool.",
+      "next": "Not doing.",
       "refs": [],
       "aliases": [
         "aabb margin",
         "fat AABB margin"
       ],
       "records": [
-        "R-1026"
+        "R-1026",
+        "R-1027"
       ]
     }
   ],
@@ -25107,6 +25107,15 @@
       "title": "E-306 probe: Box2D's AABB margin x2 saves ~5 % of the step with 38 000 walkers (x8 none)",
       "verdict": "note",
       "text": "**E-306 probe: doubling Box2D's AABB margin saves about 5 % of the step with 38 000 walking bodies; more gives it back.**\n2026-11-14 ~13:50, Node (one thread, Box2D's tasks inline), a scratch Box2D build (branch scratch/aabb-margin on weedjs/e305:\na runtime scale on b2ComputeShapeMargin, never shipped), 38 000 circles of radius 8 at 100 units a metre walking 60-120 px/s\nin a 9000 px square (Predator at crowd 2.5's density), no gravity, sleeping off, 1/60 s with 4 substeps, two rounds:\nstep median x1 20.41 / 20.33 ms, x2 19.33 / 19.35 (-5 %), x4 19.08 / 19.94, x8 20.43 / 20.50.\n\nWhy it was asked: at crowd 2.5 (Box2D by name, b2names-crowd25) each physics thread spends about 75 ms/s in the dynamic\ntree's rebuild (b2PlaceLeaf, b2DynamicTree_Rebuild, b2PartitionMid) and 45 in b2ComputeFatShapeAABB: a person's margin is\nmin(0.05 m, 0.125 x its extent) = 1 px at 100 units a metre, and it walks 1-2 px a frame, so nearly every body leaves its\nfat box every step. Box2D's own note says a small margin was tuned to keep contacts few; the probe agrees past x4.\nNext: B2_AABB_MARGIN_FRACTION 0.25 in the weed build (both builds), Predator crowd=2.5 physics as the owner (12.4 ms there)."
+    },
+    {
+      "id": "R-1027",
+      "date": "2026-11-14",
+      "time": "13:54",
+      "timeFrom": "recorded",
+      "title": "E-306 dropped: margin fraction 0.25 leaves Predator crowd 2.5's physics level (13.212 -> 13.215 ms, +2.9 % paired, 2/4)",
+      "verdict": "dropped",
+      "text": "**E-306 dropped: the AABB margin fraction 0.25 does not move Predator at crowd 2.5's physics.**\n2026-11-14 ~13:55 to 14:07, runPredatorAbab --vs main --hyp-rev w14s/e306 (Box2D 63151e4) --query crowd=2.5 --owner physics,\n4 pairs: physics 13.212 -> 13.215 ms, paired +2.9 %, 2/4 worse, cv 12/4 %; logic +1.9 %, spatial +0.5 %; pre-render +5.1 %\n(3/4, a worker the change cannot reach: drift), verdict REGRESSION on that row. The probe's -5 % (R-1026, one thread,\nBox2D's tasks inline) does not survive the pool: the tree work it saves runs in parallel tasks, and the fatter boxes add\ncandidate pairs. Box2D's tuning note stands for these crowds too. Branch weedjs/e306 kept in the Box2D repo, not merged;\nthe WeedJS branch w14s/e306 deleted."
     }
   ],
   "leads": [
