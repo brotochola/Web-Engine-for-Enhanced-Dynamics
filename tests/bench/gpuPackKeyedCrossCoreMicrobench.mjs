@@ -10,7 +10,7 @@
  *   --writer other  a worker thread rewrites them and signals (fresh data, written on another core), then the pack
  *
  *   node tests/bench/gpuPackKeyedCrossCoreMicrobench.mjs [--writer none|same|other] [--order random|near|queue]
- *     [--pack gather|scatter|table]
+ *     [--pack gather|scatter|table|rows]
  *     [--rows 14000] [--entities 42600] [--frames 61] [--output path]
  *
  * Node only (worker_threads). `queue` packs in the queue's own order (no gather): the bound for an inverse.
@@ -18,6 +18,10 @@
  * rewritten by the writer like the queue's columns) is copied whole into Pixi's own array, and the slot stream is each
  * drawn row's key in the painter's order: what Pixi would do if pre-render kept the poses by key. The statics updates
  * are left out on this side (a twentieth of the rows), so it reads a little low.
+ * `--pack rows` (E-201 by queue row): the queue's own pose columns, contiguous in row order, copied as they are into
+ * Pixi's pose texture data (four blocks of an R32F texture: x, y, rotC, rotS), and per drawn row its key and its row in
+ * the painter's order: the
+ * shader would fetch the pose by row and the statics by key. Statics updates left out as for `table`.
  */
 import { Worker } from 'node:worker_threads';
 
@@ -57,7 +61,7 @@ export async function run({ writer = 'none', order = 'random', pack: packKind = 
   const s = await setup(rows | 0, entities | 0, order === 'queue' ? 'near' : order);
   // gather: the painter's order (the binding without its inverse); scatter: E-193's, through the inverse, where the
   // tree's gpuPack has it.
-  if (packKind === 'gather' || packKind === 'table') s.b = { ...s.b, keyedInverseByte: 0 };
+  if (packKind === 'gather' || packKind === 'table' || packKind === 'rows') s.b = { ...s.b, keyedInverseByte: 0 };
   else if (!s.b.spritesKeyedScatter) throw new Error('this tree has no pack_sprites_keyed_scatter');
   // E-201: the pose table by key, in the queue's shared memory (so the writer rewrites it), and Pixi's private copy.
   const tableShared = packKind === 'table' ? new Float32Array(new SharedArrayBuffer(entities * 4 * 4)) : null;
@@ -110,7 +114,27 @@ export async function run({ writer = 'none', order = 'random', pack: packKind = 
     updatesByte: s.updates.byteOffset, updates: 0,
   };
   const keyCol = s.q.key;
-  const pack = packKind === 'table'
+  const rowPoses = packKind === 'rows' ? new Float32Array(rows * 4) : null; // four column blocks
+  const rowOfSlot = packKind === 'rows' ? new Float32Array(rows) : null;
+  const pack = packKind === 'rows'
+    ? () => {
+        // The four columns as they are, one after another (an R32F texture of four blocks): no interleave.
+        const { x, y, rotC, rotS } = s.q;
+        rowPoses.set(x.subarray(0, rows), 0);
+        rowPoses.set(y.subarray(0, rows), rows);
+        rowPoses.set(rotC.subarray(0, rows), rows * 2);
+        rowPoses.set(rotS.subarray(0, rows), rows * 3);
+        const slots = s.slots;
+        const order = s.order;
+        for (let k = 0; k < rows; k++) {
+          const r = order[k];
+          const key = keyCol[r];
+          slots[k] = key < entities ? key : entities + k;
+          rowOfSlot[k] = r;
+        }
+        return rows;
+      }
+    : packKind === 'table'
     ? () => {
         tablePrivate.set(tableShared);
         const slots = s.slots;
