@@ -14886,13 +14886,12 @@
     {
       "id": "E-304",
       "title": "Game loops re-read this.neighborCount on every pass (five megamorphic checks a neighbour against one): the guide's template and nine demo loops",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-13 from the bytecode and d8 machine-code harvest, not tested",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 70,
-      "result": "d8 16 machine code (neighborAccessMicrobench): `k < this.neighborCount` in the loop condition runs the whole getter per pass, five inline megamorphic checks a neighbour; the count read once before the loop leaves one. The form is in docs/guide/ENTITY_TEMPLATE.js and nine demo loops (Predator civilian.js and explosion.js, littleCity, carScene, buenosAires).",
+      "result": "kept (hygiene): ENTITY_TEMPLATE.js and seven demo loops read neighborCount once before the loop (buenosAiresScene left alone).",
       "next": "Read the count once before the loop in the template, the guide and the demos (same API); demo tests, Predator's logic as hygiene.",
       "refs": [
         "EXECUTION_PLAN.md#E-304"
@@ -14904,7 +14903,8 @@
       ],
       "records": [
         "R-0996",
-        "R-0997"
+        "R-0997",
+        "R-1008"
       ]
     }
   ],
@@ -24815,6 +24815,18 @@
       "title": "E-298 step 2 dropped: workers spinning through LiquidFun's step, physics +3.6 % (4/4 worse) on liquidFunStress ?water=1.3; reverted in Box2D",
       "verdict": "dropped",
       "text": "**E-298 step 2 dropped: spinning through LiquidFun's step regresses physics +3.6 % (4/4 worse).**\n2026-11-14 01:42 to 01:50, liquidFunStressScene ?water=1.3 (the knob 94821515: physics 6.9 ms at 1.3), owner physics, 4 pairs,\nmain (step 1) against w14s/e298s2 (Box2D 61770f9: the step mark a count, raised by step_world around b2World_Step and\nlfParticleSystem_Step): physics own 6.394 -> 6.713 ms, paired +3.6 %, 4/4 worse, cv 3/4 %, REGRESSION. LiquidFun's step is\nmemory-heavy and runs mostly on the physics thread; workers spinning through it slow that thread (shared cores, cache\ntraffic on the task slots). Reverted in the Box2D repo (79cb185) so weedjs/e298 builds step 1 alone; the WeedJS branch\nw14s/e298s2 is not merged. Step 1 (the world step) stands: its LiquidFun scenes have a small world step."
+    },
+    {
+      "id": "R-1008",
+      "date": "2026-11-14",
+      "time": "02:10",
+      "timeFrom": "recorded",
+      "title": "E-304 kept (hygiene): the guide template and seven demo loops read neighborCount once",
+      "verdict": "kept",
+      "text": "**E-304 kept (hygiene, guide and demos): neighbour loops read neighborCount once.**\n2026-11-14 02:10. The guide's ENTITY_TEMPLATE.js and seven demo loops (carScene x2, littleCity x2, Predator's civilian and\nexplosion) re-read this.neighborCount each pass, the getter whole (d8 16: five megamorphic checks a neighbour against one,\nR-0996); each now reads it once before its loop. Same API, as readable; one count per loop while spatial may publish.\nbuenosAiresScene's three loops left alone (the owner's Conurbano game is its own project). test:demos 101/101, test:node\n2594/2594. Not timed: the work removed is plain, and the scenes it reaches have logic under the 6 ms floor; ABAB sides\ntake demos from HEAD, so a gate would need --full-rev. Commit 5d26a719.",
+      "commits": [
+        "5d26a719"
+      ]
     }
   ],
   "leads": [
