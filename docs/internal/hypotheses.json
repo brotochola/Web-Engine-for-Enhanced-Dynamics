@@ -13385,7 +13385,8 @@
         "R-0994",
         "R-0995",
         "R-0997",
-        "R-1010"
+        "R-1010",
+        "R-1038"
       ]
     },
     {
@@ -14137,14 +14138,13 @@
     {
       "id": "E-272",
       "title": "updateDecalTiles reads every tile's dirty flag with Atomics.load each frame to count them (carScene: 92 % of it)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-14 (R-1039)",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 14,
-      "result": "CPU sweep: carScene's Pixi spends 77 ms of the window in updateDecalTiles, 92 % on `if (Atomics.load(this.decalsTilesDirty, i)) dirtyN++;` over every tile, every frame, before it knows whether any is dirty.",
-      "next": "A dirty count the stamping side bumps (or a plain read first and Atomics only on a set flag, or a word per 32 tiles); the decal scenes' Pixi STEP_MS.",
+      "result": "kept-hygiene (R-1039): count in Uint32 words (7 644 tiles 55 -> 1.4 us a frame, Node), a flag read before Atomics.exchange; carScene renderer 0.466 -> 0.349 ms (under the floor), no worker worse.",
+      "next": "None.",
       "refs": [
         "EXECUTION_PLAN.md#E-272"
       ],
@@ -14153,7 +14153,9 @@
         "decalsTilesDirty",
         "tile dirty scan"
       ],
-      "records": []
+      "records": [
+        "R-1039"
+      ]
     },
     {
       "id": "E-273",
@@ -25320,6 +25322,28 @@
       "title": "The day's Box2D changes on LiquidFun: liquidFunStress physics -2.2 % (0/4 worse), liquidFunBodyCouple -1.7 % (2/4): neutral, no row worse",
       "verdict": "note",
       "text": "**The day's Box2D and engine changes on LiquidFun scenes: neutral, no row worse.**\n2026-11-14, 16:54:13 to 17:04:24, runPredatorAbab --vs aa1aa783 (main at 00:58) --hyp-rev main (7261a0b2) --owner physics\n--pool --early, 4 pairs each (the owner asked whether the Box2D changes were tried on LiquidFun). Between the two:\nE-298 step 1 (Box2D workers spin through a world step), E-288 (accelerations in the solver), E-305 (no velocity\nread-back without LiquidFun), E-308 (the step's export skips an unchanged rotation), and the engine's JS changes.\n\n| scene | physics (own) | |\n| --- | --- | --- |\n| liquidFunStressScene ?water=1.5 | 7.094 -> 6.954 ms | paired -2.2 %, 0/4 worse, cv 2/1 % |\n| liquidFunBodyCoupleStressScene | 6.586 -> 6.507 ms | paired -1.7 %, 2/4 worse, cv 3/3 % |\n\nEvery other worker under its floor; presented 60 fps on both sides. Neither scene loses what Predator and ballsHeavy\ngained; E-298 step 2's regression (R-1007) stays the only LiquidFun cost seen, and it was dropped."
+    },
+    {
+      "id": "R-1038",
+      "date": "2026-11-14",
+      "time": "17:02",
+      "timeFrom": "recorded",
+      "title": "E-240 probe: of the rows a frame publishes 0.9 % are identical and 7.5 % of their lines; write-if-changed would save nothing",
+      "verdict": "note",
+      "text": "**E-240 probe: a publish that wrote only changed entries would leave almost nothing alone.**\n2026-11-14, 17:02 (scratch rowSameProbe.mjs, Node). E-308 showed that rewriting a column with the values it holds costs\nits readers on other cores (logic -10 %, pre-render -8 % once physics stopped). The same question for the neighbour rows\nspatial publishes and logic reads: in the spatial kernel (38 000 entities, one worker, 32 ids a cell, typed stagger, 30\nframes after 60), of 1 936 rows published a frame 0.9 % were identical to the row they replaced and 7.5 % of the\n64-byte lines they span held the same bytes; the first difference sits at 1 % of a changed row (the count). Rows are\nrepublished when due, every few frames, and change in between: write-if-changed would save next to nothing. Not done.\nE-240's open part stays the two-thread kernel of a row read a core away."
+    },
+    {
+      "id": "R-1039",
+      "date": "2026-11-14",
+      "time": "17:14",
+      "timeFrom": "recorded",
+      "title": "E-272 kept (hygiene): dirty decal tiles counted four flags a word, clean tiles read before the exchange; carScene renderer 0.466 -> 0.349 ms, no worker worse",
+      "verdict": "kept-hygiene",
+      "text": "**E-272 kept (hygiene): Pixi counts dirty decal tiles four flags a word and reads a flag before claiming it.**\n2026-11-14, 17:05 to 17:14 (result files), main e6eb5177 merged 03f0d1b9; it replaces Wave 14's unmeasured branch\nw14s/e272 (a6418e97, the count only), deleted.\n\n- updateDecalTiles counted every tile's dirty flag with an Atomics.load each frame before knowing whether any was dirty\n  (carScene: 92 % of the function). The count now reads the flags as Uint32 words with plain loads; it only decides\n  whether to scan and feeds a stat, so a flag set while it reads is seen next frame.\n- The claim loop ran an Atomics.exchange on every tile it scanned, clean ones too: a read-modify-write that takes the\n  flag's line from the stamping worker. It now reads the flag first and exchanges only a set one (B-03's exchange kept for\n  the claim; a flag set just after the read waits a frame, as one set after the exchange did).\n- Probe (scratch kernel, Node, 7 644 flags as carScene's 196 x 39 tiles): the count 55 -> 1.4 us a frame, none set or six.\n- carScene, runPredatorAbab --scene /demos/carScene/carScene.js --vs main --hyp-rev w14s/e272b --owner renderer --pool\n  --early, 4 pairs, 17:08:14 to 17:13:35: renderer 0.466 -> 0.349 ms (-25 %, under the 6 ms floor, not judged), no worker\n  worse; the runner's FAIL (load) is the emergent scene's VISIBLE_ENTITIES -6.3 % and queue size drift.\n- test:node 2627/2627, test:demos 101/101.",
+      "commits": [
+        "e6eb5177",
+        "03f0d1b9"
+      ]
     }
   ],
   "leads": [
