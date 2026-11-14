@@ -4602,6 +4602,59 @@ with the code log: an estimate). That flag cannot test the delay.
 ones find why (OSR from Maglev, deopts, size), for demo loops whether the per-entity body as its own function tiers up
 sooner; then a kernel or scene for the largest. Owner: logic.
 
+### E-300 The tick dispatch reads obj.tick twice per entity, each a megamorphic load call
+
+**Premise (bytecode, Chrome 151, Predator's code pass; machine code, d8 16):** `_tickIntervalBucket` loads `obj.tick`
+twice for each entity, once for `typeof obj.tick !== 'function'` and once for the call, and the other four tick paths
+(the no-body bucket and the `_tickNonDecimatedOne*` functions) do the same. Predator's classes give the site eight
+targets, so the load is megamorphic: in d8 16 a loop of that shape over eight classes keeps two
+`LoadICTrampoline_Megamorphic` calls per entity (a prototype method gets no inline map cache, unlike the instance
+fields of R-0995). The same loop with the type's tick resolved once per bucket and called as `tickFn.call(obj, …)` keeps
+no load, only the call (`Call_ReceiverIsAny`). A bucket holds one type, and one type is one class; nothing in src/,
+the demos or the guide assigns `tick` per instance.
+**Plan:** resolve each type's tick once (where the type's class is registered; none means the bucket is skipped) and
+call it with `.call` in the five paths; the d8 machine code of the loop shows no megamorphic load, then
+tickLoopKernel, then a logic owner scene. Owner: logic.
+
+### E-301 FSM transitions read onExit and onEnter twice each through megamorphic load calls
+
+**Premise (machine code, d8 16, fsmTickMicrobench):** `_executeTransition`, inlined into `FSM.tick`, calls
+`LoadIC_Megamorphic` four times, all for `OldState.onExit` and `NewState.onEnter` (`if (State && State.onExit)
+State.onExit(…)` loads each twice). States are classes, each its own constructor and map (17 in Predator's three FSMs),
+so every transition pays four builtin calls. `onUpdate` already goes through the `_onUpdates` array.
+**Plan:** count Predator's transitions per second first (a few hundred would make this small). Then per-state
+`_onExits` and `_onEnters` arrays built with `_onUpdates` (null where a state defines none), called with `.call`; the
+machine code shows no megamorphic load left in the transition, then fsmTickMicrobench with transitions. Owner: logic.
+
+### E-302 The collision-stay walk validates every pair each frame in a scene where nothing listens to stay
+
+**Premise (bytecode, Chrome 151, Predator's code pass):** `_processBox2dCollisionCallbacks` (684 B, 330 ms self over
+the two logic workers) walks all `_pairCount` pairs each frame: two `active` reads and the generation checks per pair,
+then the stay flags. No class in Predator defines `onCollisionStay` (`collisionStayByType` is all zero), so the walk
+only drops pairs whose entity died or whose body was replaced; `_removePairSlot` fires no callback.
+**Plan:** split the function's time between the ring drain and the walk, and count pairs walked and removed per frame
+in Predator. If the walk weighs: skip it when no type listens to stay and nothing was despawned or rebuilt since the
+last walk (a counter those paths bump), keeping `frameCollisions` exact for its readers (walk when one exists, or
+validate on read). Owner: logic.
+
+### E-303 Spatial's _findNeighbors is recompiled after warm-up
+
+**Premise (Chrome 151, Predator's code pass):** `_findNeighbors` (1783 B of bytecode, 376 ms self, spatial's hottest
+JS) was compiled by TurboFan seven times, the last at 13.2 s, well after warm-up (`rebuildOwnedRows` three times, all
+in warm-up). A deopt in steady state sends the function to a lower tier until TurboFan has new code.
+**Plan:** a deopt pass on Predator with a 30 s window names the site and its reason; if it repeats, send the rare case
+to its own function (R8, E-41) and check the code pass shows one compile. Owner: spatial.
+
+### E-304 Game loops re-read this.neighborCount on every pass
+
+**Premise (machine code, d8 16, neighborAccessMicrobench):** a loop written `for (k = 0; k < this.neighborCount; k++)`
+(the kernel's Boid class) runs the whole getter each pass, five inline megamorphic checks a neighbour
+(`_neighborOffset` twice, `_neighborReaderMarked`, `_onPage`, one more); with the count read once before the loop
+(Soldier, Ant) one check is left in the loop. The guide's `ENTITY_TEMPLATE.js`, which users copy, and nine demo loops
+(Predator's `civilian.js` and `explosion.js`, littleCity, carScene, buenosAires) use the first form.
+**Plan:** read the count once before the loop in the template, the guide's examples and the demos (same API, as
+readable); E-289 makes each read cheaper, not free. Gate: demo tests, Predator's logic as hygiene. Owner: logic.
+
 ## Wave 14 (2026-11-13): the campaign order after a full harvest
 
 The owner asked to gather every hypothesis first, without measuring, then run them all in a new campaign. The harvest:
