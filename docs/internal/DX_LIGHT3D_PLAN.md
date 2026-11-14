@@ -693,6 +693,15 @@ de las demos.
 **Hecho cuando** los mapas cargan alineados (test de alineación por cuadro), el tiempo de carga de Predator no sube más
 de lo que mide `atlasPackMicrobench` para las páginas nuevas, y nada cambia en pantalla.
 
+**Cómo quedó (rama):** `heightMap` (rg16 en 1/64 px, o `{ png, gray }`) y `normalMap` (RGB, espacio de cámara, y
+arriba) en `assets.spritesheets`; `src/render/spriteMaps.js` (octaédrica, lectura, corrección de contornos, Sobel,
+texeles gemelos) y `SpriteSheetRegistry._paintMapsPage`, que lee cada sheet una vez y escribe cada cuadro en su
+rectángulo de la página gemela; la página viaja como ImageBitmap de datos y queda en `atlasMapsSource`. Test de
+alineación por cuadro con un canvas en memoria (`tests/node/spriteMaps.test.js`). Arte de prueba: `makeShapes.mjs`
+traza una esfera, un pilar y un cajón con su altura y sus normales (modelo de lo que escribe un exportador).
+**Falta:** la tabla de sombra por cuadro (va con F6, que es quien la usa), los mapas en el bigAtlas preempaquetado, la
+herramienta `weed maps`, y medir la carga de Predator (no tiene mapas todavía: no paga nada).
+
 ### F4. G-buffer y luz con normales (DX-GBUF)
 
 - La pasada del G-buffer (generalizando la del face map) y la pasada de luz diferida, todavía sin sombras nuevas.
@@ -702,6 +711,15 @@ de lo que mide `atlasPackMicrobench` para las páginas nuevas, y nada cambia en 
 
 **Hecho cuando** `normalLightCheck` (§8) da menos de 3/255 contra su fórmula en los dos backends, `faceLightCheck`
 sigue pasando, y `spriteMapsStressScene` queda dentro del presupuesto que se fije con los números de F0.
+
+**Cómo quedó (rama), primera versión:** el G-buffer es el face map generalizado, como decía §6.4: donde un sprite no
+es cara, el fragmento lee la página gemela con el UV del color (`texelFetch`, sin filtro), gira la normal del espacio de
+cámara al del piso con el pitch de la cámara y escribe esa normal y la altura del pixel. La pasada de luz ya iluminaba
+así un pixel como un punto en 3D: no cambió. Una escena con mapas prende la pasada sola. `spriteMapsStressScene`
+(`?maps=0|height|normal|both`) se ve con relieve en WebGL (captura); `faceLightScene` captura byte a byte igual que
+antes con caras y sin ellas. **Falta:** `normals` y `surface` en `SpriteRenderer` (el cartón parado para sprites sin
+mapa), el id de entidad en el buffer (lo pide la autosombra), probar MRT, el microbench de GPU, y WebGPU: el código WGSL
+está, pero en esta VM el backend WebGPU falla en cualquier escena (`createBuffer`), así que no se pudo ver.
 
 ### F5. Profundidad que corrige al pintor (DX-DEPTH)
 
@@ -1006,3 +1024,5 @@ Lo que está hecho en la rama, fase por fase, con su commit. Se actualiza con ca
 | Plan en el repo | hecho | e77f734 | este archivo, filas DX-* en REVIEW_PLAN |
 | F1 `camera` | hecho | af40188 | `raycasted` pasa a F9; `frameChainWait` (presupuesto de reloj) falla a veces en esta máquina de 2 núcleos, también en la base |
 | F2 `DirectionalSprite` | hecho (falta el ABAB del dueño) | 4bf4d21 … f439060 | resolución en la lógica, no en el pre-render; forma `frames` pendiente; R-1043: empate contra el selector a mano en esta VM |
+| F3 mapas | en parte | 7d12c25, f4faf77, b2bf7c2 | página gemela y test de alineación; faltan tabla de sombra por cuadro, bake y `weed maps` |
+| F4 G-buffer | primera versión | f376849 | face map generalizado; faltan `normals`/`surface`, id de entidad, MRT, microbench de GPU y ver WebGPU |
