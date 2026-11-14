@@ -13008,7 +13008,8 @@
       ],
       "records": [
         "R-1029",
-        "R-1044"
+        "R-1044",
+        "R-1046"
       ]
     },
     {
@@ -15079,7 +15080,8 @@
       "records": [
         "R-1034",
         "R-1035",
-        "R-1044"
+        "R-1044",
+        "R-1046"
       ],
       "id": "E-310",
       "title": "Spatial workers at scale: at 57 600 entities two spatial workers would each spend ~7.3 ms where one spends ~12 ms (Predator sets one)",
@@ -15112,7 +15114,8 @@
         "R-1036",
         "R-1037",
         "R-1040",
-        "R-1044"
+        "R-1044",
+        "R-1046"
       ]
     },
     {
@@ -15156,7 +15159,8 @@
         "persist never hits"
       ],
       "records": [
-        "R-1045"
+        "R-1045",
+        "R-1046"
       ]
     }
   ],
@@ -25487,6 +25491,18 @@
       "text": "**E-312 opened: with keyed frames the emit reads and writes every sprite row's statics, which Pixi reads only for changed keys; ceiling about 10 % of pre-render at crowd 2.5; it needs E-177's protocol changed first.**\n2026-11-14, 17:52 to 18:25.\n\nHow it was found: the day's map (Predator crowd 1.5 and 2.5) puts emit_rows at 42 to 45 % of pre-render. A probe in the\nscene (persistProbe, 17:52 to 17:58: _persistFrameWasm and _emitRowsWasm wrapped in the worker) showed the persist path\nnever taking a frame: 631 tries, 0 hits; the buffer's remembered count is always -1, because each remember that clears a\ndirty sprite invalidates the other buffer (some sprite changes animation every frame), and the count changes with the\n~170 bullet, trail and glow rows, which sit among the 22 650 sprite rows by entity id (the first at row 0). persist_remember\nitself (2.5 % of pre-render) then runs for nothing, but it also clears the sprites' renderDirty flags, so it cannot simply go.\n\nWhat the emit spends: sprite_row reads six statics per sprite from SpriteRenderer (alpha, scale x and y, tint, anchor x and\ny, each a line of its own column) and writes them to the queue row, every row, every frame; with keyed frames (on by\ndefault on WebGL) Pixi's keyed pack reads a row's statics only when its key is flagged changed.\n\nCeiling (scratch/e312-ceiling b7f8cfa9: the six skipped on a keyed, unchanged, non-repeating row; wrong for the paths\nbelow): Predator crowd=2.5, 4 pairs, 18:05 to 18:10: preRender 7.990 -> 6.431 ms (-17.1 %, 0/4), -8.2 % against the other\nworkers; the crowd-2.5 A/A (R-1044) reads B -6.3 % on identical code: about 10 % net.\n\nWhy it is not done here: Pixi draws a keyed batch \"split\", reading every row's statics from the queue, on its first frame,\nafter a gap in the queue frames it takes (it takes the newest queue, so a slow frame skips one), and for KEYED_PAUSE_FRAMES\nwhen updates outweigh the saving (KEYED_LOSS_FRAMES); the caster and sun passes fall back the same way when their keyed\nmeshes are refused or ShadowCaster.setTexture is used. Each of those would draw another entity's statics in a row that\nshifted. A per-row exact skip (the row already holds this entity's statics) does not pay in Predator: every bullet spawned\nor despawned shifts the rows after it.\n\nPlan: E-177's changed flags made cumulative, \"changed since the queue frame Pixi last drew keyed\" (a per-entity change frame\nagainst a word Pixi publishes), so a gap needs no split frame; the keyed pause and every fallback request a full resend and\nkeep drawing keyed until the buffer that answers it, never reading statics of unchanged rows; then the emit skips them when\nPixi's header says every pass draws keyed. Verify with compareCaptures (dxCaptureScene, gaps forced) byte-identical, the emit\nkernel's checksum, Predator crowd 2.5 against the A/A margins.",
       "commits": [
         "b7f8cfa9"
+      ]
+    },
+    {
+      "id": "R-1046",
+      "date": "2026-11-14",
+      "time": "18:50",
+      "timeFrom": "recorded",
+      "title": "Crowd 2.5's side bias was noise (a one-directory A/A reads B +4.7 %); runPredatorAbab --aa judges keeps and regressions against the session's A/A limits",
+      "verdict": "note",
+      "text": "**Crowd 2.5's \"side bias\" was noise: a second A/A on one directory reads B slower, and the runner now judges against the A/A (--aa).**\n2026-11-14, 18:28:13 to 18:33:40 (the sitting), then 18:35 to 18:50 (the tool, 52cf1ee0).\n\n- A/A on one directory: runPredatorAbab --vs main --query crowd=2.5 --query-b \"crowd=2.5&noop=1\" --owner preRender --pool\n  --pairs 4 (both sides run pool-a). The 3 % bars called it REGRESSION: pre-render +4.7 % (4/4 worse, cv 4/3 %), logic\n  +2.3 %, spatial +2.1 %, physics +1.4 %. With R-1044's A/A on two directories (B -6.3 %), the B side read faster once and\n  slower once on identical code: no side bias, a large spread.\n- Pooled (8 pairs), the A/A medians are near 0 (pre-render +2.0 %, logic -0.8 %, physics -0.4 %, spatial +0.3 %); the\n  spreads give these limits for a 4-pair sitting at crowd 2.5 (raw / against the other workers): pre-render 8.7 / 5.3 %,\n  logic 13.4 / 8.9 %, physics 5.4 / 3.4 %, spatial 4.9 / 4.1 %. An 8-pair sitting divides them by 1.41.\n- runPredatorAbab --aa (52cf1ee0, HOW_WE_MEASURE rule 7 and planned tool 4's first part): those limits printed beside each\n  kind; a keep, a regression and an --early stop must clear them. Re-judged with --decide-only --aa aa-crowd25,aa25-samedir:\n  both A/As NEUTRAL; E-312's ceiling (e312-ceiling4) KEPT, pre-render -8.2 % against the others past 5.3 %; E-308\n  (e308-crowd25) NEUTRAL (within the detection limit), as R-1044 read it; E-310 step 1: spatial -37.3 % against the others,\n  logic +9.7 % against the others just past its 8.9 %.\n\nR-1044's reading of E-308 stands (its gains are within the limits; kept as hygiene); its word \"bias\" does not.",
+      "commits": [
+        "52cf1ee0"
       ]
     }
   ],
