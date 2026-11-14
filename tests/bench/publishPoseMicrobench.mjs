@@ -3,9 +3,17 @@
  * Kernel for the shipped publishPose inside weedjsPost.js.
  * The function is a closure, so this evals the real script (importScripts
  * stubbed) and calls weedjsPublishPose. It does not copy the loop.
- * `--variant ph1` applies the epoch fast-path as a source diff before eval.
+ * `--variant ph1` applies the epoch fast-path as a source diff before eval (shipped since; its anchor is gone).
+ * `--variant runs` (E-246): when no slot was respawned, the dense list's runs of consecutive slots are copied with
+ * set(), one call per column, instead of four loads and stores a body.
+ * `--variant slots` (E-246): when no slot was respawned and at least 3/4 of the slots hold a body, the slots are walked
+ * in order (densePositions) and each run of 256 or more slots with a body is copied with set(); the dense list's order no longer
+ * matters.
+ * `--holes f`: f of the bodies removed from the dense list for good (empty slots between the runs).
+ * `--churn f`: f of the bodies swap-removed from the dense list and added back at its end, as despawns and respawns
+ * leave it (0: the list in slot order).
  *
- *   node tests/bench/publishPoseMicrobench.mjs --variant base
+ *   node tests/bench/publishPoseMicrobench.mjs --variant base|runs [--n 16500] [--churn 0.1]
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -48,9 +56,73 @@ const PH1_EDITS = [
   ],
 ];
 
+const RUNS_FROM = `    let skipped = 0;
+    for (let d = 0; d < n; d++) {`;
+const RUNS_TO = `    let skipped = 0;
+    if (epochSame) {
+      let d = 0;
+      while (d < n) {
+        const start = list[d];
+        let end = d + 1;
+        while (end < n && list[end] === start + (end - d)) end++;
+        const len = end - d;
+        if (len >= 16) {
+          const stop = start + len;
+          outX.set(x.subarray(start, stop), start);
+          outY.set(y.subarray(start, stop), start);
+          outC.set(rotC.subarray(start, stop), start);
+          outS.set(rotS.subarray(start, stop), start);
+        } else {
+          for (let k = d; k < end; k++) {
+            const i = list[k];
+            outX[i] = x[i];
+            outY[i] = y[i];
+            outC[i] = rotC[i];
+            outS[i] = rotS[i];
+          }
+        }
+        d = end;
+      }
+    } else for (let d = 0; d < n; d++) {`;
+
+const SLOTS_TO = `    let skipped = 0;
+    if (epochSame && denseCount * 4 >= densePositions.length * 3) {
+      const has = densePositions;
+      const slots = has.length;
+      let i = 0;
+      while (i < slots) {
+        while (i < slots && has[i] < 0) i++;
+        const start = i;
+        while (i < slots && has[i] >= 0) i++;
+        const len = i - start;
+        if (len >= 256) {
+          outX.set(x.subarray(start, i), start);
+          outY.set(y.subarray(start, i), start);
+          outC.set(rotC.subarray(start, i), start);
+          outS.set(rotS.subarray(start, i), start);
+        } else {
+          for (let k = start; k < i; k++) {
+            outX[k] = x[k];
+            outY[k] = y[k];
+            outC[k] = rotC[k];
+            outS[k] = rotS[k];
+          }
+        }
+      }
+    } else for (let d = 0; d < n; d++) {`;
+const BIND_FROM = '    denseCount = state.denseCount | 0;\n';
+const BIND_TO = '    denseCount = state.denseCount | 0;\n    if (state.densePositions) densePositions = state.densePositions;\n';
+
 export function loadPost(variant) {
   let src = fs.readFileSync(path.join(box2dDir, 'weedjsPost.js'), 'utf8');
-  if (variant === 'ph1') {
+  if (!src.includes('state.densePositions') && src.split(BIND_FROM).length === 2) src = src.split(BIND_FROM).join(BIND_TO);
+  if (variant === 'slots') {
+    if (src.split(RUNS_FROM).length !== 2) throw new Error('slots anchor missing');
+    src = src.split(RUNS_FROM).join(SLOTS_TO);
+  } else if (variant === 'runs') {
+    if (src.split(RUNS_FROM).length !== 2) throw new Error('runs anchor missing');
+    src = src.split(RUNS_FROM).join(RUNS_TO);
+  } else if (variant === 'ph1') {
     for (const [from, to] of PH1_EDITS) {
       if (!src.includes(from)) throw new Error(`ph1 anchor missing: ${from.slice(0, 80)}`);
       src = src.replace(from, to);
@@ -82,7 +154,7 @@ export function loadPost(variant) {
   return globalThis.weedjsPublishPose;
 }
 
-function setup(n, seed) {
+function setup(n, seed, churn = 0, holes = 0) {
   const rng = mulberry32(seed);
   const list = new Int32Array(n);
   const x = new Float32Array(n);
@@ -102,6 +174,23 @@ function setup(n, seed) {
     Atomics.store(generation, i, g);
     seen[i] = g;
   }
+  // Despawns and respawns: a body leaves by swap-remove (the last entry takes its place) and comes back at the end.
+  const moves = Math.round(n * churn);
+  for (let m = 0; m < moves; m++) {
+    const pos = (rng() * (n - 1)) | 0;
+    const slot = list[pos];
+    list[pos] = list[n - 1];
+    list[n - 1] = slot;
+  }
+  // Removed for good: swap-remove, the slot left without a body.
+  let count = n;
+  const gone = Math.round(n * holes);
+  for (let m = 0; m < gone && count > 1; m++) {
+    const pos = (rng() * count) | 0;
+    list[pos] = list[--count];
+  }
+  const densePositions = new Int32Array(n).fill(-1);
+  for (let d = 0; d < count; d++) densePositions[list[d]] = d;
   const poseSync = new Int32Array(new SharedArrayBuffer(8));
   const mk = () => ({
     x: new Float32Array(n),
@@ -114,7 +203,8 @@ function setup(n, seed) {
     poseSync,
     poseBuffers,
     denseList: list,
-    denseCount: n,
+    denseCount: count,
+    densePositions,
     views: { x, y, rotC, rotS },
     bodyGeneration: generation,
     seenBodyGeneration: seen,
@@ -153,8 +243,10 @@ function main() {
   const variant = String(args.variant || 'base');
   const n = Number(args.n ?? 16500);
   const seed = Number(args.seed ?? 0x0b2d);
+  const churn = Number(args.churn ?? 0);
+  const holes = Number(args.holes ?? 0);
   loadPost(variant);
-  const k = setup(n, seed);
+  const k = setup(n, seed, churn, holes);
   const checksum = k.checksum();
   const cases = {
     publish: timeIt(`publishPose ${variant} (n=${n})`, () => k.frame(), { iterations: 40, warmup: 10 }),
@@ -165,12 +257,14 @@ function main() {
     functions: ['publishPose'],
     n,
     seed,
+    churn,
+    holes,
     checksum,
     note: 'Shipped weedjsPost publishPose. ph1 is an in-memory epoch fast-path. Gens match, so both publish every body.',
     cases,
   };
   if (args.output) writeReport(String(args.output), report);
-  else console.log(`checksum ${checksum} publish ${cases.publish.opsPerSec.toFixed(1)} ops/s`);
+  else console.log(`checksum ${checksum} publish ${variant} churn ${churn} holes ${holes} ${cases.publish.opsPerSec.toFixed(1)} ops/s`);
 }
 
 if (isCli(import.meta.url)) main();
