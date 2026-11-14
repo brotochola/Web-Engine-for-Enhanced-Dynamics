@@ -32,28 +32,32 @@ const stampOpB = { from: 0, to: 0, tween: false, ease: 0 };
 // E-108. One stamp's doubles (x, y, scaleX, scaleY, alpha) on their way into the ring: through
 // this array only integers cross the call, which made a heap number per double before.
 const STAMP_IN = new Float64Array(5);
+// E-286. A plain stamp's numbers (x, y, scaleX, scaleY, alpha, tint), defaults applied, from stamp() to its body:
+// stamp() is small enough to be inlined into the caller, and the body never sees the options object, so escape
+// analysis removes the literal games pass (allocated, with a heap number per double field, on every call before).
+const STAMP_PLAIN = new Float64Array(6);
 
 /** A stamp field: a plain number as given, anything else (a range, a from/to) resolved. */
 function stampNumber(value, defaultVal, op) {
   return typeof value === 'number' ? value : resolveParticleOp(value, defaultVal, op).from;
 }
 
-function resolveStampTextureId(config) {
-  let textureName = config.texture;
-  if (config.spritesheet && config.animation !== undefined && !Array.isArray(config.frame)) {
+function resolveStampTextureId(texture, spritesheet, animation, frame) {
+  let textureName = texture;
+  if (spritesheet && animation !== undefined && !Array.isArray(frame)) {
     textureName = SpriteSheetRegistry.getFrameName(
-      config.spritesheet,
-      config.animation,
-      config.frame ?? 0
+      spritesheet,
+      animation,
+      frame ?? 0
     );
   }
   let textureId = textureName ? SpriteSheetRegistry.getTextureId(textureName) : 0;
-  if (Array.isArray(config.frame) && config.spritesheet && config.animation !== undefined) {
-    const frames = config.frame;
+  if (Array.isArray(frame) && spritesheet && animation !== undefined) {
+    const frames = frame;
     const n = Math.min(8, frames.length);
     const ids = [];
     for (let f = 0; f < n; f++) {
-      const fname = SpriteSheetRegistry.getFrameName(config.spritesheet, config.animation, frames[f]);
+      const fname = SpriteSheetRegistry.getFrameName(spritesheet, animation, frames[f]);
       if (!fname) continue;
       ids.push(SpriteSheetRegistry.getTextureId(fname));
     }
@@ -265,29 +269,107 @@ export class Decal {
    */
   static stamp(config) {
     if (!config) return 0;
+    // E-286: the fields are read here, once, and the bodies get only their values: numbers through STAMP_PLAIN when
+    // every number a stamp uses is a number (the common stamp), the values as they are otherwise (a range, a from/to).
+    // A missing x, y, tint or alpha takes its default here, which the ranged body resolves alike. Each body checks
+    // first that the stamp has somewhere to go: this front stays small for its callers' inlining budget.
+    const x = config.x ?? 0;
+    const y = config.y ?? 0;
+    const tint = config.tint ?? 0xffffff;
+    const alpha = config.alpha ?? 1;
+    const scale = config.scale;
+    const scaleX = config.scaleX;
+    const scaleY = config.scaleY;
+    // The scales a stamp uses: scaleX and scaleY when both are given without scale, else the first given of the three.
+    let sx;
+    let sy;
+    if (scale == null && scaleX != null && scaleY != null) {
+      sx = scaleX;
+      sy = scaleY;
+    } else {
+      sx = sy = scale ?? scaleX ?? scaleY ?? 1;
+    }
+    if (typeof x === 'number' && typeof y === 'number' && typeof sx === 'number' && typeof sy === 'number' &&
+      typeof alpha === 'number' && typeof tint === 'number') {
+      const f = STAMP_PLAIN;
+      f[0] = x;
+      f[1] = y;
+      f[2] = sx;
+      f[3] = sy;
+      f[4] = alpha;
+      f[5] = tint;
+      return this._stampPlain(config.texture, config.spritesheet, config.animation, config.frame, config.count,
+        config.blendMode);
+    }
+    return this._stampFields(config.texture, config.spritesheet, config.animation, config.frame, config.count, x, y,
+      scale, scaleX, scaleY, tint, alpha, config.blendMode);
+  }
+
+  /**
+   * stamp()'s body for a plain stamp (E-286): the numbers in STAMP_PLAIN, the rest as arguments.
+   * @private
+   */
+  static _stampPlain(texture, spritesheet, animation, frame, countField, blendModeField) {
+    // The numbers are read before any call (the texture's, the apply), which could reach another stamp.
+    const f = STAMP_PLAIN;
+    const x = f[0];
+    const y = f[1];
+    const scaleX = f[2];
+    const scaleY = f[3];
+    const alpha = f[4];
+    const tint = f[5];
     const apply = stampLocalApply;
     if (!apply && !this.isStampRingBound()) return 0;
-    const textureId = resolveStampTextureId(config);
-    const count = Math.max(1, Math.round(randomRange(config.count, 1)));
+    const textureId = resolveStampTextureId(texture, spritesheet, animation, frame);
+    const count = Math.max(1, Math.round(randomRange(countField, 1)));
+    const blendMode = blendModeField ?? 0;
+    let n = 0;
+    for (let i = 0; i < count; i++) {
+      if (apply) {
+        apply(x, y, tint, scaleX, scaleY, textureId, alpha, blendMode);
+        n++;
+        continue;
+      }
+      STAMP_IN[0] = x;
+      STAMP_IN[1] = y;
+      STAMP_IN[2] = scaleX;
+      STAMP_IN[3] = scaleY;
+      STAMP_IN[4] = alpha;
+      if (!this._enqueueStampIn(textureId, tint, blendMode)) break;
+      n++;
+    }
+    return n;
+  }
+
+  /**
+   * stamp()'s body when a field is a range or a from/to: each stamp of the count resolves its own values.
+   * @private
+   */
+  static _stampFields(texture, spritesheet, animation, frame, countField, xField, yField, scaleField, scaleXField,
+    scaleYField, tintField, alphaField, blendModeField) {
+    const apply = stampLocalApply;
+    if (!apply && !this.isStampRingBound()) return 0;
+    const textureId = resolveStampTextureId(texture, spritesheet, animation, frame);
+    const count = Math.max(1, Math.round(randomRange(countField, 1)));
     let n = 0;
     for (let i = 0; i < count; i++) {
       let scaleX;
       let scaleY;
-      if (config.scale == null && config.scaleX != null && config.scaleY != null) {
-        scaleX = stampNumber(config.scaleX, 1, stampOpA);
-        scaleY = stampNumber(config.scaleY, 1, stampOpB);
+      if (scaleField == null && scaleXField != null && scaleYField != null) {
+        scaleX = stampNumber(scaleXField, 1, stampOpA);
+        scaleY = stampNumber(scaleYField, 1, stampOpB);
       } else {
-        const s = stampNumber(config.scale ?? config.scaleX ?? config.scaleY, 1, stampOpA);
+        const s = stampNumber(scaleField ?? scaleXField ?? scaleYField, 1, stampOpA);
         scaleX = s;
         scaleY = s;
       }
-      const x = randomRange(config.x);
-      const y = randomRange(config.y);
-      const tint = typeof config.tint === 'number'
-        ? config.tint
-        : resolveParticleColorOp(config.tint, 0xffffff, stampOpA).from;
-      const alpha = stampNumber(config.alpha, 1, stampOpA);
-      const blendMode = config.blendMode ?? 0;
+      const x = randomRange(xField);
+      const y = randomRange(yField);
+      const tint = typeof tintField === 'number'
+        ? tintField
+        : resolveParticleColorOp(tintField, 0xffffff, stampOpA).from;
+      const alpha = stampNumber(alphaField, 1, stampOpA);
+      const blendMode = blendModeField ?? 0;
       if (apply) {
         apply(x, y, tint, scaleX, scaleY, textureId, alpha, blendMode);
         n++;
