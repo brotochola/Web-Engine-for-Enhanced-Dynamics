@@ -1,11 +1,11 @@
 // E-177, wired: Pixi's entity batch on a Predator-shaped scene (packGpuSprites and sortSprites 'pixi', WebGL), through
 // updateSpritesFromRenderQueue. The scene lays out the keyed regions, Pixi's batch goes keyed with them, and the queue is
-// written as pre-render's emit writes it (the changed bit in a sprite's key, the resync header answered). Every frame
+// written as pre-render's emit writes it (the changed bit in a sprite's key for a change after the frame Pixi last drew
+// keyed, E-312). Every frame
 // draws each slot's pose from its queue row in the painter's order; a keyed frame (the indexed program) also finds, in its
 // key's row of the statics texture after the frame's scatter, that row's statics; rows without an entity take the slots
-// past the entities. A frame changes few statics, so few go up. The first frame, and the frame after one Pixi did not
-// draw, are drawn split while the batch asks for every sprite; the next frame sends them all. On WebGPU the batch stays
-// split.
+// past the entities. A frame changes few statics, so few go up. The first frame sends every row; the frame after one
+// Pixi did not draw sends the changes of both, keyed (E-312: no frame drawn split, no resync).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -26,7 +26,7 @@ import { SPLIT_POSE_FLOATS } from '../../src/render/instancedSpriteBatch.js';
 import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
 import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
-import { PIXI_KEYED_HEADER as H } from '../../src/util/wasmMemoryMap.js';
+import { PIXI_KEYED_HEADER as H, PIXI_KEYED_HEADER_WORDS } from '../../src/util/wasmMemoryMap.js';
 import { loadWorker, quietly } from '../bench/workerHarness.mjs';
 
 const MAX = 4000;
@@ -209,36 +209,31 @@ function restyle(w, k, r) {
 
 /**
  * Queue frame `frame` as pre-render's emit writes it (preRenderWorker.emitSpriteQueue, preRenderEmit.c): every sprite
- * moves and a twentieth change a static, which flags them; a resync request is answered by flagging every sprite; the
- * first n rows go into the frame's buffer, a sprite's key its entity with the changed bit when it was flagged (the emit
- * clears the flag); the request served goes into the buffer's word of the header. Returns the buffer.
+ * moves and a twentieth change a static, each change stamped with the frame (E-312); the first n rows go into the
+ * frame's buffer, a sprite's key its entity with the changed bit when it changed after the frame Pixi last drew keyed
+ * (the header's DRAWN; 0: every sprite), and that frame goes into the buffer's SINCE word. Returns the buffer.
  */
-function emitFrame(px, m, w, dirty, frame, n, r) {
+function emitFrame(px, m, w, changedAt, frame, n, r) {
   for (let k = 0; k < MAX; k++) {
     w.x[k] += 1;
     if (r() < 0.05) {
       restyle(w, k, r);
-      dirty[k] = 1;
+      changedAt[k] = frame;
     }
   }
-  const h = new Uint32Array(m.buffer, m.layout.emit.keyHeaderByte, 4);
-  // N-148: only the buffer of the emit that served a request answers it.
-  let served = 0;
-  if (Atomics.load(h, H.REQUEST) !== Atomics.load(h, H.SERVED)) {
-    dirty.fill(1);
-    Atomics.store(h, H.SERVED, Atomics.load(h, H.REQUEST));
-    served = Atomics.load(h, H.SERVED);
-  }
+  const h = new Uint32Array(m.buffer, m.layout.emit.keyHeaderByte, PIXI_KEYED_HEADER_WORDS);
+  const drawn = Atomics.load(h, H.DRAWN);
+  const since = drawn < frame ? drawn : 0;
   const b = (frame - 1) & 1;
   const q = px.renderQueueBuffers[b];
   q.count[0] = n;
   for (const c of COLUMNS) q[c].set(w[c].subarray(0, n));
   for (let k = 0; k < n; k++) {
     if (w.key[k] === KEY_NONE) continue;
-    q.key[k] = (w.key[k] | (dirty[k] << 31)) >>> 0;
-    dirty[k] = 0;
+    const marked = since === 0 || changedAt[k] > since ? 1 : 0;
+    q.key[k] = (w.key[k] | (marked << 31)) >>> 0;
   }
-  Atomics.store(h, H.BUFFER0 + b, served);
+  Atomics.store(h, H.SINCE0 + b, since);
   return b;
 }
 
@@ -288,11 +283,12 @@ for (const backend of ['webgl', 'webgpu']) test(`Pixi draws a scene's sprites as
   };
   const r = rng(177);
   const world = makeWorld(r);
-  const dirty = new Uint8Array(MAX).fill(1);
+  // The frame each slot's statics last changed in (E-312; every one at frame 1, as a spawn leaves it).
+  const changedAt = new Uint32Array(MAX).fill(1);
   const scattered = [];
   // Frame 9 is written but not drawn (Pixi took frame 10 next).
   for (let f = 1; f <= 12; f++) {
-    const b = emitFrame(px, scene.renderQueueMemory, world, dirty, f, f < 7 ? MAX - 100 : MAX - 300, r);
+    const b = emitFrame(px, scene.renderQueueMemory, world, changedAt, f, f < 7 ? MAX - 100 : MAX - 300, r);
     if (f === 9) continue;
     const q = px.renderQueueBuffers[b];
     px.lastReadFrame = f;
@@ -303,7 +299,8 @@ for (const backend of ['webgl', 'webgpu']) test(`Pixi draws a scene's sprites as
     const n = px.visibleEntityCount | 0;
     assert.equal(n, q.count[0], `frame ${f}: every row drawn`);
     assert.ok(order && order.length === n, `frame ${f}: the painter's order`);
-    const split = f === 1 || f === 10;
+    // E-312: every frame keyed, the first and the one after the frame Pixi did not draw included.
+    const split = false;
     assert.equal(batch.mesh.shader, split ? batch.shader : batch._indexedShader, `frame ${f}: drawn ${split ? 'split' : 'keyed'}`);
     const taken = new Set();
     for (let k = 0; k < n; k++) {
@@ -324,15 +321,14 @@ for (const backend of ['webgl', 'webgpu']) test(`Pixi draws a scene's sprites as
       }
     }
   }
-  // The frames drawn split scatter nothing and ask for every sprite; the frames that answer send every row; the others
-  // the rows without a key and the sprites whose statics changed (a twentieth).
-  const h = new Uint32Array(scene.renderQueueMemory.buffer, layout.pixiKeyHeaderByte, 4);
-  assert.equal(Atomics.load(h, H.REQUEST), 2, 'two requests');
+  // The first frame sends every row; the others the rows without a key and the sprites whose statics changed after the
+  // frame Pixi last drew (a twentieth a frame; frame 10, after the frame Pixi skipped, two frames' worth).
+  const h = new Uint32Array(scene.renderQueueMemory.buffer, layout.pixiKeyHeaderByte, PIXI_KEYED_HEADER_WORDS);
+  assert.equal(Atomics.load(h, H.DRAWN), 12, 'Pixi\'s last keyed frame');
   assert.equal(tex.uploads, 0, 'the texture takes scatters only');
-  for (const f of [1, 10]) assert.equal(scattered[f], 0, `frame ${f}: drawn split`);
-  assert.equal(scattered[2], MAX - 100, 'frame 2 answers: every row');
-  assert.equal(scattered[11], MAX - 300, 'frame 11 answers: every row');
-  for (const f of [3, 4, 5, 6, 7, 8, 12]) assert.ok(scattered[f] < MAX / 5, `frame ${f}: ${scattered[f]} scattered`);
+  assert.equal(scattered[1], MAX - 100, 'frame 1: every row');
+  for (const f of [2, 3, 4, 5, 6, 7, 8, 11, 12]) assert.ok(scattered[f] < MAX / 5, `frame ${f}: ${scattered[f]} scattered`);
+  assert.ok(scattered[10] > scattered[11] && scattered[10] < (2 * MAX) / 5, `frame 10: ${scattered[10]} scattered (two frames)`);
 });
 
 test('a scene whose renderer turns indexed sprites off keeps split frames on either backend', async () => {

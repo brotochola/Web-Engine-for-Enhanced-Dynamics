@@ -70,11 +70,9 @@ export const BATCH_DEPTH = Object.freeze({ INDEX: 0 });
 // E-177. A keyed frame saves KEYED_SAVED_BYTES a row against a split one (the slot pair instead of the statics) and
 // spends an update's bytes on each row it sends. When the updates outweigh the saving for KEYED_LOSS_FRAMES frames in a
 // row (rows without a key, as a LiquidFun scene's sprites, or statics that all move), the batch draws split for
-// KEYED_PAUSE_FRAMES frames, then resyncs and tries again.
+// KEYED_PAUSE_FRAMES frames, then tries again (E-312: the marks then count from its last keyed frame, so nothing is lost).
 export const KEYED_SAVED_BYTES = (GPU_STATIC_FLOATS - GPU_INDEXED_SLOT_FLOATS) * 4;
 export const KEYED_LOSS_FRAMES = 10;
-/** N-148: the frames a keyed batch draws split for its request unanswered before it asks again. */
-export const KEYED_REQUEST_FRAMES = 8;
 export const KEYED_PAUSE_FRAMES = 1800;
 
 const EMPTY_UPLOAD_OPTS = Object.freeze({
@@ -395,14 +393,11 @@ export class InstancedSpriteBatch {
     const texCopy = (texWords > 0 && arena && arena.f32(texWords)) || new Float32Array(texWords);
     this._keyTexUpdates = new Uint32Array(texCopy.buffer, texCopy.byteOffset, texWords);
     this._keyHeader = k ? new Uint32Array(buf, k.headerByte, PIXI_KEYED_HEADER_WORDS) : new Uint32Array(PIXI_KEYED_HEADER_WORDS);
-    // The queue frame and buffer of the next upload (the caller's), the last frame the texture took keyed (-1: none since
-    // it last missed one), and the resync request this batch made (0: none outstanding).
+    // The queue frame and buffer of the next upload (the caller's), and the last queue frame the texture took keyed (0:
+    // none; E-312: pre-render marks every change after the one the header's DRAWN says, which this batch stores).
     this.keyedFrame = 0;
     this.keyedBuffer = 0;
-    this._keyFrame = -1;
-    this._keyRequest = 0;
-    // N-148: the frames this batch has drawn split waiting for its request's answer.
-    this._keyWaits = 0;
+    this._keyDrawn = 0;
     // The keyed frames in a row whose updates outweighed their saving, and the split frames left of a pause.
     this._keyLosses = 0;
     this._keyPause = 0;
@@ -1183,48 +1178,35 @@ export class InstancedSpriteBatch {
   /**
    * E-177. A keyed batch's frame: the poses and the slot pairs (each row's key and depth) in draw order, and the statics
    * of the sprites the emit marked changed and of the rows without a key, scattered into the texture by key (the statics
-   * helper's scatter): 24 bytes a sprite and 64 an update, against 60 a sprite for a split frame. The marks say what
-   * changed since the emit before, so the texture is right only after a keyed frame of every queue frame: on its first
-   * frame, after a frame it did not take keyed (a gap in the queue's frames, a frame drawn split), the batch asks
-   * pre-render for every sprite again (the header's request; pre-render flags every sprite for its next emit) and draws
-   * split until the queue buffer it reads answers that request. Frames whose updates outweigh their saving pause the
-   * keyed frames (KEYED_LOSS_FRAMES). Returns -1 for a frame drawn split.
+   * helper's scatter): 24 bytes a sprite and 64 an update, against 60 a sprite for a split frame. E-312: the marks say
+   * what changed after the queue frame pre-render read from the header's DRAWN (the header's SINCE for this buffer), so
+   * the texture is right after this frame whenever that is not past the last frame this batch drew keyed: a queue frame
+   * it skipped, or one it drew split, loses nothing. Behind it (never with this batch's one texture) the frame is drawn
+   * split. Frames whose updates outweigh their saving pause the keyed frames (KEYED_LOSS_FRAMES). Returns -1 for a frame
+   * drawn split.
    */
   _uploadKeyed(q, ctx) {
     if (this._keyPause > 0) {
       this._keyPause--;
-      this._keyFrame = -1;
       return -1;
     }
     const H = this._keyHeader;
-    const frame = this.keyedFrame;
-    const last = this._keyFrame;
-    if (last < 0 || (frame !== last && frame !== last + 1)) {
-      this._keyFrame = -1;
-      if (this._keyRequest === 0) {
-        this._keyRequest = (Atomics.load(H, PIXI_KEYED_HEADER.REQUEST) + 1) >>> 0 || 1;
-        Atomics.store(H, PIXI_KEYED_HEADER.REQUEST, this._keyRequest);
-        this._keyWaits = 0;
-      }
-      if (Atomics.load(H, PIXI_KEYED_HEADER.BUFFER0 + (this.keyedBuffer & 1)) !== this._keyRequest) {
-        // N-148: only the queue buffer pre-render served the request in answers it, and Pixi takes the newest queue, so
-        // it may skip that one: ask again after a few frames unanswered.
-        if (++this._keyWaits >= KEYED_REQUEST_FRAMES) this._keyRequest = 0;
-        return -1;
-      }
-    }
+    const frame = this.keyedFrame >>> 0;
+    // E-312: the frame this buffer's marks count from, against the frame the texture holds.
+    const since = Atomics.load(H, PIXI_KEYED_HEADER.SINCE0 + (this.keyedBuffer & 1)) >>> 0;
+    if (since > this._keyDrawn) return -1;
     const k = this._keyedPack;
     // E-201: by queue row when the batch draws so and the queue has its pose columns here.
     const byRow = this.posesByRow && !!q.x && !!q.y && !!q.rotC && !!q.rotS;
     const out = byRow
       ? packKeyedRowsByRowWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity)
       : packKeyedRowsWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity);
-    if (out < 0) {
-      this._keyFrame = -1;
-      return -1;
+    if (out < 0) return -1;
+    // The texture holds this queue frame now (its updates scattered below); pre-render marks from it on.
+    if (frame > this._keyDrawn) {
+      this._keyDrawn = frame;
+      Atomics.store(H, PIXI_KEYED_HEADER.DRAWN, frame);
     }
-    this._keyFrame = frame;
-    this._keyRequest = 0;
     const shadowed = this.keyedShadows && k.shadowed;
     if (shadowed && out > 0) this.copyIn(this._shadowData, this._sharedShadow, out * 3);
     const n = k.updates;

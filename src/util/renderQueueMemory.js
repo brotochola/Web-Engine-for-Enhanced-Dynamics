@@ -195,6 +195,10 @@ function emitLayout(r, entities, rows, customLayers) {
     lfKeyedByte: r.emitLfKeyed.bytes > 0 ? r.emitLfKeyed.byte : -1,
     keyedLiquidFun: r.emitLfKeyed.bytes / EMIT_DECO_KEYED_BYTES,
     lfCheckedByte: r.emitLfChecked.bytes > 0 ? r.emitLfChecked.byte : -1,
+    // E-312: the change frames of the entities, keyed decorations and LiquidFun particles (-1: none).
+    keyChangeByte: r.emitKeyChange.bytes > 0 ? r.emitKeyChange.byte : -1,
+    decoChangeByte: r.emitDecoChange.bytes > 0 ? r.emitDecoChange.byte : -1,
+    lfChangeByte: r.emitLfChange.bytes > 0 ? r.emitLfChange.byte : -1,
     // W27: the Adobe emit's regions, -1 without them (no AdobeAnimComponent).
     adobeAnimByte: r.adobeAnim ? block(r.adobeAnim) : -1,
     stashXByte: r.emitStashX ? r.emitStashX.byte : -1,

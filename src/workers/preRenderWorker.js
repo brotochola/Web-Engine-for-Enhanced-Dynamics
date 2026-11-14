@@ -100,6 +100,7 @@ import {
     bindEmitAdobe,
     bindPreRenderEmit,
     bumpEmitDecorationEpoch,
+    setEmitKeyFrames,
     writeEmitAdobeAssets,
     writeEmitAdobeColumns,
     writeEmitBulletColumns,
@@ -499,6 +500,8 @@ class PreRenderWorker extends AbstractWorker {
          * pixiKeyBase), and whether this frame's sun rows, and so its stamp rows, are keyed caster rows.
          */
         this._keyedKeyBase = 0;
+        // E-312: the last main-queue emit marked every keyed row (Pixi had drawn none keyed).
+        this._keyedAllMarked = false;
         this._gpuSunKeyed = false;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
@@ -2957,25 +2960,22 @@ class PreRenderWorker extends AbstractWorker {
         const ySort = !!source.ySort;
         // -1 when off: buffer 0 is a valid persist target (it used to read as false).
         let persistBuf = source.persist ? this._queueBuf : -1;
-        // E-177: Pixi asked for every keyed statics again (its texture may miss changes): every sprite flagged for this emit,
-        // the request served.
+        // E-312, keyed frames v2: the keys marked for every change after the queue frame Pixi last drew keyed (its header's
+        // DRAWN; 0: none yet, or a statics texture just made), stored with this buffer for Pixi to check against its own.
         const keyHeader = source.persist && this._keyedFrames ? this._keyedHeader : null;
-        // N-148: the request this emit serves (0: none), the only one this queue buffer's keys answer.
-        let served = 0;
+        let keySince = 0;
         if (keyHeader !== null) {
-            const request = Atomics.load(keyHeader, PIXI_KEYED_HEADER.REQUEST);
-            if (request !== keyHeader[PIXI_KEYED_HEADER.SERVED]) {
-                SpriteRenderer.keyedDirty.fill(1);
-                // E-188: and every keyed decoration's.
-                bumpEmitDecorationEpoch(this._emitWasm);
-                keyHeader[PIXI_KEYED_HEADER.SERVED] = request;
-                served = request;
-                // N-148: the full emit answers it, never a persist frame: persist_frame keeps the rows it holds from the
-                // frame before, their keys without the changed bit, so in a still scene Pixi took an answer with no
-                // statics, scattered nothing and drew every sprite at scale 0 for good (a page loaded in a warm browser,
-                // whose request came once pre-render persisted).
+            const keyFrame = (this.renderQueueFrame + 1) >>> 0;
+            const drawn = Atomics.load(keyHeader, PIXI_KEYED_HEADER.DRAWN) >>> 0;
+            keySince = drawn < keyFrame ? drawn : 0;
+            if (keySince === 0) {
+                // Every keyed row marked: the records read again once (as Pixi's resync requests had them), and a full
+                // emit (N-148: a persist frame keeps the rows it holds, written for another frame's marks).
+                if (!this._keyedAllMarked) bumpEmitDecorationEpoch(this._emitWasm);
                 persistBuf = -1;
             }
+            this._keyedAllMarked = keySince === 0;
+            setEmitKeyFrames(this._emitWasm, keyFrame, keySince);
         }
         if (!this._writeEmitTable(source, this._resolveBuiltinTextureId('_bulletTrail'))) {
             return this._emitRefused('a column it reads is outside the render-queue memory');
@@ -3014,12 +3014,9 @@ class PreRenderWorker extends AbstractWorker {
             }
             if (this.renderQueueStaticGen.length) this.renderQueueStaticGen[0] = this._staticGen;
         }
-        // E-177: this queue buffer's keys answer the request served (Pixi draws it keyed once they answer its own). N-148:
-        // only the buffer of the emit that served it: the buffers after it carry only what changed since, and every one
-        // of them stamped the request served let Pixi, which takes the newest queue and so may skip the one that answered,
-        // take one of them for its answer: nothing scattered, every sprite at scale 0 in a still scene.
+        // E-312: the frame this buffer's marks count from (Pixi draws it keyed when its texture is not behind it).
         if (keyHeader !== null) {
-            Atomics.store(keyHeader, PIXI_KEYED_HEADER.BUFFER0 + this._queueBuf, served);
+            Atomics.store(keyHeader, PIXI_KEYED_HEADER.SINCE0 + this._queueBuf, keySince);
         }
         return writeCount;
     }
