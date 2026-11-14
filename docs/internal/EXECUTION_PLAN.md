@@ -4572,6 +4572,8 @@ with megamorphic load calls (each class its own map), and stores `_neighborReade
 Predator's logic: neighborCount 12 %, getNeighbor 8 % (E-240).
 **Plan:** the offset from `index` and the stride, the reader mark per type: one instance load (`index`); the machine code
 first (no megamorphic call left), then E-240's kernel and Predator's logic. Owner: logic.
+**Kept 2026-11-14 (R-1010), kernel claim:** each class compiles its own copy instead (`0024582f`, E-170's way), so
+the loads see one map: neighborAccessMicrobench 4.4–4.9 → 3.0–3.3 ns a neighbour read; Predator's gate clean.
 
 ### E-290 Binding an instance to its entity slot runs megamorphic stores and loads and allocates
 
