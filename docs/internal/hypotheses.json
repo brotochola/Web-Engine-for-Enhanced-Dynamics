@@ -13345,7 +13345,7 @@
       "kind": "speed",
       "rank": 8,
       "result": "get neighborCount 710 ms (12.0 %), getNeighbor 483 ms (8.2 %) of a logic worker over 26 s: a field test and one shared-buffer read each. Machine code (Node 22, R-0992): neighborCount reads `_neighborOffset` and `_neighborReaderMarked` through megamorphic loads (E-289), so part of the cost may be the generic load, not only the row crossing cores.",
-      "next": "Predator rows are 1025 ids (maxNeighbors 1024, about 2 KB): alignment can save at most a line where the count and first ids straddle two (about 17 % of short lists). The two-thread kernel with that row size, padded rows (+3 % memory) against not; the rest is the lists' volume crossing cores (game code reads every neighbour).",
+      "next": "E-289 took the getters' megamorphic loads (R-1010: 4.7 -> 3.2 ns a read, the bare row 2.5). What is left is the rows crossing cores: the two-thread kernel with Predator's row size, padded rows against not.",
       "refs": [
         "EXECUTION_PLAN.md#E-240"
       ],
@@ -13362,7 +13362,8 @@
         "R-0992",
         "R-0994",
         "R-0995",
-        "R-0997"
+        "R-0997",
+        "R-1010"
       ]
     },
     {
@@ -14530,14 +14531,13 @@
     {
       "id": "E-289",
       "title": "GameObject's instance getters read their fields through megamorphic loads in a scene of many classes (neighborCount: _neighborOffset, _neighborReaderMarked)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the machine-code harvest, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-14 (R-1010), kernel claim",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 62,
-      "result": "Machine code (Node 22, neighborAccessMicrobench): `get neighborCount`, a getter on GameObject.prototype that every entity class shares, compiles its `this._neighborOffset`, `this._neighborReaderMarked` and `this._markNeighborReader` as LoadIC_Megamorphic calls and its store of `_neighborReaderMarked` as StoreIC_Megamorphic: each class has its own map, so the shared getter sees many. Predator's logic spends 12 % in neighborCount and 8 % in getNeighbor (E-240).",
-      "next": "Read the per-entity values from columns indexed by the entity (the neighbour row's offset from `index` and the stride, the reader mark per type), so the getter loads `this.index` once and nothing else from the instance; check the machine code shows no megamorphic call left, then E-240's kernel and Predator's logic.",
+      "result": "kept (R-1010): each entity class compiles its own neighborCount and getNeighbor (0024582f): neighborAccessMicrobench 4.4-4.9 -> 3.0-3.3 ns a neighbour read (-33 %, the bare row 2.5); Predator gate clean (logic 4.329 -> 3.945 ms unjudged, the sitting drifted down).",
+      "next": "None. The component getters (FIELD_GETTERS) have the same shared loads but are 0.4 % of Predator logic.",
       "refs": [
         "EXECUTION_PLAN.md#E-289"
       ],
@@ -14551,7 +14551,8 @@
         "R-0992",
         "R-0994",
         "R-0995",
-        "R-0997"
+        "R-0997",
+        "R-1010"
       ]
     },
     {
@@ -24840,6 +24841,18 @@
       "commits": [
         "ee8833d8",
         "c07e3707"
+      ]
+    },
+    {
+      "id": "R-1010",
+      "date": "2026-11-14",
+      "time": "02:27",
+      "timeFrom": "recorded",
+      "title": "E-289 kept (kernel claim): each entity class compiles its own neighborCount and getNeighbor; -33 % a neighbour read, Predator gate clean",
+      "verdict": "kept",
+      "text": "**E-289 kept (kernel claim): each entity class compiles its own neighborCount and getNeighbor.**\n2026-11-14, `main` 0024582f.\n\nChange: GameObject's `neighborCount` getter and `getNeighbor` method are shared by every entity class, so their loads of\n`_neighborOffset`, `_neighborReaderMarked` and `_onPage` saw every class's map and went megamorphic. `_ensureComponentAccessors`\nnow gives each class a copy with GameObject's bodies, compiled apart with `new Function` (E-170's way; GameObject's under a\nCSP without 'unsafe-eval'), unless the class or one between it and GameObject wrote its own; `isEngineAccessor` counts the\nmethod too, so hot swap keeps the copies. tests/node/neighborReadsPerClass.test.js (4 tests); test:node 2598/2598,\ntest:demos 101/101.\n\n- Kernel (neighborAccessMicrobench, Node, 2000 entities, 12 neighbours, 5 classes, 3 runs a side): 4.4-4.9 -> 3.0-3.3 ns a\n  neighbour read (-33 %); the bare row read is 2.4-2.5 ns, so about two thirds of the getters' overhead went.\n- Predator's gate (runPredatorAbab --vs main --hyp-rev, crowd=1.5, 4 pairs, 02:17 to 02:27): no row worse. Spatial\n  7.030 -> 6.470 ms (-6.0 %, 0/4 worse), physics 10.062 -> 9.278 (-8.5 %, 1/4): both unreachable, so the sitting drifted\n  down; logic 4.329 -> 3.945 (-8.9 %, unjudged under the floor; read against the drift it is not separable). Load keys\n  within 0.3 %. Predator's crowd is capped at 1.5 (its pools), so its logic cannot reach the 6 ms floor.\n\nSame idea checked for the component getters (FIELD_GETTERS, shared `this._cN` loads): 0.4 % of Predator's logic self time\n(b2names-1114 CPU pass), so not done. The CPU pass also put `_tickIntervalBucket` at 8.5 %, but E-215 already showed its\ndispatch is not the cost (R-0899).",
+      "commits": [
+        "0024582f"
       ]
     }
   ],
