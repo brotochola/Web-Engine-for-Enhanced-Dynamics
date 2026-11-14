@@ -214,6 +214,11 @@ export async function setupSpatialKernel(opts = {}) {
     cx[c] = 300 + rng() * (cfg.worldWidth - 600);
     cy[c] = 300 + rng() * (cfg.worldHeight - 600);
   }
+  // Each entity's draw (kind, place, velocity), in id order; opts.cellOrderIds (E-295's ceiling) then hands them to
+  // the ids in home-cell order (row-major, stable), as a layout that kept entities by place would number them.
+  const kinds = new Float64Array(n);
+  const px = new Float32Array(n);
+  const py = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const kind = rng();
     let x;
@@ -226,9 +231,33 @@ export async function setupSpatialKernel(opts = {}) {
       x = rng() * cfg.worldWidth;
       y = rng() * cfg.worldHeight;
     }
+    kinds[i] = kind;
+    px[i] = Math.min(cfg.worldWidth - 1, Math.max(1, x));
+    py[i] = Math.min(cfg.worldHeight - 1, Math.max(1, y));
+    vx[i] = kind < 0.8 && !opts.still ? (rng() - 0.5) * 2 : 0;
+    vy[i] = kind < 0.8 && !opts.still ? (rng() - 0.5) * 2 : 0;
+  }
+  const order = Array.from({ length: n }, (_, i) => i);
+  if (opts.cellOrderIds) {
+    const cols = Math.ceil(cfg.worldWidth / cfg.cellSize);
+    const key = new Float64Array(n);
+    for (let i = 0; i < n; i++) key[i] = Math.floor(py[i] / cfg.cellSize) * cols + Math.floor(px[i] / cfg.cellSize);
+    order.sort((a, b) => key[a] - key[b] || a - b);
+    const draws = [kinds.slice(), px.slice(), py.slice(), vx.slice(), vy.slice()];
+    for (let i = 0; i < n; i++) {
+      const from = order[i];
+      kinds[i] = draws[0][from];
+      px[i] = draws[1][from];
+      py[i] = draws[2][from];
+      vx[i] = draws[3][from];
+      vy[i] = draws[4][from];
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    const kind = kinds[i];
     Transform.active[i] = 1;
-    Transform.x[i] = Math.min(cfg.worldWidth - 1, Math.max(1, x));
-    Transform.y[i] = Math.min(cfg.worldHeight - 1, Math.max(1, y));
+    Transform.x[i] = px[i];
+    Transform.y[i] = py[i];
     Transform.rotC[i] = 1;
     Transform.rotS[i] = 0;
     Collider.active[i] = 1;
@@ -238,8 +267,6 @@ export async function setupSpatialKernel(opts = {}) {
     SpriteRenderer.active[i] = 1;
     RigidBody.active[i] = kind < 0.8 ? 1 : 0;
     for (const c of classes) if (i >= c.startIndex && i < c.endIndex) Transform.entityType[i] = c.entityType;
-    vx[i] = kind < 0.8 && !opts.still ? (rng() - 0.5) * 2 : 0;
-    vy[i] = kind < 0.8 && !opts.still ? (rng() - 0.5) * 2 : 0;
     ids.push(i);
   }
   setActiveList(buffers.activeEntitiesData, ids);

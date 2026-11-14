@@ -34,6 +34,8 @@
  * predator: Predator's spatial settings (skin 0.01, 30 frames, stagger 15) and drift, 3 workers.
  * rebuild: every list rebuilt every frame (skin 0, stagger 1): the gather's own cost.
  * --check: the checksum frames only, no timing.
+ * --cell-ids (E-295's ceiling): the entities numbered in home-cell order (setupSpatialKernel's cellOrderIds), so
+ *   neighbours' poses, markers and rows sit near each other, as a layout that kept entities by place would hold them.
  */
 import { Grid } from '../../src/core/grid.js';
 import { isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
@@ -67,6 +69,7 @@ async function main() {
     workers: 3,
     spatial: { ...spatial, gatherCellOrder: v.ordered },
     js: v.gather ? null : { publish: 'kernel' },
+    cellOrderIds: Boolean(args['cell-ids']),
   });
   if (!k.workers.every((w) => w._wasmPub)) throw new Error('the workers did not bind the WASM publish');
   const gather = v.gather ? k.workers[0]._wasmGather : null;
@@ -106,6 +109,7 @@ async function main() {
     feature: 'spatial-gather-wasm',
     variant,
     config,
+    cellOrderIds: Boolean(args['cell-ids']),
     functions: ['findNeighborsForOwnedEntities (tests/reference)', 'SpatialWorker._findNeighbors', v.fn ? `spatialGatherF32.${v.fn}` : 'spatialGather.gather_batch'],
     n: k.n,
     seed: 0x5a71a1,
