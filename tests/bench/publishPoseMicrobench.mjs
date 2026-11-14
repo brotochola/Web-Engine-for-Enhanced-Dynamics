@@ -12,6 +12,8 @@
  * `--holes f`: f of the bodies removed from the dense list for good (empty slots between the runs).
  * `--runs r [--occupancy 0.58]`: the bodies (occupancy of the slots) in r runs spread over the table with gaps between,
  * as entity pools hold them (Predator: 24 800 bodies in 42 600 slots), the dense list in a shuffled order.
+ * `--respawn`: the generation epoch moves every frame (somebody respawned), so publishPose checks each body's
+ * generation (no generation actually changes, so every body still publishes).
  * `--churn f`: f of the bodies swap-removed from the dense list and added back at its end, as despawns and respawns
  * leave it (0: the list in slot order).
  *
@@ -156,7 +158,7 @@ export function loadPost(variant) {
   return globalThis.weedjsPublishPose;
 }
 
-function setup(n, seed, churn = 0, holes = 0, shared = false, runs = 0, occupancy = 0.58) {
+function setup(n, seed, churn = 0, holes = 0, shared = false, runs = 0, occupancy = 0.58, respawn = false) {
   const rng = mulberry32(seed);
   const list = new Int32Array(n);
   // --shared: every column on a SharedArrayBuffer, as the worker's are (Box2D's memory, the pose buffers).
@@ -253,6 +255,7 @@ function setup(n, seed, churn = 0, holes = 0, shared = false, runs = 0, occupanc
   }
   return {
     frame() {
+      if (respawn) Atomics.add(epoch, 0, 1);
       globalThis.weedjsPublishPose();
     },
     checksum,
@@ -270,7 +273,8 @@ function main() {
   const runs = Number(args.runs ?? 0);
   const occupancy = Number(args.occupancy ?? 0.58);
   loadPost(variant);
-  const k = setup(n, seed, churn, holes, shared, runs, occupancy);
+  const respawn = Boolean(args.respawn);
+  const k = setup(n, seed, churn, holes, shared, runs, occupancy, respawn);
   const checksum = k.checksum();
   const cases = {
     publish: timeIt(`publishPose ${variant} (n=${n})`, () => k.frame(), { iterations: 40, warmup: 10 }),
@@ -288,7 +292,7 @@ function main() {
     cases,
   };
   if (args.output) writeReport(String(args.output), report);
-  else console.log(`checksum ${checksum} publish ${variant}${shared ? ' shared' : ''} churn ${churn} holes ${holes}${runs ? ` runs ${runs} occupancy ${occupancy}` : ''} ${cases.publish.opsPerSec.toFixed(1)} ops/s`);
+  else console.log(`checksum ${checksum} publish ${variant}${shared ? ' shared' : ''}${respawn ? ' respawn' : ''} churn ${churn} holes ${holes}${runs ? ` runs ${runs} occupancy ${occupancy}` : ''} ${cases.publish.opsPerSec.toFixed(1)} ops/s`);
 }
 
 if (isCli(import.meta.url)) main();
