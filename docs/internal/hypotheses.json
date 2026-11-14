@@ -14758,6 +14758,27 @@
       ]
     },
     {
+      "id": "E-299",
+      "title": "The neighbour publish walks its batch in id order: reorder it by cell, as the gather's rebuild list (publish_batch 2.1x refills per instruction)",
+      "status": "open",
+      "statusText": "proposed 2026-11-14 from the hardware counters; kernel +10 to +19 % at 60 000 entities; gate running",
+      "date": "2026-11-14",
+      "area": "spatial",
+      "kind": "speed",
+      "rank": 77,
+      "result": "spatialPublishWasmMicrobench --case predator, id vs cell order: 16 500 entities 921 / 1 004 vs 1 001 / 1 008 ops/s (poses fit L2, a tie); 60 000 entities 76 / 72 vs 84 / 86 ops/s (+10.5 / +19.4 %), the same 3 450 823 neighbours.",
+      "next": "Predator's gate (spatial on its hot path); a spatial scene past 6 ms with poses past L2 would show the scene gain.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-299"
+      ],
+      "aliases": [
+        "publish order",
+        "cell order",
+        "publish_batch"
+      ],
+      "records": []
+    },
+    {
       "id": "E-300",
       "title": "The tick dispatch reads obj.tick twice per entity, each a megamorphic load call (two LoadICTrampoline_Megamorphic per entity in d8 16)",
       "status": "dropped",
