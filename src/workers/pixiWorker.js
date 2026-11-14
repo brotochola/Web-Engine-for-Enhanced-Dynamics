@@ -837,6 +837,8 @@ class PixiRenderer extends AbstractWorker {
     // SharedArrayBuffer views (shared with particle_worker)
     this.decalsTilesRGBA = null; // Uint8ClampedArray - RGBA pixel data
     this.decalsTilesDirty = null; // Uint8Array - dirty flags (0=clean, 1=modified)
+    // E-272: the same flags four to a word, for the frame's count (an empty array of its class until decals bind).
+    this._decalDirtyWords = new Uint32Array(0);
 
     // PIXI rendering
     this.decalTileContainer = null; // Container for decal tile sprites
@@ -3519,9 +3521,21 @@ class PixiRenderer extends AbstractWorker {
     if (totalTiles <= 0) return;
 
     const maxUploads = Math.min(this.maxDecalTileUploadsPerFrame || totalTiles, totalTiles);
+    // E-272: the count with plain reads, four flags a word (carScene's 7 644 tiles: 55 us a frame with Atomics.load
+    // per tile, 1.4 in words, Node). It only decides whether to scan and feeds a stat: a flag set while it reads is
+    // seen next frame, which the claim below already allows for.
+    const dirtyFlags = this.decalsTilesDirty;
+    const dirtyWords = this._decalDirtyWords;
+    const wordCount = dirtyWords.length;
     let dirtyN = 0;
-    for (let i = 0; i < totalTiles; i++) {
-      if (Atomics.load(this.decalsTilesDirty, i)) dirtyN++;
+    for (let k = 0; k < wordCount; k++) {
+      const v = dirtyWords[k];
+      if (v !== 0) {
+        dirtyN += ((v & 0xff) !== 0 ? 1 : 0) + ((v & 0xff00) !== 0 ? 1 : 0) + ((v & 0xff0000) !== 0 ? 1 : 0) + (v >>> 24 !== 0 ? 1 : 0);
+      }
+    }
+    for (let i = wordCount << 2; i < totalTiles; i++) {
+      if (dirtyFlags[i] !== 0) dirtyN++;
     }
     this._decalTilesDirtyThisFrame = dirtyN;
     if (dirtyN === 0) {
@@ -3536,14 +3550,15 @@ class PixiRenderer extends AbstractWorker {
     // B-03. This flag has two agents writing it from two workers: the stamp
     // side sets 1, this loop sets 0. Both transitions are atomic now, and the
     // claim is an exchange rather than a read-then-clear so the two cannot
-    // interleave between the check and the clear.
-    const dirtyFlags = this.decalsTilesDirty;
+    // interleave between the check and the clear. E-272: a plain read first, so a clean tile costs a load, not an
+    // exchange (which takes the flag's line from the stamping worker every frame); a flag that turns 1 just after it
+    // is read waits a frame, as one set after the exchange does.
 
     while (scanned < totalTiles && processed < maxUploads) {
       // Claim the tile. If a stamp lands after this exchange it re-sets the
       // flag and the tile is picked up next frame - that is the direction that
       // self-heals, so clearing here can never lose an update.
-      if (Atomics.exchange(dirtyFlags, tileIndex, 0) === 0) {
+      if (dirtyFlags[tileIndex] === 0 || Atomics.exchange(dirtyFlags, tileIndex, 0) === 0) {
         tileIndex = (tileIndex + 1) % totalTiles;
         scanned++;
         continue;
@@ -7787,6 +7802,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (!data.decals.memory || !data.decals.memoryLayout) throw new Error('decals without the decal memory (installDecalMemory)');
       this._decalPremultiply = await bindDecalPremultiply(data.decals.memory, data.decals.memoryLayout);
       this.decalsTilesDirty = new Uint8Array(data.decals.tilesDirty);
+      this._decalDirtyWords = new Uint32Array(data.decals.tilesDirty, 0, data.decals.tilesDirty.byteLength >> 2);
 
       // Create decal tile container (renders between background and entities). E-175: a render group, so the camera
       // moving it each frame moves the group's transform, not every tile's, and its batches are kept until a tile changes.
