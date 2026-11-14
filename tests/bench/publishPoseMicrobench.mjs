@@ -154,13 +154,15 @@ export function loadPost(variant) {
   return globalThis.weedjsPublishPose;
 }
 
-function setup(n, seed, churn = 0, holes = 0) {
+function setup(n, seed, churn = 0, holes = 0, shared = false) {
   const rng = mulberry32(seed);
   const list = new Int32Array(n);
-  const x = new Float32Array(n);
-  const y = new Float32Array(n);
-  const rotC = new Float32Array(n);
-  const rotS = new Float32Array(n);
+  // --shared: every column on a SharedArrayBuffer, as the worker's are (Box2D's memory, the pose buffers).
+  const f32 = (len) => (shared ? new Float32Array(new SharedArrayBuffer(len * 4)) : new Float32Array(len));
+  const x = f32(n);
+  const y = f32(n);
+  const rotC = f32(n);
+  const rotS = f32(n);
   const generation = new Int32Array(new SharedArrayBuffer(n * 4));
   const seen = new Int32Array(n);
   const epoch = new Int32Array(new SharedArrayBuffer(4));
@@ -193,10 +195,10 @@ function setup(n, seed, churn = 0, holes = 0) {
   for (let d = 0; d < count; d++) densePositions[list[d]] = d;
   const poseSync = new Int32Array(new SharedArrayBuffer(8));
   const mk = () => ({
-    x: new Float32Array(n),
-    y: new Float32Array(n),
-    rotC: new Float32Array(n),
-    rotS: new Float32Array(n),
+    x: f32(n),
+    y: f32(n),
+    rotC: f32(n),
+    rotS: f32(n),
   });
   const poseBuffers = [mk(), mk()];
   globalThis.weedjsBindPoseBench({
@@ -245,8 +247,9 @@ function main() {
   const seed = Number(args.seed ?? 0x0b2d);
   const churn = Number(args.churn ?? 0);
   const holes = Number(args.holes ?? 0);
+  const shared = Boolean(args.shared);
   loadPost(variant);
-  const k = setup(n, seed, churn, holes);
+  const k = setup(n, seed, churn, holes, shared);
   const checksum = k.checksum();
   const cases = {
     publish: timeIt(`publishPose ${variant} (n=${n})`, () => k.frame(), { iterations: 40, warmup: 10 }),
@@ -264,7 +267,7 @@ function main() {
     cases,
   };
   if (args.output) writeReport(String(args.output), report);
-  else console.log(`checksum ${checksum} publish ${variant} churn ${churn} holes ${holes} ${cases.publish.opsPerSec.toFixed(1)} ops/s`);
+  else console.log(`checksum ${checksum} publish ${variant}${shared ? ' shared' : ''} churn ${churn} holes ${holes} ${cases.publish.opsPerSec.toFixed(1)} ops/s`);
 }
 
 if (isCli(import.meta.url)) main();
