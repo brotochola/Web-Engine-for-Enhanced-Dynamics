@@ -1416,7 +1416,9 @@ static config = {
 };
 ```
 
-Each caster is a card standing on its foot, facing the sun, cut out by its picture's alpha. A sheet with a `heightMap` gives the card's depth from it. The shadows of the lamps are as before. WebGL only for now (on WebGPU it warns and keeps `'sprite'`), and not with raycasted lighting.
+Each caster is a card standing on its foot, facing the sun, cut out by its picture's alpha. A sheet with a `heightMap` gives the card's depth from it. A `DirectionalSprite` casts the frame the sun sees: a person walking towards the camera with the sun to its side casts the shadow of its profile. The shadows of the lamps are as before. WebGL only for now (on WebGPU it warns and keeps `'sprite'`), and not with raycasted lighting.
+
+`lighting.selfShadow: true` adds the shade a surface casts on itself and its neighbours: a face or a sprite with a height map looks towards the sun over the heights around it, and what rises above that line takes the sun out (an arm over a body, a crate's lid over its front). It works with either `sunShadows`, costs a few lookups a lit pixel that has a height, and is WebGL only for now.
 
 ### Faces that light as surfaces: `lighting.faces`
 

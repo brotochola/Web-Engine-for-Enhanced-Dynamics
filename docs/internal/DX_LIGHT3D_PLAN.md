@@ -746,7 +746,7 @@ mira al sol; si el sheet tiene heightmap, la profundidad sale del mapa (el cart�
 pasada de luz busca el punto de caída de cada pixel con su altura (caras y sprites con mapas) y saca solo el término del
 sol. Captura en WebGL: sombras en el piso, sin acné en las tapas; `faceLightScene` y `lightGalleryScene` iguales byte a
 byte. **Falta:** WebGPU (avisa y queda en `'sprite'`), los caminos con clave (E-191/E-211: en modo mapa se usan las
-filas completas), el cuadro que ve el sol (DirectionalSprite) y la base medida (tabla de F3), cajas y cascos de
+filas completas), la base medida (tabla de F3), cajas y cascos de
 `VolumeShadowCaster` en el mapa, la cache de lo quieto, `shadowOutlineCheck`, `sunShadowMapStressScene` propia y la
 aprobación del dueño con la captura del árbol sobre el auto.
 
@@ -762,6 +762,13 @@ de DX-VOLLIGHTS), dos faroles se iluminan uno la sombra del otro, y Predator de 
 
 **Hecho cuando** el auto y la cama del banco no muestran damero (captura aprobada), y `selfShadowStressScene` mide el
 costo por pixel con 1, 2 y 4 rayos para elegir.
+
+**Cómo quedó (rama), primera versión:** `lighting.selfShadow: true`. En la pasada de luz, un pixel con cara o con
+heightmap da pasos hacia el sol sobre las alturas del face map (espacio de pantalla, como el relieve del banco); si una
+superficie sube por encima del rayo, se saca el término directo del sol. Contra los puntitos: el primer paso salta los
+vecinos del pixel, el sesgo crece con la distancia y la prueba se apaga cerca del terminador. En las formas de prueba
+quedan unos pocos puntos en el terminador de la esfera (455 px en la captura). Faltan los faroles, WebGPU y el id de
+entidad.
 
 ### F9. `ShadowCaster` único (DX-CASTER)
 
@@ -1039,4 +1046,5 @@ Lo que está hecho en la rama, fase por fase, con su commit. Se actualiza con ca
 | F2 `DirectionalSprite` | hecho (falta el ABAB del dueño) | 4bf4d21 … f439060 | resolución en la lógica, no en el pre-render; forma `frames` pendiente; R-1043: empate contra el selector a mano en esta VM |
 | F3 mapas | en parte | 7d12c25, f4faf77, b2bf7c2 | página gemela y test de alineación; faltan tabla de sombra por cuadro, bake y `weed maps` |
 | F4 G-buffer | primera versión | f376849 | face map generalizado; faltan `normals`/`surface`, id de entidad, MRT, microbench de GPU y ver WebGPU |
-| F6 sombras del sol | primera versión | a323a1d, bb18952 | `sunShadows: 'map'`, WebGL; faltan WebGPU, caminos con clave, cuadro que ve el sol, volúmenes, cache |
+| F6 sombras del sol | primera versión | a323a1d, bb18952, 2222a32 | `sunShadows: 'map'`, WebGL, con el cuadro que ve el sol (DirectionalSprite); faltan WebGPU, caminos con clave, volúmenes, cache |
+| F8 autosombra | primera versión | 2d1eb1e, d1de9e5 | `lighting.selfShadow`, sol, WebGL; faltan faroles, WebGPU y el id de entidad (que una luz no se tape con lo suyo) |
