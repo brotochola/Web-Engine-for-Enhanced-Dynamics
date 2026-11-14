@@ -11311,7 +11311,8 @@
         "BunnyMark"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-1030"
       ],
       "rank": 27
     },
@@ -25141,6 +25142,15 @@
       "title": "Faster sittings calibrated: --pool and --early kept (~5 min a 4-pair sitting), 5 s / 6 s timings rejected (A/A false -8.7 % in ballsHeavy)",
       "verdict": "note",
       "text": "**Faster sittings, calibrated: --pool and --early kept, 5 s / 6 s timings rejected by an A/A.**\n2026-11-14, 14:09 to 14:20 (the two sittings' logs). Where a 4-pair sitting's ~9.5 minutes went: ~2 making and removing\ntwo worktrees of 2 100 files, ~4.5 in the eight runs (10 s warm-up + 10 s window + Chrome and the scene's boot), the\nrest between runs. 4f46c602 adds runPredatorAbab --pool (two fixed worktrees, ../weed-ab/pool-a and pool-b, checked out\nto each sitting's revisions, never pruned) and --early (2 pairs, stop only when each pair clears twice the bar).\n\n- A/A Predator crowd=1.5, --pool (first use: the pool made), 5 s warm-up, 6 s window, 4 pairs: 6 min 3 s; physics\n  paired -2.1 %, 1/4, cv 14/7 % (Predator's usual noise).\n- A/A ballsHeavy, --pool reused, 5 s / 6 s, 4 pairs: 4 min 12 s, against 6 min 57 s for the morning's total sitting\n  with fresh worktrees and 10 s / 10 s; but physics read -8.7 % paired, 1/4 worse, cv 10/7 % (3/2 % at 10 s / 10 s):\n  a false keep on identical code. The short warm-up leaves ballsHeavy unsettled in some runs (p95 12.4 ms on one side).\n\nDecision (HOW_WE_MEASURE rule 7: a new way stays only if it lowers the noise for the same machine time): --pool and\n--early kept, timings stay 10 s / 10 s. Expected: ~5 minutes a 4-pair sitting, ~3 when --early decides at 2."
+    },
+    {
+      "id": "R-1030",
+      "date": "2026-11-14",
+      "time": "14:23",
+      "timeFrom": "recorded",
+      "title": "E-201 step 0: a pose table by key cuts the keyed pack 45-60 % in the cross-core kernel (0.14-0.23 -> 0.08-0.09 ms)",
+      "verdict": "note",
+      "text": "**E-201 step 0: a pose table by key would take Pixi's keyed pack from 0.14-0.23 to 0.08-0.09 ms in the cross-core kernel.**\n2026-11-14 ~14:30, gpuPackKeyedCrossCoreMicrobench --writer other (a worker thread rewrites the queue's columns, and\nthe pose table, before each pack), 23 500 rows (Predator's queue), 42 600 entities, 3 rounds: --pack gather (today's\npack_sprites_keyed) 0.150 / 0.229 / 0.143 ms, --pack table (the table copied whole into Pixi's array, the slot stream\nfrom the keys in the painter's order) 0.081 / 0.088 / 0.091 ms: 45 to 60 % less.\n\nBytes up: today 20 per drawn sprite (pose 16, slot 4: about 470 KB a Predator frame); the table 16 per entity (about\n680 KB) plus the slots. Interpolation is off in Predator (preRender and renderer), so a first version needs the\ncurrent pose only. The table must come from pre-render by key (a queue row's pose is not always its entity's\nTransform: offsets, elevation, children, swaying decorations); a table Pixi built from the queue would read the same\ncross-core lines as today (E-193 step 1, R-0864). The kernel times a tenth of the scene's cost (R-0813), so in\nPredator the renderer might save about 0.3 to 0.5 ms a frame; the renderer is not what bounds the frame at scale\n(physics 13 ms, spatial 10 at crowd 2.5)."
     }
   ],
   "leads": [
