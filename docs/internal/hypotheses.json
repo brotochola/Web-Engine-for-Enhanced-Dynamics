@@ -13361,7 +13361,8 @@
         "R-0961",
         "R-0992",
         "R-0994",
-        "R-0995"
+        "R-0995",
+        "R-0997"
       ]
     },
     {
@@ -14539,7 +14540,8 @@
       "records": [
         "R-0992",
         "R-0994",
-        "R-0995"
+        "R-0995",
+        "R-0997"
       ]
     },
     {
@@ -14610,6 +14612,120 @@
       ],
       "records": [
         "R-0994"
+      ]
+    },
+    {
+      "id": "E-293",
+      "title": "Spatial runs V8's DeoptimizeCode once a frame in Predator (60 a second for the whole run)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the hardware-counter and trace harvest, not tested",
+      "date": "2026-11-13",
+      "area": "spatial",
+      "kind": "speed",
+      "rank": 71,
+      "result": "Chrome trace with the `v8` category: the spatial worker emits `V8.DeoptimizeCode` 60 times a second for the whole run (730 events in 12 s, ~16 µs each); the logic workers 50 to 70 a second for a while, the others only in warm-up. `_findNeighbors` was compiled by TurboFan seven times (E-303), not 720, so most events find little to do but still walk the code.",
+      "next": "A run with --log-deopt and code-dependency-change lines on spatial to name the dependency broken each frame (a field constness or map written in the frame loop, a prototype, a script let); remove it, check the events stop, then spatial STEP_MS on stationarySpatialWide and Predator.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-293"
+      ],
+      "aliases": [
+        "DeoptimizeCode",
+        "per-frame deopt",
+        "spatial deopt"
+      ],
+      "records": [
+        "R-0997"
+      ]
+    },
+    {
+      "id": "E-294",
+      "title": "pack_sprites_keyed waits on memory more than any other engine kernel (5.1 times the refills per instruction)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the hardware-counter and trace harvest, not tested",
+      "date": "2026-11-13",
+      "area": "renderer",
+      "kind": "speed",
+      "rank": 72,
+      "result": "WPR hardware-counter samples mapped to V8's code (Predator, three runs: TotalIssues, DcacheAccesses, DCRefillFromSystem): Pixi's `pack_sprites_keyed` takes 4.0 % of Chrome's refills from beyond L2 at 0.8 % of its instructions, 5.1 times the process's refills per instruction, the highest of any engine function (most engine kernels 0.2 to 0.6, Box2D's solver 1.5 to 1.8).",
+      "next": "Read its access pattern (keyed reads across the sprite columns in key order); a kernel with the scene's key distribution, then a gather in memory order or a prefetch-friendly layout; Pixi STEP_MS on spritePackStress and Predator.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-294"
+      ],
+      "aliases": [
+        "pack_sprites_keyed",
+        "cache misses",
+        "memory-bound"
+      ],
+      "records": [
+        "R-0997"
+      ]
+    },
+    {
+      "id": "E-295",
+      "title": "Spatial's gather_batch and publish_batch take 19 % of Chrome's memory refills in Predator (2.4 and 2.1 times the average per instruction)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the hardware-counter and trace harvest, not tested",
+      "date": "2026-11-13",
+      "area": "spatial",
+      "kind": "speed",
+      "rank": 73,
+      "result": "Same capture: `gather_batch` 11.2 % and `publish_batch` 7.9 % of the refills from beyond L2 at 4.6 and 3.8 % of the instructions. Publish writes rows other workers read on other cores, so part of it is the hand-off itself.",
+      "next": "Split the refills between the gather's reads and the publish's writes (a kernel with the scene's layout), then write only rows that changed or pack the published fields; spatial STEP_MS on stationarySpatialWide and Predator.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-295"
+      ],
+      "aliases": [
+        "gather_batch",
+        "publish_batch",
+        "memory-bound"
+      ],
+      "records": [
+        "R-0997"
+      ]
+    },
+    {
+      "id": "E-296",
+      "title": "_processSpawnSoA deopts in steady state: about 110 eager deopts each at two lines without type feedback (Predator)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the hardware-counter and trace harvest, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 74,
+      "result": "Predator's deopt pass: ~110 steady-state eager deopts each at logicWorker.js lines 871 and 882 ('Insufficient type feedback for generic named access / compare operation') inside `_processSpawnSoA`, compiled by TurboFan at 2.35 s and again at 5.38 s: branches first taken after warm-up.",
+      "next": "Name the branches; give them feedback early or move the rare path to its own function so the hot one keeps its code; the deopt pass again, then the spawn scenes logic STEP_MS.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-296"
+      ],
+      "aliases": [
+        "_processSpawnSoA",
+        "steady deopt",
+        "insufficient type feedback"
+      ],
+      "records": [
+        "R-0997"
+      ]
+    },
+    {
+      "id": "E-297",
+      "title": "Predator's soldiers scan every neighbour for a target each frame: findACivilianToShoot is 9.6 % of Chrome's instructions",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the hardware-counter and trace harvest, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 75,
+      "result": "WPR samples: the demo's `findACivilianToShoot` is the largest single consumer of instructions in Chrome (9.6 %), with getNeighbor, get neighborCount and hasLineOfSight inlined; 0.19 refills per instruction, so instruction-bound, not memory-bound (the read count costs: E-289, E-304).",
+      "next": "Demo code, public API: a soldier with a live target keeps it and rescans every few frames, staggered by index; Predator logic STEP_MS. Predator is the gate scene: the change moves its baseline, so it goes in alone and the gate reruns after.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-297"
+      ],
+      "aliases": [
+        "findACivilianToShoot",
+        "Predator soldier scan"
+      ],
+      "records": [
+        "R-0997"
       ]
     },
     {
@@ -14727,7 +14843,8 @@
         "hoist neighborCount"
       ],
       "records": [
-        "R-0996"
+        "R-0996",
+        "R-0997"
       ]
     }
   ],
@@ -24508,6 +24625,18 @@
       "title": "The bytecode and machine-code harvest on Predator's hot JS: E-300 to E-304 written, E-278 annotated (the emitter's inlining budget)",
       "verdict": "note",
       "text": "**The bytecode and machine-code harvest on Predator's hot JS: E-300 to E-304 written, E-278 annotated.**\n2026-11-13, 21:08 to 21:15 (owner's request: hypotheses from the bytecode only, no sittings).\n\n**Sources.** Chrome 151's own bytecode and inlining from Predator's code pass (R-0994's run, `summarizeV8Code`\ndumps, 20:47), and d8 16.0.39 machine code (`--print-opt-code --no-debug-code --code-comments`) over kernels bundled\nfor d8 (`D:\\perf-tools\\d8kit`: fsmTickMicrobench, rayMicrobench, neighborAccessMicrobench, and an eight-class loop of\nthe tick dispatch's shape). The kernels that load a real worker (tickLoop, contacts, spatialWorker) or use Node's\nthreads (querySystem) do not run in d8 yet. No timing was taken.\n\n**Read:**\n- Tick dispatch (E-300): `obj.tick` is loaded twice per entity in all five tick paths; in d8 16 each is a\n  `LoadICTrampoline_Megamorphic` call over eight classes (a prototype method gets no inline map cache, unlike instance\n  fields, R-0995). Resolved per bucket and called with `.call`: no load left, one `Call_ReceiverIsAny`.\n- FSM (E-301, E-253): the four `LoadIC_Megamorphic` calls in `FSM.tick` are `onExit` and `onEnter` on the transition\n  path (each loaded for its test and its call; 17 state classes in Predator), not the class's columns, which stay\n  inline in the kernel. The per-tick `onUpdate` already goes through `_onUpdates` and `Call_ReceiverIsAny`.\n- Collision stay (E-302): `_processBox2dCollisionCallbacks` (684 B, 330 ms self, six TurboFan compiles in warm-up)\n  walks every pair each frame; Predator defines no `onCollisionStay`.\n- Spatial (E-303): `_findNeighbors` compiled by TurboFan seven times, the last at 13.2 s.\n- Neighbour loops (E-304): `k < this.neighborCount` keeps five megamorphic checks a neighbour in the loop against one\n  with the count read first; the guide's ENTITY_TEMPLATE.js and nine demo loops use that form.\n- Emitter (E-278): `ParticleEmitter._spawn` is 4733 B of bytecode and 24.8 KB of TurboFan code, and its 920-byte\n  inlining budget is spent (932) by once-per-call functions (`syncParticleFeed` 260 B, `getTextureId` 110,\n  `_mergeCfg` 65, `acquireIndices` 75) and by `rng` (197 B on main: E-278's step 1 is not merged): seven of its ten\n  per-particle `randomRange` calls stay real calls, each returning a boxed double, and `checkEmit` (501 B) is over\n  460. Making `rng` small alone does not free enough budget; the per-particle draws need their own function or E-278's\n  per-burst Float64Array.\n- Rays (E-291): `_boxRayDistance` stays a call from `_checkCellEntities`' loop in d8 too (TurboFan code of its own\n  there, 1256 B; in Chrome's Predator run it stayed in Sparkplug).\n\nFiles (not in the repo): `C:\\weed-traces\\d8-predator\\` (asm.txt and summary.txt per kernel, Turbolizer JSON under\nneighbors\\turbo)."
+    },
+    {
+      "id": "R-0997",
+      "date": "2026-11-13",
+      "time": "21:52",
+      "timeFrom": "recorded",
+      "title": "Hardware counters per JS and wasm function in Chrome (WPR + V8 code log), Predator: findACivilianToShoot 9.6 % of instructions, pack_sprites_keyed 5.1x refills, spatial deopts each frame",
+      "verdict": "note",
+      "text": "**Hardware counters per JS and wasm function in Chrome, first reading (Predator): WPR samples mapped to V8's code log.**\n2026-11-13, 21:52 to 22:00 (result files' times), `main` at 6f1d2fa5, from source, headed, detailed stats off.\n\n**Tools.** uProf (AMD) does not store samples outside a module, per process or system-wide as admin: Chrome's JS and\nwasm were invisible to it (checked in its DuckDB files). Windows' own recorder (WPR, `PmcProfile` with one sampled\ncounter per capture, run elevated through two owner-made scheduled tasks) keeps every sample with its instruction\naddress. Each capture is one scene run with `--js-flags=--log-code`; the samples are mapped to the run's code objects\n(JS tiers and wasm), and to workers by the thread that ran them. On this Ryzen 4800H the working sources are\n`TotalIssues` (instructions), `DcacheAccesses` and `DCRefillFromSystem` (refills from beyond L2); `DcacheMisses` and\n`DCMiss` count nothing (legacy names), validated on a strided-read probe whose thread dominated each working counter.\nOne counter per run, so shares are compared across three runs of the same scene.\n\n**Predator, shares of Chrome's samples (instructions / refills):**\n- The demo's `findACivilianToShoot` 9.6 % / 1.8 %: the largest instruction consumer in the process, engine getters\n  (getNeighbor, neighborCount) and hasLineOfSight inlined; instruction-bound (E-297, E-289, E-304). The game's neighbour\n  loops sit at about 1x the average refills per instruction: E-240's \"a core away\" is not what costs; the count of\n  reads is.\n- Memory-bound engine kernels (refills per instruction against the process average): Pixi's `pack_sprites_keyed` 5.1x\n  (4.0 % of refills at 0.8 % of instructions, E-294); spatial's `gather_batch` 2.4x and `publish_batch` 2.1x (19 % of\n  refills together, E-295); Box2D's hot wasm functions 1.5 to 1.8x; `_processBox2dCollisionCallbacks` 1.2x.\n  Compute-bound: `emit_rows`, `collect_sprites`, `publishPose`, `_tickIntervalBucket` at 0.1 to 0.3x.\n- chrome.dll (V8's runtime and GC, Blink, the GPU client) 13 % of instructions and 20 % of refills.\n\n**Also read tonight (Chrome trace, `--trace-categories v8`):** spatial emits `V8.DeoptimizeCode` 60 times a second for the\nwhole run (E-293). Release Chrome 157 has no runtime-call-stats in its traces (category on, no data).\n\n**Machine noise (system-wide uProf capture, 12 s):** two Windows PowerShell starts (my status checks) were 35.8 % of the\nbusy cycles, Chrome 32.5 %, VS Code 12.8 %: no PowerShell during a sitting.",
+      "commits": [
+        "6f1d2fa5"
+      ]
     }
   ],
   "leads": [
