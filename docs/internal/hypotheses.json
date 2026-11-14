@@ -13533,7 +13533,8 @@
         "R-1019",
         "R-1022",
         "R-1023",
-        "R-1024"
+        "R-1024",
+        "R-1028"
       ]
     },
     {
@@ -25116,6 +25117,19 @@
       "title": "E-306 dropped: margin fraction 0.25 leaves Predator crowd 2.5's physics level (13.212 -> 13.215 ms, +2.9 % paired, 2/4)",
       "verdict": "dropped",
       "text": "**E-306 dropped: the AABB margin fraction 0.25 does not move Predator at crowd 2.5's physics.**\n2026-11-14 ~13:55 to 14:07, runPredatorAbab --vs main --hyp-rev w14s/e306 (Box2D 63151e4) --query crowd=2.5 --owner physics,\n4 pairs: physics 13.212 -> 13.215 ms, paired +2.9 %, 2/4 worse, cv 12/4 %; logic +1.9 %, spatial +0.5 %; pre-render +5.1 %\n(3/4, a worker the change cannot reach: drift), verdict REGRESSION on that row. The probe's -5 % (R-1026, one thread,\nBox2D's tasks inline) does not survive the pool: the tree work it saves runs in parallel tasks, and the fatter boxes add\ncandidate pairs. Box2D's tuning note stands for these crowds too. Branch weedjs/e306 kept in the Box2D repo, not merged;\nthe WeedJS branch w14s/e306 deleted."
+    },
+    {
+      "id": "R-1028",
+      "date": "2026-11-14",
+      "time": "14:07",
+      "timeFrom": "recorded",
+      "title": "E-246 step 3 kept (kernel claim): after a respawn, generations checked in slot order, stretches copied with set(); kernel 978 -> 6.5k ops/s",
+      "verdict": "kept",
+      "text": "**E-246 step 3 kept (kernel claim): after a respawn publishPose checks generations in slot order and copies the stretches between.**\n2026-11-14, main d7a0e85d (kernel f91aee78).\n\nFound in Predator at crowd 2.5 (Box2D by name): publishPose 20 ms/s on the physics thread, its hot line the per-body\ngeneration check. A crowd that dies and respawns moves the generation epoch every frame, so the fast path never ran.\nNow, with the slots in long runs, the slots are walked in order, each generation compared with a plain read (the writer\nbumps a generation with Atomics.add before the epoch, which publishPose reads with Atomics.load first, so every bump\nbehind that epoch is visible), and the stretches between respawned slots copied with set().\n\n- Kernel (publishPoseMicrobench --n 57600 --occupancy 0.67 --shared): --runs 40 --respawn 978 -> 6.4-6.7k ops/s; the\n  slot order alone with Atomics.load gave 1.47k, the plain read 2.70k, set() on the stretches the rest. --churn 0.3\n  --respawn 714-764 -> 5.7-5.9k. Without --respawn unchanged. Checksums equal; publishPoseBySlot.test.js covers the\n  path (a respawned slot inside a 300-slot run).\n- Predator crowd=2.5, owner physics, 4 pairs (13:59 to 14:06): physics 13.831 -> 13.692 ms, paired -1.4 %, 2/4 worse,\n  NEUTRAL; no row worse (spatial -2.9 %, pre-render -2.4 %).",
+      "commits": [
+        "d7a0e85d",
+        "f91aee78"
+      ]
     }
   ],
   "leads": [
