@@ -15111,6 +15111,27 @@
         "R-1037",
         "R-1040"
       ]
+    },
+    {
+      "id": "E-311",
+      "title": "Pixi's updateLighting boxes a double per visible light per frame (Predator crowd 1.5: 54.5 KB/s of Pixi's 302.7)",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-14 (R-1043)",
+      "date": "2026-11-14",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "kept-hygiene (R-1043): _packLightData and _writeSunUniforms (4a5e962d): Pixi's allocation 302.7 -> 251.1 KB/s (updateLighting 54.5 -> 2.3); Predator crowd 1.5 neutral, no worker worse.",
+      "next": "None.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-311"
+      ],
+      "aliases": [
+        "updateLighting allocation",
+        "_packLightData"
+      ],
+      "records": [
+        "R-1043"
+      ]
     }
   ],
   "records": [
@@ -25406,6 +25427,19 @@
         "79917247",
         "54140f87",
         "e55a2135"
+      ]
+    },
+    {
+      "id": "R-1043",
+      "date": "2026-11-14",
+      "time": "17:47",
+      "timeFrom": "recorded",
+      "title": "E-311 kept (hygiene): updateLighting's per-light pack and sun uniforms in methods of their own; Pixi 302.7 -> 251.1 KB/s, Predator neutral",
+      "verdict": "kept-hygiene",
+      "text": "**E-311 kept (hygiene): two pieces of Pixi's updateLighting in methods of their own take 52 KB/s off Pixi's allocation.**\n2026-11-14, 17:33 to 17:47 (result files), main 4a5e962d (bf320cd7).\n\nFound in the day's heap pass (Predator crowd=1.5, 16:47): Pixi allocated 302.7 KB/s, and the largest site of engine code\nwas updateLighting itself, 54.5 KB/s (the rest Pixi's own internals: bind 44.9, buffer events 41.7, ...). Its only\nexplicit allocation is a Float32Array grown when the light count rises (cold); TurboFan compiles it (1 395 bytecode\nbytes, 21 functions inlined, 15.6 KB of machine code); 54.5 KB/s at 60 fps is ~900 bytes a frame, ~57 heap numbers:\nabout one per visible light (~50) plus the sun and night uniforms.\n\n- Experiment (not committed): the per-light loop and the sun block each moved into a method; the heap pass named neither\n  the loop (nothing allocated) nor updateLighting; the sun method 2.7 KB/s. Pixi 302.7 -> 256.3 KB/s.\n- Shipped: _packLightData (the per-light pack, the columns it reads with it) and _writeSunUniforms (sun and night\n  uniforms). Heap pass after the first: updateLighting 12.1 KB/s, Pixi 265.4; after both: Pixi 251.1 KB/s (-17 %),\n  updateLighting under the list (2.3 KB/s), _writeSunUniforms 1.7, _packLightData nothing.\n- Why: the same loop compiled on its own keeps its doubles unboxed; inside the large caller TurboFan boxed one per\n  light, the pattern CLAUDE.md records for large callers (E-66, E-85). Not traced further (a --trace-turbo of the\n  function would name the node).\n- Predator crowd=1.5, runPredatorAbab --vs main --hyp-rev w14s/e311 --owner renderer --pool --early, 4 pairs, 17:40:56\n  to 17:47:04: NEUTRAL (below floor), no worker worse; renderer 2.342 -> 2.229 ms.\n- test:node 2630/2630, test:demos 101/101.",
+      "commits": [
+        "bf320cd7",
+        "4a5e962d"
       ]
     }
   ],
