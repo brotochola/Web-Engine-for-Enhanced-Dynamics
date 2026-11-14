@@ -13628,7 +13628,8 @@
         "R-0966",
         "R-0967",
         "R-0971",
-        "R-0980"
+        "R-0980",
+        "R-0998"
       ]
     },
     {
@@ -14570,12 +14571,11 @@
     {
       "id": "E-291",
       "title": "_boxRayDistance is 493 bytes of bytecode, over TurboFan's 460: never inlined, it stays in Sparkplug and boxes its doubles (Predator logic 20 KB/s)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from Predator's code pass, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13: small; inlining blocked by _checkCellEntities's budget (565 of 920)",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 64,
       "result": "Code pass (summarizeV8Code, Chrome 151): `_shapeRayDistance` is in TurboFan and inlines `_circleRayDistance` (358 B), but `_boxRayDistance` (493 B) is over the 460-byte limit, so every box a ray tests is a real call. Called too rarely to tier up on its own, it stayed in Sparkplug for the whole run (Ignition 2.98 s, Sparkplug 3.49 s, nothing above), and Sparkplug keeps every double in a HeapNumber: the heap pass's 20.4 KB/s at `_boxRayDistance` in a Predator logic worker.",
       "next": "Bring it under 460 bytes so `_shapeRayDistance` inlines it (358 of 920 bytes of budget spent there); the code pass shows it inlined, the heap pass the site at zero, then a hygiene gate on a ray scene. The same check for `_polygonRayDistance` and `_chainRayDistance` (six doubles passed to `ChainPoints.rayDistance`).",
       "refs": [
@@ -14588,7 +14588,8 @@
       ],
       "records": [
         "R-0994",
-        "R-0996"
+        "R-0996",
+        "R-0998"
       ]
     },
     {
@@ -14617,12 +14618,11 @@
     {
       "id": "E-293",
       "title": "Spatial runs V8's DeoptimizeCode once a frame in Predator (60 a second for the whole run)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the hardware-counter and trace harvest, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-13: E-251's OSR deopt loop at the same site, 0.3 % of spatial",
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 71,
       "result": "Chrome trace with the `v8` category: the spatial worker emits `V8.DeoptimizeCode` 60 times a second for the whole run (730 events in 12 s, ~16 µs each); the logic workers 50 to 70 a second for a while, the others only in warm-up. `_findNeighbors` was compiled by TurboFan seven times (E-303), not 720, so most events find little to do but still walk the code.",
       "next": "A run with --log-deopt and code-dependency-change lines on spatial to name the dependency broken each frame (a field constness or map written in the frame loop, a prototype, a script let); remove it, check the events stop, then spatial STEP_MS on stationarySpatialWide and Predator.",
       "refs": [
@@ -14634,7 +14634,8 @@
         "spatial deopt"
       ],
       "records": [
-        "R-0997"
+        "R-0997",
+        "R-0998"
       ]
     },
     {
@@ -24637,6 +24638,15 @@
       "commits": [
         "6f1d2fa5"
       ]
+    },
+    {
+      "id": "R-0998",
+      "date": "2026-11-13",
+      "time": "22:05",
+      "timeFrom": "recorded",
+      "title": "E-293 is E-251's OSR deopt loop at _flushWasmPublish (0.3 % of spatial); E-291's inlining is blocked by _checkCellEntities's budget: both answered small",
+      "verdict": "answered",
+      "text": "**E-293 and E-291 answered from the logs, no sitting: E-293 is E-251's deopt loop; E-291's inlining is blocked by its caller's budget.**\n2026-11-13, 22:05 (Predator, 6 s + 8 s, `--js-flags=\"--log-deopt --log-code\"`, `main` at b87d4861).\n\n**E-293.** The spatial isolate's log has 495 eager deopts, 464 of them at `spatialWorker.js:1762:22` inlined at `1756:10`:\n`this._wasmPub` in `_flushWasmPublish`, the tail of `_findNeighbors` after its loop, \"Insufficient type feedback for\ngeneric named access\", six every 0.1 s from 6.2 to 12.6 s (one a frame). It is E-251's loop at the same site:\n`_findNeighbors` is compiled on stack replacement during its first long loop, before its tail ever ran, and the cached\nOSR code is re-entered each frame and soft-deopts at the tail. E-251 dropped the only fix (the loop in its own function,\n+19 % Node / +55 % Chrome in its kernel). Cost: the trace's `V8.DeoptimizeCode` events average 16 µs, about 1 ms a\nsecond, 0.3 % of spatial's work: under any sitting's detection limit. Answered: small.\n\n**E-291.** `_boxRayDistance` (493 B) under 460 would still not be inlined where rays are hot: `_checkCellEntities`\ninlines `_shapeRayDistance` (151 B) and `_circleRayDistance` (358 B) and has spent 565 of its 920 bytes, so a box test\nstays a call either way. Its Sparkplug boxing is about 100 calls a second (20 KB/s a logic worker at ~12 doubles a call).\nAnswered: small; a split into integer-argument parts would only move the boxed call (CLAUDE.md, E-85)."
     }
   ],
   "leads": [
