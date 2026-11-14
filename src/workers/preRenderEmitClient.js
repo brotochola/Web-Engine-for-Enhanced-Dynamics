@@ -59,6 +59,11 @@ export const EMIT_SLOTS = [
   'lfKeyed', 'lfKeyBase', 'lfKeyedCount',
   // E-194 step 2: the compare epoch each particle's record was last checked at, and the current one (a value).
   'lfChecked', 'lfCmpEpoch',
+  // E-312, keyed frames v2: the change frames (entities, keyed decorations, LiquidFun particles), the queue frame being
+  // written and the one Pixi last drew keyed (values).
+  'kChange', 'dChange', 'lfChange', 'kFrame', 'kSince',
+  // E-312 step 2: 1 when nothing reads an unmarked keyed sprite row's statics this frame (a value).
+  'kSkip',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -209,6 +214,14 @@ export async function bindPreRenderEmit(memory, emit) {
     lfCheckedByte: emit.keyHeaderByte >= 0 && emit.lfCheckedByte >= 0 ? emit.lfCheckedByte : -1,
     lfCmpEpoch: 1,
     lfStaticsSeen: -1,
+    // E-312: the change frames' regions (-1: none) and the frames the next main-queue emit marks keys with (the queue
+    // frame it writes and Pixi's last keyed one: setEmitKeyFrames).
+    keyChangeByte: emit.keyHeaderByte >= 0 && emit.keyChangeByte >= 0 ? emit.keyChangeByte : -1,
+    decoChangeByte: emit.keyHeaderByte >= 0 && emit.decoChangeByte >= 0 ? emit.decoChangeByte : -1,
+    lfChangeByte: emit.keyHeaderByte >= 0 && emit.lfChangeByte >= 0 ? emit.lfChangeByte : -1,
+    keyFrame: 0,
+    keySince: 0,
+    keySkip: 0,
     texturesReady: false,
     // The frame sizes' length in the kernel's copy (frameWidthByte, frameHeightByte), once written.
     frames: 0,
@@ -473,7 +486,25 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
   b.table[SLOT.lfKeyedCount] = lfKeyed ? b.lfKeyedCount : 0;
   b.table[SLOT.lfChecked] = lfKeyed && b.lfCheckedByte >= 0 ? b.lfCheckedByte : 0;
   b.table[SLOT.lfCmpEpoch] = b.lfCmpEpoch;
+  // E-312: the change frames and the frames (keyed queues only; 0 keeps the old marks, this frame's changes alone).
+  b.table[SLOT.kChange] = keyed && b.keyChangeByte >= 0 ? b.keyChangeByte : 0;
+  b.table[SLOT.dChange] = decoKeyed && b.decoChangeByte >= 0 ? b.decoChangeByte : 0;
+  b.table[SLOT.lfChange] = lfKeyed && b.lfChangeByte >= 0 ? b.lfChangeByte : 0;
+  b.table[SLOT.kFrame] = keyed ? b.keyFrame >>> 0 : 0;
+  b.table[SLOT.kSince] = keyed ? b.keySince >>> 0 : 0;
+  b.table[SLOT.kSkip] = keyed && b.keySince > 0 ? b.keySkip & 1 : 0;
   return true;
+}
+
+/**
+ * E-312: the frames the next emit of the main queue marks its keys with: `frame`, the queue frame it writes, and `since`,
+ * the frame Pixi last drew keyed (0: none; every keyed row is then marked). Read by writeEmitColumns. E-312 step 2:
+ * `skip`, nothing reads an unmarked keyed sprite row's statics this frame (the emit leaves them unwritten).
+ */
+export function setEmitKeyFrames(b, frame, since, skip = false) {
+  b.keyFrame = frame >>> 0;
+  b.keySince = since >>> 0;
+  b.keySkip = skip ? 1 : 0;
 }
 
 /**

@@ -51,6 +51,7 @@ import {
   writeEmitLiquidFunColumns,
   writeEmitTextures,
   writePersistColumns,
+  setEmitKeyFrames,
 } from '../../src/workers/preRenderEmitClient.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
 import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
@@ -466,6 +467,16 @@ function rowStatics(w, r) {
   return u;
 }
 
+/**
+ * E-312: the kernel's column table for the next queue frame, Pixi having drawn the frame before (keyed frames v2: a key
+ * is marked for a change after the frame Pixi last drew keyed; the first frame marks every key).
+ */
+function writeEmitColumnsNext(b, ...rest) {
+  b.testKeyFrame = (b.testKeyFrame | 0) + 1;
+  setEmitKeyFrames(b, b.testKeyFrame, b.testKeyFrame - 1);
+  return writeEmitColumns(b, ...rest);
+}
+
 /** E-177: the bit of a sprite's key that says its statics changed since the emit before (preRenderEmit.c KEY_CHANGED). */
 const KEY_CHANGED = 0x80000000;
 /** E-189: with KEY_CHANGED, the bit that says the texture alone changed (preRenderEmit.c KEY_TEX_ONLY). */
@@ -640,7 +651,7 @@ async function runCase(t, opts) {
   const kernelSource = k.keyed ? { ...source, persist: true } : source;
   if (k.keyed) SpriteRenderer.keyedDirty.fill(1);
   for (let f = 0; f < FRAMES; f++) {
-    assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource), 'every column is in the memory');
+    assert.ok(writeEmitColumnsNext(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource), 'every column is in the memory');
     assert.equal(writeEmitBulletColumns(b, BulletComponent, worker._resolveBuiltinTextureId('_bulletTrail')), k.bullets, 'the bullet columns');
     assert.equal(writeEmitGlowColumns(b, LightEmitter, Transform, worker._resolveBuiltinTextureId('_lightGradient')), k.lights, 'the glow columns');
     assert.equal(writeEmitParticleColumns(b, ParticleComponent, worker._resolveBuiltinTextureId('_whiteCircle'),
@@ -755,6 +766,119 @@ test('DX-FACES: a decoration\'s row carries its face in the tile offsets, and a 
 
 test("E-177: the emit marks a sprite's key when its statics changed since the emit before", async (t) => {
   await runCase(t, { ySort: true, keyed: true });
+});
+
+// E-312, keyed frames v2: Pixi takes the newest queue, so it may not draw a queue frame. The next emit, told the frame
+// Pixi last drew keyed, marks every change after it: Pixi's texture, built from the frames it drew alone, holds every
+// row's statics (checkKeys), the changes of the frame it skipped included, statics and animation steps alike.
+test('E-312: after a queue frame Pixi did not draw, the next emit marks the changes of both', async () => {
+  const k = await setup({ ySort: true, keyed: true });
+  const { worker: w, b, source, count, maxItems } = k;
+  const n = Math.min(count, maxItems);
+  const kernelSource = { ...source, persist: true };
+  SpriteRenderer.keyedDirty.fill(1);
+  const st = { tex: new Uint32Array(N * 12) };
+  const emitAt = (frame, since) => {
+    setEmitKeyFrames(b, frame, since);
+    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS;
+    assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
+  };
+  emitAt(1, 0);
+  const first = checkKeys(k, n, 'frame 1', st);
+  assert.equal(first.marked, first.sprites, 'the first frame marks every sprite');
+  // Frame 2: a few sprites in the queue change a static (a setter flags them); Pixi does not draw it.
+  const changed = [];
+  for (let r = 0; r < n && changed.length < 20; r += 7) {
+    // A repeating sprite is marked every frame (E-189): left out.
+    if (w._renderableType[r] !== 0 || w.renderQueueRepeatX[r] !== 0 || w.renderQueueRepeatY[r] !== 0) continue;
+    const e = w._renderableIndex[r];
+    SpriteRenderer.scaleX[e] *= 1.25;
+    SpriteRenderer.keyedDirty[e] = 1;
+    changed.push(e);
+  }
+  assert.equal(changed.length, 20);
+  emitAt(2, 1);
+  // Frame 3, told Pixi last drew frame 1: the changes of frame 2 marked again, with frame 3's.
+  emitAt(3, 1);
+  const third = checkKeys(k, n, 'frame 3 after frame 2 skipped', st);
+  assert.ok(third.marked >= changed.length, `the skipped frame's changes marked (${third.marked})`);
+  // Frame 4, Pixi having drawn frame 3: frame 2's changes are not marked again.
+  emitAt(4, 3);
+  const keys = w.renderQueueKey;
+  for (let r = 0; r < n; r++) {
+    if (w._renderableType[r] !== 0 || !changed.includes(w._renderableIndex[r])) continue;
+    if (keys[r] >= KEY_CHANGED && (keys[r] & KEY_TEX_ONLY) === 0) assert.fail(`row ${r}: drawn since, marked again`);
+  }
+  checkKeys(k, n, 'frame 4', st);
+});
+
+// E-312 step 2: told nothing reads them (K_SKIP), the emit leaves an unmarked keyed sprite row's six statics (alpha,
+// scale, tint, anchor) unwritten and writes everything else; a marked row (a change after K_SINCE, a repeating sprite)
+// gets them all. Pixi's texture, built from the marked rows alone, still holds every row's statics the frame after.
+test('E-312 step 2: with K_SKIP the emit writes the statics of marked keyed rows only', async () => {
+  const k = await setup({ ySort: true, keyed: true });
+  const { worker: w, b, source, count, maxItems } = k;
+  const n = Math.min(count, maxItems);
+  const kernelSource = { ...source, persist: true };
+  SpriteRenderer.keyedDirty.fill(1);
+  const st = { tex: new Uint32Array(N * 12) };
+  const emitAt = (frame, since, skip) => {
+    setEmitKeyFrames(b, frame, since, skip);
+    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS;
+    assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
+  };
+  // The first frame (K_SINCE 0) marks every row, so it skips none even when told to.
+  const skipped = ['renderQueueAlpha', 'renderQueueScaleX', 'renderQueueScaleY', 'renderQueueTint', 'renderQueueAnchorX', 'renderQueueAnchorY'];
+  const scramble = () => {
+    for (const c of skipped) w[c].fill(c === 'renderQueueTint' ? 0xdeadbeef : -12345.5, 0, n);
+  };
+  scramble();
+  emitAt(1, 0, true);
+  const first = checkKeys(k, n, 'frame 1', st);
+  assert.equal(first.marked, first.sprites);
+  // Frame 2: a few sprites change a static; Pixi drew frame 1.
+  const changed = new Set();
+  for (let r = 0; r < n && changed.size < 20; r += 7) {
+    if (w._renderableType[r] !== 0 || w.renderQueueRepeatX[r] !== 0 || w.renderQueueRepeatY[r] !== 0) continue;
+    const e = w._renderableIndex[r];
+    SpriteRenderer.alpha[e] *= 0.5;
+    SpriteRenderer.keyedDirty[e] = 1;
+    changed.add(e);
+  }
+  scramble();
+  const xBefore = Float32Array.from(w.renderQueueX.subarray(0, n));
+  emitAt(2, 1, true);
+  const keys = w.renderQueueKey;
+  let kept = 0;
+  let written = 0;
+  for (let r = 0; r < n; r++) {
+    if (w._renderableType[r] !== 0) continue;
+    const e = (keys[r] & ~KEY_FLAGS) >>> 0;
+    const full = keys[r] >= KEY_CHANGED && (keys[r] & KEY_TEX_ONLY) === 0;
+    const repeating = w.renderQueueRepeatX[r] !== 0 || w.renderQueueRepeatY[r] !== 0;
+    if (changed.has(e) || repeating) assert.ok(full, `row ${r}: changed or repeating, marked`);
+    const untouched = w.renderQueueTint[r] === 0xdeadbeef && w.renderQueueAlpha[r] === -12345.5;
+    if (full) {
+      assert.ok(!untouched, `row ${r}: marked, its statics written`);
+      assert.equal(w.renderQueueAlpha[r], SpriteRenderer.alpha[e], `row ${r}: its alpha`);
+      st.tex.set(rowStatics(w, r), e * 12);
+      written++;
+    } else {
+      for (const c of skipped) {
+        const want = c === 'renderQueueTint' ? 0xdeadbeef : -12345.5;
+        if (w[c][r] !== want) assert.fail(`row ${r}: unmarked, ${c} written`);
+      }
+      if ((keys[r] & KEY_TEX_ONLY) !== 0) st.tex[e * 12 + TEX_WORD] = rowStatics(w, r)[TEX_WORD];
+      kept++;
+    }
+  }
+  assert.ok(written >= changed.size && kept > n / 2, `${written} rows written, ${kept} left`);
+  assert.ok(w.renderQueueX.subarray(0, n).some((x, r) => x !== xBefore[r]) || n > 0, 'the poses written');
+  // Frame 3, not told to skip: every row written, and Pixi's texture (frames 1 to 3's marks) holds them all.
+  emitAt(3, 2, false);
+  checkKeys(k, n, 'frame 3', st);
 });
 
 test('the emit kernel fills a queue to its capacity', async (t) => {
@@ -924,7 +1048,7 @@ test('a frame with an Adobe root or a LiquidFun row is declined before anything 
   for (const type of [6, 7]) {
     worker._renderableType[17] = type;
     const before = k.snapshot();
-    assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source));
+    assert.ok(writeEmitColumnsNext(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source));
     const written = b.emitRows(b.tableByte, source.count, source.maxItems, EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS, DT / 1000, 1, worker._zBand);
     assert.equal(written, EMIT_DECLINED, `type ${type}`);
     const after = k.snapshot();
@@ -938,9 +1062,9 @@ test('a column outside the memory makes the table refuse, so the JS emits', asyn
   const { worker, b, source } = k;
   const saved = SpriteRenderer.alpha;
   SpriteRenderer.alpha = new Float32Array(N);
-  assert.equal(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), false);
+  assert.equal(writeEmitColumnsNext(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), false);
   SpriteRenderer.alpha = saved;
-  assert.equal(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), true);
+  assert.equal(writeEmitColumnsNext(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), true);
 });
 
 test('emitSpriteQueue through the kernel writes every row the JS loop writes, other types included', async (t) => {
@@ -1126,7 +1250,7 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
   /** This frame's column table, its flags, and the full emit a miss leads to (with its ends). */
   const frameTable = (buf, st) => {
     const source = worker._fillEmitSource(count, maxItems, cY, cType, cIndex, st.x, st.y, st.rc, st.rs, true, true, ySort);
-    assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), 'every column is in the memory');
+    assert.ok(writeEmitColumnsNext(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), 'every column is in the memory');
     assert.ok(writePersistColumns(b, worker, SpriteRenderer, buf), 'and the persist rows');
     const sort = !!(worker.renderQueueSortKey && worker._queueHasOrder());
     return (sort ? EMIT_SORT_KEY : 0) | (sort && worker._entityYSort() ? EMIT_Y_SORT : 0) | EMIT_BOUNDS;
@@ -1249,7 +1373,7 @@ test('persist_frame misses on a frame with an Adobe root, which it held last tim
   const source = worker._fillEmitSource(count, maxItems, worker._renderableY, worker._renderableType, worker._renderableIndex,
     worker.renderQueueX, worker.renderQueueY, worker.renderQueueRotC, worker.renderQueueRotS, true, true, false);
   const frame = () => {
-    assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source));
+    assert.ok(writeEmitColumnsNext(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source));
     assert.ok(writePersistColumns(b, worker, SpriteRenderer, 0));
     b.persistRemember(b.tableByte, count, maxItems);
     return b.persistFrame(b.tableByte, count, maxItems, 0, DT / 1000, worker._zBand);
@@ -1365,7 +1489,7 @@ test('DX-FACES: a decoration keyed by its slot is marked when its face changes',
   const kernelSource = { ...source, persist: true };
   SpriteRenderer.keyedDirty.fill(1);
   const frame = () => {
-    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    assert.ok(writeEmitColumnsNext(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
     const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS | EMIT_TILES_DIRTY;
     assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
     const marked = new Map();
@@ -1392,7 +1516,7 @@ test('DX-FACES: a sprite that sorts into a row a face held carries no face', asy
   const { worker: w, b, source, count, maxItems } = k;
   const n = Math.min(count, maxItems);
   const emit = () => {
-    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, source));
+    assert.ok(writeEmitColumnsNext(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, source));
     const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS | EMIT_TILES_DIRTY;
     assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
   };
@@ -1431,7 +1555,7 @@ test('E-188: the emit keys a decoration by its pool slot, marked when its static
   const kernelSource = { ...source, persist: true };
   SpriteRenderer.keyedDirty.fill(1);
   const frame = () => {
-    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    assert.ok(writeEmitColumnsNext(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
     const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS;
     assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
     // Each decoration slot drawn this frame: whether its first row was marked; and every row's key.
@@ -1491,7 +1615,7 @@ test('E-194: the emit keys a LiquidFun particle by its index past the keyed deco
   const copy = new Uint32Array(LFN * 12);
   // check: Pixi's copy holds every row's statics (not after a change physics did not announce, by design).
   const frame = (check = true) => {
-    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    assert.ok(writeEmitColumnsNext(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
     assert.ok(writeEmitLiquidFunColumns(b, lf, w._prevLfX, w._prevLfY, 0, w._poseAlpha, white));
     const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS;
     assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
