@@ -13994,13 +13994,13 @@
       "id": "E-267",
       "title": "The full grid rebuild writes its cells in entity order: a cell-ordered pass (bin, then write) or W6's C port where the rebuild is a third to a half of spatial (Boids, stationarySpatialWide)",
       "status": "open",
-      "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
+      "statusText": "ceiling measured 2026-11-14 (R-1015): -15 % of the rebuild with perfect cell order; waits for bigger scenes",
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 5,
+      "rank": 40,
       "result": "CPU sweep: rebuildOwnedRows is 28 to 32 % of Boids' spatial and 48 to 51 % of stationarySpatialWide's (12.5 % in Predator when W6 was screened). Boids' hot lines: the owned-list append 26 % (the stall of the loads before it), localCounts[cellIndex] 22 %, the cell write 6 %: scattered cell accesses. W6's bit-exact C port ran +10.9 % in its kernel on Predator's mix and 1.48x on a mix of every shape, screened then because the rebuild was small in Predator.",
-      "next": "Two candidates on spatialGridMoversMicrobench --shape box and a stationary case: (a) W6's C port again, (b) a counting pass that bins the entities by cell and then writes each cell's ids in one run; the winner on Boids' and stationarySpatialWide's spatial STEP_MS (E-266 first for the stationary scene).",
+      "next": "Waits with E-295 for scenes of tens of thousands of entities per worker. Seen: every spatial worker computes every entity's bounds (three times with three workers).",
       "refs": [
         "EXECUTION_PLAN.md#E-267"
       ],
@@ -14010,7 +14010,9 @@
         "W6 revisited",
         "counting sort grid"
       ],
-      "records": []
+      "records": [
+        "R-1015"
+      ]
     },
     {
       "id": "E-268",
@@ -24900,6 +24902,15 @@
         "0d947e2d",
         "d52e7f3f"
       ]
+    },
+    {
+      "id": "R-1015",
+      "date": "2026-11-14",
+      "time": "03:09",
+      "timeFrom": "recorded",
+      "title": "E-267's ceiling: cell-ordered ids make rebuildOwnedRows 15 % faster (16 500 and 60 000); about 2-7 % of spatial, the campaign waits",
+      "verdict": "note",
+      "text": "**E-267's ceiling: rebuildOwnedRows with the entities numbered in cell order runs 15 % faster; not worth the campaign now.**\n2026-11-14 ~03:10, Node, the Predator-like kernel world (setupSpatialKernel, 3 workers, gatherCellOrder, 45 frames of\ndrift), `rebuildOwnedRows` of the three workers timed alone (9 samples of 40 calls, median), ids as drawn against\n`cellOrderIds` (c07e3707), two rounds:\n\n| entities | ids as drawn | cell-ordered ids |\n| --- | --- | --- |\n| 16 500 | 1.039 / 1.041 ms | 0.888 / 0.885 ms (-15 %) |\n| 60 000 | 3.857 / 3.932 ms | 3.258 / 3.391 ms (-15 %) |\n\nReading: perfect locality, free to keep, takes 15 % off the rebuild; a counting pass (bin by cell, then write) adds passes\nand gets part of that. With the rebuild at 12.5 % of Predator's spatial, 28-32 % of Boids' and 48-51 % of\nstationarySpatialWide's, the ceiling is about 2 %, 5 % and 7 % of those workers, and W6's C port needs the component\ncolumns in the grid's memory first (one memory per module). Together with E-295's ceiling (R-1009), the spatial layout\ncampaign waits until scenes run tens of thousands of entities per worker. Seen on the way: each spatial worker computes\nthe bounds of every active entity and writes only its own rows, so with three workers the bounds are computed three times."
     }
   ],
   "leads": [
