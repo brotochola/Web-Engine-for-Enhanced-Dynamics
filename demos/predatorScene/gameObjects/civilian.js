@@ -51,7 +51,8 @@ export class Civilian extends Person {
     }
 
     // Propagate panic to neighbor civilians
-    for (let n = 0; n < this.neighborCount; n++) {
+    const neighborCount = this.neighborCount;
+    for (let n = 0; n < neighborCount; n++) {
       const neighborIndex = this.getNeighbor(n);
       if (neighborIndex === i) continue;
       if (Transform.entityType[neighborIndex] !== civilianEntityType) continue;

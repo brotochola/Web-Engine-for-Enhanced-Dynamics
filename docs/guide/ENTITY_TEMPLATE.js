@@ -68,7 +68,8 @@ class MyEntity extends GameObject {
     }
 
     // Example neighbor iteration
-    for (let n = 0; n < this.neighborCount; n++) {
+    const neighborCount = this.neighborCount;
+    for (let n = 0; n < neighborCount; n++) {
       const neighborIndex = this.getNeighbor(n);
       // ...
     }

@@ -198,7 +198,8 @@ export class PersonThatFollowsAFlowfield extends GameObject {
     const myY = this.y;
     const lookAheadSec = 0.25;
 
-    for (let n = 0; n < this.neighborCount; n++) {
+    const neighborCount = this.neighborCount;
+    for (let n = 0; n < neighborCount; n++) {
       const neighborIndex = this.getNeighbor(n);
       if (!CarComponent.active || !CarComponent.active[neighborIndex]) continue;
 
@@ -255,7 +256,8 @@ export class PersonThatFollowsAFlowfield extends GameObject {
     let separateX = 0;
     let separateY = 0;
 
-    for (let n = 0; n < this.neighborCount; n++) {
+    const neighborCount = this.neighborCount;
+    for (let n = 0; n < neighborCount; n++) {
       const neighborIndex = this.getNeighbor(n);
       if (Transform.entityType[neighborIndex] !== myEntityType) continue;
 

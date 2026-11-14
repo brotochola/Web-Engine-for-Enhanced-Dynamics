@@ -143,7 +143,8 @@ export class CityPerson extends GameObject {
     let ax = 0;
     let ay = 0;
 
-    for (let n = 0; n < this.neighborCount; n++) {
+    const neighborCount = this.neighborCount;
+    for (let n = 0; n < neighborCount; n++) {
       const ni = this.getNeighbor(n);
       if (!Transform.active[ni]) continue;
       if (CarComponent.active[ni]) {

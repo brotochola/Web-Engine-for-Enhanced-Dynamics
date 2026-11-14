@@ -145,7 +145,8 @@ export class Explosion extends GameObject {
 
   applyDamage() {
     this.explosionComponent.wantedIntensity;
-    for (let i = 0; i < this.neighborCount; i++) {
+    const neighborCount = this.neighborCount;
+    for (let i = 0; i < neighborCount; i++) {
       const neighbor = this.getNeighbor(i);
       if (neighbor == -1) continue;
       const neighborInstance = GameObject.get(neighbor);
