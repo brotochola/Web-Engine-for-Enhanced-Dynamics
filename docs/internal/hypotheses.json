@@ -11293,11 +11293,11 @@
     {
       "id": "E-201",
       "title": "Keyed poses read by key on the GPU (a pose texture indexed by entity)",
-      "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "status": "kept",
+      "statusText": "step 1 kept 2026-11-14 (R-1031), on by default (WebGL)",
       "date": "2026-11-10",
-      "result": "",
-      "next": "E-193's gather costs 42 to 118 ms/s; colliderFillBatch already reads a uPoseTable. Step 0: bytes a frame, the whole pool's poses against today's rows, by fraction visible. Then the pose block as a texture, rows carry only the key, interpolation a lerp of two pose textures; a switch by fraction visible. Owner: BunnyMark's and Predator crowd 1.5's renderer.",
+      "result": "Step 1 kept (R-1031): keyed frames drawn by queue row, the pose fetched from the queue columns in a texture: the keyed pack's refills from beyond L2 4.78 % -> 1.42 % of Chrome's, Pixi about -10 ms/s (Predator); captures identical; gate neutral.",
+      "next": "The shadow terms by row (the pack then gathers the key and type only); the WebGPU form; step 2 (a pose table by key from pre-render) adds little in the kernel.",
       "area": "render",
       "kind": "gpu",
       "refs": [
@@ -11312,9 +11312,9 @@
       ],
       "records": [
         "R-0854",
-        "R-1030"
-      ],
-      "rank": 27
+        "R-1030",
+        "R-1031"
+      ]
     },
     {
       "id": "E-202",
@@ -25151,6 +25151,20 @@
       "title": "E-201 step 0: a pose table by key cuts the keyed pack 45-60 % in the cross-core kernel (0.14-0.23 -> 0.08-0.09 ms)",
       "verdict": "note",
       "text": "**E-201 step 0: a pose table by key would take Pixi's keyed pack from 0.14-0.23 to 0.08-0.09 ms in the cross-core kernel.**\n2026-11-14 ~14:30, gpuPackKeyedCrossCoreMicrobench --writer other (a worker thread rewrites the queue's columns, and\nthe pose table, before each pack), 23 500 rows (Predator's queue), 42 600 entities, 3 rounds: --pack gather (today's\npack_sprites_keyed) 0.150 / 0.229 / 0.143 ms, --pack table (the table copied whole into Pixi's array, the slot stream\nfrom the keys in the painter's order) 0.081 / 0.088 / 0.091 ms: 45 to 60 % less.\n\nBytes up: today 20 per drawn sprite (pose 16, slot 4: about 470 KB a Predator frame); the table 16 per entity (about\n680 KB) plus the slots. Interpolation is off in Predator (preRender and renderer), so a first version needs the\ncurrent pose only. The table must come from pre-render by key (a queue row's pose is not always its entity's\nTransform: offsets, elevation, children, swaying decorations); a table Pixi built from the queue would read the same\ncross-core lines as today (E-193 step 1, R-0864). The kernel times a tenth of the scene's cost (R-0813), so in\nPredator the renderer might save about 0.3 to 0.5 ms a frame; the renderer is not what bounds the frame at scale\n(physics 13 ms, spatial 10 at crowd 2.5)."
+    },
+    {
+      "id": "R-1031",
+      "date": "2026-11-14",
+      "time": "15:16",
+      "timeFrom": "recorded",
+      "title": "E-201 step 1 kept and on by default: keyed frames by queue row (WebGL); the keyed pack's refills -70 %, Pixi about -0.16 ms a frame; captures identical",
+      "verdict": "kept",
+      "text": "**E-201 step 1: keyed frames drawn by queue row (WebGL, renderer.keyedPosesByRow), read with every tool.**\n2026-11-14, branch w14s/e201 (ad48f6e1 knobs and probe, 8201f9bf the change). Each keyed instance carries its queue row\nand its slot; the keyed programs (the frame, its sun pass, the face map) fetch the pose from uPoses, the queue's own pose\ncolumns copied whole into four blocks of an RGBA32UI texture (a float's bits a channel; the statics helper's partial\nuploads), instead of a pose stream pack_sprites_keyed gathers in the painter's order. gpuPack.c pack_sprites_keyed_rows\nwrites the rows; statics, updates and shadow terms as before. WebGPU and interpolated frames keep the pose stream.\n\nWhy it should work (the premise, from R-0997, E-193 and the cross-core kernel): pre-render writes the queue on its core;\nPixi's keyed pack then walks the drawn rows in the painter's order and reads about nine columns of each, so most lines it\ntouches are pulled from the other core's cache (the 4800H's two 4-core complexes talk through the Infinity Fabric). By\nrow, the four pose columns are copied in order (the hardware prefetcher streams them) and the pack gathers only the key,\nthe type and the shadow terms.\n\n- Correctness: compareCaptures dxCaptureScene, posesByRow off against on: 0 of 921 600 pixels differ on WebGL and on\n  WebGPU (which keeps the stream). keyedFramesProbe on Predator crowd=1.5: keyed frames drawn with the row program\n  (drawsRows), 23 400 to 29 600 instances. test:node 2625/2625, test:demos 101/101.\n- Kernel (gpuPackKeyedCrossCoreMicrobench --writer other, 23 500 rows): gather 0.140-0.161 ms, rows 0.100-0.123 (a table by\n  key, which needs pre-render to write it: 0.081-0.091).\n- CPU pass (profileSceneSweep --pass cpu --query crowd=1.5[&posesByRow=1], Pixi thread, ms/s): pack 21.3 -> 10.9\n  (pack_sprites_keyed -> pack_sprites_keyed_rows), updateBuffer 12.3 -> 8.9 (8 bytes an instance instead of 20), the\n  pose texture's uploads (_gpuRecordRowsGl) 0 -> 3.9, the arena copy (memory.copy) 11.9 -> 12.2: about -10 ms/s, -0.16 ms a\n  frame, some 7 % of Pixi's own work (its busy time is mostly _waitForQueue).\n- Hardware counters (WPR, Predator crowd=1.5, share of Chrome's samples): refills from beyond L2 in the pack 4.78 % ->\n  1.42 % at instructions 0.92 % -> 0.68 %; refills per instruction 5.2 -> 2.1. chrome.dll (which copies WebGL data for the\n  GPU process) 18.6 % -> 13.4 % of the refills. The \"on\" refill capture had Windows' memory compression at 17 % of the\n  samples (the machine after the morning's update), so shares, not counts, are compared.\n- Heap pass: Pixi 272.3 -> 273.5 KB/s, every site Pixi's own (the pose blocks live in the batch arena: memory.copy into\n  fixed views, no subarray a frame). Deopt pass: none in instancedSpriteBatch, gpuPackClient or spriteIndexed. Code pass:\n  the batch's per-frame functions (60 calls a second) are not among the TurboFan-hot ones; the work is the wasm pack and\n  the copies.\n\n- Predator's gate (runPredatorAbab --vs w14s/e201 --query crowd=1.5 --query-b posesByRow=1 --pool --early, 15:09 to 15:14,\n  5 min 13 s; --early ran to 4 pairs): NEUTRAL, no row worse; renderer 2.242 -> 2.149 ms (unjudged); physics paired -3.5 %.\n\nKept as a kernel and trace claim and turned on by default for WebGL keyed batches (d02ab779); ?posesByRow=0\nswitches it off in Predator and dxCaptureScene. Left: the shadow terms by row (the pack would gather the key and the\ntype only), the WebGPU form, and step 2 (a pose table by key from pre-render), whose kernel adds little over by-row.",
+      "commits": [
+        "ad48f6e1",
+        "8201f9bf",
+        "d02ab779"
+      ]
     }
   ],
   "leads": [
