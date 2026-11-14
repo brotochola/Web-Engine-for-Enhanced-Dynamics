@@ -259,6 +259,18 @@ export function errorShaderFetchFailed(name, path, status) {
   );
 }
 
+/**
+ * A shader's text with LF line ends. A clone made with core.autocrlf (Git for Windows' default) or a file saved by a
+ * Windows editor has CR LF, and the engine's rewrites find their lines by "\n" (spriteIndexed.js: 'void main() {\n'):
+ * such a clone threw 'the sprite vertex shader needs one "void main() {"' (review N-169). GLSL and WGSL both read CR,
+ * LF and CR LF as one line end, so the shader means the same.
+ * @param {string} source
+ * @returns {string}
+ */
+export function shaderSourceLf(source) {
+  return source.indexOf('\r') < 0 ? source : source.replace(/\r\n?/g, '\n');
+}
+
 export function errorLookMissing(layerName, asset) {
   return new Error(
     `WeedJS: Layer "${layerName}" look shader "${asset}" was not loaded. Add it to static.assets.shaders.`
