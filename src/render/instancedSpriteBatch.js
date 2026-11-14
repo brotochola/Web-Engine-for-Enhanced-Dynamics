@@ -401,6 +401,8 @@ export class InstancedSpriteBatch {
     // The keyed frames in a row whose updates outweighed their saving, and the split frames left of a pause.
     this._keyLosses = 0;
     this._keyPause = 0;
+    // E-312 step 2: whether the header's FULL asks pre-render for every row's statics (a pause, a frame not packed keyed).
+    this._keyFull = false;
     // E-191: the sun's shadow pass over these instances (enableKeyedShadows): each draw slot's shadow terms in the
     // render-queue memory and their copy, a buffer and a geometry (pose, slot and shadow streams) per ring slot, the
     // program (makeKeyedSunShader), and this frame's geometry once a keyed upload carried them (keyedShadowReady).
@@ -1182,26 +1184,34 @@ export class InstancedSpriteBatch {
    * what changed after the queue frame pre-render read from the header's DRAWN (the header's SINCE for this buffer), so
    * the texture is right after this frame whenever that is not past the last frame this batch drew keyed: a queue frame
    * it skipped, or one it drew split, loses nothing. Behind it (never with this batch's one texture) the frame is drawn
-   * split. Frames whose updates outweigh their saving pause the keyed frames (KEYED_LOSS_FRAMES). Returns -1 for a frame
-   * drawn split.
+   * split. Frames whose updates outweigh their saving pause the keyed frames (KEYED_LOSS_FRAMES). Step 2: pre-render
+   * leaves an unmarked row's statics unwritten while this batch draws keyed, so a buffer says whether it holds every
+   * row's (COMPLETE); a pause draws split only from one that does (keyed from any other), and asks for them (FULL).
+   * Returns -1 for a frame drawn split.
    */
   _uploadKeyed(q, ctx) {
+    const H = this._keyHeader;
+    const buf = this.keyedBuffer & 1;
     if (this._keyPause > 0) {
       this._keyPause--;
-      return -1;
+      if (Atomics.load(H, PIXI_KEYED_HEADER.COMPLETE0 + buf) !== 0) return -1;
     }
-    const H = this._keyHeader;
     const frame = this.keyedFrame >>> 0;
     // E-312: the frame this buffer's marks count from, against the frame the texture holds.
-    const since = Atomics.load(H, PIXI_KEYED_HEADER.SINCE0 + (this.keyedBuffer & 1)) >>> 0;
-    if (since > this._keyDrawn) return -1;
+    const since = Atomics.load(H, PIXI_KEYED_HEADER.SINCE0 + buf) >>> 0;
+    if (since > this._keyDrawn) return this._keyedMiss(H);
     const k = this._keyedPack;
     // E-201: by queue row when the batch draws so and the queue has its pose columns here.
     const byRow = this.posesByRow && !!q.x && !!q.y && !!q.rotC && !!q.rotS;
     const out = byRow
       ? packKeyedRowsByRowWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity)
       : packKeyedRowsWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity);
-    if (out < 0) return -1;
+    if (out < 0) return this._keyedMiss(H);
+    // E-312 step 2: drawn keyed again after a pause or a miss, so pre-render may skip unmarked rows' statics again.
+    if (this._keyFull && this._keyPause === 0) {
+      this._keyFull = false;
+      Atomics.store(H, PIXI_KEYED_HEADER.FULL, 0);
+    }
     // The texture holds this queue frame now (its updates scattered below); pre-render marks from it on.
     if (frame > this._keyDrawn) {
       this._keyDrawn = frame;
@@ -1211,11 +1221,15 @@ export class InstancedSpriteBatch {
     if (shadowed && out > 0) this.copyIn(this._shadowData, this._sharedShadow, out * 3);
     const n = k.updates;
     const nt = k.texUpdates;
-    if (n * (GPU_KEYED_ROW_WORDS * 4) + nt * (GPU_KEYED_TEX_WORDS * 4) <= out * KEYED_SAVED_BYTES) {
+    if (this._keyPause > 0) {
+      // A paused frame drawn keyed from a buffer that skipped statics: not counted.
+    } else if (n * (GPU_KEYED_ROW_WORDS * 4) + nt * (GPU_KEYED_TEX_WORDS * 4) <= out * KEYED_SAVED_BYTES) {
       this._keyLosses = 0;
     } else if (++this._keyLosses >= KEYED_LOSS_FRAMES) {
       this._keyLosses = 0;
       this._keyPause = KEYED_PAUSE_FRAMES;
+      this._keyFull = true;
+      Atomics.store(H, PIXI_KEYED_HEADER.FULL, 1);
     }
     if (n > 0 || nt > 0) {
       if (n > 0) this.copyIn(this._keyUpdates, this._sharedUpdates, n * GPU_KEYED_ROW_WORDS);
@@ -1248,6 +1262,19 @@ export class InstancedSpriteBatch {
       this.keyedShadowReady = true;
     }
     return drawn;
+  }
+
+  /**
+   * E-312 step 2: a frame this batch cannot draw keyed (the kernel declined its options): drawn split, pre-render asked
+   * for every row's statics until a keyed frame. One from a buffer that skipped some (an option that changed while
+   * drawing keyed) shows those rows' last statics in that buffer for the frame or two before pre-render writes them.
+   */
+  _keyedMiss(H) {
+    if (!this._keyFull) {
+      this._keyFull = true;
+      Atomics.store(H, PIXI_KEYED_HEADER.FULL, 1);
+    }
+    return -1;
   }
 
   /**

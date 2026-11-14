@@ -100,6 +100,9 @@ enum {
      D_CHANGE and LF_CHANGE: a u32 a keyed decoration slot and LiquidFun particle, the frame its record last changed
      (0 for each: the old marks, this frame's changes only). K_FRAME: the queue frame being written (a value). */
   K_CHANGE, D_CHANGE, LF_CHANGE, K_FRAME, K_SINCE,
+  /* E-312 step 2: 1 when nothing reads an unmarked keyed sprite row's statics this frame (a value): the emit leaves its
+     alpha, scale, tint and anchor unwritten (Pixi's statics texture holds them by key). */
+  K_SKIP,
   SLOT_COUNT
 };
 
@@ -298,7 +301,7 @@ typedef struct {
   uint32_t lfCmpEpoch;
   /* E-312: the change frames (0 when the scene has none: this frame's changes alone mark a key) and the frames. */
   uint32_t *kChange, *dChange, *lfChange;
-  uint32_t kFrame, kSince, kAll;
+  uint32_t kFrame, kSince, kAll, kSkip;
   uint32_t *ends, *warns;
   const uint16_t *aaAsset, *aaClip;
   const float *aaTime;
@@ -428,6 +431,7 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->kFrame = t[K_FRAME];
   e->kSince = t[K_SINCE];
   e->kAll = e->kSince == 0;
+  e->kSkip = t[K_SKIP];
   e->ends = PTR(uint32_t, R_ENDS);
   e->warns = PTR(uint32_t, R_WARNS);
   e->aaAsset = PTR(const uint16_t, AA_ASSET);
@@ -585,10 +589,13 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
     rc = e->sRotC[idx];
     rs = e->sRotS[idx];
   }
-  e->qAlpha[out] = e->sAlpha[idx];
   queue_shadow(e, out, idx);
   const uint32_t rx = e->sRepeatX[idx];
   const uint32_t ry = e->sRepeatY[idx];
+  /* E-312 step 2: an unmarked keyed row's statics are read by no one when K_SKIP says so: they stay unwritten. The
+     same test marks the key below (a change after K_SINCE, every row while K_SINCE is 0, a repeating sprite). */
+  const int statics = !e->kSkip || !kc || changed || e->kAll || kc[0] > e->kSince || rx != 0 || ry != 0;
+  if (statics) e->qAlpha[out] = e->sAlpha[idx];
   if (rx != 0 || ry != 0) {
     e->tiled = 1;
     if (e->qRepeatX) e->qRepeatX[out] = (uint16_t)rx;
@@ -615,13 +622,15 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   }
   e->qX[out] = x;
   e->qY[out] = y;
-  e->qScaleX[out] = e->sScaleX[idx];
-  e->qScaleY[out] = e->sScaleY[idx];
   e->qRotC[out] = rc;
   e->qRotS[out] = rs;
-  e->qTint[out] = e->sTint[idx];
-  e->qAnchorX[out] = e->sAnchorX[idx];
-  e->qAnchorY[out] = e->sAnchorY[idx];
+  if (statics) {
+    e->qScaleX[out] = e->sScaleX[idx];
+    e->qScaleY[out] = e->sScaleY[idx];
+    e->qTint[out] = e->sTint[idx];
+    e->qAnchorX[out] = e->sAnchorX[idx];
+    e->qAnchorY[out] = e->sAnchorY[idx];
+  }
   if (e->qType) e->qType[out] = 0;
 
   const uint32_t sheet = e->sSheet[idx];

@@ -55,6 +55,8 @@ const NO_FILTER = { includeType: -1, excludeType0: -1, excludeType1: -1 };
 const TEX_WORD = 6;
 const STATIC_COLUMNS = ['scaleX', 'scaleY', 'alpha', 'tint', 'textureId', 'anchorX', 'anchorY', 'tileMulX', 'tileMulY',
   'tileOffsetU', 'tileOffsetV'];
+// E-312 step 2: the statics the emit leaves unwritten on an unmarked keyed row (preRenderEmit.c K_SKIP).
+const SKIPPED_COLUMNS = ['scaleX', 'scaleY', 'alpha', 'tint', 'anchorX', 'anchorY'];
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -112,6 +114,13 @@ async function setup(seed) {
     q.shadowOffX[i] = rng() - 0.5;
     q.shadowOffY[i] = rng() - 0.5;
   }
+  // E-312 step 2: the queue the split batch draws, every row's statics in it (its own columns for those the emit may
+  // skip, the queue's for the rest), against which each keyed frame is checked.
+  const ref = { ...q };
+  for (const c of SKIPPED_COLUMNS) ref[c] = c === 'tint' ? alloc(Uint32Array, N) : f32();
+  // Its own x column, a copy: gpuPack keeps a queue's column table by its x column.
+  ref.x = f32();
+  ref.x.set(q.x);
   // The world: each entity's statics, and its keyed flag (set, as spawns leave it).
   const world = {
     scaleX: new Float32Array(ENTITIES), scaleY: new Float32Array(ENTITIES), alpha: new Float32Array(ENTITIES),
@@ -182,8 +191,8 @@ async function setup(seed) {
     for (const x of [...b._buffers, ...(b._staticBuffers || []), ...(b._slotBuffers || [])]) x.update = () => {};
   }
   return {
-    rng, q, world, dirty, texDirty, changedAt, texChangedAt, header, split, keyed: keyedBatch, tex, frame: 0,
-    rowEntity: new Int32Array(N), queued: [], unqueued: [],
+    rng, q, ref, world, dirty, texDirty, changedAt, texChangedAt, header, split, keyed: keyedBatch, tex, frame: 0,
+    rowEntity: new Int32Array(N), queued: [], unqueued: [], skipStatics: false,
   };
 }
 
@@ -239,24 +248,29 @@ function change(s, count, inQueue = true) {
  * What pre-render does for a frame of the main queue (preRenderWorker.emitSpriteQueue, preRenderEmit.c): stamps each
  * flagged entity's change with the frame (the emit clears the flags), writes each sprite row from its entity, its key
  * the entity with the changed bit for a change after the frame Pixi last drew keyed (the header's DRAWN; 0: every
- * sprite), the rows without a key with statics of their own, then stores that frame in the buffer's SINCE word.
- * Returns the rows whose statics must go up (the marked and the keyless ones).
+ * sprite), the rows without a key with statics of their own, then stores that frame in the buffer's SINCE word. E-312
+ * step 2: with `s.skipStatics`, while Pixi has drawn keyed and not asked for every row's statics (FULL), an unmarked
+ * row's six statics are left unwritten (scrambled here, so a read of them shows), and the buffer's COMPLETE says so.
+ * The reference queue (s.ref) gets every row's. Returns the rows whose statics must go up (the marked and the keyless).
  */
 function emit(s) {
-  const { q, header: h, world, dirty } = s;
+  const { q, ref, header: h, world, dirty } = s;
   s.frame++;
   const drawn = Atomics.load(h, H.DRAWN);
   const since = drawn < s.frame ? drawn : 0;
+  const skip = s.skipStatics && since > 0 && Atomics.load(h, H.FULL) === 0;
   let sent = 0;
   for (let i = 0; i < N; i++) {
     const e = s.rowEntity[i];
     if (e < 0) {
       statics(q, i, s.rng);
+      for (const c of SKIPPED_COLUMNS) ref[c][i] = q[c][i];
       q.key[i] = KEY_NONE;
       sent++;
       continue;
     }
     for (const c of STATIC_COLUMNS) q[c][i] = world[c][e];
+    for (const c of SKIPPED_COLUMNS) ref[c][i] = world[c][e];
     if (dirty[e] !== 0) s.changedAt[e] = s.frame;
     if (s.texDirty[e] !== 0) s.texChangedAt[e] = s.frame;
     dirty[e] = 0;
@@ -266,8 +280,12 @@ function emit(s) {
     const texOnly = full === 0 && s.texChangedAt[e] > since;
     q.key[i] = (e | (full << 31) | (texOnly ? GPU_KEYED_CHANGED | GPU_KEYED_TEX_ONLY : 0)) >>> 0;
     sent += full | (texOnly ? 1 : 0);
+    if (skip && full === 0) {
+      for (const c of SKIPPED_COLUMNS) q[c][i] = c === 'tint' ? 0xdeadbeef : -12345.5;
+    }
   }
   Atomics.store(h, H.SINCE0 + bufferOf(s.frame), since);
+  Atomics.store(h, H.COMPLETE0 + bufferOf(s.frame), skip ? 0 : 1);
   return sent;
 }
 
@@ -278,7 +296,7 @@ function emit(s) {
  * for a frame it drew split.
  */
 function draw(s, label, opts, frame = s.frame) {
-  const n = s.split.upload(s.q, { ...opts });
+  const n = s.split.upload(s.ref, { ...opts });
   const k = s.keyed;
   k.keyedFrame = frame;
   k.keyedBuffer = bufferOf(frame);
@@ -412,6 +430,76 @@ test('keyed frames whose updates outweigh what they save pause, drawn split, the
   assert.ok(drawnBefore > 0 && drawnBefore < s.frame, 'the pause drew nothing keyed');
   emit(s);
   assert.equal(draw(s, 'after the pause', sortedOpts(s)), N, 'keyed again at once');
+});
+
+// E-312 step 2: while the batch draws keyed, pre-render leaves an unmarked row's statics unwritten. A pause asks for
+// every row's (FULL) and draws split only from a buffer that holds them (COMPLETE): the buffers emitted before
+// pre-render saw the request are drawn keyed (from the texture, still exact); after the pause, keyed frames clear it.
+test('E-312 step 2: a pause draws keyed from a buffer that skipped statics, split once they are all there', async () => {
+  const s = await setup(312);
+  const h = s.header;
+  s.skipStatics = true;
+  assignKeys(s);
+  emit(s);
+  assert.equal(Atomics.load(h, H.COMPLETE0 + bufferOf(s.frame)), 1, 'the first emit marks and writes every row');
+  assert.equal(draw(s, 'first frame', sortedOpts(s)), N);
+  change(s, N / 50);
+  emit(s);
+  assert.equal(Atomics.load(h, H.COMPLETE0 + bufferOf(s.frame)), 0, 'unmarked rows skipped');
+  assert.ok(draw(s, 'a frame that skipped', sortedOpts(s)) >= 0, 'drawn keyed');
+  // Frames that lose: every row a particle (no key, statics sent) pauses the keyed frames.
+  const types = Uint8Array.from(s.q.type);
+  const entities = Int32Array.from(s.rowEntity);
+  s.q.type.fill(1);
+  s.rowEntity.fill(-1);
+  for (let f = 0; f < KEYED_LOSS_FRAMES; f++) {
+    emit(s);
+    assert.equal(draw(s, `losing frame ${f}`, sortedOpts(s)), N, 'drawn keyed, every row sent');
+  }
+  assert.equal(Atomics.load(h, H.FULL), 1, 'the pause asks for every row\'s statics');
+  s.q.type.set(types);
+  s.rowEntity.set(entities);
+  // A buffer emitted before pre-render saw the request (skipped statics): drawn keyed, exact.
+  s.skipStatics = false;
+  emit(s);
+  s.skipStatics = true;
+  Atomics.store(h, H.COMPLETE0 + bufferOf(s.frame), 0);
+  for (let i = 0; i < N; i++) {
+    if (s.rowEntity[i] >= 0 && (s.q.key[i] >>> 31) === 0) for (const c of SKIPPED_COLUMNS) s.q[c][i] = c === 'tint' ? 1 : -1;
+  }
+  assert.ok(draw(s, 'paused, from a buffer that skipped', sortedOpts(s)) >= 0, 'drawn keyed during the pause');
+  // Buffers emitted with the request: every row's statics, drawn split.
+  for (let f = 0; f < 3; f++) {
+    change(s, N / 50);
+    emit(s);
+    assert.equal(Atomics.load(h, H.COMPLETE0 + bufferOf(s.frame)), 1, 'pre-render answers with every row');
+    assert.equal(draw(s, `paused frame ${f}`, sortedOpts(s)), -1, 'drawn split');
+  }
+  // The pause's end: keyed again at once, the request cleared, and unmarked rows skipped again.
+  s.keyed._keyPause = 1;
+  emit(s);
+  assert.equal(draw(s, 'the pause\'s last frame', sortedOpts(s)), -1);
+  assert.equal(Atomics.load(h, H.FULL), 1);
+  change(s, N / 50);
+  emit(s);
+  assert.ok(draw(s, 'after the pause', sortedOpts(s)) >= 0, 'keyed again');
+  assert.equal(Atomics.load(h, H.FULL), 0, 'the request cleared');
+  change(s, N / 50);
+  emit(s);
+  assert.equal(Atomics.load(h, H.COMPLETE0 + bufferOf(s.frame)), 0, 'unmarked rows skipped again');
+  assert.ok(draw(s, 'skipping again', sortedOpts(s)) >= 0, 'drawn keyed');
+  // A frame the kernel cannot pack keyed (no key column) asks for every row's statics too.
+  const key = s.q.key;
+  emit(s);
+  Atomics.store(h, H.COMPLETE0 + bufferOf(s.frame), 1);
+  for (let i = 0; i < N; i++) {
+    const e = s.rowEntity[i];
+    if (e >= 0) for (const c of SKIPPED_COLUMNS) s.q[c][i] = s.world[c][e];
+  }
+  s.q.key = null;
+  assert.equal(draw(s, 'no key column', sortedOpts(s)), -1, 'drawn split');
+  s.q.key = key;
+  assert.equal(Atomics.load(h, H.FULL), 1, 'and every row\'s statics asked for');
 });
 
 // E-191: with keyed shadows on, a keyed frame also carries each draw slot's shadow terms (its queue row's, in draw order),

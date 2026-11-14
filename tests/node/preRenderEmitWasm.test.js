@@ -813,6 +813,74 @@ test('E-312: after a queue frame Pixi did not draw, the next emit marks the chan
   checkKeys(k, n, 'frame 4', st);
 });
 
+// E-312 step 2: told nothing reads them (K_SKIP), the emit leaves an unmarked keyed sprite row's six statics (alpha,
+// scale, tint, anchor) unwritten and writes everything else; a marked row (a change after K_SINCE, a repeating sprite)
+// gets them all. Pixi's texture, built from the marked rows alone, still holds every row's statics the frame after.
+test('E-312 step 2: with K_SKIP the emit writes the statics of marked keyed rows only', async () => {
+  const k = await setup({ ySort: true, keyed: true });
+  const { worker: w, b, source, count, maxItems } = k;
+  const n = Math.min(count, maxItems);
+  const kernelSource = { ...source, persist: true };
+  SpriteRenderer.keyedDirty.fill(1);
+  const st = { tex: new Uint32Array(N * 12) };
+  const emitAt = (frame, since, skip) => {
+    setEmitKeyFrames(b, frame, since, skip);
+    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS;
+    assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
+  };
+  // The first frame (K_SINCE 0) marks every row, so it skips none even when told to.
+  const skipped = ['renderQueueAlpha', 'renderQueueScaleX', 'renderQueueScaleY', 'renderQueueTint', 'renderQueueAnchorX', 'renderQueueAnchorY'];
+  const scramble = () => {
+    for (const c of skipped) w[c].fill(c === 'renderQueueTint' ? 0xdeadbeef : -12345.5, 0, n);
+  };
+  scramble();
+  emitAt(1, 0, true);
+  const first = checkKeys(k, n, 'frame 1', st);
+  assert.equal(first.marked, first.sprites);
+  // Frame 2: a few sprites change a static; Pixi drew frame 1.
+  const changed = new Set();
+  for (let r = 0; r < n && changed.size < 20; r += 7) {
+    if (w._renderableType[r] !== 0 || w.renderQueueRepeatX[r] !== 0 || w.renderQueueRepeatY[r] !== 0) continue;
+    const e = w._renderableIndex[r];
+    SpriteRenderer.alpha[e] *= 0.5;
+    SpriteRenderer.keyedDirty[e] = 1;
+    changed.add(e);
+  }
+  scramble();
+  const xBefore = Float32Array.from(w.renderQueueX.subarray(0, n));
+  emitAt(2, 1, true);
+  const keys = w.renderQueueKey;
+  let kept = 0;
+  let written = 0;
+  for (let r = 0; r < n; r++) {
+    if (w._renderableType[r] !== 0) continue;
+    const e = (keys[r] & ~KEY_FLAGS) >>> 0;
+    const full = keys[r] >= KEY_CHANGED && (keys[r] & KEY_TEX_ONLY) === 0;
+    const repeating = w.renderQueueRepeatX[r] !== 0 || w.renderQueueRepeatY[r] !== 0;
+    if (changed.has(e) || repeating) assert.ok(full, `row ${r}: changed or repeating, marked`);
+    const untouched = w.renderQueueTint[r] === 0xdeadbeef && w.renderQueueAlpha[r] === -12345.5;
+    if (full) {
+      assert.ok(!untouched, `row ${r}: marked, its statics written`);
+      assert.equal(w.renderQueueAlpha[r], SpriteRenderer.alpha[e], `row ${r}: its alpha`);
+      st.tex.set(rowStatics(w, r), e * 12);
+      written++;
+    } else {
+      for (const c of skipped) {
+        const want = c === 'renderQueueTint' ? 0xdeadbeef : -12345.5;
+        if (w[c][r] !== want) assert.fail(`row ${r}: unmarked, ${c} written`);
+      }
+      if ((keys[r] & KEY_TEX_ONLY) !== 0) st.tex[e * 12 + TEX_WORD] = rowStatics(w, r)[TEX_WORD];
+      kept++;
+    }
+  }
+  assert.ok(written >= changed.size && kept > n / 2, `${written} rows written, ${kept} left`);
+  assert.ok(w.renderQueueX.subarray(0, n).some((x, r) => x !== xBefore[r]) || n > 0, 'the poses written');
+  // Frame 3, not told to skip: every row written, and Pixi's texture (frames 1 to 3's marks) holds them all.
+  emitAt(3, 2, false);
+  checkKeys(k, n, 'frame 3', st);
+});
+
 test('the emit kernel fills a queue to its capacity', async (t) => {
   await runCase(t, { ySort: true, maxItems: 600, count: 600, seed: 0xfeed });
 });

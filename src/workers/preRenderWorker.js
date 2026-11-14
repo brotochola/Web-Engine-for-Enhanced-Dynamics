@@ -502,6 +502,12 @@ class PreRenderWorker extends AbstractWorker {
         this._keyedKeyBase = 0;
         // E-312: the last main-queue emit marked every keyed row (Pixi had drawn none keyed).
         this._keyedAllMarked = false;
+        // E-312 step 2: whether Pixi sends texture-only rows as texture updates (renderQueueLayout's region), whether each
+        // queue buffer holds every row's statics (1) or a frame left an unmarked row's unwritten (0), and whether the
+        // last main-queue emit did.
+        this._keyedTexUpdates = false;
+        this._keyedComplete = new Uint8Array(2);
+        this._emitSkippedStatics = false;
         this._gpuSunKeyed = false;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
@@ -1076,6 +1082,7 @@ class PreRenderWorker extends AbstractWorker {
                 if (this._keyedFrames) {
                     this._keyedHeader = new Uint32Array(data.renderQueueMemory.buffer, emitLayout.keyHeaderByte, PIXI_KEYED_HEADER_WORDS);
                     this._keyedKeyBase = data.renderQueueLayout.pixiKeyBase | 0;
+                    this._keyedTexUpdates = (data.renderQueueLayout.pixiKeyTexUpdatesByte ?? -1) > 0;
                 }
             } catch (err) {
                 throw new Error(`[PRE_RENDER] preRenderEmit.wasm did not load: ${err?.message ?? err}`, { cause: err });
@@ -2964,6 +2971,7 @@ class PreRenderWorker extends AbstractWorker {
         // DRAWN; 0: none yet, or a statics texture just made), stored with this buffer for Pixi to check against its own.
         const keyHeader = source.persist && this._keyedFrames ? this._keyedHeader : null;
         let keySince = 0;
+        let keySkip = false;
         if (keyHeader !== null) {
             const keyFrame = (this.renderQueueFrame + 1) >>> 0;
             const drawn = Atomics.load(keyHeader, PIXI_KEYED_HEADER.DRAWN) >>> 0;
@@ -2975,8 +2983,19 @@ class PreRenderWorker extends AbstractWorker {
                 persistBuf = -1;
             }
             this._keyedAllMarked = keySince === 0;
-            setEmitKeyFrames(this._emitWasm, keyFrame, keySince);
+            // E-312 step 2: an unmarked row's statics stay unwritten when nothing reads them: Pixi draws keyed (from its
+            // texture) and has not asked for every row's (FULL), sends texture-only rows as texture updates, and packs
+            // the sprites itself; the sun's casters, if any, went keyed last frame and still may.
+            keySkip = keySince > 0 && this._keyedTexUpdates
+                && Atomics.load(keyHeader, PIXI_KEYED_HEADER.FULL) === 0
+                && this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER
+                && (!this.shadowsEnabled || !this.gpuQueueCaps || !(this.gpuQueueCaps.maxSun > 0)
+                    || (this._gpuSunKeyed && this._keyedCastersLive()));
+            // A buffer that skipped some holds every row's statics again only after a full emit that skips none.
+            if (!keySkip && this._keyedComplete[this._queueBuf] === 0) persistBuf = -1;
+            setEmitKeyFrames(this._emitWasm, keyFrame, keySince, keySkip);
         }
+        this._emitSkippedStatics = keySkip;
         if (!this._writeEmitTable(source, this._resolveBuiltinTextureId('_bulletTrail'))) {
             return this._emitRefused('a column it reads is outside the render-queue memory');
         }
@@ -3014,9 +3033,13 @@ class PreRenderWorker extends AbstractWorker {
             }
             if (this.renderQueueStaticGen.length) this.renderQueueStaticGen[0] = this._staticGen;
         }
-        // E-312: the frame this buffer's marks count from (Pixi draws it keyed when its texture is not behind it).
+        // E-312: the frame this buffer's marks count from (Pixi draws it keyed when its texture is not behind it), and
+        // whether the buffer holds every row's statics (step 2): set by a full emit, kept by a persist frame (its rows
+        // stand as this buffer's last full emit wrote them). Pixi draws a frame split only from such a buffer.
         if (keyHeader !== null) {
+            if (!persistHit) this._keyedComplete[this._queueBuf] = keySkip ? 0 : 1;
             Atomics.store(keyHeader, PIXI_KEYED_HEADER.SINCE0 + this._queueBuf, keySince);
+            Atomics.store(keyHeader, PIXI_KEYED_HEADER.COMPLETE0 + this._queueBuf, this._keyedComplete[this._queueBuf]);
         }
         return writeCount;
     }
@@ -3755,6 +3778,12 @@ class PreRenderWorker extends AbstractWorker {
             return res;
         }
         const sunN = this._packGpuSun(dst, q);
+        // E-312 step 2: a caster without an entity key makes the rows full, and they read statics this frame's emit left
+        // unwritten for unmarked rows: last frame's shadows stand (the next emit writes every row's, the sun not keyed).
+        if (sunN > 0 && !this._gpuSunKeyed && this._emitSkippedStatics) {
+            this._republishGpuShadows(dst, res);
+            return res;
+        }
         // N-134: under raycasted lighting the fans are the lamps' shadows and Pixi draws the sun's casters alone, so
         // the lamps' stamps and cookies are not made.
         const stamp = this.visibilityPolygonsEnabled ? 0 : this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
