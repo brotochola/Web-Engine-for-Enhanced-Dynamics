@@ -999,6 +999,9 @@ class SpriteSheetRegistry {
               animations: {},
               indexToName: {},
             };
+            // DX-DIRSPRITE: the directions its json declares (an exporter writes them); the scene builds the table.
+            const jsonDirections = jsonData.directions ?? jsonData.meta?.directions;
+            if (jsonDirections !== undefined) proxySheets[sheetName].directionsSpec = jsonDirections;
 
             // The sheet's pixels under the frames it keeps, read back once: each frame's trim is found in them, and a trimmed
             // frame is drawn into the atlas straight from the sheet, through its trimmed rectangle. A readback and a canvas a

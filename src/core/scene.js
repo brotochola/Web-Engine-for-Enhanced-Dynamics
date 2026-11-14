@@ -32,6 +32,8 @@ import { DecorationPool } from './decorationPool.js';
 import { BulletPool } from './bulletPool.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
 import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
+import { DirectionalSprite } from '../components/directionalSprite.js';
+import { buildDirectionTable } from './spriteDirections.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { LightOccluder } from '../components/lightOccluder.js';
@@ -424,6 +426,8 @@ class Scene {
     VolumeShadowCaster.componentId = null;
     VolumeShadowCaster.clearArrays();
     VolumeShadowCaster.defaultFloorScaleY = cameraFloorScaleY(this.config);
+    DirectionalSprite.componentId = null;
+    DirectionalSprite.clearArrays();
     FlashComponent.componentId = null;
     FlashComponent.clearArrays();
     LightOccluder.componentId = null;
@@ -1589,6 +1593,21 @@ class Scene {
     };
 
     SpriteSheetRegistry.register('bigAtlas', json);
+
+    // DX-DIRSPRITE: each sheet's direction table, from its assets entry, else its json, else its <name>_<direction>
+    // animations. A copy of the proxy carries it: the bake's JSON keeps what it read.
+    const sheetConfigs = this.imageUrls?.spritesheets || {};
+    for (const [sheetName, proxyData] of Object.entries(proxySheets)) {
+      if (!proxyData?.isProxy || proxyData.prefix === '') continue;
+      const config = sheetConfigs[sheetName];
+      const spec = config && config.directions !== undefined ? config.directions : proxyData.directionsSpec;
+      const names = [];
+      for (const [k, n] of Object.entries(proxyData.indexToName || {})) names[k | 0] = n;
+      const problems = [];
+      const table = buildDirectionTable(sheetName, spec, names, problems);
+      for (const text of problems) warnOnce(`${sheetName}:${text}`, 'DX-DIRSPRITE', text);
+      proxySheets[sheetName] = table ? { ...proxyData, directions: table } : proxyData;
+    }
 
     for (const [sheetName, proxyData] of Object.entries(proxySheets)) {
       SpriteSheetRegistry.registerProxy(sheetName, proxyData);

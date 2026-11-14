@@ -479,6 +479,46 @@ onAnimationEnd(name) {
 
 Spritesheet animations call it after their last frame has shown; an Adobe clip played without loop (`adobeAnimComponent.play(name, false)`) when it reaches its end. It runs on the logic worker that owns the entity, the frame after, once per play. Animations advance while the sprite is drawn, so an off-screen one ends when it is back on screen. It travels on the same inboxes as `sendTo` (they exist when a type defines `onMessage` or `onAnimationEnd`); `static messages` is not needed for it.
 
+### Sprites drawn from several directions (`DirectionalSprite`)
+
+A character drawn walking up, left, down and right, a car rendered from 32 headings: say where the entity looks and what it does, and `DirectionalSprite` draws the right animation. The sprite does not turn; it changes frames.
+
+```javascript
+static assets = {
+  spritesheets: {
+    civil7: { json: 'lpc/civil7.json', png: 'lpc/civil7.png' }, // walk_up, walk_left, … : nothing to declare
+    gaucho: {
+      json: 'gaucho.json', png: 'gaucho.png',
+      directions: {                                             // one side drawn, the other mirrored
+        walk: { down: 'walk_front', up: 'walk_back', right: 'walk_side', left: { anim: 'walk_side', flipX: true } },
+      },
+    },
+    hatch: { json: 'hatch.json', png: 'hatch.png', directions: { drive: { count: 32, anims: 'drive_{i}' } } },
+  },
+};
+
+class Person extends GameObject {
+  static components = [RigidBody, Collider, DirectionalSprite];
+  onSpawned() {
+    this.setSpritesheet('civil7');
+    this.setAnimation('walk');                      // no direction in the name
+    this.directionalSprite.facingFrom = 'velocity'; // faces where it moves; standing still, where it last moved
+  }
+  attack() { this.setAnimation('slash', false); }   // in the direction it faces; onAnimationEnd hears 'slash'
+}
+
+guard.directionalSprite.facing = Math.PI / 2;       // world radians, like rotation: south, at the camera
+guard.directionalSprite.lookAt(player.x, player.y);
+if (guard.directionalSprite.direction === 'left') { /* … */ }
+```
+
+- **The sheet's directions.** Without `directions`, animations named `<name>_<direction>` make the directionless names (`walk_up` … `walk_right` give `walk`). Direction names are `right`, `downRight`, `down`, `downLeft`, `left`, `upLeft`, `up`, `upRight`; keys may also be degrees of the world (0 east, 90 south). `mirrorX: true` in a group mirrors each drawn heading `a` into `180° - a` where the sheet has none (a car drawn looking right). The count form `{ count, startAngle, clockwise, anims: 'name_{i}' }` is for renders. A sheet's json may carry `directions` too; the assets entry wins. Mistakes are named once in the console.
+- **`facingFrom`**: `'manual'` (default: you write `facing` or call `lookAt`), `'velocity'` (from the body's velocity, or from how far it moved without a body; under 4 px/s it keeps its facing) or `'rotation'` (the entity's rotation picks the frame: cars).
+- **`turnMargin`** (radians, default a tenth of the step between two directions) keeps a facing on a border from flickering between two. 0 changes at the border.
+- `setAnimation` with a directionless name plays it in the facing's direction, and a new direction keeps the frame of the cycle. A plain animation of the sheet (`'walk_left'`, `'die'`) is shown as it is until the next directionless one.
+- **`onDirectionChanged(direction)`** runs after the frame's ticks when the drawn direction changes (and for the first one): put there what follows a direction, such as a collider, an anchor or a light on the front.
+- Directions are resolved on the logic worker: once in the setters (so a tick reads the direction it just asked for), and once after the ticks for `'velocity'` and `'rotation'`.
+
 ### What did I hit? (`is`, `hasComponent`)
 
 Callbacks get the other entity's **index**. Ask about it without reading SoA by hand:

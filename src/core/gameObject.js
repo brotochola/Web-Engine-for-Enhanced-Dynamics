@@ -15,6 +15,7 @@ import { ShadowCaster } from '../components/shadowCaster.js';
 import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
+import { DirectionalSprite } from '../components/directionalSprite.js';
 import { SpriteSheetRegistry, BIG_ATLAS_CHUNK, bigAtlasChunkName } from './spriteSheetRegistry.js';
 import { Layer } from './layer.js';
 import { syncColliderFeed } from '../util/layerFeed.js';
@@ -2082,6 +2083,8 @@ export class GameObject {
       return;
     }
     this.spriteRenderer.spritesheetId = spritesheetId;
+    // DX-DIRSPRITE: the animation it asked for, from the new sheet's table.
+    if (this._hasComponents.DirectionalSprite) DirectionalSprite.resolve(this.index);
 
     // Mark as animated
     this.spriteRenderer.isAnimated = 1;
@@ -2116,6 +2119,12 @@ export class GameObject {
       return;
     }
 
+    // DX-DIRSPRITE: a directionless name plays in the direction the entity faces; any other is shown as it is.
+    if (this._hasComponents.DirectionalSprite) {
+      this._setDirectionalAnimation(spritesheetId, animationName, loop);
+      return;
+    }
+
     // Name → index per sheet id: no string is built per call, so a tick can
     // call this every frame and pay only when the animation changes.
     const byName = GameObject._animIndexBySheet[spritesheetId];
@@ -2136,6 +2145,24 @@ export class GameObject {
     // Set the animation and loop flag
     this.setAnimationState(animIndex);
     SpriteRenderer.loop[this.index] = loopFlag;
+  }
+
+  /** setAnimation on an entity with a DirectionalSprite: its directionless animation, or a plain one pinned. */
+  _setDirectionalAnimation(spritesheetId, animationName, loop) {
+    const i = this.index;
+    SpriteRenderer.loop[i] = loop ? 1 : 0;
+    if (DirectionalSprite.setGroup(i, animationName)) return;
+    if (!SpriteSheetRegistry.hasAnimation(SpriteSheetRegistry.getSpritesheetName(spritesheetId), animationName)) {
+      DirectionalSprite.warnNoGroup(this.constructor.name, i, animationName);
+      return;
+    }
+    const byName = GameObject._animIndexBySheet[spritesheetId];
+    let animIndex = byName !== undefined ? byName.get(animationName) : undefined;
+    if (animIndex === undefined) {
+      animIndex = GameObject._lookUpAnimation(this.constructor.name, spritesheetId, animationName);
+      if (animIndex === undefined) return;
+    }
+    DirectionalSprite.pin(i, animIndex);
   }
 
   /**
@@ -2793,6 +2820,14 @@ export class GameObject {
    */
   onAnimationEnd(name) {}
 
+  /**
+   * DX-DIRSPRITE: the direction a DirectionalSprite draws changed (and once when it draws its first). Runs on a logic
+   * worker after the ticks of the frame it changed in. Override it for what follows a direction: a collider, an anchor,
+   * a light on the front.
+   * @param {string} direction - the sheet's name of it ('left', 'downRight', '12')
+   */
+  onDirectionChanged(direction) {}
+
   onCollisionEnter(otherIndex) {
     // Override in subclasses
   }
@@ -3218,6 +3253,9 @@ export class GameObject {
       SpriteRenderer.keyedDirty[i] = 1;
       SpriteRenderer.layerMask[i] = 0;
     }
+
+    // DX-DIRSPRITE: after the sprite's reset, which turned its rotation back on.
+    if (has.DirectionalSprite) DirectionalSprite.resetRow(i);
 
     if (has.adobeAnimComponent) {
       AdobeAnimComponent.active[i] = 1;

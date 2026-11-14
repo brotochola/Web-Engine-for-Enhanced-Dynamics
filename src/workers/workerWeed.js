@@ -58,6 +58,8 @@ import { DecorationComponent } from '../components/decorationComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
 import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
+import { DirectionalSprite, FACING_FROM } from '../components/directionalSprite.js';
+import { DIRECTION_NAMES } from '../core/spriteDirections.js';
 import {
   LightOccluder,
   LIGHT_OCCLUDER_MASK_COLLIDER,
@@ -196,6 +198,9 @@ export const WORKER_WEED = Object.freeze({
   LightEmitter,
   ShadowCaster,
   VolumeShadowCaster,
+  DirectionalSprite,
+  FACING_FROM,
+  DIRECTION_NAMES,
   LightOccluder,
   LIGHT_OCCLUDER_MASK_COLLIDER,
   LIGHT_OCCLUDER_MASK_SPRITE,

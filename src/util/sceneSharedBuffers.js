@@ -20,6 +20,7 @@ import { DecorationSpatial } from '../core/decorationSpatial.js';
 import { BulletPool } from '../core/bulletPool.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
 import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
+import { DirectionalSprite } from '../components/directionalSprite.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { LightOccluder } from '../components/lightOccluder.js';
@@ -1543,7 +1544,7 @@ export function teardownSceneSharedState(scene) {
   // memory (the engine block), the rest the scene's other memories, so a page that destroys the engine keeps none
   // of them alive. The next scene binds its own (scene.js clears the views of a component it does not pool).
   for (const C of [Transform, RigidBody, Collider, SpriteRenderer, MeshRenderer, AdobeAnimComponent, ParticleComponent,
-    DecorationComponent, BulletComponent, ShadowCaster, VolumeShadowCaster, FlashComponent, LightEmitter, LightOccluder]) {
+    DecorationComponent, BulletComponent, ShadowCaster, VolumeShadowCaster, DirectionalSprite, FlashComponent, LightEmitter, LightOccluder]) {
     C.clearArrays();
   }
   GameObject.neighborData = null;

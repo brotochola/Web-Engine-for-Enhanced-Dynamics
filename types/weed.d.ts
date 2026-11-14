@@ -287,6 +287,14 @@ export type SceneConfig = Record<string, unknown> & {
    * past that, decided when the scene is built. 16 or 32 forces one (32: up to 500000 entities).
    */
   entityIdWidth?: 'auto' | 16 | 32;
+  /**
+   * DX-CAMERA: what the camera is, once for the scene. `pitch` is degrees from the horizon (90 straight down, 0 from the
+   * side); `floorScaleY` (default sin(pitch), or 1 without a pitch) is how tall the floor is drawn against its width, which
+   * makes light pools and cones ellipses; `heightScaleY` (default cos(pitch), or 1) is the screen px a px of height rises
+   * (lighting.faces). Give the scales when the pictures do not follow the trigonometry. Replaces lighting.groundScaleY
+   * and lighting.faces.heightScaleY.
+   */
+  camera?: { pitch?: number; yaw?: number; floorScaleY?: number; heightScaleY?: number };
   physics?: Record<string, unknown> & {
     /**
      * Default true. false = do not create the Box2D WASM worker;
@@ -421,6 +429,9 @@ export interface QuerySystemPrecomputeComponentMap {
   LightEmitter: typeof LightEmitter;
   ShadowCaster: typeof ShadowCaster;
   VolumeShadowCaster: typeof VolumeShadowCaster;
+  DirectionalSprite: typeof DirectionalSprite;
+  FACING_FROM: typeof FACING_FROM;
+  DIRECTION_NAMES: typeof DIRECTION_NAMES;
   FlashComponent: typeof FlashComponent;
   LightOccluder: typeof LightOccluder;
   LIGHT_OCCLUDER_MASK_COLLIDER: typeof LIGHT_OCCLUDER_MASK_COLLIDER;
@@ -720,10 +731,35 @@ export interface SceneBigAtlasAsset {
   png: string;
 }
 
+/** One direction's animation: its name, or `{ anim, flipX }` to draw it mirrored. */
+export type SpriteDirectionEntry = string | { anim: string; flipX?: boolean };
+
+/**
+ * DX-DIRSPRITE: a directionless animation's directions. Keys are direction names (`right`, `downRight`, `down`,
+ * `downLeft`, `left`, `upLeft`, `up`, `upRight`) or degrees of the world (0 east, 90 south: y down); `mirrorX: true`
+ * mirrors each drawn heading a into 180° - a where the sheet has none. Or the count form for renders: `count`
+ * directions from `startAngle` (degrees, default 0), clockwise on the screen unless `clockwise: false`, each the
+ * animation `anims` names with `{i}` replaced by its number.
+ */
+export type SpriteDirectionGroup =
+  | ({ mirrorX?: boolean } & Record<string, SpriteDirectionEntry | boolean | undefined>)
+  | { count: number; startAngle?: number; clockwise?: boolean; anims: string };
+
+export interface SceneSpritesheetAsset extends Record<string, unknown> {
+  json?: string;
+  png?: string;
+  excludeAnimations?: string[];
+  /**
+   * The sheet's directions, for DirectionalSprite: directionless names → their directions. Without it, the sheet's own
+   * json `directions`, else its animations named `<name>_<direction>` (walk_up, walk_left…). `false`: none.
+   */
+  directions?: Record<string, SpriteDirectionGroup> | false;
+}
+
 export interface SceneAssetsManifest {
   bigAtlas?: SceneBigAtlasAsset;
   textures?: Record<string, string>;
-  spritesheets?: Record<string, Record<string, unknown>>;
+  spritesheets?: Record<string, SceneSpritesheetAsset>;
   AdobeAnimateAnimations?: Record<string, Record<string, unknown>>;
   tilemaps?: Record<string, { json: string; png: string }>;
   /**
@@ -1448,6 +1484,11 @@ export declare class GameObject {
    * advance while drawn, so an off-screen one waits.
    */
   onAnimationEnd(name: string): void;
+  /**
+   * DX-DIRSPRITE: the direction a DirectionalSprite draws changed (and once for its first), after the frame's ticks on a
+   * logic worker. For what follows a direction: a collider, an anchor, a light on the front.
+   */
+  onDirectionChanged(direction: string): void;
   /** Override to receive sendTo / scene.sendToEntity messages. from = -1 for the scene. */
   onMessage(name: string, from: number, a: number, b: number, c: number, d: number): void;
   /** Is this entity an EntityClass or a subclass? Another entity: GameObject.is(index, EntityClass). */
@@ -3898,6 +3939,42 @@ export declare class LightEmitter extends Component {
   set followFlip(on: number | boolean);
 }
 
+/** Where a DirectionalSprite's facing comes from each frame. */
+export declare const FACING_FROM: Readonly<{ MANUAL: 0; VELOCITY: 1; ROTATION: 2 }>;
+/** The eight direction names a sheet's `directions` may use, every 45° from east (y down: `down` is 90°). */
+export declare const DIRECTION_NAMES: readonly ['right', 'downRight', 'down', 'downLeft', 'left', 'upLeft', 'up', 'upRight'];
+
+/**
+ * DX-DIRSPRITE: a sprite drawn from several directions. Say where the entity looks (`facing`, or `facingFrom` 'velocity' /
+ * 'rotation') and play a directionless animation (`setAnimation('walk')`): it draws the animation of the direction nearest
+ * the facing, from the sheet's `directions`, keeping the frame of the cycle when the direction changes. The sprite does not
+ * turn. `setAnimation` with a plain animation of the sheet ('walk_left') shows it as it is until the next directionless one.
+ * Brings a SpriteRenderer.
+ */
+export declare class DirectionalSprite extends Component {
+  static readonly requires: readonly [typeof SpriteRenderer];
+  static facing: Float32Array;
+  static facingFrom: Uint8Array;
+  static directionIndex: Uint8Array;
+  /** Where it looks, in world radians like `rotation` (π/2 is south). Written by the engine with 'velocity' or 'rotation'. */
+  get facing(): number;
+  set facing(radians: number);
+  /** 'manual' (default), 'velocity' (where it moves; still, the last facing) or 'rotation'. */
+  get facingFrom(): 'manual' | 'velocity' | 'rotation';
+  set facingFrom(source: 'manual' | 'velocity' | 'rotation' | number);
+  /** Radians past a border before the direction changes; default a tenth of the step (9° with four directions). */
+  get turnMargin(): number;
+  set turnMargin(radians: number);
+  /** The direction drawn, as the sheet names it ('left', 'downRight', '12'); null before the first. */
+  readonly direction: string | null;
+  /** The direction drawn as an index into `directions`; 255 before the first. */
+  readonly directionIndex: number;
+  /** The sheet's directions, from east, clockwise on the screen. */
+  readonly directions: string[];
+  /** Face a point of the world. */
+  lookAt(x: number, y: number): void;
+}
+
 /**
  * Says what an object is, and the engine works out its shadow: a box, levels or a hull of points, in the entity's frame. It
  * moves and turns with the entity, with no second entity, no layer in the config and no mesh code. x looks the way the entity
@@ -4551,6 +4628,9 @@ export interface WeedNamespace extends WeedEnums {
   LightEmitter: typeof LightEmitter;
   ShadowCaster: typeof ShadowCaster;
   VolumeShadowCaster: typeof VolumeShadowCaster;
+  DirectionalSprite: typeof DirectionalSprite;
+  FACING_FROM: typeof FACING_FROM;
+  DIRECTION_NAMES: typeof DIRECTION_NAMES;
   LightOccluder: typeof LightOccluder;
   LIGHT_OCCLUDER_MASK_COLLIDER: typeof LIGHT_OCCLUDER_MASK_COLLIDER;
   LIGHT_OCCLUDER_MASK_SPRITE: typeof LIGHT_OCCLUDER_MASK_SPRITE;
