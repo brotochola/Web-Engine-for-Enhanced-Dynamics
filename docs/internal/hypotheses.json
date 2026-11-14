@@ -13052,8 +13052,8 @@
     {
       "id": "E-228",
       "title": "The OS's view (ETW): context switches, wake latency after a notify, core moves, frequency",
-      "status": "blocked",
-      "statusText": "proposed 2026-11-13; needs an install the owner approves",
+      "status": "open",
+      "statusText": "unblocked 2026-11-14: WPR runs elevated through two owner-made tasks (D:perf-toolswpr-elevated); PMC sampling done (R-0997), context switches and wake latency still to record",
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
@@ -13075,12 +13075,11 @@
     {
       "id": "E-229",
       "title": "Hardware counters per function: cache misses, mispredicts, IPC (uProf / VTune)",
-      "status": "blocked",
-      "statusText": "proposed 2026-11-13; needs an install the owner approves",
+      "status": "answered",
+      "statusText": "answered 2026-11-14: counters per JS and wasm function come from WPR with V8's code log (R-0997); uProf drops every sample outside a module, JIT and wasm included",
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
-      "rank": 57,
       "next": "A profile of Predator's and BunnyMark's hot workers. Needs the owner's OK to install the profiler.",
       "refs": [
         "EXECUTION_PLAN.md#E-229"
@@ -14042,7 +14041,7 @@
       "kind": "speed",
       "rank": 6,
       "result": "CPU sweep, meshApiStressScene: MeshUvFillBatch.uploadRange (meshUvFillBatch.js) spends 990 ms of the window (100 % of its self time) on `if (this.rows !== this.data) this.data.set(this.rows.subarray(from, past * MESH_UV_FILL_FLOATS), from)`: the corner kernel writes the rows in the mesh memory (W11), and they are copied into the Pixi buffer's own array before its upload; a subarray each time.",
-      "next": "Not the upload from the shared view: E-123 (R-0563) tried that for the sprite rows and every other worker paid about 6 % (physics +9.5 %, spatial +6.3 %), which the copy into a private array removed. Instead: copy only the rows whose mesh changed (the corner kernel knows which), or have the kernel write into a non-shared memory Pixi owns; meshApiStressScene's Pixi STEP_MS with the unreachable workers read against an A/A (the E-123 cost is on them), colliderFillBatch.js's same copy with it.",
+      "next": "The copy is only the written range (pixiWorker passes [first, past)); in meshApiStress every mesh changes each frame, so the copy is the data. The remedy left: the corner kernel writing Pixi's own non-shared buffer (E-123 showed uploads from the shared view cost the other workers ~6 %). A design of its own.",
       "refs": [
         "EXECUTION_PLAN.md#E-269"
       ],
