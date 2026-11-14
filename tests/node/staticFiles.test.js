@@ -81,6 +81,24 @@ test('the folder is served as before: index.html, a folder sent to its slash, a 
   }
 });
 
+test('wasm and shaders are read fresh like scripts; an image keeps an hour (review N-169)', async () => {
+  const { base, root } = makeSite();
+  for (const name of ['box2dWasm.wasm', 'sprite.vert.glsl', 'sprite.wgsl', 'liquid.frag', 'worker.mjs', 'art.png']) {
+    fs.writeFileSync(path.join(root, 'demos', name), 'x');
+  }
+  const site = await serve(root);
+  try {
+    for (const name of ['box2dWasm.wasm', 'sprite.vert.glsl', 'sprite.wgsl', 'liquid.frag', 'worker.mjs', 'index.html']) {
+      assert.equal((await site.get(`/demos/${name}`)).headers['cache-control'], 'no-cache, no-store, must-revalidate', name);
+    }
+    assert.equal((await site.get('/demos/box2dWasm.wasm')).headers['content-type'], 'application/wasm');
+    assert.equal((await site.get('/demos/art.png')).headers['cache-control'], 'public, max-age=3600');
+  } finally {
+    await site.close();
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('a special file is served for its path wherever it lives (the isolation worker at /weed-sw.js)', async () => {
   const { base, root } = makeSite();
   const site = await serve(root, { special: (p) => (p === '/weed-sw.js' ? path.join(base, 'secret.txt') : null) });
