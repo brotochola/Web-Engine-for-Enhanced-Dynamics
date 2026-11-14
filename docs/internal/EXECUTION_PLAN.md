@@ -4853,6 +4853,12 @@ Predator (631 tries, 0 hits). Ceiling (scratch b7f8cfa9): preRender -17.1 % at c
 **Plan:** Pixi still draws split frames (first frame, a gap, the keyed pause, refused keyed passes) that read every row's
 statics: make E-177's flags cumulative since the frame Pixi last drew keyed and request a full resend before any split,
 then skip unchanged rows' statics. Owner: pre-render.
+**Kept 2026-11-14 (R-1047), merged 3a314adb:** step 1 (3b119d47) marks a key for a change after the queue frame Pixi last
+drew keyed (the header's DRAWN), so a gap or a split frame needs no resend; step 2 (9d18efd4) leaves an unmarked keyed row's
+six statics unwritten while nothing reads them, each buffer saying whether it holds them all (COMPLETE) and Pixi asking for
+them (FULL) before it draws split. Predator crowd=2.5, 4 pairs against main: pre-render 6.427 -> 5.841 ms (-9.1 %, 4/4),
+-7.2 % against the other workers past the A/A limit (5.3 %), no worker worse; kernel +7.1 % (step 1 alone a tie). Left:
+the persist path still never hits in Predator (R-1045), and persist_remember runs for nothing there.
 ### E-311 Pixi's updateLighting boxes a double per light
 
 **Premise (the day's heap pass, Predator crowd 1.5):** updateLighting 54.5 KB/s of Pixi's 302.7, about one heap number per
