@@ -12257,7 +12257,8 @@
       ],
       "records": [
         "R-0898",
-        "R-0899"
+        "R-0899",
+        "R-0999"
       ]
     },
     {
@@ -13867,13 +13868,12 @@
     {
       "id": "E-262",
       "title": "Every entity tick boxes dtRatio, deltaTime and accTime: obj.tick is never inlined, so its three doubles become heap numbers per call (2.8 MB/s of logic's garbage in WaterAndBoxes)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from round 2 (heap and TurboFan sites), not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-13 (R-0999), hygiene",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 7,
-      "result": "WaterAndBoxes: logic 2807.2 KB/s, 2796.1 of it in update (logicWorker.js), whose TurboFan graph has an allocation at _tickNonDecimatedOne's obj.tick(dtRatio, deltaTime, accTime, frameNum): each class has its own tick, so the call is not inlined and the frame's three doubles are boxed for every entity, every frame.",
+      "result": "kept (hygiene): WaterAndBoxes logic 2 799 -> 27 KB/s (R-0987); Predator gate clean.",
       "next": "Box them once a frame: the three values in a generic (PACKED_ELEMENTS) array or kept tagged fields read in the loop, so the call passes the same heap numbers; kernel on the tick loop (heap and ns a tick), then WaterAndBoxes' and Predator's logic.",
       "refs": [
         "EXECUTION_PLAN.md#E-262"
@@ -13886,7 +13886,8 @@
         "_tickNonDecimatedOne"
       ],
       "records": [
-        "R-0987"
+        "R-0987",
+        "R-0999"
       ]
     },
     {
@@ -13938,13 +13939,12 @@
     {
       "id": "E-265",
       "title": "A query with a fresh array of classes misses the identity cache: each call builds an ids array, sorts it and joins a string key (Query.queryActiveEntities([A]) in a tick)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from round 2 (spawnStorm's heap) and querySystem.js, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-13 (R-0999), hygiene",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 17,
-      "result": "generateQueryMask caches masks by the classes array's identity; an array literal per call (the usual game code, e.g. spawnStormDriver's queryActiveEntities([SpriteRenderer]) each tick) misses it, so every call makes an ids array, sorts it and joins a string for the second cache: 11.2 KB/s (generateQueryMask) and 1 KB/s (join) of spawnStorm's logic.",
+      "result": "kept (hygiene): spawnStorm generateQueryMask 8 -> 0 KB/s (R-0987), logic a tie; Predator gate clean.",
       "next": "A second-level cache that needs no string: a small table keyed by the classes themselves (the first class, then a short list compared element by element), or a numeric key from the component ids; a kernel of queryActiveEntities with a fresh literal against a kept array (ns a call, KB/s); then a demo that queries in its ticks.",
       "refs": [
         "EXECUTION_PLAN.md#E-265"
@@ -13956,7 +13956,8 @@
         "array literal query"
       ],
       "records": [
-        "R-0987"
+        "R-0987",
+        "R-0999"
       ]
     },
     {
@@ -14233,12 +14234,12 @@
     {
       "id": "E-277",
       "title": "The collider fill passes its doubles through module lets and calls TurboFan leaves out (Pixi: 13.9 MB/s in destructibleTerrain, 3.2 in planetPhysics)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-13 (R-0999), hygiene",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "result": "Heap pass: destructibleTerrainScene's Pixi allocates 14.7 MB/s, 13.9 of it in `fanLocalVerts` (colliderFillBatch.js); planetPhysicsScene's 3.6 MB/s, 3.2 in `packColliderFill` itself. `radialOutset` returns its point in the module lets `_ox`/`_oy` (inlined in the fan loop, each double stored into a module context slot is a heap number, six per triangle), and `writeFillTri` (17 arguments) and `fanLocalVerts` take doubles: from a caller too large to inline them, each call boxes them (the mesh-index path: eight per triangle). Machine code on main (Node 22, R-0992): fanLocalVerts calls AllocateInYoungGeneration 6 times with 6 write barriers, packColliderFill 4: the heap numbers E-277 removes.",
+      "result": "kept (hygiene): planetPhysics Pixi 3 474 -> 343 KB/s (R-0987), bytes equal (golden); Predator gate clean.",
       "next": "The point and the triangle's corners in a module Float64Array, integer arguments only (E-85, E-261's MESH_POSE), and `--trace-turbo-inlining` on the pack to confirm what stays a call; the collider fill kernel, then destructibleTerrain's and planetPhysics' Pixi STEP_MS and heap. No other module let in src/ holds a double (a grep of `^let x = <number>`).",
       "refs": [
         "EXECUTION_PLAN.md#E-277"
@@ -14252,9 +14253,9 @@
       "records": [
         "R-0980",
         "R-0987",
-        "R-0992"
-      ],
-      "rank": 10
+        "R-0992",
+        "R-0999"
+      ]
     },
     {
       "id": "E-278",
@@ -14425,12 +14426,12 @@
     {
       "id": "E-285",
       "title": "Each sound played builds a closure over its arguments (audioStorm logic: 7.3 MB/s)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-13 (R-0999), hygiene",
       "date": "2026-11-13",
       "area": "audio",
       "kind": "speed",
-      "result": "Heap pass: audioStormScene's logic allocates 9.1 MB/s, 7.3 of it in `SoundManager._writeSlotListed`: it builds `const claim = (slot, from) => …` on every play, a context holding the fifteen values it captures (volume, pitch and pan as heap numbers) and the closure itself; each play also scans the slots with Atomics.load until a free one.",
+      "result": "kept (hygiene): audioStorm logic 9 026 -> 1 722 KB/s (R-0987); Predator gate clean.",
       "next": "claim as a static method with integer arguments, the play's doubles in a module Float64Array (E-85); then the free-slot scan (a free list or the high-water start); a kernel of plays per frame, then audioStorm's logic heap and STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-285"
@@ -14442,9 +14443,9 @@
       ],
       "records": [
         "R-0980",
-        "R-0987"
-      ],
-      "rank": 12
+        "R-0987",
+        "R-0999"
+      ]
     },
     {
       "id": "E-286",
@@ -14732,12 +14733,11 @@
     {
       "id": "E-300",
       "title": "The tick dispatch reads obj.tick twice per entity, each a megamorphic load call (two LoadICTrampoline_Megamorphic per entity in d8 16)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the bytecode and d8 machine-code harvest, not tested",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-13: E-215 (R-0899), not redone",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 66,
       "result": "Bytecode (Chrome 151, Predator): `_tickIntervalBucket` loads `obj.tick` twice per entity (the `typeof` test and the call), as do the no-body bucket and the `_tickNonDecimatedOne*` paths; eight targets in Predator. d8 16 machine code of that loop shape over eight classes: two `LoadICTrampoline_Megamorphic` calls per entity; with the type's tick resolved once per bucket and called through `.call`, no load is left, only `Call_ReceiverIsAny`. One type is one class; nothing assigns `tick` per instance.",
       "next": "Resolve each type's tick once (none: skip the bucket) and `.call` it in the five paths; d8 machine code shows no megamorphic load, then tickLoopKernel, then a logic owner scene.",
       "refs": [
@@ -14750,7 +14750,8 @@
         "LoadICTrampoline_Megamorphic"
       ],
       "records": [
-        "R-0996"
+        "R-0996",
+        "R-0999"
       ]
     },
     {
@@ -14780,13 +14781,12 @@
     {
       "id": "E-302",
       "title": "The collision-stay walk validates every pair each frame in a scene where nothing listens to stay (Predator)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the bytecode and d8 machine-code harvest, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-13 (R-0999)",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 68,
-      "result": "Bytecode (Chrome 151, Predator): `_processBox2dCollisionCallbacks` (684 B, 330 ms self over two logic workers) walks all `_pairCount` pairs each frame (active and generation checks, then stay flags). No Predator class defines `onCollisionStay`, so the walk only drops pairs of dead entities or replaced bodies; `_removePairSlot` fires no callback.",
+      "result": "kept: contactsMicrobench --no-stays +46 % contact / +36 % dense, checksums equal; Predator gate clean (physics -3.8 %), logic 4.377 -> 3.823 ms (-12.7 %, unjudged).",
       "next": "Split the function's time between the ring drain and the walk, count pairs walked and removed per frame; if the walk weighs, skip it when no type listens to stay and nothing was despawned or rebuilt since the last walk, keeping `frameCollisions` exact for its readers.",
       "refs": [
         "EXECUTION_PLAN.md#E-302"
@@ -14798,7 +14798,8 @@
         "pair walk"
       ],
       "records": [
-        "R-0996"
+        "R-0996",
+        "R-0999"
       ]
     },
     {
@@ -24647,6 +24648,24 @@
       "title": "E-293 is E-251's OSR deopt loop at _flushWasmPublish (0.3 % of spatial); E-291's inlining is blocked by _checkCellEntities's budget: both answered small",
       "verdict": "answered",
       "text": "**E-293 and E-291 answered from the logs, no sitting: E-293 is E-251's deopt loop; E-291's inlining is blocked by its caller's budget.**\n2026-11-13, 22:05 (Predator, 6 s + 8 s, `--js-flags=\"--log-deopt --log-code\"`, `main` at b87d4861).\n\n**E-293.** The spatial isolate's log has 495 eager deopts, 464 of them at `spatialWorker.js:1762:22` inlined at `1756:10`:\n`this._wasmPub` in `_flushWasmPublish`, the tail of `_findNeighbors` after its loop, \"Insufficient type feedback for\ngeneric named access\", six every 0.1 s from 6.2 to 12.6 s (one a frame). It is E-251's loop at the same site:\n`_findNeighbors` is compiled on stack replacement during its first long loop, before its tail ever ran, and the cached\nOSR code is re-entered each frame and soft-deopts at the tail. E-251 dropped the only fix (the loop in its own function,\n+19 % Node / +55 % Chrome in its kernel). Cost: the trace's `V8.DeoptimizeCode` events average 16 µs, about 1 ms a\nsecond, 0.3 % of spatial's work: under any sitting's detection limit. Answered: small.\n\n**E-291.** `_boxRayDistance` (493 B) under 460 would still not be inlined where rays are hot: `_checkCellEntities`\ninlines `_shapeRayDistance` (151 B) and `_circleRayDistance` (358 B) and has spent 565 of its 920 bytes, so a box test\nstays a call either way. Its Sparkplug boxing is about 100 calls a second (20 KB/s a logic worker at ~12 doubles a call).\nAnswered: small; a split into integer-argument parts would only move the boxed call (CLAUDE.md, E-85)."
+    },
+    {
+      "id": "R-0999",
+      "date": "2026-11-13",
+      "time": "23:18",
+      "timeFrom": "recorded",
+      "title": "Predator's gate passed for E-302, E-262, E-277, E-285 and E-265 together (physics -3.8 %, logic -12.7 % unjudged): all kept; E-300 is E-215",
+      "verdict": "kept",
+      "text": "**Predator's gate for five changes together (E-302, E-262, E-277, E-285, E-265): passed; all five kept and on main.**\n2026-11-13, 23:18 to 23:38 (the log's times), `runPredatorAbab.mjs --name w14-gate2-predator --vs main --hyp-rev w14s/gate2\n--query crowd=1.5 --pairs 4`, both sides from worktrees, source, headed, AC power, no other run (one stray file search\noverlapped the last pair).\n\n| worker (own = STEP - WAIT) | A (main e6fb1845) | B (the five) | |\n| --- | --- | --- | --- |\n| physics | 8.412 ms | 7.776 ms | -3.8 %, worse 0/4 (the judged row) |\n| logic | 4.377 | 3.823 | -12.7 %, under the 6 ms floor, not judged |\n| spatial | 5.879 | 5.645 | -4.0 %, not judged |\n| pre-render | 3.349 | 3.570 | +6.6 %, not judged (no change reaches it; Predator's 8 to 13 %) |\n| renderer / particle | 2.344 / 0.790 | 2.302 / 0.830 | not judged |\n\nLoad keys within 0.6 % (BODY_COUNT 24 792 / 24 797, VISIBLE_ENTITIES -0.6 %). Verdict NEUTRAL: no row worse.\n\n- **E-302 kept** (speed, kernel claim): contactsMicrobench --no-stays A B A B, contact 13 460 / 13 200 -> 18 882 / 20 169\n  ops/s (+46 %), dense 2 022 / 1 947 -> 2 690 / 2 703 (+36 %), checksums equal; the gate clean, Predator's logic -12.7 %\n  (unjudged, the walk was 7 to 11 % of it). Tests: contactLazyPairs.test.js (enter/exit, despawn, stale index, sweep,\n  stay unchanged). Owner scene: none reaches 6 ms of logic (contactDrainStress ?stay=0 0.5 to 0.9 ms; Predator's logic\n  tops out at 4.6 ms with crowd capped by its pools).\n- **E-262, E-277, E-285, E-265 kept** (hygiene): their heap A/B (R-0987) took their sites to near zero, the gate clean.\n\nCommits on main: 1498b907 (E-302), 225b0224 (E-262), 8aad1be2 + 5c5b9664 (E-277), 9c7100bd (E-285), 98cb0278 (E-265);\ne6fb1845 adds contactDrainStress's ?stay=0 and ?balls=N. test:node 2592/2592, test:demos 101/101.\n\n**E-300 is E-215** (dropped 2026-11-11, R-0899): the type's tick resolved once and called with .call was +46 % in\ntickLoopKernel, but a tick costs 7 to 8 ns in all, so the saving is 2 to 3 ns an entity, unmeasurable in Predator.\nNot redone; dropped as a duplicate.",
+      "commits": [
+        "1498b907",
+        "225b0224",
+        "8aad1be2",
+        "5c5b9664",
+        "9c7100bd",
+        "98cb0278",
+        "e6fb1845"
+      ]
     }
   ],
   "leads": [
