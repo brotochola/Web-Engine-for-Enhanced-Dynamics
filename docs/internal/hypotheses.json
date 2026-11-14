@@ -15142,13 +15142,12 @@
     {
       "id": "E-312",
       "title": "With keyed frames pre-render's emit reads and writes every sprite row's six statics each frame, which Pixi reads only for changed keys (Predator crowd 2.5 ceiling: preRender about -10 % net)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-14 (R-1045)",
       "date": "2026-11-14",
       "area": "pre-render",
       "kind": "speed",
-      "rank": 4,
-      "result": "",
+      "result": "Keyed frames v2 then the emit's statics skipped for unmarked keyed rows: Predator crowd 2.5 pre-render 6.427 -> 5.841 ms (-9.1 %, -7.2 % vs others past the 5.3 % A/A limit); kernel +7.1 %",
       "next": "E-177's changed flags cumulative since the queue frame Pixi last drew keyed; no split frame on a gap, a pause or a fallback without a full resend answered first; then the emit skips unchanged rows' statics when Pixi says every pass draws keyed. compareCaptures with gaps forced, Predator crowd 2.5 against the A/A.",
       "refs": [
         "EXECUTION_PLAN.md#E-312"
@@ -15160,7 +15159,8 @@
       ],
       "records": [
         "R-1045",
-        "R-1046"
+        "R-1046",
+        "R-1047"
       ]
     }
   ],
@@ -25503,6 +25503,21 @@
       "text": "**Crowd 2.5's \"side bias\" was noise: a second A/A on one directory reads B slower, and the runner now judges against the A/A (--aa).**\n2026-11-14, 18:28:13 to 18:33:40 (the sitting), then 18:35 to 18:50 (the tool, 52cf1ee0).\n\n- A/A on one directory: runPredatorAbab --vs main --query crowd=2.5 --query-b \"crowd=2.5&noop=1\" --owner preRender --pool\n  --pairs 4 (both sides run pool-a). The 3 % bars called it REGRESSION: pre-render +4.7 % (4/4 worse, cv 4/3 %), logic\n  +2.3 %, spatial +2.1 %, physics +1.4 %. With R-1044's A/A on two directories (B -6.3 %), the B side read faster once and\n  slower once on identical code: no side bias, a large spread.\n- Pooled (8 pairs), the A/A medians are near 0 (pre-render +2.0 %, logic -0.8 %, physics -0.4 %, spatial +0.3 %); the\n  spreads give these limits for a 4-pair sitting at crowd 2.5 (raw / against the other workers): pre-render 8.7 / 5.3 %,\n  logic 13.4 / 8.9 %, physics 5.4 / 3.4 %, spatial 4.9 / 4.1 %. An 8-pair sitting divides them by 1.41.\n- runPredatorAbab --aa (52cf1ee0, HOW_WE_MEASURE rule 7 and planned tool 4's first part): those limits printed beside each\n  kind; a keep, a regression and an --early stop must clear them. Re-judged with --decide-only --aa aa-crowd25,aa25-samedir:\n  both A/As NEUTRAL; E-312's ceiling (e312-ceiling4) KEPT, pre-render -8.2 % against the others past 5.3 %; E-308\n  (e308-crowd25) NEUTRAL (within the detection limit), as R-1044 read it; E-310 step 1: spatial -37.3 % against the others,\n  logic +9.7 % against the others just past its 8.9 %.\n\nR-1044's reading of E-308 stands (its gains are within the limits; kept as hygiene); its word \"bias\" does not.",
       "commits": [
         "52cf1ee0"
+      ]
+    },
+    {
+      "id": "R-1047",
+      "date": "2026-11-14",
+      "time": "20:13",
+      "timeFrom": "recorded",
+      "title": "E-312 kept: the emit leaves an unmarked keyed row's statics unwritten (keyed frames v2 first); Predator crowd 2.5 pre-render -9.1 %, -7.2 % against the others past the A/A limit",
+      "verdict": "kept",
+      "text": "**E-312 kept: with keyed frames v2 the emit leaves an unmarked keyed sprite row's statics unwritten; Predator crowd 2.5 pre-render -9.1 % (-7.2 % against the other workers, past the A/A limit).**\n2026-11-14, 20:13:20 to 20:13:53 (kernel), 20:14:17 to 20:19:44 (the sitting), then the CPU, heap and deopt passes.\n\nWhat changed (merged 3a314adb):\n\n- Step 1 (3b119d47, keyed frames v2): pre-render stamps each entity's statics and texture changes, each keyed decoration's\n  and LiquidFun particle's record change, with the queue frame, and marks a key for a change after the queue frame Pixi\n  last drew keyed (the header's DRAWN; every key while it is 0), storing that frame with the buffer (SINCE0/1). A gap, a\n  split frame or a pause loses nothing and needs no resend (REQUEST/SERVED went). Same picture as main on dxCaptureScene\n  (WebGL and WebGPU, 0 of 921 600 pixels); Predator crowd 1.5, 20 s: main drew 4 frames split after 4 gaps, v2 none.\n- Step 2 (9d18efd4): the emit kernel leaves alpha, scale x/y, tint and anchor x/y unwritten on an unmarked keyed sprite row\n  (K_SKIP) when nothing reads them: Pixi has drawn keyed and not asked for every row's statics (FULL), sends texture-only\n  rows as texture updates, packs the sprites itself, and the sun's casters went keyed last frame. Each buffer says whether\n  it holds every row's statics (COMPLETE0/1; a persist frame keeps its buffer's answer); Pixi draws split only from such a\n  buffer, asks for them on a pause or a frame it cannot pack keyed, and draws keyed from a buffer that skipped meanwhile.\n  A frame whose casters cannot go keyed after a skipping emit keeps last frame's shadows.\n- Tool (6357cb8b): preRenderEmitWasmMicrobench variants wasmKeyedV2 and wasmKeyedSkip.\n\nNumbers:\n\n- Kernel, 5 alternating rounds, same checksum: wasmKeyed 1726 ops/s, wasmKeyedV2 1742 (+0.9 %, a tie: step 1's change\n  frames cost nothing measurable), wasmKeyedSkip 1849 (+7.1 %).\n- Predator crowd=2.5, 4 pairs, main against 29beca2a (the same tree as 9d18efd4), --pool, judged with --aa aa-crowd25,\n  aa25-samedir: KEPT. pre-render 6.427 -> 5.841 ms (-9.1 %, 4/4 lower, cv 3/7 %), -7.2 % against the other workers (4/4),\n  limit 8.7 % raw / 5.3 % against the others; spatial -1.5 %, physics -2.2 % (inside their limits); logic, renderer and\n  particle below the 6 ms floor (renderer 3.073 -> 3.040). Load keys equal (BODY_COUNT, GPU_CASTERS, queue size within\n  0.1 %). The ceiling (R-1045) read -17.1 % raw, -8.2 % against the others: the real change reaches most of it.\n- CPU trace, one a side (profileSceneSweep cpu, crowd 2.5): pre-render busy 609 -> 566 ms/s; emit_rows self 37.2 % ->\n  29.8 % of it, 226 -> 169 ms/s. Pixi without its wait unchanged (378 -> 376 ms/s).\n- Heap pass: pre-render 103.2 -> 100.5 KB/s, Pixi 302.4 -> 310.4 KB/s, no new site. Deopt pass (tip): none in\n  emitSpriteQueue, _packGpuShadows, _uploadKeyed, writeEmitColumns.\n\nNobody reads a skipped static: a build that wrote magenta at 8x scale into them drew Predator crowd 1.5, steadyCombat,\nrenderQueueStress and liquidFunQuery as before (each skipping on every emit, Pixi keyed on every frame); the same build\nforced to draw split from such buffers (LIVE kept fresh) turned Predator magenta. dxCaptureScene cannot show it: a still\nscene's emits are persist frames, which skip nothing.\n\nTests: the emit kernel with K_SKIP (marked rows written, unmarked left, Pixi's texture right the frame after), the keyed\nbatch against a reference queue holding every row's statics (a pause drawn keyed from a buffer that skipped, split from\ncomplete ones, FULL set and cleared); test:node 2637/2637, test:demos 101/101.\n\nLeft: the persist path still never hits in Predator (R-1045) and persist_remember (2.7 % of pre-render) runs for nothing.",
+      "commits": [
+        "3b119d47",
+        "6357cb8b",
+        "9d18efd4",
+        "3a314adb"
       ]
     }
   ],
