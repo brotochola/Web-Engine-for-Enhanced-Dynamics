@@ -13675,7 +13675,8 @@
       "records": [
         "R-0968",
         "R-0992",
-        "R-0994"
+        "R-0994",
+        "R-0996"
       ]
     },
     {
@@ -14274,7 +14275,8 @@
       "records": [
         "R-0980",
         "R-0987",
-        "R-0994"
+        "R-0994",
+        "R-0996"
       ],
       "rank": 18
     },
@@ -14583,7 +14585,8 @@
         "Sparkplug boxing"
       ],
       "records": [
-        "R-0994"
+        "R-0994",
+        "R-0996"
       ]
     },
     {
@@ -14607,6 +14610,124 @@
       ],
       "records": [
         "R-0994"
+      ]
+    },
+    {
+      "id": "E-300",
+      "title": "The tick dispatch reads obj.tick twice per entity, each a megamorphic load call (two LoadICTrampoline_Megamorphic per entity in d8 16)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the bytecode and d8 machine-code harvest, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 66,
+      "result": "Bytecode (Chrome 151, Predator): `_tickIntervalBucket` loads `obj.tick` twice per entity (the `typeof` test and the call), as do the no-body bucket and the `_tickNonDecimatedOne*` paths; eight targets in Predator. d8 16 machine code of that loop shape over eight classes: two `LoadICTrampoline_Megamorphic` calls per entity; with the type's tick resolved once per bucket and called through `.call`, no load is left, only `Call_ReceiverIsAny`. One type is one class; nothing assigns `tick` per instance.",
+      "next": "Resolve each type's tick once (none: skip the bucket) and `.call` it in the five paths; d8 machine code shows no megamorphic load, then tickLoopKernel, then a logic owner scene.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-300"
+      ],
+      "aliases": [
+        "obj.tick",
+        "tick dispatch",
+        "typeof tick",
+        "LoadICTrampoline_Megamorphic"
+      ],
+      "records": [
+        "R-0996"
+      ]
+    },
+    {
+      "id": "E-301",
+      "title": "FSM transitions read onExit and onEnter twice each through LoadIC_Megamorphic (four builtin calls a transition)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the bytecode and d8 machine-code harvest, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 67,
+      "result": "d8 16 machine code (fsmTickMicrobench): `_executeTransition`, inlined into `FSM.tick`, calls `LoadIC_Megamorphic` four times, all for `OldState.onExit` / `NewState.onEnter` (each loaded for the test and the call); states are classes, 17 in Predator's three FSMs. `onUpdate` already goes through `_onUpdates`.",
+      "next": "Count Predator's transitions per second; then per-state `_onExits` / `_onEnters` arrays built with `_onUpdates`, called with `.call`; machine code, then fsmTickMicrobench with transitions.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-301"
+      ],
+      "aliases": [
+        "onExit",
+        "onEnter",
+        "_executeTransition",
+        "FSM transition"
+      ],
+      "records": [
+        "R-0996"
+      ]
+    },
+    {
+      "id": "E-302",
+      "title": "The collision-stay walk validates every pair each frame in a scene where nothing listens to stay (Predator)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the bytecode and d8 machine-code harvest, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 68,
+      "result": "Bytecode (Chrome 151, Predator): `_processBox2dCollisionCallbacks` (684 B, 330 ms self over two logic workers) walks all `_pairCount` pairs each frame (active and generation checks, then stay flags). No Predator class defines `onCollisionStay`, so the walk only drops pairs of dead entities or replaced bodies; `_removePairSlot` fires no callback.",
+      "next": "Split the function's time between the ring drain and the walk, count pairs walked and removed per frame; if the walk weighs, skip it when no type listens to stay and nothing was despawned or rebuilt since the last walk, keeping `frameCollisions` exact for its readers.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-302"
+      ],
+      "aliases": [
+        "collision stay",
+        "onCollisionStay",
+        "_processBox2dCollisionCallbacks",
+        "pair walk"
+      ],
+      "records": [
+        "R-0996"
+      ]
+    },
+    {
+      "id": "E-303",
+      "title": "Spatial's _findNeighbors is recompiled after warm-up (seven TurboFan compiles, the last at 13.2 s)",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the bytecode and d8 machine-code harvest, not tested",
+      "date": "2026-11-13",
+      "area": "spatial",
+      "kind": "speed",
+      "rank": 69,
+      "result": "Predator's code pass (Chrome 151): `_findNeighbors` (1783 B, 376 ms self) compiled by TurboFan seven times, the last at 13.2 s; `rebuildOwnedRows` three times, all in warm-up. A steady-state deopt in spatial's hottest JS.",
+      "next": "A deopt pass on Predator with a 30 s window to name the site and reason; if it repeats, move the rare case to its own function and check one compile in the code pass.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-303"
+      ],
+      "aliases": [
+        "_findNeighbors deopt",
+        "spatial recompile",
+        "steady deopt"
+      ],
+      "records": [
+        "R-0996"
+      ]
+    },
+    {
+      "id": "E-304",
+      "title": "Game loops re-read this.neighborCount on every pass (five megamorphic checks a neighbour against one): the guide's template and nine demo loops",
+      "status": "open",
+      "statusText": "proposed 2026-11-13 from the bytecode and d8 machine-code harvest, not tested",
+      "date": "2026-11-13",
+      "area": "logic",
+      "kind": "speed",
+      "rank": 70,
+      "result": "d8 16 machine code (neighborAccessMicrobench): `k < this.neighborCount` in the loop condition runs the whole getter per pass, five inline megamorphic checks a neighbour; the count read once before the loop leaves one. The form is in docs/guide/ENTITY_TEMPLATE.js and nine demo loops (Predator civilian.js and explosion.js, littleCity, carScene, buenosAires).",
+      "next": "Read the count once before the loop in the template, the guide and the demos (same API); demo tests, Predator's logic as hygiene.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-304"
+      ],
+      "aliases": [
+        "neighborCount loop",
+        "ENTITY_TEMPLATE",
+        "hoist neighborCount"
+      ],
+      "records": [
+        "R-0996"
       ]
     }
   ],
@@ -24378,6 +24499,15 @@
       "title": "d8 16 (Chrome's V8): the shared neighbour getters' megamorphic loads are an inline map cache check kept in the loop, not LoadIC_Megamorphic calls",
       "verdict": "note",
       "text": "**Chrome's V8 (d8 16.0.39) does not call LoadIC_Megamorphic for the shared neighbour getters: TurboFan inlines a\nsmall map cache check, kept inside the loop on every read. E-289 still holds, for less than Node's code suggested.**\n2026-11-13, 20:47 to 20:51.\n\n**How.** `neighborAccessMicrobench` bundled for d8 with esbuild (node:* modules stubbed, `process` shimmed, each module\nkeeping its own `import.meta.url`; the engine code is bundled as is, not minified), run in `D:\\perf-tools\\v8\\debug\\v8-debug.exe\n--no-debug-code --print-opt-code --code-comments --print-opt-code-filter=sumShipped|sumRow --trace-turbo`. d8 16 is\nChrome's V8 or newer; R-0992 read the same kernel in Node 22 (V8 12.4).\n\n**Read (Soldier's, Boid's and Ant's `sumShipped`, TurboFan):**\n- `this._neighborOffset`, `this._onPage` and `this._neighborReaderMarked`, from `get neighborCount` and `getNeighbor`\n  inlined into the class's method, compile to an inline megamorphic cache: the receiver's map, `(map >> 2) & 7` into an\n  8-entry table, a compare with the weak map. On a miss: the map's first descriptor key compared with the name, the\n  field's details checked, the map stored into the table (with a write barrier). No `LoadIC_Megamorphic` or\n  `StoreIC_Megamorphic` call is left (16 such checks on `_neighborOffset`, 6 on `_onPage`, 6 on\n  `_neighborReaderMarked` over the three code objects).\n- The hit is about 11 instructions and stays in the loop for every neighbour read: the miss path's store into the\n  table keeps the check from being hoisted, although `this` cannot change map inside the loop. The loop body is about\n  25 instructions against about 10 for `sumRow` (the row read without the getters), and the code objects are 3.0 to\n  3.4 KB against 1.2 KB.\n- Both keep an overflow check on each Smi add, a bounds check on the neighbour read (the typed array's length is a\n  constant: `Grid._neighborData` is constant-folded) and the loop's interrupt check.\n\n**For E-289.** The fix it proposes (the getters read columns indexed by the entity, so `this` gives one load) removes\nthese checks, but each one is now an inline compare, not a builtin call: expect less than Node's code implied. The\nkernel's timing on this machine was noise during another session's Chrome runs (d8 release, `row` read 12.6 then 3.6 ns a\nneighbour in two runs): time it again on a quiet machine before deciding. Machine code and Turbolizer files (not\nkept in the repo): `C:\\weed-traces\\d8-predator\\neighbors\\`."
+    },
+    {
+      "id": "R-0996",
+      "date": "2026-11-13",
+      "time": "21:15",
+      "timeFrom": "recorded",
+      "title": "The bytecode and machine-code harvest on Predator's hot JS: E-300 to E-304 written, E-278 annotated (the emitter's inlining budget)",
+      "verdict": "note",
+      "text": "**The bytecode and machine-code harvest on Predator's hot JS: E-300 to E-304 written, E-278 annotated.**\n2026-11-13, 21:08 to 21:15 (owner's request: hypotheses from the bytecode only, no sittings).\n\n**Sources.** Chrome 151's own bytecode and inlining from Predator's code pass (R-0994's run, `summarizeV8Code`\ndumps, 20:47), and d8 16.0.39 machine code (`--print-opt-code --no-debug-code --code-comments`) over kernels bundled\nfor d8 (`D:\\perf-tools\\d8kit`: fsmTickMicrobench, rayMicrobench, neighborAccessMicrobench, and an eight-class loop of\nthe tick dispatch's shape). The kernels that load a real worker (tickLoop, contacts, spatialWorker) or use Node's\nthreads (querySystem) do not run in d8 yet. No timing was taken.\n\n**Read:**\n- Tick dispatch (E-300): `obj.tick` is loaded twice per entity in all five tick paths; in d8 16 each is a\n  `LoadICTrampoline_Megamorphic` call over eight classes (a prototype method gets no inline map cache, unlike instance\n  fields, R-0995). Resolved per bucket and called with `.call`: no load left, one `Call_ReceiverIsAny`.\n- FSM (E-301, E-253): the four `LoadIC_Megamorphic` calls in `FSM.tick` are `onExit` and `onEnter` on the transition\n  path (each loaded for its test and its call; 17 state classes in Predator), not the class's columns, which stay\n  inline in the kernel. The per-tick `onUpdate` already goes through `_onUpdates` and `Call_ReceiverIsAny`.\n- Collision stay (E-302): `_processBox2dCollisionCallbacks` (684 B, 330 ms self, six TurboFan compiles in warm-up)\n  walks every pair each frame; Predator defines no `onCollisionStay`.\n- Spatial (E-303): `_findNeighbors` compiled by TurboFan seven times, the last at 13.2 s.\n- Neighbour loops (E-304): `k < this.neighborCount` keeps five megamorphic checks a neighbour in the loop against one\n  with the count read first; the guide's ENTITY_TEMPLATE.js and nine demo loops use that form.\n- Emitter (E-278): `ParticleEmitter._spawn` is 4733 B of bytecode and 24.8 KB of TurboFan code, and its 920-byte\n  inlining budget is spent (932) by once-per-call functions (`syncParticleFeed` 260 B, `getTextureId` 110,\n  `_mergeCfg` 65, `acquireIndices` 75) and by `rng` (197 B on main: E-278's step 1 is not merged): seven of its ten\n  per-particle `randomRange` calls stay real calls, each returning a boxed double, and `checkEmit` (501 B) is over\n  460. Making `rng` small alone does not free enough budget; the per-particle draws need their own function or E-278's\n  per-burst Float64Array.\n- Rays (E-291): `_boxRayDistance` stays a call from `_checkCellEntities`' loop in d8 too (TurboFan code of its own\n  there, 1256 B; in Chrome's Predator run it stayed in Sparkplug).\n\nFiles (not in the repo): `C:\\weed-traces\\d8-predator\\` (asm.txt and summary.txt per kernel, Turbolizer JSON under\nneighbors\\turbo)."
     }
   ],
   "leads": [
