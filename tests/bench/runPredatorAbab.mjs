@@ -24,6 +24,14 @@
  *
  * --headless: every run without a window (headed is the protocol; see opts.headed).
  *
+ * --early: after 2 pairs the sitting stops when the result is unmistakable, else it runs the rest of --pairs:
+ * every judged kind ≥ +6 % in both pairs is a regression; the owner ≤ −6 % in both, with no other judged kind ≥ +3 % in
+ * both, decides the speed reading; every judged kind within ±2 % in both pairs is a clean gate (earlyStop). Twice
+ * the 3 % bar in every pair, so two pairs suffice only for effects well past a scene's noise.
+ *
+ * --pool: the --vs and --hyp-rev sides check out in two fixed worktrees (../weed-ab/pool-a and pool-b) that every
+ * sitting reuses, instead of two made and removed per sitting (about 2 minutes saved; revWorktree.mjs).
+ *
  * --keep-worktrees: the --vs and --hyp-rev worktrees stay after the sitting (by default each is removed once no live
  * process holds it: revWorktree.mjs).
  *
@@ -421,6 +429,29 @@ export function sittingKey(pairs, base) {
   return { key: base, source: 'sampled' };
 }
 
+/**
+ * --early's look after its first pairs: why the sitting can stop, or null to go on. A kind is judged when its base median
+ * clears the floor; each of its deltas must clear the bar (twice the 3 % keep and regression bars, ±2 % for a clean gate).
+ * @param {Array<{A: object, B: object}>} pairs
+ * @param {string|null} owner
+ * @returns {string|null}
+ */
+export function earlyStop(pairs, owner) {
+  if (pairs.length < 2) return null;
+  const decision = decideAbab(pairs, owner);
+  const judged = Object.entries(decision.kinds).filter(([, k]) => k.interpretable && k.deltas.length === pairs.length);
+  if (!judged.length) return null;
+  const all = (k, test) => k.deltas.every(test);
+  const worse = judged.filter(([, k]) => all(k, (d) => d >= 6));
+  if (worse.length) return `${worse.map(([n]) => n).join(', ')} at least +6 % in every pair`;
+  const own = owner ? judged.find(([n]) => n === owner) : null;
+  if (own && all(own[1], (d) => d <= -6) && !judged.some(([n, k]) => n !== owner && all(k, (d) => d >= 3))) {
+    return `${owner} at least -6 % in every pair, no other kind +3 % in every pair`;
+  }
+  if (judged.every(([, k]) => all(k, (d) => Math.abs(d) <= 2))) return 'every judged kind within ±2 % in every pair';
+  return null;
+}
+
 export function decideAbab(pairs, owner, metric = null) {
   const kinds = {};
   for (const kind of KINDS) {
@@ -774,11 +805,13 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   // --vs <rev>: A = src/ from that revision, everything else from the working tree.
   const fullRev = Boolean(args['full-rev']);
   const baseline = args.vs
-    ? ensureRevWorktree(String(args.vs), { srcOnly: !fullRev })
+    ? ensureRevWorktree(String(args.vs), { srcOnly: !fullRev, ...(args.pool ? { pool: 'a' } : {}) })
     : ensureOverlayWorktree(name, parseOverrides(rawOverrides));
   console.log(`baseline worktree ${baseline.root}`);
   // --hyp-rev <rev>: B from its own worktree, apart from the main folder (see the header).
-  const hypSide = args['hyp-rev'] ? ensureRevWorktree(String(args['hyp-rev']), { tag: 'b', srcOnly: !fullRev }) : null;
+  const hypSide = args['hyp-rev']
+    ? ensureRevWorktree(String(args['hyp-rev']), { tag: 'b', srcOnly: !fullRev, ...(args.pool ? { pool: 'b' } : {}) })
+    : null;
   // Per-side queries without --hyp-rev: B runs A's worktree, so the two sides are one build.
   const perSide = opts.queryA !== opts.queryB || opts.jsFlagsA !== opts.jsFlagsB;
   if (perSide && !hypSide && !args.vs) {
@@ -837,6 +870,14 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
       pair[side] = predatorMetrics(res.report);
     }
     pairs.push(pair);
+    if (args.early && p === first + 1) {
+      const why = earlyStop(pairs, owner);
+      if (why) {
+        console.log(`\n  --early: stopping after ${pairs.length} pairs (${why})`);
+        break;
+      }
+      console.log(`\n  --early: not decided after ${pairs.length} pairs, running to ${first + nPairs}`);
+    }
   }
   // F-06. Refuse the verdict when the hypothesis's own probe says its code path did
   // not run, or ran on a self-cancelling subset.

@@ -14,6 +14,10 @@
  * first use in a process also removes the stale ones: every holder dead (a run cut short), or made by a runner from
  * before this (no holders) more than 12 hours ago. `--keep-worktrees` (runPredatorAbab) or WEED_KEEP_WORKTREES=1 keeps
  * them; tests/bench/cleanRevWorktrees.mjs removes the unused ones by hand.
+ *
+ * A pool worktree (opts.pool: ../weed-ab/pool-<name>) is the fast way: a fixed directory checked out to each sitting's
+ * revision (git moves only the files that differ) and never removed, so a sitting does not make and delete two trees of
+ * 2 100 files. One sitting at a time uses it: a pool tree another live process holds is refused.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -26,6 +30,9 @@ export const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.
 export const worktreeParent = path.join(path.dirname(repoRoot), 'weed-ab');
 
 const STAMP = '.weed-ab.json';
+/** Pool worktrees (ensureRevWorktree's opts.pool): fixed directories reused by every sitting, never removed. */
+const POOL_PREFIX = 'pool-';
+const isPoolRoot = (root) => path.basename(root).toLowerCase().startsWith(POOL_PREFIX);
 /** The pids of the processes that use a worktree, one empty file each. */
 const USERS = '.weed-ab-users';
 /** A worktree from a runner without holders, unused this long, is stale. */
@@ -125,8 +132,9 @@ function overlayWorkingTree(root, includeSrc = false) {
 /**
  * Create (or refresh) the baseline worktree for `rev`.
  * @param {string} rev
- * @param {{ srcOnly?: boolean, workloadCounts?: boolean, tag?: string }} [opts] `tag` names a second worktree of
- *   the same revision (runPredatorAbab's --hyp-rev side), so the two sides of an A/A are two directories
+ * @param {{ srcOnly?: boolean, workloadCounts?: boolean, tag?: string, pool?: string }} [opts] `tag` names a second
+ *   worktree of the same revision (runPredatorAbab's --hyp-rev side), so the two sides of an A/A are two directories;
+ *   `pool` checks the revision out in the fixed tree ../weed-ab/pool-<pool> instead (kept after the run)
  * @returns {{ root: string, rev: string, sha: string, headSha: string, overlay: string[], countsPatched: boolean }}
  */
 export function ensureRevWorktree(rev, opts = {}) {
@@ -134,7 +142,13 @@ export function ensureRevWorktree(rev, opts = {}) {
   pruneOnce();
   const sha = resolveRev(rev);
   const headSha = resolveRev('HEAD');
-  const root = path.join(worktreeParent, `${safeName(rev)}-${sha.slice(0, 8)}${opts.tag ? `-${safeName(opts.tag)}` : ''}`);
+  const root = opts.pool
+    ? path.join(worktreeParent, `${POOL_PREFIX}${safeName(opts.pool)}`)
+    : path.join(worktreeParent, `${safeName(rev)}-${sha.slice(0, 8)}${opts.tag ? `-${safeName(opts.tag)}` : ''}`);
+  if (opts.pool) {
+    const others = worktreeHolders(root).filter((pid) => pid !== process.pid);
+    if (others.length) throw new Error(`pool worktree ${root} is in use by pid ${others.join(', ')}`);
+  }
   const base = srcOnly ? headSha : sha;
 
   fs.mkdirSync(worktreeParent, { recursive: true });
@@ -263,7 +277,7 @@ export function releaseRevWorktrees() {
   for (const root of held) {
     try {
       fs.rmSync(path.join(root, USERS, String(process.pid)), { force: true });
-      if (keepWorktrees || worktreeHolders(root).length > 0) continue;
+      if (keepWorktrees || isPoolRoot(root) || worktreeHolders(root).length > 0) continue;
       removeRevWorktree(root);
     } catch (e) {
       console.warn(`[revWorktree] ${root} was left: ${String(e?.message || e).split('\n')[0]}`);
@@ -285,7 +299,7 @@ export function staleRevWorktrees({ legacyMs = LEGACY_STALE_MS } = {}) {
     .filter((r) => path.dirname(r).toLowerCase() === parent);
   const now = Date.now();
   return roots.filter((r) => {
-    if (held.has(r) || !fs.existsSync(r)) return false;
+    if (held.has(r) || !fs.existsSync(r) || isPoolRoot(r)) return false;
     const users = path.join(r, USERS);
     if (fs.existsSync(users)) return worktreeHolders(r).length === 0;
     let used = 0;
