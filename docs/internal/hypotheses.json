@@ -14682,14 +14682,13 @@
     {
       "id": "E-294",
       "title": "pack_sprites_keyed waits on memory more than any other engine kernel (5.1 times the refills per instruction)",
-      "status": "open",
-      "statusText": "proposed 2026-11-13 from the hardware-counter and trace harvest, not tested",
+      "status": "answered",
+      "statusText": "answered 2026-11-14 (R-1025): E-193's evidence",
       "date": "2026-11-13",
       "area": "renderer",
       "kind": "speed",
-      "rank": 72,
-      "result": "WPR hardware-counter samples mapped to V8's code (Predator, three runs: TotalIssues, DcacheAccesses, DCRefillFromSystem): Pixi's `pack_sprites_keyed` takes 4.0 % of Chrome's refills from beyond L2 at 0.8 % of its instructions, 5.1 times the process's refills per instruction, the highest of any engine function (most engine kernels 0.2 to 0.6, Box2D's solver 1.5 to 1.8).",
-      "next": "Read its access pattern (keyed reads across the sprite columns in key order); a kernel with the scene's key distribution, then a gather in memory order or a prefetch-friendly layout; Pixi STEP_MS on spritePackStress and Predator.",
+      "result": "answered (R-1025): the refills are the cross-core hand-off E-193 measured (R-0864: reading in order cost the same; R-0867: ~28 000 lines a frame); the lever is fewer bytes a row (E-193).",
+      "next": "Not doing (E-193: fewer bytes a row).",
       "refs": [
         "EXECUTION_PLAN.md#E-294"
       ],
@@ -14700,7 +14699,8 @@
       ],
       "records": [
         "R-0997",
-        "R-1000"
+        "R-1000",
+        "R-1025"
       ]
     },
     {
@@ -25069,6 +25069,15 @@
       "title": "The total since 00:58 on ballsHeavy: physics -3.4 % paired (1/4 worse), KEPT (product)",
       "verdict": "note",
       "text": "**The total since 00:58 on ballsHeavy (physics owner): -3.4 % paired, KEPT (product).**\n2026-11-14, 04:42 to 04:54, runPredatorAbab --vs aa1aa783 --hyp-rev main (470d5031) --scene ballsHeavyStressScene\n--owner physics --pairs 4: physics own 6.874 -> 6.637 ms, paired -3.4 %, 1/4 worse, cv 3/2 %. Every other worker under\nthe floor. The same changes as R-1023; E-298 alone read -7.7 % at 01:10 from a 10.07 ms baseline: the machine has run\nthese scenes in different states through the night, and this sitting is the one that measures them together."
+    },
+    {
+      "id": "R-1025",
+      "date": "2026-11-14",
+      "time": "04:51",
+      "timeFrom": "recorded",
+      "title": "E-294 answered by E-193's records: the keyed pack pays for lines from pre-render's core, not their order",
+      "verdict": "note",
+      "text": "**E-294 answered by E-193's records: the keyed pack pays for the lines it brings from pre-render's core, not their order.**\n2026-11-14, reading only. E-294's 5.1x refills per instruction (R-0997) is the cross-core hand-off E-193 measured: reading\nthe queue in its own order through an inverse (pack_sprites_keyed_scatter, R-0864) cost the same in Pixi's worker, and\nR-0867 found the pack's time is Pixi's CPU paying for about 28 000 lines a frame, not their order. A pass that gathers each\nrow's fields into a contiguous record first would read the same lines; the lever is fewer bytes a row (E-193's next: a\npose only for a row that moved). Not doing E-294 as a reorder."
     }
   ],
   "leads": [
