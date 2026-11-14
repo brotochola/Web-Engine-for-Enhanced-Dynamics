@@ -1,0 +1,78 @@
+{
+  "frames": {
+    "sphere": {
+      "frame": {
+        "x": 0,
+        "y": 0,
+        "w": 96,
+        "h": 96
+      },
+      "sourceSize": {
+        "w": 96,
+        "h": 96
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 96,
+        "h": 96
+      }
+    },
+    "pillar": {
+      "frame": {
+        "x": 96,
+        "y": 0,
+        "w": 96,
+        "h": 96
+      },
+      "sourceSize": {
+        "w": 96,
+        "h": 96
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 96,
+        "h": 96
+      }
+    },
+    "crate": {
+      "frame": {
+        "x": 192,
+        "y": 0,
+        "w": 96,
+        "h": 96
+      },
+      "sourceSize": {
+        "w": 96,
+        "h": 96
+      },
+      "spriteSourceSize": {
+        "x": 0,
+        "y": 0,
+        "w": 96,
+        "h": 96
+      }
+    }
+  },
+  "animations": {
+    "sphere": [
+      "sphere"
+    ],
+    "pillar": [
+      "pillar"
+    ],
+    "crate": [
+      "crate"
+    ]
+  },
+  "meta": {
+    "image": "shapes.png",
+    "size": {
+      "w": 288,
+      "h": 96
+    },
+    "scale": 1,
+    "pitch": 45
+  }
+}

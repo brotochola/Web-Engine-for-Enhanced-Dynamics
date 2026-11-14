@@ -35,6 +35,7 @@ const scenes = [
   { name: '🚘 Headlights', url: '/demos/headlightsScene/headlightsScene.js', export: 'HeadlightsScene' },
   { name: '🌊 LiquidFun Fluid', url: '/demos/liquidFunDemoScene/liquidFunDemoScene.js' },
   { name: '🧪 LiquidFun Stress (bench)', url: '/tests/bench/stressScenes/liquidFunStressScene.js' },
+  { name: '💡 Light Bench', url: '/demos/lightBenchScene/lightBenchScene.js', export: 'LightBenchScene' },
   { name: '🏙️ Little City', url: '/demos/littleCity/littleCityScene.js' },
   { name: '🧱 Mamushka Dig', url: '/demos/mamushkaDigScene/mamushkaDigScene.js' },
   { name: '🔷 Mesh Gallery', url: '/demos/meshGalleryScene/meshGalleryScene.js' },
