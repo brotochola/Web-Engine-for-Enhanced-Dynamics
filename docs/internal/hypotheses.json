@@ -14743,14 +14743,13 @@
     {
       "id": "E-298",
       "title": "Box2D's pool threads sleep 63 to 92 % of the step in Predator: the serial part on the physics thread bounds physics",
-      "status": "open",
-      "statusText": "step 1 kept 2026-11-14 (R-1006); step 2 (LiquidFun inside the mark) open",
+      "status": "kept",
+      "statusText": "step 1 kept 2026-11-14 (R-1006); step 2 dropped (R-1007): spinning through LiquidFun's step regresses",
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
-      "rank": 76,
       "result": "step 1 kept: workers spin through a world step (Box2D e78f1dd): ballsHeavy physics 10.069 -> 9.062 ms (-7.7 % paired, 1/8 worse); Predator gate clean (physics -2.4 %, spatial -1.3 %).",
-      "next": "Step 2: a nesting count raised by step_world around b2World_Step and lfParticleSystem_Step (LiquidFun uses the same task system after the mark is off); a LiquidFun scene past 6 ms of physics.",
+      "next": "Nothing pending on the spin. Further physics levers: E-287 (the solver stage barrier), E-288 (accelerations one call per body), E-246 (publishPose and the JS around the step).",
       "refs": [
         "EXECUTION_PLAN.md#E-298"
       ],
@@ -14761,7 +14760,8 @@
       ],
       "records": [
         "R-1000",
-        "R-1006"
+        "R-1006",
+        "R-1007"
       ]
     },
     {
@@ -24806,6 +24806,15 @@
       "commits": [
         "abb28846"
       ]
+    },
+    {
+      "id": "R-1007",
+      "date": "2026-11-14",
+      "time": "01:42",
+      "timeFrom": "recorded",
+      "title": "E-298 step 2 dropped: workers spinning through LiquidFun's step, physics +3.6 % (4/4 worse) on liquidFunStress ?water=1.3; reverted in Box2D",
+      "verdict": "dropped",
+      "text": "**E-298 step 2 dropped: spinning through LiquidFun's step regresses physics +3.6 % (4/4 worse).**\n2026-11-14 01:42 to 01:50, liquidFunStressScene ?water=1.3 (the knob 94821515: physics 6.9 ms at 1.3), owner physics, 4 pairs,\nmain (step 1) against w14s/e298s2 (Box2D 61770f9: the step mark a count, raised by step_world around b2World_Step and\nlfParticleSystem_Step): physics own 6.394 -> 6.713 ms, paired +3.6 %, 4/4 worse, cv 3/4 %, REGRESSION. LiquidFun's step is\nmemory-heavy and runs mostly on the physics thread; workers spinning through it slow that thread (shared cores, cache\ntraffic on the task slots). Reverted in the Box2D repo (79cb185) so weedjs/e298 builds step 1 alone; the WeedJS branch\nw14s/e298s2 is not merged. Step 1 (the world step) stands: its LiquidFun scenes have a small world step."
     }
   ],
   "leads": [
