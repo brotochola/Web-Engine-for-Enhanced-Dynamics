@@ -12888,19 +12888,21 @@
     {
       "id": "N-168",
       "title": "Hot-swapping an FSM module whose states are not exported pairs only the initial state: the running FSM gets fresh, unlinked state classes and every changeState writes state 0",
-      "status": "open",
-      "statusText": "found 2026-11-14 by the E-301 work (a parallel agent), not fixed",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-14 (R-1020)",
       "date": "2026-11-14",
       "area": "engine",
       "kind": "bug",
-      "result": "hotSwap.js pairClasses walks a module's exports and arrays but not plain-object statics such as an FSM's states, so in Predator's style (states declared in the FSM module, not exported) only initial is paired with its running class. After the swap the FSM's states holds the new classes, which _linkStates never numbered, so changeState(i, this.fsm.states.X) stores undefined -> state 0.",
-      "next": "Walk plain-object statics in pairClasses (states: { A, B }); a hot-swap test on an FSM module with unexported states, then the E-301 hook refresh (dd6b4741) covers their hooks.",
+      "result": "fixed (R-1020, e31ca038): pairClasses walks plain-object statics, so unexported FSM states keep their numbers after a swap.",
+      "next": "None.",
       "refs": [],
       "aliases": [
         "hot swap fsm states",
         "pairClasses states"
       ],
-      "records": []
+      "records": [
+        "R-1020"
+      ]
     },
     {
       "id": "E-221",
@@ -24979,6 +24981,18 @@
       "title": "E-246's Predator gate (batch with E-301, E-286, E-288): no judged row worse, physics -2.4 % paired",
       "verdict": "note",
       "text": "**E-246's Predator gate: in the batch with E-301, E-286 and E-288, no judged row worse.**\n\n- Predator's batch gate (w14s/batch2 = E-246 + E-301 + E-286 + E-288 against d52e7f3f, crowd=1.5, 4 pairs, 03:40 to\n  03:50): NEUTRAL, no judged row worse. Physics 10.878 -> 9.516 ms (paired -2.4 %, 2/4 worse, cv 16/17 %), spatial\n  7.218 -> 6.717 (paired +1.1 %, 3/4, under 3 %); unjudged logic 4.569 -> 4.095, pre-render 5.796 -> 5.193, renderer\n  3.037 -> 2.732 (the unreachable rows fell about as much: drift). Load keys within 0.2 %. Suites on the batch: test:node\n  2618/2618, test:demos 101/101."
+    },
+    {
+      "id": "R-1020",
+      "date": "2026-11-14",
+      "time": "03:55",
+      "timeFrom": "recorded",
+      "title": "N-168 fixed: hot swap pairs an FSM's states through its states object",
+      "verdict": "kept",
+      "text": "**N-168 fixed: hot swap pairs an FSM's states through its states object.**\n2026-11-14, e31ca038. pairClasses now walks plain-object statics one level (an FSM's `states`), so states a module does\nnot export pair with their running classes and patchClass copies their stateIndex; before, only `initial` paired and\nevery changeState after a swap wrote state 0. fsmHotSwap.test.js gained the unexported-states case (fails before the\nfix, passes after); test:node 2619/2619, test:demos 101/101. Debug-only path (hot swap), no timing.",
+      "commits": [
+        "e31ca038"
+      ]
     }
   ],
   "leads": [
