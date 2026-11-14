@@ -269,6 +269,7 @@ import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
 import { GPU_KEYED_ROW_WORDS, bindGpuPack } from '../render/gpuPackClient.js';
 import { createStaticsScatterGl, scatterStaticsGl } from '../render/webgl/staticsScatterGl.js';
+import { poseBlockFloats } from '../render/spriteIndexed.js';
 import { createStaticsScatterGpu, scatterStaticsGpu } from '../render/webgpu/staticsScatterGpu.js';
 import { createPrivateArena } from '../render/sharedCopy.js';
 import { GpuFramePacer } from '../render/gpuFramePacer.js';
@@ -733,6 +734,8 @@ class PixiRenderer extends AbstractWorker {
     this._queueWaitPeriodMs = NaN;
     this._queueWaitLastStart = NaN;
     this._queueInterp = false;
+    /** E-201: renderer.keyedPosesByRow (the entity batch's keyed frames drawn by queue row). */
+    this._keyedPosesByRow = false;
     /** N-138: pre-render's lists of the poses its sprites that have a mesh were drawn at, one per queue buffer. */
     this._meshPoseLists = [];
     /** Per entity, the frame whose sprite pose _meshQueuePose holds (x, y, rotC, rotS); the mesh fill takes it. */
@@ -2640,13 +2643,16 @@ class PixiRenderer extends AbstractWorker {
             }
           : this._gpuRecordTexture(),
       keyed,
+      posesByRow: this._keyedPosesByRow,
       // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
       // stream and statics rows; a keyed one's slot stream, updates (its statics are scattered on the GPU) and, E-191, the
       // shadow stream of the sun's pass over its instances (3 floats a row).
       arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)
         + (keyed !== null
           ? maxItems * (GPU_INDEXED_SLOT_FLOATS + GPU_KEYED_ROW_WORDS + 3)
-          : indexed ? maxItems * GPU_INDEXED_SLOT_FLOATS + gpuIndexedStaticRows(maxItems) * GPU_INDEXED_STATIC_FLOATS : 0)),
+          : indexed ? maxItems * GPU_INDEXED_SLOT_FLOATS + gpuIndexedStaticRows(maxItems) * GPU_INDEXED_STATIC_FLOATS : 0)
+        // E-201: a by-row keyed batch's pose texture data (four blocks).
+        + (keyed !== null && this._keyedPosesByRow ? poseBlockFloats(maxItems) * 4 : 0)),
     });
     this.spriteMesh = this.entitiesBatch.mesh;
 
@@ -7581,6 +7587,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Read renderer-specific configuration
     const rendererConfig = this.config.renderer || {};
     this._queueInterp = rendererConfig.interpolation === true;
+    this._keyedPosesByRow = (rendererConfig.keyedPosesByRow ?? RENDERER_DEFAULTS.keyedPosesByRow) === true;
 
     // Configure scheduling (AbstractWorker may miss 'renderer' key before aliases)
     const fixedFps = Number(rendererConfig.fixedFps);

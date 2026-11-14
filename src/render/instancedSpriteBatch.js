@@ -38,12 +38,13 @@ import {
   GPU_STATIC_FLOATS, gpuIndexedStaticRows,
 } from './gpuQueueLayout.js';
 import {
-  GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsWasm, packPoseRowsWasm,
-  packSplitRowsWasm,
+  GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsByRowWasm, packKeyedRowsWasm,
+  packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
 import { faceMapVertex, faceMapWgsl } from './faceMap.js';
 import {
-  STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, spriteIndexedVertex, spriteIndexedWgsl, staticsTextureHeight,
+  POSE_ROW_FLOATS, POSE_TEX_TEXELS, STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, poseBlockFloats, spriteIndexedVertex,
+  spriteIndexedWgsl, staticsTextureHeight,
 } from './spriteIndexed.js';
 import { PIXI_KEYED_HEADER, PIXI_KEYED_HEADER_WORDS } from '../util/wasmMemoryMap.js';
 
@@ -294,6 +295,7 @@ export class InstancedSpriteBatch {
     arena = null,
     statics = null,
     keyed = null,
+    posesByRow = false,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
@@ -346,6 +348,18 @@ export class InstancedSpriteBatch {
     // E-177: a keyed batch's statics texture holds a row for every key: the scene's entities, then a slot per row.
     this.keyed = this.indexed && keyed !== null && (keyed.keyRows | 0) > 0 && this._gpuPack !== null
       && typeof statics.scatter === 'function' && keyed.headerByte >= 0;
+    // E-201: a keyed batch drawn by queue row (WebGL): each instance carries its queue row, and the keyed programs fetch
+    // its pose from uPoses, the queue's own pose columns (x, y, rotC, rotS: four blocks of _poseBlock floats, their bits
+    // in an RGBA32UI texture through the statics helper), instead of a pose stream gathered in the painter's order.
+    this.posesByRow = this.keyed && !!posesByRow && !useWebGpu && !!this._gpuPack.spritesKeyedRows
+      && typeof statics.make === 'function' && typeof statics.upload === 'function' && !!shaders?.spriteVert;
+    this._poseBlock = this.posesByRow ? poseBlockFloats(this.capacity) : 0;
+    this._poseTexRows = this._poseBlock / POSE_ROW_FLOATS;
+    // In the arena when Pixi passes one (copyIn then runs as memory.copy), a fixed view per block.
+    this._poseRows = (this.posesByRow && arena && arena.f32(this._poseBlock * 4)) || new Float32Array(this._poseBlock * 4);
+    this._poseRowsU32 = new Uint32Array(this._poseRows.buffer, this._poseRows.byteOffset, this._poseBlock * 4);
+    this._poseRowBlocks = [0, 1, 2, 3].map((b) => this._poseRows.subarray(b * this._poseBlock, (b + 1) * this._poseBlock));
+    this._poseSource = null;
     const staticRows = this.indexed
       ? Math.max(gpuIndexedStaticRows(this.capacity), this.keyed ? keyed.keyRows | 0 : 0)
       : 0;
@@ -400,6 +414,7 @@ export class InstancedSpriteBatch {
     this._shadowData = (shadowFloats > 0 && arena && arena.f32(shadowFloats)) || new Float32Array(shadowFloats);
     this._shadowBuffers = null;
     this._keyedShadowGeometries = null;
+    this._keyedShadowRowGeometries = null;
     this._keyedSunShader = null;
     this.keyedShadows = false;
     this.keyedShadowReady = false;
@@ -415,6 +430,7 @@ export class InstancedSpriteBatch {
     this._faceState = null;
     this._faceShader = null;
     this._faceIndexedShader = null;
+    this._faceRowShader = null;
     this._keyedCasterGeometries = null;
     this._ixGen = 0;
     this._ixRows = -1;
@@ -445,6 +461,10 @@ export class InstancedSpriteBatch {
     this._indexedGeometries = this.indexed
       ? this._buffers.map((buf, r) => this._indexedGeometryFor(buf, this._slotBuffers[r]))
       : null;
+    // E-201: a by-row keyed frame's geometries: the queue row from the pose buffer's first floats, the slot stream.
+    this._rowGeometries = this.posesByRow
+      ? this._buffers.map((buf, r) => this._rowGeometryFor(buf, this._slotBuffers[r]))
+      : null;
     this._ring = 0;
     this.buffer = this._buffers[0];
     this.geometry = this._geometries[0];
@@ -466,6 +486,7 @@ export class InstancedSpriteBatch {
     this._staticsSource = null;
     this._staticsHeight = 0;
     this._indexedShader = this.indexed ? this._makeIndexedShader(labelName) : null;
+    this._rowShader = this.posesByRow ? this._makeRowShader(labelName) : null;
     this.shadowShader = null;
     if (this.shadowCast && (shaders?.shadowVert || shaders?.shadowWgsl)) {
       const sunUniforms = {
@@ -656,6 +677,78 @@ export class InstancedSpriteBatch {
     return geometry;
   }
 
+  /** E-201: a by-row keyed frame's geometry: each instance's queue row (aInstRow) and slot (aInstSlot). */
+  _rowGeometryFor(buf, slotBuf) {
+    const geometry = new Geometry({
+      attributes: {
+        aQuad: { buffer: this._quad, format: 'float32x2' },
+        aInstRow: { buffer: buf, format: 'float32', stride: 4, offset: 0, instance: true },
+        aInstSlot: { buffer: slotBuf, format: 'float32', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
+      },
+      indexBuffer: this._index,
+    });
+    geometry.instanceCount = 0;
+    return geometry;
+  }
+
+  /** E-201: the sun's pass over a by-row keyed frame: its rows, slots and shadow terms. */
+  _keyedShadowRowGeometryFor(buf, slotBuf, shadowBuf) {
+    const geometry = new Geometry({
+      attributes: {
+        aQuad: { buffer: this._quad, format: 'float32x2' },
+        aInstRow: { buffer: buf, format: 'float32', stride: 4, offset: 0, instance: true },
+        aInstSlot: { buffer: slotBuf, format: 'float32', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
+        aInstShadow: { buffer: shadowBuf, format: 'float32x3', stride: 12, offset: 0, instance: true },
+      },
+      indexBuffer: this._index,
+    });
+    geometry.instanceCount = 0;
+    return geometry;
+  }
+
+  /** E-201: the pose texture (made here) and the keyed program that reads it by queue row (WebGL). */
+  _makeRowShader(name) {
+    this._poseSource = this._statics.make(this._poseRowsU32, POSE_TEX_TEXELS, this._poseTexRows * 4, `${name}-poses`);
+    const shaders = this._engineShaders;
+    const glProgram = instancedSpriteGlProgram(
+      GlProgram,
+      spriteIndexedVertex(shaders.spriteVert, { poseBlock: this._poseBlock }),
+      pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders),
+      `${name}-rows`
+    );
+    const r = this.shader.resources;
+    return new Shader({
+      glProgram,
+      resources: {
+        uTexture: r.uTexture,
+        uSampler: r.uSampler,
+        uTexLut: r.uTexLut,
+        uniforms: r.uniforms,
+        uStatics: this._staticsSource,
+        uPoses: this._poseSource,
+      },
+    });
+  }
+
+  /**
+   * E-201: the queue's pose columns for its first `rows` rows into the pose texture: each column copied whole into its
+   * block, then the texture rows those rows reach, block by block.
+   */
+  _uploadPoseRows(q, rows) {
+    const n = rows < this._poseBlock ? rows : this._poseBlock;
+    if (n <= 0) return;
+    const blocks = this._poseRowBlocks;
+    this.copyIn(blocks[0], q.x, n);
+    this.copyIn(blocks[1], q.y, n);
+    this.copyIn(blocks[2], q.rotC, n);
+    this.copyIn(blocks[3], q.rotS, n);
+    const texRows = Math.ceil(n / POSE_ROW_FLOATS);
+    const tr = this._poseTexRows;
+    for (let b = 0; b < 4; b++) {
+      this._statics.upload(this._poseSource, this._poseRowsU32, POSE_TEX_TEXELS, tr * 4, b * tr, texRows);
+    }
+  }
+
   _makeSpriteShader(atlas, lut, alphaCut, name) {
     const uniforms = {
       uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
@@ -790,7 +883,7 @@ export class InstancedSpriteBatch {
       ix.resources.uTexture = source;
       ix.resources.uSampler = source.style;
     }
-    for (const face of [this._faceShader, this._faceIndexedShader]) {
+    for (const face of [this._faceShader, this._faceIndexedShader, this._faceRowShader, this._rowShader]) {
       if (face !== null) {
         face.resources.uTexture = source;
         face.resources.uSampler = source.style;
@@ -811,6 +904,8 @@ export class InstancedSpriteBatch {
     if (this._keyedSunShader) this._keyedSunShader.resources.uTexLut = source;
     if (this._faceShader !== null) this._faceShader.resources.uTexLut = source;
     if (this._faceIndexedShader !== null) this._faceIndexedShader.resources.uTexLut = source;
+    if (this._faceRowShader !== null) this._faceRowShader.resources.uTexLut = source;
+    if (this._rowShader !== null) this._rowShader.resources.uTexLut = source;
   }
 
   /** Match `_beginUpload` tileWorld when committing pre-packed rows. */
@@ -933,6 +1028,7 @@ export class InstancedSpriteBatch {
     return ctx;
   }
 
+  /** `indexed`: true for an indexed or keyed frame, 'rows' for a keyed frame drawn by queue row (E-201). */
   _finishUpload(out, stride, indexed = false) {
     if (out <= 0) {
       this.geometry.instanceCount = 0;
@@ -942,7 +1038,8 @@ export class InstancedSpriteBatch {
     this._show(true);
     const ring = this._ring;
     this._ring = ring ^ 1;
-    const geometry = indexed ? this._indexedGeometries[ring] : this._geometries[ring];
+    const byRow = indexed === 'rows';
+    const geometry = byRow ? this._rowGeometries[ring] : indexed ? this._indexedGeometries[ring] : this._geometries[ring];
     this._buffers[ring].update(out * stride);
     if (indexed) {
       // E-162: the slot stream goes up when this ring slot's copy is older than the CPU one; the statics are the
@@ -961,7 +1058,7 @@ export class InstancedSpriteBatch {
     }
     if (this.indexed) {
       // E-162: the program that reads this frame's layout.
-      const shader = indexed ? this._indexedShader : this.shader;
+      const shader = byRow ? this._rowShader : indexed ? this._indexedShader : this.shader;
       if (this.mesh.shader !== shader) this.mesh.shader = shader;
     }
     geometry.instanceCount = out;
@@ -1117,7 +1214,11 @@ export class InstancedSpriteBatch {
       }
     }
     const k = this._keyedPack;
-    const out = packKeyedRowsWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity);
+    // E-201: by queue row when the batch draws so and the queue has its pose columns here.
+    const byRow = this.posesByRow && !!q.x && !!q.y && !!q.rotC && !!q.rotS;
+    const out = byRow
+      ? packKeyedRowsByRowWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity)
+      : packKeyedRowsWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity);
     if (out < 0) {
       this._keyFrame = -1;
       return -1;
@@ -1145,16 +1246,21 @@ export class InstancedSpriteBatch {
     // E-191: the texture holds this queue frame's statics now; pre-render writes keyed caster rows while it is recent.
     if (this.keyedCasters) Atomics.store(H, PIXI_KEYED_HEADER.LIVE, frame >>> 0);
     if (out > 0) {
-      this.copyIn(this.data, this._sharedPose, out * SPLIT_POSE_FLOATS);
+      if (byRow) {
+        this.copyIn(this.data, this._sharedPose, out);
+        this._uploadPoseRows(q, ctx.scanCount | 0);
+      } else {
+        this.copyIn(this.data, this._sharedPose, out * SPLIT_POSE_FLOATS);
+      }
       this.copyIn(this._slotData, this._sharedSlots, out * GPU_INDEXED_SLOT_FLOATS);
       this._slotsVersion++;
     }
-    const drawn = this._finishUpload(out, SPLIT_POSE_FLOATS * 4, true);
+    const drawn = byRow ? this._finishUpload(out, 4, 'rows') : this._finishUpload(out, SPLIT_POSE_FLOATS * 4, true);
     if (shadowed && out > 0) {
       // The ring slot _finishUpload just took.
       const ring = this._ring ^ 1;
       this._shadowBuffers[ring].update(out * 12);
-      const g = this._keyedShadowGeometries[ring];
+      const g = (byRow ? this._keyedShadowRowGeometries : this._keyedShadowGeometries)[ring];
       g.instanceCount = out;
       this.keyedShadowGeometry = g;
       this.keyedShadowReady = true;
@@ -1219,6 +1325,18 @@ export class InstancedSpriteBatch {
               },
         );
       }
+      if (this._rowShader !== null) {
+        // E-201: over a by-row keyed frame (WebGL only).
+        this._faceRowShader = new Shader({
+          glProgram: instancedSpriteGlProgram(
+            GlProgram,
+            spriteIndexedVertex(faceMapVertex(shaders.spriteVert), { poseBlock: this._poseBlock }),
+            shaders.faceFrag,
+            `${name}-rows`,
+          ),
+          resources: { ...resources, uStatics: this._staticsSource, uPoses: this._poseSource },
+        });
+      }
       const state = new State();
       state.blendMode = 'none';
       state.depthTest = false;
@@ -1226,7 +1344,9 @@ export class InstancedSpriteBatch {
       state.culling = false;
       this._faceState = state;
     }
-    const shader = this.mesh.shader === this._indexedShader ? this._faceIndexedShader : this._faceShader;
+    const shader = this.mesh.shader === this._rowShader && this._rowShader !== null
+      ? this._faceRowShader
+      : this.mesh.shader === this._indexedShader ? this._faceIndexedShader : this._faceShader;
     const mesh = new Mesh({ geometry, shader, state: this._faceState, label: `${this._label}-face` });
     mesh.cullable = false;
     meshes.push(mesh);
@@ -1249,6 +1369,9 @@ export class InstancedSpriteBatch {
       ];
       this._keyedShadowGeometries = this._buffers.map((b, r) =>
         this._keyedShadowGeometryFor(b, this._slotBuffers[r], this._shadowBuffers[r]));
+      this._keyedShadowRowGeometries = this.posesByRow
+        ? this._buffers.map((b, r) => this._keyedShadowRowGeometryFor(b, this._slotBuffers[r], this._shadowBuffers[r]))
+        : null;
       this.keyedShadowGeometry = this._keyedShadowGeometries[0];
     }
     this._keyedPack.shadowByte = this._sharedShadow.byteOffset;
@@ -1276,20 +1399,23 @@ export class InstancedSpriteBatch {
    */
   makeKeyedSunShader(sun) {
     if (!this.keyedShadows || !sun) return null;
-    const program = this._keyedShadowProgram({ shadow: true }, `${this._label}-keyed-sun`);
+    // E-201: a by-row batch's keyed frames are drawn by queue row, and so is their sun pass.
+    const program = this._keyedShadowProgram(
+      this.posesByRow ? { shadow: true, poseBlock: this._poseBlock } : { shadow: true },
+      `${this._label}-keyed-sun`
+    );
     if (program === null) return null;
     if (this._keyedSunShader === null) {
       const r = sun.resources;
-      this._keyedSunShader = new Shader({
-        ...program,
-        resources: {
-          uTexture: r.uTexture,
-          uSampler: r.uSampler,
-          uTexLut: r.uTexLut,
-          uniforms: r.uniforms,
-          uStatics: this._staticsSource,
-        },
-      });
+      const resources = {
+        uTexture: r.uTexture,
+        uSampler: r.uSampler,
+        uTexLut: r.uTexLut,
+        uniforms: r.uniforms,
+        uStatics: this._staticsSource,
+      };
+      if (this.posesByRow) resources.uPoses = this._poseSource;
+      this._keyedSunShader = new Shader({ ...program, resources });
     }
     return this._keyedSunShader;
   }

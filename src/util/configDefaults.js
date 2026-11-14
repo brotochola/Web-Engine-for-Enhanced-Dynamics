@@ -671,6 +671,12 @@ export const RENDERER_DEFAULTS = Object.freeze({
    * WebGPU or 4 194 304 on WebGL (rendererBackend.indexedSpritesEnabled) the frames go in draw order.
    */
   indexedSprites: true,
+  /**
+   * E-201: keyed frames (the entity sprites' statics kept by key) drawn by queue row on WebGL: each instance carries its
+   * queue row and the vertex shader fetches its pose from the queue's own pose columns, uploaded as a texture, instead of
+   * a pose stream Pixi gathers in the painter's order. WebGPU and interpolated frames keep the pose stream.
+   */
+  keyedPosesByRow: false,
 });
 
 // ============================================================================

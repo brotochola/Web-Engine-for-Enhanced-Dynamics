@@ -11,6 +11,20 @@ export const STATICS_TEX_ROW = GPU_INDEXED_TEX_ROW;
 export const STATICS_TEX_ROW_SHIFT = 10;
 export const STATICS_TEXELS_PER_ROW = GPU_INDEXED_STATIC_FLOATS / 4;
 
+/**
+ * E-201: the pose texture of a keyed batch drawn by queue row: the queue's pose columns (x, y, rotC, rotS) as four
+ * blocks of POSE_BLOCK floats, their bits in an RGBA32UI texture POSE_TEX_TEXELS wide (four floats a texel, so a texture
+ * row holds POSE_ROW_FLOATS of one column).
+ */
+export const POSE_TEX_TEXELS = 1024;
+export const POSE_ROW_FLOATS = POSE_TEX_TEXELS * 4;
+export const POSE_ROW_SHIFT = 12;
+
+/** E-201: the floats a pose block holds for `capacity` rows (whole texture rows), and the texture's rows. */
+export function poseBlockFloats(capacity) {
+  return Math.max(1, Math.ceil(Math.max(1, capacity | 0) / POSE_ROW_FLOATS)) * POSE_ROW_FLOATS;
+}
+
 /** The texture's height for `rows` statics rows (the statics region holds whole texture rows). */
 export function staticsTextureHeight(rows) {
   return Math.max(1, Math.ceil(Math.max(0, rows | 0) / STATICS_TEX_ROW));
@@ -49,12 +63,19 @@ function replaceOnce(source, from, to, what) {
  * of its own (the pass's uLight decides), and the tint read nowhere but the line that keeps the attributes compiled in.
  * E-191 step 2: `casterRows` (with `shadow`) for keyed caster rows, which carry no rotation (a shadow's angle is the
  * sun's or the light's): aInstRotCS a constant; `light` keeps the row's own light attribute (a stamp row's).
+ * E-201: `poseBlock` (the floats of a pose block, poseBlockFloats) draws a keyed frame by queue row: the pose
+ * attributes become globals filled from `uPoses` (the queue's pose columns, four blocks) by `aInstRow`.
  * @param {string} source instancedSprite.vert.glsl (instancedSpriteShadow.vert.glsl with `shadow`)
- * @param {{ shadow?: boolean, casterRows?: boolean, light?: boolean }} [opts]
+ * @param {{ shadow?: boolean, casterRows?: boolean, light?: boolean, poseBlock?: number }} [opts]
  * @returns {string}
  */
-export function spriteIndexedVertex(source, { shadow = false, casterRows = false, light = false } = {}) {
+export function spriteIndexedVertex(source, { shadow = false, casterRows = false, light = false, poseBlock = 0 } = {}) {
   let out = source;
+  const byRow = poseBlock > 0;
+  if (byRow) {
+    out = replaceOnce(out, 'in vec2 aInstXY;', 'vec2 aInstXY;', 'vertex shader');
+    if (!(shadow && casterRows)) out = replaceOnce(out, 'in vec2 aInstRotCS;', 'vec2 aInstRotCS;', 'vertex shader');
+  }
   for (const [type, name] of STATIC_ATTRIBUTES) {
     const declaration = new RegExp(`^in ${type} ${name};`, 'm');
     if (!declaration.test(out)) throw new Error(`WeedJS: the sprite vertex shader has no "in ${type} ${name};"`);
@@ -75,7 +96,16 @@ export function spriteIndexedVertex(source, { shadow = false, casterRows = false
     out.slice(0, at) +
     "in float aInstSlot; // this instance's statics row (E-162; E-186: no depth, nothing draws with a depth test)\n" +
     "uniform highp usampler2D uStatics; // the statics in the queue's row order, three texels a row\n\n" +
+    (byRow
+      ? "in float aInstRow; // E-201: this instance's queue row, whose pose uPoses holds\n" +
+        "uniform highp usampler2D uPoses; // the queue's pose columns, four blocks, a float's bits a channel\n" +
+        `float weedPose(int i) {\n  uvec4 t = texelFetch(uPoses, ivec2((i >> 2) & ${POSE_TEX_TEXELS - 1}, i >> ${POSE_ROW_SHIFT}), 0);\n  return uintBitsToFloat(t[i & 3]);\n}\n\n`
+      : '') +
     main +
+    (byRow
+      ? `  int weedPr = int(aInstRow + 0.5);\n  aInstXY = vec2(weedPose(weedPr), weedPose(weedPr + ${poseBlock}));\n` +
+        (shadow && casterRows ? '' : `  aInstRotCS = vec2(weedPose(weedPr + ${2 * poseBlock}), weedPose(weedPr + ${3 * poseBlock}));\n`)
+      : '') +
     '  aInstDepth = 0.0;\n' +
     (shadow ? '  aInstTintBits = 0.0;\n' : '') +
     '  int weedRow = int(aInstSlot + 0.5);\n' +

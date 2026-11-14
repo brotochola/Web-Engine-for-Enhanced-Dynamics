@@ -34,6 +34,7 @@ export async function bindGpuPack(memory, layout) {
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
     'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed', 'pack_casters_keyed_scan',
+    'pack_sprites_keyed_rows',
   ]);
   return {
     buffer: memory.buffer,
@@ -47,6 +48,8 @@ export async function bindGpuPack(memory, layout) {
     spritesIndexedScatter: k.pack_sprites_indexed_scatter,
     // E-177: the pose and the statics' key in draw order, the statics that changed as updates of a table by key.
     spritesKeyed: k.pack_sprites_keyed,
+    // E-201: the same with each drawn instance's queue row instead of its pose (the shader fetches the pose by row).
+    spritesKeyedRows: k.pack_sprites_keyed_rows,
     // E-191: keyed caster rows (a pose, a key, the shadow terms) of a list of queue rows.
     castersKeyed: k.pack_casters_keyed,
     // E-192: the same rows for the casters it finds in the queue itself.
@@ -292,6 +295,38 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   // E-191: the slots' shadow terms too where the caller asks for them (a byte, 0 for none) and the queue has them.
   const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
   const out = b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+    slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+    shadowByte, keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0);
+  keyed.shadowed = shadowByte > 0;
+  const r = b.particlesByte >> 2;
+  ctx.particleCount = b.u32[r];
+  keyed.updates = b.u32[r + 1];
+  keyed.texUpdates = keyed.texUpdatesByte > 0 ? b.u32[r + 2] : 0;
+  return out;
+}
+
+/**
+ * E-201: packKeyedRowsWasm with each drawn instance's queue row (a float) at `rows` instead of its pose: the keyed
+ * program fetches the pose from the queue's own pose columns by that row. The rest as packKeyedRowsWasm.
+ * @returns {number} the rows written, or -1 when this call is not one the kernel packs
+ */
+export function packKeyedRowsByRowWasm(b, q, ctx, rows, slots, keyed, capacity) {
+  if (!b || !q || !rows || !slots || !ctx || !keyed || !b.spritesKeyedRows) return -1;
+  const o = ctx.o || ctx;
+  if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
+  const key = q.key;
+  if (!key || key.buffer !== b.buffer || rows.buffer !== b.buffer || slots.buffer !== b.buffer) return -1;
+  const typeArr = ctx.typeArr;
+  if (typeArr && typeArr.buffer !== b.buffer) return -1;
+  const table = tableFor(b, q);
+  if (table < 0) return -1;
+  const count = ctx.scanCount | 0;
+  const indexByte = indexByteFor(b, ctx, count, capacity);
+  if (indexByte < 0) return -1;
+  const depthDenom = ctx.depthDenom || 1;
+  const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
+  const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
+  const out = b.spritesKeyedRows(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, rows.byteOffset,
     slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
     shadowByte, keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0);
   keyed.shadowed = shadowByte > 0;
