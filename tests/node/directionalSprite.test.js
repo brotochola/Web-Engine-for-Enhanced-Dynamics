@@ -195,6 +195,7 @@ test('rotation: the heading picks the frame, and the sprite does not turn', () =
   DirectionalSprite.resolve(0);
   assert.equal(animOf(0), 'd2');
   assert.equal(ds.direction, '2');
+  assert.ok(Math.abs(ds.directionAngle - Math.PI / 2) < 1e-12, 'the angle of the frame drawn, not of the heading');
 });
 
 test('a mirrored direction flips the sprite, and a light that follows the flip', () => {

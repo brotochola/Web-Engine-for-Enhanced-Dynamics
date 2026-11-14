@@ -3967,6 +3967,8 @@ export declare class DirectionalSprite extends Component {
   set turnMargin(radians: number);
   /** The direction drawn, as the sheet names it ('left', 'downRight', '12'); null before the first. */
   readonly direction: string | null;
+  /** The direction drawn as world radians (π/2 south); NaN before the first. */
+  readonly directionAngle: number;
   /** The direction drawn as an index into `directions`; 255 before the first. */
   readonly directionIndex: number;
   /** The sheet's directions, from east, clockwise on the screen. */

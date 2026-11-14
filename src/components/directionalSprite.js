@@ -193,6 +193,14 @@ export class DirectionalSprite extends Component {
     return k < t.count ? t.names[k] : null;
   }
 
+  /** The direction drawn as world radians (π/2 south), NaN before the first: where a mirrored or rendered frame looks. */
+  get directionAngle() {
+    const i = this.index;
+    const k = DirectionalSprite.directionIndex[i];
+    const t = tableOf(SpriteRenderer.spritesheetId[i]);
+    return k < t.count ? t.angles[k] : Number.NaN;
+  }
+
   /** The direction drawn as a number (an index into the sheet's directions, from east), NO_DIRECTION (255) before the first. */
   get directionIndex() {
     return DirectionalSprite.directionIndex[this.index];
