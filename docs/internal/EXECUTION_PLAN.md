@@ -4841,6 +4841,9 @@ over 3 15.2 ms (each rebuilds the grid for all entities), so in parallel ~7.3 an
 worker. Step 1: a crowd knob for Predator's spatial workers and a scene pair at crowd=2.5 (spatial and the workers that
 share its cores). Step 2, if it holds: an engine choice by entity count (numberOfSpatialWorkers 'auto'), and E-267's
 counting pass for the rebuild every worker repeats. Owner: spatial.
+**Step 1 mixed 2026-11-14 (R-1035):** Predator crowd=2.5, two workers (?spatialWorkers=2, 55e0cdaa): spatial 10.767 -> 7.336 ms
+(-32.3 %, 4/4), logic +8.3 % (4/4 worse), physics +2.6 %. Unprofiled, physics (14-16 ms) limits the frame there, so no engine
+default; step 2 waits until spatial is the longest step.
 ### Wave 14, the night of 2026-11-13/14: new readings, kept rows, what is left (R-0994 to R-1003)
 
 New readings: Chrome's own bytecode, tiers and inlining (summarizeV8Code, profileSceneSweep --pass code), hardware
