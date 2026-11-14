@@ -15053,6 +15053,27 @@
       "kind": "speed",
       "result": "mixed (R-1035): crowd 2.5, 2 spatial workers: spatial 10.767 -> 7.336 ms (-32.3 %, 4/4), logic +8.3 % (4/4 worse), physics +2.6 %; physics limits the frame there. Knob kept (55e0cdaa), no 'auto' default.",
       "next": "When spatial is the longest step (past crowd 2.5, or once physics is faster): numberOfSpatialWorkers by entity count, and E-267's counting pass for the rebuild each worker repeats."
+    },
+    {
+      "id": "E-308",
+      "title": "Box2D's step export rewrites the angle (an atan2), rotC and rotS of every moved body, also when it did not turn (Predator's people have a fixed rotation)",
+      "status": "kept",
+      "statusText": "kept 2026-11-14 (R-1036)",
+      "date": "2026-11-14",
+      "area": "physics",
+      "kind": "speed",
+      "result": "kept (R-1036): Box2D f053121, WeedJS 6cdaad9c: the step's export writes angle/rotC/rotS only when the rotation changed (commands still write all); Predator crowd 2.5: physics -3.2 %, logic -10.1 %, preRender -7.8 % (0/4 worse each); pile bit-identical; kernel tie.",
+      "next": "None.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-308"
+      ],
+      "aliases": [
+        "rotation export",
+        "unchanged rotation"
+      ],
+      "records": [
+        "R-1036"
+      ]
     }
   ],
   "records": [
@@ -25271,6 +25292,20 @@
       "text": "**E-310 step 1: two spatial workers at crowd 2.5 take spatial -32 % and cost logic +8 %; physics limits the frame there.**\n2026-11-14, 16:19:37 to 16:25:14, runPredatorAbab --vs HEAD (9396c7c4, the knob 55e0cdaa) --query crowd=2.5 --query-b\nspatialWorkers=2 --owner spatial --pool --early --pairs 4 (both sides the same tree; ran to 4 pairs).\n\n| worker (own) | 1 spatial worker | 2 | |\n| --- | --- | --- | --- |\n| spatial (spatial0) | 10.767 ms | 7.336 | paired -32.3 %, 0/4 worse, cv 10/6 % (spatial1 6.5 to 7.8) |\n| logic | 6.675 | 7.104 | +8.3 %, 4/4 worse |\n| physics | 14.250 | 14.925 | +2.6 %, 2/4 worse |\n| preRender | 6.956 | 7.861 | +4.3 %, 2/4 worse |\n| presented | 60.0 fps | 60.0 | |\n\nThe runner's FAIL (load) is ENTITIES_PROCESSED -49.4 %: each worker searches its own rows, the split itself. Unprofiled,\none spatial worker at crowd 2.5 runs 9.3 to 11.2 ms (R-1034's 15 ms had the CPU profiler and Box2D's names build on),\nunder physics' 14 to 16 ms, the worker that limits the frame there. The second worker spends ~14.7 ms of CPU in all\nfor 3.4 ms off spatial's path and takes time from logic (the same cores).\n\nReading: not an engine default now (no 'auto'); the knob stays for scaling runs. It pays once spatial is the longest\nstep, which at Predator's mix starts past crowd 2.5 or with physics faster. Next at this scale: physics (Box2D).",
       "commits": [
         "55e0cdaa"
+      ]
+    },
+    {
+      "id": "R-1036",
+      "date": "2026-11-14",
+      "time": "16:40",
+      "timeFrom": "recorded",
+      "title": "E-308 kept: Box2D's step export skips an unchanged rotation; Predator crowd 2.5 physics -3.2 %, logic -10.1 %, preRender -7.8 % (all 0/4 worse)",
+      "verdict": "kept",
+      "text": "**E-308 kept: the step's export skips an unchanged rotation; the workers that read the pose columns gain more than physics.**\n2026-11-14, 16:25 to 16:40 (result files). Box2D f053121 (weedjs/e308, now Box2D main fast-forwarded to the shipped chain),\nWeedJS 302c32fc (test), 5ccca35d (build), merged 6cdaad9c.\n\nPremise (Predator at crowd 2.5, R-1034's counters: b2FinalizeBodiesTask 4.0 % of Chrome's refills): the finalize exports\nevery awake body that moved, ~19 000 a step, writing its angle (an atan2), rotC and rotS. Civilians and soldiers have a\nfixed rotation, so those three columns get the values they hold, and each write takes the line from the cache of the\nworkers that read it (pre-render and logic, other cores) for nothing.\n\nChange: b2ExportBodyStateIfMoved ends in b2ExportMovedBodyState, which writes the angle, rotC and rotS only when rotC or\nrotS differ from the body's rotation. Only the step's export: a command (body_set_transform after setRotationCS, which\nwrites rotC and rotS before the command) still exports the whole state, so the angle follows. A first version that\nskipped in every export would have left that angle stale; bodyRotationExport.wasm.test.js (new) catches it.\n\n- Correctness: a pile of 3000 boxes for 240 steps gives the same checksum of all eight channels (3623816403); the new\n  test (moving fixed-rotation body, spinning body, setRotationCS) passes on both builds; test:node 2627/2627,\n  test:demos 101/101.\n- Kernel (bodyAccelerationsMicrobench, one thread, 25 000 bodies, 4 rounds): a tie (A 172-179, B 164-180 ops/s, same\n  checksum): the kernel has no reader on another core.\n- Predator crowd=2.5, runPredatorAbab --vs main --hyp-rev w14s/e308 --owner physics --pool --early, 4 pairs, 16:32:05 to\n  16:37:32: KEPT. physics 17.395 -> 17.106 ms (-3.2 %, 0/4 worse), logic 9.166 -> 7.852 (-10.1 %, 0/4), preRender\n  9.711 -> 8.947 (-7.8 %, 0/4), spatial 13.684 -> 13.496 (-2.1 %, 2/4).\n- Refills from WPR (DCRefillFromSystem, one capture a side, Predator crowd=2.5, 16:38 to 16:40): Chrome's total -0.6 %;\n  pre-render collect_sprites 564 -> 497 (-12 %), emit_rows 1563 -> 1447 (-7 %), logic _tickIntervalBucket 2401 -> 2030\n  (-15 %): the readers. Physics' own wasm functions read +10 to +13 % in that one pair of captures (noise or more steps\n  in the window; one run a side).",
+      "commits": [
+        "302c32fc",
+        "5ccca35d",
+        "6cdaad9c"
       ]
     }
   ],
