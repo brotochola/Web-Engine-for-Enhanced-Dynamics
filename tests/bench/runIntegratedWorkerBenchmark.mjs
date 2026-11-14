@@ -435,7 +435,12 @@ async function main() {
   // --trace-cpu: CPU profiler + thread names only. The timeline categories
   // (.stack especially) add cost to every task and make a 190 MB file.
   const traceCpuOnly = Boolean(cliArgs['trace-cpu']);
-  const trace = Boolean(cliArgs.trace) || traceCpuOnly;
+  // --trace-categories a,b: more categories on top of --trace-cpu's or --trace's (alone: only those and the
+  // metadata), e.g. `v8,disabled-by-default-v8.runtime_stats` for V8's runtime call stats per isolate.
+  const extraTraceCategories = typeof cliArgs['trace-categories'] === 'string'
+    ? cliArgs['trace-categories'].split(',').map((s) => s.trim()).filter(Boolean)
+    : [];
+  const trace = Boolean(cliArgs.trace) || traceCpuOnly || extraTraceCategories.length > 0;
   const allowThrottle = Boolean(cliArgs['allow-throttle']);
   const positional = cliArgs._ || [];
   const outputPath = path.resolve(cliArgs.output || positional[3] || defaultOutputPath);
@@ -656,17 +661,22 @@ async function main() {
       await browser.startTracing(page, {
         path: path.join(path.dirname(outputPath), 'engine_trace.json'),
         screenshots: false,
-        categories: traceCpuOnly
-          ? ['-*', '__metadata', 'disabled-by-default-v8.cpu_profiler', 'disabled-by-default-v8.cpu_profiler.hires']
-          : [
-              '-*', 'devtools.timeline', 'v8.execute',
-              'disabled-by-default-devtools.timeline',
-              'disabled-by-default-devtools.timeline.frame',
-              'toplevel', 'blink.console', 'blink.user_timing',
-              'latencyInfo', 'disabled-by-default-devtools.timeline.stack',
-              'disabled-by-default-v8.cpu_profiler',
-              'disabled-by-default-v8.cpu_profiler.hires', 'v8.gc'
-            ]
+        categories: [
+          ...(traceCpuOnly
+            ? ['-*', '__metadata', 'disabled-by-default-v8.cpu_profiler', 'disabled-by-default-v8.cpu_profiler.hires']
+            : cliArgs.trace
+              ? [
+                  '-*', 'devtools.timeline', 'v8.execute',
+                  'disabled-by-default-devtools.timeline',
+                  'disabled-by-default-devtools.timeline.frame',
+                  'toplevel', 'blink.console', 'blink.user_timing',
+                  'latencyInfo', 'disabled-by-default-devtools.timeline.stack',
+                  'disabled-by-default-v8.cpu_profiler',
+                  'disabled-by-default-v8.cpu_profiler.hires', 'v8.gc'
+                ]
+              : ['-*', '__metadata']),
+          ...extraTraceCategories,
+        ]
       });
     }
 
