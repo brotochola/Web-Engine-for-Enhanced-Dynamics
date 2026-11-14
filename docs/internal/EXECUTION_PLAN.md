@@ -4196,6 +4196,8 @@ rebuild with 40 000 turned boxes +21.7 %, checksums equal; Boids' spatial 6.373 
 `publishMovedBodies` 4.2 (1.0 %): per-body copies in JS each step.
 **Plan:** E-222's sites; a kernel each against its current form (`publishPose` has one, E-76's publishPose row). Owner:
 physics' STEP_MS in Predator and Balls.
+**Kept 2026-11-14 (R-1014, R-1019), kernel claim:** publishPose and snapshotPrevPose walk the slots and copy runs of body slots with
+set() when 3/4 hold a body (`8cb36b50`): publishPoseMicrobench 5.4k → 27k ops/s; ballsHeavy physics neutral; Predator batch gate clean.
 
 ### E-247 The particle worker's JS decoration passes
 
@@ -4547,6 +4549,8 @@ kernel, then audioStorm's logic. Owner: logic (audio).
 **Plan:** the API kept; a small entry that inlines into the caller and copies the numbers into a module `Float64Array`
 before calling the body with integers (escape analysis drops the literal); a spawn kernel, then the two scenes' logic.
 Owner: logic.
+**Kept 2026-11-14 (R-1017), kernel claim:** small fronts for BulletPool.spawn and Decal.stamp (`1c3c4763`, `ccf750e8`): the literal goes, bullet
+147 → 4 bytes a call, decalBlit 140 → 4; GameObject.spawn cannot (its object reaches user code).
 
 ### E-287 b2SolverTask's own time: the solver's stage barrier between blocks
 
@@ -4563,6 +4567,8 @@ bigger blocks, or the main thread alone under a size; both builds (SIMD, no-SIMD
 body_set_transform 0.8 %, bodies_apply_accelerations 0.6 %: the glue applies each acceleration through the public API.
 **Plan:** the batch on the body sims by index, the public calls' semantics kept; a glue kernel, then Boids' physics; both
 builds. Owner: physics.
+**Kept 2026-11-14 (R-1018):** the accelerations are added in Box2D's first-substep velocity integration, in parallel (Box2D `88e247b`,
+WeedJS `f44815c0`): about 0.9 ms a frame off Predator's physics thread; same velocities bit for bit; batch gate clean.
 
 ### E-289 GameObject's instance getters read their fields through megamorphic loads in a scene of many classes
 
@@ -4695,6 +4701,8 @@ so every transition pays four builtin calls. `onUpdate` already goes through the
 **Plan:** count Predator's transitions per second first (a few hundred would make this small). Then per-state
 `_onExits` and `_onEnters` arrays built with `_onUpdates` (null where a state defines none), called with `.call`; the
 machine code shows no megamorphic load left in the transition, then fsmTickMicrobench with transitions. Owner: logic.
+**Kept 2026-11-14 (R-1016), kernel claim:** per-state `_onExits` / `_onEnters` (`ed0469d4`): fsmTickMicrobench +17 % at Predator's rate,
++50–60 % with a transition a tick; hot swap refreshes the hooks (`12afcaa2`); N-168 found.
 
 ### E-302 The collision-stay walk validates every pair each frame in a scene where nothing listens to stay
 
