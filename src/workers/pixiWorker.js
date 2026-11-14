@@ -873,6 +873,7 @@ class PixiRenderer extends AbstractWorker {
     this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
     // DX-SHADOW3D: lighting.sunShadows 'map' (src/render/sunShadowMap.js): the sun's shadow map, its pass and terms.
     this._sunMapOn = false;
+    this._selfShadowOn = false; // DX-SELFSHADOW: lighting.selfShadow, WebGL for now
     this.sunMapRT = null;
     this._sunMapMesh = null;
     this._sunMapUniforms = null;
@@ -3737,7 +3738,15 @@ LIGHTING SYSTEM SETUP
       lightingResources.uniforms.uSunMapK = { value: this._sunMapK, type: 'vec4<f32>' };
       lightingResources.uSunMap = PIXI.Texture.EMPTY.source;
     }
-    const lightingSrc = lightingSource(this._engineShaders?.lightingFrag || '', { faces: facesOn, sunMap: this._sunMapOn }).replace(
+    if (this._selfShadowOn && facesOn) {
+      // A step of 4 floor px, 6 steps, 3 px of bias (plus a quarter of the distance): src/shaders/lightingBasic.frag.glsl.
+      lightingResources.uniforms.uSelfShadow = { value: new Float32Array([4, 6, 3, 0]), type: 'vec4<f32>' };
+    }
+    const lightingSrc = lightingSource(this._engineShaders?.lightingFrag || '', {
+      faces: facesOn,
+      sunMap: this._sunMapOn,
+      selfShadow: this._selfShadowOn,
+    }).replace(
       /MAX_LIGHTS/g,
       String(this.maxLights | 0 || 64)
     );
@@ -8078,6 +8087,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         } else {
           this._sunMapOn = true;
         }
+      }
+      // DX-SELFSHADOW: faces and sprites with maps shade themselves from the sun (screen-space steps over the face map).
+      if (lightingConfig.selfShadow === true) {
+        if (this._useWebGpu) console.warn('WeedJS: lighting.selfShadow works on WebGL for now');
+        else this._selfShadowOn = true;
       }
       // DX-MAPS: a sprite with height and normal maps is lit as the surface they say, through the faces' pass.
       if (this.atlasMapsSource !== null && !this._faces.enabled) {

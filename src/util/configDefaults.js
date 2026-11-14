@@ -774,6 +774,11 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   sunShadows: 'sprite',
   /**
+   * DX-SELFSHADOW: faces and sprites with height maps shade themselves and each other from the sun: steps towards it over
+   * the face map's heights in the light pass (a crate's lid edge over its front, an arm over a body). WebGL for now.
+   */
+  selfShadow: false,
+  /**
    * 'add' — type 3 glows go to the lightGlows ADD mesh.
    * 'sprite' — same quads join the entity list (sort bias already above the body).
    * Source-over, so the soft edge can gray, and lighting multiply sits on top.

@@ -68,3 +68,12 @@ test('lighting.sunShadows is a key, sprite by default', () => {
   assert.equal(LIGHTING_DEFAULTS.sunShadows, 'sprite');
   assert.deepEqual(unknownConfigKeys({ lighting: { sunShadows: 'map' } }), []);
 });
+
+test('lighting.selfShadow: the light pass steps towards the sun over the face map, only with faces', async () => {
+  const { lightingSource } = await import('../../src/render/faceMap.js');
+  const src = shader('lightingBasic.frag.glsl');
+  assert.match(lightingSource(src, { faces: true, sunMap: false, selfShadow: true }), /sunDirect \*= mix\(1\.0, selfShadow\(p\)/);
+  assert.doesNotMatch(lightingSource(src, { faces: true, sunMap: false, selfShadow: false }), /selfShadow|uSelfShadow/);
+  assert.doesNotMatch(lightingSource(src, { faces: false, sunMap: false, selfShadow: true }), /selfShadow|uSelfShadow|#if/);
+  assert.equal(LIGHTING_DEFAULTS.selfShadow, false);
+});

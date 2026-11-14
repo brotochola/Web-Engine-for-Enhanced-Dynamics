@@ -41,17 +41,18 @@ float coneFactor(vec2 delta, vec4 cone) {
   return t * t * (3.0 - 2.0 * t);
 }
 
-// #if SUNMAP
-// DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the sprite shadows' layer is.
-uniform sampler2D uSunMap;
-uniform vec4 uSunMapK; // kx, ky (a px of height's landing shift on the floor), groundScaleY, the shadow's opacity
-
+// A world point's place on the canvas, 0..1 (weedScreenToWorld's inverse).
 vec2 weedWorldToNorm(vec2 world) {
   vec2 focus = uCameraPos + uFullCanvasSize / (2.0 * uZoom);
   vec2 d = (world - focus) * uZoom;
   vec2 sxy = vec2(uCameraRot.x * d.x - uCameraRot.y * d.y, uCameraRot.y * d.x + uCameraRot.x * d.y);
   return (sxy + uFullCanvasSize * 0.5) / uFullCanvasSize;
 }
+
+// #if SUNMAP
+// DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the sprite shadows' layer is.
+uniform sampler2D uSunMap;
+uniform vec4 uSunMapK; // kx, ky (a px of height's landing shift on the floor), groundScaleY, the shadow's opacity
 
 // How much of the sun reaches floor point p (x, y on the floor, z up): 1 lit, 1 - opacity in the shade, five taps.
 float sunVisibility(vec3 p) {
@@ -74,6 +75,31 @@ float sunVisibility(vec3 p) {
 uniform sampler2D uFaceMap;
 uniform vec4 uFaceLight; // heightScaleY, wrap, gain, sunDirect
 uniform vec4 uFaceSun; // towards the sun in the floor's space; w: 1 / its height, so a flat surface reads as the floor
+// #if SELFSHADOW
+// DX-SELFSHADOW: steps towards the sun over the face map's heights (screen space, as the light bench's relief did): a
+// surface that rises above the ray shades this pixel from the sun. x: a step's length (floor px), y: steps, z: bias (px).
+uniform vec4 uSelfShadow;
+
+float faceHeight(vec4 face) {
+  return (floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5)) / 8.0;
+}
+
+// The first step skips the pixel's own neighbours, and the bias grows with the distance: the map is at the light pass's
+// resolution, so a steep surface's own texels next door read a few px higher (the bench's freckles).
+float selfShadow(vec3 p) {
+  vec3 l = normalize(uFaceSun.xyz);
+  float s = 1.0 / uGroundInvScaleY;
+  for (int i = 2; i <= 9; i++) {
+    if (float(i) > uSelfShadow.y + 1.0) break;
+    float t = float(i) * uSelfShadow.x;
+    vec3 q = p + l * t;
+    vec2 nc = weedWorldToNorm(vec2(q.x, q.y * s - q.z * uFaceLight.x));
+    vec4 f = texture2D(uFaceMap, vec2(nc.x, uFlipY > 0.5 ? 1.0 - nc.y : nc.y));
+    if (f.r > 0.0 && faceHeight(f) > q.z + uSelfShadow.z + t * 0.25) return 0.0;
+  }
+  return 1.0;
+}
+// #endif SELFSHADOW
 
 vec3 faceLight(vec2 world, vec4 face) {
   vec2 f = (face.rg * 255.0 - 127.0) / 126.0;
@@ -88,6 +114,10 @@ vec3 faceLight(vec2 world, vec4 face) {
 // #if SUNMAP
   sunDirect *= sunVisibility(p);
 // #endif SUNMAP
+// #if SELFSHADOW
+  // Faded out at the terminator, where the cosine already shades and a step either way flips the test.
+  if (sunDirect > 0.05) sunDirect *= mix(1.0, selfShadow(p), smoothstep(0.05, 0.3, sunDirect));
+// #endif SELFSHADOW
   vec3 total = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB);
   total += vec3(uSunR, uSunG, uSunB) * uSunIntensity * (1.0 - uFaceLight.w + uFaceLight.w * sunDirect);
   const float DISTANCE_SCALE = 1.0 / 1024.0;
