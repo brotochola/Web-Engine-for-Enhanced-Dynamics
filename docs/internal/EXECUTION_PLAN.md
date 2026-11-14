@@ -4602,6 +4602,50 @@ with the code log: an estimate). That flag cannot test the delay.
 ones find why (OSR from Maglev, deopts, size), for demo loops whether the per-entity body as its own function tiers up
 sooner; then a kernel or scene for the largest. Owner: logic.
 
+### E-293 Spatial runs V8's DeoptimizeCode once a frame in Predator
+
+**Premise (Predator, Chrome trace with the `v8` category):** the spatial worker emits `V8.DeoptimizeCode` exactly 60
+times a second for the whole run (730 events in 12 s, ~16 µs each); the logic workers 50 to 70 a second for a while, the
+others only in warm-up. V8 runs it when it invalidates optimized code (a broken dependency, a deopt that throws the code
+away); `_findNeighbors` was compiled by TurboFan seven times (E-303), not 720, so most events find little to do but still
+walk the code. **Plan:** a run with `--log-deopt` and `code-dependency-change` lines on spatial to name the dependency
+broken each frame (a field constness or map written in the frame loop, a prototype or a script `let`), remove it, check
+the events stop, then spatial's STEP_MS on stationarySpatialWide and Predator. Owner: spatial.
+
+### E-294 pack_sprites_keyed waits on memory more than any other engine kernel
+
+**Premise (Predator, WPR hardware-counter samples mapped to V8's code, three runs):** Pixi's `pack_sprites_keyed` (wasm)
+takes 4.0 % of Chrome's refills from beyond L2 at 0.8 % of its instructions: 5.1 times the process's refills per
+instruction, the highest of any engine function (the average engine kernel 0.2 to 0.6, Box2D's solver 1.5 to 1.8).
+**Plan:** read its access pattern (keyed reads across the sprite columns in key order, not memory order); a kernel with
+the scene's key distribution, then a gather in memory order or a prefetch-friendly layout; Pixi's STEP_MS on
+spritePackStress and Predator. Owner: renderer.
+
+### E-295 Spatial's gather_batch and publish_batch are the largest share of memory refills
+
+**Premise (same capture):** `gather_batch` 11.2 % and `publish_batch` 7.9 % of Chrome's refills from beyond L2 at 4.6 and
+3.8 % of its instructions (2.4 and 2.1 times the average). Publish writes rows other workers read on other cores, so part
+of it is the hand-off itself. **Plan:** split the refills between the gather's reads and the publish's writes (a kernel
+with the scene's layout), then write only rows that changed or pack the published fields; spatial's STEP_MS on
+stationarySpatialWide and Predator. Owner: spatial.
+
+### E-296 Spawning paths deopt in steady state: _processSpawnSoA without type feedback
+
+**Premise (Predator's deopt pass):** about 110 steady-state eager deopts each at `logicWorker.js` lines 871 and 882
+("Insufficient type feedback for generic named access / compare operation") inside `_processSpawnSoA`, which TurboFan
+compiled at 2.35 s and again at 5.38 s: branches first taken after warm-up. **Plan:** name the branches; give them
+feedback early or move the rare path to its own function so the hot one keeps its code; the deopt pass again, then the
+spawn scenes' logic STEP_MS. Owner: logic.
+
+### E-297 Predator's soldiers scan every neighbour for a target each frame
+
+**Premise (WPR samples):** the demo's `findACivilianToShoot` is the largest single consumer of instructions in Chrome
+(9.6 %), with `getNeighbor`, `get neighborCount` and `hasLineOfSight` inlined; its refills per instruction are 0.19, so it
+is instruction-bound, not memory-bound (the read count is what costs: E-289, E-304). **Plan:** demo code, public API: a
+soldier that has a live target keeps it and rescans every few frames, staggered by index; Predator's logic STEP_MS
+(Predator is the gate scene: the change moves its baseline, so it goes in alone and the gate is rerun after). Owner:
+logic.
+
 ### E-300 The tick dispatch reads obj.tick twice per entity, each a megamorphic load call
 
 **Premise (bytecode, Chrome 151, Predator's code pass; machine code, d8 16):** `_tickIntervalBucket` loads `obj.tick`
