@@ -1765,6 +1765,12 @@ class SpatialWorker extends AbstractWorker {
       this._wasmPub.queued = 0;
       this.neighborsPublishedThisFrame += n;
       const meta = this._wasmMeta;
+      // E-299: the batch in cell order, as the gather's rebuild list is: consecutive entities share neighbours, whose
+      // poses the publish then finds still in cache (entity ids carry no place). The rows do not depend on the order.
+      const g = this._wasmGather;
+      if (n > 1 && this._gatherCellOrder && g !== null && g.order) {
+        g.order(n, this._wasmPub.listByte, meta.posByte, this.invCellSize, this.gridWidth, this.gridHeight, g.orderByte);
+      }
       this._wasmPub.publish(
         n,
         Grid.maxNeighbors,
