@@ -14680,7 +14680,7 @@
       "area": "spatial",
       "kind": "speed",
       "rank": 73,
-      "result": "Same capture: `gather_batch` 11.2 % and `publish_batch` 7.9 % of the refills from beyond L2 at 4.6 and 3.8 % of the instructions. Publish writes rows other workers read on other cores, so part of it is the hand-off itself.",
+      "result": "Ceiling (kernels, entities renumbered in home-cell order): publish +16 % at 16 500 and +20 % at 60 000; whole spatial frame -4 % and -15 % (R-1009). Not worth a per-frame copy at Predator's size; worth it at tens of thousands if E-267's counting pass yields the cell order.",
       "next": "Split the refills between the gather's reads and the publish's writes (a kernel with the scene's layout), then write only rows that changed or pack the published fields; spatial STEP_MS on stationarySpatialWide and Predator.",
       "refs": [
         "EXECUTION_PLAN.md#E-295"
@@ -14692,7 +14692,8 @@
       ],
       "records": [
         "R-0997",
-        "R-1000"
+        "R-1000",
+        "R-1009"
       ]
     },
     {
@@ -24826,6 +24827,19 @@
       "text": "**E-304 kept (hygiene, guide and demos): neighbour loops read neighborCount once.**\n2026-11-14 02:10. The guide's ENTITY_TEMPLATE.js and seven demo loops (carScene x2, littleCity x2, Predator's civilian and\nexplosion) re-read this.neighborCount each pass, the getter whole (d8 16: five megamorphic checks a neighbour against one,\nR-0996); each now reads it once before its loop. Same API, as readable; one count per loop while spatial may publish.\nbuenosAiresScene's three loops left alone (the owner's Conurbano game is its own project). test:demos 101/101, test:node\n2594/2594. Not timed: the work removed is plain, and the scenes it reaches have logic under the 6 ms floor; ABAB sides\ntake demos from HEAD, so a gate would need --full-rev. Commit 5d26a719.",
       "commits": [
         "5d26a719"
+      ]
+    },
+    {
+      "id": "R-1009",
+      "date": "2026-11-14",
+      "time": "02:07",
+      "timeFrom": "recorded",
+      "title": "E-295's ceiling in kernels: entities in home-cell order make publish +16 % (16 500) / +20 % (60 000), the spatial frame -4 % / -15 %; waits on E-267, judged at tens of thousands",
+      "verdict": "note",
+      "text": "**E-295's ceiling, measured in kernels: entities numbered in home-cell order.**\n2026-11-14, Node kernels (no browser), `main` at c07e3707. The question: if neighbours' poses, markers and rows sat near\neach other in memory (a layout that kept entities by place), how much faster would spatial run? Both kernels renumber the\nentities in row-major home-cell order and compare with today's numbering.\n\n- Publish alone (spatialPublishWasmMicrobench `--case predator --order renumber` against `--order cell`, the batch in cell\n  order on both sides, 7 rounds): 979 -> 1136 ops/s at 16 500 entities (+16 %), 85 -> 102 at 60 000 (+20 %).\n- The whole spatial frame (spatialGatherWasmMicrobench `--variant ordered --cell-ids` against `--variant ordered`, 3 workers\n  in one thread, Predator's settings and drift, 4 alternating processes): 59.1 -> 56.9 ms per 20 frames at 16 500 (-4 %,\n  4/4), 472 -> 398 ms at 60 000 (-15 %, 4/4).\n\nReading. A perfect numbering is a ceiling: it also puts the dedup stamps, the published rows and the owned lists in place\norder, which a cell-ordered pose copy would not, and it costs nothing to keep. At Predator's size the frame ceiling is\n0.11 ms of 2.95 ms per frame, about what a per-frame copy would cost: not worth it alone. At 60 000 entities it is 3.7 ms a\nframe across the three workers, worth it if the cell order comes free from the rebuild: E-267 (b)'s counting pass (bin by\ncell, then write) yields the order a slot-ordered pose copy needs. So E-295 waits on E-267 and is judged on a scene with\ntens of thousands of entities, not Predator.",
+      "commits": [
+        "ee8833d8",
+        "c07e3707"
       ]
     }
   ],
