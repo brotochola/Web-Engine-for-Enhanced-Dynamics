@@ -74,7 +74,7 @@ const STRESS = [
   'lampShadowStressScene', 'sunShadowMapStressScene', 'selfShadowStressScene', 'depthSortStressScene',
   'emissiveStressScene', 'spriteMapsStressScene', 'directionalSpriteStressScene', 'volumeStressScene',
   'flashlightStressScene', 'spotLightStressScene', 'lightGalleryScene', 'lightMotionScene', 'sunMeshParityScene',
-  'dxCaptureScene',
+  'dxCaptureScene', 'light3dCompareScene',
 ].map((n) => `/tests/bench/stressScenes/${n}.js`);
 
 /** Runner flags a scene needs to show its load. */
