@@ -563,6 +563,74 @@ export const ENGINE_FEATURES = [
     primary: ['logic0_STEP_MS'],
     load: ['BODY_COUNT'],
   },
+  // DX-LIGHT3D's owner scenes (docs/internal/DX_LIGHT3D_PLAN.md §10). Most of what they cost is the GPU's: the scoreboard
+  // reads the CPU primaries below, and the GPU's reading is the presented (drawn) frames, `runPredatorAbab --scene <path>
+  // --owner presented`. Headed: a GPU-bound scene needs the real GPU, in a visible window.
+  {
+    id: 'sunShadowMap',
+    name: 'Sun shadow map (DX-SHADOW3D)',
+    module: 'src/render/sunShadowMap.js',
+    kernel: null,
+    scene: {
+      key: 'sunShadowMap',
+      path: '/tests/bench/stressScenes/sunShadowMapStressScene.js',
+      exportName: 'SunShadowMapStressScene',
+      headed: true,
+      kind: 'stress',
+    },
+    // Pre-render writes a sun row a caster (with the frame the sun sees of it); Pixi uploads them and runs the map's passes.
+    primary: ['preRender_STEP_MS', 'pixi_STEP_MS'],
+    // GPU_CASTERS: the sun rows drawn (0 with ?kind=box, whose volumes are meshes).
+    load: ['GPU_CASTERS', 'VISIBLE_ENTITIES', 'RENDER_QUEUE_SIZE'],
+  },
+  {
+    id: 'selfShadow',
+    name: 'Self-shadow steps (DX-SELFSHADOW)',
+    module: 'src/shaders/lightingBasic.frag.glsl',
+    kernel: null,
+    scene: {
+      key: 'selfShadow',
+      path: '/tests/bench/stressScenes/selfShadowStressScene.js',
+      exportName: 'SelfShadowStressScene',
+      headed: true,
+      kind: 'stress',
+    },
+    // The steps run in the light pass, on the GPU: Pixi's step is the guard, the presented frames the owner.
+    primary: ['pixi_STEP_MS'],
+    load: ['VISIBLE_ENTITIES', 'RENDER_QUEUE_SIZE'],
+  },
+  {
+    id: 'depthSort',
+    name: 'Pixel depth under the painter (DX-DEPTH)',
+    module: 'src/render/pixelDepth.js',
+    kernel: null,
+    scene: {
+      key: 'depthSort',
+      path: '/tests/bench/stressScenes/depthSortStressScene.js',
+      exportName: 'DepthSortStressScene',
+      headed: true,
+      kind: 'stress',
+    },
+    // The depth each pixel writes is fill on the GPU: Pixi's step is the guard, the presented frames the owner.
+    primary: ['pixi_STEP_MS'],
+    load: ['VISIBLE_ENTITIES', 'RENDER_QUEUE_SIZE'],
+  },
+  {
+    id: 'emissive',
+    name: 'Emissive sprites (DX-EMISSIVE)',
+    module: 'src/render/spriteMaps.js',
+    kernel: null,
+    scene: {
+      key: 'emissive',
+      path: '/tests/bench/stressScenes/emissiveStressScene.js',
+      exportName: 'EmissiveStressScene',
+      headed: true,
+      kind: 'stress',
+    },
+    // The second colour every sprite pixel writes, and its composition, are the GPU's: Pixi's step is the guard.
+    primary: ['pixi_STEP_MS'],
+    load: ['VISIBLE_ENTITIES', 'RENDER_QUEUE_SIZE'],
+  },
   // Kernel-only rows: no stress scene reaches their regime; the product gate is
   // Predator ABAB (runPredatorAbab.mjs) on the worker named in `primary`.
   {
