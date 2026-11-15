@@ -82,6 +82,7 @@ import {
   writeLampTile,
 } from '../render/lampShadowMap.js';
 import { instancedSpriteGlProgram, pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
+import { volumeMapGpuProgram, volumeMapWgsl } from '../render/volumeShadowMap.js';
 import { TileMap } from '../core/tileMap.js';
 import {
   listGidPages,
@@ -6108,13 +6109,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * DX-SHADOW3D (F6): each sun-projected volumes' layer drawn into the sun's map (WebGL for now): the same mesh rows, each
-   * vertex landing by the map's shift (sunMapTerms, per px of height; the volumes' heights are screen px, so over
-   * heightScaleY), its height out, max blending. The rows are in world px: the render's transform takes them into the map
-   * as its cards land ((world - camera) · screenScale, sunMapVertex).
+   * DX-SHADOW3D (F6): each sun-projected volumes' layer drawn into the sun's map: the same mesh rows, each vertex landing
+   * by the map's shift (sunMapTerms, per px of height; the volumes' heights are screen px, so over heightScaleY), its
+   * height out, max blending. GLSL on WebGL (sunShadowMap.js volumeMapVertex), WGSL on WebGPU (volumeShadowMap.js
+   * volumeMapWgsl). The rows are in world px: the render's transform takes them into the map as its cards land
+   * ((world - camera) · screenScale, sunMapVertex).
    */
   _drawVolumesInSunMap(rtOpts, screenScale) {
-    if (this._useWebGpu || !this._engineShaders?.meshUvFillVert) return;
+    const shaders = this._engineShaders;
+    if (!(this._useWebGpu ? shaders?.meshUvFill : shaders?.meshUvFillVert)) return;
     const t = this._sunMapTerms;
     const hs = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
     const g = this._groundScaleY || 1;
@@ -6129,12 +6132,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (entry === null) {
         const r = batch.shader.resources;
         const terms = new Float32Array(4);
+        const program = this._useWebGpu
+          ? { gpuProgram: volumeMapGpuProgram(GpuProgram, volumeMapWgsl(shaders.meshUvFill), 'mainFragMap', 'sun-map-volumes') }
+          : {
+              glProgram: PIXI.GlProgram.from({
+                vertex: volumeMapVertex(shaders.meshUvFillVert),
+                fragment: VOLUME_MAP_FRAGMENT,
+                name: 'sun-map-volumes',
+              }),
+            };
         const shader = new PIXI.Shader({
-          glProgram: PIXI.GlProgram.from({
-            vertex: volumeMapVertex(this._engineShaders.meshUvFillVert),
-            fragment: VOLUME_MAP_FRAGMENT,
-            name: 'sun-map-volumes',
-          }),
+          ...program,
           resources: {
             uTexture: r.uTexture,
             uSampler: r.uSampler,
@@ -6156,7 +6164,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         entry = { batch, mesh, host, terms };
         this._volumeMapMeshes.push(entry);
       }
-      entry.mesh.geometry = batch.geometry;
+      if (entry.mesh.geometry !== batch.geometry) entry.mesh.geometry = batch.geometry;
+      this._syncVolumeResources(entry.mesh.shader, batch);
       const v = entry.terms;
       // A vertex h screen px high is h / heightScaleY px of height: it lands (kx, ky) further per px of height, the
       // floor's y drawn groundScaleY tall.
@@ -6172,6 +6181,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       rtOpts.transform = null;
       this._gpuPassesThisFrame++;
     }
+  }
+
+  /**
+   * DX-SHADOW3D: a volumes' map program's textures as its batch's are now (the atlas, the LUT and the pose table can be
+   * replaced after the program was made).
+   */
+  _syncVolumeResources(shader, batch) {
+    const r = batch.shader.resources;
+    const res = shader.resources;
+    if (res.uTexture !== r.uTexture) res.uTexture = r.uTexture;
+    if (res.uSampler !== r.uSampler) res.uSampler = r.uSampler;
+    if (res.uTexLut !== r.uTexLut) res.uTexLut = r.uTexLut;
+    if (res.uPoseTable !== r.uPoseTable) res.uPoseTable = r.uPoseTable;
   }
 
   /** DX-SHADOW3D (F6): world px to the sun map's texels, (world - camera) · screenScale (sunMapVertex's uCam), no turn. */
