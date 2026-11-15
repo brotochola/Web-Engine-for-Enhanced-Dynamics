@@ -47,7 +47,7 @@ export class Walker extends GameObject {
     w.walking = 0;
     w.timer = rng() * 4;
     w.speed = 17 + rng() * 9;
-    this.shadowCaster.heightMultiplier = 1.2;
+    this.shadowCaster.setSprite({ heightScale: 1.2 });
     this.animation = -1;
   }
 
