@@ -1,7 +1,8 @@
 // Tween.js — scene tween pool. Every logic worker ticks its own block of slots
 // with scaled dt (one writer per slot; see Tween.tick).
 // Slot count is config.tween.maxTweens (TWEEN_DEFAULTS).
-// Paint writes SpriteRenderer, or MeshRenderer when the entity has no sprite.
+// Paint writes SpriteRenderer, or MeshRenderer when the entity has no sprite; a paint
+// slot keeps which in its mask, read again when the entity's sprite or mesh turns on or off.
 // xy is refused on a dynamic RigidBody. Zoom writes Camera.targetZoom.
 
 import { SpriteRenderer } from '../components/spriteRenderer.js';
@@ -13,6 +14,7 @@ import { applyParticleEase, lerpRgb, resolveEaseId } from '../util/particleTween
 import { logicBlockRange } from '../util/logicOwner.js';
 import { EntityIdArray, entityIdBytes } from '../util/entityIdWidth.js';
 import { Messages } from './messages.js';
+import { setPaintTargetHook } from './paintTargetHook.js';
 
 export const TWEEN_KIND_PAINT = 0;
 export const TWEEN_KIND_XY = 1;
@@ -43,9 +45,13 @@ const XY_Y = 2;
 export const TWEEN_REPEAT_FOREVER = 0xffff;
 const FLAG_YOYO = 1;
 
-// Paint goes to the entity's sprite, or to its mesh when it has no live sprite.
-const ON_SPRITE = 1;
-const ON_MESH = 2;
+// Paint goes to the entity's sprite, or to its mesh when it has no live sprite. A paint
+// slot keeps that target in these mask bits (E-275): the tick read SpriteRenderer.active
+// for every tween every frame. paintTargetChanged sets them again when the entity's
+// sprite or mesh turns on or off.
+const ON_SPRITE = 16;
+const ON_MESH = 32;
+const ON_ANY = ON_SPRITE | ON_MESH;
 
 function paintTarget(ent) {
   if (SpriteRenderer.active && SpriteRenderer.active[ent]) return ON_SPRITE;
@@ -294,15 +300,41 @@ export class Tween {
     return true;
   }
 
-  /** After a save restore wrote slots directly: recount live tweens per entity. */
+  /**
+   * After a save restore wrote slots directly: recount live tweens per entity, and read
+   * each paint slot's target again (a save's mask holds the target of the saving run).
+   */
   static rebuildEntityCounts() {
+    if (!this.active) return;
     const counts = this.entityTweens;
-    if (counts.length === 0 || !this.active) return;
     counts.fill(0);
     for (let i = 0; i < this.capacity; i++) {
       if (this.active[i] !== SLOT_LIVE || this.kind[i] === KIND_ZOOM) continue;
       const ent = this.entity[i];
       if (ent < counts.length) counts[ent]++;
+      if (this.kind[i] === KIND_PAINT) this.mask[i] = (this.mask[i] & ~ON_ANY) | paintTarget(ent);
+    }
+  }
+
+  /**
+   * The entity's sprite or mesh turned on or off (spawn, the renderers' `active` setters):
+   * its paint tweens read their target again. The tick paints the target its slot keeps,
+   * so code that writes SpriteRenderer.active or MeshRenderer.active directly calls this.
+   * @param {number} entityIndex
+   */
+  static paintTargetChanged(entityIndex) {
+    const active = this.active;
+    if (!active) return;
+    const ent = entityIndex | 0;
+    const counts = this.entityTweens;
+    if (ent < counts.length && Atomics.load(counts, ent) === 0) return;
+    const on = paintTarget(ent);
+    const entities = this.entity;
+    const kinds = this.kind;
+    const masks = this.mask;
+    for (let i = 0; i < this.capacity; i++) {
+      if (active[i] !== SLOT_LIVE || entities[i] !== ent || kinds[i] !== KIND_PAINT) continue;
+      masks[i] = (masks[i] & ~ON_ANY) | on;
     }
   }
 
@@ -406,7 +438,7 @@ export class Tween {
         this.tintFrom[slot] = cur >>> 0;
         this.tintTo[slot] = props.tint >>> 0;
       }
-      this.mask[slot] = mask;
+      this.mask[slot] = mask | on;
     }
 
     if (kind !== KIND_ZOOM && entityIndex < this.entityTweens.length) {
@@ -558,10 +590,9 @@ export class Tween {
       return;
     }
     // The same writes as _writePaint, inline: calling it from the tick cost
-    // the 65535-tween kernel 4.9 % (review R9).
-    const on = paintTarget(ent);
-    const spriteOn = on === ON_SPRITE;
-    const meshOn = on === ON_MESH;
+    // the 65535-tween kernel 4.9 % (review R9). The target is the slot's (E-275).
+    const spriteOn = (mask & ON_SPRITE) !== 0;
+    const meshOn = (mask & ON_MESH) !== 0;
     if (mask & PAINT_ALPHA) {
       const a = this.from0[slot] + (this.to0[slot] - this.from0[slot]) * eased;
       if (spriteOn) SpriteRenderer.alpha[ent] = a;
@@ -588,3 +619,4 @@ export class Tween {
   }
 }
 
+setPaintTargetHook((entityIndex) => Tween.paintTargetChanged(entityIndex));
