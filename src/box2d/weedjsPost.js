@@ -1922,67 +1922,65 @@
     return drainBox2dCommandRing(cmdI32, cmdF32, cmdHandlers);
   }
 
+  // query-services-start
+  // E-257: the services' query callbacks are made once, here, not by each service* call: those ran six times a
+  // doStep and six times a chain-query wake, each making its closure (and serviceLiquidFunQuery a context) before
+  // the impl found nothing pending, about 65 KB/s of physics' garbage once Box2D's clock was quiet (R-1103). They read
+  // `world` when they run. A query's filter goes in one reused object: the world's queries read it and keep nothing.
+  var queryFilterScratch = { categoryBits: 1, maskBits: 1 };
+
+  function queryFilter(categoryBits, maskBits) {
+    queryFilterScratch.categoryBits = categoryBits;
+    queryFilterScratch.maskBits = maskBits;
+    return queryFilterScratch;
+  }
+
+  function overlapAabbQuery(x0, y0, x1, y1, categoryBits, maskBits, results, cap) {
+    var n = world.overlapAABB(x0, y0, x1, y1, world._querySlots, queryFilter(categoryBits, maskBits));
+    return Box2dQueryAabb.copyUniqueSlots(world._querySlots, n, results, cap, 'queryAABB');
+  }
+
+  function overlapCircleQuery(cx, cy, radius, categoryBits, maskBits, results, cap) {
+    var n = world.overlapCircle(cx, cy, radius, queryFilter(categoryBits, maskBits));
+    return Box2dQueryAabb.copyUniqueSlots(world._querySlots, n, results, cap, 'overlapCircle');
+  }
+
   function serviceQueryAabb() {
     if (!world || !world._querySlots) return;
-    var overlapFn = function (
-      x0,
-      y0,
-      x1,
-      y1,
-      categoryBits,
-      maskBits,
-      results,
-      cap,
-    ) {
-      var n = world.overlapAABB(x0, y0, x1, y1, world._querySlots, {
-        categoryBits: categoryBits,
-        maskBits: maskBits,
-      });
-      return Box2dQueryAabb.copyUniqueSlots(world._querySlots, n, results, cap, 'queryAABB');
-    };
     if (typeof Box2dQueryAabb.servicePendingQuery === 'function') {
-      Box2dQueryAabb.servicePendingQuery(overlapFn);
+      Box2dQueryAabb.servicePendingQuery(overlapAabbQuery);
     }
   }
 
   function serviceOverlapCircle() {
     if (!world || !world._querySlots) return;
-    var overlapFn = function (cx, cy, radius, categoryBits, maskBits, results, cap) {
-      var n = world.overlapCircle(cx, cy, radius, {
-        categoryBits: categoryBits,
-        maskBits: maskBits,
-      });
-      return Box2dQueryAabb.copyUniqueSlots(world._querySlots, n, results, cap, 'overlapCircle');
-    };
     if (typeof Box2dOverlapCircle !== 'undefined' && Box2dOverlapCircle.servicePendingOverlapCircle) {
-      Box2dOverlapCircle.servicePendingOverlapCircle(overlapFn);
+      Box2dOverlapCircle.servicePendingOverlapCircle(overlapCircleQuery);
     }
+  }
+
+  function fillRayAllHits(ox, oy, dx, dy, categoryBits, maskBits, hits, cap) {
+    var n = world.castRayAll(ox, oy, dx, dy, queryFilter(categoryBits, maskBits));
+    // WASM query hits are 8 floats; gameplay SAB keeps 4 (entity, fraction, hitX, hitY).
+    var srcStride = (world._queryHitStride | 0) || 8;
+    var dstStride = 4;
+    var src = world._queryHits;
+    var write = n < cap ? n : cap;
+    var maxHits = (src.length / srcStride) | 0;
+    if (write > maxHits) write = maxHits;
+    for (var i = 0; i < write; i++) {
+      var s = i * srcStride;
+      var d = i * dstStride;
+      hits[d] = src[s];
+      hits[d + 1] = src[s + 1];
+      hits[d + 2] = src[s + 2];
+      hits[d + 3] = src[s + 3];
+    }
+    return n | 0;
   }
 
   function serviceCastRayAll() {
     if (!world || !world._queryHits) return;
-    var fillRayAllHits = function (ox, oy, dx, dy, categoryBits, maskBits, hits, cap) {
-      var n = world.castRayAll(ox, oy, dx, dy, {
-        categoryBits: categoryBits,
-        maskBits: maskBits,
-      });
-      // WASM query hits are 8 floats; gameplay SAB keeps 4 (entity, fraction, hitX, hitY).
-      var srcStride = (world._queryHitStride | 0) || 8;
-      var dstStride = 4;
-      var src = world._queryHits;
-      var write = n < cap ? n : cap;
-      var maxHits = (src.length / srcStride) | 0;
-      if (write > maxHits) write = maxHits;
-      for (var i = 0; i < write; i++) {
-        var s = i * srcStride;
-        var d = i * dstStride;
-        hits[d] = src[s];
-        hits[d + 1] = src[s + 1];
-        hits[d + 2] = src[s + 2];
-        hits[d + 3] = src[s + 3];
-      }
-      return n | 0;
-    };
     if (typeof Box2dCastRayAll !== 'undefined' && Box2dCastRayAll.servicePendingCastRayAll) {
       Box2dCastRayAll.servicePendingCastRayAll(fillRayAllHits);
     }
@@ -2011,55 +2009,43 @@
     }
   }
 
+  function liquidFunQuery(op, a, b, c, d, results, cap) {
+    var n;
+    if ((op | 0) === LiquidFunQuery.OP_AABB) {
+      n = world.fillParticleQueryAabb(a, b, c, d, results, cap);
+    } else {
+      n = world.fillParticleRayCast(a, b, c, d, results, cap);
+    }
+    return n | 0;
+  }
+
   function serviceLiquidFunQuery() {
     if (!world || typeof LiquidFunQuery === 'undefined') return;
-    var OP_AABB = LiquidFunQuery.OP_AABB;
-    var queryFn = function (
-      op,
-      a,
-      b,
-      c,
-      d,
-      results,
-      cap,
-    ) {
-      var n;
-      if ((op | 0) === OP_AABB) {
-        n = world.fillParticleQueryAabb(a, b, c, d, results, cap);
-      } else {
-        n = world.fillParticleRayCast(a, b, c, d, results, cap);
-      }
-      return n | 0;
-    };
     if (typeof LiquidFunQuery.servicePendingLiquidFunQueryBurst === 'function') {
-      LiquidFunQuery.servicePendingLiquidFunQueryBurst(queryFn, 1024);
+      LiquidFunQuery.servicePendingLiquidFunQueryBurst(liquidFunQuery, 1024);
     } else {
-      LiquidFunQuery.servicePendingLiquidFunQuery(queryFn);
+      LiquidFunQuery.servicePendingLiquidFunQuery(liquidFunQuery);
     }
+  }
+
+  function liquidFunExtract(groupId, indices, count, groupFlags, trackGroup) {
+    if (typeof world.fillExtractIndices === 'function') {
+      world.fillExtractIndices(indices, count | 0);
+    }
+    const made = world.extractParticles(groupId, count | 0, groupFlags, trackGroup) | 0;
+    followLiquidFunReorder();
+    return made;
   }
 
   function serviceLiquidFunExtract() {
     if (!world || typeof LiquidFunExtract === 'undefined') return;
-    var extractFn = function (
-      groupId,
-      indices,
-      count,
-      groupFlags,
-      trackGroup,
-    ) {
-      if (typeof world.fillExtractIndices === 'function') {
-        world.fillExtractIndices(indices, count | 0);
-      }
-      const made = world.extractParticles(groupId, count | 0, groupFlags, trackGroup) | 0;
-      followLiquidFunReorder();
-      return made;
-    };
     if (typeof LiquidFunExtract.servicePendingLiquidFunExtractBurst === 'function') {
-      LiquidFunExtract.servicePendingLiquidFunExtractBurst(extractFn, 1024);
+      LiquidFunExtract.servicePendingLiquidFunExtractBurst(liquidFunExtract, 1024);
     } else {
-      LiquidFunExtract.servicePendingLiquidFunExtract(extractFn);
+      LiquidFunExtract.servicePendingLiquidFunExtract(liquidFunExtract);
     }
   }
+  // query-services-end
 
   /**
    * W28. The dense body list in Box2D's heap when the RigidBody columns are in Box2D's memory (the engine block,
