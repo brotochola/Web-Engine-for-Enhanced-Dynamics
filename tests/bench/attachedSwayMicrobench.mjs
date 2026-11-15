@@ -73,6 +73,10 @@ export async function setupAttachedSway(opts = {}) {
     D.isItOnScreen[i] = inView[p];
     if (inView[p]) shown.push(i);
   }
+  // The parents written above, after setupSwayKernel's copy: copy the snapshot again (a revision that lists the attached
+  // decorations at the copy lists them from here).
+  worker._decoSnapshotEpoch = -1;
+  worker.refreshActiveDecorationSnapshot();
   const onScreen = Int32Array.from(shown);
   const facing = new Float32Array(onScreen.length * 2);
   if (opts.walls) {
@@ -108,9 +112,13 @@ async function timeCase(label, opts) {
   const checksum = s.checksum();
   const { worker } = s;
   const count = worker._activeDecorationSnapshotCount;
+  // E-334: a revision that walks a list of the attached decorations warms on its first 64 the same way.
+  const attachedCount = worker._attachedDecorationSnapshotCount;
   worker._activeDecorationSnapshotCount = 64;
+  if (typeof attachedCount === 'number') worker._attachedDecorationSnapshotCount = Math.min(64, attachedCount);
   warmNormalCompile(s.frame);
   worker._activeDecorationSnapshotCount = count;
+  if (typeof attachedCount === 'number') worker._attachedDecorationSnapshotCount = attachedCount;
   const timed = timeIt(`${label} (${s.n} decorations, ${s.onScreen} on screen)`, s.frame, { iterations: 20, warmup: 5 });
   s.frame();
   if (s.checksum() !== checksum) throw new Error(`${label}: the timed passes wrote other values`);

@@ -56,6 +56,8 @@ const REQUIRED = [
   'decorationCollectYSort',
   'attachedSway',
   'attachedWalls',
+  'attachedScanNone',
+  'attachedScanFew',
   'textureUpload',
 ];
 

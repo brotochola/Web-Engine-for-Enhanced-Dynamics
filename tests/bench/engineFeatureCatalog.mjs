@@ -696,6 +696,27 @@ export const ENGINE_FEATURES = [
     load: [],
   },
   {
+    id: 'attachedScanNone',
+    name: 'Attached-decoration step, none attached',
+    module: 'src/workers/particleWorker.js',
+    // E-334: refreshActiveDecorationSnapshot and resolveAttachedDecorations over Predator's 20 000 grass decorations,
+    // none attached, the list unchanged from frame to frame (the header's counters).
+    kernel: { script: 'tests/bench/attachedDecorationScanMicrobench.mjs', opsKey: 'cases.none.opsPerSec' },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'attachedScanFew',
+    name: 'Attached-decoration step, 64 of 20 000 attached',
+    module: 'src/workers/particleWorker.js',
+    // E-334: the same step with 64 decorations hung from 16 stand-in parents, half of them swaying on screen.
+    kernel: { script: 'tests/bench/attachedDecorationScanMicrobench.mjs', opsKey: 'cases.few.opsPerSec' },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
+  {
     id: 'textureUpload',
     name: 'Shared picture upload',
     module: 'src/render/sharedTextureUpload.js',
