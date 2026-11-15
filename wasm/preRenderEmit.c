@@ -563,36 +563,54 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   duration_init(&e->dur);
 }
 
+/* E-330: in the row writers below, `all` (a constant) says the frame passed all_columns: every column they test is
+   present, the keyed frames v2 bound, and the sort key written in Y order. HAS(p) is then 1 and the test is gone. */
+#define HAS(p) (all || (p) != 0)
+#define FLAG(f) (all || (f))
+
 /* _writeQueueShadow: entity idx's shadow terms at row out. */
-INLINE void queue_shadow(const Emit *e, uint32_t out, int32_t idx) {
-  if (!e->qShadowH) return;
-  const int cast = e->scActive && e->scActive[idx];
-  e->qShadowH[out] = cast ? (e->scH ? or0(e->scH[idx]) : 0.0f) : 0.0f;
-  if (e->qShadowOffX) e->qShadowOffX[out] = cast ? (e->scOx ? or0(e->scOx[idx]) : 0.0f) : 0.0f;
-  if (e->qShadowOffY) e->qShadowOffY[out] = cast ? (e->scOy ? or0(e->scOy[idx]) : 0.0f) : 0.0f;
+INLINE void queue_shadow_k(const Emit *e, uint32_t out, int32_t idx, int all) {
+  if (!HAS(e->qShadowH)) return;
+  const int cast = HAS(e->scActive) && e->scActive[idx];
+  e->qShadowH[out] = cast ? (HAS(e->scH) ? or0(e->scH[idx]) : 0.0f) : 0.0f;
+  if (HAS(e->qShadowOffX)) e->qShadowOffX[out] = cast ? (HAS(e->scOx) ? or0(e->scOx[idx]) : 0.0f) : 0.0f;
+  if (HAS(e->qShadowOffY)) e->qShadowOffY[out] = cast ? (HAS(e->scOy) ? or0(e->scOy[idx]) : 0.0f) : 0.0f;
 }
+
+INLINE void queue_shadow(const Emit *e, uint32_t out, int32_t idx) { queue_shadow_k(e, out, idx, 0); }
 
 /* A row that is no tiled sprite, on a queue whose tile columns a repeating sprite wrote (E-102b). */
-INLINE void clear_tiles(const Emit *e, uint32_t out) {
-  if (e->qRepeatX) e->qRepeatX[out] = 0;
-  if (e->qRepeatY) e->qRepeatY[out] = 0;
-  if (e->qTileMode) e->qTileMode[out] = 0;
-  if (e->qTileOffU) e->qTileOffU[out] = 0;
-  if (e->qTileOffV) e->qTileOffV[out] = 0;
-  if (e->qTileMulX) e->qTileMulX[out] = 0.0f;
-  if (e->qTileMulY) e->qTileMulY[out] = 0.0f;
+INLINE void clear_tiles_k(const Emit *e, uint32_t out, int all) {
+  if (HAS(e->qRepeatX)) e->qRepeatX[out] = 0;
+  if (HAS(e->qRepeatY)) e->qRepeatY[out] = 0;
+  if (HAS(e->qTileMode)) e->qTileMode[out] = 0;
+  if (HAS(e->qTileOffU)) e->qTileOffU[out] = 0;
+  if (HAS(e->qTileOffV)) e->qTileOffV[out] = 0;
+  if (HAS(e->qTileMulX)) e->qTileMulX[out] = 0.0f;
+  if (HAS(e->qTileMulY)) e->qTileMulY[out] = 0.0f;
 }
 
+INLINE void clear_tiles(const Emit *e, uint32_t out) { clear_tiles_k(e, out, 0); }
+
 /* The sort key of a sprite or an Adobe root: orderSortKey(yKey, zIndex | 0, ySort, band). */
-INLINE double order_key(const Emit *e, uint32_t i, int32_t idx) {
-  const double z = e->sZ ? (double)e->sZ[idx] : 0.0;
-  return e->ySort ? z * e->band + (double)e->cY[i] : z;
+INLINE double order_key_k(const Emit *e, uint32_t i, int32_t idx, int all) {
+  const double z = HAS(e->sZ) ? (double)e->sZ[idx] : 0.0;
+  return FLAG(e->ySort) ? z * e->band + (double)e->cY[i] : z;
+}
+
+INLINE double order_key(const Emit *e, uint32_t i, int32_t idx) { return order_key_k(e, i, idx, 0); }
+
+/* E-330: whether the frame's columns and flags let the sprite and decoration rows run their all-present copy. */
+INLINE int all_columns(const Emit *e) {
+  return e->sortKey && e->ySort && e->qKey && e->kChange && e->aLastTex && e->sKeyedDirty && e->qType && e->sZ
+         && e->scActive && e->scH && e->scOx && e->scOy && e->qShadowH && e->qShadowOffX && e->qShadowOffY
+         && e->qRepeatX && e->qRepeatY && e->qTileMode && e->qTileOffU && e->qTileOffV && e->qTileMulX && e->qTileMulY;
 }
 
 /* emitSpriteQueue's sprite branch: collector row i at queue row out. E-320: with `inq` (a constant) the stash is this
    queue's pose columns and out is i (E-98d), so the pose is already in the row: only a rotation of the sprite's own is
    written. */
-INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq) {
+INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq, int all) {
   const int32_t idx = e->cIndex[i];
   /* E-177: whether this sprite's statics changed since the emit before: its keyed flag, taken (an atomic exchange, a full
      barrier) before its columns are read, so a change after this sets it again for the next frame; the clock below
@@ -601,16 +619,16 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq) {
   uint32_t changed = 0;
   /* E-189: whether the texture alone changed (the clock, a wrapped frame, the texture the emit before wrote). */
   uint32_t texMoved = 0;
-  if (e->sKeyedDirty && e->sKeyedDirty[idx]) {
+  if (HAS(e->sKeyedDirty) && e->sKeyedDirty[idx]) {
     const uint32_t d = __atomic_exchange_n(&e->sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
     changed = d & KEYED_DIRTY_STATICS;
     texMoved = (d & KEYED_DIRTY_TEXTURE) != 0;
   }
   /* E-312: the frame this sprite's statics changed in, now; its key is marked for a change after K_SINCE. */
-  uint32_t *kc = e->qKey && e->kChange ? e->kChange + 2u * (uint32_t)idx : 0;
-  if (kc && changed) kc[0] = e->kFrame;
-  const uint32_t lastTex = e->qKey && e->aLastTex ? e->aLastTex[idx] : 0;
-  if (e->sortKey) e->qSortKey[out] = (float)order_key(e, i, idx);
+  uint32_t *kc = HAS(e->qKey) && HAS(e->kChange) ? e->kChange + 2u * (uint32_t)idx : 0;
+  if (HAS(kc) && changed) kc[0] = e->kFrame;
+  const uint32_t lastTex = HAS(e->qKey) && HAS(e->aLastTex) ? e->aLastTex[idx] : 0;
+  if (FLAG(e->sortKey)) e->qSortKey[out] = (float)order_key_k(e, i, idx, all);
   const float x = inq ? 0.0f : e->stX[i];
   const float y = inq ? 0.0f : e->stY[i];
   const int inherit = e->sInherit[idx];
@@ -625,36 +643,36 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq) {
     rc = e->sRotC[idx];
     rs = e->sRotS[idx];
   }
-  queue_shadow(e, out, idx);
+  queue_shadow_k(e, out, idx, all);
   const uint32_t rx = e->sRepeatX[idx];
   const uint32_t ry = e->sRepeatY[idx];
   /* E-312 step 2: an unmarked keyed row's statics are read by no one when K_SKIP says so: they stay unwritten. The
      same test marks the key below (a change after K_SINCE, every row while K_SINCE is 0, a repeating sprite). */
-  const int statics = !e->kSkip || !kc || changed || e->kAll || kc[0] > e->kSince || rx != 0 || ry != 0;
+  const int statics = !e->kSkip || !HAS(kc) || changed || e->kAll || kc[0] > e->kSince || rx != 0 || ry != 0;
   if (statics) e->qAlpha[out] = e->sAlpha[idx];
   if (rx != 0 || ry != 0) {
     e->tiled = 1;
-    if (e->qRepeatX) e->qRepeatX[out] = (uint16_t)rx;
-    if (e->qRepeatY) e->qRepeatY[out] = (uint16_t)ry;
+    if (HAS(e->qRepeatX)) e->qRepeatX[out] = (uint16_t)rx;
+    if (HAS(e->qRepeatY)) e->qRepeatY[out] = (uint16_t)ry;
     /* writeEntityTileFields */
     const uint32_t mode = e->sTileMode[idx];
-    if (e->qTileMode) e->qTileMode[out] = (uint8_t)mode;
-    if (e->qTileOffU) e->qTileOffU[out] = e->sTileOffU[idx];
-    if (e->qTileOffV) e->qTileOffV[out] = e->sTileOffV[idx];
+    if (HAS(e->qTileMode)) e->qTileMode[out] = (uint8_t)mode;
+    if (HAS(e->qTileOffU)) e->qTileOffU[out] = e->sTileOffU[idx];
+    if (HAS(e->qTileOffV)) e->qTileOffV[out] = e->sTileOffV[idx];
     double mx = 0.0;
     double my = 0.0;
     if (rx > 0) mx = mode == TILE_MODE_LOCAL ? -((double)e->sHalfW[idx] * 2.0) / (double)rx : 1.0 / (double)rx;
     if (ry > 0) my = mode == TILE_MODE_LOCAL ? -((double)e->sHalfH[idx] * 2.0) / (double)ry : 1.0 / (double)ry;
-    if (e->qTileMulX) e->qTileMulX[out] = (float)mx;
-    if (e->qTileMulY) e->qTileMulY[out] = (float)my;
+    if (HAS(e->qTileMulX)) e->qTileMulX[out] = (float)mx;
+    if (HAS(e->qTileMulY)) e->qTileMulY[out] = (float)my;
   } else if (e->tilesDirty) {
-    if (e->qRepeatX) e->qRepeatX[out] = 0;
-    if (e->qRepeatY) e->qRepeatY[out] = 0;
+    if (HAS(e->qRepeatX)) e->qRepeatX[out] = 0;
+    if (HAS(e->qRepeatY)) e->qRepeatY[out] = 0;
     /* DX-FACES: a decoration that held this row left its face in the offsets. */
-    if (e->qTileOffU) e->qTileOffU[out] = 0;
-    if (e->qTileOffV) e->qTileOffV[out] = 0;
-    if (e->qTileMulX) e->qTileMulX[out] = 0.0f;
-    if (e->qTileMulY) e->qTileMulY[out] = 0.0f;
+    if (HAS(e->qTileOffU)) e->qTileOffU[out] = 0;
+    if (HAS(e->qTileOffV)) e->qTileOffV[out] = 0;
+    if (HAS(e->qTileMulX)) e->qTileMulX[out] = 0.0f;
+    if (HAS(e->qTileMulY)) e->qTileMulY[out] = 0.0f;
   }
   if (!inq) {
     e->qX[out] = x;
@@ -671,7 +689,7 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq) {
     e->qAnchorX[out] = e->sAnchorX[idx];
     e->qAnchorY[out] = e->sAnchorY[idx];
   }
-  if (e->qType) e->qType[out] = 0;
+  if (HAS(e->qType)) e->qType[out] = 0;
 
   const uint32_t sheet = e->sSheet[idx];
   const uint32_t anim = e->sAnim[idx];
@@ -717,7 +735,7 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq) {
     }
     if (known) {
       tex = (uint32_t)(e->frameStart[g] + (int32_t)e->aFrame[idx]);
-      if (e->aLastTex) e->aLastTex[idx] = (uint16_t)tex;
+      if (HAS(e->aLastTex)) e->aLastTex[idx] = (uint16_t)tex;
     } else {
       e->warns[2 * e->nWarns] = (uint32_t)idx;
       e->warns[2 * e->nWarns + 1] = WARN_NO_START;
@@ -725,7 +743,7 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq) {
     }
   } else {
     /* Never reuse a stale last texture (pool recycle, spawn before setSprite). */
-    if (e->aLastTex) e->aLastTex[idx] = INVALID_TEXTURE;
+    if (HAS(e->aLastTex)) e->aLastTex[idx] = INVALID_TEXTURE;
     if (sheet) {
       e->warns[2 * e->nWarns] = (uint32_t)idx;
       e->warns[2 * e->nWarns + 1] = WARN_NO_ANIM;
@@ -735,13 +753,13 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq) {
   e->qTexture[out] = (uint16_t)tex;
   /* A repeating sprite is always flagged: its local tile multiplier follows the frame size the clock changes for the
      next frame. */
-  if (e->qKey) {
-    const uint32_t moved = e->aLastTex != 0 && lastTex != (tex & 0xffffu);
+  if (HAS(e->qKey)) {
+    const uint32_t moved = HAS(e->aLastTex) && lastTex != (tex & 0xffffu);
     /* E-189: a repeating sprite's tile multiplier follows its frame's size, so it always sends every static. E-312: a
        change after the frame Pixi last drew keyed marks the key, the texture's alone the texture word. */
     uint32_t full = changed | (rx != 0) | (ry != 0);
     uint32_t texOnly = !full && (texMoved | moved);
-    if (kc) {
+    if (HAS(kc)) {
       if (texMoved | moved) kc[1] = e->kFrame;
       full |= e->kAll | (kc[0] > e->kSince);
       texOnly = !full && (kc[1] > e->kSince);
@@ -752,13 +770,15 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq) {
 
 /* What emitSpriteQueue writes first on a row that is no sprite and casts no shadow (a decoration, a bullet, a
    trail): the sort key with z 0 (_orderKey), the tile columns cleared, the shadow terms zeroed. */
-INLINE void plain_head(const Emit *e, uint32_t i, uint32_t out) {
-  if (e->sortKey) e->qSortKey[out] = (float)(e->ySort ? 0.0 * e->band + (double)e->cY[i] : 0.0);
-  if (e->tilesDirty) clear_tiles(e, out);
-  if (e->qShadowH) e->qShadowH[out] = 0.0f;
-  if (e->qShadowOffX) e->qShadowOffX[out] = 0.0f;
-  if (e->qShadowOffY) e->qShadowOffY[out] = 0.0f;
+INLINE void plain_head_k(const Emit *e, uint32_t i, uint32_t out, int all) {
+  if (FLAG(e->sortKey)) e->qSortKey[out] = (float)(FLAG(e->ySort) ? 0.0 * e->band + (double)e->cY[i] : 0.0);
+  if (e->tilesDirty) clear_tiles_k(e, out, all);
+  if (HAS(e->qShadowH)) e->qShadowH[out] = 0.0f;
+  if (HAS(e->qShadowOffX)) e->qShadowOffX[out] = 0.0f;
+  if (HAS(e->qShadowOffY)) e->qShadowOffY[out] = 0.0f;
 }
+
+INLINE void plain_head(const Emit *e, uint32_t i, uint32_t out) { plain_head_k(e, i, out, 0); }
 
 /* E-188: a decoration row's key: its pool slot past the entities, with KEY_CHANGED when the statics the row got differ
    from the ones the slot last emitted, or those are from an earlier epoch (a resync, or never emitted: the records start
@@ -796,9 +816,9 @@ INLINE uint32_t deco_key(const Emit *e, int32_t idx, uint32_t out) {
 
 /* emitSpriteQueue's decoration branch: collector row i at queue row out. E-320: with `inq` (a constant) its pose is
    already in the row, as in sprite_row. */
-INLINE void deco_row(Emit *e, uint32_t i, uint32_t out, int inq) {
+INLINE void deco_row(Emit *e, uint32_t i, uint32_t out, int inq, int all) {
   const int32_t idx = e->cIndex[i];
-  plain_head(e, i, out);
+  plain_head_k(e, i, out, all);
   if (!inq) {
     e->qX[out] = e->stX[i];
     e->qY[out] = e->stY[i];
@@ -823,8 +843,8 @@ INLINE void deco_row(Emit *e, uint32_t i, uint32_t out, int inq) {
   e->qTexture[out] = (uint16_t)tex;
   e->qAnchorX[out] = e->dAnchorX[idx];
   e->qAnchorY[out] = e->dAnchorY[idx];
-  if (e->qType) e->qType[out] = 2;
-  if (e->qKey) e->qKey[out] = e->dKeyed ? deco_key(e, idx, out) : KEY_NONE;
+  if (HAS(e->qType)) e->qType[out] = 2;
+  if (HAS(e->qKey)) e->qKey[out] = e->dKeyed ? deco_key(e, idx, out) : KEY_NONE;
 }
 
 /* DX-FACES: a decoration's face in its row's tile offsets. */
@@ -835,10 +855,16 @@ INLINE void deco_face(const Emit *e, uint32_t i, uint32_t out) {
 }
 
 /* The rows of a frame without Adobe roots, where row i is collector row i: a loop of their own, so that a scene without
-   faces pays one test a frame and deco_row none (it is on every decoration's path). */
-static void deco_faces(const Emit *e, const uint8_t *cType, uint32_t n) {
+   faces pays one test a frame and deco_row none (it is on every decoration's path). It takes the columns, not the Emit:
+   a call the inliner leaves out would otherwise put emit_rows' Emit on the stack (E-330's copy made it leave it out). */
+static void deco_faces(const uint8_t *cType, const int32_t *cIndex, const uint16_t *faceOct, const uint16_t *faceZ,
+                       uint16_t *offU, uint16_t *offV, uint32_t n) {
   for (uint32_t i = 0; i < n; i++) {
-    if (cType[i] == 2) deco_face(e, i, i);
+    if (cType[i] == 2) {
+      const int32_t idx = cIndex[i];
+      offU[i] = faceOct[idx];
+      offV[i] = faceZ[idx];
+    }
   }
 }
 
@@ -1212,16 +1238,17 @@ INLINE uint32_t adobe_root(Emit *e, uint32_t i, uint32_t w, uint32_t cap, double
 
 /* The rows of a frame without Adobe roots, where row i is collector row i: every type, or with `othersOnly` every type
    but the sprites (a persist frame: persist_frame wrote them); `inq` (E-320) says the stash is this queue's pose
-   columns. Both are constants, so each copy carries no test of them. Returns how many rows it listed for the JS. */
-INLINE uint32_t rows_in_place(Emit *e, uint32_t n, uint32_t *foreign, int othersOnly, int inq) {
+   columns; `all` (E-330) that the frame passed all_columns. All three are constants, so each copy carries no test of
+   them. Returns how many rows it listed for the JS. */
+INLINE uint32_t rows_in_place(Emit *e, uint32_t n, uint32_t *foreign, int othersOnly, int inq, int all) {
   const uint8_t *cType = e->cType;
   uint32_t nForeign = 0;
   for (uint32_t i = 0; i < n; i++) {
     const uint8_t ty = cType[i];
     if (ty == 0) {
-      if (!othersOnly) sprite_row(e, i, i, inq);
+      if (!othersOnly) sprite_row(e, i, i, inq, all);
     } else if (ty == 2) {
-      deco_row(e, i, i, inq);
+      deco_row(e, i, i, inq, all);
     } else if (ty == 4 && e->bActive) {
       bullet_row(e, i, i);
     } else if (ty == 5 && e->bActive) {
@@ -1238,7 +1265,7 @@ INLINE uint32_t rows_in_place(Emit *e, uint32_t n, uint32_t *foreign, int others
       nForeign++;
     }
   }
-  if (e->dFaceOct) deco_faces(e, cType, n);
+  if (e->dFaceOct) deco_faces(cType, e->cIndex, e->dFaceOct, e->dFaceZ, e->qTileOffU, e->qTileOffV, n);
   return nForeign;
 }
 
@@ -1273,10 +1300,14 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
   const int inQueue = e.stX == e.qX && e.stY == e.qY && e.stRc == e.qRotC && e.stRs == e.qRotS;
   if (flags & F_OTHERS_ONLY) {
     if (roots) return DECLINED;
-    nForeign = rows_in_place(&e, n, foreign, 1, 0);
+    nForeign = rows_in_place(&e, n, foreign, 1, 0, 0);
     w = n;
   } else if (!roots) {
-    nForeign = inQueue ? rows_in_place(&e, n, foreign, 0, 1) : rows_in_place(&e, n, foreign, 0, 0);
+    /* E-330: with every column present, keyed frames v2 and Y-sorted keys (the frames the in-place copy runs in the
+       scenes it is for), a further copy without the tests of them. */
+    if (inQueue && all_columns(&e)) nForeign = rows_in_place(&e, n, foreign, 0, 1, 1);
+    else if (inQueue) nForeign = rows_in_place(&e, n, foreign, 0, 1, 0);
+    else nForeign = rows_in_place(&e, n, foreign, 0, 0, 0);
     w = n;
   } else {
     /* emitSpriteQueue's loop: until the collector or the queue runs out (the collector holds at most maxItems). */
@@ -1289,9 +1320,9 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         continue;
       }
       if (ty == 0) {
-        sprite_row(&e, i, w, 0);
+        sprite_row(&e, i, w, 0, 0);
       } else if (ty == 2) {
-        deco_row(&e, i, w, 0);
+        deco_row(&e, i, w, 0, 0);
         if (e.dFaceOct) deco_face(&e, i, w);
       } else if (ty == 4 && e.bActive) {
         bullet_row(&e, i, w);

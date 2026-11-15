@@ -52,6 +52,7 @@ import {
   writeEmitTextures,
   writePersistColumns,
   setEmitKeyFrames,
+  EMIT_SLOTS,
 } from '../../src/workers/preRenderEmitClient.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
 import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
@@ -895,11 +896,21 @@ test('E-312 step 2: with K_SKIP the emit writes the statics of marked keyed rows
 // columns and the kernel leaves them where they are (a sprite that does not inherit its rotation still takes its own).
 // From the same start, the frames with the stash in the queue write what the frames write copying it from elsewhere
 // (queue buffer B's pose columns, given A's before each frame): every byte of queue A and the animation state.
-test('E-320: the emit with the poses already in the queue writes what it writes copying them from elsewhere', async (t) => {
+// E-330: a keyed frame with every column present and Y-sorted keys takes the in-place copy without the column tests;
+// the frames copying the stash take the loop with them all.
+/** E-330: the table slots preRenderEmit.c's all_columns needs (with the sort-key and Y-sort flags). */
+const ALL_COLUMNS = ['qKey', 'kChange', 'aLastTex', 'sKeyedDirty', 'qType', 'sZ', 'scActive', 'scH', 'scOffX', 'scOffY',
+  'qShadowH', 'qShadowOffX', 'qShadowOffY', 'qRepeatX', 'qRepeatY', 'qTileMode', 'qTileOffU', 'qTileOffV', 'qTileMulX',
+  'qTileMulY', 'qSortKey'];
+
+test('E-320, E-330: the emit with the poses already in the queue writes what it writes copying them from elsewhere', async (t) => {
   const cases = [
     { ySort: true },
     { ySort: false, seed: 0xbeef },
-    { ySort: true, keyed: true },
+    { ySort: true, keyed: true, allColumns: true },
+    { ySort: true, keyed: true, skip: true, allColumns: true, seed: 0x330 },
+    { ySort: false, keyed: true, seed: 0x331 },
+    { ySort: true, keyed: true, keyedDecorations: true, faces: true, allColumns: true, seed: 0x332 },
     { ySort: true, faces: true },
     { ySort: true, bullets: true, lights: true, particles: true, seed: 0x320 },
   ];
@@ -911,6 +922,12 @@ test('E-320: the emit with the poses already in the queue writes what it writes 
     const B = w.renderQueueBuffers[1];
     assert.equal(source.stashX, A.x, 'the stash is queue A\'s pose columns');
     assert.equal(w.renderQueueX, A.x, 'the emit writes queue A');
+    // Every column a row gets but the poses holds a marker at the start, so a store one loop leaves out shows.
+    for (const c of [...ROW_COLUMNS.slice(6), 'renderQueueKey']) {
+      if (c === 'renderQueueRotC' || c === 'renderQueueRotS') continue;
+      const v = w[c];
+      if (v && v.length) new Uint8Array(v.buffer, v.byteOffset, n * v.BYTES_PER_ELEMENT).fill(0x5a);
+    }
     const memory = new Uint8Array(k.m.buffer);
     const startMemory = memory.slice();
     const start = k.snapshot();
@@ -930,7 +947,14 @@ test('E-320: the emit with the poses already in the queue writes what it writes 
           B.rotC.set(A.rotC.subarray(0, n));
           B.rotS.set(A.rotS.subarray(0, n));
         }
-        assert.ok(writeEmitColumnsNext(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, src), 'every column is in the memory');
+        // Pixi drew the frame before; with \`skip\`, nothing reads an unmarked row's statics (K_SKIP).
+        setEmitKeyFrames(b, f + 1, f, opts.skip === true);
+        assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, src), 'every column is in the memory');
+        if (f === 0 && inQueue) {
+          const missing = ALL_COLUMNS.filter((name) => b.table[EMIT_SLOTS.indexOf(name)] === 0);
+          if (opts.allColumns) assert.deepEqual(missing, [], 'the frame takes the all-columns copy (E-330)');
+          else assert.ok(missing.length > 0 || !opts.ySort, 'the frame takes another copy');
+        }
         writeEmitBulletColumns(b, BulletComponent, w._resolveBuiltinTextureId('_bulletTrail'));
         writeEmitGlowColumns(b, LightEmitter, Transform, w._resolveBuiltinTextureId('_lightGradient'));
         writeEmitParticleColumns(b, ParticleComponent, w._resolveBuiltinTextureId('_whiteCircle'),
