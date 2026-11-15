@@ -15622,6 +15622,96 @@
         "sun frames in WASM"
       ],
       "records": []
+    },
+    {
+      "id": "N-185",
+      "title": "The G-buffer entity ids repeat every 65 535 entities: two such entities skip each other's shadow in the maps and count each other's heights in the self-shadow",
+      "status": "open",
+      "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "dx/par-render stores entity % 65535 + 1 in 16 bits (the ids map, the maps' texels). A scene past 65 535 entities (Predator's pools are 57 633) has pairs that share an id.",
+      "next": "A wider id (a third byte in the ids map and the maps' texels) when the entity count passes 65 535, or the id of a slot among the drawn rows instead of the entity.",
+      "refs": [
+        "REVIEW_PLAN.md#N-185"
+      ],
+      "aliases": [
+        "entity id wraps at 65535"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-186",
+      "title": "After a save is restored, the per-entity emissive counter is not recounted: spriteRenderer.emissive may stay unlit until set again",
+      "status": "open",
+      "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "dx/par-render counts the sprites with their own glow (emissiveUsers) to run the glow pass; a restore writes the column (gbufFlags) but not the counter, as with the zIndex counter before it.",
+      "next": "Recount both counters after a restore (the save path's post-load hook), with a test that restores a glowing sprite.",
+      "refs": [
+        "REVIEW_PLAN.md#N-186"
+      ],
+      "aliases": [
+        "emissive counter after restore"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-187",
+      "title": "A frame whose GPU queue count differs from the rows pre-render collected keeps the previous frame's G-buffer words (one frame of stale ids and flags)",
+      "status": "open",
+      "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "dx/par-render: pre-render writes the words only when the queue count matches its collected rows; otherwise the previous words stay for that frame.",
+      "next": "Clear or rewrite the words on a mismatch, or say why one frame of stale words cannot show (a capture test with a count change).",
+      "refs": [
+        "REVIEW_PLAN.md#N-187"
+      ],
+      "aliases": [
+        "stale gbuf words"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-188",
+      "title": "lighting.shadowTextures is still a public key: setSprite({ frame }) needs it on, and it turns the keyed caster paths off for the whole scene",
+      "status": "open",
+      "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
+      "date": "2026-11-15",
+      "area": "engine",
+      "kind": "bug",
+      "result": "dx/par-caster2 retired setTexture for setSprite({ frame }); pre-render and Pixi read lighting.shadowTextures once at init (the pass over the caster rows on, the keyed paths off).",
+      "next": "Pre-render detects frames in use in its 30-frame caster scan (casterFramesInUse) and tells Pixi per frame (a word in the keyed header); then the key retires (agent B's proposal, its report of 2026-11-15).",
+      "refs": [
+        "REVIEW_PLAN.md#N-188"
+      ],
+      "aliases": [
+        "shadowTextures key"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-189",
+      "title": "The lamps' map tags hold under 256 tiles, and the WebGL painter level is per range across GPU-particle chunk splits",
+      "status": "open",
+      "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "dx/par-render: the lamp tag is -(tile + 1 + 256 x the lamp's entity id), so a scene with 256 lamp tiles or more breaks the tag; with pixel depth, the painter's order inside a zIndex band is set per draw range, so particle chunk splits may sort a few edge pixels differently.",
+      "next": "A tag with room for more tiles (or the tile and the id in two floats); a capture of particles with sortWithEntities over mapped sprites.",
+      "refs": [
+        "REVIEW_PLAN.md#N-189"
+      ],
+      "aliases": [
+        "lamp tag 256 tiles"
+      ],
+      "records": []
     }
   ],
   "records": [

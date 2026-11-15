@@ -4861,6 +4861,9 @@ by absolute direction (frameAt) in another; the shadow programs (cards, columns,
 GLSL and WGSL) turn the drawn direction by the sun's angle or the lamp-to-caster angle and read the frame. Pre-render
 writes no frame. Owner: pre-render (the cost leaves), Pixi and the GPU as guards. Measure: Predator crowd 2.5 against
 main; captures of the light bench and Predator light3d unchanged.
+**Caveat (2026-11-15):** the GPU sees a texture, not an entity: a sprite whose sheet has a direction table but no
+DirectionalSprite (a pinned animation, an LPC sheet in an older demo) would get its sun frame too, which pre-render
+leaves alone (mode 1 only). It needs a flag a row (the full rows have the caster code; the keyed rows have none yet).
 ### E-370 The keyed rows' sun frames are a second pass over every keyed row
 
 **Premise (2026-11-15, CPU profile of Predator crowd 2.5 on dx/light3d, pre-render 753 ms/s busy):** `_applyKeyedSunFrames` is 4.3 % (366 ms, about 0.55 ms a frame): after the WASM keyed pack has written
