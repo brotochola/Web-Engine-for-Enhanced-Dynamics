@@ -177,7 +177,7 @@ const AdobeAnimComponent = AdobeAnimComponentImport;
 const ShadowCaster = ShadowCasterImport;
 
 /** DX-SHADOW3D: the direction tables the scene sent (by sheet id), as _applySunFrames reads them; null when none. */
-function sunFrameTables(byId) {
+export function sunFrameTables(byId) {
     if (!byId) return null;
     const out = [];
     let any = false;
@@ -210,7 +210,7 @@ function sunFrameTables(byId) {
  * a small function of its own takes TurboFan's normal compile.
  * @returns {void} out[e]: ±(textureId + 1), negative mirrored, 0 for the sprite's own frame
  */
-function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, anims, frames, tables, proxy, starts, counts,
+export function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, anims, frames, tables, proxy, starts, counts,
     shift, shiftTurn, turn, orients) {
     for (let e = 0; e < n; e++) {
         let v = 0;
