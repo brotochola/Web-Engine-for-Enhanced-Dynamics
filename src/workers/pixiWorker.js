@@ -908,6 +908,9 @@ class PixiRenderer extends AbstractWorker {
     this._lampMapOn = false;
     // DX-SHADOW3D (F6): the volumes' map programs, one a volumes' batch (made on first use).
     this._volumeMapMeshes = [];
+    // World px to the sun map's texels, (world - camera) · screenScale as its cards land, for the volumes (written when
+    // it changes: a Matrix's fields are tagged, each double written a heap number).
+    this._volumeMapTransform = new Matrix();
     this._lampTileSize = 256;
     this._lampTilesPerRow = 1;
     this._lampMapLights = 0;
@@ -6078,7 +6081,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._submitRender(rtOpts);
       this._gpuPassesThisFrame++;
     }
-    this._drawVolumesInSunMap(rtOpts);
+    this._drawVolumesInSunMap(rtOpts, screenScale);
     rtOpts.target = this.shadowRT;
     this._gpuPassesThisFrame++;
     return true;
@@ -6087,9 +6090,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   /**
    * DX-SHADOW3D (F6): each sun-projected volumes' layer drawn into the sun's map (WebGL for now): the same mesh rows, each
    * vertex landing by the map's shift (sunMapTerms, per px of height; the volumes' heights are screen px, so over
-   * heightScaleY), its height out, max blending.
+   * heightScaleY), its height out, max blending. The rows are in world px: the render's transform takes them into the map
+   * as its cards land ((world - camera) · screenScale, sunMapVertex).
    */
-  _drawVolumesInSunMap(rtOpts) {
+  _drawVolumesInSunMap(rtOpts, screenScale) {
     if (this._useWebGpu || !this._engineShaders?.meshUvFillVert) return;
     const t = this._sunMapTerms;
     const hs = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
@@ -6143,9 +6147,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       entry.mesh.shader.resources.sunShadow.update();
       rtOpts.container = entry.host;
       rtOpts.clear = false;
+      rtOpts.transform = this._writeVolumeMapTransform(screenScale);
       this._submitRender(rtOpts);
+      rtOpts.transform = null;
       this._gpuPassesThisFrame++;
     }
+  }
+
+  /** DX-SHADOW3D (F6): world px to the sun map's texels, (world - camera) · screenScale (sunMapVertex's uCam), no turn. */
+  _writeVolumeMapTransform(screenScale) {
+    const mx = this._volumeMapTransform;
+    const z = screenScale > 0 ? screenScale : 1;
+    const tx = -this._renderCameraX * z;
+    const ty = -this._renderCameraY * z;
+    if (mx.a !== z) mx.a = z;
+    if (mx.b !== 0) mx.b = 0;
+    if (mx.c !== 0) mx.c = 0;
+    if (mx.d !== z) mx.d = z;
+    if (mx.tx !== tx) mx.tx = tx;
+    if (mx.ty !== ty) mx.ty = ty;
+    return mx;
   }
 
   /**
