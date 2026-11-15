@@ -27,6 +27,7 @@ import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { LightOccluder, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { ShadowCaster } from '../components/shadowCaster.js';
 import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
 import { MeshGeometry } from '../core/meshGeometry.js';
@@ -58,6 +59,7 @@ import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource, resolveFaces, shaderWithFlag } from '../render/faceMap.js';
+import { gbufWanted, writeGbufWords } from '../render/gbufWord.js';
 import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
 import {
   SUN_MAP_COLUMNS,
@@ -118,6 +120,7 @@ import {
   GPU_FLAG_SPLIT,
   GPU_FLAG_INDEXED,
   GPU_FLAG_KEYED_CASTERS,
+  GPU_FLAG_GBUF,
   GPU_KEYED_CASTER_FLOATS,
   GPU_KEYED_STAMP_FLOATS,
   GPU_HDR_INDEXED_ROWS,
@@ -2028,6 +2031,10 @@ class PixiRenderer extends AbstractWorker {
         this.visibleEntityCount = 0;
       }
       this.visibleParticleCount = gpu.header[GPU_HDR_PARTICLE] | 0;
+      // DX-GBUF: the instances' words pre-render wrote with the frame (none: lit as they always were).
+      if (this.entitiesBatch.gbuf && this.visibleEntityCount > 0) {
+        this.entitiesBatch.commitGbuf((packedFlags & GPU_FLAG_GBUF) !== 0 ? gpu.spriteGbuf : null, this.visibleEntityCount);
+      }
       this.entitiesBatch.setPoseAlpha(this._poseAlpha);
       this._posePacked = true;
       const glowId = Layer.get('lightGlows')?.id;
@@ -2101,8 +2108,31 @@ class PixiRenderer extends AbstractWorker {
     const packed = packSpriteLayer(spec);
     this.visibleEntityCount = packed.sprite;
     this.visibleParticleCount = splitGlow ? packed.splitParticles : 0;
+    if (this.entitiesBatch.gbuf && packed.sprite > 0) this._commitPixiGbuf(packed.spriteIndices, packed.sprite);
     if (this._proxiesOn) this._applyLocalProxies(packed.spriteIndices, packed.sprite);
     if (!splitGlow && !glowBatch && this.spriteGlowMesh) this.spriteGlowMesh.visible = false;
+  }
+
+  /**
+   * DX-GBUF: the G-buffer words of the `count` instances Pixi just packed (`order`: their queue rows, null: row k), from
+   * the queue's key column (a sprite row's entity: a keyed scene's emit writes it, pre-render writes it for the others),
+   * SpriteRenderer.gbufFlags and ShadowCaster.selfShadow, with zIndex bands when the painter ordered them.
+   */
+  _commitPixiGbuf(order, count) {
+    const batch = this.entitiesBatch;
+    const flags = SpriteRenderer.gbufFlags;
+    const keys = this.renderQueueKey;
+    if (!flags || !keys || keys.length === 0) {
+      batch.commitGbuf(null, count);
+      return;
+    }
+    const n = count < batch.capacity ? count : batch.capacity;
+    const sorted = this._painter !== null && SpriteRenderer.zIndexUsers() > 0;
+    writeGbufWords(
+      batch.gbufData, n, order || null, null, null, keys, flags.length, flags, ShadowCaster.selfShadow || null,
+      sorted ? SpriteRenderer.zIndex : null,
+    );
+    batch.commitGbuf(batch.gbufData, n);
   }
 
   /** Which of updateSpritesFromRenderQueue's packedOk terms a GPU queue frame failed, in words. */
@@ -2812,6 +2842,9 @@ class PixiRenderer extends AbstractWorker {
       keyed,
       posesByRow: this._keyedPosesByRow,
       pixelDepth,
+      // DX-GBUF (plan §6.4): each instance's G-buffer words (gbufWord.js), where the G-buffer pass runs (faces, a sheet
+      // with maps, a shadow map: gbufWanted, as pre-render decides it).
+      gbuf: gbufWanted(this.config, this.atlasMapsSource !== null),
       // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
       // stream and statics rows; a keyed one's slot stream, updates (its statics are scattered on the GPU) and, E-191, the
       // shadow stream of the sun's pass over its instances (3 floats a row).

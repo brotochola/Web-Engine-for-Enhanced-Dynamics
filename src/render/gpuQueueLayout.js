@@ -60,6 +60,12 @@ export const GPU_FLAG_INDEXED = 4;
  * (GPU_KEYED_STAMP_FLOATS). Pre-render writes them while Pixi's keyed texture is live (PIXI_KEYED_HEADER.LIVE).
  */
 export const GPU_FLAG_KEYED_CASTERS = 8;
+/**
+ * DX-GBUF (plan §6.4): the gbuf region holds each sprite instance's G-buffer word pair (src/render/gbufWord.js:
+ * GPU_GBUF_FLOATS an instance, in the sprite rows' draw order, whatever their layout: rows, two streams or indexed).
+ */
+export const GPU_FLAG_GBUF = 16;
+export const GPU_GBUF_FLOATS = 2;
 export const GPU_KEYED_CASTER_FLOATS = 7;
 export const GPU_KEYED_STAMP_FLOATS = GPU_KEYED_CASTER_FLOATS + 4;
 export const GPU_HDR_INDEXED_ROWS = 9;
@@ -130,6 +136,9 @@ export function gpuQueueCaps(maxSprites, lighting, indexedSprites = false) {
     maxCookie: shadowOn ? Math.max(1, Math.min(maxLights, castLights || maxLights)) : 0,
     // DX-SHADOW3D (F7): the lights a frame's stamps can go to (stampLightIds).
     maxStampLights: shadowOn ? castLights : 0,
+    // DX-GBUF: each sprite instance's G-buffer words (GPU_FLAG_GBUF), in a lit scene (the G-buffer, the glow and the
+    // zIndex bands of the pixel depth read them).
+    maxGbuf: lightsOn ? sprites : 0,
     indexedSprites: !!indexedSprites,
   };
 }
@@ -146,6 +155,7 @@ export function computeGpuQueueBufferSize(caps) {
   offset += (c.maxStamp | 0) * 2;
   offset = align4(offset);
   offset += (c.maxStampLights | 0) * 4;
+  offset += (c.maxGbuf | 0) * GPU_GBUF_FLOATS * 4;
   return align4(offset);
 }
 
@@ -191,6 +201,10 @@ export function createGpuQueueViews(sab, caps, base = 0) {
   const stampLightN = c.maxStampLights | 0;
   const stampLightIds = stampLightN > 0 ? new Uint32Array(sab, offset, stampLightN) : new Uint32Array(0);
   offset += stampLightN * 4;
+  // DX-GBUF: the sprite instances' G-buffer words, last (a layout without them keeps every other region where it was).
+  const gbufN = (c.maxGbuf | 0) * GPU_GBUF_FLOATS;
+  const spriteGbuf = gbufN > 0 ? new Float32Array(sab, offset, gbufN) : new Float32Array(0);
+  offset += gbufN * 4;
   return {
     header,
     sprites: sprites.view,
@@ -211,6 +225,7 @@ export function createGpuQueueViews(sab, caps, base = 0) {
     cookieU32: cookie.u32,
     stampLightIdx,
     stampLightIds,
+    spriteGbuf,
     caps: c,
     byteLength: offset - start,
   };

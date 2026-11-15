@@ -34,14 +34,14 @@ import {
   pickInstancedSpriteFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
 import {
-  GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS, GPU_POSE_FLOATS,
-  GPU_STATIC_FLOATS, gpuIndexedStaticRows,
+  GPU_GBUF_FLOATS, GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS,
+  GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows,
 } from './gpuQueueLayout.js';
 import {
   GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsByRowWasm, packKeyedRowsWasm,
   packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
-import { faceMapVertex, faceMapWgsl } from './faceMap.js';
+import { faceMapVertex, faceMapWgsl, gbufAttributeWgsl, shaderWithFlag } from './faceMap.js';
 import { lutBaseFloats } from './frameBase.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from './pixelDepth.js';
 import {
@@ -305,11 +305,22 @@ export class InstancedSpriteBatch {
     keyed = null,
     posesByRow = false,
     pixelDepth = null,
+    gbuf = false,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
     this.shadowCast = !!shadowCast && !poseInterp;
     this.split = !!split && !this.poseInterp && !this.shadowCast;
+    // DX-GBUF (plan §6.4): each instance's G-buffer words (gbufWord.js), GPU_GBUF_FLOATS a sprite in a stream of their own
+    // that every geometry the batch draws carries (aInstGbuf), uploaded after each frame's rows (commitGbuf). The G-buffer
+    // pass reads them. Off, the batch's geometries and programs are as they always were.
+    this.gbuf = !!gbuf && !this.shadowCast;
+    this._gbufData = new Float32Array(this.gbuf ? this.capacity * GPU_GBUF_FLOATS : 0);
+    // The instances whose words the CPU copy holds as zeros (commitGbuf with none), so a run of frames without words
+    // uploads its zeros once.
+    this._gbufZeros = 0;
+    // The ring slot the last upload drew from: its gbuf buffer is the one this frame's words go to.
+    this._lastRing = 0;
     // E-162: a split batch given `statics` also takes indexed frames: the poses, a slot stream (each instance's statics
     // row and depth) and every queue row's statics in row order, in a texture (WebGL) or a storage buffer (WebGPU).
     this.indexed = this.split && statics !== null;
@@ -463,15 +474,21 @@ export class InstancedSpriteBatch {
     this._slotBuffers = this.indexed
       ? [this._makeSlotBuffer(labelName + '-slots'), this._makeSlotBuffer(labelName + '-slots-ring')]
       : null;
-    this._geometries = this._buffers.map((buf, r) => this._geometryFor(buf, this._staticBuffers ? this._staticBuffers[r] : null));
+    // DX-GBUF: a gbuf buffer a ring slot, each geometry over that slot's.
+    this._gbufBuffers = this.gbuf
+      ? [this._makeGbufBuffer(labelName + '-gbuf'), this._makeGbufBuffer(labelName + '-gbuf-ring')]
+      : null;
+    this._geometries = this._buffers.map((buf, r) => this._withGbuf(
+      this._geometryFor(buf, this._staticBuffers ? this._staticBuffers[r] : null), r,
+    ));
     // E-162: an indexed frame's geometries, over the same pose buffers and the slot buffers: the indexed program's
     // attributes and no other (a program bound to a geometry with attributes it lacks makes Pixi warn, per pair).
     this._indexedGeometries = this.indexed
-      ? this._buffers.map((buf, r) => this._indexedGeometryFor(buf, this._slotBuffers[r]))
+      ? this._buffers.map((buf, r) => this._withGbuf(this._indexedGeometryFor(buf, this._slotBuffers[r]), r))
       : null;
     // E-201: a by-row keyed frame's geometries: the queue row from the pose buffer's first floats, the slot stream.
     this._rowGeometries = this.posesByRow
-      ? this._buffers.map((buf, r) => this._rowGeometryFor(buf, this._slotBuffers[r]))
+      ? this._buffers.map((buf, r) => this._withGbuf(this._rowGeometryFor(buf, this._slotBuffers[r]), r))
       : null;
     this._ring = 0;
     this.buffer = this._buffers[0];
@@ -603,6 +620,61 @@ export class InstancedSpriteBatch {
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
       label,
     });
+  }
+
+  /** DX-GBUF: a ring slot's buffer of the instances' G-buffer words. */
+  _makeGbufBuffer(label) {
+    return new Buffer({
+      data: this._gbufData,
+      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      label,
+    });
+  }
+
+  /**
+   * DX-GBUF: `geometry` with ring slot `ring`'s G-buffer words (aInstGbuf) when the batch carries them. Pixi files a
+   * geometry's buffers as its attributes name them, so the words' stream is one more buffer; a WebGPU program that does
+   * not read it still declares it (gbufAttributeWgsl), and a WebGL one leaves it unbound.
+   */
+  _withGbuf(geometry, ring) {
+    if (this._gbufBuffers === null) return geometry;
+    geometry.addAttribute('aInstGbuf', {
+      buffer: this._gbufBuffers[ring],
+      format: 'float32x2',
+      stride: GPU_GBUF_FLOATS * 4,
+      offset: 0,
+      instance: true,
+    });
+    return geometry;
+  }
+
+  /**
+   * DX-GBUF: this frame's G-buffer words for the `count` instances the last upload drew, into the gbuf buffer of the ring
+   * slot it drew from. `src` holds them in draw order (the GPU queue's gbuf region, or gbufData that the caller wrote);
+   * null: none this frame, each instance is lit as it always was (its words zero).
+   * @param {Float32Array|null} src
+   * @param {number} count
+   */
+  commitGbuf(src, count) {
+    if (this._gbufBuffers === null) return;
+    const n = Math.min(count | 0, this.capacity);
+    if (n <= 0) return;
+    const floats = n * GPU_GBUF_FLOATS;
+    if (src === this._gbufData) {
+      this._gbufZeros = 0;
+    } else if (src !== null && src.length >= floats) {
+      this.copyIn(this._gbufData, src, floats);
+      this._gbufZeros = 0;
+    } else if (this._gbufZeros < n) {
+      this._gbufData.fill(0, 0, floats);
+      this._gbufZeros = n;
+    }
+    this._gbufBuffers[this._lastRing].update(floats * 4);
+  }
+
+  /** DX-GBUF: the words' CPU copy, for a caller that writes them itself (gbufWord.js writeGbufWords), then commitGbuf. */
+  get gbufData() {
+    return this._gbufData;
   }
 
   /** E-191: a ring slot's buffer of the keyed frames' shadow terms. */
@@ -814,9 +886,11 @@ export class InstancedSpriteBatch {
       // DX-DEPTH: the sprite WGSL writing the floor depth, uDepth after the group's other entries (as `uniforms` lists
       // them), the twin page as binding 5.
       const depth = this._pixelDepth !== null && !!spriteSource;
+      // DX-GBUF: the words' stream is in every geometry of a batch with words, so its programs declare it.
+      const source = this.gbuf && spriteSource ? gbufAttributeWgsl(spriteSource) : spriteSource;
       const gpuProgram = instancedSpriteGpuProgram(
         GpuProgram,
-        depth ? pixelDepthWgsl(spriteSource) : spriteSource,
+        depth ? pixelDepthWgsl(source) : source,
         fragEntry,
         name,
         { maps: depth },
@@ -898,7 +972,8 @@ export class InstancedSpriteBatch {
     const shaders = this._engineShaders;
     // DX-DEPTH: over the split program's group, which holds uPoseAlpha before uDepth (the plain WGSL reads neither).
     const depth = this._pixelDepth !== null && !!shaders?.sprite;
-    const indexedSource = shaders?.sprite ? spriteIndexedWgsl(shaders.sprite) : null;
+    const plainSource = shaders?.sprite && this.gbuf ? gbufAttributeWgsl(shaders.sprite) : shaders?.sprite;
+    const indexedSource = plainSource ? spriteIndexedWgsl(plainSource) : null;
     const gpuProgram = instancedSpriteIndexedGpuProgram(
       GpuProgram,
       depth ? pixelDepthWgsl(indexedSource, { poseAlpha: this._twoStreams }) : indexedSource,
@@ -1091,6 +1166,7 @@ export class InstancedSpriteBatch {
     this._show(true);
     const ring = this._ring;
     this._ring = ring ^ 1;
+    this._lastRing = ring;
     const byRow = indexed === 'rows';
     const geometry = byRow ? this._rowGeometries[ring] : indexed ? this._indexedGeometries[ring] : this._geometries[ring];
     this._buffers[ring].update(out * stride);
@@ -1359,12 +1435,15 @@ export class InstancedSpriteBatch {
       const r = this.shader.resources;
       const resources = { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: maps, uniforms };
       const name = `${this._label}-face`;
+      // DX-GBUF: with words, each entity's sprite as its normals and surface say (faceMap.frag.glsl's GBUF block).
+      const gbuf = { gbuf: this.gbuf };
+      const faceFrag = shaders.faceFrag ? shaderWithFlag(shaders.faceFrag, 'GBUF', this.gbuf) : shaders.faceFrag;
       if (this._useWebGpu) {
-        const source = faceMapWgsl(this._twoStreams ? shaders.spritePose : shaders.sprite);
+        const source = faceMapWgsl(this._twoStreams ? shaders.spritePose : shaders.sprite, gbuf);
         this._faceShader = new Shader({ gpuProgram: instancedSpriteGpuProgram(GpuProgram, source, 'mainFragFace', name, { maps: true }), resources });
       } else {
-        const vertex = faceMapVertex(this._twoStreams ? shaders.spriteVertPose : shaders.spriteVert);
-        this._faceShader = new Shader({ glProgram: instancedSpriteGlProgram(GlProgram, vertex, shaders.faceFrag, name), resources });
+        const vertex = faceMapVertex(this._twoStreams ? shaders.spriteVertPose : shaders.spriteVert, gbuf);
+        this._faceShader = new Shader({ glProgram: instancedSpriteGlProgram(GlProgram, vertex, faceFrag, name), resources });
       }
       if (this._indexedShader !== null) {
         const indexedResources = { ...resources, uStatics: this._indexedShader.resources.uStatics };
@@ -1374,7 +1453,7 @@ export class InstancedSpriteBatch {
             ? {
                 gpuProgram: instancedSpriteIndexedGpuProgram(
                   GpuProgram,
-                  spriteIndexedWgsl(faceMapWgsl(shaders.sprite)),
+                  spriteIndexedWgsl(faceMapWgsl(shaders.sprite, gbuf)),
                   'mainFragFace',
                   indexedName,
                   { maps: true },
@@ -1384,8 +1463,8 @@ export class InstancedSpriteBatch {
             : {
                 glProgram: instancedSpriteGlProgram(
                   GlProgram,
-                  spriteIndexedVertex(faceMapVertex(shaders.spriteVert)),
-                  shaders.faceFrag,
+                  spriteIndexedVertex(faceMapVertex(shaders.spriteVert, gbuf)),
+                  faceFrag,
                   indexedName,
                 ),
                 resources: indexedResources,
@@ -1397,8 +1476,8 @@ export class InstancedSpriteBatch {
         this._faceRowShader = new Shader({
           glProgram: instancedSpriteGlProgram(
             GlProgram,
-            spriteIndexedVertex(faceMapVertex(shaders.spriteVert), { poseBlock: this._poseBlock }),
-            shaders.faceFrag,
+            spriteIndexedVertex(faceMapVertex(shaders.spriteVert, gbuf), { poseBlock: this._poseBlock }),
+            faceFrag,
             `${name}-rows`,
           ),
           resources: { ...resources, uStatics: this._staticsSource, uPoses: this._poseSource },

@@ -38,6 +38,19 @@ export const GBUF_SELF_SHIFT = 22;
 /** The most zIndex bands the depth holds (plan §6.5's bands, 3 bits of it). */
 export const GBUF_MAX_BANDS = 8;
 
+/**
+ * Whether a scene's Pixi worker runs the G-buffer pass, so its sprite instances carry words: lit (not raycasted), with
+ * faces, a sheet with maps, or a shadow map (the maps keep their highest caster's entity, which a sprite's pixels compare
+ * with their own: a caster's own shadow never paints its own sprite). Pre-render and Pixi decide it the same way.
+ * @param {object} config the scene's config
+ * @param {boolean} atlasMaps the atlas has a twin page (its json's meta.maps)
+ */
+export function gbufWanted(config, atlasMaps) {
+  const lighting = config?.lighting;
+  if (!lighting || !lighting.enabled || lighting.raycasted) return false;
+  return lighting.faces?.enabled === true || atlasMaps === true || lighting.sunShadows === 'map' || lighting.lampShadows === 'map';
+}
+
 /** An entity's id in the G-buffer: 1 to 65535, never 0 (0 is "no entity"). */
 export function gbufEntityId(entity) {
   return (entity % 65535) + 1;

@@ -33,27 +33,64 @@ export const FACE_DEFAULTS = Object.freeze({
 });
 
 /**
+ * DX-GBUF (plan §6.4): the face map's codes beyond a normal. A normal's bytes are 1..253, so (0, 0) is "no face" (the
+ * floor), (1, 0) a glowing pixel (DX-EMISSIVE v1) and (254, 254) a pixel lit as drawn at its place in 3D (FLAT: a sprite
+ * with normals 'flat', or a standing card). A height's top bit (FACE_K_BIT, of its 16) marks a sprite's own normal (its
+ * map's or its heights'), which shows as much as the lamps' share of the light (plan §5.4): heights hold 15 bits.
+ */
+export const FACE_FLAT_CODE = 254;
+export const FACE_K_BIT = 32768;
+export const FACE_Z_MAX_CODE = FACE_K_BIT - 1;
+
+/** The words' input of a sprite WGSL's mainVert (DX-GBUF, gbufWord.js): a free location, read or not. */
+const GBUF_ATTRIBUTE_WGSL = '  @location(12) aInstGbuf: vec2<f32>,\n';
+
+/**
+ * DX-GBUF: a sprite WGSL (instancedSprite.wgsl, its pose form, or either after faceMapWgsl) taking the G-buffer words'
+ * stream (aInstGbuf), which every geometry of a batch with words carries: Pixi lays a program's vertex buffers out by the
+ * inputs its WGSL declares, and warns of a geometry attribute it does not.
+ * @param {string} source
+ * @returns {string}
+ */
+export function gbufAttributeWgsl(source) {
+  if (source.includes('aInstGbuf:')) return source;
+  const at = '  @location(1) aInstXY: vec2<f32>,\n';
+  if (source.split(at).length !== 2) throw new Error('WeedJS: the G-buffer words need the sprite WGSL (aInstXY)');
+  return source.replace(at, () => at + GBUF_ATTRIBUTE_WGSL);
+}
+
+/**
  * The sprite vertex shader for the face map: instancedSprite.vert.glsl or its pose form, indexed or not (spriteIndexed.js
  * keeps these lines). A face's height at each corner comes from its plane: the row holds the height at the sprite's
  * position, and a corner dx, dy px from it is on the plane through there with the row's normal, seen from this view:
  * dy = groundScaleY * dY - heightScaleY * dZ on the screen, dX = dx.
+ * DX-GBUF: with `gbuf`, the instance's words (vGbuf, gbufWord.js) and its foot's world y (vFootY: under its lowest row,
+ * as a standing card's height counts from there) go on to faceMap.frag.glsl's GBUF block.
  * @param {string} source
+ * @param {{ gbuf?: boolean }} [opts]
  * @returns {string}
  */
-export function faceMapVertex(source) {
+export function faceMapVertex(source, { gbuf = false } = {}) {
   const main = 'void main() {\n';
   const end = 'vTileOff = aInstTileOff;\n';
   if (source.split(main).length !== 2 || source.split(end).length !== 2) {
     throw new Error('WeedJS: the face map needs one main and one vTileOff in the sprite vertex shader');
   }
+  const gbufDecl = gbuf ? 'in vec2 aInstGbuf;\nflat out vec2 vGbuf;\nout float vFootY;\n' : '';
+  const gbufOut = gbuf
+    ? `  vGbuf = aInstGbuf;
+  vFootY = world.y - (isShear ? sheared.y : spun.y) + (aInstTrim.y + aInstTrim.w - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y);
+`
+    : '';
   return source
     .replace(
       main,
-      'uniform vec4 uFaceSpace; // heightScaleY, groundScaleY\nflat out vec2 vFaceOct;\nout float vFaceZ;\n\n' + main,
+      'uniform vec4 uFaceSpace; // heightScaleY, groundScaleY\nflat out vec2 vFaceOct;\nout float vFaceZ;\n' + gbufDecl + '\n' + main,
     )
     .replace(
       end,
       end +
+        gbufOut +
         `  uint faceCode = uint(aInstTileOff.x * 65535.0 + 0.5);
   vFaceOct = vec2(0.0);
   vFaceZ = 0.0;
@@ -76,21 +113,53 @@ export function faceMapVertex(source) {
 
 /**
  * faceMapVertex's WGSL form, on the sprite program before spriteIndexedWgsl if it is the indexed one, with the fragment
- * entry `mainFragFace` that writes the map.
+ * entry `mainFragFace` that writes the map (its texel from weedFace, faceFunctionsWgsl).
+ * DX-GBUF: with `gbuf`, the instance's words (vGbuf) and its foot's world y (vFootY), as faceMapVertex passes them.
  * @param {string} source instancedSprite.wgsl or instancedSpritePose.wgsl
+ * @param {{ gbuf?: boolean }} [opts]
  * @returns {string}
  */
-export function faceMapWgsl(source) {
+export function faceMapWgsl(source, { gbuf = false } = {}) {
+  return `${faceVertexWgsl(source, { gbuf })}${faceFunctionsWgsl({ gbuf })}
+// DX-FACES: faceMap.frag.glsl
+@fragment
+fn mainFragFace(in: VertexOut) -> @location(0) vec4<f32> {
+  return weedFace(in);
+}
+`;
+}
+
+/**
+ * The face map's vertex half in a sprite WGSL (faceMapWgsl's): its uniform, the face's octahedral bytes and height out,
+ * and with `gbuf` the words' input (gbufAttributeWgsl) and outputs.
+ * @param {string} source
+ * @param {{ gbuf?: boolean }} [opts]
+ * @returns {string}
+ */
+export function faceVertexWgsl(source, { gbuf = false } = {}) {
   const once = (text, find, add) => {
     if (text.split(find).length !== 2) throw new Error(`WeedJS: the face map needs one "${find.trim()}" in the sprite WGSL`);
-    return text.replace(find, find + add);
+    return text.replace(find, () => find + add);
   };
   let out = once(source, '  uTileWorld: vec4<f32>,\n', '  uFaceSpace: vec4<f32>, // heightScaleY, groundScaleY\n');
-  out = once(out, '  @location(5) vTileOff: vec2<f32>,\n', '  @location(6) @interpolate(flat) vFaceOct: vec2<f32>,\n  @location(7) vFaceZ: f32,\n');
+  out = once(
+    out,
+    '  @location(5) vTileOff: vec2<f32>,\n',
+    '  @location(6) @interpolate(flat) vFaceOct: vec2<f32>,\n  @location(7) vFaceZ: f32,\n' +
+      (gbuf ? '  @location(9) @interpolate(flat) vGbuf: vec2<f32>,\n  @location(10) vFootY: f32,\n' : ''),
+  );
+  if (gbuf) out = gbufAttributeWgsl(out);
+  const gbufOut = gbuf
+    ? `  out.vGbuf = aInstGbuf;
+  out.vFootY = world.y - select(spun, sheared, isShear).y
+    + (aInstTrim.y + aInstTrim.w - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y);
+`
+    : '';
   out = once(
     out,
     '  out.vTileOff = aInstTileOff;\n',
-    `  let faceCode = u32(aInstTileOff.x * 65535.0 + 0.5);
+    gbufOut +
+      `  let faceCode = u32(aInstTileOff.x * 65535.0 + 0.5);
   out.vFaceOct = vec2<f32>(0.0);
   out.vFaceZ = 0.0;
   if (faceCode != 0u && all(aInstTileInv == vec2<f32>(0.0))) {
@@ -111,9 +180,63 @@ export function faceMapWgsl(source) {
   }
 `,
   );
-  return (
-    out +
-    `
+  return out;
+}
+
+/** DX-GBUF's WGSL helpers (faceMap.frag.glsl twinHeight and heightNormal): normals 'height', the heights' Sobel. */
+const FACE_GBUF_HELPERS_WGSL = `
+// DX-GBUF: a twin texel's height (px), or \`here\` where it has no map (faceMap.frag.glsl twinHeight).
+fn faceTwinHeight(c: vec2<i32>, here: f32) -> f32 {
+  let m = textureLoad(uMaps, c, 0);
+  return select(here, (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0, m.b + m.a > 0.0);
+}
+
+// DX-GBUF: normals 'height', the Sobel of the heights around texel c (faceMap.frag.glsl heightNormal).
+fn faceHeightNormal(c: vec2<i32>, z: f32) -> vec3<f32> {
+  let a = faceTwinHeight(c + vec2<i32>(-1, -1), z);
+  let b = faceTwinHeight(c + vec2<i32>(0, -1), z);
+  let d = faceTwinHeight(c + vec2<i32>(1, -1), z);
+  let l = faceTwinHeight(c + vec2<i32>(-1, 0), z);
+  let r = faceTwinHeight(c + vec2<i32>(1, 0), z);
+  let e = faceTwinHeight(c + vec2<i32>(-1, 1), z);
+  let g = faceTwinHeight(c + vec2<i32>(0, 1), z);
+  let h = faceTwinHeight(c + vec2<i32>(1, 1), z);
+  let gx = (d + 2.0 * r + h - a - 2.0 * l - e) / 8.0;
+  let gy = (e + 2.0 * g + h - a - 2.0 * b - d) / 8.0;
+  return normalize(vec3<f32>(-gx, gy, 1.0));
+}
+`;
+
+/**
+ * The face map's fragment functions in WGSL (faceMap.frag.glsl): the twin page's binding (group 2, binding 5: the indexed
+ * program takes 4), the octahedral codes, the texel, and weedFace, which discards what the map does not take and returns
+ * the texel of what it does. DX-GBUF: with `gbuf`, an entity's sprite as its normals and surface say.
+ * @param {{ gbuf?: boolean }} [opts]
+ * @returns {string}
+ */
+export function faceFunctionsWgsl({ gbuf = false } = {}) {
+  const flat = `vec2<f32>(${FACE_FLAT_CODE}.0 / 255.0)`;
+  const gbufBlock = gbuf
+    ? `  // DX-GBUF (plan §5.4): an entity's sprite as its normals and surface say (faceMap.frag.glsl's GBUF block).
+  let word = u32(in.vGbuf.x + 0.5);
+  if (noFace && (word & 65535u) != 0u) {
+    let flags = (word >> 16u) & 63u;
+    let normals = flags & 3u;
+    if (m.b + m.a > 0.0) {
+      let zm = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0;
+      if (normals == 3u) { return faceTexel(${flat}, zm, false); }
+      var n = faceOctDecode(floor(m.ba * 255.0 + 0.5));
+      if (normals == 2u) { n = faceHeightNormal(tc, zm); }
+      return faceTexel(faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zm, true);
+    }
+    if ((flags & 4u) == 0u) {
+      return faceTexel(${flat}, max(in.vFootY - in.vWorld.y, 0.0) / uniforms.uFaceSpace.x, false);
+    }
+    return vec4<f32>(0.0);
+  }
+`
+    : '';
+  return `
 // DX-MAPS: the atlas's twin page (spriteMaps.js). Binding 5: the indexed program takes 4.
 @group(2) @binding(5) var uMaps: texture_2d<f32>;
 
@@ -135,30 +258,36 @@ fn faceOctEncode(v: vec3<f32>) -> vec2<f32> {
   return floor(p * 126.0 + 127.5) / 255.0;
 }
 
-// DX-FACES: faceMap.frag.glsl
-@fragment
-fn mainFragFace(in: VertexOut) -> @location(0) vec4<f32> {
+// The face map's texel: a normal's bytes or a code, a height in eighths of a px (15 bits), the top bit a sprite's own
+// normal (faceMap.frag.glsl faceTexel).
+fn faceTexel(oct: vec2<f32>, z: f32, k: bool) -> vec4<f32> {
+  let q = floor(clamp(z * ${FACE_Z_UNITS}.0, 0.0, ${FACE_Z_MAX_CODE}.0)) + select(0.0, ${FACE_K_BIT}.0, k);
+  return vec4<f32>(oct, floor(q / 256.0) / 255.0, (q % 256.0) / 255.0);
+}
+${gbuf ? FACE_GBUF_HELPERS_WGSL : ''}
+// DX-FACES (faceMap.frag.glsl): what this pixel is, in painter order, or a discard where the sprite is not opaque.
+fn weedFace(in: VertexOut) -> vec4<f32> {
   let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
   let t = textureSample(uTexture, uSampler, uv);
-  let m = textureLoad(uMaps, vec2<i32>(uv * vec2<f32>(textureDimensions(uMaps, 0))), 0);
+  let tc = vec2<i32>(uv * vec2<f32>(textureDimensions(uMaps, 0)));
+  let m = textureLoad(uMaps, tc, 0);
   if (t.a * in.vColor.a < 0.5) { discard; }
   var oct = in.vFaceOct;
   var z = in.vFaceZ;
+  let noFace = all(oct == vec2<f32>(0.0));
   // DX-EMISSIVE: a glowing pixel is (1/255, 0) in the face map (faceMap.frag.glsl).
-  if (all(oct == vec2<f32>(0.0)) && m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0) {
+  if (noFace && m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0) {
     return vec4<f32>(1.0 / 255.0, 0.0, 0.0, 0.0);
   }
-  if (all(oct == vec2<f32>(0.0)) && m.b + m.a > 0.0) {
+  let sc = normalize(vec2<f32>(uniforms.uFaceSpace.y, uniforms.uFaceSpace.x));
+${gbufBlock}  if (noFace && m.b + m.a > 0.0) {
     let n = faceOctDecode(floor(m.ba * 255.0 + 0.5));
-    let sc = normalize(vec2<f32>(uniforms.uFaceSpace.y, uniforms.uFaceSpace.x));
     oct = faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x));
     z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0;
   }
-  let q = floor(clamp(z * ${FACE_Z_UNITS}.0, 0.0, 65535.0));
-  return vec4<f32>(oct, floor(q / 256.0) / 255.0, (q % 256.0) / 255.0);
+  return faceTexel(oct, z, false);
 }
-`
-  );
+`;
 }
 
 /** A shader source with its `// #if NAME` ... `// #endif NAME` blocks kept (on) or cut (off). */

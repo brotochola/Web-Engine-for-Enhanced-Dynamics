@@ -22,6 +22,7 @@ import { LightOccluder as LightOccluderImport, LIGHT_OCCLUDER_MASK_SPRITE } from
 import { AbstractWorker } from './abstractWorker.js';
 import { poseRotationLive } from '../box2d/box2dBodySync.js';
 import { resolveFaces } from '../render/faceMap.js';
+import { gbufWanted, writeGbufWords } from '../render/gbufWord.js';
 import { Camera } from '../core/camera.js';
 import { takePublishedList } from '../util/publishedList.js';
 import { Query as QueryImport } from '../core/query.js';
@@ -139,6 +140,8 @@ import {
     GPU_FLAG_SPLIT,
     GPU_FLAG_INDEXED,
     GPU_FLAG_KEYED_CASTERS,
+    GPU_FLAG_GBUF,
+    GPU_GBUF_FLOATS,
     createGpuQueueViews,
     clearGpuQueueHeader,
     writeGpuQueueHeader,
@@ -733,6 +736,9 @@ class PreRenderWorker extends AbstractWorker {
         this._casterScanTick = 0;
         this._casterCode = new Int32Array(0);
         this._faces = false; // config.lighting.faces: decoration rows carry their face in the tile offsets
+        // DX-GBUF (plan §6.4): the sprite rows' G-buffer words go with the GPU queue (gbufWord.js): a lit scene whose Pixi
+        // worker runs the G-buffer pass (faces, a sheet with maps, a shadow map).
+        this._gbufOn = false;
         this._collectedRows = 0; // the rows the last sprite queue's collect held
         /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
         this._keyedHeader = EMPTY_U32;
@@ -1525,6 +1531,7 @@ class PreRenderWorker extends AbstractWorker {
         // sort line to the pose for the rest of the session).
         this._spriteSortArrays = null;
         this._faces = resolveFaces(this.config?.lighting).enabled;
+        this._gbufOn = gbufWanted(this.config, data.spritesheetMetadata?.spritesheets?.bigAtlas?.meta?.maps === true);
 
         if (
             data.shadows &&
@@ -3097,9 +3104,29 @@ class PreRenderWorker extends AbstractWorker {
         this._emitPresorted = false;
         this.renderQueueCount[0] = writeCount;
         this._emitWriteCount = writeCount;
+        // DX-GBUF: where Pixi packs the sprites of a scene that does not key its frames, the rows' entities for its
+        // G-buffer words, in the key column the emit leaves unwritten there (a keyed scene's emit writes them).
+        if (this._gbufOn && !this._keyedFrames && this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER) {
+            this._writeGbufKeys(writeCount === count ? writeCount : 0);
+        }
         this._lastCollectCount = count;
         this._lastEmitCount = writeCount;
         this._renderableCount = 0;
+    }
+
+    /**
+     * DX-GBUF: the main queue's key column as a keyed scene's emit writes it (E-177), for Pixi's G-buffer words: a sprite
+     * row's entity, KEY_NONE for any other row. Rows past `rows` (a frame whose Adobe roots expanded matches no row to its
+     * entity) read KEY_NONE: their sprites are lit as they always were.
+     */
+    _writeGbufKeys(rows) {
+        const keys = this.renderQueueKey;
+        const n = Math.min(this.renderQueueCount[0] | 0, keys.length);
+        const types = this._renderableType;
+        const entities = this._renderableIndex;
+        const r = rows < n ? rows : n;
+        for (let i = 0; i < r; i++) keys[i] = types[i] === 0 ? entities[i] : 0xffffffff;
+        if (r < n) keys.fill(0xffffffff, r, n);
     }
 
     /**
@@ -4468,6 +4495,7 @@ class PreRenderWorker extends AbstractWorker {
         if ((this._emitWriteCount | 0) > (q.count | 0)) q.count = this._emitWriteCount | 0;
         const sprites = this._packGpuSprites(dst, q, this._allowGpuPainter());
         if (this._proxyHalves !== null) this._writeProxies(q, sprites);
+        const gbuf = this._gbufOn && this._writeGbufWords(dst, q, sprites);
         if (detail) {
             const sortDelta = this.sortTimeThisFrame - sortBefore;
             let ms = performance.now() - tSprites;
@@ -4484,12 +4512,34 @@ class PreRenderWorker extends AbstractWorker {
         counts.stamp = shadows.stamp | 0;
         counts.cookie = shadows.cookie | 0;
         counts.stampLights = shadows.stampLights | 0;
-        counts.flags = (sprites.flags | 0) | (shadows.keyed ? GPU_FLAG_KEYED_CASTERS : 0);
+        counts.flags = (sprites.flags | 0) | (shadows.keyed ? GPU_FLAG_KEYED_CASTERS : 0) | (gbuf ? GPU_FLAG_GBUF : 0);
         counts.staticGen = sprites.staticGen | 0;
         counts.indexedRows = sprites.indexedRows | 0;
         counts.slotsGen = sprites.slotsGen | 0;
         writeGpuQueueHeader(dst.header, counts, counts.flags);
         if (detail) this.shadowQTimeThisFrame = performance.now() - tShadows;
+    }
+
+    /**
+     * DX-GBUF (plan §6.4): each packed sprite instance's G-buffer words (gbufWord.js), in the draw order the pack wrote
+     * (its painter order or the queue's), into the queue buffer's gbuf region: its entity's id and flags (SpriteRenderer
+     * gbufFlags, ShadowCaster selfShadow) and, when the painter ordered the rows zIndex first, its zIndex band. Queue rows
+     * are the collector's one to one unless Adobe roots expanded in the frame: such a frame sends none (GPU_FLAG_GBUF off),
+     * and Pixi lights its sprites as it always did.
+     * @returns {boolean} whether the region holds this frame's words
+     */
+    _writeGbufWords(dst, q, sprites) {
+        const n = sprites.sprite | 0;
+        const out = dst.spriteGbuf;
+        if (n <= 0 || !out || out.length < n * GPU_GBUF_FLOATS || (q.count | 0) !== this._collectedRows) return false;
+        const flags = SpriteRenderer.gbufFlags;
+        if (!flags) return false;
+        const sorted = (sprites.flags & GPU_FLAG_SORTED) !== 0 && SpriteRenderer.zIndexUsers() > 0;
+        writeGbufWords(
+            out, n, sprites.indices || null, this._renderableType, this._renderableIndex, null, flags.length, flags,
+            ShadowCaster.selfShadow || null, sorted ? SpriteRenderer.zIndex : null,
+        );
+        return true;
     }
 
     /**
