@@ -169,6 +169,9 @@ function writeLutSlot(lut, base, tex) {
   }
   // DX-SHADOW3D: where the frame stands (set by the Pixi worker from the atlas's json), else [0, 0].
   lutBaseFloats(tex.weedBase, lut, base + 10);
+  // DX-SHADOW3D: a render's footprint row (the Pixi worker's footprint texture), + 1, in its base's spare float, negative
+  // for a render that casts its card for the sun (frameBase.js lutBaseFloats).
+  if (tex.weedFootSlot >= 0 && lut[base + 10] < 0) lut[base + 11] = (lut[base + 11] < 0 ? -1 : 1) * (tex.weedFootSlot + 1);
 }
 
 export function buildTextureLut(flatTextures, fallbackTexture) {

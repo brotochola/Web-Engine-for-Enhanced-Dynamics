@@ -3,7 +3,7 @@
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
 import { frameTwinTexels, opaqueMask, readHeights } from '../render/spriteMaps.js';
-import { isRenderDirections, measureLowestContact, measureStandingBase } from '../render/frameBase.js';
+import { isRenderDirections, measureLowestContact, measureStandingBase, readFootprint } from '../render/frameBase.js';
 import {
   create2dCanvas,
   createCircularGradientCanvas,
@@ -1026,8 +1026,16 @@ class SpriteSheetRegistry {
             let trimmedCount = 0;
             let savedPixels = 0;
 
+            // DX-SHADOW3D: each frame's footprint (floor px around its anchor), when the sheet's json has them: a render's
+            // solid sweeps its cells north to it (sunShadowMap.js), as the light bench's heightmap did.
+            const footprints = jsonData.meta?.footprints ?? jsonData.meta?.light3d?.footprints ?? null;
+            // How its renders cast the sun's shadow: 'sprite', their card (the frame the sun sees); else their solid.
+            const sunCard = (jsonData.meta?.shadowCast?.sun ?? jsonData.meta?.light3d?.cast?.sun) === 'sprite';
+            let frameOrdinal = -1;
+
             // 2. Extract and optionally trim each frame
             for (const [frameName, frameData] of Object.entries(jsonData.frames)) {
+              frameOrdinal++;
               if (!requiredFrames.has(frameName)) continue;
 
               const prefixedName = `${sheetName}_${frameName}`;
@@ -1094,6 +1102,8 @@ class SpriteSheetRegistry {
                 maps,
                 // DX-SHADOW3D: its base in its own pixels (untrimmed); a render's lowest contact replaces it (_paintMapsPage).
                 base,
+                footprint: Array.isArray(footprints) ? readFootprint(footprints[frameOrdinal]) : null,
+                sunCard,
                 renderDirections: isRenderDirections(config.directions ?? jsonDirections),
               });
             }
@@ -1398,7 +1408,11 @@ class SpriteSheetRegistry {
     for (const d of imagesToPack) {
       const b = d.base;
       if (!b || !frames[d.name]) continue;
-      frames[d.name].base = b.contact >= 0 ? { contact: b.contact } : { cx: b.cx, rx: b.rx, ry: b.ry };
+      frames[d.name].base = b.contact >= 0
+        ? (d.sunCard ? { contact: b.contact, card: true } : { contact: b.contact })
+        : { cx: b.cx, rx: b.rx, ry: b.ry };
+      // A render with its footprint casts its solid swept north to it (the Pixi worker's footprint texture).
+      if (b.contact >= 0 && d.footprint) frames[d.name].footprint = d.footprint;
     }
 
     // Register individual texture names as spritesheet IDs

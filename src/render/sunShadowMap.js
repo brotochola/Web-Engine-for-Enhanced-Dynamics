@@ -15,6 +15,8 @@
  * the column under it, so its shadow is its solid's, turned as it is.
  */
 
+import { FOOTPRINT_MAX_VERTICES } from './frameBase.js';
+
 /** Height (px) that the map's 8 bits span: 2 px a step. */
 export const SUN_MAP_ZMAX = 512;
 /** Below this, a sun ray is too flat to shift by its height (kx, ky are clamped). */
@@ -68,6 +70,46 @@ export const SUN_MAP_COLUMNS = 24;
 const MAPPED_GLSL = 'uniform sampler2D uMaps;\n';
 
 /**
+ * DX-SHADOW3D: the column programs' footprint lookup (GLSL): the northmost floor y (floor px around the anchor) where
+ * footprint row `slot`'s boundary crosses x, 1e9 when it does not (frameBase.js footprintNorthY, writeFootprintRow).
+ */
+export const FOOTPRINT_GLSL = `uniform sampler2D uFoot;
+float footprintNorth(int slot, float x) {
+  int count = int(texelFetch(uFoot, ivec2(0, slot), 0).x + 0.5);
+  float ym = 1e9;
+  for (int k = 0; k < ${FOOTPRINT_MAX_VERTICES}; k++) {
+    if (k >= count) break;
+    int k2 = k + 1 < count ? k + 1 : 0;
+    vec4 tp = texelFetch(uFoot, ivec2(1 + k / 2, slot), 0);
+    vec4 tq = texelFetch(uFoot, ivec2(1 + k2 / 2, slot), 0);
+    vec2 p = k % 2 == 0 ? tp.xy : tp.zw;
+    vec2 q = k2 % 2 == 0 ? tq.xy : tq.zw;
+    if (x >= min(p.x, q.x) && x <= max(p.x, q.x) && abs(q.x - p.x) > 1e-4) ym = min(ym, p.y + (x - p.x) / (q.x - p.x) * (q.y - p.y));
+  }
+  return ym;
+}
+`;
+
+/** FOOTPRINT_GLSL's WGSL form, with its binding (group 2, binding 7). */
+export const FOOTPRINT_WGSL = `// DX-SHADOW3D: the renders' footprints (frameBase.js writeFootprintRow).
+@group(2) @binding(7) var uFoot: texture_2d<f32>;
+fn footprintNorth(slot: i32, x: f32) -> f32 {
+  let count = i32(textureLoad(uFoot, vec2<i32>(0, slot), 0).x + 0.5);
+  var ym = 1e9;
+  for (var k = 0; k < ${FOOTPRINT_MAX_VERTICES}; k++) {
+    if (k >= count) { break; }
+    let k2 = select(0, k + 1, k + 1 < count);
+    let tp = textureLoad(uFoot, vec2<i32>(1 + k / 2, slot), 0);
+    let tq = textureLoad(uFoot, vec2<i32>(1 + k2 / 2, slot), 0);
+    let p = select(tp.zw, tp.xy, k % 2 == 0);
+    let q = select(tq.zw, tq.xy, k2 % 2 == 0);
+    if (x >= min(p.x, q.x) && x <= max(p.x, q.x) && abs(q.x - p.x) > 1e-4) { ym = min(ym, p.y + (x - p.x) / (q.x - p.x) * (q.y - p.y)); }
+  }
+  return ym;
+}
+`;
+
+/**
  * The grid sunMapColumnsVertex draws over a frame, SUN_MAP_COLUMNS² cells of two triangles: per vertex the cell's centre
  * (u, v in the frame), t (0 at the floor, 1 at the column's top) and its side (-1, 1).
  * @returns {Float32Array}
@@ -112,25 +154,38 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   const head = card
     .slice(0, card.indexOf(after))
     .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nvec2 aQuad;\nuniform sampler2D uTexture;\n')
-    .replace(main, `${main}  aQuad = aCell.xy;\n`);
+    .replace(main, `${FOOTPRINT_GLSL}${main}  aQuad = aCell.xy;\n`);
   return `${head}  vec2 uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
   vec4 m = texelFetch(uMaps, ivec2(uvc * vec2(textureSize(uMaps, 0))), 0);
   float cellAlpha = texelFetch(uTexture, ivec2(uvc * vec2(textureSize(uTexture, 0))), 0).a;
   float z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * height;
-  if (aInstBase.x >= 0.0 || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5) {
+  if (aInstBase.x >= 0.0 || aInstBase.y < 0.0 || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5) {
     gl_Position = vec4(2.0, 2.0, 0.0, 1.0);${heights ? '\n    vSunZ = 0.0;' : '\n    vColor = vec4(0.0);'}
     return;
   }
   vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
   vec2 pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   vec2 base = vec2(pix.x, (pix.y + uSunK.w * z) * uGroundInvScaleY);
-  vec2 tip = base - z * uSunK.xy;
-  vec2 along = tip - base;
-  float len = length(along);
-  vec2 across = len > 1e-3 ? vec2(-along.y, along.x) / len : vec2(1.0, 0.0);
   vec2 cell = abs(aInstTrim.zw * aInstScale) / ${cells.toFixed(1)};
   float width = 1.1 * max(cell.x, cell.y * uGroundInvScaleY) + 1.0;
-  vec2 p = mix(base, tip, aCell.z) + across * aCell.w * width;
+  // A column from the cell's floor point (height 0) to where its top lands; with a footprint, the cell swept north at
+  // its own height to the footprint's edge, as the light bench's heightmap did (light passes under a belly, between
+  // legs and rails).
+  vec2 a = base;
+  vec2 b = base - z * uSunK.xy;
+  float zA = 0.0;
+  if (aInstBase.y >= 1.0) {
+    float north = aInstXY.y * uGroundInvScaleY
+      + footprintNorth(int(aInstBase.y + 0.5) - 1, content.x - aInstAnchor.x * aInstSize.x) * abs(aInstScale.y);
+    float halfCell = 0.5 * cell.y * uGroundInvScaleY + 0.5;
+    a = vec2(base.x, base.y + halfCell) - z * uSunK.xy;
+    b = vec2(base.x, min(north, base.y) - halfCell) - z * uSunK.xy;
+    zA = z;
+  }
+  vec2 along = b - a;
+  float len = length(along);
+  vec2 across = len > 1e-3 ? vec2(-along.y, along.x) / len : vec2(1.0, 0.0);
+  vec2 p = mix(a, b, aCell.z) + across * aCell.w * width;
   vec2 world = vec2(p.x, p.y / uGroundInvScaleY);
   vec2 screen = (world - uCam.xy) * uCam.z;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
@@ -142,7 +197,7 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   vWorld = world;
   vAtlasUV = aInstUV;
   vTileInv = aInstTileInv;
-  vTileOff = aInstTileOff;${heights ? '\n  vSunZ = z * aCell.z;' : ''}
+  vTileOff = aInstTileOff;${heights ? '\n  vSunZ = mix(zA, z, aCell.z);' : ''}
 }
 `;
 }
@@ -169,8 +224,9 @@ export function sunMapVertex(source, { heights = true } = {}) {
   const skipped = source.replace(
     card,
     `${card}    // A caster whose frame has a height map casts columns instead (sunMapColumnsVertex): its card would face the sun
-    // whatever the object's shape (a crate's shadow turned with the sun).
-    if (aInstBase.x < 0.0) {
+    // whatever the object's shape (a crate's shadow turned with the sun). Unless its sheet casts its card for the sun
+    // (frameBase.js lutBaseFloats: a negative second float), as the light bench's cow and cars did.
+    if (aInstBase.x < 0.0 && aInstBase.y >= 0.0) {
       gl_Position = vec4(2.0, 2.0, 0.0, 1.0);${heights ? '' : '\n      vColor = vec4(0.0);'}
       return;
     }
@@ -217,8 +273,8 @@ export function sunMapWgsl(source, { heights = true } = {}) {
   wgslMarks(source, [struct, card, out, color], 'the sun shadow map');
   const skipped = source.replace(
     card,
-    `${card}    // A render's frame casts columns instead (sunMapColumnsWgsl).
-    if (aInstBase.x < 0.0) {
+    `${card}    // A render's frame casts columns instead (sunMapColumnsWgsl), unless its sheet casts its card for the sun.
+    if (aInstBase.x < 0.0 && aInstBase.y >= 0.0) {
       clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);
       return out;
     }
@@ -259,21 +315,32 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   let m = textureLoad(uMaps, vec2<i32>(uvc * vec2<f32>(textureDimensions(uMaps, 0))), 0);
   let cellAlpha = textureLoad(uTexture, vec2<i32>(uvc * vec2<f32>(textureDimensions(uTexture, 0))), 0).a;
   let z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * height;
-  if (aInstBase.x >= 0.0 || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5) {
+  if (aInstBase.x >= 0.0 || aInstBase.y < 0.0 || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5) {
     clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);
     return out;
   }
   let content = aInstTrim.xy + aQuad * aInstTrim.zw;
   let pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   let base = vec2<f32>(pix.x, (pix.y + uniforms.uSunK.w * z) * uniforms.uGroundInvScaleY);
-  let tip = base - z * uniforms.uSunK.xy;
-  let along = tip - base;
+  let cell = abs(aInstTrim.zw * aInstScale) / ${cells.toFixed(1)};
+  let width = 1.1 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 1.0;
+  // A column, or with a footprint the cell swept north at its own height (sunMapColumnsVertex says why).
+  var a = base;
+  var b = base - z * uniforms.uSunK.xy;
+  var zA = 0.0;
+  if (aInstBase.y >= 1.0) {
+    let north = aInstXY.y * uniforms.uGroundInvScaleY
+      + footprintNorth(i32(aInstBase.y + 0.5) - 1, content.x - aInstAnchor.x * aInstSize.x) * abs(aInstScale.y);
+    let halfCell = 0.5 * cell.y * uniforms.uGroundInvScaleY + 0.5;
+    a = vec2<f32>(base.x, base.y + halfCell) - z * uniforms.uSunK.xy;
+    b = vec2<f32>(base.x, min(north, base.y) - halfCell) - z * uniforms.uSunK.xy;
+    zA = z;
+  }
+  let along = b - a;
   let len = length(along);
   var across = vec2<f32>(1.0, 0.0);
   if (len > 1e-3) { across = vec2<f32>(-along.y, along.x) / len; }
-  let cell = abs(aInstTrim.zw * aInstScale) / ${cells.toFixed(1)};
-  let width = 1.1 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 1.0;
-  let p = mix(base, tip, aCell.z) + across * aCell.w * width;
+  let p = mix(a, b, aCell.z) + across * aCell.w * width;
   let world = vec2<f32>(p.x, p.y / uniforms.uGroundInvScaleY);
   let screen = (world - uniforms.uCam.xy) * uniforms.uCam.z;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
@@ -287,12 +354,12 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   out.vWorld = world;
   out.vAtlasUV = aInstUV;
   out.vTileInv = aInstTileInv;
-  out.vTileOff = aInstTileOff;${heights ? '\n  out.vSunZ = z * aCell.z;' : ''}
+  out.vTileOff = aInstTileOff;${heights ? '\n  out.vSunZ = mix(zA, z, aCell.z);' : ''}
   return out;
 }
 `;
   return `${head}${columns}${card.slice(to + end.length)}`.replace(
     '@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n',
-    "@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n",
+    `@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n${FOOTPRINT_WGSL}`,
   );
 }

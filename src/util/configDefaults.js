@@ -768,11 +768,24 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   faces: Object.freeze({ enabled: false }),
   /**
-   * DX-SHADOW3D: how the sun casts the ShadowCasters' shadows. 'sprite' (default): each caster's picture skewed on the
-   * screen, darkening every light. 'map': a shadow map in the floor's terms (src/render/sunShadowMap.js) that takes out the
-   * sun alone, falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit. WebGL for now.
+   * DX-SHADOW3D: how the sun casts the ShadowCasters' shadows. 'sprite' (default): each caster's card on the shadows'
+   * layer, darkening every light. 'map': a shadow map in the floor's terms (src/render/sunShadowMap.js) that takes out the
+   * sun alone, falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit.
    */
   sunShadows: 'sprite',
+  /**
+   * DX-SHADOW3D (F7): how the lamps cast them. 'sprite' (default): each caster stamped on the shadows' layer, stretched
+   * away from its lamp. 'map': a shadow map a lamp in the floor's terms (src/render/lampShadowMap.js, one tile each in an
+   * atlas, the lights maxShadowCastingLights picks) that takes out that lamp's light alone, with the caster's height and
+   * the lamp's (LightEmitter.elevation) in the shadow's length.
+   */
+  lampShadows: 'sprite',
+  /**
+   * DX-SHADOW3D: a render with a footprint in its sheet's json (meta.footprints) casts its solid swept north to it at
+   * each cell's own height, as the light bench's heightmap did (light under a table), instead of columns down to the
+   * floor. Off until it is right: in the light bench the barn's walls went missing from its shadow.
+   */
+  footprintSolids: false,
   /**
    * DX-SELFSHADOW: faces and sprites with height maps shade themselves and each other from the sun: steps towards it over
    * the face map's heights in the light pass (a crate's lid edge over its front, an arm over a body). WebGL for now.

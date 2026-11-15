@@ -136,7 +136,8 @@ export function isRenderDirections(spec) {
 /**
  * A frame's base as the texture table's two spare floats (instancedSpriteBatch.js writeLutSlot), read by the shadow
  * shaders: [0, 0] none; an ellipse [cx + 1, rx] (feet, ry = 0.6 rx) or [cx + 1, -rx] (a round trunk); a render
- * [-(1 + its lowest contact row), 0].
+ * [-(1 + its lowest contact row), 0], or -0.5 in the second when it casts its card for the sun (base.card: the sheet's
+ * shadowCast.sun 'sprite'). writeLutSlot then puts its footprint row there, + 1, with that sign.
  * @param {{ cx?: number, rx?: number, ry?: number, contact?: number } | null | undefined} base
  * @param {Float32Array|number[]} out
  * @param {number} at
@@ -147,6 +148,7 @@ export function lutBaseFloats(base, out, at) {
   if (!base) return;
   if (base.contact >= 0) {
     out[at] = -(1 + base.contact);
+    if (base.card === true) out[at + 1] = -0.5;
   } else if (base.rx > 0 && base.cx >= 0) {
     out[at] = base.cx + 1;
     out[at + 1] = base.ry >= base.rx ? -base.rx : base.rx;
@@ -156,8 +158,9 @@ export function lutBaseFloats(base, out, at) {
 
 /**
  * Whether a sheet of the big atlas casts its solid: a frame of it stands on a contact (a render with height maps, its
- * base measured by _paintMapsPage). Such a sheet's shadow is built from the frame the camera sees (the columns), so it
- * keeps that frame in the sun rows instead of the one the sun sees.
+ * base measured by _paintMapsPage) and the sheet does not cast its card (shadowCast.sun 'sprite'). Such a sheet's shadow
+ * is built from the frame the camera sees (the columns), so it keeps that frame in the sun rows instead of the one the
+ * sun sees.
  * @param {{ animations?: object, frames?: object } | null | undefined} json the big atlas's
  * @param {{ animations?: Record<string, { prefixedName?: string }> } | null | undefined} proxy the sheet's proxy entry
  * @returns {boolean}
@@ -169,7 +172,69 @@ export function sheetCastsSolid(json, proxy) {
   for (const a of Object.values(proxy.animations)) {
     const list = anims[a?.prefixedName];
     const first = list && list[0];
-    if (first !== undefined && frames[first]?.base?.contact >= 0) return true;
+    const base = first !== undefined ? frames[first]?.base : undefined;
+    if (base && base.contact >= 0 && base.card !== true) return true;
   }
   return false;
+}
+
+/** The vertices a footprint keeps (the light bench's own cap): the footprint texture's rows hold no more. */
+export const FOOTPRINT_MAX_VERTICES = 16;
+/** RGBA32F texels a footprint row: its vertex count, then two vertices a texel. */
+export const FOOTPRINT_TEXELS = 1 + FOOTPRINT_MAX_VERTICES / 2;
+
+/**
+ * A frame's footprint as a sheet's json gives it (meta.footprints, or meta.light3d.footprints as the light bench's
+ * converter writes them): a polygon in floor px around the frame's anchor ([[x, y], ...], y towards the camera), its
+ * first FOOTPRINT_MAX_VERTICES vertices; null when it is not one.
+ * @param {unknown} poly
+ * @returns {Array<[number, number]> | null}
+ */
+export function readFootprint(poly) {
+  if (!Array.isArray(poly) || poly.length < 3) return null;
+  const out = [];
+  for (const v of poly.slice(0, FOOTPRINT_MAX_VERTICES)) {
+    if (!Array.isArray(v) || !Number.isFinite(v[0]) || !Number.isFinite(v[1])) return null;
+    out.push([+v[0], +v[1]]);
+  }
+  return out;
+}
+
+/**
+ * The northmost floor y where a footprint's boundary crosses x (floor px around the anchor): where a cell of the frame at
+ * that x, swept north at its own height, ends (the light bench's heightmap solid). Infinity when the boundary does not
+ * cross x. The shaders' footprintNorth.
+ * @param {Array<[number, number]>} poly
+ * @param {number} x
+ */
+export function footprintNorthY(poly, x) {
+  let ym = Infinity;
+  const n = poly.length;
+  for (let k = 0; k < n; k++) {
+    const p = poly[k];
+    const q = poly[k + 1 < n ? k + 1 : 0];
+    if (x >= Math.min(p[0], q[0]) && x <= Math.max(p[0], q[0]) && Math.abs(q[0] - p[0]) > 1e-4) {
+      const y = p[1] + ((x - p[0]) / (q[0] - p[0])) * (q[1] - p[1]);
+      if (y < ym) ym = y;
+    }
+  }
+  return ym;
+}
+
+/**
+ * One footprint into row `row` of the footprint texture's floats (FOOTPRINT_TEXELS RGBA texels a row): texel 0 its
+ * vertex count, then the vertices two a texel (x, y, x, y).
+ * @param {Float32Array} out
+ * @param {number} row
+ * @param {Array<[number, number]>} poly
+ */
+export function writeFootprintRow(out, row, poly) {
+  const at = row * FOOTPRINT_TEXELS * 4;
+  out.fill(0, at, at + FOOTPRINT_TEXELS * 4);
+  const n = Math.min(poly.length, FOOTPRINT_MAX_VERTICES);
+  out[at] = n;
+  for (let k = 0; k < n; k++) {
+    out[at + 4 + k * 2] = poly[k][0];
+    out[at + 4 + k * 2 + 1] = poly[k][1];
+  }
 }

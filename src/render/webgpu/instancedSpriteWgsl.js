@@ -35,17 +35,24 @@ export function instancedSpriteShadowGpuProgram(GpuProgram, source, name) {
 /**
  * DX-SHADOW3D: the sun map's programs and the renders' solids (sunShadowMap.js sunMapWgsl / sunMapColumnsWgsl): the
  * shadow program's bindings, the atlas readable from the vertex stage (a column reads its cell's alpha there) and, with
- * `maps`, the atlas's twin page as binding 5 (a column's height).
- * @param {string} fragEntry 'mainFragMap' (the map: the height) or 'mainFrag' (the sprite shadows' layer)
+ * `maps`, the atlas's twin page as binding 5 (a column's height); with `lampTiles` (F7, the lamps' map, lampShadowMap.js)
+ * the tiles' lamps as binding 6.
+ * @param {string} fragEntry 'mainFragMap' (the map: the height), 'mainFragLamp' (the lamps' map) or 'mainFrag' (the
+ *   sprite shadows' layer)
  */
-export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps = false } = {}) {
+export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps = false, lampTiles = false } = {}) {
   if (!source) {
     throw new Error('WeedJS: Shadow sprite WGSL was not loaded before GpuProgram creation.');
   }
   const vf = gpuStageVF();
   const f = gpuStageF();
   const group2 = { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3 };
-  if (maps) group2.uMaps = 5;
+  if (maps) {
+    group2.uMaps = 5;
+    // DX-SHADOW3D: the renders' footprints, which the columns sweep north to (sunShadowMap.js FOOTPRINT_WGSL).
+    group2.uFoot = 7;
+  }
+  if (lampTiles) group2.uLampTiles = 6;
   return GpuProgram.from({
     name,
     vertex: { source, entryPoint: 'mainVert' },
@@ -69,6 +76,12 @@ export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps 
         { binding: 3, visibility: vf, buffer: { type: 'uniform' } },
         ...(maps
           ? [{ binding: 5, visibility: vf, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
+          : []),
+        ...(lampTiles
+          ? [{ binding: 6, visibility: vf, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
+          : []),
+        ...(maps
+          ? [{ binding: 7, visibility: vf, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
           : []),
       ],
     ],

@@ -58,6 +58,7 @@ import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource, resolveFaces, shaderWithFlag } from '../render/faceMap.js';
+import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
 import {
   SUN_MAP_COLUMNS,
   sunMapColumnGrid,
@@ -633,6 +634,11 @@ class PixiRenderer extends AbstractWorker {
     this._texLutWidth = TEX_LUT_RGBA_WIDTH;
     this._texLutHeight = 1;
     this._texLutNeedsGpuUpload = false;
+    // DX-SHADOW3D: the renders' footprints (frameBase.js writeFootprintRow), a row each, uploaded with the LUT; a row
+    // of nothing (count 0) when no frame has one, so the column programs always have the texture.
+    this._footSource = null;
+    this._footRgba = new Float32Array(0);
+    this._footRows = 1;
     // GPU particle layers (LAYER_KIND.GPU_PARTICLES): animation index -> atlas lookup id, as RGBA32F (red).
     this._gpuAnimStartSource = null;
     this._gpuAnimStartRgba = new Float32Array(0);
@@ -2093,11 +2099,48 @@ class PixiRenderer extends AbstractWorker {
         this._texLutHeight,
         'weed-tex-lut'
       );
+      if (this._footSource) writeRgba32Float(renderer, this._footSource, this._footRgba, FOOTPRINT_TEXELS, this._footRows, 'weed-footprints');
       this._texLutNeedsGpuUpload = false;
       return;
     }
     this._uploadRgba32FloatGl(source, data, this._texLutWidth, this._texLutHeight);
+    if (this._footSource) this._uploadRgba32FloatGl(this._footSource, this._footRgba, FOOTPRINT_TEXELS, this._footRows);
     this._texLutNeedsGpuUpload = false;
+  }
+
+  /**
+   * DX-SHADOW3D: the renders' footprints, a row each (frameBase.js writeFootprintRow), for the solids' columns: a frame
+   * with a contact base and a footprint gets a row (texture.weedFootSlot, which writeLutSlot puts in its base's spare
+   * float). Made with the texture table, uploaded with it.
+   */
+  _buildFootprintTexture() {
+    const textures = this.flatTextures || [];
+    let rows = 0;
+    for (let i = 0; i < textures.length; i++) {
+      const t = textures[i];
+      if (t && t.weedFootprint && t.weedBase && t.weedBase.contact >= 0 && this.config?.lighting?.footprintSolids === true) t.weedFootSlot = rows++;
+    }
+    const height = Math.max(1, rows);
+    const data = new Float32Array(height * FOOTPRINT_TEXELS * 4);
+    for (let i = 0; i < textures.length; i++) {
+      const t = textures[i];
+      if (t && t.weedFootSlot >= 0) writeFootprintRow(data, t.weedFootSlot, t.weedFootprint);
+    }
+    this._footRgba = data;
+    this._footRows = height;
+    this._footSource = PIXI.TextureSource.from({
+      resource: data,
+      width: FOOTPRINT_TEXELS,
+      height,
+      format: 'rgba32float',
+      scaleMode: 'nearest',
+      addressMode: 'clamp-to-edge',
+      autoGenerateMipmaps: false,
+    });
+    this._footSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
+    // Column programs made before an atlas reload read the new one.
+    const columns = [this._sunSolids && this._sunSolids.columns, this._sunMapColumns];
+    for (const c of columns) if (c && c.shader) c.shader.resources.uFoot = this._footSource;
   }
 
   _uploadRgba32FloatGl(source, data, width, height) {
@@ -2186,6 +2229,8 @@ class PixiRenderer extends AbstractWorker {
   /** Rebuild per-textureId UV/trim/orig LUT after atlas load. */
   rebuildInstancedTextureLut() {
     const fallback = this.textures?.['_white'] || PIXI.Texture.WHITE;
+    // Before the table: its rows name each render's footprint row.
+    this._buildFootprintTexture();
     this._texLut = buildTextureLut(this.flatTextures || [], fallback);
     this._texLutCount = this.flatTextures?.length || 0;
     // N-111: one textureId a row would pass MAX_TEXTURE_SIZE with a big atlas (9 020 frames drew nothing on
@@ -3017,6 +3062,16 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /** DX-MAPS: a 1 × 1 twin page that says "no map", for the faces' pass when no sheet has maps. */
+  /** DX-SHADOW3D: the footprint texture, or one row of nothing before the atlas made it. */
+  _footSourceOrEmpty() {
+    if (this._footSource === null) {
+      this._buildFootprintTexture();
+      // Uploaded with the LUT (uploadTextureLookupIfNeeded).
+      this._texLutNeedsGpuUpload = true;
+    }
+    return this._footSource;
+  }
+
   _emptyMapsSource() {
     if (this._noMapsSource === null) {
       this._noMapsSource = PIXI.TextureSource.from({
@@ -5886,6 +5941,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             uSampler: r.uSampler,
             uTexLut: r.uTexLut,
             uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
+            uFoot: this._footSourceOrEmpty(),
             uniforms: this._sunMapUniforms,
           },
         }),
@@ -6014,7 +6070,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._sunSolids = {
         cards: new PIXI.Mesh({ geometry: batch.mesh.geometry, shader: new PIXI.Shader({ ...this._sunShadowProgram('cards'), resources: resources() }), state: batch.mesh.state, label: 'sun-cards' }),
         columns: {
-          shader: new PIXI.Shader({ ...this._sunShadowProgram('columns'), resources: resources() }),
+          shader: new PIXI.Shader({ ...this._sunShadowProgram('columns'), resources: { ...resources(), uFoot: this._footSourceOrEmpty() } }),
           grid: new Buffer({ data: sunMapColumnGrid(), usage: BufferUsage.VERTEX }),
           index: Uint16Array.from({ length: SUN_MAP_COLUMNS * SUN_MAP_COLUMNS * 6 }, (_, i) => i),
           state,
@@ -6269,6 +6325,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           const texture = new PIXI.Texture(textureOptions);
           // DX-SHADOW3D: where the frame stands (frameBase.js); writeLutSlot puts it in the texture table's spare floats.
           if (frameData.base) texture.weedBase = frameData.base;
+          // A render's footprint: its solid sweeps north to it (_buildFootprintTexture).
+          if (frameData.footprint) texture.weedFootprint = frameData.footprint;
           frameTextures[frameName] = texture;
         }
 

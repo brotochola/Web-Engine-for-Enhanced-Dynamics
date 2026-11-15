@@ -132,11 +132,17 @@ test('a caster with a height map casts columns: each cell where it is in 3D, the
   // The floor point under a cell is its screen place moved down by its height (the faces' formula), then the strip runs
   // from there (height 0) to where its ray lands (height z).
   assert.match(src, /vec2 base = vec2\(pix\.x, \(pix\.y \+ uSunK\.w \* z\) \* uGroundInvScaleY\);/);
-  assert.match(src, /vSunZ = z \* aCell\.z;/);
+  // A column's height runs from 0 at the floor to z at its top; a cell swept north to its footprint keeps z (zA).
+  assert.match(src, /vSunZ = mix\(zA, z, aCell\.z\);/);
+  assert.match(src, /float zA = 0\.0;/);
   assert.match(src, new RegExp(`/ ${SUN_MAP_COLUMNS}\\.0;`));
-  // A render (its base has a contact) casts columns and no card; a picture of one view, maps or not, its card.
-  assert.match(src, /if \(aInstBase\.x >= 0\.0 \|\| m\.b \+ m\.a <= 0\.0/);
-  assert.match(sunMapVertex(shader('instancedSpriteShadow.vert.glsl')), /if \(aInstBase\.x < 0\.0\) \{/);
+  // With a footprint row (the base's second float, + 1): the cell swept north at its height to the footprint's edge.
+  assert.match(src, /float footprintNorth\(int slot, float x\)/);
+  assert.match(src, /if \(aInstBase\.y >= 1\.0\) \{/);
+  // A render (its base has a contact) casts columns and no card, unless its sheet casts its card for the sun (a negative
+  // second float); a picture of one view, maps or not, its card.
+  assert.match(src, /if \(aInstBase\.x >= 0\.0 \|\| aInstBase\.y < 0\.0 \|\| m\.b \+ m\.a <= 0\.0/);
+  assert.match(sunMapVertex(shader('instancedSpriteShadow.vert.glsl')), /if \(aInstBase\.x < 0\.0 && aInstBase\.y >= 0\.0\) \{/);
   // Drawn on the sprite shadows' layer: the shadow's colour and opacity, no height.
   const flat = sunMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl'), SUN_MAP_COLUMNS, { heights: false });
   assert.match(flat, /vColor = vec4\(0\.0, 0\.0, 0\.0, uSun\.w\);/);
@@ -152,14 +158,16 @@ test('WebGPU: the map\'s and the solids\' WGSL come from the sprite shadows\' WG
   assert.match(map, /@location\(6\) vSunZ: f32,/);
   assert.ok(map.includes('    out.vSunZ = sunZ;\n'), 'the card\'s height');
   assert.ok(map.includes('fn mainFragMap(in: VertexOut)'), 'the map\'s fragment');
-  assert.ok(map.includes('    if (aInstBase.x < 0.0) {'), 'a render\'s frame skips its card');
+  assert.ok(map.includes('    if (aInstBase.x < 0.0 && aInstBase.y >= 0.0) {'), 'a render\'s frame skips its card unless it casts one');
   const cards = sunMapWgsl(wgsl, { heights: false });
   assert.doesNotMatch(cards, /vSunZ|mainFragMap/, 'the solids\' cards keep the shadow program\'s colour and fragment');
   const columns = sunMapColumnsWgsl(wgsl);
   assert.match(columns, /@location\(0\) aCell: vec4<f32>,/);
   assert.ok(columns.includes('  let aQuad = aCell.xy;\n'));
   assert.match(columns, /@group\(2\) @binding\(5\) var uMaps: texture_2d<f32>;/);
-  assert.ok(columns.includes('  out.vSunZ = z * aCell.z;\n'));
+  assert.ok(columns.includes('  out.vSunZ = mix(zA, z, aCell.z);\n'));
+  assert.match(columns, /@group\(2\) @binding\(7\) var uFoot: texture_2d<f32>;/);
+  assert.ok(columns.includes('fn footprintNorth(slot: i32, x: f32) -> f32 {'));
   assert.equal(columns.match(/fn mainVert\(/g).length, 1);
   const flat = sunMapColumnsWgsl(wgsl, SUN_MAP_COLUMNS, { heights: false });
   assert.ok(flat.includes('out.vColor = vec4<f32>(0.0, 0.0, 0.0, uniforms.uSun.w);'));
@@ -168,6 +176,8 @@ test('WebGPU: the map\'s and the solids\' WGSL come from the sprite shadows\' WG
   const GpuProgram = { from: (o) => o };
   const p = sunShadowGpuProgram(GpuProgram, columns, 'mainFragMap', 'c', { maps: true });
   assert.equal(p.layout[2].uMaps, 5);
+  assert.equal(p.layout[2].uFoot, 7);
+  assert.ok(p.gpuLayout[2].some((e) => e.binding === 7));
   assert.ok(p.gpuLayout[2].find((e) => e.binding === 0).visibility === p.gpuLayout[2].find((e) => e.binding === 5).visibility);
   const lit = lightingGpuProgram(GpuProgram, 'x', 'l', true, true);
   assert.deepEqual([lit.layout[2].uFaceMap, lit.layout[2].uSunMap], [4, 5]);
