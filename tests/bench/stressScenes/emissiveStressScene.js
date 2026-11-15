@@ -96,7 +96,7 @@ export class EmissiveStressScene extends Scene {
     Camera.centerOn(W / 2, H / 2);
     const rng = mulberry32(SEED);
     const grid = gridCells(FIRES, W, H, rng, { jitter: 0.6 });
-    // A flame about a cell high (its frames are 150 px, the fire about 95 px wide).
+    // A flame about a cell wide (its frames are 150 px square, the fire in them about 95 px wide).
     const fireScale = Math.min(0.6, Math.max(0.15, (0.9 * grid.side) / 95));
     for (const [x, y] of grid.cells) {
       Fire.spawn({ x, y, scale: fireScale * (0.85 + rng() * 0.3), speed: 0.22 + rng() * 0.16, flip: rng() < 0.5, emissive: EMISSIVE === 'entity' });

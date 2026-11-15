@@ -95,8 +95,8 @@ export const CAST_KINDS = Object.freeze(['auto', 'sprite', 'height', 'box']);
 
 /**
  * How the entity casts, for every light (DX-CASTER, plan §5.5): 'sprite' its card (setSprite), 'height' each pixel where it
- * is in 3D (setHeightMap), 'box' its sheet's box (setBox, which the entity's rotation turns), 'auto' nothing: its sheet's
- * own way (meta.light3d.cast). The last setter wins, so a pooled entity spawned again is set again.
+ * is in 3D (setHeightMap), 'box' its sheet's box (setBox, which the entity's rotation turns; a sheet without one casts its
+ * card), 'auto' no setter: its sheet's own way (meta.light3d.cast). The last setter wins.
  */
 export function castAs(go, kind, sheet, scale) {
   const caster = go.shadowCaster;
