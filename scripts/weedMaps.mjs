@@ -21,6 +21,9 @@
  * The sheet's frames come from its json (`frames`, TexturePacker's hash or array; `meta.image` names the png); a png
  * without json is one frame, or a grid of cells with --grid.
  *
+ * A render that has its heights already (a 3D model's, `--height <png>`) gets the same correction at export: its outline
+ * fixed and, unless --no-normal, the normals derived from it; the json's directions as above.
+ *
  * Options:
  *   --profile person|tree|prop  presets for the dome (default person):
  *                                 person  radius 9,  neighbour 5,  smooth 1,   close 0
@@ -45,6 +48,10 @@
  *   --strength <k>              how much a px of height over a px of screen tilts a normal (default 1, the engine's)
  *   --alpha <0..254>            opaque past this alpha (default 127, as the engine's twin page)
  *   --grid <w>x<h>              a png's frames are the cells of this grid (LPC sheets without a json)
+ *   --height <png>              the sheet's own height map instead of a relief (rg16 in 1/64 px; the profile, relief,
+ *                               surface and base options do not apply). <name>_h.png may be this file: fixed in place
+ *   --gray <px>                 the --height picture is greyscale, white this many px (as heightMap: { png, gray });
+ *                               what it writes is rg16
  *   --no-normal                 writes the height map only
  *   --directions <group>:<count>[:<startAngle>[:cw|ccw[:<anims>]]]
  *                               (repeatable) writes json.directions[group] = { count, startAngle, clockwise, anims }:
@@ -59,7 +66,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { decodePng, encodePng } from '../demos/lightBenchScene/tools/png.mjs';
-import { HEIGHT_MAX, HEIGHT_UNITS, fixOutline, normalsFromHeight } from '../src/render/spriteMaps.js';
+import { HEIGHT_MAX, HEIGHT_UNITS, fixOutline, normalsFromHeight, readHeights } from '../src/render/spriteMaps.js';
 import { resolveFloorScaleY, resolveHeightScaleY } from '../src/util/cameraView.js';
 
 const PROFILES = {
@@ -69,7 +76,7 @@ const PROFILES = {
 };
 const VALUE_FLAGS = new Set([
   'profile', 'relief', 'radius', 'neighbour', 'smooth', 'close', 'surface', 'base', 'pitch', 'height-scale-y',
-  'floor-scale-y', 'normals', 'strength', 'alpha', 'grid', 'directions', 'out',
+  'floor-scale-y', 'normals', 'strength', 'alpha', 'grid', 'directions', 'out', 'height', 'gray',
 ]);
 const BOOLEAN_FLAGS = new Set(['no-normal', 'dry-run', 'help']);
 /** The distance transform's "no background yet": finite, so two of them subtract to a number. */
@@ -211,6 +218,16 @@ function opaqueOf(rgba, imageWidth, f, threshold) {
   for (let j = 0; j < f.h; j++) {
     const row = ((f.y + j) * imageWidth + f.x) * 4 + 3;
     for (let i = 0; i < f.w; i++) out[j * f.w + i] = rgba[row + i * 4] > threshold ? 1 : 0;
+  }
+  return out;
+}
+
+/** A frame's pixels out of a picture the sheet's size. */
+function cutFrame(rgba, imageWidth, f) {
+  const out = new Uint8ClampedArray(f.w * f.h * 4);
+  for (let j = 0; j < f.h; j++) {
+    const at = ((f.y + j) * imageWidth + f.x) * 4;
+    out.set(rgba.subarray(at, at + f.w * 4), j * f.w * 4);
   }
   return out;
 }
@@ -442,6 +459,16 @@ function processSheet(input, s, args) {
     for (const [cellH, rows] of byHeight) common.set(cellH, commonest(rows));
   }
 
+  // --height: the sheet's own height map (a 3D render's) instead of a relief: its outline fixed, its normals derived.
+  let given = null;
+  if (args.height !== undefined) {
+    const hm = decodePng(fs.readFileSync(args.height));
+    if (hm.width !== W || hm.height !== H) {
+      fail(`--height ${args.height} is ${hm.width}x${hm.height} and the sheet ${W}x${H}: a height map is the sheet's twin`);
+    }
+    given = hm.data;
+  }
+
   const hs = s.heightScaleY;
   const fsy = s.floorScaleY;
   const towards = fsy / Math.sqrt(fsy * fsy + hs * hs);
@@ -453,19 +480,27 @@ function processSheet(input, s, args) {
   for (const f of frames) {
     if (f.bottom < 0) continue;
     const { w, h, opaque } = f;
-    const base = s.base === 'auto' ? common.get(f.cellH) - f.top : s.base === 'frame' ? f.bottom : s.base - f.top;
-    const dome = domeOf(opaque, w, h, s);
-    const heights = new Float32Array(w * h);
-    for (let j = 0; j < h; j++) {
-      for (let i = 0; i < w; i++) {
-        const q = j * w + i;
-        if (!opaque[q]) continue;
-        const z = s.surface === 'floor' ? dome[q] : (base - (j + 0.5)) / hs + dome[q] * towards;
-        heights[q] = z < 0 ? 0 : z > HEIGHT_MAX ? HEIGHT_MAX : z;
+    let dome = null;
+    let heights;
+    if (given !== null) {
+      // A render's heights, as the engine reads them (spriteMaps.js readHeights), where the frame is opaque.
+      heights = readHeights(cutFrame(given, W, f), w, h, s.gray);
+      for (let q = 0; q < w * h; q++) if (!opaque[q]) heights[q] = 0;
+    } else {
+      const base = s.base === 'auto' ? common.get(f.cellH) - f.top : s.base === 'frame' ? f.bottom : s.base - f.top;
+      dome = domeOf(opaque, w, h, s);
+      heights = new Float32Array(w * h);
+      for (let j = 0; j < h; j++) {
+        for (let i = 0; i < w; i++) {
+          const q = j * w + i;
+          if (!opaque[q]) continue;
+          const z = s.surface === 'floor' ? dome[q] : (base - (j + 0.5)) / hs + dome[q] * towards;
+          heights[q] = z < 0 ? 0 : z > HEIGHT_MAX ? HEIGHT_MAX : z;
+        }
       }
     }
     raised += fixOutline(heights, opaque, w, h);
-    const normals = normalOut ? normalsFromHeight(s.normals === 'relief' ? dome : heights, opaque, w, h, s.strength) : null;
+    const normals = normalOut ? normalsFromHeight(dome !== null && s.normals === 'relief' ? dome : heights, opaque, w, h, s.strength) : null;
     for (let j = 0; j < h; j++) {
       for (let i = 0; i < w; i++) {
         const q = j * w + i;
@@ -494,6 +529,9 @@ function processSheet(input, s, args) {
   for (const p of [heightPath, normalPath]) {
     if (path.resolve(p) === path.resolve(pngPath)) fail(`${p} is the sheet itself: give --out`);
   }
+  if (given !== null && s.gray > 0 && path.resolve(heightPath) === path.resolve(args.height)) {
+    fail(`${heightPath} would turn from greyscale into rg16 under the scene's { png, gray } entry: give --out`);
+  }
 
   // DX-DIRSPRITE: the json's directions, in the count form (spriteDirections.js), when asked.
   let jsonOut = null;
@@ -520,7 +558,7 @@ function processSheet(input, s, args) {
 
   const bases = s.base === 'auto' ? [...common].map(([cellH, row]) => `${row} of ${cellH}`).join(', ') : String(s.base);
   console.log(
-    `${input}: ${done} of ${frames.length} frames, foot row ${bases}, tallest ${tallest.toFixed(1)} px` +
+    `${input}: ${done} of ${frames.length} frames${given === null ? `, foot row ${bases}` : ''}, tallest ${tallest.toFixed(1)} px` +
       (raised > 0 ? `, ${raised} outline px raised` : ''),
   );
   const writes = [[heightPath, () => encodePng(W, H, heightOut)]];
@@ -571,17 +609,25 @@ function main() {
     normals: choiceArg(args, 'normals', ['height', 'relief']),
     strength: numberArg(args, 'strength', 1, 0, 100),
     alpha: numberArg(args, 'alpha', 127, 0, 254) | 0,
+    gray: numberArg(args, 'gray', 0, 0, HEIGHT_MAX),
     writeNormal: !args['no-normal'],
     heightScaleY: resolveHeightScaleY(camera),
     floorScaleY: resolveFloorScaleY(camera),
   };
-  if (s.surface === 'standing' && !(s.heightScaleY > 1e-3)) {
-    fail('a camera straight down shows no height: a standing card needs heightScaleY > 0 (or --surface floor)');
+  if (args.height !== undefined) {
+    if (args.inputs.length > 1) fail('--height is one sheet\'s height map: give one sheet');
+    if (s.normals === 'relief') fail('--normals relief needs the relief, and --height replaces it');
+    console.log(`weed maps: the heights of ${args.height}${s.gray > 0 ? ` (greyscale, white ${s.gray} px)` : ''}`);
+  } else {
+    if (args.gray !== undefined) fail('--gray describes a --height picture');
+    if (s.surface === 'standing' && !(s.heightScaleY > 1e-3)) {
+      fail('a camera straight down shows no height: a standing card needs heightScaleY > 0 (or --surface floor)');
+    }
+    console.log(
+      `weed maps: ${profileName} (radius ${s.radius}, neighbour ${s.neighbour}, smooth ${s.smooth}, close ${s.close}), ` +
+        `relief ${s.relief}, ${s.surface}, heightScaleY ${+s.heightScaleY.toFixed(4)}, floorScaleY ${+s.floorScaleY.toFixed(4)}`,
+    );
   }
-  console.log(
-    `weed maps: ${profileName} (radius ${s.radius}, neighbour ${s.neighbour}, smooth ${s.smooth}, close ${s.close}), ` +
-      `relief ${s.relief}, ${s.surface}, heightScaleY ${+s.heightScaleY.toFixed(4)}, floorScaleY ${+s.floorScaleY.toFixed(4)}`,
-  );
   for (const input of args.inputs) {
     try {
       processSheet(input, s, args);
