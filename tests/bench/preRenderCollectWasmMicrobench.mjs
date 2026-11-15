@@ -113,10 +113,12 @@ export async function setupCollectKernel(caseName, seed = 0xb0b) {
     }
     useSortY(pre, m, (i) => i % frames);
   }
-  // BunnyMark's sprite query lists every bunny (32-bit ids past 65 535); the other cases scan every index.
+  // BunnyMark's sprite query lists every bunny (32-bit ids past 65 535); the other cases scan every index. A query
+  // hands back an empty list, never null (the worker reads its length): with no ids both collects scan every index.
   const ids = Uint32Array.from({ length: N }, (_, i) => i);
+  const noList = new Uint32Array(0);
   let listLength = N;
-  Query.queryActiveEntities = () => (c.list ? ids.subarray(0, listLength) : null);
+  Query.queryActiveEntities = () => (c.list ? ids.subarray(0, listLength) : noList);
   const k = await bindCollect(m);
 
   /** One collect of the first `items` entities into an empty collector. */
