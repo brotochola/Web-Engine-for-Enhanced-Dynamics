@@ -196,12 +196,42 @@ export function sunFrameTables(byId) {
             solid: src.solid === true,
             // DX-CASTER: a fixed card's frame, the object seen face on (facing the camera, south).
             front: 0,
+            // E-368: each slot's (group × direction) first texture and frame count (sunFrameSlotsOf), and the proxy map
+            // they were read from.
+            slotStart: new Int32Array(0),
+            slotCount: new Int32Array(0),
+            slotsOf: null,
         };
         entry.front = pickDirection(entry, Math.PI / 2, 255, 0);
         out[id | 0] = entry;
         any = true;
     }
     return any ? out : null;
+}
+
+/**
+ * E-368: table t's slots (group × direction) as the first texture of each one's animation and its frame count, from the
+ * sheet's proxy map (its local animation to the atlas's) and the frame tables: two typed reads a caster instead of an
+ * object's element and two arrays'. A slot whose animation the atlas lacks starts at -1 (the sprite's own frame).
+ * @param {object} t a sunFrameTables entry
+ * @param {object|undefined} map proxyToGlobalAnim[sheet]
+ * @param {ArrayLike<number>} starts animationFrameStart
+ * @param {ArrayLike<number>} counts animationFrameCount
+ * @param {object} proxy proxyToGlobalAnim, kept as what the slots were read from
+ */
+export function sunFrameSlotsOf(t, map, starts, counts, proxy) {
+    const slots = t.anim.length;
+    const start = new Int32Array(slots).fill(-1);
+    const count = new Int32Array(slots);
+    for (let s = 0; s < slots; s++) {
+        const global = map ? map[t.anim[s]] : undefined;
+        if (global === undefined) continue;
+        start[s] = starts[global] | 0;
+        count[s] = counts[global] | 0;
+    }
+    t.slotStart = start;
+    t.slotCount = count;
+    t.slotsOf = proxy;
 }
 
 /**
@@ -212,24 +242,29 @@ export function sunFrameTables(byId) {
  */
 export function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, anims, frames, tables, proxy, starts, counts,
     shift, shiftTurn, turn, orients) {
+    // E-368: once a call per sheet, not per caster: its slots (rebuilt when the proxy map is another), and a uniform
+    // table's turn by the sun's angle in whole steps (the direction the logic worker drew, its margin kept, turned by it).
+    for (let sheet = 0; sheet < tables.length; sheet++) {
+        const t = tables[sheet];
+        if (t === undefined) continue;
+        if (t.slotsOf !== proxy) sunFrameSlotsOf(t, proxy[sheet], starts, counts, proxy);
+        if (t.uniform && shiftTurn[sheet] !== turn) {
+            shiftTurn[sheet] = turn;
+            shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
+        }
+    }
     for (let e = 0; e < n; e++) {
         let v = 0;
         if (active[e] === 1 && mode[e] === 1 && (casts === null || casts[e] === 1)) {
             const sheet = sheets[e];
             const t = tables[sheet];
             if (t !== undefined && !t.solid) {
-                // A uniform table: the direction the logic worker drew (its margin kept), turned by the sun's angle in
-                // whole steps, worked out once a sheet while the sun stays.
                 const cur = dirs[e];
                 let d = 0;
                 if (orients !== null && orients[e] === 1) {
                     // DX-CASTER: a fixed card shows the object face on whatever the light (its axis rides in its code).
                     d = t.front;
                 } else if (t.uniform && cur < t.count) {
-                    if (shiftTurn[sheet] !== turn) {
-                        shiftTurn[sheet] = turn;
-                        shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
-                    }
                     d = cur + shift[sheet];
                     if (d >= t.count) d -= t.count;
                 } else {
@@ -237,13 +272,11 @@ export function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, 
                 }
                 const g = anims[e];
                 const slot = (g < t.groups ? g : 0) * t.count + d;
-                const map = proxy[sheet];
-                const global = map ? map[t.anim[slot]] : undefined;
-                if (global !== undefined) {
-                    const nf = counts[global] | 0;
+                const start = t.slotStart[slot];
+                if (start >= 0) {
                     let f = frames !== null ? frames[e] | 0 : 0;
-                    if (f < 0 || f >= nf) f = 0;
-                    const tid = (starts[global] | 0) + f + 1;
+                    if (f < 0 || f >= t.slotCount[slot]) f = 0;
+                    const tid = start + f + 1;
                     v = t.flip[slot] === 1 ? -tid : tid;
                 }
             }
