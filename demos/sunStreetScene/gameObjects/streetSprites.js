@@ -1,9 +1,10 @@
 // What the street draws as sprites: houses, trees, lamps, people, cars and clouds.
 
 import WEED from '/src/index.js';
+import { setUpStreetCar } from '../streetCars.js';
 import { LAP, WORLD_W, roadPoint } from '../streetLayout.js';
 
-const { GameObject, Collider, SpriteRenderer, ShadowCaster, LightEmitter, Sun, enums } = WEED;
+const { GameObject, Collider, SpriteRenderer, DirectionalSprite, ShadowCaster, LightEmitter, Sun, enums } = WEED;
 const { ShapeType } = enums;
 
 // ?carSpeed= reaches this module on the logic worker through WEED.params: `location` there is the worker script's.
@@ -15,9 +16,6 @@ const LANE = -28; // inside of the centre line
 const LAMP_RADIUS = 949;
 const HEADLIGHT_RADIUS = 949;
 const NIGHT_GLOW = 0.18;
-// carScene's cars: a drawn frame every 7.5 degrees, named by its heading, instead of one picture that turns.
-const CAR_FRAMES = Array.from({ length: 48 }, (_, i) => String(i * 7.5));
-const CAR_FRAME_STEP = (Math.PI * 2) / CAR_FRAMES.length;
 
 // A house sprite (186 px, its foot at the bottom edge) shows a front wall 104 px high and a roof 72 px deep.
 const HOUSE_WIDTH = 176;
@@ -30,16 +28,6 @@ for (let i = 0; i < 6; i++) {
   TANK.push(-50 + Math.cos(a) * 20, -46 + Math.sin(a) * 12);
 }
 
-// A car as a volume, x forward: the body, and on it a cabin whose roof is smaller than its base.
-const CAR_BODY = [39, -19, 39, 19, -39, 19, -39, -19];
-const CAR_BODY_HEIGHT = 13;
-const CAR_CABIN = [16, -17, 16, 17, -30, 17, -30, -17];
-const CAR_ROOF = [2, -13, 2, 13, -22, 13, -22, -13];
-const CAR_ROOF_HEIGHT = 27;
-// carScene's pictures flatten the floor, so a car drawn head-on is shorter than one drawn side-on, and the picture's centre
-// sits above the floor's: the entity stands on the floor, and its picture is drawn that much higher.
-const CAR_FLOOR_SCALE = 0.7;
-const CAR_FLOOR_DROP = 7;
 
 const point = new Float64Array(3);
 
@@ -140,32 +128,22 @@ export class StreetWalker extends GameObject {
 }
 
 /**
- * A car on the road. Its one light sits ahead of it, off the entity's centre: the panel's O. Its shadow is a body and a cabin
- * for the sun, and its picture as a wall that blocks other lights.
+ * A car on the road (a standard sheet: streetCars.js), drawn by its heading. Its one light sits ahead of it, off the
+ * entity's centre: the panel's O. Its shadow is a body and a cabin for the sun, and its picture as a wall that blocks
+ * other lights.
  */
 export class StreetCar extends GameObject {
-  static components = [Collider, SpriteRenderer, LightEmitter, ShadowCaster];
+  static components = [Collider, DirectionalSprite, LightEmitter, ShadowCaster];
 
   distance = 0.5;
-  frame = -1;
 
   onSpawned(config = {}) {
     this.collider.shapeType = ShapeType.Box;
-    this.collider.width = 78;
-    this.collider.height = 38;
     this.distance = config.distance + 0.5;
-    this.setSpritesheet(config.sheet);
-    this.setAnimation(CAR_FRAMES[0]);
-    this.spriteRenderer.anchorX = 0.5;
-    this.spriteRenderer.anchorY = 0.5 + CAR_FLOOR_DROP / this.spriteRenderer.originalHeight;
-    // The frame shows the heading: the entity turns, the picture does not.
-    this.spriteRenderer.inheritTransformRotation = 0;
-    this.spriteRenderer.spriteRotation = 0;
+    setUpStreetCar(this, config.sheet);
     this.lightEmitter.color = 0xfff1c4;
     this.lightEmitter.radius = 0;
     this.lightEmitter.offsetX = config.offset;
-    this.shadowCaster.addLevel(CAR_BODY, 0, CAR_BODY_HEIGHT, CAR_BODY, { floorScaleY: CAR_FLOOR_SCALE });
-    this.shadowCaster.addLevel(CAR_CABIN, CAR_BODY_HEIGHT, CAR_ROOF_HEIGHT, CAR_ROOF);
     if (RAYCAST) this.shadowCaster.lamps.setWall({ shape: 'sprite' });
   }
 
@@ -175,12 +153,9 @@ export class StreetCar extends GameObject {
     // The rotation first: set x and set y send the body the rotation they find.
     this.rotation = point[2];
     this.x = point[0];
-    this.y = point[1] + CAR_FLOOR_DROP;
-    const frame = Math.round(point[2] / CAR_FRAME_STEP) % CAR_FRAMES.length;
-    if (frame !== this.frame) {
-      this.frame = frame;
-      this.setAnimation(CAR_FRAMES[frame]);
-    }
+    this.y = point[1];
+    // The frame drawn: the sheet's heading nearest the road's (a car going west shows the east frame mirrored).
+    this.directionalSprite.facing = point[2];
     const night = Sun.nightFactor;
     this.lightEmitter.radius = HEADLIGHT_RADIUS * Math.sqrt(night);
     this.lightEmitter.glow = NIGHT_GLOW * night;

@@ -27,6 +27,7 @@ import WEED from '/src/index.js';
 import { LAP, ROAD_CX, ROAD_CY, ROAD_WIDTH, WORLD_H, WORLD_W } from './streetLayout.js';
 import { FlagPole, GrassTufts, RoadBand, RoadDashes, StreetFlag } from './gameObjects/streetMeshes.js';
 import { StreetCar, StreetCloud, StreetHouse, StreetLamp, StreetTree, StreetWalker } from './gameObjects/streetSprites.js';
+import { CAR_SHEETS } from './streetCars.js';
 import { SunPanel } from './sunPanel.js';
 
 const { Scene, Camera, Decoration, Keyboard, Layer, Sun, Transform, BLEND_MODES, LAYER_KIND } = WEED;
@@ -72,7 +73,6 @@ const CLOUDS = [
 ];
 const WALKERS = 8;
 const WALKER_SHEETS = ['amarillo_01', 'female_01', 'amarillo_02', 'female_03'];
-const CAR_SHEETS = ['red', 'yellow', 'blue', 'white', 'black', 'poli'];
 
 export class SunStreetScene extends Scene {
   static config = {
@@ -164,7 +164,8 @@ export class SunStreetScene extends Scene {
       streetVignette: { webgl: shaderUrl('vignette.frag'), webgpu: shaderUrl('vignette.wgsl') },
     },
     spritesheets: {
-      ...Object.fromEntries(CAR_SHEETS.map((name) => [`car_${name}`, { json: `/demos/img/cars/${name}.json`, png: `/demos/img/cars/${name}.png` }])),
+      // The standard cars (streetCars.js lists them), each under its own name.
+      ...Object.fromEntries(CAR_SHEETS.map((name) => [name, { json: `/demos/img/autos/${name}.json`, png: `/demos/img/autos/${name}.png` }])),
       ...Object.fromEntries(WALKER_SHEETS.map((name) => [name, { json: '/demos/img/civil1.json', png: `/demos/img/people/${name}.png` }])),
     },
   };
@@ -248,7 +249,7 @@ export class SunStreetScene extends Scene {
       StreetWalker.spawn({ x: 300 + i * 170, y, sheet: WALKER_SHEETS[i % WALKER_SHEETS.length], from: 280, to: 1520, direction: i % 2 === 0 ? 1 : -1 });
     }
     for (let i = 0; i < CARS; i++) {
-      StreetCar.spawn({ x: ROAD_CX, y: ROAD_CY, sheet: `car_${CAR_SHEETS[i % CAR_SHEETS.length]}`, distance: (i / CARS) * LAP, offset: HEADLIGHT_OFFSET });
+      StreetCar.spawn({ x: ROAD_CX, y: ROAD_CY, sheet: CAR_SHEETS[i % CAR_SHEETS.length], distance: (i / CARS) * LAP, offset: HEADLIGHT_OFFSET });
     }
     for (const cloud of CLOUDS) StreetCloud.spawn(cloud);
     FlagPole.spawn({ x: FLAG.x, y: FLAG.y });
