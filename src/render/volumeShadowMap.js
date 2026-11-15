@@ -59,7 +59,9 @@ const LAMP_GLSL = `
   int lampTile = int(uLampVolume.x + 0.5);
   vec4 lamp = texelFetch(uLampTiles, ivec2(max(lampTile, 0), 0), 0);
   float lampZ = max(aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x), 0.0) * uSunShadow.w;
-  float lampPad = max(max(length(aV0), length(aV1)), length(aV2)) * max(1.0, f) * max(1.0, uLampVolume.w);
+  // How far a corner can stand from the anchor on the floor: turned (a pose's rotation, unit or not), the floor's f, y
+  // over groundScaleY.
+  float lampPad = max(max(length(aV0), length(aV1)), length(aV2)) * max(1.0, length(cs)) * max(1.0, f) * max(1.0, uLampVolume.w);
   vec2 lampOff = vec2(xy.x, xy.y * uLampVolume.w) - lamp.xy;
   bool lampOwn = abs(aInstBody - uLampOwner.x) < 0.5;
   if (lampTile < 0 || lampOwn || lamp.z <= 0.0 || lamp.w <= 0.0 || max(abs(lampOff.x), abs(lampOff.y)) > lamp.w + lampPad) {
@@ -117,7 +119,8 @@ const LAMP_WGSL = `  // DX-SHADOW3D (F7): towards this draw's lamp (volumeShadow
   let lamp = textureLoad(uLampTiles, vec2<i32>(max(lampTile, 0), 0), 0);
   let lampZ = max(height, 0.0) * sunShadow.uSunShadow.w;
   let lampInvG = sunShadow.uLampVolume.w;
-  let lampPad = max(max(length(aV0), length(aV1)), length(aV2)) * max(1.0, f) * max(1.0, lampInvG);
+  // How far a corner can stand from the anchor on the floor (LAMP_GLSL says how).
+  let lampPad = max(max(length(aV0), length(aV1)), length(aV2)) * max(1.0, length(cs)) * max(1.0, f) * max(1.0, lampInvG);
   let lampOff = vec2<f32>(xy.x, xy.y * lampInvG) - lamp.xy;
   let lampOwn = abs(aInstBody - sunShadow.uLampOwner.x) < 0.5;
   if (lampTile < 0 || lampOwn || lamp.z <= 0.0 || lamp.w <= 0.0 || max(abs(lampOff.x), abs(lampOff.y)) > lamp.w + lampPad) {
