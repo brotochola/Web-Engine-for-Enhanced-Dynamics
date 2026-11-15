@@ -21,6 +21,9 @@ import { VolumeShadowCaster } from './volumeShadowCaster.js';
 export const CAST_KIND = Object.freeze({ AUTO: 0, SPRITE: 1, HEIGHT_MAP: 2, BOX: 3, HULL: 4, WALL: 5, NONE: 6 });
 const KIND_NAMES = ['sprite', 'sprite', 'heightMap', 'box', 'hull', 'wall', 'none'];
 
+/** The selfShadow column: 0 the asset's way (on for a render with a footprint, off for one view), 1 on, 2 off. */
+export const SELF_SHADOW = Object.freeze({ AUTO: 0, ON: 1, OFF: 2 });
+
 /** The warnings given, by text: each mistake once. */
 const _warned = new Set();
 
@@ -233,6 +236,10 @@ export class ShadowCaster extends Component {
     lampKind: Uint8Array,
     orient: Uint8Array,
     opacity: Float32Array,
+    // DX-CASTER: the base's radius in px (0 = the measured one, plan §6.2) and whether the object shades itself (SELF_SHADOW,
+    // 0 the asset's way). Kept for the 3D shadows; nothing draws them yet.
+    baseRadius: Float32Array,
+    selfShadow: Uint8Array,
   };
 
   constructor(index) {
@@ -347,6 +354,28 @@ export const CASTER_METHODS = {
     const o = Math.max(0, Math.min(1, +v || 0));
     ShadowCaster.opacity[i] = o;
     if (entityWith(this, 'LightOccluder') !== null) LightOccluder.block[i] = o;
+  },
+
+  /** The base's radius in px, correcting the measured one; 0 keeps the measured base. Stored: the 3D shadows will read it. */
+  get baseRadius() {
+    return ShadowCaster.baseRadius[this.index];
+  },
+  set baseRadius(v) {
+    const r = +v;
+    ShadowCaster.baseRadius[this.index] = Number.isFinite(r) && r > 0 ? r : 0;
+  },
+
+  /**
+   * Whether the object shades itself: true, false or 'auto' (the asset's way: a render with a footprint does, one view does
+   * not). Stored: DX-SELFSHADOW will read it.
+   */
+  get selfShadow() {
+    const s = ShadowCaster.selfShadow[this.index];
+    return s === SELF_SHADOW.ON ? true : s === SELF_SHADOW.OFF ? false : 'auto';
+  },
+  set selfShadow(v) {
+    ShadowCaster.selfShadow[this.index] =
+      v === 'auto' || v == null ? SELF_SHADOW.AUTO : !v || v === 'off' ? SELF_SHADOW.OFF : SELF_SHADOW.ON;
   },
 
   /** What it casts for the sun: 'sprite' | 'heightMap' | 'box' | 'hull' | 'wall' | 'none' (read only). */

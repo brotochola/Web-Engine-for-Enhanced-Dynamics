@@ -3208,6 +3208,11 @@ export class GameObject {
         ShadowCaster.orient[i] = 0;
         ShadowCaster.opacity[i] = 1;
       }
+      // The measured base and the asset's own self-shadow.
+      if (ShadowCaster.baseRadius) {
+        ShadowCaster.baseRadius[i] = 0;
+        ShadowCaster.selfShadow[i] = 0;
+      }
     }
 
     if (has.VolumeShadowCaster) VolumeShadowCaster.floorScaleY[i] = VolumeShadowCaster.defaultFloorScaleY;
