@@ -11,9 +11,12 @@
 // the body that fits the silhouettes best is not always the shape, and a box fitted to a sports car lights like a box),
 // and for a name neither knows, every body fitted and the best match kept; --type forces one. Each frame goes into a cell of one size with the car's centre on the floor at the same point (the
 // entity's anchor), so <name>.png, <name>_h.png (height, R·256 + G in 1/64 px) and <name>_n.png (normals: R +x, G +y up,
-// B +z) stay twins. <name>.json keeps the pack's headings (directions.drive, mirrorX: the left-facing half mirrored),
-// so a car turns in even 7.5° steps as the pack draws it, and carries meta.light3d: how it casts, its tallest point, each
-// frame's footprint on the floor (the fitted length and width, turned by the frame's own heading) and its box.
+// B +z) stay twins. <name>.json's directions.drive (mirrorX: the left-facing half mirrored) are the headings the frames
+// are drawn at, as nm-core measured them (the pack's art is not drawn at even 7.5° steps: a frame and the frame the sun sees
+// picked by those came out up to 9° off each their own way), as the owner's light bench prototype picks its frames; a
+// measure out of order (no further round than the frame before it) takes the pack's heading. It carries meta.light3d: how
+// it casts, its tallest point, each frame's footprint on the floor (the fitted length and width, turned by the frame's
+// heading) and its box.
 // Writes index.js next to the sheets: every sheet's anchor, tallest point and box (index.js is rewritten from all the
 // sheets in the folder).
 import fs from 'node:fs';
@@ -103,6 +106,18 @@ function bake(jsonPath) {
     frames.push({ name: fname, deg: Number(deg), real: fit.rumbo, x: f.x, y: f.y, w: f.w, h: f.h, ax: fit.ancla[0], ay: fit.ancla[1], iou: fit.iou });
   }
   frames.sort((a, b) => a.deg - b.deg);
+  // The headings in the turn's order (-90 to 90): a measure no further round than the one before takes the pack's.
+  const signed = (a) => {
+    const w = ((a % 360) + 360) % 360;
+    return w > 180 ? w - 360 : w;
+  };
+  let prev = -Infinity;
+  for (const f of [...frames].sort((a, b) => signed(a.deg) - signed(b.deg))) {
+    let real = signed(f.real);
+    if (!(real > prev + 0.25)) real = signed(f.deg) > prev + 0.25 ? signed(f.deg) : prev + 0.5;
+    f.real = Math.round((((real % 360) + 360) % 360) * 100) / 100;
+    prev = real;
+  }
   // Cells: room on each side of the anchor for the widest frame on that side.
   let left = 0;
   let right = 0;
@@ -154,7 +169,7 @@ function bake(jsonPath) {
     return [[-L / 2, -Wd / 2], [L / 2, -Wd / 2], [L / 2, Wd / 2], [-L / 2, Wd / 2]].map(([X, Y]) => [r1(X * c - Y * s), r1(X * s + Y * c)]);
   };
   const drive = { mirrorX: true };
-  for (const f of frames) drive[String(f.deg)] = f.name;
+  for (const f of frames) drive[String(f.real)] = f.name;
   const roof = r.params.p.Hr ?? r.params.p.Hbox ?? zmax;
   const sheet = {
     frames: Object.fromEntries(
@@ -212,18 +227,15 @@ for (const f of fs.readdirSync(out).sort()) {
   if (!l3 || l3.kind !== 'car') continue;
   const first = Object.values(s.frames)[0].frame;
   const name = path.basename(f, '.json');
-  // directions.drive's degrees (the pack's even steps) to the heading the frame was drawn at, as nm-core found it.
-  const headings = {};
-  for (const [deg, frame] of Object.entries(s.directions?.drive ?? {})) {
-    if (deg !== 'mirrorX' && l3.headings?.[frame] !== undefined) headings[deg] = l3.headings[frame];
-  }
+  // The headings its frames are drawn at (directions.drive's), the right-facing half; the rest is 180° - these.
+  const headings = Object.keys(s.directions?.drive ?? {}).filter((k) => k !== 'mirrorX').map(Number).sort((a, b) => a - b);
   index[name] = { kind: 'car', cell: [first.w, first.h], zmax: l3.zmax, box: l3.box, maps: true, anchor: s.meta.anchor, headings };
 }
 fs.writeFileSync(
   path.join(out, 'index.js'),
   '// Written by demos/tools/bakeCarSheet.mjs: each car sheet\'s cell, tallest point (px), box (x0, x1, y0, y1, height in floor\n' +
     '// px, unturned), anchor (the car\'s centre on the floor, every cell\'s same point: its JSON\'s meta.anchor) and headings:\n' +
-    '// each of its directions (degrees, the pack\'s 7.5° steps; the left half is these mirrored, 180° - a) to the heading its\n' +
-    '// frame is drawn at (the art\'s steps are not even), for a volume turned with the car.\n' +
+    '// the headings its frames are drawn at (its directions; the left half is these mirrored, 180° - a), for code that turns\n' +
+    '// a volume or steps a car frame by frame.\n' +
     `export const CARS = {\n${Object.entries(index).map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`).join('\n')}\n};\n`,
 );
