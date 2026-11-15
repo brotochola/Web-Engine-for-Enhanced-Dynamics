@@ -15947,15 +15947,61 @@
     {
       "id": "N-194",
       "title": "A sprite drawn at a scale kept its height map's heights at scale 1: lighting (the face map), pixel depth and the sun's and lamps' shadow maps read the twin's heights in frame px, while its picture and its footprint grew with the scale",
-      "status": "running",
+      "status": "kept-hygiene",
       "statusText": "found 2026-11-15 on dx/light3d while drawing the standard 1x car sheets at 2x in the light bench; fix written, being checked",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (67e33035): the twin's height times |scale y| where it becomes a world height; the bench's 1x cars at scale 2 match its old 2x copies by day, evening and at night by a lamp",
+      "refs": [],
+      "aliases": [],
+      "next": "Fix: the twin's height times the sprite's |scale y| where it becomes a world height (faceMap.frag.glsl and faceMap.js's WGSL through a flat vMapScale; pixelDepth.js through vPainter.y / vDepthFoot.z; sunShadowMap.js and lampShadowMap.js columns through aInstScale); the normals from heights (Sobel) keep reading the frame's own heights, since a scale stretches heights and texels alike. Check: the light bench's car from the standard 1x sheet at setScale(2) against the old 2x copy (shadows, light, depth), and the shader cost (one flat varying, one multiply).",
+      "records": [
+        "R-1134"
+      ]
+    },
+    {
+      "id": "DX-STDSPRITES",
+      "title": "The demos' one set of MinZiin cars and LPC people, with height and normal maps baked the claude.ai way (nm-core), no copies",
+      "status": "kept",
+      "statusText": "done 2026-11-15 on dx/light3d (b0bc107f .. 134dd868)",
+      "date": "2026-11-15",
+      "area": "demos",
+      "kind": "feature",
+      "result": "demos/img/autos: the Buenos Aires game's 54 TopDown Vehicles with maps (bakeCarSheet.mjs, nm-core's body fit); civil1..7 and poli with maps (bakeReliefMaps.mjs); the light bench, its stress scenes, carScene, littleCity (atlas re-baked), the sun street and the night street draw them; demos/img/cars and the bench's copies are gone",
+      "refs": [],
+      "aliases": [],
+      "next": "demos/buenosAiresScene keeps its own copies of ten car sheets until DX-BARRIOS. demos/img/people (69 LPC sheets, littleCity and the sun street, no lighting) have no maps: bakeReliefMaps.mjs makes them in seconds if a lit scene needs them (1.2 MB a sheet).",
+      "records": [
+        "R-1135"
+      ]
+    },
+    {
+      "id": "N-195",
+      "title": "A top-down render's silhouette (card) sun shadow lies turned: the card shows the frame the sun sees and stretches its rows along the sun as if they were height, so a car seen from above casts a car at another heading",
+      "status": "open",
+      "statusText": "found 2026-11-15 from the owner's report on the light bench (the pickup's shadow in silhouette mode); the standard cars cast their solid now (b0bc107f), the card itself is unchanged",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
       "result": "",
       "refs": [],
       "aliases": [],
-      "next": "Fix: the twin's height times the sprite's |scale y| where it becomes a world height (faceMap.frag.glsl and faceMap.js's WGSL through a flat vMapScale; pixelDepth.js through vPainter.y / vDepthFoot.z; sunShadowMap.js and lampShadowMap.js columns through aInstScale); the normals from heights (Sobel) keep reading the frame's own heights, since a scale stretches heights and texels alike. Check: the light bench's car from the standard 1x sheet at setScale(2) against the old 2x copy (shadows, light, depth), and the shader cost (one flat varying, one multiply).",
+      "next": "The card is right for a picture of one side (a person, a tree, a fence); a render drawn from above (its base a contact) has its depth, not its height, in its rows. Options: a render's card from the frame the camera sees laid as a drop shadow (each row moved along the sun by the height its rows stand for), or a render without maps casting its footprint box. Until then a car with maps casts its solid (its sheet's cast.sun 'heightmap'), and the bench's 'silhouette' look shows the limit.",
+      "records": []
+    },
+    {
+      "id": "N-196",
+      "title": "A lamp's shadows stay coarse at any lighting.shadowResolution: its tile in the lamps' map is lampShadowTile texels (256) over twice its reach, about 7 floor px a texel at reach 900",
+      "status": "running",
+      "statusText": "reported by the owner 2026-11-15 (the light bench, a warm lamp of reach 900 at shadow resolution 1); fix being written",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "",
+      "refs": [],
+      "aliases": [],
+      "next": "lampShadowTile 'auto' (the new default): the tile's side, a power of two from 64 to 1024, follows the widest casting lamp's reach and lighting.shadowResolution (about 1.5 floor px a texel at resolution 1), for the lamps casting now, within a texel budget; a number keeps a fixed tile. Measure the lamp map pass (gpuPassBench) at 256 and auto. A softer edge (PCF in lampVisibility) is a further step.",
       "records": []
     }
   ],
@@ -26714,6 +26760,36 @@
       "text": "**N-192, part found and fixed: a floor point took the shadow maps' bias, so every shadow stood 4 |k| px off its caster's\nbase (c8963250); about 1.5 px of the outlines' error is left, and the crate's columns and the stretch cap's staircase.**\n2026-11-15, shadowOutlineCheck on both backends (the same numbers on each). The box's error was uniform (p99 = max: 3.50 px\nfrom 0 and 180 deg, 2.64 from the diagonals): a shift, not noise. The light pass counted a caster point only above\np.z + 4 + 0.03 p.z; for the floor that left the bottom 4 px of every caster casting nothing. The floor casts nothing itself\nand a caster skips its own shade by its id since round 2, so a floor point takes no bias now; a pixel above the floor keeps it.\n\n| outline (p99, px) | before | after |\n| --- | --- | --- |\n| sun, box | 2.64-3.50 | 1.50-1.64 |\n| sun, card (0-180 deg) | 3.22-3.50 | 1.43-1.50 (45 and 135 now within 1.5) |\n| sun, crate | 3.50-5.77 | 3.60-5.89 |\n| lamp at 150 px, box / card | 2.50 / 1.97 | 1.26 / 1.51 |\n| lamp at 300 px, card | 1.58 | 1.33 |\n| lamp at 60 px, box | 3.50 | 2.50 |\n\nlampSeparation, silhouetteDirection, depthSort PASS on both. Captures: the floor at the casters' bases darker (feet, a\nfence's rail), nothing else, no speckle.\nLeft: (1) the box and the card off by a uniform ~1.5 px at the light's and the shadows' resolution 1 (not the light\ntexel: a placement between the engine's setBox and the check's corners, to find side by side); (2) the crate's columns\n3.6 to 5.9 px (the 24 x 24 cells, their width 1.1 cells + 1 px, their floor points from the height map); (3) the card from\n90 deg compares nothing (its shadow lies behind it, under its sprite's mask: the check should say not compared); (4) under\nthe 60 px lamp the crate's columns past the cap land at 8 times their bases' distance, a staircase 420 px wide.",
       "commits": [
         "c8963250"
+      ]
+    },
+    {
+      "id": "R-1134",
+      "date": "2026-11-15",
+      "time": "14:35",
+      "timeFrom": "recorded",
+      "title": "N-194 fixed: height maps follow the sprite's scale (lighting, pixel depth, sun and lamp maps)",
+      "verdict": "kept",
+      "text": "N-194 fixed (67e33035): the twin's height times the sprite's |scale y| where it becomes a world height, in the face map (GLSL and WGSL, a flat vMapScale), pixel depth (vPainter.y / vDepthFoot.z) and the sun and lamp map columns (aInstScale). Normals from heights keep reading the frame's own heights (a scale stretches heights and texels alike); footprints already followed the scale.\n\nCheck (pair captures, the light bench at HEAD c0b2b190 with its 2x car copies against the standard 1x sheets at setScale(2)): the farm by day, the hatch and the pickup at zoom 3 (16 h and 10 h), the bus at 18:30, the person at zoom 4, the farm at 22 h, and the hatch and the pickup moved beside the warm lamp at night: the same size, shadows, light and depth (the pixel differences are the frames' headings: the new sheets keep the pack's even 7.5° directions, and linear filtering of a 2x texel). node suite 2728/2728.\n\nCost: one flat varying and one multiply in the face map, pixel depth and map column programs; not measured on its own (a hygiene keep: a bug fix stays unless a primary worker is 3 % worse; to be read in the next GPU pass sitting).",
+      "commits": [
+        "67e33035"
+      ]
+    },
+    {
+      "id": "R-1135",
+      "date": "2026-11-15",
+      "time": "14:53",
+      "timeFrom": "recorded",
+      "title": "The standard cars and LPC people with maps; every demo migrated, the copies removed",
+      "verdict": "kept",
+      "text": "The owner asked (2026-11-15): the Buenos Aires game's cars as the standard, their height and normal maps made as the claude.ai page makes them, the smaller cars removed, the same for the LPC people, nothing repeated across the demos.\n\nDone (b0bc107f .. 134dd868):\n- demos/tools/nmCore.cjs (the page's generator as it is, heights returned as floats), bakeCarSheet.mjs and bakeReliefMaps.mjs.\n- demos/img/autos: all 54 vehicles (15 MB with maps). Body model: nm-core's guess from the name; the pack's other models by shape (a coupe a sedan, an SUV a hatch, a dump truck a camion). Fitting every body and keeping the best silhouette match was tried first: it chose a camion for coupes and sports cars (IoU +0.006 to +0.013) and a pickup for the limousine, shapes that would light as boxes, so the bodies go by kind. Frames' IoU 0.90 (microcar) to 0.965 (bus).\n- The cars cast their solid for the sun too (cast.sun 'heightmap'): a card of a car seen from above lies turned (N-195).\n- civil1..7 and poli: maps next to them (8.7 MB), the same as the bench's civil7 had (compared frame by frame).\n- Migrated: the light bench (cars at 2x, its copies gone, Q/E a car's 48 views, its volume turned by the frame drawn), the DX-LIGHT3D stress scenes, carScene and littleCity (DirectionalSprite; atlas re-baked, 15.8 MB from 16.7), the night street and the sun street (one car setup, streetCars.js). demos/img/cars removed: the same drawings (red = hatch_rojo, pixel for pixel).\n- Checks: pair captures before and after for every demo (bench, carScene, littleCity, headlights, sun street, day and night), no console errors; test:demos 101/101, test:node 2728/2728.",
+      "commits": [
+        "b0bc107f",
+        "20ec10e2",
+        "39f7db02",
+        "e1692030",
+        "3fa344ee",
+        "caaf734f",
+        "134dd868"
       ]
     }
   ],
