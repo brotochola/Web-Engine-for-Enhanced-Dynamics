@@ -116,8 +116,9 @@ uniform vec4 uFaceSun; // towards the sun in the floor's space; w: 1 / its heigh
 // surface that rises above the ray shades this pixel from the sun. x: a step's length (floor px), y: steps, z: bias (px).
 uniform vec4 uSelfShadow;
 
+// A face map texel's height (px): 15 bits in eighths of a px, the top bit a sprite's own normal (faceMap.js FACE_K_BIT).
 float faceHeight(vec4 face) {
-  return (floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5)) / 8.0;
+  return mod(floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5), 32768.0) / 8.0;
 }
 
 // The first step skips the pixel's own neighbours, and the bias grows with the distance: the map is at the light pass's
@@ -142,25 +143,42 @@ float selfShadow(vec3 p) {
 }
 // #endif SELFSHADOW
 
+// DX-GBUF (plan §5.4): a pixel with a face's normal is lit by it (DX-FACES, as always); a FLAT one (faceMap.js
+// FACE_FLAT_CODE: a standing card, normals 'flat') as drawn, every light at full cosine, at its place in 3D; a sprite's
+// own normal (its height's FACE_K_BIT) shows as much as the lamps' share of its light, k = lamps / (lamps + ambient + sun),
+// worked out from the flat light: by day the sprite looks as drawn, at night by a lamp its normals show.
 vec3 faceLight(vec2 world, vec4 face) {
+  float q = floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5);
+  bool kRule = q >= 32768.0;
+  bool isFlat = face.r > 253.5 / 255.0 && face.g > 253.5 / 255.0;
+  bool both = kRule || isFlat;
   vec2 f = (face.rg * 255.0 - 127.0) / 126.0;
   vec3 n = vec3(f, 1.0 - abs(f.x) - abs(f.y));
   float t = max(-n.z, 0.0);
   n.x += n.x >= 0.0 ? -t : t;
   n.y += n.y >= 0.0 ? -t : t;
   n = normalize(n);
-  float z = (floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5)) / 8.0;
+  float z = (kRule ? q - 32768.0 : q) / 8.0;
   vec3 p = vec3(world.x, (world.y + z * uFaceLight.x) * uGroundInvScaleY, z);
   float sunDirect = min(max(dot(n, uFaceSun.xyz), 0.0) * uFaceSun.w, 1.6);
+  // The sun on a pixel lit as drawn: the floor's, its map's shade and its own shade.
+  float sunFlat = 1.0;
 // #if SUNMAP
-  sunDirect *= sunVisibility(p);
+  float sunVis = sunVisibility(p);
+  sunDirect *= sunVis;
+  sunFlat = sunVis;
 // #endif SUNMAP
 // #if SELFSHADOW
-  // Faded out at the terminator, where the cosine already shades and a step either way flips the test.
-  if (sunDirect > 0.05) sunDirect *= mix(1.0, selfShadow(p), smoothstep(0.05, 0.3, sunDirect));
+  // Faded out at the terminator, where the cosine already shades and a step either way flips the test. A FLAT pixel has
+  // no shape of its own to shade itself with.
+  float selfSun = (!isFlat && (sunDirect > 0.05 || kRule)) ? selfShadow(p) : 1.0;
+  if (sunDirect > 0.05) sunDirect *= mix(1.0, selfSun, smoothstep(0.05, 0.3, sunDirect));
+  sunFlat *= selfSun;
 // #endif SELFSHADOW
   vec3 total = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB);
   total += vec3(uSunR, uSunG, uSunB) * uSunIntensity * (1.0 - uFaceLight.w + uFaceLight.w * sunDirect);
+  // The lamps lit as drawn (cosine 1), for FLAT pixels and the normals' strength.
+  vec3 lampFlat = vec3(0.0);
   const float DISTANCE_SCALE = 1.0 / 1024.0;
   // The cones first, then every other light as before.
   int coneCount = int(uConeCount);
@@ -173,15 +191,18 @@ vec3 faceLight(vec2 world, vec4 face) {
     vec3 toLight = vec3(posInt.xy, col.a) - p;
     float d = length(toLight);
     float cosine = (dot(n, toLight) / max(d, 0.001) + uFaceLight.y) / (1.0 + uFaceLight.y);
-    if (cosine <= 0.0) continue;
+    if (cosine <= 0.0 && !both) continue;
     float scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     float intensityScaled = posInt.z * scaled;
     float cone = coneFactor(p.xy - posInt.xy, texture2D(uLightData, vec2(u, ROW2)));
 // #if LAMPMAP
     cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z);
 // #endif LAMPMAP
-    total += col.rgb * cosine * uFaceLight.z * cone * intensityScaled
-      / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    if (cosine > 0.0) {
+      total += col.rgb * cosine * uFaceLight.z * cone * intensityScaled
+        / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    }
+    if (both) lampFlat += col.rgb * uFaceLight.z * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
   }
   for (int j = 0; j < MAX_LIGHTS; j++) {
     int i = j + coneCount;
@@ -193,21 +214,33 @@ vec3 faceLight(vec2 world, vec4 face) {
     vec3 toLight = vec3(posInt.xy, col.a) - p;
     float d = length(toLight);
     float cosine = (dot(n, toLight) / max(d, 0.001) + uFaceLight.y) / (1.0 + uFaceLight.y);
-    if (cosine <= 0.0) continue;
+    if (cosine <= 0.0 && !both) continue;
     // The source's height is folded into I' and the colour (I' = I + h²): I / (I + d²) = k I' / (I' - h² + d²).
     float scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     float intensityScaled = posInt.z * scaled;
+    float lampVis = 1.0;
+    float lampSelf = 1.0;
 // #if LAMPMAP
-    cosine *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z);
+    lampVis = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z);
+    cosine *= lampVis;
 // #if SELFSHADOW
     // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too.
-    if (posInt.w < 0.0 && cosine > 0.05) cosine *= selfShadowToward(p, toLight / max(d, 0.001), d);
+    if (posInt.w < 0.0 && !isFlat && (cosine > 0.05 || kRule)) lampSelf = selfShadowToward(p, toLight / max(d, 0.001), d);
+    if (cosine > 0.05) cosine *= lampSelf;
 // #endif SELFSHADOW
 // #endif LAMPMAP
-    total += col.rgb * cosine * uFaceLight.z * intensityScaled
-      / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    if (cosine > 0.0) {
+      total += col.rgb * cosine * uFaceLight.z * intensityScaled
+        / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    }
+    if (both) lampFlat += col.rgb * (lampVis * lampSelf) * uFaceLight.z * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
   }
-  return total;
+  if (!both) return total;
+  vec3 totalFlat = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB) + vec3(uSunR, uSunG, uSunB) * uSunIntensity * sunFlat
+    + lampFlat;
+  if (isFlat) return totalFlat;
+  float k = clamp(dot(lampFlat, vec3(1.0)) / max(dot(totalFlat, vec3(1.0)), 0.0001), 0.0, 1.0);
+  return mix(totalFlat, total, k);
 }
 // #endif FACES
 
