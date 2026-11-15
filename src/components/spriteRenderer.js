@@ -5,6 +5,16 @@ import { Component } from '../core/component.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { SPRITE_TILE_MODE } from '../util/configDefaults.js';
 import { staticSceneryChangedAt } from '../core/staticScenery.js';
+import { GBUF_FLAGS, SPRITE_NORMALS, SPRITE_NORMALS_NAMES } from '../render/gbufWord.js';
+
+/** Each wrong value said once. */
+const _gbufWarned = new Set();
+
+function warnGbufOnce(text) {
+  if (_gbufWarned.has(text)) return;
+  _gbufWarned.add(text);
+  console.warn(`WeedJS: ${text}`);
+}
 
 /** GLSL-style fract (works for negatives). */
 export function fract01(x) {
@@ -94,6 +104,10 @@ export class SpriteRenderer extends Component {
     // bit 0 flipX, bit 1 flipY. The flip lives in the sign of scaleX / scaleY
     // (what the renderers read); this remembers it so setScale keeps it.
     flip: Uint8Array,
+    // DX-GBUF (plan §5.4): how the G-buffer pass and the light take this sprite (src/render/gbufWord.js GBUF_FLAGS):
+    // bits 0-1 its normals (SPRITE_NORMALS), bit 2 its surface floor (0: a card standing on its foot), bits 3-5 its
+    // emissive level (0 off). The normals, surface and emissive accessors write it; 0 is every default.
+    gbufFlags: Uint8Array,
   };
 
   /**
@@ -228,6 +242,50 @@ export class SpriteRenderer extends Component {
     else if (next === 0) Atomics.add(users, 0, -1);
   }
 
+  /**
+   * DX-GBUF (plan §5.4): where the light finds this sprite's normals. 'auto' (default): its sheet's normal map, else the
+   * normals its height map gives, else none (lit as drawn); 'map': its sheet's twin page as it is (the normal map when the
+   * sheet has one); 'height': from its height map even when the sheet has a normal map (LPC look better so); 'flat': none,
+   * lit as drawn at its place in 3D. How strong they show is automatic: the lamps' share of the light on the pixel.
+   */
+  get normals() {
+    return SPRITE_NORMALS_NAMES[SpriteRenderer.gbufFlags[this.index] & GBUF_FLAGS.NORMALS_MASK];
+  }
+  set normals(value) {
+    const code = SPRITE_NORMALS_NAMES.indexOf(value);
+    if (code < 0) {
+      warnGbufOnce(`spriteRenderer.normals is 'auto', 'map', 'height' or 'flat', not ${JSON.stringify(value)}`);
+      return;
+    }
+    const i = this.index;
+    SpriteRenderer.gbufFlags[i] = (SpriteRenderer.gbufFlags[i] & ~GBUF_FLAGS.NORMALS_MASK) | code;
+  }
+
+  /**
+   * DX-GBUF (plan §5.4): the height a sprite without a height map has for the light. 'standing' (default for an entity): a
+   * card standing on its foot, the bottom row at height 0, each row up a little higher; 'floor': flat on the floor (a
+   * decal, a rug). A sprite with a height map takes its map's heights either way.
+   */
+  get surface() {
+    return (SpriteRenderer.gbufFlags[this.index] & GBUF_FLAGS.FLOOR) !== 0 ? 'floor' : 'standing';
+  }
+  set surface(value) {
+    if (value !== 'standing' && value !== 'floor') {
+      warnGbufOnce(`spriteRenderer.surface is 'standing' or 'floor', not ${JSON.stringify(value)}`);
+      return;
+    }
+    const i = this.index;
+    const f = SpriteRenderer.gbufFlags[i];
+    SpriteRenderer.gbufFlags[i] = value === 'floor' ? f | GBUF_FLAGS.FLOOR : f & ~GBUF_FLAGS.FLOOR;
+  }
+
+  /** A spawned sprite's G-buffer flags back to every default (the spawn's reset calls it). */
+  static resetGbufRow(i) {
+    const flags = SpriteRenderer.gbufFlags;
+    if (!flags || flags[i] === 0) return;
+    flags[i] = 0;
+  }
+
   get tileOffsetV() {
     return unpackTileOffset01(SpriteRenderer.tileOffsetV[this.index]);
   }
@@ -241,6 +299,7 @@ export class SpriteRenderer extends Component {
   static unpackTileOffset01 = unpackTileOffset01;
   static bakeLocalOffsetFromWorld = bakeLocalOffsetFromWorld;
   static fract01 = fract01;
+  static NORMALS = SPRITE_NORMALS;
 
   static clearArrays() {
     super.clearArrays();
