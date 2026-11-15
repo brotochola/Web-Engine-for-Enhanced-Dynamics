@@ -253,6 +253,9 @@ export class EntityChunks {
     // putting one in another's place would rebuild the stage's instructions every frame.
     this.bases = [null, null, null, null];
     this.chunks = [[], [], [], []];
+    // DX-DEPTH (F5 v2): with pixel depth the batch draws an edge pass after its opaque one (its edgeMesh): chunk j's edge
+    // twin, over the chunk's own range geometry with the batch's edge program for that base, drawn right after it.
+    this.edges = [[], [], [], []];
     // The frame's draw order, [0, count). The array keeps its length (resetting it would free its storage and
     // every frame would grow it again).
     this.children = [];
@@ -288,22 +291,47 @@ export class EntityChunks {
     return mesh;
   }
 
+  /** DX-DEPTH (F5 v2): chunk j's edge twin over base `slot` (made on first use), or null without the batch's edge pass. */
+  _edgeChunk(slot, j) {
+    const batch = this.batch;
+    if (batch.edgeMesh === null || batch.edgeMesh === undefined) return null;
+    const list = this.edges[slot];
+    let mesh = list[j];
+    if (mesh === undefined) {
+      const chunk = this.chunks[slot][j];
+      const shader = batch.edgeShaderFor(chunk.shader);
+      if (shader === null) return null;
+      mesh = new Mesh({ geometry: chunk.geometry, shader, state: batch.edgeMesh.state, label: `entities-chunk-edge-${j}-${slot}` });
+      mesh.cullable = false;
+      list[j] = mesh;
+    }
+    return mesh;
+  }
+
   /**
    * Chunk j draws instances [first, first + count) with the mesh over the live geometry; its twins over the other
    * bases, those made yet, stay next to it, idle. Writes them at order[n…] in base order, returns the next free index.
+   * DX-DEPTH (F5 v2): each one's edge twin right after it, as idle as it.
    */
   _pushChunk(order, n, live, j, first, count) {
     const m = this._chunk(live, j);
     m.geometry.weedFirstInstance = first;
     m.geometry.instanceCount = count;
     m.alpha = 1;
+    this._edgeChunk(live, j);
     const chunks = this.chunks;
+    const edges = this.edges;
     // In index order: a write past the end would leave a hole, and the array would stay holey.
     for (let s = 0; s < chunks.length; s++) {
       const twin = chunks[s][j];
       if (twin === undefined) continue;
       if (s !== live) twin.alpha = 0;
       order[n++] = twin;
+      const edge = edges[s][j];
+      if (edge !== undefined) {
+        edge.alpha = s === live ? 1 : 0;
+        order[n++] = edge;
+      }
     }
     return n;
   }
@@ -347,11 +375,13 @@ export class EntityChunks {
     if (!this.active) return;
     const kids = this.root.children;
     const own = this.batch.mesh;
+    const ownEdge = this.batch.edgeMesh || null;
     for (let i = 0; i < kids.length; i++) {
       const m = kids[i];
-      if (m !== own && m.visible) m.visible = false;
+      if (m !== own && m !== ownEdge && m.visible) m.visible = false;
     }
     own.renderable = true;
+    if (ownEdge !== null) ownEdge.renderable = true;
     this.count = 0;
     this.active = false;
   }
@@ -365,7 +395,9 @@ export class EntityChunks {
   _show(order, n) {
     const root = this.root;
     const own = this.batch.mesh;
+    const ownEdge = this.batch.edgeMesh || null;
     if (own.renderable) own.renderable = false;
+    if (ownEdge !== null && ownEdge.renderable) ownEdge.renderable = false;
     for (let i = 0; i < n; i++) {
       const m = order[i];
       if (m.parent !== root) root.addChild(m);
@@ -377,11 +409,16 @@ export class EntityChunks {
     }
     for (let i = n; i < kids.length; i++) {
       const m = kids[i];
-      if (m !== own && m.visible) m.visible = false;
+      if (m !== own && m !== ownEdge && m.visible) m.visible = false;
     }
   }
 
   destroy() {
+    // The edge twins first: they share their chunk's geometry.
+    for (const list of this.edges) {
+      for (const m of list) m.destroy();
+      list.length = 0;
+    }
     for (const list of this.chunks) {
       for (const m of list) {
         m.geometry.destroy();

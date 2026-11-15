@@ -9115,6 +9115,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._entitiesRoot = new Container();
       this._entitiesRoot.label = 'entities-root';
       this._entitiesRoot.addChild(this.spriteMesh);
+      // DX-DEPTH (F5 v2): with pixel depth, the batch's edge pass right after its opaque one.
+      if (this.entitiesBatch.edgeMesh !== null) this._entitiesRoot.addChild(this.entitiesBatch.edgeMesh);
       this._registerLayerDisplayObject('entities', this._entitiesRoot);
       this.pixiApp.stage.addChild(this._entitiesRoot);
       if (this.spriteGlowMesh) {

@@ -525,6 +525,12 @@ export class InstancedSpriteBatch {
     this._alphaCut = cut;
     const atlas = atlasSource || Texture.WHITE.source;
     const lut = lutSource || dummyLutSource(useWebGpu);
+    // DX-DEPTH (F5 v2): the edge pass's programs (the soft and glowing pixels, depth tested, not written), a twin of each
+    // colour program (plain, indexed, by row) made with it; and its mesh, right after the batch's own (edgeMesh).
+    this._edgeShader = null;
+    this._edgeIndexedShader = null;
+    this._edgeRowShader = null;
+    this.edgeMesh = null;
     this.shader = this._makeSpriteShader(atlas, lut, cut, label || 'instanced-sprites');
     // E-162: the statics texture and the program that reads it; the mesh draws with it on indexed frames.
     this._statics = this.indexed ? statics : null;
@@ -584,6 +590,18 @@ export class InstancedSpriteBatch {
       label: label || 'instanced-sprites',
     });
     this.mesh.blendMode = state.blendMode;
+    if (this._edgeShader !== null) {
+      // DX-DEPTH (F5 v2): the edge pass, its pixels blended as the batch's, depth tested and not written.
+      const edgeState = new State();
+      edgeState.blend = true;
+      edgeState.blendMode = state.blendMode;
+      edgeState.depthTest = true;
+      edgeState.depthMask = false;
+      edgeState.culling = false;
+      this.edgeMesh = new Mesh({ geometry: this.geometry, shader: this._edgeShader, state: edgeState, label: `${labelName}-edge` });
+      this.edgeMesh.blendMode = state.blendMode;
+      this.edgeMesh.cullable = false;
+    }
     this._show(false);
     this.mesh.cullable = false; // bounds ignore instance attrs; don't frustum-cull the batch
     this._uploadCtx = {
@@ -813,12 +831,9 @@ export class InstancedSpriteBatch {
   _makeRowShader(name) {
     this._poseSource = this._statics.make(this._poseRowsU32, POSE_TEX_TEXELS, this._poseTexRows * 4, `${name}-poses`);
     const shaders = this._engineShaders;
-    const glProgram = instancedSpriteGlProgram(
-      GlProgram,
-      this._depthVertex(spriteIndexedVertex(shaders.spriteVert, { poseBlock: this._poseBlock })),
-      this._depthFragment(pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders)),
-      `${name}-rows`
-    );
+    const rowVertex = this._depthVertex(spriteIndexedVertex(shaders.spriteVert, { poseBlock: this._poseBlock }));
+    const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
+    const glProgram = instancedSpriteGlProgram(GlProgram, rowVertex, this._depthFragment(color), `${name}-rows`);
     const r = this.shader.resources;
     const resources = {
       uTexture: r.uTexture,
@@ -829,17 +844,24 @@ export class InstancedSpriteBatch {
       uPoses: this._poseSource,
     };
     if (this._pixelDepth) resources.uMaps = this._pixelDepth.maps;
-    return new Shader({ glProgram, resources });
+    const shader = new Shader({ glProgram, resources });
+    if (this._pixelDepth) {
+      this._edgeRowShader = new Shader({
+        glProgram: instancedSpriteGlProgram(GlProgram, rowVertex, this._depthFragment(color, true), `${name}-rows-edge`),
+        resources: this._edgeResources(shader, this._staticsSource),
+      });
+    }
+    return shader;
   }
 
   /** DX-DEPTH: a colour program's vertex shader, with the floor depth's terms when pixel depth is on. */
   _depthVertex(source) {
-    return this._pixelDepth && source ? pixelDepthVertex(source) : source;
+    return this._pixelDepth && source ? pixelDepthVertex(source, { gbuf: this.gbuf }) : source;
   }
 
   /** DX-DEPTH: a colour program's fragment shader, writing the floor depth when pixel depth is on. */
-  _depthFragment(source) {
-    return this._pixelDepth && source ? pixelDepthFragment(source) : source;
+  _depthFragment(source, edge = false) {
+    return this._pixelDepth && source ? pixelDepthFragment(source, { edge, gbuf: this.gbuf }) : source;
   }
 
   /**
@@ -903,14 +925,17 @@ export class InstancedSpriteBatch {
       const depth = this._pixelDepth !== null && !!spriteSource;
       // DX-GBUF: the words' stream is in every geometry of a batch with words, so its programs declare it.
       const source = this.gbuf && spriteSource ? gbufAttributeWgsl(spriteSource) : spriteSource;
-      const gpuProgram = instancedSpriteGpuProgram(
-        GpuProgram,
-        depth ? pixelDepthWgsl(source) : source,
-        fragEntry,
-        name,
-        { maps: depth },
-      );
-      return new Shader({ gpuProgram, resources });
+      const program = depth ? pixelDepthWgsl(source, { gbuf: this.gbuf }) : source;
+      const gpuProgram = instancedSpriteGpuProgram(GpuProgram, program, fragEntry, name, { maps: depth });
+      const shader = new Shader({ gpuProgram, resources });
+      if (depth) {
+        // DX-DEPTH (F5 v2): the edge pass's entry (pixelDepthWgsl's <entry>Edge) over the same group.
+        this._edgeShader = new Shader({
+          gpuProgram: instancedSpriteGpuProgram(GpuProgram, program, `${fragEntry}Edge`, `${name}-edge`, { maps: true }),
+          resources: this._edgeResources(shader, null),
+        });
+      }
+      return shader;
     }
     let vert = vertSource;
     if (this.shadowCast && vert) {
@@ -921,13 +946,38 @@ export class InstancedSpriteBatch {
           'gl_Position = vec4(clip.xy, aInstDepth, 1.0);\n  if (aInstShadow.x < -1000.0) gl_Position.x += aInstShadow.y + aInstShadow.z;'
         );
     }
-    let frag = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
-    if (this._pixelDepth && vert && frag) {
-      vert = pixelDepthVertex(vert);
-      frag = pixelDepthFragment(frag);
+    const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
+    let frag = color;
+    const depth = !!(this._pixelDepth && vert && frag);
+    if (depth) {
+      vert = pixelDepthVertex(vert, { gbuf: this.gbuf });
+      frag = pixelDepthFragment(frag, { gbuf: this.gbuf });
     }
     const glProgram = instancedSpriteGlProgram(GlProgram, vert, frag, name);
-    return new Shader({ glProgram, resources });
+    const shader = new Shader({ glProgram, resources });
+    if (depth) {
+      // DX-DEPTH (F5 v2): the edge pass's twin, the same vertex shader.
+      this._edgeShader = new Shader({
+        glProgram: instancedSpriteGlProgram(GlProgram, vert, pixelDepthFragment(color, { edge: true, gbuf: this.gbuf }), `${name}-edge`),
+        resources: this._edgeResources(shader, null),
+      });
+    }
+    return shader;
+  }
+
+  /**
+   * DX-DEPTH (F5 v2): an edge program's resources, its colour twin's (the atlas, the LUT, the uniform group, the twin page;
+   * `statics`: the statics, and the poses of a by-row one).
+   */
+  _edgeResources(shader, statics) {
+    const r = shader.resources;
+    const out = { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uniforms: r.uniforms };
+    if (this._pixelDepth) out.uMaps = this._pixelDepth.maps;
+    if (statics !== null) {
+      out.uStatics = statics;
+      if (r.uPoses) out.uPoses = r.uPoses;
+    }
+    return out;
   }
 
   /**
@@ -949,12 +999,9 @@ export class InstancedSpriteBatch {
     this._staticsHeight = height;
     this._staticsSource = this._statics.make(this._rowStaticsU32, width, height, `${name}-statics`);
     const shaders = this._engineShaders;
-    const glProgram = instancedSpriteGlProgram(
-      GlProgram,
-      this._depthVertex(shaders?.spriteVert ? spriteIndexedVertex(shaders.spriteVert) : null),
-      this._depthFragment(pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders)),
-      `${name}-indexed`
-    );
+    const indexedVertex = this._depthVertex(shaders?.spriteVert ? spriteIndexedVertex(shaders.spriteVert) : null);
+    const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
+    const glProgram = instancedSpriteGlProgram(GlProgram, indexedVertex, this._depthFragment(color), `${name}-indexed`);
     const r = this.shader.resources;
     const resources = {
       uTexture: r.uTexture,
@@ -964,7 +1011,14 @@ export class InstancedSpriteBatch {
       uStatics: this._staticsSource,
     };
     if (this._pixelDepth) resources.uMaps = this._pixelDepth.maps;
-    return new Shader({ glProgram, resources });
+    const shader = new Shader({ glProgram, resources });
+    if (this._pixelDepth && indexedVertex) {
+      this._edgeIndexedShader = new Shader({
+        glProgram: instancedSpriteGlProgram(GlProgram, indexedVertex, this._depthFragment(color, true), `${name}-indexed-edge`),
+        resources: this._edgeResources(shader, this._staticsSource),
+      });
+    }
+    return shader;
   }
 
   _makeIndexedGpuShader(name) {
@@ -989,13 +1043,9 @@ export class InstancedSpriteBatch {
     const depth = this._pixelDepth !== null && !!shaders?.sprite;
     const plainSource = shaders?.sprite && this.gbuf ? gbufAttributeWgsl(shaders.sprite) : shaders?.sprite;
     const indexedSource = plainSource ? spriteIndexedWgsl(plainSource) : null;
-    const gpuProgram = instancedSpriteIndexedGpuProgram(
-      GpuProgram,
-      depth ? pixelDepthWgsl(indexedSource, { poseAlpha: this._twoStreams }) : indexedSource,
-      this._premultiplyAlpha ? 'mainFrag' : 'mainFragAdd',
-      `${name}-indexed`,
-      { maps: depth },
-    );
+    const program = depth ? pixelDepthWgsl(indexedSource, { poseAlpha: this._twoStreams, gbuf: this.gbuf }) : indexedSource;
+    const entry = this._premultiplyAlpha ? 'mainFrag' : 'mainFragAdd';
+    const gpuProgram = instancedSpriteIndexedGpuProgram(GpuProgram, program, entry, `${name}-indexed`, { maps: depth });
     const r = this.shader.resources;
     const resources = {
       uTexture: r.uTexture,
@@ -1005,11 +1055,30 @@ export class InstancedSpriteBatch {
       uStatics: this._staticsSource,
     };
     if (depth) resources.uMaps = this._pixelDepth.maps;
-    return new Shader({ gpuProgram, resources });
+    const shader = new Shader({ gpuProgram, resources });
+    if (depth) {
+      this._edgeIndexedShader = new Shader({
+        gpuProgram: instancedSpriteIndexedGpuProgram(GpuProgram, program, `${entry}Edge`, `${name}-indexed-edge`, { maps: true }),
+        resources: this._edgeResources(shader, this._staticsSource),
+      });
+    }
+    return shader;
   }
 
   _show(on) {
     this.mesh.visible = on;
+    if (this.edgeMesh !== null) this.edgeMesh.visible = on;
+  }
+
+  /**
+   * DX-DEPTH (F5 v2): the edge pass's twin of one of this batch's colour programs (the plain, the indexed or the by-row
+   * one), or null without pixel depth.
+   * @param {Shader} shader
+   */
+  edgeShaderFor(shader) {
+    if (shader === this._rowShader && this._rowShader !== null) return this._edgeRowShader;
+    if (shader === this._indexedShader && this._indexedShader !== null) return this._edgeIndexedShader;
+    return this._edgeShader;
   }
 
   setAtlasSource(source) {
@@ -1029,6 +1098,12 @@ export class InstancedSpriteBatch {
     if (this._rowShader !== null) {
       this._rowShader.resources.uTexture = source;
       this._rowShader.resources.uSampler = source.style;
+    }
+    for (const edge of [this._edgeShader, this._edgeIndexedShader, this._edgeRowShader]) {
+      if (edge !== null) {
+        edge.resources.uTexture = source;
+        edge.resources.uSampler = source.style;
+      }
     }
     const aux = this._auxShaders();
     for (let i = 0; i < aux.length; i++) {
@@ -1051,6 +1126,9 @@ export class InstancedSpriteBatch {
     const aux = this._auxShaders();
     for (let i = 0; i < aux.length; i++) aux[i].resources.uTexLut = source;
     if (this._rowShader !== null) this._rowShader.resources.uTexLut = source;
+    for (const edge of [this._edgeShader, this._edgeIndexedShader, this._edgeRowShader]) {
+      if (edge !== null) edge.resources.uTexLut = source;
+    }
   }
 
   /** Match `_beginUpload` tileWorld when committing pre-packed rows. */
@@ -1211,6 +1289,12 @@ export class InstancedSpriteBatch {
     this.geometry = geometry;
     this.buffer = this._buffers[ring];
     this.mesh.geometry = geometry;
+    const edge = this.edgeMesh;
+    if (edge !== null) {
+      const edgeShader = this.edgeShaderFor(this.mesh.shader);
+      if (edgeShader !== null && edge.shader !== edgeShader) edge.shader = edgeShader;
+      if (edge.geometry !== geometry) edge.geometry = geometry;
+    }
     return out;
   }
 

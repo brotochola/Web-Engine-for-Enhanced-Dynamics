@@ -117,3 +117,15 @@ test('the G-buffer passes and the light pass declare every binding their layouts
     }
   }
 });
+
+test('the pixel depth programs with words, and their edge entries, declare every binding their layouts name', async () => {
+  const { gbufAttributeWgsl } = await import('../../src/render/faceMap.js');
+  const sprite = gbufAttributeWgsl(shader('instancedSprite.wgsl'));
+  for (const entry of ['mainFrag', 'mainFragEdge']) {
+    assertLayoutDeclared(`sprite-depth-gbuf ${entry}`, instancedSpriteGpuProgram(GpuProgram, pixelDepthWgsl(sprite, { gbuf: true }), entry, 's', { maps: true }));
+    assertLayoutDeclared(
+      `sprite-indexed-depth-gbuf ${entry}`,
+      instancedSpriteIndexedGpuProgram(GpuProgram, pixelDepthWgsl(spriteIndexedWgsl(sprite), { poseAlpha: true, gbuf: true }), entry, 'i', { maps: true }),
+    );
+  }
+});

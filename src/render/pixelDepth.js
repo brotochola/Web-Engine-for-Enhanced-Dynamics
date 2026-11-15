@@ -1,19 +1,36 @@
 /**
  * DX-DEPTH (plan §6.5, F5): depth that corrects the painter. The painter still orders the entities by their feet, in one
- * pass with blending; the depth each pixel writes is its place on the floor instead of its row's place in that order:
+ * pass with blending; the depth each pixel tests is its place on the floor instead of its row's place in that order:
  * a pixel of a sprite with a height map (the atlas's twin page, DX-MAPS) at its own height,
  *   floor y = (screen y + heightScaleY · z) / floorScaleY,
- * every other pixel its sprite's foot. Nearer the camera (further down the floor) is less deep, so with the depth test
- * (less) a pixel the painter drew late but that stands behind another is not drawn: a person behind the barn's roof is
- * hidden by it even when their feet are further south than the barn's anchor. The painter's order breaks ties (a later
- * row wins), so sprites without maps draw as the painter alone drew them.
+ * a pixel of a sprite flat on the floor (surface 'floor', DX-GBUF) its own screen y's, every other pixel its sprite's foot.
+ * Nearer the camera (further down the floor) is less deep, so with the depth test (less) a pixel the painter drew late but
+ * that stands behind another is not drawn: a person behind the barn's roof is hidden by it even when their feet are
+ * further south than the barn's anchor.
  *
- * WebGL (pixelDepthVertex, pixelDepthFragment) and WebGPU (pixelDepthWgsl). Every drawn pixel writes (a soft edge too: no
- * per-pixel depth mask in one pass).
+ * Only opaque pixels write it (alpha 0.5 and up), every pixel compares. One pass cannot choose per pixel whether to write
+ * depth, so the entities draw in two (F5 v2): the opaque pass (the batch's own mesh) draws the opaque pixels, writing
+ * depth; the edge pass (its edge mesh, right after it, the same instances) draws the soft edges and the glowing pixels,
+ * testing depth without writing it, blended over what is there in painter order. A soft edge of a sprite behind is then
+ * hidden by an opaque one in front whatever the painter's order, and one in front blends over it.
+ *
+ * The depth's 23 bits, nearer first: the zIndex band (3 bits, DX-GBUF's word: a higher zIndex is always in front, as the
+ * painter has it, R-0169), the floor place (13 bits over the view's floor span and a margin), then the painter's order in
+ * 7 bits (the instance index's low bits: rows on the same floor place tie in painter order, a later one in front). Without
+ * the words every band is 0.
+ *
+ * WebGL (pixelDepthVertex, pixelDepthFragment) and WebGPU (pixelDepthWgsl).
  */
 
+/** The floor span's margin past the view, floor px: a tall object's top in view stands this far past its floor place. */
+export const PIXEL_DEPTH_MARGIN = 1024;
+/** Floor places the depth tells apart (13 bits), zIndex bands (3 bits) and painter steps (7 bits): 23 bits in all. */
+export const PIXEL_DEPTH_FLOOR_STEPS = 8192;
+export const PIXEL_DEPTH_BANDS = 8;
+export const PIXEL_DEPTH_PAINTER_STEPS = 128;
+
 /** The terms the programs read (uDepth): 1 / floorScaleY, heightScaleY, the view's nearest-to-north floor y, 1 / range. */
-export function pixelDepthTerms(out, floorScaleY, heightScaleY, viewTopY, viewHeight, margin = 512) {
+export function pixelDepthTerms(out, floorScaleY, heightScaleY, viewTopY, viewHeight, margin = PIXEL_DEPTH_MARGIN) {
   const invG = floorScaleY > 0 ? 1 / floorScaleY : 1;
   const top = viewTopY * invG - margin;
   const range = viewHeight * invG + 2 * margin;
@@ -24,44 +41,103 @@ export function pixelDepthTerms(out, floorScaleY, heightScaleY, viewTopY, viewHe
   return out;
 }
 
-/** A sprite vertex shader (instancedSprite.vert.glsl, or its indexed forms) passing on its foot's floor y and its row. */
-export function pixelDepthVertex(source) {
+/**
+ * A pixel's depth as the programs write it (for tests): band (0 back to 7 front), the floor place's u (0 north of the
+ * view's span, 1 south), the painter step (an instance index).
+ */
+export function pixelDepthValue(band, u, instance) {
+  const b = Math.min(Math.max(band, 0), PIXEL_DEPTH_BANDS - 1);
+  const q = Math.floor(Math.min(Math.max(u, 0), 1) * (PIXEL_DEPTH_FLOOR_STEPS - 1));
+  const p = instance & (PIXEL_DEPTH_PAINTER_STEPS - 1);
+  const d = (PIXEL_DEPTH_BANDS - 1 - b) * PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS
+    + (PIXEL_DEPTH_FLOOR_STEPS - 1 - q) * PIXEL_DEPTH_PAINTER_STEPS
+    + (PIXEL_DEPTH_PAINTER_STEPS - 1 - p);
+  return d / (PIXEL_DEPTH_BANDS * PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS);
+}
+
+/**
+ * A sprite vertex shader (instancedSprite.vert.glsl, or its indexed forms) passing on its foot's floor y, its painter step
+ * (the instance index's low bits) and, with `gbuf`, its words (the zIndex band and the surface).
+ * @param {string} source
+ * @param {{ gbuf?: boolean }} [opts]
+ */
+export function pixelDepthVertex(source, { gbuf = false } = {}) {
   const decl = 'out vec2 vTileOff;\n';
   const pos = 'gl_Position = vec4(clip.xy, aInstDepth, 1.0);';
   for (const mark of [decl, pos]) {
     if (source.split(mark).length !== 2) throw new Error(`WeedJS: pixel depth needs the sprite vertex shader (${mark.trim()})`);
   }
+  const words = gbuf
+    ? `${source.includes('in vec2 aInstGbuf;') ? '' : 'in vec2 aInstGbuf;\n'}flat out vec2 vDepthWord;\n`
+    : '';
   return source
-    .replace(decl, `${decl}out float vFootFloor;\nout float vPainter;\nuniform vec4 uDepth;\n`)
-    .replace(pos, `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n  vPainter = aInstDepth;`);
+    .replace(decl, () => `${decl}out float vFootFloor;\nflat out float vPainter;\nuniform vec4 uDepth;\n${words}`)
+    .replace(
+      pos,
+      () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n  vPainter = float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1});` +
+        (gbuf ? '\n  vDepthWord = aInstGbuf;' : ''),
+    );
 }
 
-const DEPTH_BODY = `  {
-    // DX-DEPTH: this pixel's place on the floor: at its own height when its frame has a height map, else its sprite's
-    // foot (pixelDepth.js). Nearer the camera is less deep; the painter's order breaks ties.
+/** DEPTH_BODY's depth from the floor place, the band and the painter step (GLSL and WGSL alike). */
+const DEPTH_FORMULA = `(${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS}.0
+      + (${PIXEL_DEPTH_FLOOR_STEPS - 1}.0 - floor(u * ${PIXEL_DEPTH_FLOOR_STEPS - 1}.0)) * ${PIXEL_DEPTH_PAINTER_STEPS}.0
+      + (${PIXEL_DEPTH_PAINTER_STEPS - 1}.0 - painter)) / ${PIXEL_DEPTH_BANDS * PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS}.0`;
+
+/**
+ * The fragment's depth body (GLSL): the floor place, the depth, and the pass's pixels: `edge` false (the opaque pass)
+ * keeps the opaque pixels that do not glow, true (the edge pass) the others.
+ */
+function depthBodyGlsl({ edge, gbuf }) {
+  return `  {
+    // DX-DEPTH: this pixel's place on the floor: at its own height when its frame has a height map, its own when the
+    // sprite lies flat, else its sprite's foot; the zIndex band first and the painter's order last (pixelDepth.js).
     vec2 uvd = weedUv();
     vec4 md = texelFetch(uMaps, ivec2(uvd * vec2(textureSize(uMaps, 0))), 0);
     float zd = (floor(md.r * 255.0 + 0.5) * 256.0 + floor(md.g * 255.0 + 0.5)) / 64.0;
     bool glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
-    float floorY = md.b + md.a > 0.0 && !glow ? (vWorld.y + uDepth.y * zd) * uDepth.x : vFootFloor;
-    gl_FragDepth = clamp(1.0 - (floorY - uDepth.z) * uDepth.w - vPainter * 1e-5, 0.0, 1.0);
+    float band = 0.0;
+    float floorY = vFootFloor;
+${gbuf
+    ? `    uint dw = uint(vDepthWord.x + 0.5);
+    glow = glow || ((dw >> 19u) & 7u) != 0u;
+    band = min(vDepthWord.y, ${PIXEL_DEPTH_BANDS - 1}.0);
+    if ((dw & 65535u) != 0u && ((dw >> 18u) & 1u) != 0u) floorY = vWorld.y * uDepth.x;
+`
+    : ''}    if (md.b + md.a > 0.0 && !glow) floorY = (vWorld.y + uDepth.y * zd) * uDepth.x;
+    float u = clamp((floorY - uDepth.z) * uDepth.w, 0.0, 1.0);
+    float painter = vPainter;
+    gl_FragDepth = (${DEPTH_FORMULA};
+    // F5 v2: only opaque pixels write depth; the edge pass draws the soft and the glowing ones, testing it.
+    bool solid = texture(uTexture, uvd).a * vColor.a >= 0.5 && !glow;
+    if (${edge ? 'solid' : '!solid'}) discard;
   }
 `;
+}
 
-/** A sprite fragment shader writing that depth (gl_FragDepth, first thing, so every path that draws writes it). */
-export function pixelDepthFragment(source) {
+/**
+ * A sprite fragment shader writing that depth (gl_FragDepth, first thing, so every path that draws writes it) and keeping
+ * its pass's pixels: `edge` false, the opaque pass (alpha 0.5 and up, not glowing); true, the edge pass (the others).
+ * @param {string} source
+ * @param {{ edge?: boolean, gbuf?: boolean }} [opts]
+ */
+export function pixelDepthFragment(source, { edge = false, gbuf = false } = {}) {
   const decl = 'uniform sampler2D uTexture;\n';
   const main = 'void main() {\n';
   for (const mark of [decl, main]) {
     if (source.split(mark).length !== 2) throw new Error(`WeedJS: pixel depth needs the sprite fragment shader (${mark.trim()})`);
   }
   return source
-    .replace(decl, `${decl}uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\nin float vPainter;\n`)
-    .replace(main, `${main}${DEPTH_BODY}`);
+    .replace(
+      decl,
+      () => `${decl}uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\nflat in float vPainter;\n${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}`,
+    )
+    .replace(main, () => `${main}${depthBodyGlsl({ edge, gbuf })}`);
 }
 
-// DX-DEPTH: DEPTH_BODY in WGSL, a function of the fragment's inputs (vDepthFoot: the foot's floor y, the painter's row).
-const DEPTH_WGSL = `
+// DX-DEPTH: the depth body in WGSL, a function of the fragment's inputs (vDepthFoot: the foot's floor y, the painter step;
+// vDepthWord: the words), returning the depth and whether the pixel is the opaque pass's (1) or the edge pass's (0).
+const depthWgsl = ({ gbuf }) => `
 // DX-DEPTH: the atlas's twin page (spriteMaps.js), read where the colour is (pixelDepth.js).
 @group(2) @binding(5) var uMaps: texture_2d<f32>;
 
@@ -70,16 +146,27 @@ struct WeedDepthOut {
   @builtin(frag_depth) depth: f32,
 }
 
-// DX-DEPTH: this pixel's place on the floor: at its own height when its frame has a height map, else its sprite's foot
-// (pixelDepth.js). Nearer the camera is less deep; the painter's order breaks ties.
-fn weedPixelDepth(in: VertexOut) -> f32 {
+// DX-DEPTH: this pixel's depth (its floor place, its zIndex band, its painter step: pixelDepth.js) and whether it is opaque
+// and does not glow (the opaque pass's pixels; the edge pass draws the others).
+fn weedPixelDepth(in: VertexOut) -> vec2<f32> {
   let uvd = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
+  let alpha = textureSample(uTexture, uSampler, uvd).a * in.vColor.a;
   let md = textureLoad(uMaps, vec2<i32>(uvd * vec2<f32>(textureDimensions(uMaps, 0))), 0);
   let zd = (floor(md.r * 255.0 + 0.5) * 256.0 + floor(md.g * 255.0 + 0.5)) / 64.0;
-  let glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
-  let mapped = md.b + md.a > 0.0 && !glow;
-  let floorY = select(in.vDepthFoot.x, (in.vWorld.y + uniforms.uDepth.y * zd) * uniforms.uDepth.x, mapped);
-  return clamp(1.0 - (floorY - uniforms.uDepth.z) * uniforms.uDepth.w - in.vDepthFoot.y * 1e-5, 0.0, 1.0);
+  var glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
+  var band = 0.0;
+  var floorY = in.vDepthFoot.x;
+${gbuf
+    ? `  let dw = u32(in.vDepthWord.x + 0.5);
+  glow = glow || ((dw >> 19u) & 7u) != 0u;
+  band = min(in.vDepthWord.y, ${PIXEL_DEPTH_BANDS - 1}.0);
+  if ((dw & 65535u) != 0u && ((dw >> 18u) & 1u) != 0u) { floorY = in.vWorld.y * uniforms.uDepth.x; }
+`
+    : ''}  if (md.b + md.a > 0.0 && !glow) { floorY = (in.vWorld.y + uniforms.uDepth.y * zd) * uniforms.uDepth.x; }
+  let u = clamp((floorY - uniforms.uDepth.z) * uniforms.uDepth.w, 0.0, 1.0);
+  let painter = in.vDepthFoot.y;
+  let depth = (${DEPTH_FORMULA};
+  return vec2<f32>(depth, select(0.0, 1.0, alpha >= 0.5 && !glow));
 }
 `;
 
@@ -87,16 +174,17 @@ const FRAGMENT_ENTRY_WGSL = /@fragment\nfn (\w+)\(in: VertexOut\) -> @location\(
 
 /**
  * pixelDepthVertex and pixelDepthFragment in one, for the sprite WGSL (instancedSprite.wgsl or instancedSpritePose.wgsl,
- * after spriteIndexedWgsl for the indexed program): uDepth closes the sprite uniform group's struct (Pixi lays a group
- * out in its entries' order, and the batch adds uDepth last), the foot's floor y and the row go to the fragment, and
- * every fragment entry keeps its name and colour and writes the floor depth (@builtin(frag_depth)), which needs a depth
- * attachment in the target. The twin page is group 2's binding 5 (the program's `maps`).
+ * after spriteIndexedWgsl for the indexed program, after gbufAttributeWgsl with `gbuf`): uDepth closes the sprite uniform
+ * group's struct (Pixi lays a group out in its entries' order, and the batch adds uDepth last), the foot's floor y, the
+ * painter step (the instance index) and the words go to the fragment, and every fragment entry keeps its name for the
+ * opaque pass and gets one `<name>Edge` for the edge pass, each writing the floor depth (@builtin(frag_depth): a depth
+ * attachment in the target) and discarding the other pass's pixels. The twin page is group 2's binding 5 (`maps`).
  * @param {string} source
- * @param {{ poseAlpha?: boolean }} [opts] `poseAlpha`: the group holds uPoseAlpha before uDepth though this source does
- *   not read it (the indexed program over a split batch's group)
+ * @param {{ poseAlpha?: boolean, gbuf?: boolean }} [opts] `poseAlpha`: the group holds uPoseAlpha before uDepth though
+ *   this source does not read it (the indexed program over a split batch's group); `gbuf`: the source takes aInstGbuf
  * @returns {string}
  */
-export function pixelDepthWgsl(source, { poseAlpha = false } = {}) {
+export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false } = {}) {
   const once = (text, find, add, what) => {
     if (text.split(find).length !== 2) throw new Error(`WeedJS: pixel depth needs the sprite WGSL (${what})`);
     return text.replace(find, () => find + add);
@@ -106,11 +194,19 @@ export function pixelDepthWgsl(source, { poseAlpha = false } = {}) {
   let out = hasPose
     ? once(source, pose, '  uDepth: vec4<f32>,\n', 'uPoseAlpha')
     : once(source, '  uTileWorld: vec4<f32>,\n', `${poseAlpha ? pose : ''}  uDepth: vec4<f32>,\n`, 'uTileWorld');
-  out = once(out, '  @location(5) vTileOff: vec2<f32>,\n', '  @location(8) @interpolate(flat) vDepthFoot: vec2<f32>,\n', 'vTileOff');
+  out = once(
+    out,
+    '  @location(5) vTileOff: vec2<f32>,\n',
+    '  @location(8) @interpolate(flat) vDepthFoot: vec2<f32>,\n' +
+      (gbuf ? '  @location(13) @interpolate(flat) vDepthWord: vec2<f32>,\n' : ''),
+    'vTileOff',
+  );
+  out = once(out, '  @location(1) aInstXY: vec2<f32>,\n', '  @builtin(instance_index) weedInstance: u32,\n', 'aInstXY');
   out = once(
     out,
     '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
-    '  out.vDepthFoot = vec2<f32>(aInstXY.y * uniforms.uDepth.x, aInstDepth);\n',
+    `  out.vDepthFoot = vec2<f32>(aInstXY.y * uniforms.uDepth.x, f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u));\n` +
+      (gbuf ? '  out.vDepthWord = aInstGbuf;\n' : ''),
     'out.position',
   );
   const entries = [];
@@ -121,15 +217,20 @@ export function pixelDepthWgsl(source, { poseAlpha = false } = {}) {
   if (entries.length === 0) throw new Error('WeedJS: pixel depth needs the sprite WGSL (a fragment entry)');
   let wrappers = '';
   for (const name of entries) {
-    wrappers += `
+    for (const [entry, keep] of [[name, 'd.y < 0.5'], [`${name}Edge`, 'd.y > 0.5']]) {
+      // The colour first: its textureSample comes before the discard, in uniform control flow.
+      wrappers += `
 @fragment
-fn ${name}(in: VertexOut) -> WeedDepthOut {
+fn ${entry}(in: VertexOut) -> WeedDepthOut {
   var o: WeedDepthOut;
-  o.depth = weedPixelDepth(in);
   o.color = ${name}Color(in);
+  let d = weedPixelDepth(in);
+  if (${keep}) { discard; }
+  o.depth = d.x;
   return o;
 }
 `;
+    }
   }
-  return out + DEPTH_WGSL + wrappers;
+  return out + depthWgsl({ gbuf }) + wrappers;
 }
