@@ -16276,18 +16276,20 @@
     {
       "id": "DX-PIXELSHADOW",
       "title": "Pixel-art lighting: an option that shades each world pixel whole (its light and its shadows at the pixel's centre), so a shadow follows the art's pixel grid crisply as the prototype's does",
-      "status": "open",
+      "status": "kept",
       "statusText": "asked by the owner 2026-11-15 looking at the fence against the prototype (\"la sombra también con pixel art, siguiendo exactamente las líneas pixeladas, queda mucho mejor\")",
       "date": "2026-11-15",
       "area": "render",
       "kind": "feature",
-      "result": "The prototype lights per world pixel and scales its picture up with nearest; the engine's light pass shades per pass pixel and its maps take five taps, so at zoom 3 its shadows' edges are smooth across the art's blocks.",
+      "result": "built (8e58d474): lighting.pixelArt snaps the light pass's point to the pixel's centre and reads each shadow map once; the bench's fence shadow crisp on the art's grid as the prototype's; on in the bench",
       "next": "A lighting option (pixel art) that snaps the light pass's world point to its pixel's centre before every term and drops the maps' blur to that pixel; the bench turns it on (it draws its atlas 'nearest' already); captures of the fence and the barn against the prototype; its cost in gpuPassBench.",
       "refs": [],
       "aliases": [
         "pixel art shadows"
       ],
-      "records": []
+      "records": [
+        "R-1146"
+      ]
     }
   ],
   "records": [
@@ -27197,6 +27199,18 @@
       "text": "N-209 fixed (65c4a83d). The owner's report: the fence's silhouette shadow did not stand on the fence's posts; compared with the prototype (\"la de la izquierda ... queda mucho mejor, y sí, está paralelo al fence\").\n\nMethod: protoVsBench3.mjs (session scratchpad): the fence alone in both apps, the bench's two fences' facings (188 and 15), its card fixed along it, the sun at 45 degrees high from four sides, zoom 3. At 188 both alike; at 15 the engine's rails' shadows were not parallel to the fence and its posts' shadows away from the posts, and a stray line showed under a southern sun.\n\nCause: the fixed card's axis came from the facing (15 degrees), the picture from the nearest of 32 directions (11.25): 5.6 degrees between them. The prototype takes the drawn frame's angle.\n\nFix: computeCasterCodes takes the axis from the direction drawn (its table's angle at directionIndex). After: at facing 15 the engine's bands parallel to the fence and in the prototype's place, the stray line gone. Still different: the prototype's shadow is crisp on the art's pixels, the engine's edges smooth (DX-PIXELSHADOW). node 2735/2735, demos 101/101.",
       "commits": [
         "65c4a83d"
+      ]
+    },
+    {
+      "id": "R-1146",
+      "date": "2026-11-15",
+      "time": "18:18",
+      "timeFrom": "recorded",
+      "title": "DX-PIXELSHADOW built: lighting.pixelArt, each world pixel lit whole",
+      "verdict": "kept",
+      "text": "DX-PIXELSHADOW built (8e58d474): lighting.pixelArt, after the owner's comparison of the fence with the prototype (the prototype's shadow crisp on the art's pixels \"queda mucho mejor\").\n\nWhat: the light pass snaps its world point to the pixel's centre before every term and reads the sun's and the lamps' maps with one tap (PIXELART blocks, GLSL and WGSL); the lamps' tiles sized for a texel a floor px. Default false; the light bench turns it on (?pixel=0 off).\n\nCheck: protoVsBench3 (the fence alone at facing 15, four suns, zoom 3): the engine's shadow crisp on the art's grid, the prototype's shape and place. WebGPU at night in the bench (a lamp at 60 px over the fence and the table): compiles and draws; the lamps' shadows step on single art pixels after the tile change (on pairs before it). Not timed: it does less than the five-tap pass (one tap a map, one floor). node 2739/2739, demos 101/101, check:types.",
+      "commits": [
+        "8e58d474"
       ]
     }
   ],
