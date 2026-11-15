@@ -16158,18 +16158,20 @@
     {
       "id": "N-205",
       "title": "A render's card (the hut, the table, set to silhouette) stands on the camera frame's lowest contact pushed towards the light by that fixed distance, not on its contact nearest the light as the prototype's does: with a lamp high behind such a thing its shadow looks wrong",
-      "status": "open",
+      "status": "answered",
       "statusText": "reported by the owner 2026-11-15 at the light bench (\"creo que esto estaba resuelto en el artifact\")",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
-      "result": "The prototype (cards(), buildCards()): the card stands at C + dL * sup, sup = baseSupport: the farthest of the camera frame's contacts (height-map pixels under 1.5 px: legs, wheels) along the direction to the light (the footprint's when it has under 3), per caster and light; the picture's foot row is the frame the light sees' own base row. WeedJS's lampMapVertex (and the sun's card) move the foot from the anchor towards the lamp by the distance from the anchor to the lowest contact row of the camera's frame, whatever the direction.",
+      "result": "no bug: under the owner's lamp the engine's silhouette shadows of the hen house and the table have the prototype's shape, place and length (protoVsBenchLamp, 8 pairs); long by nature (the card carries the top seen from above); both sheets cast their height map by default, which is right",
       "next": "Port the support: each frame's contacts (or footprint) as a polygon in the footprints texture (frameBase.js writeFootprintRow has one per frame already), the card's foot at the anchor + the support along the light's direction, in the lamps' and the sun's card programs (GLSL, WGSL); captures of the hut and the table with a lamp high behind them against the prototype under the same light.",
       "refs": [],
       "aliases": [
         "render card on its support"
       ],
-      "records": []
+      "records": [
+        "R-1143"
+      ]
     },
     {
       "id": "N-206",
@@ -27093,6 +27095,15 @@
         "c6880f7e",
         "c43014c0"
       ]
+    },
+    {
+      "id": "R-1143",
+      "date": "2026-11-15",
+      "time": "17:58",
+      "timeFrom": "recorded",
+      "title": "N-205 answered: a render's silhouette under a high lamp matches the prototype's",
+      "verdict": "answered",
+      "text": "N-205 answered: no bug. The owner's report (the hen house and the table set to silhouette look very wrong with a lamp high behind them; \"creo que esto estaba resuelto en el artifact\") checked against the prototype under the same lamp.\n\nMethod: protoVsBenchLamp.mjs (session scratchpad): one thing alone in the prototype (its downloaded files) and in the bench, at the bench's own facing (hen house 119, table 259), its card for the lamps, at night, one white lamp at the owner's places (hen house: 24, -104 px at 205 px high; table: -110, -88 at 205) and three more around each (one at 300 px), reach 900.\n\nResult: in all eight pairs the engine's silhouette shadow has the prototype's shape, place and length (the table's long trapezoid towards the camera, the hen house's blob); the engine's edges are softer (the lamps' map's five taps) and its light dimmer (other units for the lamp). The long shadows are the silhouette's nature on a flat-topped render: the card stands up with the picture the lamp sees, which carries the top seen from above at the art's pitch, so it is much taller than the thing. Both sheets cast their height map by default (meta.light3d.cast, as in the prototype), which gives their true shadow.\n\nA possible improvement (not in the prototype, not done): squash a render's card to its height map's real height (zmax) so its silhouette shadow is no longer than the thing."
     }
   ],
   "leads": [
