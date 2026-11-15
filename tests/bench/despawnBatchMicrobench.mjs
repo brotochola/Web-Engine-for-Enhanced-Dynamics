@@ -8,8 +8,9 @@
  *
  * activeEntitiesData holds 57344 entities (16-bit ids: 115 KB, Predator crowd 2.5's list) of four types, each
  * type a contiguous index range with its own _activeList. A batch despawns D distinct listed entities picked by a
- * seeded RNG, in queue order (unsorted), and runs the pass; the lists and Transform.active are then restored from a
- * snapshot (a memcpy, the same on both sides). Cases d8, d64 and d512 are batches of 8, 64 and 512 despawns;
+ * seeded RNG, queues them as processListUpdates does (queueDespawnListUpdate, so the queue grows to the batch) and
+ * runs the pass on the queue; the lists and Transform.active are then restored from a snapshot (a memcpy, the same on
+ * both sides). Cases d8, d64 and d512 are batches of 8, 64 and 512 despawns;
  * ops/s is batches per second. The checksum hashes every list after each batch of the cycle (E-344).
  */
 import { GameObject } from '../../src/core/gameObject.js';
@@ -58,8 +59,8 @@ function makeBatches(d) {
   const rng = mulberry32(SEED + d);
   const batches = [];
   for (let b = 0; b < CYCLE; b++) {
-    const idx = new Int32Array(Math.max(256, d));
-    const classes = new Array(idx.length);
+    const idx = new Int32Array(d);
+    const classes = new Array(d);
     const seen = new Set();
     let k = 0;
     while (k < d) {
@@ -76,10 +77,14 @@ function makeBatches(d) {
 }
 
 function runBatch(worker, lists, batch) {
-  const { idx, n } = batch;
+  const { idx, classes, n } = batch;
   const transformActive = Transform.active;
-  for (let i = 0; i < n; i++) transformActive[idx[i]] = 0;
-  worker._processDespawnSoA(idx, batch.classes, n);
+  for (let i = 0; i < n; i++) {
+    transformActive[idx[i]] = 0;
+    worker.queueDespawnListUpdate(idx[i], classes[i].entityType, classes[i]);
+  }
+  worker._processDespawnSoA(worker._despawnIdx, worker._despawnClass, worker._despawnN);
+  worker._despawnN = 0;
   const listed = lists.active[0];
   for (let i = 0; i < n; i++) transformActive[idx[i]] = 1;
   return listed;
@@ -131,7 +136,7 @@ async function main() {
   }
   const report = {
     feature: 'logic-despawn-lists',
-    functions: ['LogicWorker._processDespawnSoA'],
+    functions: ['LogicWorker.queueDespawnListUpdate', 'LogicWorker._processDespawnSoA'],
     seed: SEED,
     n: N,
     checksum: all,
