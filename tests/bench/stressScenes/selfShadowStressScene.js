@@ -26,7 +26,7 @@ const { Scene, Camera, Sun, LAYER_KIND } = WEED;
  *   (lighting.lampShadows 'map') and the steps run towards it too.
  * - `?shadows=0` lighting.shadowsEnabled off: no shadow maps, the sun's self-shadow alone (default 1: the sun's map and
  *   the lamps', as the light bench).
- * - `?hour=` (default 16), `?backend=webgl|webgpu` (default webgl).
+ * - `?hour=` (default 16), `?backend=webgl|webgpu` (default webgl), `?still=1` the lamps hold still (captures to compare).
  *
  * The 6 ms floor is a STEP_MS rule; here the knobs (`?n=` until the view is covered, then `?res=`, `?lamps=`, `?rays=`,
  * `?steps=`) take the frames under the display's rate, the regime where the presented frames can show a cost.
@@ -46,6 +46,7 @@ export const LAMPS = paramCount('lamps', 0, 0, 256);
 export const SHADOWS = param('shadows') !== '0';
 export const HOUR = paramNumber('hour', 16);
 export const BACKEND = paramBackend();
+export const STILL = param('still') === '1';
 
 export const stressSceneConfig = {
   requested: {
@@ -57,6 +58,7 @@ export const stressSceneConfig = {
     shadows: SHADOWS ? 1 : 0,
     hour: HOUR,
     backend: BACKEND,
+    still: STILL ? 1 : 0,
   },
 };
 
@@ -125,7 +127,7 @@ export class SelfShadowStressScene extends Scene {
     const colors = [0xffd08a, 0xffe0b0, 0xb0d0ff, 0xffc0a0];
     for (let k = 0; k < lamps.cells.length; k++) {
       const [x, y] = lamps.cells[k];
-      ReliefLamp.spawn({ x, y, radius: 260 + rng() * 120, color: colors[k % colors.length], elevation: 60 + rng() * 40, phase: rng() * 6.283 });
+      ReliefLamp.spawn({ x, y, radius: 260 + rng() * 120, color: colors[k % colors.length], elevation: 60 + rng() * 40, phase: rng() * 6.283, sway: STILL ? 0 : 10 });
     }
   }
 }
