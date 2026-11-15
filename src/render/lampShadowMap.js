@@ -6,23 +6,34 @@
  * highest caster point landing at each texel (max blending) holds what the lamp sees first, as the sun's does. A point
  * of the world is in the lamp's shadow when the map, where its own ray lands, holds something higher than it.
  *
- * One square tile a lamp (its radius around it, on the floor) in an atlas of tiles, instead of the five faces of a cube
- * (option A): a caster at or above the lamp's height lands at infinity and is left out (it cannot shade anything below
- * the lamp's height from it). The casters are pre-render's stamp rows, already picked for each lamp.
+ * DX-LAMPPANO (plan §17.8): a panorama of the lamp in two halves. Each lamp's tile is 2S x S texels: its left half (the
+ * floor) for what is lower than the lamp, as above; its right half (the ceiling) for what is higher, the same map for the
+ * world mirrored in the lamp's height (a point at z > E drawn at z' = 2E - z, its ray the mirror of an upward one). There
+ * the depth test keeps the point nearest the lamp's height, the lowest, and the texel its real height: a point above the
+ * lamp is in its shadow when something lower than it lands where its own mirrored ray does. A landing R from the lamp goes
+ * into its half linearly to LAMP_PANO_INNER of the half's radius within the reach, and the rest of the world, out to the
+ * horizon, into the ring left (lampPanoUv): no stretch cap, a point at the lamp's height lands at the half's edge. The
+ * casters are pre-render's stamp rows, already picked for each lamp.
  */
 
 import { CASTER_ID_GLSL, CASTER_ID_WGSL, MAP_TEXEL_WGSL } from './sunShadowMap.js';
 
 /** The highest height a tile's 8 bits span, as the sun map's (2 px a step). */
 export const LAMP_MAP_ZMAX = 512;
-/** A caster point this close under the lamp's height (px) lands no farther than this many radii (a stretch cap). */
-export const LAMP_MAP_MAX_STRETCH = 8;
+/**
+ * DX-LAMPPANO: the most a vertex's landing is drawn stretched (w at least its inverse), which also spans the depth that
+ * keeps the point nearest the lamp's height: points nearer to it than 1/64 of its height tie.
+ */
+export const LAMP_MAP_MAX_STRETCH = 64;
+/** DX-LAMPPANO: the share of a half tile's radius the lamp's reach takes; the ring left holds the world out to the horizon. */
+export const LAMP_PANO_INNER = 0.8;
 
 /**
  * E-374: the clip z that keeps a tile's highest caster point by the depth test, for a vertex drawn with w (a point at
- * height z under a lamp at height E: w = (E - z) / E, at least 1 / LAMP_MAP_MAX_STRETCH). The rasterizer interpolates
- * 1 / w exactly across a card, so a depth affine in 1 / w is each fragment's own, (S - 1 / w) / (S - 1): 1 on the floor, 0
- * at the stretch cap, falling as the height rises (the points past the cap tie, where the map is no projection). The
+ * height z under a lamp at height E: w = (E - z) / E, at least 1 / LAMP_MAP_MAX_STRETCH; in the ceiling half z is the
+ * mirrored height). The rasterizer interpolates 1 / w exactly across a card, so a depth affine in 1 / w is each fragment's
+ * own, (S - 1 / w) / (S - 1): 1 on the floor, 0 at the lamp's height. DX-LAMPPANO: within the reach a landing is the
+ * projection; in the ring past it the vertices' depths are interpolated (its rows are not one projective map). The
  * fragments then write no depth, which would turn the early depth test off for the whole pass. NDC z is 2 depth - 1 on
  * WebGL and the depth on WebGPU; clip z is that times w.
  * @param {string} w the vertex's w (a GLSL or WGSL expression)
@@ -42,15 +53,15 @@ export function lampClipZWgsl(w) {
  * Where a point lands on the floor along a lamp's ray, in the floor's space (x, y on the floor, z up).
  * @param {number} x
  * @param {number} y
- * @param {number} z the point's height (px); at or above the lamp's height it lands at its own floor point, stretched
- *   no more than LAMP_MAP_MAX_STRETCH (callers leave such points out)
+ * @param {number} z the point's height (px); DX-LAMPPANO: above the lamp it lands as its mirror (2E - z) does, and
+ *   within 1/64 of the lamp's height LAMP_MAP_MAX_STRETCH times as far
  * @param {number} lx the lamp's floor point
  * @param {number} ly
  * @param {number} elevation the lamp's height (px)
  * @param {Float64Array|number[]} out x, y
  */
 export function lampLanding(x, y, z, lx, ly, elevation, out) {
-  const room = elevation - z;
+  const room = Math.abs(elevation - z);
   const k = room > elevation / LAMP_MAP_MAX_STRETCH ? elevation / room : LAMP_MAP_MAX_STRETCH;
   out[0] = lx + (x - lx) * k;
   out[1] = ly + (y - ly) * k;
@@ -58,14 +69,42 @@ export function lampLanding(x, y, z, lx, ly, elevation, out) {
 }
 
 /**
- * The lamps' tile atlas: `count` square tiles of `size` texels, as many a row as fit `maxSide`.
+ * DX-LAMPPANO: a landing's place in its half tile, 0..1 each way, from its offset (dx, dy) to the lamp on the floor:
+ * linearly to LAMP_PANO_INNER of the half's radius within `reach`, beyond it LAMP_PANO_INNER + (1 - LAMP_PANO_INNER)
+ * (1 - reach / R), the horizon at the half's edge. The shaders' lampPanoUv.
+ * @param {Float64Array|number[]} out u, v
+ */
+export function lampPanoUv(dx, dy, reach, out) {
+  const r = Math.sqrt(dx * dx + dy * dy);
+  const q = r / reach;
+  const c = q <= 1 ? LAMP_PANO_INNER * q : LAMP_PANO_INNER + (1 - LAMP_PANO_INNER) * (1 - 1 / q);
+  const k = r > 1e-4 ? (0.5 * c) / r : 0;
+  out[0] = 0.5 + dx * k;
+  out[1] = 0.5 + dy * k;
+  return out;
+}
+
+/**
+ * DX-LAMPPANO: where a world point reads a lamp's tile: its half (0 the floor, lower than the lamp; 1 the ceiling, higher)
+ * and its place there (lampPanoUv of its landing). The light pass's lookup, in JS.
+ * @returns {{ half: number, u: number, v: number }}
+ */
+export function lampPanoTexel(x, y, z, lx, ly, elevation, reach) {
+  const land = lampLanding(x, y, z, lx, ly, elevation, new Float64Array(2));
+  const uv = lampPanoUv(land[0] - lx, land[1] - ly, reach, new Float64Array(2));
+  return { half: z > elevation ? 1 : 0, u: uv[0], v: uv[1] };
+}
+
+/**
+ * The lamps' tile atlas: `count` tiles of 2 `size` x `size` texels (DX-LAMPPANO: the floor half and the ceiling half),
+ * as many a row as fit `maxSide`.
  * @returns {{ perRow: number, width: number, height: number, size: number }}
  */
 export function lampTileLayout(count, size, maxSide = 4096) {
   const n = Math.max(1, count | 0);
   const s = Math.max(1, size | 0);
-  const perRow = Math.max(1, Math.min(n, Math.floor(maxSide / s)));
-  return { perRow, width: perRow * s, height: Math.ceil(n / perRow) * s, size: s };
+  const perRow = Math.max(1, Math.min(n, Math.floor(maxSide / (2 * s))));
+  return { perRow, width: perRow * 2 * s, height: Math.ceil(n / perRow) * s, size: s };
 }
 
 /** N-196, lampShadowTile 'auto': the floor px a lamp map texel spans at most at lighting.shadowResolution 1. */
@@ -74,16 +113,16 @@ export const LAMP_TEXEL_FLOOR_PX = 2;
 export const LAMP_MAP_MAX_TEXELS = 4096 * 2048;
 
 /**
- * N-196, lampShadowTile 'auto': a tile's side, a power of two from 64 to 1024, at which the widest casting lamp's tile
- * (twice its reach, floor px) spans at most LAMP_TEXEL_FLOOR_PX / resolution floor px a texel, as far as `tiles` such
- * tiles fit LAMP_MAP_MAX_TEXELS and `maxSide`. A fixed 256 drew a lamp of reach 900 at 7 floor px a texel whatever the
+ * N-196, lampShadowTile 'auto': a half tile's side, a power of two from 64 to 1024, at which the widest casting lamp's reach
+ * (its diameter on LAMP_PANO_INNER of the half: DX-LAMPPANO) spans at most LAMP_TEXEL_FLOOR_PX / resolution floor px a
+ * texel, as far as `tiles` such tiles (two halves each) fit LAMP_MAP_MAX_TEXELS and `maxSide`. A fixed 256 drew a lamp of reach 900 at 7 floor px a texel whatever the
  * shadows' resolution.
  * @param {number} maxReach the widest casting lamp's reach (floor px)
  * @param {number} resolution lighting.shadowResolution
  * @param {number} tiles the tiles the map holds
  */
 export function autoLampTileSize(maxReach, resolution, tiles, maxSide = 4096) {
-  const want = (2 * Math.max(0, maxReach) * Math.max(0.05, resolution)) / LAMP_TEXEL_FLOOR_PX;
+  const want = (2 * Math.max(0, maxReach) * Math.max(0.05, resolution)) / (LAMP_TEXEL_FLOOR_PX * LAMP_PANO_INNER);
   let size = 64;
   while (size < 1024 && size < want) size *= 2;
   for (;;) {
@@ -92,17 +131,6 @@ export function autoLampTileSize(maxReach, resolution, tiles, maxSide = 4096) {
     if (l.height <= maxSide && l.width * l.height <= LAMP_MAP_MAX_TEXELS) return size;
     size /= 2;
   }
-}
-
-/**
- * A floor point's texel in lamp `slot`'s tile (its radius `range` around the lamp, floor px): the tile's own 0..1
- * coordinates, or null outside it.
- * @returns {[number, number] | null}
- */
-export function lampTileUv(x, y, lx, ly, range) {
-  const u = (x - lx) / (2 * range) + 0.5;
-  const v = (y - ly) / (2 * range) + 0.5;
-  return u < 0 || v < 0 || u >= 1 || v >= 1 ? null : [u, v];
 }
 
 /** Cells across (and down) a render's frame when it casts columns towards a lamp: the sun's grid. */
@@ -139,8 +167,65 @@ export function lampTileTag(tile) {
   return -(tile + 1);
 }
 
+/** DX-LAMPPANO: lampPanoUv in GLSL (the light pass's lightingBasic.frag.glsl has its twin). */
+export const LAMP_PANO_GLSL = `// DX-LAMPPANO: a landing (its offset from the lamp on the floor) into its half tile, 0..1: linearly to ${LAMP_PANO_INNER} of
+// the half's radius within the reach, the rest of the world beyond it, the horizon at the half's edge (lampShadowMap.js).
+vec2 lampPanoUv(vec2 v, float reach) {
+  float r = length(v);
+  float q = r / reach;
+  float c = q <= 1.0 ? ${LAMP_PANO_INNER.toFixed(2)} * q : ${LAMP_PANO_INNER.toFixed(2)} + ${(1 - LAMP_PANO_INNER).toFixed(2)} * (1.0 - 1.0 / q);
+  return vec2(0.5) + (r > 1e-4 ? v * (0.5 * c / r) : vec2(0.0));
+}
+`;
+
+/** DX-LAMPPANO: lampPanoUv in WGSL. */
+export const LAMP_PANO_WGSL = `// DX-LAMPPANO: a landing into its half tile, 0..1 (lampShadowMap.js lampPanoUv).
+fn lampPanoUv(v: vec2<f32>, reach: f32) -> vec2<f32> {
+  let r = length(v);
+  let q = r / reach;
+  let c = select(${LAMP_PANO_INNER.toFixed(2)} + ${(1 - LAMP_PANO_INNER).toFixed(2)} * (1.0 - 1.0 / q), ${LAMP_PANO_INNER.toFixed(2)} * q, q <= 1.0);
+  var off = vec2<f32>(0.0);
+  if (r > 1e-4) { off = v * (0.5 * c / r); }
+  return vec2<f32>(0.5) + off;
+}
+`;
+
 // DX-GBUF: the caster's entity goes on with its height (sunShadowMap.js CASTER_ID_GLSL), kept by the map's depth test.
-const LAMP_DECL_GLSL = `out float vSunZ;\nout vec3 vTileUvW;\nflat out float vSunId;\nuniform sampler2D uLampTiles;\n${CASTER_ID_GLSL}`;
+const LAMP_DECL_GLSL = `out float vSunZ;\nout vec3 vTileUvW;\nflat out float vSunId;\nuniform sampler2D uLampTiles;\n${CASTER_ID_GLSL}${LAMP_PANO_GLSL}`;
+
+/**
+ * DX-LAMPPANO: a caster's three rows in a half (GLSL and WGSL alike): from `zAll`, the height its picture or column
+ * reaches, and `dist`, its floor point's distance to the lamp: the band of heights this half draws in its own terms (the
+ * floor from 0 to the top or the lamp's height; the ceiling, mirrored z' = 2E - z, from the mirrored top to the lamp's
+ * height) cut where its landing crosses the reach, so the band within the reach is the projection itself; `row` 0, 0.5 or
+ * 1 picks the band's base, that cut or its top. Leaves `zm` (this half's height of the row) and `zReal` (its real one).
+ */
+function lampRowsGlsl(zAll, dist, row) {
+  const near = (1 - 1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
+  return `  bool lampCeil = uTileWorld.z > 0.5;
+  float lampNear = lamp.z * ${near};
+  float zA = lampCeil ? 2.0 * lamp.z - ${zAll} : 0.0;
+  float zB = lampCeil ? lampNear : min(${zAll}, lampNear);
+  float zR = clamp(lamp.z * (1.0 - ${dist} / lamp.w), zA, zB);
+  float zm = ${row} < 0.25 ? zA : (${row} < 0.75 ? zR : zB);
+  float zReal = lampCeil ? 2.0 * lamp.z - zm : zm;
+  float w = max(lamp.z - zm, lamp.z / ${LAMP_MAP_MAX_STRETCH.toFixed(1)}) / lamp.z;
+`;
+}
+
+/** lampRowsGlsl in WGSL. */
+function lampRowsWgsl(zAll, dist, row) {
+  const near = (1 - 1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
+  return `  let lampCeil = uniforms.uTileWorld.z > 0.5;
+  let lampNear = lamp.z * ${near};
+  let zA = select(0.0, 2.0 * lamp.z - ${zAll}, lampCeil);
+  let zB = select(min(${zAll}, lampNear), lampNear, lampCeil);
+  let zR = clamp(lamp.z * (1.0 - ${dist} / lamp.w), zA, zB);
+  let zm = select(select(zB, zR, ${row} < 0.75), zA, ${row} < 0.25);
+  let zReal = select(zm, 2.0 * lamp.z - zm, lampCeil);
+  let w = max(lamp.z - zm, lamp.z / ${LAMP_MAP_MAX_STRETCH.toFixed(1)}) / lamp.z;
+`;
+}
 
 // The tile, its lamp and the early out, in GLSL; `extra` adds conditions (the columns' cell tests).
 const lampTileGlsl = (extra) => `  // DX-SHADOW3D (F7): this row's lamp (lampShadowMap.js). The stamp row's light z holds its tile + 1 (Pixi writes it), and
@@ -159,12 +244,13 @@ const lampTileGlsl = (extra) => `  // DX-SHADOW3D (F7): this row's lamp (lampSha
   }
 `;
 
-// A landed point into the lamp's tile of the atlas (uTileWorld: tiles a row, a tile's texels), drawn with w = 1 / its
+// A landed point into this pass's half of the lamp's tile (uTileWorld: tiles a row, a half's texels, the half: 0 the floor,
+// 1 the ceiling; DX-LAMPPANO: a tile is 2S x S and a landing goes into its half by lampPanoUv), drawn with w = 1 / its
 // stretch: the lamp's rays make a projective map, and with w the picture (and the height between its rows) spreads over
-// its shadow as they carry it. vTileUvW keeps the tile's own coordinates for the fragment's clip, read as screen-linear.
-const LAMP_OUT_GLSL = `  vec2 tuv = (land - lamp.xy) / (2.0 * lamp.w) + 0.5;
+// its shadow as they carry it. vTileUvW keeps the half's own coordinates for the fragment's clip, read as screen-linear.
+const LAMP_OUT_GLSL = `  vec2 tuv = lampPanoUv(land - lamp.xy, lamp.w);
   int perRow = int(uTileWorld.x);
-  vec2 px = (vec2(float(tile % perRow), float(tile / perRow)) + tuv) * uTileWorld.y;
+  vec2 px = (vec2(float(tile % perRow) * 2.0 + uTileWorld.z, float(tile / perRow)) + tuv) * uTileWorld.y;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   vec3 clip = mvp * vec3(px, 1.0);
   gl_Position = vec4(clip.xy * w, ${lampClipZGlsl('w')}, w);
@@ -196,14 +282,16 @@ function lampHeadGlsl(source, what) {
 /**
  * The lamps' map's vertex shader for cards (instancedSpriteShadow.vert.glsl's head, its own body): each stamp row's
  * caster as a card standing on its base (frameBase.js), facing its lamp, each point of the picture landing on the floor
- * along the lamp's ray (lampLanding), in the lamp's tile; its height passed on (vSunZ) for the max blending. A render's
- * frame (its base a contact) casts columns instead (lampMapColumnsVertex).
+ * along the lamp's ray (lampLanding), in this pass's half of the lamp's tile; its height passed on (vSunZ) for the depth
+ * test. A render's frame (its base a contact) casts columns instead (lampMapColumnsVertex). DX-LAMPPANO: drawn on a strip of
+ * three rows (lampCardStrip: aQuad.y 0, 0.5, 1 the rows, lampRowsGlsl), the picture's row worked out from each vertex's
+ * height; the ceiling pass (uTileWorld.z 1) draws the part above the lamp, mirrored.
  * @param {string} source instancedSpriteShadow.vert.glsl
  */
 export function lampMapVertex(source) {
-  return `${lampHeadGlsl(source, 'the lamps\' shadow map')}${lampTileGlsl(' || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBase.x < 0.0)')}  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
+  return `${lampHeadGlsl(source, 'the lamps\' shadow map')}  float zPerRow = aInstTrim.w * abs(aInstScale.y) / uSunK.w * height;
+${lampTileGlsl(' || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBase.x < 0.0) || (uTileWorld.z > 0.5 && zPerRow <= lamp.z)')}  vec2 content = aInstTrim.xy + vec2(aQuad.x, 1.0) * aInstTrim.zw;
   float bottom = aInstTrim.y + aInstTrim.w;
-  float z = max(bottom - content.y, 0.0) * abs(aInstScale.y) / uSunK.w * height;
   // The picture's column at the card's foot, and the foot: under the lowest row, or the base's edge towards the lamp.
   float footCol = anchor.x * aInstSize.x;
   vec2 foot = vec2(aInstXY.x, (aInstXY.y + (bottom - aInstAnchor.y * aInstSize.y) * aInstScale.y) * uGroundInvScaleY);
@@ -240,22 +328,9 @@ export function lampMapVertex(source) {
   float dl = length(toLamp);
   vec2 dir = dl > 1e-3 ? toLamp / dl : vec2(0.0, -1.0);
   vec2 p = foot + (content.x - footCol) * aInstScale.x * (castFixed ? castAxis : vec2(dir.y, -dir.x));
-  // E-375: past the height where its ray lands twice the lamp's reach away (outside the tile, whose corner is 1.41 reach
-  // away) the column casts nothing the light pass reads, while a capped stretch drew it out to 8 times its distance and
-  // the fragment threw it away: its top is drawn there instead, with the picture's row at that height. The landing below
-  // it is the same projection (w = (E - z) / E, interpolated exactly), so the tile holds the same texels.
-  vec2 lampQuad = aQuad;
-  float zCut = lamp.z * (1.0 - length(p - lamp.xy) / (2.0 * lamp.w));
-  float zPerRow = aInstTrim.w * abs(aInstScale.y) / uSunK.w * height;
-  // Above the stretch cap's height a point lands at S times its distance, inside the circle when that is short enough.
-  if (z > zCut && zCut < lamp.z * ${(1 - 1 / LAMP_MAP_MAX_STRETCH).toFixed(6)} && zPerRow > 0.0) {
-    z = max(zCut, 0.0);
-    lampQuad.y = 1.0 - z / zPerRow;
-  }
-  float room = lamp.z - z;
-  float w = room > lamp.z * ${(1 / LAMP_MAP_MAX_STRETCH).toFixed(6)} ? room / lamp.z : ${(1 / LAMP_MAP_MAX_STRETCH).toFixed(6)};
+${lampRowsGlsl('zPerRow', 'length(p - lamp.xy)', 'aQuad.y')}  vec2 lampQuad = vec2(aQuad.x, 1.0 - zReal / max(zPerRow, 1e-3));
   vec2 land = lamp.xy + (p - lamp.xy) / w;
-  vSunZ = z;
+  vSunZ = zReal;
 ${LAMP_OUT_GLSL}`;
 }
 
@@ -275,30 +350,23 @@ export function lampMapColumnsVertex(source, cells = LAMP_MAP_COLUMNS) {
   const top = head
     .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nin vec4 aBlock; // E-379: this instance\'s block of its frame (x, y) and the blocks a side (z, 0 or 1: one)\nvec2 aQuad;\nuniform sampler2D uTexture;\nuniform sampler2D uMaps;\n')
     .replace(main, `${main}  float blocks = max(aBlock.z, 1.0);\n  aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
-  const k = (1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
   return `${top}  vec2 uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
   vec4 m = texelFetch(uMaps, ivec2(uvc * vec2(textureSize(uMaps, 0))), 0);
   float cellAlpha = texelFetch(uTexture, ivec2(uvc * vec2(textureSize(uTexture, 0))), 0).a;
   float z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * height * abs(aInstScale.y);
-${lampTileGlsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBase.x >= 0.0) || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5')}  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
+${lampTileGlsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBase.x >= 0.0) || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5 || (uTileWorld.z > 0.5 && z <= lamp.z)')}  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
   vec2 pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   vec2 base = vec2(pix.x, (pix.y + uSunK.w * z) * uGroundInvScaleY);
-  float roomTop = lamp.z - z;
-  vec2 tip = lamp.xy + (base - lamp.xy) / (roomTop > lamp.z * ${k} ? roomTop / lamp.z : ${k});
-  vec2 along = tip - base;
-  float len = length(along);
-  vec2 across = len > 1e-3 ? vec2(-along.y, along.x) / len : vec2(1.0, 0.0);
+  // The column runs from the lamp's way (radially), its width across.
+  vec2 fromLamp = base - lamp.xy;
+  float dist = length(fromLamp);
+  vec2 across = dist > 1e-3 ? vec2(-fromLamp.y, fromLamp.x) / dist : vec2(1.0, 0.0);
   vec2 cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
   float width = 1.1 * max(cell.x, cell.y * uGroundInvScaleY) + 1.0;
-  // E-375: the column's tip at most where its ray lands twice the lamp's reach away (lampMapVertex says why).
-  float h = z * aCell.z;
-  float hCut = lamp.z * (1.0 - length(base - lamp.xy) / (2.0 * lamp.w));
-  if (h > hCut && hCut < lamp.z * ${(1 - 1 / LAMP_MAP_MAX_STRETCH).toFixed(6)}) h = max(hCut, 0.0);
-  vec2 lampQuad = aQuad;
-  float room = lamp.z - h;
-  float w = room > lamp.z * ${k} ? room / lamp.z : ${k};
-  vec2 land = lamp.xy + (base - lamp.xy) / w + across * aCell.w * width;
-  vSunZ = h;
+  // DX-LAMPPANO: its rows in this half (aCell.z 0, 0.5, 1: lampColumnGrid), as the cards' (lampRowsGlsl).
+${lampRowsGlsl('z', 'dist', 'aCell.z')}  vec2 lampQuad = aQuad;
+  vec2 land = lamp.xy + fromLamp / w + across * aCell.w * width;
+  vSunZ = zReal;
 ${LAMP_OUT_GLSL}`;
 }
 
@@ -347,9 +415,9 @@ const lampTileWgsl = (extra) => `  // DX-SHADOW3D (F7): this row's lamp (lampMap
   }
 `;
 
-const LAMP_OUT_WGSL = `  let tuv = (land - lamp.xy) / (2.0 * lamp.w) + 0.5;
+const LAMP_OUT_WGSL = `  let tuv = lampPanoUv(land - lamp.xy, lamp.w);
   let perRow = i32(uniforms.uTileWorld.x);
-  let px = (vec2<f32>(f32(tile % perRow), f32(tile / perRow)) + tuv) * uniforms.uTileWorld.y;
+  let px = (vec2<f32>(f32(tile % perRow) * 2.0 + uniforms.uTileWorld.z, f32(tile / perRow)) + tuv) * uniforms.uTileWorld.y;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(px, 1.0);
   out.position = vec4<f32>(clip.xy * w, ${lampClipZWgsl('w')}, w);
@@ -385,7 +453,7 @@ function lampPartsWgsl(source, what) {
     .slice(0, from)
     .replace(struct, `${struct}  @location(6) vSunZ: f32,\n  @location(7) vTileUvW: vec3<f32>,\n  @location(8) @interpolate(flat) vSunId: f32,\n`)
     .replace(body, `${body}  out.vSunId = casterEntityId(aInstTintBits);\n`)
-    .replace(binding, `${binding}// DX-SHADOW3D (F7): the lamps' tiles: a lamp's floor point, height and reach (lampShadowMap.js).\n@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n`);
+    .replace(binding, `${binding}// DX-SHADOW3D (F7): the lamps' tiles: a lamp's floor point, height and reach (lampShadowMap.js).\n@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n${LAMP_PANO_WGSL}`);
   return { head, rest: source.slice(to + end.length) };
 }
 
@@ -396,10 +464,9 @@ function lampPartsWgsl(source, what) {
  */
 export function lampMapWgsl(source) {
   const { head, rest } = lampPartsWgsl(source, 'the lamps\' shadow map');
-  const k = (1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
-  return `${head}${lampTileWgsl(' || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBase.x < 0.0)')}  let content = aInstTrim.xy + aQuad * aInstTrim.zw;
+  return `${head}  let zPerRow = aInstTrim.w * abs(aInstScale.y) / uniforms.uSunK.w * height;
+${lampTileWgsl(' || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBase.x < 0.0) || (uniforms.uTileWorld.z > 0.5 && zPerRow <= lamp.z)')}  let content = aInstTrim.xy + vec2<f32>(aQuad.x, 1.0) * aInstTrim.zw;
   let bottom = aInstTrim.y + aInstTrim.w;
-  var z = max(bottom - content.y, 0.0) * abs(aInstScale.y) / uniforms.uSunK.w * height;
   var footCol = anchor.x * aInstSize.x;
   var foot = vec2<f32>(aInstXY.x, (aInstXY.y + (bottom - aInstAnchor.y * aInstSize.y) * aInstScale.y) * uniforms.uGroundInvScaleY);
   if (aInstBase.x >= 1.0) {
@@ -437,18 +504,10 @@ export function lampMapWgsl(source) {
   var dir = vec2<f32>(0.0, -1.0);
   if (dl > 1e-3) { dir = toLamp / dl; }
   let p = foot + (content.x - footCol) * aInstScale.x * select(vec2<f32>(dir.y, -dir.x), castAxis, castFixed);
-  // E-375: the column stops where its ray would land twice the lamp's reach away (lampMapVertex says why).
-  var lampQuad = aQuad;
-  let zCut = lamp.z * (1.0 - length(p - lamp.xy) / (2.0 * lamp.w));
-  let zPerRow = aInstTrim.w * abs(aInstScale.y) / uniforms.uSunK.w * height;
-  if (z > zCut && zCut < lamp.z * ${(1 - 1 / LAMP_MAP_MAX_STRETCH).toFixed(6)} && zPerRow > 0.0) {
-    z = max(zCut, 0.0);
-    lampQuad.y = 1.0 - z / zPerRow;
-  }
-  let room = lamp.z - z;
-  let w = select(${k}, room / lamp.z, room > lamp.z * ${k});
+  // DX-LAMPPANO: the strip's three rows in this half (lampMapVertex says how).
+${lampRowsWgsl('zPerRow', 'length(p - lamp.xy)', 'aQuad.y')}  let lampQuad = vec2<f32>(aQuad.x, 1.0 - zReal / max(zPerRow, 1e-3));
   let land = lamp.xy + (p - lamp.xy) / w;
-  out.vSunZ = z;
+  out.vSunZ = zReal;
 ${LAMP_OUT_WGSL}${rest}${LAMP_FRAGMENT_WGSL}`;
 }
 
@@ -474,29 +533,72 @@ export function lampMapColumnsWgsl(source, cells = LAMP_MAP_COLUMNS) {
       // had no binding 7, which Pixi reports as "the resource bound as 'uFoot' was destroyed".
       "@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n// DX-SHADOW3D: the renders' footprints (the layout's binding 7; unread here).\n@group(2) @binding(7) var uFoot: texture_2d<f32>;\n",
     );
-  const k = (1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
   return `${head}  let uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
   let m = textureLoad(uMaps, vec2<i32>(uvc * vec2<f32>(textureDimensions(uMaps, 0))), 0);
   let cellAlpha = textureLoad(uTexture, vec2<i32>(uvc * vec2<f32>(textureDimensions(uTexture, 0))), 0).a;
   let z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * height * abs(aInstScale.y);
-${lampTileWgsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBase.x >= 0.0) || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5')}  let content = aInstTrim.xy + aQuad * aInstTrim.zw;
+${lampTileWgsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBase.x >= 0.0) || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5 || (uniforms.uTileWorld.z > 0.5 && z <= lamp.z)')}  let content = aInstTrim.xy + aQuad * aInstTrim.zw;
   let pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   let base = vec2<f32>(pix.x, (pix.y + uniforms.uSunK.w * z) * uniforms.uGroundInvScaleY);
-  let roomTop = lamp.z - z;
-  let tip = lamp.xy + (base - lamp.xy) / select(${k}, roomTop / lamp.z, roomTop > lamp.z * ${k});
-  let along = tip - base;
-  let len = length(along);
+  let fromLamp = base - lamp.xy;
+  let dist = length(fromLamp);
   var across = vec2<f32>(1.0, 0.0);
-  if (len > 1e-3) { across = vec2<f32>(-along.y, along.x) / len; }
+  if (dist > 1e-3) { across = vec2<f32>(-fromLamp.y, fromLamp.x) / dist; }
   let cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
   let width = 1.1 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 1.0;
-  var h = z * aCell.z;
-  let hCut = lamp.z * (1.0 - length(base - lamp.xy) / (2.0 * lamp.w));
-  if (h > hCut && hCut < lamp.z * ${(1 - 1 / LAMP_MAP_MAX_STRETCH).toFixed(6)}) { h = max(hCut, 0.0); }
-  let lampQuad = aQuad;
-  let room = lamp.z - h;
-  let w = select(${k}, room / lamp.z, room > lamp.z * ${k});
-  let land = lamp.xy + (base - lamp.xy) / w + across * aCell.w * width;
-  out.vSunZ = h;
+  // DX-LAMPPANO: its rows in this half (lampMapColumnsVertex says how).
+${lampRowsWgsl('z', 'dist', 'aCell.z')}  let lampQuad = aQuad;
+  let land = lamp.xy + fromLamp / w + across * aCell.w * width;
+  out.vSunZ = zReal;
 ${LAMP_OUT_WGSL}${parts.rest}${LAMP_FRAGMENT_WGSL}`;
+}
+
+/**
+ * DX-LAMPPANO: the cards' strip, drawn instead of the sprite batch's quad: aQuad.x across the picture (0 or 1), aQuad.y the
+ * row (0 the band's base, 0.5 where its landing crosses the reach, 1 its top: lampRowsGlsl), two triangles a band.
+ * @returns {{ vertices: Float32Array, indices: Uint16Array }}
+ */
+export function lampCardStrip() {
+  return {
+    vertices: new Float32Array([0, 0, 1, 0, 0, 0.5, 1, 0.5, 0, 1, 1, 1]),
+    indices: new Uint16Array([0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4]),
+  };
+}
+
+/**
+ * DX-LAMPPANO: the lamps' columns' grid, sunMapColumnGrid's with three rows a cell side (aCell.z 0, 0.5, 1: the base, the
+ * reach's cut, the top), six vertices a cell.
+ * @param {number} [cells]
+ * @returns {Float32Array}
+ */
+export function lampColumnGrid(cells = LAMP_MAP_COLUMNS) {
+  const corners = [[0, -1], [0.5, -1], [1, -1], [1, 1], [0.5, 1], [0, 1]];
+  const out = new Float32Array(cells * cells * corners.length * 4);
+  let at = 0;
+  for (let j = 0; j < cells; j++) {
+    for (let i = 0; i < cells; i++) {
+      for (const [t, side] of corners) {
+        out[at++] = (i + 0.5) / cells;
+        out[at++] = (j + 0.5) / cells;
+        out[at++] = t;
+        out[at++] = side;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * DX-LAMPPANO: lampColumnGrid's index buffer: each cell's lower band (rows 0 and 0.5) and upper band (0.5 and 1), two
+ * triangles each over the corners they share.
+ * @param {number} [cells]
+ * @returns {Uint16Array}
+ */
+export function lampColumnIndex(cells = LAMP_MAP_COLUMNS) {
+  const out = new Uint16Array(cells * cells * 12);
+  for (let c = 0, at = 0; c < cells * cells; c++, at += 12) {
+    const v = c * 6;
+    out.set([v, v + 1, v + 4, v, v + 4, v + 5, v + 1, v + 2, v + 3, v + 1, v + 3, v + 4], at);
+  }
+  return out;
 }

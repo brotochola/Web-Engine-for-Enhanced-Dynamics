@@ -28,7 +28,7 @@ import {
 import {
   SUN_MAP_COLUMNS, sunMapColumnGrid, sunMapColumnIndex, sunMapColumnsVertex, sunMapColumnsWgsl, sunMapVertex, sunMapWgsl,
 } from '../../../src/render/sunShadowMap.js';
-import { lampMapFragment, lampMapVertex, lampMapWgsl } from '../../../src/render/lampShadowMap.js';
+import { lampCardStrip, lampMapFragment, lampMapVertex, lampMapWgsl } from '../../../src/render/lampShadowMap.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from '../../../src/render/pixelDepth.js';
 import { FOOTPRINT_TEXELS } from '../../../src/render/frameBase.js';
 import { projection } from './scenery.js';
@@ -289,6 +289,9 @@ export function buildFrame(p, sh, sc, backend) {
     uRound: 0,
   });
   const quad = { name: 'aQuad', size: 2, data: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), indices: new Uint16Array([0, 1, 2, 0, 2, 3]), count: 4 };
+  // DX-LAMPPANO: the lamps' cards are drawn on a strip of three rows (the engine's lampCardStrip).
+  const cardStrip = lampCardStrip();
+  const strip = { name: 'aQuad', size: 2, data: cardStrip.vertices, indices: cardStrip.indices, count: 6 };
   const screen = { name: 'aPosition', size: 2, data: new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]), indices: new Uint16Array([0, 1, 2, 0, 2, 3]), count: 4 };
   // As the engine draws them: the grid by its index buffer.
   const gridData = sunMapColumnGrid(SUN_MAP_COLUMNS);
@@ -488,22 +491,26 @@ export function buildFrame(p, sh, sc, backend) {
       clear: [0, 0, 0, 0],
     },
   }));
-  add('lampMap', () => ({
-    label: `lamps' map, ${sc.lampCount} tiles of ${tiles.size}, ${sc.lampCasters.count} casters, ${tiles.width}x${tiles.height} ${p.format}`,
-    spec: {
-      name: 'lampMap',
-      glsl: { vertex: lampMapVertex(sh.shadowVert), fragment: lampMapFragment(sh.sunMapFrag) },
-      wgsl: { code: lampMapWgsl(sh.shadowWgsl), vertexEntry: 'mainVert', fragmentEntry: 'mainFragLamp' },
-      vertex: quad,
-      instances: sc.lampCasters,
-      textures: { uTexture: 'atlas', uTexLut: 'lutCard', uLampTiles: 'lampTiles' },
-      uniforms: { ...shadowUniforms(), ...pixi(tiles.width, tiles.height), uTileWorld: [tiles.perRow, tiles.size, 0, 0] },
-      targets: ['lampMap'],
-      depthTarget: 'lampDepth',
-      blend: ['none'],
-      clear: [0, 0, 0, 0],
-    },
-  }));
+  // DX-LAMPPANO: the floor's half (lampMap) and the ceiling's (lampMapCeiling: uTileWorld.z 1, the cards' parts above
+  // their lamp mirrored), each its own pass here; the engine draws both in one render.
+  for (const [name, half] of [['lampMap', 0], ['lampMapCeiling', 1]]) {
+    add(name, () => ({
+      label: `lamps' map${half ? ' (ceiling)' : ''}, ${sc.lampCount} tiles of 2 x ${tiles.size}, ${sc.lampCasters.count} casters, ${tiles.width}x${tiles.height} ${p.format}`,
+      spec: {
+        name,
+        glsl: { vertex: lampMapVertex(sh.shadowVert), fragment: lampMapFragment(sh.sunMapFrag) },
+        wgsl: { code: lampMapWgsl(sh.shadowWgsl), vertexEntry: 'mainVert', fragmentEntry: 'mainFragLamp' },
+        vertex: strip,
+        instances: sc.lampCasters,
+        textures: { uTexture: 'atlas', uTexLut: 'lutCard', uLampTiles: 'lampTiles' },
+        uniforms: { ...shadowUniforms(), ...pixi(tiles.width, tiles.height), uTileWorld: [tiles.perRow, tiles.size, half, 0] },
+        targets: ['lampMap'],
+        depthTarget: 'lampDepth',
+        blend: ['none'],
+        clear: [0, 0, 0, 0],
+      },
+    }));
+  }
   add('light', () => lightPass('light', { faces: false, sunMap: false }, `light pass (today's), ${p.lights} of ${sc.maxLights} lights, ${lw}x${lh}`));
   add('light3d', () =>
     lightPass('light3d', { faces: true, sunMap: true, lampMap: true }, `light pass with G-buffer, sun map and lamps' map, ${p.lights} of ${sc.maxLights} lights, ${lw}x${lh}`),

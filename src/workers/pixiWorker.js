@@ -84,6 +84,9 @@ import {
   lampMapVertex,
   lampMapWgsl,
   autoLampTileSize,
+  lampCardStrip,
+  lampColumnGrid,
+  lampColumnIndex,
   lampTileLayout,
   writeLampTile,
 } from '../render/lampShadowMap.js';
@@ -978,9 +981,17 @@ class PixiRenderer extends AbstractWorker {
     this._lampMapLights = 0;
     this.lampMapRT = null;
     this._lampMapMesh = null;
+    /** DX-LAMPPANO: the cards drawn into the ceiling's half (their own uniforms: uTileWorld.z 1). */
+    this._lampMapMeshCeil = null;
     this._lampMapHost = null;
     this._lampMapColumns = null;
     this._lampMapUniforms = null;
+    this._lampMapUniformsCeil = null;
+    /** DX-LAMPPANO: the cards' strip (lampCardStrip) and its geometry over the batch's instance attributes. */
+    this._lampStripBuffer = null;
+    this._lampStripIndex = new Uint16Array(0);
+    this._lampStripGeometry = null;
+    this._lampStripSource = null;
     this._lampMapClear = false;
     this._lampMapDrew = false;
     // Each tile's lamp (floor point, height, reach) as RGBA32F, a texel a tile; entity -> tile; last frame's lamps.
@@ -2297,6 +2308,7 @@ class PixiRenderer extends AbstractWorker {
     for (let i = 0; i < holders.length; i++) {
       const c = holders[i];
       if (c && c.shader && c.shader.resources.uFoot !== source) c.shader.resources.uFoot = source;
+      if (c && c.shaderCeil && c.shaderCeil.resources.uFoot !== source) c.shaderCeil.resources.uFoot = source;
     }
   }
 
@@ -6576,7 +6588,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   _pointLampTilePrograms() {
     const source = this._lampTileSource;
-    const shaders = [this._lampMapMesh && this._lampMapMesh.shader, this._lampMapColumns && this._lampMapColumns.shader];
+    const shaders = [
+      this._lampMapMesh && this._lampMapMesh.shader,
+      this._lampMapMeshCeil && this._lampMapMeshCeil.shader,
+      this._lampMapColumns && this._lampMapColumns.shader,
+      this._lampMapColumns && this._lampMapColumns.shaderCeil,
+    ];
     for (let i = 0; i < this._volumeLampEntries.length; i++) {
       const meshes = this._volumeLampEntries[i].meshes;
       for (let k = 0; k < meshes.length; k++) shaders.push(meshes[k].shader);
@@ -6658,7 +6675,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this._lampTileSource === null) this._uploadLampTiles();
     if (this._lampMapMesh === null) {
       const r = batch.shadowShader.resources;
-      const uniforms = {
+      const lampUniforms = () => ({
         uTileWorld: { value: new Float32Array(4), type: 'vec4<f32>' },
         uSun: { value: new Float32Array(4), type: 'vec4<f32>' },
         uLight: { value: new Float32Array(4), type: 'vec4<f32>' },
@@ -6667,34 +6684,49 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         uGroundInvScaleY: { value: 1, type: 'f32' },
         uSunK: { value: new Float32Array(4), type: 'vec4<f32>' },
         uSunPerp: { value: new Float32Array(4), type: 'vec4<f32>' },
-      };
-      const shader = new PIXI.Shader({
+      });
+      // DX-LAMPPANO: one program set for each half of the tiles, the ceiling's with uTileWorld.z 1.
+      const cardShader = (uniforms) => new PIXI.Shader({
         ...this._lampMapProgram(false),
         resources: { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uLampTiles: this._lampTileSource, uniforms },
       });
+      const shader = cardShader(lampUniforms());
+      const shaderCeil = cardShader(lampUniforms());
       this._lampMapUniforms = shader.resources.uniforms;
+      this._lampMapUniformsCeil = shaderCeil.resources.uniforms;
       const state = mapDepthState();
-      this._lampMapMesh = new PIXI.Mesh({ geometry: batch.mesh.geometry, shader, state, label: 'lamp-map' });
+      // DX-LAMPPANO: the cards on a strip of three rows (lampCardStrip) over the stamp rows' instance attributes.
+      const strip = lampCardStrip();
+      this._lampStripBuffer = new Buffer({ data: strip.vertices, usage: BufferUsage.VERTEX, label: 'lamp-card-strip' });
+      this._lampStripIndex = strip.indices;
+      this._lampStripGeometry = this._lampCardGeometry(batch);
+      this._lampStripSource = batch.mesh.geometry;
+      this._lampMapMesh = new PIXI.Mesh({ geometry: this._lampStripGeometry, shader, state, label: 'lamp-map' });
+      this._lampMapMeshCeil = new PIXI.Mesh({ geometry: this._lampStripGeometry, shader: shaderCeil, state, label: 'lamp-map-ceiling' });
       // A depth test keeps the highest caster point and its entity; a mesh's blend mode holds only as a child (the sun
-      // map's host says why).
+      // map's host says why). Both halves in one render: they write apart.
       this._lampMapMesh.blendMode = 'none';
+      this._lampMapMeshCeil.blendMode = 'none';
       this._lampMapHost = new PIXI.Container();
       this._lampMapHost.addChild(this._lampMapMesh);
+      this._lampMapHost.addChild(this._lampMapMeshCeil);
+      const columnShader = (uniforms) => new PIXI.Shader({
+        ...this._lampMapProgram(true),
+        resources: {
+          uTexture: r.uTexture,
+          uSampler: r.uSampler,
+          uTexLut: r.uTexLut,
+          uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
+          uFoot: this._footSourceOrEmpty(),
+          uLampTiles: this._lampTileSource,
+          uniforms,
+        },
+      });
       this._lampMapColumns = {
-        shader: new PIXI.Shader({
-          ...this._lampMapProgram(true),
-          resources: {
-            uTexture: r.uTexture,
-            uSampler: r.uSampler,
-            uTexLut: r.uTexLut,
-            uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
-            uFoot: this._footSourceOrEmpty(),
-            uLampTiles: this._lampTileSource,
-            uniforms: this._lampMapUniforms,
-          },
-        }),
-        grid: new Buffer({ data: sunMapColumnGrid(LAMP_MAP_COLUMNS), usage: BufferUsage.VERTEX }),
-        index: sunMapColumnIndex(LAMP_MAP_COLUMNS),
+        shader: columnShader(this._lampMapUniforms),
+        shaderCeil: columnShader(this._lampMapUniformsCeil),
+        grid: new Buffer({ data: lampColumnGrid(LAMP_MAP_COLUMNS), usage: BufferUsage.VERTEX }),
+        index: lampColumnIndex(LAMP_MAP_COLUMNS),
         state,
         blendMode: 'none',
         rows: new Float32Array(64 * GPU_CASTER_FLOATS),
@@ -6715,14 +6747,25 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const data = batch.data;
     for (let i = 0, at = GPU_CASTER_LIGHT_FLOAT + 2; i < keep; i++, at += GPU_CASTER_FLOATS) data[at] = tiles[i] + 1;
     if (!batch.commitInstances(keep)) return false;
-    const mesh = this._lampMapMesh;
-    mesh.geometry = batch.mesh.geometry;
-    const u = this._lampMapUniforms.uniforms;
-    u.uTileWorld[0] = this._lampTilesPerRow;
-    u.uTileWorld[1] = this._lampTileSize;
-    u.uSunK[3] = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
-    u.uGroundInvScaleY = this._groundInvScaleY || 1;
-    this._lampMapUniforms.update();
+    // DX-LAMPPANO: the strip's geometry follows the batch's (a new one when the batch grows), drawn for these rows.
+    if (this._lampStripSource !== batch.mesh.geometry) {
+      this._lampStripGeometry.destroy();
+      this._lampStripGeometry = this._lampCardGeometry(batch);
+      this._lampStripSource = batch.mesh.geometry;
+      this._lampMapMesh.geometry = this._lampStripGeometry;
+      this._lampMapMeshCeil.geometry = this._lampStripGeometry;
+    }
+    this._lampStripGeometry.instanceCount = keep;
+    for (let half = 0; half < 2; half++) {
+      const group = half === 0 ? this._lampMapUniforms : this._lampMapUniformsCeil;
+      const u = group.uniforms;
+      u.uTileWorld[0] = this._lampTilesPerRow;
+      u.uTileWorld[1] = this._lampTileSize;
+      u.uTileWorld[2] = half;
+      u.uSunK[3] = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
+      u.uGroundInvScaleY = this._groundInvScaleY || 1;
+      group.update();
+    }
     const rtOpts = this._rtRenderOpts;
     rtOpts.container = this._lampMapHost;
     rtOpts.target = this.lampMapRT;
@@ -6742,6 +6785,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.target = this.shadowRT;
     this._lampMapClear = false;
     return true;
+  }
+
+  /**
+   * DX-LAMPPANO: the cards' geometry: the strip (aQuad: lampCardStrip) per vertex, and the sprite batch's instance
+   * attributes (this frame's stamp rows) per instance, as the columns' slots read them.
+   */
+  _lampCardGeometry(batch) {
+    const attributes = { aQuad: { buffer: this._lampStripBuffer, format: 'float32x2', stride: 8, offset: 0 } };
+    for (const [name, a] of Object.entries(batch.mesh.geometry.attributes)) {
+      if (name === 'aQuad') continue;
+      attributes[name] = { buffer: a.buffer, format: a.format, stride: a.stride, offset: a.offset, instance: true };
+    }
+    return new PIXI.Geometry({ attributes, indexBuffer: this._lampStripIndex });
   }
 
   /**
@@ -6916,6 +6972,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     mesh.blendMode = columns.blendMode || 'max';
     const host = new PIXI.Container();
     host.addChild(mesh);
+    // DX-LAMPPANO: the lamps' columns into the ceiling's half too, the same rows in the same render.
+    if (columns.shaderCeil) {
+      const ceil = new PIXI.Mesh({ geometry, shader: columns.shaderCeil, state: columns.state, label: `${columns.label}-ceiling` });
+      ceil.blendMode = columns.blendMode || 'max';
+      host.addChild(ceil);
+    }
     return {
       rowBuffer,
       blockBuffer,

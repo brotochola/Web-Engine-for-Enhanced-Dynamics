@@ -6,7 +6,8 @@
  *   vertex landing by the map's shift, its height in the map's units (uSunShadow.w: 1 / heightScaleY);
  * - into the lamps' map (lampShadowMap.js), once a tile in use (volumeLampVertex / volumeLampWgsl): uSunShadow.xy 0, so the
  *   vertex stays on its floor point P = (x, screen y / groundScaleY), which lands along the tile's lamp's ray at
- *   L + (P - L) · E / (E - z) (the stretch capped at LAMP_MAP_MAX_STRETCH), in the tile, drawn with w = (E - z) / E so the
+ *   L + (P - L) · E / (E - z) (DX-LAMPPANO: compressed into the floor's half of the tile out to the horizon, the stretch
+ *   drawn at most LAMP_MAP_MAX_STRETCH), in the tile, drawn with w = (E - z) / E so the
  *   heights spread over the shadow as the rays carry them, cut to the tile by the fragment. The tile's lamp is the tiles'
  *   texture's (writeLampTile: its floor point, height and reach), read by uLampVolume.x. A triangle whose floor footprint
  *   lies past one edge of the tile is left out in its vertices: its landing lies further past it. So is one of the lamp's
@@ -15,7 +16,7 @@
  */
 
 import { MAP_TEXEL_WGSL, SUN_MAP_ZMAX } from './sunShadowMap.js';
-import { LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX, lampClipZGlsl, lampClipZWgsl } from './lampShadowMap.js';
+import { LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX, LAMP_PANO_GLSL, LAMP_PANO_WGSL, lampClipZGlsl, lampClipZWgsl } from './lampShadowMap.js';
 import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
 
 /** The source with `add` after its one `find`, or a clear error. */
@@ -88,9 +89,11 @@ ${VOLUME_ID_GLSL}
   float lampRoom = lamp.z - lampZ;
   float lampW = lampRoom > lamp.z * ${MIN_W} ? lampRoom / lamp.z : ${MIN_W};
   vec2 lampLand = lamp.xy + (vec2(world.x, world.y * uLampVolume.w) - lamp.xy) / lampW;
-  vec2 lampUv = (lampLand - lamp.xy) / (2.0 * lamp.w) + 0.5;
+  // DX-LAMPPANO: into the floor's half of the lamp's 2S x S tile, compressed out to the horizon (lampPanoUv); a volume
+  // higher than its lamp stays on the floor's half (the ceiling's takes the cards and the columns).
+  vec2 lampUv = lampPanoUv(lampLand - lamp.xy, lamp.w);
   int lampPerRow = max(int(uLampVolume.y + 0.5), 1);
-  vec2 lampPx = (vec2(float(lampTile % lampPerRow), float(lampTile / lampPerRow)) + lampUv) * uLampVolume.z;
+  vec2 lampPx = (vec2(float(lampTile % lampPerRow) * 2.0, float(lampTile / lampPerRow)) + lampUv) * uLampVolume.z;
   vec3 lampClip = mvp * vec3(lampPx, 1.0);
   gl_Position = vec4(lampClip.xy * lampW, ${lampClipZGlsl('lampW')}, lampW);
   vTileUvW = vec3(lampUv * lampW, lampW);
@@ -110,7 +113,7 @@ export function volumeLampVertex(source) {
     'out float vSunZ;\nout vec3 vTileUvW;\nflat out float vSunId;\n' +
     "// DX-SHADOW3D (F7): uLampVolume: this draw's tile, tiles a row, a tile's texels, 1 / groundScaleY; uLampOwner.x: the\n" +
     "// tile's lamp's entity (-1 none); uLampTiles: the tiles' lamps.\n" +
-    'uniform vec4 uLampVolume;\nuniform vec4 uLampOwner;\nuniform sampler2D uLampTiles;\n';
+    'uniform vec4 uLampVolume;\nuniform vec4 uLampOwner;\nuniform sampler2D uLampTiles;\n' + LAMP_PANO_GLSL;
   const out = after(source, 'out vec2 vMeshUV;\n', decl, what);
   return after(out, 'gl_Position = vec4(clip.xy, aInstDepth, 1.0);', LAMP_GLSL, what);
 }
@@ -153,9 +156,10 @@ ${VOLUME_ID_WGSL}  out.vTileUvW = vec3<f32>(-1.0, -1.0, 1.0);
   let lampRoom = lamp.z - lampZ;
   let lampW = select(${MIN_W}, lampRoom / lamp.z, lampRoom > lamp.z * ${MIN_W});
   let lampLand = lamp.xy + (vec2<f32>(world.x, world.y * lampInvG) - lamp.xy) / lampW;
-  let lampUv = (lampLand - lamp.xy) / (2.0 * lamp.w) + 0.5;
+  // DX-LAMPPANO: into the floor's half of the lamp's tile, compressed (LAMP_GLSL says how).
+  let lampUv = lampPanoUv(lampLand - lamp.xy, lamp.w);
   let lampPerRow = max(i32(sunShadow.uLampVolume.y + 0.5), 1);
-  let lampPx = (vec2<f32>(f32(lampTile % lampPerRow), f32(lampTile / lampPerRow)) + lampUv) * sunShadow.uLampVolume.z;
+  let lampPx = (vec2<f32>(f32(lampTile % lampPerRow) * 2.0, f32(lampTile / lampPerRow)) + lampUv) * sunShadow.uLampVolume.z;
   let lampClip = mvp * vec3<f32>(lampPx, 1.0);
   out.position = vec4<f32>(lampClip.xy * lampW, ${lampClipZWgsl('lampW')}, lampW);
   out.vTileUvW = vec3<f32>(lampUv * lampW, lampW);
@@ -196,7 +200,7 @@ export function volumeLampWgsl(source) {
     out,
     '@group(2) @binding(4) var<uniform> sunShadow: SunShadowUniforms;\n',
     "// DX-SHADOW3D (F7): the tiles' lamps: floor point, height and reach (lampShadowMap.js writeLampTile).\n" +
-      '@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n',
+      '@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n' + LAMP_PANO_WGSL,
     what,
   );
   out = after(

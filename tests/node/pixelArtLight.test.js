@@ -21,6 +21,7 @@ for (const [name, source] of [['GLSL', GLSL], ['WGSL', WGSL]]) {
   test(`DX-PIXELSHADOW (${name}): off, the pass keeps its five taps and its point`, () => {
     const off = lightingSource(source, { ...FLAGS, pixelArt: false });
     assert.doesNotMatch(off, /floor\(fragWorld\)/);
-    assert.equal(off.match(/lit \* 0\.2/g)?.length, 2, 'the sun map and the lamps\' map average five taps');
+    // The sun map, the lamps' map and its floor-only lookup (DX-LAMPPANO) average five taps.
+    assert.equal(off.match(/lit \* 0\.2/g)?.length, 3, 'every map lookup averages five taps');
   });
 }

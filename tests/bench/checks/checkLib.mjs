@@ -247,7 +247,8 @@ export function sunGeometry(sun, floorScaleY) {
 }
 
 /** Where a point (x, y on the floor, z up) lands on the floor along a lamp's ray (plan §F7: L + (p - L)·E / (E - z)). */
-export function lampLandingPoint(p, lamp, maxStretch = 8) {
+export function lampLandingPoint(p, lamp, maxStretch = 64) {
+  // DX-LAMPPANO: the engine's map draws no stretch cap (lampShadowMap.js LAMP_MAP_MAX_STRETCH bounds only its w).
   const room = lamp.elevation - p[2];
   const k = room > lamp.elevation / maxStretch ? lamp.elevation / room : maxStretch;
   return [lamp.x + (p[0] - lamp.x) * k, lamp.y + (p[1] - lamp.y) * k];

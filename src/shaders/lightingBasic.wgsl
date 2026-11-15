@@ -182,39 +182,84 @@ fn lampOwner(tag: f32) -> f32 {
 // #endif !IDS
 }
 
-fn lampTap(c: vec2<i32>, lo: vec2<i32>, hi: vec2<i32>, above: f32, selfId: f32) -> f32 {
+// DX-LAMPPANO: a landing into its half tile, 0..1 (lightingBasic.frag.glsl's lampPanoUv).
+fn lampPanoUv(v: vec2<f32>, reach: f32) -> vec2<f32> {
+  let r = length(v);
+  let q = r / reach;
+  let c = select(0.80 + 0.20 * (1.0 - 1.0 / q), 0.80 * q, q <= 1.0);
+  var off = vec2<f32>(0.0);
+  if (r > 1e-4) { off = v * (0.5 * c / r); }
+  return vec2<f32>(0.5) + off;
+}
+
+// One tap: on the floor's half a point is shaded under a caster higher than `bound`, on the ceiling's (upper) under one
+// lower than it (an empty texel, 0, holds none).
+fn lampTap(c: vec2<i32>, lo: vec2<i32>, hi: vec2<i32>, bound: f32, upper: bool, selfId: f32) -> f32 {
   let m = textureLoad(uLampMap, clamp(c, lo, hi), 0);
-  return select(1.0, 1.0 - m.g, m.r * 512.0 > above && !ownTexel(m, selfId));
+  let z = m.r * 512.0;
+  let hit = select(z > bound, z > 0.0 && z < bound, upper);
+  return select(1.0, 1.0 - m.g, hit && !ownTexel(m, selfId));
 }
 
 fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, selfId: f32) -> f32 {
-  if (tag >= 0.0 || e <= 0.0 || p.z >= e) { return 1.0; }
+  if (tag >= 0.0 || e <= 0.0) { return 1.0; }
   let reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
-  if (reach <= 0.0) { return 1.0; }
-  let room = e - p.z;
-  let k = select(8.0, e / room, room > e * 0.125);
-  let uv = (p.xy - l) * k / (2.0 * reach) + 0.5;
-  if (uv.x < 0.0 || uv.y < 0.0 || uv.x >= 1.0 || uv.y >= 1.0) { return 1.0; }
+  // DX-LAMPPANO: past the reach on the floor the lamp gives no light (reachWindow), so nothing to read.
+  let fromLamp = p.xy - l;
+  if (reach <= 0.0 || dot(fromLamp, fromLamp) >= reach * reach) { return 1.0; }
+  // DX-LAMPPANO: a point higher than the lamp reads the ceiling's half, landing as its mirror (2E - z) does.
+  let upper = p.z > e;
+  let room = max(abs(e - p.z), e / 64.0);
+  let uv = lampPanoUv(fromLamp * (e / room), reach);
   let tile = lampTile(tag);
   let a = uniforms.uLampAtlas;
   let perRow = i32(a.x);
   let size = i32(a.y);
-  let lo = vec2<i32>(tile % perRow, tile / perRow) * size;
+  let lo = vec2<i32>((tile % perRow) * 2 + select(0, 1, upper), tile / perRow) * size;
   let hi = lo + vec2<i32>(size - 1);
   let c = lo + vec2<i32>(floor(uv * a.y));
   // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
-  let above = select(0.0, p.z + 4.0 + p.z * 0.03, p.z > 0.0);
-  var lit = lampTap(c, lo, hi, above, selfId);
+  // On the ceiling's half the bias goes under the point (towards lit there).
+  let bound = select(select(0.0, p.z + 4.0 + p.z * 0.03, p.z > 0.0), p.z - 4.0 - p.z * 0.03, upper);
+  var lit = lampTap(c, lo, hi, bound, upper, selfId);
 // #if PIXELART
   // DX-PIXELSHADOW: one tap at the art pixel's centre, crisp on the art's grid.
   return lit;
 // #endif PIXELART
 // #if !PIXELART
-  lit += lampTap(c + vec2<i32>(1, 0), lo, hi, above, selfId);
-  lit += lampTap(c - vec2<i32>(1, 0), lo, hi, above, selfId);
-  lit += lampTap(c + vec2<i32>(0, 1), lo, hi, above, selfId);
-  lit += lampTap(c - vec2<i32>(0, 1), lo, hi, above, selfId);
+  lit += lampTap(c + vec2<i32>(1, 0), lo, hi, bound, upper, selfId);
+  lit += lampTap(c - vec2<i32>(1, 0), lo, hi, bound, upper, selfId);
+  lit += lampTap(c + vec2<i32>(0, 1), lo, hi, bound, upper, selfId);
+  lit += lampTap(c - vec2<i32>(0, 1), lo, hi, bound, upper, selfId);
+  return lit * 0.2;
+// #endif !PIXELART
+}
+
+// DX-LAMPPANO: lampVisibility for a floor point (z 0, the flat path): the floor's half, no bias (lightingBasic.frag.glsl
+// says why it has its own body).
+fn lampVisibilityFloor(p: vec2<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32) -> f32 {
+  if (tag >= 0.0 || e <= 0.0) { return 1.0; }
+  let reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
+  let fromLamp = p - l;
+  if (reach <= 0.0 || dot(fromLamp, fromLamp) >= reach * reach) { return 1.0; }
+  let uv = lampPanoUv(fromLamp, reach);
+  let tile = lampTile(tag);
+  let a = uniforms.uLampAtlas;
+  let perRow = i32(a.x);
+  let size = i32(a.y);
+  let lo = vec2<i32>((tile % perRow) * 2, tile / perRow) * size;
+  let hi = lo + vec2<i32>(size - 1);
+  let c = lo + vec2<i32>(floor(uv * a.y));
+  var lit = lampTap(c, lo, hi, 0.0, false, 0.0);
+// #if PIXELART
+  return lit;
+// #endif PIXELART
+// #if !PIXELART
+  lit += lampTap(c + vec2<i32>(1, 0), lo, hi, 0.0, false, 0.0);
+  lit += lampTap(c - vec2<i32>(1, 0), lo, hi, 0.0, false, 0.0);
+  lit += lampTap(c + vec2<i32>(0, 1), lo, hi, 0.0, false, 0.0);
+  lit += lampTap(c - vec2<i32>(0, 1), lo, hi, 0.0, false, 0.0);
   return lit * 0.2;
 // #endif !PIXELART
 }
@@ -439,7 +484,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     var attenuation = intensityScaled / (intensityScaled + d2Scaled)
       * reachWindow(dot(fragWorld - posInt.xy, fragWorld - posInt.xy), posInt.z, col.a);
 // #if LAMPMAP
-    attenuation *= lampVisibility(vec3<f32>(fragWorld, 0.0), posInt.xy, col.a, posInt.w, posInt.z, 0.0);
+    attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z);
 // #endif LAMPMAP
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
   }
@@ -458,7 +503,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
       var attenuation = intensityScaled / (intensityScaled + d2Scaled)
         * reachWindow(dot(fragWorld - lightWorld, fragWorld - lightWorld), intensity, col.a);
 // #if LAMPMAP
-      attenuation *= lampVisibility(vec3<f32>(fragWorld, 0.0), lightWorld, col.a, posInt.w, intensity, 0.0);
+      attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity);
 // #endif LAMPMAP
       totalLight += col.rgb * attenuation;
     }
