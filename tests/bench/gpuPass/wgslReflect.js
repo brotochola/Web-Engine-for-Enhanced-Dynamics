@@ -188,11 +188,11 @@ export function fragmentTargets(code, entry) {
 
 /**
  * Writes `values` (by field name) into a uniform buffer laid out as `layout`. Missing fields stay 0. A mat3x3 value is
- * Pixi's 9 floats, column by column. `intBits`: 'pixi' writes an i32 field as a float's bits (what Pixi's uniform sync
- * does: pixiWorker's uConeCount note), 'exact' as the integer.
+ * Pixi's 9 floats, column by column. `intBits`: 'exact' writes an i32 field as the integer (the vendored Pixi's uniform
+ * sync: dataInt32[offset] = v), 'float' as a float's bits (what pixiWorker's uConeCount note says Pixi once did).
  * @returns {ArrayBuffer}
  */
-export function packUniforms(layout, values, intBits = 'pixi') {
+export function packUniforms(layout, values, intBits = 'exact') {
   const size = Math.max(16, Math.ceil(layout.size / 16) * 16);
   const buffer = new ArrayBuffer(size);
   const f32 = new Float32Array(buffer);

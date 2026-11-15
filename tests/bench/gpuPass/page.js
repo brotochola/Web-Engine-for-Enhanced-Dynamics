@@ -11,8 +11,8 @@
  *   0.5)  shadowRes (sun map, 1)  lights (32)  maxLights (MAX_LIGHTS and the light texture's width, 256)
  *   silhouettes (sprites and sun cards, 2000)  renders (sun columns casters, 200)  lamps (48)  casters (a lamp, 64)
  *   tile (a lamp's tile texels, 256)  steps (self-shadow steps, 6)  rays (1)  format (the shadow maps' target: rgba8,
- *   r16f, r32f, rgba16f; rgba8)  night (1: no sun term)  intBits (WebGPU i32 uniforms as Pixi writes them, 'pixi', or
- *   'exact')  samples (12)  targetMs (25)  maxK (512)  warmupMs (300)  hangMs (10000)  capacity (0)
+ *   r16f, r32f, rgba16f; rgba8)  night (1: no sun term)  intBits (WebGPU i32 uniforms: 'exact', as the vendored
+ *   Pixi writes them, or 'float', a float's bits: then uLightCount reads huge and the loops run to maxLights)  samples (12)  targetMs (25)  maxK (512)  warmupMs (300)  hangMs (10000)  capacity (0)
  *   floorScaleY, heightScaleY (the light bench's camera: 0.736, 0.752)
  */
 
@@ -53,7 +53,7 @@ export function readParams(search) {
     rays: int('rays', 1, 1),
     format,
     night: q.get('night') === '1',
-    intBits: q.get('intBits') === 'exact' ? 'exact' : 'pixi',
+    intBits: q.get('intBits') === 'float' ? 'float' : 'exact',
     samples: int('samples', 12, 3),
     targetMs: Math.max(2, num('targetMs', 25)),
     maxK: int('maxK', 512, 1),
@@ -194,9 +194,12 @@ async function run() {
       }
     }
     for (const name of order) if (handles[name]) backend.draw(handles[name]);
-    await backend.timeEmpty();
-    for (const key of ['gbuf', 'gbufFull', 'sunMap', 'lampMap']) {
-      if (order.some((n) => handles[n]?.spec.targets.includes(key))) out.inputs[key] = await coverage(backend, key);
+    // The capacity search is the fallback for a backend whose waits hang: it waits for nothing, read backs included.
+    if (!p.capacity) {
+      await backend.timeEmpty();
+      for (const key of ['gbuf', 'gbufFull', 'sunMap', 'lampMap']) {
+        if (order.some((n) => handles[n]?.spec.targets.includes(key))) out.inputs[key] = await coverage(backend, key);
+      }
     }
     for (const name of p.passes) {
       const h = handles[name];

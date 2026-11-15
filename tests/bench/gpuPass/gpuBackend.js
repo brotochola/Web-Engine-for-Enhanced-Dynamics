@@ -61,9 +61,9 @@ function padded(data) {
 
 /**
  * @param {HTMLCanvasElement} canvas
- * @param {{ hangMs?: number, intBits?: 'pixi' | 'exact' }} [opts]
+ * @param {{ hangMs?: number, intBits?: 'exact' | 'float' }} [opts]
  */
-export async function createGpuBackend(canvas, { hangMs = 10000, intBits = 'pixi' } = {}) {
+export async function createGpuBackend(canvas, { hangMs = 10000, intBits = 'exact' } = {}) {
   if (!navigator.gpu) throw new Error('no WebGPU (navigator.gpu)');
   const adapter = await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
   if (!adapter) throw new Error('no WebGPU adapter');
