@@ -134,6 +134,11 @@ test('a caster with a height map casts columns: each cell where it is in 3D, the
   assert.match(src, /vec2 base = vec2\(pix\.x, \(pix\.y \+ uSunK\.w \* z\) \* uGroundInvScaleY\);/);
   assert.match(src, /vSunZ = z \* aCell\.z;/);
   assert.match(src, new RegExp(`/ ${SUN_MAP_COLUMNS}\\.0;`));
-  assert.doesNotMatch(src, /sunMapped\(aInstUV\)\) \{/, 'columns do not skip mapped frames: cards do');
-  assert.match(sunMapVertex(shader('instancedSpriteShadow.vert.glsl')), /if \(sunMapped\(aInstUV\)\) \{/);
+  // A render (its base has a contact) casts columns and no card; a picture of one view, maps or not, its card.
+  assert.match(src, /if \(aInstBase\.x >= 0\.0 \|\| m\.b \+ m\.a <= 0\.0/);
+  assert.match(sunMapVertex(shader('instancedSpriteShadow.vert.glsl')), /if \(aInstBase\.x < 0\.0\) \{/);
+  // Drawn on the sprite shadows' layer: the shadow's colour and opacity, no height.
+  const flat = sunMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl'), SUN_MAP_COLUMNS, { heights: false });
+  assert.match(flat, /vColor = vec4\(0\.0, 0\.0, 0\.0, uSun\.w\);/);
+  assert.doesNotMatch(flat, /vSunZ/);
 });

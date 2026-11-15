@@ -59,7 +59,7 @@ import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource, resolveFaces, shaderWithFlag } from '../render/faceMap.js';
 import { SUN_MAP_COLUMNS, sunMapColumnGrid, sunMapColumnsVertex, sunMapTerms, sunMapVertex } from '../render/sunShadowMap.js';
-import { instancedSpriteGlProgram } from '../render/webgl/instancedSpriteGlsl.js';
+import { instancedSpriteGlProgram, pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
 import { TileMap } from '../core/tileMap.js';
 import {
   listGidPages,
@@ -880,6 +880,9 @@ class PixiRenderer extends AbstractWorker {
     // its own; as a child it draws with max.
     this._sunMapHost = null;
     this._sunMapColumns = null; // { shader, grid, meshes: one a caster geometry } (sunMapColumnsVertex)
+    // DX-SHADOW3D: sprite shadows in a scene with height maps (WebGL): cards that skip mapped frames, and the columns of
+    // the mapped ones on the sprite shadows' layer (max blending). { cards, columns } once made (_drawSunSolids).
+    this._sunSolids = null;
     this._sunMapUniforms = null;
     this._sunMapTerms = new Float32Array(4);
     this._sunMapK = new Float32Array(4);
@@ -5783,7 +5786,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   _ensureKeyedCasters(sunShader) {
     // DX-SHADOW3D: the sun's map, and a directional caster's sun frame, read pre-render's full rows.
-    if (this._keyedCastersTried || this._sunMapOn || this.config?.lighting?.directionalCasters === true) return;
+    if (this._keyedCastersTried || this._sunMapOn || this._sunSolidsOn() || this.config?.lighting?.directionalCasters === true) return;
     this._keyedCastersTried = true;
     const b = this.entitiesBatch;
     const casters = this.gpuCasterBatch;
@@ -5951,6 +5954,64 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return entry;
   }
 
+  /**
+   * DX-SHADOW3D: whether the sprite shadows cast solids: the atlas has height maps and the renderer is WebGL (the columns'
+   * program is GLSL for now; WebGPU keeps every frame's card).
+   */
+  _sunSolidsOn() {
+    return this.atlasMapsSource !== null && !this._useWebGpu && Boolean(this._engineShaders?.shadowVert);
+  }
+
+  /**
+   * DX-SHADOW3D: the sun's sprite shadows in a scene with height maps, as the light bench cast them: a frame with a height
+   * map casts its solid (the columns of sunMapColumnsVertex, max blending, so overlapping columns are one shadow), every
+   * other frame its card. Both read the committed full rows and the sun pass's own uniforms.
+   */
+  _drawSunSolids(batch, group) {
+    if (this._sunSolids === null) {
+      const shaders = this._engineShaders;
+      const r = batch.shadowShader.resources;
+      const fragment = pickInstancedSpriteFragmentGlsl(true, false, shaders);
+      const resources = () => ({ uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: this.atlasMapsSource, uniforms: group });
+      const cards = instancedSpriteGlProgram(PIXI.GlProgram, sunMapVertex(shaders.shadowVert, { heights: false }), fragment, 'sun-cards');
+      const columns = instancedSpriteGlProgram(
+        PIXI.GlProgram,
+        sunMapColumnsVertex(shaders.shadowVert, SUN_MAP_COLUMNS, { heights: false }),
+        fragment,
+        'sun-columns',
+      );
+      const state = new PIXI.State();
+      state.blend = true;
+      state.blendMode = 'max';
+      state.depthTest = false;
+      state.depthMask = false;
+      state.culling = false;
+      this._sunSolids = {
+        cards: new PIXI.Mesh({ geometry: batch.mesh.geometry, shader: new PIXI.Shader({ glProgram: cards, resources: resources() }), state: batch.mesh.state, label: 'sun-cards' }),
+        columns: {
+          shader: new PIXI.Shader({ glProgram: columns, resources: resources() }),
+          grid: new Buffer({ data: sunMapColumnGrid(), usage: BufferUsage.VERTEX }),
+          index: Uint16Array.from({ length: SUN_MAP_COLUMNS * SUN_MAP_COLUMNS * 6 }, (_, i) => i),
+          state,
+          meshes: [],
+          label: 'sun-columns',
+        },
+      };
+    }
+    const cards = this._sunSolids.cards;
+    cards.geometry = batch.mesh.geometry;
+    this._drawGpuCasterPass(cards, group, true);
+    const columns = this._sunMapColumnsMesh(batch.mesh.geometry, this._sunSolids.columns);
+    if ((columns.mesh.geometry.instanceCount | 0) <= 0) return;
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.container = columns.host;
+    rtOpts.target = this.shadowRT;
+    rtOpts.clear = false;
+    this._syncUniformGroup(group);
+    this._submitRender(rtOpts);
+    this._gpuPassesThisFrame++;
+  }
+
   /** DX-SHADOW3D: a frame with no sun rows clears the sun's map (once). */
   _clearSunMapIfEmpty() {
     if (this._sunMapDrew || !this.sunMapRT || this._sunMapClear === true) {
@@ -6034,6 +6095,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // DX-SHADOW3D: the sun's rows go to its shadow map, not to the sprite shadows' layer.
       if (u.uSun[3] > 0 && sunN > 0 && this._drawSunMap(batch, gpu, sunN, zoom * res)) this._sunMapDrew = true;
       this._clearSunMapIfEmpty();
+    } else if (u.uSun[3] > 0 && sunN > 0 && !keyedRows && this._sunSolidsOn()) {
+      // DX-SHADOW3D: a scene with height maps: what has one casts its solid's columns, the rest its card (full rows).
+      this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS);
+      this._drawSunSolids(batch, group);
     } else if (u.uSun[3] > 0 && sunN > 0) {
       // E-211: pre-render's keyed sun rows when it wrote them (it packs them for the stamps in any case): 28 bytes a
       // caster, read in order, where the instances cost the keyed pack 12 bytes a sprite gathered from three more

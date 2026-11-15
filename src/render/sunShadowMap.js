@@ -60,17 +60,12 @@ export function sunMapLanding({ footX, footY, localX, localY, heightScaleY, heig
 /** Cells across (and down) a frame when it casts columns: SUN_MAP_COLUMNS² columns a caster with a height map. */
 export const SUN_MAP_COLUMNS = 24;
 
-/** Whether a frame (its atlas UV rectangle) has a height map: the twin page at three points down its middle. */
-const MAPPED_GLSL = `uniform sampler2D uMaps;
-bool sunMapped(vec4 uv) {
-  vec2 size = vec2(textureSize(uMaps, 0));
-  for (int k = 0; k < 3; k++) {
-    vec4 m = texelFetch(uMaps, ivec2(mix(uv.xy, uv.zw, vec2(0.5, 0.3 + 0.2 * float(k))) * size), 0);
-    if (m.b + m.a > 0.0) return true;
-  }
-  return false;
-}
-`;
+/**
+ * The atlas's twin page (heights), which the columns read. Which frames cast columns is the frame's base's to say
+ * (frameBase.js): a render with a height map has a contact (aInstBase.x < 0) and casts its solid; a picture of one view
+ * (a person, a tree), maps or not, casts its card, as the light bench did (its solid would fill the light under a crown).
+ */
+const MAPPED_GLSL = 'uniform sampler2D uMaps;\n';
 
 /**
  * The grid sunMapColumnsVertex draws over a frame, SUN_MAP_COLUMNS² cells of two triangles: per vertex the cell's centre
@@ -98,11 +93,16 @@ export function sunMapColumnGrid(cells = SUN_MAP_COLUMNS) {
  * The columns' vertex shader: a frame with a height map stands each of its cells where it is in 3D (its screen place and
  * its height: floor y = (screen y + heightScaleY · z) / groundScaleY) and casts the column under it: a strip from that
  * floor point (height 0) to where the cell's sun ray lands (height z). The union of the columns is the object's solid
- * shadow, whatever way it is turned. Transparent cells and cells without a map draw nothing (the card pass casts those).
+ * shadow, whatever way it is turned. Only a render's frames cast them (its base has a contact); transparent cells and
+ * cells without a map draw nothing.
+ * With `heights` (the sun's map) each column carries its height; without (the sprite shadows' layer, drawn with max
+ * blending) it is the shadow's colour and opacity.
  * @param {string} source instancedSpriteShadow.vert.glsl
+ * @param {number} [cells]
+ * @param {{ heights?: boolean }} [opts]
  */
-export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS) {
-  const card = sunMapVertex(source);
+export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights = true } = {}) {
+  const card = sunMapVertex(source, { heights });
   const quad = 'in vec2 aQuad;\n';
   const main = 'void main() {\n';
   const after = '  // weed:afterAnchor\n';
@@ -117,9 +117,8 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS) {
   vec4 m = texelFetch(uMaps, ivec2(uvc * vec2(textureSize(uMaps, 0))), 0);
   float cellAlpha = texelFetch(uTexture, ivec2(uvc * vec2(textureSize(uTexture, 0))), 0).a;
   float z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * height;
-  if (m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5) {
-    gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
-    vSunZ = 0.0;
+  if (aInstBase.x >= 0.0 || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5) {
+    gl_Position = vec4(2.0, 2.0, 0.0, 1.0);${heights ? '\n    vSunZ = 0.0;' : '\n    vColor = vec4(0.0);'}
     return;
   }
   vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
@@ -139,12 +138,11 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS) {
   gl_Position = vec4(clip.xy, 0.0, 1.0);
   if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   vLocal = aQuad;
-  vColor = vec4(1.0);
+  vColor = ${heights ? 'vec4(1.0)' : 'vec4(0.0, 0.0, 0.0, uSun.w)'};
   vWorld = world;
   vAtlasUV = aInstUV;
   vTileInv = aInstTileInv;
-  vTileOff = aInstTileOff;
-  vSunZ = z * aCell.z;
+  vTileOff = aInstTileOff;${heights ? '\n  vSunZ = z * aCell.z;' : ''}
 }
 `;
 }
@@ -152,10 +150,12 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS) {
 /**
  * The map's vertex shader: instancedSpriteShadow.vert.glsl with its sun card kept (the same landing points the sprite
  * shadows draw) and its height passed on (vSunZ), so the map holds the highest caster point landing at each texel. Frames
- * with a height map skip the card: they cast columns (sunMapColumnsVertex). Same inputs, same early outs.
+ * with a height map skip the card: they cast columns (sunMapColumnsVertex). Same inputs, same early outs. Without
+ * `heights` it is the sprite shadows' own program that only skips those frames (their columns draw them).
  * @param {string} source instancedSpriteShadow.vert.glsl
+ * @param {{ heights?: boolean }} [opts]
  */
-export function sunMapVertex(source) {
+export function sunMapVertex(source, { heights = true } = {}) {
   const decl = 'uniform vec4 uSunPerp;\n';
   const main = 'void main() {\n';
   const card = '    // weed:sunCard\n';
@@ -166,19 +166,20 @@ export function sunMapVertex(source) {
       throw new Error(`WeedJS: the sun shadow map needs the sprite shadow vertex shader (${mark.trim()})`);
     }
   }
-  return source
-    .replace(decl, `${decl}out float vSunZ;\n${MAPPED_GLSL}`)
-    .replace(main, `${main}  vSunZ = 0.0;\n`)
-    .replace(
-      card,
-      `${card}    // A caster whose frame has a height map casts columns instead (sunMapColumnsVertex): its card would face the sun
+  const skipped = source.replace(
+    card,
+    `${card}    // A caster whose frame has a height map casts columns instead (sunMapColumnsVertex): its card would face the sun
     // whatever the object's shape (a crate's shadow turned with the sun).
-    if (sunMapped(aInstUV)) {
-      gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
+    if (aInstBase.x < 0.0) {
+      gl_Position = vec4(2.0, 2.0, 0.0, 1.0);${heights ? '' : '\n      vColor = vec4(0.0);'}
       return;
     }
 `,
-    )
+  );
+  if (!heights) return skipped.replace(decl, `${decl}${MAPPED_GLSL}`);
+  return skipped
+    .replace(decl, `${decl}out float vSunZ;\n${MAPPED_GLSL}`)
+    .replace(main, `${main}  vSunZ = 0.0;\n`)
     .replace(out, `${out}    vSunZ = sunZ;\n`)
     .replace(color, '  vColor = vec4(1.0);\n');
 }
