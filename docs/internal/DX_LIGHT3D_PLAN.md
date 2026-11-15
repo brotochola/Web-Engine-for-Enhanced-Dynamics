@@ -1046,5 +1046,6 @@ Lo que está hecho en la rama, fase por fase, con su commit. Se actualiza con ca
 | F2 `DirectionalSprite` | hecho (falta el ABAB del dueño) | 4bf4d21 … f439060 | resolución en la lógica, no en el pre-render; forma `frames` pendiente; R-1043: empate contra el selector a mano en esta VM |
 | F3 mapas | en parte | 7d12c25, f4faf77, b2bf7c2 | página gemela y test de alineación; faltan tabla de sombra por cuadro, bake y `weed maps` |
 | F4 G-buffer | primera versión | f376849 | face map generalizado; faltan `normals`/`surface`, id de entidad, MRT, microbench de GPU y ver WebGPU |
-| F6 sombras del sol | primera versión | a323a1d, bb18952, 2222a32 | `sunShadows: 'map'`, WebGL, con el cuadro que ve el sol (DirectionalSprite); faltan WebGPU, caminos con clave, volúmenes, cache |
+| F6 sombras del sol | primera versión | a323a1d, bb18952, 2222a32, 43f3d11 | `sunShadows: 'map'`, WebGL; cuadro que ve el sol (DirectionalSprite); los casters con heightmap tiran columnas (su sólido, girado como está: lo marcó el dueño en el banco de luz); faltan WebGPU, caminos con clave, volúmenes, cache, costo de las columnas en escenas grandes |
+| F11 vitrina | primera versión | 248fd7e | `demos/lightBenchScene`: persona con WASD, formas con mapas, faroles, mapa del sol, autosombra, teclas para comparar |
 | F8 autosombra | primera versión | 2d1eb1e, d1de9e5 | `lighting.selfShadow`, sol, WebGL; faltan faroles, WebGPU y el id de entidad (que una luz no se tape con lo suyo) |
