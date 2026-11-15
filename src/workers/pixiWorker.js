@@ -5918,7 +5918,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     k[0] = this._sunMapTerms[0];
     k[1] = this._sunMapTerms[1];
     k[2] = this._groundScaleY || 1;
-    k[3] = Sun.shadowOpacity;
+    // How much of the sun a shadow takes out: Sun.shadowAlpha alone. shadowOpacity also scales it by the sun's intensity
+    // (the light pass's sun term is already scaled by it: a low sun's shadows were faint twice over) and lightens a long
+    // shadow (a 2D trick: here a shadow's length does not thin it). At 16 h in the light bench that left 13 % of darkness.
+    k[3] = Math.max(0, Math.min(1, Sun.shadowAlpha));
     const rtOpts = this._rtRenderOpts;
     rtOpts.container = this._sunMapHost;
     rtOpts.target = this.sunMapRT;
