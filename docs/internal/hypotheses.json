@@ -16107,7 +16107,7 @@
       "id": "N-202",
       "title": "Predator: decorations now and then show another texture for a few frames, one of them the bullets' trail line (_bulletTrail): a thin bright horizontal line, seen where a TallLight lights the grass",
       "status": "open",
-      "statusText": "reported by the owner 2026-11-15 (\"sale de la talllight, no de un disparo\"); left for later at the owner's word the same day; found by the owner 2026-11-15 ~20:15: \"hay decorations que cada algunos frames cambian de imagen, y una de esas es la línea horizontal que usamos para las fireLines\"",
+      "statusText": "reported by the owner 2026-11-15 (\"sale de la talllight, no de un disparo\"); left for later at the owner's word the same day; found by the owner 2026-11-15 before 20:00: \"hay decorations que cada algunos frames cambian de imagen, y una de esas es la línea horizontal que usamos para las fireLines\"",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
@@ -16117,7 +16117,9 @@
       "aliases": [
         "TallLight horizontal line"
       ],
-      "records": []
+      "records": [
+        "R-1150"
+      ]
     },
     {
       "id": "N-203",
@@ -27398,6 +27400,18 @@
       "title": "Probe: the branch keeps its soldiers; the zoomed runs had the free camera on",
       "verdict": "answered",
       "text": "Two probes, Predator crowd 2.5 in visible Chrome windows, sides from worktrees (main 0c33673e, dx/light3d 259aba3a), nothing touched by the probe: soldiers and civilians alive and the logic camera every 2 s after a 12 s warm-up (4 runs a side, alternating), then the branch alone every 250 ms from the scene's creation (4 runs of 40 s), with the target zoom, minZoom, canvas, world, free flags and the soldiers' bounding box.\n\n- Soldiers alive the same on both sides: 13 727 to 13 814 (of 15 000 spawned), civilians 22 326 to 22 387.\n- Main 4 of 4 and the branch 7 of 8 framed the whole world: zoom 0.216, minZoom, since the soldiers' box (about 2 900 x 2 900 px) needs less than it, the camera centred near (4 980, 2 500).\n- One branch run (the first of the first probe) read zoom 0.23 at 12 s, 1.577 and 1.596 at 14 and 16 s, then 0.666 and 0.665 for the last 6 s. updateSquadCamera caps its target at 1 (Math.min(zoomX, zoomY, 1)) and nothing else in Predator or the engine writes the zoom but the free camera (its button, maxZoom 2, the wheel), setZoom (?zoom=) and a resize's reclamp (each thread's own minZoom). A zoom held at 0.665 for 6 s is not the squad camera's either: it brings the zoom back to 0.216 in about a second. So the free camera was on in that run: the button and the wheel, most likely by hand in the visible window (to be confirmed by the owner); the gate of 2026-11-15 drew 4 967 to 20 292 rows in three of its B runs the same way.\n\nNot a change of the branch: its runs keep their soldiers, and the probe that touches nothing framed like main. The gate's load-key check (RENDER_QUEUE_SIZE within 5 %) caught it, as it should. Predator sittings from here pin the camera (?zoom=0.216, setZoom every frame) and nobody touches their windows."
+    },
+    {
+      "id": "R-1150",
+      "date": "2026-11-15",
+      "time": "20:40",
+      "timeFrom": "recorded",
+      "title": "Probe scene and an in-engine statics check: the main pass draws every row with its own texture",
+      "verdict": "note",
+      "text": "Two ways to catch a decoration drawn with another row's statics, 2026-11-15 20:20 to 20:42, the branch at 259aba3a (visible Chrome, the owner's GPU).\n\n1. keyedStaticsProbeScene (committed with this record's work): a still grid of 858 grass decorations in a still view, 200 walkers crossing a column and bullets with trails a row, so the y-sorted rows shift and trail rows come and go every frame. n202probe.mjs captured the canvas 60 to 150 times a run and compared each of the 625 cells outside the bands with its reference (the pixels' median of the first five, or, with the grass swaying, the cell's lit and white pixel counts' median over every capture). No cell changed in any run: plain (60 captures), ?sway=1 (120), ?sway=1&alphaChurn=1 (every decoration marked every frame, 120), ?sway=1&particles=1&fill=19000 (Predator's particle worker and 20 000 decorations, 150).\n\n2. A statics check inside the engine (a scratch tree, never committed): instancedSpriteBatch's keyed upload kept a CPU mirror of the statics texture's texture word, fed the same updates and texture updates the scatter sends, and checked every drawn instance of each keyed frame (by row) against its queue row's texture. Predator default crowd 1, 60 s: 3 272 keyed frames, 0 mismatched instances. Predator ?light3d=1&hour=22, 60 s: 3 185 keyed frames, 15 mismatches, all in one frame (663): sprite rows (type 0, keyed) drawn while their statics row had never been sent (have -1, want 1522; since 662, drawn 663), none after; a second 30 s run had none. Those rows show the texture row's first content for a frame (zeros: scale 0, nothing drawn), or a pool slot's last occupant: a rare race between a spawn's marks and the emit, noted under N-212's leads.\n\nSo the main batch draws each row with its own texture, in both modes. The line the owner saw is not a keyed statics mix-up in the main pass; what is left: another pass or batch drawing a decoration's pose with a trail row's statics (the light passes, the glow batch, the shadows), or the scene the owner was in (asked).",
+      "commits": [
+        "cca57dea"
+      ]
     }
   ],
   "leads": [
