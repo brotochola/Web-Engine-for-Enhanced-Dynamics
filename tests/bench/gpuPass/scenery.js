@@ -124,7 +124,7 @@ export async function buildScenery(p) {
 
   // Lamps with a tile: across the view, each with its casters around it (inside its reach).
   const lampCount = Math.max(1, p.lamps);
-  const tileLayout = lampTileLayout(lampCount, p.tile, 8192);
+  const tileLayout = lampTileLayout(lampCount, p.tile);
   const lamps = Array.from({ length: lampCount }, () => ({ x: rng() * p.width, floorY: (rng() * p.height) / g, elevation: 60 + rng() * 40, reach: 260 + rng() * 120 }));
   const lampTiles = new Float32Array(lampCount * 4);
   lamps.forEach((l, t) => lampTiles.set([l.x, l.floorY, l.elevation, l.reach], t * 4));
