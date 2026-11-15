@@ -6,6 +6,49 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Saturday 14 – Sunday 15 November 2026 (night) — Sprites That Cast What Each Light Sees
+
+The idea came from a small web app, a light and shadow bench, where a farm of sprites was lit as if it were 3D: props
+rendered from 32 directions with their height and normal maps, cars, trees, an LPC person, lamps. The shadow of a tree
+climbed a car's roof, a lamp lit the side of a barrel that faced it, and a person walked around a table and was in front
+of or behind each part of it. On Saturday that became a plan, DX-LIGHT3D, and a branch: a camera the scene declares once,
+`DirectionalSprite` (say where an entity looks and play `walk`; the engine picks `walk_left`), the maps packed into a twin
+page of the atlas, the faces' pass turned into a small G-buffer, a shadow map for the sun, self-shadow, and the bench
+itself as a demo, `demos/lightBenchScene`.
+
+The night went to making the engine's farm look like the bench's. The owner could hardly see the shadows: at 4 pm one
+took out 13 % of the floor's light, because the map used the sprite shadows' opacity, which scales by the sun again and
+lightens a long shadow, a 2D trick that means nothing once the shadow is a ray. Now the map takes out `Sun.shadowAlpha` of
+the sun, and the bench's shadows are as dark as the prototype's, about 60 % under the sunlit floor. Each asset casts the
+way the bench cast it: the cow, the cars, the fence, the trees and the person a card standing on its base, the barn and
+the furniture their solid, from a line in the sheet's json. A fence's card stands along the fence instead of turning to
+the light, and a render's solid keeps the view the camera sees, which fixed a fence whose shadow was that of a fence
+turned a quarter. One idea is still off: sweeping a solid north to its footprint, as the bench did, loses the barn's
+walls.
+
+Then the lamps. The plan had two options for their shadows, a cube map a lamp or rays by screen tile; what got built is a
+third, the sun's map with a point light: one square tile a lamp, each keeping the highest point that lands on each texel,
+and the light pass taking each lamp out on its own. Two lamps light each other's shadows, the sun's shadow does not dim a
+lamp, each lamp casts the side of a person that it sees, and a car's headlights are not stopped by the car. Self-shadow
+learned to look towards the lamps too. Depth per pixel arrived: in the bench, the table now hides the end of the fence it
+stands in front of. A sheet can glow: a fire keeps its colour at night, and a person who walks in front of it hides it.
+And `ShadowCaster` started to become one component for every way of casting: a card, a solid or nothing, for the sun and
+the lamps apart. On a real GPU every scene with maps had failed under WebGPU (one binding missing from a layout); that was
+fixed, and the sun's map, the solids and self-shadow now run there too.
+
+None of that may cost the crowd scenes, and it did. The first gate against main, Predator with 38 000 people, read logic
+25 % slower and pre-render 54 % slower. The profile said why: the sun's frame of every person, an `atan2` and a direction
+lookup each, was 30 % of pre-render; `DirectionalSprite` cost each logic worker 0.6 ms; and the people's sprite had
+become their last component, past the eight that get a fast field. A uniform direction table now takes the direction
+already drawn and turns it by the sun in whole steps: pre-render 9.34 to 7.21 ms, -22.5 %. Moving required components
+before the ones that need them was neutral alone, the wrong way (+7.8 %, within the noise): the people have eleven
+components, so their state machine went past the eighth instead. Twelve fast fields fixed that: logic 7.39 to 6.43 ms, -13.6 %. One
+idea lost honestly: working the sun frames out in entity order as a method of the worker stayed in V8's middle tier and
+cost 31 %; as a plain module function it is a tie. The second gate against main still reads logic 13 % and pre-render
+25 % slower, both under the 6 ms floor where the rule cannot judge them. The cost is real, and it is the price of
+Predator's people turning with `DirectionalSprite`; winning it back, WebGPU for the rest, the volumes and walls of
+`ShadowCaster`, and the measuring phase are what is left.
+
 ## Friday 13 November 2026 (evening) — Collect Every Lead First, Then Measure Them All
 
 Until today each idea was found, coded and measured on the spot. Today it went the other way: first a harvest with no
