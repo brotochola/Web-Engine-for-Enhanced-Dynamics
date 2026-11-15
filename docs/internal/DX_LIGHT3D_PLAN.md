@@ -1044,10 +1044,10 @@ Lo que está hecho en la rama, fase por fase, con su commit. Se actualiza con ca
 | Plan en el repo | hecho | e77f734 | este archivo, filas DX-* en REVIEW_PLAN |
 | F1 `camera` | hecho | af40188 | `raycasted` pasa a F9; `frameChainWait` (presupuesto de reloj) falla a veces en esta máquina de 2 núcleos, también en la base |
 | F2 `DirectionalSprite` | hecho (falta el ABAB del dueño) | 4bf4d21 … f439060 | resolución en la lógica, no en el pre-render; forma `frames` pendiente; R-1052: empate contra el selector a mano en esta VM |
-| F3 mapas | en parte | 7d12c25, f4faf77, b2bf7c2 | página gemela y test de alineación; faltan tabla de sombra por cuadro, bake y `weed maps` |
+| F3 mapas | en parte | 7d12c25, f4faf77, b2bf7c2, 4ee050f | página gemela y test de alineación; base de cada cuadro (elipse de una sola vista, apoyo de los renders) en la tabla de texturas (`frameBase.js`); faltan bake, `weed maps` (la tubería del banco web usaba Blender: `weed-mapas.zip`, fuera del repo) y medir la carga |
 | F4 G-buffer | primera versión | f376849 | face map generalizado; faltan `normals`/`surface`, id de entidad, MRT, microbench de GPU y ver WebGPU |
-| F6 sombras del sol | primera versión | a323a1d, bb18952, 2222a32, 43f3d11, b8b4a24 | `sunShadows: 'map'`, WebGL; cuadro que ve el sol (DirectionalSprite), también en modo `'sprite'` (apaga los caminos con clave: medir en Predator); los casters con heightmap tiran columnas (su sólido, girado como está: lo marcó el dueño en el banco de luz); faltan WebGPU, caminos con clave, volúmenes, cache, costo de las columnas en escenas grandes |
-| F11 vitrina | primera versión | 248fd7e | `demos/lightBenchScene`: persona con WASD, formas con mapas, faroles, mapa del sol, autosombra, teclas para comparar |
+| F6 sombras del sol | §17.1 hecho, espera aprobación | a323a1d, bb18952, 2222a32, 43f3d11, b8b4a24, 31319d4, 658fdd5, 952929f | 17.1 (R-1053): cartón parado en su base y proyectado a lo largo del sol en los dos modos; los renders con heightmap tiran su sólido en los dos modos, lo de una sola vista su cartón; la mezcla max del mapa no se aplicaba (arreglado). Antes: | `sunShadows: 'map'`, WebGL; cuadro que ve el sol (DirectionalSprite), también en modo `'sprite'` (apaga los caminos con clave: medir en Predator); los casters con heightmap tiran columnas (su sólido, girado como está: lo marcó el dueño en el banco de luz); faltan WebGPU, caminos con clave, volúmenes, cache, costo de las columnas en escenas grandes |
+| F11 vitrina | primera versión | 248fd7e, 3cbb60a, c656266 | `demos/lightBenchScene`: la granja del banco web (Quaternius en 32 direcciones, autos MinZinn, LPC, árboles, con sus mapas), persona con WASD, faroles, mapa del sol, autosombra, teclas para comparar; `?only`, `?lamps`, `?still`, `?zoom` para capturas |
 | F8 autosombra | primera versión | 2d1eb1e, d1de9e5 | `lighting.selfShadow`, sol, WebGL; faltan faroles, WebGPU y el id de entidad (que una luz no se tape con lo suyo) |
 
 ## 17. Próximos pasos (para la sesión que sigue)
@@ -1057,6 +1057,18 @@ con la escena ni con el proyecto de Buenos Aires** (se actualizan después de es
 en las stress scenes.
 
 ### 17.1 Sombras del sol como en el banco (las dos maneras)
+
+**Hecho (2026-11-14, R-1053; falta la aprobación del dueño con las capturas):** la base sale de la tabla de texturas
+(`frameBase.js`: la fila más baja opaca, la elipse de pies o tronco de lo que tiene una sola vista, el apoyo más bajo de
+los renders, que es el más cercano a la luz porque el cuadro es la vista desde ella); el cartón cae a lo largo del sol con
+la elevación real (tope `shadowMaxLengthRatio`) y sus columnas van a la derecha de quien mira desde el sol, en WebGL y
+WebGPU. Cambio sobre el texto de abajo: un render con heightmap (8 direcciones o más) tira su sólido (columnas) también
+en modo `'sprite'`, y lo de una sola vista (personas, árboles) su cartón aunque tenga mapas, en los dos modos: como el
+banco, porque el cartón de un render toma las filas del techo como altura (el granero tiraba sombra de 530 px de alto,
+mide 228) y el sólido de un árbol tapa la luz bajo la copa. Las columnas en modo `'sprite'` son WebGL por ahora.
+Encontrado en el camino: Pixi dibuja con mezcla normal una malla que es la raíz del render, así que el `max` del mapa
+del sol no se aplicaba (arreglado con un contenedor); el WGSL de la pasada de caras con mapas (`mainFragFace`,
+`@group(2) @binding(5)`) no valida en WebGPU (ya estaba antes: va con 17.3); las sombras del modo mapa salen suaves.
 
 Hoy la sombra de un cubo no se parece a la del banco. Faltan dos cosas que el banco tenía:
 
