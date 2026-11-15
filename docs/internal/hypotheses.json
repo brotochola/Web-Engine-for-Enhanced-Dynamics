@@ -13821,7 +13821,7 @@
     {
       "id": "E-257",
       "title": "Physics' JS service loop allocates about 65 KB/s once Box2D's clock is quiet (serviceChainQueries, LiquidFun queries, pumpQueryWake, waitForLogic)",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-13 from the heap sample after E-256, not tested",
       "date": "2026-11-13",
       "area": "physics",
@@ -13840,7 +13840,8 @@
         "physics garbage"
       ],
       "records": [
-        "R-1103"
+        "R-1103",
+        "R-1117"
       ]
     },
     {
@@ -14245,12 +14246,11 @@
     {
       "id": "E-275",
       "title": "Each tween asks every frame whether its entity paints a sprite or a mesh (tweenStressScene: paintTarget 135 ms, all on SpriteRenderer.active[ent])",
-      "status": "open",
+      "status": "rejected",
       "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 19,
       "result": "CPU sweep: tweenStressScene's logic spends 135 ms of the window in paintTarget (tween.js), 100 % on its first line, the SpriteRenderer.active read of the tweened entity (a scattered byte per tween), called from the tween's apply paths every frame.",
       "next": "Keep the target kind in the tween's record when it starts and re-read it only when the entity's sprite or mesh changes (a generation, or the setter that changes them); the tween kernel, then tweenStress's logic STEP_MS.",
       "refs": [
@@ -14261,7 +14261,9 @@
         "tween paint",
         "tween apply"
       ],
-      "records": []
+      "records": [
+        "R-1116"
+      ]
     },
     {
       "id": "E-276",
@@ -14436,7 +14438,7 @@
     {
       "id": "E-282",
       "title": "Collision pairs live in a Map keyed by a number (littleCity logic: 140 KB/s in Map.set)",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
       "date": "2026-11-13",
       "area": "logic",
@@ -14452,7 +14454,8 @@
         "collisionPairKey"
       ],
       "records": [
-        "R-0980"
+        "R-0980",
+        "R-1115"
       ],
       "rank": 38
     },
@@ -15225,7 +15228,7 @@
     {
       "id": "E-315",
       "title": "Pre-render's shadow selection: each of Predator's 48 lights gathers thousands of casters and quickselects 512 (stamp_light_range 26.6 % + quickselect_order 12.0 % of pre-render at crowd 2.5)",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
@@ -15245,7 +15248,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1102"
+        "R-1102",
+        "R-1118"
       ]
     },
     {
@@ -15373,7 +15377,7 @@
     {
       "id": "E-320",
       "title": "Pre-render's emit copies poses onto themselves: the collect writes poses straight into the queue (E-98d), so sprite_row loads and stores x and y (and rc, rs) at the same address, and deco_row all four",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
@@ -15391,7 +15395,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1102"
+        "R-1102",
+        "R-1112"
       ]
     },
     {
@@ -15580,7 +15585,7 @@
     {
       "id": "E-329",
       "title": "The gather marks every visited candidate before its range test: about 3 visits in 4 are rejects, each reading and writing marker[B] (the marks are 15 % of the gather, R-1033)",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "spatial",
@@ -15598,13 +15603,14 @@
       ],
       "records": [
         "R-1100",
-        "R-1102"
+        "R-1102",
+        "R-1111"
       ]
     },
     {
       "id": "E-330",
       "title": "Pre-render's sprite_row runs about 20 tests whose answer never changes in the loop (columns present, sortKey, ySort, tilesDirty): about 68 branch sites in the compiled sprite path",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
@@ -15620,13 +15626,14 @@
         "emit unswitch"
       ],
       "records": [
-        "R-1102"
+        "R-1102",
+        "R-1112"
       ]
     },
     {
       "id": "E-331",
       "title": "The stamp's grid build makes three passes over every sun caster each frame, and the first re-reads the 28-byte keyed rows pack_casters_keyed_scan just wrote",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
@@ -15643,7 +15650,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1102"
+        "R-1102",
+        "R-1118"
       ]
     },
     {
@@ -15695,7 +15703,7 @@
     {
       "id": "E-334",
       "title": "resolveAttachedDecorations scans all 20 000 decorations every frame to find the attached ones, and Predator attaches none (about 10 % of the particle worker)",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "particle",
@@ -15711,13 +15719,14 @@
       ],
       "records": [
         "R-1100",
-        "R-1103"
+        "R-1103",
+        "R-1114"
       ]
     },
     {
       "id": "E-335",
       "title": "The decoration screen test checks all 20 000 decorations on every frame the camera moves while about 5 % are visible; DecorationSpatial's grid serves only queryCircle",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "particle",
@@ -15733,13 +15742,14 @@
         "decoration screen test"
       ],
       "records": [
-        "R-1103"
+        "R-1103",
+        "R-1114"
       ]
     },
     {
       "id": "E-336",
       "title": "The particle worker's stamp loop passes five doubles to stampParticleToTile: stampCollectedParticles makes 63-76 KB/s, about 40 % of the worker's garbage",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "particle",
@@ -15756,13 +15766,14 @@
       ],
       "records": [
         "R-1100",
-        "R-1103"
+        "R-1103",
+        "R-1117"
       ]
     },
     {
       "id": "E-337",
       "title": "Pixi's keyed pack reads the type column in painter order only for a particle count nobody in Pixi reads (pack_sprites_keyed_rows 8.4 % of Pixi)",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pixi",
@@ -15779,13 +15790,14 @@
       ],
       "records": [
         "R-1100",
-        "R-1102"
+        "R-1102",
+        "R-1111"
       ]
     },
     {
       "id": "E-338",
       "title": "After each radix the painter reads keys[slot] and writes prev[slot] in sorted order, random over ~60 000 slots (painter_order_simd 3 % of Pixi)",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pixi",
@@ -15802,7 +15814,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1102"
+        "R-1102",
+        "R-1111"
       ]
     },
     {
@@ -15921,7 +15934,7 @@
     {
       "id": "E-344",
       "title": "Despawns shift the shared active lists one entity at a time (a copyWithin of activeEntitiesData, 115 KB at crowd 2.5, and of the type list)",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "logic",
@@ -15939,7 +15952,8 @@
       "records": [
         "R-1100",
         "R-1103",
-        "R-1104"
+        "R-1104",
+        "R-1115"
       ]
     },
     {
@@ -16035,7 +16049,7 @@
     {
       "id": "E-348",
       "title": "rng() loads globalThis.rng on every call and is inlined in many functions, so a global written in play deopts them all (dependent prototype chain changed)",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "logic",
@@ -16052,13 +16066,14 @@
         "prototype chain deopt"
       ],
       "records": [
-        "R-1100"
+        "R-1100",
+        "R-1117"
       ]
     },
     {
       "id": "E-349",
       "title": "The tick bucket's typeInfo literal gains six fields on its first frame (logicWorker.js), which matches _tickIntervalBucket compiled twice",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "logic",
@@ -16075,13 +16090,14 @@
       ],
       "records": [
         "R-1100",
-        "R-1103"
+        "R-1103",
+        "R-1117"
       ]
     },
     {
       "id": "E-350",
       "title": "Fraction fields start as Smi 0 on every worker (abstractWorker.js's timing fields): each first fractional write migrates the map, a warm-up deopt",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "engine",
@@ -16097,13 +16113,14 @@
         "fieldTypeAudit Smi"
       ],
       "records": [
-        "R-1103"
+        "R-1103",
+        "R-1117"
       ]
     },
     {
       "id": "E-351",
       "title": "Arrow closures are still made every frame: logic0's _drainSpawnCommandRing builds a context and a closure, and the particle worker's drainStampRing too (with 5 doubles a stamp)",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "engine",
@@ -16119,7 +16136,8 @@
         "_drainSpawnCommandRing closure"
       ],
       "records": [
-        "R-1103"
+        "R-1103",
+        "R-1117"
       ]
     },
     {
@@ -16171,7 +16189,7 @@
     {
       "id": "E-354",
       "title": "Layer feed lists scan linearly on every add and remove while holding a cross-worker spin lock: O(n) per particle birth and death",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "particle",
@@ -16187,7 +16205,8 @@
         "layerFeed spin lock"
       ],
       "records": [
-        "R-1103"
+        "R-1103",
+        "R-1114"
       ]
     },
     {
@@ -16261,7 +16280,7 @@
     {
       "id": "E-358",
       "title": "Each caster's nearest lights live in three arrays (nearCount, nearDist, nearSlot: ~950 KB at 38 000 casters), and up to 48 x 512 note_nearest calls a frame land on random casters",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
@@ -16277,13 +16296,14 @@
         "nearest lights record"
       ],
       "records": [
-        "R-1102"
+        "R-1102",
+        "R-1118"
       ]
     },
     {
       "id": "E-359",
       "title": "The stamp's keyed rows (7 floats into 11) go through copy_row's generic loop (an alias check, a vector loop, a remainder) and convert each light's 4 floats per row",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
@@ -16299,18 +16319,18 @@
         "stamp wide stores"
       ],
       "records": [
-        "R-1102"
+        "R-1102",
+        "R-1118"
       ]
     },
     {
       "id": "E-360",
       "title": "Collect's counters res[0]/res[1] round-trip memory per queued sprite (oIndex may alias res), and the emit's animation clock computes (cur + 1) % fc and 1 / (speed x 60) per sprite",
-      "status": "open",
+      "status": "rejected",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "rank": 90,
       "result": "Read (R-1102): the disassembly shows the load/store round trip; each item under 1 % of pre-render.",
       "next": "The counters in locals; a compare and select for the frame step; 1 / (speed x 60) kept for the last speed seen (and in the persist copy); the pre-render kernels' checksums.",
       "refs": [
@@ -16321,7 +16341,8 @@
         "animation clock modulo"
       ],
       "records": [
-        "R-1102"
+        "R-1102",
+        "R-1113"
       ]
     },
     {
@@ -26878,6 +26899,116 @@
       "title": "E-313's premise: ~95 % of Predator crowd 2.5's awake contacts are recycled a step, and recycled contacts read no b2Shape line already",
       "verdict": "answered",
       "text": "**E-313's premise checked, 2026-11-15: in Predator crowd 2.5 about 95 % of the awake contacts are recycled each step, and the\nrecycled path does not touch b2Shape in the shipped build.** The plan read \"walkers take a full update every 1-2 steps\".\n\n1. Probe (not committed, as R-1045's persistProbe): a Box2D build of solver-skip-second-point whose wasm_wrapper wrote\nb2Counters.recycledContactCount into the treeHeight counter slot, run in a scratch WeedJS worktree at 283beeb with\nrunIntegratedWorkerBenchmark --src --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene --query crowd=2.5,\n15 s warm-up, 10 s window, headless Chromium in a loaded 4-vCPU cloud container. Physics stats, window average: BODY_COUNT 36 965,\nAWAKE_COUNT 23 270, COUNTER_CONTACTS 62 895, COUNTER_AWAKE_CONTACTS 55 644, recycled 52 825 (94.9 %; end of window 53 802 of\n55 984, 96.1 %). Caveat: physics ran at about 3 frames a second there, so physicsHostImpl's splitFrameDt gave each step the\n1/30 s cap, twice a 60 Hz step's motion; at 60 Hz a contact moves half as far a step and is recycled at least as often.\nThe crowd harness at 38 000 walkers agrees: ~44 300 of ~47 000 contacts recycled a step (R-1106).\n\n2. The recycled path: b2CollideTask passed shapeA->bodyId and shapeB->bodyId to b2ResolveContactBodySim, which uses them only\nwhen the encoded sim index is invalid. Making the resolver take the shape and read bodyId on that fallback alone produced a\nbox2dWasm.wasm byte-identical to solver-skip-second-point's: LLVM already sinks that load, so a recycled contact reads the\ncontact sim, two fat AABBs and two body sims, no b2Shape line.\n\nSo the b2Shape lines E-313 removes are read only on the ~5 % of contacts that take a full update a step (about 2 800 at crowd\n2.5), not on every contact: the estimate (collide -25 to -40 %, physics STEP -5 to -9 %) does not hold; what is left is a few\npercent of collide at most. Suggest lowering its rank below the open physics items (the owner's call); the probe build and the\nlazy-resolver branch were not kept."
+    },
+    {
+      "id": "R-1111",
+      "date": "2026-11-15",
+      "time": "04:06",
+      "timeFrom": "recorded",
+      "title": "E-337, E-329, E-338 built; kernels -7.9 %, -9.6 %, -8.5 % (4/4 each), holding combined",
+      "verdict": "screened",
+      "text": "**E-337, E-329, E-338 built and screened, 2026-11-15 (implementation agent, then serial kernels).**\n\nE-337 (eae462e; tool 9d36ee2 adds --pack byrow, the export Pixi uses, and a slot checksum): the keyed packs pass the\ntype column only with shadow terms (gpuPackClient.js); ctx.particleCount, read by no keyed-pack caller, is 0\nwithout them. gpuPackKeyedCrossCoreMicrobench --pack byrow --writer other --frames 2001: 0.1162 -> 0.1070 ms a\nframe (-7.9 %, 4/4); combined with E-331's gpuPackClient changes -8.8 % (2/4). Test: gpuPackKeyed.test.js replays\nthe call with the column, everything but the type-1 count equal word for word. Owner: Predator crowd 2.5 Pixi.\n\nE-329 (9953bb3): spatialGather.c tests the range first and reads/writes marker[B] only for a B in range (an\nout-of-range B fails the same doubles in every cell it is listed in). spatialGatherWasmMicrobench --variant wasm\n--n 57600 --workers 1 --per-cell 32 --types predator: 76.8 -> 85.0 frames/s (-9.6 %, 4/4); round-robin over 8\nrevisions: E-329 alone -7.7 %, the tip -9.3 % (all later revisions -6 to -11 %). Test: spatialGatherRangeFirst\n(rows, truncation and cells checked equal to a JS model of the old gather over 6 frames with wide entities).\nChrome replay (spatialGatherReplayKernel) not run. Owner: Predator crowd 2.5 spatial; Boids.\n\nE-338 (9a85642; tool 85d3f98 makes the checksum cover prevKey and ready): after the radix the prevKey writes walk\nthe slot list (memcpy + SIMD OR for the dense list); after sort_runs on a slot list the order is walked as\nbefore (repeated slots). painterRadixWasmMicrobench --variant simd --cases predator-rebuild: 15 342 -> 16 761 ops/s\n(-8.5 %, 4/4); combined -7.1 % (4/4). engine.wasm -235 B. Owner: Predator crowd 2.5 Pixi.\n\nKernels in this record: serial A/B on a quiet 4-vCPU cloud Xeon after every implementation agent had finished (load\n0.7-1.1), one benchmark at a time; two-tree A/B = alternating processes A B / B A, 4 rounds a side, median ops/s;\ncatalog rows = runKernelsVsRev --vs <base> from a worktree at the hypothesis (5 rounds). Checksums equal on both\nsides in every pair. \"Combined\" = the group's base against the branch tip with every kept change (c6a7856), the\nsame day; the two that looked like interactions were bisected round-robin over 8-9 revisions and were noise.\nScreens: the owner scene on the owner machine decides.",
+      "commits": [
+        "eae462e",
+        "9953bb3",
+        "9a85642"
+      ]
+    },
+    {
+      "id": "R-1112",
+      "date": "2026-11-15",
+      "time": "04:06",
+      "timeFrom": "recorded",
+      "title": "E-320, E-330 built; emit kernel -11.5 % and -9.3/-7.4 % keyed (5/5); combined +23 % and +32 % ops on keyed frames",
+      "verdict": "screened",
+      "text": "**E-320 and E-330 built and screened, 2026-11-15.**\n\nE-320 (72cfa9d): when the four stash columns are the queue's own pose columns, emit_rows runs a copy of the\nin-place loop in which sprite_row and deco_row leave the poses the collect already wrote (a sprite that does not\ninherit its rotation still writes its own; the Adobe and persist loops still copy). runKernelsVsRev --only\npreRenderWorker: emit 2850 -> 3221 ops/s (-11.5 % of time, 5/5).\n\nE-330 (3b48ac4; tool 0a7445b: the emit kernel's variant from WEED_KERNEL_VARIANT, the keyed variants hash the key\ncolumn): a third copy of the in-place loop for keyed, Y-sorted frames with every column present (all_columns()\nonce a frame; HAS()/FLAG() fold to 1). wasmKeyedSkip 2946 -> 3249 ops/s (-9.3 %, 5/5), wasmKeyedV2 2782 -> 3005\n(-7.4 %, 5/5). Not checked: that Predator's frames take that copy (the owner sitting should).\n\nCombined (9a85642 -> tip, E-360 reverted): plain wasm 2814 -> 3027 (+7.6 % ops, 60 % of rounds), wasmKeyedSkip\n2804 -> 3454 (+23.2 %, 80 %), wasmKeyedV2 2478 -> 3274 (+32.2 %, 80 %): the two add up on keyed frames. Tests:\npreRenderEmitWasm.test.js parity, every byte of queue A in eight setups with markers on every non-pose column.\nCost: engine.wasm grows by the copies (about 14 KB with E-360's, before its revert). Owner: Predator crowd 2.5\npre-render (STEP_MS - WAIT_MS).\n\nKernels in this record: serial A/B on a quiet 4-vCPU cloud Xeon after every implementation agent had finished (load\n0.7-1.1), one benchmark at a time; two-tree A/B = alternating processes A B / B A, 4 rounds a side, median ops/s;\ncatalog rows = runKernelsVsRev --vs <base> from a worktree at the hypothesis (5 rounds). Checksums equal on both\nsides in every pair. \"Combined\" = the group's base against the branch tip with every kept change (c6a7856), the\nsame day; the two that looked like interactions were bisected round-robin over 8-9 revisions and were noise.\nScreens: the owner scene on the owner machine decides.",
+      "commits": [
+        "72cfa9d",
+        "3b48ac4"
+      ]
+    },
+    {
+      "id": "R-1113",
+      "date": "2026-11-15",
+      "time": "04:06",
+      "timeFrom": "recorded",
+      "title": "E-360 rejected: collect kernel lost (+2 to +8 % in 3 cases of 4), emit tied (+0.4 %); reverted",
+      "verdict": "rejected",
+      "text": "**E-360 rejected in the kernels and reverted (9cdf2da), 2026-11-15.** dbe9531 kept the collect's three counters in\nlocals, made the frame step a compare and select, and cached 1/(speed x 60) per speed by its bits (exact; tests\nwith +-0, NaN and a subnormal). preRenderCollectWasmMicrobench --variant wasm, 4 alternating rounds: bunny -0.9 %\n(2/4), cull +2.2 % (0/4), turned +7.8 % (0/4), predator +2.7 % (1/4) of time: the collect lost. Emit,\nrunKernelsVsRev --only preRenderWorker: 3116 -> 3128 ops/s (+0.4 %, 52 % of rounds): a tie, as the plan's \"each\nunder 1 %\" expected. The revert rebuilt the engine binaries from the reverted sources (E-330's later copy keeps\nits own code); tests green.\n\nKernels in this record: serial A/B on a quiet 4-vCPU cloud Xeon after every implementation agent had finished (load\n0.7-1.1), one benchmark at a time; two-tree A/B = alternating processes A B / B A, 4 rounds a side, median ops/s;\ncatalog rows = runKernelsVsRev --vs <base> from a worktree at the hypothesis (5 rounds). Checksums equal on both\nsides in every pair. \"Combined\" = the group's base against the branch tip with every kept change (c6a7856), the\nsame day; the two that looked like interactions were bisected round-robin over 8-9 revisions and were noise.\nScreens: the owner scene on the owner machine decides.",
+      "commits": [
+        "9cdf2da"
+      ]
+    },
+    {
+      "id": "R-1114",
+      "date": "2026-11-15",
+      "time": "04:06",
+      "timeFrom": "recorded",
+      "title": "E-334, E-335, E-354 built; kernels: attached pass skipped at 0, screen test x10.9, layer feeds x38; attachedWalls' combined dip is a bimodal kernel",
+      "verdict": "screened",
+      "text": "**E-334, E-335, E-354 built and screened, 2026-11-15.**\n\nE-334 (fcb57ed; tool 6b8b547: attachedDecorationScanMicrobench, rows attachedScanNone/attachedScanFew, and\nattachedSway re-copies its snapshot after setting parents): a header word DECORATION_ATTACHED_COUNT kept under\nthe list lock (spawn with a parent +1, its despawn -1, despawnAll 0); at the snapshot copy the worker lists the\nattached decorations, none when the word is 0, and resolveAttachedDecorations walks that list. none: 33 016 ->\n99.7 M ops/s (the pass no longer runs), 64 of 20 000 attached: 23 553 -> 630 000 (x27); attachedSway -3.6 %,\nattachedWalls +0.4 % (ties). Test attachedDecorationList.test.js. Owner: decorationSwayStressScene particle.\n\nE-335 (868e95f; tool d0a7756: decorationVisibilityMicrobench --grid, Predator's 1920x1080 view, 824 of 20 000\nvisible, and a 240-frame pan checksum): the screen test walks DecorationSpatial's cells under the padded bounds\n(one cell of margin, every decoration there still tested: NaN or wrapped coordinates land anywhere), the\ndecorations outside the grid from a list, visible ones by snapshot row so the list order is unchanged; falls back\nto the full test zoomed out, without grid, counters or a prior full test. 5 820 -> 63 166 calls/s (x10.9; 8.6 ->\n0.8 ns a decoration). The walk holds the grid's spin lock as queryCircle does. Test decorationScreenGrid.test.js\n(a real worker, every frame equal to the full predicate). Owner: Predator particle.\n\nE-354 (b7701ab; tool d5ecffa: layerFeedMicrobench, rows layerFeedParticles/Bodies): each feed buffer holds an\nopen-addressing slot index after the list; add O(1), remove swaps the last entry in (same order as before), same\nlock and count stores. 32 -> 1 268 / 1 225 ops/s (x38). Memory: 8 x nextPow2(2 x cap) bytes a feed. Test\nlayerFeedSlots.test.js (20 000 random ops against the old model). Owner: a feed scene (liquidFunStress or\ncomputeStress).\n\nCombined (6b8b547 -> tip, with E-336 and E-351 in the same worker): attachedScanNone/Few, decorationVisibilityGrid\n(x15) and layerFeed (x25) hold; decorations, swayBuckets, decorationCollect and attachedSway within +-1.4 %.\nattachedWalls read -26 % once (20 % of rounds); bisected round-robin over 9 revisions (6b8b547 ... c6a7856, 4\nrounds each) every revision reads 1 920-2 010 ops/s with the same checksum, the tip +3.1 % of time: the kernel is\nbimodal (about one run in five drops to 1 250-1 650 on any revision, the base included), not a regression; give\nit more rounds.\n\nKernels in this record: serial A/B on a quiet 4-vCPU cloud Xeon after every implementation agent had finished (load\n0.7-1.1), one benchmark at a time; two-tree A/B = alternating processes A B / B A, 4 rounds a side, median ops/s;\ncatalog rows = runKernelsVsRev --vs <base> from a worktree at the hypothesis (5 rounds). Checksums equal on both\nsides in every pair. \"Combined\" = the group's base against the branch tip with every kept change (c6a7856), the\nsame day; the two that looked like interactions were bisected round-robin over 8-9 revisions and were noise.\nScreens: the owner scene on the owner machine decides.",
+      "commits": [
+        "fcb57ed",
+        "868e95f",
+        "b7701ab"
+      ]
+    },
+    {
+      "id": "R-1115",
+      "date": "2026-11-15",
+      "time": "04:06",
+      "timeFrom": "recorded",
+      "title": "E-282, E-344 built; contactDrain -17.7 %, despawnLists x4 (5/5), holding combined",
+      "verdict": "screened",
+      "text": "**E-282 and E-344 built and screened, 2026-11-15.**\n\nE-282 (303fc20): logic's contact pairs in an open-addressing table on three Int32Arrays (min, max, value; linear\nprobing on a Fibonacci hash, backward-shift delete, load at most 1/2, doubling from 2048 rows); slot columns and\ntheir swap-remove untouched. The Smi-key option was set aside: two 16-bit ids do not fit a 31-bit Smi. contactDrain\ndense: 1 297 -> 1 575 ops/s (-17.7 % of time, 5/5); combined +21.8 % (88 %). Test contactPairTable.test.js (a seeded\nscript through the real worker against the Map-indexed one, callbacks equal frame by frame). The table never\nshrinks. Owner: littleCity and carScene logic, contactDrainStressScene.\n\nE-344 (b4f5ec0; tools 544d469 and 30a90ea: despawnBatchMicrobench d8/d64/d512 over 57 344 listed entities, batches\nthrough the despawn queue): a batch of two or more is sorted and activeEntitiesData and each class list are\ncompacted once (one copyWithin a run between removed entries); order identical; a type's version moves once a\nbatch. despawnLists d64: 10 461 -> 42 292 ops/s (x4.0); combined x4.2. Test despawnBatchCompaction.test.js. Owner:\nPredator crowd 2.5 logic0 against logic1. Combined logic rows otherwise: spawn +7.7 % (60 %), gameObjectAccess\n+3.4 % (76 %), tweenPool +1.2 % (E-275 reverted).\n\nKernels in this record: serial A/B on a quiet 4-vCPU cloud Xeon after every implementation agent had finished (load\n0.7-1.1), one benchmark at a time; two-tree A/B = alternating processes A B / B A, 4 rounds a side, median ops/s;\ncatalog rows = runKernelsVsRev --vs <base> from a worktree at the hypothesis (5 rounds). Checksums equal on both\nsides in every pair. \"Combined\" = the group's base against the branch tip with every kept change (c6a7856), the\nsame day; the two that looked like interactions were bisected round-robin over 8-9 revisions and were noise.\nScreens: the owner scene on the owner machine decides.",
+      "commits": [
+        "303fc20",
+        "b4f5ec0"
+      ]
+    },
+    {
+      "id": "R-1116",
+      "date": "2026-11-15",
+      "time": "04:06",
+      "timeFrom": "recorded",
+      "title": "E-275 rejected: tweenPool kernel -3.0 %, 0/5 rounds; premise corrected (the read is sequential); reverted",
+      "verdict": "rejected",
+      "text": "**E-275 rejected in the kernel and reverted (c6a7856), 2026-11-15.** 536af41 kept each paint slot's sprite-or-mesh\ntarget in two mask bits, re-read through new SpriteRenderer/MeshRenderer active accessors and\nTween.paintTargetChanged. runKernelsVsRev --only tweenPool (tool 44bf0c9 adds a scattered case and the catalog row,\nkept): tick 1 136 -> 1 102 ops/s (-3.0 %), 0 of 5 rounds won. The implementation corrected the premise: in\ntweenStressScene slot i tweens entity i, so the active[ent] read is sequential, not scattered; the cost was not the\nread. It also made every direct write of the active columns owe a paintTargetChanged call.\n\nKernels in this record: serial A/B on a quiet 4-vCPU cloud Xeon after every implementation agent had finished (load\n0.7-1.1), one benchmark at a time; two-tree A/B = alternating processes A B / B A, 4 rounds a side, median ops/s;\ncatalog rows = runKernelsVsRev --vs <base> from a worktree at the hypothesis (5 rounds). Checksums equal on both\nsides in every pair. \"Combined\" = the group's base against the branch tip with every kept change (c6a7856), the\nsame day; the two that looked like interactions were bisected round-robin over 8-9 revisions and were noise.\nScreens: the owner scene on the owner machine decides.",
+      "commits": [
+        "c6a7856"
+      ]
+    },
+    {
+      "id": "R-1117",
+      "date": "2026-11-15",
+      "time": "04:06",
+      "timeFrom": "recorded",
+      "title": "E-348, E-349, E-350, E-351, E-336, E-257 built; physics services 195 -> 4 B/frame, rng's play-time deopts gone, stamp 92 -> 0, update closure 80 -> 26",
+      "verdict": "screened",
+      "text": "**E-348, E-349, E-350, E-351, E-336, E-257 built; garbage and deopts measured, 2026-11-15.** Headless Chromium,\nPredator default query, one run a side (base = an extract of 4c973c9): heapSampleWorkers.mjs --workers\nparticleWorker,logicWorker,box2d --warmup-ms 10000 --sample-ms 8000 (about 479 frames), and --log-deopt --log-ic\nwith summarizeV8Deopt. Tools: ea7159f (heapSampleWorkers: bytes a frame from the frame totals; the earlier\nattempt's patch, fixed for a single preRender), a2e9f87 and 8b90efd (fieldTypeAudit lists Smi-then-fraction fields,\nprobes without waiting for the run), workerShape.test coverage with the fixes.\n\nE-257 (678c3c3): the query services' callbacks made once in the enclosing scope, one reused filter: the five\nservice sites 65+46+30+30+24 = ~195 -> ~4 B/frame, physics total 970 -> 820 B/frame. Re-arm path (waitAsync,\npromise, then) and the results subarray not done.\nE-348 (4752c42): rng() reads module bindings; globalThis.rng is an accessor whose setter binds what is written\n(semantics in rngModuleBinding.test.js). The 10 \"dependent prototype chain changed\" deopts during play in base\n(randomRange, _spawn, resolveParticleOp, resolveParticleColorOp x2, recieveDamage, fsm.initializeArrays, logic\nworkers at 17.6 s and 18.5 s) are gone. rng's boxed returns where _spawn does not inline it (340-500 B/frame) stay.\nE-336 (9b2c3c5, 3fe516c): particlesToStamp starts as an empty Uint16Array; the stamp loop writes each W26 record\nfrom the columns: stampCollectedParticles 92 -> 0 B/frame, particle total 1 024 -> 914 (5.4 KB/s at this scene,\nnot R-1100's crowd-2.5 63-76 KB/s).\nE-351 (7c667a4, 571ccaf): the spawn and stamp ring drains take a method and thisArg: particle update site 80 -> 26\nB/frame; logic too noisy to call (gameplay-driven totals).\nE-349 (3d15ca9): the interval type's literal declares the six bucket fields: _tickIntervalBucket \"wrong map\"\ndeopts 2 -> 1, compiles unchanged (TurboFan 1 and 2 a logic worker): partly confirmed.\nE-350 (e044bb0, 5e92e1f): canvasWidth/canvasHeight declared in AbstractWorker (a resize added them during play,\nan N-32-kind shape change), timing fields start as -0: no deopt to remove in this run (hygiene). The audit still\nlists Smi-then-double fields per worker (preRender _frameCamera*, _worldBounds.*, pixi _renderCamera*,\nlightingResolution, spatial invCellSize, logic _spawnXyScratch.x/y) for FRACTION_FIELDS_BY_CLASS.\nOwners for the regression check: physics (E-257), logic (E-348, E-349, E-351), particle (E-336, E-351), all (E-350);\nthe Predator gate for E-348 and E-257.\n\nKernels in this record: serial A/B on a quiet 4-vCPU cloud Xeon after every implementation agent had finished (load\n0.7-1.1), one benchmark at a time; two-tree A/B = alternating processes A B / B A, 4 rounds a side, median ops/s;\ncatalog rows = runKernelsVsRev --vs <base> from a worktree at the hypothesis (5 rounds). Checksums equal on both\nsides in every pair. \"Combined\" = the group's base against the branch tip with every kept change (c6a7856), the\nsame day; the two that looked like interactions were bisected round-robin over 8-9 revisions and were noise.\nScreens: the owner scene on the owner machine decides.",
+      "commits": [
+        "678c3c3",
+        "4752c42",
+        "3fe516c",
+        "571ccaf",
+        "3d15ca9",
+        "5e92e1f"
+      ]
+    },
+    {
+      "id": "R-1118",
+      "date": "2026-11-15",
+      "time": "04:06",
+      "timeFrom": "recorded",
+      "title": "E-315, E-359, E-358, E-331 built; stamp replay -5.5, -5.6, -10.1, -44 % (E-331 inflated), combined -52.8 %",
+      "verdict": "screened",
+      "text": "**E-315, E-359, E-358, E-331 built and screened on Predator crowd 2.5's stamp inputs, 2026-11-15.** Tool b91ad02\nfixed the replay first: it put the light vec4 at float 18, where keyed rows (7 floats into 11) have it at 7, so even\n4c973c9 did not match its own capture. Capture (not committed): captureStampInputs.mjs --query crowd=2.5 --every 1\n--frames 24 (headed Chrome under Xvfb, base tree): 24 frames, ~37 000 casters, 48 lights, captureChecksum\n445751913, matched by every revision. shadowStampReplayMicrobench --variant wasm in each tree:\n\nE-315 (feabe3a): with maxShadowsPerEntity a light walks the grid in square rings from its cell, quickselects once it\nholds lim casters, keeps only casters under the lim-th float d2, skips rows and cells whose nearest point is not\nunder it, and stops once that distance is inside the walked square; plain walk on an unclean grid. Same kept set\nbut for exact ties at the lim-th distance (none differed). Frame 0: 30 837 casters in range, 3 922 kept; limits are\n41, 73 or 458, not 512. 37.56 -> 39.75 replays/s (-5.5 %, 4/4). Variants (b) last frame's distance and (c)\nhistogram select not built (reasons in the plan row's terms: no caster identity across frames; the ring walk\nleaves a few hundred candidates).\nE-359 (e2f3e01): keyed rows written with v128 + 64 + 32-bit stores, each light's floats converted once: 39.59 ->\n41.93 (-5.6 %, 4/4).\nE-358 (aa3d521; tool d2844d0 gives the harnesses' nearDist 8 bytes a slot): each caster's nearest lights as 8-byte\ndistance+light records, lit casters found 16 counts at a time: 42.06 -> 46.77 (-10.1 %, 3/4). +1.8 MB of queue\nmemory at Predator's caps (nearSlot kept for the float32 test module).\nE-331 (bbff14b; tool 3faf7fa builds the scan arrays outside the timed calls): pack_casters_keyed_scan_xy also\nwrites x, y and the bounds, the grid skips its first pass and bins in f64x2: 48.57 -> 86.74 (-44 %, 4/4), but the\nscan's added work is outside the replay: only the scene shows the net. +1.2 MB of regions.\n\nCombined (the tip's replay, b91ad02's engine.wasm as the other side): 41.43 -> 87.74 replays/s\n(-52.8 %, 4/4), E-331's moved work included as above. Tests: shadowStampRings, shadowStampKeyedRows,\nshadowStampNearRecords, shadowStampScan, gpuPackKeyed. engine.wasm 272 501 -> 296 314 bytes for the whole branch.\nOwner: Predator crowd 2.5 pre-render (STEP_MS - WAIT_MS).\n\nKernels in this record: serial A/B on a quiet 4-vCPU cloud Xeon after every implementation agent had finished (load\n0.7-1.1), one benchmark at a time; two-tree A/B = alternating processes A B / B A, 4 rounds a side, median ops/s;\ncatalog rows = runKernelsVsRev --vs <base> from a worktree at the hypothesis (5 rounds). Checksums equal on both\nsides in every pair. \"Combined\" = the group's base against the branch tip with every kept change (c6a7856), the\nsame day; the two that looked like interactions were bisected round-robin over 8-9 revisions and were noise.\nScreens: the owner scene on the owner machine decides.",
+      "commits": [
+        "feabe3a",
+        "e2f3e01",
+        "aa3d521",
+        "bbff14b"
+      ]
     }
   ],
   "leads": [
