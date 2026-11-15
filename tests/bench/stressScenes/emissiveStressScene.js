@@ -100,7 +100,7 @@ export class EmissiveStressScene extends Scene {
     // A flame about a cell wide (its frames are 150 px square, the fire in them about 95 px wide).
     const fireScale = Math.min(0.6, Math.max(0.15, (0.9 * grid.side) / 95));
     for (const [x, y] of grid.cells) {
-      Fire.spawn({ x, y, scale: fireScale * (0.85 + rng() * 0.3), speed: 0.22 + rng() * 0.16, flip: rng() < 0.5, emissive: EMISSIVE === 'entity' });
+      Fire.spawn({ x, y, scale: fireScale * (0.85 + rng() * 0.3), rate: 0.22 + rng() * 0.16, flip: rng() < 0.5, emissive: EMISSIVE === 'entity' });
     }
     // The lights on fires spread over the field.
     for (let j = 0; j < LIGHTS; j++) {
@@ -113,7 +113,7 @@ export class EmissiveStressScene extends Scene {
         y: rng() * H,
         heading: rng() * Math.PI * 2,
         turn: (rng() * 2 - 1) * 0.35,
-        speed: 22 + rng() * 26,
+        pace: 22 + rng() * 26,
       });
     }
   }

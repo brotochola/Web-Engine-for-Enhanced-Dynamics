@@ -21,7 +21,7 @@ export class StrollState extends Component {
 export class Stroller extends GameObject {
   static components = [DirectionalSprite, StrollState];
 
-  onSpawned({ x = 0, y = 0, heading = 0, turn = 0.2, speed = 30, scale = 1, sheet = 'civil7' } = {}) {
+  onSpawned({ x = 0, y = 0, heading = 0, turn = 0.2, pace = 30, scale = 1, sheet = 'civil7' } = {}) {
     this.setSpritesheet(sheet);
     this.setScale(scale);
     anchorOn(this, sheet);
@@ -30,11 +30,11 @@ export class Stroller extends GameObject {
     const s = this.strollState;
     s.heading = heading;
     s.turn = turn;
-    s.speed = speed;
+    s.speed = pace;
     this.directionalSprite.facingFrom = 'velocity';
     this.setAnimation('walk');
     // The steps about as fast as the feet move.
-    this.setAnimationSpeed(0.08 + speed * 0.003);
+    this.setAnimationSpeed(0.08 + pace * 0.003);
   }
 
   tick(dtRatio, deltaTime) {

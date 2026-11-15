@@ -17,7 +17,7 @@ export const ENTITY_EMISSIVE = Object.hasOwn(SpriteRenderer.ARRAY_SCHEMA || {}, 
 export class Fire extends GameObject {
   static components = [SpriteRenderer];
 
-  onSpawned({ x = 0, y = 0, scale = 0.5, speed = 0.3, flip = false, emissive = false } = {}) {
+  onSpawned({ x = 0, y = 0, scale = 0.5, rate = 0.3, flip = false, emissive = false } = {}) {
     this.setSpritesheet('fire');
     this.setScale(flip ? -scale : scale, scale);
     this.spriteRenderer.anchorX = 0.5;
@@ -25,7 +25,7 @@ export class Fire extends GameObject {
     this.x = x;
     this.y = y;
     this.setAnimation('fire');
-    this.setAnimationSpeed(speed);
+    this.setAnimationSpeed(rate);
     if (emissive && ENTITY_EMISSIVE) this.spriteRenderer.emissive = true;
   }
 }

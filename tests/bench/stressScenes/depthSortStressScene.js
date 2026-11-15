@@ -93,7 +93,7 @@ export class DepthSortStressScene extends Scene {
         y: rng() * H,
         heading: rng() * Math.PI * 2,
         turn: (rng() * 2 - 1) * 0.35,
-        speed: (22 + rng() * 26) * scale,
+        pace: (22 + rng() * 26) * scale,
         scale: scale * (0.95 + rng() * 0.1),
       });
     }
