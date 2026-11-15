@@ -296,6 +296,8 @@ export function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, 
 
 /** E-368: the sun's turn this call (prepareSunFrames writes it): a double the frame passes read, not one they are handed. */
 const SUN_TURN = new Float64Array(1);
+/** N-197: a caster's kind for a light that casts its card (CAST_KIND.SPRITE, shadowCaster.js). */
+const CARD_KIND = 1;
 
 /**
  * E-368: once a call per sheet, not per caster: its slots (rebuilt when the proxy map is another), and a uniform
@@ -318,15 +320,19 @@ export function prepareSunFrames(tables, proxy, starts, counts, shift, shiftTurn
 /**
  * E-368: the frame directional caster e shows the sun, ±(textureId + 1), negative mirrored; 0 for the sprite's own (not a
  * directional caster, a render that casts its solid, an animation the atlas lacks). prepareSunFrames ran this call.
+ * N-197: a render whose sheet casts its solid shows the sun's frame when its caster casts a card (`kinds`, its kind for the
+ * sun, 1; or a fixed card) as every card does; only its solid keeps the camera's frame (its columns are built from it).
  */
-function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients) {
+function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds) {
     if (active[e] !== 1 || mode[e] !== 1 || (casts !== null && casts[e] !== 1)) return 0;
     const sheet = sheets[e];
     const t = tables[sheet];
-    if (t === undefined || t.solid) return 0;
+    if (t === undefined) return 0;
+    const fixed = orients !== null && orients[e] === 1;
+    if (t.solid && !fixed && !(kinds !== null && kinds[e] === CARD_KIND)) return 0;
     const cur = dirs[e];
     let d = 0;
-    if (orients !== null && orients[e] === 1) {
+    if (fixed) {
         // DX-CASTER: a fixed card shows the object face on whatever the light (its axis rides in its code).
         d = t.front;
     } else if (t.uniform && cur < t.count) {
@@ -354,11 +360,11 @@ function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables
  * over every slot before it, no per-entity array between them.
  */
 export function applySunFramesFor(rows, sunN, casters, types, entities, active, mode, casts, sheets, dirs, anims, frames,
-    tables, shift, orients) {
+    tables, shift, orients, kinds = null) {
     for (let k = 0; k < sunN; k++) {
         const row = casters[k];
         if (types[row] !== 0) continue;
-        const v = sunFrameFor(entities[row], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients);
+        const v = sunFrameFor(entities[row], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
         if (v === 0) continue;
         const at = k * GPU_CASTER_FLOATS;
         rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
@@ -373,14 +379,14 @@ export function applySunFramesFor(rows, sunN, casters, types, entities, active, 
  * same way and writes there the entity's sun frame (sunFrameFor, worked out here: E-368; prepareSunFrames ran).
  */
 export function applyKeyedSunFramesFor(rows, keyedN, count, qType, shadowH, types, entities, active, mode, casts, sheets,
-    dirs, anims, frames, tables, shift, orients) {
+    dirs, anims, frames, tables, shift, orients, kinds = null) {
     let n = 0;
     for (let i = 0; i < count && n < keyedN; i++) {
         if (qType && qType[i] === 3) continue;
         if (!(shadowH[i] > 0)) continue;
         const k = n++;
         if (types[i] !== 0) continue;
-        const v = sunFrameFor(entities[i], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients);
+        const v = sunFrameFor(entities[i], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
         if (v !== 0) rows[k * GPU_KEYED_CASTER_FLOATS + 3] = v;
     }
 }
@@ -486,7 +492,7 @@ const LAMP_RAY = new Float64Array(2);
  * the floor). The row's entity is in its tint float (pre-render wrote it into the sun row the kernel copied).
  */
 export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive, dsMode,
-    dirs, anims, sheets, orients) {
+    dirs, anims, sheets, orients, kinds = null) {
     prepareLampFrames(tables, proxy, starts, counts);
     for (let k = 0; k < stampN; k++) {
         const at = k * GPU_CASTER_FLOATS;
@@ -494,7 +500,8 @@ export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables
         if (e < 0 || e >= dsActive.length || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
         if (orients !== null && orients[e] === 1) continue;
         const t = tables[sheets[e]];
-        if (t === undefined || t.solid) continue;
+        // N-197: a solid sheet keeps the camera's frame for its solid; a card of it takes the frame its lamp sees.
+        if (t === undefined || (t.solid && !(kinds !== null && kinds[e] === CARD_KIND))) continue;
         const L = lights[lightIdx[k]];
         if (!L) continue;
         LAMP_RAY[0] = rows[at] - L.x;
@@ -521,7 +528,7 @@ function dropOwnKeyedStampsInto(rows, stampN, lightIdx, lights) {
 
 /** DX-SHADOW3D: applyLampFramesInto for keyed stamp rows: the frame float, ±(textureId + 1), negative mirrored. */
 export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive,
-    dsMode, dirs, anims, sheets, orients) {
+    dsMode, dirs, anims, sheets, orients, kinds = null) {
     prepareLampFrames(tables, proxy, starts, counts);
     for (let k = 0; k < stampN; k++) {
         const at = k * GPU_KEYED_STAMP_FLOATS;
@@ -529,7 +536,8 @@ export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, t
         if (e < 0 || e >= dsActive.length || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
         if (orients !== null && orients[e] === 1) continue;
         const t = tables[sheets[e]];
-        if (t === undefined || t.solid) continue;
+        // N-197: a solid sheet keeps the camera's frame for its solid; a card of it takes the frame its lamp sees.
+        if (t === undefined || (t.solid && !(kinds !== null && kinds[e] === CARD_KIND))) continue;
         const L = lights[lightIdx[k]];
         if (!L) continue;
         LAMP_RAY[0] = rows[at] - L.x;
@@ -4047,6 +4055,7 @@ class PreRenderWorker extends AbstractWorker {
             dst.stamp, stampN, dst.stampLightIdx, this._stampLights, 1 / cameraFloorScaleY(this.config), this._sunFrameTables,
             proxy, starts, counts, this.entityFrameIndex || null, DirectionalSprite.active, DirectionalSprite.mode,
             DirectionalSprite.directionIndex, DirectionalSprite.animation, SpriteRenderer.spritesheetId, ShadowCaster.orient || null,
+            ShadowCaster.lampKind || null,
         );
     }
 
@@ -4091,7 +4100,7 @@ class PreRenderWorker extends AbstractWorker {
         applySunFramesFor(rows, sunN, this._gpuCasterIdx, this._renderableType, this._renderableIndex, DirectionalSprite.active,
             DirectionalSprite.mode, ShadowCaster.active || null, SpriteRenderer.spritesheetId, DirectionalSprite.directionIndex,
             DirectionalSprite.animation, this.entityFrameIndex || null, this._sunFrameTables, this._sunShift,
-            ShadowCaster.orient || null);
+            ShadowCaster.orient || null, ShadowCaster.sunKind || null);
     }
 
     /**
@@ -4107,7 +4116,7 @@ class PreRenderWorker extends AbstractWorker {
         applyKeyedSunFramesFor(rows, keyedN, count, qType, shadowH, this._renderableType, this._renderableIndex,
             DirectionalSprite.active, DirectionalSprite.mode, ShadowCaster.active || null, SpriteRenderer.spritesheetId,
             DirectionalSprite.directionIndex, DirectionalSprite.animation, this.entityFrameIndex || null,
-            this._sunFrameTables, this._sunShift, ShadowCaster.orient || null);
+            this._sunFrameTables, this._sunShift, ShadowCaster.orient || null, ShadowCaster.sunKind || null);
     }
 
     _ensureStampScratch(sunN) {
