@@ -1328,7 +1328,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 
 The Headlights demo (`demos/headlightsScene/`) puts most of this table on one street at night, under raycasted lighting: cone headlights on carScene's cars, round lamps, houses with a volume for the sun and a wall for the beams, and a key for each field. The light bench (`demos/lightBenchScene/`) does the same for the 3D light mode: a farm of props rendered from 32 directions, cars, trees, a person you walk with WASD and lamps, each piece on a key to compare.
 
-A light's falloff is `I / (I + d²)` with `I = (radius / 10)²`, on the floor: full at its centre, about 1 % at its radius, where it is culled. The camera picks what stops a lamp. Any camera but a flat one (no `pitch`, or an oblique one) lights with basic lighting: the sprite shadows of `ShadowCaster`s, stamped for the `lighting.maxShadowCastingLights` lights nearest the camera (or drawn into each one's shadow map with `lighting.lampShadows: 'map'`). A flat view, `camera.pitch` 90 (straight down) or 0 (from the side), lights with raycasted lighting: the walls (`shadowCaster.setWall()`) cut a visibility polygon for each light (no sprite shadows from lamps, and no `lighting.faces`).
+A light's falloff is `I / (I + d²)` with `I = (radius / 10)²`, on the floor, times `(1 - (d / radius)⁴)²`: full at its centre, nothing at its radius and past it, where it is culled; its shadows fade out with it. The camera picks what stops a lamp. Any camera but a flat one (no `pitch`, or an oblique one) lights with basic lighting: the sprite shadows of `ShadowCaster`s, stamped for the `lighting.maxShadowCastingLights` lights nearest the camera (or drawn into each one's shadow map with `lighting.lampShadows: 'map'`). A flat view, `camera.pitch` 90 (straight down) or 0 (from the side), lights with raycasted lighting: the walls (`shadowCaster.setWall()`) cut a visibility polygon for each light (no sprite shadows from lamps, and no `lighting.faces`).
 
 ```javascript
 class StreetLamp extends GameObject {
@@ -1349,7 +1349,7 @@ class StreetLamp extends GameObject {
 
 ### The camera, and light pools on the floor: `config.camera` and `elevation`
 
-A light reaches `LightEmitter.radius` px. Its falloff is `I / (I + d²)` with `I = (radius / 10)²` and `d` measured in world px: full at the centre, about 1 % at the radius. Two knobs make that `d` a distance on the floor of a top-down or isometric game.
+A light reaches `LightEmitter.radius` px. Its falloff is `I / (I + d²)` with `I = (radius / 10)²` and `d` measured in world px, times `(1 - (d / radius)⁴)²`: full at the centre, nearly unchanged halfway, nothing at the radius and past it. Two knobs make that `d` a distance on the floor of a top-down or isometric game.
 
 `config.camera` says what the camera is, once for the scene:
 

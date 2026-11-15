@@ -46,6 +46,15 @@ float coneFactor(vec2 delta, vec4 cone) {
   return t * t * (3.0 - 2.0 * t);
 }
 
+// A light ends at its radius (I' = (radius / 10)² + h², h its height): its falloff times (1 - (d / radius)⁴)², d on the
+// floor, 1 at the light and nearly 1 halfway, 0 at the radius and past it, as Unreal's and Godot's lights end at theirs. Its
+// shadows fade out with it: near its radius there is little of its light left to take out.
+float reachWindow(float floorD2, float iPrime, float h) {
+  float q = floorD2 / (100.0 * max(iPrime - h * h, 1e-6));
+  float w = clamp(1.0 - q * q, 0.0, 1.0);
+  return w * w;
+}
+
 // A world point's place on the canvas, 0..1 (weedScreenToWorld's inverse).
 vec2 weedWorldToNorm(vec2 world) {
   vec2 focus = uCameraPos + uFullCanvasSize / (2.0 * uZoom);
@@ -254,7 +263,8 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     if (cosine <= 0.0 && !both) continue;
     float scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     float intensityScaled = posInt.z * scaled;
-    float cone = coneFactor(p.xy - posInt.xy, textureLod(uLightData, vec2(u, ROW2), 0.0));
+    float cone = coneFactor(p.xy - posInt.xy, textureLod(uLightData, vec2(u, ROW2), 0.0))
+      * reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
 // #if LAMPMAP
     cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId);
 // #endif LAMPMAP
@@ -298,11 +308,13 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     if (cosine > 0.05) cosine *= lampSelf;
 // #endif SELFSHADOW
 // #endif LAMPMAP
+    // The light ends at its radius (reachWindow), and its shadows fade out with it.
+    float win = reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
     if (cosine > 0.0) {
-      total += col.rgb * cosine * uFaceLight.z * intensityScaled
+      total += col.rgb * cosine * win * uFaceLight.z * intensityScaled
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
-    if (both) lampFlat += col.rgb * (lampVis * lampSelf) * uFaceLight.z * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    if (both) lampFlat += col.rgb * (lampVis * lampSelf * win) * uFaceLight.z * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
   }
   if (!both) return total;
   vec3 totalFlat = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB) + vec3(uSunR, uSunG, uSunB) * uSunIntensity * sunFlat
@@ -372,7 +384,8 @@ void main() {
     vec2 deltaScaled = (fragWorld - posInt.xy) * DISTANCE_SCALE;
     float d2Scaled = dot(deltaScaled, deltaScaled);
     float intensityScaled = posInt.z * DISTANCE_SCALE * DISTANCE_SCALE;
-    float attenuation = intensityScaled / (intensityScaled + d2Scaled);
+    float attenuation = intensityScaled / (intensityScaled + d2Scaled)
+      * reachWindow(dot(fragWorld - posInt.xy, fragWorld - posInt.xy), posInt.z, col.a);
 // #if LAMPMAP
     attenuation *= lampVisibility(vec3(fragWorld, 0.0), posInt.xy, col.a, posInt.w, posInt.z, 0.0);
 // #endif LAMPMAP
@@ -396,7 +409,8 @@ void main() {
       vec2 deltaScaled = (fragWorld - lightWorld) * DISTANCE_SCALE;
       float d2Scaled = dot(deltaScaled, deltaScaled);
       float intensityScaled = intensity * DISTANCE_SCALE * DISTANCE_SCALE;
-      float attenuation = intensityScaled / (intensityScaled + d2Scaled);
+      float attenuation = intensityScaled / (intensityScaled + d2Scaled)
+        * reachWindow(dot(fragWorld - lightWorld, fragWorld - lightWorld), intensity, col.a);
 // #if LAMPMAP
       attenuation *= lampVisibility(vec3(fragWorld, 0.0), lightWorld, col.a, posInt.w, intensity, 0.0);
 // #endif LAMPMAP

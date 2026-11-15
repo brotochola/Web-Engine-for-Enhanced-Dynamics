@@ -1066,7 +1066,7 @@ export class LightBenchScene extends Scene {
     });
     s.range({
       label: 'Reach', min: 60, max: 900, step: 10, value: l.radius, format: (v) => `${v} px`,
-      note: 'lightEmitter.radius: how far it reaches on the floor (full at its centre, about 1 % at the radius).',
+      note: 'lightEmitter.radius: how far it reaches on the floor (full at its centre, nothing past it: its shadows fade out with it).',
       onChange: (v) => this._setLamp(l, { radius: v }),
     });
     s.range({

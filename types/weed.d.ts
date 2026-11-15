@@ -4004,7 +4004,7 @@ export declare class LightEmitter extends Component {
   static color: Uint32Array;
   /**
    * How far the light reaches, in px. Its falloff is I / (I + d²) with I = (radius / 10)², measured on the floor
-   * (`config.camera.floorScaleY`): full at its centre, about 1 % at the radius.
+   * (`config.camera.floorScaleY`), times (1 - (d / radius)⁴)²: full at its centre, nothing at the radius and past it.
    */
   static radius: Float32Array;
   /**
