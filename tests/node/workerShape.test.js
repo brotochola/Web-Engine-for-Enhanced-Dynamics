@@ -84,6 +84,57 @@ for (const [file, selfKey, className, minFields] of [
   });
 }
 
+// E-350. A field whose first value is a Smi (0) and that later holds a fraction changes representation on its first
+// fractional write, from Smi to double, which moves the object to a new map: a deopt of every method that saw the old
+// one, once per worker. A field that holds fractions starts as a double: -0 (falsy, and equal to 0 in every comparison
+// and sum) or NaN where it must read as "none".
+/** A number V8 stores as a Smi: an integer in the 31-bit range, not -0 (a double). */
+function isSmi(x) {
+  return Number.isInteger(x) && !Object.is(x, -0) && x >= -(2 ** 30) && x < 2 ** 30;
+}
+/** The object's own number fields and those of the plain objects it holds, by dotted path. */
+function numberFields(obj) {
+  const out = new Map();
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'number') out.set(k, v);
+    else if (v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) {
+      for (const [g, x] of Object.entries(v)) if (typeof x === 'number') out.set(`${k}.${g}`, x);
+    }
+  }
+  return out;
+}
+// The fields every worker's frame writes a fraction into (AbstractWorker's timing), and those a worker of its own
+// writes a fraction into that the frame-timing run below does not reach (tests/bench/fieldTypeAudit.mjs lists them
+// from a running scene).
+const FRACTION_FIELDS = [
+  'accumulatedTime', 'currentFPS', 'stepTimeThisFrame', 'messageTimeThisFrame', 'idleTimeThisFrame', '_lastFrameEndAt',
+  '_injectedDeltaTime', '_timing.deltaTime', '_timing.dtRatio',
+];
+const FRACTION_FIELDS_BY_CLASS = {};
+for (const [file, selfKey, className] of [
+  ['preRenderWorker.js', 'preRenderWorker', 'PreRenderWorker'],
+  ['pixiWorker.js', 'pixiRenderer', 'PixiRenderer'],
+  ['spatialWorker.js', 'spatialWorker', 'SpatialWorker'],
+  ['particleWorker.js', 'particleWorker', 'ParticleWorker'],
+  ['logicWorker.js', 'logicWorker', 'LogicWorker'],
+]) {
+  test(`${className}: fields that hold fractions start as doubles`, async () => {
+    const worker = await loadWorker(file, selfKey);
+    const birth = numberFields(worker);
+    const listed = [...FRACTION_FIELDS, ...(FRACTION_FIELDS_BY_CLASS[className] || [])];
+    const missing = listed.filter((f) => !birth.has(f));
+    assert.deepEqual(missing, [], 'declared from the constructor');
+    // A frame's timing on a fresh worker: a fractional wall delta writes fractions into whatever it times.
+    worker.lastFrameTime = performance.now() - 16.3;
+    worker.updateFrameTiming();
+    const after = numberFields(worker);
+    const timed = [...after].filter(([f, v]) => !Number.isInteger(v) && birth.has(f)).map(([f]) => f);
+    assert.ok(timed.includes('currentFPS') && timed.includes('_timing.dtRatio'), `the timing ran (${timed.join(' ')})`);
+    const smi = [...new Set([...listed, ...timed])].filter((f) => isSmi(birth.get(f)));
+    assert.deepEqual(smi.map((f) => `${f} (${birth.get(f)})`), [], 'start these as doubles (-0, or NaN for "none")');
+  });
+}
+
 test('pre-render: the first full-queue and missing-texture warnings keep the worker\'s shape', async () => {
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   const keys = Object.keys(pre);

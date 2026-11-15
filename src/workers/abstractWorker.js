@@ -116,11 +116,14 @@ export class AbstractWorker {
     };
 
     // Frame timing and FPS tracking
+    // E-350: the fields that hold fractions start as -0, a double zero (falsy, and equal to 0 in every comparison and
+    // sum). As the Smi 0, each one's first fractional write changed its representation to double and moved the worker
+    // to a new map: a deopt of every method that had seen the old one, in every worker, on its first frames.
     this.frameNumber = 0;
     this.lastFrameTime = performance.now();
-    this.accumulatedTime = 0; // Total time elapsed since start (in milliseconds)
-    this.currentFPS = 0;
-    this.stepTimeThisFrame = 0; // Wall ms for update() this frame (STEP_MS)
+    this.accumulatedTime = -0; // Total time elapsed since start (in milliseconds)
+    this.currentFPS = -0;
+    this.stepTimeThisFrame = -0; // Wall ms for update() this frame (STEP_MS)
 
     // Stats buffer for writing detailed metrics (set during initialization)
     this.stats = null; // Float32Array view into worker's stat buffer
@@ -206,13 +209,14 @@ export class AbstractWorker {
 
     // PERFORMANCE: Reusable timing object to avoid GC pressure
     // This is returned by updateFrameTiming() every frame on every worker
+    // E-350: both start as doubles (-0). Nothing reads them before updateFrameTiming writes both.
     this._timing = {
-      deltaTime: 0,
-      dtRatio: 1,
+      deltaTime: -0,
+      dtRatio: -0,
     };
 
     // Lightweight worker diagnostics written into the existing stats buffers.
-    this.messageTimeThisFrame = 0;
+    this.messageTimeThisFrame = -0;
 
     // Wall ms between the end of the previous frame and the start of this one.
     //
@@ -227,8 +231,8 @@ export class AbstractWorker {
     // do. E-01 / E-06 in docs/internal/EXECUTION_PLAN.md. Two limits: messages
     // handled between frames (MSG_MS) are inside it, and resume() clears the
     // stamp so a pause is not reported as idle.
-    this.idleTimeThisFrame = 0;
-    this._lastFrameEndAt = 0;
+    this.idleTimeThisFrame = -0;
+    this._lastFrameEndAt = -0;
     // E-24. Null until init hands over the shared frame clock. Stamps stay
     // outside STEP_MS: they run before the step timer starts and after it stops.
     this._frameClock = null;
@@ -237,7 +241,7 @@ export class AbstractWorker {
     this._frameTotals = null;
 
     // Injected dt for `{ msg: 'step' }` (lockstep). 0 = use wall / fixedFps.
-    this._injectedDeltaTime = 0;
+    this._injectedDeltaTime = -0;
 
     this.reportLog('finished constructor');
   }
