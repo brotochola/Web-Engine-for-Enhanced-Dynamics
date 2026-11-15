@@ -15993,16 +15993,18 @@
     {
       "id": "N-196",
       "title": "A lamp's shadows stay coarse at any lighting.shadowResolution: its tile in the lamps' map is lampShadowTile texels (256) over twice its reach, about 7 floor px a texel at reach 900",
-      "status": "running",
+      "status": "kept-hygiene",
       "statusText": "reported by the owner 2026-11-15 (the light bench, a warm lamp of reach 900 at shadow resolution 1); fix being written",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
-      "result": "",
+      "result": "fixed (cf3e8ff1): 'auto' tiles by reach and resolution; reach 900 at resolution 1 goes from 7 to 1.76 px a texel; lamp map pass 0.05 / 0.17 / 0.62 ms at 256 / 512 / 1024 (2 lamps, dense)",
       "refs": [],
       "aliases": [],
       "next": "lampShadowTile 'auto' (the new default): the tile's side, a power of two from 64 to 1024, follows the widest casting lamp's reach and lighting.shadowResolution (about 1.5 floor px a texel at resolution 1), for the lamps casting now, within a texel budget; a number keeps a fixed tile. Measure the lamp map pass (gpuPassBench) at 256 and auto. A softer edge (PCF in lampVisibility) is a further step.",
-      "records": []
+      "records": [
+        "R-1136"
+      ]
     }
   ],
   "records": [
@@ -26790,6 +26792,18 @@
         "3fa344ee",
         "caaf734f",
         "134dd868"
+      ]
+    },
+    {
+      "id": "R-1136",
+      "date": "2026-11-15",
+      "time": "15:01",
+      "timeFrom": "recorded",
+      "title": "N-196 fixed: lampShadowTile 'auto' (tile by reach and shadow resolution)",
+      "verdict": "kept",
+      "text": "N-196 fixed (cf3e8ff1): lighting.lampShadowTile 'auto' (the new default) sizes a lamp's tile, a power of two from 64 to 1024, by the widest casting lamp's reach and lighting.shadowResolution (at most 2 floor px a texel at resolution 1), a tile for each lamp casting now rounded up to a power of two, within a 4096 x 2048 map; a number keeps a fixed tile (lampShadowStressScene pins its ?tile=).\n\nPicture: the light bench at 22 h, the warm lamp at reach 900, brightness 3, elevation 75, shadow resolution 1 (the owner's report): before, 256 texels over 1800 px (7 px a texel) drew the fence's and the person's shadows as blocks; after, 1024 texels (1.76 px a texel), sharp edges (pair capture, HEAD c0b2b190 against the working tree).\n\nCost, gpuPassBench lampMap (GTX 1650, AC power), 2 lamps of 64 casters, 85.5 % of each tile drawn (a dense case), ms a pass, WebGL / WebGPU: tile 256 0.052 [0.048-0.061] / 0.054 [0.052-0.055]; 512 0.170 / 0.181; 1024 0.623 / 0.744. The pass costs its texels; what changes is only where more were asked: at the default resolution 0.5 a lamp up to 512 px of reach keeps 256 (Predator ?light3d=1, selfShadowStressScene unchanged), the bench (resolution 1) pays about 0.17 ms a lamp of reach 330 and 0.6 ms at 900.\n\nNext: a softer edge (PCF in lampVisibility, 4 fetches) if 2 px a texel still shows at a high zoom.",
+      "commits": [
+        "cf3e8ff1"
       ]
     }
   ],
