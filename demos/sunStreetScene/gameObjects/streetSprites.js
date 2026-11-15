@@ -3,11 +3,13 @@
 import WEED from '/src/index.js';
 import { LAP, WORLD_W, roadPoint } from '../streetLayout.js';
 
-const { GameObject, Collider, SpriteRenderer, ShadowCaster, VolumeShadowCaster, LightEmitter, LightOccluder, Sun, enums } = WEED;
+const { GameObject, Collider, SpriteRenderer, ShadowCaster, LightEmitter, Sun, enums } = WEED;
 const { ShapeType } = enums;
 
 // ?carSpeed= reaches this module on the logic worker through WEED.params: `location` there is the worker script's.
 const CAR_SPEED = Number(WEED.params?.get('carSpeed') ?? 4);
+// ?raycast=0: the scene's camera is not flat, so there are no walls (sunStreetScene.js reads the same knob).
+const RAYCAST = Number(WEED.params?.get('raycast') ?? 1) === 1;
 const LANE = -28; // inside of the centre line
 // The lights' reach at night; by day it shrinks with Sun.nightFactor (as √nightFactor), and their glow fades with it.
 const LAMP_RADIUS = 949;
@@ -43,13 +45,13 @@ const point = new Float64Array(3);
 
 /**
  * A house seen from the front, its roof going up the screen. Its sprite's silhouette would flip this picture, so its
- * ShadowCaster says what it is instead: a box with a water tank on it (setBox, addLevel: the volume is VolumeShadowCaster's).
- * It blocks lamps and headlights with its whole picture, not its footprint (lamps.setWall({ shape: 'sprite' }): a
- * LightOccluder): lights work on the floor, and in this view a wall and a roof are drawn over the floor behind the house, so
+ * ShadowCaster says what it is instead: a box with a water tank on it (setBox, addLevel: a volume).
+ * It blocks lamps and headlights with its whole picture, not its footprint (lamps.setWall({ shape: 'sprite' }), under
+ * raycasted lighting): lights work on the floor, and in this view a wall and a roof are drawn over the floor behind the house, so
  * with the footprint the wall facing a lamp falls in the footprint's own shadow, and the wall facing away is lit.
  */
 export class StreetHouse extends GameObject {
-  static components = [Collider, SpriteRenderer, ShadowCaster, LightOccluder, VolumeShadowCaster];
+  static components = [Collider, SpriteRenderer, ShadowCaster];
 
   onSpawned(config = {}) {
     this.collider.shapeType = ShapeType.Box;
@@ -62,7 +64,7 @@ export class StreetHouse extends GameObject {
     this.spriteRenderer.anchorY = 1;
     this.shadowCaster.setBox(HOUSE_WIDTH, HOUSE_DEPTH, HOUSE_HEIGHT, { offsetY: -HOUSE_DEPTH / 2 });
     this.shadowCaster.addLevel(TANK, HOUSE_HEIGHT, TANK_HEIGHT);
-    this.shadowCaster.lamps.setWall({ shape: 'sprite' });
+    if (RAYCAST) this.shadowCaster.lamps.setWall({ shape: 'sprite' });
   }
 }
 
@@ -142,7 +144,7 @@ export class StreetWalker extends GameObject {
  * for the sun, and its picture as a wall that blocks other lights.
  */
 export class StreetCar extends GameObject {
-  static components = [Collider, SpriteRenderer, LightEmitter, ShadowCaster, LightOccluder, VolumeShadowCaster];
+  static components = [Collider, SpriteRenderer, LightEmitter, ShadowCaster];
 
   distance = 0.5;
   frame = -1;
@@ -164,7 +166,7 @@ export class StreetCar extends GameObject {
     this.lightEmitter.offsetX = config.offset;
     this.shadowCaster.addLevel(CAR_BODY, 0, CAR_BODY_HEIGHT, CAR_BODY, { floorScaleY: CAR_FLOOR_SCALE });
     this.shadowCaster.addLevel(CAR_CABIN, CAR_BODY_HEIGHT, CAR_ROOF_HEIGHT, CAR_ROOF);
-    this.shadowCaster.lamps.setWall({ shape: 'sprite' });
+    if (RAYCAST) this.shadowCaster.lamps.setWall({ shape: 'sprite' });
   }
 
   tick(dtRatio) {
