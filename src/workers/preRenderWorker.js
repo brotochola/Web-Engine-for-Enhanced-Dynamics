@@ -180,7 +180,7 @@ function sunFrameTables(byId) {
     let any = false;
     for (const [id, src] of Object.entries(byId)) {
         if (!src || !(src.count > 0)) continue;
-        out[id | 0] = {
+        const entry = {
             count: src.count,
             uniform: src.uniform === true,
             start: +src.start,
@@ -191,7 +191,11 @@ function sunFrameTables(byId) {
             groups: src.groups.length,
             // A render with height maps casts its solid from the frame the camera sees (frameBase.js sheetCastsSolid).
             solid: src.solid === true,
+            // DX-CASTER: a fixed card's frame, the object seen face on (facing the camera, south).
+            front: 0,
         };
+        entry.front = pickDirection(entry, Math.PI / 2, 255, 0);
+        out[id | 0] = entry;
         any = true;
     }
     return any ? out : null;
@@ -204,7 +208,7 @@ function sunFrameTables(byId) {
  * @returns {void} out[e]: ±(textureId + 1), negative mirrored, 0 for the sprite's own frame
  */
 function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, anims, frames, tables, proxy, starts, counts,
-    shift, shiftTurn, turn) {
+    shift, shiftTurn, turn, orients) {
     for (let e = 0; e < n; e++) {
         let v = 0;
         if (active[e] === 1 && mode[e] === 1 && (casts === null || casts[e] === 1)) {
@@ -215,7 +219,10 @@ function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, anims, 
                 // whole steps, worked out once a sheet while the sun stays.
                 const cur = dirs[e];
                 let d = 0;
-                if (t.uniform && cur < t.count) {
+                if (orients !== null && orients[e] === 1) {
+                    // DX-CASTER: a fixed card shows the object face on whatever the light (its axis rides in its code).
+                    d = t.front;
+                } else if (t.uniform && cur < t.count) {
                     if (shiftTurn[sheet] !== turn) {
                         shiftTurn[sheet] = turn;
                         shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
@@ -253,14 +260,22 @@ function casterKindsInUse(active, sunKind, lampKind, orient, opacity, n) {
     return false;
 }
 
-/** DX-CASTER: each caster's code in entity order (casterKindsInUse's columns), 0 for every other slot. */
-function computeCasterCodes(out, active, sunKind, lampKind, orient, opacity, n) {
+/**
+ * DX-CASTER: each caster's code in entity order (casterKindsInUse's columns), 0 for every other slot. A fixed card's
+ * axis (its facing turned a quarter, (sin f, -cos f) on the floor) in 64 steps from bit 15.
+ */
+function computeCasterCodes(out, active, sunKind, lampKind, orient, opacity, dsActive, facing, n) {
     for (let e = 0; e < n; e++) {
         let v = 0;
         if (active[e] === 1) {
             const o = opacity[e];
             const a = o >= 1 ? 255 : o <= 0 ? 0 : Math.round(o * 255);
             v = (sunKind[e] & 7) | ((lampKind[e] & 7) << 3) | ((orient[e] & 1) << 6) | (a << 7);
+            if (orient[e] === 1) {
+                let q = ((dsActive !== null && dsActive[e] === 1 ? facing[e] : Math.PI / 2) - Math.PI / 2) / (2 * Math.PI);
+                q -= Math.floor(q);
+                v |= (Math.round(q * 64) & 63) << 15;
+            }
         }
         if (out[e] !== v) out[e] = v;
     }
@@ -3715,7 +3730,7 @@ class PreRenderWorker extends AbstractWorker {
         computeSunFramesInto(
             this._sunFrameOf, n, active, DirectionalSprite.mode, ShadowCaster.active || null, SpriteRenderer.spritesheetId,
             DirectionalSprite.directionIndex, DirectionalSprite.animation, this.entityFrameIndex || null, tables, proxy,
-            starts, counts, this._sunShift, this._sunShiftTurn, turn,
+            starts, counts, this._sunShift, this._sunShiftTurn, turn, ShadowCaster.orient || null,
         );
         return true;
     }
@@ -3729,7 +3744,10 @@ class PreRenderWorker extends AbstractWorker {
         const active = ShadowCaster.active;
         const n = active.length;
         if (this._casterCode.length !== n) this._casterCode = new Int32Array(n);
-        computeCasterCodes(this._casterCode, active, ShadowCaster.sunKind, ShadowCaster.lampKind, ShadowCaster.orient, ShadowCaster.opacity, n);
+        computeCasterCodes(
+            this._casterCode, active, ShadowCaster.sunKind, ShadowCaster.lampKind, ShadowCaster.orient, ShadowCaster.opacity,
+            DirectionalSprite.active || null, DirectionalSprite.facing || EMPTY_F32, n,
+        );
         const codes = this._casterCode;
         const casters = this._gpuCasterIdx;
         const types = this._renderableType;

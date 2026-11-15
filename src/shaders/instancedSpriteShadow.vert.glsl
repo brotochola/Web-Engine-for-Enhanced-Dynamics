@@ -75,6 +75,10 @@ void main() {
   int sunKind = castCode & 7;
   int lampKind = (castCode >> 3) & 7;
   float castOpacity = aInstDepth < -0.5 ? float((castCode >> 7) & 255) / 255.0 : 1.0;
+  // A fixed card lies along the object (orient bit 6), its axis on the floor in 64 steps from bit 15.
+  bool castFixed = ((castCode >> 6) & 1) == 1;
+  float castAxisA = float((castCode >> 15) & 63) * 0.09817477042;
+  vec2 castAxis = vec2(cos(castAxisA), sin(castAxisA));
   // weed:afterAnchor
   vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
   vec4 light = aInstLight.w > 0.0 ? aInstLight : uLight;
@@ -147,7 +151,14 @@ void main() {
       float reach = (-aInstBase.x - 1.0 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uGroundInvScaleY;
       foot = vec2(aInstXY.x, aInstXY.y * uGroundInvScaleY) + toSun * reach;
     }
-    vec2 land = foot + (content.x - footCol) * aInstScale.x * uSunPerp.xy - sunZ * uSunK.xy;
+    vec2 sunPerp = uSunPerp.xy;
+    if (castFixed) {
+      // DX-CASTER: a fixed card stands along the object through its anchor (the frame shows it face on).
+      foot = vec2(aInstXY.x, aInstXY.y * uGroundInvScaleY);
+      footCol = aInstAnchor.x * aInstSize.x;
+      sunPerp = castAxis;
+    }
+    vec2 land = foot + (content.x - footCol) * aInstScale.x * sunPerp - sunZ * uSunK.xy;
     world = vec2(land.x, land.y / uGroundInvScaleY);
     // weed:sunOut
   }

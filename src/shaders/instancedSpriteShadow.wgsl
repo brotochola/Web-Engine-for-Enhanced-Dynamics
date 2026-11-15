@@ -108,6 +108,9 @@ fn mainVert(
   let lampKind = (castCode >> 3u) & 7;
   var castOpacity = 1.0;
   if (aInstDepth < -0.5) { castOpacity = f32((castCode >> 7u) & 255) / 255.0; }
+  let castFixed = ((castCode >> 6u) & 1) == 1;
+  let castAxisA = f32((castCode >> 15u) & 63) * 0.09817477042;
+  let castAxis = vec2<f32>(cos(castAxisA), sin(castAxisA));
   // weed:afterAnchor
   let content = aInstTrim.xy + aQuad * aInstTrim.zw;
   var world: vec2<f32>;
@@ -163,7 +166,14 @@ fn mainVert(
       let reach = (-aInstBase.x - 1.0 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uniforms.uGroundInvScaleY;
       foot = vec2<f32>(aInstXY.x, aInstXY.y * uniforms.uGroundInvScaleY) + toSun * reach;
     }
-    let land = foot + (content.x - footCol) * aInstScale.x * uniforms.uSunPerp.xy - sunZ * uniforms.uSunK.xy;
+    var sunPerp = uniforms.uSunPerp.xy;
+    if (castFixed) {
+      // DX-CASTER: a fixed card stands along the object through its anchor.
+      foot = vec2<f32>(aInstXY.x, aInstXY.y * uniforms.uGroundInvScaleY);
+      footCol = aInstAnchor.x * aInstSize.x;
+      sunPerp = castAxis;
+    }
+    let land = foot + (content.x - footCol) * aInstScale.x * sunPerp - sunZ * uniforms.uSunK.xy;
     world = vec2<f32>(land.x, land.y / uniforms.uGroundInvScaleY);
     // weed:sunOut
   }

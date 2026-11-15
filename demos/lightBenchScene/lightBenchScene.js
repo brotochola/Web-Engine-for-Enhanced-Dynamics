@@ -71,6 +71,8 @@ class Prop extends GameObject {
   static components = [DirectionalSprite, ShadowCaster];
 
   onSpawned({ sheet = 'mesa', facing = 0 } = {}) {
+    // The prototype's fence cast a card along it, whatever the light.
+    if (sheet === 'cerca') this.shadowCaster.setSprite({ orient: 'fixed' });
     this.setSpritesheet(sheet);
     anchorOn(this, sheet);
     this.directionalSprite.facing = facing;

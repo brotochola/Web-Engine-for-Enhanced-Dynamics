@@ -177,10 +177,15 @@ export function lampMapVertex(source) {
     foot = anchorFloor + (tlen > 1e-3 ? tl / tlen : vec2(0.0, -1.0)) * reach;
   }
   // Its columns run across the lamp (to the right of someone at the lamp looking at it).
+  if (castFixed) {
+    // DX-CASTER: a fixed card stands along the object through its anchor.
+    foot = vec2(aInstXY.x, aInstXY.y * uGroundInvScaleY);
+    footCol = aInstAnchor.x * aInstSize.x;
+  }
   vec2 toLamp = lamp.xy - foot;
   float dl = length(toLamp);
   vec2 dir = dl > 1e-3 ? toLamp / dl : vec2(0.0, -1.0);
-  vec2 p = foot + (content.x - footCol) * aInstScale.x * vec2(dir.y, -dir.x);
+  vec2 p = foot + (content.x - footCol) * aInstScale.x * (castFixed ? castAxis : vec2(dir.y, -dir.x));
   float room = lamp.z - z;
   float w = room > lamp.z * ${(1 / LAMP_MAP_MAX_STRETCH).toFixed(6)} ? room / lamp.z : ${(1 / LAMP_MAP_MAX_STRETCH).toFixed(6)};
   vec2 land = lamp.xy + (p - lamp.xy) / w;
@@ -342,11 +347,15 @@ export function lampMapWgsl(source) {
     let reach = (-aInstBase.x - 1.0 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uniforms.uGroundInvScaleY;
     foot = anchorFloor + tdir * reach;
   }
+  if (castFixed) {
+    foot = vec2<f32>(aInstXY.x, aInstXY.y * uniforms.uGroundInvScaleY);
+    footCol = aInstAnchor.x * aInstSize.x;
+  }
   let toLamp = lamp.xy - foot;
   let dl = length(toLamp);
   var dir = vec2<f32>(0.0, -1.0);
   if (dl > 1e-3) { dir = toLamp / dl; }
-  let p = foot + (content.x - footCol) * aInstScale.x * vec2<f32>(dir.y, -dir.x);
+  let p = foot + (content.x - footCol) * aInstScale.x * select(vec2<f32>(dir.y, -dir.x), castAxis, castFixed);
   let room = lamp.z - z;
   let w = select(${k}, room / lamp.z, room > lamp.z * ${k});
   let land = lamp.xy + (p - lamp.xy) / w;
