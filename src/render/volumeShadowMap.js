@@ -14,7 +14,7 @@
  *   headlights are not shaded by the car's volume.
  */
 
-import { SUN_MAP_ZMAX } from './sunShadowMap.js';
+import { MAP_TEXEL_WGSL, SUN_MAP_ZMAX } from './sunShadowMap.js';
 import { LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX } from './lampShadowMap.js';
 import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
 
@@ -30,10 +30,12 @@ function after(source, find, add, what) {
 const MIN_W = (1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
 
 const SUN_FRAGMENT_WGSL = `
-// DX-SHADOW3D (F6): a volume's height where its sun ray lands, max blending (sunShadowMap.js VOLUME_MAP_FRAGMENT).
+${MAP_TEXEL_WGSL}
+// DX-SHADOW3D (F6): a volume's height where its sun ray lands, the highest kept by its depth with the volume's entity
+// (sunShadowMap.js VOLUME_MAP_FRAGMENT).
 @fragment
-fn mainFragMap(in: VertexOut) -> @location(0) vec4<f32> {
-  return vec4<f32>(clamp(in.vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0), 0.0, 0.0, 1.0);
+fn mainFragMap(in: VertexOut) -> WeedMapOut {
+  return weedMapTexel(in.vSunZ, in.vSunId);
 }
 `;
 
@@ -45,15 +47,30 @@ fn mainFragMap(in: VertexOut) -> @location(0) vec4<f32> {
  */
 export function volumeMapWgsl(source) {
   const what = "the sun map's volumes";
-  let out = after(source, '  @location(7) vMeshUV: vec2<f32>,\n', '  @location(8) vSunZ: f32,\n', what);
-  out = after(out, '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n', '  out.vSunZ = height * sunShadow.uSunShadow.w;\n', what);
+  let out = after(
+    source,
+    '  @location(7) vMeshUV: vec2<f32>,\n',
+    '  @location(8) vSunZ: f32,\n  @location(10) @interpolate(flat) vSunId: f32,\n',
+    what,
+  );
+  out = after(
+    out,
+    '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
+    `  out.vSunZ = height * sunShadow.uSunShadow.w;\n${VOLUME_ID_WGSL}`,
+    what,
+  );
   return out + SUN_FRAGMENT_WGSL;
 }
+
+// DX-GBUF: a volume's entity is its row's body (the pose table's index), as the G-buffer's id (gbufWord.js).
+const VOLUME_ID_GLSL = '  vSunId = float(int(aInstBody + 0.5) % 65535 + 1);';
+const VOLUME_ID_WGSL = '  out.vSunId = f32(u32(aInstBody + 0.5) % 65535u + 1u);\n';
 
 // The lamp's landing in GLSL, after meshUvFill.vert.glsl's gl_Position (its xy, f, world and mvp in scope).
 const LAMP_GLSL = `
   // DX-SHADOW3D (F7): towards this draw's lamp (volumeShadowMap.js): the floor point under the vertex lands along the
   // lamp's ray, in its tile, drawn with w = 1 / its stretch. A triangle past an edge of the tile is left out.
+${VOLUME_ID_GLSL}
   vSunZ = 0.0;
   vTileUvW = vec3(-1.0, -1.0, 1.0);
   int lampTile = int(uLampVolume.x + 0.5);
@@ -90,7 +107,7 @@ const LAMP_GLSL = `
 export function volumeLampVertex(source) {
   const what = "the lamps' map's volumes";
   const decl =
-    'out float vSunZ;\nout vec3 vTileUvW;\n' +
+    'out float vSunZ;\nout vec3 vTileUvW;\nflat out float vSunId;\n' +
     "// DX-SHADOW3D (F7): uLampVolume: this draw's tile, tiles a row, a tile's texels, 1 / groundScaleY; uLampOwner.x: the\n" +
     "// tile's lamp's entity (-1 none); uLampTiles: the tiles' lamps.\n" +
     'uniform vec4 uLampVolume;\nuniform vec4 uLampOwner;\nuniform sampler2D uLampTiles;\n';
@@ -98,23 +115,30 @@ export function volumeLampVertex(source) {
   return after(out, 'gl_Position = vec4(clip.xy, aInstDepth, 1.0);', LAMP_GLSL, what);
 }
 
-/** The volumes' fragment in the lamps' map (WebGL): the height, max blending, cut to the draw's tile. */
+/**
+ * The volumes' fragment in the lamps' map (WebGL): the height, the volume's entity and the depth that keeps the highest,
+ * cut to the draw's tile.
+ */
 export const VOLUME_LAMP_FRAGMENT = `#version 300 es
 precision highp float;
 in float vSunZ;
 in vec3 vTileUvW;
+flat in float vSunId;
 out vec4 finalColor;
 void main() {
   vec2 tuv = vTileUvW.xy / vTileUvW.z;
   if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) discard;
-  finalColor = vec4(clamp(vSunZ / ${LAMP_MAP_ZMAX}.0, 0.0, 1.0), 0.0, 0.0, 1.0);
+  float h = clamp(vSunZ / ${LAMP_MAP_ZMAX}.0, 0.0, 1.0);
+  int id = int(vSunId + 0.5);
+  finalColor = vec4(h, 0.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
+  gl_FragDepth = 1.0 - h;
 }
 `;
 
 // LAMP_GLSL in WGSL, after meshUvFill.wgsl's out.position (its xy, f, height, world and mvp in scope).
 const LAMP_WGSL = `  // DX-SHADOW3D (F7): towards this draw's lamp (volumeShadowMap.js): the floor point under the vertex lands along the
   // lamp's ray, in its tile, drawn with w = 1 / its stretch. A triangle past an edge of the tile is left out.
-  out.vTileUvW = vec3<f32>(-1.0, -1.0, 1.0);
+${VOLUME_ID_WGSL}  out.vTileUvW = vec3<f32>(-1.0, -1.0, 1.0);
   let lampTile = i32(sunShadow.uLampVolume.x + 0.5);
   let lamp = textureLoad(uLampTiles, vec2<i32>(max(lampTile, 0), 0), 0);
   let lampZ = max(height, 0.0) * sunShadow.uSunShadow.w;
@@ -140,12 +164,14 @@ const LAMP_WGSL = `  // DX-SHADOW3D (F7): towards this draw's lamp (volumeShadow
 `;
 
 const LAMP_FRAGMENT_WGSL = `
-// DX-SHADOW3D (F7): a volume's height where its lamp's ray lands, in that lamp's tile, max blending.
+${MAP_TEXEL_WGSL}
+// DX-SHADOW3D (F7): a volume's height where its lamp's ray lands, in that lamp's tile, the highest kept by its depth with
+// the volume's entity.
 @fragment
-fn mainFragLamp(in: VertexOut) -> @location(0) vec4<f32> {
+fn mainFragLamp(in: VertexOut) -> WeedMapOut {
   let tuv = in.vTileUvW.xy / in.vTileUvW.z;
   if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) { discard; }
-  return vec4<f32>(clamp(in.vSunZ / ${LAMP_MAP_ZMAX}.0, 0.0, 1.0), 0.0, 0.0, 1.0);
+  return weedMapTexel(in.vSunZ, in.vSunId);
 }
 `;
 
@@ -174,7 +200,12 @@ export function volumeLampWgsl(source) {
       '@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n',
     what,
   );
-  out = after(out, '  @location(7) vMeshUV: vec2<f32>,\n', '  @location(8) vSunZ: f32,\n  @location(9) vTileUvW: vec3<f32>,\n', what);
+  out = after(
+    out,
+    '  @location(7) vMeshUV: vec2<f32>,\n',
+    '  @location(8) vSunZ: f32,\n  @location(9) vTileUvW: vec3<f32>,\n  @location(10) @interpolate(flat) vSunId: f32,\n',
+    what,
+  );
   out = after(out, '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n', LAMP_WGSL, what);
   return out + LAMP_FRAGMENT_WGSL;
 }

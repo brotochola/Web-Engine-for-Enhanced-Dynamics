@@ -59,7 +59,7 @@ import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource, resolveFaces, shaderWithFlag } from '../render/faceMap.js';
-import { gbufWanted, writeGbufWords } from '../render/gbufWord.js';
+import { gbufEntityId, gbufWanted, writeGbufWords } from '../render/gbufWord.js';
 import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
 import {
   SUN_MAP_COLUMNS,
@@ -395,6 +395,19 @@ DOMAdapter.set(WebWorkerAdapter);
 
 function gpuFromWgsl(source, name) {
   return gpuProgramFromWgsl(GpuProgram, source, name);
+}
+
+/**
+ * DX-GBUF: the shadow maps' programs' state (sunShadowMap.frag.glsl): no blending, a depth test (less) and its writes, so
+ * each texel keeps its highest caster point, whose depth is 1 - height / ZMAX, with that caster's entity id.
+ */
+function mapDepthState() {
+  const state = new State();
+  state.blendMode = 'none';
+  state.depthTest = true;
+  state.depthMask = true;
+  state.culling = false;
+  return state;
 }
 
 /** Umbra floor. Matches ShadowCaster pointShadowAlphaScale so a hard block is not pitch black. */
@@ -912,6 +925,10 @@ class PixiRenderer extends AbstractWorker {
     this.lightingResolution = 1.0; // Resolution multiplier for lighting (e.g. 0.5 for half res)
     this.lightingRT = null; // RenderTexture for low-res lighting
     this.faceRT = null; // DX-FACES: the face map (src/render/faceMap.js)
+    // DX-GBUF (plan §6.4): the G-buffer's entity ids map (faceMap.js FACE_IDS_SELF), the face map's size, where the light pass
+    // reads ids: self-shadow, or a shadow map (a caster's own shadow never paints its own sprite).
+    this.faceIdsRT = null;
+    this._faceIdsOn = false;
     this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
     // DX-SHADOW3D: lighting.sunShadows 'map' (src/render/sunShadowMap.js): the sun's shadow map, its pass and terms.
     this._sunMapOn = false;
@@ -3182,6 +3199,11 @@ class PixiRenderer extends AbstractWorker {
     this._faceCamera[0] = NaN; // a turned camera's transform holds the canvas's size
     const res = this.lightingShader?.resources;
     if (res) res.uFaceMap = this.faceRT.source;
+    // DX-GBUF: the entity ids map, the face map's size and layout.
+    if (this._faceIdsOn) {
+      this.faceIdsRT = PIXI.RenderTexture.create({ width, height, scaleMode: 'nearest' });
+      if (res) res.uFaceIds = this.faceIdsRT.source;
+    }
   }
 
   /** DX-MAPS: a 1 × 1 twin page that says "no map", for the faces' pass when no sheet has maps. */
@@ -3211,7 +3233,10 @@ class PixiRenderer extends AbstractWorker {
     return this._noMapsSource;
   }
 
-  /** DX-FACES: what each pixel of this frame is, in painter order, for the light pass. */
+  /**
+   * DX-FACES: what each pixel of this frame is, in painter order, for the light pass. DX-GBUF: and, with the ids map, what
+   * entity covers it, in a pass of its own over the same instances (lighting.gbuffer 'pass').
+   */
   _renderFaceMap() {
     const batch = this.entitiesBatch;
     const maps = this.atlasMapsSource ?? this._emptyMapsSource();
@@ -3234,6 +3259,13 @@ class PixiRenderer extends AbstractWorker {
     }
     opts.transform = this._faceRtTransform;
     this._submitRender(opts);
+    if (this.faceIdsRT !== null) {
+      const ids = batch !== null ? batch.idsMesh(this._faces.heightScaleY, this._groundScaleY || 1, maps) : null;
+      opts.container = ids !== null && batch.mesh.visible ? ids : this._rtEmptyContainer;
+      opts.target = this.faceIdsRT;
+      this._submitRender(opts);
+      this._gpuPassesThisFrame++;
+    }
     opts.transform = null;
   }
 
@@ -3961,11 +3993,15 @@ LIGHTING SYSTEM SETUP
       lightingResources.uniforms.uLampAtlas = { value: this._lampAtlas, type: 'vec4<f32>' };
       lightingResources.uLampMap = this.lampMapRT ? this.lampMapRT.source : PIXI.Texture.EMPTY.source;
     }
+    // DX-GBUF: the entity ids map, where the entities carry their words and something reads ids (self-shadow, a map).
+    this._faceIdsOn = facesOn && !!this.entitiesBatch?.gbuf && (this._selfShadowOn || this._sunMapOn || this._lampMapOn);
+    if (this._faceIdsOn) lightingResources.uFaceIds = PIXI.Texture.EMPTY.source;
     const lightingSrc = lightingSource(this._engineShaders?.lightingFrag || '', {
       faces: facesOn,
       sunMap: this._sunMapOn,
       selfShadow: this._selfShadowOn,
       lampMap: this._lampMapOn,
+      ids: this._faceIdsOn,
     }).replace(
       /MAX_LIGHTS/g,
       String(this.maxLights | 0 || 64)
@@ -3974,7 +4010,9 @@ LIGHTING SYSTEM SETUP
       if (!lightingSrc) {
         throw new Error('WeedJS: Failed to compile look shader "lighting_basic" for layer "LIGHTING" on WebGPU: lighting_basic.wgsl is missing.');
       }
-      const gpuProgram = lightingGpuProgram(GpuProgram, lightingSrc, 'lighting-basic', facesOn, this._sunMapOn, this._lampMapOn);
+      const gpuProgram = lightingGpuProgram(
+        GpuProgram, lightingSrc, 'lighting-basic', facesOn, this._sunMapOn, this._lampMapOn, this._faceIdsOn,
+      );
       this.lightingShader = new PIXI.Shader({ gpuProgram, resources: lightingResources });
     } else {
       if (!lightingSrc) {
@@ -5672,6 +5710,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _packLightData(countToRender, visibleLights, coneCosSeen, coneCount, lightData, row1, row2, groundInvY, vr) {
     // DX-SHADOW3D (F7): a lamp with a tile in the lamps' map: its first row's w carries -(tile + 1).
     const tileOf = this._lampTileOf;
+    const ids = this._faceIdsOn;
     const worldX = Transform.x;
     const worldY = Transform.y;
     const lightColor = LightEmitter.color;
@@ -5720,7 +5759,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lightData[i0 + 3] = range * range;
       if (entityIndex < tileOf.length) {
         const tile = tileOf[entityIndex];
-        if (tile >= 0 && h > 0) lightData[i0 + 3] = -(tile + 1);
+        // DX-GBUF: with the ids map, -(tile + 1 + 256 · its entity's id), so a pixel of its own entity does not shade from
+        // it (lightingBasic lampOwner); tiles from 256 on go untagged there.
+        if (tile >= 0 && h > 0) {
+          if (!ids) lightData[i0 + 3] = -(tile + 1);
+          else if (tile < 256) lightData[i0 + 3] = -(tile + 1 + 256 * gbufEntityId(entityIndex));
+        }
       }
       const i1 = row1 + i0;
       lightData[i1] = (((color >> 16) & 0xff) / 255) * colorScale;
@@ -6045,6 +6089,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _createSunMap(width, height) {
     if (this.sunMapRT) this.sunMapRT.destroy(true);
     this.sunMapRT = PIXI.RenderTexture.create({ width, height, scaleMode: 'nearest' });
+    // DX-GBUF: its programs keep the highest caster point by a depth test (sunShadowMap.frag.glsl).
+    this._ensureTargetDepth(this.sunMapRT);
     const res = this.lightingShader?.resources;
     if (res) res.uSunMap = this.sunMapRT.source;
   }
@@ -6078,15 +6124,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       });
       // Pixi made the group from the object.
       this._sunMapUniforms = shader.resources.uniforms;
-      const state = new PIXI.State();
-      state.blend = true;
-      state.blendMode = 'max';
-      state.depthTest = false;
-      state.depthMask = false;
-      state.culling = false;
+      const state = mapDepthState();
       this._sunMapMesh = new PIXI.Mesh({ geometry: batch.mesh.geometry, shader, state, label: 'sun-map' });
-      // Max keeps the highest caster point. A mesh's blend mode is its own only as a child (as the root it draws normal).
-      this._sunMapMesh.blendMode = 'max';
+      // DX-GBUF: a depth test keeps the highest caster point and its entity (sunShadowMap.frag.glsl), no blending. A mesh's
+      // blend mode is its own only as a child (as the root it draws normal).
+      this._sunMapMesh.blendMode = 'none';
       this._sunMapHost = new PIXI.Container();
       this._sunMapHost.addChild(this._sunMapMesh);
       // Casters with height maps: their columns, over the same instances (one geometry a caster geometry).
@@ -6107,6 +6149,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         // Meshes draw by index: the grid's vertices in order (a geometry without one drew nothing).
         index: Uint16Array.from({ length: SUN_MAP_COLUMNS * SUN_MAP_COLUMNS * 6 }, (_, i) => i),
         state,
+        blendMode: 'none',
         meshes: [],
         label: 'sun-map-columns',
       };
@@ -6197,14 +6240,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             sunShadow: { uSunShadow: { value: terms, type: 'vec4<f32>' } },
           },
         });
-        const state = new PIXI.State();
-        state.blend = true;
-        state.blendMode = 'max';
-        state.depthTest = false;
-        state.depthMask = false;
-        state.culling = false;
+        const state = mapDepthState();
         const mesh = new PIXI.Mesh({ geometry: batch.geometry, shader, state, label: 'sun-map-volumes' });
-        mesh.blendMode = 'max';
+        mesh.blendMode = 'none';
         const host = new PIXI.Container();
         host.addChild(mesh);
         entry = { batch, mesh, host, terms };
@@ -6359,6 +6397,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const layout = lampTileLayout(lights, this._lampTileSize, 4096);
     if (this.lampMapRT) this.lampMapRT.destroy(true);
     this.lampMapRT = PIXI.RenderTexture.create({ width: layout.width, height: layout.height, scaleMode: 'nearest' });
+    // DX-GBUF: its programs keep the highest caster point by a depth test, as the sun's.
+    this._ensureTargetDepth(this.lampMapRT);
     this._lampMapLights = lights;
     this._lampTilesPerRow = layout.perRow;
     const a = this._lampAtlas;
@@ -6416,15 +6456,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         resources: { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uLampTiles: this._lampTileSource, uniforms },
       });
       this._lampMapUniforms = shader.resources.uniforms;
-      const state = new PIXI.State();
-      state.blend = true;
-      state.blendMode = 'max';
-      state.depthTest = false;
-      state.depthMask = false;
-      state.culling = false;
+      const state = mapDepthState();
       this._lampMapMesh = new PIXI.Mesh({ geometry: batch.mesh.geometry, shader, state, label: 'lamp-map' });
-      // Max keeps the highest caster point; a mesh's blend mode holds only as a child (the sun map's host says why).
-      this._lampMapMesh.blendMode = 'max';
+      // A depth test keeps the highest caster point and its entity; a mesh's blend mode holds only as a child (the sun
+      // map's host says why).
+      this._lampMapMesh.blendMode = 'none';
       this._lampMapHost = new PIXI.Container();
       this._lampMapHost.addChild(this._lampMapMesh);
       this._lampMapColumns = {
@@ -6443,6 +6479,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         grid: new Buffer({ data: sunMapColumnGrid(LAMP_MAP_COLUMNS), usage: BufferUsage.VERTEX }),
         index: Uint16Array.from({ length: LAMP_MAP_COLUMNS * LAMP_MAP_COLUMNS * 6 }, (_, i) => i),
         state,
+        blendMode: 'none',
         meshes: [],
         label: 'lamp-map-columns',
       };
@@ -6556,13 +6593,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               name: 'lamp-map-volumes',
             }),
           };
-      const state = new PIXI.State();
-      state.blend = true;
-      state.blendMode = 'max';
-      state.depthTest = false;
-      state.depthMask = false;
-      state.culling = false;
-      this._volumeLampState = state;
+      this._volumeLampState = mapDepthState();
     }
     const r = batch.shader.resources;
     const shader = new PIXI.Shader({
@@ -6582,8 +6613,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       },
     });
     const mesh = new PIXI.Mesh({ geometry: batch.geometry, shader, state: this._volumeLampState, label: 'lamp-map-volumes' });
-    // Max keeps the highest point; a mesh's blend mode holds only as a child (the sun map's host says why).
-    mesh.blendMode = 'max';
+    // A depth test keeps the highest point and its entity; a mesh's blend mode holds only as a child (the sun map's host
+    // says why).
+    mesh.blendMode = 'none';
     host.addChild(mesh);
     return mesh;
   }
@@ -6618,8 +6650,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
       const g = new PIXI.Geometry({ attributes, indexBuffer: columns.index });
       entry = { source: geometry, mesh: new PIXI.Mesh({ geometry: g, shader: columns.shader, state: columns.state, label: columns.label }) };
-      // Max blending, so overlapping columns are one shadow: a mesh's own blend mode holds only as a child.
-      entry.mesh.blendMode = 'max';
+      // Max blending (the sprite shadows' solids), so overlapping columns are one shadow; the maps' columns keep their
+      // highest by a depth test instead (columns.blendMode 'none'). A mesh's own blend mode holds only as a child.
+      entry.mesh.blendMode = columns.blendMode || 'max';
       entry.host = new PIXI.Container();
       entry.host.addChild(entry.mesh);
       columns.meshes.push(entry);
@@ -7956,6 +7989,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (this.faceRT !== null) {
         this.lightingShader.resources.uFaceMap = PIXI.Texture.EMPTY.source;
         this.faceRT.destroy(true);
+        if (this.faceIdsRT !== null) {
+          this.lightingShader.resources.uFaceIds = PIXI.Texture.EMPTY.source;
+          this.faceIdsRT.destroy(true);
+          this.faceIdsRT = null;
+        }
         this._createFaceMap(lw, lh);
       }
       this.lightingRT = this._replaceRT(
@@ -8958,8 +8996,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           this._lampTileSize = Math.max(32, Math.min(1024, (lightingConfig.lampShadowTile | 0) || 256));
         }
       }
-      // DX-MAPS: a sprite with height and normal maps is lit as the surface they say, through the faces' pass.
-      if (this.atlasMapsSource !== null && !this._faces.enabled) {
+      // DX-MAPS: a sprite with height and normal maps is lit as the surface they say, through the faces' pass. DX-GBUF: so
+      // is every entity's in the shadow maps' modes (a card standing on its foot, plan §5.4): the maps keep their highest
+      // caster's entity, and a caster's own shadow never paints its own sprite.
+      if ((this.atlasMapsSource !== null || this._sunMapOn || this._lampMapOn) && !this._faces.enabled) {
         if (lightingConfig.raycasted) {
           console.warn('WeedJS: sprites with height or normal maps are lit flat with raycasted lighting');
         } else {

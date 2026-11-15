@@ -59,6 +59,24 @@ export function sunMapLanding({ footX, footY, localX, localY, heightScaleY, heig
   return { x: fx, y: fy * groundScaleY, z };
 }
 
+/**
+ * DX-GBUF: a caster row's entity as the G-buffer's id ((entity % 65535) + 1, gbufWord.js gbufEntityId), 0 for none. A full
+ * caster row carries its entity in its tint float (pre-render's _tagCasterEntities, a stamp row copies it); a row the
+ * frame could not match keeps its tint's bits there, which this reads as none unless they happen to be a whole number.
+ * The shadow maps keep it with their highest caster (a depth test), and the light pass skips a pixel's own.
+ */
+export const CASTER_ID_GLSL = `float casterEntityId(float e) {
+  return e >= 0.0 && e < 16777216.0 && e == floor(e) ? float(int(e) % 65535 + 1) : 0.0;
+}
+`;
+
+/** CASTER_ID_GLSL's WGSL form. */
+export const CASTER_ID_WGSL = `fn casterEntityId(e: f32) -> f32 {
+  if (e >= 0.0 && e < 16777216.0 && e == floor(e)) { return f32(u32(e) % 65535u + 1u); }
+  return 0.0;
+}
+`;
+
 /** Cells across (and down) a frame when it casts columns: SUN_MAP_COLUMNS² columns a caster with a height map. */
 export const SUN_MAP_COLUMNS = 24;
 
@@ -236,8 +254,8 @@ export function sunMapVertex(source, { heights = true } = {}) {
   );
   if (!heights) return skipped.replace(decl, `${decl}${MAPPED_GLSL}`);
   return skipped
-    .replace(decl, `${decl}out float vSunZ;\n${MAPPED_GLSL}`)
-    .replace(main, `${main}  vSunZ = 0.0;\n`)
+    .replace(decl, `${decl}out float vSunZ;\nflat out float vSunId;\n${MAPPED_GLSL}${CASTER_ID_GLSL}`)
+    .replace(main, `${main}  vSunZ = 0.0;\n  vSunId = casterEntityId(aInstTintBits);\n`)
     .replace(out, `${out}    vSunZ = sunZ;\n`)
     .replace(color, '  vColor = vec4(1.0);\n');
 }
@@ -249,14 +267,35 @@ function wgslMarks(source, marks, what) {
   }
 }
 
-/** The map's fragment (sunShadowMap.frag.glsl's WGSL): the caster point's height where its ray lands. */
+/**
+ * DX-SHADOW3D: a shadow map's texel and its depth (sunShadowMap.frag.glsl): the height (R), the caster's G-buffer id (B·256 +
+ * A) and 1 - height as the depth, so a depth test keeps the highest caster with its id.
+ */
+export const MAP_TEXEL_WGSL = `struct WeedMapOut {
+  @location(0) color: vec4<f32>,
+  @builtin(frag_depth) depth: f32,
+}
+
+fn weedMapTexel(z: f32, idf: f32) -> WeedMapOut {
+  let h = clamp(z / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);
+  let id = u32(idf + 0.5);
+  var o: WeedMapOut;
+  o.color = vec4<f32>(h, 0.0, f32(id >> 8u) / 255.0, f32(id & 255u) / 255.0);
+  o.depth = 1.0 - h;
+  return o;
+}
+`;
+
+/** The map's fragment (sunShadowMap.frag.glsl's WGSL): the caster point's height where its ray lands, and its id. */
 const MAP_FRAGMENT_WGSL = `
-// DX-SHADOW3D: a caster point's height where its sun ray lands, drawn with max blending (sunShadowMap.frag.glsl).
+${CASTER_ID_WGSL}
+${MAP_TEXEL_WGSL}
+// DX-SHADOW3D: a caster point's height where its sun ray lands, the highest kept by its depth (sunShadowMap.frag.glsl).
 @fragment
-fn mainFragMap(in: VertexOut) -> @location(0) vec4<f32> {
+fn mainFragMap(in: VertexOut) -> WeedMapOut {
   let t = textureSampleLevel(uTexture, uSampler, mix(in.vAtlasUV.xy, in.vAtlasUV.zw, in.vLocal), 0.0);
   if (t.a < 0.5) { discard; }
-  return vec4<f32>(clamp(in.vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0), 0.0, 0.0, 1.0);
+  return weedMapTexel(in.vSunZ, in.vSunId);
 }
 `;
 
@@ -283,9 +322,12 @@ export function sunMapWgsl(source, { heights = true } = {}) {
 `,
   );
   if (!heights) return skipped;
+  const body = ') -> VertexOut {\n  var out: VertexOut;\n';
+  if (skipped.split(body).length !== 2) throw new Error('WeedJS: the sun shadow map needs the sprite shadow WGSL (mainVert)');
   return (
     skipped
-      .replace(struct, `${struct}  @location(6) vSunZ: f32,\n`)
+      .replace(struct, `${struct}  @location(6) vSunZ: f32,\n  @location(8) @interpolate(flat) vSunId: f32,\n`)
+      .replace(body, `${body}  out.vSunId = casterEntityId(aInstTintBits);\n`)
       .replace(out, `${out}    out.vSunZ = sunZ;\n`)
       .replace(color, '  out.vColor = vec4<f32>(1.0);\n') + MAP_FRAGMENT_WGSL
   );
@@ -380,20 +422,27 @@ export function volumeMapVertex(source) {
     if (source.split(mark).length !== 2) throw new Error(`WeedJS: the sun map's volumes need the mesh vertex shader (${mark.trim()})`);
   }
   return source
-    .replace(decl, `${decl}out float vSunZ;\n`)
+    .replace(decl, `${decl}out float vSunZ;\nflat out float vSunId;\n`)
     .replace(
       pos,
-      `${pos}\n  vSunZ = (aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x)) * uSunShadow.w;`,
+      `${pos}\n  vSunZ = (aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x)) * uSunShadow.w;\n  vSunId = float(int(aInstBody + 0.5) % 65535 + 1);`,
     );
 }
 
-/** The volumes' fragment in the sun's map: the height, max blending (sunShadowMap.frag.glsl without the picture). */
+/**
+ * The volumes' fragment in the sun's map: the height, the volume's entity and the depth that keeps the highest
+ * (sunShadowMap.frag.glsl without the picture).
+ */
 export const VOLUME_MAP_FRAGMENT = `#version 300 es
 precision highp float;
 in float vSunZ;
+flat in float vSunId;
 out vec4 finalColor;
 void main() {
-  finalColor = vec4(clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0), 0.0, 0.0, 1.0);
+  float h = clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);
+  int id = int(vSunId + 0.5);
+  finalColor = vec4(h, 0.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
+  gl_FragDepth = 1.0 - h;
 }
 `;
 

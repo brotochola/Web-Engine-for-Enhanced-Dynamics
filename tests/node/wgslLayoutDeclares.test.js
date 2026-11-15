@@ -81,3 +81,34 @@ test('the sprites\' pixel depth programs declare every binding their layouts nam
     );
   }
 });
+
+test('the G-buffer passes and the light pass declare every binding their layouts name', async () => {
+  const { faceMapWgsl, lightingSource } = await import('../../src/render/faceMap.js');
+  const { lightingGpuProgram } = await import('../../src/render/webgpu/pixiMeshWgsl.js');
+  const sprite = shader('instancedSprite.wgsl');
+  const pose = shader('instancedSpritePose.wgsl');
+  for (const gbuf of [false, true]) {
+    for (const entry of gbuf ? ['mainFragFace', 'mainFragIds'] : ['mainFragFace']) {
+      assertLayoutDeclared(`face ${entry} gbuf=${gbuf}`, instancedSpriteGpuProgram(GpuProgram, faceMapWgsl(sprite, { gbuf }), entry, 'f', { maps: true }));
+      assertLayoutDeclared(`face pose ${entry} gbuf=${gbuf}`, instancedSpriteGpuProgram(GpuProgram, faceMapWgsl(pose, { gbuf }), entry, 'f', { maps: true }));
+      assertLayoutDeclared(
+        `face indexed ${entry} gbuf=${gbuf}`,
+        instancedSpriteIndexedGpuProgram(GpuProgram, spriteIndexedWgsl(faceMapWgsl(sprite, { gbuf })), entry, 'f', { maps: true }),
+      );
+    }
+  }
+  const lighting = shader('lightingBasic.wgsl');
+  for (const faces of [false, true]) {
+    for (const sunMap of [false, true]) {
+      for (const lampMap of [false, true]) {
+        for (const ids of [false, true]) {
+          const source = lightingSource(lighting, { faces, sunMap, selfShadow: true, lampMap, ids });
+          assertLayoutDeclared(
+            `lighting faces=${faces} sunMap=${sunMap} lampMap=${lampMap} ids=${ids}`,
+            lightingGpuProgram(GpuProgram, source, 'l', faces, sunMap, lampMap, ids),
+          );
+        }
+      }
+    }
+  }
+});

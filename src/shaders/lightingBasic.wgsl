@@ -68,6 +68,10 @@ struct LightingUniforms {
 // DX-SHADOW3D (F7): the lamps' shadow map (lampShadowMap.js), a tile a lamp.
 @group(2) @binding(6) var uLampMap: texture_2d<f32>;
 // #endif LAMPMAP
+// #if IDS
+// DX-GBUF (plan §6.4): the G-buffer's entity ids (faceMap.js FACE_IDS_SELF), drawn with the face map.
+@group(2) @binding(7) var uFaceIds: texture_2d<f32>;
+// #endif IDS
 
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
@@ -108,37 +112,64 @@ fn weedWorldToNorm(world: vec2<f32>) -> vec2<f32> {
   return (sxy + uniforms.uFullCanvasSize * 0.5) / uniforms.uFullCanvasSize;
 }
 
-// #if SUNMAP
-// How much of the sun reaches floor point p (x, y on the floor, z up): 1 lit, 1 - opacity in the shade, five taps
-// (lightingBasic.frag.glsl's sunVisibility, the map read texel by texel).
-fn sunMapLit(c: vec2<i32>, size: vec2<i32>, above: f32) -> f32 {
-  let q = clamp(c, vec2<i32>(0), size - vec2<i32>(1));
-  return select(1.0, 0.0, textureLoad(uSunMap, q, 0).r * 512.0 > above);
+// DX-GBUF: whether a shadow map's texel keeps the pixel's own entity (selfId, 0 none) as its highest caster
+// (lightingBasic.frag.glsl ownTexel): a caster's own shadow never paints its own sprite.
+fn ownTexel(m: vec4<f32>, selfId: f32) -> bool {
+  return selfId > 0.5 && abs(floor(m.b * 255.0 + 0.5) * 256.0 + floor(m.a * 255.0 + 0.5) - selfId) < 0.5;
 }
 
-fn sunVisibility(p: vec3<f32>) -> f32 {
+// #if SUNMAP
+// How much of the sun reaches floor point p (x, y on the floor, z up): 1 lit, 1 - opacity in the shade, five taps
+// (lightingBasic.frag.glsl's sunVisibility, the map read texel by texel); the pixel's own entity's shade skipped.
+fn sunMapLit(c: vec2<i32>, size: vec2<i32>, above: f32, selfId: f32) -> f32 {
+  let q = clamp(c, vec2<i32>(0), size - vec2<i32>(1));
+  let m = textureLoad(uSunMap, q, 0);
+  return select(1.0, 0.0, m.r * 512.0 > above && !ownTexel(m, selfId));
+}
+
+fn sunVisibility(p: vec3<f32>, selfId: f32) -> f32 {
   let k = uniforms.uSunMapK;
   let land = p.xy - p.z * k.xy;
   let uv = weedWorldToNorm(vec2<f32>(land.x, land.y * k.z));
   let size = vec2<i32>(textureDimensions(uSunMap, 0));
   let c = vec2<i32>(floor(uv * vec2<f32>(size)));
   let above = p.z + 4.0 + p.z * 0.03;
-  var lit = sunMapLit(c, size, above);
-  lit += sunMapLit(c + vec2<i32>(1, 0), size, above);
-  lit += sunMapLit(c - vec2<i32>(1, 0), size, above);
-  lit += sunMapLit(c + vec2<i32>(0, 1), size, above);
-  lit += sunMapLit(c - vec2<i32>(0, 1), size, above);
+  var lit = sunMapLit(c, size, above, selfId);
+  lit += sunMapLit(c + vec2<i32>(1, 0), size, above, selfId);
+  lit += sunMapLit(c - vec2<i32>(1, 0), size, above, selfId);
+  lit += sunMapLit(c + vec2<i32>(0, 1), size, above, selfId);
+  lit += sunMapLit(c - vec2<i32>(0, 1), size, above, selfId);
   return 1.0 - k.w * (1.0 - lit * 0.2);
 }
 // #endif SUNMAP
 
 // #if LAMPMAP
 // DX-SHADOW3D (F7): the lamps' shadow map (lightingBasic.frag.glsl's lampVisibility, the atlas read texel by texel).
-fn lampTap(c: vec2<i32>, lo: vec2<i32>, hi: vec2<i32>, above: f32) -> f32 {
-  return select(1.0, 0.0, textureLoad(uLampMap, clamp(c, lo, hi), 0).r * 512.0 > above);
+// DX-GBUF: with the ids map a tag is -(tile + 1 + 256 · the lamp's entity id) (lampTile, lampOwner).
+fn lampTile(tag: f32) -> i32 {
+// #if IDS
+  return i32((-tag - 1.0) % 256.0 + 0.5);
+// #endif IDS
+// #if !IDS
+  return i32(-tag - 1.0 + 0.5);
+// #endif !IDS
 }
 
-fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32) -> f32 {
+fn lampOwner(tag: f32) -> f32 {
+// #if IDS
+  return select(0.0, floor((-tag - 1.0) / 256.0), tag < 0.0);
+// #endif IDS
+// #if !IDS
+  return 0.0;
+// #endif !IDS
+}
+
+fn lampTap(c: vec2<i32>, lo: vec2<i32>, hi: vec2<i32>, above: f32, selfId: f32) -> f32 {
+  let m = textureLoad(uLampMap, clamp(c, lo, hi), 0);
+  return select(1.0, 0.0, m.r * 512.0 > above && !ownTexel(m, selfId));
+}
+
+fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, selfId: f32) -> f32 {
   if (tag >= 0.0 || e <= 0.0 || p.z >= e) { return 1.0; }
   let reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
   if (reach <= 0.0) { return 1.0; }
@@ -146,7 +177,7 @@ fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32) 
   let k = select(8.0, e / room, room > e * 0.125);
   let uv = (p.xy - l) * k / (2.0 * reach) + 0.5;
   if (uv.x < 0.0 || uv.y < 0.0 || uv.x >= 1.0 || uv.y >= 1.0) { return 1.0; }
-  let tile = i32(-tag - 1.0 + 0.5);
+  let tile = lampTile(tag);
   let a = uniforms.uLampAtlas;
   let perRow = i32(a.x);
   let size = i32(a.y);
@@ -154,11 +185,11 @@ fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32) 
   let hi = lo + vec2<i32>(size - 1);
   let c = lo + vec2<i32>(floor(uv * a.y));
   let above = p.z + 4.0 + p.z * 0.03;
-  var lit = lampTap(c, lo, hi, above);
-  lit += lampTap(c + vec2<i32>(1, 0), lo, hi, above);
-  lit += lampTap(c - vec2<i32>(1, 0), lo, hi, above);
-  lit += lampTap(c + vec2<i32>(0, 1), lo, hi, above);
-  lit += lampTap(c - vec2<i32>(0, 1), lo, hi, above);
+  var lit = lampTap(c, lo, hi, above, selfId);
+  lit += lampTap(c + vec2<i32>(1, 0), lo, hi, above, selfId);
+  lit += lampTap(c - vec2<i32>(1, 0), lo, hi, above, selfId);
+  lit += lampTap(c + vec2<i32>(0, 1), lo, hi, above, selfId);
+  lit += lampTap(c - vec2<i32>(0, 1), lo, hi, above, selfId);
   return lit * 0.2;
 }
 // #endif LAMPMAP
@@ -172,8 +203,9 @@ fn faceHeight(face: vec4<f32>) -> f32 {
   return ((floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5)) % 32768.0) / 8.0;
 }
 
-// Towards unit direction l, no further than reach (a lamp's distance; the sun's is unbounded).
-fn selfShadowToward(p: vec3<f32>, l: vec3<f32>, reach: f32) -> f32 {
+// Towards unit direction l, no further than reach (a lamp's distance; the sun's is unbounded). DX-GBUF: with the ids
+// map, only the heights of the pixel's own entity (selfId) count; a pixel of no entity counts every height.
+fn selfShadowToward(p: vec3<f32>, l: vec3<f32>, reach: f32, selfId: f32) -> f32 {
   let s = 1.0 / uniforms.uGroundInvScaleY;
   let size = vec2<f32>(textureDimensions(uFaceMap, 0));
   for (var i = 2; i <= 9; i++) {
@@ -185,19 +217,25 @@ fn selfShadowToward(p: vec3<f32>, l: vec3<f32>, reach: f32) -> f32 {
     let fc = vec2<f32>(nc.x, select(nc.y, 1.0 - nc.y, uniforms.uFlipY > 0.5));
     if (any(fc < vec2<f32>(0.0)) || any(fc >= vec2<f32>(1.0))) { continue; }
     let f = textureLoad(uFaceMap, vec2<i32>(fc * size), 0);
+// #if IDS
+    if (selfId > 0.5) {
+      let g = textureLoad(uFaceIds, vec2<i32>(fc * size), 0);
+      if (abs(floor(g.r * 255.0 + 0.5) * 256.0 + floor(g.g * 255.0 + 0.5) - selfId) > 0.5) { continue; }
+    }
+// #endif IDS
     if (f.r > 0.0 && faceHeight(f) > q.z + uniforms.uSelfShadow.z + t * 0.25) { return 0.0; }
   }
   return 1.0;
 }
 
-fn selfShadow(p: vec3<f32>) -> f32 {
-  return selfShadowToward(p, normalize(uniforms.uFaceSun.xyz), 1e9);
+fn selfShadow(p: vec3<f32>, selfId: f32) -> f32 {
+  return selfShadowToward(p, normalize(uniforms.uFaceSun.xyz), 1e9, selfId);
 }
 // #endif SELFSHADOW
 
 // DX-GBUF (plan §5.4): a face's normal, a FLAT pixel lit as drawn, a sprite's own normal by the lamps' share of its light
 // (lightingBasic.frag.glsl's faceLight says how).
-fn faceLight(world: vec2<f32>, face: vec4<f32>) -> vec3<f32> {
+fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> vec3<f32> {
   let q = floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5);
   let kRule = q >= 32768.0;
   let isFlat = face.r > 253.5 / 255.0 && face.g > 253.5 / 255.0;
@@ -215,7 +253,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>) -> vec3<f32> {
   // The sun on a pixel lit as drawn: the floor's, its map's shade and its own shade.
   var sunFlat = 1.0;
 // #if SUNMAP
-  let sunVis = sunVisibility(p);
+  let sunVis = sunVisibility(p, selfId);
   sunDirect *= sunVis;
   sunFlat = sunVis;
 // #endif SUNMAP
@@ -223,7 +261,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>) -> vec3<f32> {
   // Faded out at the terminator, where the cosine already shades and a step either way flips the test. A FLAT pixel has
   // no shape of its own to shade itself with.
   var selfSun = 1.0;
-  if (!isFlat && (sunDirect > 0.05 || kRule)) { selfSun = selfShadow(p); }
+  if (selfOn && !isFlat && (sunDirect > 0.05 || kRule)) { selfSun = selfShadow(p, selfId); }
   if (sunDirect > 0.05) { sunDirect *= mix(1.0, selfSun, smoothstep(0.05, 0.3, sunDirect)); }
   sunFlat *= selfSun;
 // #endif SELFSHADOW
@@ -249,7 +287,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>) -> vec3<f32> {
     let intensityScaled = posInt.z * scaled;
     var cone = coneFactor(p.xy - posInt.xy, textureLoad(uLightData, vec2<i32>(i, 2), 0));
 // #if LAMPMAP
-    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z);
+    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId);
 // #endif LAMPMAP
     if (cosine > 0.0) {
       total += col.rgb * cosine * lit.z * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
@@ -272,10 +310,14 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>) -> vec3<f32> {
     var shade = 1.0;
     var lampSelf = 1.0;
 // #if LAMPMAP
-    shade = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z);
+    shade = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId);
 // #if SELFSHADOW
-    // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too.
-    if (posInt.w < 0.0 && !isFlat && (cosine * shade > 0.05 || kRule)) { lampSelf = selfShadowToward(p, toLight / max(d, 0.001), d); }
+    // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too, unless the pixel is
+    // of the lamp's own entity.
+    let lampOwn = selfId > 0.5 && abs(lampOwner(posInt.w) - selfId) < 0.5;
+    if (posInt.w < 0.0 && selfOn && !lampOwn && !isFlat && (cosine * shade > 0.05 || kRule)) {
+      lampSelf = selfShadowToward(p, toLight / max(d, 0.001), d, selfId);
+    }
     let flatShade = shade * lampSelf;
     if (cosine * shade > 0.05) { shade *= lampSelf; }
 // #endif SELFSHADOW
@@ -319,13 +361,21 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     return vec4<f32>(1.0);
   }
   if (face.r > 0.0) {
-    return vec4<f32>(min(faceLight(fragWorld, face), vec3<f32>(1.0)), 1.0);
+    // DX-GBUF: the pixel's entity and whether it shades itself (a pixel of no entity does, as every height did before).
+    var selfId = 0.0;
+    var selfOn = true;
+// #if IDS
+    let ids = textureLoad(uFaceIds, vec2<i32>(in.position.xy), 0);
+    selfId = floor(ids.r * 255.0 + 0.5) * 256.0 + floor(ids.g * 255.0 + 0.5);
+    selfOn = selfId < 0.5 || (floor(ids.b * 255.0 + 0.5) % 2.0) > 0.5;
+// #endif IDS
+    return vec4<f32>(min(faceLight(fragWorld, face, selfId, selfOn), vec3<f32>(1.0)), 1.0);
   }
 // #endif FACES
   fragWorld.y *= uniforms.uGroundInvScaleY;
   var totalLight = vec3<f32>(uniforms.uBaseAmbient);
 // #if SUNMAP
-  totalLight += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * sunVisibility(vec3<f32>(fragWorld, 0.0));
+  totalLight += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * sunVisibility(vec3<f32>(fragWorld, 0.0), 0.0);
 // #endif SUNMAP
 // #if !SUNMAP
   totalLight += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity;
@@ -347,7 +397,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     let intensityScaled = posInt.z * DISTANCE_SCALE * DISTANCE_SCALE;
     var attenuation = intensityScaled / (intensityScaled + d2Scaled);
 // #if LAMPMAP
-    attenuation *= lampVisibility(vec3<f32>(fragWorld, 0.0), posInt.xy, col.a, posInt.w, posInt.z);
+    attenuation *= lampVisibility(vec3<f32>(fragWorld, 0.0), posInt.xy, col.a, posInt.w, posInt.z, 0.0);
 // #endif LAMPMAP
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
   }
@@ -365,7 +415,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
       let intensityScaled = intensity * DISTANCE_SCALE * DISTANCE_SCALE;
       var attenuation = intensityScaled / (intensityScaled + d2Scaled);
 // #if LAMPMAP
-      attenuation *= lampVisibility(vec3<f32>(fragWorld, 0.0), lightWorld, col.a, posInt.w, intensity);
+      attenuation *= lampVisibility(vec3<f32>(fragWorld, 0.0), lightWorld, col.a, posInt.w, intensity, 0.0);
 // #endif LAMPMAP
       totalLight += col.rgb * attenuation;
     }

@@ -42,6 +42,68 @@ export const FACE_FLAT_CODE = 254;
 export const FACE_K_BIT = 32768;
 export const FACE_Z_MAX_CODE = FACE_K_BIT - 1;
 
+/**
+ * DX-GBUF (plan §6.4): the G-buffer's second target, the entity ids map (RGBA8, the face map's size). R·256 + G: the
+ * entity whose sprite covers the pixel (gbufWord.js gbufEntityId), 0 where none does (the floor, a decoration, a face);
+ * B: its flags (FACE_IDS_SELF: it shades itself, DX-SELFSHADOW); A: 1 where written. Written in painter order with the
+ * face map's coverage (alpha 0.5 and up), by a pass of its own (lighting.gbuffer 'pass') or in the face map's (MRT). The
+ * light pass reads it for a pixel's self-shadow (its own heights alone) and to skip its own entity's shadow in the maps,
+ * which keep their highest caster's id: a caster's own shadow never paints its own sprite.
+ */
+export const FACE_IDS_SELF = 1;
+
+const WEED_UV_GLSL = `vec2 weedUv() {
+  vec2 t = vLocal;
+  if (vTileInv.x > 0.0) t.x = fract(vWorld.x * vTileInv.x + vTileOff.x);
+  else if (vTileInv.x < 0.0) t.x = fract(vLocal.x * (-vTileInv.x) + vTileOff.x);
+  if (vTileInv.y > 0.0) t.y = fract(vWorld.y * vTileInv.y + vTileOff.y);
+  else if (vTileInv.y < 0.0) t.y = fract(vLocal.y * (-vTileInv.y) + vTileOff.y);
+  return mix(vAtlasUV.xy, vAtlasUV.zw, t);
+}`;
+
+/**
+ * The ids map's texel of a word (GLSL 300, after weedUv's alpha test): the entity's id and its flags. A word's own
+ * selfShadow (gbufWord.js bits 22-23: 0 the asset's way, 1 on, 2 off) decides FACE_IDS_SELF, the asset's way being a
+ * render's (its frame's base a contact: `render`).
+ */
+const IDS_TEXEL_GLSL = `vec4 idsTexel(vec2 gbuf, bool render) {
+  uint word = uint(gbuf.x + 0.5);
+  uint id = word & 65535u;
+  uint selfMode = (word >> 22u) & 3u;
+  bool selfOn = id != 0u && (selfMode == 1u || (selfMode == 0u && render));
+  return vec4(float(id >> 8u) / 255.0, float(id & 255u) / 255.0, selfOn ? ${FACE_IDS_SELF}.0 / 255.0 : 0.0, 1.0);
+}`;
+
+/**
+ * The ids map's fragment shader (WebGL): over faceMapVertex's outputs with words, the face map's coverage, the ids texel.
+ * @returns {string}
+ */
+export function faceIdsFragment() {
+  return `#version 300 es
+precision highp float;
+in vec2 vLocal;
+in vec4 vColor;
+in vec2 vWorld;
+in vec4 vAtlasUV;
+in vec2 vTileInv;
+in vec2 vTileOff;
+flat in vec2 vGbuf;
+flat in float vRender;
+uniform sampler2D uTexture;
+out vec4 finalColor;
+
+${WEED_UV_GLSL}
+
+${IDS_TEXEL_GLSL}
+
+// DX-GBUF: the entity ids map (faceMap.js FACE_IDS_SELF): what entity covers this pixel, in painter order.
+void main() {
+  if (texture(uTexture, weedUv()).a * vColor.a < 0.5) discard;
+  finalColor = idsTexel(vGbuf, vRender > 0.5);
+}
+`;
+}
+
 /** The words' input of a sprite WGSL's mainVert (DX-GBUF, gbufWord.js): a free location, read or not. */
 const GBUF_ATTRIBUTE_WGSL = '  @location(12) aInstGbuf: vec2<f32>,\n';
 
@@ -76,10 +138,21 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
   if (source.split(main).length !== 2 || source.split(end).length !== 2) {
     throw new Error('WeedJS: the face map needs one main and one vTileOff in the sprite vertex shader');
   }
-  const gbufDecl = gbuf ? 'in vec2 aInstGbuf;\nflat out vec2 vGbuf;\nout float vFootY;\n' : '';
+  const gbufDecl = gbuf ? 'in vec2 aInstGbuf;\nflat out vec2 vGbuf;\nout float vFootY;\nflat out float vRender;\n' : '';
+  // vRender: the frame is a render (its base a contact, frameBase.js lutBaseFloats: the table's third texel's z below 0),
+  // whose selfShadow the asset's way is on (plan §5.5).
   const gbufOut = gbuf
     ? `  vGbuf = aInstGbuf;
   vFootY = world.y - (isShear ? sheared.y : spun.y) + (aInstTrim.y + aInstTrim.w - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y);
+  vRender = 0.0;
+  {
+    int gbufTid = int(aInstTexId + 0.5);
+    ivec2 gbufLut = textureSize(uTexLut, 0);
+    int gbufPer = gbufLut.x / 3;
+    if (gbufTid >= 0 && gbufTid < gbufPer * gbufLut.y) {
+      vRender = texelFetch(uTexLut, ivec2(3 * (gbufTid % gbufPer) + 2, gbufTid / gbufPer), 0).z < 0.0 ? 1.0 : 0.0;
+    }
+  }
 `
     : '';
   return source
@@ -126,8 +199,28 @@ export function faceMapWgsl(source, { gbuf = false } = {}) {
 fn mainFragFace(in: VertexOut) -> @location(0) vec4<f32> {
   return weedFace(in);
 }
-`;
+${gbuf ? FACE_IDS_ENTRY_WGSL : ''}`;
 }
+
+/** DX-GBUF: the ids map's texel and its fragment entry (faceIdsFragment's WGSL), in a face module with words. */
+const FACE_IDS_ENTRY_WGSL = `
+// DX-GBUF: the ids map's texel of a word (faceMap.js IDS_TEXEL_GLSL).
+fn idsTexel(gbuf: vec2<f32>, render: bool) -> vec4<f32> {
+  let word = u32(gbuf.x + 0.5);
+  let id = word & 65535u;
+  let selfMode = (word >> 22u) & 3u;
+  let selfOn = id != 0u && (selfMode == 1u || (selfMode == 0u && render));
+  return vec4<f32>(f32(id >> 8u) / 255.0, f32(id & 255u) / 255.0, select(0.0, ${FACE_IDS_SELF}.0 / 255.0, selfOn), 1.0);
+}
+
+// DX-GBUF: the entity ids map (faceIdsFragment): what entity covers this pixel, in painter order.
+@fragment
+fn mainFragIds(in: VertexOut) -> @location(0) vec4<f32> {
+  let t = textureSample(uTexture, uSampler, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff));
+  if (t.a * in.vColor.a < 0.5) { discard; }
+  return idsTexel(in.vGbuf, in.vRender > 0.5);
+}
+`;
 
 /**
  * The face map's vertex half in a sprite WGSL (faceMapWgsl's): its uniform, the face's octahedral bytes and height out,
@@ -146,13 +239,21 @@ export function faceVertexWgsl(source, { gbuf = false } = {}) {
     out,
     '  @location(5) vTileOff: vec2<f32>,\n',
     '  @location(6) @interpolate(flat) vFaceOct: vec2<f32>,\n  @location(7) vFaceZ: f32,\n' +
-      (gbuf ? '  @location(9) @interpolate(flat) vGbuf: vec2<f32>,\n  @location(10) vFootY: f32,\n' : ''),
+      (gbuf
+        ? '  @location(9) @interpolate(flat) vGbuf: vec2<f32>,\n  @location(10) vFootY: f32,\n' +
+          '  @location(11) @interpolate(flat) vRender: f32,\n'
+        : ''),
   );
   if (gbuf) out = gbufAttributeWgsl(out);
   const gbufOut = gbuf
     ? `  out.vGbuf = aInstGbuf;
   out.vFootY = world.y - select(spun, sheared, isShear).y
     + (aInstTrim.y + aInstTrim.w - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y);
+  // A render (its base a contact: faceMapVertex says why).
+  out.vRender = 0.0;
+  if (tid >= 0 && tid < lutPerRow * i32(lutSize.y)) {
+    out.vRender = select(0.0, 1.0, textureLoad(uTexLut, vec2<i32>(3 * (tid % lutPerRow) + 2, tid / lutPerRow), 0).z < 0.0);
+  }
 `
     : '';
   out = once(
@@ -298,14 +399,16 @@ export function shaderWithFlag(source, name, on) {
 
 /**
  * The light pass's source with its blocks kept or cut: FACES (DX-FACES and DX-MAPS), SUNMAP / !SUNMAP (DX-SHADOW3D's
- * sun map), SELFSHADOW (DX-SELFSHADOW, inside FACES) and LAMPMAP (DX-SHADOW3D's lamps' map), in the GLSL and the WGSL
- * alike.
+ * sun map), SELFSHADOW (DX-SELFSHADOW, inside FACES), LAMPMAP (DX-SHADOW3D's lamps' map) and IDS (DX-GBUF's entity ids
+ * map, with FACES: a pixel's self-shadow counts its own heights, and its own entity's shadow in the maps is skipped), in
+ * the GLSL and the WGSL alike.
  * @param {string} source lightingBasic.frag.glsl or lightingBasic.wgsl
- * @param {{ faces: boolean, sunMap: boolean, selfShadow?: boolean, lampMap?: boolean }} flags
+ * @param {{ faces: boolean, sunMap: boolean, selfShadow?: boolean, lampMap?: boolean, ids?: boolean }} flags
  */
-export function lightingSource(source, { faces, sunMap, selfShadow = false, lampMap = false }) {
+export function lightingSource(source, { faces, sunMap, selfShadow = false, lampMap = false, ids = false }) {
   const withSun = shaderWithFlag(shaderWithFlag(shaderWithFlag(source, 'FACES', faces), 'SUNMAP', sunMap), '!SUNMAP', !sunMap);
-  return shaderWithFlag(shaderWithFlag(withSun, 'SELFSHADOW', faces && selfShadow), 'LAMPMAP', lampMap);
+  const withLamps = shaderWithFlag(shaderWithFlag(withSun, 'SELFSHADOW', faces && selfShadow), 'LAMPMAP', lampMap);
+  return shaderWithFlag(shaderWithFlag(withLamps, 'IDS', faces && ids), '!IDS', !(faces && ids));
 }
 
 /** config.lighting.faces over its defaults. */
