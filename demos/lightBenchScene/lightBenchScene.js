@@ -302,7 +302,8 @@ export class LightBenchScene extends Scene {
     logic: { numberOfLogicWorkers: 1, noLimitFPS: false },
     physics: { subStepCount: 1, gravity: { x: 0, y: 0 }, noLimitFPS: false },
     particle: { maxParticles: 0, decals: false },
-    renderer: { backend: BACKEND, ySort: true, noLimitFPS: false, ...(DEPTH !== null ? { pixelDepth: DEPTH } : {}) },
+    // Pixel art: the atlas sampled nearest (a car drawn at twice its sheet stays crisp, sprites snap to the pixel).
+    renderer: { backend: BACKEND, ySort: true, noLimitFPS: false, atlasScaleMode: 'nearest', ...(DEPTH !== null ? { pixelDepth: DEPTH } : {}) },
     camera: {
       pitch: PITCH,
       ...(FLOOR !== null ? { floorScaleY: FLOOR } : {}),
@@ -314,6 +315,9 @@ export class LightBenchScene extends Scene {
       enabled: true,
       baseAmbient: AMBIENT,
       maxLights: 16,
+      // Room for the box or hull looks the panel offers (every prop and car at once; a hull up to 24 points).
+      maxVolumes: 64,
+      maxVolumeVerts: 24,
       // The light pass, the shadows' layer and the sun's map at the canvas's own size: sharp shadow edges (the owner's
       // ask; their cost is measured later).
       resolution: RES,
