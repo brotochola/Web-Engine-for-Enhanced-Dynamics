@@ -30,7 +30,7 @@
  *              rebuilds, reinsert_* for the reinserts; inplace is the scalar rebuild with reinsert_inplace,
  *              simd_inplace the simd rebuild with reinsert_simd_inplace: simd's radix, inplace's merge)
  * The checksum: each case from a fresh state, the rebuild once and the reinsert one period plus a frame,
- * the order (and what reinsert returned) after each. JS warms with warmNormalCompile, WASM with warmWasm,
+ * the order (and what reinsert returned) after each, then (E-338) each slot's prevKey and the state's ready. JS warms with warmNormalCompile, WASM with warmWasm,
  * both through short calls on the first 64 rows of each case. --check prints the checksum and exits.
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/painterRadixWasmMicrobench.mjs --variants base,scalar,kv8,kv11,adaptive,simd,inplace,simd_inplace --rounds 5
@@ -240,6 +240,7 @@ export async function setupPainterBench({ fixtureBytes, stressRows = STRESS_ROWS
     let wf = 0;
     return {
       order: () => st.order,
+      state: () => st,
       prepare() {
         resetState(st);
         fr.f = 0;
@@ -283,6 +284,7 @@ export async function setupPainterBench({ fixtureBytes, stressRows = STRESS_ROWS
     let wf = 0;
     return {
       order: () => st.order,
+      state: () => st,
       prepare() {
         resetState(st);
         fr.f = 0;
@@ -329,6 +331,9 @@ export async function setupPainterBench({ fixtureBytes, stressRows = STRESS_ROWS
           const ret = k.op();
           changed += ret;
           h = hashOrder(fnv(h, ret), k.order(), d.ne);
+          // E-338: what the rebuild leaves for the next reinsert, which moves its writes.
+          const st = k.state();
+          h = hashOrder(fnv(h, st.ready ? 1 : 0), st.prevKey, d.rows);
         }
         k.prepare();
         return { checksum: h, meanChanged: d.reinsert ? changed / ops : null };
