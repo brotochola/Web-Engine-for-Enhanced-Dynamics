@@ -1603,7 +1603,7 @@ class Hedge extends GameObject {
 - `baseRadius` (px, 0 at spawn: the base measured from the frame) corrects the base its card stands on, and `selfShadow` (`true`, `false` or `'auto'`, the asset's way) whether it shades itself. Both are kept for the 3D shadows.
 - `type` reads what the sun casts: `'sprite'`, `'heightMap'`, `'box'`, `'hull'`, `'wall'` or `'none'`. With nothing set it is the sheet's way: `'heightMap'` for a render that casts its solid, else `'sprite'`.
 - `CAST_KIND` (`AUTO`, `SPRITE`, `HEIGHT_MAP`, `BOX`, `HULL`, `WALL`, `NONE`) holds the values of the columns `ShadowCaster.sunKind` and `ShadowCaster.lampKind`, for code that reads them in bulk. A spawn sets both to `AUTO`, the sheet's way.
-- Once one caster in the scene sets any of this (a kind, a fixed card, an opacity under 1), the sun's shadow rows carry each caster's choice: they are written whole each frame instead of by key, as the shadow maps' rows always are.
+- Once one caster in the scene sets any of this (a kind, a fixed card, an opacity under 1), the sun's shadow rows carry each caster's choice: they are written whole each frame instead of by key, as the shadow maps' rows always are. Any setter writes a kind, `setSprite({ heightScale })` included: a crowd left at its sheet's way keeps the keyed rows.
 
 **A volume.** A house or a car seen from an angle is a volume more than a picture: say what it is, and the engine works out its shadow, for the sun and, in the shadow maps, for the lamps. It moves and turns with the entity, with no second entity, no layer and no mesh code; the volume replaces the silhouette, and a later setter that casts something else clears it.
 
