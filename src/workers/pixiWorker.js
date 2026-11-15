@@ -938,6 +938,8 @@ class PixiRenderer extends AbstractWorker {
     // glowing pixels into a target the canvas's size (glowRT) and the glow layer adds them over the lighting layer where the
     // light is short of them (glowComposite.js); a pass a frame while a sheet (meta.emissive) or a sprite glows.
     this._glowOn = false;
+    // DX-EMISSIVE: spriteRenderer.emissive was set in a scene that draws no G-buffer, and that was said.
+    this._emissiveWarned = false;
     this._atlasEmissive = false;
     this.glowRT = null;
     this._glowComposite = null;
@@ -3191,6 +3193,14 @@ class PixiRenderer extends AbstractWorker {
 
   renderLightingToTexture() {
     const started = this.collectDetailedStats ? performance.now() : 0;
+    if (!this._glowOn && !this._emissiveWarned && (this.frameNumber & 127) === 0 && SpriteRenderer.emissiveUsers() > 0) {
+      // DX-EMISSIVE: a sprite asks to glow where nothing carries its words: said once, with what turns them on.
+      this._emissiveWarned = true;
+      console.warn(
+        'WeedJS: spriteRenderer.emissive is set, but this scene draws no G-buffer, so nothing glows: set ' +
+          'config.lighting.emissive = true (maps, lighting.faces or a shadow map turn it on too).',
+      );
+    }
     if (this._visPolyEnabled) {
       this.renderVisibilityLighting();
     } else if (this.lightingRT && this.lightingMesh && layerIsVisible(Layer.lighting?.id)) {

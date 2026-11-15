@@ -359,6 +359,8 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    * colour targets. Same picture.
    */
   gbuffer?: 'pass' | 'mrt';
+  /** DX-EMISSIVE: spriteRenderer.emissive glows here even without maps, faces or a shadow map. Default false. */
+  emissive?: boolean;
   /** The sun and the day (src/util/configDefaults.js SUN_DEFAULTS). */
   sun?: SunInitConfig & { dayCycle?: { enabled?: boolean; speed?: number; dayDurationMinutes?: number } };
 }

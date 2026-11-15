@@ -48,7 +48,8 @@ export const GBUF_MAX_BANDS = 8;
 export function gbufWanted(config, atlasMaps) {
   const lighting = config?.lighting;
   if (!lighting || !lighting.enabled || lighting.raycasted) return false;
-  return lighting.faces?.enabled === true || atlasMaps === true || lighting.sunShadows === 'map' || lighting.lampShadows === 'map';
+  return lighting.faces?.enabled === true || atlasMaps === true || lighting.sunShadows === 'map' || lighting.lampShadows === 'map'
+    || lighting.emissive === true;
 }
 
 /** An entity's id in the G-buffer: 1 to 65535, never 0 (0 is "no entity"). */
