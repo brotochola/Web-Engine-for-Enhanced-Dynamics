@@ -4888,6 +4888,353 @@ worker), E-295 + E-267 (spatial's reads and rebuild by entity id: W6's C port ne
 memory), E-269 (the mesh rows are copied because every mesh changes: the kernel writing Pixi's own buffer), E-253 and
 E-301 (FSM), E-275 (tweens). These are campaigns of their own, each with its kernel first.
 
+## Wave 15 candidates (2026-11-15): the night's harvest at Predator crowd 2.5 and four code reads (R-1100 to R-1104)
+
+Proposed from R-1100 (CPU, code, deopt and heap passes, counters with context switches, d8) and the reads of Box2D (R-1101),
+the wasm kernels (R-1102), the per-frame JS (R-1103) and the worker sync (R-1104), none tested. The register holds each
+one's rank; the bugs are N-170 and N-171 in REVIEW_PLAN. Where the machine stands at crowd 2.5: about 6.8 busy cores of 8;
+garbage mostly the CPU particle emit (logic 1.1-1.3 MB/s a worker); steady deopts only E-251's OSR loops and the rng global;
+the kernels are SIMD where it pays and Box2D is already 4-wide, so what is left is memory (layout, early loads, skipped
+work), not arithmetic width.
+
+### E-313 Box2D's circle contacts collide from the body sims, without b2Shape
+
+**Premise (R-1101):** Read (R-1101): per contact 2 fatAABB lines, 4 body-sim lines (the 96-byte sim read at offsets 0-96)
+and, on a full update, about 3 lines of the 280-byte b2Shape (type@20, material@24-40, circle@124, enableHitEvents@273);
+contacts are recycled only within the 2 px speculative distance, so walkers take a full update every 1-2 steps. Counters:
+b2CollideTask 2.0 refills an instruction (R-1034, R-1041). Estimate ~7.5 -> ~4 lines a contact: collide -25 to -40 %,
+physics STEP -5 to -9 %. **Plan:** Flag bodies whose only shape is a circle centred on localCenter (set in
+b2UpdateBodyMassData and wherever localCenter changes) and collide them from the body sims (b2Circle{localCenter, maxExtent}
+is bit-identical); friction, restitution, rollingResistance, tangentSpeed and the hit flag cached in the contact sim (filled
+by the slow path, invalidated by the material setters); b2BodySim reordered {p, q, invMass, invInertia, maxExtent, flags}
+first. First: the Node harness A/B at 38 000 walkers, b2Counters.recycledContactCount, how many Predator bodies have offset
+0. Manifolds bit-identical, B2_SNAP_VERSION bumped, preSolve and friction callbacks keep the slow path, both builds, the
+LiquidFun gates. Owner: physics.
+### E-314 Box2D's prefetch by early loads (b2Prefetch is a no-op in wasm)
+
+**Premise (R-1100, R-1101):** Verified 2026-11-14 (R-1100): __builtin_prefetch compiles to nothing in wasm, so Box2D's own
+prefetch loops (the pair-set probes in broad_phase.c) are dead code. Box2D's hot loops are memory-bound: finalize 2.1,
+collide 2.0, solver 1.7 refills an instruction (R-1034, R-1041). Read (R-1101): the finalize's chain is 4-6 dependent misses
+inside a ~400-instruction iteration. Estimate physics STEP -3 to -7 %, more once the refit drops its fences. **Plan:** Early
+loads in batches of 16 with a tight first loop: the finalize in 2 stages, each 8 bodies ahead; collide the AABB tests and
+body-sim loads of 16 contacts; the solver the 8 body states of wide constraint i+2; the pair-set probes as real loads. Node
+harness A/B per loop (results unchanged; it can lose where the data already hits). Owner: physics.
+### E-315 The shadow stamp's selection of each light's nearest casters
+
+**Premise (R-1100, R-1102):** CPU pass (R-1100): stamp_light_range 26.6 % and quickselect_order 12.0 %, 38.6 % of
+pre-render, more than emit_rows (28.2 %). The partition branches on an indirect dist[order[i]] that mispredicts about half
+the time in the first levels (R-1102). With maxShadowsPerEntity the kept casters' order does not matter (E-133), and d² >= 0
+sorts as integer bits. History: R1 (takeClosest in place) was rejected in JS on 2026-09-30; nothing in C; E-160 says what is
+left of the stamp is its append and the selection. **Plan:** Three variants with the same kept set (only exact ties at the
+512th may differ): (a) walk the grid in rings out from the light and stop once 512 are held and the next ring is farther
+than the current 512th; (b) start each light from last frame's 512th distance padded by the largest move since (a guaranteed
+superset); (c) an 11-bit histogram select in two sequential passes. shadowStampReplay (set equality), then shadowStampKernel
+in Chrome, then Predator crowd 2.5 pre-render. Owner: pre-render.
+### E-316 Box2D's wide solver skips the second manifold point when no lane has one
+
+**Premise (R-1101):** Read (R-1101): circle-circle and circle-polygon manifolds always have 1 point; every stage (prepare,
+warm start, solve, relax, restitution, store) still computes point 2, plus 2 divides in prepare. Estimate contact stages -20
+to -30 %, physics STEP -2 to -4 %. **Plan:** Prepare sets a per-constraint flag from b2AnyTrueW(twoPointMask); point-2
+fields go to the struct's tail, each point-2 block under that branch; store writes points[1] only when pointCount > 1. Node
+harness A/B and a 600-step pose hash against main (identical but for signed zeros); the no-SIMD build gets it through the
+scalar b2FloatW code; LiquidFun gates. Owner: physics.
+### E-317 Spatial's neighbour rows: touch the next rows' heads ahead, then pack them
+
+**Premise (R-1100, R-1104):** Verified (R-1100): predatorScene.js sets maxNeighbors 1024, two rows per 4 KB page. E-307
+found the publish's cost is writing these rows; gather_batch + publish_batch are 69 % of spatial at crowd 2.5 and the
+largest refills in Chrome (19.3 + 4.9 % of all, R-1100; E-295). The candidate loop fills the reorder buffer before the next
+entity's row head is asked for (R-1104); wasm has no prefetch instruction. Estimate spatial -5 to -15 %. **Plan:** Load
+entity n+8's row and cand heads into an unused local in the publish (and the gather) so the misses overlap:
+spatialPublishWasmMicrobench --n 57600 with and without (same rows). Then the structural one, E-15's packed rows (prefix-sum
+offsets, one region per worker: 2.5-3.6x in its kernel at 17 500 entities), or a smaller maxNeighbors where the scene allows
+it. Owner: spatial.
+### E-318 Logic loads the next ticks' neighbour row heads ahead
+
+**Premise (R-1104):** Read (R-1104): a tick bucket's ids rise by T and each tick needs the count at once. E-240's counters
+found the neighbour loops instruction-bound (R-0997): this targets only the head's miss, not the loop. Estimate logic -3 to
+-6 %. **Plan:** In a copy of the bucket loop used only for types that read neighbours (rule R8), load list[i+16]'s row head
+on each tick; neighborAccessMicrobench at 57 600 entities, stride 1025, bucket order; then Predator crowd 2.5 logic. Owner:
+logic.
+### E-319 Box2D's pool size and spin at crowd 2.5, judged on every worker
+
+**Premise (R-1100, R-1104):** Scheduling (R-1100, WPR CSwitch at crowd 2.5): the physics thread 908 ms/s on CPU, each of the
+3 pool threads 732-734 ms/s (E-298's spin about 275 ms/s each), pool threads preempted 45-55 times a second and moved
+between the CCX 34-36 times; logic threads 412-475 ms/s with 46-50 CCX moves a second. R-1041: the spin about 5 % and futex
+waits 14 % of the physics threads. E-298 was gated at crowd 1.5, where cores were free (R-1104). Nothing in the register on
+the thread count (Predator uses 4). **Plan:** A 2x2 at crowd 2.5 judged on every worker (logic, spatial and pre-render as
+well as physics): 3 against 4 threads, the spin against the previous Box2D wasm. If the spin loses: spin only while busy
+threads are fewer than cores, or an imported Atomics.pause every N turns. Owner: physics.
+### E-320 The emit stops copying poses onto themselves
+
+**Premise (R-1100, R-1102):** Verified 2026-11-14 (R-1100, R-1102): without Adobe roots C_STASH_X == Q_X and out == i;
+persist_frame already tests inQueue, emit_rows does not. About 4 of ~27 loads and 4 of ~13 stores a sprite row; emit_rows is
+28.2 % of pre-render at crowd 2.5 and bound by instructions, not memory (R-0997). Estimate emit -5 to -10 %, pre-render -2
+to -4 %. **Plan:** A variant in preRenderEmitWasmMicrobench with stash == queue (checksum unchanged), the test kept outside
+the per-row work (an unswitched or copied loop); then Predator crowd 2.5. Owner: pre-render.
+### E-321 The CPU particle emit as one wasm call per emit
+
+**Premise (R-1100, R-1103):** Heap pass (R-1100): logic 1 346 and 1 072 KB/s; _spawn 299/213, randomRange 100/65,
+copyEmitFields 78/51, rng 78/62 KB/s. Read (R-1103): _spawn leaves its randomRange calls out (R-0994). Not E-278 (dropped:
+R-1012 added JS draws inside the big function): this removes the per-particle JS. **Plan:** Resolve each field once per emit
+into a Float64Array (lo, span, ease, flags); one wasm call fills count slots on the particle Memory (ParticleComponent lives
+there), drawing mulberry32 on rng's state copied in and out, so no random double exists in JS. particleEmitMicrobench and
+heapSampleNode, then Predator's logic heap. New goldens (the random stream's order changes); logic workers load the module
+on the particle Memory. Owner: logic.
+### E-322 Box2D's awake body set re-sorted by place
+
+**Premise (R-1101):** Read (R-1101): every id order is spatially random (predatorScene.js spawns); E-309's ablation: ids
+numbered in home-cell order cut spatial's frame 8 %. Gain unknown, possibly 5-15 % of physics. **Plan:** Dump the coherence
+once; a harness ceiling with Morton-order against random spawn order. If it pays: every N steps permute bodySims and
+bodyStates and remap localIndex and encodedBodySim through a table; sort each non-overflow colour by body index (no dynamic
+body repeats within a colour: bit-identical solve; event and moved-list order change); try slot order and the tree's
+DFS-leaf order as keys. Owner: physics.
+### E-323 Hot fields first in b2Shape and b2Body for the finalize
+
+**Premise (R-1101):** Read (R-1101): b2ComputeFatShapeAABB (5.4 %) is the shape's first touch; per body the finalize touches
+shape offsets 12-136 and the 100-byte b2Body at 0-86, plus a random b2Island read for the awake-island bit. Estimate
+finalize -15 to -25 %, physics STEP -2 to -4 %. **Plan:** b2Shape: {type, bools, nextShapeId, proxyKey, aabbMargin, 4
+material scalars, aabb} first, then the union, padded to 320 bytes; b2Body: the finalize's and E-288's fields in its first
+40 bytes, padded to 128; the awake-island bit set by island id (islandCount is in g_counters[4]). Node harness A/B;
+B2_SNAP_VERSION; about 15 % more memory for these structs. Owner: physics.
+### E-324 Box2D's refit owns the moved flags, in parallel
+
+**Premise (R-1101):** Read (R-1101): ~19 000 moved leaves each do an i32.atomic.rmw.or whose result is used (a lock cmpxchg
+loop in V8, a full fence) on a random node; the refit scans the tree serially on the physics thread and
+b2GatherMovedSiblings scans it again. Estimate 0.3-0.6 ms serial, physics STEP -2 to -4 %. **Plan:** The finalize writes
+only the leaf and a tree-dirty flag; the refit propagates MOVED from children while it unions the AABBs; the refit split
+into 8-16 DFS subtree ranges under b2ParallelFor, each emitting the moved-sibling list the next step reuses (unless API
+calls or bullets changed the tree). First a build without B2_COARSE_PROFILE reading the refit and pairs timers; the parallel
+refit bit-identical to the serial one. Owner: physics.
+### E-325 The moved-body export inside Box2D's finalize
+
+**Premise (R-1101):** Read (R-1101): export_body_move_events reads g_still[slot] and, per moved body, x, y, rotC and rotS at
+a random slot (cross-core misses); step_world's own time is 1.9 % of the four threads (~1 ms a step, serial); the sleep
+paint before the step scans ~57 000 slots and writes 38 000 bytes the finalize clears again. A concrete form of E-298's
+untried "finalize's pose copy". Estimate 0.3-0.8 ms serial, physics STEP -2 to -6 %. **Plan:** Export inside the finalize
+after CCD (solver.c's move of 669-676 below 715), writing movedSlot[simIndex] sequentially; the serial pass becomes a
+sequential 160 KB compaction; bullets and bodies that fell asleep handled explicitly; the sleep flag painted incrementally.
+First emscripten_get_now around both loops in a scratch build, in Chrome at crowd 2.5; LiquidFun's re-export kept. Owner:
+physics.
+### E-326 Box2D's pool woken before the step's first parallel-for
+
+**Premise (R-1101):** Read (R-1101): E-298 spins only inside b2World_Step; the first parallel-for of each step (the pair
+tasks) wakes the workers from the semaphore. Estimate 0-1 ms, physics STEP 0 to -7 %. **Plan:** Signal the sleepers and set
+stepping at step_world's entry, before the sleep paint and b2GatherMovedSiblings; if that lead is too short, a prewake
+export called from doStep after waitForLogic, with a timeout. First a counted build logging the time from the step's first
+enqueue to the first pool claim (or WPR's ready-to-run times); mind the spin's cost on shared cores (E-319). Owner: physics.
+### E-327 publishPose skips unchanged rotations and copies on the idle pool
+
+**Premise (R-1100, R-1104):** Read (R-1104): rotations are half of every publish; W15's reopen condition (the pose buffers
+in Box2D's block) is met, so the copy can be a task while the pool idles after the step. CPU and counters (R-1100):
+publishPose 4.2 % of the physics thread, 2.07 % of Chrome's instructions. Estimate physics -2 to -3 %. **Plan:** Skip
+unchanged rotations (as E-308 did in the export); then the remaining copy as a pool task. A respawn or a teleport must write
+the rotation into both pose buffers. Predator crowd 2.5 physics. Owner: physics.
+### E-328 A second spatial worker started by logic's frame-end bell
+
+**Premise (R-1104):** Read (R-1104): rows are read two logic frames later and Box2D rewrites Transform only at its finalize,
+so spatial1 can wait on chain[2] (notified, >= 1 ms) and run from about 7 to 14.3 ms, when cores are free; the particle
+worker could do the same. At crowd 2.5 the machine is nearly idle from about 11 to 16.7 ms. **Plan:** E-310's sitting (crowd
+2.5, spatialWorkers=2) with spatial1 gated on the bell, judged on spatial and logic; a fallback start time if logic is late.
+Rows at the ownership boundary see the other worker's cells a frame older; particles a frame later. Owner: spatial.
+### E-329 The gather tests the range before the dedup mark
+
+**Premise (R-1100, R-1102):** Read (R-1102): Predator's cell radius 2 (about 21 cells of 128 px against a ~153 px circle); a
+rejected B fails the same double test in every cell, so rows, order and truncation stay identical. gather_batch is 42.4 % of
+spatial at crowd 2.5 (R-1100). Estimate gather -5 to -10 % (the low end: E-309 found far rejects cheap). **Plan:** Test the
+position first and touch the marker only for a passing B: spatialGatherWasmMicrobench --n 57600 --workers 1 --per-cell 32
+--types predator with equal checksums, then spatialGatherReplayKernel in Chrome. Variant: each entity inserted in one cell
+(its centre) with the query widened by the largest half extent, so no candidate repeats and no marks at all. Owner: spatial.
+### E-330 A copied sprite loop for the emit's keyed, all-columns setup
+
+**Premise (R-1102):** Read (R-1102): sKeyedDirty, qKey with kChange, aLastTex, sZ, the seven in queue_shadow, qType and
+others are tested per row. Estimate 10-15 % fewer instructions there, pre-render -2 to -4 %, on top of the self-copy row.
+**Plan:** One flags word picks a copy in which every column is known present (as collect's MODE_ copies);
+preRenderEmitWasmMicrobench with the same checksum, watching code size. Owner: pre-render.
+### E-331 The stamp's grid built from the caster scan's x and y
+
+**Premise (R-1100, R-1102):** Read (R-1102): the grid build was 38 % of the stamp before E-160; pack_casters_keyed_scan is
+4.8 % of pre-render at crowd 2.5 (R-1100). Estimate pre-render -1.5 to -2 %. **Plan:** The scan also writes x/y arrays and
+the min/max (pass 1 goes); pass 2's floor((x - minX) / 256) in f64x2 (exact); shadowStampReplay checksum, then Chrome.
+Owner: pre-render.
+### E-332 Decoration rows' statics skipped like sprites', and sway's constant rotC
+
+**Premise (R-1102):** Read (R-1102): E-312 covers sprites only. For Predator's 20 000 grass decorations when they are drawn,
+roughly 2-5 % of pre-render; nothing past hideDecorationsAtZoom (0.25), as in crowd 2.5's view. decorationSway.c stores rotC
+= 1.5 on lines pre-render reads (E-308's pattern). **Plan:** Compare the computed values with the slot record in registers
+and write the statics only when the row is marked or K_SKIP is off; store rotC only when it differs. Judge on Predator at
+play zoom or a decoration stress scene. Owner: pre-render.
+### E-333 The persist bookkeeping paused while it never hits
+
+**Premise (R-1100, R-1102):** CPU pass (R-1100): persist_remember 2.4 % of pre-render. Read (R-1102): its other job,
+clearing SpriteRenderer.renderDirty, has one reader, persist_frame. **Plan:** After N misses stop remembering; every M
+frames re-arm with one full emit plus remember. A Predator pair; BunnyMark, where persist hits, must not get worse. N-170
+first: the Float32 early-outs may be why persist never hits. Owner: pre-render.
+### E-334 The attached-decoration pass skipped when none is attached
+
+**Premise (R-1100, R-1103):** Read (R-1103): two loads per decoration a frame; parentEntityIndex changes only at spawn and
+despawn, and refreshActiveDecorationSnapshot already watches that list's epoch. CPU pass: 2.9 % of the particle worker at
+crowd 2.5 (R-1100), 3.0 ms/s in R-0963. **Plan:** An attached-count word (the pass skipped at 0) and a sublist built when
+the snapshot is copied; a workerHarness kernel with 20 000 unattached decorations. Owner: particle.
+### E-335 The decoration screen test through the decoration grid
+
+**Premise (R-1103):** Read (R-1103): 5.4 + 1.1 ms/s (E-247); Predator's world is 10 000 x 5 000. **Plan:** Walk the grid
+cells under the padded bounds: interior cells appended without a test, border cells tested, last frame's visible ones that
+left cleared. decorationVisibilityMicrobench with a grid variant and parity on the visible set and the flags. Risk: the list
+order pre-render receives changes; the grid's lock. Owner: particle.
+### E-336 Particle stamps written from the columns, not five doubles through a call
+
+**Premise (R-1100, R-1103):** Heap pass (R-1100): the particle worker 155 KB/s, stampCollectedParticles 66.6; code pass:
+stampCollectedParticles stays in Maglev (231 bytes). Read (R-1103): the callee has a warn path, a Set and a flush and
+competes for the 920-byte budget; particlesToStamp starts as null (the field rule) and is read through this on every pass.
+**Plan:** Write the W26 record (b.f64/b.u32) straight from the columns inside the loop; particlesToStamp starts as an empty
+typed array; heapSampleWorkers on the particle worker, A/B. Owner: particle.
+### E-337 Pixi's keyed pack stops reading the type column
+
+**Premise (R-1100, R-1102):** Read (R-1102): type[i] feeds `p` (ctx.particleCount; only pre-render reads its own) and the
+glow test with shadow terms, off since E-211; E-193 and E-294 found the pack's cost is lines fetched from pre-render's core,
+and type is about a fifth of them. CPU pass: 8.4 % of Pixi at crowd 2.5 (R-1100). Estimate pack -10 to -20 %. **Plan:** Pass
+typeByte = 0 when shadowByte is 0 (exact); gpuPackKeyedCrossCoreMicrobench, then Predator crowd 2.5's Pixi. Owner: pixi.
+### E-338 The painter writes prevKey in slot order
+
+**Premise (R-1100, R-1102):** Read (R-1102): Predator's slot set changes most frames (R-1045), so painter_order runs then.
+Counters (R-1100): painter_order_simd 1.2 % of Chrome's L1 refills. **Plan:** The same writes walking idxE in ascending
+order, or memcpy plus a SIMD OR when the list is dense (exact); painterRadixWasmMicrobench predator-rebuild and
+painterRadixWasm.test.js. Owner: pixi.
+### E-339 Pixi's uploads issued before its queue wait
+
+**Premise (R-1100, R-1104):** Read (R-1104). CPU pass (R-1100): _waitForQueue 47.9 % of Pixi's busy time at crowd 2.5 (a
+wait), _uploadDecalRgba8 2.7 %. **Plan:** Issue the decal and lookup uploads and a gl.flush before _waitForQueue, so the GPU
+process uploads during the wait (the chain's tail 0.2-0.5 ms shorter); Predator crowd 2.5 Pixi and the frame clock. Owner:
+pixi.
+### E-340 Chrome's GPU process CPU: GL calls a frame, and WebGPU against WebGL
+
+**Premise (R-1100):** Scheduling (R-1100): the GPU process's thread 405 ms/s on CPU, 61 % of it on CPU 15, never preempted;
+at crowd 2.5 the machine holds about 6.8 busy cores of 8. Nothing in the register on the GPU process's CPU (N-77 is its
+memory). **Plan:** Count GL calls, state changes and buffer uploads a frame (Spector.js or chrome://tracing's gpu
+categories, E-230); the same scene on WebGPU (Dawn on D3D12) with the GPU process's CPU from WPR; then the largest call
+sources. Owner: renderer.
+### E-341 Logic's input wait after the work that needs no input, spun with Atomics.pause
+
+**Premise (R-1104):** Read (R-1104): list updates, impacts, collision callbacks (8-12 % of logic) and messages need no
+input; a sub-ms wait on Windows loops on SleepConditionVariableSRW(0) and may retake V8's process-wide waiter mutex (not
+verified), which may delay main's notify and the pool's wakes at the same vsync. Estimate logic's wait near 0, ~0.6 ms a
+frame of spinning freed. **Plan:** Run the input-free work first, then the edge flags; if main is still not out, spin on
+Atomics.load with Atomics.pause. First a Node two-thread kernel measuring notify latency while one thread loops
+Atomics.wait(..., 0.9). Collision callbacks then see input edges a frame late: check the games. Owner: logic.
+### E-342 Tick phases by blocks of ids
+
+**Premise (R-1104):** Read (R-1104): logic streams whole arrays; (id >> 6) % T would touch 1/T of the lines. The three
+copies of the phase formula (logicOwner.js, gameObject.js, spatialWorker.js) must agree; load balance for small types.
+Estimate logic -2 to -5 %. **Plan:** A tickLoopKernel variant with block phases; Predator crowd 2.5 logic and physics.
+Owner: logic.
+### E-343 Only the queries whose types changed are republished
+
+**Premise (R-1100, R-1103):** Read (R-1103): one boolean decides (querySystem.js, logicWorker.js); E-217's open note. CPU
+pass (R-1100): copyTypeActiveListToBuffer 3.4 % of a logic worker at crowd 2.5. **Plan:** A dirty-type mask; republish only
+the queries that intersect it; publishes a frame and the collect kernel. Owner: logic.
+### E-344 Despawns compacted once per batch
+
+**Premise (R-1100, R-1103, R-1104):** Reads (R-1103, R-1104): O(n x D) a frame on logic0, rewritten under every reader; both
+logic workers rebuild the tick buckets of every changed type each frame; logic0's extra serial work unbalances the pair
+(4.85 against 4.56 ms, R-0354) and physics waits for the slower. CPU pass (R-1100): removeFromActiveEntities 2.5 % of
+logic0. Spawns already merge per batch. **Plan:** Sort the despawn batch and compact once; Predator crowd 2.5 logic0 against
+logic1. Owner: logic.
+### E-345 Acceleration resets written only when nonzero
+
+**Premise (R-1100):** Read 2026-11-14 (R-1100): logicWorker.js writes rbAx[entityIndex] = 0 (and ay, aa) in the tick paths;
+E-140 skips types without a RigidBody, not zero rows; physics reads every body's accelerations each step. **Plan:** Count
+nonzero-to-zero writes in Predator; if most are zero already, write only when nonzero (a test on a line already loaded);
+tickLoopKernel, then crowd 2.5 logic and physics. Owner: logic.
+### E-346 A neighbour's x, y and type in one read from spatial's pos slot
+
+**Premise (R-1100, R-1104):** Read (R-1104): the pad could hold the type; an accessor over pos would serve the soldiers'
+scans (findACivilianToShoot 8.1 % of Chrome's instructions at crowd 2.5, R-1100; 9.6 % in R-0997). It is the collider
+centre, not Transform. Close to E-199. **Plan:** neighborAccessMicrobench with a pos-slot accessor; Predator's soldier scan.
+Owner: logic.
+### E-347 The nav grid invalidates its flowfields only when the walkability changed
+
+**Premise (R-1100, R-1103):** Read (R-1103): predatorScene.js -> navGrid.js -> particleWorker.js -> NavGrid.invalidate. Heap
+pass (R-1100): getColliderBounds 12-17 and rebuildWalkabilityFromIndices 11-12 KB/s (a cold handler that boxes every
+double). **Plan:** Build into a scratch, compare, swap and invalidate only on a change; flowfieldsComputedThisFrame over 10
+s. Owner: particle.
+### E-348 rng() reads its generator from a module binding
+
+**Premise (R-1100):** Deopt pass (R-1100): 102 "dependent prototype chain changed" deopts in the run; the steady ones in
+person.js, civilian.js, particleTween.js, soundManager.js and scene.js, twice each (once a logic worker). Globals written
+after start: self.__weedPageOrigin from a message (abstractWorker.js), globalThis.rng in scene.js's constructor and in
+sceneSharedBuffers.js's cleanup. **Plan:** Keep the generator in a module binding set at init (rng() reads it;
+globalThis.rng stays for user code); a deopt pass shows the prototype-chain deopts gone; the rng kernel unchanged. Owner:
+logic.
+### E-349 The tick bucket's typeInfo declares its fields in the literal
+
+**Premise (R-1100, R-1103):** Verified 2026-11-14 in the code (R-1103); CPU pass (R-1100): _tickIntervalBucket 3.9-6.9 % of
+a logic worker. **Plan:** Declare the six fields in the literal; the code pass shows one compile. Owner: logic.
+### E-350 Fraction fields start as doubles, and the field audit finds Smi-then-double fields
+
+**Premise (R-1103):** Read (R-1103); fieldTypeAudit.mjs only checks fields that start null and later hold a typed array.
+**Plan:** Start them as doubles (NaN where falsy is needed); extend fieldTypeAudit to Smi-then-double fields;
+workerShape.test for the other workers. Owner: engine.
+### E-351 The spawn and stamp drains without per-frame closures
+
+**Premise (R-1103):** Read (R-1103): about 4-8 KB/s; Hot-path Hyp 5 fixed only the contact rings. **Plan:** Module-level
+functions with their state passed in; heapSampleWorkers on logic and particle. Owner: engine.
+### E-352 Emit presets in the scratch shape
+
+**Premise (R-1100, R-1103):** Heap pass (R-1100): copyEmitFields 78 and 51 KB/s. Read (R-1103): plus _mergeCfg's for-in.
+**Plan:** ParticleEmitter.preset() returning an object in emitScratch's shape that the game reuses (public API: the owner's
+call); _mergeCfg as named stores; heap sample. Owner: logic.
+### E-353 RigidBody speed written by Box2D's finalize
+
+**Premise (R-1100, R-1103):** CPU pass (R-1100): updateDerivedProperties 14.1 % of the particle worker at crowd 2.5. Read
+(R-1103): b2FinalizeBodies holds each velocity in a register, in a parallel task; a sleeping body gets 0. R-0752 kept this
+off the logic workers. **Plan:** Write speed in the finalize (C: SIMD and no-SIMD builds, the LiquidFun gates; the owner
+decides); the particle worker's and physics' STEP_MS. Owner: particle.
+### E-354 Layer feed lists with a slot index
+
+**Premise (R-1103):** Read (R-1103): nothing in Predator; quadratic in scenes with particles in density or compute layers.
+**Plan:** A per-layer slot index (add O(1), remove a swap); a layer-feed stress case. Owner: particle.
+### E-355 Box2D's island split with a cooldown
+
+**Premise (R-1101):** Read (R-1101): in a crowd the island stays connected, or its pieces re-merge serially the next step.
+Estimate 0.5-2 %. **Plan:** After a split that finds one component, skip that island as a candidate for K steps (sleep
+starts later; still deterministic); harness A/B. Owner: physics.
+### E-356 Box2D's serial contact paths from data the collide already holds
+
+**Premise (R-1101):** Read (R-1101): about 2 % of pairs begin or end a frame (E-252). Estimate 0.1-0.4 ms serial. **Plan:**
+Count events and new pairs a step; slot pairs written where the collide loop holds the bodies; candidates carry precomputed
+fields; a radix sort. Owner: physics.
+### E-357 b2MinW and b2MaxW as wasm pmin and pmax
+
+**Premise (R-1101):** Read (R-1101): emsdk compat/xmmintrin.h's own TODO; under 1-2 % of the solver; the SIMD build only.
+**Plan:** pmin/pmax in contact_solver_wide.inl (with NaN semantics checked); harness A/B. Owner: physics.
+### E-358 Each caster's nearest lights in one record
+
+**Premise (R-1102):** Read (R-1102): estimate 1-2 % of pre-render, exact. **Plan:** Distance and light slot (u16) side by
+side; the counts as a dense u8 array so the final loop skips 16 unlit casters per i8x16 test; shadowStampReplay checksum.
+Owner: pre-render.
+### E-359 The stamp's keyed rows written with wide stores
+
+**Premise (R-1102):** Read (R-1102): the disassembly shows the generic loop per row; estimate ~1 % of pre-render, exact.
+**Plan:** v128 + 64-bit + 32-bit stores per row; the light's floats converted once per light; shadowStampReplay checksum.
+Owner: pre-render.
+### E-360 Small exact cleanups in the collect and the emit
+
+**Premise (R-1102):** Read (R-1102): the disassembly shows the load/store round trip; each item under 1 % of pre-render.
+**Plan:** The counters in locals; a compare and select for the frame step; 1 / (speed x 60) kept for the last speed seen
+(and in the persist copy); the pre-render kernels' checksums. Owner: pre-render.
+### E-361 Sprite animation frames computed on the GPU
+
+**Premise (R-1100):** Keyed frames (E-201, E-312) send a row only when its key changed; Predator's walkers animate all the
+time and call setAnimationSpeed every tick (N-170), so animation likely drives most marked keys (R-1100). R-0190 ("Animation
+frame in the shader") was dropped on September's architecture. **Plan:** Count marked keys a frame by cause (animation,
+pose, statics) at crowd 2.5; if animation leads, frame = base + floor((t - t0) x speed) mod count in the vertex shader, with
+t0, speed and count in the row's statics. Owner: render.
+### E-362 The pose rotation as two snorm16 in one word
+
+**Premise (R-1102):** Read (R-1102): memory.copy is 5-7 % of Pixi (R-1100: wasm-function[0] 5.1 %), so about 2 % of Pixi;
+not exact (about 6e-5 rad); the shaders and packs change. It belongs under E-193's "fewer bytes a row" and is not listed
+there. **Plan:** The owner's call on the error; a pack kernel variant and a visual check. Owner: pixi.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
