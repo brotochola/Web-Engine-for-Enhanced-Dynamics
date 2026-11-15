@@ -182,6 +182,32 @@ test('velocity: a body faces where it moves and keeps the facing when it stops; 
   assert.equal(DirectionalSprite.directionIndex[1], 1, 'moved 10 px south between two resolves');
 });
 
+test('E-363: a setter given what the entity has changes nothing: the pose delta keeps running, the frame stays', () => {
+  const id = sheet('civil', LPC);
+  // Facing from the pose (no body): an FSM's onEnter setting 'velocity' again must not restart the delta.
+  const ds = entity(0, id, { from: FACING_FROM.VELOCITY });
+  DirectionalSprite.setGroup(0, 'walk');
+  assert.equal(ds.direction, 'down');
+  Transform.x[0] = -20;
+  ds.facingFrom = 'velocity';
+  DirectionalSprite.resolve(0);
+  assert.equal(ds.direction, 'left', 'the 20 px west since the last resolve still count');
+  const drawn = SpriteRenderer.animationState[0];
+  assert.equal(DirectionalSprite.setGroup(0, 'walk'), true);
+  assert.equal(SpriteRenderer.animationState[0], drawn, 'the group it plays, again');
+
+  const m = entity(1, id);
+  DirectionalSprite.setGroup(1, 'walk');
+  m.facing = Math.PI;
+  assert.equal(animOf(1), 'walk_left');
+  m.facing = Math.PI;
+  assert.equal(animOf(1), 'walk_left', 'the same facing again');
+  m.facing = 0;
+  assert.equal(animOf(1), 'walk_right', 'a new facing still resolves at once');
+  ds.facingFrom = 'manual';
+  assert.equal(DirectionalSprite.facingFrom[0], FACING_FROM.MANUAL, 'a new source is taken');
+});
+
 test('rotation: the heading picks the frame, and the sprite does not turn', () => {
   const id = sheet('hatch', ['d0', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7'], { drive: { count: 8, anims: 'd{i}' } });
   const ds = entity(0, id, { from: FACING_FROM.ROTATION });

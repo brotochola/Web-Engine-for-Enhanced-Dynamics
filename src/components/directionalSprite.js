@@ -149,6 +149,15 @@ export class DirectionalSprite extends Component {
     const i = this.index;
     const v = +radians;
     if (v !== v) return;
+    // E-363: the same facing again resolves to what is drawn (the column holds floats, so compare the float).
+    if (
+      DirectionalSprite.facing[i] === Math.fround(v) &&
+      DirectionalSprite.aimX[i] === 0 &&
+      DirectionalSprite.aimY[i] === 0 &&
+      DirectionalSprite.directionIndex[i] !== NO_DIRECTION
+    ) {
+      return;
+    }
     DirectionalSprite.facing[i] = v;
     DirectionalSprite.aimX[i] = 0;
     DirectionalSprite.aimY[i] = 0;
@@ -165,6 +174,9 @@ export class DirectionalSprite extends Component {
       throw new Error(`DirectionalSprite.facingFrom: '${source}' is not one of ${FACING_FROM_NAMES.join(', ')}`);
     }
     const i = this.index;
+    // E-363: the source it already has (Predator's FSM sets 'velocity' again in each state's onEnter): nothing to
+    // resolve, and the position delta keeps running (a reset stalled a facing from positions for a frame).
+    if (DirectionalSprite.facingFrom[i] === k) return;
     DirectionalSprite.facingFrom[i] = k;
     DirectionalSprite.lastX[i] = Transform.x[i];
     DirectionalSprite.lastY[i] = Transform.y[i];
@@ -232,6 +244,8 @@ export class DirectionalSprite extends Component {
     if (t.count === 0) return false;
     const g = t.groupIndex.get(name);
     if (g === undefined) return false;
+    // E-363: the group it already plays: the frame pass keeps its direction.
+    if (DirectionalSprite.mode[i] === MODE_GROUP && DirectionalSprite.animation[i] === g) return true;
     DirectionalSprite.mode[i] = MODE_GROUP;
     DirectionalSprite.animation[i] = g;
     DirectionalSprite.resolve(i);
@@ -240,6 +254,14 @@ export class DirectionalSprite extends Component {
 
   /** A plain animation shown as it is (setAnimation('walk_left') on a directional entity). */
   static pin(i, animIndex) {
+    // E-363: the animation it already shows pinned.
+    if (
+      DirectionalSprite.mode[i] === MODE_PINNED &&
+      DirectionalSprite.animation[i] === animIndex &&
+      SpriteRenderer.animationState[i] === animIndex
+    ) {
+      return;
+    }
     DirectionalSprite.mode[i] = MODE_PINNED;
     DirectionalSprite.animation[i] = animIndex;
     DirectionalSprite.resolve(i);
