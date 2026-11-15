@@ -1045,10 +1045,10 @@ Lo que está hecho en la rama, fase por fase, con su commit. Se actualiza con ca
 | F1 `camera` | hecho | af40188 | `raycasted` pasa a F9; `frameChainWait` (presupuesto de reloj) falla a veces en esta máquina de 2 núcleos, también en la base |
 | F2 `DirectionalSprite` | hecho (falta el ABAB del dueño) | 4bf4d21 … f439060 | resolución en la lógica, no en el pre-render; forma `frames` pendiente; R-1052: empate contra el selector a mano en esta VM |
 | F3 mapas | en parte | 7d12c25, f4faf77, b2bf7c2, 4ee050f | página gemela y test de alineación; base de cada cuadro (elipse de una sola vista, apoyo de los renders) en la tabla de texturas (`frameBase.js`); faltan bake, `weed maps` (la tubería del banco web usaba Blender: `weed-mapas.zip`, fuera del repo) y medir la carga |
-| F4 G-buffer | primera versión | f376849 | face map generalizado; faltan `normals`/`surface`, id de entidad, MRT, microbench de GPU y ver WebGPU |
+| F4 G-buffer | primera versión, WebGPU andando | f376849, fec5057 | face map generalizado; en WebGPU la pasada de caras no validaba (binding 5 fuera del layout): arreglado y visto en GPU real; faltan `normals`/`surface`, id de entidad, MRT, microbench de GPU |
 | F6 sombras del sol | §17.1 hecho, espera aprobación | a323a1d, bb18952, 2222a32, 43f3d11, b8b4a24, 31319d4, 658fdd5, 952929f | 17.1 (R-1053): cartón parado en su base y proyectado a lo largo del sol en los dos modos; los renders con heightmap tiran su sólido en los dos modos, lo de una sola vista su cartón; la mezcla max del mapa no se aplicaba (arreglado). Antes: | `sunShadows: 'map'`, WebGL; cuadro que ve el sol (DirectionalSprite), también en modo `'sprite'` (apaga los caminos con clave: medir en Predator); los casters con heightmap tiran columnas (su sólido, girado como está: lo marcó el dueño en el banco de luz); faltan WebGPU, caminos con clave, volúmenes, cache, costo de las columnas en escenas grandes |
 | F11 vitrina | primera versión | 248fd7e, 3cbb60a, c656266 | `demos/lightBenchScene`: la granja del banco web (Quaternius en 32 direcciones, autos MinZinn, LPC, árboles, con sus mapas), persona con WASD, faroles, mapa del sol, autosombra, teclas para comparar; `?only`, `?lamps`, `?still`, `?zoom` para capturas |
-| F8 autosombra | primera versión | 2d1eb1e, d1de9e5 | `lighting.selfShadow`, sol, WebGL; faltan faroles, WebGPU y el id de entidad (que una luz no se tape con lo suyo) |
+| F8 autosombra | primera versión | 2d1eb1e, d1de9e5, 80dde16 | `lighting.selfShadow`, sol, WebGL y WebGPU; faltan faroles y el id de entidad (que una luz no se tape con lo suyo) |
 
 ## 17. Próximos pasos (para la sesión que sigue)
 
@@ -1093,6 +1093,17 @@ Hoy la sombra de un cubo no se parece a la del banco. Faltan dos cosas que el ba
   y después, y aprobación del dueño.
 
 ### 17.2 Filas con clave que traen el cuadro de la sombra (no perder la optimización)
+
+**Hecho (2026-11-14, 488f4b2):** el cuarto número de la fila con clave (era un cero) lleva el cuadro que ve la luz,
+±(textureId + 1) con el signo como espejo; el pre-render lo escribe después del barrido (`_applyKeyedSunFrames`), las
+estampas lo copian con la fila y los shaders con clave (GLSL y WGSL) lo usan. Filas con clave contra completas
+(`?fullRows=1` del banco): idénticas byte por byte, con faroles y sin, WebGL y WebGPU. `lighting.directionalCasters`
+queda solo para E-191 (las instancias del lote no tienen lugar para otro cuadro). **El gate de la rama contra `main`
+dio regresión** (Predator crowd 2.5, `--full-rev`, 4 pares): lógica 6.00 → 7.47 ms (+25 %), pre-render 6.13 → 9.43 ms
+(+54 %). Perfil de CPU: el cuadro del sol de 38 000 personas (atan2 + `pickDirection` por caster, 30 % del pre-render),
+`DirectionalSprite.resolve` (0.6 ms de cada worker de lógica) y el getter lento de `SpriteRenderer` (`requires` lo
+agregaba al final de la lista, fuera de los 8 lugares rápidos). Arreglos: el cuadro del sol de una tabla uniforme es la
+dirección dibujada más el giro del sol en pasos (086f02c), y lo requerido va justo antes de lo que lo pide.
 
 `b8b4a24` apagó los caminos con clave (E-191 / E-211) cuando una clase tiene `DirectionalSprite` y `ShadowCaster`
 (`lighting.directionalCasters`), porque leen el cuadro del propio sprite. Eso no se queda así: el motor tiene que seguir
