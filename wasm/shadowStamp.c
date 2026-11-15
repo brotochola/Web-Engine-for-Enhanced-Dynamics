@@ -57,7 +57,9 @@ INLINE int32_t js_to_int32(double x) {
 
 INLINE int32_t floor_int32(double x) { return js_to_int32(__builtin_floor(x)); }
 
-typedef struct { double minX, minY; int32_t gw, gh; } Grid;
+/* clean (E-315): every caster's x and y finite and binned without a clamp (no NaN, nothing past the last column or row),
+   so a cell's casters lie inside its square; only then may a light's walk stop early (ring_gather_select). */
+typedef struct { double minX, minY; int32_t gw, gh, clean; } Grid;
 
 /* buildStampGrid. 0: no grid (the full scan runs). Inlined, so g stays in locals (no stack). The stamp below builds
    build_grid_packed; this one is the float32 test module's (wasm/test/shadowStampF32.c). */
@@ -115,6 +117,7 @@ __attribute__((unused)) INLINE int build_grid(const float *sun, uint32_t nSun, u
   g->minY = minY;
   g->gw = gw;
   g->gh = gh;
+  g->clean = 0;
   return 1;
 }
 
@@ -128,6 +131,7 @@ INLINE int build_grid_packed(const float *sun, uint32_t nSun, uint32_t sf, int32
   double minY = __builtin_inf();
   double maxX = -__builtin_inf();
   double maxY = -__builtin_inf();
+  int32_t nan = 0;
   for (uint32_t c = 0; c < nSun; c++) {
     const float fx = sun[c * sf];
     const float fy = sun[c * sf + 1];
@@ -135,6 +139,7 @@ INLINE int build_grid_packed(const float *sun, uint32_t nSun, uint32_t sf, int32
     ty[c] = fy;
     const double x = fx;
     const double y = fy;
+    nan |= (x != x) | (y != y);
     if (x < minX) minX = x;
     if (y < minY) minY = y;
     if (x > maxX) maxX = x;
@@ -178,6 +183,8 @@ INLINE int build_grid_packed(const float *sun, uint32_t nSun, uint32_t sf, int32
   g->minY = minY;
   g->gw = gw;
   g->gh = gh;
+  /* Finite bounds (minX was checked above), no NaN, and no width or height that ToInt32 wrapped. */
+  g->clean = !nan && maxX - minX < STAMP_CELL * (double)gw && maxY - minY < STAMP_CELL * (double)gh;
   return 1;
 }
 
@@ -403,6 +410,135 @@ INLINE int32_t append_stamped_cone(float *dst, uint32_t df, int32_t out, const f
   return out;
 }
 
+/* E-315: a lower bound on |x - l| for any caster binned in column (or row) c of a clean grid, whose casters lie in
+   [lo + 256c, lo + 256(c + 1)): the gap from l to that band, less eps (the rounding margin), and 0 inside it. */
+INLINE double gap_lower(int32_t c, double l, double lo, double eps) {
+  const double a = lo + (double)c * STAMP_CELL;
+  double gap = a - l;
+  const double past = l - (a + STAMP_CELL);
+  if (past > gap) gap = past;
+  gap -= eps;
+  return gap > 0.0 ? gap : 0.0;
+}
+
+/* E-315: one span of the grid's items into a light's candidates: those in range (and, for a cone light, in its cone)
+   whose float distance is under the selection's current threshold F (+inf until lim are held). Each goes on the active
+   list (order) as well. */
+INLINE void ring_span(const float *px, const float *py, const uint32_t *gridItems, int32_t from, int32_t to, double lx,
+                      double ly, double rangeSq, const double *L, float F, uint32_t *tmpIdx, float *dist, double *d64,
+                      uint32_t *order, uint32_t *mp, uint32_t *mop, const int cone) {
+  uint32_t m = *mp;
+  uint32_t mo = *mop;
+  for (int32_t p = from; p < to; p++) {
+    const double dx = (double)px[p] - lx;
+    const double dy = (double)py[p] - ly;
+    const double d2 = dx * dx + dy * dy;
+    if (d2 > rangeSq) continue;
+    if (cone && !in_cone(dx, dy, L)) continue;
+    const float f = (float)d2;
+    if (!(f < F)) continue;
+    tmpIdx[m] = gridItems[p];
+    dist[m] = f;
+    d64[m] = d2;
+    order[mo++] = m;
+    m++;
+  }
+  *mp = m;
+  *mop = mo;
+}
+
+/* E-315: a light's gather and selection with maxShadowsPerEntity, walking the grid in square rings of cells out from the
+   light's cell (clamped into the range's cell rectangle, the cells the plain walk visits) and stopping once lim are held
+   and no cell left can hold a caster nearer than the lim-th. The first ring that brings the held count to lim selects
+   them (quickselect_order) and its lim-th float distance becomes the threshold F: from then on only casters strictly
+   under F join, a row or cell whose nearest point is no nearer than F is not read, and each ring that adds any
+   selects lim again (F only falls). After ring k, a caster in a cell not yet
+   walked lies past one of the square's sides, at least b from the light (b the nearest such side's distance, less a
+   rounding margin); the walk stops when F <= b², so every such caster's float distance is >= F. The kept set is then
+   the plain walk's: every candidate whose float distance is under the lim-th smallest, and as many of those exactly at
+   it as fill lim (which ones may differ from the plain walk's quickselect: exact ties at the lim-th only). Returns the
+   kept count; the kept are order[0..n). Needs a clean grid (Grid.clean), a finite light and range, and room for every
+   caster in the scratch (no truncation by m < tmpCap in either walk). cone: a literal, so each light kind has its copy. */
+INLINE uint32_t ring_gather_select(const Grid *g, const int32_t *gridStarts, const uint32_t *gridItems, const float *px,
+                                   const float *py, double lx, double ly, double rangeSq, const double *L, int32_t col0,
+                                   int32_t col1, int32_t row0, int32_t row1, uint32_t lim, uint32_t *tmpIdx, float *dist,
+                                   double *d64, uint32_t *order, const int cone) {
+  if (col0 > col1 || row0 > row1) return 0;
+  const double fc = __builtin_floor((lx - g->minX) / STAMP_CELL);
+  const double fr = __builtin_floor((ly - g->minY) / STAMP_CELL);
+  const int32_t lc = fc < (double)col0 ? col0 : fc > (double)col1 ? col1 : (int32_t)fc;
+  const int32_t lr = fr < (double)row0 ? row0 : fr > (double)row1 ? row1 : (int32_t)fr;
+  int32_t K = lc - col0;
+  if (col1 - lc > K) K = col1 - lc;
+  if (lr - row0 > K) K = lr - row0;
+  if (row1 - lr > K) K = row1 - lr;
+  const int32_t gw = g->gw;
+  const double minX = g->minX;
+  const double minY = g->minY;
+  /* The rounding margin on every distance bound below: far above double's error on the coordinates (2^-30 of their
+     magnitude, cell edges included). */
+  const double eps = 0x1p-30 * (__builtin_fabs(lx) + __builtin_fabs(minX) + __builtin_fabs(ly) + __builtin_fabs(minY) +
+                                STAMP_CELL * ((double)(col1 > row1 ? col1 : row1) + 2.0));
+  uint32_t m = 0;
+  uint32_t mo = 0;
+  float F = __builtin_inff();
+  for (int32_t k = 0; k <= K; k++) {
+    const int32_t r0 = lr - k < row0 ? row0 : lr - k;
+    const int32_t r1 = lr + k > row1 ? row1 : lr + k;
+    const int32_t c0 = lc - k < col0 ? col0 : lc - k;
+    const int32_t c1 = lc + k > col1 ? col1 : lc + k;
+    for (int32_t row = r0; row <= r1; row++) {
+      /* A row, then a cell, whose nearest point is no nearer than F holds no caster that could join (each one's float
+         distance would be >= F): skipped, as the span's own test would drop each of its casters. F +inf skips none. */
+      const double gy = gap_lower(row, ly, minY, eps);
+      const double gy2 = gy * gy;
+      if ((double)F <= gy2 * (1.0 - 0x1p-40)) continue;
+      const int32_t rowBase = row * gw;
+      /* An edge row of the square: its cells c0..c1; any other row: the square's two side cells. */
+      const int edge = row == lr - k || row == lr + k;
+      const int32_t first = edge ? c0 : lc - k;
+      const int32_t last = edge ? c1 : lc + k;
+      const int32_t step = edge ? 1 : 2 * k;
+      for (int32_t col = first; col <= last; col += step) {
+        if (col < col0 || col > col1) continue;
+        const double gx = gap_lower(col, lx, minX, eps);
+        if ((double)F <= (gx * gx + gy2) * (1.0 - 0x1p-40)) continue;
+        const int32_t cell = rowBase + col;
+        ring_span(px, py, gridItems, gridStarts[cell], gridStarts[cell + 1], lx, ly, rangeSq, L, F, tmpIdx, dist, d64,
+                  order, &m, &mo, cone);
+      }
+    }
+    if (mo < lim) continue;
+    if (mo > lim || F == __builtin_inff()) {
+      quickselect_order(order, dist, 0, (int32_t)mo - 1, (int32_t)lim - 1);
+      mo = lim;
+      F = dist[order[lim - 1]];
+    }
+    double b = __builtin_inf();
+    if (lc - k - 1 >= col0) {
+      const double s = lx - (minX + (double)(lc - k) * STAMP_CELL);
+      if (s < b) b = s;
+    }
+    if (lc + k + 1 <= col1) {
+      const double s = minX + (double)(lc + k + 1) * STAMP_CELL - lx;
+      if (s < b) b = s;
+    }
+    if (lr - k - 1 >= row0) {
+      const double s = ly - (minY + (double)(lr - k) * STAMP_CELL);
+      if (s < b) b = s;
+    }
+    if (lr + k + 1 <= row1) {
+      const double s = minY + (double)(lr + k + 1) * STAMP_CELL - ly;
+      if (s < b) b = s;
+    }
+    if (b == __builtin_inf()) break; /* every cell of the rectangle walked */
+    b -= eps;
+    if (b < 0.0) b = 0.0;
+    if ((double)F <= b * b * (1.0 - 0x1p-40)) break;
+  }
+  return mo;
+}
+
 __attribute__((export_name("stamp_light_range")))
 int32_t stamp_light_range(uint32_t table) {
   const uint32_t *t = (const uint32_t *)(uintptr_t)table;
@@ -471,6 +607,29 @@ int32_t stamp_light_range(uint32_t table) {
     const int cone = L[7] > -1.0;
     const int folded = cone || L[10] < 1.0;
     anyFolded |= folded;
+    if (maxPE > 0 && grid && g.clean && lim > 0 && (uint32_t)lim < nSun && tmpCap >= nSun && lx - lx == 0.0 &&
+        ly - ly == 0.0 && rangeSq <= 0x1.fffffep127) {
+      /* E-315: the ring walk, which stops once no cell left can hold one of the lim nearest (ring_gather_select). */
+      const double r = __builtin_sqrt(rangeSq);
+      int32_t col0 = floor_int32((lx - r - g.minX) / STAMP_CELL);
+      int32_t col1 = floor_int32((lx + r - g.minX) / STAMP_CELL);
+      int32_t row0 = floor_int32((ly - r - g.minY) / STAMP_CELL);
+      int32_t row1 = floor_int32((ly + r - g.minY) / STAMP_CELL);
+      if (col0 < 0) col0 = 0;
+      if (row0 < 0) row0 = 0;
+      if (col1 >= g.gw) col1 = g.gw - 1;
+      if (row1 >= g.gh) row1 = g.gh - 1;
+      const uint32_t n = cone
+        ? ring_gather_select(&g, gridStarts, gridItems, px, py, lx, ly, rangeSq, L, col0, col1, row0, row1,
+                             (uint32_t)lim, tmpIdx, dist, d64, order, 1)
+        : ring_gather_select(&g, gridStarts, gridItems, px, py, lx, ly, rangeSq, L, col0, col1, row0, row1,
+                             (uint32_t)lim, tmpIdx, dist, d64, order, 0);
+      for (uint32_t k = 0; k < n; k++) {
+        const uint32_t at = order[k];
+        note_nearest(nearDist, nearSlot, nearCount, tmpIdx[at], i, d64[at], maxPE);
+      }
+      continue;
+    }
     if (cone && grid) {
       const double r = __builtin_sqrt(rangeSq);
       int32_t col0 = floor_int32((lx - r - g.minX) / STAMP_CELL);
