@@ -16176,18 +16176,20 @@
     {
       "id": "N-206",
       "title": "Predator crowd 2.5's gate of 2026-11-15 (588242f9 against 6b28ca2d) failed on its load keys: the new side drew 4 967, 11 450 and 20 292 rows of 38 500 in three of its four runs, and physics read +49 %",
-      "status": "open",
+      "status": "answered",
       "statusText": "found 2026-11-15 in that gate; not understood: every crowd 2.5 run of the twelve sittings before drew about 38 500 rows; left when the owner stopped the session's runs",
       "date": "2026-11-15",
       "area": "harness",
       "kind": "bug",
-      "result": "RENDER_QUEUE_SIZE per run, A: 38 488, 38 588, 38 428, 38 529; B: 11 450, 20 292, 4 967, 38 438 (GPU_CASTERS alike); BODY_COUNT and ENTITIES_PROCESSED the same on both sides. Predator's camera frames the player's soldiers (cameraController.js updateSquadCamera): soldiers dead or bunched zoom it in, so fewer rows; why only the new side, not known. Physics +48.9 % (cv 64 % on B), BODY_MOVED_COUNT +8 %.",
+      "result": "Probes 2026-11-15 (main 0c33673e vs 259aba3a, crowd 2.5, nothing touched): soldiers alive the same (13 727-13 814), main 4/4 and the branch 7/8 framed the whole world (zoom 0.216 = minZoom); one branch run read zoom 1.58 then 0.665 held 6 s, which only the free camera gives (the squad camera caps at 1 and brings 0.216 back in a second): its button and the wheel, likely by hand. Not the branch; the load-key check caught it. Predator sittings pin the camera (?zoom=0.216).",
       "next": "Run the same pair again (or the new side alone) watching MySoldier's count and Camera.zoom per run; if the new side loses its soldiers, find what in the afternoon's commits reaches the logic or physics (none of them touches Predator's code); else call it chance and gate again.",
       "refs": [],
       "aliases": [
         "crowd 2.5 gate drew fewer rows"
       ],
-      "records": []
+      "records": [
+        "R-1149"
+      ]
     },
     {
       "id": "E-380",
@@ -27371,6 +27373,15 @@
         "6083e8be",
         "437d81f3"
       ]
+    },
+    {
+      "id": "R-1149",
+      "date": "2026-11-15",
+      "time": "20:15",
+      "timeFrom": "recorded",
+      "title": "Probe: the branch keeps its soldiers; the zoomed runs had the free camera on",
+      "verdict": "answered",
+      "text": "Two probes, Predator crowd 2.5 in visible Chrome windows, sides from worktrees (main 0c33673e, dx/light3d 259aba3a), nothing touched by the probe: soldiers and civilians alive and the logic camera every 2 s after a 12 s warm-up (4 runs a side, alternating), then the branch alone every 250 ms from the scene's creation (4 runs of 40 s), with the target zoom, minZoom, canvas, world, free flags and the soldiers' bounding box.\n\n- Soldiers alive the same on both sides: 13 727 to 13 814 (of 15 000 spawned), civilians 22 326 to 22 387.\n- Main 4 of 4 and the branch 7 of 8 framed the whole world: zoom 0.216, minZoom, since the soldiers' box (about 2 900 x 2 900 px) needs less than it, the camera centred near (4 980, 2 500).\n- One branch run (the first of the first probe) read zoom 0.23 at 12 s, 1.577 and 1.596 at 14 and 16 s, then 0.666 and 0.665 for the last 6 s. updateSquadCamera caps its target at 1 (Math.min(zoomX, zoomY, 1)) and nothing else in Predator or the engine writes the zoom but the free camera (its button, maxZoom 2, the wheel), setZoom (?zoom=) and a resize's reclamp (each thread's own minZoom). A zoom held at 0.665 for 6 s is not the squad camera's either: it brings the zoom back to 0.216 in about a second. So the free camera was on in that run: the button and the wheel, most likely by hand in the visible window (to be confirmed by the owner); the gate of 2026-11-15 drew 4 967 to 20 292 rows in three of its B runs the same way.\n\nNot a change of the branch: its runs keep their soldiers, and the probe that touches nothing framed like main. The gate's load-key check (RENDER_QUEUE_SIZE within 5 %) caught it, as it should. Predator sittings from here pin the camera (?zoom=0.216, setZoom every frame) and nobody touches their windows."
     }
   ],
   "leads": [
