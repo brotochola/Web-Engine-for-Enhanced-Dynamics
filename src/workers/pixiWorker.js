@@ -9180,8 +9180,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
       // DX-SELFSHADOW: faces and sprites with maps shade themselves from the sun (screen-space steps over the face map).
       if (lightingConfig.selfShadow === true) this._selfShadowOn = true;
-      // DX-GBUF (plan §6.4): the G-buffer's targets in one pass (MRT) or a pass each (the default until measured).
-      const gbufMode = lightingConfig.gbuffer ?? 'pass';
+      // DX-GBUF (plan §6.4): the G-buffer's targets in one pass (MRT, the default: E-377) or a pass each.
+      const gbufMode = lightingConfig.gbuffer ?? 'mrt';
       if (gbufMode !== 'pass' && gbufMode !== 'mrt') {
         console.warn(`WeedJS: lighting.gbuffer is 'pass' or 'mrt', not ${JSON.stringify(gbufMode)}: the G-buffer draws a pass a target`);
       }

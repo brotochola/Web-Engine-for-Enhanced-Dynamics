@@ -355,8 +355,8 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    */
   selfShadow?: boolean;
   /**
-   * DX-GBUF: 'pass' (default) draws the face map and the entity ids map a pass each; 'mrt' both in one pass with two
-   * colour targets. Same picture.
+   * DX-GBUF: 'mrt' (default) draws the face map and the entity ids map in one pass with two colour targets; 'pass' a
+   * pass each. Same picture; one pass costs about a third less.
    */
   gbuffer?: 'pass' | 'mrt';
   /** DX-EMISSIVE: spriteRenderer.emissive glows here even without maps, faces or a shadow map. Default false. */

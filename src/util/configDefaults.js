@@ -810,10 +810,12 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   selfShadow: false,
   /**
-   * DX-GBUF: how the G-buffer passes draw. 'pass' (default): the face map, then the entity ids map, a pass each. 'mrt':
-   * both in one pass with two colour targets (WebGL2 drawBuffers, WebGPU two targets). Same picture.
+   * DX-GBUF: how the G-buffer passes draw. 'mrt' (default): the face map and the entity ids map in one pass with two
+   * colour targets (WebGL2 drawBuffers, WebGPU two targets); 'pass': a pass each. Same picture; one pass costs about a
+   * third less (E-377: 0.51 against 0.80 ms at the light's resolution 0.5, 1.65 against 2.46 at 1, GTX 1650, WebGL; the
+   * same on WebGPU). Where the two-target render target cannot be made, the engine draws a pass each.
    */
-  gbuffer: 'pass',
+  gbuffer: 'mrt',
   /**
    * DX-EMISSIVE: spriteRenderer.emissive glows in this scene: the sprites carry their G-buffer words even without maps,
    * faces or a shadow map (which turn them on by themselves, as a sheet's own emissive does). Off, a scene pays nothing.

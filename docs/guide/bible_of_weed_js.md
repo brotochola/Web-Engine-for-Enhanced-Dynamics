@@ -1407,7 +1407,7 @@ With an oblique camera, sheets that bring a height map, and the two shadow maps,
 | Depth that corrects the painter | on by itself with an oblique camera and maps (`renderer.pixelDepth`) |
 | Sprites that glow | `emissive: true` on a sheet, or `spriteRenderer.emissive` on one sprite (without maps or a shadow map, with `lighting.emissive: true`) |
 | Normals and height per sprite | `spriteRenderer.normals` and `spriteRenderer.surface` |
-| The G-buffer in one pass (two targets) instead of two | `lighting.gbuffer: 'mrt'` (the same picture) |
+| The G-buffer a pass a target instead of one pass with two | `lighting.gbuffer: 'pass'` (the same picture; `'mrt'`, the default, costs about a third less) |
 | How each thing casts | its sheet's data; `ShadowCaster`'s setters change it |
 
 A thing never takes its own shadow from a map: each map keeps which entity cast each of its texels, so a house is not darkened by its own box, while a tree's shadow still climbs it. A sprite without a height map is a card standing on its foot (`surface`), so another thing's shadow covers it only as high as it reaches.
