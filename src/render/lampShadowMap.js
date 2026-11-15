@@ -124,7 +124,7 @@ const LAMP_OUT_GLSL = `  vec2 tuv = (land - lamp.xy) / (2.0 * lamp.w) + 0.5;
   gl_Position = vec4(clip.xy * w, 0.0, w);
   if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   vTileUvW = vec3(tuv * w, w);
-  vColor = vec4(1.0);
+  vColor = vec4(1.0, castOpacity, 1.0, 1.0);
   vLocal = aQuad;
   vWorld = aInstXY;
   vAtlasUV = aInstUV;
@@ -270,7 +270,7 @@ fn mainFragLamp(in: VertexOut) -> WeedMapOut {
   if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) { discard; }
   let t = textureSampleLevel(uTexture, uSampler, mix(in.vAtlasUV.xy, in.vAtlasUV.zw, in.vLocal), 0.0);
   if (t.a < 0.5) { discard; }
-  return weedMapTexel(in.vSunZ, in.vSunId);
+  return weedMapTexel(in.vSunZ, in.vSunId, in.vColor.g);
 }
 `;
 
@@ -295,7 +295,7 @@ const LAMP_OUT_WGSL = `  let tuv = (land - lamp.xy) / (2.0 * lamp.w) + 0.5;
     out.position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   }
   out.vTileUvW = vec3<f32>(tuv * w, w);
-  out.vColor = vec4<f32>(1.0);
+  out.vColor = vec4<f32>(1.0, castOpacity, 1.0, 1.0);
   out.vLocal = aQuad;
   out.vWorld = aInstXY;
   out.vAtlasUV = aInstUV;

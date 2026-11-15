@@ -213,7 +213,7 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   // Never true (a cosine): keeps the rows' attributes in the program, which Pixi otherwise warns about (aInstLight).
   if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits + aInstLight.x;
   vLocal = aQuad;
-  vColor = ${heights ? 'vec4(1.0)' : 'vec4(0.0, 0.0, 0.0, uSun.w * castOpacity)'};
+  vColor = ${heights ? 'vec4(1.0, castOpacity, 1.0, 1.0)' : 'vec4(0.0, 0.0, 0.0, uSun.w * castOpacity)'};
   vWorld = world;
   vAtlasUV = aInstUV;
   vTileInv = aInstTileInv;
@@ -257,7 +257,7 @@ export function sunMapVertex(source, { heights = true } = {}) {
     .replace(decl, `${decl}out float vSunZ;\nflat out float vSunId;\n${MAPPED_GLSL}${CASTER_ID_GLSL}`)
     .replace(main, `${main}  vSunZ = 0.0;\n  vSunId = casterEntityId(aInstTintBits);\n`)
     .replace(out, `${out}    vSunZ = sunZ;\n`)
-    .replace(color, '  vColor = vec4(1.0);\n');
+    .replace(color, '  vColor = vec4(1.0, castOpacity, 1.0, 1.0);\n');
 }
 
 /** A WGSL source with one occurrence of each mark, or a clear error. */
@@ -268,19 +268,20 @@ function wgslMarks(source, marks, what) {
 }
 
 /**
- * DX-SHADOW3D: a shadow map's texel and its depth (sunShadowMap.frag.glsl): the height (R), the caster's G-buffer id (B·256 +
- * A) and 1 - height as the depth, so a depth test keeps the highest caster with its id.
+ * DX-SHADOW3D: a shadow map's texel and its depth (sunShadowMap.frag.glsl): the height (R), the caster's opacity (G: how
+ * much light it takes out, DX-CASTER), its G-buffer id (B·256 + A) and 1 - height as the depth, so a depth test keeps the
+ * highest caster with its opacity and id.
  */
 export const MAP_TEXEL_WGSL = `struct WeedMapOut {
   @location(0) color: vec4<f32>,
   @builtin(frag_depth) depth: f32,
 }
 
-fn weedMapTexel(z: f32, idf: f32) -> WeedMapOut {
+fn weedMapTexel(z: f32, idf: f32, opacity: f32) -> WeedMapOut {
   let h = clamp(z / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);
   let id = u32(idf + 0.5);
   var o: WeedMapOut;
-  o.color = vec4<f32>(h, 0.0, f32(id >> 8u) / 255.0, f32(id & 255u) / 255.0);
+  o.color = vec4<f32>(h, clamp(opacity, 0.0, 1.0), f32(id >> 8u) / 255.0, f32(id & 255u) / 255.0);
   o.depth = 1.0 - h;
   return o;
 }
@@ -295,7 +296,7 @@ ${MAP_TEXEL_WGSL}
 fn mainFragMap(in: VertexOut) -> WeedMapOut {
   let t = textureSampleLevel(uTexture, uSampler, mix(in.vAtlasUV.xy, in.vAtlasUV.zw, in.vLocal), 0.0);
   if (t.a < 0.5) { discard; }
-  return weedMapTexel(in.vSunZ, in.vSunId);
+  return weedMapTexel(in.vSunZ, in.vSunId, in.vColor.g);
 }
 `;
 
@@ -329,7 +330,7 @@ export function sunMapWgsl(source, { heights = true } = {}) {
       .replace(struct, `${struct}  @location(6) vSunZ: f32,\n  @location(8) @interpolate(flat) vSunId: f32,\n`)
       .replace(body, `${body}  out.vSunId = casterEntityId(aInstTintBits);\n`)
       .replace(out, `${out}    out.vSunZ = sunZ;\n`)
-      .replace(color, '  out.vColor = vec4<f32>(1.0);\n') + MAP_FRAGMENT_WGSL
+      .replace(color, '  out.vColor = vec4<f32>(1.0, castOpacity, 1.0, 1.0);\n') + MAP_FRAGMENT_WGSL
   );
 }
 
@@ -395,7 +396,7 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
     out.position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   }
   out.vLocal = aQuad;
-  out.vColor = ${heights ? 'vec4<f32>(1.0)' : 'vec4<f32>(0.0, 0.0, 0.0, uniforms.uSun.w * castOpacity)'};
+  out.vColor = ${heights ? 'vec4<f32>(1.0, castOpacity, 1.0, 1.0)' : 'vec4<f32>(0.0, 0.0, 0.0, uniforms.uSun.w * castOpacity)'};
   out.vWorld = world;
   out.vAtlasUV = aInstUV;
   out.vTileInv = aInstTileInv;
@@ -441,7 +442,7 @@ out vec4 finalColor;
 void main() {
   float h = clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);
   int id = int(vSunId + 0.5);
-  finalColor = vec4(h, 0.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
+  finalColor = vec4(h, 1.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
   gl_FragDepth = 1.0 - h;
 }
 `;

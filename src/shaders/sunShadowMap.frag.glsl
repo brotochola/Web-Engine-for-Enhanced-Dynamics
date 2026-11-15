@@ -20,6 +20,7 @@ void main() {
   if (texture(uTexture, mix(vAtlasUV.xy, vAtlasUV.zw, vLocal)).a < 0.5) discard;
   float h = clamp(vSunZ / 512.0, 0.0, 1.0);
   int id = int(vSunId + 0.5);
-  finalColor = vec4(h, 0.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
+  // DX-CASTER: G, how much light the caster takes out (its opacity, which its row's vertex passes in vColor.g).
+  finalColor = vec4(h, clamp(vColor.g, 0.0, 1.0), float(id >> 8) / 255.0, float(id & 255) / 255.0);
   gl_FragDepth = 1.0 - h;
 }

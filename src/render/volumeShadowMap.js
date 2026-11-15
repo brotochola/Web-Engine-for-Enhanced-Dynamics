@@ -35,7 +35,7 @@ ${MAP_TEXEL_WGSL}
 // (sunShadowMap.js VOLUME_MAP_FRAGMENT).
 @fragment
 fn mainFragMap(in: VertexOut) -> WeedMapOut {
-  return weedMapTexel(in.vSunZ, in.vSunId);
+  return weedMapTexel(in.vSunZ, in.vSunId, 1.0);
 }
 `;
 
@@ -130,7 +130,7 @@ void main() {
   if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) discard;
   float h = clamp(vSunZ / ${LAMP_MAP_ZMAX}.0, 0.0, 1.0);
   int id = int(vSunId + 0.5);
-  finalColor = vec4(h, 0.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
+  finalColor = vec4(h, 1.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
   gl_FragDepth = 1.0 - h;
 }
 `;
@@ -171,7 +171,7 @@ ${MAP_TEXEL_WGSL}
 fn mainFragLamp(in: VertexOut) -> WeedMapOut {
   let tuv = in.vTileUvW.xy / in.vTileUvW.z;
   if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) { discard; }
-  return weedMapTexel(in.vSunZ, in.vSunId);
+  return weedMapTexel(in.vSunZ, in.vSunId, 1.0);
 }
 `;
 

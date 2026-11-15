@@ -60,10 +60,11 @@ bool ownTexel(vec4 m, float selfId) {
 uniform sampler2D uSunMap;
 uniform vec4 uSunMapK; // kx, ky (a px of height's landing shift on the floor), groundScaleY, the shadow's opacity
 
-// One tap of the sun's map: 1 lit, 0 under a higher caster that is not the pixel's own entity (selfId).
+// One tap of the sun's map: 1 lit, under a higher caster that is not the pixel's own entity (selfId) what its opacity
+// (G, DX-CASTER) leaves.
 float sunTap(vec2 uv, float above, float selfId) {
   vec4 m = texture2D(uSunMap, uv);
-  return m.r * 512.0 > above && !ownTexel(m, selfId) ? 0.0 : 1.0;
+  return m.r * 512.0 > above && !ownTexel(m, selfId) ? 1.0 - m.g : 1.0;
 }
 
 // How much of the sun reaches floor point p (x, y on the floor, z up): 1 lit, 1 - opacity in the shade, five taps. The
@@ -115,7 +116,7 @@ float lampOwner(float tag) {
 
 float lampTap(vec2 cell, vec2 uv, float h, vec2 toAtlas, float above, float selfId) {
   vec4 m = texture2D(uLampMap, (cell + clamp(uv, h, 1.0 - h)) * toAtlas);
-  return m.r * 512.0 > above && !ownTexel(m, selfId) ? 0.0 : 1.0;
+  return m.r * 512.0 > above && !ownTexel(m, selfId) ? 1.0 - m.g : 1.0;
 }
 
 // How much of the light at floor point l, height e reaches point p (x, y on the floor, z up): 1 lit, 0 in its shadow,

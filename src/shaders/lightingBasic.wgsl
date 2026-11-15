@@ -124,7 +124,8 @@ fn ownTexel(m: vec4<f32>, selfId: f32) -> bool {
 fn sunMapLit(c: vec2<i32>, size: vec2<i32>, above: f32, selfId: f32) -> f32 {
   let q = clamp(c, vec2<i32>(0), size - vec2<i32>(1));
   let m = textureLoad(uSunMap, q, 0);
-  return select(1.0, 0.0, m.r * 512.0 > above && !ownTexel(m, selfId));
+  // Under a higher caster not its own: what the caster's opacity (G, DX-CASTER) leaves.
+  return select(1.0, 1.0 - m.g, m.r * 512.0 > above && !ownTexel(m, selfId));
 }
 
 fn sunVisibility(p: vec3<f32>, selfId: f32) -> f32 {
@@ -166,7 +167,7 @@ fn lampOwner(tag: f32) -> f32 {
 
 fn lampTap(c: vec2<i32>, lo: vec2<i32>, hi: vec2<i32>, above: f32, selfId: f32) -> f32 {
   let m = textureLoad(uLampMap, clamp(c, lo, hi), 0);
-  return select(1.0, 0.0, m.r * 512.0 > above && !ownTexel(m, selfId));
+  return select(1.0, 1.0 - m.g, m.r * 512.0 > above && !ownTexel(m, selfId));
 }
 
 fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, selfId: f32) -> f32 {
