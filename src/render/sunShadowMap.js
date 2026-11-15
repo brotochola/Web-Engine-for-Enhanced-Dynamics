@@ -365,3 +365,34 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
     `@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n${FOOTPRINT_WGSL}`,
   );
 }
+
+/**
+ * DX-SHADOW3D (F6): VolumeShadowCaster's volumes in the sun's map: meshUvFill.vert.glsl, whose vertices already move by
+ * their height (the U column) times uSunShadow.xy, passing that height on in the map's units (uSunShadow.w: 1 /
+ * heightScaleY, the volumes' heights being screen px). Pixi sets uSunShadow.xy to the map's own landing shift.
+ * @param {string} source meshUvFill.vert.glsl
+ */
+export function volumeMapVertex(source) {
+  const decl = 'out vec2 vMeshUV;\n';
+  const pos = 'gl_Position = vec4(clip.xy, aInstDepth, 1.0);';
+  for (const mark of [decl, pos]) {
+    if (source.split(mark).length !== 2) throw new Error(`WeedJS: the sun map's volumes need the mesh vertex shader (${mark.trim()})`);
+  }
+  return source
+    .replace(decl, `${decl}out float vSunZ;\n`)
+    .replace(
+      pos,
+      `${pos}\n  vSunZ = (aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x)) * uSunShadow.w;`,
+    );
+}
+
+/** The volumes' fragment in the sun's map: the height, max blending (sunShadowMap.frag.glsl without the picture). */
+export const VOLUME_MAP_FRAGMENT = `#version 300 es
+precision highp float;
+in float vSunZ;
+out vec4 finalColor;
+void main() {
+  finalColor = vec4(clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0), 0.0, 0.0, 1.0);
+}
+`;
+

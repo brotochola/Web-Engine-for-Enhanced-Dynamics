@@ -67,6 +67,8 @@ import {
   sunMapTerms,
   sunMapVertex,
   sunMapWgsl,
+  VOLUME_MAP_FRAGMENT,
+  volumeMapVertex,
 } from '../render/sunShadowMap.js';
 import { sunShadowGpuProgram } from '../render/webgpu/instancedSpriteWgsl.js';
 import {
@@ -902,6 +904,8 @@ class PixiRenderer extends AbstractWorker {
     this._sunMapOn = false;
     // DX-SHADOW3D (F7): lighting.lampShadows 'map': a shadow map a lamp (lampShadowMap.js), tiles in an atlas.
     this._lampMapOn = false;
+    // DX-SHADOW3D (F6): the volumes' map programs, one a volumes' batch (made on first use).
+    this._volumeMapMeshes = [];
     this._lampTileSize = 256;
     this._lampTilesPerRow = 1;
     this._lampMapLights = 0;
@@ -6051,9 +6055,74 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._submitRender(rtOpts);
       this._gpuPassesThisFrame++;
     }
+    this._drawVolumesInSunMap(rtOpts);
     rtOpts.target = this.shadowRT;
     this._gpuPassesThisFrame++;
     return true;
+  }
+
+  /**
+   * DX-SHADOW3D (F6): each sun-projected volumes' layer drawn into the sun's map (WebGL for now): the same mesh rows, each
+   * vertex landing by the map's shift (sunMapTerms, per px of height; the volumes' heights are screen px, so over
+   * heightScaleY), its height out, max blending.
+   */
+  _drawVolumesInSunMap(rtOpts) {
+    if (this._useWebGpu || !this._engineShaders?.meshUvFillVert) return;
+    const t = this._sunMapTerms;
+    const hs = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
+    const g = this._groundScaleY || 1;
+    for (let i = 0; i < this._customLayerList.length; i++) {
+      const cl = this._customLayerList[i];
+      const batch = cl.sunProjected ? cl.uvFillBatch : null;
+      if (!batch || (batch.geometry.instanceCount | 0) <= 0) continue;
+      let entry = null;
+      for (let k = 0; k < this._volumeMapMeshes.length; k++) {
+        if (this._volumeMapMeshes[k].batch === batch) entry = this._volumeMapMeshes[k];
+      }
+      if (entry === null) {
+        const r = batch.shader.resources;
+        const terms = new Float32Array(4);
+        const shader = new PIXI.Shader({
+          glProgram: PIXI.GlProgram.from({
+            vertex: volumeMapVertex(this._engineShaders.meshUvFillVert),
+            fragment: VOLUME_MAP_FRAGMENT,
+            name: 'sun-map-volumes',
+          }),
+          resources: {
+            uTexture: r.uTexture,
+            uSampler: r.uSampler,
+            uTexLut: r.uTexLut,
+            uPoseTable: r.uPoseTable,
+            sunShadow: { uSunShadow: { value: terms, type: 'vec4<f32>' } },
+          },
+        });
+        const state = new PIXI.State();
+        state.blend = true;
+        state.blendMode = 'max';
+        state.depthTest = false;
+        state.depthMask = false;
+        state.culling = false;
+        const mesh = new PIXI.Mesh({ geometry: batch.geometry, shader, state, label: 'sun-map-volumes' });
+        mesh.blendMode = 'max';
+        const host = new PIXI.Container();
+        host.addChild(mesh);
+        entry = { batch, mesh, host, terms };
+        this._volumeMapMeshes.push(entry);
+      }
+      entry.mesh.geometry = batch.geometry;
+      const v = entry.terms;
+      // A vertex h screen px high is h / heightScaleY px of height: it lands (kx, ky) further per px of height, the
+      // floor's y drawn groundScaleY tall.
+      v[0] = -t[0] / hs;
+      v[1] = (-t[1] * g) / hs;
+      v[2] = 1;
+      v[3] = 1 / hs;
+      entry.mesh.shader.resources.sunShadow.update();
+      rtOpts.container = entry.host;
+      rtOpts.clear = false;
+      this._submitRender(rtOpts);
+      this._gpuPassesThisFrame++;
+    }
   }
 
   /**
@@ -9368,6 +9437,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let li = 0; li < this._customLayerList.length; li++) {
       const cl = this._customLayerList[li];
       if (!layerIsVisible(cl.layerId)) continue;
+      // DX-SHADOW3D (F6): in map mode the volumes cast into the sun's map (_drawVolumesInSunMap); their own layer, which
+      // darkens every light, shows nothing. Its rows are still packed: the map draws them.
+      if (cl.sunProjected && this._sunMapOn) {
+        if (cl.displaySprite) cl.displaySprite.renderable = false;
+        if (cl.uvFillBatch) cl.uvFillBatch.mesh.renderable = false;
+      }
       this._uploadSharedPictures(cl);
       const renderToRT = !!cl.rt;
       let densityMesh = null;
