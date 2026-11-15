@@ -1070,6 +1070,11 @@ export class InstancedSpriteBatch {
     if (this.edgeMesh !== null) this.edgeMesh.visible = on;
   }
 
+  /** The batch draws nothing this frame (its mesh and, with pixel depth, its edge pass hidden). */
+  hide() {
+    this._show(false);
+  }
+
   /**
    * DX-DEPTH (F5 v2): the edge pass's twin of one of this batch's colour programs (the plain, the indexed or the by-row
    * one), or null without pixel depth.

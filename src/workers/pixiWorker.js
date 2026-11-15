@@ -1962,7 +1962,7 @@ class PixiRenderer extends AbstractWorker {
     const n = count | 0;
     if (n <= 0 || !src) {
       if (batch.geometry) batch.geometry.instanceCount = 0;
-      if (batch.mesh) batch.mesh.visible = false;
+      if (batch.mesh) batch.hide();
       return 0;
     }
     const cap = batch.capacity | 0;
@@ -1970,7 +1970,7 @@ class PixiRenderer extends AbstractWorker {
     const len = keep * (floats | 0);
     if (len > batch.data.length) {
       if (batch.geometry) batch.geometry.instanceCount = 0;
-      if (batch.mesh) batch.mesh.visible = false;
+      if (batch.mesh) batch.hide();
       return 0;
     }
     batch.copyIn(batch.data, src, len);
@@ -1993,7 +1993,7 @@ class PixiRenderer extends AbstractWorker {
       this.canvasHeight / (this._renderZoom || 1),
     );
     if (!layerIsVisible(Layer.entitiesId)) {
-      this.entitiesBatch.mesh.visible = false;
+      this.entitiesBatch.hide();
       this.visibleEntityCount = 0;
       this.visibleParticleCount = 0;
       const glowId = Layer.get('lightGlows')?.id;
@@ -2010,7 +2010,7 @@ class PixiRenderer extends AbstractWorker {
     // frame). Without a sync there is no handshake, and every frame reads the queue.
     if (this._newQueueThisFrame === 0 && this.renderQueueSync) {
       if (this.lastReadFrame <= 0) {
-        this.entitiesBatch.mesh.visible = false;
+        this.entitiesBatch.hide();
         if (this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
         this.visibleEntityCount = 0;
       }
@@ -2053,14 +2053,14 @@ class PixiRenderer extends AbstractWorker {
           );
         } else if (packedN === 0) {
           // No sprite rows: pre-render's pack wrote none, so it split none. Nothing to draw.
-          batch.mesh.visible = false;
+          batch.hide();
           this.visibleEntityCount = 0;
         } else {
           // Pre-render splits whenever this batch is split (the same atlas filter decides both, close-out group B).
           this.visibleEntityCount = this._refusePackedFrame('15-float rows for the split entity batch');
         }
       } else {
-        this.entitiesBatch.mesh.visible = false;
+        this.entitiesBatch.hide();
         this.visibleEntityCount = 0;
       }
       this.visibleParticleCount = gpu.header[GPU_HDR_PARTICLE] | 0;
@@ -2190,7 +2190,7 @@ class PixiRenderer extends AbstractWorker {
       this._refusedFrameWarned = true;
       console.error(`[PIXI WORKER] ${reason}: the entities are not drawn this frame`);
     }
-    if (this.entitiesBatch) this.entitiesBatch.mesh.visible = false;
+    if (this.entitiesBatch) this.entitiesBatch.hide();
     return 0;
   }
 
