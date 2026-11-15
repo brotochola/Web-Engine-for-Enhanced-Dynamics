@@ -18,8 +18,21 @@
 
 import { CASTER_ID_GLSL, CASTER_ID_WGSL, MAP_TEXEL_WGSL } from './sunShadowMap.js';
 
-/** The highest height a tile's 8 bits span, as the sun map's (2 px a step). */
+/** The highest height a tile's 8 bits spanned, as the sun map's (2 px a step); N-211: the volumes' fragment scale. */
 export const LAMP_MAP_ZMAX = 512;
+
+/**
+ * N-211: what a lamps' map texel keeps of a caster point: its place along its lamp's ray, 1 / (1 + |E - z| / E) (1 at the
+ * lamp's height, 1/2 on the floor, falling away from the lamp's height on both halves), in 8 bits. The point nearest the
+ * lamp on a ray keeps the most; a point is in a caster's shade when its texel holds more than its own. Near the lamp's
+ * height the rays are nearly level, where heights in 2 px steps could not tell a person from the wall behind them; there
+ * this spends its steps (a 20 px lamp: 0.13 px a step around its height).
+ * @param {number} z the point's height
+ * @param {number} elevation the lamp's height
+ */
+export function lampRayDepth(z, elevation) {
+  return 1 / (1 + Math.abs(elevation - z) / elevation);
+}
 /**
  * DX-LAMPPANO: the most a vertex's landing is drawn stretched (w at least its inverse), which also spans the depth that
  * keeps the point nearest the lamp's height: points nearer to it than 1/64 of its height tie.
@@ -191,7 +204,7 @@ fn lampPanoUv(v: vec2<f32>, reach: f32) -> vec2<f32> {
 `;
 
 // DX-GBUF: the caster's entity goes on with its height (sunShadowMap.js CASTER_ID_GLSL), kept by the map's depth test.
-const LAMP_DECL_GLSL = `out float vSunZ;\nout vec3 vTileUvW;\nflat out float vSunId;\nuniform sampler2D uLampTiles;\n${CASTER_ID_GLSL}${LAMP_PANO_GLSL}`;
+const LAMP_DECL_GLSL = `out float vSunZ;\nout vec3 vTileUvW;\nflat out float vSunId;\nflat out float vLampE;\nuniform sampler2D uLampTiles;\n${CASTER_ID_GLSL}${LAMP_PANO_GLSL}`;
 
 /**
  * DX-LAMPPANO: a caster's three rows in a half (GLSL and WGSL alike): from `zAll`, the height its picture or column
@@ -256,6 +269,7 @@ const LAMP_OUT_GLSL = `  vec2 tuv = lampPanoUv(land - lamp.xy, lamp.w);
   gl_Position = vec4(clip.xy * w, ${lampClipZGlsl('w')}, w);
   if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   vTileUvW = vec3(tuv * w, w);
+  vLampE = lamp.z;
   vColor = vec4(1.0, castOpacity, 1.0, 1.0);
   vLocal = lampQuad;
   vWorld = aInstXY;
@@ -276,7 +290,7 @@ function lampHeadGlsl(source, what) {
   return source
     .slice(0, source.indexOf(after))
     .replace(decl, `${decl}${LAMP_DECL_GLSL}`)
-    .replace(main, `${main}  vSunZ = 0.0;\n  vTileUvW = vec3(-1.0, -1.0, 1.0);\n  vSunId = casterEntityId(aInstTintBits);\n`);
+    .replace(main, `${main}  vSunZ = 0.0;\n  vTileUvW = vec3(-1.0, -1.0, 1.0);\n  vSunId = casterEntityId(aInstTintBits);\n  vLampE = 1.0;\n`);
 }
 
 /**
@@ -378,11 +392,14 @@ ${LAMP_OUT_GLSL}`;
 export function lampMapFragment(sunMapFrag) {
   const varying = 'in float vSunZ;\n';
   const main = 'void main() {\n';
-  for (const mark of [varying, main]) {
+  // N-211: the texel keeps the point's place along its lamp's ray (lampRayDepth), not its height.
+  const height = '  float h = clamp(vSunZ / 512.0, 0.0, 1.0);\n';
+  for (const mark of [varying, main, height]) {
     if (sunMapFrag.split(mark).length !== 2) throw new Error(`WeedJS: the lamps' shadow map needs the sun map's fragment (${mark.trim()})`);
   }
   return sunMapFrag
-    .replace(varying, `${varying}in vec3 vTileUvW;\n`)
+    .replace(varying, `${varying}in vec3 vTileUvW;\nflat in float vLampE;\n`)
+    .replace(height, '  float h = clamp(1.0 / (1.0 + abs(vLampE - vSunZ) / max(vLampE, 1e-3)), 0.0, 1.0);\n')
     .replace(
       main,
       `${main}  vec2 tuv = vTileUvW.xy / vTileUvW.z;\n  if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) discard;\n`,
@@ -400,7 +417,8 @@ fn mainFragLamp(in: VertexOut) -> @location(0) vec4<f32> {
   if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) { discard; }
   let t = textureSampleLevel(uTexture, uSampler, mix(in.vAtlasUV.xy, in.vAtlasUV.zw, in.vLocal), 0.0);
   if (t.a < 0.5) { discard; }
-  return weedMapTexel(in.vSunZ, in.vSunId, in.vColor.g);
+  // N-211: the point's place along its lamp's ray (lampRayDepth), in the texel's 8 bits as weedMapTexel scales a height.
+  return weedMapTexel(${LAMP_MAP_ZMAX}.0 / (1.0 + abs(in.vLampE - in.vSunZ) / max(in.vLampE, 1e-3)), in.vSunId, in.vColor.g);
 }
 `;
 
@@ -425,6 +443,7 @@ const LAMP_OUT_WGSL = `  let tuv = lampPanoUv(land - lamp.xy, lamp.w);
     out.position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   }
   out.vTileUvW = vec3<f32>(tuv * w, w);
+  out.vLampE = lamp.z;
   out.vColor = vec4<f32>(1.0, castOpacity, 1.0, 1.0);
   out.vLocal = lampQuad;
   out.vWorld = aInstXY;
@@ -451,7 +470,7 @@ function lampPartsWgsl(source, what) {
   if (source.split(body).length !== 2) throw new Error(`WeedJS: ${what} needs the sprite shadow WGSL (mainVert)`);
   const head = source
     .slice(0, from)
-    .replace(struct, `${struct}  @location(6) vSunZ: f32,\n  @location(7) vTileUvW: vec3<f32>,\n  @location(8) @interpolate(flat) vSunId: f32,\n`)
+    .replace(struct, `${struct}  @location(6) vSunZ: f32,\n  @location(7) vTileUvW: vec3<f32>,\n  @location(8) @interpolate(flat) vSunId: f32,\n  @location(9) @interpolate(flat) vLampE: f32,\n`)
     .replace(body, `${body}  out.vSunId = casterEntityId(aInstTintBits);\n`)
     .replace(binding, `${binding}// DX-SHADOW3D (F7): the lamps' tiles: a lamp's floor point, height and reach (lampShadowMap.js).\n@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n${LAMP_PANO_WGSL}`);
   return { head, rest: source.slice(to + end.length) };

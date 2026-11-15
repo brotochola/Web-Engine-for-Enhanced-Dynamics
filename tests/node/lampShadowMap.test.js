@@ -93,3 +93,14 @@ test('N-196: lampShadowTile auto makes a tile as fine as the widest lamp and the
   assert.equal(size, 256);
   assert.ok(layout.height <= 4096 && layout.width * layout.height <= LAMP_MAP_MAX_TEXELS);
 });
+
+test('N-211: a texel keeps the place along the ray, finest around the lamp\'s height, nearer the lamp more', async () => {
+  const { lampRayDepth } = await import('../../src/render/lampShadowMap.js');
+  close(lampRayDepth(20, 20), 1);
+  close(lampRayDepth(0, 20), 0.5, 1e-12);
+  // Nearer the lamp's height on both halves: more (a caster between a point and its lamp holds more than the point).
+  assert.ok(lampRayDepth(15, 20) > lampRayDepth(10, 20) && lampRayDepth(25, 20) > lampRayDepth(30, 20));
+  // The bench's person against the barn's wall under a 20 px lamp: wall 26 px up, the person's point on that ray 24.2 px:
+  // in heights under a 2 px step apart, here 14 of the texel's 255 steps.
+  assert.ok((lampRayDepth(24.2, 20) - lampRayDepth(26, 20)) * 255 > 10);
+});

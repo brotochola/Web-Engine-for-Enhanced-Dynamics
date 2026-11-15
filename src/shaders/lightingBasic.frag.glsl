@@ -149,13 +149,11 @@ vec2 lampPanoUv(vec2 v, float reach) {
   return vec2(0.5) + (r > 1e-4 ? v * (0.5 * c / r) : vec2(0.0));
 }
 
-// One tap: on the floor's half a point is shaded under a caster higher than `bound`, on the ceiling's (upper) under one
-// lower than it (an empty texel, 0, holds none).
-float lampTap(vec2 cell, vec2 uv, float h, vec2 toAtlas, float bound, bool upper, float selfId) {
+// One tap: a point is shaded under a caster nearer the lamp on its ray than `bound` (N-211: a texel keeps the place along
+// the ray, lampShadowMap.js lampRayDepth: more is nearer; an empty texel, 0, holds none).
+float lampTap(vec2 cell, vec2 uv, float h, vec2 toAtlas, float bound, float selfId) {
   vec4 m = textureLod(uLampMap, (cell + clamp(uv, h, 1.0 - h)) * toAtlas, 0.0);
-  float z = m.r * 512.0;
-  bool hit = upper ? z > 0.0 && z < bound : z > bound;
-  return hit && !ownTexel(m, selfId) ? 1.0 - m.g : 1.0;
+  return m.r > bound && !ownTexel(m, selfId) ? 1.0 - m.g : 1.0;
 }
 
 // How much of the light at floor point l, height e reaches point p (x, y on the floor, z up): 1 lit, 0 in its shadow,
@@ -179,18 +177,19 @@ float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float 
   // one towards lit (on the floor's half over its height, on the ceiling's under it): 1 px and 4 floor px along its ray
   // in height. A fixed 4 px erased under a low lamp, whose rays are nearly level, the shade of anything near the point
   // (a person's on the wall behind them: 3 px of height between them on the ray).
-  float bias = selfId > 0.5 ? 2.0 : 1.0 + 4.0 * abs(e - p.z) / max(sqrt(dot(fromLamp, fromLamp)), 1.0);
-  float bound = upper ? p.z - bias : (p.z > 0.0 ? p.z + bias : 0.0);
-  float lit = lampTap(cell, uv, h, toAtlas, bound, upper, selfId);
+  // N-211: against the point's own place along the ray (1 / (1 + |E - z| / E)), plus the texels' step and a half for a
+  // pixel of an entity (its own texels skipped) or four steps for one of no entity.
+  float bound = 1.0 / (1.0 + abs(e - p.z) / e) + (p.z > 0.0 ? (selfId > 0.5 ? 1.5 : 4.0) : 0.5) / 255.0;
+  float lit = lampTap(cell, uv, h, toAtlas, bound, selfId);
 // #if PIXELART
   // DX-PIXELSHADOW: one tap at the art pixel's centre, crisp on the art's grid.
   return lit;
 // #endif PIXELART
 // #if !PIXELART
-  lit += lampTap(cell, uv + vec2(2.0 * h, 0.0), h, toAtlas, bound, upper, selfId);
-  lit += lampTap(cell, uv - vec2(2.0 * h, 0.0), h, toAtlas, bound, upper, selfId);
-  lit += lampTap(cell, uv + vec2(0.0, 2.0 * h), h, toAtlas, bound, upper, selfId);
-  lit += lampTap(cell, uv - vec2(0.0, 2.0 * h), h, toAtlas, bound, upper, selfId);
+  lit += lampTap(cell, uv + vec2(2.0 * h, 0.0), h, toAtlas, bound, selfId);
+  lit += lampTap(cell, uv - vec2(2.0 * h, 0.0), h, toAtlas, bound, selfId);
+  lit += lampTap(cell, uv + vec2(0.0, 2.0 * h), h, toAtlas, bound, selfId);
+  lit += lampTap(cell, uv - vec2(0.0, 2.0 * h), h, toAtlas, bound, selfId);
   return lit * 0.2;
 // #endif !PIXELART
 }
@@ -208,15 +207,15 @@ float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, float intensity) {
   vec2 cell = vec2(mod(tile, uLampAtlas.x) * 2.0, floor(tile / uLampAtlas.x));
   vec2 toAtlas = vec2(uLampAtlas.y) / uLampAtlas.zw;
   float h = 0.5 / uLampAtlas.y;
-  float lit = lampTap(cell, uv, h, toAtlas, 0.0, false, 0.0);
+  float lit = lampTap(cell, uv, h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
 // #if PIXELART
   return lit;
 // #endif PIXELART
 // #if !PIXELART
-  lit += lampTap(cell, uv + vec2(2.0 * h, 0.0), h, toAtlas, 0.0, false, 0.0);
-  lit += lampTap(cell, uv - vec2(2.0 * h, 0.0), h, toAtlas, 0.0, false, 0.0);
-  lit += lampTap(cell, uv + vec2(0.0, 2.0 * h), h, toAtlas, 0.0, false, 0.0);
-  lit += lampTap(cell, uv - vec2(0.0, 2.0 * h), h, toAtlas, 0.0, false, 0.0);
+  lit += lampTap(cell, uv + vec2(2.0 * h, 0.0), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
+  lit += lampTap(cell, uv - vec2(2.0 * h, 0.0), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
+  lit += lampTap(cell, uv + vec2(0.0, 2.0 * h), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
+  lit += lampTap(cell, uv - vec2(0.0, 2.0 * h), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
   return lit * 0.2;
 // #endif !PIXELART
 }

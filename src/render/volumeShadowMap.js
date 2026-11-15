@@ -74,6 +74,7 @@ const LAMP_GLSL = `
 ${VOLUME_ID_GLSL}
   vSunZ = 0.0;
   vTileUvW = vec3(-1.0, -1.0, 1.0);
+  vLampE = 1.0;
   int lampTile = int(uLampVolume.x + 0.5);
   vec4 lamp = texelFetch(uLampTiles, ivec2(max(lampTile, 0), 0), 0);
   float lampZ = max(aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x), 0.0) * uSunShadow.w;
@@ -97,7 +98,8 @@ ${VOLUME_ID_GLSL}
   vec3 lampClip = mvp * vec3(lampPx, 1.0);
   gl_Position = vec4(lampClip.xy * lampW, ${lampClipZGlsl('lampW')}, lampW);
   vTileUvW = vec3(lampUv * lampW, lampW);
-  vSunZ = lampZ;`;
+  vSunZ = lampZ;
+  vLampE = lamp.z;`;
 
 /**
  * The lamps' map's vertex shader for the volumes (WebGL): meshUvFill.vert.glsl landing each vertex towards the lamp of
@@ -110,7 +112,7 @@ ${VOLUME_ID_GLSL}
 export function volumeLampVertex(source) {
   const what = "the lamps' map's volumes";
   const decl =
-    'out float vSunZ;\nout vec3 vTileUvW;\nflat out float vSunId;\n' +
+    'out float vSunZ;\nout vec3 vTileUvW;\nflat out float vSunId;\nflat out float vLampE;\n' +
     "// DX-SHADOW3D (F7): uLampVolume: this draw's tile, tiles a row, a tile's texels, 1 / groundScaleY; uLampOwner.x: the\n" +
     "// tile's lamp's entity (-1 none); uLampTiles: the tiles' lamps.\n" +
     'uniform vec4 uLampVolume;\nuniform vec4 uLampOwner;\nuniform sampler2D uLampTiles;\n' + LAMP_PANO_GLSL;
@@ -127,11 +129,13 @@ precision highp float;
 in float vSunZ;
 in vec3 vTileUvW;
 flat in float vSunId;
+flat in float vLampE;
 out vec4 finalColor;
 void main() {
   vec2 tuv = vTileUvW.xy / vTileUvW.z;
   if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) discard;
-  float h = clamp(vSunZ / ${LAMP_MAP_ZMAX}.0, 0.0, 1.0);
+  // N-211: the point's place along its lamp's ray (lampShadowMap.js lampRayDepth), not its height.
+  float h = clamp(1.0 / (1.0 + abs(vLampE - vSunZ) / max(vLampE, 1e-3)), 0.0, 1.0);
   int id = int(vSunId + 0.5);
   finalColor = vec4(h, 1.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
 }
@@ -164,6 +168,7 @@ ${VOLUME_ID_WGSL}  out.vTileUvW = vec3<f32>(-1.0, -1.0, 1.0);
   out.position = vec4<f32>(lampClip.xy * lampW, ${lampClipZWgsl('lampW')}, lampW);
   out.vTileUvW = vec3<f32>(lampUv * lampW, lampW);
   out.vSunZ = lampZ;
+  out.vLampE = lamp.z;
 `;
 
 const LAMP_FRAGMENT_WGSL = `
@@ -174,7 +179,8 @@ ${MAP_TEXEL_WGSL}
 fn mainFragLamp(in: VertexOut) -> @location(0) vec4<f32> {
   let tuv = in.vTileUvW.xy / in.vTileUvW.z;
   if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) { discard; }
-  return weedMapTexel(in.vSunZ, in.vSunId, 1.0);
+  // N-211: the point's place along its lamp's ray (lampRayDepth).
+  return weedMapTexel(${LAMP_MAP_ZMAX}.0 / (1.0 + abs(in.vLampE - in.vSunZ) / max(in.vLampE, 1e-3)), in.vSunId, 1.0);
 }
 `;
 
@@ -206,7 +212,7 @@ export function volumeLampWgsl(source) {
   out = after(
     out,
     '  @location(7) vMeshUV: vec2<f32>,\n',
-    '  @location(8) vSunZ: f32,\n  @location(9) vTileUvW: vec3<f32>,\n  @location(10) @interpolate(flat) vSunId: f32,\n',
+    '  @location(8) vSunZ: f32,\n  @location(9) vTileUvW: vec3<f32>,\n  @location(10) @interpolate(flat) vSunId: f32,\n  @location(11) @interpolate(flat) vLampE: f32,\n',
     what,
   );
   out = after(out, '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n', LAMP_WGSL, what);

@@ -193,13 +193,10 @@ fn lampPanoUv(v: vec2<f32>, reach: f32) -> vec2<f32> {
   return vec2<f32>(0.5) + off;
 }
 
-// One tap: on the floor's half a point is shaded under a caster higher than `bound`, on the ceiling's (upper) under one
-// lower than it (an empty texel, 0, holds none).
-fn lampTap(c: vec2<i32>, lo: vec2<i32>, hi: vec2<i32>, bound: f32, upper: bool, selfId: f32) -> f32 {
+// One tap: a point is shaded under a caster nearer the lamp on its ray than `bound` (N-211: lightingBasic.frag.glsl).
+fn lampTap(c: vec2<i32>, lo: vec2<i32>, hi: vec2<i32>, bound: f32, selfId: f32) -> f32 {
   let m = textureLoad(uLampMap, clamp(c, lo, hi), 0);
-  let z = m.r * 512.0;
-  let hit = select(z > bound, z > 0.0 && z < bound, upper);
-  return select(1.0, 1.0 - m.g, hit && !ownTexel(m, selfId));
+  return select(1.0, 1.0 - m.g, m.r > bound && !ownTexel(m, selfId));
 }
 
 fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, selfId: f32) -> f32 {
@@ -223,18 +220,18 @@ fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, 
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
   // On the ceiling's half the bias goes under the point (towards lit there); 1 px and 4 floor px along the ray in height
   // (lightingBasic.frag.glsl says why).
-  let bias = select(1.0 + 4.0 * abs(e - p.z) / max(sqrt(dot(fromLamp, fromLamp)), 1.0), 2.0, selfId > 0.5);
-  let bound = select(select(0.0, p.z + bias, p.z > 0.0), p.z - bias, upper);
-  var lit = lampTap(c, lo, hi, bound, upper, selfId);
+  // N-211: against the point's own place along the ray (lightingBasic.frag.glsl says how).
+  let bound = 1.0 / (1.0 + abs(e - p.z) / e) + select(0.5, select(4.0, 1.5, selfId > 0.5), p.z > 0.0) / 255.0;
+  var lit = lampTap(c, lo, hi, bound, selfId);
 // #if PIXELART
   // DX-PIXELSHADOW: one tap at the art pixel's centre, crisp on the art's grid.
   return lit;
 // #endif PIXELART
 // #if !PIXELART
-  lit += lampTap(c + vec2<i32>(1, 0), lo, hi, bound, upper, selfId);
-  lit += lampTap(c - vec2<i32>(1, 0), lo, hi, bound, upper, selfId);
-  lit += lampTap(c + vec2<i32>(0, 1), lo, hi, bound, upper, selfId);
-  lit += lampTap(c - vec2<i32>(0, 1), lo, hi, bound, upper, selfId);
+  lit += lampTap(c + vec2<i32>(1, 0), lo, hi, bound, selfId);
+  lit += lampTap(c - vec2<i32>(1, 0), lo, hi, bound, selfId);
+  lit += lampTap(c + vec2<i32>(0, 1), lo, hi, bound, selfId);
+  lit += lampTap(c - vec2<i32>(0, 1), lo, hi, bound, selfId);
   return lit * 0.2;
 // #endif !PIXELART
 }
@@ -254,15 +251,15 @@ fn lampVisibilityFloor(p: vec2<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: 
   let lo = vec2<i32>((tile % perRow) * 2, tile / perRow) * size;
   let hi = lo + vec2<i32>(size - 1);
   let c = lo + vec2<i32>(floor(uv * a.y));
-  var lit = lampTap(c, lo, hi, 0.0, false, 0.0);
+  var lit = lampTap(c, lo, hi, 0.5 + 0.5 / 255.0, 0.0);
 // #if PIXELART
   return lit;
 // #endif PIXELART
 // #if !PIXELART
-  lit += lampTap(c + vec2<i32>(1, 0), lo, hi, 0.0, false, 0.0);
-  lit += lampTap(c - vec2<i32>(1, 0), lo, hi, 0.0, false, 0.0);
-  lit += lampTap(c + vec2<i32>(0, 1), lo, hi, 0.0, false, 0.0);
-  lit += lampTap(c - vec2<i32>(0, 1), lo, hi, 0.0, false, 0.0);
+  lit += lampTap(c + vec2<i32>(1, 0), lo, hi, 0.5 + 0.5 / 255.0, 0.0);
+  lit += lampTap(c - vec2<i32>(1, 0), lo, hi, 0.5 + 0.5 / 255.0, 0.0);
+  lit += lampTap(c + vec2<i32>(0, 1), lo, hi, 0.5 + 0.5 / 255.0, 0.0);
+  lit += lampTap(c - vec2<i32>(0, 1), lo, hi, 0.5 + 0.5 / 255.0, 0.0);
   return lit * 0.2;
 // #endif !PIXELART
 }
