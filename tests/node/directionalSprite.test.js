@@ -251,7 +251,7 @@ test('setAnimation on a directional entity: a group plays in its direction, a pl
   }
   const list = collectComponents(Crowd);
   assert.equal(list.indexOf(SpriteRenderer), list.indexOf(DirectionalSprite) - 1);
-  assert.ok(list.indexOf(SpriteRenderer) < 8, 'among the first eight (gameObject.js COMPONENT_FIELDS)');
+  assert.ok(list.indexOf(SpriteRenderer) < 12, 'among the fast slots (gameObject.js COMPONENT_FIELDS)');
   const w = Object.create(Walker.prototype);
   w.index = 0;
   w._hasComponents = { SpriteRenderer: true, DirectionalSprite: true };

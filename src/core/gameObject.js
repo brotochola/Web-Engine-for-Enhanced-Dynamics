@@ -97,12 +97,13 @@ function warnNoSpriteOnce(className, method) {
 }
 
 /**
- * E-164: a class's first COMPONENT_FIELDS components live in fields of the instance (_c0 … _c7, declared in the
+ * E-164: a class's first COMPONENT_FIELDS components live in fields of the instance (_c0 … _c11, declared in the
  * constructor), so `this.rigidBody` is one load from the entity, not three (the entity, its slot array, the array's
  * elements). With 20 000 entities none of those is in cache: waterAndBoxesScene's getter read in about 23 ns. Each
- * getter reads its field by name; a class's further components keep E-139's slot array.
+ * getter reads its field by name; a class's further components keep E-139's slot array. Twelve, not eight: Predator's
+ * people have eleven (a class only declares the fields it has, so a smaller one carries nothing more).
  */
-const COMPONENT_FIELDS = 8;
+const COMPONENT_FIELDS = 12;
 const FIELD_GETTERS = [
   function () { const c = this._c0; return c !== null ? c : this._makeComponent(0); },
   function () { const c = this._c1; return c !== null ? c : this._makeComponent(1); },
@@ -112,6 +113,10 @@ const FIELD_GETTERS = [
   function () { const c = this._c5; return c !== null ? c : this._makeComponent(5); },
   function () { const c = this._c6; return c !== null ? c : this._makeComponent(6); },
   function () { const c = this._c7; return c !== null ? c : this._makeComponent(7); },
+  function () { const c = this._c8; return c !== null ? c : this._makeComponent(8); },
+  function () { const c = this._c9; return c !== null ? c : this._makeComponent(9); },
+  function () { const c = this._c10; return c !== null ? c : this._makeComponent(10); },
+  function () { const c = this._c11; return c !== null ? c : this._makeComponent(11); },
 ];
 FIELD_GETTERS.forEach(markEngineAccessor);
 const NO_COMPONENT_SLOTS = [];
@@ -709,6 +714,10 @@ export class GameObject {
     if (fields > 5) this._c5 = null;
     if (fields > 6) this._c6 = null;
     if (fields > 7) this._c7 = null;
+    if (fields > 8) this._c8 = null;
+    if (fields > 9) this._c9 = null;
+    if (fields > 10) this._c10 = null;
+    if (fields > 11) this._c11 = null;
     this.bindToEntitySlot({ page: options.page === true, lazy: options.lazy === true });
   }
 
@@ -768,7 +777,7 @@ export class GameObject {
     this._neighborReaderMarked = page;
 
     Ctor._ensureComponentAccessors();
-    // E-164: this entity's component instances, made on first use: the first COMPONENT_FIELDS in _c0 … _c7 (only
+    // E-164: this entity's component instances, made on first use: the first COMPONENT_FIELDS in _c0 … _c11 (only
     // the fields the constructor declared for this class), the rest in E-139's slot array.
     const slots = Ctor._componentSlotCount;
     if (slots > 0) this._c0 = null;
@@ -779,6 +788,10 @@ export class GameObject {
     if (slots > 5) this._c5 = null;
     if (slots > 6) this._c6 = null;
     if (slots > 7) this._c7 = null;
+    if (slots > 8) this._c8 = null;
+    if (slots > 9) this._c9 = null;
+    if (slots > 10) this._c10 = null;
+    if (slots > 11) this._c11 = null;
     // E-167: only a class with more components than fields has the slot array. The page's instances have it too:
     // they are frozen (Scene._createPageInstances), so a component made on their first read is kept there.
     if (slots > COMPONENT_FIELDS || page) this._components = new Array(slots).fill(null);
@@ -812,7 +825,11 @@ export class GameObject {
       case 4: this._c4 = instance; break;
       case 5: this._c5 = instance; break;
       case 6: this._c6 = instance; break;
-      default: this._c7 = instance; break;
+      case 7: this._c7 = instance; break;
+      case 8: this._c8 = instance; break;
+      case 9: this._c9 = instance; break;
+      case 10: this._c10 = instance; break;
+      default: this._c11 = instance; break;
     }
     return instance;
   }
