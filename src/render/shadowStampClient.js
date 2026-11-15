@@ -19,6 +19,9 @@ export const STAMP_SLOTS = [
   'nearDist', 'nearSlot', 'nearCount',
   // E-160: the casters' x and y packed in the grid's order, each caster's cell, the candidates' double distances.
   'packedX', 'packedY', 'cellOf', 'dist64',
+  // E-331: the caster scan's x, y and bounds for this call's rows (pack_casters_keyed_scan_xy), 0 when the rows bring
+  // their own.
+  'scanX', 'scanY', 'scanBounds',
 ];
 if (STAMP_SLOTS.length > STAMP_TABLE_SLOTS) throw new Error('shadowStamp: the column table outgrew its region');
 
@@ -54,6 +57,9 @@ const PACKED_X = 28;
 const PACKED_Y = 29;
 const CELL_OF = 30;
 const DIST64 = 31;
+const SCAN_X = 32;
+const SCAN_Y = 33;
+const SCAN_BOUNDS = 34;
 
 /**
  * Bind the kernel to the render-queue memory.
@@ -129,6 +135,16 @@ export function writeStampLights(table, lights, count) {
 }
 
 /**
+ * E-331: where pre-render's caster scan (gpuPackClient.js packKeyedCastersScanWasm) writes the casters' x, y and bounds
+ * for the stamp: the stamp regions' byte offsets and how many casters they hold.
+ * @returns {{ xByte: number, yByte: number, boundsByte: number, maxSun: number }}
+ */
+export function stampScanTarget(b) {
+  const L = b.layout;
+  return { xByte: L.scanXByte | 0, yByte: L.scanYByte | 0, boundsByte: L.scanBoundsByte | 0, maxSun: b.maxSun | 0 };
+}
+
+/**
  * stampLightRange(spec) through the kernel. The lights go into the light table first (writeStampLights).
  * @returns {number} the stamp cursor; throws when the kernel cannot take the call
  */
@@ -184,6 +200,12 @@ export function stampLightRangeWasm(b, spec) {
   t[STAMP_CAP] = spec.stampCap | 0;
   t[STAMP_BASE] = base;
   t[STAMP_LIGHT_IDX] = lightIdx ? lightIdx.byteOffset : 0;
+  // E-331: the caster scan wrote these rows' x, y and bounds this frame (stampScanTarget's regions): the grid takes them
+  // there and skips its pass over the rows. The kernel also checks the bounds' row count against nSun.
+  const scan = spec.scanXY === true;
+  t[SCAN_X] = scan ? L.scanXByte : 0;
+  t[SCAN_Y] = scan ? L.scanYByte : 0;
+  t[SCAN_BOUNDS] = scan ? L.scanBoundsByte : 0;
 
   writeStampLights(b.lights, spec.lights, capL);
   return b.stampRange(b.tableByte);

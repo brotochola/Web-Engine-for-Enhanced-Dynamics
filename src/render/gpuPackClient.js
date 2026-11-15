@@ -34,6 +34,7 @@ export async function bindGpuPack(memory, layout) {
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
     'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed', 'pack_casters_keyed_scan',
+    'pack_casters_keyed_scan_xy',
     'pack_sprites_keyed_rows',
   ]);
   return {
@@ -54,6 +55,8 @@ export async function bindGpuPack(memory, layout) {
     castersKeyed: k.pack_casters_keyed,
     // E-192: the same rows for the casters it finds in the queue itself.
     castersKeyedScan: k.pack_casters_keyed_scan,
+    // E-331: the same, also writing the casters' x, y and bounds for the shadow stamp.
+    castersKeyedScanXy: k.pack_casters_keyed_scan_xy,
     // Close-out group B: packInstancedRows' slow path (a type filter, screen space, pixel snap), its parameters 16
     // bytes into the results region (GENERAL_PARAMS doubles).
     spritesGeneral: k.pack_sprites_general,
@@ -373,10 +376,12 @@ export function packKeyedCastersWasm(b, q, indices, count, dst, keyBase, capacit
  * E-192: packKeyedCastersWasm's rows for the casters of the queue's first `count` rows (shadowH above 0, not a glow: the
  * test of compactShadowCasterIndices, in the queue's order), at most `capacity`, without a list of them. -1 when the call
  * is not one the kernel takes or a caster has no key below `keyBase`: the caller lists the casters and packs the full
- * rows.
+ * rows. E-331: with `scan` (shadowStampClient.js stampScanTarget, in the same memory) the kernel also writes the rows'
+ * x and y and their bounds there for the shadow stamp; capacity must not pass what it holds.
+ * @param {{ xByte: number, yByte: number, boundsByte: number, maxSun: number }|null} [scan]
  * @returns {number} the rows written, or -1
  */
-export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity) {
+export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity, scan = null) {
   if (!b || !b.castersKeyedScan || !q || !dst) return -1;
   const key = q.key;
   if (!key || key.buffer !== b.buffer || dst.buffer !== b.buffer || !q.shadowH || q.shadowH.buffer !== b.buffer) return -1;
@@ -384,8 +389,12 @@ export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity) {
   if (type && type.buffer !== b.buffer) return -1;
   const table = tableFor(b, q);
   if (table < 0) return -1;
-  const out = b.castersKeyedScan(table, key.byteOffset, type ? type.byteOffset : 0, count >>> 0, capacity >>> 0,
-    dst.byteOffset, keyBase >>> 0);
+  if (scan !== null && (capacity >>> 0) > (scan.maxSun >>> 0)) throw new Error('gpuPack: the caster scan outruns the stamp\'s x and y');
+  const out = scan !== null
+    ? b.castersKeyedScanXy(table, key.byteOffset, type ? type.byteOffset : 0, count >>> 0, capacity >>> 0,
+      dst.byteOffset, keyBase >>> 0, scan.xByte >>> 0, scan.yByte >>> 0, scan.boundsByte >>> 0)
+    : b.castersKeyedScan(table, key.byteOffset, type ? type.byteOffset : 0, count >>> 0, capacity >>> 0,
+      dst.byteOffset, keyBase >>> 0);
   return out === 0xffffffff ? -1 : out;
 }
 

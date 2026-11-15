@@ -66,6 +66,7 @@
         "pack_sprites_keyed_rows",
         "pack_casters_keyed",
         "pack_casters_keyed_scan",
+        "pack_casters_keyed_scan_xy",
         "pack_sprites_general",
         "pack_casters_general",
         "pack_pose",
@@ -235,6 +236,7 @@
         "pack_sprites_keyed_rows",
         "pack_casters_keyed",
         "pack_casters_keyed_scan",
+        "pack_casters_keyed_scan_xy",
         "pack_sprites_general",
         "pack_casters_general",
         "pack_pose"

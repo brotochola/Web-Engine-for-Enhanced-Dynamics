@@ -388,3 +388,72 @@ test('pack_casters_keyed_scan writes the compaction\'s keyed rows, and declines 
     'a key column outside the memory');
   assert.equal(packKeyedCastersScanWasm(b, q, 0, got, KEY_BASE, N), 0);
 });
+
+// E-331: with a target for the shadow stamp, the scan writes the same rows, each row's x and y into two float arrays, and
+// the bounds the stamp's grid build works out of the rows (minX, minY, maxX, maxY over them as doubles, a NaN flag, the
+// row count); a declined scan leaves the bounds as they were.
+test('pack_casters_keyed_scan_xy writes the scan\'s rows, their x and y, and the stamp grid\'s bounds', async () => {
+  const s = await setup(331);
+  const { q, b } = s;
+  for (let i = 0; i < N; i++) {
+    const r = s.rng();
+    q.shadowH[i] = r < 0.1 ? 0 : s.rng() * 2;
+    if (((q.key[i] & ~KEY_FLAGS) >>> 0) >= KEY_BASE) q.shadowH[i] = 0;
+    q.shadowOffX[i] = s.rng() * 4 - 2;
+    q.shadowOffY[i] = s.rng() * 4 - 2;
+  }
+  const rowsBytes = N * GPU_KEYED_CASTER_FLOATS * 4;
+  const end = b.buffer.byteLength - 2 * rowsBytes - 2 * N * 4 - 64;
+  assert.ok(end > s.pose.byteOffset + s.pose.byteLength, 'room past the regions of the setup');
+  const want = new Float32Array(b.buffer, end, N * GPU_KEYED_CASTER_FLOATS);
+  const got = new Float32Array(b.buffer, end + rowsBytes, N * GPU_KEYED_CASTER_FLOATS);
+  const xs = new Float32Array(b.buffer, end + 2 * rowsBytes, N);
+  const ys = new Float32Array(b.buffer, end + 2 * rowsBytes + N * 4, N);
+  const bounds = new Float64Array(b.buffer, end + 2 * rowsBytes + 2 * N * 4, 6);
+  const scan = { xByte: xs.byteOffset, yByte: ys.byteOffset, boundsByte: bounds.byteOffset, maxSun: N };
+  for (const [label, count, cap, nanAt] of [['every row', N, N, -1], ['a cap under the casters', N, 900, -1], ['a NaN x and y', N, N, 40]]) {
+    if (nanAt >= 0) {
+      let seen = 0;
+      for (let i = 0; i < N; i++) {
+        if (!(q.shadowH[i] > 0) || q.type[i] === 3) continue;
+        if (seen === nanAt) q.x[i] = NaN;
+        if (seen === nanAt + 3) q.y[i] = NaN;
+        seen++;
+      }
+    }
+    const n = packKeyedCastersScanWasm(b, q, count, want, KEY_BASE, cap);
+    assert.ok(n > 100, `${label}: rows`);
+    xs.fill(-5);
+    ys.fill(-5);
+    bounds.fill(-5);
+    assert.equal(packKeyedCastersScanWasm(b, q, count, got, KEY_BASE, cap, scan), n, `${label}: as many`);
+    const W = new Uint32Array(want.buffer, want.byteOffset, n * GPU_KEYED_CASTER_FLOATS);
+    const G = new Uint32Array(got.buffer, got.byteOffset, n * GPU_KEYED_CASTER_FLOATS);
+    assert.equal(G.findIndex((w, i) => w !== W[i]), -1, `${label}: the rows`);
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let nan = 0;
+    for (let c = 0; c < n; c++) {
+      const x = want[c * GPU_KEYED_CASTER_FLOATS];
+      const y = want[c * GPU_KEYED_CASTER_FLOATS + 1];
+      assert.ok(Object.is(xs[c], x) && Object.is(ys[c], y), `${label}: caster ${c}'s x and y`);
+      if (x !== x || y !== y) nan = 1;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+    assert.equal(xs[n], -5, `${label}: nothing past the rows`);
+    assert.deepEqual([...bounds], [minX, minY, maxX, maxY, nan, n], `${label}: the bounds`);
+    assert.equal(nan, nanAt >= 0 ? 1 : 0, `${label}: the NaN flag`);
+  }
+  bounds.fill(-5);
+  const keyless = q.key.findIndex((k) => ((k & ~KEY_FLAGS) >>> 0) >= KEY_BASE);
+  q.shadowH[keyless] = 1;
+  q.type[keyless] = 0;
+  assert.equal(packKeyedCastersScanWasm(b, q, N, got, KEY_BASE, N, scan), -1, 'a caster without a key');
+  assert.deepEqual([...bounds], [-5, -5, -5, -5, -5, -5], 'a declined scan writes no bounds');
+  assert.throws(() => packKeyedCastersScanWasm(b, q, N, got, KEY_BASE, N + 1, scan), /outruns/, 'a cap past the arrays');
+});

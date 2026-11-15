@@ -463,15 +463,23 @@ uint32_t pack_casters_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, 
 /* E-192: pack_casters_keyed over the casters it finds itself: the queue rows whose shadowH is above 0 and whose type is
    not a glow's (compactShadowCasterIndices' test), in the queue's order, until cap rows; the same rows the compaction
    and pack_casters_keyed write. 0xffffffff at a caster with no key below keyBase. typeByte 0: no type column. */
-__attribute__((export_name("pack_casters_keyed_scan")))
-uint32_t pack_casters_keyed_scan(uint32_t table, uint32_t keyByte, uint32_t typeByte, uint32_t count, uint32_t cap,
-                                 uint32_t dst, uint32_t keyBase) {
+/* xy (E-331, a literal): also each row's x and y into xs and ys, and at bounds the six doubles the shadow stamp's grid
+   build would work out of the rows (wasm/shadowStamp.c, grid_from_xy): minX, minY, maxX, maxY over the x and y as
+   doubles (its comparisons, in its order: a NaN takes no part), 1 when an x or y is NaN (else 0), and the row count.
+   Written only when the scan returns its rows. */
+INLINE uint32_t keyed_scan(uint32_t table, uint32_t keyByte, uint32_t typeByte, uint32_t count, uint32_t cap, uint32_t dst,
+                           uint32_t keyBase, float *xs, float *ys, double *bounds, const int xy) {
   const uint32_t *t = (const uint32_t *)(uintptr_t)table;
   const uint32_t *key = (const uint32_t *)(uintptr_t)keyByte;
   const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
   const float *X = F32(t, COL_X), *Y = F32(t, COL_Y);
   const float *SH = F32(t, COL_SHADOW_H), *SOX = F32(t, COL_SHADOW_OFF_X), *SOY = F32(t, COL_SHADOW_OFF_Y);
   float *d = (float *)(uintptr_t)dst;
+  double minX = __builtin_inf();
+  double minY = __builtin_inf();
+  double maxX = -__builtin_inf();
+  double maxY = -__builtin_inf();
+  int32_t nan = 0;
   uint32_t n = 0;
   for (uint32_t i = 0; i < count && n < cap; i++) {
     if (type && type[i] == 3) continue;
@@ -480,16 +488,51 @@ uint32_t pack_casters_keyed_scan(uint32_t table, uint32_t keyByte, uint32_t type
     const uint32_t s = key[i] & ~KEY_FLAGS;
     if (s >= keyBase) return 0xffffffffu;
     float *r = d + n * KEYED_CASTER_FLOATS;
-    r[0] = X[i];
-    r[1] = Y[i];
+    const float fx = X[i];
+    const float fy = Y[i];
+    r[0] = fx;
+    r[1] = fy;
     r[2] = (float)s;
     r[3] = 0.0f;
     r[4] = sh;
     r[5] = SOX[i];
     r[6] = SOY[i];
+    if (xy) {
+      xs[n] = fx;
+      ys[n] = fy;
+      const double x = fx;
+      const double y = fy;
+      nan |= (x != x) | (y != y);
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
     n++;
   }
+  if (xy) {
+    bounds[0] = minX;
+    bounds[1] = minY;
+    bounds[2] = maxX;
+    bounds[3] = maxY;
+    bounds[4] = nan ? 1.0 : 0.0;
+    bounds[5] = (double)n;
+  }
   return n;
+}
+
+__attribute__((export_name("pack_casters_keyed_scan")))
+uint32_t pack_casters_keyed_scan(uint32_t table, uint32_t keyByte, uint32_t typeByte, uint32_t count, uint32_t cap,
+                                 uint32_t dst, uint32_t keyBase) {
+  return keyed_scan(table, keyByte, typeByte, count, cap, dst, keyBase, 0, 0, 0, 0);
+}
+
+/* E-331: pack_casters_keyed_scan that also hands the shadow stamp its casters' x, y and bounds (keyed_scan's xy). */
+__attribute__((export_name("pack_casters_keyed_scan_xy")))
+uint32_t pack_casters_keyed_scan_xy(uint32_t table, uint32_t keyByte, uint32_t typeByte, uint32_t count, uint32_t cap,
+                                    uint32_t dst, uint32_t keyBase, uint32_t xByte, uint32_t yByte, uint32_t boundsByte) {
+  return keyed_scan(table, keyByte, typeByte, count, cap, dst, keyBase, (float *)(uintptr_t)xByte,
+                    (float *)(uintptr_t)yByte, (double *)(uintptr_t)boundsByte, 1);
 }
 
 /* packInstancedRows' slow path, its parameters as doubles at `params` (gpuPackClient.js GENERAL_PARAMS): flags

@@ -94,7 +94,7 @@ import {
     bindGpuPack, packIndexedRowsWasm, packInstancedRowsWasm, packKeyedCastersScanWasm, packSplitRowsWasm,
 } from '../render/gpuPackClient.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, radixSortIndicesWasm } from '../render/painterRadixClient.js';
-import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
+import { bindShadowStamp, stampLightRangeWasm, stampScanTarget } from '../render/shadowStampClient.js';
 import { bindPreRenderCollect, writeCollectColumns, writeCollectList } from './preRenderCollectClient.js';
 import {
     bindEmitAdobe,
@@ -509,12 +509,16 @@ class PreRenderWorker extends AbstractWorker {
         this._keyedComplete = new Uint8Array(2);
         this._emitSkippedStatics = false;
         this._gpuSunKeyed = false;
+        /** E-331: whether this frame's keyed caster scan also wrote the casters' x, y and bounds for the stamp. */
+        this._gpuSunScanXY = false;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
         /** N-138: per queue buffer, the poses of the sprites whose entity has a mesh (empty when no class has both). */
         this._meshPoseLists = [];
         /** The shadow stamp kernel (E-114), on its regions of the render-queue memory (with shadows and sun casters). */
         this._stampWasm = null;
+        /** E-331: where the keyed caster scan writes the casters' x, y and bounds for the stamp (stampScanTarget), or null. */
+        this._stampScan = null;
         /** Whether the kernel's last frame wrote a repeating sprite (emitSpriteQueue's tiledRows). */
         this._emitTiledRows = false;
         this.renderQueueSortKey = EMPTY_F32;
@@ -1186,8 +1190,10 @@ class PreRenderWorker extends AbstractWorker {
                 // E-114: the shadow stamp in WASM, where its scratch and light table are stamp regions (made with
                 // shadows and sun casters; without them nothing is stamped).
                 this._stampWasm = null;
+                this._stampScan = null;
                 if (data.renderQueueMemory && data.renderQueueLayout?.stamp) {
                     this._stampWasm = await bindShadowStamp(data.renderQueueMemory, data.renderQueueLayout.stamp);
+                    this._stampScan = stampScanTarget(this._stampWasm);
                 }
                 const cookieN = Math.max(1, caps.maxCookie | 0);
                 if (cookieN > 0) {
@@ -3498,6 +3504,7 @@ class PreRenderWorker extends AbstractWorker {
 
     _packGpuSun(dst, q) {
         this._gpuSunKeyed = false;
+        this._gpuSunScanXY = false;
         const caps = this.gpuQueueCaps;
         if (!this.shadowsEnabled || !caps || !(caps.maxSun > 0)) return 0;
         const opts = this._gpuPackOpts;
@@ -3507,9 +3514,12 @@ class PreRenderWorker extends AbstractWorker {
             // E-191 step 2: a pose, a key and the shadow terms a caster, for the casters the kernel finds in the queue
             // (E-192); -1 when a caster has no entity key (its statics are not in Pixi's texture), and the frame lists
             // the casters and packs the full rows.
-            const keyedN = packKeyedCastersScanWasm(this._gpuPackWasm, q, count, dst.sun, this._keyedKeyBase, caps.maxSun);
+            // E-331: with the stamp kernel, the scan also writes the casters' x, y and bounds where the stamp's grid takes them.
+            const scan = this._stampScan !== null && caps.maxSun <= this._stampScan.maxSun ? this._stampScan : null;
+            const keyedN = packKeyedCastersScanWasm(this._gpuPackWasm, q, count, dst.sun, this._keyedKeyBase, caps.maxSun, scan);
             if (keyedN >= 0) {
                 this._gpuSunKeyed = true;
+                this._gpuSunScanXY = scan !== null;
                 return keyedN;
             }
         }
@@ -3649,6 +3659,7 @@ class PreRenderWorker extends AbstractWorker {
                 stampLightIdx: null,
                 lightVec: null,
                 lightFloat: GPU_CASTER_LIGHT_FLOAT,
+                scanXY: false,
             };
         }
         // E-191 step 2: keyed sun rows make keyed stamp rows, their light after the caster row's seven floats.
@@ -3656,6 +3667,8 @@ class PreRenderWorker extends AbstractWorker {
         spec.sunFloats = keyed ? GPU_KEYED_CASTER_FLOATS : GPU_CASTER_FLOATS;
         spec.stampFloats = keyed ? GPU_KEYED_STAMP_FLOATS : GPU_CASTER_FLOATS;
         spec.lightFloat = keyed ? GPU_KEYED_CASTER_FLOATS : GPU_CASTER_LIGHT_FLOAT;
+        // E-331: the keyed scan wrote these rows' x, y and bounds for the stamp's grid.
+        spec.scanXY = keyed && this._gpuSunScanXY;
         spec.sun = sun;
         spec.sunN = sunN;
         spec.lights = lights;
