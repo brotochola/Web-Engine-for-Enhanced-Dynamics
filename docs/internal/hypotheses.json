@@ -15192,7 +15192,8 @@
         "collide without b2Shape"
       ],
       "records": [
-        "R-1101"
+        "R-1101",
+        "R-1110"
       ]
     },
     {
@@ -26868,6 +26869,15 @@
       "commits": [
         "260736e"
       ]
+    },
+    {
+      "id": "R-1110",
+      "date": "2026-11-15",
+      "time": "03:11",
+      "timeFrom": "recorded",
+      "title": "E-313's premise: ~95 % of Predator crowd 2.5's awake contacts are recycled a step, and recycled contacts read no b2Shape line already",
+      "verdict": "answered",
+      "text": "**E-313's premise checked, 2026-11-15: in Predator crowd 2.5 about 95 % of the awake contacts are recycled each step, and the\nrecycled path does not touch b2Shape in the shipped build.** The plan read \"walkers take a full update every 1-2 steps\".\n\n1. Probe (not committed, as R-1045's persistProbe): a Box2D build of solver-skip-second-point whose wasm_wrapper wrote\nb2Counters.recycledContactCount into the treeHeight counter slot, run in a scratch WeedJS worktree at 283beeb with\nrunIntegratedWorkerBenchmark --src --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene --query crowd=2.5,\n15 s warm-up, 10 s window, headless Chromium in a loaded 4-vCPU cloud container. Physics stats, window average: BODY_COUNT 36 965,\nAWAKE_COUNT 23 270, COUNTER_CONTACTS 62 895, COUNTER_AWAKE_CONTACTS 55 644, recycled 52 825 (94.9 %; end of window 53 802 of\n55 984, 96.1 %). Caveat: physics ran at about 3 frames a second there, so physicsHostImpl's splitFrameDt gave each step the\n1/30 s cap, twice a 60 Hz step's motion; at 60 Hz a contact moves half as far a step and is recycled at least as often.\nThe crowd harness at 38 000 walkers agrees: ~44 300 of ~47 000 contacts recycled a step (R-1106).\n\n2. The recycled path: b2CollideTask passed shapeA->bodyId and shapeB->bodyId to b2ResolveContactBodySim, which uses them only\nwhen the encoded sim index is invalid. Making the resolver take the shape and read bodyId on that fallback alone produced a\nbox2dWasm.wasm byte-identical to solver-skip-second-point's: LLVM already sinks that load, so a recycled contact reads the\ncontact sim, two fat AABBs and two body sims, no b2Shape line.\n\nSo the b2Shape lines E-313 removes are read only on the ~5 % of contacts that take a full update a step (about 2 800 at crowd\n2.5), not on every contact: the estimate (collide -25 to -40 %, physics STEP -5 to -9 %) does not hold; what is left is a few\npercent of collide at most. Suggest lowering its rank below the open physics items (the owner's call); the probe build and the\nlazy-resolver branch were not kept."
     }
   ],
   "leads": [
