@@ -128,12 +128,13 @@ fn footprintNorth(slot: i32, x: f32) -> f32 {
 `;
 
 /**
- * The grid sunMapColumnsVertex draws over a frame, SUN_MAP_COLUMNS² cells of two triangles: per vertex the cell's centre
- * (u, v in the frame), t (0 at the floor, 1 at the column's top) and its side (-1, 1).
+ * The grid sunMapColumnsVertex draws over a frame, SUN_MAP_COLUMNS² cells of four corners (two triangles by
+ * sunMapColumnIndex): per vertex the cell's centre (u, v in the frame), t (0 at the floor, 1 at the column's top) and its
+ * side (-1, 1).
  * @returns {Float32Array}
  */
 export function sunMapColumnGrid(cells = SUN_MAP_COLUMNS) {
-  const corners = [[0, -1], [1, -1], [1, 1], [0, -1], [1, 1], [0, 1]];
+  const corners = [[0, -1], [1, -1], [1, 1], [0, 1]];
   const out = new Float32Array(cells * cells * corners.length * 4);
   let at = 0;
   for (let j = 0; j < cells; j++) {
@@ -150,13 +151,24 @@ export function sunMapColumnGrid(cells = SUN_MAP_COLUMNS) {
 }
 
 /**
- * The index buffer the columns' grid is drawn with (sunMapColumnGrid's vertices in order: meshes draw by index, and a
- * geometry without one drew nothing).
+ * The index buffer the columns' grid is drawn with: each cell's two triangles over its four corners (0 1 2, 0 2 3), so
+ * the vertex shader runs four times a cell, not six (E-376: the vertex cache keeps the corners both triangles share; a
+ * render's 576 cells are most of a column pass's work).
  * @param {number} [cells]
  * @returns {Uint16Array}
  */
 export function sunMapColumnIndex(cells = SUN_MAP_COLUMNS) {
-  return Uint16Array.from({ length: cells * cells * 6 }, (_, i) => i);
+  const out = new Uint16Array(cells * cells * 6);
+  for (let c = 0, at = 0; c < cells * cells; c++) {
+    const v = c * 4;
+    out[at++] = v;
+    out[at++] = v + 1;
+    out[at++] = v + 2;
+    out[at++] = v;
+    out[at++] = v + 2;
+    out[at++] = v + 3;
+  }
+  return out;
 }
 
 /**

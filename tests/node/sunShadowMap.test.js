@@ -131,10 +131,14 @@ test('lighting.selfShadow: the light pass steps towards the sun over the face ma
 });
 
 test('a caster with a height map casts columns: each cell where it is in 3D, the column under it to the floor', async () => {
-  const { SUN_MAP_COLUMNS, sunMapColumnGrid, sunMapColumnsVertex } = await import('../../src/render/sunShadowMap.js');
+  const { SUN_MAP_COLUMNS, sunMapColumnGrid, sunMapColumnIndex, sunMapColumnsVertex } = await import('../../src/render/sunShadowMap.js');
   const grid = sunMapColumnGrid(2);
-  assert.equal(grid.length, 2 * 2 * 6 * 4);
-  assert.deepEqual(Array.from(grid.subarray(0, 8)), [0.25, 0.25, 0, -1, 0.25, 0.25, 1, -1]);
+  assert.equal(grid.length, 2 * 2 * 4 * 4);
+  assert.deepEqual(Array.from(grid.subarray(0, 16)), [0.25, 0.25, 0, -1, 0.25, 0.25, 1, -1, 0.25, 0.25, 1, 1, 0.25, 0.25, 0, 1]);
+  // E-376: four corners a cell, two triangles by index (the same two the six vertices drew: 0 1 2 and 0 2 3).
+  assert.deepEqual(Array.from(sunMapColumnIndex(2).subarray(0, 12)), [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+  assert.equal(sunMapColumnIndex(SUN_MAP_COLUMNS).length, SUN_MAP_COLUMNS * SUN_MAP_COLUMNS * 6);
+  assert.equal(Math.max(...sunMapColumnIndex(SUN_MAP_COLUMNS)), SUN_MAP_COLUMNS * SUN_MAP_COLUMNS * 4 - 1);
   const src = sunMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl'));
   assert.match(src, /in vec4 aCell;/);
   assert.match(src, /aQuad = aCell\.xy;/);
