@@ -163,7 +163,7 @@ test('the face programs name the twin page in their WebGPU layout', async () => 
 // DX-GBUF (plan §5.4): with words, the face programs read each instance's (aInstGbuf) and its foot, and their GBUF block
 // writes an entity's sprite as its normals and surface say; without, they are the face map's programs as they were.
 test('the face programs take the G-buffer words only when the batch carries them', async () => {
-  const { FACE_FLAT_CODE, FACE_K_BIT, gbufAttributeWgsl } = await import('../../src/render/faceMap.js');
+  const { FACE_FLAT_CODE, FACE_K_BIT, faceFragmentGlsl, gbufAttributeWgsl } = await import('../../src/render/faceMap.js');
   const vert = shader('instancedSprite.vert.glsl');
   assert.doesNotMatch(faceMapVertex(vert), /aInstGbuf|vFootY/);
   const on = faceMapVertex(vert, { gbuf: true });
@@ -172,8 +172,12 @@ test('the face programs take the G-buffer words only when the batch carries them
   assert.match(on, /vFootY = world\.y - /);
   assert.match(spriteIndexedVertex(faceMapVertex(vert, { gbuf: true })), /vFootY = /, 'the indexed form keeps them');
   const frag = shader('faceMap.frag.glsl');
-  assert.doesNotMatch(shaderWithFlag(frag, 'GBUF', false), /vGbuf|#if/);
-  assert.match(shaderWithFlag(frag, 'GBUF', true), /flat in vec2 vGbuf;/);
+  assert.doesNotMatch(faceFragmentGlsl(frag), /vGbuf|#if|discard;\n\s*\/\/ #endif/);
+  assert.match(faceFragmentGlsl(frag, { gbuf: true }), /flat in vec2 vGbuf;/);
+  // DX-EMISSIVE: v1 writes the glow code, v2 (glow) leaves a glowing pixel out of the face map.
+  assert.match(faceFragmentGlsl(frag), /finalColor = vec4\(1\.0 \/ 255\.0, 0\.0, 0\.0, 0\.0\);/);
+  assert.doesNotMatch(faceFragmentGlsl(frag, { glow: true }), /finalColor = vec4\(1\.0 \/ 255\.0, 0\.0, 0\.0, 0\.0\);/);
+  assert.match(faceFragmentGlsl(frag, { gbuf: true, glow: true }), /\(\(word >> 19u\) & 7u\) != 0u\) discard;/);
   assert.ok(frag.includes(`vec2(${FACE_FLAT_CODE}.0 / 255.0)`), 'the FLAT code');
   assert.ok(frag.includes(`${FACE_K_BIT - 1}.0)) + (k ? ${FACE_K_BIT}.0`), 'heights of 15 bits and the k bit');
   for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {

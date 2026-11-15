@@ -41,7 +41,9 @@ import {
   GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsByRowWasm, packKeyedRowsWasm,
   packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
-import { faceGbufFragment, faceIdsFragment, faceMapVertex, faceMapWgsl, gbufAttributeWgsl, shaderWithFlag } from './faceMap.js';
+import {
+  faceFragmentGlsl, faceGbufFragment, faceGlowFragment, faceIdsFragment, faceMapVertex, faceMapWgsl, gbufAttributeWgsl,
+} from './faceMap.js';
 import { lutBaseFloats } from './frameBase.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from './pixelDepth.js';
 import {
@@ -460,6 +462,9 @@ export class InstancedSpriteBatch {
     // indexed, by row), its state and a mesh per geometry this batch draws (_auxMesh).
     this._aux = AUX_NAMES.map(() => ({ meshes: [], state: null, shader: null, indexed: null, row: null }));
     this._auxShaderList = [];
+    // DX-EMISSIVE v2 (F10): the glow pass draws the glowing pixels (glowMesh), so the G-buffer's passes leave them out;
+    // false: the face map's glow code (v1). Set by the caller before a light pass is first drawn.
+    this.emissiveGlow = false;
     this._keyedCasterGeometries = null;
     this._ixGen = 0;
     this._ixRows = -1;
@@ -1452,6 +1457,15 @@ export class InstancedSpriteBatch {
   }
 
   /**
+   * DX-EMISSIVE v2 (plan §6.9, F10): this batch's instances for the glow target (faceMap.js faceGlowFragment), the
+   * canvas's size: a glowing pixel's colour times its glow, any other black with its alpha, normal blending. Needs words.
+   * @returns {Mesh|null}
+   */
+  glowMesh(heightScaleY, groundScaleY, maps) {
+    return this.gbuf ? this._auxMesh(AUX_GLOW, heightScaleY, groundScaleY, maps) : null;
+  }
+
+  /**
    * DX-GBUF: one of the batch's passes over its own instances for the light (AUX_FACE, AUX_IDS, ...), over this frame's
    * geometry: one mesh a geometry the batch draws from, none swapped (the ring swaps the geometry every frame, and Mesh's
    * setter makes garbage), the program that reads that geometry's layout (plain, indexed, by row). The programs are made on
@@ -1497,7 +1511,7 @@ export class InstancedSpriteBatch {
     const name = `${this._label}-${AUX_NAMES[kind]}`;
     // DX-GBUF: with words, each entity's sprite as its normals and surface say (faceMap.frag.glsl's GBUF block); every kind
     // past the face map reads them.
-    const gbuf = { gbuf: kind === AUX_FACE ? this.gbuf : true };
+    const gbuf = { gbuf: kind === AUX_FACE ? this.gbuf : true, glow: this.emissiveGlow };
     const entry = AUX_ENTRIES[kind];
     const frag = this._useWebGpu ? null : this._auxFragment(kind);
     if (this._useWebGpu) {
@@ -1543,7 +1557,8 @@ export class InstancedSpriteBatch {
       });
     }
     const state = new State();
-    state.blendMode = 'none';
+    // The G-buffer's targets hold codes: written as they are. The glow is a colour, blended as the sprites are (PMA).
+    state.blendMode = kind === AUX_GLOW ? 'normal' : 'none';
     state.depthTest = false;
     state.depthMask = false;
     state.culling = false;
@@ -1554,9 +1569,11 @@ export class InstancedSpriteBatch {
   /** DX-GBUF: a pass kind's fragment shader on WebGL. */
   _auxFragment(kind) {
     const shaders = this._engineShaders;
-    if (kind === AUX_IDS) return faceIdsFragment();
-    if (kind === AUX_GBUF) return faceGbufFragment(shaders.faceFrag);
-    return shaderWithFlag(shaders.faceFrag, 'GBUF', this.gbuf);
+    const glow = this.emissiveGlow;
+    if (kind === AUX_IDS) return faceIdsFragment({ glow });
+    if (kind === AUX_GBUF) return faceGbufFragment(shaders.faceFrag, { glow });
+    if (kind === AUX_GLOW) return faceGlowFragment();
+    return faceFragmentGlsl(shaders.faceFrag, { gbuf: this.gbuf, glow });
   }
 
   /** DX-GBUF: every program of the batch's passes for the light, for the atlas and LUT setters. */

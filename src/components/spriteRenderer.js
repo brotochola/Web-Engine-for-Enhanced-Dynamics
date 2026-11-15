@@ -5,7 +5,7 @@ import { Component } from '../core/component.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { SPRITE_TILE_MODE } from '../util/configDefaults.js';
 import { staticSceneryChangedAt } from '../core/staticScenery.js';
-import { GBUF_FLAGS, SPRITE_NORMALS, SPRITE_NORMALS_NAMES } from '../render/gbufWord.js';
+import { GBUF_FLAGS, SPRITE_NORMALS, SPRITE_NORMALS_NAMES, emissiveLevel, emissiveValue } from '../render/gbufWord.js';
 
 /** Each wrong value said once. */
 const _gbufWarned = new Set();
@@ -279,10 +279,36 @@ export class SpriteRenderer extends Component {
     SpriteRenderer.gbufFlags[i] = value === 'floor' ? f | GBUF_FLAGS.FLOOR : f & ~GBUF_FLAGS.FLOOR;
   }
 
-  /** A spawned sprite's G-buffer flags back to every default (the spawn's reset calls it). */
+  /**
+   * DX-EMISSIVE (plan §5.4, §6.9, F10 v2): the sprite glows by itself: false (default), true (its own colour, which the
+   * night does not darken), or a number, its glow (1 is true; up to 1.75, in quarters). Its lit colour is the light's like
+   * any sprite's; its glow comes on top where the light is short of it (final = lit · light + glow · (1 - light)), so by day
+   * it looks as drawn and at night it keeps its colour. It writes neither the G-buffer nor depth: what is behind it is lit.
+   * Its sheet's own (assets.spritesheets.<name>.emissive) glows every opaque pixel of its frames. Needs the G-buffer (a
+   * scene with faces, a sheet with maps or a shadow map).
+   */
+  get emissive() {
+    return emissiveValue((SpriteRenderer.gbufFlags[this.index] & GBUF_FLAGS.EMISSIVE_MASK) >> GBUF_FLAGS.EMISSIVE_SHIFT);
+  }
+  set emissive(value) {
+    const i = this.index;
+    const level = emissiveLevel(value);
+    const f = SpriteRenderer.gbufFlags[i];
+    const was = (f & GBUF_FLAGS.EMISSIVE_MASK) >> GBUF_FLAGS.EMISSIVE_SHIFT;
+    if (was === level) return;
+    SpriteRenderer.gbufFlags[i] = (f & ~GBUF_FLAGS.EMISSIVE_MASK) | (level << GBUF_FLAGS.EMISSIVE_SHIFT);
+    const users = SpriteRenderer._emissiveUsers;
+    if (!users) return;
+    if (was === 0) Atomics.add(users, 0, 1);
+    else if (level === 0) Atomics.add(users, 0, -1);
+  }
+
+  /** A spawned sprite's G-buffer flags back to every default (the spawn's reset calls it), its glow off. */
   static resetGbufRow(i) {
     const flags = SpriteRenderer.gbufFlags;
     if (!flags || flags[i] === 0) return;
+    const users = SpriteRenderer._emissiveUsers;
+    if (users && (flags[i] & GBUF_FLAGS.EMISSIVE_MASK) !== 0) Atomics.add(users, 0, -1);
     flags[i] = 0;
   }
 
@@ -304,12 +330,14 @@ export class SpriteRenderer extends Component {
   static clearArrays() {
     super.clearArrays();
     this._zIndexUsers = null;
+    this._emissiveUsers = null;
   }
 
+  // After the columns, the zIndex users' count and (DX-EMISSIVE) the glowing sprites' count, an Int32 each.
   static getBufferSize(count) {
     const base = super.getBufferSize(count);
     const aligned = (base + 3) & ~3;
-    return aligned + 4;
+    return aligned + 8;
   }
 
   static initializeArrays(buffer, count, byteOffset = 0) {
@@ -318,10 +346,17 @@ export class SpriteRenderer extends Component {
     const base = super.getBufferSize(count);
     const aligned = (base + 3) & ~3;
     this._zIndexUsers = new Int32Array(buffer, byteOffset + aligned, 1);
+    this._emissiveUsers = new Int32Array(buffer, byteOffset + aligned + 4, 1);
   }
 
   static zIndexUsers() {
     const u = this._zIndexUsers;
+    return u ? Atomics.load(u, 0) : 0;
+  }
+
+  /** DX-EMISSIVE: how many sprites glow by themselves (spriteRenderer.emissive): the glow pass runs while any does. */
+  static emissiveUsers() {
+    const u = this._emissiveUsers;
     return u ? Atomics.load(u, 0) : 0;
   }
 }

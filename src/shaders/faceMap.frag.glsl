@@ -89,10 +89,16 @@ void main() {
   if (oct == vec2(0.0)) {
     ivec2 tc = ivec2(uv * vec2(textureSize(uMaps, 0)));
     vec4 m = texelFetch(uMaps, tc, 0);
-    // DX-EMISSIVE: a glowing pixel (normal bytes 0, 255) is (1/255, 0) in the face map: the light pass lights it fully.
+    // DX-EMISSIVE: a glowing pixel (normal bytes 0, 255). F10 v1: (1/255, 0) in the face map, the light pass lights it
+    // fully. v2 (GLOW: the glow pass draws its glow): it writes nothing here, and what is behind it is lit.
     if (m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0) {
+// #if GLOW
+      discard;
+// #endif GLOW
+// #if !GLOW
       finalColor = vec4(1.0 / 255.0, 0.0, 0.0, 0.0);
       return;
+// #endif !GLOW
     }
     vec2 sc = normalize(vec2(uFaceSpace.y, uFaceSpace.x)); // sin, cos of the camera's pitch
 // #if GBUF
@@ -100,6 +106,10 @@ void main() {
     // (normals 'auto' or 'map'), the heights' (normals 'height') or none (normals 'flat': lit as drawn). Without: a card
     // standing on its foot (surface 'standing'), a row's height its rise over the foot's, lit as drawn; or the floor.
     uint word = uint(vGbuf.x + 0.5);
+// #if GLOW
+    // DX-EMISSIVE v2: an entity that glows by itself (its word's emissive level) writes nothing here either.
+    if (((word >> 19u) & 7u) != 0u) discard;
+// #endif GLOW
     if ((word & 65535u) != 0u) {
       uint flags = (word >> 16u) & 63u;
       uint normals = flags & 3u;

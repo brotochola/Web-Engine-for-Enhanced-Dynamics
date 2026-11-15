@@ -75,10 +75,24 @@ const IDS_TEXEL_GLSL = `vec4 idsTexel(vec2 gbuf, bool render) {
 }`;
 
 /**
+ * DX-EMISSIVE v2 (GLSL 300): whether a pixel glows by itself: its entity's emissive level (gbufWord.js bits 19-21) or its
+ * sheet's code in the twin page (spriteMaps.js EMISSIVE_CODE, normal bytes 0, 255), and how much (a level's quarters, 1
+ * for the sheet's). 0 for a pixel that does not.
+ */
+const GLOW_OF_GLSL = `float glowOf(vec2 gbuf, vec2 uv) {
+  uint level = (uint(gbuf.x + 0.5) >> 19u) & 7u;
+  if (level != 0u) return float(level) / 4.0;
+  vec4 m = texelFetch(uMaps, ivec2(uv * vec2(textureSize(uMaps, 0))), 0);
+  return m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0 ? 1.0 : 0.0;
+}`;
+
+/**
  * The ids map's fragment shader (WebGL): over faceMapVertex's outputs with words, the face map's coverage, the ids texel.
+ * With `glow` (DX-EMISSIVE v2) a glowing pixel writes nothing, as in the face map: what is behind it is lit.
+ * @param {{ glow?: boolean }} [opts]
  * @returns {string}
  */
-export function faceIdsFragment() {
+export function faceIdsFragment({ glow = false } = {}) {
   return `#version 300 es
 precision highp float;
 in vec2 vLocal;
@@ -90,16 +104,64 @@ in vec2 vTileOff;
 flat in vec2 vGbuf;
 flat in float vRender;
 uniform sampler2D uTexture;
+uniform sampler2D uMaps;
 out vec4 finalColor;
 
 ${WEED_UV_GLSL}
 
 ${IDS_TEXEL_GLSL}
 
+${GLOW_OF_GLSL}
+
 // DX-GBUF: the entity ids map (faceMap.js FACE_IDS_SELF): what entity covers this pixel, in painter order.
 void main() {
-  if (texture(uTexture, weedUv()).a * vColor.a < 0.5) discard;
-  finalColor = idsTexel(vGbuf, vRender > 0.5);
+  vec2 uv = weedUv();
+  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;
+${glow ? '  if (glowOf(vGbuf, uv) > 0.0) discard;\n' : ''}  finalColor = idsTexel(vGbuf, vRender > 0.5);
+}
+`;
+}
+
+/**
+ * faceMap.frag.glsl with its blocks for a batch's options: GBUF (the words: normals and surface) and GLOW / !GLOW
+ * (DX-EMISSIVE v2: a glowing pixel writes nothing, the glow pass draws it; v1: the face map's glow code).
+ * @param {string} faceFrag
+ * @param {{ gbuf?: boolean, glow?: boolean }} [opts]
+ */
+export function faceFragmentGlsl(faceFrag, { gbuf = false, glow = false } = {}) {
+  return shaderWithFlag(shaderWithFlag(shaderWithFlag(faceFrag, 'GBUF', gbuf), 'GLOW', glow), '!GLOW', !glow);
+}
+
+/**
+ * DX-EMISSIVE v2 (plan §6.9, F10): the glow pass's fragment shader (WebGL), over faceMapVertex's outputs with words: a
+ * glowing pixel writes its colour times its glow, any other black with its alpha, both premultiplied and blended normally
+ * in painter order, so a sprite in front of a flame covers its glow in proportion to its alpha. The glow layer adds it
+ * where the light is short (glowComposite.js).
+ * @returns {string}
+ */
+export function faceGlowFragment() {
+  return `#version 300 es
+precision highp float;
+in vec2 vLocal;
+in vec4 vColor;
+in vec2 vWorld;
+in vec4 vAtlasUV;
+in vec2 vTileInv;
+in vec2 vTileOff;
+flat in vec2 vGbuf;
+uniform sampler2D uTexture;
+uniform sampler2D uMaps;
+out vec4 finalColor;
+
+${WEED_UV_GLSL}
+
+${GLOW_OF_GLSL}
+
+void main() {
+  vec2 uv = weedUv();
+  vec4 t = texture(uTexture, uv);
+  float s = glowOf(vGbuf, uv);
+  finalColor = vec4(t.rgb * vColor.rgb * vColor.a * s, t.a * vColor.a);
 }
 `;
 }
@@ -111,8 +173,8 @@ void main() {
  * @param {string} faceFrag faceMap.frag.glsl
  * @returns {string}
  */
-export function faceGbufFragment(faceFrag) {
-  const src = shaderWithFlag(faceFrag, 'GBUF', true);
+export function faceGbufFragment(faceFrag, { glow = false } = {}) {
+  const src = faceFragmentGlsl(faceFrag, { gbuf: true, glow });
   const out = 'out vec4 finalColor;\n';
   const cut = '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n';
   for (const mark of [out, cut]) {
@@ -214,17 +276,45 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
  * @param {{ gbuf?: boolean }} [opts]
  * @returns {string}
  */
-export function faceMapWgsl(source, { gbuf = false } = {}) {
-  return `${faceVertexWgsl(source, { gbuf })}${faceFunctionsWgsl({ gbuf })}
+export function faceMapWgsl(source, { gbuf = false, glow = false } = {}) {
+  return `${faceVertexWgsl(source, { gbuf })}${faceFunctionsWgsl({ gbuf, glow })}
 // DX-FACES: faceMap.frag.glsl
 @fragment
 fn mainFragFace(in: VertexOut) -> @location(0) vec4<f32> {
   return weedFace(in);
 }
-${gbuf ? FACE_IDS_ENTRY_WGSL : ''}`;
+${gbuf ? faceIdsEntryWgsl({ glow }) : ''}`;
 }
 
-/** DX-GBUF: the ids map's texel and its fragment entry (faceIdsFragment's WGSL), in a face module with words. */
+/**
+ * DX-GBUF: the ids map's texel and its fragment entry (faceIdsFragment's WGSL), the one pass's entry (MRT) and the glow
+ * pass's (faceGlowFragment's), in a face module with words.
+ */
+const faceIdsEntryWgsl = ({ glow }) => `
+// DX-EMISSIVE v2: how much a pixel glows by itself (faceMap.js GLOW_OF_GLSL), 0 for one that does not.
+fn glowOf(gbuf: vec2<f32>, uv: vec2<f32>) -> f32 {
+  let level = (u32(gbuf.x + 0.5) >> 19u) & 7u;
+  if (level != 0u) { return f32(level) / 4.0; }
+  let m = textureLoad(uMaps, vec2<i32>(uv * vec2<f32>(textureDimensions(uMaps, 0))), 0);
+  return select(0.0, 1.0, m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0);
+}
+${FACE_IDS_ENTRY_WGSL.replace(
+    '  if (t.a * in.vColor.a < 0.5) { discard; }\n  return idsTexel(',
+    glow
+      ? '  if (t.a * in.vColor.a < 0.5) { discard; }\n  if (glowOf(in.vGbuf, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff)) > 0.0) { discard; }\n  return idsTexel('
+      : '  if (t.a * in.vColor.a < 0.5) { discard; }\n  return idsTexel(',
+  )}
+// DX-EMISSIVE v2 (faceGlowFragment): a glowing pixel's colour times its glow, any other black with its alpha.
+@fragment
+fn mainFragGlow(in: VertexOut) -> @location(0) vec4<f32> {
+  let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
+  let t = textureSample(uTexture, uSampler, uv);
+  let s = glowOf(in.vGbuf, uv);
+  return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, t.a * in.vColor.a);
+}
+`;
+
+/** The ids entry and the one pass's (faceIdsEntryWgsl adds the glow's discard and the glow entry). */
 const FACE_IDS_ENTRY_WGSL = `
 // DX-GBUF: the ids map's texel of a word (faceMap.js IDS_TEXEL_GLSL).
 fn idsTexel(gbuf: vec2<f32>, render: bool) -> vec4<f32> {
@@ -351,12 +441,12 @@ fn faceHeightNormal(c: vec2<i32>, z: f32) -> vec3<f32> {
  * @param {{ gbuf?: boolean }} [opts]
  * @returns {string}
  */
-export function faceFunctionsWgsl({ gbuf = false } = {}) {
+export function faceFunctionsWgsl({ gbuf = false, glow = false } = {}) {
   const flat = `vec2<f32>(${FACE_FLAT_CODE}.0 / 255.0)`;
   const gbufBlock = gbuf
     ? `  // DX-GBUF (plan §5.4): an entity's sprite as its normals and surface say (faceMap.frag.glsl's GBUF block).
   let word = u32(in.vGbuf.x + 0.5);
-  if (noFace && (word & 65535u) != 0u) {
+${glow ? '  // DX-EMISSIVE v2: an entity that glows by itself writes nothing here.\n  if (((word >> 19u) & 7u) != 0u) { discard; }\n' : ''}  if (noFace && (word & 65535u) != 0u) {
     let flags = (word >> 16u) & 63u;
     let normals = flags & 3u;
     if (m.b + m.a > 0.0) {
@@ -412,9 +502,9 @@ fn weedFace(in: VertexOut) -> vec4<f32> {
   var oct = in.vFaceOct;
   var z = in.vFaceZ;
   let noFace = all(oct == vec2<f32>(0.0));
-  // DX-EMISSIVE: a glowing pixel is (1/255, 0) in the face map (faceMap.frag.glsl).
+  // DX-EMISSIVE: a glowing pixel is (1/255, 0) in the face map (v1), or nothing (v2, glow: the glow pass draws it).
   if (noFace && m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0) {
-    return vec4<f32>(1.0 / 255.0, 0.0, 0.0, 0.0);
+    ${glow ? 'discard;' : 'return vec4<f32>(1.0 / 255.0, 0.0, 0.0, 0.0);'}
   }
   let sc = normalize(vec2<f32>(uniforms.uFaceSpace.y, uniforms.uFaceSpace.x));
 ${gbufBlock}  if (noFace && m.b + m.a > 0.0) {

@@ -60,6 +60,7 @@ import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource, resolveFaces, shaderWithFlag } from '../render/faceMap.js';
 import { gbufEntityId, gbufWanted, writeGbufWords } from '../render/gbufWord.js';
+import { GLOW_COMPOSITE_FRAG, GLOW_COMPOSITE_VERT, glowCompositeGpuProgram, glowQuadPositions } from '../render/glowComposite.js';
 import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
 import {
   SUN_MAP_COLUMNS,
@@ -933,6 +934,17 @@ class PixiRenderer extends AbstractWorker {
     // as colour targets (made once they are, remade with them); 'pass' (default): a pass each.
     this._gbufMrt = false;
     this._gbufTarget = null;
+    // DX-EMISSIVE v2 (plan §6.9, F10): two colours a pixel. Where the entities carry their words, the glow pass draws their
+    // glowing pixels into a target the canvas's size (glowRT) and the glow layer adds them over the lighting layer where the
+    // light is short of them (glowComposite.js); a pass a frame while a sheet (meta.emissive) or a sprite glows.
+    this._glowOn = false;
+    this._atlasEmissive = false;
+    this.glowRT = null;
+    this._glowComposite = null;
+    this._glowQuad = new Float32Array(8);
+    this._glowQuadBuffer = null;
+    this._glowRtLayer = { resolution: 1 };
+    this._glowRtTransform = new Matrix();
     this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
     // DX-SHADOW3D: lighting.sunShadows 'map' (src/render/sunShadowMap.js): the sun's shadow map, its pass and terms.
     this._sunMapOn = false;
@@ -3192,8 +3204,96 @@ class PixiRenderer extends AbstractWorker {
       this._submitRender(renderOptions);
       this._renderLiquidFunLightingField();
       this._renderParticleLightingField();
+      if (this._glowOn) this._renderGlow();
     }
     if (started) this.lightsTimeThisFrame += performance.now() - started;
+  }
+
+  /**
+   * DX-EMISSIVE v2: the glow target (the canvas's size) and the glow layer, a quad over the canvas just above the lighting
+   * layer that adds glow · (1 - light) (glowComposite.js), its blend additive.
+   */
+  _createGlowLayer() {
+    const width = this.canvasWidth;
+    const height = this.canvasHeight;
+    this.glowRT = PIXI.RenderTexture.create({ width, height });
+    glowQuadPositions(this._glowQuad, width, height);
+    this._glowQuadBuffer = new Buffer({ data: this._glowQuad, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST });
+    const geometry = new PIXI.Geometry({
+      attributes: {
+        aPosition: { buffer: this._glowQuadBuffer, format: 'float32x2', stride: 8, offset: 0 },
+        aUV: [0, 0, 1, 0, 1, 1, 0, 1],
+      },
+      indexBuffer: [0, 1, 2, 0, 2, 3],
+    });
+    const glow = this.glowRT.source;
+    const light = this.lightingRT.source;
+    const shader = this._useWebGpu
+      ? new PIXI.Shader({
+          gpuProgram: glowCompositeGpuProgram(GpuProgram),
+          resources: { uGlow: glow, uGlowSampler: glow.style, uLight: light, uLightSampler: light.style },
+        })
+      : new PIXI.Shader({
+          glProgram: PIXI.GlProgram.from({ vertex: GLOW_COMPOSITE_VERT, fragment: GLOW_COMPOSITE_FRAG, name: 'weed-glow' }),
+          resources: { uGlow: glow, uLight: light },
+        });
+    const state = new PIXI.State();
+    state.blendMode = 'add';
+    state.depthTest = false;
+    state.depthMask = false;
+    state.culling = false;
+    const mesh = new PIXI.Mesh({ geometry, shader, state, label: 'weed-glow' });
+    mesh.blendMode = 'add';
+    mesh.cullable = false;
+    mesh.visible = false;
+    mesh.zIndex = this.lightingDisplaySprite ? this.lightingDisplaySprite.zIndex : 0;
+    this._glowComposite = mesh;
+    this.pixiApp.stage.addChild(mesh);
+    this.pixiApp.stage.sortChildren();
+  }
+
+  /** DX-EMISSIVE v2: the glow layer's targets as the light's and the glow's are now (a resize remakes them). */
+  _bindGlowLayer() {
+    const mesh = this._glowComposite;
+    if (mesh === null || this.glowRT === null || this.lightingRT === null) return;
+    const res = mesh.shader.resources;
+    const glow = this.glowRT.source;
+    const light = this.lightingRT.source;
+    if (res.uGlow !== glow) res.uGlow = glow;
+    if (res.uLight !== light) res.uLight = light;
+    if (this._useWebGpu) {
+      if (res.uGlowSampler !== glow.style) res.uGlowSampler = glow.style;
+      if (res.uLightSampler !== light.style) res.uLightSampler = light.style;
+    }
+  }
+
+  /**
+   * DX-EMISSIVE v2: this frame's glow, while a sheet or a sprite glows: the entities again into the glow target (the canvas's
+   * size, as they land on it), and the glow layer shown with the lighting layer; else the layer hidden.
+   */
+  _renderGlow() {
+    const mesh = this._glowComposite;
+    if (mesh === null || this.glowRT === null) return;
+    const on = (this._atlasEmissive || SpriteRenderer.emissiveUsers() > 0) && layerIsVisible(Layer.lighting?.id);
+    if (!on) {
+      if (mesh.visible) mesh.visible = false;
+      return;
+    }
+    const batch = this.entitiesBatch;
+    const maps = this.atlasMapsSource ?? this._emptyMapsSource();
+    const glow = batch !== null && batch.mesh.visible ? batch.glowMesh(this._faces.heightScaleY, this._groundScaleY || 1, maps) : null;
+    const opts = this._rtRenderOpts;
+    opts.container = glow !== null ? glow : this._rtEmptyContainer;
+    opts.target = this.glowRT;
+    opts.clear = true;
+    opts.clearColor = this._clearTransparent;
+    opts.transform = this._writeCameraRtTransform(this._glowRtTransform, this._glowRtLayer);
+    this._submitRender(opts);
+    opts.transform = null;
+    this._gpuPassesThisFrame++;
+    const display = this.lightingDisplaySprite;
+    if (display && mesh.zIndex !== display.zIndex) mesh.zIndex = display.zIndex;
+    if (!mesh.visible) mesh.visible = true;
   }
 
   /** DX-FACES: the face map's texture, nearest (its texels are codes), at the light pass's size. */
@@ -4084,8 +4184,14 @@ LIGHTING SYSTEM SETUP
       shader: this.lightingShader,
     });
 
+    // DX-EMISSIVE v2: where the entities carry their words, a sprite may glow (its sheet or spriteRenderer.emissive): the
+    // G-buffer's passes leave glowing pixels to the glow pass, and the glow layer reads the light's target.
+    const glowShaders = this._useWebGpu ? !!this._engineShaders?.sprite : !!this._engineShaders?.spriteVert;
+    this._glowOn = !!this.entitiesBatch?.gbuf && glowShaders;
+    if (this.entitiesBatch) this.entitiesBatch.emissiveGlow = this._glowOn;
     // Low-res lighting, liquid field splats, or particle lights need an RT target.
-    const needRt = this.lightingResolution < 1.0 || this.liquidFunMaxCount > 0 || this._particleLightsEnabled || facesOn;
+    const needRt = this.lightingResolution < 1.0 || this.liquidFunMaxCount > 0 || this._particleLightsEnabled || facesOn
+      || this._glowOn;
     if (needRt) {
       const lw = rtPixelSize(this.canvasWidth, this.lightingResolution);
       const lh = rtPixelSize(this.canvasHeight, this.lightingResolution);
@@ -4098,6 +4204,7 @@ LIGHTING SYSTEM SETUP
       this._registerLayerDisplayObject('lighting', this.lightingDisplaySprite);
       this.pixiApp.stage.addChild(this.lightingDisplaySprite);
       this._applyLightingViewport(this.canvasWidth, this.canvasHeight);
+      if (this._glowOn) this._createGlowLayer();
 
       debugWorkerLog(
         `PIXI WORKER: Lighting RenderTexture created (${this.lightingRT.width}x${this.lightingRT.height})`
@@ -7051,6 +7158,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }
           // DX-MAPS: the atlas's twin page (heights and normals at the same rectangles), data: nearest, no mipmaps,
           // no premultiplied alpha. The G-buffer pass samples it with the colour's UV.
+          // DX-EMISSIVE: a sheet of the atlas glows by itself (spriteSheetRegistry createBigAtlas's meta.emissive).
+          this._atlasEmissive = jsonData.meta?.emissive === true;
           if (data.mapsBitmap) {
             this.atlasMapsSource = new PIXI.ImageSource({
               resource: data.mapsBitmap,
@@ -8056,6 +8165,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (this.lightingDisplaySprite) {
         this.lightingDisplaySprite.scale.set(width / lw, height / lh);
       }
+      if (this.glowRT !== null) {
+        this.glowRT.destroy(true);
+        this.glowRT = PIXI.RenderTexture.create({ width, height });
+        glowQuadPositions(this._glowQuad, width, height);
+        if (this._glowQuadBuffer !== null) this._glowQuadBuffer.update();
+      }
+      this._bindGlowLayer();
     }
 
     // Sync lighting shader uniforms immediately
