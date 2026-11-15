@@ -15979,16 +15979,18 @@
     {
       "id": "N-195",
       "title": "A top-down render's silhouette (card) sun shadow lies turned: the card shows the frame the sun sees and stretches its rows along the sun as if they were height, so a car seen from above casts a car at another heading",
-      "status": "open",
-      "statusText": "found 2026-11-15 from the owner's report on the light bench (the pickup's shadow in silhouette mode); the standard cars cast their solid now (b0bc107f), the card itself is unchanged",
+      "status": "rejected",
+      "statusText": "closed 2026-11-15: the premise did not hold; the card was right, its frame was not: N-197 (a solid sheet's card took the camera's frame), fixed in e90de4dc (R-1138)",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
-      "result": "",
+      "result": "not a limit of the card: the owner's prototype casts cars' cards well with the same terms; the turned shadows were N-197",
       "refs": [],
       "aliases": [],
-      "next": "The card is right for a picture of one side (a person, a tree, a fence); a render drawn from above (its base a contact) has its depth, not its height, in its rows. Options: a render's card from the frame the camera sees laid as a drop shadow (each row moved along the sun by the height its rows stand for), or a render without maps casting its footprint box. Until then a car with maps casts its solid (its sheet's cast.sun 'heightmap'), and the bench's 'silhouette' look shows the limit.",
-      "records": []
+      "next": "",
+      "records": [
+        "R-1138"
+      ]
     },
     {
       "id": "N-196",
@@ -16005,6 +16007,52 @@
       "records": [
         "R-1136"
       ]
+    },
+    {
+      "id": "E-379",
+      "title": "Columns passes (sun map, lamps' map, sprite shadows) ran their 24 x 24 grid for every caster row and threw away the rows that cast none; they now draw only the rows that cast columns, a large render as k x k blocks of the grid",
+      "status": "running",
+      "statusText": "found and done 2026-11-15 on dx/light3d (ef2e71e0); the GPU pass measured, a scene check left",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "gpuPassBench sunColumns (GTX 1650, WebGL): 20 renders 0.096 ms; the same 20 among 2 000 card rows 5.107 ms, the same image: what Predator ?light3d=1's people cost each columns pass before; the Pixi worker now gives each pass only its column-casting rows (compactColumnRows), and the barn's columns are 6 px (k = 3) instead of 18 (its shadow's staircase)",
+      "refs": [],
+      "aliases": [],
+      "next": "Scene check: Predator ?light3d=1 (people as cards beside the farm's renders) and sunShadowMapStressScene, the renderer's frame time and every worker's STEP_MS (the compaction is a loop over the caster rows in the Pixi worker), ABAB against e90de4dc^.",
+      "records": [
+        "R-1137"
+      ]
+    },
+    {
+      "id": "N-197",
+      "title": "A card of a sheet whose way is its solid took the camera's frame, not the one its light sees: the barn, the table and the standard cars set to cast their silhouette stood the camera's view up towards the sun and their shadows lay turned",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 (fences, cars, table in silhouette, 'como estaba en la otra app'); fixed the same day (e90de4dc)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (e90de4dc): the frame passes (sun and lamps, full and keyed rows) test each caster's kind: a card (1) or a fixed card takes its light's frame, a solid keeps the camera's; checked against the owner's prototype, the same sun and things, a car's card shadow lies under it on the right side under four suns",
+      "refs": [],
+      "aliases": [],
+      "next": "",
+      "records": [
+        "R-1138"
+      ]
+    },
+    {
+      "id": "N-198",
+      "title": "The light bench offered box and hull looks with no room for volumes: shadowCaster.setBox and setHull warned 'the scene keeps no room for volumes' and cast nothing",
+      "status": "kept-hygiene",
+      "statusText": "seen in the owner's console 2026-11-15; fixed the same day (3cf5c1bf)",
+      "date": "2026-11-15",
+      "area": "demos",
+      "kind": "bug",
+      "result": "fixed (3cf5c1bf): lighting.maxVolumes 64 (every prop and car at once), maxVolumeVerts 24 (the hulls); the same commit samples the bench's atlas nearest (its 2x cars were soft next to the prototype)",
+      "refs": [],
+      "aliases": [],
+      "next": "",
+      "records": []
     }
   ],
   "records": [
@@ -26804,6 +26852,32 @@
       "text": "N-196 fixed (cf3e8ff1): lighting.lampShadowTile 'auto' (the new default) sizes a lamp's tile, a power of two from 64 to 1024, by the widest casting lamp's reach and lighting.shadowResolution (at most 2 floor px a texel at resolution 1), a tile for each lamp casting now rounded up to a power of two, within a 4096 x 2048 map; a number keeps a fixed tile (lampShadowStressScene pins its ?tile=).\n\nPicture: the light bench at 22 h, the warm lamp at reach 900, brightness 3, elevation 75, shadow resolution 1 (the owner's report): before, 256 texels over 1800 px (7 px a texel) drew the fence's and the person's shadows as blocks; after, 1024 texels (1.76 px a texel), sharp edges (pair capture, HEAD c0b2b190 against the working tree).\n\nCost, gpuPassBench lampMap (GTX 1650, AC power), 2 lamps of 64 casters, 85.5 % of each tile drawn (a dense case), ms a pass, WebGL / WebGPU: tile 256 0.052 [0.048-0.061] / 0.054 [0.052-0.055]; 512 0.170 / 0.181; 1024 0.623 / 0.744. The pass costs its texels; what changes is only where more were asked: at the default resolution 0.5 a lamp up to 512 px of reach keeps 256 (Predator ?light3d=1, selfShadowStressScene unchanged), the bench (resolution 1) pays about 0.17 ms a lamp of reach 330 and 0.6 ms at 900.\n\nNext: a softer edge (PCF in lampVisibility, 4 fetches) if 2 px a texel still shows at a high zoom.",
       "commits": [
         "cf3e8ff1"
+      ]
+    },
+    {
+      "id": "R-1137",
+      "date": "2026-11-15",
+      "time": "15:13",
+      "timeFrom": "recorded",
+      "title": "E-379: the columns passes draw only their column-casting rows, large renders in blocks",
+      "verdict": "kept-kernel",
+      "text": "E-379 (ef2e71e0). The columns programs (the sun map's, the lamps' map's, the sprite shadows') drew their 24 x 24 grid (2 304 vertices) for every caster row of the batch and threw away in the vertex shader the rows that cast no columns: people, trees, every card.\n\nMeasured (gpuPassBench, GTX 1650, AC power, WebGL, 12 samples), with a new `cards` knob (edee5a6b: card rows among the columns' instances, the table's frames twice): sunColumns, 20 renders: 0.096 ms [0.094-0.100]; the same 20 renders among 2 000 card rows: 5.107 ms [5.087-5.127], the same image hash (1135689b). 98 % of the pass was rows thrown away.\n\nChange: the Pixi worker copies the rows that cast columns for the pass's light into the pass's own instance buffers (two ring slots), by the programs' own test (sunShadowMap.js compactColumnRows: kind 2, or kind 0 on a render; for the sun not a render that casts its card); a frame more than SUN_MAP_COLUMNS x COLUMN_CELL_PX (24 x 8) px a side draws as k x k instances of the grid (aBlock: its block, k up to 4), which also fixes the barn's staircase (432 px frame: 18 px cells before, 6 px now; not N-192's staircase, which is the lamp stretch cap's, as ef2e71e0's message says by mistake). Behavioural test on the real function (tests/node/sunShadowMap.test.js). node suite 2730/2730.\n\nPictures: the barn at 16 h and 10 h, 24 cells against a finer grid (a test build with 72), and the bench after: the steps gone.\n\nNot yet measured: a scene (Predator ?light3d=1, sunShadowMapStressScene) and the Pixi worker's cost of the compaction (a loop over the caster rows).",
+      "commits": [
+        "edee5a6b",
+        "ef2e71e0"
+      ]
+    },
+    {
+      "id": "R-1138",
+      "date": "2026-11-15",
+      "time": "15:35",
+      "timeFrom": "recorded",
+      "title": "N-197 fixed: a solid sheet's card takes its light's frame (the turned silhouettes); N-195 was this",
+      "verdict": "kept",
+      "text": "N-197 fixed (e90de4dc). The owner: fences, cars and the table cast their silhouettes for the sun 'at another angle', unlike the light bench prototype (claude.ai artifact RcVVdz6bEo7GiErDNGZSKK).\n\nHow it was found: the prototype's files downloaded and served next to the engine's bench, the same sun (the prototype's azimuth = 180 - the engine's Sun.angle: the engine's angle is where shadows point; checked with a tree, which has no views), the same things turned alike, captured side by side. The card's terms are the prototype's (rows above the frame's lowest opaque row at 1 / heightScaleY px of height, the card standing on the contact nearest the light, its columns to the right of someone at the light, the light's frame turned by 90 deg minus the angle to the light); the difference was the frame: pre-render's sun and lamp frame passes left any sheet marked solid (its way is its solid: a render with height maps) at the camera's frame, whatever its caster asked, so a card of the barn, the table or the standard cars showed the camera's view stood up towards the sun.\n\nFix: each caster's kind for that light decides: a card (CAST_KIND.SPRITE) or a fixed card takes the light's frame; a solid keeps the camera's (its columns are built from it). The pickup alone under four suns, prototype against engine: before, the engine's shadow on the wrong side at every sun; after, on the same side, small and under the car as the prototype's. N-195 was this (closed).",
+      "commits": [
+        "e90de4dc",
+        "d0e1d644"
       ]
     }
   ],
