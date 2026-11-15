@@ -196,6 +196,59 @@ function sunFrameTables(byId) {
     }
     return any ? out : null;
 }
+
+/**
+ * DX-SHADOW3D: _computeSunFrames' loop, a module function over the columns it is handed. As a method it stayed in
+ * Maglev in Predator's pre-render (3.8 ms a call for 57 633 slots, its parts 0.2 to 0.5 ms each when timed alone):
+ * a small function of its own takes TurboFan's normal compile.
+ * @returns {void} out[e]: ±(textureId + 1), negative mirrored, 0 for the sprite's own frame
+ */
+function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, anims, frames, tables, proxy, starts, counts,
+    shift, shiftTurn, turn) {
+    for (let e = 0; e < n; e++) {
+        let v = 0;
+        if (active[e] === 1 && mode[e] === 1 && (casts === null || casts[e] === 1)) {
+            const sheet = sheets[e];
+            const t = tables[sheet];
+            if (t !== undefined && !t.solid) {
+                // A uniform table: the direction the logic worker drew (its margin kept), turned by the sun's angle in
+                // whole steps, worked out once a sheet while the sun stays.
+                const cur = dirs[e];
+                let d = 0;
+                if (t.uniform && cur < t.count) {
+                    if (shiftTurn[sheet] !== turn) {
+                        shiftTurn[sheet] = turn;
+                        shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
+                    }
+                    d = cur + shift[sheet];
+                    if (d >= t.count) d -= t.count;
+                } else {
+                    d = sunFrameDirection(t, e, turn);
+                }
+                const g = anims[e];
+                const slot = (g < t.groups ? g : 0) * t.count + d;
+                const map = proxy[sheet];
+                const global = map ? map[t.anim[slot]] : undefined;
+                if (global !== undefined) {
+                    const nf = counts[global] | 0;
+                    let f = frames !== null ? frames[e] | 0 : 0;
+                    if (f < 0 || f >= nf) f = 0;
+                    const tid = (starts[global] | 0) + f + 1;
+                    v = t.flip[slot] === 1 ? -tid : tid;
+                }
+            }
+        }
+        if (out[e] !== v) out[e] = v;
+    }
+}
+
+/** A table that is not uniform (or a sprite with no direction yet): the facing turned by the sun, nearest direction. */
+function sunFrameDirection(t, e, turn) {
+    const ax = DirectionalSprite.aimX[e];
+    const ay = DirectionalSprite.aimY[e];
+    const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
+    return pickDirection(t, facing + turn, 255, 0);
+}
 const FlashComponent = FlashComponentImport;
 const LightOccluder = LightOccluderImport;
 const Query = QueryImport;
@@ -522,6 +575,8 @@ class PreRenderWorker extends AbstractWorker {
         // DX-SHADOW3D: a uniform table's turn towards the sun in whole steps, by sheet id, and the sun's turn it is for.
         this._sunShift = new Int16Array(256);
         this._sunShiftTurn = new Float64Array(256).fill(NaN);
+        // DX-SHADOW3D: each entity's sun frame this frame, ±(textureId + 1) (_computeSunFrames), sized on first use.
+        this._sunFrameOf = new Int32Array(0);
         this._faces = false; // config.lighting.faces: decoration rows carry their face in the tile offsets
         this._collectedRows = 0; // the rows the last sprite queue's collect held
         /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
@@ -3600,125 +3655,75 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * DX-SHADOW3D: a directional sprite's sun row draws the frame the sun sees: its facing turned by the angle between
-     * the camera's view (north) and the sun's (along the shadows, on the floor), its animation in that direction, the
-     * same frame of the cycle, that direction's flip. Full rows only (a keyed row reads the sprite's own statics).
+     * DX-SHADOW3D: the frame the sun sees for every directional caster, as ±(textureId + 1) (negative mirrored, 0 the
+     * sprite's own) in _sunFrameOf by entity: its facing turned by the angle between the camera's view (north) and the
+     * sun's (along the shadows, on the floor), its animation in that direction, the same frame of the cycle, that
+     * direction's flip. In entity order, so its columns stream: the caster rows' passes read one value a row. Read by row
+     * in the painter's order, those columns were a cache miss each a caster (Predator, 38 000 casters: 18 % of
+     * pre-render's samples). A sheet that casts its solid keeps the camera's frame (its columns are built from it).
+     * @returns {boolean} whether _sunFrameOf holds this frame's
      */
-    _applySunFrames(q, rows, sunN) {
-        if ((q.count | 0) !== this._collectedRows || !Sun.isInitialized) return;
+    _computeSunFrames() {
         const tables = this._sunFrameTables;
-        const casters = this._gpuCasterIdx;
-        const types = this._renderableType;
-        const entities = this._renderableIndex;
+        const active = DirectionalSprite.active;
         const proxy = this.proxyToGlobalAnim;
         const starts = this.animationFrameStart;
         const counts = this.animationFrameCount;
-        const frames = this.entityFrameIndex;
-        if (!proxy || !starts || !counts) return;
+        if (tables === null || !active || !proxy || !starts || !counts || !Sun.isInitialized) return false;
+        const n = active.length;
+        if (this._sunFrameOf.length !== n) this._sunFrameOf = new Int32Array(n);
         const turn = -Math.PI / 2 - Math.atan2(Sun.shadowDirY / cameraFloorScaleY(this.config), Sun.shadowDirX);
-        const shift = this._sunShift;
-        const shiftTurn = this._sunShiftTurn;
+        computeSunFramesInto(
+            this._sunFrameOf, n, active, DirectionalSprite.mode, ShadowCaster.active || null, SpriteRenderer.spritesheetId,
+            DirectionalSprite.directionIndex, DirectionalSprite.animation, this.entityFrameIndex || null, tables, proxy,
+            starts, counts, this._sunShift, this._sunShiftTurn, turn,
+        );
+        return true;
+    }
+
+    /**
+     * DX-SHADOW3D: a directional sprite's full sun row draws the frame the sun sees (_computeSunFrames): its texture and
+     * the flip of its scale.
+     */
+    _applySunFrames(q, rows, sunN) {
+        if ((q.count | 0) !== this._collectedRows || !this._computeSunFrames()) return;
+        const of = this._sunFrameOf;
+        const casters = this._gpuCasterIdx;
+        const types = this._renderableType;
+        const entities = this._renderableIndex;
         for (let k = 0; k < sunN; k++) {
             const row = casters[k];
             if (types[row] !== 0) continue;
-            const e = entities[row];
-            if (!DirectionalSprite.active[e] || DirectionalSprite.mode[e] !== 1) continue;
-            const sheet = SpriteRenderer.spritesheetId[e];
-            const t = tables[sheet];
-            if (t === undefined || t.solid) continue;
-            // The direction the sun sees. A uniform table: the one the logic worker drew (its margin kept), turned by the
-            // sun's angle in whole steps, worked out once a sheet while the sun stays (Predator: 38 000 casters a frame).
-            const cur = DirectionalSprite.directionIndex[e];
-            let d;
-            if (t.uniform && cur < t.count) {
-                if (shiftTurn[sheet] !== turn) {
-                    shiftTurn[sheet] = turn;
-                    shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
-                }
-                d = cur + shift[sheet];
-                if (d >= t.count) d -= t.count;
-            } else {
-                const ax = DirectionalSprite.aimX[e];
-                const ay = DirectionalSprite.aimY[e];
-                const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
-                d = pickDirection(t, facing + turn, 255, 0);
-            }
-            const g = DirectionalSprite.animation[e];
-            const slot = (g < t.groups ? g : 0) * t.count + d;
-            const map = proxy[sheet];
-            const global = map ? map[t.anim[slot]] : undefined;
-            if (global === undefined) continue;
-            const n = counts[global] | 0;
-            let f = frames ? frames[e] | 0 : 0;
-            if (f < 0 || f >= n) f = 0;
+            const v = of[entities[row]];
+            if (v === 0) continue;
             const at = k * GPU_CASTER_FLOATS;
-            rows[at + GPU_ROW_TEXTURE] = (starts[global] | 0) + f;
+            rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
             const sx = rows[at + GPU_ROW_SCALE_X];
-            const flipped = t.flip[slot] === 1;
-            rows[at + GPU_ROW_SCALE_X] = flipped === (sx < 0) ? sx : -sx;
+            rows[at + GPU_ROW_SCALE_X] = (v < 0) === (sx < 0) ? sx : -sx;
         }
     }
 
     /**
      * DX-SHADOW3D (plan §17.2): _applySunFrames for keyed caster rows. The kernel wrote a row for each queue row it found
      * casting (type 3 left out, a shadow height above 0), in queue order, with 0 in its fourth float; this walks the
-     * queue the same way and writes there, for a DirectionalSprite, the frame the sun sees as ±(textureId + 1), negative
-     * mirrored, which the keyed shadow programs take instead of the sprite's own. A copy of _applySunFrames' body, not a
-     * shared helper (hot loops: R8).
+     * queue the same way and writes there a DirectionalSprite's sun frame (_computeSunFrames, ±(textureId + 1), negative
+     * mirrored), which the keyed shadow programs take instead of the sprite's own.
      */
     _applyKeyedSunFrames(q, rows, keyedN, count) {
-        if ((q.count | 0) !== this._collectedRows || !Sun.isInitialized) return;
-        const tables = this._sunFrameTables;
         const qType = q.type || this.renderQueueType;
         const shadowH = q.shadowH;
+        if ((q.count | 0) !== this._collectedRows || !shadowH || !this._computeSunFrames()) return;
+        const of = this._sunFrameOf;
         const types = this._renderableType;
         const entities = this._renderableIndex;
-        const proxy = this.proxyToGlobalAnim;
-        const starts = this.animationFrameStart;
-        const counts = this.animationFrameCount;
-        const frames = this.entityFrameIndex;
-        if (!proxy || !starts || !counts || !shadowH) return;
-        const turn = -Math.PI / 2 - Math.atan2(Sun.shadowDirY / cameraFloorScaleY(this.config), Sun.shadowDirX);
-        const shift = this._sunShift;
-        const shiftTurn = this._sunShiftTurn;
         let n = 0;
         for (let i = 0; i < count && n < keyedN; i++) {
             if (qType && qType[i] === 3) continue;
             if (!(shadowH[i] > 0)) continue;
             const k = n++;
             if (types[i] !== 0) continue;
-            const e = entities[i];
-            if (!DirectionalSprite.active[e] || DirectionalSprite.mode[e] !== 1) continue;
-            const sheet = SpriteRenderer.spritesheetId[e];
-            const t = tables[sheet];
-            if (t === undefined || t.solid) continue;
-            // The direction the sun sees. A uniform table: the one the logic worker drew (its margin kept), turned by the
-            // sun's angle in whole steps, worked out once a sheet while the sun stays (Predator: 38 000 casters a frame).
-            const cur = DirectionalSprite.directionIndex[e];
-            let d;
-            if (t.uniform && cur < t.count) {
-                if (shiftTurn[sheet] !== turn) {
-                    shiftTurn[sheet] = turn;
-                    shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
-                }
-                d = cur + shift[sheet];
-                if (d >= t.count) d -= t.count;
-            } else {
-                const ax = DirectionalSprite.aimX[e];
-                const ay = DirectionalSprite.aimY[e];
-                const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
-                d = pickDirection(t, facing + turn, 255, 0);
-            }
-            const g = DirectionalSprite.animation[e];
-            const slot = (g < t.groups ? g : 0) * t.count + d;
-            const map = proxy[sheet];
-            const global = map ? map[t.anim[slot]] : undefined;
-            if (global === undefined) continue;
-            const nf = counts[global] | 0;
-            let f = frames ? frames[e] | 0 : 0;
-            if (f < 0 || f >= nf) f = 0;
-            const tid = (starts[global] | 0) + f + 1;
-            rows[k * GPU_KEYED_CASTER_FLOATS + 3] = t.flip[slot] === 1 ? -tid : tid;
+            const v = of[entities[i]];
+            if (v !== 0) rows[k * GPU_KEYED_CASTER_FLOATS + 3] = v;
         }
     }
 
