@@ -251,11 +251,23 @@ function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, anims, 
 
 /**
  * DX-CASTER (F9): whether any caster asks for something other than its sheet's way (a kind, a fixed card, an opacity
- * below 1). Scanned in entity order now and then: until one does, the rows carry nothing more.
+ * below 1). Scanned in entity order now and then: until one does, the rows carry nothing more. A card (CAST_KIND.SPRITE,
+ * 1) on a sheet that casts no solid is what its sheet's way casts anyway (setSprite's options alone, as Predator's people
+ * ask for a longer shadow): it keeps the keyed rows. A sheet casts a solid when its direction table says so (a render
+ * with height maps; a render always has directions).
+ * @param {Uint8Array|null} sheets SpriteRenderer.spritesheetId
+ * @param {Array|null} tables the direction tables by sheet id (sunFrameTables), whose `solid` says it
  */
-function casterKindsInUse(active, sunKind, lampKind, orient, opacity, n) {
+function casterKindsInUse(active, sunKind, lampKind, orient, opacity, n, sheets, tables) {
     for (let e = 0; e < n; e++) {
-        if (active[e] === 1 && (sunKind[e] !== 0 || lampKind[e] !== 0 || orient[e] !== 0 || opacity[e] < 1)) return true;
+        if (active[e] !== 1) continue;
+        if (orient[e] !== 0 || opacity[e] < 1) return true;
+        const s = sunKind[e];
+        const l = lampKind[e];
+        if ((s | l) === 0) continue;
+        if (s > 1 || l > 1) return true;
+        const t = tables !== null && sheets !== null ? tables[sheets[e]] : undefined;
+        if (t !== undefined && t.solid) return true;
     }
     return false;
 }
@@ -3738,7 +3750,7 @@ class PreRenderWorker extends AbstractWorker {
             this._casterScanTick = 30;
             this._casterKindsOn = !!ShadowCaster.sunKind && casterKindsInUse(
                 ShadowCaster.active, ShadowCaster.sunKind, ShadowCaster.lampKind, ShadowCaster.orient, ShadowCaster.opacity,
-                ShadowCaster.active.length,
+                ShadowCaster.active.length, SpriteRenderer.spritesheetId || null, this._sunFrameTables,
             );
         }
         if (count > 0 && !this._casterKindsOn && this._keyedCastersLive()) {
