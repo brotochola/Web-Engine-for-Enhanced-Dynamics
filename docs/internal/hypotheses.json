@@ -15164,6 +15164,27 @@
       "statusText": "built 2026-11-14 on dx/light3d; measured on a 2-core VM only"
     },
     {
+      "aliases": [
+        "sunShadows"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#DX-SHADOW3D",
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "records": [
+        "R-1053"
+      ],
+      "date": "2026-11-14",
+      "area": "render",
+      "kind": "dx",
+      "result": "",
+      "next": "Owner: approve the light bench's captures (17.1); then 17.2 (keyed rows carry the shadow's frame), WebGPU of the map and the solids, the lamps (F7).",
+      "id": "DX-SHADOW3D",
+      "title": "Shadows from the frame each light sees: cards on their base, renders’ solids, the sun’s map (DX-LIGHT3D F6/F7, §17)",
+      "status": "running",
+      "statusText": "sun built 2026-11-14 on dx/light3d (map and sprite modes, WebGL; cards also WebGPU); lamps to do"
+    },
+    {
       "id": "E-311",
       "title": "Pixi's updateLighting boxes a double per visible light per frame (Predator crowd 1.5: 54.5 KB/s of Pixi's 302.7)",
       "status": "kept-hygiene",
@@ -25620,6 +25641,21 @@
       "title": "E-99 closed: rejected in the kernel (2026-10-23), it still read open",
       "verdict": "rejected",
       "text": "W7 and E-99 closed: W7 says nothing is pending (screened 2026-10-28: a port's ceiling is a few per cent of spatial); E-99 lost in the kernel 2026-10-23. Both still read open."
+    },
+    {
+      "id": "R-1053",
+      "date": "2026-11-14",
+      "time": "22:56",
+      "timeFrom": "recorded",
+      "title": "Sun shadows as in the light bench (plan §17.1): cards on their base, renders' solids, the sun map's max fixed",
+      "verdict": "note",
+      "text": "Plan §17.1 built on dx/light3d (commits 4ee050ff, 31319d49, 658fdd56, 952929fd), checked with captures, no timing\nsitting (a visual change; its cost is a few texture reads a caster in the sun pass, the columns only in scenes with\nheight maps). Captures 21:41–22:56 from the result files.\n\n- The light bench (demos/lightBenchScene) now draws the prototype's own farm (Quaternius props from 32 directions,\n  MinZinn cars, LPC civil7, two trees, each with height and normal maps; tools/fromLightBench.mjs converts them).\n- Frame bases (frameBase.js): measured at atlas time into the texture table's spare floats. A picture of one view:\n  an ellipse (feet, or a round trunk over roots, told apart by the run 14..32 rows up being under half the bottom's\n  width). A render (8 directions or more, with a height map): its lowest contact, the pixels within 1.5 px of its\n  lowest point (the hatchback's wheels sit 2.5 px up from some directions: an absolute 1.5 px found none and fell\n  back to the feet's ellipse, so its shadow detached southwards).\n- Sprite sun shadows draw the card: on the base, landing along the sun's ray with the sun's real elevation (capped at\n  shadowMaxLengthRatio), columns to the right of someone at the sun. dxCaptureScene: 14 887 px change in WebGL, 14 464\n  in WebGPU, the two backends equal to each other before and after (3 773 / 3 787 px apart, as they already were).\n- Renders with height maps cast their solid (columns) in both modes, pictures of one view their card: the card stood a\n  barn's picture rows up as heights (530 px of shadow height for a 228 px model).\n- Bug found: the sun map's max blending never took effect (Pixi blends a mesh drawn as the render's root normally):\n  each texel kept the last caster, not the highest. Fixed through a host container.\n- Not this record: WebGPU of the face/G-buffer pass breaks on the bench (entities-instanced-face: @group(2)\n  @binding(5) missing from the layout), already on the branch before 17.1; the map mode's shadows read faint.\n- Waiting: the owner's approval of the captures (light bench, Sun Street, dxCaptureScene).",
+      "commits": [
+        "4ee050ff",
+        "31319d49",
+        "658fdd56",
+        "952929fd"
+      ]
     }
   ],
   "leads": [
