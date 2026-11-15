@@ -15929,6 +15929,34 @@
       "records": [
         "R-1129"
       ]
+    },
+    {
+      "id": "DX-BARRIOS",
+      "title": "Editor de barrios: the buenos-aires repo becomes the neighbourhood editor, exporting houses and above all the floor as WeedJS sheets with height maps, normal maps and pixel depth instead of simplified 3D models; WeedJS's import workarounds for those models go",
+      "status": "blocked",
+      "statusText": "approved by the owner 2026-11-15; starts once dx/light3d is merged to main",
+      "date": "2026-11-15",
+      "area": "demos",
+      "kind": "feature",
+      "result": "",
+      "refs": [],
+      "aliases": [],
+      "next": "After the dx/light3d merge: rename the buenos-aires repo (where the neighbourhood editor lives) to \"editor de barrios\"; export from it houses and mainly the floor as standard sheets (colour, height map, normal map: DX-MAPS) lit by the standard lighting (DX-GBUF, DX-SHADOW3D, pixel depth DX-DEPTH) instead of the simplified 3D models WeedJS reads today; remove the engine code that only exists to import those models and their maps (the workarounds), and edit demos/buenosAiresScene to the new exports. Owner, 2026-11-15: \"cuando terminemos esto y dx/light3d este mergeado a main, ahi vamos a editar esa escena, el otro repo, y las partes del codigo q tienen q ver con eso\".",
+      "records": []
+    },
+    {
+      "id": "N-194",
+      "title": "A sprite drawn at a scale kept its height map's heights at scale 1: lighting (the face map), pixel depth and the sun's and lamps' shadow maps read the twin's heights in frame px, while its picture and its footprint grew with the scale",
+      "status": "running",
+      "statusText": "found 2026-11-15 on dx/light3d while drawing the standard 1x car sheets at 2x in the light bench; fix written, being checked",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "",
+      "refs": [],
+      "aliases": [],
+      "next": "Fix: the twin's height times the sprite's |scale y| where it becomes a world height (faceMap.frag.glsl and faceMap.js's WGSL through a flat vMapScale; pixelDepth.js through vPainter.y / vDepthFoot.z; sunShadowMap.js and lampShadowMap.js columns through aInstScale); the normals from heights (Sobel) keep reading the frame's own heights, since a scale stretches heights and texels alike. Check: the light bench's car from the standard 1x sheet at setScale(2) against the old 2x copy (shadows, light, depth), and the shader cost (one flat varying, one multiply).",
+      "records": []
     }
   ],
   "records": [
