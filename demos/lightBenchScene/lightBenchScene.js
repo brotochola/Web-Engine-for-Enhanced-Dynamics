@@ -177,7 +177,12 @@ export class LightBenchScene extends Scene {
       sunShadows: SUN_MAP ? 'map' : 'sprite',
       selfShadow: SELF,
       shadowTextures: FULL_ROWS,
-      sun: { enabled: true, angle: 215, elevation: 45, intensity: 1, startHour: HOUR, dayCycle: { enabled: false } },
+      // Shadows as dark as the light bench prototype's (about 60 % darker than the sunlit floor at 16 h): a strong shadow
+      // alpha, and no lightening of long shadows.
+      sun: {
+        enabled: true, angle: 215, elevation: 45, intensity: 1, startHour: HOUR, dayCycle: { enabled: false },
+        shadowAlpha: 0.7, shadowStretchAlphaFactor: 0,
+      },
     },
   };
 
