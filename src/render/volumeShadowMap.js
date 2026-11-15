@@ -14,7 +14,7 @@
  *   headlights are not shaded by the car's volume.
  */
 
-import { MAP_TEXEL_WGSL, SUN_MAP_ZMAX } from './sunShadowMap.js';
+import { MAP_TEXEL_WGSL, SUN_MAP_ZMAX, SUN_TEXEL_WGSL } from './sunShadowMap.js';
 import { LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX } from './lampShadowMap.js';
 import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
 
@@ -30,12 +30,12 @@ function after(source, find, add, what) {
 const MIN_W = (1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
 
 const SUN_FRAGMENT_WGSL = `
-${MAP_TEXEL_WGSL}
-// DX-SHADOW3D (F6): a volume's height where its sun ray lands, the highest kept by its depth with the volume's entity
-// (sunShadowMap.js VOLUME_MAP_FRAGMENT).
+${SUN_TEXEL_WGSL}
+// DX-SHADOW3D (F6): a volume's height where its sun ray lands, the highest kept by its depth (which its vertices write)
+// with the volume's entity (sunShadowMap.js VOLUME_MAP_FRAGMENT).
 @fragment
-fn mainFragMap(in: VertexOut) -> WeedMapOut {
-  return weedMapTexel(in.vSunZ, in.vSunId, 1.0);
+fn mainFragMap(in: VertexOut) -> @location(0) vec4<f32> {
+  return weedSunTexel(in.vSunZ, in.vSunId, 1.0);
 }
 `;
 
@@ -56,7 +56,7 @@ export function volumeMapWgsl(source) {
   out = after(
     out,
     '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
-    `  out.vSunZ = height * sunShadow.uSunShadow.w;\n${VOLUME_ID_WGSL}`,
+    `  out.vSunZ = height * sunShadow.uSunShadow.w;\n  out.position.z = 1.0 - clamp(out.vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);\n${VOLUME_ID_WGSL}`,
     what,
   );
   return out + SUN_FRAGMENT_WGSL;

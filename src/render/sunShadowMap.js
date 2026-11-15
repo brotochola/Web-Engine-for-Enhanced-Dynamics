@@ -217,7 +217,7 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   vWorld = world;
   vAtlasUV = aInstUV;
   vTileInv = aInstTileInv;
-  vTileOff = aInstTileOff;${heights ? '\n  vSunZ = mix(zA, z, aCell.z);' : ''}
+  vTileOff = aInstTileOff;${heights ? `\n  vSunZ = mix(zA, z, aCell.z);\n  gl_Position.z = 1.0 - 2.0 * clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);` : ''}
 }
 `;
 }
@@ -257,7 +257,8 @@ export function sunMapVertex(source, { heights = true } = {}) {
     .replace(decl, `${decl}out float vSunZ;\nflat out float vSunId;\n${MAPPED_GLSL}${CASTER_ID_GLSL}`)
     .replace(main, `${main}  vSunZ = 0.0;\n  vSunId = casterEntityId(aInstTintBits);\n`)
     .replace(out, `${out}    vSunZ = sunZ;\n`)
-    .replace(color, '  vColor = vec4(1.0, castOpacity, 1.0, 1.0);\n');
+    // The depth that keeps the highest point (sunShadowMap.frag.glsl), from the vertex: NDC z = 2 (1 - h) - 1.
+    .replace(color, `  vColor = vec4(1.0, castOpacity, 1.0, 1.0);\n  gl_Position.z = 1.0 - 2.0 * clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);\n`);
 }
 
 /** A WGSL source with one occurrence of each mark, or a clear error. */
@@ -287,16 +288,28 @@ fn weedMapTexel(z: f32, idf: f32, opacity: f32) -> WeedMapOut {
 }
 `;
 
+/**
+ * The sun's map's texel (WGSL): MAP_TEXEL_WGSL's colour alone, the depth coming from the vertices (E-374: a fragment
+ * that writes its depth turns the early depth test off for the whole pass).
+ */
+export const SUN_TEXEL_WGSL = `fn weedSunTexel(z: f32, idf: f32, opacity: f32) -> vec4<f32> {
+  let h = clamp(z / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);
+  let id = u32(idf + 0.5);
+  return vec4<f32>(h, clamp(opacity, 0.0, 1.0), f32(id >> 8u) / 255.0, f32(id & 255u) / 255.0);
+}
+`;
+
 /** The map's fragment (sunShadowMap.frag.glsl's WGSL): the caster point's height where its ray lands, and its id. */
 const MAP_FRAGMENT_WGSL = `
 ${CASTER_ID_WGSL}
-${MAP_TEXEL_WGSL}
-// DX-SHADOW3D: a caster point's height where its sun ray lands, the highest kept by its depth (sunShadowMap.frag.glsl).
+${SUN_TEXEL_WGSL}
+// DX-SHADOW3D: a caster point's height where its sun ray lands, the highest kept by its depth (sunShadowMap.frag.glsl),
+// which its vertices write.
 @fragment
-fn mainFragMap(in: VertexOut) -> WeedMapOut {
+fn mainFragMap(in: VertexOut) -> @location(0) vec4<f32> {
   let t = textureSampleLevel(uTexture, uSampler, mix(in.vAtlasUV.xy, in.vAtlasUV.zw, in.vLocal), 0.0);
   if (t.a < 0.5) { discard; }
-  return weedMapTexel(in.vSunZ, in.vSunId, in.vColor.g);
+  return weedSunTexel(in.vSunZ, in.vSunId, in.vColor.g);
 }
 `;
 
@@ -330,7 +343,7 @@ export function sunMapWgsl(source, { heights = true } = {}) {
       .replace(struct, `${struct}  @location(6) vSunZ: f32,\n  @location(8) @interpolate(flat) vSunId: f32,\n`)
       .replace(body, `${body}  out.vSunId = casterEntityId(aInstTintBits);\n`)
       .replace(out, `${out}    out.vSunZ = sunZ;\n`)
-      .replace(color, '  out.vColor = vec4<f32>(1.0, castOpacity, 1.0, 1.0);\n') + MAP_FRAGMENT_WGSL
+      .replace(color, `  out.vColor = vec4<f32>(1.0, castOpacity, 1.0, 1.0);\n  out.position.z = 1.0 - clamp(out.vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);\n`) + MAP_FRAGMENT_WGSL
   );
 }
 
@@ -400,7 +413,7 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   out.vWorld = world;
   out.vAtlasUV = aInstUV;
   out.vTileInv = aInstTileInv;
-  out.vTileOff = aInstTileOff;${heights ? '\n  out.vSunZ = mix(zA, z, aCell.z);' : ''}
+  out.vTileOff = aInstTileOff;${heights ? `\n  out.vSunZ = mix(zA, z, aCell.z);\n  out.position.z = 1.0 - clamp(out.vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);` : ''}
   return out;
 }
 `;
@@ -426,13 +439,13 @@ export function volumeMapVertex(source) {
     .replace(decl, `${decl}out float vSunZ;\nflat out float vSunId;\n`)
     .replace(
       pos,
-      `${pos}\n  vSunZ = (aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x)) * uSunShadow.w;\n  vSunId = float(int(aInstBody + 0.5) % 65535 + 1);`,
+      `${pos}\n  vSunZ = (aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x)) * uSunShadow.w;\n  vSunId = float(int(aInstBody + 0.5) % 65535 + 1);\n  gl_Position.z = 1.0 - 2.0 * clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);`,
     );
 }
 
 /**
- * The volumes' fragment in the sun's map: the height, the volume's entity and the depth that keeps the highest
- * (sunShadowMap.frag.glsl without the picture).
+ * The volumes' fragment in the sun's map: the height and the volume's entity (sunShadowMap.frag.glsl without the
+ * picture); the depth that keeps the highest comes from volumeMapVertex.
  */
 export const VOLUME_MAP_FRAGMENT = `#version 300 es
 precision highp float;
@@ -443,7 +456,6 @@ void main() {
   float h = clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);
   int id = int(vSunId + 0.5);
   finalColor = vec4(h, 1.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
-  gl_FragDepth = 1.0 - h;
 }
 `;
 

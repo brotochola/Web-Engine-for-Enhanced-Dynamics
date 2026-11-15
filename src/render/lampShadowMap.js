@@ -256,7 +256,9 @@ export function lampMapFragment(sunMapFrag) {
     .replace(
       main,
       `${main}  vec2 tuv = vTileUvW.xy / vTileUvW.z;\n  if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) discard;\n`,
-    );
+    )
+    // The depth that keeps the highest (the sun's map takes it from its vertices).
+    .replace(/\n}\s*$/, '\n  gl_FragDepth = 1.0 - h;\n}\n');
 }
 
 const LAMP_FRAGMENT_WGSL = `
