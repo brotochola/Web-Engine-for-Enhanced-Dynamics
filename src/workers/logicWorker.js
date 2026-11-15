@@ -644,6 +644,9 @@ class LogicWorker extends AbstractWorker {
             const tickInterval = rawInterval == null ? 1 : (rawInterval | 0);
 
             if (needsTick && tickInterval > 1 && GameObject.nextTick) {
+              // E-349: the bucket fields _tickIntervalBucket and _rebuildTickBuckets keep are declared here, so the
+              // literal keeps one map; added on the first frame, they gave it a second and the bucket loop compiled
+              // twice. A stamp count of -1 makes the first frame rebuild; an interval of 0 makes it allocate.
               this.decimatedTypes.push({
                 EntityClass,
                 activeList: EntityClass._activeList,
@@ -652,6 +655,12 @@ class LogicWorker extends AbstractWorker {
                 entityType,
                 needsScreenCallbacks,
                 hasRigidBody,
+                _buckets: [],
+                _bucketCounts: new Int32Array(0),
+                _bucketInterval: 0,
+                _bucketCap: 0,
+                _bucketStampCount: -1,
+                _bucketStampVer: -1,
               });
             } else {
               this.nonDecimatedTypes.push({
