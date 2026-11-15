@@ -171,10 +171,92 @@ function writeSprite(i, { frame, anchorX, anchorY, scaleX = 0, scaleY = 0, heigh
   return true;
 }
 
+/** The silhouette for the light kinds (CastSide.setSprite's options); options that warn leave everything as it was. */
+function castSprite(caster, sun, lamps, options) {
+  if (!writeSprite(caster.index, options)) return caster;
+  return writeKinds(caster, sun, lamps, CAST_KIND.SPRITE);
+}
+
+/** Each pixel where it is in 3D, for the light kinds (needs the sheet's heightMap). */
+function castHeightMap(caster, sun, lamps) {
+  const i = caster.index;
+  if (ShadowCaster.heightMultiplier[i] === 0) ShadowCaster.heightMultiplier[i] = 1;
+  return writeKinds(caster, sun, lamps, CAST_KIND.HEIGHT_MAP);
+}
+
 /**
- * One light kind's setters (shadowCaster.sun, shadowCaster.lamps; the instance's own setters are both kinds'): they write that
- * kind alone, and return the ShadowCaster. The sun casts no wall, and the lamps have no volume of their own (shadowCaster.setBox
- * gives one to every light): those warn.
+ * The caster's volume, or null (warned once): the lamps have no volume of their own, or the scene keeps no room for volumes
+ * (config.lighting.maxVolumes: the layer and the mesh arena's share are made at load).
+ */
+function volumeFor(caster, sun, method) {
+  if (!sun) {
+    warnOnce(`shadowCaster.lamps.${method}: the lamps have no volume of their own; shadowCaster.${method} gives one to every light`);
+    return null;
+  }
+  if (VolumeShadowCaster.floorScaleY == null || VolumeShadowCaster.layerBit() === 0) {
+    warnOnce(
+      `shadowCaster.${method}: the scene keeps no room for volumes; set config.lighting.maxVolumes to the number of ` +
+        'entities that hold one at once',
+    );
+    return null;
+  }
+  return casterVolume(caster);
+}
+
+/** After a volume setter: the kind, once the entity holds a volume (a refused shape warned and left it as it was). */
+function castVolume(caster, sun, lamps, volume, kind) {
+  if (volume === null || !holdsVolume(caster.index)) return caster;
+  return writeKinds(caster, sun, lamps, kind);
+}
+
+function castBox(caster, sun, lamps, width, depth, height, options) {
+  const volume = volumeFor(caster, sun, 'setBox');
+  if (volume !== null) volume.setBox(width, depth, height, options);
+  return castVolume(caster, sun, lamps, volume, CAST_KIND.BOX);
+}
+
+function castLevel(caster, sun, lamps, outline, bottom, top, topOutline, options) {
+  const volume = volumeFor(caster, sun, 'addLevel');
+  if (volume !== null) volume.addLevel(outline, bottom, top, topOutline, options);
+  return castVolume(caster, sun, lamps, volume, CAST_KIND.BOX);
+}
+
+function castHull(caster, sun, lamps, points, options) {
+  const volume = volumeFor(caster, sun, 'setHull');
+  if (volume !== null) volume.setHull(points, options);
+  return castVolume(caster, sun, lamps, volume, CAST_KIND.HULL);
+}
+
+/**
+ * A wall that stops lamps and headlights in a flat view (raycasted lighting): the entity's occluder, cut by its Collider
+ * ('collider', the fastest) or by the sprite's alpha ('sprite'), taking out the caster's opacity of the light. Another camera
+ * has no walls: it warns once and changes nothing.
+ */
+function castWall(caster, sun, lamps, { shape = 'collider' } = {}) {
+  if (!lamps) {
+    warnOnce('shadowCaster.sun.setWall: the sun casts no wall (a wall stops lamps and headlights); shadowCaster.lamps.setWall');
+    return caster;
+  }
+  if (!wallsOn()) {
+    warnOnce(
+      'shadowCaster.setWall: a wall stops lamps and headlights in a flat view (raycasted lighting: config.camera.pitch 90 ' +
+        'or 0, with lighting enabled), which this scene is not; the entity casts as it did',
+    );
+    return caster;
+  }
+  if (shape !== 'collider' && shape !== 'sprite') warnOnce(`shadowCaster.setWall: shape is 'collider' or 'sprite', not '${shape}'`);
+  const i = caster.index;
+  LightOccluder.maskMode[i] = shape === 'sprite' ? LIGHT_OCCLUDER_MASK_SPRITE : LIGHT_OCCLUDER_MASK_COLLIDER;
+  LightOccluder.block[i] = ShadowCaster.opacity[i];
+  writeKinds(caster, sun, lamps, CAST_KIND.WALL);
+  LightOccluder.active[i] = 1;
+  return caster;
+}
+
+/**
+ * One light kind's setters (shadowCaster.sun, shadowCaster.lamps; the instance's own setters are both kinds', written
+ * without one of these): they write that kind alone, and return the ShadowCaster. The sun casts no wall, and the lamps have
+ * no volume of their own (shadowCaster.setBox gives one to every light): those warn.
  */
 class CastSide {
   constructor(caster, sun, lamps) {
@@ -193,94 +275,40 @@ class CastSide {
    *   orient 'fixed': the card along the object (a fence, a wall)
    */
   setSprite(options) {
-    if (!writeSprite(this._caster.index, options)) return this._caster;
-    return writeKinds(this._caster, this._sun, this._lamps, CAST_KIND.SPRITE);
+    return castSprite(this._caster, this._sun, this._lamps, options);
   }
 
   /** Each pixel where it is in 3D (needs the sheet's heightMap). */
   setHeightMap() {
-    const i = this._caster.index;
-    if (ShadowCaster.heightMultiplier[i] === 0) ShadowCaster.heightMultiplier[i] = 1;
-    return writeKinds(this._caster, this._sun, this._lamps, CAST_KIND.HEIGHT_MAP);
+    return castHeightMap(this._caster, this._sun, this._lamps);
   }
 
   /** A box, which replaces the volume (ShadowCaster.setBox's arguments). */
   setBox(width, depth, height, options) {
-    const volume = this._volume('setBox');
-    if (volume !== null) volume.setBox(width, depth, height, options);
-    return this._castVolume(volume, CAST_KIND.BOX);
+    return castBox(this._caster, this._sun, this._lamps, width, depth, height, options);
   }
 
   /** One more level on what the volume has (ShadowCaster.addLevel's arguments). */
   addLevel(outline, bottom, top, topOutline, options) {
-    const volume = this._volume('addLevel');
-    if (volume !== null) volume.addLevel(outline, bottom, top, topOutline, options);
-    return this._castVolume(volume, CAST_KIND.BOX);
+    return castLevel(this._caster, this._sun, this._lamps, outline, bottom, top, topOutline, options);
   }
 
   /** The convex volume around points, which replaces the volume (ShadowCaster.setHull's arguments). */
   setHull(points, options) {
-    const volume = this._volume('setHull');
-    if (volume !== null) volume.setHull(points, options);
-    return this._castVolume(volume, CAST_KIND.HULL);
+    return castHull(this._caster, this._sun, this._lamps, points, options);
   }
 
   /**
-   * A wall that stops lamps and headlights in a flat view (raycasted lighting): the entity's occluder, cut by its Collider
-   * ('collider', the fastest) or by the sprite's alpha ('sprite'), taking out the caster's opacity of the light. Another
-   * camera has no walls: it warns once and changes nothing.
+   * A wall for this light kind (lamps.setWall; the sun casts none): castWall.
    * @param {{ shape?: 'collider'|'sprite' }} [options]
    */
-  setWall({ shape = 'collider' } = {}) {
-    const caster = this._caster;
-    if (!this._lamps) {
-      warnOnce('shadowCaster.sun.setWall: the sun casts no wall (a wall stops lamps and headlights); shadowCaster.lamps.setWall');
-      return caster;
-    }
-    if (!wallsOn()) {
-      warnOnce(
-        'shadowCaster.setWall: a wall stops lamps and headlights in a flat view (raycasted lighting: config.camera.pitch 90 ' +
-          'or 0, with lighting enabled), which this scene is not; the entity casts as it did',
-      );
-      return caster;
-    }
-    if (shape !== 'collider' && shape !== 'sprite') warnOnce(`shadowCaster.setWall: shape is 'collider' or 'sprite', not '${shape}'`);
-    const i = caster.index;
-    LightOccluder.maskMode[i] = shape === 'sprite' ? LIGHT_OCCLUDER_MASK_SPRITE : LIGHT_OCCLUDER_MASK_COLLIDER;
-    LightOccluder.block[i] = ShadowCaster.opacity[i];
-    writeKinds(caster, this._sun, this._lamps, CAST_KIND.WALL);
-    LightOccluder.active[i] = 1;
-    return caster;
+  setWall(options) {
+    return castWall(this._caster, this._sun, this._lamps, options);
   }
 
   /** No shadow from this light kind. */
   clear() {
     return writeKinds(this._caster, this._sun, this._lamps, CAST_KIND.NONE);
-  }
-
-  /**
-   * The caster's volume, or null (warned once): the lamps have no volume of their own, or the scene keeps no room for volumes
-   * (config.lighting.maxVolumes: the layer and the mesh arena's share are made at load).
-   */
-  _volume(method) {
-    if (!this._sun) {
-      warnOnce(`shadowCaster.lamps.${method}: the lamps have no volume of their own; shadowCaster.${method} gives one to every light`);
-      return null;
-    }
-    if (VolumeShadowCaster.floorScaleY == null || VolumeShadowCaster.layerBit() === 0) {
-      warnOnce(
-        `shadowCaster.${method}: the scene keeps no room for volumes; set config.lighting.maxVolumes to the number of ` +
-          'entities that hold one at once',
-      );
-      return null;
-    }
-    return casterVolume(this._caster);
-  }
-
-  /** After a volume setter: the kind, once the entity holds a volume (a refused shape warned and left it as it was). */
-  _castVolume(volume, kind) {
-    if (volume === null || !holdsVolume(this._caster.index)) return this._caster;
-    return writeKinds(this._caster, this._sun, this._lamps, kind);
   }
 }
 
@@ -310,12 +338,10 @@ export class ShadowCaster extends Component {
 
   constructor(index) {
     super(index);
-    // DX-CASTER: shadowCaster.sun / .lamps, the setters for one light kind, and the instance's own (both kinds'). Made on first
-    // use: most casters never call one, and the instance's setSprite, setHeightMap and clear write without one (a crowd of
-    // 38 000 that sets a heightScale at spawn makes none).
+    // DX-CASTER: shadowCaster.sun / .lamps, the setters for one light kind, made on first use. The instance's own setters
+    // (both kinds') write without such an object: a crowd of 38 000 that sets a heightScale at spawn makes none.
     this._sunSide = null;
     this._lampSide = null;
-    this._bothSides = null;
     // DX-CASTER: the internal VolumeShadowCaster that setBox, addLevel and setHull write through, made on first use.
     this._volumeCaster = null;
   }
@@ -367,28 +393,16 @@ for (const [name, instead] of Object.entries(GONE_METHODS)) {
   });
 }
 
-/** The caster's setters for both light kinds, made on first use. */
-function bothSides(caster) {
-  const side = caster._bothSides;
-  return side != null ? side : (caster._bothSides = new CastSide(caster, true, true));
-}
-
 /** The methods ShadowCaster's instances get (installed on the class below the component). */
 export const CASTER_METHODS = {
-  /**
-   * The silhouette, for every light: a card on its base (CastSide.setSprite's options). Written here rather than through the
-   * both-kinds side, which a crowd that sets a heightScale at spawn would make one of each.
-   */
+  /** The silhouette, for every light: a card on its base (CastSide.setSprite's options). */
   setSprite(options) {
-    if (!writeSprite(this.index, options)) return this;
-    return writeKinds(this, true, true, CAST_KIND.SPRITE);
+    return castSprite(this, true, true, options);
   },
 
   /** Each pixel where it is in 3D, for every light (needs the sheet's heightMap). */
   setHeightMap() {
-    const i = this.index;
-    if (ShadowCaster.heightMultiplier[i] === 0) ShadowCaster.heightMultiplier[i] = 1;
-    return writeKinds(this, true, true, CAST_KIND.HEIGHT_MAP);
+    return castHeightMap(this, true, true);
   },
 
   /**
@@ -401,7 +415,7 @@ export const CASTER_METHODS = {
    *   the entity's frame; how much smaller its roof is about it (0: a pyramid); the floor's scale (config.camera's)
    */
   setBox(width, depth, height, options) {
-    return bothSides(this).setBox(width, depth, height, options);
+    return castBox(this, true, true, width, depth, height, options);
   },
 
   /**
@@ -413,7 +427,7 @@ export const CASTER_METHODS = {
    * @param {{ floorScaleY?: number }} [options]
    */
   addLevel(outline, bottom, top, topOutline, options) {
-    return bothSides(this).addLevel(outline, bottom, top, topOutline, options);
+    return castLevel(this, true, true, outline, bottom, top, topOutline, options);
   },
 
   /**
@@ -423,7 +437,7 @@ export const CASTER_METHODS = {
    * @param {{ floorScaleY?: number }} [options]
    */
   setHull(points, options) {
-    return bothSides(this).setHull(points, options);
+    return castHull(this, true, true, points, options);
   },
 
   /**
@@ -432,7 +446,7 @@ export const CASTER_METHODS = {
    * @param {{ shape?: 'collider'|'sprite' }} [options] what cuts the light: the Collider (default) or the sprite's alpha
    */
   setWall(options) {
-    return bothSides(this).setWall(options);
+    return castWall(this, true, true, options);
   },
 
   /** No shadow at all. */
