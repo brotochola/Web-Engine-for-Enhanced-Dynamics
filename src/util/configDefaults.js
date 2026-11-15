@@ -634,6 +634,11 @@ export const RENDERER_DEFAULTS = Object.freeze({
   ySort: false,
   /** null = auto-size main render queue at SAB alloc from pools + Adobe piece bounds */
   maxVisibleRenderables: null,
+  /**
+   * DX-DEPTH (F5): each entity pixel's floor place corrects the painter (pixelDepth.js). null: on with an oblique camera
+   * and height maps (WebGL for now); true or false forces it.
+   */
+  pixelDepth: null,
   maxDecalTileUploadsPerFrame: 32,
   /** Pixi ImageSource mip chain for atlases/textures/tilesets. Off by default (VRAM + atlas bleed risk; STEP flat in benches). */
   autoGenerateMipmaps: false,
@@ -786,6 +791,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * floor. Off until it is right: in the light bench the barn's walls went missing from its shadow.
    */
   footprintSolids: false,
+  /** DX-SHADOW3D (F7): a lamp's tile in the lamps' shadow map, texels a side (32 to 1024). */
+  lampShadowTile: 256,
   /**
    * DX-SELFSHADOW: faces and sprites with height maps shade themselves and each other from the sun: steps towards it over
    * the face map's heights in the light pass (a crate's lid edge over its front, an arm over a body). WebGL for now.

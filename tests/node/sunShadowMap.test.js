@@ -54,7 +54,9 @@ test('the sprite shadows\' sun card stands on the frame\'s lowest opaque row, no
   assert.match(src, /float bottom = aInstTrim\.y \+ aInstTrim\.w;/);
   assert.match(src, /float sunZ = max\(bottom - content\.y, 0\.0\) \* abs\(aInstScale\.y\) \/ uSunK\.w \* height;/);
   assert.match(src, /vec2 foot = vec2\(aInstXY\.x, \(aInstXY\.y \+ \(bottom - aInstAnchor\.y \* aInstSize\.y\) \* aInstScale\.y\) \* uGroundInvScaleY\);/);
-  assert.match(src, /vec2 land = foot \+ \(content\.x - footCol\) \* aInstScale\.x \* uSunPerp\.xy - sunZ \* uSunK\.xy;/);
+  // Its columns run along sunPerp: the sun's perpendicular, or a fixed card's axis (DX-CASTER).
+  assert.match(src, /vec2 sunPerp = uSunPerp\.xy;/);
+  assert.match(src, /vec2 land = foot \+ \(content\.x - footCol\) \* aInstScale\.x \* sunPerp - sunZ \* uSunK\.xy;/);
   // A base in the texture table's spare floats moves the foot: an ellipse's edge, or a render's lowest contact.
   assert.match(src, /aInstBase = t2\.zw;/);
   assert.match(src, /foot \+= toSun \* sqrt\(rx \* rx \* toSun\.x \* toSun\.x \+ ry \* ry \* toSun\.y \* toSun\.y\);/);
@@ -82,7 +84,9 @@ test('the map\'s vertex shader is the sprite shadows\' with the same sun card, i
   const src = sunMapVertex(shader('instancedSpriteShadow.vert.glsl'));
   assert.match(src, /uniform vec4 uSunK;/);
   assert.match(src, /out float vSunZ;/);
-  assert.match(src, /vec2 land = foot \+ \(content\.x - footCol\) \* aInstScale\.x \* uSunPerp\.xy - sunZ \* uSunK\.xy;/);
+  // Its columns run along sunPerp: the sun's perpendicular, or a fixed card's axis (DX-CASTER).
+  assert.match(src, /vec2 sunPerp = uSunPerp\.xy;/);
+  assert.match(src, /vec2 land = foot \+ \(content\.x - footCol\) \* aInstScale\.x \* sunPerp - sunZ \* uSunK\.xy;/);
   assert.match(src, /vSunZ = sunZ;/);
   assert.match(src, /vColor = vec4\(1\.0\);/);
   assert.equal(src.match(/void main\(\)/g).length, 1);
@@ -141,11 +145,17 @@ test('a caster with a height map casts columns: each cell where it is in 3D, the
   assert.match(src, /if \(aInstBase\.y >= 1\.0\) \{/);
   // A render (its base has a contact) casts columns and no card, unless its sheet casts its card for the sun (a negative
   // second float); a picture of one view, maps or not, its card.
-  assert.match(src, /if \(aInstBase\.x >= 0\.0 \|\| aInstBase\.y < 0\.0 \|\| m\.b \+ m\.a <= 0\.0/);
-  assert.match(sunMapVertex(shader('instancedSpriteShadow.vert.glsl')), /if \(aInstBase\.x < 0\.0 && aInstBase\.y >= 0\.0\) \{/);
+  // DX-CASTER: a caster's own kind first (2 its solid), else its sheet's (a render's contact, no card flag).
+  assert.match(src, /bool solid = sunKind == 2 \|\| \(sunKind == 0 && aInstBase\.x < 0\.0 && aInstBase\.y >= 0\.0\);/);
+  assert.match(src, /if \(!solid \|\| m\.b \+ m\.a <= 0\.0/);
+  assert.ok(
+    sunMapVertex(shader('instancedSpriteShadow.vert.glsl')).includes(
+      'if (sunKind == 6 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {',
+    ),
+  );
   // Drawn on the sprite shadows' layer: the shadow's colour and opacity, no height.
   const flat = sunMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl'), SUN_MAP_COLUMNS, { heights: false });
-  assert.match(flat, /vColor = vec4\(0\.0, 0\.0, 0\.0, uSun\.w\);/);
+  assert.match(flat, /vColor = vec4\(0\.0, 0\.0, 0\.0, uSun\.w \* castOpacity\);/);
   assert.doesNotMatch(flat, /vSunZ/);
 });
 
@@ -158,7 +168,10 @@ test('WebGPU: the map\'s and the solids\' WGSL come from the sprite shadows\' WG
   assert.match(map, /@location\(6\) vSunZ: f32,/);
   assert.ok(map.includes('    out.vSunZ = sunZ;\n'), 'the card\'s height');
   assert.ok(map.includes('fn mainFragMap(in: VertexOut)'), 'the map\'s fragment');
-  assert.ok(map.includes('    if (aInstBase.x < 0.0 && aInstBase.y >= 0.0) {'), 'a render\'s frame skips its card unless it casts one');
+  assert.ok(
+    map.includes('    if (sunKind == 6 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {'),
+    'a render\'s frame skips its card unless it casts one',
+  );
   const cards = sunMapWgsl(wgsl, { heights: false });
   assert.doesNotMatch(cards, /vSunZ|mainFragMap/, 'the solids\' cards keep the shadow program\'s colour and fragment');
   const columns = sunMapColumnsWgsl(wgsl);
@@ -170,7 +183,7 @@ test('WebGPU: the map\'s and the solids\' WGSL come from the sprite shadows\' WG
   assert.ok(columns.includes('fn footprintNorth(slot: i32, x: f32) -> f32 {'));
   assert.equal(columns.match(/fn mainVert\(/g).length, 1);
   const flat = sunMapColumnsWgsl(wgsl, SUN_MAP_COLUMNS, { heights: false });
-  assert.ok(flat.includes('out.vColor = vec4<f32>(0.0, 0.0, 0.0, uniforms.uSun.w);'));
+  assert.ok(flat.includes('out.vColor = vec4<f32>(0.0, 0.0, 0.0, uniforms.uSun.w * castOpacity);'));
   assert.doesNotMatch(flat, /vSunZ/);
   // The columns read the atlas and the twin page in the vertex stage: their layout says so.
   const GpuProgram = { from: (o) => o };
