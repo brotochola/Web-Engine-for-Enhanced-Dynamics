@@ -6040,7 +6040,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       };
       const shader = new PIXI.Shader({
         ...this._sunShadowProgram('map'),
-        resources: { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: this.atlasMapsSource ?? this._emptyMapsSource(), uniforms },
+        // No uMaps: the map's cards program does not read the twin page (its WGSL does not declare it, and Pixi warned).
+        resources: { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uniforms },
       });
       // Pixi made the group from the object.
       this._sunMapUniforms = shader.resources.uniforms;
@@ -6632,7 +6633,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _drawSunSolids(batch, group) {
     if (this._sunSolids === null) {
       const r = batch.shadowShader.resources;
-      const resources = () => ({ uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: this.atlasMapsSource, uniforms: group });
+      // The cards read no twin page (uMaps): only the columns get it, with the footprints.
+      const resources = () => ({ uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uniforms: group });
       const state = new PIXI.State();
       state.blend = true;
       state.blendMode = 'max';
@@ -6642,7 +6644,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._sunSolids = {
         cards: new PIXI.Mesh({ geometry: batch.mesh.geometry, shader: new PIXI.Shader({ ...this._sunShadowProgram('cards'), resources: resources() }), state: batch.mesh.state, label: 'sun-cards' }),
         columns: {
-          shader: new PIXI.Shader({ ...this._sunShadowProgram('columns'), resources: { ...resources(), uFoot: this._footSourceOrEmpty() } }),
+          shader: new PIXI.Shader({
+            ...this._sunShadowProgram('columns'),
+            resources: { ...resources(), uMaps: this.atlasMapsSource ?? this._emptyMapsSource(), uFoot: this._footSourceOrEmpty() },
+          }),
           grid: new Buffer({ data: sunMapColumnGrid(), usage: BufferUsage.VERTEX }),
           index: Uint16Array.from({ length: SUN_MAP_COLUMNS * SUN_MAP_COLUMNS * 6 }, (_, i) => i),
           state,
