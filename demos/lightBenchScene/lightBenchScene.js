@@ -8,10 +8,11 @@
 //   ?sun=sprite   the sun's shadows as sprites on the shadows' layer, instead of its shadow map
 //   ?self=0       no self-shadow
 //   ?hour=        the sun's hour (default 16)
-//   ?still=1      nothing moves (the lamps stay, the person stands): for captures
+//   ?still=1      nothing moves (the lamps stay, the person stands without breathing): for captures
 //   ?zoom= ?cx= ?cy=  the camera (default: the whole farm); ?panel=0 hides the panel (captures)
 //   ?only=hatch,arboles,civil7  only those things (none: the grass alone); ?lamps=0 no lamps (captures, checks)
 //   ?backend=webgpu
+//   ?fullRows=1   the shadows from pre-render's full caster rows (lighting.shadowTextures: the keyed paths off), to compare
 
 import WEED from '/src/index.js';
 import { SunPanel } from '../sunStreetScene/sunPanel.js';
@@ -33,6 +34,7 @@ const CY = Number(param('cy')) || 0;
 const ONLY = param('only') === null ? null : new Set(param('only').split(','));
 const LAMPS = param('lamps') !== '0';
 const BACKEND = param('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+const FULL_ROWS = param('fullRows') === '1';
 const wanted = (sheet) => ONLY === null || ONLY.has(sheet);
 const HOUR = Number(param('hour')) || 16;
 const HOURS = [10, 16, 18.5, 22];
@@ -118,7 +120,8 @@ class Walker extends GameObject {
       this.y = Math.min(H - 10, Math.max(40, this.y + dy * k * FLOOR_SCALE_Y));
     }
     this.setAnimation(moving ? 'walk' : 'idle');
-    this.setAnimationSpeed(moving ? 0.18 : 0.05);
+    // Still: no breathing either, so two captures show the same frame.
+    this.setAnimationSpeed(moving ? 0.18 : STILL ? 0 : 0.05);
   }
 }
 
@@ -173,6 +176,7 @@ export class LightBenchScene extends Scene {
       shadowsEnabled: true,
       sunShadows: SUN_MAP ? 'map' : 'sprite',
       selfShadow: SELF,
+      shadowTextures: FULL_ROWS,
       sun: { enabled: true, angle: 215, elevation: 45, intensity: 1, startHour: HOUR, dayCycle: { enabled: false } },
     },
   };
