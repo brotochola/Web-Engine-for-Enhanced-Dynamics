@@ -1,57 +1,101 @@
-// The light bench (DX-LIGHT3D's showcase): what the light bench prototype tried, with the engine's API. A person you walk
-// with WASD (DirectionalSprite: it faces where it goes, and its sun shadow is the frame the sun sees), ray-traced shapes
-// with height and normal maps (lit as the surfaces they are), lamps that wander, the sun's shadow map and self-shadow.
+// The light bench (DX-LIGHT3D's showcase): the light bench prototype's farm with the engine's API. Quaternius props
+// rendered from 32 directions, MinZinn cars (half a turn, mirrored), two trees and an LPC person you walk with WASD, each
+// with its height map and normal map (assets/: tools/fromLightBench.mjs converts the prototype's files). The props and
+// cars are DirectionalSprites: they show the view they face, and each light's shadow shows the view that light sees.
 // The panel's keys reload the scene with a part on or off, to compare.
 //
-//   ?maps=0       the shapes without their maps (lit as the floor, as before)
-//   ?sun=sprite   the sun's shadows as skewed sprites (the default before), instead of its shadow map
+//   ?maps=0       no height or normal maps (lit as the floor, as before)
+//   ?sun=sprite   the sun's shadows as sprites on the shadows' layer, instead of its shadow map
 //   ?self=0       no self-shadow
 //   ?hour=        the sun's hour (default 16)
+//   ?still=1      nothing moves (the lamps stay, the person stands): for captures
+//   ?zoom= ?cx= ?cy=  the camera (default: the whole farm); ?panel=0 hides the panel (captures)
 
 import WEED from '/src/index.js';
 import { SunPanel } from '../sunStreetScene/sunPanel.js';
+import { BENCH_ASSETS } from './assets/index.js';
 
-const { Scene, GameObject, Collider, DirectionalSprite, ShadowCaster, LightEmitter, Camera, Sun, Keyboard,
-  Decoration, enums } = WEED;
+const { Scene, GameObject, Collider, DirectionalSprite, ShadowCaster, LightEmitter, Camera, Sun, Keyboard, SpriteRenderer,
+  LAYER_KIND, enums } = WEED;
 const { ShapeType } = enums;
 
 const param = (k) => WEED.params?.get(k) ?? null;
 const MAPS = param('maps') !== '0';
 const SUN_MAP = param('sun') !== 'sprite';
 const SELF = param('self') !== '0';
+const STILL = param('still') === '1';
+const PANEL = param('panel') !== '0';
+const ZOOM = Number(param('zoom')) || 0;
+const CX = Number(param('cx')) || 0;
+const CY = Number(param('cy')) || 0;
 const HOUR = Number(param('hour')) || 16;
 const HOURS = [10, 16, 18.5, 22];
-const W = 1400;
-const H = 900;
-const SHAPES = ['sphere', 'pillar', 'crate'];
-const IMG = '/demos/lightBenchScene/img/';
+const W = 1500;
+const H = 960;
+const DIR = '/demos/lightBenchScene/assets/';
+const DEG = Math.PI / 180;
 
-const shapes = { json: IMG + 'shapes.json', png: IMG + 'shapes.png' };
-if (MAPS) Object.assign(shapes, { heightMap: IMG + 'shapes_h.png', normalMap: IMG + 'shapes_n.png' });
+// The prototype's camera: its art keeps the floor at 0.736 and a px of height at 0.752 px on the screen.
+const FLOOR_SCALE_Y = 0.7364193217154872;
+const HEIGHT_SCALE_Y = 0.7516549042792687;
 
-/** A ray-traced shape (makeShapes.mjs, pitch 45, 8 directions) standing on its foot, turned as it faces. */
-class Shape extends GameObject {
+const spritesheets = {};
+for (const [name, a] of Object.entries(BENCH_ASSETS)) {
+  spritesheets[name] = { json: `${DIR}${name}.json`, png: `${DIR}${name}.png` };
+  if (MAPS && a.maps) Object.assign(spritesheets[name], { heightMap: `${DIR}${name}_h.png`, normalMap: `${DIR}${name}_n.png` });
+}
+
+/** Anchors each sheet's cells share (the converter put every frame's foot there). */
+function anchorOn(go, sheet) {
+  const a = BENCH_ASSETS[sheet];
+  go.spriteRenderer.anchorX = a.anchorX;
+  go.spriteRenderer.anchorY = a.anchorY;
+}
+
+/** A farm prop rendered from 32 directions, turned as it faces. */
+class Prop extends GameObject {
   static components = [DirectionalSprite, ShadowCaster];
 
-  onSpawned({ shape = 0, facing = Math.PI / 2 } = {}) {
-    this.setSpritesheet('shapes');
-    // Drawn from 8 directions (the sheet's json says so): it shows the one it faces, its sun shadow the one the sun sees.
+  onSpawned({ sheet = 'mesa', facing = 0 } = {}) {
+    this.setSpritesheet(sheet);
+    anchorOn(this, sheet);
     this.directionalSprite.facing = facing;
-    this.setAnimation(SHAPES[shape % SHAPES.length]);
-    this.spriteRenderer.anchorX = 0.5;
-    this.spriteRenderer.anchorY = 0.75;
+    this.setAnimation('stand');
   }
 }
 
-/** You: an LPC person that walks with WASD and faces where it walks. */
+/** A car: half a turn drawn, the other half mirrored. */
+class Car extends GameObject {
+  static components = [DirectionalSprite, ShadowCaster];
+
+  onSpawned({ sheet = 'hatch', facing = 0 } = {}) {
+    this.setSpritesheet(sheet);
+    anchorOn(this, sheet);
+    this.directionalSprite.facing = facing;
+    this.setAnimation('drive');
+  }
+}
+
+/** One of the two trees: a single view. */
+class Tree extends GameObject {
+  static components = [SpriteRenderer, ShadowCaster];
+
+  onSpawned({ kind = 'arbol_verde' } = {}) {
+    this.setSpritesheet('arboles');
+    anchorOn(this, 'arboles');
+    this.setAnimation(kind);
+  }
+}
+
+/** You: the LPC person, walking with WASD, facing where it walks. */
 class Walker extends GameObject {
   static components = [DirectionalSprite, ShadowCaster];
 
   onSpawned() {
-    this.setSpritesheet('civil1');
+    this.setSpritesheet('civil7');
+    anchorOn(this, 'civil7');
     this.directionalSprite.facingFrom = 'velocity';
     this.setAnimation('idle');
-    this.setScale(1.4);
   }
 
   tick(dtRatio) {
@@ -63,36 +107,44 @@ class Walker extends GameObject {
     if (Keyboard.isDown('s') || Keyboard.isDown('arrowdown')) dy += 1;
     const moving = dx !== 0 || dy !== 0;
     if (moving) {
-      const k = (2.2 * (dtRatio || 1)) / Math.sqrt(dx * dx + dy * dy);
+      const k = (1.6 * (dtRatio || 1)) / Math.sqrt(dx * dx + dy * dy);
       this.x = Math.min(W - 20, Math.max(20, this.x + dx * k));
-      this.y = Math.min(H - 10, Math.max(40, this.y + dy * k * 0.7));
+      this.y = Math.min(H - 10, Math.max(40, this.y + dy * k * FLOOR_SCALE_Y));
     }
     this.setAnimation(moving ? 'walk' : 'idle');
     this.setAnimationSpeed(moving ? 0.18 : 0.05);
   }
 }
 
-/** A lamp 40 px above the floor that walks a slow circle. */
+/** A lamp (a sphere of light) at a height, that walks a slow circle unless the scene is still. */
 class Lamp extends GameObject {
   static components = [Collider, LightEmitter];
 
-  onSpawned({ cx = 0, cy = 0, r = 100, phase = 0, color = 0xffd9a0 } = {}) {
+  onSpawned({ cx = 0, cy = 0, r = 0, phase = 0, color = 0xffcf8a, elevation = 75, radius = 330, brightness = 1.4, castShadows = true } = {}) {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 4;
-    this.lightEmitter.color = color;
-    this.lightEmitter.radius = 600;
-    this.lightEmitter.elevation = 40;
+    Object.assign(this.lightEmitter, { color, radius, elevation, brightness, castShadows });
     this.cx = cx;
     this.cy = cy;
     this.r = r;
     this.phase = phase;
+    this.setPosition(cx + Math.cos(phase) * r, cy + Math.sin(phase) * r * FLOOR_SCALE_Y);
   }
 
   tick(dtRatio, dt) {
+    if (STILL || this.r === 0) return;
     this.phase += (dt || 16.7) * 0.0003;
-    this.setPosition(this.cx + Math.cos(this.phase) * this.r, this.cy + Math.sin(this.phase) * this.r * 0.7);
+    this.setPosition(this.cx + Math.cos(this.phase) * this.r, this.cy + Math.sin(this.phase) * this.r * FLOOR_SCALE_Y);
   }
 }
+
+// The prototype's farm: where each thing stands (x, screen y) and the trees and lamps.
+const FARM = [
+  ['granero', 330, 360], ['gallinero', 1000, 300], ['aljibe', 700, 300], ['cerca', 560, 520], ['cerca', 760, 540],
+  ['mesa', 900, 560], ['cama', 1110, 470], ['sillon', 1080, 640], ['biblioteca', 1250, 420], ['vaca', 470, 690],
+  ['pickup', 780, 770], ['hatch', 300, 790], ['colectivo', 1220, 820],
+];
+const TREES = [[600, 360, 0], [880, 380, 1], [1380, 600, 0], [140, 560, 1], [980, 900, 0]];
 
 export class LightBenchScene extends Scene {
   static config = {
@@ -103,62 +155,60 @@ export class LightBenchScene extends Scene {
     logic: { numberOfLogicWorkers: 1, noLimitFPS: false },
     physics: { subStepCount: 1, gravity: { x: 0, y: 0 }, noLimitFPS: false },
     particle: { maxParticles: 0, decals: false },
-    decoration: { maxDecorations: 4 },
     renderer: { backend: 'webgl', ySort: true, noLimitFPS: false },
-    camera: { pitch: 45 },
-    // The floor under the sprite shadows' layer (zIndex 2), so both kinds of sun shadow show on it.
-    layers: { ground: { zIndex: 1.5, maxItems: 4, ySorting: false } },
+    camera: { pitch: 47, floorScaleY: FLOOR_SCALE_Y, heightScaleY: HEIGHT_SCALE_Y },
+    // The grass under the sprite shadows' layer (zIndex 2), so both kinds of sun shadow show on it.
+    layers: { ground: { kind: LAYER_KIND.TILING, texture: 'pasto', tileScale: 1, parallax: 1, zIndex: 0 } },
     lighting: {
       enabled: true,
-      baseAmbient: 0.07,
+      baseAmbient: 0.12,
       maxLights: 16,
       resolution: 0.5,
       shadowsEnabled: true,
       sunShadows: SUN_MAP ? 'map' : 'sprite',
       selfShadow: SELF,
-      sun: { enabled: true, angle: 135, elevation: 40, intensity: 1, startHour: HOUR, dayCycle: { enabled: false } },
+      sun: { enabled: true, angle: 215, elevation: 45, intensity: 1, startHour: HOUR, dayCycle: { enabled: false } },
     },
   };
 
   static assets = {
-    spritesheets: {
-      shapes,
-      civil1: { json: '/demos/img/civil1.json', png: '/demos/img/civil1.png' },
-    },
+    spritesheets,
+    textures: { pasto: `${DIR}pasto.png` },
   };
 
-  static entities = [[Shape, 40], [Walker, 1], [Lamp, 4]];
+  static entities = [[Prop, 16], [Car, 4], [Tree, 8], [Walker, 1], [Lamp, 4]];
 
   _panel = null;
   _hour = HOUR;
 
   create() {
     Sun.setTimeOfDay(this._hour);
-    Camera.setZoom(Math.min(innerWidth / W, innerHeight / H));
-    Camera.centerOn(W / 2, H / 2);
+    Camera.setZoom(ZOOM || Math.min(innerWidth / W, innerHeight / H));
+    Camera.centerOn(CX || W / 2, CY || H / 2);
     this._panel = new SunPanel([
-      { key: 'm', keyName: 'M', label: 'Maps', note: "assets.spritesheets.shapes.heightMap / normalMap: lit as the surfaces they are (reloads)", press: () => this._reload('maps', MAPS ? '0' : '1') },
-      { key: 'u', keyName: 'U', label: "Sun's shadows", note: "lighting.sunShadows: 'map' takes out the sun alone and falls on heights; 'sprite' is the old one (reloads)", press: () => this._reload('sun', SUN_MAP ? 'sprite' : 'map') },
+      { key: 'm', keyName: 'M', label: 'Maps', note: 'assets.spritesheets.*.heightMap / normalMap: lit as the surfaces they are (reloads)', press: () => this._reload('maps', MAPS ? '0' : '1') },
+      { key: 'u', keyName: 'U', label: "Sun's shadows", note: "lighting.sunShadows: 'map' takes out the sun alone and falls on heights; 'sprite' draws them on the shadows' layer (reloads)", press: () => this._reload('sun', SUN_MAP ? 'sprite' : 'map') },
       { key: 'o', keyName: 'O', label: 'Self-shadow', note: 'lighting.selfShadow: what has height shades itself from the sun (reloads)', press: () => this._reload('self', SELF ? '0' : '1') },
       { key: 'j', keyName: 'J', label: 'Hour', note: 'Sun.setTimeOfDay: 10, 16, 18:30 and 22 h (the lamps at night)', press: () => this._nextHour() },
     ]);
+    if (!PANEL) this._panel.el.style.display = 'none';
     this._showStates();
   }
 
   createNewGame() {
-    Decoration.spawn({ x: W / 2, y: H / 2, texture: '_white', scaleX: (W + 8) / 8, scaleY: (H + 8) / 8, anchorX: 0.5, anchorY: 0.5, tint: 0x8e8a7c, layer: 'ground' });
-    const rng = globalThis.rng;
-    for (let k = 0; k < 40; k++) {
-      Shape.spawn({
-        x: 80 + ((k % 8) * (W - 160)) / 7 + (rng() - 0.5) * 30,
-        y: 120 + Math.floor(k / 8) * 170 + (rng() - 0.5) * 30,
-        shape: k,
-        facing: rng() * Math.PI * 2,
-      });
+    // The prototype turned each thing at random (its seed 7, Park-Miller): the same turns here.
+    let seed = 7;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (const [sheet, x, y] of FARM) {
+      // The prototype's turn is counter-clockwise on the floor; a facing is the world's angle (clockwise, y down).
+      const facing = -Math.floor(rnd() * 360) * DEG;
+      if (BENCH_ASSETS[sheet].kind === 'car') Car.spawn({ x, y, sheet, facing });
+      else Prop.spawn({ x, y, sheet, facing });
     }
-    Walker.spawn({ x: W / 2, y: H / 2 + 40 });
-    const colors = [0xffd9a0, 0xa8c8ff, 0xffa8c0, 0xc8ffa8];
-    for (let k = 0; k < 4; k++) Lamp.spawn({ cx: 250 + k * 300, cy: 300 + (k % 2) * 300, r: 120, phase: k * 1.7, color: colors[k] });
+    for (const [x, y, v] of TREES) Tree.spawn({ x, y, kind: v === 0 ? 'arbol_verde' : 'arbol_jacaranda' });
+    Walker.spawn({ x: 700, y: 620 });
+    Lamp.spawn({ cx: 640, cy: 470, r: STILL ? 0 : 60, color: 0xffcf8a, elevation: 75, radius: 330, brightness: 1.4, castShadows: true });
+    Lamp.spawn({ cx: 1010, cy: 690, r: 0, color: 0x9ec3ff, elevation: 55, radius: 260, brightness: 1.2, castShadows: false });
   }
 
   update() {
@@ -184,7 +234,7 @@ export class LightBenchScene extends Scene {
 
   _showStates() {
     if (!this._panel) return;
-    this._panel.readout.textContent = 'WASD: walk   (DirectionalSprite, its shadow the frame the sun sees)';
+    this._panel.readout.textContent = 'WASD: walk   (DirectionalSprite: each light sees its own view of every thing)';
     this._panel.show('m', MAPS ? 'on' : 'off');
     this._panel.show('u', SUN_MAP ? 'shadow map' : 'sprites');
     this._panel.show('o', SELF ? 'on' : 'off');
