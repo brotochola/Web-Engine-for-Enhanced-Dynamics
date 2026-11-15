@@ -220,8 +220,10 @@ fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, 
   let c = lo + vec2<i32>(floor(uv * a.y));
   // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
-  // On the ceiling's half the bias goes under the point (towards lit there).
-  let bound = select(select(0.0, p.z + 4.0 + p.z * 0.03, p.z > 0.0), p.z - 4.0 - p.z * 0.03, upper);
+  // On the ceiling's half the bias goes under the point (towards lit there); 1 px and 4 floor px along the ray in height
+  // (lightingBasic.frag.glsl says why).
+  let bias = 1.0 + 4.0 * abs(e - p.z) / max(sqrt(dot(fromLamp, fromLamp)), 1.0);
+  let bound = select(select(0.0, p.z + bias, p.z > 0.0), p.z - bias, upper);
   var lit = lampTap(c, lo, hi, bound, upper, selfId);
 // #if PIXELART
   // DX-PIXELSHADOW: one tap at the art pixel's centre, crisp on the art's grid.

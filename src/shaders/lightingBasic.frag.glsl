@@ -172,9 +172,12 @@ float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float 
   vec2 toAtlas = vec2(uLampAtlas.y) / uLampAtlas.zw;
   float h = 0.5 / uLampAtlas.y;
   // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
-  // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it,
-  // towards lit: on the floor's half over its height, on the ceiling's under it.
-  float bound = upper ? p.z - 4.0 - p.z * 0.03 : (p.z > 0.0 ? p.z + 4.0 + p.z * 0.03 : 0.0);
+  // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps
+  // one towards lit (on the floor's half over its height, on the ceiling's under it): 1 px and 4 floor px along its ray
+  // in height. A fixed 4 px erased under a low lamp, whose rays are nearly level, the shade of anything near the point
+  // (a person's on the wall behind them: 3 px of height between them on the ray).
+  float bias = 1.0 + 4.0 * abs(e - p.z) / max(sqrt(dot(fromLamp, fromLamp)), 1.0);
+  float bound = upper ? p.z - bias : (p.z > 0.0 ? p.z + bias : 0.0);
   float lit = lampTap(cell, uv, h, toAtlas, bound, upper, selfId);
 // #if PIXELART
   // DX-PIXELSHADOW: one tap at the art pixel's centre, crisp on the art's grid.
