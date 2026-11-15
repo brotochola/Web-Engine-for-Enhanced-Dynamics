@@ -206,6 +206,26 @@ export function gbufAttributeWgsl(source) {
 }
 
 /**
+ * DX-GBUF: gbufAttributeWgsl's twin for a sprite vertex shader in GLSL (instancedSprite.vert.glsl, its pose form, indexed
+ * or not): it takes the words' stream whether or not it reads it. WebGL drops an input the program never reads, and Pixi
+ * then warned of the geometry's aInstGbuf ("not present in the shader") for every colour program without pixel depth.
+ * The words' x (an id + 1 and flags) is never negative, so the kept line never moves a vertex.
+ * @param {string} source
+ * @returns {string}
+ */
+export function gbufAttributeGlsl(source) {
+  if (source.includes('in vec2 aInstGbuf;')) return source;
+  const main = 'void main() {\n';
+  const at = '  gl_Position = vec4(clip.xy, aInstDepth, 1.0);\n';
+  if (source.split(main).length !== 2 || source.split(at).length !== 2) {
+    throw new Error('WeedJS: the G-buffer words need the sprite vertex shader (main, its gl_Position)');
+  }
+  return source
+    .replace(main, () => `in vec2 aInstGbuf;\n${main}`)
+    .replace(at, () => `${at}  if (aInstGbuf.x < -1.0) gl_Position.x += aInstGbuf.y;\n`);
+}
+
+/**
  * The sprite vertex shader for the face map: instancedSprite.vert.glsl or its pose form, indexed or not (spriteIndexed.js
  * keeps these lines). A face's height at each corner comes from its plane: the row holds the height at the sprite's
  * position, and a corner dx, dy px from it is on the plane through there with the row's normal, seen from this view:

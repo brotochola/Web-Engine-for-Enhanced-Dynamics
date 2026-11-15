@@ -42,7 +42,7 @@ import {
   packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
 import {
-  faceFragmentGlsl, faceGbufFragment, faceGlowFragment, faceIdsFragment, faceMapVertex, faceMapWgsl, gbufAttributeWgsl,
+  faceFragmentGlsl, faceGbufFragment, faceGlowFragment, faceIdsFragment, faceMapVertex, faceMapWgsl, gbufAttributeGlsl, gbufAttributeWgsl,
 } from './faceMap.js';
 import { lutBaseFloats } from './frameBase.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from './pixelDepth.js';
@@ -856,7 +856,9 @@ export class InstancedSpriteBatch {
 
   /** DX-DEPTH: a colour program's vertex shader, with the floor depth's terms when pixel depth is on. */
   _depthVertex(source) {
-    return this._pixelDepth && source ? pixelDepthVertex(source, { gbuf: this.gbuf }) : source;
+    if (this._pixelDepth && source) return pixelDepthVertex(source, { gbuf: this.gbuf });
+    // DX-GBUF: a batch with words has every geometry carry them; the program takes them, read or not (gbufAttributeGlsl).
+    return this.gbuf && source ? gbufAttributeGlsl(source) : source;
   }
 
   /** DX-DEPTH: a colour program's fragment shader, writing the floor depth when pixel depth is on. */
@@ -949,6 +951,8 @@ export class InstancedSpriteBatch {
     const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
     let frag = color;
     const depth = !!(this._pixelDepth && vert && frag);
+    // DX-GBUF: without pixel depth the colour program reads no words, yet the batch's geometry carries them.
+    if (!depth && this.gbuf && vert) vert = gbufAttributeGlsl(vert);
     if (depth) {
       vert = pixelDepthVertex(vert, { gbuf: this.gbuf });
       frag = pixelDepthFragment(frag, { gbuf: this.gbuf });

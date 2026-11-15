@@ -193,6 +193,24 @@ test('the face programs take the G-buffer words only when the batch carries them
   assert.match(gbufAttributeWgsl(shader('instancedSprite.wgsl')), /@location\(12\) aInstGbuf/);
 });
 
+// A colour program without pixel depth reads no words, yet the batch's geometry carries them: WebGL dropped the unread
+// input and Pixi warned of aInstGbuf ("not present in the shader") in every map-mode scene without maps.
+test('a GLSL colour program takes the G-buffer words, read or not, once, in every sprite form', async () => {
+  const { gbufAttributeGlsl } = await import('../../src/render/faceMap.js');
+  for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
+    for (const [form, src] of [['plain', shader(name)], ['indexed', spriteIndexedVertex(shader(name))]]) {
+      const out = gbufAttributeGlsl(src);
+      assert.equal(out.split('in vec2 aInstGbuf;').length, 2, `${name} ${form}: declared once`);
+      assert.ok(out.includes('  if (aInstGbuf.x < -1.0) gl_Position.x += aInstGbuf.y;\n'), `${name} ${form}: kept alive`);
+      assert.ok(out.indexOf('in vec2 aInstGbuf;') < out.indexOf('void main() {'), `${name} ${form}: at global scope`);
+      assert.equal(gbufAttributeGlsl(out), out, `${name} ${form}: twice is once`);
+    }
+  }
+  const face = faceMapVertex(shader('instancedSprite.vert.glsl'), { gbuf: true });
+  assert.equal(gbufAttributeGlsl(face), face, 'a program that reads the words is left as it is');
+  assert.throws(() => gbufAttributeGlsl('void main() {\n}\n'), /gl_Position/);
+});
+
 test('the light pass reads a FLAT pixel and the k bit in both languages, and masks the bit from a height', () => {
   for (const name of ['lightingBasic.frag.glsl', 'lightingBasic.wgsl']) {
     const on = lightingSource(shader(name), { faces: true, sunMap: true, selfShadow: true, lampMap: true });
