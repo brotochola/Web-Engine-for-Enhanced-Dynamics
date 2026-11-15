@@ -2,7 +2,8 @@
 
 Plan escrito el 2026-11-14 contra `main` en `d1158cc` (versión 0.14.0), después de probar todo esto en el
 "Banco de luz y sombras" (la webapp chica donde iteramos la API). Es un plan para que el dueño decida y para que
-las sesiones de código lo ejecuten fase por fase. Nada de esto está construido en el motor.
+las sesiones de código lo ejecuten fase por fase. Se está construyendo en la rama `dx/light3d`: lo hecho está en §16 y en el
+«Cómo quedó (rama)» de cada fase; el estado y lo que falta, en §17.3.
 
 Filas propuestas para [REVIEW_PLAN.md](./REVIEW_PLAN.md): **DX-DIRSPRITE**, **DX-CAMERA**, **DX-MAPS**,
 **DX-GBUF**, **DX-DEPTH**, **DX-SHADOW3D**, **DX-SELFSHADOW**, **DX-CASTER**, **DX-EMISSIVE**. Toma y cierra
@@ -721,12 +722,29 @@ antes con caras y sin ellas. **Falta:** `normals` y `surface` en `SpriteRenderer
 mapa), el id de entidad en el buffer (lo pide la autosombra), probar MRT, el microbench de GPU, y WebGPU: el código WGSL
 está, pero en esta VM el backend WebGPU falla en cualquier escena (`createBuffer`), así que no se pudo ver.
 
+**Después (2026-11-14):** en una GPU real, toda escena con mapas fallaba en WebGPU: la pasada de caras lee la página
+gemela en el binding 5 del grupo 2, que los layouts explícitos de los programas de sprites no tenían ("Binding doesn't
+exist"). Arreglado (6601e884): el banco anda en WebGPU.
+
 ### F5. Profundidad que corrige al pintor (DX-DEPTH)
 
 **Hecho cuando** `depthSortCheck` (§8) da la visibilidad esperada en cada posición del personaje alrededor de la mesa
 girada y del granero, los bordes semitransparentes capturan igual que con el pintor solo donde no hay heightmap,
 `painterMoveStressScene` y `painterSortStressScene` no empeoran, y la mezcla con partículas GPU (`gpuYSortProbeScene`)
 no cambia.
+
+**Cómo quedó (rama), primera versión (2026-11-15, 72d38271, R-1061):** el pintor sigue igual (orden por el pie, una sola
+pasada con mezcla). Con cámara oblicua y una página de mapas, los programas de color del lote de entidades (el común, el
+indexado y el que lee por fila) escriben como profundidad el lugar de cada pixel en el piso y la prueban (`less`): un pixel
+con heightmap, a su altura, `(y_pantalla + heightScaleY·z) / floorScaleY`; cualquier otro, el pie de su sprite; el orden
+del pintor desempata (`src/render/pixelDepth.js`). Se prende sola con cámara oblicua y algún sheet con mapas;
+`renderer.pixelDepth` `true` o `false` la fuerza (`true` igual necesita un sheet con mapas). Un pixel emisivo se ubica en el
+pie de su sprite. En el banco a las 16 h cambian 388 px contra el commit anterior, todos donde la cerca se cruza con la
+otra cerca y con la mesa, que ahora tapa la punta de la cerca que tiene delante. **Cambio contra §6.5:** todo pixel
+dibujado escribe profundidad, también los bordes semitransparentes (en una sola pasada no hay máscara por pixel).
+**Falta:** WebGPU (ahí ordena solo el pintor), que escriban solo los opacos, las franjas de zIndex, `depthSortCheck`,
+`depthSortStressScene`, los cortes del lote con partículas GPU (`sortWithEntities`) y medir lo que cuesta escribir la
+profundidad desde el shader (apaga el descarte temprano).
 
 ### F6. Sombras del sol (DX-SHADOW3D, parte 1)
 
@@ -750,6 +768,32 @@ filas completas), la base medida (tabla de F3), cajas y cascos de
 `VolumeShadowCaster` en el mapa, la cache de lo quieto, `shadowOutlineCheck`, `sunShadowMapStressScene` propia y la
 aprobación del dueño con la captura del árbol sobre el auto.
 
+**Después (2026-11-14 y 15, R-1053, R-1065):**
+
+- §17.1: el cartón parado en su base medida y proyectado a lo largo del sol, en los dos modos; los renders con heightmap
+  tiran su sólido (R-1053).
+- §17.2: las filas con clave llevan el cuadro que ve el sol (d5dc4ef6): E-211 vuelve con casters direccionales.
+- WebGPU: el mapa del sol, los sólidos y la autosombra (496587e7). En el banco, modo mapa, WebGPU contra WebGL: 6 149 px
+  distintos, delta máximo 2.
+- Un render que tira su sólido conserva el cuadro de la cámara, no el que ve el sol (265207b5): la sombra de la cerca era
+  la de una cerca girada un cuarto; ahora es una banda a lo largo de ella (27 947 px cambian en el banco).
+- Cada sheet dice cómo tira la sombra del sol (d352144b): `meta.shadowCast.sun` (o `meta.light3d.cast.sun`, como lo
+  escribe el conversor del banco) en `'sprite'` le da a sus renders el cartón en vez del sólido (la vaca, los autos). Con
+  huellas en el json (`meta.footprints`), `lighting.footprintSolids` barre cada celda hacia el norte a su altura hasta el
+  borde de la huella, como el banco; queda apagado porque al granero le faltan las paredes en la sombra.
+- Sombras más oscuras: el mapa saca `Sun.shadowAlpha` del sol (ac57e08d), no `Sun.shadowOpacity`, que lo volvía a escalar
+  por la intensidad y aclaraba las sombras largas (a las 16 h el banco sacaba 13 % de la luz del piso). El banco usa
+  `shadowAlpha` 0.7 y `shadowStretchAlphaFactor` 0 en los dos modos (6f074f2f), como el prototipo. El dueño las aprobó.
+- Volúmenes en el mapa (600a434a, WebGL): las cajas, niveles y cascos de `VolumeShadowCaster` se dibujan otra vez en el
+  mapa del sol, con su altura y mezcla max; en modo mapa su capa no se dibuja. **En WebGPU, en modo mapa, los volúmenes no
+  tiran nada todavía** (la capa se esconde y esa pasada es solo GLSL).
+- Rendimiento en Predator: el cuadro del sol de una tabla uniforme (d869b31a; pre-render −22.5 %, R-1055); los cuadros
+  del sol en orden de entidades, por una función de módulo (8018aa0a; neutro, R-1060).
+
+**Falta todavía:** la cache de lo quieto, el WGSL de los volúmenes en el mapa, la opacidad del caster en el mapa,
+`footprintSolids` (el bug), las filas con clave en modo mapa (usa las completas), el costo de las columnas en escenas
+grandes, `shadowOutlineCheck`, `sunShadowMapStressScene` y la captura del árbol sobre el auto para el dueño.
+
 ### F7. Sombras de los faroles (DX-SHADOW3D, parte 2)
 
 - Prototipo A contra B en `lampShadowStressScene`; el dueño decide con los números.
@@ -757,6 +801,28 @@ aprobación del dueño con la captura del árbol sobre el auto.
 
 **Hecho cuando** un auto bajo un farol de 150 px tira una sombra corta y bajo uno de 40 px una larga (contra la fórmula
 de DX-VOLLIGHTS), dos faroles se iluminan uno la sombra del otro, y Predator de noche queda dentro de lo fijado.
+
+**Cómo quedó (rama), primera versión (2026-11-15, df3555b0, R-1065):** ni A ni B: una **opción C**, la idea del mapa del
+sol llevada a una luz puntual. `lighting.lampShadows: 'map'` (por defecto `'sprite'`, las estampas de siempre). Un punto
+(x, y, z) bajo un farol que está en el punto L del piso y a la altura E cae en el piso en L + ((x, y) − L) · E / (E − z),
+con el estiramiento topeado en 8. Cada farol tiene un mosaico cuadrado (su radio alrededor, en el piso) en un atlas
+(`src/render/lampShadowMap.js`) que guarda el punto caster más alto que cae en cada texel (mezcla max); un punto está en la
+sombra de ese farol si donde cae su propio rayo hay algo más alto. Un mosaico por luz de estampa (las
+`maxShadowCastingLights` con `castShadows` más cercanas a la cámara), de `lighting.lampShadowTile` texeles de lado (256;
+de 32 a 1024); los casters son las filas de estampa del pre-render tal como están (`maxShadowsPerLight`, `shadowRange`).
+En la pasada de luz, el aporte de cada farol con mosaico (piso y caras, conos y puntuales) se multiplica por su visibilidad
+(cinco muestras en su mosaico): cada farol se saca por separado y dos faroles se iluminan uno la sombra del otro. Lo que
+está a la altura del farol o más arriba no le tira sombra, y un farol con `elevation` 0 no tira ninguna. GLSL y WGSL.
+
+- Las siluetas de un farol usan el cuadro que ve ese farol (5074f12a; un cartón fijo conserva su cuadro de frente), y un
+  farol no se tapa con su propia entidad (918da75b: sus filas de estampa pierden la altura), en los dos modos. Las dos
+  cosas también en las filas con clave (f764d0ac, en `dx/light3d` después de la base de esta rama de docs).
+- La autosombra hacia cada farol con mosaico (F8, 7ac0817b).
+- Escena dueña: `lampShadowStressScene` (72cee65d: `?lampShadows=map|sprite`, `?lamps=` 48, `?walkers=` 2000), sin medir.
+
+**Falta:** medir en esa escena el mapa contra las estampas, la prueba contra la fórmula (faroles de 150 y 40 px; dos
+faroles), Predator de noche, los volúmenes para los faroles (`setBox` / `addLevel` / `setHull` de F9, cierra
+DX-VOLLIGHTS), la opacidad del caster en el mapa y las filas con clave en modo mapa (se usan las completas).
 
 ### F8. Autosombra (DX-SELFSHADOW)
 
@@ -770,6 +836,12 @@ vecinos del pixel, el sesgo crece con la distancia y la prueba se apaga cerca de
 quedan unos pocos puntos en el terminador de la esfera (455 px en la captura). Faltan los faroles, WebGPU y el id de
 entidad.
 
+**Después (2026-11-15, R-1062):** WebGPU (496587e7) y los faroles (7ac0817b): con `lampShadows: 'map'` y `selfShadow`,
+una cara o un sprite con mapas da pasos hacia cada farol que tiene mosaico, como hacia el sol (`selfShadowToward`, sin
+pasarse del alcance), donde la luz de ese farol todavía cuenta (coseno mayor que 0.05). GLSL y WGSL. **Falta:** el id de
+entidad (hoy cuenta las alturas de todo lo que está alrededor), medir 1, 2 y 4 rayos en `selfShadowStressScene`, y la
+aprobación del auto y la cama sin damero.
+
 ### F9. `ShadowCaster` único (DX-CASTER)
 
 - La API de §5.5, `.sun` / `.lamps`, valores por defecto por asset, `opacity`, `setWall`.
@@ -779,10 +851,43 @@ entidad.
 **Hecho cuando** cada demo migrada captura igual (o mejor, con film y aprobación) y la tabla "what you want, what you
 write" de la guía está reescrita.
 
+**Cómo quedó (rama), primera parte (2026-11-15, fd5b866a, c07b5800, R-1064):** `shadowCaster.setSprite({ orient })`,
+`setHeightMap()` y `clear()` valen para todas las luces; `shadowCaster.sun.*` y `shadowCaster.lamps.*`, para un tipo de luz
+solo; gana el último. `opacity` (0 a 1, 1 al nacer) y `type` (se lee). Columnas nuevas `sunKind`, `lampKind` (`CAST_KIND`:
+0 lo del sheet, 1 su cartón, 2 su sólido, 6 nada), `orient` y `opacity`; `CAST_KIND` se exporta (`src/index.js`, los
+tipos).
+
+- El pre-render revisa los casters cada 30 cuadros (`casterKindsInUse`). Cuando alguno pide lo suyo (un tipo, un cartón
+  fijo, una opacidad menor que 1), las filas del sol pasan a ser completas y cada una lleva el código de su caster,
+  −(código + 1), en su número de profundidad, que ningún programa de sombra lee; las estampas lo copian.
+- La cabecera de los shaders de sombra lo decodifica, así que todo programa hecho con ellos lo tiene: las sombras de
+  sprites saltean un NONE y escalan por la opacidad; los cartones y columnas del sol y de los faroles (GLSL y WGSL) tiran lo
+  que pide el caster, y lo del sheet si no pide nada.
+- `orient: 'fixed'` (c07b5800): el cartón queda a lo largo del objeto, por su ancla, muestra el objeto de frente (el cuadro
+  de la tabla que mira a la cámara) y cada punto cae a lo largo de la luz, como la cerca del banco. El eje (el facing girado
+  un cuarto) va en el código del caster en 64 pasos. Las cercas del banco lo usan.
+
+**Cambios contra §5.5:** `opacity` todavía no entra en los mapas (sol y faroles), solo en las sombras de sprites; `type`
+lee lo pedido para el sol, y sin pedir nada (AUTO) lee `'sprite'` aunque el sheet tire su sólido. **Falta (otra sesión lo
+está terminando):** `setBox` / `addLevel` / `setHull` / `setWall`, `selfShadow`, `baseRadius`,
+`setSprite({ frame, anchorX, anchorY, heightScale })`; después, migrar las demos, sacar `VolumeShadowCaster`,
+`LightOccluder` y `raycasted`, y `CAST_KIND` en el WEED de los workers (`src/workers/workerWeed.js`, si no
+`workerWeed.test.js` falla).
+
 ### F10. Emisivos y sombras parciales (DX-EMISSIVE)
 
 - Los dos colores por pixel, `spriteRenderer.emissive`.
 - Opcional: siluetas que sacan luz según su alpha (humo, borde de copas).
+
+**Cómo quedó (rama), v1 (2026-11-15, 165f0ff3, R-1063):** `assets.spritesheets.<nombre>.emissive: true` (o
+`meta.emissive` en su json) le da al sheet una página gemela cuyos pixeles opacos llevan el código emisivo donde iría la
+normal (los bytes 0 y 255, que ninguna normal octaédrica alcanza; `emissiveTexels` en `spriteMaps.js`, que conserva las
+alturas si las hay). La pasada de caras (GLSL y WGSL) escribe ese pixel como (1/255, 0) en el face map, en el orden del
+pintor, y la pasada de luz le da luz plena: una fogata o una ventana encendida conserva su color de noche, y quien pasa
+por delante la tapa. La profundidad por pixel lo ubica en el pie de su sprite. **Cambio contra §6.9:** no hay dos colores
+por pixel; el pixel recibe luz plena y nada más (ningún brillo pasa de 1), y va por sheet, no por entidad. **Falta (v2):**
+MRT y los dos colores (`color_con_luz × luz + brillo_propio`), `spriteRenderer.emissive`, `emissiveStressScene` y
+`emissiveCheck`, y las sombras parciales.
 
 ### F11. Vitrina, Predator y cierre
 
@@ -1045,10 +1150,15 @@ Lo que está hecho en la rama, fase por fase, con su commit. Se actualiza con ca
 | F1 `camera` | hecho | af40188 | `raycasted` pasa a F9; `frameChainWait` (presupuesto de reloj) falla a veces en esta máquina de 2 núcleos, también en la base |
 | F2 `DirectionalSprite` | hecho (falta el ABAB del dueño) | 4bf4d21 … f439060 | resolución en la lógica, no en el pre-render; forma `frames` pendiente; R-1052: empate contra el selector a mano en esta VM |
 | F3 mapas | en parte | 7d12c25, f4faf77, b2bf7c2, 4ee050f | página gemela y test de alineación; base de cada cuadro (elipse de una sola vista, apoyo de los renders) en la tabla de texturas (`frameBase.js`); faltan bake, `weed maps` (la tubería del banco web usaba Blender: `weed-mapas.zip`, fuera del repo) y medir la carga |
-| F4 G-buffer | primera versión, WebGPU andando | f376849, fec5057 | face map generalizado; en WebGPU la pasada de caras no validaba (binding 5 fuera del layout): arreglado y visto en GPU real; faltan `normals`/`surface`, id de entidad, MRT, microbench de GPU |
-| F6 sombras del sol | §17.1 hecho, espera aprobación | a323a1d, bb18952, 2222a32, 43f3d11, b8b4a24, 31319d4, 658fdd5, 952929f | 17.1 (R-1053): cartón parado en su base y proyectado a lo largo del sol en los dos modos; los renders con heightmap tiran su sólido en los dos modos, lo de una sola vista su cartón; la mezcla max del mapa no se aplicaba (arreglado). Antes: | `sunShadows: 'map'`, WebGL; cuadro que ve el sol (DirectionalSprite), también en modo `'sprite'` (apaga los caminos con clave: medir en Predator); los casters con heightmap tiran columnas (su sólido, girado como está: lo marcó el dueño en el banco de luz); faltan WebGPU, caminos con clave, volúmenes, cache, costo de las columnas en escenas grandes |
-| F11 vitrina | primera versión | 248fd7e, 3cbb60a, c656266 | `demos/lightBenchScene`: la granja del banco web (Quaternius en 32 direcciones, autos MinZinn, LPC, árboles, con sus mapas), persona con WASD, faroles, mapa del sol, autosombra, teclas para comparar; `?only`, `?lamps`, `?still`, `?zoom` para capturas |
-| F8 autosombra | primera versión | 2d1eb1e, d1de9e5, 80dde16 | `lighting.selfShadow`, sol, WebGL y WebGPU; faltan faroles y el id de entidad (que una luz no se tape con lo suyo) |
+| F4 G-buffer | primera versión, WebGPU andando | f376849, 6601e884 | face map generalizado; en WebGPU la pasada de caras no validaba (binding 5 fuera del layout): arreglado y visto en GPU real; faltan `normals`/`surface`, id de entidad, MRT, microbench de GPU |
+| F5 profundidad | primera versión, WebGL | 72d38271 | `renderer.pixelDepth`, sola con cámara oblicua y mapas (R-1061); todo pixel dibujado escribe; faltan WebGPU, solo los opacos, franjas de zIndex, `depthSortCheck` |
+| F6 sombras del sol | §17.1 y §17.2 hechos; sombras más oscuras aprobadas | a323a1d, bb18952, 2222a32, 43f3d11, b8b4a24, 31319d4, 658fdd5, 952929f, d5dc4ef6, 496587e7, 265207b5, ac57e08d, d352144b, 600a434a | 17.1 (R-1053); filas con clave con el cuadro del sol (17.2); WebGPU del mapa y de los sólidos; el mapa saca `Sun.shadowAlpha`; cada sheet dice cómo tira (`meta.shadowCast`); volúmenes en el mapa (WebGL); `footprintSolids` apagado (bug); faltan cache, WGSL de los volúmenes, opacidad en el mapa, `shadowOutlineCheck` (R-1065) |
+| F7 sombras de los faroles | primera versión (opción C) | df3555b0, 5074f12a, 918da75b, f764d0ac | `lighting.lampShadows: 'map'`, un mosaico por farol (`lampShadowTile`); cuadro que ve cada farol; sin su propia entidad; WebGL y WebGPU; `lampShadowStressScene` (72cee65d) sin medir (R-1065) |
+| F8 autosombra | primera versión, sol y faroles | 2d1eb1e, d1de9e5, 496587e7, 7ac0817b | `lighting.selfShadow`, WebGL y WebGPU; hacia los faroles con `lampShadows: 'map'` (R-1062); falta el id de entidad |
+| F9 `ShadowCaster` único | primera parte | fd5b866a, c07b5800 | `setSprite({ orient })`, `setHeightMap`, `clear`, `.sun` / `.lamps`, `opacity`, `type`, `CAST_KIND` (R-1064); la segunda parte (volúmenes, `setWall`, `selfShadow`, `baseRadius`, `frame`) la termina otra sesión |
+| F10 emisivos | v1 | 165f0ff3 | `emissive` por sheet: luz plena en la pasada de luz (R-1063); faltan MRT y los dos colores (v2) |
+| F11 vitrina | primera versión | 248fd7e, 3cbb60a, c656266 | `demos/lightBenchScene`: la granja del banco web (Quaternius en 32 direcciones, autos MinZinn, LPC, árboles, con sus mapas), persona con WASD, faroles, mapa del sol, autosombra, teclas para comparar; `?only`, `?lamps`, `?still`, `?zoom` para capturas; después `?fullRows`, `?lampMap=0`, `?sweep=1`, cada asset dice cómo tira (`meta.light3d.cast`), luz y sombras a la resolución del canvas |
+| Rendimiento (Predator crowd 2.5) | la rama contra `main`: neutra por la regla, más cara de verdad | d869b31a, 0dfbc28c, 281c699a, 8018aa0a | R-1054 a R-1060: primer gate, regresión (lógica +25 %, pre-render +54 %); el cuadro del sol de una tabla uniforme (pre-render −22.5 %); doce lugares rápidos de componentes (lógica −13.6 %); segundo gate: lógica 5.85 → 6.65 ms, pre-render 5.89 → 7.34 ms, bases bajo el piso de 6 ms; el costo viene de la gente de Predator con `DirectionalSprite` |
 
 ## 17. Próximos pasos (para la sesión que sigue)
 
@@ -1069,6 +1179,13 @@ mide 228) y el sólido de un árbol tapa la luz bajo la copa. Las columnas en mo
 Encontrado en el camino: Pixi dibuja con mezcla normal una malla que es la raíz del render, así que el `max` del mapa
 del sol no se aplicaba (arreglado con un contenedor); el WGSL de la pasada de caras con mapas (`mainFragFace`,
 `@group(2) @binding(5)`) no valida en WebGPU (ya estaba antes: va con 17.3); las sombras del modo mapa salen suaves.
+
+**Después (2026-11-15):** el dueño casi no veía las sombras: a las 16 h el mapa sacaba 13 % de la luz del piso, y las del
+prototipo eran unas 60 % más oscuras que el piso al sol. El mapa saca ahora `Sun.shadowAlpha` del sol (ac57e08d) y el
+banco usa `shadowAlpha` 0.7 y `shadowStretchAlphaFactor` 0 (6f074f2f); el dueño aprobó las sombras más oscuras. Las
+columnas del modo `'sprite'` y el mapa andan también en WebGPU (496587e7), y la pasada de caras con mapas valida
+(6601e884). Las sombras suaves del modo mapa eran la resolución: el banco pasó la luz y las sombras al tamaño del canvas
+(0ccf07b9; su costo va a la fase de medición).
 
 Hoy la sombra de un cubo no se parece a la del banco. Faltan dos cosas que el banco tenía:
 
@@ -1094,7 +1211,7 @@ Hoy la sombra de un cubo no se parece a la del banco. Faltan dos cosas que el ba
 
 ### 17.2 Filas con clave que traen el cuadro de la sombra (no perder la optimización)
 
-**Hecho (2026-11-14, 488f4b2):** el cuarto número de la fila con clave (era un cero) lleva el cuadro que ve la luz,
+**Hecho (2026-11-14, d5dc4ef6):** el cuarto número de la fila con clave (era un cero) lleva el cuadro que ve la luz,
 ±(textureId + 1) con el signo como espejo; el pre-render lo escribe después del barrido (`_applyKeyedSunFrames`), las
 estampas lo copian con la fila y los shaders con clave (GLSL y WGSL) lo usan. Filas con clave contra completas
 (`?fullRows=1` del banco): idénticas byte por byte, con faroles y sin, WebGL y WebGPU. `lighting.directionalCasters`
@@ -1103,7 +1220,22 @@ dio regresión** (Predator crowd 2.5, `--full-rev`, 4 pares): lógica 6.00 → 7
 (+54 %). Perfil de CPU: el cuadro del sol de 38 000 personas (atan2 + `pickDirection` por caster, 30 % del pre-render),
 `DirectionalSprite.resolve` (0.6 ms de cada worker de lógica) y el getter lento de `SpriteRenderer` (`requires` lo
 agregaba al final de la lista, fuera de los 8 lugares rápidos). Arreglos: el cuadro del sol de una tabla uniforme es la
-dirección dibujada más el giro del sol en pasos (086f02c), y lo requerido va justo antes de lo que lo pide.
+dirección dibujada más el giro del sol en pasos (d869b31a), y lo requerido va justo antes de lo que lo pide.
+
+**Después (2026-11-14 y 15, Predator crowd 2.5, 4 pares cada sesión; límites de detección del A/A: lógica ±13.4 %,
+pre-render ±8.7 %):**
+
+| Cambio | Commit | Resultado | Registro |
+| --- | --- | --- | --- |
+| El cuadro del sol de una tabla uniforme | d869b31a | pre-render 9.34 → 7.21 ms (−22.5 %, 4/4): se queda | R-1055 |
+| Lo requerido justo antes de lo que lo pide, solo | 0dfbc28c | lógica 6.81 → 7.53 ms (+7.8 %, 4/4 peor, dentro del límite): neutro; la gente tiene 11 componentes y el FSM quedó noveno | R-1056 |
+| Doce lugares rápidos de componentes, no ocho | 281c699a | lógica 7.39 → 6.43 ms (−13.6 %, 4/4): se queda | R-1057 |
+| Los cuadros del sol en orden de entidades, como método del worker | (no entró) | pre-render 7.31 → 9.70 ms (+31 %): regresión (el método quedaba en Maglev) | R-1059 |
+| Lo mismo como función de módulo | 8018aa0a | pre-render 7.51 → 7.76 ms (+1.8 %): neutro; mismos cuadros byte a byte | R-1060 |
+
+Segundo gate de la rama contra `main` (R-1058): lógica 5.85 → 6.65 ms, pre-render 5.89 → 7.34 ms, 4/4 peor cada uno;
+las dos bases quedan bajo el piso de 6 ms, así que por la regla es neutro, pero el costo es real y viene de la gente de
+Predator con `DirectionalSprite`. `lighting.directionalCasters` sigue solo para E-191.
 
 `b8b4a24` apagó los caminos con clave (E-191 / E-211) cuando una clase tiene `DirectionalSprite` y `ShadowCaster`
 (`lighting.directionalCasters`), porque leen el cuadro del propio sprite. Eso no se queda así: el motor tiene que seguir
@@ -1119,15 +1251,41 @@ igual de optimizado.
 - Después, sacar `lighting.directionalCasters` y sus dos chequeos (`_keyedCastersLive`, `_keyedSunFor` /
   `_ensureKeyedCasters`), y pasar el gate de Predator contra `main`.
 
-### 17.3 Lo demás que falta (de la tabla de §16)
+### 17.3 Estado (2026-11-15) y lo que falta
 
-- F5 profundidad que corrige al pintor; F7 sombras de los faroles (prototipo A contra B en `lampShadowStressScene`);
-  F9 `ShadowCaster` único, sacar `raycasted` y `LightOccluder`, migrar Sun Street, Headlights y Predator; F10 emisivos.
-- F3: mapas en el bigAtlas preempaquetado, herramienta `weed maps`, tabla de sombra por cuadro.
-- F4: `normals` / `surface` en `SpriteRenderer`, id de entidad en el G-buffer, probar MRT, microbench de GPU.
-- F6: cajas y cascos de `VolumeShadowCaster` en el mapa, cache de lo quieto, costo de las columnas en escenas grandes,
-  las rayitas en el borde de la sombra de la esfera.
-- F8: autosombra con faroles.
-- WebGPU de F6 y F8 (hoy solo WebGL; en WebGPU avisan y quedan como antes) y ver en una GPU real el WGSL de F4.
-- Mediciones en la máquina del dueño: ABAB de `directionalSpriteStressScene` (`?mode=hand|ds`), gate de Predator, el
-  banco de luz con mapa de sol y columnas.
+**Hecho en la rama:** F1; F2 (falta el ABAB del dueño); F3 en parte (página gemela, base de cada cuadro); F4 primera
+versión, WebGL y WebGPU; F5 primera versión, WebGL; F6 con §17.1 y §17.2, WebGPU, volúmenes en el mapa (WebGL), cada sheet
+dice cómo tira, sombras más oscuras aprobadas por el dueño; F7 primera versión (opción C), WebGL y WebGPU, con el cuadro
+que ve cada farol y sin su propia entidad; F8 hacia el sol y los faroles, WebGL y WebGPU; F9 primera parte; F10 v1; F11
+primera versión (el banco). El detalle, en el «Cómo quedó» de cada fase y en el registro (R-1053 a R-1065).
+
+**Falta:**
+
+- **Paridad WebGPU:** la profundidad por pixel (F5; en WebGPU ordena solo el pintor) y los volúmenes en el mapa del sol
+  (en WebGPU, en modo mapa, hoy no tiran nada: la capa se esconde y la pasada es solo GLSL).
+- **El resto de F9** (otra sesión lo está terminando): `setBox` / `addLevel` / `setHull` / `setWall`, `selfShadow`,
+  `baseRadius`, `setSprite({ frame, anchorX, anchorY, heightScale })`; la opacidad del caster en los mapas; `type` con AUTO
+  debería decir lo que tira el sheet; migrar Sun Street, Headlights, Buenos Aires y Predator; sacar `VolumeShadowCaster`,
+  `LightOccluder` y `raycasted`; `CAST_KIND` en el WEED de los workers (`src/workers/workerWeed.js`).
+- **MRT en F4:** probarlo contra la segunda pasada (microbench de GPU); también `normals` / `surface` en `SpriteRenderer` y
+  el id de entidad en el G-buffer (lo piden la autosombra y §6.6).
+- **F10 v2:** los dos colores por pixel con MRT (brillo por encima de 1), `spriteRenderer.emissive` por entidad, sombras
+  parciales.
+- **F3:** los mapas en el bigAtlas preempaquetado (bake), la herramienta `weed maps`, medir la carga.
+- **El bug de `footprintSolids`:** al granero del banco le faltan las paredes en su sombra; queda apagado.
+- **Filas con clave:** los dos mapas y los códigos por caster (`sunKind`, `lampKind`, `orient`, `opacity`) usan filas
+  completas; las filas con clave (E-211) todavía no los llevan, y las instancias del lote (E-191,
+  `lighting.directionalCasters`) no tienen lugar para el cuadro de la sombra.
+- **F5:** que escriban profundidad solo los pixeles opacos; las franjas de zIndex.
+- **F6:** la cache de lo quieto; el costo de las columnas en escenas grandes.
+- **Claves de config:** `lighting.lampShadowTile` y `renderer.pixelDepth` no tienen valor por defecto ni están en
+  `src/util/configKeys.js`: una escena que las escribe recibe el aviso de clave desconocida ("does nothing"), y el test
+  "every config.<section>.<key> the engine reads is a known key" (`tests/node/configKeys.test.js`) las encuentra en
+  `pixiWorker.js`.
+- **La fase de medición:** las stress scenes de §10 que faltan (`sunShadowMapStressScene`, `selfShadowStressScene`,
+  `depthSortStressScene`, `emissiveStressScene`; `lampShadowStressScene` ya está, sin medir), el microbench de GPU (§9.3),
+  las pruebas contra fórmula de §8.2, Predator con `?light3d=1` de día y de noche en los dos backends, el ABAB de
+  `directionalSpriteStressScene` del dueño (`?mode=hand|ds`), lo que cuestan la luz y las sombras a la resolución del canvas
+  en el banco, y el scoreboard. La rama contra `main` sigue más cara en Predator (R-1058).
+- **Aprobaciones del dueño:** la captura del árbol sobre el auto (F6), el auto y la cama sin damero (F8), la profundidad
+  del banco (F5).
