@@ -1,5 +1,6 @@
 import { FireComponent } from '../components/fireComponent.js';
 import WEED from '/src/index.js';
+import { LIGHT3D } from '../light3d.js';
 
 // Destructure what we need from WEED
 const {
@@ -57,6 +58,8 @@ export class Fire extends GameObject {
 
     // Set fixed animation speed
     this.setAnimationSpeed(this.fireComponent.baseAnimationSpeed);
+    // ?light3d=1: the flames glow, no night or shadow darkens them (DX-EMISSIVE).
+    if (LIGHT3D) this.spriteRenderer.emissive = true;
     SoundManager.play('explosion_de_fuego', 0.8, 0.9, 1.1, 0, 0, this.x, this.y, 'sfx');
   }
 

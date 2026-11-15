@@ -26,6 +26,7 @@ import { DropPistol } from './gameObjects/dropPistol.js';
 import { Civilian } from './gameObjects/civilian.js';
 import { resetSquadCameraHold, updateSquadCamera } from './gameObjects/cameraController.js';
 import { Trash } from './gameObjects/trash.js';
+import { Bonfire } from './gameObjects/bonfire.js';
 import { ART_FLOOR_SCALE_Y, ART_HEIGHT_SCALE_Y, LIGHT3D, LIGHT3D_PITCH, farmSheet } from './light3d.js';
 // import { Cloud } from './gameObjects/cloud.js';
 
@@ -462,8 +463,10 @@ export class PredatorScene extends WEED.Scene {
     [DropAk47, 1000],
     [DropPistol, 1000],
     [DropShotgun, 1000],
-    [Trash, 100]
+    [Trash, 100],
     // Grass now uses Decoration instead of GameObject
+    // ?light3d=1: bonfires that keep burning, to see the flames glow and their light at night.
+    ...(LIGHT3D ? [[Bonfire, 16]] : []),
   ];
 
   // ========================================
@@ -518,7 +521,23 @@ export class PredatorScene extends WEED.Scene {
     this.spawnCivilians(Math.round(10000 * crowd));
     this.spawnMySoldiers(Math.round(6000 * crowd));
     this.spawnDestination();
+    if (LIGHT3D) this.spawnBonfires(8);
     await map;
+  }
+
+  /** ?light3d=1: bonfires on a ring around the squad's start, in view of the first frames. */
+  spawnBonfires(count) {
+    const cx = this.config.worldWidth / 2;
+    const cy = this.config.worldHeight / 2;
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * 2 * Math.PI + this.rng() * 0.4;
+      const r = 1000 + this.rng() * 400;
+      Bonfire.spawn({
+        x: cx + Math.cos(a) * r,
+        y: cy + Math.sin(a) * r * ART_FLOOR_SCALE_Y,
+        scale: 1 + this.rng() * 0.5,
+      });
+    }
   }
 
   spawnTrash(count) {
