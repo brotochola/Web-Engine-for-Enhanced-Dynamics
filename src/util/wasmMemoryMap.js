@@ -224,7 +224,9 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'stampGridCounts', owner: 'pre-render', bytes: STAMP_GRID_CELLS * 4 },
       { name: 'stampGridStarts', owner: 'pre-render', bytes: (STAMP_GRID_CELLS + 1) * 4 },
       { name: 'stampGridItems', owner: 'pre-render', bytes: sun * 4 },
-      { name: 'stampNearDist', owner: 'pre-render', bytes: near * 4 },
+      // E-358: each caster's nearest lights as records, the float distance and the light (int32) side by side.
+      { name: 'stampNearDist', owner: 'pre-render', bytes: near * 8 },
+      // Not read by the shipped stamp since E-358; the float32 test module's variants (wasm/test/shadowStampF32.c) still keep it.
       { name: 'stampNearSlot', owner: 'pre-render', bytes: near * 4 },
       { name: 'stampNearCount', owner: 'pre-render', bytes: sun },
       // E-160: the grid's packed x and y, each caster's cell, and the candidates' double distances.

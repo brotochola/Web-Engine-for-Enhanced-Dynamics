@@ -167,7 +167,7 @@ test('with the stamp spec, the shadow stamp scratch and light table are regions 
     ['gridCounts', s.gridCountsByte, STAMP_GRID_CELLS * 4],
     ['gridStarts', s.gridStartsByte, (STAMP_GRID_CELLS + 1) * 4],
     ['gridItems', s.gridItemsByte, MAX * 4],
-    ['nearDist', s.nearDistByte, MAX * 3 * 4],
+    ['nearDist', s.nearDistByte, MAX * 3 * 8],
     ['nearSlot', s.nearSlotByte, MAX * 3 * 4],
     ['nearCount', s.nearCountByte, MAX],
     ['packedX', s.packedXByte, MAX * 4],
