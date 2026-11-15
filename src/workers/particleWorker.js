@@ -372,6 +372,10 @@ class ParticleWorker extends AbstractWorker {
     this._swayFrameCounter = 0;
     this._activeDecorationSnapshot = null;
     this._activeDecorationSnapshotCount = 0;
+    // E-334: the snapshot's decorations that have a parent, in its order, listed when it is copied (empty while the
+    // pool's header counts none attached); the attached pass walks these, not the whole snapshot.
+    this._attachedDecorationSnapshot = new Uint32Array(0);
+    this._attachedDecorationSnapshotCount = 0;
     // E-179c: the list count (DecorationPool.listEpoch) the snapshot was copied at (-1: none); the screen test's last
     // inputs: the list and move counts and the camera bounds it ran with; and whether this frame's attached
     // decorations moved.
@@ -558,6 +562,7 @@ class ParticleWorker extends AbstractWorker {
       const swayView = (Type, byte, length) => (swayLayout ? new Type(swayBuffer, byte, length) : new Type(length));
       // E-129: u32 past 65 535 decorations, as the sway regions and the kernel bound for them.
       this._activeDecorationSnapshot = swayView(PoolSlotArray(this.maxDecorations), swayLayout?.snapshotByte, this.maxDecorations);
+      this._attachedDecorationSnapshot = new Uint32Array(this.maxDecorations);
       if (this._swayBuckets) {
         this._phaseSin = swayView(Float32Array, swayLayout?.phaseSinByte, this.maxDecorations);
         this._phaseCos = swayView(Float32Array, swayLayout?.phaseCosByte, this.maxDecorations);
@@ -850,6 +855,7 @@ class ParticleWorker extends AbstractWorker {
   refreshActiveDecorationSnapshot() {
     if (!this._activeDecorationSnapshot) {
       this._activeDecorationSnapshotCount = 0;
+      this._attachedDecorationSnapshotCount = 0;
       return 0;
     }
     // E-179c: an active list that has not changed since the last copy (its count holds) leaves the copy as it is.
@@ -857,7 +863,33 @@ class ParticleWorker extends AbstractWorker {
     if (epoch >= 0 && epoch === this._decoSnapshotEpoch) return this._activeDecorationSnapshotCount;
     this._activeDecorationSnapshotCount = DecorationPool.copyActiveSnapshot(this._activeDecorationSnapshot);
     this._decoSnapshotEpoch = epoch;
+    this._listAttachedDecorations();
     return this._activeDecorationSnapshotCount;
+  }
+
+  /**
+   * E-334: the copied snapshot's decorations that have a parent, in its order, into _attachedDecorationSnapshot. A
+   * decoration gets or loses its parent only when it spawns or despawns, which changes the list (and its epoch), so
+   * the list holds until the next copy. None when the pool's header counts none attached (read after the copy: a
+   * spawn the copy holds counted before it); the whole snapshot is read where the header has no such word.
+   */
+  _listAttachedDecorations() {
+    const out = this._attachedDecorationSnapshot;
+    const attached = DecorationPool.attachedCount();
+    if (attached === 0 || out.length === 0 || !DecorationComponent.parentEntityIndex) {
+      this._attachedDecorationSnapshotCount = 0;
+      return;
+    }
+    const snap = this._activeDecorationSnapshot;
+    const count = this._activeDecorationSnapshotCount;
+    const parentEntityIndex = DecorationComponent.parentEntityIndex;
+    const noParent = this._noParent;
+    let n = 0;
+    for (let k = 0; k < count; k++) {
+      const i = snap[k];
+      if (parentEntityIndex[i] !== noParent) out[n++] = i;
+    }
+    this._attachedDecorationSnapshotCount = n;
   }
 
   /**
@@ -986,8 +1018,9 @@ class ParticleWorker extends AbstractWorker {
     this._decoAttachedMoved = false;
     if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
 
-    const activeData = this._activeDecorationSnapshot;
-    const activeCount = this._activeDecorationSnapshotCount;
+    // E-334: the snapshot's attached decorations, listed when it was copied (none: no pass).
+    const activeData = this._attachedDecorationSnapshot;
+    const activeCount = this._attachedDecorationSnapshotCount;
     if (activeCount === 0) return;
 
     this._latchPose();
