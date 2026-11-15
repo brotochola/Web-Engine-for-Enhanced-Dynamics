@@ -16004,6 +16004,34 @@
       ]
     },
     {
+      "id": "N-172",
+      "title": "The dev toolchain pulls 496 packages, most of them for webpack, babel and an obfuscator: build the bundles with esbuild alone and keep five tools (128 packages)",
+      "status": "open",
+      "statusText": "owner 2026-11-15: asked whether node_modules holds links and what vendoring every dependency would give; vendoring the tooling advised against, trimming it filed; backlog, not started",
+      "date": "2026-11-15",
+      "area": "build",
+      "kind": "dx",
+      "result": "Checked 2026-11-15 in the main folder: node_modules is a plain folder (238 MB, 295 top-level entries) with no symlink or junction in it (`find -type l`, `dir /A:L /S`). The engine already ships with no runtime dependency: package.json lists devDependencies only, Pixi is vendored as src/vendor/pixi.min.js (440 KB, built by `npm run build:pixi` from node_modules/pixi.js with esbuild) and Box2D comes from the Box2d_3.2 repo. node_modules holds tooling: 17 devDependencies, 496 packages in package-lock.json. webpack, webpack-cli, babel-loader, @babel/core, @babel/preset-env, css-loader, style-loader, terser-webpack-plugin, webpack-obfuscator and javascript-obfuscator run buildBundle.js through webpack.config.js and webpack.bundle.config.js; esbuild builds Pixi; Playwright drives the browser benches and smokes (over 20 scripts in tests/bench); eslint and prettier lint and format; cross-env is used nowhere and rimraf only by `clean`. Packages reachable from esbuild, eslint, playwright, prettier and pixi.js: 128 of the 496 (webpack-obfuscator alone reaches 188, @babel/preset-env 133, webpack-cli 119; counted on the lockfile, platform binaries included). Babel targets `> 1%, last 2 versions, not dead`, while the engine needs SharedArrayBuffer, cross-origin isolation and module workers. The obfuscator runs only under `make_bundle:obfuscate`; release.mjs calls `make_bundle`. Four of the eight bundles are UMD, which esbuild does not write (esm, iife, cjs). Vendoring the tooling into git was weighed and advised against: esbuild and Playwright ship per-platform binaries (Playwright's Chromium lives outside node_modules anyway), 238 MB would stay in the history for good and grow with each update (against N-164 and N-165), and package-lock.json already pins every version with its integrity hash for `npm ci`.",
+      "next": "One commit each. (1) cross-env out of devDependencies; `clean` as a node one-liner (`fs.rmSync` of dist, recursive) and rimraf out. (2) buildBundle.js builds the same eight bundles with esbuild's API instead of the two webpack configs: CSS imported as text, minified, no babel (target the browsers that have SharedArrayBuffer and module workers), the UMD four as an iife with a global name inside a small UMD wrapper; the webpack, babel, loader, terser and obfuscator packages go, and `make_bundle:obfuscate` with them unless the owner still uses it. Check: check:dist, test:bundle, test:node:bundle, test:demos, each bundle's size before and after, and the prod bundle against src as at every merge (Boids 8 pairs and per-function traces, since bundle vs src reads -3 to +10 % in Predator). (3) pixi.js stays a devDependency (build:pixi needs it, and pixiDrawGarbage.test.js and pixiShaderSync.test.js import it), unless those tests move to the vendored copy. Playwright, eslint and prettier stay.",
+      "refs": [
+        "REVIEW_PLAN.md#N-172"
+      ],
+      "aliases": [
+        "vendoring",
+        "vendor dependencies",
+        "zero dependencies",
+        "node_modules symlinks",
+        "toolchain",
+        "webpack",
+        "babel",
+        "esbuild bundle",
+        "obfuscator",
+        "rimraf",
+        "cross-env"
+      ],
+      "records": []
+    },
+    {
       "id": "E-347",
       "title": "updateNavGrid rebuilds the walkability every 300 frames in Predator and clears every flowfield and path even when nothing changed, so every requester recomputes every 5 s",
       "status": "open",
