@@ -16343,6 +16343,86 @@
       "records": [
         "R-1148"
       ]
+    },
+    {
+      "id": "E-382",
+      "title": "Predator's people (MySoldier, Civilian) on DirectionalSprite against main's hand-picked directions: what the branch charges Predator's logic and pre-render",
+      "status": "open",
+      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "date": "2026-11-15",
+      "area": "logic",
+      "kind": "speed",
+      "result": "",
+      "next": "Predator crowd 2.5, the camera fixed (N-206 first), ABAB 4 + 4 against main; logic and pre-render STEP_MS; then the CPU trace of DirectionalSprite's resolve (E-363's setters).",
+      "refs": [
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "aliases": [],
+      "records": []
+    },
+    {
+      "id": "E-383",
+      "title": "carScene's and littleCity's cars on DirectionalSprite against main",
+      "status": "open",
+      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "date": "2026-11-15",
+      "area": "logic",
+      "kind": "speed",
+      "result": "",
+      "next": "Each scene ABAB 4 + 4 against main (worktrees); logic and pre-render STEP_MS; directionalSpriteStressScene ?mode=hand|ds for the kernel of it.",
+      "refs": [
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "aliases": [],
+      "records": []
+    },
+    {
+      "id": "E-384",
+      "title": "What Predator's shadows cost now against main: the stamps as before, and ?light3d=1 (the maps, the G-buffer, self-shadow, pixel depth) by day and by night",
+      "status": "open",
+      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "",
+      "next": "Predator crowd 2.5 ABAB against main (the stamps); Predator ?light3d=1 against Predator without it on the branch (pre-render, Pixi, the GPU passes); gpuPassBench per pass.",
+      "refs": [
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "aliases": [],
+      "records": []
+    },
+    {
+      "id": "E-385",
+      "title": "burningBoxes (a side view, raycasted light) against main: the branch's light changes in a scene that uses none of light3d",
+      "status": "open",
+      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "date": "2026-11-15",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "",
+      "next": "ABAB 4 + 4 against main; Pixi and pre-render STEP_MS.",
+      "refs": [
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "aliases": [],
+      "records": []
+    },
+    {
+      "id": "E-386",
+      "title": "New stress scenes for the light's costs and traces: (a) light3d complete, one population on main and the branch (switches for maps, G-buffer, self-shadow, pixel depth); (b) lamps at scale, 48 to 128 lamps with maps over thousands of casters; (c) renders with columns, hundreds of renders with height maps under the sun and the lamps",
+      "status": "open",
+      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "date": "2026-11-15",
+      "area": "tools",
+      "kind": "speed",
+      "result": "",
+      "next": "Write them in tests/bench/stressScenes with catalog rows; run each against main where it can, else the switches on and off; then the deep traces (CPU per function, deopts, heap, PMC, GPU per pass).",
+      "refs": [
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "aliases": [],
+      "records": []
     }
   ],
   "records": [
