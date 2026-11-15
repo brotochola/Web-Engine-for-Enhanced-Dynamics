@@ -43,7 +43,7 @@ import {
 } from './gpuPackClient.js';
 import { faceMapVertex, faceMapWgsl } from './faceMap.js';
 import { lutBaseFloats } from './frameBase.js';
-import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex } from './pixelDepth.js';
+import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from './pixelDepth.js';
 import {
   POSE_ROW_FLOATS, POSE_TEX_TEXELS, STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, poseBlockFloats, spriteIndexedVertex,
   spriteIndexedWgsl, staticsTextureHeight,
@@ -481,8 +481,10 @@ export class InstancedSpriteBatch {
     this._engineShaders = shaders;
     this._premultiplyAlpha = premultiplyAlpha;
     this._alphaDiscard = alphaDiscard !== false;
-    // DX-DEPTH (F5, pixelDepth.js): { maps }: the colour programs write each pixel's floor depth (WebGL), tested.
-    this._pixelDepth = pixelDepth && pixelDepth.maps && !useWebGpu ? pixelDepth : null;
+    // DX-DEPTH (F5, pixelDepth.js): { maps }: the colour programs write each pixel's floor depth (gl_FragDepth on WebGL,
+    // frag_depth on WebGPU), tested. On WebGPU every target this batch draws into needs a depth attachment.
+    this._pixelDepth = pixelDepth && pixelDepth.maps ? pixelDepth : null;
+    this.pixelDepthOn = this._pixelDepth !== null;
     this._depthTerms = new Float32Array([1, 1, 0, 0]);
 
     this._tileWorld = new Float32Array(4);
@@ -809,7 +811,16 @@ export class InstancedSpriteBatch {
     const spriteSource = this._twoStreams ? shaders?.spritePose : shaders?.sprite;
     const vertSource = this._twoStreams ? shaders?.spriteVertPose : shaders?.spriteVert;
     if (this._useWebGpu) {
-      const gpuProgram = instancedSpriteGpuProgram(GpuProgram, spriteSource, fragEntry, name);
+      // DX-DEPTH: the sprite WGSL writing the floor depth, uDepth after the group's other entries (as `uniforms` lists
+      // them), the twin page as binding 5.
+      const depth = this._pixelDepth !== null && !!spriteSource;
+      const gpuProgram = instancedSpriteGpuProgram(
+        GpuProgram,
+        depth ? pixelDepthWgsl(spriteSource) : spriteSource,
+        fragEntry,
+        name,
+        { maps: depth },
+      );
       return new Shader({ gpuProgram, resources });
     }
     let vert = vertSource;
@@ -885,11 +896,15 @@ export class InstancedSpriteBatch {
     // zeros): Pixi must never make the buffer again from it, as its resource GC would after a minute undrawn.
     if (this.keyed) this._staticsSource.autoGarbageCollect = false;
     const shaders = this._engineShaders;
+    // DX-DEPTH: over the split program's group, which holds uPoseAlpha before uDepth (the plain WGSL reads neither).
+    const depth = this._pixelDepth !== null && !!shaders?.sprite;
+    const indexedSource = shaders?.sprite ? spriteIndexedWgsl(shaders.sprite) : null;
     const gpuProgram = instancedSpriteIndexedGpuProgram(
       GpuProgram,
-      shaders?.sprite ? spriteIndexedWgsl(shaders.sprite) : null,
+      depth ? pixelDepthWgsl(indexedSource, { poseAlpha: this._twoStreams }) : indexedSource,
       this._premultiplyAlpha ? 'mainFrag' : 'mainFragAdd',
-      `${name}-indexed`
+      `${name}-indexed`,
+      { maps: depth },
     );
     const r = this.shader.resources;
     const resources = {
@@ -899,6 +914,7 @@ export class InstancedSpriteBatch {
       uniforms: r.uniforms,
       uStatics: this._staticsSource,
     };
+    if (depth) resources.uMaps = this._pixelDepth.maps;
     return new Shader({ gpuProgram, resources });
   }
 

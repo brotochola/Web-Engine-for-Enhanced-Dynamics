@@ -830,6 +830,8 @@ class PixiRenderer extends AbstractWorker {
     // DX-POST: the LAYER_KIND.SCREEN passes in zIndex order, and the frame they read (the stage drawn into a target).
     this._screenLayers = [];
     this._screenSceneRT = null;
+    // DX-DEPTH: the frame target given a depth attachment for the entities' pixel depth (WebGPU), so it is asked once.
+    this._screenSceneDepth = null;
     this._screenClear = [0, 0, 0, 1];
     this._layerRuntime = Object.create(null); // layerName -> display object
     this._cornerFirstRow = 0; // the rows the last corner rewrite wrote: [first, past)
@@ -2733,11 +2735,12 @@ class PixiRenderer extends AbstractWorker {
     // too since E-187: the scatter a compute pass).
     const keyed = this._pixiKeyed !== null && this._pixiInstanceRows !== null ? this._pixiKeyed : null;
     const indexed = !!(gpuCaps && gpuCaps.indexedSprites) || keyed !== null;
-    // DX-DEPTH (F5): an oblique camera with a maps page: each pixel's floor depth corrects the painter (WebGL for now;
-    // renderer.pixelDepth true or false forces it).
+    // DX-DEPTH (F5): an oblique camera with a maps page: each pixel's floor depth corrects the painter, on WebGL and
+    // WebGPU (renderer.pixelDepth true or false forces it). WebGPU tests it in the canvas's depth, or the SCREEN passes'
+    // frame's (_ensureTargetDepth).
     const wantDepth = this.config?.renderer?.pixelDepth;
     const oblique = cameraFloorScaleY(this.config) < 1 && cameraHeightScaleY(this.config) > 0;
-    const pixelDepth = !this._useWebGpu && this.atlasMapsSource !== null && (wantDepth === true || (wantDepth !== false && oblique))
+    const pixelDepth = this.atlasMapsSource !== null && (wantDepth === true || (wantDepth !== false && oblique))
       ? { maps: this.atlasMapsSource }
       : null;
     this.entitiesBatch = new InstancedSpriteBatch({
@@ -3436,6 +3439,7 @@ class PixiRenderer extends AbstractWorker {
       this._screenSceneRT.destroy(true);
       this._screenSceneRT = null;
     }
+    this._screenSceneDepth = null;
   }
 
   /**
@@ -3454,6 +3458,18 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
+   * DX-DEPTH: `rt`'s render target with a depth-stencil attachment (Pixi makes it at its size and clears it with the
+   * colour), for programs that test or write depth there: the entities' pixel depth on WebGPU.
+   */
+  _ensureTargetDepth(rt) {
+    const system = this.pixiApp?.renderer?.renderTarget;
+    const target = system && typeof system.getRenderTarget === 'function' ? system.getRenderTarget(rt) : null;
+    if (target && !target.depthStencilAttachment && typeof target.ensureDepthStencilTexture === 'function') {
+      target.ensureDepthStencilTexture();
+    }
+  }
+
+  /**
    * DX-POST: with a visible SCREEN layer, the stage goes into a target the canvas's size, cleared to the canvas's
    * background. Each visible SCREEN layer then, in zIndex order, reads what came before it and draws into its own
    * target, and the last onto the canvas. Without a visible one: false, and the present is the stage's as before.
@@ -3468,6 +3484,13 @@ class PixiRenderer extends AbstractWorker {
     const width = this.canvasWidth;
     const height = this.canvasHeight;
     this._screenSceneRT = this._screenTarget(this._screenSceneRT, width, height);
+    // DX-DEPTH: the entities' pixel depth writes frag_depth on WebGPU, and a pipeline that does needs a depth attachment
+    // in its target (WebGL draws the painter alone in a target without one).
+    if (this._screenSceneDepth !== this._screenSceneRT && this._useWebGpu && this.entitiesBatch !== null
+      && this.entitiesBatch.pixelDepthOn) {
+      this._ensureTargetDepth(this._screenSceneRT);
+      this._screenSceneDepth = this._screenSceneRT;
+    }
 
     const opts = this._rtRenderOpts;
     const background = app.renderer.background?.colorRgba;
