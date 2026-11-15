@@ -595,6 +595,16 @@ export const ENGINE_FEATURES = [
     load: [],
   },
   {
+    id: 'despawnLists',
+    name: 'Despawn pass over the shared active lists',
+    module: 'src/workers/logicWorker.js',
+    // logic0's _processDespawnSoA on a real LogicWorker: 57344 listed entities, batches of 8, 64, 512 (E-344).
+    kernel: { script: 'tests/bench/despawnBatchMicrobench.mjs', opsKey: 'cases.d64.opsPerSec' },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
+  {
     id: 'shadowStamp',
     name: 'Shadow caster stamp',
     // shadowStamp.wasm only (the JS stamp is tests/reference/shadowStamp.mjs): the kernel's microbench, wasm.

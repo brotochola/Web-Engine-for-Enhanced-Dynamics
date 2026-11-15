@@ -63,6 +63,7 @@ const REQUIRED = [
   'layerFeedBodies',
   'textureUpload',
   'tweenPool',
+  'despawnLists',
 ];
 
 test('catalog has one unique row per hot engine feature', () => {
