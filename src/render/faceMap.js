@@ -66,11 +66,11 @@ const WEED_UV_GLSL = `vec2 weedUv() {
  * selfShadow (gbufWord.js bits 22-23: 0 the asset's way, 1 on, 2 off) decides FACE_IDS_SELF, the asset's way being a
  * render's (its frame's base a contact: `render`).
  */
-const IDS_TEXEL_GLSL = `vec4 idsTexel(vec2 gbuf, bool render) {
+const IDS_TEXEL_GLSL = `vec4 idsTexel(vec2 gbuf, bool isRender) {
   uint word = uint(gbuf.x + 0.5);
   uint id = word & 65535u;
   uint selfMode = (word >> 22u) & 3u;
-  bool selfOn = id != 0u && (selfMode == 1u || (selfMode == 0u && render));
+  bool selfOn = id != 0u && (selfMode == 1u || (selfMode == 0u && isRender));
   return vec4(float(id >> 8u) / 255.0, float(id & 255u) / 255.0, selfOn ? ${FACE_IDS_SELF}.0 / 255.0 : 0.0, 1.0);
 }`;
 
@@ -317,11 +317,11 @@ fn mainFragGlow(in: VertexOut) -> @location(0) vec4<f32> {
 /** The ids entry and the one pass's (faceIdsEntryWgsl adds the glow's discard and the glow entry). */
 const FACE_IDS_ENTRY_WGSL = `
 // DX-GBUF: the ids map's texel of a word (faceMap.js IDS_TEXEL_GLSL).
-fn idsTexel(gbuf: vec2<f32>, render: bool) -> vec4<f32> {
+fn idsTexel(gbuf: vec2<f32>, isRender: bool) -> vec4<f32> {
   let word = u32(gbuf.x + 0.5);
   let id = word & 65535u;
   let selfMode = (word >> 22u) & 3u;
-  let selfOn = id != 0u && (selfMode == 1u || (selfMode == 0u && render));
+  let selfOn = id != 0u && (selfMode == 1u || (selfMode == 0u && isRender));
   return vec4<f32>(f32(id >> 8u) / 255.0, f32(id & 255u) / 255.0, select(0.0, ${FACE_IDS_SELF}.0 / 255.0, selfOn), 1.0);
 }
 
