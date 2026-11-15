@@ -346,8 +346,7 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   lampShadowTile?: number;
   /**
    * A render with footprints in its sheet's json (meta.footprints) casts its solid swept north to them at each cell's own
-   * height (light under a table) instead of columns down to the floor. Default false: still wrong on some models (a
-   * barn's walls go missing from its shadow).
+   * height (light under a table) instead of columns down to the floor. Default true; false keeps the columns.
    */
   footprintSolids?: boolean;
   /**

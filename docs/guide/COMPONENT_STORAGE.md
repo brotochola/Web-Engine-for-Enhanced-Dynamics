@@ -32,7 +32,8 @@ That layout is intentional for hot components such as `Transform`, `RigidBody`, 
 | `AdobeAnimComponent` | Any registered entity lists it |
 | `LightEmitter` | Entity lists it, or `lighting.enabled`, or `maxFlashes > 0` |
 | `ShadowCaster` | Entity lists it, or `lighting.shadowsEnabled` |
-| `LightOccluder` | Entity lists it, or `lighting.raycasted`. Shape from entity `Collider`. `maskMode`: 0=collider self-lit fill, 1=sprite mask. |
+| `LightOccluder` (internal: the columns of `shadowCaster.setWall`) | Raycasted lighting: `camera.pitch` 90 or 0 with lighting on. No class lists it. Shape from the entity's `Collider`, or its sprite's alpha (`setWall({ shape: 'sprite' })`). |
+| `VolumeShadowCaster` (internal: a ShadowCaster's volume, `setBox`) | `lighting.maxVolumes` above 0 with a class that lists `ShadowCaster`. No class lists it; 4 bytes an entity. |
 | `FlashComponent` | Entity lists it, or `maxFlashes > 0` |
 
 Scenes that never use lighting/Adobe (e.g. BallsScene) should show those components absent from `buffers.componentData` (or 0 bytes), so Memory tab waste shrinks.
