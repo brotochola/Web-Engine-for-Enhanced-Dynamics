@@ -16102,6 +16102,22 @@
       "records": [
         "R-1139"
       ]
+    },
+    {
+      "id": "N-202",
+      "title": "Predator: a thin bright horizontal line crosses a TallLight's light now and then (the owner saw it on dx/light3d); not reproduced yet",
+      "status": "open",
+      "statusText": "reported by the owner 2026-11-15 (\"sale de la talllight, no de un disparo\"); left for later at the owner's word the same day",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "The owner's capture: a crowd, a TallLight's red glow, and a white line one or two pixels high and level across it; first taken for the bullets' trails or the shots' flashes, then placed on the TallLight itself. Not reproduced: 60 captures around tall lights (default Predator, free camera, zoom 1.5) and 40 where shots were fired showed no such line to a row scan (a run of 25+ px brighter than 3 px above and below). Ruled out: the bullets' rows (rotation and trail terms right for every active bullet). Not known yet whether it is new on dx/light3d or older.",
+      "next": "Catch it in the act: capture a TallLight while bullets hit it (its onGotShot spawns sparks and a Flash of radius 707 at the hit), and while its light (elevation 110, glowOffsetY -110, radius 1414) has a Flash or a muzzle light nearby; read the lights' rows at that frame (glow scale and rotation, elevation, the lightGlows layer). Then the same on main to say whether dx/light3d brought it.",
+      "refs": [],
+      "aliases": [
+        "TallLight horizontal line"
+      ],
+      "records": []
     }
   ],
   "records": [
