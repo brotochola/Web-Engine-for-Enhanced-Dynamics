@@ -206,6 +206,8 @@ export function sunFrameTables(byId) {
             maxFrames: 1,
             frameOf: new Int32Array(0),
             frameShift: -1,
+            // E-369: the frames by absolute direction (no turn), (direction, group, frame) as frameOf, for the lamps' rows.
+            frameAt: new Int32Array(0),
         };
         entry.front = pickDirection(entry, Math.PI / 2, 255, 0);
         out[id | 0] = entry;
@@ -242,6 +244,8 @@ export function sunFrameSlotsOf(t, map, starts, counts, proxy) {
     t.maxFrames = most;
     t.frameOf = new Int32Array(t.count * t.groups * most);
     t.frameShift = -1;
+    t.frameAt = new Int32Array(t.count * t.groups * most);
+    sunFrameResolve(t, 0, t.frameAt);
 }
 
 /**
@@ -250,11 +254,10 @@ export function sunFrameSlotsOf(t, map, starts, counts, proxy) {
  * What sunFrameFor's uniform path computed a caster at a time, a few hundred entries a sheet, again only when the turn
  * moves a step.
  */
-function sunFrameResolve(t, shift) {
+function sunFrameResolve(t, shift, out) {
     const count = t.count;
     const groups = t.groups;
     const most = t.maxFrames;
-    const out = t.frameOf;
     for (let cur = 0; cur < count; cur++) {
         let d = cur + shift;
         if (d >= count) d -= count;
@@ -273,7 +276,7 @@ function sunFrameResolve(t, shift) {
             }
         }
     }
-    t.frameShift = shift;
+    if (out === t.frameOf) t.frameShift = shift;
 }
 
 /**
@@ -308,7 +311,7 @@ export function prepareSunFrames(tables, proxy, starts, counts, shift, shiftTurn
             shiftTurn[sheet] = turn;
             shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
         }
-        if (t.uniform && t.frameShift !== shift[sheet]) sunFrameResolve(t, shift[sheet]);
+        if (t.uniform && t.frameShift !== shift[sheet]) sunFrameResolve(t, shift[sheet], t.frameOf);
     }
 }
 
@@ -429,42 +432,78 @@ function computeCasterCodes(out, active, sunKind, lampKind, orient, opacity, dsA
 }
 
 /**
+ * E-369: atan2 to about 1e-5 rad (a fifth-order odd polynomial on [0, 1], Hastings). Picking one of a sheet's directions
+ * (a step of 11.25° at 32) it changes a frame only within 1e-5 rad of a border; Math.atan2 was half the lamps' frames.
+ */
+export function fastAtan2(y, x) {
+    const ax = x < 0 ? -x : x;
+    const ay = y < 0 ? -y : y;
+    const big = ax > ay ? ax : ay;
+    if (big === 0) return 0;
+    const a = (ax > ay ? ay : ax) / big;
+    const q = a * a;
+    let r = a * (0.999866 + q * (-0.3302995 + q * (0.180141 + q * (-0.085133 + q * 0.0208351))));
+    if (ay > ax) r = 1.5707963267948966 - r;
+    if (x < 0) r = 3.141592653589793 - r;
+    return y < 0 ? -r : r;
+}
+
+/** E-369: tables' slots and absolute frames before a lamp pass (built once per proxy map; the sun's pass may not run). */
+function prepareLampFrames(tables, proxy, starts, counts) {
+    for (let sheet = 0; sheet < tables.length; sheet++) {
+        const t = tables[sheet];
+        if (t !== undefined && t.slotsOf !== proxy) sunFrameSlotsOf(t, proxy[sheet], starts, counts, proxy);
+    }
+}
+
+/**
+ * E-369: the frame lamp L sees of directional caster e at floor point (x, y): the direction the logic worker drew turned
+ * by the angle from the camera's view to the lamp's (along the shadow, lamp to caster), read from the absolute table;
+ * ±(textureId + 1), 0 for the sprite's own. The doubles come in through LAMP_RAY (dx, dy on the floor).
+ */
+function lampFrameFor(e, t, dirs, anims, frames) {
+    const cur = dirs[e];
+    let d = 0;
+    if (t.uniform && cur < t.count) {
+        const turn = -1.5707963267948966 - fastAtan2(LAMP_RAY[1], LAMP_RAY[0]);
+        d = (cur + Math.round(wrapAngle(turn) / t.step)) % t.count;
+        if (d < 0) d += t.count;
+    } else {
+        d = sunFrameDirection(t, e, -1.5707963267948966 - Math.atan2(LAMP_RAY[1], LAMP_RAY[0]));
+    }
+    const g = anims[e];
+    let f = frames !== null ? frames[e] | 0 : 0;
+    if (f < 0 || f >= t.maxFrames) f = 0;
+    return t.frameAt[(d * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
+}
+
+/** E-369: the ray from a lamp to its caster on the floor (dx, dy), for lampFrameFor. */
+const LAMP_RAY = new Float64Array(2);
+
+/**
  * DX-SHADOW3D: each full stamp row of a directional caster drawn with the frame its lamp sees: the direction the logic
  * worker drew turned by the angle from the camera's view to the lamp's (along the shadow, from the lamp to the caster, on
  * the floor). The row's entity is in its tint float (pre-render wrote it into the sun row the kernel copied).
  */
 export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive, dsMode,
     dirs, anims, sheets, orients) {
+    prepareLampFrames(tables, proxy, starts, counts);
     for (let k = 0; k < stampN; k++) {
         const at = k * GPU_CASTER_FLOATS;
         const e = rows[at + GPU_ROW_TINT] | 0;
         if (e < 0 || e >= dsActive.length || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
         if (orients !== null && orients[e] === 1) continue;
-        const sheet = sheets[e];
-        const t = tables[sheet];
+        const t = tables[sheets[e]];
         if (t === undefined || t.solid) continue;
         const L = lights[lightIdx[k]];
         if (!L) continue;
-        const turn = -Math.PI / 2 - Math.atan2((rows[at + 1] - L.y) * invG, rows[at] - L.x);
-        const cur = dirs[e];
-        let d = 0;
-        if (t.uniform && cur < t.count) {
-            d = (cur + Math.round(wrapAngle(turn) / t.step)) % t.count;
-            if (d < 0) d += t.count;
-        } else {
-            d = sunFrameDirection(t, e, turn);
-        }
-        const g = anims[e];
-        const slot = (g < t.groups ? g : 0) * t.count + d;
-        const map = proxy[sheet];
-        const global = map ? map[t.anim[slot]] : undefined;
-        if (global === undefined) continue;
-        const nf = counts[global] | 0;
-        let fr = frames !== null ? frames[e] | 0 : 0;
-        if (fr < 0 || fr >= nf) fr = 0;
-        rows[at + GPU_ROW_TEXTURE] = (starts[global] | 0) + fr;
+        LAMP_RAY[0] = rows[at] - L.x;
+        LAMP_RAY[1] = (rows[at + 1] - L.y) * invG;
+        const v = lampFrameFor(e, t, dirs, anims, frames);
+        if (v === 0) continue;
+        rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
         const sx = rows[at + GPU_ROW_SCALE_X];
-        rows[at + GPU_ROW_SCALE_X] = (t.flip[slot] === 1) === (sx < 0) ? sx : -sx;
+        rows[at + GPU_ROW_SCALE_X] = (v < 0) === (sx < 0) ? sx : -sx;
     }
 }
 
@@ -483,35 +522,20 @@ function dropOwnKeyedStampsInto(rows, stampN, lightIdx, lights) {
 /** DX-SHADOW3D: applyLampFramesInto for keyed stamp rows: the frame float, ±(textureId + 1), negative mirrored. */
 export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive,
     dsMode, dirs, anims, sheets, orients) {
+    prepareLampFrames(tables, proxy, starts, counts);
     for (let k = 0; k < stampN; k++) {
         const at = k * GPU_KEYED_STAMP_FLOATS;
         const e = rows[at + 2] | 0;
         if (e < 0 || e >= dsActive.length || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
         if (orients !== null && orients[e] === 1) continue;
-        const sheet = sheets[e];
-        const t = tables[sheet];
+        const t = tables[sheets[e]];
         if (t === undefined || t.solid) continue;
         const L = lights[lightIdx[k]];
         if (!L) continue;
-        const turn = -Math.PI / 2 - Math.atan2((rows[at + 1] - L.y) * invG, rows[at] - L.x);
-        const cur = dirs[e];
-        let d = 0;
-        if (t.uniform && cur < t.count) {
-            d = (cur + Math.round(wrapAngle(turn) / t.step)) % t.count;
-            if (d < 0) d += t.count;
-        } else {
-            d = sunFrameDirection(t, e, turn);
-        }
-        const g = anims[e];
-        const slot = (g < t.groups ? g : 0) * t.count + d;
-        const map = proxy[sheet];
-        const global = map ? map[t.anim[slot]] : undefined;
-        if (global === undefined) continue;
-        const nf = counts[global] | 0;
-        let fr = frames !== null ? frames[e] | 0 : 0;
-        if (fr < 0 || fr >= nf) fr = 0;
-        const tid = (starts[global] | 0) + fr + 1;
-        rows[at + 3] = t.flip[slot] === 1 ? -tid : tid;
+        LAMP_RAY[0] = rows[at] - L.x;
+        LAMP_RAY[1] = (rows[at + 1] - L.y) * invG;
+        const v = lampFrameFor(e, t, dirs, anims, frames);
+        if (v !== 0) rows[at + 3] = v;
     }
 }
 
