@@ -1422,3 +1422,47 @@ infinito (el estiramiento topeado en 8 hace los escalones de N-192). El diseño:
 - **La pasada de luz** elige la mitad por la altura del punto y lee con la misma caída comprimida.
 - **Medir:** gpuPassBench lampMap y light3d antes y después, lampShadowStressScene, y capturas: la cerca contra la pared del
   granero bajo un farol de 20 px, un cajón bajo un farol más bajo que él (N-192), la vaca y el auto de N-203.
+
+**Más tarde esa noche:** la sombra de la persona sobre la pared bajo un farol bajo (el sesgo a lo largo del rayo, 4f5451c7;
+el mapa guarda el lugar a lo largo del rayo, N-211, 437d81f3), la persona de espaldas al sol dentro de la sombra del
+granero (N-208 sólo para volúmenes cerrados y el sesgo de 2 px para un pixel con id, N-210, 6083e8be). N-207 queda como
+está por pedido del dueño (el cartón por el ancla arreglaba una cara pero cambiaba la sombra de todos los autos).
+
+### 17.9 Plan de optimización y mediciones (2026-11-15, noche)
+
+El dueño dio por bueno lo visual ("está todo bien ahora, dejemos todo así") y pidió seguir con la optimización de las luces
+y estas mediciones: (1) DirectionalSprite en MySoldier y Civilian contra main; (2) DirectionalSprite en carScene y
+littleCity contra main; (3) cuánto cuestan las sombras en Predator ahora contra main; (4) burningBoxes, que es de costado;
+(5) stress scenes nuevas que comparen contra main y sirvan para los traces, para ver qué de lo nuevo se puede optimizar.
+
+**Fase 0, que la medida sea confiable.** N-206 primero: en el gate de Predator con crowd 2,5 el lado nuevo dibujó 5 a 30 %
+de las filas en tres de cuatro corridas, y physics +49 %. Correr la rama y main mirando por corrida los soldados vivos, el
+zoom de la cámara y las filas: si en la rama mueren los soldados, algo de la rama toca el juego (bug); si es azar, el gate
+se mide con la cámara fija (el `?zoom=` de Predator), para que la carga no dependa de la partida. Antes de cada sitting:
+corriente alterna y ningún otro Chrome de benchmarks.
+
+**Fase 1, lo que la rama le cobra a todos** (contra main, sin la luz nueva; ABAB con worktrees, 4 + 4 pares, ventana
+visible):
+
+| Escena | Qué mira | Workers |
+| --- | --- | --- |
+| Predator crowd 2,5 (cámara fija) | DirectionalSprite en la gente (1); las sombras de siempre, estampas (3) | logic, pre-render, Pixi |
+| carScene, littleCity | DirectionalSprite en los autos (2) | logic, pre-render |
+| burningBoxes | una escena de costado, luz raycasted (4) | Pixi, pre-render |
+| filas del catálogo con luz (spotLights, flashlight, lightGallery) | la luz que termina en su radio (N-204), los sesgos | Pixi |
+
+**Fase 2, cuánto cuesta cada parte nueva**, prendida y apagada en su escena (la rama sola), y en la GPU con gpuPassBench:
+
+- Predator `?light3d=1` de día y de noche contra Predator sin light3d (3).
+- Las stress scenes de la segunda ronda (sunShadowMap, selfShadow, depthSort, emissive), lampShadowStressScene (el
+  panorámico, piso y techo) y directionalSpriteStressScene (`?mode=hand|ds`).
+- Nuevas (5): (a) "luz 3D completa", la misma población en main y en la rama (en main sombras de sprite y luz plana; en la
+  rama lo mismo, con switches a mapas, G-buffer, autosombra, profundidad por pixel): la diferencia es lo que cuesta lo nuevo;
+  (b) "faroles a escala", de 48 a 128 faroles con mapa sobre miles de casters (el panorámico y la elección de cuadros por
+  farol); (c) "renders con columnas", cientos de renders con mapas de altura bajo el sol y los faroles (las columnas, E-379).
+
+**Fase 3, deep traces** en las escenas que más cuestan: CPU por función, deopts (`--log-deopt`), heap
+(heapSampleWorkers), contadores PMC (WPR) y la GPU por pase. Cada hallazgo, una fila del registro.
+
+**Fase 4, optimizar** por costo por qué tan común es: las candidatas anotadas (E-363, E-370 a E-372, E-373, E-378, E-380,
+E-381, la caché de lo quieto de F6, los códigos por caster en las filas con clave, E-191) y lo que salga de las fases 1 a 3.
