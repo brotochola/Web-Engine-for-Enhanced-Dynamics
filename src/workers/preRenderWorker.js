@@ -516,6 +516,7 @@ class PreRenderWorker extends AbstractWorker {
         this._shadowTextures = false; // config.lighting.shadowTextures
         // DX-SHADOW3D: a directional sprite's sun shadow shows the frame the sun sees (directionTables, by sheet id).
         this._sunFrameTables = null;
+        this._directionalCasters = false; // config.lighting.directionalCasters (the scene sets it)
         this._faces = false; // config.lighting.faces: decoration rows carry their face in the tile offsets
         this._collectedRows = 0; // the rows the last sprite queue's collect held
         /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
@@ -1309,6 +1310,7 @@ class PreRenderWorker extends AbstractWorker {
             this.shadowsEnabled = true;
             this._shadowTextures = this.config?.lighting?.shadowTextures === true;
             this._sunFrameTables = sunFrameTables(data.directionTables);
+            this._directionalCasters = this.config?.lighting?.directionalCasters === true;
             this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
             this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
             this.maxShadowsPerEntity = data.shadows.maxShadowsPerEntity || 0;
@@ -3498,7 +3500,7 @@ class PreRenderWorker extends AbstractWorker {
      * word once it draws such rows. A pause, WebGPU or a scene not keyed leaves the word stale or zero.
      */
     _keyedCastersLive() {
-        if (!this._keyedFrames || this._keyedKeyBase <= 0 || this._shadowTextures) return false;
+        if (!this._keyedFrames || this._keyedKeyBase <= 0 || this._shadowTextures || this._directionalCasters) return false;
         const live = Atomics.load(this._keyedHeader, PIXI_KEYED_HEADER.LIVE);
         return live !== 0 && ((this.renderQueueFrame + 1 - live) >>> 0) <= KEYED_CASTERS_LAG;
     }

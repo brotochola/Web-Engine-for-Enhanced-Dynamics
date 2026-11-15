@@ -1,3 +1,5 @@
+import { DirectionalSprite } from '../components/directionalSprite.js';
+import { ShadowCaster } from '../components/shadowCaster.js';
 import { getPortTransferables, postWorkerInitMessage } from './utils.js';
 import { debugWorkerLog } from './debugLog.js';
 import { sceneParams } from '../core/sceneParams.js';
@@ -294,6 +296,14 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
   }
   if (scene.config.particle) {
     scene.config.particle.deriveSpeed = scene._anyDeriveSpeed === true;
+  }
+  // DX-SHADOW3D: a class with a DirectionalSprite and a ShadowCaster casts the frame the sun sees, which pre-render writes
+  // into the full caster rows: the keyed caster paths (which read a sprite's own frame) stay off, as with shadowTextures.
+  if (scene.config.lighting) {
+    scene.config.lighting.directionalCasters = scene.registeredClasses.some((r) => {
+      const c = GameObject._collectComponents(r.class);
+      return c.includes(DirectionalSprite) && c.includes(ShadowCaster);
+    });
   }
   return {
     msg: 'init',

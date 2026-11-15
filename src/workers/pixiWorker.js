@@ -5730,7 +5730,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   _keyedSunFor(sunShader) {
     // Those instances are the sprites': a ShadowCaster's own texture is only in pre-render's rows.
-    if (this.config?.lighting?.shadowTextures === true) return null;
+    // DX-SHADOW3D: a directional caster's sun frame is only in pre-render's full rows, too.
+    if (this.config?.lighting?.shadowTextures === true || this.config?.lighting?.directionalCasters === true) return null;
     const b = this.entitiesBatch;
     if (!this._keyedSunTried) {
       this._keyedSunTried = true;
@@ -5758,8 +5759,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * entity batch's keyed uploads tell pre-render (its header's LIVE word), which then writes such rows.
    */
   _ensureKeyedCasters(sunShader) {
-    // DX-SHADOW3D: the sun's map reads pre-render's full rows.
-    if (this._keyedCastersTried || this._sunMapOn) return;
+    // DX-SHADOW3D: the sun's map, and a directional caster's sun frame, read pre-render's full rows.
+    if (this._keyedCastersTried || this._sunMapOn || this.config?.lighting?.directionalCasters === true) return;
     this._keyedCastersTried = true;
     const b = this.entitiesBatch;
     const casters = this.gpuCasterBatch;

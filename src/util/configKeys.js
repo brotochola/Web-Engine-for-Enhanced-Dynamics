@@ -84,7 +84,8 @@ export const SCENE_CONFIG_SCHEMA = Object.freeze({
   renderer: keys(RENDERER_DEFAULTS),
   preRender: keys(PRE_RENDER_DEFAULTS),
   lighting: {
-    ...keys(LIGHTING_DEFAULTS),
+    // directionalCasters: the scene sets it (sceneWorkerBootstrap), from its classes.
+    ...keys(LIGHTING_DEFAULTS, ['directionalCasters']),
     faces: keys(LIGHTING_DEFAULTS.faces, ['gain', 'sunDirect', 'wrap']),
     particleLights: keys(LIGHTING_DEFAULTS.particleLights),
     sun: {
