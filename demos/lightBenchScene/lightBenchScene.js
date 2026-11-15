@@ -1001,12 +1001,16 @@ export class LightBenchScene extends Scene {
       sel.enable('box', hasBox);
       sel.enable('hull', hasHull);
     }
-    s.select({
-      label: 'Card orientation', value: look.orient, options: ORIENTS.map((o) => [o, o === 'light' ? 'faces each light' : 'fixed, along it']),
-      note: "setSprite({ orient: 'fixed' }): the silhouette's card stands along the object, face on, for every light (a fence, " +
-        'a wall); by default it faces each light.',
-      onChange: (v) => this._setLook(t, { orient: v }),
-    });
+    // A fixed card is for things that lie along a line (a fence, a wall, a car's side): trees and people always face each
+    // light, as in the prototype, so they do not offer it.
+    if (t.kind === 'prop' || t.kind === 'car') {
+      s.select({
+        label: 'Card orientation', value: look.orient, options: ORIENTS.map((o) => [o, o === 'light' ? 'faces each light' : 'fixed, along it']),
+        note: "setSprite({ orient: 'fixed' }): the silhouette's card stands along the object, face on, for every light (a fence, " +
+          'a wall); by default it faces each light.',
+        onChange: (v) => this._setLook(t, { orient: v }),
+      });
+    }
     s.select({
       label: 'Self-shadow', value: look.self, options: SELF_SHADOWS.map((o) => [o, o === 'auto' ? "its sheet's way" : o]),
       note: 'shadowCaster.selfShadow: whether it shades itself (a render with a footprint does by default, one view does ' +
