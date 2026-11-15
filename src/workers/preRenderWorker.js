@@ -201,6 +201,11 @@ export function sunFrameTables(byId) {
             slotStart: new Int32Array(0),
             slotCount: new Int32Array(0),
             slotsOf: null,
+            // E-368 (step 3): a uniform table's frames resolved for its current turn (sunFrameResolve): by (direction drawn,
+            // group, frame of the cycle), ±(textureId + 1); maxFrames its frames axis, frameShift the turn it holds.
+            maxFrames: 1,
+            frameOf: new Int32Array(0),
+            frameShift: -1,
         };
         entry.front = pickDirection(entry, Math.PI / 2, 255, 0);
         out[id | 0] = entry;
@@ -232,6 +237,43 @@ export function sunFrameSlotsOf(t, map, starts, counts, proxy) {
     t.slotStart = start;
     t.slotCount = count;
     t.slotsOf = proxy;
+    let most = 1;
+    for (let s = 0; s < slots; s++) if (count[s] > most) most = count[s];
+    t.maxFrames = most;
+    t.frameOf = new Int32Array(t.count * t.groups * most);
+    t.frameShift = -1;
+}
+
+/**
+ * E-368 (step 3): uniform table t's frames for a turn of `shift` steps, by (direction drawn, group, frame of the cycle):
+ * the direction turned, its slot's first texture plus the frame (the first past its count), mirrored as its slot says.
+ * What sunFrameFor's uniform path computed a caster at a time, a few hundred entries a sheet, again only when the turn
+ * moves a step.
+ */
+function sunFrameResolve(t, shift) {
+    const count = t.count;
+    const groups = t.groups;
+    const most = t.maxFrames;
+    const out = t.frameOf;
+    for (let cur = 0; cur < count; cur++) {
+        let d = cur + shift;
+        if (d >= count) d -= count;
+        for (let g = 0; g < groups; g++) {
+            const slot = g * count + d;
+            const start = t.slotStart[slot];
+            const nf = t.slotCount[slot];
+            const at = (cur * groups + g) * most;
+            for (let f = 0; f < most; f++) {
+                if (start < 0) {
+                    out[at + f] = 0;
+                    continue;
+                }
+                const tid = start + (f < nf ? f : 0) + 1;
+                out[at + f] = t.flip[slot] === 1 ? -tid : tid;
+            }
+        }
+    }
+    t.frameShift = shift;
 }
 
 /**
@@ -266,6 +308,7 @@ export function prepareSunFrames(tables, proxy, starts, counts, shift, shiftTurn
             shiftTurn[sheet] = turn;
             shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
         }
+        if (t.uniform && t.frameShift !== shift[sheet]) sunFrameResolve(t, shift[sheet]);
     }
 }
 
@@ -284,8 +327,11 @@ function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables
         // DX-CASTER: a fixed card shows the object face on whatever the light (its axis rides in its code).
         d = t.front;
     } else if (t.uniform && cur < t.count) {
-        d = cur + shift[sheet];
-        if (d >= t.count) d -= t.count;
+        // E-368 (step 3): the frame resolved for this turn (prepareSunFrames).
+        let f = frames !== null ? frames[e] | 0 : 0;
+        if (f < 0 || f >= t.maxFrames) f = 0;
+        const g = anims[e];
+        return t.frameOf[(cur * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
     } else {
         d = sunFrameDirection(t, e, SUN_TURN[0]);
     }
