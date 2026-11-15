@@ -530,7 +530,9 @@ class ParticleWorker extends AbstractWorker {
     this.decalsTotalTiles = 0;
     this.decalsTilesRGBA = null;
     this.decalsTilesDirty = null;
-    this.particlesToStamp = null;
+    // E-336: an empty list of the stamp list's class (initialize binds the integrate's, Uint32Array past 65 535
+    // particles): from null V8 typed the field Any.
+    this.particlesToStamp = new Uint16Array(0);
     this.particlesToStampCount = 0;
     this.decalTextures = {};
 
