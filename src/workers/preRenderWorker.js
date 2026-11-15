@@ -235,15 +235,29 @@ export function sunFrameSlotsOf(t, map, starts, counts, proxy) {
 }
 
 /**
- * DX-SHADOW3D: _computeSunFrames' loop, a module function over the columns it is handed. As a method it stayed in
- * Maglev in Predator's pre-render (3.8 ms a call for 57 633 slots, its parts 0.2 to 0.5 ms each when timed alone):
- * a small function of its own takes TurboFan's normal compile.
+ * DX-SHADOW3D: every slot's sun frame into out, in entity order (sunFrameFor each). The frame passes no longer use it:
+ * since E-368 they work out their own rows' frames (applySunFramesFor, applyKeyedSunFramesFor); the kernel times it
+ * (sunFramesMicrobench, its slots path). As a method it had stayed in Maglev (3.8 ms a call for 57 633 slots).
  * @returns {void} out[e]: ±(textureId + 1), negative mirrored, 0 for the sprite's own frame
  */
 export function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, anims, frames, tables, proxy, starts, counts,
     shift, shiftTurn, turn, orients) {
-    // E-368: once a call per sheet, not per caster: its slots (rebuilt when the proxy map is another), and a uniform
-    // table's turn by the sun's angle in whole steps (the direction the logic worker drew, its margin kept, turned by it).
+    prepareSunFrames(tables, proxy, starts, counts, shift, shiftTurn, turn);
+    for (let e = 0; e < n; e++) {
+        const v = sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients);
+        if (out[e] !== v) out[e] = v;
+    }
+}
+
+/** E-368: the sun's turn this call (prepareSunFrames writes it): a double the frame passes read, not one they are handed. */
+const SUN_TURN = new Float64Array(1);
+
+/**
+ * E-368: once a call per sheet, not per caster: its slots (rebuilt when the proxy map is another), and a uniform
+ * table's turn by the sun's angle in whole steps (the direction the logic worker drew, its margin kept, turned by it).
+ */
+export function prepareSunFrames(tables, proxy, starts, counts, shift, shiftTurn, turn) {
+    SUN_TURN[0] = turn;
     for (let sheet = 0; sheet < tables.length; sheet++) {
         const t = tables[sheet];
         if (t === undefined) continue;
@@ -253,47 +267,49 @@ export function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, 
             shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
         }
     }
-    for (let e = 0; e < n; e++) {
-        let v = 0;
-        if (active[e] === 1 && mode[e] === 1 && (casts === null || casts[e] === 1)) {
-            const sheet = sheets[e];
-            const t = tables[sheet];
-            if (t !== undefined && !t.solid) {
-                const cur = dirs[e];
-                let d = 0;
-                if (orients !== null && orients[e] === 1) {
-                    // DX-CASTER: a fixed card shows the object face on whatever the light (its axis rides in its code).
-                    d = t.front;
-                } else if (t.uniform && cur < t.count) {
-                    d = cur + shift[sheet];
-                    if (d >= t.count) d -= t.count;
-                } else {
-                    d = sunFrameDirection(t, e, turn);
-                }
-                const g = anims[e];
-                const slot = (g < t.groups ? g : 0) * t.count + d;
-                const start = t.slotStart[slot];
-                if (start >= 0) {
-                    let f = frames !== null ? frames[e] | 0 : 0;
-                    if (f < 0 || f >= t.slotCount[slot]) f = 0;
-                    const tid = start + f + 1;
-                    v = t.flip[slot] === 1 ? -tid : tid;
-                }
-            }
-        }
-        if (out[e] !== v) out[e] = v;
-    }
 }
 
 /**
- * DX-SHADOW3D: _applySunFrames' loop. A directional sprite's full sun row draws the frame the sun sees (of[entity],
- * ±(textureId + 1), negative mirrored): its texture, and the flip in its scale's sign.
+ * E-368: the frame directional caster e shows the sun, ±(textureId + 1), negative mirrored; 0 for the sprite's own (not a
+ * directional caster, a render that casts its solid, an animation the atlas lacks). prepareSunFrames ran this call.
  */
-export function applySunFramesInto(rows, sunN, casters, types, entities, of) {
+function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients) {
+    if (active[e] !== 1 || mode[e] !== 1 || (casts !== null && casts[e] !== 1)) return 0;
+    const sheet = sheets[e];
+    const t = tables[sheet];
+    if (t === undefined || t.solid) return 0;
+    const cur = dirs[e];
+    let d = 0;
+    if (orients !== null && orients[e] === 1) {
+        // DX-CASTER: a fixed card shows the object face on whatever the light (its axis rides in its code).
+        d = t.front;
+    } else if (t.uniform && cur < t.count) {
+        d = cur + shift[sheet];
+        if (d >= t.count) d -= t.count;
+    } else {
+        d = sunFrameDirection(t, e, SUN_TURN[0]);
+    }
+    const g = anims[e];
+    const slot = (g < t.groups ? g : 0) * t.count + d;
+    const start = t.slotStart[slot];
+    if (start < 0) return 0;
+    let f = frames !== null ? frames[e] | 0 : 0;
+    if (f < 0 || f >= t.slotCount[slot]) f = 0;
+    const tid = start + f + 1;
+    return t.flip[slot] === 1 ? -tid : tid;
+}
+
+/**
+ * DX-SHADOW3D: a directional sprite's full sun row draws the frame the sun sees (sunFrameFor): its texture, and the flip in
+ * its scale's sign. E-368: each row's frame is worked out where it is written (prepareSunFrames ran this call): no pass
+ * over every slot before it, no per-entity array between them.
+ */
+export function applySunFramesFor(rows, sunN, casters, types, entities, active, mode, casts, sheets, dirs, anims, frames,
+    tables, shift, orients) {
     for (let k = 0; k < sunN; k++) {
         const row = casters[k];
         if (types[row] !== 0) continue;
-        const v = of[entities[row]];
+        const v = sunFrameFor(entities[row], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients);
         if (v === 0) continue;
         const at = k * GPU_CASTER_FLOATS;
         rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
@@ -303,18 +319,19 @@ export function applySunFramesInto(rows, sunN, casters, types, entities, of) {
 }
 
 /**
- * DX-SHADOW3D (plan §17.2): _applyKeyedSunFrames' loop. The kernel wrote a keyed row for each queue row it found casting
- * (type 3 left out, a shadow height above 0), in queue order, with 0 in its fourth float; this walks the queue the same
- * way and writes there the entity's sun frame (of[entity]).
+ * DX-SHADOW3D (plan §17.2): the keyed caster rows' sun frames. The kernel wrote a keyed row for each queue row it found
+ * casting (type 3 left out, a shadow height above 0), in queue order, with 0 in its fourth float; this walks the queue the
+ * same way and writes there the entity's sun frame (sunFrameFor, worked out here: E-368; prepareSunFrames ran).
  */
-export function applyKeyedSunFramesInto(rows, keyedN, count, qType, shadowH, types, entities, of) {
+export function applyKeyedSunFramesFor(rows, keyedN, count, qType, shadowH, types, entities, active, mode, casts, sheets,
+    dirs, anims, frames, tables, shift, orients) {
     let n = 0;
     for (let i = 0; i < count && n < keyedN; i++) {
         if (qType && qType[i] === 3) continue;
         if (!(shadowH[i] > 0)) continue;
         const k = n++;
         if (types[i] !== 0) continue;
-        const v = of[entities[i]];
+        const v = sunFrameFor(entities[i], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients);
         if (v !== 0) rows[k * GPU_KEYED_CASTER_FLOATS + 3] = v;
     }
 }
@@ -802,8 +819,6 @@ class PreRenderWorker extends AbstractWorker {
         // DX-SHADOW3D: a uniform table's turn towards the sun in whole steps, by sheet id, and the sun's turn it is for.
         this._sunShift = new Int16Array(256);
         this._sunShiftTurn = new Float64Array(256).fill(NaN);
-        // DX-SHADOW3D: each entity's sun frame this frame, ±(textureId + 1) (_computeSunFrames), sized on first use.
-        this._sunFrameOf = new Int32Array(0);
         // DX-CASTER (F9): whether casters ask for their own way (rescanned every 30 frames), and each one's code.
         this._casterKindsOn = false;
         this._casterScanTick = 0;
@@ -3922,29 +3937,20 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * DX-SHADOW3D: the frame the sun sees for every directional caster, as ±(textureId + 1) (negative mirrored, 0 the
-     * sprite's own) in _sunFrameOf by entity: its facing turned by the angle between the camera's view (north) and the
-     * sun's (along the shadows, on the floor), its animation in that direction, the same frame of the cycle, that
-     * direction's flip. In entity order, so its columns stream: the caster rows' passes read one value a row. Read by row
-     * in the painter's order, those columns were a cache miss each a caster (Predator, 38 000 casters: 18 % of
-     * pre-render's samples). A sheet that casts its solid keeps the camera's frame (its columns are built from it).
-     * @returns {boolean} whether _sunFrameOf holds this frame's
+     * DX-SHADOW3D: the frame passes' per-call part (prepareSunFrames): the angle between the camera's view (north) and
+     * the sun's (along the shadows, on the floor), and each sheet's slots and turn. A directional caster's frame is then
+     * its facing turned by that angle, its animation in that direction, the same frame of the cycle, that direction's
+     * flip (sunFrameFor); a sheet that casts its solid keeps the camera's frame (its columns are built from it).
+     * @returns {boolean} whether the passes can run (the tables, the animation tables and the sun are there)
      */
-    _computeSunFrames() {
+    _prepareSunFrames() {
         const tables = this._sunFrameTables;
-        const active = DirectionalSprite.active;
         const proxy = this.proxyToGlobalAnim;
         const starts = this.animationFrameStart;
         const counts = this.animationFrameCount;
-        if (tables === null || !active || !proxy || !starts || !counts || !Sun.isInitialized) return false;
-        const n = active.length;
-        if (this._sunFrameOf.length !== n) this._sunFrameOf = new Int32Array(n);
+        if (tables === null || !DirectionalSprite.active || !proxy || !starts || !counts || !Sun.isInitialized) return false;
         const turn = -Math.PI / 2 - Math.atan2(Sun.shadowDirY / cameraFloorScaleY(this.config), Sun.shadowDirX);
-        computeSunFramesInto(
-            this._sunFrameOf, n, active, DirectionalSprite.mode, ShadowCaster.active || null, SpriteRenderer.spritesheetId,
-            DirectionalSprite.directionIndex, DirectionalSprite.animation, this.entityFrameIndex || null, tables, proxy,
-            starts, counts, this._sunShift, this._sunShiftTurn, turn, ShadowCaster.orient || null,
-        );
+        prepareSunFrames(tables, proxy, starts, counts, this._sunShift, this._sunShiftTurn, turn);
         return true;
     }
 
@@ -4007,26 +4013,31 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * DX-SHADOW3D: a directional sprite's full sun row draws the frame the sun sees (_computeSunFrames): its texture and
+     * DX-SHADOW3D: a directional sprite's full sun row draws the frame the sun sees (applySunFramesFor): its texture and
      * the flip of its scale.
      */
     _applySunFrames(q, rows, sunN) {
-        if ((q.count | 0) !== this._collectedRows || !this._computeSunFrames()) return;
-        applySunFramesInto(rows, sunN, this._gpuCasterIdx, this._renderableType, this._renderableIndex, this._sunFrameOf);
+        if ((q.count | 0) !== this._collectedRows || !this._prepareSunFrames()) return;
+        applySunFramesFor(rows, sunN, this._gpuCasterIdx, this._renderableType, this._renderableIndex, DirectionalSprite.active,
+            DirectionalSprite.mode, ShadowCaster.active || null, SpriteRenderer.spritesheetId, DirectionalSprite.directionIndex,
+            DirectionalSprite.animation, this.entityFrameIndex || null, this._sunFrameTables, this._sunShift,
+            ShadowCaster.orient || null);
     }
 
     /**
      * DX-SHADOW3D (plan §17.2): _applySunFrames for keyed caster rows. The kernel wrote a row for each queue row it found
      * casting (type 3 left out, a shadow height above 0), in queue order, with 0 in its fourth float; this walks the
-     * queue the same way and writes there a DirectionalSprite's sun frame (_computeSunFrames, ±(textureId + 1), negative
-     * mirrored), which the keyed shadow programs take instead of the sprite's own.
+     * queue the same way and writes there a DirectionalSprite's sun frame (applyKeyedSunFramesFor, ±(textureId + 1),
+     * negative mirrored), which the keyed shadow programs take instead of the sprite's own.
      */
     _applyKeyedSunFrames(q, rows, keyedN, count) {
         const qType = q.type || this.renderQueueType;
         const shadowH = q.shadowH;
-        if ((q.count | 0) !== this._collectedRows || !shadowH || !this._computeSunFrames()) return;
-        applyKeyedSunFramesInto(rows, keyedN, count, qType, shadowH, this._renderableType, this._renderableIndex,
-            this._sunFrameOf);
+        if ((q.count | 0) !== this._collectedRows || !shadowH || !this._prepareSunFrames()) return;
+        applyKeyedSunFramesFor(rows, keyedN, count, qType, shadowH, this._renderableType, this._renderableIndex,
+            DirectionalSprite.active, DirectionalSprite.mode, ShadowCaster.active || null, SpriteRenderer.spritesheetId,
+            DirectionalSprite.directionIndex, DirectionalSprite.animation, this.entityFrameIndex || null,
+            this._sunFrameTables, this._sunShift, ShadowCaster.orient || null);
     }
 
     _ensureStampScratch(sunN) {
