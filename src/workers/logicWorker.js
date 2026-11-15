@@ -2972,41 +2972,45 @@ class LogicWorker extends AbstractWorker {
    */
   _drainSpawnCommandRing() {
     if (!isSpawnCommandRingBound()) return 0;
-    const extras = this._pendingDrainExtras;
-    const xy = this._spawnXyScratch;
-    const byType = this._entityClassByType;
-    const n = drainSpawnCommands((kind, typeId, entityIndex, x, y, owner) => {
-      if (kind === SPAWN_CMD_KIND.DESPAWN) {
-        this._mainThreadDespawn(entityIndex);
-        return;
-      }
-      const extra = extras ? extras.get(entityIndex) : null;
-      let EntityClass;
-      let cfg;
-      if (extra) {
-        EntityClass = extra.className ? self[extra.className] : byType[typeId];
-        cfg = extra.spawnConfig;
-      } else {
-        EntityClass = byType[typeId];
-        xy.x = x;
-        xy.y = y;
-        xy.forceProcessOnLogicWorker = owner;
-        cfg = xy;
-      }
-      if (!EntityClass) {
-        console.error(
-          `LOGIC WORKER ${this.workerIndex}: ring spawn type ${typeId} not found`,
-        );
-        return;
-      }
-      if (!GameObject._spawnAt(EntityClass, cfg, entityIndex)) {
-        // The pusher reserved the index (an empty pool is reported there), so a
-        // null here is onSpawned despawning its own entity: a choice, not an error.
-        debugWorkerLog(`LOGIC WORKER ${this.workerIndex}: ${EntityClass.name}[${entityIndex}] spawn did not complete`);
-      }
-    });
+    // E-351: the visitor is a method with this worker as its `this`: the arrow it was made a context and a closure
+    // every frame, ring empty or not.
+    const n = drainSpawnCommands(this._visitSpawnCommand, this);
     this._pendingDrainExtras = null;
     return n;
+  }
+
+  /** One ring command (drainSpawnCommands' visitor): a despawn, or a spawn set up at its reserved index. */
+  _visitSpawnCommand(kind, typeId, entityIndex, x, y, owner) {
+    if (kind === SPAWN_CMD_KIND.DESPAWN) {
+      this._mainThreadDespawn(entityIndex);
+      return;
+    }
+    const extras = this._pendingDrainExtras;
+    const extra = extras ? extras.get(entityIndex) : null;
+    let EntityClass;
+    let cfg;
+    if (extra) {
+      EntityClass = extra.className ? self[extra.className] : this._entityClassByType[typeId];
+      cfg = extra.spawnConfig;
+    } else {
+      EntityClass = this._entityClassByType[typeId];
+      const xy = this._spawnXyScratch;
+      xy.x = x;
+      xy.y = y;
+      xy.forceProcessOnLogicWorker = owner;
+      cfg = xy;
+    }
+    if (!EntityClass) {
+      console.error(
+        `LOGIC WORKER ${this.workerIndex}: ring spawn type ${typeId} not found`,
+      );
+      return;
+    }
+    if (!GameObject._spawnAt(EntityClass, cfg, entityIndex)) {
+      // The pusher reserved the index (an empty pool is reported there), so a
+      // null here is onSpawned despawning its own entity: a choice, not an error.
+      debugWorkerLog(`LOGIC WORKER ${this.workerIndex}: ${EntityClass.name}[${entityIndex}] spawn did not complete`);
+    }
   }
 
   _mainThreadDespawn(entityIndex) {
