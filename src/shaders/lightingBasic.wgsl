@@ -145,7 +145,8 @@ fn sunVisibility(p: vec3<f32>, selfId: f32) -> f32 {
   let c = vec2<i32>(floor(uv * vec2<f32>(size)));
   // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
-  let above = select(0.0, p.z + 4.0 + p.z * 0.03, p.z > 0.0);
+  // N-210: a pixel of an entity keeps only the map's height step (lightingBasic.frag.glsl says why).
+  let above = select(0.0, p.z + select(4.0 + p.z * 0.03, 2.0, selfId > 0.5), p.z > 0.0);
   var lit = sunMapLit(c, size, above, selfId);
 // #if PIXELART
   // DX-PIXELSHADOW: one tap at the art pixel's centre, crisp on the art's grid.
@@ -222,7 +223,7 @@ fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, 
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
   // On the ceiling's half the bias goes under the point (towards lit there); 1 px and 4 floor px along the ray in height
   // (lightingBasic.frag.glsl says why).
-  let bias = 1.0 + 4.0 * abs(e - p.z) / max(sqrt(dot(fromLamp, fromLamp)), 1.0);
+  let bias = select(1.0 + 4.0 * abs(e - p.z) / max(sqrt(dot(fromLamp, fromLamp)), 1.0), 2.0, selfId > 0.5);
   let bound = select(select(0.0, p.z + bias, p.z > 0.0), p.z - bias, upper);
   var lit = lampTap(c, lo, hi, bound, upper, selfId);
 // #if PIXELART
@@ -328,8 +329,9 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
 // #if SUNMAP
   let sunVis = sunVisibility(p, selfId);
   sunDirect *= sunVis;
-  // N-208: a face the sun does not reach takes no other caster's shadow (lightingBasic.frag.glsl says why).
-  sunFlat = select(mix(1.0, sunVis, smoothstep(0.0, 0.15, dot(n, uniforms.uFaceSun.xyz))), sunVis, isFlat);
+  // N-208: a face the sun does not reach, on an entity that shades itself, takes no other caster's shadow; a card and an
+  // entity that does not shade itself (a person) take it whole (lightingBasic.frag.glsl says why).
+  sunFlat = select(mix(1.0, sunVis, smoothstep(0.0, 0.15, dot(n, uniforms.uFaceSun.xyz))), sunVis, isFlat || !selfOn);
 // #endif SUNMAP
 // #if SELFSHADOW
   // Faded out at the terminator, where the cosine already shades and a step either way flips the test. A FLAT pixel has

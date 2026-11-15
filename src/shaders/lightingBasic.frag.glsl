@@ -89,7 +89,10 @@ float sunVisibility(vec3 p, float selfId) {
   vec2 texel = 1.0 / uViewport;
   // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
-  float bias = p.z > 0.0 ? 4.0 + p.z * 0.03 : 0.0;
+  // N-210: a pixel of an entity (its id known) skips its own entity's texels (ownTexel), so it keeps only the map's
+  // height step (2 px) towards lit: 4 px and more erased the shade of a caster just behind it (a person by the barn's
+  // wall, the sun's ray from their head meeting the wall 5 px higher). A pixel of no entity keeps the old bias.
+  float bias = p.z > 0.0 ? (selfId > 0.5 ? 2.0 : 4.0 + p.z * 0.03) : 0.0;
   float above = p.z + bias;
   float lit = sunTap(uv, above, selfId);
 // #if PIXELART
@@ -176,7 +179,7 @@ float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float 
   // one towards lit (on the floor's half over its height, on the ceiling's under it): 1 px and 4 floor px along its ray
   // in height. A fixed 4 px erased under a low lamp, whose rays are nearly level, the shade of anything near the point
   // (a person's on the wall behind them: 3 px of height between them on the ray).
-  float bias = 1.0 + 4.0 * abs(e - p.z) / max(sqrt(dot(fromLamp, fromLamp)), 1.0);
+  float bias = selfId > 0.5 ? 2.0 : 1.0 + 4.0 * abs(e - p.z) / max(sqrt(dot(fromLamp, fromLamp)), 1.0);
   float bound = upper ? p.z - bias : (p.z > 0.0 ? p.z + bias : 0.0);
   float lit = lampTap(cell, uv, h, toAtlas, bound, upper, selfId);
 // #if PIXELART
@@ -291,11 +294,13 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
 // #if SUNMAP
   float sunVis = sunVisibility(p, selfId);
   sunDirect *= sunVis;
-  // N-208: a face the sun does not reach is in its own shade, where no other caster's shadow shows (by day it looks as
-  // drawn): the map's shade fades out across the terminator. The map keeps the highest caster on a ray and a pixel skips
-  // its own entity's, so a tree beyond the barn shaded the barn's far wall through the barn. A FLAT pixel (a card) has no
-  // side turned away.
-  sunFlat = isFlat ? sunVis : mix(1.0, sunVis, smoothstep(0.0, 0.15, dot(n, uFaceSun.xyz)));
+  // N-208: a face the sun does not reach, on an entity that shades itself (a closed volume: a render with a footprint), is
+  // in its own shade, where no other caster's shadow shows (by day it looks as drawn): the map's shade fades out across
+  // the terminator. The map keeps the highest caster on a ray and a pixel skips its own entity's, so a tree beyond the barn
+  // shaded the barn's far wall through the barn. A FLAT pixel (a card) has no side turned away, and an entity that does not
+  // shade itself (a person, a thin sprite whose normals come from its height map) takes another's shadow whole: a person
+  // with their back to the sun stood lit in the barn's shadow.
+  sunFlat = (isFlat || !selfOn) ? sunVis : mix(1.0, sunVis, smoothstep(0.0, 0.15, dot(n, uFaceSun.xyz)));
 // #endif SUNMAP
 // #if SELFSHADOW
   // Faded out at the terminator, where the cosine already shades and a step either way flips the test. A FLAT pixel has
