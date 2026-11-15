@@ -6455,7 +6455,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * DX-SHADOW3D (F7): each sun-projected volumes' layer drawn into the lamps' map once a tile in use, in one render: a mesh
    * a tile over the layer's rows (volumeShadowMap.js volumeLampVertex / volumeLampWgsl), each vertex landing on the floor
    * along that tile's lamp's ray (the tiles' texture holds the lamps; uLampVolume says which), its height out, max
-   * blending. A triangle past an edge of a tile is left out in its vertices. Last frame's rows, as the sun map's volumes.
+   * blending. A triangle past an edge of a tile is left out in its vertices, and one of the tile's lamp's own entity.
+   * Last frame's rows, as the sun map's volumes.
    */
   _drawVolumesInLampMap(rtOpts) {
     const shaders = this._engineShaders;
@@ -6487,7 +6488,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this._syncVolumeResources(mesh.shader, batch);
         const group = mesh.shader.resources.sunShadow;
         const u = group.uniforms;
-        if (writeVolumeLampTerms(u.uSunShadow, u.uLampVolume, t, this._lampTilesPerRow, this._lampTileSize, invHs, invG)) {
+        // The tile's lamp's own entity casts nothing for it (_readLampTiles: tile t is entity _lampTileIds[t]'s light).
+        const owner = t < this._lampTileIds.length ? this._lampTileIds[t] : -1;
+        const perRow = this._lampTilesPerRow;
+        if (writeVolumeLampTerms(u.uSunShadow, u.uLampVolume, u.uLampOwner, t, owner, perRow, this._lampTileSize, invHs, invG)) {
           group.update();
         }
       }
@@ -6500,7 +6504,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   /**
    * DX-SHADOW3D (F7): a mesh over a volumes' batch for one tile of the lamps' map, with its own terms (sunShadow: uSunShadow,
-   * then uLampVolume, the WGSL struct's order), in `host`. The program and state are made once.
+   * uLampVolume, then uLampOwner, the WGSL struct's order), in `host`. The program and state are made once.
    */
   _volumeLampMesh(batch, host) {
     if (this._volumeLampProgram === null) {
@@ -6539,6 +6543,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         sunShadow: {
           uSunShadow: { value: new Float32Array(4), type: 'vec4<f32>' },
           uLampVolume: { value: new Float32Array([-1, 0, 0, 0]), type: 'vec4<f32>' },
+          uLampOwner: { value: new Float32Array([-1, 0, 0, 0]), type: 'vec4<f32>' },
         },
       },
     });

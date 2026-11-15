@@ -9,7 +9,9 @@
  *   L + (P - L) · E / (E - z) (the stretch capped at LAMP_MAP_MAX_STRETCH), in the tile, drawn with w = (E - z) / E so the
  *   heights spread over the shadow as the rays carry them, cut to the tile by the fragment. The tile's lamp is the tiles'
  *   texture's (writeLampTile: its floor point, height and reach), read by uLampVolume.x. A triangle whose floor footprint
- *   lies past one edge of the tile is left out in its vertices: its landing lies further past it.
+ *   lies past one edge of the tile is left out in its vertices: its landing lies further past it. So is one of the lamp's
+ *   own entity (uLampOwner.x; the rows' aInstBody is their entity), as pre-render drops a lamp's own stamp rows: a car's
+ *   headlights are not shaded by the car's volume.
  */
 
 import { SUN_MAP_ZMAX } from './sunShadowMap.js';
@@ -59,7 +61,8 @@ const LAMP_GLSL = `
   float lampZ = max(aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x), 0.0) * uSunShadow.w;
   float lampPad = max(max(length(aV0), length(aV1)), length(aV2)) * max(1.0, f) * max(1.0, uLampVolume.w);
   vec2 lampOff = vec2(xy.x, xy.y * uLampVolume.w) - lamp.xy;
-  if (lampTile < 0 || lamp.z <= 0.0 || lamp.w <= 0.0 || max(abs(lampOff.x), abs(lampOff.y)) > lamp.w + lampPad) {
+  bool lampOwn = abs(aInstBody - uLampOwner.x) < 0.5;
+  if (lampTile < 0 || lampOwn || lamp.z <= 0.0 || lamp.w <= 0.0 || max(abs(lampOff.x), abs(lampOff.y)) > lamp.w + lampPad) {
     gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
     return;
   }
@@ -76,8 +79,9 @@ const LAMP_GLSL = `
 
 /**
  * The lamps' map's vertex shader for the volumes (WebGL): meshUvFill.vert.glsl landing each vertex towards the lamp of
- * tile uLampVolume.x (uLampVolume: the tile, tiles a row, a tile's texels, 1 / groundScaleY; uSunShadow: 0, 0, 1 for the
- * volumes' floor, 1 / heightScaleY), its height out (vSunZ) and the tile's own coordinates for the fragment's clip.
+ * tile uLampVolume.x (uLampVolume: the tile, tiles a row, a tile's texels, 1 / groundScaleY; uLampOwner.x: the lamp's
+ * entity, -1 none; uSunShadow: 0, 0, 1 for the volumes' floor, 1 / heightScaleY), its height out (vSunZ) and the tile's
+ * own coordinates for the fragment's clip.
  * @param {string} source meshUvFill.vert.glsl
  * @returns {string}
  */
@@ -85,8 +89,9 @@ export function volumeLampVertex(source) {
   const what = "the lamps' map's volumes";
   const decl =
     'out float vSunZ;\nout vec3 vTileUvW;\n' +
-    "// DX-SHADOW3D (F7): this draw's tile, tiles a row, a tile's texels, 1 / groundScaleY; the tiles' lamps.\n" +
-    'uniform vec4 uLampVolume;\nuniform sampler2D uLampTiles;\n';
+    "// DX-SHADOW3D (F7): uLampVolume: this draw's tile, tiles a row, a tile's texels, 1 / groundScaleY; uLampOwner.x: the\n" +
+    "// tile's lamp's entity (-1 none); uLampTiles: the tiles' lamps.\n" +
+    'uniform vec4 uLampVolume;\nuniform vec4 uLampOwner;\nuniform sampler2D uLampTiles;\n';
   const out = after(source, 'out vec2 vMeshUV;\n', decl, what);
   return after(out, 'gl_Position = vec4(clip.xy, aInstDepth, 1.0);', LAMP_GLSL, what);
 }
@@ -114,7 +119,8 @@ const LAMP_WGSL = `  // DX-SHADOW3D (F7): towards this draw's lamp (volumeShadow
   let lampInvG = sunShadow.uLampVolume.w;
   let lampPad = max(max(length(aV0), length(aV1)), length(aV2)) * max(1.0, f) * max(1.0, lampInvG);
   let lampOff = vec2<f32>(xy.x, xy.y * lampInvG) - lamp.xy;
-  if (lampTile < 0 || lamp.z <= 0.0 || lamp.w <= 0.0 || max(abs(lampOff.x), abs(lampOff.y)) > lamp.w + lampPad) {
+  let lampOwn = abs(aInstBody - sunShadow.uLampOwner.x) < 0.5;
+  if (lampTile < 0 || lampOwn || lamp.z <= 0.0 || lamp.w <= 0.0 || max(abs(lampOff.x), abs(lampOff.y)) > lamp.w + lampPad) {
     out.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
     return out;
   }
@@ -141,8 +147,9 @@ fn mainFragLamp(in: VertexOut) -> @location(0) vec4<f32> {
 `;
 
 /**
- * volumeLampVertex's WGSL form (WebGPU): meshUvFill.wgsl with uLampVolume after uSunShadow in its group (the order Pixi
- * lays the group out in), the tiles' texture as group 2's binding 6, and the fragment entry `mainFragLamp`.
+ * volumeLampVertex's WGSL form (WebGPU): meshUvFill.wgsl with uLampVolume and uLampOwner after uSunShadow in its group
+ * (the order Pixi lays the group out in), the tiles' texture as group 2's binding 6, and the fragment entry
+ * `mainFragLamp`.
  * @param {string} source meshUvFill.wgsl
  * @returns {string}
  */
@@ -151,7 +158,10 @@ export function volumeLampWgsl(source) {
   let out = after(
     source,
     '  uSunShadow: vec4<f32>,\n',
-    "  // DX-SHADOW3D (F7): this draw's tile, tiles a row, a tile's texels, 1 / groundScaleY.\n  uLampVolume: vec4<f32>,\n",
+    "  // DX-SHADOW3D (F7): this draw's tile, tiles a row, a tile's texels, 1 / groundScaleY.\n" +
+      '  uLampVolume: vec4<f32>,\n' +
+      "  // x: the tile's lamp's entity, whose own volume casts nothing for it (-1 none).\n" +
+      '  uLampOwner: vec4<f32>,\n',
     what,
   );
   out = after(
@@ -168,18 +178,24 @@ export function volumeLampWgsl(source) {
 
 /**
  * A lamps' map volumes draw's terms, written when they differ: uSunShadow (no sun shift, the volumes' floor, 1 /
- * heightScaleY) and uLampVolume (the tile, tiles a row, a tile's texels, 1 / groundScaleY).
+ * heightScaleY), uLampVolume (the tile, tiles a row, a tile's texels, 1 / groundScaleY) and uLampOwner (x: the tile's
+ * lamp's entity, whose own volume casts nothing for it; -1 none).
  * @param {Float32Array} sun
  * @param {Float32Array} lamp
+ * @param {Float32Array} owner
  * @returns {boolean} whether any changed (the group needs an update)
  */
-export function writeVolumeLampTerms(sun, lamp, tile, perRow, tileSize, invHeightScaleY, invGroundScaleY) {
+export function writeVolumeLampTerms(
+  sun, lamp, owner, tile, ownerEntity, perRow, tileSize, invHeightScaleY, invGroundScaleY,
+) {
   if (
     sun[0] === 0 && sun[1] === 0 && sun[2] === 1 && sun[3] === Math.fround(invHeightScaleY)
     && lamp[0] === tile && lamp[1] === perRow && lamp[2] === tileSize && lamp[3] === Math.fround(invGroundScaleY)
+    && owner[0] === Math.fround(ownerEntity)
   ) {
     return false;
   }
+  owner[0] = ownerEntity;
   sun[0] = 0;
   sun[1] = 0;
   sun[2] = 1;
