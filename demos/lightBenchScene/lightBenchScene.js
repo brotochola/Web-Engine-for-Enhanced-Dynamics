@@ -10,6 +10,8 @@
 //   ?hour=        the sun's hour (default 16)
 //   ?still=1      nothing moves (the lamps stay, the person stands): for captures
 //   ?zoom= ?cx= ?cy=  the camera (default: the whole farm); ?panel=0 hides the panel (captures)
+//   ?only=hatch,arboles,civil7  only those things (none: the grass alone); ?lamps=0 no lamps (captures, checks)
+//   ?backend=webgpu
 
 import WEED from '/src/index.js';
 import { SunPanel } from '../sunStreetScene/sunPanel.js';
@@ -28,6 +30,10 @@ const PANEL = param('panel') !== '0';
 const ZOOM = Number(param('zoom')) || 0;
 const CX = Number(param('cx')) || 0;
 const CY = Number(param('cy')) || 0;
+const ONLY = param('only') === null ? null : new Set(param('only').split(','));
+const LAMPS = param('lamps') !== '0';
+const BACKEND = param('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+const wanted = (sheet) => ONLY === null || ONLY.has(sheet);
 const HOUR = Number(param('hour')) || 16;
 const HOURS = [10, 16, 18.5, 22];
 const W = 1500;
@@ -155,7 +161,7 @@ export class LightBenchScene extends Scene {
     logic: { numberOfLogicWorkers: 1, noLimitFPS: false },
     physics: { subStepCount: 1, gravity: { x: 0, y: 0 }, noLimitFPS: false },
     particle: { maxParticles: 0, decals: false },
-    renderer: { backend: 'webgl', ySort: true, noLimitFPS: false },
+    renderer: { backend: BACKEND, ySort: true, noLimitFPS: false },
     camera: { pitch: 47, floorScaleY: FLOOR_SCALE_Y, heightScaleY: HEIGHT_SCALE_Y },
     // The grass under the sprite shadows' layer (zIndex 2), so both kinds of sun shadow show on it.
     layers: { ground: { kind: LAYER_KIND.TILING, texture: 'pasto', tileScale: 1, parallax: 1, zIndex: 0 } },
@@ -202,11 +208,13 @@ export class LightBenchScene extends Scene {
     for (const [sheet, x, y] of FARM) {
       // The prototype's turn is counter-clockwise on the floor; a facing is the world's angle (clockwise, y down).
       const facing = -Math.floor(rnd() * 360) * DEG;
+      if (!wanted(sheet)) continue;
       if (BENCH_ASSETS[sheet].kind === 'car') Car.spawn({ x, y, sheet, facing });
       else Prop.spawn({ x, y, sheet, facing });
     }
-    for (const [x, y, v] of TREES) Tree.spawn({ x, y, kind: v === 0 ? 'arbol_verde' : 'arbol_jacaranda' });
-    Walker.spawn({ x: 700, y: 620 });
+    if (wanted('arboles')) for (const [x, y, v] of TREES) Tree.spawn({ x, y, kind: v === 0 ? 'arbol_verde' : 'arbol_jacaranda' });
+    if (wanted('civil7')) Walker.spawn({ x: 700, y: 620 });
+    if (!LAMPS) return;
     Lamp.spawn({ cx: 640, cy: 470, r: STILL ? 0 : 60, color: 0xffcf8a, elevation: 75, radius: 330, brightness: 1.4, castShadows: true });
     Lamp.spawn({ cx: 1010, cy: 690, r: 0, color: 0x9ec3ff, elevation: 55, radius: 260, brightness: 1.2, castShadows: false });
   }
