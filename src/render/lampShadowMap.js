@@ -68,6 +68,32 @@ export function lampTileLayout(count, size, maxSide = 4096) {
   return { perRow, width: perRow * s, height: Math.ceil(n / perRow) * s, size: s };
 }
 
+/** N-196, lampShadowTile 'auto': the floor px a lamp map texel spans at most at lighting.shadowResolution 1. */
+export const LAMP_TEXEL_FLOOR_PX = 2;
+/** The lamps' map's texels at most with lampShadowTile 'auto' (its tiles together: a 4096 x 2048 atlas). */
+export const LAMP_MAP_MAX_TEXELS = 4096 * 2048;
+
+/**
+ * N-196, lampShadowTile 'auto': a tile's side, a power of two from 64 to 1024, at which the widest casting lamp's tile
+ * (twice its reach, floor px) spans at most LAMP_TEXEL_FLOOR_PX / resolution floor px a texel, as far as `tiles` such
+ * tiles fit LAMP_MAP_MAX_TEXELS and `maxSide`. A fixed 256 drew a lamp of reach 900 at 7 floor px a texel whatever the
+ * shadows' resolution.
+ * @param {number} maxReach the widest casting lamp's reach (floor px)
+ * @param {number} resolution lighting.shadowResolution
+ * @param {number} tiles the tiles the map holds
+ */
+export function autoLampTileSize(maxReach, resolution, tiles, maxSide = 4096) {
+  const want = (2 * Math.max(0, maxReach) * Math.max(0.05, resolution)) / LAMP_TEXEL_FLOOR_PX;
+  let size = 64;
+  while (size < 1024 && size < want) size *= 2;
+  for (;;) {
+    if (size <= 64) return 64;
+    const l = lampTileLayout(tiles, size, maxSide);
+    if (l.height <= maxSide && l.width * l.height <= LAMP_MAP_MAX_TEXELS) return size;
+    size /= 2;
+  }
+}
+
 /**
  * A floor point's texel in lamp `slot`'s tile (its radius `range` around the lamp, floor px): the tile's own 0..1
  * coordinates, or null outside it.

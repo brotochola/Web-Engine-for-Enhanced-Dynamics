@@ -2,7 +2,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LAMP_MAP_MAX_STRETCH, lampLanding, lampTileLayout, lampTileUv } from '../../src/render/lampShadowMap.js';
+import {
+  LAMP_MAP_MAX_STRETCH, LAMP_MAP_MAX_TEXELS, autoLampTileSize, lampLanding, lampTileLayout, lampTileUv,
+} from '../../src/render/lampShadowMap.js';
 
 const close = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
 
@@ -40,4 +42,17 @@ test('the tiles: as many a row as fit, a floor point in its lamp\'s tile or out 
   assert.deepEqual(lampTileUv(100, 100, 100, 100, 300), [0.5, 0.5]);
   assert.equal(lampTileUv(401, 100, 100, 100, 300), null);
   assert.deepEqual(lampTileUv(-199, 100, 100, 100, 300).map((v) => Math.round(v * 1000) / 1000), [0.002, 0.5]);
+});
+
+test('N-196: lampShadowTile auto makes a tile as fine as the widest lamp and the shadow resolution ask, within the budget', () => {
+  // Twice the reach over at most 2 floor px a texel at resolution 1: 660 px want 330 texels, 512; 1800 want 900, 1024.
+  assert.equal(autoLampTileSize(330, 1, 1), 512);
+  assert.equal(autoLampTileSize(900, 1, 1), 1024);
+  assert.equal(autoLampTileSize(330, 0.5, 1), 256, 'half the resolution, half the texels');
+  assert.equal(autoLampTileSize(0, 1, 1), 64, 'no casting lamp: the smallest tile');
+  // 32 tiles of 1024 would be 4096 x 8192: the tile halves until the map fits its budget.
+  const size = autoLampTileSize(900, 1, 32);
+  const layout = lampTileLayout(32, size);
+  assert.equal(size, 512);
+  assert.ok(layout.height <= 4096 && layout.width * layout.height <= LAMP_MAP_MAX_TEXELS);
 });

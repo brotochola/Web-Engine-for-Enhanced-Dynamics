@@ -1664,7 +1664,7 @@ By default a lamp stamps each caster's shadow on the `castedShadows` layer, stre
 ```javascript
 static config = {
   camera: { pitch: 47 },
-  lighting: { enabled: true, shadowsEnabled: true, lampShadows: 'map', lampShadowTile: 256 },
+  lighting: { enabled: true, shadowsEnabled: true, lampShadows: 'map' },
 };
 
 // In a lamp's onSpawned: the bulb 75 px above the floor.
@@ -1673,7 +1673,7 @@ Object.assign(this.lightEmitter, { radius: 330, color: 0xffcf8a, elevation: 75, 
 
 - The lamps that cast are the ones they always were: `castShadows` on (the default), the `lighting.maxShadowCastingLights` nearest the camera (20 by default), each with the casters it picks (`lighting.maxShadowsPerLight`, within its `shadowRange`).
 - `LightEmitter.elevation` is the bulb's height, and with the caster's height it makes the shadow's length: a car under a lamp at 150 px casts a short shadow, under one at 40 px a long one. What stands higher than the bulb casts nothing for it, and a lamp at elevation 0 casts no shadows in this mode.
-- A tile spans the lamp's radius on the floor; `lampShadowTile` (texels a side, 32 to 1024, default 256) sets how sharp its shadows are.
+- A tile spans the lamp's radius on the floor. `lampShadowTile` sets how sharp its shadows are: `'auto'` (the default) makes the tiles as fine as the widest casting lamp's reach and `lighting.shadowResolution` ask (at most 2 floor px a texel at resolution 1, up to 1024 texels a side, within a 4096 × 2048 map); a number (32 to 1024) fixes the texels a side.
 - In both modes a lamp casts the frame of a `DirectionalSprite` that it sees, a card turned towards it or a render's solid as the caster says (above), and a lamp is not shaded by its own entity: a car's headlights are not stopped by the car, and a post does not shade its own lamp.
 - WebGL and WebGPU. Not with raycasted lighting (it warns and keeps the visibility polygons).
 

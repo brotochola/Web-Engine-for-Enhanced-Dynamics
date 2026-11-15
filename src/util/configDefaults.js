@@ -802,8 +802,12 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * floor. A sheet without footprints keeps its columns.
    */
   footprintSolids: true,
-  /** DX-SHADOW3D (F7): a lamp's tile in the lamps' shadow map, texels a side (32 to 1024). */
-  lampShadowTile: 256,
+  /**
+   * DX-SHADOW3D (F7): a lamp's tile in the lamps' shadow map, texels a side (32 to 1024), or 'auto' (N-196): a power of two
+   * from 64 to 1024 by the widest casting lamp's reach and shadowResolution, at most 2 floor px a texel at resolution 1
+   * while the map stays within 4096 x 2048 texels. A tile spans twice its lamp's reach.
+   */
+  lampShadowTile: 'auto',
   /**
    * DX-SELFSHADOW: faces and sprites with height maps shade themselves and each other from the sun: steps towards it over
    * the face map's heights in the light pass (a crate's lid edge over its front, an arm over a body). WebGL for now.

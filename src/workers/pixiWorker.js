@@ -82,6 +82,7 @@ import {
   lampMapFragment,
   lampMapVertex,
   lampMapWgsl,
+  autoLampTileSize,
   lampTileLayout,
   writeLampTile,
 } from '../render/lampShadowMap.js';
@@ -964,6 +965,10 @@ class PixiRenderer extends AbstractWorker {
     this._volumeLampProgram = null;
     this._volumeLampState = null;
     this._lampTileSize = 256;
+    /** N-196: lampShadowTile 'auto' (the tile follows the widest casting lamp's reach and the shadows' resolution). */
+    this._lampTileAuto = false;
+    /** N-196: this frame's widest casting lamp's reach (floor px; a double from the start). */
+    this._lampMaxReach = 0.5;
     this._lampTilesPerRow = 1;
     this._lampMapLights = 0;
     this.lampMapRT = null;
@@ -6497,6 +6502,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this._lampTileData.length < cap * 4) this._lampTileData = new Float32Array(cap * 4);
     const data = this._lampTileData;
     const groundInvY = this._groundInvScaleY || 1;
+    let maxReach = 0.5;
     const worldX = Transform.x;
     const worldY = Transform.y;
     const rotC = Transform.rotC;
@@ -6511,8 +6517,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const oy = offsetY[id];
       const x = worldX[id] + ox * rotC[id] - oy * rotS[id];
       const y = (worldY[id] + ox * rotS[id] + oy * rotC[id]) * groundInvY;
-      writeLampTile(data, t, x, y, LightEmitter.elevation[id], LightEmitter.radius[id]);
+      const elevation = LightEmitter.elevation[id];
+      const reach = LightEmitter.radius[id];
+      writeLampTile(data, t, x, y, elevation, reach);
+      if (elevation > 0 && reach > maxReach) maxReach = reach;
     }
+    this._lampMaxReach = maxReach;
     data.fill(0, n * 4, Math.max(n, this._lampTileCount) * 4);
     this._lampTileCount = n;
     this._uploadLampTiles();
@@ -6571,9 +6581,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * @returns {boolean}
    */
   _ensureLampMap(gpu) {
-    const lights = Math.max(1, (gpu && gpu.caps && gpu.caps.maxStampLights) | 0);
-    if (this.lampMapRT !== null && this._lampMapLights === lights) return true;
-    const layout = lampTileLayout(lights, this._lampTileSize, 4096);
+    const most = Math.max(1, (gpu && gpu.caps && gpu.caps.maxStampLights) | 0);
+    let lights = most;
+    let size = this._lampTileSize;
+    if (this._lampTileAuto) {
+      // N-196: a tile for each lamp casting now, rounded up to a power of two (the map is made again only when that
+      // count or the tile's size changes), each as fine as the widest lamp's reach and the shadows' resolution ask.
+      lights = 1;
+      while (lights < this._lampTileCount && lights < most) lights *= 2;
+      if (lights > most) lights = most;
+      size = autoLampTileSize(this._lampMaxReach, this.shadowResolution, lights);
+    }
+    if (this.lampMapRT !== null && this._lampMapLights === lights && this._lampTileSize === size) return true;
+    this._lampTileSize = size;
+    const layout = lampTileLayout(lights, size, 4096);
     if (this.lampMapRT) this.lampMapRT.destroy(true);
     this.lampMapRT = PIXI.RenderTexture.create({ width: layout.width, height: layout.height, scaleMode: 'nearest' });
     // DX-GBUF: its programs keep the highest caster point by a depth test, as the sun's.
@@ -9192,7 +9213,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           console.warn(`WeedJS: lighting.lampShadows 'map' does not work with raycasted lighting: the lamps' shadows are the fans`);
         } else {
           this._lampMapOn = true;
-          this._lampTileSize = Math.max(32, Math.min(1024, (lightingConfig.lampShadowTile | 0) || 256));
+          // N-196: 'auto' (the default) sizes the tile by the casting lamps' reach and lighting.shadowResolution.
+          const tile = lightingConfig.lampShadowTile;
+          this._lampTileAuto = tile === undefined || tile === null || tile === 'auto';
+          this._lampTileSize = this._lampTileAuto ? 256 : Math.max(32, Math.min(1024, (tile | 0) || 256));
         }
       }
       // DX-MAPS: a sprite with height and normal maps is lit as the surface they say, through the faces' pass. DX-GBUF: so

@@ -343,7 +343,7 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    */
   lampShadows?: 'sprite' | 'map';
   /** Texels a side of a lamp's tile in the lamps' map, 32 to 1024 (default 256). The tile spans the lamp's radius. */
-  lampShadowTile?: number;
+  lampShadowTile?: number | 'auto';
   /**
    * A render with footprints in its sheet's json (meta.footprints) casts its solid swept north to them at each cell's own
    * height (light under a table) instead of columns down to the floor. Default true; false keeps the columns.
