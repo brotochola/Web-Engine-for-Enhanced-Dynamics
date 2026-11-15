@@ -788,9 +788,9 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   /**
    * DX-SHADOW3D: a render with a footprint in its sheet's json (meta.footprints) casts its solid swept north to it at
    * each cell's own height, as the light bench's heightmap did (light under a table), instead of columns down to the
-   * floor. Off until it is right: in the light bench the barn's walls went missing from its shadow.
+   * floor. A sheet without footprints keeps its columns.
    */
-  footprintSolids: false,
+  footprintSolids: true,
   /** DX-SHADOW3D (F7): a lamp's tile in the lamps' shadow map, texels a side (32 to 1024). */
   lampShadowTile: 256,
   /**

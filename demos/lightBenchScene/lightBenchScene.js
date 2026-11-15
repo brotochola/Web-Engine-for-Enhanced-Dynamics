@@ -14,7 +14,7 @@
 //   ?backend=webgpu
 //   ?fullRows=1   the shadows from pre-render's full caster rows (lighting.shadowTextures: the keyed paths off), to compare
 //   ?lampMap=0    the lamps' shadows as stamps, instead of the lamps' shadow map (one tile a lamp)
-//   ?sweep=1      the heightmap casters' solids swept north to their footprints (being fixed)
+//   ?sweep=0      the heightmap casters' solids as columns down to the floor, not swept north to their footprints
 
 import WEED from '/src/index.js';
 import { SunPanel } from '../sunStreetScene/sunPanel.js';
@@ -37,8 +37,8 @@ const ONLY = param('only') === null ? null : new Set(param('only').split(','));
 const LAMPS = param('lamps') !== '0';
 const BACKEND = param('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 const FULL_ROWS = param('fullRows') === '1';
-// ?sweep=1: lighting.footprintSolids, the heightmap casters' solids swept north to their footprints (being fixed).
-const SWEEP = param('sweep') === '1';
+// ?sweep=0: lighting.footprintSolids off, the heightmap casters' solids as columns down to the floor.
+const SWEEP = param('sweep') !== '0';
 // ?lampMap=0: the lamps' shadows as stamps on the shadows' layer, instead of the lamps' shadow map (lighting.lampShadows).
 const LAMP_MAP = param('lampMap') !== '0';
 const wanted = (sheet) => ONLY === null || ONLY.has(sheet);
