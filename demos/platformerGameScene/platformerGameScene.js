@@ -49,7 +49,6 @@ export class PlatformerGameScene extends Scene {
       maxShadowSprites: 200,
       resolution: 0.25,
       shadowResolution: 0.5,
-      raycasted: false,
       maxPolygonVertices: 5000,
     },
     layers: {
