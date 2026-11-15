@@ -433,7 +433,7 @@ function computeCasterCodes(out, active, sunKind, lampKind, orient, opacity, dsA
  * worker drew turned by the angle from the camera's view to the lamp's (along the shadow, from the lamp to the caster, on
  * the floor). The row's entity is in its tint float (pre-render wrote it into the sun row the kernel copied).
  */
-function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive, dsMode,
+export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive, dsMode,
     dirs, anims, sheets, orients) {
     for (let k = 0; k < stampN; k++) {
         const at = k * GPU_CASTER_FLOATS;
@@ -481,7 +481,7 @@ function dropOwnKeyedStampsInto(rows, stampN, lightIdx, lights) {
 }
 
 /** DX-SHADOW3D: applyLampFramesInto for keyed stamp rows: the frame float, ±(textureId + 1), negative mirrored. */
-function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive,
+export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive,
     dsMode, dirs, anims, sheets, orients) {
     for (let k = 0; k < stampN; k++) {
         const at = k * GPU_KEYED_STAMP_FLOATS;
