@@ -317,7 +317,7 @@ test('the logic worker resolves after the ticks and tells the entity once per ch
   const heard = [];
   const list = new Int32Array([3, 0, 1, 2]);
   const fake = {
-    directionalTypes: [{ activeList: list, entityType: 0, hook: true }],
+    directionalTypes: [{ activeList: list, entityType: 0, hook: true, decimated: null }],
     totalLogicWorkers: 1,
     workerIndex: 0,
     gameObjects: [0, 1, 2].map((i) => ({ directionalSprite: { get direction() { return ['right', 'down', 'left', 'up'][DirectionalSprite.directionIndex[i]]; } }, onDirectionChanged: (d) => heard.push([i, d]) })),
@@ -333,4 +333,46 @@ test('the logic worker resolves after the ticks and tells the entity once per ch
   logic._resolveDirections.call(fake);
   assert.deepEqual(heard, [[1, 'right']], 'nothing new, nothing heard');
   assert.equal(animOf(1), 'walk_right');
+});
+
+test('E-364: a type that ticks every N frames through its buckets resolves the entities it ticked this frame', async () => {
+  const { loadWorker } = await import('../bench/workerHarness.mjs');
+  const logic = await loadWorker('logicWorker.js', 'logicWorker');
+  SpriteSheetRegistry.clearForSceneUnload();
+  bind();
+  const id = sheet('civil', LPC);
+  for (let i = 0; i < 4; i++) {
+    entity(i, id, { from: FACING_FROM.VELOCITY });
+    RigidBody.active[i] = 1;
+    DirectionalSprite.setGroup(i, 'walk');
+  }
+  Transform.active.fill(1, 0, 4);
+  const dirs = () => [0, 1, 2, 3].map((i) => ['right', 'down', 'left', 'up'][DirectionalSprite.directionIndex[i]]);
+  assert.deepEqual(dirs(), ['down', 'down', 'down', 'down']);
+  // tickInterval 2: entities 0 and 2 tick on even frames (phase 0), 1 and 3 on odd ones, as _rebuildTickBuckets lays them.
+  const decimated = {
+    tickInterval: 2,
+    _bucketFrame: -1,
+    _buckets: [Int32Array.of(0, 2), Int32Array.of(1, 3)],
+    _bucketCounts: Int32Array.of(2, 2),
+  };
+  const fake = {
+    directionalTypes: [{ activeList: new Int32Array([4, 0, 1, 2, 3]), entityType: 0, hook: false, decimated }],
+    totalLogicWorkers: 1,
+    workerIndex: 0,
+    gameObjects: [],
+    _directionChanged: logic._directionChanged,
+    _entityThrew: () => assert.fail('threw'),
+  };
+  RigidBody.vx.fill(40, 0, 4);
+  decimated._bucketFrame = 6;
+  logic._resolveDirections.call(fake, 6);
+  assert.deepEqual(dirs(), ['right', 'down', 'right', 'down'], 'frame 6 ticked phase 0: entities 0 and 2');
+  decimated._bucketFrame = 7;
+  logic._resolveDirections.call(fake, 7);
+  assert.deepEqual(dirs(), ['right', 'right', 'right', 'right'], 'frame 7: entities 1 and 3');
+  RigidBody.vx.fill(0, 0, 4);
+  RigidBody.vy.fill(40, 0, 4);
+  logic._resolveDirections.call(fake, 8);
+  assert.deepEqual(dirs(), ['down', 'down', 'down', 'down'], 'a frame the buckets did not tick (countdown path): every entity');
 });

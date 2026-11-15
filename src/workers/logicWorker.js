@@ -563,12 +563,16 @@ class LogicWorker extends AbstractWorker {
           if (ComponentClass === RigidBody) hasRigidBody = true;
           if (ComponentClass === DirectionalSprite) hasDirectional = true;
         }
+        let directionalEntry = null;
         if (hasDirectional && poolSize > 0) {
-          this.directionalTypes.push({
+          directionalEntry = {
             activeList: EntityClass._activeList,
             entityType,
             hook: definesBelow(EntityClass, GameObject, 'onDirectionChanged'),
-          });
+            // E-364: the type's decimatedTypes entry when it ticks every N frames (its entities resolve on their tick frames).
+            decimated: null,
+          };
+          this.directionalTypes.push(directionalEntry);
         }
 
         if (needsCollisionCallbacks) {
@@ -631,7 +635,7 @@ class LogicWorker extends AbstractWorker {
             const tickInterval = rawInterval == null ? 1 : (rawInterval | 0);
 
             if (needsTick && tickInterval > 1 && GameObject.nextTick) {
-              this.decimatedTypes.push({
+              const decimated = {
                 EntityClass,
                 activeList: EntityClass._activeList,
                 tickInterval,
@@ -639,7 +643,11 @@ class LogicWorker extends AbstractWorker {
                 entityType,
                 needsScreenCallbacks,
                 hasRigidBody,
-              });
+                // E-364: the frame _tickIntervalBucket last ticked this type's bucket (-1: never), for _resolveDirections.
+                _bucketFrame: -1,
+              };
+              this.decimatedTypes.push(decimated);
+              if (directionalEntry !== null) directionalEntry.decimated = decimated;
             } else {
               this.nonDecimatedTypes.push({
                 EntityClass,
@@ -1390,7 +1398,7 @@ class LogicWorker extends AbstractWorker {
     }
 
     activeCount += this._runTickAllTypes(dtRatio, transformActive, rbAx, rbAy, rbAa);
-    if (this.directionalTypes.length > 0) this._resolveDirections();
+    if (this.directionalTypes.length > 0) this._resolveDirections(frameNum);
     // E-140: the entities the paths above processed, counted once rather than written on `this` per entity.
     this.entitiesProcessedThisFrame += activeCount;
 
@@ -1549,6 +1557,8 @@ class LogicWorker extends AbstractWorker {
       typeInfo._bucketStampCount = count;
       typeInfo._bucketStampVer = ver;
     }
+    // E-364: this frame's bucket is the one _resolveDirections resolves for a directional type.
+    typeInfo._bucketFrame = frameNum;
 
     const phase = frameNum % interval;
     const list = typeInfo._buckets[phase];
@@ -1992,9 +2002,11 @@ class LogicWorker extends AbstractWorker {
   /**
    * DX-DIRSPRITE: each directional entity's drawn direction, after the ticks: its facing from its velocity or rotation,
    * the animation of that direction, and onDirectionChanged when it changed. Split among the workers as the ticks are,
-   * so the worker that ticked an entity resolves it.
+   * so the worker that ticked an entity resolves it. E-364: a type that ticks every N frames through its buckets
+   * resolves the entities it ticked this frame, so each one on its own tick frames (its setters still resolve at once).
+   * @param {number} frameNum the frame update() ticked
    */
-  _resolveDirections() {
+  _resolveDirections(frameNum) {
     const types = this.directionalTypes;
     const totalWorkers = this.totalLogicWorkers;
     const myIndex = this.workerIndex;
@@ -2005,9 +2017,29 @@ class LogicWorker extends AbstractWorker {
     const notified = DirectionalSprite.notified;
     for (let t = 0; t < types.length; t++) {
       const info = types[t];
+      const hook = info.hook;
+      const decimated = info.decimated;
+      if (decimated !== null && decimated._bucketFrame === frameNum) {
+        const phase = frameNum % decimated.tickInterval;
+        const bucket = decimated._buckets[phase];
+        const nAll = decimated._bucketCounts[phase];
+        let from = 0;
+        let to = nAll;
+        if (totalWorkers > 1) {
+          const range = logicBlockRange(nAll, myIndex, totalWorkers);
+          from = range.start;
+          to = range.end;
+        }
+        for (let k = from; k < to; k++) {
+          const e = bucket[k];
+          if (active[e] === 0) continue;
+          DirectionalSprite.resolve(e);
+          if (directionIndex[e] !== notified[e]) this._directionChanged(e, hook);
+        }
+        continue;
+      }
       const list = info.activeList;
       const count = Math.min(list[0], list.length - 1);
-      const hook = info.hook;
       if (totalWorkers > 1 && forced && typeHasForced && typeHasForced[info.entityType]) {
         for (let idx = 0; idx < count; idx++) {
           const e = list[1 + idx];
