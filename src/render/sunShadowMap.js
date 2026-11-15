@@ -227,7 +227,7 @@ export function sunMapVertex(source, { heights = true } = {}) {
     `${card}    // A caster whose frame has a height map casts columns instead (sunMapColumnsVertex): its card would face the sun
     // whatever the object's shape (a crate's shadow turned with the sun). Unless its sheet casts its card for the sun
     // (frameBase.js lutBaseFloats: a negative second float), as the light bench's cow and cars did.
-    if (sunKind == 6 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {
+    if (sunKind >= 3 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {
       gl_Position = vec4(2.0, 2.0, 0.0, 1.0);${heights ? '' : '\n      vColor = vec4(0.0);'}
       return;
     }
@@ -275,7 +275,7 @@ export function sunMapWgsl(source, { heights = true } = {}) {
   const skipped = source.replace(
     card,
     `${card}    // A render's frame casts columns instead (sunMapColumnsWgsl), unless its sheet casts its card for the sun.
-    if (sunKind == 6 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {
+    if (sunKind >= 3 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {
       clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);
       return out;
     }

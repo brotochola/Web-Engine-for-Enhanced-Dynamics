@@ -150,7 +150,7 @@ test('a caster with a height map casts columns: each cell where it is in 3D, the
   assert.match(src, /if \(!solid \|\| m\.b \+ m\.a <= 0\.0/);
   assert.ok(
     sunMapVertex(shader('instancedSpriteShadow.vert.glsl')).includes(
-      'if (sunKind == 6 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {',
+      'if (sunKind >= 3 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {',
     ),
   );
   // Drawn on the sprite shadows' layer: the shadow's colour and opacity, no height.
@@ -169,7 +169,7 @@ test('WebGPU: the map\'s and the solids\' WGSL come from the sprite shadows\' WG
   assert.ok(map.includes('    out.vSunZ = sunZ;\n'), 'the card\'s height');
   assert.ok(map.includes('fn mainFragMap(in: VertexOut)'), 'the map\'s fragment');
   assert.ok(
-    map.includes('    if (sunKind == 6 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {'),
+    map.includes('    if (sunKind >= 3 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {'),
     'a render\'s frame skips its card unless it casts one',
   );
   const cards = sunMapWgsl(wgsl, { heights: false });
