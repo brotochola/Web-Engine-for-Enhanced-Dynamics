@@ -164,6 +164,19 @@ import {
 /** `wasm` keys a scene set that are not switches, already warned about (once per key per page). */
 const warnedWasmKeys = new Set();
 
+/**
+ * A file named beside another asset: `name` in the folder of `url` (its query and hash left out). An absolute URL or a
+ * root path is itself.
+ * @param {string} url
+ * @param {string} name
+ */
+function siblingAssetUrl(url, name) {
+  if (/^([a-z][a-z0-9+.-]*:|\/)/i.test(name)) return name;
+  const s = String(url);
+  const cut = s.split(/[?#]/, 1)[0].lastIndexOf('/');
+  return cut >= 0 ? s.slice(0, cut + 1) + name : name;
+}
+
 class Scene {
   /** Steps onLoadProgress reports, in boot order (the asset ones overlap). */
   static LOAD_STEPS = Object.freeze([
@@ -1657,13 +1670,40 @@ class Scene {
   }
 
   async _loadBakedBigAtlas(bigAtlasAsset) {
-    const [json, pngResponse] = await Promise.all([
-      fetchAssetJson(bigAtlasAsset.json, 'baked bigAtlas JSON'),
+    const jsonPromise = fetchAssetJson(bigAtlasAsset.json, 'baked bigAtlas JSON');
+    // DX-MAPS: the twin page the bake wrote beside the atlas, fetched once the JSON names it, while the atlas loads.
+    const mapsPromise = jsonPromise.then((json) => this._loadBakedMapsPage(bigAtlasAsset, json));
+    const [json, pngResponse, mapsBitmap] = await Promise.all([
+      jsonPromise,
       fetchAssetRead(bigAtlasAsset.png, 'baked bigAtlas PNG', (r) => r.blob()),
+      mapsPromise,
     ]);
     const imageBitmap = await createImageBitmap(pngResponse.body);
     const canvas = this._canvasFromImageBitmap(imageBitmap);
-    return { json, imageBitmap, canvas };
+    return { json, imageBitmap, mapsBitmap, canvas };
+  }
+
+  /**
+   * DX-MAPS: a baked atlas's twin page (heights and normals at each frame's rectangle), as data: `assets.bigAtlas.maps`,
+   * else the file its JSON names (meta.mapsImage, beside the atlas png). Null when the atlas has no maps.
+   * @returns {Promise<ImageBitmap|null>}
+   */
+  async _loadBakedMapsPage(bigAtlasAsset, json) {
+    const named = json?.meta?.mapsImage;
+    const url = typeof bigAtlasAsset.maps === 'string'
+      ? bigAtlasAsset.maps
+      : typeof named === 'string' && named !== '' ? siblingAssetUrl(bigAtlasAsset.png, named) : null;
+    if (url === null) {
+      if (json?.meta?.maps === true) {
+        warnOnce(this.constructor.name, 'baked-maps',
+          `${this.constructor.name}: its baked bigAtlas JSON says a sheet has maps but names no maps page (meta.mapsImage), so ` +
+          `the sprites are lit flat. Bake it again (npm run bake:atlas), or give assets.bigAtlas.maps.`);
+      }
+      return null;
+    }
+    const { body } = await fetchAssetRead(url, 'baked bigAtlas maps PNG', (r) => r.blob());
+    // Data, not colour, as the packed page (_packBigAtlasOnMainThread): no premultiplied alpha, no colour space.
+    return createImageBitmap(body, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
   }
 
   async _packBigAtlasOnMainThread(assetsToLoad, options) {

@@ -870,7 +870,9 @@ class SpriteSheetRegistry {
    * @param {boolean} options.trimImages - Trim transparent pixels from individual images (default: true)
    * @param {number} options.trimAlphaThreshold - Alpha threshold for trimming (default: 0)
    * @param {string} options.heuristic - Packing heuristic (default: 'best-short-side')
-   * @returns {Promise<Object>} - { canvas, json, proxySheets }
+   * @param {boolean} [options.keepMapsTexels] - DX-MAPS: also return the twin page's texels as they are (`mapsTexels`),
+   *   for the bake: its canvas stores premultiplied alpha, which loses a height under a low A (default: false)
+   * @returns {Promise<Object>} - { canvas, mapsCanvas, mapsTexels, json, proxySheets }
    *
    * @example
    * const bigAtlas = await SpriteSheetRegistry.createBigAtlas({
@@ -894,6 +896,7 @@ class SpriteSheetRegistry {
       trimImages = ASSETS_DEFAULTS.trimImages,
       trimAlphaThreshold = ASSETS_DEFAULTS.trimAlphaThreshold,
       heuristic = ASSETS_DEFAULTS.heuristic,
+      keepMapsTexels = false,
     } = options;
 
     debugWorkerLog('🎨 Creating BigAtlas from assets...');
@@ -1402,8 +1405,11 @@ class SpriteSheetRegistry {
       }
     }
 
-    // DX-MAPS: the twin page, when a sheet has maps.
-    const mapsCanvas = this._paintMapsPage(imagesToPack, actualWidth, actualHeight);
+    // DX-MAPS: the twin page, when a sheet has maps; the bake asks for its texels too (keepMapsTexels).
+    const mapsTexels = keepMapsTexels && imagesToPack.some((d) => d.maps && d.rect && d.sourceRect)
+      ? new Uint8ClampedArray(actualWidth * actualHeight * 4)
+      : null;
+    const mapsCanvas = this._paintMapsPage(imagesToPack, actualWidth, actualHeight, mapsTexels);
     // DX-SHADOW3D: each frame's base travels with its rectangle (the Pixi worker writes it into the texture table).
     for (const d of imagesToPack) {
       const b = d.base;
@@ -1457,6 +1463,7 @@ class SpriteSheetRegistry {
     return {
       canvas: canvas,
       mapsCanvas,
+      mapsTexels: mapsCanvas !== null ? mapsTexels : null,
       json: atlasJson,
       proxySheets: proxySheets,
       individualTextures: individualTextures, // For reference
@@ -1466,9 +1473,10 @@ class SpriteSheetRegistry {
   /**
    * DX-MAPS: the atlas's twin page (spriteMaps.js): each frame of a sheet with maps gets its heights and normals at its
    * own rectangle. Each sheet's colour and maps are read back once, each frame cut out of them in memory.
+   * @param {Uint8ClampedArray|null} [keep] width·height·4: the texels are also copied here, as they are (the bake)
    * @returns {HTMLCanvasElement|OffscreenCanvas|null} null when no sheet has maps
    */
-  static _paintMapsPage(imagesToPack, width, height) {
+  static _paintMapsPage(imagesToPack, width, height, keep = null) {
     const withMaps = imagesToPack.filter((d) => d.maps && d.rect && d.sourceRect);
     if (withMaps.length === 0) return null;
     const page = create2dCanvas(width, height);
@@ -1514,7 +1522,12 @@ class SpriteSheetRegistry {
         gray: d.maps.gray,
         emissive: d.maps.emissive === true,
       });
-      if (texels !== null) ctx.putImageData(new ImageData(texels, w, h), d.rect.x, d.rect.y);
+      if (texels !== null) {
+        ctx.putImageData(new ImageData(texels, w, h), d.rect.x, d.rect.y);
+        if (keep !== null) {
+          for (let y = 0; y < h; y++) keep.set(texels.subarray(y * w * 4, (y + 1) * w * 4), ((d.rect.y + y) * width + d.rect.x) * 4);
+        }
+      }
       // DX-SHADOW3D: a render stands on its contact nearest the light (frameBase.js), in its untrimmed frame's rows.
       if (d.renderDirections && height !== null) {
         const opaque = opaqueMask(color, w, h);

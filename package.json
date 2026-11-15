@@ -166,6 +166,7 @@
     "verify:pose-interpolation": "node tests/bench/poseInterpolationVerify.mjs",
     "verify:terrain-webgpu": "node tests/bench/terrainWebgpuCorrectness.mjs",
     "bake:atlas": "node scripts/bakeBigAtlas.mjs",
+    "maps": "node scripts/weedMaps.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "premake_bundle": "node scripts/syncVersion.js",
