@@ -15198,7 +15198,7 @@
     {
       "id": "E-314",
       "title": "Box2D's prefetch is a no-op in wasm (b2Prefetch emits nothing): the finalize's chain sim -> body -> shape -> fatAABB -> node is 4-6 dependent misses an iteration",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "physics",
@@ -15216,7 +15216,9 @@
       ],
       "records": [
         "R-1100",
-        "R-1101"
+        "R-1101",
+        "R-1106",
+        "R-1109"
       ]
     },
     {
@@ -15248,7 +15250,7 @@
     {
       "id": "E-316",
       "title": "Box2D's wide contact solver computes the second manifold point with zero masses for circle contacts, which have one: about 40 % of the contact stages' arithmetic and 192 of 592 bytes a wide constraint",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "physics",
@@ -15265,7 +15267,9 @@
         "wide solver point 2"
       ],
       "records": [
-        "R-1101"
+        "R-1101",
+        "R-1106",
+        "R-1108"
       ]
     },
     {
@@ -15343,7 +15347,7 @@
     {
       "id": "N-170",
       "title": "Early-outs that compare a Float32 column with a double never fire: setting the same value again re-marks renderDirty or re-queues a teleport",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "engine",
@@ -15361,7 +15365,8 @@
         "setAnimationSpeed every tick"
       ],
       "records": [
-        "R-1103"
+        "R-1103",
+        "R-1105"
       ]
     },
     {
@@ -16231,7 +16236,7 @@
     {
       "id": "E-357",
       "title": "b2MinW/b2MaxW compile to compare+bitselect (emscripten's _mm_min_ps emulation) where wasm_f32x4_pmin/pmax are one instruction each",
-      "status": "open",
+      "status": "running",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "physics",
@@ -16247,7 +16252,9 @@
         "b2MinW"
       ],
       "records": [
-        "R-1101"
+        "R-1101",
+        "R-1106",
+        "R-1107"
       ]
     },
     {
@@ -26804,6 +26811,63 @@
       "title": "Worker sync and cross-core traffic read (the frame chain mapped from the code): ten candidates, one bug",
       "verdict": "note",
       "text": "**Worker sync and cross-core traffic, read from the code, 2026-11-14, done 22:18.** A read-only agent at 775b053a.\n\n**The frame chain:** every worker's own rAF fires within ~0.2 ms of the vsync (R-0354, R-0927); main publishes the frame (chain[1]++\nand notify); the two logic workers wait on chain[1] at most 0.95 ms, tick (rows two logic frames old, Transform live, the contact\nring), then chain[0] += 1 and ring the bell (chain[2]); physics sleeps on the bell until chain[0] rose by nLogic, budget\nmin(T - step - 6, 0.4T) (below zero at crowd 2.5: no wait), then sync, commands, queries, accelerations, b2World_Step (3 pool threads\nspin), publishPose into pose A/B, afterStep; spatial and particle do not wait; pre-render skips when Pixi is more than one behind and\nwaits on the pose, budget min(T - step - 4, 0.6T); Pixi waits on the queue, budget min(T - step - 1, 0.75T). Pose and render queue\nare double-buffered with backpressure; Transform, rows, grid and pos single-buffered and read live; contacts a ring; particle lists\ntriple-buffered. At crowd 2.5 physics starts at the vsync and publishes about 14 ms in: in the first 7 ms about 10 threads are runnable\non 8 cores, from 11 to 16.7 ms the machine is nearly idle.\n\nRanked: N-171 (E-198's waits do not notice a lost frame: a bug), E-328 (a second spatial worker started by logic's bell), E-317 (touch\nthe next rows' heads ahead, then pack), E-318 (logic loads the next row heads ahead), E-341 (logic's input wait after the input-free\nwork, with Atomics.pause), E-327 (publishPose skips unchanged rotations, copies on the pool), E-319 (E-298's spin re-judged at crowd 2.5),\nE-342 (tick phases by id blocks), E-339 (Pixi's uploads before its queue wait), E-344 (despawn compaction), E-346 (a neighbour's x, y\nand type in one read).\n\n**E-226, instances:** the 4-16 byte handshake buffers (sceneSharedBuffers.js) are probably packed several to a line by Chrome's\nallocator, and bodyGenEpoch gets an Atomics.add on every spawn: pad each to 64 bytes; the contact ring does an Atomics.add, a seq-cst\nstore and two loads per event on physics' serial path; with two or more spatial workers pos lines mix owners and are rewritten\nunconditionally (spatialWorker.js); grid cells are 68 bytes, so sparse cells straddle lines under the spiral walk.\n\n**Found fine:** the logic split (sorted type lists, contiguous id ranges per worker); frame totals, wasm regions and spatial's slices\nline-aligned; the handshake order (publishPose before afterStep, one ahead with backpressure, physics on the bell); E-274, E-308 and\nE-268 already stop identical rewrites; Predator uses grid rays, so E-57's tail never runs; movedBits and decoration flags have no\nreader on another core."
+    },
+    {
+      "id": "R-1105",
+      "date": "2026-11-15",
+      "time": "03:05",
+      "timeFrom": "recorded",
+      "title": "N-170 fixed: Float32 early-outs compare with Math.fround(value); test 4/4; the Predator hygiene sitting pending",
+      "verdict": "note",
+      "text": "**N-170 fixed, 2026-11-15 (34b8fbc on wave15-speed-candidates).** Every early-out on a Float32 column now compares with\nMath.fround(value): gameObject.js set x/y, setPosition, rotation, vx/vy, setVelocity, angularVelocity, alpha, setAlpha, scaleX/scaleY\n(sprite and Adobe), setScale, setAnimationSpeed, and MeshRenderer's alpha and visualOutset (22 lines, 2 files). The idiom is the one\nspatialWorker, meshUvFillBatch and volumeShadowCaster already used. Integer columns (tint, renderVisible, layerMask, repeat, tile\noffsets) were exact already and stay as they were; the internal compares found in the same sweep (gpuParticleChunks quad, the Pixi\nface camera, angularSweep's edge table, particleWorker's attached-decoration move) compare like with like and need nothing.\n\nTest: tests/node/float32EarlyOut.test.js sets each value twice with values float32 cannot hold (0.3, 0.7, 37.5 x 0.00277) and counts\nSET_TRANSFORM, SET_VELOCITY, SET_ANGULAR_VELOCITY and SET_ROT_CS commands drained from the ring, renderDirty, keyedDirty, updateBounds\ncalls and the mesh paint and outset epochs: 4/4 pass with the fix, 4/4 fail on cb6a01e. Node suite 2641/2641 once the machine was\nquiet (frameChainWait, queryWake, timeScale and visibleListTear fail under load on both sides).\n\nNot measured: the hygiene sitting is Predator crowd 2.5 (pre-render and logic; nothing may get 3 % worse), then the count E-333 waits\nfor (persist hits and marked keys a frame). R-1045's second cause, the ~170 bullet, trail and glow rows that shift the count, stays,\nso persist is not expected to start hitting from this alone.",
+      "commits": [
+        "34b8fbc"
+      ]
+    },
+    {
+      "id": "R-1106",
+      "date": "2026-11-15",
+      "time": "03:05",
+      "timeFrom": "recorded",
+      "title": "Box2D rebuilt byte for byte in a cloud container (emsdk 6.0.4), and a Node crowd harness for the physics plans (Box2D wasm-crowd-harness)",
+      "verdict": "note",
+      "text": "**Box2D rebuilt byte for byte off the owner's machine, and a Node crowd harness for the physics plans, 2026-11-15.** In a Linux\ncloud container: emsdk 6.0.4 (clang 24.0.0git c050c487, wasm-opt 131, the pinned versions; it also reproduces all 29 engine wasm\nkernels, buildWasm --check) builds Box2d_3.2_C_-_liquidfun f053121 with build_for_weed.bat's flags (CMake Release,\nBOX2D_WEED_INTEGRATION=ON, BOX2D_PTHREAD_POOL_SIZE=0, LTO full, SIMD; then its wasm-opt -O pass) into a box2dWasm.wasm identical to\nsrc/box2d's (sha1 70ff9025, 417 500 bytes). weedjs/ is gitignored in that repo; weed_pre.js and weed_post.js were taken back out of\nthe committed glue (its include markers), and the rebuilt glue matches the committed one but for the include paths and CRLF.\n\nThe harness the plans call \"the Node harness\" did not exist: Box2D branch wasm-crowd-harness (4184aa4, dc02d46),\nwasm/tests/crowd_harness. crowd.c: N circle walkers (radius 8, upright, density 1) on (40 px)^2 each among N/100 static boxes, the\nWeedJS defaults (no gravity, 100 units a meter, contactHertz 30, damping 0.7, contactSpeed 1000, maximumLinearSpeed 50000, sleeping\non, 60 Hz x 4 substeps), each walker's velocity set before every step from a seeded heading that wanders, Box2D's internal scheduler\nwith 4 workers (E-298's spin included); it prints the mean, median and p95 of the measured b2World_Step times, each b2Profile stage's\nmean (the Weed build is B2_COARSE_PROFILE: collide, solve and sleepIslands only), the last step's counters and an FNV-1a hash of every\nwalker's transform and velocity. run.mjs links it against one or more Weed build folders' libbox2d.a and runs them alternating.\nThe hash is the same run after run and with 1, 2 and 4 workers. At 38 000 walkers main steps in about 12.7 ms on that machine\n(Predator crowd 2.5's physics is about 13 ms), with ~47 000 contacts of which ~44 000 are recycled each step (Predator's walkers\ntake a full update every 1-2 steps, R-1101: the harness under-represents the full-update path E-313 targets).\n\nIts numbers are screens: a shared 4-vCPU Xeon (2 MB L2 a core), runs within a sitting only, and the same build read 9.9 to 11.4 ms\nacross sittings an hour apart."
+    },
+    {
+      "id": "R-1107",
+      "date": "2026-11-15",
+      "time": "03:05",
+      "timeFrom": "recorded",
+      "title": "E-357 built (pmin/pmax), exact: same bits on 8.2 M pairs and the same pose hash; harness screen +4.3 %, inside the noise",
+      "verdict": "screened",
+      "text": "**E-357 built, exact, a tie in the harness screen, 2026-11-15.** Box2D branch solver-wasm-pmin-pmax: 61ff6f1 adds\nwasm/tests/pmin_pmax (wasm pmin(b, a)/pmax(b, a) against Emscripten's _mm_min_ps/_mm_max_ps(a, b) under Box2D core's flags -O3\n-ffast-math -fno-trapping-math -msimd128 -msse2: the same bits on every pair of 16 special values, NaNs and signed zeros included,\nand 8.2 million random pairs; wasm-dis shows lt/gt + bitselect against pmin/pmax, so nothing folded the two together); eb42d5e\nwrites b2MinW/b2MaxW (and b2SymClampW through them) as pmin/pmax under __wasm_simd128__, the intrinsics elsewhere. SIMD module:\nv128.bitselect 84 -> 56, f32x4.pmin/pmax 20 -> 48, 417 500 -> 417 042 bytes; glue unchanged; the no-SIMD build builds, passes\nwasm-opt without SIMD and the sse2_scalar check. WeedJS f00218d (on 34b8fbc).\n\nCrowd harness (38 000 walkers, 600 steps, 120 warm-up, 4 alternating rounds against main): same pose hash 0c5efc89deaaef21;\nb2World_Step median of run means 12.69 -> 13.23 ms (+4.3 %, rounds 13.04/13.47/13.42/11.52 against 14.05/12.50/12.71/12.67): inside\nthat machine's noise, as expected for under 1-2 % of the solver. The owner sitting (ballsHeavy physics) decides; a tie is likely.",
+      "commits": [
+        "f00218d"
+      ]
+    },
+    {
+      "id": "R-1108",
+      "date": "2026-11-15",
+      "time": "03:05",
+      "timeFrom": "recorded",
+      "title": "E-316 built (skip the second manifold point), bit-identical; harness screen b2World_Step 12.69 -> 10.83 ms (-14.7 %), owner sitting pending",
+      "verdict": "screened",
+      "text": "**E-316 built, bit-identical, -14.7 % of b2World_Step in the harness screen, 2026-11-15.** Box2D branch solver-skip-second-point\n(c5d1a03, on solver-wasm-pmin-pmax): b2ContactConstraintWide gets int twoPoint = b2AnyTrueW(twoPointMask) from prepare, and its\ntwelve second-point vectors move to the tail (592 -> 608 bytes, 416 before the tail); prepare's gather, masses and relative\nvelocity, warm start, push, solve's bias, normal and friction, restitution (normalMass2 moved in) and the store of points[1] run\nunder if ( twoPoint ). A one-point lane's points[1] holds zeros (manifolds are zero-initialized; the store only ever wrote zero\nimpulses there), so the skipped blocks applied +-0 and lanes of a constraint with a second point anywhere run as before. Signed\nzeros could in principle differ (the plan allowed it); the harness hash did not move. No-SIMD build: builds, wasm-opt without SIMD,\nsse2_scalar check. SIMD module 417 042 -> 417 289 bytes, glue unchanged. WeedJS 4c973c9 (on f00218d).\n\nCrowd harness, 38 000 walkers, 600 steps, 4 alternating rounds, three builds: main 12.69 ms (14.05/12.50/12.71/12.67), pmin/pmax\n13.23, this 10.83 ms (11.22/11.09/10.57/9.95): -14.7 % against main, every round under every round of main; pose hash\n0c5efc89deaaef21 in all three (also the same at 5 000 walkers). The plan's estimate was physics STEP -2 to -4 %: the harness times\nb2World_Step alone (no WeedJS export, publishPose or query service) and its contacts are almost all circle-circle or circle-box, so\nthe share in the engine will be lower. Owner sitting: Predator crowd 2.5 physics (--vs f00218d --hyp-rev 4c973c9), then ballsHeavy\nand the LiquidFun gates.",
+      "commits": [
+        "4c973c9"
+      ]
+    },
+    {
+      "id": "R-1109",
+      "date": "2026-11-15",
+      "time": "03:05",
+      "timeFrom": "recorded",
+      "title": "E-314 step 1 built (the finalize's early loads), same results; harness screen +1.75 % on a 2 MB-L2 Xeon, the owner machine decides",
+      "verdict": "screened",
+      "text": "**E-314 step 1 (the finalize's early loads) built, same results, no gain in the harness screen, 2026-11-15.** Box2D branch\nfinalize-load-ahead (4fa43ed, on solver-skip-second-point, not stacked under later work): in wasm builds b2FinalizeBodiesTask\nloads, with volatile loads nothing reads, the body of the sim 16 iterations on, and the shape (type and geometry lines), fat AABB\nand island of the sim 8 on. Native builds keep b2Prefetch. WeedJS branch wave15-e314-finalize-loads (260736e, on 4c973c9), apart\nfrom the candidate line.\n\nCrowd harness, 38 000 walkers, 600 steps, 8 alternating rounds against solver-skip-second-point: same pose hash; b2World_Step\n11.45 -> 11.65 ms (+1.75 %), the coarse solve stage (the finalize is inside it) +2.2 %, collide +1.5 %. On a Xeon with 2 MB of L2\na core this world's bodies and shapes likely stay in cache, where the plan says early loads can lose; the owner machine (Zen 2,\n512 KB L2 a core) decides: Predator crowd 2.5 physics --vs 4c973c9 --hyp-rev 260736e. Steps 2+ (collide's 16-contact batches, the\nsolver's body states two constraints ahead, the pair-set probes as real loads) wait on that answer.",
+      "commits": [
+        "260736e"
+      ]
     }
   ],
   "leads": [
