@@ -321,6 +321,15 @@ function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy
     }
 }
 
+/** DX-SHADOW3D: a full stamp row whose caster (its tint float) is its own light's entity casts nothing for it. */
+function dropOwnStampsInto(rows, stampN, lightIdx, lights) {
+    for (let k = 0; k < stampN; k++) {
+        const at = k * GPU_CASTER_FLOATS;
+        const L = lights[lightIdx[k]];
+        if (L && (rows[at + GPU_ROW_TINT] | 0) === L.id) rows[at + GPU_SPRITE_FLOATS] = 0;
+    }
+}
+
 /** A table that is not uniform (or a sprite with no direction yet): the facing turned by the sun, nearest direction. */
 function sunFrameDirection(t, e, turn) {
     const ax = DirectionalSprite.aimX[e];
@@ -3711,7 +3720,8 @@ class PreRenderWorker extends AbstractWorker {
             if (this._shadowTextures && sunN > 0) this._applyShadowTextures(q, dst.sun, sunN);
             if (this._sunFrameTables !== null && sunN > 0 && DirectionalSprite.active) this._applySunFrames(q, dst.sun, sunN);
             if (this._casterKindsOn && sunN > 0) this._tagCasterRows(q, dst.sun, sunN);
-            if (this._sunFrameTables !== null && sunN > 0 && DirectionalSprite.active) this._tagCasterEntities(q, dst.sun, sunN);
+            // The rows' entities: the lamps' frames and their own entities' stamps read them.
+            if (sunN > 0) this._tagCasterEntities(q, dst.sun, sunN);
         }
         return sunN;
     }
@@ -4098,7 +4108,11 @@ class PreRenderWorker extends AbstractWorker {
         // the lamps' stamps and cookies are not made.
         const stamp = this.visibilityPolygonsEnabled ? 0 : this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
         // DX-SHADOW3D: a lamp's silhouettes in the direction that lamp sees (full rows; keyed ones keep the sun's).
-        if (stamp > 0 && !this._gpuSunKeyed && this._sunFrameTables !== null && DirectionalSprite.active) this._applyLampFrames(dst, stamp);
+        if (stamp > 0 && !this._gpuSunKeyed) {
+            // A lamp is not shaded by its own entity (a car's headlights by the car).
+            if (this._stampLights && dst.stampLightIdx) dropOwnStampsInto(dst.stamp, stamp, dst.stampLightIdx, this._stampLights);
+            if (this._sunFrameTables !== null && DirectionalSprite.active) this._applyLampFrames(dst, stamp);
+        }
         const cookie = this.visibilityPolygonsEnabled ? 0 : this._packGpuCookies(dst);
         res.sun = sunN;
         res.stamp = stamp;
