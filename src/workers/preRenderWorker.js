@@ -15,7 +15,7 @@ import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRend
 import { AdobeAnimComponent as AdobeAnimComponentImport } from '../components/adobeAnimComponent.js';
 import { ShadowCaster as ShadowCasterImport } from '../components/shadowCaster.js';
 import { DirectionalSprite } from '../components/directionalSprite.js';
-import { pickDirection } from '../core/spriteDirections.js';
+import { pickDirection, wrapAngle } from '../core/spriteDirections.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
 import { FlashComponent as FlashComponentImport } from '../components/flashComponent.js';
 import { LightOccluder as LightOccluderImport, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
@@ -517,6 +517,9 @@ class PreRenderWorker extends AbstractWorker {
         this._shadowTextures = false; // config.lighting.shadowTextures
         // DX-SHADOW3D: a directional sprite's sun shadow shows the frame the sun sees (directionTables, by sheet id).
         this._sunFrameTables = null;
+        // DX-SHADOW3D: a uniform table's turn towards the sun in whole steps, by sheet id, and the sun's turn it is for.
+        this._sunShift = new Int16Array(256);
+        this._sunShiftTurn = new Float64Array(256).fill(NaN);
         this._faces = false; // config.lighting.faces: decoration rows carry their face in the tile offsets
         this._collectedRows = 0; // the rows the last sprite queue's collect held
         /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
@@ -3611,6 +3614,8 @@ class PreRenderWorker extends AbstractWorker {
         const frames = this.entityFrameIndex;
         if (!proxy || !starts || !counts) return;
         const turn = -Math.PI / 2 - Math.atan2(Sun.shadowDirY / cameraFloorScaleY(this.config), Sun.shadowDirX);
+        const shift = this._sunShift;
+        const shiftTurn = this._sunShiftTurn;
         for (let k = 0; k < sunN; k++) {
             const row = casters[k];
             if (types[row] !== 0) continue;
@@ -3619,10 +3624,23 @@ class PreRenderWorker extends AbstractWorker {
             const sheet = SpriteRenderer.spritesheetId[e];
             const t = tables[sheet];
             if (t === undefined) continue;
-            const ax = DirectionalSprite.aimX[e];
-            const ay = DirectionalSprite.aimY[e];
-            const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
-            const d = pickDirection(t, facing + turn, 255, 0);
+            // The direction the sun sees. A uniform table: the one the logic worker drew (its margin kept), turned by the
+            // sun's angle in whole steps, worked out once a sheet while the sun stays (Predator: 38 000 casters a frame).
+            const cur = DirectionalSprite.directionIndex[e];
+            let d;
+            if (t.uniform && cur < t.count) {
+                if (shiftTurn[sheet] !== turn) {
+                    shiftTurn[sheet] = turn;
+                    shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
+                }
+                d = cur + shift[sheet];
+                if (d >= t.count) d -= t.count;
+            } else {
+                const ax = DirectionalSprite.aimX[e];
+                const ay = DirectionalSprite.aimY[e];
+                const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
+                d = pickDirection(t, facing + turn, 255, 0);
+            }
             const g = DirectionalSprite.animation[e];
             const slot = (g < t.groups ? g : 0) * t.count + d;
             const map = proxy[sheet];
@@ -3659,6 +3677,8 @@ class PreRenderWorker extends AbstractWorker {
         const frames = this.entityFrameIndex;
         if (!proxy || !starts || !counts || !shadowH) return;
         const turn = -Math.PI / 2 - Math.atan2(Sun.shadowDirY / cameraFloorScaleY(this.config), Sun.shadowDirX);
+        const shift = this._sunShift;
+        const shiftTurn = this._sunShiftTurn;
         let n = 0;
         for (let i = 0; i < count && n < keyedN; i++) {
             if (qType && qType[i] === 3) continue;
@@ -3670,10 +3690,23 @@ class PreRenderWorker extends AbstractWorker {
             const sheet = SpriteRenderer.spritesheetId[e];
             const t = tables[sheet];
             if (t === undefined) continue;
-            const ax = DirectionalSprite.aimX[e];
-            const ay = DirectionalSprite.aimY[e];
-            const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
-            const d = pickDirection(t, facing + turn, 255, 0);
+            // The direction the sun sees. A uniform table: the one the logic worker drew (its margin kept), turned by the
+            // sun's angle in whole steps, worked out once a sheet while the sun stays (Predator: 38 000 casters a frame).
+            const cur = DirectionalSprite.directionIndex[e];
+            let d;
+            if (t.uniform && cur < t.count) {
+                if (shiftTurn[sheet] !== turn) {
+                    shiftTurn[sheet] = turn;
+                    shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
+                }
+                d = cur + shift[sheet];
+                if (d >= t.count) d -= t.count;
+            } else {
+                const ax = DirectionalSprite.aimX[e];
+                const ay = DirectionalSprite.aimY[e];
+                const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
+                d = pickDirection(t, facing + turn, 255, 0);
+            }
             const g = DirectionalSprite.animation[e];
             const slot = (g < t.groups ? g : 0) * t.count + d;
             const map = proxy[sheet];
