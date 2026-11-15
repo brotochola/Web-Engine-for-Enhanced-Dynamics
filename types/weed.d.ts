@@ -4164,7 +4164,10 @@ export declare class ShadowCaster extends Component {
    */
   get opacity(): number;
   set opacity(value: number);
-  /** What it casts for the sun, as set: 'sprite' also when nothing was set (CAST_KIND.AUTO, its sheet's way). Read only. */
+  /**
+   * What it casts for the sun, as set; with nothing set (CAST_KIND.AUTO) what its sheet casts: 'heightMap' for a render
+   * that casts its solid, else 'sprite'. Read only.
+   */
   readonly type: ShadowCastType;
   /**
    * A box, for every light: a volume in the entity's frame (it moves and turns with the entity), on the scene's

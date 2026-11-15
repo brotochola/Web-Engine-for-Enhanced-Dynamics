@@ -9,8 +9,10 @@
 // more.
 
 import { Component } from '../core/component.js';
+import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { LightOccluder, LIGHT_OCCLUDER_MASK_COLLIDER, LIGHT_OCCLUDER_MASK_SPRITE } from './lightOccluder.js';
 import { MESH_NO_TEXTURE, resolveMeshTextureId } from './meshRenderer.js';
+import { SpriteRenderer } from './spriteRenderer.js';
 import { VolumeShadowCaster, holdsVolume } from './volumeShadowCaster.js';
 
 
@@ -47,6 +49,20 @@ function castsSprite(kind) {
 
 function castsVolume(kind) {
   return kind === CAST_KIND.BOX || kind === CAST_KIND.HULL;
+}
+
+/**
+ * Whether the entity's sheet casts its solid for the sun by itself (sheetCastsSolid: a render with height maps whose json does
+ * not say `shadowCast.sun: 'sprite'`): Scene marks `castsSolid` on the sheet's proxy at load, and every thread gets the
+ * proxies. False with no sheet, or a texture.
+ * @param {number} i
+ */
+function sheetCastsSolidAt(i) {
+  const ids = SpriteRenderer.spritesheetId;
+  if (ids == null) return false;
+  const name = SpriteSheetRegistry.getSpritesheetName(ids[i]);
+  const sheet = name !== null ? SpriteSheetRegistry.spritesheets.get(name) : undefined;
+  return sheet != null && sheet.castsSolid === true;
 }
 
 /** Whether the scene has walls: raycasted lighting pools LightOccluder's columns, which its visibility sweep reads. */
@@ -424,9 +440,15 @@ export const CASTER_METHODS = {
       v === 'auto' || v == null ? SELF_SHADOW.AUTO : !v || v === 'off' ? SELF_SHADOW.OFF : SELF_SHADOW.ON;
   },
 
-  /** What it casts for the sun: 'sprite' | 'heightMap' | 'box' | 'hull' | 'wall' | 'none' (read only). */
+  /**
+   * What it casts for the sun: 'sprite' | 'heightMap' | 'box' | 'hull' | 'wall' | 'none' (read only). With nothing set
+   * (CAST_KIND.AUTO) it is what its sheet casts: 'heightMap' for a render that casts its solid, else 'sprite'.
+   */
   get type() {
-    return KIND_NAMES[ShadowCaster.sunKind[this.index]] || 'sprite';
+    const i = this.index;
+    const kind = ShadowCaster.sunKind[i];
+    if (kind === CAST_KIND.AUTO) return sheetCastsSolidAt(i) ? 'heightMap' : 'sprite';
+    return KIND_NAMES[kind] || 'sprite';
   },
 };
 

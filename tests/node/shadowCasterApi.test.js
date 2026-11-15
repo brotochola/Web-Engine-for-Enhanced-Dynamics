@@ -6,7 +6,9 @@ import assert from 'node:assert/strict';
 
 import { MeshGeometry } from '../../src/core/meshGeometry.js';
 import { Layer } from '../../src/core/layer.js';
+import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
 import { MeshRenderer } from '../../src/components/meshRenderer.js';
+import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Transform } from '../../src/components/transform.js';
 import { LightOccluder, LIGHT_OCCLUDER_MASK_COLLIDER, LIGHT_OCCLUDER_MASK_SPRITE } from '../../src/components/lightOccluder.js';
 import {
@@ -225,4 +227,30 @@ test('a spawn drops the wall of the slot\'s last entity, and a restored save bri
   restoreCasterWall(3);
   assert.equal(LightOccluder.active[3], 1);
   assert.equal(LightOccluder.block[3], 0.5);
+});
+
+test('type with nothing set says what the sheet casts: heightMap for a render that casts its solid, else sprite', () => {
+  SpriteRenderer.initializeArrays(new SharedArrayBuffer(SpriteRenderer.getBufferSize(ENTITIES)), ENTITIES);
+  SpriteSheetRegistry.clearForSceneUnload();
+  try {
+    // Scene._installBigAtlas marks castsSolid on the proxy of a sheet that casts its solid (sheetCastsSolid).
+    SpriteSheetRegistry.registerProxy('barn', { isProxy: true, targetSheet: 'bigAtlas', prefix: 'barn_', castsSolid: true });
+    SpriteSheetRegistry.registerProxy('civil', { isProxy: true, targetSheet: 'bigAtlas', prefix: 'civil_' });
+    SpriteRenderer.spritesheetId[1] = SpriteSheetRegistry.getSpritesheetId('barn');
+    SpriteRenderer.spritesheetId[2] = SpriteSheetRegistry.getSpritesheetId('civil');
+    SpriteRenderer.spritesheetId[3] = 0;
+    assert.equal(caster(1).type, 'heightMap');
+    assert.equal(caster(2).type, 'sprite');
+    assert.equal(caster(3).type, 'sprite', 'no sheet');
+    const barn = caster(1);
+    barn.sun.setSprite();
+    assert.equal(barn.type, 'sprite', 'what was set wins');
+    barn.lamps.setHeightMap();
+    assert.equal(barn.type, 'sprite', 'type reads the sun');
+    barn.clear();
+    assert.equal(barn.type, 'none');
+  } finally {
+    SpriteSheetRegistry.clearForSceneUnload();
+    SpriteRenderer.clearArrays();
+  }
 });

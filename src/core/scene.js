@@ -1638,9 +1638,16 @@ class Scene {
       const table = buildDirectionTable(sheetName, spec, names, problems);
       for (const text of problems) warnOnce(`${sheetName}:${text}`, 'DX-DIRSPRITE', text);
       // DX-SHADOW3D: a render with height maps stands on a contact (frameBase.js) and casts its solid, which is built
-      // from the frame the camera sees: pre-render leaves such a sheet's frame alone in the sun rows.
-      if (table && sheetCastsSolid(json, proxyData)) table.solid = true;
-      proxySheets[sheetName] = table ? { ...proxyData, directions: table } : proxyData;
+      // from the frame the camera sees: pre-render leaves such a sheet's frame alone in the sun rows. DX-CASTER: the proxy
+      // says so too (castsSolid), for shadowCaster.type on the logic workers and the page, which get the proxies.
+      const solid = sheetCastsSolid(json, proxyData);
+      if (table && solid) table.solid = true;
+      if (table || solid) {
+        const copy = { ...proxyData };
+        if (table) copy.directions = table;
+        if (solid) copy.castsSolid = true;
+        proxySheets[sheetName] = copy;
+      }
     }
 
     for (const [sheetName, proxyData] of Object.entries(proxySheets)) {
