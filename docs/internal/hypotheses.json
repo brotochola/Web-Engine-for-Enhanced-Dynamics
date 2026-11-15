@@ -15504,7 +15504,8 @@
       ],
       "records": [
         "R-1120",
-        "R-1121"
+        "R-1121",
+        "R-1122"
       ]
     },
     {
@@ -15582,6 +15583,43 @@
       ],
       "aliases": [
         "aInstGbuf not present in the shader"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-371",
+      "title": "The sun's and the lamps' frames of directional casters picked in the shadow programs (a texture by texture id and the tables' frames), not by pre-render: about 1 ms a frame of Predator's pre-render",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "next": "Texture-id and frame tables to the GPU; every shadow program picks the frame; pre-render writes none. Predator crowd 2.5 against main, captures unchanged.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-371"
+      ],
+      "aliases": [
+        "sun frames on the GPU",
+        "shadow frame in the vertex shader"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-372",
+      "title": "The frames' gather in WASM, inside the keyed pack (the alternative to E-371)",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "",
+      "next": "Only if E-371 does not land: the pack writes the frame; gpuPackCastersKeyedMicrobench, Predator crowd 2.5.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-372"
+      ],
+      "aliases": [
+        "sun frames in WASM"
       ],
       "records": []
     }
@@ -26200,6 +26238,15 @@
         "74aa2616",
         "a2798d07"
       ]
+    },
+    {
+      "id": "R-1122",
+      "date": "2026-11-15",
+      "time": "07:40",
+      "timeFrom": "recorded",
+      "title": "E-368 step 4 (the frames in entity order again) ties the fused passes in Predator: pre-render -0.1 %",
+      "verdict": "tie",
+      "text": "**Tie: pre-render 7.694 -> 7.655 ms (-0.1 %), the other workers within their noise; the fused passes stay.**\n2026-11-15, the step 4 candidate (fc53b05e, a branch of its own, deleted after): the sun frames worked out in entity order\nagain (computeSunFramesInto with the resolved tables, the columns streaming) and gathered by row, against the fused\npasses (cf851e76), runPredatorAbab --vs cf851e76 --hyp-rev fc53b05e --query crowd=2.5 --owner preRender --pairs 4 --pool.\nThe kernel had read the other way (keyed path 1 219-1 236 against 1 422-1 460 ops/s, the same checksum): in Chrome the\npainter-order misses cost what the extra pass does. A profile of the same scene, main against the branch (both crowd\n2.5): pre-render 511 -> 626 ms/s busy; the WASM kernels alike, the difference is the frames' JS (sunFrameFor 525 ms,\napplyKeyedSunFramesFor 266, the lamps' 238 in the window), about 1 ms a frame: E-371, E-372."
     }
   ],
   "leads": [

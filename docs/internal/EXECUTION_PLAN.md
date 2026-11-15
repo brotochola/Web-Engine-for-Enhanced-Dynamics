@@ -4845,6 +4845,22 @@ Owner: spatial.
 gather alone 9.45 -> 9.52 ms a frame with the skip off). The skipped visits were the cheap ones (predicted rejects whose
 lines the next entity loads anyway). Ablation of the gather: without the dedup marks -15 %, without the row writes -17 %;
 ids numbered in home-cell order (the locality ceiling) -8 % of the frame.
+### E-372 The frames' gather in WASM
+
+**Premise (R-1122):** the same millisecond as E-371; the gather is seven loads a caster in the painter's order, which
+JS does with bounds checks and a call a row.
+**Plan:** if E-371 does not land, the keyed pack (pack_casters_keyed_scan) writes the frame as it writes the row, from
+the columns and the tables in the kernel's memory (the plan's §9.5 'Dirección: JS / WASM'). Owner: pre-render.
+### E-371 The sun's and the lamps' frames picked in the shadow programs
+
+**Premise (R-1122):** after E-368 and E-369 the frames of directional casters are still pre-render's largest piece of
+the branch against main in Predator: about 1 ms a frame (sunFrameFor, applyKeyedSunFramesFor, the lamps' frames), each
+a gather of seven columns in the painter's order. The GPU draws four vertices a caster and could pick the frame itself.
+**Plan:** a small texture by texture id (its sheet's table, direction, group, frame of the cycle) and the tables' frames
+by absolute direction (frameAt) in another; the shadow programs (cards, columns, stamps, the sun's and the lamps' maps,
+GLSL and WGSL) turn the drawn direction by the sun's angle or the lamp-to-caster angle and read the frame. Pre-render
+writes no frame. Owner: pre-render (the cost leaves), Pixi and the GPU as guards. Measure: Predator crowd 2.5 against
+main; captures of the light bench and Predator light3d unchanged.
 ### E-370 The keyed rows' sun frames are a second pass over every keyed row
 
 **Premise (2026-11-15, CPU profile of Predator crowd 2.5 on dx/light3d, pre-render 753 ms/s busy):** `_applyKeyedSunFrames` is 4.3 % (366 ms, about 0.55 ms a frame): after the WASM keyed pack has written
