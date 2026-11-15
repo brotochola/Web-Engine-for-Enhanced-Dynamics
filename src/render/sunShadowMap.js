@@ -159,7 +159,8 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   vec4 m = texelFetch(uMaps, ivec2(uvc * vec2(textureSize(uMaps, 0))), 0);
   float cellAlpha = texelFetch(uTexture, ivec2(uvc * vec2(textureSize(uTexture, 0))), 0).a;
   float z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * height;
-  if (aInstBase.x >= 0.0 || aInstBase.y < 0.0 || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5) {
+  bool solid = sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0);
+  if (!solid || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5) {
     gl_Position = vec4(2.0, 2.0, 0.0, 1.0);${heights ? '\n    vSunZ = 0.0;' : '\n    vColor = vec4(0.0);'}
     return;
   }
@@ -193,7 +194,7 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   gl_Position = vec4(clip.xy, 0.0, 1.0);
   if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   vLocal = aQuad;
-  vColor = ${heights ? 'vec4(1.0)' : 'vec4(0.0, 0.0, 0.0, uSun.w)'};
+  vColor = ${heights ? 'vec4(1.0)' : 'vec4(0.0, 0.0, 0.0, uSun.w * castOpacity)'};
   vWorld = world;
   vAtlasUV = aInstUV;
   vTileInv = aInstTileInv;
@@ -226,7 +227,7 @@ export function sunMapVertex(source, { heights = true } = {}) {
     `${card}    // A caster whose frame has a height map casts columns instead (sunMapColumnsVertex): its card would face the sun
     // whatever the object's shape (a crate's shadow turned with the sun). Unless its sheet casts its card for the sun
     // (frameBase.js lutBaseFloats: a negative second float), as the light bench's cow and cars did.
-    if (aInstBase.x < 0.0 && aInstBase.y >= 0.0) {
+    if (sunKind == 6 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {
       gl_Position = vec4(2.0, 2.0, 0.0, 1.0);${heights ? '' : '\n      vColor = vec4(0.0);'}
       return;
     }
@@ -274,7 +275,7 @@ export function sunMapWgsl(source, { heights = true } = {}) {
   const skipped = source.replace(
     card,
     `${card}    // A render's frame casts columns instead (sunMapColumnsWgsl), unless its sheet casts its card for the sun.
-    if (aInstBase.x < 0.0 && aInstBase.y >= 0.0) {
+    if (sunKind == 6 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {
       clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);
       return out;
     }
@@ -315,7 +316,8 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   let m = textureLoad(uMaps, vec2<i32>(uvc * vec2<f32>(textureDimensions(uMaps, 0))), 0);
   let cellAlpha = textureLoad(uTexture, vec2<i32>(uvc * vec2<f32>(textureDimensions(uTexture, 0))), 0).a;
   let z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * height;
-  if (aInstBase.x >= 0.0 || aInstBase.y < 0.0 || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5) {
+  let solid = sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0);
+  if (!solid || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5) {
     clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);
     return out;
   }
@@ -350,7 +352,7 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
     out.position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   }
   out.vLocal = aQuad;
-  out.vColor = ${heights ? 'vec4<f32>(1.0)' : 'vec4<f32>(0.0, 0.0, 0.0, uniforms.uSun.w)'};
+  out.vColor = ${heights ? 'vec4<f32>(1.0)' : 'vec4<f32>(0.0, 0.0, 0.0, uniforms.uSun.w * castOpacity)'};
   out.vWorld = world;
   out.vAtlasUV = aInstUV;
   out.vTileInv = aInstTileInv;

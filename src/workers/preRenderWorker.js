@@ -242,6 +242,30 @@ function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, anims, 
     }
 }
 
+/**
+ * DX-CASTER (F9): whether any caster asks for something other than its sheet's way (a kind, a fixed card, an opacity
+ * below 1). Scanned in entity order now and then: until one does, the rows carry nothing more.
+ */
+function casterKindsInUse(active, sunKind, lampKind, orient, opacity, n) {
+    for (let e = 0; e < n; e++) {
+        if (active[e] === 1 && (sunKind[e] !== 0 || lampKind[e] !== 0 || orient[e] !== 0 || opacity[e] < 1)) return true;
+    }
+    return false;
+}
+
+/** DX-CASTER: each caster's code in entity order (casterKindsInUse's columns), 0 for every other slot. */
+function computeCasterCodes(out, active, sunKind, lampKind, orient, opacity, n) {
+    for (let e = 0; e < n; e++) {
+        let v = 0;
+        if (active[e] === 1) {
+            const o = opacity[e];
+            const a = o >= 1 ? 255 : o <= 0 ? 0 : Math.round(o * 255);
+            v = (sunKind[e] & 7) | ((lampKind[e] & 7) << 3) | ((orient[e] & 1) << 6) | (a << 7);
+        }
+        if (out[e] !== v) out[e] = v;
+    }
+}
+
 /** A table that is not uniform (or a sprite with no direction yet): the facing turned by the sun, nearest direction. */
 function sunFrameDirection(t, e, turn) {
     const ax = DirectionalSprite.aimX[e];
@@ -270,6 +294,8 @@ const EMPTY_U32 = new Uint32Array(0);
 const EMPTY_I32 = new Int32Array(0);
 // A caster row's terms DX-SHADOWTEX changes, by float: the sprite row of wasm/gpuPack.c sprite_row.
 const GPU_ROW_SCALE_X = 2;
+// DX-CASTER: a full caster row's depth float carries its caster code (the shadow programs read no depth).
+const GPU_ROW_DEPTH = 8;
 const GPU_ROW_ANCHOR_X = 4;
 const GPU_ROW_TEXTURE = 10;
 
@@ -577,6 +603,10 @@ class PreRenderWorker extends AbstractWorker {
         this._sunShiftTurn = new Float64Array(256).fill(NaN);
         // DX-SHADOW3D: each entity's sun frame this frame, ±(textureId + 1) (_computeSunFrames), sized on first use.
         this._sunFrameOf = new Int32Array(0);
+        // DX-CASTER (F9): whether casters ask for their own way (rescanned every 30 frames), and each one's code.
+        this._casterKindsOn = false;
+        this._casterScanTick = 0;
+        this._casterCode = new Int32Array(0);
         this._faces = false; // config.lighting.faces: decoration rows carry their face in the tile offsets
         this._collectedRows = 0; // the rows the last sprite queue's collect held
         /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
@@ -3590,7 +3620,15 @@ class PreRenderWorker extends AbstractWorker {
         const opts = this._gpuPackOpts;
         const typeArr = q.type || this.renderQueueType;
         const count = q.count | 0;
-        if (count > 0 && this._keyedCastersLive()) {
+        // DX-CASTER: now and then, whether any caster asks for its own way (its code rides in the full rows).
+        if (this._casterScanTick-- <= 0) {
+            this._casterScanTick = 30;
+            this._casterKindsOn = !!ShadowCaster.sunKind && casterKindsInUse(
+                ShadowCaster.active, ShadowCaster.sunKind, ShadowCaster.lampKind, ShadowCaster.orient, ShadowCaster.opacity,
+                ShadowCaster.active.length,
+            );
+        }
+        if (count > 0 && !this._casterKindsOn && this._keyedCastersLive()) {
             // E-191 step 2: a pose, a key and the shadow terms a caster, for the casters the kernel finds in the queue
             // (E-192); -1 when a caster has no entity key (its statics are not in Pixi's texture), and the frame lists
             // the casters and packs the full rows.
@@ -3615,6 +3653,7 @@ class PreRenderWorker extends AbstractWorker {
                 : 0;
             if (this._shadowTextures && sunN > 0) this._applyShadowTextures(q, dst.sun, sunN);
             if (this._sunFrameTables !== null && sunN > 0 && DirectionalSprite.active) this._applySunFrames(q, dst.sun, sunN);
+            if (this._casterKindsOn && sunN > 0) this._tagCasterRows(q, dst.sun, sunN);
         }
         return sunN;
     }
@@ -3679,6 +3718,27 @@ class PreRenderWorker extends AbstractWorker {
             starts, counts, this._sunShift, this._sunShiftTurn, turn,
         );
         return true;
+    }
+
+    /**
+     * DX-CASTER (F9): each full sun row's caster code, -(code + 1) in its depth float (computeCasterCodes): the shadow
+     * programs read the entity's kinds, card orientation and opacity there. The stamp rows copy it with the row.
+     */
+    _tagCasterRows(q, rows, sunN) {
+        if ((q.count | 0) !== this._collectedRows) return;
+        const active = ShadowCaster.active;
+        const n = active.length;
+        if (this._casterCode.length !== n) this._casterCode = new Int32Array(n);
+        computeCasterCodes(this._casterCode, active, ShadowCaster.sunKind, ShadowCaster.lampKind, ShadowCaster.orient, ShadowCaster.opacity, n);
+        const codes = this._casterCode;
+        const casters = this._gpuCasterIdx;
+        const types = this._renderableType;
+        const entities = this._renderableIndex;
+        for (let k = 0; k < sunN; k++) {
+            const row = casters[k];
+            if (types[row] !== 0) continue;
+            rows[k * GPU_CASTER_FLOATS + GPU_ROW_DEPTH] = -(codes[entities[row]] + 1);
+        }
     }
 
     /**

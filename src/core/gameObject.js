@@ -3201,6 +3201,13 @@ export class GameObject {
       ShadowCaster.active[i] = 1;
       ShadowCaster.heightMultiplier[i] = 1; // Default: normal shadow (0 = no shadow)
       if (ShadowCaster.textureId) ShadowCaster.textureId[i] = 0;
+      // DX-CASTER: its sheet's way for every light, facing the light, taking all of it out.
+      if (ShadowCaster.sunKind) {
+        ShadowCaster.sunKind[i] = 0;
+        ShadowCaster.lampKind[i] = 0;
+        ShadowCaster.orient[i] = 0;
+        ShadowCaster.opacity[i] = 1;
+      }
     }
 
     if (has.VolumeShadowCaster) VolumeShadowCaster.floorScaleY[i] = VolumeShadowCaster.defaultFloorScaleY;

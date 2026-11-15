@@ -68,6 +68,13 @@ void main() {
   }
 
   vec2 anchor = aInstAnchor + aInstShadow.yz;
+  // DX-CASTER (F9): the caster's own way when pre-render tagged its row (-(code + 1) in the depth float, which no
+  // shadow program reads otherwise): kinds for the sun and the lamps (0 the sheet's, 1 a card, 2 its solid, 6 none),
+  // how much light it takes out.
+  int castCode = aInstDepth < -0.5 ? int(-aInstDepth - 0.5) : 0;
+  int sunKind = castCode & 7;
+  int lampKind = (castCode >> 3) & 7;
+  float castOpacity = aInstDepth < -0.5 ? float((castCode >> 7) & 255) / 255.0 : 1.0;
   // weed:afterAnchor
   vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
   vec4 light = aInstLight.w > 0.0 ? aInstLight : uLight;
@@ -97,7 +104,8 @@ void main() {
     float s = -d.x * invScreenDist;
     float fade = 1.0 - distSq / rangeSq;
     alpha = light.z / (light.z + distSq);
-    alpha = clamp(alpha, 0.0, 1.0) * uPointScale * fade;
+    alpha = clamp(alpha, 0.0, 1.0) * uPointScale * fade * castOpacity;
+    if (lampKind == 6) alpha = 0.0;
     if (alpha < 0.003) {
       gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
       vColor = vec4(0.0);
@@ -116,7 +124,7 @@ void main() {
     // each point of the picture lands on the floor along the sun's ray: its columns run across the sun, a px of the
     // picture's height above that row is 1 / heightScaleY px of height (times the caster's height), the landing shift
     // per px of height is uSunK.xy, all in the floor's terms (y over floorScaleY).
-    alpha = uSun.w;
+    alpha = sunKind == 6 ? 0.0 : uSun.w * castOpacity;
     float bottom = aInstTrim.y + aInstTrim.w;
     float sunZ = max(bottom - content.y, 0.0) * abs(aInstScale.y) / uSunK.w * height;
     // The picture's column at the card's foot, and the foot: under the lowest row, unless the frame's base says more.

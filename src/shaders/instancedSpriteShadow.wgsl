@@ -101,10 +101,17 @@ fn mainVert(
     return out;
   }
   let anchor = aInstAnchor + aInstShadow.yz;
+  // DX-CASTER (F9): the caster's own way (instancedSpriteShadow.vert.glsl says how).
+  var castCode = 0;
+  if (aInstDepth < -0.5) { castCode = i32(-aInstDepth - 0.5); }
+  let sunKind = castCode & 7;
+  let lampKind = (castCode >> 3u) & 7;
+  var castOpacity = 1.0;
+  if (aInstDepth < -0.5) { castOpacity = f32((castCode >> 7u) & 255) / 255.0; }
   // weed:afterAnchor
   let content = aInstTrim.xy + aQuad * aInstTrim.zw;
   var world: vec2<f32>;
-  var alpha = uniforms.uSun.w;
+  var alpha = select(uniforms.uSun.w * castOpacity, 0.0, sunKind == 6);
   let light = select(uniforms.uLight, aInstLight, aInstLight.w > 0.0);
   if (light.w > 0.0) {
     let d = aInstXY - light.xy;
@@ -123,7 +130,8 @@ fn mainVert(
     let c = d.y * invScreenDist;
     let s = -d.x * invScreenDist;
     let fade = 1.0 - distSq / rangeSq;
-    alpha = clamp(light.z / (light.z + distSq), 0.0, 1.0) * uniforms.uPointScale * fade;
+    alpha = clamp(light.z / (light.z + distSq), 0.0, 1.0) * uniforms.uPointScale * fade * castOpacity;
+    if (lampKind == 6) { alpha = 0.0; }
     if (alpha < 0.003) {
       clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);
       return out;
