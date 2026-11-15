@@ -6156,6 +6156,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }
 
           const texture = new PIXI.Texture(textureOptions);
+          // DX-SHADOW3D: where the frame stands (frameBase.js); writeLutSlot puts it in the texture table's spare floats.
+          if (frameData.base) texture.weedBase = frameData.base;
           frameTextures[frameName] = texture;
         }
 

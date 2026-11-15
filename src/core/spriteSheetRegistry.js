@@ -2,7 +2,8 @@
 // Provides string->index mapping for animations without runtime overhead
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
-import { frameTwinTexels } from '../render/spriteMaps.js';
+import { frameTwinTexels, opaqueMask, readHeights } from '../render/spriteMaps.js';
+import { isRenderDirections, measureLowestContact, measureStandingBase } from '../render/frameBase.js';
 import {
   create2dCanvas,
   createCircularGradientCanvas,
@@ -1041,6 +1042,23 @@ class SpriteSheetRegistry {
               let trimOffsetY = 0;
               let trimmed = false;
 
+              // DX-SHADOW3D: where the frame stands (frameBase.js), from the pixels the trim reads anyway.
+              let base = null;
+              if (sheetPixels) {
+                const px = sheetPixels;
+                const ox = frame.x - px.x;
+                const oy = frame.y - px.y;
+                base = measureStandingBase(
+                  (i, j) => {
+                    const x = ox + i;
+                    const y = oy + j;
+                    return x >= 0 && y >= 0 && x < px.width && y < px.height && px.data[(y * px.width + x) * 4 + 3] > 127;
+                  },
+                  originalW,
+                  originalH,
+                );
+              }
+
               if (sheetPixels) {
                 const trimBounds = this._getTrimBoundsInPixels(sheetPixels, frame.x, frame.y, originalW, originalH, trimAlphaThreshold);
 
@@ -1074,6 +1092,9 @@ class SpriteSheetRegistry {
                 isTrimmed: trimmed,
                 // DX-MAPS: the sheet's height and normal maps (one object per sheet), read through the same sourceRect.
                 maps,
+                // DX-SHADOW3D: its base in its own pixels (untrimmed); a render's lowest contact replaces it (_paintMapsPage).
+                base,
+                renderDirections: isRenderDirections(config.directions ?? jsonDirections),
               });
             }
 
@@ -1373,6 +1394,12 @@ class SpriteSheetRegistry {
 
     // DX-MAPS: the twin page, when a sheet has maps.
     const mapsCanvas = this._paintMapsPage(imagesToPack, actualWidth, actualHeight);
+    // DX-SHADOW3D: each frame's base travels with its rectangle (the Pixi worker writes it into the texture table).
+    for (const d of imagesToPack) {
+      const b = d.base;
+      if (!b || !frames[d.name]) continue;
+      frames[d.name].base = b.contact >= 0 ? { contact: b.contact } : { cx: b.cx, rx: b.rx, ry: b.ry };
+    }
 
     // Register individual texture names as spritesheet IDs
     // This allows setSpritesheet("ball") to work for static textures
@@ -1462,15 +1489,24 @@ class SpriteSheetRegistry {
       const w = sr.w | 0;
       const h = sr.h | 0;
       if (w <= 0 || h <= 0 || w !== d.rect.width || h !== d.rect.height) continue;
+      const color = cut(pixelsOf(d.sourceImg), sr);
+      const height = d.maps.heightImg ? cut(pixelsOf(d.maps.heightImg), sr) : null;
       const texels = frameTwinTexels({
-        color: cut(pixelsOf(d.sourceImg), sr),
-        height: d.maps.heightImg ? cut(pixelsOf(d.maps.heightImg), sr) : null,
+        color,
+        height,
         normal: d.maps.normalImg ? cut(pixelsOf(d.maps.normalImg), sr) : null,
         w,
         h,
         gray: d.maps.gray,
       });
       if (texels !== null) ctx.putImageData(new ImageData(texels, w, h), d.rect.x, d.rect.y);
+      // DX-SHADOW3D: a render stands on its contact nearest the light (frameBase.js), in its untrimmed frame's rows.
+      if (d.renderDirections && height !== null) {
+        const opaque = opaqueMask(color, w, h);
+        const heights = readHeights(height, w, h, d.maps.gray);
+        const lowest = measureLowestContact((i, j) => opaque[j * w + i] !== 0, (i, j) => heights[j * w + i], w, h);
+        if (lowest !== null) d.base = { contact: lowest + (d.sourceY | 0) };
+      }
     }
     return page;
   }

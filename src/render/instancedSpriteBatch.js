@@ -42,6 +42,7 @@ import {
   packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
 import { faceMapVertex, faceMapWgsl } from './faceMap.js';
+import { lutBaseFloats } from './frameBase.js';
 import {
   POSE_ROW_FLOATS, POSE_TEX_TEXELS, STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, poseBlockFloats, spriteIndexedVertex,
   spriteIndexedWgsl, staticsTextureHeight,
@@ -97,10 +98,11 @@ const EMPTY_UPLOAD_OPTS = Object.freeze({
 });
 
 /**
- * Per-textureId LUT: origW, origH, u0, v0, u1, v1, trimX, trimY, trimW, trimH
+ * Per-textureId LUT: origW, origH, u0, v0, u1, v1, trimX, trimY, trimW, trimH, and the frame's base (frameBase.js
+ * lutBaseFloats: where it stands, read by the shadow passes only).
  */
-export const TEX_LUT_FLOATS = 10;
-/** RGBA32F texels per textureId in the LUT (12 floats; last two unused). */
+export const TEX_LUT_FLOATS = 12;
+/** RGBA32F texels per textureId in the LUT (12 floats). */
 export const TEX_LUT_RGBA_WIDTH = 3;
 /**
  * N-111. The LUT's most rows: WebGL 2's promised MAX_TEXTURE_SIZE, so the texture uploads on every GPU (SwiftShader's
@@ -165,6 +167,8 @@ function writeLutSlot(lut, base, tex) {
     lut[base + 8] = origW;
     lut[base + 9] = origH;
   }
+  // DX-SHADOW3D: where the frame stands (set by the Pixi worker from the atlas's json), else [0, 0].
+  lutBaseFloats(tex.weedBase, lut, base + 10);
 }
 
 export function buildTextureLut(flatTextures, fallbackTexture) {
@@ -212,6 +216,8 @@ export function packTextureLutRgba(lut, count, maxRows = TEX_LUT_MAX_ROWS) {
       out[dst + 7] = lut[s + 7];
       out[dst + 8] = lut[s + 8];
       out[dst + 9] = lut[s + 9];
+      out[dst + 10] = lut[s + 10];
+      out[dst + 11] = lut[s + 11];
     }
   }
   return out;
