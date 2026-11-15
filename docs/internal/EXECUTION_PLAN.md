@@ -4845,6 +4845,22 @@ Owner: spatial.
 gather alone 9.45 -> 9.52 ms a frame with the skip off). The skipped visits were the cheap ones (predicted rejects whose
 lines the next entity loads anyway). Ablation of the gather: without the dedup marks -15 %, without the row writes -17 %;
 ids numbered in home-cell order (the locality ceiling) -8 % of the frame.
+### E-374 The shadow maps' depth test costs the sun's map a third more
+
+**Premise (2026-11-15, gpuPassBench with real waits):** since the second round the maps keep each texel's highest
+caster by a depth test (and its entity id) instead of a max blend: the sun's map went from 0.79 to 1.08 times the
+colour pass's time (2000 silhouettes; WebGL 1.04 ms, WebGPU 1.03). The fragment program discards transparent texels,
+so the depth test runs late, and Pixi's depth-stencil target is 24 + 8 bits.
+**Plan:** a 16-bit depth buffer (the bench's `mapDepth=16`; the engine would need its own depth texture on the maps'
+render targets), or the casters drawn highest first so the early depth cull rejects. Owner: the GPU; the captures
+unchanged (16 bits hold 1 / 65 536 of the height range).
+### E-373 The 3D light pass costs 11 % more on WebGL than on WebGPU
+
+**Premise (2026-11-15, gpuPassBench with real waits, N-193):** light3d (32 lights, resolution 0.5, GTX 1650) takes
+1.26 ms on WebGL against 1.13 on WebGPU, while the plain light pass is the same (0.68/0.69) and the ES 3.0 reads
+(8f387ea0) did not move it. The difference is in the 3D terms as ANGLE's HLSL compiles them.
+**Plan:** compare ANGLE's HLSL with Tint's (the light data read per light as texelFetch, the lamp's reach once a
+light instead of a pixel, the loop's exits); time terms one by one in the bench. Owner: the GPU.
 ### E-372 The frames' gather in WASM
 
 **Premise (R-1122):** the same millisecond as E-371; the gather is seven loads a caster in the painter's order, which
@@ -4899,6 +4915,8 @@ WebGL against 0.54 ms on WebGPU. Agent R is changing that pass (F4: normals, sur
 once it lands.
 **Plan:** after F4, the same bench on both backends; if WebGL still lags, look at the GLSL (discard, the twin page's
 texelFetch, branches). Owner: the GPU.
+**Rejected 2026-11-15: its premise was the bench's (N-193).** The 0.89 ms was the G-buffer pass timed after the
+colour pass in one case; with real waits WebGL takes 0.485 ms and WebGPU 0.495.
 ### E-366 The 3D light pass costs 40 % more on WebGPU than on WebGL
 
 **Premise (the same quick suite):** the light pass with the G-buffer, the sun's map and the lamps' map (32 lights,
@@ -4906,6 +4924,8 @@ resolution 0.5) takes 1.22 ms on WebGPU against 0.87 ms on WebGL, while the plai
 0.72). The WGSL of the 3D terms (LAMPMAP taps, the sun map, their uniforms) costs what the GLSL does not.
 **Plan:** read both programs' generated code (Tint's HLSL against ANGLE's), time the terms one by one in the bench
 (`--passes light3d` with parts turned off), fix the WGSL. Owner: the GPU.
+**Rejected 2026-11-15: its premise was the bench's (N-193).** The 0.87 ms on WebGL was light3d timed after the plain
+light pass in one case, while WebGL's waits were flushes; with real waits WebGL takes 1.26 ms and WebGPU 1.13 (E-373).
 ### E-365 The self-shadow pass costs 4.6 times the light pass
 
 **Premise (2026-11-15, `gpuPassBench --suite quick`, GTX 1650, resolution 0.5, 94 % of the pixels with a height):** the
@@ -4914,6 +4934,13 @@ ms for the light pass with 32 lights. A scene of renders with maps pays it on ev
 **Plan:** the plan's tournament (§9.5: 1, 2 or 4 rays, the step cap) plus early outs: no steps where the sun term is 0
 or the pixel's neighbourhood is flat, a half-resolution pass, and only the caster's own heights once the G-buffer holds
 the entity id (DX-SELFSHADOW). Owner: the GPU (presented frames). Measure: `selfShadowStressScene` and `gpuPassBench`.
+**Kept 2026-11-15 (R-1125), two steps.** With the bench's real waits (N-193) the pass took 3.33 ms on WebGL and 3.54 on
+WebGPU, and 96 % of it was the steps towards the 32 lamps (the sun's +0.07 ms, the lamps' +2.0): they ran for every pixel
+facing a lamp, however far. (1) ES 3.0 reads (8f387ea0): texture2D inside a branch of a loop that leaves per pixel made
+ANGLE's D3D11 flatten the branch, so no early out saved anything on WebGL; textureLod at level 0 reads the same image:
+WebGL 3.33 -> 2.91 ms. (2) The steps towards a lamp only inside its radius (23b83f0d), where its map ends too: WebGL
+1.61 ms, WebGPU 1.60. selfShadowStressScene with 32 lamps: drawn frames 41.8 -> 60.0 fps (+43.5 %, 4/4 pairs, at the
+display's rate). Captures: at most 6 / 255 on the light bench, 34 / 255 on 91 px of the stress scene by day.
 ### E-364 DirectionalSprite resolves every entity every frame, also those that tick every N frames
 
 **Premise (the same profile):** `_resolveDirections` resolves every directional entity every frame, about 0.67 ms per

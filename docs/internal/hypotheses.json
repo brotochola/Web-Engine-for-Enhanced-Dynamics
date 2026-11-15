@@ -15431,13 +15431,13 @@
     },
     {
       "id": "E-365",
-      "title": "The self-shadow pass costs 3.35 ms (WebGL) and 3.87 ms (WebGPU) at resolution 0.5 on the GTX 1650, 4.6 times the light pass",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "title": "The self-shadow pass cost 2.6 to 3.1 times the 3D light pass: the steps towards every lamp, however far, and on WebGL no early out at all (ANGLE flattened the branches)",
+      "status": "kept",
+      "statusText": "kept 2026-11-15 on dx/light3d (R-1125)",
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "",
+      "result": "Kept (8f387ea0, 23b83f0d): gpuPassBench selfShadow 3.33 -> 1.61 ms on WebGL, 3.54 -> 1.60 on WebGPU (resolution 0.5, 32 lamps); selfShadowStressScene with 32 lamps drawn 41.8 -> 60.0 fps (+43.5 %, 4/4 pairs). The lamps' steps were 96 % of the pass and ran past their radius; on WebGL ANGLE flattened every early out (texture2D in a branch).",
       "next": "Rays and steps tournament, early outs (sun term 0, flat neighbourhood), half resolution, own entity only; selfShadowStressScene and gpuPassBench.",
       "refs": [
         "EXECUTION_PLAN.md#E-365"
@@ -15446,17 +15446,19 @@
         "self-shadow cost",
         "selfShadow pass ms"
       ],
-      "records": []
+      "records": [
+        "R-1125"
+      ]
     },
     {
       "id": "E-366",
       "title": "The 3D light pass costs 1.22 ms on WebGPU against 0.87 ms on WebGL (32 lights, resolution 0.5, GTX 1650), +40 %; the plain light pass is close",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "status": "rejected",
+      "statusText": "its premise was the bench's (N-193), 2026-11-15",
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "",
+      "result": "With real waits WebGL takes 1.26 ms and WebGPU 1.13 (WebGPU 11 % faster): the 0.87 ms was light3d timed after the plain light pass while WebGL waits were flushes (N-193). The other way round is E-373.",
       "next": "Compare the generated code, time the terms one by one in gpuPassBench, fix the WGSL.",
       "refs": [
         "EXECUTION_PLAN.md#E-366"
@@ -15465,17 +15467,19 @@
         "light3d WebGPU slower",
         "WGSL light pass cost"
       ],
-      "records": []
+      "records": [
+        "R-1124"
+      ]
     },
     {
       "id": "E-367",
       "title": "The G-buffer pass costs 0.89 ms on WebGL against 0.54 ms on WebGPU (resolution 0.5, GTX 1650), +66 %",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "status": "rejected",
+      "statusText": "its premise was the bench's (N-193), 2026-11-15",
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "",
+      "result": "With real waits WebGL takes 0.485 ms and WebGPU 0.495: the same. The 0.89 ms was the G-buffer pass timed after the colour pass (N-193).",
       "next": "Measure again after F4 lands; then the GLSL (discard, twin page reads, branches).",
       "refs": [
         "EXECUTION_PLAN.md#E-367"
@@ -15483,7 +15487,9 @@
       "aliases": [
         "gbuffer WebGL slower"
       ],
-      "records": []
+      "records": [
+        "R-1124"
+      ]
     },
     {
       "id": "E-368",
@@ -15774,6 +15780,64 @@
       "records": [
         "R-1123"
       ]
+    },
+    {
+      "id": "N-193",
+      "title": "gpuPassBench timed WebGL by gl.finish(), a flush in Chrome: each sample timed the queue's intake, and a pass timed after another in the same case read as that one",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-11-15 on dx/light3d (26e860e0)",
+      "date": "2026-11-15",
+      "area": "bench",
+      "kind": "bug",
+      "result": "fixed (26e860e0): a 1 x 1 read back of the pass's own target waits for the GPU. Before: selfShadow after light3d 1.19 ms (alone 3.27), light3d after selfShadow 3.07 (alone 1.21), color after gbuffer 0.51 (0.91), gbuffer after color 0.83 (0.46), GPU clocks steady (1700 MHz, P0); after, either order the same (light3d 1.26/1.26, selfShadow 3.29/3.30, gbuffer 0.486/0.485, color 0.968/0.968) and the round trip 0.15-0.29 ms. Each pass also reports a hash of the image it left.",
+      "next": "Every WebGL number of gpuPassBench from a case of more than one pass before 26e860e0 is suspect: E-366 and E-367 rejected; the tournaments (plan §9.5) run again with the fixed bench.",
+      "refs": [
+        "REVIEW_PLAN.md#N-193"
+      ],
+      "aliases": [
+        "gl.finish is a flush",
+        "WebGL finish does not wait"
+      ],
+      "records": [
+        "R-1124"
+      ]
+    },
+    {
+      "id": "E-373",
+      "title": "The 3D light pass costs 11 % more on WebGL than on WebGPU (1.26 against 1.13 ms, 32 lights, resolution 0.5, GTX 1650)",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "next": "Read ANGLE's HLSL against Tint's; texelFetch for the light data; the reach per light; time terms in gpuPassBench.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-373"
+      ],
+      "aliases": [
+        "light3d WebGL slower"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-374",
+      "title": "The shadow maps' depth test (the second round's highest caster with its id) costs the sun's map a third more than the max blend did: a 16-bit depth buffer, or the casters highest first",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "next": "gpuPassBench sunMap and lampMap with mapDepth=16 against 24 on both backends; then the engine side if it wins.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-374"
+      ],
+      "aliases": [
+        "map depth 16 bits",
+        "sun map depth test cost"
+      ],
+      "records": []
     }
   ],
   "records": [
@@ -26394,7 +26458,7 @@
     {
       "id": "R-1122",
       "date": "2026-11-15",
-      "time": "07:40",
+      "time": "07:34",
       "timeFrom": "recorded",
       "title": "E-368 step 4 (the frames in entity order again) ties the fused passes in Predator: pre-render -0.1 %",
       "verdict": "tie",
@@ -26403,11 +26467,38 @@
     {
       "id": "R-1123",
       "date": "2026-11-15",
-      "time": "08:40",
+      "time": "08:08",
       "timeFrom": "recorded",
       "title": "The six checks against a formula on both backends: four pass, two pass after N-190 and N-191, shadowOutline fails (N-192)",
       "verdict": "answered",
       "text": "**The six checks against a formula (plan §8.2), both backends: four pass, one passes after N-190, one after N-191, one fails (N-192).**\n2026-11-15, tests/bench/*Check.mjs (C2's, dx/par-checks), windowed Chrome, the art from makeCheckArt.mjs.\n\n| check | result |\n| --- | --- |\n| normalLightCheck | PASS with §5.4's automatic strength, now the default (sun worst 0.4/255, lamp 2.9/255); the full normals read 127.6 off by day, which the engine no longer draws (a sprite looks as drawn by day) |\n| silhouetteDirectionCheck | PASS: the shadow is the frame the sun sees, within 1.5 px (after E-368 and E-369) |\n| depthSortCheck | PASS: 0 wrong pixels at 24 places; at two of the table's, 174 and 48 px the painter alone gets wrong are right |\n| lampSeparationCheck | FAIL (a box alone cast nothing in the sun's map) -> PASS after N-190 (worst 0.6/255, 99.9 % of the lamp kept) |\n| emissiveCheck | FAIL (the flame's core 81 for 255: no G-buffer words without maps) -> PASS with lighting.emissive (N-191) |\n| shadowOutlineCheck | FAIL: 2.6 to 5.8 px against 1.5, the same on both backends (N-192) |\n\nThe same numbers on WebGL and WebGPU in every check. The boot sweep before them: the 84 scenes (34 demos, 50 stress scenes,\nthe light ones included) start on WebGL."
+    },
+    {
+      "id": "R-1124",
+      "date": "2026-11-15",
+      "time": "08:46",
+      "timeFrom": "recorded",
+      "title": "gpuPassBench's WebGL waits were flushes: a pass timed second read as the first; fixed, E-366 and E-367 rejected",
+      "verdict": "answered",
+      "text": "**gpuPassBench's WebGL waits were flushes (N-193): fixed; E-366 and E-367 came from it and are rejected.**\n2026-11-15, gpuPassBench on the GTX 1650 (dx/light3d). Chrome's WebGL finish() is a flush: the empty round trip read 0.000 ms\n(WebGPU's 0.15), and each sample timed how fast the queue took draws. In one case a pass timed after another read as that one\nfor all its samples while the first one's backlog drained; GPU clocks steady (nvidia-smi: 1700 MHz, P0, 50 W) throughout.\n\n| case | first (ms) | second (ms) | second alone (ms) |\n| --- | --- | --- | --- |\n| light3d, selfShadow | 1.195 | 1.192 | 3.27 |\n| selfShadow, light3d | 3.29 | 3.07 | 1.21 |\n| gbuffer, color | 0.457 | 0.505 | 0.906 |\n| color, gbuffer | 0.897 | 0.829 | 0.458 |\n\nWebGPU (onSubmittedWorkDone) read the same in either order. A read back between the passes made WebGL right too; a 30 ms\npause did not. Fixed in 26e860e0: a 1 x 1 read back of the pass's target; either order now reads the same (light3d 1.26/1.26,\nselfShadow 3.29/3.30, gbuffer 0.486/0.485, color 0.968/0.968, the round trip 0.15-0.29 ms). The quick suite then, WebGL/WebGPU\n(ms): color 0.968/0.969, gbuffer 0.485/0.495, sunMap 1.039/1.027, lampMap 0.735/0.727, light 0.682/0.688, light3d\n1.260/1.126, selfShadow 3.334/3.540, compose 0.070/0.106. E-366 (light3d 40 % slower on WebGPU) and E-367 (the G-buffer 66 %\nslower on WebGL) were passes timed second: rejected. E-373 (light3d on WebGL) and E-374 (the maps' depth test) are what the\nfixed bench shows.",
+      "commits": [
+        "58712d85",
+        "26e860e0"
+      ]
+    },
+    {
+      "id": "R-1125",
+      "date": "2026-11-15",
+      "time": "09:07",
+      "timeFrom": "recorded",
+      "title": "E-365 kept: ES 3.0 reads and a lamp's self-shadow only inside its radius, the pass 3.33 -> 1.61 ms (WebGL), 3.54 -> 1.60 (WebGPU); the stress scene +43.5 % drawn frames",
+      "verdict": "kept",
+      "text": "**Kept: the self-shadow pass 3.33 -> 1.61 ms on WebGL and 3.54 -> 1.60 on WebGPU (gpuPassBench, 32 lamps, resolution 0.5);\nselfShadowStressScene with 32 lamps drawn 41.8 -> 60.0 fps (+43.5 %, 4/4 pairs).**\n2026-11-15, dx/light3d, the GTX 1650, gpuPassBench with real waits (N-193). The split first: with no lights the sun's steps\nadd 0.07 ms (light3d 0.090 -> selfShadow 0.162); at night with 32 lamps the lamps' steps add 2.0 ms (1.264 -> 3.269): 96 %\nof the pass, because a lamp's steps ran for every pixel facing it, however far, while past its radius the lamp gives under\n1 % of its light and its map casts nothing.\n\n| step | WebGL selfShadow | WebGPU selfShadow | image |\n| --- | --- | --- | --- |\n| before (a2e29e9c) | 3.33 ms | 3.54 ms | 8c7816db |\n| ES 3.0 reads (8f387ea0) | 2.91 ms | (GLSL only) | 8c7816db, the same |\n| steps only inside a lamp's radius (23b83f0d) | 1.61 ms | 1.60 ms | changed |\n\nThe first step alone gave WebGPU nothing to do: only ANGLE flattens a branch around a texture read with gradients inside a\nloop that leaves per pixel (both sides ran), so on WebGL no early out of the light pass had saved anything. light3d did\nnot move (1.26 ms WebGL, 1.13 WebGPU, its image the same: E-373).\n\nScene (runPredatorAbab --vs a2e29e9c --hyp-rev 23b83f0d's tree, selfShadowStressScene lamps=32 shadows=1, res 1, owner\ndrawn frames, 4 pairs, --pool --early): drawn 41.8 -> 60.0 fps, +43.5 %, 4/4 pairs, B at the display's rate (the cut is\nlarger than the scene can show); the CPU workers under their floor and unmoved; load keys equal.\n\nCaptures (pairCapture, A a2e29e9c, B the change): the light bench at 22 h about 1 000 px lighter by at most 3 / 255 (both\nbackends), at 16 h by at most 6; selfShadowStressScene with 32 still lamps (?still=1, a2e29e9c) 6.7 % of the pixels\nlighter, 93 % of those by 4 / 255 or less, at most 12 / 255 at night and 34 by day (91 px past 16, where the k-rule mixes\non the lamps' flat light): nothing to see at 3x on the worst spots.",
+      "commits": [
+        "a2e29e9c",
+        "8f387ea0",
+        "23b83f0d"
+      ]
     }
   ],
   "leads": [
