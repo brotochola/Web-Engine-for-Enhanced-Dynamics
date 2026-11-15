@@ -1,5 +1,5 @@
 import WEED from '/src/index.js';
-import { DirectionalWanderer, HandWanderer, WORLD } from './directional/wanderer.js';
+import { DirectionalWanderer, HandWanderer, TICK_INTERVAL, WORLD } from './directional/wanderer.js';
 
 const { Scene, Camera } = WEED;
 
@@ -16,10 +16,11 @@ export const MODE = WEED.params?.get('mode') === 'hand' ? 'hand' : 'ds';
 /** `?turnRate=`: radians a wanderer turns a frame, at most (default 0.02): how often directions change. */
 export const TURN = queryNumber('turnRate', 0.02);
 /** `?margin=`: DirectionalSprite.turnMargin in radians (default: the component's, a tenth of a step). */
+/** `?tickInterval=`: both arms tick every N frames (default 1), as Predator's civilians (4) and soldiers (6) do (E-364). */
 export const MARGIN = queryNumber('margin', -1);
 
 export const stressSceneConfig = {
-  requested: { n: N, mode: MODE, turnRate: TURN, margin: MARGIN },
+  requested: { n: N, mode: MODE, turnRate: TURN, margin: MARGIN, tickInterval: TICK_INTERVAL },
 };
 
 /**
@@ -35,7 +36,8 @@ export class DirectionalSpriteStressScene extends Scene {
     seed: 0xd1e5,
     entityIdWidth: 32,
     spatial: { numberOfSpatialWorkers: 0, cellSize: 1024, maxNeighbors: 0, noLimitFPS: false },
-    logic: { numberOfLogicWorkers: 1, noLimitFPS: false },
+    // ?tickInterval= (wanderer.js): past 1 the types tick every N frames, which needs staggered updates.
+    logic: { numberOfLogicWorkers: 1, noLimitFPS: false, staggeredUpdates: TICK_INTERVAL > 1 },
     physics: { enabled: false, gravity: { x: 0, y: 0 }, noLimitFPS: false },
     particle: { maxParticles: 0, decals: false },
     renderer: { backend: WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl', noLimitFPS: false, ySort: false, maxVisibleRenderables: N },

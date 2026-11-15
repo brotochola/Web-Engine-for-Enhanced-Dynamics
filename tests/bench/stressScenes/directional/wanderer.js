@@ -25,6 +25,12 @@ function octant(vx, vy) {
 /** The world wanderers wrap in (the scene sets it). */
 export const WORLD = { w: 1920, h: 1080 };
 
+/**
+ * `?tickInterval=`: both wanderers tick every N frames (default 1; the scene turns logic.staggeredUpdates on past 1), as
+ * Predator's civilians (4) and soldiers (6) do, and each tick walks and turns N frames' worth, so the pace stays.
+ */
+export const TICK_INTERVAL = Math.max(1, Math.min(60, Math.floor(Number(WEED.params?.get('tickInterval')) || 1)));
+
 /** One frame's walk along (vx, vy), wrapped at the world's edges. */
 function wander(i, vx, vy) {
   let x = WEED.Transform.x[i] + vx;
@@ -40,6 +46,7 @@ function wander(i, vx, vy) {
 /** Walks a slow curve across the world and wraps at its edges. The hand selector picks its frame in its tick. */
 export class HandWanderer extends GameObject {
   static components = [SpriteRenderer, WanderState];
+  static tickInterval = TICK_INTERVAL;
 
   onSpawned({ x = 0, y = 0, heading = 0, turn = 0.01, pace = 1 } = {}) {
     this.setSpritesheet('civil1');
@@ -56,10 +63,10 @@ export class HandWanderer extends GameObject {
 
   tick() {
     const i = this.index;
-    const h = WanderState.heading[i] + WanderState.turn[i];
+    const h = WanderState.heading[i] + WanderState.turn[i] * TICK_INTERVAL;
     WanderState.heading[i] = h;
-    const vx = Math.cos(h) * WanderState.speed[i];
-    const vy = Math.sin(h) * WanderState.speed[i];
+    const vx = Math.cos(h) * WanderState.speed[i] * TICK_INTERVAL;
+    const vy = Math.sin(h) * WanderState.speed[i] * TICK_INTERVAL;
     wander(i, vx, vy);
     const d = octant(vx, vy);
     if (d !== WanderState.lastDir[i]) {
@@ -72,6 +79,7 @@ export class HandWanderer extends GameObject {
 /** The same walk; DirectionalSprite picks its frame from where it moved, after the ticks. */
 export class DirectionalWanderer extends GameObject {
   static components = [DirectionalSprite, WanderState];
+  static tickInterval = TICK_INTERVAL;
 
   onSpawned({ x = 0, y = 0, heading = 0, turn = 0.01, pace = 1, margin = -1 } = {}) {
     this.setSpritesheet('civil1');
@@ -89,8 +97,9 @@ export class DirectionalWanderer extends GameObject {
 
   tick() {
     const i = this.index;
-    const h = WanderState.heading[i] + WanderState.turn[i];
+    const h = WanderState.heading[i] + WanderState.turn[i] * TICK_INTERVAL;
     WanderState.heading[i] = h;
-    wander(i, Math.cos(h) * WanderState.speed[i], Math.sin(h) * WanderState.speed[i]);
+    const step = WanderState.speed[i] * TICK_INTERVAL;
+    wander(i, Math.cos(h) * step, Math.sin(h) * step);
   }
 }
