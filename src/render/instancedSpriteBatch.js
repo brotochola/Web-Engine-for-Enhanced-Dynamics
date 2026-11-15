@@ -1314,7 +1314,7 @@ export class InstancedSpriteBatch {
       const name = `${this._label}-face`;
       if (this._useWebGpu) {
         const source = faceMapWgsl(this._twoStreams ? shaders.spritePose : shaders.sprite);
-        this._faceShader = new Shader({ gpuProgram: instancedSpriteGpuProgram(GpuProgram, source, 'mainFragFace', name), resources });
+        this._faceShader = new Shader({ gpuProgram: instancedSpriteGpuProgram(GpuProgram, source, 'mainFragFace', name, { maps: true }), resources });
       } else {
         const vertex = faceMapVertex(this._twoStreams ? shaders.spriteVertPose : shaders.spriteVert);
         this._faceShader = new Shader({ glProgram: instancedSpriteGlProgram(GlProgram, vertex, shaders.faceFrag, name), resources });
@@ -1330,6 +1330,7 @@ export class InstancedSpriteBatch {
                   spriteIndexedWgsl(faceMapWgsl(shaders.sprite)),
                   'mainFragFace',
                   indexedName,
+                  { maps: true },
                 ),
                 resources: indexedResources,
               }

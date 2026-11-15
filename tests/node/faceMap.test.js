@@ -141,3 +141,21 @@ test('spawnMany takes a face per decoration', () => {
   assert.deepEqual([...out].map((i) => D.faceOct[i]), [encodeFaceNormal(1, 0, 0), encodeFaceNormal(0, 1, 0), encodeFaceNormal(0, 0, 1)]);
   assert.deepEqual([...out].map((i) => D.faceZ[i]), [80, 160, 240]);
 });
+
+// DX-MAPS on WebGPU: the face pass's WGSL reads the atlas's twin page at group 2's binding 5, and its programs' explicit
+// layouts must name it, or the pipeline fails its validation ("Binding doesn't exist", seen on a real GPU).
+test('the face programs name the twin page in their WebGPU layout', async () => {
+  const { instancedSpriteGpuProgram, instancedSpriteIndexedGpuProgram } = await import('../../src/render/webgpu/instancedSpriteWgsl.js');
+  const GpuProgram = { from: (o) => o };
+  const wgsl = faceMapWgsl(fs.readFileSync(new URL('../../src/shaders/instancedSprite.wgsl', import.meta.url), 'utf8'));
+  assert.match(wgsl, /@group\(2\) @binding\(5\) var uMaps: texture_2d<f32>;/);
+  for (const make of [instancedSpriteGpuProgram, instancedSpriteIndexedGpuProgram]) {
+    const plain = make(GpuProgram, wgsl, 'mainFragFace', 'p');
+    assert.equal(plain.layout[2].uMaps, undefined, `${make.name}: the sprite pass has no maps`);
+    assert.ok(!plain.gpuLayout[2].some((e) => e.binding === 5));
+    const face = make(GpuProgram, wgsl, 'mainFragFace', 'p', { maps: true });
+    assert.equal(face.layout[2].uMaps, 5, `${make.name}: the face pass's maps`);
+    const entry = face.gpuLayout[2].find((e) => e.binding === 5);
+    assert.equal(entry.texture.sampleType, 'unfilterable-float', 'read with textureLoad');
+  }
+});
