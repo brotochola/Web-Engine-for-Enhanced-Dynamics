@@ -216,32 +216,13 @@ INLINE double foot_y(const cols_t *k, uint32_t i, double poseY, double rc, doubl
   return poseY + ox * rs + oy * rc;
 }
 
-/* E-360: R_RESULTS' three words in locals through the walk (a store to the collector's columns may alias them as far as
-   the compiler knows, so each sprite loaded and stored them), written back when the walk returns. */
-typedef struct {
-  int32_t n, queued, full;
-} counts_t;
-
-INLINE counts_t counts_load(const cols_t *k) {
-  counts_t c;
-  c.n = k->res[0];
-  c.queued = k->res[1];
-  c.full = 0;
-  return c;
-}
-
-INLINE void counts_store(const cols_t *k, const counts_t *c) {
-  k->res[0] = c->n;
-  k->res[1] = c->queued;
-  if (c->full) k->res[2] = 1;
-}
-
 /* The shared tail: queue an on-screen sprite. Returns 0 when it must go through collectRenderable instead. */
-INLINE int queue_sprite(const cols_t *k, counts_t *res, uint32_t i, float keyY, uint32_t maxItems, double alpha,
-                        double sortK, int bodies, int sortY) {
+INLINE int queue_sprite(const cols_t *k, uint32_t i, float keyY, uint32_t maxItems, double alpha, double sortK,
+                        int bodies, int sortY) {
   if (!k->sVisible[i] || !k->sSheet || !k->sSheet[i]) return 1;
   if (k->sMask && k->sMask[i] != 0) return 0;
-  const int32_t n = res->n;
+  int32_t *res = k->res;
+  const int32_t n = res[0];
   if ((uint32_t)n < maxItems) {
     float key = keyY;
     if (bodies || sortY) {
@@ -270,11 +251,11 @@ INLINE int queue_sprite(const cols_t *k, counts_t *res, uint32_t i, float keyY, 
     k->oY[n] = key;
     k->oType[n] = 0;
     k->oIndex[n] = (int32_t)i;
-    res->n = n + 1;
+    res[0] = n + 1;
   } else {
-    res->full = 1;
+    res[2] = 1;
   }
-  res->queued++;
+  res[1]++;
   return 1;
 }
 
@@ -286,7 +267,6 @@ INLINE uint32_t walk(uint32_t table, uint32_t from, uint32_t count, uint32_t max
                      double maxY, double alpha, double sortK, int bodies, int sortY) {
   const cols_t k = columns(table);
   const float keyY = (float)keyYd;
-  counts_t res = counts_load(&k);
   for (uint32_t idx = from; idx < count; idx++) {
     const uint32_t i = ENTITY(idx);
     if (!k.tActive[i] || !k.sActive[i]) continue;
@@ -299,12 +279,8 @@ INLINE uint32_t walk(uint32_t table, uint32_t from, uint32_t count, uint32_t max
         if (!(sx >= minX - extent && sx <= maxX + extent && sy >= minY - extent && sy <= maxY + extent)) continue;
       }
     }
-    if (!queue_sprite(&k, &res, i, keyY, maxItems, alpha, sortK, bodies, sortY)) {
-      counts_store(&k, &res);
-      return idx;
-    }
+    if (!queue_sprite(&k, i, keyY, maxItems, alpha, sortK, bodies, sortY)) return idx;
   }
-  counts_store(&k, &res);
   return count;
 }
 
@@ -316,7 +292,6 @@ INLINE uint32_t walk_turned(uint32_t table, uint32_t from, uint32_t count, uint3
                             int sortY) {
   const cols_t k = columns(table);
   const float keyY = (float)keyYd;
-  counts_t res = counts_load(&k);
   for (uint32_t idx = from; idx < count; idx++) {
     const uint32_t i = ENTITY(idx);
     if (!k.tActive[i] || !k.sActive[i]) continue;
@@ -330,12 +305,8 @@ INLINE uint32_t walk_turned(uint32_t table, uint32_t from, uint32_t count, uint3
       const double h = limH + extent;
       if (u < -w || u > w || v < -h || v > h) continue;
     }
-    if (!queue_sprite(&k, &res, i, keyY, maxItems, alpha, sortK, bodies, sortY)) {
-      counts_store(&k, &res);
-      return idx;
-    }
+    if (!queue_sprite(&k, i, keyY, maxItems, alpha, sortK, bodies, sortY)) return idx;
   }
-  counts_store(&k, &res);
   return count;
 }
 
