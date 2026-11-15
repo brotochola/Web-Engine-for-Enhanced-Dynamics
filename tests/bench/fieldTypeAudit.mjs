@@ -159,7 +159,9 @@ try {
       }
     }
   }
-  await run.catch(() => {});
+  // The probes are in: the browser closes now (the finally) and the run ends with it. Awaiting the run's own end
+  // left the audit waiting past 400 s on a loaded Linux machine (heapSampleWorkers does the same).
+  run.catch(() => {});
 } finally {
   await browser.close();
   await server.close();
