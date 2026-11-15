@@ -16218,6 +16218,24 @@
         "panoramic lamp map"
       ],
       "records": []
+    },
+    {
+      "id": "N-207",
+      "title": "A render's silhouette card is as wide as its whole picture and as tall as the picture with its top seen from above, standing on its contact nearest the light: under a lamp high and close (the table, 300 px) its ends stick out of the thing's outline (slivers on the lamp's side) and on other lamps its shadow runs long; the prototype does the same",
+      "status": "open",
+      "statusText": "seen by the owner 2026-11-15 in R-1143's comparison (\"el frame más a la derecha en ambos casos está mal\"); to do within DX-LAMPPANO (it rewrites the lamps' cards), the sun's card too",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "R-1143's grid, the table with the lamp at -110, -88 and 300 px: in both apps a thin dark sliver left of the table (towards the lamp's side) and one past its top right corner, where the true shadow lies almost all under the top with a thin band away from the lamp. The card's width is the picture's (the thing's full width across the light) placed on the support line, where the footprint is narrower; its height is the picture's rows over the art's 0.752, the top seen from above counted as height.",
+      "next": "For a card on a contact (a render): its height to the frame's height-map top (zmax) instead of the picture's rows, and its width to the footprint's extent across the light on the line it stands on; the lamps' card (in DX-LAMPPANO's program) and the sun's (sunMapVertex, GLSL and WGSL). Check: protoVsBenchLamp's eight places for the hen house and the table, and the sun at 75 degrees.",
+      "refs": [],
+      "aliases": [
+        "render card size"
+      ],
+      "records": [
+        "R-1143"
+      ]
     }
   ],
   "records": [
