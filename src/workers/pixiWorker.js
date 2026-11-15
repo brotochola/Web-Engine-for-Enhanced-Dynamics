@@ -2175,7 +2175,13 @@ class PixiRenderer extends AbstractWorker {
       if (t && t.weedFootSlot >= 0) writeFootprintRow(data, t.weedFootSlot, t.weedFootprint);
     }
     this._footRgba = data;
+    // Its texels go up with the LUT (_uploadTexLutTexture writes this array into the source's texture).
+    this._texLutNeedsGpuUpload = true;
+    // One source while the rows' count holds. A program binds it (uFoot) when it is made and keeps it: a new source
+    // each rebuild left the lamps' columns on the old one, which WebGPU then failed every frame as destroyed.
+    if (this._footSource !== null && this._footRows === height) return;
     this._footRows = height;
+    const old = this._footSource;
     this._footSource = PIXI.TextureSource.from({
       resource: data,
       width: FOOTPRINT_TEXELS,
@@ -2186,9 +2192,23 @@ class PixiRenderer extends AbstractWorker {
       autoGenerateMipmaps: false,
     });
     this._footSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
-    // Column programs made before an atlas reload read the new one.
-    const columns = [this._sunSolids && this._sunSolids.columns, this._sunMapColumns];
-    for (const c of columns) if (c && c.shader) c.shader.resources.uFoot = this._footSource;
+    // Never unloaded by Pixi's texture GC while bound (writeRgba32Float pins it too, but only when it makes the texture).
+    this._footSource.autoGarbageCollect = false;
+    this._pointFootPrograms();
+    if (old !== null) old.destroy();
+  }
+
+  /**
+   * DX-SHADOW3D: every program that binds the footprints (uFoot) on the current source: the sprite shadows' columns, the
+   * sun map's and the lamps' map's (their layouts name binding 7 whether or not their WGSL reads it).
+   */
+  _pointFootPrograms() {
+    const source = this._footSource;
+    const holders = [this._sunSolids && this._sunSolids.columns, this._sunMapColumns, this._lampMapColumns];
+    for (let i = 0; i < holders.length; i++) {
+      const c = holders[i];
+      if (c && c.shader && c.shader.resources.uFoot !== source) c.shader.resources.uFoot = source;
+    }
   }
 
   _uploadRgba32FloatGl(source, data, width, height) {
