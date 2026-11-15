@@ -1009,9 +1009,8 @@ class ParticleWorker extends AbstractWorker {
     // Stamp collected particles onto blood decal tiles
     startTime = shouldProfile ? performance.now() : 0;
     this.stampCollectedParticles();
-    const ringStamps = Decal.drainStampRing((x, y, tint, scaleX, scaleY, textureId, alpha, blendMode) => {
-      this.stampParticleToTile(x, y, tint, scaleX, scaleY, textureId, alpha, blendMode);
-    });
+    // E-351: the method and this worker, not an arrow over them: that was a context and a closure every frame.
+    const ringStamps = Decal.drainStampRing(this.stampParticleToTile, this);
     // W26: the frame's stamps, queued as records, in one kernel call.
     this.flushDecalStamps();
     this.particlesStampedThisFrame += ringStamps;

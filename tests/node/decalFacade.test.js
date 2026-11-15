@@ -162,3 +162,23 @@ test('Decal.stamp enqueues each field as configured', { concurrency: false }, ()
   ]);
   Decal.bindStampRing(null);
 });
+
+// E-351: the particle worker drains with its stampParticleToTile and itself (thisArg) instead of a closure a frame.
+test('Decal.drainStampRing calls onStamp with thisArg as this, each stamp as enqueued', { concurrency: false }, () => {
+  Decal.bindStampRing(Decal.createStampRingSab(16));
+  assert.equal(Decal.enqueueStamp(10.5, 20.25, 3, 1.5, 2, 0x80ff00, 0.5, 1), true);
+  assert.equal(Decal.enqueueStamp(7, 8, 4, 1, 1, 0xffffff, 1, 0), true);
+  const worker = {
+    stamps: [],
+    stamp(x, y, tint, scaleX, scaleY, textureId, alpha, blendMode) {
+      this.stamps.push([x, y, tint, scaleX, scaleY, textureId, alpha, blendMode]);
+    },
+  };
+  assert.equal(Decal.drainStampRing(worker.stamp, worker), 2);
+  assert.deepEqual(worker.stamps, [
+    [10.5, 20.25, 0x80ff00, 1.5, 2, 3, 0.5, 1],
+    [7, 8, 0xffffff, 1, 1, 4, 1, 0],
+  ]);
+  assert.equal(Decal.drainStampRing(worker.stamp, worker), 0, 'drained');
+  Decal.bindStampRing(null);
+});
