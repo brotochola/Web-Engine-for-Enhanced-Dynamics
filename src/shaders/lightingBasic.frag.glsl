@@ -78,7 +78,9 @@ float sunVisibility(vec3 p, float selfId) {
   vec2 land = p.xy - p.z * uSunMapK.xy;
   vec2 uv = weedWorldToNorm(vec2(land.x, land.y * uSunMapK.z));
   vec2 texel = 1.0 / uViewport;
-  float bias = 4.0 + p.z * 0.03;
+  // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
+  // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
+  float bias = p.z > 0.0 ? 4.0 + p.z * 0.03 : 0.0;
   float above = p.z + bias;
   float lit = 0.0;
   lit += sunTap(uv, above, selfId);
@@ -138,7 +140,9 @@ float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float 
   vec2 cell = vec2(mod(tile, uLampAtlas.x), floor(tile / uLampAtlas.x));
   vec2 toAtlas = vec2(uLampAtlas.y) / uLampAtlas.zw;
   float h = 0.5 / uLampAtlas.y;
-  float above = p.z + 4.0 + p.z * 0.03;
+  // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
+  // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
+  float above = p.z > 0.0 ? p.z + 4.0 + p.z * 0.03 : 0.0;
   float lit = lampTap(cell, uv, h, toAtlas, above, selfId);
   lit += lampTap(cell, uv + vec2(2.0 * h, 0.0), h, toAtlas, above, selfId);
   lit += lampTap(cell, uv - vec2(2.0 * h, 0.0), h, toAtlas, above, selfId);

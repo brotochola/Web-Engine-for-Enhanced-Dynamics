@@ -134,7 +134,9 @@ fn sunVisibility(p: vec3<f32>, selfId: f32) -> f32 {
   let uv = weedWorldToNorm(vec2<f32>(land.x, land.y * k.z));
   let size = vec2<i32>(textureDimensions(uSunMap, 0));
   let c = vec2<i32>(floor(uv * vec2<f32>(size)));
-  let above = p.z + 4.0 + p.z * 0.03;
+  // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
+  // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
+  let above = select(0.0, p.z + 4.0 + p.z * 0.03, p.z > 0.0);
   var lit = sunMapLit(c, size, above, selfId);
   lit += sunMapLit(c + vec2<i32>(1, 0), size, above, selfId);
   lit += sunMapLit(c - vec2<i32>(1, 0), size, above, selfId);
@@ -185,7 +187,9 @@ fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, 
   let lo = vec2<i32>(tile % perRow, tile / perRow) * size;
   let hi = lo + vec2<i32>(size - 1);
   let c = lo + vec2<i32>(floor(uv * a.y));
-  let above = p.z + 4.0 + p.z * 0.03;
+  // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
+  // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
+  let above = select(0.0, p.z + 4.0 + p.z * 0.03, p.z > 0.0);
   var lit = lampTap(c, lo, hi, above, selfId);
   lit += lampTap(c + vec2<i32>(1, 0), lo, hi, above, selfId);
   lit += lampTap(c - vec2<i32>(1, 0), lo, hi, above, selfId);
