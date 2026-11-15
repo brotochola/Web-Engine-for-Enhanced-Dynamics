@@ -82,6 +82,14 @@ import {
   writeLampTile,
 } from '../render/lampShadowMap.js';
 import { instancedSpriteGlProgram, pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
+import {
+  VOLUME_LAMP_FRAGMENT,
+  volumeLampVertex,
+  volumeLampWgsl,
+  volumeMapGpuProgram,
+  volumeMapWgsl,
+  writeVolumeLampTerms,
+} from '../render/volumeShadowMap.js';
 import { TileMap } from '../core/tileMap.js';
 import {
   listGidPages,
@@ -830,6 +838,8 @@ class PixiRenderer extends AbstractWorker {
     // DX-POST: the LAYER_KIND.SCREEN passes in zIndex order, and the frame they read (the stage drawn into a target).
     this._screenLayers = [];
     this._screenSceneRT = null;
+    // DX-DEPTH: the frame target given a depth attachment for the entities' pixel depth (WebGPU), so it is asked once.
+    this._screenSceneDepth = null;
     this._screenClear = [0, 0, 0, 1];
     this._layerRuntime = Object.create(null); // layerName -> display object
     this._cornerFirstRow = 0; // the rows the last corner rewrite wrote: [first, past)
@@ -906,6 +916,14 @@ class PixiRenderer extends AbstractWorker {
     this._lampMapOn = false;
     // DX-SHADOW3D (F6): the volumes' map programs, one a volumes' batch (made on first use).
     this._volumeMapMeshes = [];
+    // World px to the sun map's texels, (world - camera) · screenScale as its cards land, for the volumes (written when
+    // it changes: a Matrix's fields are tagged, each double written a heap number).
+    this._volumeMapTransform = new Matrix();
+    // DX-SHADOW3D (F7): the volumes in the lamps' map: { batch, host, meshes: a mesh a tile } a volumes' batch, and their
+    // program's options and state (made on first use).
+    this._volumeLampEntries = [];
+    this._volumeLampProgram = null;
+    this._volumeLampState = null;
     this._lampTileSize = 256;
     this._lampTilesPerRow = 1;
     this._lampMapLights = 0;
@@ -2170,7 +2188,13 @@ class PixiRenderer extends AbstractWorker {
       if (t && t.weedFootSlot >= 0) writeFootprintRow(data, t.weedFootSlot, t.weedFootprint);
     }
     this._footRgba = data;
+    // Its texels go up with the LUT (_uploadTexLutTexture writes this array into the source's texture).
+    this._texLutNeedsGpuUpload = true;
+    // One source while the rows' count holds. A program binds it (uFoot) when it is made and keeps it: a new source
+    // each rebuild left the lamps' columns on the old one, which WebGPU then failed every frame as destroyed.
+    if (this._footSource !== null && this._footRows === height) return;
     this._footRows = height;
+    const old = this._footSource;
     this._footSource = PIXI.TextureSource.from({
       resource: data,
       width: FOOTPRINT_TEXELS,
@@ -2181,9 +2205,23 @@ class PixiRenderer extends AbstractWorker {
       autoGenerateMipmaps: false,
     });
     this._footSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
-    // Column programs made before an atlas reload read the new one.
-    const columns = [this._sunSolids && this._sunSolids.columns, this._sunMapColumns];
-    for (const c of columns) if (c && c.shader) c.shader.resources.uFoot = this._footSource;
+    // Never unloaded by Pixi's texture GC while bound (writeRgba32Float pins it too, but only when it makes the texture).
+    this._footSource.autoGarbageCollect = false;
+    this._pointFootPrograms();
+    if (old !== null) old.destroy();
+  }
+
+  /**
+   * DX-SHADOW3D: every program that binds the footprints (uFoot) on the current source: the sprite shadows' columns, the
+   * sun map's and the lamps' map's (their layouts name binding 7 whether or not their WGSL reads it).
+   */
+  _pointFootPrograms() {
+    const source = this._footSource;
+    const holders = [this._sunSolids && this._sunSolids.columns, this._sunMapColumns, this._lampMapColumns];
+    for (let i = 0; i < holders.length; i++) {
+      const c = holders[i];
+      if (c && c.shader && c.shader.resources.uFoot !== source) c.shader.resources.uFoot = source;
+    }
   }
 
   _uploadRgba32FloatGl(source, data, width, height) {
@@ -2733,11 +2771,12 @@ class PixiRenderer extends AbstractWorker {
     // too since E-187: the scatter a compute pass).
     const keyed = this._pixiKeyed !== null && this._pixiInstanceRows !== null ? this._pixiKeyed : null;
     const indexed = !!(gpuCaps && gpuCaps.indexedSprites) || keyed !== null;
-    // DX-DEPTH (F5): an oblique camera with a maps page: each pixel's floor depth corrects the painter (WebGL for now;
-    // renderer.pixelDepth true or false forces it).
+    // DX-DEPTH (F5): an oblique camera with a maps page: each pixel's floor depth corrects the painter, on WebGL and
+    // WebGPU (renderer.pixelDepth true or false forces it). WebGPU tests it in the canvas's depth, or the SCREEN passes'
+    // frame's (_ensureTargetDepth).
     const wantDepth = this.config?.renderer?.pixelDepth;
     const oblique = cameraFloorScaleY(this.config) < 1 && cameraHeightScaleY(this.config) > 0;
-    const pixelDepth = !this._useWebGpu && this.atlasMapsSource !== null && (wantDepth === true || (wantDepth !== false && oblique))
+    const pixelDepth = this.atlasMapsSource !== null && (wantDepth === true || (wantDepth !== false && oblique))
       ? { maps: this.atlasMapsSource }
       : null;
     this.entitiesBatch = new InstancedSpriteBatch({
@@ -3436,6 +3475,7 @@ class PixiRenderer extends AbstractWorker {
       this._screenSceneRT.destroy(true);
       this._screenSceneRT = null;
     }
+    this._screenSceneDepth = null;
   }
 
   /**
@@ -3454,6 +3494,18 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
+   * DX-DEPTH: `rt`'s render target with a depth-stencil attachment (Pixi makes it at its size and clears it with the
+   * colour), for programs that test or write depth there: the entities' pixel depth on WebGPU.
+   */
+  _ensureTargetDepth(rt) {
+    const system = this.pixiApp?.renderer?.renderTarget;
+    const target = system && typeof system.getRenderTarget === 'function' ? system.getRenderTarget(rt) : null;
+    if (target && !target.depthStencilAttachment && typeof target.ensureDepthStencilTexture === 'function') {
+      target.ensureDepthStencilTexture();
+    }
+  }
+
+  /**
    * DX-POST: with a visible SCREEN layer, the stage goes into a target the canvas's size, cleared to the canvas's
    * background. Each visible SCREEN layer then, in zIndex order, reads what came before it and draws into its own
    * target, and the last onto the canvas. Without a visible one: false, and the present is the stage's as before.
@@ -3468,6 +3520,13 @@ class PixiRenderer extends AbstractWorker {
     const width = this.canvasWidth;
     const height = this.canvasHeight;
     this._screenSceneRT = this._screenTarget(this._screenSceneRT, width, height);
+    // DX-DEPTH: the entities' pixel depth writes frag_depth on WebGPU, and a pipeline that does needs a depth attachment
+    // in its target (WebGL draws the painter alone in a target without one).
+    if (this._screenSceneDepth !== this._screenSceneRT && this._useWebGpu && this.entitiesBatch !== null
+      && this.entitiesBatch.pixelDepthOn) {
+      this._ensureTargetDepth(this._screenSceneRT);
+      this._screenSceneDepth = this._screenSceneRT;
+    }
 
     const opts = this._rtRenderOpts;
     const background = app.renderer.background?.colorRgba;
@@ -6055,19 +6114,22 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._submitRender(rtOpts);
       this._gpuPassesThisFrame++;
     }
-    this._drawVolumesInSunMap(rtOpts);
+    this._drawVolumesInSunMap(rtOpts, screenScale);
     rtOpts.target = this.shadowRT;
     this._gpuPassesThisFrame++;
     return true;
   }
 
   /**
-   * DX-SHADOW3D (F6): each sun-projected volumes' layer drawn into the sun's map (WebGL for now): the same mesh rows, each
-   * vertex landing by the map's shift (sunMapTerms, per px of height; the volumes' heights are screen px, so over
-   * heightScaleY), its height out, max blending.
+   * DX-SHADOW3D (F6): each sun-projected volumes' layer drawn into the sun's map: the same mesh rows, each vertex landing
+   * by the map's shift (sunMapTerms, per px of height; the volumes' heights are screen px, so over heightScaleY), its
+   * height out, max blending. GLSL on WebGL (sunShadowMap.js volumeMapVertex), WGSL on WebGPU (volumeShadowMap.js
+   * volumeMapWgsl). The rows are in world px: the render's transform takes them into the map as its cards land
+   * ((world - camera) · screenScale, sunMapVertex).
    */
-  _drawVolumesInSunMap(rtOpts) {
-    if (this._useWebGpu || !this._engineShaders?.meshUvFillVert) return;
+  _drawVolumesInSunMap(rtOpts, screenScale) {
+    const shaders = this._engineShaders;
+    if (!(this._useWebGpu ? shaders?.meshUvFill : shaders?.meshUvFillVert)) return;
     const t = this._sunMapTerms;
     const hs = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
     const g = this._groundScaleY || 1;
@@ -6082,12 +6144,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (entry === null) {
         const r = batch.shader.resources;
         const terms = new Float32Array(4);
+        const program = this._useWebGpu
+          ? { gpuProgram: volumeMapGpuProgram(GpuProgram, volumeMapWgsl(shaders.meshUvFill), 'mainFragMap', 'sun-map-volumes') }
+          : {
+              glProgram: PIXI.GlProgram.from({
+                vertex: volumeMapVertex(shaders.meshUvFillVert),
+                fragment: VOLUME_MAP_FRAGMENT,
+                name: 'sun-map-volumes',
+              }),
+            };
         const shader = new PIXI.Shader({
-          glProgram: PIXI.GlProgram.from({
-            vertex: volumeMapVertex(this._engineShaders.meshUvFillVert),
-            fragment: VOLUME_MAP_FRAGMENT,
-            name: 'sun-map-volumes',
-          }),
+          ...program,
           resources: {
             uTexture: r.uTexture,
             uSampler: r.uSampler,
@@ -6109,7 +6176,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         entry = { batch, mesh, host, terms };
         this._volumeMapMeshes.push(entry);
       }
-      entry.mesh.geometry = batch.geometry;
+      if (entry.mesh.geometry !== batch.geometry) entry.mesh.geometry = batch.geometry;
+      this._syncVolumeResources(entry.mesh.shader, batch);
       const v = entry.terms;
       // A vertex h screen px high is h / heightScaleY px of height: it lands (kx, ky) further per px of height, the
       // floor's y drawn groundScaleY tall.
@@ -6120,9 +6188,39 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       entry.mesh.shader.resources.sunShadow.update();
       rtOpts.container = entry.host;
       rtOpts.clear = false;
+      rtOpts.transform = this._writeVolumeMapTransform(screenScale);
       this._submitRender(rtOpts);
+      rtOpts.transform = null;
       this._gpuPassesThisFrame++;
     }
+  }
+
+  /**
+   * DX-SHADOW3D: a volumes' map program's textures as its batch's are now (the atlas, the LUT and the pose table can be
+   * replaced after the program was made).
+   */
+  _syncVolumeResources(shader, batch) {
+    const r = batch.shader.resources;
+    const res = shader.resources;
+    if (res.uTexture !== r.uTexture) res.uTexture = r.uTexture;
+    if (res.uSampler !== r.uSampler) res.uSampler = r.uSampler;
+    if (res.uTexLut !== r.uTexLut) res.uTexLut = r.uTexLut;
+    if (res.uPoseTable !== r.uPoseTable) res.uPoseTable = r.uPoseTable;
+  }
+
+  /** DX-SHADOW3D (F6): world px to the sun map's texels, (world - camera) · screenScale (sunMapVertex's uCam), no turn. */
+  _writeVolumeMapTransform(screenScale) {
+    const mx = this._volumeMapTransform;
+    const z = screenScale > 0 ? screenScale : 1;
+    const tx = -this._renderCameraX * z;
+    const ty = -this._renderCameraY * z;
+    if (mx.a !== z) mx.a = z;
+    if (mx.b !== 0) mx.b = 0;
+    if (mx.c !== 0) mx.c = 0;
+    if (mx.d !== z) mx.d = z;
+    if (mx.tx !== tx) mx.tx = tx;
+    if (mx.ty !== ty) mx.ty = ty;
+    return mx;
   }
 
   /**
@@ -6173,7 +6271,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _uploadLampTiles() {
     const width = Math.max(1, this._lampTileData.length / 4);
     if (this._lampTileSource === null || this._lampTileSource.width !== width) {
-      if (this._lampTileSource) this._lampTileSource.destroy();
+      const old = this._lampTileSource;
       this._lampTileSource = PIXI.TextureSource.from({
         resource: this._lampTileData,
         width,
@@ -6184,8 +6282,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         autoGenerateMipmaps: false,
       });
       this._lampTileSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
-      const programs = [this._lampMapMesh && this._lampMapMesh.shader, this._lampMapColumns && this._lampMapColumns.shader];
-      for (const shader of programs) if (shader) shader.resources.uLampTiles = this._lampTileSource;
+      // Never unloaded by Pixi's texture GC while the programs keep it bound.
+      this._lampTileSource.autoGarbageCollect = false;
+      // Every program that binds it moves to the new one before the old one is destroyed.
+      this._pointLampTilePrograms();
+      if (old) old.destroy();
     }
     if (this._useWebGpu) {
       const renderer = this.pixiApp?.renderer;
@@ -6193,6 +6294,23 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       return;
     }
     this._uploadRgba32FloatGl(this._lampTileSource, this._lampTileData, width, 1);
+  }
+
+  /**
+   * DX-SHADOW3D (F7): every program that binds the tiles' lamps (uLampTiles) on the current source: the lamps' map's cards
+   * and columns, and each tile's volumes mesh.
+   */
+  _pointLampTilePrograms() {
+    const source = this._lampTileSource;
+    const shaders = [this._lampMapMesh && this._lampMapMesh.shader, this._lampMapColumns && this._lampMapColumns.shader];
+    for (let i = 0; i < this._volumeLampEntries.length; i++) {
+      const meshes = this._volumeLampEntries[i].meshes;
+      for (let k = 0; k < meshes.length; k++) shaders.push(meshes[k].shader);
+    }
+    for (let i = 0; i < shaders.length; i++) {
+      const shader = shaders[i];
+      if (shader && shader.resources.uLampTiles !== source) shader.resources.uLampTiles = source;
+    }
   }
 
   /**
@@ -6327,9 +6445,113 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._submitRender(rtOpts);
       this._gpuPassesThisFrame++;
     }
+    this._drawVolumesInLampMap(rtOpts);
     rtOpts.target = this.shadowRT;
     this._lampMapClear = false;
     return true;
+  }
+
+  /**
+   * DX-SHADOW3D (F7): each sun-projected volumes' layer drawn into the lamps' map once a tile in use, in one render: a mesh
+   * a tile over the layer's rows (volumeShadowMap.js volumeLampVertex / volumeLampWgsl), each vertex landing on the floor
+   * along that tile's lamp's ray (the tiles' texture holds the lamps; uLampVolume says which), its height out, max
+   * blending. A triangle past an edge of a tile is left out in its vertices, and one of the tile's lamp's own entity.
+   * Last frame's rows, as the sun map's volumes.
+   */
+  _drawVolumesInLampMap(rtOpts) {
+    const shaders = this._engineShaders;
+    const tiles = this._lampTileCount | 0;
+    if (tiles <= 0 || this._lampTileSource === null) return;
+    if (!(this._useWebGpu ? shaders?.meshUvFill : shaders?.meshUvFillVert)) return;
+    const invHs = 1 / (this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1);
+    const invG = this._groundInvScaleY || 1;
+    for (let i = 0; i < this._customLayerList.length; i++) {
+      const cl = this._customLayerList[i];
+      const batch = cl.sunProjected ? cl.uvFillBatch : null;
+      if (!batch || (batch.geometry.instanceCount | 0) <= 0) continue;
+      let entry = null;
+      for (let k = 0; k < this._volumeLampEntries.length; k++) {
+        if (this._volumeLampEntries[k].batch === batch) entry = this._volumeLampEntries[k];
+      }
+      if (entry === null) {
+        entry = { batch, host: new PIXI.Container(), meshes: [] };
+        this._volumeLampEntries.push(entry);
+      }
+      const meshes = entry.meshes;
+      while (meshes.length < tiles) meshes.push(this._volumeLampMesh(batch, entry.host));
+      for (let t = 0; t < meshes.length; t++) {
+        const mesh = meshes[t];
+        const on = t < tiles;
+        if (mesh.visible !== on) mesh.visible = on;
+        if (!on) continue;
+        if (mesh.geometry !== batch.geometry) mesh.geometry = batch.geometry;
+        this._syncVolumeResources(mesh.shader, batch);
+        const group = mesh.shader.resources.sunShadow;
+        const u = group.uniforms;
+        // The tile's lamp's own entity casts nothing for it (_readLampTiles: tile t is entity _lampTileIds[t]'s light).
+        const owner = t < this._lampTileIds.length ? this._lampTileIds[t] : -1;
+        const perRow = this._lampTilesPerRow;
+        if (writeVolumeLampTerms(u.uSunShadow, u.uLampVolume, u.uLampOwner, t, owner, perRow, this._lampTileSize, invHs, invG)) {
+          group.update();
+        }
+      }
+      rtOpts.container = entry.host;
+      rtOpts.clear = false;
+      this._submitRender(rtOpts);
+      this._gpuPassesThisFrame++;
+    }
+  }
+
+  /**
+   * DX-SHADOW3D (F7): a mesh over a volumes' batch for one tile of the lamps' map, with its own terms (sunShadow: uSunShadow,
+   * uLampVolume, then uLampOwner, the WGSL struct's order), in `host`. The program and state are made once.
+   */
+  _volumeLampMesh(batch, host) {
+    if (this._volumeLampProgram === null) {
+      const shaders = this._engineShaders;
+      this._volumeLampProgram = this._useWebGpu
+        ? {
+            gpuProgram: volumeMapGpuProgram(GpuProgram, volumeLampWgsl(shaders.meshUvFill), 'mainFragLamp', 'lamp-map-volumes', {
+              lampTiles: true,
+            }),
+          }
+        : {
+            glProgram: PIXI.GlProgram.from({
+              vertex: volumeLampVertex(shaders.meshUvFillVert),
+              fragment: VOLUME_LAMP_FRAGMENT,
+              name: 'lamp-map-volumes',
+            }),
+          };
+      const state = new PIXI.State();
+      state.blend = true;
+      state.blendMode = 'max';
+      state.depthTest = false;
+      state.depthMask = false;
+      state.culling = false;
+      this._volumeLampState = state;
+    }
+    const r = batch.shader.resources;
+    const shader = new PIXI.Shader({
+      ...this._volumeLampProgram,
+      resources: {
+        uTexture: r.uTexture,
+        uSampler: r.uSampler,
+        uTexLut: r.uTexLut,
+        uPoseTable: r.uPoseTable,
+        uLampTiles: this._lampTileSource,
+        // A tile of -1 until the frame writes this mesh's terms (writeVolumeLampTerms).
+        sunShadow: {
+          uSunShadow: { value: new Float32Array(4), type: 'vec4<f32>' },
+          uLampVolume: { value: new Float32Array([-1, 0, 0, 0]), type: 'vec4<f32>' },
+          uLampOwner: { value: new Float32Array([-1, 0, 0, 0]), type: 'vec4<f32>' },
+        },
+      },
+    });
+    const mesh = new PIXI.Mesh({ geometry: batch.geometry, shader, state: this._volumeLampState, label: 'lamp-map-volumes' });
+    // Max keeps the highest point; a mesh's blend mode holds only as a child (the sun map's host says why).
+    mesh.blendMode = 'max';
+    host.addChild(mesh);
+    return mesh;
   }
 
   /** DX-SHADOW3D (F7): a frame with no stamp rows clears the lamps' map (once). */
