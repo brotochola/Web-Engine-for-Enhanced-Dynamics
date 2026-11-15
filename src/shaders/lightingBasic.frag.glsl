@@ -233,7 +233,11 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
 // #if SUNMAP
   float sunVis = sunVisibility(p, selfId);
   sunDirect *= sunVis;
-  sunFlat = sunVis;
+  // N-208: a face the sun does not reach is in its own shade, where no other caster's shadow shows (by day it looks as
+  // drawn): the map's shade fades out across the terminator. The map keeps the highest caster on a ray and a pixel skips
+  // its own entity's, so a tree beyond the barn shaded the barn's far wall through the barn. A FLAT pixel (a card) has no
+  // side turned away.
+  sunFlat = isFlat ? sunVis : mix(1.0, sunVis, smoothstep(0.0, 0.15, dot(n, uFaceSun.xyz)));
 // #endif SUNMAP
 // #if SELFSHADOW
   // Faded out at the terminator, where the cosine already shades and a step either way flips the test. A FLAT pixel has

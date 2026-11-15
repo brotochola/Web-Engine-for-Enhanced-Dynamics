@@ -269,7 +269,8 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
 // #if SUNMAP
   let sunVis = sunVisibility(p, selfId);
   sunDirect *= sunVis;
-  sunFlat = sunVis;
+  // N-208: a face the sun does not reach takes no other caster's shadow (lightingBasic.frag.glsl says why).
+  sunFlat = select(mix(1.0, sunVis, smoothstep(0.0, 0.15, dot(n, uniforms.uFaceSun.xyz))), sunVis, isFlat);
 // #endif SUNMAP
 // #if SELFSHADOW
   // Faded out at the terminator, where the cosine already shades and a step either way flips the test. A FLAT pixel has
