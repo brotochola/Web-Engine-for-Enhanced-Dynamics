@@ -54,10 +54,11 @@ export class FlashlightStressScene extends Scene {
     layers: {
       ground: { kind: LAYER_KIND.TILING, texture: 'ground', tileScale: 1, parallax: 1, zIndex: 0 },
     },
+    // A side view: raycasted lighting, the crates its walls. The lights pool on the backdrop, seen face on: a floor of 1.
+    camera: { pitch: 0, floorScaleY: 1 },
     lighting: {
       enabled: true,
       baseAmbient: 0.05,
-      raycasted: true,
       shadowsEnabled: false,
       maxLights: LIGHTS,
       maxPolygonVertices: 5000,

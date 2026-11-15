@@ -70,14 +70,14 @@ export class LightMotionScene extends Scene {
     layers: {
       ground: { kind: LAYER_KIND.TILING, texture: 'ground', tileScale: 1, parallax: 1, zIndex: 0 },
     },
-    camera: { floorScaleY: GROUND_SCALE_Y },
+    // ?raycast=1: pitch 90, a flat view, lights by raycasting (the blocks' walls), on the same floor.
+    camera: RAYCAST ? { pitch: 90, floorScaleY: GROUND_SCALE_Y } : { floorScaleY: GROUND_SCALE_Y },
     lighting: {
       enabled: true,
       baseAmbient: AMBIENT,
       maxLights: 32,
       maxFlashes: 16,
       shadowsEnabled: true,
-      raycasted: RAYCAST,
       maxShadowCastingLights: 16,
       maxShadowsPerLight: 32,
       maxPolygonVertices: 2048,

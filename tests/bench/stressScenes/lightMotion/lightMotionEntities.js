@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, ShadowCaster, LightEmitter, LightOccluder, Flash, enums } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, ShadowCaster, LightEmitter, Flash, enums } = WEED;
 const { ShapeType } = enums;
 
 /** Writes a moving lamp's light (the light API of the revision this file belongs to). */
@@ -50,9 +50,9 @@ export class MotionProp extends GameObject {
   }
 }
 
-/** A box that blocks raycasted light. */
+/** A box that blocks raycasted light: a wall (spawned with ?raycast=1 only). */
 export class MotionBlock extends GameObject {
-  static components = [RigidBody, Collider, LightOccluder];
+  static components = [RigidBody, Collider, ShadowCaster];
 
   onSpawned({ x = 0, y = 0 } = {}) {
     this.x = x;
@@ -63,8 +63,7 @@ export class MotionBlock extends GameObject {
     this.collider.width = 40;
     this.collider.height = 26;
     this.collider.visualRange = 64;
-    this.lightOccluder.active = 1;
-    this.lightOccluder.block = 1;
+    this.shadowCaster.setWall();
   }
 }
 
