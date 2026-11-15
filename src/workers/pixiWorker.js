@@ -6310,7 +6310,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         label: 'sun-map-columns',
       };
     }
-    if (!this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS)) return false;
+    // N-190: with no sprite caster's row this frame the volumes still cast (a scene of boxes alone): the cards' and the
+    // columns' passes are left out, the map is cleared by the first of what draws.
+    const rows = sunN > 0 ? this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS) : 0;
+    if (rows <= 0 && !this._volumesCast()) return false;
     const mesh = this._sunMapMesh;
     mesh.geometry = batch.mesh.geometry;
     const u = this._sunMapUniforms.uniforms;
@@ -6336,12 +6339,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // shadow (a 2D trick: here a shadow's length does not thin it). At 16 h in the light bench that left 13 % of darkness.
     k[3] = Math.max(0, Math.min(1, Sun.shadowAlpha));
     const rtOpts = this._rtRenderOpts;
-    rtOpts.container = this._sunMapHost;
+    rtOpts.container = rows > 0 ? this._sunMapHost : this._rtEmptyContainer;
     rtOpts.target = this.sunMapRT;
     rtOpts.clear = true;
     rtOpts.clearColor = this._clearTransparent;
     this._submitRender(rtOpts);
-    if (this.atlasMapsSource !== null) {
+    if (rows > 0 && this.atlasMapsSource !== null) {
       rtOpts.container = this._sunMapColumnsMesh(batch.mesh.geometry, this._sunMapColumns).host;
       rtOpts.clear = false;
       this._submitRender(rtOpts);
@@ -6360,6 +6363,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * volumeMapWgsl). The rows are in world px: the render's transform takes them into the map as its cards land
    * ((world - camera) · screenScale, sunMapVertex).
    */
+  /** N-190: whether a sun-projected volumes' layer has a volume this frame (they cast into the maps without sprite rows). */
+  _volumesCast() {
+    for (let i = 0; i < this._customLayerList.length; i++) {
+      const cl = this._customLayerList[i];
+      const batch = cl.sunProjected ? cl.uvFillBatch : null;
+      if (batch && (batch.geometry.instanceCount | 0) > 0) return true;
+    }
+    return false;
+  }
+
   _drawVolumesInSunMap(rtOpts, screenScale) {
     const shaders = this._engineShaders;
     if (!(this._useWebGpu ? shaders?.meshUvFill : shaders?.meshUvFillVert)) return;
@@ -6973,7 +6986,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._sunMapDrew = false;
     if (this._sunMapOn) {
       // DX-SHADOW3D: the sun's rows go to its shadow map, not to the sprite shadows' layer.
-      if (u.uSun[3] > 0 && sunN > 0 && this._drawSunMap(batch, gpu, sunN, zoom * res)) this._sunMapDrew = true;
+      if (u.uSun[3] > 0 && (sunN > 0 || this._volumesCast()) && this._drawSunMap(batch, gpu, sunN, zoom * res)) {
+        this._sunMapDrew = true;
+      }
       this._clearSunMapIfEmpty();
     } else if (u.uSun[3] > 0 && sunN > 0 && !keyedRows && this._sunSolidsOn()) {
       // DX-SHADOW3D: a scene with height maps: what has one casts its solid's columns, the rest its card (full rows).
