@@ -807,6 +807,11 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   selfShadow: false,
   /**
+   * DX-GBUF: how the G-buffer passes draw. 'pass' (default): the face map, then the entity ids map, a pass each. 'mrt':
+   * both in one pass with two colour targets (WebGL2 drawBuffers, WebGPU two targets). Same picture.
+   */
+  gbuffer: 'pass',
+  /**
    * 'add' — type 3 glows go to the lightGlows ADD mesh.
    * 'sprite' — same quads join the entity list (sort bias already above the body).
    * Source-over, so the soft edge can gray, and lighting multiply sits on top.
