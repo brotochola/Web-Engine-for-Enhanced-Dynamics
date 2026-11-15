@@ -90,25 +90,48 @@ export function sheetScale(name) {
 }
 
 /**
- * The heading (radians, the world's: 0 east, π/2 south) of the frame a car sheet draws for `facing`: its nearest direction
- * of the right-facing half drawn, mirrored for the left (180° − a), as DirectionalSprite picks it. `facing` itself for a
- * sheet without measured headings.
+ * A car sheet's directions in degrees, the turn's order (0 east, clockwise): the headings its frames are drawn at and
+ * their mirrors (180° − a), as DirectionalSprite has them; null for a sheet without them.
+ */
+function carDirections(name) {
+  const h = BENCH_ASSETS[name]?.headings;
+  if (!Array.isArray(h) || h.length === 0) return null;
+  const all = new Set();
+  for (const a of h) {
+    all.add(((a % 360) + 360) % 360);
+    all.add((((180 - a) % 360) + 360) % 360);
+  }
+  return [...all].sort((p, q) => p - q);
+}
+
+/** The direction of `dirs` (degrees) nearest `facing` (radians): its index. */
+function nearestDirection(dirs, facing) {
+  const deg = (((facing * 180) / Math.PI) % 360 + 360) % 360;
+  let best = 0;
+  let bestGap = Infinity;
+  dirs.forEach((at, k) => {
+    const gap = Math.abs(((deg - at + 540) % 360) - 180);
+    if (gap < bestGap) {
+      bestGap = gap;
+      best = k;
+    }
+  });
+  return best;
+}
+
+/**
+ * The heading (radians, the world's: 0 east, π/2 south) of the frame a car sheet draws for `facing`: its direction nearest
+ * the facing, as DirectionalSprite picks it. `facing` itself for a sheet without directions.
  */
 export function drawnHeading(name, facing) {
-  const h = BENCH_ASSETS[name]?.headings;
-  if (!h) return facing;
-  const deg = (((facing * 180) / Math.PI) % 360 + 360) % 360;
-  let best = null;
-  let bestGap = Infinity;
-  for (const [key, real] of Object.entries(h)) {
-    const k = Number(key);
-    for (const [at, drawn] of [[k, real], [(540 - k) % 360, 180 - real]]) {
-      const gap = Math.abs(((deg - at + 540) % 360) - 180);
-      if (gap < bestGap) {
-        bestGap = gap;
-        best = drawn;
-      }
-    }
-  }
-  return (best * Math.PI) / 180;
+  const dirs = carDirections(name);
+  return dirs ? (dirs[nearestDirection(dirs, facing)] * Math.PI) / 180 : facing;
+}
+
+/** The facing (radians) of a car sheet's next direction from `facing` (`step` +1 clockwise, -1 back): one frame a turn. */
+export function nextCarFacing(name, facing, step) {
+  const dirs = carDirections(name);
+  if (!dirs) return facing + (step * 7.5 * Math.PI) / 180;
+  const k = (nearestDirection(dirs, facing) + step + dirs.length) % dirs.length;
+  return (dirs[k] * Math.PI) / 180;
 }

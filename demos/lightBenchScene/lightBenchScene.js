@@ -29,7 +29,7 @@
 //   ?cycle=       the day cycle, in hours a second (default 0: the hour stays)
 
 import WEED from '/src/index.js';
-import { BENCH_ASSETS, benchSheetSpec, sheetScale } from './benchAssets.js';
+import { BENCH_ASSETS, benchSheetSpec, nextCarFacing, sheetScale } from './benchAssets.js';
 import { elementCode, lampCode, sceneCode } from './benchCode.js';
 import {
   KIND_NAMES, LAMP_KINDS, NORMALS, ORIENTS, SELF_SHADOWS, SUN_KINDS,
@@ -384,8 +384,10 @@ export class LightBenchScene extends Scene {
     let seed = 7;
     const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
     for (const [sheet, x, y] of FARM) {
-      // The prototype's turn is counter-clockwise on the floor; a facing is the world's angle (clockwise, y down).
-      const facing = -Math.floor(rnd() * 360) * DEG;
+      // The prototype's turn is counter-clockwise on the floor; a facing is the world's angle (clockwise, y down). A car's
+      // turn is its heading; a prop's frame k is its model turned k steps, frame 0 at facing 90° (its sheet's stand table).
+      const turn = Math.floor(rnd() * 360);
+      const facing = (BENCH_ASSETS[sheet].kind === 'car' ? -turn : 90 - turn) * DEG;
       if (!wanted(sheet)) continue;
       this._addElement(BENCH_ASSETS[sheet].kind === 'car' ? 'car' : 'prop', sheet, null, x, y, facing);
     }
@@ -689,9 +691,10 @@ export class LightBenchScene extends Scene {
       return;
     }
     if (s.lamp) return;
-    // One of its views a press: a prop's 32, a car's 48 (the pack's 7.5° steps), so every frame drawn shows on a turn.
-    if (Keyboard.isPressed('q')) this._turn(s, -turnStep(s.kind));
-    if (Keyboard.isPressed('e')) this._turn(s, turnStep(s.kind));
+    // One of its views a press: a prop's 32 even steps; a car to its next frame (its directions are the headings its
+    // frames are drawn at, not even), so every frame drawn shows on a turn.
+    const press = Keyboard.isPressed('q') ? -1 : Keyboard.isPressed('e') ? 1 : 0;
+    if (press !== 0) this._turn(s, s.kind === 'car' ? nextCarFacing(s.sheet, s.facing, press) - s.facing : press * turnStep(s.kind));
     if (Keyboard.isPressed('b')) {
       // Off, and back to what it was.
       if (s.off !== null) {
