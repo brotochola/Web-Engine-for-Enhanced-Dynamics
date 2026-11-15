@@ -57,6 +57,11 @@ const REQUIRED = [
   'attachedSway',
   'attachedWalls',
   'textureUpload',
+  // DX-LIGHT3D owner scenes (plan §10).
+  'sunShadowMap',
+  'selfShadow',
+  'depthSort',
+  'emissive',
 ];
 
 test('catalog has one unique row per hot engine feature', () => {
