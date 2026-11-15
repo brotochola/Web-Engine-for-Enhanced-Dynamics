@@ -35,6 +35,8 @@ const ONLY = param('only') === null ? null : new Set(param('only').split(','));
 const LAMPS = param('lamps') !== '0';
 const BACKEND = param('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 const FULL_ROWS = param('fullRows') === '1';
+// ?sweep=1: lighting.footprintSolids, the heightmap casters' solids swept north to their footprints (being fixed).
+const SWEEP = param('sweep') === '1';
 const wanted = (sheet) => ONLY === null || ONLY.has(sheet);
 const HOUR = Number(param('hour')) || 16;
 const HOURS = [10, 16, 18.5, 22];
@@ -175,6 +177,7 @@ export class LightBenchScene extends Scene {
       resolution: 0.5,
       shadowsEnabled: true,
       sunShadows: SUN_MAP ? 'map' : 'sprite',
+      footprintSolids: SWEEP,
       selfShadow: SELF,
       shadowTextures: FULL_ROWS,
       // Shadows as dark as the light bench prototype's (about 60 % darker than the sunlit floor at 16 h): a strong shadow

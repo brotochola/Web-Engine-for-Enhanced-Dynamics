@@ -60,6 +60,18 @@ function blit(from, fw, to, tw, sx, sy, w, h, dx, dy) {
   }
 }
 
+/**
+ * How the prototype cast each asset's shadows: trees and the fence a card for every light; cars a card for the sun and
+ * their heightmap for the lamps; the cow a card for the sun and its hull for the lamps; everything else its heightmap.
+ */
+function castOf(name, kind) {
+  if (kind === 'tree' || name === 'cerca') return { sun: 'sprite', lamp: 'sprite' };
+  if (kind === 'car') return { sun: 'sprite', lamp: 'heightmap' };
+  if (name === 'vaca') return { sun: 'sprite', lamp: 'hull' };
+  if (kind === 'char') return { sun: 'sprite', lamp: 'sprite' };
+  return { sun: 'heightmap', lamp: 'heightmap' };
+}
+
 const index = {};
 let total = 0;
 for (const [name, a] of Object.entries(meta)) {
@@ -111,9 +123,17 @@ for (const [name, a] of Object.entries(meta)) {
       image: `${name}.png`,
       size: { w: W, h: H },
       scale: 1,
-      // The light bench's data the engine does not read yet: footprints per frame (floor px around the anchor), the box
-      // (x0, x1, y0, y1, height) and the hull of the model unturned, its tallest point.
-      light3d: { kind: a.kind ?? 'prop', zmax: a.zmax ?? null, footprints: a.huellas ?? null, box: a.caja ?? null, hull: a.casco ?? null },
+      // The light bench's data: how it casts (cast.sun: 'sprite', a card; 'heightmap', its solid swept north to its
+      // footprint), the footprints per frame (floor px around the anchor), which the engine reads, and the box (x0, x1, y0,
+      // y1, height) and the hull of the model unturned, its tallest point, which it does not yet.
+      light3d: {
+        kind: a.kind ?? 'prop',
+        cast: castOf(name, a.kind ?? 'prop'),
+        zmax: a.zmax ?? null,
+        footprints: a.huellas ?? null,
+        box: a.caja ?? null,
+        hull: a.casco ?? null,
+      },
     },
   };
   fs.writeFileSync(path.join(out, `${name}.json`), JSON.stringify(json));
