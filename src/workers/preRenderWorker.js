@@ -281,6 +281,46 @@ function computeCasterCodes(out, active, sunKind, lampKind, orient, opacity, dsA
     }
 }
 
+/**
+ * DX-SHADOW3D: each full stamp row of a directional caster drawn with the frame its lamp sees: the direction the logic
+ * worker drew turned by the angle from the camera's view to the lamp's (along the shadow, from the lamp to the caster, on
+ * the floor). The row's entity is in its tint float (pre-render wrote it into the sun row the kernel copied).
+ */
+function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive, dsMode,
+    dirs, anims, sheets, orients) {
+    for (let k = 0; k < stampN; k++) {
+        const at = k * GPU_CASTER_FLOATS;
+        const e = rows[at + GPU_ROW_TINT] | 0;
+        if (e < 0 || e >= dsActive.length || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
+        if (orients !== null && orients[e] === 1) continue;
+        const sheet = sheets[e];
+        const t = tables[sheet];
+        if (t === undefined || t.solid) continue;
+        const L = lights[lightIdx[k]];
+        if (!L) continue;
+        const turn = -Math.PI / 2 - Math.atan2((rows[at + 1] - L.y) * invG, rows[at] - L.x);
+        const cur = dirs[e];
+        let d = 0;
+        if (t.uniform && cur < t.count) {
+            d = (cur + Math.round(wrapAngle(turn) / t.step)) % t.count;
+            if (d < 0) d += t.count;
+        } else {
+            d = sunFrameDirection(t, e, turn);
+        }
+        const g = anims[e];
+        const slot = (g < t.groups ? g : 0) * t.count + d;
+        const map = proxy[sheet];
+        const global = map ? map[t.anim[slot]] : undefined;
+        if (global === undefined) continue;
+        const nf = counts[global] | 0;
+        let fr = frames !== null ? frames[e] | 0 : 0;
+        if (fr < 0 || fr >= nf) fr = 0;
+        rows[at + GPU_ROW_TEXTURE] = (starts[global] | 0) + fr;
+        const sx = rows[at + GPU_ROW_SCALE_X];
+        rows[at + GPU_ROW_SCALE_X] = (t.flip[slot] === 1) === (sx < 0) ? sx : -sx;
+    }
+}
+
 /** A table that is not uniform (or a sprite with no direction yet): the facing turned by the sun, nearest direction. */
 function sunFrameDirection(t, e, turn) {
     const ax = DirectionalSprite.aimX[e];
@@ -311,6 +351,8 @@ const EMPTY_I32 = new Int32Array(0);
 const GPU_ROW_SCALE_X = 2;
 // DX-CASTER: a full caster row's depth float carries its caster code (the shadow programs read no depth).
 const GPU_ROW_DEPTH = 8;
+// A full caster row's tint float carries its entity for the lamps' frames (the shadow programs read no tint).
+const GPU_ROW_TINT = 9;
 const GPU_ROW_ANCHOR_X = 4;
 const GPU_ROW_TEXTURE = 10;
 
@@ -3669,6 +3711,7 @@ class PreRenderWorker extends AbstractWorker {
             if (this._shadowTextures && sunN > 0) this._applyShadowTextures(q, dst.sun, sunN);
             if (this._sunFrameTables !== null && sunN > 0 && DirectionalSprite.active) this._applySunFrames(q, dst.sun, sunN);
             if (this._casterKindsOn && sunN > 0) this._tagCasterRows(q, dst.sun, sunN);
+            if (this._sunFrameTables !== null && sunN > 0 && DirectionalSprite.active) this._tagCasterEntities(q, dst.sun, sunN);
         }
         return sunN;
     }
@@ -3733,6 +3776,31 @@ class PreRenderWorker extends AbstractWorker {
             starts, counts, this._sunShift, this._sunShiftTurn, turn, ShadowCaster.orient || null,
         );
         return true;
+    }
+
+    /** DX-SHADOW3D: each full sun row's entity in its tint float, for the lamps' frames (applyLampFramesInto). */
+    _tagCasterEntities(q, rows, sunN) {
+        if ((q.count | 0) !== this._collectedRows) return;
+        const casters = this._gpuCasterIdx;
+        const types = this._renderableType;
+        const entities = this._renderableIndex;
+        for (let k = 0; k < sunN; k++) {
+            const row = casters[k];
+            rows[k * GPU_CASTER_FLOATS + GPU_ROW_TINT] = types[row] === 0 ? entities[row] : -1;
+        }
+    }
+
+    /** DX-SHADOW3D: the full stamp rows' frames as their lamps see them (applyLampFramesInto). */
+    _applyLampFrames(dst, stampN) {
+        const proxy = this.proxyToGlobalAnim;
+        const starts = this.animationFrameStart;
+        const counts = this.animationFrameCount;
+        if (!proxy || !starts || !counts || !this._stampLights || !dst.stampLightIdx) return;
+        applyLampFramesInto(
+            dst.stamp, stampN, dst.stampLightIdx, this._stampLights, 1 / cameraFloorScaleY(this.config), this._sunFrameTables,
+            proxy, starts, counts, this.entityFrameIndex || null, DirectionalSprite.active, DirectionalSprite.mode,
+            DirectionalSprite.directionIndex, DirectionalSprite.animation, SpriteRenderer.spritesheetId, ShadowCaster.orient || null,
+        );
     }
 
     /**
@@ -4029,6 +4097,8 @@ class PreRenderWorker extends AbstractWorker {
         // N-134: under raycasted lighting the fans are the lamps' shadows and Pixi draws the sun's casters alone, so
         // the lamps' stamps and cookies are not made.
         const stamp = this.visibilityPolygonsEnabled ? 0 : this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
+        // DX-SHADOW3D: a lamp's silhouettes in the direction that lamp sees (full rows; keyed ones keep the sun's).
+        if (stamp > 0 && !this._gpuSunKeyed && this._sunFrameTables !== null && DirectionalSprite.active) this._applyLampFrames(dst, stamp);
         const cookie = this.visibilityPolygonsEnabled ? 0 : this._packGpuCookies(dst);
         res.sun = sunN;
         res.stamp = stamp;
