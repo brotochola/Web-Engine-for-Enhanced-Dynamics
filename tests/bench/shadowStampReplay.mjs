@@ -78,7 +78,8 @@ export async function createStampReplay(capture, kernelUrl) {
   regions.push(
     { name: 'gridCounts', owner: 'pre-render', bytes: STAMP_GRID_CELLS * 4 },
     { name: 'gridStarts', owner: 'pre-render', bytes: (STAMP_GRID_CELLS + 1) * 4 },
-    { name: 'nearDist', owner: 'pre-render', bytes: maxSun * maxPE * 4 },
+    // 8 bytes a slot: room for a record of the distance and the light side by side (E-358), a float array before it.
+    { name: 'nearDist', owner: 'pre-render', bytes: maxSun * maxPE * 8 },
     { name: 'nearSlot', owner: 'pre-render', bytes: maxSun * maxPE * 4 },
     { name: 'stamp', owner: 'pre-render', bytes: maxCap * floats * 4 },
     { name: 'stampLightIdx', owner: 'pre-render', bytes: maxCap * 2 },

@@ -124,7 +124,8 @@ export async function createStampKernel(fx, opts, kernelUrl) {
   regions.push(
     { name: 'lightVec', owner: 'pre-render', bytes: 16 },
     { name: 'lights', owner: 'pre-render', bytes: spec.lights.length * STAMP_LIGHT_DOUBLES * 8 },
-    { name: 'nearDist', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 4 },
+    // 8 bytes a slot: room for a record of the distance and the light side by side (E-358), a float array before it.
+    { name: 'nearDist', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 8 },
     { name: 'nearSlot', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 4 },
     { name: 'nearCount', owner: 'pre-render', bytes: Math.max(1, s.sunN) },
     { name: 'packedX', owner: 'pre-render', bytes: Math.max(1, s.sunN) * 4 },
