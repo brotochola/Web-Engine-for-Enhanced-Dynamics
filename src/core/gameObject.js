@@ -3408,7 +3408,10 @@ export class GameObject {
       }
 
       if (spawnConfig && spawnConfig._saveRestore) {
+        // N-186: the save writes the columns directly; the sprite's counters follow what they now hold.
+        const spriteUsers = has.SpriteRenderer ? SpriteRenderer.usersOfRow(i) : 0;
         applyEntitySaveRestore(i, EntityClass, spawnConfig._saveRestore);
+        if (has.SpriteRenderer) SpriteRenderer.recountRow(i, spriteUsers);
         // DX-CASTER: the wall follows the kinds the save brought back (its columns are internal, so not in the save).
         if (has.ShadowCaster) restoreCasterWall(i);
       }

@@ -312,6 +312,26 @@ export class SpriteRenderer extends Component {
     flags[i] = 0;
   }
 
+  /** N-186: the counted states row i holds: 1 a zIndex, 2 its own glow (the two counters' members). */
+  static usersOfRow(i) {
+    const z = SpriteRenderer.zIndex;
+    const f = SpriteRenderer.gbufFlags;
+    return (z && z[i] !== 0 ? 1 : 0) | (f && (f[i] & GBUF_FLAGS.EMISSIVE_MASK) !== 0 ? 2 : 0);
+  }
+
+  /**
+   * N-186: after row i's columns were written directly (a save restored), the counters follow what changed since
+   * usersOfRow gave `before`: the glow pass and the zIndex sort know a restored sprite glows or has a zIndex.
+   */
+  static recountRow(i, before) {
+    const after = SpriteRenderer.usersOfRow(i);
+    if (after === before) return;
+    const zUsers = SpriteRenderer._zIndexUsers;
+    const eUsers = SpriteRenderer._emissiveUsers;
+    if (zUsers && (after & 1) !== (before & 1)) Atomics.add(zUsers, 0, (after & 1) !== 0 ? 1 : -1);
+    if (eUsers && (after & 2) !== (before & 2)) Atomics.add(eUsers, 0, (after & 2) !== 0 ? 1 : -1);
+  }
+
   get tileOffsetV() {
     return unpackTileOffset01(SpriteRenderer.tileOffsetV[this.index]);
   }
