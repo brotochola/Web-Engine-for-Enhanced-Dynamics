@@ -180,6 +180,35 @@ INLINE double fabs_d(double v) { return __builtin_fabs(v); }
 INLINE double js_min1(double v) { return v != v ? v : v < 1.0 ? v : 1.0; }
 INLINE double js_max0(double v) { return v != v ? v : v > 0.0 ? v : 0.0; }
 
+/* E-360: (cur + 1) % fc for a frame cur >= 0 and a count fc > 1, as a compare and a select: the next frame is below the
+   count or wraps to 0 at it; a frame already past the count (frame tables rewritten under it) takes the remainder. */
+INLINE int32_t frame_step(int32_t cur, int32_t fc) {
+  const int32_t next = cur + 1;
+  if (__builtin_expect(next > fc, 0)) return next % fc;
+  return next == fc ? 0 : next;
+}
+
+/* E-360: 1 / (speed x 60), the frame's duration, kept for the last speed seen (by its bits: -0 and +0 give -Infinity and
+   +Infinity, and a NaN compares unequal to itself). Sprites share a few speeds. */
+typedef struct {
+  uint32_t bits;
+  double duration;
+} Duration;
+
+INLINE void duration_init(Duration *d) {
+  d->bits = 0u;
+  d->duration = 1.0 / (0.0 * 60.0);
+}
+
+INLINE double duration_of(Duration *d, float speed) {
+  union { float f; uint32_t u; } b = {speed};
+  if (b.u != d->bits) {
+    d->bits = b.u;
+    d->duration = 1.0 / ((double)speed * 60.0);
+  }
+  return d->duration;
+}
+
 /* JS `x % y` on doubles: the exact remainder, the sign of x (musl's fmod, the normalisation by count). */
 static double js_fmod(double x, double y) {
   union { double f; uint64_t i; } ux = {x}, uy = {y};
@@ -336,6 +365,7 @@ typedef struct {
   int sortKey, ySort, tilesDirty, bounds;
   double deltaSeconds, zoomAlpha, band;
   uint32_t nEnds, nWarns, tiled;
+  Duration dur;
 } Emit;
 
 INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSeconds, double zoomAlpha, double band) {
@@ -530,6 +560,7 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->nEnds = 0;
   e->nWarns = 0;
   e->tiled = 0;
+  duration_init(&e->dur);
 }
 
 /* _writeQueueShadow: entity idx's shadow terms at row out. */
@@ -656,7 +687,7 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq) {
     if (e->sAnimated[idx] && fc > 1) {
       const float acc = (float)((double)e->aAccum[idx] + e->deltaSeconds);
       e->aAccum[idx] = acc;
-      const double duration = 1.0 / ((double)e->sSpeed[idx] * 60.0);
+      const double duration = duration_of(&e->dur, e->sSpeed[idx]);
       if ((double)acc >= duration) {
         e->aAccum[idx] = (float)((double)acc - duration);
         const int32_t cur = e->aFrame[idx];
@@ -666,7 +697,7 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq) {
           e->ends[2 * e->nEnds + 1] = anim;
           e->nEnds++;
         } else {
-          e->aFrame[idx] = (uint16_t)((cur + 1) % fc);
+          e->aFrame[idx] = (uint16_t)frame_step(cur, fc);
           texMoved = 1;
           if (e->bounds) {
             /* Bounds may change (variable frame sizes). */
@@ -1486,6 +1517,8 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   /* Every row passed: the clocks, in row order. */
   uint32_t moved = 0;
   uint32_t nEnds = 0;
+  Duration dur;
+  duration_init(&dur);
   for (uint32_t a = 0; a < nAnimated; a++) {
     const uint32_t i = animated[a];
     const int32_t idx = cIndex[i];
@@ -1496,7 +1529,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
     if (fc <= 1) continue;
     const float acc = (float)((double)aAccum[idx] + deltaSeconds);
     aAccum[idx] = acc;
-    const double duration = 1.0 / ((double)sSpeed[idx] * 60.0);
+    const double duration = duration_of(&dur, sSpeed[idx]);
     if (!((double)acc >= duration)) continue; /* the full emit's test: a NaN clock never advances (N-65) */
     aAccum[idx] = (float)((double)acc - duration);
     const int32_t cur = aFrame[idx];
@@ -1507,7 +1540,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
       nEnds++;
       continue;
     }
-    aFrame[idx] = (uint16_t)((cur + 1) % fc);
+    aFrame[idx] = (uint16_t)frame_step(cur, fc);
     const uint32_t frame = aFrame[idx];
     const int32_t tex = frameStart[g] + (int32_t)frame;
     qTexture[i] = (uint16_t)tex;

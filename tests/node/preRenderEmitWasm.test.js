@@ -122,7 +122,7 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false, keyedDecorations = false, keyedLiquidFun = false, faces = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false, keyedDecorations = false, keyedLiquidFun = false, faces = false, speeds = null }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
   // With `lights`, LightEmitter in the emit's blocks and Transform's pose in the collect's (a scene without physics).
@@ -269,7 +269,9 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     sr.spritesheetId[i] = i % 41 === 0 ? 0 : i % 29 === 0 ? 4 : 1 + (i % 3);
     sr.animationState[i] = sr.spritesheetId[i] === 4 ? (i & 1) : i % 4;
     sr.isAnimated[i] = i % 7 === 0 ? 0 : 1;
-    sr.animationSpeed[i] = 0.1 + r() * 0.9;
+    // E-360: `speeds` replaces the random speeds by a pattern (the draw still made, so the other columns stay the same).
+    const speed = 0.1 + r() * 0.9;
+    sr.animationSpeed[i] = speeds ? speeds[i % speeds.length] : speed;
     sr.loop[i] = i % 11 === 0 ? 0 : 1;
     ShadowCaster.active[i] = i % 4 === 0 ? 0 : 1;
     ShadowCaster.heightMultiplier[i] = i % 13 === 0 ? NaN : i % 19 === 0 ? -0 : r() * 2;
@@ -758,6 +760,14 @@ test('the emit kernel writes what emitSpriteQueue writes, Y-sorted', async (t) =
 
 test('the emit kernel writes what emitSpriteQueue writes, without Y-sort', async (t) => {
   await runCase(t, { ySort: false, seed: 0xbeef });
+});
+
+// E-360: the emit keeps 1 / (speed x 60) for the last speed seen. Runs of one speed, signed zeros (their durations are
+// -Infinity and +Infinity), NaN and a speed whose duration overflows: the kernel's clocks are still the JS's.
+const SPEED_RUNS = [0.15, 0.15, 0.15, -0, 0, 0.15, NaN, NaN, 0.15, 0.3, 0.3, 1e-310, 0.15, 0, -0, 0.5];
+
+test('E-360: with runs of one speed, signed zeros and NaN the kernel\'s clocks are the JS\'s', async (t) => {
+  await runCase(t, { ySort: true, speeds: SPEED_RUNS, seed: 0x360 });
 });
 
 test('DX-FACES: a decoration\'s row carries its face in the tile offsets, and a sprite\'s row stays untiled', async (t) => {
@@ -1289,8 +1299,8 @@ function persistSchedule(k, { inQueue, seed, adobe, casters = true }) {
   };
 }
 
-async function runPersistCase(t, { ySort, inQueue, seed, keyed = false }) {
-  const k = await setup({ ySort, seed, persist: true, keyed });
+async function runPersistCase(t, { ySort, inQueue, seed, keyed = false, speeds = null }) {
+  const k = await setup({ ySort, seed, persist: true, keyed, speeds });
   await withPersistOrder(ySort, () => persistFrames(t, k, { ySort, inQueue, seed }));
 }
 
@@ -1427,6 +1437,10 @@ test("E-177: persist frames mark the keys as the full emit does: the repaired an
 
 test('the persist path in the kernel does what the JS persist path does, without Y-sort', async (t) => {
   await runPersistCase(t, { ySort: false, inQueue: true, seed: 0x9e2 });
+});
+
+test('E-360: the persist path\'s clocks with runs of one speed, signed zeros and NaN are the JS persist path\'s', async (t) => {
+  await runPersistCase(t, { ySort: true, inQueue: true, seed: 0x9e4, speeds: SPEED_RUNS });
 });
 
 test('the persist path in the kernel copies a stash that is not the queue', async (t) => {
