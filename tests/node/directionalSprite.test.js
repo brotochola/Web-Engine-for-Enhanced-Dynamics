@@ -231,11 +231,27 @@ test('a plain animation is pinned until the next directionless one; an ended one
 class Walker extends GameObject {
   static components = [DirectionalSprite];
 }
+// Stand-ins for a long component list (only their identity counts to collectComponents).
+class RigidBodyLike {}
+class PlainA {}
+class PlainB {}
+class PlainC {}
+class PlainD {}
+class PlainE {}
+class PlainF {}
+class PlainG {}
 
 test('setAnimation on a directional entity: a group plays in its direction, a plain name is pinned, a missing one is said', () => {
   const id = sheet('civil', LPC);
   entity(0, id, { facing: 0 });
   assert.ok(collectComponents(Walker).includes(SpriteRenderer), 'DirectionalSprite brings its sprite');
+  // Just before it, where a class listing it would have its sprite: the getter stays one of the fast slots.
+  class Crowd extends GameObject {
+    static components = [RigidBodyLike, DirectionalSprite, PlainA, PlainB, PlainC, PlainD, PlainE, PlainF, PlainG];
+  }
+  const list = collectComponents(Crowd);
+  assert.equal(list.indexOf(SpriteRenderer), list.indexOf(DirectionalSprite) - 1);
+  assert.ok(list.indexOf(SpriteRenderer) < 8, 'among the first eight (gameObject.js COMPONENT_FIELDS)');
   const w = Object.create(Walker.prototype);
   w.index = 0;
   w._hasComponents = { SpriteRenderer: true, DirectionalSprite: true };

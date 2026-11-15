@@ -741,12 +741,20 @@ export function collectComponents(EntityClass, BaseClass = GameObject, DefaultCo
     components.add(DefaultComponent);
   }
 
-  // What a listed component needs comes with it. A Set visits what is added while it is walked, so this goes all the way down.
-  for (const component of components) {
-    if (component.requires) component.requires.forEach((c) => components.add(c));
-  }
-
-  return Array.from(components);
+  // What a listed component needs comes with it, all the way down, placed just before it: a required component keeps the
+  // place near the top of the list its dependent had, so its getter stays one of the fast slots (gameObject.js
+  // COMPONENT_FIELDS: Predator's people took DirectionalSprite where SpriteRenderer was, and appended last, their
+  // SpriteRenderer fell to the slow getter, 0.6 ms of the logic worker a frame), and it is set up before what needs it.
+  const ordered = [];
+  const placed = new Set();
+  const place = (component) => {
+    if (placed.has(component)) return;
+    placed.add(component);
+    if (component.requires) component.requires.forEach(place);
+    ordered.push(component);
+  };
+  components.forEach(place);
+  return ordered;
 }
 
 // ============================================================================
