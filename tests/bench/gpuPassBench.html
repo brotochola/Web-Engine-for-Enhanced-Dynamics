@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>GPU pass bench</title>
+  <style>
+    body { margin: 0; background: #14141a; color: #c8c8d0; font: 12px/1.4 monospace; }
+    canvas { display: block; }
+    pre { margin: 8px; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <!-- DX-LIGHT3D plan §9.3: one pass of the engine, outside the engine, timed (gpuPass/page.js; gpuPassBench.mjs drives it). -->
+  <canvas id="c" width="256" height="144"></canvas>
+  <pre id="log"></pre>
+  <script type="module" src="./gpuPass/page.js"></script>
+</body>
+</html>
