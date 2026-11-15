@@ -6,7 +6,7 @@ import { CarComponent } from '/demos/carScene/components/carComponent.js';
 import { CityPerson } from './cityPerson.js';
 import { avoidTurnSign } from '../avoidSteer.js';
 
-const { SpriteRenderer, RigidBody, Collider, CollisionListener, Transform, NavGrid, dot2 } = WEED;
+const { DirectionalSprite, RigidBody, Collider, CollisionListener, Transform, NavGrid, dot2 } = WEED;
 
 const _navVec = { x: 0, y: 0 };
 // _avoidAhead's result, rewritten per call (one per car per frame otherwise).
@@ -37,7 +37,7 @@ const AVOID_CAR_CORRIDOR = 72;
 const AVOID_STEER = 1.15;
 
 export class TrafficCar extends Car {
-  static components = [RigidBody, Collider, CollisionListener, SpriteRenderer, CarComponent];
+  static components = [RigidBody, Collider, CollisionListener, DirectionalSprite, CarComponent];
 
   static aiTurnStrength = 0.8;
   static aiForwardStrength = 0.5;

@@ -226,25 +226,27 @@ export class LittleCityScene extends WEED.Scene {
       ...buildTreeTextures(),
     },
     spritesheets: {
-      red_car: {
-        json: '/demos/img/cars/red.json',
-        png: '/demos/img/cars/red.png',
+      // The cars: demos/img/autos sheets (MinZiin's TopDown Vehicles, CC BY 4.0), named as there (Car reads each one's
+      // anchor and box from its index.js). With useBaked they come from baked/bigAtlas: bake it again when they change.
+      hatch_rojo: {
+        json: '/demos/img/autos/hatch_rojo.json',
+        png: '/demos/img/autos/hatch_rojo.png',
       },
-      yellow_car: {
-        json: '/demos/img/cars/yellow.json',
-        png: '/demos/img/cars/yellow.png',
+      taxi: {
+        json: '/demos/img/autos/taxi.json',
+        png: '/demos/img/autos/taxi.png',
       },
-      black_car: {
-        json: '/demos/img/cars/black.json',
-        png: '/demos/img/cars/black.png',
+      sedan_negro: {
+        json: '/demos/img/autos/sedan_negro.json',
+        png: '/demos/img/autos/sedan_negro.png',
       },
-      white_car: {
-        json: '/demos/img/cars/white.json',
-        png: '/demos/img/cars/white.png',
+      sedan_blanco: {
+        json: '/demos/img/autos/sedan_blanco.json',
+        png: '/demos/img/autos/sedan_blanco.png',
       },
-      blue_car: {
-        json: '/demos/img/cars/blue.json',
-        png: '/demos/img/cars/blue.png',
+      hatch_azul: {
+        json: '/demos/img/autos/hatch_azul.json',
+        png: '/demos/img/autos/hatch_azul.png',
       },
       ...buildPeopleSpritesheets(),
     },
@@ -303,7 +305,7 @@ export class LittleCityScene extends WEED.Scene {
     }
 
     const roadCells = flattenRoadCells(data.roads || []);
-    const carSprites = ['red_car', 'yellow_car', 'black_car', 'white_car', 'blue_car'];
+    const carSprites = ['hatch_rojo', 'taxi', 'sedan_negro', 'sedan_blanco', 'hatch_azul'];
     const carCount = Math.min(TRAFFIC_SPAWN_COUNT, roadCells.length);
     for (let i = 0; i < carCount; i++) {
       const cell = pickRandom(roadCells);

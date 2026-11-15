@@ -143,34 +143,35 @@ export class CarScene extends WEED.Scene {
             blood: '/demos/img/blood.png',
         },
         spritesheets: {
-
-            red_car: {
-                json: '/demos/img/cars/red.json',
-                png: '/demos/img/cars/red.png',
+            // The cars: demos/img/autos sheets (MinZiin's TopDown Vehicles, CC BY 4.0), named as there (Car reads each
+            // one's anchor and box from its index.js).
+            hatch_rojo: {
+                json: '/demos/img/autos/hatch_rojo.json',
+                png: '/demos/img/autos/hatch_rojo.png',
             },
-            yellow_car: {
-                json: '/demos/img/cars/yellow.json',
-                png: '/demos/img/cars/yellow.png',
+            taxi: {
+                json: '/demos/img/autos/taxi.json',
+                png: '/demos/img/autos/taxi.png',
             },
-            black_car: {
-                json: '/demos/img/cars/black.json',
-                png: '/demos/img/cars/black.png',
+            sedan_negro: {
+                json: '/demos/img/autos/sedan_negro.json',
+                png: '/demos/img/autos/sedan_negro.png',
             },
-            white_car: {
-                json: '/demos/img/cars/white.json',
-                png: '/demos/img/cars/white.png',
+            sedan_blanco: {
+                json: '/demos/img/autos/sedan_blanco.json',
+                png: '/demos/img/autos/sedan_blanco.png',
             },
-            blue_car: {
-                json: '/demos/img/cars/blue.json',
-                png: '/demos/img/cars/blue.png',
+            hatch_azul: {
+                json: '/demos/img/autos/hatch_azul.json',
+                png: '/demos/img/autos/hatch_azul.png',
             },
-            car_police: {
-                json: '/demos/img/cars/poli.json',
-                png: '/demos/img/cars/poli.png',
+            policia: {
+                json: '/demos/img/autos/policia.json',
+                png: '/demos/img/autos/policia.png',
             },
-            // car_burnt: {
-            //     json: '/demos/img/cars/burnt.json',
-            //     png: '/demos/img/cars/burnt.png',
+            // quemado_sedan: {
+            //     json: '/demos/img/autos/quemado_sedan.json',
+            //     png: '/demos/img/autos/quemado_sedan.png',
             // },
             civil1: {
                 json: '/demos/img/civil1.json',
@@ -235,10 +236,10 @@ export class CarScene extends WEED.Scene {
         this.playerCar = PlayerCar.spawn({
             x: 100,
             y: 100,
-            sprite: 'car_police',
+            sprite: 'policia',
         });
 
-        const carSprites = ['red_car', 'yellow_car', 'black_car', 'white_car', 'blue_car'];
+        const carSprites = ['hatch_rojo', 'taxi', 'sedan_negro', 'sedan_blanco', 'hatch_azul'];
         const spawnRadius = 1000;
 
         for (let i = 0; i < 20; i++) {

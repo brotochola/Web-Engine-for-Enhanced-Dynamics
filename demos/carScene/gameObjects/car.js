@@ -1,7 +1,10 @@
 // Car.js - Single ShapeType.Box chassis, Box2D-first drive
 // Constant accel while W/S held, linearDamping top speed, soft lateral, torque on A/D only.
+// Drawn from a car sheet of demos/img/autos (MinZiin's TopDown Vehicles, CC BY 4.0: the right-facing half turn drawn,
+// the left half mirrored). The DirectionalSprite shows the frame of the body's rotation; the picture never turns.
 
 import WEED from '/src/index.js';
+import { CARS } from '/demos/img/autos/index.js';
 import { CarComponent, CAR_DEFAULTS } from '../components/carComponent.js';
 
 const {
@@ -9,8 +12,7 @@ const {
     RigidBody,
     Collider,
     CollisionListener,
-    SpriteRenderer,
-    SpriteSheetRegistry,
+    DirectionalSprite,
     Transform,
     ParticleEmitter,
     enums, rng,
@@ -19,46 +21,30 @@ const {
 } = WEED;
 const { ShapeType } = enums;
 
-const DEG2RAD = Math.PI / 180;
-
 // Reused by applyForces / friction (zero alloc)
 const _heading = { frontX: 0, frontY: 0, rightX: 0, rightY: 0 };
 
-/** Cached numeric anim keys + unit (c,s) per spritesheet name — avoid rebuild/sort every tick. */
-const _angleKeysBySheet = new Map();
 const _randCS = { c: 1, s: 0 };
 
-function getAngleKeys(spritesheet) {
-    let cached = _angleKeysBySheet.get(spritesheet);
-    if (cached) return cached;
-    const animNames = SpriteSheetRegistry.getAnimationNames(spritesheet);
-    const keys = animNames
-        .map(k => {
-            const num = parseFloat(k);
-            const rad = num * DEG2RAD;
-            return { num, key: k, c: Math.cos(rad), s: Math.sin(rad) };
-        })
-        .filter(p => !isNaN(p.num))
-        .sort((a, b) => a.num - b.num);
-    cached = {
-        keys,
-        halfStepCos: keys.length ? Math.cos(Math.PI / keys.length) : 1,
-    };
-    _angleKeysBySheet.set(spritesheet, cached);
-    return cached;
+/** A car sheet's anchor and box (index.js beside the sheets; bakeCarSheet.mjs writes it with them). */
+function carSheetSpec(sheet) {
+    const spec = CARS[sheet];
+    if (spec !== undefined) return spec;
+    console.error(`Car: "${sheet}" is not a car sheet of demos/img/autos (index.js); anchored and sized as hatch_rojo`);
+    return CARS.hatch_rojo;
 }
 
 export class Car extends GameObject {
     static deriveSpeed = true;
 
-    static components = [RigidBody, Collider, CollisionListener, SpriteRenderer, CarComponent];
+    // DirectionalSprite brings the SpriteRenderer it draws through (its requires).
+    static components = [RigidBody, Collider, CollisionListener, DirectionalSprite, CarComponent];
 
     onSpawned(spawnConfig = {}) {
-        this.spriteRenderer.anchorX = 0.5;
-        this.spriteRenderer.anchorY = 0.5;
         const x = spawnConfig.x || 0;
         const y = spawnConfig.y || 0;
-        const sprite = spawnConfig.sprite || 'car';
+        const sprite = spawnConfig.sprite || 'hatch_rojo';
+        const spec = carSheetSpec(sprite);
 
         this.carComponent.driveForce = spawnConfig.driveForce ?? CAR_DEFAULTS.driveForce;
         this.carComponent.lateralFriction = spawnConfig.lateralFriction ?? CAR_DEFAULTS.lateralFriction;
@@ -69,17 +55,22 @@ export class Car extends GameObject {
 
         const scale = spawnConfig.scale ?? spawnConfig.spriteScale ?? CAR_DEFAULTS.spriteScale;
         this.setSpritesheet(sprite);
-        this.setAnimation('0');
+        // Every cell has the car's centre on the floor at the sheet's anchor: the body's centre.
+        this.spriteRenderer.anchorX = spec.anchor[0];
+        this.spriteRenderer.anchorY = spec.anchor[1];
         this.setScale(scale, scale);
 
-        const carLength = this.spriteRenderer.originalWidth * scale * 0.9;
-        const carHeight = this.spriteRenderer.originalHeight * scale * 0.75;
-        const halfDiag = Math.sqrt(carLength * carLength + carHeight * carHeight) * 0.5;
+        // The body is the car's footprint, the sheet's box (x along the car, y across it, floor px), scaled as the
+        // sprite is. The cells are not: they have room for every heading around the anchor.
+        const box = spec.box;
+        const carLength = (box[1] - box[0]) * scale;
+        const carWidth = (box[3] - box[2]) * scale;
+        const halfDiag = Math.sqrt(carLength * carLength + carWidth * carWidth) * 0.5;
         this._halfDiag = halfDiag;
 
         this.collider.shapeType = ShapeType.Box;
         this.collider.width = carLength;
-        this.collider.height = carHeight;
+        this.collider.height = carWidth;
         this.collider.radius = 0;
         this.collider.isTrigger = 0;
         this.collider.friction = 0.3;
@@ -98,15 +89,15 @@ export class Car extends GameObject {
         this.y = y;
         const heading = spawnConfig.rotation ?? 0;
         this.rotation = heading;
+        // The frame drawn follows the body's rotation, each frame (the logic worker's pass after the ticks).
+        this.directionalSprite.facingFrom = 'rotation';
+        this.setAnimation('drive');
 
         this.carComponent.active = 1;
-        this._lastAngleKey = null;
-        this._updateSpriteFrame();
     }
 
     onDespawned() {
         this.carComponent.active = 0;
-        this._lastAngleKey = null;
         this._halfDiag = 0;
     }
 
@@ -164,38 +155,6 @@ export class Car extends GameObject {
 
         this._updateFriction();
         // this._emitDust();
-        this._updateSpriteFrame();
-    }
-
-    _updateSpriteFrame() {
-        const i = this.index;
-        const spritesheetId = this.spriteRenderer.spritesheetId;
-        if (!spritesheetId) return;
-        const spritesheet = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
-        if (!spritesheet) return;
-
-        const { keys, halfStepCos } = getAngleKeys(spritesheet);
-        if (keys.length === 0) return;
-
-        const c = Transform.rotC ? Transform.rotC[i] : 1;
-        const s = Transform.rotS ? Transform.rotS[i] : 0;
-
-        const last = this._lastAngleKey;
-        if (last && c * last.c + s * last.s >= halfStepCos) return;
-
-        let best = keys[0];
-        let bestDot = c * best.c + s * best.s;
-        for (let k = 1; k < keys.length; k++) {
-            const d = c * keys[k].c + s * keys[k].s;
-            if (d > bestDot) {
-                bestDot = d;
-                best = keys[k];
-            }
-        }
-        if (last !== best) {
-            this._lastAngleKey = best;
-            this.setAnimation(best.key);
-        }
     }
 
     _emitDust() {
