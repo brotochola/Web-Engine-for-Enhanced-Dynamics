@@ -14,7 +14,7 @@
  *   node tests/bench/normalLightCheck.mjs [--backend webgl|webgpu|both] [--part sun|lamp|both] [--tolerance 3]
  *     [--strength full|auto] [--inset 3] [--save dir] [--headless] [--wait-ms 3000] [--query k=v]
  *
- * --strength auto: §5.4's automatic strength of the normals (k = lamps / (lamps + ambient + sun), the drawn picture's
+ * --strength auto (default): §5.4's automatic strength of the normals (k = lamps / (lamps + ambient + sun), the drawn picture's
  * light mixed towards the normals' by k) instead of the full normals. --inset: px left out at the ball's rim (grazing
  * normals and the soft edge). Exit 0 when every compared pixel is within --tolerance of 255 on every backend and part.
  */
@@ -94,7 +94,7 @@ function compare(pixels, samples) {
 }
 
 async function main() {
-  const opts = parseCheckCli(process.argv.slice(2), { tolerance: 3, usage: USAGE, flags: { part: 'both', strength: 'full', inset: 3 } });
+  const opts = parseCheckCli(process.argv.slice(2), { tolerance: 3, usage: USAGE, flags: { part: 'both', strength: 'auto', inset: 3 } });
   const parts = opts.part === 'both' ? ['sun', 'lamp'] : [opts.part];
   await withCheckBrowser(opts, async (ctx) => {
     for (const backend of opts.backends) {
