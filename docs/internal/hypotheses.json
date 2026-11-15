@@ -15326,6 +15326,66 @@
         "R-1046",
         "R-1047"
       ]
+    },
+    {
+      "id": "N-180",
+      "title": "Sun.angle and Sun.elevation setters change nothing on screen: the shadow direction (SHADOW_DIR_X/Y) is only recomputed by setTimeOfDay",
+      "status": "open",
+      "statusText": "found 2026-11-15 by agent D while building the light bench's sun controls (dx/light3d); backlog",
+      "date": "2026-11-15",
+      "area": "engine",
+      "kind": "bug",
+      "result": "src/core/sun.js: set angle and set elevation write their own float; shadowDirX/Y, which the renderers read, are written only in setTimeOfDay (with what else it derives from angle and elevation). With the day cycle off, Sun.angle = 30 leaves every shadow where it was. The light bench turns its sun with shadowAngleOffset and maxElevation, then setTimeOfDay.",
+      "next": "Both setters recompute what setTimeOfDay derives from angle and elevation (the shadow direction and the length terms), or they leave the API and the docs point to setTimeOfDay with the offsets; a node test that sets Sun.angle and reads shadowDirX.",
+      "refs": [
+        "REVIEW_PLAN.md#N-180"
+      ],
+      "aliases": [
+        "Sun.angle setter",
+        "Sun.elevation setter",
+        "shadowDirX not updated"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-181",
+      "title": "lighting.sunShadows 'map': a caster's own shadow paints its own sprite when the sprite has no heights (Sun Street's houses)",
+      "status": "running",
+      "statusText": "found 2026-11-15 by the owner on a capture (Sun Street forced into map mode); agent R (dx/par-render) is adding the entity id and surface 'standing'",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "Sun Street with sunShadows and lampShadows 'map', paused at 15 h: in sprite mode each house sits on top of its long box shadow (the shadows' layer is under the entities); in map mode the houses' pixels are lit as floor (no height map), so the box's own shadow, which lands mostly on the footprint there, darkens the left half of every house as a soft blob. The owner: \"sombra encima de la casa cuando no debería\". Map mode's box shadows also come out shorter and blurrier than sprite mode's in that scene (no camera.pitch, lighting.resolution 0.25).",
+      "next": "The maps keep who cast each texel's maximum (a depth test instead of max blending, the caster's entity id in colour) and the light pass skips its own entity's shadow (the G-buffer's id); a sprite without maps stands as a card (surface 'standing'), so another caster's shadow climbs on it only as high as it reaches. Check: Sun Street ?mode=sprite against ?mode=map at 15 h.",
+      "refs": [
+        "REVIEW_PLAN.md#N-181"
+      ],
+      "aliases": [
+        "own shadow over the house",
+        "sombra encima de la casa",
+        "map mode self shadow blob"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-182",
+      "title": "WebGPU: every frame with the lamps' shadow map threw \"[BindGroup] the resource bound as 'uFoot' was destroyed\": the lamps' columns program named binding 7 in its layout without declaring it in its WGSL",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-11-15 on dx/light3d (code only on that branch)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (c99e57b0): Pixi files a Shader's resources by the WGSL's declarations, so the undeclared uFoot went to a spare group and group 2 had no binding 7, which Pixi reports as a destroyed resource; the lamps' columns WGSL declares it now (unread). With it: ea6105a3 (the map's cards programs take no uMaps) and d037eae0 (the sun columns keep aInstLight), two Pixi warnings; cabf1291, a node test that checks every transformed WebGPU program's layout against its WGSL (it fails on the lamp program before the fix). The light bench: 16 h identical on both backends, 22 h 380 of 921 600 px differ by at most 6/255.",
+      "next": "None.",
+      "refs": [
+        "REVIEW_PLAN.md#N-182"
+      ],
+      "aliases": [
+        "uFoot destroyed",
+        "BindGroup resource destroyed",
+        "layout names a binding the WGSL lacks"
+      ],
+      "records": []
     }
   ],
   "records": [
