@@ -262,7 +262,8 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
   return source
     .replace(
       main,
-      'uniform vec4 uFaceSpace; // heightScaleY, groundScaleY\nflat out vec2 vFaceOct;\nout float vFaceZ;\n' + gbufDecl + '\n' + main,
+      'uniform vec4 uFaceSpace; // heightScaleY, groundScaleY\nflat out vec2 vFaceOct;\nout float vFaceZ;\nflat out float vMapScale;\n' +
+        gbufDecl + '\n' + main,
     )
     .replace(
       end,
@@ -271,6 +272,8 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
         `  uint faceCode = uint(aInstTileOff.x * 65535.0 + 0.5);
   vFaceOct = vec2(0.0);
   vFaceZ = 0.0;
+  // N-194: a sprite drawn at a scale stands that much taller, so its twin's heights (frame px) scale with it.
+  vMapScale = abs(aInstScale.y);
   if (faceCode != 0u && aInstTileInv == vec2(0.0)) {
     vec2 faceBytes = vec2(float(faceCode >> 8u), float(faceCode & 255u));
     vFaceOct = faceBytes / 255.0;
@@ -385,6 +388,7 @@ export function faceVertexWgsl(source, { gbuf = false } = {}) {
     out,
     '  @location(5) vTileOff: vec2<f32>,\n',
     '  @location(6) @interpolate(flat) vFaceOct: vec2<f32>,\n  @location(7) vFaceZ: f32,\n' +
+      '  @location(12) @interpolate(flat) vMapScale: f32,\n' +
       (gbuf
         ? '  @location(9) @interpolate(flat) vGbuf: vec2<f32>,\n  @location(10) vFootY: f32,\n' +
           '  @location(11) @interpolate(flat) vRender: f32,\n'
@@ -409,6 +413,8 @@ export function faceVertexWgsl(source, { gbuf = false } = {}) {
       `  let faceCode = u32(aInstTileOff.x * 65535.0 + 0.5);
   out.vFaceOct = vec2<f32>(0.0);
   out.vFaceZ = 0.0;
+  // N-194: a scaled sprite's twin heights scale with it (faceMapVertex).
+  out.vMapScale = abs(aInstScale.y);
   if (faceCode != 0u && all(aInstTileInv == vec2<f32>(0.0))) {
     let faceBytes = vec2<f32>(f32(faceCode >> 8u), f32(faceCode & 255u));
     out.vFaceOct = faceBytes / 255.0;
@@ -471,10 +477,11 @@ ${glow ? '  // DX-EMISSIVE v2: an entity that glows by itself writes nothing her
     let normals = flags & 3u;
     if (m.b + m.a > 0.0) {
       let zm = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0;
-      if (normals == 3u) { return faceTexel(${flat}, zm, false); }
+      if (normals == 3u) { return faceTexel(${flat}, zm * in.vMapScale, false); }
       var n = faceOctDecode(floor(m.ba * 255.0 + 0.5));
+      // The Sobel reads the frame's own heights: a scale stretches the heights and the texels alike.
       if (normals == 2u) { n = faceHeightNormal(tc, zm); }
-      return faceTexel(faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zm, true);
+      return faceTexel(faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zm * in.vMapScale, true);
     }
     if ((flags & 4u) == 0u) {
       return faceTexel(${flat}, max(in.vFootY - in.vWorld.y, 0.0) / uniforms.uFaceSpace.x, false);
@@ -530,7 +537,7 @@ fn weedFace(in: VertexOut) -> vec4<f32> {
 ${gbufBlock}  if (noFace && m.b + m.a > 0.0) {
     let n = faceOctDecode(floor(m.ba * 255.0 + 0.5));
     oct = faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x));
-    z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0;
+    z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * in.vMapScale;
   }
   return faceTexel(oct, z, false);
 }

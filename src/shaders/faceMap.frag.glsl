@@ -8,6 +8,8 @@ in vec2 vTileInv;
 in vec2 vTileOff;
 flat in vec2 vFaceOct;
 in float vFaceZ;
+// N-194: the sprite's |scale y|: its twin's heights (frame px) times this are its world heights.
+flat in float vMapScale;
 // #if GBUF
 // DX-GBUF: the instance's words (gbufWord.js: its entity's id, normals, surface, ...) and its foot's world y.
 flat in vec2 vGbuf;
@@ -116,11 +118,12 @@ void main() {
       if (m.b + m.a > 0.0) {
         float zm = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0;
         if (normals == 3u) {
-          finalColor = faceTexel(vec2(254.0 / 255.0), zm, false);
+          finalColor = faceTexel(vec2(254.0 / 255.0), zm * vMapScale, false);
           return;
         }
+        // The Sobel reads the frame's own heights: a scale stretches the heights and the texels alike.
         vec3 n = normals == 2u ? heightNormal(tc, zm) : octDecode(floor(m.ba * 255.0 + 0.5));
-        finalColor = faceTexel(octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zm, true);
+        finalColor = faceTexel(octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zm * vMapScale, true);
         return;
       }
       if ((flags & 4u) == 0u) {
@@ -134,7 +137,7 @@ void main() {
     if (m.b + m.a > 0.0) {
       vec3 n = octDecode(floor(m.ba * 255.0 + 0.5));
       oct = octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x));
-      z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0;
+      z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * vMapScale;
     }
   }
   finalColor = faceTexel(oct, z, false);

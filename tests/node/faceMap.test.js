@@ -104,9 +104,9 @@ test('the height scale of the shaders is the encoder\'s', () => {
   const code = encodeFaceHeight(100);
   assert.ok(Math.abs((code / 65535) * scale - 100) < 1e-3);
   assert.match(shader('faceMap.frag.glsl'), /clamp\(z \* 8\.0/);
-  // DX-MAPS: a twin texel's height is in spriteMaps.js's units.
-  assert.match(shader('faceMap.frag.glsl'), new RegExp(`\\) / ${HEIGHT_UNITS}\\.0;`));
-  assert.match(faceMapWgsl(shader('instancedSprite.wgsl')), new RegExp(`\\) / ${HEIGHT_UNITS}\\.0;`));
+  // DX-MAPS: a twin texel's height is in spriteMaps.js's units (N-194: times the sprite's scale where it is written).
+  assert.match(shader('faceMap.frag.glsl'), new RegExp(`\\) / ${HEIGHT_UNITS}\\.0( \\* vMapScale)?;`));
+  assert.match(faceMapWgsl(shader('instancedSprite.wgsl')), new RegExp(`\\) / ${HEIGHT_UNITS}\\.0 \\* in\\.vMapScale;`));
   assert.match(shader('lightingBasic.frag.glsl'), /\/ 8\.0;/);
 });
 

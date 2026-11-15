@@ -70,11 +70,12 @@ export function pixelDepthVertex(source, { gbuf = false } = {}) {
   const words = gbuf
     ? `${source.includes('in vec2 aInstGbuf;') ? '' : 'in vec2 aInstGbuf;\n'}flat out vec2 vDepthWord;\n`
     : '';
+  // N-194: vPainter's y is the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
   return source
-    .replace(decl, () => `${decl}out float vFootFloor;\nflat out float vPainter;\nuniform vec4 uDepth;\n${words}`)
+    .replace(decl, () => `${decl}out float vFootFloor;\nflat out vec2 vPainter;\nuniform vec4 uDepth;\n${words}`)
     .replace(
       pos,
-      () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n  vPainter = float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1});` +
+      () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n  vPainter = vec2(float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1}), abs(aInstScale.y));` +
         (gbuf ? '\n  vDepthWord = aInstGbuf;' : ''),
     );
 }
@@ -94,7 +95,7 @@ function depthBodyGlsl({ edge, gbuf }) {
     // sprite lies flat, else its sprite's foot; the zIndex band first and the painter's order last (pixelDepth.js).
     vec2 uvd = weedUv();
     vec4 md = texelFetch(uMaps, ivec2(uvd * vec2(textureSize(uMaps, 0))), 0);
-    float zd = (floor(md.r * 255.0 + 0.5) * 256.0 + floor(md.g * 255.0 + 0.5)) / 64.0;
+    float zd = (floor(md.r * 255.0 + 0.5) * 256.0 + floor(md.g * 255.0 + 0.5)) / 64.0 * vPainter.y;
     bool glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
     float band = 0.0;
     float floorY = vFootFloor;
@@ -106,7 +107,7 @@ ${gbuf
 `
     : ''}    if (md.b + md.a > 0.0 && !glow) floorY = (vWorld.y + uDepth.y * zd) * uDepth.x;
     float u = clamp((floorY - uDepth.z) * uDepth.w, 0.0, 1.0);
-    float painter = vPainter;
+    float painter = vPainter.x;
     gl_FragDepth = (${DEPTH_FORMULA};
     // F5 v2: only opaque pixels write depth; the edge pass draws the soft and the glowing ones, testing it.
     bool solid = texture(uTexture, uvd).a * vColor.a >= 0.5 && !glow;
@@ -130,7 +131,7 @@ export function pixelDepthFragment(source, { edge = false, gbuf = false } = {}) 
   return source
     .replace(
       decl,
-      () => `${decl}uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\nflat in float vPainter;\n${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}`,
+      () => `${decl}uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\nflat in vec2 vPainter;\n${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}`,
     )
     .replace(main, () => `${main}${depthBodyGlsl({ edge, gbuf })}`);
 }
@@ -152,7 +153,7 @@ fn weedPixelDepth(in: VertexOut) -> vec2<f32> {
   let uvd = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
   let alpha = textureSample(uTexture, uSampler, uvd).a * in.vColor.a;
   let md = textureLoad(uMaps, vec2<i32>(uvd * vec2<f32>(textureDimensions(uMaps, 0))), 0);
-  let zd = (floor(md.r * 255.0 + 0.5) * 256.0 + floor(md.g * 255.0 + 0.5)) / 64.0;
+  let zd = (floor(md.r * 255.0 + 0.5) * 256.0 + floor(md.g * 255.0 + 0.5)) / 64.0 * in.vDepthFoot.z;
   var glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
   var band = 0.0;
   var floorY = in.vDepthFoot.x;
@@ -197,7 +198,7 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false } = {})
   out = once(
     out,
     '  @location(5) vTileOff: vec2<f32>,\n',
-    '  @location(8) @interpolate(flat) vDepthFoot: vec2<f32>,\n' +
+    '  @location(8) @interpolate(flat) vDepthFoot: vec3<f32>,\n' +
       (gbuf ? '  @location(13) @interpolate(flat) vDepthWord: vec2<f32>,\n' : ''),
     'vTileOff',
   );
@@ -205,7 +206,8 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false } = {})
   out = once(
     out,
     '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
-    `  out.vDepthFoot = vec2<f32>(aInstXY.y * uniforms.uDepth.x, f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u));\n` +
+    // N-194: z, the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
+    `  out.vDepthFoot = vec3<f32>(aInstXY.y * uniforms.uDepth.x, f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u), abs(aInstScale.y));\n` +
       (gbuf ? '  out.vDepthWord = aInstGbuf;\n' : ''),
     'out.position',
   );
