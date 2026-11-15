@@ -15187,7 +15187,8 @@
         "R-1059",
         "R-1060",
         "R-1065",
-        "R-1120"
+        "R-1120",
+        "R-1132"
       ],
       "date": "2026-11-14",
       "area": "render",
@@ -15332,12 +15333,12 @@
     {
       "id": "N-180",
       "title": "Sun.angle and Sun.elevation setters change nothing on screen: the shadow direction (SHADOW_DIR_X/Y) is only recomputed by setTimeOfDay",
-      "status": "open",
-      "statusText": "found 2026-11-15 by agent D while building the light bench's sun controls (dx/light3d); backlog",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-15 on dx/light3d (dd640931)",
       "date": "2026-11-15",
       "area": "engine",
       "kind": "bug",
-      "result": "src/core/sun.js: set angle and set elevation write their own float; shadowDirX/Y, which the renderers read, are written only in setTimeOfDay (with what else it derives from angle and elevation). With the day cycle off, Sun.angle = 30 leaves every shadow where it was. The light bench turns its sun with shadowAngleOffset and maxElevation, then setTimeOfDay.",
+      "result": "Fixed (dd640931): the angle, elevation, shadowAngleOffset and length ratio setters recompute the shadow direction and length ratio; setTimeOfDay recomputes once as before. Test sunSetters.test.js.",
       "next": "Both setters recompute what setTimeOfDay derives from angle and elevation (the shadow direction and the length terms), or they leave the API and the docs point to setTimeOfDay with the offsets; a node test that sets Sun.angle and reads shadowDirX.",
       "refs": [
         "REVIEW_PLAN.md#N-180"
@@ -15347,7 +15348,9 @@
         "Sun.elevation setter",
         "shadowDirX not updated"
       ],
-      "records": []
+      "records": [
+        "R-1131"
+      ]
     },
     {
       "id": "N-181",
@@ -15650,12 +15653,12 @@
     {
       "id": "N-186",
       "title": "After a save is restored, the per-entity emissive counter is not recounted: spriteRenderer.emissive may stay unlit until set again",
-      "status": "open",
-      "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-15 on dx/light3d (88bb89e9)",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
-      "result": "dx/par-render counts the sprites with their own glow (emissiveUsers) to run the glow pass; a restore writes the column (gbufFlags) but not the counter, as with the zIndex counter before it.",
+      "result": "Fixed (88bb89e9): GameObject._spawnAt takes the row's counted states (SpriteRenderer.usersOfRow) before applyEntitySaveRestore and brings the zIndex users' and the glowing sprites' counters in line after (recountRow). Test spriteRendererRestoreCounters.test.js.",
       "next": "Recount both counters after a restore (the save path's post-load hook), with a test that restores a glowing sprite.",
       "refs": [
         "REVIEW_PLAN.md#N-186"
@@ -15663,18 +15666,20 @@
       "aliases": [
         "emissive counter after restore"
       ],
-      "records": []
+      "records": [
+        "R-1131"
+      ]
     },
     {
       "id": "N-187",
-      "title": "A frame whose GPU queue count differs from the rows pre-render collected keeps the previous frame's G-buffer words (one frame of stale ids and flags)",
+      "title": "A frame whose GPU queue count differs from the rows pre-render collected sends no G-buffer words: Pixi zeroes them, so every sprite is lit without its id and flags that frame (its own map shadow, its glow, its self-shadow); with Adobe animations every frame differs",
       "status": "open",
       "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
-      "result": "dx/par-render: pre-render writes the words only when the queue count matches its collected rows; otherwise the previous words stay for that frame.",
-      "next": "Clear or rewrite the words on a mismatch, or say why one frame of stale words cannot show (a capture test with a count change).",
+      "result": "Read 2026-11-15: _writeGbufWords returns false when q.count differs from the collected rows (Adobe roots expanded into more rows), the frame goes without GPU_FLAG_GBUF and Pixi's commitGbuf(null) zeroes the words (not the last frame's, as first reported). Each such frame lights every sprite as before round 2: id 0 (a caster's own shadow paints it in map mode), no glow of its own, no self-shadow flag. A scene with Adobe animated entities expands roots every frame, so there the words never reach Pixi.",
+      "next": "Give the expanded rows their root's entity (the collector knows it) so the words are written whatever the count; a capture of an Adobe character with spriteRenderer.emissive and a sun map.",
       "refs": [
         "REVIEW_PLAN.md#N-187"
       ],
@@ -26638,6 +26643,37 @@
         "2511e011",
         "68b0b640"
       ]
+    },
+    {
+      "id": "R-1130",
+      "date": "2026-11-15",
+      "time": "11:13",
+      "timeFrom": "recorded",
+      "title": "Scoreboard against `main` (full, 16 rows)",
+      "verdict": "note",
+      "text": "emit: FAIL, spotLights: FAIL, flashlights: FAIL, visPoly: TIE, preRender: FAIL, decorations: TIE, spawn: FAIL, steadyCombat: KEPT, meshFillMoving: TIE, meshFillPan: FAIL, gameObjectAccess: TIE, shadowStamp: TIE, gpuQueuePack: TIE, painterRadix: TIE, preRenderWorker: TIE, textureUpload: TIE.\n\nYes, on the rows that were measured: steadyCombat kept and none worse. 3 row(s) are a protocol ceiling (not claimed). 3 row(s) are under the 3 ms floor (not a regression). A tree is the fastest WeedJS only when every catalog row is kept or a tie and none is worse or failed. The rows' numbers are in the local report (`tests/results/scoreboard/report.md`, not kept)."
+    },
+    {
+      "id": "R-1131",
+      "date": "2026-11-15",
+      "time": "11:29",
+      "timeFrom": "commit",
+      "title": "N-180 fixed: the Sun setters move the shadows; N-186 fixed: a restored sprite's zIndex and glow counters follow its columns",
+      "verdict": "kept-hygiene",
+      "text": "**N-180 and N-186 fixed.** dd640931: Sun.angle, Sun.elevation, shadowAngleOffset and the shadow length ratios' setters\nrecompute SHADOW_DIR_X/Y and SHADOW_LENGTH_RATIO (only setTimeOfDay did: with the day cycle off the setters changed nothing\non screen); setTimeOfDay writes the angle and the elevation and recomputes once, as before. sunSetters.test.js reads the\nSAB as a worker does: the direction at five angles, the ratio at 0, 45 and 90 degrees, the offset's half turn, and\nsetTimeOfDay's shadows unchanged. 88bb89e9: a restore writes SpriteRenderer's columns directly, past the setters that keep\nthe zIndex users' and the glowing sprites' counters; _spawnAt takes the row's counted states before applyEntitySaveRestore\nand brings the counters in line after. spriteRendererRestoreCounters.test.js: a glowing sprite with a zIndex restored counts\nin both, a plain one in neither, a glowing slot restored plain leaves them. Neither path is hot (setters, a restore's spawns):\nno sitting. test:node 2728/2728, test:demos 101/101.",
+      "commits": [
+        "dd640931",
+        "88bb89e9"
+      ]
+    },
+    {
+      "id": "R-1132",
+      "date": "2026-11-15",
+      "time": "11:28",
+      "timeFrom": "recorded",
+      "title": "The branch against main on the 16 catalog rows without the new lighting: no regression confirmed (scoreboard, then spotLights and spawnStorm in ABAB pairs)",
+      "verdict": "passed",
+      "text": "**The branch against main on the 16 catalog rows that do not use the new lighting: no regression confirmed.**\n2026-11-15, runScoreboard --vs main --full-rev --only preRender,preRenderWorker,emit,spotLights,flashlights,visPoly,\nshadowStamp,gpuQueuePack,painterRadix,steadyCombat,spawn,decorations,gameObjectAccess,meshFillMoving,meshFillPan,textureUpload\n(10:23-11:13; main has no src change the branch lacks). Correctness: test:node and the lockstep scenes ok.\n\n| row | verdict | primary |\n| --- | --- | --- |\n| steadyCombat | KEPT | logic0 -5.9 %, particle -1.0 %, spatial -1.1 % |\n| visPoly, decorations, meshFillMoving, textureUpload | TIE | within 2 % |\n| gameObjectAccess, shadowStamp, gpuQueuePack, painterRadix, preRenderWorker | TIE | kernels -9.8 to +0.3 % (gameObjectAccess's -8 % not confirmed over 4 ABAB pairs) |\n| emit, preRender, meshFillPan | FAIL (protocol ceilings: the particle pool, the linear cull's floor, a pan that skips the pack) | none |\n| spotLights | FAIL (under the floor) | preRender +13.1 %, but every worker moved up, physics +44 % |\n| spawn | FAIL (under the floor) | logic0 +9.0 %, the load off (bodies 2000 -> 1880) |\n\nThe scoreboard runs each side's five runs in a row, so drift moves every worker of a row together. The two flagged rows\nagain in ABAB pairs from worktrees (runPredatorAbab --vs main --full-rev, 4 pairs, load raised):\n- spotLightStressScene cars=200 props=2000 shadowLights=200: Pixi 0.595 -> 0.660 ms, pre-render 3.875 -> 3.984, both under\n  the floor, the frames the same; one run each with detailed stats: Pixi's work (step minus wait) p50 0.66 against 0.64 ms,\n  SHADOWS_MS 0.347 against 0.339. Not a regression.\n- spawnStormScene storm=4500: logic 5.087 -> 5.042 ms (-0.9 %); the scoreboard's +9 % was drift."
     }
   ],
   "leads": [
