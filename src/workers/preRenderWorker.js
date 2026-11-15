@@ -447,9 +447,15 @@ export function casterFramesInUse(active, textureId) {
 
 /**
  * DX-CASTER: each caster's code in entity order (casterKindsInUse's columns), 0 for every other slot. A fixed card's
- * axis (its facing turned a quarter, (sin f, -cos f) on the floor) in 64 steps from bit 15.
+ * axis (its facing turned a quarter, (sin f, -cos f) on the floor) in 64 steps from bit 15. N-209: f is the angle of the
+ * direction drawn (its sheet's table at directionIndex), so the card lies along the picture (a fence at facing 15 is drawn
+ * with its 11.25 degree frame, and its silhouette stood 5.6 degrees off it); the facing only without a table.
+ * @param {Array|null} tables the direction tables by sheet id (sunFrameTables)
+ * @param {Uint8Array|null} sheets SpriteRenderer.spritesheetId
+ * @param {Uint8Array|null} dirs DirectionalSprite.directionIndex
  */
-function computeCasterCodes(out, active, sunKind, lampKind, orient, opacity, dsActive, facing, n) {
+export function computeCasterCodes(out, active, sunKind, lampKind, orient, opacity, dsActive, facing, n, tables = null,
+    sheets = null, dirs = null) {
     for (let e = 0; e < n; e++) {
         let v = 0;
         if (active[e] === 1) {
@@ -457,7 +463,13 @@ function computeCasterCodes(out, active, sunKind, lampKind, orient, opacity, dsA
             const a = o >= 1 ? 255 : o <= 0 ? 0 : Math.round(o * 255);
             v = (sunKind[e] & 7) | ((lampKind[e] & 7) << 3) | ((orient[e] & 1) << 6) | (a << 7);
             if (orient[e] === 1) {
-                let q = ((dsActive !== null && dsActive[e] === 1 ? facing[e] : Math.PI / 2) - Math.PI / 2) / (2 * Math.PI);
+                let f = Math.PI / 2;
+                if (dsActive !== null && dsActive[e] === 1) {
+                    const t = tables !== null && sheets !== null ? tables[sheets[e]] : undefined;
+                    const d = dirs !== null ? dirs[e] : 255;
+                    f = t !== undefined && d < t.count ? t.angles[d] : facing[e];
+                }
+                let q = (f - Math.PI / 2) / (2 * Math.PI);
                 q -= Math.floor(q);
                 v |= (Math.round(q * 64) & 63) << 15;
             }
@@ -4130,7 +4142,8 @@ class PreRenderWorker extends AbstractWorker {
         if (this._casterCode.length !== n) this._casterCode = new Int32Array(n);
         computeCasterCodes(
             this._casterCode, active, ShadowCaster.sunKind, ShadowCaster.lampKind, ShadowCaster.orient, ShadowCaster.opacity,
-            DirectionalSprite.active || null, DirectionalSprite.facing || EMPTY_F32, n,
+            DirectionalSprite.active || null, DirectionalSprite.facing || EMPTY_F32, n, this._sunFrameTables,
+            SpriteRenderer.spritesheetId || null, DirectionalSprite.directionIndex || null,
         );
         const codes = this._casterCode;
         const casters = this._gpuCasterIdx;
