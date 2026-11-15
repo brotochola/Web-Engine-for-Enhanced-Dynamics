@@ -1049,3 +1049,62 @@ Lo que está hecho en la rama, fase por fase, con su commit. Se actualiza con ca
 | F6 sombras del sol | primera versión | a323a1d, bb18952, 2222a32, 43f3d11, b8b4a24 | `sunShadows: 'map'`, WebGL; cuadro que ve el sol (DirectionalSprite), también en modo `'sprite'` (apaga los caminos con clave: medir en Predator); los casters con heightmap tiran columnas (su sólido, girado como está: lo marcó el dueño en el banco de luz); faltan WebGPU, caminos con clave, volúmenes, cache, costo de las columnas en escenas grandes |
 | F11 vitrina | primera versión | 248fd7e | `demos/lightBenchScene`: persona con WASD, formas con mapas, faroles, mapa del sol, autosombra, teclas para comparar |
 | F8 autosombra | primera versión | 2d1eb1e, d1de9e5 | `lighting.selfShadow`, sol, WebGL; faltan faroles, WebGPU y el id de entidad (que una luz no se tape con lo suyo) |
+
+## 17. Próximos pasos (para la sesión que sigue)
+
+Lo que el dueño marcó mirando el banco de luz (`demos/lightBenchScene`) el 2026-11-14, en el orden en que va. **No probar
+con la escena ni con el proyecto de Buenos Aires** (se actualizan después de estos cambios): se mira en el banco de luz y
+en las stress scenes.
+
+### 17.1 Sombras del sol como en el banco (las dos maneras)
+
+Hoy la sombra de un cubo no se parece a la del banco. Faltan dos cosas que el banco tenía:
+
+- **La base.** El cartón de la silueta tiene que pararse en la fila más baja opaca del cuadro, no en el ancla del sprite
+  (en las formas, el ancla está en el medio de la huella y la sombra sale corrida). Esa fila ya está en la tabla de
+  texturas: el fondo del recorte, `aInstTrim.y + aInstTrim.w` en px del cuadro (`instancedSpriteShadow.vert.glsl`, y la
+  tabla de `instancedSpriteBatch.js`, `writeLutSlot`; con `assets.trimImages` apagado, el fondo del cuadro). En el
+  shader, con `local = (content - anchor * size) * scale`:
+  `baseY = (trimBottom - anchor.y * size.y) * scale.y`, `z = max(baseY - local.y, 0) / heightScaleY * height`, el pie del
+  cartón en el piso en `(xy.x, (xy.y + baseY) / floorScaleY)`, y cae en `pie + local.x * perp - z * k`. Es lo que ya hace
+  la tarjeta del modo mapa (`sunMapVertex` en `src/render/sunShadowMap.js`) salvo que hoy toma el pie en el ancla.
+  Después: para lo que tiene huella, el apoyo más cercano a la luz (la tabla de sombra por cuadro de F3: alcance de los
+  pixeles del heightmap cerca del piso hacia 16 direcciones), como `baseSupport` en el banco.
+- **La proyección en modo `'sprite'`.** La rama del sol de `instancedSpriteShadow.vert.glsl` (la que no es de farol)
+  todavía espeja y estira el dibujo en pantalla (`sy = -abs(scale.y) * height * uSun.z` y la rotación por la dirección
+  de la sombra). Tiene que ser el mismo cartón proyectado sobre el piso que el modo mapa, escrito como alfa en la capa de
+  sombras: uniformes `uSunK` / `uSunPerp` en los del sol de `InstancedSpriteBatch` (`sunUniforms`), que `pixiWorker`
+  escribe en `_drawGpuCasterShadows` desde `_writeFaceSun` y `sunMapTerms`. Las variantes con clave e indexadas
+  (`spriteIndexedVertex(..., { shadow })`) reescriben solo atributos de la cabecera: la cola nueva pasa por ellas. Las
+  filas de farol (estampas) quedan como están hasta F7. Hacer también `instancedSpriteShadow.wgsl` (WebGPU).
+- Cambia cómo se ven las sombras del sol de todas las escenas en modo `'sprite'` (Predator, Sun Street): capturas antes
+  y después, y aprobación del dueño.
+
+### 17.2 Filas con clave que traen el cuadro de la sombra (no perder la optimización)
+
+`b8b4a24` apagó los caminos con clave (E-191 / E-211) cuando una clase tiene `DirectionalSprite` y `ShadowCaster`
+(`lighting.directionalCasters`), porque leen el cuadro del propio sprite. Eso no se queda así: el motor tiene que seguir
+igual de optimizado.
+
+- E-211 (filas con clave del pre-render, `packKeyedCastersScanWasm` en `wasm/gpuPack.c`, `GPU_KEYED_CASTER_FLOATS`):
+  agregar a la fila un id de textura de sombra (0 = el del sprite). El pre-render lo escribe para los direccionales con
+  la misma cuenta que `_applySunFrames` (`preRenderWorker.js`: dirección vista desde el sol, misma vuelta del ciclo,
+  espejo); el shader de sombras con clave (`makeKeyedCasterShader`, `makeKeyedSunShader` en `instancedSpriteBatch.js`)
+  usa ese id cuando no es 0. Medir la fila nueva con `gpuPackMicrobench` (o el kernel del pack que corresponda).
+- E-191 (instancias del lote de entidades, `_keyedSunFor`): no tiene dónde llevar otro cuadro; con casters
+  direccionales, usar E-211.
+- Después, sacar `lighting.directionalCasters` y sus dos chequeos (`_keyedCastersLive`, `_keyedSunFor` /
+  `_ensureKeyedCasters`), y pasar el gate de Predator contra `main`.
+
+### 17.3 Lo demás que falta (de la tabla de §16)
+
+- F5 profundidad que corrige al pintor; F7 sombras de los faroles (prototipo A contra B en `lampShadowStressScene`);
+  F9 `ShadowCaster` único, sacar `raycasted` y `LightOccluder`, migrar Sun Street, Headlights y Predator; F10 emisivos.
+- F3: mapas en el bigAtlas preempaquetado, herramienta `weed maps`, tabla de sombra por cuadro.
+- F4: `normals` / `surface` en `SpriteRenderer`, id de entidad en el G-buffer, probar MRT, microbench de GPU.
+- F6: cajas y cascos de `VolumeShadowCaster` en el mapa, cache de lo quieto, costo de las columnas en escenas grandes,
+  las rayitas en el borde de la sombra de la esfera.
+- F8: autosombra con faroles.
+- WebGPU de F6 y F8 (hoy solo WebGL; en WebGPU avisan y quedan como antes) y ver en una GPU real el WGSL de F4.
+- Mediciones en la máquina del dueño: ABAB de `directionalSpriteStressScene` (`?mode=hand|ds`), gate de Predator, el
+  banco de luz con mapa de sol y columnas.
