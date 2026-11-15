@@ -70,6 +70,11 @@ const STRESS = [
   'ballsHeavyStressScene', 'tweenStressScene', 'audioStormScene', 'steadyCombatScene', 'textureUploadStressScene',
   'sceneryCamStressScene', 'particleEmitStressScene', 'movedBodiesMixedScene', 'computeStressScene',
   'cmdSamePoseStressScene',
+  // The lights' and shadows' scenes (DX-LIGHT3D and before).
+  'lampShadowStressScene', 'sunShadowMapStressScene', 'selfShadowStressScene', 'depthSortStressScene',
+  'emissiveStressScene', 'spriteMapsStressScene', 'directionalSpriteStressScene', 'volumeStressScene',
+  'flashlightStressScene', 'spotLightStressScene', 'lightGalleryScene', 'lightMotionScene', 'sunMeshParityScene',
+  'dxCaptureScene',
 ].map((n) => `/tests/bench/stressScenes/${n}.js`);
 
 /** Runner flags a scene needs to show its load. */
