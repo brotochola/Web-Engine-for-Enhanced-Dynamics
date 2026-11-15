@@ -13,6 +13,8 @@
 //   ?only=hatch,arboles,civil7  only those things (none: the grass alone); ?lamps=0 no lamps (captures, checks)
 //   ?backend=webgpu
 //   ?fullRows=1   the shadows from pre-render's full caster rows (lighting.shadowTextures: the keyed paths off), to compare
+//   ?lampMap=0    the lamps' shadows as stamps, instead of the lamps' shadow map (one tile a lamp)
+//   ?sweep=1      the heightmap casters' solids swept north to their footprints (being fixed)
 
 import WEED from '/src/index.js';
 import { SunPanel } from '../sunStreetScene/sunPanel.js';
@@ -37,6 +39,8 @@ const BACKEND = param('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 const FULL_ROWS = param('fullRows') === '1';
 // ?sweep=1: lighting.footprintSolids, the heightmap casters' solids swept north to their footprints (being fixed).
 const SWEEP = param('sweep') === '1';
+// ?lampMap=0: the lamps' shadows as stamps on the shadows' layer, instead of the lamps' shadow map (lighting.lampShadows).
+const LAMP_MAP = param('lampMap') !== '0';
 const wanted = (sheet) => ONLY === null || ONLY.has(sheet);
 const HOUR = Number(param('hour')) || 16;
 const HOURS = [10, 16, 18.5, 22];
@@ -178,6 +182,7 @@ export class LightBenchScene extends Scene {
       shadowsEnabled: true,
       sunShadows: SUN_MAP ? 'map' : 'sprite',
       footprintSolids: SWEEP,
+      lampShadows: LAMP_MAP ? 'map' : 'sprite',
       selfShadow: SELF,
       shadowTextures: FULL_ROWS,
       // Shadows as dark as the light bench prototype's (about 60 % darker than the sunlit floor at 16 h): a strong shadow
