@@ -1,5 +1,9 @@
 // PredatorScene.js - Predators vs Prey gameplay scene
 // Demonstrates the new Scene-based architecture for WeedJS
+//
+// `?light3d=1` turns DX-LIGHT3D's pieces on (light3d.js): an oblique camera, the sun's and the lamps' shadow maps,
+// self-shadow, pixel depth, the light bench's barn as each house and its trees, lamp posts that cast, glowing fires and
+// bonfires; `&hour=22` pins the hour (night). Without it the scene is the engine's regression guard, as it was.
 
 import WEED from '/src/index.js';
 
@@ -22,6 +26,8 @@ import { DropPistol } from './gameObjects/dropPistol.js';
 import { Civilian } from './gameObjects/civilian.js';
 import { resetSquadCameraHold, updateSquadCamera } from './gameObjects/cameraController.js';
 import { Trash } from './gameObjects/trash.js';
+import { Bonfire } from './gameObjects/bonfire.js';
+import { ART_FLOOR_SCALE_Y, ART_HEIGHT_SCALE_Y, LIGHT3D, LIGHT3D_PITCH, farmSheet } from './light3d.js';
 // import { Cloud } from './gameObjects/cloud.js';
 
 function predatorSearchParam(name) {
@@ -211,8 +217,12 @@ export class PredatorScene extends WEED.Scene {
       ...(predatorSearchParam('indexedSprites') === '0' ? { indexedSprites: false } : {}),
       // E-201: `?posesByRow=0` draws the keyed frames from a pose stream instead of by queue row (renderer.keyedPosesByRow).
       ...(predatorSearchParam('posesByRow') === '0' ? { keyedPosesByRow: false } : {}),
+      // ?light3d=1 (light3d.js): each entity pixel's place on the floor corrects the painter where it has a height map.
+      ...(LIGHT3D ? { pixelDepth: true } : {}),
       // atlasScaleMode: 'linear',
     },
+    // ?light3d=1 packs the atlas on load (the baked one lacks the farm's renders): room for the barn's 32 views.
+    ...(LIGHT3D ? { assets: { maxAtlasWidth: 8192, maxAtlasHeight: 8192 } } : {}),
     preRender: {
       noLimitFPS: predatorNoLimitFPS,
       packGpuSprites: predatorSearchParam('packGpuSprites') || 'pixi',
@@ -226,8 +236,15 @@ export class PredatorScene extends WEED.Scene {
     },
 
     // A 3/4 top-down view: the floor is drawn ~0.7 as tall as it is deep, so light pools are ellipses.
-    // `?groundScaleY=1` shows the round pools of a straight-down view.
-    camera: { floorScaleY: predatorPositiveParam('groundScaleY', 0.7) },
+    // `?groundScaleY=1` shows the round pools of a straight-down view. ?light3d=1: an oblique camera (camera.pitch, the 3D
+    // light), with the floor and heights LPC art and the farm's renders were drawn with.
+    camera: LIGHT3D
+      ? {
+        pitch: LIGHT3D_PITCH,
+        floorScaleY: predatorPositiveParam('groundScaleY', ART_FLOOR_SCALE_Y),
+        heightScaleY: ART_HEIGHT_SCALE_Y,
+      }
+      : { floorScaleY: predatorPositiveParam('groundScaleY', 0.7) },
 
     lighting: {
       lightGlow: 'add',
@@ -241,10 +258,14 @@ export class PredatorScene extends WEED.Scene {
       maxLights: 256,
       maxShadowSprites: 30000,
       maxFlashes: 32,
-      resolution: predatorPositiveParam('lightingRes', 0.25),
-      shadowResolution: predatorPositiveParam('shadowRes', 0.25),
+      // ?light3d=1: the light pass and the shadow maps at half the canvas (the sun's map is sharper).
+      resolution: predatorPositiveParam('lightingRes', LIGHT3D ? 0.5 : 0.25),
+      shadowResolution: predatorPositiveParam('shadowRes', LIGHT3D ? 0.5 : 0.25),
       shadowUpdateInterval: predatorPositiveParam('shadowInterval', 1),
-      // raycasted: true,
+      // ?light3d=1: the sun's shadow map (it takes out the sun alone and falls on what has height), a shadow map a lamp
+      // (the lamps light each other's shadows, the bulbs' heights in the shadows' lengths), and self-shadow.
+      ...(LIGHT3D ? { sunShadows: 'map', lampShadows: 'map', selfShadow: true } : {}),
+      // A flat view (camera: { pitch: 90 }) lights with the 2D sweep, walls being shadowCaster.setWall():
       // maxPolygonVertices: 128,
       // /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
       // maxOccluderSelfLit: 512,
@@ -255,10 +276,13 @@ export class PredatorScene extends WEED.Scene {
         elevation: 45, // Degrees above horizon (0=horizon, 90=overhead)
         intensity: 1, // Light intensity (0-1), affects ambient brightness
         color: 0xffffff, // Sun color (warm white default)
-        shadowAlpha: 0.25, // Base darkness of sun-cast shadows (0-1)
+        // Base darkness of sun-cast shadows (0-1); ?light3d=1: as dark as the light bench's, long shadows not lightened.
+        shadowAlpha: LIGHT3D ? 0.6 : 0.25,
+        ...(LIGHT3D ? { shadowStretchAlphaFactor: 0 } : {}),
         startHour: 12, // Starting hour for day cycle (0-24)
         dayCycle: {
-          enabled: true, // Auto-advance time of day
+          // Auto-advance time of day; ?light3d=1&hour= pins the hour (day or night stays, for looking and captures).
+          enabled: !(LIGHT3D && pinHour != null),
           speed: 1, // Multiplier (1 = real time, 60 = 1 minute = 1 hour)
           dayDurationMinutes: 1, // Real minutes for full day (1440 = 24 real hours)
         },
@@ -297,10 +321,13 @@ export class PredatorScene extends WEED.Scene {
   // ========================================
 
   static assets = {
-    bigAtlas: {
-      json: '/demos/img/baked/PredatorScene/bigAtlas.json',
-      png: '/demos/img/baked/PredatorScene/bigAtlas.png',
-    },
+    // ?light3d=1 packs its atlas on load: the baked one has no farm renders and no maps.
+    ...(LIGHT3D ? {} : {
+      bigAtlas: {
+        json: '/demos/img/baked/PredatorScene/bigAtlas.json',
+        png: '/demos/img/baked/PredatorScene/bigAtlas.png',
+      },
+    }),
     textures: {
       // cloud: '/demos/img/cloud.png',
       bullet: '/demos/img/bullet.png',
@@ -388,6 +415,8 @@ export class PredatorScene extends WEED.Scene {
         json: '/demos/img/explosions/explosions.json',
         png: '/demos/img/explosions/explosions.png',
       },
+      // ?light3d=1: the light bench's barn (each house) and trees, with their height and normal maps.
+      ...(LIGHT3D ? { granero: farmSheet('granero'), arboles: farmSheet('arboles') } : {}),
     },
     tilemaps: {
       myTilemap: {
@@ -434,8 +463,10 @@ export class PredatorScene extends WEED.Scene {
     [DropAk47, 1000],
     [DropPistol, 1000],
     [DropShotgun, 1000],
-    [Trash, 100]
+    [Trash, 100],
     // Grass now uses Decoration instead of GameObject
+    // ?light3d=1: bonfires that keep burning, to see the flames glow and their light at night.
+    ...(LIGHT3D ? [[Bonfire, 16]] : []),
   ];
 
   // ========================================
@@ -490,7 +521,23 @@ export class PredatorScene extends WEED.Scene {
     this.spawnCivilians(Math.round(10000 * crowd));
     this.spawnMySoldiers(Math.round(6000 * crowd));
     this.spawnDestination();
+    if (LIGHT3D) this.spawnBonfires(8);
     await map;
+  }
+
+  /** ?light3d=1: bonfires on a ring around the squad's start, in view of the first frames. */
+  spawnBonfires(count) {
+    const cx = this.config.worldWidth / 2;
+    const cy = this.config.worldHeight / 2;
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * 2 * Math.PI + this.rng() * 0.4;
+      const r = 1000 + this.rng() * 400;
+      Bonfire.spawn({
+        x: cx + Math.cos(a) * r,
+        y: cy + Math.sin(a) * r * ART_FLOOR_SCALE_Y,
+        scale: 1 + this.rng() * 0.5,
+      });
+    }
   }
 
   spawnTrash(count) {

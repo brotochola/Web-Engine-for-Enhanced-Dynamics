@@ -8,6 +8,7 @@ import { Lootable } from './lootable.js';
 import { LootableComponent } from '../components/lootableComponent.js';
 import { PersonComponent } from '../components/personComponent.js';
 import { PersonAnimationFSM, WALK_SPEED_THRESHOLD } from '../fsm/personAnimationFsm.js';
+import { LIGHT3D } from '../light3d.js';
 import {
   ParticleEmitter,
   SpriteSheetRegistry,
@@ -20,7 +21,7 @@ import {
   randomColor,
 } from '/src/index.js';
 
-const { LightOccluder, ShadowCaster, RigidBody, Collider, DirectionalSprite, Transform, rng, NavGrid } = WEED;
+const { ShadowCaster, RigidBody, Collider, DirectionalSprite, Transform, rng, NavGrid } = WEED;
 
 export class Person extends Lootable {
   static deriveSpeed = true;
@@ -45,7 +46,6 @@ export class Person extends Lootable {
     Collider,
     DirectionalSprite,
     ShadowCaster,
-    // LightOccluder,
     PersonComponent,
     PersonAnimationFSM,
   ];
@@ -98,9 +98,9 @@ export class Person extends Lootable {
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.98;
     this.spriteRenderer.animationSpeed = 0.15;
-    this.shadowCaster.heightMultiplier = 1.5
-
-    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
+    // The shadow: the sprite's silhouette, its card 1.5 times as long. With ?light3d=1 the camera gives its height, and the
+    // silhouette is the ShadowCaster's default (each light sees its own view of the person).
+    if (!LIGHT3D) this.shadowCaster.setSprite({ heightScale: 1.5 });
 
     // Flocking and resistance now use static class properties (no per-entity arrays needed)
     // this.setSpritesheet("poli");
@@ -112,7 +112,6 @@ export class Person extends Lootable {
     const scale = 0.9 + rng() * 0.2;
     this.collider.radius = 10 * scale;
     this.setScale(scale, scale);
-    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
 
     this.lootableComponent.health = 1;
     // resistance now uses static class property (Person.resistance)

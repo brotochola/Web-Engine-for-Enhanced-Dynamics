@@ -113,7 +113,7 @@ export class Player extends GameObject {
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 1.0;
 
-    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
+    // Its shadow is the sprite's silhouette (ShadowCaster's default).
 
     // It faces where it moves; standing, where it last moved.
     this.directionalSprite.facingFrom = 'velocity';

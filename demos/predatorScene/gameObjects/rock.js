@@ -1,4 +1,5 @@
 import WEED from '/src/index.js';
+import { LIGHT3D } from '../light3d.js';
 
 // Destructure what we need from WEED
 const {
@@ -53,8 +54,9 @@ export class Rock extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = this.spriteRenderer.originalWidth * 0.4 * this.scale;
     this.collider.visualRange = 0;
-    this.shadowCaster.heightMultiplier = 2;
-    this.shadowCaster.anchorOffsetY = 0.17;
+    // The silhouette twice as long, its foot 0.17 of the sprite below the anchor. With ?light3d=1 the camera gives its
+    // height and the engine measures its base: the ShadowCaster's default.
+    if (!LIGHT3D) this.shadowCaster.setSprite({ heightScale: 2, anchorY: 0.17 });
     this.spriteRenderer.anchorY = 0.66;
     this.spriteRenderer.anchorX = 0.5;
   }

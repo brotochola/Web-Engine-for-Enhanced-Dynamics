@@ -1,4 +1,5 @@
 import WEED from '/src/index.js';
+import { ART_FLOOR_SCALE_Y, ART_HEIGHT_SCALE_Y, BARN, HOUSE_SCALE, LIGHT3D } from '../light3d.js';
 
 // Destructure what we need from WEED
 const {
@@ -17,8 +18,10 @@ const { ShapeType } = enums;
 
 export class House extends GameObject {
   static serializable = true;
-  // Add PreyBehavior component for prey-specific properties
-  static components = [Collider, SpriteRenderer, LightEmitter, RigidBody];
+  // ?light3d=1: a ShadowCaster too, its shadow a box (the barn's).
+  static components = LIGHT3D
+    ? [Collider, SpriteRenderer, LightEmitter, RigidBody, ShadowCaster]
+    : [Collider, SpriteRenderer, LightEmitter, RigidBody];
 
   onGotShot(damage, hitX, hitY, ownerId, shooterEntityType) {
     const count = Math.floor(damage * 8) + 3;
@@ -52,6 +55,10 @@ export class House extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
+    if (LIGHT3D) {
+      this.spawnBarn();
+      return;
+    }
     this.rigidBody.static = 1;
     const type = rng() > 0.5 ? 1 : 2;
     this.setSprite('house' + type);
@@ -70,7 +77,40 @@ export class House extends GameObject {
     this.setScale(1, 1);
     this.lightEmitter.shadowRange = 300;
 
-  
+
+  }
+
+  /**
+   * ?light3d=1: the light bench's barn (a render with its height and normal maps) looking at the camera, its collider its
+   * footprint, its shadow a box for the sun and the lamps, and a lamp over its door.
+   */
+  spawnBarn() {
+    this.rigidBody.static = 1;
+    const s = HOUSE_SCALE;
+    const [x0, x1, y0, y1, height] = BARN.box;
+    this.setSpritesheet('granero');
+    this.setAnimation('granero_0'); // the render that looks south, at the camera
+    this.spriteRenderer.anchorX = BARN.anchorX;
+    this.spriteRenderer.anchorY = BARN.anchorY;
+    this.setScale(s, s);
+
+    // Its footprint, as the floor is drawn (the anchor is its middle).
+    this.collider.shapeType = ShapeType.Box;
+    this.collider.width = (x1 - x0) * s;
+    this.collider.height = (y1 - y0) * s * ART_FLOOR_SCALE_Y;
+    this.collider.offsetY = 0;
+    this.collider.offsetX = 0;
+
+    // A box: its width and depth on the floor, its height in screen px (DX-CASTER: shadowCaster.setBox).
+    this.shadowCaster.setBox((x1 - x0) * s, (y1 - y0) * s, height * s * ART_HEIGHT_SCALE_Y);
+
+    // The lamp over its door, in front of the south wall; in an oblique scene elevation is the bulb's real height.
+    this.lightEmitter.color = 0xffffaa;
+    this.lightEmitter.offsetY = y1 * s * ART_FLOOR_SCALE_Y + 8;
+    this.lightEmitter.elevation = 45;
+    this.lightEmitter.radius = 632;
+    this.lightEmitter.active = 1;
+    this.lightEmitter.shadowRange = 300;
   }
 
   onDespawned() {
