@@ -881,6 +881,74 @@ test('E-312 step 2: with K_SKIP the emit writes the statics of marked keyed rows
   checkKeys(k, n, 'frame 3', st);
 });
 
+// E-320: the collect writes the poses into the queue being written (E-98d), so the emit's stash is that queue's own pose
+// columns and the kernel leaves them where they are (a sprite that does not inherit its rotation still takes its own).
+// From the same start, the frames with the stash in the queue write what the frames write copying it from elsewhere
+// (queue buffer B's pose columns, given A's before each frame): every byte of queue A and the animation state.
+test('E-320: the emit with the poses already in the queue writes what it writes copying them from elsewhere', async (t) => {
+  const cases = [
+    { ySort: true },
+    { ySort: false, seed: 0xbeef },
+    { ySort: true, keyed: true },
+    { ySort: true, faces: true },
+    { ySort: true, bullets: true, lights: true, particles: true, seed: 0x320 },
+  ];
+  for (const opts of cases) {
+    const k = await setup(opts);
+    const { worker: w, b, source, count, maxItems } = k;
+    const n = Math.min(count, maxItems);
+    const A = w.renderQueueBuffers[0];
+    const B = w.renderQueueBuffers[1];
+    assert.equal(source.stashX, A.x, 'the stash is queue A\'s pose columns');
+    assert.equal(w.renderQueueX, A.x, 'the emit writes queue A');
+    const memory = new Uint8Array(k.m.buffer);
+    const startMemory = memory.slice();
+    const start = k.snapshot();
+    const queueA = new Uint8Array(k.m.buffer, k.m.layout.queueAByte, computeBufferSize(maxItems));
+    const run = (inQueue) => {
+      memory.set(startMemory);
+      k.restore(start);
+      b.testKeyFrame = 0;
+      if (k.keyed) SpriteRenderer.keyedDirty.fill(1);
+      const src = { ...source, persist: k.keyed ? true : source.persist };
+      if (!inQueue) Object.assign(src, { stashX: B.x, stashY: B.y, stashRotC: B.rotC, stashRotS: B.rotS });
+      const frames = [];
+      for (let f = 0; f < 12; f++) {
+        if (!inQueue) {
+          B.x.set(A.x.subarray(0, n));
+          B.y.set(A.y.subarray(0, n));
+          B.rotC.set(A.rotC.subarray(0, n));
+          B.rotS.set(A.rotS.subarray(0, n));
+        }
+        assert.ok(writeEmitColumnsNext(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, src), 'every column is in the memory');
+        writeEmitBulletColumns(b, BulletComponent, w._resolveBuiltinTextureId('_bulletTrail'));
+        writeEmitGlowColumns(b, LightEmitter, Transform, w._resolveBuiltinTextureId('_lightGradient'));
+        writeEmitParticleColumns(b, ParticleComponent, w._resolveBuiltinTextureId('_whiteCircle'),
+          w.zenithalMaxHeight, w.zenithalScaleFactor, w.zenithalAlphaFade);
+        const tilesDirty = w.renderQueueTileMode !== null && (w._faces || w._tiledTileColumns.has(w.renderQueueTileMode));
+        const flags = EMIT_SORT_KEY | (k.ySort ? EMIT_Y_SORT : 0) | (tilesDirty ? EMIT_TILES_DIRTY : 0) | EMIT_BOUNDS;
+        assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n, `frame ${f}: rows`);
+        if (b.results[2] && w.renderQueueTileMode !== null) w._tiledTileColumns.add(w.renderQueueTileMode);
+        frames.push({ queue: queueA.slice(), state: k.snapshot().state, counts: Array.from(b.results.subarray(0, 4)) });
+      }
+      return frames;
+    };
+    const copied = run(false);
+    const inQueue = run(true);
+    for (let f = 0; f < copied.length; f++) {
+      const at = inQueue[f].queue.findIndex((x, i) => x !== copied[f].queue[i]);
+      assert.equal(at, -1, `${JSON.stringify(opts)} frame ${f}: queue A differs at byte ${at}`);
+      assert.deepEqual(inQueue[f].counts, copied[f].counts, `${JSON.stringify(opts)} frame ${f}: the counts`);
+      inQueue[f].state.forEach((v, s) => {
+        const c = copied[f].state[s];
+        assert.deepEqual(Buffer.from(v.buffer, v.byteOffset, v.byteLength), Buffer.from(c.buffer, c.byteOffset, c.byteLength),
+          `${JSON.stringify(opts)} frame ${f}: state ${s}`);
+      });
+    }
+    t.diagnostic(`${JSON.stringify(opts)}: ${n} rows, ${new Set(k.types.slice(0, n)).size} row types`);
+  }
+});
+
 test('the emit kernel fills a queue to its capacity', async (t) => {
   await runCase(t, { ySort: true, maxItems: 600, count: 600, seed: 0xfeed });
 });

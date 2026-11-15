@@ -558,8 +558,10 @@ INLINE double order_key(const Emit *e, uint32_t i, int32_t idx) {
   return e->ySort ? z * e->band + (double)e->cY[i] : z;
 }
 
-/* emitSpriteQueue's sprite branch: collector row i at queue row out. */
-INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
+/* emitSpriteQueue's sprite branch: collector row i at queue row out. E-320: with `inq` (a constant) the stash is this
+   queue's pose columns and out is i (E-98d), so the pose is already in the row: only a rotation of the sprite's own is
+   written. */
+INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq) {
   const int32_t idx = e->cIndex[i];
   /* E-177: whether this sprite's statics changed since the emit before: its keyed flag, taken (an atomic exchange, a full
      barrier) before its columns are read, so a change after this sets it again for the next frame; the clock below
@@ -578,13 +580,16 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   if (kc && changed) kc[0] = e->kFrame;
   const uint32_t lastTex = e->qKey && e->aLastTex ? e->aLastTex[idx] : 0;
   if (e->sortKey) e->qSortKey[out] = (float)order_key(e, i, idx);
-  const float x = e->stX[i];
-  const float y = e->stY[i];
-  float rc;
-  float rs;
-  if (e->sInherit[idx]) {
-    rc = e->stRc[i];
-    rs = e->stRs[i];
+  const float x = inq ? 0.0f : e->stX[i];
+  const float y = inq ? 0.0f : e->stY[i];
+  const int inherit = e->sInherit[idx];
+  float rc = 0.0f;
+  float rs = 0.0f;
+  if (inherit) {
+    if (!inq) {
+      rc = e->stRc[i];
+      rs = e->stRs[i];
+    }
   } else {
     rc = e->sRotC[idx];
     rs = e->sRotS[idx];
@@ -620,10 +625,14 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
     if (e->qTileMulX) e->qTileMulX[out] = 0.0f;
     if (e->qTileMulY) e->qTileMulY[out] = 0.0f;
   }
-  e->qX[out] = x;
-  e->qY[out] = y;
-  e->qRotC[out] = rc;
-  e->qRotS[out] = rs;
+  if (!inq) {
+    e->qX[out] = x;
+    e->qY[out] = y;
+  }
+  if (!inq || !inherit) {
+    e->qRotC[out] = rc;
+    e->qRotS[out] = rs;
+  }
   if (statics) {
     e->qScaleX[out] = e->sScaleX[idx];
     e->qScaleY[out] = e->sScaleY[idx];
@@ -754,20 +763,21 @@ INLINE uint32_t deco_key(const Emit *e, int32_t idx, uint32_t out) {
   return (e->dKeyBase + (uint32_t)idx) | (mark << 31);
 }
 
-/* emitSpriteQueue's decoration branch: collector row i at queue row out. */
-INLINE void deco_row(Emit *e, uint32_t i, uint32_t out) {
+/* emitSpriteQueue's decoration branch: collector row i at queue row out. E-320: with `inq` (a constant) its pose is
+   already in the row, as in sprite_row. */
+INLINE void deco_row(Emit *e, uint32_t i, uint32_t out, int inq) {
   const int32_t idx = e->cIndex[i];
   plain_head(e, i, out);
-  const float x = e->stX[i];
-  const float y = e->stY[i];
-  const float rc = e->stRc[i];
-  const float rs = e->stRs[i];
-  e->qX[out] = x;
-  e->qY[out] = y;
+  if (!inq) {
+    e->qX[out] = e->stX[i];
+    e->qY[out] = e->stY[i];
+  }
   e->qScaleX[out] = e->dScaleX[idx];
   e->qScaleY[out] = e->dScaleY[idx];
-  e->qRotC[out] = rc;
-  e->qRotS[out] = rs;
+  if (!inq) {
+    e->qRotC[out] = e->stRc[i];
+    e->qRotS[out] = e->stRs[i];
+  }
   e->qAlpha[out] = (float)((double)e->dAlpha[idx] * e->zoomAlpha);
   e->qTint[out] = e->dTint[idx];
   const uint32_t a = e->dTexture[idx];
@@ -1169,6 +1179,38 @@ INLINE uint32_t adobe_root(Emit *e, uint32_t i, uint32_t w, uint32_t cap, double
   return w;
 }
 
+/* The rows of a frame without Adobe roots, where row i is collector row i: every type, or with `othersOnly` every type
+   but the sprites (a persist frame: persist_frame wrote them); `inq` (E-320) says the stash is this queue's pose
+   columns. Both are constants, so each copy carries no test of them. Returns how many rows it listed for the JS. */
+INLINE uint32_t rows_in_place(Emit *e, uint32_t n, uint32_t *foreign, int othersOnly, int inq) {
+  const uint8_t *cType = e->cType;
+  uint32_t nForeign = 0;
+  for (uint32_t i = 0; i < n; i++) {
+    const uint8_t ty = cType[i];
+    if (ty == 0) {
+      if (!othersOnly) sprite_row(e, i, i, inq);
+    } else if (ty == 2) {
+      deco_row(e, i, i, inq);
+    } else if (ty == 4 && e->bActive) {
+      bullet_row(e, i, i);
+    } else if (ty == 5 && e->bActive) {
+      trail_row(e, i, i);
+    } else if (ty == 3 && e->lColor) {
+      glow_row(e, i, i);
+    } else if (ty == 1 && e->pcX) {
+      particle_row(e, i, i);
+    } else if (ty == 7) {
+      lf_row(e, i, i);
+    } else {
+      foreign[2 * nForeign] = i;
+      foreign[2 * nForeign + 1] = i;
+      nForeign++;
+    }
+  }
+  if (e->dFaceOct) deco_faces(e, cType, n);
+  return nForeign;
+}
+
 __attribute__((export_name("emit_rows")))
 uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t flags,
                    double deltaSeconds, double zoomAlpha, double band) {
@@ -1194,56 +1236,16 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
   uint32_t nForeign = 0;
   uint32_t overflow = 0;
   uint32_t w;
+  /* E-320: the collect wrote the poses into this queue's columns (E-98d, no Adobe root this frame): the full emit's rows
+     in place leave them there, in a copy of the loop of their own (the test stays out of the per-row work). A persist
+     frame's rows keep the copying loop: persist misses in the scenes this is for, and the copy is ~5 KB of code. */
+  const int inQueue = e.stX == e.qX && e.stY == e.qY && e.stRc == e.qRotC && e.stRs == e.qRotS;
   if (flags & F_OTHERS_ONLY) {
     if (roots) return DECLINED;
-    for (uint32_t i = 0; i < n; i++) {
-      const uint8_t ty = cType[i];
-      if (ty == 0) {
-        continue;
-      } else if (ty == 2) {
-        deco_row(&e, i, i);
-      } else if (ty == 4 && e.bActive) {
-        bullet_row(&e, i, i);
-      } else if (ty == 5 && e.bActive) {
-        trail_row(&e, i, i);
-      } else if (ty == 3 && e.lColor) {
-        glow_row(&e, i, i);
-      } else if (ty == 1 && e.pcX) {
-        particle_row(&e, i, i);
-      } else if (ty == 7) {
-        lf_row(&e, i, i);
-      } else {
-        foreign[2 * nForeign] = i;
-        foreign[2 * nForeign + 1] = i;
-        nForeign++;
-      }
-    }
-    if (e.dFaceOct) deco_faces(&e, cType, n);
+    nForeign = rows_in_place(&e, n, foreign, 1, 0);
     w = n;
   } else if (!roots) {
-    for (uint32_t i = 0; i < n; i++) {
-      const uint8_t ty = cType[i];
-      if (ty == 0) {
-        sprite_row(&e, i, i);
-      } else if (ty == 2) {
-        deco_row(&e, i, i);
-      } else if (ty == 4 && e.bActive) {
-        bullet_row(&e, i, i);
-      } else if (ty == 5 && e.bActive) {
-        trail_row(&e, i, i);
-      } else if (ty == 3 && e.lColor) {
-        glow_row(&e, i, i);
-      } else if (ty == 1 && e.pcX) {
-        particle_row(&e, i, i);
-      } else if (ty == 7) {
-        lf_row(&e, i, i);
-      } else {
-        foreign[2 * nForeign] = i;
-        foreign[2 * nForeign + 1] = i;
-        nForeign++;
-      }
-    }
-    if (e.dFaceOct) deco_faces(&e, cType, n);
+    nForeign = inQueue ? rows_in_place(&e, n, foreign, 0, 1) : rows_in_place(&e, n, foreign, 0, 0);
     w = n;
   } else {
     /* emitSpriteQueue's loop: until the collector or the queue runs out (the collector holds at most maxItems). */
@@ -1256,9 +1258,9 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         continue;
       }
       if (ty == 0) {
-        sprite_row(&e, i, w);
+        sprite_row(&e, i, w, 0);
       } else if (ty == 2) {
-        deco_row(&e, i, w);
+        deco_row(&e, i, w, 0);
         if (e.dFaceOct) deco_face(&e, i, w);
       } else if (ty == 4 && e.bActive) {
         bullet_row(&e, i, w);
