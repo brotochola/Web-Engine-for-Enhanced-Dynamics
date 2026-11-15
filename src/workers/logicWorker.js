@@ -49,8 +49,7 @@ import {
 } from '../util/listUpdateRing.js';
 import { bindNavRequestRing } from '../util/navRequestRing.js';
 import { NavGrid } from '../core/navGrid.js';
-import { collisionPairKey } from '../util/utils.js';
-import { EntityIdArray } from '../util/entityIdWidth.js';
+import { EntityIdArray, unpackPair } from '../util/entityIdWidth.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
@@ -114,6 +113,17 @@ function instanceAtIndex(index) {
 // E-262: the frame's dtRatio, deltaTime and accumulated time as heap numbers, boxed once a frame (update). A tagged array:
 // what is stored stays the value a load gives back, so every tick call passes the same three.
 const TICK_ARGS = [null, null, null];
+
+// E-282: the contact pair table (LogicWorker._pairFind). An empty row has min = PAIR_EMPTY; a lookup that finds
+// nothing returns NO_PAIR, a Smi under 31-bit Smis below every foreign value -(slot + 1).
+const PAIR_EMPTY = -1;
+const NO_PAIR = -0x40000000;
+const PAIR_TABLE_MIN = 2048;
+
+/** The pair's home row: Fibonacci hashing of both ids, the top bits kept (shift = 32 - log2(capacity)). */
+function pairHash(minE, maxE, shift) {
+  return Math.imul(Math.imul(minE, 0x9e3779b1) ^ maxE, 0x85ebca6b) >>> shift;
+}
 
 /** Stale pairs owned by another logic worker are dropped at least this often. */
 const FOREIGN_SWEEP_FRAMES = 30;
@@ -196,23 +206,33 @@ class LogicWorker extends AbstractWorker {
 
     // Collision tracking (Unity-style Enter/Stay/Exit from Box2D contacts)
 
-    // Tracked contact pairs: collisionPairKey → slot in dense columns
+    // Tracked contact pairs: (minE, maxE) → slot in dense columns
     // (min, max, gen of min, gen of max). Delete swaps the last slot in, so the
     // stay loop walks the columns without iterating a Set or unpacking keys.
     // Pairs this worker fires callbacks for (one side at least: see
     // _runsCallbacksOf) are validated every frame; _pairSides says which sides.
     // The others sit in the foreign columns and are validated when
     // isCollidingWith asks, plus a sweep every FOREIGN_SWEEP_FRAMES.
-    // Map value: slot ≥ 0 own, −(slot+1) foreign.
-    /** @type {Map<number, number>} */
-    this._pairSlot = new Map();
-    // The key is `collisionPairKey(minE, maxE)`, which is `packPair` bound by
-    // `bindEntityIdWidth` - see src/util/entityIdWidth.js, which carries the full note.
+    // Table value: slot ≥ 0 own, −(slot+1) foreign.
+    // E-282: (minE, maxE) → value in an open-addressing table on typed arrays (linear
+    // probing, deletes shift the run back, load ≤ 1/2, doubles when full). It was a Map
+    // keyed by `collisionPairKey(minE, maxE)` (`packPair`, bound by `bindEntityIdWidth`:
+    // src/util/entityIdWidth.js carries the full note), which allocated under begin/end
+    // churn: a new backing store each time deletes filled one, and in Chrome a heap
+    // number per key from minE 16384 on (every Cantor key under 32-bit ids).
+    this._pairHashMin = new Int32Array(0);
+    this._pairHashMax = new Int32Array(0);
+    this._pairHashVal = new Int32Array(0);
+    this._pairHashMask = 0;
+    this._pairHashShift = 32;
+    this._pairHashSize = 0;
+    // has(key) unpacks a collisionPairKey here.
+    this._pairUnpack = { a: 0, b: 0 };
     //
     // A previous version of this file had, 45 lines above and attached to nothing, the
     // comment "Float64Array, not Int32Array: this key overflows a 32-bit int well
     // before the entity cap." There is no Float64Array in this file for the pair key (the
-    // spawn sort's keys, E-125, are the only one), and the key is a Map key, i.e. a JS number. As a floating
+    // spawn sort's keys, E-125, are the only one); the key was a Map key, a JS number (E-282: two Int32Array columns now). As a floating
     // JSDoc it also visually documented the B-09 block below it. Read as a performance
     // claim about hashing, it is what made E-10 a two-line hypothesis that was already
     // dead; E-10 then swept 715 838 805 keys and found zero boxed (in Node; Chrome's
@@ -2033,9 +2053,99 @@ class LogicWorker extends AbstractWorker {
     this._pairCapacity = cap;
   }
 
+  /** E-282: the table's value for (minE, maxE), or NO_PAIR. */
+  _pairFind(minE, maxE) {
+    if (this._pairHashSize === 0) return NO_PAIR;
+    const keyMin = this._pairHashMin;
+    const keyMax = this._pairHashMax;
+    const mask = this._pairHashMask;
+    let h = pairHash(minE, maxE, this._pairHashShift);
+    for (;;) {
+      const m = keyMin[h];
+      if (m === PAIR_EMPTY) return NO_PAIR;
+      if (m === minE && keyMax[h] === maxE) return this._pairHashVal[h];
+      h = (h + 1) & mask;
+    }
+  }
+
+  /** E-282: set (minE, maxE) → value, adding the pair when the table lacks it. */
+  _pairPut(minE, maxE, value) {
+    if ((this._pairHashSize + 1) * 2 > this._pairHashMin.length) this._growPairHash();
+    const keyMin = this._pairHashMin;
+    const keyMax = this._pairHashMax;
+    const mask = this._pairHashMask;
+    let h = pairHash(minE, maxE, this._pairHashShift);
+    for (;;) {
+      const m = keyMin[h];
+      if (m === PAIR_EMPTY) {
+        keyMin[h] = minE;
+        keyMax[h] = maxE;
+        this._pairHashVal[h] = value;
+        this._pairHashSize++;
+        return;
+      }
+      if (m === minE && keyMax[h] === maxE) {
+        this._pairHashVal[h] = value;
+        return;
+      }
+      h = (h + 1) & mask;
+    }
+  }
+
+  /** E-282: drop (minE, maxE). The rows after it in its run move back over the hole (no tombstones). */
+  _pairDelete(minE, maxE) {
+    if (this._pairHashSize === 0) return;
+    const keyMin = this._pairHashMin;
+    const keyMax = this._pairHashMax;
+    const vals = this._pairHashVal;
+    const mask = this._pairHashMask;
+    const shift = this._pairHashShift;
+    let hole = pairHash(minE, maxE, shift);
+    for (;;) {
+      const m = keyMin[hole];
+      if (m === PAIR_EMPTY) return;
+      if (m === minE && keyMax[hole] === maxE) break;
+      hole = (hole + 1) & mask;
+    }
+    let j = hole;
+    for (;;) {
+      j = (j + 1) & mask;
+      const m = keyMin[j];
+      if (m === PAIR_EMPTY) break;
+      // Row j moves into the hole unless its home lies after the hole (cyclically, up to j).
+      const home = pairHash(m, keyMax[j], shift);
+      if (((j - home) & mask) >= ((j - hole) & mask)) {
+        keyMin[hole] = m;
+        keyMax[hole] = keyMax[j];
+        vals[hole] = vals[j];
+        hole = j;
+      }
+    }
+    keyMin[hole] = PAIR_EMPTY;
+    this._pairHashSize--;
+  }
+
+  _growPairHash() {
+    const oldMin = this._pairHashMin;
+    const oldMax = this._pairHashMax;
+    const oldVal = this._pairHashVal;
+    const cap = oldMin.length > 0 ? oldMin.length * 2 : PAIR_TABLE_MIN;
+    this._pairHashMin = new Int32Array(cap).fill(PAIR_EMPTY);
+    this._pairHashMax = new Int32Array(cap);
+    this._pairHashVal = new Int32Array(cap);
+    this._pairHashMask = cap - 1;
+    this._pairHashShift = Math.clz32(cap) + 1;
+    this._pairHashSize = 0;
+    for (let i = 0; i < oldMin.length; i++) {
+      if (oldMin[i] !== PAIR_EMPTY) this._pairPut(oldMin[i], oldMax[i], oldVal[i]);
+    }
+  }
+
   /** Swap the last slot into `slot`. The caller continues at `slot` when walking. */
-  _removePairSlot(slot, key) {
+  _removePairSlot(slot) {
     const last = --this._pairCount;
+    const goneMin = this._pairMin[slot];
+    const goneMax = this._pairMax[slot];
     if (slot !== last) {
       const minE = this._pairMin[last];
       const maxE = this._pairMax[last];
@@ -2045,9 +2155,9 @@ class LogicWorker extends AbstractWorker {
       this._pairGenMax[slot] = this._pairGenMax[last];
       this._pairBegan[slot] = this._pairBegan[last];
       this._pairSides[slot] = this._pairSides[last];
-      this._pairSlot.set(collisionPairKey(minE, maxE), slot);
+      this._pairPut(minE, maxE, slot);
     }
-    this._pairSlot.delete(key);
+    this._pairDelete(goneMin, goneMax);
   }
 
   _growForeignColumns() {
@@ -2064,8 +2174,10 @@ class LogicWorker extends AbstractWorker {
     this._foreignCapacity = cap;
   }
 
-  _removeForeignSlot(slot, key) {
+  _removeForeignSlot(slot) {
     const last = --this._foreignCount;
+    const goneMin = this._foreignMin[slot];
+    const goneMax = this._foreignMax[slot];
     if (slot !== last) {
       const minE = this._foreignMin[last];
       const maxE = this._foreignMax[last];
@@ -2073,9 +2185,9 @@ class LogicWorker extends AbstractWorker {
       this._foreignMax[slot] = maxE;
       this._foreignGenMin[slot] = this._foreignGenMin[last];
       this._foreignGenMax[slot] = this._foreignGenMax[last];
-      this._pairSlot.set(collisionPairKey(minE, maxE), -(slot + 1));
+      this._pairPut(minE, maxE, -(slot + 1));
     }
-    this._pairSlot.delete(key);
+    this._pairDelete(goneMin, goneMax);
   }
 
   _foreignValid(slot) {
@@ -2104,21 +2216,27 @@ class LogicWorker extends AbstractWorker {
 
   /** isCollidingWith: own pairs were validated this frame unless it skipped the walk (E-302); foreign ones are checked here. */
   _hasPair(key) {
-    const v = this._pairSlot.get(key);
-    if (v === undefined) return false;
+    const pair = unpackPair(key, this._pairUnpack);
+    return this._hasPairOf(pair.a, pair.b);
+  }
+
+  _hasPairOf(minE, maxE) {
+    const v = this._pairFind(minE, maxE);
+    if (v === NO_PAIR) return false;
     if (v >= 0) {
       if (!this._lazyPairs || this._ownPairValid(v)) return true;
-      this._removePairSlot(v, key);
+      this._removePairSlot(v);
       return false;
     }
     const slot = -v - 1;
     if (this._foreignValid(slot)) return true;
-    this._removeForeignSlot(slot, key);
+    this._removeForeignSlot(slot);
     return false;
   }
 
   _clearContactState(reason) {
-    this._pairSlot.clear();
+    if (this._pairHashSize !== 0) this._pairHashMin.fill(PAIR_EMPTY);
+    this._pairHashSize = 0;
     this._pairCount = 0;
     this._foreignCount = 0;
     if (reason) {
@@ -2129,24 +2247,23 @@ class LogicWorker extends AbstractWorker {
   _applyContactEnd(rawA, rawB, genA, genB) {
     const minE = rawA < rawB ? rawA : rawB;
     const maxE = rawA < rawB ? rawB : rawA;
-    const key = collisionPairKey(minE, maxE);
-    const slot = this._pairSlot.get(key);
-    if (slot === undefined) return;
+    const slot = this._pairFind(minE, maxE);
+    if (slot === NO_PAIR) return;
     if (slot < 0) {
-      this._removeForeignSlot(-slot - 1, key);
+      this._removeForeignSlot(-slot - 1);
       return;
     }
     // E-302: without the walk, a pair whose entity went inactive or whose body was replaced is still here; the walk
     // would have dropped it silently, so does this (no exit on a despawned entity).
     if (this._lazyPairs && !this._ownPairValid(slot)) {
-      this._removePairSlot(slot, key);
+      this._removePairSlot(slot);
       return;
     }
     const match =
       this._pairGenMin[slot] === ((rawA < rawB ? genA : genB) >>> 0) &&
       this._pairGenMax[slot] === ((rawA < rawB ? genB : genA) >>> 0);
     const sides = this._pairSides[slot];
-    this._removePairSlot(slot, key);
+    this._removePairSlot(slot);
     if (!match) return;
     const entityType = Transform.entityType;
     const collisionFlags = this.collisionListenerByType;
@@ -2178,15 +2295,14 @@ class LogicWorker extends AbstractWorker {
 
     const minE = rawA < rawB ? rawA : rawB;
     const maxE = rawA < rawB ? rawB : rawA;
-    const key = collisionPairKey(minE, maxE);
     const sides = (this._runsCallbacksOf(minE, minE) ? 1 : 0) | (this._runsCallbacksOf(maxE, minE) ? 2 : 0);
     if (sides === 0) {
-      const v = this._pairSlot.get(key);
+      const v = this._pairFind(minE, maxE);
       let f;
-      if (v === undefined) {
+      if (v === NO_PAIR) {
         if (this._foreignCount === this._foreignCapacity) this._growForeignColumns();
         f = this._foreignCount++;
-        this._pairSlot.set(key, -(f + 1));
+        this._pairPut(minE, maxE, -(f + 1));
         this._foreignMin[f] = minE;
         this._foreignMax[f] = maxE;
       } else {
@@ -2196,15 +2312,16 @@ class LogicWorker extends AbstractWorker {
       this._foreignGenMax[f] = (rawA < rawB ? genB : genA) >>> 0;
       return;
     }
-    let slot = this._pairSlot.get(key);
-    let isNew = slot === undefined;
+    let slot = this._pairFind(minE, maxE);
+    const absent = slot === NO_PAIR;
+    let isNew = absent;
     // E-302: without the walk, the slot may be a stale pair of a despawned or rebuilt body at the same index: this
     // begin is a new contact and fires enter (the walk would have dropped the slot first).
     if (!isNew && this._lazyPairs && !this._ownPairValid(slot)) isNew = true;
-    if (slot === undefined) {
+    if (absent) {
       if (this._pairCount === this._pairCapacity) this._growPairColumns();
       slot = this._pairCount++;
-      this._pairSlot.set(key, slot);
+      this._pairPut(minE, maxE, slot);
       this._pairMin[slot] = minE;
       this._pairMax[slot] = maxE;
     }
@@ -2275,7 +2392,7 @@ class LogicWorker extends AbstractWorker {
       this._foreignSweepIn = FOREIGN_SWEEP_FRAMES;
       for (let f = 0; f < this._foreignCount; ) {
         if (this._foreignValid(f)) f++;
-        else this._removeForeignSlot(f, collisionPairKey(this._foreignMin[f], this._foreignMax[f]));
+        else this._removeForeignSlot(f);
       }
     }
 
@@ -2315,7 +2432,7 @@ class LogicWorker extends AbstractWorker {
               ? (gen[minE] >>> 0) === genMin[s] && (gen[maxE] >>> 0) === genMax[s]
               : genMin[s] === 0 && genMax[s] === 0);
           if (!valid) {
-            this._removePairSlot(s, collisionPairKey(minE, maxE));
+            this._removePairSlot(s);
             continue;
           }
           const beganNow = began[s] === frame;
@@ -2849,8 +2966,8 @@ class LogicWorker extends AbstractWorker {
     }
     this.stats[LOGIC_STATS.MARK_ACTIVE] = markActive;
     // E-27. Always on, like IDLE_MS: the live pair count is a premise, not a
-    // detailed diagnostic. Map.size is one load of a field the map already keeps.
-    this.stats[LOGIC_STATS.PAIR_COUNT] = this._pairSlot.size;
+    // detailed diagnostic. Every tracked pair holds one own or one foreign slot.
+    this.stats[LOGIC_STATS.PAIR_COUNT] = this._pairCount + this._foreignCount;
     // M11: every worker's map holds every pair; this is the share it validates.
     this.stats[LOGIC_STATS.PAIR_OWN] = this._pairCount;
     if (!this.collectDetailedStats) return;
