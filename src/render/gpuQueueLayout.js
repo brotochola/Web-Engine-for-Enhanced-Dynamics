@@ -53,9 +53,10 @@ export const GPU_FLAG_SPLIT = 2;
  */
 export const GPU_FLAG_INDEXED = 4;
 /**
- * E-191. With GPU_FLAG_KEYED_CASTERS the sun and stamp regions hold keyed caster rows: x, y, the key as a float and a
- * zero (the slot pair the shadow program reads the statics by, from the keyed frames' statics texture) and the shadow
- * terms (GPU_KEYED_CASTER_FLOATS); a stamp row adds the light vec4 at GPU_KEYED_CASTER_FLOATS
+ * E-191. With GPU_FLAG_KEYED_CASTERS the sun and stamp regions hold keyed caster rows: x, y, the key as a float (the slot
+ * the shadow program reads the statics by, from the keyed frames' statics texture), the frame the light sees (DX-SHADOW3D:
+ * ±(textureId + 1), negative mirrored, 0 the sprite's own) and the shadow terms (GPU_KEYED_CASTER_FLOATS); a stamp row adds
+ * the light vec4 at GPU_KEYED_CASTER_FLOATS
  * (GPU_KEYED_STAMP_FLOATS). Pre-render writes them while Pixi's keyed texture is live (PIXI_KEYED_HEADER.LIVE).
  */
 export const GPU_FLAG_KEYED_CASTERS = 8;

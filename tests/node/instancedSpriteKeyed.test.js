@@ -637,12 +637,12 @@ test('keyed casters: a keyed frame stores its queue frame in LIVE, and the caste
   const rows = new Float32Array(5 * GPU_KEYED_STAMP_FLOATS).map((_, i) => i + 0.25);
   const g = s.split.commitKeyedCasterRows(rows, 5, GPU_KEYED_STAMP_FLOATS);
   assert.equal(g.instanceCount, 5);
-  assert.deepEqual(Object.keys(g.attributes).sort(), ['aInstLight', 'aInstShadow', 'aInstSlot', 'aInstXY', 'aQuad']);
-  assert.deepEqual([g.attributes.aInstSlot.offset, g.attributes.aInstShadow.offset, g.attributes.aInstLight.offset], [8, 16, 28]);
+  assert.deepEqual(Object.keys(g.attributes).sort(), ['aInstFrame', 'aInstLight', 'aInstShadow', 'aInstSlot', 'aInstXY', 'aQuad']);
+  assert.deepEqual([g.attributes.aInstSlot.offset, g.attributes.aInstFrame.offset, g.attributes.aInstShadow.offset, g.attributes.aInstLight.offset], [8, 12, 16, 28]);
   assert.equal(g.attributes.aInstXY.stride, GPU_KEYED_STAMP_FLOATS * 4);
   assert.deepEqual(Array.from(s.split.data.subarray(0, rows.length)), Array.from(rows), 'the rows as given');
   const g2 = s.split.commitKeyedCasterRows(rows, 3, GPU_KEYED_CASTER_FLOATS);
-  assert.deepEqual(Object.keys(g2.attributes).sort(), ['aInstShadow', 'aInstSlot', 'aInstXY', 'aQuad'], 'a sun row has no light');
+  assert.deepEqual(Object.keys(g2.attributes).sort(), ['aInstFrame', 'aInstShadow', 'aInstSlot', 'aInstXY', 'aQuad'], 'a sun row has no light');
   assert.equal(g2.attributes.aInstXY.stride, GPU_KEYED_CASTER_FLOATS * 4);
   assert.notEqual(g2.attributes.aInstXY.buffer, g.attributes.aInstXY.buffer, 'the other ring slot');
   assert.equal(s.split.commitKeyedCasterRows(rows, 0, GPU_KEYED_CASTER_FLOATS), null, 'none');

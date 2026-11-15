@@ -92,9 +92,13 @@ export function spriteIndexedVertex(source, { shadow = false, casterRows = false
   const main = 'void main() {\n';
   const at = out.indexOf(main);
   if (at < 0 || out.indexOf(main, at + 1) >= 0) throw new Error('WeedJS: the sprite vertex shader needs one "void main() {"');
+  // DX-SHADOW3D (plan §17.2): a caster row's fourth float, the frame a light sees: ±(textureId + 1), negative mirrored,
+  // 0 the sprite's own (pre-render writes it for a DirectionalSprite).
+  const frame = shadow && casterRows;
   return (
     out.slice(0, at) +
     "in float aInstSlot; // this instance's statics row (E-162; E-186: no depth, nothing draws with a depth test)\n" +
+    (frame ? "in float aInstFrame; // the frame this light sees, ±(textureId + 1), - mirrored; 0: the sprite's own\n" : '') +
     "uniform highp usampler2D uStatics; // the statics in the queue's row order, three texels a row\n\n" +
     (byRow
       ? "in float aInstRow; // E-201: this instance's queue row, whose pose uPoses holds\n" +
@@ -118,6 +122,12 @@ export function spriteIndexedVertex(source, { shadow = false, casterRows = false
     '  aInstTexId = uintBitsToFloat(weedS1.z);\n' +
     '  aInstTileInv = uintBitsToFloat(uvec2(weedS1.w, weedS2.x));\n' +
     '  aInstTileOff = uintBitsToFloat(weedS2.yz);\n' +
+    (frame
+      ? '  if (aInstFrame != 0.0) {\n' +
+        '    aInstTexId = abs(aInstFrame) - 1.0;\n' +
+        '    aInstScale.x = aInstFrame < 0.0 ? -abs(aInstScale.x) : abs(aInstScale.x);\n' +
+        '  }\n'
+      : '') +
     out.slice(at + main.length)
   );
 }
@@ -162,7 +172,8 @@ export function spriteIndexedWgsl(source, { shadow = false, casterRows = false, 
     out = replaceOnce(out, '  @location(1) aInstXY: vec2<f32>,\n', '  @location(1) aInstXY: vec2<f32>,\n  @location(2) aInstSlot: f32,\n', 'shadow WGSL');
     lets += '  let aInstTintBits = 0.0;\n';
     if (casterRows) {
-      out = replaceOnce(out, '  @location(4) aInstRotCS: vec2<f32>,\n', '', 'shadow WGSL');
+      // DX-SHADOW3D (plan §17.2): the row's fourth float, the frame a light sees, takes the rotation's free location.
+      out = replaceOnce(out, '  @location(4) aInstRotCS: vec2<f32>,\n', '  @location(4) aInstFrame: f32,\n', 'shadow WGSL');
       lets += '  let aInstRotCS = vec2<f32>(1.0, 0.0);\n';
     }
     if (!light) {
@@ -175,6 +186,7 @@ export function spriteIndexedWgsl(source, { shadow = false, casterRows = false, 
   const at = vert < 0 ? -1 : out.indexOf(body, vert);
   if (at < 0) throw new Error('WeedJS: the sprite WGSL needs "fn mainVert(…) -> VertexOut {"');
   const head = at + body.length;
+  const frame = shadow && casterRows;
   return (
     out.slice(0, head) +
     lets +
@@ -182,10 +194,17 @@ export function spriteIndexedWgsl(source, { shadow = false, casterRows = false, 
     '  let weedS0 = uStatics[weedRow];\n' +
     '  let weedS1 = uStatics[weedRow + 1u];\n' +
     '  let weedS2 = uStatics[weedRow + 2u];\n' +
-    '  let aInstScale = bitcast<vec2<f32>>(weedS0.xy);\n' +
+    (frame
+      ? // The frame a light sees, when the row carries one: its texture, mirrored when negative.
+        '  let weedScale = bitcast<vec2<f32>>(weedS0.xy);\n' +
+        '  let weedSx = select(abs(weedScale.x), -abs(weedScale.x), aInstFrame < 0.0);\n' +
+        '  let aInstScale = select(weedScale, vec2<f32>(weedSx, weedScale.y), aInstFrame != 0.0);\n'
+      : '  let aInstScale = bitcast<vec2<f32>>(weedS0.xy);\n') +
     '  let aInstAnchor = bitcast<vec2<f32>>(weedS0.zw);\n' +
     '  let aInstDepth = 0.0;\n' +
-    '  let aInstTexId = bitcast<f32>(weedS1.z);\n' +
+    (frame
+      ? '  let aInstTexId = select(bitcast<f32>(weedS1.z), abs(aInstFrame) - 1.0, aInstFrame != 0.0);\n'
+      : '  let aInstTexId = bitcast<f32>(weedS1.z);\n') +
     '  let aInstTileInv = bitcast<vec2<f32>>(vec2<u32>(weedS1.w, weedS2.x));\n' +
     '  let aInstTileOff = bitcast<vec2<f32>>(weedS2.yz);\n' +
     out.slice(head)

@@ -1535,6 +1535,8 @@ export class InstancedSpriteBatch {
       aQuad: { buffer: this._quad, format: 'float32x2' },
       aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
       aInstSlot: { buffer: buf, format: 'float32', stride: ds, offset: 8, instance: true },
+      // DX-SHADOW3D (plan §17.2): the frame the light sees, ±(textureId + 1), 0 the sprite's own (pre-render writes it).
+      aInstFrame: { buffer: buf, format: 'float32', stride: ds, offset: 12, instance: true },
       aInstShadow: { buffer: buf, format: 'float32x3', stride: ds, offset: 16, instance: true },
     };
     if (light) attributes.aInstLight = { buffer: buf, format: 'float32x4', stride: ds, offset: GPU_KEYED_CASTER_FLOATS * 4, instance: true };

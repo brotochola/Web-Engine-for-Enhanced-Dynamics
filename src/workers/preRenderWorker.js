@@ -517,7 +517,6 @@ class PreRenderWorker extends AbstractWorker {
         this._shadowTextures = false; // config.lighting.shadowTextures
         // DX-SHADOW3D: a directional sprite's sun shadow shows the frame the sun sees (directionTables, by sheet id).
         this._sunFrameTables = null;
-        this._directionalCasters = false; // config.lighting.directionalCasters (the scene sets it)
         this._faces = false; // config.lighting.faces: decoration rows carry their face in the tile offsets
         this._collectedRows = 0; // the rows the last sprite queue's collect held
         /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
@@ -1320,7 +1319,6 @@ class PreRenderWorker extends AbstractWorker {
             this.shadowsEnabled = true;
             this._shadowTextures = this.config?.lighting?.shadowTextures === true;
             this._sunFrameTables = sunFrameTables(data.directionTables);
-            this._directionalCasters = this.config?.lighting?.directionalCasters === true;
             this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
             this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
             this.maxShadowsPerEntity = data.shadows.maxShadowsPerEntity || 0;
@@ -3520,7 +3518,7 @@ class PreRenderWorker extends AbstractWorker {
      * word once it draws such rows. A pause, WebGPU or a scene not keyed leaves the word stale or zero.
      */
     _keyedCastersLive() {
-        if (!this._keyedFrames || this._keyedKeyBase <= 0 || this._shadowTextures || this._directionalCasters) return false;
+        if (!this._keyedFrames || this._keyedKeyBase <= 0 || this._shadowTextures) return false;
         const live = Atomics.load(this._keyedHeader, PIXI_KEYED_HEADER.LIVE);
         return live !== 0 && ((this.renderQueueFrame + 1 - live) >>> 0) <= KEYED_CASTERS_LAG;
     }
@@ -3539,6 +3537,8 @@ class PreRenderWorker extends AbstractWorker {
             const keyedN = packKeyedCastersScanWasm(this._gpuPackWasm, q, count, dst.sun, this._keyedKeyBase, caps.maxSun);
             if (keyedN >= 0) {
                 this._gpuSunKeyed = true;
+                // DX-SHADOW3D (plan §17.2): a DirectionalSprite's row carries the frame the sun sees (its fourth float).
+                if (this._sunFrameTables !== null && keyedN > 0 && DirectionalSprite.active) this._applyKeyedSunFrames(q, dst.sun, keyedN, count);
                 return keyedN;
             }
         }
@@ -3636,6 +3636,54 @@ class PreRenderWorker extends AbstractWorker {
             const sx = rows[at + GPU_ROW_SCALE_X];
             const flipped = t.flip[slot] === 1;
             rows[at + GPU_ROW_SCALE_X] = flipped === (sx < 0) ? sx : -sx;
+        }
+    }
+
+    /**
+     * DX-SHADOW3D (plan §17.2): _applySunFrames for keyed caster rows. The kernel wrote a row for each queue row it found
+     * casting (type 3 left out, a shadow height above 0), in queue order, with 0 in its fourth float; this walks the
+     * queue the same way and writes there, for a DirectionalSprite, the frame the sun sees as ±(textureId + 1), negative
+     * mirrored, which the keyed shadow programs take instead of the sprite's own. A copy of _applySunFrames' body, not a
+     * shared helper (hot loops: R8).
+     */
+    _applyKeyedSunFrames(q, rows, keyedN, count) {
+        if ((q.count | 0) !== this._collectedRows || !Sun.isInitialized) return;
+        const tables = this._sunFrameTables;
+        const qType = q.type || this.renderQueueType;
+        const shadowH = q.shadowH;
+        const types = this._renderableType;
+        const entities = this._renderableIndex;
+        const proxy = this.proxyToGlobalAnim;
+        const starts = this.animationFrameStart;
+        const counts = this.animationFrameCount;
+        const frames = this.entityFrameIndex;
+        if (!proxy || !starts || !counts || !shadowH) return;
+        const turn = -Math.PI / 2 - Math.atan2(Sun.shadowDirY / cameraFloorScaleY(this.config), Sun.shadowDirX);
+        let n = 0;
+        for (let i = 0; i < count && n < keyedN; i++) {
+            if (qType && qType[i] === 3) continue;
+            if (!(shadowH[i] > 0)) continue;
+            const k = n++;
+            if (types[i] !== 0) continue;
+            const e = entities[i];
+            if (!DirectionalSprite.active[e] || DirectionalSprite.mode[e] !== 1) continue;
+            const sheet = SpriteRenderer.spritesheetId[e];
+            const t = tables[sheet];
+            if (t === undefined) continue;
+            const ax = DirectionalSprite.aimX[e];
+            const ay = DirectionalSprite.aimY[e];
+            const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
+            const d = pickDirection(t, facing + turn, 255, 0);
+            const g = DirectionalSprite.animation[e];
+            const slot = (g < t.groups ? g : 0) * t.count + d;
+            const map = proxy[sheet];
+            const global = map ? map[t.anim[slot]] : undefined;
+            if (global === undefined) continue;
+            const nf = counts[global] | 0;
+            let f = frames ? frames[e] | 0 : 0;
+            if (f < 0 || f >= nf) f = 0;
+            const tid = (starts[global] | 0) + f + 1;
+            rows[k * GPU_KEYED_CASTER_FLOATS + 3] = t.flip[slot] === 1 ? -tid : tid;
         }
     }
 

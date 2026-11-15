@@ -104,7 +104,12 @@ test('the caster rows\' forms have no rotation, and the stamp form keeps the row
     assert.match(out, /^in float aInstSlot;/m);
     assert.match(out, /^in vec3 aInstShadow;/m);
     for (const name of STATICS) assert.match(out, new RegExp(`^\\s+${name} = `, 'm'), `${name} is filled in main`);
+    // DX-SHADOW3D (plan §17.2): the row's frame, when it carries one, replaces the sprite's and mirrors it.
+    assert.match(out, /^in float aInstFrame;/m);
+    assert.ok(out.includes('    aInstTexId = abs(aInstFrame) - 1.0;\n'), 'the frame the light sees');
+    assert.ok(out.includes('    aInstScale.x = aInstFrame < 0.0 ? -abs(aInstScale.x) : abs(aInstScale.x);\n'), 'mirrored when negative');
   }
+  assert.doesNotMatch(spriteIndexedVertex(shippedShadow, { shadow: true }), /aInstFrame/, 'the instances carry no frame');
   assert.match(sun, /^const vec4 aInstLight = vec4\(0\.0\);/m, 'a sun row has no light');
   assert.match(stamp, /^in vec4 aInstLight;/m, 'a stamp row\'s light is an attribute');
   assert.match(spriteIndexedVertex(shippedShadow, { shadow: true }), /^in vec2 aInstRotCS;/m, 'the instances\' form keeps it');
@@ -124,10 +129,10 @@ test('the shadow WGSL forms read the statics by key and keep what each pass stre
   };
   const forms = {
     sun: [spriteIndexedWgsl(shippedShadowWgsl, { shadow: true }), ['aQuad', 'aInstXY', 'aInstSlot', 'aInstRotCS', 'aInstShadow']],
-    sunRows: [spriteIndexedWgsl(shippedShadowWgsl, { shadow: true, casterRows: true }), ['aQuad', 'aInstXY', 'aInstSlot', 'aInstShadow']],
+    sunRows: [spriteIndexedWgsl(shippedShadowWgsl, { shadow: true, casterRows: true }), ['aQuad', 'aInstXY', 'aInstSlot', 'aInstFrame', 'aInstShadow']],
     stampRows: [
       spriteIndexedWgsl(shippedShadowWgsl, { shadow: true, casterRows: true, light: true }),
-      ['aQuad', 'aInstXY', 'aInstSlot', 'aInstShadow', 'aInstLight'],
+      ['aQuad', 'aInstXY', 'aInstSlot', 'aInstFrame', 'aInstShadow', 'aInstLight'],
     ],
   };
   for (const [form, [out, inputs]] of Object.entries(forms)) {
@@ -141,6 +146,10 @@ test('the shadow WGSL forms read the statics by key and keep what each pass stre
     assert.match(out, /^  let aInstTintBits = 0\.0;/m, `${form}: the tint read nowhere`);
     assert.equal(/^  let aInstRotCS = /m.test(out), form !== 'sun', `${form}: the rotation`);
     assert.equal(/^  let aInstLight = /m.test(out), form !== 'stampRows', `${form}: the light`);
+    // DX-SHADOW3D (plan §17.2): a caster row's frame, when it carries one, replaces the sprite's and mirrors it.
+    const rows = form !== 'sun';
+    assert.equal(out.includes('let aInstTexId = select(bitcast<f32>(weedS1.z), abs(aInstFrame) - 1.0, aInstFrame != 0.0);'), rows, `${form}: the row's frame`);
+    assert.equal(out.includes('select(abs(weedScale.x), -abs(weedScale.x), aInstFrame < 0.0)'), rows, `${form}: its mirror`);
   }
   assert.throws(() => spriteIndexedWgsl(shippedShadowWgsl), /TileUniforms|tintBits/, 'the sprite form refuses the shadow WGSL');
 });

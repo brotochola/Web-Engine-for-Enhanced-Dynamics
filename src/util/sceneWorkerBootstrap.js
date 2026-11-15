@@ -298,7 +298,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     scene.config.particle.deriveSpeed = scene._anyDeriveSpeed === true;
   }
   // DX-SHADOW3D: a class with a DirectionalSprite and a ShadowCaster casts the frame the sun sees, which pre-render writes
-  // into the full caster rows: the keyed caster paths (which read a sprite's own frame) stay off, as with shadowTextures.
+  // into its caster rows (full or keyed, plan §17.2): the entity batch's own instances (E-191) have no room for it.
   if (scene.config.lighting) {
     scene.config.lighting.directionalCasters = scene.registeredClasses.some((r) => {
       const c = GameObject._collectComponents(r.class);
