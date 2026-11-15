@@ -1259,33 +1259,43 @@ dice cómo tira, sombras más oscuras aprobadas por el dueño; F7 primera versi�
 que ve cada farol y sin su propia entidad; F8 hacia el sol y los faroles, WebGL y WebGPU; F9 primera parte; F10 v1; F11
 primera versión (el banco). El detalle, en el «Cómo quedó» de cada fase y en el registro (R-1053 a R-1065).
 
-**Falta:**
+**Hecho después, en la primera ronda de agentes (2026-11-15, mergeado en la rama, sin probar todavía salvo lo dicho):**
 
-- **Paridad WebGPU:** la profundidad por pixel (F5; en WebGPU ordena solo el pintor) y los volúmenes en el mapa del sol
-  (en WebGPU, en modo mapa, hoy no tiran nada: la capa se esconde y la pasada es solo GLSL).
-- **El resto de F9** (otra sesión lo está terminando): `setBox` / `addLevel` / `setHull` / `setWall`, `selfShadow`,
-  `baseRadius`, `setSprite({ frame, anchorX, anchorY, heightScale })`; la opacidad del caster en los mapas; `type` con AUTO
-  debería decir lo que tira el sheet; migrar Sun Street, Headlights, Buenos Aires y Predator; sacar `VolumeShadowCaster`,
-  `LightOccluder` y `raycasted`; `CAST_KIND` en el WEED de los workers (`src/workers/workerWeed.js`).
-- **MRT en F4:** probarlo contra la segunda pasada (microbench de GPU); también `normals` / `surface` en `SpriteRenderer` y
-  el id de entidad en el G-buffer (lo piden la autosombra y §6.6).
-- **F10 v2:** los dos colores por pixel con MRT (brillo por encima de 1), `spriteRenderer.emissive` por entidad, sombras
-  parciales.
-- **F3:** los mapas en el bigAtlas preempaquetado (bake), la herramienta `weed maps`, medir la carga.
-- **El bug de `footprintSolids`:** al granero del banco le faltan las paredes en su sombra; queda apagado.
-- **Filas con clave:** los dos mapas y los códigos por caster (`sunKind`, `lampKind`, `orient`, `opacity`) usan filas
-  completas; las filas con clave (E-211) todavía no los llevan, y las instancias del lote (E-191,
-  `lighting.directionalCasters`) no tienen lugar para el cuadro de la sombra.
-- **F5:** que escriban profundidad solo los pixeles opacos; las franjas de zIndex.
-- **F6:** la cache de lo quieto; el costo de las columnas en escenas grandes.
-- **Claves de config:** `lighting.lampShadowTile` y `renderer.pixelDepth` no tienen valor por defecto ni están en
-  `src/util/configKeys.js`: una escena que las escribe recibe el aviso de clave desconocida ("does nothing"), y el test
-  "every config.<section>.<key> the engine reads is a known key" (`tests/node/configKeys.test.js`) las encuentra en
-  `pixiWorker.js`.
-- **La fase de medición:** las stress scenes de §10 que faltan (`sunShadowMapStressScene`, `selfShadowStressScene`,
-  `depthSortStressScene`, `emissiveStressScene`; `lampShadowStressScene` ya está, sin medir), el microbench de GPU (§9.3),
-  las pruebas contra fórmula de §8.2, Predator con `?light3d=1` de día y de noche en los dos backends, el ABAB de
-  `directionalSpriteStressScene` del dueño (`?mode=hand|ds`), lo que cuestan la luz y las sombras a la resolución del canvas
-  en el banco, y el scoreboard. La rama contra `main` sigue más cara en Predator (R-1058).
-- **Aprobaciones del dueño:** la captura del árbol sobre el auto (F6), el auto y la cama sin damero (F8), la profundidad
-  del banco (F5).
+- WebGPU: la profundidad por pixel (F5), los volúmenes en el mapa del sol y en el de los faroles, la textura de huellas
+  (2d8ef7aa). El error de `uFoot` en WebGPU (el programa de columnas de los faroles nombraba el binding 7 en su layout
+  sin declararlo en su WGSL, c99e57b0) y un test que compara cada layout con su WGSL (cabf1291). El banco a las 16 h da
+  la misma imagen en los dos backends; a las 22 h cambian 380 px, por 6/255 como mucho.
+- F9, segunda parte (ed4c34e5): `setBox` / `addLevel` / `setHull` (por `VolumeShadowCaster`), `setWall` (por
+  `LightOccluder`), `setSprite({ frame, scaleX, scaleY, anchorX, anchorY, heightScale, orient })`, columnas
+  `baseRadius` y `selfShadow`; `CAST_KIND` en el WEED de los workers (9a36ef3a).
+- F3 (fcfd0a59): los mapas en el bigAtlas preempaquetado y `npm run maps` (`scripts/bakeBigAtlas.mjs`,
+  `scripts/weedMaps.mjs`).
+- `footprintSolids`: el granero perdía las paredes porque la página gemela se corrompía al leerla de un canvas
+  premultiplicado (06eaca56); prendido por defecto.
+- Filas con clave: los cuadros que ve cada farol y la propia entidad. Claves de config `lampShadowTile` y
+  `pixelDepth` con valor por defecto.
+
+**Falta:** lo de la segunda ronda (§17.4); la fase de medición: las stress scenes, el microbench de GPU y las pruebas
+contra fórmula que hace esa ronda, `lampShadowStressScene` (mapa contra estampas), Predator con `?light3d=1` de día y
+de noche en los dos backends, el ABAB de `directionalSpriteStressScene` del dueño (`?mode=hand|ds`), lo que cuestan la
+luz y las sombras a la resolución del canvas en el banco, y el scoreboard (la rama contra `main` sigue más cara en
+Predator, R-1058); después, la optimización. **Aprobaciones del dueño:** la captura del árbol sobre el auto (F6), el auto
+y la cama sin damero (F8), la profundidad del banco (F5).
+
+### 17.4 Segunda ronda de agentes (2026-11-15)
+
+La regla del dueño: un plan, la implementación en paralelo, y después se prueba y se mide todo. Cada agente trabaja en su
+worktree (`D:/xampp/htdocs/weed-par-*`) y su rama, con sus archivos y ningún otro; sin tests, capturas ni mediciones
+(solo `node --check`), un commit por cambio, sin push. Lo que necesite de un archivo ajeno lo anota en su informe.
+
+| Agente (rama) | Qué hace | Sus archivos |
+| --- | --- | --- |
+| R (`dx/par-render`) | F4: `normals` / `surface` en `SpriteRenderer`, el id de entidad en el G-buffer (autosombra, la propia entidad), MRT como alternativa a la segunda pasada; F10 v2: dos colores por pixel, `spriteRenderer.emissive`; `selfShadow` y `baseRadius` del caster en el render; la opacidad del caster en los mapas; F5: solo los opacos escriben profundidad, franjas de zIndex, cortes con partículas GPU | `src/workers/pixiWorker.js`, `src/workers/preRenderWorker.js`, `src/render/**`, `src/shaders/**`, `src/components/spriteRenderer.js`, `src/core/spriteSheetRegistry.js` |
+| B (`dx/par-caster2`) | F9: `VolumeShadowCaster` y `LightOccluder` dejan la API pública (una clase lista solo `ShadowCaster`); `lighting.raycasted` sale (`camera.pitch` 90 o 0); `type` con AUTO dice lo que tira el sheet; las demos, las stress scenes existentes y la guía migradas (Buenos Aires al final: solo el cambio de API, sin probarla) | `src/components/{shadowCaster,volumeShadowCaster,lightOccluder,meshRenderer}.js`, `src/core/{scene,gameObject}.js`, la config, `src/index.js`, `types/weed.d.ts`, `src/workers/workerWeed.js`, `demos/**` menos Predator y el banco, `tests/bench/stressScenes/**` existentes, `docs/guide/**` |
+| C1 (`dx/par-stress`) | Las stress scenes de §10 que faltan: `sunShadowMapStressScene`, `selfShadowStressScene`, `depthSortStressScene`, `emissiveStressScene`, con sus filas en `engineFeatureCatalog.mjs` | archivos nuevos en `tests/bench/stressScenes/`, `tests/bench/engineFeatureCatalog.mjs` |
+| C2 (`dx/par-checks`) | El microbench de GPU (§9.3) y las pruebas contra fórmula de §8.2 | archivos nuevos en `tests/bench/` |
+| D (`dx/par-showcase`) | Predator migrado y con `?light3d=1` (F11); el banco como vitrina (§11) | `demos/predatorScene/**`, `demos/lightBenchScene/**`, `tools/fromLightBench.mjs` |
+
+Quedan para la optimización, después de medir: la cache de lo quieto (F6), el costo de las columnas en escenas grandes,
+los códigos por caster en las filas con clave (hoy fuerzan filas completas) y el cuadro de la sombra en las instancias del
+lote (E-191).
