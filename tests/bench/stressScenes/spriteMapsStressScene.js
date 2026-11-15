@@ -25,12 +25,14 @@ const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 export const SUN_SHADOWS = WEED.params?.get('sunShadows') === 'map' ? 'map' : 'sprite';
 /** `?selfShadow=1`: lighting.selfShadow (DX-SELFSHADOW). */
 export const SELF_SHADOW = WEED.params?.get('selfShadow') === '1';
+/** `?gbuffer=pass|mrt`: lighting.gbuffer (the face map and the entity ids map a pass each, or both in one); left out, the default. */
+export const GBUFFER = ['pass', 'mrt'].includes(WEED.params?.get('gbuffer')) ? WEED.params.get('gbuffer') : null;
 const W = 1600;
 const H = 1000;
 const SHAPES = ['sphere', 'pillar', 'crate'];
 
 export const stressSceneConfig = {
-  requested: { maps: MAPS, n: N, lights: LIGHTS, res: RES, hour: HOUR, backend: BACKEND, sunShadows: SUN_SHADOWS, selfShadow: SELF_SHADOW ? 1 : 0 },
+  requested: { maps: MAPS, n: N, lights: LIGHTS, res: RES, hour: HOUR, backend: BACKEND, sunShadows: SUN_SHADOWS, selfShadow: SELF_SHADOW ? 1 : 0, gbuffer: GBUFFER ?? 'default' },
 };
 
 /** A shape of tests/bench/stressScenes/maps (ray-traced at pitch 45 from 8 directions: makeShapes.mjs), turned as it faces. */
@@ -99,6 +101,7 @@ export class SpriteMapsStressScene extends Scene {
       shadowsEnabled: true,
       sunShadows: SUN_SHADOWS,
       selfShadow: SELF_SHADOW,
+      ...(GBUFFER ? { gbuffer: GBUFFER } : {}),
       sun: { enabled: true, angle: 135, elevation: 40, intensity: 1, startHour: HOUR, dayCycle: { enabled: false } },
     },
   };
