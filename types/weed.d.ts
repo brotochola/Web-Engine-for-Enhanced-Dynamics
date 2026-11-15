@@ -324,7 +324,7 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   /** Under raycasted lighting (config.camera.pitch 90 or 0): the vertices of a light's visibility polygon (default 128). */
   maxPolygonVertices?: number;
   /** shadowCaster.setSprite({ frame }) works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
-  shadowTextures?: boolean;
+  keyedCasters?: boolean;
   /** DX-FACES: decorations with a normal are lit as surfaces. Not with raycasted lighting. */
   faces?: SceneLightingFacesConfig;
   /**
@@ -4139,8 +4139,8 @@ export interface ShadowCasterSpriteOptions {
   orient?: 'light' | 'fixed';
   /**
    * Another frame of the atlas as the silhouette (was setTexture): a tree whose branches are decorations casts its whole
-   * silhouette while its trunk stays the sprite. Needs `config.lighting.shadowTextures: true` (a pass over the caster rows
-   * each frame, the keyed caster paths off).
+   * silhouette while its trunk stays the sprite. The frames a caster uses one take pre-render's full caster rows (the keyed
+   * caster paths off those frames).
    */
   frame?: string;
   /** With `frame`: its scale (0 or left out: the sprite's). */

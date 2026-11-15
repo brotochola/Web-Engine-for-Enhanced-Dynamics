@@ -139,7 +139,7 @@ export class BuenosAiresScene extends Scene {
       maxVolumes: META.nCasas + 8 + 2 * (META.nAutos + 4) + 16,
       // sunDirect 0.5: a face in the shade keeps half, as the editor lit it.
       faces: { enabled: FACES, wrap: 0.15, gain: 1.3, sunDirect: 0.5 },
-      shadowsEnabled: true, maxShadowCastingLights: 16, maxShadowsPerLight: 64, maxShadowsPerEntity: 2, shadowTextures: true,
+      shadowsEnabled: true, maxShadowCastingLights: 16, maxShadowsPerLight: 64, maxShadowsPerEntity: 2,
       resolution: RESOLUTION, shadowResolution: RESOLUTION,
       // The sun on the camera's side (shadowAngleOffset 0), or every wall the camera sees would be against the light, and no
       // higher than 60 degrees, or at noon it would reach no wall.

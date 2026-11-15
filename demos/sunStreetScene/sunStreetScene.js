@@ -120,7 +120,6 @@ export class SunStreetScene extends Scene {
       maxLights: 32,
       shadowsEnabled: true,
       maxVolumes: HOUSES + CARS, // each house's box and tank, each car's body and cabin
-      shadowTextures: true, // T: shadowCaster.setSprite({ frame })
       maxShadowCastingLights: 8,
       maxShadowsPerLight: 24,
       sun: {

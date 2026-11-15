@@ -543,7 +543,6 @@ export class AbstractWorker {
     // Store config for worker access
     this.config = data.config || {};
     setDevChecks(this.config.debug?.checks !== false);
-    ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
     VolumeShadowCaster.defaultFloorScaleY = cameraFloorScaleY(this.config);
     bindEntityIdWidth(resolveEntityIdWidth(this.config));
     this._noParent = entityIdNone;

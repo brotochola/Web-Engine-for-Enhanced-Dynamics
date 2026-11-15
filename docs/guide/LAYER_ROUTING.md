@@ -310,7 +310,7 @@ The sun moves a vertex `h · Sun.shadowLengthRatio · (Sun.shadowDirX, Sun.shado
 A `ShadowCaster` casts its entity's sprite. When the sprite is only a piece of what you see (a tree's trunk, its branches decorations that sway), give it the whole silhouette to cast:
 
 ```javascript
-static config = { lighting: { shadowsEnabled: true, shadowTextures: true } };
+static config = { lighting: { shadowsEnabled: true } };
 
 onSpawned() {
   this.setSprite('trunk');
@@ -318,7 +318,7 @@ onSpawned() {
 }
 ```
 
-The silhouette casts for the sun and for point lights. Options left out stay the sprite's: with a `frame`, `anchorX` and `anchorY` are that frame's own anchor; `setSprite()` goes back to the sprite's silhouette. `config.lighting.shadowTextures` turns on one pass over the caster rows and turns off the keyed caster paths, so a scene without it pays nothing; a frame with Adobe animations in it keeps the sprites' own shadows.
+The silhouette casts for the sun and for point lights. Options left out stay the sprite's: with a `frame`, `anchorX` and `anchorY` are that frame's own anchor; `setSprite()` goes back to the sprite's silhouette. While any caster casts a frame of its own, pre-render sends its full caster rows (one pass over them; the keyed caster paths off those frames), so a scene without one pays nothing; a frame with Adobe animations in it keeps the sprites' own shadows.
 
 ## Layer Resolution (Cross-Worker)
 

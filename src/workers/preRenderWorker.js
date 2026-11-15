@@ -141,6 +141,7 @@ import {
     GPU_FLAG_INDEXED,
     GPU_FLAG_KEYED_CASTERS,
     GPU_FLAG_GBUF,
+    GPU_FLAG_CASTER_OWN,
     GPU_GBUF_FLOATS,
     createGpuQueueViews,
     clearGpuQueueHeader,
@@ -413,6 +414,17 @@ function casterKindsInUse(active, sunKind, lampKind, orient, opacity, n, sheets,
         const t = tables !== null && sheets !== null ? tables[sheets[e]] : undefined;
         if (t !== undefined && t.solid) return true;
     }
+    return false;
+}
+
+/**
+ * N-188: whether any active caster casts a frame of its own (ShadowCaster.textureId, setSprite({ frame })).
+ * @param {Uint8Array} active
+ * @param {Uint16Array} textureId
+ */
+export function casterFramesInUse(active, textureId) {
+    const n = active.length < textureId.length ? active.length : textureId.length;
+    for (let e = 0; e < n; e++) if (active[e] === 1 && textureId[e] !== 0) return true;
     return false;
 }
 
@@ -891,7 +903,8 @@ class PreRenderWorker extends AbstractWorker {
         this._emitWasm = null;
         /** E-177: the scene keys its main queue's frames (the resync header laid out): the emit writes the key column. */
         this._keyedFrames = false;
-        this._shadowTextures = false; // config.lighting.shadowTextures
+        this._keyedCastersAllowed = true; // config.lighting.keyedCasters (false: the full rows always, a diagnostic)
+        this._shadowFramesOn = false; // N-188: a caster casts a frame of its own (its scan, every 30 frames)
         // DX-SHADOW3D: a directional sprite's sun shadow shows the frame the sun sees (directionTables, by sheet id).
         this._sunFrameTables = null;
         // DX-SHADOW3D: a uniform table's turn towards the sun in whole steps, by sheet id, and the sun's turn it is for.
@@ -1705,7 +1718,7 @@ class PreRenderWorker extends AbstractWorker {
             data.buffers?.componentData?.ShadowCaster
         ) {
             this.shadowsEnabled = true;
-            this._shadowTextures = this.config?.lighting?.shadowTextures === true;
+            this._keyedCastersAllowed = this.config?.lighting?.keyedCasters !== false;
             this._sunFrameTables = sunFrameTables(data.directionTables);
             this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
             this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
@@ -3926,7 +3939,7 @@ class PreRenderWorker extends AbstractWorker {
      * word once it draws such rows. A pause, WebGPU or a scene not keyed leaves the word stale or zero.
      */
     _keyedCastersLive() {
-        if (!this._keyedFrames || this._keyedKeyBase <= 0 || this._shadowTextures) return false;
+        if (!this._keyedFrames || this._keyedKeyBase <= 0 || !this._keyedCastersAllowed || this._shadowFramesOn) return false;
         const live = Atomics.load(this._keyedHeader, PIXI_KEYED_HEADER.LIVE);
         return live !== 0 && ((this.renderQueueFrame + 1 - live) >>> 0) <= KEYED_CASTERS_LAG;
     }
@@ -3946,6 +3959,8 @@ class PreRenderWorker extends AbstractWorker {
                 ShadowCaster.active.length, SpriteRenderer.spritesheetId || null, this._sunFrameTables,
                 ShadowCaster.baseRadius || null,
             );
+            // N-188: whether any caster casts a frame of its own (setSprite({ frame })): those frames take the full rows.
+            this._shadowFramesOn = !!ShadowCaster.textureId && casterFramesInUse(ShadowCaster.active, ShadowCaster.textureId);
         }
         if (count > 0 && !this._casterKindsOn && this._keyedCastersLive()) {
             // E-191 step 2: a pose, a key and the shadow terms a caster, for the casters the kernel finds in the queue
@@ -3970,7 +3985,7 @@ class PreRenderWorker extends AbstractWorker {
             sunN = sctx
                 ? this._packRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
                 : 0;
-            if (this._shadowTextures && sunN > 0) this._applyShadowTextures(q, dst.sun, sunN);
+            if (this._shadowFramesOn && sunN > 0) this._applyShadowTextures(q, dst.sun, sunN);
             if (this._sunFrameTables !== null && sunN > 0 && DirectionalSprite.active) this._applySunFrames(q, dst.sun, sunN);
             if (this._casterKindsOn && sunN > 0) this._tagCasterRows(q, dst.sun, sunN);
             // The rows' entities: the lamps' frames and their own entities' stamps read them.
@@ -4661,7 +4676,10 @@ class PreRenderWorker extends AbstractWorker {
         counts.stamp = shadows.stamp | 0;
         counts.cookie = shadows.cookie | 0;
         counts.stampLights = shadows.stampLights | 0;
-        counts.flags = (sprites.flags | 0) | (shadows.keyed ? GPU_FLAG_KEYED_CASTERS : 0) | (gbuf ? GPU_FLAG_GBUF : 0);
+        // N-188: rows with casters' own ways tell Pixi to draw them (not the entity batch's keyed instances).
+        const own = this._casterKindsOn || this._shadowFramesOn || !this._keyedCastersAllowed;
+        counts.flags = (sprites.flags | 0) | (shadows.keyed ? GPU_FLAG_KEYED_CASTERS : 0) | (gbuf ? GPU_FLAG_GBUF : 0) |
+            (own ? GPU_FLAG_CASTER_OWN : 0);
         counts.staticGen = sprites.staticGen | 0;
         counts.indexedRows = sprites.indexedRows | 0;
         counts.slotsGen = sprites.slotsGen | 0;

@@ -65,6 +65,11 @@ export const GPU_FLAG_KEYED_CASTERS = 8;
  * GPU_GBUF_FLOATS an instance, in the sprite rows' draw order, whatever their layout: rows, two streams or indexed).
  */
 export const GPU_FLAG_GBUF = 16;
+/**
+ * N-188: the sun rows carry casters' own ways (a frame of their own, setSprite({ frame }); a kind or a code, DX-CASTER):
+ * Pixi draws pre-render's rows, not the entity batch's keyed instances, which hold the sprites' own statics only.
+ */
+export const GPU_FLAG_CASTER_OWN = 32;
 export const GPU_GBUF_FLOATS = 2;
 export const GPU_KEYED_CASTER_FLOATS = 7;
 export const GPU_KEYED_STAMP_FLOATS = GPU_KEYED_CASTER_FLOATS + 4;

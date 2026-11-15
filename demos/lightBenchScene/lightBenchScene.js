@@ -18,7 +18,7 @@
 //   ?zoom= ?cx= ?cy=  the camera (default: the whole farm); ?panel=0 hides the panel and the marks (captures)
 //   ?only=hatch_rojo,arboles,civil7  only those things (none: the grass alone); ?lamps=0 no lamps (captures, checks)
 //   ?backend=webgpu
-//   ?fullRows=1   the shadows from pre-render's full caster rows (lighting.shadowTextures: the keyed paths off), to compare
+//   ?fullRows=1   the shadows from pre-render's full caster rows (lighting.keyedCasters false: the keyed paths off), to compare
 //   ?lampMap=0    the lamps' shadows as stamps, instead of the lamps' shadow map (one tile a lamp)
 //   ?sweep=0      the heightmap casters' solids as columns down to the floor, not swept north to their footprints
 //   ?pitch= ?floor= ?height=  camera.pitch, floorScaleY, heightScaleY (default 47, 0.736, 0.752, the art's; floor=auto
@@ -327,7 +327,7 @@ export class LightBenchScene extends Scene {
       footprintSolids: SWEEP,
       lampShadows: LAMP_MAP ? 'map' : 'sprite',
       selfShadow: SELF,
-      shadowTextures: FULL_ROWS,
+      keyedCasters: !FULL_ROWS,
       // Shadows as dark as the light bench prototype's (about 60 % darker than the sunlit floor at 16 h): a strong shadow
       // alpha, and no lightening of long shadows.
       sun: {
@@ -849,7 +849,7 @@ export class LightBenchScene extends Scene {
     });
     scene.toggle({
       label: 'Full caster rows', value: FULL_ROWS,
-      note: 'lighting.shadowTextures: the keyed caster rows off, to compare (the same picture, more work).',
+      note: 'lighting.keyedCasters false: the keyed caster rows off, to compare (the same picture, more work).',
       onChange: (v) => this._reload('fullRows', v ? '1' : '0'),
     });
     scene.select({

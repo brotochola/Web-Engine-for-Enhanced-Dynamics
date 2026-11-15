@@ -1307,7 +1307,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | A short burst (a shot, a spark) | `Flash.spawn({ x, y, radius, color, glow, lifespan, castShadows })` (needs `lighting.maxFlashes`) |
 | A sprite that casts a shadow | `ShadowCaster` in its components: its silhouette, from the sun and the lamps (`setSprite()` says it again) |
 | A longer or a shorter shadow | `this.shadowCaster.setSprite({ heightScale: 1.5 })` |
-| Another silhouette than the sprite (a tree whose branches are decorations) | `this.shadowCaster.setSprite({ frame: 'treeSilhouette' })` (needs `lighting.shadowTextures`) |
+| Another silhouette than the sprite (a tree whose branches are decorations) | `this.shadowCaster.setSprite({ frame: 'treeSilhouette' })` |
 | A box, a house or a car that casts its shadow | `this.shadowCaster.setBox(w, d, h)`, `addLevel(outline, bottom, top)` or `setHull(points)`, with `lighting.maxVolumes` |
 | A wall that stops lamps (a top-down or side view) | `this.shadowCaster.setWall()` and a `Collider`, with `camera.pitch` 90 or 0 |
 | A render with a height map cast pixel by pixel | `this.shadowCaster.setHeightMap()` |
@@ -1604,7 +1604,7 @@ class Hedge extends GameObject {
 ```
 
 - `setSprite(options)` casts its card, `setHeightMap()` its solid (it needs the sheet's `heightMap`), `clear()` nothing. The same three are on `shadowCaster.sun` and `shadowCaster.lamps`, with `sun.setBox` (a volume for the sun alone) and `lamps.setWall` (a wall for the lamps alone), below.
-- `setSprite`'s options shape the card, for every light that casts it: `heightScale` its height, times (1 by default, 0 casts none); `frame` another frame of the atlas as the silhouette, with `scaleX` / `scaleY` its scale and `anchorX` / `anchorY` its own anchor (left out, the sprite's), which needs `lighting.shadowTextures: true` (a pass over the caster rows each frame); without a frame, `anchorX` / `anchorY` move the card's foot from the sprite's anchor, in fractions of the sprite, a rare case since the base is measured.
+- `setSprite`'s options shape the card, for every light that casts it: `heightScale` its height, times (1 by default, 0 casts none); `frame` another frame of the atlas as the silhouette, with `scaleX` / `scaleY` its scale and `anchorX` / `anchorY` its own anchor (left out, the sprite's); while a caster uses one, the shadows come from pre-render's full caster rows (a pass over them, the keyed paths off those frames); without a frame, `anchorX` / `anchorY` move the card's foot from the sprite's anchor, in fractions of the sprite, a rare case since the base is measured.
 - `setSprite({ orient: 'fixed' })` stands the card along the object through its anchor and shows the object face on, for every light: a fence or a wall, whose card turned to face the light is right only when the light is across it. The card runs across where the entity faces (a DirectionalSprite's `facing` turned a quarter; along the screen without one). `orient: 'light'` turns it back. It is one value for the entity, kept until set again.
 - `opacity` (0 to 1, 1 at spawn) is how much light it takes out. The sprite shadows read it (the sun's in `'sprite'` mode, the lamps' stamps), and so does a wall; the shadow maps do not yet.
 - `baseRadius` (px, 0 at spawn: the base measured from the frame) corrects the base its card stands on, and `selfShadow` (`true`, `false` or `'auto'`, the asset's way) whether it shades itself. Both are kept for the 3D shadows.

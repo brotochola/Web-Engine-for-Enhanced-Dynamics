@@ -436,7 +436,6 @@ class Scene {
     ShadowCaster.componentId = null;
     ShadowCaster.clearArrays();
     // Workers set it from their init message; a page may call shadowCaster.setSprite({ frame }) too.
-    ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
     VolumeShadowCaster.componentId = null;
     VolumeShadowCaster.clearArrays();
     VolumeShadowCaster.defaultFloorScaleY = cameraFloorScaleY(this.config);

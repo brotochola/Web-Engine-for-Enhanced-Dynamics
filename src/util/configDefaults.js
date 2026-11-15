@@ -772,10 +772,11 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
   maxOccluderSelfLit: 512,
   /**
-   * shadowCaster.setSprite({ frame }) works: a pass over the caster rows each frame, and the keyed caster paths off (E-191),
-   * since those read a sprite's own statics. Off, a scene pays nothing. A key while pre-render and Pixi read it at init.
+   * E-191's keyed caster paths (the casters' rows by key, read from the sprites' statics). A frame whose casters ask for
+   * their own way (setSprite({ frame }), a kind) takes the full rows by itself (N-188); false sends the full rows always,
+   * a diagnostic to compare the two (the same picture, more work).
    */
-  shadowTextures: false,
+  keyedCasters: true,
   /**
    * DX-FACES: decorations with a normal are lit as surfaces (Decoration.spawn's faceNormalX, ...). A second draw of the
    * entity batch into a map at `resolution`, and the light pass reads it. Off, a scene pays nothing.

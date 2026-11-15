@@ -124,6 +124,7 @@ import {
   GPU_FLAG_SPLIT,
   GPU_FLAG_INDEXED,
   GPU_FLAG_KEYED_CASTERS,
+  GPU_FLAG_CASTER_OWN,
   GPU_FLAG_GBUF,
   GPU_KEYED_CASTER_FLOATS,
   GPU_KEYED_STAMP_FLOATS,
@@ -6197,7 +6198,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Those instances are the sprites': a ShadowCaster's own texture is only in pre-render's rows.
     // DX-SHADOW3D: a directional caster's sun frame rides in pre-render's rows (full or keyed, plan §17.2); these
     // instances have no room for it.
-    if (this.config?.lighting?.shadowTextures === true || this.config?.lighting?.directionalCasters === true) return null;
+    // N-188: casters' own ways (a frame, a kind) and the keyed paths' diagnostic switch ride in pre-render's rows (the
+    // frame's GPU_FLAG_CASTER_OWN, which the caller reads).
+    if (this.config?.lighting?.keyedCasters === false || this.config?.lighting?.directionalCasters === true) return null;
     const b = this.entitiesBatch;
     if (!this._keyedSunTried) {
       this._keyedSunTried = true;
@@ -7039,6 +7042,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // E-191 step 2: pre-render's sun and stamp rows are keyed caster rows (a pose, a key, the shadow terms; a stamp's
     // light) when it found Pixi's statics recent.
     const keyedRows = gpu && gpu.header ? ((gpu.header[GPU_HDR_FLAGS] | 0) & GPU_FLAG_KEYED_CASTERS) !== 0 : false;
+    // N-188: this frame's rows carry casters' own ways: they are drawn, not the entity batch's keyed instances.
+    const ownRows = gpu && gpu.header ? ((gpu.header[GPU_HDR_FLAGS] | 0) & GPU_FLAG_CASTER_OWN) !== 0 : false;
     this._gpuCastersThisFrame = sunN;
     this._gpuShadowLightsThisFrame = cookieN;
 
@@ -7095,8 +7100,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // caster, read in order, where the instances cost the keyed pack 12 bytes a sprite gathered from three more
       // queue columns and 12 more written. Else (E-191) the entity batch's own instances, when this frame's pack wrote
       // their shadow terms (a sprite that casts none has no height); else pre-render's full sun rows.
-      this._keyedSunWanted = !keyedRows;
-      const keyedSun = keyedRows ? null : this._keyedSunFor(shader);
+      this._keyedSunWanted = !keyedRows && !ownRows;
+      const keyedSun = keyedRows || ownRows ? null : this._keyedSunFor(shader);
       if (keyedRows) {
         const rows = this._keyedRowsMesh(this._keyedSunRowsMesh, gpu.sun, sunN, GPU_KEYED_CASTER_FLOATS);
         if (rows !== null) this._drawGpuCasterPass(rows, group, true);

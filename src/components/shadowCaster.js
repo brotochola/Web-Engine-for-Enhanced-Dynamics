@@ -33,7 +33,6 @@ const _warned = new Set();
 
 export function resetShadowCasterWarns() {
   _warned.clear();
-  ShadowCaster._warnedTextures = false;
 }
 
 function warnOnce(text) {
@@ -124,14 +123,10 @@ export function resetCasterWall(i) {
 
 /**
  * setSprite({ frame }): a frame of the atlas cast instead of the sprite, with its own anchor (NaN: the sprite's) and scale (0:
- * the sprite's). Pre-render swaps it into the caster rows with config.lighting.shadowTextures on (a pass over the rows each
- * frame, the keyed caster paths off): without it, it warns once.
+ * the sprite's). Pre-render swaps it into the caster rows the frames it finds one in use (N-188: its caster scan; those
+ * frames take the full rows).
  */
 function writeFrame(i, name, anchorX, anchorY, scaleX, scaleY) {
-  if (!ShadowCaster.texturesEnabled && !ShadowCaster._warnedTextures) {
-    ShadowCaster._warnedTextures = true;
-    console.warn('WeedJS: shadowCaster.setSprite({ frame }) needs config.lighting.shadowTextures: true');
-  }
   const id = resolveMeshTextureId(name);
   ShadowCaster.textureId[i] = id === MESH_NO_TEXTURE ? 0 : id + 1;
   ShadowCaster.textureScaleX[i] = scaleX;
@@ -268,8 +263,8 @@ class CastSide {
   /**
    * The silhouette: a card standing on its base, the frame the light sees (the default for one view).
    * @param {{ frame?: string, anchorX?: number, anchorY?: number, scaleX?: number, scaleY?: number, heightScale?: number,
-   *   orient?: 'light'|'fixed' }} [options] frame: another frame of the atlas as the silhouette (needs
-   *   config.lighting.shadowTextures), with scaleX/scaleY (0: the sprite's) and anchorX/anchorY its own anchor (0 to 1 of
+   *   orient?: 'light'|'fixed' }} [options] frame: another frame of the atlas as the silhouette (the
+   *   frames one is in use take pre-render's full caster rows), with scaleX/scaleY (0: the sprite's) and anchorX/anchorY its own anchor (0 to 1 of
    *   it; left out, the sprite's); without a frame, anchorX/anchorY move the foot from the sprite's anchor, in fractions of
    *   the sprite (rare: baseRadius corrects the measured base); heightScale: the card's height, times (0: no shadow);
    *   orient 'fixed': the card along the object (a fence, a wall)
@@ -349,9 +344,6 @@ export class ShadowCaster extends Component {
   // Static pool tracking (set during initialization)
   static shadowCount = 0;
 
-  /** config.lighting.shadowTextures, for setSprite({ frame })'s warning. */
-  static texturesEnabled = false;
-  static _warnedTextures = false;
 }
 
 /**

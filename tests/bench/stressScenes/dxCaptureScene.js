@@ -11,7 +11,7 @@ const { Scene, Camera, Sun, Decoration, LAYER_KIND, BLEND_MODES } = WEED;
  * across revisions, and a knob compares against its own absence.
  *
  * `?posesByRow=0` (renderer.keyedPosesByRow off, E-201). `?hour=` (default 12), `?lights=` (default 8), `?backend=webgpu`, `?raycast=1` (camera pitch 90: raycasted lighting), `?night=1` (lighting.sun.night),
- * `?colors=1` (lighting.sun.colors), `?propSprite=`, `?propAlpha=` and `?propShadow=` (lighting.shadowTextures). `?shade=1`: overlapping black squares on a MESH layer, `?shadeLook=1` with a look
+ * `?colors=1` (lighting.sun.colors), `?propSprite=`, `?propAlpha=` and `?propShadow=` (a frame of its own: setSprite({ frame })). `?shade=1`: overlapping black squares on a MESH layer, `?shadeLook=1` with a look
  * shader that passes its RT through, `?shadeAlpha=` (default 1) the layer's alpha, `?shadeMeshAlpha=` (default 1) each
  * mesh's, `?shadeSun=` its alphaBySun (shadow, night, or ramp for { from: 0.1, to: 0.4 }). `?deco=1`: decorations on a
  * sprite layer, `?shadeHeight=` the squares' far corners at that height on a sunProjected layer, `?decoAlpha=` (default 1) the layer's alpha, `?decoLook=1` through a look, `?decoSun=` its alphaBySun.
@@ -115,7 +115,6 @@ export class DxCaptureScene extends Scene {
       baseAmbient: 0.1,
       maxLights: 32,
       shadowsEnabled: true,
-      shadowTextures: query('propShadow') !== null,
       maxShadowCastingLights: 8,
       maxShadowsPerLight: 32,
       resolution: 1,
