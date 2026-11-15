@@ -41,7 +41,8 @@ export const SELF_LIT = (() => {
 
 /**
  * `?mask=sprite` (E-260): the occluders carry a white picture of their size and their self-lit fills are masked by it
- * (`maskMode` sprite, as a house in the Headlights demo): the self-lit sprite-mask pass, one mesh per occluder and light.
+ * (setWall({ shape: 'sprite' }), as a house in the Headlights demo): the self-lit sprite-mask pass, one mesh per occluder
+ * and light.
  */
 export const SPRITE_MASK = WEED.params?.get('mask') === 'sprite' ? 1 : 0;
 
@@ -49,7 +50,7 @@ export const SPRITE_MASK = WEED.params?.get('mask') === 'sprite' ? 1 : 0;
 export const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 
 /**
- * `?block=X`: the occluders' `LightOccluder.block` (default 1). Under 1 each occluder lets part of the
+ * `?block=X`: the occluders' `shadowCaster.opacity`, their walls' block (default 1). Under 1 each occluder lets part of the
  * light through and adds a transmit wedge per light, which no other scene draws (E-96c).
  */
 export const BLOCK = (() => {
@@ -66,7 +67,7 @@ export const stressSceneConfig = {
   requested: { occluderShape: OCCLUDER_SHAPE, selfLit: SELF_LIT, block: BLOCK, lights: LIGHTS, mask: SPRITE_MASK ? 'sprite' : 'collider', backend: BACKEND },
 };
 
-/** Bench scene: raycasted lights + occluders. Predator default leaves this path off. */
+/** Bench scene: raycasted lights + occluders (camera pitch 90: a flat view). Predator default leaves this path off. */
 export class VisPolyStressScene extends Scene {
   static config = {
     worldWidth: 4000,
@@ -88,12 +89,13 @@ export class VisPolyStressScene extends Scene {
       packGpuSprites: 'pixi',
       sortSprites: 'pixi',
     },
+    // Straight down: a flat view lights by raycasting, with the floor of 1 the scene had without a camera.
+    camera: { pitch: 90 },
     lighting: {
       enabled: true,
       baseAmbient: 0.2,
       maxLights: LIGHTS,
       shadowsEnabled: true,
-      raycasted: true,
       maxPolygonVertices: 5000,
       maxOccluderSelfLit: SELF_LIT,
     },

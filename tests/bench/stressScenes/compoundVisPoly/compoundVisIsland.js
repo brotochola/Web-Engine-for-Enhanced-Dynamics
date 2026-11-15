@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, LightOccluder } = WEED;
+const { GameObject, RigidBody, Collider, ShadowCaster } = WEED;
 
 const WORLD_W = 2400;
 const WORLD_H = 2400;
@@ -39,7 +39,7 @@ export function makeRingPolys(segments, outerR, innerR) {
 }
 
 export class CompoundVisIsland extends GameObject {
-  static components = [RigidBody, Collider, LightOccluder];
+  static components = [RigidBody, Collider, ShadowCaster];
 
   onSpawned({
     x = 0,
@@ -67,8 +67,7 @@ export class CompoundVisIsland extends GameObject {
     this._polys = polys;
     this._remeshEvery = remeshEvery | 0;
     this._remeshTick = 0;
-    this.lightOccluder.active = 1;
-    this.lightOccluder.block = 1;
+    this.shadowCaster.setWall();
     this.setVelocity(vx, vy);
     this.angularVelocity = spin;
     this.setAwake(true);

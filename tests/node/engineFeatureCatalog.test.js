@@ -90,7 +90,7 @@ test('visPoly scene is the raycasted bench, not Predator', () => {
   const row = getFeature('visPoly');
   assert.match(row.scene.path, /visPolyStressScene/);
   const src = fs.readFileSync(path.join(root, 'tests/bench/stressScenes/visPolyStressScene.js'), 'utf8');
-  assert.match(src, /raycasted:\s*true/);
+  assert.match(src, /camera:\s*\{\s*pitch:\s*90\s*\}/, 'a flat view: raycasted lighting');
   assert.match(src, /seed:/);
 });
 
