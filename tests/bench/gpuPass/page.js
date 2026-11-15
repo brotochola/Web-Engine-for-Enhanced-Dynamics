@@ -1,7 +1,7 @@
 /**
  * The GPU pass bench's page (tests/bench/gpuPassBench.html; plan §9.3): builds one frame's passes from the engine's shader
  * sources (passes.js), draws the inputs of the passes it times once, then times each named pass: K executions between
- * two waits for the GPU (WebGL gl.finish(), WebGPU onSubmittedWorkDone), K grown until one sample takes `targetMs`,
+ * two waits for the GPU (WebGL a 1 x 1 read back, WebGPU onSubmittedWorkDone), K grown until one sample takes `targetMs`,
  * `samples` samples, the clock's empty round trip taken out. With `capacity=1` it searches instead how many times a
  * frame the pass can be drawn before the presented frames drop under the display's rate (the fallback when a backend
  * hangs on the waits).
@@ -157,6 +157,22 @@ async function coverage(backend, key) {
   }
 }
 
+/**
+ * FNV-1a of a target's bytes after a pass was timed: the same pass must leave the same image whatever ran before it in
+ * the case (a self-check: on WebGL a pass timed after another read as that one, 2026-11-15, glBackend.js's waits).
+ */
+async function imageHash(backend, key) {
+  try {
+    const t = await backend.readTarget(key);
+    if (!t) return null;
+    let h = 0x811c9dc5;
+    for (let i = 0; i < t.data.length; i++) h = Math.imul(h ^ t.data[i], 0x01000193);
+    return (h >>> 0).toString(16).padStart(8, '0');
+  } catch {
+    return null;
+  }
+}
+
 async function run() {
   const p = readParams(location.search);
   const canvas = document.getElementById('c');
@@ -207,6 +223,7 @@ async function run() {
       const pass = frame.passes[name];
       try {
         const r = p.capacity ? await capacityPass(backend, h, p) : await timePass(backend, h, p);
+        const image = p.capacity ? null : await imageHash(backend, h.spec.targets[0]);
         const missing = (NEEDS[name] || []).filter((n) => !handles[n]);
         out.passes[name] = {
           label: pass.label,
@@ -214,6 +231,7 @@ async function run() {
           size: [h.width, h.height],
           instances: h.instanceCount,
           unfed: h.unknown,
+          image,
           ...r,
         };
         log(`${name}: ${r.mode === 'timed' ? `${r.median.toFixed(3)} ms (K ${r.k})` : `${r.passesPerFrame} a frame`}`);

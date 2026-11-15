@@ -3,8 +3,11 @@
  * uniforms and samplers found by reflection and fed by name (anything the pass does not name gets zeros, an identity
  * matrix or a 1 x 1 black texture), drawn into its own targets. No Pixi: only the measured pass runs.
  *
- * Timing: gl.finish() around K draws (plan §9.3). The clock includes issuing the draws, so a pass far cheaper than a
- * draw call reads as the call's cost: the page reports the empty round trip next to it.
+ * Timing: a wait for the GPU around K draws (plan §9.3). The clock includes issuing the draws, so a pass far cheaper than
+ * a draw call reads as the call's cost: the page reports the empty round trip next to it. The wait is a 1 x 1 read back
+ * of the pass's target, not gl.finish(): Chrome's WebGL finish() is a flush and does not wait, so each sample timed how
+ * fast the queue took draws, and a pass timed after another read as the one before it while that one's backlog drained
+ * (2026-11-15: selfShadow after light3d 1.19 ms, alone 3.27; the empty round trip read 0.000 ms).
  */
 
 /**
@@ -81,6 +84,17 @@ export function createGlBackend(canvas) {
   const textures = new Map();
   const framebuffers = new Map();
   const handles = [];
+  // The empty round trip's read back (timeEmpty): a pixel no pass draws.
+  const syncTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, syncTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+  const syncFb = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, syncFb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, syncTex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  const pixel8 = new Uint8Array(4);
+  const pixelF = new Float32Array(4);
+
   const black = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, black);
   gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
@@ -402,20 +416,32 @@ export function createGlBackend(canvas) {
     gl.bindVertexArray(null);
   }
 
-  /** ms for K executions between two gl.finish() calls. */
+  /**
+   * Waits until the GPU has run everything queued: one pixel of a target read back (of the pass's own first target, which
+   * its draws wrote; the queue runs in order). Float targets are read as floats (EXT_color_buffer_float drew them).
+   */
+  function waitGpu(h) {
+    const target = h ? textures.get(h.spec.targets[0]) : null;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, h ? h.fb : syncFb);
+    if (target && FORMATS[target.format]?.float) gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, pixelF);
+    else gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel8);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  }
+
+  /** ms for K executions between two waits for the GPU. */
   async function timeK(h, k) {
-    gl.finish();
+    waitGpu(h);
     const t0 = performance.now();
     for (let i = 0; i < k; i++) draw(h);
-    gl.finish();
+    waitGpu(h);
     return performance.now() - t0;
   }
 
-  /** ms for the clock's round trip alone (two finishes). */
+  /** ms for the clock's round trip alone (two waits). */
   async function timeEmpty() {
-    gl.finish();
+    waitGpu(null);
     const t0 = performance.now();
-    gl.finish();
+    waitGpu(null);
     return performance.now() - t0;
   }
 
@@ -448,6 +474,8 @@ export function createGlBackend(canvas) {
       for (const b of h.buffers) gl.deleteBuffer(b);
     }
     for (const fb of framebuffers.values()) gl.deleteFramebuffer(fb);
+    gl.deleteFramebuffer(syncFb);
+    gl.deleteTexture(syncTex);
     for (const t of textures.values()) {
       if (t.tex) gl.deleteTexture(t.tex);
       if (t.depth) gl.deleteRenderbuffer(t.depth);

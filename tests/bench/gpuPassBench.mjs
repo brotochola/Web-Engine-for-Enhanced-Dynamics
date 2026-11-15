@@ -2,7 +2,7 @@
 /**
  * DX-LIGHT3D's GPU microbench (plan §9.3): the cost of one pass of the 3D light, outside the engine. The engine's GPU clock
  * hung Chrome, so a page (gpuPassBench.html, gpuPass/) builds only the measured pass from src/shaders and the engine's own
- * source transforms, and draws it K times between two waits for the GPU (WebGL gl.finish(), WebGPU
+ * source transforms, and draws it K times between two waits for the GPU (WebGL a 1 x 1 read back, WebGPU
  * onSubmittedWorkDone). A real Chrome window on the real GPU, one page per case; ms per pass with its spread.
  *
  *   node tests/bench/gpuPassBench.mjs                                  the default suite, both backends
@@ -174,7 +174,7 @@ function line(backend, name, query, r) {
   return (
     `${backend.padEnd(6)} ${name.padEnd(11)} ${query}: ${r.median.toFixed(3)} ms ` +
     `[${r.p25.toFixed(3)}-${r.p75.toFixed(3)}] spread ${(r.spread * 100).toFixed(1)} % (K ${r.k}, ${r.samples.length} samples, ` +
-    `clock ${r.overheadMs.toFixed(3)} ms)${r.notes ? `; ${r.notes}` : ''}`
+    `clock ${r.overheadMs.toFixed(3)} ms${r.image ? `, image ${r.image}` : ''})${r.notes ? `; ${r.notes}` : ''}`
   );
 }
 
