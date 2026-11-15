@@ -88,7 +88,10 @@ test('the map\'s vertex shader is the sprite shadows\' with the same sun card, i
   assert.match(src, /vec2 sunPerp = uSunPerp\.xy;/);
   assert.match(src, /vec2 land = foot \+ \(content\.x - footCol\) \* aInstScale\.x \* sunPerp - sunZ \* uSunK\.xy;/);
   assert.match(src, /vSunZ = sunZ;/);
-  assert.match(src, /vColor = vec4\(1\.0\);/);
+  // DX-CASTER: the caster's opacity rides in vColor.g into the map's texel (its G); DX-GBUF: its entity (the row's tint
+  // float), which the map keeps with its highest caster by the depth test.
+  assert.match(src, /vColor = vec4\(1\.0, castOpacity, 1\.0, 1\.0\);/);
+  assert.match(src, /vSunId = casterEntityId\(aInstTintBits\);/);
   assert.equal(src.match(/void main\(\)/g).length, 1);
   assert.equal(src.match(/uniform vec4 uSunK;/g).length, 1, 'declared once');
   assert.throws(() => sunMapVertex('void main() {}'), /sun shadow map/);
@@ -107,7 +110,7 @@ test('the light pass keeps its old sun term without the map and takes the map\'s
   const on = shaderWithFlag(shaderWithFlag(src, 'SUNMAP', true), '!SUNMAP', false);
   assert.doesNotMatch(off, /sunVisibility|uSunMap/);
   assert.match(off, /totalLight \+= sunColor \* uSunIntensity;/);
-  assert.match(on, /totalLight \+= sunColor \* uSunIntensity \* sunVisibility\(vec3\(fragWorld, 0\.0\)\);/);
+  assert.match(on, /totalLight \+= sunColor \* uSunIntensity \* sunVisibility\(vec3\(fragWorld, 0\.0\), 0\.0\);/);
   assert.doesNotMatch(on, /totalLight \+= sunColor \* uSunIntensity;/);
 });
 
@@ -119,7 +122,9 @@ test('lighting.sunShadows is a key, sprite by default', () => {
 test('lighting.selfShadow: the light pass steps towards the sun over the face map, only with faces', async () => {
   const { lightingSource } = await import('../../src/render/faceMap.js');
   const src = shader('lightingBasic.frag.glsl');
-  assert.match(lightingSource(src, { faces: true, sunMap: false, selfShadow: true }), /sunDirect \*= mix\(1\.0, selfShadow\(p\)/);
+  const steps = lightingSource(src, { faces: true, sunMap: false, selfShadow: true });
+  assert.match(steps, /selfShadow\(p, selfId\)/);
+  assert.match(steps, /sunDirect \*= mix\(1\.0, selfSun, smoothstep\(0\.05, 0\.3, sunDirect\)\)/);
   assert.doesNotMatch(lightingSource(src, { faces: true, sunMap: false, selfShadow: false }), /selfShadow|uSelfShadow/);
   assert.doesNotMatch(lightingSource(src, { faces: false, sunMap: false, selfShadow: true }), /selfShadow|uSelfShadow|#if/);
   assert.equal(LIGHTING_DEFAULTS.selfShadow, false);
