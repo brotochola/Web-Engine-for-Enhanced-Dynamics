@@ -15882,6 +15882,47 @@
       "records": [
         "R-1128"
       ]
+    },
+    {
+      "id": "E-377",
+      "title": "lighting.gbuffer drew the G-buffer's two targets a pass each by default: 'mrt' (one pass, two targets) costs a third less, the same picture",
+      "status": "kept-kernel",
+      "statusText": "kept (kernel) 2026-11-15 on dx/light3d (R-1129)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "Kept (kernel; 68b0b640): 'mrt' by default. gpuPassBench with the engine's programs: resolution 0.5 WebGL 0.796 -> 0.512 ms (-36 %), WebGPU 0.749 -> 0.521 (-30 %); resolution 1 -33 % / -31 %. Captures 0 px differ, GPU_PASSES 3 -> 2.",
+      "next": "None.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-377"
+      ],
+      "aliases": [
+        "gbuffer mrt default"
+      ],
+      "records": [
+        "R-1129"
+      ]
+    },
+    {
+      "id": "E-378",
+      "title": "The pixel depth (DX-DEPTH) costs the colour pass +30 % on WebGL and +90 % on WebGPU: every fragment writes its depth, also a sprite without maps whose depth is its foot's",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "next": "Split the opaque pass: maps-less sprites' depth from the vertices (early depth test), the others' from the fragment; why WebGPU pays three times more. gpuPassBench color/colorDepth, depthSortCheck.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-378"
+      ],
+      "aliases": [
+        "pixel depth cost",
+        "colorDepth cost"
+      ],
+      "records": [
+        "R-1129"
+      ]
     }
   ],
   "records": [
@@ -26581,6 +26622,21 @@
       "commits": [
         "6daf584b",
         "7ecde902"
+      ]
+    },
+    {
+      "id": "R-1129",
+      "date": "2026-11-15",
+      "time": "10:20",
+      "timeFrom": "recorded",
+      "title": "The GPU tournament with real waits: lighting.gbuffer 'mrt' a third cheaper and made the default; the pixel depth +30 % / +90 % on the colour pass",
+      "verdict": "kept-kernel",
+      "text": "**The GPU tournament (plan §9.5) with real waits: lighting.gbuffer 'mrt' a third cheaper, made the default (E-377); the\npixel depth +30 % / +90 % on the colour pass (E-378); the lamps' tiles, the light's resolution and the rays measured.**\n2026-11-15, gpuPassBench --suite tournament on both backends (GTX 1650), then the engine's two G-buffer modes as passes.\n\n| case | WebGL ms | WebGPU ms |\n| --- | --- | --- |\n| G-buffer 'pass' (gbufFace + gbufIds), resolution 0.5 | 0.503 + 0.293 = 0.796 | 0.490 + 0.259 = 0.749 |\n| G-buffer 'mrt' (gbufBoth), resolution 0.5 | 0.512 | 0.521 |\n| G-buffer 'pass', resolution 1 | 1.531 + 0.927 = 2.458 | 1.736 + 0.932 = 2.668 |\n| G-buffer 'mrt', resolution 1 | 1.651 | 1.854 |\n| colour, then with the pixel depth (colorDepth) | 0.977 / 1.271 | 0.970 / 1.847 |\n| lamps' map, 48 lamps, tile 128 / 256 / 512 | 0.442 / 1.469 / 5.745 | 0.416 / 1.431 / 5.541 |\n| light3d, 32 lights, resolution 0.25 / 0.5 / 1 | 0.382 / 1.256 / 4.408 | 0.325 / 1.140 / 4.124 |\n| selfShadow, resolution 1, rays 1 / 2 / 4 | 5.709 / 5.728 / 5.720 | 5.628 / 5.651 / 5.628 |\n\nThe bench's own MRT (colour and face map in one pass, both full size: gbufferMrt) is not what the engine draws and lost to\nthe second pass at 0.5 (1.89 against 1.48 ms) and won at 1 (1.91 against 2.53); the engine's 'mrt' joins the face map and\nthe ids map instead, at the light's size, and wins at every size. The rays cost the same: the engine's shader steps one ray\n(lighting.selfShadowRays, plan §6.8, is not built) and the bench's transform no longer finds its one-ray function. The\nsun map's formats are gone from the suite: the texel holds the height, the opacity and the id in RGBA8 since round 2.\nCaptures of spriteMapsStressScene (sun map; self-shadow) in either mode, both backends: 0 px differ; GPU_PASSES 3 -> 2.",
+      "commits": [
+        "f2423443",
+        "00acabb7",
+        "2511e011",
+        "68b0b640"
       ]
     }
   ],

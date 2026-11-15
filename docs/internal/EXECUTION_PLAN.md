@@ -4845,6 +4845,23 @@ Owner: spatial.
 gather alone 9.45 -> 9.52 ms a frame with the skip off). The skipped visits were the cheap ones (predicted rejects whose
 lines the next entity loads anyway). Ablation of the gather: without the dedup marks -15 %, without the row writes -17 %;
 ids numbered in home-cell order (the locality ceiling) -8 % of the frame.
+### E-378 The pixel depth costs the colour pass +30 % on WebGL and +90 % on WebGPU
+
+**Premise (2026-11-15, gpuPassBench with real waits, 2000 sprites at 1920 x 1080):** color 0.977 ms against
+colorDepth 1.271 on WebGL (+30 %), 0.970 against 1.847 on WebGPU (+90 %). Every colour fragment writes its depth
+(pixelDepth.js), which turns the early depth test off for the pass, though a sprite without a height map has one
+depth for all its pixels (its foot) and a floor sprite one that runs with its screen y.
+**Plan:** the opaque pass in two draws, the sprites with maps writing their fragments' depth and the others from their
+vertices (the depth test, not the painter, orders the opaque pass); find why WebGPU pays three times WebGL's
+(the WGSL depth path, the depth-stencil format). Owner: the GPU; the depth captures and depthSortCheck unchanged.
+### E-377 lighting.gbuffer drew the G-buffer's two targets a pass each by default
+
+**Premise (2026-11-15):** 'pass' was the plan's starting point (§9.5, decision 5) until measured: the face map and the
+entity ids map a pass each over the same instances, where 'mrt' draws both in one with two colour targets.
+**Kept (kernel) 2026-11-15 (R-1129):** 68b0b640 ('mrt' the default; 2511e011 the bench's passes as the engine draws
+them). gpuPassBench, gbufFace + gbufIds against gbufBoth: light resolution 0.5 WebGL 0.796 -> 0.512 ms, WebGPU 0.749
+-> 0.521; resolution 1 2.458 -> 1.651, 2.668 -> 1.854. Captures 0 px differ, GPU_PASSES 3 -> 2. spriteMapsStressScene
+stays at the display's rate either way up to 12 000 shapes at resolution 1 (no sitting can judge it here).
 ### E-376 The columns' grid ran the vertex shader six times a cell
 
 **Premise (2026-11-15):** a render's columns are 576 cells (24 x 24) of two triangles, six vertices a cell drawn in
