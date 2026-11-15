@@ -16067,6 +16067,38 @@
       "aliases": [],
       "next": "",
       "records": []
+    },
+    {
+      "id": "N-200",
+      "title": "The standard cars picked their frames by the pack's nominal 7.5° headings, but the art is not drawn at those: a car's frame and the frame the sun sees came out up to 9° off each their own way, and its silhouette shadow lay up to 18° off the car drawn",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 (the white pickup's and the bus's shadows 'desfasadas en cuanto al ángulo'); fixed the same day (b48a15f2)",
+      "date": "2026-11-15",
+      "area": "demos",
+      "kind": "bug",
+      "result": "fixed (b48a15f2): directions.drive are the headings nm-core measured (the prototype's way); the bench's pickup had its frame 10° one way and its sun frame 7.7° the other; after, the bench against the prototype under its own sun, the shadows on the same side and angle",
+      "refs": [],
+      "aliases": [],
+      "next": "",
+      "records": [
+        "R-1139"
+      ]
+    },
+    {
+      "id": "N-201",
+      "title": "The light bench turned the farm's props a quarter turn off the prototype's (facing = -turn for every thing, while a prop's frame 0 stands at facing 90°)",
+      "status": "kept-hygiene",
+      "statusText": "seen 2026-11-15 comparing the bench and the prototype as each starts; fixed the same day (0adb3656)",
+      "date": "2026-11-15",
+      "area": "demos",
+      "kind": "bug",
+      "result": "fixed (0adb3656): a prop's facing is 90° - the prototype's turn, a car's -turn; the barn shows its gable, the fences stand across, the cow faces the camera, as in the prototype",
+      "refs": [],
+      "aliases": [],
+      "next": "",
+      "records": [
+        "R-1139"
+      ]
     }
   ],
   "records": [
@@ -26892,6 +26924,19 @@
       "commits": [
         "e90de4dc",
         "d0e1d644"
+      ]
+    },
+    {
+      "id": "R-1139",
+      "date": "2026-11-15",
+      "time": "16:08",
+      "timeFrom": "recorded",
+      "title": "N-200 and N-201 fixed: cars by their drawn headings, the bench's props turned as the prototype",
+      "verdict": "kept",
+      "text": "N-200 and N-201 fixed (b48a15f2, 0adb3656), after the owner's report that the white pickup's and the bus's shadows were off in angle against the prototype.\n\nN-200: the standard cars' directions were the pack's even 7.5° steps, the art's headings are not (nm-core measured them: the hatch's frames at 0, 1.3, 7.8, 19.4, 31.1, 42.5, 52.8 ... for 0, 7.5, 15, 22.5 ...). For the bench's pickup (facing 114°, sun from 330°), its frame was drawn at 104° and the frame the sun sees at 241.7° where 234° was wanted: 10° one way, 7.7° the other. Now directions.drive are the measured headings (out of order ones, the microcar's three near 0°, take the pack's), as the prototype picks its frames; littleCity's atlas re-baked for its tables (bigAtlas.png byte for byte the same).\n\nN-201: the bench's farm props stood a quarter turn off the prototype's (it used facing = -turn for every thing; a prop's frame k is its model turned k steps with frame 0 at facing 90°).\n\nCheck: both apps as each starts, the engine under the prototype's sun (azimuth 215, elevation 45 = engine angle 325), zoom 1, the same camera: the same turns everywhere; the pickup's, the bus's and the hatch's shadows on the same side and parallel to the car as the prototype's (crops at 2x). The owner: \"ahora se ve todo joya\". node 2730/2730, demos 101/101.",
+      "commits": [
+        "b48a15f2",
+        "0adb3656"
       ]
     }
   ],
