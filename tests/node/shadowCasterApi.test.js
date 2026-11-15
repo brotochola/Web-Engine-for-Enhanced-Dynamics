@@ -1,5 +1,6 @@
 // DX-CASTER (DX_LIGHT3D_PLAN.md §5.5) on real code: a class lists ShadowCaster alone, and its setters give the entity a volume
-// (shadowCaster.setBox, addLevel, setHull: the internal VolumeShadowCaster) where the scene keeps room for volumes.
+// (shadowCaster.setBox, addLevel, setHull: the internal VolumeShadowCaster) where the scene keeps room for volumes, and a wall
+// (setWall: the internal LightOccluder's columns) where the scene has raycasted lighting.
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -7,14 +8,30 @@ import { MeshGeometry } from '../../src/core/meshGeometry.js';
 import { Layer } from '../../src/core/layer.js';
 import { MeshRenderer } from '../../src/components/meshRenderer.js';
 import { Transform } from '../../src/components/transform.js';
-import { CAST_KIND, ShadowCaster, resetShadowCasterWarns } from '../../src/components/shadowCaster.js';
+import { LightOccluder, LIGHT_OCCLUDER_MASK_COLLIDER, LIGHT_OCCLUDER_MASK_SPRITE } from '../../src/components/lightOccluder.js';
+import {
+  CAST_KIND,
+  ShadowCaster,
+  resetCasterWall,
+  resetShadowCasterWarns,
+  restoreCasterWall,
+} from '../../src/components/shadowCaster.js';
 import { VolumeShadowCaster, holdsVolume, resetVolumeShadowCasterWarns } from '../../src/components/volumeShadowCaster.js';
 import { DEFAULT_LAYERS, LAYER_KIND, VOLUME_LAYER, VOLUME_LAYER_Z } from '../../src/util/configDefaults.js';
 
 const ENTITIES = 6;
 
-/** The columns a scene with room for volumes binds (`volumes` false: one without, lighting.maxVolumes 0). */
-function setup({ volumes = true } = {}) {
+/**
+ * The columns a scene with room for volumes binds (`volumes` false: one without, lighting.maxVolumes 0), and with raycasted
+ * lighting LightOccluder's (`walls`).
+ */
+function setup({ volumes = true, walls = false } = {}) {
+  if (walls) {
+    LightOccluder.initializeArrays(new SharedArrayBuffer(LightOccluder.getBufferSize(ENTITIES)), ENTITIES);
+    LightOccluder.block.fill(1);
+  } else {
+    LightOccluder.clearArrays();
+  }
   Layer.reset();
   MeshGeometry.reset();
   MeshRenderer.initializeArrays(new SharedArrayBuffer(MeshRenderer.getBufferSize(ENTITIES)), ENTITIES);
@@ -58,6 +75,7 @@ function warnings(run) {
 beforeEach(() => setup());
 afterEach(() => {
   ShadowCaster.clearArrays();
+  LightOccluder.clearArrays();
   VolumeShadowCaster.clearArrays();
   Transform.clearArrays();
   MeshRenderer.clearArrays();
@@ -137,4 +155,74 @@ test('a refused shape warns and leaves the kinds as they were', () => {
   warnings(() => c.setBox(10, 10, -1));
   assert.equal(ShadowCaster.sunKind[1], CAST_KIND.AUTO);
   assert.equal(holdsVolume(1), false);
+});
+
+test('setWall with ShadowCaster alone listed, under raycasted lighting: the wall on, its shape, the caster\'s opacity', () => {
+  setup({ walls: true });
+  const c = caster(1);
+  c.opacity = 0.6;
+  assert.deepEqual(warnings(() => c.setWall()), []);
+  assert.equal(LightOccluder.active[1], 1);
+  assert.equal(LightOccluder.maskMode[1], LIGHT_OCCLUDER_MASK_COLLIDER);
+  assert.equal(LightOccluder.block[1], Math.fround(0.6));
+  assert.equal(ShadowCaster.sunKind[1], CAST_KIND.WALL);
+  assert.equal(ShadowCaster.lampKind[1], CAST_KIND.WALL);
+  assert.equal(ShadowCaster.active[1], 0, 'the sun casts nothing from a wall');
+  c.opacity = 0.25;
+  assert.equal(LightOccluder.block[1], 0.25, 'opacity is the wall\'s block');
+  c.clear();
+  assert.equal(LightOccluder.active[1], 0, 'no light kind is a wall: the wall goes');
+});
+
+test('lamps.setWall keeps the sun\'s shadow; a later setter that leaves no wall turns it off', () => {
+  setup({ walls: true });
+  const c = caster(2);
+  c.lamps.setWall({ shape: 'sprite' });
+  assert.equal(LightOccluder.active[2], 1);
+  assert.equal(LightOccluder.maskMode[2], LIGHT_OCCLUDER_MASK_SPRITE);
+  assert.equal(ShadowCaster.sunKind[2], CAST_KIND.AUTO);
+  assert.equal(ShadowCaster.active[2], 1, 'the sun still casts its sprite');
+  c.setSprite();
+  assert.equal(LightOccluder.active[2], 0);
+  c.setBox(10, 10, 10);
+  c.lamps.setWall();
+  assert.equal(LightOccluder.active[2], 1, 'a box for the sun, a wall for the lamps');
+  assert.equal(holdsVolume(2), true);
+});
+
+test('setWall without raycasted lighting warns once and changes nothing; the sun casts no wall', () => {
+  const c = caster(1);
+  const seen = warnings(() => {
+    c.setWall();
+    c.lamps.setWall({ shape: 'sprite' });
+  });
+  assert.equal(seen.length, 1, seen.join(' | '));
+  assert.match(seen[0], /raycasted lighting/);
+  assert.equal(ShadowCaster.sunKind[1], CAST_KIND.AUTO);
+  assert.equal(ShadowCaster.lampKind[1], CAST_KIND.AUTO);
+  setup({ walls: true });
+  const s = caster(2);
+  assert.equal(warnings(() => s.sun.setWall()).length, 1);
+  assert.equal(LightOccluder.active[2], 0);
+});
+
+test('a spawn drops the wall of the slot\'s last entity, and a restored save brings back the one its kinds say', () => {
+  setup({ walls: true });
+  const c = caster(3);
+  c.setWall({ shape: 'sprite' });
+  resetCasterWall(3);
+  assert.equal(LightOccluder.active[3], 0);
+  assert.equal(LightOccluder.maskMode[3], LIGHT_OCCLUDER_MASK_COLLIDER);
+  assert.equal(LightOccluder.block[3], 1);
+  // onSpawned set a wall; the save says the box was burning (clear) when it was saved, at opacity 0.5.
+  c.setWall();
+  ShadowCaster.sunKind[3] = CAST_KIND.NONE;
+  ShadowCaster.lampKind[3] = CAST_KIND.NONE;
+  restoreCasterWall(3);
+  assert.equal(LightOccluder.active[3], 0);
+  ShadowCaster.lampKind[3] = CAST_KIND.WALL;
+  ShadowCaster.opacity[3] = 0.5;
+  restoreCasterWall(3);
+  assert.equal(LightOccluder.active[3], 1);
+  assert.equal(LightOccluder.block[3], 0.5);
 });

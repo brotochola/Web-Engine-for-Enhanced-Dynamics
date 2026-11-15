@@ -11,7 +11,7 @@ import { SpriteRenderer, DEFAULT_ANIMATION_SPEED } from '../components/spriteRen
 import { MeshRenderer, MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
-import { ShadowCaster } from '../components/shadowCaster.js';
+import { ShadowCaster, resetCasterWall, restoreCasterWall } from '../components/shadowCaster.js';
 import { VolumeShadowCaster, holdsVolume } from '../components/volumeShadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
@@ -3223,8 +3223,9 @@ export class GameObject {
         ShadowCaster.baseRadius[i] = 0;
         ShadowCaster.selfShadow[i] = 0;
       }
-      // No volume (shadowCaster.setBox) from the slot's last entity: the despawn freed its mesh.
+      // No volume (shadowCaster.setBox) and no wall (setWall) from the slot's last entity: the despawn freed its mesh.
       VolumeShadowCaster.resetRow(i, has.MeshRenderer === true);
+      resetCasterWall(i);
     }
 
     if (has.FlashComponent) {
@@ -3233,12 +3234,6 @@ export class GameObject {
       FlashComponent.currentLife[i] = 0;
       FlashComponent.initialRadius[i] = 0;
       FlashComponent.initialGlow[i] = 0;
-    }
-
-    if (has.LightOccluder) {
-      LightOccluder.active[i] = 1;
-      LightOccluder.maskMode[i] = 0; // LIGHT_OCCLUDER_MASK_COLLIDER
-      LightOccluder.block[i] = 1;
     }
 
     if (has.MeshRenderer) {
@@ -3412,6 +3407,8 @@ export class GameObject {
 
       if (spawnConfig && spawnConfig._saveRestore) {
         applyEntitySaveRestore(i, EntityClass, spawnConfig._saveRestore);
+        // DX-CASTER: the wall follows the kinds the save brought back (its columns are internal, so not in the save).
+        if (has.ShadowCaster) restoreCasterWall(i);
       }
     } finally {
       endBodyDirtyDeferred();

@@ -6,6 +6,10 @@ export const LIGHT_OCCLUDER_MASK_COLLIDER = 0;
 export const LIGHT_OCCLUDER_MASK_SPRITE = 1;
 
 /**
+ * Internal: the columns of a ShadowCaster's wall (shadowCaster.setWall, DX-CASTER: DX_LIGHT3D_PLAN.md §5.5). No class lists
+ * it: a scene with raycasted lighting pools it for every entity, the visibility sweep reads it, and ShadowCaster's setters
+ * write it (setWall turns it on with its shape, a setter that leaves no light kind a wall turns it off, opacity is block).
+ *
  * Light blocker for raycasted lighting.
  * Occlusion shape comes from the entity's Collider. One circle, rotated box, or convex
  * polygon uses that primary shape. Extra fixtures (`fixtureCount > 0`) block as one
@@ -23,10 +27,6 @@ export const LIGHT_OCCLUDER_MASK_SPRITE = 1;
  * After the visibility polygon is drawn, a self-lit fill lights the side of the
  * body that faces the light (maskMode selects collider vs sprite alpha). The far
  * side stays on the umbra floor. A light inside the body keeps the plain radial.
- *
- * DX-CASTER (DX_LIGHT3D_PLAN.md §5.5), for a class that also lists ShadowCaster: shadowCaster.setWall({ shape }) sets maskMode
- * ('collider' or 'sprite') and turns it on, and shadowCaster.opacity writes block. A class that lists it starts with it on, as
- * before; a ShadowCaster setter that leaves no light kind a wall turns it off.
  */
 export class LightOccluder extends Component {
   static ARRAY_SCHEMA = {

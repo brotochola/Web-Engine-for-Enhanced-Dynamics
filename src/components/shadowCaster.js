@@ -2,10 +2,11 @@
 // its sprite's silhouette (the default), its height map, a volume or a wall. Shadow pixels are written to the double-buffered
 // shadow render queue (not this SoA); the entity SoA says how each entity casts.
 //
-// A volume is an internal VolumeShadowCaster's (a mesh on the volumeShadows layer, with room in a scene whose
-// config.lighting.maxVolumes is above 0), and a wall is LightOccluder's (raycasted lighting): the class lists that component
-// too, and ShadowCaster's setters drive it. The last setter wins: the sprite rows, a volume or a wall an earlier setter gave the
-// entity go when no light kind casts them any more.
+// A class lists ShadowCaster alone. A volume is an internal VolumeShadowCaster's (a mesh on the volumeShadows layer, with room
+// in a scene whose config.lighting.maxVolumes is above 0), and a wall is the internal LightOccluder's columns (the visibility
+// sweep of raycasted lighting reads them, and a scene with that lighting pools them): ShadowCaster's setters drive both. The
+// last setter wins: the sprite rows, a volume or a wall an earlier setter gave the entity go when no light kind casts them any
+// more.
 
 import { Component } from '../core/component.js';
 import { LightOccluder, LIGHT_OCCLUDER_MASK_COLLIDER, LIGHT_OCCLUDER_MASK_SPRITE } from './lightOccluder.js';
@@ -48,10 +49,9 @@ function castsVolume(kind) {
   return kind === CAST_KIND.BOX || kind === CAST_KIND.HULL;
 }
 
-/** The entity, when its class lists `name` (ShadowCaster drives its LightOccluder); else null. */
-function entityWith(caster, name) {
-  const owner = caster.owner;
-  return owner != null && owner._hasComponents != null && owner._hasComponents[name] === true ? owner : null;
+/** Whether the scene has walls: raycasted lighting pools LightOccluder's columns, which its visibility sweep reads. */
+function wallsOn() {
+  return LightOccluder.active != null;
 }
 
 /** The caster's volume, made on first use: its entity's MeshRenderer row draws it, its own when the class lists one. */
@@ -66,8 +66,8 @@ function casterVolume(caster) {
 /**
  * Writes `kind` for the sun, the lamps or both, and keeps what casts in step with the kinds. The sprite rows (`active`: pre-render's
  * emit gives a caster at 0 no shadow height, so no row) and a volume go when no kind casts them any more, and the rows come back on
- * that change alone, so a setter on a despawned entity does not wake it. The wall goes whenever no kind is a wall: a class that
- * lists LightOccluder starts with it on, and its first other setter takes it off. setWall turns it on.
+ * that change alone, so a setter on a despawned entity does not wake it. The wall goes whenever no kind is a wall; setWall turns
+ * it on.
  */
 function writeKinds(caster, sun, lamps, kind) {
   const i = caster.index;
@@ -82,10 +82,28 @@ function writeKinds(caster, sun, lamps, kind) {
   if ((castsVolume(wasSun) || castsVolume(wasLamp)) && !castsVolume(nowSun) && !castsVolume(nowLamp) && holdsVolume(i)) {
     casterVolume(caster).clear();
   }
-  if (nowSun !== CAST_KIND.WALL && nowLamp !== CAST_KIND.WALL && entityWith(caster, 'LightOccluder') !== null) {
-    LightOccluder.active[i] = 0;
-  }
+  if (nowSun !== CAST_KIND.WALL && nowLamp !== CAST_KIND.WALL && wallsOn()) LightOccluder.active[i] = 0;
   return caster;
+}
+
+/**
+ * A spawn restored from a save (SaveGame writes the ShadowCaster's columns after onSpawned): the wall follows the kinds and the
+ * opacity it brought back. The wall's shape (collider or sprite) is what onSpawned gave it.
+ * @param {number} i
+ */
+export function restoreCasterWall(i) {
+  if (!wallsOn() || ShadowCaster.sunKind == null) return;
+  const wall = ShadowCaster.sunKind[i] === CAST_KIND.WALL || ShadowCaster.lampKind[i] === CAST_KIND.WALL;
+  LightOccluder.active[i] = wall ? 1 : 0;
+  if (wall) LightOccluder.block[i] = ShadowCaster.opacity[i];
+}
+
+/** A spawned slot: no wall, its shape the collider's, blocking all the light (setWall writes them again). */
+export function resetCasterWall(i) {
+  if (!wallsOn()) return;
+  LightOccluder.active[i] = 0;
+  LightOccluder.maskMode[i] = LIGHT_OCCLUDER_MASK_COLLIDER;
+  LightOccluder.block[i] = 1;
 }
 
 /** A frame of the atlas cast instead of the sprite (needs config.lighting.shadowTextures): setSprite({ frame }), setTexture. */
@@ -176,8 +194,9 @@ class CastSide {
   }
 
   /**
-   * A wall that stops lamps and headlights (raycasted lighting): the entity's LightOccluder, cut by its Collider ('collider',
-   * the fastest) or by the sprite's alpha ('sprite'), taking out the caster's opacity of the light.
+   * A wall that stops lamps and headlights (raycasted lighting): the entity's occluder, cut by its Collider ('collider', the
+   * fastest) or by the sprite's alpha ('sprite'), taking out the caster's opacity of the light. A scene without raycasted
+   * lighting has no walls: it warns once and changes nothing.
    * @param {{ shape?: 'collider'|'sprite' }} [options]
    */
   setWall({ shape = 'collider' } = {}) {
@@ -186,8 +205,11 @@ class CastSide {
       warnOnce('shadowCaster.sun.setWall: the sun casts no wall (a wall stops lamps and headlights); shadowCaster.lamps.setWall');
       return caster;
     }
-    if (entityWith(caster, 'LightOccluder') === null) {
-      warnOnce("shadowCaster.setWall needs LightOccluder in the class's components: the wall is its occluder");
+    if (!wallsOn()) {
+      warnOnce(
+        'shadowCaster.setWall: a wall stops lamps and headlights under raycasted lighting, which this scene does not have; ' +
+          'the entity casts as it did',
+      );
       return caster;
     }
     if (shape !== 'collider' && shape !== 'sprite') warnOnce(`shadowCaster.setWall: shape is 'collider' or 'sprite', not '${shape}'`);
@@ -346,8 +368,8 @@ export const CASTER_METHODS = {
   },
 
   /**
-   * Flat view: it stops the light as a wall (its LightOccluder, so the class lists LightOccluder), and the sun casts nothing
-   * from it. `lamps.setWall` keeps the sun's shadow.
+   * Flat view (raycasted lighting): it stops lamps and headlights as a wall, and the sun casts nothing from it. `lamps.setWall`
+   * keeps the sun's shadow. Its light finds the wall through the spatial grid, so the entity has a Collider.
    * @param {{ shape?: 'collider'|'sprite' }} [options] what cuts the light: the Collider (default) or the sprite's alpha
    */
   setWall(options) {
@@ -369,7 +391,7 @@ export const CASTER_METHODS = {
     return side != null ? side : (this._lampSide = new CastSide(this, false, true));
   },
 
-  /** How much light it takes out, 0 to 1 (was LightOccluder.block, which follows it). The sprite shadows' layer reads it. */
+  /** How much light it takes out, 0 to 1: the sprite shadows read it, and a wall (setWall) takes that much out of a lamp. */
   get opacity() {
     return ShadowCaster.opacity[this.index];
   },
@@ -377,7 +399,7 @@ export const CASTER_METHODS = {
     const i = this.index;
     const o = Math.max(0, Math.min(1, +v || 0));
     ShadowCaster.opacity[i] = o;
-    if (entityWith(this, 'LightOccluder') !== null) LightOccluder.block[i] = o;
+    if (wallsOn()) LightOccluder.block[i] = o;
   },
 
   /** The base's radius in px, correcting the measured one; 0 keeps the measured base. Stored: the 3D shadows will read it. */
