@@ -21,7 +21,7 @@
  *                three textures (the bench's shader: the engine has none yet)
  */
 
-import { faceMapVertex, faceMapWgsl, lightingSource } from '../../../src/render/faceMap.js';
+import { faceFragmentGlsl, faceMapVertex, faceMapWgsl, lightingSource } from '../../../src/render/faceMap.js';
 import {
   SUN_MAP_COLUMNS, sunMapColumnGrid, sunMapColumnsVertex, sunMapColumnsWgsl, sunMapVertex, sunMapWgsl,
 } from '../../../src/render/sunShadowMap.js';
@@ -267,7 +267,9 @@ export function buildFrame(p, sh, sc, backend) {
     gbufFull: { kind: 'target', format: 'rgba8', width: W, height: H, filter: 'nearest' },
     depth: { kind: 'depth', width: W, height: H },
     sunMap: { kind: 'target', format: p.format, width: sw, height: shh, filter: 'nearest' },
+    sunDepth: { kind: 'depth', width: sw, height: shh },
     lampMap: { kind: 'target', format: p.format, width: tiles.width, height: tiles.height, filter: 'nearest' },
+    lampDepth: { kind: 'depth', width: tiles.width, height: tiles.height },
     light: { kind: 'target', format: 'rgba8', width: lw, height: lh, filter: 'linear' },
   };
 
@@ -397,7 +399,7 @@ export function buildFrame(p, sh, sc, backend) {
     label: `G-buffer, second pass, ${sc.sprites.count} sprites, ${lw}x${lh}`,
     spec: {
       name: 'gbuffer',
-      glsl: { vertex: faceMapVertex(sh.spriteVert), fragment: sh.faceFrag },
+      glsl: { vertex: faceMapVertex(sh.spriteVert), fragment: faceFragmentGlsl(sh.faceFrag) },
       wgsl: { code: faceMapWgsl(sh.spriteWgsl), vertexEntry: 'mainVert', fragmentEntry: 'mainFragFace' },
       vertex: quad,
       instances: sc.sprites,
@@ -413,7 +415,7 @@ export function buildFrame(p, sh, sc, backend) {
     notes: 'the G-buffer target is full resolution (MRT targets share a size)',
     spec: {
       name: 'gbufferMrt',
-      glsl: { vertex: faceMapVertex(sh.spriteVert), fragment: mrtGlsl(sh.faceFrag) },
+      glsl: { vertex: faceMapVertex(sh.spriteVert), fragment: mrtGlsl(faceFragmentGlsl(sh.faceFrag)) },
       wgsl: { code: mrtWgsl(faceMapWgsl(sh.spriteWgsl)), vertexEntry: 'mainVert', fragmentEntry: 'mainFragMrt' },
       vertex: quad,
       instances: sc.sprites,
@@ -435,7 +437,9 @@ export function buildFrame(p, sh, sc, backend) {
       textures: spriteTextures,
       uniforms: shadowUniforms(),
       targets: ['sunMap'],
-      blend: ['max'],
+      // As the engine draws it (mapDepthState): the highest caster point by a depth test, no blending.
+      depthTarget: 'sunDepth',
+      blend: ['none'],
       clear: [0, 0, 0, 0],
     },
   }));
@@ -450,7 +454,9 @@ export function buildFrame(p, sh, sc, backend) {
       textures: { uTexture: 'atlas', uTexLut: 'lutRender', uMaps: 'twin', uFoot: 'foot' },
       uniforms: shadowUniforms(),
       targets: ['sunMap'],
-      blend: ['max'],
+      // As the engine draws it (mapDepthState): the highest caster point by a depth test, no blending.
+      depthTarget: 'sunDepth',
+      blend: ['none'],
       clear: [0, 0, 0, 0],
     },
   }));
@@ -465,7 +471,8 @@ export function buildFrame(p, sh, sc, backend) {
       textures: { uTexture: 'atlas', uTexLut: 'lutCard', uLampTiles: 'lampTiles' },
       uniforms: { ...shadowUniforms(), ...pixi(tiles.width, tiles.height), uTileWorld: [tiles.perRow, tiles.size, 0, 0] },
       targets: ['lampMap'],
-      blend: ['max'],
+      depthTarget: 'lampDepth',
+      blend: ['none'],
       clear: [0, 0, 0, 0],
     },
   }));
