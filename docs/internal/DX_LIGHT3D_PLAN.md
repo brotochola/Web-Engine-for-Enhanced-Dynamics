@@ -1385,3 +1385,40 @@ prueba, carScene, littleCity, la calle de día y la de noche usan esos; se borra
 
 **Queda abierto:** medir E-379, N-194 (un varying más) y N-196 en escena; N-188 (retirar `lighting.shadowTextures` con
 una marca por cuadro del pre-render); E-371/E-372/E-373/E-378, N-185, N-187, N-189 y el resto de N-192.
+
+### 17.8 La noche en el banco, y el mapa panorámico de los faroles (2026-11-15, noche)
+
+El dueño miró el banco de noche y de día y fue tirando lo que veía. Hecho:
+
+| Qué | Causa | Arreglo |
+| --- | --- | --- |
+| El auto blanco y la vaca, con mapa de altura para los faroles, tiraban la sombra de sí mismos girados (90° el auto) | N-203: las filas de los faroles tomaban el cuadro que ve el farol salvo en hojas que tiran sólido con el sol; un auto tira cartón con el sol y columnas con los faroles | El cuadro de cada luz por caster, como decide el pase de columnas (d2b8c392) |
+| Las sombras de un farol no se apagaban en su alcance: corrían oscuras hasta el borde cuadrado de su mosaico | N-204: la caída I / (I + d²) nunca llega a cero | La luz termina en su radio: × (1 − (d / radio)⁴)², como Unreal y Godot y como el prototipo (c6880f7e; light3d +5,6 % WebGL, E-380 para recuperarlo) |
+| La sombra del árbol atravesaba el granero hasta su pared de atrás | N-208: el mapa del sol guarda el caster más alto de cada rayo y un pixel salta el de su propia entidad | Una cara a la que no llega el sol no toma sombras de otros (3baefdbc) |
+| La silueta de la cerca no era paralela a la cerca | N-209: el eje del cartón fijo salía del facing (15°) y el dibujo es el cuadro más cercano (11,25°) | El eje sale de la dirección dibujada (65c4a83d) |
+| Las sombras suaves al lado de las del prototipo, nítidas sobre los pixeles del dibujo | La pasada de luz sombrea por pixel de pantalla y promedia cinco muestras | `lighting.pixelArt` (DX-PIXELSHADOW, 8e58d474), prendido en el banco |
+
+Explicados sin bug: la casita y la mesa con silueta bajo un farol alto salen iguales que en el prototipo (N-205); el cartón de
+un render es más ancho y más alto que la cosa (N-207, se arregla con lo de abajo). Abierto: N-206 (el gate de Predator con
+crowd 2,5 que dibujó menos filas en tres corridas).
+
+**El mapa panorámico de los faroles (DX-LAMPPANO, aprobado por el dueño).** El mapa de hoy (F7, opción C) proyecta cada
+punto caster sobre el piso desde el farol; un punto más alto que el farol no tiene adónde caer (cuenta como iluminado: bajo un
+farol de 20 px la sombra de la cerca no trepa por la pared del granero), y uno cerca de la altura del farol cae en el
+infinito (el estiramiento topeado en 8 hace los escalones de N-192). El diseño:
+
+- **Dos mitades por farol.** El mosaico de cada farol pasa a 2S × S texeles: la mitad izquierda (piso) para lo que está más
+  bajo que el farol, como hoy; la derecha (techo) es la misma mitad para el mundo reflejado en la altura del farol: un punto
+  a altura z > E se dibuja a z' = 2E − z. Las dos mitades guardan la altura (reflejada) más alta de cada caída, y un punto
+  receptor hace la misma prueba (lo guardado > su altura, reflejada si está arriba del farol, más el sesgo).
+- **Hasta el horizonte, sin tope.** La caída v = (p − L) · E / (E − z), R = |v|: dentro del alcance lineal hasta 0,8 del
+  radio del medio mosaico (la resolución de hoy, 20 % menos), y de ahí al borde el resto del mundo, 0,8 + 0,2 (1 − alcance / R):
+  el horizonte en el borde. Sin el tope de 8.
+- **Cartones y columnas en tres filas.** La fila de la base, la de donde su caída cruza el alcance y la de la punta: la banda
+  de adentro es exacta (proyectiva, como hoy) y la de afuera aproximada (sólo la usan las paredes cerca de la altura del farol).
+  El cartón deja de ser el quad del lote: una tira de 6 vértices que comparte los atributos de las filas, como las columnas.
+  Con eso, N-207: el alto del cartón de un render a su altura de mapa y su ancho a su huella.
+- **Volúmenes**, en la mitad del piso con la caída comprimida (la del techo después).
+- **La pasada de luz** elige la mitad por la altura del punto y lee con la misma caída comprimida.
+- **Medir:** gpuPassBench lampMap y light3d antes y después, lampShadowStressScene, y capturas: la cerca contra la pared del
+  granero bajo un farol de 20 px, un cajón bajo un farol más bajo que él (N-192), la vaca y el auto de N-203.
