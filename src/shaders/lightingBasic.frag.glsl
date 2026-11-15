@@ -1,4 +1,9 @@
+#version 300 es
 precision highp float;
+// ES 3.0 for its explicit-LOD reads: a texture read with gradients inside a branch of a loop that leaves per pixel makes
+// ANGLE's D3D11 flatten the branch (both sides run), so no early out (a lamp's reach, its cosine) saved anything on WebGL
+// (E-365). Every input is a render target without mipmaps: textureLod at level 0 reads what texture() did.
+out vec4 finalColor;
 
 uniform vec2 uCameraPos;
 uniform float uZoom;
@@ -63,7 +68,7 @@ uniform vec4 uSunMapK; // kx, ky (a px of height's landing shift on the floor), 
 // One tap of the sun's map: 1 lit, under a higher caster that is not the pixel's own entity (selfId) what its opacity
 // (G, DX-CASTER) leaves.
 float sunTap(vec2 uv, float above, float selfId) {
-  vec4 m = texture2D(uSunMap, uv);
+  vec4 m = textureLod(uSunMap, uv, 0.0);
   return m.r * 512.0 > above && !ownTexel(m, selfId) ? 1.0 - m.g : 1.0;
 }
 
@@ -115,7 +120,7 @@ float lampOwner(float tag) {
 }
 
 float lampTap(vec2 cell, vec2 uv, float h, vec2 toAtlas, float above, float selfId) {
-  vec4 m = texture2D(uLampMap, (cell + clamp(uv, h, 1.0 - h)) * toAtlas);
+  vec4 m = textureLod(uLampMap, (cell + clamp(uv, h, 1.0 - h)) * toAtlas, 0.0);
   return m.r * 512.0 > above && !ownTexel(m, selfId) ? 1.0 - m.g : 1.0;
 }
 
@@ -175,10 +180,10 @@ float selfShadowToward(vec3 p, vec3 l, float reach, float selfId) {
     vec3 q = p + l * t;
     vec2 nc = weedWorldToNorm(vec2(q.x, q.y * s - q.z * uFaceLight.x));
     vec2 fc = vec2(nc.x, uFlipY > 0.5 ? 1.0 - nc.y : nc.y);
-    vec4 f = texture2D(uFaceMap, fc);
+    vec4 f = textureLod(uFaceMap, fc, 0.0);
 // #if IDS
     if (selfId > 0.5) {
-      vec4 g = texture2D(uFaceIds, fc);
+      vec4 g = textureLod(uFaceIds, fc, 0.0);
       if (abs(floor(g.r * 255.0 + 0.5) * 256.0 + floor(g.g * 255.0 + 0.5) - selfId) > 0.5) continue;
     }
 // #endif IDS
@@ -236,16 +241,16 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
   for (int i = 0; i < MAX_LIGHTS; i++) {
     if (i >= coneCount) break;
     float u = (float(i) + 0.5) / uLightTexWidth;
-    vec4 posInt = texture2D(uLightData, vec2(u, ROW0));
+    vec4 posInt = textureLod(uLightData, vec2(u, ROW0), 0.0);
     if (posInt.z <= 0.0) continue;
-    vec4 col = texture2D(uLightData, vec2(u, ROW1));
+    vec4 col = textureLod(uLightData, vec2(u, ROW1), 0.0);
     vec3 toLight = vec3(posInt.xy, col.a) - p;
     float d = length(toLight);
     float cosine = (dot(n, toLight) / max(d, 0.001) + uFaceLight.y) / (1.0 + uFaceLight.y);
     if (cosine <= 0.0 && !both) continue;
     float scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     float intensityScaled = posInt.z * scaled;
-    float cone = coneFactor(p.xy - posInt.xy, texture2D(uLightData, vec2(u, ROW2)));
+    float cone = coneFactor(p.xy - posInt.xy, textureLod(uLightData, vec2(u, ROW2), 0.0));
 // #if LAMPMAP
     cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId);
 // #endif LAMPMAP
@@ -259,9 +264,9 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     int i = j + coneCount;
     if (i >= uLightCount) break;
     float u = (float(i) + 0.5) / uLightTexWidth;
-    vec4 posInt = texture2D(uLightData, vec2(u, ROW0));
+    vec4 posInt = textureLod(uLightData, vec2(u, ROW0), 0.0);
     if (posInt.z <= 0.0) continue;
-    vec4 col = texture2D(uLightData, vec2(u, ROW1));
+    vec4 col = textureLod(uLightData, vec2(u, ROW1), 0.0);
     vec3 toLight = vec3(posInt.xy, col.a) - p;
     float d = length(toLight);
     float cosine = (dot(n, toLight) / max(d, 0.001) + uFaceLight.y) / (1.0 + uFaceLight.y);
@@ -315,10 +320,10 @@ void main() {
   vec2 screenPos = normCoord * uFullCanvasSize;
   vec2 fragWorld = weedScreenToWorld(screenPos);
 // #if FACES
-  vec4 face = texture2D(uFaceMap, gl_FragCoord.xy / uViewport);
+  vec4 face = textureLod(uFaceMap, gl_FragCoord.xy / uViewport, 0.0);
   // DX-EMISSIVE (F10): a glowing pixel keeps its own colour (the face pass's (1/255, 0)).
   if (face.r > 0.0 && face.g < 0.5 / 255.0) {
-    gl_FragColor = vec4(1.0);
+    finalColor = vec4(1.0);
     return;
   }
   if (face.r > 0.0) {
@@ -326,11 +331,11 @@ void main() {
     float selfId = 0.0;
     bool selfOn = true;
 // #if IDS
-    vec4 ids = texture2D(uFaceIds, gl_FragCoord.xy / uViewport);
+    vec4 ids = textureLod(uFaceIds, gl_FragCoord.xy / uViewport, 0.0);
     selfId = floor(ids.r * 255.0 + 0.5) * 256.0 + floor(ids.g * 255.0 + 0.5);
     selfOn = selfId < 0.5 || mod(floor(ids.b * 255.0 + 0.5), 2.0) > 0.5;
 // #endif IDS
-    gl_FragColor = vec4(min(faceLight(fragWorld, face, selfId, selfOn), vec3(1.0)), 1.0);
+    finalColor = vec4(min(faceLight(fragWorld, face, selfId, selfOn), vec3(1.0)), 1.0);
     return;
   }
 // #endif FACES
@@ -350,10 +355,10 @@ void main() {
   for (int i = 0; i < MAX_LIGHTS; i++) {
     if (i >= coneCount) break;
     float u = (float(i) + 0.5) / uLightTexWidth;
-    vec4 posInt = texture2D(uLightData, vec2(u, ROW0));
+    vec4 posInt = textureLod(uLightData, vec2(u, ROW0), 0.0);
     if (posInt.z <= 0.0) continue;
-    vec4 col = texture2D(uLightData, vec2(u, ROW1));
-    vec4 cone = texture2D(uLightData, vec2(u, ROW2));
+    vec4 col = textureLod(uLightData, vec2(u, ROW1), 0.0);
+    vec4 cone = textureLod(uLightData, vec2(u, ROW2), 0.0);
     const float DISTANCE_SCALE = 1.0 / 1024.0;
     vec2 deltaScaled = (fragWorld - posInt.xy) * DISTANCE_SCALE;
     float d2Scaled = dot(deltaScaled, deltaScaled);
@@ -370,8 +375,8 @@ void main() {
     if (i >= uLightCount) break;
 
     float u = (float(i) + 0.5) / uLightTexWidth;
-    vec4 posInt = texture2D(uLightData, vec2(u, ROW0));
-    vec4 col = texture2D(uLightData, vec2(u, ROW1));
+    vec4 posInt = textureLod(uLightData, vec2(u, ROW0), 0.0);
+    vec4 col = textureLod(uLightData, vec2(u, ROW1), 0.0);
 
     vec2 lightWorld = posInt.xy;
     float intensity = posInt.z;
@@ -391,9 +396,9 @@ void main() {
   }
 
   if (uShadowComposite > 0.5) {
-    vec4 sh = texture2D(uShadowMap, normCoord);
+    vec4 sh = textureLod(uShadowMap, normCoord, 0.0);
     totalLight *= (1.0 - sh.a);
   }
   totalLight = min(totalLight, vec3(1.0));
-  gl_FragColor = vec4(totalLight, 1.0);
+  finalColor = vec4(totalLight, 1.0);
 }
