@@ -244,10 +244,11 @@ export class ShadowCaster extends Component {
 
   constructor(index) {
     super(index);
-    // DX-CASTER: shadowCaster.sun / .lamps, the setters for one light kind; the instance's own setters are both kinds'.
-    this._sunSide = new CastSide(this, true, false);
-    this._lampSide = new CastSide(this, false, true);
-    this._bothSides = new CastSide(this, true, true);
+    // DX-CASTER: shadowCaster.sun / .lamps, the setters for one light kind, and the instance's own (both kinds'). Made on first
+    // use: most casters never call one (Predator makes 38 000 of these through heightMultiplier).
+    this._sunSide = null;
+    this._lampSide = null;
+    this._bothSides = null;
   }
 
   // Static pool tracking (set during initialization)
@@ -278,16 +279,22 @@ export class ShadowCaster extends Component {
   }
 }
 
+/** The caster's setters for both light kinds, made on first use. */
+function bothSides(caster) {
+  const side = caster._bothSides;
+  return side != null ? side : (caster._bothSides = new CastSide(caster, true, true));
+}
+
 /** The methods ShadowCaster's instances get (installed on the class below the component). */
 export const CASTER_METHODS = {
   /** The silhouette, for every light: a card on its base (CastSide.setSprite's options). */
   setSprite(options) {
-    return this._bothSides.setSprite(options);
+    return bothSides(this).setSprite(options);
   },
 
   /** Each pixel where it is in 3D, for every light (needs the sheet's heightMap). */
   setHeightMap() {
-    return this._bothSides.setHeightMap();
+    return bothSides(this).setHeightMap();
   },
 
   /**
@@ -299,7 +306,7 @@ export const CASTER_METHODS = {
    * @param {{ offsetX?: number, offsetY?: number, topScale?: number, floorScaleY?: number }} [options]
    */
   setBox(width, depth, height, options) {
-    return this._bothSides.setBox(width, depth, height, options);
+    return bothSides(this).setBox(width, depth, height, options);
   },
 
   /**
@@ -311,7 +318,7 @@ export const CASTER_METHODS = {
    * @param {{ floorScaleY?: number }} [options]
    */
   addLevel(outline, bottom, top, topOutline, options) {
-    return this._bothSides.addLevel(outline, bottom, top, topOutline, options);
+    return bothSides(this).addLevel(outline, bottom, top, topOutline, options);
   },
 
   /**
@@ -320,7 +327,7 @@ export const CASTER_METHODS = {
    * @param {{ floorScaleY?: number }} [options]
    */
   setHull(points, options) {
-    return this._bothSides.setHull(points, options);
+    return bothSides(this).setHull(points, options);
   },
 
   /**
@@ -329,20 +336,22 @@ export const CASTER_METHODS = {
    * @param {{ shape?: 'collider'|'sprite' }} [options] what cuts the light: the Collider (default) or the sprite's alpha
    */
   setWall(options) {
-    return this._bothSides.setWall(options);
+    return bothSides(this).setWall(options);
   },
 
   /** No shadow at all. */
   clear() {
-    return this._bothSides.clear();
+    return bothSides(this).clear();
   },
 
   get sun() {
-    return this._sunSide;
+    const side = this._sunSide;
+    return side != null ? side : (this._sunSide = new CastSide(this, true, false));
   },
 
   get lamps() {
-    return this._lampSide;
+    const side = this._lampSide;
+    return side != null ? side : (this._lampSide = new CastSide(this, false, true));
   },
 
   /** How much light it takes out, 0 to 1 (was LightOccluder.block, which follows it). The sprite shadows' layer reads it. */
