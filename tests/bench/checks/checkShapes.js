@@ -166,6 +166,38 @@ export function pictureBounds(sheet, frame) {
   return [Math.min(...rects.map((r) => r[0])), Math.min(...rects.map((r) => r[1])), Math.max(...rects.map((r) => r[2])), Math.max(...rects.map((r) => r[3]))];
 }
 
+/**
+ * A picture's base as the design measures a picture of one view (plan §6.2, §17.1): its lowest opaque row (exclusive,
+ * frame px), the centre of what stands on it, and the feet's ellipse on the floor: half the bottom rows' width, from 3
+ * to 8 px, 0.6 as deep as wide.
+ * @returns {{ bottom: number, cx: number, rx: number, ry: number }}
+ */
+export function pictureBase(sheet, frame) {
+  const p = PICTURES[sheet];
+  const opaque = (x, y) => pictureAlpha(sheet, frame, x, y) > 127;
+  let bottom = -1;
+  for (let y = p.h - 1; y >= 0 && bottom < 0; y--) {
+    for (let x = 0; x < p.w; x++) {
+      if (opaque(x, y)) {
+        bottom = y + 1;
+        break;
+      }
+    }
+  }
+  let lo = Infinity;
+  let hi = -1;
+  for (let y = Math.max(0, bottom - 5); y < bottom; y++) {
+    for (let x = 0; x < p.w; x++) {
+      if (opaque(x, y)) {
+        lo = Math.min(lo, x);
+        hi = Math.max(hi, x);
+      }
+    }
+  }
+  const rx = Math.min(8, Math.max(3, (hi - lo + 1) / 2));
+  return { bottom, cx: (lo + hi + 1) / 2, rx, ry: 0.6 * rx };
+}
+
 /** A point of the floor's space on the screen, for an entity whose foot is at screen (fx, fy). */
 export function toScreen(fx, fy, p) {
   return [fx + p[0], fy + p[1] * S - p[2] * C];
