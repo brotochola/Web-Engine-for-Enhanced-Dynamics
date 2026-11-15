@@ -321,11 +321,8 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   maxVolumes?: number;
   /** The mesh arena's vertices kept for each of maxVolumes (default 16: a box with a cabin, or a hull of 16 points). */
   maxVolumeVerts?: number;
-  /**
-   * A visibility polygon a light, cut by the ShadowCasters' walls (shadowCaster.setWall; default false). Turns off faces,
-   * the lighting by maps and both shadow maps, with a warning.
-   */
-  raycasted?: boolean;
+  /** Under raycasted lighting (config.camera.pitch 90 or 0): the vertices of a light's visibility polygon (default 128). */
+  maxPolygonVertices?: number;
   /** ShadowCaster.setTexture works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
   shadowTextures?: boolean;
   /** DX-FACES: decorations with a normal are lit as surfaces. Not with raycasted lighting. */
@@ -389,8 +386,10 @@ export type SceneConfig = Record<string, unknown> & {
    * side); `floorScaleY` (default sin(pitch), or 1 without a pitch) is how tall the floor is drawn against its width, which
    * makes light pools and cones ellipses; `heightScaleY` (default cos(pitch), or 1) is the screen px a px of height rises
    * (faces, height maps, both shadow maps, pixel depth). Give the scales when the pictures do not follow the
-   * trigonometry. An oblique camera (floorScaleY under 1) is what turns renderer.pixelDepth on by itself. Replaces
-   * lighting.groundScaleY and lighting.faces.heightScaleY.
+   * trigonometry. An oblique camera (floorScaleY under 1) is what turns renderer.pixelDepth on by itself. A flat view,
+   * `pitch` 90 or 0, lights with raycasted lighting when lighting is enabled: a visibility polygon a light, cut by the
+   * ShadowCasters' walls (setWall), without faces, maps or shadow maps; a side view whose lights pool on the backdrop
+   * also writes `floorScaleY: 1`. Replaces lighting.groundScaleY, lighting.faces.heightScaleY and lighting.raycasted.
    */
   camera?: { pitch?: number; yaw?: number; floorScaleY?: number; heightScaleY?: number };
   /** Scene lighting; the 3D light mode's keys are typed in {@link SceneLightingConfig}. */
@@ -4200,9 +4199,10 @@ export declare class ShadowCaster extends Component {
    */
   setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): this;
   /**
-   * Under raycasted lighting, a wall that stops lamps and headlights, cut by the entity's Collider ('collider', the default
-   * and the fastest) or by its sprite's alpha ('sprite'), taking out `opacity` of the light; the sun casts nothing from it
-   * (`lamps.setWall` keeps the sun's shadow). A scene without raycasted lighting warns once and changes nothing.
+   * In a flat view (config.camera.pitch 90 or 0, with lighting: raycasted lighting), a wall that stops lamps and
+   * headlights, cut by the entity's Collider ('collider', the default and the fastest) or by its sprite's alpha ('sprite'),
+   * taking out `opacity` of the light; the sun casts nothing from it (`lamps.setWall` keeps the sun's shadow). Another
+   * camera warns once and changes nothing.
    */
   setWall(options?: { shape?: 'collider' | 'sprite' }): this;
   /** Not merged yet: the object shades itself (a render with a footprint: yes by default; one view: no). */

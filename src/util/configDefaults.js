@@ -762,7 +762,9 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   shadowUpdateInterval: 1,
   /** Scale shadow caster budget per light dynamically based on on-screen light radius when zoomed out. */
   adaptiveShadowBudget: true,
-  raycasted: false,
+  // No `raycasted` here: raycasted lighting (a visibility polygon a light) is on exactly when config.camera.pitch is 90 or 0
+  // (a flat view) and lighting is enabled. Scene._applyConfigDefaults writes lighting.raycasted from that, for the workers.
+  /** Under raycasted lighting: the vertices of a light's visibility polygon. */
   maxPolygonVertices: 128,
   /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
   maxOccluderSelfLit: 512,

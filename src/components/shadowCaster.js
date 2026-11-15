@@ -194,9 +194,9 @@ class CastSide {
   }
 
   /**
-   * A wall that stops lamps and headlights (raycasted lighting): the entity's occluder, cut by its Collider ('collider', the
-   * fastest) or by the sprite's alpha ('sprite'), taking out the caster's opacity of the light. A scene without raycasted
-   * lighting has no walls: it warns once and changes nothing.
+   * A wall that stops lamps and headlights in a flat view (raycasted lighting): the entity's occluder, cut by its Collider
+   * ('collider', the fastest) or by the sprite's alpha ('sprite'), taking out the caster's opacity of the light. Another
+   * camera has no walls: it warns once and changes nothing.
    * @param {{ shape?: 'collider'|'sprite' }} [options]
    */
   setWall({ shape = 'collider' } = {}) {
@@ -207,8 +207,8 @@ class CastSide {
     }
     if (!wallsOn()) {
       warnOnce(
-        'shadowCaster.setWall: a wall stops lamps and headlights under raycasted lighting, which this scene does not have; ' +
-          'the entity casts as it did',
+        'shadowCaster.setWall: a wall stops lamps and headlights in a flat view (raycasted lighting: config.camera.pitch 90 ' +
+          'or 0, with lighting enabled), which this scene is not; the entity casts as it did',
       );
       return caster;
     }

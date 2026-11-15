@@ -986,6 +986,11 @@ class Scene {
     const cameraProblems = [];
     this.config.camera = resolveCamera(this.config.camera, cameraProblems);
     for (const text of cameraProblems) warnOnce(`${sceneName}.config.${text}`, 'camera', `${sceneName}.config.${text}`);
+    // DX-CASTER (plan §5.1, §6.11): a flat view, straight down or from the side, lights by the 2D sweep of the ShadowCasters'
+    // walls (raycasted lighting, visibility polygons); any other camera by the 3D system. Derived here, once, for the code
+    // that reads lighting.raycasted (the pools, the buffers, the workers); a scene that wrote the key was told it is retired.
+    const pitch = this.config.camera.pitch;
+    this.config.lighting.raycasted = this.config.lighting.enabled === true && (pitch === 90 || pitch === 0);
 
     // Navigation defaults from centralized config
     this.config.navigation = {
