@@ -8,7 +8,7 @@ import {
 import {
   GPU_KEYED_CHANGED, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_ONLY, GPU_KEYED_TEX_WORDS, bindGpuPack,
   packKeyedCastersScanWasm, packKeyedCastersWasm,
-  packKeyedRowsWasm, packSplitRowsWasm,
+  packKeyedRowsByRowWasm, packKeyedRowsWasm, packSplitRowsWasm,
 } from '../../src/render/gpuPackClient.js';
 import { compactShadowCasterIndices } from '../../src/render/gpuShadowCasters.js';
 
@@ -120,7 +120,8 @@ function checkPack(s, label, opts, cap) {
   s.slots.fill(-7);
   const ctx = makePackContext(s.q, opts, cap, {});
   assert.equal(packKeyedRowsWasm(s.b, s.q, ctx, s.pose, s.slots, s.keyed, cap), n, `${label}: rows`);
-  assert.equal(ctx.particleCount, splitCtx.particleCount, `${label}: particles`);
+  // E-337: the type column (and so the particle count) only goes to the kernel with the shadow terms.
+  assert.equal(ctx.particleCount, s.keyed.shadowed ? splitCtx.particleCount : 0, `${label}: particles`);
   const sp = words(s.splitPose, n * GPU_POSE_FLOATS);
   const ss = words(s.splitStat, n * GPU_STATIC_FLOATS);
   const kp = words(s.pose, n * GPU_POSE_FLOATS);
@@ -238,6 +239,65 @@ test('the keyed pack writes each slot\'s shadow terms when asked, zeros for a gl
     }
   }
   assert.ok(glows > 0, 'some glow rows');
+});
+
+// E-337: without shadow terms the keyed pack leaves the type column out. The kernel's output with it is the output
+// without it, word for word, but for the count of type-1 rows, which no caller of a keyed pack reads: the call the
+// client made is run again with the type column, and only the count differs. With shadows the column still goes in.
+test('the keyed pack reads the type column only with shadow terms, and it changes nothing but the particle count', async () => {
+  const exports = [['spritesKeyed', packKeyedRowsWasm], ['spritesKeyedRows', packKeyedRowsByRowWasm]];
+  for (const [name, pack] of exports) {
+    const s = await setup(337);
+    const { q, b } = s;
+    s.keyed.texUpdatesByte = s.texUpdates.byteOffset;
+    const opts = { space: GPU_SPACE_WORLD, indices: s.order, indexCount: N, type: q.type };
+    const raw = b[name];
+    let args = null;
+    b[name] = (...a) => {
+      args = a;
+      return raw(...a);
+    };
+    const outputs = () => [
+      Uint32Array.from(new Uint32Array(s.pose.buffer, s.pose.byteOffset, s.pose.length)),
+      Uint32Array.from(new Uint32Array(s.slots.buffer, s.slots.byteOffset, s.slots.length)),
+      Uint32Array.from(s.updates), Uint32Array.from(s.texUpdates),
+    ];
+    s.pose.fill(-7);
+    s.slots.fill(-7);
+    s.updates.fill(0xdeadbeef);
+    s.texUpdates.fill(0xdeadbeef);
+    const ctx = makePackContext(q, opts, N, {});
+    assert.equal(pack(b, q, ctx, s.pose, s.slots, s.keyed, N), N, `${name}: rows`);
+    assert.equal(s.keyed.shadowed, false);
+    assert.equal(args[10], 0, `${name}: no type column without shadow terms`);
+    assert.equal(ctx.particleCount, 0, `${name}: no particle count without shadow terms`);
+    const without = outputs();
+    const results = [s.keyed.updates, s.keyed.texUpdates];
+    assert.ok(results[0] > 0 && results[1] > 0, `${name}: updates and texture updates (${results})`);
+    s.pose.fill(-7);
+    s.slots.fill(-7);
+    s.updates.fill(0xdeadbeef);
+    s.texUpdates.fill(0xdeadbeef);
+    const withType = args.slice();
+    withType[10] = q.type.byteOffset;
+    assert.equal(raw(...withType), N, `${name}: rows with the type column`);
+    const r = b.particlesByte >> 2;
+    let particles = 0;
+    for (let k = 0; k < N; k++) particles += q.type[s.order[k]] === 1;
+    assert.ok(particles > 0);
+    assert.equal(b.u32[r], particles, `${name}: the type column counts the type-1 rows`);
+    assert.deepEqual([b.u32[r + 1], b.u32[r + 2]], results, `${name}: the same update counts`);
+    const withOut = outputs();
+    for (let j = 0; j < without.length; j++) assert.deepEqual(withOut[j], without[j], `${name}: output ${j} word for word`);
+    // With shadow terms the glow test reads the column, so it still goes in (and gives the count).
+    s.keyed.shadowByte = s.shadow.byteOffset;
+    const shadowCtx = makePackContext(q, opts, N, {});
+    assert.equal(pack(b, q, shadowCtx, s.pose, s.slots, s.keyed, N), N);
+    assert.equal(s.keyed.shadowed, true);
+    assert.equal(args[10], q.type.byteOffset, `${name}: the type column with shadow terms`);
+    assert.equal(shadowCtx.particleCount, particles, `${name}: the particle count with shadow terms`);
+    b[name] = raw;
+  }
 });
 
 // E-191 step 2: keyed caster rows for a list of queue rows: x, y, the key (without the changed bit) as a float and a

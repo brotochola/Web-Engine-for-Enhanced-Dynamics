@@ -275,6 +275,8 @@ export const GPU_KEYED_TEX_WORDS = 2;
  * the queue's shadow columns in the memory, each slot's shadow terms (shadowH, offX, offY; zeros for a glow row) go there
  * too, and `keyed.shadowed` says whether they did. E-189: with `keyed.texUpdatesByte` (0 for none), a row whose key also
  * carries GPU_KEYED_TEX_ONLY goes there as a texture update (GPU_KEYED_TEX_WORDS) instead, counted in `keyed.texUpdates`.
+ * E-337: the type column (ctx.typeArr) goes to the kernel only with the shadow terms, whose glow test reads it; the
+ * count of type-1 rows it also gives (ctx.particleCount) is read by no caller of a keyed pack, so it is 0 without them.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
 export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
@@ -294,8 +296,10 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
   // E-191: the slots' shadow terms too where the caller asks for them (a byte, 0 for none) and the queue has them.
   const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
+  // E-337: the type column only for the shadow terms' glow test; without them it fed only an unread particle count.
+  const typeByte = shadowByte > 0 && typeArr ? typeArr.byteOffset : 0;
   const out = b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
-    slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+    slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte,
     shadowByte, keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0);
   keyed.shadowed = shadowByte > 0;
   const r = b.particlesByte >> 2;
@@ -326,8 +330,9 @@ export function packKeyedRowsByRowWasm(b, q, ctx, rows, slots, keyed, capacity) 
   const depthDenom = ctx.depthDenom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
   const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
+  const typeByte = shadowByte > 0 && typeArr ? typeArr.byteOffset : 0; // E-337, as packKeyedRowsWasm
   const out = b.spritesKeyedRows(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, rows.byteOffset,
-    slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+    slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte,
     shadowByte, keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0);
   keyed.shadowed = shadowByte > 0;
   const r = b.particlesByte >> 2;
