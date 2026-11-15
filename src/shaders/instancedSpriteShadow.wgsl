@@ -111,6 +111,8 @@ fn mainVert(
   let castFixed = ((castCode >> 6u) & 1) == 1;
   let castAxisA = f32((castCode >> 15u) & 63) * 0.09817477042;
   let castAxis = vec2<f32>(cos(castAxisA), sin(castAxisA));
+  // ShadowCaster.baseRadius (px, 0: the measured base), in a tagged row's tile offset (instancedSpriteShadow.vert.glsl).
+  let castBaseRadius = select(0.0, max(aInstTileOff.x, 0.0), all(aInstTileInv == vec2<f32>(0.0)));
   // weed:afterAnchor
   let content = aInstTrim.xy + aQuad * aInstTrim.zw;
   var world: vec2<f32>;
@@ -155,8 +157,13 @@ fn mainVert(
     if (kLen > 1e-6) { toSun = uniforms.uSunK.xy / kLen; }
     if (aInstBase.x >= 1.0) {
       // One view: an ellipse (the feet; a trunk, round), the card on its edge towards the sun.
-      let rx = abs(aInstBase.y) * abs(aInstScale.x);
-      let ry = select(0.6 * aInstBase.y, -aInstBase.y, aInstBase.y < 0.0) * abs(aInstScale.y);
+      var rx = abs(aInstBase.y) * abs(aInstScale.x);
+      var ry = select(0.6 * aInstBase.y, -aInstBase.y, aInstBase.y < 0.0) * abs(aInstScale.y);
+      // DX-CASTER: the caster's baseRadius corrects the measured radius, the ellipse's shape kept.
+      if (castBaseRadius > 0.0) {
+        ry = select(select(0.6 * castBaseRadius, castBaseRadius, aInstBase.y < 0.0), ry * castBaseRadius / rx, rx > 1e-3);
+        rx = castBaseRadius;
+      }
       footCol = aInstBase.x - 1.0;
       foot.x = aInstXY.x + (footCol - aInstAnchor.x * aInstSize.x) * aInstScale.x;
       foot.y -= ry;

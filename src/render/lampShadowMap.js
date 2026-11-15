@@ -164,6 +164,11 @@ export function lampMapVertex(source) {
   if (aInstBase.x >= 1.0) {
     float rx = abs(aInstBase.y) * abs(aInstScale.x);
     float ry = (aInstBase.y < 0.0 ? -aInstBase.y : 0.6 * aInstBase.y) * abs(aInstScale.y);
+    // DX-CASTER: the caster's baseRadius corrects the measured radius (instancedSpriteShadow.vert.glsl's castBaseRadius).
+    if (castBaseRadius > 0.0) {
+      ry = rx > 1e-3 ? ry * castBaseRadius / rx : (aInstBase.y < 0.0 ? castBaseRadius : 0.6 * castBaseRadius);
+      rx = castBaseRadius;
+    }
     footCol = aInstBase.x - 1.0;
     foot.x = aInstXY.x + (footCol - aInstAnchor.x * aInstSize.x) * aInstScale.x;
     foot.y -= ry;
@@ -336,8 +341,13 @@ export function lampMapWgsl(source) {
   var footCol = anchor.x * aInstSize.x;
   var foot = vec2<f32>(aInstXY.x, (aInstXY.y + (bottom - aInstAnchor.y * aInstSize.y) * aInstScale.y) * uniforms.uGroundInvScaleY);
   if (aInstBase.x >= 1.0) {
-    let rx = abs(aInstBase.y) * abs(aInstScale.x);
-    let ry = select(0.6 * aInstBase.y, -aInstBase.y, aInstBase.y < 0.0) * abs(aInstScale.y);
+    var rx = abs(aInstBase.y) * abs(aInstScale.x);
+    var ry = select(0.6 * aInstBase.y, -aInstBase.y, aInstBase.y < 0.0) * abs(aInstScale.y);
+    // DX-CASTER: the caster's baseRadius corrects the measured radius.
+    if (castBaseRadius > 0.0) {
+      ry = select(select(0.6 * castBaseRadius, castBaseRadius, aInstBase.y < 0.0), ry * castBaseRadius / rx, rx > 1e-3);
+      rx = castBaseRadius;
+    }
     footCol = aInstBase.x - 1.0;
     foot.x = aInstXY.x + (footCol - aInstAnchor.x * aInstSize.x) * aInstScale.x;
     foot.y -= ry;

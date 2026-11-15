@@ -260,11 +260,13 @@ function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, anims, 
  * with height maps; a render always has directions).
  * @param {Uint8Array|null} sheets SpriteRenderer.spritesheetId
  * @param {Array|null} tables the direction tables by sheet id (sunFrameTables), whose `solid` says it
+ * @param {Float32Array|null} baseRadius ShadowCaster.baseRadius: a base corrected rides in the full rows too
  */
-function casterKindsInUse(active, sunKind, lampKind, orient, opacity, n, sheets, tables) {
+function casterKindsInUse(active, sunKind, lampKind, orient, opacity, n, sheets, tables, baseRadius) {
     for (let e = 0; e < n; e++) {
         if (active[e] !== 1) continue;
         if (orient[e] !== 0 || opacity[e] < 1) return true;
+        if (baseRadius !== null && baseRadius[e] > 0) return true;
         const s = sunKind[e];
         const l = lampKind[e];
         if ((s | l) === 0) continue;
@@ -426,6 +428,10 @@ const GPU_ROW_DEPTH = 8;
 const GPU_ROW_TINT = 9;
 const GPU_ROW_ANCHOR_X = 4;
 const GPU_ROW_TEXTURE = 10;
+// DX-CASTER: a full caster row's tile terms (inverse period x, y; offset u, v): a caster that does not repeat its texture
+// has them 0, and its offset u carries its corrected base (ShadowCaster.baseRadius).
+const GPU_ROW_TILE_INV = 11;
+const GPU_ROW_TILE_OFF = 13;
 
 /**
  * E-07. Kinds of animation-row source, as numeric tags.
@@ -3778,6 +3784,7 @@ class PreRenderWorker extends AbstractWorker {
             this._casterKindsOn = !!ShadowCaster.sunKind && casterKindsInUse(
                 ShadowCaster.active, ShadowCaster.sunKind, ShadowCaster.lampKind, ShadowCaster.orient, ShadowCaster.opacity,
                 ShadowCaster.active.length, SpriteRenderer.spritesheetId || null, this._sunFrameTables,
+                ShadowCaster.baseRadius || null,
             );
         }
         if (count > 0 && !this._casterKindsOn && this._keyedCastersLive()) {
@@ -3917,10 +3924,18 @@ class PreRenderWorker extends AbstractWorker {
         const casters = this._gpuCasterIdx;
         const types = this._renderableType;
         const entities = this._renderableIndex;
+        // DX-CASTER: a corrected base (ShadowCaster.baseRadius, px) in the row's tile offset, which the shadow programs read
+        // where the caster does not repeat its texture (its tile terms 0); the stamp rows copy it.
+        const radius = ShadowCaster.baseRadius || EMPTY_F32;
         for (let k = 0; k < sunN; k++) {
             const row = casters[k];
             if (types[row] !== 0) continue;
-            rows[k * GPU_CASTER_FLOATS + GPU_ROW_DEPTH] = -(codes[entities[row]] + 1);
+            const e = entities[row];
+            const at = k * GPU_CASTER_FLOATS;
+            rows[at + GPU_ROW_DEPTH] = -(codes[e] + 1);
+            if (e < radius.length && radius[e] > 0 && rows[at + GPU_ROW_TILE_INV] === 0 && rows[at + GPU_ROW_TILE_INV + 1] === 0) {
+                rows[at + GPU_ROW_TILE_OFF] = radius[e];
+            }
         }
     }
 
