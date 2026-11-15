@@ -876,6 +876,9 @@ class PixiRenderer extends AbstractWorker {
     this._selfShadowOn = false; // DX-SELFSHADOW: lighting.selfShadow, WebGL for now
     this.sunMapRT = null;
     this._sunMapMesh = null;
+    // The map's card mesh inside a container: a mesh drawn as the render's root takes the root's blend mode (normal), not
+    // its own; as a child it draws with max.
+    this._sunMapHost = null;
     this._sunMapColumns = null; // { shader, grid, meshes: one a caster geometry } (sunMapColumnsVertex)
     this._sunMapUniforms = null;
     this._sunMapTerms = new Float32Array(4);
@@ -5856,6 +5859,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       state.depthMask = false;
       state.culling = false;
       this._sunMapMesh = new PIXI.Mesh({ geometry: batch.mesh.geometry, shader, state, label: 'sun-map' });
+      // Max keeps the highest caster point. A mesh's blend mode is its own only as a child (as the root it draws normal).
+      this._sunMapMesh.blendMode = 'max';
+      this._sunMapHost = new PIXI.Container();
+      this._sunMapHost.addChild(this._sunMapMesh);
       // Casters with height maps: their columns, over the same instances (one geometry a caster geometry).
       const columnsProgram = instancedSpriteGlProgram(PIXI.GlProgram, sunMapColumnsVertex(shaders.shadowVert), shaders.sunMapFrag, 'sun-map-columns');
       this._sunMapColumns = {
@@ -5875,6 +5882,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         index: Uint16Array.from({ length: SUN_MAP_COLUMNS * SUN_MAP_COLUMNS * 6 }, (_, i) => i),
         state,
         meshes: [],
+        label: 'sun-map-columns',
       };
     }
     if (!this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS)) return false;
@@ -5900,13 +5908,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     k[2] = this._groundScaleY || 1;
     k[3] = Sun.shadowOpacity;
     const rtOpts = this._rtRenderOpts;
-    rtOpts.container = mesh;
+    rtOpts.container = this._sunMapHost;
     rtOpts.target = this.sunMapRT;
     rtOpts.clear = true;
     rtOpts.clearColor = this._clearTransparent;
     this._submitRender(rtOpts);
     if (this.atlasMapsSource !== null) {
-      rtOpts.container = this._sunMapColumnsMesh(batch.mesh.geometry);
+      rtOpts.container = this._sunMapColumnsMesh(batch.mesh.geometry, this._sunMapColumns).host;
       rtOpts.clear = false;
       this._submitRender(rtOpts);
       this._gpuPassesThisFrame++;
@@ -5920,8 +5928,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * DX-SHADOW3D: the columns' mesh over a caster geometry: its instance attributes, the column grid instead of the quad,
    * indexed in order (the grid lists its triangles). Made once a geometry (the ring swaps them); the instance count each frame.
    */
-  _sunMapColumnsMesh(geometry) {
-    const columns = this._sunMapColumns;
+  _sunMapColumnsMesh(geometry, columns) {
     let entry = null;
     for (let i = 0; i < columns.meshes.length; i++) {
       if (columns.meshes[i].source === geometry) entry = columns.meshes[i];
@@ -5933,11 +5940,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         attributes[name] = { ...a };
       }
       const g = new PIXI.Geometry({ attributes, indexBuffer: columns.index });
-      entry = { source: geometry, mesh: new PIXI.Mesh({ geometry: g, shader: columns.shader, state: columns.state, label: 'sun-map-columns' }) };
+      entry = { source: geometry, mesh: new PIXI.Mesh({ geometry: g, shader: columns.shader, state: columns.state, label: columns.label }) };
+      // Max blending, so overlapping columns are one shadow: a mesh's own blend mode holds only as a child.
+      entry.mesh.blendMode = 'max';
+      entry.host = new PIXI.Container();
+      entry.host.addChild(entry.mesh);
       columns.meshes.push(entry);
     }
     entry.mesh.geometry.instanceCount = geometry.instanceCount;
-    return entry.mesh;
+    return entry;
   }
 
   /** DX-SHADOW3D: a frame with no sun rows clears the sun's map (once). */
