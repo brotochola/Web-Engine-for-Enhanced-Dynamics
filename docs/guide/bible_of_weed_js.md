@@ -1321,6 +1321,9 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | A base of another size than the one measured | `this.shadowCaster.baseRadius = 6` (px) |
 | What a thing casts | `this.shadowCaster.type`: `'sprite'`, `'heightMap'`, `'box'`, `'hull'`, `'wall'` or `'none'` |
 | A fire or a lit window that keeps its colour at night | `emissive: true` on its sheet |
+| One sprite that glows, the rest of its sheet not (a lit torch, a hot coal) | `this.spriteRenderer.emissive = true` (or a strength up to 1.75, in quarters) |
+| A sprite lit as drawn, its normal map ignored, or its normals from its height alone | `this.spriteRenderer.normals = 'flat'` or `'height'` (`'auto'` by default: the map, else the height, else flat) |
+| A sprite without a height map lit as a card standing on its foot, or as part of the floor | `this.spriteRenderer.surface = 'standing'` (entities) or `'floor'` (a rug, a decal) |
 | A person in front of or behind each part of a table | pixel depth: on by itself with an oblique camera and height maps (`renderer.pixelDepth`) |
 
 The Headlights demo (`demos/headlightsScene/`) puts most of this table on one street at night, under raycasted lighting: cone headlights on carScene's cars, round lamps, houses with a volume for the sun and a wall for the beams, and a key for each field. The light bench (`demos/lightBenchScene/`) does the same for the 3D light mode: a farm of props rendered from 32 directions, cars, trees, a person you walk with WASD and lamps, each piece on a key to compare.
@@ -1402,8 +1405,12 @@ With an oblique camera, sheets that bring a height map, and the two shadow maps,
 | Each lamp's own shadows | `lighting.lampShadows: 'map'` |
 | A surface's shade on itself | `lighting.selfShadow: true` |
 | Depth that corrects the painter | on by itself with an oblique camera and maps (`renderer.pixelDepth`) |
-| Sprites that glow | `emissive: true` on a sheet |
+| Sprites that glow | `emissive: true` on a sheet, or `spriteRenderer.emissive` on one sprite |
+| Normals and height per sprite | `spriteRenderer.normals` and `spriteRenderer.surface` |
+| The G-buffer in one pass (two targets) instead of two | `lighting.gbuffer: 'mrt'` (the same picture) |
 | How each thing casts | its sheet's data; `ShadowCaster`'s setters change it |
+
+A thing never takes its own shadow from a map: each map keeps which entity cast each of its texels, so a house is not darkened by its own box, while a tree's shadow still climbs it. A sprite without a height map is a card standing on its foot (`surface`), so another thing's shadow covers it only as high as it reaches.
 
 A whole scene (the light bench, `demos/lightBenchScene/`, is the same farm with its assets):
 
