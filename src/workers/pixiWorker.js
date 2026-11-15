@@ -6595,8 +6595,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this.lampMapRT !== null && this._lampMapLights === lights && this._lampTileSize === size) return true;
     this._lampTileSize = size;
     const layout = lampTileLayout(lights, size, 4096);
-    if (this.lampMapRT) this.lampMapRT.destroy(true);
+    // The light pass lets go of the old map before it goes (Pixi warns of a source destroyed while bound).
+    const old = this.lampMapRT;
     this.lampMapRT = PIXI.RenderTexture.create({ width: layout.width, height: layout.height, scaleMode: 'nearest' });
+    const bound = this.lightingShader?.resources;
+    if (bound) bound.uLampMap = this.lampMapRT.source;
+    if (old) old.destroy(true);
     // DX-GBUF: its programs keep the highest caster point by a depth test, as the sun's.
     this._ensureTargetDepth(this.lampMapRT);
     this._lampMapLights = lights;
@@ -6606,8 +6610,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     a[1] = layout.size;
     a[2] = layout.width;
     a[3] = layout.height;
-    const res = this.lightingShader?.resources;
-    if (res) res.uLampMap = this.lampMapRT.source;
     this._lampMapClear = false;
     return true;
   }
