@@ -728,7 +728,7 @@ export const SUN_DEFAULTS = Object.freeze({
   colors: null,
 });
 
-/** DX-VOLUME: the layer Scene adds for VolumeShadowCaster, and its place: over the decals, under castedShadows. */
+/** DX-VOLUME: the layer Scene adds for the ShadowCasters' volumes (lighting.maxVolumes), and its place: over the decals, under castedShadows. */
 export const VOLUME_LAYER = 'volumeShadows';
 export const VOLUME_LAYER_Z = 1.5;
 
@@ -746,8 +746,14 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   maxShadowSprites: 1000,
   maxFlashes: 0,
   /**
-   * Mesh arena vertices kept for each entity of a class that lists VolumeShadowCaster, added to renderer.maxMeshVerts: 16
-   * holds a box with a cabin, or a hull of 16 points. It is a share of one arena, so a volume may take more if others take less.
+   * DX-CASTER: the ShadowCasters that hold a volume at once (shadowCaster.setBox, addLevel, setHull). Above 0, and with a class
+   * that lists ShadowCaster, the scene gets the volumeShadows layer and maxVolumes × maxVolumeVerts vertices of the mesh
+   * arena on top of renderer.maxMeshVerts; 0 (the default) keeps neither, and a volume setter warns.
+   */
+  maxVolumes: 0,
+  /**
+   * Mesh arena vertices kept for each of lighting.maxVolumes: 16 holds a box with a cabin, or a hull of 16 points. It is a
+   * share of one arena, so a volume may take more if others take less.
    */
   maxVolumeVerts: 16,
   resolution: 0.25,
@@ -824,7 +830,7 @@ export const LIGHTING_DEFAULTS = Object.freeze({
  * - floorScaleY: how tall the floor is drawn against its width, in (0, 1]. Light pools are measured on the floor, so a
  *   light reaches R across and R * floorScaleY up and down: an ellipse. 1 = straight down (round pools), ~0.7 = a 3/4
  *   top-down view, 0.5 = 2:1 isometric. Point, raycasted, particle and LiquidFun lights, cones, point-light shadows and
- *   VolumeShadowCaster's default floorScaleY read it.
+ *   the default floorScaleY of a ShadowCaster's volume read it.
  * - heightScaleY: screen px that a px of height rises (lighting.faces).
  * - yaw: degrees the view turns about the vertical (45 for an isometric diamond). Read by nothing yet.
  */

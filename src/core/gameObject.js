@@ -12,7 +12,7 @@ import { MeshRenderer, MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
-import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
+import { VolumeShadowCaster, holdsVolume } from '../components/volumeShadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
 import { DirectionalSprite } from '../components/directionalSprite.js';
@@ -82,6 +82,16 @@ import { Tween } from './tween.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
+
+/**
+ * DX-CASTER: whether an entity's MeshRenderer row takes its alpha and visibility: its class lists MeshRenderer, or it is a
+ * ShadowCaster's in a scene with room for volumes, whose volume (shadowCaster.setBox) that row draws. A car that fades takes
+ * its volume's shadow along, whether it was given the volume before the fade or after.
+ * @param {Record<string, boolean>} has the entity's _hasComponents
+ */
+function meshRowFollows(has) {
+  return has.MeshRenderer === true || (has.ShadowCaster === true && VolumeShadowCaster.floorScaleY != null);
+}
 
 /** className → methods already warned about a missing sprite (one warning each). */
 const _warnedNoSprite = new Map();
@@ -1221,7 +1231,7 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.alpha[this.index] = value;
     }
-    if (this._hasComponents.MeshRenderer && MeshRenderer.alpha[this.index] !== value) {
+    if (meshRowFollows(this._hasComponents) && MeshRenderer.alpha[this.index] !== value) {
       MeshRenderer.alpha[this.index] = value;
       MeshRenderer.renderDirty[this.index] = 1;
     }
@@ -1269,7 +1279,7 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.renderVisible[this.index] = v;
     }
-    if (this._hasComponents.MeshRenderer && MeshRenderer.renderVisible[this.index] !== v) {
+    if (meshRowFollows(this._hasComponents) && MeshRenderer.renderVisible[this.index] !== v) {
       MeshRenderer.renderVisible[this.index] = v;
       MeshRenderer.renderDirty[this.index] = 1;
     }
@@ -1477,7 +1487,7 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.alpha[this.index] !== value) {
       AdobeAnimComponent.alpha[this.index] = value;
     }
-    if (this._hasComponents.MeshRenderer && MeshRenderer.alpha[this.index] !== value) {
+    if (meshRowFollows(this._hasComponents) && MeshRenderer.alpha[this.index] !== value) {
       MeshRenderer.alpha[this.index] = value;
       MeshRenderer.renderDirty[this.index] = 1;
     }
@@ -1523,7 +1533,7 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.renderVisible[this.index] = v;
     }
-    if (this._hasComponents.MeshRenderer && MeshRenderer.renderVisible[this.index] !== v) {
+    if (meshRowFollows(this._hasComponents) && MeshRenderer.renderVisible[this.index] !== v) {
       MeshRenderer.renderVisible[this.index] = v;
       MeshRenderer.renderDirty[this.index] = 1;
     }
@@ -1584,8 +1594,8 @@ export class GameObject {
       AdobeAnimComponent.layerMask[i] = m;
     }
     if (this._hasComponents.MeshRenderer && MeshRenderer.layerMask) {
-      // A volume stays on its layer, wherever the entity's sprite goes; an entity of such a class with no volume stays off it.
-      const meshMask = this._hasComponents.VolumeShadowCaster ? m | (MeshRenderer.layerMask[i] & VolumeShadowCaster.layerBit()) : m;
+      // A ShadowCaster's volume stays on its layer, wherever the entity's sprite goes; an entity with no volume stays off it.
+      const meshMask = this._hasComponents.ShadowCaster ? m | (MeshRenderer.layerMask[i] & VolumeShadowCaster.layerBit()) : m;
       if (MeshRenderer.layerMask[i] !== meshMask) {
         MeshRenderer.layerMask[i] = meshMask;
         MeshRenderer.renderDirty[i] = 1;
@@ -3213,9 +3223,9 @@ export class GameObject {
         ShadowCaster.baseRadius[i] = 0;
         ShadowCaster.selfShadow[i] = 0;
       }
+      // No volume (shadowCaster.setBox) from the slot's last entity: the despawn freed its mesh.
+      VolumeShadowCaster.resetRow(i, has.MeshRenderer === true);
     }
-
-    if (has.VolumeShadowCaster) VolumeShadowCaster.floorScaleY[i] = VolumeShadowCaster.defaultFloorScaleY;
 
     if (has.FlashComponent) {
       FlashComponent.active[i] = 1;
@@ -3445,7 +3455,8 @@ export class GameObject {
     const hasBody = has.RigidBody || has.Collider;
     if (hasBody) advanceBodyGeneration(i);
     Transform.active[i] = 1;
-    if (has.MeshRenderer) MeshRenderer.active[i] = 1;
+    // A ShadowCaster's volume given in onSpawned draws with the entity's MeshRenderer row, its own or the volume's.
+    if (has.MeshRenderer || (has.ShadowCaster && holdsVolume(i))) MeshRenderer.active[i] = 1;
     if (hasBody) markBodyDirty(i, BODY_DIRTY.LIFECYCLE, true);
     // E-127: pre-render bins the static scenery again, now that this one is active where onSpawned put it.
     if (EntityClass.isStatic === true) {

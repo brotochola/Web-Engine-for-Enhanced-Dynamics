@@ -1,11 +1,14 @@
-// DX-VOLUME on real code: what a volume writes to its mesh slot, the layer it joins and keeps, its floor scale down to the row,
-// the mesh it refuses, and what a scene gets for listing the component.
+// DX-VOLUME on real code: what a ShadowCaster's volume (the internal VolumeShadowCaster) writes to its mesh slot, the layer it
+// joins and keeps, its floor scale down to the row, the row it turns on for a class without a MeshRenderer, the mesh it refuses,
+// and what a scene gets for lighting.maxVolumes.
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { MeshGeometry } from '../../src/core/meshGeometry.js';
 import { MeshRenderer } from '../../src/components/meshRenderer.js';
-import { VolumeShadowCaster, resetVolumeShadowCasterWarns } from '../../src/components/volumeShadowCaster.js';
+import { ShadowCaster } from '../../src/components/shadowCaster.js';
+import { Transform } from '../../src/components/transform.js';
+import { VolumeShadowCaster, holdsVolume, resetVolumeShadowCasterWarns } from '../../src/components/volumeShadowCaster.js';
 import { Layer } from '../../src/core/layer.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { Scene } from '../../src/core/scene.js';
@@ -26,11 +29,9 @@ function setup({ verts = 256, indices = 1024 } = {}) {
   resetVolumeShadowCasterWarns();
 }
 
-function volume(index, floorScaleY = 1) {
-  VolumeShadowCaster.floorScaleY[index] = floorScaleY;
-  const v = Object.create(VolumeShadowCaster.prototype);
-  Object.defineProperty(v, 'index', { value: index });
-  return v;
+/** A volume as a ShadowCaster makes it: `ownMesh` when the entity's class lists MeshRenderer. */
+function volume(index, ownMesh = true) {
+  return new VolumeShadowCaster(index, ownMesh);
 }
 
 function renderer(index) {
@@ -180,7 +181,7 @@ test('a volume joins its layer and stays there when the entity changes layer', (
   const bit = Layer.bit(Layer.get(VOLUME_LAYER).id);
   volume(1).setBox(10, 10, 10);
   assert.ok(MeshRenderer.layerMask[1] & bit);
-  const entity = { index: 1, _hasComponents: { MeshRenderer: true, VolumeShadowCaster: true } };
+  const entity = { index: 1, _hasComponents: { MeshRenderer: true, ShadowCaster: true } };
   GameObject.prototype._applyLayerMask.call(entity, Layer.entitiesMask());
   assert.equal(MeshRenderer.layerMask[1], Layer.entitiesMask() | bit);
   const plain = { index: 2, _hasComponents: { MeshRenderer: true } };
@@ -190,8 +191,7 @@ test('a volume joins its layer and stays there when the entity changes layer', (
 
 test('an entity with no volume stays off the layer, where its collider would fill in black', () => {
   const bit = Layer.bit(Layer.get(VOLUME_LAYER).id);
-  const entity = { index: 1, _hasComponents: { MeshRenderer: true, VolumeShadowCaster: true } };
-  volume(1);
+  const entity = { index: 1, _hasComponents: { MeshRenderer: true, ShadowCaster: true } };
   GameObject.prototype._applyLayerMask.call(entity, Layer.entitiesMask());
   assert.equal(MeshRenderer.layerMask[1] & bit, 0, 'never had a volume');
   const v = volume(1);
@@ -203,22 +203,72 @@ test('an entity with no volume stays off the layer, where its collider would fil
   assert.equal(MeshRenderer.layerMask[1] & bit, 0);
 });
 
-test('floorScaleY: validated as groundScaleY is, and a change marks the row', () => {
-  const v = volume(1, 0.5);
-  assert.equal(v.floorScaleY, 0.5);
+test('floorScaleY marks a held volume: the camera\'s by default, an option validated as groundScaleY is, 0 once cleared', () => {
+  VolumeShadowCaster.defaultFloorScaleY = 0.5;
+  const v = volume(1);
+  assert.equal(v.floorScaleY, 0, 'no volume yet');
+  assert.equal(holdsVolume(1), false);
+  v.setBox(10, 10, 10);
+  assert.equal(v.floorScaleY, 0.5, "config.camera's");
+  assert.equal(holdsVolume(1), true);
   MeshRenderer.renderDirty[1] = 0;
   const epoch = MeshRenderer.paintEpoch[0];
-  v.floorScaleY = 0.7;
-  assert.equal(MeshRenderer.renderDirty[1], 1);
-  assert.equal(MeshRenderer.paintEpoch[0], epoch + 1);
+  v.setBox(10, 10, 10, { floorScaleY: 0.7 });
   assert.equal(v.floorScaleY, Math.fround(0.7));
-  MeshRenderer.renderDirty[1] = 0;
-  v.floorScaleY = 0.7;
-  assert.equal(MeshRenderer.renderDirty[1], 0, 'the same value marks nothing');
-  v.floorScaleY = -1;
-  assert.equal(v.floorScaleY, resolveGroundScaleY(-1));
-  v.setBox(10, 10, 10, { floorScaleY: 0.25 });
-  assert.equal(v.floorScaleY, 0.25);
+  assert.equal(MeshRenderer.renderDirty[1], 1, 'a new scale marks the row');
+  assert.equal(MeshRenderer.paintEpoch[0], epoch + 1);
+  v.addLevel([-1, -1, 1, -1, 1, 1], 10, 20);
+  assert.equal(v.floorScaleY, Math.fround(0.7), 'a level without one keeps the volume\'s');
+  v.setBox(10, 10, 10, { floorScaleY: -1 });
+  assert.equal(v.floorScaleY, Math.fround(resolveGroundScaleY(-1)));
+  v.clear();
+  assert.equal(v.floorScaleY, 0);
+  assert.equal(holdsVolume(1), false);
+  v.setBox(10, 10, 10);
+  assert.equal(v.floorScaleY, 0.5, 'a new volume starts from the camera\'s again');
+});
+
+test('a class without a MeshRenderer: the volume turns its row on while the entity is live, and off with the volume', () => {
+  Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(ENTITIES)), ENTITIES);
+  try {
+    MeshRenderer.active.fill(0);
+    const v = volume(1, false);
+    v.setBox(10, 10, 10);
+    assert.equal(MeshRenderer.active[1], 0, 'in onSpawned the entity is not live yet: the spawn turns the row on');
+    Transform.active[1] = 1;
+    v.setBox(10, 10, 12);
+    assert.equal(MeshRenderer.active[1], 1, 'live: on now');
+    v.clear();
+    assert.equal(MeshRenderer.active[1], 0, 'no volume, no row');
+    // A class that lists MeshRenderer keeps its row as the spawn left it.
+    MeshRenderer.active[2] = 1;
+    Transform.active[2] = 1;
+    const own = volume(2, true);
+    own.setBox(10, 10, 10);
+    own.clear();
+    assert.equal(MeshRenderer.active[2], 1);
+  } finally {
+    Transform.clearArrays();
+  }
+});
+
+test('a spawned slot drops the volume of its last entity, and a row it lent goes back to its defaults', () => {
+  const bit = Layer.bit(Layer.get(VOLUME_LAYER).id);
+  volume(1, false).setBox(10, 10, 10);
+  MeshRenderer.alpha[1] = 0.25;
+  MeshRenderer.renderVisible[1] = 0;
+  MeshGeometry.clearEntity(1); // the despawn's
+  VolumeShadowCaster.resetRow(1, false);
+  assert.equal(holdsVolume(1), false);
+  assert.equal(MeshRenderer.layerMask[1] & bit, 0);
+  assert.equal(MeshRenderer.active[1], 0);
+  assert.equal(MeshRenderer.alpha[1], 1);
+  assert.equal(MeshRenderer.renderVisible[1], 1);
+  volume(2, true).setBox(10, 10, 10);
+  MeshRenderer.alpha[2] = 0.25;
+  VolumeShadowCaster.resetRow(2, true);
+  assert.equal(holdsVolume(2), false);
+  assert.equal(MeshRenderer.alpha[2], 0.25, "with a MeshRenderer of its own, that component's reset is the one");
 });
 
 test('an entity with a volume refuses a mesh of its own, once in the console, and others are served', () => {
@@ -240,13 +290,14 @@ test('an entity with a volume refuses a mesh of its own, once in the console, an
   assert.equal(MeshGeometry.vertCount[2], 3, 'an entity with no volume keeps its mesh');
 });
 
-test('a full arena warns about the knob that widens it', () => {
+test('a full arena warns about the knobs that widen it', () => {
   setup({ verts: 10, indices: 60 });
   const seen = warnings(() => {
     volume(1).setBox(10, 10, 10);
     volume(2).setBox(10, 10, 10);
   });
-  assert.ok(seen.some((m) => m.includes('lighting.maxVolumeVerts')), seen.join(' | '));
+  assert.ok(seen.some((m) => m.includes('lighting.maxVolumes') && m.includes('lighting.maxVolumeVerts')), seen.join(' | '));
+  assert.equal(holdsVolume(2), false, 'refused: it holds none');
   assert.equal(MeshGeometry.vertCount[1], 8);
   assert.equal(MeshGeometry.vertCount[2], 0);
   assert.equal(MeshRenderer.layerMask[2], 0, 'no mesh, not on the layer');
@@ -297,7 +348,7 @@ test('a volume the arena refuses outright leaves the layer with no mesh', () => 
 });
 
 test('the row carries a volume\'s floor scale in its tile offset, and a plain mesh keeps its own', () => {
-  volume(1, 0.7).setBox(10, 10, 10);
+  volume(1).setBox(10, 10, 10, { floorScaleY: 0.7 });
   renderer(2).setMesh([0, 0, 1, 0, 1, 1], null, [0, 0, 1, 0, 1, 1]);
   const bit = Layer.bit(Layer.get(VOLUME_LAYER).id);
   MeshRenderer.layerMask[2] = bit;
@@ -342,36 +393,39 @@ test('the row carries a volume\'s floor scale in its tile offset, and a plain me
   assert.ok(Math.abs(out[10 * MESH_UV_FILL_FLOATS + FILL_ROW.TILE_OFF] - 0.25) < 1e-4);
 });
 
-test('a listed component brings the components it requires, and only then', () => {
-  class Plain extends GameObject {
-    static components = [];
-  }
+test('a ShadowCaster brings no MeshRenderer: the volume lends itself the row only while it holds one', () => {
   class House extends GameObject {
-    static components = [VolumeShadowCaster];
+    static components = [ShadowCaster];
   }
   class Car extends House {}
-  assert.ok(!collectComponents(Plain, GameObject).includes(MeshRenderer));
-  assert.ok(collectComponents(House, GameObject).includes(MeshRenderer));
-  assert.ok(collectComponents(Car, GameObject).includes(MeshRenderer), 'through a parent too');
+  assert.ok(!collectComponents(House, GameObject).includes(MeshRenderer));
+  assert.ok(!collectComponents(Car, GameObject).includes(MeshRenderer));
+  assert.ok(!collectComponents(Car, GameObject).includes(VolumeShadowCaster), 'no class lists the volume');
 });
 
-test('a scene with volumes gets their layer and their share of the arena, and its class keeps its config', () => {
+test('a scene with room for volumes gets their layer and their share of the arena, and its class keeps its config', () => {
   class House extends GameObject {
-    static components = [VolumeShadowCaster];
+    static components = [ShadowCaster];
   }
   class Car extends House {}
   class Person extends GameObject {}
   class Town extends Scene {
-    static config = { renderer: { maxMeshVerts: 100, maxMeshIndices: 300 }, layers: { ground: { kind: LAYER_KIND.MESH, zIndex: 0 } } };
+    static config = {
+      renderer: { maxMeshVerts: 100, maxMeshIndices: 300 },
+      lighting: { maxVolumes: 15 },
+      layers: { ground: { kind: LAYER_KIND.MESH, zIndex: 0 } },
+    };
 
     static entities = [[House, 10], [Car, 5], [Person, 1000]];
   }
-  const { config } = new Town({});
+  const scene = new Town({});
+  const { config } = scene;
   const per = LIGHTING_DEFAULTS.maxVolumeVerts;
   assert.equal(config.renderer.maxMeshVerts, 100 + 15 * per);
   assert.equal(config.renderer.maxMeshIndices, 300 + 15 * per * 6);
   assert.deepEqual(config.layers[VOLUME_LAYER], { zIndex: VOLUME_LAYER_Z, kind: LAYER_KIND.MESH, sunProjected: true, volumeFloor: true });
   assert.ok(config.layers.ground, 'its own layers stay');
+  assert.ok(scene.componentPools.VolumeShadowCaster, 'the volumes\' column is pooled');
   assert.equal(Town.config.renderer.maxMeshVerts, 100);
   assert.equal(Town.config.layers[VOLUME_LAYER], undefined);
   assert.equal(new Town({}).config.renderer.maxMeshVerts, 100 + 15 * per, 'a second load adds once');
@@ -379,10 +433,10 @@ test('a scene with volumes gets their layer and their share of the arena, and it
 
 test('a scene moves the layer with a config of its name, and lighting.maxVolumeVerts widens the arena', () => {
   class House extends GameObject {
-    static components = [VolumeShadowCaster];
+    static components = [ShadowCaster];
   }
   class Town extends Scene {
-    static config = { lighting: { maxVolumeVerts: 32 }, layers: { [VOLUME_LAYER]: { zIndex: 7 } } };
+    static config = { lighting: { maxVolumes: 10, maxVolumeVerts: 32 }, layers: { [VOLUME_LAYER]: { zIndex: 7 } } };
 
     static entities = [[House, 10]];
   }
@@ -392,14 +446,26 @@ test('a scene moves the layer with a config of its name, and lighting.maxVolumeV
   assert.equal(config.renderer.maxMeshVerts, 320);
 });
 
-test('a scene with no volume is left alone', () => {
+test('a scene without room for volumes, or without a ShadowCaster, is left alone: no layer, no arena, no column', () => {
   class Person extends GameObject {}
+  class Walker extends GameObject {
+    static components = [ShadowCaster];
+  }
   class Town extends Scene {
+    static entities = [[Person, 10], [Walker, 40]];
+  }
+  const town = new Town({});
+  assert.equal(town.config.layers?.[VOLUME_LAYER], undefined, 'casters, but maxVolumes 0');
+  assert.equal(town.config.renderer.maxMeshVerts | 0, 0);
+  assert.equal(town.componentPools.VolumeShadowCaster, undefined);
+  class Field extends Scene {
+    static config = { lighting: { maxVolumes: 8 } };
+
     static entities = [[Person, 10]];
   }
-  const { config } = new Town({});
-  assert.equal(config.layers?.[VOLUME_LAYER], undefined);
-  assert.equal(config.renderer.maxMeshVerts | 0, 0);
+  const field = new Field({});
+  assert.equal(field.config.layers?.[VOLUME_LAYER], undefined, 'room, but nothing to cast');
+  assert.equal(field.config.renderer.maxMeshVerts | 0, 0);
 });
 
 // A point that is not finite: the hull's tolerances go NaN, every test fails and the first tetrahedron comes back.

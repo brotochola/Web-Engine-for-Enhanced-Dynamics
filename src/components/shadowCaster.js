@@ -2,20 +2,21 @@
 // its sprite's silhouette (the default), its height map, a volume or a wall. Shadow pixels are written to the double-buffered
 // shadow render queue (not this SoA); the entity SoA says how each entity casts.
 //
-// A volume is VolumeShadowCaster's (a mesh on the volumeShadows layer) and a wall is LightOccluder's (raycasted lighting): the
-// class lists that component too, and ShadowCaster's setters drive it. The last setter wins: the sprite rows, a volume or a
-// wall an earlier setter gave the entity go when no light kind casts them any more.
+// A volume is an internal VolumeShadowCaster's (a mesh on the volumeShadows layer, with room in a scene whose
+// config.lighting.maxVolumes is above 0), and a wall is LightOccluder's (raycasted lighting): the class lists that component
+// too, and ShadowCaster's setters drive it. The last setter wins: the sprite rows, a volume or a wall an earlier setter gave the
+// entity go when no light kind casts them any more.
 
 import { Component } from '../core/component.js';
 import { LightOccluder, LIGHT_OCCLUDER_MASK_COLLIDER, LIGHT_OCCLUDER_MASK_SPRITE } from './lightOccluder.js';
-import { MESH_NO_TEXTURE, MeshRenderer, resolveMeshTextureId } from './meshRenderer.js';
-import { VolumeShadowCaster } from './volumeShadowCaster.js';
+import { MESH_NO_TEXTURE, resolveMeshTextureId } from './meshRenderer.js';
+import { VolumeShadowCaster, holdsVolume } from './volumeShadowCaster.js';
 
 
 /**
  * DX-CASTER (plan §5.5, F9): how an entity casts, for the sun and for the lamps apart. AUTO is its sheet's default
  * (meta.shadowCast: a render with a height map casts its solid unless the sheet says 'sprite'). AUTO, SPRITE and HEIGHT_MAP
- * are the sprite rows'; BOX and HULL the volume's (the sun's alone until DX-VOLLIGHTS); WALL the LightOccluder's (lamps and
+ * are the sprite rows'; BOX and HULL the volume's (setBox, addLevel, setHull); WALL the LightOccluder's (lamps and
  * headlights, under raycasted lighting).
  */
 export const CAST_KIND = Object.freeze({ AUTO: 0, SPRITE: 1, HEIGHT_MAP: 2, BOX: 3, HULL: 4, WALL: 5, NONE: 6 });
@@ -47,16 +48,19 @@ function castsVolume(kind) {
   return kind === CAST_KIND.BOX || kind === CAST_KIND.HULL;
 }
 
-/** The entity, when its class lists `name` (ShadowCaster drives its VolumeShadowCaster and LightOccluder); else null. */
+/** The entity, when its class lists `name` (ShadowCaster drives its LightOccluder); else null. */
 function entityWith(caster, name) {
   const owner = caster.owner;
   return owner != null && owner._hasComponents != null && owner._hasComponents[name] === true ? owner : null;
 }
 
-/** Whether the entity has a volume on the volumeShadows layer (a refused shape warned and left it as it was). */
-function hasVolume(i) {
-  const bit = VolumeShadowCaster.layerBit();
-  return bit !== 0 && (MeshRenderer.layerMask[i] & bit) !== 0;
+/** The caster's volume, made on first use: its entity's MeshRenderer row draws it, its own when the class lists one. */
+function casterVolume(caster) {
+  const made = caster._volumeCaster;
+  if (made !== null) return made;
+  const owner = caster.owner;
+  const ownMesh = owner != null && owner._hasComponents != null && owner._hasComponents.MeshRenderer === true;
+  return (caster._volumeCaster = new VolumeShadowCaster(caster.index, ownMesh));
 }
 
 /**
@@ -75,9 +79,8 @@ function writeKinds(caster, sun, lamps, kind) {
   ShadowCaster.lampKind[i] = nowLamp;
   const sprite = castsSprite(nowSun) || castsSprite(nowLamp);
   if (sprite !== (castsSprite(wasSun) || castsSprite(wasLamp))) ShadowCaster.active[i] = sprite ? 1 : 0;
-  if ((castsVolume(wasSun) || castsVolume(wasLamp)) && !castsVolume(nowSun) && !castsVolume(nowLamp)) {
-    const entity = entityWith(caster, 'VolumeShadowCaster');
-    if (entity !== null) entity.volumeShadowCaster.clear();
+  if ((castsVolume(wasSun) || castsVolume(wasLamp)) && !castsVolume(nowSun) && !castsVolume(nowLamp) && holdsVolume(i)) {
+    casterVolume(caster).clear();
   }
   if (nowSun !== CAST_KIND.WALL && nowLamp !== CAST_KIND.WALL && entityWith(caster, 'LightOccluder') !== null) {
     LightOccluder.active[i] = 0;
@@ -121,7 +124,8 @@ function writeSprite(i, { frame, anchorX = 0, anchorY = 0, scaleX = 0, scaleY = 
 
 /**
  * One light kind's setters (shadowCaster.sun, shadowCaster.lamps; the instance's own setters are both kinds'): they write that
- * kind alone, and return the ShadowCaster. The sun casts no wall, and the lamps no volume yet (DX-VOLLIGHTS): those warn.
+ * kind alone, and return the ShadowCaster. The sun casts no wall, and the lamps have no volume of their own (shadowCaster.setBox
+ * gives one to every light): those warn.
  */
 class CastSide {
   constructor(caster, sun, lamps) {
@@ -150,21 +154,21 @@ class CastSide {
     return writeKinds(this._caster, this._sun, this._lamps, CAST_KIND.HEIGHT_MAP);
   }
 
-  /** A box, which replaces the volume: VolumeShadowCaster.setBox's arguments. */
+  /** A box, which replaces the volume (ShadowCaster.setBox's arguments). */
   setBox(width, depth, height, options) {
     const volume = this._volume('setBox');
     if (volume !== null) volume.setBox(width, depth, height, options);
     return this._castVolume(volume, CAST_KIND.BOX);
   }
 
-  /** One more level on what the volume has: VolumeShadowCaster.addLevel's arguments. */
+  /** One more level on what the volume has (ShadowCaster.addLevel's arguments). */
   addLevel(outline, bottom, top, topOutline, options) {
     const volume = this._volume('addLevel');
     if (volume !== null) volume.addLevel(outline, bottom, top, topOutline, options);
     return this._castVolume(volume, CAST_KIND.BOX);
   }
 
-  /** The convex volume around points, which replaces the volume: VolumeShadowCaster.setHull's arguments. */
+  /** The convex volume around points, which replaces the volume (ShadowCaster.setHull's arguments). */
   setHull(points, options) {
     const volume = this._volume('setHull');
     if (volume !== null) volume.setHull(points, options);
@@ -200,21 +204,28 @@ class CastSide {
     return writeKinds(this._caster, this._sun, this._lamps, CAST_KIND.NONE);
   }
 
-  /** The entity's VolumeShadowCaster, or null (warned once): the lamps see no volume yet, or the class does not list it. */
+  /**
+   * The caster's volume, or null (warned once): the lamps have no volume of their own, or the scene keeps no room for volumes
+   * (config.lighting.maxVolumes: the layer and the mesh arena's share are made at load).
+   */
   _volume(method) {
     if (!this._sun) {
-      warnOnce(`shadowCaster.lamps.${method}: lamps cast no volume yet (DX-VOLLIGHTS); shadowCaster.${method} gives the sun one`);
+      warnOnce(`shadowCaster.lamps.${method}: the lamps have no volume of their own; shadowCaster.${method} gives one to every light`);
       return null;
     }
-    const entity = entityWith(this._caster, 'VolumeShadowCaster');
-    if (entity !== null) return entity.volumeShadowCaster;
-    warnOnce(`shadowCaster.${method} needs VolumeShadowCaster in the class's components: the volume is its mesh, on the volumeShadows layer`);
-    return null;
+    if (VolumeShadowCaster.floorScaleY == null || VolumeShadowCaster.layerBit() === 0) {
+      warnOnce(
+        `shadowCaster.${method}: the scene keeps no room for volumes; set config.lighting.maxVolumes to the number of ` +
+          'entities that hold one at once',
+      );
+      return null;
+    }
+    return casterVolume(this._caster);
   }
 
-  /** After a volume setter: the kind, once the entity has a volume on the layer. */
+  /** After a volume setter: the kind, once the entity holds a volume (a refused shape warned and left it as it was). */
   _castVolume(volume, kind) {
-    if (volume === null || !hasVolume(this._caster.index)) return this._caster;
+    if (volume === null || !holdsVolume(this._caster.index)) return this._caster;
     return writeKinds(this._caster, this._sun, this._lamps, kind);
   }
 }
@@ -249,6 +260,8 @@ export class ShadowCaster extends Component {
     this._sunSide = null;
     this._lampSide = null;
     this._bothSides = null;
+    // DX-CASTER: the internal VolumeShadowCaster that setBox, addLevel and setHull write through, made on first use.
+    this._volumeCaster = null;
   }
 
   // Static pool tracking (set during initialization)
@@ -298,19 +311,20 @@ export const CASTER_METHODS = {
   },
 
   /**
-   * A box, for every light (the sun's alone until DX-VOLLIGHTS): VolumeShadowCaster.setBox, so the class lists
-   * VolumeShadowCaster. Replaces the volume.
+   * A box, for every light: a volume on the volumeShadows layer, in the entity's frame (it moves and turns with the entity).
+   * Replaces the volume. The scene keeps room for volumes with config.lighting.maxVolumes.
    * @param {number} width along x, the way the entity looks
    * @param {number} depth across it, on the floor
    * @param {number} height screen px
-   * @param {{ offsetX?: number, offsetY?: number, topScale?: number, floorScaleY?: number }} [options]
+   * @param {{ offsetX?: number, offsetY?: number, topScale?: number, floorScaleY?: number }} [options] the box's centre on
+   *   the entity's frame; how much smaller its roof is about it (0: a pyramid); the floor's scale (config.camera's)
    */
   setBox(width, depth, height, options) {
     return bothSides(this).setBox(width, depth, height, options);
   },
 
   /**
-   * One more level on top of what the volume has (VolumeShadowCaster.addLevel): a body, a cabin on it, a tank on a roof.
+   * One more level on top of what the volume has: a body, a cabin on it, a tank on a roof. Its outline need not be convex.
    * @param {ArrayLike<number>|Array<{x:number,y:number}>} outline on the entity's frame
    * @param {number} bottom height of the outline, screen px
    * @param {number} top height of the level's top
@@ -322,7 +336,8 @@ export const CASTER_METHODS = {
   },
 
   /**
-   * The convex volume around points (VolumeShadowCaster.setHull), for every light. Replaces the volume.
+   * The convex volume around points, for every light: a house from an editor. It runs once, when called. Replaces the
+   * volume.
    * @param {ArrayLike<number>|Array<{x:number,y:number,z:number}>} points flat x, y, z (z: height, screen px) or objects
    * @param {{ floorScaleY?: number }} [options]
    */

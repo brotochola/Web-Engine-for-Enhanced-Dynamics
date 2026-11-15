@@ -644,20 +644,31 @@ class Scene {
       // Raycasted lighting needs LightEmitter for light sources
       this._ensureComponentPool(LightEmitter);
     }
+    // DX-CASTER: the ShadowCasters' volumes keep their floor scale in VolumeShadowCaster's one column (no class lists it).
+    if (this._volumes > 0) {
+      this._ensureComponentPool(VolumeShadowCaster);
+    }
   }
 
   /**
-   * DX-VOLUME: with a class that lists VolumeShadowCaster, its layer and its share of the mesh arena, so a scene's config says
-   * nothing about either. config.layers.volumeShadows, if the scene has it, moves the layer. A hull's triangles are at most
-   * six indices a vertex.
+   * DX-VOLUME, DX-CASTER: with config.lighting.maxVolumes above 0 and a class that lists ShadowCaster, the volumes' layer and
+   * their share of the mesh arena (maxVolumes × maxVolumeVerts), so shadowCaster.setBox, addLevel and setHull have room. A
+   * scene without volumes gets neither: no layer drawn, no arena, no column. config.layers.volumeShadows, if the scene has
+   * it, moves the layer. A hull's triangles are at most six indices a vertex.
    */
   _applyVolumeConfig() {
-    let volumes = 0;
+    this._volumes = 0;
+    const volumes = this.config.lighting?.maxVolumes | 0;
+    if (!(volumes > 0)) return;
+    let casters = false;
     for (const entry of this.constructor.entities || []) {
-      if (!(entry[1] > 0)) continue;
-      if (GameObject._collectComponents(entry[0]).includes(VolumeShadowCaster)) volumes += entry[1] | 0;
+      if (entry[1] > 0 && GameObject._collectComponents(entry[0]).includes(ShadowCaster)) {
+        casters = true;
+        break;
+      }
     }
-    if (volumes === 0) return;
+    if (!casters) return;
+    this._volumes = volumes;
     const verts = volumes * (this.config.lighting?.maxVolumeVerts ?? LIGHTING_DEFAULTS.maxVolumeVerts);
     this.config.renderer = {
       ...this.config.renderer,
