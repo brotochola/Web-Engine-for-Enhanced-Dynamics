@@ -696,6 +696,17 @@ export const ENGINE_FEATURES = [
     load: [],
   },
   {
+    id: 'decorationVisibilityGrid',
+    name: 'Decoration screen test, Predator view over a grid',
+    module: 'src/workers/particleWorker.js',
+    // E-335: updateDecorationScreen over Predator's 20 000 grass blades with DecorationSpatial's grid (cell 128) and
+    // the list header's counters, a 1920 x 1080 view mid-world (about 4 % on screen), each call a camera move.
+    kernel: { script: 'tests/bench/decorationVisibilityGridMicrobench.mjs', opsKey: 'opsPerSec' },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
+  {
     id: 'attachedScanNone',
     name: 'Attached-decoration step, none attached',
     module: 'src/workers/particleWorker.js',

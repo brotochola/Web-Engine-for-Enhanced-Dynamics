@@ -58,6 +58,7 @@ const REQUIRED = [
   'attachedWalls',
   'attachedScanNone',
   'attachedScanFew',
+  'decorationVisibilityGrid',
   'textureUpload',
 ];
 
