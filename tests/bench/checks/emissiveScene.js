@@ -37,6 +37,8 @@ export class EmissiveScene extends Scene {
     lighting: {
       baseAmbient: L.ambient,
       shadowsEnabled: false,
+      // spriteRenderer.emissive glows where the sprites carry their G-buffer words: no maps or shadow maps here.
+      emissive: true,
       sun: { enabled: false },
     },
   });

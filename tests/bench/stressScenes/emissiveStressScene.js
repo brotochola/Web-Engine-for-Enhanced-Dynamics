@@ -72,6 +72,8 @@ export class EmissiveStressScene extends Scene {
     // Night: no sun, a little ambient; the fires' lights and their glow are what shows.
     lighting: {
       enabled: true,
+      // ?emissive=entity: spriteRenderer.emissive needs the sprites' G-buffer words (the people's maps bring them too).
+      emissive: EMISSIVE === 'entity',
       baseAmbient: 0.07,
       maxLights: Math.max(8, LIGHTS + 4),
       resolution: 0.5,
