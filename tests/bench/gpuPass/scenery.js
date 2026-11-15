@@ -141,12 +141,17 @@ export async function buildScenery(p) {
   // The light data texture (pixiWorker: row 0 x, floor y, I', range² or the tile's tag; row 1 colour and height; row 2 a cone).
   const maxLights = Math.max(p.maxLights, p.lights, 1);
   const lightData = new Float32Array(maxLights * LIGHT_ROWS * 4);
+  // The first `lamps` lights are the lamps with a tile (their tag in row 0's w): today's light pass does not read it, the
+  // 3D one (LAMPMAP) looks each one up in the lamps' map.
   for (let i = 0; i < p.lights; i++) {
-    const tiled = p.lampMap && i < lampCount;
+    const tiled = i < lampCount;
     const l = tiled ? lamps[i] : { x: rng() * p.width, floorY: (rng() * p.height) / g, elevation: 40 + rng() * 50, reach: 200 + rng() * 200 };
-    const intensity = (l.reach / 10) ** 2 + l.elevation ** 2;
+    // pixiWorker's _packLightData: I = (radius / 10)², raised by the height (I' = I + h²), the colour scaled by I / I'.
+    const base = (l.reach / 10) ** 2;
+    const intensity = base + l.elevation ** 2;
+    const k = base / intensity;
     lightData.set([l.x, l.floorY, intensity, tiled ? -(i + 1) : l.reach * l.reach], i * 4);
-    lightData.set([1, 0.85, 0.6, l.elevation], (maxLights + i) * 4);
+    lightData.set([k, 0.85 * k, 0.6 * k, l.elevation], (maxLights + i) * 4);
   }
 
   // One empty footprint row (the columns' uFoot: no footprint, nothing swept north).
