@@ -15712,6 +15712,68 @@
         "lamp tag 256 tiles"
       ],
       "records": []
+    },
+    {
+      "id": "N-190",
+      "title": "Map mode: a scene whose casters are volumes alone cast no sun shadow (Pixi drew the sun's map only with sprite caster rows)",
+      "status": "kept-hygiene",
+      "statusText": "found by lampSeparationCheck and fixed 2026-11-15 on dx/light3d (a round-one bug: the bench always has sprite casters)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (00515783): the sun's map was drawn only with sun rows (sunN > 0) and _drawSunMap left before the volumes when the batch had none, so boxes alone cast nothing and the map stayed clear. It now draws when a sun-projected volumes' layer holds a volume. lampSeparationCheck: FAIL (no shadow; the lamp's light 302 % kept) -> PASS on both backends (worst 0.6/255, 99.9 % kept).",
+      "next": "The lamps' map has the same gate (stampN > 0) and its tiles come from the stamp lights pre-render picks: check a scene of volumes alone under lamps in map mode.",
+      "refs": [
+        "REVIEW_PLAN.md#N-190"
+      ],
+      "aliases": [
+        "volumes alone no sun shadow",
+        "sunN > 0 volumes"
+      ],
+      "records": [
+        "R-1123"
+      ]
+    },
+    {
+      "id": "N-191",
+      "title": "spriteRenderer.emissive did nothing, silently, in a scene without maps, lighting.faces or a shadow map",
+      "status": "kept-hygiene",
+      "statusText": "found by emissiveCheck and fixed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (678b88e0): a sprite's own glow rides in its G-buffer words, which only those features turned on. lighting.emissive: true turns them on (off by default), Pixi warns once when a sprite asks to glow without them, guide and types name the key. emissiveCheck with it: PASS on both backends (worst 1.4/255 through the glow, 1.0 the core, 2.0 the person in front); without it the core read 81 for 255.",
+      "next": "None.",
+      "refs": [
+        "REVIEW_PLAN.md#N-191"
+      ],
+      "aliases": [
+        "emissive without gbuffer"
+      ],
+      "records": [
+        "R-1123"
+      ]
+    },
+    {
+      "id": "N-192",
+      "title": "shadowOutlineCheck: shadow outlines 2.6 to 5.8 px from the analytic projection (tolerance 1.5) on both backends; a card passes only with the sun from 225 to 315 degrees; under a lamp lower than a crate the stretch cap ends in steps",
+      "status": "open",
+      "statusText": "found 2026-11-15 in the test phase (dx/light3d); to investigate",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "The same numbers on WebGL and WebGPU. Sun at 8 h from 8 directions: box p99 2.64 (45, 90, 135...) to 3.50 px (0, 180), card 3.2 to 3.5 except 0.7 to 0.95 from 225 to 315 deg, crate 3.5 to 5.8; from 90 deg the card measures nothing and the projection is empty. Lamps at 60, 150, 300 px: 1.1 to 2.8 px, and at 60 px the crate's shadow (the lamp under its top) runs to the stretch cap (8) where the formula has none, its far end a staircase of columns. Not a global shift (the card passes from three directions).",
+      "next": "Overlay the projection on the captures (--save) per direction; compare the engine's base and landing with the check's formulas (sunMapTerms, the card's foot, setBox's offsets); give the formula the cap; make the cap's end a straight line (each column capped at the same radius).",
+      "refs": [
+        "REVIEW_PLAN.md#N-192"
+      ],
+      "aliases": [
+        "shadow outline 3.5 px",
+        "stretch cap staircase"
+      ],
+      "records": [
+        "R-1123"
+      ]
     }
   ],
   "records": [
@@ -26337,6 +26399,15 @@
       "title": "E-368 step 4 (the frames in entity order again) ties the fused passes in Predator: pre-render -0.1 %",
       "verdict": "tie",
       "text": "**Tie: pre-render 7.694 -> 7.655 ms (-0.1 %), the other workers within their noise; the fused passes stay.**\n2026-11-15, the step 4 candidate (fc53b05e, a branch of its own, deleted after): the sun frames worked out in entity order\nagain (computeSunFramesInto with the resolved tables, the columns streaming) and gathered by row, against the fused\npasses (cf851e76), runPredatorAbab --vs cf851e76 --hyp-rev fc53b05e --query crowd=2.5 --owner preRender --pairs 4 --pool.\nThe kernel had read the other way (keyed path 1 219-1 236 against 1 422-1 460 ops/s, the same checksum): in Chrome the\npainter-order misses cost what the extra pass does. A profile of the same scene, main against the branch (both crowd\n2.5): pre-render 511 -> 626 ms/s busy; the WASM kernels alike, the difference is the frames' JS (sunFrameFor 525 ms,\napplyKeyedSunFramesFor 266, the lamps' 238 in the window), about 1 ms a frame: E-371, E-372."
+    },
+    {
+      "id": "R-1123",
+      "date": "2026-11-15",
+      "time": "08:40",
+      "timeFrom": "recorded",
+      "title": "The six checks against a formula on both backends: four pass, two pass after N-190 and N-191, shadowOutline fails (N-192)",
+      "verdict": "answered",
+      "text": "**The six checks against a formula (plan §8.2), both backends: four pass, one passes after N-190, one after N-191, one fails (N-192).**\n2026-11-15, tests/bench/*Check.mjs (C2's, dx/par-checks), windowed Chrome, the art from makeCheckArt.mjs.\n\n| check | result |\n| --- | --- |\n| normalLightCheck | PASS with §5.4's automatic strength, now the default (sun worst 0.4/255, lamp 2.9/255); the full normals read 127.6 off by day, which the engine no longer draws (a sprite looks as drawn by day) |\n| silhouetteDirectionCheck | PASS: the shadow is the frame the sun sees, within 1.5 px (after E-368 and E-369) |\n| depthSortCheck | PASS: 0 wrong pixels at 24 places; at two of the table's, 174 and 48 px the painter alone gets wrong are right |\n| lampSeparationCheck | FAIL (a box alone cast nothing in the sun's map) -> PASS after N-190 (worst 0.6/255, 99.9 % of the lamp kept) |\n| emissiveCheck | FAIL (the flame's core 81 for 255: no G-buffer words without maps) -> PASS with lighting.emissive (N-191) |\n| shadowOutlineCheck | FAIL: 2.6 to 5.8 px against 1.5, the same on both backends (N-192) |\n\nThe same numbers on WebGL and WebGPU in every check. The boot sweep before them: the 84 scenes (34 demos, 50 stress scenes,\nthe light ones included) start on WebGL."
     }
   ],
   "leads": [
