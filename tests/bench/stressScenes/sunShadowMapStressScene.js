@@ -16,8 +16,9 @@ const { Scene, Camera, Sun, LAYER_KIND } = WEED;
  *
  * Owner: pre-render (the sun rows, a caster each, and the frame the sun sees of each render) and Pixi (their upload and
  * the map's passes); the map's draws are the GPU's, read as the presented (drawn) frames: `runPredatorAbab --scene
- * /tests/bench/stressScenes/sunShadowMapStressScene.js --owner presented`. Load keys: GPU_CASTERS (the sun rows drawn:
- * 0 with `?kind=box`, whose volumes are meshes), VISIBLE_ENTITIES, RENDER_QUEUE_SIZE.
+ * /tests/bench/stressScenes/sunShadowMapStressScene.js --scene-export SunShadowMapStressScene --owner presented`. Load
+ * keys: GPU_CASTERS (the sun rows drawn: 0 with `?kind=box`, whose volumes are meshes), VISIBLE_ENTITIES,
+ * RENDER_QUEUE_SIZE.
  *
  * - `?casters=` the still renders (default 3000): the load knob. Pre-render's 6 ms takes many more than the default
  *   (raise it with `?kind=sprite`, the cheapest on the GPU); the columns of `auto`/`height` load the GPU first.

@@ -15,9 +15,10 @@ const { Scene, Camera, LAYER_KIND } = WEED;
  * their alpha. Some fires carry a light, which shows the people's normals. No shadows.
  *
  * Owner: the presented (drawn) frames: the emissive colour is written by every sprite pixel of the entity pass (a second
- * target, or a pass more) and composed with the light (`runPredatorAbab --scene /tests/bench/stressScenes/emissiveStressScene.js
- * --owner presented`, the same build with `--query-a emissive=0 --query-b emissive=entity`). Pixi's step is the guard.
- * Load keys: VISIBLE_ENTITIES, RENDER_QUEUE_SIZE. The whole world is in view and the crowd stays in it.
+ * target, or a pass more) and composed with the light (`runPredatorAbab --scene
+ * /tests/bench/stressScenes/emissiveStressScene.js --scene-export EmissiveStressScene --owner presented`, the same build
+ * with `--query-a emissive=0 --query-b emissive=entity`). Pixi's step is the guard. Load keys: VISIBLE_ENTITIES,
+ * RENDER_QUEUE_SIZE. The whole world is in view and the crowd stays in it.
  *
  * - `?fires=` (default 600), `?people=` (default 2400): the load knobs (the frames fall as the overdraw grows).
  * - `?lights=` fires that carry a light (default 24, at most the fires).

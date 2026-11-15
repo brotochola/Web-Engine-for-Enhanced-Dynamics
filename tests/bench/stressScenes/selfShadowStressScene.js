@@ -13,8 +13,9 @@ const { Scene, Camera, Sun, LAYER_KIND } = WEED;
  * towards the sun in the light pass (lighting.selfShadow), and towards each lamp with a tile in the lamps' map when there
  * are lamps. The cost is per lit pixel with height, per light, per ray and per step: the light pass is the GPU's, so the
  * owner is the presented (drawn) frames (`runPredatorAbab --scene /tests/bench/stressScenes/selfShadowStressScene.js
- * --owner presented`); Pixi's step is the guard. Load keys: VISIBLE_ENTITIES, RENDER_QUEUE_SIZE (and GPU_SHADOW_LIGHTS
- * with lamps). The whole world is in view and nothing but the lamps moves: the load does not drift.
+ * --scene-export SelfShadowStressScene --owner presented`, the same build with `--query-a rays=1 --query-b rays=4`);
+ * Pixi's step is the guard. Load keys: VISIBLE_ENTITIES, RENDER_QUEUE_SIZE (and GPU_SHADOW_LIGHTS with lamps). The whole
+ * world is in view and nothing but the lamps moves: the load does not drift.
  *
  * - `?n=` renders (default 600): how much of the view has height; past covering it, more only overlaps.
  * - `?rays=1|2|4` lighting.selfShadowRays (proposed: rays a pixel, from its corners, plan §6.8), `?steps=`

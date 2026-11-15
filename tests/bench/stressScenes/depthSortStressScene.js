@@ -16,9 +16,10 @@ const { Scene, Camera, LAYER_KIND } = WEED;
  * the entity pass is the cost, and nothing else draws over it.
  *
  * Owner: the presented (drawn) frames, since writing the depth from the shader is fill the GPU pays (and it turns off the
- * early depth test): `runPredatorAbab --scene /tests/bench/stressScenes/depthSortStressScene.js --owner presented`, the
- * same build with `--query-a depth=0 --query-b depth=1`. Pixi's step is the guard (its batch's state and splits), pre-render
- * the painter's. Load keys: VISIBLE_ENTITIES, RENDER_QUEUE_SIZE. The whole world is in view and the crowd stays in it.
+ * early depth test): `runPredatorAbab --scene /tests/bench/stressScenes/depthSortStressScene.js --scene-export
+ * DepthSortStressScene --owner presented`, the same build with `--query-a depth=0 --query-b depth=1`. Pixi's step is the
+ * guard (its batch's state and splits), pre-render the painter's. Load keys: VISIBLE_ENTITIES, RENDER_QUEUE_SIZE. The
+ * whole world is in view and the crowd stays in it.
  *
  * - `?tables=` (default 900), `?people=` (default 2400): the load knobs (the frames fall as the overdraw grows).
  * - `?depth=0|1` renderer.pixelDepth false or true; left out, the engine's default (on with an oblique camera and a sheet
