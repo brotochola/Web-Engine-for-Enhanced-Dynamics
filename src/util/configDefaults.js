@@ -282,9 +282,12 @@ export const CAMERA_TYPES = Object.freeze({
 // ============================================================================
 
 export const ASSETS_DEFAULTS = Object.freeze({
-  /** Maximum atlas width in pixels (GPU texture limit) */
+  /**
+   * Maximum atlas width in pixels (GPU texture limit). Past 4096 a scene asks for more than some mobile and older GPUs
+   * hold (their textures stop at 4096 a side); the packer never goes past this, so it is the scene's choice.
+   */
   maxAtlasWidth: 4096,
-  /** Maximum atlas height in pixels (GPU texture limit) */
+  /** Maximum atlas height in pixels (GPU texture limit; past 4096, as maxAtlasWidth says). */
   maxAtlasHeight: 4096,
   /** Trim transparent pixels from individual images to save atlas space */
   trimImages: true,

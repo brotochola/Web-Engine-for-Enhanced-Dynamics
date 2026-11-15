@@ -1365,13 +1365,9 @@ class SpriteSheetRegistry {
       actualHeight = Math.max(actualHeight, rect.y + rect.height);
     }
 
-    // Warn if atlas is too large for many mobile devices/GPUs
-    if (actualWidth > 4096 || actualHeight > 4096) {
-      console.warn(
-        `⚠️ BigAtlas dimensions (${actualWidth}x${actualHeight}) exceed 4096x4096. ` +
-        `This may cause performance issues or fail to render on some mobile devices or older GPUs.`
-      );
-    }
+    // An atlas past 4096 a side is only possible when the scene raised maxAtlasWidth/Height past it (the packer stays
+    // within them): its own choice, which the keys' docs (ASSETS_DEFAULTS) explain. It warned on every load, so a demo
+    // mode packing 8190 px (Predator ?light3d=1) started with a warning.
 
     // Create canvas and draw packed atlas
     // willReadFrequently: first getContext locks attrs; extractDecalTextures reads via getImageData
