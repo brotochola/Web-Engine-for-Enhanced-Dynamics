@@ -82,7 +82,14 @@ import {
   writeLampTile,
 } from '../render/lampShadowMap.js';
 import { instancedSpriteGlProgram, pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
-import { volumeMapGpuProgram, volumeMapWgsl } from '../render/volumeShadowMap.js';
+import {
+  VOLUME_LAMP_FRAGMENT,
+  volumeLampVertex,
+  volumeLampWgsl,
+  volumeMapGpuProgram,
+  volumeMapWgsl,
+  writeVolumeLampTerms,
+} from '../render/volumeShadowMap.js';
 import { TileMap } from '../core/tileMap.js';
 import {
   listGidPages,
@@ -912,6 +919,11 @@ class PixiRenderer extends AbstractWorker {
     // World px to the sun map's texels, (world - camera) · screenScale as its cards land, for the volumes (written when
     // it changes: a Matrix's fields are tagged, each double written a heap number).
     this._volumeMapTransform = new Matrix();
+    // DX-SHADOW3D (F7): the volumes in the lamps' map: { batch, host, meshes: a mesh a tile } a volumes' batch, and their
+    // program's options and state (made on first use).
+    this._volumeLampEntries = [];
+    this._volumeLampProgram = null;
+    this._volumeLampState = null;
     this._lampTileSize = 256;
     this._lampTilesPerRow = 1;
     this._lampMapLights = 0;
@@ -6259,7 +6271,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _uploadLampTiles() {
     const width = Math.max(1, this._lampTileData.length / 4);
     if (this._lampTileSource === null || this._lampTileSource.width !== width) {
-      if (this._lampTileSource) this._lampTileSource.destroy();
+      const old = this._lampTileSource;
       this._lampTileSource = PIXI.TextureSource.from({
         resource: this._lampTileData,
         width,
@@ -6270,8 +6282,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         autoGenerateMipmaps: false,
       });
       this._lampTileSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
-      const programs = [this._lampMapMesh && this._lampMapMesh.shader, this._lampMapColumns && this._lampMapColumns.shader];
-      for (const shader of programs) if (shader) shader.resources.uLampTiles = this._lampTileSource;
+      // Never unloaded by Pixi's texture GC while the programs keep it bound.
+      this._lampTileSource.autoGarbageCollect = false;
+      // Every program that binds it moves to the new one before the old one is destroyed.
+      this._pointLampTilePrograms();
+      if (old) old.destroy();
     }
     if (this._useWebGpu) {
       const renderer = this.pixiApp?.renderer;
@@ -6279,6 +6294,23 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       return;
     }
     this._uploadRgba32FloatGl(this._lampTileSource, this._lampTileData, width, 1);
+  }
+
+  /**
+   * DX-SHADOW3D (F7): every program that binds the tiles' lamps (uLampTiles) on the current source: the lamps' map's cards
+   * and columns, and each tile's volumes mesh.
+   */
+  _pointLampTilePrograms() {
+    const source = this._lampTileSource;
+    const shaders = [this._lampMapMesh && this._lampMapMesh.shader, this._lampMapColumns && this._lampMapColumns.shader];
+    for (let i = 0; i < this._volumeLampEntries.length; i++) {
+      const meshes = this._volumeLampEntries[i].meshes;
+      for (let k = 0; k < meshes.length; k++) shaders.push(meshes[k].shader);
+    }
+    for (let i = 0; i < shaders.length; i++) {
+      const shader = shaders[i];
+      if (shader && shader.resources.uLampTiles !== source) shader.resources.uLampTiles = source;
+    }
   }
 
   /**
@@ -6413,9 +6445,108 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._submitRender(rtOpts);
       this._gpuPassesThisFrame++;
     }
+    this._drawVolumesInLampMap(rtOpts);
     rtOpts.target = this.shadowRT;
     this._lampMapClear = false;
     return true;
+  }
+
+  /**
+   * DX-SHADOW3D (F7): each sun-projected volumes' layer drawn into the lamps' map once a tile in use, in one render: a mesh
+   * a tile over the layer's rows (volumeShadowMap.js volumeLampVertex / volumeLampWgsl), each vertex landing on the floor
+   * along that tile's lamp's ray (the tiles' texture holds the lamps; uLampVolume says which), its height out, max
+   * blending. A triangle past an edge of a tile is left out in its vertices. Last frame's rows, as the sun map's volumes.
+   */
+  _drawVolumesInLampMap(rtOpts) {
+    const shaders = this._engineShaders;
+    const tiles = this._lampTileCount | 0;
+    if (tiles <= 0 || this._lampTileSource === null) return;
+    if (!(this._useWebGpu ? shaders?.meshUvFill : shaders?.meshUvFillVert)) return;
+    const invHs = 1 / (this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1);
+    const invG = this._groundInvScaleY || 1;
+    for (let i = 0; i < this._customLayerList.length; i++) {
+      const cl = this._customLayerList[i];
+      const batch = cl.sunProjected ? cl.uvFillBatch : null;
+      if (!batch || (batch.geometry.instanceCount | 0) <= 0) continue;
+      let entry = null;
+      for (let k = 0; k < this._volumeLampEntries.length; k++) {
+        if (this._volumeLampEntries[k].batch === batch) entry = this._volumeLampEntries[k];
+      }
+      if (entry === null) {
+        entry = { batch, host: new PIXI.Container(), meshes: [] };
+        this._volumeLampEntries.push(entry);
+      }
+      const meshes = entry.meshes;
+      while (meshes.length < tiles) meshes.push(this._volumeLampMesh(batch, entry.host));
+      for (let t = 0; t < meshes.length; t++) {
+        const mesh = meshes[t];
+        const on = t < tiles;
+        if (mesh.visible !== on) mesh.visible = on;
+        if (!on) continue;
+        if (mesh.geometry !== batch.geometry) mesh.geometry = batch.geometry;
+        this._syncVolumeResources(mesh.shader, batch);
+        const group = mesh.shader.resources.sunShadow;
+        const u = group.uniforms;
+        if (writeVolumeLampTerms(u.uSunShadow, u.uLampVolume, t, this._lampTilesPerRow, this._lampTileSize, invHs, invG)) {
+          group.update();
+        }
+      }
+      rtOpts.container = entry.host;
+      rtOpts.clear = false;
+      this._submitRender(rtOpts);
+      this._gpuPassesThisFrame++;
+    }
+  }
+
+  /**
+   * DX-SHADOW3D (F7): a mesh over a volumes' batch for one tile of the lamps' map, with its own terms (sunShadow: uSunShadow,
+   * then uLampVolume, the WGSL struct's order), in `host`. The program and state are made once.
+   */
+  _volumeLampMesh(batch, host) {
+    if (this._volumeLampProgram === null) {
+      const shaders = this._engineShaders;
+      this._volumeLampProgram = this._useWebGpu
+        ? {
+            gpuProgram: volumeMapGpuProgram(GpuProgram, volumeLampWgsl(shaders.meshUvFill), 'mainFragLamp', 'lamp-map-volumes', {
+              lampTiles: true,
+            }),
+          }
+        : {
+            glProgram: PIXI.GlProgram.from({
+              vertex: volumeLampVertex(shaders.meshUvFillVert),
+              fragment: VOLUME_LAMP_FRAGMENT,
+              name: 'lamp-map-volumes',
+            }),
+          };
+      const state = new PIXI.State();
+      state.blend = true;
+      state.blendMode = 'max';
+      state.depthTest = false;
+      state.depthMask = false;
+      state.culling = false;
+      this._volumeLampState = state;
+    }
+    const r = batch.shader.resources;
+    const shader = new PIXI.Shader({
+      ...this._volumeLampProgram,
+      resources: {
+        uTexture: r.uTexture,
+        uSampler: r.uSampler,
+        uTexLut: r.uTexLut,
+        uPoseTable: r.uPoseTable,
+        uLampTiles: this._lampTileSource,
+        // A tile of -1 until the frame writes this mesh's terms (writeVolumeLampTerms).
+        sunShadow: {
+          uSunShadow: { value: new Float32Array(4), type: 'vec4<f32>' },
+          uLampVolume: { value: new Float32Array([-1, 0, 0, 0]), type: 'vec4<f32>' },
+        },
+      },
+    });
+    const mesh = new PIXI.Mesh({ geometry: batch.geometry, shader, state: this._volumeLampState, label: 'lamp-map-volumes' });
+    // Max keeps the highest point; a mesh's blend mode holds only as a child (the sun map's host says why).
+    mesh.blendMode = 'max';
+    host.addChild(mesh);
+    return mesh;
   }
 
   /** DX-SHADOW3D (F7): a frame with no stamp rows clears the lamps' map (once). */
