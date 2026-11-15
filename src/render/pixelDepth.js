@@ -41,7 +41,8 @@ const DEPTH_BODY = `  {
     vec2 uvd = weedUv();
     vec4 md = texelFetch(uMaps, ivec2(uvd * vec2(textureSize(uMaps, 0))), 0);
     float zd = (floor(md.r * 255.0 + 0.5) * 256.0 + floor(md.g * 255.0 + 0.5)) / 64.0;
-    float floorY = md.b + md.a > 0.0 ? (vWorld.y + uDepth.y * zd) * uDepth.x : vFootFloor;
+    bool glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
+    float floorY = md.b + md.a > 0.0 && !glow ? (vWorld.y + uDepth.y * zd) * uDepth.x : vFootFloor;
     gl_FragDepth = clamp(1.0 - (floorY - uDepth.z) * uDepth.w - vPainter * 1e-5, 0.0, 1.0);
   }
 `;

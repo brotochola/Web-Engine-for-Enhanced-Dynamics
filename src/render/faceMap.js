@@ -144,6 +144,10 @@ fn mainFragFace(in: VertexOut) -> @location(0) vec4<f32> {
   if (t.a * in.vColor.a < 0.5) { discard; }
   var oct = in.vFaceOct;
   var z = in.vFaceZ;
+  // DX-EMISSIVE: a glowing pixel is (1/255, 0) in the face map (faceMap.frag.glsl).
+  if (all(oct == vec2<f32>(0.0)) && m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0) {
+    return vec4<f32>(1.0 / 255.0, 0.0, 0.0, 0.0);
+  }
   if (all(oct == vec2<f32>(0.0)) && m.b + m.a > 0.0) {
     let n = faceOctDecode(floor(m.ba * 255.0 + 0.5));
     let sc = normalize(vec2<f32>(uniforms.uFaceSpace.y, uniforms.uFaceSpace.x));

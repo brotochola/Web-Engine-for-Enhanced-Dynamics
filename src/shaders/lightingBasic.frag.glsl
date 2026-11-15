@@ -228,6 +228,11 @@ void main() {
   vec2 fragWorld = weedScreenToWorld(screenPos);
 // #if FACES
   vec4 face = texture2D(uFaceMap, gl_FragCoord.xy / uViewport);
+  // DX-EMISSIVE (F10): a glowing pixel keeps its own colour (the face pass's (1/255, 0)).
+  if (face.r > 0.0 && face.g < 0.5 / 255.0) {
+    gl_FragColor = vec4(1.0);
+    return;
+  }
   if (face.r > 0.0) {
     gl_FragColor = vec4(min(faceLight(fragWorld, face), vec3(1.0)), 1.0);
     return;

@@ -1512,6 +1512,7 @@ class SpriteSheetRegistry {
         w,
         h,
         gray: d.maps.gray,
+        emissive: d.maps.emissive === true,
       });
       if (texels !== null) ctx.putImageData(new ImageData(texels, w, h), d.rect.x, d.rect.y);
       // DX-SHADOW3D: a render stands on its contact nearest the light (frameBase.js), in its untrimmed frame's rows.
@@ -1716,8 +1717,10 @@ class SpriteSheetRegistry {
       heightUrl ? this._loadImage(heightUrl) : null,
       config.normalMap ? this._loadImage(config.normalMap) : null,
     ]);
-    const maps = heightImg || normalImg
-      ? { heightImg, normalImg, gray: Number(heightSpec?.gray) > 0 ? Number(heightSpec.gray) : 0 }
+    // DX-EMISSIVE: a sheet that glows (assets config or its json's meta) gets a twin page with the emissive code.
+    const emissive = config.emissive === true || jsonData?.meta?.emissive === true;
+    const maps = heightImg || normalImg || emissive
+      ? { heightImg, normalImg, gray: Number(heightSpec?.gray) > 0 ? Number(heightSpec.gray) : 0, emissive }
       : null;
     return { img, jsonData, maps };
   }

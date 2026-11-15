@@ -50,6 +50,11 @@ void main() {
   float z = vFaceZ;
   if (oct == vec2(0.0)) {
     vec4 m = texelFetch(uMaps, ivec2(uv * vec2(textureSize(uMaps, 0))), 0);
+    // DX-EMISSIVE: a glowing pixel (normal bytes 0, 255) is (1/255, 0) in the face map: the light pass lights it fully.
+    if (m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0) {
+      finalColor = vec4(1.0 / 255.0, 0.0, 0.0, 0.0);
+      return;
+    }
     if (m.b + m.a > 0.0) {
       vec3 n = octDecode(floor(m.ba * 255.0 + 0.5));
       vec2 sc = normalize(vec2(uFaceSpace.y, uFaceSpace.x)); // sin, cos of the camera's pitch

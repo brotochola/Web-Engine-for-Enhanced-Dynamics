@@ -275,6 +275,10 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   var fragWorld = weedScreenToWorld(screenPos);
 // #if FACES
   let face = textureLoad(uFaceMap, vec2<i32>(in.position.xy), 0);
+  // DX-EMISSIVE (F10): a glowing pixel keeps its own colour (the face pass's (1/255, 0)).
+  if (face.r > 0.0 && face.g < 0.5 / 255.0) {
+    return vec4<f32>(1.0);
+  }
   if (face.r > 0.0) {
     return vec4<f32>(min(faceLight(fragWorld, face), vec3<f32>(1.0)), 1.0);
   }
