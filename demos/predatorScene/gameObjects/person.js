@@ -8,6 +8,7 @@ import { Lootable } from './lootable.js';
 import { LootableComponent } from '../components/lootableComponent.js';
 import { PersonComponent } from '../components/personComponent.js';
 import { PersonAnimationFSM, WALK_SPEED_THRESHOLD } from '../fsm/personAnimationFsm.js';
+import { LIGHT3D } from '../light3d.js';
 import {
   ParticleEmitter,
   SpriteSheetRegistry,
@@ -97,8 +98,9 @@ export class Person extends Lootable {
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.98;
     this.spriteRenderer.animationSpeed = 0.15;
-    // The shadow: the sprite's silhouette, its card 1.5 times as long.
-    this.shadowCaster.setSprite({ heightScale: 1.5 });
+    // The shadow: the sprite's silhouette, its card 1.5 times as long. With ?light3d=1 the camera gives its height, and the
+    // silhouette is the ShadowCaster's default (each light sees its own view of the person).
+    if (!LIGHT3D) this.shadowCaster.setSprite({ heightScale: 1.5 });
 
     // Flocking and resistance now use static class properties (no per-entity arrays needed)
     // this.setSpritesheet("poli");

@@ -2,6 +2,7 @@ import { RigidBody } from '/src/index.js';
 import { LootableComponent } from '../components/lootableComponent.js';
 import { Lootable } from './lootable.js';
 import WEED from '/src/index.js';
+import { LIGHT3D } from '../light3d.js';
 
 // Destructure what we need from WEED
 const {
@@ -36,8 +37,9 @@ export class Trash extends Lootable {
         this.collider.visualRange = this.collider.radius * 2
         // this.collider.offsetY = -15;
 
-        // The silhouette 1.5 times as long, its foot 0.1 of the sprite above the anchor.
-        this.shadowCaster.setSprite({ heightScale: 1.5, anchorY: -0.1 });
+        // The silhouette 1.5 times as long, its foot 0.1 of the sprite above the anchor. With ?light3d=1 the camera gives
+        // its height and the engine measures its base: the ShadowCaster's default.
+        if (!LIGHT3D) this.shadowCaster.setSprite({ heightScale: 1.5, anchorY: -0.1 });
 
         this.lootableComponent.health = 1;
         this.lootableComponent.dropMoney = 100;
