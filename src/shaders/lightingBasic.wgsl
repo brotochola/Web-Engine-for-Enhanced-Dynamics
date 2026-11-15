@@ -318,7 +318,12 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too, unless the pixel is
     // of the lamp's own entity.
     let lampOwn = selfId > 0.5 && abs(lampOwner(posInt.w) - selfId) < 0.5;
-    if (posInt.w < 0.0 && selfOn && !lampOwn && !isFlat && cosine * shade > 0.05) {
+    // Only inside the lamp's radius (its tile's reach: I' = (radius / 10)² + h²): past it the lamp gives under
+    // 1 % of its light and its map casts nothing, while the steps cost what they cost near it (E-365: with 32 lamps they were
+    // 96 % of the pass).
+    let fromLamp = p.xy - posInt.xy;
+    let lampNear = dot(fromLamp, fromLamp) < 100.0 * max(posInt.z - col.a * col.a, 0.0);
+    if (posInt.w < 0.0 && selfOn && !lampOwn && !isFlat && lampNear && cosine * shade > 0.05) {
       lampSelf = selfShadowToward(p, toLight / max(d, 0.001), d, selfId);
     }
     let flatShade = shade * lampSelf;
