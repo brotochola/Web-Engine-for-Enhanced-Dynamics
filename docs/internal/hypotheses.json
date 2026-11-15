@@ -15769,7 +15769,7 @@
       "area": "render",
       "kind": "bug",
       "result": "The same numbers on WebGL and WebGPU. Sun at 8 h from 8 directions: box p99 2.64 (45, 90, 135...) to 3.50 px (0, 180), card 3.2 to 3.5 except 0.7 to 0.95 from 225 to 315 deg, crate 3.5 to 5.8; from 90 deg the card measures nothing and the projection is empty. Lamps at 60, 150, 300 px: 1.1 to 2.8 px, and at 60 px the crate's shadow (the lamp under its top) runs to the stretch cap (8) where the formula has none, its far end a staircase of columns. Not a global shift (the card passes from three directions).",
-      "next": "Overlay the projection on the captures (--save) per direction; compare the engine's base and landing with the check's formulas (sunMapTerms, the card's foot, setBox's offsets); give the formula the cap; make the cap's end a straight line (each column capped at the same radius).",
+      "next": "Overlay the projection on the captures (--save) per direction; compare the engine's base and landing with the check's formulas (sunMapTerms, the card's foot, setBox's offsets); give the formula the cap; make the cap's end a straight line (each column capped at the same radius). The stretch cap draws a column whose top is above the cap's height (7/8 of the lamp's) with w = 1/8 at its top, so its heights along the shadow run 8 z s / (1 + 7 s) where the projection has 7 E s / (1 + 7 s): too high, and its picture's rows squeezed (E-375 cut such columns where they leave the tile; nearer than reach / 4 they still reach the cap): cutting them at the cap's height would make them exact up to 8 times their distance.",
       "refs": [
         "REVIEW_PLAN.md#N-192"
       ],
@@ -15823,12 +15823,12 @@
     {
       "id": "E-374",
       "title": "The shadow maps' depth test (the second round's highest caster with its id) costs the sun's map a third more than the max blend did: a 16-bit depth buffer, or the casters highest first",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "status": "kept-kernel",
+      "statusText": "kept (kernel) 2026-11-15 on dx/light3d (R-1126)",
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "",
+      "result": "Kept (kernel; f068966c, 3497ca6d): every map fragment wrote its depth, which turns the early depth test off; the vertices write it now (a lamp's as 1 / w). gpuPassBench sunMap WebGL 1.035 -> 0.673 ms, WebGPU 1.025 -> 0.531; sunColumns 1.849 -> 0.713, 1.766 -> 0.532; lampMap -4.5 %; the same images. A 16-bit depth buffer changed nothing. sunShadowMapStressScene 15 000 columns +3.0 % (neutral).",
       "next": "gpuPassBench sunMap and lampMap with mapDepth=16 against 24 on both backends; then the engine side if it wins.",
       "refs": [
         "EXECUTION_PLAN.md#E-374"
@@ -15837,7 +15837,51 @@
         "map depth 16 bits",
         "sun map depth test cost"
       ],
-      "records": []
+      "records": [
+        "R-1126"
+      ]
+    },
+    {
+      "id": "E-375",
+      "title": "A lamp's caster columns were drawn out to the stretch cap and the fragments outside its tile thrown away: each column's top now stops where its ray leaves twice the lamp's reach",
+      "status": "kept-kernel",
+      "statusText": "kept 2026-11-15 on dx/light3d (R-1127)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "Kept (6970a9fd): gpuPassBench lampMap WebGL 4.11 -> 1.45 ms (-65 %), WebGPU 4.17 -> 1.40 (-66 %). lampShadowStressScene (lampShadows=map, owner presented, --vs 3497ca6d): both sides at the display's rate at the default load (48 lamps, 2 000 walkers) and at 240 lamps and 10 000 walkers (9 055 caster rows; pre-render 5.6 ms holds that frame): neutral, no regression.",
+      "next": "None.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-375"
+      ],
+      "aliases": [
+        "lamp map overdraw",
+        "lamp shadow outside tile"
+      ],
+      "records": [
+        "R-1127"
+      ]
+    },
+    {
+      "id": "E-376",
+      "title": "The columns' grid (576 cells a render) ran the vertex shader six times a cell: four corners and a quad index, four times",
+      "status": "kept",
+      "statusText": "kept 2026-11-15 on dx/light3d (R-1128)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "Kept (7ecde902): gpuPassBench sunColumns 5 000 renders WebGL 6.93 -> 5.65 ms, WebGPU 4.95 -> 4.24; sunShadowMapStressScene 15 000 renders as columns drawn 17.2 -> 23.8 fps (+37.8 %, 4/4 pairs), with E-374 +41.7 %; the same images.",
+      "next": "None.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-376"
+      ],
+      "aliases": [
+        "column grid indexed",
+        "columns vertex shader six times"
+      ],
+      "records": [
+        "R-1128"
+      ]
     }
   ],
   "records": [
@@ -26498,6 +26542,45 @@
         "a2e29e9c",
         "8f387ea0",
         "23b83f0d"
+      ]
+    },
+    {
+      "id": "R-1126",
+      "date": "2026-11-15",
+      "time": "09:39",
+      "timeFrom": "recorded",
+      "title": "E-374 kept (kernel): the maps' depth from their vertices, sunMap -35/-48 %, sunColumns -61/-70 %, lampMap -4.5 %, the same images; scenes neutral",
+      "verdict": "kept-kernel",
+      "text": "**Kept (kernel): the maps' depth from their vertices. sunMap -35 % (WebGL) / -48 % (WebGPU), sunColumns -61 / -70 %,\nlampMap -4.5 %, the same images; the scene could not show it (neutral).**\n2026-11-15, dx/light3d, gpuPassBench with real waits on the GTX 1650. The plan's candidates first: a 16-bit depth buffer\nchanged nothing (sunMap 1.045 / 1.053 ms, lampMap 4.300 / 4.305; on WebGPU the 16-bit ties changed the image), and the max\nblend without depth, with today's shader, 1.008 ms against 1.045: the depth test was 4 %. The cost was the fragment's\ndepth write: gl_FragDepth / frag_depth turn the early depth test and depth compression off for the whole pass.\n\n| pass | WebGL before | after | WebGPU before | after |\n| --- | --- | --- | --- | --- |\n| sunMap (2000 silhouettes) | 1.035 | 0.673 | 1.025 | 0.531 |\n| sunColumns (200 renders) | 1.849 | 0.713 | 1.766 | 0.532 |\n| lampMap (48 lamps) | 4.30 | 4.11 | 4.37 | 4.17 |\n\nImages identical in every pass on both backends except the lamps' map on WebGPU (ties of equal heights rounded otherwise).\nCaptures, A before, B after: sunShadowMapStressScene auto and box (still), the light bench at 16 h, both backends, 0 px\ndiffer; the light bench at 22 h 0 px; selfShadowStressScene with 32 lamps 1 037 px by at most 9 / 255 (casters past the\nlamps' stretch cap tie). lampSeparationCheck PASS; shadowOutlineCheck --part lamp as before.\nScenes (runPredatorAbab --vs 422f3ed8 --hyp-rev 3497ca6d, owner presented): sunShadowMapStressScene at its default load\nboth sides at 60 fps (neutral); casters=15000 kind=height drawn 16.8 -> 17.3 fps, +3.0 %, 4/4 pairs, neutral: the columns'\nvertex shader held that frame, E-376.",
+      "commits": [
+        "f068966c",
+        "93748095",
+        "3497ca6d"
+      ]
+    },
+    {
+      "id": "R-1127",
+      "date": "2026-11-15",
+      "time": "10:17",
+      "timeFrom": "recorded",
+      "title": "E-375 kept-kernel: a lamp's caster columns cut where they leave twice its reach, lampMap -65 % (WebGL) / -66 % (WebGPU)",
+      "verdict": "kept-kernel",
+      "text": "**Kept (kernel): a lamp's caster columns stop where they leave twice its reach; gpuPassBench lampMap -65 % (WebGL) / -66 % (WebGPU).**\n2026-11-15, dx/light3d. The lamps' map drew each caster's columns out to the stretch cap (8 times their distance) and threw away\nevery fragment outside the lamp's tile. Each column's top is now drawn where its ray lands twice the lamp's reach away, the\npicture's row with it; only where the cap does not already hold the point inside that circle. A first try cut there too\nand moved the picture's rows of casters near their lamp (coverage 82.7 -> 90.7 %); the cut below the cap's height alone\nkeeps the tile (84.9 %: the rest are casters taller than the cap's height, which the cap drew with heights above the true\nones, 8 z s / (1 + 7 s) against 7 E s / (1 + 7 s)).\ngpuPassBench lampMap (48 lamps, 64 casters, 256 px tiles): WebGL 4.11 -> 1.45 ms, WebGPU 4.17 -> 1.40.\nlampShadowStressScene (lampShadows=map, owner presented, --vs 3497ca6d): both sides at the display's rate at the default load (48 lamps, 2 000 walkers) and at 240 lamps and 10 000 walkers (9 055 caster rows; pre-render 5.6 ms holds that frame): neutral, no regression.\nCaptures (A 3497ca6d): the light bench at 22 h 8 655 px by at most 4 / 255 (one at 5), around a tree taller than the lamps,\nlighter and darker, nothing at 3x; zoomed 2 298 px by at most 4; selfShadowStressScene with 32 still lamps 175 px by at most\n5. lampSeparationCheck PASS (worst 0.6 / 255, 99.9 % kept); shadowOutlineCheck --part lamp: every number as before.",
+      "commits": [
+        "6970a9fd"
+      ]
+    },
+    {
+      "id": "R-1128",
+      "date": "2026-11-15",
+      "time": "10:06",
+      "timeFrom": "recorded",
+      "title": "E-376 kept: the columns' grid indexed (4 vertex runs a cell, not 6), the 15 000-column scene +37.8 % drawn frames",
+      "verdict": "kept",
+      "text": "**Kept: the columns' grid as four corners a cell and a quad index; sunShadowMapStressScene with 15 000 renders as columns\ndrawn 17.2 -> 23.8 fps (+37.8 %, 4/4 pairs); gpuPassBench sunColumns -12 to -19 %, the same images.**\n2026-11-15, dx/light3d. A render's columns are 576 cells of two triangles, six vertices a cell drawn in order (an index of\n0..n), so the vertex shader ran six times a cell. 6daf584b gave the engine's three column meshes and the GPU bench one index\nfunction (no change: 0.717 / 0.533 ms, the same images); 7ecde902 made it four corners and 0 1 2, 0 2 3.\n\n| sunColumns | WebGL before | after | WebGPU before | after |\n| --- | --- | --- | --- | --- |\n| 5 000 renders | 6.93 | 5.65 | 4.95 | 4.24 |\n| 200 renders | 0.717 | 0.586 | 0.533 | 0.470 |\n\nlampMap the same (its casters are mostly cards). Captures (A 6daf584b): sunShadowMapStressScene height (both backends), the\nlight bench at 16 h and 22 h, selfShadowStressScene without maps and with 32 lamps: 0 px differ.\nScenes (owner presented, sunShadowMapStressScene casters=15000 kind=height, 4 pairs): E-376 alone (--vs 6daf584b) drawn 17.2\n-> 23.8 fps (+37.8 %, 4/4), presented 37.2 -> 50.4; with E-374 (--vs 422f3ed8) 16.8 -> 23.8 (+41.7 %, 4/4). The scene gains\nmore than the pass did in the bench: its frame runs the grid in more than one pass.",
+      "commits": [
+        "6daf584b",
+        "7ecde902"
       ]
     }
   ],

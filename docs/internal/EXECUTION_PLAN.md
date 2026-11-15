@@ -4845,6 +4845,29 @@ Owner: spatial.
 gather alone 9.45 -> 9.52 ms a frame with the skip off). The skipped visits were the cheap ones (predicted rejects whose
 lines the next entity loads anyway). Ablation of the gather: without the dedup marks -15 %, without the row writes -17 %;
 ids numbered in home-cell order (the locality ceiling) -8 % of the frame.
+### E-376 The columns' grid ran the vertex shader six times a cell
+
+**Premise (2026-11-15):** a render's columns are 576 cells (24 x 24) of two triangles, six vertices a cell drawn in
+order: at thousands of renders the vertex shader (two texel reads and the landing, six times a cell) holds the frame
+(sunShadowMapStressScene with 15 000 renders as columns drew 17 fps).
+**Plan:** four corners a cell and the quad index 0 1 2, 0 2 3: the same two triangles, and the vertex cache keeps the
+two corners they share. Owner: the GPU.
+**Kept 2026-11-15 (R-1128):** 7ecde902 (6daf584b first gave the engine and the bench one index function).
+gpuPassBench sunColumns, the same images: 5 000 renders WebGL 6.93 -> 5.65 ms (-19 %), WebGPU 4.95 -> 4.24 (-14 %);
+200 renders 0.717 -> 0.586, 0.533 -> 0.470. sunShadowMapStressScene, 15 000 renders as columns: drawn 17.2 -> 23.8 fps
+(+37.8 %, 4/4 pairs); with E-374, 16.8 -> 23.8 (+41.7 %). Captures of columns on both backends: 0 px differ.
+### E-375 A lamp's caster columns were drawn out to the stretch cap and thrown away outside the tile
+
+**Premise (2026-11-15, gpuPassBench, 48 lamps):** the lamps' map took 4.1 ms. Each caster's columns land along its
+lamp's rays up to the stretch cap (8 times their distance), and every fragment that lands outside the lamp's tile is
+discarded: with lamps lower than the casters (Predator's bonfires at 24 px, its houses' lights at 45, people 50 to 60
+px tall) most of the drawn area is outside.
+**Plan:** each column's top drawn where its ray lands twice the lamp's reach away (the tile's corner is 1.41 reach
+away), with the picture's row at that height; the landing below it is the same projection. Owner: the GPU.
+**Kept (kernel) 2026-11-15 (R-1127):** 6970a9fd. gpuPassBench lampMap WebGL 4.11 -> 1.45 ms (-65 %), WebGPU 4.17 -> 1.40 (-66 %).
+lampShadowStressScene (lampShadows=map, owner presented, --vs 3497ca6d): both sides at the display's rate at the default load (48 lamps, 2 000 walkers) and at 240 lamps and 10 000 walkers (9 055 caster rows; pre-render 5.6 ms holds that frame): neutral, no regression. The light bench at 22 h: 8 655 px by at most 4 / 255, where a tree taller than the lamps crosses the
+cap (whose interpolation gave heights above the true ones). lampSeparationCheck PASS, shadowOutlineCheck's numbers as
+before.
 ### E-374 The shadow maps' depth test costs the sun's map a third more
 
 **Premise (2026-11-15, gpuPassBench with real waits):** since the second round the maps keep each texel's highest
@@ -4854,6 +4877,15 @@ so the depth test runs late, and Pixi's depth-stencil target is 24 + 8 bits.
 **Plan:** a 16-bit depth buffer (the bench's `mapDepth=16`; the engine would need its own depth texture on the maps'
 render targets), or the casters drawn highest first so the early depth cull rejects. Owner: the GPU; the captures
 unchanged (16 bits hold 1 / 65 536 of the height range).
+**Kept 2026-11-15 (kernel; R-1126), and not the way the plan said.** A 16-bit depth buffer changed nothing (1.045 /
+1.053 ms), and the max blend itself would have cost only 4 % less: what cost was that every map fragment wrote its depth
+(gl_FragDepth, frag_depth), which turns the early depth test and the depth compression off for the whole pass. The
+height runs across a card, a column or a volume as the screen does, so the vertices write the same depth (f068966c); a
+lamp's map, drawn with w = (E - z) / E, gets a depth affine in 1 / w, which the rasterizer interpolates exactly
+(3497ca6d). gpuPassBench, the same images: sunMap WebGL 1.035 -> 0.673 ms, WebGPU 1.025 -> 0.531; sunColumns 1.849 ->
+0.713, 1.766 -> 0.532; lampMap 4.30 -> 4.11, 4.37 -> 4.17. sunShadowMapStressScene: 3 000 casters at the display's rate
+both sides; 15 000 with columns drawn 16.8 -> 17.3 fps (+3.0 %, 4/4 pairs, neutral): the columns' vertices held that
+frame (E-376).
 ### E-373 The 3D light pass costs 11 % more on WebGL than on WebGPU
 
 **Premise (2026-11-15, gpuPassBench with real waits, N-193):** light3d (32 lights, resolution 0.5, GTX 1650) takes
