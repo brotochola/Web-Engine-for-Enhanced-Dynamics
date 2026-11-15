@@ -3286,6 +3286,8 @@ export class GameObject {
       SpriteRenderer.renderDirty[i] = 1;
       SpriteRenderer.keyedDirty[i] = 1;
       SpriteRenderer.layerMask[i] = 0;
+      // DX-GBUF: normals, surface and emissive back to their defaults (a pooled slot keeps no last owner's glow).
+      SpriteRenderer.resetGbufRow(i);
     }
 
     // DX-DIRSPRITE: after the sprite's reset, which turned its rotation back on.
