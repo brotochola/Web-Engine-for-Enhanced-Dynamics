@@ -23,7 +23,7 @@
 
 import { faceFragmentGlsl, faceMapVertex, faceMapWgsl, lightingSource } from '../../../src/render/faceMap.js';
 import {
-  SUN_MAP_COLUMNS, sunMapColumnGrid, sunMapColumnsVertex, sunMapColumnsWgsl, sunMapVertex, sunMapWgsl,
+  SUN_MAP_COLUMNS, sunMapColumnGrid, sunMapColumnIndex, sunMapColumnsVertex, sunMapColumnsWgsl, sunMapVertex, sunMapWgsl,
 } from '../../../src/render/sunShadowMap.js';
 import { lampMapFragment, lampMapVertex, lampMapWgsl } from '../../../src/render/lampShadowMap.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from '../../../src/render/pixelDepth.js';
@@ -284,7 +284,9 @@ export function buildFrame(p, sh, sc, backend) {
   });
   const quad = { name: 'aQuad', size: 2, data: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), indices: new Uint16Array([0, 1, 2, 0, 2, 3]), count: 4 };
   const screen = { name: 'aPosition', size: 2, data: new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]), indices: new Uint16Array([0, 1, 2, 0, 2, 3]), count: 4 };
-  const grid = { name: 'aCell', size: 4, data: sunMapColumnGrid(SUN_MAP_COLUMNS), indices: null, count: SUN_MAP_COLUMNS * SUN_MAP_COLUMNS * 6 };
+  // As the engine draws them: the grid by its index buffer.
+  const gridData = sunMapColumnGrid(SUN_MAP_COLUMNS);
+  const grid = { name: 'aCell', size: 4, data: gridData, indices: sunMapColumnIndex(SUN_MAP_COLUMNS), count: gridData.length / 4 };
   const shadowUniforms = (extra) => ({
     ...pixi(W, H),
     uTileWorld: [0, 0, 0, 0],

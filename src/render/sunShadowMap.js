@@ -150,6 +150,16 @@ export function sunMapColumnGrid(cells = SUN_MAP_COLUMNS) {
 }
 
 /**
+ * The index buffer the columns' grid is drawn with (sunMapColumnGrid's vertices in order: meshes draw by index, and a
+ * geometry without one drew nothing).
+ * @param {number} [cells]
+ * @returns {Uint16Array}
+ */
+export function sunMapColumnIndex(cells = SUN_MAP_COLUMNS) {
+  return Uint16Array.from({ length: cells * cells * 6 }, (_, i) => i);
+}
+
+/**
  * The columns' vertex shader: a frame with a height map stands each of its cells where it is in 3D (its screen place and
  * its height: floor y = (screen y + heightScaleY · z) / groundScaleY) and casts the column under it: a strip from that
  * floor point (height 0) to where the cell's sun ray lands (height z). The union of the columns is the object's solid
