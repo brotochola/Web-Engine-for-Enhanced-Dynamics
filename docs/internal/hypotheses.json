@@ -15350,13 +15350,13 @@
     {
       "id": "N-181",
       "title": "lighting.sunShadows 'map': a caster's own shadow paints its own sprite when the sprite has no heights (Sun Street's houses)",
-      "status": "running",
-      "statusText": "found 2026-11-15 by the owner on a capture (Sun Street forced into map mode); agent R (dx/par-render) is adding the entity id and surface 'standing'",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-15 by the owner; fixed by dx/par-render (2fdb6755), checked the same day after the merge",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
-      "result": "Sun Street with sunShadows and lampShadows 'map', paused at 15 h: in sprite mode each house sits on top of its long box shadow (the shadows' layer is under the entities); in map mode the houses' pixels are lit as floor (no height map), so the box's own shadow, which lands mostly on the footprint there, darkens the left half of every house as a soft blob. The owner: \"sombra encima de la casa cuando no debería\". Map mode's box shadows also come out shorter and blurrier than sprite mode's in that scene (no camera.pitch, lighting.resolution 0.25).",
-      "next": "The maps keep who cast each texel's maximum (a depth test instead of max blending, the caster's entity id in colour) and the light pass skips its own entity's shadow (the G-buffer's id); a sprite without maps stands as a card (surface 'standing'), so another caster's shadow climbs on it only as high as it reaches. Check: Sun Street ?mode=sprite against ?mode=map at 15 h.",
+      "result": "fixed (2fdb6755, dx/par-render): the shadow maps keep their highest caster by a depth test, with its entity id in the texel, and the light pass skips a texel of the pixel's own entity (the G-buffer's ids map); unmapped entities are standing cards in map mode. Sun Street forced into map mode at 15 h after the merge: no house carries its own shadow, the shadows stay on the ground around them.",
+      "next": "None.",
       "refs": [
         "REVIEW_PLAN.md#N-181"
       ],
@@ -15537,6 +15537,44 @@
       "aliases": [
         "keyed sun frames pass",
         "_applyKeyedSunFrames cost"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-183",
+      "title": "Round two's light pass shaded every face turned away from the light on sprites with their own normals: the light bench's barn walls went black by day, freckled, and the fence's lower rail black",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-11-15 on dx/light3d, in the test phase of the second agents' round (code only on that branch)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (8698ed16): dx/par-render's light pass ran the self-shadow steps on a kRule pixel (a sprite with its own normal map) whatever its cosine; a face turned away from the sun steps into its own body and always reads shaded, so the barn's front wall went black at 16 h with bright freckles where a step missed the roof, and the fence's lower rail went black under the upper one. Round one's gate is back: only a face the light reaches (cosine > 0.05) takes its own shade, towards the sun and the lamps, GLSL and WGSL. With self-shadow off the walls had been lit, which located it. The tree's shadow still falls on the barn's wall (another caster).",
+      "next": "None.",
+      "refs": [
+        "REVIEW_PLAN.md#N-183"
+      ],
+      "aliases": [
+        "barn walls black",
+        "kRule self shadow",
+        "freckles on the barn"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-184",
+      "title": "WebGL warned \"Attribute aInstGbuf is not present in the shader\" in every map-mode scene without maps: a colour program without pixel depth did not take the G-buffer words its geometry carries",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-11-15 on dx/light3d (test phase of the second round)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (9681e069): gbufAttributeGlsl, the twin of dx/par-render's gbufAttributeWgsl, declares aInstGbuf in a sprite vertex shader and keeps it with a line that is never true; the plain, indexed and row colour programs take it when pixel depth is off. Sun Street in map mode starts without the warning; a node test covers the four sprite forms.",
+      "next": "None.",
+      "refs": [
+        "REVIEW_PLAN.md#N-184"
+      ],
+      "aliases": [
+        "aInstGbuf not present in the shader"
       ],
       "records": []
     }
