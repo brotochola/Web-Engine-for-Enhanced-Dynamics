@@ -10,7 +10,7 @@
  *   --writer other  a worker thread rewrites them and signals (fresh data, written on another core), then the pack
  *
  *   node tests/bench/gpuPackKeyedCrossCoreMicrobench.mjs [--writer none|same|other] [--order random|near|queue]
- *     [--pack gather|scatter|table|rows]
+ *     [--pack gather|scatter|table|rows|byrow]
  *     [--rows 14000] [--entities 42600] [--frames 61] [--output path]
  *
  * Node only (worker_threads). `queue` packs in the queue's own order (no gather): the bound for an inverse.
@@ -22,6 +22,9 @@
  * Pixi's pose texture data (four blocks of an R32F texture: x, y, rotC, rotS), and per drawn row its key and its row in
  * the painter's order: the
  * shader would fetch the pose by row and the statics by key. Statics updates left out as for `table`.
+ * `--pack byrow` (E-337): the shipped keyed pack by queue row (packKeyedRowsByRowWasm, pack_sprites_keyed_rows), what
+ * Pixi runs where its batch draws poses by row; the rows go where `gather` writes its poses. `checkSlots` sums the slot
+ * stream, which both keyed packs write.
  */
 import { Worker } from 'node:worker_threads';
 
@@ -61,8 +64,9 @@ export async function run({ writer = 'none', order = 'random', pack: packKind = 
   const s = await setup(rows | 0, entities | 0, order === 'queue' ? 'near' : order);
   // gather: the painter's order (the binding without its inverse); scatter: E-193's, through the inverse, where the
   // tree's gpuPack has it.
-  if (packKind === 'gather' || packKind === 'table' || packKind === 'rows') s.b = { ...s.b, keyedInverseByte: 0 };
+  if (packKind === 'gather' || packKind === 'table' || packKind === 'rows' || packKind === 'byrow') s.b = { ...s.b, keyedInverseByte: 0 };
   else if (!s.b.spritesKeyedScatter) throw new Error('this tree has no pack_sprites_keyed_scatter');
+  if (packKind === 'byrow' && !s.b.spritesKeyedRows) throw new Error('this tree has no pack_sprites_keyed_rows');
   // E-201: the pose table by key, in the queue's shared memory (so the writer rewrites it), and Pixi's private copy.
   const tableShared = packKind === 'table' ? new Float32Array(new SharedArrayBuffer(entities * 4 * 4)) : null;
   const tablePrivate = packKind === 'table' ? new Float32Array(entities * 4) : null;
@@ -145,6 +149,11 @@ export async function run({ writer = 'none', order = 'random', pack: packKind = 
         }
         return rows;
       }
+    : packKind === 'byrow'
+    ? () => {
+        keyed.epoch = (keyed.epoch + 1) >>> 0 || 1;
+        return client.packKeyedRowsByRowWasm(s.b, s.q, ctx(), s.pose, s.slots, keyed, rows);
+      }
     : () => {
         keyed.epoch = (keyed.epoch + 1) >>> 0 || 1;
         return client.packKeyedRowsWasm(s.b, s.q, ctx(), s.pose, s.slots, keyed, rows);
@@ -175,6 +184,8 @@ export async function run({ writer = 'none', order = 'random', pack: packKind = 
   }
   let check = 0;
   for (let k = 0; k < s.pose.length; k += 97) check += s.pose[k];
+  let checkSlots = 0;
+  for (let k = 0; k < s.slots.length; k++) checkSlots += s.slots[k];
   return {
     feature: 'gpu-pack-keyed-cross-core',
     writer,
@@ -186,6 +197,7 @@ export async function run({ writer = 'none', order = 'random', pack: packKind = 
     ms: times[(times.length / 2) | 0],
     p90: times[Math.floor(times.length * 0.9)],
     check,
+    checkSlots,
   };
 }
 
