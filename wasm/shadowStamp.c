@@ -738,6 +738,40 @@ int32_t stamp_light_range(uint32_t table) {
     cursor = written;
   }
   if (maxPE == 0) return cursor;
+  if (!anyFolded && sf == 7 && df == 11 && lightAt == 7 && capL >= 0 && (uint32_t)capL <= tmpCap / 4u) {
+    /* E-359: keyed rows (gpuQueueLayout's 7 floats into 11, the light vec4 after them). Each light's vec4 is converted
+       once, into keep (which nothing reads with maxShadowsPerEntity on, and which holds tmpCap words); a caster's 7 floats
+       are loaded once; each row is a v128, a 64-bit and a 32-bit store and the light's v128. The same bits as the loop
+       below: the conversions are its own, and loads and stores move bits unchanged. */
+    float *lf = (float *)keep;
+    for (int32_t li = 0; li < capL; li++) {
+      const double *L = lights + (uint32_t)li * LIGHT_DOUBLES;
+      lf[li * 4] = (float)L[0];
+      lf[li * 4 + 1] = (float)L[1];
+      lf[li * 4 + 2] = (float)L[2];
+      lf[li * 4 + 3] = (float)L[3];
+    }
+    for (uint32_t c = 0; c < nSun && cursor < cap; c++) {
+      const uint32_t n = nearCount[c];
+      if (n == 0) continue;
+      const float *s = sun + c * 7;
+      const v128_t a = wasm_v128_load(s);
+      const v128_t b = wasm_v128_load64_zero(s + 4);
+      const float s6 = s[6];
+      const uint32_t base = c * maxPE;
+      for (uint32_t k = 0; k < n && cursor < cap; k++) {
+        const int32_t li = nearSlot[base + k];
+        float *d = stamp + (uint32_t)cursor * 11;
+        wasm_v128_store(d, a);
+        wasm_v128_store64_lane(d + 4, b, 0);
+        d[6] = s6;
+        wasm_v128_store(d + 7, wasm_v128_load(lf + (uint32_t)li * 4));
+        if (stampLightIdx) stampLightIdx[cursor] = (uint16_t)li;
+        cursor++;
+      }
+    }
+    return cursor;
+  }
   if (!anyFolded) {
     /* Point lights at full shade only: each row is its caster's with the light's vec4. */
     for (uint32_t c = 0; c < nSun && cursor < cap; c++) {
