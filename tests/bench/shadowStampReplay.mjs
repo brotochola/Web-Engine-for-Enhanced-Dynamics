@@ -16,7 +16,7 @@
  * With `"other": "/path/engine.wasm"` and `"variants": "other,wasm"`, `other` is the shipped stamp of that engine.wasm
  * (a copy from before a change, served from the repo).
  */
-import { GPU_CASTER_LIGHT_FLOAT } from '../../src/render/gpuQueueLayout.js';
+import { GPU_CASTER_LIGHT_FLOAT, GPU_KEYED_CASTER_FLOATS } from '../../src/render/gpuQueueLayout.js';
 import { STAMP_SLOTS } from '../../src/render/shadowStampClient.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { layoutRegions, NULL_GUARD_BYTES, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
@@ -123,7 +123,8 @@ export async function createStampReplay(capture, kernelUrl) {
     put('stampCap', f.stampCap);
     put('stampBase', f.stampBase);
     put('stampLightIdx', f.lightIdxOn ? R.stampLightIdx.byte : 0);
-    put('lightFloat', GPU_CASTER_LIGHT_FLOAT);
+    // Where the light vec4 goes in a stamp row, as pre-render sets it: after a keyed row's 7 floats, else GPU_CASTER_LIGHT_FLOAT.
+    put('lightFloat', f.sunFloats === GPU_KEYED_CASTER_FLOATS ? GPU_KEYED_CASTER_FLOATS : GPU_CASTER_LIGHT_FLOAT);
     put('nearDist', R.nearDist.byte);
     put('nearSlot', R.nearSlot.byte);
     put('nearCount', R.nearCount.byte);
