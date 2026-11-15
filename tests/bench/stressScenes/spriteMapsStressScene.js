@@ -1,7 +1,7 @@
 import WEED from '/src/index.js';
 import { mulberry32 } from '../benchMath.js';
 
-const { Scene, GameObject, Collider, SpriteRenderer, ShadowCaster, LightEmitter, Camera, Sun, Decoration, enums } = WEED;
+const { Scene, GameObject, Collider, DirectionalSprite, ShadowCaster, LightEmitter, Camera, Sun, Decoration, enums } = WEED;
 const { ShapeType } = enums;
 
 function queryNumber(key, fallback) {
@@ -33,12 +33,14 @@ export const stressSceneConfig = {
   requested: { maps: MAPS, n: N, lights: LIGHTS, res: RES, hour: HOUR, backend: BACKEND, sunShadows: SUN_SHADOWS, selfShadow: SELF_SHADOW ? 1 : 0 },
 };
 
-/** A shape of tests/bench/stressScenes/maps (ray-traced at pitch 45: makeShapes.mjs), standing on its foot. */
+/** A shape of tests/bench/stressScenes/maps (ray-traced at pitch 45 from 8 directions: makeShapes.mjs), turned as it faces. */
 class Shape extends GameObject {
-  static components = [SpriteRenderer, ShadowCaster];
+  static components = [DirectionalSprite, ShadowCaster];
 
-  onSpawned({ shape = 0 } = {}) {
+  onSpawned({ shape = 0, facing = Math.PI / 2 } = {}) {
     this.setSpritesheet('shapes');
+    // Drawn from 8 directions (the sheet's json says so): it shows the one it faces, its sun shadow the one the sun sees.
+    this.directionalSprite.facing = facing;
     this.setAnimation(SHAPES[shape % SHAPES.length]);
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.75;
@@ -116,7 +118,7 @@ export class SpriteMapsStressScene extends Scene {
     for (let k = 0; k < N; k++) {
       const c = k % cols;
       const r = (k / cols) | 0;
-      Shape.spawn({ x: ((c + 0.5) * W) / cols + (rng() - 0.5) * 20, y: ((r + 0.5) * H) / rows + (rng() - 0.5) * 20, shape: k });
+      Shape.spawn({ x: ((c + 0.5) * W) / cols + (rng() - 0.5) * 20, y: ((r + 0.5) * H) / rows + (rng() - 0.5) * 20, shape: k, facing: rng() * Math.PI * 2 });
     }
     const colors = [0xffe0b0, 0xb0d0ff, 0xffb0c0, 0xc0ffb0];
     for (let k = 0; k < LIGHTS; k++) {

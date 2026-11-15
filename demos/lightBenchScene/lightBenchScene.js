@@ -11,7 +11,7 @@
 import WEED from '/src/index.js';
 import { SunPanel } from '../sunStreetScene/sunPanel.js';
 
-const { Scene, GameObject, Collider, SpriteRenderer, DirectionalSprite, ShadowCaster, LightEmitter, Camera, Sun, Keyboard,
+const { Scene, GameObject, Collider, DirectionalSprite, ShadowCaster, LightEmitter, Camera, Sun, Keyboard,
   Decoration, enums } = WEED;
 const { ShapeType } = enums;
 
@@ -29,12 +29,14 @@ const IMG = '/demos/lightBenchScene/img/';
 const shapes = { json: IMG + 'shapes.json', png: IMG + 'shapes.png' };
 if (MAPS) Object.assign(shapes, { heightMap: IMG + 'shapes_h.png', normalMap: IMG + 'shapes_n.png' });
 
-/** A ray-traced shape (makeShapes.mjs, pitch 45) standing on its foot. */
+/** A ray-traced shape (makeShapes.mjs, pitch 45, 8 directions) standing on its foot, turned as it faces. */
 class Shape extends GameObject {
-  static components = [SpriteRenderer, ShadowCaster];
+  static components = [DirectionalSprite, ShadowCaster];
 
-  onSpawned({ shape = 0 } = {}) {
+  onSpawned({ shape = 0, facing = Math.PI / 2 } = {}) {
     this.setSpritesheet('shapes');
+    // Drawn from 8 directions (the sheet's json says so): it shows the one it faces, its sun shadow the one the sun sees.
+    this.directionalSprite.facing = facing;
     this.setAnimation(SHAPES[shape % SHAPES.length]);
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.75;
@@ -147,7 +149,12 @@ export class LightBenchScene extends Scene {
     Decoration.spawn({ x: W / 2, y: H / 2, texture: '_white', scaleX: (W + 8) / 8, scaleY: (H + 8) / 8, anchorX: 0.5, anchorY: 0.5, tint: 0x8e8a7c, layer: 'ground' });
     const rng = globalThis.rng;
     for (let k = 0; k < 40; k++) {
-      Shape.spawn({ x: 80 + ((k % 8) * (W - 160)) / 7 + (rng() - 0.5) * 30, y: 120 + Math.floor(k / 8) * 170 + (rng() - 0.5) * 30, shape: k });
+      Shape.spawn({
+        x: 80 + ((k % 8) * (W - 160)) / 7 + (rng() - 0.5) * 30,
+        y: 120 + Math.floor(k / 8) * 170 + (rng() - 0.5) * 30,
+        shape: k,
+        facing: rng() * Math.PI * 2,
+      });
     }
     Walker.spawn({ x: W / 2, y: H / 2 + 40 });
     const colors = [0xffd9a0, 0xa8c8ff, 0xffa8c0, 0xc8ffa8];
