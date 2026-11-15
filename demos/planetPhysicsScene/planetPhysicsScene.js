@@ -104,9 +104,11 @@ export class PlanetPhysicsScene extends Scene {
       noLimitFPS: false,
     },
 
+    // A side view: raycasted lighting, the rock a wall (TerrainIsland's shadowCaster.setWall). The lights pool on the
+    // backdrop, seen face on: a floor of 1, not sin(0).
+    camera: { pitch: 0, floorScaleY: 1 },
     lighting: {
       enabled: true,
-      raycasted: true,
       shadowsEnabled: false,
       baseAmbient: 0,
       maxLights: 40,
