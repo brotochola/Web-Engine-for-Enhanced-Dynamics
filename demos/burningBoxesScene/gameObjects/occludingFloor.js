@@ -1,11 +1,11 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, LightOccluder, enums } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, ShadowCaster, enums } = WEED;
 const { ShapeType } = enums;
 
 export class OccludingFloor extends GameObject {
   static instances = [];
-  static components = [RigidBody, Collider, SpriteRenderer, LightOccluder];
+  static components = [RigidBody, Collider, SpriteRenderer, ShadowCaster];
 
   onSpawned(spawnConfig = {}) {
     const config = spawnConfig || {};
@@ -31,6 +31,8 @@ export class OccludingFloor extends GameObject {
     this.setAnchor(0.5, 0.5);
     this.setTint(config.tint ?? (sprite === 'box' ? 0x666666 : 0xffffff));
     this.setAlpha(config.alpha ?? (sprite === 'box' ? 0.8 : 1));
+    // A wall: it stops the lights of the boxes that burn, by its collider.
+    this.shadowCaster.setWall();
 
     // const rx = config.repeatX != null ? config.repeatX : sprite === 'box' ? 0 : origW;
     // const ry = config.repeatY != null ? config.repeatY : sprite === 'box' ? 0 : origH;
