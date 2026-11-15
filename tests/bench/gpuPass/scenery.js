@@ -162,6 +162,26 @@ export async function buildScenery(p) {
     atlasSize: [W, H],
     twin,
     lutCard: lut('card'),
+    // The columns' instances with `cards` card rows among the renders: the table's frames as renders, then again as cards.
+    lutMixed: (() => {
+      const r = lut('render');
+      const c = lut('card');
+      const out = new Float32Array(r.length + c.length);
+      out.set(r, 0);
+      out.set(c, r.length);
+      return out;
+    })(),
+    lutMixedSize: [LUT_TEXELS, frames.length * 2],
+    columnRows: spriteRows(
+      [
+        ...feet.slice(0, Math.min(p.renders, feet.length)),
+        ...Array.from({ length: p.cards }, (_, i) => {
+          const f = feet[i % feet.length];
+          return [f[0], f[1], f[2] + frameCount, f[3]];
+        }),
+      ],
+      { shadow: true },
+    ),
     lutRender: lut('render'),
     lutSize: [LUT_TEXELS, frames.length],
     sprites: spriteRows(feet, { depth: true }),

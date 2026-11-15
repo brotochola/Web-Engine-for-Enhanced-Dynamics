@@ -261,6 +261,7 @@ export function buildFrame(p, sh, sc, backend) {
     twin: { kind: 'data', format: 'rgba8', width: sc.atlasSize[0], height: sc.atlasSize[1], data: sc.twin, filter: 'nearest' },
     lutCard: { kind: 'data', format: 'rgba32f', width: sc.lutSize[0], height: sc.lutSize[1], data: sc.lutCard },
     lutRender: { kind: 'data', format: 'rgba32f', width: sc.lutSize[0], height: sc.lutSize[1], data: sc.lutRender },
+    lutMixed: { kind: 'data', format: 'rgba32f', width: sc.lutMixedSize[0], height: sc.lutMixedSize[1], data: sc.lutMixed },
     lightData: { kind: 'data', format: 'rgba32f', width: sc.maxLights, height: 3, data: sc.lightData },
     lampTiles: { kind: 'data', format: 'rgba32f', width: sc.lampCount, height: 1, data: sc.lampTiles },
     foot: { kind: 'data', format: 'rgba32f', width: FOOTPRINT_TEXELS, height: 1, data: sc.foot },
@@ -471,14 +472,14 @@ export function buildFrame(p, sh, sc, backend) {
     },
   }));
   add('sunColumns', () => ({
-    label: `sun map, ${sc.renders.count} renders as columns (${SUN_MAP_COLUMNS}x${SUN_MAP_COLUMNS} cells), ${sw}x${shh} ${p.format}`,
+    label: `sun map, ${sc.renders.count} renders as columns (${SUN_MAP_COLUMNS}x${SUN_MAP_COLUMNS} cells)${p.cards > 0 ? ` among ${p.cards} card rows` : ''}, ${sw}x${shh} ${p.format}`,
     spec: {
       name: 'sunColumns',
       glsl: { vertex: sunMapColumnsVertex(sh.shadowVert), fragment: sh.sunMapFrag },
       wgsl: { code: sunMapColumnsWgsl(sh.shadowWgsl), vertexEntry: 'mainVert', fragmentEntry: 'mainFragMap' },
       vertex: grid,
-      instances: sc.renders,
-      textures: { uTexture: 'atlas', uTexLut: 'lutRender', uMaps: 'twin', uFoot: 'foot' },
+      instances: p.cards > 0 ? sc.columnRows : sc.renders,
+      textures: { uTexture: 'atlas', uTexLut: p.cards > 0 ? 'lutMixed' : 'lutRender', uMaps: 'twin', uFoot: 'foot' },
       uniforms: shadowUniforms(),
       targets: ['sunMap'],
       // As the engine draws it (mapDepthState): the highest caster point by a depth test, no blending.
