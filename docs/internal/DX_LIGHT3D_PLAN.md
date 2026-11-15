@@ -816,7 +816,7 @@ está a la altura del farol o más arriba no le tira sombra, y un farol con `ele
 
 - Las siluetas de un farol usan el cuadro que ve ese farol (5074f12a; un cartón fijo conserva su cuadro de frente), y un
   farol no se tapa con su propia entidad (918da75b: sus filas de estampa pierden la altura), en los dos modos. Las dos
-  cosas también en las filas con clave (f764d0ac, en `dx/light3d` después de la base de esta rama de docs).
+  cosas también en las filas con clave (f764d0ac).
 - La autosombra hacia cada farol con mosaico (F8, 7ac0817b).
 - Escena dueña: `lampShadowStressScene` (72cee65d: `?lampShadows=map|sprite`, `?lamps=` 48, `?walkers=` 2000), sin medir.
 
