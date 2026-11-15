@@ -104,8 +104,9 @@ export async function createGpuBackend(canvas, { hangMs = 10000, intBits = 'exac
 
   function createTexture(key, desc) {
     if (desc.kind === 'depth') {
-      const texture = device.createTexture({ size: [desc.width, desc.height], format: 'depth24plus', usage: GPUTextureUsage.RENDER_ATTACHMENT });
-      textures.set(key, { texture, view: texture.createView(), width: desc.width, height: desc.height, format: 'depth' });
+      const depthFormat = desc.bits === 16 ? 'depth16unorm' : 'depth24plus';
+      const texture = device.createTexture({ size: [desc.width, desc.height], format: depthFormat, usage: GPUTextureUsage.RENDER_ATTACHMENT });
+      textures.set(key, { texture, view: texture.createView(), width: desc.width, height: desc.height, format: 'depth', depthFormat });
       return;
     }
     const format = desc.format || 'rgba8';
@@ -266,7 +267,7 @@ export async function createGpuBackend(canvas, { hangMs = 10000, intBits = 'exac
         vertex: { module, entryPoint: spec.wgsl.vertexEntry, buffers: bufferLayouts },
         fragment: { module, entryPoint: spec.wgsl.fragmentEntry, targets },
         primitive: { topology: 'triangle-list', cullMode: 'none' },
-        depthStencil: depth ? { format: 'depth24plus', depthWriteEnabled: true, depthCompare: 'less' } : undefined,
+        depthStencil: depth ? { format: depth.depthFormat, depthWriteEnabled: true, depthCompare: 'less' } : undefined,
       }),
     );
     const first = textures.get(spec.targets[0]);

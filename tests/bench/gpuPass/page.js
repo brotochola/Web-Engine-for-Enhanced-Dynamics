@@ -11,7 +11,7 @@
  *   0.5)  shadowRes (sun map, 1)  lights (32)  maxLights (MAX_LIGHTS and the light texture's width, 256)
  *   silhouettes (sprites and sun cards, 2000)  renders (sun columns casters, 200)  lamps (48)  casters (a lamp, 64)
  *   tile (a lamp's tile texels, 256)  steps (self-shadow steps, 6)  rays (1)  format (the shadow maps' target: rgba8,
- *   r16f, r32f, rgba16f; rgba8)  night (1: no sun term)  intBits (WebGPU i32 uniforms: 'exact', as the vendored
+ *   r16f, r32f, rgba16f; rgba8)  mapDepth (the maps' depth buffer: 24, as Pixi's depth-stencil, or 16)  night (1: no sun term)  intBits (WebGPU i32 uniforms: 'exact', as the vendored
  *   Pixi writes them, or 'float', a float's bits: then uLightCount reads huge and the loops run to maxLights)  samples (12)  targetMs (25)  maxK (512)  warmupMs (300)  hangMs (10000)  capacity (0)
  *   floorScaleY, heightScaleY (the light bench's camera: 0.736, 0.752)
  */
@@ -60,6 +60,8 @@ export function readParams(search) {
     warmupMs: Math.max(0, num('warmupMs', 300)),
     hangMs: Math.max(1000, num('hangMs', 10000)),
     capacity: q.get('capacity') === '1',
+    // The shadow maps' depth buffer: 24 bits (Pixi's depth-stencil, what the engine draws with) or 16.
+    mapDepth: q.get('mapDepth') === '16' ? 16 : 24,
     capacityMax: int('capacityMax', 4096, 1),
     floorScaleY: Math.min(1, Math.max(0.05, num('floorScaleY', 0.7364193217154872))),
     heightScaleY: Math.min(2, Math.max(0, num('heightScaleY', 0.7516549042792687))),

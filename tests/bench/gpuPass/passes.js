@@ -267,9 +267,9 @@ export function buildFrame(p, sh, sc, backend) {
     gbufFull: { kind: 'target', format: 'rgba8', width: W, height: H, filter: 'nearest' },
     depth: { kind: 'depth', width: W, height: H },
     sunMap: { kind: 'target', format: p.format, width: sw, height: shh, filter: 'nearest' },
-    sunDepth: { kind: 'depth', width: sw, height: shh },
+    sunDepth: { kind: 'depth', width: sw, height: shh, bits: p.mapDepth },
     lampMap: { kind: 'target', format: p.format, width: tiles.width, height: tiles.height, filter: 'nearest' },
-    lampDepth: { kind: 'depth', width: tiles.width, height: tiles.height },
+    lampDepth: { kind: 'depth', width: tiles.width, height: tiles.height, bits: p.mapDepth },
     light: { kind: 'target', format: 'rgba8', width: lw, height: lh, filter: 'linear' },
   };
 

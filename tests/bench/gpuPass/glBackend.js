@@ -126,7 +126,7 @@ export function createGlBackend(canvas) {
     if (desc.kind === 'depth') {
       const rb = gl.createRenderbuffer();
       gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
-      gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, desc.width, desc.height);
+      gl.renderbufferStorage(gl.RENDERBUFFER, desc.bits === 16 ? gl.DEPTH_COMPONENT16 : gl.DEPTH_COMPONENT24, desc.width, desc.height);
       textures.set(key, { depth: rb, width: desc.width, height: desc.height, format: 'depth' });
       return;
     }
