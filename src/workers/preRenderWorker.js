@@ -286,6 +286,40 @@ export function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, 
 }
 
 /**
+ * DX-SHADOW3D: _applySunFrames' loop. A directional sprite's full sun row draws the frame the sun sees (of[entity],
+ * ±(textureId + 1), negative mirrored): its texture, and the flip in its scale's sign.
+ */
+export function applySunFramesInto(rows, sunN, casters, types, entities, of) {
+    for (let k = 0; k < sunN; k++) {
+        const row = casters[k];
+        if (types[row] !== 0) continue;
+        const v = of[entities[row]];
+        if (v === 0) continue;
+        const at = k * GPU_CASTER_FLOATS;
+        rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
+        const sx = rows[at + GPU_ROW_SCALE_X];
+        rows[at + GPU_ROW_SCALE_X] = (v < 0) === (sx < 0) ? sx : -sx;
+    }
+}
+
+/**
+ * DX-SHADOW3D (plan §17.2): _applyKeyedSunFrames' loop. The kernel wrote a keyed row for each queue row it found casting
+ * (type 3 left out, a shadow height above 0), in queue order, with 0 in its fourth float; this walks the queue the same
+ * way and writes there the entity's sun frame (of[entity]).
+ */
+export function applyKeyedSunFramesInto(rows, keyedN, count, qType, shadowH, types, entities, of) {
+    let n = 0;
+    for (let i = 0; i < count && n < keyedN; i++) {
+        if (qType && qType[i] === 3) continue;
+        if (!(shadowH[i] > 0)) continue;
+        const k = n++;
+        if (types[i] !== 0) continue;
+        const v = of[entities[i]];
+        if (v !== 0) rows[k * GPU_KEYED_CASTER_FLOATS + 3] = v;
+    }
+}
+
+/**
  * DX-CASTER (F9): whether any caster asks for something other than its sheet's way (a kind, a fixed card, an opacity
  * below 1). Scanned in entity order now and then: until one does, the rows carry nothing more. A card (CAST_KIND.SPRITE,
  * 1) on a sheet that casts no solid is what its sheet's way casts anyway (setSprite's options alone, as Predator's people
@@ -3978,20 +4012,7 @@ class PreRenderWorker extends AbstractWorker {
      */
     _applySunFrames(q, rows, sunN) {
         if ((q.count | 0) !== this._collectedRows || !this._computeSunFrames()) return;
-        const of = this._sunFrameOf;
-        const casters = this._gpuCasterIdx;
-        const types = this._renderableType;
-        const entities = this._renderableIndex;
-        for (let k = 0; k < sunN; k++) {
-            const row = casters[k];
-            if (types[row] !== 0) continue;
-            const v = of[entities[row]];
-            if (v === 0) continue;
-            const at = k * GPU_CASTER_FLOATS;
-            rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
-            const sx = rows[at + GPU_ROW_SCALE_X];
-            rows[at + GPU_ROW_SCALE_X] = (v < 0) === (sx < 0) ? sx : -sx;
-        }
+        applySunFramesInto(rows, sunN, this._gpuCasterIdx, this._renderableType, this._renderableIndex, this._sunFrameOf);
     }
 
     /**
@@ -4004,18 +4025,8 @@ class PreRenderWorker extends AbstractWorker {
         const qType = q.type || this.renderQueueType;
         const shadowH = q.shadowH;
         if ((q.count | 0) !== this._collectedRows || !shadowH || !this._computeSunFrames()) return;
-        const of = this._sunFrameOf;
-        const types = this._renderableType;
-        const entities = this._renderableIndex;
-        let n = 0;
-        for (let i = 0; i < count && n < keyedN; i++) {
-            if (qType && qType[i] === 3) continue;
-            if (!(shadowH[i] > 0)) continue;
-            const k = n++;
-            if (types[i] !== 0) continue;
-            const v = of[entities[i]];
-            if (v !== 0) rows[k * GPU_KEYED_CASTER_FLOATS + 3] = v;
-        }
+        applyKeyedSunFramesInto(rows, keyedN, count, qType, shadowH, this._renderableType, this._renderableIndex,
+            this._sunFrameOf);
     }
 
     _ensureStampScratch(sunN) {
