@@ -12,7 +12,7 @@
 // and for a name neither knows, every body fitted and the best match kept; --type forces one. Each frame goes into a cell of one size with the car's centre on the floor at the same point (the
 // entity's anchor), so <name>.png, <name>_h.png (height, R·256 + G in 1/64 px) and <name>_n.png (normals: R +x, G +y up,
 // B +z) stay twins. <name>.json keeps the pack's headings (directions.drive, mirrorX: the left-facing half mirrored),
-// so a car turns in even 7.5° steps as the pack draws it, and carries meta.light3d: how it casts (its solid), its tallest point, each
+// so a car turns in even 7.5° steps as the pack draws it, and carries meta.light3d: how it casts, its tallest point, each
 // frame's footprint on the floor (the fitted length and width, turned by the frame's own heading) and its box.
 // Writes index.js next to the sheets: every sheet's anchor, tallest point and box (index.js is rewritten from all the
 // sheets in the folder).
@@ -176,13 +176,13 @@ function bake(jsonPath) {
       // The car's centre on the floor in its cell (every cell puts it at the same point): the sprite's anchor.
       anchor: [Math.round((left / cw) * 1e6) / 1e6, Math.round((top / ch) * 1e6) / 1e6],
       source: json.meta?.fuente || 'TopDown Vehicles v1.17, MinZiin (CC BY 4.0)',
-      // How it casts (its heightmap's solid for the sun and the lamps: a card facing the sun would lie at an angle, the
-      // picture being the car seen from above), its tallest point (px), each frame's
+      // How it casts (as the owner's light bench prototype: a card for the sun, the frame the sun sees standing on the
+      // contact nearest it; its heightmap's solid for the lamps), its tallest point (px), each frame's
       // footprint (floor px around the anchor, in frame order), its box unturned (x0, x1, y0, y1, height) and the frames'
       // own headings as nm-core found them (the art is not drawn every 7.5° exactly).
       light3d: {
         kind: 'car',
-        cast: { sun: 'heightmap', lamp: 'heightmap' },
+        cast: { sun: 'sprite', lamp: 'heightmap' },
         zmax: r1(zmax),
         footprints: frames.map((f) => footprint(f.real)),
         box: [r1(-L / 2), r1(L / 2), r1(-Wd / 2), r1(Wd / 2), r1(roof)],

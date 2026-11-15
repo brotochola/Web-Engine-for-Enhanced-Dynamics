@@ -12,7 +12,7 @@ Each car is four files that stay twins (the same cells in the same places):
 - `<name>_n.png`: the normals, R +x, G +y up, B +z;
 - `<name>.json`: the frames, `directions.drive` (the pack's degrees, `mirrorX`) for `DirectionalSprite` with
   `setAnimation('drive')`, `meta.anchor` (that centre, for `spriteRenderer.anchorX/Y`) and `meta.light3d` (how it casts:
-  its height map's solid for the sun and the lamps; its tallest point; each frame's footprint on the floor; its box; the
+  its card for the sun, its height map's solid for the lamps; its tallest point; each frame's footprint on the floor; its box; the
   heading each frame is drawn at).
 
 `index.js` lists every car's cell, box, tallest point, anchor and drawn headings for code that needs them before the
