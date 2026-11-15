@@ -218,9 +218,14 @@ export class Sun {
     }
     static set angle(v) {
         if (this._float32) {
-            this._float32[Sun.F32.ANGLE] = v;
-            this._written |= 1 << Sun.F32.ANGLE;
+            this._writeAngle(v);
+            // N-180: the shadows' direction follows (setTimeOfDay alone recomputed it).
+            this._updateShadowValues(this._float32[Sun.F32.ELEVATION]);
         }
+    }
+    static _writeAngle(v) {
+        this._float32[Sun.F32.ANGLE] = v;
+        this._written |= 1 << Sun.F32.ANGLE;
     }
 
     /** Sun elevation in degrees (0=horizon, 90=directly overhead) */
@@ -229,9 +234,14 @@ export class Sun {
     }
     static set elevation(v) {
         if (this._float32) {
-            this._float32[Sun.F32.ELEVATION] = v;
-            this._written |= 1 << Sun.F32.ELEVATION;
+            this._writeElevation(v);
+            // N-180: the shadows' length follows (setTimeOfDay alone recomputed it).
+            this._updateShadowValues(this._float32[Sun.F32.ELEVATION]);
         }
+    }
+    static _writeElevation(v) {
+        this._float32[Sun.F32.ELEVATION] = v;
+        this._written |= 1 << Sun.F32.ELEVATION;
     }
 
     /** Sun intensity (0-1), affects ambient light and point light shadow suppression */
@@ -364,6 +374,7 @@ export class Sun {
         if (this._float32) {
             this._float32[Sun.F32.SHADOW_ANGLE_OFFSET] = v;
             this._written |= 1 << Sun.F32.SHADOW_ANGLE_OFFSET;
+            this._updateShadowValues(this._float32[Sun.F32.ELEVATION]); // N-180
         }
     }
 
@@ -386,6 +397,7 @@ export class Sun {
         if (this._float32) {
             this._float32[Sun.F32.SHADOW_MIN_LENGTH_RATIO] = v;
             this._written |= 1 << Sun.F32.SHADOW_MIN_LENGTH_RATIO;
+            this._updateShadowValues(this._float32[Sun.F32.ELEVATION]); // N-180
         }
     }
 
@@ -397,6 +409,7 @@ export class Sun {
         if (this._float32) {
             this._float32[Sun.F32.SHADOW_MAX_LENGTH_RATIO] = v;
             this._written |= 1 << Sun.F32.SHADOW_MAX_LENGTH_RATIO;
+            this._updateShadowValues(this._float32[Sun.F32.ELEVATION]); // N-180
         }
     }
 
@@ -474,12 +487,12 @@ export class Sun {
 
         // Sun angle: East (90°) at 6am, South (180°) at noon, West (270°) at 6pm
         // Offset so sunrise is at ~6am
-        this.angle = ((dayProgress - 0.25) * 360 + 360) % 360;
+        if (this._float32) this._writeAngle(((dayProgress - 0.25) * 360 + 360) % 360);
 
         // Elevation: cos(π * noonOffset) = cos(2π * noonOffset/2)
         const noonOffset = Math.abs(h - 12) / 12; // 0 at noon, 1 at midnight
         const elevation = Math.max(0, this._cosTau(noonOffset * 0.5) * (this.maxElevation || 90));
-        this.elevation = elevation;
+        if (this._float32) this._writeElevation(elevation);
 
         // Intensity: (1 - cos(2π dayProgress)) / 2
         this.intensity = Math.max(0, Math.min(1, -this._cosTau(dayProgress) * 0.5 + 0.5));
