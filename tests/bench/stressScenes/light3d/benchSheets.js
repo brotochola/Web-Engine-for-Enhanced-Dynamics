@@ -1,11 +1,14 @@
 import WEED from '/src/index.js';
-import { BENCH_ASSETS } from '/demos/lightBenchScene/assets/index.js';
+import { BENCH_ASSETS, benchSheetSpec, sheetScale } from '/demos/lightBenchScene/benchAssets.js';
+
+export { sheetScale };
 
 /**
- * What the DX-LIGHT3D stress scenes share: the light bench's renders (demos/lightBenchScene/assets/: Quaternius props drawn
- * from 32 directions, MinZinn cars over half a turn and mirrored, the LPC person, each with its height and normal maps),
- * the camera they were drawn for, and the scenes' URL knobs. Nothing here is copied: the sheets are read where the bench
- * keeps them, and their anchors and boxes come from its index.js.
+ * What the DX-LIGHT3D stress scenes share: the light bench's sheets (demos/lightBenchScene/benchAssets.js: Quaternius
+ * props drawn from 32 directions, the repo's standard MinZiin cars over half a turn and mirrored, drawn at twice their
+ * size, the shared LPC person, each with its height and normal maps), the camera they were drawn for, and the scenes'
+ * URL knobs. Nothing here is copied: the sheets are read where they are kept, and their anchors, scales and boxes come
+ * from the bench's table. An entity draws a sheet at its scale times sheetScale(sheet).
  */
 export const BENCH_DIR = '/demos/lightBenchScene/assets/';
 
@@ -43,13 +46,7 @@ export function paramBackend() {
 /** The bench's sheet specs for `names`, with their height and normal maps unless `maps` is false. */
 export function benchSheets(names, maps = true) {
   const sheets = {};
-  for (const name of names) {
-    sheets[name] = { json: `${BENCH_DIR}${name}.json`, png: `${BENCH_DIR}${name}.png` };
-    if (maps && BENCH_ASSETS[name]?.maps) {
-      sheets[name].heightMap = `${BENCH_DIR}${name}_h.png`;
-      sheets[name].normalMap = `${BENCH_DIR}${name}_n.png`;
-    }
-  }
+  for (const name of names) sheets[name] = benchSheetSpec(name, maps);
   return sheets;
 }
 

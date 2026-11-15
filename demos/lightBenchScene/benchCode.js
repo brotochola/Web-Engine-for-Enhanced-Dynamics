@@ -1,7 +1,7 @@
 // The light bench's code panel: the WeedJS code of what is selected (an element, a lamp, or the scene when nothing is),
 // with DX-LIGHT3D's API (DX_LIGHT3D_PLAN.md §5). It writes the calls benchLook.js's applyLook makes, in the same order.
 
-import { BENCH_ASSETS } from './assets/index.js';
+import { BENCH_ASSETS } from './benchAssets.js';
 import { boxOf, boxOptions, castsVolume, normalizeLook, volumeRotation } from './benchLook.js';
 
 const DEG = 180 / Math.PI;
@@ -101,6 +101,7 @@ export function elementCode(el, { maps }) {
   out.push('  onSpawned() {');
   out.push(line(4, `this.setSpritesheet('${el.sheet}');`));
   out.push(line(4, `this.setAnchor(${num(asset.anchorX, 3)}, ${num(asset.anchorY, 3)});`, 'the foot, where every frame has it'));
+  if (asset.scale !== 1) out.push(line(4, `this.setScale(${num(asset.scale)});`, 'the sheet at the scene\'s scale (its maps follow)'));
   if (el.kind === 'prop') {
     out.push(line(4, "this.setAnimation('stand');", 'no direction: the json\'s directions (32 renders)'));
     out.push(line(4, `this.directionalSprite.facing = ${num(el.facing)};`, `${num(((el.facing * DEG) % 360 + 360) % 360, 0)}°; 90° looks at the camera`));

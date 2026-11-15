@@ -34,7 +34,7 @@ const { Scene, Camera, Sun, LAYER_KIND } = WEED;
 const W = VIEW_W;
 const H = VIEW_H;
 const SEED = 0x5e1f;
-const SHEETS = ['cama', 'mesa', 'sillon', 'biblioteca', 'aljibe', 'gallinero', 'vaca', 'hatch', 'pickup'];
+const SHEETS = ['cama', 'mesa', 'sillon', 'biblioteca', 'aljibe', 'gallinero', 'vaca', 'hatch_rojo', 'pickup_blanco'];
 
 export const N = paramCount('n', 600, 1, 20000);
 const RAYS_RAW = paramNumber('rays', 0);

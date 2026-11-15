@@ -42,7 +42,7 @@ const SEED = 0x5a3d;
 /** Every fifth row of the grid is a road. */
 const ROAD_EVERY = 5;
 const PROP_SHEETS = ['mesa', 'cama', 'sillon', 'biblioteca', 'aljibe', 'gallinero', 'vaca'];
-const CAR_SHEETS = ['hatch', 'pickup'];
+const CAR_SHEETS = ['hatch_rojo', 'pickup_blanco'];
 
 export const CASTERS = paramCount('casters', 3000, 1, 60000);
 export const MOVERS = paramCount('movers', Math.round(CASTERS / 8), 0, 20000);

@@ -65,28 +65,6 @@ export const BENCH_ASSETS = {
     ],
     "maps": true
   },
-  "civil7": {
-    "kind": "char",
-    "anchorX": 0.5,
-    "anchorY": 0.96875,
-    "zmax": null,
-    "box": null,
-    "maps": true
-  },
-  "colectivo": {
-    "kind": "car",
-    "anchorX": 0.51634,
-    "anchorY": 0.618321,
-    "zmax": 85,
-    "box": [
-      -139.25,
-      139.25,
-      -42,
-      42,
-      84.8
-    ],
-    "maps": true
-  },
   "gallinero": {
     "kind": "prop",
     "anchorX": 0.5,
@@ -115,20 +93,6 @@ export const BENCH_ASSETS = {
     ],
     "maps": true
   },
-  "hatch": {
-    "kind": "car",
-    "anchorX": 0.511905,
-    "anchorY": 0.584615,
-    "zmax": 39.5,
-    "box": [
-      -76.6,
-      76.6,
-      -34,
-      34,
-      39.6
-    ],
-    "maps": true
-  },
   "mesa": {
     "kind": "prop",
     "anchorX": 0.5,
@@ -140,20 +104,6 @@ export const BENCH_ASSETS = {
       -49,
       49,
       29
-    ],
-    "maps": true
-  },
-  "pickup": {
-    "kind": "car",
-    "anchorX": 0.494505,
-    "anchorY": 0.577465,
-    "zmax": 41,
-    "box": [
-      -81.625,
-      81.625,
-      -32.725,
-      32.725,
-      41
     ],
     "maps": true
   },

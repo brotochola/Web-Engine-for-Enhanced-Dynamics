@@ -3,7 +3,7 @@
 // setter takes a caster back to its sheet's way, and a fresh entity is that way. The entity applies its look in onSpawned,
 // on its logic worker; benchCode.js writes the same calls as the code panel shows them.
 
-import { BENCH_ASSETS } from './assets/index.js';
+import { BENCH_ASSETS, drawnHeading } from './benchAssets.js';
 
 /** What the sun can cast from an element, in the panel's order: 'auto' is its sheet's way (no setter called). */
 export const SUN_KINDS = ['auto', 'sprite', 'heightMap', 'box', 'hull', 'none'];
@@ -71,9 +71,14 @@ export function castsVolume(look) {
   return look.sun === 'box' || look.sun === 'hull' || look.lamps === 'box' || look.lamps === 'hull';
 }
 
-/** The rotation that turns an element's volume with its facing; 0 for what has no volume turn (trees, the person). */
+/**
+ * The rotation that turns an element's volume with its facing; 0 for what has no volume turn (trees, the person). A car's
+ * follows the frame drawn for that facing (its art is not drawn at even steps: benchAssets.js drawnHeading).
+ */
 export function volumeRotation(sheet, facing) {
-  const turn = VOLUME_TURN[BENCH_ASSETS[sheet]?.kind];
+  const kind = BENCH_ASSETS[sheet]?.kind;
+  if (kind === 'car') return drawnHeading(sheet, facing) + VOLUME_TURN.car;
+  const turn = VOLUME_TURN[kind];
   return turn === undefined ? 0 : facing + turn;
 }
 

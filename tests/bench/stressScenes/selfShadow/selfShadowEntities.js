@@ -1,5 +1,5 @@
 import WEED from '/src/index.js';
-import { anchorOn, benchAnimation } from '../light3d/benchSheets.js';
+import { anchorOn, benchAnimation, sheetScale } from '../light3d/benchSheets.js';
 
 const { GameObject, DirectionalSprite, ShadowCaster, LightEmitter } = WEED;
 
@@ -14,7 +14,7 @@ export class ReliefProp extends GameObject {
 
   onSpawned({ x = 0, y = 0, sheet = 'cama', facing = Math.PI / 2, scale = 1 } = {}) {
     this.setSpritesheet(sheet);
-    this.setScale(scale);
+    this.setScale(scale * sheetScale(sheet));
     anchorOn(this, sheet);
     this.x = x;
     this.y = y;

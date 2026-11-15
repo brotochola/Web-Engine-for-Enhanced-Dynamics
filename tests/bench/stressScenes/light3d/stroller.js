@@ -1,5 +1,5 @@
 import WEED from '/src/index.js';
-import { FLOOR_SCALE_Y, VIEW_H, VIEW_W, anchorOn } from './benchSheets.js';
+import { FLOOR_SCALE_Y, VIEW_H, VIEW_W, anchorOn, sheetScale } from './benchSheets.js';
 
 const { GameObject, Component, DirectionalSprite, Transform } = WEED;
 
@@ -23,7 +23,7 @@ export class Stroller extends GameObject {
 
   onSpawned({ x = 0, y = 0, heading = 0, turn = 0.2, pace = 30, scale = 1, sheet = 'civil7' } = {}) {
     this.setSpritesheet(sheet);
-    this.setScale(scale);
+    this.setScale(scale * sheetScale(sheet));
     anchorOn(this, sheet);
     this.x = x;
     this.y = y;

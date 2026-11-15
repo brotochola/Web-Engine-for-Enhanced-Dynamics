@@ -1,5 +1,5 @@
 import WEED from '/src/index.js';
-import { anchorOn, benchAnimation, castAs } from '../light3d/benchSheets.js';
+import { anchorOn, benchAnimation, castAs, sheetScale } from '../light3d/benchSheets.js';
 
 const { GameObject, Component, DirectionalSprite, ShadowCaster, Transform } = WEED;
 
@@ -17,7 +17,7 @@ export class MapProp extends GameObject {
 
   onSpawned({ x = 0, y = 0, sheet = 'mesa', facing = Math.PI / 2, scale = 1, kind = 'auto' } = {}) {
     this.setSpritesheet(sheet);
-    this.setScale(scale);
+    this.setScale(scale * sheetScale(sheet));
     anchorOn(this, sheet);
     this.x = x;
     this.y = y;
@@ -45,9 +45,9 @@ export class LaneState extends Component {
 export class MapCar extends GameObject {
   static components = [DirectionalSprite, ShadowCaster, LaneState];
 
-  onSpawned({ x = 0, y = 0, sheet = 'hatch', vx = 80, wrapW = 1920, scale = 1, kind = 'auto' } = {}) {
+  onSpawned({ x = 0, y = 0, sheet = 'hatch_rojo', vx = 80, wrapW = 1920, scale = 1, kind = 'auto' } = {}) {
     this.setSpritesheet(sheet);
-    this.setScale(scale);
+    this.setScale(scale * sheetScale(sheet));
     anchorOn(this, sheet);
     this.x = x;
     this.y = y;

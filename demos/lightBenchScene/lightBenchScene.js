@@ -1,5 +1,6 @@
 // The light bench (DX-LIGHT3D's showcase, DX_LIGHT3D_PLAN.md §11): the light bench prototype's farm with the engine's API.
-// Quaternius props rendered from 32 directions, MinZinn cars (half a turn, mirrored), two trees and an LPC person you walk
+// Quaternius props rendered from 32 directions, MinZiin cars (the repo's standard sheets, demos/img/autos: half a turn,
+// mirrored, drawn at twice their size), two trees and an LPC person (demos/img/civil7) you walk
 // with WASD, each with its height map and normal map (assets/: tools/fromLightBench.mjs converts the prototype's files).
 // The props and cars are DirectionalSprites: they show the view they face, and each light's shadow shows the view that
 // light sees.
@@ -15,7 +16,7 @@
 //   ?hour=        the sun's hour (default 16)
 //   ?still=1      nothing moves (the lamps stay, the person stands without breathing): for captures
 //   ?zoom= ?cx= ?cy=  the camera (default: the whole farm); ?panel=0 hides the panel and the marks (captures)
-//   ?only=hatch,arboles,civil7  only those things (none: the grass alone); ?lamps=0 no lamps (captures, checks)
+//   ?only=hatch_rojo,arboles,civil7  only those things (none: the grass alone); ?lamps=0 no lamps (captures, checks)
 //   ?backend=webgpu
 //   ?fullRows=1   the shadows from pre-render's full caster rows (lighting.shadowTextures: the keyed paths off), to compare
 //   ?lampMap=0    the lamps' shadows as stamps, instead of the lamps' shadow map (one tile a lamp)
@@ -28,7 +29,7 @@
 //   ?cycle=       the day cycle, in hours a second (default 0: the hour stays)
 
 import WEED from '/src/index.js';
-import { BENCH_ASSETS } from './assets/index.js';
+import { BENCH_ASSETS, benchSheetSpec, sheetScale } from './benchAssets.js';
 import { elementCode, lampCode, sceneCode } from './benchCode.js';
 import {
   KIND_NAMES, LAMP_KINDS, NORMALS, ORIENTS, SELF_SHADOWS, SUN_KINDS,
@@ -90,16 +91,15 @@ const RES = numberParam('res', 1, 0.1, 2);
 const CYCLE = numberParam('cycle', 0, 0, 24);
 
 const spritesheets = {};
-for (const [name, a] of Object.entries(BENCH_ASSETS)) {
-  spritesheets[name] = { json: `${DIR}${name}.json`, png: `${DIR}${name}.png` };
-  if (MAPS && a.maps) Object.assign(spritesheets[name], { heightMap: `${DIR}${name}_h.png`, normalMap: `${DIR}${name}_n.png` });
-}
+for (const name of Object.keys(BENCH_ASSETS)) spritesheets[name] = benchSheetSpec(name, MAPS);
 
-/** Anchors each sheet's cells share (the converter put every frame's foot there). */
+/** The anchor each sheet's cells share (every frame's foot there) and its scale next to the bench's art. */
 function anchorOn(go, sheet) {
   const a = BENCH_ASSETS[sheet];
   go.spriteRenderer.anchorX = a.anchorX;
   go.spriteRenderer.anchorY = a.anchorY;
+  const s = sheetScale(sheet);
+  if (s !== 1) go.setScale(s, s);
 }
 
 /** The page's messages to an element: 'move' to a point, 'turn' to a facing (a volume turns with it). */
@@ -142,7 +142,7 @@ class Car extends GameObject {
   _sheet = '';
   _volume = false;
 
-  onSpawned({ sheet = 'hatch', facing = 0, look = null, hull = null } = {}) {
+  onSpawned({ sheet = 'hatch_rojo', facing = 0, look = null, hull = null } = {}) {
     const l = look ?? defaultLook(sheet);
     this._sheet = sheet;
     this._volume = castsVolume(l);
@@ -251,7 +251,7 @@ class Lamp extends GameObject {
 const FARM = [
   ['granero', 330, 360], ['gallinero', 1000, 300], ['aljibe', 700, 300], ['cerca', 560, 520], ['cerca', 760, 540],
   ['mesa', 900, 560], ['cama', 1110, 470], ['sillon', 1080, 640], ['biblioteca', 1250, 420], ['vaca', 470, 690],
-  ['pickup', 780, 770], ['hatch', 300, 790], ['colectivo', 1220, 820],
+  ['pickup_blanco', 780, 770], ['hatch_rojo', 300, 790], ['colectivo_amarillo', 1220, 820],
 ];
 const TREES = [[600, 360, 0], [880, 380, 1], [1380, 600, 0], [140, 560, 1], [980, 900, 0]];
 
@@ -259,7 +259,8 @@ const TREES = [[600, 360, 0], [880, 380, 1], [1380, 600, 0], [140, 560, 1], [980
 const ADDABLE = [
   ['granero', 'barn (prop)'], ['gallinero', 'hen house (prop)'], ['aljibe', 'well (prop)'], ['cerca', 'fence (prop)'],
   ['mesa', 'table (prop)'], ['cama', 'bed (prop)'], ['sillon', 'sofa (prop)'], ['biblioteca', 'bookcase (prop)'],
-  ['vaca', 'cow (prop)'], ['hatch', 'hatchback (car)'], ['pickup', 'pickup (car)'], ['colectivo', 'bus (car)'],
+  ['vaca', 'cow (prop)'], ['hatch_rojo', 'hatchback (car)'], ['pickup_blanco', 'pickup (car)'], ['colectivo_amarillo', 'bus (car)'],
+  ['taxi', 'taxi (car)'], ['camion_rojo', 'truck (car)'],
   ['tree:arbol_verde', 'green tree'], ['tree:arbol_jacaranda', 'jacaranda'],
 ];
 
@@ -270,7 +271,7 @@ const LAMP_COLORS = [
 const KEYS_TEXT = [
   'WASD      walk the person',
   'click     select a thing or a lamp\'s dot; drag: move it',
-  'Q / E     turn the selected (32 views)',
+  'Q / E     turn the selected (a prop 32 views, a car 48)',
   'Delete    remove the selected   Esc  select nothing',
   'B         the selected\'s shadows off / back',
   'N         the selected\'s normals: auto, map, height, flat',
@@ -286,6 +287,11 @@ const KEYS_TEXT = [
 ].join('\n');
 
 const RESOLUTIONS = [1, 0.5, 0.25];
+
+/** A turn of one view: a prop's sheet has 32, a car's 48 (TopDown Vehicles: 7.5° steps, half drawn, half mirrored). */
+function turnStep(kind) {
+  return (kind === 'car' ? 7.5 : 11.25) * DEG;
+}
 
 export class LightBenchScene extends Scene {
   static config = {
@@ -502,7 +508,7 @@ export class LightBenchScene extends Scene {
     if (el.kind !== 'prop' && el.kind !== 'car') return;
     el.facing += by;
     if (el.index >= 0) this.sendToEntity(el.index, 'turn', el.facing);
-    this._ui?.facing?.set(Math.round((((el.facing / DEG) % 360) + 360) % 360));
+    this._ui?.facing?.set(Math.round(((((el.facing / DEG) % 360) + 360) % 360) * 10) / 10);
     this._refreshCode();
   }
 
@@ -679,8 +685,9 @@ export class LightBenchScene extends Scene {
       return;
     }
     if (s.lamp) return;
-    if (Keyboard.isPressed('q')) this._turn(s, -11.25 * DEG);
-    if (Keyboard.isPressed('e')) this._turn(s, 11.25 * DEG);
+    // One of its views a press: a prop's 32, a car's 48 (the pack's 7.5° steps), so every frame drawn shows on a turn.
+    if (Keyboard.isPressed('q')) this._turn(s, -turnStep(s.kind));
+    if (Keyboard.isPressed('e')) this._turn(s, turnStep(s.kind));
     if (Keyboard.isPressed('b')) {
       // Off, and back to what it was.
       if (s.off !== null) {
@@ -720,7 +727,7 @@ export class LightBenchScene extends Scene {
   async _loadMeta() {
     await Promise.all(Object.keys(BENCH_ASSETS).map(async (name) => {
       try {
-        const res = await fetch(`${DIR}${name}.json`);
+        const res = await fetch(BENCH_ASSETS[name].json);
         const json = await res.json();
         const first = Object.values(json.frames ?? {})[0];
         this._meta[name] = {
@@ -953,12 +960,12 @@ export class LightBenchScene extends Scene {
     }
     const a = BENCH_ASSETS[t.sheet];
     const meta = this._meta[t.sheet];
-    const what = { prop: 'prop, 32 views', car: 'car, half a turn mirrored', tree: 'tree, one view', char: 'the person, 4 views' }[t.kind];
+    const what = { prop: 'prop, 32 views', car: 'car, 48 views: half a turn mirrored', tree: 'tree, one view', char: 'the person, 4 views' }[t.kind];
     s.summary.textContent = `Selected: ${t.anim ?? t.sheet} (${what})`;
     const ui = this._ui;
     if (t.kind === 'prop' || t.kind === 'car') {
       ui.facing = s.range({
-        label: 'Facing', min: 0, max: 360, step: 11.25, value: Math.round((((t.facing / DEG) % 360) + 360) % 360),
+        label: 'Facing', min: 0, max: 360, step: turnStep(t.kind) / DEG, value: Math.round(((((t.facing / DEG) % 360) + 360) % 360) * 10) / 10,
         format: (v) => `${v}°`,
         note: 'directionalSprite.facing: where it looks, world radians like rotation (90° looks at the camera). It draws ' +
           'the view it faces, and each light\'s shadow the view that light sees. [Q/E]',

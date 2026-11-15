@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // The light bench prototype's assets (the "Banco de luz y sombras" page: Quaternius farm props rendered from 32
-// directions, MinZinn cars, an LPC person and two trees, each with a height map and a normal map) as WeedJS spritesheets.
+// directions, MinZinn cars, an LPC person and two trees, each with a height map and a normal map) as WeedJS spritesheets:
+// the props and the trees. The cars and the person are the repo's standard sheets (demos/img/autos and demos/img/civil7,
+// baked by demos/tools/bakeCarSheet.mjs and bakeReliefMaps.mjs), which ../benchAssets.js borrows: they are skipped here.
 //
 //   node demos/lightBenchScene/tools/fromLightBench.mjs <folder with meta.json and the pngs> [out folder]
 //
@@ -75,6 +77,7 @@ function castOf(name, kind) {
 const index = {};
 let total = 0;
 for (const [name, a] of Object.entries(meta)) {
+  if (a.kind === 'car' || a.kind === 'char') continue;
   const { frames, animations, directions } = describe(name, a);
   // The cell: room on each side of the anchor for the widest frame on that side.
   let left = 0;
