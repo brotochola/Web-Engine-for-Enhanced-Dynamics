@@ -244,7 +244,7 @@ export class PredatorScene extends WEED.Scene {
       resolution: predatorPositiveParam('lightingRes', 0.25),
       shadowResolution: predatorPositiveParam('shadowRes', 0.25),
       shadowUpdateInterval: predatorPositiveParam('shadowInterval', 1),
-      // raycasted: true,
+      // A flat view (camera: { pitch: 90 }) lights with the 2D sweep, walls being shadowCaster.setWall():
       // maxPolygonVertices: 128,
       // /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
       // maxOccluderSelfLit: 512,

@@ -53,8 +53,8 @@ export class Rock extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = this.spriteRenderer.originalWidth * 0.4 * this.scale;
     this.collider.visualRange = 0;
-    this.shadowCaster.heightMultiplier = 2;
-    this.shadowCaster.anchorOffsetY = 0.17;
+    // The silhouette twice as long, its foot 0.17 of the sprite below the anchor.
+    this.shadowCaster.setSprite({ heightScale: 2, anchorY: 0.17 });
     this.spriteRenderer.anchorY = 0.66;
     this.spriteRenderer.anchorX = 0.5;
   }

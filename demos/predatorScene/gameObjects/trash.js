@@ -36,11 +36,8 @@ export class Trash extends Lootable {
         this.collider.visualRange = this.collider.radius * 2
         // this.collider.offsetY = -15;
 
-        // Shadow uses default heightMultiplier = 1 (matches sprite scale)
-        this.shadowCaster.heightMultiplier = 1.5
-
-        this.shadowCaster.anchorOffsetY = -0.1
-        // this.shadowCaster.anchorOffsetX = 0.5
+        // The silhouette 1.5 times as long, its foot 0.1 of the sprite above the anchor.
+        this.shadowCaster.setSprite({ heightScale: 1.5, anchorY: -0.1 });
 
         this.lootableComponent.health = 1;
         this.lootableComponent.dropMoney = 100;
