@@ -514,7 +514,9 @@ export class LightBenchScene extends Scene {
   }
 
   _spawnLamp(l) {
+    // Its place on the page at once (the marks read it), as onSpawned puts it.
     const go = Lamp.spawn({
+      x: l.cx + Math.cos(l.phase) * l.r, y: l.cy + Math.sin(l.phase) * l.r * FLOOR_SCALE_Y,
       cx: l.cx, cy: l.cy, r: l.r, phase: l.phase, color: l.color, elevation: l.elevation, reach: l.radius,
       brightness: l.brightness, castShadows: l.castShadows,
     });
