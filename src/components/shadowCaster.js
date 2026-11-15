@@ -122,11 +122,15 @@ export function resetCasterWall(i) {
   LightOccluder.block[i] = 1;
 }
 
-/** A frame of the atlas cast instead of the sprite (needs config.lighting.shadowTextures): setSprite({ frame }), setTexture. */
-function writeFrame(i, name, anchorX, anchorY, scaleX, scaleY, method) {
+/**
+ * setSprite({ frame }): a frame of the atlas cast instead of the sprite, with its own anchor (NaN: the sprite's) and scale (0:
+ * the sprite's). Pre-render swaps it into the caster rows with config.lighting.shadowTextures on (a pass over the rows each
+ * frame, the keyed caster paths off): without it, it warns once.
+ */
+function writeFrame(i, name, anchorX, anchorY, scaleX, scaleY) {
   if (!ShadowCaster.texturesEnabled && !ShadowCaster._warnedTextures) {
     ShadowCaster._warnedTextures = true;
-    console.warn(`WeedJS: ShadowCaster.${method} needs config.lighting.shadowTextures: true`);
+    console.warn('WeedJS: shadowCaster.setSprite({ frame }) needs config.lighting.shadowTextures: true');
   }
   const id = resolveMeshTextureId(name);
   ShadowCaster.textureId[i] = id === MESH_NO_TEXTURE ? 0 : id + 1;
@@ -138,19 +142,30 @@ function writeFrame(i, name, anchorX, anchorY, scaleX, scaleY, method) {
 
 /**
  * The silhouette's options: the entity's, for every light kind that casts its sprite. Each one left out is the default: the
- * sprite's own frame and scale, its foot at the sprite's anchor, its height, facing the light. A value that is not finite warns
- * and changes nothing (false).
+ * sprite's own frame and scale, its foot at the sprite's anchor, its height, facing the light. With `frame`, `anchorX` and
+ * `anchorY` are that frame's own anchor (0 to 1 of it), as setTexture took them; without one they move the foot from the
+ * sprite's anchor, in fractions of the sprite (the anchorOffsetX/Y columns: the shadow shaders add them to the row's anchor).
+ * A value that is not finite warns and changes nothing (false).
  */
-function writeSprite(i, { frame, anchorX = 0, anchorY = 0, scaleX = 0, scaleY = 0, heightScale = 1, orient = 'light' } = {}) {
-  if (![anchorX, anchorY, scaleX, scaleY, heightScale].every(Number.isFinite) || heightScale < 0) {
+function writeSprite(i, { frame, anchorX, anchorY, scaleX = 0, scaleY = 0, heightScale = 1, orient = 'light' } = {}) {
+  const ownFrame = frame != null;
+  const ax = anchorX === undefined ? (ownFrame ? NaN : 0) : anchorX;
+  const ay = anchorY === undefined ? (ownFrame ? NaN : 0) : anchorY;
+  const given = [anchorX ?? 0, anchorY ?? 0, scaleX, scaleY, heightScale];
+  if (!given.every(Number.isFinite) || heightScale < 0) {
     warnOnce('shadowCaster.setSprite needs finite anchors and scales, and a heightScale of 0 or more');
     return false;
   }
   if (orient !== 'light' && orient !== 'fixed') warnOnce(`shadowCaster.setSprite: orient is 'light' or 'fixed', not '${orient}'`);
-  if (frame != null) writeFrame(i, frame, NaN, NaN, scaleX, scaleY, 'setSprite({ frame })');
-  else ShadowCaster.textureId[i] = 0;
-  ShadowCaster.anchorOffsetX[i] = anchorX;
-  ShadowCaster.anchorOffsetY[i] = anchorY;
+  if (ownFrame) {
+    writeFrame(i, frame, ax, ay, scaleX, scaleY);
+    ShadowCaster.anchorOffsetX[i] = 0;
+    ShadowCaster.anchorOffsetY[i] = 0;
+  } else {
+    ShadowCaster.textureId[i] = 0;
+    ShadowCaster.anchorOffsetX[i] = ax;
+    ShadowCaster.anchorOffsetY[i] = ay;
+  }
   ShadowCaster.heightMultiplier[i] = heightScale;
   ShadowCaster.orient[i] = orient === 'fixed' ? 1 : 0;
   return true;
@@ -171,10 +186,11 @@ class CastSide {
   /**
    * The silhouette: a card standing on its base, the frame the light sees (the default for one view).
    * @param {{ frame?: string, anchorX?: number, anchorY?: number, scaleX?: number, scaleY?: number, heightScale?: number,
-   *   orient?: 'light'|'fixed' }} [options] frame: another frame of the atlas (was setTexture; needs
-   *   config.lighting.shadowTextures), scaleX/scaleY its scale (0 the sprite's); anchorX/anchorY: the foot moved from the
-   *   sprite's anchor, in fractions of the sprite (were anchorOffsetX/Y); heightScale: the shadow's length (was
-   *   heightMultiplier); orient 'fixed': the card along the object (a fence, a wall)
+   *   orient?: 'light'|'fixed' }} [options] frame: another frame of the atlas as the silhouette (needs
+   *   config.lighting.shadowTextures), with scaleX/scaleY (0: the sprite's) and anchorX/anchorY its own anchor (0 to 1 of
+   *   it; left out, the sprite's); without a frame, anchorX/anchorY move the foot from the sprite's anchor, in fractions of
+   *   the sprite (rare: baseRadius corrects the measured base); heightScale: the card's height, times (0: no shadow);
+   *   orient 'fixed': the card along the object (a fence, a wall)
    */
   setSprite(options) {
     if (!writeSprite(this._caster.index, options)) return this._caster;
@@ -269,15 +285,16 @@ class CastSide {
 }
 
 export class ShadowCaster extends Component {
+  // The silhouette's columns hold setSprite's options: the API is setSprite (pre-render and Pixi read the columns).
   static ARRAY_SCHEMA = {
     active: Uint8Array, // 1 while a light kind casts its sprite (the setters keep it): 0 = no sprite rows
-    heightMultiplier: Float32Array, // Shadow length multiplier (0=no shadow, 1=normal): setSprite's heightScale
-    anchorOffsetX: Float32Array, // Shadow anchor offset X (0-1, relative to sprite size): setSprite's anchorX
-    anchorOffsetY: Float32Array, // Shadow anchor offset Y (0-1, relative to sprite size): setSprite's anchorY
+    heightMultiplier: Float32Array, // setSprite's heightScale: the card's height, times (0 = no shadow, 1 at spawn)
+    anchorOffsetX: Float32Array, // setSprite's anchorX without a frame: the foot moved from the sprite's anchor (0-1 of it)
+    anchorOffsetY: Float32Array, // setSprite's anchorY without a frame
     textureId: Uint16Array, // setSprite's frame + 1; 0 = the shadow is the sprite's
-    textureScaleX: Float32Array, // 0 = the sprite's scale
+    textureScaleX: Float32Array, // setSprite's scaleX with a frame; 0 = the sprite's scale
     textureScaleY: Float32Array,
-    textureAnchorX: Float32Array, // NaN = the sprite's anchor (setTexture's anchors)
+    textureAnchorX: Float32Array, // setSprite's anchorX with a frame: its own anchor; NaN = the sprite's
     textureAnchorY: Float32Array,
     // DX-CASTER (F9): what it casts for the sun and for the lamps (CAST_KIND, 0 its sheet's default), a card's
     // orientation (0 facing the light, 1 along the object), how much light it takes out (1 by default).
@@ -294,7 +311,8 @@ export class ShadowCaster extends Component {
   constructor(index) {
     super(index);
     // DX-CASTER: shadowCaster.sun / .lamps, the setters for one light kind, and the instance's own (both kinds'). Made on first
-    // use: most casters never call one (Predator makes 38 000 of these through heightMultiplier).
+    // use: most casters never call one, and the instance's setSprite, setHeightMap and clear write without one (a crowd of
+    // 38 000 that sets a heightScale at spawn makes none).
     this._sunSide = null;
     this._lampSide = null;
     this._bothSides = null;
@@ -305,29 +323,48 @@ export class ShadowCaster extends Component {
   // Static pool tracking (set during initialization)
   static shadowCount = 0;
 
-  /** config.lighting.shadowTextures, for setTexture's and setSprite({ frame })'s warning. */
+  /** config.lighting.shadowTextures, for setSprite({ frame })'s warning. */
   static texturesEnabled = false;
   static _warnedTextures = false;
+}
 
-  /**
-   * The old setSprite({ frame }): cast this frame's shadow instead of the sprite's, and leave the kinds as they are. A tree whose
-   * branches are decorations casts its whole silhouette while its trunk stays the sprite that sorts with people. Needs
-   * config.lighting.shadowTextures.
-   * @param {string} name a frame of the atlas
-   * @param {{ anchorX?: number, anchorY?: number, scaleX?: number, scaleY?: number }} [options] each defaults to the sprite's;
-   *   the anchors are the frame's own (setSprite's anchorX/anchorY move the foot from the sprite's anchor instead)
-   * @returns {this}
-   */
-  setTexture(name, { anchorX = NaN, anchorY = NaN, scaleX = 0, scaleY = 0 } = {}) {
-    writeFrame(this.index, name, anchorX, anchorY, scaleX, scaleY, 'setTexture');
-    return this;
-  }
-
-  /** The old setSprite(): back to the sprite's shadow, the kinds as they are. */
-  clearTexture() {
-    ShadowCaster.textureId[this.index] = 0;
-    return this;
-  }
+/**
+ * The members that left the API (DX-CASTER, plan §5.5's migration table; no back compat), each with what replaces it. On the
+ * prototype, so the columns of the same names (which pre-render and Pixi read) get no accessor: reading or writing one warns
+ * once and does nothing, and a call returns the ShadowCaster.
+ */
+const GONE_FIELDS = {
+  heightMultiplier: 'setSprite({ heightScale })',
+  anchorOffsetX: 'baseRadius (it corrects the measured base), or setSprite({ anchorX }) for a rare case',
+  anchorOffsetY: 'baseRadius (it corrects the measured base), or setSprite({ anchorY }) for a rare case',
+};
+const GONE_METHODS = {
+  setTexture: 'setSprite({ frame, anchorX, anchorY, scaleX, scaleY })',
+  clearTexture: 'setSprite()',
+};
+for (const [name, instead] of Object.entries(GONE_FIELDS)) {
+  const text = `shadowCaster.${name} is gone: ${instead}`;
+  Object.defineProperty(ShadowCaster.prototype, name, {
+    get() {
+      warnOnce(text);
+      return undefined;
+    },
+    set(_value) {
+      warnOnce(text);
+    },
+    configurable: true,
+  });
+}
+for (const [name, instead] of Object.entries(GONE_METHODS)) {
+  const text = `shadowCaster.${name} is gone: ${instead}`;
+  Object.defineProperty(ShadowCaster.prototype, name, {
+    value() {
+      warnOnce(text);
+      return this;
+    },
+    writable: true,
+    configurable: true,
+  });
 }
 
 /** The caster's setters for both light kinds, made on first use. */
@@ -338,14 +375,20 @@ function bothSides(caster) {
 
 /** The methods ShadowCaster's instances get (installed on the class below the component). */
 export const CASTER_METHODS = {
-  /** The silhouette, for every light: a card on its base (CastSide.setSprite's options). */
+  /**
+   * The silhouette, for every light: a card on its base (CastSide.setSprite's options). Written here rather than through the
+   * both-kinds side, which a crowd that sets a heightScale at spawn would make one of each.
+   */
   setSprite(options) {
-    return bothSides(this).setSprite(options);
+    if (!writeSprite(this.index, options)) return this;
+    return writeKinds(this, true, true, CAST_KIND.SPRITE);
   },
 
   /** Each pixel where it is in 3D, for every light (needs the sheet's heightMap). */
   setHeightMap() {
-    return bothSides(this).setHeightMap();
+    const i = this.index;
+    if (ShadowCaster.heightMultiplier[i] === 0) ShadowCaster.heightMultiplier[i] = 1;
+    return writeKinds(this, true, true, CAST_KIND.HEIGHT_MAP);
   },
 
   /**
@@ -394,7 +437,7 @@ export const CASTER_METHODS = {
 
   /** No shadow at all. */
   clear() {
-    return bothSides(this).clear();
+    return writeKinds(this, true, true, CAST_KIND.NONE);
   },
 
   get sun() {

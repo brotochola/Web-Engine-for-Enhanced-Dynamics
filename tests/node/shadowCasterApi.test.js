@@ -254,3 +254,25 @@ test('type with nothing set says what the sheet casts: heightMap for a render th
     SpriteRenderer.clearArrays();
   }
 });
+
+test('the members that left (heightMultiplier, anchorOffsetX/Y, setTexture, clearTexture) warn once, naming what replaces them', () => {
+  const c = caster(1);
+  const seen = warnings(() => {
+    c.heightMultiplier = 1.5;
+    c.heightMultiplier = 2;
+    assert.equal(c.heightMultiplier, undefined);
+    c.anchorOffsetY = 0.17;
+    assert.equal(c.setTexture('tree', { anchorX: 0.5 }), c);
+    assert.equal(c.clearTexture(), c);
+  });
+  assert.equal(ShadowCaster.heightMultiplier[1], 1, 'the column is left alone');
+  assert.equal(ShadowCaster.anchorOffsetY[1], 0);
+  assert.equal(ShadowCaster.textureId[1], 0);
+  assert.equal(seen.length, 4, seen.join(' | '));
+  assert.match(seen[0], /heightMultiplier is gone: setSprite\(\{ heightScale \}\)/);
+  assert.match(seen[1], /anchorOffsetY is gone: baseRadius/);
+  assert.match(seen[2], /setTexture is gone: setSprite\(\{ frame/);
+  assert.match(seen[3], /clearTexture is gone: setSprite\(\)/);
+  c.setSprite({ heightScale: 1.5 });
+  assert.equal(ShadowCaster.heightMultiplier[1], 1.5, 'setSprite({ heightScale }) is the way');
+});

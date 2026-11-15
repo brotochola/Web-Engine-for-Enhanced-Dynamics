@@ -323,7 +323,7 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   maxVolumeVerts?: number;
   /** Under raycasted lighting (config.camera.pitch 90 or 0): the vertices of a light's visibility polygon (default 128). */
   maxPolygonVertices?: number;
-  /** ShadowCaster.setTexture works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
+  /** shadowCaster.setSprite({ frame }) works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
   shadowTextures?: boolean;
   /** DX-FACES: decorations with a normal are lit as surfaces. Not with raycasted lighting. */
   faces?: SceneLightingFacesConfig;
@@ -4114,13 +4114,25 @@ export interface ShadowCasterSpriteOptions {
    * object face on, for every light: a fence, a wall. One value for the entity, kept until set again.
    */
   orient?: 'light' | 'fixed';
-  /** Not merged yet (DX-CASTER, F9 second part): another frame of the atlas as the silhouette; replaces setTexture. */
+  /**
+   * Another frame of the atlas as the silhouette (was setTexture): a tree whose branches are decorations casts its whole
+   * silhouette while its trunk stays the sprite. Needs `config.lighting.shadowTextures: true` (a pass over the caster rows
+   * each frame, the keyed caster paths off).
+   */
   frame?: string;
-  /** Not merged yet: the silhouette's anchor, 0 to 1 of its frame, for rare cases (baseRadius corrects the measured base). */
+  /** With `frame`: its scale (0 or left out: the sprite's). */
+  scaleX?: number;
+  /** With `frame`: see scaleX. */
+  scaleY?: number;
+  /**
+   * With `frame`, that frame's own anchor, 0 to 1 of it (left out: the sprite's), as setTexture took it. Without one, how far
+   * the foot moves from the sprite's anchor, in fractions of the sprite (was anchorOffsetX): a rare case, since the base is
+   * measured from the frame and `baseRadius` corrects it.
+   */
   anchorX?: number;
-  /** Not merged yet: see anchorX. */
+  /** See anchorX (was anchorOffsetY without a frame). */
   anchorY?: number;
-  /** Not merged yet: times the card's height; replaces heightMultiplier (in 3D the height comes from the camera). */
+  /** The card's height, times (default 1; 0: no shadow). Was heightMultiplier; in 3D the height comes from the camera. */
   heightScale?: number;
 }
 
@@ -4132,6 +4144,28 @@ export interface ShadowCasterLightSide {
   setHeightMap(): ShadowCaster;
   /** No shadow from this kind of light. */
   clear(): ShadowCaster;
+  /** `sun.setBox`: a volume for the sun alone (as ShadowCaster.setBox). The lamps have no volume of their own: it warns. */
+  setBox(
+    width: number,
+    depth: number,
+    height: number,
+    options?: { offsetX?: number; offsetY?: number; topScale?: number; floorScaleY?: number },
+  ): ShadowCaster;
+  /** `sun.addLevel`: as ShadowCaster.addLevel, for the sun alone. */
+  addLevel(
+    outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
+    bottom: number,
+    top: number,
+    topOutline?: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
+    options?: { floorScaleY?: number },
+  ): ShadowCaster;
+  /** `sun.setHull`: as ShadowCaster.setHull, for the sun alone. */
+  setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): ShadowCaster;
+  /**
+   * `lamps.setWall`: a wall for the lamps and headlights alone, the sun's shadow kept (as ShadowCaster.setWall). The sun
+   * casts no wall: it warns.
+   */
+  setWall(options?: { shape?: 'collider' | 'sprite' }): ShadowCaster;
 }
 
 /**
@@ -4141,13 +4175,6 @@ export interface ShadowCasterLightSide {
  * not shaded by its own entity. How the shadows are drawn is the scene's: `lighting.sunShadows`, `lighting.lampShadows`.
  */
 export declare class ShadowCaster extends Component {
-  /**
-   * Cast this frame's shadow instead of the sprite's. Needs `config.lighting.shadowTextures: true`. Options left out
-   * stay the sprite's. To become `setSprite({ frame })` (DX-CASTER, not merged yet).
-   */
-  setTexture(name: string, options?: { anchorX?: number; anchorY?: number; scaleX?: number; scaleY?: number }): this;
-  /** Back to the sprite's shadow. */
-  clearTexture(): this;
   /** Its card for every light: standing on its base, the frame each light sees (`orient: 'fixed'`: along the object). */
   setSprite(options?: ShadowCasterSpriteOptions): this;
   /** Its solid for every light: each pixel where it is in 3D (needs the sheet's heightMap). */
@@ -4159,8 +4186,8 @@ export declare class ShadowCaster extends Component {
   /** The setters for the lamps (and headlights) alone. */
   readonly lamps: ShadowCasterLightSide;
   /**
-   * How much light it takes out, 0 to 1 (1 at spawn); a wall takes that much out of a lamp. The sprite shadows read it (the sun's in
-   * 'sprite' mode, the lamps' stamps); the shadow maps do not yet.
+   * How much light it takes out, 0 to 1 (1 at spawn); a wall takes that much out of a lamp. The sprite shadows read it
+   * (the sun's in 'sprite' mode, the lamps' stamps); the shadow maps do not yet.
    */
   get opacity(): number;
   set opacity(value: number);
@@ -4208,9 +4235,16 @@ export declare class ShadowCaster extends Component {
    * camera warns once and changes nothing.
    */
   setWall(options?: { shape?: 'collider' | 'sprite' }): this;
-  /** Not merged yet: the object shades itself (a render with a footprint: yes by default; one view: no). */
-  selfShadow: boolean;
-  /** Not merged yet: px that correct the measured base of its silhouette (replaces anchorOffsetX / anchorOffsetY). */
+  /**
+   * Whether the object shades itself: true, false or 'auto' (the default: a render with a footprint does, one view does
+   * not). Kept for the 3D shadows (DX-SELFSHADOW).
+   */
+  get selfShadow(): boolean | 'auto';
+  set selfShadow(value: boolean | 'auto' | 'on' | 'off' | null);
+  /**
+   * The base's radius in px, correcting the one measured from the frame; 0 (the default) keeps the measured base. Replaces
+   * anchorOffsetX / anchorOffsetY. Kept for the 3D shadows.
+   */
   baseRadius: number;
   static readonly ARRAY_SCHEMA: {
     active: typeof Uint8Array;
@@ -4226,18 +4260,10 @@ export declare class ShadowCaster extends Component {
     lampKind: typeof Uint8Array;
     orient: typeof Uint8Array;
     opacity: typeof Float32Array;
+    baseRadius: typeof Float32Array;
+    selfShadow: typeof Uint8Array;
   };
   static active: Uint8Array;
-  /** The shadow's length, times (1 at spawn; 0 = no shadow). */
-  static heightMultiplier: Float32Array;
-  static anchorOffsetX: Float32Array;
-  static anchorOffsetY: Float32Array;
-  /** setTexture's frame + 1; 0 = the sprite's own. */
-  static textureId: Uint16Array;
-  static textureScaleX: Float32Array;
-  static textureScaleY: Float32Array;
-  static textureAnchorX: Float32Array;
-  static textureAnchorY: Float32Array;
   /** CAST_KIND for the sun (0, AUTO, at spawn). */
   static sunKind: Uint8Array;
   /** CAST_KIND for the lamps (0, AUTO, at spawn). */
@@ -4346,7 +4372,24 @@ export interface AdobeAnimComponent extends ComponentFields<(typeof AdobeAnimCom
 export interface ParticleComponent extends ComponentFields<(typeof ParticleComponent)['ARRAY_SCHEMA']> {}
 export interface DecorationComponent extends ComponentFields<(typeof DecorationComponent)['ARRAY_SCHEMA']> {}
 export interface LightEmitter extends ComponentFields<(typeof LightEmitter)['ARRAY_SCHEMA']> {}
-export interface ShadowCaster extends ComponentFields<(typeof ShadowCaster)['ARRAY_SCHEMA']> {}
+/** ShadowCaster's schema fields as instance fields, but the silhouette's columns (setSprite writes them) and its accessors. */
+export interface ShadowCaster
+  extends ComponentFields<
+    Omit<
+      (typeof ShadowCaster)['ARRAY_SCHEMA'],
+      | 'heightMultiplier'
+      | 'anchorOffsetX'
+      | 'anchorOffsetY'
+      | 'textureId'
+      | 'textureScaleX'
+      | 'textureScaleY'
+      | 'textureAnchorX'
+      | 'textureAnchorY'
+      | 'opacity'
+      | 'baseRadius'
+      | 'selfShadow'
+    >
+  > {}
 export interface FlashComponent extends ComponentFields<(typeof FlashComponent)['ARRAY_SCHEMA']> {}
 export interface BulletComponent extends ComponentFields<(typeof BulletComponent)['ARRAY_SCHEMA']> {}
 
