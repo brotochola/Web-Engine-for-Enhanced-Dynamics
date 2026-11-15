@@ -13,6 +13,7 @@
 //   ?maps=0       no height or normal maps (lit as the floor, as before)
 //   ?sun=sprite   the sun's shadows as sprites on the shadows' layer, instead of its shadow map
 //   ?self=0       no self-shadow
+//   ?pixel=0      smooth light and shadows (lighting.pixelArt off): each world pixel is lit whole by default
 //   ?hour=        the sun's hour (default 16)
 //   ?still=1      nothing moves (the lamps stay, the person stands without breathing): for captures
 //   ?zoom= ?cx= ?cy=  the camera (default: the whole farm); ?panel=0 hides the panel and the marks (captures)
@@ -45,6 +46,7 @@ const param = (k) => WEED.params?.get(k) ?? null;
 const MAPS = param('maps') !== '0';
 const SUN_MAP = param('sun') !== 'sprite';
 const SELF = param('self') !== '0';
+const PIXEL_ART = param('pixel') !== '0';
 const STILL = param('still') === '1';
 const PANEL = param('panel') !== '0';
 const ZOOM = Number(param('zoom')) || 0;
@@ -327,6 +329,8 @@ export class LightBenchScene extends Scene {
       footprintSolids: SWEEP,
       lampShadows: LAMP_MAP ? 'map' : 'sprite',
       selfShadow: SELF,
+      // Each world pixel lit whole, the maps read with one tap: the shadows crisp on the art's pixels, as the prototype's.
+      pixelArt: PIXEL_ART,
       keyedCasters: !FULL_ROWS,
       // Shadows as dark as the light bench prototype's (about 60 % darker than the sunlit floor at 16 h): a strong shadow
       // alpha, and no lightening of long shadows.

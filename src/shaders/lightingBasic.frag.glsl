@@ -91,13 +91,18 @@ float sunVisibility(vec3 p, float selfId) {
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
   float bias = p.z > 0.0 ? 4.0 + p.z * 0.03 : 0.0;
   float above = p.z + bias;
-  float lit = 0.0;
-  lit += sunTap(uv, above, selfId);
+  float lit = sunTap(uv, above, selfId);
+// #if PIXELART
+  // DX-PIXELSHADOW: one tap at the art pixel's centre (main snapped the point), so the shade is crisp on the art's grid.
+  return 1.0 - uSunMapK.w * (1.0 - lit);
+// #endif PIXELART
+// #if !PIXELART
   lit += sunTap(uv + vec2(texel.x, 0.0), above, selfId);
   lit += sunTap(uv - vec2(texel.x, 0.0), above, selfId);
   lit += sunTap(uv + vec2(0.0, texel.y), above, selfId);
   lit += sunTap(uv - vec2(0.0, texel.y), above, selfId);
   return 1.0 - uSunMapK.w * (1.0 - lit * 0.2);
+// #endif !PIXELART
 }
 // #endif SUNMAP
 
@@ -153,11 +158,17 @@ float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float 
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
   float above = p.z > 0.0 ? p.z + 4.0 + p.z * 0.03 : 0.0;
   float lit = lampTap(cell, uv, h, toAtlas, above, selfId);
+// #if PIXELART
+  // DX-PIXELSHADOW: one tap at the art pixel's centre, crisp on the art's grid.
+  return lit;
+// #endif PIXELART
+// #if !PIXELART
   lit += lampTap(cell, uv + vec2(2.0 * h, 0.0), h, toAtlas, above, selfId);
   lit += lampTap(cell, uv - vec2(2.0 * h, 0.0), h, toAtlas, above, selfId);
   lit += lampTap(cell, uv + vec2(0.0, 2.0 * h), h, toAtlas, above, selfId);
   lit += lampTap(cell, uv - vec2(0.0, 2.0 * h), h, toAtlas, above, selfId);
   return lit * 0.2;
+// #endif !PIXELART
 }
 // #endif LAMPMAP
 
@@ -344,6 +355,11 @@ void main() {
   vec2 normCoord = vec2(gl_FragCoord.x, y) / uViewport;
   vec2 screenPos = normCoord * uFullCanvasSize;
   vec2 fragWorld = weedScreenToWorld(screenPos);
+// #if PIXELART
+  // DX-PIXELSHADOW (lighting.pixelArt): every term at the art pixel's centre, so a pixel of the world is lit or shaded
+  // whole and the shadows follow the art's grid, as a pixel-art picture scaled up with nearest is.
+  fragWorld = floor(fragWorld) + 0.5;
+// #endif PIXELART
 // #if FACES
   vec4 face = textureLod(uFaceMap, gl_FragCoord.xy / uViewport, 0.0);
   // DX-EMISSIVE (F10): a glowing pixel keeps its own colour (the face pass's (1/255, 0)).

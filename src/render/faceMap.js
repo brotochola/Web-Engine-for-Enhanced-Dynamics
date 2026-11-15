@@ -554,14 +554,16 @@ export function shaderWithFlag(source, name, on) {
  * The light pass's source with its blocks kept or cut: FACES (DX-FACES and DX-MAPS), SUNMAP / !SUNMAP (DX-SHADOW3D's
  * sun map), SELFSHADOW (DX-SELFSHADOW, inside FACES), LAMPMAP (DX-SHADOW3D's lamps' map) and IDS (DX-GBUF's entity ids
  * map, with FACES: a pixel's self-shadow counts its own heights, and its own entity's shadow in the maps is skipped), in
- * the GLSL and the WGSL alike.
+ * the GLSL and the WGSL alike. DX-PIXELSHADOW: PIXELART / !PIXELART (lighting.pixelArt: each world pixel shaded whole at
+ * its centre, the maps read with one tap).
  * @param {string} source lightingBasic.frag.glsl or lightingBasic.wgsl
- * @param {{ faces: boolean, sunMap: boolean, selfShadow?: boolean, lampMap?: boolean, ids?: boolean }} flags
+ * @param {{ faces: boolean, sunMap: boolean, selfShadow?: boolean, lampMap?: boolean, ids?: boolean, pixelArt?: boolean }} flags
  */
-export function lightingSource(source, { faces, sunMap, selfShadow = false, lampMap = false, ids = false }) {
+export function lightingSource(source, { faces, sunMap, selfShadow = false, lampMap = false, ids = false, pixelArt = false }) {
   const withSun = shaderWithFlag(shaderWithFlag(shaderWithFlag(source, 'FACES', faces), 'SUNMAP', sunMap), '!SUNMAP', !sunMap);
   const withLamps = shaderWithFlag(shaderWithFlag(withSun, 'SELFSHADOW', faces && selfShadow), 'LAMPMAP', lampMap);
-  return shaderWithFlag(shaderWithFlag(withLamps, 'IDS', faces && ids), '!IDS', !(faces && ids));
+  const withIds = shaderWithFlag(shaderWithFlag(withLamps, 'IDS', faces && ids), '!IDS', !(faces && ids));
+  return shaderWithFlag(shaderWithFlag(withIds, 'PIXELART', pixelArt), '!PIXELART', !pixelArt);
 }
 
 /** config.lighting.faces over its defaults. */

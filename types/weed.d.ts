@@ -345,6 +345,12 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   /** Texels a side of a lamp's tile in the lamps' map, 32 to 1024 (default 256). The tile spans the lamp's radius. */
   lampShadowTile?: number | 'auto';
   /**
+   * Pixel-art lighting: each world pixel is lit whole, at its centre, and the sun's and the lamps' maps are read with one
+   * tap, so light and shadows fall crisply on the art's pixel grid. Best with lighting.resolution 1 and
+   * renderer.atlasScaleMode 'nearest'. Default false.
+   */
+  pixelArt?: boolean;
+  /**
    * A render with footprints in its sheet's json (meta.footprints) casts its solid swept north to them at each cell's own
    * height (light under a table) instead of columns down to the floor. Default true; false keeps the columns.
    */

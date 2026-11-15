@@ -810,6 +810,12 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   lampShadowTile: 'auto',
   /**
+   * DX-PIXELSHADOW: pixel-art lighting. The light pass shades each world pixel whole, at its centre, and reads the sun's and
+   * the lamps' maps with one tap, so light and shadows fall crisply on the art's pixel grid (as a pixel-art picture scaled
+   * up with nearest is) instead of smoothly at the screen's. Best with lighting.resolution 1 and an atlas drawn 'nearest'.
+   */
+  pixelArt: false,
+  /**
    * DX-SELFSHADOW: faces and sprites with height maps shade themselves and each other from the sun: steps towards it over
    * the face map's heights in the light pass (a crate's lid edge over its front, an arm over a body). WebGL for now.
    */

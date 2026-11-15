@@ -970,6 +970,8 @@ class PixiRenderer extends AbstractWorker {
     this._lampTileSize = 256;
     /** N-196: lampShadowTile 'auto' (the tile follows the widest casting lamp's reach and the shadows' resolution). */
     this._lampTileAuto = false;
+    /** DX-PIXELSHADOW: lighting.pixelArt (each world pixel lit whole, the maps read with one tap). */
+    this._pixelArtLight = false;
     /** N-196: this frame's widest casting lamp's reach (floor px; a double from the start). */
     this._lampMaxReach = 0.5;
     this._lampTilesPerRow = 1;
@@ -4170,6 +4172,7 @@ LIGHTING SYSTEM SETUP
       selfShadow: this._selfShadowOn,
       lampMap: this._lampMapOn,
       ids: this._faceIdsOn,
+      pixelArt: this._pixelArtLight,
     }).replace(
       /MAX_LIGHTS/g,
       String(this.maxLights | 0 || 64)
@@ -6600,7 +6603,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lights = 1;
       while (lights < this._lampTileCount && lights < most) lights *= 2;
       if (lights > most) lights = most;
-      size = autoLampTileSize(this._lampMaxReach, this.shadowResolution, lights);
+      // DX-PIXELSHADOW: with pixel-art lighting a texel a floor px (twice the resolution), so a lamp's shadow steps on the
+      // art's pixels rather than on pairs of them, as far as the map's room allows.
+      size = autoLampTileSize(this._lampMaxReach, this.shadowResolution * (this._pixelArtLight ? 2 : 1), lights);
     }
     if (this.lampMapRT !== null && this._lampMapLights === lights && this._lampTileSize === size) return true;
     this._lampTileSize = size;
@@ -9271,6 +9276,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
       // DX-SELFSHADOW: faces and sprites with maps shade themselves from the sun (screen-space steps over the face map).
       if (lightingConfig.selfShadow === true) this._selfShadowOn = true;
+      // DX-PIXELSHADOW: each world pixel lit whole, the maps read with one tap (lighting.pixelArt).
+      this._pixelArtLight = lightingConfig.pixelArt === true;
       // DX-GBUF (plan §6.4): the G-buffer's targets in one pass (MRT, the default: E-377) or a pass each.
       const gbufMode = lightingConfig.gbuffer ?? 'mrt';
       if (gbufMode !== 'pass' && gbufMode !== 'mrt') {

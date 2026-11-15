@@ -147,11 +147,17 @@ fn sunVisibility(p: vec3<f32>, selfId: f32) -> f32 {
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
   let above = select(0.0, p.z + 4.0 + p.z * 0.03, p.z > 0.0);
   var lit = sunMapLit(c, size, above, selfId);
+// #if PIXELART
+  // DX-PIXELSHADOW: one tap at the art pixel's centre, crisp on the art's grid.
+  return 1.0 - k.w * (1.0 - lit);
+// #endif PIXELART
+// #if !PIXELART
   lit += sunMapLit(c + vec2<i32>(1, 0), size, above, selfId);
   lit += sunMapLit(c - vec2<i32>(1, 0), size, above, selfId);
   lit += sunMapLit(c + vec2<i32>(0, 1), size, above, selfId);
   lit += sunMapLit(c - vec2<i32>(0, 1), size, above, selfId);
   return 1.0 - k.w * (1.0 - lit * 0.2);
+// #endif !PIXELART
 }
 // #endif SUNMAP
 
@@ -200,11 +206,17 @@ fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, 
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
   let above = select(0.0, p.z + 4.0 + p.z * 0.03, p.z > 0.0);
   var lit = lampTap(c, lo, hi, above, selfId);
+// #if PIXELART
+  // DX-PIXELSHADOW: one tap at the art pixel's centre, crisp on the art's grid.
+  return lit;
+// #endif PIXELART
+// #if !PIXELART
   lit += lampTap(c + vec2<i32>(1, 0), lo, hi, above, selfId);
   lit += lampTap(c - vec2<i32>(1, 0), lo, hi, above, selfId);
   lit += lampTap(c + vec2<i32>(0, 1), lo, hi, above, selfId);
   lit += lampTap(c - vec2<i32>(0, 1), lo, hi, above, selfId);
   return lit * 0.2;
+// #endif !PIXELART
 }
 // #endif LAMPMAP
 
@@ -379,6 +391,10 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let normCoord = vec2<f32>(in.position.x, y) / vp;
   let screenPos = normCoord * uniforms.uFullCanvasSize;
   var fragWorld = weedScreenToWorld(screenPos);
+// #if PIXELART
+  // DX-PIXELSHADOW (lighting.pixelArt): every term at the art pixel's centre (lightingBasic.frag.glsl says why).
+  fragWorld = floor(fragWorld) + 0.5;
+// #endif PIXELART
 // #if FACES
   let face = textureLoad(uFaceMap, vec2<i32>(in.position.xy), 0);
   // DX-EMISSIVE (F10): a glowing pixel keeps its own colour (the face pass's (1/255, 0)).
