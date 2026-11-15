@@ -159,3 +159,57 @@ test('the face programs name the twin page in their WebGPU layout', async () => 
     assert.equal(entry.texture.sampleType, 'unfilterable-float', 'read with textureLoad');
   }
 });
+
+// DX-GBUF (plan §5.4): with words, the face programs read each instance's (aInstGbuf) and its foot, and their GBUF block
+// writes an entity's sprite as its normals and surface say; without, they are the face map's programs as they were.
+test('the face programs take the G-buffer words only when the batch carries them', async () => {
+  const { FACE_FLAT_CODE, FACE_K_BIT, faceFragmentGlsl, gbufAttributeWgsl } = await import('../../src/render/faceMap.js');
+  const vert = shader('instancedSprite.vert.glsl');
+  assert.doesNotMatch(faceMapVertex(vert), /aInstGbuf|vFootY/);
+  const on = faceMapVertex(vert, { gbuf: true });
+  assert.match(on, /in vec2 aInstGbuf;/);
+  assert.match(on, /flat out vec2 vGbuf;/);
+  assert.match(on, /vFootY = world\.y - /);
+  assert.match(spriteIndexedVertex(faceMapVertex(vert, { gbuf: true })), /vFootY = /, 'the indexed form keeps them');
+  const frag = shader('faceMap.frag.glsl');
+  assert.doesNotMatch(faceFragmentGlsl(frag), /vGbuf|#if|discard;\n\s*\/\/ #endif/);
+  assert.match(faceFragmentGlsl(frag, { gbuf: true }), /flat in vec2 vGbuf;/);
+  // DX-EMISSIVE: v1 writes the glow code, v2 (glow) leaves a glowing pixel out of the face map.
+  assert.match(faceFragmentGlsl(frag), /finalColor = vec4\(1\.0 \/ 255\.0, 0\.0, 0\.0, 0\.0\);/);
+  assert.doesNotMatch(faceFragmentGlsl(frag, { glow: true }), /finalColor = vec4\(1\.0 \/ 255\.0, 0\.0, 0\.0, 0\.0\);/);
+  assert.match(faceFragmentGlsl(frag, { gbuf: true, glow: true }), /\(\(word >> 19u\) & 7u\) != 0u\) discard;/);
+  assert.ok(frag.includes(`vec2(${FACE_FLAT_CODE}.0 / 255.0)`), 'the FLAT code');
+  assert.ok(frag.includes(`${FACE_K_BIT - 1}.0)) + (k ? ${FACE_K_BIT}.0`), 'heights of 15 bits and the k bit');
+  for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
+    const off = faceMapWgsl(shader(name));
+    assert.doesNotMatch(off, /aInstGbuf|vGbuf/, name);
+    const w = faceMapWgsl(shader(name), { gbuf: true });
+    assert.match(w, /@location\(12\) aInstGbuf: vec2<f32>,/, name);
+    assert.match(w, /@location\(9\) @interpolate\(flat\) vGbuf: vec2<f32>,/, name);
+    assert.match(w, /fn faceHeightNormal/, name);
+    assert.equal(gbufAttributeWgsl(w), w, 'declared once');
+  }
+  assert.match(spriteIndexedWgsl(faceMapWgsl(shader('instancedSprite.wgsl'), { gbuf: true })), /aInstGbuf: vec2<f32>/);
+  assert.match(gbufAttributeWgsl(shader('instancedSprite.wgsl')), /@location\(12\) aInstGbuf/);
+});
+
+test('the light pass reads a FLAT pixel and the k bit in both languages, and masks the bit from a height', () => {
+  for (const name of ['lightingBasic.frag.glsl', 'lightingBasic.wgsl']) {
+    const on = lightingSource(shader(name), { faces: true, sunMap: true, selfShadow: true, lampMap: true });
+    assert.match(on, /253\.5 \/ 255\.0/, `${name}: the FLAT code`);
+    assert.match(on, /32768\.0/, `${name}: the k bit`);
+    assert.match(on, /lampFlat/, `${name}: the lamps lit as drawn`);
+  }
+});
+
+test('the G-buffer in one pass (MRT) writes the face texel at location 0 and the ids texel at 1, in both languages', async () => {
+  const { faceGbufFragment } = await import('../../src/render/faceMap.js');
+  const frag = faceGbufFragment(shader('faceMap.frag.glsl'));
+  assert.match(frag, /layout\(location = 0\) out vec4 finalColor;/);
+  assert.match(frag, /layout\(location = 1\) out vec4 finalIds;/);
+  assert.match(frag, /finalIds = idsTexel\(vGbuf, vRender > 0\.5\);/);
+  assert.doesNotMatch(frag, /#if/);
+  const wgsl = faceMapWgsl(shader('instancedSprite.wgsl'), { gbuf: true });
+  assert.match(wgsl, /fn mainFragGbuf\(in: VertexOut\) -> WeedGbufOut/);
+  assert.match(wgsl, /@location\(1\) ids: vec4<f32>,/);
+});

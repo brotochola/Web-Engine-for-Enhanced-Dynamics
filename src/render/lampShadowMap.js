@@ -11,6 +11,8 @@
  * the lamp's height from it). The casters are pre-render's stamp rows, already picked for each lamp.
  */
 
+import { CASTER_ID_GLSL, CASTER_ID_WGSL, MAP_TEXEL_WGSL } from './sunShadowMap.js';
+
 /** The highest height a tile's 8 bits span, as the sun map's (2 px a step). */
 export const LAMP_MAP_ZMAX = 512;
 /** A caster point this close under the lamp's height (px) lands no farther than this many radii (a stretch cap). */
@@ -91,7 +93,8 @@ export function lampTileTag(tile) {
   return -(tile + 1);
 }
 
-const LAMP_DECL_GLSL = 'out float vSunZ;\nout vec3 vTileUvW;\nuniform sampler2D uLampTiles;\n';
+// DX-GBUF: the caster's entity goes on with its height (sunShadowMap.js CASTER_ID_GLSL), kept by the map's depth test.
+const LAMP_DECL_GLSL = `out float vSunZ;\nout vec3 vTileUvW;\nflat out float vSunId;\nuniform sampler2D uLampTiles;\n${CASTER_ID_GLSL}`;
 
 // The tile, its lamp and the early out, in GLSL; `extra` adds conditions (the columns' cell tests).
 const lampTileGlsl = (extra) => `  // DX-SHADOW3D (F7): this row's lamp (lampShadowMap.js). The stamp row's light z holds its tile + 1 (Pixi writes it), and
@@ -121,7 +124,7 @@ const LAMP_OUT_GLSL = `  vec2 tuv = (land - lamp.xy) / (2.0 * lamp.w) + 0.5;
   gl_Position = vec4(clip.xy * w, 0.0, w);
   if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   vTileUvW = vec3(tuv * w, w);
-  vColor = vec4(1.0);
+  vColor = vec4(1.0, castOpacity, 1.0, 1.0);
   vLocal = aQuad;
   vWorld = aInstXY;
   vAtlasUV = aInstUV;
@@ -141,7 +144,7 @@ function lampHeadGlsl(source, what) {
   return source
     .slice(0, source.indexOf(after))
     .replace(decl, `${decl}${LAMP_DECL_GLSL}`)
-    .replace(main, `${main}  vSunZ = 0.0;\n  vTileUvW = vec3(-1.0, -1.0, 1.0);\n`);
+    .replace(main, `${main}  vSunZ = 0.0;\n  vTileUvW = vec3(-1.0, -1.0, 1.0);\n  vSunId = casterEntityId(aInstTintBits);\n`);
 }
 
 /**
@@ -161,6 +164,11 @@ export function lampMapVertex(source) {
   if (aInstBase.x >= 1.0) {
     float rx = abs(aInstBase.y) * abs(aInstScale.x);
     float ry = (aInstBase.y < 0.0 ? -aInstBase.y : 0.6 * aInstBase.y) * abs(aInstScale.y);
+    // DX-CASTER: the caster's baseRadius corrects the measured radius (instancedSpriteShadow.vert.glsl's castBaseRadius).
+    if (castBaseRadius > 0.0) {
+      ry = rx > 1e-3 ? ry * castBaseRadius / rx : (aInstBase.y < 0.0 ? castBaseRadius : 0.6 * castBaseRadius);
+      rx = castBaseRadius;
+    }
     footCol = aInstBase.x - 1.0;
     foot.x = aInstXY.x + (footCol - aInstAnchor.x * aInstSize.x) * aInstScale.x;
     foot.y -= ry;
@@ -252,14 +260,17 @@ export function lampMapFragment(sunMapFrag) {
 }
 
 const LAMP_FRAGMENT_WGSL = `
-// DX-SHADOW3D (F7): a caster point's height where its lamp's ray lands, in that lamp's tile, max blending.
+${CASTER_ID_WGSL}
+${MAP_TEXEL_WGSL}
+// DX-SHADOW3D (F7): a caster point's height where its lamp's ray lands, in that lamp's tile, the highest kept by its depth
+// with its caster's id (sunShadowMap.frag.glsl).
 @fragment
-fn mainFragLamp(in: VertexOut) -> @location(0) vec4<f32> {
+fn mainFragLamp(in: VertexOut) -> WeedMapOut {
   let tuv = in.vTileUvW.xy / in.vTileUvW.z;
   if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) { discard; }
   let t = textureSampleLevel(uTexture, uSampler, mix(in.vAtlasUV.xy, in.vAtlasUV.zw, in.vLocal), 0.0);
   if (t.a < 0.5) { discard; }
-  return vec4<f32>(clamp(in.vSunZ / ${LAMP_MAP_ZMAX}.0, 0.0, 1.0), 0.0, 0.0, 1.0);
+  return weedMapTexel(in.vSunZ, in.vSunId, in.vColor.g);
 }
 `;
 
@@ -284,7 +295,7 @@ const LAMP_OUT_WGSL = `  let tuv = (land - lamp.xy) / (2.0 * lamp.w) + 0.5;
     out.position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   }
   out.vTileUvW = vec3<f32>(tuv * w, w);
-  out.vColor = vec4<f32>(1.0);
+  out.vColor = vec4<f32>(1.0, castOpacity, 1.0, 1.0);
   out.vLocal = aQuad;
   out.vWorld = aInstXY;
   out.vAtlasUV = aInstUV;
@@ -306,9 +317,12 @@ function lampPartsWgsl(source, what) {
   const from = source.indexOf(after);
   const to = source.indexOf(end, from);
   if (to < 0) throw new Error(`WeedJS: ${what} needs the sprite shadow WGSL (mainVert's end)`);
+  const body = ') -> VertexOut {\n  var out: VertexOut;\n';
+  if (source.split(body).length !== 2) throw new Error(`WeedJS: ${what} needs the sprite shadow WGSL (mainVert)`);
   const head = source
     .slice(0, from)
-    .replace(struct, `${struct}  @location(6) vSunZ: f32,\n  @location(7) vTileUvW: vec3<f32>,\n`)
+    .replace(struct, `${struct}  @location(6) vSunZ: f32,\n  @location(7) vTileUvW: vec3<f32>,\n  @location(8) @interpolate(flat) vSunId: f32,\n`)
+    .replace(body, `${body}  out.vSunId = casterEntityId(aInstTintBits);\n`)
     .replace(binding, `${binding}// DX-SHADOW3D (F7): the lamps' tiles: a lamp's floor point, height and reach (lampShadowMap.js).\n@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n`);
   return { head, rest: source.slice(to + end.length) };
 }
@@ -327,8 +341,13 @@ export function lampMapWgsl(source) {
   var footCol = anchor.x * aInstSize.x;
   var foot = vec2<f32>(aInstXY.x, (aInstXY.y + (bottom - aInstAnchor.y * aInstSize.y) * aInstScale.y) * uniforms.uGroundInvScaleY);
   if (aInstBase.x >= 1.0) {
-    let rx = abs(aInstBase.y) * abs(aInstScale.x);
-    let ry = select(0.6 * aInstBase.y, -aInstBase.y, aInstBase.y < 0.0) * abs(aInstScale.y);
+    var rx = abs(aInstBase.y) * abs(aInstScale.x);
+    var ry = select(0.6 * aInstBase.y, -aInstBase.y, aInstBase.y < 0.0) * abs(aInstScale.y);
+    // DX-CASTER: the caster's baseRadius corrects the measured radius.
+    if (castBaseRadius > 0.0) {
+      ry = select(select(0.6 * castBaseRadius, castBaseRadius, aInstBase.y < 0.0), ry * castBaseRadius / rx, rx > 1e-3);
+      rx = castBaseRadius;
+    }
     footCol = aInstBase.x - 1.0;
     foot.x = aInstXY.x + (footCol - aInstAnchor.x * aInstSize.x) * aInstScale.x;
     foot.y -= ry;

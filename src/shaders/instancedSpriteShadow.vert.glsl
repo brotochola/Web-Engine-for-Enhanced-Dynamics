@@ -80,6 +80,9 @@ void main() {
   bool castFixed = ((castCode >> 6) & 1) == 1;
   float castAxisA = float((castCode >> 15) & 63) * 0.09817477042;
   vec2 castAxis = vec2(cos(castAxisA), sin(castAxisA));
+  // ShadowCaster.baseRadius (px, 0: the measured base): pre-render writes it into a tagged row's tile offset, which a caster
+  // that does not repeat its texture leaves at 0 (its tile terms 0).
+  float castBaseRadius = aInstTileInv == vec2(0.0) ? max(aInstTileOff.x, 0.0) : 0.0;
   // weed:afterAnchor
   vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
   vec4 light = aInstLight.w > 0.0 ? aInstLight : uLight;
@@ -142,6 +145,11 @@ void main() {
       // lowest row. The card stands on its edge towards the sun, so the whole base lies on its own shadow.
       float rx = abs(aInstBase.y) * abs(aInstScale.x);
       float ry = (aInstBase.y < 0.0 ? -aInstBase.y : 0.6 * aInstBase.y) * abs(aInstScale.y);
+      // DX-CASTER: the caster's baseRadius corrects the measured radius, the ellipse's shape kept.
+      if (castBaseRadius > 0.0) {
+        ry = rx > 1e-3 ? ry * castBaseRadius / rx : (aInstBase.y < 0.0 ? castBaseRadius : 0.6 * castBaseRadius);
+        rx = castBaseRadius;
+      }
       footCol = aInstBase.x - 1.0;
       foot.x = aInstXY.x + (footCol - aInstAnchor.x * aInstSize.x) * aInstScale.x;
       foot.y -= ry;

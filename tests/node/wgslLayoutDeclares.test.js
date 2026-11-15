@@ -81,3 +81,51 @@ test('the sprites\' pixel depth programs declare every binding their layouts nam
     );
   }
 });
+
+test('the G-buffer passes and the light pass declare every binding their layouts name', async () => {
+  const { faceMapWgsl, lightingSource } = await import('../../src/render/faceMap.js');
+  const { lightingGpuProgram } = await import('../../src/render/webgpu/pixiMeshWgsl.js');
+  const sprite = shader('instancedSprite.wgsl');
+  const pose = shader('instancedSpritePose.wgsl');
+  for (const [gbuf, glow] of [[false, false], [true, false], [true, true]]) {
+    const opts = { gbuf, glow };
+    for (const entry of gbuf ? ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragGlow'] : ['mainFragFace']) {
+      const label = `${entry} gbuf=${gbuf} glow=${glow}`;
+      assertLayoutDeclared(`face ${label}`, instancedSpriteGpuProgram(GpuProgram, faceMapWgsl(sprite, opts), entry, 'f', { maps: true }));
+      assertLayoutDeclared(`face pose ${label}`, instancedSpriteGpuProgram(GpuProgram, faceMapWgsl(pose, opts), entry, 'f', { maps: true }));
+      assertLayoutDeclared(
+        `face indexed ${label}`,
+        instancedSpriteIndexedGpuProgram(GpuProgram, spriteIndexedWgsl(faceMapWgsl(sprite, opts)), entry, 'f', { maps: true }),
+      );
+    }
+  }
+  const { glowCompositeGpuProgram } = await import('../../src/render/glowComposite.js');
+  const glow = glowCompositeGpuProgram(GpuProgram);
+  assertLayoutDeclared('glow layer', glow);
+  const lighting = shader('lightingBasic.wgsl');
+  for (const faces of [false, true]) {
+    for (const sunMap of [false, true]) {
+      for (const lampMap of [false, true]) {
+        for (const ids of [false, true]) {
+          const source = lightingSource(lighting, { faces, sunMap, selfShadow: true, lampMap, ids });
+          assertLayoutDeclared(
+            `lighting faces=${faces} sunMap=${sunMap} lampMap=${lampMap} ids=${ids}`,
+            lightingGpuProgram(GpuProgram, source, 'l', faces, sunMap, lampMap, ids),
+          );
+        }
+      }
+    }
+  }
+});
+
+test('the pixel depth programs with words, and their edge entries, declare every binding their layouts name', async () => {
+  const { gbufAttributeWgsl } = await import('../../src/render/faceMap.js');
+  const sprite = gbufAttributeWgsl(shader('instancedSprite.wgsl'));
+  for (const entry of ['mainFrag', 'mainFragEdge']) {
+    assertLayoutDeclared(`sprite-depth-gbuf ${entry}`, instancedSpriteGpuProgram(GpuProgram, pixelDepthWgsl(sprite, { gbuf: true }), entry, 's', { maps: true }));
+    assertLayoutDeclared(
+      `sprite-indexed-depth-gbuf ${entry}`,
+      instancedSpriteIndexedGpuProgram(GpuProgram, pixelDepthWgsl(spriteIndexedWgsl(sprite), { poseAlpha: true, gbuf: true }), entry, 'i', { maps: true }),
+    );
+  }
+});

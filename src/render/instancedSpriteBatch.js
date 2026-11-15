@@ -34,14 +34,16 @@ import {
   pickInstancedSpriteFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
 import {
-  GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS, GPU_POSE_FLOATS,
-  GPU_STATIC_FLOATS, gpuIndexedStaticRows,
+  GPU_GBUF_FLOATS, GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS,
+  GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows,
 } from './gpuQueueLayout.js';
 import {
   GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsByRowWasm, packKeyedRowsWasm,
   packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
-import { faceMapVertex, faceMapWgsl } from './faceMap.js';
+import {
+  faceFragmentGlsl, faceGbufFragment, faceGlowFragment, faceIdsFragment, faceMapVertex, faceMapWgsl, gbufAttributeWgsl,
+} from './faceMap.js';
 import { lutBaseFloats } from './frameBase.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from './pixelDepth.js';
 import {
@@ -68,6 +70,17 @@ export const SPLIT_POSE_FLOATS = GPU_POSE_FLOATS;
 
 export const BATCH_SPACE = Object.freeze({ WORLD: 0, SCREEN: 1 });
 export const BATCH_DEPTH = Object.freeze({ INDEX: 0 });
+
+/**
+ * DX-FACES, DX-GBUF: the batch's passes over its own instances for the light (InstancedSpriteBatch._auxMesh): the face
+ * map, the entity ids map, both in one pass (MRT), the self-glowing colour. Their names and fragment entries (WGSL).
+ */
+export const AUX_FACE = 0;
+export const AUX_IDS = 1;
+export const AUX_GBUF = 2;
+export const AUX_GLOW = 3;
+const AUX_NAMES = ['face', 'ids', 'gbuf', 'glow'];
+const AUX_ENTRIES = ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragGlow'];
 
 // E-177. A keyed frame saves KEYED_SAVED_BYTES a row against a split one (the slot pair instead of the statics) and
 // spends an update's bytes on each row it sends. When the updates outweigh the saving for KEYED_LOSS_FRAMES frames in a
@@ -305,11 +318,22 @@ export class InstancedSpriteBatch {
     keyed = null,
     posesByRow = false,
     pixelDepth = null,
+    gbuf = false,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
     this.shadowCast = !!shadowCast && !poseInterp;
     this.split = !!split && !this.poseInterp && !this.shadowCast;
+    // DX-GBUF (plan §6.4): each instance's G-buffer words (gbufWord.js), GPU_GBUF_FLOATS a sprite in a stream of their own
+    // that every geometry the batch draws carries (aInstGbuf), uploaded after each frame's rows (commitGbuf). The G-buffer
+    // pass reads them. Off, the batch's geometries and programs are as they always were.
+    this.gbuf = !!gbuf && !this.shadowCast;
+    this._gbufData = new Float32Array(this.gbuf ? this.capacity * GPU_GBUF_FLOATS : 0);
+    // The instances whose words the CPU copy holds as zeros (commitGbuf with none), so a run of frames without words
+    // uploads its zeros once.
+    this._gbufZeros = 0;
+    // The ring slot the last upload drew from: its gbuf buffer is the one this frame's words go to.
+    this._lastRing = 0;
     // E-162: a split batch given `statics` also takes indexed frames: the poses, a slot stream (each instance's statics
     // row and depth) and every queue row's statics in row order, in a texture (WebGL) or a storage buffer (WebGPU).
     this.indexed = this.split && statics !== null;
@@ -433,12 +457,14 @@ export class InstancedSpriteBatch {
     // its geometries over each ring slot for those rows (commitKeyedCasterRows: the sun's, then the stamps').
     this.keyedCasters = false;
     this._keyedCasterShaders = [null, null];
-    // DX-FACES: the face map's programs, and a mesh per geometry this batch draws (faceMesh).
-    this._faceMeshes = [];
-    this._faceState = null;
-    this._faceShader = null;
-    this._faceIndexedShader = null;
-    this._faceRowShader = null;
+    // DX-FACES, DX-GBUF: the batch's passes over its own instances for the light (AUX_FACE: the face map; AUX_IDS: the
+    // entity ids map; AUX_GBUF: both in one pass, MRT; AUX_GLOW: the self-glowing colour): each kind's programs (plain,
+    // indexed, by row), its state and a mesh per geometry this batch draws (_auxMesh).
+    this._aux = AUX_NAMES.map(() => ({ meshes: [], state: null, shader: null, indexed: null, row: null }));
+    this._auxShaderList = [];
+    // DX-EMISSIVE v2 (F10): the glow pass draws the glowing pixels (glowMesh), so the G-buffer's passes leave them out;
+    // false: the face map's glow code (v1). Set by the caller before a light pass is first drawn.
+    this.emissiveGlow = false;
     this._keyedCasterGeometries = null;
     this._ixGen = 0;
     this._ixRows = -1;
@@ -463,15 +489,21 @@ export class InstancedSpriteBatch {
     this._slotBuffers = this.indexed
       ? [this._makeSlotBuffer(labelName + '-slots'), this._makeSlotBuffer(labelName + '-slots-ring')]
       : null;
-    this._geometries = this._buffers.map((buf, r) => this._geometryFor(buf, this._staticBuffers ? this._staticBuffers[r] : null));
+    // DX-GBUF: a gbuf buffer a ring slot, each geometry over that slot's.
+    this._gbufBuffers = this.gbuf
+      ? [this._makeGbufBuffer(labelName + '-gbuf'), this._makeGbufBuffer(labelName + '-gbuf-ring')]
+      : null;
+    this._geometries = this._buffers.map((buf, r) => this._withGbuf(
+      this._geometryFor(buf, this._staticBuffers ? this._staticBuffers[r] : null), r,
+    ));
     // E-162: an indexed frame's geometries, over the same pose buffers and the slot buffers: the indexed program's
     // attributes and no other (a program bound to a geometry with attributes it lacks makes Pixi warn, per pair).
     this._indexedGeometries = this.indexed
-      ? this._buffers.map((buf, r) => this._indexedGeometryFor(buf, this._slotBuffers[r]))
+      ? this._buffers.map((buf, r) => this._withGbuf(this._indexedGeometryFor(buf, this._slotBuffers[r]), r))
       : null;
     // E-201: a by-row keyed frame's geometries: the queue row from the pose buffer's first floats, the slot stream.
     this._rowGeometries = this.posesByRow
-      ? this._buffers.map((buf, r) => this._rowGeometryFor(buf, this._slotBuffers[r]))
+      ? this._buffers.map((buf, r) => this._withGbuf(this._rowGeometryFor(buf, this._slotBuffers[r]), r))
       : null;
     this._ring = 0;
     this.buffer = this._buffers[0];
@@ -493,6 +525,12 @@ export class InstancedSpriteBatch {
     this._alphaCut = cut;
     const atlas = atlasSource || Texture.WHITE.source;
     const lut = lutSource || dummyLutSource(useWebGpu);
+    // DX-DEPTH (F5 v2): the edge pass's programs (the soft and glowing pixels, depth tested, not written), a twin of each
+    // colour program (plain, indexed, by row) made with it; and its mesh, right after the batch's own (edgeMesh).
+    this._edgeShader = null;
+    this._edgeIndexedShader = null;
+    this._edgeRowShader = null;
+    this.edgeMesh = null;
     this.shader = this._makeSpriteShader(atlas, lut, cut, label || 'instanced-sprites');
     // E-162: the statics texture and the program that reads it; the mesh draws with it on indexed frames.
     this._statics = this.indexed ? statics : null;
@@ -552,6 +590,18 @@ export class InstancedSpriteBatch {
       label: label || 'instanced-sprites',
     });
     this.mesh.blendMode = state.blendMode;
+    if (this._edgeShader !== null) {
+      // DX-DEPTH (F5 v2): the edge pass, its pixels blended as the batch's, depth tested and not written.
+      const edgeState = new State();
+      edgeState.blend = true;
+      edgeState.blendMode = state.blendMode;
+      edgeState.depthTest = true;
+      edgeState.depthMask = false;
+      edgeState.culling = false;
+      this.edgeMesh = new Mesh({ geometry: this.geometry, shader: this._edgeShader, state: edgeState, label: `${labelName}-edge` });
+      this.edgeMesh.blendMode = state.blendMode;
+      this.edgeMesh.cullable = false;
+    }
     this._show(false);
     this.mesh.cullable = false; // bounds ignore instance attrs; don't frustum-cull the batch
     this._uploadCtx = {
@@ -603,6 +653,61 @@ export class InstancedSpriteBatch {
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
       label,
     });
+  }
+
+  /** DX-GBUF: a ring slot's buffer of the instances' G-buffer words. */
+  _makeGbufBuffer(label) {
+    return new Buffer({
+      data: this._gbufData,
+      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      label,
+    });
+  }
+
+  /**
+   * DX-GBUF: `geometry` with ring slot `ring`'s G-buffer words (aInstGbuf) when the batch carries them. Pixi files a
+   * geometry's buffers as its attributes name them, so the words' stream is one more buffer; a WebGPU program that does
+   * not read it still declares it (gbufAttributeWgsl), and a WebGL one leaves it unbound.
+   */
+  _withGbuf(geometry, ring) {
+    if (this._gbufBuffers === null) return geometry;
+    geometry.addAttribute('aInstGbuf', {
+      buffer: this._gbufBuffers[ring],
+      format: 'float32x2',
+      stride: GPU_GBUF_FLOATS * 4,
+      offset: 0,
+      instance: true,
+    });
+    return geometry;
+  }
+
+  /**
+   * DX-GBUF: this frame's G-buffer words for the `count` instances the last upload drew, into the gbuf buffer of the ring
+   * slot it drew from. `src` holds them in draw order (the GPU queue's gbuf region, or gbufData that the caller wrote);
+   * null: none this frame, each instance is lit as it always was (its words zero).
+   * @param {Float32Array|null} src
+   * @param {number} count
+   */
+  commitGbuf(src, count) {
+    if (this._gbufBuffers === null) return;
+    const n = Math.min(count | 0, this.capacity);
+    if (n <= 0) return;
+    const floats = n * GPU_GBUF_FLOATS;
+    if (src === this._gbufData) {
+      this._gbufZeros = 0;
+    } else if (src !== null && src.length >= floats) {
+      this.copyIn(this._gbufData, src, floats);
+      this._gbufZeros = 0;
+    } else if (this._gbufZeros < n) {
+      this._gbufData.fill(0, 0, floats);
+      this._gbufZeros = n;
+    }
+    this._gbufBuffers[this._lastRing].update(floats * 4);
+  }
+
+  /** DX-GBUF: the words' CPU copy, for a caller that writes them itself (gbufWord.js writeGbufWords), then commitGbuf. */
+  get gbufData() {
+    return this._gbufData;
   }
 
   /** E-191: a ring slot's buffer of the keyed frames' shadow terms. */
@@ -726,12 +831,9 @@ export class InstancedSpriteBatch {
   _makeRowShader(name) {
     this._poseSource = this._statics.make(this._poseRowsU32, POSE_TEX_TEXELS, this._poseTexRows * 4, `${name}-poses`);
     const shaders = this._engineShaders;
-    const glProgram = instancedSpriteGlProgram(
-      GlProgram,
-      this._depthVertex(spriteIndexedVertex(shaders.spriteVert, { poseBlock: this._poseBlock })),
-      this._depthFragment(pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders)),
-      `${name}-rows`
-    );
+    const rowVertex = this._depthVertex(spriteIndexedVertex(shaders.spriteVert, { poseBlock: this._poseBlock }));
+    const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
+    const glProgram = instancedSpriteGlProgram(GlProgram, rowVertex, this._depthFragment(color), `${name}-rows`);
     const r = this.shader.resources;
     const resources = {
       uTexture: r.uTexture,
@@ -742,17 +844,24 @@ export class InstancedSpriteBatch {
       uPoses: this._poseSource,
     };
     if (this._pixelDepth) resources.uMaps = this._pixelDepth.maps;
-    return new Shader({ glProgram, resources });
+    const shader = new Shader({ glProgram, resources });
+    if (this._pixelDepth) {
+      this._edgeRowShader = new Shader({
+        glProgram: instancedSpriteGlProgram(GlProgram, rowVertex, this._depthFragment(color, true), `${name}-rows-edge`),
+        resources: this._edgeResources(shader, this._staticsSource),
+      });
+    }
+    return shader;
   }
 
   /** DX-DEPTH: a colour program's vertex shader, with the floor depth's terms when pixel depth is on. */
   _depthVertex(source) {
-    return this._pixelDepth && source ? pixelDepthVertex(source) : source;
+    return this._pixelDepth && source ? pixelDepthVertex(source, { gbuf: this.gbuf }) : source;
   }
 
   /** DX-DEPTH: a colour program's fragment shader, writing the floor depth when pixel depth is on. */
-  _depthFragment(source) {
-    return this._pixelDepth && source ? pixelDepthFragment(source) : source;
+  _depthFragment(source, edge = false) {
+    return this._pixelDepth && source ? pixelDepthFragment(source, { edge, gbuf: this.gbuf }) : source;
   }
 
   /**
@@ -814,14 +923,19 @@ export class InstancedSpriteBatch {
       // DX-DEPTH: the sprite WGSL writing the floor depth, uDepth after the group's other entries (as `uniforms` lists
       // them), the twin page as binding 5.
       const depth = this._pixelDepth !== null && !!spriteSource;
-      const gpuProgram = instancedSpriteGpuProgram(
-        GpuProgram,
-        depth ? pixelDepthWgsl(spriteSource) : spriteSource,
-        fragEntry,
-        name,
-        { maps: depth },
-      );
-      return new Shader({ gpuProgram, resources });
+      // DX-GBUF: the words' stream is in every geometry of a batch with words, so its programs declare it.
+      const source = this.gbuf && spriteSource ? gbufAttributeWgsl(spriteSource) : spriteSource;
+      const program = depth ? pixelDepthWgsl(source, { gbuf: this.gbuf }) : source;
+      const gpuProgram = instancedSpriteGpuProgram(GpuProgram, program, fragEntry, name, { maps: depth });
+      const shader = new Shader({ gpuProgram, resources });
+      if (depth) {
+        // DX-DEPTH (F5 v2): the edge pass's entry (pixelDepthWgsl's <entry>Edge) over the same group.
+        this._edgeShader = new Shader({
+          gpuProgram: instancedSpriteGpuProgram(GpuProgram, program, `${fragEntry}Edge`, `${name}-edge`, { maps: true }),
+          resources: this._edgeResources(shader, null),
+        });
+      }
+      return shader;
     }
     let vert = vertSource;
     if (this.shadowCast && vert) {
@@ -832,13 +946,38 @@ export class InstancedSpriteBatch {
           'gl_Position = vec4(clip.xy, aInstDepth, 1.0);\n  if (aInstShadow.x < -1000.0) gl_Position.x += aInstShadow.y + aInstShadow.z;'
         );
     }
-    let frag = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
-    if (this._pixelDepth && vert && frag) {
-      vert = pixelDepthVertex(vert);
-      frag = pixelDepthFragment(frag);
+    const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
+    let frag = color;
+    const depth = !!(this._pixelDepth && vert && frag);
+    if (depth) {
+      vert = pixelDepthVertex(vert, { gbuf: this.gbuf });
+      frag = pixelDepthFragment(frag, { gbuf: this.gbuf });
     }
     const glProgram = instancedSpriteGlProgram(GlProgram, vert, frag, name);
-    return new Shader({ glProgram, resources });
+    const shader = new Shader({ glProgram, resources });
+    if (depth) {
+      // DX-DEPTH (F5 v2): the edge pass's twin, the same vertex shader.
+      this._edgeShader = new Shader({
+        glProgram: instancedSpriteGlProgram(GlProgram, vert, pixelDepthFragment(color, { edge: true, gbuf: this.gbuf }), `${name}-edge`),
+        resources: this._edgeResources(shader, null),
+      });
+    }
+    return shader;
+  }
+
+  /**
+   * DX-DEPTH (F5 v2): an edge program's resources, its colour twin's (the atlas, the LUT, the uniform group, the twin page;
+   * `statics`: the statics, and the poses of a by-row one).
+   */
+  _edgeResources(shader, statics) {
+    const r = shader.resources;
+    const out = { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uniforms: r.uniforms };
+    if (this._pixelDepth) out.uMaps = this._pixelDepth.maps;
+    if (statics !== null) {
+      out.uStatics = statics;
+      if (r.uPoses) out.uPoses = r.uPoses;
+    }
+    return out;
   }
 
   /**
@@ -860,12 +999,9 @@ export class InstancedSpriteBatch {
     this._staticsHeight = height;
     this._staticsSource = this._statics.make(this._rowStaticsU32, width, height, `${name}-statics`);
     const shaders = this._engineShaders;
-    const glProgram = instancedSpriteGlProgram(
-      GlProgram,
-      this._depthVertex(shaders?.spriteVert ? spriteIndexedVertex(shaders.spriteVert) : null),
-      this._depthFragment(pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders)),
-      `${name}-indexed`
-    );
+    const indexedVertex = this._depthVertex(shaders?.spriteVert ? spriteIndexedVertex(shaders.spriteVert) : null);
+    const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
+    const glProgram = instancedSpriteGlProgram(GlProgram, indexedVertex, this._depthFragment(color), `${name}-indexed`);
     const r = this.shader.resources;
     const resources = {
       uTexture: r.uTexture,
@@ -875,7 +1011,14 @@ export class InstancedSpriteBatch {
       uStatics: this._staticsSource,
     };
     if (this._pixelDepth) resources.uMaps = this._pixelDepth.maps;
-    return new Shader({ glProgram, resources });
+    const shader = new Shader({ glProgram, resources });
+    if (this._pixelDepth && indexedVertex) {
+      this._edgeIndexedShader = new Shader({
+        glProgram: instancedSpriteGlProgram(GlProgram, indexedVertex, this._depthFragment(color, true), `${name}-indexed-edge`),
+        resources: this._edgeResources(shader, this._staticsSource),
+      });
+    }
+    return shader;
   }
 
   _makeIndexedGpuShader(name) {
@@ -898,14 +1041,11 @@ export class InstancedSpriteBatch {
     const shaders = this._engineShaders;
     // DX-DEPTH: over the split program's group, which holds uPoseAlpha before uDepth (the plain WGSL reads neither).
     const depth = this._pixelDepth !== null && !!shaders?.sprite;
-    const indexedSource = shaders?.sprite ? spriteIndexedWgsl(shaders.sprite) : null;
-    const gpuProgram = instancedSpriteIndexedGpuProgram(
-      GpuProgram,
-      depth ? pixelDepthWgsl(indexedSource, { poseAlpha: this._twoStreams }) : indexedSource,
-      this._premultiplyAlpha ? 'mainFrag' : 'mainFragAdd',
-      `${name}-indexed`,
-      { maps: depth },
-    );
+    const plainSource = shaders?.sprite && this.gbuf ? gbufAttributeWgsl(shaders.sprite) : shaders?.sprite;
+    const indexedSource = plainSource ? spriteIndexedWgsl(plainSource) : null;
+    const program = depth ? pixelDepthWgsl(indexedSource, { poseAlpha: this._twoStreams, gbuf: this.gbuf }) : indexedSource;
+    const entry = this._premultiplyAlpha ? 'mainFrag' : 'mainFragAdd';
+    const gpuProgram = instancedSpriteIndexedGpuProgram(GpuProgram, program, entry, `${name}-indexed`, { maps: depth });
     const r = this.shader.resources;
     const resources = {
       uTexture: r.uTexture,
@@ -915,11 +1055,35 @@ export class InstancedSpriteBatch {
       uStatics: this._staticsSource,
     };
     if (depth) resources.uMaps = this._pixelDepth.maps;
-    return new Shader({ gpuProgram, resources });
+    const shader = new Shader({ gpuProgram, resources });
+    if (depth) {
+      this._edgeIndexedShader = new Shader({
+        gpuProgram: instancedSpriteIndexedGpuProgram(GpuProgram, program, `${entry}Edge`, `${name}-indexed-edge`, { maps: true }),
+        resources: this._edgeResources(shader, this._staticsSource),
+      });
+    }
+    return shader;
   }
 
   _show(on) {
     this.mesh.visible = on;
+    if (this.edgeMesh !== null) this.edgeMesh.visible = on;
+  }
+
+  /** The batch draws nothing this frame (its mesh and, with pixel depth, its edge pass hidden). */
+  hide() {
+    this._show(false);
+  }
+
+  /**
+   * DX-DEPTH (F5 v2): the edge pass's twin of one of this batch's colour programs (the plain, the indexed or the by-row
+   * one), or null without pixel depth.
+   * @param {Shader} shader
+   */
+  edgeShaderFor(shader) {
+    if (shader === this._rowShader && this._rowShader !== null) return this._edgeRowShader;
+    if (shader === this._indexedShader && this._indexedShader !== null) return this._edgeIndexedShader;
+    return this._edgeShader;
   }
 
   setAtlasSource(source) {
@@ -936,11 +1100,20 @@ export class InstancedSpriteBatch {
       ix.resources.uTexture = source;
       ix.resources.uSampler = source.style;
     }
-    for (const face of [this._faceShader, this._faceIndexedShader, this._faceRowShader, this._rowShader]) {
-      if (face !== null) {
-        face.resources.uTexture = source;
-        face.resources.uSampler = source.style;
+    if (this._rowShader !== null) {
+      this._rowShader.resources.uTexture = source;
+      this._rowShader.resources.uSampler = source.style;
+    }
+    for (const edge of [this._edgeShader, this._edgeIndexedShader, this._edgeRowShader]) {
+      if (edge !== null) {
+        edge.resources.uTexture = source;
+        edge.resources.uSampler = source.style;
       }
+    }
+    const aux = this._auxShaders();
+    for (let i = 0; i < aux.length; i++) {
+      aux[i].resources.uTexture = source;
+      aux[i].resources.uSampler = source.style;
     }
     const ks = this._keyedSunShader;
     if (ks) {
@@ -955,10 +1128,12 @@ export class InstancedSpriteBatch {
     if (this.shadowShader) this.shadowShader.resources.uTexLut = source;
     if (this._indexedShader) this._indexedShader.resources.uTexLut = source;
     if (this._keyedSunShader) this._keyedSunShader.resources.uTexLut = source;
-    if (this._faceShader !== null) this._faceShader.resources.uTexLut = source;
-    if (this._faceIndexedShader !== null) this._faceIndexedShader.resources.uTexLut = source;
-    if (this._faceRowShader !== null) this._faceRowShader.resources.uTexLut = source;
+    const aux = this._auxShaders();
+    for (let i = 0; i < aux.length; i++) aux[i].resources.uTexLut = source;
     if (this._rowShader !== null) this._rowShader.resources.uTexLut = source;
+    for (const edge of [this._edgeShader, this._edgeIndexedShader, this._edgeRowShader]) {
+      if (edge !== null) edge.resources.uTexLut = source;
+    }
   }
 
   /** Match `_beginUpload` tileWorld when committing pre-packed rows. */
@@ -1091,6 +1266,7 @@ export class InstancedSpriteBatch {
     this._show(true);
     const ring = this._ring;
     this._ring = ring ^ 1;
+    this._lastRing = ring;
     const byRow = indexed === 'rows';
     const geometry = byRow ? this._rowGeometries[ring] : indexed ? this._indexedGeometries[ring] : this._geometries[ring];
     this._buffers[ring].update(out * stride);
@@ -1118,6 +1294,12 @@ export class InstancedSpriteBatch {
     this.geometry = geometry;
     this.buffer = this._buffers[ring];
     this.mesh.geometry = geometry;
+    const edge = this.edgeMesh;
+    if (edge !== null) {
+      const edgeShader = this.edgeShaderFor(this.mesh.shader);
+      if (edgeShader !== null && edge.shader !== edgeShader) edge.shader = edgeShader;
+      if (edge.geometry !== geometry) edge.geometry = geometry;
+    }
     return out;
   }
 
@@ -1342,82 +1524,158 @@ export class InstancedSpriteBatch {
    * @returns {Mesh|null}
    */
   faceMesh(heightScaleY, groundScaleY, maps) {
-    // One mesh a geometry, none swapped: the ring swaps the geometry every frame, and Mesh's setter makes garbage.
+    return this._auxMesh(AUX_FACE, heightScaleY, groundScaleY, maps);
+  }
+
+  /**
+   * DX-GBUF (plan §6.4): this batch's instances for the entity ids map (faceMap.js FACE_IDS_SELF), the G-buffer's second
+   * target, drawn as faceMesh draws the face map (lighting.gbuffer 'pass'). Needs the batch's words.
+   * @returns {Mesh|null}
+   */
+  idsMesh(heightScaleY, groundScaleY, maps) {
+    return this.gbuf ? this._auxMesh(AUX_IDS, heightScaleY, groundScaleY, maps) : null;
+  }
+
+  /**
+   * DX-GBUF (plan §6.4, lighting.gbuffer 'mrt'): this batch's instances for the face map and the entity ids map in one
+   * pass, two colour targets (faceMap.js faceGbufFragment; the caller's render target holds both). Needs the batch's words.
+   * @returns {Mesh|null}
+   */
+  gbufMesh(heightScaleY, groundScaleY, maps) {
+    return this.gbuf ? this._auxMesh(AUX_GBUF, heightScaleY, groundScaleY, maps) : null;
+  }
+
+  /**
+   * DX-EMISSIVE v2 (plan §6.9, F10): this batch's instances for the glow target (faceMap.js faceGlowFragment), the
+   * canvas's size: a glowing pixel's colour times its glow, any other black with its alpha, normal blending. Needs words.
+   * @returns {Mesh|null}
+   */
+  glowMesh(heightScaleY, groundScaleY, maps) {
+    return this.gbuf ? this._auxMesh(AUX_GLOW, heightScaleY, groundScaleY, maps) : null;
+  }
+
+  /**
+   * DX-GBUF: one of the batch's passes over its own instances for the light (AUX_FACE, AUX_IDS, ...), over this frame's
+   * geometry: one mesh a geometry the batch draws from, none swapped (the ring swaps the geometry every frame, and Mesh's
+   * setter makes garbage), the program that reads that geometry's layout (plain, indexed, by row). The programs are made on
+   * the kind's first use, their uniforms the face map's group (uTileWorld, uFaceSpace, uPoseAlpha).
+   * @returns {Mesh|null}
+   */
+  _auxMesh(kind, heightScaleY, groundScaleY, maps) {
+    const aux = this._aux[kind];
     const geometry = this.mesh.geometry;
-    const meshes = this._faceMeshes;
+    const meshes = aux.meshes;
     for (let i = 0; i < meshes.length; i++) {
       if (meshes[i].geometry === geometry) return meshes[i];
     }
-    if (this._faceState === null) {
-      const shaders = this._engineShaders;
-      if (!(this._useWebGpu ? shaders?.sprite : shaders?.faceFrag)) return null;
-      const uniforms = {
+    if (aux.state === null && !this._makeAux(kind, aux, heightScaleY, groundScaleY, maps)) return null;
+    const shader = this.mesh.shader === this._rowShader && this._rowShader !== null
+      ? aux.row
+      : this.mesh.shader === this._indexedShader && this._indexedShader !== null ? aux.indexed : aux.shader;
+    if (shader === null) return null;
+    const mesh = new Mesh({ geometry, shader, state: aux.state, label: `${this._label}-${AUX_NAMES[kind]}` });
+    mesh.cullable = false;
+    meshes.push(mesh);
+    return mesh;
+  }
+
+  /** DX-GBUF: a pass kind's programs (plain, indexed, by row) and state, the first time it draws. */
+  _makeAux(kind, aux, heightScaleY, groundScaleY, maps) {
+    const shaders = this._engineShaders;
+    if (!(this._useWebGpu ? shaders?.sprite : shaders?.faceFrag && shaders?.spriteVert)) return false;
+    const face = this._aux[AUX_FACE];
+    let uniforms;
+    if (kind !== AUX_FACE && face.shader !== null) {
+      // Pixi made the face map's group from its object: every kind shares it.
+      uniforms = face.shader.resources.uniforms;
+    } else {
+      uniforms = {
         uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
         uFaceSpace: { value: new Float32Array([heightScaleY, groundScaleY, 0, 0]), type: 'vec4<f32>' },
       };
       if (this._twoStreams) uniforms.uPoseAlpha = { value: 1, type: 'f32' };
-      const r = this.shader.resources;
-      const resources = { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: maps, uniforms };
-      const name = `${this._label}-face`;
-      if (this._useWebGpu) {
-        const source = faceMapWgsl(this._twoStreams ? shaders.spritePose : shaders.sprite);
-        this._faceShader = new Shader({ gpuProgram: instancedSpriteGpuProgram(GpuProgram, source, 'mainFragFace', name, { maps: true }), resources });
-      } else {
-        const vertex = faceMapVertex(this._twoStreams ? shaders.spriteVertPose : shaders.spriteVert);
-        this._faceShader = new Shader({ glProgram: instancedSpriteGlProgram(GlProgram, vertex, shaders.faceFrag, name), resources });
-      }
-      if (this._indexedShader !== null) {
-        const indexedResources = { ...resources, uStatics: this._indexedShader.resources.uStatics };
-        const indexedName = `${name}-indexed`;
-        this._faceIndexedShader = new Shader(
-          this._useWebGpu
-            ? {
-                gpuProgram: instancedSpriteIndexedGpuProgram(
-                  GpuProgram,
-                  spriteIndexedWgsl(faceMapWgsl(shaders.sprite)),
-                  'mainFragFace',
-                  indexedName,
-                  { maps: true },
-                ),
-                resources: indexedResources,
-              }
-            : {
-                glProgram: instancedSpriteGlProgram(
-                  GlProgram,
-                  spriteIndexedVertex(faceMapVertex(shaders.spriteVert)),
-                  shaders.faceFrag,
-                  indexedName,
-                ),
-                resources: indexedResources,
-              },
-        );
-      }
-      if (this._rowShader !== null) {
-        // E-201: over a by-row keyed frame (WebGL only).
-        this._faceRowShader = new Shader({
-          glProgram: instancedSpriteGlProgram(
-            GlProgram,
-            spriteIndexedVertex(faceMapVertex(shaders.spriteVert), { poseBlock: this._poseBlock }),
-            shaders.faceFrag,
-            `${name}-rows`,
-          ),
-          resources: { ...resources, uStatics: this._staticsSource, uPoses: this._poseSource },
-        });
-      }
-      const state = new State();
-      state.blendMode = 'none';
-      state.depthTest = false;
-      state.depthMask = false;
-      state.culling = false;
-      this._faceState = state;
     }
-    const shader = this.mesh.shader === this._rowShader && this._rowShader !== null
-      ? this._faceRowShader
-      : this.mesh.shader === this._indexedShader ? this._faceIndexedShader : this._faceShader;
-    const mesh = new Mesh({ geometry, shader, state: this._faceState, label: `${this._label}-face` });
-    mesh.cullable = false;
-    meshes.push(mesh);
-    return mesh;
+    const r = this.shader.resources;
+    const resources = { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: maps, uniforms };
+    const name = `${this._label}-${AUX_NAMES[kind]}`;
+    // DX-GBUF: with words, each entity's sprite as its normals and surface say (faceMap.frag.glsl's GBUF block); every kind
+    // past the face map reads them.
+    const gbuf = { gbuf: kind === AUX_FACE ? this.gbuf : true, glow: this.emissiveGlow };
+    const entry = AUX_ENTRIES[kind];
+    const frag = this._useWebGpu ? null : this._auxFragment(kind);
+    if (this._useWebGpu) {
+      const source = faceMapWgsl(this._twoStreams ? shaders.spritePose : shaders.sprite, gbuf);
+      aux.shader = new Shader({ gpuProgram: instancedSpriteGpuProgram(GpuProgram, source, entry, name, { maps: true }), resources });
+    } else {
+      const vertex = faceMapVertex(this._twoStreams ? shaders.spriteVertPose : shaders.spriteVert, gbuf);
+      aux.shader = new Shader({ glProgram: instancedSpriteGlProgram(GlProgram, vertex, frag, name), resources });
+    }
+    // The shared group, for the kinds made after this one.
+    if (kind === AUX_FACE) resources.uniforms = aux.shader.resources.uniforms;
+    if (this._indexedShader !== null) {
+      const indexedResources = { ...resources, uStatics: this._indexedShader.resources.uStatics };
+      const indexedName = `${name}-indexed`;
+      aux.indexed = new Shader(
+        this._useWebGpu
+          ? {
+              gpuProgram: instancedSpriteIndexedGpuProgram(
+                GpuProgram,
+                spriteIndexedWgsl(faceMapWgsl(shaders.sprite, gbuf)),
+                entry,
+                indexedName,
+                { maps: true },
+              ),
+              resources: indexedResources,
+            }
+          : {
+              glProgram: instancedSpriteGlProgram(GlProgram, spriteIndexedVertex(faceMapVertex(shaders.spriteVert, gbuf)), frag, indexedName),
+              resources: indexedResources,
+            },
+      );
+    }
+    if (this._rowShader !== null) {
+      // E-201: over a by-row keyed frame (WebGL only).
+      aux.row = new Shader({
+        glProgram: instancedSpriteGlProgram(
+          GlProgram,
+          spriteIndexedVertex(faceMapVertex(shaders.spriteVert, gbuf), { poseBlock: this._poseBlock }),
+          frag,
+          `${name}-rows`,
+        ),
+        resources: { ...resources, uStatics: this._staticsSource, uPoses: this._poseSource },
+      });
+    }
+    const state = new State();
+    // The G-buffer's targets hold codes: written as they are. The glow is a colour, blended as the sprites are (PMA).
+    state.blendMode = kind === AUX_GLOW ? 'normal' : 'none';
+    state.depthTest = false;
+    state.depthMask = false;
+    state.culling = false;
+    aux.state = state;
+    return true;
+  }
+
+  /** DX-GBUF: a pass kind's fragment shader on WebGL. */
+  _auxFragment(kind) {
+    const shaders = this._engineShaders;
+    const glow = this.emissiveGlow;
+    if (kind === AUX_IDS) return faceIdsFragment({ glow });
+    if (kind === AUX_GBUF) return faceGbufFragment(shaders.faceFrag, { glow });
+    if (kind === AUX_GLOW) return faceGlowFragment();
+    return faceFragmentGlsl(shaders.faceFrag, { gbuf: this.gbuf, glow });
+  }
+
+  /** DX-GBUF: every program of the batch's passes for the light, for the atlas and LUT setters. */
+  _auxShaders() {
+    const out = this._auxShaderList;
+    out.length = 0;
+    for (let k = 0; k < this._aux.length; k++) {
+      const aux = this._aux[k];
+      if (aux.shader !== null) out.push(aux.shader);
+      if (aux.indexed !== null) out.push(aux.indexed);
+      if (aux.row !== null) out.push(aux.row);
+    }
+    return out;
   }
 
   /**

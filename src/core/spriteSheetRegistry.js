@@ -1441,6 +1441,8 @@ class SpriteSheetRegistry {
         proxySheets,
         individualTextures,
         maps: mapsCanvas !== null,
+        // DX-EMISSIVE v2: a sheet glows by itself (assets or its json's meta.emissive): the Pixi worker runs the glow pass.
+        emissive: imagesToPack.some((d) => d.maps && d.maps.emissive === true),
       },
     };
 
