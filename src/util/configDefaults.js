@@ -769,8 +769,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
   maxOccluderSelfLit: 512,
   /**
-   * ShadowCaster.setTexture works: a pass over the caster rows each frame, and the keyed caster paths off (E-191), since
-   * those read a sprite's own statics. Off, a scene pays nothing.
+   * shadowCaster.setSprite({ frame }) works: a pass over the caster rows each frame, and the keyed caster paths off (E-191),
+   * since those read a sprite's own statics. Off, a scene pays nothing. A key while pre-render and Pixi read it at init.
    */
   shadowTextures: false,
   /**
