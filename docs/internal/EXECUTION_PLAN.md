@@ -4827,6 +4827,8 @@ angle, rotC and rotS; civilians and soldiers have a fixed rotation, so the write
 the lines from the readers' caches (pre-render, logic). Owner: physics.
 **Kept 2026-11-14 (R-1036):** Box2D f053121, WeedJS 6cdaad9c: only the step's export skips (commands still write all).
 Predator crowd=2.5, 4 pairs: physics -3.2 % (0/4 worse), logic -10.1 %, preRender -7.8 %; pile bit-identical; kernel tie.
+**Read again 2026-11-14 (R-1044):** a crowd-2.5 A/A with --pool reads B -3.1 % physics, -8.0 % logic, -6.3 % preRender on
+identical code, so those gains are within the margin: kept as hygiene (no worker worse, reader refills down).
 ### E-307 The gather publishes the rows it rebuilds
 
 **Premise (Predator at crowd 2.5, spatial one worker at ~15 ms):** publish_batch reads each rebuilt row's candidates and their
@@ -4843,6 +4845,26 @@ Owner: spatial.
 gather alone 9.45 -> 9.52 ms a frame with the skip off). The skipped visits were the cheap ones (predicted rejects whose
 lines the next entity loads anyway). Ablation of the gather: without the dedup marks -15 %, without the row writes -17 %;
 ids numbered in home-cell order (the locality ceiling) -8 % of the frame.
+### E-312 The emit writes every sprite row's statics, read only for changed keys
+
+**Premise (R-1045):** emit_rows is 42 to 45 % of pre-render; sprite_row reads six statics per sprite and writes them to
+the queue every frame, while the keyed pack reads them only for changed keys. The persist path never takes a frame in
+Predator (631 tries, 0 hits). Ceiling (scratch b7f8cfa9): preRender -17.1 % at crowd 2.5, about -10 % past the A/A.
+**Plan:** Pixi still draws split frames (first frame, a gap, the keyed pause, refused keyed passes) that read every row's
+statics: make E-177's flags cumulative since the frame Pixi last drew keyed and request a full resend before any split,
+then skip unchanged rows' statics. Owner: pre-render.
+**Kept 2026-11-14 (R-1047), merged 3a314adb:** step 1 (3b119d47) marks a key for a change after the queue frame Pixi last
+drew keyed (the header's DRAWN), so a gap or a split frame needs no resend; step 2 (9d18efd4) leaves an unmarked keyed row's
+six statics unwritten while nothing reads them, each buffer saying whether it holds them all (COMPLETE) and Pixi asking for
+them (FULL) before it draws split. Predator crowd=2.5, 4 pairs against main: pre-render 6.427 -> 5.841 ms (-9.1 %, 4/4),
+-7.2 % against the other workers past the A/A limit (5.3 %), no worker worse; kernel +7.1 % (step 1 alone a tie). Left:
+the persist path still never hits in Predator (R-1045), and persist_remember runs for nothing there.
+### E-311 Pixi's updateLighting boxes a double per light
+
+**Premise (the day's heap pass, Predator crowd 1.5):** updateLighting 54.5 KB/s of Pixi's 302.7, about one heap number per
+visible light a frame; its only explicit allocation is cold. Owner: Pixi.
+**Kept 2026-11-14 (R-1043), hygiene:** the per-light pack (_packLightData) and the sun uniforms (_writeSunUniforms) in methods
+of their own (4a5e962d): Pixi 302.7 -> 251.1 KB/s; Predator crowd=1.5 neutral, no worker worse.
 ### E-310 Spatial workers at scale
 
 **Premise (R-1034):** at 57 600 entities one spatial worker spends ~12 ms a frame; the total over 2 workers is 14.6 ms and

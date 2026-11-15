@@ -46,6 +46,10 @@ Plans, this document, records and reports are written in English, in full senten
    than the scene's detection limit cannot be called either way there. When every worker the change
    cannot reach moved the same way, that is drift: read the owner against it. The A/A also judges the
    protocol: a new way of running sittings stays only if it lowers that noise for the same machine time.
+   `runPredatorAbab --aa <A/A sitting>[,<another>]` applies it: each kind's limit is printed and a keep or a
+   regression must clear it (`--decide-only --aa` re-judges a sitting). Run an A/A sitting of the scene and query
+   first; at Predator crowd=2.5 two A/As on identical code read pre-render -6.3 % and +4.7 % (R-1046), each past
+   the 3 % bars alone.
 8. **Correctness first, by a test:** bit-identical when that is free, within a stated tolerance held by a
    test when exactness would cost speed. A timing whose checksum differs does not exist.
 9. **One benchmark at a time, on a quiet machine.** Agents write kernels and tests; they do not time.
@@ -380,7 +384,9 @@ Planned tools, each in its own commit before the measurements that use it:
    read -1.2 %, on different windows and with the owner at work: the same-build check is still to do.
 4. The sequential decision of [How a sitting decides](#how-a-sitting-decides) in the runner, reading the
    session's A/A for the detection limits, with a threshold for each look so that the rate of false keeps
-   over the looks is the one chosen.
+   over the looks is the one chosen. **First part built 2026-11-14:** `--aa` reads the A/A sittings, pools their
+   pairs and judges every kind against 2.5 x their spread / sqrt(pairs) (against the other workers where it can),
+   `--early` included. Left: the per-look thresholds.
 5. A preflight that refuses to start a sitting on a busy machine or with another benchmark running.
 6. A records writer: the sitting's summary becomes its record in the register.
 7. Warm-up and window per scene in `engineFeatureCatalog.mjs`, from where each scene's running mean flattens.

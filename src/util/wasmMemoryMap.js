@@ -171,7 +171,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitPersistEntity', owner: 'pre-render', bytes: 2 * n * 4 },
       { name: 'emitPersistFrame', owner: 'pre-render', bytes: 2 * n * 2 },
       { name: 'emitPersistAnim', owner: 'pre-render', bytes: 2 * n * 2 },
-      // E-177: the keyed frames' resync header on a line of its own (PIXI_KEYED_HEADER: Pixi asks, pre-render answers).
+      // E-177: the keyed frames' header on a line of its own (PIXI_KEYED_HEADER: Pixi's last keyed frame, pre-render's
+      // frame each buffer's marks count from).
       { name: 'emitKeyHeader', owner: 'pre-render and Pixi', bytes: emit.pixiKeyed ? CACHE_LINE_BYTES : 0 },
       // E-188: the keyed decorations' records (EMIT_DECO_KEYED_BYTES a decoration slot: the statics it last emitted).
       { name: 'emitDecoKeyed', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedDecorations | 0) * EMIT_DECO_KEYED_BYTES : 0 },
@@ -179,6 +180,11 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitLfKeyed', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedLiquidFun | 0) * EMIT_DECO_KEYED_BYTES : 0 },
       // E-194: the compare epoch each LiquidFun particle's record was last checked at (u32 an index).
       { name: 'emitLfChecked', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedLiquidFun | 0) * 4 : 0 },
+      // E-312: the queue frame each entity's statics and its texture last changed in (two u32 an entity), and each keyed
+      // decoration slot's and LiquidFun particle's record (a u32 each), so a key stays marked until Pixi draws past it.
+      { name: 'emitKeyChange', owner: 'pre-render', bytes: emit.pixiKeyed ? e * 8 : 0 },
+      { name: 'emitDecoChange', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedDecorations | 0) * 4 : 0 },
+      { name: 'emitLfChange', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedLiquidFun | 0) * 4 : 0 },
     );
     // Each custom sprite layer's two queue buffers (pre-render writes, Pixi reads) and its collector: y and index
     // (u32 each), the pose stash x, y, rotC, rotS (f32 each), then type (u8) per row: CUSTOM_COLLECTOR_ROW_BYTES.
@@ -434,9 +440,15 @@ export const PIXI_KEYED_TEX_BYTES = 8;
  * buffer's word, so Pixi draws a buffer keyed only once it carries the request it made. E-191: LIVE is the queue frame of
  * Pixi's last keyed upload with shadow terms (0: none); pre-render writes keyed caster rows while it is recent.
  */
-export const PIXI_KEYED_HEADER = Object.freeze({ REQUEST: 0, SERVED: 1, BUFFER0: 2, BUFFER1: 3, LIVE: 4 });
+// E-312, keyed frames v2: Pixi stores DRAWN, the queue frame it last drew keyed (0: none, or its statics texture is
+// new); pre-render reads it at each emit of the main queue, marks the keys changed in a frame after it, and stores what
+// it read in SINCE0 / SINCE1 for that queue buffer, so Pixi draws a buffer keyed when SINCE is not past its own last
+// keyed frame, whatever frames it skipped. E-191: LIVE, the frame of Pixi's last keyed upload once it draws keyed
+// caster rows. FULL and COMPLETE0 / COMPLETE1 (E-312 step 2): Pixi asks for every row's statics, and pre-render says
+// which buffer holds them.
+export const PIXI_KEYED_HEADER = Object.freeze({ LIVE: 0, DRAWN: 1, SINCE0: 2, SINCE1: 3, FULL: 4, COMPLETE0: 5, COMPLETE1: 6 });
 /** The header's words, the view each worker takes of its line. */
-export const PIXI_KEYED_HEADER_WORDS = 5;
+export const PIXI_KEYED_HEADER_WORDS = 7;
 
 /**
  * The navigation memory (W14 `navFlowfield.wasm`, created by navigationMemory.js). NavGrid reads its

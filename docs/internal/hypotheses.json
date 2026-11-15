@@ -555,7 +555,7 @@
     {
       "id": "W7",
       "title": "W5 + W6 + the existing publish",
-      "status": "open",
+      "status": "screened",
       "statusText": "screened 2026-10-28: a port's ceiling is a few per cent of spatial",
       "date": null,
       "result": "The JS decision loop is about 8 % of the spatial frame (kernel profile); the rebuild in C ties (+2.0 % / −2.2 %); the loop's counter writes in locals tie (−0.2 % / −0.9 %).",
@@ -568,7 +568,8 @@
       "next": "Nothing pending.",
       "records": [
         "R-0685",
-        "R-0991"
+        "R-0991",
+        "R-1050"
       ]
     },
     {
@@ -7950,7 +7951,7 @@
     {
       "id": "E-99",
       "title": "Caster positions in bin order for the shadow stamp",
-      "status": "open",
+      "status": "rejected",
       "statusText": "rejected in the kernel 2026-10-23",
       "date": "2026-10-23",
       "result": "buildStampGrid copied caster x, y in bin order for the light walk. shadowStampMicrobench 666 → 658 ops/s (−1.2 %, a tie): the rows fit in cache, the profile's samples were load stalls.",
@@ -7962,7 +7963,8 @@
       "aliases": [],
       "records": [
         "R-0490",
-        "R-0991"
+        "R-0991",
+        "R-1051"
       ]
     },
     {
@@ -12625,13 +12627,12 @@
     {
       "id": "N-156",
       "title": "physicsChainWait.test.js's first test fails now and then under the full suite (a wall-clock budget)",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "found 2026-11-12 on dx/light-api: 1 of 2550 in two full runs, 4 of 4 alone",
       "date": "2026-11-12",
       "area": "tests",
       "kind": "bug",
-      "rank": 46,
-      "result": "Its ringer thread rings at 3, 6 and 9 ms against a 16 ms budget; under the suite's load it ran late, the wait gave up and turned the chain off (121 !== 0).",
+      "result": "Ringer started from the wait's first pass, budget 100 ms: 0 of 288 runs failed under 48 parallel copies (5 of 288 before)",
       "next": "A wider budget (a longer period) or a deadline given ahead, as the other publish tests do.",
       "refs": [
         "REVIEW_PLAN.md#N-156"
@@ -12642,7 +12643,9 @@
         "chain wait",
         "N-146"
       ],
-      "records": []
+      "records": [
+        "R-1048"
+      ]
     },
     {
       "id": "N-157",
@@ -12885,7 +12888,9 @@
         "demo warnings",
         "maxParticles"
       ],
-      "records": []
+      "records": [
+        "R-1049"
+      ]
     },
     {
       "id": "N-168",
@@ -13007,7 +13012,9 @@
         "frame clock"
       ],
       "records": [
-        "R-1029"
+        "R-1029",
+        "R-1044",
+        "R-1046"
       ]
     },
     {
@@ -15077,7 +15084,9 @@
       ],
       "records": [
         "R-1034",
-        "R-1035"
+        "R-1035",
+        "R-1044",
+        "R-1046"
       ],
       "id": "E-310",
       "title": "Spatial workers at scale: at 57 600 entities two spatial workers would each spend ~7.3 ms where one spends ~12 ms (Predator sets one)",
@@ -15092,12 +15101,12 @@
     {
       "id": "E-308",
       "title": "Box2D's step export rewrites the angle (an atan2), rotC and rotS of every moved body, also when it did not turn (Predator's people have a fixed rotation)",
-      "status": "kept",
-      "statusText": "kept 2026-11-14 (R-1036)",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-14 (R-1036, read against the crowd-2.5 A/A in R-1044)",
       "date": "2026-11-14",
       "area": "physics",
       "kind": "speed",
-      "result": "kept (R-1036): Box2D f053121, WeedJS 6cdaad9c: the step's export writes angle/rotC/rotS only when the rotation changed (commands still write all); Predator crowd 2.5: physics -3.2 %, logic -10.1 %, preRender -7.8 % (0/4 worse each); pile bit-identical; kernel tie.",
+      "result": "kept-hygiene (R-1036, R-1044): the step's export writes angle/rotC/rotS only when the rotation changed; Predator crowd 2.5 physics -3.2 %, logic -10.1 %, preRender -7.8 %, all within the crowd-2.5 A/A's B-side bias (-3.1, -8.0, -6.3 %); no worker worse, reader refills down (one capture a side); pile bit-identical.",
       "next": "None.",
       "refs": [
         "EXECUTION_PLAN.md#E-308"
@@ -15109,7 +15118,9 @@
       "records": [
         "R-1036",
         "R-1037",
-        "R-1040"
+        "R-1040",
+        "R-1044",
+        "R-1046"
       ]
     },
     {
@@ -15151,6 +15162,51 @@
       "title": "DirectionalSprite: a sprite drawn from several directions, from its facing (DX-LIGHT3D F2)",
       "status": "running",
       "statusText": "built 2026-11-14 on dx/light3d; measured on a 2-core VM only"
+    },
+    {
+      "id": "E-311",
+      "title": "Pixi's updateLighting boxes a double per visible light per frame (Predator crowd 1.5: 54.5 KB/s of Pixi's 302.7)",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-11-14 (R-1043)",
+      "date": "2026-11-14",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "kept-hygiene (R-1043): _packLightData and _writeSunUniforms (4a5e962d): Pixi's allocation 302.7 -> 251.1 KB/s (updateLighting 54.5 -> 2.3); Predator crowd 1.5 neutral, no worker worse.",
+      "next": "None.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-311"
+      ],
+      "aliases": [
+        "updateLighting allocation",
+        "_packLightData"
+      ],
+      "records": [
+        "R-1043"
+      ]
+    },
+    {
+      "id": "E-312",
+      "title": "With keyed frames pre-render's emit reads and writes every sprite row's six statics each frame, which Pixi reads only for changed keys (Predator crowd 2.5 ceiling: preRender about -10 % net)",
+      "status": "kept",
+      "statusText": "proposed 2026-11-14 (R-1045)",
+      "date": "2026-11-14",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "Keyed frames v2 then the emit's statics skipped for unmarked keyed rows: Predator crowd 2.5 pre-render 6.427 -> 5.841 ms (-9.1 %, -7.2 % vs others past the 5.3 % A/A limit); kernel +7.1 %",
+      "next": "E-177's changed flags cumulative since the queue frame Pixi last drew keyed; no split frame on a gap, a pause or a fallback without a full resend answered first; then the emit skips unchanged rows' statics when Pixi says every pass draws keyed. compareCaptures with gaps forced, Predator crowd 2.5 against the A/A.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-312"
+      ],
+      "aliases": [
+        "emit statics",
+        "keyed statics skip",
+        "persist never hits"
+      ],
+      "records": [
+        "R-1045",
+        "R-1046",
+        "R-1047"
+      ]
     }
   ],
   "records": [
@@ -25461,6 +25517,109 @@
         "f556f6d",
         "ea688a5"
       ]
+    },
+    {
+      "id": "R-1043",
+      "date": "2026-11-14",
+      "time": "17:47",
+      "timeFrom": "recorded",
+      "title": "E-311 kept (hygiene): updateLighting's per-light pack and sun uniforms in methods of their own; Pixi 302.7 -> 251.1 KB/s, Predator neutral",
+      "verdict": "kept-hygiene",
+      "text": "**E-311 kept (hygiene): two pieces of Pixi's updateLighting in methods of their own take 52 KB/s off Pixi's allocation.**\n2026-11-14, 17:33 to 17:47 (result files), main 4a5e962d (bf320cd7).\n\nFound in the day's heap pass (Predator crowd=1.5, 16:47): Pixi allocated 302.7 KB/s, and the largest site of engine code\nwas updateLighting itself, 54.5 KB/s (the rest Pixi's own internals: bind 44.9, buffer events 41.7, ...). Its only\nexplicit allocation is a Float32Array grown when the light count rises (cold); TurboFan compiles it (1 395 bytecode\nbytes, 21 functions inlined, 15.6 KB of machine code); 54.5 KB/s at 60 fps is ~900 bytes a frame, ~57 heap numbers:\nabout one per visible light (~50) plus the sun and night uniforms.\n\n- Experiment (not committed): the per-light loop and the sun block each moved into a method; the heap pass named neither\n  the loop (nothing allocated) nor updateLighting; the sun method 2.7 KB/s. Pixi 302.7 -> 256.3 KB/s.\n- Shipped: _packLightData (the per-light pack, the columns it reads with it) and _writeSunUniforms (sun and night\n  uniforms). Heap pass after the first: updateLighting 12.1 KB/s, Pixi 265.4; after both: Pixi 251.1 KB/s (-17 %),\n  updateLighting under the list (2.3 KB/s), _writeSunUniforms 1.7, _packLightData nothing.\n- Why: the same loop compiled on its own keeps its doubles unboxed; inside the large caller TurboFan boxed one per\n  light, the pattern CLAUDE.md records for large callers (E-66, E-85). Not traced further (a --trace-turbo of the\n  function would name the node).\n- Predator crowd=1.5, runPredatorAbab --vs main --hyp-rev w14s/e311 --owner renderer --pool --early, 4 pairs, 17:40:56\n  to 17:47:04: NEUTRAL (below floor), no worker worse; renderer 2.342 -> 2.229 ms.\n- test:node 2630/2630, test:demos 101/101.",
+      "commits": [
+        "bf320cd7",
+        "4a5e962d"
+      ]
+    },
+    {
+      "id": "R-1044",
+      "date": "2026-11-14",
+      "time": "18:16",
+      "timeFrom": "recorded",
+      "title": "A/A at Predator crowd 2.5 with --pool reads B faster in every worker (preRender -6.3 %, logic -8 %, physics -3.1 %, spatial -2.1 %): E-308's gains are within it",
+      "verdict": "note",
+      "text": "**A/A at Predator crowd 2.5 with --pool: identical code reads the B side faster in every worker (2 to 8 %); today's crowd-2.5 verdicts read against it.**\n2026-11-14, 18:11:11 to 18:16:37, runPredatorAbab --vs main --hyp-rev main (416a24d2) --query crowd=2.5 --owner preRender\n--pool --pairs 4 (the runner orders the pairs AB BA AB BA). The runner called it KEPT:\n\n| worker (own) | A | B | |\n| --- | --- | --- | --- |\n| preRender | 7.340 ms | 6.996 | paired -6.3 %, 1/4 worse, cv 8/3 % |\n| logic | 6.837 | 6.288 | -8.0 %, 1/4 |\n| physics | 14.100 | 13.681 | -3.1 %, 1/4 |\n| spatial | 10.927 | 10.367 | -2.1 %, 1/4 |\n\nPer run, A was slower in three pairs of four whether it ran first or second (preRender A 6.65 / 7.70 / 8.09 / 6.95, B\n7.10 / 6.80 / 7.23 / 6.60), and the sitting's first run was not the slow one: the bias goes with the side (pool-a for\n--vs, pool-b for --hyp-rev), not with the order. Cause not found. Until it is, a crowd-2.5 reading needs to clear these\nmargins, and a two-pair --early stop can be fooled (the E-312 ceiling's first sitting stopped at 2 pairs with every worker\n12 to 16 % lower).\n\nToday's crowd-2.5 readings against it:\n- E-308 (R-1036): physics -3.2 % (A/A -3.1 %), logic -10.1 % (-8.0 %), preRender -7.8 % (-6.3 %): within the margins. The\n  change stays (no worker worse, the counters' reader refills down), as hygiene, not as a speed keep.\n- E-310 step 1 (R-1035): spatial -32.3 % clears it; logic +8.3 % runs against it, so that cost is real.\n- E-312's ceiling (scratch b7f8cfa9, 18:05:22 to 18:10:40, 4 pairs): preRender -17.1 % (0/4), -8.2 % against the other\n  workers, which fell 9 to 16 %: about 10 % past the A/A's -6.3 %."
+    },
+    {
+      "id": "R-1045",
+      "date": "2026-11-14",
+      "time": "18:25",
+      "timeFrom": "recorded",
+      "title": "E-312 opened: the emit rewrites every sprite row's statics that Pixi reads only for changed keys; persist never hits in Predator (0 of 631); ceiling preRender -17.1 % (about -10 % past the A/A); needs E-177's protocol first",
+      "verdict": "note",
+      "text": "**E-312 opened: with keyed frames the emit reads and writes every sprite row's statics, which Pixi reads only for changed keys; ceiling about 10 % of pre-render at crowd 2.5; it needs E-177's protocol changed first.**\n2026-11-14, 17:52 to 18:25.\n\nHow it was found: the day's map (Predator crowd 1.5 and 2.5) puts emit_rows at 42 to 45 % of pre-render. A probe in the\nscene (persistProbe, 17:52 to 17:58: _persistFrameWasm and _emitRowsWasm wrapped in the worker) showed the persist path\nnever taking a frame: 631 tries, 0 hits; the buffer's remembered count is always -1, because each remember that clears a\ndirty sprite invalidates the other buffer (some sprite changes animation every frame), and the count changes with the\n~170 bullet, trail and glow rows, which sit among the 22 650 sprite rows by entity id (the first at row 0). persist_remember\nitself (2.5 % of pre-render) then runs for nothing, but it also clears the sprites' renderDirty flags, so it cannot simply go.\n\nWhat the emit spends: sprite_row reads six statics per sprite from SpriteRenderer (alpha, scale x and y, tint, anchor x and\ny, each a line of its own column) and writes them to the queue row, every row, every frame; with keyed frames (on by\ndefault on WebGL) Pixi's keyed pack reads a row's statics only when its key is flagged changed.\n\nCeiling (scratch/e312-ceiling b7f8cfa9: the six skipped on a keyed, unchanged, non-repeating row; wrong for the paths\nbelow): Predator crowd=2.5, 4 pairs, 18:05 to 18:10: preRender 7.990 -> 6.431 ms (-17.1 %, 0/4), -8.2 % against the other\nworkers; the crowd-2.5 A/A (R-1044) reads B -6.3 % on identical code: about 10 % net.\n\nWhy it is not done here: Pixi draws a keyed batch \"split\", reading every row's statics from the queue, on its first frame,\nafter a gap in the queue frames it takes (it takes the newest queue, so a slow frame skips one), and for KEYED_PAUSE_FRAMES\nwhen updates outweigh the saving (KEYED_LOSS_FRAMES); the caster and sun passes fall back the same way when their keyed\nmeshes are refused or ShadowCaster.setTexture is used. Each of those would draw another entity's statics in a row that\nshifted. A per-row exact skip (the row already holds this entity's statics) does not pay in Predator: every bullet spawned\nor despawned shifts the rows after it.\n\nPlan: E-177's changed flags made cumulative, \"changed since the queue frame Pixi last drew keyed\" (a per-entity change frame\nagainst a word Pixi publishes), so a gap needs no split frame; the keyed pause and every fallback request a full resend and\nkeep drawing keyed until the buffer that answers it, never reading statics of unchanged rows; then the emit skips them when\nPixi's header says every pass draws keyed. Verify with compareCaptures (dxCaptureScene, gaps forced) byte-identical, the emit\nkernel's checksum, Predator crowd 2.5 against the A/A margins.",
+      "commits": [
+        "b7f8cfa9"
+      ]
+    },
+    {
+      "id": "R-1046",
+      "date": "2026-11-14",
+      "time": "18:50",
+      "timeFrom": "recorded",
+      "title": "Crowd 2.5's side bias was noise (a one-directory A/A reads B +4.7 %); runPredatorAbab --aa judges keeps and regressions against the session's A/A limits",
+      "verdict": "note",
+      "text": "**Crowd 2.5's \"side bias\" was noise: a second A/A on one directory reads B slower, and the runner now judges against the A/A (--aa).**\n2026-11-14, 18:28:13 to 18:33:40 (the sitting), then 18:35 to 18:50 (the tool, 52cf1ee0).\n\n- A/A on one directory: runPredatorAbab --vs main --query crowd=2.5 --query-b \"crowd=2.5&noop=1\" --owner preRender --pool\n  --pairs 4 (both sides run pool-a). The 3 % bars called it REGRESSION: pre-render +4.7 % (4/4 worse, cv 4/3 %), logic\n  +2.3 %, spatial +2.1 %, physics +1.4 %. With R-1044's A/A on two directories (B -6.3 %), the B side read faster once and\n  slower once on identical code: no side bias, a large spread.\n- Pooled (8 pairs), the A/A medians are near 0 (pre-render +2.0 %, logic -0.8 %, physics -0.4 %, spatial +0.3 %); the\n  spreads give these limits for a 4-pair sitting at crowd 2.5 (raw / against the other workers): pre-render 8.7 / 5.3 %,\n  logic 13.4 / 8.9 %, physics 5.4 / 3.4 %, spatial 4.9 / 4.1 %. An 8-pair sitting divides them by 1.41.\n- runPredatorAbab --aa (52cf1ee0, HOW_WE_MEASURE rule 7 and planned tool 4's first part): those limits printed beside each\n  kind; a keep, a regression and an --early stop must clear them. Re-judged with --decide-only --aa aa-crowd25,aa25-samedir:\n  both A/As NEUTRAL; E-312's ceiling (e312-ceiling4) KEPT, pre-render -8.2 % against the others past 5.3 %; E-308\n  (e308-crowd25) NEUTRAL (within the detection limit), as R-1044 read it; E-310 step 1: spatial -37.3 % against the others,\n  logic +9.7 % against the others just past its 8.9 %.\n\nR-1044's reading of E-308 stands (its gains are within the limits; kept as hygiene); its word \"bias\" does not.",
+      "commits": [
+        "52cf1ee0"
+      ]
+    },
+    {
+      "id": "R-1047",
+      "date": "2026-11-14",
+      "time": "20:13",
+      "timeFrom": "recorded",
+      "title": "E-312 kept: the emit leaves an unmarked keyed row's statics unwritten (keyed frames v2 first); Predator crowd 2.5 pre-render -9.1 %, -7.2 % against the others past the A/A limit",
+      "verdict": "kept",
+      "text": "**E-312 kept: with keyed frames v2 the emit leaves an unmarked keyed sprite row's statics unwritten; Predator crowd 2.5 pre-render -9.1 % (-7.2 % against the other workers, past the A/A limit).**\n2026-11-14, 20:13:20 to 20:13:53 (kernel), 20:14:17 to 20:19:44 (the sitting), then the CPU, heap and deopt passes.\n\nWhat changed (merged 3a314adb):\n\n- Step 1 (3b119d47, keyed frames v2): pre-render stamps each entity's statics and texture changes, each keyed decoration's\n  and LiquidFun particle's record change, with the queue frame, and marks a key for a change after the queue frame Pixi\n  last drew keyed (the header's DRAWN; every key while it is 0), storing that frame with the buffer (SINCE0/1). A gap, a\n  split frame or a pause loses nothing and needs no resend (REQUEST/SERVED went). Same picture as main on dxCaptureScene\n  (WebGL and WebGPU, 0 of 921 600 pixels); Predator crowd 1.5, 20 s: main drew 4 frames split after 4 gaps, v2 none.\n- Step 2 (9d18efd4): the emit kernel leaves alpha, scale x/y, tint and anchor x/y unwritten on an unmarked keyed sprite row\n  (K_SKIP) when nothing reads them: Pixi has drawn keyed and not asked for every row's statics (FULL), sends texture-only\n  rows as texture updates, packs the sprites itself, and the sun's casters went keyed last frame. Each buffer says whether\n  it holds every row's statics (COMPLETE0/1; a persist frame keeps its buffer's answer); Pixi draws split only from such a\n  buffer, asks for them on a pause or a frame it cannot pack keyed, and draws keyed from a buffer that skipped meanwhile.\n  A frame whose casters cannot go keyed after a skipping emit keeps last frame's shadows.\n- Tool (6357cb8b): preRenderEmitWasmMicrobench variants wasmKeyedV2 and wasmKeyedSkip.\n\nNumbers:\n\n- Kernel, 5 alternating rounds, same checksum: wasmKeyed 1726 ops/s, wasmKeyedV2 1742 (+0.9 %, a tie: step 1's change\n  frames cost nothing measurable), wasmKeyedSkip 1849 (+7.1 %).\n- Predator crowd=2.5, 4 pairs, main against 29beca2a (the same tree as 9d18efd4), --pool, judged with --aa aa-crowd25,\n  aa25-samedir: KEPT. pre-render 6.427 -> 5.841 ms (-9.1 %, 4/4 lower, cv 3/7 %), -7.2 % against the other workers (4/4),\n  limit 8.7 % raw / 5.3 % against the others; spatial -1.5 %, physics -2.2 % (inside their limits); logic, renderer and\n  particle below the 6 ms floor (renderer 3.073 -> 3.040). Load keys equal (BODY_COUNT, GPU_CASTERS, queue size within\n  0.1 %). The ceiling (R-1045) read -17.1 % raw, -8.2 % against the others: the real change reaches most of it.\n- CPU trace, one a side (profileSceneSweep cpu, crowd 2.5): pre-render busy 609 -> 566 ms/s; emit_rows self 37.2 % ->\n  29.8 % of it, 226 -> 169 ms/s. Pixi without its wait unchanged (378 -> 376 ms/s).\n- Heap pass: pre-render 103.2 -> 100.5 KB/s, Pixi 302.4 -> 310.4 KB/s, no new site. Deopt pass (tip): none in\n  emitSpriteQueue, _packGpuShadows, _uploadKeyed, writeEmitColumns.\n\nNobody reads a skipped static: a build that wrote magenta at 8x scale into them drew Predator crowd 1.5, steadyCombat,\nrenderQueueStress and liquidFunQuery as before (each skipping on every emit, Pixi keyed on every frame); the same build\nforced to draw split from such buffers (LIVE kept fresh) turned Predator magenta. dxCaptureScene cannot show it: a still\nscene's emits are persist frames, which skip nothing.\n\nTests: the emit kernel with K_SKIP (marked rows written, unmarked left, Pixi's texture right the frame after), the keyed\nbatch against a reference queue holding every row's statics (a pause drawn keyed from a buffer that skipped, split from\ncomplete ones, FULL set and cleared); test:node 2637/2637, test:demos 101/101.\n\nLeft: the persist path still never hits in Predator (R-1045) and persist_remember (2.7 % of pre-render) runs for nothing.",
+      "commits": [
+        "3b119d47",
+        "6357cb8b",
+        "9d18efd4",
+        "3a314adb"
+      ]
+    },
+    {
+      "id": "R-1048",
+      "date": "2026-11-14",
+      "time": "21:20",
+      "timeFrom": "recorded",
+      "title": "N-156 fixed: the chain wait test's ringer starts from the wait's first pass, 100 ms budget (0 of 288 failed under load, 5 of 288 before)",
+      "verdict": "kept-hygiene",
+      "text": "**N-156 fixed: physicsChainWait's first test starts its ringer from the wait's first pass, with a 100 ms budget.**\n2026-11-14, c56a580b. Under 48 parallel copies of the file it failed 5 of 288 runs before (all early rings: the main\nthread descheduled between starting the ringer and waiting, so it waited 2.9 to 7.8 ms, not 8; the suite's single failure\nwas the other way, a ringer started late past the 16 ms budget). Now the ringer starts from the test's service callback on\nthe wait's first pass and the frame is 250 ms (budget 100 ms): 0 of 288. test:node 2637/2637.",
+      "commits": [
+        "c56a580b"
+      ]
+    },
+    {
+      "id": "R-1049",
+      "date": "2026-11-14",
+      "time": "21:20",
+      "timeFrom": "recorded",
+      "title": "N-167 under way: demoWarnings finds 10 of 35 demos with warnings; each demo's command ring peak measured (Boids 286 386)",
+      "verdict": "note",
+      "text": "**N-167 under way: the check (demoWarnings) and each demo's command ring demand measured; the fixes are left.**\n2026-11-14, 9f0f2936 (tests/bench/demoWarnings.mjs: every scene of demos/menu.js, 8 s, its warnings; exit 1 on any).\n\nFirst run, 35 scenes: 10 start with warnings. Command ring full (capacity 4096) in Balls, Ants, Boids, Constraint Boxes,\nGear Chain, Little City, Oriented Boxes, Predator, Water & Boxes; joint pool full in Constraint Boxes (maxJoints 4096);\nProp pool full in Blastforge (220); Predator also: Flash pool full (32), ParticleEmitter pool exhausted (maxParticles),\nand \"[PRE_RENDER] animationNameToIndex missing _lightGradientHalf\". Gear Chain's myColor warning did not show.\n\nPeak ring depth at a drain (scratch tree: ring 1 048 576, the drain recording write - read; 12 s a demo), the start's\nspawn burst: Boids 286 386 (40 000 boids at once; a 524 288 ring is 16 MB at 32 B a command), Predator 52 680, Ants\n31 200, Little City 27 755, Balls 18 008, Gear Chain 10 002, Water & Boxes 8 012, Oriented Boxes 5 208, Constraint\nBoxes 5 008.\n\nLeft: physics.commandRingCapacity per demo (a power of two past each peak), or spawns spread over frames where the ring\nwould be large (Boids); maxJoints in Constraint Boxes; the Prop count in Blastforge; Predator's Flash count, maxParticles\nand the missing texture; then demoWarnings clean. The engine question stays (a full ring drops what it carried).",
+      "commits": [
+        "9f0f2936"
+      ]
+    },
+    {
+      "id": "R-1050",
+      "date": "2026-11-14",
+      "time": "21:23",
+      "timeFrom": "recorded",
+      "title": "W7 closed: nothing pending (a port's ceiling is a few per cent of spatial)",
+      "verdict": "screened",
+      "text": "W7 and E-99 closed: W7 says nothing is pending (screened 2026-10-28: a port's ceiling is a few per cent of spatial); E-99 lost in the kernel 2026-10-23. Both still read open."
+    },
+    {
+      "id": "R-1051",
+      "date": "2026-11-14",
+      "time": "21:23",
+      "timeFrom": "recorded",
+      "title": "E-99 closed: rejected in the kernel (2026-10-23), it still read open",
+      "verdict": "rejected",
+      "text": "W7 and E-99 closed: W7 says nothing is pending (screened 2026-10-28: a port's ceiling is a few per cent of spatial); E-99 lost in the kernel 2026-10-23. Both still read open."
     }
   ],
   "leads": [

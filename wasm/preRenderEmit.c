@@ -94,6 +94,15 @@ enum {
   /* E-194 step 2: the compare epoch each particle's record was last checked at (u32 an index; 0: every record read)
      and the current one (a value, from 1): no static can have changed since a record checked at it. */
   LF_CHECKED, LF_CMP_EPOCH,
+  /* E-312, keyed frames v2: a keyed row's KEY_CHANGED says its statics changed in a queue frame after K_SINCE, the
+     frame Pixi last drew keyed (a value; 0: none yet, every keyed row marked), so a queue frame Pixi skips loses no
+     change. K_CHANGE: two u32 an entity, the queue frame its statics last changed and the one its texture last did;
+     D_CHANGE and LF_CHANGE: a u32 a keyed decoration slot and LiquidFun particle, the frame its record last changed
+     (0 for each: the old marks, this frame's changes only). K_FRAME: the queue frame being written (a value). */
+  K_CHANGE, D_CHANGE, LF_CHANGE, K_FRAME, K_SINCE,
+  /* E-312 step 2: 1 when nothing reads an unmarked keyed sprite row's statics this frame (a value): the emit leaves its
+     alpha, scale, tint and anchor unwritten (Pixi's statics texture holds them by key). */
+  K_SKIP,
   SLOT_COUNT
 };
 
@@ -290,6 +299,9 @@ typedef struct {
   uint32_t lfKeyBase, lfKeyedCount;
   uint32_t *lfChecked;
   uint32_t lfCmpEpoch;
+  /* E-312: the change frames (0 when the scene has none: this frame's changes alone mark a key) and the frames. */
+  uint32_t *kChange, *dChange, *lfChange;
+  uint32_t kFrame, kSince, kAll, kSkip;
   uint32_t *ends, *warns;
   const uint16_t *aaAsset, *aaClip;
   const float *aaTime;
@@ -413,6 +425,13 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->lfKeyedCount = t[LF_KEYED_COUNT];
   e->lfChecked = PTR(uint32_t, LF_CHECKED);
   e->lfCmpEpoch = t[LF_CMP_EPOCH];
+  e->kChange = PTR(uint32_t, K_CHANGE);
+  e->dChange = PTR(uint32_t, D_CHANGE);
+  e->lfChange = PTR(uint32_t, LF_CHANGE);
+  e->kFrame = t[K_FRAME];
+  e->kSince = t[K_SINCE];
+  e->kAll = e->kSince == 0;
+  e->kSkip = t[K_SKIP];
   e->ends = PTR(uint32_t, R_ENDS);
   e->warns = PTR(uint32_t, R_WARNS);
   e->aaAsset = PTR(const uint16_t, AA_ASSET);
@@ -554,6 +573,9 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
     changed = d & KEYED_DIRTY_STATICS;
     texMoved = (d & KEYED_DIRTY_TEXTURE) != 0;
   }
+  /* E-312: the frame this sprite's statics changed in, now; its key is marked for a change after K_SINCE. */
+  uint32_t *kc = e->qKey && e->kChange ? e->kChange + 2u * (uint32_t)idx : 0;
+  if (kc && changed) kc[0] = e->kFrame;
   const uint32_t lastTex = e->qKey && e->aLastTex ? e->aLastTex[idx] : 0;
   if (e->sortKey) e->qSortKey[out] = (float)order_key(e, i, idx);
   const float x = e->stX[i];
@@ -567,10 +589,13 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
     rc = e->sRotC[idx];
     rs = e->sRotS[idx];
   }
-  e->qAlpha[out] = e->sAlpha[idx];
   queue_shadow(e, out, idx);
   const uint32_t rx = e->sRepeatX[idx];
   const uint32_t ry = e->sRepeatY[idx];
+  /* E-312 step 2: an unmarked keyed row's statics are read by no one when K_SKIP says so: they stay unwritten. The
+     same test marks the key below (a change after K_SINCE, every row while K_SINCE is 0, a repeating sprite). */
+  const int statics = !e->kSkip || !kc || changed || e->kAll || kc[0] > e->kSince || rx != 0 || ry != 0;
+  if (statics) e->qAlpha[out] = e->sAlpha[idx];
   if (rx != 0 || ry != 0) {
     e->tiled = 1;
     if (e->qRepeatX) e->qRepeatX[out] = (uint16_t)rx;
@@ -597,13 +622,15 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   }
   e->qX[out] = x;
   e->qY[out] = y;
-  e->qScaleX[out] = e->sScaleX[idx];
-  e->qScaleY[out] = e->sScaleY[idx];
   e->qRotC[out] = rc;
   e->qRotS[out] = rs;
-  e->qTint[out] = e->sTint[idx];
-  e->qAnchorX[out] = e->sAnchorX[idx];
-  e->qAnchorY[out] = e->sAnchorY[idx];
+  if (statics) {
+    e->qScaleX[out] = e->sScaleX[idx];
+    e->qScaleY[out] = e->sScaleY[idx];
+    e->qTint[out] = e->sTint[idx];
+    e->qAnchorX[out] = e->sAnchorX[idx];
+    e->qAnchorY[out] = e->sAnchorY[idx];
+  }
   if (e->qType) e->qType[out] = 0;
 
   const uint32_t sheet = e->sSheet[idx];
@@ -670,9 +697,15 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
      next frame. */
   if (e->qKey) {
     const uint32_t moved = e->aLastTex != 0 && lastTex != (tex & 0xffffu);
-    /* E-189: a repeating sprite's tile multiplier follows its frame's size, so it always sends every static. */
-    const uint32_t full = changed | (rx != 0) | (ry != 0);
-    const uint32_t texOnly = !full && (texMoved | moved);
+    /* E-189: a repeating sprite's tile multiplier follows its frame's size, so it always sends every static. E-312: a
+       change after the frame Pixi last drew keyed marks the key, the texture's alone the texture word. */
+    uint32_t full = changed | (rx != 0) | (ry != 0);
+    uint32_t texOnly = !full && (texMoved | moved);
+    if (kc) {
+      if (texMoved | moved) kc[1] = e->kFrame;
+      full |= e->kAll | (kc[0] > e->kSince);
+      texOnly = !full && (kc[1] > e->kSince);
+    }
     e->qKey[out] = (uint32_t)idx | (full << 31) | (texOnly ? (KEY_CHANGED | KEY_TEX_ONLY) : 0u);
   }
 }
@@ -710,7 +743,15 @@ INLINE uint32_t deco_key(const Emit *e, int32_t idx, uint32_t out) {
     r[6] = ay.u;
     r[7] = e->dKeyEpoch;
   }
-  return (e->dKeyBase + (uint32_t)idx) | (changed << 31);
+  /* E-312: marked for a change after the frame Pixi last drew keyed, on the slot's first row of this frame: the marking
+     row moves its change frame to this one (a later frame Pixi skips still marks it), so its later rows here do not. */
+  uint32_t mark = changed;
+  if (e->dChange) {
+    const uint32_t at = e->dChange[idx];
+    mark = changed | ((e->kAll | (at > e->kSince)) & (at != e->kFrame));
+    if (mark) e->dChange[idx] = e->kFrame;
+  }
+  return (e->dKeyBase + (uint32_t)idx) | (mark << 31);
 }
 
 /* emitSpriteQueue's decoration branch: collector row i at queue row out. */
@@ -937,7 +978,16 @@ INLINE void particle_row(Emit *e, uint32_t i, uint32_t out) {
 INLINE uint32_t lf_key(const Emit *e, int32_t idx, uint32_t out) {
   if ((uint32_t)idx >= e->lfKeyedCount) return KEY_NONE;
   /* Step 2: a record checked at the current compare epoch still holds this row's statics. */
-  if (e->lfChecked && e->lfChecked[idx] == e->lfCmpEpoch) return e->lfKeyBase + (uint32_t)idx;
+  if (e->lfChecked && e->lfChecked[idx] == e->lfCmpEpoch) {
+    /* E-312: unread, but still marked while Pixi has not drawn the frame it last changed in (once a frame, as below). */
+    uint32_t mark = 0;
+    if (e->lfChange) {
+      const uint32_t at = e->lfChange[idx];
+      mark = (e->kAll | (at > e->kSince)) & (at != e->kFrame);
+      if (mark) e->lfChange[idx] = e->kFrame;
+    }
+    return (e->lfKeyBase + (uint32_t)idx) | (mark << 31);
+  }
   union { float f; uint32_t u; } sx = {e->qScaleX[out]}, sy = {e->qScaleY[out]}, al = {e->qAlpha[out]};
   uint32_t *r = e->lfKeyed + (uint32_t)idx * DECO_KEYED_WORDS;
   const uint32_t tint = e->qTint[out];
@@ -953,7 +1003,13 @@ INLINE uint32_t lf_key(const Emit *e, int32_t idx, uint32_t out) {
     r[7] = e->dKeyEpoch;
   }
   if (e->lfChecked) e->lfChecked[idx] = e->lfCmpEpoch;
-  return (e->lfKeyBase + (uint32_t)idx) | (changed << 31);
+  uint32_t mark = changed;
+  if (e->lfChange) {
+    const uint32_t at = e->lfChange[idx];
+    mark = changed | ((e->kAll | (at > e->kSince)) & (at != e->kFrame));
+    if (mark) e->lfChange[idx] = e->kFrame;
+  }
+  return (e->lfKeyBase + (uint32_t)idx) | (mark << 31);
 }
 
 /* emitSpriteQueue's LiquidFun branch (type 7, queued as type 1): collector row i, LiquidFun particle cIndex[i], at
@@ -1477,15 +1533,27 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   if (keyed) {
     const uint16_t *qRepeatX = PTR(const uint16_t, Q_REPEAT_X);
     const uint16_t *qRepeatY = PTR(const uint16_t, Q_REPEAT_Y);
+    uint32_t *kChange = PTR(uint32_t, K_CHANGE);
+    const uint32_t kFrame = t[K_FRAME];
+    const uint32_t kSince = t[K_SINCE];
     for (uint32_t i = 0; i < n; i++) {
       if (cType[i] != 0) continue;
       const int32_t idx = cIndex[i];
       uint32_t c = (qRepeatX && qRepeatX[i] != 0) | (qRepeatY && qRepeatY[i] != 0);
       uint32_t texOnly = 0;
+      uint32_t d = 0;
       if (sKeyedDirty[idx]) {
-        const uint32_t d = __atomic_exchange_n(&sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
+        d = __atomic_exchange_n(&sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
         c |= d & KEYED_DIRTY_STATICS;
         texOnly = !c && (d & KEYED_DIRTY_TEXTURE) != 0;
+      }
+      if (kChange) {
+        /* E-312: as sprite_row marks it. */
+        uint32_t *kc = kChange + 2u * (uint32_t)idx;
+        if (d & KEYED_DIRTY_STATICS) kc[0] = kFrame;
+        if (d & KEYED_DIRTY_TEXTURE) kc[1] = kFrame;
+        c |= (kSince == 0) | (kc[0] > kSince);
+        texOnly = !c && (kc[1] > kSince);
       }
       qKey[i] = (uint32_t)idx | (c << 31) | (texOnly ? (KEY_CHANGED | KEY_TEX_ONLY) : 0u);
     }
