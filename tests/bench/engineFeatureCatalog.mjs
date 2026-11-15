@@ -696,6 +696,28 @@ export const ENGINE_FEATURES = [
     load: [],
   },
   {
+    id: 'layerFeedParticles',
+    name: 'Particle feed lists, add and remove',
+    module: 'src/util/layerFeed.js',
+    // E-354: syncParticleFeed churning 6 000 particles out of and into a LiquidFun density layer's feed (8 192 long),
+    // a quarter of them also in a compute layer's particle feed.
+    kernel: { script: 'tests/bench/layerFeedMicrobench.mjs', opsKey: 'cases.particles.opsPerSec' },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'layerFeedBodies',
+    name: 'Body feed lists, add and remove',
+    module: 'src/util/layerFeed.js',
+    // E-354: syncColliderFeed churning 6 000 bodies out of and into a compute layer's body feed (8 192 long), a quarter
+    // of them also in a second compute layer's.
+    kernel: { script: 'tests/bench/layerFeedMicrobench.mjs', opsKey: 'cases.bodies.opsPerSec' },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
+  {
     id: 'decorationVisibilityGrid',
     name: 'Decoration screen test, Predator view over a grid',
     module: 'src/workers/particleWorker.js',

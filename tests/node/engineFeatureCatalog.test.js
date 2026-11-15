@@ -59,6 +59,8 @@ const REQUIRED = [
   'attachedScanNone',
   'attachedScanFew',
   'decorationVisibilityGrid',
+  'layerFeedParticles',
+  'layerFeedBodies',
   'textureUpload',
 ];
 
