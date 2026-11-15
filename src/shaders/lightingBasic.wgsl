@@ -262,7 +262,9 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
   // Faded out at the terminator, where the cosine already shades and a step either way flips the test. A FLAT pixel has
   // no shape of its own to shade itself with.
   var selfSun = 1.0;
-  if (selfOn && !isFlat && (sunDirect > 0.05 || kRule)) { selfSun = selfShadow(p, selfId); }
+  // A face turned away from the light steps into its own body and always reads shaded: only a face the light reaches
+  // takes its own shade (by day a sprite looks as drawn; the bench's barn walls went black and freckled with kRule here).
+  if (selfOn && !isFlat && sunDirect > 0.05) { selfSun = selfShadow(p, selfId); }
   if (sunDirect > 0.05) { sunDirect *= mix(1.0, selfSun, smoothstep(0.05, 0.3, sunDirect)); }
   sunFlat *= selfSun;
 // #endif SELFSHADOW
@@ -316,7 +318,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too, unless the pixel is
     // of the lamp's own entity.
     let lampOwn = selfId > 0.5 && abs(lampOwner(posInt.w) - selfId) < 0.5;
-    if (posInt.w < 0.0 && selfOn && !lampOwn && !isFlat && (cosine * shade > 0.05 || kRule)) {
+    if (posInt.w < 0.0 && selfOn && !lampOwn && !isFlat && cosine * shade > 0.05) {
       lampSelf = selfShadowToward(p, toLight / max(d, 0.001), d, selfId);
     }
     let flatShade = shade * lampSelf;
