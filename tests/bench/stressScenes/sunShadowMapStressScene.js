@@ -72,6 +72,8 @@ export const stressSceneConfig = {
 
 const lighting = {
   enabled: true,
+  // ?kind=box: every still render holds a volume (lighting.maxVolumes is their room; 0, the default, makes none).
+  maxVolumes: KIND === 'box' ? CASTERS : 0,
   baseAmbient: 0.12,
   // The light pass at half the canvas; the map's own size is the knob.
   resolution: 0.5,

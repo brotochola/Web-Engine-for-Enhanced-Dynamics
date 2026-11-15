@@ -25,6 +25,8 @@ export class LampSeparationScene extends Scene {
     lighting: {
       baseAmbient: L.ambient,
       shadowsEnabled: true,
+      // The box casts a volume: lighting.maxVolumes is its room (0, the default, makes none).
+      maxVolumes: 4,
       sunShadows: SUN_SHADOWS,
       lampShadows: 'map',
       selfShadow: false,

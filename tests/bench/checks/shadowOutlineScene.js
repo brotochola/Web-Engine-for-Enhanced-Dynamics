@@ -51,6 +51,8 @@ export class ShadowOutlineScene extends Scene {
     lighting: {
       baseAmbient: PART === 'sun' ? L.ambient : L.lampAmbient,
       shadowsEnabled: true,
+      // The box casts a volume: lighting.maxVolumes is its room (0, the default, makes none).
+      maxVolumes: 4,
       sunShadows: 'map',
       lampShadows: 'map',
       lampShadowTile: L.lampTile,
