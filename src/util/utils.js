@@ -986,6 +986,55 @@ export function seededRandom(seed, workerId) {
   return fn;
 }
 
+// E-348: the generator rng() uses, in this module. rng() read globalThis.rng on every call and is inlined into many
+// functions, so their optimized code loaded a property of the global object, through its prototype chain: a global
+// written or added in play (the scene's constructor, its cleanup, a worker's message) deoptimized all of them
+// ("dependent prototype chain changed"). globalThis.rng stays the API: it is an accessor over these bindings, so a
+// generator anyone writes there (AbstractWorker.initSeededRandom, the Scene, user code) is the one rng() steps from
+// the next call on, and reading it gives that generator back (null when none: a value that is not a function, which
+// rng() could never call, reads back as null). rngState is a seededRandom generator's state, which rng() steps itself
+// (E-168), taken when the generator is written; null for any other function, which rng() calls.
+let rngGenerator = null;
+let rngState = null;
+
+function bindRng(generator) {
+  rngGenerator = typeof generator === 'function' ? generator : null;
+  rngState = rngGenerator !== null && rngGenerator._state instanceof Int32Array ? rngGenerator._state : null;
+}
+
+function installRngAccessor() {
+  const existing = globalThis.rng;
+  try {
+    Object.defineProperty(globalThis, 'rng', {
+      get() {
+        return rngGenerator;
+      },
+      set: bindRng,
+      configurable: true,
+      enumerable: true,
+    });
+  } catch {
+    // globalThis.rng is a non-configurable global (a classic script's `var rng`): rng() reads it on its slow path.
+    return;
+  }
+  bindRng(existing);
+}
+installRngAccessor();
+
+/** The generator: the bound one, or globalThis.rng where the accessor is not installed or was deleted. */
+function currentRngGenerator() {
+  if (rngGenerator !== null) return rngGenerator;
+  const g = globalThis.rng;
+  return typeof g === 'function' ? g : null;
+}
+
+/** Seeds globalThis.rng with 0 when nothing set it (a warning), and returns the generator. */
+function rngSeedUninitialized() {
+  console.warn('rng() called before initialization, seeding with 0');
+  globalThis.rng = seededRandom(0, 'uninit');
+  return currentRngGenerator();
+}
+
 /**
  * The next `n` numbers of the seeded generator (rng) into out[start…], as `n` rng() calls would return them.
  * @param {Float64Array} out
@@ -993,11 +1042,9 @@ export function seededRandom(seed, workerId) {
  * @param {number} n
  */
 export function rngFill(out, start, n) {
-  if (typeof globalThis.rng !== 'function') {
-    console.warn('rng() called before initialization, seeding with 0');
-    globalThis.rng = seededRandom(0, 'uninit');
-  }
-  const fill = globalThis.rng.fill;
+  let generator = currentRngGenerator();
+  if (generator === null) generator = rngSeedUninitialized();
+  const fill = generator.fill;
   if (typeof fill !== 'function') {
     throw new Error('rngFill: globalThis.rng must be a seededRandom generator');
   }
@@ -1005,16 +1052,15 @@ export function rngFill(out, start, n) {
 }
 
 /**
- * Seeded random number generator - wrapper that accesses globalThis.rng
+ * Seeded random number generator: steps the generator in globalThis.rng.
  * This allows entity code to use rng() which gets initialized in workers
  * In worker context: globalThis.rng is set by AbstractWorker.initSeededRandom()
- * In main thread: can be set via seededRandom() if needed
+ * In main thread: the Scene sets it; any code may set its own (a seededRandom generator or any function).
  * @returns {number} Random number between 0 and 1
  */
 export function rng() {
-  const generator = globalThis.rng;
-  const state = generator !== undefined && generator !== null ? generator._state : undefined;
-  if (state !== undefined) {
+  const state = rngState;
+  if (state !== null) {
     // E-168: seededRandom's step on the generator's own state, here: no call whose double comes back boxed.
     const t = (state[0] + 0x6d2b79f5) | 0;
     state[0] = t;
@@ -1022,13 +1068,14 @@ export function rng() {
     r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
     return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
   }
-  if (typeof generator === 'function') {
-    return generator();
-  }
+  return rngCallGenerator();
+}
 
-  console.warn('rng() called before initialization, seeding with 0');
-  globalThis.rng = seededRandom(0, 'uninit');
-  return globalThis.rng();
+/** rng() for a generator that is not a seededRandom one, or none yet: its own call. Off rng()'s inlined path. */
+function rngCallGenerator() {
+  let generator = currentRngGenerator();
+  if (generator === null) generator = rngSeedUninitialized();
+  return generator();
 }
 
 // ============================================================================
