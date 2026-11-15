@@ -129,6 +129,10 @@ export class AbstractWorker {
     this.isPaused = true;
     this.globalEntityCount = 0;
     this.config = {};
+    // The canvas size; a 'resize' message rewrites both. Declared here (N-32): a worker whose initialize does not set
+    // them (logic) gained both fields on its first resize, in play, a new map for the worker.
+    this.canvasWidth = 0;
+    this.canvasHeight = 0;
 
     // Scheduling
     this.usesCustomScheduler = false; // Override in subclass if using custom scheduler
