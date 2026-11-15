@@ -171,13 +171,14 @@ fn faceHeight(face: vec4<f32>) -> f32 {
   return (floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5)) / 8.0;
 }
 
-fn selfShadow(p: vec3<f32>) -> f32 {
-  let l = normalize(uniforms.uFaceSun.xyz);
+// Towards unit direction l, no further than reach (a lamp's distance; the sun's is unbounded).
+fn selfShadowToward(p: vec3<f32>, l: vec3<f32>, reach: f32) -> f32 {
   let s = 1.0 / uniforms.uGroundInvScaleY;
   let size = vec2<f32>(textureDimensions(uFaceMap, 0));
   for (var i = 2; i <= 9; i++) {
     if (f32(i) > uniforms.uSelfShadow.y + 1.0) { break; }
     let t = f32(i) * uniforms.uSelfShadow.x;
+    if (t >= reach) { break; }
     let q = p + l * t;
     let nc = weedWorldToNorm(vec2<f32>(q.x, q.y * s - q.z * uniforms.uFaceLight.x));
     let fc = vec2<f32>(nc.x, select(nc.y, 1.0 - nc.y, uniforms.uFlipY > 0.5));
@@ -186,6 +187,10 @@ fn selfShadow(p: vec3<f32>) -> f32 {
     if (f.r > 0.0 && faceHeight(f) > q.z + uniforms.uSelfShadow.z + t * 0.25) { return 0.0; }
   }
   return 1.0;
+}
+
+fn selfShadow(p: vec3<f32>) -> f32 {
+  return selfShadowToward(p, normalize(uniforms.uFaceSun.xyz), 1e9);
 }
 // #endif SELFSHADOW
 
@@ -247,6 +252,10 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>) -> vec3<f32> {
     var shade = 1.0;
 // #if LAMPMAP
     shade = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z);
+// #if SELFSHADOW
+    // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too.
+    if (posInt.w < 0.0 && cosine * shade > 0.05) { shade *= selfShadowToward(p, toLight / max(d, 0.001), d); }
+// #endif SELFSHADOW
 // #endif LAMPMAP
     total += col.rgb * cosine * shade * lit.z * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
   }

@@ -122,18 +122,23 @@ float faceHeight(vec4 face) {
 
 // The first step skips the pixel's own neighbours, and the bias grows with the distance: the map is at the light pass's
 // resolution, so a steep surface's own texels next door read a few px higher (the bench's freckles).
-float selfShadow(vec3 p) {
-  vec3 l = normalize(uFaceSun.xyz);
+// Towards unit direction l, no further than reach (a lamp's distance; the sun's is unbounded).
+float selfShadowToward(vec3 p, vec3 l, float reach) {
   float s = 1.0 / uGroundInvScaleY;
   for (int i = 2; i <= 9; i++) {
     if (float(i) > uSelfShadow.y + 1.0) break;
     float t = float(i) * uSelfShadow.x;
+    if (t >= reach) break;
     vec3 q = p + l * t;
     vec2 nc = weedWorldToNorm(vec2(q.x, q.y * s - q.z * uFaceLight.x));
     vec4 f = texture2D(uFaceMap, vec2(nc.x, uFlipY > 0.5 ? 1.0 - nc.y : nc.y));
     if (f.r > 0.0 && faceHeight(f) > q.z + uSelfShadow.z + t * 0.25) return 0.0;
   }
   return 1.0;
+}
+
+float selfShadow(vec3 p) {
+  return selfShadowToward(p, normalize(uFaceSun.xyz), 1e9);
 }
 // #endif SELFSHADOW
 
@@ -194,6 +199,10 @@ vec3 faceLight(vec2 world, vec4 face) {
     float intensityScaled = posInt.z * scaled;
 // #if LAMPMAP
     cosine *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z);
+// #if SELFSHADOW
+    // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too.
+    if (posInt.w < 0.0 && cosine > 0.05) cosine *= selfShadowToward(p, toLight / max(d, 0.001), d);
+// #endif SELFSHADOW
 // #endif LAMPMAP
     total += col.rgb * cosine * uFaceLight.z * intensityScaled
       / (intensityScaled + (d * d - col.a * col.a) * scaled);
