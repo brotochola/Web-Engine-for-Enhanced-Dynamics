@@ -354,6 +354,11 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    * the heights in the light pass); with `lampShadows: 'map'`, from each lamp with a tile too. Default false.
    */
   selfShadow?: boolean;
+  /**
+   * DX-GBUF: 'pass' (default) draws the face map and the entity ids map a pass each; 'mrt' both in one pass with two
+   * colour targets. Same picture.
+   */
+  gbuffer?: 'pass' | 'mrt';
   /** The sun and the day (src/util/configDefaults.js SUN_DEFAULTS). */
   sun?: SunInitConfig & { dayCycle?: { enabled?: boolean; speed?: number; dayDurationMinutes?: number } };
 }
@@ -3638,6 +3643,7 @@ export declare class SpriteRenderer extends Component {
     tileMode: typeof Uint8Array;
     tileOffsetU: typeof Uint16Array;
     tileOffsetV: typeof Uint16Array;
+    gbufFlags: typeof Uint8Array;
   };
   static active: Uint8Array;
   static isAnimated: Uint8Array;
@@ -3686,6 +3692,22 @@ export declare class SpriteRenderer extends Component {
   set tileOffsetU(value: number);
   get tileOffsetV(): number;
   set tileOffsetV(value: number);
+  /** DX-GBUF: normals (bits 0-1), surface 'floor' (bit 2), emissive level in quarters (bits 3-5). */
+  static gbufFlags: Uint8Array;
+  static readonly NORMALS: Readonly<{ AUTO: 0; MAP: 1; HEIGHT: 2; FLAT: 3 }>;
+  /** A spawned slot's normals, surface and emissive back to their defaults. */
+  static resetGbufRow(i: number): void;
+  /** How many live sprites glow on their own (spriteRenderer.emissive). */
+  static emissiveUsers(): number;
+  /** Where the light pass takes the sprite's normals from: the normal map, its height, or flat (lit as drawn). */
+  get normals(): 'auto' | 'map' | 'height' | 'flat';
+  set normals(v: 'auto' | 'map' | 'height' | 'flat');
+  /** The height of a sprite without a height map: a card standing on its foot, or flat on the floor. */
+  get surface(): 'standing' | 'floor';
+  set surface(v: 'standing' | 'floor');
+  /** Glows on its own: kept bright at night, sorted with the entities; true, or a strength up to 1.75 in quarters. */
+  get emissive(): boolean | number;
+  set emissive(v: boolean | number);
   static getOriginalWidth(entityIndex: number): number;
   static getOriginalHeight(entityIndex: number): number;
   static updateBounds(entityIndex: number): void;
