@@ -58,7 +58,16 @@ import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource, resolveFaces, shaderWithFlag } from '../render/faceMap.js';
-import { SUN_MAP_COLUMNS, sunMapColumnGrid, sunMapColumnsVertex, sunMapTerms, sunMapVertex } from '../render/sunShadowMap.js';
+import {
+  SUN_MAP_COLUMNS,
+  sunMapColumnGrid,
+  sunMapColumnsVertex,
+  sunMapColumnsWgsl,
+  sunMapTerms,
+  sunMapVertex,
+  sunMapWgsl,
+} from '../render/sunShadowMap.js';
+import { sunShadowGpuProgram } from '../render/webgpu/instancedSpriteWgsl.js';
 import { instancedSpriteGlProgram, pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
 import { TileMap } from '../core/tileMap.js';
 import {
@@ -3761,7 +3770,7 @@ LIGHTING SYSTEM SETUP
       if (!lightingSrc) {
         throw new Error('WeedJS: Failed to compile look shader "lighting_basic" for layer "LIGHTING" on WebGPU: lighting_basic.wgsl is missing.');
       }
-      const gpuProgram = lightingGpuProgram(GpuProgram, lightingSrc, 'lighting-basic', facesOn);
+      const gpuProgram = lightingGpuProgram(GpuProgram, lightingSrc, 'lighting-basic', facesOn, this._sunMapOn);
       this.lightingShader = new PIXI.Shader({ gpuProgram, resources: lightingResources });
     } else {
       if (!lightingSrc) {
@@ -5837,7 +5846,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const shaders = this._engineShaders;
     // Made here: the shadow layer is created before the lighting config is read.
     if (!this.sunMapRT && this.shadowRT) this._createSunMap(this.shadowRT.width, this.shadowRT.height);
-    if (!this.sunMapRT || !shaders?.shadowVert || !shaders?.sunMapFrag) return false;
+    if (!this.sunMapRT || !(this._useWebGpu ? shaders?.shadowWgsl : shaders?.shadowVert && shaders?.sunMapFrag)) return false;
     if (this._sunMapMesh === null) {
       const r = batch.shadowShader.resources;
       const uniforms = {
@@ -5850,9 +5859,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         uSunK: { value: new Float32Array(4), type: 'vec4<f32>' },
         uSunPerp: { value: new Float32Array(4), type: 'vec4<f32>' },
       };
-      const glProgram = instancedSpriteGlProgram(PIXI.GlProgram, sunMapVertex(shaders.shadowVert), shaders.sunMapFrag, 'sun-map');
       const shader = new PIXI.Shader({
-        glProgram,
+        ...this._sunShadowProgram('map'),
         resources: { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: this.atlasMapsSource ?? this._emptyMapsSource(), uniforms },
       });
       // Pixi made the group from the object.
@@ -5869,10 +5877,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._sunMapHost = new PIXI.Container();
       this._sunMapHost.addChild(this._sunMapMesh);
       // Casters with height maps: their columns, over the same instances (one geometry a caster geometry).
-      const columnsProgram = instancedSpriteGlProgram(PIXI.GlProgram, sunMapColumnsVertex(shaders.shadowVert), shaders.sunMapFrag, 'sun-map-columns');
       this._sunMapColumns = {
         shader: new PIXI.Shader({
-          glProgram: columnsProgram,
+          ...this._sunShadowProgram('mapColumns'),
           // Named one by one: a shader's resources are not plain properties to spread.
           resources: {
             uTexture: r.uTexture,
@@ -5956,12 +5963,34 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return entry;
   }
 
-  /**
-   * DX-SHADOW3D: whether the sprite shadows cast solids: the atlas has height maps and the renderer is WebGL (the columns'
-   * program is GLSL for now; WebGPU keeps every frame's card).
-   */
+  /** DX-SHADOW3D: whether the sprite shadows cast solids: the atlas has height maps (and the backend's shadow source). */
   _sunSolidsOn() {
-    return this.atlasMapsSource !== null && !this._useWebGpu && Boolean(this._engineShaders?.shadowVert);
+    return this.atlasMapsSource !== null && Boolean(this._useWebGpu ? this._engineShaders?.shadowWgsl : this._engineShaders?.shadowVert);
+  }
+
+  /**
+   * DX-SHADOW3D: a sun shadow pass's program as a Shader's options: 'map' (the sun map's cards: heights), 'mapColumns'
+   * (a render's columns into the map), 'cards' (the sprite shadows' cards, a render's frames skipped) or 'columns' (a
+   * render's solid on the sprite shadows' layer). GLSL on WebGL (sunMapVertex / sunMapColumnsVertex), WGSL on WebGPU
+   * (sunMapWgsl / sunMapColumnsWgsl).
+   * @param {'map'|'mapColumns'|'cards'|'columns'} kind
+   */
+  _sunShadowProgram(kind) {
+    const shaders = this._engineShaders;
+    const heights = kind === 'map' || kind === 'mapColumns';
+    const columns = kind === 'mapColumns' || kind === 'columns';
+    const name = kind === 'map' ? 'sun-map' : kind === 'mapColumns' ? 'sun-map-columns' : kind === 'cards' ? 'sun-cards' : 'sun-columns';
+    if (this._useWebGpu) {
+      const source = columns
+        ? sunMapColumnsWgsl(shaders.shadowWgsl, SUN_MAP_COLUMNS, { heights })
+        : sunMapWgsl(shaders.shadowWgsl, { heights });
+      return { gpuProgram: sunShadowGpuProgram(GpuProgram, source, heights ? 'mainFragMap' : 'mainFrag', name, { maps: columns }) };
+    }
+    const vertex = columns
+      ? sunMapColumnsVertex(shaders.shadowVert, SUN_MAP_COLUMNS, { heights })
+      : sunMapVertex(shaders.shadowVert, { heights });
+    const fragment = heights ? shaders.sunMapFrag : pickInstancedSpriteFragmentGlsl(true, false, shaders);
+    return { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, fragment, name) };
   }
 
   /**
@@ -5971,17 +6000,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   _drawSunSolids(batch, group) {
     if (this._sunSolids === null) {
-      const shaders = this._engineShaders;
       const r = batch.shadowShader.resources;
-      const fragment = pickInstancedSpriteFragmentGlsl(true, false, shaders);
       const resources = () => ({ uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: this.atlasMapsSource, uniforms: group });
-      const cards = instancedSpriteGlProgram(PIXI.GlProgram, sunMapVertex(shaders.shadowVert, { heights: false }), fragment, 'sun-cards');
-      const columns = instancedSpriteGlProgram(
-        PIXI.GlProgram,
-        sunMapColumnsVertex(shaders.shadowVert, SUN_MAP_COLUMNS, { heights: false }),
-        fragment,
-        'sun-columns',
-      );
       const state = new PIXI.State();
       state.blend = true;
       state.blendMode = 'max';
@@ -5989,9 +6009,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       state.depthMask = false;
       state.culling = false;
       this._sunSolids = {
-        cards: new PIXI.Mesh({ geometry: batch.mesh.geometry, shader: new PIXI.Shader({ glProgram: cards, resources: resources() }), state: batch.mesh.state, label: 'sun-cards' }),
+        cards: new PIXI.Mesh({ geometry: batch.mesh.geometry, shader: new PIXI.Shader({ ...this._sunShadowProgram('cards'), resources: resources() }), state: batch.mesh.state, label: 'sun-cards' }),
         columns: {
-          shader: new PIXI.Shader({ glProgram: columns, resources: resources() }),
+          shader: new PIXI.Shader({ ...this._sunShadowProgram('columns'), resources: resources() }),
           grid: new Buffer({ data: sunMapColumnGrid(), usage: BufferUsage.VERTEX }),
           index: Uint16Array.from({ length: SUN_MAP_COLUMNS * SUN_MAP_COLUMNS * 6 }, (_, i) => i),
           state,
@@ -8242,19 +8262,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (lightingConfig.faces?.enabled && !this._faces.enabled) {
         console.warn('WeedJS: lighting.faces does not work with raycasted lighting yet: faces are off');
       }
-      // DX-SHADOW3D: the sun's shadows from a shadow map, the sun's term alone (WebGL for now).
+      // DX-SHADOW3D: the sun's shadows from a shadow map, the sun's term alone (WebGL and WebGPU).
       if (lightingConfig.sunShadows === 'map') {
-        if (this._useWebGpu || lightingConfig.raycasted) {
-          console.warn(`WeedJS: lighting.sunShadows 'map' works on WebGL without raycasted lighting for now: the sun's shadows are sprites`);
+        if (lightingConfig.raycasted) {
+          console.warn(`WeedJS: lighting.sunShadows 'map' does not work with raycasted lighting yet: the sun's shadows are sprites`);
         } else {
           this._sunMapOn = true;
         }
       }
       // DX-SELFSHADOW: faces and sprites with maps shade themselves from the sun (screen-space steps over the face map).
-      if (lightingConfig.selfShadow === true) {
-        if (this._useWebGpu) console.warn('WeedJS: lighting.selfShadow works on WebGL for now');
-        else this._selfShadowOn = true;
-      }
+      if (lightingConfig.selfShadow === true) this._selfShadowOn = true;
       // DX-MAPS: a sprite with height and normal maps is lit as the surface they say, through the faces' pass.
       if (this.atlasMapsSource !== null && !this._faces.enabled) {
         if (lightingConfig.raycasted) {

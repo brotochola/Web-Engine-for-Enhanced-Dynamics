@@ -101,6 +101,7 @@ fn mainVert(
     return out;
   }
   let anchor = aInstAnchor + aInstShadow.yz;
+  // weed:afterAnchor
   let content = aInstTrim.xy + aQuad * aInstTrim.zw;
   var world: vec2<f32>;
   var alpha = uniforms.uSun.w;
@@ -130,6 +131,7 @@ fn mainVert(
     let local = (content - anchor * aInstSize) * vec2<f32>(aInstScale.x, sy);
     world = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c) + aInstXY;
   } else {
+    // weed:sunCard
     // DX-SHADOW3D: the sun's card (instancedSpriteShadow.vert.glsl says how): standing on the frame's lowest opaque row,
     // its columns across the sun, each point landing on the floor along the sun's ray.
     let bottom = aInstTrim.y + aInstTrim.w;
@@ -155,6 +157,7 @@ fn mainVert(
     }
     let land = foot + (content.x - footCol) * aInstScale.x * uniforms.uSunPerp.xy - sunZ * uniforms.uSunK.xy;
     world = vec2<f32>(land.x, land.y / uniforms.uGroundInvScaleY);
+    // weed:sunOut
   }
   let screen = (world - uniforms.uCam.xy) * uniforms.uCam.z;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;

@@ -42,6 +42,12 @@ struct LightingUniforms {
   uFaceLight: vec4<f32>, // heightScaleY, wrap, gain, sunDirect
   uFaceSun: vec4<f32>, // towards the sun in the floor's space; w: 1 / its height, so a flat surface reads as the floor
 // #endif FACES
+// #if SUNMAP
+  uSunMapK: vec4<f32>, // kx, ky (a px of height's landing shift on the floor), groundScaleY, the shadow's opacity
+// #endif SUNMAP
+// #if SELFSHADOW
+  uSelfShadow: vec4<f32>, // a step's length (floor px), steps, bias (px)
+// #endif SELFSHADOW
 }
 @group(2) @binding(0) var uLightData: texture_2d<f32>;
 @group(2) @binding(1) var<uniform> uniforms: LightingUniforms;
@@ -51,6 +57,10 @@ struct LightingUniforms {
 // DX-FACES: this pixel's face, in the face map, drawn at this pass's size.
 @group(2) @binding(4) var uFaceMap: texture_2d<f32>;
 // #endif FACES
+// #if SUNMAP
+// DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the sprite shadows' layer is.
+@group(2) @binding(5) var uSunMap: texture_2d<f32>;
+// #endif SUNMAP
 
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
@@ -82,7 +92,65 @@ fn coneFactor(delta: vec2<f32>, cone: vec4<f32>) -> f32 {
   return t * t * (3.0 - 2.0 * t);
 }
 
+// A world point's place on the canvas, 0..1 (weedScreenToWorld's inverse).
+fn weedWorldToNorm(world: vec2<f32>) -> vec2<f32> {
+  let focus = uniforms.uCameraPos + uniforms.uFullCanvasSize / (2.0 * uniforms.uZoom);
+  let d = (world - focus) * uniforms.uZoom;
+  let rot = uniforms.uCameraRot;
+  let sxy = vec2<f32>(rot.x * d.x - rot.y * d.y, rot.y * d.x + rot.x * d.y);
+  return (sxy + uniforms.uFullCanvasSize * 0.5) / uniforms.uFullCanvasSize;
+}
+
+// #if SUNMAP
+// How much of the sun reaches floor point p (x, y on the floor, z up): 1 lit, 1 - opacity in the shade, five taps
+// (lightingBasic.frag.glsl's sunVisibility, the map read texel by texel).
+fn sunMapLit(c: vec2<i32>, size: vec2<i32>, above: f32) -> f32 {
+  let q = clamp(c, vec2<i32>(0), size - vec2<i32>(1));
+  return select(1.0, 0.0, textureLoad(uSunMap, q, 0).r * 512.0 > above);
+}
+
+fn sunVisibility(p: vec3<f32>) -> f32 {
+  let k = uniforms.uSunMapK;
+  let land = p.xy - p.z * k.xy;
+  let uv = weedWorldToNorm(vec2<f32>(land.x, land.y * k.z));
+  let size = vec2<i32>(textureDimensions(uSunMap, 0));
+  let c = vec2<i32>(floor(uv * vec2<f32>(size)));
+  let above = p.z + 4.0 + p.z * 0.03;
+  var lit = sunMapLit(c, size, above);
+  lit += sunMapLit(c + vec2<i32>(1, 0), size, above);
+  lit += sunMapLit(c - vec2<i32>(1, 0), size, above);
+  lit += sunMapLit(c + vec2<i32>(0, 1), size, above);
+  lit += sunMapLit(c - vec2<i32>(0, 1), size, above);
+  return 1.0 - k.w * (1.0 - lit * 0.2);
+}
+// #endif SUNMAP
+
 // #if FACES
+// #if SELFSHADOW
+// DX-SELFSHADOW: steps towards the sun over the face map's heights (lightingBasic.frag.glsl's selfShadow): a surface
+// that rises above the ray shades this pixel from the sun.
+fn faceHeight(face: vec4<f32>) -> f32 {
+  return (floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5)) / 8.0;
+}
+
+fn selfShadow(p: vec3<f32>) -> f32 {
+  let l = normalize(uniforms.uFaceSun.xyz);
+  let s = 1.0 / uniforms.uGroundInvScaleY;
+  let size = vec2<f32>(textureDimensions(uFaceMap, 0));
+  for (var i = 2; i <= 9; i++) {
+    if (f32(i) > uniforms.uSelfShadow.y + 1.0) { break; }
+    let t = f32(i) * uniforms.uSelfShadow.x;
+    let q = p + l * t;
+    let nc = weedWorldToNorm(vec2<f32>(q.x, q.y * s - q.z * uniforms.uFaceLight.x));
+    let fc = vec2<f32>(nc.x, select(nc.y, 1.0 - nc.y, uniforms.uFlipY > 0.5));
+    if (any(fc < vec2<f32>(0.0)) || any(fc >= vec2<f32>(1.0))) { continue; }
+    let f = textureLoad(uFaceMap, vec2<i32>(fc * size), 0);
+    if (f.r > 0.0 && faceHeight(f) > q.z + uniforms.uSelfShadow.z + t * 0.25) { return 0.0; }
+  }
+  return 1.0;
+}
+// #endif SELFSHADOW
+
 fn faceLight(world: vec2<f32>, face: vec4<f32>) -> vec3<f32> {
   let f = (face.rg * 255.0 - 127.0) / 126.0;
   var n = vec3<f32>(f, 1.0 - abs(f.x) - abs(f.y));
@@ -93,7 +161,14 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>) -> vec3<f32> {
   let z = (floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5)) / 8.0;
   let lit = uniforms.uFaceLight;
   let p = vec3<f32>(world.x, (world.y + z * lit.x) * uniforms.uGroundInvScaleY, z);
-  let sunDirect = min(max(dot(n, uniforms.uFaceSun.xyz), 0.0) * uniforms.uFaceSun.w, 1.6);
+  var sunDirect = min(max(dot(n, uniforms.uFaceSun.xyz), 0.0) * uniforms.uFaceSun.w, 1.6);
+// #if SUNMAP
+  sunDirect *= sunVisibility(p);
+// #endif SUNMAP
+// #if SELFSHADOW
+  // Faded out at the terminator, where the cosine already shades and a step either way flips the test.
+  if (sunDirect > 0.05) { sunDirect *= mix(1.0, selfShadow(p), smoothstep(0.05, 0.3, sunDirect)); }
+// #endif SELFSHADOW
   var total = vec3<f32>(uniforms.uBaseAmbient) + vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB);
   total += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * (1.0 - lit.w + lit.w * sunDirect);
   let nLights = uniforms.uLightCount;
@@ -152,7 +227,12 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
 // #endif FACES
   fragWorld.y *= uniforms.uGroundInvScaleY;
   var totalLight = vec3<f32>(uniforms.uBaseAmbient);
+// #if SUNMAP
+  totalLight += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * sunVisibility(vec3<f32>(fragWorld, 0.0));
+// #endif SUNMAP
+// #if !SUNMAP
   totalLight += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity;
+// #endif !SUNMAP
   totalLight += vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB);
   let nLights = uniforms.uLightCount;
   let nCones = i32(uniforms.uConeCount);

@@ -165,7 +165,7 @@ export function shaderWithFlag(source, name, on) {
 
 /**
  * The light pass's source with its blocks kept or cut: FACES (DX-FACES and DX-MAPS), SUNMAP / !SUNMAP (DX-SHADOW3D's
- * sun map) and SELFSHADOW (DX-SELFSHADOW, inside FACES); the last two WebGL only for now.
+ * sun map) and SELFSHADOW (DX-SELFSHADOW, inside FACES), in the GLSL and the WGSL alike.
  * @param {string} source lightingBasic.frag.glsl or lightingBasic.wgsl
  * @param {{ faces: boolean, sunMap: boolean }} flags
  */

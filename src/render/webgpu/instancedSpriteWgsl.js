@@ -33,6 +33,49 @@ export function instancedSpriteShadowGpuProgram(GpuProgram, source, name) {
 }
 
 /**
+ * DX-SHADOW3D: the sun map's programs and the renders' solids (sunShadowMap.js sunMapWgsl / sunMapColumnsWgsl): the
+ * shadow program's bindings, the atlas readable from the vertex stage (a column reads its cell's alpha there) and, with
+ * `maps`, the atlas's twin page as binding 5 (a column's height).
+ * @param {string} fragEntry 'mainFragMap' (the map: the height) or 'mainFrag' (the sprite shadows' layer)
+ */
+export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps = false } = {}) {
+  if (!source) {
+    throw new Error('WeedJS: Shadow sprite WGSL was not loaded before GpuProgram creation.');
+  }
+  const vf = gpuStageVF();
+  const f = gpuStageF();
+  const group2 = { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3 };
+  if (maps) group2.uMaps = 5;
+  return GpuProgram.from({
+    name,
+    vertex: { source, entryPoint: 'mainVert' },
+    fragment: { source, entryPoint: fragEntry },
+    layout: {
+      0: { globalUniforms: 0 },
+      1: { localUniforms: 0 },
+      2: group2,
+    },
+    gpuLayout: [
+      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      [
+        { binding: 0, visibility: vf, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
+        { binding: 1, visibility: f, sampler: { type: 'filtering' } },
+        {
+          binding: 2,
+          visibility: vf,
+          texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false },
+        },
+        { binding: 3, visibility: vf, buffer: { type: 'uniform' } },
+        ...(maps
+          ? [{ binding: 5, visibility: vf, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
+          : []),
+      ],
+    ],
+  });
+}
+
+/**
  * E-220: the keyed shadow programs (spriteIndexed.js spriteIndexedWgsl with `shadow`): the shadow program's bindings and
  * the statics as group 2's binding 4, a read-only storage buffer.
  */

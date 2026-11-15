@@ -142,3 +142,33 @@ test('a caster with a height map casts columns: each cell where it is in 3D, the
   assert.match(flat, /vColor = vec4\(0\.0, 0\.0, 0\.0, uSun\.w\);/);
   assert.doesNotMatch(flat, /vSunZ/);
 });
+
+test('WebGPU: the map\'s and the solids\' WGSL come from the sprite shadows\' WGSL as the GLSL ones do', async () => {
+  const { SUN_MAP_COLUMNS, sunMapWgsl, sunMapColumnsWgsl } = await import('../../src/render/sunShadowMap.js');
+  const { sunShadowGpuProgram } = await import('../../src/render/webgpu/instancedSpriteWgsl.js');
+  const { lightingGpuProgram } = await import('../../src/render/webgpu/pixiMeshWgsl.js');
+  const wgsl = shader('instancedSpriteShadow.wgsl');
+  const map = sunMapWgsl(wgsl);
+  assert.match(map, /@location\(6\) vSunZ: f32,/);
+  assert.ok(map.includes('    out.vSunZ = sunZ;\n'), 'the card\'s height');
+  assert.ok(map.includes('fn mainFragMap(in: VertexOut)'), 'the map\'s fragment');
+  assert.ok(map.includes('    if (aInstBase.x < 0.0) {'), 'a render\'s frame skips its card');
+  const cards = sunMapWgsl(wgsl, { heights: false });
+  assert.doesNotMatch(cards, /vSunZ|mainFragMap/, 'the solids\' cards keep the shadow program\'s colour and fragment');
+  const columns = sunMapColumnsWgsl(wgsl);
+  assert.match(columns, /@location\(0\) aCell: vec4<f32>,/);
+  assert.ok(columns.includes('  let aQuad = aCell.xy;\n'));
+  assert.match(columns, /@group\(2\) @binding\(5\) var uMaps: texture_2d<f32>;/);
+  assert.ok(columns.includes('  out.vSunZ = z * aCell.z;\n'));
+  assert.equal(columns.match(/fn mainVert\(/g).length, 1);
+  const flat = sunMapColumnsWgsl(wgsl, SUN_MAP_COLUMNS, { heights: false });
+  assert.ok(flat.includes('out.vColor = vec4<f32>(0.0, 0.0, 0.0, uniforms.uSun.w);'));
+  assert.doesNotMatch(flat, /vSunZ/);
+  // The columns read the atlas and the twin page in the vertex stage: their layout says so.
+  const GpuProgram = { from: (o) => o };
+  const p = sunShadowGpuProgram(GpuProgram, columns, 'mainFragMap', 'c', { maps: true });
+  assert.equal(p.layout[2].uMaps, 5);
+  assert.ok(p.gpuLayout[2].find((e) => e.binding === 0).visibility === p.gpuLayout[2].find((e) => e.binding === 5).visibility);
+  const lit = lightingGpuProgram(GpuProgram, 'x', 'l', true, true);
+  assert.deepEqual([lit.layout[2].uFaceMap, lit.layout[2].uSunMap], [4, 5]);
+});

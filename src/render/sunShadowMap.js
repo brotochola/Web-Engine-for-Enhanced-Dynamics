@@ -183,3 +183,116 @@ export function sunMapVertex(source, { heights = true } = {}) {
     .replace(out, `${out}    vSunZ = sunZ;\n`)
     .replace(color, '  vColor = vec4(1.0);\n');
 }
+
+/** A WGSL source with one occurrence of each mark, or a clear error. */
+function wgslMarks(source, marks, what) {
+  for (const mark of marks) {
+    if (source.split(mark).length !== 2) throw new Error(`WeedJS: ${what} needs the sprite shadow WGSL (${mark.trim()})`);
+  }
+}
+
+/** The map's fragment (sunShadowMap.frag.glsl's WGSL): the caster point's height where its ray lands. */
+const MAP_FRAGMENT_WGSL = `
+// DX-SHADOW3D: a caster point's height where its sun ray lands, drawn with max blending (sunShadowMap.frag.glsl).
+@fragment
+fn mainFragMap(in: VertexOut) -> @location(0) vec4<f32> {
+  let t = textureSampleLevel(uTexture, uSampler, mix(in.vAtlasUV.xy, in.vAtlasUV.zw, in.vLocal), 0.0);
+  if (t.a < 0.5) { discard; }
+  return vec4<f32>(clamp(in.vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0), 0.0, 0.0, 1.0);
+}
+`;
+
+/**
+ * sunMapVertex's WGSL form (WebGPU): instancedSpriteShadow.wgsl with its card skipping a render's frames (its columns
+ * cast it) and, with `heights`, its height passed on (vSunZ) and the map's fragment entry `mainFragMap`. Without, the
+ * sprite shadows' own program that only skips those frames.
+ * @param {string} source instancedSpriteShadow.wgsl
+ * @param {{ heights?: boolean }} [opts]
+ */
+export function sunMapWgsl(source, { heights = true } = {}) {
+  const struct = '  @location(5) vTileOff: vec2<f32>,\n';
+  const card = '    // weed:sunCard\n';
+  const out = '    // weed:sunOut\n';
+  const color = '  out.vColor = vec4<f32>(0.0, 0.0, 0.0, alpha);\n';
+  wgslMarks(source, [struct, card, out, color], 'the sun shadow map');
+  const skipped = source.replace(
+    card,
+    `${card}    // A render's frame casts columns instead (sunMapColumnsWgsl).
+    if (aInstBase.x < 0.0) {
+      clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);
+      return out;
+    }
+`,
+  );
+  if (!heights) return skipped;
+  return (
+    skipped
+      .replace(struct, `${struct}  @location(6) vSunZ: f32,\n`)
+      .replace(out, `${out}    out.vSunZ = sunZ;\n`)
+      .replace(color, '  out.vColor = vec4<f32>(1.0);\n') + MAP_FRAGMENT_WGSL
+  );
+}
+
+/**
+ * sunMapColumnsVertex's WGSL form: a render's frame cast as columns, one a cell of the SUN_MAP_COLUMNS² grid (aCell
+ * instead of aQuad), each where its cell is in 3D, down to the floor. With `heights` for the map (vSunZ, `mainFragMap`),
+ * without for the sprite shadows' layer (the shadow's colour and opacity, the shadow program's `mainFrag`).
+ * @param {string} source instancedSpriteShadow.wgsl
+ * @param {number} [cells]
+ * @param {{ heights?: boolean }} [opts]
+ */
+export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = true } = {}) {
+  const card = sunMapWgsl(source, { heights });
+  const quad = '  @location(0) aQuad: vec2<f32>,\n';
+  const body = ') -> VertexOut {\n  var out: VertexOut;\n';
+  const after = '  // weed:afterAnchor\n';
+  const end = '  out.vTileOff = aInstTileOff;\n  return out;\n}\n';
+  wgslMarks(card, [quad, body, after], 'the sun shadow map columns');
+  const from = card.indexOf(after);
+  const to = card.indexOf(end, from);
+  if (to < 0) throw new Error('WeedJS: the sun shadow map columns need the sprite shadow WGSL (mainVert\'s end)');
+  const head = card
+    .slice(0, from)
+    .replace(quad, "  @location(0) aCell: vec4<f32>, // the cell's centre in the frame, t (floor 0, top 1), side\n")
+    .replace(body, `${body}  let aQuad = aCell.xy;\n`);
+  const columns = `  let uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
+  let m = textureLoad(uMaps, vec2<i32>(uvc * vec2<f32>(textureDimensions(uMaps, 0))), 0);
+  let cellAlpha = textureLoad(uTexture, vec2<i32>(uvc * vec2<f32>(textureDimensions(uTexture, 0))), 0).a;
+  let z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * height;
+  if (aInstBase.x >= 0.0 || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5) {
+    clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);
+    return out;
+  }
+  let content = aInstTrim.xy + aQuad * aInstTrim.zw;
+  let pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
+  let base = vec2<f32>(pix.x, (pix.y + uniforms.uSunK.w * z) * uniforms.uGroundInvScaleY);
+  let tip = base - z * uniforms.uSunK.xy;
+  let along = tip - base;
+  let len = length(along);
+  var across = vec2<f32>(1.0, 0.0);
+  if (len > 1e-3) { across = vec2<f32>(-along.y, along.x) / len; }
+  let cell = abs(aInstTrim.zw * aInstScale) / ${cells.toFixed(1)};
+  let width = 1.1 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 1.0;
+  let p = mix(base, tip, aCell.z) + across * aCell.w * width;
+  let world = vec2<f32>(p.x, p.y / uniforms.uGroundInvScaleY);
+  let screen = (world - uniforms.uCam.xy) * uniforms.uCam.z;
+  let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
+  let clip = mvp * vec3<f32>(screen, 1.0);
+  out.position = vec4<f32>(clip.xy, 0.0, 1.0);
+  if (abs(aInstRotCS.x) > 2.0) {
+    out.position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
+  }
+  out.vLocal = aQuad;
+  out.vColor = ${heights ? 'vec4<f32>(1.0)' : 'vec4<f32>(0.0, 0.0, 0.0, uniforms.uSun.w)'};
+  out.vWorld = world;
+  out.vAtlasUV = aInstUV;
+  out.vTileInv = aInstTileInv;
+  out.vTileOff = aInstTileOff;${heights ? '\n  out.vSunZ = z * aCell.z;' : ''}
+  return out;
+}
+`;
+  return `${head}${columns}${card.slice(to + end.length)}`.replace(
+    '@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n',
+    "@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n",
+  );
+}
