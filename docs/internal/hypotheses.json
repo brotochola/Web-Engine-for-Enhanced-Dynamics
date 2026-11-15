@@ -16118,6 +16118,104 @@
         "TallLight horizontal line"
       ],
       "records": []
+    },
+    {
+      "id": "N-203",
+      "title": "A directional caster's lamp rows built columns (a height map, a render's solid) from the frame the lamp sees whenever its sheet keeps its card for the sun: the cars and the cow under a lamp beside them cast the shadow of themselves turned (the white pickup's, 90 degrees, on both sides and towards the lamp)",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 at the light bench (the cow with lamps on its height map, the white pickup); fixed the same day (d2b8c392)",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "bug",
+      "result": "fixed (d2b8c392): each light's frame is decided per caster as the columns pass decides what it casts (castsCard): a card takes the frame that light sees (a fixed card its front), anything else the frame the camera sees; the lamp rows copy the sun's, so a column caster gets the camera's frame back. N-197 had covered only the sheets that cast a solid for the sun. lampFramesMicrobench 920 -> 934/975 ops/s, same checksum; tests/node/lampFrameKinds.test.js fails 3/3 on the old code",
+      "refs": [],
+      "aliases": [
+        "lamp columns from the lamp frame"
+      ],
+      "next": "",
+      "records": [
+        "R-1142"
+      ]
+    },
+    {
+      "id": "N-204",
+      "title": "A lamp's shadows ran dark to the square edge of its map and stopped on a line: the light never ended at its radius (about 1 % there, 3 % at brightness 3, and on past it)",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 (\"las sombras deberían tener una caída de opacidad, sombra 0 al final del radio\"); option A chosen by the owner; fixed the same day (c6880f7e)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (c6880f7e): every light of the light pass is its falloff times (1 - (d / radius)^4)^2 (reachWindow: 1 at the lamp, 0.88 halfway, 0 at the radius), as the prototype's light ends at its reach; a shadow fades with the light it takes out. gpuPassBench res 0.5, 32 lights: WebGL light3d 1.384 -> 1.461 ms (+5.6 %), light 0.742 -> 0.755; WebGPU light3d 1.261 -> 1.306 (+3.6 %); E-380 to win it back",
+      "refs": [],
+      "aliases": [
+        "light reach window"
+      ],
+      "next": "",
+      "records": [
+        "R-1142"
+      ]
+    },
+    {
+      "id": "N-205",
+      "title": "A render's card (the hut, the table, set to silhouette) stands on the camera frame's lowest contact pushed towards the light by that fixed distance, not on its contact nearest the light as the prototype's does: with a lamp high behind such a thing its shadow looks wrong",
+      "status": "open",
+      "statusText": "reported by the owner 2026-11-15 at the light bench (\"creo que esto estaba resuelto en el artifact\")",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "The prototype (cards(), buildCards()): the card stands at C + dL * sup, sup = baseSupport: the farthest of the camera frame's contacts (height-map pixels under 1.5 px: legs, wheels) along the direction to the light (the footprint's when it has under 3), per caster and light; the picture's foot row is the frame the light sees' own base row. WeedJS's lampMapVertex (and the sun's card) move the foot from the anchor towards the lamp by the distance from the anchor to the lowest contact row of the camera's frame, whatever the direction.",
+      "next": "Port the support: each frame's contacts (or footprint) as a polygon in the footprints texture (frameBase.js writeFootprintRow has one per frame already), the card's foot at the anchor + the support along the light's direction, in the lamps' and the sun's card programs (GLSL, WGSL); captures of the hut and the table with a lamp high behind them against the prototype under the same light.",
+      "refs": [],
+      "aliases": [
+        "render card on its support"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-206",
+      "title": "Predator crowd 2.5's gate of 2026-11-15 (588242f9 against 6b28ca2d) failed on its load keys: the new side drew 4 967, 11 450 and 20 292 rows of 38 500 in three of its four runs, and physics read +49 %",
+      "status": "open",
+      "statusText": "found 2026-11-15 in that gate; not understood: every crowd 2.5 run of the twelve sittings before drew about 38 500 rows; left when the owner stopped the session's runs",
+      "date": "2026-11-15",
+      "area": "harness",
+      "kind": "bug",
+      "result": "RENDER_QUEUE_SIZE per run, A: 38 488, 38 588, 38 428, 38 529; B: 11 450, 20 292, 4 967, 38 438 (GPU_CASTERS alike); BODY_COUNT and ENTITIES_PROCESSED the same on both sides. Predator's camera frames the player's soldiers (cameraController.js updateSquadCamera): soldiers dead or bunched zoom it in, so fewer rows; why only the new side, not known. Physics +48.9 % (cv 64 % on B), BODY_MOVED_COUNT +8 %.",
+      "next": "Run the same pair again (or the new side alone) watching MySoldier's count and Camera.zoom per run; if the new side loses its soldiers, find what in the afternoon's commits reaches the logic or physics (none of them touches Predator's code); else call it chance and gate again.",
+      "refs": [],
+      "aliases": [
+        "crowd 2.5 gate drew fewer rows"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-380",
+      "title": "The light pass's reach window divides per light and pixel (1 / (100 (I' - h^2))): +5.6 % of the WebGL light3d pass (N-204); a per-light 1 / radius^2 written with the light data would make it a multiply",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d with N-204",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "gpu",
+      "result": "",
+      "next": "A free float per light in the light data (or a fourth row) for 1 / radius^2, against the division and against the subtract-the-edge form ((a - a_R) / (1 - a_R)); gpuPassBench light and light3d, res 0.5, 32 lights, both backends.",
+      "refs": [],
+      "aliases": [],
+      "records": []
+    },
+    {
+      "id": "DX-LAMPPANO",
+      "title": "The lamps' shadow map as a panorama per lamp: for each direction from the lamp, how far the first thing is (the standard point light's shadow map). Points higher than the lamp take its shadows (today they count as lit: under a 20 px lamp the fence's shadow does not climb the barn's wall), and no stretch cap (N-192's steps at the tip)",
+      "status": "open",
+      "statusText": "approved by the owner 2026-11-15 (\"agregalo al backlog, y lo hacés en un rato, como parte de los arreglos de esta branch\"); after the current fixes, on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "feature",
+      "result": "Today's map (F7, option C) projects every caster point onto the floor from the lamp and keeps the highest landing in each texel: a point is shaded when something higher lands where its own ray does, which only answers for points lower than the lamp, and points near the lamp's height land at infinity (the stretch capped at 8).",
+      "next": "Each lamp's tile as (azimuth, elevation) from the lamp holding the nearest caster's distance (min depth): a column is a vertical segment there, a card a near-rectangle with its picture tested per fragment; the light pass looks up the pixel's own direction and compares its distance. Cards facing each lamp and fixed ones, the lamp's own entity left out, GLSL and WGSL; then shadowOutlineCheck (N-192), lampShadowStressScene against today's map, the bench's fence and barn under a 20 px lamp.",
+      "refs": [],
+      "aliases": [
+        "panoramic lamp map"
+      ],
+      "records": []
     }
   ],
   "records": [
@@ -26980,6 +27078,20 @@
       "text": "N-188 fixed (572d30b2): lighting.shadowTextures retires. setSprite({ frame }) works in any scene: pre-render's caster scan (every 30 frames, beside casterKindsInUse) finds a frame in use (casterFramesInUse: an active caster with a textureId), those frames take the full rows with the frames applied, and the queue header says so (GPU_FLAG_CASTER_OWN, also when caster kinds are on, or lighting.keyedCasters is false); Pixi then draws pre-render's rows, not the entity batch's keyed instances (E-191), which hold only the sprites' own statics. lighting.keyedCasters: false is the diagnostic that keeps the full rows always (the light bench's ?fullRows=1). Migrated: the sun street, the light bench, the Buenos Aires scene's config line (not run there, the owner's rule), dxCaptureScene, the guide (bible, LAYER_ROUTING), the types, tests (the scan; the keyed paths off with a frame in use or the diagnostic).\n\nCheck: the sun street at 15 h, the panel's T (the trees cast a big tree's silhouette) with no key: the silhouettes drawn, no warning or error. node 2730/2730, demos 101/101.\n\nSide effect worth knowing: a frame with caster kinds on (DX-CASTER) no longer draws the entity batch's keyed sun instances in place of pre-render's coded rows (the flag covers kinds too).",
       "commits": [
         "572d30b2"
+      ]
+    },
+    {
+      "id": "R-1142",
+      "date": "2026-11-15",
+      "time": "17:32",
+      "timeFrom": "recorded",
+      "title": "N-203 and N-204 fixed: lamp columns from the camera's frame, the light ends at its radius",
+      "verdict": "kept",
+      "text": "N-203 and N-204 fixed (d2b8c392, c6880f7e), and the bench's card orientation offered only for props and cars (c43014c0), after the owner's look at the light bench at night.\n\nN-203: a directional caster's lamp rows took the frame the lamp sees unless its sheet cast a solid for the sun (N-197's rule), so the cars and the cow (their json keeps the card for the sun, while left to their sheet they cast columns for the lamps) built their lamp columns from the view the lamp sees, placed as the camera's. Now castsCard decides per caster and light, as compactColumnRows decides what it casts. Check: the white pickup facing the camera, a lamp at 55 px on its right (bench, night, zoom 2): before, its shadow lay on both sides and towards the lamp; after, to its left only. lampFramesMicrobench (cards, Predator's shape) 920 -> 934 / 975 ops/s with the same checksum; tests/node/lampFrameKinds.test.js fails 3/3 on the old code.\n\nN-204: the light never ended at its radius (about 1 % there and on past it) while a lamp's map ends at a square of its radius: a low lamp's long shadows ran to that square and stopped on a line. Now every light of the light pass is multiplied by reachWindow ((1 - (d / radius)^4)^2). Check: bench at night, a lamp at 55 px, reach 590, brightness 3: the vertical line where the shadows stopped (1 020 px) is gone, the pool near the lamp the same. Cost, gpuPassBench (GTX 1650, res 0.5, 32 lights): WebGL light 0.742 -> 0.755 ms, light3d 1.384 -> 1.461 ms (+5.6 %); WebGPU light 0.805 -> 0.787 (spread 21 % before), light3d 1.261 -> 1.306 ms (+3.6 %); E-380 is the way back.\n\nnode 2733/2733, demos 101/101, check:types. Opened the same evening: N-205 (a render's card on the wrong support), DX-LAMPPANO (the panoramic lamp map, approved), E-380, N-206 (the crowd 2.5 gate that drew fewer rows).",
+      "commits": [
+        "d2b8c392",
+        "c6880f7e",
+        "c43014c0"
       ]
     }
   ],
