@@ -68,6 +68,11 @@ export const GPU_HDR_INDEXED_ROWS = 9;
  * scale hold, so the renderer takes the pairs again only when it moves (0: take them).
  */
 export const GPU_HDR_SLOTS_GEN = 10;
+/**
+ * DX-SHADOW3D (F7): how many lights this frame's stamps went to; stampLightIds names each one's entity, in the order a
+ * stamp row's stampLightIdx counts them (a lamp's tile in the lamps' shadow map is that index).
+ */
+export const GPU_HDR_STAMP_LIGHTS = 11;
 
 export const GPU_SPACE_WORLD = 0;
 export const GPU_SPACE_SCREEN = 1;
@@ -123,6 +128,8 @@ export function gpuQueueCaps(maxSprites, lighting, indexedSprites = false) {
     maxSun: shadowOn ? sprites : 0,
     maxStamp: stamp,
     maxCookie: shadowOn ? Math.max(1, Math.min(maxLights, castLights || maxLights)) : 0,
+    // DX-SHADOW3D (F7): the lights a frame's stamps can go to (stampLightIds).
+    maxStampLights: shadowOn ? castLights : 0,
     indexedSprites: !!indexedSprites,
   };
 }
@@ -137,6 +144,8 @@ export function computeGpuQueueBufferSize(caps) {
   offset += (c.maxCookie | 0) * GPU_SPRITE_FLOATS * 4;
   offset = align4(offset);
   offset += (c.maxStamp | 0) * 2;
+  offset = align4(offset);
+  offset += (c.maxStampLights | 0) * 4;
   return align4(offset);
 }
 
@@ -179,6 +188,9 @@ export function createGpuQueueViews(sab, caps, base = 0) {
   // A spriteKeys region (maxSprites floats) used to follow; nothing read or
   // wrote it, so it is gone (review D6).
   offset = align4(offset + stampN * 2);
+  const stampLightN = c.maxStampLights | 0;
+  const stampLightIds = stampLightN > 0 ? new Uint32Array(sab, offset, stampLightN) : new Uint32Array(0);
+  offset += stampLightN * 4;
   return {
     header,
     sprites: sprites.view,
@@ -198,6 +210,7 @@ export function createGpuQueueViews(sab, caps, base = 0) {
     cookie: cookie.view,
     cookieU32: cookie.u32,
     stampLightIdx,
+    stampLightIds,
     caps: c,
     byteLength: offset - start,
   };
@@ -216,6 +229,7 @@ export function clearGpuQueueHeader(header) {
   header[GPU_HDR_STATIC_GEN] = 0;
   header[GPU_HDR_INDEXED_ROWS] = 0;
   header[GPU_HDR_SLOTS_GEN] = 0;
+  header[GPU_HDR_STAMP_LIGHTS] = 0;
 }
 
 export function writeGpuQueueHeader(header, counts, flags) {
@@ -231,6 +245,7 @@ export function writeGpuQueueHeader(header, counts, flags) {
   header[GPU_HDR_STATIC_GEN] = counts.staticGen | 0;
   header[GPU_HDR_INDEXED_ROWS] = counts.indexedRows | 0;
   header[GPU_HDR_SLOTS_GEN] = counts.slotsGen | 0;
+  header[GPU_HDR_STAMP_LIGHTS] = counts.stampLights | 0;
 }
 
 /**

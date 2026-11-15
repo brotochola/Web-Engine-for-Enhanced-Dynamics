@@ -3924,12 +3924,13 @@ class PreRenderWorker extends AbstractWorker {
 
     _packGpuShadows(dst, q) {
         const caps = this.gpuQueueCaps;
-        const res = this._gpuShadowsResult || (this._gpuShadowsResult = { sun: 0, stamp: 0, cookie: 0, keyed: false });
+        const res = this._gpuShadowsResult || (this._gpuShadowsResult = { sun: 0, stamp: 0, cookie: 0, keyed: false, stampLights: 0 });
         if (!this.shadowsEnabled || !caps || !(caps.maxSun > 0)) {
             res.sun = 0;
             res.stamp = 0;
             res.cookie = 0;
             res.keyed = false;
+            res.stampLights = 0;
             return res;
         }
         const interval = this.shadowUpdateInterval | 0;
@@ -3955,8 +3956,23 @@ class PreRenderWorker extends AbstractWorker {
         res.stamp = stamp;
         res.cookie = cookie;
         res.keyed = this._gpuSunKeyed;
+        res.stampLights = this._writeStampLightIds(dst, stamp);
         this._gpuShadowsFrom = dst;
         return res;
+    }
+
+    /**
+     * DX-SHADOW3D (F7): the entity of each light this frame's stamps went to, in the order a stamp row's stampLightIdx
+     * counts them (the stamp kernel's light table): a lamp's tile in the lamps' shadow map is that index.
+     * @returns {number} how many
+     */
+    _writeStampLightIds(dst, stampN) {
+        const ids = dst.stampLightIds;
+        if (!ids || ids.length === 0 || !(stampN > 0) || !this._stampLights) return 0;
+        const n = Math.min(this._stampLightCount | 0, ids.length);
+        const lights = this._stampLights;
+        for (let i = 0; i < n; i++) ids[i] = lights[i].id;
+        return n;
     }
 
     /**
@@ -3974,6 +3990,8 @@ class PreRenderWorker extends AbstractWorker {
         const di = dst.stampLightIdx;
         const si = src.stampLightIdx;
         for (let i = 0; i < stampN; i++) di[i] = si[i];
+        const lightN = res.stampLights | 0;
+        for (let i = 0; i < lightN; i++) dst.stampLightIds[i] = src.stampLightIds[i];
         copyF32(dst.cookie, src.cookie, (res.cookie | 0) * GPU_SPRITE_FLOATS);
     }
 
@@ -4241,6 +4259,7 @@ class PreRenderWorker extends AbstractWorker {
         counts.sun = shadows.sun | 0;
         counts.stamp = shadows.stamp | 0;
         counts.cookie = shadows.cookie | 0;
+        counts.stampLights = shadows.stampLights | 0;
         counts.flags = (sprites.flags | 0) | (shadows.keyed ? GPU_FLAG_KEYED_CASTERS : 0);
         counts.staticGen = sprites.staticGen | 0;
         counts.indexedRows = sprites.indexedRows | 0;

@@ -48,6 +48,9 @@ struct LightingUniforms {
 // #if SELFSHADOW
   uSelfShadow: vec4<f32>, // a step's length (floor px), steps, bias (px)
 // #endif SELFSHADOW
+// #if LAMPMAP
+  uLampAtlas: vec4<f32>, // tiles a row, a tile's texels, the atlas's width and height in texels
+// #endif LAMPMAP
 }
 @group(2) @binding(0) var uLightData: texture_2d<f32>;
 @group(2) @binding(1) var<uniform> uniforms: LightingUniforms;
@@ -61,6 +64,10 @@ struct LightingUniforms {
 // DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the sprite shadows' layer is.
 @group(2) @binding(5) var uSunMap: texture_2d<f32>;
 // #endif SUNMAP
+// #if LAMPMAP
+// DX-SHADOW3D (F7): the lamps' shadow map (lampShadowMap.js), a tile a lamp.
+@group(2) @binding(6) var uLampMap: texture_2d<f32>;
+// #endif LAMPMAP
 
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
@@ -125,6 +132,37 @@ fn sunVisibility(p: vec3<f32>) -> f32 {
 }
 // #endif SUNMAP
 
+// #if LAMPMAP
+// DX-SHADOW3D (F7): the lamps' shadow map (lightingBasic.frag.glsl's lampVisibility, the atlas read texel by texel).
+fn lampTap(c: vec2<i32>, lo: vec2<i32>, hi: vec2<i32>, above: f32) -> f32 {
+  return select(1.0, 0.0, textureLoad(uLampMap, clamp(c, lo, hi), 0).r * 512.0 > above);
+}
+
+fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32) -> f32 {
+  if (tag >= 0.0 || e <= 0.0 || p.z >= e) { return 1.0; }
+  let reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
+  if (reach <= 0.0) { return 1.0; }
+  let room = e - p.z;
+  let k = select(8.0, e / room, room > e * 0.125);
+  let uv = (p.xy - l) * k / (2.0 * reach) + 0.5;
+  if (uv.x < 0.0 || uv.y < 0.0 || uv.x >= 1.0 || uv.y >= 1.0) { return 1.0; }
+  let tile = i32(-tag - 1.0 + 0.5);
+  let a = uniforms.uLampAtlas;
+  let perRow = i32(a.x);
+  let size = i32(a.y);
+  let lo = vec2<i32>(tile % perRow, tile / perRow) * size;
+  let hi = lo + vec2<i32>(size - 1);
+  let c = lo + vec2<i32>(floor(uv * a.y));
+  let above = p.z + 4.0 + p.z * 0.03;
+  var lit = lampTap(c, lo, hi, above);
+  lit += lampTap(c + vec2<i32>(1, 0), lo, hi, above);
+  lit += lampTap(c - vec2<i32>(1, 0), lo, hi, above);
+  lit += lampTap(c + vec2<i32>(0, 1), lo, hi, above);
+  lit += lampTap(c - vec2<i32>(0, 1), lo, hi, above);
+  return lit * 0.2;
+}
+// #endif LAMPMAP
+
 // #if FACES
 // #if SELFSHADOW
 // DX-SELFSHADOW: steps towards the sun over the face map's heights (lightingBasic.frag.glsl's selfShadow): a surface
@@ -187,7 +225,10 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>) -> vec3<f32> {
     if (cosine <= 0.0) { continue; }
     let scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     let intensityScaled = posInt.z * scaled;
-    let cone = coneFactor(p.xy - posInt.xy, textureLoad(uLightData, vec2<i32>(i, 2), 0));
+    var cone = coneFactor(p.xy - posInt.xy, textureLoad(uLightData, vec2<i32>(i, 2), 0));
+// #if LAMPMAP
+    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z);
+// #endif LAMPMAP
     total += col.rgb * cosine * lit.z * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
   }
   for (var j = 0; j < MAX_LIGHTS; j++) {
@@ -203,7 +244,11 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>) -> vec3<f32> {
     // The source's height is folded into I' and the colour (I' = I + h²): I / (I + d²) = k I' / (I' - h² + d²).
     let scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     let intensityScaled = posInt.z * scaled;
-    total += col.rgb * cosine * lit.z * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    var shade = 1.0;
+// #if LAMPMAP
+    shade = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z);
+// #endif LAMPMAP
+    total += col.rgb * cosine * shade * lit.z * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
   }
   return total;
 }
@@ -248,7 +293,10 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     let deltaScaled = (fragWorld - posInt.xy) * DISTANCE_SCALE;
     let d2Scaled = dot(deltaScaled, deltaScaled);
     let intensityScaled = posInt.z * DISTANCE_SCALE * DISTANCE_SCALE;
-    let attenuation = intensityScaled / (intensityScaled + d2Scaled);
+    var attenuation = intensityScaled / (intensityScaled + d2Scaled);
+// #if LAMPMAP
+    attenuation *= lampVisibility(vec3<f32>(fragWorld, 0.0), posInt.xy, col.a, posInt.w, posInt.z);
+// #endif LAMPMAP
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
   }
   for (var j = 0; j < MAX_LIGHTS; j++) {
@@ -263,7 +311,10 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
       let deltaScaled = (fragWorld - lightWorld) * DISTANCE_SCALE;
       let d2Scaled = dot(deltaScaled, deltaScaled);
       let intensityScaled = intensity * DISTANCE_SCALE * DISTANCE_SCALE;
-      let attenuation = intensityScaled / (intensityScaled + d2Scaled);
+      var attenuation = intensityScaled / (intensityScaled + d2Scaled);
+// #if LAMPMAP
+      attenuation *= lampVisibility(vec3<f32>(fragWorld, 0.0), lightWorld, col.a, posInt.w, intensity);
+// #endif LAMPMAP
       totalLight += col.rgb * attenuation;
     }
   }

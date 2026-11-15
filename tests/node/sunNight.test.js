@@ -154,12 +154,13 @@ test('both lighting shaders add the night term, and the WGSL struct lists what t
   assert.match(glsl, /totalLight \+= vec3\(uNightR, uNightG, uNightB\)/);
   assert.match(wgsl, /totalLight \+= vec3<f32>\(uniforms\.uNightR, uniforms\.uNightG, uniforms\.uNightB\)/);
   const fields = (source) => [...source.match(/struct LightingUniforms \{([^}]*)\}/)[1].matchAll(/^\s*(u\w+):/gm)].map((m) => m[1]);
-  const flags = (source, on) => ['FACES', 'SUNMAP', 'SELFSHADOW'].reduce((s, name) => shaderWithFlag(s, name, on), source);
+  const flags = (source, on) => ['FACES', 'SUNMAP', 'SELFSHADOW', 'LAMPMAP'].reduce((s, name) => shaderWithFlag(s, name, on), source);
   const names = fields(flags(wgsl, false));
-  // lighting.faces adds its two at the end of the group, then the sun map's terms and self-shadow's, as the worker does.
-  const facesOnly = shaderWithFlag(shaderWithFlag(shaderWithFlag(wgsl, 'SUNMAP', false), 'SELFSHADOW', false), 'FACES', true);
+  // lighting.faces adds its two at the end of the group, then the sun map's terms, self-shadow's and the lamps' map's
+  // (DX-SHADOW3D F7), as the worker does.
+  const facesOnly = flags(shaderWithFlag(wgsl, 'FACES', true), false);
   assert.deepEqual(fields(facesOnly), [...names, 'uFaceLight', 'uFaceSun']);
-  assert.deepEqual(fields(flags(wgsl, true)), [...names, 'uFaceLight', 'uFaceSun', 'uSunMapK', 'uSelfShadow']);
+  assert.deepEqual(fields(flags(wgsl, true)), [...names, 'uFaceLight', 'uFaceSun', 'uSunMapK', 'uSelfShadow', 'uLampAtlas']);
   const end = pixi.indexOf('...this._lightingShadowResources()');
   const start = pixi.lastIndexOf('uCameraPos:', end);
   const declared = [...pixi.slice(start, end).matchAll(/^\s*(u\w+):/gm)].map((m) => m[1]);

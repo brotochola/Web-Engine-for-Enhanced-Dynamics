@@ -165,13 +165,14 @@ export function shaderWithFlag(source, name, on) {
 
 /**
  * The light pass's source with its blocks kept or cut: FACES (DX-FACES and DX-MAPS), SUNMAP / !SUNMAP (DX-SHADOW3D's
- * sun map) and SELFSHADOW (DX-SELFSHADOW, inside FACES), in the GLSL and the WGSL alike.
+ * sun map), SELFSHADOW (DX-SELFSHADOW, inside FACES) and LAMPMAP (DX-SHADOW3D's lamps' map), in the GLSL and the WGSL
+ * alike.
  * @param {string} source lightingBasic.frag.glsl or lightingBasic.wgsl
- * @param {{ faces: boolean, sunMap: boolean }} flags
+ * @param {{ faces: boolean, sunMap: boolean, selfShadow?: boolean, lampMap?: boolean }} flags
  */
-export function lightingSource(source, { faces, sunMap, selfShadow = false }) {
+export function lightingSource(source, { faces, sunMap, selfShadow = false, lampMap = false }) {
   const withSun = shaderWithFlag(shaderWithFlag(shaderWithFlag(source, 'FACES', faces), 'SUNMAP', sunMap), '!SUNMAP', !sunMap);
-  return shaderWithFlag(withSun, 'SELFSHADOW', faces && selfShadow);
+  return shaderWithFlag(shaderWithFlag(withSun, 'SELFSHADOW', faces && selfShadow), 'LAMPMAP', lampMap);
 }
 
 /** config.lighting.faces over its defaults. */

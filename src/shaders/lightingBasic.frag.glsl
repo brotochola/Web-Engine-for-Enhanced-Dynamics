@@ -70,6 +70,42 @@ float sunVisibility(vec3 p) {
 }
 // #endif SUNMAP
 
+// #if LAMPMAP
+// DX-SHADOW3D (F7): the lamps' shadow map (lampShadowMap.js): a tile a lamp in an atlas, each texel the height of the
+// highest caster point whose ray from that lamp lands there. A light with a tile carries -(tile + 1) in its first row's w
+// (its range's square otherwise, which this pass does not read); its tile reaches its radius, which its intensity and
+// height give back (I' = (radius / 10)² + h²).
+uniform sampler2D uLampMap;
+uniform vec4 uLampAtlas; // tiles a row, a tile's texels, the atlas's width and height in texels
+
+float lampTap(vec2 cell, vec2 uv, float h, vec2 toAtlas, float above) {
+  return texture2D(uLampMap, (cell + clamp(uv, h, 1.0 - h)) * toAtlas).r * 512.0 > above ? 0.0 : 1.0;
+}
+
+// How much of the light at floor point l, height e reaches point p (x, y on the floor, z up): 1 lit, 0 in its shadow,
+// five taps. tag: the light's first row's w; intensity: its I'.
+float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity) {
+  if (tag >= 0.0 || e <= 0.0 || p.z >= e) return 1.0;
+  float reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
+  if (reach <= 0.0) return 1.0;
+  float room = e - p.z;
+  float k = room > e * 0.125 ? e / room : 8.0;
+  vec2 uv = (p.xy - l) * k / (2.0 * reach) + 0.5;
+  if (uv.x < 0.0 || uv.y < 0.0 || uv.x >= 1.0 || uv.y >= 1.0) return 1.0;
+  float tile = -tag - 1.0;
+  vec2 cell = vec2(mod(tile, uLampAtlas.x), floor(tile / uLampAtlas.x));
+  vec2 toAtlas = vec2(uLampAtlas.y) / uLampAtlas.zw;
+  float h = 0.5 / uLampAtlas.y;
+  float above = p.z + 4.0 + p.z * 0.03;
+  float lit = lampTap(cell, uv, h, toAtlas, above);
+  lit += lampTap(cell, uv + vec2(2.0 * h, 0.0), h, toAtlas, above);
+  lit += lampTap(cell, uv - vec2(2.0 * h, 0.0), h, toAtlas, above);
+  lit += lampTap(cell, uv + vec2(0.0, 2.0 * h), h, toAtlas, above);
+  lit += lampTap(cell, uv - vec2(0.0, 2.0 * h), h, toAtlas, above);
+  return lit * 0.2;
+}
+// #endif LAMPMAP
+
 // #if FACES
 // DX-FACES: this pixel's face, in the face map, drawn at this pass's size.
 uniform sampler2D uFaceMap;
@@ -136,6 +172,9 @@ vec3 faceLight(vec2 world, vec4 face) {
     float scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     float intensityScaled = posInt.z * scaled;
     float cone = coneFactor(p.xy - posInt.xy, texture2D(uLightData, vec2(u, ROW2)));
+// #if LAMPMAP
+    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z);
+// #endif LAMPMAP
     total += col.rgb * cosine * uFaceLight.z * cone * intensityScaled
       / (intensityScaled + (d * d - col.a * col.a) * scaled);
   }
@@ -153,6 +192,9 @@ vec3 faceLight(vec2 world, vec4 face) {
     // The source's height is folded into I' and the colour (I' = I + h²): I / (I + d²) = k I' / (I' - h² + d²).
     float scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     float intensityScaled = posInt.z * scaled;
+// #if LAMPMAP
+    cosine *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z);
+// #endif LAMPMAP
     total += col.rgb * cosine * uFaceLight.z * intensityScaled
       / (intensityScaled + (d * d - col.a * col.a) * scaled);
   }
@@ -207,6 +249,9 @@ void main() {
     float d2Scaled = dot(deltaScaled, deltaScaled);
     float intensityScaled = posInt.z * DISTANCE_SCALE * DISTANCE_SCALE;
     float attenuation = intensityScaled / (intensityScaled + d2Scaled);
+// #if LAMPMAP
+    attenuation *= lampVisibility(vec3(fragWorld, 0.0), posInt.xy, col.a, posInt.w, posInt.z);
+// #endif LAMPMAP
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
   }
 
@@ -228,6 +273,9 @@ void main() {
       float d2Scaled = dot(deltaScaled, deltaScaled);
       float intensityScaled = intensity * DISTANCE_SCALE * DISTANCE_SCALE;
       float attenuation = intensityScaled / (intensityScaled + d2Scaled);
+// #if LAMPMAP
+      attenuation *= lampVisibility(vec3(fragWorld, 0.0), lightWorld, col.a, posInt.w, intensity);
+// #endif LAMPMAP
       totalLight += color * attenuation;
     }
   }

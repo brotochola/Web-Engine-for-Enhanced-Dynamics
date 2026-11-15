@@ -69,6 +69,16 @@ import {
   sunMapWgsl,
 } from '../render/sunShadowMap.js';
 import { sunShadowGpuProgram } from '../render/webgpu/instancedSpriteWgsl.js';
+import {
+  LAMP_MAP_COLUMNS,
+  lampMapColumnsVertex,
+  lampMapColumnsWgsl,
+  lampMapFragment,
+  lampMapVertex,
+  lampMapWgsl,
+  lampTileLayout,
+  writeLampTile,
+} from '../render/lampShadowMap.js';
 import { instancedSpriteGlProgram, pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
 import { TileMap } from '../core/tileMap.js';
 import {
@@ -82,6 +92,8 @@ import { createViews as createRenderQueueViews, createRenderQueueCameraViews } f
 import {
   GPU_SPRITE_FLOATS,
   GPU_CASTER_FLOATS,
+  GPU_CASTER_LIGHT_FLOAT,
+  GPU_HDR_STAMP_LIGHTS,
   GPU_HDR_SPRITE,
   GPU_HDR_GLOW,
   GPU_HDR_SUN,
@@ -888,6 +900,26 @@ class PixiRenderer extends AbstractWorker {
     this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
     // DX-SHADOW3D: lighting.sunShadows 'map' (src/render/sunShadowMap.js): the sun's shadow map, its pass and terms.
     this._sunMapOn = false;
+    // DX-SHADOW3D (F7): lighting.lampShadows 'map': a shadow map a lamp (lampShadowMap.js), tiles in an atlas.
+    this._lampMapOn = false;
+    this._lampTileSize = 256;
+    this._lampTilesPerRow = 1;
+    this._lampMapLights = 0;
+    this.lampMapRT = null;
+    this._lampMapMesh = null;
+    this._lampMapHost = null;
+    this._lampMapColumns = null;
+    this._lampMapUniforms = null;
+    this._lampMapClear = false;
+    this._lampMapDrew = false;
+    // Each tile's lamp (floor point, height, reach) as RGBA32F, a texel a tile; entity -> tile; last frame's lamps.
+    this._lampTileData = new Float32Array(4);
+    this._lampTileSource = null;
+    this._lampTileOf = new Int16Array(0);
+    this._lampTileIds = new Uint32Array(1);
+    this._lampTileCount = 0;
+    // The light pass's uLampAtlas: tiles a row, a tile's texels, the atlas's width and height.
+    this._lampAtlas = new Float32Array([1, 256, 256, 256]);
     this._selfShadowOn = false; // DX-SELFSHADOW: lighting.selfShadow, WebGL for now
     this.sunMapRT = null;
     this._sunMapMesh = null;
@@ -3813,10 +3845,16 @@ LIGHTING SYSTEM SETUP
       // A step of 4 floor px, 6 steps, 3 px of bias (plus a quarter of the distance): src/shaders/lightingBasic.frag.glsl.
       lightingResources.uniforms.uSelfShadow = { value: new Float32Array([4, 6, 3, 0]), type: 'vec4<f32>' };
     }
+    if (this._lampMapOn) {
+      // DX-SHADOW3D (F7): the lamps' map and its layout (_ensureLampMap binds the atlas once it is made).
+      lightingResources.uniforms.uLampAtlas = { value: this._lampAtlas, type: 'vec4<f32>' };
+      lightingResources.uLampMap = this.lampMapRT ? this.lampMapRT.source : PIXI.Texture.EMPTY.source;
+    }
     const lightingSrc = lightingSource(this._engineShaders?.lightingFrag || '', {
       faces: facesOn,
       sunMap: this._sunMapOn,
       selfShadow: this._selfShadowOn,
+      lampMap: this._lampMapOn,
     }).replace(
       /MAX_LIGHTS/g,
       String(this.maxLights | 0 || 64)
@@ -3825,7 +3863,7 @@ LIGHTING SYSTEM SETUP
       if (!lightingSrc) {
         throw new Error('WeedJS: Failed to compile look shader "lighting_basic" for layer "LIGHTING" on WebGPU: lighting_basic.wgsl is missing.');
       }
-      const gpuProgram = lightingGpuProgram(GpuProgram, lightingSrc, 'lighting-basic', facesOn, this._sunMapOn);
+      const gpuProgram = lightingGpuProgram(GpuProgram, lightingSrc, 'lighting-basic', facesOn, this._sunMapOn, this._lampMapOn);
       this.lightingShader = new PIXI.Shader({ gpuProgram, resources: lightingResources });
     } else {
       if (!lightingSrc) {
@@ -5521,6 +5559,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * compiled alone the loop allocates nothing.
    */
   _packLightData(countToRender, visibleLights, coneCosSeen, coneCount, lightData, row1, row2, groundInvY, vr) {
+    // DX-SHADOW3D (F7): a lamp with a tile in the lamps' map: its first row's w carries -(tile + 1).
+    const tileOf = this._lampTileOf;
     const worldX = Transform.x;
     const worldY = Transform.y;
     const lightColor = LightEmitter.color;
@@ -5567,6 +5607,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lightData[i0 + 1] = (worldY[entityIndex] + ox * rotS[entityIndex] + oy * rotC[entityIndex]) * groundInvY;
       lightData[i0 + 2] = intensity;
       lightData[i0 + 3] = range * range;
+      if (entityIndex < tileOf.length) {
+        const tile = tileOf[entityIndex];
+        if (tile >= 0 && h > 0) lightData[i0 + 3] = -(tile + 1);
+      }
       const i1 = row1 + i0;
       lightData[i1] = (((color >> 16) & 0xff) / 255) * colorScale;
       lightData[i1 + 1] = (((color >> 8) & 0xff) / 255) * colorScale;
@@ -5628,6 +5672,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   updateLighting() {
     if (!this.lightingEnabled || !this.lightingShader) return;
+    // DX-SHADOW3D (F7): which lamps have a tile in the lamps' map this frame, before their texels are packed.
+    if (this._lampMapOn) this._readLampTiles();
 
     const uniformGroup = this.lightingShader.resources.uniforms;
 
@@ -5852,7 +5898,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _ensureKeyedCasters(sunShader) {
     // DX-SHADOW3D: the sun's map and the renders' solids read pre-render's full rows (their columns need a frame's
     // instance whole); a directional caster's sun frame rides in the keyed rows too (plan §17.2).
-    if (this._keyedCastersTried || this._sunMapOn || this._sunSolidsOn()) return;
+    if (this._keyedCastersTried || this._sunMapOn || this._lampMapOn || this._sunSolidsOn()) return;
     this._keyedCastersTried = true;
     const b = this.entitiesBatch;
     const casters = this.gpuCasterBatch;
@@ -5993,6 +6039,226 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.target = this.shadowRT;
     this._gpuPassesThisFrame++;
     return true;
+  }
+
+  /**
+   * DX-SHADOW3D (F7): this frame's lamps with a tile in the lamps' map, read before the light data is packed: pre-render's
+   * stamp lights (the GPU queue's stampLightIds, a stamp row's stampLightIdx counts them), each one's tile its index. The
+   * light pack tags their first row (_lampTileOf); the tiles' texture holds each lamp's floor point, height and reach
+   * (lampShadowMap.js writeLampTile), which the map's programs read.
+   */
+  _readLampTiles() {
+    const gpu = this._gpuQueueRead;
+    const ids = gpu && gpu.stampLightIds ? gpu.stampLightIds : null;
+    const n = ids && gpu.header ? Math.min(gpu.header[GPU_HDR_STAMP_LIGHTS] | 0, ids.length) : 0;
+    const entities = Transform.x ? Transform.x.length : 0;
+    if (this._lampTileOf.length !== entities) this._lampTileOf = new Int16Array(entities).fill(-1);
+    const of = this._lampTileOf;
+    const last = this._lampTileIds;
+    for (let i = 0; i < this._lampTileCount; i++) {
+      const id = last[i];
+      if (id < of.length) of[id] = -1;
+    }
+    const cap = Math.max(1, ids ? ids.length : 1);
+    if (this._lampTileIds.length < cap) this._lampTileIds = new Uint32Array(cap);
+    if (this._lampTileData.length < cap * 4) this._lampTileData = new Float32Array(cap * 4);
+    const data = this._lampTileData;
+    const groundInvY = this._groundInvScaleY || 1;
+    const worldX = Transform.x;
+    const worldY = Transform.y;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
+    const offsetX = LightEmitter.offsetX;
+    const offsetY = LightEmitter.offsetY;
+    for (let t = 0; t < n; t++) {
+      const id = ids[t];
+      this._lampTileIds[t] = id;
+      if (id < of.length) of[id] = t;
+      const ox = offsetX[id];
+      const oy = offsetY[id];
+      const x = worldX[id] + ox * rotC[id] - oy * rotS[id];
+      const y = (worldY[id] + ox * rotS[id] + oy * rotC[id]) * groundInvY;
+      writeLampTile(data, t, x, y, LightEmitter.elevation[id], LightEmitter.radius[id]);
+    }
+    data.fill(0, n * 4, Math.max(n, this._lampTileCount) * 4);
+    this._lampTileCount = n;
+    this._uploadLampTiles();
+  }
+
+  /** DX-SHADOW3D (F7): the tiles' texture (a texel a tile), made on first use, written each frame. */
+  _uploadLampTiles() {
+    const width = Math.max(1, this._lampTileData.length / 4);
+    if (this._lampTileSource === null || this._lampTileSource.width !== width) {
+      if (this._lampTileSource) this._lampTileSource.destroy();
+      this._lampTileSource = PIXI.TextureSource.from({
+        resource: this._lampTileData,
+        width,
+        height: 1,
+        format: 'rgba32float',
+        scaleMode: 'nearest',
+        addressMode: 'clamp-to-edge',
+        autoGenerateMipmaps: false,
+      });
+      this._lampTileSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
+      const programs = [this._lampMapMesh && this._lampMapMesh.shader, this._lampMapColumns && this._lampMapColumns.shader];
+      for (const shader of programs) if (shader) shader.resources.uLampTiles = this._lampTileSource;
+    }
+    if (this._useWebGpu) {
+      const renderer = this.pixiApp?.renderer;
+      if (renderer?.gpu?.device) writeRgba32Float(renderer, this._lampTileSource, this._lampTileData, width, 1, 'weed-lamp-tiles');
+      return;
+    }
+    this._uploadRgba32FloatGl(this._lampTileSource, this._lampTileData, width, 1);
+  }
+
+  /**
+   * DX-SHADOW3D (F7): the lamps' map, an atlas of a square tile a stamp light (lampTileLayout), bound to the light pass with
+   * its layout (uLampAtlas: tiles a row, a tile's texels, the atlas's size). Made for the most lights the queue's stamps can
+   * go to.
+   * @returns {boolean}
+   */
+  _ensureLampMap(gpu) {
+    const lights = Math.max(1, (gpu && gpu.caps && gpu.caps.maxStampLights) | 0);
+    if (this.lampMapRT !== null && this._lampMapLights === lights) return true;
+    const layout = lampTileLayout(lights, this._lampTileSize, 4096);
+    if (this.lampMapRT) this.lampMapRT.destroy(true);
+    this.lampMapRT = PIXI.RenderTexture.create({ width: layout.width, height: layout.height, scaleMode: 'nearest' });
+    this._lampMapLights = lights;
+    this._lampTilesPerRow = layout.perRow;
+    const a = this._lampAtlas;
+    a[0] = layout.perRow;
+    a[1] = layout.size;
+    a[2] = layout.width;
+    a[3] = layout.height;
+    const res = this.lightingShader?.resources;
+    if (res) res.uLampMap = this.lampMapRT.source;
+    this._lampMapClear = false;
+    return true;
+  }
+
+  /**
+   * DX-SHADOW3D (F7): a lamps' map program as a Shader's options: the cards (lampMapVertex: the casters facing their lamp)
+   * or a render's columns (lampMapColumnsVertex), GLSL on WebGL and WGSL on WebGPU.
+   * @param {boolean} columns
+   */
+  _lampMapProgram(columns) {
+    const shaders = this._engineShaders;
+    const name = columns ? 'lamp-map-columns' : 'lamp-map';
+    if (this._useWebGpu) {
+      const source = columns ? lampMapColumnsWgsl(shaders.shadowWgsl) : lampMapWgsl(shaders.shadowWgsl);
+      return { gpuProgram: sunShadowGpuProgram(GpuProgram, source, 'mainFragLamp', name, { maps: columns, lampTiles: true }) };
+    }
+    const vertex = columns ? lampMapColumnsVertex(shaders.shadowVert) : lampMapVertex(shaders.shadowVert);
+    return { glProgram: instancedSpriteGlProgram(PIXI.GlProgram, vertex, lampMapFragment(shaders.sunMapFrag), name) };
+  }
+
+  /**
+   * DX-SHADOW3D (F7): this frame's stamp rows drawn into the lamps' map: each caster's card in its lamp's tile (max
+   * blending: the highest point landing at each texel), a render's columns too. The rows are pre-render's full rows; their
+   * light's z, which the lamps' programs do not read, carries the tile + 1 (stampLightIdx).
+   * @returns {boolean} whether it drew
+   */
+  _drawLampMap(batch, gpu, stampN) {
+    const shaders = this._engineShaders;
+    if (!(this._useWebGpu ? shaders?.shadowWgsl : shaders?.shadowVert && shaders?.sunMapFrag)) return false;
+    if (!gpu.stampLightIdx || !this._ensureLampMap(gpu)) return false;
+    if (this._lampTileSource === null) this._uploadLampTiles();
+    if (this._lampMapMesh === null) {
+      const r = batch.shadowShader.resources;
+      const uniforms = {
+        uTileWorld: { value: new Float32Array(4), type: 'vec4<f32>' },
+        uSun: { value: new Float32Array(4), type: 'vec4<f32>' },
+        uLight: { value: new Float32Array(4), type: 'vec4<f32>' },
+        uCam: { value: new Float32Array(4), type: 'vec4<f32>' },
+        uPointScale: { value: 0, type: 'f32' },
+        uGroundInvScaleY: { value: 1, type: 'f32' },
+        uSunK: { value: new Float32Array(4), type: 'vec4<f32>' },
+        uSunPerp: { value: new Float32Array(4), type: 'vec4<f32>' },
+      };
+      const shader = new PIXI.Shader({
+        ...this._lampMapProgram(false),
+        resources: { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uLampTiles: this._lampTileSource, uniforms },
+      });
+      this._lampMapUniforms = shader.resources.uniforms;
+      const state = new PIXI.State();
+      state.blend = true;
+      state.blendMode = 'max';
+      state.depthTest = false;
+      state.depthMask = false;
+      state.culling = false;
+      this._lampMapMesh = new PIXI.Mesh({ geometry: batch.mesh.geometry, shader, state, label: 'lamp-map' });
+      // Max keeps the highest caster point; a mesh's blend mode holds only as a child (the sun map's host says why).
+      this._lampMapMesh.blendMode = 'max';
+      this._lampMapHost = new PIXI.Container();
+      this._lampMapHost.addChild(this._lampMapMesh);
+      this._lampMapColumns = {
+        shader: new PIXI.Shader({
+          ...this._lampMapProgram(true),
+          resources: {
+            uTexture: r.uTexture,
+            uSampler: r.uSampler,
+            uTexLut: r.uTexLut,
+            uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
+            uFoot: this._footSourceOrEmpty(),
+            uLampTiles: this._lampTileSource,
+            uniforms: this._lampMapUniforms,
+          },
+        }),
+        grid: new Buffer({ data: sunMapColumnGrid(LAMP_MAP_COLUMNS), usage: BufferUsage.VERTEX }),
+        index: Uint16Array.from({ length: LAMP_MAP_COLUMNS * LAMP_MAP_COLUMNS * 6 }, (_, i) => i),
+        state,
+        meshes: [],
+        label: 'lamp-map-columns',
+      };
+    }
+    // The stamp rows, their light's z the tile + 1.
+    const n = stampN | 0;
+    const cap = batch.capacity | 0;
+    const keep = n > cap ? cap : n;
+    const len = keep * GPU_CASTER_FLOATS;
+    if (keep <= 0 || len > batch.data.length) return false;
+    batch.copyIn(batch.data, gpu.stamp, len);
+    const tiles = gpu.stampLightIdx;
+    const data = batch.data;
+    for (let i = 0, at = GPU_CASTER_LIGHT_FLOAT + 2; i < keep; i++, at += GPU_CASTER_FLOATS) data[at] = tiles[i] + 1;
+    if (!batch.commitInstances(keep)) return false;
+    const mesh = this._lampMapMesh;
+    mesh.geometry = batch.mesh.geometry;
+    const u = this._lampMapUniforms.uniforms;
+    u.uTileWorld[0] = this._lampTilesPerRow;
+    u.uTileWorld[1] = this._lampTileSize;
+    u.uSunK[3] = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
+    u.uGroundInvScaleY = this._groundInvScaleY || 1;
+    this._lampMapUniforms.update();
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.container = this._lampMapHost;
+    rtOpts.target = this.lampMapRT;
+    rtOpts.clear = true;
+    rtOpts.clearColor = this._clearTransparent;
+    this._submitRender(rtOpts);
+    this._gpuPassesThisFrame++;
+    if (this.atlasMapsSource !== null) {
+      rtOpts.container = this._sunMapColumnsMesh(batch.mesh.geometry, this._lampMapColumns).host;
+      rtOpts.clear = false;
+      this._submitRender(rtOpts);
+      this._gpuPassesThisFrame++;
+    }
+    rtOpts.target = this.shadowRT;
+    this._lampMapClear = false;
+    return true;
+  }
+
+  /** DX-SHADOW3D (F7): a frame with no stamp rows clears the lamps' map (once). */
+  _clearLampMapIfEmpty() {
+    if (!this.lampMapRT || this._lampMapClear === true) return;
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.container = this._rtEmptyContainer;
+    rtOpts.target = this.lampMapRT;
+    rtOpts.clear = true;
+    rtOpts.clearColor = this._clearTransparent;
+    this._submitRender(rtOpts);
+    rtOpts.target = this.shadowRT;
+    this._lampMapClear = true;
   }
 
   /**
@@ -6218,7 +6484,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
 
-    if (stampN > 0 && !this._castedShadowsSunOnly) {
+    this._lampMapDrew = false;
+    if (stampN > 0 && !this._castedShadowsSunOnly && this._lampMapOn && !keyedRows) {
+      // DX-SHADOW3D (F7): each lamp's casters into its tile of the lamps' map; the light pass takes each lamp out alone.
+      this._lampMapDrew = this._drawLampMap(batch, gpu, stampN);
+    } else if (stampN > 0 && !this._castedShadowsSunOnly) {
       u.uLight[0] = 0;
       u.uLight[1] = 0;
       u.uLight[2] = 0;
@@ -6231,6 +6501,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
       }
     }
+
+    if (this._lampMapOn && !this._lampMapDrew) this._clearLampMapIfEmpty();
 
     if (!this._gpuSunDrew) {
       rtOpts.container = this._rtEmptyContainer;
@@ -8333,6 +8605,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
       // DX-SELFSHADOW: faces and sprites with maps shade themselves from the sun (screen-space steps over the face map).
       if (lightingConfig.selfShadow === true) this._selfShadowOn = true;
+      // DX-SHADOW3D (F7): the lamps' shadows from a map a lamp, each lamp's own light alone (WebGL and WebGPU).
+      if (lightingConfig.lampShadows === 'map') {
+        if (lightingConfig.raycasted) {
+          console.warn(`WeedJS: lighting.lampShadows 'map' does not work with raycasted lighting: the lamps' shadows are the fans`);
+        } else {
+          this._lampMapOn = true;
+          this._lampTileSize = Math.max(32, Math.min(1024, (lightingConfig.lampShadowTile | 0) || 256));
+        }
+      }
       // DX-MAPS: a sprite with height and normal maps is lit as the surface they say, through the faces' pass.
       if (this.atlasMapsSource !== null && !this._faces.enabled) {
         if (lightingConfig.raycasted) {

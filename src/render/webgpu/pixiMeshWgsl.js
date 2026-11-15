@@ -36,7 +36,7 @@ function meshUniformGroups(vf) {
  * The light pass (lightingBasic.wgsl). `faces`: the face map at binding 4 (DX-FACES, DX-MAPS); `sunMap`: the sun's shadow
  * map at binding 5 (DX-SHADOW3D), both read with textureLoad.
  */
-export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunMap = false) {
+export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunMap = false, lampMap = false) {
   const vf = gpuStageVF();
   const f = gpuStageF();
   return GpuProgram.from({
@@ -53,6 +53,8 @@ export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunM
         uShadowSampler: 3,
         ...(faces ? { uFaceMap: 4 } : {}),
         ...(sunMap ? { uSunMap: 5 } : {}),
+        // DX-SHADOW3D (F7): the lamps' shadow map.
+        ...(lampMap ? { uLampMap: 6 } : {}),
       },
     },
     gpuLayout: [
@@ -71,6 +73,9 @@ export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunM
           : []),
         ...(sunMap
           ? [{ binding: 5, visibility: f, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
+          : []),
+        ...(lampMap
+          ? [{ binding: 6, visibility: f, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
           : []),
       ],
     ],
