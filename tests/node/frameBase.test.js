@@ -9,6 +9,7 @@ import {
   lutBaseFloats,
   measureLowestContact,
   measureStandingBase,
+  sheetCastsSolid,
 } from '../../src/render/frameBase.js';
 import { buildTextureLut, packTextureLutRgba, TEX_LUT_FLOATS } from '../../src/render/instancedSpriteBatch.js';
 
@@ -84,4 +85,20 @@ test('the base rides in the texture table\'s last two floats', () => {
   assert.deepEqual(Array.from(lut.subarray(22, 24)), [0, 0], 'no base: zeros');
   const rgba = packTextureLutRgba(lut, 2);
   assert.deepEqual(Array.from(rgba.subarray(10, 12)), [33, 8], 'the third texel\'s zw');
+});
+
+test('a sheet casts its solid when a frame of it stands on a contact (a render with height maps)', () => {
+  const json = {
+    animations: { barn_stand_0: ['barn/0'], barn_stand_1: ['barn/1'], walker_walk_up: ['walker/0'] },
+    frames: { 'barn/0': { base: { contact: 41 } }, 'barn/1': { base: { contact: 40 } }, 'walker/0': { base: { cx: 8, rx: 5, ry: 3 } } },
+  };
+  const barn = { animations: { stand_0: { prefixedName: 'barn_stand_0' }, stand_1: { prefixedName: 'barn_stand_1' } } };
+  const walker = { animations: { walk_up: { prefixedName: 'walker_walk_up' } } };
+  assert.equal(sheetCastsSolid(json, barn), true);
+  assert.equal(sheetCastsSolid(json, walker), false);
+  // A contact at row 0 is one; a sheet the atlas does not know, or no atlas, is not.
+  json.frames['walker/0'].base = { contact: 0 };
+  assert.equal(sheetCastsSolid(json, walker), true);
+  assert.equal(sheetCastsSolid(json, { animations: { x: { prefixedName: 'missing' } } }), false);
+  assert.equal(sheetCastsSolid(null, barn), false);
 });

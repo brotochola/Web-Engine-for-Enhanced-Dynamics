@@ -153,3 +153,23 @@ export function lutBaseFloats(base, out, at) {
   }
 }
 
+
+/**
+ * Whether a sheet of the big atlas casts its solid: a frame of it stands on a contact (a render with height maps, its
+ * base measured by _paintMapsPage). Such a sheet's shadow is built from the frame the camera sees (the columns), so it
+ * keeps that frame in the sun rows instead of the one the sun sees.
+ * @param {{ animations?: object, frames?: object } | null | undefined} json the big atlas's
+ * @param {{ animations?: Record<string, { prefixedName?: string }> } | null | undefined} proxy the sheet's proxy entry
+ * @returns {boolean}
+ */
+export function sheetCastsSolid(json, proxy) {
+  const anims = json?.animations;
+  const frames = json?.frames;
+  if (!anims || !frames || !proxy?.animations) return false;
+  for (const a of Object.values(proxy.animations)) {
+    const list = anims[a?.prefixedName];
+    const first = list && list[0];
+    if (first !== undefined && frames[first]?.base?.contact >= 0) return true;
+  }
+  return false;
+}

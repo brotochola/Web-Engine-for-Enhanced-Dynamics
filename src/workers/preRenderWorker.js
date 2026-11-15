@@ -189,6 +189,8 @@ function sunFrameTables(byId) {
             anim: Uint8Array.from(src.anim),
             flip: Uint8Array.from(src.flip),
             groups: src.groups.length,
+            // A render with height maps casts its solid from the frame the camera sees (frameBase.js sheetCastsSolid).
+            solid: src.solid === true,
         };
         any = true;
     }
@@ -3623,7 +3625,7 @@ class PreRenderWorker extends AbstractWorker {
             if (!DirectionalSprite.active[e] || DirectionalSprite.mode[e] !== 1) continue;
             const sheet = SpriteRenderer.spritesheetId[e];
             const t = tables[sheet];
-            if (t === undefined) continue;
+            if (t === undefined || t.solid) continue;
             // The direction the sun sees. A uniform table: the one the logic worker drew (its margin kept), turned by the
             // sun's angle in whole steps, worked out once a sheet while the sun stays (Predator: 38 000 casters a frame).
             const cur = DirectionalSprite.directionIndex[e];
@@ -3689,7 +3691,7 @@ class PreRenderWorker extends AbstractWorker {
             if (!DirectionalSprite.active[e] || DirectionalSprite.mode[e] !== 1) continue;
             const sheet = SpriteRenderer.spritesheetId[e];
             const t = tables[sheet];
-            if (t === undefined) continue;
+            if (t === undefined || t.solid) continue;
             // The direction the sun sees. A uniform table: the one the logic worker drew (its margin kept), turned by the
             // sun's angle in whole steps, worked out once a sheet while the sun stays (Predator: 38 000 casters a frame).
             const cur = DirectionalSprite.directionIndex[e];

@@ -42,6 +42,7 @@ import { CollisionListener } from '../components/collisionListener.js';
 import { JointBreakListener } from '../components/jointBreakListener.js';
 import { Grab } from '../components/grab.js';
 import { SpriteSheetRegistry, addBigAtlasChunks } from './spriteSheetRegistry.js';
+import { sheetCastsSolid } from '../render/frameBase.js';
 import { AdobeAnimRegistry } from './adobeAnimRegistry.js';
 import { AdobeAnimCompiler } from '../util/adobeAnimCompiler.js';
 import {
@@ -1607,6 +1608,9 @@ class Scene {
       const problems = [];
       const table = buildDirectionTable(sheetName, spec, names, problems);
       for (const text of problems) warnOnce(`${sheetName}:${text}`, 'DX-DIRSPRITE', text);
+      // DX-SHADOW3D: a render with height maps stands on a contact (frameBase.js) and casts its solid, which is built
+      // from the frame the camera sees: pre-render leaves such a sheet's frame alone in the sun rows.
+      if (table && sheetCastsSolid(json, proxyData)) table.solid = true;
       proxySheets[sheetName] = table ? { ...proxyData, directions: table } : proxyData;
     }
 
