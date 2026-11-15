@@ -14,8 +14,8 @@
  *   headlights are not shaded by the car's volume.
  */
 
-import { MAP_TEXEL_WGSL, SUN_MAP_ZMAX, SUN_TEXEL_WGSL } from './sunShadowMap.js';
-import { LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX } from './lampShadowMap.js';
+import { MAP_TEXEL_WGSL, SUN_MAP_ZMAX } from './sunShadowMap.js';
+import { LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX, lampClipZGlsl, lampClipZWgsl } from './lampShadowMap.js';
 import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
 
 /** The source with `add` after its one `find`, or a clear error. */
@@ -30,12 +30,12 @@ function after(source, find, add, what) {
 const MIN_W = (1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
 
 const SUN_FRAGMENT_WGSL = `
-${SUN_TEXEL_WGSL}
+${MAP_TEXEL_WGSL}
 // DX-SHADOW3D (F6): a volume's height where its sun ray lands, the highest kept by its depth (which its vertices write)
 // with the volume's entity (sunShadowMap.js VOLUME_MAP_FRAGMENT).
 @fragment
 fn mainFragMap(in: VertexOut) -> @location(0) vec4<f32> {
-  return weedSunTexel(in.vSunZ, in.vSunId, 1.0);
+  return weedMapTexel(in.vSunZ, in.vSunId, 1.0);
 }
 `;
 
@@ -92,7 +92,7 @@ ${VOLUME_ID_GLSL}
   int lampPerRow = max(int(uLampVolume.y + 0.5), 1);
   vec2 lampPx = (vec2(float(lampTile % lampPerRow), float(lampTile / lampPerRow)) + lampUv) * uLampVolume.z;
   vec3 lampClip = mvp * vec3(lampPx, 1.0);
-  gl_Position = vec4(lampClip.xy * lampW, 0.0, lampW);
+  gl_Position = vec4(lampClip.xy * lampW, ${lampClipZGlsl('lampW')}, lampW);
   vTileUvW = vec3(lampUv * lampW, lampW);
   vSunZ = lampZ;`;
 
@@ -116,8 +116,8 @@ export function volumeLampVertex(source) {
 }
 
 /**
- * The volumes' fragment in the lamps' map (WebGL): the height, the volume's entity and the depth that keeps the highest,
- * cut to the draw's tile.
+ * The volumes' fragment in the lamps' map (WebGL): the height and the volume's entity, cut to the draw's tile; the depth
+ * that keeps the highest comes from the vertex (lampClipZGlsl).
  */
 export const VOLUME_LAMP_FRAGMENT = `#version 300 es
 precision highp float;
@@ -131,7 +131,6 @@ void main() {
   float h = clamp(vSunZ / ${LAMP_MAP_ZMAX}.0, 0.0, 1.0);
   int id = int(vSunId + 0.5);
   finalColor = vec4(h, 1.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
-  gl_FragDepth = 1.0 - h;
 }
 `;
 
@@ -158,17 +157,17 @@ ${VOLUME_ID_WGSL}  out.vTileUvW = vec3<f32>(-1.0, -1.0, 1.0);
   let lampPerRow = max(i32(sunShadow.uLampVolume.y + 0.5), 1);
   let lampPx = (vec2<f32>(f32(lampTile % lampPerRow), f32(lampTile / lampPerRow)) + lampUv) * sunShadow.uLampVolume.z;
   let lampClip = mvp * vec3<f32>(lampPx, 1.0);
-  out.position = vec4<f32>(lampClip.xy * lampW, 0.0, lampW);
+  out.position = vec4<f32>(lampClip.xy * lampW, ${lampClipZWgsl('lampW')}, lampW);
   out.vTileUvW = vec3<f32>(lampUv * lampW, lampW);
   out.vSunZ = lampZ;
 `;
 
 const LAMP_FRAGMENT_WGSL = `
 ${MAP_TEXEL_WGSL}
-// DX-SHADOW3D (F7): a volume's height where its lamp's ray lands, in that lamp's tile, the highest kept by its depth with
-// the volume's entity.
+// DX-SHADOW3D (F7): a volume's height where its lamp's ray lands, in that lamp's tile, the highest kept by its depth
+// (which its vertices write: lampClipZWgsl) with the volume's entity.
 @fragment
-fn mainFragLamp(in: VertexOut) -> WeedMapOut {
+fn mainFragLamp(in: VertexOut) -> @location(0) vec4<f32> {
   let tuv = in.vTileUvW.xy / in.vTileUvW.z;
   if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) { discard; }
   return weedMapTexel(in.vSunZ, in.vSunId, 1.0);

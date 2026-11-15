@@ -19,6 +19,26 @@ export const LAMP_MAP_ZMAX = 512;
 export const LAMP_MAP_MAX_STRETCH = 8;
 
 /**
+ * E-374: the clip z that keeps a tile's highest caster point by the depth test, for a vertex drawn with w (a point at
+ * height z under a lamp at height E: w = (E - z) / E, at least 1 / LAMP_MAP_MAX_STRETCH). The rasterizer interpolates
+ * 1 / w exactly across a card, so a depth affine in 1 / w is each fragment's own, (S - 1 / w) / (S - 1): 1 on the floor, 0
+ * at the stretch cap, falling as the height rises (the points past the cap tie, where the map is no projection). The
+ * fragments then write no depth, which would turn the early depth test off for the whole pass. NDC z is 2 depth - 1 on
+ * WebGL and the depth on WebGPU; clip z is that times w.
+ * @param {string} w the vertex's w (a GLSL or WGSL expression)
+ */
+export function lampClipZGlsl(w) {
+  const s = LAMP_MAP_MAX_STRETCH;
+  return `(${(s + 1).toFixed(1)} * ${w} - 2.0) / ${(s - 1).toFixed(1)}`;
+}
+
+/** lampClipZGlsl's WGSL form (WebGPU's NDC z runs 0..1). */
+export function lampClipZWgsl(w) {
+  const s = LAMP_MAP_MAX_STRETCH;
+  return `(${s.toFixed(1)} * ${w} - 1.0) / ${(s - 1).toFixed(1)}`;
+}
+
+/**
  * Where a point lands on the floor along a lamp's ray, in the floor's space (x, y on the floor, z up).
  * @param {number} x
  * @param {number} y
@@ -121,7 +141,7 @@ const LAMP_OUT_GLSL = `  vec2 tuv = (land - lamp.xy) / (2.0 * lamp.w) + 0.5;
   vec2 px = (vec2(float(tile % perRow), float(tile / perRow)) + tuv) * uTileWorld.y;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   vec3 clip = mvp * vec3(px, 1.0);
-  gl_Position = vec4(clip.xy * w, 0.0, w);
+  gl_Position = vec4(clip.xy * w, ${lampClipZGlsl('w')}, w);
   if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   vTileUvW = vec3(tuv * w, w);
   vColor = vec4(1.0, castOpacity, 1.0, 1.0);
@@ -256,18 +276,16 @@ export function lampMapFragment(sunMapFrag) {
     .replace(
       main,
       `${main}  vec2 tuv = vTileUvW.xy / vTileUvW.z;\n  if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) discard;\n`,
-    )
-    // The depth that keeps the highest (the sun's map takes it from its vertices).
-    .replace(/\n}\s*$/, '\n  gl_FragDepth = 1.0 - h;\n}\n');
+    );
 }
 
 const LAMP_FRAGMENT_WGSL = `
 ${CASTER_ID_WGSL}
 ${MAP_TEXEL_WGSL}
 // DX-SHADOW3D (F7): a caster point's height where its lamp's ray lands, in that lamp's tile, the highest kept by its depth
-// with its caster's id (sunShadowMap.frag.glsl).
+// (which its vertices write: lampClipZWgsl) with its caster's id (sunShadowMap.frag.glsl).
 @fragment
-fn mainFragLamp(in: VertexOut) -> WeedMapOut {
+fn mainFragLamp(in: VertexOut) -> @location(0) vec4<f32> {
   let tuv = in.vTileUvW.xy / in.vTileUvW.z;
   if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) { discard; }
   let t = textureSampleLevel(uTexture, uSampler, mix(in.vAtlasUV.xy, in.vAtlasUV.zw, in.vLocal), 0.0);
@@ -292,7 +310,7 @@ const LAMP_OUT_WGSL = `  let tuv = (land - lamp.xy) / (2.0 * lamp.w) + 0.5;
   let px = (vec2<f32>(f32(tile % perRow), f32(tile / perRow)) + tuv) * uniforms.uTileWorld.y;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(px, 1.0);
-  out.position = vec4<f32>(clip.xy * w, 0.0, w);
+  out.position = vec4<f32>(clip.xy * w, ${lampClipZWgsl('w')}, w);
   if (abs(aInstRotCS.x) > 2.0) {
     out.position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   }

@@ -269,30 +269,12 @@ function wgslMarks(source, marks, what) {
 }
 
 /**
- * DX-SHADOW3D: a shadow map's texel and its depth (sunShadowMap.frag.glsl): the height (R), the caster's opacity (G: how
- * much light it takes out, DX-CASTER), its G-buffer id (B·256 + A) and 1 - height as the depth, so a depth test keeps the
- * highest caster with its opacity and id.
+ * DX-SHADOW3D: a shadow map's texel (sunShadowMap.frag.glsl): the height (R), the caster's opacity (G: how much light it
+ * takes out, DX-CASTER) and its G-buffer id (B·256 + A). A depth test keeps the highest caster with its opacity and id;
+ * the depth comes from the vertices (E-374: a fragment that writes its depth turns the early depth test off for the whole
+ * pass): 1 - height / ZMAX on the sun's map, lampClipZ's on a lamp's.
  */
-export const MAP_TEXEL_WGSL = `struct WeedMapOut {
-  @location(0) color: vec4<f32>,
-  @builtin(frag_depth) depth: f32,
-}
-
-fn weedMapTexel(z: f32, idf: f32, opacity: f32) -> WeedMapOut {
-  let h = clamp(z / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);
-  let id = u32(idf + 0.5);
-  var o: WeedMapOut;
-  o.color = vec4<f32>(h, clamp(opacity, 0.0, 1.0), f32(id >> 8u) / 255.0, f32(id & 255u) / 255.0);
-  o.depth = 1.0 - h;
-  return o;
-}
-`;
-
-/**
- * The sun's map's texel (WGSL): MAP_TEXEL_WGSL's colour alone, the depth coming from the vertices (E-374: a fragment
- * that writes its depth turns the early depth test off for the whole pass).
- */
-export const SUN_TEXEL_WGSL = `fn weedSunTexel(z: f32, idf: f32, opacity: f32) -> vec4<f32> {
+export const MAP_TEXEL_WGSL = `fn weedMapTexel(z: f32, idf: f32, opacity: f32) -> vec4<f32> {
   let h = clamp(z / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);
   let id = u32(idf + 0.5);
   return vec4<f32>(h, clamp(opacity, 0.0, 1.0), f32(id >> 8u) / 255.0, f32(id & 255u) / 255.0);
@@ -302,14 +284,14 @@ export const SUN_TEXEL_WGSL = `fn weedSunTexel(z: f32, idf: f32, opacity: f32) -
 /** The map's fragment (sunShadowMap.frag.glsl's WGSL): the caster point's height where its ray lands, and its id. */
 const MAP_FRAGMENT_WGSL = `
 ${CASTER_ID_WGSL}
-${SUN_TEXEL_WGSL}
+${MAP_TEXEL_WGSL}
 // DX-SHADOW3D: a caster point's height where its sun ray lands, the highest kept by its depth (sunShadowMap.frag.glsl),
 // which its vertices write.
 @fragment
 fn mainFragMap(in: VertexOut) -> @location(0) vec4<f32> {
   let t = textureSampleLevel(uTexture, uSampler, mix(in.vAtlasUV.xy, in.vAtlasUV.zw, in.vLocal), 0.0);
   if (t.a < 0.5) { discard; }
-  return weedSunTexel(in.vSunZ, in.vSunId, in.vColor.g);
+  return weedMapTexel(in.vSunZ, in.vSunId, in.vColor.g);
 }
 `;
 
