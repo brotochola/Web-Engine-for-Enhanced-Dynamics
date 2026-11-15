@@ -178,7 +178,10 @@ export class LightBenchScene extends Scene {
       enabled: true,
       baseAmbient: 0.12,
       maxLights: 16,
-      resolution: 0.5,
+      // The light pass, the shadows' layer and the sun's map at the canvas's own size: sharp shadow edges (the owner's
+      // ask; their cost is measured later).
+      resolution: 1,
+      shadowResolution: 1,
       shadowsEnabled: true,
       sunShadows: SUN_MAP ? 'map' : 'sprite',
       footprintSolids: SWEEP,
