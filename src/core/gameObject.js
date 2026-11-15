@@ -3363,8 +3363,6 @@ export class GameObject {
       if (has.Collider) Collider.active[i] = 0;
       if (has.MeshRenderer) MeshRenderer.active[i] = 0;
       if (has.SpriteRenderer) SpriteRenderer.active[i] = 0;
-      // A tween onSpawned started stays live: it stops painting, as it did when the tick read active (E-275).
-      if (has.MeshRenderer || has.SpriteRenderer) Tween.paintTargetChanged(i);
       GameObject.writeForceProcessOnLogicWorker(i, EntityClass.entityType, FORCE_PROCESS_ON_LOGIC_WORKER_NONE);
       if (EntityClass.freeList && EntityClass.freeListTop) {
         pushEntity(EntityClass.freeListTop, EntityClass.freeList, i, EntityClass.startIndex);
@@ -3381,8 +3379,6 @@ export class GameObject {
     if (hasBody) advanceBodyGeneration(i);
     Transform.active[i] = 1;
     if (has.MeshRenderer) MeshRenderer.active[i] = 1;
-    // A paint tween keeps its target (E-275): one onSpawned started on a mesh saw it off.
-    if (has.MeshRenderer || has.SpriteRenderer) Tween.paintTargetChanged(i);
     if (hasBody) markBodyDirty(i, BODY_DIRTY.LIFECYCLE, true);
     // E-127: pre-render bins the static scenery again, now that this one is active where onSpawned put it.
     if (EntityClass.isStatic === true) {

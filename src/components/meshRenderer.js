@@ -9,7 +9,6 @@ import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { SPRITE_TILE_MODE } from '../util/configDefaults.js';
 import { triangulateSimplePolygon } from '../render/meshTriangulate.js';
 import { packTileOffset01, unpackTileOffset01 } from './spriteRenderer.js';
-import { paintTargetChanged } from '../core/paintTargetHook.js';
 
 /** Stored in textureId: no atlas sample, solid tint. Anim 0 is a valid texture. */
 export const MESH_NO_TEXTURE = 0xffff;
@@ -160,17 +159,6 @@ export class MeshRenderer extends Component {
     super.clearArrays();
     this.paintEpoch = null;
     this.outsetEpoch = null;
-  }
-
-  /** 1 = the entity draws its mesh. A change sends the entity's paint tweens to their new target (E-275). */
-  get active() {
-    return MeshRenderer.active[this.index];
-  }
-  set active(value) {
-    const arr = MeshRenderer.active;
-    const prev = arr[this.index];
-    arr[this.index] = value;
-    if (arr[this.index] !== prev) paintTargetChanged(this.index);
   }
 
   get tint() {

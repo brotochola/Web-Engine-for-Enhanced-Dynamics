@@ -5,7 +5,6 @@ import { Component } from '../core/component.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { SPRITE_TILE_MODE } from '../util/configDefaults.js';
 import { staticSceneryChangedAt } from '../core/staticScenery.js';
-import { paintTargetChanged } from '../core/paintTargetHook.js';
 
 /** GLSL-style fract (works for negatives). */
 export function fract01(x) {
@@ -96,17 +95,6 @@ export class SpriteRenderer extends Component {
     // (what the renderers read); this remembers it so setScale keeps it.
     flip: Uint8Array,
   };
-
-  /** 1 = the entity has a sprite. A change sends the entity's paint tweens to their new target (E-275). */
-  get active() {
-    return SpriteRenderer.active[this.index];
-  }
-  set active(value) {
-    const arr = SpriteRenderer.active;
-    const prev = arr[this.index];
-    arr[this.index] = value;
-    if (arr[this.index] !== prev) paintTargetChanged(this.index);
-  }
 
   /**
    * Get the original (unscaled) width of the current sprite/animation frame
