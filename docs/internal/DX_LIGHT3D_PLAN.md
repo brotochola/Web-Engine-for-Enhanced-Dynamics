@@ -1326,3 +1326,30 @@ igual que un A/A. El banco a las 16 y 22 h en los dos backends: mismos números 
 
 **Rendimiento ya medido:** E-364 (la dirección de un tipo escalonado se resuelve en sus cuadros de tick): lógica −32,4 % en
 `directionalSpriteStressScene` (R-1119). Anotadas para medir: E-363, E-365 a E-370 (§E del EXECUTION_PLAN).
+
+### 17.6 La fase de pruebas y medición (2026-11-15, mediodía)
+
+**El microbench de GPU medía mal en WebGL (N-193):** `gl.finish()` de Chrome es un flush; un pase medido después de otro
+salía con el tiempo del primero. Ahora espera con una lectura de un píxel (26e860e0). E-366 y E-367 eran eso (rechazadas).
+
+**Lo que se ganó, en el bench de GPU (GTX 1650) y en su escena:**
+
+| Cambio | Pase (WebGL / WebGPU) | Escena |
+| --- | --- | --- |
+| E-365: GLSL ES 3.0 (ANGLE aplanaba los cortes) y la autosombra de un farol solo dentro de su radio | selfShadow 3,33 → 1,61 / 3,54 → 1,60 ms | selfShadowStressScene 32 faroles 41,8 → 60 fps |
+| E-374: la profundidad de los mapas sale del vértice (el fragmento la escribía y apagaba el early-Z) | sunMap 1,04 → 0,67 / 1,03 → 0,53; columnas 1,85 → 0,71 / 1,77 → 0,53 ms | sin cambio visible a 60 fps |
+| E-375: la columna de un caster se corta donde su rayo sale del tile del farol | lampMap 4,11 → 1,45 / 4,17 → 1,40 ms | a 60 fps las dos (pre-render manda) |
+| E-376: la grilla de columnas indexada (4 vértices por celda, no 6) | columnas −12 a −19 % | sunShadowMapStressScene 15 000 columnas 17,2 → 23,8 fps |
+| E-377: `lighting.gbuffer: 'mrt'` por defecto (un pase con dos destinos) | 0,80 → 0,51 / 0,75 → 0,52 ms a resolución 0,5 | misma imagen, 3 → 2 pases |
+
+**Bugs:** N-180 (los setters del sol no movían las sombras; dd640931), N-186 (los contadores de zIndex y brillo tras
+restaurar una partida; 88bb89e9), N-192 en parte (el piso tomaba el sesgo de los mapas: toda sombra quedaba 4 |k| px
+despegada de su base; c8963250, contornos 2,6–3,5 → 1,4–1,6 px). N-187 corregido: con conteos distintos las palabras del
+G-buffer van en cero (con animaciones de Adobe, siempre).
+
+**Sin regresiones contra main** en las 16 filas del catálogo que no usan lo nuevo (R-1132): las dos señales (spotLights,
+spawnStorm) eran deriva y no aparecieron en pares ABAB.
+
+**Queda abierto:** E-373 (light3d 11 % más caro en WebGL que en WebGPU), E-378 (la profundidad por pixel +30 % / +90 % en el
+pase de color), E-371 / E-372 (el milisegundo de los cuadros de sombra direccionales en el pre-render de Predator), N-185,
+N-187 (Adobe), N-188, N-189 y el resto de N-192 (un 1,5 px uniforme, las columnas del cajón, la escalera del tope).
