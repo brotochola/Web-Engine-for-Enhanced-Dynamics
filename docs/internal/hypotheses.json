@@ -15409,12 +15409,12 @@
     {
       "id": "E-364",
       "title": "DirectionalSprite resolves every directional entity every frame, also those whose type ticks every N frames (Predator: civilians 4, soldiers 6; ~0.67 ms per logic worker a frame)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-15 on dx/light3d",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "result": "",
+      "result": "logic 7.019 -> 4.745 ms (-32.4 %, 2/2, early stop) in directionalSpriteStressScene n=120000 tickInterval=4; pre-render +0.2 %; Predator gated with the batch",
       "next": "Resolve a staggered type's entities on their tick frames only; directionalSpriteStressScene with a tickInterval knob, then Predator crowd 2.5 against main.",
       "refs": [
         "EXECUTION_PLAN.md#E-364"
@@ -15423,7 +15423,9 @@
         "resolve on tick frames",
         "DirectionalSprite staggered resolve"
       ],
-      "records": []
+      "records": [
+        "R-1119"
+      ]
     },
     {
       "id": "E-365",
@@ -26112,6 +26114,19 @@
         "918da75b",
         "600a434a",
         "f764d0ac"
+      ]
+    },
+    {
+      "id": "R-1119",
+      "date": "2026-11-15",
+      "time": "05:26",
+      "timeFrom": "recorded",
+      "title": "E-364 kept: a staggered type resolves its directions on its tick frames; directionalSpriteStressScene (n 120 000, tickInterval 4) logic -32.4 %",
+      "verdict": "kept",
+      "text": "**Kept (product): logic 7.019 -> 4.745 ms (-32.4 %, 2/2 pairs, early stop), pre-render +0.2 %, presented 60 -> 60.**\n2026-11-15, 05:23:24 to 05:26:37 (the result files), runPredatorAbab on directionalSpriteStressScene (owner logic),\n`--query \"n=120000&tickInterval=4\" --vs 8738e59c --hyp-rev eac75740 --pairs 4 --early --pool`, headed, on AC power.\nA = the branch with E-363 and the scene's new knob (8738e59c), B = the same plus E-364 (eac75740).\n\n| worker | A | B | |\n| --- | --- | --- | --- |\n| logic | 7.019 ms | 4.745 | -32.4 %, 0/2 worse, cv 2/1 % |\n| pre-render | 6.147 | 6.156 | +0.2 % |\n| renderer | 1.588 | 1.559 | under the floor |\n| presented | 60.0 fps | 60.0 | |\n\nLoad keys equal (VISIBLE_ENTITIES 120 000, ENTITIES_PROCESSED 30 000). The scene's wanderers tick every 4 frames\n(`?tickInterval=`, 8738e59c): before, every one of the 120 000 resolved its direction every frame; now a quarter, the\nones their bucket ticked. No A/A of this scene this session: the effect is ten times the 3 % bar in both pairs.\nPredator (civilians every 4 frames, soldiers every 6) is gated with the batch.",
+      "commits": [
+        "eac75740",
+        "8738e59c"
       ]
     }
   ],

@@ -4899,6 +4899,9 @@ direction only when a person shot.
 buckets `_tickIntervalBucket` walks that frame), after the ticks as now; the setters still resolve at once. Expected:
 about -0.5 ms per logic worker in Predator crowd 2.5. Owner: logic. Measure: `directionalSpriteStressScene` with a
 tickInterval knob, then Predator crowd 2.5 against main.
+**Kept 2026-11-15 (R-1119, eac75740):** directionalSpriteStressScene n=120000 tickInterval=4 (the knob, 8738e59c), owner
+logic, 2 pairs with an early stop: logic 7.019 -> 4.745 ms (-32.4 %, 2/2), pre-render +0.2 %, presented 60. Predator is
+gated with the batch.
 ### E-363 DirectionalSprite's setters resolve even when the value does not change
 
 **Premise (2026-11-15, CPU profile of Predator crowd 2.5 on dx/light3d):** `DirectionalSprite.resolve` is 790 ms of
