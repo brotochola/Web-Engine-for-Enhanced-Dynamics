@@ -62,7 +62,7 @@ export class DirectionalSpriteStressScene extends Scene {
         y: WORLD.h * rng(),
         heading: rng() * Math.PI * 2,
         turn: (rng() * 2 - 1) * TURN,
-        speed: 0.5 + rng(),
+        pace: 0.5 + rng(),
         margin: MARGIN,
       });
     }

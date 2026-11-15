@@ -41,7 +41,7 @@ function wander(i, vx, vy) {
 export class HandWanderer extends GameObject {
   static components = [SpriteRenderer, WanderState];
 
-  onSpawned({ x = 0, y = 0, heading = 0, turn = 0.01, speed = 1 } = {}) {
+  onSpawned({ x = 0, y = 0, heading = 0, turn = 0.01, pace = 1 } = {}) {
     this.setSpritesheet('civil1');
     this.setScale(0.5);
     this.x = x;
@@ -49,7 +49,7 @@ export class HandWanderer extends GameObject {
     const s = this.wanderState;
     s.heading = heading;
     s.turn = turn;
-    s.speed = speed;
+    s.speed = pace;
     s.lastDir = 255;
     this.setAnimation('walk_down');
   }
@@ -73,7 +73,7 @@ export class HandWanderer extends GameObject {
 export class DirectionalWanderer extends GameObject {
   static components = [DirectionalSprite, WanderState];
 
-  onSpawned({ x = 0, y = 0, heading = 0, turn = 0.01, speed = 1, margin = -1 } = {}) {
+  onSpawned({ x = 0, y = 0, heading = 0, turn = 0.01, pace = 1, margin = -1 } = {}) {
     this.setSpritesheet('civil1');
     this.setScale(0.5);
     this.x = x;
@@ -81,7 +81,7 @@ export class DirectionalWanderer extends GameObject {
     const s = this.wanderState;
     s.heading = heading;
     s.turn = turn;
-    s.speed = speed;
+    s.speed = pace;
     this.directionalSprite.facingFrom = 'velocity';
     if (margin >= 0) this.directionalSprite.turnMargin = margin;
     this.setAnimation('walk');
