@@ -197,3 +197,15 @@ test('the light pass reads a FLAT pixel and the k bit in both languages, and mas
     assert.match(on, /lampFlat/, `${name}: the lamps lit as drawn`);
   }
 });
+
+test('the G-buffer in one pass (MRT) writes the face texel at location 0 and the ids texel at 1, in both languages', async () => {
+  const { faceGbufFragment } = await import('../../src/render/faceMap.js');
+  const frag = faceGbufFragment(shader('faceMap.frag.glsl'));
+  assert.match(frag, /layout\(location = 0\) out vec4 finalColor;/);
+  assert.match(frag, /layout\(location = 1\) out vec4 finalIds;/);
+  assert.match(frag, /finalIds = idsTexel\(vGbuf, vRender > 0\.5\);/);
+  assert.doesNotMatch(frag, /#if/);
+  const wgsl = faceMapWgsl(shader('instancedSprite.wgsl'), { gbuf: true });
+  assert.match(wgsl, /fn mainFragGbuf\(in: VertexOut\) -> WeedGbufOut/);
+  assert.match(wgsl, /@location\(1\) ids: vec4<f32>,/);
+});

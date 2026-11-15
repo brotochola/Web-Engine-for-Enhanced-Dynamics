@@ -88,7 +88,7 @@ test('the G-buffer passes and the light pass declare every binding their layouts
   const sprite = shader('instancedSprite.wgsl');
   const pose = shader('instancedSpritePose.wgsl');
   for (const gbuf of [false, true]) {
-    for (const entry of gbuf ? ['mainFragFace', 'mainFragIds'] : ['mainFragFace']) {
+    for (const entry of gbuf ? ['mainFragFace', 'mainFragIds', 'mainFragGbuf'] : ['mainFragFace']) {
       assertLayoutDeclared(`face ${entry} gbuf=${gbuf}`, instancedSpriteGpuProgram(GpuProgram, faceMapWgsl(sprite, { gbuf }), entry, 'f', { maps: true }));
       assertLayoutDeclared(`face pose ${entry} gbuf=${gbuf}`, instancedSpriteGpuProgram(GpuProgram, faceMapWgsl(pose, { gbuf }), entry, 'f', { maps: true }));
       assertLayoutDeclared(

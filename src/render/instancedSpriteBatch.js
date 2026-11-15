@@ -41,7 +41,7 @@ import {
   GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsByRowWasm, packKeyedRowsWasm,
   packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
-import { faceIdsFragment, faceMapVertex, faceMapWgsl, gbufAttributeWgsl, shaderWithFlag } from './faceMap.js';
+import { faceGbufFragment, faceIdsFragment, faceMapVertex, faceMapWgsl, gbufAttributeWgsl, shaderWithFlag } from './faceMap.js';
 import { lutBaseFloats } from './frameBase.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from './pixelDepth.js';
 import {
@@ -1443,6 +1443,15 @@ export class InstancedSpriteBatch {
   }
 
   /**
+   * DX-GBUF (plan §6.4, lighting.gbuffer 'mrt'): this batch's instances for the face map and the entity ids map in one
+   * pass, two colour targets (faceMap.js faceGbufFragment; the caller's render target holds both). Needs the batch's words.
+   * @returns {Mesh|null}
+   */
+  gbufMesh(heightScaleY, groundScaleY, maps) {
+    return this.gbuf ? this._auxMesh(AUX_GBUF, heightScaleY, groundScaleY, maps) : null;
+  }
+
+  /**
    * DX-GBUF: one of the batch's passes over its own instances for the light (AUX_FACE, AUX_IDS, ...), over this frame's
    * geometry: one mesh a geometry the batch draws from, none swapped (the ring swaps the geometry every frame, and Mesh's
    * setter makes garbage), the program that reads that geometry's layout (plain, indexed, by row). The programs are made on
@@ -1546,6 +1555,7 @@ export class InstancedSpriteBatch {
   _auxFragment(kind) {
     const shaders = this._engineShaders;
     if (kind === AUX_IDS) return faceIdsFragment();
+    if (kind === AUX_GBUF) return faceGbufFragment(shaders.faceFrag);
     return shaderWithFlag(shaders.faceFrag, 'GBUF', this.gbuf);
   }
 

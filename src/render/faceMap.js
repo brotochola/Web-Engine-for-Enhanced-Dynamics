@@ -104,6 +104,28 @@ void main() {
 `;
 }
 
+/**
+ * DX-GBUF (plan §6.4, lighting.gbuffer 'mrt'): faceMap.frag.glsl writing the face map and the entity ids map in one pass,
+ * two colour targets (WebGL 2's draw buffers): the face texel at location 0 as faceMap.frag.glsl writes it, the ids texel
+ * at 1 (faceIdsFragment's), for the same coverage.
+ * @param {string} faceFrag faceMap.frag.glsl
+ * @returns {string}
+ */
+export function faceGbufFragment(faceFrag) {
+  const src = shaderWithFlag(faceFrag, 'GBUF', true);
+  const out = 'out vec4 finalColor;\n';
+  const cut = '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n';
+  for (const mark of [out, cut]) {
+    if (src.split(mark).length !== 2) throw new Error(`WeedJS: the G-buffer's one pass needs faceMap.frag.glsl (${mark.trim()})`);
+  }
+  return src
+    .replace(
+      out,
+      () => `layout(location = 0) out vec4 finalColor;\nlayout(location = 1) out vec4 finalIds;\nflat in float vRender;\n\n${IDS_TEXEL_GLSL}\n`,
+    )
+    .replace(cut, () => `${cut}  finalIds = idsTexel(vGbuf, vRender > 0.5);\n`);
+}
+
 /** The words' input of a sprite WGSL's mainVert (DX-GBUF, gbufWord.js): a free location, read or not. */
 const GBUF_ATTRIBUTE_WGSL = '  @location(12) aInstGbuf: vec2<f32>,\n';
 
@@ -219,6 +241,20 @@ fn mainFragIds(in: VertexOut) -> @location(0) vec4<f32> {
   let t = textureSample(uTexture, uSampler, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff));
   if (t.a * in.vColor.a < 0.5) { discard; }
   return idsTexel(in.vGbuf, in.vRender > 0.5);
+}
+
+// DX-GBUF (lighting.gbuffer 'mrt'): the face map and the ids map in one pass, two colour targets (faceGbufFragment).
+struct WeedGbufOut {
+  @location(0) face: vec4<f32>,
+  @location(1) ids: vec4<f32>,
+}
+
+@fragment
+fn mainFragGbuf(in: VertexOut) -> WeedGbufOut {
+  var o: WeedGbufOut;
+  o.face = weedFace(in);
+  o.ids = idsTexel(in.vGbuf, in.vRender > 0.5);
+  return o;
 }
 `;
 

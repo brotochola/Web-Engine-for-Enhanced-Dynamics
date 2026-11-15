@@ -929,6 +929,10 @@ class PixiRenderer extends AbstractWorker {
     // reads ids: self-shadow, or a shadow map (a caster's own shadow never paints its own sprite).
     this.faceIdsRT = null;
     this._faceIdsOn = false;
+    // DX-GBUF (plan §6.4): lighting.gbuffer 'mrt': the face map and the ids map drawn in one pass, a render target with both
+    // as colour targets (made once they are, remade with them); 'pass' (default): a pass each.
+    this._gbufMrt = false;
+    this._gbufTarget = null;
     this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
     // DX-SHADOW3D: lighting.sunShadows 'map' (src/render/sunShadowMap.js): the sun's shadow map, its pass and terms.
     this._sunMapOn = false;
@@ -3258,6 +3262,16 @@ class PixiRenderer extends AbstractWorker {
       this._writeCameraRtTransform(this._faceRtTransform, this._faceRtLayer);
     }
     opts.transform = this._faceRtTransform;
+    const mrt = this._gbufMrt && this.faceIdsRT !== null ? this._ensureGbufTarget() : null;
+    if (mrt !== null) {
+      // DX-GBUF (lighting.gbuffer 'mrt'): both targets in this one pass.
+      const both = batch !== null ? batch.gbufMesh(this._faces.heightScaleY, this._groundScaleY || 1, maps) : null;
+      opts.container = both !== null && batch.mesh.visible ? both : this._rtEmptyContainer;
+      opts.target = mrt;
+      this._submitRender(opts);
+      opts.transform = null;
+      return;
+    }
     this._submitRender(opts);
     if (this.faceIdsRT !== null) {
       const ids = batch !== null ? batch.idsMesh(this._faces.heightScaleY, this._groundScaleY || 1, maps) : null;
@@ -3267,6 +3281,41 @@ class PixiRenderer extends AbstractWorker {
       this._gpuPassesThisFrame++;
     }
     opts.transform = null;
+  }
+
+  /**
+   * DX-GBUF (lighting.gbuffer 'mrt'): the render target whose colour targets are the face map and the entity ids map (Pixi's
+   * RenderTarget, its class the canvas's target's: the bundle exports none), for the G-buffer's one pass; null where it
+   * cannot be made (the passes then draw a target each).
+   */
+  _ensureGbufTarget() {
+    if (this._gbufTarget !== null) return this._gbufTarget;
+    const RenderTargetClass = this.pixiApp?.renderer?.view?.renderTarget?.constructor;
+    if (typeof RenderTargetClass !== 'function' || this.faceRT === null || this.faceIdsRT === null) {
+      this._gbufMrt = false;
+      return null;
+    }
+    this._gbufTarget = new RenderTargetClass({ colorTextures: [this.faceRT, this.faceIdsRT], label: 'weed-gbuffer' });
+    return this._gbufTarget;
+  }
+
+  /**
+   * DX-GBUF: the G-buffer's one-pass target goes before its textures do (a resize remakes them): its GPU side through the
+   * render target system's records (Pixi releases a texture's own target when the texture goes, not one made of several).
+   */
+  _releaseGbufTarget() {
+    const target = this._gbufTarget;
+    if (target === null) return;
+    this._gbufTarget = null;
+    const system = this.pixiApp?.renderer?.renderTarget;
+    const gpuTargets = system ? system._gpuRenderTargetHash : null;
+    const gpu = gpuTargets ? gpuTargets[target.uid] : null;
+    if (gpu && system.adaptor && typeof system.adaptor.destroyGpuRenderTarget === 'function') {
+      gpuTargets[target.uid] = null;
+      system.adaptor.destroyGpuRenderTarget(gpu);
+    }
+    if (system && system._renderSurfaceToRenderTargetHash) system._renderSurfaceToRenderTargetHash.delete(target);
+    if (typeof target.destroy === 'function') target.destroy();
   }
 
   applyLayerVisibility() {
@@ -7987,6 +8036,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const lw = rtPixelSize(width, this.lightingResolution);
       const lh = rtPixelSize(height, this.lightingResolution);
       if (this.faceRT !== null) {
+        this._releaseGbufTarget();
         this.lightingShader.resources.uFaceMap = PIXI.Texture.EMPTY.source;
         this.faceRT.destroy(true);
         if (this.faceIdsRT !== null) {
@@ -8987,6 +9037,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
       // DX-SELFSHADOW: faces and sprites with maps shade themselves from the sun (screen-space steps over the face map).
       if (lightingConfig.selfShadow === true) this._selfShadowOn = true;
+      // DX-GBUF (plan §6.4): the G-buffer's targets in one pass (MRT) or a pass each (the default until measured).
+      const gbufMode = lightingConfig.gbuffer ?? 'pass';
+      if (gbufMode !== 'pass' && gbufMode !== 'mrt') {
+        console.warn(`WeedJS: lighting.gbuffer is 'pass' or 'mrt', not ${JSON.stringify(gbufMode)}: the G-buffer draws a pass a target`);
+      }
+      this._gbufMrt = gbufMode === 'mrt';
       // DX-SHADOW3D (F7): the lamps' shadows from a map a lamp, each lamp's own light alone (WebGL and WebGPU).
       if (lightingConfig.lampShadows === 'map') {
         if (lightingConfig.raycasted) {
