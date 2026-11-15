@@ -314,8 +314,16 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   /** The size of the shadows' layer and of the sun's map against the canvas (default 0.5). */
   shadowResolution?: number;
   /**
-   * A visibility polygon a light, cut by LightOccluders (default false). Turns off faces, the lighting by maps and both
-   * shadow maps, with a warning.
+   * DX-CASTER: the ShadowCasters that hold a volume at once (shadowCaster.setBox, addLevel, setHull). Default 0: no volumes,
+   * and the scene pays nothing for them (a volume setter warns). Above 0 the scene gets the volumeShadows layer and
+   * maxVolumes × maxVolumeVerts vertices of the mesh arena; when that is full, a volume warns.
+   */
+  maxVolumes?: number;
+  /** The mesh arena's vertices kept for each of maxVolumes (default 16: a box with a cabin, or a hull of 16 points). */
+  maxVolumeVerts?: number;
+  /**
+   * A visibility polygon a light, cut by the ShadowCasters' walls (shadowCaster.setWall; default false). Turns off faces,
+   * the lighting by maps and both shadow maps, with a warning.
    */
   raycasted?: boolean;
   /** ShadowCaster.setTexture works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
@@ -325,9 +333,9 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   /**
    * DX-SHADOW3D: how the sun casts. 'sprite' (default): each caster's shadow on the shadows' layer, darkening every light
    * by Sun.shadowOpacity. 'map': a shadow map in the floor's terms that takes out the sun's light alone (Sun.shadowAlpha
-   * of it), falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit; VolumeShadowCasters
-   * cast into it on WebGL (on WebGPU they cast nothing in map mode yet). Either mode: a picture of one view casts its card,
-   * a render with a height map its solid (the sheet and the entity can say otherwise: ShadowCaster).
+   * of it), falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit; a ShadowCaster's
+   * volume (setBox, setHull) casts into it. Either mode: a picture of one view casts its card, a render with a height map
+   * its solid (the sheet and the entity can say otherwise: ShadowCaster).
    */
   sunShadows?: 'sprite' | 'map';
   /**
@@ -523,14 +531,10 @@ export interface QuerySystemPrecomputeComponentMap {
   LightEmitter: typeof LightEmitter;
   ShadowCaster: typeof ShadowCaster;
   CAST_KIND: typeof CAST_KIND;
-  VolumeShadowCaster: typeof VolumeShadowCaster;
   DirectionalSprite: typeof DirectionalSprite;
   FACING_FROM: typeof FACING_FROM;
   DIRECTION_NAMES: typeof DIRECTION_NAMES;
   FlashComponent: typeof FlashComponent;
-  LightOccluder: typeof LightOccluder;
-  LIGHT_OCCLUDER_MASK_COLLIDER: typeof LIGHT_OCCLUDER_MASK_COLLIDER;
-  LIGHT_OCCLUDER_MASK_SPRITE: typeof LIGHT_OCCLUDER_MASK_SPRITE;
   CameraInOutListener: typeof CameraInOutListener;
   CollisionListener: typeof CollisionListener;
   Grab: typeof Grab;
@@ -1383,7 +1387,6 @@ export declare class GameObject {
   get lightEmitter(): LightEmitter | null;
   get flashComponent(): FlashComponent | null;
   get shadowCaster(): ShadowCaster | null;
-  get volumeShadowCaster(): VolumeShadowCaster | null;
   get sceneBridge(): typeof SceneBridge;
   sendMessageToScene(data: unknown): boolean;
   get active(): number;
@@ -4095,59 +4098,10 @@ export declare class DirectionalSprite extends Component {
 }
 
 /**
- * Says what an object is, and the engine works out its shadow: a box, levels or a hull of points, in the entity's frame. It
- * moves and turns with the entity, with no second entity, no layer in the config and no mesh code. x looks the way the entity
- * looks, y across it, both on the floor; heights are in screen px, as on a ShadowCaster's sprite. The sun casts it; lamps do not
- * yet. With `lighting.sunShadows: 'map'` it casts into the sun's map on WebGL (on WebGPU it casts nothing in that mode yet).
- * Its class has a MeshRenderer, whose one mesh is the volume: `setMesh` and the like are refused. To be replaced by
- * shadowCaster.setBox / addLevel / setHull (DX-CASTER, not merged yet).
- */
-export declare class VolumeShadowCaster extends Component {
-  static readonly ARRAY_SCHEMA: { floorScaleY: typeof Float32Array };
-  static readonly requires: readonly [typeof MeshRenderer];
-  static floorScaleY: Float32Array;
-  /**
-   * How tall the floor is drawn against its width, in (0, 1]; `config.camera.floorScaleY` unless a volume says. The
-   * entity's rotation stays what the screen shows: a car keeps its long side on its path, and a turn rewrites no vertex.
-   */
-  floorScaleY: number;
-  /**
-   * A box. Replaces the volume. `offsetX` and `offsetY` are its centre; `topScale` shrinks the roof about it, from 0 up (0: a
-   * pyramid). A value that is not finite, or a topScale below 0, is refused with a warning and leaves the volume as it was.
-   */
-  setBox(
-    width: number,
-    depth: number,
-    height: number,
-    options?: { offsetX?: number; offsetY?: number; topScale?: number; floorScaleY?: number },
-  ): this;
-  /**
-   * One more level on what the volume has. `topOutline`, as many corners, makes its top another shape: one that closes on a
-   * point is a pyramid, on a line a gabled roof; one that crosses itself is refused. A corner that is not finite is refused.
-   * A level the arena has no room for warns and leaves the volume as it was.
-   */
-  addLevel(
-    outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
-    bottom: number,
-    top: number,
-    topOutline?: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
-    options?: { floorScaleY?: number },
-  ): this;
-  /**
-   * The convex volume around points: flat x, y, z or objects, z the height. Runs once, when called. Replaces the volume. At most
-   * 4 096 points, all finite; otherwise it warns and leaves the volume as it was. Convex: it fills an L and joins a tower to a
-   * low annex with a slope, so give such boxes an addLevel each.
-   */
-  setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): this;
-  /** No volume: the entity casts nothing until it is given one again. */
-  clear(): this;
-}
-
-/**
  * DX-CASTER: how an entity casts, for the sun and for the lamps apart (ShadowCaster.sunKind and .lampKind). AUTO, what a
  * spawn sets, is its sheet's way: a picture of one view casts its card, a render with a height map (8 directions or more)
- * its solid, unless its json says `meta.shadowCast.sun: 'sprite'` (then the sun casts its card). BOX, HULL and WALL are
- * for setBox / setHull / setWall, not merged yet.
+ * its solid, unless its json says `meta.shadowCast.sun: 'sprite'` (then the sun casts its card). BOX and HULL are a
+ * volume's (setBox, addLevel, setHull), WALL a wall's (setWall).
  */
 export declare const CAST_KIND: Readonly<{ AUTO: 0; SPRITE: 1; HEIGHT_MAP: 2; BOX: 3; HULL: 4; WALL: 5; NONE: 6 }>;
 
@@ -4206,7 +4160,7 @@ export declare class ShadowCaster extends Component {
   /** The setters for the lamps (and headlights) alone. */
   readonly lamps: ShadowCasterLightSide;
   /**
-   * How much light it takes out, 0 to 1 (1 at spawn; was LightOccluder.block). The sprite shadows read it (the sun's in
+   * How much light it takes out, 0 to 1 (1 at spawn); a wall takes that much out of a lamp. The sprite shadows read it (the sun's in
    * 'sprite' mode, the lamps' stamps); the shadow maps do not yet.
    */
   get opacity(): number;
@@ -4214,20 +4168,42 @@ export declare class ShadowCaster extends Component {
   /** What it casts for the sun, as set: 'sprite' also when nothing was set (CAST_KIND.AUTO, its sheet's way). Read only. */
   readonly type: ShadowCastType;
   /**
-   * Not merged yet (DX-CASTER, F9 second part): a box, as VolumeShadowCaster.setBox, cast for the lamps too in 3D (closes
-   * DX-VOLLIGHTS).
+   * A box, for every light: a volume in the entity's frame (it moves and turns with the entity), on the scene's
+   * volumeShadows layer and in the shadow maps. Replaces the volume. `width` along x (the way the entity looks), `depth`
+   * across it, both on the floor; `height` in screen px, as a sprite's. `offsetX` and `offsetY` are its centre;
+   * `topScale` shrinks the roof about it, from 0 up (0: a pyramid); `floorScaleY` is how tall the floor is drawn against its
+   * width (config.camera's by default). The scene keeps room for volumes with `config.lighting.maxVolumes` (without it,
+   * this warns once and changes nothing). A value that is not finite warns and leaves the volume as it was.
    */
-  setBox(width: number, depth: number, height: number, options?: { offsetX?: number; offsetY?: number; topScale?: number }): this;
-  /** Not merged yet: one more level, as VolumeShadowCaster.addLevel. */
+  setBox(
+    width: number,
+    depth: number,
+    height: number,
+    options?: { offsetX?: number; offsetY?: number; topScale?: number; floorScaleY?: number },
+  ): this;
+  /**
+   * One more level on what the volume has: a body, a cabin on it, a tank on a roof. The outline need not be convex.
+   * `topOutline`, as many corners, makes its top another shape: one that closes on a point is a pyramid, on a line a gabled
+   * roof; one that crosses itself is refused. A level the arena has no room for warns and leaves the volume as it was.
+   */
   addLevel(
     outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
     bottom: number,
     top: number,
     topOutline?: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
+    options?: { floorScaleY?: number },
   ): this;
-  /** Not merged yet: the convex volume around points (x, y, z), as VolumeShadowCaster.setHull. */
-  setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>): this;
-  /** Not merged yet: in a flat view (camera.pitch 90 or 0) it cuts the light as LightOccluder did, by its collider or sprite. */
+  /**
+   * The convex volume around points (flat x, y, z or objects, z the height), for every light: a house from an editor. Runs
+   * once, when called. Replaces the volume. At most 4 096 points, all finite. Convex: it fills an L, so give such boxes an
+   * addLevel each.
+   */
+  setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): this;
+  /**
+   * Under raycasted lighting, a wall that stops lamps and headlights, cut by the entity's Collider ('collider', the default
+   * and the fastest) or by its sprite's alpha ('sprite'), taking out `opacity` of the light; the sun casts nothing from it
+   * (`lamps.setWall` keeps the sun's shadow). A scene without raycasted lighting warns once and changes nothing.
+   */
   setWall(options?: { shape?: 'collider' | 'sprite' }): this;
   /** Not merged yet: the object shades itself (a render with a footprint: yes by default; one view: no). */
   selfShadow: boolean;
@@ -4268,20 +4244,6 @@ export declare class ShadowCaster extends Component {
   /** 0 to 1, the light it takes out; 1 at spawn. */
   static opacity: Float32Array;
   static shadowCount: number;
-}
-
-export declare const LIGHT_OCCLUDER_MASK_COLLIDER = 0;
-export declare const LIGHT_OCCLUDER_MASK_SPRITE = 1;
-
-export declare class LightOccluder extends Component {
-  static readonly ARRAY_SCHEMA: {
-    active: typeof Uint8Array;
-    maskMode: typeof Uint8Array;
-    block: typeof Float32Array;
-  };
-  static active: Uint8Array;
-  static maskMode: Uint8Array;
-  static block: Float32Array;
 }
 
 export declare class FlashComponent extends Component {
@@ -4382,7 +4344,6 @@ export interface ParticleComponent extends ComponentFields<(typeof ParticleCompo
 export interface DecorationComponent extends ComponentFields<(typeof DecorationComponent)['ARRAY_SCHEMA']> {}
 export interface LightEmitter extends ComponentFields<(typeof LightEmitter)['ARRAY_SCHEMA']> {}
 export interface ShadowCaster extends ComponentFields<(typeof ShadowCaster)['ARRAY_SCHEMA']> {}
-export interface LightOccluder extends ComponentFields<(typeof LightOccluder)['ARRAY_SCHEMA']> {}
 export interface FlashComponent extends ComponentFields<(typeof FlashComponent)['ARRAY_SCHEMA']> {}
 export interface BulletComponent extends ComponentFields<(typeof BulletComponent)['ARRAY_SCHEMA']> {}
 
@@ -4839,13 +4800,9 @@ export interface WeedNamespace extends WeedEnums {
   LightEmitter: typeof LightEmitter;
   ShadowCaster: typeof ShadowCaster;
   CAST_KIND: typeof CAST_KIND;
-  VolumeShadowCaster: typeof VolumeShadowCaster;
   DirectionalSprite: typeof DirectionalSprite;
   FACING_FROM: typeof FACING_FROM;
   DIRECTION_NAMES: typeof DIRECTION_NAMES;
-  LightOccluder: typeof LightOccluder;
-  LIGHT_OCCLUDER_MASK_COLLIDER: typeof LIGHT_OCCLUDER_MASK_COLLIDER;
-  LIGHT_OCCLUDER_MASK_SPRITE: typeof LIGHT_OCCLUDER_MASK_SPRITE;
   FlashComponent: typeof FlashComponent;
   CameraInOutListener: typeof CameraInOutListener;
   CollisionListener: typeof CollisionListener;
