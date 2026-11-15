@@ -192,7 +192,8 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   vec3 clip = mvp * vec3(screen, 1.0);
   gl_Position = vec4(clip.xy, 0.0, 1.0);
-  if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
+  // Never true (a cosine): keeps the rows' attributes in the program, which Pixi otherwise warns about (aInstLight).
+  if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits + aInstLight.x;
   vLocal = aQuad;
   vColor = ${heights ? 'vec4(1.0)' : 'vec4(0.0, 0.0, 0.0, uSun.w * castOpacity)'};
   vWorld = world;
