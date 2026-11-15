@@ -12625,13 +12625,12 @@
     {
       "id": "N-156",
       "title": "physicsChainWait.test.js's first test fails now and then under the full suite (a wall-clock budget)",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "found 2026-11-12 on dx/light-api: 1 of 2550 in two full runs, 4 of 4 alone",
       "date": "2026-11-12",
       "area": "tests",
       "kind": "bug",
-      "rank": 46,
-      "result": "Its ringer thread rings at 3, 6 and 9 ms against a 16 ms budget; under the suite's load it ran late, the wait gave up and turned the chain off (121 !== 0).",
+      "result": "Ringer started from the wait's first pass, budget 100 ms: 0 of 288 runs failed under 48 parallel copies (5 of 288 before)",
       "next": "A wider budget (a longer period) or a deadline given ahead, as the other publish tests do.",
       "refs": [
         "REVIEW_PLAN.md#N-156"
@@ -12642,7 +12641,9 @@
         "chain wait",
         "N-146"
       ],
-      "records": []
+      "records": [
+        "R-1048"
+      ]
     },
     {
       "id": "N-157",
@@ -12885,7 +12886,9 @@
         "demo warnings",
         "maxParticles"
       ],
-      "records": []
+      "records": [
+        "R-1049"
+      ]
     },
     {
       "id": "N-168",
@@ -25518,6 +25521,30 @@
         "6357cb8b",
         "9d18efd4",
         "3a314adb"
+      ]
+    },
+    {
+      "id": "R-1048",
+      "date": "2026-11-14",
+      "time": "21:20",
+      "timeFrom": "recorded",
+      "title": "N-156 fixed: the chain wait test's ringer starts from the wait's first pass, 100 ms budget (0 of 288 failed under load, 5 of 288 before)",
+      "verdict": "kept-hygiene",
+      "text": "**N-156 fixed: physicsChainWait's first test starts its ringer from the wait's first pass, with a 100 ms budget.**\n2026-11-14, c56a580b. Under 48 parallel copies of the file it failed 5 of 288 runs before (all early rings: the main\nthread descheduled between starting the ringer and waiting, so it waited 2.9 to 7.8 ms, not 8; the suite's single failure\nwas the other way, a ringer started late past the 16 ms budget). Now the ringer starts from the test's service callback on\nthe wait's first pass and the frame is 250 ms (budget 100 ms): 0 of 288. test:node 2637/2637.",
+      "commits": [
+        "c56a580b"
+      ]
+    },
+    {
+      "id": "R-1049",
+      "date": "2026-11-14",
+      "time": "21:20",
+      "timeFrom": "recorded",
+      "title": "N-167 under way: demoWarnings finds 10 of 35 demos with warnings; each demo's command ring peak measured (Boids 286 386)",
+      "verdict": "note",
+      "text": "**N-167 under way: the check (demoWarnings) and each demo's command ring demand measured; the fixes are left.**\n2026-11-14, 9f0f2936 (tests/bench/demoWarnings.mjs: every scene of demos/menu.js, 8 s, its warnings; exit 1 on any).\n\nFirst run, 35 scenes: 10 start with warnings. Command ring full (capacity 4096) in Balls, Ants, Boids, Constraint Boxes,\nGear Chain, Little City, Oriented Boxes, Predator, Water & Boxes; joint pool full in Constraint Boxes (maxJoints 4096);\nProp pool full in Blastforge (220); Predator also: Flash pool full (32), ParticleEmitter pool exhausted (maxParticles),\nand \"[PRE_RENDER] animationNameToIndex missing _lightGradientHalf\". Gear Chain's myColor warning did not show.\n\nPeak ring depth at a drain (scratch tree: ring 1 048 576, the drain recording write - read; 12 s a demo), the start's\nspawn burst: Boids 286 386 (40 000 boids at once; a 524 288 ring is 16 MB at 32 B a command), Predator 52 680, Ants\n31 200, Little City 27 755, Balls 18 008, Gear Chain 10 002, Water & Boxes 8 012, Oriented Boxes 5 208, Constraint\nBoxes 5 008.\n\nLeft: physics.commandRingCapacity per demo (a power of two past each peak), or spawns spread over frames where the ring\nwould be large (Boids); maxJoints in Constraint Boxes; the Prop count in Blastforge; Predator's Flash count, maxParticles\nand the missing texture; then demoWarnings clean. The engine question stays (a full ring drops what it carried).",
+      "commits": [
+        "9f0f2936"
       ]
     }
   ],
