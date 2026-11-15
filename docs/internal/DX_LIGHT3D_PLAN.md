@@ -678,7 +678,7 @@ de las demos.
   piso escribe `facing = atan2(vy / floorScaleY, vx)` (los peatones de Buenos Aires). Cuando la cámara de F1 sea oblicua
   por defecto en más escenas, se puede agregar `facingFrom: 'floorVelocity'`.
 - Velocidad sin atan2: mientras el rumbo sigue dentro de su dirección (producto punto contra cos² de medio hueco más medio
-  margen), no se calcula el ángulo. Kernel: 26 ns por entidad con 4 direcciones, 46 con 32 (R-1043).
+  margen), no se calcula el ángulo. Kernel: 26 ns por entidad con 4 direcciones, 46 con 32 (R-1052).
 - Migraron: autos y peatones de Buenos Aires (se van `frame()`, la tabla de rumbos y el selector de octantes),
   la gente de Predator (FSM con nombres sin dirección; disparar y pegar miran al blanco), el jugador y la persona de
   carScene. Capturas de Predator iguales a ojo; Buenos Aires se mueve (no hay captura byte a byte posible).
@@ -1043,7 +1043,7 @@ Lo que está hecho en la rama, fase por fase, con su commit. Se actualiza con ca
 | --- | --- | --- | --- |
 | Plan en el repo | hecho | e77f734 | este archivo, filas DX-* en REVIEW_PLAN |
 | F1 `camera` | hecho | af40188 | `raycasted` pasa a F9; `frameChainWait` (presupuesto de reloj) falla a veces en esta máquina de 2 núcleos, también en la base |
-| F2 `DirectionalSprite` | hecho (falta el ABAB del dueño) | 4bf4d21 … f439060 | resolución en la lógica, no en el pre-render; forma `frames` pendiente; R-1043: empate contra el selector a mano en esta VM |
+| F2 `DirectionalSprite` | hecho (falta el ABAB del dueño) | 4bf4d21 … f439060 | resolución en la lógica, no en el pre-render; forma `frames` pendiente; R-1052: empate contra el selector a mano en esta VM |
 | F3 mapas | en parte | 7d12c25, f4faf77, b2bf7c2 | página gemela y test de alineación; faltan tabla de sombra por cuadro, bake y `weed maps` |
 | F4 G-buffer | primera versión | f376849 | face map generalizado; faltan `normals`/`surface`, id de entidad, MRT, microbench de GPU y ver WebGPU |
 | F6 sombras del sol | primera versión | a323a1d, bb18952, 2222a32, 43f3d11, b8b4a24 | `sunShadows: 'map'`, WebGL; cuadro que ve el sol (DirectionalSprite), también en modo `'sprite'` (apaga los caminos con clave: medir en Predator); los casters con heightmap tiran columnas (su sólido, girado como está: lo marcó el dueño en el banco de luz); faltan WebGPU, caminos con clave, volúmenes, cache, costo de las columnas en escenas grandes |
