@@ -1,11 +1,11 @@
-// Headlights — the light API on one street at night: carScene's cars with cone headlights, round street lamps, and
-// houses with geometry for their shadows, under raycasted lighting.
+// Headlights — the light API on one street at night: the standard cars (demos/img/autos) with cone headlights, round
+// street lamps, and houses with geometry for their shadows, under raycasted lighting.
 //
 //   LightEmitter            radius, color, brightness, elevation, glow, glowOffsetY, offsetX, castShadows, shadowRange
 //   cone lights             coneAngle, coneSoftness, direction: the cars' headlights (nightStreet.js, Car)
 //   camera.pitch 90         a flat view lights by raycasting: lights are stopped by walls, the houses and the cars cut
 //                           the beams (shadowCaster.lamps.setWall)
-//   camera.floorScaleY      the floor is drawn 0.7 as tall (carScene's pictures are), and so are pools and cones
+//   camera.floorScaleY      the floor is drawn 0.7 as tall (the cars' pictures: 0.736), and so are pools and cones
 //   shadowCaster.setBox     the houses and cars as volumes, for the sun's shadows by day (N); lighting.maxVolumes is
 //                           their room
 //
@@ -20,7 +20,7 @@ import WEED from '/src/index.js';
 import { LAP, ROAD_CX, ROAD_CY, ROAD_WIDTH, WORLD_H, WORLD_W } from '../sunStreetScene/streetLayout.js';
 import { RoadBand, RoadDashes } from '../sunStreetScene/gameObjects/streetMeshes.js';
 import { SunPanel } from '../sunStreetScene/sunPanel.js';
-import { Car, HEADLIGHT, House, LAMP, StreetLamp } from './nightStreet.js';
+import { Car, CAR_SHEETS, HEADLIGHT, House, LAMP, StreetLamp } from './nightStreet.js';
 
 const { Scene, Camera, Keyboard, Sun, Transform, LAYER_KIND } = WEED;
 
@@ -49,7 +49,6 @@ const LAMPS = [
   [555, 345], [855, 345], [1155, 345],
   [450, 852], [750, 852], [1050, 852], [1350, 852],
 ];
-const CAR_SHEETS = ['red', 'yellow', 'blue', 'white', 'black', 'poli'];
 const HOUSES = HOUSE_ROWS.reduce((sum, row) => sum + row.xs.length, 0);
 
 export class HeadlightsScene extends Scene {
@@ -74,8 +73,8 @@ export class HeadlightsScene extends Scene {
       sidewalk: { kind: LAYER_KIND.MESH, zIndex: 0.45 },
       street: { kind: LAYER_KIND.MESH, zIndex: 0.5 },
     },
-    // carScene's cars are drawn with the floor 0.7 as tall: the pools and cones are foreshortened the same way. Pitch 90,
-    // a flat view, lights by raycasting (the walls); without it, basic lighting.
+    // The floor is drawn 0.7 as tall, about as the cars' pictures draw it (0.736): the pools and cones are
+    // foreshortened the same way. Pitch 90, a flat view, lights by raycasting (the walls); without it, basic lighting.
     camera: RAYCAST ? { pitch: 90, floorScaleY: 0.7 } : { floorScaleY: 0.7 },
     lighting: {
       enabled: true,
@@ -99,8 +98,9 @@ export class HeadlightsScene extends Scene {
       house2: '/demos/img/house2.png',
       tallLight: '/demos/img/tallLight.png',
     },
+    // The cars' sheets, each under its own name (nightStreet.js lists them); no height or normal maps.
     spritesheets: Object.fromEntries(
-      CAR_SHEETS.map((name) => [`car_${name}`, { json: `/demos/img/cars/${name}.json`, png: `/demos/img/cars/${name}.png` }]),
+      CAR_SHEETS.map((name) => [name, { json: `/demos/img/autos/${name}.json`, png: `/demos/img/autos/${name}.png` }]),
     ),
   };
 
@@ -155,7 +155,7 @@ export class HeadlightsScene extends Scene {
     }
     for (const [x, y] of LAMPS) StreetLamp.spawn({ x, y });
     for (let i = 0; i < CARS; i++) {
-      Car.spawn({ x: ROAD_CX, y: ROAD_CY, sheet: `car_${CAR_SHEETS[i % CAR_SHEETS.length]}`, distance: (i / CARS) * LAP });
+      Car.spawn({ x: ROAD_CX, y: ROAD_CY, sheet: CAR_SHEETS[i % CAR_SHEETS.length], distance: (i / CARS) * LAP });
     }
   }
 

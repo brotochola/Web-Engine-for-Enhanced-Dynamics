@@ -2,9 +2,10 @@
 // onSpawned; the scene's panel changes some of its fields at run time to show what each one does.
 
 import WEED from '/src/index.js';
+import { CARS } from '/demos/img/autos/index.js';
 import { LAP, roadPoint } from '../sunStreetScene/streetLayout.js';
 
-const { GameObject, Collider, SpriteRenderer, LightEmitter, ShadowCaster, enums } = WEED;
+const { GameObject, Collider, SpriteRenderer, DirectionalSprite, LightEmitter, ShadowCaster, enums } = WEED;
 const { ShapeType } = enums;
 
 // ?carSpeed= reaches this module on the logic worker through WEED.params (`location` there is the worker script's).
@@ -17,13 +18,12 @@ const LANE = -28; // px inside the road's centre line
 // Lights
 // ---------------------------------------------------------------------------------------------------------------
 
-/** The headlights' cone at spawn. The scene's panel changes these on every car. */
+/** The headlights' cone at spawn, at each car's front bumper (Car). The scene's panel changes these on every car. */
 export const HEADLIGHT = {
   radius: 1600, // px the beam reaches (about 1 % of its light is left there; half of it at 160 px)
   color: 0xfff1c4, // warm white
   coneAngle: Math.PI / 3, // the whole aperture: 60 degrees, 30 each side of the car's heading
   coneSoftness: 0.35, // the outer 35 % of each half fades out; 0 is a hard edge
-  ahead: 46, // px ahead of the car's centre: its front bumper (offsetX, turned with the car)
 };
 
 /** A street lamp: a round light (no coneAngle), its bulb up the post. */
@@ -46,19 +46,33 @@ const HOUSE_DEPTH = 72;
 const HOUSE_HEIGHT = 104;
 const HOUSE_PICTURE_HEIGHT = 180;
 
-// A car as a volume, x forward: a body 78 x 38 and 13 tall, and a cabin on it whose roof is smaller than its base.
-const CAR_BODY = [39, -19, 39, 19, -39, 19, -39, -19];
-const CAR_BODY_HEIGHT = 13;
-const CAR_CABIN = [16, -17, 16, 17, -30, 17, -30, -17];
-const CAR_ROOF = [2, -13, 2, 13, -22, 13, -22, -13];
-const CAR_ROOF_HEIGHT = 27;
-// carScene's pictures are drawn with the floor 0.7 as tall (the scene's camera.floorScaleY), and the picture's
-// centre sits 7 px above the car's spot on the floor.
-const CAR_FLOOR_SCALE = 0.7;
-const CAR_FLOOR_DROP = 7;
-// carScene's sheets hold a picture every 7.5 degrees, each animation named by its heading.
-const CAR_FRAMES = Array.from({ length: 48 }, (_, i) => String(i * 7.5));
-const CAR_FRAME_STEP = (Math.PI * 2) / CAR_FRAMES.length;
+// The cars are the standard sheets of demos/img/autos (MinZiin's TopDown Vehicles, CC BY 4.0, baked by
+// demos/tools/bakeCarSheet.mjs): every cell has the car's centre on the floor at the sheet's anchor, and index.js gives
+// that anchor and the car's box (x0, x1, y0, y1 in floor px, x along the car with its front at x1, and its roof's
+// height). The pack's pictures draw the floor 0.736 as tall and a px of height 0.752 px tall (its projection, as
+// nm-core fitted it: demos/tools/nmCore.cjs). A volume's heights are screen px, so they are the car's times 0.752, and
+// its floor is drawn as the pictures draw it.
+const CAR_FLOOR_SCALE = 0.7364193217154872;
+const CAR_HEIGHT_SCALE = 0.7516549042792687;
+
+/**
+ * The scene's cars, in the order it paints them, with what their boxes do not say: the height of the body, and the
+ * cabin on it (the glass and the roof: from x0 to x1 at its base, from roofX0 to roofX1 at the roof, halfWidth either
+ * side), floor px. Both are the model the bake fitted to the car's pictures (nm-core's buildParts).
+ */
+const CAR_SHAPES = {
+  hatch_rojo: { bodyTop: 8.3, cabin: [-33.7, 31, -29.7, 18.6, 15.2] },
+  taxi: { bodyTop: 14.4, cabin: [-25.7, 26.6, -14.9, 7.1, 14.6] },
+  hatch_azul: { bodyTop: 8.3, cabin: [-33.7, 31, -29.7, 18.6, 15.2] },
+  sedan_blanco: { bodyTop: 14.4, cabin: [-26.3, 26.3, -16, 8.6, 14.4] },
+  sedan_negro: { bodyTop: 14.4, cabin: [-26.3, 26.3, -16, 8.6, 14.4] },
+  policia: { bodyTop: 14.4, cabin: [-25.6, 21.8, -14.1, 6.7, 15.3] },
+};
+/** The car sheets, in the order the scene paints its cars; the scene loads each under its own name. */
+export const CAR_SHEETS = Object.keys(CAR_SHAPES);
+
+/** A level's outline: the rectangle x0..x1 by y0..y1, its front right corner first. */
+const outline = (x0, x1, y0, y1) => [x1, y0, x1, y1, x0, y1, x0, y0];
 
 const roadAt = new Float64Array(3); // roadPoint's x, y and heading, reused every tick
 
@@ -115,37 +129,53 @@ export class StreetLamp extends GameObject {
 }
 
 /**
- * One of carScene's cars lapping the road, with its headlights as one cone light at the front bumper. The cone turns
+ * One of the standard cars lapping the road, with its headlights as one cone light at the front bumper. The cone turns
  * with the car: `direction` (0, straight ahead) and `offsetX` are in the car's own frame, and the entity's rotation
- * turns both, so tick only moves the car. The car is a wall too: it stops the other cars' beams and the lamps.
+ * turns both. The picture does not turn: the sheet has a frame every 7.5 degrees (the left half its right half
+ * mirrored), and DirectionalSprite draws the one nearest the heading tick gives it. The car is a wall too: it stops the
+ * other cars' beams and the lamps.
  */
 export class Car extends GameObject {
-  static components = [Collider, SpriteRenderer, LightEmitter, ShadowCaster];
+  static components = [Collider, SpriteRenderer, DirectionalSprite, LightEmitter, ShadowCaster];
 
   distance = 0.5; // px along the road; a double from the start (the tick adds fractions)
-  frame = -1;
 
   onSpawned(config = {}) {
     this.distance = config.distance + 0.5;
+    const { anchor, box } = CARS[config.sheet];
+    const [x0, x1, y0, y1, roof] = box;
+    const { bodyTop, cabin } = CAR_SHAPES[config.sheet];
+    const [cabinX0, cabinX1, roofX0, roofX1, half] = cabin;
+
     this.setSpritesheet(config.sheet);
-    this.setAnimation(CAR_FRAMES[0]);
-    this.spriteRenderer.anchorX = 0.5;
-    this.spriteRenderer.anchorY = 0.5 + CAR_FLOOR_DROP / this.spriteRenderer.originalHeight;
+    // The car's centre on the floor, where every cell of the sheet puts it: the entity's spot.
+    this.spriteRenderer.anchorX = anchor[0];
+    this.spriteRenderer.anchorY = anchor[1];
     // The sheet draws the heading: the entity turns, its picture does not.
     this.spriteRenderer.inheritTransformRotation = 0;
     this.spriteRenderer.spriteRotation = 0;
+    this.setAnimation('drive');
 
+    // The box's footprint, and the car as a volume for the sun: its body, and the cabin on it whose roof is shorter
+    // than its base.
     this.collider.shapeType = ShapeType.Box;
-    this.collider.width = 78;
-    this.collider.height = 38;
-    this.shadowCaster.addLevel(CAR_BODY, 0, CAR_BODY_HEIGHT, CAR_BODY, { floorScaleY: CAR_FLOOR_SCALE });
-    this.shadowCaster.addLevel(CAR_CABIN, CAR_BODY_HEIGHT, CAR_ROOF_HEIGHT, CAR_ROOF);
+    this.collider.width = x1 - x0;
+    this.collider.height = y1 - y0;
+    const body = outline(x0, x1, y0, y1);
+    const bodyHeight = bodyTop * CAR_HEIGHT_SCALE;
+    this.shadowCaster.addLevel(body, 0, bodyHeight, body, { floorScaleY: CAR_FLOOR_SCALE });
+    this.shadowCaster.addLevel(
+      outline(cabinX0, cabinX1, -half, half),
+      bodyHeight,
+      roof * CAR_HEIGHT_SCALE,
+      outline(roofX0, roofX1, -half, half),
+    );
     if (RAYCAST) this.shadowCaster.lamps.setWall({ shape: 'sprite' });
 
     const light = this.lightEmitter;
     light.radius = HEADLIGHT.radius;
     light.color = HEADLIGHT.color;
-    light.offsetX = HEADLIGHT.ahead;
+    light.offsetX = x1; // the box's front: the front bumper
     light.coneAngle = HEADLIGHT.coneAngle;
     light.coneSoftness = HEADLIGHT.coneSoftness;
     light.direction = 0; // where the cone points from the car's heading (radians); 0 is the default
@@ -157,11 +187,8 @@ export class Car extends GameObject {
     // The rotation first: x and y send the body the rotation they find.
     this.rotation = roadAt[2];
     this.x = roadAt[0];
-    this.y = roadAt[1] + CAR_FLOOR_DROP;
-    const frame = Math.round(roadAt[2] / CAR_FRAME_STEP) % CAR_FRAMES.length;
-    if (frame !== this.frame) {
-      this.frame = frame;
-      this.setAnimation(CAR_FRAMES[frame]);
-    }
+    this.y = roadAt[1];
+    // The frame drawn: the sheet's heading nearest the road's (a car going west shows the east frame mirrored).
+    this.directionalSprite.facing = roadAt[2];
   }
 }
