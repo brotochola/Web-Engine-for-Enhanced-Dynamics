@@ -145,7 +145,7 @@ const LAMP_OUT_GLSL = `  vec2 tuv = (land - lamp.xy) / (2.0 * lamp.w) + 0.5;
   if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
   vTileUvW = vec3(tuv * w, w);
   vColor = vec4(1.0, castOpacity, 1.0, 1.0);
-  vLocal = aQuad;
+  vLocal = lampQuad;
   vWorld = aInstXY;
   vAtlasUV = aInstUV;
   vTileInv = aInstTileInv;
@@ -214,6 +214,18 @@ export function lampMapVertex(source) {
   float dl = length(toLamp);
   vec2 dir = dl > 1e-3 ? toLamp / dl : vec2(0.0, -1.0);
   vec2 p = foot + (content.x - footCol) * aInstScale.x * (castFixed ? castAxis : vec2(dir.y, -dir.x));
+  // E-375: past the height where its ray lands twice the lamp's reach away (outside the tile, whose corner is 1.41 reach
+  // away) the column casts nothing the light pass reads, while a capped stretch drew it out to 8 times its distance and
+  // the fragment threw it away: its top is drawn there instead, with the picture's row at that height. The landing below
+  // it is the same projection (w = (E - z) / E, interpolated exactly), so the tile holds the same texels.
+  vec2 lampQuad = aQuad;
+  float zCut = lamp.z * (1.0 - length(p - lamp.xy) / (2.0 * lamp.w));
+  float zPerRow = aInstTrim.w * abs(aInstScale.y) / uSunK.w * height;
+  // Above the stretch cap's height a point lands at S times its distance, inside the circle when that is short enough.
+  if (z > zCut && zCut < lamp.z * ${(1 - 1 / LAMP_MAP_MAX_STRETCH).toFixed(6)} && zPerRow > 0.0) {
+    z = max(zCut, 0.0);
+    lampQuad.y = 1.0 - z / zPerRow;
+  }
   float room = lamp.z - z;
   float w = room > lamp.z * ${(1 / LAMP_MAP_MAX_STRETCH).toFixed(6)} ? room / lamp.z : ${(1 / LAMP_MAP_MAX_STRETCH).toFixed(6)};
   vec2 land = lamp.xy + (p - lamp.xy) / w;
@@ -252,7 +264,11 @@ ${lampTileGlsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBas
   vec2 across = len > 1e-3 ? vec2(-along.y, along.x) / len : vec2(1.0, 0.0);
   vec2 cell = abs(aInstTrim.zw * aInstScale) / ${cells.toFixed(1)};
   float width = 1.1 * max(cell.x, cell.y * uGroundInvScaleY) + 1.0;
+  // E-375: the column's tip at most where its ray lands twice the lamp's reach away (lampMapVertex says why).
   float h = z * aCell.z;
+  float hCut = lamp.z * (1.0 - length(base - lamp.xy) / (2.0 * lamp.w));
+  if (h > hCut && hCut < lamp.z * ${(1 - 1 / LAMP_MAP_MAX_STRETCH).toFixed(6)}) h = max(hCut, 0.0);
+  vec2 lampQuad = aQuad;
   float room = lamp.z - h;
   float w = room > lamp.z * ${k} ? room / lamp.z : ${k};
   vec2 land = lamp.xy + (base - lamp.xy) / w + across * aCell.w * width;
@@ -316,7 +332,7 @@ const LAMP_OUT_WGSL = `  let tuv = (land - lamp.xy) / (2.0 * lamp.w) + 0.5;
   }
   out.vTileUvW = vec3<f32>(tuv * w, w);
   out.vColor = vec4<f32>(1.0, castOpacity, 1.0, 1.0);
-  out.vLocal = aQuad;
+  out.vLocal = lampQuad;
   out.vWorld = aInstXY;
   out.vAtlasUV = aInstUV;
   out.vTileInv = aInstTileInv;
@@ -357,7 +373,7 @@ export function lampMapWgsl(source) {
   const k = (1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
   return `${head}${lampTileWgsl(' || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBase.x < 0.0)')}  let content = aInstTrim.xy + aQuad * aInstTrim.zw;
   let bottom = aInstTrim.y + aInstTrim.w;
-  let z = max(bottom - content.y, 0.0) * abs(aInstScale.y) / uniforms.uSunK.w * height;
+  var z = max(bottom - content.y, 0.0) * abs(aInstScale.y) / uniforms.uSunK.w * height;
   var footCol = anchor.x * aInstSize.x;
   var foot = vec2<f32>(aInstXY.x, (aInstXY.y + (bottom - aInstAnchor.y * aInstSize.y) * aInstScale.y) * uniforms.uGroundInvScaleY);
   if (aInstBase.x >= 1.0) {
@@ -395,6 +411,14 @@ export function lampMapWgsl(source) {
   var dir = vec2<f32>(0.0, -1.0);
   if (dl > 1e-3) { dir = toLamp / dl; }
   let p = foot + (content.x - footCol) * aInstScale.x * select(vec2<f32>(dir.y, -dir.x), castAxis, castFixed);
+  // E-375: the column stops where its ray would land twice the lamp's reach away (lampMapVertex says why).
+  var lampQuad = aQuad;
+  let zCut = lamp.z * (1.0 - length(p - lamp.xy) / (2.0 * lamp.w));
+  let zPerRow = aInstTrim.w * abs(aInstScale.y) / uniforms.uSunK.w * height;
+  if (z > zCut && zCut < lamp.z * ${(1 - 1 / LAMP_MAP_MAX_STRETCH).toFixed(6)} && zPerRow > 0.0) {
+    z = max(zCut, 0.0);
+    lampQuad.y = 1.0 - z / zPerRow;
+  }
   let room = lamp.z - z;
   let w = select(${k}, room / lamp.z, room > lamp.z * ${k});
   let land = lamp.xy + (p - lamp.xy) / w;
@@ -440,7 +464,10 @@ ${lampTileWgsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBas
   if (len > 1e-3) { across = vec2<f32>(-along.y, along.x) / len; }
   let cell = abs(aInstTrim.zw * aInstScale) / ${cells.toFixed(1)};
   let width = 1.1 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 1.0;
-  let h = z * aCell.z;
+  var h = z * aCell.z;
+  let hCut = lamp.z * (1.0 - length(base - lamp.xy) / (2.0 * lamp.w));
+  if (h > hCut && hCut < lamp.z * ${(1 - 1 / LAMP_MAP_MAX_STRETCH).toFixed(6)}) { h = max(hCut, 0.0); }
+  let lampQuad = aQuad;
   let room = lamp.z - h;
   let w = select(${k}, room / lamp.z, room > lamp.z * ${k});
   let land = lamp.xy + (base - lamp.xy) / w + across * aCell.w * width;
