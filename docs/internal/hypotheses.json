@@ -15157,7 +15157,8 @@
         "R-1054",
         "R-1056",
         "R-1057",
-        "R-1058"
+        "R-1058",
+        "R-1120"
       ],
       "date": "2026-11-14",
       "area": "engine",
@@ -15185,7 +15186,8 @@
         "R-1058",
         "R-1059",
         "R-1060",
-        "R-1065"
+        "R-1065",
+        "R-1120"
       ],
       "date": "2026-11-14",
       "area": "render",
@@ -15500,7 +15502,9 @@
         "computeSunFramesInto cost",
         "sun frames every slot"
       ],
-      "records": []
+      "records": [
+        "R-1120"
+      ]
     },
     {
       "id": "E-369",
@@ -26165,6 +26169,18 @@
       "commits": [
         "eac75740",
         "8738e59c"
+      ]
+    },
+    {
+      "id": "R-1120",
+      "date": "2026-11-15",
+      "time": "07:09",
+      "timeFrom": "recorded",
+      "title": "The branch against main on Predator crowd 3 after the second round: logic +4.0 %, pre-render +28.9 % (bases under the floor)",
+      "verdict": "passed",
+      "text": "**Neutral by the rule (bases under the 6 ms floor), a real cost left: logic 5.985 -> 6.224 ms (+4.0 %), pre-render 5.943 -> 7.661 ms (+28.9 %); spatial +0.2 %, physics +1.1 %, presented 60 -> 60.**\n2026-11-15, 07:04:27 to 07:09:06 (the result files), runPredatorAbab --vs main (0c33673e) --hyp-rev HEAD (8363751c: the\nsecond round merged, E-363, E-364, E-368 step 1, R's casterKindsInUse) --full-rev --query crowd=3 --pairs 4 --pool,\nheaded, on AC power.\n\n| worker | main | branch | |\n| --- | --- | --- | --- |\n| logic | 5.985 ms | 6.224 | +4.0 %, base under the floor |\n| pre-render | 5.943 | 7.661 | +28.9 %, base under the floor |\n| spatial | 10.004 | 9.987 | +0.2 % (paired) |\n| physics | 13.026 | 13.152 | +1.1 % |\n| renderer | 2.937 | 2.993 | under the floor |\n\nLoad keys within 0.1 % (38 366 bodies, GPU_CASTERS 38 228). crowd=3 holds the same population as 2.5 (the pools are\nfull), so it does not lift the bases past 6 ms. Against R-1058 (crowd 2.5, before the round): logic +13.4 % -> +4.0 %\n(E-363, E-364), pre-render +24.5 % -> +28.9 %: what is left there is the sun frames, the lamps' keyed frames and the keyed\nrows' second pass (E-368 to E-370), next.",
+      "commits": [
+        "8363751c"
       ]
     }
   ],
