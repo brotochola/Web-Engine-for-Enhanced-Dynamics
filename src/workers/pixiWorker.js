@@ -58,7 +58,7 @@ import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource, resolveFaces, shaderWithFlag } from '../render/faceMap.js';
-import { sunMapTerms, sunMapVertex } from '../render/sunShadowMap.js';
+import { SUN_MAP_COLUMNS, sunMapColumnGrid, sunMapColumnsVertex, sunMapTerms, sunMapVertex } from '../render/sunShadowMap.js';
 import { instancedSpriteGlProgram } from '../render/webgl/instancedSpriteGlsl.js';
 import { TileMap } from '../core/tileMap.js';
 import {
@@ -876,6 +876,7 @@ class PixiRenderer extends AbstractWorker {
     this._selfShadowOn = false; // DX-SELFSHADOW: lighting.selfShadow, WebGL for now
     this.sunMapRT = null;
     this._sunMapMesh = null;
+    this._sunMapColumns = null; // { shader, grid, meshes: one a caster geometry } (sunMapColumnsVertex)
     this._sunMapUniforms = null;
     this._sunMapTerms = new Float32Array(4);
     this._sunMapK = new Float32Array(4);
@@ -5834,6 +5835,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       state.depthMask = false;
       state.culling = false;
       this._sunMapMesh = new PIXI.Mesh({ geometry: batch.mesh.geometry, shader, state, label: 'sun-map' });
+      // Casters with height maps: their columns, over the same instances (one geometry a caster geometry).
+      const columnsProgram = instancedSpriteGlProgram(PIXI.GlProgram, sunMapColumnsVertex(shaders.shadowVert), shaders.sunMapFrag, 'sun-map-columns');
+      this._sunMapColumns = {
+        shader: new PIXI.Shader({
+          glProgram: columnsProgram,
+          // Named one by one: a shader's resources are not plain properties to spread.
+          resources: {
+            uTexture: r.uTexture,
+            uSampler: r.uSampler,
+            uTexLut: r.uTexLut,
+            uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
+            uniforms: this._sunMapUniforms,
+          },
+        }),
+        grid: new Buffer({ data: sunMapColumnGrid(), usage: BufferUsage.VERTEX }),
+        // Meshes draw by index: the grid's vertices in order (a geometry without one drew nothing).
+        index: Uint16Array.from({ length: SUN_MAP_COLUMNS * SUN_MAP_COLUMNS * 6 }, (_, i) => i),
+        state,
+        meshes: [],
+      };
     }
     if (!this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS)) return false;
     const mesh = this._sunMapMesh;
@@ -5863,9 +5884,39 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.clear = true;
     rtOpts.clearColor = this._clearTransparent;
     this._submitRender(rtOpts);
+    if (this.atlasMapsSource !== null) {
+      rtOpts.container = this._sunMapColumnsMesh(batch.mesh.geometry);
+      rtOpts.clear = false;
+      this._submitRender(rtOpts);
+      this._gpuPassesThisFrame++;
+    }
     rtOpts.target = this.shadowRT;
     this._gpuPassesThisFrame++;
     return true;
+  }
+
+  /**
+   * DX-SHADOW3D: the columns' mesh over a caster geometry: its instance attributes, the column grid instead of the quad,
+   * indexed in order (the grid lists its triangles). Made once a geometry (the ring swaps them); the instance count each frame.
+   */
+  _sunMapColumnsMesh(geometry) {
+    const columns = this._sunMapColumns;
+    let entry = null;
+    for (let i = 0; i < columns.meshes.length; i++) {
+      if (columns.meshes[i].source === geometry) entry = columns.meshes[i];
+    }
+    if (entry === null) {
+      const attributes = { aCell: { buffer: columns.grid, format: 'float32x4', stride: 16, offset: 0 } };
+      for (const [name, a] of Object.entries(geometry.attributes)) {
+        if (name === 'aQuad') continue;
+        attributes[name] = { ...a };
+      }
+      const g = new PIXI.Geometry({ attributes, indexBuffer: columns.index });
+      entry = { source: geometry, mesh: new PIXI.Mesh({ geometry: g, shader: columns.shader, state: columns.state, label: 'sun-map-columns' }) };
+      columns.meshes.push(entry);
+    }
+    entry.mesh.geometry.instanceCount = geometry.instanceCount;
+    return entry.mesh;
   }
 
   /** DX-SHADOW3D: a frame with no sun rows clears the sun's map (once). */

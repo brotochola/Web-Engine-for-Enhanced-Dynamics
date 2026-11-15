@@ -77,3 +77,20 @@ test('lighting.selfShadow: the light pass steps towards the sun over the face ma
   assert.doesNotMatch(lightingSource(src, { faces: false, sunMap: false, selfShadow: true }), /selfShadow|uSelfShadow|#if/);
   assert.equal(LIGHTING_DEFAULTS.selfShadow, false);
 });
+
+test('a caster with a height map casts columns: each cell where it is in 3D, the column under it to the floor', async () => {
+  const { SUN_MAP_COLUMNS, sunMapColumnGrid, sunMapColumnsVertex } = await import('../../src/render/sunShadowMap.js');
+  const grid = sunMapColumnGrid(2);
+  assert.equal(grid.length, 2 * 2 * 6 * 4);
+  assert.deepEqual(Array.from(grid.subarray(0, 8)), [0.25, 0.25, 0, -1, 0.25, 0.25, 1, -1]);
+  const src = sunMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl'));
+  assert.match(src, /in vec4 aCell;/);
+  assert.match(src, /aQuad = aCell\.xy;/);
+  // The floor point under a cell is its screen place moved down by its height (the faces' formula), then the strip runs
+  // from there (height 0) to where its ray lands (height z).
+  assert.match(src, /vec2 base = vec2\(pix\.x, \(pix\.y \+ uSunK\.w \* z\) \* uGroundInvScaleY\);/);
+  assert.match(src, /vSunZ = z \* aCell\.z;/);
+  assert.match(src, new RegExp(`/ ${SUN_MAP_COLUMNS}\\.0;`));
+  assert.doesNotMatch(src, /sunMapped\(aInstUV\)\) \{/, 'columns do not skip mapped frames: cards do');
+  assert.match(sunMapVertex(shader('instancedSpriteShadow.vert.glsl')), /if \(sunMapped\(aInstUV\)\) \{/);
+});
