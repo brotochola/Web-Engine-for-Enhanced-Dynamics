@@ -16207,7 +16207,7 @@
       "id": "DX-LAMPPANO",
       "title": "The lamps' shadow map as a panorama per lamp: for each direction from the lamp, how far the first thing is (the standard point light's shadow map). Points higher than the lamp take its shadows (today they count as lit: under a 20 px lamp the fence's shadow does not climb the barn's wall), and no stretch cap (N-192's steps at the tip)",
       "status": "open",
-      "statusText": "approved by the owner 2026-11-15 (\"agregalo al backlog, y lo hacés en un rato, como parte de los arreglos de esta branch\"); after the current fixes, on dx/light3d",
+      "statusText": "approved by the owner 2026-11-15 (\"agregalo al backlog, y lo hacés en un rato, como parte de los arreglos de esta branch\"); after the current fixes, on dx/light3d; the owner saw the same limit on the barn's walls under the bench's lamps the same evening",
       "date": "2026-11-15",
       "area": "render",
       "kind": "feature",
@@ -16236,6 +16236,54 @@
       "records": [
         "R-1143"
       ]
+    },
+    {
+      "id": "N-208",
+      "title": "By day a tree's sun shadow showed on the barn's far wall, through the barn: the sun map keeps the highest caster on each ray (the tree beyond the barn) and a pixel skips its own entity's, so a wall turned away from the sun took the tree's shade",
+      "status": "open",
+      "statusText": "reported by the owner 2026-11-15 at the light bench (\"la sombra del árbol proyectada en la pared del granero traspasa la pared\"); fix written the same day, its capture pending",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "A face turned away from the sun is in its own shade, where by day the sprite looks as drawn: the fix keeps the sun map's shade off the flat term of a face the sun does not reach (faded across the terminator, smoothstep 0 to 0.15 of its cosine); a card (FLAT pixel) keeps it.",
+      "next": "The bench in the morning, a tree beside the barn's corner, before and after; tests; commit.",
+      "refs": [],
+      "aliases": [
+        "tree shadow through the barn"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-209",
+      "title": "A fixed card's axis comes from the facing, not the frame drawn: a fence at facing 15 drawn with its 11.25 degree frame casts its silhouette 5.6 degrees off, its rails' shadows not parallel to it and its posts' shadows away from its posts (the prototype takes the frame's angle)",
+      "status": "open",
+      "statusText": "reported by the owner 2026-11-15 at the light bench; compared with the prototype the same day (protoVsBench3, facings 188 and 15): at 188 both alike, at 15 the prototype parallel and crisp, the engine off",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "bug",
+      "result": "computeCasterCodes writes the axis from DirectionalSprite.facing in 64 steps; the frame drawn is the nearest of 32 (11.25 degree) directions, so the card can stand up to half a step off the picture. 32 directions from 90 degrees are whole 64ths, so the drawn direction's angle is exact in the code.",
+      "next": "The axis from the direction drawn (the sheet's table angle at DirectionalSprite.directionIndex), the facing only without a table; protoVsBench3 at facings 15 and 188 against the prototype.",
+      "refs": [],
+      "aliases": [
+        "fixed card axis from the drawn frame"
+      ],
+      "records": []
+    },
+    {
+      "id": "DX-PIXELSHADOW",
+      "title": "Pixel-art lighting: an option that shades each world pixel whole (its light and its shadows at the pixel's centre), so a shadow follows the art's pixel grid crisply as the prototype's does",
+      "status": "open",
+      "statusText": "asked by the owner 2026-11-15 looking at the fence against the prototype (\"la sombra también con pixel art, siguiendo exactamente las líneas pixeladas, queda mucho mejor\")",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "feature",
+      "result": "The prototype lights per world pixel and scales its picture up with nearest; the engine's light pass shades per pass pixel and its maps take five taps, so at zoom 3 its shadows' edges are smooth across the art's blocks.",
+      "next": "A lighting option (pixel art) that snaps the light pass's world point to its pixel's centre before every term and drops the maps' blur to that pixel; the bench turns it on (it draws its atlas 'nearest' already); captures of the fence and the barn against the prototype; its cost in gpuPassBench.",
+      "refs": [],
+      "aliases": [
+        "pixel art shadows"
+      ],
+      "records": []
     }
   ],
   "records": [
