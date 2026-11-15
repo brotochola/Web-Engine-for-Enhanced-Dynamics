@@ -15691,20 +15691,22 @@
     {
       "id": "N-188",
       "title": "lighting.shadowTextures is still a public key: setSprite({ frame }) needs it on, and it turns the keyed caster paths off for the whole scene",
-      "status": "open",
-      "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-15 on dx/light3d (572d30b2)",
       "date": "2026-11-15",
       "area": "engine",
       "kind": "bug",
-      "result": "dx/par-caster2 retired setTexture for setSprite({ frame }); pre-render and Pixi read lighting.shadowTextures once at init (the pass over the caster rows on, the keyed paths off).",
-      "next": "Pre-render detects frames in use in its 30-frame caster scan (casterFramesInUse) and tells Pixi per frame (a word in the keyed header); then the key retires (agent B's proposal, its report of 2026-11-15).",
+      "result": "fixed (572d30b2): pre-render finds frames in use in its caster scan and flags those frames (GPU_FLAG_CASTER_OWN); Pixi draws its rows then; lighting.keyedCasters: false is the diagnostic; the sun street's tree silhouettes cast with no key",
+      "next": "",
       "refs": [
         "REVIEW_PLAN.md#N-188"
       ],
       "aliases": [
         "shadowTextures key"
       ],
-      "records": []
+      "records": [
+        "R-1141"
+      ]
     },
     {
       "id": "N-189",
@@ -16011,17 +16013,18 @@
     {
       "id": "E-379",
       "title": "Columns passes (sun map, lamps' map, sprite shadows) ran their 24 x 24 grid for every caster row and threw away the rows that cast none; they now draw only the rows that cast columns, a large render as k x k blocks of the grid",
-      "status": "running",
-      "statusText": "found and done 2026-11-15 on dx/light3d (ef2e71e0); the GPU pass measured, a scene check left",
+      "status": "kept",
+      "statusText": "done 2026-11-15 on dx/light3d (ef2e71e0); the GPU pass and Predator ?light3d=1 measured",
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "gpuPassBench sunColumns (GTX 1650, WebGL): 20 renders 0.096 ms; the same 20 among 2 000 card rows 5.107 ms, the same image: what Predator ?light3d=1's people cost each columns pass before; the Pixi worker now gives each pass only its column-casting rows (compactColumnRows), and the barn's columns are 6 px (k = 3) instead of 18 (its shadow's staircase)",
+      "result": "gpuPassBench sunColumns (GTX 1650, WebGL): 20 renders 0.096 ms, the same among 2 000 card rows 5.107 ms (same image); Predator ?light3d=1 ABAB 4 pairs: Pixi drew 34.5 -> 60.0 fps (+73 %, 4/4; it was GPU-bound), workers below the 6 ms floor (renderer 2.86 -> 2.95 ms, the compaction); the barn's columns 6 px instead of 18",
       "refs": [],
       "aliases": [],
-      "next": "Scene check: Predator ?light3d=1 (people as cards beside the farm's renders) and sunShadowMapStressScene, the renderer's frame time and every worker's STEP_MS (the compaction is a loop over the caster rows in the Pixi worker), ABAB against e90de4dc^.",
+      "next": "",
       "records": [
-        "R-1137"
+        "R-1137",
+        "R-1140"
       ]
     },
     {
@@ -26937,6 +26940,30 @@
       "commits": [
         "b48a15f2",
         "0adb3656"
+      ]
+    },
+    {
+      "id": "R-1140",
+      "date": "2026-11-15",
+      "time": "16:13",
+      "timeFrom": "recorded",
+      "title": "E-379 in Predator ?light3d=1: Pixi draws 34.5 -> 60 fps",
+      "verdict": "kept",
+      "text": "E-379's scene check: Predator ?light3d=1 (the farm's renders with maps beside about 14 000 casters, people as cards), ABAB, A edee5a6b (before), B ef2e71e0 (E-379), runPredatorAbab --pool --early --pairs 4 --owner pixi, headed, AC power, the owner's Chrome idle (0.13 CPU s in 3 s before the sitting).\n\nPixi drew under the page's rate before: DRAWN_FPS per pair A 44.3, 34.6, 34.5, 34.1 against B 60.0, 59.7, 60.0, 60.1: paired +73.2 %, 4/4 pairs (the columns passes' grid over every caster row had the GPU bound). Presented 60.0 both. Workers' STEP_MS below the 6 ms floor, not judged: renderer 2.858 -> 2.952 (+3.3 %: the compaction, a loop over the caster rows each columns pass), pre-render 3.073 -> 3.095, physics 3.02 -> 3.21, spatial 3.31 -> 3.39, logic 2.05 -> 2.01, particle 0.68 -> 0.75. Load keys within 0.5 % (GPU_CASTERS 13 852 -> 13 783, VISIBLE_ENTITIES 13 883 -> 13 812).\n\nVerdict: kept (the drawn frames; the runner's word for the workers is NEUTRAL, below the floor).",
+      "commits": [
+        "ef2e71e0"
+      ]
+    },
+    {
+      "id": "R-1141",
+      "date": "2026-11-15",
+      "time": "16:16",
+      "timeFrom": "recorded",
+      "title": "N-188 fixed: lighting.shadowTextures retires, frames in use found per scan",
+      "verdict": "kept",
+      "text": "N-188 fixed (572d30b2): lighting.shadowTextures retires. setSprite({ frame }) works in any scene: pre-render's caster scan (every 30 frames, beside casterKindsInUse) finds a frame in use (casterFramesInUse: an active caster with a textureId), those frames take the full rows with the frames applied, and the queue header says so (GPU_FLAG_CASTER_OWN, also when caster kinds are on, or lighting.keyedCasters is false); Pixi then draws pre-render's rows, not the entity batch's keyed instances (E-191), which hold only the sprites' own statics. lighting.keyedCasters: false is the diagnostic that keeps the full rows always (the light bench's ?fullRows=1). Migrated: the sun street, the light bench, the Buenos Aires scene's config line (not run there, the owner's rule), dxCaptureScene, the guide (bible, LAYER_ROUTING), the types, tests (the scan; the keyed paths off with a frame in use or the diagnostic).\n\nCheck: the sun street at 15 h, the panel's T (the trees cast a big tree's silhouette) with no key: the silhouettes drawn, no warning or error. node 2730/2730, demos 101/101.\n\nSide effect worth knowing: a frame with caster kinds on (DX-CASTER) no longer draws the entity batch's keyed sun instances in place of pre-render's coded rows (the flag covers kinds too).",
+      "commits": [
+        "572d30b2"
       ]
     }
   ],
