@@ -15488,12 +15488,12 @@
     {
       "id": "E-368",
       "title": "computeSunFramesInto walks every entity slot and recomputes every directional caster's sun frame each frame: 11.3 % of pre-render in Predator crowd 2.5 (~1.4 ms a frame)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-15 on dx/light3d (pre-render is agent R's file until its branch merges)",
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "result": "",
+      "result": "Predator crowd 2.5 pre-render 8.245 -> 7.497 ms (-9.6 %, 4/4) with E-369; kernels: sun frames keyed 862 -> 1 441 ops/s, every slot 864 -> 1 778",
       "next": "Walk the directional casters only; skip a caster whose direction, animation frame and the sun turn are unchanged; nothing at night. Kernel, then Predator crowd 2.5 against main.",
       "refs": [
         "EXECUTION_PLAN.md#E-368"
@@ -15503,18 +15503,19 @@
         "sun frames every slot"
       ],
       "records": [
-        "R-1120"
+        "R-1120",
+        "R-1121"
       ]
     },
     {
       "id": "E-369",
       "title": "applyKeyedLampFramesInto spends 48 % of its time in one Math.atan2 per keyed stamp row (lamp to caster), only to pick one of N directions: 4.7 % of pre-render in Predator crowd 2.5 (~0.6 ms a frame)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-15 on dx/light3d (pre-render is agent R's file until its branch merges)",
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "result": "",
+      "result": "with E-368 (R-1121): Predator crowd 2.5 pre-render -9.6 %; kernel lampFramesMicrobench 805 -> 1 323 ops/s, the same checksum",
       "next": "Dot products against the bucket borders, or a fast atan2; kernel, then Predator crowd 2.5.",
       "refs": [
         "EXECUTION_PLAN.md#E-369"
@@ -15523,7 +15524,9 @@
         "keyed lamp frames atan2",
         "applyKeyedLampFramesInto cost"
       ],
-      "records": []
+      "records": [
+        "R-1121"
+      ]
     },
     {
       "id": "E-370",
@@ -26181,6 +26184,21 @@
       "text": "**Neutral by the rule (bases under the 6 ms floor), a real cost left: logic 5.985 -> 6.224 ms (+4.0 %), pre-render 5.943 -> 7.661 ms (+28.9 %); spatial +0.2 %, physics +1.1 %, presented 60 -> 60.**\n2026-11-15, 07:04:27 to 07:09:06 (the result files), runPredatorAbab --vs main (0c33673e) --hyp-rev HEAD (8363751c: the\nsecond round merged, E-363, E-364, E-368 step 1, R's casterKindsInUse) --full-rev --query crowd=3 --pairs 4 --pool,\nheaded, on AC power.\n\n| worker | main | branch | |\n| --- | --- | --- | --- |\n| logic | 5.985 ms | 6.224 | +4.0 %, base under the floor |\n| pre-render | 5.943 | 7.661 | +28.9 %, base under the floor |\n| spatial | 10.004 | 9.987 | +0.2 % (paired) |\n| physics | 13.026 | 13.152 | +1.1 % |\n| renderer | 2.937 | 2.993 | under the floor |\n\nLoad keys within 0.1 % (38 366 bodies, GPU_CASTERS 38 228). crowd=3 holds the same population as 2.5 (the pools are\nfull), so it does not lift the bases past 6 ms. Against R-1058 (crowd 2.5, before the round): logic +13.4 % -> +4.0 %\n(E-363, E-364), pre-render +24.5 % -> +28.9 %: what is left there is the sun frames, the lamps' keyed frames and the keyed\nrows' second pass (E-368 to E-370), next.",
       "commits": [
         "8363751c"
+      ]
+    },
+    {
+      "id": "R-1121",
+      "date": "2026-11-15",
+      "time": "07:26",
+      "timeFrom": "recorded",
+      "title": "E-368 and E-369 kept: Predator crowd 2.5 pre-render -9.6 % (the sun frames and the lamps' keyed frames)",
+      "verdict": "kept",
+      "text": "**Kept (product): pre-render 8.245 -> 7.497 ms (-9.6 %, 4/4 pairs, -7.9 % against the other workers); logic -0.6 %, spatial -0.7 %, physics -1.0 %, presented 60 -> 60.**\n2026-11-15, 07:21:09 to 07:26:03 (the result files), runPredatorAbab --vs a3786df3 (before E-368) --hyp-rev a2798d07\n(E-368 steps 1 to 3 and E-369) --query crowd=2.5 --owner preRender --pairs 4 --early --pool, headed, on AC power.\n\n| worker | A | B | |\n| --- | --- | --- | --- |\n| pre-render | 8.245 ms | 7.497 | -9.6 %, 0/4 worse, cv 1/2 %, -7.9 % vs the others |\n| logic | 6.231 | 6.189 | -0.6 % |\n| spatial | 10.168 | 10.116 | -0.7 % |\n| physics | 13.416 | 13.348 | -1.0 % |\n| renderer | 2.969 | 2.900 | under the floor |\n\nLoad keys within 0.1 % (38 366 bodies, GPU_CASTERS 38 223, 48 shadow lights). The kernels before it: the sun frames\n(sunFramesMicrobench) 864 -> 1 778 ops/s on every slot and 862 -> 1 441 on the keyed rows' pass (steps 1 to 3: typed slot\ntables, the passes working out their own rows, a uniform sheet resolved once a turn step); the lamps' keyed frames\n(lampFramesMicrobench) 805 -> 1 323 ops/s (a table by direction, a fast arctangent). Each the same checksum. Left of the\nbranch's pre-render cost against main (R-1120: +1.72 ms): about 1 ms.",
+      "commits": [
+        "8363751c",
+        "b2d82cd3",
+        "74aa2616",
+        "a2798d07"
       ]
     }
   ],

@@ -4858,6 +4858,8 @@ angle from the lamp to the caster by `Math.atan2`, only to pick one of a sheet's
 **Plan:** the direction from dot products against the table's bucket borders (as DirectionalSprite.resolve keeps a
 direction), or a fast atan2 (a step is 11.25° at 32 directions: an error of 0.005 rad changes nothing). Owner:
 pre-render. Kernel, then Predator crowd 2.5.
+**Kept 2026-11-15 (R-1121, a2798d07):** with the sun frames' change (E-368), a table by absolute direction (frameAt) and fastAtan2 (within 2e-5
+rad); lampFramesMicrobench 805 -> 1 323 ops/s, the same checksum. Predator crowd 2.5 pre-render -9.6 % with E-368.
 ### E-368 The sun frames walk every entity slot each frame
 
 **Premise (2026-11-15, CPU profile of Predator crowd 2.5 on dx/light3d, pre-render 753 ms/s busy):** `computeSunFramesInto` is 11.3 % of pre-render (963 ms of self time in the window, about 1.4 ms a
@@ -4867,6 +4869,10 @@ though it changes only when the caster's direction, its animation frame or the s
 **Plan:** walk the directional casters' dense lists, and keep each one's last (direction, frame, turn) so an
 unchanged caster costs a compare; at night (sun intensity 0) nothing. Owner: pre-render. Kernel first
 (`computeSunFramesInto` on Predator-like rows), then Predator crowd 2.5 against main.
+**Kept 2026-11-15 (R-1121), three steps:** typed slot tables (8363751c), the passes working out their own rows'
+frames (b2d82cd3), a uniform sheet resolved once a turn step (74aa2616). sunFramesMicrobench: every slot 864 -> 1 778
+ops/s, the keyed rows' pass 862 -> 1 441, the same checksums. Predator crowd 2.5 (with E-369): pre-render 8.245 -> 7.497 ms
+(-9.6 %, 4/4, -7.9 % against the others).
 ### E-367 The G-buffer pass costs 66 % more on WebGL than on WebGPU
 
 **Premise (the same quick suite):** the G-buffer pass (the face map generalised, resolution 0.5) takes 0.89 ms on
