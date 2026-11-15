@@ -1299,3 +1299,30 @@ worktree (`D:/xampp/htdocs/weed-par-*`) y su rama, con sus archivos y ningún ot
 Quedan para la optimización, después de medir: la cache de lo quieto (F6), el costo de las columnas en escenas grandes,
 los códigos por caster en las filas con clave (hoy fuerzan filas completas) y el cuadro de la sombra en las instancias del
 lote (E-191).
+
+### 17.5 Cómo quedó la segunda ronda (2026-11-15, mañana)
+
+Las cinco ramas están mergeadas en `dx/light3d` (sin push): C1 (9989e648), C2 (df7fcb2d), B (b8da4adc), D (e5a64592)
+y R (f4e187e0). Ninguna corrió tests; los corrí al juntarlas: `test:node` 2721/2721, `test:demos` 101/101, `check:types`.
+
+- **R:** `SpriteRenderer.normals` / `surface` / `emissive` (columna `gbufFlags`), el id de entidad en un segundo destino
+  RGBA8 del G-buffer, `lighting.gbuffer: 'pass' | 'mrt'`, emisivos v2 (dos colores, capa de brillo), `baseRadius` y
+  `selfShadow` del caster en el render, la opacidad del caster en los mapas, y F5 v2 (solo los opacos escriben profundidad,
+  pasada de bordes, franjas de zIndex). Los mapas guardan su caster más alto con prueba de profundidad y su id, y un pixel
+  no recibe la sombra de su propia entidad: arregla N-181 (la casa pintada por su propia sombra en modo mapa).
+- **B:** `VolumeShadowCaster` y `LightOccluder` son internos (`ShadowCaster` escribe sus columnas); los volúmenes piden
+  `lighting.maxVolumes` (sin él, nada: ni capa ni arena); `lighting.raycasted` sale de `camera.pitch` 90 o 0; `type` con
+  AUTO lee `castsSolid`; `setTexture` / `heightMultiplier` / `anchorOffset` pasan a `setSprite`; demos, stress scenes y guía
+  migradas (Buenos Aires solo el cambio de API, sin correrla). Queda `lighting.shadowTextures` (lo leen pre-render y Pixi).
+- **C1:** `sunShadowMap`, `selfShadow`, `depthSort` y `emissive` StressScene con sus filas del catálogo. **C2:** el
+  microbench de GPU (`gpuPassBench.mjs`) y las seis pruebas contra fórmula. **D:** Predator con un solo `ShadowCaster` y
+  `?light3d=1`; el banco como vitrina (panel por elemento, código, luces).
+
+**Lo que encontró la fase de pruebas hasta ahora:** N-183 (la autosombra de R en las caras que no ve la luz ennegrecía las
+paredes del granero; arreglado en 8698ed16), N-184 (aviso de `aInstGbuf` en WebGL; 9681e069), la clave
+`lighting.maxVolumes` en las escenas que tiran volúmenes (Predator light3d, C1, C2), el aviso del bigAtlas de más de 4096
+(salía siempre que una escena lo pedía). Las 21 escenas migradas por B: las quietas dan iguales byte a byte; las que se mueven,
+igual que un A/A. El banco a las 16 y 22 h en los dos backends: mismos números en WebGL y WebGPU.
+
+**Rendimiento ya medido:** E-364 (la dirección de un tipo escalonado se resuelve en sus cuadros de tick): lógica −32,4 % en
+`directionalSpriteStressScene` (R-1119). Anotadas para medir: E-363, E-365 a E-370 (§E del EXECUTION_PLAN).
