@@ -16225,7 +16225,7 @@
       "id": "N-207",
       "title": "A render's silhouette card is as wide as its whole picture and as tall as the picture with its top seen from above, standing on its contact nearest the light: under a lamp high and close (the table, 300 px) its ends stick out of the thing's outline (slivers on the lamp's side) and on other lamps its shadow runs long; the prototype does the same",
       "status": "open",
-      "statusText": "seen by the owner 2026-11-15 in R-1143's comparison (\"el frame más a la derecha en ambos casos está mal\"); to do within DX-LAMPPANO (it rewrites the lamps' cards), the sun's card too",
+      "statusText": "seen by the owner 2026-11-15 in R-1143's comparison (\"el frame más a la derecha en ambos casos está mal\"); to do within DX-LAMPPANO (it rewrites the lamps' cards), the sun's card too; the owner 2026-11-15 ~20:00: left as it is (\"está todo bien ahora, dejemos todo así\"). Tried that evening: the card through the anchor, its heights from the anchor row; it fixed a person's face shaded by the white pickup's sun card (the card stood 4 px past them, its ends out of the car's outline) but changed every car's shadow shape, so reverted. The way left if it comes back: a card bent along the footprint's near outline (a column a lateral step, each on the footprint), the look kept",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
