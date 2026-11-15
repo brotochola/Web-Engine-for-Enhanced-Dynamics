@@ -585,6 +585,16 @@ export const ENGINE_FEATURES = [
     load: [],
   },
   {
+    id: 'tweenPool',
+    name: 'Tween pool tick (65535 alpha tweens)',
+    module: 'src/core/tween.js',
+    // tick = tweenStressScene's slot i -> entity i; scattered = the same tweens on shuffled entities (E-275).
+    kernel: { script: 'tests/bench/tweenPoolMicrobench.mjs', opsKey: 'cases.tick.opsPerSec' },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
+  {
     id: 'shadowStamp',
     name: 'Shadow caster stamp',
     // shadowStamp.wasm only (the JS stamp is tests/reference/shadowStamp.mjs): the kernel's microbench, wasm.
