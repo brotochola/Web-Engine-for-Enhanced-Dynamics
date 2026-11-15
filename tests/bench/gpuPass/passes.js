@@ -4,6 +4,7 @@
  *
  *   color        the entities' colour pass (instancedSprite), premultiplied blending, full resolution
  *   colorDepth   the same with DX-DEPTH's per-pixel depth (pixelDepth.js) and a depth target
+ *   gbufFace, gbufIds, gbufBoth  lighting.gbuffer as the engine draws it: 'pass' is the first two, 'mrt' the third
  *   gbuffer      the G-buffer as a second pass (the face map generalised: faceMap.js + faceMap.frag.glsl) at the light
  *                pass's resolution
  *   gbufferMrt   colour and G-buffer in one pass, two targets (both full resolution: MRT targets share a size). The
@@ -21,7 +22,9 @@
  *                three textures (the bench's shader: the engine has none yet)
  */
 
-import { faceFragmentGlsl, faceMapVertex, faceMapWgsl, lightingSource } from '../../../src/render/faceMap.js';
+import {
+  faceFragmentGlsl, faceGbufFragment, faceIdsFragment, faceMapVertex, faceMapWgsl, lightingSource,
+} from '../../../src/render/faceMap.js';
 import {
   SUN_MAP_COLUMNS, sunMapColumnGrid, sunMapColumnIndex, sunMapColumnsVertex, sunMapColumnsWgsl, sunMapVertex, sunMapWgsl,
 } from '../../../src/render/sunShadowMap.js';
@@ -265,6 +268,8 @@ export function buildFrame(p, sh, sc, backend) {
     final: { kind: 'target', format: 'rgba8', width: W, height: H, filter: 'linear' },
     gbuf: { kind: 'target', format: 'rgba8', width: lw, height: lh, filter: 'nearest' },
     gbufFull: { kind: 'target', format: 'rgba8', width: W, height: H, filter: 'nearest' },
+    // DX-GBUF: the entity ids map, the light's size as the face map (lighting.gbuffer's two modes).
+    ids: { kind: 'target', format: 'rgba8', width: lw, height: lh, filter: 'nearest' },
     depth: { kind: 'depth', width: W, height: H },
     sunMap: { kind: 'target', format: p.format, width: sw, height: shh, filter: 'nearest' },
     sunDepth: { kind: 'depth', width: sw, height: shh, bits: p.mapDepth },
@@ -412,6 +417,26 @@ export function buildFrame(p, sh, sc, backend) {
       clear: [0, 0, 0, 0],
     },
   }));
+  // lighting.gbuffer as the engine draws it (instancedSpriteBatch idsMesh / gbufMesh, the words on): 'pass' is gbufFace
+  // then gbufIds, 'mrt' is gbufBoth, every target the light's size.
+  const gbufPass = (name, label, fragment, entry, targets) => ({
+    label: `${label}, ${sc.sprites.count} sprites, ${lw}x${lh}`,
+    spec: {
+      name,
+      glsl: { vertex: faceMapVertex(sh.spriteVert, { gbuf: true }), fragment },
+      wgsl: { code: faceMapWgsl(sh.spriteWgsl, { gbuf: true }), vertexEntry: 'mainVert', fragmentEntry: entry },
+      vertex: quad,
+      instances: sc.sprites,
+      textures: spriteTextures,
+      uniforms: { ...pixi(W, H), uTileWorld: [0, 0, 0, 0], uFaceSpace: [c, g, 0, 0] },
+      targets,
+      blend: targets.map(() => 'none'),
+      clear: [0, 0, 0, 0],
+    },
+  });
+  add('gbufFace', () => gbufPass('gbufFace', "the face map with the words (lighting.gbuffer 'pass', its first)", faceFragmentGlsl(sh.faceFrag, { gbuf: true }), 'mainFragFace', ['gbuf']));
+  add('gbufIds', () => gbufPass('gbufIds', "the entity ids map (lighting.gbuffer 'pass', its second)", faceIdsFragment(), 'mainFragIds', ['ids']));
+  add('gbufBoth', () => gbufPass('gbufBoth', "the face map and the ids map in one pass (lighting.gbuffer 'mrt')", faceGbufFragment(sh.faceFrag), 'mainFragGbuf', ['gbuf', 'ids']));
   add('gbufferMrt', () => ({
     label: `colour + G-buffer in one pass (MRT, the bench's program), ${sc.sprites.count} sprites, ${W}x${H}`,
     notes: 'the G-buffer target is full resolution (MRT targets share a size)',
