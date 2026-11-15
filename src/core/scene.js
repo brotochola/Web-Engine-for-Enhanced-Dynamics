@@ -1707,11 +1707,18 @@ class Scene {
   }
 
   async _packBigAtlasOnMainThread(assetsToLoad, options) {
-    const packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, options);
+    // DX-MAPS: the twin page's texels as computed, not read back from its canvas: a 2D canvas keeps premultiplied alpha,
+    // and the twin page holds a normal's second byte in A (about 55 to 61 on standing sprites), so R, the height's high
+    // byte, came back rounded by a few steps (several px of height).
+    const packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, { ...options, keepMapsTexels: true });
+    const maps = packed.mapsCanvas;
+    const exact = maps && packed.mapsTexels ? new ImageData(packed.mapsTexels, maps.width, maps.height) : null;
     const [imageBitmap, mapsBitmap] = await Promise.all([
       createImageBitmap(packed.canvas),
       // DX-MAPS: the twin page goes to the renderer as data: no premultiplied alpha, no colour space.
-      packed.mapsCanvas ? createImageBitmap(packed.mapsCanvas, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }) : null,
+      exact
+        ? createImageBitmap(exact, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+        : maps ? createImageBitmap(maps, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }) : null,
     ]);
     return { json: packed.json, imageBitmap, mapsBitmap, canvas: packed.canvas };
   }
