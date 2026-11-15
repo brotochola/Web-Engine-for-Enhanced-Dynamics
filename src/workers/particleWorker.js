@@ -1633,7 +1633,18 @@ class ParticleWorker extends AbstractWorker {
   stampCollectedParticles() {
     const n = this.particlesToStampCount;
     if (n === 0) return;
+    const list = this.particlesToStamp;
+    const b = this._decalWasm;
+    if (!this.decalsEnabled || b === null) {
+      // Nothing stamps (stampParticleToTile left out every stamp without the kernel): the particles go back to the pool.
+      for (let i = 0; i < n; i++) ParticleEmitter.returnToPool(list[i]);
+      this.particlesStampedThisFrame = this.decalsEnabled ? n : 0;
+      return;
+    }
 
+    // E-336: each particle's W26 record, written here from its columns as stampParticleToTile writes it. Passed to
+    // stampParticleToTile, its five doubles crossed a call TurboFan left out (that callee also holds a warning, a Set
+    // and a flush): 63-76 KB/s of heap numbers in Predator (R-1100).
     const particleX = ParticleComponent.x;
     const particleY = ParticleComponent.y;
     const particleTint = ParticleComponent.baseTint;
@@ -1642,41 +1653,64 @@ class ParticleWorker extends AbstractWorker {
     const particleTextureId = ParticleComponent.textureId;
     const particleAlpha = ParticleComponent.alpha;
     const particleBlendMode = ParticleComponent.blendMode;
-    const decalsEnabled = this.decalsEnabled;
-
+    const textures = this.decalTextures;
+    const f64 = b.f64;
+    const u32 = b.u32;
+    const maxStamps = b.maxStamps;
+    let k = b.count;
     for (let i = 0; i < n; i++) {
-      const particleIndex = this.particlesToStamp[i];
-
-      if (decalsEnabled) {
-        this.stampParticleToTile(
-          particleX[particleIndex],
-          particleY[particleIndex],
-          particleTint[particleIndex],
-          particleScaleX[particleIndex],
-          particleScaleY[particleIndex],
-          particleTextureId[particleIndex],
-          particleAlpha[particleIndex],
-          particleBlendMode[particleIndex]
-        );
+      const p = list[i];
+      const textureId = particleTextureId[p];
+      const texture = textures[textureId];
+      if (texture) {
+        const byte = texture.wasmByte;
+        if (byte >= 0) {
+          if (k === maxStamps) {
+            b.count = k;
+            this.flushDecalStamps();
+            k = b.count;
+          }
+          const f = k << 3;
+          const u = k << 4;
+          f64[f] = particleX[p];
+          f64[f + 1] = particleY[p];
+          f64[f + 2] = particleScaleX[p];
+          f64[f + 3] = particleScaleY[p];
+          f64[f + 4] = particleAlpha[p];
+          u32[u + 10] = particleTint[p];
+          u32[u + 11] = particleBlendMode[p] === 1 ? 1 : 0;
+          u32[u + 12] = byte;
+          u32[u + 13] = texture.width;
+          u32[u + 14] = texture.height;
+          k++;
+        } else {
+          this._decalTextureNotInMemory(textureId);
+        }
       }
-      ParticleEmitter.returnToPool(particleIndex);
+      ParticleEmitter.returnToPool(p);
     }
+    b.count = k;
+    this.particlesStampedThisFrame = n;
+  }
 
-    this.particlesStampedThisFrame = decalsEnabled ? n : 0;
+  /** A decal texture the decal memory left out (no pixels to stamp): its stamps are skipped, with one warning. */
+  _decalTextureNotInMemory(textureId) {
+    if (!this._decalTexturesMissing.has(textureId)) {
+      this._decalTexturesMissing.add(textureId);
+      console.warn(`[PARTICLE WORKER] decal texture ${textureId} is not in the decal memory (no pixels?); its stamps are skipped`);
+    }
   }
 
   stampParticleToTile(worldX, worldY, tint, scaleX, scaleY, textureId, alpha, blendMode) {
     const texture = this.decalTextures[textureId];
     if (!texture) return;
     // W26: a record for decalStamp.wasm (written here, so no double crosses a call), stamped at the flush.
+    // stampCollectedParticles writes the same record inline: a change here goes there too.
     const b = this._decalWasm;
     if (b === null) return;
     // The memory holds every well-formed texture (createDecalMemory): one it left out has no pixels to stamp.
     if (texture.wasmByte < 0) {
-      if (!this._decalTexturesMissing.has(textureId)) {
-        this._decalTexturesMissing.add(textureId);
-        console.warn(`[PARTICLE WORKER] decal texture ${textureId} is not in the decal memory (no pixels?); its stamps are skipped`);
-      }
+      this._decalTextureNotInMemory(textureId);
       return;
     }
     if (b.count === b.maxStamps) this.flushDecalStamps();
