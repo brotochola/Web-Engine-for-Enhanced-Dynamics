@@ -380,7 +380,10 @@ export function lampMapColumnsWgsl(source, cells = LAMP_MAP_COLUMNS) {
     .replace(body, `${body}  let aQuad = aCell.xy;\n`)
     .replace(
       '@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n',
-      "@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n",
+      // uFoot is declared though no lamp column reads it: the program's layout names binding 7 (sunShadowGpuProgram with
+      // maps), and Pixi files a resource by the WGSL's declarations. Undeclared, it went to a spare group and group 2
+      // had no binding 7, which Pixi reports as "the resource bound as 'uFoot' was destroyed".
+      "@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n// DX-SHADOW3D: the renders' footprints (the layout's binding 7; unread here).\n@group(2) @binding(7) var uFoot: texture_2d<f32>;\n",
     );
   const k = (1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
   return `${head}  let uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
