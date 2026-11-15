@@ -3,9 +3,10 @@
 //
 //   LightEmitter            radius, color, brightness, elevation, glow, glowOffsetY, offsetX, castShadows, shadowRange
 //   cone lights             coneAngle, coneSoftness, direction: the cars' headlights (nightStreet.js, Car)
-//   lighting.raycasted      lights are stopped by LightOccluders: the houses and the cars cut the beams
+//   lighting.raycasted      lights are stopped by walls: the houses and the cars cut the beams (shadowCaster.lamps.setWall,
+//                           a LightOccluder each)
 //   camera.floorScaleY      the floor is drawn 0.7 as tall (carScene's pictures are), and so are pools and cones
-//   VolumeShadowCaster      the houses and cars as volumes, for the sun's shadows by day (N)
+//   shadowCaster.setBox     the houses and cars as volumes (VolumeShadowCaster's), for the sun's shadows by day (N)
 //
 // The panel's keys (C V F B K R G N) change one field of every headlight (or lamp) at a time; nothing else changes.
 // The road, its meshes and the panel are Sun Street's: this scene is about the lights.
@@ -79,7 +80,7 @@ export class HeadlightsScene extends Scene {
       baseAmbient: 0.05,
       raycasted: RAYCAST,
       maxLights: 32, // 7 lamps and up to 25 cars in view
-      shadowsEnabled: true, // the sun's shadows (VolumeShadowCaster), and the lamps' sprite shadows with ?raycast=0
+      shadowsEnabled: true, // the sun's shadows (the volumes), and the lamps' sprite shadows with ?raycast=0
       sun: {
         enabled: true,
         dayCycle: { enabled: false }, // the hour only moves with N (create sets it)
@@ -136,7 +137,7 @@ export class HeadlightsScene extends Scene {
       { key: 'k', keyName: 'K', label: 'Cast shadows', note: 'castShadows: off, the beams pass the houses (and cost less)', press: () => this._toggleCastShadows() },
       { key: 'r', keyName: 'R', label: 'Shadow range', note: 'shadowRange: only occluders this close stop the beam (0: the radius)', press: () => this._nextShadowRange() },
       { key: 'g', keyName: 'G', label: 'Lamp glow', note: "glow: the halo's alpha on the bulb, glowOffsetY puts it up the post", press: () => this._toggleLampGlow() },
-      { key: 'n', keyName: 'N', label: 'Hour', note: "Sun.setTimeOfDay: by day the houses' VolumeShadowCaster boxes cast the sun's shadows", press: () => this._toggleNight() },
+      { key: 'n', keyName: 'N', label: 'Hour', note: "Sun.setTimeOfDay: by day the houses' boxes (shadowCaster.setBox) cast the sun's shadows", press: () => this._toggleNight() },
     ]);
     this._showStates();
   }

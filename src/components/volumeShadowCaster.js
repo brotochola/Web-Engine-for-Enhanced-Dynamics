@@ -1,6 +1,10 @@
 // VolumeShadowCaster — says what an object is, and the engine works out its shadow (DX-VOLUME). A box, levels or a hull of
 // points, in the entity's frame: it moves and turns with the entity. No second entity, no layer in the config, no mesh code.
 //
+// DX-CASTER (DX_LIGHT3D_PLAN.md §5.5): shadowCaster.setBox, addLevel and setHull come here, for a class that lists both. Through
+// the ShadowCaster the volume replaces the sprite's silhouette, and a later ShadowCaster setter that casts something else clears
+// it. Called on its own, as before, it leaves the sprite's shadow alone.
+//
 // A volume is the entity's MeshGeometry slot, with the height of each vertex where a mesh has its U, on the `volumeShadows`
 // layer, which Scene adds when a class lists this component: sunProjected, so the GPU moves each vertex by the sun. Only the
 // roof and the sides are drawn. A ray from a point in shadow up to the sun leaves the volume through one of them, so a floor
