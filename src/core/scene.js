@@ -42,7 +42,7 @@ import { CollisionListener } from '../components/collisionListener.js';
 import { JointBreakListener } from '../components/jointBreakListener.js';
 import { Grab } from '../components/grab.js';
 import { SpriteSheetRegistry, addBigAtlasChunks } from './spriteSheetRegistry.js';
-import { sheetCastsSolid } from '../render/frameBase.js';
+import { sheetCastsSolid, sheetStandsOnContact } from '../render/frameBase.js';
 import { AdobeAnimRegistry } from './adobeAnimRegistry.js';
 import { AdobeAnimCompiler } from '../util/adobeAnimCompiler.js';
 import {
@@ -1641,6 +1641,8 @@ class Scene {
       // says so too (castsSolid), for shadowCaster.type on the logic workers and the page, which get the proxies.
       const solid = sheetCastsSolid(json, proxyData);
       if (table && solid) table.solid = true;
+      // N-203: a render on a contact casts its solid for the lamps when left to its sheet, even if the sun takes its card.
+      if (table && sheetStandsOnContact(json, proxyData)) table.contact = true;
       if (table || solid) {
         const copy = { ...proxyData };
         if (table) copy.directions = table;

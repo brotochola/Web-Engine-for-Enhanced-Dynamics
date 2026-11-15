@@ -166,6 +166,23 @@ export function lutBaseFloats(base, out, at) {
  * @returns {boolean}
  */
 export function sheetCastsSolid(json, proxy) {
+  return someFirstBase(json, proxy, true);
+}
+
+/**
+ * N-203: whether a sheet of the big atlas stands on a contact (a render with height maps), whatever its json says the sun
+ * casts. Left to its sheet, such a sheet casts its solid for the lamps (sunShadowMap.js compactColumnRows: a render's frame
+ * casts columns for them even when the sun takes its card), so the lamps' rows keep the frame the camera sees.
+ * @param {{ animations?: object, frames?: object } | null | undefined} json the big atlas's
+ * @param {{ animations?: Record<string, { prefixedName?: string }> } | null | undefined} proxy the sheet's proxy entry
+ * @returns {boolean}
+ */
+export function sheetStandsOnContact(json, proxy) {
+  return someFirstBase(json, proxy, false);
+}
+
+/** Whether the first frame of one of the sheet's animations stands on a contact (and, with `solid`, casts no card). */
+function someFirstBase(json, proxy, solid) {
   const anims = json?.animations;
   const frames = json?.frames;
   if (!anims || !frames || !proxy?.animations) return false;
@@ -173,7 +190,7 @@ export function sheetCastsSolid(json, proxy) {
     const list = anims[a?.prefixedName];
     const first = list && list[0];
     const base = first !== undefined ? frames[first]?.base : undefined;
-    if (base && base.contact >= 0 && base.card !== true) return true;
+    if (base && base.contact >= 0 && !(solid && base.card === true)) return true;
   }
   return false;
 }

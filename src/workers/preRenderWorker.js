@@ -195,6 +195,8 @@ export function sunFrameTables(byId) {
             groups: src.groups.length,
             // A render with height maps casts its solid from the frame the camera sees (frameBase.js sheetCastsSolid).
             solid: src.solid === true,
+            // N-203: it stands on a contact (sheetStandsOnContact): left to its sheet, it casts its solid for the lamps.
+            contact: src.contact === true,
             // DX-CASTER: a fixed card's frame, the object seen face on (facing the camera, south).
             front: 0,
             // E-368: each slot's (group × direction) first texture and frame count (sunFrameSlotsOf), and the proxy map
@@ -290,7 +292,7 @@ export function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, 
     shift, shiftTurn, turn, orients) {
     prepareSunFrames(tables, proxy, starts, counts, shift, shiftTurn, turn);
     for (let e = 0; e < n; e++) {
-        const v = sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients);
+        const v = sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, null);
         if (out[e] !== v) out[e] = v;
     }
 }
@@ -299,6 +301,20 @@ export function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, 
 const SUN_TURN = new Float64Array(1);
 /** N-197: a caster's kind for a light that casts its card (CAST_KIND.SPRITE, shadowCaster.js). */
 const CARD_KIND = 1;
+
+/**
+ * N-203: whether directional caster e casts its card for a light kind (`lamps` false: the sun). Its kind for that light
+ * says so (CAST_KIND.SPRITE), or it is left to its sheet (AUTO, 0) and the sheet casts no solid for that light, as the
+ * columns pass reads it (sunShadowMap.js compactColumnRows): for the sun a render on a contact whose json keeps its card
+ * (`t.solid` false), for the lamps a frame on no contact (`t.contact` false). Every other caster keeps the frame the camera
+ * sees: columns are built from it (a height map, a solid), and volumes and walls read no frame.
+ */
+function castsCard(t, kinds, e, lamps) {
+    const k = kinds !== null ? kinds[e] : 0;
+    if (k === CARD_KIND) return true;
+    if (k !== 0) return false;
+    return lamps ? !t.contact : !t.solid;
+}
 
 /**
  * E-368: once a call per sheet, not per caster: its slots (rebuilt when the proxy map is another), and a uniform
@@ -322,15 +338,16 @@ export function prepareSunFrames(tables, proxy, starts, counts, shift, shiftTurn
  * E-368: the frame directional caster e shows the sun, ±(textureId + 1), negative mirrored; 0 for the sprite's own (not a
  * directional caster, a render that casts its solid, an animation the atlas lacks). prepareSunFrames ran this call.
  * N-197: a render whose sheet casts its solid shows the sun's frame when its caster casts a card (`kinds`, its kind for the
- * sun, 1; or a fixed card) as every card does; only its solid keeps the camera's frame (its columns are built from it).
+ * sun, 1) as every card does; only its solid keeps the camera's frame (its columns are built from it). N-203: and so does
+ * any caster whose kind for the sun is not a card (castsCard), whatever its sheet: a height map asked of a car's sheet,
+ * which casts its card by default, is built from the camera's frame too.
  */
 function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds) {
     if (active[e] !== 1 || mode[e] !== 1 || (casts !== null && casts[e] !== 1)) return 0;
     const sheet = sheets[e];
     const t = tables[sheet];
-    if (t === undefined) return 0;
+    if (t === undefined || !castsCard(t, kinds, e, false)) return 0;
     const fixed = orients !== null && orients[e] === 1;
-    if (t.solid && !fixed && !(kinds !== null && kinds[e] === CARD_KIND)) return 0;
     const cur = dirs[e];
     let d = 0;
     if (fixed) {
@@ -499,6 +516,18 @@ function lampFrameFor(e, t, dirs, anims, frames) {
 const LAMP_RAY = new Float64Array(2);
 
 /**
+ * N-203: directional caster e's frame in direction d of its table (no turn), ±(textureId + 1), 0 when the table lacks it:
+ * its front for a fixed card (t.front), the camera's (the direction the logic worker drew) for columns.
+ */
+function frameFacing(e, t, d, anims, frames) {
+    if (d >= t.count) return 0;
+    const g = anims[e];
+    let f = frames !== null ? frames[e] | 0 : 0;
+    if (f < 0 || f >= t.maxFrames) f = 0;
+    return t.frameAt[(d * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
+}
+
+/**
  * DX-SHADOW3D: each full stamp row of a directional caster drawn with the frame its lamp sees: the direction the logic
  * worker drew turned by the angle from the camera's view to the lamp's (along the shadow, from the lamp to the caster, on
  * the floor). The row's entity is in its tint float (pre-render wrote it into the sun row the kernel copied).
@@ -510,15 +539,22 @@ export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables
         const at = k * GPU_CASTER_FLOATS;
         const e = rows[at + GPU_ROW_TINT] | 0;
         if (e < 0 || e >= dsActive.length || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
-        if (orients !== null && orients[e] === 1) continue;
         const t = tables[sheets[e]];
-        // N-197: a solid sheet keeps the camera's frame for its solid; a card of it takes the frame its lamp sees.
-        if (t === undefined || (t.solid && !(kinds !== null && kinds[e] === CARD_KIND))) continue;
-        const L = lights[lightIdx[k]];
-        if (!L) continue;
-        LAMP_RAY[0] = rows[at] - L.x;
-        LAMP_RAY[1] = (rows[at + 1] - L.y) * invG;
-        const v = lampFrameFor(e, t, dirs, anims, frames);
+        if (t === undefined) continue;
+        // N-197, N-203: a card takes the frame its lamp sees (a fixed card its front); columns, the frame the camera sees
+        // (the row copied the sun's, which holds the sun's frame when the sun takes the card).
+        const card = castsCard(t, kinds, e, true);
+        const fixed = orients !== null && orients[e] === 1;
+        let v = 0;
+        if (card && !fixed) {
+            const L = lights[lightIdx[k]];
+            if (!L) continue;
+            LAMP_RAY[0] = rows[at] - L.x;
+            LAMP_RAY[1] = (rows[at + 1] - L.y) * invG;
+            v = lampFrameFor(e, t, dirs, anims, frames);
+        } else {
+            v = frameFacing(e, t, card ? t.front : dirs[e], anims, frames);
+        }
         if (v === 0) continue;
         rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
         const sx = rows[at + GPU_ROW_SCALE_X];
@@ -546,15 +582,24 @@ export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, t
         const at = k * GPU_KEYED_STAMP_FLOATS;
         const e = rows[at + 2] | 0;
         if (e < 0 || e >= dsActive.length || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
-        if (orients !== null && orients[e] === 1) continue;
         const t = tables[sheets[e]];
-        // N-197: a solid sheet keeps the camera's frame for its solid; a card of it takes the frame its lamp sees.
-        if (t === undefined || (t.solid && !(kinds !== null && kinds[e] === CARD_KIND))) continue;
-        const L = lights[lightIdx[k]];
-        if (!L) continue;
-        LAMP_RAY[0] = rows[at] - L.x;
-        LAMP_RAY[1] = (rows[at + 1] - L.y) * invG;
-        const v = lampFrameFor(e, t, dirs, anims, frames);
+        if (t === undefined) continue;
+        // N-197, N-203: a card takes the frame its lamp sees (a fixed card its front); columns, the sprite's own frame (0),
+        // whatever the sun's row it copied carried.
+        if (!castsCard(t, kinds, e, true)) {
+            if (rows[at + 3] !== 0) rows[at + 3] = 0;
+            continue;
+        }
+        let v = 0;
+        if (orients !== null && orients[e] === 1) {
+            v = frameFacing(e, t, t.front, anims, frames);
+        } else {
+            const L = lights[lightIdx[k]];
+            if (!L) continue;
+            LAMP_RAY[0] = rows[at] - L.x;
+            LAMP_RAY[1] = (rows[at + 1] - L.y) * invG;
+            v = lampFrameFor(e, t, dirs, anims, frames);
+        }
         if (v !== 0) rows[at + 3] = v;
     }
 }
