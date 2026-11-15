@@ -15480,6 +15480,63 @@
         "gbuffer WebGL slower"
       ],
       "records": []
+    },
+    {
+      "id": "E-368",
+      "title": "computeSunFramesInto walks every entity slot and recomputes every directional caster's sun frame each frame: 11.3 % of pre-render in Predator crowd 2.5 (~1.4 ms a frame)",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d (pre-render is agent R's file until its branch merges)",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "",
+      "next": "Walk the directional casters only; skip a caster whose direction, animation frame and the sun turn are unchanged; nothing at night. Kernel, then Predator crowd 2.5 against main.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-368"
+      ],
+      "aliases": [
+        "computeSunFramesInto cost",
+        "sun frames every slot"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-369",
+      "title": "applyKeyedLampFramesInto spends 48 % of its time in one Math.atan2 per keyed stamp row (lamp to caster), only to pick one of N directions: 4.7 % of pre-render in Predator crowd 2.5 (~0.6 ms a frame)",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d (pre-render is agent R's file until its branch merges)",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "",
+      "next": "Dot products against the bucket borders, or a fast atan2; kernel, then Predator crowd 2.5.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-369"
+      ],
+      "aliases": [
+        "keyed lamp frames atan2",
+        "applyKeyedLampFramesInto cost"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-370",
+      "title": "_applyKeyedSunFrames is a second JS pass over every keyed caster row after the WASM pack (48 % on the store into the row): 4.3 % of pre-render in Predator crowd 2.5 (~0.55 ms a frame)",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d (pre-render is agent R's file until its branch merges)",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "",
+      "next": "Write the frame inside the keyed pack, or store only changed frames; gpuPackCastersKeyedMicrobench, then Predator crowd 2.5.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-370"
+      ],
+      "aliases": [
+        "keyed sun frames pass",
+        "_applyKeyedSunFrames cost"
+      ],
+      "records": []
     }
   ],
   "records": [

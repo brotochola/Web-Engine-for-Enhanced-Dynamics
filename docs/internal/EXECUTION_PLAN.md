@@ -4845,6 +4845,28 @@ Owner: spatial.
 gather alone 9.45 -> 9.52 ms a frame with the skip off). The skipped visits were the cheap ones (predicted rejects whose
 lines the next entity loads anyway). Ablation of the gather: without the dedup marks -15 %, without the row writes -17 %;
 ids numbered in home-cell order (the locality ceiling) -8 % of the frame.
+### E-370 The keyed rows' sun frames are a second pass over every keyed row
+
+**Premise (2026-11-15, CPU profile of Predator crowd 2.5 on dx/light3d, pre-render 753 ms/s busy):** `_applyKeyedSunFrames` is 4.3 % (366 ms, about 0.55 ms a frame): after the WASM keyed pack has written
+the rows, a JS pass reads each row's entity (21 %) and stores its sun frame into the row (48 %, a miss per row).
+**Plan:** the pack writes the frame as it writes the row (the frames table passed to WASM), or the pass stores only
+rows whose frame changed. Owner: pre-render. Kernel (`gpuPackCastersKeyedMicrobench`), then Predator crowd 2.5.
+### E-369 The lamps' keyed frames take an atan2 per caster and lamp
+
+**Premise (2026-11-15, CPU profile of Predator crowd 2.5 on dx/light3d, pre-render 753 ms/s busy):** `applyKeyedLampFramesInto` is 4.7 % (401 ms, about 0.6 ms a frame), and 48 % of it is one line: the
+angle from the lamp to the caster by `Math.atan2`, only to pick one of a sheet's N directions.
+**Plan:** the direction from dot products against the table's bucket borders (as DirectionalSprite.resolve keeps a
+direction), or a fast atan2 (a step is 11.25° at 32 directions: an error of 0.005 rad changes nothing). Owner:
+pre-render. Kernel, then Predator crowd 2.5.
+### E-368 The sun frames walk every entity slot each frame
+
+**Premise (2026-11-15, CPU profile of Predator crowd 2.5 on dx/light3d, pre-render 753 ms/s busy):** `computeSunFramesInto` is 11.3 % of pre-render (963 ms of self time in the window, about 1.4 ms a
+frame), the branch's pre-render cost against main (R-1058: 5.89 -> 7.34 ms). It walks every entity slot (14 % on
+the test `active[e] === 1 && mode[e] === 1 && casts[e]`) and recomputes each directional caster's frame every frame,
+though it changes only when the caster's direction, its animation frame or the sun's turn does.
+**Plan:** walk the directional casters' dense lists, and keep each one's last (direction, frame, turn) so an
+unchanged caster costs a compare; at night (sun intensity 0) nothing. Owner: pre-render. Kernel first
+(`computeSunFramesInto` on Predator-like rows), then Predator crowd 2.5 against main.
 ### E-367 The G-buffer pass costs 66 % more on WebGL than on WebGPU
 
 **Premise (the same quick suite):** the G-buffer pass (the face map generalised, resolution 0.5) takes 0.89 ms on
