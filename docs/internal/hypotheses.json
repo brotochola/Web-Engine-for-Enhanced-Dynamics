@@ -16206,18 +16206,20 @@
     {
       "id": "DX-LAMPPANO",
       "title": "The lamps' shadow map as a panorama per lamp: for each direction from the lamp, how far the first thing is (the standard point light's shadow map). Points higher than the lamp take its shadows (today they count as lit: under a 20 px lamp the fence's shadow does not climb the barn's wall), and no stretch cap (N-192's steps at the tip)",
-      "status": "open",
+      "status": "kept",
       "statusText": "approved by the owner 2026-11-15 (\"agregalo al backlog, y lo hacés en un rato, como parte de los arreglos de esta branch\"); after the current fixes, on dx/light3d; the owner saw the same limit on the barn's walls under the bench's lamps the same evening",
       "date": "2026-11-15",
       "area": "render",
       "kind": "feature",
-      "result": "Today's map (F7, option C) projects every caster point onto the floor from the lamp and keeps the highest landing in each texel: a point is shaded when something higher lands where its own ray does, which only answers for points lower than the lamp, and points near the lamp's height land at infinity (the stretch capped at 8).",
+      "result": "built (2b19d9f8): two halves a lamp (the ceiling the world mirrored in the lamp's height), landings compressed to the horizon, no stretch cap; the fence's shadow climbs the barn's wall under a 20 px lamp; map + light pass -2.5 % WebGL, -11 % WebGPU at 48 lamps",
       "next": "Each lamp's tile as (azimuth, elevation) from the lamp holding the nearest caster's distance (min depth): a column is a vertical segment there, a card a near-rectangle with its picture tested per fragment; the light pass looks up the pixel's own direction and compares its distance. Cards facing each lamp and fixed ones, the lamp's own entity left out, GLSL and WGSL; then shadowOutlineCheck (N-192), lampShadowStressScene against today's map, the bench's fence and barn under a 20 px lamp.",
       "refs": [],
       "aliases": [
         "panoramic lamp map"
       ],
-      "records": []
+      "records": [
+        "R-1147"
+      ]
     },
     {
       "id": "N-207",
@@ -16290,6 +16292,20 @@
       "records": [
         "R-1146"
       ]
+    },
+    {
+      "id": "E-381",
+      "title": "DX-LAMPPANO's lamp lookup costs the WebGL light3d pass 12 % (1.302 -> 1.461 ms at 48 lamps), WebGPU none",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 with DX-LAMPPANO; for the optimization plan (no benchmarks until then, the owner)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "gpu",
+      "result": "The lookup per lamp and pixel within the reach: the compressed landing (a length, a division), the half and the ceiling test; ANGLE D3D11 against Tint.",
+      "next": "Read ANGLE's HLSL for the light pass (the branch at the reach a real one?), a cheaper landing (squared radii), the ceiling half only for points above some lamp; gpuPassBench light3d both backends.",
+      "refs": [],
+      "aliases": [],
+      "records": []
     }
   ],
   "records": [
@@ -27211,6 +27227,18 @@
       "text": "DX-PIXELSHADOW built (8e58d474): lighting.pixelArt, after the owner's comparison of the fence with the prototype (the prototype's shadow crisp on the art's pixels \"queda mucho mejor\").\n\nWhat: the light pass snaps its world point to the pixel's centre before every term and reads the sun's and the lamps' maps with one tap (PIXELART blocks, GLSL and WGSL); the lamps' tiles sized for a texel a floor px. Default false; the light bench turns it on (?pixel=0 off).\n\nCheck: protoVsBench3 (the fence alone at facing 15, four suns, zoom 3): the engine's shadow crisp on the art's grid, the prototype's shape and place. WebGPU at night in the bench (a lamp at 60 px over the fence and the table): compiles and draws; the lamps' shadows step on single art pixels after the tile change (on pairs before it). Not timed: it does less than the five-tap pass (one tap a map, one floor). node 2739/2739, demos 101/101, check:types.",
       "commits": [
         "8e58d474"
+      ]
+    },
+    {
+      "id": "R-1147",
+      "date": "2026-11-15",
+      "time": "18:53",
+      "timeFrom": "recorded",
+      "title": "DX-LAMPPANO built: the lamps' map as a panorama, a floor and a ceiling half",
+      "verdict": "kept",
+      "text": "DX-LAMPPANO built (2b19d9f8), the owner's choice B for the lamps' shadows on walls higher than the lamp (the fence's shadow under a 20 px lamp did not climb the barn's wall) and N-192's stretch cap.\n\nWhat: each lamp's tile is 2S x S: a floor half (as before) and a ceiling half (the world mirrored in the lamp's height, its texel the lowest caster point's real height); landings compressed into each half out to the horizon (0.8 of the half's radius for the reach, the ring for the rest), so no stretch cap; cards on a three-row strip, columns on a three-row grid (the band within the reach the projection itself); volumes compressed on the floor half; the light pass picks the half by the point's height, the flat path has a floor-only lookup, both leave past the reach.\n\nFound on the way: with the full lookup at all four call sites ANGLE's D3D11 compiler failed to link the light pass (2.9 s, empty log) and Chrome lost the GPU context at the bench's start; the floor-only lookup on the flat path links in 337 / 600 ms (pixel art / not; the old pass 331). Found with glslLink.mjs and glslVariants.mjs (session scratchpad: real Chrome, one fresh browser a variant).\n\nCheck: bench at night, a lamp at 20 px past the fence: the fence's shadow climbs the barn's gable wall and runs to the horizon behind it (the fence is taller than the lamp), WebGL and WebGPU alike; a 55 px lamp's scene as before. gpuPassBench (GTX 1650, 48 lamps, tile 256; run before the owner asked for no benchmarks): floor half 1.446 -> 0.691 ms WebGL, 1.543 -> 0.721 WebGPU, ceiling half 0.527 / 0.516; light3d 1.302 -> 1.461 WebGL (E-381), 1.288 -> 1.274 WebGPU; map and light together -2.5 % WebGL, -11 % WebGPU. node 2742/2742, demos 101/101, check:types.\n\nLeft: the ceiling half for the volumes; N-207 (a render's card size) in the cards' program; N-192's outline offsets (the cap's steps are gone).",
+      "commits": [
+        "2b19d9f8"
       ]
     }
   ],
