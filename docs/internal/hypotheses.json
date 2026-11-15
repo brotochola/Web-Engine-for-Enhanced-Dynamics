@@ -555,7 +555,7 @@
     {
       "id": "W7",
       "title": "W5 + W6 + the existing publish",
-      "status": "open",
+      "status": "screened",
       "statusText": "screened 2026-10-28: a port's ceiling is a few per cent of spatial",
       "date": null,
       "result": "The JS decision loop is about 8 % of the spatial frame (kernel profile); the rebuild in C ties (+2.0 % / −2.2 %); the loop's counter writes in locals tie (−0.2 % / −0.9 %).",
@@ -568,7 +568,8 @@
       "next": "Nothing pending.",
       "records": [
         "R-0685",
-        "R-0991"
+        "R-0991",
+        "R-1050"
       ]
     },
     {
@@ -7950,7 +7951,7 @@
     {
       "id": "E-99",
       "title": "Caster positions in bin order for the shadow stamp",
-      "status": "open",
+      "status": "rejected",
       "statusText": "rejected in the kernel 2026-10-23",
       "date": "2026-10-23",
       "result": "buildStampGrid copied caster x, y in bin order for the light walk. shadowStampMicrobench 666 → 658 ops/s (−1.2 %, a tie): the rows fit in cache, the profile's samples were load stalls.",
@@ -7962,7 +7963,8 @@
       "aliases": [],
       "records": [
         "R-0490",
-        "R-0991"
+        "R-0991",
+        "R-1051"
       ]
     },
     {
@@ -25546,6 +25548,24 @@
       "commits": [
         "9f0f2936"
       ]
+    },
+    {
+      "id": "R-1050",
+      "date": "2026-11-14",
+      "time": "21:23",
+      "timeFrom": "recorded",
+      "title": "W7 closed: nothing pending (a port's ceiling is a few per cent of spatial)",
+      "verdict": "screened",
+      "text": "W7 and E-99 closed: W7 says nothing is pending (screened 2026-10-28: a port's ceiling is a few per cent of spatial); E-99 lost in the kernel 2026-10-23. Both still read open."
+    },
+    {
+      "id": "R-1051",
+      "date": "2026-11-14",
+      "time": "21:23",
+      "timeFrom": "recorded",
+      "title": "E-99 closed: rejected in the kernel (2026-10-23), it still read open",
+      "verdict": "rejected",
+      "text": "W7 and E-99 closed: W7 says nothing is pending (screened 2026-10-28: a port's ceiling is a few per cent of spatial); E-99 lost in the kernel 2026-10-23. Both still read open."
     }
   ],
   "leads": [
