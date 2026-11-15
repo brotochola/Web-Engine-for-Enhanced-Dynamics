@@ -60,10 +60,15 @@ async function ringer(sab, events) {
 test('physics sleeps until the bell rings: a query posted mid-wait is answered, the frames end the wait', async () => {
   const chain = new Int32Array(new SharedArrayBuffer(16));
   let services = 0;
-  // A long frame (40 ms, an own step of 1 ms: a budget of 16 ms) leaves room for a slow test machine.
-  const w = loadWait()({ chainI32: chain, chainLogicWorkers: 2, stepMs: 1, periodMs: 40, service: () => { services++; } });
-  const r = await ringer(chain.buffer, [{ at: 3 }, { at: 6, frames: 1 }, { at: 9, frames: 1 }]);
-  r.go();
+  // N-156: a long frame (250 ms, an own step of 1 ms: a budget of 100 ms) leaves room for a thread the full suite's load
+  // starts late (it overran 16 ms once in 2550 tests). The ringer starts from the wait's first service pass, which runs
+  // before it sleeps, so its rings come after the wait began (started before the call, a main thread descheduled
+  // between the two let it ring early: 3 of 144 runs under 48 parallel copies waited 2.9 to 7.8 ms).
+  let r = null;
+  const w = loadWait()({ chainI32: chain, chainLogicWorkers: 2, stepMs: 1, periodMs: 250, service: () => {
+    if (services++ === 0) r.go();
+  } });
+  r = await ringer(chain.buffer, [{ at: 3 }, { at: 6, frames: 1 }, { at: 9, frames: 1 }]);
   const out = w.wait();
   await r.stop();
   assert.equal(Atomics.load(chain, 0), 2, 'both logic frames in');
