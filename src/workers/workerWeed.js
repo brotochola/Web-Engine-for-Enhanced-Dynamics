@@ -56,7 +56,7 @@ import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { ParticleComponent } from '../components/particleComponent.js';
 import { DecorationComponent } from '../components/decorationComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
-import { ShadowCaster } from '../components/shadowCaster.js';
+import { CAST_KIND, ShadowCaster } from '../components/shadowCaster.js';
 import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
 import { DirectionalSprite, FACING_FROM } from '../components/directionalSprite.js';
 import { DIRECTION_NAMES } from '../core/spriteDirections.js';
@@ -197,6 +197,7 @@ export const WORKER_WEED = Object.freeze({
   ParticleComponent,
   LightEmitter,
   ShadowCaster,
+  CAST_KIND,
   VolumeShadowCaster,
   DirectionalSprite,
   FACING_FROM,

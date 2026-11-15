@@ -137,6 +137,9 @@ export class RegionQuads {
     this.state.blend = true;
     this.state.blendMode = opts.blendMode || 'normal';
     this.state.depthTest = false;
+    // DX-DEPTH: no depth either: on WebGPU Pixi writes depth whenever depthMask is on, test or not, and a region drawn
+    // between entity chunks would hide the entities drawn after it under pixel depth.
+    this.state.depthMask = false;
     this.state.culling = false;
     this.blendMode = this.state.blendMode;
     this.index = new Buffer({ data: new Uint32Array([0, 1, 2, 0, 2, 3]), usage: BufferUsage.INDEX });
