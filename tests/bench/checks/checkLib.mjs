@@ -57,11 +57,15 @@ export async function withCheckBrowser(opts, fn) {
   const written = ensureCheckArt();
   if (written.length) console.log(`made the checks' art: ${written.join(', ')}`);
   const server = await createStaticBenchmarkServer(repoRoot);
-  const browser = await chromium.launch({
-    channel: 'chrome',
-    headless: opts.headless,
-    args: ['--enable-unsafe-webgpu', '--mute-audio', '--disable-background-timer-throttling', '--disable-renderer-backgrounding'],
-  });
+  const args = [
+    '--enable-unsafe-webgpu',
+    '--mute-audio',
+    '--disable-background-timer-throttling',
+    '--disable-renderer-backgrounding',
+    '--disable-backgrounding-occluded-windows',
+  ];
+  if (process.platform === 'win32') args.push('--disable-features=CalculateNativeWinOcclusion');
+  const browser = await chromium.launch({ channel: 'chrome', headless: opts.headless, args });
   try {
     return await fn({ browser, server });
   } finally {
