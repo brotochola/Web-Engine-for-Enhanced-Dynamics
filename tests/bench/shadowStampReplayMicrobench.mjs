@@ -6,9 +6,10 @@
  * and light indices; `matchesCapture` says whether the shipped kernel's replay writes what the scene's stamp wrote.
  *
  *   node tests/bench/shadowStampReplayMicrobench.mjs [--capture tests/results/stamp-capture/predator.bin]
- *        [--variant wasm|other] [--other-wasm path] [--output path] [--check]
+ *        [--variant wasm|other] [--other-wasm path] [--output path] [--check] [--no-scan]
  * `other` is the shipped stamp from another engine.wasm (--other-wasm, say a copy taken before a change), so a
- * build can be compared with the one before it in alternating processes.
+ * build can be compared with the one before it in alternating processes. --no-scan (E-331): the stamp does not get the
+ * caster scan's x, y and bounds and builds its grid from the rows, as a build before E-331 does.
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/shadowStampReplayMicrobench.mjs --variants wasm,<v> --rounds 5
  */
 import fs from 'node:fs';
@@ -32,14 +33,14 @@ async function main() {
   const file = path.resolve(here, '../..', String(args.capture ?? 'tests/results/stamp-capture/predator.bin'));
   if (!fs.existsSync(file)) throw new Error(`missing ${file} (run captureStampInputs.mjs)`);
   const capture = decodeStampCapture(new Uint8Array(fs.readFileSync(file)));
-  const r = await createStampReplay(capture, pathToFileURL(path.resolve(here, STAMP_REPLAY_VARIANTS.wasm.file)));
+  const r = await createStampReplay(capture, pathToFileURL(path.resolve(here, STAMP_REPLAY_VARIANTS.wasm.file)), { scan: !args['no-scan'] });
   const fn = variant === 'wasm' ? r.shipped : await r.kernelOf(pathToFileURL(path.resolve(here, v.file)), v.name, v.fn);
   if (!fn) throw new Error(`no ${v.fn} in ${v.file}`);
   const expected = captureChecksum(capture);
   const checksum = r.replayChecksum(fn);
   const frames = capture.frames.length;
   if (args.check) {
-    console.log(`checksum ${checksum} variant ${variant} frames ${frames} matchesCapture ${checksum === expected}`);
+    console.log(`checksum ${checksum} variant ${variant} frames ${frames} matchesCapture ${checksum === expected} scan ${r.scanOn}`);
     return;
   }
   const run = () => r.replay(fn);
@@ -48,6 +49,7 @@ async function main() {
   const msPerFrame = 1000 / (cases.replay.opsPerSec * frames);
   const report = {
     feature: 'shadow-stamp-replay',
+    scan: r.scanOn,
     variant,
     functions: [`${v.name}.${v.fn}`],
     capture: path.relative(path.resolve(here, '../..'), file),

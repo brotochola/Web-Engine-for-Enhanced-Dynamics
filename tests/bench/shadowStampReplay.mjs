@@ -15,6 +15,8 @@
  *     --args '{"capture":"/tests/results/stamp-capture/predator.bin","rounds":7}'
  * With `"other": "/path/engine.wasm"` and `"variants": "other,wasm"`, `other` is the shipped stamp of that engine.wasm
  * (a copy from before a change, served from the repo).
+ * (E-331) `"scan": false` keeps the caster scan's x, y and bounds from the stamp (a table with those slots builds its grid
+ * from the rows then).
  */
 import { GPU_CASTER_LIGHT_FLOAT, GPU_KEYED_CASTER_FLOATS } from '../../src/render/gpuQueueLayout.js';
 import { STAMP_SLOTS } from '../../src/render/shadowStampClient.js';
@@ -23,6 +25,40 @@ import { layoutRegions, NULL_GUARD_BYTES, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES,
 import { decodeStampCapture } from './stampCapture.mjs';
 
 const SLOT = Object.fromEntries(STAMP_SLOTS.map((name, k) => [name, k]));
+
+/**
+ * E-331: a stamp table with the caster scan's slots takes, on keyed frames, the casters' x and y as two float arrays and
+ * their bounds as pack_casters_keyed_scan writes them in pre-render (minX, minY, maxX, maxY, 1 when an x or y is NaN,
+ * the row count), so its grid build skips the pass that read them out of the rows. The replay makes them per frame,
+ * outside the timed calls (the scan's own share of that work is the scene's to time). A table without the slots (a
+ * revision before E-331) gets none.
+ */
+export const SCAN_BOUNDS_DOUBLES = 6;
+const SCAN_ON = 'scanX' in SLOT && 'scanY' in SLOT && 'scanBounds' in SLOT;
+
+function scanOf(f) {
+  const n = f.sunN;
+  const sf = f.sunFloats;
+  const x = new Float32Array(Math.max(1, n));
+  const y = new Float32Array(Math.max(1, n));
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let nan = 0;
+  for (let c = 0; c < n; c++) {
+    const fx = f.sun[c * sf];
+    const fy = f.sun[c * sf + 1];
+    x[c] = fx;
+    y[c] = fy;
+    if (fx !== fx || fy !== fy) nan = 1;
+    if (fx < minX) minX = fx;
+    if (fy < minY) minY = fy;
+    if (fx > maxX) maxX = fx;
+    if (fy > maxY) maxY = fy;
+  }
+  return { x, y, bounds: new Float64Array([minX, minY, maxX, maxY, nan, n]) };
+}
 
 /** The variants: a module's export of the stamp (the shipped kernel is engine.wasm's). */
 export const STAMP_REPLAY_VARIANTS = {
@@ -52,8 +88,11 @@ export function captureChecksum(capture) {
  * @param {{ meta: object, frames: object[] }} capture decodeStampCapture's result
  * @param {URL|string} kernelUrl the module that holds the shipped stamp (engine.wasm)
  */
-export async function createStampReplay(capture, kernelUrl) {
+export async function createStampReplay(capture, kernelUrl, opts = {}) {
   const frames = capture.frames;
+  // E-331: whether keyed frames hand the stamp the caster scan's x, y and bounds (when its table has the slots).
+  const scanOn = SCAN_ON && opts.scan !== false;
+  const scans = frames.map((f) => (scanOn && f.sunFloats === GPU_KEYED_CASTER_FLOATS ? scanOf(f) : null));
   let maxSun = 1;
   let maxPE = 1;
   let maxCap = 1;
@@ -71,6 +110,11 @@ export async function createStampReplay(capture, kernelUrl) {
   frames.forEach((f, i) => {
     regions.push({ name: `sun${i}`, owner: 'pre-render', bytes: Math.max(4, f.sun.byteLength) });
     regions.push({ name: `lights${i}`, owner: 'pre-render', bytes: Math.max(8, f.lights.byteLength) });
+    if (scans[i]) {
+      regions.push({ name: `scanX${i}`, owner: 'pre-render', bytes: scans[i].x.byteLength });
+      regions.push({ name: `scanY${i}`, owner: 'pre-render', bytes: scans[i].y.byteLength });
+      regions.push({ name: `scanBounds${i}`, owner: 'pre-render', bytes: SCAN_BOUNDS_DOUBLES * 8 });
+    }
   });
   for (const name of ['tmpIdx', 'dist', 'order', 'keep', 'gridItems', 'nearCount', 'packedX', 'packedY', 'cellOf']) {
     regions.push({ name, owner: 'pre-render', bytes: maxSun * 4 });
@@ -133,6 +177,14 @@ export async function createStampReplay(capture, kernelUrl) {
     put('packedY', R.packedY.byte);
     put('cellOf', R.cellOf.byte);
     put('dist64', R.dist64.byte);
+    if (scans[i]) {
+      new Float32Array(buffer, R[`scanX${i}`].byte, scans[i].x.length).set(scans[i].x);
+      new Float32Array(buffer, R[`scanY${i}`].byte, scans[i].y.length).set(scans[i].y);
+      new Float64Array(buffer, R[`scanBounds${i}`].byte, SCAN_BOUNDS_DOUBLES).set(scans[i].bounds);
+      put('scanX', R[`scanX${i}`].byte);
+      put('scanY', R[`scanY${i}`].byte);
+      put('scanBounds', R[`scanBounds${i}`].byte);
+    }
     return t;
   });
   const table = new Uint32Array(buffer, R.table.byte, STAMP_TABLE_SLOTS);
@@ -164,7 +216,7 @@ export async function createStampReplay(capture, kernelUrl) {
   };
   /** A variant's export, instantiated on this memory. */
   const kernelOf = async (url, name, fn) => (await loadWasmKernel(name, url, memory, [fn]))[fn];
-  return { memory, frames, shipped, replay, replayChecksum, kernelOf };
+  return { memory, frames, shipped, replay, replayChecksum, kernelOf, scanOn: scans.some(Boolean) };
 }
 
 function medianOf(values) {
@@ -180,7 +232,7 @@ export async function run(args = {}) {
   const names = String(args.variants ?? 'wasm').split(',');
   const bytes = new Uint8Array(await (await fetch(new URL(String(args.capture ?? '/tests/results/stamp-capture/predator.bin'), location.href))).arrayBuffer());
   const capture = decodeStampCapture(bytes);
-  const r = await createStampReplay(capture, new URL(STAMP_REPLAY_VARIANTS.wasm.file, import.meta.url));
+  const r = await createStampReplay(capture, new URL(STAMP_REPLAY_VARIANTS.wasm.file, import.meta.url), { scan: args.scan !== false });
   const fns = {};
   for (const n of names) {
     if (n === 'other') {
@@ -219,6 +271,7 @@ export async function run(args = {}) {
   return {
     feature: 'shadow-stamp-replay-chrome',
     frames: capture.frames.length,
+    scanOn: r.scanOn,
     sceneMsPerCall: capture.meta.sceneMsPerCall,
     expected,
     checksums,
