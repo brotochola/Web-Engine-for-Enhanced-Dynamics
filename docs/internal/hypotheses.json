@@ -16247,14 +16247,15 @@
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
-      "result": "fixed (3baefdbc): the sun map's shade leaves the flat term of a face the sun does not reach (faded across the terminator), cards keep it; the bench's barn wall and the well clean, the gable keeps the tree's shadow",
+      "result": "fixed (3baefdbc): the sun map's shade leaves the flat term of a face the sun does not reach (faded across the terminator), cards keep it; the bench's barn wall and the well clean, the gable keeps the tree's shadow; refined 2026-11-15 (6083e8be): only for an entity that shades itself (a closed volume), since a person with their back to the sun stood lit in the barn's shadow",
       "next": "The bench in the morning, a tree beside the barn's corner, before and after; tests; commit.",
       "refs": [],
       "aliases": [
         "tree shadow through the barn"
       ],
       "records": [
-        "R-1144"
+        "R-1144",
+        "R-1148"
       ]
     },
     {
@@ -16306,6 +16307,42 @@
       "refs": [],
       "aliases": [],
       "records": []
+    },
+    {
+      "id": "N-210",
+      "title": "The maps' bias (4 px and more towards lit, the lamps' 1 px plus 4 floor px along the ray) erased the shade of a caster just behind a pixel: a person by the barn's wall stood lit in its shadow (their head's sun ray met the wall 5 px higher), and their own shadow on the wall under a 20 px lamp showed only as a blob",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 at the light bench (\"no debería oscurecerse el personaje?\"); fixed the same day (4f5451c7, 6083e8be)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed: a pixel of an entity skips its own entity's texels already (DX-GBUF), so it keeps the maps' step (2 px; then N-211's step and a half) towards lit; a pixel of no entity keeps the old bias; the lamps' bias went along the ray first (4f5451c7)",
+      "refs": [],
+      "aliases": [
+        "maps bias near casters"
+      ],
+      "next": "",
+      "records": [
+        "R-1148"
+      ]
+    },
+    {
+      "id": "N-211",
+      "title": "The lamps' map kept heights in 2 px steps: near the lamp's height the rays are nearly level and a caster and the point behind it differ by under a step, so the person's shadow on the wall behind them came out striped",
+      "status": "kept-hygiene",
+      "statusText": "seen by the owner 2026-11-15 (\"estas líneas decías?\"); fixed the same day (437d81f3)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (437d81f3): a texel keeps lampRayDepth = 1 / (1 + |E - z| / E), the place along the ray (0.13 px a step around a 20 px lamp's height); both halves one test; the stripes nearly all gone",
+      "refs": [],
+      "aliases": [
+        "lamp map ray depth"
+      ],
+      "next": "",
+      "records": [
+        "R-1148"
+      ]
     }
   ],
   "records": [
@@ -27239,6 +27276,20 @@
       "text": "DX-LAMPPANO built (2b19d9f8), the owner's choice B for the lamps' shadows on walls higher than the lamp (the fence's shadow under a 20 px lamp did not climb the barn's wall) and N-192's stretch cap.\n\nWhat: each lamp's tile is 2S x S: a floor half (as before) and a ceiling half (the world mirrored in the lamp's height, its texel the lowest caster point's real height); landings compressed into each half out to the horizon (0.8 of the half's radius for the reach, the ring for the rest), so no stretch cap; cards on a three-row strip, columns on a three-row grid (the band within the reach the projection itself); volumes compressed on the floor half; the light pass picks the half by the point's height, the flat path has a floor-only lookup, both leave past the reach.\n\nFound on the way: with the full lookup at all four call sites ANGLE's D3D11 compiler failed to link the light pass (2.9 s, empty log) and Chrome lost the GPU context at the bench's start; the floor-only lookup on the flat path links in 337 / 600 ms (pixel art / not; the old pass 331). Found with glslLink.mjs and glslVariants.mjs (session scratchpad: real Chrome, one fresh browser a variant).\n\nCheck: bench at night, a lamp at 20 px past the fence: the fence's shadow climbs the barn's gable wall and runs to the horizon behind it (the fence is taller than the lamp), WebGL and WebGPU alike; a 55 px lamp's scene as before. gpuPassBench (GTX 1650, 48 lamps, tile 256; run before the owner asked for no benchmarks): floor half 1.446 -> 0.691 ms WebGL, 1.543 -> 0.721 WebGPU, ceiling half 0.527 / 0.516; light3d 1.302 -> 1.461 WebGL (E-381), 1.288 -> 1.274 WebGPU; map and light together -2.5 % WebGL, -11 % WebGPU. node 2742/2742, demos 101/101, check:types.\n\nLeft: the ceiling half for the volumes; N-207 (a render's card size) in the cards' program; N-192's outline offsets (the cap's steps are gone).",
       "commits": [
         "2b19d9f8"
+      ]
+    },
+    {
+      "id": "R-1148",
+      "date": "2026-11-15",
+      "time": "19:30",
+      "timeFrom": "recorded",
+      "title": "N-208 refined, N-210 and N-211 fixed: a person in another's shadow, the lamps' map along the ray",
+      "verdict": "kept",
+      "text": "N-208 refined, N-210 and N-211 fixed (4f5451c7, 6083e8be, 437d81f3), from the owner's looks at the light bench in the evening.\n\n- A person by the barn with their back to the sun stood lit in the barn's shadow (with the sun from the other side they darkened). Two causes: N-208 kept the sun map's shade off any face turned away from the sun, and a person's normals (from their height map) count their front as turned away: now only for an entity that shades itself (a closed volume, the barn's far wall); and the maps' bias of 4 px and more erased the shade of a caster just behind a pixel (N-210): an entity's pixel skips its own entity's texels already, so it keeps the maps' step.\n- Under a 20 px lamp the person's shadow on the barn's wall behind them showed first as a blob (the lamps' fixed 4 px bias, 4f5451c7: along the ray), then striped (N-211): the map's heights in 2 px steps cannot tell a caster from the point behind it near the lamp's height, where the rays are nearly level. Now a texel keeps the place along the ray, lampRayDepth = 1 / (1 + |E - z| / E), finest around the lamp's height.\n\nChecks: the owner saw the person darken in the barn's shadow in the bench; captures (session scratchpad vis/): the person in front of the gable wall under a 20 px lamp, their shadow climbing the wall as their silhouette, the stripes nearly gone (wallperson3). Every lamp program compiles, the light pass links in 342 ms (D3D11). node 2743/2743, demos 101/101. No benchmarks (the owner: visual first).",
+      "commits": [
+        "4f5451c7",
+        "6083e8be",
+        "437d81f3"
       ]
     }
   ],
