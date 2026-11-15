@@ -74,7 +74,7 @@ export { AdobeAnimComponent } from './components/adobeAnimComponent.js';
 export { ParticleComponent } from './components/particleComponent.js';
 export { DecorationComponent } from './components/decorationComponent.js';
 export { LightEmitter } from './components/lightEmitter.js';
-export { ShadowCaster } from './components/shadowCaster.js';
+export { ShadowCaster, CAST_KIND } from './components/shadowCaster.js';
 export { VolumeShadowCaster } from './components/volumeShadowCaster.js';
 export { DirectionalSprite, FACING_FROM } from './components/directionalSprite.js';
 export { DIRECTION_NAMES } from './core/spriteDirections.js';
@@ -259,7 +259,7 @@ import { SharedResource, SharedResourceMailbox } from './core/sharedResource.js'
 import { DecorationComponent } from './components/decorationComponent.js';
 import { BulletComponent } from './components/bulletComponent.js';
 import { LightEmitter } from './components/lightEmitter.js';
-import { ShadowCaster } from './components/shadowCaster.js';
+import { ShadowCaster, CAST_KIND } from './components/shadowCaster.js';
 import { VolumeShadowCaster } from './components/volumeShadowCaster.js';
 import { DirectionalSprite, FACING_FROM } from './components/directionalSprite.js';
 import { DIRECTION_NAMES } from './core/spriteDirections.js';
@@ -401,6 +401,7 @@ const WEED = Object.freeze({
   ParticleComponent,
   LightEmitter,
   ShadowCaster,
+  CAST_KIND,
   VolumeShadowCaster,
   DirectionalSprite,
   FACING_FROM,
