@@ -19,11 +19,52 @@ test('the sun\'s terms: a px of height shifts its landing away from the sun, and
   close(t[0], s, 1e-6);
   close(t[1], s, 1e-6);
   close(t[2] * t[0] + t[3] * t[1], 0, 1e-6);
-  assert.ok(t[2] >= 0, 'a card\'s columns run to the right when they can');
   const noon = sunMapTerms([0, 0, 1], new Float32Array(4));
   assert.deepEqual(Array.from(noon), [0, 0, 1, 0], 'straight above: no shift');
   const low = sunMapTerms([1, 0, 0], new Float32Array(4));
   assert.ok(Number.isFinite(low[0]) && low[0] > 10, 'a sun on the horizon is clamped, not infinite');
+});
+
+test('a card\'s columns run to the right of someone at the sun, as the light bench\'s', () => {
+  // From the south (behind the camera): the sun sees what the camera sees, the picture's right is the screen's.
+  const south = sunMapTerms([0, 1, 1], new Float32Array(4));
+  close(south[2], 1);
+  close(south[3], 0);
+  // From the north: the sun sees the back, so the picture's right lands on the screen's left.
+  const north = sunMapTerms([0, -1, 1], new Float32Array(4));
+  close(north[2], -1);
+  close(north[3], 0);
+  // From the east: the right of someone looking west is the north (y down).
+  const east = sunMapTerms([1, 0, 1], new Float32Array(4));
+  close(east[2], 0);
+  close(east[3], -1);
+});
+
+test('the sun\'s shift stops at the longest shadow it is given (Sun.shadowMaxLengthRatio)', () => {
+  const low = sunMapTerms([1, 0, 0.1], new Float32Array(4), 3);
+  close(low[0], 3, 1e-6);
+  close(low[1], 0, 1e-6);
+  const high = sunMapTerms([1, 0, 1], new Float32Array(4), 3);
+  close(high[0], 1, 1e-6, 'a shadow shorter than the cap keeps its length');
+});
+
+test('the sprite shadows\' sun card stands on the frame\'s lowest opaque row, not on the anchor', () => {
+  const src = shader('instancedSpriteShadow.vert.glsl');
+  // The trim's bottom (the lowest opaque row): heights count up from it, and the foot is where it is drawn.
+  assert.match(src, /float bottom = aInstTrim\.y \+ aInstTrim\.w;/);
+  assert.match(src, /float sunZ = max\(bottom - content\.y, 0\.0\) \* abs\(aInstScale\.y\) \/ uSunK\.w \* height;/);
+  assert.match(src, /vec2 foot = vec2\(aInstXY\.x, \(aInstXY\.y \+ \(bottom - aInstAnchor\.y \* aInstSize\.y\) \* aInstScale\.y\) \* uGroundInvScaleY\);/);
+  assert.match(src, /vec2 land = foot \+ \(content\.x - footCol\) \* aInstScale\.x \* uSunPerp\.xy - sunZ \* uSunK\.xy;/);
+  // A base in the texture table's spare floats moves the foot: an ellipse's edge, or a render's lowest contact.
+  assert.match(src, /aInstBase = t2\.zw;/);
+  assert.match(src, /foot \+= toSun \* sqrt\(rx \* rx \* toSun\.x \* toSun\.x \+ ry \* ry \* toSun\.y \* toSun\.y\);/);
+  assert.match(src, /foot = vec2\(aInstXY\.x, aInstXY\.y \* uGroundInvScaleY\) \+ toSun \* reach;/);
+  // The old skewed sprite (stretched by shadowLengthRatio, turned on the screen) is gone from the sun's branch.
+  assert.doesNotMatch(src, /uSun\.z/);
+  const wgsl = shader('instancedSpriteShadow.wgsl');
+  assert.match(wgsl, /let sunZ = max\(bottom - content\.y, 0\.0\) \* abs\(aInstScale\.y\) \/ uniforms\.uSunK\.w \* height;/);
+  assert.match(wgsl, /uSunK: vec4<f32>,\n  uSunPerp: vec4<f32>,\n\}/);
+  assert.doesNotMatch(wgsl, /uSun\.z/);
 });
 
 test('a picture point lands its height times the terms away, on the floor drawn at groundScaleY', () => {
@@ -37,13 +78,15 @@ test('a picture point lands its height times the terms away, on the floor drawn 
   close(side.x, 106, 1e-9);
 });
 
-test('the map\'s vertex shader is the sprite shadows\' with its last part turned into landing points', () => {
+test('the map\'s vertex shader is the sprite shadows\' with the same sun card, its height passed on', () => {
   const src = sunMapVertex(shader('instancedSpriteShadow.vert.glsl'));
   assert.match(src, /uniform vec4 uSunK;/);
   assert.match(src, /out float vSunZ;/);
-  assert.match(src, /vec2 land = foot \+ local\.x \* uSunPerp\.xy - z \* uSunK\.xy;/);
+  assert.match(src, /vec2 land = foot \+ \(content\.x - footCol\) \* aInstScale\.x \* uSunPerp\.xy - sunZ \* uSunK\.xy;/);
+  assert.match(src, /vSunZ = sunZ;/);
+  assert.match(src, /vColor = vec4\(1\.0\);/);
   assert.equal(src.match(/void main\(\)/g).length, 1);
-  assert.doesNotMatch(src, /rotated/);
+  assert.equal(src.match(/uniform vec4 uSunK;/g).length, 1, 'declared once');
   assert.throws(() => sunMapVertex('void main() {}'), /sun shadow map/);
 });
 

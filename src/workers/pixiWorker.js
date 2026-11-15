@@ -5890,7 +5890,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     mesh.geometry = batch.mesh.geometry;
     const u = this._sunMapUniforms.uniforms;
     this._writeFaceSun();
-    sunMapTerms(this._faceSun, this._sunMapTerms);
+    sunMapTerms(this._faceSun, this._sunMapTerms, Sun.shadowMaxLengthRatio);
     u.uCam[0] = this._renderCameraX;
     u.uCam[1] = this._renderCameraY;
     u.uCam[2] = screenScale;
@@ -6003,9 +6003,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       u.uSun[1] = -Sun.shadowDirX;
       u.uSun[2] = Sun.shadowLengthRatio;
       u.uSun[3] = Sun.shadowOpacity;
+      // DX-SHADOW3D: the sun's card, in both shadow modes: each picture point lands along the sun's ray (no longer than
+      // shadowMaxLengthRatio per px of height), its columns across the sun.
+      this._writeFaceSun();
+      const t = sunMapTerms(this._faceSun, this._sunMapTerms, Sun.shadowMaxLengthRatio);
+      u.uSunK[0] = t[0];
+      u.uSunK[1] = t[1];
+      u.uSunK[3] = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
+      u.uSunPerp[0] = t[2];
+      u.uSunPerp[1] = t[3];
     } else {
       u.uSun[3] = 0;
     }
+    u.uGroundInvScaleY = this._groundInvScaleY || 1;
     u.uLight[0] = 0;
     u.uLight[1] = 0;
     u.uLight[2] = 0;

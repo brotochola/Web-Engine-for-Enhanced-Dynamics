@@ -22,25 +22,23 @@ export const SUN_MAP_MIN_ELEVATION = 0.05;
 
 /**
  * The sun's terms for a frame: the landing shift per px of height (kx, ky) and the floor direction a card's columns run
- * along (across the sun, to the right on the screen when it can be).
+ * along: across the sun, to the right of someone at the sun looking at the caster (as the light bench's cards), so a
+ * caster seen from the sun's side casts its picture the right way round, and one lit from behind the camera casts it as
+ * the camera sees it.
  * @param {ArrayLike<number>} towardsSun the sun's direction in the floor's space (x, y, z), any length
  * @param {Float32Array|number[]} out kx, ky, perpX, perpY
+ * @param {number} [maxLength] the longest shadow, in px per px of height (Sun.shadowMaxLengthRatio)
  */
-export function sunMapTerms(towardsSun, out) {
+export function sunMapTerms(towardsSun, out, maxLength = Infinity) {
   const x = towardsSun[0];
   const y = towardsSun[1];
   const z = Math.max(towardsSun[2], SUN_MAP_MIN_ELEVATION * Math.sqrt(x * x + y * y + towardsSun[2] * towardsSun[2]));
-  out[0] = x / z;
-  out[1] = y / z;
   const h = Math.sqrt(x * x + y * y);
-  let px = h > 1e-9 ? -y / h : 1;
-  let py = h > 1e-9 ? x / h : 0;
-  if (px < 0 || (px === 0 && py < 0)) {
-    px = -px;
-    py = -py;
-  }
-  out[2] = px;
-  out[3] = py;
+  const k = h > maxLength * z ? maxLength / h : 1 / z;
+  out[0] = x * k;
+  out[1] = y * k;
+  out[2] = h > 1e-9 ? y / h : 1;
+  out[3] = h > 1e-9 ? -x / h : 0;
   return out;
 }
 
@@ -107,12 +105,12 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS) {
   const card = sunMapVertex(source);
   const quad = 'in vec2 aQuad;\n';
   const main = 'void main() {\n';
-  const tail = '  // A caster whose frame has a height map casts columns instead';
-  if (card.split(quad).length !== 2 || card.split(main).length !== 2 || card.split(tail).length !== 2) {
-    throw new Error('WeedJS: the sun shadow map columns need the sprite shadow vertex shader (aQuad, main)');
+  const after = '  // weed:afterAnchor\n';
+  if (card.split(quad).length !== 2 || card.split(main).length !== 2 || card.split(after).length !== 2) {
+    throw new Error('WeedJS: the sun shadow map columns need the sprite shadow vertex shader (aQuad, main, weed:afterAnchor)');
   }
   const head = card
-    .slice(0, card.indexOf(tail))
+    .slice(0, card.indexOf(after))
     .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nvec2 aQuad;\nuniform sampler2D uTexture;\n')
     .replace(main, `${main}  aQuad = aCell.xy;\n`);
   return `${head}  vec2 uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
@@ -152,46 +150,35 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS) {
 }
 
 /**
- * The map's vertex shader: instancedSpriteShadow.vert.glsl with its last part (a skewed sprite on the screen) turned into
- * the card's landing points and their heights (vSunZ). Same inputs, same early outs, same screen mapping.
+ * The map's vertex shader: instancedSpriteShadow.vert.glsl with its sun card kept (the same landing points the sprite
+ * shadows draw) and its height passed on (vSunZ), so the map holds the highest caster point landing at each texel. Frames
+ * with a height map skip the card: they cast columns (sunMapColumnsVertex). Same inputs, same early outs.
  * @param {string} source instancedSpriteShadow.vert.glsl
  */
 export function sunMapVertex(source) {
-  const decl = 'uniform float uGroundInvScaleY;\n';
-  const tailStart = '  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;\n';
-  if (source.split(decl).length !== 2 || source.split(tailStart).length !== 2) {
-    throw new Error('WeedJS: the sun shadow map needs the sprite shadow vertex shader (uGroundInvScaleY, content)');
+  const decl = 'uniform vec4 uSunPerp;\n';
+  const main = 'void main() {\n';
+  const card = '    // weed:sunCard\n';
+  const out = '    // weed:sunOut\n';
+  const color = '  vColor = vec4(0.0, 0.0, 0.0, alpha);\n';
+  for (const mark of [decl, main, card, out, color]) {
+    if (source.split(mark).length !== 2) {
+      throw new Error(`WeedJS: the sun shadow map needs the sprite shadow vertex shader (${mark.trim()})`);
+    }
   }
-  const head = source.slice(0, source.indexOf(tailStart)).replace(
-    decl,
-    `${decl}// DX-SHADOW3D: kx, ky (a px of height's landing shift), 0, heightScaleY; a card's floor direction.\n` +
-      'uniform vec4 uSunK;\nuniform vec4 uSunPerp;\nout float vSunZ;\n' + MAPPED_GLSL,
-  );
-  return `${head}  // A caster whose frame has a height map casts columns instead (sunMapColumnsVertex): its card would face the sun
-  // whatever the object's shape (a crate's shadow turned with the sun).
-  if (sunMapped(aInstUV)) {
-    gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
-    vSunZ = 0.0;
-    return;
-  }
-  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
-  vec2 local = (content - anchor * aInstSize) * aInstScale;
-  float z = max(-local.y, 0.0) * height / uSunK.w;
-  vec2 foot = vec2(aInstXY.x, aInstXY.y * uGroundInvScaleY);
-  vec2 land = foot + local.x * uSunPerp.xy - z * uSunK.xy;
-  vec2 world = vec2(land.x, land.y / uGroundInvScaleY);
-  vec2 screen = (world - uCam.xy) * uCam.z;
-  mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
-  vec3 clip = mvp * vec3(screen, 1.0);
-  gl_Position = vec4(clip.xy, 0.0, 1.0);
-  if (abs(aInstRotCS.x) > 2.0) gl_Position.x += aInstRotCS.y + aInstDepth + aInstTintBits;
-  vLocal = aQuad;
-  vColor = vec4(1.0);
-  vWorld = world;
-  vAtlasUV = aInstUV;
-  vTileInv = aInstTileInv;
-  vTileOff = aInstTileOff;
-  vSunZ = z;
-}
-`;
+  return source
+    .replace(decl, `${decl}out float vSunZ;\n${MAPPED_GLSL}`)
+    .replace(main, `${main}  vSunZ = 0.0;\n`)
+    .replace(
+      card,
+      `${card}    // A caster whose frame has a height map casts columns instead (sunMapColumnsVertex): its card would face the sun
+    // whatever the object's shape (a crate's shadow turned with the sun).
+    if (sunMapped(aInstUV)) {
+      gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
+      return;
+    }
+`,
+    )
+    .replace(out, `${out}    vSunZ = sunZ;\n`)
+    .replace(color, '  vColor = vec4(1.0);\n');
 }

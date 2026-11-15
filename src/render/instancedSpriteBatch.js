@@ -499,6 +499,9 @@ export class InstancedSpriteBatch {
         uCam: { value: new Float32Array(4), type: 'vec4<f32>' },
         uPointScale: { value: 0, type: 'f32' },
         uGroundInvScaleY: { value: 1, type: 'f32' },
+        // DX-SHADOW3D: the sun's card (sunShadowMap.js sunMapTerms): kx, ky, 0, heightScaleY; the columns' direction.
+        uSunK: { value: new Float32Array([0, 0, 0, 1]), type: 'vec4<f32>' },
+        uSunPerp: { value: new Float32Array([1, 0, 0, 0]), type: 'vec4<f32>' },
       };
       this._sunUniforms = sunUniforms;
       const resources = {
