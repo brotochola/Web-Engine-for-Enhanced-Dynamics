@@ -1353,3 +1353,35 @@ spawnStorm) eran deriva y no aparecieron en pares ABAB.
 **Queda abierto:** E-373 (light3d 11 % más caro en WebGL que en WebGPU), E-378 (la profundidad por pixel +30 % / +90 % en el
 pase de color), E-371 / E-372 (el milisegundo de los cuadros de sombra direccionales en el pre-render de Predator), N-185,
 N-187 (Adobe), N-188, N-189 y el resto de N-192 (un 1,5 px uniforme, las columnas del cajón, la escalera del tope).
+
+### 17.7 El banco contra el prototipo, y los autos y la gente estándar (2026-11-15, tarde)
+
+El dueño probó el banco y comparó con su prototipo ("Banco de luz y sombras", artifact RcVVdz6bEo7GiErDNGZSKK). Para
+compararlos bien, los archivos del prototipo se bajaron y corrieron al lado del banco con el mismo sol (el azimut del
+prototipo es 180 − `Sun.angle` del engine, que dice hacia dónde caen las sombras) y las mismas cosas giradas igual.
+
+| Qué | Causa | Arreglo |
+| --- | --- | --- |
+| Silueta de autos, mesa y granero girada | N-197: una hoja que por defecto tira su sólido dejaba a la silueta con el cuadro de la cámara | El cuadro de cada luz se decide por caster (e90de4dc) |
+| Sombra de silueta de la pickup y el colectivo desfasada | N-200: los autos elegían cuadros por los pasos nominales del pack (7,5°); el dibujo no está a esos ángulos | Direcciones por el ángulo medido de cada cuadro, como el prototipo (b48a15f2) |
+| Sombra de farol pixelada | N-196: tile fijo de 256 texels para 2 × alcance | `lampShadowTile: 'auto'` por alcance y resolución (cf3e8ff1) |
+| Escalones en la sombra del granero | La grilla fija de 24 × 24 columnas (celdas de 18 px) | E-379: bloques de grilla para los renders grandes (celdas de 6 px) (ef2e71e0) |
+| Alturas de mapas a escala 1 en un sprite escalado | N-194 | La altura del mapa por `|scale y|` en luz, profundidad y mapas de sombra (67e33035) |
+| Banco borroso al lado del prototipo | Atlas con filtro lineal y autos a 2× | `atlasScaleMode: 'nearest'` en el banco (3cf5c1bf) |
+| Caja y casco sin volumen | N-198: sin `maxVolumes` | 64 volúmenes de 24 vértices (3cf5c1bf) |
+| Muebles un cuarto de vuelta girados | N-201: el banco usaba la convención de los autos para todo | 90° − giro para los props (0adb3656) |
+
+**E-379, de paso:** el pase de columnas corría su grilla para cada fila de caster y descartaba en el shader las que no
+tiran columnas (personas, árboles). gpuPassBench: 20 renders, 0,096 ms; los mismos entre 2 000 siluetas, 5,107 ms con la
+misma imagen. Ahora cada pase recibe solo sus filas. Falta medirlo en una escena (Predator `?light3d=1`).
+
+**Explicados sin bug:** el farol frío no tira sombras (`castShadows` apagado); la auto-sombra funciona y es sutil
+(ventanas, puertas); el aljibe "raro" estaba metido dentro del granero y la profundidad por pixel dibuja la intersección
+(N-199). N-195 se cerró: era N-197.
+
+**Autos y gente estándar (DX-STDSPRITES):** `demos/img/autos` con los 54 vehículos del pack de Buenos Aires y sus mapas
+(nm-core, la herramienta de Claude web, en `demos/tools`), y civil1..7 y poli con sus mapas. El banco, sus escenas de
+prueba, carScene, littleCity, la calle de día y la de noche usan esos; se borraron `demos/img/cars` y las copias del banco.
+
+**Queda abierto:** medir E-379, N-194 (un varying más) y N-196 en escena; N-188 (retirar `lighting.shadowTextures` con
+una marca por cuadro del pre-render); E-371/E-372/E-373/E-378, N-185, N-187, N-189 y el resto de N-192.
