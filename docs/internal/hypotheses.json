@@ -15769,11 +15769,11 @@
       "id": "N-192",
       "title": "shadowOutlineCheck: shadow outlines 2.6 to 5.8 px from the analytic projection (tolerance 1.5) on both backends; a card passes only with the sun from 225 to 315 degrees; under a lamp lower than a crate the stretch cap ends in steps",
       "status": "open",
-      "statusText": "found 2026-11-15 in the test phase (dx/light3d); to investigate",
+      "statusText": "open: part fixed 2026-11-15 (c8963250, the floor bias); the rest to investigate",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
-      "result": "The same numbers on WebGL and WebGPU. Sun at 8 h from 8 directions: box p99 2.64 (45, 90, 135...) to 3.50 px (0, 180), card 3.2 to 3.5 except 0.7 to 0.95 from 225 to 315 deg, crate 3.5 to 5.8; from 90 deg the card measures nothing and the projection is empty. Lamps at 60, 150, 300 px: 1.1 to 2.8 px, and at 60 px the crate's shadow (the lamp under its top) runs to the stretch cap (8) where the formula has none, its far end a staircase of columns. Not a global shift (the card passes from three directions).",
+      "result": "Part fixed (c8963250): a floor point took the shadow maps' bias (p.z + 4), so the bottom 4 px of every caster cast nothing on the floor: outlines 2.6-3.5 -> 1.4-1.6 px (sun box and card), lamp box at 150 px 2.50 -> 1.26. Left: a uniform ~1.5 px (box, card), the crate's columns 3.6-5.9 px, the 90-degree card compared to nothing (a check fix), the cap's staircase under a lamp lower than the crate.",
       "next": "Overlay the projection on the captures (--save) per direction; compare the engine's base and landing with the check's formulas (sunMapTerms, the card's foot, setBox's offsets); give the formula the cap; make the cap's end a straight line (each column capped at the same radius). The stretch cap draws a column whose top is above the cap's height (7/8 of the lamp's) with w = 1/8 at its top, so its heights along the shadow run 8 z s / (1 + 7 s) where the projection has 7 E s / (1 + 7 s): too high, and its picture's rows squeezed (E-375 cut such columns where they leave the tile; nearer than reach / 4 they still reach the cap): cutting them at the cap's height would make them exact up to 8 times their distance.",
       "refs": [
         "REVIEW_PLAN.md#N-192"
@@ -15783,7 +15783,8 @@
         "stretch cap staircase"
       ],
       "records": [
-        "R-1123"
+        "R-1123",
+        "R-1133"
       ]
     },
     {
@@ -26674,6 +26675,18 @@
       "title": "The branch against main on the 16 catalog rows without the new lighting: no regression confirmed (scoreboard, then spotLights and spawnStorm in ABAB pairs)",
       "verdict": "passed",
       "text": "**The branch against main on the 16 catalog rows that do not use the new lighting: no regression confirmed.**\n2026-11-15, runScoreboard --vs main --full-rev --only preRender,preRenderWorker,emit,spotLights,flashlights,visPoly,\nshadowStamp,gpuQueuePack,painterRadix,steadyCombat,spawn,decorations,gameObjectAccess,meshFillMoving,meshFillPan,textureUpload\n(10:23-11:13; main has no src change the branch lacks). Correctness: test:node and the lockstep scenes ok.\n\n| row | verdict | primary |\n| --- | --- | --- |\n| steadyCombat | KEPT | logic0 -5.9 %, particle -1.0 %, spatial -1.1 % |\n| visPoly, decorations, meshFillMoving, textureUpload | TIE | within 2 % |\n| gameObjectAccess, shadowStamp, gpuQueuePack, painterRadix, preRenderWorker | TIE | kernels -9.8 to +0.3 % (gameObjectAccess's -8 % not confirmed over 4 ABAB pairs) |\n| emit, preRender, meshFillPan | FAIL (protocol ceilings: the particle pool, the linear cull's floor, a pan that skips the pack) | none |\n| spotLights | FAIL (under the floor) | preRender +13.1 %, but every worker moved up, physics +44 % |\n| spawn | FAIL (under the floor) | logic0 +9.0 %, the load off (bodies 2000 -> 1880) |\n\nThe scoreboard runs each side's five runs in a row, so drift moves every worker of a row together. The two flagged rows\nagain in ABAB pairs from worktrees (runPredatorAbab --vs main --full-rev, 4 pairs, load raised):\n- spotLightStressScene cars=200 props=2000 shadowLights=200: Pixi 0.595 -> 0.660 ms, pre-render 3.875 -> 3.984, both under\n  the floor, the frames the same; one run each with detailed stats: Pixi's work (step minus wait) p50 0.66 against 0.64 ms,\n  SHADOWS_MS 0.347 against 0.339. Not a regression.\n- spawnStormScene storm=4500: logic 5.087 -> 5.042 ms (-0.9 %); the scoreboard's +9 % was drift."
+    },
+    {
+      "id": "R-1133",
+      "date": "2026-11-15",
+      "time": "11:48",
+      "timeFrom": "recorded",
+      "title": "N-192 part fixed: a floor point took the shadow maps' bias (shadows 4 |k| px off their bases); outlines 2.6-3.5 -> 1.4-1.6 px, the crate and the cap left",
+      "verdict": "kept-hygiene",
+      "text": "**N-192, part found and fixed: a floor point took the shadow maps' bias, so every shadow stood 4 |k| px off its caster's\nbase (c8963250); about 1.5 px of the outlines' error is left, and the crate's columns and the stretch cap's staircase.**\n2026-11-15, shadowOutlineCheck on both backends (the same numbers on each). The box's error was uniform (p99 = max: 3.50 px\nfrom 0 and 180 deg, 2.64 from the diagonals): a shift, not noise. The light pass counted a caster point only above\np.z + 4 + 0.03 p.z; for the floor that left the bottom 4 px of every caster casting nothing. The floor casts nothing itself\nand a caster skips its own shade by its id since round 2, so a floor point takes no bias now; a pixel above the floor keeps it.\n\n| outline (p99, px) | before | after |\n| --- | --- | --- |\n| sun, box | 2.64-3.50 | 1.50-1.64 |\n| sun, card (0-180 deg) | 3.22-3.50 | 1.43-1.50 (45 and 135 now within 1.5) |\n| sun, crate | 3.50-5.77 | 3.60-5.89 |\n| lamp at 150 px, box / card | 2.50 / 1.97 | 1.26 / 1.51 |\n| lamp at 300 px, card | 1.58 | 1.33 |\n| lamp at 60 px, box | 3.50 | 2.50 |\n\nlampSeparation, silhouetteDirection, depthSort PASS on both. Captures: the floor at the casters' bases darker (feet, a\nfence's rail), nothing else, no speckle.\nLeft: (1) the box and the card off by a uniform ~1.5 px at the light's and the shadows' resolution 1 (not the light\ntexel: a placement between the engine's setBox and the check's corners, to find side by side); (2) the crate's columns\n3.6 to 5.9 px (the 24 x 24 cells, their width 1.1 cells + 1 px, their floor points from the height map); (3) the card from\n90 deg compares nothing (its shadow lies behind it, under its sprite's mask: the check should say not compared); (4) under\nthe 60 px lamp the crate's columns past the cap land at 8 times their bases' distance, a staircase 420 px wide.",
+      "commits": [
+        "c8963250"
+      ]
     }
   ],
   "leads": [
