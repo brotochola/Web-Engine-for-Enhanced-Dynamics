@@ -43,6 +43,7 @@ import {
 } from './gpuPackClient.js';
 import { faceMapVertex, faceMapWgsl } from './faceMap.js';
 import { lutBaseFloats } from './frameBase.js';
+import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex } from './pixelDepth.js';
 import {
   POSE_ROW_FLOATS, POSE_TEX_TEXELS, STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, poseBlockFloats, spriteIndexedVertex,
   spriteIndexedWgsl, staticsTextureHeight,
@@ -303,6 +304,7 @@ export class InstancedSpriteBatch {
     statics = null,
     keyed = null,
     posesByRow = false,
+    pixelDepth = null,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
@@ -479,6 +481,9 @@ export class InstancedSpriteBatch {
     this._engineShaders = shaders;
     this._premultiplyAlpha = premultiplyAlpha;
     this._alphaDiscard = alphaDiscard !== false;
+    // DX-DEPTH (F5, pixelDepth.js): { maps }: the colour programs write each pixel's floor depth (WebGL), tested.
+    this._pixelDepth = pixelDepth && pixelDepth.maps && !useWebGpu ? pixelDepth : null;
+    this._depthTerms = new Float32Array([1, 1, 0, 0]);
 
     this._tileWorld = new Float32Array(4);
     this._tileWorld[2] = 1;
@@ -534,8 +539,8 @@ export class InstancedSpriteBatch {
     const state = new State();
     state.blend = true;
     state.blendMode = blendMode || 'normal';
-    state.depthTest = !!depthTest;
-    state.depthMask = depthMask !== false;
+    state.depthTest = !!depthTest || this._pixelDepth !== null;
+    state.depthMask = depthMask !== false || this._pixelDepth !== null;
     state.culling = false;
 
     this.mesh = new Mesh({
@@ -721,22 +726,42 @@ export class InstancedSpriteBatch {
     const shaders = this._engineShaders;
     const glProgram = instancedSpriteGlProgram(
       GlProgram,
-      spriteIndexedVertex(shaders.spriteVert, { poseBlock: this._poseBlock }),
-      pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders),
+      this._depthVertex(spriteIndexedVertex(shaders.spriteVert, { poseBlock: this._poseBlock })),
+      this._depthFragment(pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders)),
       `${name}-rows`
     );
     const r = this.shader.resources;
-    return new Shader({
-      glProgram,
-      resources: {
-        uTexture: r.uTexture,
-        uSampler: r.uSampler,
-        uTexLut: r.uTexLut,
-        uniforms: r.uniforms,
-        uStatics: this._staticsSource,
-        uPoses: this._poseSource,
-      },
-    });
+    const resources = {
+      uTexture: r.uTexture,
+      uSampler: r.uSampler,
+      uTexLut: r.uTexLut,
+      uniforms: r.uniforms,
+      uStatics: this._staticsSource,
+      uPoses: this._poseSource,
+    };
+    if (this._pixelDepth) resources.uMaps = this._pixelDepth.maps;
+    return new Shader({ glProgram, resources });
+  }
+
+  /** DX-DEPTH: a colour program's vertex shader, with the floor depth's terms when pixel depth is on. */
+  _depthVertex(source) {
+    return this._pixelDepth && source ? pixelDepthVertex(source) : source;
+  }
+
+  /** DX-DEPTH: a colour program's fragment shader, writing the floor depth when pixel depth is on. */
+  _depthFragment(source) {
+    return this._pixelDepth && source ? pixelDepthFragment(source) : source;
+  }
+
+  /**
+   * DX-DEPTH: this frame's floor depth terms (pixelDepth.js pixelDepthTerms): the camera's foreshortening and the view's
+   * floor span.
+   */
+  setPixelDepthTerms(floorScaleY, heightScaleY, viewTopY, viewHeight) {
+    if (this._pixelDepth === null) return;
+    pixelDepthTerms(this._depthTerms, floorScaleY, heightScaleY, viewTopY, viewHeight);
+    const group = this.shader && this.shader.resources && this.shader.resources.uniforms;
+    if (group && typeof group.update === 'function') group.update();
   }
 
   /**
@@ -768,12 +793,14 @@ export class InstancedSpriteBatch {
       // A split batch keeps 1 (setPoseAlpha leaves it).
       uniforms.uPoseAlpha = { value: 1, type: 'f32' };
     }
+    if (this._pixelDepth) uniforms.uDepth = { value: this._depthTerms, type: 'vec4<f32>' };
     const resources = {
       uTexture: atlas,
       uSampler: atlas.style,
       uTexLut: lut,
       uniforms,
     };
+    if (this._pixelDepth) resources.uMaps = this._pixelDepth.maps;
     let fragEntry = 'mainFragAdd';
     if (this._premultiplyAlpha) {
       fragEntry = 'mainFrag';
@@ -794,12 +821,12 @@ export class InstancedSpriteBatch {
           'gl_Position = vec4(clip.xy, aInstDepth, 1.0);\n  if (aInstShadow.x < -1000.0) gl_Position.x += aInstShadow.y + aInstShadow.z;'
         );
     }
-    const glProgram = instancedSpriteGlProgram(
-      GlProgram,
-      vert,
-      pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders),
-      name
-    );
+    let frag = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
+    if (this._pixelDepth && vert && frag) {
+      vert = pixelDepthVertex(vert);
+      frag = pixelDepthFragment(frag);
+    }
+    const glProgram = instancedSpriteGlProgram(GlProgram, vert, frag, name);
     return new Shader({ glProgram, resources });
   }
 
@@ -824,8 +851,8 @@ export class InstancedSpriteBatch {
     const shaders = this._engineShaders;
     const glProgram = instancedSpriteGlProgram(
       GlProgram,
-      shaders?.spriteVert ? spriteIndexedVertex(shaders.spriteVert) : null,
-      pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders),
+      this._depthVertex(shaders?.spriteVert ? spriteIndexedVertex(shaders.spriteVert) : null),
+      this._depthFragment(pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders)),
       `${name}-indexed`
     );
     const r = this.shader.resources;
@@ -836,6 +863,7 @@ export class InstancedSpriteBatch {
       uniforms: r.uniforms,
       uStatics: this._staticsSource,
     };
+    if (this._pixelDepth) resources.uMaps = this._pixelDepth.maps;
     return new Shader({ glProgram, resources });
   }
 

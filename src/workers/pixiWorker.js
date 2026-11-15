@@ -8,7 +8,7 @@ self.postMessage({
 
 // Import engine dependencies
 
-import { cameraFloorScaleY } from '../util/cameraView.js';
+import { cameraFloorScaleY, cameraHeightScaleY } from '../util/cameraView.js';
 import { Transform } from '../components/transform.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { RigidBody } from '../components/rigidBody.js';
@@ -1927,6 +1927,13 @@ class PixiRenderer extends AbstractWorker {
    */
   updateSpritesFromRenderQueue() {
     if (!this.renderQueueEnabled || !this.entitiesBatch) return;
+    // DX-DEPTH: the floor span this frame's view covers, for the entities' floor depth.
+    this.entitiesBatch.setPixelDepthTerms(
+      this._groundScaleY || 1,
+      cameraHeightScaleY(this.config),
+      this._renderCameraY || 0,
+      this.canvasHeight / (this._renderZoom || 1),
+    );
     if (!layerIsVisible(Layer.entitiesId)) {
       this.entitiesBatch.mesh.visible = false;
       this.visibleEntityCount = 0;
@@ -2722,6 +2729,13 @@ class PixiRenderer extends AbstractWorker {
     // too since E-187: the scatter a compute pass).
     const keyed = this._pixiKeyed !== null && this._pixiInstanceRows !== null ? this._pixiKeyed : null;
     const indexed = !!(gpuCaps && gpuCaps.indexedSprites) || keyed !== null;
+    // DX-DEPTH (F5): an oblique camera with a maps page: each pixel's floor depth corrects the painter (WebGL for now;
+    // renderer.pixelDepth true or false forces it).
+    const wantDepth = this.config?.renderer?.pixelDepth;
+    const oblique = cameraFloorScaleY(this.config) < 1 && cameraHeightScaleY(this.config) > 0;
+    const pixelDepth = !this._useWebGpu && this.atlasMapsSource !== null && (wantDepth === true || (wantDepth !== false && oblique))
+      ? { maps: this.atlasMapsSource }
+      : null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
@@ -2754,6 +2768,7 @@ class PixiRenderer extends AbstractWorker {
           : this._gpuRecordTexture(),
       keyed,
       posesByRow: this._keyedPosesByRow,
+      pixelDepth,
       // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
       // stream and statics rows; a keyed one's slot stream, updates (its statics are scattered on the GPU) and, E-191, the
       // shadow stream of the sun's pass over its instances (3 floats a row).
