@@ -1109,9 +1109,11 @@ export class LightBenchScene extends Scene {
     if (!this._panel || !this._panel.visible) return;
     const h = Math.floor(this._hour);
     const m = Math.floor((this._hour - h) * 60);
+    // Where the shadows fall, on the floor (world degrees: 90 is towards the camera), from the sun's shadow direction.
+    const toward = Math.round((((Math.atan2(Sun.shadowDirY, Sun.shadowDirX) / DEG) % 360) + 360) % 360);
     const text =
-      `${h}:${String(m).padStart(2, '0')}   sun from ${Math.round(Sun.angle)}°, ${Math.round(Sun.elevation)}° high, ` +
-      `intensity ${Sun.intensity.toFixed(2)}\nWASD walks the person; click a thing or a lamp's dot`;
+      `${h}:${String(m).padStart(2, '0')}   sun ${Math.round(Sun.elevation)}° high, intensity ${Sun.intensity.toFixed(2)}, ` +
+      `shadows toward ${toward}°\nWASD walks the person; click a thing or a lamp's dot`;
     if (text !== this._readoutText) {
       this._readoutText = text;
       this._panel.readout.textContent = text;

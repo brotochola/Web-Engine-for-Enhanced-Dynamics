@@ -29,12 +29,12 @@ function className(el) {
   return el.sheet.charAt(0).toUpperCase() + el.sheet.slice(1);
 }
 
-/** What the sheet's way casts, for the comment on a kind left 'auto'. */
-function autoText(el, light) {
-  const asset = BENCH_ASSETS[el.sheet];
+/** What the sheet's way casts, for the comment on a kind left 'auto' (`mapsOn`: the sheet loads its height map). */
+function autoText(el, light, mapsOn) {
+  if (el.kind === 'tree' || el.kind === 'char') return 'one view: its card';
+  if (!mapsOn) return 'no height map: its card';
   const cast = el.cast?.[light === 'sun' ? 'sun' : 'lamp'];
-  if (!asset?.maps || el.kind === 'tree' || el.kind === 'char') return 'one view: its card';
-  if (cast === 'sprite') return "its json says meta.light3d.cast: its card";
+  if (cast === 'sprite') return 'its json says meta.light3d.cast: its card';
   return 'a render with a height map: its solid';
 }
 
@@ -76,7 +76,8 @@ export function elementCode(el, { maps }) {
   const asset = BENCH_ASSETS[el.sheet];
   const look = normalizeLook(el.look, el.sheet, Array.isArray(el.hull) && el.hull.length >= 12);
   const out = [];
-  const twins = maps && asset?.maps ? `, heightMap: '${el.sheet}_h.png', normalMap: '${el.sheet}_n.png'` : '';
+  const mapsOn = maps && asset?.maps === true;
+  const twins = mapsOn ? `, heightMap: '${el.sheet}_h.png', normalMap: '${el.sheet}_n.png'` : '';
   out.push('// Its sheet and the twins of its pictures: the same frames in the same places (DX-MAPS).');
   out.push('static assets = {');
   out.push('  spritesheets: {');
@@ -115,10 +116,10 @@ export function elementCode(el, { maps }) {
   // The shadows: the same order as applyLook.
   if (look.sun === look.lamps) {
     const l = castLine('this.shadowCaster', look.sun, el, look);
-    out.push(l ?? line(4, `// Shadows: its sheet's way (${autoText(el, 'sun')}).`));
+    out.push(l ?? line(4, `// Shadows: its sheet's way (${autoText(el, 'sun', mapsOn)}).`));
   } else {
-    out.push(castLine('this.shadowCaster.sun', look.sun, el, look) ?? line(4, `// The sun: its sheet's way (${autoText(el, 'sun')}).`));
-    out.push(castLine('this.shadowCaster.lamps', look.lamps, el, look) ?? line(4, `// The lamps: its sheet's way (${autoText(el, 'lamps')}).`));
+    out.push(castLine('this.shadowCaster.sun', look.sun, el, look) ?? line(4, `// The sun: its sheet's way (${autoText(el, 'sun', mapsOn)}).`));
+    out.push(castLine('this.shadowCaster.lamps', look.lamps, el, look) ?? line(4, `// The lamps: its sheet's way (${autoText(el, 'lamps', mapsOn)}).`));
   }
   if (castsVolume(look)) {
     out.push(line(4, `this.rotation = ${num(volumeRotation(el.sheet, el.facing))};`, 'a volume turns with rotation; the sprite does not'));
