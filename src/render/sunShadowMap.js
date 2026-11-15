@@ -79,6 +79,73 @@ export const CASTER_ID_WGSL = `fn casterEntityId(e: f32) -> f32 {
 
 /** Cells across (and down) a frame when it casts columns: SUN_MAP_COLUMNS² columns a caster with a height map. */
 export const SUN_MAP_COLUMNS = 24;
+/** E-379: the px a column's cell spans at most: a frame wider than SUN_MAP_COLUMNS such cells draws as blocks of the grid. */
+export const COLUMN_CELL_PX = 8;
+/** E-379: the most blocks a side a frame draws as (a k x k of grids). */
+export const COLUMN_MAX_BLOCKS = 4;
+
+/** E-379: the caster row's floats compactColumnRows reads (gpuQueueLayout.js's caster rows, instancedSpriteBatch's layout). */
+const ROW_SCALE = 2;
+const ROW_DEPTH = 8;
+const ROW_TEX = 10;
+
+/**
+ * E-379: the instances a columns pass draws. The columns programs ran their grid (SUN_MAP_COLUMNS² cells) for every caster
+ * row and threw away the rows that cast none: 2 000 cards beside 20 renders cost the sun map's columns 5.1 ms against
+ * 0.1 for the renders alone (gpuPassBench, GTX 1650). Of `rows` caster rows of `rowFloats` floats in `src`, the ones that
+ * cast columns for the sun (`light` 0) or the lamps (1), as the programs test it (their kind 2, a solid, or 0, the sheet's
+ * way, on a render: its frame's base a contact; for the sun, not one that casts its card), are copied into `out`; a frame
+ * more than SUN_MAP_COLUMNS · COLUMN_CELL_PX px a side (its trim times its scale) as k x k instances, each its block's
+ * x, y and k in `blocks` (4 floats an instance), so a barn's columns are 6 px, not 18. Returns the instances it needs:
+ * when that is more than `out` holds, it wrote what fits and the caller grows `out` and asks again.
+ * @param {Float32Array} src
+ * @param {number} rows
+ * @param {number} rowFloats
+ * @param {Float32Array} lut the texture table (`lutFloats` an id: the trim's size at 8, 9, the base at 10, 11)
+ * @param {number} lutFloats
+ * @param {0|1} light
+ * @param {Float32Array} out
+ * @param {Float32Array} blocks
+ * @returns {number}
+ */
+export function compactColumnRows(src, rows, rowFloats, lut, lutFloats, light, out, blocks) {
+  const ids = (lut.length / lutFloats) | 0;
+  const cap = Math.min((out.length / rowFloats) | 0, (blocks.length / 4) | 0);
+  const span = SUN_MAP_COLUMNS * COLUMN_CELL_PX;
+  let n = 0;
+  for (let r = 0; r < rows; r++) {
+    const at = r * rowFloats;
+    const depth = src[at + ROW_DEPTH];
+    const code = depth < -0.5 ? (-depth - 0.5) | 0 : 0;
+    const kind = light === 0 ? code & 7 : (code >> 3) & 7;
+    if (kind !== 0 && kind !== 2) continue;
+    const id = src[at + ROW_TEX] | 0;
+    if (id < 0 || id >= ids) continue;
+    const l = id * lutFloats;
+    if (kind === 0 && !(lut[l + 10] < 0 && (light === 1 || lut[l + 11] >= 0))) continue;
+    const w = lut[l + 8] * src[at + ROW_SCALE];
+    const h = lut[l + 9] * src[at + ROW_SCALE + 1];
+    const side = Math.max(w < 0 ? -w : w, h < 0 ? -h : h);
+    let k = Math.ceil(side / span);
+    if (!(k >= 1)) k = 1;
+    else if (k > COLUMN_MAX_BLOCKS) k = COLUMN_MAX_BLOCKS;
+    for (let by = 0; by < k; by++) {
+      for (let bx = 0; bx < k; bx++) {
+        if (n < cap) {
+          const to = n * rowFloats;
+          for (let f = 0; f < rowFloats; f++) out[to + f] = src[at + f];
+          const b = n * 4;
+          blocks[b] = bx;
+          blocks[b + 1] = by;
+          blocks[b + 2] = k;
+          blocks[b + 3] = 0;
+        }
+        n++;
+      }
+    }
+  }
+  return n;
+}
 
 /**
  * The atlas's twin page (heights), which the columns read. Which frames cast columns is the frame's base's to say
@@ -193,8 +260,8 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   }
   const head = card
     .slice(0, card.indexOf(after))
-    .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nvec2 aQuad;\nuniform sampler2D uTexture;\n')
-    .replace(main, `${FOOTPRINT_GLSL}${main}  aQuad = aCell.xy;\n`);
+    .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nin vec4 aBlock; // E-379: this instance\'s block of its frame (x, y) and the blocks a side (z, 0 or 1: one)\nvec2 aQuad;\nuniform sampler2D uTexture;\n')
+    .replace(main, `${FOOTPRINT_GLSL}${main}  float blocks = max(aBlock.z, 1.0);\n  aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
   return `${head}  vec2 uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
   vec4 m = texelFetch(uMaps, ivec2(uvc * vec2(textureSize(uMaps, 0))), 0);
   float cellAlpha = texelFetch(uTexture, ivec2(uvc * vec2(textureSize(uTexture, 0))), 0).a;
@@ -207,7 +274,7 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
   vec2 pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   vec2 base = vec2(pix.x, (pix.y + uSunK.w * z) * uGroundInvScaleY);
-  vec2 cell = abs(aInstTrim.zw * aInstScale) / ${cells.toFixed(1)};
+  vec2 cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
   float width = 1.1 * max(cell.x, cell.y * uGroundInvScaleY) + 1.0;
   // A column from the cell's floor point (height 0) to where its top lands; with a footprint, the cell swept north at
   // its own height to the footprint's edge, as the light bench's heightmap did (light passes under a belly, between
@@ -371,8 +438,8 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   if (to < 0) throw new Error('WeedJS: the sun shadow map columns need the sprite shadow WGSL (mainVert\'s end)');
   const head = card
     .slice(0, from)
-    .replace(quad, "  @location(0) aCell: vec4<f32>, // the cell's centre in the frame, t (floor 0, top 1), side\n")
-    .replace(body, `${body}  let aQuad = aCell.xy;\n`);
+    .replace(quad, "  @location(0) aCell: vec4<f32>, // the cell's centre in the frame, t (floor 0, top 1), side\n  @location(12) aBlock: vec4<f32>, // E-379: this instance's block of its frame (x, y) and the blocks a side (z)\n")
+    .replace(body, `${body}  let blocks = max(aBlock.z, 1.0);\n  let aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
   const columns = `  let uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
   let m = textureLoad(uMaps, vec2<i32>(uvc * vec2<f32>(textureDimensions(uMaps, 0))), 0);
   let cellAlpha = textureLoad(uTexture, vec2<i32>(uvc * vec2<f32>(textureDimensions(uTexture, 0))), 0).a;
@@ -385,7 +452,7 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   let content = aInstTrim.xy + aQuad * aInstTrim.zw;
   let pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   let base = vec2<f32>(pix.x, (pix.y + uniforms.uSunK.w * z) * uniforms.uGroundInvScaleY);
-  let cell = abs(aInstTrim.zw * aInstScale) / ${cells.toFixed(1)};
+  let cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
   let width = 1.1 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 1.0;
   // A column, or with a footprint the cell swept north at its own height (sunMapColumnsVertex says why).
   var a = base;

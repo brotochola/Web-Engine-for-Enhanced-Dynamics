@@ -273,8 +273,8 @@ export function lampMapColumnsVertex(source, cells = LAMP_MAP_COLUMNS) {
     throw new Error('WeedJS: the lamps\' shadow map columns need the sprite shadow vertex shader (aQuad, main)');
   }
   const top = head
-    .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nvec2 aQuad;\nuniform sampler2D uTexture;\nuniform sampler2D uMaps;\n')
-    .replace(main, `${main}  aQuad = aCell.xy;\n`);
+    .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nin vec4 aBlock; // E-379: this instance\'s block of its frame (x, y) and the blocks a side (z, 0 or 1: one)\nvec2 aQuad;\nuniform sampler2D uTexture;\nuniform sampler2D uMaps;\n')
+    .replace(main, `${main}  float blocks = max(aBlock.z, 1.0);\n  aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
   const k = (1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
   return `${top}  vec2 uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
   vec4 m = texelFetch(uMaps, ivec2(uvc * vec2(textureSize(uMaps, 0))), 0);
@@ -288,7 +288,7 @@ ${lampTileGlsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBas
   vec2 along = tip - base;
   float len = length(along);
   vec2 across = len > 1e-3 ? vec2(-along.y, along.x) / len : vec2(1.0, 0.0);
-  vec2 cell = abs(aInstTrim.zw * aInstScale) / ${cells.toFixed(1)};
+  vec2 cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
   float width = 1.1 * max(cell.x, cell.y * uGroundInvScaleY) + 1.0;
   // E-375: the column's tip at most where its ray lands twice the lamp's reach away (lampMapVertex says why).
   float h = z * aCell.z;
@@ -465,8 +465,8 @@ export function lampMapColumnsWgsl(source, cells = LAMP_MAP_COLUMNS) {
     throw new Error('WeedJS: the lamps\' shadow map columns need the sprite shadow WGSL (aQuad, mainVert)');
   }
   const head = parts.head
-    .replace(quad, "  @location(0) aCell: vec4<f32>, // the cell's centre in the frame, t (floor 0, top 1), side\n")
-    .replace(body, `${body}  let aQuad = aCell.xy;\n`)
+    .replace(quad, "  @location(0) aCell: vec4<f32>, // the cell's centre in the frame, t (floor 0, top 1), side\n  @location(12) aBlock: vec4<f32>, // E-379: this instance's block of its frame (x, y) and the blocks a side (z)\n")
+    .replace(body, `${body}  let blocks = max(aBlock.z, 1.0);\n  let aQuad = (aBlock.xy + aCell.xy) / blocks;\n`)
     .replace(
       '@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n',
       // uFoot is declared though no lamp column reads it: the program's layout names binding 7 (sunShadowGpuProgram with
@@ -488,7 +488,7 @@ ${lampTileWgsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBas
   let len = length(along);
   var across = vec2<f32>(1.0, 0.0);
   if (len > 1e-3) { across = vec2<f32>(-along.y, along.x) / len; }
-  let cell = abs(aInstTrim.zw * aInstScale) / ${cells.toFixed(1)};
+  let cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
   let width = 1.1 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 1.0;
   var h = z * aCell.z;
   let hCut = lamp.z * (1.0 - length(base - lamp.xy) / (2.0 * lamp.w));

@@ -141,14 +141,16 @@ test('a caster with a height map casts columns: each cell where it is in 3D, the
   assert.equal(Math.max(...sunMapColumnIndex(SUN_MAP_COLUMNS)), SUN_MAP_COLUMNS * SUN_MAP_COLUMNS * 4 - 1);
   const src = sunMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl'));
   assert.match(src, /in vec4 aCell;/);
-  assert.match(src, /aQuad = aCell\.xy;/);
+  // E-379: this instance's block of the frame (a large render draws as k x k instances of the grid).
+  assert.match(src, /in vec4 aBlock;/);
+  assert.match(src, /aQuad = \(aBlock\.xy \+ aCell\.xy\) \/ blocks;/);
   // The floor point under a cell is its screen place moved down by its height (the faces' formula), then the strip runs
   // from there (height 0) to where its ray lands (height z).
   assert.match(src, /vec2 base = vec2\(pix\.x, \(pix\.y \+ uSunK\.w \* z\) \* uGroundInvScaleY\);/);
   // A column's height runs from 0 at the floor to z at its top; a cell swept north to its footprint keeps z (zA).
   assert.match(src, /vSunZ = mix\(zA, z, aCell\.z\);/);
   assert.match(src, /float zA = 0\.0;/);
-  assert.match(src, new RegExp(`/ ${SUN_MAP_COLUMNS}\\.0;`));
+  assert.match(src, new RegExp(`/ \\(${SUN_MAP_COLUMNS}\\.0 \\* blocks\\);`));
   // With a footprint row (the base's second float, + 1): the cell swept north at its height to the footprint's edge.
   assert.match(src, /float footprintNorth\(int slot, float x\)/);
   assert.match(src, /if \(aInstBase\.y >= 1\.0\) \{/);
@@ -185,7 +187,8 @@ test('WebGPU: the map\'s and the solids\' WGSL come from the sprite shadows\' WG
   assert.doesNotMatch(cards, /vSunZ|mainFragMap/, 'the solids\' cards keep the shadow program\'s colour and fragment');
   const columns = sunMapColumnsWgsl(wgsl);
   assert.match(columns, /@location\(0\) aCell: vec4<f32>,/);
-  assert.ok(columns.includes('  let aQuad = aCell.xy;\n'));
+  assert.match(columns, /@location\(12\) aBlock: vec4<f32>,/);
+  assert.ok(columns.includes('  let aQuad = (aBlock.xy + aCell.xy) / blocks;\n'));
   assert.match(columns, /@group\(2\) @binding\(5\) var uMaps: texture_2d<f32>;/);
   assert.ok(columns.includes('  out.vSunZ = mix(zA, z, aCell.z);\n'));
   assert.match(columns, /@group\(2\) @binding\(7\) var uFoot: texture_2d<f32>;/);
@@ -203,4 +206,53 @@ test('WebGPU: the map\'s and the solids\' WGSL come from the sprite shadows\' WG
   assert.ok(p.gpuLayout[2].find((e) => e.binding === 0).visibility === p.gpuLayout[2].find((e) => e.binding === 5).visibility);
   const lit = lightingGpuProgram(GpuProgram, 'x', 'l', true, true);
   assert.deepEqual([lit.layout[2].uFaceMap, lit.layout[2].uSunMap], [4, 5]);
+});
+
+test('E-379: a columns pass draws the rows that cast columns for its light, a large render as blocks of the grid', async () => {
+  const { COLUMN_CELL_PX, compactColumnRows } = await import('../../src/render/sunShadowMap.js');
+  const F = 22;
+  const L = 12;
+  // The texture table: 0 a card (a standing base), 1 a small render (a contact, casts its solid), 2 a barn-sized render,
+  // 3 a render that casts its card for the sun (its base's second float negative).
+  const lut = new Float32Array(4 * L);
+  const frame = (id, w, h, bx, by) => lut.set([w, h, 0, 0, 1, 1, 0, 0, w, h, bx, by], id * L);
+  frame(0, 64, 64, 33, 6);
+  frame(1, 100, 80, -11, 0);
+  frame(2, 442, 442, -40, 0);
+  frame(3, 90, 70, -9, -0.5);
+  const rows = [];
+  const row = (tex, sunKind, lampKind, scale = 1) => {
+    const r = new Float32Array(F);
+    r[0] = rows.length; // x, to know it back
+    r[2] = scale;
+    r[3] = scale;
+    r[8] = sunKind || lampKind ? -((sunKind | (lampKind << 3)) + 1) : 0;
+    r[10] = tex;
+    rows.push(r);
+  };
+  row(0, 0, 0); // a person: no columns
+  row(1, 0, 0); // a small render: its columns
+  row(2, 0, 0); // the barn: 3 x 3 blocks (442 px over 24 cells of 8 px)
+  row(1, 1, 0); // a render set to cast its card for the sun: none for the sun
+  row(0, 2, 0); // a sprite set to cast its height map: its columns
+  row(3, 0, 0); // a render whose sheet casts its card for the sun: none for the sun, its columns for the lamps
+  const src = new Float32Array(rows.length * F);
+  rows.forEach((r, i) => src.set(r, i * F));
+  const out = new Float32Array(64 * F);
+  const blocks = new Float32Array(64 * 4);
+  const n = compactColumnRows(src, rows.length, F, lut, L, 0, out, blocks);
+  assert.equal(n, 1 + 9 + 1);
+  assert.deepEqual([...Array(n).keys()].map((i) => out[i * F]), [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 4]);
+  assert.deepEqual(Array.from(blocks.subarray(0, 4)), [0, 0, 1, 0]);
+  assert.deepEqual(Array.from(blocks.subarray(4, 4 * 10)), [0, 0, 3, 0, 1, 0, 3, 0, 2, 0, 3, 0, 0, 1, 3, 0, 1, 1, 3, 0, 2, 1, 3, 0, 0, 2, 3, 0, 1, 2, 3, 0, 2, 2, 3, 0]);
+  assert.deepEqual(Array.from(out.subarray(F, 2 * F)), Array.from(rows[2]), 'a block is its row, copied whole');
+  assert.ok(Math.ceil(442 / (24 * COLUMN_CELL_PX)) === 3);
+  // The lamps: the render that casts its card for the sun casts columns towards a lamp (its kind there is the sheet's).
+  const lamps = compactColumnRows(src, rows.length, F, lut, L, 1, out, blocks);
+  assert.deepEqual([...Array(lamps).keys()].map((i) => out[i * F]), [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 5]);
+  // Too little room: what fits is written, the count it needs comes back.
+  const small = new Float32Array(4 * F);
+  const smallBlocks = new Float32Array(4 * 4);
+  assert.equal(compactColumnRows(src, rows.length, F, lut, L, 0, small, smallBlocks), 11);
+  assert.deepEqual([0, 1, 2, 3].map((i) => small[i * F]), [1, 2, 2, 2]);
 });

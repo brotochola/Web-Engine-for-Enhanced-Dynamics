@@ -112,6 +112,8 @@ export async function buildScenery(p) {
     if (extra?.shadow) {
       attributes.aInstShadow = column(count, 3, (i, o) => o.set([1, 0, 0]));
       attributes.aInstLight = column(count, 4, (i, o) => o.set(extra.light ? extra.light(i) : [0, 0, 0, 0]));
+      // E-379: the columns programs' block of the frame (x, y, the blocks a side): one block, the whole frame.
+      attributes.aBlock = column(count, 4, (i, o) => o.set([0, 0, 1, 0]));
     }
     return { count, attributes };
   };
