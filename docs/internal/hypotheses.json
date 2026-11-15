@@ -16053,6 +16053,20 @@
       "aliases": [],
       "next": "",
       "records": []
+    },
+    {
+      "id": "N-199",
+      "title": "The light bench: the well dragged against the barn shows the barn's trim across it with pixel depth (the owner's report: 'algo raro en cómo las cosas se superponen'); the well stood inside the barn's footprint",
+      "status": "answered",
+      "statusText": "looked at 2026-11-15: not a bug; pixel depth draws an intersection where the painter hid it",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "the barn (anchor floor y 488.9, box ±146.7 x ±156.2) has its wall at floor y 636-645; the well at screen y 470 (floor 638) reaches 28 px behind its centre, 26-35 px inside the wall, so the wall's trim stands in front of the well's back half and pixel depth draws it there; at screen y 500 (back edge 651) the well is whole in front, with and without pixel depth; the painter drew the whole well in front either way. Self-shadow, the same report's 'does nothing': it works and is subtle (the barn's window insets, the hen house's door at 16 h and 18:30); the owner tried it at night on a tree (one view: off by its way) under the lamp that casts no shadows",
+      "refs": [],
+      "aliases": [],
+      "next": "",
+      "records": []
     }
   ],
   "records": [
