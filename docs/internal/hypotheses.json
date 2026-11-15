@@ -16240,18 +16240,20 @@
     {
       "id": "N-208",
       "title": "By day a tree's sun shadow showed on the barn's far wall, through the barn: the sun map keeps the highest caster on each ray (the tree beyond the barn) and a pixel skips its own entity's, so a wall turned away from the sun took the tree's shade",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "reported by the owner 2026-11-15 at the light bench (\"la sombra del árbol proyectada en la pared del granero traspasa la pared\"); fix written the same day, its capture pending",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
-      "result": "A face turned away from the sun is in its own shade, where by day the sprite looks as drawn: the fix keeps the sun map's shade off the flat term of a face the sun does not reach (faded across the terminator, smoothstep 0 to 0.15 of its cosine); a card (FLAT pixel) keeps it.",
+      "result": "fixed (3baefdbc): the sun map's shade leaves the flat term of a face the sun does not reach (faded across the terminator), cards keep it; the bench's barn wall and the well clean, the gable keeps the tree's shadow",
       "next": "The bench in the morning, a tree beside the barn's corner, before and after; tests; commit.",
       "refs": [],
       "aliases": [
         "tree shadow through the barn"
       ],
-      "records": []
+      "records": [
+        "R-1144"
+      ]
     },
     {
       "id": "N-209",
@@ -27170,6 +27172,18 @@
       "title": "N-205 answered: a render's silhouette under a high lamp matches the prototype's",
       "verdict": "answered",
       "text": "N-205 answered: no bug. The owner's report (the hen house and the table set to silhouette look very wrong with a lamp high behind them; \"creo que esto estaba resuelto en el artifact\") checked against the prototype under the same lamp.\n\nMethod: protoVsBenchLamp.mjs (session scratchpad): one thing alone in the prototype (its downloaded files) and in the bench, at the bench's own facing (hen house 119, table 259), its card for the lamps, at night, one white lamp at the owner's places (hen house: 24, -104 px at 205 px high; table: -110, -88 at 205) and three more around each (one at 300 px), reach 900.\n\nResult: in all eight pairs the engine's silhouette shadow has the prototype's shape, place and length (the table's long trapezoid towards the camera, the hen house's blob); the engine's edges are softer (the lamps' map's five taps) and its light dimmer (other units for the lamp). The long shadows are the silhouette's nature on a flat-topped render: the card stands up with the picture the lamp sees, which carries the top seen from above at the art's pitch, so it is much taller than the thing. Both sheets cast their height map by default (meta.light3d.cast, as in the prototype), which gives their true shadow.\n\nA possible improvement (not in the prototype, not done): squash a render's card to its height map's real height (zmax) so its silhouette shadow is no longer than the thing."
+    },
+    {
+      "id": "R-1144",
+      "date": "2026-11-15",
+      "time": "18:05",
+      "timeFrom": "recorded",
+      "title": "N-208 fixed: a face the sun does not reach takes no other caster's shadow",
+      "verdict": "kept",
+      "text": "N-208 fixed (3baefdbc). The owner's report: by day the tree's shadow on the barn passed through the wall onto the wall on the left.\n\nCause: the sun map keeps the highest caster on each ray, and a pixel skips its own entity's (DX-GBUF, so a thing does not shade itself in the map); on a face turned away from the sun, the barn's own body is the first thing towards the sun, skipped, so the tree beyond it was found. By day such a face is drawn as the artist shaded it (normals 'auto', k near 0).\n\nFix: the sun map's shade leaves the flat term of a face the sun does not reach, faded across the terminator; cards keep it.\n\nCheck: the bench by day, the barn turned 45 degrees, a tree beside its corner, the sun at 185 degrees and 30 high (benchScene2.mjs, session scratchpad): before, the leaves' shadow on the long wall (its back to the sun) and on the well's far side; after, both clean, the gable (facing the sun) keeps the tree's shadow. node 2733/2733, demos 101/101.",
+      "commits": [
+        "3baefdbc"
+      ]
     }
   ],
   "leads": [
