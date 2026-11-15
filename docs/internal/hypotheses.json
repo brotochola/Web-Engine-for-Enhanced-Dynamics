@@ -15386,6 +15386,100 @@
         "layout names a binding the WGSL lacks"
       ],
       "records": []
+    },
+    {
+      "id": "E-363",
+      "title": "DirectionalSprite's setters resolve even when the value does not change (Predator: 13 % of the resolves come from facingFrom set again in each FSM onEnter)",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "logic",
+      "kind": "speed",
+      "result": "",
+      "next": "The setters return early on an unchanged value; Predator crowd 2.5 against the branch.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-363"
+      ],
+      "aliases": [
+        "facingFrom setter resolve",
+        "DirectionalSprite setter early out"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-364",
+      "title": "DirectionalSprite resolves every directional entity every frame, also those whose type ticks every N frames (Predator: civilians 4, soldiers 6; ~0.67 ms per logic worker a frame)",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "logic",
+      "kind": "speed",
+      "result": "",
+      "next": "Resolve a staggered type's entities on their tick frames only; directionalSpriteStressScene with a tickInterval knob, then Predator crowd 2.5 against main.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-364"
+      ],
+      "aliases": [
+        "resolve on tick frames",
+        "DirectionalSprite staggered resolve"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-365",
+      "title": "The self-shadow pass costs 3.35 ms (WebGL) and 3.87 ms (WebGPU) at resolution 0.5 on the GTX 1650, 4.6 times the light pass",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "next": "Rays and steps tournament, early outs (sun term 0, flat neighbourhood), half resolution, own entity only; selfShadowStressScene and gpuPassBench.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-365"
+      ],
+      "aliases": [
+        "self-shadow cost",
+        "selfShadow pass ms"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-366",
+      "title": "The 3D light pass costs 1.22 ms on WebGPU against 0.87 ms on WebGL (32 lights, resolution 0.5, GTX 1650), +40 %; the plain light pass is close",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "next": "Compare the generated code, time the terms one by one in gpuPassBench, fix the WGSL.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-366"
+      ],
+      "aliases": [
+        "light3d WebGPU slower",
+        "WGSL light pass cost"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-367",
+      "title": "The G-buffer pass costs 0.89 ms on WebGL against 0.54 ms on WebGPU (resolution 0.5, GTX 1650), +66 %",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "next": "Measure again after F4 lands; then the GLSL (discard, twin page reads, branches).",
+      "refs": [
+        "EXECUTION_PLAN.md#E-367"
+      ],
+      "aliases": [
+        "gbuffer WebGL slower"
+      ],
+      "records": []
     }
   ],
   "records": [

@@ -4845,6 +4845,46 @@ Owner: spatial.
 gather alone 9.45 -> 9.52 ms a frame with the skip off). The skipped visits were the cheap ones (predicted rejects whose
 lines the next entity loads anyway). Ablation of the gather: without the dedup marks -15 %, without the row writes -17 %;
 ids numbered in home-cell order (the locality ceiling) -8 % of the frame.
+### E-367 The G-buffer pass costs 66 % more on WebGL than on WebGPU
+
+**Premise (the same quick suite):** the G-buffer pass (the face map generalised, resolution 0.5) takes 0.89 ms on
+WebGL against 0.54 ms on WebGPU. Agent R is changing that pass (F4: normals, surface, entity id, MRT); measure again
+once it lands.
+**Plan:** after F4, the same bench on both backends; if WebGL still lags, look at the GLSL (discard, the twin page's
+texelFetch, branches). Owner: the GPU.
+### E-366 The 3D light pass costs 40 % more on WebGPU than on WebGL
+
+**Premise (the same quick suite):** the light pass with the G-buffer, the sun's map and the lamps' map (32 lights,
+resolution 0.5) takes 1.22 ms on WebGPU against 0.87 ms on WebGL, while the plain light pass is close (0.78 against
+0.72). The WGSL of the 3D terms (LAMPMAP taps, the sun map, their uniforms) costs what the GLSL does not.
+**Plan:** read both programs' generated code (Tint's HLSL against ANGLE's), time the terms one by one in the bench
+(`--passes light3d` with parts turned off), fix the WGSL. Owner: the GPU.
+### E-365 The self-shadow pass costs 4.6 times the light pass
+
+**Premise (2026-11-15, `gpuPassBench --suite quick`, GTX 1650, resolution 0.5, 94 % of the pixels with a height):** the
+self-shadow pass (one ray, 6 steps) takes 3.35 ms on WebGL (spread 16 %) and 3.87 ms on WebGPU, against 0.72 and 0.78
+ms for the light pass with 32 lights. A scene of renders with maps pays it on every such pixel.
+**Plan:** the plan's tournament (§9.5: 1, 2 or 4 rays, the step cap) plus early outs: no steps where the sun term is 0
+or the pixel's neighbourhood is flat, a half-resolution pass, and only the caster's own heights once the G-buffer holds
+the entity id (DX-SELFSHADOW). Owner: the GPU (presented frames). Measure: `selfShadowStressScene` and `gpuPassBench`.
+### E-364 DirectionalSprite resolves every entity every frame, also those that tick every N frames
+
+**Premise (the same profile):** `_resolveDirections` resolves every directional entity every frame, about 0.67 ms per
+logic worker a frame in Predator crowd 2.5 (38 000 people, ~42 ns each: the first read of each column misses). Predator
+ticks its civilians every 4 frames and its soldiers every 6 (staggeredUpdates); main's hand-written picker changed a
+direction only when a person shot.
+**Plan:** with staggered updates, an entity whose type has `tickInterval` > 1 is resolved on its own tick frames (the
+buckets `_tickIntervalBucket` walks that frame), after the ticks as now; the setters still resolve at once. Expected:
+about -0.5 ms per logic worker in Predator crowd 2.5. Owner: logic. Measure: `directionalSpriteStressScene` with a
+tickInterval knob, then Predator crowd 2.5 against main.
+### E-363 DirectionalSprite's setters resolve even when the value does not change
+
+**Premise (2026-11-15, CPU profile of Predator crowd 2.5 on dx/light3d):** `DirectionalSprite.resolve` is 790 ms of
+self time in the window on the two logic threads, about 0.8 ms per worker a frame: the branch's logic cost against main
+(R-1058, 5.85 -> 6.65 ms). 13 % of its calls come from `set facingFrom`: Predator's FSM sets `'velocity'` again in
+each state's onEnter. The setter also resets lastX/lastY, which stalls a facing from position deltas for a frame.
+**Plan:** the setters (`facingFrom`, and the others that resolve) return when the value is what it was. Owner: logic.
+Hygiene with a small speed share; Predator crowd 2.5 as the guard.
 ### E-312 The emit writes every sprite row's statics, read only for changed keys
 
 **Premise (R-1045):** emit_rows is 42 to 45 % of pre-render; sprite_row reads six statics per sprite and writes them to
