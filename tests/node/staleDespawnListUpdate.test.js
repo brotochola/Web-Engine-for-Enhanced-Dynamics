@@ -16,19 +16,23 @@ test('a late despawn does not unlist the new life that reused the index', async 
   const worker = await loadWorker('logicWorker.js', 'logicWorker');
   const N = 4;
   Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(N)), N);
-  const removed = [];
-  const real = { all: GameObject._removeFromActiveEntities, type: GameObject._removeFromTypeActiveList };
-  GameObject._removeFromActiveEntities = (i) => removed.push(i);
-  GameObject._removeFromTypeActiveList = () => {};
+  const prevAll = GameObject.activeEntitiesData;
   try {
     class Flashy {}
-    Transform.active[1] = 1; // reused: a new flash lives at 1
-    Transform.active[2] = 0; // really gone
-    worker._processDespawnSoA(Int32Array.from([1, 2]), [Flashy, Flashy], 2);
-    assert.deepEqual(removed, [2]);
+    Flashy.entityType = 0;
+    // A batch of two (sorted and compacted once, E-344) and a batch of one: the lists themselves, not the calls.
+    for (const batch of [[1, 2], [2, 1], [1]]) {
+      Flashy._activeList = Uint16Array.of(2, 1, 2, 0, 0);
+      GameObject.activeEntitiesData = Uint16Array.of(2, 1, 2, 0, 0);
+      Transform.active[1] = 1; // reused: a new flash lives at 1
+      Transform.active[2] = 0; // really gone
+      worker._processDespawnSoA(Int32Array.from(batch), batch.map(() => Flashy), batch.length);
+      const want = batch.includes(2) ? [1] : [1, 2];
+      assert.deepEqual([...GameObject.activeEntitiesData.subarray(1, 1 + GameObject.activeEntitiesData[0])], want, `${batch}`);
+      assert.deepEqual([...Flashy._activeList.subarray(1, 1 + Flashy._activeList[0])], want, `${batch} type list`);
+    }
   } finally {
-    GameObject._removeFromActiveEntities = real.all;
-    GameObject._removeFromTypeActiveList = real.type;
+    GameObject.activeEntitiesData = prevAll;
   }
 });
 

@@ -29,6 +29,55 @@ export function removeFromActiveEntities(activeEntitiesData, entityIndex) {
   activeEntitiesData[0] = count - 1;
 }
 
+/**
+ * E-344: take the indices `sorted[0..n)` (ascending, repeats allowed) out of a sorted [count, idx...] list in one
+ * pass. Entries before the first removed one stay where they are; each run between two removed entries moves once
+ * (native memmove), so a batch of D despawns costs one pass instead of D shifts of the list's tail. Writes list[0]
+ * last, as a single removal does.
+ * @param {Uint16Array|Uint32Array|Int32Array|null} list
+ * @param {ArrayLike<number>} sorted
+ * @param {number} n
+ */
+export function removeSortedFromActiveList(list, sorted, n) {
+  if (!list || n <= 0) return;
+  const count = list[0];
+  if (count === 0) return;
+  let write = -1;
+  let from = 1;
+  let prev = -1;
+  for (let j = 0; j < n; j++) {
+    const value = sorted[j];
+    if (value === prev) continue;
+    prev = value;
+    let lo = from;
+    let hi = count;
+    let pos = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      const v = list[mid];
+      if (v === value) {
+        pos = mid;
+        break;
+      }
+      if (v < value) lo = mid + 1;
+      else hi = mid - 1;
+    }
+    if (pos < 0) continue;
+    if (write < 0) write = pos;
+    else if (pos > from) {
+      list.copyWithin(write, from, pos);
+      write += pos - from;
+    }
+    from = pos + 1;
+  }
+  if (write < 0) return;
+  if (from <= count) {
+    list.copyWithin(write, from, count + 1);
+    write += count + 1 - from;
+  }
+  list[0] = write - 1;
+}
+
 export function batchRemoveFromActiveEntities(activeEntitiesData, indicesToRemove) {
   if (!activeEntitiesData || indicesToRemove.size === 0) return;
 

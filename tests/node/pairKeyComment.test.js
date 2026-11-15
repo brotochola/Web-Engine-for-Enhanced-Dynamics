@@ -46,12 +46,13 @@ const IDW = 'src/util/entityIdWidth.js';
 test('logicWorker.js keeps the pair key out of any Float64Array, and no comment claims one', () => {
   // Strip comments first, or the note that explains the removal documents the very
   // symbol it is reporting as absent - the trap that broke four earlier test files.
-  // E-125 added one Float64Array, the spawn sort's packed keys. E-282 moved the pair from a Map key to two
+  // E-125 added one Float64Array, the spawn sort's packed keys (E-344 the despawn sort's). E-282 moved the pair from a Map key to two
   // Int32Array columns of an open-addressing table.
   const src = code(LOGIC);
   const uses = src.match(/[\w.]*\s*=\s*new Float64Array\(/g) || [];
   for (const use of uses) {
-    assert.match(use, /_spawnSortKeys/, `logicWorker.js makes a Float64Array other than the spawn keys: ${use}`);
+    // E-344 sorts the despawn batch with the same packed keys.
+    assert.match(use, /_(de)?spawnSortKeys/, `logicWorker.js makes a Float64Array other than the spawn keys: ${use}`);
   }
   assert.ok(/this\._pairHashMin = new Int32Array\(/.test(src), 'the pair table keeps its ids in Int32Arrays');
   assert.ok(!/_pairSlot/.test(src), 'no Map of pair keys is left');

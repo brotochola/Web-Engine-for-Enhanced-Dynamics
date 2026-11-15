@@ -78,7 +78,7 @@ import {
   initialJointBreakCursor,
 } from '../box2d/box2dJointBreakRing.js';
 import { bindBodySyncBuffers } from '../box2d/box2dBodySync.js';
-import { mergeSortedIntoActiveList } from '../util/gameObjectActiveState.js';
+import { mergeSortedIntoActiveList, removeSortedFromActiveList } from '../util/gameObjectActiveState.js';
 import {
   SPAWN_CMD_KIND,
   drainSpawnCommands,
@@ -381,6 +381,11 @@ class LogicWorker extends AbstractWorker {
     this._despawnIdx = new Int32Array(256);
     this._despawnType = new Int32Array(256);
     this._despawnClass = new Array(256);
+    // E-344: the despawn batch sorted by entity index (packed keys as the spawn pass's, E-125), and one type's share.
+    this._despawnSortKeys = new Float64Array(256);
+    this._despawnSorted = new Int32Array(256);
+    this._despawnSortedClass = new Array(256);
+    this._despawnTypeScratch = new Int32Array(256);
     this._despawnN = 0;
     // E-165: GameObject's spawn and despawn read this worker through a module reference, not self.logicWorker.
     bindLogicWorkerRef(this);
@@ -699,6 +704,10 @@ class LogicWorker extends AbstractWorker {
       this._despawnIdx = idx;
       this._despawnType = type;
       this._despawnClass = classes;
+      this._despawnSortKeys = new Float64Array(next);
+      this._despawnSorted = new Int32Array(next);
+      this._despawnSortedClass = new Array(next);
+      this._despawnTypeScratch = new Int32Array(next);
       this._despawnCap = next;
     }
   }
@@ -941,16 +950,65 @@ class LogicWorker extends AbstractWorker {
    * the index still listed and kept it; removing it now would leave the new
    * life active, unlisted and never ticked. So an index alive again is skipped,
    * as the spawn pass skips one that is no longer alive.
+   *
+   * E-344: a batch is sorted by entity index and each list is compacted once
+   * (removeSortedFromActiveList), not shifted once per despawn; each type's list
+   * version moves once, after its list is final. The lists stay sorted, so their
+   * content and order are what the per-entity removals left.
    */
   _processDespawnSoA(idx, classes, n) {
     if (n === 0) return false;
     const transformActive = Transform.active;
+    if (n === 1) {
+      const entityIndex = idx[0];
+      if (transformActive[entityIndex] !== 1) {
+        GameObject._removeFromActiveEntities(entityIndex);
+        GameObject._removeFromTypeActiveList(classes[0], entityIndex);
+      }
+      return true;
+    }
+
+    const keys = this._despawnSortKeys;
+    const span = keys.length;
+    const sorted = this._despawnSorted;
+    const sortedClass = this._despawnSortedClass;
+    // Key = entityIndex * span + position: span is the batch capacity, a power of two, so the typed array's own
+    // numeric sort orders by index, then by queue position (E-125's spawn keys).
+    for (let i = 0; i < n; i++) keys[i] = idx[i] * span + i;
+    keys.subarray(0, n).sort();
+    let m = 0;
     for (let i = 0; i < n; i++) {
-      const entityIndex = idx[i];
-      const EntityClass = classes[i];
+      const key = keys[i];
+      const src = (key - Math.floor(key / span) * span) | 0;
+      const entityIndex = idx[src];
       if (transformActive[entityIndex] === 1) continue;
-      GameObject._removeFromActiveEntities(entityIndex);
-      GameObject._removeFromTypeActiveList(EntityClass, entityIndex);
+      const EntityClass = classes[src];
+      if (m > 0 && sorted[m - 1] === entityIndex && sortedClass[m - 1] === EntityClass) continue;
+      sorted[m] = entityIndex;
+      sortedClass[m] = EntityClass;
+      m++;
+    }
+    if (m === 0) return true;
+
+    removeSortedFromActiveList(GameObject.activeEntitiesData, sorted, m);
+    // Each class once: its despawns, still in index order, then one compaction of its list.
+    const typeIdx = this._despawnTypeScratch;
+    for (let k = 0; k < m; k++) {
+      const EntityClass = sortedClass[k];
+      let seen = false;
+      for (let q = 0; q < k; q++) {
+        if (sortedClass[q] === EntityClass) {
+          seen = true;
+          break;
+        }
+      }
+      if (seen) continue;
+      let t = 0;
+      for (let q = k; q < m; q++) {
+        if (sortedClass[q] === EntityClass) typeIdx[t++] = sorted[q];
+      }
+      removeSortedFromActiveList(EntityClass._activeList, typeIdx, t);
+      GameObject._typeListChanged(EntityClass);
     }
     return true;
   }
