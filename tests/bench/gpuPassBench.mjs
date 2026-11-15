@@ -70,9 +70,9 @@ const SUITES = {
   tournament: [
     { passes: 'color,gbuffer,gbufferMrt', query: { res: 0.5 } },
     { passes: 'color,gbuffer,gbufferMrt', query: { res: 1 } },
-    { passes: 'sunMap', query: { format: 'rgba8', silhouettes: 5000 } },
-    { passes: 'sunMap', query: { format: 'r16f', silhouettes: 5000 } },
-    { passes: 'sunMap', query: { format: 'r32f', silhouettes: 5000 } },
+    // The maps keep a caster's height, opacity and id in RGBA8 since the second round: no format to choose. What the
+    // pixel depth (DX-DEPTH) costs the colour pass instead.
+    { passes: 'color,colorDepth', query: { res: 0.5 } },
     ...[128, 256, 512].map((tile) => ({ passes: 'lampMap', query: { lamps: 48, tile } })),
     ...[0.25, 0.5, 1].map((res) => ({ passes: 'light3d', query: { res, lights: 32 } })),
     ...[1, 2, 4].map((rays) => ({ passes: 'selfShadow', query: { res: 1, lights: 32, rays } })),
