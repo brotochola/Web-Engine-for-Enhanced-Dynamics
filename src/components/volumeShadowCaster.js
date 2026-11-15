@@ -1,14 +1,17 @@
-// VolumeShadowCaster — says what an object is, and the engine works out its shadow (DX-VOLUME). A box, levels or a hull of
-// points, in the entity's frame: it moves and turns with the entity. No second entity, no layer in the config, no mesh code.
-//
-// DX-CASTER (DX_LIGHT3D_PLAN.md §5.5): shadowCaster.setBox, addLevel and setHull come here, for a class that lists both. Through
-// the ShadowCaster the volume replaces the sprite's silhouette, and a later ShadowCaster setter that casts something else clears
-// it. Called on its own, as before, it leaves the sprite's shadow alone.
+// VolumeShadowCaster — internal: what a ShadowCaster's setBox, addLevel and setHull make (DX-VOLUME, DX-CASTER: plan §5.5).
+// A box, levels or a hull of points, in the entity's frame: it moves and turns with the entity. No second entity, no layer in
+// the config, no mesh code. No class lists it: Scene pools its one column when config.lighting.maxVolumes is above 0 (the
+// entities that hold a volume at once), with the layer and the volumes' share of the mesh arena, and the ShadowCaster drives
+// it. Through the ShadowCaster the volume replaces the sprite's silhouette, and a later setter that casts something else
+// clears it.
 //
 // A volume is the entity's MeshGeometry slot, with the height of each vertex where a mesh has its U, on the `volumeShadows`
-// layer, which Scene adds when a class lists this component: sunProjected, so the GPU moves each vertex by the sun. Only the
-// roof and the sides are drawn. A ray from a point in shadow up to the sun leaves the volume through one of them, so a floor
-// face would add nothing.
+// layer: sunProjected, so the GPU moves each vertex by the sun. Only the roof and the sides are drawn. A ray from a point in
+// shadow up to the sun leaves the volume through one of them, so a floor face would add nothing.
+//
+// The entity's MeshRenderer row draws it. A class that lists MeshRenderer has that row anyway; for one that does not, the row is
+// on (MeshRenderer.active) while the entity is live and holds a volume, and its other columns keep their defaults but the
+// entity's alpha and visibility (GameObject writes those to it).
 //
 // x and y are on the floor, height in screen px. A floor seen at an angle is drawn floorScaleY as tall as it is wide: the
 // shader applies it, after the turn, so a turning car rewrites no vertex (meshUvFill.vert.glsl).
@@ -21,6 +24,7 @@ import { triangulateSimplePolygon } from '../render/meshTriangulate.js';
 import { VOLUME_LAYER } from '../util/configDefaults.js';
 import { resolveGroundScaleY } from '../util/lightRadius.js';
 import { MeshRenderer, markMeshPaint } from './meshRenderer.js';
+import { Transform } from './transform.js';
 
 const HEIGHT_ON_THE_FLOOR = 1e-3;
 
@@ -36,13 +40,22 @@ export function resetVolumeShadowCasterWarns() {
 function warnFull() {
   if (_warnedFull) return;
   _warnedFull = true;
-  console.warn('WeedJS: VolumeShadowCaster: the mesh arena is full; raise lighting.maxVolumeVerts (16 by default)');
+  console.warn(
+    'WeedJS: shadowCaster: the mesh arena has no room for this volume; raise lighting.maxVolumes (the entities that hold a ' +
+      'volume at once) or lighting.maxVolumeVerts (the vertices kept for each, 16 by default)',
+  );
 }
 
 function warnShape(what) {
   if (_warnedShapes.has(what)) return;
   _warnedShapes.add(what);
-  console.warn(`WeedJS: VolumeShadowCaster: ${what}`);
+  console.warn(`WeedJS: shadowCaster: ${what}`);
+}
+
+/** Whether entity `i` holds a volume: its floor scale is above 0 (0 with none, and on every slot in a scene without volumes). */
+export function holdsVolume(i) {
+  const scale = VolumeShadowCaster.floorScaleY;
+  return scale != null && scale[i] > 0;
 }
 
 const _base = new Float32Array(8);
@@ -78,14 +91,14 @@ function readRing(points, into) {
 }
 
 /** Writes the mesh and joins the layer. `xy`, `heights` and `indices` are scratch this file owns or MeshGeometry's. */
-function publish(i, xy, heights, indices, vertN, indexN) {
+function publish(i, ownMesh, scale, xy, heights, indices, vertN, indexN) {
   if (!MeshGeometry.replace(i, xy, indices, heights, vertN, indexN)) {
     // A refused mesh leaves the slot empty, and an empty slot on the layer would fill its collider.
-    VolumeShadowCaster.leaveLayer(i);
+    VolumeShadowCaster.leaveLayer(i, ownMesh);
     warnFull();
     return false;
   }
-  VolumeShadowCaster.joinLayer(i);
+  VolumeShadowCaster.joinLayer(i, ownMesh, scale);
   return true;
 }
 
@@ -122,11 +135,11 @@ function topIsFlat(top, n, near) {
 }
 
 /**
- * One level: `base` at height `bottom`, `top` at height `height`, the roof and a quad up each side, after the mesh the entity
+ * One level: `base` at height `bottom`, `top` at height `height`, the roof and a quad up each side, after the volume the entity
  * holds when `keep`. A top that closes on a point or a line has no roof, and a side whose two top corners meet is one
  * triangle: no row draws nothing.
  */
-function writeLevel(i, base, top, n, bottom, height, keep) {
+function writeLevel(i, ownMesh, scale, base, top, n, bottom, height, keep) {
   let minX = base[0];
   let maxX = base[0];
   let minY = base[1];
@@ -148,7 +161,8 @@ function writeLevel(i, base, top, n, bottom, height, keep) {
       return false;
     }
   }
-  const at = keep ? MeshGeometry.vertOffset[i] | 0 : -1;
+  // Only a volume is kept: a mesh of the entity's own MeshRenderer is replaced.
+  const at = keep && holdsVolume(i) ? MeshGeometry.vertOffset[i] | 0 : -1;
   const hadV = at >= 0 ? MeshGeometry.vertCount[i] | 0 : 0;
   const ixAt = at >= 0 ? MeshGeometry.indexOffset[i] | 0 : -1;
   const hadI = ixAt >= 0 ? MeshGeometry.indexCount[i] | 0 : 0;
@@ -192,22 +206,19 @@ function writeLevel(i, base, top, n, bottom, height, keep) {
     idx[w++] = roofRing + q;
     idx[w++] = roofRing + p;
   }
-  if (publish(i, xy, uv, idx, vertN, w)) return true;
+  if (publish(i, ownMesh, scale, xy, uv, idx, vertN, w)) return true;
   // The arena refused the bigger volume (publish warned): the one the entity had is still at the start of the scratch, and
   // its spans were just freed, so it goes back, on the layer. A car that cannot add its cabin keeps its body's shadow.
-  if (hadV >= 3 && MeshGeometry.replace(i, xy, hadI > 0 ? idx : null, uv, hadV, hadI)) VolumeShadowCaster.joinLayer(i);
+  if (hadV >= 3 && MeshGeometry.replace(i, xy, hadI > 0 ? idx : null, uv, hadV, hadI)) {
+    VolumeShadowCaster.joinLayer(i, ownMesh, scale);
+  }
   return false;
 }
 
 export class VolumeShadowCaster extends Component {
   static ARRAY_SCHEMA = {
-    floorScaleY: Float32Array, // above 0 on every slot of a class that lists this component
+    floorScaleY: Float32Array, // above 0 while the entity holds a volume: that volume's floor scale; 0 without one
   };
-
-  /** Its mesh and its row are MeshRenderer's: an entity of this class has one, listed or not. A getter: modules import in a cycle. */
-  static get requires() {
-    return [MeshRenderer];
-  }
 
   /** config.camera.floorScaleY, validated, on each thread: a new volume's floorScaleY. */
   static defaultFloorScaleY = 1;
@@ -222,36 +233,77 @@ export class VolumeShadowCaster extends Component {
     MeshRenderer.volumeColumn = null;
   }
 
-  /** @returns {number} the layer's bit in a layer mask, or 0 */
+  /** @returns {number} the layer's bit in a layer mask, or 0 (a scene without volumes has no such layer) */
   static layerBit() {
     const layer = Layer.get(VOLUME_LAYER);
     return layer ? Layer.bit(layer.id) : 0;
   }
 
-  static joinLayer(i) {
+  /**
+   * On the layer with its floor scale, which marks the entity as holding a volume. Without a MeshRenderer of its own the
+   * entity's row comes on with it, once the entity is live (the spawn turns it on after onSpawned).
+   */
+  static joinLayer(i, ownMesh, scale) {
+    let changed = false;
+    if (VolumeShadowCaster.floorScaleY[i] !== Math.fround(scale)) {
+      VolumeShadowCaster.floorScaleY[i] = scale;
+      changed = true;
+    }
+    if (!ownMesh) MeshRenderer.active[i] = Transform.active != null && Transform.active[i] === 1 ? 1 : 0;
     const bit = VolumeShadowCaster.layerBit();
-    if ((MeshRenderer.layerMask[i] & bit) === bit) return;
-    MeshRenderer.layerMask[i] |= bit;
-    markMeshPaint(i);
+    if ((MeshRenderer.layerMask[i] & bit) !== bit) {
+      MeshRenderer.layerMask[i] |= bit;
+      changed = true;
+    }
+    if (changed) markMeshPaint(i);
   }
 
-  /** Off the layer: a MeshRenderer with no mesh there would fill its collider, in black. */
-  static leaveLayer(i) {
+  /** Off the layer, holding no volume: a MeshRenderer with no mesh there would fill its collider, in black. */
+  static leaveLayer(i, ownMesh) {
+    VolumeShadowCaster.floorScaleY[i] = 0;
+    if (!ownMesh) MeshRenderer.active[i] = 0;
     const bit = VolumeShadowCaster.layerBit();
     if (!(MeshRenderer.layerMask[i] & bit)) return;
     MeshRenderer.layerMask[i] &= ~bit;
     markMeshPaint(i);
   }
 
-  /** How tall the floor is drawn against its width, in (0, 1]: `config.camera.floorScaleY` unless a volume says. */
+  /**
+   * A spawned slot of a ShadowCaster's class: no volume (the despawn freed its mesh). Without a MeshRenderer of its own, the
+   * row the volume drew with goes back to its defaults (with one, MeshRenderer's own reset follows).
+   */
+  static resetRow(i, ownMesh) {
+    if (VolumeShadowCaster.floorScaleY == null) return;
+    VolumeShadowCaster.floorScaleY[i] = 0;
+    if (ownMesh) return;
+    MeshRenderer.active[i] = 0;
+    MeshRenderer.alpha[i] = 1;
+    MeshRenderer.renderVisible[i] = 1;
+    if (MeshRenderer.layerMask[i] !== 0) {
+      MeshRenderer.layerMask[i] = 0;
+      markMeshPaint(i);
+    }
+  }
+
+  /**
+   * @param {number} index the entity
+   * @param {boolean} [ownMesh] its class lists MeshRenderer: its row is its own, on whatever the volume does
+   */
+  constructor(index, ownMesh = false) {
+    super(index);
+    this.ownMesh = ownMesh === true;
+  }
+
+  /** The scale a setter gives the volume: `floorScaleY` when it says, else the volume's, else config.camera.floorScaleY. */
+  _scaleFor(floorScaleY) {
+    if (floorScaleY !== undefined) return resolveGroundScaleY(floorScaleY);
+    const held = VolumeShadowCaster.floorScaleY[this.index];
+    return held > 0 ? held : VolumeShadowCaster.defaultFloorScaleY;
+  }
+
+  /** How tall the floor is drawn against its width, in (0, 1]; 0 while the entity holds no volume. */
   get floorScaleY() {
     return VolumeShadowCaster.floorScaleY[this.index];
-  }
-  set floorScaleY(value) {
-    const s = resolveGroundScaleY(value);
-    if (VolumeShadowCaster.floorScaleY[this.index] === Math.fround(s)) return;
-    VolumeShadowCaster.floorScaleY[this.index] = s;
-    markMeshPaint(this.index);
   }
 
   /**
@@ -278,7 +330,7 @@ export class VolumeShadowCaster extends Component {
       warnShape('setBox needs a width, a depth and a height above 0');
       return this;
     }
-    if (floorScaleY !== undefined) this.floorScaleY = floorScaleY;
+    const scale = this._scaleFor(floorScaleY);
     const corners = [-hw, -hd, hw, -hd, hw, hd, -hw, hd];
     for (let c = 0; c < 4; c++) {
       _base[c * 2] = offsetX + corners[c * 2];
@@ -286,7 +338,7 @@ export class VolumeShadowCaster extends Component {
       _top[c * 2] = offsetX + corners[c * 2] * topScale;
       _top[c * 2 + 1] = offsetY + corners[c * 2 + 1] * topScale;
     }
-    writeLevel(this.index, _base, _top, 4, 0, height, false);
+    writeLevel(this.index, this.ownMesh, scale, _base, _top, 4, 0, height, false);
     return this;
   }
 
@@ -316,8 +368,7 @@ export class VolumeShadowCaster extends Component {
       warnShape('a level needs its top above its bottom');
       return this;
     }
-    if (floorScaleY !== undefined) this.floorScaleY = floorScaleY;
-    writeLevel(this.index, _ringA, _ringB, n, bottom, top, true);
+    writeLevel(this.index, this.ownMesh, this._scaleFor(floorScaleY), _ringA, _ringB, n, bottom, top, true);
     return this;
   }
 
@@ -352,7 +403,7 @@ export class VolumeShadowCaster extends Component {
       warnShape('setHull needs points that enclose a volume');
       return this;
     }
-    if (floorScaleY !== undefined) this.floorScaleY = floorScaleY;
+    const scale = this._scaleFor(floorScaleY);
     const used = new Int32Array(n).fill(-1);
     const idx = MeshGeometry.scratchIdx(triangles.length);
     let vertN = 0;
@@ -382,14 +433,14 @@ export class VolumeShadowCaster extends Component {
       uv[v * 2] = z[p];
       uv[v * 2 + 1] = 0;
     }
-    publish(this.index, xy, uv, idx, vertN, indexN);
+    publish(this.index, this.ownMesh, scale, xy, uv, idx, vertN, indexN);
     return this;
   }
 
-  /** No volume: the entity casts nothing until it is given one again. */
+  /** No volume: the entity casts nothing from one until it is given one again. */
   clear() {
-    MeshGeometry.clearEntity(this.index);
-    VolumeShadowCaster.leaveLayer(this.index);
+    if (holdsVolume(this.index)) MeshGeometry.clearEntity(this.index);
+    VolumeShadowCaster.leaveLayer(this.index, this.ownMesh);
     return this;
   }
 }

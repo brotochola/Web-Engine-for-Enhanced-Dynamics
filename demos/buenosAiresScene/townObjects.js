@@ -8,7 +8,7 @@ import {
 } from './town.js';
 
 const {
-  GameObject, RigidBody, Collider, SpriteRenderer, ShadowCaster, LightEmitter, LightOccluder, VolumeShadowCaster, enums, rng,
+  GameObject, RigidBody, Collider, SpriteRenderer, ShadowCaster, LightEmitter, enums, rng,
 } = WEED;
 const { ShapeType } = enums;
 
@@ -19,15 +19,10 @@ const { ShapeType } = enums;
 export class House extends GameObject {
   static isStatic = true;
   static tickInterval = LIGHT_TICK;
-  static components = [RigidBody, Collider, LightEmitter, LightHours, VolumeShadowCaster, ...(RAYCAST ? [LightOccluder] : [])];
+  static components = [RigidBody, Collider, LightEmitter, LightHours, ShadowCaster];
 
   onSpawned(c = {}) {
     this.rigidBody.static = 1;
-    // With ?raycast=1 a house's footprint stops lights; a post does not.
-    if (RAYCAST) {
-      this.lightOccluder.maskMode = 0;
-      this.lightOccluder.block = c.col ? 1 : 0;
-    }
     if (c.col) {
       let area = 0;
       for (let i = 0; i < c.col.length; i++) {
@@ -49,8 +44,10 @@ export class House extends GameObject {
     if (c.sp && c.sp.length >= 12) {
       const points = Float32Array.from(c.sp);
       for (let q = 2; q < points.length; q += 3) points[q] *= HEIGHT_PX;
-      this.volumeShadowCaster.setHull(points, { floorScaleY: 1 });
+      this.shadowCaster.setHull(points, { floorScaleY: 1 });
     }
+    // With ?raycast=1 a house's footprint stops lights (a wall for the lamps; the sun keeps the volume); a post does not.
+    if (RAYCAST && c.col) this.shadowCaster.lamps.setWall();
     // Houses do not light; a wooden post with a lamp (dirt streets, the villa) does.
     const L = this.lightEmitter;
     const lamp = c.k === 'poste' && !!c.l;
@@ -90,7 +87,7 @@ export class StreetProp extends GameObject {
     this.setScale(c.fl ? -e : e, e);
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = Math.max(1.5, c.r);
-    this.shadowCaster.heightMultiplier = 0.8;
+    this.shadowCaster.setSprite({ heightScale: 0.8 });
     const L = this.lightEmitter;
     const top = this.spriteRenderer.originalHeight * anchor[1] * e;
     const kind = c.f.endsWith('_atras') ? c.f.slice(0, -6) : c.f; // seen from behind: the same thing
@@ -144,7 +141,7 @@ const CROWN_AHEAD = 2.8 * META.SYN * META.SF;
 
 /**
  * A tree from the editor: its trunk is the sprite, each branch with its leaves an attached decoration that sways. Its shadow is
- * the whole tree's silhouette (ShadowCaster.setTexture): decorations cast none.
+ * the whole tree's silhouette (shadowCaster.setSprite({ frame })): decorations cast none.
  */
 export class Tree extends GameObject {
   static isStatic = true;
@@ -159,8 +156,8 @@ export class Tree extends GameObject {
     this.collider.radius = Math.max(2, c.r || 3);
     this.collider.visualRange = 200;
     const S = T.sil;
-    this.shadowCaster.heightMultiplier = S ? 1 : 0;
-    if (S) this.shadowCaster.setTexture('arboles_' + S[0], { anchorX: S[1], anchorY: S[2], scaleX: (E / S[3]) * fl, scaleY: E / S[3] });
+    if (S) this.shadowCaster.setSprite({ frame: 'arboles_' + S[0], anchorX: S[1], anchorY: S[2], scaleX: (E / S[3]) * fl, scaleY: E / S[3] });
+    else this.shadowCaster.setSprite({ heightScale: 0 });
     for (const p of T.piezas) {
       if (p[5] === 0) {
         this.setSprite('arboles', p[0], 0);

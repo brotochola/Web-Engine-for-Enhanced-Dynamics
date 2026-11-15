@@ -9,16 +9,20 @@ import { loadWorker, quietly } from '../bench/workerHarness.mjs';
 import { GameObject } from '../../src/core/gameObject.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { MeshRenderer } from '../../src/components/meshRenderer.js';
+import { ShadowCaster } from '../../src/components/shadowCaster.js';
 import { VolumeShadowCaster } from '../../src/components/volumeShadowCaster.js';
 import { Collider } from '../../src/components/collider.js';
 import { bindMeshPoseList, createMeshPoseLists, meshPoseCapacity, MESH_POSE_FLOATS } from '../../src/util/meshPoseList.js';
+import { volumePoseCapacity } from '../../src/util/sceneSharedBuffers.js';
 import { packColliderFill, COLLIDER_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
 
 const N = 6;
 const INV = 0xffff;
 
 class Car extends GameObject {}
-Car.components = [Collider, SpriteRenderer, VolumeShadowCaster];
+Car.components = [Collider, SpriteRenderer, MeshRenderer];
+class House extends GameObject {}
+House.components = [Collider, SpriteRenderer, ShadowCaster];
 class Tree extends GameObject {}
 Tree.components = [Collider, SpriteRenderer];
 class Road extends GameObject {}
@@ -68,11 +72,25 @@ function addTri(views, e) {
   views.fixtureCount[e] = 1;
 }
 
-test('the lists hold the pools of the classes with a sprite and a mesh (a volume brings its mesh)', () => {
+test('the lists hold the pools of the classes with a sprite and a mesh', () => {
   const rec = (C, count) => ({ class: C, count, components: GameObject._collectComponents(C) });
   assert.equal(meshPoseCapacity([rec(Car, 12), rec(Tree, 40), rec(Road, 3)], SpriteRenderer, MeshRenderer), 12);
   assert.equal(meshPoseCapacity([rec(Tree, 40), rec(Road, 3)], SpriteRenderer, MeshRenderer), 0);
+  assert.equal(meshPoseCapacity([rec(House, 30)], SpriteRenderer, MeshRenderer), 0, 'a ShadowCaster lists no mesh');
   assert.equal(createMeshPoseLists(0), null, 'no list without such a class');
+});
+
+test('a ShadowCaster\'s volume is its mesh: a place for each volume the scene keeps room for, no more than its casters', () => {
+  const rec = (C, count) => ({ class: C, count, components: GameObject._collectComponents(C) });
+  const scene = (maxVolumes, pooled, classes) => ({
+    config: { lighting: { maxVolumes } },
+    componentPools: pooled ? { VolumeShadowCaster: { ComponentClass: VolumeShadowCaster } } : {},
+    registeredClasses: classes,
+  });
+  assert.equal(volumePoseCapacity(scene(8, true, [rec(House, 30), rec(Tree, 40)])), 8);
+  assert.equal(volumePoseCapacity(scene(80, true, [rec(House, 30), rec(Tree, 40)])), 30, 'at most the casters with a sprite');
+  assert.equal(volumePoseCapacity(scene(8, false, [rec(House, 30)])), 0, 'no room for volumes, no place');
+  assert.equal(volumePoseCapacity(scene(8, true, [rec(Car, 12)])), 0, 'a class with its own mesh is meshPoseCapacity\'s');
 });
 
 test("a moved car's mesh is filled at the pose its sprite was drawn at, not the live Transform", async () => {

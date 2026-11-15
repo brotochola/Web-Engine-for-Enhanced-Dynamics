@@ -107,13 +107,16 @@ function markPaint(i) {
 /** This entity's row needs packing again: a column the row reads changed. */
 export const markMeshPaint = markPaint;
 
-/** MeshGeometry holds one mesh an entity, and on a class that lists VolumeShadowCaster it is the volume's (DX-VOLUME). */
+/** MeshGeometry holds one mesh an entity, and while its ShadowCaster holds a volume it is the volume's (DX-VOLUME). */
 function heldByVolume(i) {
   const held = MeshRenderer.volumeColumn;
   if (held === null || !(held[i] > 0)) return false;
   if (!_warnedVolume) {
     _warnedVolume = true;
-    console.warn('WeedJS: an entity with a VolumeShadowCaster has no mesh of its own to set: its one mesh is its volume');
+    console.warn(
+      'WeedJS: an entity whose ShadowCaster holds a volume (setBox, addLevel, setHull) has no mesh of its own to set: its one ' +
+        'mesh is the volume',
+    );
   }
   return true;
 }
@@ -135,7 +138,7 @@ export class MeshRenderer extends Component {
     visualOutset: Float32Array,
   };
 
-  /** VolumeShadowCaster.floorScaleY while that component is bound: above 0 where the mesh is a volume's. */
+  /** VolumeShadowCaster.floorScaleY while that column is bound (a scene with lighting.maxVolumes): above 0 where the mesh is a volume. */
   static volumeColumn = null;
 
   static getBufferSize(count) {

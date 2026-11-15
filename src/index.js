@@ -74,15 +74,10 @@ export { AdobeAnimComponent } from './components/adobeAnimComponent.js';
 export { ParticleComponent } from './components/particleComponent.js';
 export { DecorationComponent } from './components/decorationComponent.js';
 export { LightEmitter } from './components/lightEmitter.js';
+// DX-CASTER: a ShadowCaster's volume and wall (setBox, setWall) are its own; their components are internal.
 export { ShadowCaster, CAST_KIND } from './components/shadowCaster.js';
-export { VolumeShadowCaster } from './components/volumeShadowCaster.js';
 export { DirectionalSprite, FACING_FROM } from './components/directionalSprite.js';
 export { DIRECTION_NAMES } from './core/spriteDirections.js';
-export {
-  LightOccluder,
-  LIGHT_OCCLUDER_MASK_COLLIDER,
-  LIGHT_OCCLUDER_MASK_SPRITE,
-} from './components/lightOccluder.js';
 export { FlashComponent } from './components/flashComponent.js';
 export { CameraInOutListener } from './components/cameraInOutListener.js';
 export { CollisionListener } from './components/collisionListener.js';
@@ -260,14 +255,8 @@ import { DecorationComponent } from './components/decorationComponent.js';
 import { BulletComponent } from './components/bulletComponent.js';
 import { LightEmitter } from './components/lightEmitter.js';
 import { ShadowCaster, CAST_KIND } from './components/shadowCaster.js';
-import { VolumeShadowCaster } from './components/volumeShadowCaster.js';
 import { DirectionalSprite, FACING_FROM } from './components/directionalSprite.js';
 import { DIRECTION_NAMES } from './core/spriteDirections.js';
-import {
-  LightOccluder,
-  LIGHT_OCCLUDER_MASK_COLLIDER,
-  LIGHT_OCCLUDER_MASK_SPRITE,
-} from './components/lightOccluder.js';
 import { FlashComponent } from './components/flashComponent.js';
 import { Flash } from './core/flash.js';
 import { CameraInOutListener } from './components/cameraInOutListener.js';
@@ -402,13 +391,9 @@ const WEED = Object.freeze({
   LightEmitter,
   ShadowCaster,
   CAST_KIND,
-  VolumeShadowCaster,
   DirectionalSprite,
   FACING_FROM,
   DIRECTION_NAMES,
-  LightOccluder,
-  LIGHT_OCCLUDER_MASK_COLLIDER,
-  LIGHT_OCCLUDER_MASK_SPRITE,
   FlashComponent,
   CameraInOutListener,
   CollisionListener,

@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, ShadowCaster, LightEmitter, LightOccluder, enums } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, ShadowCaster, LightEmitter, enums } = WEED;
 const { ShapeType } = enums;
 
 /**
@@ -67,9 +67,9 @@ export class GalleryProp extends GameObject {
   }
 }
 
-/** A box that blocks raycasted light. */
+/** A box that blocks raycasted light: a wall (spawned with ?raycast=1 only). */
 export class GalleryBlock extends GameObject {
-  static components = [RigidBody, Collider, LightOccluder];
+  static components = [RigidBody, Collider, ShadowCaster];
 
   onSpawned({ x = 0, y = 0, width = 36, height = 24 } = {}) {
     this.x = x;
@@ -80,7 +80,6 @@ export class GalleryBlock extends GameObject {
     this.collider.width = width;
     this.collider.height = height;
     this.collider.visualRange = 64;
-    this.lightOccluder.active = 1;
-    this.lightOccluder.block = 1;
+    this.shadowCaster.setWall();
   }
 }

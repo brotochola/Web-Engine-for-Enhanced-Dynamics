@@ -111,3 +111,40 @@ test('a scene resolves its camera once and names what it fixed', () => {
   }
   assert.deepEqual(warningsOf(() => new Plain({})), []);
 });
+
+/** lighting.raycasted as the scene derives it, for a camera and lighting on or off. */
+function raycastedFor(camera, enabled = true) {
+  class Lit extends Scene {
+    static entities = [[Crate, 4]];
+    static config = { worldWidth: 2000, worldHeight: 2000, camera, lighting: { enabled, baseAmbient: 0.5 } };
+  }
+  let scene = null;
+  warningsOf(() => {
+    scene = new Lit({});
+  });
+  return scene.config.lighting.raycasted;
+}
+
+test('raycasted lighting is a flat view\'s: camera.pitch 90 or 0 with lighting on, and nothing else', () => {
+  assert.equal(raycastedFor({ pitch: 90 }), true, 'straight down');
+  assert.equal(raycastedFor({ pitch: 0, floorScaleY: 1 }), true, 'from the side, lights on the backdrop');
+  assert.equal(raycastedFor({ pitch: 47 }), false, 'oblique: the 3D system');
+  assert.equal(raycastedFor({ floorScaleY: 0.7 }), false, 'no pitch: today\'s scene');
+  assert.equal(raycastedFor(undefined), false);
+  assert.equal(raycastedFor({ pitch: 90 }, false), false, 'no lighting, no light pass');
+  assert.equal(raycastedFor({ pitch: 120 }), true, 'clamped to 90');
+});
+
+test('a scene that still writes lighting.raycasted is told where it went, and the camera decides', () => {
+  class Old extends Scene {
+    static entities = [[Crate, 4]];
+    static config = { worldWidth: 2000, worldHeight: 2000, lighting: { enabled: true, baseAmbient: 0.5, raycasted: true } };
+  }
+  let scene = null;
+  const lines = warningsOf(() => {
+    scene = new Old({});
+  });
+  assert.equal(scene.config.lighting.raycasted, false, 'no flat camera: not raycasted');
+  assert.equal(lines.length, 1, lines.join(' | '));
+  assert.match(lines[0], /^WeedJS: Old\.config\.lighting\.raycasted does nothing any more \(.*config\.camera\.pitch is 90 or 0.*\)\. Remove it\.$/);
+});

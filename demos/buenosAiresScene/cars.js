@@ -1,6 +1,6 @@
 // The cars: Box2D bodies (carScene's pattern), a drawn frame every 7.5 degrees of their heading on the screen (DirectionalSprite
 // picks it from the rotation; the sheets' directions are in buenosAiresScene's assets), headlights that
-// come on with the hour, and a VolumeShadowCaster box. DrivingCar follows the editor's lanes and brakes for cars and people
+// come on with the hour, and a box for its shadow (shadowCaster.setBox). DrivingCar follows the editor's lanes and brakes for cars and people
 // ahead; buenos-aires also keeps the traffic law (lights, right of way, limits by street), which this demo does without.
 
 import WEED from '/src/index.js';
@@ -10,7 +10,7 @@ import {
 } from './town.js';
 
 const {
-  GameObject, RigidBody, Collider, CollisionListener, DirectionalSprite, LightEmitter, VolumeShadowCaster, SpriteSheetRegistry,
+  GameObject, RigidBody, Collider, CollisionListener, DirectionalSprite, LightEmitter, ShadowCaster, SpriteSheetRegistry,
   SpriteRenderer, NavGrid, Transform, enums, rng, dot2,
 } = WEED;
 const { ShapeType } = enums;
@@ -46,7 +46,7 @@ function footprint(i, c, s, out) {
 
 export class Car extends GameObject {
   static deriveSpeed = true;
-  static components = [RigidBody, Collider, CollisionListener, DirectionalSprite, LightEmitter, LightHours, VolumeShadowCaster, CarState];
+  static components = [RigidBody, Collider, CollisionListener, DirectionalSprite, LightEmitter, LightHours, ShadowCaster, CarState];
 
   onSpawned(c = {}) {
     const model = CAR_MODELS[c.sheet];
@@ -82,7 +82,7 @@ export class Car extends GameObject {
     this.rotation = rot;
     A.active = 1;
     // Its shadow: a box on the pictures' floor, turned with the car and moved with the sun by the GPU.
-    this.volumeShadowCaster.setBox(A.ha * 2, A.hb * 2, model.height * CAR_HEIGHT_PX, { topScale: model.roof, floorScaleY: CAR_FLOOR });
+    this.shadowCaster.setBox(A.ha * 2, A.hb * 2, model.height * CAR_HEIGHT_PX, { topScale: model.roof, floorScaleY: CAR_FLOOR });
     const L = this.lightEmitter;
     A.headlights = c.headlights ? 1 : 0;
     if (c.headlights) {

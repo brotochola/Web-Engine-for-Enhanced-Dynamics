@@ -314,20 +314,25 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   /** The size of the shadows' layer and of the sun's map against the canvas (default 0.5). */
   shadowResolution?: number;
   /**
-   * A visibility polygon a light, cut by LightOccluders (default false). Turns off faces, the lighting by maps and both
-   * shadow maps, with a warning.
+   * DX-CASTER: the ShadowCasters that hold a volume at once (shadowCaster.setBox, addLevel, setHull). Default 0: no volumes,
+   * and the scene pays nothing for them (a volume setter warns). Above 0 the scene gets the volumeShadows layer and
+   * maxVolumes × maxVolumeVerts vertices of the mesh arena; when that is full, a volume warns.
    */
-  raycasted?: boolean;
-  /** ShadowCaster.setTexture works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
+  maxVolumes?: number;
+  /** The mesh arena's vertices kept for each of maxVolumes (default 16: a box with a cabin, or a hull of 16 points). */
+  maxVolumeVerts?: number;
+  /** Under raycasted lighting (config.camera.pitch 90 or 0): the vertices of a light's visibility polygon (default 128). */
+  maxPolygonVertices?: number;
+  /** shadowCaster.setSprite({ frame }) works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
   shadowTextures?: boolean;
   /** DX-FACES: decorations with a normal are lit as surfaces. Not with raycasted lighting. */
   faces?: SceneLightingFacesConfig;
   /**
    * DX-SHADOW3D: how the sun casts. 'sprite' (default): each caster's shadow on the shadows' layer, darkening every light
    * by Sun.shadowOpacity. 'map': a shadow map in the floor's terms that takes out the sun's light alone (Sun.shadowAlpha
-   * of it), falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit; VolumeShadowCasters
-   * cast into it on WebGL (on WebGPU they cast nothing in map mode yet). Either mode: a picture of one view casts its card,
-   * a render with a height map its solid (the sheet and the entity can say otherwise: ShadowCaster).
+   * of it), falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit; a ShadowCaster's
+   * volume (setBox, setHull) casts into it. Either mode: a picture of one view casts its card, a render with a height map
+   * its solid (the sheet and the entity can say otherwise: ShadowCaster).
    */
   sunShadows?: 'sprite' | 'map';
   /**
@@ -341,8 +346,7 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   lampShadowTile?: number;
   /**
    * A render with footprints in its sheet's json (meta.footprints) casts its solid swept north to them at each cell's own
-   * height (light under a table) instead of columns down to the floor. Default false: still wrong on some models (a
-   * barn's walls go missing from its shadow).
+   * height (light under a table) instead of columns down to the floor. Default true; false keeps the columns.
    */
   footprintSolids?: boolean;
   /**
@@ -381,8 +385,10 @@ export type SceneConfig = Record<string, unknown> & {
    * side); `floorScaleY` (default sin(pitch), or 1 without a pitch) is how tall the floor is drawn against its width, which
    * makes light pools and cones ellipses; `heightScaleY` (default cos(pitch), or 1) is the screen px a px of height rises
    * (faces, height maps, both shadow maps, pixel depth). Give the scales when the pictures do not follow the
-   * trigonometry. An oblique camera (floorScaleY under 1) is what turns renderer.pixelDepth on by itself. Replaces
-   * lighting.groundScaleY and lighting.faces.heightScaleY.
+   * trigonometry. An oblique camera (floorScaleY under 1) is what turns renderer.pixelDepth on by itself. A flat view,
+   * `pitch` 90 or 0, lights with raycasted lighting when lighting is enabled: a visibility polygon a light, cut by the
+   * ShadowCasters' walls (setWall), without faces, maps or shadow maps; a side view whose lights pool on the backdrop
+   * also writes `floorScaleY: 1`. Replaces lighting.groundScaleY, lighting.faces.heightScaleY and lighting.raycasted.
    */
   camera?: { pitch?: number; yaw?: number; floorScaleY?: number; heightScaleY?: number };
   /** Scene lighting; the 3D light mode's keys are typed in {@link SceneLightingConfig}. */
@@ -523,14 +529,10 @@ export interface QuerySystemPrecomputeComponentMap {
   LightEmitter: typeof LightEmitter;
   ShadowCaster: typeof ShadowCaster;
   CAST_KIND: typeof CAST_KIND;
-  VolumeShadowCaster: typeof VolumeShadowCaster;
   DirectionalSprite: typeof DirectionalSprite;
   FACING_FROM: typeof FACING_FROM;
   DIRECTION_NAMES: typeof DIRECTION_NAMES;
   FlashComponent: typeof FlashComponent;
-  LightOccluder: typeof LightOccluder;
-  LIGHT_OCCLUDER_MASK_COLLIDER: typeof LIGHT_OCCLUDER_MASK_COLLIDER;
-  LIGHT_OCCLUDER_MASK_SPRITE: typeof LIGHT_OCCLUDER_MASK_SPRITE;
   CameraInOutListener: typeof CameraInOutListener;
   CollisionListener: typeof CollisionListener;
   Grab: typeof Grab;
@@ -1383,7 +1385,6 @@ export declare class GameObject {
   get lightEmitter(): LightEmitter | null;
   get flashComponent(): FlashComponent | null;
   get shadowCaster(): ShadowCaster | null;
-  get volumeShadowCaster(): VolumeShadowCaster | null;
   get sceneBridge(): typeof SceneBridge;
   sendMessageToScene(data: unknown): boolean;
   get active(): number;
@@ -4095,59 +4096,10 @@ export declare class DirectionalSprite extends Component {
 }
 
 /**
- * Says what an object is, and the engine works out its shadow: a box, levels or a hull of points, in the entity's frame. It
- * moves and turns with the entity, with no second entity, no layer in the config and no mesh code. x looks the way the entity
- * looks, y across it, both on the floor; heights are in screen px, as on a ShadowCaster's sprite. The sun casts it; lamps do not
- * yet. With `lighting.sunShadows: 'map'` it casts into the sun's map on WebGL (on WebGPU it casts nothing in that mode yet).
- * Its class has a MeshRenderer, whose one mesh is the volume: `setMesh` and the like are refused. To be replaced by
- * shadowCaster.setBox / addLevel / setHull (DX-CASTER, not merged yet).
- */
-export declare class VolumeShadowCaster extends Component {
-  static readonly ARRAY_SCHEMA: { floorScaleY: typeof Float32Array };
-  static readonly requires: readonly [typeof MeshRenderer];
-  static floorScaleY: Float32Array;
-  /**
-   * How tall the floor is drawn against its width, in (0, 1]; `config.camera.floorScaleY` unless a volume says. The
-   * entity's rotation stays what the screen shows: a car keeps its long side on its path, and a turn rewrites no vertex.
-   */
-  floorScaleY: number;
-  /**
-   * A box. Replaces the volume. `offsetX` and `offsetY` are its centre; `topScale` shrinks the roof about it, from 0 up (0: a
-   * pyramid). A value that is not finite, or a topScale below 0, is refused with a warning and leaves the volume as it was.
-   */
-  setBox(
-    width: number,
-    depth: number,
-    height: number,
-    options?: { offsetX?: number; offsetY?: number; topScale?: number; floorScaleY?: number },
-  ): this;
-  /**
-   * One more level on what the volume has. `topOutline`, as many corners, makes its top another shape: one that closes on a
-   * point is a pyramid, on a line a gabled roof; one that crosses itself is refused. A corner that is not finite is refused.
-   * A level the arena has no room for warns and leaves the volume as it was.
-   */
-  addLevel(
-    outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
-    bottom: number,
-    top: number,
-    topOutline?: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
-    options?: { floorScaleY?: number },
-  ): this;
-  /**
-   * The convex volume around points: flat x, y, z or objects, z the height. Runs once, when called. Replaces the volume. At most
-   * 4 096 points, all finite; otherwise it warns and leaves the volume as it was. Convex: it fills an L and joins a tower to a
-   * low annex with a slope, so give such boxes an addLevel each.
-   */
-  setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): this;
-  /** No volume: the entity casts nothing until it is given one again. */
-  clear(): this;
-}
-
-/**
  * DX-CASTER: how an entity casts, for the sun and for the lamps apart (ShadowCaster.sunKind and .lampKind). AUTO, what a
  * spawn sets, is its sheet's way: a picture of one view casts its card, a render with a height map (8 directions or more)
- * its solid, unless its json says `meta.shadowCast.sun: 'sprite'` (then the sun casts its card). BOX, HULL and WALL are
- * for setBox / setHull / setWall, not merged yet.
+ * its solid, unless its json says `meta.shadowCast.sun: 'sprite'` (then the sun casts its card). BOX and HULL are a
+ * volume's (setBox, addLevel, setHull), WALL a wall's (setWall).
  */
 export declare const CAST_KIND: Readonly<{ AUTO: 0; SPRITE: 1; HEIGHT_MAP: 2; BOX: 3; HULL: 4; WALL: 5; NONE: 6 }>;
 
@@ -4161,13 +4113,25 @@ export interface ShadowCasterSpriteOptions {
    * object face on, for every light: a fence, a wall. One value for the entity, kept until set again.
    */
   orient?: 'light' | 'fixed';
-  /** Not merged yet (DX-CASTER, F9 second part): another frame of the atlas as the silhouette; replaces setTexture. */
+  /**
+   * Another frame of the atlas as the silhouette (was setTexture): a tree whose branches are decorations casts its whole
+   * silhouette while its trunk stays the sprite. Needs `config.lighting.shadowTextures: true` (a pass over the caster rows
+   * each frame, the keyed caster paths off).
+   */
   frame?: string;
-  /** Not merged yet: the silhouette's anchor, 0 to 1 of its frame, for rare cases (baseRadius corrects the measured base). */
+  /** With `frame`: its scale (0 or left out: the sprite's). */
+  scaleX?: number;
+  /** With `frame`: see scaleX. */
+  scaleY?: number;
+  /**
+   * With `frame`, that frame's own anchor, 0 to 1 of it (left out: the sprite's), as setTexture took it. Without one, how far
+   * the foot moves from the sprite's anchor, in fractions of the sprite (was anchorOffsetX): a rare case, since the base is
+   * measured from the frame and `baseRadius` corrects it.
+   */
   anchorX?: number;
-  /** Not merged yet: see anchorX. */
+  /** See anchorX (was anchorOffsetY without a frame). */
   anchorY?: number;
-  /** Not merged yet: times the card's height; replaces heightMultiplier (in 3D the height comes from the camera). */
+  /** The card's height, times (default 1; 0: no shadow). Was heightMultiplier; in 3D the height comes from the camera. */
   heightScale?: number;
 }
 
@@ -4179,6 +4143,28 @@ export interface ShadowCasterLightSide {
   setHeightMap(): ShadowCaster;
   /** No shadow from this kind of light. */
   clear(): ShadowCaster;
+  /** `sun.setBox`: a volume for the sun alone (as ShadowCaster.setBox). The lamps have no volume of their own: it warns. */
+  setBox(
+    width: number,
+    depth: number,
+    height: number,
+    options?: { offsetX?: number; offsetY?: number; topScale?: number; floorScaleY?: number },
+  ): ShadowCaster;
+  /** `sun.addLevel`: as ShadowCaster.addLevel, for the sun alone. */
+  addLevel(
+    outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
+    bottom: number,
+    top: number,
+    topOutline?: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
+    options?: { floorScaleY?: number },
+  ): ShadowCaster;
+  /** `sun.setHull`: as ShadowCaster.setHull, for the sun alone. */
+  setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): ShadowCaster;
+  /**
+   * `lamps.setWall`: a wall for the lamps and headlights alone, the sun's shadow kept (as ShadowCaster.setWall). The sun
+   * casts no wall: it warns.
+   */
+  setWall(options?: { shape?: 'collider' | 'sprite' }): ShadowCaster;
 }
 
 /**
@@ -4188,13 +4174,6 @@ export interface ShadowCasterLightSide {
  * not shaded by its own entity. How the shadows are drawn is the scene's: `lighting.sunShadows`, `lighting.lampShadows`.
  */
 export declare class ShadowCaster extends Component {
-  /**
-   * Cast this frame's shadow instead of the sprite's. Needs `config.lighting.shadowTextures: true`. Options left out
-   * stay the sprite's. To become `setSprite({ frame })` (DX-CASTER, not merged yet).
-   */
-  setTexture(name: string, options?: { anchorX?: number; anchorY?: number; scaleX?: number; scaleY?: number }): this;
-  /** Back to the sprite's shadow. */
-  clearTexture(): this;
   /** Its card for every light: standing on its base, the frame each light sees (`orient: 'fixed'`: along the object). */
   setSprite(options?: ShadowCasterSpriteOptions): this;
   /** Its solid for every light: each pixel where it is in 3D (needs the sheet's heightMap). */
@@ -4206,32 +4185,65 @@ export declare class ShadowCaster extends Component {
   /** The setters for the lamps (and headlights) alone. */
   readonly lamps: ShadowCasterLightSide;
   /**
-   * How much light it takes out, 0 to 1 (1 at spawn; was LightOccluder.block). The sprite shadows read it (the sun's in
-   * 'sprite' mode, the lamps' stamps); the shadow maps do not yet.
+   * How much light it takes out, 0 to 1 (1 at spawn); a wall takes that much out of a lamp. The sprite shadows read it
+   * (the sun's in 'sprite' mode, the lamps' stamps); the shadow maps do not yet.
    */
   get opacity(): number;
   set opacity(value: number);
-  /** What it casts for the sun, as set: 'sprite' also when nothing was set (CAST_KIND.AUTO, its sheet's way). Read only. */
+  /**
+   * What it casts for the sun, as set; with nothing set (CAST_KIND.AUTO) what its sheet casts: 'heightMap' for a render
+   * that casts its solid, else 'sprite'. Read only.
+   */
   readonly type: ShadowCastType;
   /**
-   * Not merged yet (DX-CASTER, F9 second part): a box, as VolumeShadowCaster.setBox, cast for the lamps too in 3D (closes
-   * DX-VOLLIGHTS).
+   * A box, for every light: a volume in the entity's frame (it moves and turns with the entity), on the scene's
+   * volumeShadows layer and in the shadow maps. Replaces the volume. `width` along x (the way the entity looks), `depth`
+   * across it, both on the floor; `height` in screen px, as a sprite's. `offsetX` and `offsetY` are its centre;
+   * `topScale` shrinks the roof about it, from 0 up (0: a pyramid); `floorScaleY` is how tall the floor is drawn against its
+   * width (config.camera's by default). The scene keeps room for volumes with `config.lighting.maxVolumes` (without it,
+   * this warns once and changes nothing). A value that is not finite warns and leaves the volume as it was.
    */
-  setBox(width: number, depth: number, height: number, options?: { offsetX?: number; offsetY?: number; topScale?: number }): this;
-  /** Not merged yet: one more level, as VolumeShadowCaster.addLevel. */
+  setBox(
+    width: number,
+    depth: number,
+    height: number,
+    options?: { offsetX?: number; offsetY?: number; topScale?: number; floorScaleY?: number },
+  ): this;
+  /**
+   * One more level on what the volume has: a body, a cabin on it, a tank on a roof. The outline need not be convex.
+   * `topOutline`, as many corners, makes its top another shape: one that closes on a point is a pyramid, on a line a gabled
+   * roof; one that crosses itself is refused. A level the arena has no room for warns and leaves the volume as it was.
+   */
   addLevel(
     outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
     bottom: number,
     top: number,
     topOutline?: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
+    options?: { floorScaleY?: number },
   ): this;
-  /** Not merged yet: the convex volume around points (x, y, z), as VolumeShadowCaster.setHull. */
-  setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>): this;
-  /** Not merged yet: in a flat view (camera.pitch 90 or 0) it cuts the light as LightOccluder did, by its collider or sprite. */
+  /**
+   * The convex volume around points (flat x, y, z or objects, z the height), for every light: a house from an editor. Runs
+   * once, when called. Replaces the volume. At most 4 096 points, all finite. Convex: it fills an L, so give such boxes an
+   * addLevel each.
+   */
+  setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): this;
+  /**
+   * In a flat view (config.camera.pitch 90 or 0, with lighting: raycasted lighting), a wall that stops lamps and
+   * headlights, cut by the entity's Collider ('collider', the default and the fastest) or by its sprite's alpha ('sprite'),
+   * taking out `opacity` of the light; the sun casts nothing from it (`lamps.setWall` keeps the sun's shadow). Another
+   * camera warns once and changes nothing.
+   */
   setWall(options?: { shape?: 'collider' | 'sprite' }): this;
-  /** Not merged yet: the object shades itself (a render with a footprint: yes by default; one view: no). */
-  selfShadow: boolean;
-  /** Not merged yet: px that correct the measured base of its silhouette (replaces anchorOffsetX / anchorOffsetY). */
+  /**
+   * Whether the object shades itself: true, false or 'auto' (the default: a render with a footprint does, one view does
+   * not). Kept for the 3D shadows (DX-SELFSHADOW).
+   */
+  get selfShadow(): boolean | 'auto';
+  set selfShadow(value: boolean | 'auto' | 'on' | 'off' | null);
+  /**
+   * The base's radius in px, correcting the one measured from the frame; 0 (the default) keeps the measured base. Replaces
+   * anchorOffsetX / anchorOffsetY. Kept for the 3D shadows.
+   */
   baseRadius: number;
   static readonly ARRAY_SCHEMA: {
     active: typeof Uint8Array;
@@ -4247,18 +4259,10 @@ export declare class ShadowCaster extends Component {
     lampKind: typeof Uint8Array;
     orient: typeof Uint8Array;
     opacity: typeof Float32Array;
+    baseRadius: typeof Float32Array;
+    selfShadow: typeof Uint8Array;
   };
   static active: Uint8Array;
-  /** The shadow's length, times (1 at spawn; 0 = no shadow). */
-  static heightMultiplier: Float32Array;
-  static anchorOffsetX: Float32Array;
-  static anchorOffsetY: Float32Array;
-  /** setTexture's frame + 1; 0 = the sprite's own. */
-  static textureId: Uint16Array;
-  static textureScaleX: Float32Array;
-  static textureScaleY: Float32Array;
-  static textureAnchorX: Float32Array;
-  static textureAnchorY: Float32Array;
   /** CAST_KIND for the sun (0, AUTO, at spawn). */
   static sunKind: Uint8Array;
   /** CAST_KIND for the lamps (0, AUTO, at spawn). */
@@ -4268,20 +4272,6 @@ export declare class ShadowCaster extends Component {
   /** 0 to 1, the light it takes out; 1 at spawn. */
   static opacity: Float32Array;
   static shadowCount: number;
-}
-
-export declare const LIGHT_OCCLUDER_MASK_COLLIDER = 0;
-export declare const LIGHT_OCCLUDER_MASK_SPRITE = 1;
-
-export declare class LightOccluder extends Component {
-  static readonly ARRAY_SCHEMA: {
-    active: typeof Uint8Array;
-    maskMode: typeof Uint8Array;
-    block: typeof Float32Array;
-  };
-  static active: Uint8Array;
-  static maskMode: Uint8Array;
-  static block: Float32Array;
 }
 
 export declare class FlashComponent extends Component {
@@ -4381,8 +4371,24 @@ export interface AdobeAnimComponent extends ComponentFields<(typeof AdobeAnimCom
 export interface ParticleComponent extends ComponentFields<(typeof ParticleComponent)['ARRAY_SCHEMA']> {}
 export interface DecorationComponent extends ComponentFields<(typeof DecorationComponent)['ARRAY_SCHEMA']> {}
 export interface LightEmitter extends ComponentFields<(typeof LightEmitter)['ARRAY_SCHEMA']> {}
-export interface ShadowCaster extends ComponentFields<(typeof ShadowCaster)['ARRAY_SCHEMA']> {}
-export interface LightOccluder extends ComponentFields<(typeof LightOccluder)['ARRAY_SCHEMA']> {}
+/** ShadowCaster's schema fields as instance fields, but the silhouette's columns (setSprite writes them) and its accessors. */
+export interface ShadowCaster
+  extends ComponentFields<
+    Omit<
+      (typeof ShadowCaster)['ARRAY_SCHEMA'],
+      | 'heightMultiplier'
+      | 'anchorOffsetX'
+      | 'anchorOffsetY'
+      | 'textureId'
+      | 'textureScaleX'
+      | 'textureScaleY'
+      | 'textureAnchorX'
+      | 'textureAnchorY'
+      | 'opacity'
+      | 'baseRadius'
+      | 'selfShadow'
+    >
+  > {}
 export interface FlashComponent extends ComponentFields<(typeof FlashComponent)['ARRAY_SCHEMA']> {}
 export interface BulletComponent extends ComponentFields<(typeof BulletComponent)['ARRAY_SCHEMA']> {}
 
@@ -4839,13 +4845,9 @@ export interface WeedNamespace extends WeedEnums {
   LightEmitter: typeof LightEmitter;
   ShadowCaster: typeof ShadowCaster;
   CAST_KIND: typeof CAST_KIND;
-  VolumeShadowCaster: typeof VolumeShadowCaster;
   DirectionalSprite: typeof DirectionalSprite;
   FACING_FROM: typeof FACING_FROM;
   DIRECTION_NAMES: typeof DIRECTION_NAMES;
-  LightOccluder: typeof LightOccluder;
-  LIGHT_OCCLUDER_MASK_COLLIDER: typeof LIGHT_OCCLUDER_MASK_COLLIDER;
-  LIGHT_OCCLUDER_MASK_SPRITE: typeof LIGHT_OCCLUDER_MASK_SPRITE;
   FlashComponent: typeof FlashComponent;
   CameraInOutListener: typeof CameraInOutListener;
   CollisionListener: typeof CollisionListener;

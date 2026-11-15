@@ -84,8 +84,9 @@ export const SCENE_CONFIG_SCHEMA = Object.freeze({
   renderer: keys(RENDERER_DEFAULTS),
   preRender: keys(PRE_RENDER_DEFAULTS),
   lighting: {
-    // directionalCasters: the scene sets it (sceneWorkerBootstrap), from its classes.
-    ...keys(LIGHTING_DEFAULTS, ['directionalCasters']),
+    // directionalCasters: the scene sets it (sceneWorkerBootstrap), from its classes. raycasted: the scene derives it from
+    // camera.pitch (Scene._applyConfigDefaults) for the code that reads it; a scene that writes it is told it is retired.
+    ...keys(LIGHTING_DEFAULTS, ['directionalCasters', 'raycasted']),
     faces: keys(LIGHTING_DEFAULTS.faces, ['gain', 'sunDirect', 'wrap']),
     particleLights: keys(LIGHTING_DEFAULTS.particleLights),
     sun: {
@@ -107,6 +108,9 @@ export const RETIRED_CONFIG_KEYS = Object.freeze({
   'preRender.numberOfPreRenderWorkers': 'there is one pre-render worker',
   'lighting.groundScaleY': 'the floor\'s foreshortening is config.camera.floorScaleY now, or camera.pitch (DX-CAMERA)',
   'lighting.faces.heightScaleY': 'the px a px of height rises is config.camera.heightScaleY now, or camera.pitch (DX-CAMERA)',
+  'lighting.raycasted':
+    'raycasted lighting is on when config.camera.pitch is 90 or 0, a flat view, and lighting is enabled; a side view whose ' +
+    'lights pool on the backdrop also writes camera.floorScaleY: 1 (DX-CASTER)',
 });
 
 /** Optimal string alignment distance, letters compared without case. */

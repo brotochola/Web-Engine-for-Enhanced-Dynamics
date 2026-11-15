@@ -16,7 +16,6 @@ const {
   JointBreakListener,
   Joint,
   Transform,
-  LightOccluder,
   Layer,
   LiquidFun,
   LIQUIDFUN_FLAGS,

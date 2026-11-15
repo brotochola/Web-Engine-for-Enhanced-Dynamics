@@ -3,15 +3,16 @@
 //
 //   LightEmitter            radius, color, brightness, elevation, glow, glowOffsetY, offsetX, castShadows, shadowRange
 //   cone lights             coneAngle, coneSoftness, direction: the cars' headlights (nightStreet.js, Car)
-//   lighting.raycasted      lights are stopped by walls: the houses and the cars cut the beams (shadowCaster.lamps.setWall,
-//                           a LightOccluder each)
+//   camera.pitch 90         a flat view lights by raycasting: lights are stopped by walls, the houses and the cars cut
+//                           the beams (shadowCaster.lamps.setWall)
 //   camera.floorScaleY      the floor is drawn 0.7 as tall (carScene's pictures are), and so are pools and cones
-//   shadowCaster.setBox     the houses and cars as volumes (VolumeShadowCaster's), for the sun's shadows by day (N)
+//   shadowCaster.setBox     the houses and cars as volumes, for the sun's shadows by day (N); lighting.maxVolumes is
+//                           their room
 //
 // The panel's keys (C V F B K R G N) change one field of every headlight (or lamp) at a time; nothing else changes.
 // The road, its meshes and the panel are Sun Street's: this scene is about the lights.
 //
-// URL: ?hour=22 (15 is day), ?cars=6, ?carSpeed=3, ?raycast=0 (basic lighting: sprite shadows instead of occluders),
+// URL: ?hour=22 (15 is day), ?cars=6, ?carSpeed=3, ?raycast=0 (no pitch: basic lighting, no walls),
 // ?backend=webgpu.
 // WASD or arrows pan, the wheel zooms, H hides the panel.
 
@@ -64,7 +65,7 @@ export class HeadlightsScene extends Scene {
       backend: BACKEND,
       noLimitFPS: false,
       ySort: true,
-      // The road's meshes (two bands and the dashes); the volumes of VolumeShadowCaster get their own share on top.
+      // The road's meshes (two bands and the dashes); the volumes get their own share on top (lighting.maxVolumes).
       maxMeshVerts: 2048,
       maxMeshIndices: 4096,
     },
@@ -73,13 +74,14 @@ export class HeadlightsScene extends Scene {
       sidewalk: { kind: LAYER_KIND.MESH, zIndex: 0.45 },
       street: { kind: LAYER_KIND.MESH, zIndex: 0.5 },
     },
-    // carScene's cars are drawn with the floor 0.7 as tall: the pools and cones are foreshortened the same way.
-    camera: { floorScaleY: 0.7 },
+    // carScene's cars are drawn with the floor 0.7 as tall: the pools and cones are foreshortened the same way. Pitch 90,
+    // a flat view, lights by raycasting (the walls); without it, basic lighting.
+    camera: RAYCAST ? { pitch: 90, floorScaleY: 0.7 } : { floorScaleY: 0.7 },
     lighting: {
       enabled: true,
       baseAmbient: 0.05,
-      raycasted: RAYCAST,
       maxLights: 32, // 7 lamps and up to 25 cars in view
+      maxVolumes: HOUSES + CARS, // each house's box and each car's body and cabin
       shadowsEnabled: true, // the sun's shadows (the volumes), and the lamps' sprite shadows with ?raycast=0
       sun: {
         enabled: true,

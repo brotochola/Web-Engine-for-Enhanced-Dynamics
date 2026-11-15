@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, Grab, LightEmitter, LightOccluder, Mouse, Keyboard, enums, LiquidFun, LIQUIDFUN_GROUP_FLAGS } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, Grab, LightEmitter, ShadowCaster, Mouse, Keyboard, enums, LiquidFun, LIQUIDFUN_GROUP_FLAGS } = WEED;
 const { ShapeType } = enums;
 
 const HEAT = 1;
@@ -26,7 +26,7 @@ const EXTRACT_OPTS = { groupFlags: 0 };
 export class BurningBox extends GameObject {
   static instances = [];
   static serializable = true;
-  static components = [RigidBody, Collider, SpriteRenderer, Grab, LightEmitter, LightOccluder];
+  static components = [RigidBody, Collider, SpriteRenderer, Grab, LightEmitter, ShadowCaster];
   static _meltAcc = -1;
 
   ignite() {
@@ -36,7 +36,8 @@ export class BurningBox extends GameObject {
     this.lightEmitter.radius = 10 * Math.sqrt(LIGHT_BASE);
     this.lightEmitter.glow = LIGHT_BASE / 50000;
     this.lightEmitter.shadowRange = LIGHT_RANGE;
-    this.lightOccluder.active = 0
+    // A burning box is a light, not a wall: it stops no light.
+    this.shadowCaster.clear();
     return this;
   }
 
@@ -44,7 +45,8 @@ export class BurningBox extends GameObject {
     this.setFeedBits(this.getFeedBits() & ~HEAT);
     this.lightEmitter.radius = 0;
     this.lightEmitter.active = 0;
-    this.lightOccluder.active = 1
+    // A wall again: it stops the lights of the boxes that burn (the scene's flat camera lights by raycasting).
+    this.shadowCaster.setWall();
     return this;
   }
 

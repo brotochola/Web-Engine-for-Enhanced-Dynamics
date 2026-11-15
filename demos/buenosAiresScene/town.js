@@ -20,7 +20,7 @@ export function param(key, fallback) {
 
 /** ?faces=0: walls lit as the floor under them, the engine's lighting without lighting.faces. */
 export const FACES = param('faces', 1) === 1;
-/** ?raycast=1: lights stopped by the houses' footprints (lighting.raycasted); it turns faces off. */
+/** ?raycast=1: lights stopped by the houses' footprints (camera pitch 90: raycasted lighting); it turns faces off. */
 export const RAYCAST = param('raycast', 0) === 1;
 
 // The editor's view: SF px a floor metre across, the floor drawn SYN as tall as it is wide, a metre of height CZ·SF px up.

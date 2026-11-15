@@ -12,8 +12,8 @@ Open it from the demo menu (Buenos Aires), or `demos/index.html?scene=buenosaire
 | Feature | Where |
 | --- | --- |
 | `lighting.faces`: each wall lit as the surface it is | the houses: one decoration per flat face, with its normal (`faceNormalX/Y/Z`, `faceHeight`) |
-| `VolumeShadowCaster` | houses (`setHull`, from the editor's shadow points) and cars (`setBox`, with a roof smaller than the floor) |
-| `ShadowCaster` | people, street props and trees (`setTexture`: the whole tree's silhouette) |
+| `ShadowCaster`'s volumes | houses (`setHull`, from the editor's shadow points) and cars (`setBox`, with a roof smaller than the floor), with room in `lighting.maxVolumes` |
+| `ShadowCaster` | people, street props and trees (`setSprite({ frame })`: the whole tree's silhouette) |
 | `LightEmitter` | street lamps and wooden posts (`elevation`), headlights (`offsetX`, ahead of each car), on by the hour |
 | `lighting.sun` with a day cycle | an 8-minute day, the sun on the camera's side, no higher than 60° |
 | a `worldRect` shader layer | the floor, painted pixel by pixel from the editor's baked data (`floor.frag`, `barrio/piso.bin`) |
@@ -34,7 +34,7 @@ Drag, the wheel or WASD move the camera. The panel's buttons do what their keys 
 | C, P | stop the cars, stop the people |
 | F | faces off (reloads) |
 | Q | `lighting.resolution` 0.25, 0.5 or 1 (reloads) |
-| R | `lighting.raycasted`: houses stop the lamps; faces go off with it (reloads) |
+| R | raycasted lighting (`camera.pitch` 90): houses stop the lamps (`shadowCaster.lamps.setWall`); faces go off with it (reloads) |
 
 URL parameters: `hour` (17.5), `dayMinutes` (8; 0 stops the clock), `people` (400, up to 4000), `resolution`, `faces=0`,
 `raycast=1`, `backend=webgpu`.

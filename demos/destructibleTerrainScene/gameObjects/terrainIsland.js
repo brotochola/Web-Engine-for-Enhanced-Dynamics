@@ -7,8 +7,8 @@ const {
   Collider,
   ColliderFixture,
   MeshRenderer,
+  ShadowCaster,
   Transform,
-  LightOccluder,
 } = WEED;
 
 const MIN_KEEP_AREA = CELL * CELL;
@@ -51,7 +51,7 @@ export class TerrainIsland extends GameObject {
     return RigidBody.static[entityIndex] !== 1;
   }
   static instances = [];
-  static components = [RigidBody, Collider, MeshRenderer, LightOccluder];
+  static components = [RigidBody, Collider, MeshRenderer, ShadowCaster];
   // static forceProcessOnLogicWorker = 1;
 
   onSpawned(spawnConfig = {}) {
@@ -62,6 +62,10 @@ export class TerrainIsland extends GameObject {
     this.rigidBody.linearDamping = spawnConfig.isStatic ? 0 : 0.4;
     this.rigidBody.angularDamping = spawnConfig.isStatic ? 0 : 0.8;
     if (spawnConfig.isStatic) this.collider.collisionLayer = LAYER_STATIC;
+    // In a flat view (planetPhysicsScene's camera, pitch 90 or 0) the lights are raycasted and the rock is a wall that stops
+    // them; the destructible landscape's lights are not, so it is no wall there.
+    const pitch = this.config.camera?.pitch;
+    if (pitch === 90 || pitch === 0) this.shadowCaster.setWall();
 
     // A loaded save: the components (tint, tiling, body) are restored, and the
     // save writes the fixtures after this. Only what is not a component field.

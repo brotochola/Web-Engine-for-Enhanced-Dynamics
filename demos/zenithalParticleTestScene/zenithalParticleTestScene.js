@@ -47,9 +47,10 @@ export class ZenithalParticleTestScene extends Scene {
       maxShadowSprites: 200,
       resolution: 0.5,
       // shadowResolution: 0.5,
-      raycasted: true,
       maxPolygonVertices: 5000,
     },
+    // Straight down: a flat view lights by raycasting, the cars its walls (shadowCaster.setWall).
+    camera: { pitch: 90 },
 
     layers: {
       ground: {

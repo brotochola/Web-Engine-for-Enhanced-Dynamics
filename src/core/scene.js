@@ -435,7 +435,7 @@ class Scene {
     LightEmitter.clearArrays();
     ShadowCaster.componentId = null;
     ShadowCaster.clearArrays();
-    // Workers set it from their init message; a page may call setTexture too.
+    // Workers set it from their init message; a page may call shadowCaster.setSprite({ frame }) too.
     ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
     VolumeShadowCaster.componentId = null;
     VolumeShadowCaster.clearArrays();
@@ -644,20 +644,31 @@ class Scene {
       // Raycasted lighting needs LightEmitter for light sources
       this._ensureComponentPool(LightEmitter);
     }
+    // DX-CASTER: the ShadowCasters' volumes keep their floor scale in VolumeShadowCaster's one column (no class lists it).
+    if (this._volumes > 0) {
+      this._ensureComponentPool(VolumeShadowCaster);
+    }
   }
 
   /**
-   * DX-VOLUME: with a class that lists VolumeShadowCaster, its layer and its share of the mesh arena, so a scene's config says
-   * nothing about either. config.layers.volumeShadows, if the scene has it, moves the layer. A hull's triangles are at most
-   * six indices a vertex.
+   * DX-VOLUME, DX-CASTER: with config.lighting.maxVolumes above 0 and a class that lists ShadowCaster, the volumes' layer and
+   * their share of the mesh arena (maxVolumes × maxVolumeVerts), so shadowCaster.setBox, addLevel and setHull have room. A
+   * scene without volumes gets neither: no layer drawn, no arena, no column. config.layers.volumeShadows, if the scene has
+   * it, moves the layer. A hull's triangles are at most six indices a vertex.
    */
   _applyVolumeConfig() {
-    let volumes = 0;
+    this._volumes = 0;
+    const volumes = this.config.lighting?.maxVolumes | 0;
+    if (!(volumes > 0)) return;
+    let casters = false;
     for (const entry of this.constructor.entities || []) {
-      if (!(entry[1] > 0)) continue;
-      if (GameObject._collectComponents(entry[0]).includes(VolumeShadowCaster)) volumes += entry[1] | 0;
+      if (entry[1] > 0 && GameObject._collectComponents(entry[0]).includes(ShadowCaster)) {
+        casters = true;
+        break;
+      }
     }
-    if (volumes === 0) return;
+    if (!casters) return;
+    this._volumes = volumes;
     const verts = volumes * (this.config.lighting?.maxVolumeVerts ?? LIGHTING_DEFAULTS.maxVolumeVerts);
     this.config.renderer = {
       ...this.config.renderer,
@@ -975,6 +986,11 @@ class Scene {
     const cameraProblems = [];
     this.config.camera = resolveCamera(this.config.camera, cameraProblems);
     for (const text of cameraProblems) warnOnce(`${sceneName}.config.${text}`, 'camera', `${sceneName}.config.${text}`);
+    // DX-CASTER (plan §5.1, §6.11): a flat view, straight down or from the side, lights by the 2D sweep of the ShadowCasters'
+    // walls (raycasted lighting, visibility polygons); any other camera by the 3D system. Derived here, once, for the code
+    // that reads lighting.raycasted (the pools, the buffers, the workers); a scene that wrote the key was told it is retired.
+    const pitch = this.config.camera.pitch;
+    this.config.lighting.raycasted = this.config.lighting.enabled === true && (pitch === 90 || pitch === 0);
 
     // Navigation defaults from centralized config
     this.config.navigation = {
@@ -1622,9 +1638,16 @@ class Scene {
       const table = buildDirectionTable(sheetName, spec, names, problems);
       for (const text of problems) warnOnce(`${sheetName}:${text}`, 'DX-DIRSPRITE', text);
       // DX-SHADOW3D: a render with height maps stands on a contact (frameBase.js) and casts its solid, which is built
-      // from the frame the camera sees: pre-render leaves such a sheet's frame alone in the sun rows.
-      if (table && sheetCastsSolid(json, proxyData)) table.solid = true;
-      proxySheets[sheetName] = table ? { ...proxyData, directions: table } : proxyData;
+      // from the frame the camera sees: pre-render leaves such a sheet's frame alone in the sun rows. DX-CASTER: the proxy
+      // says so too (castsSolid), for shadowCaster.type on the logic workers and the page, which get the proxies.
+      const solid = sheetCastsSolid(json, proxyData);
+      if (table && solid) table.solid = true;
+      if (table || solid) {
+        const copy = { ...proxyData };
+        if (table) copy.directions = table;
+        if (solid) copy.castsSolid = true;
+        proxySheets[sheetName] = copy;
+      }
     }
 
     for (const [sheetName, proxyData] of Object.entries(proxySheets)) {

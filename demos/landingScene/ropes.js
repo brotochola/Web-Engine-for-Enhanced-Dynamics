@@ -14,7 +14,7 @@ const {
   Collider,
   SpriteRenderer,
   LightEmitter,
-  LightOccluder,
+  ShadowCaster,
   Joint,
   LiquidFun,
   LIQUIDFUN_FLAGS,
@@ -72,7 +72,7 @@ export class RopeLink extends GameObject {
 
 /** A plank of the bridge: a link that things stand on, and that casts shadows. */
 export class Plank extends GameObject {
-  static components = [RigidBody, Collider, SpriteRenderer, Link, LightOccluder];
+  static components = [RigidBody, Collider, SpriteRenderer, Link, ShadowCaster];
 
   onSpawned({ len = 30, thick = 8 } = {}) {
     Link.halfLen[this.index] = len / 2;
@@ -88,7 +88,7 @@ export class Plank extends GameObject {
     this.setAnchor(0.5, 0.5);
     this.setDisplaySize(len - 1, thick);
     this.setTint(0x7a5634);
-    this.lightOccluder.active = 1;
+    this.shadowCaster.setWall();
   }
 
   tick() {
@@ -128,7 +128,7 @@ export class Lantern extends GameObject {
 
 /** A crate on a rope: it casts the lanterns' shadows. */
 export class HungCrate extends GameObject {
-  static components = [RigidBody, Collider, SpriteRenderer, LightOccluder];
+  static components = [RigidBody, Collider, SpriteRenderer, ShadowCaster];
 
   onSpawned({ size = 50 } = {}) {
     this.setSprite('campCrate');
@@ -140,7 +140,7 @@ export class HungCrate extends GameObject {
     this.rigidBody.linearDamping = 0.2;
     this.rigidBody.angularDamping = 0.4;
     this.rigidBody.mass = size * size * 0.45; // after the geometry: it floats when it falls in the pond
-    this.lightOccluder.active = 1;
+    this.shadowCaster.setWall();
   }
 
   tick() {
@@ -150,7 +150,7 @@ export class HungCrate extends GameObject {
 
 /** The beam and the posts: static, drawn, shadow-casting. */
 export class Beam extends GameObject {
-  static components = [RigidBody, Collider, SpriteRenderer, LightOccluder];
+  static components = [RigidBody, Collider, SpriteRenderer, ShadowCaster];
 
   onSpawned({ w = 100, h = 14, tint = 0x5a3e24 } = {}) {
     this.rigidBody.static = 1;
@@ -162,7 +162,7 @@ export class Beam extends GameObject {
     this.setAnchor(0.5, 0.5);
     this.setDisplaySize(w, h);
     this.setTint(tint);
-    this.lightOccluder.active = 1;
+    this.shadowCaster.setWall();
   }
 }
 
