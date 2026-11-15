@@ -16347,6 +16347,22 @@
       ]
     },
     {
+      "id": "N-212",
+      "title": "Shadows flicker, not with the fire: some do not show right and some disappear now and then",
+      "status": "open",
+      "statusText": "reported by the owner 2026-11-15 ~20:40 (\"hay sombras titilando, no por el fuego, como que no todas se muestran bien y algunas desaparecen\"); the scene and its URL asked",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "Not reproduced yet. A fire's light flickers on purpose (its shadows with it); these are others, which come and go.",
+      "next": "Reproduce in the owner's scene; leads: a cap that cuts a different set each frame as lights or casters sort (lighting.maxShadowCastingLights, the lamps' map tiles, maxShadowSprites, the sun's caster rows maxSun), muzzle flashes taking shadow-casting lights from the lamps, keyed caster rows read while Pixi's statics texture is not recent (KEYED_CASTERS_LAG), and keyed rows drawn before their statics were sent (N-202's probe saw 15 sprites in one frame of Predator ?light3d=1).",
+      "refs": [],
+      "aliases": [
+        "flickering shadows"
+      ],
+      "records": []
+    },
+    {
       "id": "E-382",
       "title": "Predator's people (MySoldier, Civilian) on DirectionalSprite against main's hand-picked directions: what the branch charges Predator's logic and pre-render",
       "status": "open",
