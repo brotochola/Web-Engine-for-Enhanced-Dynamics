@@ -222,7 +222,9 @@ export class VolumeStressScene extends Scene {
     renderer: {
       backend: BACKEND,
       noLimitFPS: false,
-      ...(API === 'mesh' ? { maxMeshVerts: N * 20 + CARS * 16 + 64, maxMeshIndices: N * 72 + CARS * 96 + 64 } : {}),
+      // N-224: a house takes 78 indices (26 triangles: a box's 2 roof and 8 side, the tank's 4 roof and 12 side) and a car
+      // 60; the old N * 72 + CARS * 96 fitted 18 708 houses and no car.
+      ...(API === 'mesh' ? { maxMeshVerts: N * 20 + CARS * 16 + 64, maxMeshIndices: N * 78 + CARS * 60 + 64 } : {}),
     },
     layers: {
       ground: { kind: LAYER_KIND.COVER, texture: '_white', zIndex: 0 },
