@@ -489,6 +489,11 @@ class SpatialWorker extends AbstractWorker {
     // STEP 2: Find neighbors (only for entities in owned rows)
     startTime = detail ? performance.now() : 0;
     this._findNeighbors();
+    // N-214: the publish of what the search queued, called here and not at the search's end. Inlined there, TurboFan
+    // compiled its body before it had run (the search tiers up in its first frames, when nothing is published yet), and
+    // that code then deopted at its first property read every frame something was published, never replaced (Predator:
+    // 391 times in 8 s).
+    this._flushWasmPublish();
     if (detail) {
       this.neighborSearchTimeThisFrame = performance.now() - startTime;
     }
@@ -1755,7 +1760,6 @@ class SpatialWorker extends AbstractWorker {
         }
       }
     }
-    this._flushWasmPublish();
   }
 
   /** The WASM publish of every entity queued this frame (the search ends here). */
