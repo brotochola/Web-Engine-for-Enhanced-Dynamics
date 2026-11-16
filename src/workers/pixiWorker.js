@@ -998,6 +998,8 @@ class PixiRenderer extends AbstractWorker {
     this._lampTileData = new Float32Array(4);
     this._lampTileSource = null;
     this._lampTileOf = new Int16Array(0);
+    /** N-212: each lamp's map shadow fade at the cut, by entity (1 inside it), read with its tile (_readLampTiles). */
+    this._lampFadeOf = new Float32Array(0);
     this._lampTileIds = new Uint32Array(1);
     this._lampTileCount = 0;
     // The light pass's uLampAtlas: tiles a row, a tile's texels, the atlas's width and height.
@@ -5900,6 +5902,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _packLightData(countToRender, visibleLights, coneCosSeen, coneCount, lightData, row1, row2, groundInvY, vr) {
     // DX-SHADOW3D (F7): a lamp with a tile in the lamps' map: its first row's w carries -(tile + 1).
     const tileOf = this._lampTileOf;
+    // N-212: and its fourth row's x its map shadow's fade at the cut (1 for any other light).
+    const fadeOf = this._lampFadeOf;
+    const row3 = row2 + row2 - row1;
     const ids = this._faceIdsOn;
     const worldX = Transform.x;
     const worldY = Transform.y;
@@ -5947,6 +5952,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lightData[i0 + 1] = (worldY[entityIndex] + ox * rotS[entityIndex] + oy * rotC[entityIndex]) * groundInvY;
       lightData[i0 + 2] = intensity;
       lightData[i0 + 3] = range * range;
+      const i3 = row3 + i0;
+      lightData[i3] = 1;
       if (entityIndex < tileOf.length) {
         const tile = tileOf[entityIndex];
         // DX-GBUF: with the ids map, -(tile + 1 + 256 · its entity's id), so a pixel of its own entity does not shade from
@@ -5954,6 +5961,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (tile >= 0 && h > 0) {
           if (!ids) lightData[i0 + 3] = -(tile + 1);
           else if (tile < 256) lightData[i0 + 3] = -(tile + 1 + 256 * gbufEntityId(entityIndex));
+          if (entityIndex < fadeOf.length) lightData[i3] = fadeOf[entityIndex];
         }
       }
       const i1 = row1 + i0;
@@ -6516,11 +6524,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const n = ids && gpu.header ? Math.min(gpu.header[GPU_HDR_STAMP_LIGHTS] | 0, ids.length) : 0;
     const entities = Transform.x ? Transform.x.length : 0;
     if (this._lampTileOf.length !== entities) this._lampTileOf = new Int16Array(entities).fill(-1);
+    if (this._lampFadeOf.length !== entities) this._lampFadeOf = new Float32Array(entities).fill(1);
     const of = this._lampTileOf;
+    const fadeOf = this._lampFadeOf;
+    // N-212: pre-render's fades beside the ids (a queue without them: none fade).
+    const fades = gpu && gpu.stampLightFade && gpu.stampLightFade.length >= n ? gpu.stampLightFade : null;
     const last = this._lampTileIds;
     for (let i = 0; i < this._lampTileCount; i++) {
       const id = last[i];
-      if (id < of.length) of[id] = -1;
+      if (id < of.length) {
+        of[id] = -1;
+        fadeOf[id] = 1;
+      }
     }
     const cap = Math.max(1, ids ? ids.length : 1);
     if (this._lampTileIds.length < cap) this._lampTileIds = new Uint32Array(cap);
@@ -6537,7 +6552,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let t = 0; t < n; t++) {
       const id = ids[t];
       this._lampTileIds[t] = id;
-      if (id < of.length) of[id] = t;
+      if (id < of.length) {
+        of[id] = t;
+        fadeOf[id] = fades !== null ? fades[t] : 1;
+      }
       const ox = offsetX[id];
       const oy = offsetY[id];
       const x = worldX[id] + ox * rotC[id] - oy * rotS[id];

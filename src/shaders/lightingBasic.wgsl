@@ -199,12 +199,15 @@ fn lampTap(c: vec2<i32>, lo: vec2<i32>, hi: vec2<i32>, bound: f32, selfId: f32) 
   return select(1.0, 1.0 - m.g, m.r > bound && !ownTexel(m, selfId));
 }
 
-fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, selfId: f32) -> f32 {
+// li: the light's column in the light data, whose fourth row holds its fade at the cut (N-212; lightingBasic.frag.glsl).
+fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, selfId: f32, li: i32) -> f32 {
   if (tag >= 0.0 || e <= 0.0) { return 1.0; }
   let reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
   // DX-LAMPPANO: past the reach on the floor the lamp gives no light (reachWindow), so nothing to read.
   let fromLamp = p.xy - l;
   if (reach <= 0.0 || dot(fromLamp, fromLamp) >= reach * reach) { return 1.0; }
+  let fade = textureLoad(uLightData, vec2<i32>(li, 3), 0).x;
+  if (fade <= 0.0) { return 1.0; }
   // DX-LAMPPANO: a point higher than the lamp reads the ceiling's half, landing as its mirror (2E - z) does.
   let upper = p.z > e;
   let room = max(abs(e - p.z), e / 64.0);
@@ -225,24 +228,27 @@ fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, 
   var lit = lampTap(c, lo, hi, bound, selfId);
 // #if PIXELART
   // DX-PIXELSHADOW: one tap at the art pixel's centre, crisp on the art's grid.
-  return lit;
+  return 1.0 - (1.0 - lit) * fade;
 // #endif PIXELART
 // #if !PIXELART
   lit += lampTap(c + vec2<i32>(1, 0), lo, hi, bound, selfId);
   lit += lampTap(c - vec2<i32>(1, 0), lo, hi, bound, selfId);
   lit += lampTap(c + vec2<i32>(0, 1), lo, hi, bound, selfId);
   lit += lampTap(c - vec2<i32>(0, 1), lo, hi, bound, selfId);
-  return lit * 0.2;
+  return 1.0 - (1.0 - lit * 0.2) * fade;
 // #endif !PIXELART
 }
 
 // DX-LAMPPANO: lampVisibility for a floor point (z 0, the flat path): the floor's half, no bias (lightingBasic.frag.glsl
 // says why it has its own body).
-fn lampVisibilityFloor(p: vec2<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32) -> f32 {
+fn lampVisibilityFloor(p: vec2<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, li: i32) -> f32 {
   if (tag >= 0.0 || e <= 0.0) { return 1.0; }
   let reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
   let fromLamp = p - l;
   if (reach <= 0.0 || dot(fromLamp, fromLamp) >= reach * reach) { return 1.0; }
+  // N-212: its fade at the cut.
+  let fade = textureLoad(uLightData, vec2<i32>(li, 3), 0).x;
+  if (fade <= 0.0) { return 1.0; }
   let uv = lampPanoUv(fromLamp, reach);
   let tile = lampTile(tag);
   let a = uniforms.uLampAtlas;
@@ -253,14 +259,14 @@ fn lampVisibilityFloor(p: vec2<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: 
   let c = lo + vec2<i32>(floor(uv * a.y));
   var lit = lampTap(c, lo, hi, 0.5 + 0.5 / 255.0, 0.0);
 // #if PIXELART
-  return lit;
+  return 1.0 - (1.0 - lit) * fade;
 // #endif PIXELART
 // #if !PIXELART
   lit += lampTap(c + vec2<i32>(1, 0), lo, hi, 0.5 + 0.5 / 255.0, 0.0);
   lit += lampTap(c - vec2<i32>(1, 0), lo, hi, 0.5 + 0.5 / 255.0, 0.0);
   lit += lampTap(c + vec2<i32>(0, 1), lo, hi, 0.5 + 0.5 / 255.0, 0.0);
   lit += lampTap(c - vec2<i32>(0, 1), lo, hi, 0.5 + 0.5 / 255.0, 0.0);
-  return lit * 0.2;
+  return 1.0 - (1.0 - lit * 0.2) * fade;
 // #endif !PIXELART
 }
 // #endif LAMPMAP
@@ -363,7 +369,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     var cone = coneFactor(p.xy - posInt.xy, textureLoad(uLightData, vec2<i32>(i, 2), 0))
       * reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
 // #if LAMPMAP
-    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId);
+    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
 // #endif LAMPMAP
     if (cosine > 0.0) {
       total += col.rgb * cosine * lit.z * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
@@ -386,7 +392,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     var shade = 1.0;
     var lampSelf = 1.0;
 // #if LAMPMAP
-    shade = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId);
+    shade = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
 // #if SELFSHADOW
     // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too, unless the pixel is
     // of the lamp's own entity.
@@ -485,7 +491,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     var attenuation = intensityScaled / (intensityScaled + d2Scaled)
       * reachWindow(dot(fragWorld - posInt.xy, fragWorld - posInt.xy), posInt.z, col.a);
 // #if LAMPMAP
-    attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z);
+    attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z, i);
 // #endif LAMPMAP
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
   }
@@ -504,7 +510,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
       var attenuation = intensityScaled / (intensityScaled + d2Scaled)
         * reachWindow(dot(fragWorld - lightWorld, fragWorld - lightWorld), intensity, col.a);
 // #if LAMPMAP
-      attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity);
+      attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity, i);
 // #endif LAMPMAP
       totalLight += col.rgb * attenuation;
     }

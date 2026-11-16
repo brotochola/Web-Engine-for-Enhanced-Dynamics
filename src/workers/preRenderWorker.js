@@ -772,6 +772,32 @@ function stampLightOrder(a, b) {
     return a.id - b.id;
 }
 
+/** N-212: the part of the cut's distance over which the kept lights' shadows fade out (fadeStampLightsAtCut). */
+export const STAMP_CUT_FADE = 0.2;
+
+/**
+ * N-212: lighting.maxShadowCastingLights keeps the `cap` lights nearest the view's centre (`lights` sorted by
+ * stampLightOrder, `n` of them); the rest cast no shadows. The kept ones near that cut fade theirs out: each one's `fade`
+ * runs from 1 down to 0 at the first light left out, over STAMP_CUT_FADE of its distance, and its `shade` (its stamps'
+ * darkness and its cookie's strength) takes it. A light crossing the cut as the camera moves, or one coming or going,
+ * fades in or out instead of its shadows popping. Every light keeps fade 1 when none is left out.
+ */
+export function fadeStampLightsAtCut(lights, n, cap) {
+    if (!(cap > 0) || n <= cap) return;
+    const dCut = Math.sqrt(lights[cap].distSq);
+    const band = dCut * STAMP_CUT_FADE;
+    if (!(band > 0)) return;
+    // Sorted: from the last kept light inwards, until one is past the band.
+    for (let i = cap - 1; i >= 0; i--) {
+        const L = lights[i];
+        const f = (dCut - Math.sqrt(L.distSq)) / band;
+        if (f >= 1) break;
+        const fade = f > 0 ? f : 0;
+        L.fade = fade;
+        L.shade *= fade;
+    }
+}
+
 /**
  * Build the diagnostic label. Only ever called on a warn path.
  * A string `kind` is passed through, so the name-based caller still works.
@@ -1807,6 +1833,8 @@ class PreRenderWorker extends AbstractWorker {
                     coneDirX: NaN, coneDirYW: NaN, coneCos: NaN, coneInvSpan: NaN, invG2: NaN,
                     // DX-LIGHTAPI: min(brightness, 1), how dark its shadows are and how strong its cookie.
                     shade: NaN,
+                    // N-212: 1, or down to 0 near the cut of maxShadowCastingLights (fadeStampLightsAtCut).
+                    fade: NaN,
                 };
             }
         }
@@ -3947,11 +3975,16 @@ class PreRenderWorker extends AbstractWorker {
             slot.invG2 = invG * invG;
             const brightness = lightBrightness[id];
             slot.shade = brightness < 1 ? brightness : 1;
+            slot.fade = 1;
             n++;
         }
         this._stampLightCount = n;
         // Cookie pack needs the list; dist-order is only for stamping casters.
-        if (this._stampSortLights) this._sortPrefix(out, n, this._stampLightCmp);
+        if (this._stampSortLights) {
+            this._sortPrefix(out, n, this._stampLightCmp);
+            // N-212: the kept lights near the cut fade their shadows out rather than pop.
+            fadeStampLightsAtCut(out, n, this.maxShadowCastingLights | 0);
+        }
     }
 
     _sortPrefix(arr, count, compare) {
@@ -4445,6 +4478,9 @@ class PreRenderWorker extends AbstractWorker {
         const n = Math.min(this._stampLightCount | 0, ids.length);
         const lights = this._stampLights;
         for (let i = 0; i < n; i++) ids[i] = lights[i].id;
+        // N-212: and each one's fade at the cut, for its map shadow (fadeStampLightsAtCut).
+        const fades = dst.stampLightFade;
+        if (fades && fades.length >= n) for (let i = 0; i < n; i++) fades[i] = lights[i].fade;
         return n;
     }
 
@@ -4465,6 +4501,7 @@ class PreRenderWorker extends AbstractWorker {
         for (let i = 0; i < stampN; i++) di[i] = si[i];
         const lightN = res.stampLights | 0;
         for (let i = 0; i < lightN; i++) dst.stampLightIds[i] = src.stampLightIds[i];
+        if (dst.stampLightFade && src.stampLightFade) copyF32(dst.stampLightFade, src.stampLightFade, lightN);
         copyF32(dst.cookie, src.cookie, (res.cookie | 0) * GPU_SPRITE_FLOATS);
     }
 

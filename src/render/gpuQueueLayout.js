@@ -161,6 +161,8 @@ export function computeGpuQueueBufferSize(caps) {
   offset = align4(offset);
   offset += (c.maxStampLights | 0) * 4;
   offset += (c.maxGbuf | 0) * GPU_GBUF_FLOATS * 4;
+  // N-212: each stamp light's fade at the cut.
+  offset += (c.maxStampLights | 0) * 4;
   return align4(offset);
 }
 
@@ -210,6 +212,10 @@ export function createGpuQueueViews(sab, caps, base = 0) {
   const gbufN = (c.maxGbuf | 0) * GPU_GBUF_FLOATS;
   const spriteGbuf = gbufN > 0 ? new Float32Array(sab, offset, gbufN) : new Float32Array(0);
   offset += gbufN * 4;
+  // N-212: each stamp light's fade at the cut of maxShadowCastingLights (1 inside it), as stampLightIds names them, after
+  // the G-buffer words so every other region stays where it was.
+  const stampLightFade = stampLightN > 0 ? new Float32Array(sab, offset, stampLightN) : new Float32Array(0);
+  offset += stampLightN * 4;
   return {
     header,
     sprites: sprites.view,
@@ -231,6 +237,7 @@ export function createGpuQueueViews(sab, caps, base = 0) {
     stampLightIdx,
     stampLightIds,
     spriteGbuf,
+    stampLightFade,
     caps: c,
     byteLength: offset - start,
   };

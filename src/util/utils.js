@@ -268,8 +268,11 @@ export const LIGHT_GRADIENT_TEXTURE_RADIUS = 100;
 export const METABALL_TEXTURE_RADIUS = 32;
 export { LIGHT_INFLUENCE_RADIUS_SCALE, lightInfluenceRadius, resolveGroundScaleY };
 
-/** Rows in the lighting data texture: 0 = xy+intensity, 1 = rgb + the source's height, 2 = a cone (DX-SPOT). */
-export const LIGHT_DATA_TEX_HEIGHT = 3;
+/**
+ * Rows in the lighting data texture: 0 = xy+intensity, 1 = rgb + the source's height, 2 = a cone (DX-SPOT), 3 = x its map
+ * shadow's fade at the cut of maxShadowCastingLights (N-212; 1 for a light that is not fading).
+ */
+export const LIGHT_DATA_TEX_HEIGHT = 4;
 
 /** Float count for an RGBA32F light-data texture of width `maxLights`. */
 export function lightDataTextureFloatCount(maxLights) {

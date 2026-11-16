@@ -33,9 +33,11 @@ uniform float uNightG;
 uniform float uNightB;
 
 // The light data texture's rows (3 texels tall, sampled at their centres).
-const float ROW0 = 1.0 / 6.0;
-const float ROW1 = 0.5;
-const float ROW2 = 5.0 / 6.0;
+const float ROW0 = 1.0 / 8.0;
+const float ROW1 = 3.0 / 8.0;
+const float ROW2 = 5.0 / 8.0;
+// N-212: a lamp's map shadow fade at the cut of maxShadowCastingLights (x; 1 for a light not fading).
+const float ROW3 = 7.0 / 8.0;
 
 // DX-SPOT: how far inside its cone a point at floor offset delta from the light is: 1 inside, 0 outside, smooth across
 // the soft edge. At the light itself, 1.
@@ -157,13 +159,17 @@ float lampTap(vec2 cell, vec2 uv, float h, vec2 toAtlas, float bound, float self
 }
 
 // How much of the light at floor point l, height e reaches point p (x, y on the floor, z up): 1 lit, 0 in its shadow,
-// five taps. tag: the light's first row's w; intensity: its I'; selfId: the pixel's entity (its own shade skipped).
-float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float selfId) {
+// five taps. tag: the light's first row's w; intensity: its I'; selfId: the pixel's entity (its own shade skipped); u: its
+// column in the light data, whose fourth row holds its fade at the cut (N-212: the shade lightens as it fades, read only
+// for a point the lamp's map covers).
+float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float selfId, float u) {
   if (tag >= 0.0 || e <= 0.0) return 1.0;
   float reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
   // DX-LAMPPANO: past the reach on the floor the lamp gives no light (reachWindow), so nothing to read.
   vec2 fromLamp = p.xy - l;
   if (reach <= 0.0 || dot(fromLamp, fromLamp) >= reach * reach) return 1.0;
+  float fade = textureLod(uLightData, vec2(u, ROW3), 0.0).x;
+  if (fade <= 0.0) return 1.0;
   // DX-LAMPPANO: a point higher than the lamp reads the ceiling's half, landing as its mirror (2E - z) does.
   bool upper = p.z > e;
   float room = max(abs(e - p.z), e / 64.0);
@@ -183,25 +189,28 @@ float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float 
   float lit = lampTap(cell, uv, h, toAtlas, bound, selfId);
 // #if PIXELART
   // DX-PIXELSHADOW: one tap at the art pixel's centre, crisp on the art's grid.
-  return lit;
+  return 1.0 - (1.0 - lit) * fade;
 // #endif PIXELART
 // #if !PIXELART
   lit += lampTap(cell, uv + vec2(2.0 * h, 0.0), h, toAtlas, bound, selfId);
   lit += lampTap(cell, uv - vec2(2.0 * h, 0.0), h, toAtlas, bound, selfId);
   lit += lampTap(cell, uv + vec2(0.0, 2.0 * h), h, toAtlas, bound, selfId);
   lit += lampTap(cell, uv - vec2(0.0, 2.0 * h), h, toAtlas, bound, selfId);
-  return lit * 0.2;
+  return 1.0 - (1.0 - lit * 0.2) * fade;
 // #endif !PIXELART
 }
 
 // DX-LAMPPANO: lampVisibility for a floor point (z 0, the flat path): always under the lamp, on the floor's half, no bias.
 // Its own small body: with the full lookup inlined at the flat path's two loops too, ANGLE's D3D11 compiler failed to link
 // the light pass (2.9 s, no log); so it links in about the time the stretch-capped map's pass did.
-float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, float intensity) {
+float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, float intensity, float u) {
   if (tag >= 0.0 || e <= 0.0) return 1.0;
   float reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
   vec2 fromLamp = p - l;
   if (reach <= 0.0 || dot(fromLamp, fromLamp) >= reach * reach) return 1.0;
+  // N-212: its fade at the cut (lampVisibility says how).
+  float fade = textureLod(uLightData, vec2(u, ROW3), 0.0).x;
+  if (fade <= 0.0) return 1.0;
   vec2 uv = lampPanoUv(fromLamp, reach);
   float tile = lampTile(tag);
   vec2 cell = vec2(mod(tile, uLampAtlas.x) * 2.0, floor(tile / uLampAtlas.x));
@@ -209,14 +218,14 @@ float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, float intensity) {
   float h = 0.5 / uLampAtlas.y;
   float lit = lampTap(cell, uv, h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
 // #if PIXELART
-  return lit;
+  return 1.0 - (1.0 - lit) * fade;
 // #endif PIXELART
 // #if !PIXELART
   lit += lampTap(cell, uv + vec2(2.0 * h, 0.0), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
   lit += lampTap(cell, uv - vec2(2.0 * h, 0.0), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
   lit += lampTap(cell, uv + vec2(0.0, 2.0 * h), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
   lit += lampTap(cell, uv - vec2(0.0, 2.0 * h), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
-  return lit * 0.2;
+  return 1.0 - (1.0 - lit * 0.2) * fade;
 // #endif !PIXELART
 }
 // #endif LAMPMAP
@@ -332,7 +341,7 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     float cone = coneFactor(p.xy - posInt.xy, textureLod(uLightData, vec2(u, ROW2), 0.0))
       * reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
 // #if LAMPMAP
-    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId);
+    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, u);
 // #endif LAMPMAP
     if (cosine > 0.0) {
       total += col.rgb * cosine * uFaceLight.z * cone * intensityScaled
@@ -357,7 +366,7 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     float lampVis = 1.0;
     float lampSelf = 1.0;
 // #if LAMPMAP
-    lampVis = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId);
+    lampVis = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, u);
     cosine *= lampVis;
 // #if SELFSHADOW
     // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too, unless the pixel is
@@ -458,7 +467,7 @@ void main() {
     float attenuation = intensityScaled / (intensityScaled + d2Scaled)
       * reachWindow(dot(fragWorld - posInt.xy, fragWorld - posInt.xy), posInt.z, col.a);
 // #if LAMPMAP
-    attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z);
+    attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z, u);
 // #endif LAMPMAP
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
   }
@@ -483,7 +492,7 @@ void main() {
       float attenuation = intensityScaled / (intensityScaled + d2Scaled)
         * reachWindow(dot(fragWorld - lightWorld, fragWorld - lightWorld), intensity, col.a);
 // #if LAMPMAP
-      attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity);
+      attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity, u);
 // #endif LAMPMAP
       totalLight += color * attenuation;
     }
