@@ -4,13 +4,22 @@ import { BunnySpawner } from './gameObjects/bunnySpawner.js';
 
 const { Scene, Camera, GameObject } = WEED;
 
-const INITIAL_BUNNIES = 250_000
-
 function bunnySearchParam(name) {
     const search = globalThis.location && globalThis.location.search;
     if (typeof search !== 'string') return null;
     return new URLSearchParams(search).get(name);
 }
+
+// `?bunnies=<n>` sets the bunnies spawned at the start, their pool and the render queue (default 250 000): the count a
+// GPU holds at 60 fps is found by a sweep. `?still=1` spawns them at rest, so the frame is the same picture every time
+// (image comparisons).
+const INITIAL_BUNNIES = (() => {
+    const n = parseInt(bunnySearchParam('bunnies') ?? '', 10);
+    return Number.isFinite(n) && n > 0 ? n : 250_000;
+})();
+const STILL = bunnySearchParam('still') === '1';
+// `?interpolation=0`: the renderer draws the queue's poses as they come, so Pixi packs the bunnies as keyed frames.
+const INTERPOLATION = bunnySearchParam('interpolation') !== '0';
 
 const HUD_CSS =
     'position:fixed;left:12px;bottom:12px;z-index:940;pointer-events:none;' +
@@ -54,7 +63,7 @@ export class BunnyMarkScene extends Scene {
             noLimitFPS: false,
             ySort: false,
             maxVisibleRenderables: INITIAL_BUNNIES,
-            interpolation: true,
+            interpolation: INTERPOLATION,
         },
         preRender: {
             skipCull: true,
@@ -83,10 +92,10 @@ export class BunnyMarkScene extends Scene {
 
         const rng = globalThis.rng;
         for (let i = 0; i < INITIAL_BUNNIES; i++) {
-            Bunny.spawn({
-                x: this.config.worldWidth * rng(),
-                y: this.config.worldHeight * rng()
-            });
+            const x = this.config.worldWidth * rng();
+            const y = this.config.worldHeight * rng();
+            // An xy-only config rides the spawn ring; `still` travels in create()'s extras, only when asked for.
+            Bunny.spawn(STILL ? { x, y, still: true } : { x, y });
         }
         BunnySpawner.spawn({ x: cx, y: cy });
         this._setCount(GameObject.getPoolStats(Bunny).active);

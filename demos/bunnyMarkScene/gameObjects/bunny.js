@@ -20,8 +20,10 @@ export class Bunny extends GameObject {
     this.setTint((rng() * 0xffffff) | 0);
     this.x = spawnConfig.x ?? 0;
     this.y = spawnConfig.y ?? 0;
-    this.bunnyMotion.vx = rng() * 1 - 0.5;
-    this.bunnyMotion.vy = rng() * 1 - 0.5;
+    // The scene's `?still=1`: at rest, so every frame is the same picture.
+    const speed = spawnConfig.still ? 0 : 1;
+    this.bunnyMotion.vx = (rng() * 1 - 0.5) * speed;
+    this.bunnyMotion.vy = (rng() * 1 - 0.5) * speed;
   }
 
   static tickAll(list, count, dtRatio) {
