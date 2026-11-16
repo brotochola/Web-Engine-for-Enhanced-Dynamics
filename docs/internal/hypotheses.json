@@ -15672,7 +15672,8 @@
         "R-1164",
         "R-1172",
         "R-1182",
-        "R-1183"
+        "R-1183",
+        "R-1185"
       ]
     },
     {
@@ -16524,7 +16525,8 @@
       ],
       "aliases": [],
       "records": [
-        "R-1162"
+        "R-1162",
+        "R-1185"
       ]
     },
     {
@@ -16586,7 +16588,8 @@
         "R-1167",
         "R-1176",
         "R-1179",
-        "R-1183"
+        "R-1183",
+        "R-1185"
       ]
     },
     {
@@ -17765,7 +17768,8 @@
         "R-1178",
         "R-1180",
         "R-1182",
-        "R-1183"
+        "R-1183",
+        "R-1185"
       ]
     },
     {
@@ -17791,7 +17795,8 @@
         "R-1178",
         "R-1180",
         "R-1182",
-        "R-1183"
+        "R-1183",
+        "R-1185"
       ]
     },
     {
@@ -18646,7 +18651,8 @@
         "trackMeshFillPose"
       ],
       "records": [
-        "R-1183"
+        "R-1183",
+        "R-1185"
       ]
     },
     {
@@ -30317,6 +30323,18 @@
       "title": "Contention on Predator crowd 2.5: Box2D's pool 2.25 cores, core complex moves 24-50/s, the GPU process waking 8 times a frame",
       "verdict": "note",
       "text": "**Contention on Predator crowd 2.5 (a WPR capture with CSwitch and ReadyThread, cswitchStats.mjs and wprPmc.mjs): Box2D's pool threads take about 2.25 cores through the step, threads move between the two core complexes 24 to 50 times a second, Chrome's GPU process wakes 8 times a frame.** wprScene.sh (TotalIssues at 100 000, the profile's CSwitch and ReadyThread keywords added for the capture and removed after), main 0f3f79a2, 2026-11-16 05:44 to 05:47 (the capture's window 8.76 s); the scene's STEP_MS in that run (capture load included): spatial 13.9, physics 24.3, Pixi 6.2, logic 9.9, pre-render 9.5 ms.\n\n| thread (by its V8 code) | on CPU ms/s | switches/s | CCX moves/s | preempted/s | ready to run p50/p90/p99 us | why it left |\n| --- | --- | --- | --- | --- | --- | --- |\n| physics (14952) | 950 | 132 | 28 | 84 | 6/11/579 | UserRequest 24/s, WrAlertByThreadId 10/s |\n| Box2D pool (15832, 9608, 16468) | 754, 752, 743 | 207 to 221 | 45 to 50 | 126 to 143 | 6/13-14/490-810 | WrAlertByThreadId 62 to 63/s |\n| spatial / pre-render (12180, 11344) | 708, 572 | 124 | 31, 29 | 72, 56 | 6/19/136, 5/16/62 | UserRequest 41, 60/s |\n| logic (2984, 17356) | 610, 538 | 127 | 33, 33 | 39, 36 | 5/10/210, 5/13/746 | UserRequest 62, 60/s |\n| Pixi (10620) | 380 | 199 | 47 | 37 | 5/10/58 | UserRequest 147/s |\n| particle (2608) | 58 | 83 | 27 | 21 | 5/8/13 | UserRequest 60/s |\n| Chrome GPU process main (8476, native) | 305 | 478 | 102 | 1 | 5/10/43 | UserRequest 460/s |\n\nTwo other busy threads (10216 at 629 ms/s, 3504 at 497 ms/s pinned to CPU 15) carry no V8 code. By process (instruction samples): chrome.exe 68.4 %, wpr.exe 9.1 %, code.exe 6.5 %, msmpeng.exe 3.7 %. Filed: E-426 (the pool's spin against the other workers), E-427 (core complex moves), E-428 (the GPU process's wakes), N-221 (background load during sittings)."
+    },
+    {
+      "id": "R-1185",
+      "date": "2026-11-16",
+      "time": "05:58",
+      "timeFrom": "recorded",
+      "title": "Tonight's integration against the pushed main: Predator crowd 2.5 KEPT, pre-render 7.439 -> 6.422 ms (-13.9 %, 4/4)",
+      "verdict": "kept",
+      "text": "**Tonight's integration (E-372, E-358/E-359, the plain keyed pack's exports, E-425) against the pushed main: Predator crowd 2.5 KEPT, pre-render 7.439 -> 6.422 ms (-13.9 %, 4/4).** `runPredatorAbab --pool --pairs 4 --vs 0b0ec824 --hyp-rev 7daf6d14 --query crowd=2.5&zoom=0.216 --owner preRender`, headed, AC power, 2026-11-16 05:53 to 05:58 (three agents were building and testing in their worktrees meanwhile). Pre-render paired -13.9 % (0/4 worse, -11.5 % against the other workers, cv 3/4 %); physics 13.757 -> 13.213 (-6.1 %, 0/4 worse), logic 6.410 -> 6.227 (-2.6 %), spatial 10.325 -> 10.129 (-1.6 %), Pixi 3.339 -> 3.048 (under the floor); loads equal (GPU_CASTERS 37 858 -> 38 153, RENDER_QUEUE_SIZE 38 547 -> 38 558). The merge of DX-LIGHT3D had put Predator crowd 2.5's pre-render at +1.5 ms against main before it (R-1162: 5.757 -> 7.283); tonight's work brings back about 1 ms of it (chained across sittings, so a rough figure).",
+      "commits": [
+        "7daf6d14"
+      ]
     }
   ],
   "leads": [
