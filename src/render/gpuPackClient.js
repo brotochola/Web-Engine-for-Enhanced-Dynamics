@@ -34,7 +34,7 @@ export async function bindGpuPack(memory, layout) {
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
     'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed', 'pack_casters_keyed_scan',
-    'pack_sprites_keyed_rows',
+    'pack_sprites_keyed_rows', 'pack_sprites_keyed_gbuf', 'pack_sprites_keyed_rows_gbuf',
   ]);
   return {
     buffer: memory.buffer,
@@ -50,6 +50,9 @@ export async function bindGpuPack(memory, layout) {
     spritesKeyed: k.pack_sprites_keyed,
     // E-201: the same with each drawn instance's queue row instead of its pose (the shader fetches the pose by row).
     spritesKeyedRows: k.pack_sprites_keyed_rows,
+    // E-387: the two with the instances' G-buffer words too (exports of their own: the plain ones keep their code).
+    spritesKeyedGbuf: k.pack_sprites_keyed_gbuf,
+    spritesKeyedRowsGbuf: k.pack_sprites_keyed_rows_gbuf,
     // E-191: keyed caster rows (a pose, a key, the shadow terms) of a list of queue rows.
     castersKeyed: k.pack_casters_keyed,
     // E-192: the same rows for the casters it finds in the queue itself.
@@ -330,9 +333,14 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
   // E-387: the slots' G-buffer words too where the caller hands their columns (the kernel packs min(count, capacity)).
   const gbufByte = keyedGbufByte(b, keyed, count < (capacity | 0) ? count : capacity | 0);
-  const out = b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
-    slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
-    shadowByte, keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0, gbufByte);
+  const texByte = keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0;
+  const out = gbufByte > 0
+    ? b.spritesKeyedGbuf(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+      shadowByte, texByte, gbufByte)
+    : b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+      shadowByte, texByte);
   keyed.shadowed = shadowByte > 0;
   keyed.gbufWritten = gbufByte > 0;
   const r = b.particlesByte >> 2;
@@ -365,9 +373,14 @@ export function packKeyedRowsByRowWasm(b, q, ctx, rows, slots, keyed, capacity) 
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
   const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
   const gbufByte = keyedGbufByte(b, keyed, count < (capacity | 0) ? count : capacity | 0);
-  const out = b.spritesKeyedRows(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, rows.byteOffset,
-    slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
-    shadowByte, keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0, gbufByte);
+  const texByte = keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0;
+  const out = gbufByte > 0
+    ? b.spritesKeyedRowsGbuf(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, rows.byteOffset,
+      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+      shadowByte, texByte, gbufByte)
+    : b.spritesKeyedRows(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, rows.byteOffset,
+      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+      shadowByte, texByte);
   keyed.shadowed = shadowByte > 0;
   keyed.gbufWritten = gbufByte > 0;
   const r = b.particlesByte >> 2;
