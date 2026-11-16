@@ -125,6 +125,8 @@ class GlowStencilStep extends ViewContainer {
 /** E-448: what the opaque mesh draws: a pose or split frame's rows (its poses copied each frame), a by-row keyed frame's. */
 const OPAQUE_KIND_POSE = 0;
 const OPAQUE_KIND_KEYED_ROWS = 1;
+/** E-448: frames a by-row batch skips building its opaque rows after a frame where the pass did not pay (a quarter second). */
+const OPAQUE_RECHECK_FRAMES = 15;
 
 /**
  * E-448: the opaque pass's step before its mesh, run by Pixi's custom render pipe where the mesh's draw is: this frame's
@@ -825,6 +827,11 @@ export class InstancedSpriteBatch {
     this._opBuiltStatics = -1;
     this._opBuiltRows = -1;
     this._opAllowed = true;
+    // The by-row pass's frames left to skip its build after a frame where it did not pay, and the view that frame had
+    // (_commitOpaqueRows).
+    this._opSkipFrames = 0;
+    this._opSkipZoom = NaN;
+    this._opSkipScreen = NaN;
     this._blendState = state;
     this._depthState = state;
     if (this._opWanted && this._colorVertex !== '' && this._colorFragment !== '') this._makeOpaquePass(labelName, opaquePass);
@@ -1515,12 +1522,24 @@ export class InstancedSpriteBatch {
       this.dropOpaquePass();
       return;
     }
-    const m = buildOpaqueKeyedRows(this.data, this._slotData, n, q.alpha, q.textureId, q.scaleX, q.scaleY, this._opTexels,
-      this._opArea, this._opKeyedRows, this._opCover);
-    if (m <= 0 || !this._opaquePays(m)) {
+    // While the pass does not pay at this view, its rows (every draw slot's) are not built every frame: the cover moves
+    // slowly, so it is checked again every OPAQUE_RECHECK_FRAMES frames, or at once when the zoom or the target changes.
+    // Built every frame, they cost Pixi 1.29 -> 1.71 ms a frame in Predator, where the gate keeps the pass off.
+    if (this._opSkipFrames > 0 && this._opSkipZoom === this._opZoom && this._opSkipScreen === this._opScreen) {
+      this._opSkipFrames--;
       this.dropOpaquePass();
       return;
     }
+    const m = buildOpaqueKeyedRows(this.data, this._slotData, n, q.alpha, q.textureId, q.scaleX, q.scaleY, this._opTexels,
+      this._opArea, this._opKeyedRows, this._opCover);
+    if (m <= 0 || !this._opaquePays(m)) {
+      this._opSkipFrames = OPAQUE_RECHECK_FRAMES;
+      this._opSkipZoom = this._opZoom;
+      this._opSkipScreen = this._opScreen;
+      this.dropOpaquePass();
+      return;
+    }
+    this._opSkipFrames = 0;
     const group = this.shader.resources.uniforms;
     const step = 1 / (ctx.depthDenom > 0 ? ctx.depthDenom : this.capacity + 1);
     if (group.uniforms.uOpDepth !== step) {
