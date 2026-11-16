@@ -262,7 +262,7 @@ export function buildFrame(p, sh, sc, backend) {
     lutCard: { kind: 'data', format: 'rgba32f', width: sc.lutSize[0], height: sc.lutSize[1], data: sc.lutCard },
     lutRender: { kind: 'data', format: 'rgba32f', width: sc.lutSize[0], height: sc.lutSize[1], data: sc.lutRender },
     lutMixed: { kind: 'data', format: 'rgba32f', width: sc.lutMixedSize[0], height: sc.lutMixedSize[1], data: sc.lutMixed },
-    lightData: { kind: 'data', format: 'rgba32f', width: sc.maxLights, height: 3, data: sc.lightData },
+    lightData: { kind: 'data', format: 'rgba32f', width: sc.maxLights, height: sc.lightData.length / (4 * sc.maxLights), data: sc.lightData },
     lampTiles: { kind: 'data', format: 'rgba32f', width: sc.lampCount, height: 1, data: sc.lampTiles },
     foot: { kind: 'data', format: 'rgba32f', width: FOOTPRINT_TEXELS, height: 1, data: sc.foot },
     color: { kind: 'target', format: 'rgba8', width: W, height: H, filter: 'linear' },
