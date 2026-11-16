@@ -161,8 +161,8 @@ export function lampCasts(tile, elevation, reach) {
 }
 
 /**
- * The lamps' tile data texel of tile `t` (RGBA32F, one texel a tile, uLampTiles): the lamp's floor point (y over
- * groundScaleY), its height and its reach (floor px); a tile that casts nothing has 0 reach.
+ * The lamps' tile data texel of tile `t` (RGBA32F, one texel a tile in row 0, uLampTiles): the lamp's floor point (y
+ * over groundScaleY), its height and its reach (floor px); a tile that casts nothing has 0 reach.
  * @param {Float32Array} out
  * @param {number} t
  */
@@ -173,6 +173,22 @@ export function writeLampTile(out, t, x, floorY, elevation, reach) {
   out[at + 1] = floorY;
   out[at + 2] = casts ? elevation : 0;
   out[at + 3] = casts ? reach : 0;
+}
+
+/**
+ * E-389: tile `t`'s owner, below its lamp in the tiles' texture (row 1 of a texture `width` texels wide): the entity
+ * whose own volume casts nothing for the lamp (x; -1 none), read by the lamps' map volumes' one draw for every tile.
+ * @param {Float32Array} out
+ * @param {number} width the texture's width (its rows' texels)
+ * @param {number} t
+ * @param {number} entity
+ */
+export function writeLampTileOwner(out, width, t, entity) {
+  const at = (width + t) * 4;
+  out[at] = entity;
+  out[at + 1] = 0;
+  out[at + 2] = 0;
+  out[at + 3] = 0;
 }
 
 /** The light data's tag for a light with a tile in the lamps' map: its first row's w, -(tile + 1) (rangeSq otherwise). */

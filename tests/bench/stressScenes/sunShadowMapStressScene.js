@@ -26,7 +26,8 @@ const { Scene, Camera, Sun, LAYER_KIND } = WEED;
  * - `?movers=` the cars (default an eighth of the casters).
  * - `?kind=auto|sprite|height|box` how every caster casts (light3d/benchSheets.js castAs): `auto` (default) each sheet's
  *   own way (the props their height map's columns, the cars and the cow their card), `sprite` the card, `height` the
- *   columns, `box` the sheet's box (a volume in the map).
+ *   columns, `box` the sheet's box (a volume in the map), `mix` every other still render a box and the rest (and the cars)
+ *   their own way: volumes beside stamp rows, for captures of the lamps' map's volumes (which draw after its cards).
  * - `?mapRes=` lighting.shadowResolution (default 1): the sun's map is the size of the shadows' layer, this share of the
  *   canvas; a texel a screen px at 1.
  * - `?cache=0|1` lighting.sunShadowCache (proposed: the still casters drawn once into a map of their own, the movers added
@@ -50,7 +51,9 @@ const CAR_SHEETS = ['hatch_rojo', 'pickup_blanco'];
 
 export const CASTERS = paramCount('casters', 3000, 1, 60000);
 export const MOVERS = paramCount('movers', Math.round(CASTERS / 8), 0, 20000);
-export const KIND = CAST_KINDS.includes(param('kind')) ? param('kind') : 'auto';
+export const KIND = param('kind') === 'mix' ? 'mix' : CAST_KINDS.includes(param('kind')) ? param('kind') : 'auto';
+/** `?kind=mix`: the i-th still render's way. */
+const kindOf = (i) => (KIND === 'mix' ? (i % 2 === 0 ? 'box' : 'auto') : KIND);
 export const MAP_RES = Math.min(2, Math.max(0.125, paramNumber('mapRes', 1)));
 const CACHE_RAW = param('cache');
 /** null: the knob was left out and the engine's default stands. */
@@ -81,7 +84,7 @@ export const stressSceneConfig = {
 const lighting = {
   enabled: true,
   // ?kind=box: every still render holds a volume (lighting.maxVolumes is their room; 0, the default, makes none).
-  maxVolumes: KIND === 'box' ? CASTERS : 0,
+  maxVolumes: KIND === 'box' || KIND === 'mix' ? CASTERS : 0,
   baseAmbient: 0.12,
   // The light pass at half the canvas; the map's own size is the knob.
   resolution: 0.5,
@@ -142,11 +145,12 @@ export class SunShadowMapStressScene extends Scene {
     const rng = mulberry32(SEED);
     const isRoad = (r) => r % ROAD_EVERY === ROAD_EVERY - 1;
     const grid = gridCells(CASTERS, W, H, rng, { skipRow: isRoad });
+    let propIndex = 0;
     for (const [x, y] of grid.cells) {
       const sheet = PROP_SHEETS[Math.floor(rng() * PROP_SHEETS.length)];
       // Each fills about its cell, a little more or less.
       const scale = Math.min(1.2, Math.max(0.25, ((1.15 * grid.side) / benchSize(sheet)) * (0.9 + rng() * 0.2)));
-      MapProp.spawn({ x, y, sheet, facing: rng() * Math.PI * 2, scale, kind: KIND });
+      MapProp.spawn({ x, y, sheet, facing: rng() * Math.PI * 2, scale, kind: kindOf(propIndex++) });
     }
     // The roads are the rows the props left empty: two lanes each, east below, west above.
     const roads = [];
@@ -162,7 +166,7 @@ export class SunShadowMapStressScene extends Scene {
         vx: (east ? 1 : -1) * (60 + rng() * 90),
         wrapW: W,
         scale: carScale,
-        kind: KIND,
+        kind: KIND === 'mix' ? 'auto' : KIND,
       });
     }
     // ?lamps=: on a grid over the town, a little jitter, their pools overlapping.

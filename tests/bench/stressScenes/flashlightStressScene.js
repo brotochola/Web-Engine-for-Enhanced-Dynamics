@@ -10,7 +10,8 @@ const { Scene, Camera, LAYER_KIND } = WEED;
  * into a cone (`?aperture=` degrees, default 50; `?softness=`, default 0.25) that follows the flip, `?cone=0` (the
  * default) leaves the same lights round: the arm to measure a cone's cost (and its sweep's saving) against.
  *
- * `?lights=` (default 120), `?crates=` (default 160), `?cone=`, `?aperture=`, `?softness=`, `?backend=webgpu`.
+ * `?lights=` (default 120), `?crates=` (default 160), `?cone=`, `?aperture=`, `?softness=`, `?backend=webgpu`,
+ * `?glowRes=` (lighting.lightGlowResolution, E-404: the halos' target against the canvas; left out, the engine's default).
  */
 const WORLD_W = 1280;
 const WORLD_H = 720;
@@ -36,6 +37,7 @@ export const CONE = queryNumber('cone', 0) === 1;
 export const APERTURE = (queryNumber('aperture', 50) * Math.PI) / 180;
 export const SOFTNESS = queryNumber('softness', 0.25);
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+export const GLOW_RES = queryNumber('glowRes', NaN);
 
 export const stressSceneConfig = {
   requested: { lights: LIGHTS, crates: CRATES, cone: CONE ? 1 : 0, aperture: APERTURE, softness: SOFTNESS, backend: BACKEND },
@@ -63,6 +65,7 @@ export class FlashlightStressScene extends Scene {
       maxLights: LIGHTS,
       maxPolygonVertices: 5000,
       maxOccluderSelfLit: 1024,
+      ...(Number.isFinite(GLOW_RES) ? { lightGlowResolution: GLOW_RES } : {}),
       sun: { enabled: false },
     },
   };

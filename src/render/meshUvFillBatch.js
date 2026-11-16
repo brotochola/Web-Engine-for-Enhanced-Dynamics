@@ -46,17 +46,18 @@ export class MeshUvFillBatch {
       label: label || 'mesh-uv-fill',
     });
 
-    const tri = new Float32Array([0, 0, 1, 0, 0, 1]);
     const stride = MESH_UV_FILL_STRIDE;
     const buf = this.buffer;
     // E-419: the row as MESH_UV_ROW_VEC4 vec4 in FILL_ROW's order (aRow0 floats 0-3, ...), which the shaders name field
     // by field: one attribute a field (14) made the vertex stage twice as slow (meshUvFill.vert.glsl). The shaders take
-    // the corner from the vertex's index; aTri only gives an instance its 3 vertices (Geometry.vertexCount).
-    const attributes = { aTri: { buffer: tri, format: 'float32x2' } };
+    // the corner from the vertex's index, and the index buffer [0, 1, 2] gives an instance its 3 vertices (N-228: an aTri
+    // attribute that no shader reads made Pixi warn "Attribute aTri is not present in the shader").
+    const attributes = {};
     for (let k = 0; k < MESH_UV_ROW_VEC4; k++) {
       attributes[`aRow${k}`] = { buffer: buf, format: 'float32x4', stride, offset: k * 16, instance: true };
     }
-    this.geometry = new Geometry({ attributes });
+    // Uint32: 12 bytes (WebGPU makes no buffer whose size is not a multiple of 4; Uint16 [0, 1, 2] is 6).
+    this.geometry = new Geometry({ attributes, indexBuffer: new Uint32Array([0, 1, 2]) });
     this.geometry.instanceCount = 0;
 
     const atlas = atlasSource || Texture.WHITE.source;

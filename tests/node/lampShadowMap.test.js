@@ -5,8 +5,12 @@ import assert from 'node:assert/strict';
 
 import {
   LAMP_MAP_MAX_STRETCH, LAMP_MAP_MAX_TEXELS, LAMP_PANO_INNER, autoLampTileSize, lampColumnGrid, lampColumnIndex,
-  lampLanding, lampPanoTexel, lampPanoUv, lampTileLayout,
+  lampLanding, lampPanoTexel, lampPanoUv, lampTileLayout, writeLampTile, writeLampTileOwner,
 } from '../../src/render/lampShadowMap.js';
+import {
+  volumeLampVertex, volumeLampVertexCount, volumeLampVertices, volumeLampWgsl, writeVolumeLampTerms,
+} from '../../src/render/volumeShadowMap.js';
+import fs from 'node:fs';
 
 const close = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
 
@@ -103,4 +107,39 @@ test('N-211: a texel keeps the place along the ray, finest around the lamp\'s he
   // The bench's person against the barn's wall under a 20 px lamp: wall 26 px up, the person's point on that ray 24.2 px:
   // in heights under a 2 px step apart, here 14 of the texel's 255 steps.
   assert.ok((lampRayDepth(24.2, 20) - lampRayDepth(26, 20)) * 255 > 10);
+});
+
+test('E-389: the volumes go into every lamp tile in one draw, vertex v corner v % 3 of tile v / 3, as a draw a tile ran them', () => {
+  // A tile's own draw ran meshUvFill's three vertices (its corners from the vertex index, E-419) over every row; the one
+  // draw runs three a tile in use, so each row's triangle reaches each tile with the same corners, tile after tile.
+  assert.equal(volumeLampVertexCount(5), 15);
+  assert.equal(volumeLampVertexCount(0), 3, 'a draw sized for one tile at least');
+  // Each vertex its number (aLampVertex): tile number / 3, corner number % 3.
+  assert.deepEqual(Array.from(volumeLampVertices(2)), [0, 1, 2, 3, 4, 5]);
+  const glsl = volumeLampVertex(fs.readFileSync(new URL('../../src/shaders/meshUvFill.vert.glsl', import.meta.url), 'utf8'));
+  const wgsl = volumeLampWgsl(fs.readFileSync(new URL('../../src/shaders/meshUvFill.wgsl', import.meta.url), 'utf8'));
+  // The corner from the index mod 3 (meshUvFill's own test of the index, on it), the tile from the index over 3.
+  assert.ok(glsl.includes('in float aLampVertex;') && glsl.includes('int lampCorner = lampVertex % 3;'));
+  assert.ok(glsl.includes('lampCorner == 1 ? 1.0 : 0.0, lampCorner == 2 ? 1.0 : 0.0') && !glsl.includes('gl_VertexID == 1'));
+  assert.ok(glsl.includes('int lampTile = lampVertex / 3;'));
+  assert.ok(wgsl.includes('@location(6) aLampVertex: f32,') && wgsl.includes('let lampCorner = lampVertex % 3u;'));
+  assert.ok(!wgsl.includes('vertexIndex == 1u') && wgsl.includes('let lampTile = i32(lampVertex / 3u);'));
+  // Its lamp and its owner from the tiles' texture; no uniform names a tile or an owner any more.
+  assert.ok(glsl.includes('ivec2(lampTile, 1)') && !glsl.includes('uLampOwner'));
+  assert.ok(wgsl.includes('vec2<i32>(lampTile, 1)') && !wgsl.includes('uLampOwner'));
+  // The tiles' texture: each tile's lamp in row 0 and, under it in row 1, the entity whose own volume casts nothing for it.
+  const width = 3;
+  const data = new Float32Array(width * 8);
+  writeLampTile(data, 1, 10, 20, 30, 40);
+  writeLampTileOwner(data, width, 1, 4242);
+  assert.deepEqual(Array.from(data.subarray(4, 8)), [10, 20, 30, 40]);
+  assert.deepEqual(Array.from(data.subarray((width + 1) * 4, (width + 2) * 4)), [4242, 0, 0, 0]);
+  // The draw's terms: the tiles in use (no tile of its own any more), written only when they change.
+  const sun = new Float32Array(4);
+  const lamp = new Float32Array(4);
+  const scales = new Float64Array([0.5, 2]);
+  assert.equal(writeVolumeLampTerms(sun, lamp, 47, 8, 256, scales), true);
+  assert.deepEqual(Array.from(sun), [0, 0, 1, 0.5]);
+  assert.deepEqual(Array.from(lamp), [47, 8, 256, 2]);
+  assert.equal(writeVolumeLampTerms(sun, lamp, 47, 8, 256, scales), false, 'unchanged: the group is not updated');
 });

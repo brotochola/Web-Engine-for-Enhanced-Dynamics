@@ -1035,9 +1035,11 @@ test('fill row: the UV batch reads FILL_ROW as 6 vec4, and both its shaders name
   const batch = wgslFillBatch(MeshUvFillBatch);
   const attrs = batch.geometry.attributes;
   const wgslAttrs = batch.shader.gpuProgram.attributeData;
-  const rows = Object.keys(attrs).filter((name) => name !== 'aTri');
-  // aTri only gives an instance its 3 vertices: the shaders take the corner from the vertex's index.
-  assert.equal(attrs.aTri.buffer.data.length, 6);
+  const rows = Object.keys(attrs);
+  // N-228: no aTri attribute: the index buffer [0, 1, 2] gives an instance its 3 vertices, and the shaders take the
+  // corner from the vertex's index.
+  assert.equal(attrs.aTri, undefined);
+  assert.deepEqual(Array.from(batch.geometry.indexBuffer.data), [0, 1, 2]);
   assert.equal(wgslAttrs.aTri, undefined);
   assert.deepEqual(rows.sort(), Object.keys(wgslAttrs).sort());
   assert.equal(rows.length, MESH_UV_FILL_FLOATS / 4);
