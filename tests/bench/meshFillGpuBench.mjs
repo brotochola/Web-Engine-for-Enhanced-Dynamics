@@ -18,14 +18,18 @@
  *   flat      no instances: the row's 3 corners as 3 vertices of 16 floats (drawArrays)
  *   indexed   no instances: each mesh's vertices once (16 floats) and its indices (drawElements)
  *   pull      no instances, no attributes: the rows in an RGBA32F texture, read by gl_VertexID (drawArrays)
+ *   col       E-452: ColliderFillBatch as shipped, the same triangles as its 18-float rows (no UVs, so no sun shift),
+ *             colliderFill.*.glsl
+ *   colVs     the collider batch as the --vs tree ships it
  * Every way but instMin runs meshUvFill.vert.glsl's body on the same row values, so the picture is the same; the page
- * checks it (a read back of each way's target against inst's).
+ * checks it (a read back of each way's target against inst's; colVs's against col's, which has no sun shift).
  *
  *   node tests/bench/meshFillGpuBench.mjs [--n 20000] [--zoom 0.5] [--ways inst,flat] [--scissor] [--draws 40]
  *     [--rounds 3] [--root <tree>] [--vs <tree>] [--output path]
- * --root: meshUvFill.*.glsl from that tree's src/shaders (default this one), to time another revision's shaders.
- * --vs: the way instVs, the batch as that tree ships it, timed in the same page as inst (the GPU's clock the same):
- *   `--ways inst,instVs --vs <base>` reads a shader change against its base.
+ * --root: meshUvFill.*.glsl and colliderFill.*.glsl from that tree's src/shaders (default this one), to time another
+ *   revision's shaders.
+ * --vs: the ways instVs and colVs, the batches as that tree ships them, timed in the same page as inst and col (the GPU's
+ *   clock the same): `--ways inst,instVs --vs <base>` reads a shader change against its base.
  * Headed Chrome on the real GPU (a headless one draws on a software path).
  */
 import fs from 'node:fs';
@@ -40,7 +44,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../
 const readShader = (root, name) => fs.readFileSync(path.join(root, 'src/shaders', name), 'utf8').replace(/\r\n?/g, '\n');
 
 /** Runs in the page. */
-async function benchInPage({ vert, frag, vertVs, fragVs, n, zoom, ways, scissor, draws, rounds, width, height }) {
+async function benchInPage({ vert, frag, vertVs, fragVs, colVert, colFrag, colVertVs, colFragVs, n, zoom, ways, scissor, draws, rounds, width, height }) {
   // ---- volumeStressScene's town (houseLevels, meshOf, the spawn order and its index budget) ----
   const SEED = 0x701;
   const WORLD_W = 6000;
@@ -310,6 +314,11 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
   const triBuf = buffer(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1]));
   const tri3Buf = buffer(gl.ARRAY_BUFFER, new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 0, 1, 0, 1, 1]));
   const rowBuf = buffer(gl.ARRAY_BUFFER, rows);
+  // col: the same rows as ColliderFillBatch's 18 floats (packColliderFill writes the first 18 of a UV row's 24 the same).
+  const COL_ROW = 18;
+  const colRows = new Float32Array(triCount * COL_ROW);
+  for (let k = 0; k < triCount; k++) colRows.set(rows.subarray(k * ROW, k * ROW + COL_ROW), k * COL_ROW);
+  const colBuf = buffer(gl.ARRAY_BUFFER, colRows);
   // flat: 3 vertices a row; indexed: each mesh's vertices once.
   const VERT = 16;
   function vertexRecord(out, o, x, y, u, row) {
@@ -356,6 +365,14 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
     attrib(p, 'aTri', triBuf, 2, 0, 0, 0);
     for (const [name, off] of Object.entries(OFFSETS)) attrib(p, name, rowBuf, TYPES[name] ? 1 : 2, STRIDE, off * 4, 1);
     for (let r = 0; r < 6; r++) attrib(p, `aRow${r}`, rowBuf, 4, STRIDE, r * 16, 1);
+  };
+  // The collider batch's attributes in either form: its 11 fields, or its 18 floats as 4 vec4 and a vec2 (E-452).
+  const colAttribs = (p) => {
+    attrib(p, 'aTri', triBuf, 2, 0, 0, 0);
+    for (const [name, off] of Object.entries(OFFSETS)) {
+      if (off < COL_ROW) attrib(p, name, colBuf, TYPES[name] ? 1 : 2, COL_ROW * 4, off * 4, 1);
+    }
+    for (let r = 0; r < 5; r++) attrib(p, `aRow${r}`, colBuf, r < 4 ? 4 : 2, COL_ROW * 4, r * 16, 1);
   };
   const WAYS = {
     inst: { vs: () => vert, fs: () => frag, bind: shippedAttribs, draw: () => gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, triCount) },
@@ -417,7 +434,19 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
       draw: () => gl.drawElements(gl.TRIANGLES, triCount * 3, gl.UNSIGNED_INT, 0),
     },
     pull: { vs: vPull, fs: () => frag, bind: () => {}, draw: () => gl.drawArrays(gl.TRIANGLES, 0, triCount * 3) },
+    col: { vs: () => colVert, fs: () => colFrag, bind: colAttribs, draw: () => gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, triCount) },
+    colVs: {
+      vs: () => {
+        if (!colVertVs) throw new Error('colVs needs --vs <tree>');
+        return colVertVs;
+      },
+      fs: () => colFragVs,
+      bind: colAttribs,
+      draw: () => gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, triCount),
+    },
   };
+  // The picture each way is checked against: the collider batch draws no sun shift.
+  const referenceOf = (name) => (name === 'col' || name === 'colVs' ? 'col' : 'inst');
 
   const built = {};
   const skipped = {};
@@ -510,7 +539,7 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
     gl.disable(gl.SCISSOR_TEST);
   }
 
-  // The picture each way leaves, against inst's: the target read back after one full draw.
+  // The picture each way leaves, against its reference's (referenceOf): the target read back after one full draw.
   const pixels = new Uint8Array(width * height * 4);
   function picture(name) {
     drawWay(name, null, false);
@@ -518,10 +547,12 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
     return pixels.slice();
   }
   const live = ways.filter((name) => built[name]);
-  const reference = built.inst ? picture('inst') : null;
+  const references = {};
+  for (const name of ['inst', 'col']) if (built[name]) references[name] = picture(name);
   const parity = {};
   for (const name of live) {
-    if (name === 'inst' || name === 'instMin' || !reference) continue;
+    const reference = references[referenceOf(name)];
+    if (name === 'inst' || name === 'instMin' || name === 'col' || !reference) continue;
     const got = picture(name);
     let differ = 0;
     let maxDelta = 0;
@@ -535,7 +566,8 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
     parity[name] = { bytesDiffering: differ, maxDelta };
   }
   let covered = 0;
-  if (reference) for (let i = 3; i < reference.length; i += 4) if (reference[i]) covered++;
+  const shown = references.inst || references.col || null;
+  if (shown) for (let i = 3; i < shown.length; i += 4) if (shown[i]) covered++;
 
   // Warm the GPU's clocks with a second of drawing, then rounds of each way, interleaved.
   const t0 = performance.now();
@@ -582,6 +614,10 @@ export async function runMeshFillGpuBench(opts) {
       frag: readShader(opts.root, 'meshUvFill.frag.glsl'),
       vertVs: opts.vs ? readShader(opts.vs, 'meshUvFill.vert.glsl') : null,
       fragVs: opts.vs ? readShader(opts.vs, 'meshUvFill.frag.glsl') : null,
+      colVert: readShader(opts.root, 'colliderFill.vert.glsl'),
+      colFrag: readShader(opts.root, 'colliderFill.frag.glsl'),
+      colVertVs: opts.vs ? readShader(opts.vs, 'colliderFill.vert.glsl') : null,
+      colFragVs: opts.vs ? readShader(opts.vs, 'colliderFill.frag.glsl') : null,
       n: opts.n,
       zoom: opts.zoom,
       ways: opts.ways,
@@ -624,7 +660,7 @@ async function main() {
   const opts = {
     n: Number(args.n ?? 20000),
     zoom: Number(args.zoom ?? 0.5),
-    ways: String(args.ways ?? 'inst,instMin,instVec4,instVec4Id,instVec4Lean,inst2,flat,indexed,pull').split(',').filter(Boolean),
+    ways: String(args.ways ?? 'inst,instMin,instVec4,instVec4Id,instVec4Lean,inst2,flat,indexed,pull,col').split(',').filter(Boolean),
     scissor: !!args.scissor,
     draws: Number(args.draws ?? 40),
     rounds: Number(args.rounds ?? 3),
@@ -646,7 +682,10 @@ async function main() {
     console.log(`  ${row.medianMs.toFixed(3).padStart(7)} ms (min ${row.minMs.toFixed(3)}, ${row.draws} draws)  ${row.key}`);
   }
   for (const [name, why] of Object.entries(r.skipped || {})) console.log(`  skipped ${name}: ${why.split('\n')[0]}`);
-  for (const [name, p] of Object.entries(r.parity)) console.log(`  parity ${name}: ${p.bytesDiffering} bytes differ from inst (max ${p.maxDelta})`);
+  for (const [name, p] of Object.entries(r.parity)) {
+    const ref = name === 'colVs' ? 'col' : 'inst';
+    console.log(`  parity ${name}: ${p.bytesDiffering} bytes differ from ${ref} (max ${p.maxDelta})`);
+  }
   if (args.output) fs.writeFileSync(String(args.output), JSON.stringify({ opts, ...r, clocks }, null, 1));
 }
 
