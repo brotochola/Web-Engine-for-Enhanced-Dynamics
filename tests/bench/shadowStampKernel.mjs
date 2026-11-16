@@ -2,6 +2,8 @@
  * The shadow stamp kernel's setup (E-76 W23, E-114), browser-safe so Chrome can run it (chromeKernel.mjs):
  * - setupStamp: the Predator fixture as the stamp sees it, the 48 lights nearest the caster centroid,
  *   maxShadowsPerLight 512, maxShadowsPerEntity 3, casters packed as GPU_CASTER_FLOATS rows;
+ * - setupLampStamp: lampShadowStressScene's lamps and walkers (128 and 6000 by default), maxShadowsPerLight 15: each lamp
+ *   keeps 15 of hundreds of candidates;
  * - createStampKernel: every array of that spec moved into one shared WebAssembly.Memory with the kernel's table,
  *   and the product wrapper around stamp_light_range;
  * - run: chromeKernel.mjs's entry, the shipped kernel against stampLightRange in alternating rounds.
@@ -25,6 +27,7 @@ import { stampLightRange } from '../reference/shadowStamp.mjs';
 import { STAMP_SLOTS, writeStampLights } from '../../src/render/shadowStampClient.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { layoutRegions, NULL_GUARD_BYTES, STAMP_LIGHT_DOUBLES } from '../../src/util/wasmMemoryMap.js';
+import { mulberry32 } from './benchMath.js';
 import { parsePredatorFixture } from './predatorFixtureParse.mjs';
 
 const SLOT = Object.fromEntries(STAMP_SLOTS.map((name, k) => [name, k]));
@@ -113,9 +116,99 @@ export function setupStamp(fx, opts = {}) {
   return { spec, sunN, lights, candidates, maxPL };
 }
 
+/**
+ * lampShadowStressScene's frame as the stamp sees it, the shape setupStamp returns: its lamps on a jittered grid over
+ * 2400 x 1400 px (radius 300 to 380 px, their shadows' range; point lights at full shade) and its walkers where they
+ * stand after their first step, from the scene's own seed and draws. maxShadowsPerLight 15 and maxShadowsPerEntity 0 by
+ * default (the scene's: lighting's defaults, and no adaptive budget under lampShadows 'map'), so each lamp keeps 15
+ * of the ~570 walkers in its range: the selection with m >> lim.
+ * @param {{ lamps?: number, walkers?: number, maxPerLight?: number, maxPerEntity?: number, stampCap?: number }} [opts]
+ */
+export function setupLampStamp(opts = {}) {
+  const W = 2400;
+  const H = 1400;
+  const nLamps = Math.max(1, opts.lamps ?? 128);
+  const nWalkers = Math.max(1, opts.walkers ?? 6000);
+  const rng = mulberry32(0x1a3b);
+  const cols = Math.ceil(Math.sqrt(nLamps * (W / H)));
+  const rows = Math.ceil(nLamps / cols);
+  const lights = [];
+  for (let i = 0; i < nLamps; i++) {
+    const c = i % cols;
+    const r = Math.floor(i / cols);
+    const x = ((c + 0.5) / cols) * W + (rng() - 0.5) * 60;
+    const y = ((r + 0.5) / rows) * H + (rng() - 0.5) * 60;
+    const radius = 300 + rng() * 80;
+    rng(); // the sway's phase
+    lights.push({ id: i, x, y, intensity: (radius * radius) / 100, rangeSq: radius * radius, maxShadows: 0 });
+  }
+  const sf = GPU_CASTER_FLOATS;
+  const sun = new Float32Array(nWalkers * sf);
+  for (let c = 0; c < nWalkers; c++) {
+    const cx = rng() * W;
+    const cy = rng() * H;
+    const loop = 20 + rng() * 60;
+    rng(); // speed
+    const phase = rng() * 6.283;
+    rng(); // scale
+    sun[c * sf] = cx + Math.cos(phase) * loop;
+    sun[c * sf + 1] = cy + Math.sin(phase) * loop * 0.6;
+    sun[c * sf + 2] = 1;
+    sun[c * sf + 3] = 1;
+  }
+  const maxPL = opts.maxPerLight ?? 15;
+  const maxPE = opts.maxPerEntity ?? 0;
+  const stampCap = opts.stampCap ?? 100000;
+  const spec = {
+    sun,
+    sunN: nWalkers,
+    sunFloats: sf,
+    lights,
+    lightBegin: 0,
+    lightEnd: lights.length,
+    lightStride: 1,
+    maxPerLight: maxPL,
+    maxPerEntity: maxPE,
+    used: new Uint8Array(nWalkers),
+    tmpIdx: new Uint32Array(nWalkers),
+    dist: new Float32Array(nWalkers),
+    order: new Uint32Array(nWalkers),
+    keepIdx: new Uint32Array(nWalkers),
+    gridCounts: new Int32Array(128 * 128),
+    gridStarts: new Int32Array(128 * 128 + 1),
+    gridItems: new Uint32Array(nWalkers),
+    stamp: new Float32Array(stampCap * sf),
+    stampFloats: sf,
+    lightFloat: GPU_CASTER_LIGHT_FLOAT,
+    stampCap,
+    stampBase: 0,
+    stampLightIdx: new Uint16Array(stampCap),
+    lightVec: new Float32Array(4),
+  };
+  const candidates = lights.map((L) => {
+    const ids = [];
+    const d = [];
+    for (let c = 0; c < nWalkers; c++) {
+      const dx = sun[c * sf] - L.x;
+      const dy = sun[c * sf + 1] - L.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 <= L.rangeSq) {
+        ids.push(c);
+        d.push(d2);
+      }
+    }
+    return { idx: Uint32Array.from(ids), dist: Float32Array.from(d) };
+  });
+  return { spec, sunN: nWalkers, lights, candidates, maxPL };
+}
+
 /** The fixture's spec with every array moved into one shared memory, and the shipped kernel (`kernelUrl`) on it. */
 export async function createStampKernel(fx, opts, kernelUrl) {
-  const s = setupStamp(fx, opts);
+  return createStampKernelFor(setupStamp(fx, opts), kernelUrl);
+}
+
+/** createStampKernel for a setup already made (setupStamp's or setupLampStamp's). */
+export async function createStampKernelFor(s, kernelUrl) {
   const spec = s.spec;
   const maxPE = spec.maxPerEntity | 0;
   const arrays = ['sun', 'used', 'tmpIdx', 'dist', 'order', 'keepIdx', 'gridCounts', 'gridStarts', 'gridItems', 'stamp', 'stampLightIdx'];
