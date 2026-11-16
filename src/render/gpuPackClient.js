@@ -19,12 +19,58 @@ export const GPU_PACK_COLUMNS = [
 ];
 
 /**
+ * E-372: the sun frames' region (renderQueueMemory.js `keyedSun`), where the keyed caster scan reads what it needs to
+ * write each keyed caster row's sun frame: a block of KEYED_SUN_BLOCK_WORDS u32, the sheet table (a descriptor of
+ * KEYED_SUN_SHEET_WORDS u32 a sheet id), the list of the rows the scan leaves to the JS (KEYED_SUN_LIST_CAP pairs:
+ * keyed row, entity) and the pool the descriptors' frames are copied into (i32).
+ */
+export const KEYED_SUN_BLOCK_WORDS = 16;
+export const KEYED_SUN_SHEETS = 256;
+export const KEYED_SUN_SHEET_WORDS = 8;
+export const KEYED_SUN_LIST_CAP = 8192;
+export const KEYED_SUN_POOL_WORDS = 65536;
+
+/** E-372: the sun frames' region's bytes. */
+export function keyedSunRegionBytes() {
+  const tables = KEYED_SUN_BLOCK_WORDS + KEYED_SUN_SHEETS * KEYED_SUN_SHEET_WORDS;
+  return (tables + 2 * KEYED_SUN_LIST_CAP + KEYED_SUN_POOL_WORDS) * 4;
+}
+
+/**
+ * E-372: views of the sun frames' region at `byte` (null for none, 0 or less), and what its sheet table holds:
+ * preRenderWorker.js syncKeyedSunTables writes it (`tables`, and by sheet id the frames it copied and their turn).
+ * @param {ArrayBufferLike} buffer
+ * @param {number} byte
+ */
+export function keyedSunViews(buffer, byte) {
+  if (!(byte > 0)) return null;
+  const sheetsByte = byte + KEYED_SUN_BLOCK_WORDS * 4;
+  const listByte = sheetsByte + KEYED_SUN_SHEETS * KEYED_SUN_SHEET_WORDS * 4;
+  const poolByte = listByte + 2 * KEYED_SUN_LIST_CAP * 4;
+  return {
+    byte,
+    block: new Uint32Array(buffer, byte, KEYED_SUN_BLOCK_WORDS),
+    sheets: new Uint32Array(buffer, sheetsByte, KEYED_SUN_SHEETS * KEYED_SUN_SHEET_WORDS),
+    sheetsByte,
+    list: new Uint32Array(buffer, listByte, 2 * KEYED_SUN_LIST_CAP),
+    listByte,
+    listCap: KEYED_SUN_LIST_CAP,
+    pool: new Int32Array(buffer, poolByte, KEYED_SUN_POOL_WORDS),
+    poolByte,
+    tables: null,
+    frameOf: new Array(KEYED_SUN_SHEETS).fill(null),
+    frameAt: new Array(KEYED_SUN_SHEETS).fill(null),
+    frameShift: new Int32Array(KEYED_SUN_SHEETS).fill(-2),
+  };
+}
+
+/**
  * Bind the kernel to the render-queue memory.
  * @param {WebAssembly.Memory} memory
  * @param {{ tableByte: number, tableSlots: number, indexByte: number, indexCap: number, particlesByte: number }} layout
  *   createRenderQueueMemory's layout: room for `tableSlots` column tables, an index scratch of
  *   `indexCap` u32, the scatter's inverse (`inverseByte`, one u32 per queue row; 0 for none) and one
- *   u32 for the particle count
+ *   u32 for the particle count; E-372: the sun frames' region (`keyedSunByte`, -1 or none: no region)
  */
 /** The doubles the general pack reads (wasm/gpuPack.c pack_general): flags, then the camera, snap and type values. */
 const GENERAL_PARAMS = 16;
@@ -71,6 +117,8 @@ export async function bindGpuPack(memory, layout) {
     indexByte: layout.indexByte,
     indexCap: layout.indexCap,
     particlesByte: layout.particlesByte,
+    // E-372: the sun frames' region (null: the keyed caster scan writes no frame).
+    keyedSun: keyedSunViews(memory.buffer, layout.keyedSunByte | 0),
   };
 }
 

@@ -8,9 +8,12 @@
 // W22: with a sway spec, the particle worker's decoration sway arrays.
 // W10: with a painter spec, the painter sort's state of the worker that sorts (pre-render's, Pixi's, or both).
 // W27: with emit.adobe, the AdobeAnimComponent block, the collector's pose stash and the Adobe assets' tables.
+// E-372: with emit.directionalBytes, the DirectionalSprite block and pre-render's sun frames' region (withSunFrameRegions).
 
-import { EMIT_DECO_KEYED_BYTES, painterStateLayout, renderQueueMemoryRegions, SWAY_LIST_CAP } from './wasmMemoryMap.js';
-import { GPU_PACK_COLUMNS } from '../render/gpuPackClient.js';
+import {
+  alignToLine, EMIT_DECO_KEYED_BYTES, painterStateLayout, renderQueueMemoryRegions, SWAY_LIST_CAP, WASM_PAGE_BYTES,
+} from './wasmMemoryMap.js';
+import { GPU_PACK_COLUMNS, keyedSunRegionBytes } from '../render/gpuPackClient.js';
 import { gpuIndexedStaticRows } from '../render/gpuQueueLayout.js';
 
 // The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
@@ -20,14 +23,42 @@ const WASM_MAX_PAGES = 32768;
 export const GPU_PACK_TABLE_SLOTS = 4;
 
 /**
+ * E-372: with emit.directionalBytes (the scene has DirectionalSprite), renderQueueMemoryRegions' regions and after them
+ * DirectionalSprite's block (Component.initializeArrays at the region's byte, in every worker and on the main thread, as
+ * the emit's component blocks) and pre-render's sun frames' region (gpuPackClient.js keyedSunViews), where the keyed caster
+ * scan reads the DirectionalSprite columns and the sun frames' tables. Laid past the others, whose places they leave as
+ * they are, each on a line as layoutRegions lays them.
+ * @param {{ regions: Record<string, { byte: number, bytes: number, owner: string }>, bytes: number, pages: number }} map
+ *   renderQueueMemoryRegions' layout (its bytes end on a line)
+ */
+function withSunFrameRegions(map, emit) {
+  const bytes = emit ? emit.directionalBytes | 0 : 0;
+  if (bytes <= 0) return map;
+  const directionalByte = alignToLine(map.bytes);
+  const sunByte = alignToLine(directionalByte + bytes);
+  const sunBytes = keyedSunRegionBytes();
+  const end = alignToLine(sunByte + sunBytes);
+  return {
+    regions: {
+      ...map.regions,
+      directionalSprite: { byte: directionalByte, bytes, owner: 'every worker (DirectionalSprite)' },
+      keyedSun: { byte: sunByte, bytes: sunBytes, owner: 'pre-render' },
+    },
+    bytes: end,
+    pages: Math.max(1, Math.ceil(end / WASM_PAGE_BYTES)),
+  };
+}
+
+/**
  * @param {number} maxItems the render queue's rows
  * @param {number} queueBytes computeBufferSize(maxItems)
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
  * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number,
  *   lightBytes?: number, particleBytes?: number, liquidFun?: null | { maxCount: number, renderBytes: number },
  *   customLayers?: Array<{ layerId: number, maxItems: number, queueBytes: number, ySort?: boolean }>, bulletBytes?: number,
- *   adobe?: null | { animBytes: number, tableBytes: number } }} [emit]
- *   the emit's regions too (renderQueueMemoryRegions); a component with 0 bytes gets no block (byte -1)
+ *   adobe?: null | { animBytes: number, tableBytes: number }, directionalBytes?: number }} [emit]
+ *   the emit's regions too (renderQueueMemoryRegions; DirectionalSprite's and the sun frames', withSunFrameRegions); a
+ *   component with 0 bytes gets no block (byte -1)
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number, cookies?: number, cookieBytes?: number }} [stamp]
  *   the stamp's regions too, with the light cookies' queue
  * @param {null | { decorations: number, buckets: number }} [sway] the sway's regions too (with emit's decorations)
@@ -49,7 +80,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
   const pixiFloats = pixiPack === true ? 15 : pixiPack | 0;
   const pixiRows = pixiFloats > 0 ? n : 0;
   const pixiExtra = pixiExtraSpec(emit, n);
-  const map = renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect, painter, pixiFloats || 15, pixiExtra);
+  const map = withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect, painter, pixiFloats || 15, pixiExtra), emit);
   const base = place ? place.baseByte | 0 : 0;
   if (place) {
     if ((base & 63) !== 0 || base + map.bytes > place.memory.buffer.byteLength) return null;
@@ -106,6 +137,8 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         pixiKeyShadowByte: keyed && r.pixiKeyShadow && r.pixiKeyShadow.bytes > 0 ? r.pixiKeyShadow.byte : -1,
         // E-189: the keyed frames' texture updates, -1 without keyed frames.
         pixiKeyTexUpdatesByte: keyed && r.pixiKeyTexUpdates && r.pixiKeyTexUpdates.bytes > 0 ? r.pixiKeyTexUpdates.byte : -1,
+        // E-372: pre-render's sun frames' region (gpuPackClient.js keyedSunViews), -1 without DirectionalSprite.
+        keyedSunByte: r.keyedSun ? r.keyedSun.byte : -1,
         // W10: each sorting worker's painter state (null: that worker sorts in JS on arrays of its own).
         preRenderPainter: painter?.preRender ? painterStateLayout(r, 'preRenderPainter', n) : null,
         pixiPainter: painter?.pixi ? painterStateLayout(r, 'pixiPainter', n) : null,
@@ -153,6 +186,8 @@ function emitLayout(r, entities, rows, customLayers) {
     lightEmitterByte: block(r.lightEmitter),
     // BulletComponent here when the bullet tick's block does not hold it, -1 otherwise.
     bulletComponentByte: block(r.emitBullets),
+    // E-372: DirectionalSprite here (withSunFrameRegions), -1 without it.
+    directionalSpriteByte: r.directionalSprite ? block(r.directionalSprite) : -1,
     // The particle memory's place (createParticleMemory), -1 without particles.
     particleMemoryByte: block(r.particleMemory),
     particleMemoryBytes: r.particleMemory.bytes,
@@ -264,7 +299,7 @@ export function renderQueueMemoryBytes(maxItems, queueBytes, gpuQueueBytes, emit
   if (n <= 0) return 0;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
   const pixiFloats = pixiPack === true ? 15 : pixiPack | 0;
-  return renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiFloats > 0 ? n : 0, collect, painter, pixiFloats || 15, pixiExtraSpec(emit, n)).bytes;
+  return withSunFrameRegions(renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiFloats > 0 ? n : 0, collect, painter, pixiFloats || 15, pixiExtraSpec(emit, n)), emit).bytes;
 }
 
 function stampLayout(r, stamp) {
