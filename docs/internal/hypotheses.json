@@ -11418,7 +11418,8 @@
         "R-1173",
         "R-1174",
         "R-1175",
-        "R-1198"
+        "R-1198",
+        "R-1206"
       ]
     },
     {
@@ -15676,7 +15677,8 @@
         "R-1172",
         "R-1182",
         "R-1183",
-        "R-1185"
+        "R-1185",
+        "R-1206"
       ]
     },
     {
@@ -17902,7 +17904,8 @@
         "R-1175",
         "R-1181",
         "R-1193",
-        "R-1205"
+        "R-1205",
+        "R-1206"
       ]
     },
     {
@@ -18000,7 +18003,8 @@
       ],
       "records": [
         "R-1173",
-        "R-1196"
+        "R-1196",
+        "R-1206"
       ]
     },
     {
@@ -18236,7 +18240,8 @@
         "R-1190",
         "R-1191",
         "R-1195",
-        "R-1205"
+        "R-1205",
+        "R-1206"
       ]
     },
     {
@@ -18547,7 +18552,8 @@
       "records": [
         "R-1181",
         "R-1190",
-        "R-1200"
+        "R-1200",
+        "R-1206"
       ]
     },
     {
@@ -18798,7 +18804,8 @@
       "records": [
         "R-1187",
         "R-1190",
-        "R-1197"
+        "R-1197",
+        "R-1206"
       ]
     },
     {
@@ -18859,7 +18866,8 @@
         "R-1187",
         "R-1190",
         "R-1195",
-        "R-1205"
+        "R-1205",
+        "R-1206"
       ]
     },
     {
@@ -19078,7 +19086,8 @@
       ],
       "records": [
         "R-1189",
-        "R-1202"
+        "R-1202",
+        "R-1206"
       ]
     },
     {
@@ -31289,6 +31298,15 @@
         "05eaeb82",
         "a3570ad4"
       ]
+    },
+    {
+      "id": "R-1206",
+      "date": "2026-11-16",
+      "time": "10:11",
+      "timeFrom": "recorded",
+      "title": "The night's total since the push: Predator crowd 2.5 light3d night draws 60 fps against 46.5 (+29 %, 4/4); plain crowd 2.5 pre-render -11.7 % (4/4); unreachable workers move with the frames drawn",
+      "verdict": "note",
+      "text": "**The night's total since the push, measured in one sitting each: Predator crowd 2.5 with light3d by night now draws 60 frames a second against 46.5 (+29 %, 4/4), and plain Predator crowd 2.5's pre-render is -11.7 % (4/4).** The workers that nothing merged since the push can reach moved too: spatial and physics +11 to 12 % with light3d, logic +5.3 % plain. R-1207's A/A reads that noise.\n\nrunPredatorAbab --pool, 4 pairs, headed, AC power, 0b0ec824 (main as pushed at 05:29) against 6bfeba44 (main now), Pixi as owner, 2026-11-16 (the log):\n\n| worker | crowd=2.5 zoom=0.216 light3d=1 hour=22, 10:01 to 10:06 | crowd=2.5 zoom=0.216, 10:06 to 10:11 |\n| --- | --- | --- |\n| drawn | 46.5 -> 60.0 fps (+29.0 %, 0/4 fewer) | 60.0 -> 60.0 |\n| pre-render | 10.377 -> 10.196 ms (-1.7 %; -12.8 % against the others, 4/4) | 7.392 -> 6.399 ms (-11.7 %, 0/4 worse; -13.0 % against the others) |\n| renderer (Pixi) | 5.207 -> 5.832 (under the floor: it now draws every tick) | 3.149 -> 3.300 (under the floor) |\n| spatial | 10.099 -> 11.220 (+11.2 %, 3/4) | 10.300 -> 10.245 (-0.5 %) |\n| physics | 13.100 -> 14.603 (+11.9 %, 3/4) | 13.508 -> 13.524 (+0.4 %) |\n| logic | 5.929 -> 6.630 (under the floor) | 6.111 -> 6.436 (+5.3 %, 3/4) |\n\nWhat it holds, merged since the push:\n- the integration (7daf6d14): E-372's sun frames in the keyed scan, E-358/E-359's stamp rows, the keyed pack's exports, E-425's fused mesh poses;\n- the light tiles (E-205);\n- the lamp and full-row frames in wasm (E-393, E-394);\n- DX-DEPTH's cheaper edge pass (E-429, E-430);\n- the volume mesh fill (E-419);\n- pre-render's G-buffer words in the pack (E-444);\n- the Pixi GPU batch (E-389, E-404, E-431, E-432);\n- N-222 and N-228.\n\nNone of it changes logic's, spatial's or physics' code.\n\nWith light3d the GPU no longer drops frames (its GPU frame went from about 14 to about 10 ms: R-1198), so Pixi and Chrome's GPU process work every tick on the same cores. The unreachable workers' rise comes with that, as in the tiles' gates (R-1198: +7 to 9 % with 40 % more frames drawn, nothing with the frames equal). Plain Predator's logic +5.3 % has no code behind it; the A/A says whether it is noise."
     }
   ],
   "leads": [
