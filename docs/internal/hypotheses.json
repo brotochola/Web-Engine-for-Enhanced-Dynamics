@@ -19865,73 +19865,77 @@
     {
       "id": "E-471",
       "title": "rebuildOwnedRows re-checks its typed arrays every entity: the loop is too big to peel, so each array a local took from a null-started field or a Grid static gets a map check and a pointer decode at its first use, every entity (14 map checks, 11 Smi checks, Grid.maxEntitiesPerCell re-read, countNoBody a generic ToBoolean, the cell range stored as Smis every entity)",
-      "status": "open",
+      "status": "kept",
       "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
       "date": "2026-11-16",
       "area": "spatial",
       "kind": "speed",
-      "result": "rebuildOwnedRowsMicrobench (boids' grid), variant `checked` (maps known before the loops, | 0 on the Grid integers, maxEntitiesPerCell hoisted, countNoBody boolean, the cell range in locals), bit-identical: points (boids) Node 2.058 -> 1.840 ms (-10.6 %, 4/6), d8 2.187 -> 1.970 (-9.9 %, 5/6); circles d8 -16.4 % (4/4), Node -9.0 %; boxes d8 -10.0 % (4/4), Node +1.5 %. About 2 to 3 % of the spatial worker in boids and Predator.",
+      "result": "Kept 2026-11-16 (R-1227, d8920938): kernel points d8 -14.2 %, Node -8.3 %; with E-472 boids spatial 7.925 -> 7.723 ms (-5.5 %, 0/4 worse). rebuildOwnedRowsMicrobench (boids' grid), variant `checked` (maps known before the loops, | 0 on the Grid integers, maxEntitiesPerCell hoisted, countNoBody boolean, the cell range in locals), bit-identical: points (boids) Node 2.058 -> 1.840 ms (-10.6 %, 4/6), d8 2.187 -> 1.970 (-9.9 %, 5/6); circles d8 -16.4 % (4/4), Node -9.0 %; boxes d8 -10.0 % (4/4), Node +1.5 %. About 2 to 3 % of the spatial worker in boids and Predator.",
       "next": "Build `checked` into spatialWorker.js (empty typed arrays of their class at construction where the class is known; EntityIdArray can be 16 or 32 bits); the kernel, then boids' and Predator's spatial STEP_MS.",
       "refs": [],
       "aliases": [
         "rebuildOwnedRows map checks"
       ],
       "records": [
-        "R-1222"
+        "R-1222",
+        "R-1227"
       ]
     },
     {
       "id": "E-472",
       "title": "A point entity whose single cell row belongs to the other spatial worker can skip its cell range in rebuildOwnedRows (posY * invCellSize | 0, not the fround home row): on top of the map-check fix, -16 to -19 % of the rebuild on boids",
-      "status": "open",
+      "status": "kept",
       "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
       "date": "2026-11-16",
       "area": "spatial",
       "kind": "speed",
-      "result": "rebuildOwnedRowsMicrobench variant `pointSkip` (with `checked`), bit-identical: boids Node 2.058 -> 1.735 ms (-15.7 %, 6/6), d8 2.187 -> 1.766 (-19.2 %, 6/6); about 5 to 6 % of the spatial worker in boids.",
+      "result": "Kept 2026-11-16 (R-1227, 2e43e6dd): over E-471 points d8 -9.3 %, Node -7.6 %; with E-471 boids spatial -5.5 % (0/4 worse). rebuildOwnedRowsMicrobench variant `pointSkip` (with `checked`), bit-identical: boids Node 2.058 -> 1.735 ms (-15.7 %, 6/6), d8 2.187 -> 1.766 (-19.2 %, 6/6); about 5 to 6 % of the spatial worker in boids.",
       "next": "After the map-check fix, the point skip; the kernel and boids' spatial STEP_MS (with spatialWorkers 2 where rows are split).",
       "refs": [],
       "aliases": [
         "rebuildOwnedRows point skip"
       ],
       "records": [
-        "R-1222"
+        "R-1222",
+        "R-1227"
       ]
     },
     {
       "id": "E-473",
       "title": "N-215's SETTER_ARGS is an on-heap Float32Array, so every setter access loads and decodes its length, base and external pointer and bounds-checks; a Float32Array on a SharedArrayBuffer gets an immediate address and no bounds check in d8",
-      "status": "open",
+      "status": "kept",
       "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
       "date": "2026-11-16",
       "area": "logic",
       "kind": "speed",
-      "result": "setterMicrobench moving, 4096 walkers: d8 all inlined -8.6 %, budget spent -7.7 %; Node +3.0 % / -6.4 %. With E-474: -22 to -33 % in d8.",
+      "result": "Kept 2026-11-16 (R-1227, de0a1238): setter frame d8 -4.0 % / -7.4 % (budget spent); with E-474 keyedPack logic 11.648 -> 10.296 ms (-13.2 %, 0/4 worse). setterMicrobench moving, 4096 walkers: d8 all inlined -8.6 %, budget spent -7.7 %; Node +3.0 % / -6.4 %. With E-474: -22 to -33 % in d8.",
       "next": "SETTER_ARGS on a SharedArrayBuffer (or a view whose backing store is off-heap); d8 16 and Chrome's logic per function (keyedPack).",
       "refs": [],
       "aliases": [
         "setter args off heap"
       ],
       "records": [
-        "R-1222"
+        "R-1222",
+        "R-1227"
       ]
     },
     {
       "id": "E-474",
       "title": "gameObject.js reads Transform, staticSceneryChangedAt and isCommandRingBound through import cells: setXFromArgs does 6 cell loads, 6 hole checks, 2 map checks and 2 pointer decodes; module-const aliases (allowed: those exporters are outside gameObject.js's 22-module import cycle, importAliases.test.js) cut it to 2 cell loads and 0 decodes, 258 -> 178 instructions",
-      "status": "open",
+      "status": "kept",
       "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
       "date": "2026-11-16",
       "area": "logic",
       "kind": "speed",
-      "result": "setterMicrobench moving: aliased imports d8 -30.2 % (all inlined) and -10.2 % (budget spent, a game tick's shape); Node -13.5 % / -1.2 %; with E-473 d8 -32.6 % / -22.2 %; on top of E-459 d8 -33.1 % / -25.1 %. setXFromArgs was about 6.5 % of logic in keyedPack (R-1203): about 1 to 2 % of logic.",
+      "result": "Kept 2026-11-16 (R-1227, bd83d3db): over E-473 setter frame d8 -20.0 % / -12.9 %; with E-473 keyedPack logic -13.2 % (0/4 worse), the setters group 617-650 -> 241-275 ms self. setterMicrobench moving: aliased imports d8 -30.2 % (all inlined) and -10.2 % (budget spent, a game tick's shape); Node -13.5 % / -1.2 %; with E-473 d8 -32.6 % / -22.2 %; on top of E-459 d8 -33.1 % / -25.1 %. setXFromArgs was about 6.5 % of logic in keyedPack (R-1203): about 1 to 2 % of logic.",
       "next": "Alias the three as module consts (RigidBody, SpriteRenderer, MeshRenderer are inside the cycle: not those); judged in d8 16 or Chrome (HOW_WE_MEASURE: Node 22 shows import forms less).",
       "refs": [],
       "aliases": [
         "gameObject import aliases"
       ],
       "records": [
-        "R-1222"
+        "R-1222",
+        "R-1227"
       ]
     },
     {
@@ -32101,6 +32105,22 @@
       "title": "Every frame's slots over 10 s: spatial's tail is periodic (32-frame cycle, 3 to 46 ms, lag-32 autocorrelation 0.68) from E-200's typed refresh phases (E-476); physics' tail is not periodic (contention)",
       "verdict": "note",
       "text": "**Every frame of each worker over 10 s at Predator crowd 2.5 by night: spatial's tail is periodic (a 32-frame cycle, lag-32 autocorrelation 0.68), physics' is not.** runFramePhase with its new samples.json (9ebebff7), 12 s warm-up, 10 s, 600 frames, through the bench lock, the file written 18:54.\n\n| worker | p50 | p90 | p99 | max | strongest autocorrelation (lag: r) |\n| --- | --- | --- | --- | --- | --- |\n| spatial0 | 8.7 | 16.2 | 37.9 | 47.0 | 32: 0.68, 31: 0.45, 33: 0.44 |\n| physics | 14.0 | 15.1 | 16.6 | 23.5 | 1: 0.27, 2: 0.24 |\n| preRender | 8.6 | 10.3 | 11.9 | 14.8 | 1: 0.20 |\n| logic0 | 6.9 | 8.5 | 9.5 | 12.7 | 1: 0.11 |\n| renderer | 5.8 | 6.8 | 13.1 | 15.2 | 1 to 4: 0.59 to 0.42 (slow drift) |\n\nSpatial a frame, rows of 32 frames (ms): 15 14 16 14 7 8 8 7 3 3 4 3 7 9 9 10 13 14 15 13 . 28 18 3 4 4 4 3 5 5 12 11, and every row the same shape, with 29 to 46 ms around frames 20 to 22. Cause, from the code: E-200's typed refresh (spatialWorker.js _setupTypedNeighborStagger) gives a class only T phases inside its refresh period P = ceil(neighborTickInterval / T) x T, so the class's whole refresh lands on T frames of every P. Filed as E-476 (spread each slot over the period's P / T tick occurrences).\n\nPhysics' tail is not periodic: contention (the cores, R-1223, and the CSwitch capture's CPU skew), not scheduled work."
+    },
+    {
+      "id": "R-1227",
+      "date": "2026-11-16",
+      "time": "19:21",
+      "timeFrom": "recorded",
+      "title": "E-471..E-474 kept: rebuildOwnedRows checked and point skip (boids spatial -5.5 %), setters' args off heap and import aliases (keyedPack logic -13.2 %); Predator crowd 2.5 neutral",
+      "verdict": "kept",
+      "text": "**E-471, E-472, E-473 and E-474 kept: spatial's rebuildOwnedRows with its arrays checked before the loop and a point skip (boids spatial -5.5 %, 0/4 worse), and the setters' args off heap with the gameObject import aliases (keyedPack logic -13.2 %, 0/4 worse); Predator crowd 2.5 NEUTRAL with no worker worse.** Branch opt/d8-fixes, merged 89f5cd71 (node 2904/2904, demos 101/101).\n\nCommits: dbe6ca84 (boidsScene ?boids=<n>, a load knob: the default 40 000 ran spatial at about 5.1 ms, under the floor), 838d22da (rebuildOwnedRowsGolden: the full rebuild's bytes, 16- and 32-bit ids, every shape, NaN offsets, 364 and 408 points whose float32 home row differs from their cell's row, cells at their cap; hashes from before E-471), d8920938 (E-471), 2e43e6dd (E-472: the skip keyed on posY * invCellSize | 0, not the fround home row, which the golden catches), 708607dd (the kernel's control copy regenerated), de0a1238 (E-473: SETTER_ARGS on a SharedArrayBuffer, an ArrayBuffer on non-isolated pages), bd83d3db (E-474).\n\nKernels (2026-11-16 18:12 to 18:14, trees alternated, identical checksums): rebuildOwnedRowsMicrobench points Node 2.038 -> 1.843 ms (E-471, -8.3 %, 6/6), d8 2.195 -> 1.901 (-14.2 %, 6/6); with E-472 Node -15.8 %, d8 -20.4 %; circles E-471 -9.2 / -10.7 % (E-472 +4.2 % Node, +0.1 % d8: a compare where there are no points); boxes -6.2 / -8.3 %. setterMicrobench moving, 4096 walkers, one process a run, 5 rounds: E-473 d8 -4.0 % all inlined (5/5), -7.4 % budget spent (4/5); E-474 over it d8 -20.0 % (5/5) and -12.9 % (5/5), Node -16.1 % / -2.0 %; both d8 -21.6 % / -18.6 %.\n\nScenes (4 pairs each, headed, AC power): boids ?boids=55000, spatial owner, 19:09 to 19:16: spatial 7.925 -> 7.723 ms, paired -5.5 % (pair deltas -0.3, -21.2, -4.9, -6.2; pair 2 moved every worker 15 to 31 %, drift), load keys within 5 %, KEPT. keyedPackStressScene n=400000 moving=1 churn=0, logic owner, 19:16 to 19:21: logic 11.648 -> 10.296 ms, paired -13.2 % (-16.1, -3.9, -19.5, -10.3), pre-render +1.3 %, the renderer +8.5 % under its floor (3.86 -> 4.14 ms, not judged), KEPT. keyedPack's CPU per function (n=300000 moving=0.5, alternated twice, 18:16 to 18:19): the setters' group self time 617 and 650 -> 241 and 275 ms in the window; logic busy 377 and 382 -> 295 and 337 ms/s. Predator crowd 2.5, all four against c08399ab, 18:20 to 18:26: NEUTRAL, logic -1.5 %, spatial -2.3 %, physics -0.2 %, pre-render -1.6 % (pair 2 +17 to +23 % on every worker: drift).",
+      "commits": [
+        "d8920938",
+        "2e43e6dd",
+        "de0a1238",
+        "bd83d3db",
+        "89f5cd71"
+      ]
     }
   ],
   "leads": [
