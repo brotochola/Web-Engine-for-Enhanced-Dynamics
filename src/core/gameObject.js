@@ -4,7 +4,7 @@
 import { syncRotCSFromAngle } from '../box2d/box2dHotFields.js';
 import { Camera } from './camera.js';
 import { isEngineAccessor, markEngineAccessor } from './engineAccessors.js';
-import { Transform } from '../components/transform.js';
+import { Transform as TransformImport } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer, DEFAULT_ANIMATION_SPEED } from '../components/spriteRenderer.js';
@@ -57,7 +57,7 @@ import {
   enqueueSetAngularVelocity,
   enqueueSetFixedRotation,
   enqueueSetAwake,
-  isCommandRingBound,
+  isCommandRingBound as isCommandRingBoundImport,
 } from '../box2d/box2dCommandRing.js';
 import {
   BODY_DIRTY,
@@ -73,12 +73,22 @@ import {
   resolveForceProcessOnLogicWorker,
 } from '../util/logicOwner.js';
 import { isXyOnlySpawnConfig } from '../util/createSpawnBatch.js';
-import { staticSceneryChanged, staticSceneryChangedAt } from './staticScenery.js';
+import { staticSceneryChanged, staticSceneryChangedAt as staticSceneryChangedAtImport } from './staticScenery.js';
 import { isSpawnCommandRingBound, tryPushSpawn } from '../util/spawnCommandRing.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from './messages.js';
 import { Tween } from './tween.js';
+
+// E-474: the setters' hot reads as module consts, not imports. TurboFan folds a module const (and the typed arrays its
+// class holds); an import is a cell it loads and hole-checks at each use (R-1222: setXFromArgs, before E-459, did 6 cell
+// loads, 6 hole checks, 2 map checks and 2 pointer decodes). Only exporters outside this module's import cycle can be
+// aliased (importAliases.test.js): RigidBody, SpriteRenderer and MeshRenderer are in it. See HOW_WE_MEASURE, "Imports in
+// hot code".
+const Transform = TransformImport;
+const staticSceneryChangedAt = staticSceneryChangedAtImport;
+const isCommandRingBound = isCommandRingBoundImport;
+
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
