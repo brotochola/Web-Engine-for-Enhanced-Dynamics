@@ -19674,7 +19674,9 @@
       "aliases": [
         "recorder sync calls count bindings"
       ],
-      "records": []
+      "records": [
+        "R-1216"
+      ]
     },
     {
       "id": "E-464",
@@ -31711,6 +31713,18 @@
       "title": "WebGPU per-draw GPU timer merged (webgpuFrameRecorder.mjs); eight scenes draw by draw on both backends: totals match, but 17 submits a frame (E-464), GL's sun map and volume mesh far slower (E-465, E-466), WebGPU's entity draws slower (E-467), one composite pass (E-468)",
       "verdict": "note",
       "text": "**The WebGPU backend has a per-draw GPU timer now (webgpuFrameRecorder.mjs, merged b4ca9dc2), and its first sitting read eight scenes draw by draw on both backends: Predator by night matches WebGL in total (5.88 against 6.04 ms), but WebGPU submits twice per render call (E-464), the GL sun map and volume mesh are far slower than their WebGPU twins (E-465, E-466), WebGPU's entity draws are slower (E-467), and three full-screen composites could be one (E-468).**\n\nThe tool (branch tools/webgpu-draws, 94e1086e and 71f85c02; suite 2899/2899 and demos 101/101 after the merge): it wraps the WebGPU prototypes in the Pixi worker and counts passes, draws, instances, state calls, uploads and submits a frame; `--gpu-passes` writes a timestamp around each pass, `--gpu-draws` around each draw and dispatch (Chrome's `chromium-experimental-timestamp-query-inside-passes`, which Chrome 157 exposes only with `--enable-unsafe-webgpu`; the engine asks for it under `config.debug.gpuTimestampsInsidePasses`, off by default), `--split-passes` gives each draw a pass of its own where the feature is missing. Without `--enable-webgpu-developer-features` the timestamps are rounded to 65.5 us. No overhead visible: Predator by night 5.88 ms per draw, 5.87 per pass, 5.90 split. A load-time clear reads 0 us on Dawn/D3D12.\n\nSitting 2026-11-16 15:51 to 16:08 (the agent's result files), GTX 1650, Chrome 157, 3 s after 12 s:\n\n| scene | clock | GPU ms a frame (WebGPU) | WebGL, same sitting | costliest |\n| --- | --- | --- | --- | --- |\n| Predator light3d night | 1785 / 1785 | 5.88 | 6.04 | colour 2.62 (entities 0.95, edges 0.76), 3D light 1.58, lamps' map 0.69, G-buffer 0.42, glow 0.29 |\n| light3dCompare | 1785 / 1785 | 5.93 | 6.03 | colour 3.34 (entities 1.72, edges 1.34), lamps' map 1.79, G-buffer 0.33, light 0.26, sun map 0.074 |\n| Predator crowd 2.5 | 1215 / 705 | 3.34 | 4.95 | colour 2.46 (38k entities 1.17), glow 0.36, sun rows 0.31 |\n| flashlight stress | 870 / 735 | 3.43 | 3.94 | glow pass (120 cone glows) 2.25 |\n| volume stress | 1635 / 1785 | 2.72 | 5.35 (7.6 a drawn frame) | the volume mesh draw 2.27 |\n| GPU Galaxy 4.09M | 1695 | 12.24 | | 8 additive draws of 1.2 to 1.8 ms, about 3 ns a quad: GPU-bound fill |\n\nThe light scenes idle at P5/P8 (480 to 870 MHz) where the GPU is not the limit, so their times compare only at equal clocks. WebGPU's frame span (first pass to last) is 7.7 to 10.1 ms for 3.3 to 5.9 ms of passes: the gaps are the CPU feeding it, with 17 submits a frame (E-464). Calls a frame: Predator by night 302 on WebGPU against 706 on WebGL, 1 redundant against 75.\n\nThe 3D light pass reads about 1.5 ms on both backends against 5.5 ms this morning (R-1174/R-1187), as E-399's tiles predicted.\n\nE-230 (what the GPU does in a frame, per backend) is answered: both backends have their per-draw timer."
+    },
+    {
+      "id": "R-1216",
+      "date": "2026-11-16",
+      "time": "16:22",
+      "timeFrom": "recorded",
+      "title": "N-233 fixed: glFrameRecorder leaves binding queries out of its wait count",
+      "verdict": "kept-hygiene",
+      "text": "**N-233 fixed (aa8855ca):** the recorder's per-frame count of calls that can wait for the GPU leaves out getParameter of bindings (textures, buffers, framebuffers, renderbuffers, programs, vertex arrays, samplers, transform feedback, the active unit), which Blink answers from its own objects; Predator's 11 to 12 a frame were all of those.",
+      "commits": [
+        "aa8855ca"
+      ]
     }
   ],
   "leads": [
