@@ -80,6 +80,14 @@ export function pixelDepthVertex(source, { gbuf = false } = {}) {
     );
 }
 
+/**
+ * H-EDGE: the pixels a pass draws nothing for, known from the texture's alpha times the tint's (`ad`, GLSL and WGSL alike),
+ * so they leave before the twin page and the depth. The opaque pass keeps none under 0.5 (whether it glows or not). The
+ * edge pass draws a pixel of alpha 0 as nothing: its colour is premultiplied 0 (the atlas's alpha is premultiplied on
+ * upload, and the tint's alpha scales the colour too), it writes no depth, and a zero blends to the pixel under it.
+ */
+const EARLY_DISCARD = (edge) => (edge ? 'ad <= 0.0' : 'ad < 0.5');
+
 /** DEPTH_BODY's depth from the floor place, the band and the painter step (GLSL and WGSL alike). */
 const DEPTH_FORMULA = `(${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS}.0
       + (${PIXEL_DEPTH_FLOOR_STEPS - 1}.0 - floor(u * ${PIXEL_DEPTH_FLOOR_STEPS - 1}.0)) * ${PIXEL_DEPTH_PAINTER_STEPS}.0
@@ -87,13 +95,16 @@ const DEPTH_FORMULA = `(${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPTH_FLOOR
 
 /**
  * The fragment's depth body (GLSL): the floor place, the depth, and the pass's pixels: `edge` false (the opaque pass)
- * keeps the opaque pixels that do not glow, true (the edge pass) the others.
+ * keeps the opaque pixels that do not glow, true (the edge pass) the others. H-EDGE: the texture's alpha comes first, and
+ * a pixel the pass draws nothing for leaves before the twin page and the depth (EARLY_DISCARD).
  */
 function depthBodyGlsl({ edge, gbuf }) {
   return `  {
     // DX-DEPTH: this pixel's place on the floor: at its own height when its frame has a height map, its own when the
     // sprite lies flat, else its sprite's foot; the zIndex band first and the painter's order last (pixelDepth.js).
     vec2 uvd = weedUv();
+    float ad = texture(uTexture, uvd).a * vColor.a;
+    if (${EARLY_DISCARD(edge)}) discard;
     vec4 md = texelFetch(uMaps, ivec2(uvd * vec2(textureSize(uMaps, 0))), 0);
     float zd = (floor(md.r * 255.0 + 0.5) * 256.0 + floor(md.g * 255.0 + 0.5)) / 64.0 * vPainter.y;
     bool glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
@@ -110,7 +121,7 @@ ${gbuf
     float painter = vPainter.x;
     gl_FragDepth = (${DEPTH_FORMULA};
     // F5 v2: only opaque pixels write depth; the edge pass draws the soft and the glowing ones, testing it.
-    bool solid = texture(uTexture, uvd).a * vColor.a >= 0.5 && !glow;
+    bool solid = ad >= 0.5 && !glow;
     if (${edge ? 'solid' : '!solid'}) discard;
   }
 `;
@@ -148,10 +159,12 @@ struct WeedDepthOut {
 }
 
 // DX-DEPTH: this pixel's depth (its floor place, its zIndex band, its painter step: pixelDepth.js) and whether it is opaque
-// and does not glow (the opaque pass's pixels; the edge pass draws the others).
-fn weedPixelDepth(in: VertexOut) -> vec2<f32> {
+// and does not glow (the opaque pass's pixels; the edge pass draws the others). H-EDGE: a pixel the pass draws nothing for
+// (EARLY_DISCARD; edge: the pass) leaves before the twin page and the depth.
+fn weedPixelDepth(in: VertexOut, edge: bool) -> vec2<f32> {
   let uvd = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
-  let alpha = textureSample(uTexture, uSampler, uvd).a * in.vColor.a;
+  let ad = textureSample(uTexture, uSampler, uvd).a * in.vColor.a;
+  if (select(${EARLY_DISCARD(false)}, ${EARLY_DISCARD(true)}, edge)) { discard; }
   let md = textureLoad(uMaps, vec2<i32>(uvd * vec2<f32>(textureDimensions(uMaps, 0))), 0);
   let zd = (floor(md.r * 255.0 + 0.5) * 256.0 + floor(md.g * 255.0 + 0.5)) / 64.0 * in.vDepthFoot.z;
   var glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
@@ -167,7 +180,7 @@ ${gbuf
   let u = clamp((floorY - uniforms.uDepth.z) * uniforms.uDepth.w, 0.0, 1.0);
   let painter = in.vDepthFoot.y;
   let depth = (${DEPTH_FORMULA};
-  return vec2<f32>(depth, select(0.0, 1.0, alpha >= 0.5 && !glow));
+  return vec2<f32>(depth, select(0.0, 1.0, ad >= 0.5 && !glow));
 }
 `;
 
@@ -219,14 +232,14 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false } = {})
   if (entries.length === 0) throw new Error('WeedJS: pixel depth needs the sprite WGSL (a fragment entry)');
   let wrappers = '';
   for (const name of entries) {
-    for (const [entry, keep] of [[name, 'd.y < 0.5'], [`${name}Edge`, 'd.y > 0.5']]) {
+    for (const [entry, keep, edge] of [[name, 'd.y < 0.5', false], [`${name}Edge`, 'd.y > 0.5', true]]) {
       // The colour first: its textureSample comes before the discard, in uniform control flow.
       wrappers += `
 @fragment
 fn ${entry}(in: VertexOut) -> WeedDepthOut {
   var o: WeedDepthOut;
   o.color = ${name}Color(in);
-  let d = weedPixelDepth(in);
+  let d = weedPixelDepth(in, ${edge});
   if (${keep}) { discard; }
   o.depth = d.x;
   return o;
