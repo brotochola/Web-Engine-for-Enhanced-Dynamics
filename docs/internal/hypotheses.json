@@ -19306,30 +19306,31 @@
     {
       "id": "E-452",
       "title": "ColliderFillBatch reads its row as 11 instance attributes plus aTri: the repack that halved MeshUvFillBatch's vertex stage (E-419: 6 vec4, the corner from the vertex index) should do the same for it",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 by the E-419 agent (opt/volume-fill), from its microbench and scene recordings",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "E-419: the cost of MeshUvFillBatch's draw was its attribute count, not its math (15 attributes 1.88 ms, the shader cut to placing the corner 1.04, 6 vec4 0.93, with the corner from gl_VertexID 0.83 ms, at 1782 MHz). ColliderFillBatch's layout: 11 instance attributes plus aTri.",
+      "result": "Kept 2026-11-16 (R-1228, a05a4e45): meshFillGpuBench 1.587 -> 0.723 ms a draw at 1769 MHz (1.567 -> 0.695 under the scissor), pictures identical; meshFillPanScene 4.10/4.50 -> 4.06/4.02 ms (its draw is vertex and setup work). E-419: the cost of MeshUvFillBatch's draw was its attribute count, not its math (15 attributes 1.88 ms, the shader cut to placing the corner 1.04, 6 vec4 0.93, with the corner from gl_VertexID 0.83 ms, at 1782 MHz). ColliderFillBatch's layout: 11 instance attributes plus aTri.",
       "next": "4 vec4 plus 1 vec2 (or 5 vec4), the corner from the vertex index; meshFillGpuBench's way for the collider fill and its scenes per draw; the image identical.",
       "refs": [],
       "aliases": [
         "collider fill attributes"
       ],
       "records": [
-        "R-1200"
+        "R-1200",
+        "R-1228"
       ]
     },
     {
       "id": "E-453",
       "title": "A mesh layer's rows repeat each shared vertex in every triangle: each mesh's vertices once plus an index buffer cut the mesh fill draw to 0.63 ms (vertex stage 0.18) against 0.82 after E-419, and the bytes read a draw from about 47 to 30 MB",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 by the E-419 agent (opt/volume-fill), from its microbench and scene recordings",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "meshFillGpuBench at 1782 MHz: rows as 6 vec4 with the corner from the vertex index 0.83 ms; each mesh's vertices once, indexed 0.63 ms, 0.18 under a 1 px scissor. At the scene's idle clock the vertex work under the scissor is still 6.7 ms a draw.",
+      "result": "Kept 2026-11-16 (R-1228, 0fe1f767): meshFillGpuBench 0.860 -> 0.625 ms a draw (vertex stage 0.855 -> 0.176); volumeStressScene 8.13/8.33 -> 5.32/5.35 ms a draw (the indexed side at a 20 % higher clock), its layer region 88 -> 37 MB; 19 still captures identical, the shadow maps included. meshFillGpuBench at 1782 MHz: rows as 6 vec4 with the corner from the vertex index 0.83 ms; each mesh's vertices once, indexed 0.63 ms, 0.18 under a 1 px scissor. At the scene's idle clock the vertex work under the scissor is still 6.7 ms a draw.",
       "next": "The packer keeps each row's vertex ids (a vertex table a mesh and the index buffer it draws); the lamps' map cull, which uses each triangle's corner lengths, needs a per-entity reach instead. Per draw before and after, the image identical.",
       "refs": [],
       "aliases": [
@@ -19337,7 +19338,8 @@
       ],
       "records": [
         "R-1200",
-        "R-1210"
+        "R-1210",
+        "R-1228"
       ]
     },
     {
@@ -20046,6 +20048,114 @@
         "shared base side"
       ],
       "records": []
+    },
+    {
+      "id": "N-240",
+      "title": "A paint change on a volumes layer dropped every volume's floor scale until the next full pack: on UV rows packColliderFillPoseOnly wrote _paint.tou without the floor-scale override packMeshUvFill applies, so the shader read f = 0",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "bug",
+      "result": "Found reading the paint path while building E-453; E-453 replaced that path (packMeshUvVertsPaint keeps the floor scale, tested against a repack), so main is fixed by E-453 (0fe1f767, merged aa9041cb).",
+      "next": "Nothing left while E-453 stays; if E-453 is ever reverted, the row path needs the override.",
+      "refs": [],
+      "aliases": [
+        "volume paint floor scale"
+      ],
+      "records": [
+        "R-1228"
+      ]
+    },
+    {
+      "id": "E-477",
+      "title": "Scene mesh-fill draws cost several times what meshFillGpuBench pays a row at the same clock, even with no uploads: meshFillPanScene spends about 4.3 ms on 296 400 rows at about 1 GHz (mostly still under a 1 px scissor), the upload scene 6.3 ms for 400 000 at 1785 MHz, against 0.86 ms for 486 408 in the bench",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "E-452/E-453 agent, 17:13 to 17:38; the diagnostic runs (movers=other, volumeStressScene still=1) were stopped when the owner started playing.",
+      "next": "Find what the scene adds over the bench (state changes, the depth or blend state, the target, interleaved draws, per-draw uniform uploads): per draw with and without each, at matched clocks.",
+      "refs": [],
+      "aliases": [
+        "scene fill vs bench"
+      ],
+      "records": [
+        "R-1228"
+      ]
+    },
+    {
+      "id": "E-478",
+      "title": "The collider batch's explicit meshes and fixture fans could take E-453's indexed form: an 8-gon fan is 18 corners for 8 vertices",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "E-453 cut the UV fill's vertex stage 0.855 -> 0.176 ms under the scissor in meshFillGpuBench by drawing each vertex once.",
+      "next": "Indexed records for ColliderFillBatch (fans and explicit meshes), its pack and paint; meshFillGpuBench col/colVs before and after, pictures identical.",
+      "refs": [],
+      "aliases": [
+        "collider fill indexed"
+      ],
+      "records": [
+        "R-1228"
+      ]
+    },
+    {
+      "id": "N-241",
+      "title": "The lamps' map cull drops geometry that would still draw: since DX-LAMPPANO, landings past a lamp's reach still fall inside the tile's outer band, so culling by reach (per triangle before E-453, per mesh now) can drop what that band would show",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "bug",
+      "result": "Seen by the E-453 agent; its captures (shadowOutlineScene part=lamp, light3dCompare all=1 by night) showed 0 pixels changed, so no case found yet.",
+      "next": "Decide what the cull may drop (the tile's outer band against the lamp's reach) and make it conservative; a capture with a volume just past a lamp's reach.",
+      "refs": [],
+      "aliases": [
+        "lamp map cull outer band"
+      ],
+      "records": [
+        "R-1228"
+      ]
+    },
+    {
+      "id": "N-242",
+      "title": "packMeshUvFill, the row kernel's UV path (rewrite_corners with stride 24) and the UV case of packColliderFillPoseOnly are unused by the engine since E-453; they stay only as test references",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "bug",
+      "result": "E-453 agent.",
+      "next": "Remove them (or keep them as the references the tests name, moved under tests/reference), with the wasm export if nothing else calls it.",
+      "refs": [],
+      "aliases": [
+        "dead uv row pack"
+      ],
+      "records": [
+        "R-1228"
+      ]
+    },
+    {
+      "id": "N-243",
+      "title": "glFrameRecorder rounds draws a frame to 0.1, so per-draw times of layers that redraw in fewer than every frame read about +-8 %",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "E-453 agent normalised the row draws by their instance counts instead.",
+      "next": "Report draws a frame and ms a draw unrounded (or ms a draw from the totals), the table rounded only when printed.",
+      "refs": [],
+      "aliases": [
+        "recorder draw rounding"
+      ],
+      "records": [
+        "R-1228"
+      ]
     }
   ],
   "records": [
@@ -32120,6 +32230,20 @@
         "de0a1238",
         "bd83d3db",
         "89f5cd71"
+      ]
+    },
+    {
+      "id": "R-1228",
+      "date": "2026-11-16",
+      "time": "17:38",
+      "timeFrom": "recorded",
+      "title": "E-452 and E-453 kept: collider fill row as 4 vec4 + vec2 (1.59 -> 0.72 ms a draw), UV fill vertices once, indexed (volumeStress 8.1 -> 5.3 ms a draw, 88 -> 37 MB); pictures identical; N-240 fixed with it",
+      "verdict": "kept",
+      "text": "**E-452 and E-453 kept: the collider fill reads its row as 4 vec4 and a vec2 with the corner from the vertex index (meshFillGpuBench 1.587 -> 0.723 ms a draw), and the UV fill draws each mesh's vertices once through an index buffer (0.860 -> 0.625 ms, its vertex stage 0.855 -> 0.176 under a 1 px scissor; volumeStressScene's draw 8.1 -> 5.3 ms and its layer region 88 -> 37 MB). Every picture identical.** Branch opt/fill-attrs, merged aa9041cb (node 2913/2913, demos 101/101).\n\nCommits: 409822fe (meshFillGpuBench: the collider ways col, colVs), a05a4e45 (E-452: colliderFillBatch.js, colliderFill.vert.glsl, colliderFill.wgsl; the [0,1,2] index buffer as N-228), 7b7f0e9f (meshFillGpuBench: the indexed UV form), 0fe1f767 (E-453: 16-float vertex records read as 4 vec4, Uint32 indices in the rows' order, the entity's reach in the depth slot no draw of the layer tests; packMeshUvVerts, packMeshUvVertsPaint; wasm rewrite_verts and _u32 in meshCorners.c, client rewriteVertsWasm, JS reference tests/reference/meshUvVerts.mjs; engine.wasm and both fixtures rebuilt; the lamps' map draws vertices and indices with one instance a tile and culls by the entity's reach; tests/node/meshUvVerts.test.js and ten test files updated).\n\nTimings 2026-11-16 17:13 to 17:38 (before the owner's game; the later session's timing runs were stopped at 19:36 before any ran):\n\n| measure | before | after |\n| --- | --- | --- |\n| meshFillGpuBench collider (486 408 rows, 1769 MHz) | 1.587 ms (scissor 1.567) | 0.723 (0.695) |\n| meshFillGpuBench UV | 0.860 (0.855) | 0.625 (0.176) |\n| meshFillPanScene collider fans (296 400 rows, about 1 GHz) | 4.10, 4.50 (scissor 4.39) | 4.06, 4.02 (3.56) |\n| volumeStressScene UV draw | 8.13, 8.33 ms (870 MHz) | 5.32, 5.35 (1050-1065 MHz) |\n| meshUploadStressScene movers=one | 5.87 ms (1785 MHz) | 1.38 (660 MHz: the GPU dropped its clock) |\n\nThe clocks never matched across sides in the scenes (the indexed side about 20 % faster in volumeStress); the benches are at one clock. Pictures: 0 of 921 600 pixels differ in meshLayerOrderScene tris=20000 (WebGL, WebGPU), meshFillStaticScene, and E-453's 19 captures (volumeStressScene WebGL, WebGPU, api=volume, 12 lamps at hour 22; sunMeshParityScene both backends; meshApiStressScene uv and plane; shadowOutlineScene part=sun and part=lamp both backends; light3dCompareScene all=1 still=1 by day and night, WebGPU at night). The lamps' map cull is per mesh now (a superset of triangles).\n\nNew: N-240 (a paint change dropped volumes' floor scale on main; fixed by E-453's paint path), E-477 (scene fill draws cost several times the bench a row), E-478 (the collider batch's fans indexed), N-241 (the lamps' map cull and the tile's outer band), N-242 (the unused UV row pack), N-243 (glFrameRecorder rounds draws a frame).",
+      "commits": [
+        "a05a4e45",
+        "0fe1f767",
+        "aa9041cb"
       ]
     }
   ],
