@@ -453,6 +453,37 @@ test('E-315: the ring walk decides a small budget; a tie at its cut, or among it
   }
 });
 
+test('E-315: a cell the ring walk skips still tells whether the light has more candidates than it keeps', async () => {
+  const s = await setup({ allPairs: true });
+  const r = rng(0xce11);
+  const d64 = new Float64Array(s.b.buffer, s.b.layout.dist64Byte, s.caps.maxSun);
+  const lx = 1000.5;
+  const ly = 1000.25;
+  // lim casters a few px from the light, in its own cell, the nearest last (their caster order is not their distance
+  // order); then one more caster in a far cell: in range (6 candidates: the 5 nearest, by distance), past the range
+  // in the box's corner, or none (5 candidates: all, by caster index). Only the skipped far cell can tell them apart.
+  for (const far of ['in range', 'past the range', 'none']) {
+    for (const maxPerEntity of [0, PER_ENTITY]) {
+      const xy = [];
+      for (let q = 0; q < 5; q++) xy.push(lx + 5 - q, ly + 0.5);
+      if (far === 'in range') xy.push(lx + 300, ly - 120);
+      if (far === 'past the range') xy.push(lx + 390, ly + 390);
+      xy.push(lx - 2000, ly - 2000, lx + 2000, ly + 2000); // the grid's corners, far out of range
+      const nSun = writeCasters(s.dst, xy, r);
+      const f = { nSun, lights: [light(lx, ly, 400, 5, r)], maxPerLight: 0, maxPerEntity, lightBegin: 0, lightStride: 1, stampCap: Infinity, stampBase: 0 };
+      d64.fill(-1);
+      const label = `far caster ${far}, maxPE ${maxPerEntity}`;
+      const rows = compare(s, f, label);
+      assert.equal(d64[0], -1, `${label}: the ring walk decided it`);
+      if (maxPerEntity === 0) {
+        assert.equal(rows, 5, `${label}: five rows`);
+        const firstRowX = s.dst.stamp[0];
+        assert.equal(firstRowX, Math.fround(far === 'in range' ? lx + 1 : lx + 5), `${label}: ${far === 'in range' ? 'the nearest' : 'caster 0'} first`);
+      }
+    }
+  }
+});
+
 test('the kernel keeps the JS reference\'s casters, in its order, on frames built for the selection', async (t) => {
   const s = await setup({ allPairs: true });
   const r = rng(0x5e1ec7);
