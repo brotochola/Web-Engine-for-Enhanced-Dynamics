@@ -44,7 +44,7 @@ import {
 import {
   faceFragmentGlsl, faceGbufFragment, faceGlowFragment, faceIdsFragment, faceMapVertex, faceMapWgsl, gbufAttributeGlsl, gbufAttributeWgsl,
 } from './faceMap.js';
-import { lutBaseFloats } from './frameBase.js';
+import { FRAME_UNSCANNED, TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW, TEX_LUT_SOFT_OR_GLOW, lutBaseFloats } from './frameBase.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from './pixelDepth.js';
 import {
   POSE_ROW_FLOATS, POSE_TEX_TEXELS, STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, poseBlockFloats, spriteIndexedVertex,
@@ -131,7 +131,8 @@ export const TEX_LUT_MAX_ROWS = 2048;
 
 /**
  * N-111. The LUT texture for `count` textureIds: `perRow` of them a row (1 until count passes `maxRows`), `width` texels
- * (TEX_LUT_RGBA_WIDTH each) and `height` rows. textureId t is at texel (TEX_LUT_RGBA_WIDTH * (t % perRow), t / perRow).
+ * (TEX_LUT_RGBA_WIDTH each, then H-EDGE's flags texel: frameBase.js TEX_LUT_SOFT_OR_GLOW) and `height` rows. textureId t
+ * is at texel (TEX_LUT_RGBA_WIDTH * (t % perRow), t / perRow), its row's flags at (TEX_LUT_RGBA_WIDTH * perRow, t / perRow).
  * @param {number} count
  * @param {number} [maxRows]
  * @returns {{ perRow: number, width: number, height: number }}
@@ -139,10 +140,10 @@ export const TEX_LUT_MAX_ROWS = 2048;
 export function textureLutLayout(count, maxRows = TEX_LUT_MAX_ROWS) {
   const n = Math.max(1, count | 0);
   const perRow = Math.ceil(n / maxRows);
-  const width = perRow * TEX_LUT_RGBA_WIDTH;
+  const width = perRow * TEX_LUT_RGBA_WIDTH + 1;
   if (width > maxRows) {
     throw new Error(
-      `WeedJS: the atlas has ${n} frames; its texture table holds at most ${Math.floor(maxRows / TEX_LUT_RGBA_WIDTH) * maxRows} (${maxRows} x ${maxRows} texels)`
+      `WeedJS: the atlas has ${n} frames; its texture table holds at most ${Math.floor((maxRows - 1) / TEX_LUT_RGBA_WIDTH) * maxRows} (${maxRows} x ${maxRows} texels)`
     );
   }
   return { perRow, width, height: Math.ceil(n / perRow) };
@@ -192,9 +193,34 @@ function writeLutSlot(lut, base, tex) {
   if (tex.weedFootSlot >= 0 && lut[base + 10] < 0) lut[base + 11] = (lut[base + 11] < 0 ? -1 : 1) * (tex.weedFootSlot + 1);
 }
 
+/** H-EDGE: what a texture's frame's texels hold (frameBase.js FRAME_*: its json base's `texels`, else FRAME_UNSCANNED). */
+function frameTexels(tex) {
+  const t = tex && tex.weedBase ? tex.weedBase.texels : undefined;
+  return typeof t === 'number' ? t & 255 : FRAME_UNSCANNED;
+}
+
+/**
+ * H-EDGE: a CPU LUT's frames' texels (frameBase.js FRAME_*), a byte a slot, for the LUTs buildTextureLut made: kept beside
+ * the LUT, so it stays TEX_LUT_FLOATS a textureId for every reader (sunShadowMap.js compactColumnRows bounds its ids by
+ * its length). packTextureLutRgba puts their soft-or-glow bit in each row's flags texel; textureLutTexels reads them.
+ */
+const LUT_TEXELS = new WeakMap();
+
+/**
+ * H-EDGE: what each textureId's frame's texels hold (frameBase.js FRAME_SOFT, FRAME_HALF, FRAME_GLOW, FRAME_UNSCANNED), a
+ * byte a textureId, for a LUT buildTextureLut made; null for any other.
+ * @param {Float32Array} lut
+ * @returns {Uint8Array|null}
+ */
+export function textureLutTexels(lut) {
+  return (lut && LUT_TEXELS.get(lut)) || null;
+}
+
+/** The CPU LUT of `flatTextures`: TEX_LUT_FLOATS a textureId, one slot at least; H-EDGE's texels beside it (textureLutTexels). */
 export function buildTextureLut(flatTextures, fallbackTexture) {
   const n = flatTextures?.length || 0;
   const lut = new Float32Array(Math.max(1, n) * TEX_LUT_FLOATS);
+  const texels = new Uint8Array(Math.max(1, n)).fill(FRAME_UNSCANNED);
   const fb = fallbackTexture || Texture.WHITE;
   for (let i = 0; i < n; i++) {
     const tex = flatTextures[i];
@@ -205,26 +231,36 @@ export function buildTextureLut(flatTextures, fallbackTexture) {
       writeLutSlot(lut, i * TEX_LUT_FLOATS, fb);
     } else {
       writeLutSlot(lut, i * TEX_LUT_FLOATS, tex);
+      texels[i] = frameTexels(tex);
     }
   }
   if (n === 0) {
     console.warn('[InstancedSpriteBatch] flatTextures empty; LUT falls back to WHITE');
     writeLutSlot(lut, 0, fb);
   }
+  LUT_TEXELS.set(lut, texels);
   return lut;
 }
 
 /**
- * Pack CPU LUT (10 floats/id) into the RGBA32F texture of textureLutLayout(count, maxRows) for vertex texelFetch.
- * A layout of one id a row is the rows it always was; the slots past `count` in the last row stay 0 (a zero size).
+ * Pack CPU LUT (12 floats/id) into the RGBA32F texture of textureLutLayout(count, maxRows) for vertex texelFetch.
+ * The slots past `count` in the last row stay 0 (a zero size). H-EDGE: each row's flags texel holds its frames' soft-or-glow
+ * bits (frameBase.js TEX_LUT_SOFT_OR_GLOW, TEX_LUT_FLAG_BITS a channel), set for every frame of a LUT that has no texels
+ * (textureLutTexels).
  */
 export function packTextureLutRgba(lut, count, maxRows = TEX_LUT_MAX_ROWS) {
   const n = Math.max(1, count | 0);
   const { perRow, width, height } = textureLutLayout(n, maxRows);
   const out = new Float32Array(width * height * 4);
   const srcN = lut ? (lut.length / TEX_LUT_FLOATS) | 0 : 0;
+  const texels = textureLutTexels(lut);
   for (let i = 0; i < n; i++) {
-    const dst = ((((i / perRow) | 0) * width) + (i % perRow) * TEX_LUT_RGBA_WIDTH) * 4;
+    const row = (i / perRow) | 0;
+    const slot = i % perRow;
+    const dst = (row * width + slot * TEX_LUT_RGBA_WIDTH) * 4;
+    if (slot < TEX_LUT_FLAGS_PER_ROW && (texels === null || i >= texels.length || (texels[i] & TEX_LUT_SOFT_OR_GLOW) !== 0)) {
+      out[(row * width + perRow * TEX_LUT_RGBA_WIDTH) * 4 + ((slot / TEX_LUT_FLAG_BITS) | 0)] += 2 ** (slot % TEX_LUT_FLAG_BITS);
+    }
     if (i < srcN) {
       const s = i * TEX_LUT_FLOATS;
       out[dst] = lut[s];
@@ -251,7 +287,7 @@ export function dummyLutSource(useWebGpu) {
     if (_dummyLutGpu) return _dummyLutGpu;
     _dummyLutGpu = TextureSource.from({
       resource: packTextureLutRgba(null, 1),
-      width: TEX_LUT_RGBA_WIDTH,
+      width: textureLutLayout(1).width,
       height: 1,
       format: 'rgba32float',
       scaleMode: 'nearest',
@@ -264,7 +300,7 @@ export function dummyLutSource(useWebGpu) {
   if (_dummyLutGl) return _dummyLutGl;
   _dummyLutGl = TextureSource.from({
     resource: packTextureLutRgba(null, 1),
-    width: TEX_LUT_RGBA_WIDTH,
+    width: textureLutLayout(1).width,
     height: 1,
     format: 'rgba32float',
     scaleMode: 'nearest',

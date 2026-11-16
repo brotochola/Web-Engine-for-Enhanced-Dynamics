@@ -46,3 +46,30 @@ test('the opaque pass keeps the opaque pixels and the edge pass the others, in b
   assert.match(wgsl, /fn mainFragEdge\(in: VertexOut\) -> WeedDepthOut/);
   assert.match(wgsl, /@builtin\(instance_index\) weedInstance: u32,/);
 });
+
+test('H-EDGE: each pass leaves before the twin page and the depth for the pixels it draws nothing for, in both languages', () => {
+  const frag = shader('instancedSpriteBlend.frag.glsl');
+  // The opaque pass keeps no pixel under alpha 0.5; the edge pass draws one of alpha 0 as nothing (premultiplied 0, no
+  // depth written), nor a solid one of a plain frame's instance (no soft or glowing texel, no emissive word: it cannot
+  // glow), so neither needs the twin page's texel or the depth for them.
+  for (const [edge, early] of [[false, 'if (ad < 0.5) discard;'], [true, 'if (ad <= 0.0 || (ad >= 0.5 && vPlain > 0.5)) discard;']]) {
+    for (const gbuf of [false, true]) {
+      const src = pixelDepthFragment(frag, { edge, gbuf });
+      const at = src.indexOf(early);
+      assert.ok(at > 0, `edge ${edge}, gbuf ${gbuf}: ${early}`);
+      assert.ok(at > src.indexOf('float ad = texture(uTexture, uvd).a * vColor.a;'), 'after the alpha');
+      assert.ok(at < src.indexOf('texelFetch(uMaps'), 'before the twin page');
+      assert.ok(at < src.indexOf('gl_FragDepth ='), 'before the depth');
+      assert.match(src, /bool solid = ad >= 0\.5 && !glow;/, 'the pass keeps its pixels as before');
+      assert.equal(src.split('texture(uTexture, uvd)').length, 2, 'the alpha read once in the depth body');
+    }
+  }
+  const wgsl = pixelDepthWgsl(shader('instancedSprite.wgsl'), { gbuf: true });
+  const early = wgsl.indexOf('if (select(ad < 0.5, ad <= 0.0 || (ad >= 0.5 && in.vPlain > 0.5), edge)) { discard; }');
+  assert.ok(early > wgsl.indexOf('let ad = textureSample(uTexture, uSampler, uvd).a * in.vColor.a;'), 'after the alpha');
+  assert.ok(early < wgsl.indexOf('textureLoad(uMaps'), 'before the twin page');
+  assert.match(wgsl, /fn mainFrag\(in: VertexOut\) -> WeedDepthOut \{[^}]*weedPixelDepth\(in, false\)/);
+  assert.match(wgsl, /fn mainFragEdge\(in: VertexOut\) -> WeedDepthOut \{[^}]*weedPixelDepth\(in, true\)/);
+  // The colour's textureSample still comes first, in uniform control flow.
+  assert.match(wgsl, /o\.color = mainFragColor\(in\);\n  let d = weedPixelDepth\(in, true\);/);
+});

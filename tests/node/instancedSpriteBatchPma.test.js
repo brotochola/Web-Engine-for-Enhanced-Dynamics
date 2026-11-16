@@ -155,15 +155,17 @@ test('pixi binds packed LUT as rgba32float TextureSource', () => {
   assert.match(pixiSrc, /preference: backend/);
 });
 
-test('packTextureLutRgba writes 12 floats (the last two the frame base) into 3 RGBA32F texels', async () => {
+test('packTextureLutRgba writes 12 floats (the last two the frame base) into 3 RGBA32F texels, then the row\'s flags', async () => {
   const { packTextureLutRgba, TEX_LUT_FLOATS } = await import(
     '../../src/render/instancedSpriteBatch.js'
   );
   const lut = new Float32Array(TEX_LUT_FLOATS);
   for (let i = 0; i < TEX_LUT_FLOATS; i++) lut[i] = i + 1;
   const rgba = packTextureLutRgba(lut, 1);
-  assert.equal(rgba.length, 12);
+  assert.equal(rgba.length, 16);
   for (let i = 0; i < 12; i++) assert.equal(rgba[i], i + 1);
+  // H-EDGE: a LUT buildTextureLut did not make knows nothing of its frames' texels: its frame's soft-or-glow bit is set.
+  assert.deepEqual(Array.from(rgba.subarray(12)), [1, 0, 0, 0]);
 });
 
 test('lighting GLSL loop bound is MAX_LIGHTS token', () => {
