@@ -113,8 +113,13 @@ function meshRowFollows(has) {
  * compare-inline form would not keep them under 75 bytes in a bundle: a module's functions and imports past its 255th
  * slot take 4 bytes more each (set vx: 69 bytes from source, 77 after esbuild and terser). Float32, so the functions
  * read the value as its column will hold it (N-170's compare); each reads it first, before it calls anything.
+ *
+ * E-473: on a SharedArrayBuffer, whose backing store is off V8's heap and can never be detached, so TurboFan gives its
+ * two floats an immediate address; an on-heap Float32Array(2) had its length, base and external pointer loaded,
+ * decoded and bounds-checked at each access. A plain ArrayBuffer on a page without SharedArrayBuffer (not cross-origin
+ * isolated), where the engine does not start and no setter runs a frame.
  */
-const SETTER_ARGS = new Float32Array(2);
+const SETTER_ARGS = new Float32Array(new (typeof SharedArrayBuffer === 'function' ? SharedArrayBuffer : ArrayBuffer)(8));
 
 /** A body moved by a position setter: its SET_TRANSFORM from the columns just written (the ring stores float32). */
 function enqueuePoseOf(i) {
