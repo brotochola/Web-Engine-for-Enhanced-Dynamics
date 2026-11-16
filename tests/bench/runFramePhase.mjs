@@ -128,6 +128,9 @@ try {
   };
   await fs.mkdir(outDir, { recursive: true });
   await fs.writeFile(path.join(outDir, 'summary.json'), JSON.stringify(payload, null, 2) + '\n');
+  // Every frame's slots too (start, end, generation a worker), for a worker's time series: a spike every N frames is
+  // amortized work, spikes at random are contention.
+  await fs.writeFile(path.join(outDir, 'samples.json'), JSON.stringify(samples) + '\n');
   console.log(JSON.stringify({ verdict: summary.verdict, spreadMs: summary.spreadMs, samples: summary.samples, reason: summary.reason, broken: summary.broken }, null, 2));
   console.log(JSON.stringify(table, null, 2));
   console.log(`wrote ${path.join(outDir, 'summary.json')}`);
