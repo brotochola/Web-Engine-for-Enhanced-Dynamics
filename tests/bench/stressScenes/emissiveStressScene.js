@@ -122,7 +122,12 @@ export class EmissiveStressScene extends Scene {
       const turn = (rng() * 2 - 1) * 0.35;
       const pace = 22 + rng() * 26;
       const person = Stroller.spawn({ x, y, heading, turn: STILL ? 0 : turn, pace: STILL ? 0 : pace });
-      if (STILL && person) person.setAnimationSpeed(0);
+      if (STILL && person) {
+        // Facing where it would walk, set (from its velocity it would be the first frame's, whichever that was).
+        person.setAnimationSpeed(0);
+        person.directionalSprite.facingFrom = 'manual';
+        person.directionalSprite.facing = heading;
+      }
     }
   }
 }
