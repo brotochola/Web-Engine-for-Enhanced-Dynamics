@@ -16,13 +16,12 @@
  *
  * `--case` (one a process: a case that re-binds the component columns would make the next case's code lose their
  * folding): `shipped` the worker's method; `copy` rebuildOwnedRowsVariants.mjs' verbatim copy (the control, checked
- * against the method's text); `checked` the copy with the per-entity map and Smi checks moved before the loops and the
- * cell range in locals; `pointSkip` checked, and a point whose one cell row another worker owns skips its cell range
- * (see that file). All write the same bytes: compare their checksums. In d8, keep src/ and rebuildOwnedRowsVariants.mjs
+ * against the method's text), for variants to be built beside it (E-471's `checked` and E-472's `pointSkip` were, and
+ * shipped). All write the same bytes: compare their checksums. In d8, keep src/ and rebuildOwnedRowsVariants.mjs
  * native modules (not bundled): a bundler makes those module consts top-level `var`s, which TurboFan does not fold, and
  * the copies then check the component columns' maps at every entity.
  *
- *   node tests/bench/rebuildOwnedRowsMicrobench.mjs [--case shipped|copy|checked|pointSkip] [--shape point|box|circle]
+ *   node tests/bench/rebuildOwnedRowsMicrobench.mjs [--case shipped|copy] [--shape point|box|circle]
  *     [--alive 40000] [--sample-ms 3] [--output path]
  */
 import { Transform } from '../../src/components/transform.js';
@@ -34,7 +33,7 @@ import { ShapeType } from '../../src/util/configDefaults.js';
 import { KERNEL_SAMPLE_MS } from './benchmarkDefaults.mjs';
 import { isCli, mulberry32, parseArgs, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { setupSpatialKernel } from './spatialWorkerMicrobench.mjs';
-import { rebuildChecked, rebuildCopy, rebuildPointSkip } from './rebuildOwnedRowsVariants.mjs';
+import { rebuildCopy } from './rebuildOwnedRowsVariants.mjs';
 
 // boidsScene.js's spatial config (rowsPerBlock: the engine's default, 2).
 const BOIDS_SPATIAL = {
@@ -56,7 +55,7 @@ function fnv(h, v) {
   return Math.imul(h ^ (v >>> 0), 16777619) >>> 0;
 }
 
-const CASES = { shipped: null, copy: rebuildCopy, checked: rebuildChecked, pointSkip: rebuildPointSkip };
+const CASES = { shipped: null, copy: rebuildCopy };
 
 /** The copy's body against the worker's method text, whitespace aside: the control is the shipped code. */
 function sameBody(method, fn) {
