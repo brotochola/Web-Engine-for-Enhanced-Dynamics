@@ -81,6 +81,7 @@ import { gbufEntityId, gbufWanted, writeGbufWords } from '../render/gbufWord.js'
 import { GLOW_COMPOSITE_FRAG, GLOW_COMPOSITE_VERT, glowCompositeGpuProgram, glowQuadPositions } from '../render/glowComposite.js';
 import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
 import {
+  COLUMN_GRIDS,
   SUN_MAP_COLUMNS,
   compactColumnRows,
   sunMapColumnGrid,
@@ -95,7 +96,7 @@ import {
 } from '../render/sunShadowMap.js';
 import { sunShadowGpuProgram } from '../render/webgpu/instancedSpriteWgsl.js';
 import {
-  LAMP_MAP_COLUMNS,
+  LAMP_PANO_INNER,
   lampMapColumnsVertex,
   lampMapColumnsWgsl,
   lampMapFragment,
@@ -6561,12 +6562,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             uniforms: this._sunMapUniforms,
           },
         }),
-        grid: new Buffer({ data: sunMapColumnGrid(), usage: BufferUsage.VERTEX }),
-        index: sunMapColumnIndex(SUN_MAP_COLUMNS),
+        ...this._columnGrids(false),
         state,
         blendMode: 'none',
-        rows: new Float32Array(64 * GPU_CASTER_FLOATS),
-        blocks: new Float32Array(64 * 4),
         slots: [],
         ring: 0,
         label: 'sun-map-columns',
@@ -6965,12 +6963,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._lampMapColumns = {
         shader: columnShader(this._lampMapUniforms),
         shaderCeil: columnShader(this._lampMapUniformsCeil),
-        grid: new Buffer({ data: lampColumnGrid(LAMP_MAP_COLUMNS), usage: BufferUsage.VERTEX }),
-        index: lampColumnIndex(LAMP_MAP_COLUMNS),
+        ...this._columnGrids(true),
         state,
         blendMode: 'none',
-        rows: new Float32Array(64 * GPU_CASTER_FLOATS),
-        blocks: new Float32Array(64 * 4),
         slots: [],
         ring: 0,
         label: 'lamp-map-columns',
@@ -7197,23 +7192,33 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * E-379: a columns pass's container over its own instances: of the batch's first `rows` caster rows, the ones that cast
    * columns for `light` (0 the sun, 1 the lamps), a large render as blocks of the grid (sunShadowMap.js
    * compactColumnRows). The programs ran their grid for every caster row and threw away the rows that cast none (2 000
-   * cards beside 20 renders: 5.1 ms of the sun map's columns against 0.1). The instances go up into two ring slots, as the
-   * batch's do; null when no row casts columns.
+   * cards beside 20 renders: 5.1 ms of the sun map's columns against 0.1). E-447: each instance with the grid its block
+   * needs on the map (COLUMN_GRIDS: no finer than the texel it lands on), a draw a grid in use. The instances go up into
+   * two ring slots, as the batch's do; null when no row casts columns.
    */
   _columnsHost(batch, rows, columns, light) {
     const lut = this._texLut;
     const src = batch.data;
     if (!lut || !src || rows <= 0) return null;
     const F = GPU_CASTER_FLOATS;
-    let n = compactColumnRows(src, rows, F, lut, TEX_LUT_FLOATS, light, columns.rows, columns.blocks);
-    if (n > columns.blocks.length / 4) {
-      let cap = Math.max(64, columns.blocks.length / 4);
-      while (cap < n) cap *= 2;
-      columns.rows = new Float32Array(cap * F);
-      columns.blocks = new Float32Array(cap * 4);
+    const grids = columns.grids;
+    const counts = columns.counts;
+    const texels = this._columnTexels(columns, light);
+    let n = compactColumnRows(src, rows, F, lut, TEX_LUT_FLOATS, light, grids, texels, counts);
+    let grew = false;
+    for (let g = 0; g < grids.length; g++) {
+      const grid = grids[g];
+      if (counts[g] <= grid.blocks.length >> 2) continue;
+      let cap = Math.max(64, grid.blocks.length >> 2);
+      while (cap < counts[g]) cap *= 2;
+      grid.rows = new Float32Array(cap * F);
+      grid.blocks = new Float32Array(cap * 4);
+      grew = true;
+    }
+    if (grew) {
       for (const slot of columns.slots) slot.dispose();
       columns.slots = [];
-      n = compactColumnRows(src, rows, F, lut, TEX_LUT_FLOATS, light, columns.rows, columns.blocks);
+      n = compactColumnRows(src, rows, F, lut, TEX_LUT_FLOATS, light, grids, texels, counts);
     }
     if (n <= 0) return null;
     if (columns.slots.length === 0) {
@@ -7221,51 +7226,111 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     const slot = columns.slots[columns.ring];
     columns.ring ^= 1;
-    slot.rowBuffer.update(n * F * 4);
-    slot.blockBuffer.update(n * 16);
-    slot.mesh.geometry.instanceCount = n;
+    for (let g = 0; g < grids.length; g++) {
+      const part = slot.parts[g];
+      const count = counts[g];
+      const on = count > 0;
+      if (part.mesh.visible !== on) {
+        part.mesh.visible = on;
+        if (part.ceil !== null) part.ceil.visible = on;
+      }
+      if (!on) continue;
+      part.rowBuffer.update(count * F * 4);
+      part.blockBuffer.update(count * 16);
+      part.geometry.instanceCount = count;
+    }
     return slot.host;
   }
 
   /**
-   * E-379: one ring slot of a columns pass: buffers over the pass's instance arrays (the batch's row layout, and aBlock)
-   * and the mesh over them and the grid.
+   * E-447: a columns pass's grids, COLUMN_GRIDS' order: each one's corners (lampColumnGrid for the lamps' map's three rows a
+   * cell side, else sunMapColumnGrid) and index, and the rows and blocks of the instances that draw with it; with the
+   * counts compactColumnRows writes and the texels it reads (_columnTexels).
+   */
+  _columnGrids(lamp) {
+    const grids = COLUMN_GRIDS.map((cells) => ({
+      cells,
+      grid: new Buffer({ data: lamp ? lampColumnGrid(cells) : sunMapColumnGrid(cells), usage: BufferUsage.VERTEX }),
+      index: lamp ? lampColumnIndex(cells) : sunMapColumnIndex(cells),
+      rows: new Float32Array(64 * GPU_CASTER_FLOATS),
+      blocks: new Float32Array(64 * 4),
+    }));
+    return { grids, counts: new Int32Array(COLUMN_GRIDS.length), texels: new Float32Array(1) };
+  }
+
+  /**
+   * E-447: the px of a frame a map texel spans where a columns pass's rows land, for compactColumnRows to pick their grids:
+   * for the sun (its map and the sprite shadows' layer, the shadows' resolution of the canvas) one, the canvas px of a
+   * texel over the zoom; for the lamps one a tile, its lamp's reach over the half tile's texels it takes (LAMP_PANO_INNER),
+   * the floor px a texel spans within the reach, times groundScaleY (a frame's px go further on a foreshortened floor).
+   */
+  _columnTexels(columns, light) {
+    let t = columns.texels;
+    if (light === 0) {
+      const map = this.shadowRT;
+      const zoom = this._renderZoom > 0 ? this._renderZoom : 1;
+      t[0] = map !== null && map.width > 0 ? (this.canvasWidth || 0) / (map.width * zoom) : 0;
+      return t;
+    }
+    const tiles = this._lampTileCount | 0;
+    if (t.length < tiles) t = columns.texels = new Float32Array(Math.max(tiles, t.length * 2));
+    const size = this._lampTileSize > 0 ? this._lampTileSize : 1;
+    const ground = this._groundScaleY > 0 && this._groundScaleY < 1 ? this._groundScaleY : 1;
+    const data = this._lampTileData;
+    const perTexel = ground / (0.5 * LAMP_PANO_INNER * size);
+    for (let i = 0; i < tiles; i++) t[i] = data[i * 4 + 3] * perTexel;
+    for (let i = tiles; i < t.length; i++) t[i] = 0;
+    return t;
+  }
+
+  /**
+   * E-447: a ring slot of a columns pass: a mesh a grid (and its twin for the lamps' ceiling half) over that grid's corners
+   * and index and its own row and block buffers, every one in one container, a grid with no instance this frame hidden.
    */
   _columnsSlot(batch, columns, k) {
     const usage = BufferUsage.VERTEX | BufferUsage.COPY_DST;
-    const rowBuffer = new Buffer({ data: columns.rows, usage, label: `${columns.label}-rows-${k}` });
-    const blockBuffer = new Buffer({ data: columns.blocks, usage, label: `${columns.label}-blocks-${k}` });
-    const attributes = {
-      aCell: { buffer: columns.grid, format: 'float32x4', stride: 16, offset: 0 },
-      aBlock: { buffer: blockBuffer, format: 'float32x4', stride: 16, offset: 0, instance: true },
-    };
-    for (const [name, a] of Object.entries(batch.mesh.geometry.attributes)) {
-      if (name === 'aQuad') continue;
-      attributes[name] = { buffer: rowBuffer, format: a.format, stride: a.stride, offset: a.offset, instance: true };
-    }
-    const geometry = new PIXI.Geometry({ attributes, indexBuffer: columns.index });
-    const mesh = new PIXI.Mesh({ geometry, shader: columns.shader, state: columns.state, label: columns.label });
-    // Max blending (the sprite shadows' solids), so overlapping columns are one shadow; the maps' columns keep their
-    // highest by a depth test instead (columns.blendMode 'none'). A mesh's own blend mode holds only as a child.
-    mesh.blendMode = columns.blendMode || 'max';
     const host = new PIXI.Container();
-    host.addChild(mesh);
-    // DX-LAMPPANO: the lamps' columns into the ceiling's half too, the same rows in the same render.
-    if (columns.shaderCeil) {
-      const ceil = new PIXI.Mesh({ geometry, shader: columns.shaderCeil, state: columns.state, label: `${columns.label}-ceiling` });
-      ceil.blendMode = columns.blendMode || 'max';
-      host.addChild(ceil);
+    const parts = [];
+    for (let g = 0; g < columns.grids.length; g++) {
+      const grid = columns.grids[g];
+      const rowBuffer = new Buffer({ data: grid.rows, usage, label: `${columns.label}-${grid.cells}-rows-${k}` });
+      const blockBuffer = new Buffer({ data: grid.blocks, usage, label: `${columns.label}-${grid.cells}-blocks-${k}` });
+      const attributes = {
+        aCell: { buffer: grid.grid, format: 'float32x4', stride: 16, offset: 0 },
+        aBlock: { buffer: blockBuffer, format: 'float32x4', stride: 16, offset: 0, instance: true },
+      };
+      for (const [name, a] of Object.entries(batch.mesh.geometry.attributes)) {
+        if (name === 'aQuad') continue;
+        attributes[name] = { buffer: rowBuffer, format: a.format, stride: a.stride, offset: a.offset, instance: true };
+      }
+      const geometry = new PIXI.Geometry({ attributes, indexBuffer: grid.index });
+      geometry.instanceCount = 0;
+      const mesh = new PIXI.Mesh({ geometry, shader: columns.shader, state: columns.state, label: `${columns.label}-${grid.cells}` });
+      // Max blending (the sprite shadows' solids), so overlapping columns are one shadow; the maps' columns keep their
+      // highest by a depth test instead (columns.blendMode 'none'). A mesh's own blend mode holds only as a child.
+      mesh.blendMode = columns.blendMode || 'max';
+      mesh.visible = false;
+      host.addChild(mesh);
+      // DX-LAMPPANO: the lamps' columns into the ceiling's half too, the same rows in the same render.
+      let ceil = null;
+      if (columns.shaderCeil) {
+        ceil = new PIXI.Mesh({ geometry, shader: columns.shaderCeil, state: columns.state, label: `${columns.label}-${grid.cells}-ceiling` });
+        ceil.blendMode = columns.blendMode || 'max';
+        ceil.visible = false;
+        host.addChild(ceil);
+      }
+      parts.push({ mesh, ceil, geometry, rowBuffer, blockBuffer });
     }
     return {
-      rowBuffer,
-      blockBuffer,
-      mesh,
       host,
+      parts,
       dispose() {
         host.destroy({ children: true });
-        geometry.destroy();
-        rowBuffer.destroy();
-        blockBuffer.destroy();
+        for (const part of parts) {
+          part.geometry.destroy();
+          part.rowBuffer.destroy();
+          part.blockBuffer.destroy();
+        }
       },
     };
   }
@@ -7323,11 +7388,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             ...this._sunShadowProgram('columns'),
             resources: { ...resources(), uMaps: this.atlasMapsSource ?? this._emptyMapsSource(), uFoot: this._footSourceOrEmpty() },
           }),
-          grid: new Buffer({ data: sunMapColumnGrid(), usage: BufferUsage.VERTEX }),
-          index: sunMapColumnIndex(SUN_MAP_COLUMNS),
+          ...this._columnGrids(false),
           state,
-          rows: new Float32Array(64 * GPU_CASTER_FLOATS),
-          blocks: new Float32Array(64 * 4),
           slots: [],
           ring: 0,
           label: 'sun-columns',

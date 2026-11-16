@@ -391,7 +391,8 @@ ${lampTileGlsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBas
   vec2 fromLamp = base - lamp.xy;
   float dist = length(fromLamp);
   vec2 across = dist > 1e-3 ? vec2(-fromLamp.y, fromLamp.x) / dist : vec2(1.0, 0.0);
-  vec2 cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
+  // E-447: the instance's grid (aBlock.w: sunShadowMap.js COLUMN_GRIDS), the finest when it has none.
+  vec2 cell = abs(aInstTrim.zw * aInstScale) / ((aBlock.w > 0.5 ? aBlock.w : ${cells.toFixed(1)}) * blocks);
   float width = 1.1 * max(cell.x, cell.y * uGroundInvScaleY) + 1.0;
   // DX-LAMPPANO: its rows in this half (aCell.z 0, 0.5, 1: lampColumnGrid), as the cards' (lampRowsGlsl).
 ${lampRowsGlsl('z', 'dist', 'aCell.z')}  vec2 lampQuad = aQuad;
@@ -579,7 +580,8 @@ ${lampTileWgsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBas
   let dist = length(fromLamp);
   var across = vec2<f32>(1.0, 0.0);
   if (dist > 1e-3) { across = vec2<f32>(-fromLamp.y, fromLamp.x) / dist; }
-  let cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
+  // E-447: the instance's grid (aBlock.w), the finest when it has none.
+  let cell = abs(aInstTrim.zw * aInstScale) / (select(${cells.toFixed(1)}, aBlock.w, aBlock.w > 0.5) * blocks);
   let width = 1.1 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 1.0;
   // DX-LAMPPANO: its rows in this half (lampMapColumnsVertex says how).
 ${lampRowsWgsl('z', 'dist', 'aCell.z')}  let lampQuad = aQuad;

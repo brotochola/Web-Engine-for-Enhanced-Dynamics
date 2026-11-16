@@ -16,6 +16,7 @@
  */
 
 import { FOOTPRINT_MAX_VERTICES } from './frameBase.js';
+import { GPU_CASTER_LIGHT_FLOAT } from './gpuQueueLayout.js';
 
 /** Height (px) that the map's 8 bits span: 2 px a step. */
 export const SUN_MAP_ZMAX = 512;
@@ -83,11 +84,36 @@ export const SUN_MAP_COLUMNS = 24;
 export const COLUMN_CELL_PX = 8;
 /** E-379: the most blocks a side a frame draws as (a k x k of grids). */
 export const COLUMN_MAX_BLOCKS = 4;
+/**
+ * E-447: the grids a columns pass draws its instances with, cells a side, finest (SUN_MAP_COLUMNS) first: a draw each.
+ * Every instance ran the finest grid (2 304 vertices) whatever its frame's size on the map, and a columns pass was vertex
+ * work: under a 1 px scissor the sun map's columns kept 1.28 of their 2.09 ms (selfShadowStressScene), the lamps' map's
+ * all of theirs (sunShadowMapStressScene).
+ */
+export const COLUMN_GRIDS = Object.freeze([SUN_MAP_COLUMNS, 16, 12, 8, 6, 4]);
+
+/**
+ * E-447: the grid (its index in COLUMN_GRIDS) a block `side` px a side draws with on a map whose texel spans `texel` px:
+ * the coarsest whose cells are no wider than a texel (side / cells <= texel), so the map changes only where the finest
+ * grid's cells were finer than its texel; the finest when `texel` is not known (0).
+ * @param {number} side
+ * @param {number} texel
+ * @returns {number}
+ */
+export function columnGrid(side, texel) {
+  if (!(texel > 0)) return 0;
+  const need = side / texel;
+  let g = 0;
+  while (g + 1 < COLUMN_GRIDS.length && COLUMN_GRIDS[g + 1] >= need) g++;
+  return g;
+}
 
 /** E-379: the caster row's floats compactColumnRows reads (gpuQueueLayout.js's caster rows, instancedSpriteBatch's layout). */
 const ROW_SCALE = 2;
 const ROW_DEPTH = 8;
 const ROW_TEX = 10;
+/** E-447: the light's z, which the lamps' map's stamp rows carry as their tile + 1. */
+const ROW_LAMP_TILE = GPU_CASTER_LIGHT_FLOAT + 2;
 
 /**
  * E-379: the instances a columns pass draws. The columns programs ran their grid (SUN_MAP_COLUMNS² cells) for every caster
@@ -96,21 +122,28 @@ const ROW_TEX = 10;
  * cast columns for the sun (`light` 0) or the lamps (1), as the programs test it (their kind 2, a solid, or 0, the sheet's
  * way, on a render: its frame's base a contact; for the sun, not one that casts its card), are copied into `out`; a frame
  * more than SUN_MAP_COLUMNS · COLUMN_CELL_PX px a side (its trim times its scale) as k x k instances, each its block's
- * x, y and k in `blocks` (4 floats an instance), so a barn's columns are 6 px, not 18. Returns the instances it needs:
- * when that is more than `out` holds, it wrote what fits and the caller grows `out` and asks again.
+ * x, y and k in its block's 4 floats. E-447: each instance goes to the grid its block needs on the map (columnGrid: the
+ * block's side against the texel where it lands, `texels` [0] for the sun, `texels` [tile] for a lamp's row; none: the
+ * finest), `outs` [g] holding grid g's rows and blocks (its cells the block's fourth float) and `counts` [g] their
+ * number. Returns the instances in all: when grid g needs more than its arrays hold, it wrote what fits and the caller
+ * grows them and asks again.
  * @param {Float32Array} src
  * @param {number} rows
  * @param {number} rowFloats
  * @param {Float32Array} lut the texture table (`lutFloats` an id: the trim's size at 8, 9, the base at 10, 11)
  * @param {number} lutFloats
  * @param {0|1} light
- * @param {Float32Array} out
- * @param {Float32Array} blocks
+ * @param {{ rows: Float32Array, blocks: Float32Array }[]} outs a grid each, COLUMN_GRIDS' order
+ * @param {Float32Array|null} texels the map's texel (px of a frame) where a row lands
+ * @param {Int32Array} counts a grid each
  * @returns {number}
  */
-export function compactColumnRows(src, rows, rowFloats, lut, lutFloats, light, out, blocks) {
+export function compactColumnRows(src, rows, rowFloats, lut, lutFloats, light, outs, texels, counts) {
   const ids = (lut.length / lutFloats) | 0;
-  const cap = Math.min((out.length / rowFloats) | 0, (blocks.length / 4) | 0);
+  const grids = COLUMN_GRIDS.length;
+  for (let g = 0; g < grids; g++) counts[g] = 0;
+  const texelCount = texels !== null ? texels.length | 0 : 0;
+  const sunTexel = light === 0 && texelCount > 0 ? texels[0] : 0;
   const span = SUN_MAP_COLUMNS * COLUMN_CELL_PX;
   let n = 0;
   for (let r = 0; r < rows; r++) {
@@ -129,20 +162,34 @@ export function compactColumnRows(src, rows, rowFloats, lut, lutFloats, light, o
     let k = Math.ceil(side / span);
     if (!(k >= 1)) k = 1;
     else if (k > COLUMN_MAX_BLOCKS) k = COLUMN_MAX_BLOCKS;
+    // E-447: the texel where the row lands: the sun's map's, or its lamp's tile's.
+    let texel = sunTexel;
+    if (light === 1) {
+      const tile = (src[at + ROW_LAMP_TILE] | 0) - 1;
+      texel = tile >= 0 && tile < texelCount ? texels[tile] : 0;
+    }
+    const g = columnGrid(side / k, texel);
+    const cells = COLUMN_GRIDS[g];
+    const out = outs[g].rows;
+    const blocks = outs[g].blocks;
+    const cap = Math.min((out.length / rowFloats) | 0, blocks.length >> 2);
+    let m = counts[g];
     for (let by = 0; by < k; by++) {
       for (let bx = 0; bx < k; bx++) {
-        if (n < cap) {
-          const to = n * rowFloats;
+        if (m < cap) {
+          const to = m * rowFloats;
           for (let f = 0; f < rowFloats; f++) out[to + f] = src[at + f];
-          const b = n * 4;
+          const b = m * 4;
           blocks[b] = bx;
           blocks[b + 1] = by;
           blocks[b + 2] = k;
-          blocks[b + 3] = 0;
+          blocks[b + 3] = cells;
         }
-        n++;
+        m++;
       }
     }
+    counts[g] = m;
+    n += k * k;
   }
   return n;
 }
@@ -260,7 +307,7 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   }
   const head = card
     .slice(0, card.indexOf(after))
-    .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nin vec4 aBlock; // E-379: this instance\'s block of its frame (x, y) and the blocks a side (z, 0 or 1: one)\nvec2 aQuad;\nuniform sampler2D uTexture;\n')
+    .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nin vec4 aBlock; // E-379: this instance\'s block of its frame (x, y), the blocks a side (z, 0 or 1: one); E-447: its grid\'s cells a side (w)\nvec2 aQuad;\nuniform sampler2D uTexture;\n')
     .replace(main, `${FOOTPRINT_GLSL}${main}  float blocks = max(aBlock.z, 1.0);\n  aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
   return `${head}  vec2 uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
   vec4 m = texelFetch(uMaps, ivec2(uvc * vec2(textureSize(uMaps, 0))), 0);
@@ -274,7 +321,8 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
   vec2 pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   vec2 base = vec2(pix.x, (pix.y + uSunK.w * z) * uGroundInvScaleY);
-  vec2 cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
+  // E-447: the instance's grid (aBlock.w: COLUMN_GRIDS), the finest when it has none.
+  vec2 cell = abs(aInstTrim.zw * aInstScale) / ((aBlock.w > 0.5 ? aBlock.w : ${cells.toFixed(1)}) * blocks);
   float width = 1.1 * max(cell.x, cell.y * uGroundInvScaleY) + 1.0;
   // A column from the cell's floor point (height 0) to where its top lands; with a footprint, the cell swept north at
   // its own height to the footprint's edge, as the light bench's heightmap did (light passes under a belly, between
@@ -438,7 +486,7 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   if (to < 0) throw new Error('WeedJS: the sun shadow map columns need the sprite shadow WGSL (mainVert\'s end)');
   const head = card
     .slice(0, from)
-    .replace(quad, "  @location(0) aCell: vec4<f32>, // the cell's centre in the frame, t (floor 0, top 1), side\n  @location(12) aBlock: vec4<f32>, // E-379: this instance's block of its frame (x, y) and the blocks a side (z)\n")
+    .replace(quad, "  @location(0) aCell: vec4<f32>, // the cell's centre in the frame, t (floor 0, top 1), side\n  @location(12) aBlock: vec4<f32>, // E-379: this instance's block of its frame (x, y) and the blocks a side (z); E-447: its grid's cells a side (w)\n")
     .replace(body, `${body}  let blocks = max(aBlock.z, 1.0);\n  let aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
   const columns = `  let uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
   let m = textureLoad(uMaps, vec2<i32>(uvc * vec2<f32>(textureDimensions(uMaps, 0))), 0);
@@ -452,7 +500,8 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   let content = aInstTrim.xy + aQuad * aInstTrim.zw;
   let pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   let base = vec2<f32>(pix.x, (pix.y + uniforms.uSunK.w * z) * uniforms.uGroundInvScaleY);
-  let cell = abs(aInstTrim.zw * aInstScale) / (${cells.toFixed(1)} * blocks);
+  // E-447: the instance's grid (aBlock.w), the finest when it has none.
+  let cell = abs(aInstTrim.zw * aInstScale) / (select(${cells.toFixed(1)}, aBlock.w, aBlock.w > 0.5) * blocks);
   let width = 1.1 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 1.0;
   // A column, or with a footprint the cell swept north at its own height (sunMapColumnsVertex says why).
   var a = base;
