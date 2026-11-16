@@ -311,9 +311,103 @@ static void quicksort_order(uint32_t *order, const float *dist, int32_t left, in
   }
 }
 
+/* E-315: a light's lim nearest candidates without the quickselect's partitions (whose branch on dist[order[i]]
+   mispredicts about half the time): a non-negative float orders as its bits, so the candidates go into SEL_BINS bins
+   by the high bits of their float distance, 16 bins an octave over the 16 octaves below the light's rangeSq (the
+   octaves under those share bin 0). One pass counts the bins, which finds the bin that holds the lim-th distance; a
+   second puts the candidates of the bins below it (all kept) into order and that bin's into a list; the next 8 bits
+   split the list again, and so on, until the rest of the cut is the whole list or a list of at most SEL_SMALL, sorted
+   outright. The kept are then the lim smallest distances, the set the quickselect keeps whenever the lim-th and the
+   (lim+1)-th distances differ. Returns 1 with order[0..lim) those candidates (the bins below first, unsorted), 0 when
+   it cannot decide that way: a tie at the cut, a NaN distance, or a crowded bin 0 that holds the octaves under it;
+   the caller then runs the quickselect, which decides as it always did. hist: SEL_BINS words of scratch; list: m. */
+#define SEL_BINS 256
+#define SEL_SHIFT 19
+#define SEL_SMALL 32
+/* Fewer candidates than this: the quickselect (the bins' fixed cost would weigh more than its partitions). */
+#define SEL_MIN 64
+
+INLINE uint32_t f32_bits(float f) {
+  union { float f; uint32_t u; } b = { .f = f };
+  return b.u;
+}
+
+static int radix_select(const float *dist, uint32_t m, uint32_t lim, uint32_t kTop, uint32_t *order, uint32_t *list,
+                        uint32_t *hist) {
+  const int32_t base = (int32_t)(kTop >> SEL_SHIFT) - (SEL_BINS - 1);
+  for (uint32_t b = 0; b < SEL_BINS; b++) hist[b] = 0;
+  uint32_t bad = 0;
+  uint32_t low = 0;
+  for (uint32_t i = 0; i < m; i++) {
+    const uint32_t k = f32_bits(dist[i]);
+    int32_t b = (int32_t)(k >> SEL_SHIFT) - base;
+    bad |= k > kTop; /* past the range: NaN */
+    low |= b < 0;
+    b = b < 0 ? 0 : (b > SEL_BINS - 1 ? SEL_BINS - 1 : b);
+    hist[b]++;
+  }
+  if (bad) return 0;
+  uint32_t lo = 0;
+  int32_t cut = 0;
+  for (; cut < SEL_BINS - 1; cut++) {
+    if (lo + hist[cut] >= lim) break;
+    lo += hist[cut];
+  }
+  uint32_t n = hist[cut];
+  uint32_t need = lim - lo;
+  /* Bin 0 with distances of the octaves under it is not one run of high bits: only sorted outright, or kept whole. */
+  if (cut == 0 && low && n > SEL_SMALL && n != need) return 0;
+  /* Every candidate is written to both outputs and counted in the one its bin picks: no branch on the bin. */
+  uint32_t kept = 0;
+  uint32_t at = 0;
+  for (uint32_t i = 0; i < m; i++) {
+    int32_t b = (int32_t)(f32_bits(dist[i]) >> SEL_SHIFT) - base;
+    b = b < 0 ? 0 : b;
+    order[kept] = i;
+    kept += b < cut;
+    list[at] = i;
+    at += b == cut;
+  }
+  uint32_t shift = SEL_SHIFT;
+  for (;;) {
+    if (n == need) { /* the whole list: every other candidate is in a higher bin, so farther */
+      for (uint32_t j = 0; j < n; j++) order[lo + j] = list[j];
+      return 1;
+    }
+    if (n <= SEL_SMALL) {
+      insertion_sort_order(list, dist, 0, (int32_t)n - 1);
+      if (dist[list[need - 1]] == dist[list[need]]) return 0;
+      for (uint32_t j = 0; j < need; j++) order[lo + j] = list[j];
+      return 1;
+    }
+    if (shift == 0) return 0; /* the list shares every bit: equal distances across the cut */
+    const uint32_t s = shift > 8 ? shift - 8 : 0;
+    const uint32_t mask = (1u << (shift - s)) - 1u;
+    for (uint32_t b = 0; b <= mask; b++) hist[b] = 0;
+    for (uint32_t j = 0; j < n; j++) hist[(f32_bits(dist[list[j]]) >> s) & mask]++;
+    uint32_t below = 0;
+    uint32_t sub = 0;
+    for (; sub < mask; sub++) {
+      if (below + hist[sub] >= need) break;
+      below += hist[sub];
+    }
+    uint32_t w = 0;
+    for (uint32_t j = 0; j < n; j++) {
+      const uint32_t p = list[j];
+      const uint32_t b = (f32_bits(dist[p]) >> s) & mask;
+      if (b < sub) order[lo++] = p;
+      else if (b == sub) list[w++] = p;
+    }
+    n = w;
+    need -= below;
+    shift = s;
+  }
+}
+
 /* takeClosest. ordered 0 (maxShadowsPerEntity): the kept casters only go into their own nearest-light slots,
-   whose order is (distance, light) whatever order they come in, so the kept slice is not sorted (E-133). */
-INLINE uint32_t take_closest(const uint32_t *tmpIdx, const float *tmpDist, uint32_t *order, uint32_t m, int32_t limit,
+   whose order is (distance, light) whatever order they come in, so the kept slice is not sorted (E-133). The stamp
+   below runs it as radix_select with this as the fallback; the float32 test module runs it whole. */
+__attribute__((unused)) INLINE uint32_t take_closest(const uint32_t *tmpIdx, const float *tmpDist, uint32_t *order, uint32_t m, int32_t limit,
                              uint32_t *outIdx, int ordered) {
   if (limit > 0 && m > (uint32_t)limit) {
     for (uint32_t k = 0; k < m; k++) order[k] = k;
@@ -551,12 +645,16 @@ int32_t stamp_light_range(uint32_t table) {
       }
     }
     if (m == 0) continue;
+    /* E-315: the radix select needs SEL_BINS words of cellOf (the grid build's, free after it: nSun words). */
+    const int radix = m >= SEL_MIN && nSun >= SEL_BINS;
     if (maxPE > 0) {
       /* takeClosest without its copy (the kept slice is not sorted here, E-133): the kept are order[0..lim) when it
          selects, else every candidate, and each brings its own distance. */
       if (lim > 0 && m > (uint32_t)lim) {
-        for (uint32_t k = 0; k < m; k++) order[k] = k;
-        quickselect_order(order, dist, 0, (int32_t)m - 1, lim - 1);
+        if (!(radix && radix_select(dist, m, (uint32_t)lim, f32_bits((float)rangeSq), order, keep, (uint32_t *)cellOf))) {
+          for (uint32_t k = 0; k < m; k++) order[k] = k;
+          quickselect_order(order, dist, 0, (int32_t)m - 1, lim - 1);
+        }
         for (int32_t k = 0; k < lim; k++) {
           const uint32_t at = order[k];
           note_nearest(nearDist, nearSlot, nearCount, tmpIdx[at], i, d64[at], maxPE);
@@ -567,7 +665,24 @@ int32_t stamp_light_range(uint32_t table) {
       continue;
     }
     if (grid && m > 1 && !(lim > 0 && m > (uint32_t)lim)) sort_pairs_by_index(tmpIdx, dist, m);
-    m = take_closest(tmpIdx, dist, order, m, lim, keep, 1);
+    if (lim > 0 && m > (uint32_t)lim) {
+      /* takeClosest: the kept sorted by distance. After the radix select they are sorted only when no two of them
+         tie (the quickselect's order of a tie is its own); else, and when it cannot decide, the quickselect. */
+      int ok = radix && radix_select(dist, m, (uint32_t)lim, f32_bits((float)rangeSq), order, keep, (uint32_t *)cellOf);
+      if (ok) {
+        quicksort_order(order, dist, 0, lim - 1);
+        for (int32_t k = 1; k < lim && ok; k++) ok = dist[order[k - 1]] != dist[order[k]];
+      }
+      if (!ok) {
+        for (uint32_t k = 0; k < m; k++) order[k] = k;
+        quickselect_order(order, dist, 0, (int32_t)m - 1, lim - 1);
+        quicksort_order(order, dist, 0, lim - 1);
+      }
+      for (int32_t k = 0; k < lim; k++) keep[k] = tmpIdx[order[k]];
+      m = (uint32_t)lim;
+    } else {
+      for (uint32_t k = 0; k < m; k++) keep[k] = tmpIdx[k];
+    }
     lightVec[0] = (float)lx;
     lightVec[1] = (float)ly;
     lightVec[2] = (float)intensity;

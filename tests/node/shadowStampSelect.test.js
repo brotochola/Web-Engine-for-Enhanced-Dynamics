@@ -351,6 +351,54 @@ function tally(t, dst, f) {
   }
 }
 
+/**
+ * The kernel's candidate scratch (the stamp regions), which shows the way a light's selection went: the quickselect
+ * writes an order entry for each of the m candidates, the radix select (E-315) only the lim kept ones, and it is the only
+ * one that writes `keep` under maxShadowsPerEntity (its boundary list).
+ */
+function scratchOf(s) {
+  const L = s.b.layout;
+  const n = s.caps.maxSun;
+  return { order: new Uint32Array(s.b.buffer, L.orderByte, n), keep: new Uint32Array(s.b.buffer, L.keepByte, n) };
+}
+
+/** One light over a crowd (and `stack` casters on one spot 50 px from it), keeping `lim`: the frame and its m. */
+function oneLightFrame(s, r, lim, maxPerEntity, stack = 0) {
+  const xy = [];
+  crowd(xy, r, 2500);
+  for (let q = 0; q < stack; q++) xy.push(1250, 700);
+  const nSun = writeCasters(s.dst, xy, r);
+  const L = light(1200, 700, 400, lim, r);
+  const f = { nSun, lights: [L], maxPerLight: 0, maxPerEntity, lightBegin: 0, lightStride: 1, stampCap: Infinity, stampBase: 0 };
+  return { f, keys: candidateKeys(s.dst, nSun, L) };
+}
+
+test('E-315: the radix select decides a cut between two distances; a tie at the cut goes to the quickselect', async () => {
+  const s = await setup({ allPairs: true });
+  const r = rng(0xb175);
+  const scratch = scratchOf(s);
+  const NONE = 0xffffffff;
+  for (const maxPerEntity of [0, PER_ENTITY]) {
+    for (const [stack, tie] of [[0, false], [300, true]]) {
+      const { f, keys } = oneLightFrame(s, r, 100, maxPerEntity, stack);
+      const m = keys.length;
+      assert.ok(m > 300, `the light has many candidates (${m})`);
+      assert.equal(keys[99] === keys[100], tie, `the frame ${tie ? 'ties' : 'does not tie'} at the cut`);
+      scratch.order.fill(NONE);
+      scratch.keep.fill(NONE);
+      compare(s, f, `one light, ${stack} stacked, maxPE ${maxPerEntity}`);
+      const label = `${stack} stacked, maxPE ${maxPerEntity}`;
+      if (tie) {
+        assert.notEqual(scratch.order[m - 1], NONE, `${label}: the quickselect ordered every candidate`);
+      } else {
+        assert.equal(scratch.order[m - 1], NONE, `${label}: only the kept are in order (the radix select)`);
+        assert.notEqual(scratch.order[99], NONE, `${label}: the kept are`);
+        if (maxPerEntity > 0) assert.notEqual(scratch.keep[0], NONE, `${label}: its boundary list`);
+      }
+    }
+  }
+});
+
 test('the kernel keeps the JS reference\'s casters, in its order, on frames built for the selection', async (t) => {
   const s = await setup({ allPairs: true });
   const r = rng(0x5e1ec7);
