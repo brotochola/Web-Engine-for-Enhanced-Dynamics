@@ -57,6 +57,7 @@ import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkSer
 import { withGpuClocks } from './glFrameRecorder.mjs';
 import { installCreationHooks, recordInWorker } from './webgpuRecorderWorker.mjs';
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
+import { benchWindowArgs, rememberBenchWindow } from './benchWindow.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -65,7 +66,7 @@ export async function recordWebGpuFrames(opts) {
   // The developer features turn the quantization of timestamps off; the inside-passes feature is experimental in Dawn,
   // which reports it only with unsafe APIs allowed (Chrome 157: not with the developer features alone).
   const flags = opts.chromeArgs || (opts.devFeatures === false ? [] : ['--enable-webgpu-developer-features', '--enable-unsafe-webgpu']);
-  const args = ['--mute-audio', ...flags];
+  const args = ['--mute-audio', ...flags, ...benchWindowArgs()];
   const browser = await chromium.launch({ headless: false, channel: 'chrome', args });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
@@ -91,6 +92,7 @@ export async function recordWebGpuFrames(opts) {
     });
     const { result, clocks } = await withGpuClocks(() => Promise.race([worker.evaluate(recordInWorker, { ms: opts.recordMs, mode: opts.mode }), stuck]));
     clearTimeout(timer);
+    await rememberBenchWindow(page);
     if (result && !result.error) {
       result.gpuClocks = clocks;
       result.hookState = hookState;

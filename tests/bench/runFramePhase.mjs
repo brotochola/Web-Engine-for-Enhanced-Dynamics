@@ -22,6 +22,7 @@ import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkSer
 import { parseArgs } from './microbenchHelpers.mjs';
 import { median as benchMedian } from './benchMath.js';
 import { summarizePhase } from './framePhaseSummary.mjs';
+import { benchWindowArgs, rememberBenchWindow } from './benchWindow.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const args = parseArgs(process.argv.slice(2));
@@ -80,6 +81,7 @@ const browser = await chromium.launch({
     // Same as runIntegratedWorkerBenchmark: without it Windows reports a covered
     // window as hidden and Chrome throttles its frames (review M9).
     ...(process.platform === 'win32' ? ['--disable-features=CalculateNativeWinOcclusion'] : []),
+    ...benchWindowArgs(),
   ],
 });
 
@@ -112,6 +114,7 @@ try {
     scene._phaseLog = null;
     return log;
   });
+  await rememberBenchWindow(page);
 
   const summary = summarizePhase(samples);
   const table = phaseTable(samples);
