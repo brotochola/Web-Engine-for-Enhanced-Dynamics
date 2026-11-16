@@ -1466,3 +1466,34 @@ visible):
 
 **Fase 4, optimizar** por costo por qué tan común es: las candidatas anotadas (E-363, E-370 a E-372, E-373, E-378, E-380,
 E-381, la caché de lo quieto de F6, los códigos por caster en las filas con clave, E-191) y lo que salga de las fases 1 a 3.
+
+### 17.10 Lo que dijeron las fases 0 y 3, y el plan de la fase 4 (2026-11-15, noche)
+
+**Fase 0.** N-206 respondido: la rama no pierde soldados (los mismos 13 7xx vivos que main); las corridas con zoom tenían
+la cámara libre prendida (solo ella pasa de zoom 1), probablemente a mano. Las sesiones de Predator fijan la cámara
+(`?zoom=0.216`). N-202 sin reproducir: una escena de prueba (keyedStaticsProbeScene) y un chequeo dentro del engine (un
+espejo de la textura de statics) dicen que la pasada principal dibuja cada fila con su textura, en Predator normal y con
+`?light3d=1`; falta la escena del dueño. N-212 (sombras que titilan): en Predator hay 58 a 70 luces con sombra a la vista
+contra el tope de 48, y el grupo cambiaba cada 2 s: ahora las del corte se desvanecen (e47c5442).
+
+**Fase 1** espera la ventana quieta (la pestaña del dueño abierta). carScene, littleCity y burningBoxes quedan bajo el piso
+de 6 ms en el worker de la pregunta y sin perilla de carga en main: van como guardas; el costo de DirectionalSprite sale de
+su stress scene. Escenas de la fase 2 listas: light3dCompareScene (la misma población en main y en la rama), los faroles a
+escala (lampShadowStressScene) y los renders con columnas bajo faroles (sunShadowMap `?lamps=`).
+
+**Fase 3** (traces de CPU, deopts y heap; R-1155, R-1157). Arreglado en el acto, por basura: la tira de las tarjetas de los
+faroles hecha cada frame y los doubles de los volúmenes (N-213: Pixi 1317 → 504 KB/s en Predator light3d), los doubles de
+pickDirection (E-388: logic 365 → 24 KB/s con DirectionalSprite, pre-render 358 → 103 bajo los renders). Lo que más pesa
+del código nuevo, y la fase 4 en ese orden (cada una con su escena dueña y sus traces antes y después; un archivo, un
+escritor):
+
+| # | Qué | Dónde pesa | Archivo | Idea |
+| --- | --- | --- | --- | --- |
+| 1 | Los cuadros de sol y de faroles en JS (E-370 a E-372) | Predator light3d: 11 % de pre-render; light3dCompare `?all=1`: los de faroles un noveno | preRenderWorker.js (y gpuPack.c o shadowStamp.c) | Escribir el cuadro dentro del kernel que escribe la fila (las tablas aplanadas a typed arrays), o en el shader por id de textura |
+| 2 | La elección de casters por farol (quickselect_order) | 21 % de pre-render a 128 faroles con mapa | shadowStamp.c | Con mapa, no elegir los más cercanos de cada farol si caben todos en su presupuesto; si no, una grilla por distancia en vez de quickselect |
+| 3 | Las palabras del G-buffer por instancia (E-387) | 3,4 % de Pixi en Predator light3d | gbufWord.js, pixiWorker.js (o gpuPack.c) | La palabra por entidad, refrescada cuando cambian sus flags; o escrita por el pack con clave |
+| 4 | Los setters x e y boxean su double (N-215, de todo el engine) | 2,1 MB/s a 3000 caminantes | gameObject.js | Setter mínimo (el store y una llamada sin doubles para lo raro) |
+| 5 | Deopts estables (N-214, de todo el engine) | spatialWorker ×391, weedjsPost ×286, logicWorker ×140 en 8 s | spatialWorker.js, weedjsPost.js, logicWorker.js | Leer cada sitio con el pase de código y `--trace-deopt` |
+| 6 | La GPU del pase de luz (E-380, E-381, E-373, E-378) | 5,6 % (la ventana del alcance), 12 % (el panorámico), WebGL 11 % más lento que WebGPU, la profundidad por pixel +30/+90 % | lightingBasic.*, lampShadowMap.js | gpuPassBench por pase antes y después |
+
+Al final, todo junto en una sesión (la suma se mide, no se suma), contra main y contra la rama de antes.
