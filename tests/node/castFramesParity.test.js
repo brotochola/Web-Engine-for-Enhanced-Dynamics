@@ -1,0 +1,751 @@
+// E-370 to E-372: the frame passes of directional casters (pre-render's sun rows, keyed sun rows, lamp stamp rows full and
+// keyed) write bit for bit what they wrote before, on random scenes: uniform tables of 4 to 32 directions and uneven ones,
+// tables whose count is not a multiple of four or whose step is not a whole turn's share, flipped slots, slots the atlas
+// lacks, fixed cards, casters whose kind is not a card, sheets that cast their solid or stand on a contact, rows of other
+// types, entities out of range, lamps all around their casters (rays along the borders between two directions too) and
+// lights missing. The reference is the passes as they were (E-368, E-369), copied here.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { GPU_CASTER_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS } from '../../src/render/gpuQueueLayout.js';
+import { DirectionalSprite } from '../../src/components/directionalSprite.js';
+import { PICK_ARGS, pickDirection, pickDirectionArgs, wrapAngle } from '../../src/core/spriteDirections.js';
+import { mulberry32 } from '../bench/benchMath.js';
+import { loadWorker } from '../bench/workerHarness.mjs';
+
+// The shipped row layout's floats the passes write (preRenderWorker.js GPU_ROW_*).
+const GPU_ROW_SCALE_X = 2;
+const GPU_ROW_TINT = 9;
+const GPU_ROW_TEXTURE = 10;
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The reference: preRenderWorker.js's frame passes at bdcca2e7, verbatim but for the names.
+
+function refSunFrameTables(byId) {
+  if (!byId) return null;
+  const out = [];
+  let any = false;
+  for (const [id, src] of Object.entries(byId)) {
+    if (!src || !(src.count > 0)) continue;
+    const entry = {
+      count: src.count,
+      uniform: src.uniform === true,
+      start: +src.start,
+      step: +src.step,
+      angles: Float64Array.from(src.angles),
+      anim: Uint8Array.from(src.anim),
+      flip: Uint8Array.from(src.flip),
+      groups: src.groups.length,
+      solid: src.solid === true,
+      contact: src.contact === true,
+      front: 0,
+      slotStart: new Int32Array(0),
+      slotCount: new Int32Array(0),
+      slotsOf: null,
+      maxFrames: 1,
+      frameOf: new Int32Array(0),
+      frameShift: -1,
+      frameAt: new Int32Array(0),
+    };
+    entry.front = pickDirection(entry, Math.PI / 2, 255, 0);
+    out[id | 0] = entry;
+    any = true;
+  }
+  return any ? out : null;
+}
+
+function refSunFrameSlotsOf(t, map, starts, counts, proxy) {
+  const slots = t.anim.length;
+  const start = new Int32Array(slots).fill(-1);
+  const count = new Int32Array(slots);
+  for (let s = 0; s < slots; s++) {
+    const global = map ? map[t.anim[s]] : undefined;
+    if (global === undefined) continue;
+    start[s] = starts[global] | 0;
+    count[s] = counts[global] | 0;
+  }
+  t.slotStart = start;
+  t.slotCount = count;
+  t.slotsOf = proxy;
+  let most = 1;
+  for (let s = 0; s < slots; s++) if (count[s] > most) most = count[s];
+  t.maxFrames = most;
+  t.frameOf = new Int32Array(t.count * t.groups * most);
+  t.frameShift = -1;
+  t.frameAt = new Int32Array(t.count * t.groups * most);
+  refSunFrameResolve(t, 0, t.frameAt);
+}
+
+function refSunFrameResolve(t, shift, out) {
+  const count = t.count;
+  const groups = t.groups;
+  const most = t.maxFrames;
+  for (let cur = 0; cur < count; cur++) {
+    let d = cur + shift;
+    if (d >= count) d -= count;
+    for (let g = 0; g < groups; g++) {
+      const slot = g * count + d;
+      const start = t.slotStart[slot];
+      const nf = t.slotCount[slot];
+      const at = (cur * groups + g) * most;
+      for (let f = 0; f < most; f++) {
+        if (start < 0) {
+          out[at + f] = 0;
+          continue;
+        }
+        const tid = start + (f < nf ? f : 0) + 1;
+        out[at + f] = t.flip[slot] === 1 ? -tid : tid;
+      }
+    }
+  }
+  if (out === t.frameOf) t.frameShift = shift;
+}
+
+const REF_SUN_TURN = new Float64Array(1);
+const REF_LAMP_TURN = new Float64Array(1);
+const REF_LAMP_RAY = new Float64Array(2);
+const CARD_KIND = 1;
+
+function refCastsCard(t, kinds, e, lamps) {
+  const k = kinds !== null ? kinds[e] : 0;
+  if (k === CARD_KIND) return true;
+  if (k !== 0) return false;
+  return lamps ? !t.contact : !t.solid;
+}
+
+function refPrepareSunFrames(tables, proxy, starts, counts, shift, shiftTurn, turn) {
+  REF_SUN_TURN[0] = turn;
+  for (let sheet = 0; sheet < tables.length; sheet++) {
+    const t = tables[sheet];
+    if (t === undefined) continue;
+    if (t.slotsOf !== proxy) refSunFrameSlotsOf(t, proxy[sheet], starts, counts, proxy);
+    if (t.uniform && shiftTurn[sheet] !== turn) {
+      shiftTurn[sheet] = turn;
+      shift[sheet] = Math.round(wrapAngle(turn) / t.step) % t.count;
+    }
+    if (t.uniform && t.frameShift !== shift[sheet]) refSunFrameResolve(t, shift[sheet], t.frameOf);
+  }
+}
+
+function refSunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds) {
+  if (active[e] !== 1 || mode[e] !== 1 || (casts !== null && casts[e] !== 1)) return 0;
+  const sheet = sheets[e];
+  const t = tables[sheet];
+  if (t === undefined || !refCastsCard(t, kinds, e, false)) return 0;
+  const fixed = orients !== null && orients[e] === 1;
+  const cur = dirs[e];
+  let d = 0;
+  if (fixed) {
+    d = t.front;
+  } else if (t.uniform && cur < t.count) {
+    let f = frames !== null ? frames[e] | 0 : 0;
+    if (f < 0 || f >= t.maxFrames) f = 0;
+    const g = anims[e];
+    return t.frameOf[(cur * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
+  } else {
+    d = refSunFrameDirection(t, e, REF_SUN_TURN);
+  }
+  const g = anims[e];
+  const slot = (g < t.groups ? g : 0) * t.count + d;
+  const start = t.slotStart[slot];
+  if (start < 0) return 0;
+  let f = frames !== null ? frames[e] | 0 : 0;
+  if (f < 0 || f >= t.slotCount[slot]) f = 0;
+  const tid = start + f + 1;
+  return t.flip[slot] === 1 ? -tid : tid;
+}
+
+function refApplySunFramesFor(rows, sunN, casters, types, entities, active, mode, casts, sheets, dirs, anims, frames,
+  tables, shift, orients, kinds = null) {
+  for (let k = 0; k < sunN; k++) {
+    const row = casters[k];
+    if (types[row] !== 0) continue;
+    const v = refSunFrameFor(entities[row], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
+    if (v === 0) continue;
+    const at = k * GPU_CASTER_FLOATS;
+    rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
+    const sx = rows[at + GPU_ROW_SCALE_X];
+    rows[at + GPU_ROW_SCALE_X] = (v < 0) === (sx < 0) ? sx : -sx;
+  }
+}
+
+/** The worker's _tagCasterEntities loop: each full sun row's entity in its tint float. */
+function refTagCasterEntities(rows, sunN, casters, types, entities) {
+  for (let k = 0; k < sunN; k++) {
+    const row = casters[k];
+    rows[k * GPU_CASTER_FLOATS + GPU_ROW_TINT] = types[row] === 0 ? entities[row] : -1;
+  }
+}
+
+function refApplyKeyedSunFramesFor(rows, keyedN, count, qType, shadowH, types, entities, active, mode, casts, sheets,
+  dirs, anims, frames, tables, shift, orients, kinds = null) {
+  let n = 0;
+  for (let i = 0; i < count && n < keyedN; i++) {
+    if (qType && qType[i] === 3) continue;
+    if (!(shadowH[i] > 0)) continue;
+    const k = n++;
+    if (types[i] !== 0) continue;
+    const v = refSunFrameFor(entities[i], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
+    if (v !== 0) rows[k * GPU_KEYED_CASTER_FLOATS + 3] = v;
+  }
+}
+
+function refFastAtan2(y, x) {
+  const ax = x < 0 ? -x : x;
+  const ay = y < 0 ? -y : y;
+  const big = ax > ay ? ax : ay;
+  if (big === 0) return 0;
+  const a = (ax > ay ? ay : ax) / big;
+  const q = a * a;
+  let r = a * (0.999866 + q * (-0.3302995 + q * (0.180141 + q * (-0.085133 + q * 0.0208351))));
+  if (ay > ax) r = 1.5707963267948966 - r;
+  if (x < 0) r = 3.141592653589793 - r;
+  return y < 0 ? -r : r;
+}
+
+function refPrepareLampFrames(tables, proxy, starts, counts) {
+  for (let sheet = 0; sheet < tables.length; sheet++) {
+    const t = tables[sheet];
+    if (t !== undefined && t.slotsOf !== proxy) refSunFrameSlotsOf(t, proxy[sheet], starts, counts, proxy);
+  }
+}
+
+function refLampFrameFor(e, t, dirs, anims, frames) {
+  const cur = dirs[e];
+  let d = 0;
+  if (t.uniform && cur < t.count) {
+    const turn = -1.5707963267948966 - refFastAtan2(REF_LAMP_RAY[1], REF_LAMP_RAY[0]);
+    d = (cur + Math.round(wrapAngle(turn) / t.step)) % t.count;
+    if (d < 0) d += t.count;
+  } else {
+    REF_LAMP_TURN[0] = -1.5707963267948966 - Math.atan2(REF_LAMP_RAY[1], REF_LAMP_RAY[0]);
+    d = refSunFrameDirection(t, e, REF_LAMP_TURN);
+  }
+  const g = anims[e];
+  let f = frames !== null ? frames[e] | 0 : 0;
+  if (f < 0 || f >= t.maxFrames) f = 0;
+  return t.frameAt[(d * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
+}
+
+function refFrameFacing(e, t, d, anims, frames) {
+  if (d >= t.count) return 0;
+  const g = anims[e];
+  let f = frames !== null ? frames[e] | 0 : 0;
+  if (f < 0 || f >= t.maxFrames) f = 0;
+  return t.frameAt[(d * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
+}
+
+function refApplyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive, dsMode,
+  dirs, anims, sheets, orients, kinds = null) {
+  refPrepareLampFrames(tables, proxy, starts, counts);
+  for (let k = 0; k < stampN; k++) {
+    const at = k * GPU_CASTER_FLOATS;
+    const e = rows[at + GPU_ROW_TINT] | 0;
+    if (e < 0 || e >= dsActive.length || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
+    const t = tables[sheets[e]];
+    if (t === undefined) continue;
+    const card = refCastsCard(t, kinds, e, true);
+    const fixed = orients !== null && orients[e] === 1;
+    let v = 0;
+    if (card && !fixed) {
+      const L = lights[lightIdx[k]];
+      if (!L) continue;
+      REF_LAMP_RAY[0] = rows[at] - L.x;
+      REF_LAMP_RAY[1] = (rows[at + 1] - L.y) * invG;
+      v = refLampFrameFor(e, t, dirs, anims, frames);
+    } else {
+      v = refFrameFacing(e, t, card ? t.front : dirs[e], anims, frames);
+    }
+    if (v === 0) continue;
+    rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
+    const sx = rows[at + GPU_ROW_SCALE_X];
+    rows[at + GPU_ROW_SCALE_X] = (v < 0) === (sx < 0) ? sx : -sx;
+  }
+}
+
+function refApplyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive,
+  dsMode, dirs, anims, sheets, orients, kinds = null) {
+  refPrepareLampFrames(tables, proxy, starts, counts);
+  for (let k = 0; k < stampN; k++) {
+    const at = k * GPU_KEYED_STAMP_FLOATS;
+    const e = rows[at + 2] | 0;
+    if (e < 0 || e >= dsActive.length || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
+    const t = tables[sheets[e]];
+    if (t === undefined) continue;
+    if (!refCastsCard(t, kinds, e, true)) {
+      if (rows[at + 3] !== 0) rows[at + 3] = 0;
+      continue;
+    }
+    let v = 0;
+    if (orients !== null && orients[e] === 1) {
+      v = refFrameFacing(e, t, t.front, anims, frames);
+    } else {
+      const L = lights[lightIdx[k]];
+      if (!L) continue;
+      REF_LAMP_RAY[0] = rows[at] - L.x;
+      REF_LAMP_RAY[1] = (rows[at + 1] - L.y) * invG;
+      v = refLampFrameFor(e, t, dirs, anims, frames);
+    }
+    if (v !== 0) rows[at + 3] = v;
+  }
+}
+
+function refSunFrameDirection(t, e, turn) {
+  const ax = DirectionalSprite.aimX[e];
+  const ay = DirectionalSprite.aimY[e];
+  const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
+  PICK_ARGS[0] = facing + turn[0];
+  PICK_ARGS[1] = 0;
+  return pickDirectionArgs(t, 255);
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Random scenes.
+
+const TWO_PI = Math.PI * 2;
+const SHEET_IDS = 12;
+const LIGHTS = 14;
+
+/** A direction table as the scene sends it (spriteDirections.js buildDirectionTable's fields). */
+function tableSource(r, kind) {
+  const { count } = kind;
+  const groups = 1 + Math.floor(r() * 3);
+  let uniform = true;
+  let step = TWO_PI / count;
+  let start = r() < 0.5 ? 0 : r() * step;
+  let angles = Array.from({ length: count }, (_, k) => start + k * step);
+  if (kind.uneven) {
+    uniform = false;
+    angles = Array.from({ length: count }, () => r() * TWO_PI).sort((a, b) => a - b);
+    start = angles[0];
+  } else if (kind.oddStep) {
+    // A uniform table whose step is not a whole turn's share (a hand-made one).
+    step = (TWO_PI / count) * (1.5 + r());
+  }
+  const slots = groups * count;
+  const flips = r() < 0.4 ? 0 : r() < 0.5 ? 0.5 : 1;
+  return {
+    count,
+    uniform,
+    start,
+    step,
+    angles,
+    // Slots share an animation now and then (a mirrored side, a group that lacks a direction).
+    anim: Array.from({ length: slots }, (_, s) => (r() < 0.8 ? s : Math.floor(r() * slots))),
+    flip: Array.from({ length: slots }, () => (r() < flips ? 1 : 0)),
+    groups: Array.from({ length: groups }, (_, g) => `g${g}`),
+    solid: r() < 0.25,
+    contact: r() < 0.4,
+  };
+}
+
+const TABLE_KINDS = [
+  { count: 4 }, { count: 4 }, { count: 32 }, { count: 8 }, { count: 16 }, { count: 12 }, { count: 6 }, { count: 3 },
+  { count: 1 }, { count: 5, uneven: true }, { count: 8, oddStep: true },
+];
+
+function makeScene(seed, n) {
+  const r = mulberry32(seed);
+  const sources = {};
+  const tableIds = [];
+  for (let id = 1; id < SHEET_IDS; id++) {
+    if (r() < 0.15) continue;
+    sources[id] = tableSource(r, TABLE_KINDS[(id - 1) % TABLE_KINDS.length]);
+    tableIds.push(id);
+  }
+  // proxyToGlobalAnim (some animations missing from the atlas) and the frame tables.
+  const proxy = {};
+  const starts = [];
+  const counts = [];
+  let global = 0;
+  let offset = 0;
+  for (const id of tableIds) {
+    const map = {};
+    const locals = sources[id].anim.length;
+    for (let a = 0; a < locals; a++) {
+      if (r() < 0.06) continue;
+      map[a] = global;
+      starts[global] = offset;
+      counts[global] = 1 + Math.floor(r() * 6);
+      offset += counts[global];
+      global++;
+    }
+    proxy[id] = map;
+  }
+  const pick = (weights) => {
+    let x = r();
+    for (let k = 0; k < weights.length; k++) {
+      if (x < weights[k]) return k;
+      x -= weights[k];
+    }
+    return weights.length - 1;
+  };
+  const e = {
+    active: new Uint8Array(n),
+    mode: new Uint8Array(n),
+    casts: new Uint8Array(n),
+    sheets: new Uint8Array(n),
+    sunKind: new Uint8Array(n),
+    lampKind: new Uint8Array(n),
+    orients: new Uint8Array(n),
+    dirs: new Uint8Array(n),
+    anims: new Uint8Array(n),
+    frames: new Uint16Array(n),
+  };
+  for (let i = 0; i < n; i++) {
+    e.active[i] = pick([0.1, 0.85, 0.05]);
+    e.mode[i] = pick([0.08, 0.87, 0.05]);
+    e.casts[i] = r() < 0.92 ? 1 : 0;
+    e.sheets[i] = r() < 0.9 ? tableIds[Math.floor(r() * tableIds.length)] : Math.floor(r() * (SHEET_IDS + 2));
+    e.sunKind[i] = pick([0.6, 0.25, 0.1, 0.05]);
+    e.lampKind[i] = pick([0.6, 0.25, 0.1, 0.05]);
+    e.orients[i] = pick([0.85, 0.12, 0.03]);
+    const src = sources[e.sheets[i]];
+    e.dirs[i] = r() < 0.05 ? 255 : Math.floor(r() * ((src ? src.count : 8) + (r() < 0.05 ? 3 : 0)));
+    e.anims[i] = Math.floor(r() * 4);
+    e.frames[i] = Math.floor(r() * 8);
+  }
+  // DirectionalSprite's facing columns (sunFrameDirection reads them for uneven tables and casters with no direction).
+  const ds = {
+    facing: Float32Array.from({ length: n }, () => (r() - 0.5) * 4 * TWO_PI),
+    facingFrom: Uint8Array.from({ length: n }, () => pick([0.6, 0.3, 0.1])),
+    aimX: Float32Array.from({ length: n }, () => (r() < 0.2 ? 0 : (r() - 0.5) * 200)),
+    aimY: Float32Array.from({ length: n }, () => (r() < 0.2 ? 0 : (r() - 0.5) * 200)),
+  };
+  return { r, sources, proxy, starts, counts, e, ds, n };
+}
+
+function bindDirectionalSprite(ds) {
+  DirectionalSprite.facing = ds.facing;
+  DirectionalSprite.facingFrom = ds.facingFrom;
+  DirectionalSprite.aimX = ds.aimX;
+  DirectionalSprite.aimY = ds.aimY;
+}
+
+/** Some casters walk a frame, turn or change their animation between frames. */
+function stepScene(s) {
+  const { r, e, n } = s;
+  for (let k = 0; k < n / 4; k++) {
+    const i = Math.floor(r() * n);
+    e.frames[i] = (e.frames[i] + 1) % 9;
+    if (r() < 0.3) e.dirs[i] = r() < 0.03 ? 255 : Math.floor(r() * 34) % 33;
+    if (r() < 0.1) e.anims[i] = Math.floor(r() * 4);
+  }
+}
+
+/** A random float32 value as a row's float, zeros, negative zeros and NaN among them. */
+function rowFloat(r) {
+  const x = r();
+  if (x < 0.03) return 0;
+  if (x < 0.06) return -0;
+  if (x < 0.07) return NaN;
+  return (r() - 0.5) * 400;
+}
+
+function sameBits(a, b, what) {
+  const ua = new Uint32Array(a.buffer, a.byteOffset, a.length);
+  const ub = new Uint32Array(b.buffer, b.byteOffset, b.length);
+  for (let i = 0; i < ua.length; i++) {
+    if (ua[i] !== ub[i]) assert.fail(`${what}: float ${i} (row float ${i % 64}) is ${b[i]}, the reference wrote ${a[i]}`);
+  }
+}
+
+let mod = null;
+async function worker() {
+  if (mod === null) {
+    await loadWorker('preRenderWorker.js', 'preRenderWorker');
+    mod = await import('../../src/workers/preRenderWorker.js');
+  }
+  return mod;
+}
+
+/** The columns a variant hands the passes: null for the optional ones now and then. */
+function columns(s, variant) {
+  const { e } = s;
+  return {
+    casts: variant & 1 ? null : e.casts,
+    frames: variant & 2 ? null : e.frames,
+    orients: variant & 4 ? null : e.orients,
+    sunKinds: variant & 8 ? null : e.sunKind,
+    lampKinds: variant & 8 ? null : e.lampKind,
+  };
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The sun's rows.
+
+/** A queue: its rows' types and entities, the casting rows listed in order, and its scale column. */
+function makeQueue(s, rows) {
+  const { r, n } = s;
+  const types = Uint8Array.from({ length: rows }, () => (r() < 0.85 ? 0 : 1 + Math.floor(r() * 3)));
+  const entities = Int32Array.from({ length: rows }, () => Math.floor(r() * n));
+  const list = [];
+  for (let i = 0; i < rows; i++) if (r() < 0.6) list.push(i);
+  const casters = Uint32Array.from(list);
+  const scaleX = Float32Array.from({ length: rows }, () => {
+    const x = r();
+    if (x < 0.02) return 0;
+    if (x < 0.04) return -0;
+    if (x < 0.05) return NaN;
+    return (r() < 0.3 ? -1 : 1) * (0.25 + r() * 2);
+  });
+  const qType = Uint8Array.from({ length: rows }, () => (r() < 0.05 ? 3 : 0));
+  const shadowH = Float32Array.from({ length: rows }, () => {
+    const x = r();
+    return x < 0.6 ? 5 + r() * 40 : x < 0.85 ? 0 : x < 0.95 ? -3 : NaN;
+  });
+  return { types, entities, casters, scaleX, qType, shadowH };
+}
+
+/** Full sun rows as the pack leaves them: random floats, each row's scale its queue row's. */
+function packedSunRows(s, q) {
+  const { r } = s;
+  const sunN = q.casters.length;
+  const rows = Float32Array.from({ length: sunN * GPU_CASTER_FLOATS }, () => rowFloat(r));
+  for (let k = 0; k < sunN; k++) rows[k * GPU_CASTER_FLOATS + GPU_ROW_SCALE_X] = q.scaleX[q.casters[k]];
+  return rows;
+}
+
+const SUN_TURNS = [0, Math.PI / 2, -2.2, 0.31, 3.9, -7.5, 13.1];
+
+test('E-370: full sun rows: the same textures and flips as before, every variant of the columns', async () => {
+  const m = await worker();
+  for (const seed of [11, 12, 13, 14]) {
+    const s = makeScene(seed, 1500);
+    bindDirectionalSprite(s.ds);
+    const refTables = refSunFrameTables(s.sources);
+    const newTables = m.sunFrameTables(s.sources);
+    const refShift = new Int16Array(256);
+    const refShiftTurn = new Float64Array(256).fill(NaN);
+    const newShift = new Int16Array(256);
+    const newShiftTurn = new Float64Array(256).fill(NaN);
+    for (let frame = 0; frame < 6; frame++) {
+      const variant = (seed * 7 + frame) & 15;
+      const c = columns(s, variant);
+      const q = makeQueue(s, 1200);
+      const turn = SUN_TURNS[(seed + frame) % SUN_TURNS.length];
+      // A new proxy map now and then (the slots rebuilt).
+      const proxy = frame === 3 ? JSON.parse(JSON.stringify(s.proxy)) : s.proxy;
+      refPrepareSunFrames(refTables, proxy, s.starts, s.counts, refShift, refShiftTurn, turn);
+      m.prepareSunFrames(newTables, proxy, s.starts, s.counts, newShift, newShiftTurn, turn);
+      const ref = packedSunRows(s, q);
+      const got = ref.slice();
+      const sunN = q.casters.length;
+      refApplySunFramesFor(ref, sunN, q.casters, q.types, q.entities, s.e.active, s.e.mode, c.casts, s.e.sheets, s.e.dirs,
+        s.e.anims, c.frames, refTables, refShift, c.orients, c.sunKinds);
+      m.applySunFramesFor(got, sunN, q.casters, q.types, q.entities, s.e.active, s.e.mode, c.casts, s.e.sheets, s.e.dirs,
+        s.e.anims, c.frames, newTables, newShift, c.orients, c.sunKinds);
+      sameBits(ref, got, `seed ${seed} frame ${frame}`);
+      stepScene(s);
+    }
+  }
+});
+
+test('E-370: keyed sun rows: the same frames as before', async () => {
+  const m = await worker();
+  for (const seed of [21, 22, 23]) {
+    const s = makeScene(seed, 1500);
+    bindDirectionalSprite(s.ds);
+    const refTables = refSunFrameTables(s.sources);
+    const newTables = m.sunFrameTables(s.sources);
+    const refShift = new Int16Array(256);
+    const refShiftTurn = new Float64Array(256).fill(NaN);
+    const newShift = new Int16Array(256);
+    const newShiftTurn = new Float64Array(256).fill(NaN);
+    for (let frame = 0; frame < 6; frame++) {
+      const variant = (seed * 5 + frame) & 15;
+      const c = columns(s, variant);
+      const q = makeQueue(s, 1500);
+      const turn = SUN_TURNS[(seed + frame) % SUN_TURNS.length];
+      refPrepareSunFrames(refTables, s.proxy, s.starts, s.counts, refShift, refShiftTurn, turn);
+      m.prepareSunFrames(newTables, s.proxy, s.starts, s.counts, newShift, newShiftTurn, turn);
+      let casting = 0;
+      for (let i = 0; i < q.types.length; i++) if (q.qType[i] !== 3 && q.shadowH[i] > 0) casting++;
+      // The kernel's cap now and then below the casting rows.
+      const keyedN = frame & 1 ? casting : Math.max(0, casting - 37);
+      const ref = Float32Array.from({ length: keyedN * GPU_KEYED_CASTER_FLOATS }, () => rowFloat(s.r));
+      for (let k = 0; k < keyedN; k++) ref[k * GPU_KEYED_CASTER_FLOATS + 3] = 0;
+      const got = ref.slice();
+      const qType = frame === 2 ? null : q.qType;
+      refApplyKeyedSunFramesFor(ref, keyedN, q.types.length, qType, q.shadowH, q.types, q.entities, s.e.active, s.e.mode,
+        c.casts, s.e.sheets, s.e.dirs, s.e.anims, c.frames, refTables, refShift, c.orients, c.sunKinds);
+      m.applyKeyedSunFramesFor(got, keyedN, q.types.length, qType, q.shadowH, q.types, q.entities, s.e.active, s.e.mode,
+        c.casts, s.e.sheets, s.e.dirs, s.e.anims, c.frames, newTables, newShift, c.orients, c.sunKinds);
+      sameBits(ref, got, `seed ${seed} frame ${frame}`);
+      stepScene(s);
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// The lamps' rows.
+
+function makeLights(r) {
+  const lights = [];
+  for (let i = 0; i < LIGHTS - 2; i++) {
+    // Whole-pixel lamps most of the time (a row's x and y are float32), some anywhere.
+    const x = r() < 0.7 ? Math.round(r() * 1500) : r() * 1500;
+    const y = r() < 0.7 ? Math.round(r() * 1500) : r() * 1500;
+    lights.push({ id: 100000 + i, x, y, intensity: 1.4, rangeSq: 90000 });
+  }
+  return lights;
+}
+
+/** The step of a uniform table of `count` directions: the borders a ray is stressed against. */
+const STRESS_COUNTS = [4, 8, 16, 32, 12];
+
+/**
+ * A ray (dx, dy on the floor, dy already times invG) from lamp to caster: anywhere, on a border between two directions of
+ * a table of STRESS_COUNTS (within 3e-4 rad either way, fastAtan2's error band and the borders' margin), along an axis, or
+ * none at all (the caster on its lamp).
+ */
+function ray(r) {
+  const x = r();
+  const len = 1 + r() * 300;
+  if (x < 0.02) return [0, 0];
+  if (x < 0.06) {
+    const a = Math.floor(r() * 4) * (Math.PI / 2);
+    return [Math.round(Math.cos(a)) * len, Math.round(Math.sin(a)) * len];
+  }
+  if (x < 0.5) {
+    const count = STRESS_COUNTS[Math.floor(r() * STRESS_COUNTS.length)];
+    const step = TWO_PI / count;
+    const j = Math.floor(r() * count);
+    const off = (r() - 0.5) * 6e-4 * (r() < 0.5 ? 1 : 0.05);
+    // The lamp's turn is the angle of (-dy, -dx): its borders sit at (j + 1/2) steps.
+    const phi = (j + 0.5) * step + off;
+    return [-Math.sin(phi) * len, -Math.cos(phi) * len];
+  }
+  const a = r() * TWO_PI;
+  return [Math.cos(a) * len, Math.sin(a) * len];
+}
+
+/** Stamp rows: each a caster near its lamp (its entity where the row names it), random floats elsewhere. */
+function stampRows(s, lights, invG, stampN, floats, entityFloat, keyed) {
+  const { r, n } = s;
+  const rows = Float32Array.from({ length: stampN * floats }, () => rowFloat(r));
+  const lightIdx = new Uint8Array(stampN);
+  // The stamp lists come by light: runs of a light's rows, a missing light now and then.
+  let l = 0;
+  for (let k = 0; k < stampN; k++) {
+    if (r() < 0.05) l = Math.floor(r() * LIGHTS);
+    lightIdx[k] = l;
+    const at = k * floats;
+    const x = r();
+    rows[at + entityFloat] = x < 0.02 ? -1 : x < 0.04 ? n + Math.floor(r() * 50) : x < 0.06 ? Math.floor(r() * n) + 0.5 : Math.floor(r() * n);
+    const L = lights[l];
+    if (L) {
+      const [dx, dy] = ray(r);
+      rows[at] = L.x + dx;
+      rows[at + 1] = L.y + dy / invG;
+    }
+    if (keyed) rows[at + 3] = r() < 0.5 ? 0 : (r() < 0.5 ? -1 : 1) * Math.floor(1 + r() * 300);
+    else rows[at + GPU_ROW_SCALE_X] = (r() < 0.3 ? -1 : 1) * (0.5 + r());
+  }
+  return { rows, lightIdx };
+}
+
+test('E-372: fastAtan2 stays within 2e-5 rad of the arctangent (the lamps\' border margin is five times that)', async () => {
+  const m = await worker();
+  let worst = 0;
+  for (let k = 0; k <= 200000; k++) {
+    const a = k / 200000;
+    const d = Math.abs(m.fastAtan2(a, 1) - Math.atan(a));
+    if (d > worst) worst = d;
+  }
+  assert.ok(worst < 2e-5, `worst ${worst}`);
+});
+
+test('E-372: full lamp rows: the same textures and flips as before', async () => {
+  const m = await worker();
+  for (const seed of [31, 32, 33, 34]) {
+    const s = makeScene(seed, 1500);
+    bindDirectionalSprite(s.ds);
+    const refTables = refSunFrameTables(s.sources);
+    const newTables = m.sunFrameTables(s.sources);
+    for (let frame = 0; frame < 5; frame++) {
+      const variant = (seed * 3 + frame) & 15;
+      const c = columns(s, variant);
+      const lights = makeLights(s.r);
+      const invG = frame & 1 ? 1 : 1 / 0.7364;
+      const proxy = frame === 2 ? JSON.parse(JSON.stringify(s.proxy)) : s.proxy;
+      const { rows: ref, lightIdx } = stampRows(s, lights, invG, 6000, GPU_CASTER_FLOATS, GPU_ROW_TINT, false);
+      const got = ref.slice();
+      refApplyLampFramesInto(ref, 6000, lightIdx, lights, invG, refTables, proxy, s.starts, s.counts, c.frames, s.e.active,
+        s.e.mode, s.e.dirs, s.e.anims, s.e.sheets, c.orients, c.lampKinds);
+      m.applyLampFramesInto(got, 6000, lightIdx, lights, invG, newTables, proxy, s.starts, s.counts, c.frames, s.e.active,
+        s.e.mode, s.e.dirs, s.e.anims, s.e.sheets, c.orients, c.lampKinds);
+      sameBits(ref, got, `seed ${seed} frame ${frame}`);
+      stepScene(s);
+    }
+  }
+});
+
+test('E-372: keyed lamp rows: the same frames as before', async () => {
+  const m = await worker();
+  for (const seed of [41, 42, 43, 44]) {
+    const s = makeScene(seed, 1500);
+    bindDirectionalSprite(s.ds);
+    const refTables = refSunFrameTables(s.sources);
+    const newTables = m.sunFrameTables(s.sources);
+    for (let frame = 0; frame < 5; frame++) {
+      const variant = (seed * 3 + frame) & 15;
+      const c = columns(s, variant);
+      const lights = makeLights(s.r);
+      const invG = frame & 1 ? 1 / 0.7364 : 1;
+      const { rows: ref, lightIdx } = stampRows(s, lights, invG, 6000, GPU_KEYED_STAMP_FLOATS, 2, true);
+      const got = ref.slice();
+      refApplyKeyedLampFramesInto(ref, 6000, lightIdx, lights, invG, refTables, s.proxy, s.starts, s.counts, c.frames,
+        s.e.active, s.e.mode, s.e.dirs, s.e.anims, s.e.sheets, c.orients, c.lampKinds);
+      m.applyKeyedLampFramesInto(got, 6000, lightIdx, lights, invG, newTables, s.proxy, s.starts, s.counts, c.frames,
+        s.e.active, s.e.mode, s.e.dirs, s.e.anims, s.e.sheets, c.orients, c.lampKinds);
+      sameBits(ref, got, `seed ${seed} frame ${frame}`);
+      stepScene(s);
+    }
+  }
+});
+
+test('E-372: a lamp all around a caster of each uniform table: every direction as before', async () => {
+  const m = await worker();
+  // One caster per table, its lamp turned round it a ten-thousandth of a degree at a time near each border.
+  const s = makeScene(51, 64);
+  bindDirectionalSprite(s.ds);
+  const refTables = refSunFrameTables(s.sources);
+  const newTables = m.sunFrameTables(s.sources);
+  const ids = Object.keys(s.sources).map(Number);
+  const e = s.e;
+  for (let i = 0; i < ids.length; i++) {
+    e.active[i] = 1;
+    e.mode[i] = 1;
+    e.sheets[i] = ids[i];
+    e.lampKind[i] = 1;
+    e.orients[i] = 0;
+    e.dirs[i] = i % s.sources[ids[i]].count;
+    e.anims[i] = 0;
+  }
+  const lights = [{ id: -5, x: 0, y: 0 }];
+  for (const invG of [1, 1 / 0.7364]) {
+    const per = 4000;
+    const stampN = ids.length * per;
+    const ref = new Float32Array(stampN * GPU_KEYED_STAMP_FLOATS);
+    for (let i = 0; i < ids.length; i++) {
+      const count = s.sources[ids[i]].count;
+      const step = TWO_PI / count;
+      for (let k = 0; k < per; k++) {
+        const at = (i * per + k) * GPU_KEYED_STAMP_FLOATS;
+        // Half the rays sweep the whole turn, half sit within 2e-4 rad of a border.
+        const phi = k & 1 ? (k / per) * TWO_PI : (Math.floor((k / per) * count) + 0.5) * step + ((k % 97) - 48) * 4e-6;
+        ref[at] = -Math.sin(phi) * 250;
+        ref[at + 1] = (-Math.cos(phi) * 250) / invG;
+        ref[at + 2] = i;
+      }
+    }
+    const got = ref.slice();
+    const lightIdx = new Uint8Array(stampN);
+    refApplyKeyedLampFramesInto(ref, stampN, lightIdx, lights, invG, refTables, s.proxy, s.starts, s.counts, e.frames,
+      e.active, e.mode, e.dirs, e.anims, e.sheets, e.orients, e.lampKind);
+    m.applyKeyedLampFramesInto(got, stampN, lightIdx, lights, invG, newTables, s.proxy, s.starts, s.counts, e.frames,
+      e.active, e.mode, e.dirs, e.anims, e.sheets, e.orients, e.lampKind);
+    sameBits(ref, got, `invG ${invG}`);
+  }
+});
