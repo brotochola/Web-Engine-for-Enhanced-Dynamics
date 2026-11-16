@@ -5,7 +5,7 @@
 // copied into the memory's index scratch first. Anything else returns -1 and the caller packs in JS.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
-import { GPU_CASTER_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_SPRITE_FLOATS } from './gpuQueueLayout.js';
+import { GPU_CASTER_FLOATS, GPU_GBUF_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_SPRITE_FLOATS } from './gpuQueueLayout.js';
 import { engineWasmUrl } from '../wasm/engine.js';
 
 
@@ -265,6 +265,38 @@ export const GPU_KEYED_TEX_ONLY = 0x40000000;
 export const GPU_KEYED_TEX_WORDS = 2;
 
 /**
+ * E-387: the byte of the block (gpuPack.c GB_*, six u32) that has a keyed pack of `n` rows write their G-buffer words
+ * into `keyed.gbufOut` (GPU_GBUF_FLOATS a draw slot), as gbufWord.js writeGbufWords writes them from the key column:
+ * from `keyed.gbufFlags` (SpriteRenderer.gbufFlags; its length is the entity count), `keyed.gbufSelf`
+ * (ShadowCaster.selfShadow; null or empty: none) and `keyed.gbufZ` (SpriteRenderer.zIndex where the painter orders by
+ * it; null or empty: no bands). 0, no words, when the destination or the flags are missing, an array is outside the
+ * memory, the destination has no room for n slots, or the zIndex column is shorter than the flags. The block goes where
+ * the general pack's parameters go, which a keyed pack does not read.
+ */
+function keyedGbufByte(b, keyed, n) {
+  const out = keyed.gbufOut;
+  const flags = keyed.gbufFlags;
+  if (!out || !flags || flags.length === 0 || out.length < GPU_GBUF_FLOATS * n) return 0;
+  if (out.buffer !== b.buffer || flags.buffer !== b.buffer) return 0;
+  const self = keyed.gbufSelf;
+  const selfN = self ? self.length : 0;
+  // The block's 0 says "none" for these two, so a column at byte 0 (never, in a layout) declines.
+  if (selfN > 0 && (self.buffer !== b.buffer || self.byteOffset === 0)) return 0;
+  const z = keyed.gbufZ;
+  const zN = z ? z.length : 0;
+  if (zN > 0 && (z.buffer !== b.buffer || z.byteOffset === 0 || zN < flags.length)) return 0;
+  const at = b.paramsByte >> 2;
+  const u32 = b.u32;
+  u32[at] = out.byteOffset;
+  u32[at + 1] = flags.byteOffset;
+  u32[at + 2] = selfN > 0 ? self.byteOffset : 0;
+  u32[at + 3] = selfN;
+  u32[at + 4] = zN > 0 ? z.byteOffset : 0;
+  u32[at + 5] = flags.length;
+  return b.paramsByte;
+}
+
+/**
  * E-177: a split frame whose statics stay with their key, through the kernel. Each drawn row's pose (GPU_POSE_FLOATS)
  * and slot (GPU_INDEXED_SLOT_FLOATS: its key's row of the statics texture, as a float; E-186: no depth) at its draw
  * slot. A sprite row's key is its entity, with GPU_KEYED_CHANGED set when the emit found
@@ -275,6 +307,8 @@ export const GPU_KEYED_TEX_WORDS = 2;
  * the queue's shadow columns in the memory, each slot's shadow terms (shadowH, offX, offY; zeros for a glow row) go there
  * too, and `keyed.shadowed` says whether they did. E-189: with `keyed.texUpdatesByte` (0 for none), a row whose key also
  * carries GPU_KEYED_TEX_ONLY goes there as a texture update (GPU_KEYED_TEX_WORDS) instead, counted in `keyed.texUpdates`.
+ * E-387: with `keyed.gbufOut` and `keyed.gbufFlags` (keyedGbufByte's columns), each slot's G-buffer words go there too,
+ * the words gbufWord.js writeGbufWords writes from the key column, and `keyed.gbufWritten` says whether they did.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
 export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
@@ -294,10 +328,13 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
   // E-191: the slots' shadow terms too where the caller asks for them (a byte, 0 for none) and the queue has them.
   const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
+  // E-387: the slots' G-buffer words too where the caller hands their columns (the kernel packs min(count, capacity)).
+  const gbufByte = keyedGbufByte(b, keyed, count < (capacity | 0) ? count : capacity | 0);
   const out = b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
     slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
-    shadowByte, keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0);
+    shadowByte, keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0, gbufByte);
   keyed.shadowed = shadowByte > 0;
+  keyed.gbufWritten = gbufByte > 0;
   const r = b.particlesByte >> 2;
   ctx.particleCount = b.u32[r];
   keyed.updates = b.u32[r + 1];
@@ -307,7 +344,8 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
 
 /**
  * E-201: packKeyedRowsWasm with each drawn instance's queue row (a float) at `rows` instead of its pose: the keyed
- * program fetches the pose from the queue's own pose columns by that row. The rest as packKeyedRowsWasm.
+ * program fetches the pose from the queue's own pose columns by that row. The rest as packKeyedRowsWasm (E-387: the
+ * G-buffer words too).
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
 export function packKeyedRowsByRowWasm(b, q, ctx, rows, slots, keyed, capacity) {
@@ -326,10 +364,12 @@ export function packKeyedRowsByRowWasm(b, q, ctx, rows, slots, keyed, capacity) 
   const depthDenom = ctx.depthDenom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
   const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
+  const gbufByte = keyedGbufByte(b, keyed, count < (capacity | 0) ? count : capacity | 0);
   const out = b.spritesKeyedRows(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, rows.byteOffset,
     slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
-    shadowByte, keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0);
+    shadowByte, keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0, gbufByte);
   keyed.shadowed = shadowByte > 0;
+  keyed.gbufWritten = gbufByte > 0;
   const r = b.particlesByte >> 2;
   ctx.particleCount = b.u32[r];
   keyed.updates = b.u32[r + 1];
