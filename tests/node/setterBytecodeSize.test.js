@@ -3,16 +3,26 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
-// N-215. A setter call TurboFan leaves out of a caller boxes the double it passes: a stress scene's walkers, moved
-// through this.x and this.y, allocated 2.1 MB/s in the logic worker at 3 000 of them. TurboFan inlines a function of
-// at most 27 bytes of bytecode whatever the caller's budget (--max-inlined-bytecode-size-small), so GameObject's
-// one-value per-frame setters store their value in a Float32 scratch and call a function that takes no double. This
-// reads their bytecode length from V8 (this Node's) and fails when one grows past 27. The two-value methods cannot get
-// there (two stores and a call); they must not grow back toward the 130 to 360 bytes they had.
+// N-215, E-459. A setter call TurboFan leaves out of a caller boxes the double it passes: a stress scene's walkers,
+// moved through this.x and this.y, allocated 2.1 MB/s in the logic worker at 3 000 of them. V8 inlines a callee
+// whatever the caller's budget when the call passes a heap number (a double from arithmetic, a Float64 field) and the
+// callee's own bytecode is 75 bytes or less (--max-inlined-bytecode-size-small-with-heapnum-in-out: Chrome 157's V8
+// 15.7, V8 16; Node 22's V8 has no such rule). Its other small-function rule (30 bytes; 27 in Node 22) also counts the
+// bytecode the callee's own optimized code inlined, and a setter is optimized on its own early (interpreted ticks call
+// it): N-215's 26-byte set x counted 26 + 181 from then on (Node 22's trace).
+//
+// set x and set y compare and store inline and call a function that takes no double. A bundle makes them longer than
+// their source does (an operand past a module's 255th slot takes 4 bytes more; esbuild and terser made set x 62 bytes
+// from 58), so their source stays two such operands under 75. The other setters pass their values through a Float32
+// scratch to a function that takes the entity: their own bytecode stays at the scratch store and the call.
+// This reads the lengths from V8 (this Node's: V8 16 gives this source the same for set x and set y).
 
 const DRIVER = fileURLToPath(new URL('../helpers/setterBytecodeDriver.mjs', import.meta.url));
-const SMALL = 27;
-const ONE_VALUE = ['set x', 'set y', 'set vx', 'set vy', 'set angularVelocity', 'set alpha', 'setAlpha', 'setAnimationSpeed'];
+/** V8's --max-inlined-bytecode-size-small-with-heapnum-in-out default, less two widened operands of a bundle. */
+const COMPARE_INLINE_MAX = 75 - 2 * 4;
+const COMPARE_INLINE = ['set x', 'set y'];
+const ONE_VALUE = ['set vx', 'set vy', 'set angularVelocity', 'set alpha', 'setAlpha', 'setAnimationSpeed'];
+const ONE_VALUE_MAX = 27;
 const TWO_VALUES = ['setPosition', 'setVelocity', 'setScale'];
 const TWO_VALUES_MAX = 45;
 
@@ -32,17 +42,18 @@ function bytecodeLengths() {
   return lengths;
 }
 
-test('the one-value per-frame setters stay small enough for TurboFan to inline whatever the budget', () => {
+test('the per-frame setters stay small enough for V8 to inline them whenever they are given a heap number', () => {
   const lengths = bytecodeLengths();
-  for (const name of ONE_VALUE) {
-    const found = lengths.get(name);
-    assert.ok(found, `${name}: no bytecode printed (renamed, or the driver no longer calls it?)`);
-    assert.equal(found.length, 1, `${name}: one function of that name`);
-    assert.ok(found[0] <= SMALL, `${name} is ${found[0]} bytes of bytecode: over ${SMALL}, a caller can leave it out and box its value`);
-  }
-  for (const name of TWO_VALUES) {
-    const found = lengths.get(name);
-    assert.ok(found, `${name}: no bytecode printed`);
-    assert.ok(found[0] <= TWO_VALUES_MAX, `${name} is ${found[0]} bytes of bytecode: keep its work in its FromArgs function`);
+  for (const [names, max, why] of [
+    [COMPARE_INLINE, COMPARE_INLINE_MAX, 'a bundle can take it past 75, where a caller out of budget leaves it out'],
+    [ONE_VALUE, ONE_VALUE_MAX, 'keep its work in its FromArgs function'],
+    [TWO_VALUES, TWO_VALUES_MAX, 'keep its work in its FromArgs function'],
+  ]) {
+    for (const name of names) {
+      const found = lengths.get(name);
+      assert.ok(found, `${name}: no bytecode printed (renamed, or the driver no longer calls it?)`);
+      assert.equal(found.length, 1, `${name}: one function of that name`);
+      assert.ok(found[0] <= max, `${name} is ${found[0]} bytes of bytecode, over ${max}: ${why}`);
+    }
   }
 });
