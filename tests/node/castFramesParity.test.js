@@ -3,13 +3,18 @@
 // tables whose count is not a multiple of four or whose step is not a whole turn's share, flipped slots, slots the atlas
 // lacks, fixed cards, casters whose kind is not a card, sheets that cast their solid or stand on a contact, rows of other
 // types, entities out of range, lamps all around their casters (rays along the borders between two directions too) and
-// lights missing. The reference is the passes as they were (E-368, E-369), copied here.
+// lights missing. The reference is the passes as they were (E-368, E-369), copied here. E-372: the keyed sun rows' frames
+// written by the keyed caster scan (gpuPack.wasm) itself, and the rows it leaves to the JS, against the same reference.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
   GPU_CASTER_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS, GPU_SPRITE_FLOATS,
 } from '../../src/render/gpuQueueLayout.js';
+import {
+  GPU_PACK_COLUMNS, KEYED_SUN_DEFER, KEYED_SUN_SHEET, KEYED_SUN_SHEET_WORDS, bindGpuPack, keyedSunRegionBytes, keyedSunViews,
+  packKeyedCastersScanWasm,
+} from '../../src/render/gpuPackClient.js';
 import { DirectionalSprite } from '../../src/components/directionalSprite.js';
 import { PICK_ARGS, pickDirection, pickDirectionArgs, wrapAngle } from '../../src/core/spriteDirections.js';
 import { mulberry32 } from '../bench/benchMath.js';
@@ -1040,5 +1045,324 @@ test('E-370: _packGpuShadows on the real worker (sun pack and stamp stood in for
     }
     sameBits(ref, dst.stamp, `case ${c}`, floats);
     stepScene(s);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// E-372: the keyed sun rows' frames written by the keyed caster scan (gpuPack.wasm pack_casters_keyed_scan) itself.
+
+/** The scans' key base: every key of these queues is below it. */
+const SCAN_KEY_BASE = 1 << 20;
+
+/**
+ * One shared memory holding what the keyed caster scan reads, the kernel bound on it: the queue's columns (the pack's
+ * column table, its key and type), the collector's row types and entities, the entity columns sunFrameFor reads, two
+ * sets of keyed rows (the reference's and the scan's) and the sun frames' region.
+ */
+async function scanMemory(rows, n) {
+  const memory = new WebAssembly.Memory({ initial: 48, maximum: 48, shared: true });
+  const buf = memory.buffer;
+  let top = 64;
+  const place = (bytes) => {
+    top = (top + 63) & ~63;
+    const at = top;
+    top += bytes;
+    return at;
+  };
+  const alloc = (Ctor, len) => new Ctor(buf, place(len * Ctor.BYTES_PER_ELEMENT), len);
+  const u16 = new Set(['textureId', 'tileOffsetU', 'tileOffsetV']);
+  const q = { count: rows, key: alloc(Uint32Array, rows), type: alloc(Uint8Array, rows) };
+  for (const c of GPU_PACK_COLUMNS) q[c] = alloc(c === 'tint' ? Uint32Array : u16.has(c) ? Uint16Array : Float32Array, rows);
+  const mem = {
+    types: alloc(Uint8Array, rows),
+    entities: alloc(Int32Array, rows),
+    active: alloc(Uint8Array, n),
+    mode: alloc(Uint8Array, n),
+    casts: alloc(Uint8Array, n),
+    sheets: alloc(Uint8Array, n),
+    kinds: alloc(Uint8Array, n),
+    orients: alloc(Uint8Array, n),
+    dirs: alloc(Uint8Array, n),
+    anims: alloc(Uint8Array, n),
+    frames: alloc(Uint16Array, n),
+    ref: alloc(Float32Array, rows * GPU_KEYED_CASTER_FLOATS),
+    got: alloc(Float32Array, rows * GPU_KEYED_CASTER_FLOATS),
+  };
+  const tableByte = place(4 * GPU_PACK_COLUMNS.length * 4);
+  const indexByte = place(rows * 4);
+  const particlesByte = place(144);
+  const keyedSunByte = place(keyedSunRegionBytes());
+  if (top > buf.byteLength) throw new Error('the test memory is too small');
+  const b = await bindGpuPack(memory, {
+    tableByte, tableSlots: 4, indexByte, indexCap: rows, particlesByte, inverseByte: 0, keyedSunByte,
+  });
+  return { q, mem, b };
+}
+
+/**
+ * A frame of scene s in the scan's memory: its entity columns, and queue qq (makeQueue's) as the queue's type and shadow
+ * columns and the collector's rows, a few entities out of range among them (-1, past the entities); poses and offsets at
+ * random, every key an entity's below SCAN_KEY_BASE (some marked changed).
+ */
+function loadScanFrame(s, sm, qq) {
+  const { r, e, n } = s;
+  const { q, mem } = sm;
+  mem.active.set(e.active);
+  mem.mode.set(e.mode);
+  mem.casts.set(e.casts);
+  mem.sheets.set(e.sheets);
+  mem.kinds.set(e.sunKind);
+  mem.orients.set(e.orients);
+  mem.dirs.set(e.dirs);
+  mem.anims.set(e.anims);
+  mem.frames.set(e.frames);
+  const rows = qq.types.length;
+  for (let i = 0; i < rows; i++) {
+    const x = r();
+    mem.types[i] = qq.types[i];
+    mem.entities[i] = x < 0.01 ? -1 : x < 0.02 ? n + Math.floor(r() * 40) : qq.entities[i];
+    q.type[i] = qq.qType[i];
+    q.shadowH[i] = qq.shadowH[i];
+    q.x[i] = (r() - 0.5) * 4000;
+    q.y[i] = (r() - 0.5) * 4000;
+    q.shadowOffX[i] = r() - 0.5;
+    q.shadowOffY[i] = r() - 0.5;
+    q.key[i] = (Math.floor(r() * n) | (r() < 0.1 ? 0x80000000 : 0)) >>> 0;
+  }
+  q.count = rows;
+}
+
+/** The scan's columns for a variant (columns(s, variant)'s nulls), in the scan's memory. */
+function scanColumns(mem, variant) {
+  return {
+    types: mem.types,
+    entities: mem.entities,
+    active: mem.active,
+    mode: mem.mode,
+    dirs: mem.dirs,
+    anims: mem.anims,
+    casts: variant & 1 ? null : mem.casts,
+    orients: variant & 4 ? null : mem.orients,
+    kinds: variant & 8 ? null : mem.kinds,
+    sheets: mem.sheets,
+    frames: variant & 2 ? null : mem.frames,
+    framed: false,
+    listed: 0,
+  };
+}
+
+/**
+ * The queue in sm scanned twice: without the frames, then the keyed rows' pass before E-372 (the reference copy, on its
+ * prepared tables); and with them (the shipped tables synced into the region), then the rows the scan listed. The same
+ * rows bit for bit.
+ * @returns {{ framed: number, listed: number }} the rows whose frame the scan wrote (not 0) and the rows it listed
+ */
+function scanBoth(m, sm, refTables, refShift, newTables, newShift, variant, typed, cap, label) {
+  const { q, mem, b } = sm;
+  const qq = typed ? q : { ...q, type: null };
+  const count = q.count;
+  const sun = scanColumns(mem, variant);
+  mem.ref.fill(-7);
+  mem.got.fill(-7);
+  const keyedN = packKeyedCastersScanWasm(b, qq, count, mem.ref, SCAN_KEY_BASE, cap);
+  assert.ok(keyedN > 0, `${label}: the scan took the queue`);
+  refApplyKeyedSunFramesFor(mem.ref, keyedN, count, qq.type, qq.shadowH, mem.types, mem.entities, mem.active, mem.mode,
+    sun.casts, mem.sheets, mem.dirs, mem.anims, sun.frames, refTables, refShift, sun.orients, sun.kinds);
+  assert.equal(packKeyedCastersScanWasm(b, qq, count, mem.got, SCAN_KEY_BASE, cap, sun), keyedN, `${label}: as many rows`);
+  assert.equal(sun.framed, true, `${label}: the scan wrote the frames`);
+  assert.ok(sun.listed <= b.keyedSun.listCap, `${label}: the list holds the rows left (${sun.listed})`);
+  let framed = 0;
+  for (let k = 0; k < keyedN; k++) if (mem.got[k * GPU_KEYED_CASTER_FLOATS + 3] !== 0) framed++;
+  m.applyListedSunFramesFor(mem.got, b.keyedSun.list, sun.listed, mem.active, mem.mode, sun.casts, mem.sheets, mem.dirs,
+    mem.anims, sun.frames, newTables, newShift, sun.orients, sun.kinds);
+  const floats = keyedN * GPU_KEYED_CASTER_FLOATS;
+  sameBits(mem.ref.subarray(0, floats), mem.got.subarray(0, floats), label, GPU_KEYED_CASTER_FLOATS);
+  return { framed, listed: sun.listed };
+}
+
+/** Random scenes' frames through scanBoth: the sun's turn, the columns' variant, the type column and the cap change. */
+async function scanScenes(seeds, frames, adjust = null) {
+  const m = await worker();
+  const n = 1500;
+  let framed = 0;
+  let listed = 0;
+  let mostListed = 0;
+  for (const seed of seeds) {
+    const s = makeScene(seed, n);
+    if (adjust) adjust.scene(s);
+    bindDirectionalSprite(s.ds);
+    const sm = await scanMemory(1500, n);
+    const refTables = refSunFrameTables(s.sources);
+    const newTables = m.sunFrameTables(s.sources);
+    if (adjust) adjust.tables(refTables, newTables, sm);
+    const refShift = new Int16Array(256);
+    const refShiftTurn = new Float64Array(256).fill(NaN);
+    const newShift = new Int16Array(256);
+    const newShiftTurn = new Float64Array(256).fill(NaN);
+    for (let frame = 0; frame < frames; frame++) {
+      const variant = (seed * 3 + frame) & 15;
+      loadScanFrame(s, sm, makeQueue(s, 1500));
+      const turn = SUN_TURNS[(seed + frame) % SUN_TURNS.length];
+      // A new proxy map now and then (the slots and both frame tables rebuilt, the region's tables written again).
+      const proxy = frame === 5 ? JSON.parse(JSON.stringify(s.proxy)) : s.proxy;
+      refPrepareSunFrames(refTables, proxy, s.starts, s.counts, refShift, refShiftTurn, turn);
+      m.prepareSunFrames(newTables, proxy, s.starts, s.counts, newShift, newShiftTurn, turn);
+      m.syncKeyedSunTables(sm.b.keyedSun, newTables);
+      if (adjust) adjust.synced(sm, newTables);
+      const got = scanBoth(m, sm, refTables, refShift, newTables, newShift, variant, frame !== 2, frame & 1 ? 1500 : 600,
+        `seed ${seed} frame ${frame}`);
+      framed += got.framed;
+      listed += got.listed;
+      if (got.listed > mostListed) mostListed = got.listed;
+      stepScene(s);
+      if (adjust) adjust.scene(s);
+    }
+  }
+  return { framed, listed, mostListed };
+}
+
+test('E-372: the keyed caster scan writes the keyed rows\' sun frames as before, the JS the rows it lists', async () => {
+  const { framed, listed } = await scanScenes([31, 32, 33, 34], 8);
+  assert.ok(framed > 4000, `the scan wrote frames (${framed})`);
+  assert.ok(listed > 100, `and listed rows for the JS: uneven tables, no direction drawn (${listed})`);
+});
+
+test('E-372: on uniform tables every caster with a direction drawn takes its frame from the scan, none from the JS', async () => {
+  // Only the uniform tables, and each caster's direction one of its table's.
+  const uniformOnly = (s) => {
+    for (const id of Object.keys(s.sources)) if (!s.sources[id].uniform) delete s.sources[id];
+    for (let i = 0; i < s.n; i++) {
+      const src = s.sources[s.e.sheets[i]];
+      if (src) s.e.dirs[i] %= src.count;
+    }
+  };
+  const { framed, mostListed } = await scanScenes([41, 42], 6, { scene: uniformOnly, tables() {}, synced() {} });
+  assert.ok(framed > 2000, `the scan wrote frames (${framed})`);
+  assert.equal(mostListed, 0, 'no row left to the JS');
+});
+
+test('E-372: a sheet whose frames the region cannot hold, or whose front is no direction, goes to the JS as before', async () => {
+  let deferred = 0;
+  const odd = [];
+  const adjust = {
+    scene() {},
+    tables(refTables, newTables, sm) {
+      // A uniform table's front past its directions (a fixed card of it reads past them, sunFrameFor's way).
+      const id = newTables.findIndex((t) => t !== undefined && t.uniform && t.count >= 3);
+      refTables[id].front = refTables[id].count;
+      newTables[id].front = newTables[id].count;
+      odd.push(id);
+      // A region whose pool holds a few sheets' frames.
+      const region = keyedSunViews(sm.b.buffer, sm.b.keyedSun.byte);
+      region.pool = region.pool.subarray(0, 300);
+      sm.b.keyedSun = region;
+    },
+    synced(sm) {
+      const flags = (sheet) => sm.b.keyedSun.sheets[sheet * KEYED_SUN_SHEET_WORDS + KEYED_SUN_SHEET.FLAGS];
+      assert.ok((flags(odd[odd.length - 1]) & KEYED_SUN_DEFER) !== 0, 'the sheet with its front past its directions');
+      let n = 0;
+      for (let sheet = 0; sheet < 256; sheet++) if ((flags(sheet) & KEYED_SUN_DEFER) !== 0) n++;
+      if (n > deferred) deferred = n;
+    },
+  };
+  const { framed, listed } = await scanScenes([51, 52], 6, adjust);
+  assert.ok(deferred >= 3, `sheets left to the JS (${deferred})`);
+  assert.ok(framed > 200 && listed > 300, `the scan wrote frames (${framed}) and listed rows (${listed})`);
+});
+
+test('E-372: _packGpuSun keyed on the real worker, the scan writing the frames: the keyed rows as before', async () => {
+  const m = await worker();
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const { ShadowCaster } = await import('../../src/components/shadowCaster.js');
+  const { SpriteRenderer } = await import('../../src/components/spriteRenderer.js');
+  const { Sun } = await import('../../src/core/sun.js');
+  const { cameraFloorScaleY } = await import('../../src/util/cameraView.js');
+  const n = 1500;
+  const rows = 1400;
+  const cap = 900;
+  const s = makeScene(81, n);
+  bindDirectionalSprite(s.ds);
+  const sm = await scanMemory(rows, n);
+  const { q, mem, b } = sm;
+  const region = b.keyedSun;
+  const listCap = region.listCap;
+  DirectionalSprite.active = mem.active;
+  DirectionalSprite.mode = mem.mode;
+  DirectionalSprite.directionIndex = mem.dirs;
+  DirectionalSprite.animation = mem.anims;
+  SpriteRenderer.spritesheetId = mem.sheets;
+  const caster = { active: ShadowCaster.active, orient: ShadowCaster.orient, sunKind: ShadowCaster.sunKind };
+  Object.assign(ShadowCaster, { active: mem.casts, orient: mem.orients, sunKind: mem.kinds });
+  // The worker is the module's one instance: an earlier test stood in for its _packGpuSun.
+  delete pre._packGpuSun;
+  pre._keyedCastersLive = () => true;
+  Sun.initialize(new SharedArrayBuffer(Sun.BYTE_LENGTH));
+  try {
+    const config = { camera: { pitch: 50 } };
+    Object.assign(pre, {
+      config,
+      shadowsEnabled: true,
+      gpuQueueCaps: { maxSun: cap },
+      _gpuPackOpts: {},
+      _gpuPackWasm: b,
+      _keyedKeyBase: SCAN_KEY_BASE,
+      _casterScanTick: 1e9,
+      _casterKindsOn: false,
+      _sunFrameTables: m.sunFrameTables(s.sources),
+      _sunShift: new Int16Array(256),
+      _sunShiftTurn: new Float64Array(256).fill(NaN),
+      proxyToGlobalAnim: s.proxy,
+      animationFrameStart: s.starts,
+      animationFrameCount: s.counts,
+      _renderableType: mem.types,
+      _renderableIndex: mem.entities,
+      renderQueueType: q.type,
+    });
+    const refTables = refSunFrameTables(s.sources);
+    const refShift = new Int16Array(256);
+    const refShiftTurn = new Float64Array(256).fill(NaN);
+    const cases = [
+      { what: 'the scan writes the frames', framed: true },
+      { what: 'more rows for the JS than the list holds', framed: true, listCap: 3 },
+      { what: 'no region', framed: false, region: false },
+      { what: 'the entities\' frames outside the memory', framed: false, framesOut: true },
+      { what: 'a queue that is not the collector\'s rows (no frames)', rowsOff: true },
+      { what: 'the scan writes the frames, the sun turned', framed: true },
+    ];
+    for (let c = 0; c < cases.length; c++) {
+      const k = cases[c];
+      const angle = c * 1.1 - 2.5;
+      Sun._float32[Sun.F32.SHADOW_DIR_X] = Math.cos(angle);
+      Sun._float32[Sun.F32.SHADOW_DIR_Y] = Math.sin(angle);
+      loadScanFrame(s, sm, makeQueue(s, rows));
+      b.keyedSun = k.region === false ? null : region;
+      region.listCap = k.listCap ?? listCap;
+      pre.entityFrameIndex = k.framesOut ? Uint16Array.from(mem.frames) : mem.frames;
+      pre._collectedRows = k.rowsOff ? rows - 1 : rows;
+      pre._keyedSun.framed = !k.framed;
+      mem.got.fill(-7);
+      const keyedN = pre._packGpuSun({ sun: mem.got }, q);
+      assert.equal(pre._gpuSunKeyed, true, `${k.what}: keyed rows`);
+      if (!k.rowsOff) assert.equal(pre._keyedSun.framed, k.framed, `${k.what}: the scan wrote the frames or not`);
+      if (k.listCap) assert.ok(pre._keyedSun.listed > k.listCap, `${k.what}: ${pre._keyedSun.listed} rows listed`);
+      // The reference: the scan's rows without frames, then the keyed rows' pass as it was where the rows carry frames.
+      mem.ref.fill(-7);
+      assert.equal(packKeyedCastersScanWasm(b, q, rows, mem.ref, SCAN_KEY_BASE, cap), keyedN, `${k.what}: the rows`);
+      if (!k.rowsOff) {
+        const turn = -Math.PI / 2 - Math.atan2(Sun.shadowDirY / cameraFloorScaleY(config), Sun.shadowDirX);
+        refPrepareSunFrames(refTables, s.proxy, s.starts, s.counts, refShift, refShiftTurn, turn);
+        refApplyKeyedSunFramesFor(mem.ref, keyedN, rows, q.type, q.shadowH, mem.types, mem.entities, mem.active, mem.mode,
+          mem.casts, mem.sheets, mem.dirs, mem.anims, mem.frames, refTables, refShift, mem.orients, mem.kinds);
+      }
+      const floats = keyedN * GPU_KEYED_CASTER_FLOATS;
+      sameBits(mem.ref.subarray(0, floats), mem.got.subarray(0, floats), k.what, GPU_KEYED_CASTER_FLOATS);
+      stepScene(s);
+    }
+  } finally {
+    b.keyedSun = region;
+    region.listCap = listCap;
+    delete pre._keyedCastersLive;
+    Object.assign(ShadowCaster, caster);
+    Sun.unbind();
   }
 });
