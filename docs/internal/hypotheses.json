@@ -18563,6 +18563,45 @@
       "records": [
         "R-1181"
       ]
+    },
+    {
+      "id": "E-423",
+      "title": "Self-shadow could walk the face map texel by texel (a 2D DDA, as Pixel Art Parallax walks its heightmap) instead of 6 fixed steps of 4 floor px: no thin edge lost between two steps, the first 8 px read, crisp on the art's grid with lighting.pixelArt",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from reading Ville Mönkkönen's Pixel Art Parallax (shadertoy t33yRl; instantkingdom.com/2026/01/16, its HLSL in instantkingdom.com/2026/01/pixelartparallax.txt)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "gpu",
+      "result": "Not measured. selfShadowToward (lightingBasic.frag.glsl and .wgsl) reads the face map at t = 8, 12, ..., 28 floor px (uSelfShadow 4, 6, 3 in pixiWorker.js), with a bias of 3 px plus a quarter of t: an occluder thinner than 4 px (a lid's edge, an arm, a pole) can fall between two reads, and the first 8 px are never read. The shadertoy's DDA projects the ray's two ends once, visits every texel the ray crosses in order (one fetch, a min, a compare and an add each) and tests the ray's height entering and leaving the texel against the texel's height; its own side-by-side shows fixed steps at texel centres (what we do) banding and pancaking where the DDA is exact. A shadow needs only yes or no, so the hit's interpolation (tHit) goes. Reads for the 28 px reach: about 7 at lighting.resolution 0.25 (as now), 14 at 0.5, 28 at 1 (what pixelArt asks), so it may cost more exactly where it shows most; the author himself kept contact refinement for dense maps.",
+      "next": "A contender in E-365's rays and steps tournament: (a) today's steps; (b) E-424; (c) the DDA with the same reach, the ray rising towards the light so a texel shades when its height passes the ray's height where it enters plus the bias, skipping only the pixel's own texel, ids filter as now, a fixed loop bound with a break (ANGLE); (d) (c) with a thickness, the HLSL version's bottom height (a constant a sprite, or its footprint as footprintSolids does for the sun's map), so an arm in front of a body stops shading a ray that passes behind it. Judge the pictures (freckles, checkerboard, thin edges) and the ms: selfShadowStressScene and gpuPassBench, sun only and 32 lamps, WebGL and WebGPU, lighting.resolution 0.5 and 1.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-365"
+      ],
+      "aliases": [
+        "self-shadow dda",
+        "pixel art parallax",
+        "self-shadow grid traversal"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-424",
+      "title": "Self-shadow projects every step from scratch (p + l·t, the oblique y·s − z·heightScaleY, weedWorldToNorm's zoom and rotation, the flip): all affine in t, so the face map coordinate could be set once and stepped by adding",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from reading Ville Mönkkönen's Pixel Art Parallax (shadertoy t33yRl; instantkingdom.com/2026/01/16, its HLSL in instantkingdom.com/2026/01/pixelartparallax.txt) (it projects the ray's ends once and only adds after)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "gpu",
+      "result": "Not measured. Each of the up to 6 steps a light (the sun, and every lamp with a tile) redoes a vec3 multiply-add, the oblique projection, weedWorldToNorm (focus, zoom, a 2 x 2 rotation, a divide by the canvas) and the flip, though the start and the step in face map coordinates are the same for every step; the ray's height is linear in t too. Fewer ALU a step; whether the pass is bound by its ALU or by its two fetches a step (the face map and the ids) is not known.",
+      "next": "Variant (b) of E-423's tournament, and worth it without the DDA: gpuPassBench selfShadow, sun only and 32 lamps (the lamps' steps were 96 % of the pass, E-365), WebGL and WebGPU; keep if the pass gets 3 % cheaper with the same picture.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-365"
+      ],
+      "aliases": [
+        "self-shadow affine steps",
+        "self-shadow projection once"
+      ],
+      "records": []
     }
   ],
   "records": [
