@@ -19500,19 +19500,20 @@
     {
       "id": "E-459",
       "title": "N-215's Float32-scratch setters run 12 to 21 % slower than inline setter bodies wherever the caller inlines them: an inline early-out under TurboFan's 27-byte budget, or a scratch that keeps the value a double, might keep N-215's no-boxing guarantee without the round trip",
-      "status": "open",
+      "status": "kept-kernel",
       "statusText": "proposed 2026-11-16 by the PR #12 integration agent (integrate/pr12), from the twice-built pairs' kernels",
       "date": "2026-11-16",
       "area": "logic",
       "kind": "speed",
-      "result": "setterMicrobench (00248ddf, normal compile checked with kernelTierAudit): PR #12's setter bodies (the same 21 Math.fround compares as main's N-170, inline, no scratch) 12.2 % faster when moving (8/8) and 20.8 % faster on equal values (7/8). Main kept N-215 on scene evidence: logic's garbage 201 -> 24 KB/s (R-1169).",
+      "result": "Kept 2026-11-16 (R-1217, 27eb6a71): set x and set y compare with Math.fround, store, then call poseMoved (no double): d8 16 keyedPack-like tick -10.2 % (15/15), setter frame -3.0 % (10/15); Node setterMicrobench +4.3 % moving and +5.1 % same (9/14 each); the prod bundle's per-call closures gone. setterMicrobench (00248ddf, normal compile checked with kernelTierAudit): PR #12's setter bodies (the same 21 Math.fround compares as main's N-170, inline, no scratch) 12.2 % faster when moving (8/8) and 20.8 % faster on equal values (7/8). Main kept N-215 on scene evidence: logic's garbage 201 -> 24 KB/s (R-1169).",
       "next": "A setter body that stays within the 27-byte budget with the compare inline and the scratch only on the slow path (the store), or a Float64 scratch; setterMicrobench and logic's garbage (heapSampleWorkers) both, then Predator crowd 2.5 logic.",
       "refs": [],
       "aliases": [
         "setter scratch cost"
       ],
       "records": [
-        "R-1208"
+        "R-1208",
+        "R-1217"
       ]
     },
     {
@@ -19767,6 +19768,78 @@
       ],
       "records": [
         "R-1215"
+      ]
+    },
+    {
+      "id": "E-469",
+      "title": "The shipped bundle's terser (reduce_vars) inlines single-caller functions as closures made at each call: dist's set x read `q[0]=e,function(e){...}(this)` (a CreateClosure, 24 bytes), and N-215's terser-minified setters allocated 64 B an entity in a tick out of budget (d8 16); the same applies to every remaining FromArgs setter and probably engine-wide",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-459 agent (opt/setter-inline), in d8 16, Node 22 and Chrome 157",
+      "date": "2026-11-16",
+      "area": "engine",
+      "kind": "speed",
+      "result": "E-459 avoided it for set x and set y (poseMoved has two callers). The other setters' helpers have one caller each.",
+      "next": "Find terser's setting in the bundle build (webpack.config.js / make_bundle: inline or reduce_vars for single-use functions) that keeps them functions; d8 heap and the prod bundle's Predator (weedBundle) before and after.",
+      "refs": [],
+      "aliases": [
+        "terser single-caller closures"
+      ],
+      "records": [
+        "R-1217"
+      ]
+    },
+    {
+      "id": "E-470",
+      "title": "vx, vy, angularVelocity and setAnimationSpeed compare and store inline as set x and set y do since E-459: +5.0 % on Node's setter frame (4 rounds), -5.8 % on d8 16's (3 rounds), once bundle bytecode sizes are checked (they are 69 to 70 bytes from source, 73 to 77 after esbuild and terser, past the 75-byte heap-number rule)",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-459 agent (opt/setter-inline), in d8 16, Node 22 and Chrome 157",
+      "date": "2026-11-16",
+      "area": "engine",
+      "kind": "speed",
+      "result": "measured 2026-11-16 by the E-459 agent (opt/setter-inline), in d8 16, Node 22 and Chrome 157",
+      "next": "After N-234's bundle check (or a terser setting that keeps them under 75 bytes): the compare-inline forms, d8 16's frame and Chrome's logic CPU per function.",
+      "refs": [],
+      "aliases": [
+        "compare-inline velocity setters"
+      ],
+      "records": [
+        "R-1217"
+      ]
+    },
+    {
+      "id": "N-234",
+      "title": "Nothing checks the bundle's bytecode sizes: esbuild makes N-215's set x 32 bytes (past the 30-byte small-function rule) and terser widens operands past a module's 255th slot, while setterBytecodeSize.test.js measures the sources only",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-459 agent (opt/setter-inline), in d8 16, Node 22 and Chrome 157",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "E-459: set x 58 bytes from source, 62 after esbuild and terser; compare-inline vx 69 from source, 77 after.",
+      "next": "A release check: d8 --no-lazy --print-bytecode on the built worker bundles for the setters setterBytecodeSize.test.js names, failing past their limits.",
+      "refs": [],
+      "aliases": [
+        "bundle bytecode size check"
+      ],
+      "records": [
+        "R-1217"
+      ]
+    },
+    {
+      "id": "N-235",
+      "title": "d8 16 starves its background threads on this machine: Maglev jobs took 0.2 to 5.5 s and scavenges 362 ms unless run with --concurrent-maglev-high-priority-threads --single-threaded-gc, so D:/perf-tools/d8kit/runKernels.sh timings may be skewed",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-459 agent (opt/setter-inline), in d8 16, Node 22 and Chrome 157",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "Seen by the E-459 agent in its d8 16 driver.",
+      "next": "Add the two flags to runKernels.sh (or say why not) and re-time one known kernel both ways.",
+      "refs": [],
+      "aliases": [
+        "d8 background threads starved"
+      ],
+      "records": [
+        "R-1217"
       ]
     }
   ],
@@ -31724,6 +31797,19 @@
       "text": "**N-233 fixed (aa8855ca):** the recorder's per-frame count of calls that can wait for the GPU leaves out getParameter of bindings (textures, buffers, framebuffers, renderbuffers, programs, vertex arrays, samplers, transform feedback, the active unit), which Blink answers from its own objects; Predator's 11 to 12 a frame were all of those.",
       "commits": [
         "aa8855ca"
+      ]
+    },
+    {
+      "id": "R-1217",
+      "date": "2026-11-16",
+      "time": "16:15",
+      "timeFrom": "recorded",
+      "title": "E-459 kept on its kernel: set x and set y compare and store inline, rest through poseMoved: d8 16 tick -10.2 % (15/15), prod-bundle setter closures gone; the heap-number inlining rule is what keeps setters inlined",
+      "verdict": "kept-kernel",
+      "text": "**E-459 kept on its kernel: set x and set y compare the column with Math.fround(value), store, then call poseMoved(this), which takes no double: d8 16's keyedPack-like tick -10.2 % (faster in 15/15), the setter frame -3.0 % (10/15), and the prod bundle's per-call closures in these setters are gone.** Branch opt/setter-inline 7f6376a0, merged 27eb6a71 (node 2899/2899, demos 101/101). The agent's sittings ran 2026-11-16 from about 13:20 to 16:15 through the bench lock.\n\nTwo findings change N-215's premise:\n- N-215's 27-byte guarantee never held: V8's small-function rule also counts the bytecode the setter's own optimized code inlined, and setters get optimized on their own early (ticks call them from the interpreter first). Node 22's inlining trace: set x \"bytecode size 26, existing opt code's inlined bytecode size 181\"; setterMicrobench's frame leaves set x out in every build.\n- What keeps setters inlined in Chrome is the heap-number rule: a call passing a heap number inlines a callee of up to 75 bytes of its own bytecode, whatever its optimized code inlined (--max-inlined-bytecode-size-small-with-heapnum-in-out, in Chrome 157's V8 15.7 and d8 16, not in Node 22). A value from a phi or a load never qualifies (V8 looks one node deep), so keyedPack's `this.x = x` boxes once its caller is out of budget, in any form.\n\n| measure | N-215 | E-459 | PR #12's inline bodies |\n| --- | --- | --- | --- |\n| d8 16 setter frame, ns an entity (15 rounds) | 10.91 | 10.71 (-3.0 %, 10/15) | 13.26 (+21.6 %, out of budget) |\n| d8 16 keyedPack-like tick (x, y from phis) | 7.20 | 6.43 (-10.2 %, 15/15) | 5.94 |\n| Node 22 setterMicrobench moving, ops/s (14 rounds) | 9088 | 9331 (+4.3 %, 9/14) | +13.7 % |\n| Node 22 same | 11202 | 12003 (+5.1 %, 9/14) | +13.2 % |\n| d8 16 garbage, out-of-budget tick, terser-minified | 64 B an entity | 0 | 24 B an entity |\n| Chrome keyedPack logic worker, heap | 49.9 KB/s | 13.6 KB/s | 12.8 KB/s |\n| Chrome lampShadow lamps=128 walkers=6000, logic heap | 11.6 KB/s | 12.1 KB/s | 4 361 KB/s |\n\nChrome keyedPack (n=300000 moving=0.5 churn=0), logic CPU per function: the setters' group 66.7 and 81.6 -> 62.0, 58.8 and 63.0 ms/s; with the tick 199 and 223 -> 196, 209 and 215. Logic's total busy is noise there (400 to 575 ms/s, set by _tickNonDecimatedOneNoBody's own time, which this does not reach): no scene regression. Same writes, marks and commands (setterParity, setterSameValue, float32EarlyOut, sunSetters pass); setterBytecodeSize.test.js holds set x and set y to 67 bytes.\n\nThe other setters keep N-215's scratch: compare-inline vx, vy, angularVelocity and setAnimationSpeed are 69 to 70 bytes from source and 73 to 77 after esbuild and terser (past 75), filed as E-470 behind N-234's bundle check. Rejected: a Float64 scratch (Node -4.6 % moving; d8 frame +9 %), poseMoved(this, i) (no difference). New: E-469 (terser's per-call closures), E-470, N-234 (no bundle bytecode check), N-235 (d8 16 starves its background threads). Method note: Node 22 lacks the heap-number rule, so a setter or inlining boxing claim is judged in d8 16 or Chrome, not in a Node kernel. Windows Defender ran at up to 4 cores during these sittings (the bench queue's waiters, fixed at 15:29 with waitTurn.mjs).",
+      "commits": [
+        "7f6376a0",
+        "27eb6a71"
       ]
     }
   ],
