@@ -70,6 +70,6 @@ export class SpotProp extends GameObject {
     this.setScale(spec.scale ?? 1);
     this.rotation = spec.rotation ?? 0;
     // Low things seen from above: short shadows.
-    this.shadowCaster.heightMultiplier = spec.height ?? 0.35;
+    this.shadowCaster.setSprite({ heightScale: spec.height ?? 0.35 });
   }
 }

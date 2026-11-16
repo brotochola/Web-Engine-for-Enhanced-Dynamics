@@ -20,8 +20,12 @@ uniform vec4 uSun;
 uniform vec4 uLight;
 uniform vec4 uCam;
 uniform float uPointScale;
-// 1 / config.lighting.groundScaleY: a point light's falloff and range are measured on the floor.
+// 1 / the camera's floorScaleY: a point light's falloff and range are measured on the floor.
 uniform float uGroundInvScaleY;
+// DX-SHADOW3D: the sun's terms (sunShadowMap.js sunMapTerms): kx, ky (a px of height's landing shift on the floor), 0,
+// heightScaleY; and the floor direction a card's columns run along (to the right of someone at the sun).
+uniform vec4 uSunK;
+uniform vec4 uSunPerp;
 
 out vec2 vLocal;
 out vec4 vColor;
@@ -39,6 +43,8 @@ void main() {
   vec2 aInstSize = vec2(0.0);
   vec4 aInstUV = vec4(0.0);
   vec4 aInstTrim = vec4(0.0);
+  // DX-SHADOW3D: where the frame stands (frameBase.js lutBaseFloats), the table's last two floats.
+  vec2 aInstBase = vec2(0.0);
   if (tid >= 0 && tid < lutPerRow * lutSize.y) {
     ivec2 lutAt = ivec2(3 * (tid % lutPerRow), tid / lutPerRow);
     vec4 t0 = texelFetch(uTexLut, lutAt, 0);
@@ -47,6 +53,7 @@ void main() {
     aInstSize = t0.xy;
     aInstUV = vec4(t0.zw, t1.xy);
     aInstTrim = vec4(t1.zw, t2.xy);
+    aInstBase = t2.zw;
   }
 
   if (height <= 0.0) {
@@ -61,11 +68,26 @@ void main() {
   }
 
   vec2 anchor = aInstAnchor + aInstShadow.yz;
-  float sy = aInstScale.y;
-  float alpha = uSun.w;
-  float c = uSun.x;
-  float s = uSun.y;
+  // DX-CASTER (F9): the caster's own way when pre-render tagged its row (-(code + 1) in the depth float, which no
+  // shadow program reads otherwise): kinds for the sun and the lamps (0 the sheet's, 1 a card, 2 its solid; 3 a box, 4 a
+  // hull, 5 a wall and 6 none cast no sprite shadow: the volume or the wall does),
+  // how much light it takes out.
+  int castCode = aInstDepth < -0.5 ? int(-aInstDepth - 0.5) : 0;
+  int sunKind = castCode & 7;
+  int lampKind = (castCode >> 3) & 7;
+  float castOpacity = aInstDepth < -0.5 ? float((castCode >> 7) & 255) / 255.0 : 1.0;
+  // A fixed card lies along the object (orient bit 6), its axis on the floor in 64 steps from bit 15.
+  bool castFixed = ((castCode >> 6) & 1) == 1;
+  float castAxisA = float((castCode >> 15) & 63) * 0.09817477042;
+  vec2 castAxis = vec2(cos(castAxisA), sin(castAxisA));
+  // ShadowCaster.baseRadius (px, 0: the measured base): pre-render writes it into a tagged row's tile offset, which a caster
+  // that does not repeat its texture leaves at 0 (its tile terms 0).
+  float castBaseRadius = aInstTileInv == vec2(0.0) ? max(aInstTileOff.x, 0.0) : 0.0;
+  // weed:afterAnchor
+  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
   vec4 light = aInstLight.w > 0.0 ? aInstLight : uLight;
+  vec2 world;
+  float alpha;
   if (light.w > 0.0) {
     vec2 d = aInstXY - light.xy;
     vec2 floorD = vec2(d.x, d.y * uGroundInvScaleY);
@@ -83,14 +105,15 @@ void main() {
     }
     float invDist = inversesqrt(distSq);
     float distRatio = clamp(distSq * invDist * 0.00390625, 0.0, 1.0);
-    sy = -(0.3 + distRatio * 0.9) * abs(aInstScale.y) * height;
+    float sy = -(0.3 + distRatio * 0.9) * abs(aInstScale.y) * height;
     // The shadow points away from the light on screen (the floor's projection keeps straight lines).
     float invScreenDist = inversesqrt(max(dot(d, d), 1e-6));
-    c = d.y * invScreenDist;
-    s = -d.x * invScreenDist;
+    float c = d.y * invScreenDist;
+    float s = -d.x * invScreenDist;
     float fade = 1.0 - distSq / rangeSq;
     alpha = light.z / (light.z + distSq);
-    alpha = clamp(alpha, 0.0, 1.0) * uPointScale * fade;
+    alpha = clamp(alpha, 0.0, 1.0) * uPointScale * fade * castOpacity;
+    if (lampKind >= 3) alpha = 0.0;
     if (alpha < 0.003) {
       gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
       vColor = vec4(0.0);
@@ -101,14 +124,54 @@ void main() {
       vTileOff = aInstTileOff;
       return;
     }
+    vec2 local = (content - anchor * aInstSize) * vec2(aInstScale.x, sy);
+    world = vec2(local.x * c - local.y * s, local.x * s + local.y * c) + aInstXY;
   } else {
-    sy = -abs(aInstScale.y) * height * uSun.z;
+    // weed:sunCard
+    // DX-SHADOW3D: the sun's card. It stands on the frame's lowest opaque row (its trim's bottom), faces the sun, and
+    // each point of the picture lands on the floor along the sun's ray: its columns run across the sun, a px of the
+    // picture's height above that row is 1 / heightScaleY px of height (times the caster's height), the landing shift
+    // per px of height is uSunK.xy, all in the floor's terms (y over floorScaleY).
+    alpha = sunKind >= 3 ? 0.0 : uSun.w * castOpacity;
+    float bottom = aInstTrim.y + aInstTrim.w;
+    float sunZ = max(bottom - content.y, 0.0) * abs(aInstScale.y) / uSunK.w * height;
+    // The picture's column at the card's foot, and the foot: under the lowest row, unless the frame's base says more.
+    float footCol = anchor.x * aInstSize.x;
+    vec2 foot = vec2(aInstXY.x, (aInstXY.y + (bottom - aInstAnchor.y * aInstSize.y) * aInstScale.y) * uGroundInvScaleY);
+    float kLen = length(uSunK.xy);
+    vec2 toSun = kLen > 1e-6 ? uSunK.xy / kLen : vec2(0.0);
+    if (aInstBase.x >= 1.0) {
+      // One view: the base is an ellipse on the floor (the feet; a trunk, round), its centre one radius north of the
+      // lowest row. The card stands on its edge towards the sun, so the whole base lies on its own shadow.
+      float rx = abs(aInstBase.y) * abs(aInstScale.x);
+      float ry = (aInstBase.y < 0.0 ? -aInstBase.y : 0.6 * aInstBase.y) * abs(aInstScale.y);
+      // DX-CASTER: the caster's baseRadius corrects the measured radius, the ellipse's shape kept.
+      if (castBaseRadius > 0.0) {
+        ry = rx > 1e-3 ? ry * castBaseRadius / rx : (aInstBase.y < 0.0 ? castBaseRadius : 0.6 * castBaseRadius);
+        rx = castBaseRadius;
+      }
+      footCol = aInstBase.x - 1.0;
+      foot.x = aInstXY.x + (footCol - aInstAnchor.x * aInstSize.x) * aInstScale.x;
+      foot.y -= ry;
+      foot += toSun * sqrt(rx * rx * toSun.x * toSun.x + ry * ry * toSun.y * toSun.y);
+    } else if (aInstBase.x < 0.0) {
+      // A render: this frame is the view from the sun (the sun where the camera is), so its contact nearest the sun is
+      // its lowest one. The card stands there, that far from the anchor towards the sun.
+      float reach = (-aInstBase.x - 1.0 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uGroundInvScaleY;
+      foot = vec2(aInstXY.x, aInstXY.y * uGroundInvScaleY) + toSun * reach;
+    }
+    vec2 sunPerp = uSunPerp.xy;
+    if (castFixed) {
+      // DX-CASTER: a fixed card stands along the object through its anchor (the frame shows it face on).
+      foot = vec2(aInstXY.x, aInstXY.y * uGroundInvScaleY);
+      footCol = aInstAnchor.x * aInstSize.x;
+      sunPerp = castAxis;
+    }
+    vec2 land = foot + (content.x - footCol) * aInstScale.x * sunPerp - sunZ * uSunK.xy;
+    world = vec2(land.x, land.y / uGroundInvScaleY);
+    // weed:sunOut
   }
 
-  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
-  vec2 local = (content - anchor * aInstSize) * vec2(aInstScale.x, sy);
-  vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
-  vec2 world = rotated + aInstXY;
   vec2 screen = (world - uCam.xy) * uCam.z;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   vec3 clip = mvp * vec3(screen, 1.0);

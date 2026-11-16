@@ -8,7 +8,6 @@ import assert from 'node:assert/strict';
 import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
-import { LIGHTING_DEFAULTS } from '../../src/util/configDefaults.js';
 import { GROUND_SCALE_Y_MIN, resolveGroundScaleY } from '../../src/util/lightRadius.js';
 import { lightDataTextureFloatCount } from '../../src/util/utils.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
@@ -87,7 +86,6 @@ function expected(intensity, h, dx, dy, groundScaleY) {
 }
 
 test('groundScaleY: a positive number up to 1, clamped below; anything else is 1', () => {
-  assert.equal(LIGHTING_DEFAULTS.groundScaleY, 1);
   assert.equal(resolveGroundScaleY(undefined), 1);
   assert.equal(resolveGroundScaleY(null), 1);
   assert.equal(resolveGroundScaleY('iso'), 1);

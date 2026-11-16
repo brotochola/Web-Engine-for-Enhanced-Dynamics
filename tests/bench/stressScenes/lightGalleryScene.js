@@ -90,13 +90,13 @@ export class LightGalleryScene extends Scene {
       ground: { kind: LAYER_KIND.TILING, texture: 'ground', tileScale: 1, parallax: 1, zIndex: 0 },
       glows: { zIndex: 4, blendMode: BLEND_MODES.ADD, ySorting: false },
     },
+    // ?raycast=1: pitch 90, a flat view, lights by raycasting (the blocks' walls), on the same floor.
+    camera: RAYCAST ? { pitch: 90, floorScaleY: GROUND_SCALE_Y } : { floorScaleY: GROUND_SCALE_Y },
     lighting: {
       enabled: true,
       baseAmbient: AMBIENT,
       maxLights: 32,
       shadowsEnabled: true,
-      raycasted: RAYCAST,
-      groundScaleY: GROUND_SCALE_Y,
       lightGlow: GLOW_MODE,
       maxShadowCastingLights: 16,
       maxShadowsPerLight: 32,

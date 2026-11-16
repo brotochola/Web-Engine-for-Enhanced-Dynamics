@@ -3,26 +3,25 @@
 
 import WEED from '/src/index.js';
 
-
 import { Destination } from './destination.js';
 import { Lootable } from './lootable.js';
 import { LootableComponent } from '../components/lootableComponent.js';
-import { PersonComponent, DIRECTION_DOWN, DIRECTION_NAMES } from '../components/personComponent.js';
+import { PersonComponent } from '../components/personComponent.js';
 import { PersonAnimationFSM, WALK_SPEED_THRESHOLD } from '../fsm/personAnimationFsm.js';
+import { LIGHT3D } from '../light3d.js';
 import {
   ParticleEmitter,
   SpriteSheetRegistry,
   Ray,
   Flash,
   SoundManager,
-  getDirectionFromVector,
   GameObject,
   Decal,
   BulletPool,
   randomColor,
 } from '/src/index.js';
 
-const { LightOccluder, ShadowCaster, RigidBody, Collider, SpriteRenderer, Transform, rng, NavGrid } = WEED;
+const { ShadowCaster, RigidBody, Collider, DirectionalSprite, Transform, rng, NavGrid } = WEED;
 
 export class Person extends Lootable {
   static deriveSpeed = true;
@@ -45,9 +44,8 @@ export class Person extends Lootable {
     ...Lootable.components,
     RigidBody,
     Collider,
-    SpriteRenderer,
+    DirectionalSprite,
     ShadowCaster,
-    // LightOccluder,
     PersonComponent,
     PersonAnimationFSM,
   ];
@@ -100,9 +98,9 @@ export class Person extends Lootable {
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.98;
     this.spriteRenderer.animationSpeed = 0.15;
-    this.shadowCaster.heightMultiplier = 1.5
-
-    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
+    // The shadow: the sprite's silhouette, its card 1.5 times as long. With ?light3d=1 the camera gives its height, and the
+    // silhouette is the ShadowCaster's default (each light sees its own view of the person).
+    if (!LIGHT3D) this.shadowCaster.setSprite({ heightScale: 1.5 });
 
     // Flocking and resistance now use static class properties (no per-entity arrays needed)
     // this.setSpritesheet("poli");
@@ -114,14 +112,14 @@ export class Person extends Lootable {
     const scale = 0.9 + rng() * 0.2;
     this.collider.radius = 10 * scale;
     this.setScale(scale, scale);
-    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
 
     this.lootableComponent.health = 1;
     // resistance now uses static class property (Person.resistance)
     this.lootableComponent.dropMoney = 0//100;
 
-    // Initialize facing direction (default: down)
-    PersonComponent.facingDirection[this.index] = DIRECTION_DOWN;
+    // Facing south. The walk follows the velocity (PersonAnimationFSM), with no margin at the borders.
+    this.directionalSprite.turnMargin = 0;
+    this.directionalSprite.facing = Math.PI / 2;
 
     // Reset dead flag (entity indices are reused)
     PersonComponent.dead[this.index] = 0;
@@ -282,11 +280,9 @@ export class Person extends Lootable {
       dirY = dy * inv;
     }
 
-    const direction = getDirectionFromVector(dx, dy);
-    const dirIndex = DIRECTION_NAMES.indexOf(direction);
-    if (dirIndex >= 0) {
-      PersonComponent.facingDirection[this.index] = dirIndex;
-    }
+    // Face the target (the shooting state keeps the facing; the walk takes it from the velocity again).
+    this.directionalSprite.facingFrom = 'manual';
+    if (lenSq > 1e-12) this.directionalSprite.facing = Math.atan2(dy, dx);
 
     // Record shot time
     PersonComponent.lastShotTime[this.index] = performance.now();
@@ -440,13 +436,8 @@ export class Person extends Lootable {
     PersonAnimationFSM.changeState(this.index, PersonAnimationFSM.states.PUNCHING);
 
     // Face the target
-    const targetX = Transform.x[targetEntityIndex];
-    const targetY = Transform.y[targetEntityIndex];
-    const direction = getDirectionFromVector(targetX - this.x, targetY - this.y);
-    const dirIndex = DIRECTION_NAMES.indexOf(direction);
-    if (dirIndex >= 0) {
-      PersonComponent.facingDirection[this.index] = dirIndex;
-    }
+    this.directionalSprite.facingFrom = 'manual';
+    this.directionalSprite.lookAt(Transform.x[targetEntityIndex], Transform.y[targetEntityIndex]);
 
     const target = GameObject.get(targetEntityIndex);
     if (target && target.recieveDamage) {

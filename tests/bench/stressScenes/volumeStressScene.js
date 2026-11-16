@@ -1,13 +1,13 @@
 import WEED from '/src/index.js';
 import { mulberry32 } from '../benchMath.js';
 
-const { Scene, Camera, GameObject, MeshRenderer, VolumeShadowCaster, LightEmitter, Collider, Sun, LAYER_KIND, enums } = WEED;
+const { Scene, Camera, GameObject, MeshRenderer, ShadowCaster, LightEmitter, Collider, Sun, LAYER_KIND, enums } = WEED;
 const { ShapeType } = enums;
 
 /**
  * DX-VOLUME's ruler: a town of volumes, the same picture written two ways. `?api=mesh` is what a game writes by hand: a mesh
  * with heights per house on a sunProjected layer, a car rebuilt on the CPU as it turns, at most every 2 degrees. `?api=volume`
- * is the component. Houses have a tank on the roof, cars a cabin on a body.
+ * is ShadowCaster's volume (addLevel). Houses have a tank on the roof, cars a cabin on a body.
  *
  * `?n=` (default 20000) houses, `?cars=` (default 200) cars that go round, `?lights=` (default 0) lamps, `?hour=` (default 9),
  * `?dayMinutes=` (default 1, 0 stops the sun), `?still=1` stops the cars at spread headings, for byte comparisons,
@@ -148,21 +148,23 @@ class MeshCar extends GameObject {
   }
 }
 
+const HOUSE_FLOOR_OPTION = { floorScaleY: HOUSE_FLOOR };
+const CAR_FLOOR_OPTION = { floorScaleY: CAR_FLOOR };
+
 class VolumeHouse extends GameObject {
-  static components = [VolumeShadowCaster];
+  static components = [ShadowCaster];
 
   onSpawned(config = {}) {
     this.x = config.x;
     this.y = config.y;
-    this.volumeShadowCaster.floorScaleY = HOUSE_FLOOR;
     for (const [outline, bottom, height, top] of houseLevels(config.hw, config.hd, config.h)) {
-      this.volumeShadowCaster.addLevel(outline, bottom, height, top);
+      this.shadowCaster.addLevel(outline, bottom, height, top, HOUSE_FLOOR_OPTION);
     }
   }
 }
 
 class VolumeCar extends GameObject {
-  static components = [VolumeShadowCaster];
+  static components = [ShadowCaster];
 
   angle = 0;
   orbit = 0;
@@ -172,8 +174,7 @@ class VolumeCar extends GameObject {
 
   onSpawned(config = {}) {
     Object.assign(this, config);
-    this.volumeShadowCaster.floorScaleY = CAR_FLOOR;
-    for (const [outline, bottom, height, top] of CAR_LEVELS) this.volumeShadowCaster.addLevel(outline, bottom, height, top);
+    for (const [outline, bottom, height, top] of CAR_LEVELS) this.shadowCaster.addLevel(outline, bottom, height, top, CAR_FLOOR_OPTION);
     this.place();
   }
 
@@ -231,7 +232,7 @@ export class VolumeStressScene extends Scene {
       enabled: true,
       baseAmbient: 0.3,
       maxLights: Math.max(10, LIGHTS),
-      ...(API === 'volume' ? { maxVolumeVerts: 20 } : {}),
+      ...(API === 'volume' ? { maxVolumes: N + CARS, maxVolumeVerts: 20 } : {}),
       sun: { enabled: true, startHour: HOUR, shadowAlpha: 0.6, dayCycle: { enabled: DAY_MINUTES > 0, speed: 1, dayDurationMinutes: DAY_MINUTES || 1 } },
     },
   };

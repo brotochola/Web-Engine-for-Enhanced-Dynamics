@@ -2,6 +2,7 @@
 // Handles workers, SharedArrayBuffers, entity registration, and scene lifecycle
 // GameEngine owns canvas / page lifecycle; Scene owns the running world.
 
+import { cameraFloorScaleY, resolveCamera } from '../util/cameraView.js';
 import { GameObject } from './gameObject.js';
 import { popEntity } from '../util/atomicFreeList.js';
 import { resolveForceProcessOnLogicWorker } from '../util/logicOwner.js';
@@ -23,7 +24,6 @@ import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js'
 import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
-import { resolveGroundScaleY } from '../util/lightRadius.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { ParticleComponent } from '../components/particleComponent.js';
 import { DecorationComponent } from '../components/decorationComponent.js';
@@ -32,6 +32,8 @@ import { DecorationPool } from './decorationPool.js';
 import { BulletPool } from './bulletPool.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
 import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
+import { DirectionalSprite } from '../components/directionalSprite.js';
+import { buildDirectionTable } from './spriteDirections.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { LightOccluder } from '../components/lightOccluder.js';
@@ -40,6 +42,7 @@ import { CollisionListener } from '../components/collisionListener.js';
 import { JointBreakListener } from '../components/jointBreakListener.js';
 import { Grab } from '../components/grab.js';
 import { SpriteSheetRegistry, addBigAtlasChunks } from './spriteSheetRegistry.js';
+import { sheetCastsSolid, sheetStandsOnContact } from '../render/frameBase.js';
 import { AdobeAnimRegistry } from './adobeAnimRegistry.js';
 import { AdobeAnimCompiler } from '../util/adobeAnimCompiler.js';
 import {
@@ -160,6 +163,19 @@ import {
 
 /** `wasm` keys a scene set that are not switches, already warned about (once per key per page). */
 const warnedWasmKeys = new Set();
+
+/**
+ * A file named beside another asset: `name` in the folder of `url` (its query and hash left out). An absolute URL or a
+ * root path is itself.
+ * @param {string} url
+ * @param {string} name
+ */
+function siblingAssetUrl(url, name) {
+  if (/^([a-z][a-z0-9+.-]*:|\/)/i.test(name)) return name;
+  const s = String(url);
+  const cut = s.split(/[?#]/, 1)[0].lastIndexOf('/');
+  return cut >= 0 ? s.slice(0, cut + 1) + name : name;
+}
 
 class Scene {
   /** Steps onLoadProgress reports, in boot order (the asset ones overlap). */
@@ -419,11 +435,12 @@ class Scene {
     LightEmitter.clearArrays();
     ShadowCaster.componentId = null;
     ShadowCaster.clearArrays();
-    // Workers set it from their init message; a page may call setTexture too.
-    ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
+    // Workers set it from their init message; a page may call shadowCaster.setSprite({ frame }) too.
     VolumeShadowCaster.componentId = null;
     VolumeShadowCaster.clearArrays();
-    VolumeShadowCaster.defaultFloorScaleY = resolveGroundScaleY(this.config.lighting?.groundScaleY);
+    VolumeShadowCaster.defaultFloorScaleY = cameraFloorScaleY(this.config);
+    DirectionalSprite.componentId = null;
+    DirectionalSprite.clearArrays();
     FlashComponent.componentId = null;
     FlashComponent.clearArrays();
     LightOccluder.componentId = null;
@@ -626,20 +643,31 @@ class Scene {
       // Raycasted lighting needs LightEmitter for light sources
       this._ensureComponentPool(LightEmitter);
     }
+    // DX-CASTER: the ShadowCasters' volumes keep their floor scale in VolumeShadowCaster's one column (no class lists it).
+    if (this._volumes > 0) {
+      this._ensureComponentPool(VolumeShadowCaster);
+    }
   }
 
   /**
-   * DX-VOLUME: with a class that lists VolumeShadowCaster, its layer and its share of the mesh arena, so a scene's config says
-   * nothing about either. config.layers.volumeShadows, if the scene has it, moves the layer. A hull's triangles are at most
-   * six indices a vertex.
+   * DX-VOLUME, DX-CASTER: with config.lighting.maxVolumes above 0 and a class that lists ShadowCaster, the volumes' layer and
+   * their share of the mesh arena (maxVolumes × maxVolumeVerts), so shadowCaster.setBox, addLevel and setHull have room. A
+   * scene without volumes gets neither: no layer drawn, no arena, no column. config.layers.volumeShadows, if the scene has
+   * it, moves the layer. A hull's triangles are at most six indices a vertex.
    */
   _applyVolumeConfig() {
-    let volumes = 0;
+    this._volumes = 0;
+    const volumes = this.config.lighting?.maxVolumes | 0;
+    if (!(volumes > 0)) return;
+    let casters = false;
     for (const entry of this.constructor.entities || []) {
-      if (!(entry[1] > 0)) continue;
-      if (GameObject._collectComponents(entry[0]).includes(VolumeShadowCaster)) volumes += entry[1] | 0;
+      if (entry[1] > 0 && GameObject._collectComponents(entry[0]).includes(ShadowCaster)) {
+        casters = true;
+        break;
+      }
     }
-    if (volumes === 0) return;
+    if (!casters) return;
+    this._volumes = volumes;
     const verts = volumes * (this.config.lighting?.maxVolumeVerts ?? LIGHTING_DEFAULTS.maxVolumeVerts);
     this.config.renderer = {
       ...this.config.renderer,
@@ -951,6 +979,17 @@ class Scene {
     // Compute shadowsEnabled (requires both enabled and shadowsEnabled)
     this.config.lighting.shadowsEnabled =
       this.config.lighting.enabled && this.config.lighting.shadowsEnabled !== false;
+
+    // DX-CAMERA: what the camera is, resolved once, every key a number (src/util/cameraView.js). The floor's
+    // foreshortening and the px a px of height rises are read from here by lights, cones, faces and volumes.
+    const cameraProblems = [];
+    this.config.camera = resolveCamera(this.config.camera, cameraProblems);
+    for (const text of cameraProblems) warnOnce(`${sceneName}.config.${text}`, 'camera', `${sceneName}.config.${text}`);
+    // DX-CASTER (plan §5.1, §6.11): a flat view, straight down or from the side, lights by the 2D sweep of the ShadowCasters'
+    // walls (raycasted lighting, visibility polygons); any other camera by the 3D system. Derived here, once, for the code
+    // that reads lighting.raycasted (the pools, the buffers, the workers); a scene that wrote the key was told it is retired.
+    const pitch = this.config.camera.pitch;
+    this.config.lighting.raycasted = this.config.lighting.enabled === true && (pitch === 90 || pitch === 0);
 
     // Navigation defaults from centralized config
     this.config.navigation = {
@@ -1571,7 +1610,7 @@ class Scene {
    * @param {object} [compiledAdobeAssets]
    */
   _installBigAtlas(atlas, compiledAdobeAssets = {}) {
-    const { json, imageBitmap, canvas } = atlas;
+    const { json, imageBitmap, canvas, mapsBitmap = null } = atlas;
     // A copy: bigAtlas's chunk sheets (ED-74) are added to it, not to the JSON a bake writes out.
     const proxySheets = { ...(json?.meta?.proxySheets || {}) };
     addBigAtlasChunks(json, proxySheets);
@@ -1580,9 +1619,37 @@ class Scene {
     this.loadedSpritesheets['bigAtlas'] = {
       json,
       imageBitmap,
+      mapsBitmap,
     };
 
     SpriteSheetRegistry.register('bigAtlas', json);
+
+    // DX-DIRSPRITE: each sheet's direction table, from its assets entry, else its json, else its <name>_<direction>
+    // animations. A copy of the proxy carries it: the bake's JSON keeps what it read.
+    const sheetConfigs = this.imageUrls?.spritesheets || {};
+    for (const [sheetName, proxyData] of Object.entries(proxySheets)) {
+      if (!proxyData?.isProxy || proxyData.prefix === '') continue;
+      const config = sheetConfigs[sheetName];
+      const spec = config && config.directions !== undefined ? config.directions : proxyData.directionsSpec;
+      const names = [];
+      for (const [k, n] of Object.entries(proxyData.indexToName || {})) names[k | 0] = n;
+      const problems = [];
+      const table = buildDirectionTable(sheetName, spec, names, problems);
+      for (const text of problems) warnOnce(`${sheetName}:${text}`, 'DX-DIRSPRITE', text);
+      // DX-SHADOW3D: a render with height maps stands on a contact (frameBase.js) and casts its solid, which is built
+      // from the frame the camera sees: pre-render leaves such a sheet's frame alone in the sun rows. DX-CASTER: the proxy
+      // says so too (castsSolid), for shadowCaster.type on the logic workers and the page, which get the proxies.
+      const solid = sheetCastsSolid(json, proxyData);
+      if (table && solid) table.solid = true;
+      // N-203: a render on a contact casts its solid for the lamps when left to its sheet, even if the sun takes its card.
+      if (table && sheetStandsOnContact(json, proxyData)) table.contact = true;
+      if (table || solid) {
+        const copy = { ...proxyData };
+        if (table) copy.directions = table;
+        if (solid) copy.castsSolid = true;
+        proxySheets[sheetName] = copy;
+      }
+    }
 
     for (const [sheetName, proxyData] of Object.entries(proxySheets)) {
       SpriteSheetRegistry.registerProxy(sheetName, proxyData);
@@ -1627,19 +1694,57 @@ class Scene {
   }
 
   async _loadBakedBigAtlas(bigAtlasAsset) {
-    const [json, pngResponse] = await Promise.all([
-      fetchAssetJson(bigAtlasAsset.json, 'baked bigAtlas JSON'),
+    const jsonPromise = fetchAssetJson(bigAtlasAsset.json, 'baked bigAtlas JSON');
+    // DX-MAPS: the twin page the bake wrote beside the atlas, fetched once the JSON names it, while the atlas loads.
+    const mapsPromise = jsonPromise.then((json) => this._loadBakedMapsPage(bigAtlasAsset, json));
+    const [json, pngResponse, mapsBitmap] = await Promise.all([
+      jsonPromise,
       fetchAssetRead(bigAtlasAsset.png, 'baked bigAtlas PNG', (r) => r.blob()),
+      mapsPromise,
     ]);
     const imageBitmap = await createImageBitmap(pngResponse.body);
     const canvas = this._canvasFromImageBitmap(imageBitmap);
-    return { json, imageBitmap, canvas };
+    return { json, imageBitmap, mapsBitmap, canvas };
+  }
+
+  /**
+   * DX-MAPS: a baked atlas's twin page (heights and normals at each frame's rectangle), as data: `assets.bigAtlas.maps`,
+   * else the file its JSON names (meta.mapsImage, beside the atlas png). Null when the atlas has no maps.
+   * @returns {Promise<ImageBitmap|null>}
+   */
+  async _loadBakedMapsPage(bigAtlasAsset, json) {
+    const named = json?.meta?.mapsImage;
+    const url = typeof bigAtlasAsset.maps === 'string'
+      ? bigAtlasAsset.maps
+      : typeof named === 'string' && named !== '' ? siblingAssetUrl(bigAtlasAsset.png, named) : null;
+    if (url === null) {
+      if (json?.meta?.maps === true) {
+        warnOnce(this.constructor.name, 'baked-maps',
+          `${this.constructor.name}: its baked bigAtlas JSON says a sheet has maps but names no maps page (meta.mapsImage), so ` +
+          `the sprites are lit flat. Bake it again (npm run bake:atlas), or give assets.bigAtlas.maps.`);
+      }
+      return null;
+    }
+    const { body } = await fetchAssetRead(url, 'baked bigAtlas maps PNG', (r) => r.blob());
+    // Data, not colour, as the packed page (_packBigAtlasOnMainThread): no premultiplied alpha, no colour space.
+    return createImageBitmap(body, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
   }
 
   async _packBigAtlasOnMainThread(assetsToLoad, options) {
-    const packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, options);
-    const imageBitmap = await createImageBitmap(packed.canvas);
-    return { json: packed.json, imageBitmap, canvas: packed.canvas };
+    // DX-MAPS: the twin page's texels as computed, not read back from its canvas: a 2D canvas keeps premultiplied alpha,
+    // and the twin page holds a normal's second byte in A (about 55 to 61 on standing sprites), so R, the height's high
+    // byte, came back rounded by a few steps (several px of height).
+    const packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, { ...options, keepMapsTexels: true });
+    const maps = packed.mapsCanvas;
+    const exact = maps && packed.mapsTexels ? new ImageData(packed.mapsTexels, maps.width, maps.height) : null;
+    const [imageBitmap, mapsBitmap] = await Promise.all([
+      createImageBitmap(packed.canvas),
+      // DX-MAPS: the twin page goes to the renderer as data: no premultiplied alpha, no colour space.
+      exact
+        ? createImageBitmap(exact, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
+        : maps ? createImageBitmap(maps, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }) : null,
+    ]);
+    return { json: packed.json, imageBitmap, mapsBitmap, canvas: packed.canvas };
   }
 
   async _loadTilemapsParallel(tilemaps) {

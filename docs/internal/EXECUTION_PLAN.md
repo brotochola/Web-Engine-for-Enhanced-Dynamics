@@ -4845,6 +4845,172 @@ Owner: spatial.
 gather alone 9.45 -> 9.52 ms a frame with the skip off). The skipped visits were the cheap ones (predicted rejects whose
 lines the next entity loads anyway). Ablation of the gather: without the dedup marks -15 %, without the row writes -17 %;
 ids numbered in home-cell order (the locality ceiling) -8 % of the frame.
+### E-378 The pixel depth costs the colour pass +30 % on WebGL and +90 % on WebGPU
+
+**Premise (2026-11-15, gpuPassBench with real waits, 2000 sprites at 1920 x 1080):** color 0.977 ms against
+colorDepth 1.271 on WebGL (+30 %), 0.970 against 1.847 on WebGPU (+90 %). Every colour fragment writes its depth
+(pixelDepth.js), which turns the early depth test off for the pass, though a sprite without a height map has one
+depth for all its pixels (its foot) and a floor sprite one that runs with its screen y.
+**Plan:** the opaque pass in two draws, the sprites with maps writing their fragments' depth and the others from their
+vertices (the depth test, not the painter, orders the opaque pass); find why WebGPU pays three times WebGL's
+(the WGSL depth path, the depth-stencil format). Owner: the GPU; the depth captures and depthSortCheck unchanged.
+### E-377 lighting.gbuffer drew the G-buffer's two targets a pass each by default
+
+**Premise (2026-11-15):** 'pass' was the plan's starting point (§9.5, decision 5) until measured: the face map and the
+entity ids map a pass each over the same instances, where 'mrt' draws both in one with two colour targets.
+**Kept (kernel) 2026-11-15 (R-1129):** 68b0b640 ('mrt' the default; 2511e011 the bench's passes as the engine draws
+them). gpuPassBench, gbufFace + gbufIds against gbufBoth: light resolution 0.5 WebGL 0.796 -> 0.512 ms, WebGPU 0.749
+-> 0.521; resolution 1 2.458 -> 1.651, 2.668 -> 1.854. Captures 0 px differ, GPU_PASSES 3 -> 2. spriteMapsStressScene
+stays at the display's rate either way up to 12 000 shapes at resolution 1 (no sitting can judge it here).
+### E-376 The columns' grid ran the vertex shader six times a cell
+
+**Premise (2026-11-15):** a render's columns are 576 cells (24 x 24) of two triangles, six vertices a cell drawn in
+order: at thousands of renders the vertex shader (two texel reads and the landing, six times a cell) holds the frame
+(sunShadowMapStressScene with 15 000 renders as columns drew 17 fps).
+**Plan:** four corners a cell and the quad index 0 1 2, 0 2 3: the same two triangles, and the vertex cache keeps the
+two corners they share. Owner: the GPU.
+**Kept 2026-11-15 (R-1128):** 7ecde902 (6daf584b first gave the engine and the bench one index function).
+gpuPassBench sunColumns, the same images: 5 000 renders WebGL 6.93 -> 5.65 ms (-19 %), WebGPU 4.95 -> 4.24 (-14 %);
+200 renders 0.717 -> 0.586, 0.533 -> 0.470. sunShadowMapStressScene, 15 000 renders as columns: drawn 17.2 -> 23.8 fps
+(+37.8 %, 4/4 pairs); with E-374, 16.8 -> 23.8 (+41.7 %). Captures of columns on both backends: 0 px differ.
+### E-375 A lamp's caster columns were drawn out to the stretch cap and thrown away outside the tile
+
+**Premise (2026-11-15, gpuPassBench, 48 lamps):** the lamps' map took 4.1 ms. Each caster's columns land along its
+lamp's rays up to the stretch cap (8 times their distance), and every fragment that lands outside the lamp's tile is
+discarded: with lamps lower than the casters (Predator's bonfires at 24 px, its houses' lights at 45, people 50 to 60
+px tall) most of the drawn area is outside.
+**Plan:** each column's top drawn where its ray lands twice the lamp's reach away (the tile's corner is 1.41 reach
+away), with the picture's row at that height; the landing below it is the same projection. Owner: the GPU.
+**Kept (kernel) 2026-11-15 (R-1127):** 6970a9fd. gpuPassBench lampMap WebGL 4.11 -> 1.45 ms (-65 %), WebGPU 4.17 -> 1.40 (-66 %).
+lampShadowStressScene (lampShadows=map, owner presented, --vs 3497ca6d): both sides at the display's rate at the default load (48 lamps, 2 000 walkers) and at 240 lamps and 10 000 walkers (9 055 caster rows; pre-render 5.6 ms holds that frame): neutral, no regression. The light bench at 22 h: 8 655 px by at most 4 / 255, where a tree taller than the lamps crosses the
+cap (whose interpolation gave heights above the true ones). lampSeparationCheck PASS, shadowOutlineCheck's numbers as
+before.
+### E-374 The shadow maps' depth test costs the sun's map a third more
+
+**Premise (2026-11-15, gpuPassBench with real waits):** since the second round the maps keep each texel's highest
+caster by a depth test (and its entity id) instead of a max blend: the sun's map went from 0.79 to 1.08 times the
+colour pass's time (2000 silhouettes; WebGL 1.04 ms, WebGPU 1.03). The fragment program discards transparent texels,
+so the depth test runs late, and Pixi's depth-stencil target is 24 + 8 bits.
+**Plan:** a 16-bit depth buffer (the bench's `mapDepth=16`; the engine would need its own depth texture on the maps'
+render targets), or the casters drawn highest first so the early depth cull rejects. Owner: the GPU; the captures
+unchanged (16 bits hold 1 / 65 536 of the height range).
+**Kept 2026-11-15 (kernel; R-1126), and not the way the plan said.** A 16-bit depth buffer changed nothing (1.045 /
+1.053 ms), and the max blend itself would have cost only 4 % less: what cost was that every map fragment wrote its depth
+(gl_FragDepth, frag_depth), which turns the early depth test and the depth compression off for the whole pass. The
+height runs across a card, a column or a volume as the screen does, so the vertices write the same depth (f068966c); a
+lamp's map, drawn with w = (E - z) / E, gets a depth affine in 1 / w, which the rasterizer interpolates exactly
+(3497ca6d). gpuPassBench, the same images: sunMap WebGL 1.035 -> 0.673 ms, WebGPU 1.025 -> 0.531; sunColumns 1.849 ->
+0.713, 1.766 -> 0.532; lampMap 4.30 -> 4.11, 4.37 -> 4.17. sunShadowMapStressScene: 3 000 casters at the display's rate
+both sides; 15 000 with columns drawn 16.8 -> 17.3 fps (+3.0 %, 4/4 pairs, neutral): the columns' vertices held that
+frame (E-376).
+### E-373 The 3D light pass costs 11 % more on WebGL than on WebGPU
+
+**Premise (2026-11-15, gpuPassBench with real waits, N-193):** light3d (32 lights, resolution 0.5, GTX 1650) takes
+1.26 ms on WebGL against 1.13 on WebGPU, while the plain light pass is the same (0.68/0.69) and the ES 3.0 reads
+(8f387ea0) did not move it. The difference is in the 3D terms as ANGLE's HLSL compiles them.
+**Plan:** compare ANGLE's HLSL with Tint's (the light data read per light as texelFetch, the lamp's reach once a
+light instead of a pixel, the loop's exits); time terms one by one in the bench. Owner: the GPU.
+### E-372 The frames' gather in WASM
+
+**Premise (R-1122):** the same millisecond as E-371; the gather is seven loads a caster in the painter's order, which
+JS does with bounds checks and a call a row.
+**Plan:** if E-371 does not land, the keyed pack (pack_casters_keyed_scan) writes the frame as it writes the row, from
+the columns and the tables in the kernel's memory (the plan's §9.5 'Dirección: JS / WASM'). Owner: pre-render.
+### E-371 The sun's and the lamps' frames picked in the shadow programs
+
+**Premise (R-1122):** after E-368 and E-369 the frames of directional casters are still pre-render's largest piece of
+the branch against main in Predator: about 1 ms a frame (sunFrameFor, applyKeyedSunFramesFor, the lamps' frames), each
+a gather of seven columns in the painter's order. The GPU draws four vertices a caster and could pick the frame itself.
+**Plan:** a small texture by texture id (its sheet's table, direction, group, frame of the cycle) and the tables' frames
+by absolute direction (frameAt) in another; the shadow programs (cards, columns, stamps, the sun's and the lamps' maps,
+GLSL and WGSL) turn the drawn direction by the sun's angle or the lamp-to-caster angle and read the frame. Pre-render
+writes no frame. Owner: pre-render (the cost leaves), Pixi and the GPU as guards. Measure: Predator crowd 2.5 against
+main; captures of the light bench and Predator light3d unchanged.
+**Caveat (2026-11-15):** the GPU sees a texture, not an entity: a sprite whose sheet has a direction table but no
+DirectionalSprite (a pinned animation, an LPC sheet in an older demo) would get its sun frame too, which pre-render
+leaves alone (mode 1 only). It needs a flag a row (the full rows have the caster code; the keyed rows have none yet).
+### E-370 The keyed rows' sun frames are a second pass over every keyed row
+
+**Premise (2026-11-15, CPU profile of Predator crowd 2.5 on dx/light3d, pre-render 753 ms/s busy):** `_applyKeyedSunFrames` is 4.3 % (366 ms, about 0.55 ms a frame): after the WASM keyed pack has written
+the rows, a JS pass reads each row's entity (21 %) and stores its sun frame into the row (48 %, a miss per row).
+**Plan:** the pack writes the frame as it writes the row (the frames table passed to WASM), or the pass stores only
+rows whose frame changed. Owner: pre-render. Kernel (`gpuPackCastersKeyedMicrobench`), then Predator crowd 2.5.
+### E-369 The lamps' keyed frames take an atan2 per caster and lamp
+
+**Premise (2026-11-15, CPU profile of Predator crowd 2.5 on dx/light3d, pre-render 753 ms/s busy):** `applyKeyedLampFramesInto` is 4.7 % (401 ms, about 0.6 ms a frame), and 48 % of it is one line: the
+angle from the lamp to the caster by `Math.atan2`, only to pick one of a sheet's N directions.
+**Plan:** the direction from dot products against the table's bucket borders (as DirectionalSprite.resolve keeps a
+direction), or a fast atan2 (a step is 11.25° at 32 directions: an error of 0.005 rad changes nothing). Owner:
+pre-render. Kernel, then Predator crowd 2.5.
+**Kept 2026-11-15 (R-1121, a2798d07):** with the sun frames' change (E-368), a table by absolute direction (frameAt) and fastAtan2 (within 2e-5
+rad); lampFramesMicrobench 805 -> 1 323 ops/s, the same checksum. Predator crowd 2.5 pre-render -9.6 % with E-368.
+### E-368 The sun frames walk every entity slot each frame
+
+**Premise (2026-11-15, CPU profile of Predator crowd 2.5 on dx/light3d, pre-render 753 ms/s busy):** `computeSunFramesInto` is 11.3 % of pre-render (963 ms of self time in the window, about 1.4 ms a
+frame), the branch's pre-render cost against main (R-1058: 5.89 -> 7.34 ms). It walks every entity slot (14 % on
+the test `active[e] === 1 && mode[e] === 1 && casts[e]`) and recomputes each directional caster's frame every frame,
+though it changes only when the caster's direction, its animation frame or the sun's turn does.
+**Plan:** walk the directional casters' dense lists, and keep each one's last (direction, frame, turn) so an
+unchanged caster costs a compare; at night (sun intensity 0) nothing. Owner: pre-render. Kernel first
+(`computeSunFramesInto` on Predator-like rows), then Predator crowd 2.5 against main.
+**Kept 2026-11-15 (R-1121), three steps:** typed slot tables (8363751c), the passes working out their own rows'
+frames (b2d82cd3), a uniform sheet resolved once a turn step (74aa2616). sunFramesMicrobench: every slot 864 -> 1 778
+ops/s, the keyed rows' pass 862 -> 1 441, the same checksums. Predator crowd 2.5 (with E-369): pre-render 8.245 -> 7.497 ms
+(-9.6 %, 4/4, -7.9 % against the others).
+### E-367 The G-buffer pass costs 66 % more on WebGL than on WebGPU
+
+**Premise (the same quick suite):** the G-buffer pass (the face map generalised, resolution 0.5) takes 0.89 ms on
+WebGL against 0.54 ms on WebGPU. Agent R is changing that pass (F4: normals, surface, entity id, MRT); measure again
+once it lands.
+**Plan:** after F4, the same bench on both backends; if WebGL still lags, look at the GLSL (discard, the twin page's
+texelFetch, branches). Owner: the GPU.
+**Rejected 2026-11-15: its premise was the bench's (N-193).** The 0.89 ms was the G-buffer pass timed after the
+colour pass in one case; with real waits WebGL takes 0.485 ms and WebGPU 0.495.
+### E-366 The 3D light pass costs 40 % more on WebGPU than on WebGL
+
+**Premise (the same quick suite):** the light pass with the G-buffer, the sun's map and the lamps' map (32 lights,
+resolution 0.5) takes 1.22 ms on WebGPU against 0.87 ms on WebGL, while the plain light pass is close (0.78 against
+0.72). The WGSL of the 3D terms (LAMPMAP taps, the sun map, their uniforms) costs what the GLSL does not.
+**Plan:** read both programs' generated code (Tint's HLSL against ANGLE's), time the terms one by one in the bench
+(`--passes light3d` with parts turned off), fix the WGSL. Owner: the GPU.
+**Rejected 2026-11-15: its premise was the bench's (N-193).** The 0.87 ms on WebGL was light3d timed after the plain
+light pass in one case, while WebGL's waits were flushes; with real waits WebGL takes 1.26 ms and WebGPU 1.13 (E-373).
+### E-365 The self-shadow pass costs 4.6 times the light pass
+
+**Premise (2026-11-15, `gpuPassBench --suite quick`, GTX 1650, resolution 0.5, 94 % of the pixels with a height):** the
+self-shadow pass (one ray, 6 steps) takes 3.35 ms on WebGL (spread 16 %) and 3.87 ms on WebGPU, against 0.72 and 0.78
+ms for the light pass with 32 lights. A scene of renders with maps pays it on every such pixel.
+**Plan:** the plan's tournament (§9.5: 1, 2 or 4 rays, the step cap) plus early outs: no steps where the sun term is 0
+or the pixel's neighbourhood is flat, a half-resolution pass, and only the caster's own heights once the G-buffer holds
+the entity id (DX-SELFSHADOW). Owner: the GPU (presented frames). Measure: `selfShadowStressScene` and `gpuPassBench`.
+**Kept 2026-11-15 (R-1125), two steps.** With the bench's real waits (N-193) the pass took 3.33 ms on WebGL and 3.54 on
+WebGPU, and 96 % of it was the steps towards the 32 lamps (the sun's +0.07 ms, the lamps' +2.0): they ran for every pixel
+facing a lamp, however far. (1) ES 3.0 reads (8f387ea0): texture2D inside a branch of a loop that leaves per pixel made
+ANGLE's D3D11 flatten the branch, so no early out saved anything on WebGL; textureLod at level 0 reads the same image:
+WebGL 3.33 -> 2.91 ms. (2) The steps towards a lamp only inside its radius (23b83f0d), where its map ends too: WebGL
+1.61 ms, WebGPU 1.60. selfShadowStressScene with 32 lamps: drawn frames 41.8 -> 60.0 fps (+43.5 %, 4/4 pairs, at the
+display's rate). Captures: at most 6 / 255 on the light bench, 34 / 255 on 91 px of the stress scene by day.
+### E-364 DirectionalSprite resolves every entity every frame, also those that tick every N frames
+
+**Premise (the same profile):** `_resolveDirections` resolves every directional entity every frame, about 0.67 ms per
+logic worker a frame in Predator crowd 2.5 (38 000 people, ~42 ns each: the first read of each column misses). Predator
+ticks its civilians every 4 frames and its soldiers every 6 (staggeredUpdates); main's hand-written picker changed a
+direction only when a person shot.
+**Plan:** with staggered updates, an entity whose type has `tickInterval` > 1 is resolved on its own tick frames (the
+buckets `_tickIntervalBucket` walks that frame), after the ticks as now; the setters still resolve at once. Expected:
+about -0.5 ms per logic worker in Predator crowd 2.5. Owner: logic. Measure: `directionalSpriteStressScene` with a
+tickInterval knob, then Predator crowd 2.5 against main.
+**Kept 2026-11-15 (R-1119, eac75740):** directionalSpriteStressScene n=120000 tickInterval=4 (the knob, 8738e59c), owner
+logic, 2 pairs with an early stop: logic 7.019 -> 4.745 ms (-32.4 %, 2/2), pre-render +0.2 %, presented 60. Predator is
+gated with the batch.
+### E-363 DirectionalSprite's setters resolve even when the value does not change
+
+**Premise (2026-11-15, CPU profile of Predator crowd 2.5 on dx/light3d):** `DirectionalSprite.resolve` is 790 ms of
+self time in the window on the two logic threads, about 0.8 ms per worker a frame: the branch's logic cost against main
+(R-1058, 5.85 -> 6.65 ms). 13 % of its calls come from `set facingFrom`: Predator's FSM sets `'velocity'` again in
+each state's onEnter. The setter also resets lastX/lastY, which stalls a facing from position deltas for a frame.
+**Plan:** the setters (`facingFrom`, and the others that resolve) return when the value is what it was. Owner: logic.
+Hygiene with a small speed share; Predator crowd 2.5 as the guard.
 ### E-312 The emit writes every sprite row's statics, read only for changed keys
 
 **Premise (R-1045):** emit_rows is 42 to 45 % of pre-render; sprite_row reads six statics per sprite and writes them to

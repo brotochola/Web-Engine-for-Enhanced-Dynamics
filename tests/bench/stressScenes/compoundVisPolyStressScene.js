@@ -90,12 +90,13 @@ export class CompoundVisPolyStressScene extends Scene {
     particle: { maxParticles: 0, decals: false },
     renderer: { backend: 'webgl', noLimitFPS: false, maxVisibleRenderables: 4000 },
     preRender: { noLimitFPS: false },
+    // Straight down: a flat view lights by raycasting, with the floor of 1 the scene had without a camera.
+    camera: { pitch: 90 },
     lighting: {
       enabled: true,
       baseAmbient: 0.15,
       maxLights: 32,
       shadowsEnabled: false,
-      raycasted: true,
       maxPolygonVertices: 5000,
       maxOccluderSelfLit: 2048,
     },

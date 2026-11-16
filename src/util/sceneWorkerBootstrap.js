@@ -1,3 +1,5 @@
+import { DirectionalSprite } from '../components/directionalSprite.js';
+import { ShadowCaster } from '../components/shadowCaster.js';
 import { getPortTransferables, postWorkerInitMessage } from './utils.js';
 import { debugWorkerLog } from './debugLog.js';
 import { sceneParams } from '../core/sceneParams.js';
@@ -271,6 +273,18 @@ function buildComponentPoolsInfo(scene) {
 }
 
 /** Bundles embed the engine shaders; source builds let the renderer fetch /src/shaders. */
+/** DX-DIRSPRITE: each proxy sheet's direction table (Scene._installBigAtlas built them), by its sheet id; null when none. */
+function directionTablesById(proxySheets) {
+  let out = null;
+  for (const [name, proxy] of Object.entries(proxySheets || {})) {
+    if (!proxy?.directions) continue;
+    const id = SpriteSheetRegistry.getSpritesheetId(name);
+    if (!(id > 0)) continue;
+    (out ||= {})[id] = proxy.directions;
+  }
+  return out;
+}
+
 function bundleEngineShaders() {
   if (typeof window === 'undefined' || !window.WEED?.BUNDLE_MODE) return null;
   return window.WEED.EngineShaders || null;
@@ -282,6 +296,14 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
   }
   if (scene.config.particle) {
     scene.config.particle.deriveSpeed = scene._anyDeriveSpeed === true;
+  }
+  // DX-SHADOW3D: a class with a DirectionalSprite and a ShadowCaster casts the frame the sun sees, which pre-render writes
+  // into its caster rows (full or keyed, plan §17.2): the entity batch's own instances (E-191) have no room for it.
+  if (scene.config.lighting) {
+    scene.config.lighting.directionalCasters = scene.registeredClasses.some((r) => {
+      const c = GameObject._collectComponents(r.class);
+      return c.includes(DirectionalSprite) && c.includes(ShadowCaster);
+    });
   }
   return {
     msg: 'init',
@@ -590,6 +612,8 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     },
     frameRateIndex: preRenderStart,
     frameClockSlot: frameClockSlot('preRender'),
+    // DX-SHADOW3D: the sheets' direction tables by sheet id, for the frame the sun sees (DirectionalSprite).
+    directionTables: directionTablesById(scene.bigAtlasProxySheets),
   });
 
   debugWorkerLog('[Scene]   → Initializing renderer worker...');
@@ -603,6 +627,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     offscreenCanvas,
     ...Object.values(scene.loadedTextures),
     ...Object.values(scene.loadedSpritesheets).map((sheet) => sheet.imageBitmap),
+    ...Object.values(scene.loadedSpritesheets).map((sheet) => sheet.mapsBitmap).filter(Boolean),
     ...Object.values(tilesetBitmaps),
     ...(workerPorts.renderer ? Object.values(workerPorts.renderer) : []),
   ];

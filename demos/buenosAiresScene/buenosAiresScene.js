@@ -1,13 +1,14 @@
 // Buenos Aires — a small barrio made by buenos-aires' barrio editor, with its people and cars, to try the engine's light and
 // shadows on a town: every wall lit as the surface it is (lighting.faces), houses and cars that say what they are and cast it
-// (VolumeShadowCaster), lamps and headlights that come on with the hour. The game is brotochola/buenos-aires; its editor
+// (shadowCaster.setHull, setBox), lamps and headlights that come on with the hour. The game is brotochola/buenos-aires; its editor
 // exported this barrio (200 × 160 m, seed 385919651), and the people and cars here are its own, without its traffic rules.
 //
 //   lighting.faces         a lamp lights the wall that looks at it; F turns faces off (it reloads)
-//   VolumeShadowCaster     houses (setHull, from the editor's boxes) and cars (setBox); V hides their shadows
-//   ShadowCaster           people, street props and trees (setTexture: the whole tree's silhouette); B hides theirs
+//   shadowCaster volumes   houses (setHull, from the editor's boxes) and cars (setBox); V hides their shadows
+//   ShadowCaster           people, street props and trees (setSprite({ frame }): the whole tree's silhouette); B hides theirs
 //   lighting.resolution    Q: 0.25, 0.5 or 1, how sharp the edge between two faces is (it reloads)
-//   lighting.raycasted     R: lamps stopped by the houses' footprints; faces go off with it (it reloads)
+//   camera.pitch 90        R: raycasted lighting, lamps stopped by the houses' footprints (lamps.setWall); faces go off
+//                          with it (it reloads)
 //
 // URL: ?hour=17.5, ?dayMinutes=8 (0 stops the clock), ?people=400, ?resolution=0.5, ?faces=0, ?raycast=1, ?backend=webgpu.
 // Drag, the wheel or WASD move the camera; Z and X move the hour while held; H hides the panel.
@@ -51,8 +52,13 @@ for (let i = 0; i < (META.hojasCaras || 0); i++) SHEETS['caras' + i] = { json: B
 for (const name of PEOPLE_SHEETS) {
   SHEETS[name] = { json: '/demos/img/civil1.json', png: `/demos/img/people/${name}.png`, excludeAnimations: LPC_EXCLUDE };
 }
+// A car sheet draws the headings that look right, each an animation named by its degrees; the others are those mirrored.
 for (const name of new Set([...DRIVING_SHEETS, ...PARKED_SHEETS, ...WRECKED_SHEETS])) {
-  SHEETS['car_' + name] = { json: `/demos/buenosAiresScene/img/cars/${name}.json`, png: `/demos/buenosAiresScene/img/cars/${name}.png` };
+  const drive = { mirrorX: true };
+  for (const a of Object.keys(CAR_MODELS[name].anchorY)) drive[a] = a;
+  SHEETS['car_' + name] = {
+    json: `/demos/buenosAiresScene/img/cars/${name}.json`, png: `/demos/buenosAiresScene/img/cars/${name}.png`, directions: { drive },
+  };
 }
 // The editor writes the flowfields as .bin (WeedJS's binary format) when META.ffExt says so, as JSON otherwise.
 const FF_EXT = META.ffExt || '.json';
@@ -124,12 +130,16 @@ export class BuenosAiresScene extends Scene {
     renderer: { backend: BACKEND, ySort: true },
     // The houses are decorations: they do not fade out as the camera goes back.
     preRender: { startFadingDecorationsAtZoom: 0.2, hideDecorationsAtZoom: 0.1, cullingRatio: 0.3 },
+    // The floor is drawn at SYN (0.5), so the lamps' pools are ellipses; a px of height rises CZ on the screen. ?raycast=1:
+    // pitch 90, a flat view, lights by raycasting, on the same floor and heights.
+    camera: RAYCAST ? { pitch: 90, floorScaleY: META.SYN, heightScaleY: META.CZ } : { floorScaleY: META.SYN, heightScaleY: META.CZ },
     lighting: {
-      // The floor is drawn at SYN (0.5), so the lamps' pools are ellipses.
-      enabled: true, raycasted: RAYCAST, lightGlow: 'sprite', baseAmbient: 0.04, maxLights: 1024, groundScaleY: META.SYN,
-      // heightScaleY: what a px of height rises on the screen. sunDirect 0.5: a face in the shade keeps half, as the editor lit it.
-      faces: { enabled: FACES, heightScaleY: META.CZ, wrap: 0.15, gain: 1.3, sunDirect: 0.5 },
-      shadowsEnabled: true, maxShadowCastingLights: 16, maxShadowsPerLight: 64, maxShadowsPerEntity: 2, shadowTextures: true,
+      enabled: true, lightGlow: 'sprite', baseAmbient: 0.04, maxLights: 1024,
+      // The volumes' room: every house and car (the pools in entities below).
+      maxVolumes: META.nCasas + 8 + 2 * (META.nAutos + 4) + 16,
+      // sunDirect 0.5: a face in the shade keeps half, as the editor lit it.
+      faces: { enabled: FACES, wrap: 0.15, gain: 1.3, sunDirect: 0.5 },
+      shadowsEnabled: true, maxShadowCastingLights: 16, maxShadowsPerLight: 64, maxShadowsPerEntity: 2,
       resolution: RESOLUTION, shadowResolution: RESOLUTION,
       // The sun on the camera's side (shadowAngleOffset 0), or every wall the camera sees would be against the light, and no
       // higher than 60 degrees, or at noon it would reach no wall.
@@ -348,7 +358,7 @@ export class BuenosAiresScene extends Scene {
       { key: ' ', keyName: 'Space', label: 'Clock', note: 'Z and X move the hour while held', press: () => this.togglePause() },
       { key: 'j', keyName: 'J', label: 'Jump to', note: 'noon, dusk, night, dawn', press: () => this.jumpHour() },
       { key: 'n', keyName: 'N', label: 'Night light', note: 'lighting.sun.night: a blue light of its own, Sun.intensity stays', press: () => this.toggleNight() },
-      { key: 'v', keyName: 'V', label: 'Volume shadows', note: 'VolumeShadowCaster: houses and cars (the volumeShadows layer)', press: () => this.toggleVolumes() },
+      { key: 'v', keyName: 'V', label: 'Volume shadows', note: 'shadowCaster.setHull, setBox: houses and cars (the volumeShadows layer)', press: () => this.toggleVolumes() },
       { key: 'b', keyName: 'B', label: 'Sprite shadows', note: 'ShadowCaster: people, street props, trees (castedShadows)', press: () => this.toggleSpriteShadows() },
       { key: 'l', keyName: 'L', label: 'Lamps', note: 'street lamps and wooden posts, on from 18-19 h to 6-7 h', press: () => this.toggleSwitch(OFF.LAMPS) },
       { key: 'o', keyName: 'O', label: 'Headlights', note: 'LightEmitter.offsetX: ahead of each car, turning with it', press: () => this.toggleSwitch(OFF.HEADLIGHTS) },
@@ -356,7 +366,7 @@ export class BuenosAiresScene extends Scene {
       { key: 'p', keyName: 'P', label: 'People', note: 'stopped where they are', press: () => this.toggleSwitch(OFF.PEOPLE) },
       { key: 'f', keyName: 'F', label: 'Faces', note: 'lighting.faces: each wall lit as the surface it is (reloads)', press: () => reloadWith('faces', FACES ? 0 : 1) },
       { key: 'q', keyName: 'Q', label: 'Light resolution', note: 'lighting.resolution: the edge between two faces (reloads)', press: () => reloadWith('resolution', RESOLUTIONS[(RESOLUTIONS.indexOf(RESOLUTION) + 1) % RESOLUTIONS.length]) },
-      { key: 'r', keyName: 'R', label: 'Raycast', note: 'lighting.raycasted: houses stop lamps; faces go off (reloads)', press: () => reloadWith('raycast', RAYCAST ? 0 : 1) },
+      { key: 'r', keyName: 'R', label: 'Raycast', note: 'camera pitch 90: houses stop lamps; faces go off (reloads)', press: () => reloadWith('raycast', RAYCAST ? 0 : 1) },
     ]);
     this.showStates();
   }

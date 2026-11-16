@@ -5,6 +5,16 @@ import { Component } from '../core/component.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { SPRITE_TILE_MODE } from '../util/configDefaults.js';
 import { staticSceneryChangedAt } from '../core/staticScenery.js';
+import { GBUF_FLAGS, SPRITE_NORMALS, SPRITE_NORMALS_NAMES, emissiveLevel, emissiveValue } from '../render/gbufWord.js';
+
+/** Each wrong value said once. */
+const _gbufWarned = new Set();
+
+function warnGbufOnce(text) {
+  if (_gbufWarned.has(text)) return;
+  _gbufWarned.add(text);
+  console.warn(`WeedJS: ${text}`);
+}
 
 /** GLSL-style fract (works for negatives). */
 export function fract01(x) {
@@ -94,6 +104,10 @@ export class SpriteRenderer extends Component {
     // bit 0 flipX, bit 1 flipY. The flip lives in the sign of scaleX / scaleY
     // (what the renderers read); this remembers it so setScale keeps it.
     flip: Uint8Array,
+    // DX-GBUF (plan §5.4): how the G-buffer pass and the light take this sprite (src/render/gbufWord.js GBUF_FLAGS):
+    // bits 0-1 its normals (SPRITE_NORMALS), bit 2 its surface floor (0: a card standing on its foot), bits 3-5 its
+    // emissive level (0 off). The normals, surface and emissive accessors write it; 0 is every default.
+    gbufFlags: Uint8Array,
   };
 
   /**
@@ -228,6 +242,96 @@ export class SpriteRenderer extends Component {
     else if (next === 0) Atomics.add(users, 0, -1);
   }
 
+  /**
+   * DX-GBUF (plan §5.4): where the light finds this sprite's normals. 'auto' (default): its sheet's normal map, else the
+   * normals its height map gives, else none (lit as drawn); 'map': its sheet's twin page as it is (the normal map when the
+   * sheet has one); 'height': from its height map even when the sheet has a normal map (LPC look better so); 'flat': none,
+   * lit as drawn at its place in 3D. How strong they show is automatic: the lamps' share of the light on the pixel.
+   */
+  get normals() {
+    return SPRITE_NORMALS_NAMES[SpriteRenderer.gbufFlags[this.index] & GBUF_FLAGS.NORMALS_MASK];
+  }
+  set normals(value) {
+    const code = SPRITE_NORMALS_NAMES.indexOf(value);
+    if (code < 0) {
+      warnGbufOnce(`spriteRenderer.normals is 'auto', 'map', 'height' or 'flat', not ${JSON.stringify(value)}`);
+      return;
+    }
+    const i = this.index;
+    SpriteRenderer.gbufFlags[i] = (SpriteRenderer.gbufFlags[i] & ~GBUF_FLAGS.NORMALS_MASK) | code;
+  }
+
+  /**
+   * DX-GBUF (plan §5.4): the height a sprite without a height map has for the light. 'standing' (default for an entity): a
+   * card standing on its foot, the bottom row at height 0, each row up a little higher; 'floor': flat on the floor (a
+   * decal, a rug). A sprite with a height map takes its map's heights either way.
+   */
+  get surface() {
+    return (SpriteRenderer.gbufFlags[this.index] & GBUF_FLAGS.FLOOR) !== 0 ? 'floor' : 'standing';
+  }
+  set surface(value) {
+    if (value !== 'standing' && value !== 'floor') {
+      warnGbufOnce(`spriteRenderer.surface is 'standing' or 'floor', not ${JSON.stringify(value)}`);
+      return;
+    }
+    const i = this.index;
+    const f = SpriteRenderer.gbufFlags[i];
+    SpriteRenderer.gbufFlags[i] = value === 'floor' ? f | GBUF_FLAGS.FLOOR : f & ~GBUF_FLAGS.FLOOR;
+  }
+
+  /**
+   * DX-EMISSIVE (plan §5.4, §6.9, F10 v2): the sprite glows by itself: false (default), true (its own colour, which the
+   * night does not darken), or a number, its glow (1 is true; up to 1.75, in quarters). Its lit colour is the light's like
+   * any sprite's; its glow comes on top where the light is short of it (final = lit · light + glow · (1 - light)), so by day
+   * it looks as drawn and at night it keeps its colour. It writes neither the G-buffer nor depth: what is behind it is lit.
+   * Its sheet's own (assets.spritesheets.<name>.emissive) glows every opaque pixel of its frames. Needs the G-buffer (a
+   * scene with faces, a sheet with maps or a shadow map).
+   */
+  get emissive() {
+    return emissiveValue((SpriteRenderer.gbufFlags[this.index] & GBUF_FLAGS.EMISSIVE_MASK) >> GBUF_FLAGS.EMISSIVE_SHIFT);
+  }
+  set emissive(value) {
+    const i = this.index;
+    const level = emissiveLevel(value);
+    const f = SpriteRenderer.gbufFlags[i];
+    const was = (f & GBUF_FLAGS.EMISSIVE_MASK) >> GBUF_FLAGS.EMISSIVE_SHIFT;
+    if (was === level) return;
+    SpriteRenderer.gbufFlags[i] = (f & ~GBUF_FLAGS.EMISSIVE_MASK) | (level << GBUF_FLAGS.EMISSIVE_SHIFT);
+    const users = SpriteRenderer._emissiveUsers;
+    if (!users) return;
+    if (was === 0) Atomics.add(users, 0, 1);
+    else if (level === 0) Atomics.add(users, 0, -1);
+  }
+
+  /** A spawned sprite's G-buffer flags back to every default (the spawn's reset calls it), its glow off. */
+  static resetGbufRow(i) {
+    const flags = SpriteRenderer.gbufFlags;
+    if (!flags || flags[i] === 0) return;
+    const users = SpriteRenderer._emissiveUsers;
+    if (users && (flags[i] & GBUF_FLAGS.EMISSIVE_MASK) !== 0) Atomics.add(users, 0, -1);
+    flags[i] = 0;
+  }
+
+  /** N-186: the counted states row i holds: 1 a zIndex, 2 its own glow (the two counters' members). */
+  static usersOfRow(i) {
+    const z = SpriteRenderer.zIndex;
+    const f = SpriteRenderer.gbufFlags;
+    return (z && z[i] !== 0 ? 1 : 0) | (f && (f[i] & GBUF_FLAGS.EMISSIVE_MASK) !== 0 ? 2 : 0);
+  }
+
+  /**
+   * N-186: after row i's columns were written directly (a save restored), the counters follow what changed since
+   * usersOfRow gave `before`: the glow pass and the zIndex sort know a restored sprite glows or has a zIndex.
+   */
+  static recountRow(i, before) {
+    const after = SpriteRenderer.usersOfRow(i);
+    if (after === before) return;
+    const zUsers = SpriteRenderer._zIndexUsers;
+    const eUsers = SpriteRenderer._emissiveUsers;
+    if (zUsers && (after & 1) !== (before & 1)) Atomics.add(zUsers, 0, (after & 1) !== 0 ? 1 : -1);
+    if (eUsers && (after & 2) !== (before & 2)) Atomics.add(eUsers, 0, (after & 2) !== 0 ? 1 : -1);
+  }
+
   get tileOffsetV() {
     return unpackTileOffset01(SpriteRenderer.tileOffsetV[this.index]);
   }
@@ -241,16 +345,19 @@ export class SpriteRenderer extends Component {
   static unpackTileOffset01 = unpackTileOffset01;
   static bakeLocalOffsetFromWorld = bakeLocalOffsetFromWorld;
   static fract01 = fract01;
+  static NORMALS = SPRITE_NORMALS;
 
   static clearArrays() {
     super.clearArrays();
     this._zIndexUsers = null;
+    this._emissiveUsers = null;
   }
 
+  // After the columns, the zIndex users' count and (DX-EMISSIVE) the glowing sprites' count, an Int32 each.
   static getBufferSize(count) {
     const base = super.getBufferSize(count);
     const aligned = (base + 3) & ~3;
-    return aligned + 4;
+    return aligned + 8;
   }
 
   static initializeArrays(buffer, count, byteOffset = 0) {
@@ -259,10 +366,17 @@ export class SpriteRenderer extends Component {
     const base = super.getBufferSize(count);
     const aligned = (base + 3) & ~3;
     this._zIndexUsers = new Int32Array(buffer, byteOffset + aligned, 1);
+    this._emissiveUsers = new Int32Array(buffer, byteOffset + aligned + 4, 1);
   }
 
   static zIndexUsers() {
     const u = this._zIndexUsers;
+    return u ? Atomics.load(u, 0) : 0;
+  }
+
+  /** DX-EMISSIVE: how many sprites glow by themselves (spriteRenderer.emissive): the glow pass runs while any does. */
+  static emissiveUsers() {
+    const u = this._emissiveUsers;
     return u ? Atomics.load(u, 0) : 0;
   }
 }

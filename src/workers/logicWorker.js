@@ -20,6 +20,7 @@ import { Mouse } from '../core/mouse.js';
 import { Transform } from '../components/transform.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { RigidBody } from '../components/rigidBody.js';
+import { DirectionalSprite, NO_DIRECTION } from '../components/directionalSprite.js';
 import { Camera } from '../core/camera.js';
 import { Tween } from '../core/tween.js';
 import {
@@ -297,6 +298,8 @@ class LogicWorker extends AbstractWorker {
     this.nonDecimatedTypes = []; // Array of {EntityClass, activeList} for tickInterval === 1
     this.decimatedTypes = [];    // Array of {EntityClass, activeList, tickInterval} for tickInterval > 1
     this.tickAllTypes = [];      // static tickAll, no tick() override
+    // DX-DIRSPRITE: the types with a DirectionalSprite, resolved after the ticks (_resolveDirections).
+    this.directionalTypes = [];
 
     // ========================================
     // SPAWN/DESPAWN LIST UPDATE QUEUES
@@ -552,11 +555,24 @@ class LogicWorker extends AbstractWorker {
         let needsCollisionCallbacks = false;
         let needsJointBreakCallbacks = false;
         let hasRigidBody = false;
+        let hasDirectional = false;
         for (const ComponentClass of components) {
           if (ComponentClass === CameraInOutListener) needsScreenCallbacks = true;
           if (ComponentClass === CollisionListener) needsCollisionCallbacks = true;
           if (ComponentClass === JointBreakListener) needsJointBreakCallbacks = true;
           if (ComponentClass === RigidBody) hasRigidBody = true;
+          if (ComponentClass === DirectionalSprite) hasDirectional = true;
+        }
+        let directionalEntry = null;
+        if (hasDirectional && poolSize > 0) {
+          directionalEntry = {
+            activeList: EntityClass._activeList,
+            entityType,
+            hook: definesBelow(EntityClass, GameObject, 'onDirectionChanged'),
+            // E-364: the type's decimatedTypes entry when it ticks every N frames (its entities resolve on their tick frames).
+            decimated: null,
+          };
+          this.directionalTypes.push(directionalEntry);
         }
 
         if (needsCollisionCallbacks) {
@@ -619,7 +635,7 @@ class LogicWorker extends AbstractWorker {
             const tickInterval = rawInterval == null ? 1 : (rawInterval | 0);
 
             if (needsTick && tickInterval > 1 && GameObject.nextTick) {
-              this.decimatedTypes.push({
+              const decimated = {
                 EntityClass,
                 activeList: EntityClass._activeList,
                 tickInterval,
@@ -627,7 +643,11 @@ class LogicWorker extends AbstractWorker {
                 entityType,
                 needsScreenCallbacks,
                 hasRigidBody,
-              });
+                // E-364: the frame _tickIntervalBucket last ticked this type's bucket (-1: never), for _resolveDirections.
+                _bucketFrame: -1,
+              };
+              this.decimatedTypes.push(decimated);
+              if (directionalEntry !== null) directionalEntry.decimated = decimated;
             } else {
               this.nonDecimatedTypes.push({
                 EntityClass,
@@ -1378,6 +1398,7 @@ class LogicWorker extends AbstractWorker {
     }
 
     activeCount += this._runTickAllTypes(dtRatio, transformActive, rbAx, rbAy, rbAa);
+    if (this.directionalTypes.length > 0) this._resolveDirections(frameNum);
     // E-140: the entities the paths above processed, counted once rather than written on `this` per entity.
     this.entitiesProcessedThisFrame += activeCount;
 
@@ -1536,6 +1557,8 @@ class LogicWorker extends AbstractWorker {
       typeInfo._bucketStampCount = count;
       typeInfo._bucketStampVer = ver;
     }
+    // E-364: this frame's bucket is the one _resolveDirections resolves for a directional type.
+    typeInfo._bucketFrame = frameNum;
 
     const phase = frameNum % interval;
     const list = typeInfo._buckets[phase];
@@ -1976,13 +1999,95 @@ class LogicWorker extends AbstractWorker {
     }
   }
 
+  /**
+   * DX-DIRSPRITE: each directional entity's drawn direction, after the ticks: its facing from its velocity or rotation,
+   * the animation of that direction, and onDirectionChanged when it changed. Split among the workers as the ticks are,
+   * so the worker that ticked an entity resolves it. E-364: a type that ticks every N frames through its buckets
+   * resolves the entities it ticked this frame, so each one on its own tick frames (its setters still resolve at once).
+   * @param {number} frameNum the frame update() ticked
+   */
+  _resolveDirections(frameNum) {
+    const types = this.directionalTypes;
+    const totalWorkers = this.totalLogicWorkers;
+    const myIndex = this.workerIndex;
+    const forced = GameObject.forceProcessOnLogicWorker;
+    const typeHasForced = GameObject.entityTypeHasForcedLogicWorker;
+    const active = Transform.active;
+    const directionIndex = DirectionalSprite.directionIndex;
+    const notified = DirectionalSprite.notified;
+    for (let t = 0; t < types.length; t++) {
+      const info = types[t];
+      const hook = info.hook;
+      const decimated = info.decimated;
+      if (decimated !== null && decimated._bucketFrame === frameNum) {
+        const phase = frameNum % decimated.tickInterval;
+        const bucket = decimated._buckets[phase];
+        const nAll = decimated._bucketCounts[phase];
+        let from = 0;
+        let to = nAll;
+        if (totalWorkers > 1) {
+          const range = logicBlockRange(nAll, myIndex, totalWorkers);
+          from = range.start;
+          to = range.end;
+        }
+        for (let k = from; k < to; k++) {
+          const e = bucket[k];
+          if (active[e] === 0) continue;
+          DirectionalSprite.resolve(e);
+          if (directionIndex[e] !== notified[e]) this._directionChanged(e, hook);
+        }
+        continue;
+      }
+      const list = info.activeList;
+      const count = Math.min(list[0], list.length - 1);
+      if (totalWorkers > 1 && forced && typeHasForced && typeHasForced[info.entityType]) {
+        for (let idx = 0; idx < count; idx++) {
+          const e = list[1 + idx];
+          if (logicWorkerThatShouldTick(idx, e, totalWorkers, forced) !== myIndex || active[e] === 0) continue;
+          DirectionalSprite.resolve(e);
+          if (directionIndex[e] !== notified[e]) this._directionChanged(e, hook);
+        }
+        continue;
+      }
+      let from = 0;
+      let to = count;
+      if (totalWorkers > 1) {
+        const range = logicBlockRange(count, myIndex, totalWorkers);
+        from = range.start;
+        to = range.end;
+      }
+      for (let idx = from; idx < to; idx++) {
+        const e = list[1 + idx];
+        if (active[e] === 0) continue;
+        DirectionalSprite.resolve(e);
+        if (directionIndex[e] !== notified[e]) this._directionChanged(e, hook);
+      }
+    }
+  }
+
+  /** The direction entity e draws is not the one its game heard of: tell it (onDirectionChanged). */
+  _directionChanged(e, hook) {
+    const k = DirectionalSprite.directionIndex[e];
+    DirectionalSprite.notified[e] = k;
+    if (!hook || k === NO_DIRECTION) return;
+    const obj = this.gameObjects[e] ?? this._makeInstance(e);
+    if (!obj) return;
+    try {
+      obj.onDirectionChanged(obj.directionalSprite.direction);
+    } catch (error) {
+      this._entityThrew(error, e, 'onDirectionChanged');
+    }
+  }
+
   /** kind 0: sprite animation `id`; kind 1: Adobe clip `id`. Delivered by name. */
   _deliverAnimationEnd(obj, target, kind, id) {
     if (this.animEndListenerByType[Transform.entityType[target]] !== 1) return;
     let name;
     if (kind === 0) {
+      // DX-DIRSPRITE: a directional entity hears the name it asked for ('slash', not 'slash_left').
+      const group = DirectionalSprite.active && DirectionalSprite.active[target] ? DirectionalSprite.groupOf(target, id) : null;
       const sheet = SpriteSheetRegistry.getSpritesheetName(SpriteRenderer.spritesheetId[target]);
-      name = sheet ? SpriteSheetRegistry.getAnimationName(sheet, id) : undefined;
+      name = group !== null ? group : sheet ? SpriteSheetRegistry.getAnimationName(sheet, id) : undefined;
     } else {
       name = AdobeAnimRegistry.getClipName(AdobeAnimComponent.assetId[target], id);
     }

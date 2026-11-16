@@ -212,6 +212,9 @@ function extractMetrics(report) {
     RENDER_QUEUE_SIZE: preRender.RENDER_QUEUE_SIZE ?? 0,
     VISIBLE_ENTITIES: preRender.VISIBLE_ENTITIES ?? 0,
     pixi_STEP_MS: pixi.STEP_MS ?? 0,
+    // DX-LIGHT3D load keys of the shadow scenes (runPredatorAbab reads them already; the scoreboard skips a key it lacks).
+    GPU_CASTERS: pixi.GPU_CASTERS ?? 0,
+    GPU_SHADOW_LIGHTS: pixi.GPU_SHADOW_LIGHTS ?? 0,
     DECAL_TILES_DIRTY: pixi.DECAL_TILES_DIRTY ?? 0,
     DECAL_TILES_UPLOADED: pixi.DECAL_TILES_UPLOADED ?? 0,
     SCENERY_COUNT: pixi.SCENERY_COUNT ?? 0,

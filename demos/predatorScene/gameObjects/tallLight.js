@@ -1,14 +1,18 @@
 import WEED from '/src/index.js';
+import { LIGHT3D } from '../light3d.js';
 
 // Destructure what we need from WEED
-const { GameObject, Collider, SpriteRenderer, LightEmitter, rng, randomColor, Flash, SoundManager, enums } = WEED;
+const { GameObject, Collider, SpriteRenderer, LightEmitter, ShadowCaster, rng, randomColor, Flash, SoundManager, enums } = WEED;
 const { ShapeType } = enums;
 
 export class TallLight extends GameObject {
   // Auto-detected by GameEngine - no manual path needed in registerEntityClass!
   static serializable = true;
-  // Tall lights are simple lit props with collision, a sprite, and an emitter.
-  static components = [Collider, SpriteRenderer, LightEmitter];
+  // Tall lights are simple lit props with collision, a sprite, and an emitter. ?light3d=1: the post casts the sun's
+  // shadow and the other lamps' (its silhouette: a lamp's own post does not shade its light).
+  static components = LIGHT3D
+    ? [Collider, SpriteRenderer, LightEmitter, ShadowCaster]
+    : [Collider, SpriteRenderer, LightEmitter];
 
   // Note: ARRAY_SCHEMA removed - all data now in components (pure ECS architecture)
 

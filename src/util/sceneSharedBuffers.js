@@ -20,6 +20,7 @@ import { DecorationSpatial } from '../core/decorationSpatial.js';
 import { BulletPool } from '../core/bulletPool.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
 import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
+import { DirectionalSprite } from '../components/directionalSprite.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { LightOccluder } from '../components/lightOccluder.js';
@@ -1397,13 +1398,33 @@ export function createSceneSharedBuffers(scene) {
   bindSpawnCommandRing(scene.buffers.spawnCommandRing);
   // E-208: the list update rings of logic workers 1..N (null with one).
   scene.buffers.listUpdateRings = createListUpdateRings(scene.config?.logic?.numberOfLogicWorkers | 0, scene.totalEntityCount);
-  // N-138: per render-queue buffer, the poses of the sprites whose entity has a mesh (null when no class has both).
-  scene.buffers.meshPoseCapacity = meshPoseCapacity(scene.registeredClasses, SpriteRenderer, MeshRenderer);
+  // N-138: per render-queue buffer, the poses of the sprites whose entity has a mesh (null when no class has both). A
+  // ShadowCaster's volume is its entity's mesh too: a place for each volume the scene keeps room for.
+  scene.buffers.meshPoseCapacity = meshPoseCapacity(scene.registeredClasses, SpriteRenderer, MeshRenderer) + volumePoseCapacity(scene);
   scene.buffers.meshPoseLists = createMeshPoseLists(scene.buffers.meshPoseCapacity);
   // E-213: a nav request ring per logic worker, with navigation on.
   scene.buffers.navRequestRings = scene.config?.navigation?.enabled
     ? createNavRequestRings(scene.config?.logic?.numberOfLogicWorkers | 0)
     : null;
+}
+
+/**
+ * DX-CASTER: the mesh poses a scene's volumes need: lighting.maxVolumes once Scene pooled their column, at most the entities
+ * that have a sprite and a ShadowCaster without a MeshRenderer of their own (meshPoseCapacity counts those).
+ */
+export function volumePoseCapacity(scene) {
+  if (!scene.componentPools?.VolumeShadowCaster?.ComponentClass) return 0;
+  const max = scene.config?.lighting?.maxVolumes | 0;
+  if (!(max > 0)) return 0;
+  let casters = 0;
+  for (const rec of scene.registeredClasses || []) {
+    const components = rec.components;
+    if (!(rec.count > 0) || !components) continue;
+    if (components.includes(SpriteRenderer) && components.includes(ShadowCaster) && !components.includes(MeshRenderer)) {
+      casters += rec.count | 0;
+    }
+  }
+  return casters < max ? casters : max;
 }
 
 function initializeSharedResourceBuffers(scene) {
@@ -1543,7 +1564,7 @@ export function teardownSceneSharedState(scene) {
   // memory (the engine block), the rest the scene's other memories, so a page that destroys the engine keeps none
   // of them alive. The next scene binds its own (scene.js clears the views of a component it does not pool).
   for (const C of [Transform, RigidBody, Collider, SpriteRenderer, MeshRenderer, AdobeAnimComponent, ParticleComponent,
-    DecorationComponent, BulletComponent, ShadowCaster, VolumeShadowCaster, FlashComponent, LightEmitter, LightOccluder]) {
+    DecorationComponent, BulletComponent, ShadowCaster, VolumeShadowCaster, DirectionalSprite, FlashComponent, LightEmitter, LightOccluder]) {
     C.clearArrays();
   }
   GameObject.neighborData = null;

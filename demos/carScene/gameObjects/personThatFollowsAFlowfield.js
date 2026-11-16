@@ -1,11 +1,11 @@
 import WEED from '/src/index.js';
-import { DIRECTION_DOWN, PersonComponent } from '/demos/predatorScene/components/personComponent.js';
+import { PersonComponent } from '/demos/predatorScene/components/personComponent.js';
 import { PersonAnimationFSM } from '/demos/predatorScene/fsm/personAnimationFsm.js';
 import { LootableComponent } from '/demos/predatorScene/components/lootableComponent.js';
 import { CarComponent } from '../components/carComponent.js';
 import { ParticleEmitter, Decal, SpriteSheetRegistry, SoundManager } from '/src/index.js';
 
-const { rng, GameObject, RigidBody, Collider, CollisionListener, SpriteRenderer, NavGrid, Transform } = WEED;
+const { rng, GameObject, RigidBody, Collider, CollisionListener, DirectionalSprite, NavGrid, Transform } = WEED;
 
 // Reusable object for flowfield sampling (zero allocation)
 const _navVec = { x: 0, y: 0 };
@@ -18,7 +18,7 @@ export class PersonThatFollowsAFlowfield extends GameObject {
     RigidBody,
     Collider,
     CollisionListener,
-    SpriteRenderer,
+    DirectionalSprite,
     PersonAnimationFSM,
     PersonComponent,
     LootableComponent,
@@ -49,7 +49,7 @@ export class PersonThatFollowsAFlowfield extends GameObject {
     const spritesheets = this.constructor.peopleSpritesheets;
     const randomSheet = spritesheets[Math.floor(rng() * spritesheets.length)];
     this.setSpritesheet(randomSheet);
-    this.setAnimation('idle_down');
+    this.setAnimation('idle');
 
     super.onSpawned(spawnConfig);
 
@@ -70,7 +70,9 @@ export class PersonThatFollowsAFlowfield extends GameObject {
     this.lootableComponent.health = 1;
     this.lootableComponent.dropMoney = 0;
 
-    PersonComponent.facingDirection[this.index] = DIRECTION_DOWN;
+    // Facing south; PersonAnimationFSM's walk follows the velocity.
+    this.directionalSprite.turnMargin = 0;
+    this.directionalSprite.facing = Math.PI / 2;
     PersonComponent.dead[this.index] = 0;
     PersonComponent.lastShotTime[this.index] = 0;
     PersonComponent.aimingAccuracy[this.index] =

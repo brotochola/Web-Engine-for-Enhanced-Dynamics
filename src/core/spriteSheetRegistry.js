@@ -2,6 +2,8 @@
 // Provides string->index mapping for animations without runtime overhead
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
+import { frameTwinTexels, opaqueMask, readHeights } from '../render/spriteMaps.js';
+import { isRenderDirections, measureLowestContact, measureStandingBase, readFootprint } from '../render/frameBase.js';
 import {
   create2dCanvas,
   createCircularGradientCanvas,
@@ -868,7 +870,9 @@ class SpriteSheetRegistry {
    * @param {boolean} options.trimImages - Trim transparent pixels from individual images (default: true)
    * @param {number} options.trimAlphaThreshold - Alpha threshold for trimming (default: 0)
    * @param {string} options.heuristic - Packing heuristic (default: 'best-short-side')
-   * @returns {Promise<Object>} - { canvas, json, proxySheets }
+   * @param {boolean} [options.keepMapsTexels] - DX-MAPS: also return the twin page's texels as they are (`mapsTexels`),
+   *   for the bake: its canvas stores premultiplied alpha, which loses a height under a low A (default: false)
+   * @returns {Promise<Object>} - { canvas, mapsCanvas, mapsTexels, json, proxySheets }
    *
    * @example
    * const bigAtlas = await SpriteSheetRegistry.createBigAtlas({
@@ -892,6 +896,7 @@ class SpriteSheetRegistry {
       trimImages = ASSETS_DEFAULTS.trimImages,
       trimAlphaThreshold = ASSETS_DEFAULTS.trimAlphaThreshold,
       heuristic = ASSETS_DEFAULTS.heuristic,
+      keepMapsTexels = false,
     } = options;
 
     debugWorkerLog('🎨 Creating BigAtlas from assets...');
@@ -973,7 +978,7 @@ class SpriteSheetRegistry {
       for (const [sheetName, config] of Object.entries(assetsConfig.spritesheets)) {
         spritesheetPromises.push(
           this._loadSpritesheet(sheetName, config).then((sheetData) => {
-            const { img, jsonData } = sheetData;
+            const { img, jsonData, maps } = sheetData;
             const excluded = config.excludeAnimations || [];
 
             // 1. Determine which animations and frames are actually needed
@@ -999,6 +1004,9 @@ class SpriteSheetRegistry {
               animations: {},
               indexToName: {},
             };
+            // DX-DIRSPRITE: the directions its json declares (an exporter writes them); the scene builds the table.
+            const jsonDirections = jsonData.directions ?? jsonData.meta?.directions;
+            if (jsonDirections !== undefined) proxySheets[sheetName].directionsSpec = jsonDirections;
 
             // The sheet's pixels under the frames it keeps, read back once: each frame's trim is found in them, and a trimmed
             // frame is drawn into the atlas straight from the sheet, through its trimmed rectangle. A readback and a canvas a
@@ -1021,8 +1029,16 @@ class SpriteSheetRegistry {
             let trimmedCount = 0;
             let savedPixels = 0;
 
+            // DX-SHADOW3D: each frame's footprint (floor px around its anchor), when the sheet's json has them: a render's
+            // solid sweeps its cells north to it (sunShadowMap.js), as the light bench's heightmap did.
+            const footprints = jsonData.meta?.footprints ?? jsonData.meta?.light3d?.footprints ?? null;
+            // How its renders cast the sun's shadow: 'sprite', their card (the frame the sun sees); else their solid.
+            const sunCard = (jsonData.meta?.shadowCast?.sun ?? jsonData.meta?.light3d?.cast?.sun) === 'sprite';
+            let frameOrdinal = -1;
+
             // 2. Extract and optionally trim each frame
             for (const [frameName, frameData] of Object.entries(jsonData.frames)) {
+              frameOrdinal++;
               if (!requiredFrames.has(frameName)) continue;
 
               const prefixedName = `${sheetName}_${frameName}`;
@@ -1036,6 +1052,23 @@ class SpriteSheetRegistry {
               let trimOffsetX = 0;
               let trimOffsetY = 0;
               let trimmed = false;
+
+              // DX-SHADOW3D: where the frame stands (frameBase.js), from the pixels the trim reads anyway.
+              let base = null;
+              if (sheetPixels) {
+                const px = sheetPixels;
+                const ox = frame.x - px.x;
+                const oy = frame.y - px.y;
+                base = measureStandingBase(
+                  (i, j) => {
+                    const x = ox + i;
+                    const y = oy + j;
+                    return x >= 0 && y >= 0 && x < px.width && y < px.height && px.data[(y * px.width + x) * 4 + 3] > 127;
+                  },
+                  originalW,
+                  originalH,
+                );
+              }
 
               if (sheetPixels) {
                 const trimBounds = this._getTrimBoundsInPixels(sheetPixels, frame.x, frame.y, originalW, originalH, trimAlphaThreshold);
@@ -1068,6 +1101,13 @@ class SpriteSheetRegistry {
                 pivot: frameData.pivot,
                 isSpritesheetFrame: true,
                 isTrimmed: trimmed,
+                // DX-MAPS: the sheet's height and normal maps (one object per sheet), read through the same sourceRect.
+                maps,
+                // DX-SHADOW3D: its base in its own pixels (untrimmed); a render's lowest contact replaces it (_paintMapsPage).
+                base,
+                footprint: Array.isArray(footprints) ? readFootprint(footprints[frameOrdinal]) : null,
+                sunCard,
+                renderDirections: isRenderDirections(config.directions ?? jsonDirections),
               });
             }
 
@@ -1325,13 +1365,9 @@ class SpriteSheetRegistry {
       actualHeight = Math.max(actualHeight, rect.y + rect.height);
     }
 
-    // Warn if atlas is too large for many mobile devices/GPUs
-    if (actualWidth > 4096 || actualHeight > 4096) {
-      console.warn(
-        `⚠️ BigAtlas dimensions (${actualWidth}x${actualHeight}) exceed 4096x4096. ` +
-        `This may cause performance issues or fail to render on some mobile devices or older GPUs.`
-      );
-    }
+    // An atlas past 4096 a side is only possible when the scene raised maxAtlasWidth/Height past it (the packer stays
+    // within them): its own choice, which the keys' docs (ASSETS_DEFAULTS) explain. It warned on every load, so a demo
+    // mode packing 8190 px (Predator ?light3d=1) started with a warning.
 
     // Create canvas and draw packed atlas
     // willReadFrequently: first getContext locks attrs; extractDecalTextures reads via getImageData
@@ -1365,6 +1401,22 @@ class SpriteSheetRegistry {
       }
     }
 
+    // DX-MAPS: the twin page, when a sheet has maps; the bake asks for its texels too (keepMapsTexels).
+    const mapsTexels = keepMapsTexels && imagesToPack.some((d) => d.maps && d.rect && d.sourceRect)
+      ? new Uint8ClampedArray(actualWidth * actualHeight * 4)
+      : null;
+    const mapsCanvas = this._paintMapsPage(imagesToPack, actualWidth, actualHeight, mapsTexels);
+    // DX-SHADOW3D: each frame's base travels with its rectangle (the Pixi worker writes it into the texture table).
+    for (const d of imagesToPack) {
+      const b = d.base;
+      if (!b || !frames[d.name]) continue;
+      frames[d.name].base = b.contact >= 0
+        ? (d.sunCard ? { contact: b.contact, card: true } : { contact: b.contact })
+        : { cx: b.cx, rx: b.rx, ry: b.ry };
+      // A render with its footprint casts its solid swept north to it (the Pixi worker's footprint texture).
+      if (b.contact >= 0 && d.footprint) frames[d.name].footprint = d.footprint;
+    }
+
     // Register individual texture names as spritesheet IDs
     // This allows setSpritesheet("ball") to work for static textures
     const individualTextures = [];
@@ -1384,6 +1436,9 @@ class SpriteSheetRegistry {
         scale: 1,
         proxySheets,
         individualTextures,
+        maps: mapsCanvas !== null,
+        // DX-EMISSIVE v2: a sheet glows by itself (assets or its json's meta.emissive): the Pixi worker runs the glow pass.
+        emissive: imagesToPack.some((d) => d.maps && d.maps.emissive === true),
       },
     };
 
@@ -1405,10 +1460,81 @@ class SpriteSheetRegistry {
 
     return {
       canvas: canvas,
+      mapsCanvas,
+      mapsTexels: mapsCanvas !== null ? mapsTexels : null,
       json: atlasJson,
       proxySheets: proxySheets,
       individualTextures: individualTextures, // For reference
     };
+  }
+
+  /**
+   * DX-MAPS: the atlas's twin page (spriteMaps.js): each frame of a sheet with maps gets its heights and normals at its
+   * own rectangle. Each sheet's colour and maps are read back once, each frame cut out of them in memory.
+   * @param {Uint8ClampedArray|null} [keep] width·height·4: the texels are also copied here, as they are (the bake)
+   * @returns {HTMLCanvasElement|OffscreenCanvas|null} null when no sheet has maps
+   */
+  static _paintMapsPage(imagesToPack, width, height, keep = null) {
+    const withMaps = imagesToPack.filter((d) => d.maps && d.rect && d.sourceRect);
+    if (withMaps.length === 0) return null;
+    const page = create2dCanvas(width, height);
+    const ctx = page.getContext('2d', { willReadFrequently: true });
+    const read = new Map();
+    const pixelsOf = (img) => {
+      if (!img) return null;
+      let px = read.get(img);
+      if (px === undefined) read.set(img, (px = this._readImagePixels(img)));
+      return px;
+    };
+    const cut = (px, sr) => {
+      const out = new Uint8ClampedArray(sr.w * sr.h * 4);
+      for (let y = 0; y < sr.h; y++) {
+        const sy = sr.y + y - px.y;
+        if (sy < 0 || sy >= px.height) continue;
+        for (let x = 0; x < sr.w; x++) {
+          const sx = sr.x + x - px.x;
+          if (sx < 0 || sx >= px.width) continue;
+          const s = (sy * px.width + sx) * 4;
+          const d = (y * sr.w + x) * 4;
+          out[d] = px.data[s];
+          out[d + 1] = px.data[s + 1];
+          out[d + 2] = px.data[s + 2];
+          out[d + 3] = px.data[s + 3];
+        }
+      }
+      return out;
+    };
+    for (const d of withMaps) {
+      const sr = d.sourceRect;
+      const w = sr.w | 0;
+      const h = sr.h | 0;
+      if (w <= 0 || h <= 0 || w !== d.rect.width || h !== d.rect.height) continue;
+      const color = cut(pixelsOf(d.sourceImg), sr);
+      const height = d.maps.heightImg ? cut(pixelsOf(d.maps.heightImg), sr) : null;
+      const texels = frameTwinTexels({
+        color,
+        height,
+        normal: d.maps.normalImg ? cut(pixelsOf(d.maps.normalImg), sr) : null,
+        w,
+        h,
+        gray: d.maps.gray,
+        emissive: d.maps.emissive === true,
+      });
+      if (texels !== null) {
+        ctx.putImageData(new ImageData(texels, w, h), d.rect.x, d.rect.y);
+        if (keep !== null) {
+          for (let y = 0; y < h; y++) keep.set(texels.subarray(y * w * 4, (y + 1) * w * 4), ((d.rect.y + y) * width + d.rect.x) * 4);
+        }
+      }
+      // DX-SHADOW3D: a render stands on its contact nearest the light (frameBase.js), in its untrimmed frame's rows.
+      if (d.renderDirections && height !== null) {
+        const opaque = opaqueMask(color, w, h);
+        const heights = readHeights(height, w, h, d.maps.gray);
+        const lowest = measureLowestContact((i, j) => opaque[j * w + i] !== 0, (i, j) => heights[j * w + i], w, h);
+        if (lowest !== null) d.base = { contact: lowest + (d.sourceY | 0) };
+      }
+    }
+    return page;
   }
 
   /**
@@ -1593,10 +1719,21 @@ class SpriteSheetRegistry {
     }
 
     // DX-GUARDS C6: a 404 used to reach .json() and read "Unexpected token '<'".
-    const jsonData = await fetchAssetJson(config.json, `spritesheet "${name}" JSON`);
-    const img = await this._loadImage(config.png);
-
-    return { img, jsonData };
+    const heightSpec = config.heightMap;
+    const heightUrl = typeof heightSpec === 'string' ? heightSpec : heightSpec?.png;
+    const [jsonData, img, heightImg, normalImg] = await Promise.all([
+      fetchAssetJson(config.json, `spritesheet "${name}" JSON`),
+      this._loadImage(config.png),
+      // DX-MAPS: the sheet's twins, same frames in the same places.
+      heightUrl ? this._loadImage(heightUrl) : null,
+      config.normalMap ? this._loadImage(config.normalMap) : null,
+    ]);
+    // DX-EMISSIVE: a sheet that glows (assets config or its json's meta) gets a twin page with the emissive code.
+    const emissive = config.emissive === true || jsonData?.meta?.emissive === true;
+    const maps = heightImg || normalImg || emissive
+      ? { heightImg, normalImg, gray: Number(heightSpec?.gray) > 0 ? Number(heightSpec.gray) : 0, emissive }
+      : null;
+    return { img, jsonData, maps };
   }
 
   /**

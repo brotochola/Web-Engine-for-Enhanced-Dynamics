@@ -659,7 +659,12 @@
     // N-86: the fast path checked the epoch once, before a loop that takes about a millisecond. A slot despawned and
     // respawned inside it got its old body's pose over the invalidation (rotC and rotS 0): put that back for every
     // slot whose body is not the one this worker last saw, as the slow path would have skipped it.
-    if (epochSame && (Atomics.load(poseGenEpoch, 0) | 0) !== epoch && bodyGeneration && seenBodyGeneration) {
+    // N-214: the epoch read again on every frame, not only after the fast path: a frame of Predator's warm-up never took
+    // that path (its crowd respawns), so TurboFan compiled the call with no feedback and that code deopted there each
+    // frame that did, never replaced (287 times in 8 s); its comparison too, for the same reason.
+    const epochAfter = poseGenEpoch ? (Atomics.load(poseGenEpoch, 0) | 0) : epoch;
+    const epochMoved = epochAfter !== epoch;
+    if (epochSame && epochMoved && bodyGeneration && seenBodyGeneration) {
       for (let d = 0; d < n; d++) {
         const i = list[d];
         if ((seenBodyGeneration[i] | 0) === (Atomics.load(bodyGeneration, i) | 0)) continue;

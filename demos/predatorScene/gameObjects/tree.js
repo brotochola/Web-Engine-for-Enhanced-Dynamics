@@ -1,5 +1,6 @@
 import WEED from '/src/index.js';
 import { ParticleEmitter } from '/src/index.js';
+import { FARM_TREES, LIGHT3D } from '../light3d.js';
 
 // Destructure what we need from WEED
 const {
@@ -41,6 +42,10 @@ export class Tree extends GameObject {
   }
 
   onSpawned(spawnConfig = {}) {
+    if (LIGHT3D) {
+      this.spawnFarmTree();
+      return;
+    }
     this.rigidBody.static = 1;
     const whichTree = rng() > 0.5 ? 1 : 2;
     this.setSprite('tree' + whichTree);
@@ -50,6 +55,24 @@ export class Tree extends GameObject {
     this.collider.radius = 12 * scale;
     this.spriteRenderer.anchorY = 0.95;
     this.spriteRenderer.anchorX = 0.45;
+    this.collider.visualRange = this.collider.radius * 10;
+  }
+
+  /**
+   * ?light3d=1: the light bench's trees, with their height and normal maps. One view each, so every light casts its
+   * silhouette (the ShadowCaster's default for one view), standing on the base the engine measures.
+   */
+  spawnFarmTree() {
+    this.rigidBody.static = 1;
+    const whichTree = rng() > 0.5 ? 1 : 2;
+    this.setSpritesheet('arboles');
+    this.setAnimation(whichTree === 1 ? 'arbol_verde' : 'arbol_jacaranda');
+    const scale = rng() * 0.5 + 1;
+    this.setScale(rng() > 0.5 ? scale : -scale, scale);
+    this.collider.shapeType = ShapeType.Circle;
+    this.collider.radius = 12 * scale;
+    this.spriteRenderer.anchorY = FARM_TREES.anchorY;
+    this.spriteRenderer.anchorX = FARM_TREES.anchorX;
     this.collider.visualRange = this.collider.radius * 10;
   }
 

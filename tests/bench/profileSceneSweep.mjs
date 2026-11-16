@@ -47,12 +47,14 @@ const DEMOS = [
   'bunnyMarkScene/bunnyMarkScene.js', 'burningBoxesScene/burningBoxesScene.js', 'carScene/carScene.js',
   'constraintBoxScene/constraintBoxScene.js', 'constraintsTestScene/constraintsTestScene.js',
   'destructibleTerrainScene/destructibleTerrainScene.js', 'gearChainScene/gearChainScene.js',
-  'liquidFunDemoScene/liquidFunDemoScene.js', 'liquidFunQueryScene/liquidFunQueryScene.js',
+  'gpuGalaxyScene/gpuGalaxyScene.js', 'headlightsScene/headlightsScene.js', 'landingScene/landingScene.js',
+  'lightBenchScene/lightBenchScene.js', 'liquidFunDemoScene/liquidFunDemoScene.js',
+  'liquidFunQueryScene/liquidFunQueryScene.js',
   'littleCity/littleCityScene.js', 'mamushkaDigScene/mamushkaDigScene.js', 'meshGalleryScene/meshGalleryScene.js',
   'orientedBoxScene/orientedBoxScene.js', 'particleLabScene/particleLabScene.js',
   'planetPhysicsScene/planetPhysicsScene.js', 'planetScene/planetScene.js',
   'platformerGameScene/platformerGameScene.js', 'predatorScene/predatorScene.js',
-  'proceduralTreeScene/proceduralTreeScene.js', 'uChainScene/uChainScene.js',
+  'proceduralTreeScene/proceduralTreeScene.js', 'sunStreetScene/sunStreetScene.js', 'uChainScene/uChainScene.js',
   'waterAndBoxesScene/waterAndBoxesScene.js', 'weldBreakScene/weldBreakScene.js',
   'zenithalParticleTestScene/zenithalParticleTestScene.js',
 ].map((p) => `/demos/${p}`);
@@ -68,6 +70,11 @@ const STRESS = [
   'ballsHeavyStressScene', 'tweenStressScene', 'audioStormScene', 'steadyCombatScene', 'textureUploadStressScene',
   'sceneryCamStressScene', 'particleEmitStressScene', 'movedBodiesMixedScene', 'computeStressScene',
   'cmdSamePoseStressScene',
+  // The lights' and shadows' scenes (DX-LIGHT3D and before).
+  'lampShadowStressScene', 'sunShadowMapStressScene', 'selfShadowStressScene', 'depthSortStressScene',
+  'emissiveStressScene', 'spriteMapsStressScene', 'directionalSpriteStressScene', 'volumeStressScene',
+  'flashlightStressScene', 'spotLightStressScene', 'lightGalleryScene', 'lightMotionScene', 'sunMeshParityScene',
+  'dxCaptureScene', 'light3dCompareScene',
 ].map((n) => `/tests/bench/stressScenes/${n}.js`);
 
 /** Runner flags a scene needs to show its load. */

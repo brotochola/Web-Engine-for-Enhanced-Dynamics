@@ -1,6 +1,7 @@
 // AbstractWorker.js - Base class for all game engine workers
 // Provides common functionality: frame timing,  FPS tracking, pause state, message handling
 
+import { cameraFloorScaleY } from '../util/cameraView.js';
 import { setSceneParams } from '../core/sceneParams.js';
 import { GameObject } from '../core/gameObject.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
@@ -82,7 +83,7 @@ import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
 import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
-import { resolveGroundScaleY } from '../util/lightRadius.js';
+import { DirectionalSprite } from '../components/directionalSprite.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
 import { bindPoolExhaustion } from '../util/poolExhaustion.js';
@@ -542,8 +543,7 @@ export class AbstractWorker {
     // Store config for worker access
     this.config = data.config || {};
     setDevChecks(this.config.debug?.checks !== false);
-    ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
-    VolumeShadowCaster.defaultFloorScaleY = resolveGroundScaleY(this.config.lighting?.groundScaleY);
+    VolumeShadowCaster.defaultFloorScaleY = cameraFloorScaleY(this.config);
     bindEntityIdWidth(resolveEntityIdWidth(this.config));
     this._noParent = entityIdNone;
 
@@ -1181,6 +1181,7 @@ export class AbstractWorker {
       LightEmitter,
       ShadowCaster,
       VolumeShadowCaster,
+      DirectionalSprite,
       FlashComponent,
       LightOccluder,
     ];

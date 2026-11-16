@@ -1,11 +1,11 @@
 import WEED from '/src/index.js';
 
-const { Scene, Camera, GameObject, MeshRenderer, Collider, SpriteRenderer, ShadowCaster, VolumeShadowCaster, Sun, LAYER_KIND, enums } = WEED;
+const { Scene, Camera, GameObject, MeshRenderer, Collider, SpriteRenderer, ShadowCaster, Sun, LAYER_KIND, enums } = WEED;
 const { ShapeType } = enums;
 
 /**
  * DX-SUNMESH's parity: one thin vertical bar, `?bar=sprite` as a ShadowCaster with an invisible sprite, `?bar=mesh` as a
- * post on a sunProjected layer, `?bar=volume` as a VolumeShadowCaster's box, on a plain ground, the sun stopped at `?hour=`. sunMeshParity.mjs reads where each
+ * post on a sunProjected layer, `?bar=volume` as a ShadowCaster's box (setBox), on a plain ground, the sun stopped at `?hour=`. sunMeshParity.mjs reads where each
  * shadow ends: houses and people must agree. `?height=` (default 200), `?backend=webgpu`.
  */
 function query(key) {
@@ -61,10 +61,10 @@ class ParityWall extends GameObject {
 }
 
 class ParityVolume extends GameObject {
-  static components = [VolumeShadowCaster];
+  static components = [ShadowCaster];
 
   onSpawned() {
-    this.volumeShadowCaster.setBox(HALF_WIDTH * 2, HALF_WIDTH * 2, HEIGHT);
+    this.shadowCaster.setBox(HALF_WIDTH * 2, HALF_WIDTH * 2, HEIGHT);
   }
 }
 
@@ -89,6 +89,7 @@ export class SunMeshParityScene extends Scene {
       shadowsEnabled: true,
       maxShadowCastingLights: 1,
       maxShadowsPerLight: 1,
+      maxVolumes: 1, // ?bar=volume's box
       resolution: 1,
       shadowResolution: 1,
       sun: { enabled: true, startHour: HOUR, shadowAlpha: 1, dayCycle: { enabled: false } },

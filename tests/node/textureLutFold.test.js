@@ -71,8 +71,7 @@ test('folded, every frame is where the shaders fetch it, and the slots past the 
     assert.equal(rgba.length, width * height * 4);
     for (let t = 0; t < n; t++) {
       const got = shaderRead(rgba, width, height, t);
-      assert.deepEqual(Array.from(got.subarray(0, TEX_LUT_FLOATS)), Array.from(lut.subarray(t * TEX_LUT_FLOATS, (t + 1) * TEX_LUT_FLOATS)), `frame ${t}`);
-      assert.deepEqual(Array.from(got.subarray(TEX_LUT_FLOATS)), [0, 0], `frame ${t}: the two unused floats`);
+      assert.deepEqual(Array.from(got.subarray(0, TEX_LUT_FLOATS)), Array.from(lut.subarray(t * TEX_LUT_FLOATS, (t + 1) * TEX_LUT_FLOATS)), `frame ${t}, its base too`);
     }
     for (let t = n; t < perRow * height; t++) {
       assert.ok(shaderRead(rgba, width, height, t).every((v) => v === 0), `slot ${t} past the last frame: a zero size`);

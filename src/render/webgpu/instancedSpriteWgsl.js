@@ -33,6 +33,62 @@ export function instancedSpriteShadowGpuProgram(GpuProgram, source, name) {
 }
 
 /**
+ * DX-SHADOW3D: the sun map's programs and the renders' solids (sunShadowMap.js sunMapWgsl / sunMapColumnsWgsl): the
+ * shadow program's bindings, the atlas readable from the vertex stage (a column reads its cell's alpha there) and, with
+ * `maps`, the atlas's twin page as binding 5 (a column's height); with `lampTiles` (F7, the lamps' map, lampShadowMap.js)
+ * the tiles' lamps as binding 6.
+ * @param {string} fragEntry 'mainFragMap' (the map: the height), 'mainFragLamp' (the lamps' map) or 'mainFrag' (the
+ *   sprite shadows' layer)
+ */
+export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps = false, lampTiles = false } = {}) {
+  if (!source) {
+    throw new Error('WeedJS: Shadow sprite WGSL was not loaded before GpuProgram creation.');
+  }
+  const vf = gpuStageVF();
+  const f = gpuStageF();
+  const group2 = { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3 };
+  if (maps) {
+    group2.uMaps = 5;
+    // DX-SHADOW3D: the renders' footprints, which the columns sweep north to (sunShadowMap.js FOOTPRINT_WGSL).
+    group2.uFoot = 7;
+  }
+  if (lampTiles) group2.uLampTiles = 6;
+  return GpuProgram.from({
+    name,
+    vertex: { source, entryPoint: 'mainVert' },
+    fragment: { source, entryPoint: fragEntry },
+    layout: {
+      0: { globalUniforms: 0 },
+      1: { localUniforms: 0 },
+      2: group2,
+    },
+    gpuLayout: [
+      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      [
+        { binding: 0, visibility: vf, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
+        { binding: 1, visibility: f, sampler: { type: 'filtering' } },
+        {
+          binding: 2,
+          visibility: vf,
+          texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false },
+        },
+        { binding: 3, visibility: vf, buffer: { type: 'uniform' } },
+        ...(maps
+          ? [{ binding: 5, visibility: vf, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
+          : []),
+        ...(lampTiles
+          ? [{ binding: 6, visibility: vf, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
+          : []),
+        ...(maps
+          ? [{ binding: 7, visibility: vf, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
+          : []),
+      ],
+    ],
+  });
+}
+
+/**
  * E-220: the keyed shadow programs (spriteIndexed.js spriteIndexedWgsl with `shadow`): the shadow program's bindings and
  * the statics as group 2's binding 4, a read-only storage buffer.
  */
@@ -69,7 +125,16 @@ export function instancedSpriteShadowIndexedGpuProgram(GpuProgram, source, name)
   });
 }
 
-export function instancedSpriteGpuProgram(GpuProgram, source, fragEntry, name) {
+/** DX-MAPS: the atlas's twin page as group 2's binding 5, read by textureLoad in the fragment (the face pass). */
+function mapsBinding(f) {
+  return { binding: 5, visibility: f, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } };
+}
+
+/**
+ * The sprite program. With `maps`, the face pass's form (faceMap.js faceMapWgsl): the atlas's twin page as group 2's
+ * binding 5, which an explicit layout must name or the pipeline fails its validation.
+ */
+export function instancedSpriteGpuProgram(GpuProgram, source, fragEntry, name, { maps = false } = {}) {
   if (!source) {
     throw new Error(
       'WeedJS: Instanced sprite WGSL was not loaded before GpuProgram creation.'
@@ -77,6 +142,8 @@ export function instancedSpriteGpuProgram(GpuProgram, source, fragEntry, name) {
   }
   const vf = gpuStageVF();
   const f = gpuStageF();
+  const group2 = { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3 };
+  if (maps) group2.uMaps = 5;
   return GpuProgram.from({
     name,
     vertex: { source, entryPoint: 'mainVert' },
@@ -84,7 +151,7 @@ export function instancedSpriteGpuProgram(GpuProgram, source, fragEntry, name) {
     layout: {
       0: { globalUniforms: 0 },
       1: { localUniforms: 0 },
-      2: { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3 },
+      2: group2,
     },
     gpuLayout: [
       [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
@@ -98,6 +165,7 @@ export function instancedSpriteGpuProgram(GpuProgram, source, fragEntry, name) {
           texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false },
         },
         { binding: 3, visibility: vf, buffer: { type: 'uniform' } },
+        ...(maps ? [mapsBinding(f)] : []),
       ],
     ],
   });
@@ -105,14 +173,16 @@ export function instancedSpriteGpuProgram(GpuProgram, source, fragEntry, name) {
 
 /**
  * E-162: the indexed sprite program (spriteIndexed.js spriteIndexedWgsl), the sprite program's bindings and the
- * statics as group 2's binding 4, a read-only storage buffer.
+ * statics as group 2's binding 4, a read-only storage buffer; with `maps` the atlas's twin page as binding 5.
  */
-export function instancedSpriteIndexedGpuProgram(GpuProgram, source, fragEntry, name) {
+export function instancedSpriteIndexedGpuProgram(GpuProgram, source, fragEntry, name, { maps = false } = {}) {
   if (!source) {
     throw new Error('WeedJS: Instanced sprite WGSL was not loaded before GpuProgram creation.');
   }
   const vf = gpuStageVF();
   const f = gpuStageF();
+  const group2 = { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3, uStatics: 4 };
+  if (maps) group2.uMaps = 5;
   return GpuProgram.from({
     name,
     vertex: { source, entryPoint: 'mainVert' },
@@ -120,7 +190,7 @@ export function instancedSpriteIndexedGpuProgram(GpuProgram, source, fragEntry, 
     layout: {
       0: { globalUniforms: 0 },
       1: { localUniforms: 0 },
-      2: { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3, uStatics: 4 },
+      2: group2,
     },
     gpuLayout: [
       [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
@@ -135,6 +205,7 @@ export function instancedSpriteIndexedGpuProgram(GpuProgram, source, fragEntry, 
         },
         { binding: 3, visibility: vf, buffer: { type: 'uniform' } },
         { binding: 4, visibility: vf, buffer: { type: 'read-only-storage' } },
+        ...(maps ? [mapsBinding(f)] : []),
       ],
     ],
   });

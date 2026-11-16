@@ -1,10 +1,9 @@
 // DX-SHADOWTEX on a real pre-render worker: the pass over the caster rows changes a row's frame, scale and anchor for a
-// ShadowCaster with a texture, and leaves every other row as the pack wrote it.
+// ShadowCaster with a frame of its own (shadowCaster.setSprite({ frame })), and leaves every other row as the pack wrote it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ShadowCaster } from '../../src/components/shadowCaster.js';
-import { Scene } from '../../src/core/scene.js';
 import { GPU_CASTER_FLOATS } from '../../src/render/gpuQueueLayout.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
 
@@ -97,46 +96,45 @@ test('the keyed caster paths stay off in a scene with shadow textures', async ()
   pre._keyedKeyBase = 1;
   pre._keyedHeader = new Int32Array(new SharedArrayBuffer(64));
   pre.renderQueueFrame = 1;
-  pre._shadowTextures = true;
-  assert.equal(pre._keyedCastersLive(), false);
-  pre._shadowTextures = false;
+  pre._shadowFramesOn = true;
+  assert.equal(pre._keyedCastersLive(), false, 'a caster with a frame of its own: the full rows');
+  pre._shadowFramesOn = false;
+  pre._keyedCastersAllowed = false;
+  assert.equal(pre._keyedCastersLive(), false, 'lighting.keyedCasters false: the full rows always');
+  pre._keyedCastersAllowed = true;
   pre._keyedFrames = false;
 });
 
-test('the page knows a scene has shadow textures, so setTexture from Scene.update does not warn', () => {
-  const on = class extends Scene {
-    static config = { lighting: { shadowTextures: true } };
-  };
-  const off = class extends Scene {
-    static config = { lighting: {} };
-  };
-  const saved = ShadowCaster.texturesEnabled;
-  try {
-    new on({});
-    assert.equal(ShadowCaster.texturesEnabled, true);
-    new off({});
-    assert.equal(ShadowCaster.texturesEnabled, false);
-  } finally {
-    ShadowCaster.texturesEnabled = saved;
-  }
+test('N-188: the caster scan finds a frame of its own on an active caster, and no other', async () => {
+  const { casterFramesInUse } = await import('../../src/workers/preRenderWorker.js');
+  const active = new Uint8Array([1, 1, 0, 1]);
+  const textureId = new Uint16Array([0, 0, 7, 0]);
+  assert.equal(casterFramesInUse(active, textureId), false, 'the one with a frame is not active');
+  textureId[3] = 4;
+  assert.equal(casterFramesInUse(active, textureId), true);
+  assert.equal(casterFramesInUse(new Uint8Array(0), new Uint16Array(0)), false);
 });
 
-test('setTexture writes the columns, with the frame + 1; clearTexture goes back to the sprite', () => {
-  bind();
-  ShadowCaster.texturesEnabled = true;
-  const caster = Object.create(ShadowCaster.prototype);
-  Object.defineProperty(caster, 'index', { value: 3 });
+test('setSprite({ frame }) writes the frame + 1 with its own anchor and scale; setSprite() goes back to the sprite', () => {
+  ShadowCaster.initializeArrays(new SharedArrayBuffer(ShadowCaster.getBufferSize(N)), N);
+  const caster = new ShadowCaster(3);
   const warn = console.warn;
   console.warn = () => {};
-  assert.equal(caster.setTexture('no such frame', { scaleX: 2, anchorY: 0.5 }), caster);
-  console.warn = warn;
+  try {
+    assert.equal(caster.setSprite({ frame: 'no such frame', scaleX: 2, anchorY: 0.5 }), caster);
+  } finally {
+    console.warn = warn;
+  }
   assert.equal(ShadowCaster.textureId[3], 0, 'an unknown frame casts the sprite');
   assert.equal(ShadowCaster.textureScaleX[3], 2);
   assert.equal(ShadowCaster.textureScaleY[3], 0);
-  assert.ok(Number.isNaN(ShadowCaster.textureAnchorX[3]));
-  assert.equal(ShadowCaster.textureAnchorY[3], 0.5);
+  assert.ok(Number.isNaN(ShadowCaster.textureAnchorX[3]), 'left out: the sprite\'s anchor');
+  assert.equal(ShadowCaster.textureAnchorY[3], 0.5, 'with a frame, the frame\'s own anchor (as setTexture took it)');
+  assert.equal(ShadowCaster.anchorOffsetY[3], 0, 'not an offset');
   ShadowCaster.textureId[3] = 9;
-  assert.equal(caster.clearTexture(), caster);
-  assert.equal(ShadowCaster.textureId[3], 0);
-  ShadowCaster.texturesEnabled = false;
+  assert.equal(caster.setSprite({ anchorY: 0.17, heightScale: 2 }), caster);
+  assert.equal(ShadowCaster.textureId[3], 0, 'no frame: the sprite\'s silhouette');
+  assert.equal(ShadowCaster.anchorOffsetY[3], Math.fround(0.17), 'without a frame, the foot moved from the sprite\'s anchor');
+  assert.equal(ShadowCaster.heightMultiplier[3], 2, 'heightScale');
+  ShadowCaster.clearArrays();
 });

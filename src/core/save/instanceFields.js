@@ -27,6 +27,10 @@ export const ENGINE_INSTANCE_KEYS = new Set([
   '_c5',
   '_c6',
   '_c7',
+  '_c8',
+  '_c9',
+  '_c10',
+  '_c11',
   '_spawnAborted',
 ]);
 

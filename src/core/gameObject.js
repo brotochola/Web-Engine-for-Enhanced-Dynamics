@@ -11,10 +11,11 @@ import { SpriteRenderer, DEFAULT_ANIMATION_SPEED } from '../components/spriteRen
 import { MeshRenderer, MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
-import { ShadowCaster } from '../components/shadowCaster.js';
-import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
+import { ShadowCaster, resetCasterWall, restoreCasterWall } from '../components/shadowCaster.js';
+import { VolumeShadowCaster, holdsVolume } from '../components/volumeShadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
+import { DirectionalSprite } from '../components/directionalSprite.js';
 import { SpriteSheetRegistry, BIG_ATLAS_CHUNK, bigAtlasChunkName } from './spriteSheetRegistry.js';
 import { Layer } from './layer.js';
 import { syncColliderFeed } from '../util/layerFeed.js';
@@ -82,6 +83,16 @@ import { Tween } from './tween.js';
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
 
+/**
+ * DX-CASTER: whether an entity's MeshRenderer row takes its alpha and visibility: its class lists MeshRenderer, or it is a
+ * ShadowCaster's in a scene with room for volumes, whose volume (shadowCaster.setBox) that row draws. A car that fades takes
+ * its volume's shadow along, whether it was given the volume before the fade or after.
+ * @param {Record<string, boolean>} has the entity's _hasComponents
+ */
+function meshRowFollows(has) {
+  return has.MeshRenderer === true || (has.ShadowCaster === true && VolumeShadowCaster.floorScaleY != null);
+}
+
 /** className → methods already warned about a missing sprite (one warning each). */
 const _warnedNoSprite = new Map();
 function warnNoSpriteOnce(className, method) {
@@ -96,12 +107,13 @@ function warnNoSpriteOnce(className, method) {
 }
 
 /**
- * E-164: a class's first COMPONENT_FIELDS components live in fields of the instance (_c0 … _c7, declared in the
+ * E-164: a class's first COMPONENT_FIELDS components live in fields of the instance (_c0 … _c11, declared in the
  * constructor), so `this.rigidBody` is one load from the entity, not three (the entity, its slot array, the array's
  * elements). With 20 000 entities none of those is in cache: waterAndBoxesScene's getter read in about 23 ns. Each
- * getter reads its field by name; a class's further components keep E-139's slot array.
+ * getter reads its field by name; a class's further components keep E-139's slot array. Twelve, not eight: Predator's
+ * people have eleven (a class only declares the fields it has, so a smaller one carries nothing more).
  */
-const COMPONENT_FIELDS = 8;
+const COMPONENT_FIELDS = 12;
 const FIELD_GETTERS = [
   function () { const c = this._c0; return c !== null ? c : this._makeComponent(0); },
   function () { const c = this._c1; return c !== null ? c : this._makeComponent(1); },
@@ -111,6 +123,10 @@ const FIELD_GETTERS = [
   function () { const c = this._c5; return c !== null ? c : this._makeComponent(5); },
   function () { const c = this._c6; return c !== null ? c : this._makeComponent(6); },
   function () { const c = this._c7; return c !== null ? c : this._makeComponent(7); },
+  function () { const c = this._c8; return c !== null ? c : this._makeComponent(8); },
+  function () { const c = this._c9; return c !== null ? c : this._makeComponent(9); },
+  function () { const c = this._c10; return c !== null ? c : this._makeComponent(10); },
+  function () { const c = this._c11; return c !== null ? c : this._makeComponent(11); },
 ];
 FIELD_GETTERS.forEach(markEngineAccessor);
 const NO_COMPONENT_SLOTS = [];
@@ -708,6 +724,10 @@ export class GameObject {
     if (fields > 5) this._c5 = null;
     if (fields > 6) this._c6 = null;
     if (fields > 7) this._c7 = null;
+    if (fields > 8) this._c8 = null;
+    if (fields > 9) this._c9 = null;
+    if (fields > 10) this._c10 = null;
+    if (fields > 11) this._c11 = null;
     this.bindToEntitySlot({ page: options.page === true, lazy: options.lazy === true });
   }
 
@@ -767,7 +787,7 @@ export class GameObject {
     this._neighborReaderMarked = page;
 
     Ctor._ensureComponentAccessors();
-    // E-164: this entity's component instances, made on first use: the first COMPONENT_FIELDS in _c0 … _c7 (only
+    // E-164: this entity's component instances, made on first use: the first COMPONENT_FIELDS in _c0 … _c11 (only
     // the fields the constructor declared for this class), the rest in E-139's slot array.
     const slots = Ctor._componentSlotCount;
     if (slots > 0) this._c0 = null;
@@ -778,6 +798,10 @@ export class GameObject {
     if (slots > 5) this._c5 = null;
     if (slots > 6) this._c6 = null;
     if (slots > 7) this._c7 = null;
+    if (slots > 8) this._c8 = null;
+    if (slots > 9) this._c9 = null;
+    if (slots > 10) this._c10 = null;
+    if (slots > 11) this._c11 = null;
     // E-167: only a class with more components than fields has the slot array. The page's instances have it too:
     // they are frozen (Scene._createPageInstances), so a component made on their first read is kept there.
     if (slots > COMPONENT_FIELDS || page) this._components = new Array(slots).fill(null);
@@ -811,7 +835,11 @@ export class GameObject {
       case 4: this._c4 = instance; break;
       case 5: this._c5 = instance; break;
       case 6: this._c6 = instance; break;
-      default: this._c7 = instance; break;
+      case 7: this._c7 = instance; break;
+      case 8: this._c8 = instance; break;
+      case 9: this._c9 = instance; break;
+      case 10: this._c10 = instance; break;
+      default: this._c11 = instance; break;
     }
     return instance;
   }
@@ -1203,7 +1231,7 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.alpha[this.index] = value;
     }
-    if (this._hasComponents.MeshRenderer && MeshRenderer.alpha[this.index] !== value) {
+    if (meshRowFollows(this._hasComponents) && MeshRenderer.alpha[this.index] !== value) {
       MeshRenderer.alpha[this.index] = value;
       MeshRenderer.renderDirty[this.index] = 1;
     }
@@ -1251,7 +1279,7 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.renderVisible[this.index] = v;
     }
-    if (this._hasComponents.MeshRenderer && MeshRenderer.renderVisible[this.index] !== v) {
+    if (meshRowFollows(this._hasComponents) && MeshRenderer.renderVisible[this.index] !== v) {
       MeshRenderer.renderVisible[this.index] = v;
       MeshRenderer.renderDirty[this.index] = 1;
     }
@@ -1459,7 +1487,7 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.alpha[this.index] !== value) {
       AdobeAnimComponent.alpha[this.index] = value;
     }
-    if (this._hasComponents.MeshRenderer && MeshRenderer.alpha[this.index] !== value) {
+    if (meshRowFollows(this._hasComponents) && MeshRenderer.alpha[this.index] !== value) {
       MeshRenderer.alpha[this.index] = value;
       MeshRenderer.renderDirty[this.index] = 1;
     }
@@ -1505,7 +1533,7 @@ export class GameObject {
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.renderVisible[this.index] = v;
     }
-    if (this._hasComponents.MeshRenderer && MeshRenderer.renderVisible[this.index] !== v) {
+    if (meshRowFollows(this._hasComponents) && MeshRenderer.renderVisible[this.index] !== v) {
       MeshRenderer.renderVisible[this.index] = v;
       MeshRenderer.renderDirty[this.index] = 1;
     }
@@ -1566,8 +1594,8 @@ export class GameObject {
       AdobeAnimComponent.layerMask[i] = m;
     }
     if (this._hasComponents.MeshRenderer && MeshRenderer.layerMask) {
-      // A volume stays on its layer, wherever the entity's sprite goes; an entity of such a class with no volume stays off it.
-      const meshMask = this._hasComponents.VolumeShadowCaster ? m | (MeshRenderer.layerMask[i] & VolumeShadowCaster.layerBit()) : m;
+      // A ShadowCaster's volume stays on its layer, wherever the entity's sprite goes; an entity with no volume stays off it.
+      const meshMask = this._hasComponents.ShadowCaster ? m | (MeshRenderer.layerMask[i] & VolumeShadowCaster.layerBit()) : m;
       if (MeshRenderer.layerMask[i] !== meshMask) {
         MeshRenderer.layerMask[i] = meshMask;
         MeshRenderer.renderDirty[i] = 1;
@@ -2082,6 +2110,8 @@ export class GameObject {
       return;
     }
     this.spriteRenderer.spritesheetId = spritesheetId;
+    // DX-DIRSPRITE: the animation it asked for, from the new sheet's table.
+    if (this._hasComponents.DirectionalSprite) DirectionalSprite.resolve(this.index);
 
     // Mark as animated
     this.spriteRenderer.isAnimated = 1;
@@ -2116,6 +2146,12 @@ export class GameObject {
       return;
     }
 
+    // DX-DIRSPRITE: a directionless name plays in the direction the entity faces; any other is shown as it is.
+    if (this._hasComponents.DirectionalSprite) {
+      this._setDirectionalAnimation(spritesheetId, animationName, loop);
+      return;
+    }
+
     // Name → index per sheet id: no string is built per call, so a tick can
     // call this every frame and pay only when the animation changes.
     const byName = GameObject._animIndexBySheet[spritesheetId];
@@ -2136,6 +2172,24 @@ export class GameObject {
     // Set the animation and loop flag
     this.setAnimationState(animIndex);
     SpriteRenderer.loop[this.index] = loopFlag;
+  }
+
+  /** setAnimation on an entity with a DirectionalSprite: its directionless animation, or a plain one pinned. */
+  _setDirectionalAnimation(spritesheetId, animationName, loop) {
+    const i = this.index;
+    SpriteRenderer.loop[i] = loop ? 1 : 0;
+    if (DirectionalSprite.setGroup(i, animationName)) return;
+    if (!SpriteSheetRegistry.hasAnimation(SpriteSheetRegistry.getSpritesheetName(spritesheetId), animationName)) {
+      DirectionalSprite.warnNoGroup(this.constructor.name, i, animationName);
+      return;
+    }
+    const byName = GameObject._animIndexBySheet[spritesheetId];
+    let animIndex = byName !== undefined ? byName.get(animationName) : undefined;
+    if (animIndex === undefined) {
+      animIndex = GameObject._lookUpAnimation(this.constructor.name, spritesheetId, animationName);
+      if (animIndex === undefined) return;
+    }
+    DirectionalSprite.pin(i, animIndex);
   }
 
   /**
@@ -2793,6 +2847,14 @@ export class GameObject {
    */
   onAnimationEnd(name) {}
 
+  /**
+   * DX-DIRSPRITE: the direction a DirectionalSprite draws changed (and once when it draws its first). Runs on a logic
+   * worker after the ticks of the frame it changed in. Override it for what follows a direction: a collider, an anchor,
+   * a light on the front.
+   * @param {string} direction - the sheet's name of it ('left', 'downRight', '12')
+   */
+  onDirectionChanged(direction) {}
+
   onCollisionEnter(otherIndex) {
     // Override in subclasses
   }
@@ -3149,9 +3211,22 @@ export class GameObject {
       ShadowCaster.active[i] = 1;
       ShadowCaster.heightMultiplier[i] = 1; // Default: normal shadow (0 = no shadow)
       if (ShadowCaster.textureId) ShadowCaster.textureId[i] = 0;
+      // DX-CASTER: its sheet's way for every light, facing the light, taking all of it out.
+      if (ShadowCaster.sunKind) {
+        ShadowCaster.sunKind[i] = 0;
+        ShadowCaster.lampKind[i] = 0;
+        ShadowCaster.orient[i] = 0;
+        ShadowCaster.opacity[i] = 1;
+      }
+      // The measured base and the asset's own self-shadow.
+      if (ShadowCaster.baseRadius) {
+        ShadowCaster.baseRadius[i] = 0;
+        ShadowCaster.selfShadow[i] = 0;
+      }
+      // No volume (shadowCaster.setBox) and no wall (setWall) from the slot's last entity: the despawn freed its mesh.
+      VolumeShadowCaster.resetRow(i, has.MeshRenderer === true);
+      resetCasterWall(i);
     }
-
-    if (has.VolumeShadowCaster) VolumeShadowCaster.floorScaleY[i] = VolumeShadowCaster.defaultFloorScaleY;
 
     if (has.FlashComponent) {
       FlashComponent.active[i] = 1;
@@ -3159,12 +3234,6 @@ export class GameObject {
       FlashComponent.currentLife[i] = 0;
       FlashComponent.initialRadius[i] = 0;
       FlashComponent.initialGlow[i] = 0;
-    }
-
-    if (has.LightOccluder) {
-      LightOccluder.active[i] = 1;
-      LightOccluder.maskMode[i] = 0; // LIGHT_OCCLUDER_MASK_COLLIDER
-      LightOccluder.block[i] = 1;
     }
 
     if (has.MeshRenderer) {
@@ -3217,7 +3286,12 @@ export class GameObject {
       SpriteRenderer.renderDirty[i] = 1;
       SpriteRenderer.keyedDirty[i] = 1;
       SpriteRenderer.layerMask[i] = 0;
+      // DX-GBUF: normals, surface and emissive back to their defaults (a pooled slot keeps no last owner's glow).
+      SpriteRenderer.resetGbufRow(i);
     }
+
+    // DX-DIRSPRITE: after the sprite's reset, which turned its rotation back on.
+    if (has.DirectionalSprite) DirectionalSprite.resetRow(i);
 
     if (has.adobeAnimComponent) {
       AdobeAnimComponent.active[i] = 1;
@@ -3334,7 +3408,12 @@ export class GameObject {
       }
 
       if (spawnConfig && spawnConfig._saveRestore) {
+        // N-186: the save writes the columns directly; the sprite's counters follow what they now hold.
+        const spriteUsers = has.SpriteRenderer ? SpriteRenderer.usersOfRow(i) : 0;
         applyEntitySaveRestore(i, EntityClass, spawnConfig._saveRestore);
+        if (has.SpriteRenderer) SpriteRenderer.recountRow(i, spriteUsers);
+        // DX-CASTER: the wall follows the kinds the save brought back (its columns are internal, so not in the save).
+        if (has.ShadowCaster) restoreCasterWall(i);
       }
     } finally {
       endBodyDirtyDeferred();
@@ -3378,7 +3457,8 @@ export class GameObject {
     const hasBody = has.RigidBody || has.Collider;
     if (hasBody) advanceBodyGeneration(i);
     Transform.active[i] = 1;
-    if (has.MeshRenderer) MeshRenderer.active[i] = 1;
+    // A ShadowCaster's volume given in onSpawned draws with the entity's MeshRenderer row, its own or the volume's.
+    if (has.MeshRenderer || (has.ShadowCaster && holdsVolume(i))) MeshRenderer.active[i] = 1;
     if (hasBody) markBodyDirty(i, BODY_DIRTY.LIFECYCLE, true);
     // E-127: pre-render bins the static scenery again, now that this one is active where onSpawned put it.
     if (EntityClass.isStatic === true) {

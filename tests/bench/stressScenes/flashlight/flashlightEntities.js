@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, LightEmitter, LightOccluder, enums } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, LightEmitter, ShadowCaster, enums } = WEED;
 const { ShapeType } = enums;
 
 /**
@@ -48,9 +48,9 @@ export class FlashlightWalker extends GameObject {
   }
 }
 
-/** A crate that blocks raycasted light. */
+/** A crate that blocks raycasted light: a wall. */
 export class FlashlightCrate extends GameObject {
-  static components = [RigidBody, Collider, LightOccluder];
+  static components = [RigidBody, Collider, ShadowCaster];
 
   onSpawned({ x = 0, y = 0, w = 40, h = 40 } = {}) {
     this.x = x;
@@ -60,7 +60,6 @@ export class FlashlightCrate extends GameObject {
     this.collider.shapeType = ShapeType.Box;
     this.collider.width = w;
     this.collider.height = h;
-    this.lightOccluder.active = 1;
-    this.lightOccluder.block = 1;
+    this.shadowCaster.setWall();
   }
 }

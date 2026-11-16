@@ -1,14 +1,13 @@
 import WEED from '/src/index.js';
 
 const {
-  GameObject, Collider, SpriteRenderer, RigidBody, LightOccluder,
-  LIGHT_OCCLUDER_MASK_SPRITE, enums,
+  GameObject, Collider, SpriteRenderer, RigidBody, ShadowCaster, enums,
 } = WEED;
 const { ShapeType } = enums;
 
 export class ZenithalCar extends GameObject {
 
-  static components = [Collider, SpriteRenderer, RigidBody, LightOccluder];
+  static components = [Collider, SpriteRenderer, RigidBody, ShadowCaster];
 
   onSpawned(spawnConfig = {}) {
     this.setSprite('zenithal_car');
@@ -20,7 +19,8 @@ export class ZenithalCar extends GameObject {
 
     this.rigidBody.linearDamping = 0.9;
     this.setAnchor(0.5, 0.5);
-    // this.lightOccluder.maskMode = LIGHT_OCCLUDER_MASK_SPRITE
+    // A wall that stops the lights, cut by the collider ({ shape: 'sprite' }: by the picture's alpha).
+    this.shadowCaster.setWall();
   
   }
 }

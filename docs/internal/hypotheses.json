@@ -9078,7 +9078,9 @@
         "R-0716",
         "R-0722",
         "R-0736",
-        "R-0742"
+        "R-0742",
+        "R-1056",
+        "R-1057"
       ],
       "id": "E-164",
       "title": "A component read waits on memory: the slot array and its elements",
@@ -15128,6 +15130,166 @@
       ]
     },
     {
+      "aliases": [
+        "config.camera"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#DX-CAMERA",
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "records": [],
+      "date": "2026-11-14",
+      "area": "engine",
+      "kind": "dx",
+      "result": "config.camera { pitch, yaw, floorScaleY, heightScaleY } replaces lighting.groundScaleY and lighting.faces.heightScaleY (retired keys that point to it); no camera keeps floor 1 and heights 1, so pictures do not change. Not timed: the same numbers reach the same shaders.",
+      "next": "raycasted goes in F9 with setWall.",
+      "id": "DX-CAMERA",
+      "title": "config.camera: what the camera is, once for the scene (DX-LIGHT3D F1)",
+      "status": "kept-hygiene",
+      "statusText": "built 2026-11-14 on dx/light3d (af40188)"
+    },
+    {
+      "aliases": [
+        "DirectionalSprite"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#DX-DIRSPRITE",
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "records": [
+        "R-1052",
+        "R-1054",
+        "R-1056",
+        "R-1057",
+        "R-1058",
+        "R-1120"
+      ],
+      "date": "2026-11-14",
+      "area": "engine",
+      "kind": "dx",
+      "result": "",
+      "next": "Owner: an ABAB with worktrees on a quiet machine (directionalSpriteStressScene ?mode=hand|ds, logic). Predator's gate against main ran (R-1058): neutral by the rule (logic and pre-render under the 6 ms floor), a real cost from its people's DirectionalSprite still to win back.",
+      "id": "DX-DIRSPRITE",
+      "title": "DirectionalSprite: a sprite drawn from several directions, from its facing (DX-LIGHT3D F2)",
+      "status": "running",
+      "statusText": "built 2026-11-14 on dx/light3d; measured on a 2-core VM only"
+    },
+    {
+      "aliases": [
+        "sunShadows",
+        "lampShadows"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#DX-SHADOW3D",
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "records": [
+        "R-1053",
+        "R-1054",
+        "R-1055",
+        "R-1058",
+        "R-1059",
+        "R-1060",
+        "R-1065",
+        "R-1120",
+        "R-1132"
+      ],
+      "date": "2026-11-14",
+      "area": "render",
+      "kind": "dx",
+      "result": "",
+      "next": "The static cache; volumes in the sun's map on WebGPU; opacity in the maps; footprint solids (off: a bug); keyed rows in map mode; lampShadowStressScene (map against stamps), the formula checks, Predator at night (measuring phase).",
+      "id": "DX-SHADOW3D",
+      "title": "Shadows from the frame each light sees: cards on their base, renders’ solids, the sun’s map (DX-LIGHT3D F6/F7, §17)",
+      "status": "running",
+      "statusText": "sun and lamps built 2026-11-14/15 on dx/light3d: the sun's map and sprite modes (WebGL and WebGPU), the lamps' map (F7, option C); the owner approved the darker shadows; not timed against main"
+    },
+    {
+      "aliases": [
+        "pixelDepth",
+        "renderer.pixelDepth"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#DX-DEPTH",
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "records": [
+        "R-1061"
+      ],
+      "date": "2026-11-14",
+      "area": "render",
+      "kind": "dx",
+      "result": "",
+      "next": "WebGPU; opaque-only writes and zIndex bands; depthSortCheck and depthSortStressScene; the cost of writing depth from the shader (measuring phase).",
+      "id": "DX-DEPTH",
+      "title": "Depth that corrects the painter: each entity pixel at its place on the floor (DX-LIGHT3D F5)",
+      "status": "running",
+      "statusText": "first version built 2026-11-15 on dx/light3d (WebGL); not timed"
+    },
+    {
+      "aliases": [
+        "lighting.selfShadow"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#DX-SELFSHADOW",
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "records": [
+        "R-1062"
+      ],
+      "date": "2026-11-14",
+      "area": "render",
+      "kind": "dx",
+      "result": "",
+      "next": "The entity id (same-entity heights only), 1/2/4 rays in selfShadowStressScene, the owner's look at the car and the bed.",
+      "id": "DX-SELFSHADOW",
+      "title": "Self-shadow: faces and sprites with height maps shade themselves from the sun and the lamps (DX-LIGHT3D F8)",
+      "status": "running",
+      "statusText": "built 2026-11-14/15 on dx/light3d: sun and lamps (with the lamps' map), WebGL and WebGPU; not timed"
+    },
+    {
+      "aliases": [
+        "emissive sheets"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#DX-EMISSIVE",
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "records": [
+        "R-1063"
+      ],
+      "date": "2026-11-14",
+      "area": "render",
+      "kind": "dx",
+      "result": "",
+      "next": "v2: MRT and the two colours a pixel (a glow past 1), spriteRenderer.emissive per entity, emissiveStressScene and emissiveCheck.",
+      "id": "DX-EMISSIVE",
+      "title": "Emissive sheets: a glowing sprite keeps its colour in the dark and sorts with the entities (DX-LIGHT3D F10)",
+      "status": "running",
+      "statusText": "v1 built 2026-11-15 on dx/light3d (per sheet, full light); v2 (MRT, two colours a pixel) to do"
+    },
+    {
+      "aliases": [
+        "CAST_KIND"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#DX-CASTER",
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "records": [
+        "R-1064"
+      ],
+      "date": "2026-11-14",
+      "area": "engine",
+      "kind": "dx",
+      "result": "",
+      "next": "The second part (setBox / addLevel / setHull / setWall, selfShadow, baseRadius, setSprite({ frame, anchorX, anchorY, heightScale })), opacity in the maps, the demos' migration, CAST_KIND in the worker WEED.",
+      "id": "DX-CASTER",
+      "title": "One ShadowCaster: each entity says how it casts, for the sun and the lamps apart (DX-LIGHT3D F9)",
+      "status": "running",
+      "statusText": "first part built 2026-11-15 on dx/light3d (setSprite / setHeightMap / clear, sun / lamps, opacity, type, fixed cards); the rest being finished"
+    },
+    {
       "id": "E-311",
       "title": "Pixi's updateLighting boxes a double per visible light per frame (Predator crowd 1.5: 54.5 KB/s of Pixi's 302.7)",
       "status": "kept-hygiene",
@@ -15170,6 +15332,1233 @@
         "R-1045",
         "R-1046",
         "R-1047"
+      ]
+    },
+    {
+      "id": "N-180",
+      "title": "Sun.angle and Sun.elevation setters change nothing on screen: the shadow direction (SHADOW_DIR_X/Y) is only recomputed by setTimeOfDay",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-15 on dx/light3d (dd640931)",
+      "date": "2026-11-15",
+      "area": "engine",
+      "kind": "bug",
+      "result": "Fixed (dd640931): the angle, elevation, shadowAngleOffset and length ratio setters recompute the shadow direction and length ratio; setTimeOfDay recomputes once as before. Test sunSetters.test.js.",
+      "next": "Both setters recompute what setTimeOfDay derives from angle and elevation (the shadow direction and the length terms), or they leave the API and the docs point to setTimeOfDay with the offsets; a node test that sets Sun.angle and reads shadowDirX.",
+      "refs": [
+        "REVIEW_PLAN.md#N-180"
+      ],
+      "aliases": [
+        "Sun.angle setter",
+        "Sun.elevation setter",
+        "shadowDirX not updated"
+      ],
+      "records": [
+        "R-1131"
+      ]
+    },
+    {
+      "id": "N-181",
+      "title": "lighting.sunShadows 'map': a caster's own shadow paints its own sprite when the sprite has no heights (Sun Street's houses)",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-15 by the owner; fixed by dx/par-render (2fdb6755), checked the same day after the merge",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (2fdb6755, dx/par-render): the shadow maps keep their highest caster by a depth test, with its entity id in the texel, and the light pass skips a texel of the pixel's own entity (the G-buffer's ids map); unmapped entities are standing cards in map mode. Sun Street forced into map mode at 15 h after the merge: no house carries its own shadow, the shadows stay on the ground around them.",
+      "next": "None.",
+      "refs": [
+        "REVIEW_PLAN.md#N-181"
+      ],
+      "aliases": [
+        "own shadow over the house",
+        "sombra encima de la casa",
+        "map mode self shadow blob"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-182",
+      "title": "WebGPU: every frame with the lamps' shadow map threw \"[BindGroup] the resource bound as 'uFoot' was destroyed\": the lamps' columns program named binding 7 in its layout without declaring it in its WGSL",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-11-15 on dx/light3d (code only on that branch)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (c99e57b0): Pixi files a Shader's resources by the WGSL's declarations, so the undeclared uFoot went to a spare group and group 2 had no binding 7, which Pixi reports as a destroyed resource; the lamps' columns WGSL declares it now (unread). With it: ea6105a3 (the map's cards programs take no uMaps) and d037eae0 (the sun columns keep aInstLight), two Pixi warnings; cabf1291, a node test that checks every transformed WebGPU program's layout against its WGSL (it fails on the lamp program before the fix). The light bench: 16 h identical on both backends, 22 h 380 of 921 600 px differ by at most 6/255.",
+      "next": "None.",
+      "refs": [
+        "REVIEW_PLAN.md#N-182"
+      ],
+      "aliases": [
+        "uFoot destroyed",
+        "BindGroup resource destroyed",
+        "layout names a binding the WGSL lacks"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-363",
+      "title": "DirectionalSprite's setters resolve even when the value does not change (Predator: 13 % of the resolves come from facingFrom set again in each FSM onEnter)",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "logic",
+      "kind": "speed",
+      "result": "",
+      "next": "The setters return early on an unchanged value; Predator crowd 2.5 against the branch.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-363"
+      ],
+      "aliases": [
+        "facingFrom setter resolve",
+        "DirectionalSprite setter early out"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-364",
+      "title": "DirectionalSprite resolves every directional entity every frame, also those whose type ticks every N frames (Predator: civilians 4, soldiers 6; ~0.67 ms per logic worker a frame)",
+      "status": "kept",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "logic",
+      "kind": "speed",
+      "result": "logic 7.019 -> 4.745 ms (-32.4 %, 2/2, early stop) in directionalSpriteStressScene n=120000 tickInterval=4; pre-render +0.2 %; Predator gated with the batch",
+      "next": "Resolve a staggered type's entities on their tick frames only; directionalSpriteStressScene with a tickInterval knob, then Predator crowd 2.5 against main.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-364"
+      ],
+      "aliases": [
+        "resolve on tick frames",
+        "DirectionalSprite staggered resolve"
+      ],
+      "records": [
+        "R-1119"
+      ]
+    },
+    {
+      "id": "E-365",
+      "title": "The self-shadow pass cost 2.6 to 3.1 times the 3D light pass: the steps towards every lamp, however far, and on WebGL no early out at all (ANGLE flattened the branches)",
+      "status": "kept",
+      "statusText": "kept 2026-11-15 on dx/light3d (R-1125)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "Kept (8f387ea0, 23b83f0d): gpuPassBench selfShadow 3.33 -> 1.61 ms on WebGL, 3.54 -> 1.60 on WebGPU (resolution 0.5, 32 lamps); selfShadowStressScene with 32 lamps drawn 41.8 -> 60.0 fps (+43.5 %, 4/4 pairs). The lamps' steps were 96 % of the pass and ran past their radius; on WebGL ANGLE flattened every early out (texture2D in a branch).",
+      "next": "Rays and steps tournament, early outs (sun term 0, flat neighbourhood), half resolution, own entity only; selfShadowStressScene and gpuPassBench.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-365"
+      ],
+      "aliases": [
+        "self-shadow cost",
+        "selfShadow pass ms"
+      ],
+      "records": [
+        "R-1125"
+      ]
+    },
+    {
+      "id": "E-366",
+      "title": "The 3D light pass costs 1.22 ms on WebGPU against 0.87 ms on WebGL (32 lights, resolution 0.5, GTX 1650), +40 %; the plain light pass is close",
+      "status": "rejected",
+      "statusText": "its premise was the bench's (N-193), 2026-11-15",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "With real waits WebGL takes 1.26 ms and WebGPU 1.13 (WebGPU 11 % faster): the 0.87 ms was light3d timed after the plain light pass while WebGL waits were flushes (N-193). The other way round is E-373.",
+      "next": "Compare the generated code, time the terms one by one in gpuPassBench, fix the WGSL.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-366"
+      ],
+      "aliases": [
+        "light3d WebGPU slower",
+        "WGSL light pass cost"
+      ],
+      "records": [
+        "R-1124"
+      ]
+    },
+    {
+      "id": "E-367",
+      "title": "The G-buffer pass costs 0.89 ms on WebGL against 0.54 ms on WebGPU (resolution 0.5, GTX 1650), +66 %",
+      "status": "rejected",
+      "statusText": "its premise was the bench's (N-193), 2026-11-15",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "With real waits WebGL takes 0.485 ms and WebGPU 0.495: the same. The 0.89 ms was the G-buffer pass timed after the colour pass (N-193).",
+      "next": "Measure again after F4 lands; then the GLSL (discard, twin page reads, branches).",
+      "refs": [
+        "EXECUTION_PLAN.md#E-367"
+      ],
+      "aliases": [
+        "gbuffer WebGL slower"
+      ],
+      "records": [
+        "R-1124"
+      ]
+    },
+    {
+      "id": "E-368",
+      "title": "computeSunFramesInto walks every entity slot and recomputes every directional caster's sun frame each frame: 11.3 % of pre-render in Predator crowd 2.5 (~1.4 ms a frame)",
+      "status": "kept",
+      "statusText": "proposed 2026-11-15 on dx/light3d (pre-render is agent R's file until its branch merges)",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "Predator crowd 2.5 pre-render 8.245 -> 7.497 ms (-9.6 %, 4/4) with E-369; kernels: sun frames keyed 862 -> 1 441 ops/s, every slot 864 -> 1 778",
+      "next": "Walk the directional casters only; skip a caster whose direction, animation frame and the sun turn are unchanged; nothing at night. Kernel, then Predator crowd 2.5 against main.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-368"
+      ],
+      "aliases": [
+        "computeSunFramesInto cost",
+        "sun frames every slot"
+      ],
+      "records": [
+        "R-1120",
+        "R-1121",
+        "R-1122"
+      ]
+    },
+    {
+      "id": "E-369",
+      "title": "applyKeyedLampFramesInto spends 48 % of its time in one Math.atan2 per keyed stamp row (lamp to caster), only to pick one of N directions: 4.7 % of pre-render in Predator crowd 2.5 (~0.6 ms a frame)",
+      "status": "kept",
+      "statusText": "proposed 2026-11-15 on dx/light3d (pre-render is agent R's file until its branch merges)",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "with E-368 (R-1121): Predator crowd 2.5 pre-render -9.6 %; kernel lampFramesMicrobench 805 -> 1 323 ops/s, the same checksum",
+      "next": "Dot products against the bucket borders, or a fast atan2; kernel, then Predator crowd 2.5.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-369"
+      ],
+      "aliases": [
+        "keyed lamp frames atan2",
+        "applyKeyedLampFramesInto cost"
+      ],
+      "records": [
+        "R-1121"
+      ]
+    },
+    {
+      "id": "E-370",
+      "title": "_applyKeyedSunFrames is a second JS pass over every keyed caster row after the WASM pack (48 % on the store into the row): 4.3 % of pre-render in Predator crowd 2.5 (~0.55 ms a frame)",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d (pre-render is agent R's file until its branch merges)",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "",
+      "next": "Write the frame inside the keyed pack, or store only changed frames; gpuPackCastersKeyedMicrobench, then Predator crowd 2.5.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-370"
+      ],
+      "aliases": [
+        "keyed sun frames pass",
+        "_applyKeyedSunFrames cost"
+      ],
+      "records": [
+        "R-1155",
+        "R-1157"
+      ]
+    },
+    {
+      "id": "N-183",
+      "title": "Round two's light pass shaded every face turned away from the light on sprites with their own normals: the light bench's barn walls went black by day, freckled, and the fence's lower rail black",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-11-15 on dx/light3d, in the test phase of the second agents' round (code only on that branch)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (8698ed16): dx/par-render's light pass ran the self-shadow steps on a kRule pixel (a sprite with its own normal map) whatever its cosine; a face turned away from the sun steps into its own body and always reads shaded, so the barn's front wall went black at 16 h with bright freckles where a step missed the roof, and the fence's lower rail went black under the upper one. Round one's gate is back: only a face the light reaches (cosine > 0.05) takes its own shade, towards the sun and the lamps, GLSL and WGSL. With self-shadow off the walls had been lit, which located it. The tree's shadow still falls on the barn's wall (another caster).",
+      "next": "None.",
+      "refs": [
+        "REVIEW_PLAN.md#N-183"
+      ],
+      "aliases": [
+        "barn walls black",
+        "kRule self shadow",
+        "freckles on the barn"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-184",
+      "title": "WebGL warned \"Attribute aInstGbuf is not present in the shader\" in every map-mode scene without maps: a colour program without pixel depth did not take the G-buffer words its geometry carries",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-11-15 on dx/light3d (test phase of the second round)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (9681e069): gbufAttributeGlsl, the twin of dx/par-render's gbufAttributeWgsl, declares aInstGbuf in a sprite vertex shader and keeps it with a line that is never true; the plain, indexed and row colour programs take it when pixel depth is off. Sun Street in map mode starts without the warning; a node test covers the four sprite forms.",
+      "next": "None.",
+      "refs": [
+        "REVIEW_PLAN.md#N-184"
+      ],
+      "aliases": [
+        "aInstGbuf not present in the shader"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-371",
+      "title": "The sun's and the lamps' frames of directional casters picked in the shadow programs (a texture by texture id and the tables' frames), not by pre-render: about 1 ms a frame of Predator's pre-render",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "next": "Texture-id and frame tables to the GPU; every shadow program picks the frame; pre-render writes none. Predator crowd 2.5 against main, captures unchanged.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-371"
+      ],
+      "aliases": [
+        "sun frames on the GPU",
+        "shadow frame in the vertex shader"
+      ],
+      "records": [
+        "R-1155"
+      ]
+    },
+    {
+      "id": "E-372",
+      "title": "The frames' gather in WASM, inside the keyed pack (the alternative to E-371)",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "",
+      "next": "Only if E-371 does not land: the pack writes the frame; gpuPackCastersKeyedMicrobench, Predator crowd 2.5.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-372"
+      ],
+      "aliases": [
+        "sun frames in WASM"
+      ],
+      "records": [
+        "R-1155",
+        "R-1157"
+      ]
+    },
+    {
+      "id": "N-185",
+      "title": "The G-buffer entity ids repeat every 65 535 entities: two such entities skip each other's shadow in the maps and count each other's heights in the self-shadow",
+      "status": "open",
+      "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "dx/par-render stores entity % 65535 + 1 in 16 bits (the ids map, the maps' texels). A scene past 65 535 entities (Predator's pools are 57 633) has pairs that share an id.",
+      "next": "A wider id (a third byte in the ids map and the maps' texels) when the entity count passes 65 535, or the id of a slot among the drawn rows instead of the entity.",
+      "refs": [
+        "REVIEW_PLAN.md#N-185"
+      ],
+      "aliases": [
+        "entity id wraps at 65535"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-186",
+      "title": "After a save is restored, the per-entity emissive counter is not recounted: spriteRenderer.emissive may stay unlit until set again",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-15 on dx/light3d (88bb89e9)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "Fixed (88bb89e9): GameObject._spawnAt takes the row's counted states (SpriteRenderer.usersOfRow) before applyEntitySaveRestore and brings the zIndex users' and the glowing sprites' counters in line after (recountRow). Test spriteRendererRestoreCounters.test.js.",
+      "next": "Recount both counters after a restore (the save path's post-load hook), with a test that restores a glowing sprite.",
+      "refs": [
+        "REVIEW_PLAN.md#N-186"
+      ],
+      "aliases": [
+        "emissive counter after restore"
+      ],
+      "records": [
+        "R-1131"
+      ]
+    },
+    {
+      "id": "N-187",
+      "title": "A frame whose GPU queue count differs from the rows pre-render collected sends no G-buffer words: Pixi zeroes them, so every sprite is lit without its id and flags that frame (its own map shadow, its glow, its self-shadow); with Adobe animations every frame differs",
+      "status": "open",
+      "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "Read 2026-11-15: _writeGbufWords returns false when q.count differs from the collected rows (Adobe roots expanded into more rows), the frame goes without GPU_FLAG_GBUF and Pixi's commitGbuf(null) zeroes the words (not the last frame's, as first reported). Each such frame lights every sprite as before round 2: id 0 (a caster's own shadow paints it in map mode), no glow of its own, no self-shadow flag. A scene with Adobe animated entities expands roots every frame, so there the words never reach Pixi.",
+      "next": "Give the expanded rows their root's entity (the collector knows it) so the words are written whatever the count; a capture of an Adobe character with spriteRenderer.emissive and a sun map.",
+      "refs": [
+        "REVIEW_PLAN.md#N-187"
+      ],
+      "aliases": [
+        "stale gbuf words"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-188",
+      "title": "lighting.shadowTextures is still a public key: setSprite({ frame }) needs it on, and it turns the keyed caster paths off for the whole scene",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-15 on dx/light3d (572d30b2)",
+      "date": "2026-11-15",
+      "area": "engine",
+      "kind": "bug",
+      "result": "fixed (572d30b2): pre-render finds frames in use in its caster scan and flags those frames (GPU_FLAG_CASTER_OWN); Pixi draws its rows then; lighting.keyedCasters: false is the diagnostic; the sun street's tree silhouettes cast with no key",
+      "next": "",
+      "refs": [
+        "REVIEW_PLAN.md#N-188"
+      ],
+      "aliases": [
+        "shadowTextures key"
+      ],
+      "records": [
+        "R-1141"
+      ]
+    },
+    {
+      "id": "N-189",
+      "title": "The lamps' map tags hold under 256 tiles, and the WebGL painter level is per range across GPU-particle chunk splits",
+      "status": "open",
+      "statusText": "reported 2026-11-15 by the second round's agents (dx/light3d); backlog",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "dx/par-render: the lamp tag is -(tile + 1 + 256 x the lamp's entity id), so a scene with 256 lamp tiles or more breaks the tag; with pixel depth, the painter's order inside a zIndex band is set per draw range, so particle chunk splits may sort a few edge pixels differently.",
+      "next": "A tag with room for more tiles (or the tile and the id in two floats); a capture of particles with sortWithEntities over mapped sprites.",
+      "refs": [
+        "REVIEW_PLAN.md#N-189"
+      ],
+      "aliases": [
+        "lamp tag 256 tiles"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-190",
+      "title": "Map mode: a scene whose casters are volumes alone cast no sun shadow (Pixi drew the sun's map only with sprite caster rows)",
+      "status": "kept-hygiene",
+      "statusText": "found by lampSeparationCheck and fixed 2026-11-15 on dx/light3d (a round-one bug: the bench always has sprite casters)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (00515783): the sun's map was drawn only with sun rows (sunN > 0) and _drawSunMap left before the volumes when the batch had none, so boxes alone cast nothing and the map stayed clear. It now draws when a sun-projected volumes' layer holds a volume. lampSeparationCheck: FAIL (no shadow; the lamp's light 302 % kept) -> PASS on both backends (worst 0.6/255, 99.9 % kept).",
+      "next": "The lamps' map has the same gate (stampN > 0) and its tiles come from the stamp lights pre-render picks: check a scene of volumes alone under lamps in map mode.",
+      "refs": [
+        "REVIEW_PLAN.md#N-190"
+      ],
+      "aliases": [
+        "volumes alone no sun shadow",
+        "sunN > 0 volumes"
+      ],
+      "records": [
+        "R-1123"
+      ]
+    },
+    {
+      "id": "N-191",
+      "title": "spriteRenderer.emissive did nothing, silently, in a scene without maps, lighting.faces or a shadow map",
+      "status": "kept-hygiene",
+      "statusText": "found by emissiveCheck and fixed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (678b88e0): a sprite's own glow rides in its G-buffer words, which only those features turned on. lighting.emissive: true turns them on (off by default), Pixi warns once when a sprite asks to glow without them, guide and types name the key. emissiveCheck with it: PASS on both backends (worst 1.4/255 through the glow, 1.0 the core, 2.0 the person in front); without it the core read 81 for 255.",
+      "next": "None.",
+      "refs": [
+        "REVIEW_PLAN.md#N-191"
+      ],
+      "aliases": [
+        "emissive without gbuffer"
+      ],
+      "records": [
+        "R-1123"
+      ]
+    },
+    {
+      "id": "N-192",
+      "title": "shadowOutlineCheck: shadow outlines 2.6 to 5.8 px from the analytic projection (tolerance 1.5) on both backends; a card passes only with the sun from 225 to 315 degrees; under a lamp lower than a crate the stretch cap ends in steps",
+      "status": "open",
+      "statusText": "open: part fixed 2026-11-15 (c8963250, the floor bias); the rest to investigate",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "Part fixed (c8963250): a floor point took the shadow maps' bias (p.z + 4), so the bottom 4 px of every caster cast nothing on the floor: outlines 2.6-3.5 -> 1.4-1.6 px (sun box and card), lamp box at 150 px 2.50 -> 1.26. Left: a uniform ~1.5 px (box, card), the crate's columns 3.6-5.9 px, the 90-degree card compared to nothing (a check fix), the cap's staircase under a lamp lower than the crate.",
+      "next": "Overlay the projection on the captures (--save) per direction; compare the engine's base and landing with the check's formulas (sunMapTerms, the card's foot, setBox's offsets); give the formula the cap; make the cap's end a straight line (each column capped at the same radius). The stretch cap draws a column whose top is above the cap's height (7/8 of the lamp's) with w = 1/8 at its top, so its heights along the shadow run 8 z s / (1 + 7 s) where the projection has 7 E s / (1 + 7 s): too high, and its picture's rows squeezed (E-375 cut such columns where they leave the tile; nearer than reach / 4 they still reach the cap): cutting them at the cap's height would make them exact up to 8 times their distance.",
+      "refs": [
+        "REVIEW_PLAN.md#N-192"
+      ],
+      "aliases": [
+        "shadow outline 3.5 px",
+        "stretch cap staircase"
+      ],
+      "records": [
+        "R-1123",
+        "R-1133"
+      ]
+    },
+    {
+      "id": "N-193",
+      "title": "gpuPassBench timed WebGL by gl.finish(), a flush in Chrome: each sample timed the queue's intake, and a pass timed after another in the same case read as that one",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-11-15 on dx/light3d (26e860e0)",
+      "date": "2026-11-15",
+      "area": "bench",
+      "kind": "bug",
+      "result": "fixed (26e860e0): a 1 x 1 read back of the pass's own target waits for the GPU. Before: selfShadow after light3d 1.19 ms (alone 3.27), light3d after selfShadow 3.07 (alone 1.21), color after gbuffer 0.51 (0.91), gbuffer after color 0.83 (0.46), GPU clocks steady (1700 MHz, P0); after, either order the same (light3d 1.26/1.26, selfShadow 3.29/3.30, gbuffer 0.486/0.485, color 0.968/0.968) and the round trip 0.15-0.29 ms. Each pass also reports a hash of the image it left.",
+      "next": "Every WebGL number of gpuPassBench from a case of more than one pass before 26e860e0 is suspect: E-366 and E-367 rejected; the tournaments (plan §9.5) run again with the fixed bench.",
+      "refs": [
+        "REVIEW_PLAN.md#N-193"
+      ],
+      "aliases": [
+        "gl.finish is a flush",
+        "WebGL finish does not wait"
+      ],
+      "records": [
+        "R-1124"
+      ]
+    },
+    {
+      "id": "E-373",
+      "title": "The 3D light pass costs 11 % more on WebGL than on WebGPU (1.26 against 1.13 ms, 32 lights, resolution 0.5, GTX 1650)",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "next": "Read ANGLE's HLSL against Tint's; texelFetch for the light data; the reach per light; time terms in gpuPassBench.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-373"
+      ],
+      "aliases": [
+        "light3d WebGL slower"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-374",
+      "title": "The shadow maps' depth test (the second round's highest caster with its id) costs the sun's map a third more than the max blend did: a 16-bit depth buffer, or the casters highest first",
+      "status": "kept-kernel",
+      "statusText": "kept (kernel) 2026-11-15 on dx/light3d (R-1126)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "Kept (kernel; f068966c, 3497ca6d): every map fragment wrote its depth, which turns the early depth test off; the vertices write it now (a lamp's as 1 / w). gpuPassBench sunMap WebGL 1.035 -> 0.673 ms, WebGPU 1.025 -> 0.531; sunColumns 1.849 -> 0.713, 1.766 -> 0.532; lampMap -4.5 %; the same images. A 16-bit depth buffer changed nothing. sunShadowMapStressScene 15 000 columns +3.0 % (neutral).",
+      "next": "gpuPassBench sunMap and lampMap with mapDepth=16 against 24 on both backends; then the engine side if it wins.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-374"
+      ],
+      "aliases": [
+        "map depth 16 bits",
+        "sun map depth test cost"
+      ],
+      "records": [
+        "R-1126"
+      ]
+    },
+    {
+      "id": "E-375",
+      "title": "A lamp's caster columns were drawn out to the stretch cap and the fragments outside its tile thrown away: each column's top now stops where its ray leaves twice the lamp's reach",
+      "status": "kept-kernel",
+      "statusText": "kept 2026-11-15 on dx/light3d (R-1127)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "Kept (6970a9fd): gpuPassBench lampMap WebGL 4.11 -> 1.45 ms (-65 %), WebGPU 4.17 -> 1.40 (-66 %). lampShadowStressScene (lampShadows=map, owner presented, --vs 3497ca6d): both sides at the display's rate at the default load (48 lamps, 2 000 walkers) and at 240 lamps and 10 000 walkers (9 055 caster rows; pre-render 5.6 ms holds that frame): neutral, no regression.",
+      "next": "None.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-375"
+      ],
+      "aliases": [
+        "lamp map overdraw",
+        "lamp shadow outside tile"
+      ],
+      "records": [
+        "R-1127"
+      ]
+    },
+    {
+      "id": "E-376",
+      "title": "The columns' grid (576 cells a render) ran the vertex shader six times a cell: four corners and a quad index, four times",
+      "status": "kept",
+      "statusText": "kept 2026-11-15 on dx/light3d (R-1128)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "Kept (7ecde902): gpuPassBench sunColumns 5 000 renders WebGL 6.93 -> 5.65 ms, WebGPU 4.95 -> 4.24; sunShadowMapStressScene 15 000 renders as columns drawn 17.2 -> 23.8 fps (+37.8 %, 4/4 pairs), with E-374 +41.7 %; the same images.",
+      "next": "None.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-376"
+      ],
+      "aliases": [
+        "column grid indexed",
+        "columns vertex shader six times"
+      ],
+      "records": [
+        "R-1128"
+      ]
+    },
+    {
+      "id": "E-377",
+      "title": "lighting.gbuffer drew the G-buffer's two targets a pass each by default: 'mrt' (one pass, two targets) costs a third less, the same picture",
+      "status": "kept-kernel",
+      "statusText": "kept (kernel) 2026-11-15 on dx/light3d (R-1129)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "Kept (kernel; 68b0b640): 'mrt' by default. gpuPassBench with the engine's programs: resolution 0.5 WebGL 0.796 -> 0.512 ms (-36 %), WebGPU 0.749 -> 0.521 (-30 %); resolution 1 -33 % / -31 %. Captures 0 px differ, GPU_PASSES 3 -> 2.",
+      "next": "None.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-377"
+      ],
+      "aliases": [
+        "gbuffer mrt default"
+      ],
+      "records": [
+        "R-1129"
+      ]
+    },
+    {
+      "id": "E-378",
+      "title": "The pixel depth (DX-DEPTH) costs the colour pass +30 % on WebGL and +90 % on WebGPU: every fragment writes its depth, also a sprite without maps whose depth is its foot's",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "next": "Split the opaque pass: maps-less sprites' depth from the vertices (early depth test), the others' from the fragment; why WebGPU pays three times more. gpuPassBench color/colorDepth, depthSortCheck.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-378"
+      ],
+      "aliases": [
+        "pixel depth cost",
+        "colorDepth cost"
+      ],
+      "records": [
+        "R-1129"
+      ]
+    },
+    {
+      "id": "DX-BARRIOS",
+      "title": "Editor de barrios: the buenos-aires repo becomes the neighbourhood editor, exporting houses and above all the floor as WeedJS sheets with height maps, normal maps and pixel depth instead of simplified 3D models; WeedJS's import workarounds for those models go",
+      "status": "blocked",
+      "statusText": "approved by the owner 2026-11-15; starts once dx/light3d is merged to main",
+      "date": "2026-11-15",
+      "area": "demos",
+      "kind": "feature",
+      "result": "",
+      "refs": [],
+      "aliases": [],
+      "next": "After the dx/light3d merge: rename the buenos-aires repo (where the neighbourhood editor lives) to \"editor de barrios\"; export from it houses and mainly the floor as standard sheets (colour, height map, normal map: DX-MAPS) lit by the standard lighting (DX-GBUF, DX-SHADOW3D, pixel depth DX-DEPTH) instead of the simplified 3D models WeedJS reads today; remove the engine code that only exists to import those models and their maps (the workarounds), and edit demos/buenosAiresScene to the new exports. Owner, 2026-11-15: \"cuando terminemos esto y dx/light3d este mergeado a main, ahi vamos a editar esa escena, el otro repo, y las partes del codigo q tienen q ver con eso\".",
+      "records": []
+    },
+    {
+      "id": "N-194",
+      "title": "A sprite drawn at a scale kept its height map's heights at scale 1: lighting (the face map), pixel depth and the sun's and lamps' shadow maps read the twin's heights in frame px, while its picture and its footprint grew with the scale",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-15 on dx/light3d while drawing the standard 1x car sheets at 2x in the light bench; fix written, being checked",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (67e33035): the twin's height times |scale y| where it becomes a world height; the bench's 1x cars at scale 2 match its old 2x copies by day, evening and at night by a lamp",
+      "refs": [],
+      "aliases": [],
+      "next": "Fix: the twin's height times the sprite's |scale y| where it becomes a world height (faceMap.frag.glsl and faceMap.js's WGSL through a flat vMapScale; pixelDepth.js through vPainter.y / vDepthFoot.z; sunShadowMap.js and lampShadowMap.js columns through aInstScale); the normals from heights (Sobel) keep reading the frame's own heights, since a scale stretches heights and texels alike. Check: the light bench's car from the standard 1x sheet at setScale(2) against the old 2x copy (shadows, light, depth), and the shader cost (one flat varying, one multiply).",
+      "records": [
+        "R-1134"
+      ]
+    },
+    {
+      "id": "DX-STDSPRITES",
+      "title": "The demos' one set of MinZiin cars and LPC people, with height and normal maps baked the claude.ai way (nm-core), no copies",
+      "status": "kept",
+      "statusText": "done 2026-11-15 on dx/light3d (b0bc107f .. 134dd868)",
+      "date": "2026-11-15",
+      "area": "demos",
+      "kind": "feature",
+      "result": "demos/img/autos: the Buenos Aires game's 54 TopDown Vehicles with maps (bakeCarSheet.mjs, nm-core's body fit); civil1..7 and poli with maps (bakeReliefMaps.mjs); the light bench, its stress scenes, carScene, littleCity (atlas re-baked), the sun street and the night street draw them; demos/img/cars and the bench's copies are gone",
+      "refs": [],
+      "aliases": [],
+      "next": "demos/buenosAiresScene keeps its own copies of ten car sheets until DX-BARRIOS. demos/img/people (69 LPC sheets, littleCity and the sun street, no lighting) have no maps: bakeReliefMaps.mjs makes them in seconds if a lit scene needs them (1.2 MB a sheet).",
+      "records": [
+        "R-1135"
+      ]
+    },
+    {
+      "id": "N-195",
+      "title": "A top-down render's silhouette (card) sun shadow lies turned: the card shows the frame the sun sees and stretches its rows along the sun as if they were height, so a car seen from above casts a car at another heading",
+      "status": "rejected",
+      "statusText": "closed 2026-11-15: the premise did not hold; the card was right, its frame was not: N-197 (a solid sheet's card took the camera's frame), fixed in e90de4dc (R-1138)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "not a limit of the card: the owner's prototype casts cars' cards well with the same terms; the turned shadows were N-197",
+      "refs": [],
+      "aliases": [],
+      "next": "",
+      "records": [
+        "R-1138"
+      ]
+    },
+    {
+      "id": "N-196",
+      "title": "A lamp's shadows stay coarse at any lighting.shadowResolution: its tile in the lamps' map is lampShadowTile texels (256) over twice its reach, about 7 floor px a texel at reach 900",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 (the light bench, a warm lamp of reach 900 at shadow resolution 1); fix being written",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (cf3e8ff1): 'auto' tiles by reach and resolution; reach 900 at resolution 1 goes from 7 to 1.76 px a texel; lamp map pass 0.05 / 0.17 / 0.62 ms at 256 / 512 / 1024 (2 lamps, dense)",
+      "refs": [],
+      "aliases": [],
+      "next": "lampShadowTile 'auto' (the new default): the tile's side, a power of two from 64 to 1024, follows the widest casting lamp's reach and lighting.shadowResolution (about 1.5 floor px a texel at resolution 1), for the lamps casting now, within a texel budget; a number keeps a fixed tile. Measure the lamp map pass (gpuPassBench) at 256 and auto. A softer edge (PCF in lampVisibility) is a further step.",
+      "records": [
+        "R-1136"
+      ]
+    },
+    {
+      "id": "E-379",
+      "title": "Columns passes (sun map, lamps' map, sprite shadows) ran their 24 x 24 grid for every caster row and threw away the rows that cast none; they now draw only the rows that cast columns, a large render as k x k blocks of the grid",
+      "status": "kept",
+      "statusText": "done 2026-11-15 on dx/light3d (ef2e71e0); the GPU pass and Predator ?light3d=1 measured",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "gpuPassBench sunColumns (GTX 1650, WebGL): 20 renders 0.096 ms, the same among 2 000 card rows 5.107 ms (same image); Predator ?light3d=1 ABAB 4 pairs: Pixi drew 34.5 -> 60.0 fps (+73 %, 4/4; it was GPU-bound), workers below the 6 ms floor (renderer 2.86 -> 2.95 ms, the compaction); the barn's columns 6 px instead of 18",
+      "refs": [],
+      "aliases": [],
+      "next": "",
+      "records": [
+        "R-1137",
+        "R-1140"
+      ]
+    },
+    {
+      "id": "N-197",
+      "title": "A card of a sheet whose way is its solid took the camera's frame, not the one its light sees: the barn, the table and the standard cars set to cast their silhouette stood the camera's view up towards the sun and their shadows lay turned",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 (fences, cars, table in silhouette, 'como estaba en la otra app'); fixed the same day (e90de4dc)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (e90de4dc): the frame passes (sun and lamps, full and keyed rows) test each caster's kind: a card (1) or a fixed card takes its light's frame, a solid keeps the camera's; checked against the owner's prototype, the same sun and things, a car's card shadow lies under it on the right side under four suns",
+      "refs": [],
+      "aliases": [],
+      "next": "",
+      "records": [
+        "R-1138"
+      ]
+    },
+    {
+      "id": "N-198",
+      "title": "The light bench offered box and hull looks with no room for volumes: shadowCaster.setBox and setHull warned 'the scene keeps no room for volumes' and cast nothing",
+      "status": "kept-hygiene",
+      "statusText": "seen in the owner's console 2026-11-15; fixed the same day (3cf5c1bf)",
+      "date": "2026-11-15",
+      "area": "demos",
+      "kind": "bug",
+      "result": "fixed (3cf5c1bf): lighting.maxVolumes 64 (every prop and car at once), maxVolumeVerts 24 (the hulls); the same commit samples the bench's atlas nearest (its 2x cars were soft next to the prototype)",
+      "refs": [],
+      "aliases": [],
+      "next": "",
+      "records": []
+    },
+    {
+      "id": "N-199",
+      "title": "The light bench: the well dragged against the barn shows the barn's trim across it with pixel depth (the owner's report: 'algo raro en cómo las cosas se superponen'); the well stood inside the barn's footprint",
+      "status": "answered",
+      "statusText": "looked at 2026-11-15: not a bug; pixel depth draws an intersection where the painter hid it",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "the barn (anchor floor y 488.9, box ±146.7 x ±156.2) has its wall at floor y 636-645; the well at screen y 470 (floor 638) reaches 28 px behind its centre, 26-35 px inside the wall, so the wall's trim stands in front of the well's back half and pixel depth draws it there; at screen y 500 (back edge 651) the well is whole in front, with and without pixel depth; the painter drew the whole well in front either way. Self-shadow, the same report's 'does nothing': it works and is subtle (the barn's window insets, the hen house's door at 16 h and 18:30); the owner tried it at night on a tree (one view: off by its way) under the lamp that casts no shadows",
+      "refs": [],
+      "aliases": [],
+      "next": "",
+      "records": []
+    },
+    {
+      "id": "N-200",
+      "title": "The standard cars picked their frames by the pack's nominal 7.5° headings, but the art is not drawn at those: a car's frame and the frame the sun sees came out up to 9° off each their own way, and its silhouette shadow lay up to 18° off the car drawn",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 (the white pickup's and the bus's shadows 'desfasadas en cuanto al ángulo'); fixed the same day (b48a15f2)",
+      "date": "2026-11-15",
+      "area": "demos",
+      "kind": "bug",
+      "result": "fixed (b48a15f2): directions.drive are the headings nm-core measured (the prototype's way); the bench's pickup had its frame 10° one way and its sun frame 7.7° the other; after, the bench against the prototype under its own sun, the shadows on the same side and angle",
+      "refs": [],
+      "aliases": [],
+      "next": "",
+      "records": [
+        "R-1139"
+      ]
+    },
+    {
+      "id": "N-201",
+      "title": "The light bench turned the farm's props a quarter turn off the prototype's (facing = -turn for every thing, while a prop's frame 0 stands at facing 90°)",
+      "status": "kept-hygiene",
+      "statusText": "seen 2026-11-15 comparing the bench and the prototype as each starts; fixed the same day (0adb3656)",
+      "date": "2026-11-15",
+      "area": "demos",
+      "kind": "bug",
+      "result": "fixed (0adb3656): a prop's facing is 90° - the prototype's turn, a car's -turn; the barn shows its gable, the fences stand across, the cow faces the camera, as in the prototype",
+      "refs": [],
+      "aliases": [],
+      "next": "",
+      "records": [
+        "R-1139"
+      ]
+    },
+    {
+      "id": "N-202",
+      "title": "Predator: decorations now and then show another texture for a few frames, one of them the bullets' trail line (_bulletTrail): a thin bright horizontal line, seen where a TallLight lights the grass",
+      "status": "open",
+      "statusText": "reported by the owner 2026-11-15 (\"sale de la talllight, no de un disparo\"); left for later at the owner's word the same day; found by the owner 2026-11-15 before 20:00: \"hay decorations que cada algunos frames cambian de imagen, y una de esas es la línea horizontal que usamos para las fireLines\"",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "The owner's capture: a crowd, a TallLight's red glow, and a white line one or two pixels high and level across it; first taken for the bullets' trails or the shots' flashes, then placed on the TallLight itself. Not reproduced: 60 captures around tall lights (default Predator, free camera, zoom 1.5) and 40 where shots were fired showed no such line to a row scan (a run of 25+ px brighter than 3 px above and below). Ruled out: the bullets' rows (rotation and trail terms right for every active bullet). Not known yet whether it is new on dx/light3d or older. The owner's finding: the line is a decoration drawn with the trail's texture for some frames (visible at night only where a light reaches it). Read since: the emit kernel writes a trail row keyless (qKey KEY_NONE, its texture _bulletTrail) and a decoration row keyed (dKeyBase + its pool slot, its statics compared with its record and marked when they change); Pixi's statics texture keys the entities, then the keyed decorations (maxDecorations, when keyedDecorationsFit), then the keyed LiquidFun particles, then a slot per queue row for keyless rows (pixiKeyBase): no overlap in that layout. The TallLight has no attached decorations.",
+      "next": "Reproduce: Predator by night, zoomed on grass a TallLight lights while shots fly, frames captured; then main against the branch (is it the branch's?). Leads: how a keyless row's statics slot is refreshed when its queue row held another kind the frame before; a keyed decoration whose record Pixi keeps while the emit marked no change (the double-buffered queue, KEYED_CASTERS_LAG); keyedDecorationsFit failing at crowd 2.5 (decorations keyless then).",
+      "refs": [],
+      "aliases": [
+        "TallLight horizontal line"
+      ],
+      "records": [
+        "R-1150"
+      ]
+    },
+    {
+      "id": "N-203",
+      "title": "A directional caster's lamp rows built columns (a height map, a render's solid) from the frame the lamp sees whenever its sheet keeps its card for the sun: the cars and the cow under a lamp beside them cast the shadow of themselves turned (the white pickup's, 90 degrees, on both sides and towards the lamp)",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 at the light bench (the cow with lamps on its height map, the white pickup); fixed the same day (d2b8c392)",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "bug",
+      "result": "fixed (d2b8c392): each light's frame is decided per caster as the columns pass decides what it casts (castsCard): a card takes the frame that light sees (a fixed card its front), anything else the frame the camera sees; the lamp rows copy the sun's, so a column caster gets the camera's frame back. N-197 had covered only the sheets that cast a solid for the sun. lampFramesMicrobench 920 -> 934/975 ops/s, same checksum; tests/node/lampFrameKinds.test.js fails 3/3 on the old code",
+      "refs": [],
+      "aliases": [
+        "lamp columns from the lamp frame"
+      ],
+      "next": "",
+      "records": [
+        "R-1142"
+      ]
+    },
+    {
+      "id": "N-204",
+      "title": "A lamp's shadows ran dark to the square edge of its map and stopped on a line: the light never ended at its radius (about 1 % there, 3 % at brightness 3, and on past it)",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 (\"las sombras deberían tener una caída de opacidad, sombra 0 al final del radio\"); option A chosen by the owner; fixed the same day (c6880f7e)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (c6880f7e): every light of the light pass is its falloff times (1 - (d / radius)^4)^2 (reachWindow: 1 at the lamp, 0.88 halfway, 0 at the radius), as the prototype's light ends at its reach; a shadow fades with the light it takes out. gpuPassBench res 0.5, 32 lights: WebGL light3d 1.384 -> 1.461 ms (+5.6 %), light 0.742 -> 0.755; WebGPU light3d 1.261 -> 1.306 (+3.6 %); E-380 to win it back",
+      "refs": [],
+      "aliases": [
+        "light reach window"
+      ],
+      "next": "",
+      "records": [
+        "R-1142"
+      ]
+    },
+    {
+      "id": "N-205",
+      "title": "A render's card (the hut, the table, set to silhouette) stands on the camera frame's lowest contact pushed towards the light by that fixed distance, not on its contact nearest the light as the prototype's does: with a lamp high behind such a thing its shadow looks wrong",
+      "status": "answered",
+      "statusText": "reported by the owner 2026-11-15 at the light bench (\"creo que esto estaba resuelto en el artifact\")",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "no bug: under the owner's lamp the engine's silhouette shadows of the hen house and the table have the prototype's shape, place and length (protoVsBenchLamp, 8 pairs); long by nature (the card carries the top seen from above); both sheets cast their height map by default, which is right",
+      "next": "Port the support: each frame's contacts (or footprint) as a polygon in the footprints texture (frameBase.js writeFootprintRow has one per frame already), the card's foot at the anchor + the support along the light's direction, in the lamps' and the sun's card programs (GLSL, WGSL); captures of the hut and the table with a lamp high behind them against the prototype under the same light.",
+      "refs": [],
+      "aliases": [
+        "render card on its support"
+      ],
+      "records": [
+        "R-1143"
+      ]
+    },
+    {
+      "id": "N-206",
+      "title": "Predator crowd 2.5's gate of 2026-11-15 (588242f9 against 6b28ca2d) failed on its load keys: the new side drew 4 967, 11 450 and 20 292 rows of 38 500 in three of its four runs, and physics read +49 %",
+      "status": "answered",
+      "statusText": "found 2026-11-15 in that gate; not understood: every crowd 2.5 run of the twelve sittings before drew about 38 500 rows; left when the owner stopped the session's runs",
+      "date": "2026-11-15",
+      "area": "harness",
+      "kind": "bug",
+      "result": "Probes 2026-11-15 (main 0c33673e vs 259aba3a, crowd 2.5, nothing touched): soldiers alive the same (13 727-13 814), main 4/4 and the branch 7/8 framed the whole world (zoom 0.216 = minZoom); one branch run read zoom 1.58 then 0.665 held 6 s, which only the free camera gives (the squad camera caps at 1 and brings 0.216 back in a second): its button and the wheel, likely by hand. Not the branch; the load-key check caught it. Predator sittings pin the camera (?zoom=0.216).",
+      "next": "Run the same pair again (or the new side alone) watching MySoldier's count and Camera.zoom per run; if the new side loses its soldiers, find what in the afternoon's commits reaches the logic or physics (none of them touches Predator's code); else call it chance and gate again.",
+      "refs": [],
+      "aliases": [
+        "crowd 2.5 gate drew fewer rows"
+      ],
+      "records": [
+        "R-1149"
+      ]
+    },
+    {
+      "id": "E-380",
+      "title": "The light pass's reach window divides per light and pixel (1 / (100 (I' - h^2))): +5.6 % of the WebGL light3d pass (N-204); a per-light 1 / radius^2 written with the light data would make it a multiply",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 on dx/light3d with N-204",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "gpu",
+      "result": "",
+      "next": "A free float per light in the light data (or a fourth row) for 1 / radius^2, against the division and against the subtract-the-edge form ((a - a_R) / (1 - a_R)); gpuPassBench light and light3d, res 0.5, 32 lights, both backends.",
+      "refs": [],
+      "aliases": [],
+      "records": []
+    },
+    {
+      "id": "DX-LAMPPANO",
+      "title": "The lamps' shadow map as a panorama per lamp: for each direction from the lamp, how far the first thing is (the standard point light's shadow map). Points higher than the lamp take its shadows (today they count as lit: under a 20 px lamp the fence's shadow does not climb the barn's wall), and no stretch cap (N-192's steps at the tip)",
+      "status": "kept",
+      "statusText": "approved by the owner 2026-11-15 (\"agregalo al backlog, y lo hacés en un rato, como parte de los arreglos de esta branch\"); after the current fixes, on dx/light3d; the owner saw the same limit on the barn's walls under the bench's lamps the same evening",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "feature",
+      "result": "built (2b19d9f8): two halves a lamp (the ceiling the world mirrored in the lamp's height), landings compressed to the horizon, no stretch cap; the fence's shadow climbs the barn's wall under a 20 px lamp; map + light pass -2.5 % WebGL, -11 % WebGPU at 48 lamps",
+      "next": "Each lamp's tile as (azimuth, elevation) from the lamp holding the nearest caster's distance (min depth): a column is a vertical segment there, a card a near-rectangle with its picture tested per fragment; the light pass looks up the pixel's own direction and compares its distance. Cards facing each lamp and fixed ones, the lamp's own entity left out, GLSL and WGSL; then shadowOutlineCheck (N-192), lampShadowStressScene against today's map, the bench's fence and barn under a 20 px lamp.",
+      "refs": [],
+      "aliases": [
+        "panoramic lamp map"
+      ],
+      "records": [
+        "R-1147"
+      ]
+    },
+    {
+      "id": "N-207",
+      "title": "A render's silhouette card is as wide as its whole picture and as tall as the picture with its top seen from above, standing on its contact nearest the light: under a lamp high and close (the table, 300 px) its ends stick out of the thing's outline (slivers on the lamp's side) and on other lamps its shadow runs long; the prototype does the same",
+      "status": "open",
+      "statusText": "seen by the owner 2026-11-15 in R-1143's comparison (\"el frame más a la derecha en ambos casos está mal\"); to do within DX-LAMPPANO (it rewrites the lamps' cards), the sun's card too; the owner 2026-11-15 ~20:00: left as it is (\"está todo bien ahora, dejemos todo así\"). Tried that evening: the card through the anchor, its heights from the anchor row; it fixed a person's face shaded by the white pickup's sun card (the card stood 4 px past them, its ends out of the car's outline) but changed every car's shadow shape, so reverted. The way left if it comes back: a card bent along the footprint's near outline (a column a lateral step, each on the footprint), the look kept",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "R-1143's grid, the table with the lamp at -110, -88 and 300 px: in both apps a thin dark sliver left of the table (towards the lamp's side) and one past its top right corner, where the true shadow lies almost all under the top with a thin band away from the lamp. The card's width is the picture's (the thing's full width across the light) placed on the support line, where the footprint is narrower; its height is the picture's rows over the art's 0.752, the top seen from above counted as height.",
+      "next": "For a card on a contact (a render): its height to the frame's height-map top (zmax) instead of the picture's rows, and its width to the footprint's extent across the light on the line it stands on; the lamps' card (in DX-LAMPPANO's program) and the sun's (sunMapVertex, GLSL and WGSL). Check: protoVsBenchLamp's eight places for the hen house and the table, and the sun at 75 degrees.",
+      "refs": [],
+      "aliases": [
+        "render card size"
+      ],
+      "records": [
+        "R-1143"
+      ]
+    },
+    {
+      "id": "N-208",
+      "title": "By day a tree's sun shadow showed on the barn's far wall, through the barn: the sun map keeps the highest caster on each ray (the tree beyond the barn) and a pixel skips its own entity's, so a wall turned away from the sun took the tree's shade",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 at the light bench (\"la sombra del árbol proyectada en la pared del granero traspasa la pared\"); fix written the same day, its capture pending",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (3baefdbc): the sun map's shade leaves the flat term of a face the sun does not reach (faded across the terminator), cards keep it; the bench's barn wall and the well clean, the gable keeps the tree's shadow; refined 2026-11-15 (6083e8be): only for an entity that shades itself (a closed volume), since a person with their back to the sun stood lit in the barn's shadow",
+      "next": "The bench in the morning, a tree beside the barn's corner, before and after; tests; commit.",
+      "refs": [],
+      "aliases": [
+        "tree shadow through the barn"
+      ],
+      "records": [
+        "R-1144",
+        "R-1148"
+      ]
+    },
+    {
+      "id": "N-209",
+      "title": "A fixed card's axis comes from the facing, not the frame drawn: a fence at facing 15 drawn with its 11.25 degree frame casts its silhouette 5.6 degrees off, its rails' shadows not parallel to it and its posts' shadows away from its posts (the prototype takes the frame's angle)",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 at the light bench; compared with the prototype the same day (protoVsBench3, facings 188 and 15): at 188 both alike, at 15 the prototype parallel and crisp, the engine off",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "bug",
+      "result": "fixed (65c4a83d): the axis from the direction drawn (its table's angle), not the facing; the fence at facing 15 casts parallel to itself, in the prototype's place",
+      "next": "The axis from the direction drawn (the sheet's table angle at DirectionalSprite.directionIndex), the facing only without a table; protoVsBench3 at facings 15 and 188 against the prototype.",
+      "refs": [],
+      "aliases": [
+        "fixed card axis from the drawn frame"
+      ],
+      "records": [
+        "R-1145"
+      ]
+    },
+    {
+      "id": "DX-PIXELSHADOW",
+      "title": "Pixel-art lighting: an option that shades each world pixel whole (its light and its shadows at the pixel's centre), so a shadow follows the art's pixel grid crisply as the prototype's does",
+      "status": "kept",
+      "statusText": "asked by the owner 2026-11-15 looking at the fence against the prototype (\"la sombra también con pixel art, siguiendo exactamente las líneas pixeladas, queda mucho mejor\")",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "feature",
+      "result": "built (8e58d474): lighting.pixelArt snaps the light pass's point to the pixel's centre and reads each shadow map once; the bench's fence shadow crisp on the art's grid as the prototype's; on in the bench",
+      "next": "A lighting option (pixel art) that snaps the light pass's world point to its pixel's centre before every term and drops the maps' blur to that pixel; the bench turns it on (it draws its atlas 'nearest' already); captures of the fence and the barn against the prototype; its cost in gpuPassBench.",
+      "refs": [],
+      "aliases": [
+        "pixel art shadows"
+      ],
+      "records": [
+        "R-1146"
+      ]
+    },
+    {
+      "id": "E-381",
+      "title": "DX-LAMPPANO's lamp lookup costs the WebGL light3d pass 12 % (1.302 -> 1.461 ms at 48 lamps), WebGPU none",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 with DX-LAMPPANO; for the optimization plan (no benchmarks until then, the owner)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "gpu",
+      "result": "The lookup per lamp and pixel within the reach: the compressed landing (a length, a division), the half and the ceiling test; ANGLE D3D11 against Tint.",
+      "next": "Read ANGLE's HLSL for the light pass (the branch at the reach a real one?), a cheaper landing (squared radii), the ceiling half only for points above some lamp; gpuPassBench light3d both backends.",
+      "refs": [],
+      "aliases": [],
+      "records": []
+    },
+    {
+      "id": "N-210",
+      "title": "The maps' bias (4 px and more towards lit, the lamps' 1 px plus 4 floor px along the ray) erased the shade of a caster just behind a pixel: a person by the barn's wall stood lit in its shadow (their head's sun ray met the wall 5 px higher), and their own shadow on the wall under a 20 px lamp showed only as a blob",
+      "status": "kept-hygiene",
+      "statusText": "reported by the owner 2026-11-15 at the light bench (\"no debería oscurecerse el personaje?\"); fixed the same day (4f5451c7, 6083e8be)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed: a pixel of an entity skips its own entity's texels already (DX-GBUF), so it keeps the maps' step (2 px; then N-211's step and a half) towards lit; a pixel of no entity keeps the old bias; the lamps' bias went along the ray first (4f5451c7)",
+      "refs": [],
+      "aliases": [
+        "maps bias near casters"
+      ],
+      "next": "",
+      "records": [
+        "R-1148"
+      ]
+    },
+    {
+      "id": "N-211",
+      "title": "The lamps' map kept heights in 2 px steps: near the lamp's height the rays are nearly level and a caster and the point behind it differ by under a step, so the person's shadow on the wall behind them came out striped",
+      "status": "kept-hygiene",
+      "statusText": "seen by the owner 2026-11-15 (\"estas líneas decías?\"); fixed the same day (437d81f3)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "fixed (437d81f3): a texel keeps lampRayDepth = 1 / (1 + |E - z| / E), the place along the ray (0.13 px a step around a 20 px lamp's height); both halves one test; the stripes nearly all gone",
+      "refs": [],
+      "aliases": [
+        "lamp map ray depth"
+      ],
+      "next": "",
+      "records": [
+        "R-1148"
+      ]
+    },
+    {
+      "id": "N-212",
+      "title": "Shadows flicker, not with the fire: some do not show right and some disappear now and then",
+      "status": "open",
+      "statusText": "reported by the owner 2026-11-15 ~20:40 (\"hay sombras titilando, no por el fuego, como que no todas se muestran bien y algunas desaparecen\"); the scene and its URL asked",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "Predator (crowd 1): 58-61 shadow-casting lights in view against maxShadowCastingLights 48 (67-70 with ?light3d=1), the kept set (nearest the view centre) taking in 0-3 new lights every 2 s: their shadows popped. Fixed for that cut (e47c5442, R-1151): the kept lights fade their shadows over the last 20 % of the cut distance (stamps, cookies, the lamps' map). Still: 15-24 lights in view without shadows (the cap), the per-entity (3 nearest) and per-light caster cuts pop; the owner's scene not confirmed.",
+      "next": "Confirm with the owner (scene, URL); then Predator's cap (raise it or thin its lights) and a fade in shadowStamp.c's per-entity and per-light cuts; measure the light pass's extra texel (gpuPassBench lampMap).",
+      "refs": [],
+      "aliases": [
+        "flickering shadows"
+      ],
+      "records": [
+        "R-1151",
+        "R-1159"
+      ]
+    },
+    {
+      "id": "N-213",
+      "title": "Pixi's garbage on the lamps' map path (DX-LAMPPANO, F7): a card strip geometry made every frame, and the volumes' lamp terms' doubles boxed a tile a frame",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-15 in Phase 3's first heap pass (Predator ?light3d=1&hour=22) and fixed the same evening (b9d36346, 27d7113b)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "Pixi's allocation in Predator ?light3d=1&hour=22, crowd 1 (profileSceneSweep's heap pass, 8 s): 1316.9 KB/s, then 554.7 with a strip a ring slot (the stamp batch's geometry changes slot every frame, and the strip was made again each time: _lampCardGeometry 96 KB/s and Pixi's geometry setup 400 KB/s), then 504.2 with writeVolumeLampTerms' two scales in a Float64Array (_drawVolumesInLampMap's 36.5 KB/s). 62 % less in all.",
+      "next": "Pixi's own sites lead now (execute 79, bind 58, ge.emit 37 KB/s): the batches' buffer updates (onBufferUpdate) and the render groups.",
+      "refs": [],
+      "aliases": [
+        "lamp strip garbage",
+        "pixi light3d allocation"
+      ],
+      "records": [
+        "R-1154"
+      ]
+    },
+    {
+      "id": "N-214",
+      "title": "Steady-state deopts in Predator (main too): spatialWorker _flushWasmPublish, weedjsPost publishPose, logicWorker's spawn list",
+      "status": "open",
+      "statusText": "found 2026-11-15 in Phase 3's deopt pass of Predator ?light3d=1&hour=22; the sites are the same on main (spatialWorker.js and weedjsPost.js unchanged by dx/light3d)",
+      "date": "2026-11-15",
+      "area": "engine",
+      "kind": "bug",
+      "result": "In steady state (8 s): spatialWorker.js:1764:22 (_flushWasmPublish, this._wasmPub.queued) deopt-eager \"Insufficient type feedback for generic named access\" x391; box2d/weedjsPost.js:662:31 (the N-86 epoch check after the pose copy) \"Insufficient type feedback for call\" x286; logicWorker.js:912:11 (compare) x70 and :901:10 (named access) x68 (the spawn batch sort); util/gameObjectActiveState.js:140:17 (unary) x13. A site that keeps deopting in steady state recompiles its function each time. Fixed 2026-11-15 (R-1158): the spatial publish (391 -> 0, e334063b) and the Box2D pose epoch (287 -> 0, 68c0d0c5): code compiled before a branch at its end had run, deopting there every frame and never replaced.",
+      "next": "logicWorker _processSpawnSoA's batch path (cold in one logic worker when it tiered); the LiquidFun gate for 68c0d0c5.",
+      "refs": [],
+      "aliases": [
+        "steady deopts predator"
+      ],
+      "records": [
+        "R-1155",
+        "R-1158"
+      ]
+    },
+    {
+      "id": "N-215",
+      "title": "GameObject's x and y setters box their double wherever a game's tick leaves them out of its inlining (light3dCompareScene's walkers: 2.1 MB/s in the logic worker at 3 000 of them)",
+      "status": "open",
+      "statusText": "found 2026-11-15 in Phase 3's heap passes (main has the same setters); the stress scene now writes its columns",
+      "date": "2026-11-15",
+      "area": "engine",
+      "kind": "speed",
+      "result": "A walker's tick (`this.x = cx + c * r; this.y = ...`) allocated 2.1 MB/s once its own hashes were gone, 4.2 MB/s with them (more of the tick's inlining budget spent): each setter call left out boxes its value. lampShadowStressScene's walkers show it too (_tickNonDecimatedOneNoBody 177 KB/s at 6 000). Any game that moves its entities through the setters pays it.",
+      "next": "A setter small enough to be inlined always (V8 inlines a callee under 27 bytes of bytecode whatever the budget): the store and a call without doubles for the rare work (static scenery, a body's transform), or position setters that take their values through a Float64Array; read the logic worker's allocation before and after in a scene that moves its entities through them.",
+      "refs": [],
+      "aliases": [
+        "setter boxing",
+        "x y setter garbage"
+      ],
+      "records": [
+        "R-1157"
+      ]
+    },
+    {
+      "id": "E-382",
+      "title": "Predator's people (MySoldier, Civilian) on DirectionalSprite against main's hand-picked directions: what the branch charges Predator's logic and pre-render",
+      "status": "open",
+      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "date": "2026-11-15",
+      "area": "logic",
+      "kind": "speed",
+      "result": "",
+      "next": "Predator crowd 2.5, the camera fixed (N-206 first), ABAB 4 + 4 against main; logic and pre-render STEP_MS; then the CPU trace of DirectionalSprite's resolve (E-363's setters).",
+      "refs": [
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "aliases": [],
+      "records": []
+    },
+    {
+      "id": "E-383",
+      "title": "carScene's and littleCity's cars on DirectionalSprite against main",
+      "status": "open",
+      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "date": "2026-11-15",
+      "area": "logic",
+      "kind": "speed",
+      "result": "",
+      "next": "Each scene ABAB 4 + 4 against main (worktrees); logic and pre-render STEP_MS; directionalSpriteStressScene ?mode=hand|ds for the kernel of it.",
+      "refs": [
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "aliases": [],
+      "records": [
+        "R-1153"
+      ]
+    },
+    {
+      "id": "E-384",
+      "title": "What Predator's shadows cost now against main: the stamps as before, and ?light3d=1 (the maps, the G-buffer, self-shadow, pixel depth) by day and by night",
+      "status": "open",
+      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "date": "2026-11-15",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "",
+      "next": "Predator crowd 2.5 ABAB against main (the stamps); Predator ?light3d=1 against Predator without it on the branch (pre-render, Pixi, the GPU passes); gpuPassBench per pass.",
+      "refs": [
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "aliases": [],
+      "records": []
+    },
+    {
+      "id": "E-385",
+      "title": "burningBoxes (a side view, raycasted light) against main: the branch's light changes in a scene that uses none of light3d",
+      "status": "open",
+      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "date": "2026-11-15",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "",
+      "next": "ABAB 4 + 4 against main; Pixi and pre-render STEP_MS.",
+      "refs": [
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "aliases": [],
+      "records": [
+        "R-1153"
+      ]
+    },
+    {
+      "id": "E-386",
+      "title": "New stress scenes for the light's costs and traces: (a) light3d complete, one population on main and the branch (switches for maps, G-buffer, self-shadow, pixel depth); (b) lamps at scale, 48 to 128 lamps with maps over thousands of casters; (c) renders with columns, hundreds of renders with height maps under the sun and the lamps",
+      "status": "open",
+      "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
+      "date": "2026-11-15",
+      "area": "tools",
+      "kind": "speed",
+      "result": "",
+      "next": "Write them in tests/bench/stressScenes with catalog rows; run each against main where it can, else the switches on and off; then the deep traces (CPU per function, deopts, heap, PMC, GPU per pass).",
+      "refs": [
+        "DX_LIGHT3D_PLAN.md"
+      ],
+      "aliases": [],
+      "records": [
+        "R-1152",
+        "R-1157"
+      ]
+    },
+    {
+      "id": "E-387",
+      "title": "writeGbufWords costs Pixi 3.4 % in Predator ?light3d=1 (285 ms in an 8 s window, about 0.6 ms a frame at 14 600 instances): an entity's word made per instance from four entity columns read at random",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 from Phase 3's first CPU pass",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "Its hot lines: 43 % the word ((e % 65535) + 1 + (flags[e] & 63) * 65536 + selfShadow), 36 % the row's key, 13 % the store.",
+      "next": "Keep each entity's word in an entity column refreshed when its flags or self-shadow change (one read an instance), or write the words in the keyed pack kernel, which already reads each row's key; then the Pixi worker's CPU per function before and after (Predator ?light3d=1).",
+      "refs": [],
+      "aliases": [
+        "gbuf words cost"
+      ],
+      "records": [
+        "R-1155",
+        "R-1157"
+      ]
+    },
+    {
+      "id": "E-388",
+      "title": "pickDirection's doubles boxed where TurboFan left its calls out: DirectionalSprite.resolve (facing, margin) and pre-render's sun and lamp frames (the turn); its angle math called wrapAngle and angleDistance",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-15 in Phase 3's heap passes and fixed the same evening (2993032c): pickDirectionArgs, its doubles in PICK_ARGS (the turn in SUN_TURN or LAMP_TURN), every wrap and distance written out; bit for bit the old results (spriteDirectionsParity)",
+      "date": "2026-11-15",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Allocation (heap pass, 8 s): directionalSpriteStressScene n=20000, logic 365.4 -> 24.3 KB/s; sunShadowMapStressScene lamps=48 hour=22 casters=3000, pre-render 357.8 -> 102.6 KB/s. A first form that still called wrapAngle past a turn allocated more (12.9 MB/s in pre-render: a facing plus the sun's turn passes 2π often). Node, 3e6 calls: 1.8 -> 9.7 M/s on an uneven 32-direction table, 24.6 -> 27.7 M/s on a uniform one. STEP_MS not measured yet.",
+      "next": "The logic and pre-render STEP_MS with the scenes of Phase 1 and 2 (directionalSpriteStressScene ?mode=ds, sunShadowMapStressScene ?lamps=, Predator ?light3d=1).",
+      "refs": [],
+      "aliases": [
+        "pick direction boxing",
+        "directional resolve garbage"
+      ],
+      "records": [
+        "R-1156"
       ]
     },
     {
@@ -26686,6 +28075,20 @@
       ]
     },
     {
+      "id": "R-1052",
+      "date": "2026-11-14",
+      "time": "20:02",
+      "timeFrom": "recorded",
+      "title": "DirectionalSprite against the hand selector: kernel and owner scene on the cloud VM",
+      "verdict": "tie",
+      "text": "DirectionalSprite against Predator's hand-written selector, on the cloud VM this branch was built on (2 cores, SwiftShader, headless Chrome): not a quiet machine, and the scene runs were not from worktrees.\n\nKernel (`node tests/bench/directionalSpriteMicrobench.mjs`, Node 22, n = 5000, every heading turning 0.02 rad a frame, TurboFan after warmNormalCompile): the pass DirectionalSprite.resolve over all entities costs, per frame and on top of the step,\n- hand4 (octant by comparisons, a write on a change): 0.010 ms (2 ns an entity);\n- ds4 (4 directions from the velocity, margin 0): 0.128 ms (26 ns) after ea688a5, 0.540 ms (108 ns) before it (an atan2 and five modulos per entity);\n- ds32 (32 from the rotation): 0.230 ms (46 ns), 0.511 before;\n- ds32odd (one direction moved half a degree: no uniform step): 0.287 ms (57 ns), 2.40 before.\nhand4 and ds4 draw the same animations after 120 frames (checksum).\n\nScene (`directionalSpriteStressScene`, n = 20 000, logic0 STEP_MS, 3 pairs, warm-up 4 s, 8 s each): hand 8.34 / 8.14 / 8.83 ms, ds 8.82 / 8.25 / 7.86 ms: +5.8 %, +1.3 %, −11 %, a mean of −1.4 %. No regression this sitting can see; its pairs spread ±8 %, so that is its detection limit. Logic's baseline is above the 6 ms floor.\n\nNot decided here: a keep needs the owner's ABAB with worktrees on a quiet machine, and Predator's gate (its people now resolve in the pass).",
+      "commits": [
+        "4bf4d21",
+        "f556f6d",
+        "ea688a5"
+      ]
+    },
+    {
       "id": "R-1043",
       "date": "2026-11-14",
       "time": "17:47",
@@ -26787,6 +28190,664 @@
       "title": "E-99 closed: rejected in the kernel (2026-10-23), it still read open",
       "verdict": "rejected",
       "text": "W7 and E-99 closed: W7 says nothing is pending (screened 2026-10-28: a port's ceiling is a few per cent of spatial); E-99 lost in the kernel 2026-10-23. Both still read open."
+    },
+    {
+      "id": "R-1053",
+      "date": "2026-11-14",
+      "time": "22:56",
+      "timeFrom": "recorded",
+      "title": "Sun shadows as in the light bench (plan §17.1): cards on their base, renders' solids, the sun map's max fixed",
+      "verdict": "note",
+      "text": "Plan §17.1 built on dx/light3d (commits 4ee050ff, 31319d49, 658fdd56, 952929fd), checked with captures, no timing\nsitting (a visual change; its cost is a few texture reads a caster in the sun pass, the columns only in scenes with\nheight maps). Captures 21:41–22:56 from the result files.\n\n- The light bench (demos/lightBenchScene) now draws the prototype's own farm (Quaternius props from 32 directions,\n  MinZinn cars, LPC civil7, two trees, each with height and normal maps; tools/fromLightBench.mjs converts them).\n- Frame bases (frameBase.js): measured at atlas time into the texture table's spare floats. A picture of one view:\n  an ellipse (feet, or a round trunk over roots, told apart by the run 14..32 rows up being under half the bottom's\n  width). A render (8 directions or more, with a height map): its lowest contact, the pixels within 1.5 px of its\n  lowest point (the hatchback's wheels sit 2.5 px up from some directions: an absolute 1.5 px found none and fell\n  back to the feet's ellipse, so its shadow detached southwards).\n- Sprite sun shadows draw the card: on the base, landing along the sun's ray with the sun's real elevation (capped at\n  shadowMaxLengthRatio), columns to the right of someone at the sun. dxCaptureScene: 14 887 px change in WebGL, 14 464\n  in WebGPU, the two backends equal to each other before and after (3 773 / 3 787 px apart, as they already were).\n- Renders with height maps cast their solid (columns) in both modes, pictures of one view their card: the card stood a\n  barn's picture rows up as heights (530 px of shadow height for a 228 px model).\n- Bug found: the sun map's max blending never took effect (Pixi blends a mesh drawn as the render's root normally):\n  each texel kept the last caster, not the highest. Fixed through a host container.\n- Not this record: WebGPU of the face/G-buffer pass breaks on the bench (entities-instanced-face: @group(2)\n  @binding(5) missing from the layout), already on the branch before 17.1; the map mode's shadows read faint.\n- Waiting: the owner's approval of the captures (light bench, Sun Street, dxCaptureScene).",
+      "commits": [
+        "4ee050ff",
+        "31319d49",
+        "658fdd56",
+        "952929fd"
+      ]
+    },
+    {
+      "id": "R-1054",
+      "date": "2026-11-14",
+      "time": "23:23",
+      "timeFrom": "recorded",
+      "title": "The branch against main on Predator crowd 2.5, first gate: REGRESSION, logic +25.3 %, pre-render +53.8 % (the people's DirectionalSprite and sun frames)",
+      "verdict": "note",
+      "text": "**REGRESSION, the first gate of dx/light3d against main: Predator crowd 2.5, logic 6.00 -> 7.47 ms (+25.3 %) and pre-render 6.13 -> 9.43 ms (+53.8 %), 4/4 pairs worse each.**\n2026-11-14, 23:18:32 to 23:23:08 (the result files), runPredatorAbab --vs main (775b053a) --full-rev, the branch's head then\n(488f4b25, plan §17.2's keyed sun frames; d5dc4ef6 since the branch was rebased), --query crowd=2.5, 4 pairs, judged\nagainst the A/As aa-crowd25 and aa25-samedir (R-1044, R-1046).\n\n| worker | main | branch | |\n| --- | --- | --- | --- |\n| logic | 6.00 ms | 7.47 | +25.3 %, 4/4 worse (limit ±13.4 %) |\n| pre-render | 6.13 | 9.43 | +53.8 %, 4/4 worse (limit ±8.7 %) |\n| spatial | 9.96 | 10.10 | +2.3 % (limit ±4.9 %) |\n| physics | 13.10 | 13.06 | -0.1 % (limit ±5.4 %) |\n| renderer, particle | 3.13, 0.75 | 3.28, 0.75 | under the floor, not judged |\n\nPresented frames 60 on both sides; load keys within 0.2 % (38 400 bodies, 38 200 casters).\n\nWhere it went, from a CPU profile of the branch: the sun frame of 38 000 people (an atan2 and pickDirection a caster,\n30 % of pre-render), DirectionalSprite.resolve (0.6 ms of each logic worker) and SpriteRenderer's slow getter\n(Component.requires put it last in the people's list, past the eight fast slots). The fixes and their sittings are\nR-1055 to R-1060; the second gate is R-1058."
+    },
+    {
+      "id": "R-1055",
+      "date": "2026-11-14",
+      "time": "23:56",
+      "timeFrom": "recorded",
+      "title": "Uniform-table sun frames kept: a directional caster's sun frame is its drawn direction turned by the sun; Predator crowd 2.5 pre-render 9.34 -> 7.21 ms (-22.5 %)",
+      "verdict": "kept",
+      "text": "**Kept: pre-render 9.34 -> 7.21 ms (-22.5 %, 4/4 pairs lower, -23.5 % against the other workers; detection limit ±8.7 %, ±5.3 % against the others).**\n2026-11-14, 23:52:03 to 23:56:53 (the result files), runPredatorAbab --owner preRender --vs 80dde16d --hyp-rev 086f02c0\n(the branch's 496587e7 and d869b31a since its rebase) --query crowd=2.5, 4 pairs.\n\nWhat changed (d869b31a): _applySunFrames and _applyKeyedSunFrames picked each directional caster's sun frame with an\natan2 of its aim and pickDirection. Predator draws 38 000 people a frame, and the keyed pass was 23.8 % of pre-render's\ntime (pickDirection 4.3 %, wrapAngle 1.8 %). A uniform direction table now takes the direction the logic worker drew\n(its turn margin kept) plus the sun's turn in whole steps, worked out once a sheet while the sun stays; other tables keep\npickDirection. Both copies alike, so keyed and full rows stay the same (the light bench, byte for byte).\n\n| worker | before | after | |\n| --- | --- | --- | --- |\n| pre-render | 9.34 ms | 7.21 | -22.5 %, 4/4 lower |\n| logic | 7.10 | 7.12 | paired -1.5 % (limit ±13.4 %) |\n| spatial | 9.99 | 9.89 | paired +0.8 % (limit ±4.9 %) |\n| physics | 12.88 | 13.07 | paired +1.7 % (limit ±5.4 %) |\n| renderer, particle | 3.18, 0.74 | 2.98, 0.74 | under the floor, not judged |\n\nPresented frames 60; load keys within 0.1 %.",
+      "commits": [
+        "d869b31a"
+      ]
+    },
+    {
+      "id": "R-1056",
+      "date": "2026-11-15",
+      "time": "00:03",
+      "timeFrom": "recorded",
+      "title": "A required component placed just before the one that requires it, alone: Predator crowd 2.5 logic 6.81 -> 7.53 ms (+7.8 %, within the ±13.4 % limit), neutral",
+      "verdict": "note",
+      "text": "**Neutral alone, and the wrong way: logic 6.81 -> 7.53 ms (+7.8 %, 4/4 pairs worse), within the session's ±13.4 % detection limit; kept for the commit after it (R-1057).**\n2026-11-14 23:59:09 to 2026-11-15 00:03:44 (the result files), runPredatorAbab --owner logic --vs 484ecfbf --hyp-rev\n472e5684 (the branch's d869b31a and 0dfbc28c since its rebase) --query crowd=2.5, 4 pairs.\n\nWhat changed (0dfbc28c): collectComponents appended what a component requires at the end of the class's list.\nPredator's people list DirectionalSprite where they listed SpriteRenderer, so their SpriteRenderer came last, past the\neight fast getter slots (E-164's COMPONENT_FIELDS): every this.spriteRenderer in a person's tick went through the slow\ngetter, 8.3 % of the logic workers' time in a CPU profile. The requirements now go just before their dependent, all the\nway down, and are set up first (tests/node/directionalSprite.test.js).\n\nWhy it read worse: the people have eleven components, so the sprite's slot pushed the behaviour FSM past the eighth\ninstead. The other workers within their limits: spatial +0.0 %, physics -0.6 %, pre-render +0.8 %; presented frames 60.",
+      "commits": [
+        "0dfbc28c"
+      ]
+    },
+    {
+      "id": "R-1057",
+      "date": "2026-11-15",
+      "time": "00:12",
+      "timeFrom": "recorded",
+      "title": "Twelve fast component fields, not eight, kept: Predator crowd 2.5 logic 7.39 -> 6.43 ms (-13.6 %, 4/4)",
+      "verdict": "kept",
+      "text": "**Kept: logic 7.39 -> 6.43 ms (-13.6 %, 4/4 pairs lower, -13.6 % against the other workers; detection limit ±13.4 %, ±8.9 % against the others).**\n2026-11-15, 00:07:41 to 00:12:16 (the result files), runPredatorAbab --owner logic --vs 04f978cf --hyp-rev 85c9c071 (the\nbranch's 0dfbc28c and 281c699a since its rebase) --query crowd=2.5, 4 pairs.\n\nWhat changed (281c699a): E-164 gave a class's first eight components a field of the instance (one load a getter) and\nthe rest E-139's slot array (three loads, out of cache with many entities). Predator's people have eleven: whichever\ncame ninth and on read through the slow getter (their sprite before R-1056's commit, their behaviour FSM after it).\nCOMPONENT_FIELDS is 12: _c8 to _c11, their getters and maker cases. A class still declares only the fields it has, so\none with eight or fewer carries nothing more.\n\n| worker | before | after | |\n| --- | --- | --- | --- |\n| logic | 7.39 ms | 6.43 | -13.6 %, 4/4 lower |\n| spatial | 9.98 | 9.89 | -1.2 % (limit ±4.9 %) |\n| physics | 13.25 | 13.04 | -3.0 % (limit ±5.4 %) |\n| pre-render | 7.31 | 7.33 | -0.2 % (limit ±8.7 %) |\n| renderer, particle | 3.00, 0.81 | 3.09, 0.77 | under the floor, not judged |\n\nPresented frames 60; load keys within 0.1 %. The branch against main with both commits in: R-1058.",
+      "commits": [
+        "281c699a"
+      ]
+    },
+    {
+      "id": "R-1058",
+      "date": "2026-11-15",
+      "time": "00:19",
+      "timeFrom": "recorded",
+      "title": "The branch against main on Predator crowd 2.5, second gate: neutral by the rule (logic 5.85 -> 6.65 ms, pre-render 5.89 -> 7.34 ms, bases under the 6 ms floor), a real cost",
+      "verdict": "note",
+      "text": "**Neutral by the rule, a real cost: logic 5.85 -> 6.65 ms (+13.4 %) and pre-render 5.89 -> 7.34 ms (+24.5 %), 4/4 pairs worse each, but both bases are under the 6 ms floor, so the runner reports them without judging; spatial +2.2 % and physics +1.5 %, within their limits.**\n2026-11-15, 00:15:05 to 00:19:43 (the result files), runPredatorAbab --vs main (775b053a) --full-rev 281c699a (the branch\nwith R-1055's and R-1057's commits) --query crowd=2.5, 4 pairs, judged against the A/As aa-crowd25 and aa25-samedir.\n\n| worker | main | branch | |\n| --- | --- | --- | --- |\n| logic | 5.85 ms | 6.65 | +13.4 %, 4/4 worse, base under the floor |\n| pre-render | 5.89 | 7.34 | +24.5 %, 4/4 worse, base under the floor |\n| spatial | 9.92 | 10.08 | +2.2 % (limit ±4.9 %) |\n| physics | 12.89 | 13.17 | +1.5 % (limit ±5.4 %) |\n| renderer, particle | 3.09, 0.74 | 2.91, 0.78 | under the floor |\n\nPresented frames 60; load keys within 0.1 %. Against the first gate (R-1054: +25.3 % and +53.8 %) both gaps are about\nhalf as wide. What is left is real: Predator's people use DirectionalSprite on the branch (its resolve on the logic\nworkers, the sun frames of 38 000 directional casters in pre-render) and main's do not; the 3D light features are off in\nPredator. Next: a load that puts both bases past 6 ms, and the rest won back (plan §17.3)."
+    },
+    {
+      "id": "R-1059",
+      "date": "2026-11-15",
+      "time": "00:40",
+      "timeFrom": "recorded",
+      "title": "Sun frames in entity order as a method of the worker: Predator crowd 2.5 pre-render 7.31 -> 9.70 ms (+31.2 %), dropped (it stayed in Maglev)",
+      "verdict": "dropped",
+      "text": "**Dropped: pre-render 7.31 -> 9.70 ms (+31.2 %, 4/4 pairs worse, +34.9 % against the other workers; limit ±8.7 %).**\n2026-11-15, 00:35:22 to 00:40:12 (the result files), runPredatorAbab --owner preRender --vs 265207b5 --hyp-rev 8aaf5730\n--query crowd=2.5, 4 pairs.\n\nThe idea: _applySunFrames and _applyKeyedSunFrames read six columns of each directional caster (active, mode, sheet,\ndirection, animation, frame) by its row, in the painter's order: 18 % of pre-render's samples in Predator (38 000\npeople). 8aaf5730 works the frames out first, in entity order (_computeSunFrames writes each caster's sun frame as\n±(textureId + 1) into _sunFrameOf, 0 for the sprite's own), and the row passes read that one value. Written as the\nmethod's own loop it stayed in Maglev: 3.5 to 3.8 ms a call in Predator, timed in the worker, while each part of it took\n0.2 to 0.5 ms timed alone. The other workers within their limits (logic -3.3 %, spatial -1.4 %, physics -1.9 %).\n\nNever on the branch: R-1060 is the same walk as a module function."
+    },
+    {
+      "id": "R-1060",
+      "date": "2026-11-15",
+      "time": "01:09",
+      "timeFrom": "recorded",
+      "title": "Sun frames in entity order by a module function: Predator crowd 2.5 pre-render 7.51 -> 7.76 ms (+1.8 %), a tie; on the branch with the same frames",
+      "verdict": "tie",
+      "text": "**Tie: pre-render 7.51 -> 7.76 ms (+1.8 %, 2/4 pairs worse, +4.6 % against the other workers; limits ±8.7 % and ±5.3 %). The code stays on the branch, with no speed claim.**\n2026-11-15, 01:05:35 to 01:09:48 (the result files), runPredatorAbab --owner preRender --vs 265207b5 --hyp-rev 8018aa0a\n--query crowd=2.5, 4 pairs.\n\nWhat changed (8018aa0a): R-1059's walk in entity order as computeSunFramesInto, a module function handed the columns. It\ntakes 1.0 ms a call in Predator, timed in the worker (the method took 3.5 to 3.8 ms). The frames are the same: the light\nbench captures byte for byte the same with full rows (maps) and keyed rows (?maps=0). The other workers within their\nlimits: logic -2.4 %, spatial -0.4 %, physics -3.0 %.",
+      "commits": [
+        "8018aa0a"
+      ]
+    },
+    {
+      "id": "R-1061",
+      "date": "2026-11-15",
+      "time": "02:18",
+      "timeFrom": "recorded",
+      "title": "Pixel depth on dx/light3d (F5, first version, WebGL): each entity pixel's place on the floor corrects the painter",
+      "verdict": "note",
+      "text": "**Built, not timed: renderer.pixelDepth, each entity pixel's place on the floor corrects the painter (DX-DEPTH, plan F5), WebGL.**\n2026-11-15, commit 72d38271 at 02:18.\n\n- The painter still orders the entities by their feet in one blended pass. With an oblique camera (floorScaleY under 1)\n  and a maps page, the entity batch's colour programs (plain, indexed and by row) write each pixel's floor place as its\n  depth and test it (less): a pixel with a height map at its own height, (screen y + heightScaleY · z) / floorScaleY,\n  every other pixel at its sprite's foot, the painter's order breaking ties (src/render/pixelDepth.js). A pixel the\n  painter drew late but that stands behind another is not drawn.\n- renderer.pixelDepth true or false forces it (true still needs a sheet with maps). An emissive pixel (DX-EMISSIVE)\n  stands at its sprite's foot.\n- The light bench at 16 h: 388 px differ from the commit before, all where the fence meets the other fence and the\n  table, which now hides the end of the fence it stands in front of.\n- Unlike plan §6.5, every drawn pixel writes the depth, soft edges too (one pass has no per-pixel depth mask).\n- Not yet: WebGPU (the painter alone there), opaque-only writes, the zIndex bands, depthSortCheck, depthSortStressScene,\n  GPU particles cut into the batch (sortWithEntities), and the cost of writing depth from the shader (it turns the\n  early depth test off).\n- Found while documenting: renderer.pixelDepth has no default and is not in src/util/configKeys.js, so a scene that\n  writes it is warned that the key does nothing.",
+      "commits": [
+        "72d38271"
+      ]
+    },
+    {
+      "id": "R-1062",
+      "date": "2026-11-15",
+      "time": "02:22",
+      "timeFrom": "recorded",
+      "title": "Self-shadow on dx/light3d (F8): from the sun, on WebGPU, and towards the lamps with the lamps' map",
+      "verdict": "note",
+      "text": "**Built, not timed: lighting.selfShadow from the sun and from the lamps, WebGL and WebGPU (DX-SELFSHADOW, plan F8).**\n2026-11-14 and 15, from the commits.\n\n- 2026-11-14 (d1de9e51; the bench knob, 2d1eb1eb): in the light pass a pixel with a face or a height map steps towards\n  the sun over the face map's heights (screen space, as the light bench's relief did); a surface rising above the ray\n  takes the sun's direct term out. Against freckles: the first step skips the pixel's neighbours, the bias grows with the\n  distance, and the test fades near the terminator. On the test shapes a few points stay on the sphere's terminator\n  (455 px in the capture).\n- 2026-11-14 (496587e7): the WGSL light pass gets the same block; on WebGPU it had warned and fallen back.\n- 2026-11-15 (7ac0817b, 02:22): selfShadowToward(p, l, reach), the sun's march towards any unit direction no further\n  than reach. With the lamps' map (lighting.lampShadows 'map'), each lamp with a tile shades a face's own relief towards\n  it, as the sun does, where its light still counts (cosine past 0.05). GLSL and WGSL.\n- Not yet: the entity id (it counts every height around a pixel, not only its own entity's), 1, 2 and 4 rays measured in\n  selfShadowStressScene, and the owner's look at the light bench's car and bed.",
+      "commits": [
+        "d1de9e51",
+        "2d1eb1eb",
+        "496587e7",
+        "7ac0817b"
+      ]
+    },
+    {
+      "id": "R-1063",
+      "date": "2026-11-15",
+      "time": "02:28",
+      "timeFrom": "recorded",
+      "title": "Emissive sheets on dx/light3d (F10 v1): a glowing sprite keeps its colour in the dark, hidden by what stands in front",
+      "verdict": "note",
+      "text": "**Built, not timed: emissive sheets, v1 (DX-EMISSIVE, plan F10).** 2026-11-15, commit 165f0ff3 at 02:28.\n\n- assets.spritesheets.<name>.emissive: true, or its json's meta.emissive, gives the sheet a twin page whose opaque pixels\n  carry the emissive code where a normal would be: normal bytes 0 and 255, which no octahedral normal reaches\n  (spriteMaps.js emissiveTexels, its heights kept when it has them).\n- The face pass (GLSL and WGSL) writes such a pixel as (1/255, 0) in the face map, in the painter's order, and the light\n  pass gives it full light: a fire or a lit window keeps its colour at night, and a person passing in front hides it.\n  Pixel depth puts such a pixel at its sprite's foot.\n- Unlike plan §6.9 there are no two colours a pixel (the light it receives and the light it gives, a glow past 1): that\n  waits for MRT. This one lights the pixel and stops, and it is per sheet, not spriteRenderer.emissive per entity.\n- v2: MRT and the two colours, spriteRenderer.emissive, emissiveStressScene and emissiveCheck, partial shadows.",
+      "commits": [
+        "165f0ff3"
+      ]
+    },
+    {
+      "id": "R-1064",
+      "date": "2026-11-15",
+      "time": "02:35",
+      "timeFrom": "recorded",
+      "title": "One ShadowCaster on dx/light3d (F9, first part): each entity casts its card, its solid or nothing, for the sun and the lamps apart; fixed cards",
+      "verdict": "note",
+      "text": "**Built, not timed: ShadowCaster says how each entity casts, for the sun and the lamps apart; first part (DX-CASTER, plan F9).**\n2026-11-15, commits fd5b866a (02:32) and c07b5800 (02:35).\n\n- shadowCaster.setSprite({ orient }), setHeightMap() and clear() for every light; shadowCaster.sun.* and\n  shadowCaster.lamps.* for one kind alone; the last setter wins. shadowCaster.opacity (0 to 1, 1 at spawn) and\n  shadowCaster.type (read). New columns sunKind and lampKind (CAST_KIND: 0 the sheet's way, 1 its card, 2 its solid,\n  6 none), orient and opacity.\n- Pre-render rescans the casters every 30 frames (casterKindsInUse). Once one asks for its own way (a kind, a fixed\n  card, an opacity under 1), the sun rows are full rows and each carries its caster's code, -(code + 1), in its depth\n  float, which no shadow program reads (computeCasterCodes in entity order, _tagCasterRows by row); the stamp rows copy\n  it.\n- The shadow shaders' head decodes it, so every program made from them has it: the sprite shadows drop a NONE and scale\n  by the opacity; the sun's cards and columns, and the lamps' (GLSL and WGSL), cast the card or the solid the caster asks\n  for, its sheet's way otherwise; a render asked for a lamp card stands on its contact towards the lamp.\n- Fixed cards (c07b5800): setSprite({ orient: 'fixed' }) stands the card along the object through its anchor, shows the\n  object face on (the direction table's frame facing the camera, for every light) and lands each point along the light,\n  as the light bench prototype's fence did. The axis, the facing turned a quarter, rides in the caster code in 64 steps\n  (bits 15 to 20). The light bench's fences use it.\n- CAST_KIND exported (src/index.js and types/weed.d.ts, on dx/par-docs); the worker WEED (src/workers/workerWeed.js)\n  still needs it, or tests/node/workerWeed.test.js fails.\n- Unlike plan §5.5: opacity is read by the sprite shadows only, not by the shadow maps yet; type reads what was set for\n  the sun, and 'sprite' for AUTO even when the sheet casts its solid.\n- Not yet (being finished in another session): setBox / addLevel / setHull / setWall, selfShadow, baseRadius,\n  setSprite({ frame, anchorX, anchorY, heightScale }); then the demos' migration, and VolumeShadowCaster, LightOccluder\n  and raycasted going.",
+      "commits": [
+        "fd5b866a",
+        "c07b5800"
+      ]
+    },
+    {
+      "id": "R-1065",
+      "date": "2026-11-15",
+      "time": "02:51",
+      "timeFrom": "recorded",
+      "title": "DX-SHADOW3D on dx/light3d, the night of 2026-11-14: keyed sun frames (17.2), WebGPU, per-sheet sun cast, darker map shadows (approved), the lamps' map (F7), lamps' frames and own entity, volumes in the sun's map",
+      "verdict": "note",
+      "text": "**Built and checked with captures, not timed against main (the Predator sittings are R-1054 to R-1060): plan §17.1 and §17.2 done, the lamps' shadow map (F7), and the sun's map on a par with the light bench.**\n2026-11-14 23:13 to 2026-11-15 02:51, from the commits.\n\n- §17.2 (d5dc4ef6, 23:13): a keyed caster row's fourth float carries the frame a light sees, ±(textureId + 1), negative\n  mirrored; the keyed shadow programs (GLSL and WGSL) take it. E-211 runs again with directional casters;\n  lighting.directionalCasters only keeps E-191's path off. The light bench without maps: keyed and full rows\n  (?fullRows=1) capture byte for byte the same, with lamps and without, WebGL and WebGPU; with the frame's write left\n  out, 859 px differ.\n- WebGPU (496587e7, 23:51): the sun map, the renders' solids and self-shadow. The light bench in map mode, WebGPU against\n  WebGL: 6 149 px apart, max delta 2. The face pass's layout on a real GPU too (6601e884, DX-MAPS).\n- A render that casts its solid keeps the camera's frame, not the one the sun sees (265207b5, 00:31): fences and shelves\n  at 16 h, 27 947 px differ, the fence's shadow now a band along it.\n- Darker shadows (ac57e08d, 01:34): the map takes out Sun.shadowAlpha of the sun, clamped to 0..1, not\n  Sun.shadowOpacity, which scaled by the sun's intensity again and lightened long shadows: at 16 h a shadow took out\n  13 % of the floor's light. The light bench uses shadowAlpha 0.7 and shadowStretchAlphaFactor 0 in both modes\n  (6f074f2f), as dark as the prototype's (about 60 % under the sunlit floor). The owner approved them.\n- Per-sheet sun cast and footprints (d352144b, 01:58): meta.shadowCast.sun (or meta.light3d.cast.sun) 'sprite' makes a\n  sheet's renders cast their card for the sun. With footprints in the json (meta.footprints), lighting.footprintSolids\n  sweeps a render's cells north to the footprint at their own height, as the prototype's heightmap did; off, since the\n  barn's walls went missing from its shadow.\n- The lamps' map (df3555b0, 02:09; F7 as an option C, neither of plan §6.6's A and B): lighting.lampShadows 'map', a\n  square tile a stamp light in an atlas (lighting.lampShadowTile, 256 texels, 32 to 1024), the sun map's idea with a\n  point light. A point (x, y, z) under a lamp at floor point L and height E lands at L + ((x, y) - L) · E / (E - z),\n  stretch capped at 8; a tile keeps the highest caster point landing at each texel (max blending); the light pass\n  multiplies each such lamp's contribution, floor and faces, by its visibility (five taps in its tile). GLSL and WGSL;\n  tests/node/lampShadowMap.test.js.\n- A lamp's silhouettes in the direction that lamp sees (5074f12a) and a lamp not shaded by its own entity (918da75b), at\n  02:36, on full rows; keyed rows too (f764d0ac, 02:51, on dx/light3d).\n- Volumes in the sun's map (600a434a, 02:39): VolumeShadowCaster's boxes, levels and hulls drawn again into the map with\n  their height, max blending; their own layer is not drawn in map mode. WebGL only: on WebGPU, in map mode, the volumes\n  cast nothing yet.\n- The lamps' owner scene: lampShadowStressScene (72cee65d), not run yet.\n- Still to do: the static cache, the volumes' WGSL, the caster's opacity in the maps, the footprint solids bug, keyed rows\n  in map mode, the columns' cost in big scenes, shadowOutlineCheck and sunShadowMapStressScene, lampShadowStressScene's\n  sitting (the map against the stamps), the formula checks, Predator at night. lighting.lampShadowTile, like\n  renderer.pixelDepth, has no default and is missing from src/util/configKeys.js.",
+      "commits": [
+        "d5dc4ef6",
+        "496587e7",
+        "265207b5",
+        "ac57e08d",
+        "d352144b",
+        "df3555b0",
+        "5074f12a",
+        "918da75b",
+        "600a434a",
+        "f764d0ac"
+      ]
+    },
+    {
+      "id": "R-1119",
+      "date": "2026-11-15",
+      "time": "05:26",
+      "timeFrom": "recorded",
+      "title": "E-364 kept: a staggered type resolves its directions on its tick frames; directionalSpriteStressScene (n 120 000, tickInterval 4) logic -32.4 %",
+      "verdict": "kept",
+      "text": "**Kept (product): logic 7.019 -> 4.745 ms (-32.4 %, 2/2 pairs, early stop), pre-render +0.2 %, presented 60 -> 60.**\n2026-11-15, 05:23:24 to 05:26:37 (the result files), runPredatorAbab on directionalSpriteStressScene (owner logic),\n`--query \"n=120000&tickInterval=4\" --vs 8738e59c --hyp-rev eac75740 --pairs 4 --early --pool`, headed, on AC power.\nA = the branch with E-363 and the scene's new knob (8738e59c), B = the same plus E-364 (eac75740).\n\n| worker | A | B | |\n| --- | --- | --- | --- |\n| logic | 7.019 ms | 4.745 | -32.4 %, 0/2 worse, cv 2/1 % |\n| pre-render | 6.147 | 6.156 | +0.2 % |\n| renderer | 1.588 | 1.559 | under the floor |\n| presented | 60.0 fps | 60.0 | |\n\nLoad keys equal (VISIBLE_ENTITIES 120 000, ENTITIES_PROCESSED 30 000). The scene's wanderers tick every 4 frames\n(`?tickInterval=`, 8738e59c): before, every one of the 120 000 resolved its direction every frame; now a quarter, the\nones their bucket ticked. No A/A of this scene this session: the effect is ten times the 3 % bar in both pairs.\nPredator (civilians every 4 frames, soldiers every 6) is gated with the batch.",
+      "commits": [
+        "eac75740",
+        "8738e59c"
+      ]
+    },
+    {
+      "id": "R-1120",
+      "date": "2026-11-15",
+      "time": "07:09",
+      "timeFrom": "recorded",
+      "title": "The branch against main on Predator crowd 3 after the second round: logic +4.0 %, pre-render +28.9 % (bases under the floor)",
+      "verdict": "passed",
+      "text": "**Neutral by the rule (bases under the 6 ms floor), a real cost left: logic 5.985 -> 6.224 ms (+4.0 %), pre-render 5.943 -> 7.661 ms (+28.9 %); spatial +0.2 %, physics +1.1 %, presented 60 -> 60.**\n2026-11-15, 07:04:27 to 07:09:06 (the result files), runPredatorAbab --vs main (0c33673e) --hyp-rev HEAD (8363751c: the\nsecond round merged, E-363, E-364, E-368 step 1, R's casterKindsInUse) --full-rev --query crowd=3 --pairs 4 --pool,\nheaded, on AC power.\n\n| worker | main | branch | |\n| --- | --- | --- | --- |\n| logic | 5.985 ms | 6.224 | +4.0 %, base under the floor |\n| pre-render | 5.943 | 7.661 | +28.9 %, base under the floor |\n| spatial | 10.004 | 9.987 | +0.2 % (paired) |\n| physics | 13.026 | 13.152 | +1.1 % |\n| renderer | 2.937 | 2.993 | under the floor |\n\nLoad keys within 0.1 % (38 366 bodies, GPU_CASTERS 38 228). crowd=3 holds the same population as 2.5 (the pools are\nfull), so it does not lift the bases past 6 ms. Against R-1058 (crowd 2.5, before the round): logic +13.4 % -> +4.0 %\n(E-363, E-364), pre-render +24.5 % -> +28.9 %: what is left there is the sun frames, the lamps' keyed frames and the keyed\nrows' second pass (E-368 to E-370), next.",
+      "commits": [
+        "8363751c"
+      ]
+    },
+    {
+      "id": "R-1121",
+      "date": "2026-11-15",
+      "time": "07:26",
+      "timeFrom": "recorded",
+      "title": "E-368 and E-369 kept: Predator crowd 2.5 pre-render -9.6 % (the sun frames and the lamps' keyed frames)",
+      "verdict": "kept",
+      "text": "**Kept (product): pre-render 8.245 -> 7.497 ms (-9.6 %, 4/4 pairs, -7.9 % against the other workers); logic -0.6 %, spatial -0.7 %, physics -1.0 %, presented 60 -> 60.**\n2026-11-15, 07:21:09 to 07:26:03 (the result files), runPredatorAbab --vs a3786df3 (before E-368) --hyp-rev a2798d07\n(E-368 steps 1 to 3 and E-369) --query crowd=2.5 --owner preRender --pairs 4 --early --pool, headed, on AC power.\n\n| worker | A | B | |\n| --- | --- | --- | --- |\n| pre-render | 8.245 ms | 7.497 | -9.6 %, 0/4 worse, cv 1/2 %, -7.9 % vs the others |\n| logic | 6.231 | 6.189 | -0.6 % |\n| spatial | 10.168 | 10.116 | -0.7 % |\n| physics | 13.416 | 13.348 | -1.0 % |\n| renderer | 2.969 | 2.900 | under the floor |\n\nLoad keys within 0.1 % (38 366 bodies, GPU_CASTERS 38 223, 48 shadow lights). The kernels before it: the sun frames\n(sunFramesMicrobench) 864 -> 1 778 ops/s on every slot and 862 -> 1 441 on the keyed rows' pass (steps 1 to 3: typed slot\ntables, the passes working out their own rows, a uniform sheet resolved once a turn step); the lamps' keyed frames\n(lampFramesMicrobench) 805 -> 1 323 ops/s (a table by direction, a fast arctangent). Each the same checksum. Left of the\nbranch's pre-render cost against main (R-1120: +1.72 ms): about 1 ms.",
+      "commits": [
+        "8363751c",
+        "b2d82cd3",
+        "74aa2616",
+        "a2798d07"
+      ]
+    },
+    {
+      "id": "R-1122",
+      "date": "2026-11-15",
+      "time": "07:34",
+      "timeFrom": "recorded",
+      "title": "E-368 step 4 (the frames in entity order again) ties the fused passes in Predator: pre-render -0.1 %",
+      "verdict": "tie",
+      "text": "**Tie: pre-render 7.694 -> 7.655 ms (-0.1 %), the other workers within their noise; the fused passes stay.**\n2026-11-15, the step 4 candidate (fc53b05e, a branch of its own, deleted after): the sun frames worked out in entity order\nagain (computeSunFramesInto with the resolved tables, the columns streaming) and gathered by row, against the fused\npasses (cf851e76), runPredatorAbab --vs cf851e76 --hyp-rev fc53b05e --query crowd=2.5 --owner preRender --pairs 4 --pool.\nThe kernel had read the other way (keyed path 1 219-1 236 against 1 422-1 460 ops/s, the same checksum): in Chrome the\npainter-order misses cost what the extra pass does. A profile of the same scene, main against the branch (both crowd\n2.5): pre-render 511 -> 626 ms/s busy; the WASM kernels alike, the difference is the frames' JS (sunFrameFor 525 ms,\napplyKeyedSunFramesFor 266, the lamps' 238 in the window), about 1 ms a frame: E-371, E-372."
+    },
+    {
+      "id": "R-1123",
+      "date": "2026-11-15",
+      "time": "08:08",
+      "timeFrom": "recorded",
+      "title": "The six checks against a formula on both backends: four pass, two pass after N-190 and N-191, shadowOutline fails (N-192)",
+      "verdict": "answered",
+      "text": "**The six checks against a formula (plan §8.2), both backends: four pass, one passes after N-190, one after N-191, one fails (N-192).**\n2026-11-15, tests/bench/*Check.mjs (C2's, dx/par-checks), windowed Chrome, the art from makeCheckArt.mjs.\n\n| check | result |\n| --- | --- |\n| normalLightCheck | PASS with §5.4's automatic strength, now the default (sun worst 0.4/255, lamp 2.9/255); the full normals read 127.6 off by day, which the engine no longer draws (a sprite looks as drawn by day) |\n| silhouetteDirectionCheck | PASS: the shadow is the frame the sun sees, within 1.5 px (after E-368 and E-369) |\n| depthSortCheck | PASS: 0 wrong pixels at 24 places; at two of the table's, 174 and 48 px the painter alone gets wrong are right |\n| lampSeparationCheck | FAIL (a box alone cast nothing in the sun's map) -> PASS after N-190 (worst 0.6/255, 99.9 % of the lamp kept) |\n| emissiveCheck | FAIL (the flame's core 81 for 255: no G-buffer words without maps) -> PASS with lighting.emissive (N-191) |\n| shadowOutlineCheck | FAIL: 2.6 to 5.8 px against 1.5, the same on both backends (N-192) |\n\nThe same numbers on WebGL and WebGPU in every check. The boot sweep before them: the 84 scenes (34 demos, 50 stress scenes,\nthe light ones included) start on WebGL."
+    },
+    {
+      "id": "R-1124",
+      "date": "2026-11-15",
+      "time": "08:46",
+      "timeFrom": "recorded",
+      "title": "gpuPassBench's WebGL waits were flushes: a pass timed second read as the first; fixed, E-366 and E-367 rejected",
+      "verdict": "answered",
+      "text": "**gpuPassBench's WebGL waits were flushes (N-193): fixed; E-366 and E-367 came from it and are rejected.**\n2026-11-15, gpuPassBench on the GTX 1650 (dx/light3d). Chrome's WebGL finish() is a flush: the empty round trip read 0.000 ms\n(WebGPU's 0.15), and each sample timed how fast the queue took draws. In one case a pass timed after another read as that one\nfor all its samples while the first one's backlog drained; GPU clocks steady (nvidia-smi: 1700 MHz, P0, 50 W) throughout.\n\n| case | first (ms) | second (ms) | second alone (ms) |\n| --- | --- | --- | --- |\n| light3d, selfShadow | 1.195 | 1.192 | 3.27 |\n| selfShadow, light3d | 3.29 | 3.07 | 1.21 |\n| gbuffer, color | 0.457 | 0.505 | 0.906 |\n| color, gbuffer | 0.897 | 0.829 | 0.458 |\n\nWebGPU (onSubmittedWorkDone) read the same in either order. A read back between the passes made WebGL right too; a 30 ms\npause did not. Fixed in 26e860e0: a 1 x 1 read back of the pass's target; either order now reads the same (light3d 1.26/1.26,\nselfShadow 3.29/3.30, gbuffer 0.486/0.485, color 0.968/0.968, the round trip 0.15-0.29 ms). The quick suite then, WebGL/WebGPU\n(ms): color 0.968/0.969, gbuffer 0.485/0.495, sunMap 1.039/1.027, lampMap 0.735/0.727, light 0.682/0.688, light3d\n1.260/1.126, selfShadow 3.334/3.540, compose 0.070/0.106. E-366 (light3d 40 % slower on WebGPU) and E-367 (the G-buffer 66 %\nslower on WebGL) were passes timed second: rejected. E-373 (light3d on WebGL) and E-374 (the maps' depth test) are what the\nfixed bench shows.",
+      "commits": [
+        "58712d85",
+        "26e860e0"
+      ]
+    },
+    {
+      "id": "R-1125",
+      "date": "2026-11-15",
+      "time": "09:07",
+      "timeFrom": "recorded",
+      "title": "E-365 kept: ES 3.0 reads and a lamp's self-shadow only inside its radius, the pass 3.33 -> 1.61 ms (WebGL), 3.54 -> 1.60 (WebGPU); the stress scene +43.5 % drawn frames",
+      "verdict": "kept",
+      "text": "**Kept: the self-shadow pass 3.33 -> 1.61 ms on WebGL and 3.54 -> 1.60 on WebGPU (gpuPassBench, 32 lamps, resolution 0.5);\nselfShadowStressScene with 32 lamps drawn 41.8 -> 60.0 fps (+43.5 %, 4/4 pairs).**\n2026-11-15, dx/light3d, the GTX 1650, gpuPassBench with real waits (N-193). The split first: with no lights the sun's steps\nadd 0.07 ms (light3d 0.090 -> selfShadow 0.162); at night with 32 lamps the lamps' steps add 2.0 ms (1.264 -> 3.269): 96 %\nof the pass, because a lamp's steps ran for every pixel facing it, however far, while past its radius the lamp gives under\n1 % of its light and its map casts nothing.\n\n| step | WebGL selfShadow | WebGPU selfShadow | image |\n| --- | --- | --- | --- |\n| before (a2e29e9c) | 3.33 ms | 3.54 ms | 8c7816db |\n| ES 3.0 reads (8f387ea0) | 2.91 ms | (GLSL only) | 8c7816db, the same |\n| steps only inside a lamp's radius (23b83f0d) | 1.61 ms | 1.60 ms | changed |\n\nThe first step alone gave WebGPU nothing to do: only ANGLE flattens a branch around a texture read with gradients inside a\nloop that leaves per pixel (both sides ran), so on WebGL no early out of the light pass had saved anything. light3d did\nnot move (1.26 ms WebGL, 1.13 WebGPU, its image the same: E-373).\n\nScene (runPredatorAbab --vs a2e29e9c --hyp-rev 23b83f0d's tree, selfShadowStressScene lamps=32 shadows=1, res 1, owner\ndrawn frames, 4 pairs, --pool --early): drawn 41.8 -> 60.0 fps, +43.5 %, 4/4 pairs, B at the display's rate (the cut is\nlarger than the scene can show); the CPU workers under their floor and unmoved; load keys equal.\n\nCaptures (pairCapture, A a2e29e9c, B the change): the light bench at 22 h about 1 000 px lighter by at most 3 / 255 (both\nbackends), at 16 h by at most 6; selfShadowStressScene with 32 still lamps (?still=1, a2e29e9c) 6.7 % of the pixels\nlighter, 93 % of those by 4 / 255 or less, at most 12 / 255 at night and 34 by day (91 px past 16, where the k-rule mixes\non the lamps' flat light): nothing to see at 3x on the worst spots.",
+      "commits": [
+        "a2e29e9c",
+        "8f387ea0",
+        "23b83f0d"
+      ]
+    },
+    {
+      "id": "R-1126",
+      "date": "2026-11-15",
+      "time": "09:39",
+      "timeFrom": "recorded",
+      "title": "E-374 kept (kernel): the maps' depth from their vertices, sunMap -35/-48 %, sunColumns -61/-70 %, lampMap -4.5 %, the same images; scenes neutral",
+      "verdict": "kept-kernel",
+      "text": "**Kept (kernel): the maps' depth from their vertices. sunMap -35 % (WebGL) / -48 % (WebGPU), sunColumns -61 / -70 %,\nlampMap -4.5 %, the same images; the scene could not show it (neutral).**\n2026-11-15, dx/light3d, gpuPassBench with real waits on the GTX 1650. The plan's candidates first: a 16-bit depth buffer\nchanged nothing (sunMap 1.045 / 1.053 ms, lampMap 4.300 / 4.305; on WebGPU the 16-bit ties changed the image), and the max\nblend without depth, with today's shader, 1.008 ms against 1.045: the depth test was 4 %. The cost was the fragment's\ndepth write: gl_FragDepth / frag_depth turn the early depth test and depth compression off for the whole pass.\n\n| pass | WebGL before | after | WebGPU before | after |\n| --- | --- | --- | --- | --- |\n| sunMap (2000 silhouettes) | 1.035 | 0.673 | 1.025 | 0.531 |\n| sunColumns (200 renders) | 1.849 | 0.713 | 1.766 | 0.532 |\n| lampMap (48 lamps) | 4.30 | 4.11 | 4.37 | 4.17 |\n\nImages identical in every pass on both backends except the lamps' map on WebGPU (ties of equal heights rounded otherwise).\nCaptures, A before, B after: sunShadowMapStressScene auto and box (still), the light bench at 16 h, both backends, 0 px\ndiffer; the light bench at 22 h 0 px; selfShadowStressScene with 32 lamps 1 037 px by at most 9 / 255 (casters past the\nlamps' stretch cap tie). lampSeparationCheck PASS; shadowOutlineCheck --part lamp as before.\nScenes (runPredatorAbab --vs 422f3ed8 --hyp-rev 3497ca6d, owner presented): sunShadowMapStressScene at its default load\nboth sides at 60 fps (neutral); casters=15000 kind=height drawn 16.8 -> 17.3 fps, +3.0 %, 4/4 pairs, neutral: the columns'\nvertex shader held that frame, E-376.",
+      "commits": [
+        "f068966c",
+        "93748095",
+        "3497ca6d"
+      ]
+    },
+    {
+      "id": "R-1127",
+      "date": "2026-11-15",
+      "time": "10:17",
+      "timeFrom": "recorded",
+      "title": "E-375 kept-kernel: a lamp's caster columns cut where they leave twice its reach, lampMap -65 % (WebGL) / -66 % (WebGPU)",
+      "verdict": "kept-kernel",
+      "text": "**Kept (kernel): a lamp's caster columns stop where they leave twice its reach; gpuPassBench lampMap -65 % (WebGL) / -66 % (WebGPU).**\n2026-11-15, dx/light3d. The lamps' map drew each caster's columns out to the stretch cap (8 times their distance) and threw away\nevery fragment outside the lamp's tile. Each column's top is now drawn where its ray lands twice the lamp's reach away, the\npicture's row with it; only where the cap does not already hold the point inside that circle. A first try cut there too\nand moved the picture's rows of casters near their lamp (coverage 82.7 -> 90.7 %); the cut below the cap's height alone\nkeeps the tile (84.9 %: the rest are casters taller than the cap's height, which the cap drew with heights above the true\nones, 8 z s / (1 + 7 s) against 7 E s / (1 + 7 s)).\ngpuPassBench lampMap (48 lamps, 64 casters, 256 px tiles): WebGL 4.11 -> 1.45 ms, WebGPU 4.17 -> 1.40.\nlampShadowStressScene (lampShadows=map, owner presented, --vs 3497ca6d): both sides at the display's rate at the default load (48 lamps, 2 000 walkers) and at 240 lamps and 10 000 walkers (9 055 caster rows; pre-render 5.6 ms holds that frame): neutral, no regression.\nCaptures (A 3497ca6d): the light bench at 22 h 8 655 px by at most 4 / 255 (one at 5), around a tree taller than the lamps,\nlighter and darker, nothing at 3x; zoomed 2 298 px by at most 4; selfShadowStressScene with 32 still lamps 175 px by at most\n5. lampSeparationCheck PASS (worst 0.6 / 255, 99.9 % kept); shadowOutlineCheck --part lamp: every number as before.",
+      "commits": [
+        "6970a9fd"
+      ]
+    },
+    {
+      "id": "R-1128",
+      "date": "2026-11-15",
+      "time": "10:06",
+      "timeFrom": "recorded",
+      "title": "E-376 kept: the columns' grid indexed (4 vertex runs a cell, not 6), the 15 000-column scene +37.8 % drawn frames",
+      "verdict": "kept",
+      "text": "**Kept: the columns' grid as four corners a cell and a quad index; sunShadowMapStressScene with 15 000 renders as columns\ndrawn 17.2 -> 23.8 fps (+37.8 %, 4/4 pairs); gpuPassBench sunColumns -12 to -19 %, the same images.**\n2026-11-15, dx/light3d. A render's columns are 576 cells of two triangles, six vertices a cell drawn in order (an index of\n0..n), so the vertex shader ran six times a cell. 6daf584b gave the engine's three column meshes and the GPU bench one index\nfunction (no change: 0.717 / 0.533 ms, the same images); 7ecde902 made it four corners and 0 1 2, 0 2 3.\n\n| sunColumns | WebGL before | after | WebGPU before | after |\n| --- | --- | --- | --- | --- |\n| 5 000 renders | 6.93 | 5.65 | 4.95 | 4.24 |\n| 200 renders | 0.717 | 0.586 | 0.533 | 0.470 |\n\nlampMap the same (its casters are mostly cards). Captures (A 6daf584b): sunShadowMapStressScene height (both backends), the\nlight bench at 16 h and 22 h, selfShadowStressScene without maps and with 32 lamps: 0 px differ.\nScenes (owner presented, sunShadowMapStressScene casters=15000 kind=height, 4 pairs): E-376 alone (--vs 6daf584b) drawn 17.2\n-> 23.8 fps (+37.8 %, 4/4), presented 37.2 -> 50.4; with E-374 (--vs 422f3ed8) 16.8 -> 23.8 (+41.7 %, 4/4). The scene gains\nmore than the pass did in the bench: its frame runs the grid in more than one pass.",
+      "commits": [
+        "6daf584b",
+        "7ecde902"
+      ]
+    },
+    {
+      "id": "R-1129",
+      "date": "2026-11-15",
+      "time": "10:20",
+      "timeFrom": "recorded",
+      "title": "The GPU tournament with real waits: lighting.gbuffer 'mrt' a third cheaper and made the default; the pixel depth +30 % / +90 % on the colour pass",
+      "verdict": "kept-kernel",
+      "text": "**The GPU tournament (plan §9.5) with real waits: lighting.gbuffer 'mrt' a third cheaper, made the default (E-377); the\npixel depth +30 % / +90 % on the colour pass (E-378); the lamps' tiles, the light's resolution and the rays measured.**\n2026-11-15, gpuPassBench --suite tournament on both backends (GTX 1650), then the engine's two G-buffer modes as passes.\n\n| case | WebGL ms | WebGPU ms |\n| --- | --- | --- |\n| G-buffer 'pass' (gbufFace + gbufIds), resolution 0.5 | 0.503 + 0.293 = 0.796 | 0.490 + 0.259 = 0.749 |\n| G-buffer 'mrt' (gbufBoth), resolution 0.5 | 0.512 | 0.521 |\n| G-buffer 'pass', resolution 1 | 1.531 + 0.927 = 2.458 | 1.736 + 0.932 = 2.668 |\n| G-buffer 'mrt', resolution 1 | 1.651 | 1.854 |\n| colour, then with the pixel depth (colorDepth) | 0.977 / 1.271 | 0.970 / 1.847 |\n| lamps' map, 48 lamps, tile 128 / 256 / 512 | 0.442 / 1.469 / 5.745 | 0.416 / 1.431 / 5.541 |\n| light3d, 32 lights, resolution 0.25 / 0.5 / 1 | 0.382 / 1.256 / 4.408 | 0.325 / 1.140 / 4.124 |\n| selfShadow, resolution 1, rays 1 / 2 / 4 | 5.709 / 5.728 / 5.720 | 5.628 / 5.651 / 5.628 |\n\nThe bench's own MRT (colour and face map in one pass, both full size: gbufferMrt) is not what the engine draws and lost to\nthe second pass at 0.5 (1.89 against 1.48 ms) and won at 1 (1.91 against 2.53); the engine's 'mrt' joins the face map and\nthe ids map instead, at the light's size, and wins at every size. The rays cost the same: the engine's shader steps one ray\n(lighting.selfShadowRays, plan §6.8, is not built) and the bench's transform no longer finds its one-ray function. The\nsun map's formats are gone from the suite: the texel holds the height, the opacity and the id in RGBA8 since round 2.\nCaptures of spriteMapsStressScene (sun map; self-shadow) in either mode, both backends: 0 px differ; GPU_PASSES 3 -> 2.",
+      "commits": [
+        "f2423443",
+        "00acabb7",
+        "2511e011",
+        "68b0b640"
+      ]
+    },
+    {
+      "id": "R-1130",
+      "date": "2026-11-15",
+      "time": "11:13",
+      "timeFrom": "recorded",
+      "title": "Scoreboard against `main` (full, 16 rows)",
+      "verdict": "note",
+      "text": "emit: FAIL, spotLights: FAIL, flashlights: FAIL, visPoly: TIE, preRender: FAIL, decorations: TIE, spawn: FAIL, steadyCombat: KEPT, meshFillMoving: TIE, meshFillPan: FAIL, gameObjectAccess: TIE, shadowStamp: TIE, gpuQueuePack: TIE, painterRadix: TIE, preRenderWorker: TIE, textureUpload: TIE.\n\nYes, on the rows that were measured: steadyCombat kept and none worse. 3 row(s) are a protocol ceiling (not claimed). 3 row(s) are under the 3 ms floor (not a regression). A tree is the fastest WeedJS only when every catalog row is kept or a tie and none is worse or failed. The rows' numbers are in the local report (`tests/results/scoreboard/report.md`, not kept)."
+    },
+    {
+      "id": "R-1131",
+      "date": "2026-11-15",
+      "time": "11:29",
+      "timeFrom": "commit",
+      "title": "N-180 fixed: the Sun setters move the shadows; N-186 fixed: a restored sprite's zIndex and glow counters follow its columns",
+      "verdict": "kept-hygiene",
+      "text": "**N-180 and N-186 fixed.** dd640931: Sun.angle, Sun.elevation, shadowAngleOffset and the shadow length ratios' setters\nrecompute SHADOW_DIR_X/Y and SHADOW_LENGTH_RATIO (only setTimeOfDay did: with the day cycle off the setters changed nothing\non screen); setTimeOfDay writes the angle and the elevation and recomputes once, as before. sunSetters.test.js reads the\nSAB as a worker does: the direction at five angles, the ratio at 0, 45 and 90 degrees, the offset's half turn, and\nsetTimeOfDay's shadows unchanged. 88bb89e9: a restore writes SpriteRenderer's columns directly, past the setters that keep\nthe zIndex users' and the glowing sprites' counters; _spawnAt takes the row's counted states before applyEntitySaveRestore\nand brings the counters in line after. spriteRendererRestoreCounters.test.js: a glowing sprite with a zIndex restored counts\nin both, a plain one in neither, a glowing slot restored plain leaves them. Neither path is hot (setters, a restore's spawns):\nno sitting. test:node 2728/2728, test:demos 101/101.",
+      "commits": [
+        "dd640931",
+        "88bb89e9"
+      ]
+    },
+    {
+      "id": "R-1132",
+      "date": "2026-11-15",
+      "time": "11:28",
+      "timeFrom": "recorded",
+      "title": "The branch against main on the 16 catalog rows without the new lighting: no regression confirmed (scoreboard, then spotLights and spawnStorm in ABAB pairs)",
+      "verdict": "passed",
+      "text": "**The branch against main on the 16 catalog rows that do not use the new lighting: no regression confirmed.**\n2026-11-15, runScoreboard --vs main --full-rev --only preRender,preRenderWorker,emit,spotLights,flashlights,visPoly,\nshadowStamp,gpuQueuePack,painterRadix,steadyCombat,spawn,decorations,gameObjectAccess,meshFillMoving,meshFillPan,textureUpload\n(10:23-11:13; main has no src change the branch lacks). Correctness: test:node and the lockstep scenes ok.\n\n| row | verdict | primary |\n| --- | --- | --- |\n| steadyCombat | KEPT | logic0 -5.9 %, particle -1.0 %, spatial -1.1 % |\n| visPoly, decorations, meshFillMoving, textureUpload | TIE | within 2 % |\n| gameObjectAccess, shadowStamp, gpuQueuePack, painterRadix, preRenderWorker | TIE | kernels -9.8 to +0.3 % (gameObjectAccess's -8 % not confirmed over 4 ABAB pairs) |\n| emit, preRender, meshFillPan | FAIL (protocol ceilings: the particle pool, the linear cull's floor, a pan that skips the pack) | none |\n| spotLights | FAIL (under the floor) | preRender +13.1 %, but every worker moved up, physics +44 % |\n| spawn | FAIL (under the floor) | logic0 +9.0 %, the load off (bodies 2000 -> 1880) |\n\nThe scoreboard runs each side's five runs in a row, so drift moves every worker of a row together. The two flagged rows\nagain in ABAB pairs from worktrees (runPredatorAbab --vs main --full-rev, 4 pairs, load raised):\n- spotLightStressScene cars=200 props=2000 shadowLights=200: Pixi 0.595 -> 0.660 ms, pre-render 3.875 -> 3.984, both under\n  the floor, the frames the same; one run each with detailed stats: Pixi's work (step minus wait) p50 0.66 against 0.64 ms,\n  SHADOWS_MS 0.347 against 0.339. Not a regression.\n- spawnStormScene storm=4500: logic 5.087 -> 5.042 ms (-0.9 %); the scoreboard's +9 % was drift."
+    },
+    {
+      "id": "R-1133",
+      "date": "2026-11-15",
+      "time": "11:48",
+      "timeFrom": "recorded",
+      "title": "N-192 part fixed: a floor point took the shadow maps' bias (shadows 4 |k| px off their bases); outlines 2.6-3.5 -> 1.4-1.6 px, the crate and the cap left",
+      "verdict": "kept-hygiene",
+      "text": "**N-192, part found and fixed: a floor point took the shadow maps' bias, so every shadow stood 4 |k| px off its caster's\nbase (c8963250); about 1.5 px of the outlines' error is left, and the crate's columns and the stretch cap's staircase.**\n2026-11-15, shadowOutlineCheck on both backends (the same numbers on each). The box's error was uniform (p99 = max: 3.50 px\nfrom 0 and 180 deg, 2.64 from the diagonals): a shift, not noise. The light pass counted a caster point only above\np.z + 4 + 0.03 p.z; for the floor that left the bottom 4 px of every caster casting nothing. The floor casts nothing itself\nand a caster skips its own shade by its id since round 2, so a floor point takes no bias now; a pixel above the floor keeps it.\n\n| outline (p99, px) | before | after |\n| --- | --- | --- |\n| sun, box | 2.64-3.50 | 1.50-1.64 |\n| sun, card (0-180 deg) | 3.22-3.50 | 1.43-1.50 (45 and 135 now within 1.5) |\n| sun, crate | 3.50-5.77 | 3.60-5.89 |\n| lamp at 150 px, box / card | 2.50 / 1.97 | 1.26 / 1.51 |\n| lamp at 300 px, card | 1.58 | 1.33 |\n| lamp at 60 px, box | 3.50 | 2.50 |\n\nlampSeparation, silhouetteDirection, depthSort PASS on both. Captures: the floor at the casters' bases darker (feet, a\nfence's rail), nothing else, no speckle.\nLeft: (1) the box and the card off by a uniform ~1.5 px at the light's and the shadows' resolution 1 (not the light\ntexel: a placement between the engine's setBox and the check's corners, to find side by side); (2) the crate's columns\n3.6 to 5.9 px (the 24 x 24 cells, their width 1.1 cells + 1 px, their floor points from the height map); (3) the card from\n90 deg compares nothing (its shadow lies behind it, under its sprite's mask: the check should say not compared); (4) under\nthe 60 px lamp the crate's columns past the cap land at 8 times their bases' distance, a staircase 420 px wide.",
+      "commits": [
+        "c8963250"
+      ]
+    },
+    {
+      "id": "R-1134",
+      "date": "2026-11-15",
+      "time": "14:35",
+      "timeFrom": "recorded",
+      "title": "N-194 fixed: height maps follow the sprite's scale (lighting, pixel depth, sun and lamp maps)",
+      "verdict": "kept",
+      "text": "N-194 fixed (67e33035): the twin's height times the sprite's |scale y| where it becomes a world height, in the face map (GLSL and WGSL, a flat vMapScale), pixel depth (vPainter.y / vDepthFoot.z) and the sun and lamp map columns (aInstScale). Normals from heights keep reading the frame's own heights (a scale stretches heights and texels alike); footprints already followed the scale.\n\nCheck (pair captures, the light bench at HEAD c0b2b190 with its 2x car copies against the standard 1x sheets at setScale(2)): the farm by day, the hatch and the pickup at zoom 3 (16 h and 10 h), the bus at 18:30, the person at zoom 4, the farm at 22 h, and the hatch and the pickup moved beside the warm lamp at night: the same size, shadows, light and depth (the pixel differences are the frames' headings: the new sheets keep the pack's even 7.5° directions, and linear filtering of a 2x texel). node suite 2728/2728.\n\nCost: one flat varying and one multiply in the face map, pixel depth and map column programs; not measured on its own (a hygiene keep: a bug fix stays unless a primary worker is 3 % worse; to be read in the next GPU pass sitting).",
+      "commits": [
+        "67e33035"
+      ]
+    },
+    {
+      "id": "R-1135",
+      "date": "2026-11-15",
+      "time": "14:53",
+      "timeFrom": "recorded",
+      "title": "The standard cars and LPC people with maps; every demo migrated, the copies removed",
+      "verdict": "kept",
+      "text": "The owner asked (2026-11-15): the Buenos Aires game's cars as the standard, their height and normal maps made as the claude.ai page makes them, the smaller cars removed, the same for the LPC people, nothing repeated across the demos.\n\nDone (b0bc107f .. 134dd868):\n- demos/tools/nmCore.cjs (the page's generator as it is, heights returned as floats), bakeCarSheet.mjs and bakeReliefMaps.mjs.\n- demos/img/autos: all 54 vehicles (15 MB with maps). Body model: nm-core's guess from the name; the pack's other models by shape (a coupe a sedan, an SUV a hatch, a dump truck a camion). Fitting every body and keeping the best silhouette match was tried first: it chose a camion for coupes and sports cars (IoU +0.006 to +0.013) and a pickup for the limousine, shapes that would light as boxes, so the bodies go by kind. Frames' IoU 0.90 (microcar) to 0.965 (bus).\n- The cars cast their solid for the sun too (cast.sun 'heightmap'): a card of a car seen from above lies turned (N-195).\n- civil1..7 and poli: maps next to them (8.7 MB), the same as the bench's civil7 had (compared frame by frame).\n- Migrated: the light bench (cars at 2x, its copies gone, Q/E a car's 48 views, its volume turned by the frame drawn), the DX-LIGHT3D stress scenes, carScene and littleCity (DirectionalSprite; atlas re-baked, 15.8 MB from 16.7), the night street and the sun street (one car setup, streetCars.js). demos/img/cars removed: the same drawings (red = hatch_rojo, pixel for pixel).\n- Checks: pair captures before and after for every demo (bench, carScene, littleCity, headlights, sun street, day and night), no console errors; test:demos 101/101, test:node 2728/2728.",
+      "commits": [
+        "b0bc107f",
+        "20ec10e2",
+        "39f7db02",
+        "e1692030",
+        "3fa344ee",
+        "caaf734f",
+        "134dd868"
+      ]
+    },
+    {
+      "id": "R-1136",
+      "date": "2026-11-15",
+      "time": "15:01",
+      "timeFrom": "recorded",
+      "title": "N-196 fixed: lampShadowTile 'auto' (tile by reach and shadow resolution)",
+      "verdict": "kept",
+      "text": "N-196 fixed (cf3e8ff1): lighting.lampShadowTile 'auto' (the new default) sizes a lamp's tile, a power of two from 64 to 1024, by the widest casting lamp's reach and lighting.shadowResolution (at most 2 floor px a texel at resolution 1), a tile for each lamp casting now rounded up to a power of two, within a 4096 x 2048 map; a number keeps a fixed tile (lampShadowStressScene pins its ?tile=).\n\nPicture: the light bench at 22 h, the warm lamp at reach 900, brightness 3, elevation 75, shadow resolution 1 (the owner's report): before, 256 texels over 1800 px (7 px a texel) drew the fence's and the person's shadows as blocks; after, 1024 texels (1.76 px a texel), sharp edges (pair capture, HEAD c0b2b190 against the working tree).\n\nCost, gpuPassBench lampMap (GTX 1650, AC power), 2 lamps of 64 casters, 85.5 % of each tile drawn (a dense case), ms a pass, WebGL / WebGPU: tile 256 0.052 [0.048-0.061] / 0.054 [0.052-0.055]; 512 0.170 / 0.181; 1024 0.623 / 0.744. The pass costs its texels; what changes is only where more were asked: at the default resolution 0.5 a lamp up to 512 px of reach keeps 256 (Predator ?light3d=1, selfShadowStressScene unchanged), the bench (resolution 1) pays about 0.17 ms a lamp of reach 330 and 0.6 ms at 900.\n\nNext: a softer edge (PCF in lampVisibility, 4 fetches) if 2 px a texel still shows at a high zoom.",
+      "commits": [
+        "cf3e8ff1"
+      ]
+    },
+    {
+      "id": "R-1137",
+      "date": "2026-11-15",
+      "time": "15:13",
+      "timeFrom": "recorded",
+      "title": "E-379: the columns passes draw only their column-casting rows, large renders in blocks",
+      "verdict": "kept-kernel",
+      "text": "E-379 (ef2e71e0). The columns programs (the sun map's, the lamps' map's, the sprite shadows') drew their 24 x 24 grid (2 304 vertices) for every caster row of the batch and threw away in the vertex shader the rows that cast no columns: people, trees, every card.\n\nMeasured (gpuPassBench, GTX 1650, AC power, WebGL, 12 samples), with a new `cards` knob (edee5a6b: card rows among the columns' instances, the table's frames twice): sunColumns, 20 renders: 0.096 ms [0.094-0.100]; the same 20 renders among 2 000 card rows: 5.107 ms [5.087-5.127], the same image hash (1135689b). 98 % of the pass was rows thrown away.\n\nChange: the Pixi worker copies the rows that cast columns for the pass's light into the pass's own instance buffers (two ring slots), by the programs' own test (sunShadowMap.js compactColumnRows: kind 2, or kind 0 on a render; for the sun not a render that casts its card); a frame more than SUN_MAP_COLUMNS x COLUMN_CELL_PX (24 x 8) px a side draws as k x k instances of the grid (aBlock: its block, k up to 4), which also fixes the barn's staircase (432 px frame: 18 px cells before, 6 px now; not N-192's staircase, which is the lamp stretch cap's, as ef2e71e0's message says by mistake). Behavioural test on the real function (tests/node/sunShadowMap.test.js). node suite 2730/2730.\n\nPictures: the barn at 16 h and 10 h, 24 cells against a finer grid (a test build with 72), and the bench after: the steps gone.\n\nNot yet measured: a scene (Predator ?light3d=1, sunShadowMapStressScene) and the Pixi worker's cost of the compaction (a loop over the caster rows).",
+      "commits": [
+        "edee5a6b",
+        "ef2e71e0"
+      ]
+    },
+    {
+      "id": "R-1138",
+      "date": "2026-11-15",
+      "time": "15:35",
+      "timeFrom": "recorded",
+      "title": "N-197 fixed: a solid sheet's card takes its light's frame (the turned silhouettes); N-195 was this",
+      "verdict": "kept",
+      "text": "N-197 fixed (e90de4dc). The owner: fences, cars and the table cast their silhouettes for the sun 'at another angle', unlike the light bench prototype (claude.ai artifact RcVVdz6bEo7GiErDNGZSKK).\n\nHow it was found: the prototype's files downloaded and served next to the engine's bench, the same sun (the prototype's azimuth = 180 - the engine's Sun.angle: the engine's angle is where shadows point; checked with a tree, which has no views), the same things turned alike, captured side by side. The card's terms are the prototype's (rows above the frame's lowest opaque row at 1 / heightScaleY px of height, the card standing on the contact nearest the light, its columns to the right of someone at the light, the light's frame turned by 90 deg minus the angle to the light); the difference was the frame: pre-render's sun and lamp frame passes left any sheet marked solid (its way is its solid: a render with height maps) at the camera's frame, whatever its caster asked, so a card of the barn, the table or the standard cars showed the camera's view stood up towards the sun.\n\nFix: each caster's kind for that light decides: a card (CAST_KIND.SPRITE) or a fixed card takes the light's frame; a solid keeps the camera's (its columns are built from it). The pickup alone under four suns, prototype against engine: before, the engine's shadow on the wrong side at every sun; after, on the same side, small and under the car as the prototype's. N-195 was this (closed).",
+      "commits": [
+        "e90de4dc",
+        "d0e1d644"
+      ]
+    },
+    {
+      "id": "R-1139",
+      "date": "2026-11-15",
+      "time": "16:00",
+      "timeFrom": "recorded",
+      "title": "N-200 and N-201 fixed: cars by their drawn headings, the bench's props turned as the prototype",
+      "verdict": "kept",
+      "text": "N-200 and N-201 fixed (b48a15f2, 0adb3656), after the owner's report that the white pickup's and the bus's shadows were off in angle against the prototype.\n\nN-200: the standard cars' directions were the pack's even 7.5° steps, the art's headings are not (nm-core measured them: the hatch's frames at 0, 1.3, 7.8, 19.4, 31.1, 42.5, 52.8 ... for 0, 7.5, 15, 22.5 ...). For the bench's pickup (facing 114°, sun from 330°), its frame was drawn at 104° and the frame the sun sees at 241.7° where 234° was wanted: 10° one way, 7.7° the other. Now directions.drive are the measured headings (out of order ones, the microcar's three near 0°, take the pack's), as the prototype picks its frames; littleCity's atlas re-baked for its tables (bigAtlas.png byte for byte the same).\n\nN-201: the bench's farm props stood a quarter turn off the prototype's (it used facing = -turn for every thing; a prop's frame k is its model turned k steps with frame 0 at facing 90°).\n\nCheck: both apps as each starts, the engine under the prototype's sun (azimuth 215, elevation 45 = engine angle 325), zoom 1, the same camera: the same turns everywhere; the pickup's, the bus's and the hatch's shadows on the same side and parallel to the car as the prototype's (crops at 2x). The owner: \"ahora se ve todo joya\". node 2730/2730, demos 101/101.",
+      "commits": [
+        "b48a15f2",
+        "0adb3656"
+      ]
+    },
+    {
+      "id": "R-1140",
+      "date": "2026-11-15",
+      "time": "16:13",
+      "timeFrom": "recorded",
+      "title": "E-379 in Predator ?light3d=1: Pixi draws 34.5 -> 60 fps",
+      "verdict": "kept",
+      "text": "E-379's scene check: Predator ?light3d=1 (the farm's renders with maps beside about 14 000 casters, people as cards), ABAB, A edee5a6b (before), B ef2e71e0 (E-379), runPredatorAbab --pool --early --pairs 4 --owner pixi, headed, AC power, the owner's Chrome idle (0.13 CPU s in 3 s before the sitting).\n\nPixi drew under the page's rate before: DRAWN_FPS per pair A 44.3, 34.6, 34.5, 34.1 against B 60.0, 59.7, 60.0, 60.1: paired +73.2 %, 4/4 pairs (the columns passes' grid over every caster row had the GPU bound). Presented 60.0 both. Workers' STEP_MS below the 6 ms floor, not judged: renderer 2.858 -> 2.952 (+3.3 %: the compaction, a loop over the caster rows each columns pass), pre-render 3.073 -> 3.095, physics 3.02 -> 3.21, spatial 3.31 -> 3.39, logic 2.05 -> 2.01, particle 0.68 -> 0.75. Load keys within 0.5 % (GPU_CASTERS 13 852 -> 13 783, VISIBLE_ENTITIES 13 883 -> 13 812).\n\nVerdict: kept (the drawn frames; the runner's word for the workers is NEUTRAL, below the floor).",
+      "commits": [
+        "ef2e71e0"
+      ]
+    },
+    {
+      "id": "R-1141",
+      "date": "2026-11-15",
+      "time": "16:16",
+      "timeFrom": "recorded",
+      "title": "N-188 fixed: lighting.shadowTextures retires, frames in use found per scan",
+      "verdict": "kept",
+      "text": "N-188 fixed (572d30b2): lighting.shadowTextures retires. setSprite({ frame }) works in any scene: pre-render's caster scan (every 30 frames, beside casterKindsInUse) finds a frame in use (casterFramesInUse: an active caster with a textureId), those frames take the full rows with the frames applied, and the queue header says so (GPU_FLAG_CASTER_OWN, also when caster kinds are on, or lighting.keyedCasters is false); Pixi then draws pre-render's rows, not the entity batch's keyed instances (E-191), which hold only the sprites' own statics. lighting.keyedCasters: false is the diagnostic that keeps the full rows always (the light bench's ?fullRows=1). Migrated: the sun street, the light bench, the Buenos Aires scene's config line (not run there, the owner's rule), dxCaptureScene, the guide (bible, LAYER_ROUTING), the types, tests (the scan; the keyed paths off with a frame in use or the diagnostic).\n\nCheck: the sun street at 15 h, the panel's T (the trees cast a big tree's silhouette) with no key: the silhouettes drawn, no warning or error. node 2730/2730, demos 101/101.\n\nSide effect worth knowing: a frame with caster kinds on (DX-CASTER) no longer draws the entity batch's keyed sun instances in place of pre-render's coded rows (the flag covers kinds too).",
+      "commits": [
+        "572d30b2"
+      ]
+    },
+    {
+      "id": "R-1142",
+      "date": "2026-11-15",
+      "time": "17:32",
+      "timeFrom": "recorded",
+      "title": "N-203 and N-204 fixed: lamp columns from the camera's frame, the light ends at its radius",
+      "verdict": "kept",
+      "text": "N-203 and N-204 fixed (d2b8c392, c6880f7e), and the bench's card orientation offered only for props and cars (c43014c0), after the owner's look at the light bench at night.\n\nN-203: a directional caster's lamp rows took the frame the lamp sees unless its sheet cast a solid for the sun (N-197's rule), so the cars and the cow (their json keeps the card for the sun, while left to their sheet they cast columns for the lamps) built their lamp columns from the view the lamp sees, placed as the camera's. Now castsCard decides per caster and light, as compactColumnRows decides what it casts. Check: the white pickup facing the camera, a lamp at 55 px on its right (bench, night, zoom 2): before, its shadow lay on both sides and towards the lamp; after, to its left only. lampFramesMicrobench (cards, Predator's shape) 920 -> 934 / 975 ops/s with the same checksum; tests/node/lampFrameKinds.test.js fails 3/3 on the old code.\n\nN-204: the light never ended at its radius (about 1 % there and on past it) while a lamp's map ends at a square of its radius: a low lamp's long shadows ran to that square and stopped on a line. Now every light of the light pass is multiplied by reachWindow ((1 - (d / radius)^4)^2). Check: bench at night, a lamp at 55 px, reach 590, brightness 3: the vertical line where the shadows stopped (1 020 px) is gone, the pool near the lamp the same. Cost, gpuPassBench (GTX 1650, res 0.5, 32 lights): WebGL light 0.742 -> 0.755 ms, light3d 1.384 -> 1.461 ms (+5.6 %); WebGPU light 0.805 -> 0.787 (spread 21 % before), light3d 1.261 -> 1.306 ms (+3.6 %); E-380 is the way back.\n\nnode 2733/2733, demos 101/101, check:types. Opened the same evening: N-205 (a render's card on the wrong support), DX-LAMPPANO (the panoramic lamp map, approved), E-380, N-206 (the crowd 2.5 gate that drew fewer rows).",
+      "commits": [
+        "d2b8c392",
+        "c6880f7e",
+        "c43014c0"
+      ]
+    },
+    {
+      "id": "R-1143",
+      "date": "2026-11-15",
+      "time": "17:41",
+      "timeFrom": "recorded",
+      "title": "N-205 answered: a render's silhouette under a high lamp matches the prototype's",
+      "verdict": "answered",
+      "text": "N-205 answered: no bug. The owner's report (the hen house and the table set to silhouette look very wrong with a lamp high behind them; \"creo que esto estaba resuelto en el artifact\") checked against the prototype under the same lamp.\n\nMethod: protoVsBenchLamp.mjs (session scratchpad): one thing alone in the prototype (its downloaded files) and in the bench, at the bench's own facing (hen house 119, table 259), its card for the lamps, at night, one white lamp at the owner's places (hen house: 24, -104 px at 205 px high; table: -110, -88 at 205) and three more around each (one at 300 px), reach 900.\n\nResult: in all eight pairs the engine's silhouette shadow has the prototype's shape, place and length (the table's long trapezoid towards the camera, the hen house's blob); the engine's edges are softer (the lamps' map's five taps) and its light dimmer (other units for the lamp). The long shadows are the silhouette's nature on a flat-topped render: the card stands up with the picture the lamp sees, which carries the top seen from above at the art's pitch, so it is much taller than the thing. Both sheets cast their height map by default (meta.light3d.cast, as in the prototype), which gives their true shadow.\n\nA possible improvement (not in the prototype, not done): squash a render's card to its height map's real height (zmax) so its silhouette shadow is no longer than the thing."
+    },
+    {
+      "id": "R-1144",
+      "date": "2026-11-15",
+      "time": "18:05",
+      "timeFrom": "recorded",
+      "title": "N-208 fixed: a face the sun does not reach takes no other caster's shadow",
+      "verdict": "kept",
+      "text": "N-208 fixed (3baefdbc). The owner's report: by day the tree's shadow on the barn passed through the wall onto the wall on the left.\n\nCause: the sun map keeps the highest caster on each ray, and a pixel skips its own entity's (DX-GBUF, so a thing does not shade itself in the map); on a face turned away from the sun, the barn's own body is the first thing towards the sun, skipped, so the tree beyond it was found. By day such a face is drawn as the artist shaded it (normals 'auto', k near 0).\n\nFix: the sun map's shade leaves the flat term of a face the sun does not reach, faded across the terminator; cards keep it.\n\nCheck: the bench by day, the barn turned 45 degrees, a tree beside its corner, the sun at 185 degrees and 30 high (benchScene2.mjs, session scratchpad): before, the leaves' shadow on the long wall (its back to the sun) and on the well's far side; after, both clean, the gable (facing the sun) keeps the tree's shadow. node 2733/2733, demos 101/101.",
+      "commits": [
+        "3baefdbc"
+      ]
+    },
+    {
+      "id": "R-1145",
+      "date": "2026-11-15",
+      "time": "18:09",
+      "timeFrom": "recorded",
+      "title": "N-209 fixed: a fixed card lies along the direction drawn",
+      "verdict": "kept",
+      "text": "N-209 fixed (65c4a83d). The owner's report: the fence's silhouette shadow did not stand on the fence's posts; compared with the prototype (\"la de la izquierda ... queda mucho mejor, y sí, está paralelo al fence\").\n\nMethod: protoVsBench3.mjs (session scratchpad): the fence alone in both apps, the bench's two fences' facings (188 and 15), its card fixed along it, the sun at 45 degrees high from four sides, zoom 3. At 188 both alike; at 15 the engine's rails' shadows were not parallel to the fence and its posts' shadows away from the posts, and a stray line showed under a southern sun.\n\nCause: the fixed card's axis came from the facing (15 degrees), the picture from the nearest of 32 directions (11.25): 5.6 degrees between them. The prototype takes the drawn frame's angle.\n\nFix: computeCasterCodes takes the axis from the direction drawn (its table's angle at directionIndex). After: at facing 15 the engine's bands parallel to the fence and in the prototype's place, the stray line gone. Still different: the prototype's shadow is crisp on the art's pixels, the engine's edges smooth (DX-PIXELSHADOW). node 2735/2735, demos 101/101.",
+      "commits": [
+        "65c4a83d"
+      ]
+    },
+    {
+      "id": "R-1146",
+      "date": "2026-11-15",
+      "time": "18:18",
+      "timeFrom": "recorded",
+      "title": "DX-PIXELSHADOW built: lighting.pixelArt, each world pixel lit whole",
+      "verdict": "kept",
+      "text": "DX-PIXELSHADOW built (8e58d474): lighting.pixelArt, after the owner's comparison of the fence with the prototype (the prototype's shadow crisp on the art's pixels \"queda mucho mejor\").\n\nWhat: the light pass snaps its world point to the pixel's centre before every term and reads the sun's and the lamps' maps with one tap (PIXELART blocks, GLSL and WGSL); the lamps' tiles sized for a texel a floor px. Default false; the light bench turns it on (?pixel=0 off).\n\nCheck: protoVsBench3 (the fence alone at facing 15, four suns, zoom 3): the engine's shadow crisp on the art's grid, the prototype's shape and place. WebGPU at night in the bench (a lamp at 60 px over the fence and the table): compiles and draws; the lamps' shadows step on single art pixels after the tile change (on pairs before it). Not timed: it does less than the five-tap pass (one tap a map, one floor). node 2739/2739, demos 101/101, check:types.",
+      "commits": [
+        "8e58d474"
+      ]
+    },
+    {
+      "id": "R-1147",
+      "date": "2026-11-15",
+      "time": "18:53",
+      "timeFrom": "recorded",
+      "title": "DX-LAMPPANO built: the lamps' map as a panorama, a floor and a ceiling half",
+      "verdict": "kept",
+      "text": "DX-LAMPPANO built (2b19d9f8), the owner's choice B for the lamps' shadows on walls higher than the lamp (the fence's shadow under a 20 px lamp did not climb the barn's wall) and N-192's stretch cap.\n\nWhat: each lamp's tile is 2S x S: a floor half (as before) and a ceiling half (the world mirrored in the lamp's height, its texel the lowest caster point's real height); landings compressed into each half out to the horizon (0.8 of the half's radius for the reach, the ring for the rest), so no stretch cap; cards on a three-row strip, columns on a three-row grid (the band within the reach the projection itself); volumes compressed on the floor half; the light pass picks the half by the point's height, the flat path has a floor-only lookup, both leave past the reach.\n\nFound on the way: with the full lookup at all four call sites ANGLE's D3D11 compiler failed to link the light pass (2.9 s, empty log) and Chrome lost the GPU context at the bench's start; the floor-only lookup on the flat path links in 337 / 600 ms (pixel art / not; the old pass 331). Found with glslLink.mjs and glslVariants.mjs (session scratchpad: real Chrome, one fresh browser a variant).\n\nCheck: bench at night, a lamp at 20 px past the fence: the fence's shadow climbs the barn's gable wall and runs to the horizon behind it (the fence is taller than the lamp), WebGL and WebGPU alike; a 55 px lamp's scene as before. gpuPassBench (GTX 1650, 48 lamps, tile 256; run before the owner asked for no benchmarks): floor half 1.446 -> 0.691 ms WebGL, 1.543 -> 0.721 WebGPU, ceiling half 0.527 / 0.516; light3d 1.302 -> 1.461 WebGL (E-381), 1.288 -> 1.274 WebGPU; map and light together -2.5 % WebGL, -11 % WebGPU. node 2742/2742, demos 101/101, check:types.\n\nLeft: the ceiling half for the volumes; N-207 (a render's card size) in the cards' program; N-192's outline offsets (the cap's steps are gone).",
+      "commits": [
+        "2b19d9f8"
+      ]
+    },
+    {
+      "id": "R-1148",
+      "date": "2026-11-15",
+      "time": "19:30",
+      "timeFrom": "recorded",
+      "title": "N-208 refined, N-210 and N-211 fixed: a person in another's shadow, the lamps' map along the ray",
+      "verdict": "kept",
+      "text": "N-208 refined, N-210 and N-211 fixed (4f5451c7, 6083e8be, 437d81f3), from the owner's looks at the light bench in the evening.\n\n- A person by the barn with their back to the sun stood lit in the barn's shadow (with the sun from the other side they darkened). Two causes: N-208 kept the sun map's shade off any face turned away from the sun, and a person's normals (from their height map) count their front as turned away: now only for an entity that shades itself (a closed volume, the barn's far wall); and the maps' bias of 4 px and more erased the shade of a caster just behind a pixel (N-210): an entity's pixel skips its own entity's texels already, so it keeps the maps' step.\n- Under a 20 px lamp the person's shadow on the barn's wall behind them showed first as a blob (the lamps' fixed 4 px bias, 4f5451c7: along the ray), then striped (N-211): the map's heights in 2 px steps cannot tell a caster from the point behind it near the lamp's height, where the rays are nearly level. Now a texel keeps the place along the ray, lampRayDepth = 1 / (1 + |E - z| / E), finest around the lamp's height.\n\nChecks: the owner saw the person darken in the barn's shadow in the bench; captures (session scratchpad vis/): the person in front of the gable wall under a 20 px lamp, their shadow climbing the wall as their silhouette, the stripes nearly gone (wallperson3). Every lamp program compiles, the light pass links in 342 ms (D3D11). node 2743/2743, demos 101/101. No benchmarks (the owner: visual first).",
+      "commits": [
+        "4f5451c7",
+        "6083e8be",
+        "437d81f3"
+      ]
+    },
+    {
+      "id": "R-1149",
+      "date": "2026-11-15",
+      "time": "20:15",
+      "timeFrom": "recorded",
+      "title": "Probe: the branch keeps its soldiers; the zoomed runs had the free camera on",
+      "verdict": "answered",
+      "text": "Two probes, Predator crowd 2.5 in visible Chrome windows, sides from worktrees (main 0c33673e, dx/light3d 259aba3a), nothing touched by the probe: soldiers and civilians alive and the logic camera every 2 s after a 12 s warm-up (4 runs a side, alternating), then the branch alone every 250 ms from the scene's creation (4 runs of 40 s), with the target zoom, minZoom, canvas, world, free flags and the soldiers' bounding box.\n\n- Soldiers alive the same on both sides: 13 727 to 13 814 (of 15 000 spawned), civilians 22 326 to 22 387.\n- Main 4 of 4 and the branch 7 of 8 framed the whole world: zoom 0.216, minZoom, since the soldiers' box (about 2 900 x 2 900 px) needs less than it, the camera centred near (4 980, 2 500).\n- One branch run (the first of the first probe) read zoom 0.23 at 12 s, 1.577 and 1.596 at 14 and 16 s, then 0.666 and 0.665 for the last 6 s. updateSquadCamera caps its target at 1 (Math.min(zoomX, zoomY, 1)) and nothing else in Predator or the engine writes the zoom but the free camera (its button, maxZoom 2, the wheel), setZoom (?zoom=) and a resize's reclamp (each thread's own minZoom). A zoom held at 0.665 for 6 s is not the squad camera's either: it brings the zoom back to 0.216 in about a second. So the free camera was on in that run: the button and the wheel, most likely by hand in the visible window (to be confirmed by the owner); the gate of 2026-11-15 drew 4 967 to 20 292 rows in three of its B runs the same way.\n\nNot a change of the branch: its runs keep their soldiers, and the probe that touches nothing framed like main. The gate's load-key check (RENDER_QUEUE_SIZE within 5 %) caught it, as it should. Predator sittings from here pin the camera (?zoom=0.216, setZoom every frame) and nobody touches their windows."
+    },
+    {
+      "id": "R-1150",
+      "date": "2026-11-15",
+      "time": "20:40",
+      "timeFrom": "recorded",
+      "title": "Probe scene and an in-engine statics check: the main pass draws every row with its own texture",
+      "verdict": "note",
+      "text": "Two ways to catch a decoration drawn with another row's statics, 2026-11-15 20:20 to 20:42, the branch at 259aba3a (visible Chrome, the owner's GPU).\n\n1. keyedStaticsProbeScene (committed with this record's work): a still grid of 858 grass decorations in a still view, 200 walkers crossing a column and bullets with trails a row, so the y-sorted rows shift and trail rows come and go every frame. n202probe.mjs captured the canvas 60 to 150 times a run and compared each of the 625 cells outside the bands with its reference (the pixels' median of the first five, or, with the grass swaying, the cell's lit and white pixel counts' median over every capture). No cell changed in any run: plain (60 captures), ?sway=1 (120), ?sway=1&alphaChurn=1 (every decoration marked every frame, 120), ?sway=1&particles=1&fill=19000 (Predator's particle worker and 20 000 decorations, 150).\n\n2. A statics check inside the engine (a scratch tree, never committed): instancedSpriteBatch's keyed upload kept a CPU mirror of the statics texture's texture word, fed the same updates and texture updates the scatter sends, and checked every drawn instance of each keyed frame (by row) against its queue row's texture. Predator default crowd 1, 60 s: 3 272 keyed frames, 0 mismatched instances. Predator ?light3d=1&hour=22, 60 s: 3 185 keyed frames, 15 mismatches, all in one frame (663): sprite rows (type 0, keyed) drawn while their statics row had never been sent (have -1, want 1522; since 662, drawn 663), none after; a second 30 s run had none. Those rows show the texture row's first content for a frame (zeros: scale 0, nothing drawn), or a pool slot's last occupant: a rare race between a spawn's marks and the emit, noted under N-212's leads.\n\nSo the main batch draws each row with its own texture, in both modes. The line the owner saw is not a keyed statics mix-up in the main pass; what is left: another pass or batch drawing a decoration's pose with a trail row's statics (the light passes, the glow batch, the shadows), or the scene the owner was in (asked).",
+      "commits": [
+        "cca57dea"
+      ]
+    },
+    {
+      "id": "R-1151",
+      "date": "2026-11-15",
+      "time": "21:00",
+      "timeFrom": "recorded",
+      "title": "Predator: 15 to 24 lights in view past the cap of 48, the kept set swapping; the cut now fades",
+      "verdict": "note",
+      "text": "The owner's scene not named yet; Predator read for the leads, 2026-11-15 20:58 to 21:04 (n212lights.mjs: every 2 s, the shadow-casting lights that pass pre-render's view test, _collectStampLights' own: active, castShadows, radius > 0, within the view grown by the radius; ranked by distance to the view's centre as stampLightOrder does).\n\n- Predator default, crowd 1 (zoom 0.30, hours 16 to 3): 113 to 116 lights pass the test, 58 to 61 of them in the view, against maxShadowCastingLights 48: 15 to 17 lights in view cast no shadows, and the kept set took in 0 to 3 new lights every 2 s (the squad camera drifting, fires coming and going), so those lights' shadows popped on and off.\n- Predator ?light3d=1&hour=22: 121 to 124 pass, 67 to 70 in view, 21 to 24 in view without shadows, 0 to 3 swaps every 2 s. The lamps' map takes the same list (pre-render's stamp lights), so its lamps pop the same way.\n- The other cuts read too: maxShadowsPerEntity 3 keeps each caster's three nearest lights by distance (shadowStamp.c note_nearest), not by brightness, so a fire's flicker does not reorder them (a person walking between lights still swaps the fourth); maxShadowsPerLight (512, the adaptive budget lowers it when zoomed out: a TallLight's 400 px shadow range gives about 141 at zoom 0.3) keeps each light's nearest casters.\n\nFixed for the light cap (e47c5442): the kept lights fade their shadows over the last 20 % of the cut's distance, down to 0 at the first light left out (fadeStampLightsAtCut), so a light crossing the cut fades instead of popping; the stamps and cookies take the fade through their shade, the lamps' map through a fourth row of the light data (stampLightFade in the GPU queue; lampVisibility lightens by it and skips the taps at 0). Tests: stampLightCutFade, lampCutFade. The light pass links in 653 ms (576) on ANGLE D3D11, 407 (356) with pixel art. Not measured yet (the light pass reads one more texel per lamp with a tile, after its reach test).\n\nLeft: 15 to 24 of Predator's lights in view still cast no shadows (its cap of 48: raising it costs stamps, or lamp tiles that get smaller); the per-entity and per-light cuts still pop (a fade there is in shadowStamp.c); whether this is what the owner saw.",
+      "commits": [
+        "e47c5442"
+      ]
+    },
+    {
+      "id": "R-1152",
+      "date": "2026-11-15",
+      "time": "21:14",
+      "timeFrom": "recorded",
+      "title": "The three scenes in: light3dCompareScene, lampShadowStressScene's knobs, sunShadowMap ?lamps=",
+      "verdict": "note",
+      "text": "The three scenes are in, not measured yet (the owner's open bench tab; Phase 1 waits for it).\n\n- (a) light3dCompareScene (65d1b609): people walking (civil1 to civil4, animated, each a ShadowCaster), props that cast (houses, trees, barrels, rocks) and lamps that cast, by day or by night (?hour=22), the whole world in view; only the API main has, so `runPredatorAbab --vs main --hyp-rev <branch>` (src from each revision, the scene from the working tree) reads what the branch costs a scene lit as before. The branch's pieces switch on in the same scene: ?pitch=, ?sunMap=1, ?lampMap=1, ?self=1, ?depth=1, ?maps=1, ?ds=1, ?all=1. Load: ?walkers= (3000), ?props= (400), ?lamps= (24). Checked on both sides (main at 0c33673e: day and night; the branch: day, and ?all=1&hour=22).\n- (b) lamps at scale: lampShadowStressScene's own knobs already reach it (?lampShadows=map, ?lamps= up to 256, ?walkers= up to 20 000); checked on WebGL and WebGPU at 64 lamps and 3 000 walkers.\n- (c) renders with columns under the lamps: sunShadowMapStressScene ?lamps=N (7614f83d), lamps casting into the lamps' map over the same renders (?kind= says how each casts), ?hour=22 for the night; checked at 48 lamps and 2 000 casters.",
+      "commits": [
+        "65d1b609",
+        "7614f83d"
+      ]
+    },
+    {
+      "id": "R-1153",
+      "date": "2026-11-15",
+      "time": "21:19",
+      "timeFrom": "recorded",
+      "title": "carScene, littleCity and burningBoxes run under the 6 ms floor: guards against main, DirectionalSprite's cost from its stress scene",
+      "verdict": "note",
+      "text": "Load levels read before the sittings (2026-11-15 21:19, the branch at 7614f83d, one headed run each, 5 s warm-up and 5 s window, detailed stats off; the owner's bench tab open, so levels only):\n\n| Scene | spatial | physics | renderer | particle | logic | pre-render |\n| --- | --- | --- | --- | --- | --- | --- |\n| carScene | 1.30 | 0.33 | 0.42 | 0.17 | 0.46 | 0.21 |\n| littleCity | 4.37 / 3.61 | 2.90 | 0.36 | 0.27 | 2.93 | 0.44 |\n| burningBoxes | 0.07 / 0.07 | 0.20 | 0.93 | 0.06 | 0.07 | 0.43 |\n\n(ms of work a frame.) None of the three reaches HOW_WE_MEASURE's 6 ms floor on the worker the question owns (DirectionalSprite's frames are pre-render's and the facing logic's; burningBoxes' side light is Pixi's and the GPU's), and neither main's nor the branch's carScene, littleCity or burningBoxes has a load knob (their populations are fixed in create). Against main they can only show a gross regression: Phase 1 runs them as guards (4 pairs, --full-rev, since the branch's demos use DirectionalSprite, which main lacks). The cost of DirectionalSprite itself comes from directionalSpriteStressScene ?mode=hand|ds at a population that reaches the floor, read per entity and carried to these scenes' counts (carScene 21 cars and 1 000 people; littleCity's traffic)."
+    },
+    {
+      "id": "R-1154",
+      "date": "2026-11-15",
+      "time": "21:28",
+      "timeFrom": "recorded",
+      "title": "Pixi's lamp map garbage: 1316.9 -> 504.2 KB/s in Predator light3d",
+      "verdict": "kept-hygiene",
+      "text": "Heap passes of profileSceneSweep (Predator ?light3d=1&hour=22, crowd 1, 8 s): 1316.9 KB/s at 7614f83d (21:23), 554.7 with a lamp card strip a ring slot (21:26), 504.2 with writeVolumeLampTerms' scales in a Float64Array (21:28). The first: the stamp batch draws from a ring of geometries, a slot each frame, and the strip was made again whenever it changed; the second: two doubles passed a tile a frame to a call TurboFan left out.",
+      "commits": [
+        "b9d36346",
+        "27d7113b"
+      ]
+    },
+    {
+      "id": "R-1155",
+      "date": "2026-11-15",
+      "time": "21:23",
+      "timeFrom": "recorded",
+      "title": "Phase 3, Predator light3d night: the sun and lamp frames 11 % of pre-render, writeGbufWords 3.4 % of Pixi, steady deopts",
+      "verdict": "note",
+      "text": "Phase 3's first passes (DX_LIGHT3D_PLAN 17.9), Predator ?light3d=1&hour=22, crowd 1, the branch at 7614f83d (profileSceneSweep: cpu at 21:22, deopt 21:23, heap 21:23; 8 s warm-up, 8 s window; the owner's bench tab open, so shares within a worker, not ms).\n\nBusy ms/s: pixi 534 (its wait for the queue 25 %, Pixi's own code 28 %), pre-render 443, spatial 350, logic 319 and 293, particle 81 (the four physics threads read 1000: wasm threads in Atomics.wait).\n\nThe branch's code in the hot lists:\n- pre-render: applySunFramesFor 4.5 % (67 % of it on reading the row's scale back, `rows[at + GPU_ROW_SCALE_X]`, after writing its texture), applyLampFramesInto 3.7 % (the row's entity and the ray to its lamp), sunFrameFor 3.2 % (the entity's columns and the frame table): about 11 % of pre-render, 0.8 ms a frame (E-370 to E-372).\n- Pixi: writeGbufWords 3.4 % (E-387), compactColumnRows (E-379's columns) 169 ms in the window.\n- logic: DirectionalSprite.resolve 2.5 to 2.7 %.\n\nGarbage: Pixi 1316.9 KB/s, 96 of it from _lampCardGeometry made every frame and 36.5 from the volumes' boxed doubles: fixed (N-213, 504.2 KB/s after). Steady-state deopts that main has too: N-214."
+    },
+    {
+      "id": "R-1156",
+      "date": "2026-11-15",
+      "time": "21:50",
+      "timeFrom": "recorded",
+      "title": "pickDirection's doubles through PICK_ARGS: logic 365 -> 24, pre-render 358 -> 103 KB/s",
+      "verdict": "kept-hygiene",
+      "text": "Heap passes (8 s): directionalSpriteStressScene n=20000, logic 365.4 (21:38) -> 24.3 KB/s (21:50); sunShadowMapStressScene lamps=48 hour=22 casters=3000, pre-render 357.8 (21:36) -> 102.6 KB/s (21:49). A first form that kept wrapAngle calls past a turn allocated 12.9 MB/s in pre-render and 4.2 in logic there (a facing plus the sun's turn passes 2π often); written out entirely, none. Parity: spriteDirectionsParity, 72 000 cases. Node, 3e6 calls: 1.8 -> 9.7 M/s on an uneven 32-direction table, 24.6 -> 27.7 on a uniform one.",
+      "commits": [
+        "2993032c"
+      ]
+    },
+    {
+      "id": "R-1157",
+      "date": "2026-11-15",
+      "time": "21:38",
+      "timeFrom": "recorded",
+      "title": "Phase 3's second batch: lamps' frames a ninth of pre-render with DirectionalSprite people, quickselect a fifth at 128 lamps",
+      "verdict": "note",
+      "text": "Phase 3's second batch (DX_LIGHT3D_PLAN 17.9), the branch at 7614f83d, profileSceneSweep's cpu, deopt and heap passes, 8 s warm-up and 8 s window each (21:30 to 21:38; the owner's bench tab open: shares within a worker, not ms). Busy ms/s, then the hot engine functions:\n\n- light3dCompareScene ?all=1&hour=22 (3 000 people through DirectionalSprite, 400 props, 24 lamps with maps, self-shadow, pixel depth): pixi 254 (its wait 70 %), pre-render 210 (its wait for the pose 53 %; stamp_light_range 10 %, applyLampFramesInto 5.6 %, emit_rows 4.3 %, fastAtan2 3.8 %, lampFrameFor 3.2 %), logic 145 (DirectionalSprite.resolve 5.5 %, pickDirection 4 %). The lamps' frames (applyLampFramesInto, lampFrameFor, fastAtan2) are a ninth of pre-render's busy time here: each caster's frame a lamp, an atan2 each.\n- lampShadowStressScene ?lampShadows=map&lamps=128&walkers=6000: pre-render 222 (stamp_light_range 23 %, quickselect_order 21 %: each lamp's nearest casters chosen by maxShadowsPerLight, for the map as for the stamps), pixi 236 (its wait 76 %).\n- sunShadowMapStressScene ?lamps=48&hour=22&casters=3000: pixi 146 (compactColumnRows 2.3 %), pre-render 100 (stamp_light_range 11 %, quickselect_order 9.5 %, collect_sprites 8.8 %, persist_frame 7.8 %, wrapAngle 5.5 %, pack_casters 5.2 %, angleDistance 4.2 %, pickDirection 4 %).\n- directionalSpriteStressScene n=20000: logic 197 (resolve 15.5 %), pre-render 120 (emit_rows 44 %, collect_sprites 20 %, pack_sprites_split 15 %).\n\nNo steady-state engine deopts in the four. Garbage: logic 4274 KB/s in light3dCompareScene (the scene's own walkers: fixed, 47738ca8; the setters' part is N-215), 365 in the DirectionalSprite scene and 358 in pre-render under the renders (pickDirection's doubles: E-388, fixed, 24 and 103 after)."
+    },
+    {
+      "id": "R-1158",
+      "date": "2026-11-15",
+      "time": "22:05",
+      "timeFrom": "recorded",
+      "title": "Two of the steady deopt loops fixed: spatial publish 391 -> 0, Box2D pose epoch 287 -> 0",
+      "verdict": "kept-hygiene",
+      "text": "Deopt passes of Predator ?light3d=1&hour=22 (8 s each). The kept V8 log (22:00) named the code: _findNeighbors' TurboFan code, with _flushWasmPublish inlined at its end, deopted 706 times in two passes at spatialWorker.js:1764 (the same code object every time): the search tiers up in its first frames, before anything is published, so the inlined body had no feedback, and V8 never replaced that code. Called from update() after the search (e334063b): gone (22:02). weedjsPost.js:662, the N-86 epoch re-read after the fast path that no warm-up frame took (Predator's crowd respawns): read every frame, it moved to the comparison after it (282 at :666, 22:04); compared every frame too (68c0d0c5): gone (22:05). Left: logicWorker.js:901/912 (_processSpawnSoA's batch path, cold when it tiered: about 110 in 8 s in some runs, none in others), a few OSR exits. The Box2D worker change (one atomic load a frame) waits for the LiquidFun gate (liquidFunStress ?water=1.5, liquidFunBodyCouple) with Phase 1's sittings.",
+      "commits": [
+        "e334063b",
+        "68c0d0c5"
+      ]
+    },
+    {
+      "id": "R-1159",
+      "date": "2026-11-15",
+      "time": "22:14",
+      "timeFrom": "recorded",
+      "title": "The adaptive shadow budget left off with the lamps' map",
+      "verdict": "kept-hygiene",
+      "text": "lighting.adaptiveShadowBudget lowers each light's casters when zoomed out, for the stamps on the shadows' layer (texels that follow the zoom); with lampShadows 'map' the same stamp rows feed the map's tiles, which keep their size, so zoomed out a crowd's shadows were cut to each lamp's nearest and the set changed as people walked. adaptiveStampBudget(lighting) leaves it off with the map (test in stampLightCutFade). In Predator ?light3d=1 (shadowResolution 0.5, a TallLight's shadowRange 400) the budget kept the cap of 512 down to zoom 0.28, so at its default zoom (0.30) the change shows only when zoomed out further; maxShadowsPerLight (512) and maxShadowsPerEntity (3) still choose by distance.",
+      "commits": [
+        "3a160eac"
+      ]
     },
     {
       "id": "R-1100",

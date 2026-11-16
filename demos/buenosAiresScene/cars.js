@@ -1,5 +1,6 @@
-// The cars: Box2D bodies (carScene's pattern), a drawn frame every 7.5 degrees of their heading on the screen, headlights that
-// come on with the hour, and a VolumeShadowCaster box. DrivingCar follows the editor's lanes and brakes for cars and people
+// The cars: Box2D bodies (carScene's pattern), a drawn frame every 7.5 degrees of their heading on the screen (DirectionalSprite
+// picks it from the rotation; the sheets' directions are in buenosAiresScene's assets), headlights that
+// come on with the hour, and a box for its shadow (shadowCaster.setBox). DrivingCar follows the editor's lanes and brakes for cars and people
 // ahead; buenos-aires also keeps the traffic law (lights, right of way, limits by street), which this demo does without.
 
 import WEED from '/src/index.js';
@@ -9,8 +10,8 @@ import {
 } from './town.js';
 
 const {
-  GameObject, RigidBody, Collider, CollisionListener, SpriteRenderer, LightEmitter, VolumeShadowCaster, SpriteSheetRegistry,
-  NavGrid, Transform, enums, rng, dot2,
+  GameObject, RigidBody, Collider, CollisionListener, DirectionalSprite, LightEmitter, ShadowCaster, SpriteSheetRegistry,
+  SpriteRenderer, NavGrid, Transform, enums, rng, dot2,
 } = WEED;
 const { ShapeType } = enums;
 
@@ -25,28 +26,6 @@ const SPEED_LIMIT_KMH = 30;
 const _h = { frontX: 0, frontY: 0, rightX: 0, rightY: 0 };
 const _v = { x: 0, y: 0 };
 const _footprint = [0, 0];
-
-const _frames = new Map();
-const NO_FRAMES = [];
-/** A sheet's headings: it draws those that look right, and the others are the same mirrored (heading 180° - a). */
-function headings(sheet) {
-  let list = _frames.get(sheet);
-  if (list) return list;
-  const names = SpriteSheetRegistry.getAnimationNames(sheet) || [];
-  const drawn = names.map((n) => ({ n, a: parseFloat(n), mirror: 0 })).filter((o) => !Number.isNaN(o.a));
-  const seen = new Set(drawn.map((o) => ((o.a % 360) + 360) % 360));
-  const all = drawn.slice();
-  for (const o of drawn) {
-    const m = (((180 - o.a) % 360) + 360) % 360;
-    if (!seen.has(m)) {
-      seen.add(m);
-      all.push({ n: o.n, a: m, mirror: 1 });
-    }
-  }
-  list = all.map((o) => ({ n: o.n, c: Math.cos((o.a * Math.PI) / 180), s: Math.sin((o.a * Math.PI) / 180), mirror: o.mirror }));
-  _frames.set(sheet, list);
-  return list;
-}
 
 /**
  * A footprint of 2a × 2b px on the pictures' floor, turned θ, shows on the screen as a parallelogram along the screen heading φ,
@@ -67,17 +46,16 @@ function footprint(i, c, s, out) {
 
 export class Car extends GameObject {
   static deriveSpeed = true;
-  static components = [RigidBody, Collider, CollisionListener, SpriteRenderer, LightEmitter, LightHours, VolumeShadowCaster, CarState];
+  static components = [RigidBody, Collider, CollisionListener, DirectionalSprite, LightEmitter, LightHours, ShadowCaster, CarState];
 
   onSpawned(c = {}) {
     const model = CAR_MODELS[c.sheet];
     this.setSpritesheet('car_' + c.sheet);
-    this.setAnimation('0');
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.5;
-    // The frame shows the heading: the entity turns, the picture does not.
-    this.spriteRenderer.inheritTransformRotation = 0;
-    this.spriteRenderer.spriteRotation = 0;
+    // The frame shows the heading: the entity turns, the picture does not. A frame changes half a step past its border.
+    this.directionalSprite.facingFrom = 'rotation';
+    this.directionalSprite.turnMargin = 0;
     const A = this.carState;
     A.driveForce = c.drive ?? 340;
     A.lateralFriction = 8;
@@ -85,7 +63,6 @@ export class Car extends GameObject {
     A.minSteerSpeed = 8;
     A.minSteerFactor = 0.5;
     A.maxSteerSpeed = 140;
-    A.lastKey = -1;
     A.ha = model.length * 9;
     A.hb = model.width * 9;
     const rot = c.rot || 0;
@@ -105,7 +82,7 @@ export class Car extends GameObject {
     this.rotation = rot;
     A.active = 1;
     // Its shadow: a box on the pictures' floor, turned with the car and moved with the sun by the GPU.
-    this.volumeShadowCaster.setBox(A.ha * 2, A.hb * 2, model.height * CAR_HEIGHT_PX, { topScale: model.roof, floorScaleY: CAR_FLOOR });
+    this.shadowCaster.setBox(A.ha * 2, A.hb * 2, model.height * CAR_HEIGHT_PX, { topScale: model.roof, floorScaleY: CAR_FLOOR });
     const L = this.lightEmitter;
     A.headlights = c.headlights ? 1 : 0;
     if (c.headlights) {
@@ -126,7 +103,7 @@ export class Car extends GameObject {
       L.active = 0;
       this.lightHours.base = 0;
     }
-    this.frame();
+    this.setAnimation('drive');
   }
 
   onDespawned() {
@@ -165,36 +142,19 @@ export class Car extends GameObject {
   }
 
   /**
-   * The drawn frame nearest the heading on the screen, changed only past half a step (no flicker between two). With a new frame:
-   * the anchor at its lowest wheel, the collider to the footprint at that heading, the headlights on its front.
+   * A new frame (DirectionalSprite drew the one nearest the heading): the anchor at its lowest wheel, the collider to the
+   * footprint at the heading it shows, the headlights on its front.
    */
-  frame() {
+  onDirectionChanged() {
     const i = this.index;
-    const c = Transform.rotC ? Transform.rotC[i] : 1;
-    const s = Transform.rotS ? Transform.rotS[i] : 0;
-    const sid = SpriteRenderer.spritesheetId[i];
+    const a = this.directionalSprite.directionAngle;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
     // From the sheet's name, not a field: an entity can move from one logic worker to another, and its fields stay behind.
-    const sheet = sid ? SpriteSheetRegistry.getSpritesheetName(sid) || '' : '';
-    const ks = sheet ? headings(sheet) : NO_FRAMES;
-    if (!ks.length) return;
-    const last = CarState.lastKey[i];
-    if (last >= 0 && c * ks[last].c + s * ks[last].s >= Math.cos(Math.PI / ks.length)) return;
-    let best = 0;
-    let bestDot = -2;
-    for (let k = 0; k < ks.length; k++) {
-      const d = c * ks[k].c + s * ks[k].s;
-      if (d > bestDot) {
-        bestDot = d;
-        best = k;
-      }
-    }
-    if (last === best) return;
-    CarState.lastKey[i] = best;
-    const k = ks[best];
-    this.setAnimation(k.n);
-    this.flipX = k.mirror === 1;
-    this.spriteRenderer.anchorY = CAR_MODELS[sheet.slice(4)]?.anchorY[k.n] || 0.5;
-    const [L, W] = footprint(i, k.c, k.s, _footprint);
+    const sheet = SpriteSheetRegistry.getSpritesheetName(SpriteRenderer.spritesheetId[i]) || '';
+    const drawn = SpriteSheetRegistry.getAnimationName(sheet, SpriteRenderer.animationState[i]);
+    this.spriteRenderer.anchorY = CAR_MODELS[sheet.slice(4)]?.anchorY[drawn] || 0.5;
+    const [L, W] = footprint(i, c, s, _footprint);
     if (Math.abs(L * 0.5 - CarState.hl[i]) > 0.5 || Math.abs(W * 0.5 - CarState.hw[i]) > 0.5) {
       this.collider.width = L;
       this.collider.height = W;
@@ -205,7 +165,7 @@ export class Car extends GameObject {
       LightEmitter.offsetX[i] = L * 0.5 + HEADLIGHT_AHEAD;
       // A glow sorts at the car's foot line plus sortOffsetY: on the body when the front looks at the camera, a length behind and
       // under it when it looks away.
-      const behind = k.s < -0.25 ? -L : 0;
+      const behind = s < -0.25 ? -L : 0;
       if (this.getAttachedDecorationCount() >= 2) {
         for (let q = 0; q < 2; q++) {
           const d = this.getAttachedDecoration(q);
@@ -221,7 +181,6 @@ export class Car extends GameObject {
   tick() {
     if (!Transform.active[this.index]) return;
     this.friction();
-    this.frame();
     lightTick(this);
   }
 }

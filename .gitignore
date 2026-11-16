@@ -36,3 +36,5 @@ tests/results/
 # the public repo serves it, so it is tracked on purpose.
 *.mp4
 !trailer2.mp4
+# The checks' shape art (tests/bench/checks/makeCheckArt.mjs makes it when it is missing).
+tests/bench/checks/art/

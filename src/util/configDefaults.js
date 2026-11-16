@@ -282,9 +282,12 @@ export const CAMERA_TYPES = Object.freeze({
 // ============================================================================
 
 export const ASSETS_DEFAULTS = Object.freeze({
-  /** Maximum atlas width in pixels (GPU texture limit) */
+  /**
+   * Maximum atlas width in pixels (GPU texture limit). Past 4096 a scene asks for more than some mobile and older GPUs
+   * hold (their textures stop at 4096 a side); the packer never goes past this, so it is the scene's choice.
+   */
   maxAtlasWidth: 4096,
-  /** Maximum atlas height in pixels (GPU texture limit) */
+  /** Maximum atlas height in pixels (GPU texture limit; past 4096, as maxAtlasWidth says). */
   maxAtlasHeight: 4096,
   /** Trim transparent pixels from individual images to save atlas space */
   trimImages: true,
@@ -634,6 +637,11 @@ export const RENDERER_DEFAULTS = Object.freeze({
   ySort: false,
   /** null = auto-size main render queue at SAB alloc from pools + Adobe piece bounds */
   maxVisibleRenderables: null,
+  /**
+   * DX-DEPTH (F5): each entity pixel's floor place corrects the painter (pixelDepth.js). null: on with an oblique camera
+   * and height maps (WebGL for now); true or false forces it.
+   */
+  pixelDepth: null,
   maxDecalTileUploadsPerFrame: 32,
   /** Pixi ImageSource mip chain for atlases/textures/tilesets. Off by default (VRAM + atlas bleed risk; STEP flat in benches). */
   autoGenerateMipmaps: false,
@@ -723,7 +731,7 @@ export const SUN_DEFAULTS = Object.freeze({
   colors: null,
 });
 
-/** DX-VOLUME: the layer Scene adds for VolumeShadowCaster, and its place: over the decals, under castedShadows. */
+/** DX-VOLUME: the layer Scene adds for the ShadowCasters' volumes (lighting.maxVolumes), and its place: over the decals, under castedShadows. */
 export const VOLUME_LAYER = 'volumeShadows';
 export const VOLUME_LAYER_Z = 1.5;
 
@@ -741,8 +749,14 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   maxShadowSprites: 1000,
   maxFlashes: 0,
   /**
-   * Mesh arena vertices kept for each entity of a class that lists VolumeShadowCaster, added to renderer.maxMeshVerts: 16
-   * holds a box with a cabin, or a hull of 16 points. It is a share of one arena, so a volume may take more if others take less.
+   * DX-CASTER: the ShadowCasters that hold a volume at once (shadowCaster.setBox, addLevel, setHull). Above 0, and with a class
+   * that lists ShadowCaster, the scene gets the volumeShadows layer and maxVolumes × maxVolumeVerts vertices of the mesh
+   * arena on top of renderer.maxMeshVerts; 0 (the default) keeps neither, and a volume setter warns.
+   */
+  maxVolumes: 0,
+  /**
+   * Mesh arena vertices kept for each of lighting.maxVolumes: 16 holds a box with a cabin, or a hull of 16 points. It is a
+   * share of one arena, so a volume may take more if others take less.
    */
   maxVolumeVerts: 16,
   resolution: 0.25,
@@ -751,40 +765,108 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   shadowUpdateInterval: 1,
   /** Scale shadow caster budget per light dynamically based on on-screen light radius when zoomed out. */
   adaptiveShadowBudget: true,
-  raycasted: false,
+  // No `raycasted` here: raycasted lighting (a visibility polygon a light) is on exactly when config.camera.pitch is 90 or 0
+  // (a flat view) and lighting is enabled. Scene._applyConfigDefaults writes lighting.raycasted from that, for the workers.
+  /** Under raycasted lighting: the vertices of a light's visibility polygon. */
   maxPolygonVertices: 128,
   /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
   maxOccluderSelfLit: 512,
   /**
-   * ShadowCaster.setTexture works: a pass over the caster rows each frame, and the keyed caster paths off (E-191), since
-   * those read a sprite's own statics. Off, a scene pays nothing.
+   * E-191's keyed caster paths (the casters' rows by key, read from the sprites' statics). A frame whose casters ask for
+   * their own way (setSprite({ frame }), a kind) takes the full rows by itself (N-188); false sends the full rows always,
+   * a diagnostic to compare the two (the same picture, more work).
    */
-  shadowTextures: false,
+  keyedCasters: true,
   /**
    * DX-FACES: decorations with a normal are lit as surfaces (Decoration.spawn's faceNormalX, ...). A second draw of the
    * entity batch into a map at `resolution`, and the light pass reads it. Off, a scene pays nothing.
-   * { enabled, heightScaleY, wrap, gain, sunDirect }: src/render/faceMap.js. Not with raycasted lighting.
+   * { enabled, wrap, gain, sunDirect }: src/render/faceMap.js; a px of height rises config.camera.heightScaleY. Not with
+   * raycasted lighting.
    */
   faces: Object.freeze({ enabled: false }),
+  /**
+   * DX-SHADOW3D: how the sun casts the ShadowCasters' shadows. 'sprite' (default): each caster's card on the shadows'
+   * layer, darkening every light. 'map': a shadow map in the floor's terms (src/render/sunShadowMap.js) that takes out the
+   * sun alone, falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit.
+   */
+  sunShadows: 'sprite',
+  /**
+   * DX-SHADOW3D (F7): how the lamps cast them. 'sprite' (default): each caster stamped on the shadows' layer, stretched
+   * away from its lamp. 'map': a shadow map a lamp in the floor's terms (src/render/lampShadowMap.js, one tile each in an
+   * atlas, the lights maxShadowCastingLights picks) that takes out that lamp's light alone, with the caster's height and
+   * the lamp's (LightEmitter.elevation) in the shadow's length.
+   */
+  lampShadows: 'sprite',
+  /**
+   * DX-SHADOW3D: a render with a footprint in its sheet's json (meta.footprints) casts its solid swept north to it at
+   * each cell's own height, as the light bench's heightmap did (light under a table), instead of columns down to the
+   * floor. A sheet without footprints keeps its columns.
+   */
+  footprintSolids: true,
+  /**
+   * DX-SHADOW3D (F7): a lamp's tile in the lamps' shadow map, texels a side (32 to 1024), or 'auto' (N-196): a power of two
+   * from 64 to 1024 by the widest casting lamp's reach and shadowResolution, at most 2 floor px a texel at resolution 1
+   * while the map stays within 4096 x 2048 texels. A tile spans twice its lamp's reach.
+   */
+  lampShadowTile: 'auto',
+  /**
+   * DX-PIXELSHADOW: pixel-art lighting. The light pass shades each world pixel whole, at its centre, and reads the sun's and
+   * the lamps' maps with one tap, so light and shadows fall crisply on the art's pixel grid (as a pixel-art picture scaled
+   * up with nearest is) instead of smoothly at the screen's. Best with lighting.resolution 1 and an atlas drawn 'nearest'.
+   */
+  pixelArt: false,
+  /**
+   * DX-SELFSHADOW: faces and sprites with height maps shade themselves and each other from the sun: steps towards it over
+   * the face map's heights in the light pass (a crate's lid edge over its front, an arm over a body). WebGL for now.
+   */
+  selfShadow: false,
+  /**
+   * DX-GBUF: how the G-buffer passes draw. 'mrt' (default): the face map and the entity ids map in one pass with two
+   * colour targets (WebGL2 drawBuffers, WebGPU two targets); 'pass': a pass each. Same picture; one pass costs about a
+   * third less (E-377: 0.51 against 0.80 ms at the light's resolution 0.5, 1.65 against 2.46 at 1, GTX 1650, WebGL; the
+   * same on WebGPU). Where the two-target render target cannot be made, the engine draws a pass each.
+   */
+  gbuffer: 'mrt',
+  /**
+   * DX-EMISSIVE: spriteRenderer.emissive glows in this scene: the sprites carry their G-buffer words even without maps,
+   * faces or a shadow map (which turn them on by themselves, as a sheet's own emissive does). Off, a scene pays nothing.
+   */
+  emissive: false,
   /**
    * 'add' — type 3 glows go to the lightGlows ADD mesh.
    * 'sprite' — same quads join the entity list (sort bias already above the body).
    * Source-over, so the soft edge can gray, and lighting multiply sits on top.
    */
   lightGlow: 'add',
-  /**
-   * How much the floor is foreshortened vertically on screen, in (0, 1]. Light pools are measured on
-   * the floor, so a light reaches R across and R * groundScaleY up and down: an ellipse.
-   * 1 = straight down (round pools), ~0.7 = a 3/4 top-down view, 0.5 = 2:1 isometric.
-   * Applies to point lights, raycasted lights, particle / LiquidFun lights and point-light shadows.
-   */
-  groundScaleY: 1,
   /** Additive radial quads for ParticleEmitter `lightRadius`. Off unless a scene opts in. */
   particleLights: Object.freeze({
     enabled: false,
     max: 256,
   }),
   sun: SUN_DEFAULTS,
+});
+
+// ============================================================================
+// CAMERA DEFAULTS (DX-CAMERA)
+// ============================================================================
+
+/**
+ * What the scene's camera is (src/util/cameraView.js resolves it). Unset, the picture WeedJS always drew: a floor that is
+ * not foreshortened and heights that rise as many px as they measure.
+ * - pitch: degrees from the horizon, 90 straight down, 0 from the side. Gives floorScaleY = sin(pitch) and
+ *   heightScaleY = cos(pitch) unless they are set.
+ * - floorScaleY: how tall the floor is drawn against its width, in (0, 1]. Light pools are measured on the floor, so a
+ *   light reaches R across and R * floorScaleY up and down: an ellipse. 1 = straight down (round pools), ~0.7 = a 3/4
+ *   top-down view, 0.5 = 2:1 isometric. Point, raycasted, particle and LiquidFun lights, cones, point-light shadows and
+ *   the default floorScaleY of a ShadowCaster's volume read it.
+ * - heightScaleY: screen px that a px of height rises (lighting.faces).
+ * - yaw: degrees the view turns about the vertical (45 for an isometric diamond). Read by nothing yet.
+ */
+export const CAMERA_DEFAULTS = Object.freeze({
+  pitch: null,
+  yaw: 0,
+  floorScaleY: null,
+  heightScaleY: null,
 });
 
 // ============================================================================

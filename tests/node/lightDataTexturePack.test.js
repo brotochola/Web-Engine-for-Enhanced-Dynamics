@@ -8,10 +8,10 @@ import {
   clearUnusedLightDataTexels,
 } from '../../src/util/utils.js';
 
-test('light data texture pack/read matches the RGBA32F layout (row 2: DX-SPOT\'s cones)', () => {
+test('light data texture pack/read matches the RGBA32F layout (row 2: DX-SPOT\'s cones, row 3: N-212\'s fades)', () => {
   const maxLights = 4;
-  assert.equal(LIGHT_DATA_TEX_HEIGHT, 3);
-  assert.equal(lightDataTextureFloatCount(maxLights), maxLights * 3 * 4);
+  assert.equal(LIGHT_DATA_TEX_HEIGHT, 4);
+  assert.equal(lightDataTextureFloatCount(maxLights), maxLights * 4 * 4);
 
   const data = new Float32Array(lightDataTextureFloatCount(maxLights));
   packLightDataTexel(data, maxLights, 0, 10, 20, 5000, 1, 0.5, 0.25);

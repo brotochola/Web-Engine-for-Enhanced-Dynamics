@@ -72,12 +72,12 @@ export class SpotLightStressScene extends Scene {
     layers: {
       ground: { kind: LAYER_KIND.TILEMAP, tilemap: 'terrain', scale: 1, zIndex: 0.5 },
     },
+    camera: { floorScaleY: GROUND_SCALE_Y },
     lighting: {
       enabled: true,
       baseAmbient: 0.06,
       maxLights: CARS,
       shadowsEnabled: true,
-      groundScaleY: GROUND_SCALE_Y,
       maxShadowCastingLights: Math.min(CARS, SHADOW_LIGHTS),
       maxShadowsPerLight: 64,
       ...(FACES ? { faces: { enabled: true } } : {}),

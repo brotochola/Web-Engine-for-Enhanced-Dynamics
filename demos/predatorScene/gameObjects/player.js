@@ -8,7 +8,7 @@ const {
   GameObject,
   RigidBody,
   Collider,
-  SpriteRenderer,
+  DirectionalSprite,
   ShadowCaster,
   Transform,
   Keyboard,
@@ -16,7 +16,6 @@ const {
   Camera,
   Ray,
   NavGrid,
-  getDirectionFromVector,
   rng,
   Flash,
   LightEmitter,
@@ -29,7 +28,7 @@ export class Player extends GameObject {
   static components = [
     RigidBody,
     Collider,
-    SpriteRenderer,
+    DirectionalSprite,
     ShadowCaster,
     // LightEmitter,
   ];
@@ -114,10 +113,11 @@ export class Player extends GameObject {
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 1.0;
 
-    // Shadow uses default heightMultiplier = 1 (matches sprite scale)
+    // Its shadow is the sprite's silhouette (ShadowCaster's default).
 
-    // Store last direction for idle animations
-    this.lastDirection = 'down';
+    // It faces where it moves; standing, where it last moved.
+    this.directionalSprite.facingFrom = 'velocity';
+    this.directionalSprite.turnMargin = 0;
 
     // Movement acceleration (px/s²) — was 0.3 frame units
     this.moveAcceleration = 1080;
@@ -137,7 +137,7 @@ export class Player extends GameObject {
 
     // Set spritesheet and initial animation
     this.setSpritesheet('poli');
-    this.setAnimation('idle_down');
+    this.setAnimation('idle');
     this.setAnimationSpeed(0.15);
   }
 
@@ -199,19 +199,12 @@ export class Player extends GameObject {
 
     // Determine animation state based on speed
     if (speed > 0.5) {
-      const direction = getDirectionFromVector(this.rigidBody.vx, this.rigidBody.vy);
-      this.lastDirection = direction;
-
-      // Choose walk or run based on speed threshold
-      const isRunning = speed > 180; // px/s — was 3 frame units
-      const animPrefix = isRunning ? 'run' : 'walk';
-
-      // Set animation with speed-based animation speed
-      this.setAnimation(`${animPrefix}_${direction}`);
+      // Walk or run in the direction it moves (DirectionalSprite), with a speed-based animation speed.
+      this.setAnimation(speed > 180 ? 'run' : 'walk'); // px/s — was 3 frame units
       this.setAnimationSpeed(speed / 860); // was speed * 0.07 on frame vel
     } else {
-      // Idle - use last facing direction
-      this.setAnimation(`idle_${this.lastDirection}`);
+      // Idle, facing where it last moved
+      this.setAnimation('idle');
     }
   }
 }

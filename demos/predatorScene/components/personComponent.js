@@ -1,25 +1,15 @@
 // PersonComponent.js - Data for person entities
-// Tracks team behavior, grouping, separation, and facing direction
+// Tracks team behavior, grouping and separation (facing is DirectionalSprite's)
 
 import WEED from '/src/index.js';
 
 const { Component } = WEED;
-
-// Direction constants (matches getDirectionFromAngle output)
-export const DIRECTION_UP = 0;
-export const DIRECTION_LEFT = 1;
-export const DIRECTION_DOWN = 2;
-export const DIRECTION_RIGHT = 3;
-
-export const DIRECTION_NAMES = ['up', 'left', 'down', 'right'];
 
 export class PersonComponent extends Component {
   static ARRAY_SCHEMA = {
 
     team: Uint8Array,
     dead: Uint8Array, // 0 = alive, 1 = dead
-    // Animation state
-    facingDirection: Uint8Array, // 0=up, 1=left, 2=down, 3=right
     // Shooting state
     lastShotTime: Float32Array, // Game tick when last shot was fired (for cooldown)
     aimingAccuracy: Float32Array, // 0 = terrible aim (max spread), 1 = perfect aim (no spread)

@@ -311,7 +311,7 @@ test('the shadow cookie: a cone up to 180 degrees takes the half disc turned alo
   };
   pre.gpuQueueCaps = { maxCookie: 8 };
   pre.maxShadowCastingLights = 8;
-  pre.config = { lighting: { groundScaleY: 0.5 } };
+  pre.config = { camera: { floorScaleY: 0.5 } };
   pre.canvasWidth = 800;
   pre._resolveBuiltinTextureId = (name) => (name === '_lightGradient' ? 5 : name === '_lightGradientHalf' ? 9 : -1);
   pre._gpuPackOpts = {};

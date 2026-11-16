@@ -5,7 +5,7 @@ import WEED from '/src/index.js';
 import { SHOOT_DURATION_MS, WALK_SPEED_THRESHOLD } from './personAnimationFsm.js';
 import { Civilian } from '../gameObjects/civilian.js';
 import { Destination } from '../gameObjects/destination.js';
-import { PersonComponent, DIRECTION_NAMES } from '../components/personComponent.js';
+import { PersonComponent } from '../components/personComponent.js';
 
 import { LootableComponent } from '../components/lootableComponent.js';
 

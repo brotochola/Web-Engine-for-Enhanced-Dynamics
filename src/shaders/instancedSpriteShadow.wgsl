@@ -19,8 +19,12 @@ struct ShadowUniforms {
   uLight: vec4<f32>,
   uCam: vec4<f32>,
   uPointScale: f32,
-  // 1 / config.lighting.groundScaleY: a point light's falloff and range are measured on the floor.
+  // 1 / the camera's floorScaleY: a point light's falloff and range are measured on the floor.
   uGroundInvScaleY: f32,
+  // DX-SHADOW3D: the sun's terms (sunShadowMap.js sunMapTerms): kx, ky (a px of height's landing shift on the floor), 0,
+  // heightScaleY; and the floor direction a card's columns run along (to the right of someone at the sun).
+  uSunK: vec4<f32>,
+  uSunPerp: vec4<f32>,
 }
 @group(2) @binding(0) var uTexture: texture_2d<f32>;
 @group(2) @binding(1) var uSampler: sampler;
@@ -79,6 +83,8 @@ fn mainVert(
   var aInstSize = vec2<f32>(0.0);
   var aInstUV = vec4<f32>(0.0);
   var aInstTrim = vec4<f32>(0.0);
+  // DX-SHADOW3D: where the frame stands (frameBase.js lutBaseFloats), the table's last two floats.
+  var aInstBase = vec2<f32>(0.0);
   if (tid >= 0 && tid < lutPerRow * i32(lutSize.y)) {
     let lutAt = vec2<i32>(3 * (tid % lutPerRow), tid / lutPerRow);
     let t0 = textureLoad(uTexLut, lutAt, 0);
@@ -87,6 +93,7 @@ fn mainVert(
     aInstSize = t0.xy;
     aInstUV = vec4<f32>(t0.zw, t1.xy);
     aInstTrim = vec4<f32>(t1.zw, t2.xy);
+    aInstBase = t2.zw;
   }
   let height = aInstShadow.x;
   if (height <= 0.0) {
@@ -94,10 +101,22 @@ fn mainVert(
     return out;
   }
   let anchor = aInstAnchor + aInstShadow.yz;
-  var sy = aInstScale.y;
-  var alpha = uniforms.uSun.w;
-  var c = uniforms.uSun.x;
-  var s = uniforms.uSun.y;
+  // DX-CASTER (F9): the caster's own way (instancedSpriteShadow.vert.glsl says how).
+  var castCode = 0;
+  if (aInstDepth < -0.5) { castCode = i32(-aInstDepth - 0.5); }
+  let sunKind = castCode & 7;
+  let lampKind = (castCode >> 3u) & 7;
+  var castOpacity = 1.0;
+  if (aInstDepth < -0.5) { castOpacity = f32((castCode >> 7u) & 255) / 255.0; }
+  let castFixed = ((castCode >> 6u) & 1) == 1;
+  let castAxisA = f32((castCode >> 15u) & 63) * 0.09817477042;
+  let castAxis = vec2<f32>(cos(castAxisA), sin(castAxisA));
+  // ShadowCaster.baseRadius (px, 0: the measured base), in a tagged row's tile offset (instancedSpriteShadow.vert.glsl).
+  let castBaseRadius = select(0.0, max(aInstTileOff.x, 0.0), all(aInstTileInv == vec2<f32>(0.0)));
+  // weed:afterAnchor
+  let content = aInstTrim.xy + aQuad * aInstTrim.zw;
+  var world: vec2<f32>;
+  var alpha = select(uniforms.uSun.w * castOpacity, 0.0, sunKind >= 3);
   let light = select(uniforms.uLight, aInstLight, aInstLight.w > 0.0);
   if (light.w > 0.0) {
     let d = aInstXY - light.xy;
@@ -110,24 +129,61 @@ fn mainVert(
     }
     let invDist = inverseSqrt(distSq);
     let distRatio = clamp(distSq * invDist * 0.00390625, 0.0, 1.0);
-    sy = -(0.3 + distRatio * 0.9) * abs(aInstScale.y) * height;
+    let sy = -(0.3 + distRatio * 0.9) * abs(aInstScale.y) * height;
     // The shadow points away from the light on screen (the floor's projection keeps straight lines).
     let invScreenDist = inverseSqrt(max(dot(d, d), 1e-6));
-    c = d.y * invScreenDist;
-    s = -d.x * invScreenDist;
+    let c = d.y * invScreenDist;
+    let s = -d.x * invScreenDist;
     let fade = 1.0 - distSq / rangeSq;
-    alpha = clamp(light.z / (light.z + distSq), 0.0, 1.0) * uniforms.uPointScale * fade;
+    alpha = clamp(light.z / (light.z + distSq), 0.0, 1.0) * uniforms.uPointScale * fade * castOpacity;
+    if (lampKind >= 3) { alpha = 0.0; }
     if (alpha < 0.003) {
       clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);
       return out;
     }
+    let local = (content - anchor * aInstSize) * vec2<f32>(aInstScale.x, sy);
+    world = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c) + aInstXY;
   } else {
-    sy = -abs(aInstScale.y) * height * uniforms.uSun.z;
+    // weed:sunCard
+    // DX-SHADOW3D: the sun's card (instancedSpriteShadow.vert.glsl says how): standing on the frame's lowest opaque row,
+    // its columns across the sun, each point landing on the floor along the sun's ray.
+    let bottom = aInstTrim.y + aInstTrim.w;
+    let sunZ = max(bottom - content.y, 0.0) * abs(aInstScale.y) / uniforms.uSunK.w * height;
+    // The picture's column at the card's foot, and the foot: under the lowest row, unless the frame's base says more.
+    var footCol = anchor.x * aInstSize.x;
+    var foot = vec2<f32>(aInstXY.x, (aInstXY.y + (bottom - aInstAnchor.y * aInstSize.y) * aInstScale.y) * uniforms.uGroundInvScaleY);
+    let kLen = length(uniforms.uSunK.xy);
+    var toSun = vec2<f32>(0.0);
+    if (kLen > 1e-6) { toSun = uniforms.uSunK.xy / kLen; }
+    if (aInstBase.x >= 1.0) {
+      // One view: an ellipse (the feet; a trunk, round), the card on its edge towards the sun.
+      var rx = abs(aInstBase.y) * abs(aInstScale.x);
+      var ry = select(0.6 * aInstBase.y, -aInstBase.y, aInstBase.y < 0.0) * abs(aInstScale.y);
+      // DX-CASTER: the caster's baseRadius corrects the measured radius, the ellipse's shape kept.
+      if (castBaseRadius > 0.0) {
+        ry = select(select(0.6 * castBaseRadius, castBaseRadius, aInstBase.y < 0.0), ry * castBaseRadius / rx, rx > 1e-3);
+        rx = castBaseRadius;
+      }
+      footCol = aInstBase.x - 1.0;
+      foot.x = aInstXY.x + (footCol - aInstAnchor.x * aInstSize.x) * aInstScale.x;
+      foot.y -= ry;
+      foot += toSun * sqrt(rx * rx * toSun.x * toSun.x + ry * ry * toSun.y * toSun.y);
+    } else if (aInstBase.x < 0.0) {
+      // A render: the view from the sun, its lowest contact the one nearest the sun.
+      let reach = (-aInstBase.x - 1.0 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uniforms.uGroundInvScaleY;
+      foot = vec2<f32>(aInstXY.x, aInstXY.y * uniforms.uGroundInvScaleY) + toSun * reach;
+    }
+    var sunPerp = uniforms.uSunPerp.xy;
+    if (castFixed) {
+      // DX-CASTER: a fixed card stands along the object through its anchor.
+      foot = vec2<f32>(aInstXY.x, aInstXY.y * uniforms.uGroundInvScaleY);
+      footCol = aInstAnchor.x * aInstSize.x;
+      sunPerp = castAxis;
+    }
+    let land = foot + (content.x - footCol) * aInstScale.x * sunPerp - sunZ * uniforms.uSunK.xy;
+    world = vec2<f32>(land.x, land.y / uniforms.uGroundInvScaleY);
+    // weed:sunOut
   }
-  let content = aInstTrim.xy + aQuad * aInstTrim.zw;
-  let local = (content - anchor * aInstSize) * vec2<f32>(aInstScale.x, sy);
-  let rotated = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c);
-  let world = rotated + aInstXY;
   let screen = (world - uniforms.uCam.xy) * uniforms.uCam.z;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(screen, 1.0);

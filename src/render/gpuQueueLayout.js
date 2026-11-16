@@ -53,12 +53,24 @@ export const GPU_FLAG_SPLIT = 2;
  */
 export const GPU_FLAG_INDEXED = 4;
 /**
- * E-191. With GPU_FLAG_KEYED_CASTERS the sun and stamp regions hold keyed caster rows: x, y, the key as a float and a
- * zero (the slot pair the shadow program reads the statics by, from the keyed frames' statics texture) and the shadow
- * terms (GPU_KEYED_CASTER_FLOATS); a stamp row adds the light vec4 at GPU_KEYED_CASTER_FLOATS
+ * E-191. With GPU_FLAG_KEYED_CASTERS the sun and stamp regions hold keyed caster rows: x, y, the key as a float (the slot
+ * the shadow program reads the statics by, from the keyed frames' statics texture), the frame the light sees (DX-SHADOW3D:
+ * ±(textureId + 1), negative mirrored, 0 the sprite's own) and the shadow terms (GPU_KEYED_CASTER_FLOATS); a stamp row adds
+ * the light vec4 at GPU_KEYED_CASTER_FLOATS
  * (GPU_KEYED_STAMP_FLOATS). Pre-render writes them while Pixi's keyed texture is live (PIXI_KEYED_HEADER.LIVE).
  */
 export const GPU_FLAG_KEYED_CASTERS = 8;
+/**
+ * DX-GBUF (plan §6.4): the gbuf region holds each sprite instance's G-buffer word pair (src/render/gbufWord.js:
+ * GPU_GBUF_FLOATS an instance, in the sprite rows' draw order, whatever their layout: rows, two streams or indexed).
+ */
+export const GPU_FLAG_GBUF = 16;
+/**
+ * N-188: the sun rows carry casters' own ways (a frame of their own, setSprite({ frame }); a kind or a code, DX-CASTER):
+ * Pixi draws pre-render's rows, not the entity batch's keyed instances, which hold the sprites' own statics only.
+ */
+export const GPU_FLAG_CASTER_OWN = 32;
+export const GPU_GBUF_FLOATS = 2;
 export const GPU_KEYED_CASTER_FLOATS = 7;
 export const GPU_KEYED_STAMP_FLOATS = GPU_KEYED_CASTER_FLOATS + 4;
 export const GPU_HDR_INDEXED_ROWS = 9;
@@ -67,6 +79,11 @@ export const GPU_HDR_INDEXED_ROWS = 9;
  * scale hold, so the renderer takes the pairs again only when it moves (0: take them).
  */
 export const GPU_HDR_SLOTS_GEN = 10;
+/**
+ * DX-SHADOW3D (F7): how many lights this frame's stamps went to; stampLightIds names each one's entity, in the order a
+ * stamp row's stampLightIdx counts them (a lamp's tile in the lamps' shadow map is that index).
+ */
+export const GPU_HDR_STAMP_LIGHTS = 11;
 
 export const GPU_SPACE_WORLD = 0;
 export const GPU_SPACE_SCREEN = 1;
@@ -122,6 +139,11 @@ export function gpuQueueCaps(maxSprites, lighting, indexedSprites = false) {
     maxSun: shadowOn ? sprites : 0,
     maxStamp: stamp,
     maxCookie: shadowOn ? Math.max(1, Math.min(maxLights, castLights || maxLights)) : 0,
+    // DX-SHADOW3D (F7): the lights a frame's stamps can go to (stampLightIds).
+    maxStampLights: shadowOn ? castLights : 0,
+    // DX-GBUF: each sprite instance's G-buffer words (GPU_FLAG_GBUF), in a lit scene (the G-buffer, the glow and the
+    // zIndex bands of the pixel depth read them).
+    maxGbuf: lightsOn ? sprites : 0,
     indexedSprites: !!indexedSprites,
   };
 }
@@ -136,6 +158,11 @@ export function computeGpuQueueBufferSize(caps) {
   offset += (c.maxCookie | 0) * GPU_SPRITE_FLOATS * 4;
   offset = align4(offset);
   offset += (c.maxStamp | 0) * 2;
+  offset = align4(offset);
+  offset += (c.maxStampLights | 0) * 4;
+  offset += (c.maxGbuf | 0) * GPU_GBUF_FLOATS * 4;
+  // N-212: each stamp light's fade at the cut.
+  offset += (c.maxStampLights | 0) * 4;
   return align4(offset);
 }
 
@@ -178,6 +205,17 @@ export function createGpuQueueViews(sab, caps, base = 0) {
   // A spriteKeys region (maxSprites floats) used to follow; nothing read or
   // wrote it, so it is gone (review D6).
   offset = align4(offset + stampN * 2);
+  const stampLightN = c.maxStampLights | 0;
+  const stampLightIds = stampLightN > 0 ? new Uint32Array(sab, offset, stampLightN) : new Uint32Array(0);
+  offset += stampLightN * 4;
+  // DX-GBUF: the sprite instances' G-buffer words, last (a layout without them keeps every other region where it was).
+  const gbufN = (c.maxGbuf | 0) * GPU_GBUF_FLOATS;
+  const spriteGbuf = gbufN > 0 ? new Float32Array(sab, offset, gbufN) : new Float32Array(0);
+  offset += gbufN * 4;
+  // N-212: each stamp light's fade at the cut of maxShadowCastingLights (1 inside it), as stampLightIds names them, after
+  // the G-buffer words so every other region stays where it was.
+  const stampLightFade = stampLightN > 0 ? new Float32Array(sab, offset, stampLightN) : new Float32Array(0);
+  offset += stampLightN * 4;
   return {
     header,
     sprites: sprites.view,
@@ -197,6 +235,9 @@ export function createGpuQueueViews(sab, caps, base = 0) {
     cookie: cookie.view,
     cookieU32: cookie.u32,
     stampLightIdx,
+    stampLightIds,
+    spriteGbuf,
+    stampLightFade,
     caps: c,
     byteLength: offset - start,
   };
@@ -215,6 +256,7 @@ export function clearGpuQueueHeader(header) {
   header[GPU_HDR_STATIC_GEN] = 0;
   header[GPU_HDR_INDEXED_ROWS] = 0;
   header[GPU_HDR_SLOTS_GEN] = 0;
+  header[GPU_HDR_STAMP_LIGHTS] = 0;
 }
 
 export function writeGpuQueueHeader(header, counts, flags) {
@@ -230,6 +272,7 @@ export function writeGpuQueueHeader(header, counts, flags) {
   header[GPU_HDR_STATIC_GEN] = counts.staticGen | 0;
   header[GPU_HDR_INDEXED_ROWS] = counts.indexedRows | 0;
   header[GPU_HDR_SLOTS_GEN] = counts.slotsGen | 0;
+  header[GPU_HDR_STAMP_LIGHTS] = counts.stampLights | 0;
 }
 
 /**

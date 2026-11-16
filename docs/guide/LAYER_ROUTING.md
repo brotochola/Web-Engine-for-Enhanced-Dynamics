@@ -243,21 +243,23 @@ layers: {
 
 A MESH layer with `alphaBySun` draws into one render texture at the layer's `resolution` and composes it once, so overlapping meshes do not darken twice. A sprite layer fades per sprite.
 
-### Volumes: `VolumeShadowCaster`
+### Volumes: `shadowCaster.setBox`
 
-A `ShadowCaster` flips a sprite from its foot, which suits something standing. A house or a car seen from above is a volume: list `VolumeShadowCaster` and say what it is. The engine works out the shadow.
+A `ShadowCaster` casts a sprite's silhouette, which suits something standing. A house or a car seen from above is a volume: its `ShadowCaster` says what it is, and the engine works out the shadow. The scene keeps room for the entities that hold a volume at once (`lighting.maxVolumes`).
 
 ```javascript
-static components = [SpriteRenderer, VolumeShadowCaster];
+static config = { lighting: { enabled: true, maxVolumes: 40 } };
+
+static components = [SpriteRenderer, ShadowCaster];
 
 onSpawned() {
   this.setSprite('house');
-  this.volumeShadowCaster.setBox(176, 72, 104, { offsetY: -36 }); // width, depth, height, and its centre on the entity
-  this.volumeShadowCaster.addLevel(tankOutline, 104, 140);        // a water tank on the roof
+  this.shadowCaster.setBox(176, 72, 104, { offsetY: -36 }); // width, depth, height, and its centre on the entity
+  this.shadowCaster.addLevel(tankOutline, 104, 140);        // a water tank on the roof
 }
 ```
 
-It moves and turns with its entity. There is no second entity, no `tick`, no layer in the config and no mesh code.
+It moves and turns with its entity. There is no second entity, no `tick`, no layer in the config and no mesh code. The volume replaces the silhouette; a later `setSprite()` (or another setter that casts something else) clears it.
 
 - `setBox(width, depth, height, { offsetX, offsetY, topScale, floorScaleY })` is a box; `topScale` makes its roof smaller about its centre. It goes from 0 up, and 0 is a pyramid. It replaces the volume.
 - `addLevel(outline, bottom, top, topOutline, { floorScaleY })` adds a level on what the volume has: a cabin on a car's body, a tank on a roof. The outline is flat `x, y` or `{ x, y }[]`, and need not be convex. `topOutline`, with as many corners, gives the level another top; a top that closes on a point is a pyramid and one that closes on a line a gabled roof. A top that crosses itself is refused.
@@ -270,26 +272,26 @@ A call that cannot make a volume warns once for each kind of mistake and leaves 
 
 x looks the way the entity looks and y goes across it, both on the floor, in world px. Heights are in screen px, as on a `ShadowCaster`'s sprite, so houses, people and trees cast to the same point.
 
-`floorScaleY` (default `lighting.groundScaleY`) is how tall the floor is drawn against its width. A car whose pictures flatten the floor to 0.7 says so on a floor of 0.5. The shader applies it, so a car that turns rewrites no vertex, and it keeps the entity's rotation as what the screen shows: the car's long side stays on its path at every heading. Points already measured on the screen take `floorScaleY: 1`.
+`floorScaleY` (default `config.camera.floorScaleY`) is how tall the floor is drawn against its width. A car whose pictures flatten the floor to 0.7 says so on a floor of 0.5. The shader applies it, so a car that turns rewrites no vertex, and it keeps the entity's rotation as what the screen shows: the car's long side stays on its path at every heading. Points already measured on the screen take `floorScaleY: 1`.
 
 ```javascript
 // A car, x forward. Its cabin's roof is smaller than its base.
-this.volumeShadowCaster.addLevel(BODY, 0, 13, BODY, { floorScaleY: 0.7 });
-this.volumeShadowCaster.addLevel(CABIN, 13, 27, ROOF);
+this.shadowCaster.addLevel(BODY, 0, 13, BODY, { floorScaleY: 0.7 });
+this.shadowCaster.addLevel(CABIN, 13, 27, ROOF);
 ```
 
 The rest takes care of itself:
 
-- **The layer.** A scene with such a class gets a `volumeShadows` layer at `zIndex` 1.5, composed once with `alphaBySun: 'shadow'`, so two shadows that cross do not darken twice. `layers: { volumeShadows: { zIndex: 2.5 } }` moves it. `setLayer` moves the entity's sprite, not its volume.
-- **The room.** The scene keeps `lighting.maxVolumeVerts` vertices (default 16) for each entity of such a class, on top of `renderer.maxMeshVerts`. A box takes 8, a body with a cabin 16, and a hull as many as its corners. It is a share of one arena, so one volume may take more if another takes less; when it is full, a volume warns: a box or a hull that does not fit draws nothing, and a level that does not fit leaves the volume as it was.
+- **The layer.** A scene with `lighting.maxVolumes` above 0 (and a class that lists `ShadowCaster`) gets a `volumeShadows` layer at `zIndex` 1.5, composed once with `alphaBySun: 'shadow'`, so two shadows that cross do not darken twice. `layers: { volumeShadows: { zIndex: 2.5 } }` moves it. `setLayer` moves the entity's sprite, not its volume. A scene with `maxVolumes` 0 (the default) has no such layer and pays nothing; a volume setter there warns once.
+- **The room.** The scene keeps `lighting.maxVolumeVerts` vertices (default 16) for each of `lighting.maxVolumes`, on top of `renderer.maxMeshVerts`. A box takes 8, a body with a cabin 16, and a hull as many as its corners. It is a share of one arena, so one volume may take more if another takes less; when it is full, a volume warns, naming both keys: a box or a hull that does not fit draws nothing, and a level that does not fit leaves the volume as it was.
 - **Its entity's paint.** The shadow is black whatever `tint` the entity has. `alpha` and `visible` reach it, so a car that fades takes its shadow along.
 - **The cost.** A volume draws what the mesh it replaces would, and a turn rewrites nothing. On a town of 20 000 houses and 200 cars, as many frames as meshes written by hand, and 5 % less of the renderer's time.
 
-An entity of such a class has a `MeshRenderer`, listed or not, and its one mesh is the volume: `setMesh` and the like are refused with a warning. The sun casts a volume; lamps do not yet.
+The volume draws with the entity's `MeshRenderer` row: an entity whose class does not list `MeshRenderer` gets that row while it holds a volume; one whose class lists it has its one mesh taken by the volume, so `setMesh` and the like are refused with a warning while it holds one. The sun casts a volume, and in the shadow maps the lamps too.
 
 ### Volumes by hand: `sunProjected`
 
-`VolumeShadowCaster` is built on this, and it stays public for what the component does not cover. Give an entity a mesh with a height per vertex on a `sunProjected` layer, and the vertex shader moves each vertex by its height and the sun, every frame, with nothing packed or uploaded after the first.
+A ShadowCaster's volume is built on this, and it stays public for what the volume setters do not cover. Give an entity a mesh with a height per vertex on a `sunProjected` layer, and the vertex shader moves each vertex by its height and the sun, every frame, with nothing packed or uploaded after the first.
 
 ```javascript
 layers: { houseShadows: { kind: LAYER_KIND.MESH, zIndex: 1.5, sunProjected: true } } // alphaBySun defaults to 'shadow'
@@ -308,15 +310,15 @@ The sun moves a vertex `h · Sun.shadowLengthRatio · (Sun.shadowDirX, Sun.shado
 A `ShadowCaster` casts its entity's sprite. When the sprite is only a piece of what you see (a tree's trunk, its branches decorations that sway), give it the whole silhouette to cast:
 
 ```javascript
-static config = { lighting: { shadowsEnabled: true, shadowTextures: true } };
+static config = { lighting: { shadowsEnabled: true } };
 
 onSpawned() {
   this.setSprite('trunk');
-  this.shadowCaster.setTexture('treeSilhouette', { anchorX: 0.5, anchorY: 1, scaleX: 1.2, scaleY: 1.2 });
+  this.shadowCaster.setSprite({ frame: 'treeSilhouette', anchorX: 0.5, anchorY: 1, scaleX: 1.2, scaleY: 1.2 });
 }
 ```
 
-The silhouette casts for the sun and for point lights. Options left out stay the sprite's. `config.lighting.shadowTextures` turns on one pass over the caster rows and turns off the keyed caster paths, so a scene without it pays nothing; a frame with Adobe animations in it keeps the sprites' own shadows.
+The silhouette casts for the sun and for point lights. Options left out stay the sprite's: with a `frame`, `anchorX` and `anchorY` are that frame's own anchor; `setSprite()` goes back to the sprite's silhouette. While any caster casts a frame of its own, pre-render sends its full caster rows (one pass over them; the keyed caster paths off those frames), so a scene without one pays nothing; a frame with Adobe animations in it keeps the sprites' own shadows.
 
 ## Layer Resolution (Cross-Worker)
 

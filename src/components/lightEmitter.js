@@ -16,7 +16,8 @@ const FULL_TURN = Math.PI * 2;
  * A light on an entity.
  *
  * - `radius` (px) is how far it reaches. Its falloff is I / (I + d²) with I = (radius / 10)², measured on the floor
- *   (config.lighting.groundScaleY), so it is full at its centre and about 1 % at the radius.
+ *   (config.camera.floorScaleY), times (1 - (d / radius)⁴)²: full at its centre, nearly unchanged halfway, nothing at the
+ *   radius and past it, where its shadows fade out with it.
  * - `brightness` (1 by default) multiplies its colour and its glow; under 1 its sprite shadows are that much lighter.
  * - `color` is 0xRRGGBB.
  * - `elevation` lifts the source off the floor without moving its pool: the falloff becomes I / (I + h² + d²), a wider,

@@ -1,5 +1,5 @@
 // Sun Street — a day on a street, with the sun, night and mesh options on one screen. An oblique view: height only
-// rises on the screen, so a house is a volume, and a ShadowCaster, which flips a sprite from its foot, cannot shadow it.
+// rises on the screen, so a house is a volume: a sprite's silhouette, flipped from its foot, cannot shadow it.
 //
 //   lighting.sun.night     the night's own blue light, which leaves Sun.intensity alone (N)
 //   lighting.sun.colors    this scene's colours by hour: the deep orange dusk
@@ -7,11 +7,13 @@
 //                          what the main thread leaves at the end of its frame
 //   alphaBySun             windows and lamp halos come up with 'night', clouds go with a ramp, no code in update
 //   layer.alpha            L, on a sprite layer and a MESH layer
-//   VolumeShadowCaster     houses and cars say what they are (setBox, addLevel), and the GPU moves their shadows with
-//                          the sun; trees and people use ShadowCaster, and the shadows agree
-//   LightOccluder          R: houses and cars stop the lamps and headlights (lighting.raycasted; ?raycast=0 turns it off)
+//   shadowCaster.setBox    houses and cars say what they are (setBox, addLevel: volumes, with room in lighting.maxVolumes),
+//                          and the GPU moves their shadows with the sun; trees and people cast their sprite, and the
+//                          shadows agree
+//   lamps.setWall          R: houses and cars stop the lamps and headlights (walls, under the raycasted lighting of
+//                          camera.pitch 90; ?raycast=0 sets no pitch and no walls); R sets their shadowCaster.opacity
 //   LightEmitter.offsetX   the headlights sit ahead of the car and turn with it (O); the cars are carScene's
-//   setTexture             T: the trees cast another tree's silhouette, their sprite stays
+//   setSprite({ frame })   T: the trees cast another tree's silhouette, their sprite stays
 //   mesh range uploads     the flag rewrites its vertices every frame and the still tufts are not sent again: the
 //                          renderer's time in the panel does not grow with ?tufts=
 //   WEED.params            ?carSpeed= is read on the logic worker
@@ -25,9 +27,10 @@ import WEED from '/src/index.js';
 import { LAP, ROAD_CX, ROAD_CY, ROAD_WIDTH, WORLD_H, WORLD_W } from './streetLayout.js';
 import { FlagPole, GrassTufts, RoadBand, RoadDashes, StreetFlag } from './gameObjects/streetMeshes.js';
 import { StreetCar, StreetCloud, StreetHouse, StreetLamp, StreetTree, StreetWalker } from './gameObjects/streetSprites.js';
+import { CAR_SHEETS } from './streetCars.js';
 import { SunPanel } from './sunPanel.js';
 
-const { Scene, Camera, Decoration, Keyboard, Layer, LightOccluder, Sun, Transform, BLEND_MODES, LAYER_KIND } = WEED;
+const { Scene, Camera, Decoration, Keyboard, Layer, Sun, Transform, BLEND_MODES, LAYER_KIND } = WEED;
 
 const param = (key, fallback) => Number(WEED.params?.get(key) ?? fallback);
 const START_HOUR = param('hour', 16.5);
@@ -70,7 +73,6 @@ const CLOUDS = [
 ];
 const WALKERS = 8;
 const WALKER_SHEETS = ['amarillo_01', 'female_01', 'amarillo_02', 'female_03'];
-const CAR_SHEETS = ['red', 'yellow', 'blue', 'white', 'black', 'poli'];
 
 export class SunStreetScene extends Scene {
   static config = {
@@ -109,13 +111,15 @@ export class SunStreetScene extends Scene {
         shader: { fragment: 'streetVignette', uniforms: { uAmount: { value: VIGNETTE, type: 'f32' } } },
       },
     },
+    // Pitch 90, a flat view, lights by raycasting (the walls); ?raycast=0 sets none, basic lighting. The floor is 1 either
+    // way, as without a camera.
+    camera: RAYCAST ? { pitch: 90 } : {},
     lighting: {
       enabled: true,
       baseAmbient: 0.06,
       maxLights: 32,
       shadowsEnabled: true,
-      raycasted: RAYCAST,
-      shadowTextures: true,
+      maxVolumes: HOUSES + CARS, // each house's box and tank, each car's body and cabin
       maxShadowCastingLights: 8,
       maxShadowsPerLight: 24,
       sun: {
@@ -159,7 +163,8 @@ export class SunStreetScene extends Scene {
       streetVignette: { webgl: shaderUrl('vignette.frag'), webgpu: shaderUrl('vignette.wgsl') },
     },
     spritesheets: {
-      ...Object.fromEntries(CAR_SHEETS.map((name) => [`car_${name}`, { json: `/demos/img/cars/${name}.json`, png: `/demos/img/cars/${name}.png` }])),
+      // The standard cars (streetCars.js lists them), each under its own name.
+      ...Object.fromEntries(CAR_SHEETS.map((name) => [name, { json: `/demos/img/autos/${name}.json`, png: `/demos/img/autos/${name}.png` }])),
       ...Object.fromEntries(WALKER_SHEETS.map((name) => [name, { json: '/demos/img/civil1.json', png: `/demos/img/people/${name}.png` }])),
     },
   };
@@ -205,7 +210,7 @@ export class SunStreetScene extends Scene {
       { key: 'e', keyName: 'E', label: 'Eclipse', note: 'update overrides Sun.intensity after the cycle, every frame: it must not flicker', press: () => this._toggleEclipse() },
       { key: 'o', keyName: 'O', label: 'Headlights', note: 'At night. LightEmitter.offsetX: the pool ahead of the car, through the bends', press: () => this._toggleHeadlights() },
       { key: 'r', keyName: 'R', label: 'Light occluders', note: 'At night. Houses and cars stop the lamps and headlights', press: () => this._toggleOccluders() },
-      { key: 't', keyName: 'T', label: 'Tree shadows', note: 'ShadowCaster.setTexture: another silhouette, the same sprite', press: () => this._toggleTreeShadows() },
+      { key: 't', keyName: 'T', label: 'Tree shadows', note: 'shadowCaster.setSprite({ frame }): another silhouette, the same sprite', press: () => this._toggleTreeShadows() },
       { key: 'l', keyName: 'L', label: 'layer.alpha', note: 'On the road (MESH layers) and the clouds (a sprite layer)', press: () => this._toggleFade() },
       { key: 'p', keyName: 'P', label: 'Post', note: 'LAYER_KIND.SCREEN: a grading by the hour, then a vignette, over the whole frame', press: () => this._togglePost() },
     ]);
@@ -243,7 +248,7 @@ export class SunStreetScene extends Scene {
       StreetWalker.spawn({ x: 300 + i * 170, y, sheet: WALKER_SHEETS[i % WALKER_SHEETS.length], from: 280, to: 1520, direction: i % 2 === 0 ? 1 : -1 });
     }
     for (let i = 0; i < CARS; i++) {
-      StreetCar.spawn({ x: ROAD_CX, y: ROAD_CY, sheet: `car_${CAR_SHEETS[i % CAR_SHEETS.length]}`, distance: (i / CARS) * LAP, offset: HEADLIGHT_OFFSET });
+      StreetCar.spawn({ x: ROAD_CX, y: ROAD_CY, sheet: CAR_SHEETS[i % CAR_SHEETS.length], distance: (i / CARS) * LAP, offset: HEADLIGHT_OFFSET });
     }
     for (const cloud of CLOUDS) StreetCloud.spawn(cloud);
     FlagPole.spawn({ x: FLAG.x, y: FLAG.y });
@@ -335,7 +340,8 @@ export class SunStreetScene extends Scene {
     this._occluders = !this._occluders;
     for (const list of [StreetHouse.instances, StreetCar.instances]) {
       for (const entity of list) {
-        if (Transform.active[entity.index]) LightOccluder.block[entity.index] = this._occluders ? 1 : 0;
+        // How much light the wall takes out (setWall takes the caster's opacity).
+        if (Transform.active[entity.index]) entity.shadowCaster.opacity = this._occluders ? 1 : 0;
       }
     }
     this._showStates();
@@ -345,8 +351,9 @@ export class SunStreetScene extends Scene {
     this._treeShadows = !this._treeShadows;
     for (const tree of StreetTree.instances) {
       if (!Transform.active[tree.index]) continue;
-      if (this._treeShadows) tree.shadowCaster.setTexture('tree2', { anchorX: 0.5, anchorY: 1, scaleX: 1.5, scaleY: 1.5 });
-      else tree.shadowCaster.clearTexture();
+      // The frame stands where the sprite does, at its anchor: the foot.
+      if (this._treeShadows) tree.shadowCaster.setSprite({ frame: 'tree2', scaleX: 1.5, scaleY: 1.5 });
+      else tree.shadowCaster.setSprite();
     }
     this._showStates();
   }
@@ -365,7 +372,7 @@ export class SunStreetScene extends Scene {
     panel.show('n', this._nightOn ? 'on' : 'off');
     panel.show('e', this._eclipse ? 'on' : 'off');
     panel.show('o', this._headlightsAhead ? `${HEADLIGHT_OFFSET} px ahead` : 'on the car');
-    panel.show('r', !RAYCAST ? 'needs lighting.raycasted' : this._occluders ? 'on' : 'off');
+    panel.show('r', !RAYCAST ? 'needs ?raycast=1 (camera pitch 90)' : this._occluders ? 'on' : 'off');
     panel.show('t', this._treeShadows ? 'a big tree' : "the sprite's");
     panel.show('l', this._faded ? String(FADED_ALPHA) : '1');
     panel.show('p', this._post ? 'on' : 'off');

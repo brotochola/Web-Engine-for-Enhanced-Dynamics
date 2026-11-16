@@ -2,14 +2,6 @@
 // Handles locomotion (idle/walk/run) and action animations (shoot, melee, hurt, die)
 
 import WEED from '/src/index.js';
-import {
-  PersonComponent,
-  DIRECTION_NAMES,
-  DIRECTION_UP,
-  DIRECTION_LEFT,
-  DIRECTION_DOWN,
-  DIRECTION_RIGHT,
-} from '../components/personComponent.js';
 import { LootableComponent } from '../components/lootableComponent.js';
 
 const { FSM, FSMState, RigidBody } = WEED;
@@ -37,13 +29,9 @@ const RUN_ANIMATION_MULTIPLIER = 0.002; // was 0.12 / 60
 const WALK_ANIMATION_MULTIPLIER = 0.00277; // was 0.166 / 60
 const IDLE_ANIMATION_MULTIPLIER = 0.05; // idle is not speed-scaled
 
-/** Same octants as getDirectionFromVector — returns DIRECTION_* index (no string/indexOf). */
-function facingIndexFromVelocity(vx, vy) {
-  const ax = vx < 0 ? -vx : vx;
-  const ay = vy < 0 ? -vy : vy;
-  if (ay >= ax) return vy >= 0 ? DIRECTION_DOWN : DIRECTION_UP;
-  return vx >= 0 ? DIRECTION_RIGHT : DIRECTION_LEFT;
-}
+// Directions: each animation is played by its directionless name ('walk', 'shoot'); the person's DirectionalSprite draws the
+// direction it faces. Moving states face where the body goes (facingFrom 'velocity': under 4 px/s, WALK_SPEED_THRESHOLD, it
+// keeps its facing); the actions face their target (Person.shoot / punch set it, manual).
 
 // ==========================================
 // IDLE STATE - standing still
@@ -54,8 +42,8 @@ class IdleState extends FSMState {
     // Skip animation if no spritesheet set yet (FSM auto-init runs before onSpawned)
     if (!owner.spriteRenderer?.spritesheetId) return;
 
-    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
-    owner.setAnimation(`idle_${facingDir}`);
+    owner.directionalSprite.facingFrom = 'velocity';
+    owner.setAnimation('idle');
     owner.setAnimationSpeed(IDLE_ANIMATION_MULTIPLIER);
   }
 
@@ -73,7 +61,6 @@ class IdleState extends FSMState {
       this.fsm.changeState(i, this.fsm.states.WALKING);
     }
 
-    // Facing only changes in walk/run/actions; onEnter already set idle_* — skip per-tick setAnimation
   }
 }
 
@@ -84,8 +71,8 @@ class IdleState extends FSMState {
 class WalkingState extends FSMState {
   static onEnter(owner, i, fromState) {
     if (!owner.spriteRenderer?.spritesheetId) return;
-    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
-    owner.setAnimation(`walk_${facingDir}`);
+    owner.directionalSprite.facingFrom = 'velocity';
+    owner.setAnimation('walk');
     owner.setAnimationSpeed(RigidBody.speed[i] * WALK_ANIMATION_MULTIPLIER);
   }
 
@@ -97,15 +84,6 @@ class WalkingState extends FSMState {
     }
 
     const speed = RigidBody.speed[i];
-
-    // Update facing from vx/vy; setAnimation only when facing changes
-    if (speed > WALK_SPEED_THRESHOLD) {
-      const dirIndex = facingIndexFromVelocity(RigidBody.vx[i], RigidBody.vy[i]);
-      if (dirIndex !== PersonComponent.facingDirection[i]) {
-        PersonComponent.facingDirection[i] = dirIndex;
-        owner.setAnimation(`walk_${DIRECTION_NAMES[dirIndex]}`);
-      }
-    }
 
     owner.setAnimationSpeed(speed * WALK_ANIMATION_MULTIPLIER);
 
@@ -132,8 +110,8 @@ class WalkingState extends FSMState {
 class RunningState extends FSMState {
   static onEnter(owner, i, fromState) {
     if (!owner.spriteRenderer?.spritesheetId) return;
-    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
-    owner.setAnimation(`run_${facingDir}`);
+    owner.directionalSprite.facingFrom = 'velocity';
+    owner.setAnimation('run');
     owner.setAnimationSpeed(RigidBody.speed[i] * RUN_ANIMATION_MULTIPLIER);
   }
 
@@ -145,12 +123,6 @@ class RunningState extends FSMState {
     }
 
     const speed = RigidBody.speed[i];
-
-    const dirIndex = facingIndexFromVelocity(RigidBody.vx[i], RigidBody.vy[i]);
-    if (dirIndex !== PersonComponent.facingDirection[i]) {
-      PersonComponent.facingDirection[i] = dirIndex;
-      owner.setAnimation(`run_${DIRECTION_NAMES[dirIndex]}`);
-    }
 
     owner.setAnimationSpeed(speed * RUN_ANIMATION_MULTIPLIER);
 
@@ -171,8 +143,7 @@ class RunningState extends FSMState {
 class ShootingState extends FSMState {
   static onEnter(owner, i, fromState) {
     if (!owner) return console.warn("ShootingState.onEnter called without owner", this.constructor.name);
-    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
-    owner.setAnimation(`shoot_${facingDir}`, false);
+    owner.setAnimation('shoot', false);
     owner.setAnimationSpeed(ACTION_ANIM_SPEED);
   }
 
@@ -195,8 +166,7 @@ class ShootingState extends FSMState {
 class PunchingState extends FSMState {
   static onEnter(owner, i, fromState) {
     if (!owner.spriteRenderer?.spritesheetId) return;
-    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
-    owner.setAnimation(`slash_${facingDir}`);
+    owner.setAnimation('slash');
     owner.setAnimationSpeed(ACTION_ANIM_SPEED);
   }
 
@@ -221,8 +191,7 @@ class PunchingState extends FSMState {
 class StickHitState extends FSMState {
   static onEnter(owner, i, fromState) {
     if (!owner.spriteRenderer?.spritesheetId) return;
-    const facingDir = DIRECTION_NAMES[PersonComponent.facingDirection[i]] || 'down';
-    owner.setAnimation(`1h_slash_${facingDir}`);
+    owner.setAnimation('1h_slash');
     owner.setAnimationSpeed(ACTION_ANIM_SPEED);
   }
 

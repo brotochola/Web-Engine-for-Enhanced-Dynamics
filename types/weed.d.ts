@@ -280,6 +280,112 @@ export type SceneEntityDefinitionTuple = [typeof GameObject, number];
 
 export type SceneQueryTuple = readonly (typeof Component)[];
 
+/** `config.lighting.faces` (DX-FACES): decorations with a normal, and sprites with maps, lit as surfaces in 3D. */
+export interface SceneLightingFacesConfig {
+  /** Default false. A sheet with a heightMap, a normalMap or `emissive` turns the faces' pass on by itself. */
+  enabled?: boolean;
+  /** A lamp's light past the terminator: 0 (the default) stops hard, 1 is half-Lambert. */
+  wrap?: number;
+  /** A lamp's strength on a face against the floor's. Default 1. */
+  gain?: number;
+  /** How much of the sun's light depends on where a face looks; the rest is sky. Default 0.6. */
+  sunDirect?: number;
+}
+
+/**
+ * `config.lighting`. The keys of the 3D light mode (DX-LIGHT3D) and the common ones are typed; the others are in
+ * LIGHTING_DEFAULTS (src/util/configDefaults.js) and the guide's "Lights and shadows".
+ */
+export interface SceneLightingConfig extends Record<string, unknown> {
+  /** Default false: no light pass at all. */
+  enabled?: boolean;
+  /** The light at night, with the sun down (default 0.05). */
+  baseAmbient?: number;
+  /** At most this many lights drawn a frame (default 10). */
+  maxLights?: number;
+  /** ShadowCasters cast shadows (default false). */
+  shadowsEnabled?: boolean;
+  /** The lights with castShadows nearest the camera that cast shadows (default 20); with `lampShadows: 'map'`, one tile each. */
+  maxShadowCastingLights?: number;
+  /** At most this many casters in range for each of those lights (default 15). */
+  maxShadowsPerLight?: number;
+  /** The light pass's size against the canvas (default 0.25); 1 for sharp shadow edges on pixel art. */
+  resolution?: number;
+  /** The size of the shadows' layer and of the sun's map against the canvas (default 0.5). */
+  shadowResolution?: number;
+  /**
+   * DX-CASTER: the ShadowCasters that hold a volume at once (shadowCaster.setBox, addLevel, setHull). Default 0: no volumes,
+   * and the scene pays nothing for them (a volume setter warns). Above 0 the scene gets the volumeShadows layer and
+   * maxVolumes × maxVolumeVerts vertices of the mesh arena; when that is full, a volume warns.
+   */
+  maxVolumes?: number;
+  /** The mesh arena's vertices kept for each of maxVolumes (default 16: a box with a cabin, or a hull of 16 points). */
+  maxVolumeVerts?: number;
+  /** Under raycasted lighting (config.camera.pitch 90 or 0): the vertices of a light's visibility polygon (default 128). */
+  maxPolygonVertices?: number;
+  /** shadowCaster.setSprite({ frame }) works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
+  keyedCasters?: boolean;
+  /** DX-FACES: decorations with a normal are lit as surfaces. Not with raycasted lighting. */
+  faces?: SceneLightingFacesConfig;
+  /**
+   * DX-SHADOW3D: how the sun casts. 'sprite' (default): each caster's shadow on the shadows' layer, darkening every light
+   * by Sun.shadowOpacity. 'map': a shadow map in the floor's terms that takes out the sun's light alone (Sun.shadowAlpha
+   * of it), falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit; a ShadowCaster's
+   * volume (setBox, setHull) casts into it. Either mode: a picture of one view casts its card, a render with a height map
+   * its solid (the sheet and the entity can say otherwise: ShadowCaster).
+   */
+  sunShadows?: 'sprite' | 'map';
+  /**
+   * DX-SHADOW3D (F7): how the lamps cast. 'sprite' (default): each caster stamped on the shadows' layer, stretched away from
+   * its lamp. 'map': a shadow map a lamp (a square tile each in an atlas, for the maxShadowCastingLights lamps nearest the
+   * camera) that takes out that lamp's light alone; the caster's height and the lamp's LightEmitter.elevation make the
+   * shadow's length, and a lamp at elevation 0 casts none. WebGL and WebGPU; not with raycasted lighting.
+   */
+  lampShadows?: 'sprite' | 'map';
+  /** Texels a side of a lamp's tile in the lamps' map, 32 to 1024 (default 256). The tile spans the lamp's radius. */
+  lampShadowTile?: number | 'auto';
+  /**
+   * Pixel-art lighting: each world pixel is lit whole, at its centre, and the sun's and the lamps' maps are read with one
+   * tap, so light and shadows fall crisply on the art's pixel grid. Best with lighting.resolution 1 and
+   * renderer.atlasScaleMode 'nearest'. Default false.
+   */
+  pixelArt?: boolean;
+  /**
+   * A render with footprints in its sheet's json (meta.footprints) casts its solid swept north to them at each cell's own
+   * height (light under a table) instead of columns down to the floor. Default true; false keeps the columns.
+   */
+  footprintSolids?: boolean;
+  /**
+   * DX-SELFSHADOW: faces and sprites with height maps shade themselves and each other from the sun (steps towards it over
+   * the heights in the light pass); with `lampShadows: 'map'`, from each lamp with a tile too. Default false.
+   */
+  selfShadow?: boolean;
+  /**
+   * DX-GBUF: 'mrt' (default) draws the face map and the entity ids map in one pass with two colour targets; 'pass' a
+   * pass each. Same picture; one pass costs about a third less.
+   */
+  gbuffer?: 'pass' | 'mrt';
+  /** DX-EMISSIVE: spriteRenderer.emissive glows here even without maps, faces or a shadow map. Default false. */
+  emissive?: boolean;
+  /** The sun and the day (src/util/configDefaults.js SUN_DEFAULTS). */
+  sun?: SunInitConfig & { dayCycle?: { enabled?: boolean; speed?: number; dayDurationMinutes?: number } };
+}
+
+/** `config.renderer`: the keys this file types (the rest are in RENDERER_DEFAULTS, src/util/configDefaults.js). */
+export interface SceneRendererConfig extends Record<string, unknown> {
+  /** 'webgpu' (default) or 'webgl'. Compute layers need 'webgpu'. */
+  backend?: 'webgl' | 'webgpu';
+  /** The entities layer drawn in the painter's order, by their feet (default false). */
+  ySort?: boolean;
+  /**
+   * DX-DEPTH: each entity pixel's place on the floor corrects the painter: a pixel with a height map at its own height,
+   * every other pixel at its sprite's foot, the painter breaking ties. Unset (the default), on with an oblique camera
+   * (floorScaleY under 1) when a sheet has maps (heightMap, normalMap or emissive); true or false forces it (true still
+   * needs a sheet with maps). WebGL only for now.
+   */
+  pixelDepth?: boolean;
+}
+
 /** Merged runtime scene config (static defaults + `Scene.config` + nested worker blocks). */
 export type SceneConfig = Record<string, unknown> & {
   /**
@@ -287,6 +393,21 @@ export type SceneConfig = Record<string, unknown> & {
    * past that, decided when the scene is built. 16 or 32 forces one (32: up to 500000 entities).
    */
   entityIdWidth?: 'auto' | 16 | 32;
+  /**
+   * DX-CAMERA: what the camera is, once for the scene. `pitch` is degrees from the horizon (90 straight down, 0 from the
+   * side); `floorScaleY` (default sin(pitch), or 1 without a pitch) is how tall the floor is drawn against its width, which
+   * makes light pools and cones ellipses; `heightScaleY` (default cos(pitch), or 1) is the screen px a px of height rises
+   * (faces, height maps, both shadow maps, pixel depth). Give the scales when the pictures do not follow the
+   * trigonometry. An oblique camera (floorScaleY under 1) is what turns renderer.pixelDepth on by itself. A flat view,
+   * `pitch` 90 or 0, lights with raycasted lighting when lighting is enabled: a visibility polygon a light, cut by the
+   * ShadowCasters' walls (setWall), without faces, maps or shadow maps; a side view whose lights pool on the backdrop
+   * also writes `floorScaleY: 1`. Replaces lighting.groundScaleY, lighting.faces.heightScaleY and lighting.raycasted.
+   */
+  camera?: { pitch?: number; yaw?: number; floorScaleY?: number; heightScaleY?: number };
+  /** Scene lighting; the 3D light mode's keys are typed in {@link SceneLightingConfig}. */
+  lighting?: SceneLightingConfig;
+  /** The renderer: the backend, the painter and pixel depth ({@link SceneRendererConfig}). */
+  renderer?: SceneRendererConfig;
   physics?: Record<string, unknown> & {
     /**
      * Default true. false = do not create the Box2D WASM worker;
@@ -420,11 +541,11 @@ export interface QuerySystemPrecomputeComponentMap {
   AdobeAnimComponent: typeof AdobeAnimComponent;
   LightEmitter: typeof LightEmitter;
   ShadowCaster: typeof ShadowCaster;
-  VolumeShadowCaster: typeof VolumeShadowCaster;
+  CAST_KIND: typeof CAST_KIND;
+  DirectionalSprite: typeof DirectionalSprite;
+  FACING_FROM: typeof FACING_FROM;
+  DIRECTION_NAMES: typeof DIRECTION_NAMES;
   FlashComponent: typeof FlashComponent;
-  LightOccluder: typeof LightOccluder;
-  LIGHT_OCCLUDER_MASK_COLLIDER: typeof LIGHT_OCCLUDER_MASK_COLLIDER;
-  LIGHT_OCCLUDER_MASK_SPRITE: typeof LIGHT_OCCLUDER_MASK_SPRITE;
   CameraInOutListener: typeof CameraInOutListener;
   CollisionListener: typeof CollisionListener;
   Grab: typeof Grab;
@@ -720,10 +841,55 @@ export interface SceneBigAtlasAsset {
   png: string;
 }
 
+/** One direction's animation: its name, or `{ anim, flipX }` to draw it mirrored. */
+export type SpriteDirectionEntry = string | { anim: string; flipX?: boolean };
+
+/**
+ * DX-DIRSPRITE: a directionless animation's directions. Keys are direction names (`right`, `downRight`, `down`,
+ * `downLeft`, `left`, `upLeft`, `up`, `upRight`) or degrees of the world (0 east, 90 south: y down); `mirrorX: true`
+ * mirrors each drawn heading a into 180° - a where the sheet has none. Or the count form for renders: `count`
+ * directions from `startAngle` (degrees, default 0), clockwise on the screen unless `clockwise: false`, each the
+ * animation `anims` names with `{i}` replaced by its number.
+ */
+export type SpriteDirectionGroup =
+  | ({ mirrorX?: boolean } & Record<string, SpriteDirectionEntry | boolean | undefined>)
+  | { count: number; startAngle?: number; clockwise?: boolean; anims: string };
+
+export interface SceneSpritesheetAsset extends Record<string, unknown> {
+  /**
+   * The sheet's json. For the 3D light mode it may carry `directions` (at its top or in its `meta`, as below) and, in its
+   * `meta`: `emissive: true`, `shadowCast: { sun: 'sprite' }` (or `light3d: { cast: { sun: 'sprite' } }`, as the light
+   * bench's converter writes it: its renders cast their card for the sun instead of their solid) and `footprints` (or
+   * `light3d.footprints`: a floor polygon a frame, for `lighting.footprintSolids`).
+   */
+  json?: string;
+  png?: string;
+  excludeAnimations?: string[];
+  /**
+   * The sheet's directions, for DirectionalSprite: directionless names → their directions. Without it, the sheet's own
+   * json `directions`, else its animations named `<name>_<direction>` (walk_up, walk_left…). `false`: none.
+   */
+  directions?: Record<string, SpriteDirectionGroup> | false;
+  /**
+   * DX-MAPS: a twin of the sheet (same frames, same places) with each pixel's height above the floor: R·256 + G in 1/64
+   * px, or `{ png, gray }` for a greyscale picture whose white is `gray` px. With lighting, the sheet's sprites are lit as
+   * the surface it says (and the normals come from it when there is no normalMap).
+   */
+  heightMap?: string | { png: string; gray?: number };
+  /** DX-MAPS: a twin of the sheet with each pixel's normal, RGB in the camera's space (x right, y up, z out of the screen). */
+  normalMap?: string;
+  /**
+   * DX-EMISSIVE: every opaque pixel of the sheet glows: it keeps its own colour whatever the light (night, shadows), still
+   * drawn in the painter's order, so what stands in front hides it. Needs lighting (not raycasted) and the entities layer.
+   * Its normals give way to the glow. Or `emissive: true` in its json's meta. Default false.
+   */
+  emissive?: boolean;
+}
+
 export interface SceneAssetsManifest {
   bigAtlas?: SceneBigAtlasAsset;
   textures?: Record<string, string>;
-  spritesheets?: Record<string, Record<string, unknown>>;
+  spritesheets?: Record<string, SceneSpritesheetAsset>;
   AdobeAnimateAnimations?: Record<string, Record<string, unknown>>;
   tilemaps?: Record<string, { json: string; png: string }>;
   /**
@@ -1232,7 +1398,6 @@ export declare class GameObject {
   get lightEmitter(): LightEmitter | null;
   get flashComponent(): FlashComponent | null;
   get shadowCaster(): ShadowCaster | null;
-  get volumeShadowCaster(): VolumeShadowCaster | null;
   get sceneBridge(): typeof SceneBridge;
   sendMessageToScene(data: unknown): boolean;
   get active(): number;
@@ -1448,6 +1613,11 @@ export declare class GameObject {
    * advance while drawn, so an off-screen one waits.
    */
   onAnimationEnd(name: string): void;
+  /**
+   * DX-DIRSPRITE: the direction a DirectionalSprite draws changed (and once for its first), after the frame's ticks on a
+   * logic worker. For what follows a direction: a collider, an anchor, a light on the front.
+   */
+  onDirectionChanged(direction: string): void;
   /** Override to receive sendTo / scene.sendToEntity messages. from = -1 for the scene. */
   onMessage(name: string, from: number, a: number, b: number, c: number, d: number): void;
   /** Is this entity an EntityClass or a subclass? Another entity: GameObject.is(index, EntityClass). */
@@ -3481,6 +3651,7 @@ export declare class SpriteRenderer extends Component {
     tileMode: typeof Uint8Array;
     tileOffsetU: typeof Uint16Array;
     tileOffsetV: typeof Uint16Array;
+    gbufFlags: typeof Uint8Array;
   };
   static active: Uint8Array;
   static isAnimated: Uint8Array;
@@ -3529,6 +3700,22 @@ export declare class SpriteRenderer extends Component {
   set tileOffsetU(value: number);
   get tileOffsetV(): number;
   set tileOffsetV(value: number);
+  /** DX-GBUF: normals (bits 0-1), surface 'floor' (bit 2), emissive level in quarters (bits 3-5). */
+  static gbufFlags: Uint8Array;
+  static readonly NORMALS: Readonly<{ AUTO: 0; MAP: 1; HEIGHT: 2; FLAT: 3 }>;
+  /** A spawned slot's normals, surface and emissive back to their defaults. */
+  static resetGbufRow(i: number): void;
+  /** How many live sprites glow on their own (spriteRenderer.emissive). */
+  static emissiveUsers(): number;
+  /** Where the light pass takes the sprite's normals from: the normal map, its height, or flat (lit as drawn). */
+  get normals(): 'auto' | 'map' | 'height' | 'flat';
+  set normals(v: 'auto' | 'map' | 'height' | 'flat');
+  /** The height of a sprite without a height map: a card standing on its foot, or flat on the floor. */
+  get surface(): 'standing' | 'floor';
+  set surface(v: 'standing' | 'floor');
+  /** Glows on its own: kept bright at night, sorted with the entities; true, or a strength up to 1.75 in quarters. */
+  get emissive(): boolean | number;
+  set emissive(v: boolean | number);
   static getOriginalWidth(entityIndex: number): number;
   static getOriginalHeight(entityIndex: number): number;
   static updateBounds(entityIndex: number): void;
@@ -3823,7 +4010,7 @@ export declare class LightEmitter extends Component {
   static color: Uint32Array;
   /**
    * How far the light reaches, in px. Its falloff is I / (I + d²) with I = (radius / 10)², measured on the floor
-   * (`config.lighting.groundScaleY`): full at its centre, about 1 % at the radius.
+   * (`config.camera.floorScaleY`), times (1 - (d / radius)⁴)²: full at its centre, nothing at the radius and past it.
    */
   static radius: Float32Array;
   /**
@@ -3833,7 +4020,9 @@ export declare class LightEmitter extends Component {
   static brightness: Float32Array;
   /**
    * The source's height above the floor, in px. Widens and flattens the pool without moving it or changing its
-   * reach: falloff I / (I + h² + d²). 0 = a light on the floor.
+   * reach: falloff I / (I + h² + d²). 0 = a light on the floor. With `lighting.lampShadows: 'map'` it is also the height
+   * the lamp casts from (a car under a lamp at 150 px casts a short shadow, under one at 40 px a long one), and a lamp at
+   * 0 casts none there.
    */
   static elevation: Float32Array;
   /** The halo's alpha; 0 (the default) draws none. The halo is about 0.85 of the radius wide. */
@@ -3898,24 +4087,151 @@ export declare class LightEmitter extends Component {
   set followFlip(on: number | boolean);
 }
 
+/** Where a DirectionalSprite's facing comes from each frame. */
+export declare const FACING_FROM: Readonly<{ MANUAL: 0; VELOCITY: 1; ROTATION: 2 }>;
+/** The eight direction names a sheet's `directions` may use, every 45° from east (y down: `down` is 90°). */
+export declare const DIRECTION_NAMES: readonly ['right', 'downRight', 'down', 'downLeft', 'left', 'upLeft', 'up', 'upRight'];
+
 /**
- * Says what an object is, and the engine works out its shadow: a box, levels or a hull of points, in the entity's frame. It
- * moves and turns with the entity, with no second entity, no layer in the config and no mesh code. x looks the way the entity
- * looks, y across it, both on the floor; heights are in screen px, as on a ShadowCaster's sprite. The sun casts it; lamps do not
- * yet. Its class has a MeshRenderer, whose one mesh is the volume: `setMesh` and the like are refused.
+ * DX-DIRSPRITE: a sprite drawn from several directions. Say where the entity looks (`facing`, or `facingFrom` 'velocity' /
+ * 'rotation') and play a directionless animation (`setAnimation('walk')`): it draws the animation of the direction nearest
+ * the facing, from the sheet's `directions`, keeping the frame of the cycle when the direction changes. The sprite does not
+ * turn. `setAnimation` with a plain animation of the sheet ('walk_left') shows it as it is until the next directionless one.
+ * Brings a SpriteRenderer.
  */
-export declare class VolumeShadowCaster extends Component {
-  static readonly ARRAY_SCHEMA: { floorScaleY: typeof Float32Array };
-  static readonly requires: readonly [typeof MeshRenderer];
-  static floorScaleY: Float32Array;
+export declare class DirectionalSprite extends Component {
+  static readonly requires: readonly [typeof SpriteRenderer];
+  static facing: Float32Array;
+  static facingFrom: Uint8Array;
+  static directionIndex: Uint8Array;
+  /** Where it looks, in world radians like `rotation` (π/2 is south). Written by the engine with 'velocity' or 'rotation'. */
+  get facing(): number;
+  set facing(radians: number);
+  /** 'manual' (default), 'velocity' (where it moves; still, the last facing) or 'rotation'. */
+  get facingFrom(): 'manual' | 'velocity' | 'rotation';
+  set facingFrom(source: 'manual' | 'velocity' | 'rotation' | number);
+  /** Radians past a border before the direction changes; default a tenth of the step (9° with four directions). */
+  get turnMargin(): number;
+  set turnMargin(radians: number);
+  /** The direction drawn, as the sheet names it ('left', 'downRight', '12'); null before the first. */
+  readonly direction: string | null;
+  /** The direction drawn as world radians (π/2 south); NaN before the first. */
+  readonly directionAngle: number;
+  /** The direction drawn as an index into `directions`; 255 before the first. */
+  readonly directionIndex: number;
+  /** The sheet's directions, from east, clockwise on the screen. */
+  readonly directions: string[];
+  /** Face a point of the world. */
+  lookAt(x: number, y: number): void;
+}
+
+/**
+ * DX-CASTER: how an entity casts, for the sun and for the lamps apart (ShadowCaster.sunKind and .lampKind). AUTO, what a
+ * spawn sets, is its sheet's way: a picture of one view casts its card, a render with a height map (8 directions or more)
+ * its solid, unless its json says `meta.shadowCast.sun: 'sprite'` (then the sun casts its card). BOX and HULL are a
+ * volume's (setBox, addLevel, setHull), WALL a wall's (setWall).
+ */
+export declare const CAST_KIND: Readonly<{ AUTO: 0; SPRITE: 1; HEIGHT_MAP: 2; BOX: 3; HULL: 4; WALL: 5; NONE: 6 }>;
+
+/** What {@link ShadowCaster.type} reads. */
+export type ShadowCastType = 'sprite' | 'heightMap' | 'box' | 'hull' | 'wall' | 'none';
+
+/** Options of `shadowCaster.setSprite`. */
+export interface ShadowCasterSpriteOptions {
   /**
-   * How tall the floor is drawn against its width, in (0, 1]; `config.lighting.groundScaleY` unless a volume says. The
-   * entity's rotation stays what the screen shows: a car keeps its long side on its path, and a turn rewrites no vertex.
+   * 'light' (the default): the card faces each light. 'fixed': it stands along the object through its anchor and shows the
+   * object face on, for every light: a fence, a wall. One value for the entity, kept until set again.
    */
-  floorScaleY: number;
+  orient?: 'light' | 'fixed';
   /**
-   * A box. Replaces the volume. `offsetX` and `offsetY` are its centre; `topScale` shrinks the roof about it, from 0 up (0: a
-   * pyramid). A value that is not finite, or a topScale below 0, is refused with a warning and leaves the volume as it was.
+   * Another frame of the atlas as the silhouette (was setTexture): a tree whose branches are decorations casts its whole
+   * silhouette while its trunk stays the sprite. The frames a caster uses one take pre-render's full caster rows (the keyed
+   * caster paths off those frames).
+   */
+  frame?: string;
+  /** With `frame`: its scale (0 or left out: the sprite's). */
+  scaleX?: number;
+  /** With `frame`: see scaleX. */
+  scaleY?: number;
+  /**
+   * With `frame`, that frame's own anchor, 0 to 1 of it (left out: the sprite's), as setTexture took it. Without one, how far
+   * the foot moves from the sprite's anchor, in fractions of the sprite (was anchorOffsetX): a rare case, since the base is
+   * measured from the frame and `baseRadius` corrects it.
+   */
+  anchorX?: number;
+  /** See anchorX (was anchorOffsetY without a frame). */
+  anchorY?: number;
+  /** The card's height, times (default 1; 0: no shadow). Was heightMultiplier; in 3D the height comes from the camera. */
+  heightScale?: number;
+}
+
+/** One kind of light's setters, `shadowCaster.sun` or `shadowCaster.lamps`: each writes that kind alone. */
+export interface ShadowCasterLightSide {
+  /** Its card for this kind of light: standing on its base, the frame that light sees. */
+  setSprite(options?: ShadowCasterSpriteOptions): ShadowCaster;
+  /** Its solid for this kind of light: each pixel where it is in 3D (needs the sheet's heightMap). */
+  setHeightMap(): ShadowCaster;
+  /** No shadow from this kind of light. */
+  clear(): ShadowCaster;
+  /** `sun.setBox`: a volume for the sun alone (as ShadowCaster.setBox). The lamps have no volume of their own: it warns. */
+  setBox(
+    width: number,
+    depth: number,
+    height: number,
+    options?: { offsetX?: number; offsetY?: number; topScale?: number; floorScaleY?: number },
+  ): ShadowCaster;
+  /** `sun.addLevel`: as ShadowCaster.addLevel, for the sun alone. */
+  addLevel(
+    outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
+    bottom: number,
+    top: number,
+    topOutline?: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
+    options?: { floorScaleY?: number },
+  ): ShadowCaster;
+  /** `sun.setHull`: as ShadowCaster.setHull, for the sun alone. */
+  setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): ShadowCaster;
+  /**
+   * `lamps.setWall`: a wall for the lamps and headlights alone, the sun's shadow kept (as ShadowCaster.setWall). The sun
+   * casts no wall: it warns.
+   */
+  setWall(options?: { shape?: 'collider' | 'sprite' }): ShadowCaster;
+}
+
+/**
+ * Casts the entity's shadow from the sun and from the lamps that cast (LightEmitter.castShadows), each light its own way
+ * (DX-CASTER): by default its sheet's (CAST_KIND.AUTO), else what the setters say for every light, or for the sun or the
+ * lamps alone (`sun`, `lamps`); the last setter wins. A DirectionalSprite casts the frame each light sees, and a lamp is
+ * not shaded by its own entity. How the shadows are drawn is the scene's: `lighting.sunShadows`, `lighting.lampShadows`.
+ */
+export declare class ShadowCaster extends Component {
+  /** Its card for every light: standing on its base, the frame each light sees (`orient: 'fixed'`: along the object). */
+  setSprite(options?: ShadowCasterSpriteOptions): this;
+  /** Its solid for every light: each pixel where it is in 3D (needs the sheet's heightMap). */
+  setHeightMap(): this;
+  /** No shadow from any light. */
+  clear(): this;
+  /** The setters for the sun alone. */
+  readonly sun: ShadowCasterLightSide;
+  /** The setters for the lamps (and headlights) alone. */
+  readonly lamps: ShadowCasterLightSide;
+  /**
+   * How much light it takes out, 0 to 1 (1 at spawn); a wall takes that much out of a lamp. The sprite shadows read it
+   * (the sun's in 'sprite' mode, the lamps' stamps); the shadow maps do not yet.
+   */
+  get opacity(): number;
+  set opacity(value: number);
+  /**
+   * What it casts for the sun, as set; with nothing set (CAST_KIND.AUTO) what its sheet casts: 'heightMap' for a render
+   * that casts its solid, else 'sprite'. Read only.
+   */
+  readonly type: ShadowCastType;
+  /**
+   * A box, for every light: a volume in the entity's frame (it moves and turns with the entity), on the scene's
+   * volumeShadows layer and in the shadow maps. Replaces the volume. `width` along x (the way the entity looks), `depth`
+   * across it, both on the floor; `height` in screen px, as a sprite's. `offsetX` and `offsetY` are its centre;
+   * `topScale` shrinks the roof about it, from 0 up (0: a pyramid); `floorScaleY` is how tall the floor is drawn against its
+   * width (config.camera's by default). The scene keeps room for volumes with `config.lighting.maxVolumes` (without it,
+   * this warns once and changes nothing). A value that is not finite warns and leaves the volume as it was.
    */
   setBox(
     width: number,
@@ -3924,9 +4240,9 @@ export declare class VolumeShadowCaster extends Component {
     options?: { offsetX?: number; offsetY?: number; topScale?: number; floorScaleY?: number },
   ): this;
   /**
-   * One more level on what the volume has. `topOutline`, as many corners, makes its top another shape: one that closes on a
-   * point is a pyramid, on a line a gabled roof; one that crosses itself is refused. A corner that is not finite is refused.
-   * A level the arena has no room for warns and leaves the volume as it was.
+   * One more level on what the volume has: a body, a cabin on it, a tank on a roof. The outline need not be convex.
+   * `topOutline`, as many corners, makes its top another shape: one that closes on a point is a pyramid, on a line a gabled
+   * roof; one that crosses itself is refused. A level the arena has no room for warns and leaves the volume as it was.
    */
   addLevel(
     outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
@@ -3936,64 +4252,56 @@ export declare class VolumeShadowCaster extends Component {
     options?: { floorScaleY?: number },
   ): this;
   /**
-   * The convex volume around points: flat x, y, z or objects, z the height. Runs once, when called. Replaces the volume. At most
-   * 4 096 points, all finite; otherwise it warns and leaves the volume as it was. Convex: it fills an L and joins a tower to a
-   * low annex with a slope, so give such boxes an addLevel each.
+   * The convex volume around points (flat x, y, z or objects, z the height), for every light: a house from an editor. Runs
+   * once, when called. Replaces the volume. At most 4 096 points, all finite. Convex: it fills an L, so give such boxes an
+   * addLevel each.
    */
   setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): this;
-  /** No volume: the entity casts nothing until it is given one again. */
-  clear(): this;
-}
-
-export declare class ShadowCaster extends Component {
   /**
-   * Cast this frame's shadow instead of the sprite's. Needs `config.lighting.shadowTextures: true`. Options left out
-   * stay the sprite's.
+   * In a flat view (config.camera.pitch 90 or 0, with lighting: raycasted lighting), a wall that stops lamps and
+   * headlights, cut by the entity's Collider ('collider', the default and the fastest) or by its sprite's alpha ('sprite'),
+   * taking out `opacity` of the light; the sun casts nothing from it (`lamps.setWall` keeps the sun's shadow). Another
+   * camera warns once and changes nothing.
    */
-  setTexture(name: string, options?: { anchorX?: number; anchorY?: number; scaleX?: number; scaleY?: number }): this;
-  /** Back to the sprite's shadow. */
-  clearTexture(): this;
+  setWall(options?: { shape?: 'collider' | 'sprite' }): this;
+  /**
+   * Whether the object shades itself: true, false or 'auto' (the default: a render with a footprint does, one view does
+   * not). Kept for the 3D shadows (DX-SELFSHADOW).
+   */
+  get selfShadow(): boolean | 'auto';
+  set selfShadow(value: boolean | 'auto' | 'on' | 'off' | null);
+  /**
+   * The base's radius in px, correcting the one measured from the frame; 0 (the default) keeps the measured base. Replaces
+   * anchorOffsetX / anchorOffsetY. Kept for the 3D shadows.
+   */
+  baseRadius: number;
   static readonly ARRAY_SCHEMA: {
     active: typeof Uint8Array;
     heightMultiplier: typeof Float32Array;
-    x: typeof Float32Array;
-    y: typeof Float32Array;
-    rotation: typeof Float32Array;
-    scaleX: typeof Float32Array;
-    scaleY: typeof Float32Array;
-    alpha: typeof Float32Array;
-    entityIdx: typeof Int32Array;
-    lightIdx: typeof Int32Array;
     anchorOffsetX: typeof Float32Array;
     anchorOffsetY: typeof Float32Array;
+    textureId: typeof Uint16Array;
+    textureScaleX: typeof Float32Array;
+    textureScaleY: typeof Float32Array;
+    textureAnchorX: typeof Float32Array;
+    textureAnchorY: typeof Float32Array;
+    sunKind: typeof Uint8Array;
+    lampKind: typeof Uint8Array;
+    orient: typeof Uint8Array;
+    opacity: typeof Float32Array;
+    baseRadius: typeof Float32Array;
+    selfShadow: typeof Uint8Array;
   };
   static active: Uint8Array;
-  static heightMultiplier: Float32Array;
-  static x: Float32Array;
-  static y: Float32Array;
-  static rotation: Float32Array;
-  static scaleX: Float32Array;
-  static scaleY: Float32Array;
-  static alpha: Float32Array;
-  static entityIdx: Int32Array;
-  static lightIdx: Int32Array;
-  static anchorOffsetX: Float32Array;
-  static anchorOffsetY: Float32Array;
+  /** CAST_KIND for the sun (0, AUTO, at spawn). */
+  static sunKind: Uint8Array;
+  /** CAST_KIND for the lamps (0, AUTO, at spawn). */
+  static lampKind: Uint8Array;
+  /** The card's orientation: 0 facing the light, 1 along the object (`orient: 'fixed'`). */
+  static orient: Uint8Array;
+  /** 0 to 1, the light it takes out; 1 at spawn. */
+  static opacity: Float32Array;
   static shadowCount: number;
-}
-
-export declare const LIGHT_OCCLUDER_MASK_COLLIDER = 0;
-export declare const LIGHT_OCCLUDER_MASK_SPRITE = 1;
-
-export declare class LightOccluder extends Component {
-  static readonly ARRAY_SCHEMA: {
-    active: typeof Uint8Array;
-    maskMode: typeof Uint8Array;
-    block: typeof Float32Array;
-  };
-  static active: Uint8Array;
-  static maskMode: Uint8Array;
-  static block: Float32Array;
 }
 
 export declare class FlashComponent extends Component {
@@ -4093,8 +4401,24 @@ export interface AdobeAnimComponent extends ComponentFields<(typeof AdobeAnimCom
 export interface ParticleComponent extends ComponentFields<(typeof ParticleComponent)['ARRAY_SCHEMA']> {}
 export interface DecorationComponent extends ComponentFields<(typeof DecorationComponent)['ARRAY_SCHEMA']> {}
 export interface LightEmitter extends ComponentFields<(typeof LightEmitter)['ARRAY_SCHEMA']> {}
-export interface ShadowCaster extends ComponentFields<(typeof ShadowCaster)['ARRAY_SCHEMA']> {}
-export interface LightOccluder extends ComponentFields<(typeof LightOccluder)['ARRAY_SCHEMA']> {}
+/** ShadowCaster's schema fields as instance fields, but the silhouette's columns (setSprite writes them) and its accessors. */
+export interface ShadowCaster
+  extends ComponentFields<
+    Omit<
+      (typeof ShadowCaster)['ARRAY_SCHEMA'],
+      | 'heightMultiplier'
+      | 'anchorOffsetX'
+      | 'anchorOffsetY'
+      | 'textureId'
+      | 'textureScaleX'
+      | 'textureScaleY'
+      | 'textureAnchorX'
+      | 'textureAnchorY'
+      | 'opacity'
+      | 'baseRadius'
+      | 'selfShadow'
+    >
+  > {}
 export interface FlashComponent extends ComponentFields<(typeof FlashComponent)['ARRAY_SCHEMA']> {}
 export interface BulletComponent extends ComponentFields<(typeof BulletComponent)['ARRAY_SCHEMA']> {}
 
@@ -4550,10 +4874,10 @@ export interface WeedNamespace extends WeedEnums {
   ParticleComponent: typeof ParticleComponent;
   LightEmitter: typeof LightEmitter;
   ShadowCaster: typeof ShadowCaster;
-  VolumeShadowCaster: typeof VolumeShadowCaster;
-  LightOccluder: typeof LightOccluder;
-  LIGHT_OCCLUDER_MASK_COLLIDER: typeof LIGHT_OCCLUDER_MASK_COLLIDER;
-  LIGHT_OCCLUDER_MASK_SPRITE: typeof LIGHT_OCCLUDER_MASK_SPRITE;
+  CAST_KIND: typeof CAST_KIND;
+  DirectionalSprite: typeof DirectionalSprite;
+  FACING_FROM: typeof FACING_FROM;
+  DIRECTION_NAMES: typeof DIRECTION_NAMES;
   FlashComponent: typeof FlashComponent;
   CameraInOutListener: typeof CameraInOutListener;
   CollisionListener: typeof CollisionListener;

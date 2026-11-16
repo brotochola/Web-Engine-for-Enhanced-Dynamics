@@ -155,7 +155,7 @@ test('pixi binds packed LUT as rgba32float TextureSource', () => {
   assert.match(pixiSrc, /preference: backend/);
 });
 
-test('packTextureLutRgba writes 10 floats into 3 RGBA32F texels', async () => {
+test('packTextureLutRgba writes 12 floats (the last two the frame base) into 3 RGBA32F texels', async () => {
   const { packTextureLutRgba, TEX_LUT_FLOATS } = await import(
     '../../src/render/instancedSpriteBatch.js'
   );
@@ -163,9 +163,7 @@ test('packTextureLutRgba writes 10 floats into 3 RGBA32F texels', async () => {
   for (let i = 0; i < TEX_LUT_FLOATS; i++) lut[i] = i + 1;
   const rgba = packTextureLutRgba(lut, 1);
   assert.equal(rgba.length, 12);
-  for (let i = 0; i < 10; i++) assert.equal(rgba[i], i + 1);
-  assert.equal(rgba[10], 0);
-  assert.equal(rgba[11], 0);
+  for (let i = 0; i < 12; i++) assert.equal(rgba[i], i + 1);
 });
 
 test('lighting GLSL loop bound is MAX_LIGHTS token', () => {

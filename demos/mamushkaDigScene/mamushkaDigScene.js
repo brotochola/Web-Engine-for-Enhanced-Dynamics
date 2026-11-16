@@ -57,9 +57,10 @@ export class MamushkaDigScene extends WEED.Scene {
       maxVisibleRenderables: 40000,
     },
 
+    // A side view: raycasted lighting. The lights pool on the backdrop, seen face on: a floor of 1, not sin(0).
+    camera: { pitch: 0, floorScaleY: 1 },
     lighting: {
       enabled: true,
-      raycasted: true,
       shadowsEnabled: false,
       baseAmbient: 0.12,
       maxLights: 40,

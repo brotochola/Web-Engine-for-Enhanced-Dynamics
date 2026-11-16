@@ -74,13 +74,10 @@ export { AdobeAnimComponent } from './components/adobeAnimComponent.js';
 export { ParticleComponent } from './components/particleComponent.js';
 export { DecorationComponent } from './components/decorationComponent.js';
 export { LightEmitter } from './components/lightEmitter.js';
-export { ShadowCaster } from './components/shadowCaster.js';
-export { VolumeShadowCaster } from './components/volumeShadowCaster.js';
-export {
-  LightOccluder,
-  LIGHT_OCCLUDER_MASK_COLLIDER,
-  LIGHT_OCCLUDER_MASK_SPRITE,
-} from './components/lightOccluder.js';
+// DX-CASTER: a ShadowCaster's volume and wall (setBox, setWall) are its own; their components are internal.
+export { ShadowCaster, CAST_KIND } from './components/shadowCaster.js';
+export { DirectionalSprite, FACING_FROM } from './components/directionalSprite.js';
+export { DIRECTION_NAMES } from './core/spriteDirections.js';
 export { FlashComponent } from './components/flashComponent.js';
 export { CameraInOutListener } from './components/cameraInOutListener.js';
 export { CollisionListener } from './components/collisionListener.js';
@@ -257,13 +254,9 @@ import { SharedResource, SharedResourceMailbox } from './core/sharedResource.js'
 import { DecorationComponent } from './components/decorationComponent.js';
 import { BulletComponent } from './components/bulletComponent.js';
 import { LightEmitter } from './components/lightEmitter.js';
-import { ShadowCaster } from './components/shadowCaster.js';
-import { VolumeShadowCaster } from './components/volumeShadowCaster.js';
-import {
-  LightOccluder,
-  LIGHT_OCCLUDER_MASK_COLLIDER,
-  LIGHT_OCCLUDER_MASK_SPRITE,
-} from './components/lightOccluder.js';
+import { ShadowCaster, CAST_KIND } from './components/shadowCaster.js';
+import { DirectionalSprite, FACING_FROM } from './components/directionalSprite.js';
+import { DIRECTION_NAMES } from './core/spriteDirections.js';
 import { FlashComponent } from './components/flashComponent.js';
 import { Flash } from './core/flash.js';
 import { CameraInOutListener } from './components/cameraInOutListener.js';
@@ -397,10 +390,10 @@ const WEED = Object.freeze({
   ParticleComponent,
   LightEmitter,
   ShadowCaster,
-  VolumeShadowCaster,
-  LightOccluder,
-  LIGHT_OCCLUDER_MASK_COLLIDER,
-  LIGHT_OCCLUDER_MASK_SPRITE,
+  CAST_KIND,
+  DirectionalSprite,
+  FACING_FROM,
+  DIRECTION_NAMES,
   FlashComponent,
   CameraInOutListener,
   CollisionListener,
