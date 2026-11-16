@@ -1526,3 +1526,42 @@ Predator crowd 2.5 de día: NEUTRAL. Sus cuadros del sol son de filas con clave,
 - La forma sin palabras del pack con clave volvió +7,8 % más lenta en el kernel: sus formas con palabras van a exports
   propios.
 - La CPU de Pixi con `?light3d=1`: un pase de CPU por función.
+
+### 17.12 La GPU draw por draw, y la cola que salió de ahí (2026-11-16, mañana)
+
+Herramientas nuevas en el grabador (glFrameRecorder, en main):
+- `--gpu-draws`: una consulta de tiempo alrededor de cada draw, clear y blit, con el programa y las texturas de cada uno.
+- `--probe-scissor`: los draws elegidos con un scissor de 1 px. Lo que baja es su relleno; lo que queda, vértices y
+  preparación.
+- Los `uniform1i` y binds redundantes, anotados por programa.
+
+Medir por pase contaba como trabajo la espera de la GPU por la CPU, y eso cambió varias lecturas (R-1187, R-1190):
+- E-401 (el scatter: 0,05 ms, no 1), E-402 (los clears: 0,03 ms) y E-413 (los 9,2 ms del pase de color eran espera):
+  rechazadas.
+- E-380 y E-381: descartadas con los números de la madrugada (R-1186: WebGL light3d +10,6 % juntas, +6,3 % E-380 sola).
+
+Lo que cuesta de verdad, en ms de GPU por frame (GTX 1650, 1920 × 1080):
+
+| Qué | Dónde | ms | Por qué | Fila |
+| --- | --- | --- | --- | --- |
+| El pase de luz 3D | Predator `?light3d=1` | 5,5 | todas las luces en cada pixel | E-399/E-205 (agente de tiles) |
+| El relleno de mallas | volumeStress | 8,5 en los frames que lo dibujan | 231 623 instancias | E-419 (agente) |
+| Los glows | flashlight | 4,8 | puro relleno: 0,007 con scissor de 1 px | E-404, E-421 |
+| Las columnas de sombra | selfShadow, sunShadowMap | 1,3 a 3,4 | vértices: la grilla de 24 × 24 por instancia | E-447 |
+| La pasada de bordes de DX-DEPTH | seis escenas | 0,6 a 1,25 | redibuja todo el quad sin bordes suaves que dibujar | E-429 (agente), E-430 |
+| El mapa de faroles | light3dCompare `all=1` | 1,7 | la mitad del piso 1,2 | E-418 |
+| Partículas GPU | Predator crowd 2.5 | 0,9 a 1,3 | puro relleno | E-431 |
+| El tilemap | Predator, spot | 0,7 a 1,6 | 7 u 8 quads de pantalla completa | E-432 |
+| El G-buffer dos veces | Predator `?light3d=1` | 0,8 + 0,5 | el face map es la segunda | E-403 |
+| El clear del mapa de faroles | lampShadowStress | 0,32 | se limpia entero | E-446 |
+
+En la CPU:
+- Los volúmenes entran al mapa de faroles con un mesh de Pixi por mosaico: unos 47 draws y 94 `uniform1i` redundantes
+  por frame (R-1193; E-389, E-391, E-414).
+- Pre-render escribe en JS las palabras del G-buffer de las filas que empaca (E-444).
+- Pixi sube las palabras de todas las instancias en cada frame (E-445).
+- N-218 resultó contención y no código de logic (R-1189).
+
+**La cola de `pixiWorker.js`**, un agente a la vez cuando termine el de tiles: volúmenes en un solo draw, glows y
+partículas a resolución reducida, columnas por grilla (E-447), face map por MRT, tilemap en una pasada, clear por
+mosaico, subida de palabras por rango. Después, PR #12: un merge de prueba dio 14 archivos en conflicto (R-1192).
