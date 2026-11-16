@@ -13,8 +13,10 @@
  *
  * Pre-render writes them for the rows it packs (the GPU queue's gbuf region, GPU_FLAG_GBUF); Pixi for the rows it packs,
  * from the queue's key column (the entity of a sprite row). E-387: on Pixi's keyed frames the keyed pack writes them
- * (wasm/gpuPack.c pack_keyed, the same words as writeGbufWords from the key column): a change to the words is made in
- * both, and gpuPackKeyedGbuf.test.js holds them equal.
+ * (wasm/gpuPack.c pack_keyed, the same words as writeGbufWords from the key column); E-444: pre-render's split and
+ * indexed packs too (pack_split, pack_split_scatter and pack_indexed_scatter's _gbuf exports, the same words from the
+ * collector's columns). A change to the words is made in all of them: gpuPackKeyedGbuf.test.js and
+ * gpuPackSplitGbuf.test.js hold them equal.
  */
 
 /** SpriteRenderer.gbufFlags: normals in bits 0-1, the surface in bit 2, the emissive level in bits 3-5. */

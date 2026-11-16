@@ -3,6 +3,7 @@
    sprite rows split into a pose stream and a static stream (E-82b, packSplitRows). Its slow path too (close-out
    group B): pack_sprites_general and pack_casters_general take a type filter, screen space (with the camera's turn)
    and pixel snap, from a block of doubles the client writes. And a pose batch's two streams (W9e, renderer.interpolation): pack_pose.
+   E-444: pre-render's split and indexed packs with the instances' G-buffer words (the _gbuf exports, gbuf_cols).
    The render-queue columns and the destination are byte offsets into the imported shared memory, the
    columns through a table written once per queue (src/render/gpuPackClient.js). Arithmetic as JS
    does it: alpha clamped and rounded in double, depth and the tile-offset scale in double, each
@@ -151,6 +152,73 @@ INLINE uint32_t pack_scatter(const uint32_t *t, uint32_t indices, uint32_t count
 #define POSE_FLOATS 4
 #define STATIC_FLOATS 11
 
+/* The G-buffer words (E-387's keyed pack, E-444's split and indexed packs): with withGbuf (a constant, so each form is a
+   copy), each drawn instance's words at its draw slot, as gbufWord.js writeGbufWords makes them: GBUF_FLOATS floats, the
+   word and the zIndex band. The word is the entity's id in the G-buffer ((e % 65535) + 1), its SpriteRenderer.gbufFlags'
+   6 bits << 16 and its ShadowCaster.selfShadow's 2 bits << 22 (none at or past the selfShadow column's length): an
+   integer under 2^24, so an exact float. A row that is no entity has the word 0: for the keyed pack, which reads the
+   entity from the key column, KEY_NONE or a key at or past the entity count (a decoration's, a LiquidFun particle's, one
+   past keyBase); for pre-render's packs, gbuf_cols'. The band, with withBands (the painter orders zIndex first), counts
+   the zIndex changes along the draw order up to GBUF_MAX_BANDS - 1, a row that is no entity at zIndex 0; 0 without. The
+   block at G, GB_WORDS u32: the words' destination, the gbufFlags column, the selfShadow column (0: none) and its length,
+   the zIndex column (0: no bands), the entity count; E-444: then the collector's row types (u8) and entities (i32) by
+   queue row, which pre-render's split and indexed packs read the entities from instead of the key column (gbuf_cols).
+   The keyed pack does not read those two. */
+enum { GB_DST, GB_FLAGS, GB_SELF, GB_SELF_N, GB_ZINDEX, GB_ENTITIES, GB_ROW_TYPE, GB_ROW_ENTITY, GB_WORDS };
+#define GBUF_FLOATS 2
+#define GBUF_MAX_BANDS 8
+
+/* E-444: the columns of pre-render's G-buffer words, from the block at G. Pre-render's frame (writeGbufWords with the
+   collector's columns): queue row i is an entity's sprite when its row type is 0, its entity the collector's; a row of
+   another type, or whose entity is at or past the entity count (none, in a frame whose queue rows are the collector's),
+   has the word 0 and zIndex 0. */
+typedef struct {
+  float *dst;
+  const uint8_t *flags, *self, *rowType;
+  const int32_t *rowEntity;
+  const int16_t *z;
+  uint32_t selfN, entities;
+} GbufCols;
+
+INLINE void gbuf_cols(const uint32_t *G, GbufCols *c, const int withBands) {
+  c->dst = (float *)(uintptr_t)G[GB_DST];
+  c->flags = (const uint8_t *)(uintptr_t)G[GB_FLAGS];
+  c->self = (const uint8_t *)(uintptr_t)G[GB_SELF];
+  c->selfN = c->self ? G[GB_SELF_N] : 0;
+  c->z = withBands ? (const int16_t *)(uintptr_t)G[GB_ZINDEX] : 0;
+  c->entities = G[GB_ENTITIES];
+  c->rowType = (const uint8_t *)(uintptr_t)G[GB_ROW_TYPE];
+  c->rowEntity = (const int32_t *)(uintptr_t)G[GB_ROW_ENTITY];
+}
+
+/* Queue row i's word; with withBands its entity's zIndex in *z (left as it is for a row that is no entity). */
+INLINE uint32_t gbuf_row_word(const GbufCols *c, uint32_t i, int32_t *z, const int withBands) {
+  if (c->rowType[i] != 0) return 0;
+  const uint32_t e = (uint32_t)c->rowEntity[i];
+  if (e >= c->entities) return 0;
+  if (withBands) *z = c->z[e];
+  return e % 65535u + 1u + ((uint32_t)(c->flags[e] & 63u) << 16) + (e < c->selfN ? (uint32_t)(c->self[e] & 3u) << 22 : 0u);
+}
+
+/* The band along the draw order: a zIndex unlike the one before moves it on, up to GBUF_MAX_BANDS - 1. */
+INLINE void gbuf_band(int32_t z, int32_t *lastZ, uint32_t *band) {
+  if (z != *lastZ) {
+    if (*lastZ != -32769 && *band < GBUF_MAX_BANDS - 1) (*band)++;
+    *lastZ = z;
+  }
+}
+
+/* A scatter visits the rows in the queue's order, not the draw order: it leaves each slot's zIndex in its band float
+   (an int16, an exact float), and this pass over the slots in draw order makes the bands of them. */
+INLINE void gbuf_bands_from_z(float *dst, uint32_t n) {
+  uint32_t band = 0;
+  int32_t lastZ = -32769;
+  for (uint32_t k = 0; k < n; k++) {
+    gbuf_band((int32_t)dst[k * GBUF_FLOATS + 1], &lastZ, &band);
+    dst[k * GBUF_FLOATS + 1] = (float)(int32_t)band;
+  }
+}
+
 INLINE void sprite_pose(const uint32_t *t, uint32_t i, float *d) {
   d[0] = F32(t, COL_X)[i];
   d[1] = F32(t, COL_Y)[i];
@@ -173,28 +241,43 @@ INLINE void sprite_static(const uint32_t *t, uint32_t i, float *d, double depth)
   d[10] = (float)((double)U16(t, COL_TILE_OFF_V)[i] * inv65535);
 }
 
-/* pack() for the two streams; statics 0 writes the pose alone. */
+/* pack() for the two streams; statics 0 writes the pose alone. E-444: withGbuf and withBands (constants, so each form is
+   a copy) also write each slot's G-buffer words from the block at G (gbuf_cols), the bands along the draw order. */
 INLINE uint32_t pack_split(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
-                           float *pose, float *stat, uint32_t typeByte, uint32_t *particles, int statics) {
+                           float *pose, float *stat, uint32_t typeByte, uint32_t *particles, int statics,
+                           const uint32_t *G, const int withGbuf, const int withBands) {
   const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
   const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
   const uint32_t n = count < cap ? count : cap;
+  GbufCols gc;
+  if (withGbuf) gbuf_cols(G, &gc, withBands);
+  uint32_t band = 0;
+  int32_t lastZ = -32769;
   uint32_t p = 0;
   for (uint32_t k = 0; k < n; k++) {
     const uint32_t i = indices ? idx[k] : k;
     if (type) p += type[i] == 1;
     sprite_pose(t, i, pose + k * POSE_FLOATS);
     if (statics) sprite_static(t, i, stat + k * STATIC_FLOATS, 1.0 - (double)(k + 1) * invDepthDenom);
+    if (withGbuf) {
+      int32_t z = 0;
+      const uint32_t word = gbuf_row_word(&gc, i, &z, withBands);
+      if (withBands) gbuf_band(z, &lastZ, &band);
+      gc.dst[k * GBUF_FLOATS] = (float)(int32_t)word;
+      gc.dst[k * GBUF_FLOATS + 1] = (float)(int32_t)band;
+    }
   }
   *particles = p;
   return n;
 }
 
 /* pack_scatter() for the two streams, with both always: a listed frame's order may have moved, so its
-   statics are never known to be current. */
+   statics are never known to be current. E-444: withGbuf and withBands as pack_split's, the bands made after the
+   scatter (gbuf_bands_from_z). */
 INLINE uint32_t pack_split_scatter(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap,
                                    double invDepthDenom, float *pose, float *stat, uint32_t typeByte,
-                                   uint32_t *particles, uint32_t invByte, uint32_t rowCount) {
+                                   uint32_t *particles, uint32_t invByte, uint32_t rowCount, const uint32_t *G,
+                                   const int withGbuf, const int withBands) {
   const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
   const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
   uint32_t *inv = (uint32_t *)(uintptr_t)invByte;
@@ -205,6 +288,8 @@ INLINE uint32_t pack_split_scatter(const uint32_t *t, uint32_t indices, uint32_t
     if (r >= rowCount || inv[r] != 0xffffffffu) return 0xffffffffu;
     inv[r] = k;
   }
+  GbufCols gc;
+  if (withGbuf) gbuf_cols(G, &gc, withBands);
   uint32_t p = 0;
   for (uint32_t i = 0; i < rowCount; i++) {
     const uint32_t k = inv[i];
@@ -212,7 +297,13 @@ INLINE uint32_t pack_split_scatter(const uint32_t *t, uint32_t indices, uint32_t
     if (type) p += type[i] == 1;
     sprite_pose(t, i, pose + k * POSE_FLOATS);
     sprite_static(t, i, stat + k * STATIC_FLOATS, 1.0 - (double)(k + 1) * invDepthDenom);
+    if (withGbuf) {
+      int32_t z = 0;
+      gc.dst[k * GBUF_FLOATS] = (float)(int32_t)gbuf_row_word(&gc, i, &z, withBands);
+      gc.dst[k * GBUF_FLOATS + 1] = (float)z;
+    }
   }
+  if (withBands) gbuf_bands_from_z(gc.dst, n);
   *particles = p;
   return n;
 }
@@ -229,9 +320,11 @@ INLINE uint32_t pack_split_scatter(const uint32_t *t, uint32_t indices, uint32_t
    slot's depth was never read; invDepthDenom stays in the exports' signatures and goes unused. */
 #define SLOT_FLOATS 1
 
+/* E-444: withGbuf and withBands as pack_split_scatter's. */
 INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap,
                                      double invDepthDenom, float *pose, float *slots, float *stat, uint32_t typeByte,
-                                     uint32_t *particles, uint32_t invByte, uint32_t rowCount, int statics) {
+                                     uint32_t *particles, uint32_t invByte, uint32_t rowCount, int statics,
+                                     const uint32_t *G, const int withGbuf, const int withBands) {
   const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
   const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
   uint32_t *inv = (uint32_t *)(uintptr_t)invByte;
@@ -242,6 +335,8 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
     if (r >= rowCount || inv[r] != 0xffffffffu) return 0xffffffffu;
     inv[r] = k;
   }
+  GbufCols gc;
+  if (withGbuf) gbuf_cols(G, &gc, withBands);
   uint32_t p = 0;
   for (uint32_t i = 0; i < rowCount; i++) {
     if (statics) {
@@ -254,7 +349,13 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
     if (type) p += type[i] == 1;
     sprite_pose(t, i, pose + k * POSE_FLOATS);
     slots[k * SLOT_FLOATS] = (float)i;
+    if (withGbuf) {
+      int32_t z = 0;
+      gc.dst[k * GBUF_FLOATS] = (float)(int32_t)gbuf_row_word(&gc, i, &z, withBands);
+      gc.dst[k * GBUF_FLOATS + 1] = (float)z;
+    }
   }
+  if (withBands) gbuf_bands_from_z(gc.dst, n);
   (void)invDepthDenom;
   *particles = p;
   return n;
@@ -280,18 +381,8 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
 #define KEY_TEX_ONLY 0x40000000u
 #define KEY_FLAGS (KEY_CHANGED | KEY_TEX_ONLY)
 
-/* E-387: with withGbuf (a constant, so each form is a copy), each drawn instance's G-buffer words at its draw slot, as
-   gbufWord.js writeGbufWords makes them from the key column: GBUF_FLOATS floats, the word and the zIndex band. The word
-   is the entity's id in the G-buffer ((e % 65535) + 1), its SpriteRenderer.gbufFlags' 6 bits << 16 and its
-   ShadowCaster.selfShadow's 2 bits << 22 (none at or past the selfShadow column's length): an integer under 2^24, so an
-   exact float. A row that is no entity (KEY_NONE, or a key at or past the entity count: a decoration's, a LiquidFun
-   particle's, one past keyBase) has the word 0. The band, with withBands (the painter orders zIndex first), counts the
-   zIndex changes along the draw order up to GBUF_MAX_BANDS - 1, a row that is no entity at zIndex 0; 0 without. The
-   block at G, GB_WORDS u32: the words' destination, the gbufFlags column, the selfShadow column (0: none) and its length,
-   the zIndex column (0: no bands), the entity count. */
-enum { GB_DST, GB_FLAGS, GB_SELF, GB_SELF_N, GB_ZINDEX, GB_ENTITIES, GB_WORDS };
-#define GBUF_FLOATS 2
-#define GBUF_MAX_BANDS 8
+/* E-387: with withGbuf, each drawn instance's G-buffer words from the key column and the block at G (GB_*, defined with
+   the split pack above, whose E-444 forms write the same words from the collector's columns). */
 
 /* E-201: byRow (a constant, so each form is a copy) writes each drawn instance's queue row at rows (as a float) instead
    of its pose: the shader fetches the pose from the queue's own pose columns by that row. */
@@ -455,8 +546,29 @@ uint32_t pack_sprites_split(uint32_t table, uint32_t indices, uint32_t count, ui
   float *pose = (float *)(uintptr_t)dstPose;
   float *stat = (float *)(uintptr_t)dstStatic;
   uint32_t *particles = (uint32_t *)(uintptr_t)particlesOut;
-  if (dstStatic) return pack_split(t, indices, count, cap, invDepthDenom, pose, stat, typeByte, particles, 1);
-  return pack_split(t, indices, count, cap, invDepthDenom, pose, stat, typeByte, particles, 0);
+  if (dstStatic) return pack_split(t, indices, count, cap, invDepthDenom, pose, stat, typeByte, particles, 1, 0, 0, 0);
+  return pack_split(t, indices, count, cap, invDepthDenom, pose, stat, typeByte, particles, 0, 0, 0, 0);
+}
+
+/* E-444: pack_sprites_split with each drawn instance's G-buffer words too, the block at gbufByte (GB_WORDS u32), its
+   forms each a copy: with the statics or without, with the bands (a zIndex column in the block) or without. Exports of
+   their own, so the plain pack keeps the code it had (E-387: the keyed pack ran 7.8 % slower with its words' forms in
+   the same export). */
+__attribute__((export_name("pack_sprites_split_gbuf")))
+uint32_t pack_sprites_split_gbuf(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
+                                 uint32_t dstPose, uint32_t dstStatic, uint32_t typeByte, uint32_t particlesOut,
+                                 uint32_t gbufByte) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  float *pose = (float *)(uintptr_t)dstPose;
+  float *stat = (float *)(uintptr_t)dstStatic;
+  uint32_t *particles = (uint32_t *)(uintptr_t)particlesOut;
+  const uint32_t *G = (const uint32_t *)(uintptr_t)gbufByte;
+  if (dstStatic) {
+    if (G[GB_ZINDEX]) return pack_split(t, indices, count, cap, invDepthDenom, pose, stat, typeByte, particles, 1, G, 1, 1);
+    return pack_split(t, indices, count, cap, invDepthDenom, pose, stat, typeByte, particles, 1, G, 1, 0);
+  }
+  if (G[GB_ZINDEX]) return pack_split(t, indices, count, cap, invDepthDenom, pose, stat, typeByte, particles, 0, G, 1, 1);
+  return pack_split(t, indices, count, cap, invDepthDenom, pose, stat, typeByte, particles, 0, G, 1, 0);
 }
 
 __attribute__((export_name("pack_sprites_split_scatter")))
@@ -465,7 +577,26 @@ uint32_t pack_sprites_split_scatter(uint32_t table, uint32_t indices, uint32_t c
                                     uint32_t particlesOut, uint32_t invByte, uint32_t rowCount) {
   return pack_split_scatter((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
                             (float *)(uintptr_t)dstPose, (float *)(uintptr_t)dstStatic, typeByte,
-                            (uint32_t *)(uintptr_t)particlesOut, invByte, rowCount);
+                            (uint32_t *)(uintptr_t)particlesOut, invByte, rowCount, 0, 0, 0);
+}
+
+/* E-444: pack_sprites_split_scatter with each drawn instance's G-buffer words too, the block at gbufByte; with the bands
+   or without. */
+__attribute__((export_name("pack_sprites_split_scatter_gbuf")))
+uint32_t pack_sprites_split_scatter_gbuf(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap,
+                                         double invDepthDenom, uint32_t dstPose, uint32_t dstStatic, uint32_t typeByte,
+                                         uint32_t particlesOut, uint32_t invByte, uint32_t rowCount, uint32_t gbufByte) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  float *pose = (float *)(uintptr_t)dstPose;
+  float *stat = (float *)(uintptr_t)dstStatic;
+  uint32_t *particles = (uint32_t *)(uintptr_t)particlesOut;
+  const uint32_t *G = (const uint32_t *)(uintptr_t)gbufByte;
+  if (G[GB_ZINDEX]) {
+    return pack_split_scatter(t, indices, count, cap, invDepthDenom, pose, stat, typeByte, particles, invByte, rowCount,
+                              G, 1, 1);
+  }
+  return pack_split_scatter(t, indices, count, cap, invDepthDenom, pose, stat, typeByte, particles, invByte, rowCount, G,
+                            1, 0);
 }
 
 /* E-162: the pose and slot streams at dstPose and dstSlots, and every row's statics in row order at dstStatic unless it
@@ -481,9 +612,38 @@ uint32_t pack_sprites_indexed_scatter(uint32_t table, uint32_t indices, uint32_t
   uint32_t *particles = (uint32_t *)(uintptr_t)particlesOut;
   if (dstStatic)
     return pack_indexed_scatter(t, indices, count, cap, invDepthDenom, pose, slots, stat, typeByte, particles, invByte,
-                                rowCount, 1);
+                                rowCount, 1, 0, 0, 0);
   return pack_indexed_scatter(t, indices, count, cap, invDepthDenom, pose, slots, stat, typeByte, particles, invByte,
-                              rowCount, 0);
+                              rowCount, 0, 0, 0, 0);
+}
+
+/* E-444: pack_sprites_indexed_scatter with each drawn instance's G-buffer words too, the block at gbufByte; with the
+   statics or without, with the bands or without. */
+__attribute__((export_name("pack_sprites_indexed_scatter_gbuf")))
+uint32_t pack_sprites_indexed_scatter_gbuf(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap,
+                                           double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t dstStatic,
+                                           uint32_t typeByte, uint32_t particlesOut, uint32_t invByte, uint32_t rowCount,
+                                           uint32_t gbufByte) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  float *pose = (float *)(uintptr_t)dstPose;
+  float *slots = (float *)(uintptr_t)dstSlots;
+  float *stat = (float *)(uintptr_t)dstStatic;
+  uint32_t *particles = (uint32_t *)(uintptr_t)particlesOut;
+  const uint32_t *G = (const uint32_t *)(uintptr_t)gbufByte;
+  if (dstStatic) {
+    if (G[GB_ZINDEX]) {
+      return pack_indexed_scatter(t, indices, count, cap, invDepthDenom, pose, slots, stat, typeByte, particles, invByte,
+                                  rowCount, 1, G, 1, 1);
+    }
+    return pack_indexed_scatter(t, indices, count, cap, invDepthDenom, pose, slots, stat, typeByte, particles, invByte,
+                                rowCount, 1, G, 1, 0);
+  }
+  if (G[GB_ZINDEX]) {
+    return pack_indexed_scatter(t, indices, count, cap, invDepthDenom, pose, slots, stat, typeByte, particles, invByte,
+                                rowCount, 0, G, 1, 1);
+  }
+  return pack_indexed_scatter(t, indices, count, cap, invDepthDenom, pose, slots, stat, typeByte, particles, invByte,
+                              rowCount, 0, G, 1, 0);
 }
 
 /* E-177: the pose and slot streams at dstPose and dstSlots, the updates at updatesByte (room for cap), the results at

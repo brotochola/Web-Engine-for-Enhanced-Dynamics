@@ -104,7 +104,8 @@ export async function bindGpuPack(memory, layout) {
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
     'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed', 'pack_casters_keyed_scan',
     'pack_sprites_keyed_rows', 'pack_sprites_keyed_gbuf', 'pack_sprites_keyed_rows_gbuf', 'lamp_frames',
-    'pack_casters_framed', 'pack_casters_scatter_framed',
+    'pack_casters_framed', 'pack_casters_scatter_framed', 'pack_sprites_split_gbuf', 'pack_sprites_split_scatter_gbuf',
+    'pack_sprites_indexed_scatter_gbuf',
   ]);
   return {
     buffer: memory.buffer,
@@ -119,6 +120,11 @@ export async function bindGpuPack(memory, layout) {
     spritesSplitScatter: k.pack_sprites_split_scatter,
     // E-162: the pose and the statics' row in draw order, the statics in the queue's row order.
     spritesIndexedScatter: k.pack_sprites_indexed_scatter,
+    // E-444: the three with the sprites' G-buffer words too (pre-render's; exports of their own: the plain ones keep
+    // their code).
+    spritesSplitGbuf: k.pack_sprites_split_gbuf,
+    spritesSplitScatterGbuf: k.pack_sprites_split_scatter_gbuf,
+    spritesIndexedScatterGbuf: k.pack_sprites_indexed_scatter_gbuf,
     // E-177: the pose and the statics' key in draw order, the statics that changed as updates of a table by key.
     spritesKeyed: k.pack_sprites_keyed,
     // E-201: the same with each drawn instance's queue row instead of its pose (the shader fetches the pose by row).
@@ -295,9 +301,12 @@ export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shado
 /**
  * E-82b: packSplitRows (gpuQueueLayout.js) through the kernel. Each plain sprite's pose goes into `pose`
  * (POSE_PLAIN_FLOATS a row) and, unless `stat` is null, its statics into `stat` (POSE_STATIC_FLOATS a row).
+ * E-444: with `gbuf` (splitGbufByte's columns; null: none), each drawn row's G-buffer words go to `gbuf.out` too, the
+ * words gbufWord.js writeGbufWords writes from the collector's columns, and `gbuf.written` says whether they did.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
-export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity) {
+export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity, gbuf = null) {
+  if (gbuf !== null) gbuf.written = false;
   if (!b || !q || !pose || !ctx) return -1;
   const o = ctx.o || ctx;
   if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
@@ -316,14 +325,23 @@ export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity) {
   // As above: a long list over most of the queue goes through its inverse (with the statics: a listed
   // frame's statics are never current).
   const rows = q.count | 0;
+  // E-444: the rows' G-buffer words too where the caller hands their columns (the kernel packs min(count, capacity)).
+  const gbufByte = splitGbufByte(b, gbuf, count < (capacity | 0) ? count : capacity | 0, rows);
   if (stat !== null && indexByte && b.inverseByte && count >= SCATTER_MIN_ROWS && count * 2 >= rows && rows <= b.indexCap) {
-    out = b.spritesSplitScatter(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset, stat.byteOffset,
-      typeByte, b.particlesByte, b.inverseByte, rows);
+    out = gbufByte > 0
+      ? b.spritesSplitScatterGbuf(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset, stat.byteOffset,
+        typeByte, b.particlesByte, b.inverseByte, rows, gbufByte)
+      : b.spritesSplitScatter(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset, stat.byteOffset,
+        typeByte, b.particlesByte, b.inverseByte, rows);
   }
   if (out < 0) {
-    out = b.spritesSplit(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
-      stat !== null ? stat.byteOffset : 0, typeByte, b.particlesByte);
+    out = gbufByte > 0
+      ? b.spritesSplitGbuf(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+        stat !== null ? stat.byteOffset : 0, typeByte, b.particlesByte, gbufByte)
+      : b.spritesSplit(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+        stat !== null ? stat.byteOffset : 0, typeByte, b.particlesByte);
   }
+  if (gbufByte > 0) gbuf.written = true;
   ctx.particleCount = b.u32[b.particlesByte >> 2];
   return out;
 }
@@ -332,10 +350,11 @@ export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity) {
  * E-162: a painter-sorted frame's indexed streams through the kernel: each drawn row's pose (GPU_POSE_FLOATS) and its
  * slot (GPU_INDEXED_SLOT_FLOATS: its row, as a float; E-186: no depth, which nothing read) at its draw slot, and, unless `stat` is null, every queue row's statics at its row (GPU_INDEXED_STATIC_FLOATS a row, the
  * depth term 0). Only for an index list over most of the queue, as packSplitRowsWasm's scatter takes it, and a queue
- * whose rows `stat` holds.
+ * whose rows `stat` holds. E-444: with `gbuf` (null: none), each drawn row's G-buffer words too, as packSplitRowsWasm's.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs (the caller packs it split)
  */
-export function packIndexedRowsWasm(b, q, ctx, pose, slots, stat, capacity) {
+export function packIndexedRowsWasm(b, q, ctx, pose, slots, stat, capacity, gbuf = null) {
+  if (gbuf !== null) gbuf.written = false;
   if (!b || !q || !pose || !slots || !ctx || !b.spritesIndexedScatter) return -1;
   const o = ctx.o || ctx;
   if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
@@ -351,10 +370,16 @@ export function packIndexedRowsWasm(b, q, ctx, pose, slots, stat, capacity) {
   if (stat !== null && stat.length < n * GPU_INDEXED_STATIC_FLOATS) return -1;
   const depthDenom = ctx.depthDenom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
-  const out = b.spritesIndexedScatter(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
-    slots.byteOffset, stat !== null ? stat.byteOffset : 0, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
-    b.inverseByte, n);
+  const gbufByte = splitGbufByte(b, gbuf, count < (capacity | 0) ? count : capacity | 0, n);
+  const out = gbufByte > 0
+    ? b.spritesIndexedScatterGbuf(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+      slots.byteOffset, stat !== null ? stat.byteOffset : 0, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+      b.inverseByte, n, gbufByte)
+    : b.spritesIndexedScatter(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+      slots.byteOffset, stat !== null ? stat.byteOffset : 0, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+      b.inverseByte, n);
   if (out < 0) return -1;
+  if (gbufByte > 0) gbuf.written = true;
   ctx.particleCount = b.u32[b.particlesByte >> 2];
   return out;
 }
@@ -371,26 +396,22 @@ export const GPU_KEYED_TEX_ONLY = 0x40000000;
 export const GPU_KEYED_TEX_WORDS = 2;
 
 /**
- * E-387: the byte of the block (gpuPack.c GB_*, six u32) that has a keyed pack of `n` rows write their G-buffer words
- * into `keyed.gbufOut` (GPU_GBUF_FLOATS a draw slot), as gbufWord.js writeGbufWords writes them from the key column:
- * from `keyed.gbufFlags` (SpriteRenderer.gbufFlags; its length is the entity count), `keyed.gbufSelf`
- * (ShadowCaster.selfShadow; null or empty: none) and `keyed.gbufZ` (SpriteRenderer.zIndex where the painter orders by
- * it; null or empty: no bands). 0, no words, when the destination or the flags are missing, an array is outside the
- * memory, the destination has no room for n slots, or the zIndex column is shorter than the flags. The block goes where
- * the general pack's parameters go, which a keyed pack does not read.
+ * E-387: the block's first six words (gpuPack.c GB_DST to GB_ENTITIES) that have a pack of `n` rows write their
+ * G-buffer words into `out` (GPU_GBUF_FLOATS a draw slot), as gbufWord.js writeGbufWords writes them: from `flags`
+ * (SpriteRenderer.gbufFlags; its length is the entity count), `self` (ShadowCaster.selfShadow; null or empty: none)
+ * and `z` (SpriteRenderer.zIndex where the painter orders by it; null or empty: no bands). False, nothing written, when
+ * the destination or the flags are missing, an array is outside the memory, the destination has no room for n slots,
+ * or the zIndex column is shorter than the flags. The block goes where the general pack's parameters go, which these
+ * packs do not read.
  */
-function keyedGbufByte(b, keyed, n) {
-  const out = keyed.gbufOut;
-  const flags = keyed.gbufFlags;
-  if (!out || !flags || flags.length === 0 || out.length < GPU_GBUF_FLOATS * n) return 0;
-  if (out.buffer !== b.buffer || flags.buffer !== b.buffer) return 0;
-  const self = keyed.gbufSelf;
+function writeGbufBlock(b, out, flags, self, z, n) {
+  if (!out || !flags || flags.length === 0 || out.length < GPU_GBUF_FLOATS * n) return false;
+  if (out.buffer !== b.buffer || flags.buffer !== b.buffer) return false;
   const selfN = self ? self.length : 0;
   // The block's 0 says "none" for these two, so a column at byte 0 (never, in a layout) declines.
-  if (selfN > 0 && (self.buffer !== b.buffer || self.byteOffset === 0)) return 0;
-  const z = keyed.gbufZ;
+  if (selfN > 0 && (self.buffer !== b.buffer || self.byteOffset === 0)) return false;
   const zN = z ? z.length : 0;
-  if (zN > 0 && (z.buffer !== b.buffer || z.byteOffset === 0 || zN < flags.length)) return 0;
+  if (zN > 0 && (z.buffer !== b.buffer || z.byteOffset === 0 || zN < flags.length)) return false;
   const at = b.paramsByte >> 2;
   const u32 = b.u32;
   u32[at] = out.byteOffset;
@@ -399,6 +420,35 @@ function keyedGbufByte(b, keyed, n) {
   u32[at + 3] = selfN;
   u32[at + 4] = zN > 0 ? z.byteOffset : 0;
   u32[at + 5] = flags.length;
+  return true;
+}
+
+/**
+ * E-387: the byte of the block (gpuPack.c GB_*) that has a keyed pack of `n` rows write their G-buffer words from the
+ * key column, from `keyed.gbufOut`, `keyed.gbufFlags`, `keyed.gbufSelf` and `keyed.gbufZ` (writeGbufBlock's columns);
+ * 0, no words, where writeGbufBlock declines them.
+ */
+function keyedGbufByte(b, keyed, n) {
+  return writeGbufBlock(b, keyed.gbufOut, keyed.gbufFlags, keyed.gbufSelf, keyed.gbufZ, n) ? b.paramsByte : 0;
+}
+
+/**
+ * E-444: the byte of the block (gpuPack.c GB_*, eight u32) that has pre-render's split or indexed pack of `n` rows write
+ * their G-buffer words from the collector's columns, as pre-render's writeGbufWords call does: `gbuf.types` (u8, 0: a
+ * sprite entity) and `gbuf.entities` (i32), the collector's row types and entities by queue row (`rows` at least, the
+ * queue's), then `gbuf.out`, `gbuf.flags`, `gbuf.self` and `gbuf.z` (writeGbufBlock's columns). 0, no words, for a null
+ * `gbuf`, a kernel without the words' forms, a collector column missing, outside the memory, of another element size or
+ * shorter than the queue, or where writeGbufBlock declines.
+ */
+function splitGbufByte(b, gbuf, n, rows) {
+  if (gbuf === null || !b.spritesSplitGbuf) return 0;
+  const types = gbuf.types;
+  const entities = gbuf.entities;
+  if (!lampColumn(types, b.buffer, rows, 1) || !lampColumn(entities, b.buffer, rows, 4)) return 0;
+  if (!writeGbufBlock(b, gbuf.out, gbuf.flags, gbuf.self, gbuf.z, n)) return 0;
+  const at = b.paramsByte >> 2;
+  b.u32[at + 6] = types.byteOffset;
+  b.u32[at + 7] = entities.byteOffset;
   return b.paramsByte;
 }
 
