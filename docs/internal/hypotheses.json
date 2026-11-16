@@ -18552,7 +18552,8 @@
       ],
       "records": [
         "R-1181",
-        "R-1190"
+        "R-1190",
+        "R-1194"
       ]
     },
     {
@@ -19090,6 +19091,25 @@
       ],
       "records": [
         "R-1190"
+      ]
+    },
+    {
+      "id": "E-447",
+      "title": "Column casters run their whole 24 x 24 grid (576 cells, 2 304 vertex invocations) for every instance whatever size the frame takes on the map: the columns' cost in the shadow maps is vertex work (61 % to all of it survives a 1 px scissor)",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws --probe-scissor on the column casters (GTX 1650, 1920 x 1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "selfShadowStressScene: the sun map's columns program [uTexture,uTexLut,uMaps,uFoot], 404 instances, 1.282 ms under a 1 px scissor against 2.085 ms drawn (R-1190); sunShadowMapStressScene lamps=48 hour=22: the lamps' map's columns program [uTexture,uMaps,uTexLut,uLampTiles], two draws of 716 instances, 1.653 + 1.755 ms under the scissor (2.521 drawn in R-1190: the per-draw split overlaps there). sunShadowMap.js: SUN_MAP_COLUMNS 24, COLUMN_CELL_PX 8 (the most px a cell spans; E-379's blocks for big frames), each cell four vertices (E-376's index buffer). A 64 px frame thus draws 2.7 px cells into a map that resolves no less than its own texel.",
+      "next": "Bucket the column instances by the grid their frame needs at the map's texel size (cells of about one map texel: a 64 px person at resolution 0.5 needs 8 x 8 or fewer), compactColumnRows (E-379) writing each bucket's rows and the pass drawing one call a bucket with its own grid; or a per-frame list of the solid cells (most of a sprite frame is empty) drawn by vertex pulling. The image changes only where a cell was finer than the map's texel; per draw before and after on selfShadow, sunShadowMap and light3dCompare all=1.",
+      "refs": [],
+      "aliases": [
+        "column grid vertex work",
+        "columns per map texel"
+      ],
+      "records": [
+        "R-1194"
       ]
     }
   ],
@@ -30781,6 +30801,18 @@
       "title": "94 of 130 redundant sampler uniforms a frame come from the volumes drawn into the lamps' map once per tile (_drawVolumesInLampMap: a Pixi mesh a tile, ~47 draws): one instanced draw over rows x tiles",
       "verdict": "note",
       "text": "**E-389 named: 94 of the frame's 130 redundant sampler uniforms come from one program: the volumes drawn into the lamps' map, once per lamp tile.** E-391's 50 draws are the same draws.\n\nglFrameRecorder with the redundant calls noted by program (the commit after 8f1d4eda), Predator zoom=0.3 light3d=1, headed, 3 s after 12 s, 2026-11-16 06:56 (the result file):\n\n| redundant a frame | program |\n| --- | --- |\n| 94.4 uniform1i | prog [uTexLut,uPoseTable,uLampTiles], the volumes in the lamps' map (volumeShadowMap.js volumeLampVertex) |\n| 9.8 bindTexture | prog [uTexLut,uTexture] |\n| 6.9 uniform1i | the tilemap's [uGid,uTileset] |\n| 4.9 uniform1i | the 3D light pass |\n| 3.9 uniform1i each | the lamps' map sprites, and the four sprite programs with poses and maps |\n\nTotals a frame: 1 098 GL calls, 80.8 draws, 162 redundant calls.\n\nThe cause is pixiWorker.js `_drawVolumesInLampMap`, which makes one Pixi mesh per lamp tile in use, each with its own shader and uniform group (uLampVolume: the tile). Pixi binds each mesh's program, syncs its group (the uniform4f E-391 counts) and its two samplers (the uniform1i), then draws: about 47 draws a frame for the 47 lamp tiles. In the GPU process they are 2 997 glDrawArraysInstancedANGLE a second, 8.6 us each (E-414).\n\nFix: one mesh drawn with instanceCount = rows x tiles, the vertex stage taking the tile from gl_InstanceID / rows (a uniform) and the owner from the tiles' texture. That is one draw and one sync where there are about 47 now. Each tile's draw already runs every row's vertices and leaves out the triangles past its tile, so the vertex work stays the same. It goes in pixiWorker.js and volumeShadowMap.js (both shaders), after the light-tiles work there."
+    },
+    {
+      "id": "R-1194",
+      "date": "2026-11-16",
+      "time": "07:01",
+      "timeFrom": "recorded",
+      "title": "The column casters' cost in the shadow maps is vertex work (1.28 of 2.09 ms survives a 1 px scissor in selfShadow, all of it in sunShadowMap): the 24 x 24 grid per instance (E-447)",
+      "verdict": "note",
+      "text": "**The column casters' cost in the shadow maps is vertex work, not overdraw. Under a 1 px scissor the sun map's columns keep 1.282 of their 2.085 ms (selfShadow), and the lamps' map's keep all of theirs (sunShadowMap).** E-420's premise (quads stretched over far more texels than the shadow) is not the main cost. Every column instance runs the whole 24 x 24 grid, 2 304 vertex invocations, whatever size its frame takes on the map (E-447).\n\nglFrameRecorder --gpu-draws --probe-scissor (6aa3566b), headed Chrome 157, GTX 1650, 1920 x 1080, 3 s after 10 s, main a7c05362, 2026-11-16 07:00 to 07:01 (the result files):\n\n| scene | columns program | drawn (R-1190) | under a 1 px scissor |\n| --- | --- | --- | --- |\n| selfShadowStressScene | [uTexture,uTexLut,uMaps,uFoot], 404 instances | 2.085 ms | 1.282 ms |\n| sunShadowMapStressScene lamps=48 hour=22 | [uTexture,uMaps,uTexLut,uLampTiles], 2 x 716 instances | 2.521 ms | 1.653 + 1.755 ms |\n\nThe sunShadowMap row reads higher under the probe than drawn. Per-draw ranges overlap when draws pipeline, so the split there is approximate, but none of the cost went away with the pixels.\n\nsunShadowMap.js: SUN_MAP_COLUMNS = 24 cells a side, four vertices a cell (E-376), COLUMN_CELL_PX = 8 the most a cell spans (E-379's blocks for big frames). A 64 px person thus draws 2.7 px cells into a map that cannot resolve finer than its texel. Filed: E-447, the columns bucketed by the grid their frame needs at the map's texel size, one draw a bucket, or the solid cells pulled from a per-frame list.",
+      "commits": [
+        "6aa3566b"
+      ]
     }
   ],
   "leads": [
