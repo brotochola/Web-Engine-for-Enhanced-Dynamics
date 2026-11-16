@@ -28,6 +28,7 @@
  * From Git Bash set MSYS_NO_PATHCONV=1. Headed Chrome (a headless one draws on a software path). The wrappers add a
  * little time to each call, so the scene's speed during the window is not a measurement; the counts are.
  */
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -387,6 +388,39 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
   };
 }
 
+/**
+ * E-451: the GPU's power state and clocks while `fn` runs, from nvidia-smi every 200 ms where it exists (null else): the
+ * share of samples in each pstate and the median graphics clock (MHz) and utilization (%). A paced scene can keep the GPU
+ * at its idle clock, where a draw takes several times what it takes at full clock.
+ */
+export async function withGpuClocks(fn) {
+  let proc = null;
+  let text = '';
+  try {
+    proc = spawn('nvidia-smi', ['--query-gpu=pstate,clocks.gr,utilization.gpu', '--format=csv,noheader,nounits', '-lms', '200'], { windowsHide: true });
+    proc.stdout.on('data', (d) => { text += d; });
+    proc.on('error', () => { proc = null; });
+  } catch {
+    proc = null;
+  }
+  try {
+    const result = await fn();
+    return { result, clocks: summariseClocks(text) };
+  } finally {
+    if (proc) proc.kill();
+  }
+}
+
+function summariseClocks(text) {
+  const rows = text.split(/\r?\n/).map((l) => l.split(',').map((x) => x.trim())).filter((r) => r.length >= 3 && /^P\d+$/.test(r[0]));
+  if (!rows.length) return null;
+  const median = (xs) => { const v = xs.filter((x) => Number.isFinite(x)).sort((a, b) => a - b); return v.length ? v[v.length >> 1] : NaN; };
+  const states = {};
+  for (const r of rows) states[r[0]] = (states[r[0]] || 0) + 1;
+  for (const k of Object.keys(states)) states[k] = Math.round((states[k] / rows.length) * 100);
+  return { samples: rows.length, pstates: states, clockMHz: median(rows.map((r) => +r[1])), utilization: median(rows.map((r) => +r[2])) };
+}
+
 export async function recordGlFrames(opts) {
   const server = await createStaticBenchmarkServer(repoRoot);
   const browser = await chromium.launch({ headless: false, channel: 'chrome', args: ['--mute-audio'] });
@@ -400,7 +434,10 @@ export async function recordGlFrames(opts) {
     await page.waitForTimeout(opts.warmupMs);
     const worker = page.workers().find((w) => w.url().includes('pixiWorker'));
     if (!worker) throw new Error('no Pixi worker');
-    return await worker.evaluate(recordInWorker, { ms: opts.recordMs, gpuPasses: !!opts.gpuPasses, gpuDraws: !!opts.gpuDraws, probeScissor: opts.probeScissor || null });
+    const { result, clocks } = await withGpuClocks(() => worker.evaluate(recordInWorker,
+      { ms: opts.recordMs, gpuPasses: !!opts.gpuPasses, gpuDraws: !!opts.gpuDraws, probeScissor: opts.probeScissor || null }));
+    if (result && !result.error) result.gpuClocks = clocks;
+    return result;
   } finally {
     await browser.close();
     await server.close?.();
@@ -450,6 +487,11 @@ async function main() {
         `${String(row.instancesPerFrame).padStart(7)} inst  ${row.label}`);
     }
   } else if (args['gpu-passes'] || args['gpu-draws']) console.log('GPU time: no EXT_disjoint_timer_query_webgl2 in this context');
+  if (r.gpuClocks) {
+    const c = r.gpuClocks;
+    console.log(`GPU clocks in the window (nvidia-smi, ${c.samples} samples): ${Object.entries(c.pstates).map(([k, v]) => `${k} ${v} %`).join(', ')}; ` +
+      `median ${c.clockMHz} MHz, ${c.utilization} % busy`);
+  }
   if (args.output) fs.writeFileSync(String(args.output), JSON.stringify(r, null, 1));
 }
 
