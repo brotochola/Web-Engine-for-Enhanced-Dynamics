@@ -15,7 +15,11 @@
    E-160: the grid also packs the casters' x and y in its own order (two float arrays), so a light's walk reads them
    there and not out of each candidate's 88-byte row; the build reads each row once. The walk keeps each candidate's
    double distance, which the per-caster nearest lights take instead of reading the row again; a caster row is copied
-   in v128s. The stamp is the same, bit for bit (tests/bench/shadowStampReplay.mjs replays Predator's own frames). */
+   in v128s. The stamp is the same, bit for bit (tests/bench/shadowStampReplay.mjs replays Predator's own frames).
+   E-315: a light that keeps at most KNN_MAX_LIM casters walks its cells nearest first and skips the cells too far to
+   hold one of its kept (ring_select), and a larger budget picks its kept with a radix select on the float distances'
+   bits (radix_select) instead of the quickselect; a tie at the cut (or among sorted rows) goes the old way, so the
+   rows stay the same, bit for bit (tests/node/shadowStampSelect.test.js). */
 #include <stdint.h>
 #include <wasm_simd128.h>
 
@@ -57,7 +61,11 @@ INLINE int32_t js_to_int32(double x) {
 
 INLINE int32_t floor_int32(double x) { return js_to_int32(__builtin_floor(x)); }
 
-typedef struct { double minX, minY; int32_t gw, gh; } Grid;
+/* exact (build_grid_packed only): every caster lies in its cell's square, so a cell's distance bounds its casters'
+   (E-315's ring walk): no NaN caster (binned in cell 0), and the casters' box within KNN_COORD_MAX of the origin, so no
+   width wraps and a cell's edges in double are off by far less than KNN_EPS. */
+typedef struct { double minX, minY; int32_t gw, gh, exact; } Grid;
+#define KNN_COORD_MAX 16777216.0
 
 /* buildStampGrid. 0: no grid (the full scan runs). Inlined, so g stays in locals (no stack). The stamp below builds
    build_grid_packed; this one is the float32 test module's (wasm/test/shadowStampF32.c). */
@@ -128,6 +136,7 @@ INLINE int build_grid_packed(const float *sun, uint32_t nSun, uint32_t sf, int32
   double minY = __builtin_inf();
   double maxX = -__builtin_inf();
   double maxY = -__builtin_inf();
+  int nan = 0;
   for (uint32_t c = 0; c < nSun; c++) {
     const float fx = sun[c * sf];
     const float fy = sun[c * sf + 1];
@@ -135,12 +144,14 @@ INLINE int build_grid_packed(const float *sun, uint32_t nSun, uint32_t sf, int32
     ty[c] = fy;
     const double x = fx;
     const double y = fy;
+    nan |= (x != x) | (y != y);
     if (x < minX) minX = x;
     if (y < minY) minY = y;
     if (x > maxX) maxX = x;
     if (y > maxY) maxY = y;
   }
   if (!(minX - minX == 0.0)) return 0; /* !Number.isFinite(minX) */
+  g->exact = !nan && minX >= -KNN_COORD_MAX && maxX <= KNN_COORD_MAX && minY >= -KNN_COORD_MAX && maxY <= KNN_COORD_MAX;
   const int64_t gw64 = (int64_t)floor_int32((maxX - minX) / STAMP_CELL) + 1;
   const int64_t gh64 = (int64_t)floor_int32((maxY - minY) / STAMP_CELL) + 1;
   const int64_t cells = gw64 * gh64;
@@ -497,6 +508,175 @@ INLINE int32_t append_stamped_cone(float *dst, uint32_t df, int32_t out, const f
   return out;
 }
 
+/* One light's rows without maxShadowsPerEntity: its kept casters keep[0..n) with its vec4 (a cone or dim light's
+   intensity row by row), and their light index. Returns the new cursor. */
+INLINE int32_t stamp_light_rows(float *stamp, uint32_t df, int32_t cursor, const float *sun, uint32_t sf,
+                                const uint32_t *keep, uint32_t n, int32_t cap, uint32_t lightAt, int folded, double lx,
+                                double ly, double intensity, double rangeSq, const double *L, uint16_t *stampLightIdx,
+                                int32_t i) {
+  const float lightVec[4] = { (float)lx, (float)ly, (float)intensity, (float)rangeSq };
+  const int32_t written = folded
+    ? append_stamped_cone(stamp, df, cursor, sun, sf, keep, n, lightVec, cap, lightAt, lx, ly, intensity, L)
+    : append_stamped(stamp, df, cursor, sun, sf, keep, n, lightVec, cap, lightAt);
+  if (stampLightIdx) for (int32_t k = cursor; k < written; k++) stampLightIdx[k] = (uint16_t)i;
+  return written;
+}
+
+/* E-315: a light that keeps at most KNN_MAX_LIM casters walks its cells nearest first and skips the cells too far to
+   hold one of its kept, instead of gathering every candidate of its box and selecting among them. */
+#define KNN_MAX_LIM 64
+/* A light farther out than this takes the gather: its cells' distances in double stay well within KNN_EPS. */
+#define KNN_LIGHT_MAX 1073741824.0
+/* How much nearer than its cell's square (px) a caster may be, and the relative margin on a squared distance: far
+   more than the doubles' rounding (under 1e-6 px and 1e-15 here), so a skipped cell never holds a distance a kept one
+   ties or beats. */
+#define KNN_EPS (1.0 / 64.0)
+#define KNN_SHRINK (1.0 - 1.0 / 1048576.0)
+
+/* The ring walk (E-315). The light's box of cells is the gather's, cell for cell, but walked in rings around the
+   light's cell; each candidate (in range, and in the cone when `cone`) goes into bufKey/bufPos, its float distance and
+   its packed position kept sorted by distance (an equal one after those already there), lim at most. Once lim are
+   held, a candidate past the last is dropped, a nearer one drops the last, and a cell whose nearest point (minus
+   KNN_EPS) is past the last distance (in float, so a skipped caster cannot even tie it) is skipped, as are the rings
+   after one whose inner edge is past it (when the light is in its own cell). `over` records that a candidate was left
+   out (m > lim, so the gather would select): for a skipped cell while that is not known yet, the walk looks for one
+   candidate in it. Returns (n << 1) | over with n the candidates held: every candidate of the box when not over, else
+   the lim nearest; -1 when a candidate ties the last held distance (or a dropped one ties the new last): the gather
+   and its selection then decide that light, as they always did. bufKey and bufPos have room for lim. */
+INLINE int32_t ring_select(const int32_t *gridStarts, const float *px, const float *py, double minX, double minY,
+                           int32_t gw, int32_t gh, double lx, double ly, double rangeSq, const double *L, int cone,
+                           int32_t lim, float *bufKey, uint32_t *bufPos) {
+  const double r = __builtin_sqrt(rangeSq);
+  int32_t col0 = floor_int32((lx - r - minX) / STAMP_CELL);
+  int32_t col1 = floor_int32((lx + r - minX) / STAMP_CELL);
+  int32_t row0 = floor_int32((ly - r - minY) / STAMP_CELL);
+  int32_t row1 = floor_int32((ly + r - minY) / STAMP_CELL);
+  if (col0 < 0) col0 = 0;
+  if (row0 < 0) row0 = 0;
+  if (col1 >= gw) col1 = gw - 1;
+  if (row1 >= gh) row1 = gh - 1;
+  if (col0 > col1 || row0 > row1) return 0;
+  int32_t lc = floor_int32((lx - minX) / STAMP_CELL);
+  int32_t lr = floor_int32((ly - minY) / STAMP_CELL);
+  /* The light in a cell of its box: the rings after the k-th lie past that ring's inner edge. */
+  const int inside = lc >= col0 && lc <= col1 && lr >= row0 && lr <= row1;
+  lc = lc < col0 ? col0 : (lc > col1 ? col1 : lc);
+  lr = lr < row0 ? row0 : (lr > row1 ? row1 : lr);
+  int32_t rings = lc - col0;
+  if (col1 - lc > rings) rings = col1 - lc;
+  if (lr - row0 > rings) rings = lr - row0;
+  if (row1 - lr > rings) rings = row1 - lr;
+  float top = __builtin_inff();
+  int32_t n = 0;
+  int over = 0;
+  for (int32_t k = 0; k <= rings; k++) {
+    if (k > 0 && over && inside) {
+      double gap = __builtin_inf();
+      if (lc - k >= col0) {
+        const double d = lx - (minX + (double)(lc - k + 1) * STAMP_CELL);
+        if (d < gap) gap = d;
+      }
+      if (lc + k <= col1) {
+        const double d = (minX + (double)(lc + k) * STAMP_CELL) - lx;
+        if (d < gap) gap = d;
+      }
+      if (lr - k >= row0) {
+        const double d = ly - (minY + (double)(lr - k + 1) * STAMP_CELL);
+        if (d < gap) gap = d;
+      }
+      if (lr + k <= row1) {
+        const double d = (minY + (double)(lr + k) * STAMP_CELL) - ly;
+        if (d < gap) gap = d;
+      }
+      gap -= KNN_EPS;
+      if (gap > 0.0 && (float)(gap * gap * KNN_SHRINK) > top) break;
+    }
+    const int32_t rowFrom = lr - k < row0 ? row0 : lr - k;
+    const int32_t rowTo = lr + k > row1 ? row1 : lr + k;
+    for (int32_t row = rowFrom; row <= rowTo; row++) {
+      /* The ring's first and last rows whole; the rows between, their two ends. */
+      int32_t colFrom = lc - k;
+      int32_t colTo = lc + k;
+      int32_t step = 2 * k;
+      if (row == lr - k || row == lr + k) {
+        if (colFrom < col0) colFrom = col0;
+        if (colTo > col1) colTo = col1;
+        step = 1;
+      }
+      for (int32_t col = colFrom; col <= colTo; col += step) {
+        if (col < col0 || col > col1) continue;
+        const int32_t cell = row * gw + col;
+        const int32_t from = gridStarts[cell];
+        const int32_t to = gridStarts[cell + 1];
+        if (from == to) continue;
+        if (n == lim) {
+          const double x0 = minX + (double)col * STAMP_CELL;
+          const double y0 = minY + (double)row * STAMP_CELL;
+          double gx = x0 - lx;
+          const double gx1 = lx - (x0 + STAMP_CELL);
+          if (gx1 > gx) gx = gx1;
+          double gy = y0 - ly;
+          const double gy1 = ly - (y0 + STAMP_CELL);
+          if (gy1 > gy) gy = gy1;
+          gx -= KNN_EPS;
+          gy -= KNN_EPS;
+          if (gx < 0.0) gx = 0.0;
+          if (gy < 0.0) gy = 0.0;
+          if ((float)((gx * gx + gy * gy) * KNN_SHRINK) > top) {
+            if (over) continue;
+            for (int32_t p = from; p < to; p++) {
+              const double dx = (double)px[p] - lx;
+              const double dy = (double)py[p] - ly;
+              const double d2 = dx * dx + dy * dy;
+              if (d2 > rangeSq || (cone && !in_cone(dx, dy, L))) continue;
+              over = 1;
+              break;
+            }
+            continue;
+          }
+        }
+        for (int32_t p = from; p < to; p++) {
+          const double dx = (double)px[p] - lx;
+          const double dy = (double)py[p] - ly;
+          const double d2 = dx * dx + dy * dy;
+          if (d2 > rangeSq) continue;
+          if (cone && !in_cone(dx, dy, L)) continue;
+          const float key = (float)d2;
+          if (key > top) {
+            over = 1;
+            continue;
+          }
+          if (n < lim) {
+            int32_t j = n;
+            while (j > 0 && key < bufKey[j - 1]) {
+              bufKey[j] = bufKey[j - 1];
+              bufPos[j] = bufPos[j - 1];
+              j--;
+            }
+            bufKey[j] = key;
+            bufPos[j] = (uint32_t)p;
+            if (++n == lim) top = bufKey[lim - 1];
+            continue;
+          }
+          over = 1;
+          if (!(key < top)) return -1;
+          int32_t j = lim - 1;
+          while (j > 0 && key < bufKey[j - 1]) {
+            bufKey[j] = bufKey[j - 1];
+            bufPos[j] = bufPos[j - 1];
+            j--;
+          }
+          bufKey[j] = key;
+          bufPos[j] = (uint32_t)p;
+          if (bufKey[lim - 1] == top) return -1;
+          top = bufKey[lim - 1];
+        }
+      }
+    }
+  }
+  return (n << 1) | over;
+}
+
 __attribute__((export_name("stamp_light_range")))
 int32_t stamp_light_range(uint32_t table) {
   const uint32_t *t = (const uint32_t *)(uintptr_t)table;
@@ -536,12 +716,16 @@ int32_t stamp_light_range(uint32_t table) {
   if (nSun == 0) return cursor;
   if (maxPE > 0) for (uint32_t c = 0; c < nSun; c++) nearCount[c] = 0;
   Grid g;
+  g.exact = 0;
   /* tmpIdx and dist hold the rows' x and y while the grid is built: they are maxSun long, and the gather does not
      use them until the first light. */
   const int grid = gridCounts && gridStarts && gridItems
     ? build_grid_packed(sun, nSun, sf, gridCounts, gridStarts, gridItems, t[T_GRID_COUNTS_CAP], t[T_GRID_ITEMS_CAP], &g,
                         dist, (float *)tmpIdx, px, py, cellOf)
     : 0;
+  /* E-315: the ring walk needs cells that bound their casters, and a scratch that holds every candidate (the gather
+     stops at tmpCap; the walk keeps no list to stop at that place). */
+  const int knn = grid && g.exact && tmpCap >= nSun;
   /* Whether a light this call took is a cone or dim: the per-entity rows then go through their own copy of the loop. */
   int anyFolded = 0;
   for (int32_t i = begin; i < capL && (maxPE > 0 || cursor < cap); i += stride) {
@@ -565,6 +749,49 @@ int32_t stamp_light_range(uint32_t table) {
     const int cone = L[7] > -1.0;
     const int folded = cone || L[10] < 1.0;
     anyFolded |= folded;
+    /* E-315: a small budget walks its cells nearest first (ring_select); a tie at its cut takes the gather below. */
+    if (knn && lim > 0 && lim <= KNN_MAX_LIM && lx >= -KNN_LIGHT_MAX && lx <= KNN_LIGHT_MAX && ly >= -KNN_LIGHT_MAX &&
+        ly <= KNN_LIGHT_MAX) {
+      const int32_t got = cone
+        ? ring_select(gridStarts, px, py, g.minX, g.minY, g.gw, g.gh, lx, ly, rangeSq, L, 1, lim, dist, order)
+        : ring_select(gridStarts, px, py, g.minX, g.minY, g.gw, g.gh, lx, ly, rangeSq, L, 0, lim, dist, order);
+      if (got >= 0) {
+        const uint32_t n = (uint32_t)got >> 1;
+        const int over = got & 1;
+        if (n == 0) continue;
+        if (maxPE > 0) {
+          /* Each kept caster into its own slots, in any order (E-133), with the gather's double distance. */
+          for (uint32_t k = 0; k < n; k++) {
+            const uint32_t p = order[k];
+            const double dx = (double)px[p] - lx;
+            const double dy = (double)py[p] - ly;
+            note_nearest(nearDist, nearSlot, nearCount, gridItems[p], i, dx * dx + dy * dy, maxPE);
+          }
+          continue;
+        }
+        /* The rows in takeClosest's order: the lim nearest by distance (the gather decides when two of them tie, the
+           order of a tie being its quicksort's), or every candidate by caster index (sortPairsByIndex). */
+        int ok = 1;
+        if (over) for (uint32_t k = 1; k < n && ok; k++) ok = dist[k - 1] != dist[k];
+        if (ok) {
+          for (uint32_t k = 0; k < n; k++) keep[k] = gridItems[order[k]];
+          if (!over) {
+            for (uint32_t a = 1; a < n; a++) {
+              const uint32_t v = keep[a];
+              uint32_t j = a;
+              while (j > 0 && keep[j - 1] > v) {
+                keep[j] = keep[j - 1];
+                j--;
+              }
+              keep[j] = v;
+            }
+          }
+          cursor = stamp_light_rows(stamp, df, cursor, sun, sf, keep, n, cap, lightAt, folded, lx, ly, intensity, rangeSq,
+                                    L, stampLightIdx, i);
+          continue;
+        }
+      }
+    }
     if (cone && grid) {
       const double r = __builtin_sqrt(rangeSq);
       int32_t col0 = floor_int32((lx - r - g.minX) / STAMP_CELL);
@@ -683,15 +910,8 @@ int32_t stamp_light_range(uint32_t table) {
     } else {
       for (uint32_t k = 0; k < m; k++) keep[k] = tmpIdx[k];
     }
-    lightVec[0] = (float)lx;
-    lightVec[1] = (float)ly;
-    lightVec[2] = (float)intensity;
-    lightVec[3] = (float)rangeSq;
-    const int32_t written = folded
-      ? append_stamped_cone(stamp, df, cursor, sun, sf, keep, m, lightVec, cap, lightAt, lx, ly, intensity, L)
-      : append_stamped(stamp, df, cursor, sun, sf, keep, m, lightVec, cap, lightAt);
-    if (stampLightIdx) for (int32_t k = cursor; k < written; k++) stampLightIdx[k] = (uint16_t)i;
-    cursor = written;
+    cursor = stamp_light_rows(stamp, df, cursor, sun, sf, keep, m, cap, lightAt, folded, lx, ly, intensity, rangeSq, L,
+                              stampLightIdx, i);
   }
   if (maxPE == 0) return cursor;
   if (!anyFolded) {

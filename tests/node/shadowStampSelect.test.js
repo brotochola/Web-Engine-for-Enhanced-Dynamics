@@ -23,7 +23,7 @@ const BUDGETS = [1, 2, 3, 7, 15, 16, 31, 32, 33, 63, 64, 65, 100, 300, 511, 512,
 /** maxShadowsPerLight per frame (0: each light's own budget, or every caster). */
 const MAX_PER_LIGHT = [0, 1, 15, 32, 64, 65, 512];
 /** Frame kinds (selectFrame). */
-const KINDS = 12;
+const KINDS = 13;
 
 /** The casters of a frame into dst.sun: x, y, then random floats so that each row is its own. */
 function writeCasters(dst, xy, r) {
@@ -121,7 +121,8 @@ function longestRun(keys) {
  * clear · 4 few casters (lim >= m, lim = m, lim = m - 1) · 5 cone and dim lights over a crowd · 6 lights outside the
  * casters' box, infinite and huge ranges · 7 NaN, infinite or far casters · 8 coordinates past 2^24 px · 9 lim = 1 at a
  * tie · 10 a dense crowd, budgets in the hundreds and thousands (many candidates per sixteenth of an octave of d²) ·
- * 11 tight rings: distances a few float steps apart (they share all but the last bits).
+ * 11 tight rings: distances a few float steps apart (they share all but the last bits) · 12 casters on cell edges,
+ * lights on and a hair off edges and corners, small budgets.
  */
 function selectFrame(r, k, dst) {
   const kind = k % KINDS;
@@ -223,6 +224,21 @@ function selectFrame(r, k, dst) {
     lights.push(light(cx, cy, 250, 0, r));
     lights.push(light(cx, cy, 250, 0, r));
     lights.push(light(cx, cy, 250, 0, r));
+  } else if (kind === 12) {
+    // The grid's cells start at (0, 0) (a caster there): casters on cell edges, lights on and a hair off edges and
+    // corners, small budgets (the ring walk skips cells by their distance; these sit at its margins).
+    xy.push(0, 0);
+    crowd(xy, r, 2400, 0, 0, W, H);
+    for (let q = 0; q < 150; q++) xy.push(256 * (1 + Math.floor(r() * 8)), r() * H);
+    for (let q = 0; q < 150; q++) xy.push(r() * W, 256 * (1 + Math.floor(r() * 4)));
+    maxPerLight = 0;
+    const offs = [0, 0, 0.5, -0.5, 3, -3, 20, -20, 1e-9, -1e-9];
+    const n = 10 + Math.floor(r() * (LIGHTS - 10));
+    for (let i = 0; i < n; i++) {
+      const x = 256 * (1 + Math.floor(r() * 8)) + offs[Math.floor(r() * offs.length)] + (r() < 0.3 ? r() * 256 : 0);
+      const y = 256 * (1 + Math.floor(r() * 4)) + offs[Math.floor(r() * offs.length)] + (r() < 0.3 ? r() * 256 : 0);
+      lights.push(light(x, y, 120 + r() * 300, [1, 2, 7, 15, 16, 31, 32, 33, 63, 64][i % 10], r));
+    }
   }
   const nSun = writeCasters(dst, xy, r);
   const keysOf = (L) => candidateKeys(dst, nSun, L);
@@ -362,11 +378,15 @@ function scratchOf(s) {
   return { order: new Uint32Array(s.b.buffer, L.orderByte, n), keep: new Uint32Array(s.b.buffer, L.keepByte, n) };
 }
 
-/** One light over a crowd (and `stack` casters on one spot 50 px from it), keeping `lim`: the frame and its m. */
-function oneLightFrame(s, r, lim, maxPerEntity, stack = 0) {
+/**
+ * One light over a crowd (and `stack` casters on one spot 50 px from it, `pair` on one spot 4 px from it), keeping
+ * `lim`: the frame and its candidates' distances.
+ */
+function oneLightFrame(s, r, lim, maxPerEntity, stack = 0, pair = 0) {
   const xy = [];
   crowd(xy, r, 2500);
   for (let q = 0; q < stack; q++) xy.push(1250, 700);
+  for (let q = 0; q < pair; q++) xy.push(1204, 700);
   const nSun = writeCasters(s.dst, xy, r);
   const L = light(1200, 700, 400, lim, r);
   const f = { nSun, lights: [L], maxPerLight: 0, maxPerEntity, lightBegin: 0, lightStride: 1, stampCap: Infinity, stampBase: 0 };
@@ -396,6 +416,40 @@ test('E-315: the radix select decides a cut between two distances; a tie at the 
         if (maxPerEntity > 0) assert.notEqual(scratch.keep[0], NONE, `${label}: its boundary list`);
       }
     }
+  }
+});
+
+test('E-315: the ring walk decides a small budget; a tie at its cut, or among its sorted rows, goes to the gather', async () => {
+  const s = await setup({ allPairs: true });
+  const r = rng(0x417);
+  // The gather writes each candidate's double distance into dist64; the ring walk never does.
+  const d64 = new Float64Array(s.b.buffer, s.b.layout.dist64Byte, s.caps.maxSun);
+  const cases = [
+    { lim: 15, maxPerEntity: 0, walk: true },
+    { lim: 15, maxPerEntity: PER_ENTITY, walk: true },
+    { lim: 1, maxPerEntity: 0, walk: true },
+    { lim: 64, maxPerEntity: 0, walk: true },
+    { lim: 64, maxPerEntity: 1, walk: true },
+    { lim: 15, maxPerEntity: 0, cone: true, walk: true },
+    { lim: 15, maxPerEntity: 0, stack: 300, walk: false },
+    { lim: 15, maxPerEntity: PER_ENTITY, stack: 300, walk: false },
+    // Two kept casters on one spot, the cut clear: their order in the rows is the gather's; under maxShadowsPerEntity
+    // there is no order.
+    { lim: 15, maxPerEntity: 0, pair: 2, walk: false },
+    { lim: 15, maxPerEntity: PER_ENTITY, pair: 2, walk: true },
+    // Past KNN_MAX_LIM: the gather and the radix select.
+    { lim: 65, maxPerEntity: 0, walk: false },
+  ];
+  for (const c of cases) {
+    const { f, keys } = oneLightFrame(s, r, c.lim, c.maxPerEntity, c.stack ?? 0, c.pair ?? 0);
+    if (c.cone) cone(f.lights[0], r);
+    const label = JSON.stringify(c);
+    assert.ok(keys.length > 20 * c.lim || c.lim > 15, `${label}: many candidates (${keys.length})`);
+    if (c.stack) assert.equal(keys[c.lim - 1], keys[c.lim], `${label}: the cut ties`);
+    if (c.pair) assert.ok(keys[0] === keys[1] && keys[c.lim - 1] !== keys[c.lim], `${label}: the kept tie, the cut does not`);
+    d64.fill(-1);
+    compare(s, f, label);
+    assert.equal(d64[0] === -1, c.walk, `${label}: ${c.walk ? 'the ring walk decided it' : 'the gather ran'}`);
   }
 });
 
