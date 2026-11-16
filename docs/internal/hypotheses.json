@@ -19581,13 +19581,13 @@
     },
     {
       "id": "N-230",
-      "title": "lampShadowStressScene's walkers all pace at speed 1: StressWalker.spawn() skips the key \"speed\" (a warning at load)",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the second pixi batch agent (opt/pixi-gpu-batch2)",
+      "title": "lampShadowStressScene warned \"StressWalker.spawn() skips the key \\\"speed\\\"\" at load: spawn writes every config key onto the instance and GameObject.speed is read-only",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-16 by the second pixi batch agent (opt/pixi-gpu-batch2); fixed 2026-11-16 (the key renamed pace)",
       "date": "2026-11-16",
       "area": "bench",
       "kind": "bug",
-      "result": "The warning shows on load; it predates the second pixi batch.",
+      "result": "Fixed: the walkers' config key is `pace`. The walkers did pace at their own speeds before too (onSpawned reads the spawn config, which keeps every key); only the warning was wrong to keep. The warning shows on load; it predates the second pixi batch.",
       "next": "Pass the speed the way spawn takes it (a field the class declares, or onSpawned reads it) and check the warning is gone.",
       "refs": [],
       "aliases": [
