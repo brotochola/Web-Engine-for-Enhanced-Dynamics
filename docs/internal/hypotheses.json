@@ -19653,6 +19653,22 @@
       "records": [
         "R-1212"
       ]
+    },
+    {
+      "id": "N-233",
+      "title": "glFrameRecorder's \"calls that wait for the GPU\" counts every getParameter, but Predator's 11 to 12 a frame are binding queries (TEXTURE_BINDING_2D 6.3 to 7.4, one each of DRAW_ and READ_FRAMEBUFFER_BINDING, CURRENT_PROGRAM, VERTEX_ARRAY_BINDING, ARRAY_BUFFER_BINDING), which return WebGL objects only Blink holds, so Blink answers them without the GPU process: the number reads as waits that do not happen",
+      "status": "open",
+      "statusText": "found 2026-11-16 reading Predator's re-trace (R-1212) by enum",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "Predator crowd 2.5, plain and light3d by night (13:43, 13:44): getParameter 0x8069 6.3 / 7.4 a frame (lightTiles.js, sharedTextureUpload.js and pixiWorker.js save and restore the bound texture), 0x8ca6, 0x8caa, 0x8b8d, 0x85b5, 0x8894 once a frame each (staticsScatterGl.js); isEnabled of BLEND, SCISSOR_TEST, DEPTH_TEST, STENCIL_TEST, CULL_FACE once a frame each. R-0785's COLOR_WRITEMASK query, which did wait, is gone (1b230b05).",
+      "next": "Count as possible waits only getParameter enums that are not binding queries (and readPixels, getError, finish, getBufferSubData); keep the per-enum detail. After the WebGPU recorder branch (tools/webgpu-draws) merges, since it edits the same file.",
+      "refs": [],
+      "aliases": [
+        "recorder sync calls count bindings"
+      ],
+      "records": []
     }
   ],
   "records": [
