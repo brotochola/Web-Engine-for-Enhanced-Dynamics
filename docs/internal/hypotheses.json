@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-15",
+  "updated": "2026-11-16",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -15540,7 +15540,7 @@
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "result": "with E-368 (R-1121): Predator crowd 2.5 pre-render -9.6 %; kernel lampFramesMicrobench 805 -> 1 323 ops/s, the same checksum",
+      "result": "Kept twice: a table by direction and a fast arctangent (R-1121: lampFrames 805 -> 1 323 ops/s; with E-368, Predator crowd 2.5 pre-render -9.6 %), then the uniform tables' lamp frames from the ray's quarter and borders with no fastAtan2 and the frames passes fused (R-1166): lampFramesMicrobench 49 -> 32 ms (-35.5 %), light3dCompareScene ds=1 at night pre-render -24.7 %, lampMap=1 -18.7 % (4/4 each).",
       "next": "Dot products against the bucket borders, or a fast atan2; kernel, then Predator crowd 2.5.",
       "refs": [
         "EXECUTION_PLAN.md#E-369"
@@ -15550,7 +15550,8 @@
         "applyKeyedLampFramesInto cost"
       ],
       "records": [
-        "R-1121"
+        "R-1121",
+        "R-1166"
       ]
     },
     {
@@ -15572,7 +15573,8 @@
       ],
       "records": [
         "R-1155",
-        "R-1157"
+        "R-1157",
+        "R-1164"
       ]
     },
     {
@@ -15631,7 +15633,8 @@
         "shadow frame in the vertex shader"
       ],
       "records": [
-        "R-1155"
+        "R-1155",
+        "R-1164"
       ]
     },
     {
@@ -15652,7 +15655,8 @@
       ],
       "records": [
         "R-1155",
-        "R-1157"
+        "R-1157",
+        "R-1164"
       ]
     },
     {
@@ -15841,7 +15845,7 @@
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "",
+      "result": "texelFetch at integer texels for the light data (a0f12347): gpuPassBench WebGL light3d 1.170 -> 1.106 ms (-5.5 %), light 0.755 -> 0.755, same images. Next: E-380 (the reach's division) and E-381 (the lamps' lookup).",
       "next": "Read ANGLE's HLSL against Tint's; texelFetch for the light data; the reach per light; time terms in gpuPassBench.",
       "refs": [
         "EXECUTION_PLAN.md#E-373"
@@ -15849,7 +15853,9 @@
       "aliases": [
         "light3d WebGL slower"
       ],
-      "records": []
+      "records": [
+        "R-1170"
+      ]
     },
     {
       "id": "E-374",
@@ -16433,12 +16439,12 @@
     {
       "id": "N-215",
       "title": "GameObject's x and y setters box their double wherever a game's tick leaves them out of its inlining (light3dCompareScene's walkers: 2.1 MB/s in the logic worker at 3 000 of them)",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "found 2026-11-15 in Phase 3's heap passes (main has the same setters); the stress scene now writes its columns",
       "date": "2026-11-15",
       "area": "engine",
       "kind": "speed",
-      "result": "A walker's tick (`this.x = cx + c * r; this.y = ...`) allocated 2.1 MB/s once its own hashes were gone, 4.2 MB/s with them (more of the tick's inlining budget spent): each setter call left out boxes its value. lampShadowStressScene's walkers show it too (_tickNonDecimatedOneNoBody 177 KB/s at 6 000). Any game that moves its entities through the setters pays it.",
+      "result": "Fixed (3cd0d1fc): each per-frame setter under 27 bytecode bytes, its value through a Float32 scratch to functions without doubles. lampShadowStressScene 128 lamps 6 000 walkers: logic 201.4 -> 23.7 KB/s (the walkers' tick gone from the sites); logic STEP_MS -3.9 % and -1.3 % in light3dCompareScene.",
       "next": "A setter small enough to be inlined always (V8 inlines a callee under 27 bytes of bytecode whatever the budget): the store and a call without doubles for the rare work (static scenery, a body's transform), or position setters that take their values through a Float64Array; read the logic worker's allocation before and after in a scene that moves its entities through them.",
       "refs": [],
       "aliases": [
@@ -16446,7 +16452,8 @@
         "x y setter garbage"
       ],
       "records": [
-        "R-1157"
+        "R-1157",
+        "R-1169"
       ]
     },
     {
@@ -16486,35 +16493,38 @@
     {
       "id": "E-384",
       "title": "What Predator's shadows cost now against main: the stamps as before, and ?light3d=1 (the maps, the G-buffer, self-shadow, pixel depth) by day and by night",
-      "status": "open",
+      "status": "answered",
       "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "result": "",
+      "result": "Predator crowd 2.5 against main: pre-render 5.757 -> 7.283 ms (+26.5 %, the people's DirectionalSprite frames), logic +5.3 %, Pixi +4.7 % (NEUTRAL, below the floor). light3dCompareScene lit as before +5 % pre-render and Pixi. Each piece: all on +46 % pre-render and Pixi; sun map +13.6 %/+24 %; lamps' map +10.4 %/+31 %; self and depth about +1 %; ds +33 % pre-render; Predator ?light3d=1 pre-render +30 % (day) and +52 % (night), Pixi +111 %.",
       "next": "Predator crowd 2.5 ABAB against main (the stamps); Predator ?light3d=1 against Predator without it on the branch (pre-render, Pixi, the GPU passes); gpuPassBench per pass.",
       "refs": [
         "DX_LIGHT3D_PLAN.md"
       ],
       "aliases": [],
-      "records": []
+      "records": [
+        "R-1162"
+      ]
     },
     {
       "id": "E-385",
       "title": "burningBoxes (a side view, raycasted light) against main: the branch's light changes in a scene that uses none of light3d",
-      "status": "open",
+      "status": "answered",
       "statusText": "asked by the owner 2026-11-15 night (DX_LIGHT3D_PLAN 17.9)",
       "date": "2026-11-15",
       "area": "pixi",
       "kind": "speed",
-      "result": "",
+      "result": "NEUTRAL (below the floor) against main before the merge: Pixi 0.716 -> 0.694 ms, pre-render 0.297 -> 0.289, every worker far under 6 ms (2026-11-16, 4 pairs).",
       "next": "ABAB 4 + 4 against main; Pixi and pre-render STEP_MS.",
       "refs": [
         "DX_LIGHT3D_PLAN.md"
       ],
       "aliases": [],
       "records": [
-        "R-1153"
+        "R-1153",
+        "R-1163"
       ]
     },
     {
@@ -16533,18 +16543,19 @@
       "aliases": [],
       "records": [
         "R-1152",
-        "R-1157"
+        "R-1157",
+        "R-1164"
       ]
     },
     {
       "id": "E-387",
       "title": "writeGbufWords costs Pixi 3.4 % in Predator ?light3d=1 (285 ms in an 8 s window, about 0.6 ms a frame at 14 600 instances): an entity's word made per instance from four entity columns read at random",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-15 from Phase 3's first CPU pass",
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "Its hot lines: 43 % the word ((e % 65535) + 1 + (flags[e] & 63) * 65536 + selfShadow), 36 % the row's key, 13 % the store.",
+      "result": "The keyed pack writes the instances' G-buffer words (no writeGbufWords in Pixi's keyed frames): light3dCompareScene lampMap=1 Pixi 2.581 -> 2.311 ms (-10.4 %, 4/4, under the floor), Predator ?light3d=1 -6 %; Node kernel a tie (0.1345 -> 0.1318 ms). Left: the plain keyed pack (no words) +7.8 % in the kernel (0.072 -> 0.078 ms): the words' forms as exports of their own.",
       "next": "Keep each entity's word in an entity column refreshed when its flags or self-shadow change (one read an instance), or write the words in the keyed pack kernel, which already reads each row's key; then the Pixi worker's CPU per function before and after (Predator ?light3d=1).",
       "refs": [],
       "aliases": [
@@ -16552,7 +16563,8 @@
       ],
       "records": [
         "R-1155",
-        "R-1157"
+        "R-1157",
+        "R-1167"
       ]
     },
     {
@@ -16624,13 +16636,12 @@
     {
       "id": "E-315",
       "title": "Pre-render's shadow selection: each of Predator's 48 lights gathers thousands of casters and quickselects 512 (stamp_light_range 26.6 % + quickselect_order 12.0 % of pre-render at crowd 2.5)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "rank": 3,
-      "result": "CPU pass (R-1100): stamp_light_range 26.6 % and quickselect_order 12.0 %, 38.6 % of pre-render, more than emit_rows (28.2 %). The partition branches on an indirect dist[order[i]] that mispredicts about half the time in the first levels (R-1102). With maxShadowsPerEntity the kept casters' order does not matter (E-133), and d² >= 0 sorts as integer bits. History: R1 (takeClosest in place) was rejected in JS on 2026-09-30; nothing in C; E-160 says what is left of the stamp is its append and the selection.",
+      "result": "Ring walk (budgets up to 64) and radix select, same kept set: shadowStampMicrobench lampWasm 30.03 -> 6.02 ms (-79.9 %), lampWasm512 -1.9 %, Predator's fixture +2.5 % (nothing to select); lampShadowStressScene map 128 lamps pre-render 2.32 -> 1.18 ms with E-369's follow-up (below the floor); Predator crowd 2.5 NEUTRAL (R-1164).",
       "next": "Three variants with the same kept set (only exact ties at the 512th may differ): (a) walk the grid in rings out from the light and stop once 512 are held and the next ring is farther than the current 512th; (b) start each light from last frame's 512th distance padded by the largest move since (a guaranteed superset); (c) an 11-bit histogram select in two sequential passes. shadowStampReplay (set equality), then shadowStampKernel in Chrome, then Predator crowd 2.5 pre-render.",
       "refs": [
         "EXECUTION_PLAN.md#E-315"
@@ -16644,7 +16655,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1102"
+        "R-1102",
+        "R-1165"
       ]
     },
     {
@@ -16745,13 +16757,12 @@
     {
       "id": "N-170",
       "title": "Early-outs that compare a Float32 column with a double never fire: setting the same value again re-marks renderDirty or re-queues a teleport",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "engine",
       "kind": "bug",
-      "rank": 11,
-      "result": "Found 2026-11-14 in the per-frame JS read (R-1103), verified in the code: gameObject.js set x/y, setPosition, setVelocity, set vx/vy/angularVelocity, alpha, setScale and setAnimationSpeed compare `f32[i] === value`, false for any value not exact in float32 (0.3, speed x 0.00277). A repeated write sets renderDirty/keyedDirty and calls updateBounds, or queues another SET_TRANSFORM or SET_VELOCITY; renderDirty also makes the emit's persist path miss (preRenderEmit.c). Predator's walkers call setAnimationSpeed every tick.",
+      "result": "Fixed (f2ef124e): the early-outs compare the Float32 column with Math.fround(value); setting a value again re-marks nothing and queues nothing (setterSameValue). Logic -3.9 % and -1.3 % in light3dCompareScene, Predator NEUTRAL (R-1164).",
       "next": "Compare against Math.fround(value); a node test that sets the same value twice and counts commands and dirty flags; then Predator's persist hits and marked keys a frame.",
       "refs": [
         "REVIEW_PLAN.md#N-170"
@@ -16763,7 +16774,8 @@
         "setAnimationSpeed every tick"
       ],
       "records": [
-        "R-1103"
+        "R-1103",
+        "R-1168"
       ]
     },
     {
@@ -28930,6 +28942,115 @@
       "text": "**The bundles of f025d0c9 (DX-LIGHT3D merged into main) tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `9461601e`.\n\n- Node 2752 of 2752, demos 101 of 101 on the merge's tree.\n- `check:dist` passes (inputs 132bd6b469e78af1); embed and browser smokes OK on all 8 bundles.\n- `test:node:bundle` 308 of 308 on each of the 8.\n\nThe prod ESM bundle against its sources (`runPredatorAbab --vs HEAD --hyp-rev HEAD --full-rev --pool --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, no other bench browser, the owner's Chrome at about 0.08 of a core:\n- **Predator, 4 pairs, 22:39 to 22:44: NEUTRAL.** Every worker under the 6 ms floor (not judged), and every one but particle as fast or faster on the bundle: logic 2.163 → 2.070, spatial 3.448 → 3.322, physics 3.494 → 3.109, renderer 1.266 → 1.155, pre-render 2.342 → 2.266, particle 0.695 → 0.765 ms; loads within 0.6 % (GPU_CASTERS 13 678 → 13 609, RENDER_QUEUE_SIZE 13 989 → 13 912).\n- **Boids, 8 pairs, 22:44 to 22:54: NEUTRAL (below the floor).** Spatial 4.756 → 4.660, physics 3.382 → 3.387, logic 1.035 → 1.066, pre-render 1.474 → 1.450 ms; loads within 0.1 %.",
       "commits": [
         "9461601e"
+      ]
+    },
+    {
+      "id": "R-1162",
+      "date": "2026-11-16",
+      "time": "01:18",
+      "timeFrom": "recorded",
+      "title": "What the DX-LIGHT3D merge costs: Predator crowd 2.5 pre-render +26.5 % (DirectionalSprite's frames), scenes lit as before +5 %, each piece's cost",
+      "verdict": "answered",
+      "text": "**What the DX-LIGHT3D merge costs, DX_LIGHT3D_PLAN 17.9 phases 1 and 2: Predator crowd 2.5's pre-render +26.5 % against main (its people's DirectionalSprite frames), scenes lit as before about +5 % in pre-render and Pixi, and each new piece's cost.** main after the merge (bdcca2e7, pinned) against main before it (0c33673e), `runPredatorAbab --pool`, 4 pairs, headed, AC power, the owner's Chrome idle (about 0.08 of a core), one run at a time; 2026-11-15 23:47 to 2026-11-16 01:18 (the result files). STEP_MS - WAIT_MS, A -> B.\n\nPhase 1, against main:\n- **A/A, Predator crowd 2.5, the camera pinned (?zoom=0.216), 23:47 to 23:52:** the runner read REGRESSION on identical code: logic 6.610 -> 6.886 (paired +9.3 %, 3/4), pre-render 7.595 -> 7.863 (+3.4 %, 3/4), spatial +1.8 %, physics +1.3 %. The session's noise reference: Predator's workers move 3 to 9 % between identical sides.\n- **Predator crowd 2.5, --full-rev, 23:52 to 23:58: NEUTRAL (below the floor).** Pre-render 5.757 -> 7.283 ms (+26.5 %; main's 5.76 ms is under the 6 ms floor, but this is five times the A/A's spread), logic 5.678 -> 5.978 (+5.3 %, inside the A/A's 9 %), Pixi 2.931 -> 3.068 (+4.7 %), spatial 9.875 -> 9.762, physics 12.920 -> 12.953; loads equal (GPU_CASTERS 38 265 -> 38 221). The merge costs Predator's pre-render about 1.5 ms a frame: its people became DirectionalSprites, so each caster row picks the frame the sun and each lamp see (E-370 to E-372).\n- **light3dCompareScene (walkers=20000 props=2000 lamps=48, no new piece on), 23:58 to 00:10: NEUTRAL (below the floor) by day and by night.** Day: pre-render 5.410 -> 5.703 (+5.4 %), Pixi 1.968 -> 2.070 (+5.2 %). Night: pre-render 5.290 -> 5.585 (+5.6 %), Pixi 1.827 -> 1.905 (+4.3 %). Loads equal.\n\nPhase 2, each piece on against off, one build (bdcca2e7), light3dCompareScene as above unless said, 00:10 to 01:03:\n- all=1: by day pre-render 5.503 -> 8.032 (+46 %), Pixi 2.012 -> 2.937 (+46 %); by night pre-render 5.495 -> 7.980 (+45 %), Pixi 1.862 -> 2.550 (+37 %).\n- sunMap=1 (day): pre-render +13.6 % (5.604 -> 6.368), Pixi +24 % (2.077 -> 2.568). lampMap=1 (night): pre-render +10.4 % (5.597 -> 6.182), Pixi +31 % (1.857 -> 2.433).\n- self=1 and depth=1 (day, maps, pitch 47): NEUTRAL; pre-render +0.8 % and +1.1 %; depth's REGRESSION is logic +3.5 % (3/4), a worker it cannot reach.\n- ds=1 (day): pre-render 5.675 -> 7.571 (+33 %), Pixi equal: DirectionalSprite's people cost pre-render 1.9 ms.\n- Predator ?light3d=1 (zoom 0.3): by day pre-render 2.779 -> 3.622 (+30 %), Pixi 1.445 -> 3.058 (+112 %); by night pre-render 2.680 -> 4.086 (+52 %), Pixi 1.361 -> 2.875 (+111 %); RENDER_QUEUE_SIZE +3 %.\n- lampShadowStressScene lamps=128 walkers=6000, lampShadows=map against sprite: every worker under the floor; pre-render 2.310 -> 2.341, Pixi 0.455 -> 0.602.\n- directionalSpriteStressScene n=60000, mode=ds against hand: NEUTRAL, logic 6.551 -> 6.709 (+2.7 %, 3/4).\n\nPhase 1's guards against main, --full-rev, 01:03 to 01:18: carScene FAIL (load: VISIBLE_ENTITIES cv 73 %, its camera), every worker under 1.3 ms and equal; littleCity NEUTRAL (below the floor), every worker equal or lower; burningBoxes NEUTRAL (E-385).\n\nWhat it asks next: the sun's and the lamps' frames of directional casters (E-370 to E-372, and the frames passes measured in the next records), Pixi's doubled CPU with ?light3d=1 (a CPU pass per function), the maps' costs."
+    },
+    {
+      "id": "R-1163",
+      "date": "2026-11-16",
+      "time": "01:18",
+      "timeFrom": "recorded",
+      "title": "burningBoxes against main: NEUTRAL (below the floor), Pixi 0.716 -> 0.694 ms",
+      "verdict": "answered",
+      "text": "**burningBoxes against main: NEUTRAL (below the floor).** main before the DX-LIGHT3D merge (0c33673e) against main after it (bdcca2e7), `runPredatorAbab --pool --full-rev --owner pixi`, 4 pairs, headed, AC power, 2026-11-16 01:13 to 01:18 (the result files). STEP_MS - WAIT_MS: Pixi 0.716 -> 0.694 ms, pre-render 0.297 -> 0.289, physics 0.161 -> 0.150, logic 0.042 -> 0.042; loads equal (24 entities processed, 21 visible). The merge's light changes cost a side view with raycasted light nothing measurable; every worker is far under the 6 ms floor, so only a gross regression would show."
+    },
+    {
+      "id": "R-1164",
+      "date": "2026-11-16",
+      "time": "01:53",
+      "timeFrom": "recorded",
+      "title": "Phase 4's batch against the merge: light3dCompareScene KEPT, pre-render -24.7 % (ds, night) and -18.7 % (lamps' map); Predator crowd 2.5 NEUTRAL",
+      "verdict": "kept",
+      "text": "**Phase 4's batch (DX_LIGHT3D_PLAN 17.10) against the merge: light3dCompareScene KEPT twice, pre-render -24.7 % with DirectionalSprite people at night and -18.7 % with the lamps' map; Predator crowd 2.5 NEUTRAL.** main after the merge (bdcca2e7) against main with opt/integrate merged (ac73cf48: E-315's selection, E-369's follow-up and the frames passes, E-387's words in the keyed pack, N-170 and N-215's setters, E-373's texelFetch), `runPredatorAbab --pool`, 4 pairs, headed, AC power, one run at a time, 2026-11-16 01:26 to 01:53 (the result files); three agents edited code in their own worktrees meanwhile (targeted node tests only). STEP_MS - WAIT_MS, A -> B; the noise reference is the A/A of R-1162's Predator (3 to 9 % a worker).\n\n- **Predator crowd 2.5, the camera pinned (?zoom=0.216), 01:26 to 01:31: NEUTRAL.** Pre-render 7.362 -> 7.393 (paired -0.6 %, 2/4 worse), logic 6.107 -> 6.083, spatial 10.102 -> 10.228, physics 13.425 -> 13.541; Pixi 2.942 -> 3.229 under the floor (raw STEP_MS +0.6, +4.9, +15.0, +5.2 % by pair; see E-387's record); loads equal (GPU_CASTERS 38 222 -> 38 214). Predator's people are keyed casters, whose sun frames are still the JS pass after the pack (E-370; E-372 next): nothing here reaches it, so the merge's +1.5 ms remains.\n- **light3dCompareScene walkers=20000 props=2000 lamps=48 hour=22 ds=1, 01:31 to 01:36: KEPT.** Pre-render 7.340 -> 5.613 (-24.7 %, 4/4, cv 2/3 %), logic 7.369 -> 7.061 (-3.9 %, 0/4 worse), Pixi 1.777 -> 1.905 under the floor (by pair +22.5, -15.1, +12.3, +2.1 %); loads equal. Phase 2 put DirectionalSprite's people at +1.75 ms of this scene's pre-render at night (5.585 without them on bdcca2e7): about 0.03 ms of it is left.\n- **The same with lampMap=1 (no ds), 01:36 to 01:41: KEPT.** Pre-render 6.252 -> 5.044 (-18.7 %, 4/4, cv 2/3 %), Pixi 2.581 -> 2.311 (-10.4 %, 4/4: -11.7, -10.4, -10.8, -10.6 %, under the floor), logic -1.3 %.\n- **lampShadowStressScene lampShadows=map lamps=128 walkers=6000, 01:42 to 01:47: NEUTRAL (below the floor).** Pre-render 2.322 -> 1.176 ms (-49 %), Pixi 0.508 -> 0.489, logic 1.027 -> 1.054.\n- **Predator ?light3d=1&hour=22 (zoom 0.3), 01:47 to 01:52: NEUTRAL (below the floor).** Pre-render 3.316 -> 2.973 (-10 %), Pixi 2.556 -> 2.394 (-6 %), physics 3.538 -> 3.017 (a worker none of it reaches: drift).\n- **Heap pass, lampShadowStressScene lamps=128 walkers=6000 lampShadows=map, 01:53:** logic 23.7 KB/s against 201.4 before (R-1157: _tickNonDecimatedOneNoBody 177.4 of it, the setters' boxed doubles), pre-render 66.5, Pixi 247.1 (Pixi's vendor code).\n\nThe pieces, each with its kernel, are in the records of E-315, E-369, E-387, N-170, N-215 and E-373. What is left of DirectionalSprite's cost is the keyed sun frames (E-370, E-372: an agent is writing them into the WASM keyed caster scan) and Predator ?light3d=1's doubled Pixi CPU.",
+      "commits": [
+        "ac73cf48"
+      ]
+    },
+    {
+      "id": "R-1165",
+      "date": "2026-11-16",
+      "time": "01:53",
+      "timeFrom": "recorded",
+      "title": "E-315 kept: ring walk for budgets up to 64 and a radix select; lampWasm 30.03 -> 6.02 ms, the lamps' scenes faster, Predator NEUTRAL",
+      "verdict": "kept",
+      "text": "**E-315 kept: a light keeping at most 64 casters walks its grid cells nearest first and stops at the cells too far to hold one (9936ea2b), and a larger budget selects by a radix select on the float distances, the quickselect only for ties (4bb1261e).** The kept set is the old one (the stamp tests and shadowStampSelect against the JS reference on frames built for it: dense crowds, tight rings, a cell the ring walk skips still deciding whether a light selects).\n\n- shadowStampMicrobench (Node 22), 2873fa43 (the new cases, the old kernel) against ac73cf48, alternated twice, 2026-11-16 01:25 to 01:26, same checksums: lampWasm (128 lamps, 6 000 walkers, 15 a light) 30.03 -> 6.02 ms (-79.9 %); lampWasmPerEntity (3 an entity) 30.50 -> 6.32 (-79.3 %); lampWasm512 (512 a light) 73.97 -> 72.53 (-1.9 %); stampWasm (the Predator fixture, 48 lights, 512 a light, median 142 candidates a light: most lights select nothing) 7.79 -> 7.98 (+2.5 %); the unchanged JS stampLightRange 19.34 -> 20.52 (+6.1 %: this kernel's run-to-run spread).\n- The batch's sittings (R-1164): lampShadowStressScene lampShadows=map lamps=128 walkers=6000 pre-render 2.322 -> 1.176 ms (below the floor; with E-369's follow-up), light3dCompareScene with the lamps' map -18.7 % (KEPT, 4/4); Predator crowd 2.5 NEUTRAL (pre-render -0.6 %): its 48 lights rarely hold more than 512 casters, so its selection was not the cost R-1100 read at crowd 2.5 any more.",
+      "commits": [
+        "9936ea2b",
+        "4bb1261e",
+        "aa20dbbc"
+      ]
+    },
+    {
+      "id": "R-1166",
+      "date": "2026-11-16",
+      "time": "01:53",
+      "timeFrom": "recorded",
+      "title": "E-369's follow-up and the frames passes kept: lampFrames -35.5 %, light3dCompareScene pre-render -24.7 % (ds) and -18.7 % (lamps' map)",
+      "verdict": "kept",
+      "text": "**E-369's follow-up and the frames passes kept: the lamps' frames of uniform tables from the ray's quarter and its borders, no fastAtan2 (658c5d95); full sun rows written once, their entities and frames together, no read back (678d5835); the lamps' frames pass drops each lamp's own rows, no pass of its own before it (3cbfa462).** Same frames bit for bit (castFramesParity: the passes against their copies; lampFrameKinds).\n\n- lampFramesMicrobench (applyKeyedLampFramesInto, 20 000 keyed stamp rows, 48 lamps, Node 22), bdcca2e7 against ac73cf48 alternated twice, 2026-11-16 01:25, same checksums: 49.13 and 48.60 ms against 31.18 and 32.28 ms: -35.5 %, 1.55x.\n- The batch's sittings (R-1164): light3dCompareScene hour=22 ds=1 pre-render 7.340 -> 5.613 ms (-24.7 %, 4/4: DirectionalSprite's people cost 1.75 ms of it at night before, about 0.03 ms now) and lampMap=1 6.252 -> 5.044 (-18.7 %, 4/4), both KEPT with cv 2-3 %; lampShadowStressScene pre-render -49 % (below the floor). The keyed sun frames pass (E-370) is untouched: Predator crowd 2.5 by day stays where the merge put it.",
+      "commits": [
+        "658c5d95",
+        "678d5835",
+        "3cbfa462",
+        "91aa6be8"
+      ]
+    },
+    {
+      "id": "R-1167",
+      "date": "2026-11-16",
+      "time": "01:54",
+      "timeFrom": "recorded",
+      "title": "E-387 kept: the G-buffer words in the keyed pack; Pixi -10.4 % (4/4) with the lamps' map; the plain keyed pack +7.8 % to win back",
+      "verdict": "kept",
+      "text": "**E-387 kept: the keyed pack writes each drawn instance's G-buffer words (c0e27328), which Pixi's keyed frames take instead of writeGbufWords (1a875d57, f610ec89).** The words are writeGbufWords' (gpuPackKeyedGbuf, instancedSpriteKeyedGbuf, pixiKeyedGbuf; the microbench checks them too).\n\n- gpuPackKeyedMicrobench --gbuf (Node 22, one tree, 14 000 rows, 42 600 entities, 5 % dirty, random order), 2026-11-16 01:26: the pack then writeGbufWords 0.1345 ms against the words in the pack plus their copy out 0.1318 (-2.0 %); with zIndex bands 0.1812 against 0.1945 (+7.3 %); one run each: a tie in Node, where writeGbufWords takes 0.06 ms against Chrome's 0.6 ms a frame in Predator ?light3d=1 (R-1155).\n- The batch's sittings (R-1164): light3dCompareScene with the lamps' map, Pixi 2.581 -> 2.311 ms (-10.4 %, 4 of 4 pairs between -10.4 and -11.7 %, under the 6 ms floor: not judged by the runner); Predator ?light3d=1 Pixi 2.556 -> 2.394 (-6 %, below the floor).\n- A cost to remove: the keyed pack without words (scenes with no G-buffer) got slower, bdcca2e7 against ac73cf48 alternated three times at 01:54, same checks: 0.0715, 0.0716, 0.0726 ms against 0.0776, 0.0760, 0.0789 (+7.8 %, about 16 us a frame at Predator's 38 500 rows). The C form without words is the old loop (each form a copy), so the likely cause is the export's code (six inlined copies where there were two); Predator crowd 2.5's Pixi read +0.6, +4.9, +15.0, +5.2 % by pair (under the floor, inside Predator's spread). Next: the words' forms as exports of their own, the plain pack's code as before; the kernel again.",
+      "commits": [
+        "c0e27328",
+        "1a875d57",
+        "f610ec89"
+      ]
+    },
+    {
+      "id": "R-1168",
+      "date": "2026-11-16",
+      "time": "01:53",
+      "timeFrom": "recorded",
+      "title": "N-170 kept (hygiene): the setters' early-outs compare with Math.fround(value)",
+      "verdict": "kept-hygiene",
+      "text": "**N-170 kept (hygiene): the setters' early-outs compare the Float32 column with Math.fround(value) (f2ef124e).** Setting a value again that is not exact in float32 (0.3, an animation speed times 0.00277) no longer marks renderDirty or keyedDirty, calls updateBounds or queues another SET_TRANSFORM or SET_VELOCITY: setterSameValue sets each value twice and counts the commands and the dirty flags. The batch's sittings (R-1164): logic -3.9 % (0/4 worse) and -1.3 % in light3dCompareScene, NEUTRAL in Predator crowd 2.5 (logic -0.7 % against the other workers); pre-render's persist path (E-333) still to read with it.",
+      "commits": [
+        "f2ef124e"
+      ]
+    },
+    {
+      "id": "R-1169",
+      "date": "2026-11-16",
+      "time": "01:53",
+      "timeFrom": "recorded",
+      "title": "N-215 kept (hygiene): setters without doubles across calls; logic 201.4 -> 23.7 KB/s in lampShadowStressScene",
+      "verdict": "kept-hygiene",
+      "text": "**N-215 kept (hygiene): the per-frame setters hand their value to functions without doubles through a Float32 scratch (3cd0d1fc), each setter under the 27 bytecode bytes V8 always inlines (setterBytecodeSize checks them; setterParity, the old and new setters on the same writes).** Heap pass (profileSceneSweep --pass heap, lampShadowStressScene lamps=128 walkers=6000 lampShadows=map, 8 s, 2026-11-16 01:53): the logic worker 201.4 -> 23.7 KB/s, the walkers' tick (_tickNonDecimatedOneNoBody, 177.4 KB/s in R-1157) gone from the sites. Logic STEP_MS in the batch's sittings (R-1164): light3dCompareScene -3.9 % and -1.3 %, Predator NEUTRAL. Found by the setters' agent and not changed: setPosition does not bump the static scenery's generation as set x and set y do (main has it too).",
+      "commits": [
+        "3cd0d1fc"
+      ]
+    },
+    {
+      "id": "R-1170",
+      "date": "2026-11-16",
+      "time": "01:23",
+      "timeFrom": "recorded",
+      "title": "E-373, one step: texelFetch for the light data; WebGL light3d pass 1.170 -> 1.106 ms (-5.5 %), same image",
+      "verdict": "kept",
+      "text": "**E-373, one step: the GLSL light pass reads its light data with texelFetch at integer texels, not textureLod at texel centres (a0f12347): the WebGL light3d pass -5.5 %, the same image.** gpuPassBench --backend webgl --passes light,light3d (GTX 1650, ANGLE D3D11, 960x540, 32 of 256 lights, 12 samples), bdcca2e7 at 01:21 against ac73cf48 at 01:23 on 2026-11-16: light3d 1.1704 -> 1.1057 ms median (p25 1.1640 -> 1.0991, p75 1.2076 -> 1.1188), images d50774a2 on both; the plain light pass 0.7550 -> 0.7546 (image fedf51fb on both). The program links in about the same time (glslLink: 581 -> 583 ms, pixel art 362 -> 366). WebGPU was not timed in this sitting (its WGSL already loads by integer texel). Next on the WebGL side: the reach's division (E-380) and the lamps' lookup (E-381).",
+      "commits": [
+        "a0f12347"
       ]
     }
   ],
