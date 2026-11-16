@@ -442,11 +442,14 @@ function rowFloat(r) {
   return (r() - 0.5) * 400;
 }
 
-function sameBits(a, b, what) {
+/** Two row buffers bit for bit (NaN payloads, the sign of zero); `stride` floats a row, for the message. */
+function sameBits(a, b, what, stride = GPU_CASTER_FLOATS) {
   const ua = new Uint32Array(a.buffer, a.byteOffset, a.length);
   const ub = new Uint32Array(b.buffer, b.byteOffset, b.length);
   for (let i = 0; i < ua.length; i++) {
-    if (ua[i] !== ub[i]) assert.fail(`${what}: float ${i} (row float ${i % 64}) is ${b[i]}, the reference wrote ${a[i]}`);
+    if (ua[i] !== ub[i]) {
+      assert.fail(`${what}: row ${Math.floor(i / stride)} float ${i % stride} is ${b[i]}, the reference wrote ${a[i]}`);
+    }
   }
 }
 
@@ -508,7 +511,12 @@ function packedSunRows(s, q) {
 
 const SUN_TURNS = [0, Math.PI / 2, -2.2, 0.31, 3.9, -7.5, 13.1];
 
-test('E-370: full sun rows: the same textures and flips as before, every variant of the columns', async () => {
+/**
+ * The full sun rows' passes before E-370: the frames (applySunFramesFor), then the rows' entities in their tint floats
+ * (_tagCasterEntities), against applySunFramesFor now, which does both: with the queue's scale column when the rows' scales
+ * are the pack's (`fromQueue`), or reading the rows' scales back (any scale in the rows).
+ */
+async function fullSunRows(fromQueue) {
   const m = await worker();
   for (const seed of [11, 12, 13, 14]) {
     const s = makeScene(seed, 1500);
@@ -529,15 +537,192 @@ test('E-370: full sun rows: the same textures and flips as before, every variant
       refPrepareSunFrames(refTables, proxy, s.starts, s.counts, refShift, refShiftTurn, turn);
       m.prepareSunFrames(newTables, proxy, s.starts, s.counts, newShift, newShiftTurn, turn);
       const ref = packedSunRows(s, q);
-      const got = ref.slice();
       const sunN = q.casters.length;
+      // Read back, the rows' scales need not be the queue's (a shadow texture changed some, or their signs).
+      if (!fromQueue) for (let k = 0; k < sunN; k += 3) ref[k * GPU_CASTER_FLOATS + GPU_ROW_SCALE_X] = rowFloat(s.r);
+      const got = ref.slice();
       refApplySunFramesFor(ref, sunN, q.casters, q.types, q.entities, s.e.active, s.e.mode, c.casts, s.e.sheets, s.e.dirs,
         s.e.anims, c.frames, refTables, refShift, c.orients, c.sunKinds);
+      refTagCasterEntities(ref, sunN, q.casters, q.types, q.entities);
       m.applySunFramesFor(got, sunN, q.casters, q.types, q.entities, s.e.active, s.e.mode, c.casts, s.e.sheets, s.e.dirs,
-        s.e.anims, c.frames, newTables, newShift, c.orients, c.sunKinds);
+        s.e.anims, c.frames, newTables, newShift, c.orients, c.sunKinds, fromQueue ? q.scaleX : null);
       sameBits(ref, got, `seed ${seed} frame ${frame}`);
       stepScene(s);
     }
+  }
+}
+
+test('E-370: full sun rows, the flips from the queue\'s scales: the same textures, flips and entities as before', async () => {
+  await fullSunRows(true);
+});
+
+test('E-370: full sun rows, the scales read back: the same textures, flips and entities as before', async () => {
+  await fullSunRows(false);
+});
+
+// The worker's passes over the full sun rows after the pack, as they were (their row loops; the caster codes from the
+// shipped computeCasterCodes, which E-370 leaves alone).
+const GPU_ROW_ANCHOR_X = 4;
+const GPU_ROW_DEPTH = 8;
+const GPU_ROW_TILE_INV = 11;
+const GPU_ROW_TILE_OFF = 13;
+
+function refApplyShadowTextures(rows, sunN, casters, types, entities, SC) {
+  for (let k = 0; k < sunN; k++) {
+    const row = casters[k];
+    if (types[row] !== 0) continue;
+    const e = entities[row];
+    const id = SC.textureId[e];
+    if (id === 0) continue;
+    const at = k * GPU_CASTER_FLOATS;
+    const sx = SC.textureScaleX[e];
+    const sy = SC.textureScaleY[e];
+    if (sx !== 0) rows[at + GPU_ROW_SCALE_X] = rows[at + GPU_ROW_SCALE_X] < 0 ? -sx : sx;
+    if (sy !== 0) rows[at + GPU_ROW_SCALE_X + 1] = rows[at + GPU_ROW_SCALE_X + 1] < 0 ? -sy : sy;
+    const ax = SC.textureAnchorX[e];
+    const ay = SC.textureAnchorY[e];
+    if (ax === ax) rows[at + GPU_ROW_ANCHOR_X] = ax;
+    if (ay === ay) rows[at + GPU_ROW_ANCHOR_X + 1] = ay;
+    rows[at + GPU_ROW_TEXTURE] = id - 1;
+  }
+}
+
+function refTagCasterRows(rows, sunN, casters, types, entities, codes, radius) {
+  for (let k = 0; k < sunN; k++) {
+    const row = casters[k];
+    if (types[row] !== 0) continue;
+    const e = entities[row];
+    const at = k * GPU_CASTER_FLOATS;
+    rows[at + GPU_ROW_DEPTH] = -(codes[e] + 1);
+    if (e < radius.length && radius[e] > 0 && rows[at + GPU_ROW_TILE_INV] === 0 && rows[at + GPU_ROW_TILE_INV + 1] === 0) {
+      rows[at + GPU_ROW_TILE_OFF] = radius[e];
+    }
+  }
+}
+
+/** The pack's caster rows, stood in for: each float a function of its queue row, the scale the queue's, tiles 0 at times. */
+function stubPackRows(q, indices, n, rows) {
+  for (let k = 0; k < n; k++) {
+    const i = indices[k];
+    const at = k * GPU_CASTER_FLOATS;
+    for (let f = 0; f < GPU_CASTER_FLOATS; f++) rows[at + f] = Math.sin(i * 12.9898 + f * 78.233) * 437.5;
+    rows[at + GPU_ROW_SCALE_X] = q.scaleX[i];
+    if (i % 3 !== 0) {
+      rows[at + GPU_ROW_TILE_INV] = 0;
+      rows[at + GPU_ROW_TILE_INV + 1] = 0;
+    }
+  }
+}
+
+test('E-370: _packGpuSun on the real worker (the pack stood in for): the full sun rows as the old passes left them', async () => {
+  const m = await worker();
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const { ShadowCaster } = await import('../../src/components/shadowCaster.js');
+  const { SpriteRenderer } = await import('../../src/components/spriteRenderer.js');
+  const { Sun } = await import('../../src/core/sun.js');
+  const { cameraFloorScaleY } = await import('../../src/util/cameraView.js');
+  const n = 1500;
+  const rowsInQueue = 1400;
+  const cap = 700;
+  const s = makeScene(61, n);
+  bindDirectionalSprite(s.ds);
+  const { r, e } = s;
+  DirectionalSprite.active = e.active;
+  DirectionalSprite.mode = e.mode;
+  DirectionalSprite.directionIndex = e.dirs;
+  DirectionalSprite.animation = e.anims;
+  SpriteRenderer.spritesheetId = e.sheets;
+  Object.assign(ShadowCaster, {
+    active: e.casts,
+    sunKind: e.sunKind,
+    lampKind: e.lampKind,
+    orient: e.orients,
+    opacity: Float32Array.from({ length: n }, () => (r() < 0.8 ? 1 : r())),
+    baseRadius: Float32Array.from({ length: n }, () => (r() < 0.8 ? 0 : 3 + r() * 9)),
+    textureId: Uint16Array.from({ length: n }, () => (r() < 0.7 ? 0 : 1 + Math.floor(r() * 400))),
+    textureScaleX: Float32Array.from({ length: n }, () => (r() < 0.3 ? 0 : (r() < 0.3 ? -1 : 1) * (0.5 + r()))),
+    textureScaleY: Float32Array.from({ length: n }, () => (r() < 0.3 ? 0 : 0.5 + r())),
+    textureAnchorX: Float32Array.from({ length: n }, () => (r() < 0.5 ? NaN : r())),
+    textureAnchorY: Float32Array.from({ length: n }, () => (r() < 0.5 ? NaN : r())),
+  });
+  Sun.initialize(new SharedArrayBuffer(Sun.BYTE_LENGTH));
+  try {
+    const config = {};
+    Object.assign(pre, {
+      config,
+      shadowsEnabled: true,
+      gpuQueueCaps: { maxSun: cap },
+      _gpuPackOpts: {},
+      _gpuPackCtx: {},
+      _gpuCasterIdx: new Uint32Array(rowsInQueue),
+      _sunFrameTables: m.sunFrameTables(s.sources),
+      proxyToGlobalAnim: s.proxy,
+      animationFrameStart: s.starts,
+      animationFrameCount: s.counts,
+      entityFrameIndex: e.frames,
+      renderQueueMaxItems: rowsInQueue,
+      _casterScanTick: 1e9,
+    });
+    pre._packRows = (q, ctx, dst, dstU32, floatsPer, capacity) => {
+      const rows = Math.min(ctx.scanCount, capacity);
+      stubPackRows(q, ctx.indices, rows, dst);
+      return rows;
+    };
+    const refTables = refSunFrameTables(s.sources);
+    const refShift = new Int16Array(256);
+    const refShiftTurn = new Float64Array(256).fill(NaN);
+    const cases = [
+      { textures: false, kinds: false, sun: true },
+      { textures: true, kinds: false, sun: true },
+      { textures: false, kinds: true, sun: true },
+      { textures: true, kinds: true, sun: true },
+      { textures: false, kinds: false, sun: false },
+      { textures: true, kinds: true, sun: false },
+    ];
+    for (let c = 0; c < cases.length; c++) {
+      const { textures, kinds, sun } = cases[c];
+      const angle = c * 1.3 - 2;
+      Sun._float32[Sun.F32.SHADOW_DIR_X] = Math.cos(angle);
+      Sun._float32[Sun.F32.SHADOW_DIR_Y] = Math.sin(angle);
+      if (!sun) Sun._sab = null;
+      const q = makeQueue(s, rowsInQueue);
+      const queue = { count: rowsInQueue, type: q.qType, shadowH: q.shadowH, scaleX: q.scaleX };
+      Object.assign(pre, {
+        _renderableType: q.types,
+        _renderableIndex: q.entities,
+        _collectedRows: rowsInQueue,
+        renderQueueType: q.qType,
+        _shadowFramesOn: textures,
+        _casterKindsOn: kinds,
+      });
+      const dst = { sun: new Float32Array(cap * GPU_CASTER_FLOATS) };
+      const sunN = pre._packGpuSun(dst, queue);
+      // The old order: the pack, shadow textures, the sun's frames, the caster codes, the rows' entities.
+      const list = [];
+      for (let i = 0; i < rowsInQueue && list.length < cap; i++) if (q.qType[i] !== 3 && q.shadowH[i] > 0) list.push(i);
+      assert.equal(sunN, list.length, `case ${c}: the rows packed`);
+      const ref = new Float32Array(cap * GPU_CASTER_FLOATS);
+      stubPackRows(q, list, list.length, ref);
+      if (textures) refApplyShadowTextures(ref, sunN, list, q.types, q.entities, ShadowCaster);
+      if (sun) {
+        const turn = -Math.PI / 2 - Math.atan2(Sun.shadowDirY / cameraFloorScaleY(config), Sun.shadowDirX);
+        refPrepareSunFrames(refTables, s.proxy, s.starts, s.counts, refShift, refShiftTurn, turn);
+        refApplySunFramesFor(ref, sunN, list, q.types, q.entities, e.active, e.mode, e.casts, e.sheets, e.dirs, e.anims, e.frames,
+          refTables, refShift, e.orients, e.sunKind);
+      }
+      if (kinds) {
+        const codes = new Int32Array(n);
+        m.computeCasterCodes(codes, e.casts, e.sunKind, e.lampKind, e.orients, ShadowCaster.opacity, e.active, s.ds.facing, n,
+          pre._sunFrameTables, e.sheets, e.dirs);
+        refTagCasterRows(ref, sunN, list, q.types, q.entities, codes, ShadowCaster.baseRadius);
+      }
+      refTagCasterEntities(ref, sunN, list, q.types, q.entities);
+      sameBits(ref, dst.sun, `case ${c}`);
+      if (!sun) Sun.initialize(new SharedArrayBuffer(Sun.BYTE_LENGTH));
+      stepScene(s);
+    }
+  } finally {
+    Sun.unbind();
   }
 });
 
@@ -571,7 +756,7 @@ test('E-370: keyed sun rows: the same frames as before', async () => {
         c.casts, s.e.sheets, s.e.dirs, s.e.anims, c.frames, refTables, refShift, c.orients, c.sunKinds);
       m.applyKeyedSunFramesFor(got, keyedN, q.types.length, qType, q.shadowH, q.types, q.entities, s.e.active, s.e.mode,
         c.casts, s.e.sheets, s.e.dirs, s.e.anims, c.frames, newTables, newShift, c.orients, c.sunKinds);
-      sameBits(ref, got, `seed ${seed} frame ${frame}`);
+      sameBits(ref, got, `seed ${seed} frame ${frame}`, GPU_KEYED_CASTER_FLOATS);
       stepScene(s);
     }
   }
@@ -699,7 +884,7 @@ test('E-372: keyed lamp rows: the same frames as before', async () => {
         s.e.active, s.e.mode, s.e.dirs, s.e.anims, s.e.sheets, c.orients, c.lampKinds);
       m.applyKeyedLampFramesInto(got, 6000, lightIdx, lights, invG, newTables, s.proxy, s.starts, s.counts, c.frames,
         s.e.active, s.e.mode, s.e.dirs, s.e.anims, s.e.sheets, c.orients, c.lampKinds);
-      sameBits(ref, got, `seed ${seed} frame ${frame}`);
+      sameBits(ref, got, `seed ${seed} frame ${frame}`, GPU_KEYED_STAMP_FLOATS);
       stepScene(s);
     }
   }
@@ -746,6 +931,6 @@ test('E-372: a lamp all around a caster of each uniform table: every direction a
       e.active, e.mode, e.dirs, e.anims, e.sheets, e.orients, e.lampKind);
     m.applyKeyedLampFramesInto(got, stampN, lightIdx, lights, invG, newTables, s.proxy, s.starts, s.counts, e.frames,
       e.active, e.mode, e.dirs, e.anims, e.sheets, e.orients, e.lampKind);
-    sameBits(ref, got, `invG ${invG}`);
+    sameBits(ref, got, `invG ${invG}`, GPU_KEYED_STAMP_FLOATS);
   }
 });

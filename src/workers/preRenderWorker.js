@@ -383,18 +383,53 @@ function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables
  * DX-SHADOW3D: a directional sprite's full sun row draws the frame the sun sees (sunFrameFor): its texture, and the flip in
  * its scale's sign. E-368: each row's frame is worked out where it is written (prepareSunFrames ran this call): no pass
  * over every slot before it, no per-entity array between them.
+ * E-370: the same pass names each row's entity in its tint float for the lamps' frames (-1 for a row that is not an
+ * entity's sprite), the work of _tagCasterEntities, which runs only when this pass does not: the rows are walked once.
+ * `scaleX` is the queue's column the pack copied each row's scale from, when no pass has changed a row's scale since (no
+ * shadow textures): the flip's sign is read there and the rows are only written, a scale only when the frame flips it the
+ * other way. With null the row's scale is read back (applySunFramesReadBack).
  */
 export function applySunFramesFor(rows, sunN, casters, types, entities, active, mode, casts, sheets, dirs, anims, frames,
-    tables, shift, orients, kinds = null) {
+    tables, shift, orients, kinds = null, scaleX = null) {
+    if (scaleX === null) {
+        applySunFramesReadBack(rows, sunN, casters, types, entities, active, mode, casts, sheets, dirs, anims, frames, tables,
+            shift, orients, kinds);
+        return;
+    }
     for (let k = 0; k < sunN; k++) {
         const row = casters[k];
-        if (types[row] !== 0) continue;
-        const v = sunFrameFor(entities[row], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
-        if (v === 0) continue;
         const at = k * GPU_CASTER_FLOATS;
+        if (types[row] !== 0) {
+            rows[at + GPU_ROW_TINT] = -1;
+            continue;
+        }
+        const e = entities[row];
+        rows[at + GPU_ROW_TINT] = e;
+        const v = sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
+        if (v === 0) continue;
+        rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
+        const sx = scaleX[row];
+        if ((v < 0) !== (sx < 0)) rows[at + GPU_ROW_SCALE_X] = -sx;
+    }
+}
+
+/** E-370: applySunFramesFor after a pass that changed the rows' scales (shadow textures): the flip's sign read from the row. */
+function applySunFramesReadBack(rows, sunN, casters, types, entities, active, mode, casts, sheets, dirs, anims, frames,
+    tables, shift, orients, kinds) {
+    for (let k = 0; k < sunN; k++) {
+        const row = casters[k];
+        const at = k * GPU_CASTER_FLOATS;
+        if (types[row] !== 0) {
+            rows[at + GPU_ROW_TINT] = -1;
+            continue;
+        }
+        const e = entities[row];
+        rows[at + GPU_ROW_TINT] = e;
+        const v = sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
+        if (v === 0) continue;
         rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
         const sx = rows[at + GPU_ROW_SCALE_X];
-        rows[at + GPU_ROW_SCALE_X] = (v < 0) === (sx < 0) ? sx : -sx;
+        if ((v < 0) !== (sx < 0)) rows[at + GPU_ROW_SCALE_X] = -sx;
     }
 }
 
@@ -4241,10 +4276,11 @@ class PreRenderWorker extends AbstractWorker {
                 ? this._packRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
                 : 0;
             if (this._shadowFramesOn && sunN > 0) this._applyShadowTextures(q, dst.sun, sunN);
-            if (this._sunFrameTables !== null && sunN > 0 && DirectionalSprite.active) this._applySunFrames(q, dst.sun, sunN);
+            // E-370: the sun's frames write the rows' entities in the same pass; without it, _tagCasterEntities below.
+            const tagged = sunN > 0 && this._sunFrameTables !== null && !!DirectionalSprite.active && this._applySunFrames(q, dst.sun, sunN);
             if (this._casterKindsOn && sunN > 0) this._tagCasterRows(q, dst.sun, sunN);
             // The rows' entities: the lamps' frames and their own entities' stamps read them.
-            if (sunN > 0) this._tagCasterEntities(q, dst.sun, sunN);
+            if (sunN > 0 && !tagged) this._tagCasterEntities(q, dst.sun, sunN);
         }
         return sunN;
     }
@@ -4302,7 +4338,10 @@ class PreRenderWorker extends AbstractWorker {
         return true;
     }
 
-    /** DX-SHADOW3D: each full sun row's entity in its tint float, for the lamps' frames (applyLampFramesInto). */
+    /**
+     * DX-SHADOW3D: each full sun row's entity in its tint float, for the lamps' frames (applyLampFramesInto). E-370: when
+     * the sun's frames do not run (applySunFramesFor writes them as it goes).
+     */
     _tagCasterEntities(q, rows, sunN) {
         if ((q.count | 0) !== this._collectedRows) return;
         const casters = this._gpuCasterIdx;
@@ -4364,14 +4403,17 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * DX-SHADOW3D: a directional sprite's full sun row draws the frame the sun sees (applySunFramesFor): its texture and
-     * the flip of its scale.
+     * the flip of its scale. E-370: and every row's entity in its tint float (_tagCasterEntities' work); the flips' signs
+     * from the queue's scales the pack copied, unless shadow textures changed the rows' scales after it.
+     * @returns {boolean} whether the pass ran (the rows' entities are written)
      */
     _applySunFrames(q, rows, sunN) {
-        if ((q.count | 0) !== this._collectedRows || !this._prepareSunFrames()) return;
+        if ((q.count | 0) !== this._collectedRows || !this._prepareSunFrames()) return false;
         applySunFramesFor(rows, sunN, this._gpuCasterIdx, this._renderableType, this._renderableIndex, DirectionalSprite.active,
             DirectionalSprite.mode, ShadowCaster.active || null, SpriteRenderer.spritesheetId, DirectionalSprite.directionIndex,
             DirectionalSprite.animation, this.entityFrameIndex || null, this._sunFrameTables, this._sunShift,
-            ShadowCaster.orient || null, ShadowCaster.sunKind || null);
+            ShadowCaster.orient || null, ShadowCaster.sunKind || null, this._shadowFramesOn || !q.scaleX ? null : q.scaleX);
+        return true;
     }
 
     /**
