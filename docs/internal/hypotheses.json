@@ -18322,7 +18322,8 @@
       "records": [
         "R-1175",
         "R-1177",
-        "R-1181"
+        "R-1181",
+        "R-1214"
       ]
     },
     {
@@ -19190,7 +19191,8 @@
       "records": [
         "R-1195",
         "R-1204",
-        "R-1212"
+        "R-1212",
+        "R-1214"
       ]
     },
     {
@@ -19652,7 +19654,8 @@
         "G-buffer MRT early depth"
       ],
       "records": [
-        "R-1212"
+        "R-1212",
+        "R-1214"
       ]
     },
     {
@@ -31597,6 +31600,15 @@
       "title": "N-202 lead from the owner: at Predator crowd=2.5 zoom=1 a grass decoration switches texture all the time (the keyless decorations at crowd 2.5 are the first suspect)",
       "verdict": "note",
       "text": "**N-202, a lead from the owner (2026-11-16, about 15:05): in Predator `?src=1&crowd=2.5&zoom=1` one grass decoration changes its texture all the time, not now and then.** The owner's capture (kept outside the repo, D:\\claude\\handoffs\\n202\\owner-2026-11-16-grass.png): the bench page at night with TallLights lit, the crowd packed over the grass, and one grass tuft the owner circled whose picture keeps switching between assets. The owner thinks it is the same bug as the thin white horizontal lines (the bullets' trail texture shown on a decoration).\n\nWhy it matters: the line was not reproduced at the default crowd (R-1150: 60 to 150 captures a run, 0 cells changed; the in-engine statics check found 0 mismatches at crowd 1). This sighting is at crowd 2.5, which N-202's own leads name: keyedDecorationsFit failing at crowd 2.5 (the decorations keyless then), and a keyless row's statics slot refreshed when its queue row held another kind the frame before. Next: the in-engine statics check (R-1150 point 2) and the cell capture (n202probe) at crowd=2.5 zoom=1, with and without light3d; check keyedDecorationsFit's verdict at crowd 2.5."
+    },
+    {
+      "id": "R-1214",
+      "date": "2026-11-16",
+      "time": "15:16",
+      "timeFrom": "recorded",
+      "title": "Nsight Systems again on today's main: Predator ?light3d=1 GR Active 78 -> 33 %, SM issue 29 -> 11 % since 03:57; by night at crowd 2.5 48 % active (an upper bound: the owner's own Predator tab drew too), the rest is fill waiting on fetches",
+      "verdict": "note",
+      "text": "**Nsight Systems again on today's main (7e8fe900): Predator ?light3d=1 went from GR Active 78 % (R-1175, 03:57) to 33 %, SM issue 29 -> 11 %, pixel warps in flight 55 -> 24 %, DRAM read 10 -> 6 %; by night at crowd 2.5 the GPU is 48 % active with the same low issue rate (11 %), so what is left is pixel work waiting on fetches, not arithmetic.**\n\n`nsysElevated.mjs` (nsys 2026.6.1, `-t dx11,wddm --gpu-metrics-devices=all`, delay 90 s, 5 s window; the owner accepted the UAC prompts), Chrome 1400 x 900, GTX 1650 at 1785 MHz (GPC clock mean 1785 and 1778 MHz: full clock both times). Captures 2026-11-16 15:12:31 to 15:12:42 and 15:15:43 to 15:15:57 (the reports' session times); reports and SQLite exports in D:\\perf-tools\\captures\\nsys-predator-l3d-pm and nsys-predator-l3dnight. Two earlier tries at 14:55 and 14:57 failed: Chrome under nsys took over 30 s to load the page (the script's timeout), and the leftover Chrome kept the CDP port the second try needed. The script now takes a random port, 180 s timeouts and closes its Chrome on a failure.\n\n| metric (mean over the window) | 03:57 ?light3d=1 (R-1175) | 15:12 ?light3d=1 | 15:15 crowd=2.5 zoom=0.216 light3d=1 hour=22 |\n| --- | --- | --- | --- |\n| GR Active | 78.4 % | 32.8 % | 47.9 % |\n| SMs Active | 71.3 % | 31.5 % | 41.4 % |\n| SM Issue | 28.8 % | 11.1 % | 11.1 % |\n| Pixel Warps in Flight | 54.6 % (34.9 a cycle) | 23.5 % (15.1) | 30.0 % (19.2) |\n| Vertex/Tess/Geometry warps | 0.74 % | 0.62 % | 1.77 % |\n| Unallocated Warps in Active SMs | 16.0 % | 7.3 % | 9.7 % |\n| DRAM read / write | 9.9 / 4.4 % | 6.3 / 3.3 % | 12.8 / 5.2 % |\n\nCPU by thread in the windows: at 15:12 the profiled Chrome's GPU process main thread (CrGpuMain) 98.7 ms/s (154.8 in R-1175), the workers 101, 98, 83, 63, 62, 34 ms/s. At 15:15 the workers 281, 238, 223, 216, 175, 158, 109, 109, 105 ms/s (crowd 2.5's logic, spatial, pre-render, Pixi, physics) and CrGpuMain 148.9 ms/s.\n\nCaveat for the night capture: the owner's own Chrome had a Predator tab open (127.0.0.1:57670, crowd 2.5, zoom 1; renderer started 14:58:55), and in that window its GPU process main thread ran 56.5 ms/s and its renderer main 78.7 ms/s. So the night capture's GPU metrics include some of that tab's drawing, and its 47.9 % is an upper bound. The 15:12 capture is clean of it (the owner's GPU process 4.6 ms/s there). The per-draw reading of the same night configuration at 13:44 (R-1212: 8.978 ms of draws a frame, nvidia-smi 59 % busy) was taken before the tab was opened.\n\nWhat it says: since 03:57 the frame's GPU work fell by more than half at the same clock, and the remaining work has the shape of fill: active SMs that issue an instruction in about a third of their active cycles, with pixel warps waiting. Vertex work stays near 1 to 2 %. It is the profile E-448 (early depth for the binary sprites) and E-463 (the same for the face map and ids) target. The GPU process's main thread fell from 154.8 to 98.7 ms/s for the same scene (E-407's command stream, after the Pixi GPU batches cut the GL calls)."
     }
   ],
   "leads": [
