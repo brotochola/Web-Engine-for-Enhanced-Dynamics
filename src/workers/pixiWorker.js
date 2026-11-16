@@ -126,6 +126,7 @@ import {
   gidPageSize,
   gidPageByteLength,
   gidPageHasTile,
+  gidPageQuads,
   packGidPageRgba8,
 } from '../render/tilemapGid.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
@@ -9079,6 +9080,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const { pageW, pageH } = gidPageSize(page);
         if (pageW <= 0 || pageH <= 0) continue;
         if (!gidPageHasTile(layer.data, tileMapData.mapWidth, page)) continue;
+        // E-432: the page drawn only over its chunks with tiles, not as one quad.
+        const quads = gidPageQuads(layer.data, tileMapData.mapWidth, page, tw, th);
+        if (quads.quads === 0) continue;
         const bytes = new Uint8Array(gidPageByteLength(pageW, pageH));
         packGidPageRgba8(layer.data, tileMapData.mapWidth, page, bytes);
         const gidSource = TextureSource.from({
@@ -9096,18 +9100,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           gidSource.style.scaleMode = 'nearest';
           gidSource.style.addressMode = 'clamp-to-edge';
         }
-        const x0 = page.minX * tw;
-        const y0 = page.minY * th;
-        const x1 = page.maxX * tw;
-        const y1 = page.maxY * th;
         const geometry = new Geometry({
           attributes: {
             aPosition: {
-              buffer: new Float32Array([x0, y0, x1, y0, x1, y1, x0, y1]),
+              buffer: quads.positions,
               format: 'float32x2',
             },
           },
-          indexBuffer: new Uint16Array([0, 1, 2, 0, 2, 3]),
+          indexBuffer: quads.indices,
         });
         const uniforms = {
           uTileSize: { value: new Float32Array([tw, th]), type: 'vec2<f32>' },
