@@ -10,6 +10,8 @@
  *   node tests/bench/runFramePhase.mjs --warmup-ms 10000 --capture-ms 5000
  *   node tests/bench/runFramePhase.mjs --scene /demos/boidsScene/boidsScene.js --scene-export BoidsScene
  * (--scene and --scene-export: another scene than Predator, E-198.)
+ *   node tests/bench/runFramePhase.mjs --query "crowd=2.5&light3d=1&hour=22" --output <dir>
+ * (--query: the scene's parameters, one string, as runIntegratedWorkerBenchmark takes them.)
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -28,6 +30,7 @@ const captureMs = Number(args['capture-ms'] ?? 5000);
 const outDir = path.resolve(repoRoot, String(args.output ?? 'tests/results/e24-frame-phase'));
 const sceneModule = String(args.scene ?? '/demos/predatorScene/predatorScene.js');
 const sceneExport = String(args['scene-export'] ?? 'PredatorScene');
+const extraQuery = typeof args.query === 'string' ? args.query.replace(/^\?/, '') : '';
 
 function median(values) {
   return values.length === 0 ? null : benchMedian(values);
@@ -64,7 +67,7 @@ function phaseTable(samples) {
 const server = await createStaticBenchmarkServer(repoRoot);
 const url =
   `http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html?src=1` +
-  `&scene=${sceneModule}&sceneExport=${sceneExport}`;
+  `&scene=${sceneModule}&sceneExport=${sceneExport}` + (extraQuery ? `&${extraQuery}` : '');
 const browser = await chromium.launch({
   headless: false,
   channel: 'chrome',
@@ -114,6 +117,7 @@ try {
   const table = phaseTable(samples);
   const payload = {
     scene: sceneExport,
+    query: extraQuery,
     headed: true,
     src: true,
     collectDetailedStats: false,
