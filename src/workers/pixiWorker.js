@@ -172,11 +172,10 @@ import {
   packColliderFill,
   packColliderFillPoseOnly,
   packMeshUvFill,
-  colliderFillCanSkipPack,
-  copyMeshFillPoseScratch,
+  colliderFillEpochsMatch,
+  trackMeshFillPose,
   clearMeshFillPaintDirty,
-  meshFillPresenceChanged,
-  meshFillPoseOrPresenceChanged,
+  MESH_FILL_PRESENCE_MOVED,
   COLLIDER_FILL_PACK_FIRST_FRAME,
   COLLIDER_FILL_FLOATS,
   MESH_UV_FILL_FLOATS,
@@ -7864,7 +7863,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     cl.uvPrevCount = packed;
     batch.upload(packed);
     if (packed > 0) {
-      batch.uploadPoseTable(skip.uvInstanceEntity, packed, views);
+      batch.uploadPoseTable(skip.uvInstanceEntity, packed, views, skip.prevPose);
       this._uploadMeshPoseSource(batch, 'mesh-uv-pose');
     }
   }
@@ -10285,7 +10284,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             // Each batch's instance-to-entity list, written by its full pack.
             instanceEntity: new Uint32Array(0),
             uvInstanceEntity: new Uint32Array(0),
-            prevPose: {},
+            // The layer's record of every mesh's presence and pose, which trackMeshFillPose compares and updates once a
+            // frame and the pose tables upload from; sized on the first frame.
+            prevPose: {
+              x: new Float32Array(0),
+              y: new Float32Array(0),
+              rotC: new Float32Array(0),
+              rotS: new Float32Array(0),
+              active: new Uint8Array(0),
+              visible: new Uint8Array(0),
+            },
             camX: NaN,
             camY: NaN,
             zoom: NaN,
@@ -10302,7 +10310,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         views.lastOutsetEpoch = skip.lastOutsetEpoch | 0;
         views.lastVertEpoch = skip.lastVertEpoch >>> 0;
         let packedThisFrame = false;
-        if (!colliderFillCanSkipPack(views, skip.lastRevision, skip.prevPose)) {
+        // The layer's one pass over every entity this frame: whether any mesh's pose or presence moved since its
+        // record, and this frame's into the record, where the pose tables below take them from.
+        const moved = trackMeshFillPose(views, skip.prevPose);
+        const poseMoved = moved !== 0;
+        if (poseMoved || !colliderFillEpochsMatch(views, skip.lastRevision)) {
           const cap = cl.fillBatch.capacity;
           if (!skip.instanceEntity || skip.instanceEntity.length < cap) {
             skip.instanceEntity = new Uint32Array(cap);
@@ -10317,13 +10329,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             rev === (skip.lastRevision | 0) &&
             meshRev === (skip.lastMeshRevision | 0) &&
             outsetRev === (skip.lastOutsetEpoch | 0) &&
-            !meshFillPresenceChanged(views, skip.prevPose);
+            (moved & MESH_FILL_PRESENCE_MOVED) === 0;
           const paintMoved = !!(
             views.paintEpoch &&
             (views.paintEpoch[0] | 0) !== (skip.lastPaintEpoch | 0)
           );
           const vertsMoved = vertEpoch !== (skip.lastVertEpoch >>> 0);
-          const poseMoved = meshFillPoseOrPresenceChanged(views, skip.prevPose);
           this._ensureVertGenScratch(skip, views);
           let full = !topologyStable;
           // Generations before vertices (B24): both paths below read vertices.
@@ -10378,7 +10389,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             cl.fillBatch.upload(packed);
             cl.prevCount = packed;
             if (packed > 0) {
-              cl.fillBatch.uploadPoseTable(skip.instanceEntity, packed, views);
+              cl.fillBatch.uploadPoseTable(skip.instanceEntity, packed, views, skip.prevPose);
               this._uploadMeshPoseSource(cl.fillBatch, 'mesh-pose');
             }
             this._packMeshUvLayer(cl, views, skip);
@@ -10420,12 +10431,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             }
             if (poseMoved) {
               if (lastPacked > 0) {
-                cl.fillBatch.uploadPoseTable(skip.instanceEntity, lastPacked, views);
+                cl.fillBatch.uploadPoseTable(skip.instanceEntity, lastPacked, views, skip.prevPose);
                 this._uploadMeshPoseSource(cl.fillBatch, 'mesh-pose');
               }
               const uvCount = cl.uvPrevCount | 0;
               if (cl.uvFillBatch && uvCount > 0 && skip.uvInstanceEntity) {
-                cl.uvFillBatch.uploadPoseTable(skip.uvInstanceEntity, uvCount, views);
+                cl.uvFillBatch.uploadPoseTable(skip.uvInstanceEntity, uvCount, views, skip.prevPose);
                 this._uploadMeshPoseSource(cl.uvFillBatch, 'mesh-uv-pose');
               }
             }
@@ -10434,7 +10445,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               this._commitUvGen(skip, views);
             }
           }
-          copyMeshFillPoseScratch(views, skip.prevPose);
           skip.lastRevision = rev;
           skip.lastMeshRevision = meshRev;
           skip.lastPaintEpoch = views.paintEpoch ? (views.paintEpoch[0] | 0) : 0;

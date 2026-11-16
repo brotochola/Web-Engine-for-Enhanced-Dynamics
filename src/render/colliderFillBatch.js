@@ -384,14 +384,14 @@ export function meshFillPoseOrPresenceChanged(views, prevPose) {
 
 /** trackMeshFillPose: a mesh's pose or an entity's presence moved (meshFillPoseOrPresenceChanged's question). */
 export const MESH_FILL_MOVED = 1;
-/** trackMeshFillPose: a presence moved (meshFillPresenceChanged's question). Comes with MESH_FILL_MOVED. */
+/** trackMeshFillPose: an entity's presence moved, so the packed rows are not the layer's any more. Comes with MESH_FILL_MOVED. */
 export const MESH_FILL_PRESENCE_MOVED = 2;
 
 /**
- * A MESH layer's one pass over every entity per frame, in place of meshFillPoseOrPresenceChanged,
- * meshFillPresenceChanged and copyMeshFillPoseScratch, a pass each, each deciding every pose again: decides the pose
- * source of each live, visible mesh once (meshFillPoseSource's tests, in its order), compares that pose and every
- * entity's presence with the layer's record (prevPose) as those compare them, and writes into the record what moved.
+ * A MESH layer's one pass over every entity per frame, where Pixi ran up to four (meshFillPoseOrPresenceChanged
+ * twice, a presence scan and copyMeshFillPoseScratch), each deciding every pose again: decides the pose source of
+ * each live, visible mesh once (meshFillPoseSource's tests, in its order), compares that pose and every entity's
+ * presence with the layer's record (prevPose) as those compared them, and writes into the record what moved.
  * After it the record holds every entity's presence and every live, visible mesh's pose this frame, as the Float32
  * the pose table stores: uploadPoseTable takes those poses from it (framePose). A hidden mesh's pose is left as it
  * was, as nothing reads it: the compare skips a hidden mesh, and one shown again has moved its presence.
@@ -946,19 +946,6 @@ export function packColliderFill(out, cap, layerId, views) {
 /** Prior full pack wrote instance→entity, so pose-only refill is legal. */
 export function meshFillHasLocals(views) {
   return !!(views && views.instanceEntity);
-}
-
-export function meshFillPresenceChanged(views, prevPose) {
-  const n = views.entityCount | 0;
-  const pa = prevPose && prevPose.active;
-  if (!pa || pa.length < n) return true;
-  const pv = prevPose.visible;
-  const active = views.meshActive;
-  const visible = views.meshVisible;
-  for (let i = 0; i < n; i++) {
-    if ((pa[i] | 0) !== (active[i] | 0) || (pv[i] | 0) !== (visible[i] | 0)) return true;
-  }
-  return false;
 }
 
 /**

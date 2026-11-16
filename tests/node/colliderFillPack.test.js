@@ -418,7 +418,7 @@ test('MESH look path is one RT, no fillSpace / SCREEN bake', () => {
   assert.match(src, /skip\._skipRt/);
   assert.match(src, /paintEpoch/);
   assert.match(src, /packColliderFillPoseOnly/);
-  assert.match(src, /meshFillPresenceChanged/);
+  assert.match(src, /MESH_FILL_PRESENCE_MOVED/);
 });
 
 function attachExplicit(views, entity, xy, indices, uvs) {

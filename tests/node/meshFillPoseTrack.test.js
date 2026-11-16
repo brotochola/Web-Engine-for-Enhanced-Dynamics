@@ -10,7 +10,20 @@
 // record's poses and must leave the texels sampling left, bit for bit.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
+import { loadWorker, quietly } from '../bench/workerHarness.mjs';
+import { Transform } from '../../src/components/transform.js';
+import { RigidBody } from '../../src/components/rigidBody.js';
+import { Collider } from '../../src/components/collider.js';
+import { MeshRenderer } from '../../src/components/meshRenderer.js';
+import { MeshGeometry } from '../../src/core/meshGeometry.js';
+import { Layer } from '../../src/core/layer.js';
+import { Query } from '../../src/core/query.js';
+import { GameObject } from '../../src/core/gameObject.js';
+import { LAYER_KIND, ShapeType, WASM_DEFAULTS } from '../../src/util/configDefaults.js';
+import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
+import { createWeedPosePayload, initWeedPoseDefaults } from '../../src/box2d/box2dHotFields.js';
 import {
   trackMeshFillPose,
   colliderFillEpochsMatch,
@@ -618,4 +631,335 @@ test('a record that holds fewer entities than the views is grown, and everything
   // No entity, no move: the old passes found none either (a record of empty arrays).
   const none = makeScene(rng(4), 4, 0, SHAPES.pixi).views;
   assert.equal(trackMeshFillPose(none, { x: new Float32Array(0), active: new Uint8Array(0) }), 0);
+});
+
+// --- Pixi's real MESH layer pass (initializeCustomLayers, then updateCustomLayers a frame), as meshCornersWired runs it. ---
+
+const W_N = 64;
+const W_FRAMES = 160;
+const W_SHADERS = {
+  colliderFill: fs.readFileSync(new URL('../../src/shaders/colliderFill.wgsl', import.meta.url), 'utf8'),
+  meshUvFill: fs.readFileSync(new URL('../../src/shaders/meshUvFill.wgsl', import.meta.url), 'utf8'),
+};
+
+class PoseThing extends GameObject {}
+PoseThing.components = [RigidBody, Collider, MeshRenderer];
+
+/** The main thread's shared buffers: W_N entities, two MESH layers. */
+function buildWiredScene() {
+  Query.reset();
+  const scene = {
+    totalEntityCount: W_N,
+    nextComponentId: 4,
+    registeredClasses: [{ class: PoseThing, count: W_N, startIndex: 0, entityType: 0, components: PoseThing.components }],
+    componentPools: {
+      Transform: { ComponentClass: Transform },
+      RigidBody: { ComponentClass: RigidBody },
+      Collider: { ComponentClass: Collider },
+      MeshRenderer: { ComponentClass: MeshRenderer },
+    },
+    config: {
+      worldWidth: 4000,
+      worldHeight: 3000,
+      canvasWidth: 800,
+      canvasHeight: 600,
+      particle: { maxParticles: 0 },
+      decoration: { maxDecorations: 0 },
+      bullet: { maxBullets: 0 },
+      physics: { enabled: false, maxJoints: 0 },
+      spatial: { cellSize: 100, maxNeighbors: 8, maxEntitiesPerCell: 64, rowsPerBlock: 2, numberOfSpatialWorkers: 1 },
+      lighting: { enabled: false, maxLights: 10, shadowsEnabled: false, maxFlashes: 0, raycasted: false },
+      logic: { staggeredUpdates: false },
+      debug: { maxDebugDrawEntries: 1 },
+      navigation: { enabled: false },
+      renderer: { maxVisibleRenderables: 100, maxMeshVerts: 4096, maxMeshIndices: 12288 },
+      layers: { a: { kind: LAYER_KIND.MESH, zIndex: 2 }, b: { kind: LAYER_KIND.MESH, zIndex: 3 } },
+      wasm: { ...WASM_DEFAULTS },
+    },
+    buffers: { componentData: {} },
+    views: {},
+    camera: { zoom: 1, x: 0, y: 0 },
+    inputBufferSize: 1,
+    keyMap: {},
+    updateKeyboardBuffer() {},
+    preInitializeEntityTypeArrays() {},
+    constructor: { queries: [] },
+  };
+  createSceneSharedBuffers(scene);
+  scene.weedPose = createWeedPosePayload(W_N);
+  initWeedPoseDefaults(scene.weedPose);
+  return scene;
+}
+
+async function initWiredPixi(px, scene) {
+  px._colliderFillSkip = [];
+  px._colliderFillViews = null;
+  px._colliderFillLayerCount = -1;
+  px._customLayerList = [];
+  px.globalEntityCount = scene.totalEntityCount;
+  px.config = scene.config;
+  px._useWebGpu = true;
+  px._engineShaders = W_SHADERS;
+  px.pixiApp = { stage: { addChild() {}, sortChildren() {} }, renderer: null };
+  await px.initializeCustomLayers({
+    config: scene.config,
+    layerData: Layer.getSerializableData(),
+    customLayerRenderQueues: scene.customLayerRenderQueues,
+    meshGeom: {
+      enabled: true,
+      maxMeshVerts: 4096,
+      maxMeshIndices: 12288,
+      entityCount: scene.totalEntityCount,
+      data: scene.buffers.meshGeomData,
+      memory: scene.meshMemory?.memory || null,
+      layout: scene.meshMemory?.layout || null,
+    },
+  });
+}
+
+const W_QUAD = [-16, -12, 16, -12, 16, 12, -16, 12];
+
+function wiredFan(r, n) {
+  const xy = [];
+  const rad = 10 + r() * 10;
+  for (let i = 0; i < n; i++) xy.push(Math.cos((i / n) * Math.PI * 2) * rad, Math.sin((i / n) * Math.PI * 2) * rad);
+  return xy;
+}
+
+/**
+ * The game side of one frame: presence toggles, live moves inside and past the slack, the renderer's published pose
+ * catching up (Pixi's _poseX columns), rotations not published yet, static bodies, sprite poses of this frame, a
+ * repaint, vertex edits. A fifth of the frames move no pose: some change nothing, some only repaint or edit vertices.
+ */
+function wiredGameFrame(r, px, api, f) {
+  const n = W_N;
+  if (r() < 0.2) {
+    const e = r();
+    if (e < 0.25) api[Math.floor(r() * n)].tint = Math.floor(r() * 0xffffff);
+    else if (e < 0.5) {
+      const i = 1 + 4 * Math.floor(r() * (n / 4));
+      if (MeshGeometry.vertOffset[i] >= 0) api[i].setVertices(wiredFan(r, MeshGeometry.vertCount[i]));
+    }
+    return;
+  }
+  if (r() < 0.35) {
+    for (let k = 0; k < 2; k++) {
+      const i = Math.floor(r() * n);
+      if (r() < 0.5) MeshRenderer.active[i] ^= 1;
+      else MeshRenderer.renderVisible[i] ^= 1;
+    }
+  }
+  for (let i = 0; i < n; i++) {
+    const p = r();
+    if (p < 0.15) {
+      Transform.x[i] += (r() - 0.5) * 20;
+      Transform.y[i] += (r() - 0.5) * 20;
+    } else if (p < 0.19) {
+      Transform.x[i] += 60 + r() * 200;
+    } else if (p < 0.21) {
+      Transform.x[i] = px._poseX[i] + 48;
+      Transform.y[i] = px._poseY[i];
+    }
+    if (r() < 0.05) {
+      const a = r() * Math.PI * 2;
+      Transform.rotC[i] = Math.cos(a);
+      Transform.rotS[i] = Math.sin(a);
+    }
+    if (r() < 0.25) {
+      px._poseX[i] = Transform.x[i];
+      px._poseY[i] = Transform.y[i];
+      px._poseRotC[i] = Transform.rotC[i];
+      px._poseRotS[i] = Transform.rotS[i];
+    }
+    if (r() < 0.02) {
+      px._poseRotC[i] = 0;
+      px._poseRotS[i] = 0;
+    }
+    if (r() < 0.02) RigidBody.static[i] ^= 1;
+  }
+  // Pre-render's list for the frame Pixi takes: the meshes whose sprite it drew, at that sprite's pose.
+  px.lastReadFrame = r() < 0.1 ? -1 : f + 1;
+  for (let i = 0; i < n; i++) {
+    if (r() < 0.4) {
+      px._meshQueueStamp[i] = f + 1;
+      const o = i * 4;
+      px._meshQueuePose[o] = Transform.x[i] - r() * 6;
+      px._meshQueuePose[o + 1] = Transform.y[i] + r() * 6;
+      px._meshQueuePose[o + 2] = Transform.rotC[i];
+      px._meshQueuePose[o + 3] = Transform.rotS[i];
+    }
+  }
+  if (r() < 0.1) api[Math.floor(r() * n)].tint = Math.floor(r() * 0xffffff);
+  if (r() < 0.2) {
+    const i = 1 + 4 * Math.floor(r() * (n / 4));
+    if (MeshGeometry.vertOffset[i] >= 0) api[i].setVertices(wiredFan(r, MeshGeometry.vertCount[i]));
+  }
+}
+
+test("Pixi's MESH layers decide, record and upload as the old passes did", async () => {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const scene = await quietly(() => buildWiredScene());
+  // The published pose apart from the live Transform, and sprite poses; bound before the first frame builds the views.
+  px._poseX = new Float32Array(W_N);
+  px._poseY = new Float32Array(W_N);
+  px._poseRotC = new Float32Array(W_N);
+  px._poseRotS = new Float32Array(W_N);
+  px._meshPoseLists = [{}, {}];
+  px._meshQueueStamp = new Int32Array(W_N);
+  px._meshQueuePose = new Float32Array(W_N * 4);
+  await quietly(() => initWiredPixi(px, scene));
+  const ids = [Layer.get('a').id, Layer.get('b').id];
+  const layers = ids.map((id) => px._customLayers[id]);
+  assert.ok(layers.every((cl) => cl?.fillBatch), 'both MESH layers have their fill batch');
+
+  const r = rng(0x9a55);
+  const api = [];
+  for (let i = 0; i < W_N; i++) {
+    const mr = new MeshRenderer(i);
+    api.push(mr);
+    MeshRenderer.active[i] = 1;
+    MeshRenderer.layerMask[i] = i % 3 === 0 ? 1 << ids[0] : i % 3 === 1 ? 1 << ids[1] : (1 << ids[0]) | (1 << ids[1]);
+    Transform.x[i] = 100 + r() * 3000;
+    Transform.y[i] = 100 + r() * 2000;
+    const a = r() * Math.PI * 2;
+    Transform.rotC[i] = Math.cos(a);
+    Transform.rotS[i] = Math.sin(a);
+    px._poseX[i] = Transform.x[i];
+    px._poseY[i] = Transform.y[i];
+    px._poseRotC[i] = Transform.rotC[i];
+    px._poseRotS[i] = Transform.rotS[i];
+    const kind = i % 4;
+    // UV rows (the UV batch), a mesh without UVs and a collider box (the fill batch), a plane (the UV batch).
+    if (kind === 0) mr.setMesh(W_QUAD, [0, 1, 2, 0, 2, 3], [0, 0, 1, 0, 1, 1, 0, 1]);
+    else if (kind === 1) mr.setMesh(wiredFan(r, 6));
+    else if (kind === 3) mr.setPlane(40, 30, 2, 2);
+    else {
+      Collider.shapeType[i] = ShapeType.Box;
+      Collider.width[i] = 20;
+      Collider.height[i] = 12;
+    }
+  }
+
+  // What the frame did, per layer (its skip object) and batch.
+  const log = { nonSkip: new Set(), full: new Set(), failedRewrite: new Set(), uploads: new Set() };
+  const proto = Object.getPrototypeOf(px);
+  px._ensureVertGenScratch = function (skip, views) {
+    log.nonSkip.add(skip);
+    return proto._ensureVertGenScratch.call(this, skip, views);
+  };
+  px._packMeshUvLayer = function (cl, views, skip) {
+    log.full.add(skip);
+    return proto._packMeshUvLayer.call(this, cl, views, skip);
+  };
+  px._rewriteMeshCorners = function (...args) {
+    const code = proto._rewriteMeshCorners.apply(this, args);
+    if (code < 0) log.failedRewrite.add(args[2]);
+    return code;
+  };
+  // Each upload against the old one on a table of its own, the table the old flow would have left on the batch.
+  const refTables = new Map();
+  let compared = 0;
+  const spy = (batch, name) => {
+    const own = Object.getPrototypeOf(batch).uploadPoseTable;
+    refTables.set(batch, tableCtx());
+    batch.uploadPoseTable = function (instanceEntity, count, views, framePose) {
+      log.uploads.add(name);
+      assert.ok(framePose && framePose.x, `${name}: the upload has the layer's record`);
+      refUploadPoseTable(refTables.get(this), instanceEntity, count, views);
+      const n = own.call(this, instanceEntity, count, views, framePose);
+      assertSameTable(refTables.get(this).poseTable, this.poseTable, `${name} after ${compared} uploads`);
+      compared++;
+      return n;
+    };
+  };
+  layers.forEach((cl, L) => spy(cl.fillBatch, `layer ${L} fill`));
+  px._ensureMeshUvBatch = function (cl) {
+    const had = cl.uvFillBatch;
+    const batch = proto._ensureMeshUvBatch.call(this, cl);
+    if (batch && batch !== had) spy(batch, `layer ${layers.indexOf(cl)} uv`);
+    return batch;
+  };
+
+  const refs = layers.map(() => ({}));
+  const tally = { skip: 0, full: 0, poseOnly: 0, packNoPose: 0, presence: 0 };
+  try {
+    await quietly(() => {
+      for (let f = 0; f < W_FRAMES; f++) {
+        if (f > 0) wiredGameFrame(r, px, api, f);
+        // The old flow's answers, from what each layer holds before the frame.
+        const views = px._ensureColliderFillViews();
+        const want = layers.map((cl, L) => {
+          const skip = px._colliderFillSkip[cl.layerId];
+          const v = {
+            ...views,
+            lastPaintEpoch: skip ? skip.lastPaintEpoch : -1,
+            lastMeshRevision: skip ? skip.lastMeshRevision | 0 : 0,
+            lastOutsetEpoch: skip ? skip.lastOutsetEpoch | 0 : 0,
+            lastVertEpoch: skip ? skip.lastVertEpoch >>> 0 : 0,
+          };
+          const lastRevision = skip ? skip.lastRevision : COLLIDER_FILL_PACK_FIRST_FRAME;
+          const presence = refPresenceChanged(v, refs[L]);
+          return {
+            v,
+            skip: refCanSkip(v, lastRevision, refs[L]),
+            presence,
+            moved: refPoseOrPresenceChanged(v, refs[L]),
+            topologyStable:
+              lastRevision !== COLLIDER_FILL_PACK_FIRST_FRAME &&
+              (v.fixtureRevision ? v.fixtureRevision[0] | 0 : 0) === (lastRevision | 0) &&
+              (v.meshGeomRevision ? v.meshGeomRevision[0] | 0 : 0) === v.lastMeshRevision &&
+              (v.outsetEpoch ? v.outsetEpoch[0] | 0 : 0) === v.lastOutsetEpoch &&
+              !presence,
+            fillCount: cl.prevCount | 0,
+            uvCount: cl.uvPrevCount | 0,
+          };
+        });
+        log.nonSkip.clear();
+        log.full.clear();
+        log.failedRewrite.clear();
+        log.uploads.clear();
+        px.updateCustomLayers();
+        layers.forEach((cl, L) => {
+          const e = want[L];
+          const skip = px._colliderFillSkip[cl.layerId];
+          const where = `frame ${f} layer ${L}`;
+          assert.equal(!log.nonSkip.has(skip), e.skip, `${where}: skip`);
+          const fillUp = log.uploads.has(`layer ${L} fill`);
+          const uvUp = log.uploads.has(`layer ${L} uv`);
+          if (e.skip) {
+            assert.ok(!fillUp && !uvUp, `${where}: a skipped layer uploads no pose`);
+            tally.skip++;
+          } else {
+            const full = log.full.has(skip);
+            const failed = log.failedRewrite.has(skip.instanceEntity) || log.failedRewrite.has(skip.uvInstanceEntity);
+            assert.equal(full, !e.topologyStable || failed, `${where}: full pack`);
+            if (full) {
+              assert.equal(fillUp, (cl.prevCount | 0) > 0, `${where}: fill pose table after the pack`);
+              assert.equal(uvUp, !!cl.uvFillBatch && (cl.uvPrevCount | 0) > 0, `${where}: UV pose table after the pack`);
+              tally.full++;
+            } else {
+              assert.equal(fillUp, e.moved && e.fillCount > 0, `${where}: fill pose table`);
+              assert.equal(uvUp, e.moved && !!cl.uvFillBatch && e.uvCount > 0, `${where}: UV pose table`);
+              if (e.moved) tally.poseOnly++;
+              else tally.packNoPose++;
+            }
+            refCopy(e.v, refs[L]);
+          }
+          if (e.presence) tally.presence++;
+          assertSameRecord(refs[L], skip.prevPose, W_N, where);
+        });
+      }
+    });
+  } finally {
+    delete px._ensureVertGenScratch;
+    delete px._packMeshUvLayer;
+    delete px._rewriteMeshCorners;
+    delete px._ensureMeshUvBatch;
+    px._meshPoseLists = [];
+    px.lastReadFrame = -1;
+    px._poseX = null;
+  }
+  assert.ok(layers.every((cl) => cl.uvFillBatch), 'both layers draw UV rows too');
+  assert.ok(compared > W_FRAMES, `${compared} pose tables compared`);
+  assert.ok(tally.skip > 10 && tally.full > 10 && tally.poseOnly > 50 && tally.packNoPose > 5, JSON.stringify(tally));
 });
