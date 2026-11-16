@@ -42,7 +42,7 @@ import { CollisionListener } from '../components/collisionListener.js';
 import { JointBreakListener } from '../components/jointBreakListener.js';
 import { Grab } from '../components/grab.js';
 import { SpriteSheetRegistry, addBigAtlasChunks } from './spriteSheetRegistry.js';
-import { sheetCastsSolid, sheetStandsOnContact } from '../render/frameBase.js';
+import { fillFrameTexels, sheetCastsSolid, sheetStandsOnContact } from '../render/frameBase.js';
 import { AdobeAnimRegistry } from './adobeAnimRegistry.js';
 import { AdobeAnimCompiler } from '../util/adobeAnimCompiler.js';
 import {
@@ -1704,6 +1704,14 @@ class Scene {
     ]);
     const imageBitmap = await createImageBitmap(pngResponse.body);
     const canvas = this._canvasFromImageBitmap(imageBitmap);
+    // H-EDGE (E-448): a bake from before H-EDGE wrote no frame texels; read them from the atlas's pixels, once.
+    fillFrameTexels(json, () => ({
+      data: canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height).data,
+      x: 0,
+      y: 0,
+      width: canvas.width,
+      height: canvas.height,
+    }));
     return { json, imageBitmap, mapsBitmap, canvas };
   }
 

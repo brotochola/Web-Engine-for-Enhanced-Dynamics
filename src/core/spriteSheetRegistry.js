@@ -4,7 +4,8 @@
 
 import { frameTwinTexels, opaqueMask, readHeights, twinHasGlow } from '../render/spriteMaps.js';
 import {
-  FRAME_GLOW, FRAME_HALF, FRAME_SOFT, frameAlphaKinds, isRenderDirections, measureLowestContact, measureStandingBase, readFootprint,
+  FRAME_GLOW, FRAME_HALF, FRAME_SOFT, frameAlphaKinds, frameSolidTexels, isRenderDirections, measureLowestContact,
+  measureStandingBase, readFootprint,
 } from '../render/frameBase.js';
 import {
   create2dCanvas,
@@ -967,8 +968,10 @@ class SpriteSheetRegistry {
             sourceHeight: height,
             isSpritesheetFrame: false,
             trimInfo: trimInfo,       // Store trim info for debugging
-            // H-EDGE: what its alphas hold (frameBase.js FRAME_SOFT, FRAME_HALF), from the trim's scan.
+            // H-EDGE: what its alphas hold (frameBase.js FRAME_SOFT, FRAME_HALF), from the trim's scan; E-448: its solid
+            // texels.
             texels: trimImages && trimResult ? trimResult.bounds.kinds : undefined,
+            solidTexels: trimImages && trimResult ? trimResult.bounds.solid : undefined,
           });
 
           // Create a single-frame "animation" for this image
@@ -1113,6 +1116,10 @@ class SpriteSheetRegistry {
                 // H-EDGE: what the drawn part's alphas hold (frameBase.js FRAME_SOFT, FRAME_HALF), from the pixels the trim read.
                 texels: sheetPixels
                   ? frameAlphaKinds(sheetPixels, frame.x + trimOffsetX, frame.y + trimOffsetY, packedWidth, packedHeight)
+                  : undefined,
+                // E-448: its solid texels, which the opaque pass's cover counts.
+                solidTexels: sheetPixels
+                  ? frameSolidTexels(sheetPixels, frame.x + trimOffsetX, frame.y + trimOffsetY, packedWidth, packedHeight)
                   : undefined,
                 footprint: Array.isArray(footprints) ? readFootprint(footprints[frameOrdinal]) : null,
                 sunCard,
@@ -1566,6 +1573,8 @@ class SpriteSheetRegistry {
       const f = frames[d.name];
       if (!f || typeof d.texels !== 'number') continue;
       f.base = { ...(f.base || {}), texels: d.texels | (allGlow || d.glow === true ? FRAME_GLOW : 0) };
+      // E-448: its solid texels (alpha 255), which the opaque pass's cover counts.
+      if (typeof d.solidTexels === 'number') f.base.solidTexels = d.solidTexels;
     }
   }
 
@@ -1624,14 +1633,16 @@ class SpriteSheetRegistry {
     const data = imageData.data;
 
     let minX = w, minY = h, maxX = -1, maxY = -1;
-    // H-EDGE: what its alphas hold (frameBase.js FRAME_SOFT, FRAME_HALF).
+    // H-EDGE: what its alphas hold (frameBase.js FRAME_SOFT, FRAME_HALF); E-448: how many are solid (255).
     let kinds = 0;
+    let solid = 0;
 
     // Scan for non-transparent pixels
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const alpha = data[(y * w + x) * 4 + 3];
         if (alpha !== 0 && alpha !== 255) kinds |= alpha < 128 ? FRAME_SOFT : FRAME_HALF;
+        else if (alpha === 255) solid++;
         if (alpha > alphaThreshold) {
           if (x < minX) minX = x;
           if (x > maxX) maxX = x;
@@ -1652,6 +1663,7 @@ class SpriteSheetRegistry {
       width: maxX - minX + 1,
       height: maxY - minY + 1,
       kinds,
+      solid,
     };
   }
 

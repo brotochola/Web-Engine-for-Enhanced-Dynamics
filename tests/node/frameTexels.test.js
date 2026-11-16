@@ -12,10 +12,12 @@ import fs from 'node:fs';
 import { HEIGHT_UNITS, frameTwinTexels, twinHasGlow } from '../../src/render/spriteMaps.js';
 import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
 import {
-  FRAME_GLOW, FRAME_HALF, FRAME_SOFT, FRAME_UNSCANNED, TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW, frameAlphaKinds,
-  lutBaseFloats, sheetCastsSolid,
+  FRAME_GLOW, FRAME_HALF, FRAME_SOFT, FRAME_UNSCANNED, TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW, fillFrameTexels,
+  frameAlphaKinds, frameSolidTexels, lutBaseFloats, sheetCastsSolid,
 } from '../../src/render/frameBase.js';
-import { buildTextureLut, packTextureLutRgba, textureLutLayout, textureLutTexels } from '../../src/render/instancedSpriteBatch.js';
+import {
+  buildTextureLut, packTextureLutRgba, textureLutLayout, textureLutSolid, textureLutTexels,
+} from '../../src/render/instancedSpriteBatch.js';
 import { pixelDepthFragment, pixelDepthVertex, pixelDepthWgsl } from '../../src/render/pixelDepth.js';
 
 const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
@@ -205,9 +207,14 @@ test('the texture table keeps each frame\'s texels on the CPU and its soft-or-gl
       assert.deepEqual(Array.from(rgba.subarray(at, at + 2)), [8, 8], `frame ${t}'s size`);
     }
   }
+  // E-448: each frame's solid texels beside the table too, 0 where its base has none.
+  const solidOf = [37, undefined, 0];
+  const withSolid = textures(3, () => 0).map((tex, i) => (solidOf[i] === undefined ? tex : { ...tex, weedBase: { texels: 0, solidTexels: solidOf[i] } }));
+  assert.deepEqual(Array.from(textureLutSolid(buildTextureLut(withSolid))), [37, 0, 0]);
   // A table this module did not make (12 floats a frame and nothing beside): every frame may be soft or glow.
   const plain = packTextureLutRgba(new Float32Array(12 * 4), 4);
   assert.equal(textureLutTexels(new Float32Array(12)), null);
+  assert.equal(textureLutSolid(new Float32Array(12)), null);
   for (let t = 0; t < 4; t++) assert.equal(shaderSoftOrGlow(plain, 4, 4, t), 1);
   // A table without the flags texel (three texels a row, as another layout would have it) reads as set too.
   assert.equal(shaderSoftOrGlow(new Float32Array(12), 3, 1, 0), 1);
@@ -233,4 +240,48 @@ test('the depth programs read the bit after their own LUT read and the edge pass
     assert.equal(wgsl.includes('if (((u32(aInstGbuf.x + 0.5) >> 19u) & 7u) != 0u) { out.vPlain = 0.0; }'), gbuf);
     assert.match(wgsl, /ad <= 0\.0 \|\| \(ad >= 0\.5 && in\.vPlain > 0\.5\)/);
   }
+});
+
+test('a baked atlas without frame texels gets them from its pixels when it loads; one with them, or with maps, keeps its own', () => {
+  // E-448: and each frame's solid texels (alpha 255), which the opaque pass's cover counts.
+  // A 6 x 2 atlas: frame a (x 0..1) binary, frame b (x 2..3) a soft texel, frame c (x 4..5) a half one.
+  const w = 6;
+  const h = 2;
+  const alphas = [0, 255, 255, 40, 200, 0, 255, 0, 255, 255, 255, 255];
+  const data = new Uint8ClampedArray(w * h * 4);
+  alphas.forEach((a, i) => { data[i * 4 + 3] = a; });
+  const reads = [];
+  const read = () => {
+    reads.push(1);
+    return { data, x: 0, y: 0, width: w, height: h };
+  };
+  const json = () => ({
+    frames: {
+      a: { frame: { x: 0, y: 0, w: 2, h: 2 } },
+      b: { frame: { x: 2, y: 0, w: 2, h: 2 }, base: { cx: 1, rx: 1, ry: 0.5 } },
+      c: { frame: { x: 4, y: 0, w: 2, h: 2 } },
+    },
+    meta: {},
+  });
+  const old = json();
+  assert.equal(fillFrameTexels(old, read), 3);
+  assert.deepEqual(Object.values(old.frames).map((f) => f.base.texels), [0, FRAME_SOFT, FRAME_HALF]);
+  assert.deepEqual(Object.values(old.frames).map((f) => f.base.solidTexels), [2, 3, 2]);
+  assert.equal(frameSolidTexels({ data, x: 0, y: 0, width: w, height: h }, 0, 0, w, h), 7);
+  assert.deepEqual(old.frames.b.base, { cx: 1, rx: 1, ry: 0.5, texels: FRAME_SOFT, solidTexels: 3 }, 'its base kept');
+  // A bake with texels but no solid texels (between H-EDGE and E-448): only those are read, its texels kept.
+  const mid = json();
+  for (const f of Object.values(mid.frames)) f.base = { ...(f.base || {}), texels: FRAME_GLOW };
+  assert.equal(fillFrameTexels(mid, read), 3);
+  assert.deepEqual(Object.values(mid.frames).map((f) => [f.base.texels, f.base.solidTexels]), [[FRAME_GLOW, 2], [FRAME_GLOW, 3], [FRAME_GLOW, 2]]);
+  reads.length = 1;
+  assert.equal(reads.length, 1, 'one read');
+  // A bake with texels: nothing read.
+  assert.equal(fillFrameTexels(old, read), 0);
+  assert.equal(reads.length, 1);
+  // An atlas with maps may glow, which its pixels do not say: left unscanned.
+  const mapped = { ...json(), meta: { maps: true } };
+  assert.equal(fillFrameTexels(mapped, read), 0);
+  assert.equal(mapped.frames.a.base, undefined);
+  assert.equal(reads.length, 1);
 });
