@@ -1,6 +1,11 @@
 /**
- * Second instanced mesh for explicit geometry that carries per-vertex UVs.
+ * Second mesh for explicit geometry that carries per-vertex UVs.
  * Created only after a MESH layer actually has one. Collider-fill stride stays 18.
+ *
+ * E-453: it draws each mesh's vertices once, through an index buffer (packMeshUvVerts): a vertex record
+ * (MESH_UV_VERT_FLOATS) a vertex, read as 4 vec4 (aVert0..aVert3), and each triangle 3 indices, in the order the rows of
+ * packMeshUvFill drew them. The geometry's instanceCount is 1 while it has triangles and 0 when it has none
+ * (emptyInstancedMesh); the lamps' map draws the same buffers once a tile in use (instanceCount the tiles).
  */
 
 import {
@@ -19,45 +24,88 @@ import {
 import { colliderFillGpuProgram } from './webgpu/colliderFillWgsl.js';
 import { colliderFillGlProgram } from './webgl/colliderFillGlsl.js';
 import { dummyLutSource } from './instancedSpriteBatch.js';
-import { MESH_UV_FILL_FLOATS, MESH_UV_FILL_STRIDE, writeMeshPoseTable } from './colliderFillBatch.js';
+import { MESH_UV_VERT_FLOATS, MESH_UV_VERT_STRIDE, writeMeshPoseTable } from './colliderFillBatch.js';
 
-/** The vec4 attributes a row is read as (aRow0..aRow5): MESH_UV_FILL_FLOATS / 4. */
-export const MESH_UV_ROW_VEC4 = MESH_UV_FILL_FLOATS / 4;
+/** The vec4 attributes a vertex record is read as (aVert0..aVert3): MESH_UV_VERT_FLOATS / 4. */
+export const MESH_UV_VERT_VEC4 = MESH_UV_VERT_FLOATS / 4;
 
 export class MeshUvFillBatch {
   /**
-   * `data`: where the rows are written, capacity × MESH_UV_FILL_FLOATS, a region of the mesh memory
-   * (meshMemory.js, E-76 W11) where the corner kernel rewrites them; any other length, none. As in
-   * ColliderFillBatch, the Pixi Buffer uploads an array of its own (E-123), and upload copies into it the
-   * rows it sends.
+   * @param {object} opts
+   * @param {number} opts.capacity vertex records
+   * @param {number} [opts.indexCapacity] indices, 3 a triangle (default 3 × capacity)
+   * @param {number} [opts.entities] the entities an indexSpan of the batch's own covers (2 values each)
+   * @param {Float32Array|null} [opts.data] where the records are written, capacity × MESH_UV_VERT_FLOATS: a region of
+   *   the mesh memory (meshMemory.js, E-76 W11), where the corner kernel rewrites them; any other length, none. As in
+   *   ColliderFillBatch, the Pixi Buffers upload arrays of their own (E-123), and the uploads copy into them what they
+   *   send.
+   * @param {Uint32Array|null} [opts.vertexEntity] each record's entity (capacity of them), in the mesh memory with `data`
+   * @param {Uint32Array|null} [opts.indices] where the packs write the triangles' indices (indexCapacity), there too
+   * @param {Uint32Array|null} [opts.indexSpan] each entity's first index and count (packMeshUvVerts), there too
+   * @param {{ updateBuffer: (buffer: object) => unknown }|null} [opts.bufferSystem] the renderer's: see _send
+   * @param {{ unbind?: () => void }|null} [opts.geometrySystem] the renderer's: see _sendIndices
    */
-  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null, data = null, bufferSystem = null }) {
+  constructor({
+    capacity,
+    indexCapacity = 0,
+    entities = 0,
+    label,
+    useWebGpu = true,
+    shaders = null,
+    atlasSource = null,
+    lutSource = null,
+    data = null,
+    vertexEntity = null,
+    indices = null,
+    indexSpan = null,
+    bufferSystem = null,
+    geometrySystem = null,
+  }) {
     this.capacity = Math.max(1, capacity | 0);
+    this.indexCapacity = Math.max(3, (indexCapacity | 0) > 0 ? indexCapacity | 0 : this.capacity * 3);
     this._bufferSystem = bufferSystem;
-    const floats = this.capacity * MESH_UV_FILL_FLOATS;
+    this._geometrySystem = geometrySystem;
+    const floats = this.capacity * MESH_UV_VERT_FLOATS;
     this.data = new Float32Array(floats);
     this.dataU32 = new Uint32Array(this.data.buffer);
     const shared = data instanceof Float32Array && data.length === floats ? data : null;
-    this.rows = shared || this.data;
-    this.rowsU32 = shared ? new Uint32Array(shared.buffer, shared.byteOffset, shared.length) : this.dataU32;
+    // Where the packs and the corner rewrite write the records: the mesh memory's region when there is one, and upload
+    // copies the records it sends from there; else this.data (ColliderFillBatch's rows say why).
+    this.verts = shared || this.data;
+    this.vertsU32 = shared ? new Uint32Array(shared.buffer, shared.byteOffset, shared.length) : this.dataU32;
+    this.vertexEntity = vertexEntity instanceof Uint32Array && vertexEntity.length >= this.capacity
+      ? vertexEntity
+      : new Uint32Array(this.capacity);
+    this.indices = indices instanceof Uint32Array && indices.length >= this.indexCapacity
+      ? indices
+      : new Uint32Array(this.indexCapacity);
+    this.indexSpan = indexSpan instanceof Uint32Array ? indexSpan : new Uint32Array(Math.max(0, entities | 0) * 2);
     this.buffer = new Buffer({
       data: this.data,
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
       label: label || 'mesh-uv-fill',
     });
+    // The index buffer's own array. Pixi draws data.length indices, so the buffer's data is a view of the first
+    // indexCount (_setIndexView); with shrinkToFit off a shorter view keeps the buffer the GPU has.
+    this.indexData = new Uint32Array(this.indexCapacity);
+    this._indexView = this.indexData;
+    this.indexBuffer = new Buffer({
+      data: this.indexData,
+      usage: BufferUsage.INDEX | BufferUsage.COPY_DST,
+      label: `${label || 'mesh-uv-fill'}-indices`,
+      shrinkToFit: false,
+    });
+    this.indexCount = 0;
 
-    const stride = MESH_UV_FILL_STRIDE;
+    const stride = MESH_UV_VERT_STRIDE;
     const buf = this.buffer;
-    // E-419: the row as MESH_UV_ROW_VEC4 vec4 in FILL_ROW's order (aRow0 floats 0-3, ...), which the shaders name field
-    // by field: one attribute a field (14) made the vertex stage twice as slow (meshUvFill.vert.glsl). The shaders take
-    // the corner from the vertex's index, and the index buffer [0, 1, 2] gives an instance its 3 vertices (N-228: an aTri
-    // attribute that no shader reads made Pixi warn "Attribute aTri is not present in the shader").
+    // A record as MESH_UV_VERT_VEC4 vec4 in MESH_UV_VERT's order, one a vertex, which the shaders name field by field
+    // (meshUvFill.vert.glsl).
     const attributes = {};
-    for (let k = 0; k < MESH_UV_ROW_VEC4; k++) {
-      attributes[`aRow${k}`] = { buffer: buf, format: 'float32x4', stride, offset: k * 16, instance: true };
+    for (let k = 0; k < MESH_UV_VERT_VEC4; k++) {
+      attributes[`aVert${k}`] = { buffer: buf, format: 'float32x4', stride, offset: k * 16 };
     }
-    // Uint32: 12 bytes (WebGPU makes no buffer whose size is not a multiple of 4; Uint16 [0, 1, 2] is 6).
-    this.geometry = new Geometry({ attributes, indexBuffer: new Uint32Array([0, 1, 2]) });
+    this.geometry = new Geometry({ attributes, indexBuffer: this.indexBuffer });
     this.geometry.instanceCount = 0;
 
     const atlas = atlasSource || Texture.WHITE.source;
@@ -106,7 +154,7 @@ export class MeshUvFillBatch {
     const state = new State();
     state.blend = true;
     state.blendMode = 'normal';
-    // Rows paint in order and layers by zIndex. Every layer numbers its depth from 0 in one depth buffer: a test here
+    // Triangles paint in order and layers by zIndex. Every layer numbers its depth from 0 in one depth buffer: a test here
     // let a lower layer's late rows beat a higher layer's first ones (N-119).
     state.depthTest = false;
     state.depthMask = false;
@@ -133,25 +181,58 @@ export class MeshUvFillBatch {
     if (source) this.shader.resources.uTexLut = source;
   }
 
-  upload(count) {
-    const n = count | 0;
-    if (n <= 0) {
+  /**
+   * Send the first `count` records and `indexCount` indices the pack wrote: what the batch draws from now.
+   * @param {number} count
+   * @param {number} indexCount
+   * @returns {number} the indices drawn
+   */
+  upload(count, indexCount) {
+    const n = Math.min(count | 0, this.capacity);
+    const m = Math.min(indexCount | 0, this.indexCapacity);
+    if (n <= 0 || m < 3) {
       this.geometry.instanceCount = 0;
       this.mesh.visible = false;
+      this.indexCount = 0;
       return 0;
     }
     this.mesh.visible = true;
-    // E-123: the rows this upload sends, out of the mesh memory into the Buffer's own array.
-    if (this.rows !== this.data) this.data.set(this.rows.subarray(0, n * MESH_UV_FILL_FLOATS));
-    this.buffer.update(n * MESH_UV_FILL_STRIDE);
+    // E-123: what this upload sends, out of the mesh memory into the Buffers' own arrays.
+    if (this.verts !== this.data) this.data.set(this.verts.subarray(0, n * MESH_UV_VERT_FLOATS));
+    this.buffer.update(n * MESH_UV_VERT_STRIDE);
     this._send();
-    this.geometry.instanceCount = n;
-    return n;
+    this.indexData.set(this.indices.subarray(0, m));
+    this._setIndexView(m);
+    this._sendIndices();
+    this.indexCount = m;
+    this.geometry.instanceCount = 1;
+    return m;
+  }
+
+  /** The index buffer's data: its array's first `m` (a new view only when the count moved). */
+  _setIndexView(m) {
+    if (this._indexView.length === m) {
+      this.indexBuffer.update(m * 4);
+      return;
+    }
+    this._indexView = m === this.indexData.length ? this.indexData : this.indexData.subarray(0, m);
+    this.indexBuffer.setDataWithSize(this._indexView, m, true);
   }
 
   /** ColliderFillBatch._send. */
   _send() {
     if (this._bufferSystem) this._bufferSystem.updateBuffer(this.buffer);
+  }
+
+  /**
+   * _send for the index buffer. WebGL binds an index buffer into the vertex array bound, so Pixi's is unbound first (its
+   * geometry system binds the next draw's again).
+   */
+  _sendIndices() {
+    if (!this._bufferSystem) return;
+    const geometry = this._geometrySystem;
+    if (geometry && typeof geometry.unbind === 'function') geometry.unbind();
+    this._bufferSystem.updateBuffer(this.indexBuffer);
   }
 
   /**
@@ -168,22 +249,32 @@ export class MeshUvFillBatch {
     return true;
   }
 
-  /** DX-VOLUME: this batch draws the volumes' layer: rows that carry a floor scale, in black. */
+  /** DX-VOLUME: this batch draws the volumes' layer: records that carry a floor scale, in black. */
   setVolumes() {
     this._sunShadow[2] = 1;
     const group = this.shader.resources.sunShadow;
     if (group && typeof group.update === 'function') group.update();
   }
 
-  /** ColliderFillBatch.uploadRange for the UV rows. */
+  /** ColliderFillBatch.uploadRange for records [first, past), which an upload of the same layout already placed. */
   uploadRange(first, past) {
-    const from = first * MESH_UV_FILL_FLOATS;
-    if (this.rows !== this.data) this.data.set(this.rows.subarray(from, past * MESH_UV_FILL_FLOATS), from);
-    this.buffer.update((past - first) * MESH_UV_FILL_STRIDE, first * MESH_UV_FILL_STRIDE);
+    const from = first * MESH_UV_VERT_FLOATS;
+    if (this.verts !== this.data) this.data.set(this.verts.subarray(from, past * MESH_UV_VERT_FLOATS), from);
+    this.buffer.update((past - first) * MESH_UV_VERT_STRIDE, first * MESH_UV_VERT_STRIDE);
     this._send();
   }
 
-  /** ColliderFillBatch.uploadPoseTable for the UV rows. */
+  /** Send indices [first, past) of the drawn ones, which the corner rewrite wrote again. */
+  uploadIndexRange(first, past) {
+    const from = first | 0;
+    const end = Math.min(past | 0, this.indexCount);
+    if (end <= from) return;
+    this.indexData.set(this.indices.subarray(from, end), from);
+    this.indexBuffer.update((end - from) * 4, from * 4);
+    this._sendIndices();
+  }
+
+  /** ColliderFillBatch.uploadPoseTable for the records: `instanceEntity` is vertexEntity, `count` the records. */
   uploadPoseTable(instanceEntity, count, views, framePose = null) {
     const n = count | 0;
     if (n <= 0 || !instanceEntity) return 0;

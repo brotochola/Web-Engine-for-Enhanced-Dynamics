@@ -1,13 +1,12 @@
 #version 300 es
-// E-419: the row (FILL_ROW, colliderFillBatch.js) as 6 vec4 in its order, not one attribute a field, and the corner from
-// gl_VertexID, not an attribute: with 15 attributes the vertex stage took 1.86 ms for volumeStressScene's 486 408 rows,
-// with these 6 0.82 (meshFillGpuBench, GTX 1650). main() names the fields as they were.
-in vec4 aRow0; // v0, v1
-in vec4 aRow1; // v2, xy
-in vec4 aRow2; // rotation cos sin, tint bits, depth
-in vec4 aRow3; // texture id, tile inverse, tile offset x
-in vec4 aRow4; // tile offset y, body, uv0
-in vec4 aRow5; // uv1, uv2
+// E-453: each mesh's vertices once, drawn through an index buffer (MeshUvFillBatch): a vertex record (MESH_UV_VERT,
+// colliderFillBatch.js) as 4 vec4. E-419 read a triangle's row as 6 vec4 and placed its corner from the vertex index
+// (1.86 -> 0.82 ms a draw for volumeStressScene's 486 408 rows, meshFillGpuBench, GTX 1650); a house's vertex sat in 3 to
+// 6 of its rows, read and placed again in each. main() names the fields as the rows did.
+in vec4 aVert0; // x, y, u, v
+in vec4 aVert1; // the pose: xy, rotation cos sin
+in vec4 aVert2; // tint bits, the entity's reach, texture id, body
+in vec4 aVert3; // tile inverse, tile offset
 
 uniform mat3 uProjectionMatrix;
 uniform mat3 uWorldTransformMatrix;
@@ -29,23 +28,17 @@ out float vHasTex;
 out vec2 vMeshUV;
 
 void main() {
-  // The corner: 0, 1, 2 in each instance of 3 vertices.
-  vec2 aTri = vec2(gl_VertexID == 1 ? 1.0 : 0.0, gl_VertexID == 2 ? 1.0 : 0.0);
-  vec2 aV0 = aRow0.xy;
-  vec2 aV1 = aRow0.zw;
-  vec2 aV2 = aRow1.xy;
-  vec2 aInstXY = aRow1.zw;
-  vec2 aInstRotCS = aRow2.xy;
-  float aInstTintBits = aRow2.z;
-  float aInstDepth = aRow2.w;
-  float aInstTexId = aRow3.x;
-  vec2 aInstTileInv = aRow3.yz;
-  vec2 aInstTileOff = vec2(aRow3.w, aRow4.x);
-  float aInstBody = aRow4.y;
-  vec2 aUV0 = aRow4.zw;
-  vec2 aUV1 = aRow5.xy;
-  vec2 aUV2 = aRow5.zw;
-  vec2 local = aV0 + aTri.x * (aV1 - aV0) + aTri.y * (aV2 - aV0);
+  vec2 local = aVert0.xy;
+  vec2 aUV = aVert0.zw;
+  vec2 aInstXY = aVert1.xy;
+  vec2 aInstRotCS = aVert1.zw;
+  float aInstTintBits = aVert2.x;
+  // The lamps' map's cull reads it (volumeShadowMap.js): how far from the anchor the entity's farthest vertex stands.
+  float aInstReach = aVert2.y;
+  float aInstTexId = aVert2.z;
+  float aInstBody = aVert2.w;
+  vec2 aInstTileInv = aVert3.xy;
+  vec2 aInstTileOff = aVert3.zw;
   vec2 xy = aInstXY;
   vec2 cs = aInstRotCS;
   int id = int(aInstBody + 0.5);
@@ -69,10 +62,13 @@ void main() {
       rotated = vec2(local.x * heading.x - local.y * heading.y, f * (local.x * heading.y + local.y * heading.x));
     }
   }
-  vec2 world = rotated + xy + (aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x)) * uSunShadow.xy;
+  // DX-SUNMESH: a sunProjected layer's U is the vertex's height.
+  float height = aUV.x;
+  vec2 world = rotated + xy + height * uSunShadow.xy;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   vec3 clip = mvp * vec3(world, 1.0);
-  gl_Position = vec4(clip.xy, aInstDepth, 1.0);
+  // No depth: the layer's draw neither tests nor writes it (N-119).
+  gl_Position = vec4(clip.xy, 0.5, 1.0);
 
   uint tintBits = floatBitsToUint(aInstTintBits);
   vec3 rgb = vec3(
@@ -106,7 +102,7 @@ void main() {
   vWorld = world;
   vAtlasUV = atlasUV;
   vTileOff = aInstTileOff;
-  vMeshUV = aUV0 + aTri.x * (aUV1 - aUV0) + aTri.y * (aUV2 - aUV0);
+  vMeshUV = aUV;
   if (vHasTex > 0.5 && aInstTileInv.x == 0.0 && orig.x > 0.0) {
     vTileInv = 1.0 / orig;
   } else {

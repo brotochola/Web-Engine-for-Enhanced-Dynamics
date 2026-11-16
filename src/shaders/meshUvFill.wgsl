@@ -43,34 +43,25 @@ fn meshUv(vMeshUV: vec2<f32>, vAtlasUV: vec4<f32>) -> vec2<f32> {
 
 @vertex
 fn mainVert(
-  // E-419: the corner from the vertex's index, and the row (FILL_ROW) as 6 vec4 in its order, not one attribute a field
+  // E-453: each mesh's vertices once, drawn through an index buffer: a vertex record (MESH_UV_VERT) as 4 vec4
   // (meshUvFill.vert.glsl says why).
-  @builtin(vertex_index) vertexIndex: u32,
-  @location(0) aRow0: vec4<f32>,
-  @location(1) aRow1: vec4<f32>,
-  @location(2) aRow2: vec4<f32>,
-  @location(3) aRow3: vec4<f32>,
-  @location(4) aRow4: vec4<f32>,
-  @location(5) aRow5: vec4<f32>,
+  @location(0) aVert0: vec4<f32>,
+  @location(1) aVert1: vec4<f32>,
+  @location(2) aVert2: vec4<f32>,
+  @location(3) aVert3: vec4<f32>,
 ) -> VertexOut {
   var out: VertexOut;
-  // The corner: 0, 1, 2 in each instance of 3 vertices.
-  let aTri = vec2<f32>(select(0.0, 1.0, vertexIndex == 1u), select(0.0, 1.0, vertexIndex == 2u));
-  let aV0 = aRow0.xy;
-  let aV1 = aRow0.zw;
-  let aV2 = aRow1.xy;
-  let aInstXY = aRow1.zw;
-  let aInstRotCS = aRow2.xy;
-  let aInstTintBits = aRow2.z;
-  let aInstDepth = aRow2.w;
-  let aInstTexId = aRow3.x;
-  let aInstTileInv = aRow3.yz;
-  let aInstTileOff = vec2<f32>(aRow3.w, aRow4.x);
-  let aInstBody = aRow4.y;
-  let aUV0 = aRow4.zw;
-  let aUV1 = aRow5.xy;
-  let aUV2 = aRow5.zw;
-  let local = aV0 + aTri.x * (aV1 - aV0) + aTri.y * (aV2 - aV0);
+  let local = aVert0.xy;
+  let aUV = aVert0.zw;
+  let aInstXY = aVert1.xy;
+  let aInstRotCS = aVert1.zw;
+  let aInstTintBits = aVert2.x;
+  // The lamps' map's cull reads it (volumeShadowMap.js): how far from the anchor the entity's farthest vertex stands.
+  let aInstReach = aVert2.y;
+  let aInstTexId = aVert2.z;
+  let aInstBody = aVert2.w;
+  let aInstTileInv = aVert3.xy;
+  let aInstTileOff = aVert3.zw;
   var xy = aInstXY;
   var cs = aInstRotCS;
   let id = i32(aInstBody + 0.5);
@@ -92,7 +83,8 @@ fn mainVert(
       rotated = vec2<f32>(local.x * heading.x - local.y * heading.y, f * (local.x * heading.y + local.y * heading.x));
     }
   }
-  let height = aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x);
+  // DX-SUNMESH: a sunProjected layer's U is the vertex's height.
+  let height = aUV.x;
   let world = rotated + xy + height * sunShadow.uSunShadow.xy;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(world, 1.0);
@@ -103,7 +95,8 @@ fn mainVert(
     f32(tintBits & 255u)
   ) / 255.0;
   let instA = f32((tintBits >> 24u) & 255u) / 255.0;
-  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);
+  // No depth: the layer's draw neither tests nor writes it (N-119).
+  out.position = vec4<f32>(clip.xy, 0.5, 1.0);
   // A volume's shadow is black whatever its entity's tint: GameObject.tint reaches the mesh too.
   if (sunShadow.uSunShadow.z > 0.0) {
     rgb = vec3<f32>(0.0);
@@ -112,7 +105,7 @@ fn mainVert(
   out.vLocal = local;
   out.vWorld = world;
   out.vTileOff = aInstTileOff;
-  out.vMeshUV = aUV0 + aTri.x * (aUV1 - aUV0) + aTri.y * (aUV2 - aUV0);
+  out.vMeshUV = aUV;
 
   let tid = i32(aInstTexId + 0.5);
   let lutSize = textureDimensions(uTexLut);

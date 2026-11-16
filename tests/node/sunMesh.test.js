@@ -66,12 +66,14 @@ test('MeshRenderer.setHeights is the geometry call, on this entity, and chains',
 });
 
 test('both UV shaders move the vertex by height times the uniform, and it starts at 0 for every other layer', () => {
-  assert.match(
-    read('meshUvFill.vert.glsl'),
-    /vec2 world = rotated \+ xy \+ \(aUV0\.x \+ aTri\.x \* \(aUV1\.x - aUV0\.x\) \+ aTri\.y \* \(aUV2\.x - aUV0\.x\)\) \* uSunShadow\.xy;/,
-  );
+  // E-453: the height is the vertex record's own U.
+  const glsl = read('meshUvFill.vert.glsl');
+  assert.match(glsl, /vec2 aUV = aVert0\.zw;/);
+  assert.match(glsl, /float height = aUV\.x;/);
+  assert.match(glsl, /vec2 world = rotated \+ xy \+ height \* uSunShadow\.xy;/);
   const wgsl = read('meshUvFill.wgsl');
-  assert.match(wgsl, /let height = aUV0\.x \+ aTri\.x \* \(aUV1\.x - aUV0\.x\) \+ aTri\.y \* \(aUV2\.x - aUV0\.x\);/);
+  assert.match(wgsl, /let aUV = aVert0\.zw;/);
+  assert.match(wgsl, /let height = aUV\.x;/);
   assert.match(wgsl, /let world = rotated \+ xy \+ height \* sunShadow\.uSunShadow\.xy;/);
   const batch = fs.readFileSync(new URL('../../src/render/meshUvFillBatch.js', import.meta.url), 'utf8');
   assert.match(batch, /this\._sunShadow = new Float32Array\(4\);/);

@@ -21,9 +21,10 @@
  *
  * The rewrite reads the MeshGeometry block (spans, counts, vertices, UVs, indices) and Pixi's batch rows,
  * instance-to-entity lists and generations, so the kernel needs all of them in the memory it imports. The
- * memory is laid out as the product's mesh memory (wasmMemoryMap.js meshMemoryRegions, one MESH layer): the
- * MeshGeometry block at byte 0 (MeshGeometry.initializeArrays lays its views out from byte 0 of its buffer),
- * then the kernel's table and the layer's rows, lists and generation copies, sized to the rows packed here.
+ * memory is laid out as the product's mesh memory was before E-453 (wasmMemoryMap.js meshMemoryRegions, one MESH
+ * layer, with the UV batch's rows, which the engine now draws as vertex records, rewrite_verts): the MeshGeometry block
+ * at byte 0 (MeshGeometry.initializeArrays lays its views out from byte 0 of its buffer), then the kernel's table and
+ * the layer's rows, lists and generation copies, sized to the rows packed here.
  * The meshes are made with the MeshRenderer calls the scene makes, and the batches are filled by the shipped
  * packColliderFill and packMeshUvFill.
  *
@@ -67,7 +68,7 @@ import {
 import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 import { bindMeshCorners, rewriteCornersWasm } from '../../src/render/meshCornersClient.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
-import { meshMemoryRegions } from '../../src/util/wasmMemoryMap.js';
+import { layoutRegions, MESH_CORNER_TABLE_SLOTS, MESH_FILL_ROW_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { checksumInts, isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
@@ -203,7 +204,19 @@ export async function setupMeshCornersKernel(opts = {}) {
   const ropeTris = (ROPE_POINTS - 1) * 2;
   const uvCap = c.deform * deformTris + c.rope * ropeTris + c.uv * 2 + c.plane * PLANE_SX * PLANE_SY * 2;
 
-  const layout = meshMemoryRegions(MeshGeometry.getBufferSize(maxVerts, maxIndices, n), n, [{ fillRows: fillCap, uvRows: uvCap }]);
+  // meshMemoryRegions' layout for one MESH layer before E-453, its UV batch's rows (the row kernel's subject) included.
+  const layout = layoutRegions([
+    { name: 'meshGeometry', owner: 'test', bytes: MeshGeometry.getBufferSize(maxVerts, maxIndices, n) },
+    { name: 'meshCornerTable', owner: 'test', bytes: MESH_CORNER_TABLE_SLOTS * 4 },
+    { name: 'meshFillRows0', owner: 'test', bytes: fillCap * MESH_FILL_ROW_BYTES },
+    { name: 'meshUvRows0', owner: 'test', bytes: uvCap * MESH_UV_FILL_FLOATS * 4 },
+    { name: 'meshFillEntity0', owner: 'test', bytes: fillCap * 4 },
+    { name: 'meshUvEntity0', owner: 'test', bytes: uvCap * 4 },
+    { name: 'meshLastVertGen0', owner: 'test', bytes: n * 4 },
+    { name: 'meshFrameVertGen0', owner: 'test', bytes: n * 4 },
+    { name: 'meshLastUvGen0', owner: 'test', bytes: n * 4 },
+    { name: 'meshFrameUvGen0', owner: 'test', bytes: n * 4 },
+  ]);
   const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
   const buffer = memory.buffer;
   const R = layout.regions;

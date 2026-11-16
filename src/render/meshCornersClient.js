@@ -9,10 +9,12 @@
 // shorter than the call).
 // E-130: a 32-bit arena (renderer.maxMeshVerts past 65535) binds the kernel's rewrite_corners_u32 export, a
 // 16-bit one rewrite_corners, by the class of the columns at bind time; the call path is the same.
+// E-453: the UV batch's vertex records (packMeshUvVerts) are rewritten by rewrite_verts (rewrite_verts_u32), through
+// rewriteVertsWasm, on the same table; its reference is tests/reference/meshUvVerts.mjs.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { MESH_CORNER_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
-import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS } from './colliderFillBatch.js';
+import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS, MESH_UV_VERT_FLOATS } from './colliderFillBatch.js';
 import { engineWasmUrl } from '../wasm/engine.js';
 
 
@@ -24,6 +26,9 @@ export const MESH_CORNER_SLOTS = [
   'uvGen', 'uvGenLen', 'lastUv', 'lastUvLen',
   // DX-MESHUPLOAD, written by the kernel: the rows the call rewrote, [firstRow, pastRow).
   'firstRow', 'pastRow',
+  // E-453, rewrite_verts only: the UV batch's indices, its span table (2 u32 an entity) and the entities it covers;
+  // written by the kernel, the indices the call rewrote, [firstIndex, pastIndex).
+  'drawIndices', 'span', 'spanLen', 'firstIndex', 'pastIndex',
 ];
 if (MESH_CORNER_SLOTS.length > MESH_CORNER_TABLE_SLOTS) throw new Error('meshCorners: the column table outgrew its region');
 
@@ -54,6 +59,11 @@ const LAST_UV = 23;
 const LAST_UV_LEN = 24;
 const FIRST_ROW = 25;
 const PAST_ROW = 26;
+const DRAW_INDICES = 27;
+const SPAN = 28;
+const SPAN_LEN = 29;
+const FIRST_INDEX = 30;
+const PAST_INDEX = 31;
 
 /** The MeshGeometry columns the kernel reads, with the class each must have, in a 16-bit arena. */
 const GEOMETRY_COLUMNS = {
@@ -72,6 +82,9 @@ const GEOMETRY_COLUMNS_U32 = { ...GEOMETRY_COLUMNS, vertCount: Uint32Array, indi
 /** The kernel's export for each arena width: wasm/meshCorners.c rewrite_corners and rewrite_corners_u32. */
 const REWRITE_EXPORT = 'rewrite_corners';
 const REWRITE_EXPORT_U32 = 'rewrite_corners_u32';
+/** E-453: the UV batch's, rewrite_verts and rewrite_verts_u32. */
+const VERTS_EXPORT = 'rewrite_verts';
+const VERTS_EXPORT_U32 = 'rewrite_verts_u32';
 
 /**
  * Bind the kernel to `memory`, the MeshGeometry columns in it (`geom`: the views MeshGeometry holds, by their
@@ -95,7 +108,10 @@ export async function bindMeshCorners(memory, tableByte, geom) {
   if (geom.vertCount.length !== e || geom.indexOffset.length !== e || geom.indexCount.length !== e) throw new Error('meshCorners: entity columns of different lengths');
   if (geom.vertexY.length !== v || geom.uvU.length !== v || geom.uvV.length !== v) throw new Error('meshCorners: vertex columns of different lengths');
   const exportName = wide ? REWRITE_EXPORT_U32 : REWRITE_EXPORT;
-  const rewrite = (await loadWasmKernel('meshCorners', engineWasmUrl, memory, [exportName]))[exportName];
+  const vertsName = wide ? VERTS_EXPORT_U32 : VERTS_EXPORT;
+  const kernel = await loadWasmKernel('meshCorners', engineWasmUrl, memory, [exportName, vertsName]);
+  const rewrite = kernel[exportName];
+  const rewriteVerts = kernel[vertsName];
   const table = new Uint32Array(buffer, tableByte, MESH_CORNER_SLOTS.length);
   table[VERT_OFFSET] = geom.vertOffset.byteOffset;
   table[VERT_COUNT] = geom.vertCount.byteOffset;
@@ -111,7 +127,7 @@ export async function bindMeshCorners(memory, tableByte, geom) {
   table[INDEX_CAP] = geom.indices.length;
   const bound = {};
   for (const name of Object.keys(columns)) bound[name] = geom[name];
-  return { buffer, table, tableByte, rewrite, geom: bound, calls: 0, indexWidth: wide ? 32 : 16 };
+  return { buffer, table, tableByte, rewrite, rewriteVerts, geom: bound, calls: 0, indexWidth: wide ? 32 : 16 };
 }
 
 /** The first row the last rewriteCornersWasm that returned above 0 wrote. */
@@ -122,6 +138,16 @@ export function rewrittenFirstRow(b) {
 /** One past the last row that call wrote. first >= past: it wrote none. */
 export function rewrittenPastRow(b) {
   return b.table[PAST_ROW];
+}
+
+/** E-453: the first index the last rewriteVertsWasm that returned above 0 wrote (0xffffffff: none). */
+export function rewrittenFirstIndex(b) {
+  return b.table[FIRST_INDEX];
+}
+
+/** E-453: one past the last index that call wrote. first >= past: it wrote none. */
+export function rewrittenPastIndex(b) {
+  return b.table[PAST_INDEX];
 }
 
 /** A Uint32Array in the kernel's memory holding at least `n` values. */
@@ -183,4 +209,64 @@ export function rewriteCornersWasm(b, out, count, entityOfInstance, views, strid
   }
   b.calls++;
   return b.rewrite(b.tableByte);
+}
+
+/**
+ * E-453: the UV batch's rewrite, rewriteMeshUvVerts (tests/reference/meshUvVerts.mjs) through the kernel: the vertex
+ * records `target.verts` [0, count) that packMeshUvVerts wrote, their entities (target.vertexEntity), the batch's
+ * indices (target.indices) and its span table (target.indexSpan), every one in the kernel's memory. Same result, same
+ * bits; rewrittenFirstRow / rewrittenPastRow and rewrittenFirstIndex / rewrittenPastIndex say what it wrote. `b.calls`
+ * counts the calls the kernel ran; a call it cannot take throws.
+ * @param {{ verts: Float32Array, vertexEntity: Uint32Array, indices: Uint32Array, indexSpan: Uint32Array }} target
+ * @returns {number} 1 done, -1 the records or triangles no longer match (the caller repacks), 0 nothing to do
+ */
+export function rewriteVertsWasm(b, target, count, views, lastVertGen, genNow, lastUvGen, uvGenNow) {
+  const n = count | 0;
+  const gen = genNow || views.meshVertGen;
+  if (n <= 0 || !gen || !lastVertGen) return 0;
+  const g = b.geom;
+  const out = target.verts;
+  // E-118: the UV generations when the caller keeps the ones it drew (byte 0 is the MeshGeometry block: "none").
+  const uvGen = lastUvGen ? (uvGenNow || views.meshUvGen || null) : null;
+  if (
+    !(out instanceof Float32Array) || out.buffer !== b.buffer || n * MESH_UV_VERT_FLOATS > out.length ||
+    !u32In(b, target.vertexEntity, n) || !u32In(b, target.indices, 0) || !u32In(b, target.indexSpan, 0) ||
+    !u32In(b, gen, 0) || !u32In(b, lastVertGen, 0) ||
+    views.meshVertOffset !== g.vertOffset || views.meshVertCount !== g.vertCount ||
+    views.meshIndexOffset !== g.indexOffset || views.meshIndexCount !== g.indexCount ||
+    views.meshVertexX !== g.vertexX || views.meshVertexY !== g.vertexY || views.meshIndices !== g.indices ||
+    views.meshUvU !== g.uvU || views.meshUvV !== g.uvV ||
+    (uvGen !== null && (!u32In(b, uvGen, 0) || uvGen.byteOffset === 0 || !u32In(b, lastUvGen, 0)))
+  ) {
+    throw new Error(
+      'meshCorners: a vertex rewrite the kernel cannot take (records, entities, indices, span table, generations or ' +
+        'MeshGeometry columns that are not the ones bound in the mesh memory)',
+    );
+  }
+  const t = b.table;
+  t[OUT] = out.byteOffset;
+  t[COUNT] = n;
+  t[STEP] = MESH_UV_VERT_FLOATS;
+  t[UV_ON] = 1;
+  t[ENTITY] = target.vertexEntity.byteOffset;
+  t[GEN] = gen.byteOffset;
+  t[GEN_LEN] = gen.length;
+  t[LAST] = lastVertGen.byteOffset;
+  t[LAST_LEN] = lastVertGen.length;
+  if (uvGen !== null) {
+    t[UV_GEN] = uvGen.byteOffset;
+    t[UV_GEN_LEN] = uvGen.length;
+    t[LAST_UV] = lastUvGen.byteOffset;
+    t[LAST_UV_LEN] = lastUvGen.length;
+  } else {
+    t[UV_GEN] = 0;
+    t[UV_GEN_LEN] = 0;
+    t[LAST_UV] = 0;
+    t[LAST_UV_LEN] = 0;
+  }
+  t[DRAW_INDICES] = target.indices.byteOffset;
+  t[SPAN] = target.indexSpan.byteOffset;
+  t[SPAN_LEN] = target.indexSpan.length >> 1;
+  b.calls++;
+  return b.rewriteVerts(b.tableByte);
 }

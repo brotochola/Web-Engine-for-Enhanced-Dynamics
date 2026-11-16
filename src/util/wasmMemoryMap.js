@@ -546,11 +546,11 @@ export function particleMemoryRegions(maxParticles, componentBytes, lutFloats) {
 }
 
 /**
- * The mesh batches' row bytes: colliderFillBatch.js COLLIDER_FILL_STRIDE and MESH_UV_FILL_STRIDE. That module
- * loads Pixi, which the main thread does not; meshCornersLayout.test.js ties the two.
+ * The mesh batches' row and vertex record bytes: colliderFillBatch.js COLLIDER_FILL_STRIDE and MESH_UV_VERT_STRIDE
+ * (E-453). That module loads Pixi, which the main thread does not; meshCornersLayout.test.js ties the two.
  */
 export const MESH_FILL_ROW_BYTES = 72;
-export const MESH_UV_ROW_BYTES = 96;
+export const MESH_UV_VERT_BYTES = 64;
 /** Room for the corner kernel's column table (meshCornersClient.js MESH_CORNER_SLOTS). */
 export const MESH_CORNER_TABLE_SLOTS = 32;
 
@@ -559,13 +559,16 @@ export const MESH_CORNER_TABLE_SLOTS = 32;
  * lays its views out from byte 0 of its buffer in every worker, so this memory starts with the block and has
  * no guard: logic workers write the meshes there, Pixi reads them. After it, Pixi's:
  * - meshCornerTable: the kernel's column table (u32 byte offsets);
- * - per MESH layer k, in the order of the layer metadata: meshFillRows<k> and meshUvRows<k>, the layer's fill
- *   and UV batches (the rows Pixi uploads); meshFillEntity<k> and meshUvEntity<k>, their instance-to-entity
- *   lists (u32 per row); meshLastVertGen<k>, meshFrameVertGen<k>, meshLastUvGen<k> and meshFrameUvGen<k>,
- *   the vertex and UV generations the layer drew and this frame's copies (u32 per entity, E-118).
+ * - per MESH layer k, in the order of the layer metadata: meshFillRows<k>, the fill batch's rows, and meshFillEntity<k>,
+ *   their instance-to-entity list (u32 per row); meshUvVerts<k>, the UV batch's vertex records (E-453), with
+ *   meshUvVertEntity<k>, each record's entity (u32), meshUvIndices<k>, the triangles' indices of the records (u32, 3
+ *   a triangle), and meshUvIndexSpan<k>, each entity's first index there and their count (2 u32 per entity, none
+ *   without records); meshLastVertGen<k>, meshFrameVertGen<k>, meshLastUvGen<k> and meshFrameUvGen<k>, the vertex
+ *   and UV generations the layer drew and this frame's copies (u32 per entity, E-118). Pixi uploads the rows, the
+ *   records and the indices from here.
  * @param {number} geometryBytes MeshGeometry.getBufferSize(maxVerts, maxIndices, entities)
  * @param {number} entities
- * @param {Array<{ fillRows: number, uvRows: number }>} layers each MESH layer's batch capacities
+ * @param {Array<{ fillRows: number, uvVerts: number, uvIndices: number }>} layers each MESH layer's batch capacities
  */
 export function meshMemoryRegions(geometryBytes, entities, layers) {
   const e = entities | 0;
@@ -575,12 +578,15 @@ export function meshMemoryRegions(geometryBytes, entities, layers) {
   ];
   for (let k = 0; k < layers.length; k++) {
     const fill = layers[k].fillRows | 0;
-    const uv = layers[k].uvRows | 0;
+    const uvVerts = layers[k].uvVerts | 0;
+    const uvIndices = layers[k].uvIndices | 0;
     regions.push(
       { name: `meshFillRows${k}`, owner: 'Pixi', bytes: fill * MESH_FILL_ROW_BYTES },
-      { name: `meshUvRows${k}`, owner: 'Pixi', bytes: uv * MESH_UV_ROW_BYTES },
+      { name: `meshUvVerts${k}`, owner: 'Pixi', bytes: uvVerts * MESH_UV_VERT_BYTES },
       { name: `meshFillEntity${k}`, owner: 'Pixi', bytes: fill * 4 },
-      { name: `meshUvEntity${k}`, owner: 'Pixi', bytes: uv * 4 },
+      { name: `meshUvVertEntity${k}`, owner: 'Pixi', bytes: uvVerts * 4 },
+      { name: `meshUvIndices${k}`, owner: 'Pixi', bytes: uvIndices * 4 },
+      { name: `meshUvIndexSpan${k}`, owner: 'Pixi', bytes: uvVerts > 0 ? e * 8 : 0 },
       { name: `meshLastVertGen${k}`, owner: 'Pixi', bytes: e * 4 },
       { name: `meshFrameVertGen${k}`, owner: 'Pixi', bytes: e * 4 },
       { name: `meshLastUvGen${k}`, owner: 'Pixi', bytes: e * 4 },
