@@ -76,6 +76,10 @@ test('a window is the difference of two reads: frames, means, median and p95 of 
   // Work is 0.05..10 ms uniform: the median is 5 ms and the p95 9.5 ms, to within a bin.
   assert.ok(Math.abs(w.p50Ms - 5) <= HIST_BIN_MS, `p50 ${w.p50Ms}`);
   assert.ok(Math.abs(w.p95Ms - 9.5) <= HIST_BIN_MS, `p95 ${w.p95Ms}`);
+  assert.ok(Math.abs(w.p99Ms - 9.9) <= HIST_BIN_MS, `p99 ${w.p99Ms}`);
+  // The longest frame's work is 10 ms: its bin's edge; the warm-up's 30 ms frames are outside the window.
+  assert.ok(w.maxMs >= 10 && w.maxMs <= 10 + HIST_BIN_MS, `max ${w.maxMs}`);
+  assert.equal(w.longFrames, 0);
   // Another slot saw nothing.
   assert.equal(totalsWindow(readTotals(view, 0), readTotals(view, 0)), null);
 });
@@ -90,6 +94,22 @@ test('steps past the histogram land in its last bin; extra time is summed apart'
   assert.equal(w.stepMs, 500);
   assert.equal(w.extraMs, 2);
   assert.ok(w.p95Ms >= (HIST_BINS - 1) * HIST_BIN_MS);
+  assert.equal(w.maxMs, HIST_BINS * HIST_BIN_MS);
+  assert.equal(w.longFrames, 10);
+});
+
+test('long frames count the frames whose work reached 16 ms, at the bin edge', () => {
+  const view = bindFrameTotals(createFrameTotalsBuffer());
+  const slot = frameClockSlot('physics');
+  const start = readTotals(view, slot);
+  for (let i = 0; i < 97; i++) addFrame(view, slot, 4, 0, 0);
+  addFrame(view, slot, 15.99, 0, 0);
+  addFrame(view, slot, 16, 0, 0);
+  addFrame(view, slot, 21, 1, 0);
+  const w = totalsWindow(start, readTotals(view, slot));
+  assert.equal(w.frames, 100);
+  assert.equal(w.longFrames, 2);
+  assert.equal(w.maxMs, 20 + HIST_BIN_MS);
 });
 
 test('out-of-range slots and non-numbers are ignored', () => {

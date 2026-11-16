@@ -112,9 +112,20 @@ function percentile(hist, total, q) {
   return hist.length * HIST_BIN_MS;
 }
 
+/** The upper edge of the highest bin that holds a frame (the longest frame, to within a bin); 0 when empty. */
+function maxBinEdge(hist) {
+  for (let b = hist.length - 1; b >= 0; b--) if (hist[b] > 0) return (b + 1) * HIST_BIN_MS;
+  return 0;
+}
+
+/** Bins from this one up hold the frames whose own work took 16 ms or more (a vsync at 60 Hz by itself). */
+const LONG_FRAME_BIN = 16 * BINS_PER_MS;
+
 /**
  * The window between two reads of one slot: frame count, mean STEP_MS, WAIT_MS and extra, the mean
- * of STEP_MS − WAIT_MS (`workMs`) and its median and p95. Null when the slot published no frame.
+ * of STEP_MS − WAIT_MS (`workMs`) and its median, p95 and p99, the longest frame (`maxMs`, the edge of its
+ * bin) and how many frames took 16 ms or more of work (`longFrames`: the tail a mean hides). Null when
+ * the slot published no frame.
  */
 export function totalsWindow(start, end) {
   if (!start || !end) return null;
@@ -124,6 +135,8 @@ export function totalsWindow(start, end) {
   for (let b = 0; b < HIST_BINS; b++) hist[b] = end.hist[b] - start.hist[b];
   const stepMs = (end.stepSum - start.stepSum) / frames;
   const waitMs = (end.waitSum - start.waitSum) / frames;
+  let longFrames = 0;
+  for (let b = LONG_FRAME_BIN; b < HIST_BINS; b++) longFrames += hist[b];
   return {
     frames,
     stepMs,
@@ -132,5 +145,8 @@ export function totalsWindow(start, end) {
     workMs: stepMs - waitMs,
     p50Ms: percentile(hist, frames, 0.5),
     p95Ms: percentile(hist, frames, 0.95),
+    p99Ms: percentile(hist, frames, 0.99),
+    maxMs: maxBinEdge(hist),
+    longFrames,
   };
 }

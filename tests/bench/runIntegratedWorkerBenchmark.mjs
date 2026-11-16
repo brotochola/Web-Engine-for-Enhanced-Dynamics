@@ -32,7 +32,9 @@ function formatWorkerConsoleLine(worker) {
     line += ` | exact ${ex.frames} frames: step ${ex.stepMs.toFixed(3)}` +
       (ex.waitMs > 0 ? ` wait ${ex.waitMs.toFixed(3)}` : '') +
       (ex.extraMs > 0 ? ` query wake ${ex.extraMs.toFixed(3)}` : '') +
-      ` p50 ${ex.p50Ms.toFixed(2)} p95 ${ex.p95Ms.toFixed(2)}`;
+      ` p50 ${ex.p50Ms.toFixed(2)} p95 ${ex.p95Ms.toFixed(2)}` +
+      (ex.p99Ms != null ? ` p99 ${ex.p99Ms.toFixed(2)} max ${ex.maxMs.toFixed(2)}` : '') +
+      (ex.longFrames > 0 ? ` long ${ex.longFrames}` : '');
   }
   if (worker.type === 'preRender' || worker.id === 'preRender' || String(worker.id || '').startsWith('preRender')) {
     if (avg.COLLECT_MS != null) line += ` | COLLECT_MS ${Number(avg.COLLECT_MS).toFixed(3)}`;
