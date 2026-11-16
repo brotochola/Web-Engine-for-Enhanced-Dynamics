@@ -13167,12 +13167,11 @@
     {
       "id": "E-230",
       "title": "What the GPU does in a frame (Spector.js on WebGL, timestamp queries on WebGPU)",
-      "status": "open",
+      "status": "answered",
       "statusText": "tool working 2026-11-13 (R-0976): Predator read; E-258 and E-259 from it",
       "date": "2026-11-13",
       "area": "renderer",
       "kind": "gpu",
-      "rank": 50,
       "next": "One captured frame of Predator, Sun Street and Headlights per backend: redundant state, draw calls, each pass's GPU time.",
       "refs": [
         "EXECUTION_PLAN.md#E-230"
@@ -13187,8 +13186,10 @@
         "R-0976",
         "R-1173",
         "R-1174",
-        "R-1175"
-      ]
+        "R-1175",
+        "R-1215"
+      ],
+      "result": "Answered 2026-11-16 (R-1215): both backends have a per-draw GPU timer now (glFrameRecorder --gpu-draws; webgpuFrameRecorder.mjs, merged b4ca9dc2), and Predator, light3dCompare and the light scenes were read draw by draw on both."
     },
     {
       "id": "E-231",
@@ -18155,7 +18156,8 @@
         "R-1181",
         "R-1187",
         "R-1198",
-        "R-1212"
+        "R-1212",
+        "R-1215"
       ]
     },
     {
@@ -19661,18 +19663,109 @@
     {
       "id": "N-233",
       "title": "glFrameRecorder's \"calls that wait for the GPU\" counts every getParameter, but Predator's 11 to 12 a frame are binding queries (TEXTURE_BINDING_2D 6.3 to 7.4, one each of DRAW_ and READ_FRAMEBUFFER_BINDING, CURRENT_PROGRAM, VERTEX_ARRAY_BINDING, ARRAY_BUFFER_BINDING), which return WebGL objects only Blink holds, so Blink answers them without the GPU process: the number reads as waits that do not happen",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "found 2026-11-16 reading Predator's re-trace (R-1212) by enum",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "Predator crowd 2.5, plain and light3d by night (13:43, 13:44): getParameter 0x8069 6.3 / 7.4 a frame (lightTiles.js, sharedTextureUpload.js and pixiWorker.js save and restore the bound texture), 0x8ca6, 0x8caa, 0x8b8d, 0x85b5, 0x8894 once a frame each (staticsScatterGl.js); isEnabled of BLEND, SCISSOR_TEST, DEPTH_TEST, STENCIL_TEST, CULL_FACE once a frame each. R-0785's COLOR_WRITEMASK query, which did wait, is gone (1b230b05).",
+      "result": "Fixed 2026-11-16 (aa8855ca): binding queries are left out of the recorder's wait count. Predator crowd 2.5, plain and light3d by night (13:43, 13:44): getParameter 0x8069 6.3 / 7.4 a frame (lightTiles.js, sharedTextureUpload.js and pixiWorker.js save and restore the bound texture), 0x8ca6, 0x8caa, 0x8b8d, 0x85b5, 0x8894 once a frame each (staticsScatterGl.js); isEnabled of BLEND, SCISSOR_TEST, DEPTH_TEST, STENCIL_TEST, CULL_FACE once a frame each. R-0785's COLOR_WRITEMASK query, which did wait, is gone (1b230b05).",
       "next": "Count as possible waits only getParameter enums that are not binding queries (and readPixels, getError, finish, getBufferSubData); keep the per-enum detail. After the WebGPU recorder branch (tools/webgpu-draws) merges, since it edits the same file.",
       "refs": [],
       "aliases": [
         "recorder sync calls count bindings"
       ],
       "records": []
+    },
+    {
+      "id": "E-464",
+      "title": "Pixi on WebGPU submits twice per render call: its uniform-batch upload (_uploadBindGroups) makes an encoder and a submit of its own, 17 submits a frame in Predator light3d by night and 13 at crowd 2.5 and in light3dCompare, and the frame's GPU span is 7.7 to 10.1 ms for 3.3 to 5.9 ms of passes",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the WebGPU per-draw recorder (webgpuFrameRecorder.mjs, its first sitting 15:51 to 16:08, GTX 1650, Chrome 157)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "Predator light3d night: 5.88 ms of passes in a 7.74 ms span; light3dCompare 5.93 in 10.09; Predator crowd 2.5 3.34 in 9.56 (its clock lower). WebGPU makes 302 calls a frame there against WebGL's 706.",
+      "next": "Fold the uniform copy into the render call's own encoder (one submit per render call, or one a frame); Pixi's STEP_MS, the GPU process's CPU (gpuProcessTrace) and the frame span before and after.",
+      "refs": [],
+      "aliases": [
+        "webgpu double submit",
+        "pixi uniform batch submit"
+      ],
+      "records": [
+        "R-1215"
+      ]
+    },
+    {
+      "id": "E-465",
+      "title": "light3dCompare's sun map costs 0.460 ms a frame on WebGL against 0.074 on WebGPU for the same 21 900 instances at 960 x 540, both at 1785 MHz: something loses early depth (or adds work) on the GL path",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the WebGPU per-draw recorder (webgpuFrameRecorder.mjs, its first sitting 15:51 to 16:08, GTX 1650, Chrome 157)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "Both sources use the vertex depth test. Per draw with webgpuFrameRecorder and glFrameRecorder in the same sitting.",
+      "next": "Compare the two programs and states: a discard or gl_FragDepth on GL, the depth attachment's format, depth func and write; --probe-scissor on GL to split fill from vertex work; the fix on GL, the image identical.",
+      "refs": [],
+      "aliases": [
+        "sun map webgl slow"
+      ],
+      "records": [
+        "R-1215"
+      ]
+    },
+    {
+      "id": "E-466",
+      "title": "volumeStressScene's mesh draw takes 7.45 ms a drawn frame on WebGL against 2.27 on WebGPU for about 500 000 instances, and WebGL draws the scene's passes in only 60 to 70 % of frames",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the WebGPU per-draw recorder (webgpuFrameRecorder.mjs, its first sitting 15:51 to 16:08, GTX 1650, Chrome 157)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "WebGL 5.35 ms a recorded frame (7.6 a drawn frame) at 1785 MHz; WebGPU 2.72 at 1635 MHz, every frame drawn. E-419 cut the GL draw from 1.88 to 0.83 ms in meshFillGpuBench; E-453 (indexed rows) is being built.",
+      "next": "Compare the GLSL and WGSL mesh-uv vertex paths (the pose fetch, attribute layout after E-419); measure after E-453 lands, per draw on both backends.",
+      "refs": [],
+      "aliases": [
+        "volume mesh webgl slow"
+      ],
+      "records": [
+        "R-1215"
+      ]
+    },
+    {
+      "id": "E-467",
+      "title": "The entity draws are slower on WebGPU than on WebGL for the same instances: 3.06 against 2.52 ms (+21 %) in light3dCompare and 1.71 against 1.64 in Predator by night",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the WebGPU per-draw recorder (webgpuFrameRecorder.mjs, its first sitting 15:51 to 16:08, GTX 1650, Chrome 157)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "Per draw on both backends in one sitting, both at 1785 MHz.",
+      "next": "Compare the WGSL and GLSL fragment paths (the uMaps branch, the samplers' count and kind); per draw before and after on WebGPU, the image identical.",
+      "refs": [],
+      "aliases": [
+        "webgpu entity draw slower"
+      ],
+      "records": [
+        "R-1215"
+      ]
+    },
+    {
+      "id": "E-468",
+      "title": "Predator composites the light, the shadows and the glow in three full-screen passes of about 0.10 ms each at full clock (0.15 to 0.32 at lower clocks): one composite pass reading the three would save 0.1 to 0.3 ms of GPU a frame",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the WebGPU per-draw recorder (webgpuFrameRecorder.mjs, its first sitting 15:51 to 16:08, GTX 1650, Chrome 157)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "WebGPU per draw: the composites 0.10 ms each at 1785 MHz; WebGL the same order (R-1212: three composites 0.447 ms at 660 MHz).",
+      "next": "One pass sampling the light, shadow and glow layers (both backends), the image identical; per draw before and after.",
+      "refs": [],
+      "aliases": [
+        "one composite pass"
+      ],
+      "records": [
+        "R-1215"
+      ]
     }
   ],
   "records": [
@@ -31609,6 +31702,15 @@
       "title": "Nsight Systems again on today's main: Predator ?light3d=1 GR Active 78 -> 33 %, SM issue 29 -> 11 % since 03:57; by night at crowd 2.5 48 % active (an upper bound: the owner's own Predator tab drew too), the rest is fill waiting on fetches",
       "verdict": "note",
       "text": "**Nsight Systems again on today's main (7e8fe900): Predator ?light3d=1 went from GR Active 78 % (R-1175, 03:57) to 33 %, SM issue 29 -> 11 %, pixel warps in flight 55 -> 24 %, DRAM read 10 -> 6 %; by night at crowd 2.5 the GPU is 48 % active with the same low issue rate (11 %), so what is left is pixel work waiting on fetches, not arithmetic.**\n\n`nsysElevated.mjs` (nsys 2026.6.1, `-t dx11,wddm --gpu-metrics-devices=all`, delay 90 s, 5 s window; the owner accepted the UAC prompts), Chrome 1400 x 900, GTX 1650 at 1785 MHz (GPC clock mean 1785 and 1778 MHz: full clock both times). Captures 2026-11-16 15:12:31 to 15:12:42 and 15:15:43 to 15:15:57 (the reports' session times); reports and SQLite exports in D:\\perf-tools\\captures\\nsys-predator-l3d-pm and nsys-predator-l3dnight. Two earlier tries at 14:55 and 14:57 failed: Chrome under nsys took over 30 s to load the page (the script's timeout), and the leftover Chrome kept the CDP port the second try needed. The script now takes a random port, 180 s timeouts and closes its Chrome on a failure.\n\n| metric (mean over the window) | 03:57 ?light3d=1 (R-1175) | 15:12 ?light3d=1 | 15:15 crowd=2.5 zoom=0.216 light3d=1 hour=22 |\n| --- | --- | --- | --- |\n| GR Active | 78.4 % | 32.8 % | 47.9 % |\n| SMs Active | 71.3 % | 31.5 % | 41.4 % |\n| SM Issue | 28.8 % | 11.1 % | 11.1 % |\n| Pixel Warps in Flight | 54.6 % (34.9 a cycle) | 23.5 % (15.1) | 30.0 % (19.2) |\n| Vertex/Tess/Geometry warps | 0.74 % | 0.62 % | 1.77 % |\n| Unallocated Warps in Active SMs | 16.0 % | 7.3 % | 9.7 % |\n| DRAM read / write | 9.9 / 4.4 % | 6.3 / 3.3 % | 12.8 / 5.2 % |\n\nCPU by thread in the windows: at 15:12 the profiled Chrome's GPU process main thread (CrGpuMain) 98.7 ms/s (154.8 in R-1175), the workers 101, 98, 83, 63, 62, 34 ms/s. At 15:15 the workers 281, 238, 223, 216, 175, 158, 109, 109, 105 ms/s (crowd 2.5's logic, spatial, pre-render, Pixi, physics) and CrGpuMain 148.9 ms/s.\n\nCaveat for the night capture: the owner's own Chrome had a Predator tab open (127.0.0.1:57670, crowd 2.5, zoom 1; renderer started 14:58:55), and in that window its GPU process main thread ran 56.5 ms/s and its renderer main 78.7 ms/s. So the night capture's GPU metrics include some of that tab's drawing, and its 47.9 % is an upper bound. The 15:12 capture is clean of it (the owner's GPU process 4.6 ms/s there). The per-draw reading of the same night configuration at 13:44 (R-1212: 8.978 ms of draws a frame, nvidia-smi 59 % busy) was taken before the tab was opened.\n\nWhat it says: since 03:57 the frame's GPU work fell by more than half at the same clock, and the remaining work has the shape of fill: active SMs that issue an instruction in about a third of their active cycles, with pixel warps waiting. Vertex work stays near 1 to 2 %. It is the profile E-448 (early depth for the binary sprites) and E-463 (the same for the face map and ids) target. The GPU process's main thread fell from 154.8 to 98.7 ms/s for the same scene (E-407's command stream, after the Pixi GPU batches cut the GL calls)."
+    },
+    {
+      "id": "R-1215",
+      "date": "2026-11-16",
+      "time": "16:08",
+      "timeFrom": "recorded",
+      "title": "WebGPU per-draw GPU timer merged (webgpuFrameRecorder.mjs); eight scenes draw by draw on both backends: totals match, but 17 submits a frame (E-464), GL's sun map and volume mesh far slower (E-465, E-466), WebGPU's entity draws slower (E-467), one composite pass (E-468)",
+      "verdict": "note",
+      "text": "**The WebGPU backend has a per-draw GPU timer now (webgpuFrameRecorder.mjs, merged b4ca9dc2), and its first sitting read eight scenes draw by draw on both backends: Predator by night matches WebGL in total (5.88 against 6.04 ms), but WebGPU submits twice per render call (E-464), the GL sun map and volume mesh are far slower than their WebGPU twins (E-465, E-466), WebGPU's entity draws are slower (E-467), and three full-screen composites could be one (E-468).**\n\nThe tool (branch tools/webgpu-draws, 94e1086e and 71f85c02; suite 2899/2899 and demos 101/101 after the merge): it wraps the WebGPU prototypes in the Pixi worker and counts passes, draws, instances, state calls, uploads and submits a frame; `--gpu-passes` writes a timestamp around each pass, `--gpu-draws` around each draw and dispatch (Chrome's `chromium-experimental-timestamp-query-inside-passes`, which Chrome 157 exposes only with `--enable-unsafe-webgpu`; the engine asks for it under `config.debug.gpuTimestampsInsidePasses`, off by default), `--split-passes` gives each draw a pass of its own where the feature is missing. Without `--enable-webgpu-developer-features` the timestamps are rounded to 65.5 us. No overhead visible: Predator by night 5.88 ms per draw, 5.87 per pass, 5.90 split. A load-time clear reads 0 us on Dawn/D3D12.\n\nSitting 2026-11-16 15:51 to 16:08 (the agent's result files), GTX 1650, Chrome 157, 3 s after 12 s:\n\n| scene | clock | GPU ms a frame (WebGPU) | WebGL, same sitting | costliest |\n| --- | --- | --- | --- | --- |\n| Predator light3d night | 1785 / 1785 | 5.88 | 6.04 | colour 2.62 (entities 0.95, edges 0.76), 3D light 1.58, lamps' map 0.69, G-buffer 0.42, glow 0.29 |\n| light3dCompare | 1785 / 1785 | 5.93 | 6.03 | colour 3.34 (entities 1.72, edges 1.34), lamps' map 1.79, G-buffer 0.33, light 0.26, sun map 0.074 |\n| Predator crowd 2.5 | 1215 / 705 | 3.34 | 4.95 | colour 2.46 (38k entities 1.17), glow 0.36, sun rows 0.31 |\n| flashlight stress | 870 / 735 | 3.43 | 3.94 | glow pass (120 cone glows) 2.25 |\n| volume stress | 1635 / 1785 | 2.72 | 5.35 (7.6 a drawn frame) | the volume mesh draw 2.27 |\n| GPU Galaxy 4.09M | 1695 | 12.24 | | 8 additive draws of 1.2 to 1.8 ms, about 3 ns a quad: GPU-bound fill |\n\nThe light scenes idle at P5/P8 (480 to 870 MHz) where the GPU is not the limit, so their times compare only at equal clocks. WebGPU's frame span (first pass to last) is 7.7 to 10.1 ms for 3.3 to 5.9 ms of passes: the gaps are the CPU feeding it, with 17 submits a frame (E-464). Calls a frame: Predator by night 302 on WebGPU against 706 on WebGL, 1 redundant against 75.\n\nThe 3D light pass reads about 1.5 ms on both backends against 5.5 ms this morning (R-1174/R-1187), as E-399's tiles predicted.\n\nE-230 (what the GPU does in a frame, per backend) is answered: both backends have their per-draw timer."
     }
   ],
   "leads": [
