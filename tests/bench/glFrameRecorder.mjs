@@ -267,7 +267,16 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
     }
     else if (name === 'bindVertexArray') hook = (a) => { if (bound.vao === a[0]) redo(name); bound.vao = a[0]; };
     else if (name === 'activeTexture') hook = (a) => { if (bound.unit === a[0]) redo(name); bound.unit = a[0]; };
-    else if (name === 'bindTexture') hook = (a) => { const k = `${bound.unit}:${a[0]}`; if (bound.tex.get(k) === a[1]) redo(name); bound.tex.set(k, a[1]); };
+    else if (name === 'bindTexture') {
+      hook = (a) => {
+        const k = `${bound.unit}:${a[0]}`;
+        if (bound.tex.get(k) === a[1]) {
+          redo(name);
+          note(`bindTexture again, prog#${idOf(bound.program)} [${signature(bound.program)}]`, 0);
+        }
+        bound.tex.set(k, a[1]);
+      };
+    }
     else if (name === 'bindBuffer') hook = (a) => { if (bound.buf.get(a[0]) === a[1]) redo(name); bound.buf.set(a[0], a[1]); };
     else if (name === 'bindFramebuffer') {
       hook = (a) => {
@@ -300,7 +309,14 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
         note(`${name} texture#${idOf(bound.tex.get(`${bound.unit}:${a[0]}`))} ${dims} format ${a[name === 'texSubImage2D' ? 6 : 6]} type ${a[7]}`, bytesTexture - before);
       };
     } else if (name === 'uniform1i' || name === 'uniform1f') {
-      hook = (a) => { const k = a[0]; if (k && uniformLast.get(k) === a[1]) redo(name); uniformLast.set(k, a[1]); };
+      hook = (a) => {
+        const k = a[0];
+        if (k && uniformLast.get(k) === a[1]) {
+          redo(name);
+          note(`${name} again, prog#${idOf(bound.program)} [${signature(bound.program)}]`, 0);
+        }
+        uniformLast.set(k, a[1]);
+      };
     } else if (['enable', 'disable', 'blendFunc', 'blendFuncSeparate', 'blendEquation', 'blendEquationSeparate', 'depthMask', 'depthFunc', 'colorMask', 'viewport', 'scissor', 'cullFace', 'frontFace', 'clearColor', 'pixelStorei', 'stencilMask', 'stencilFunc', 'stencilOp'].includes(name)) {
       hook = (a) => {
         if (name === 'viewport' && seg && !seg.viewport) seg.viewport = `${a[2]}x${a[3]}`;
