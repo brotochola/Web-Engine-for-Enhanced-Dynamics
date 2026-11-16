@@ -638,6 +638,13 @@ class SpatialWorker extends AbstractWorker {
         let homeRow = (Math.fround(posY) * invCellSize) | 0;
         homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
         if (rowOwnership[homeRow] === workerId) ownedList[ownedCount++] = i;
+        // E-472: a point (no extent: a sprite without a collider, every boid) covers one cell, in the row its Y falls
+        // in: the cell range's row below, not the home row (they differ where the float32 Y rounds across a cell's
+        // edge). When another worker owns that row nothing below writes anything, so the cell range is skipped.
+        if (halfW === 0 && halfH === 0) {
+          const pointRow = (posY * invCellSize) | 0;
+          if (rowOwnership[pointRow < 0 ? 0 : pointRow > maxRow ? maxRow : pointRow] !== workerId) continue;
+        }
 
         // E-471: getCellRange's arithmetic in locals. Through _cellRangeResult (a module object, so the stores stay),
         // its four results were Smi-tagged, stored and read back at every entity.
