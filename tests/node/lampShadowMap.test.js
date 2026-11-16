@@ -7,7 +7,9 @@ import {
   LAMP_MAP_MAX_STRETCH, LAMP_MAP_MAX_TEXELS, LAMP_PANO_INNER, autoLampTileSize, lampColumnGrid, lampColumnIndex,
   lampLanding, lampPanoTexel, lampPanoUv, lampTileLayout, writeLampTile, writeLampTileOwner,
 } from '../../src/render/lampShadowMap.js';
-import { volumeLampVertex, volumeLampVertexCount, volumeLampWgsl, writeVolumeLampTerms } from '../../src/render/volumeShadowMap.js';
+import {
+  volumeLampVertex, volumeLampVertexCount, volumeLampVertices, volumeLampWgsl, writeVolumeLampTerms,
+} from '../../src/render/volumeShadowMap.js';
 import fs from 'node:fs';
 
 const close = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
@@ -112,13 +114,16 @@ test('E-389: the volumes go into every lamp tile in one draw, vertex v corner v 
   // draw runs three a tile in use, so each row's triangle reaches each tile with the same corners, tile after tile.
   assert.equal(volumeLampVertexCount(5), 15);
   assert.equal(volumeLampVertexCount(0), 3, 'a draw sized for one tile at least');
+  // Each vertex its number (aLampVertex): tile number / 3, corner number % 3.
+  assert.deepEqual(Array.from(volumeLampVertices(2)), [0, 1, 2, 3, 4, 5]);
   const glsl = volumeLampVertex(fs.readFileSync(new URL('../../src/shaders/meshUvFill.vert.glsl', import.meta.url), 'utf8'));
   const wgsl = volumeLampWgsl(fs.readFileSync(new URL('../../src/shaders/meshUvFill.wgsl', import.meta.url), 'utf8'));
   // The corner from the index mod 3 (meshUvFill's own test of the index, on it), the tile from the index over 3.
-  assert.ok(glsl.includes('int lampCorner = gl_VertexID % 3;') && glsl.includes('lampCorner == 1 ? 1.0 : 0.0, lampCorner == 2 ? 1.0 : 0.0'));
-  assert.ok(!glsl.includes('gl_VertexID == 1') && glsl.includes('int lampTile = gl_VertexID / 3;'));
-  assert.ok(wgsl.includes('let lampCorner = vertexIndex % 3u;') && !wgsl.includes('vertexIndex == 1u'));
-  assert.ok(wgsl.includes('let lampTile = i32(vertexIndex / 3u);') && wgsl.split('@builtin(vertex_index)').length === 2);
+  assert.ok(glsl.includes('in float aLampVertex;') && glsl.includes('int lampCorner = lampVertex % 3;'));
+  assert.ok(glsl.includes('lampCorner == 1 ? 1.0 : 0.0, lampCorner == 2 ? 1.0 : 0.0') && !glsl.includes('gl_VertexID == 1'));
+  assert.ok(glsl.includes('int lampTile = lampVertex / 3;'));
+  assert.ok(wgsl.includes('@location(6) aLampVertex: f32,') && wgsl.includes('let lampCorner = lampVertex % 3u;'));
+  assert.ok(!wgsl.includes('vertexIndex == 1u') && wgsl.includes('let lampTile = i32(lampVertex / 3u);'));
   // Its lamp and its owner from the tiles' texture; no uniform names a tile or an owner any more.
   assert.ok(glsl.includes('ivec2(lampTile, 1)') && !glsl.includes('uLampOwner'));
   assert.ok(wgsl.includes('vec2<i32>(lampTile, 1)') && !wgsl.includes('uLampOwner'));

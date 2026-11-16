@@ -5,8 +5,8 @@
  * - into the sun's map (WebGL: sunShadowMap.js volumeMapVertex and VOLUME_MAP_FRAGMENT; WebGPU: volumeMapWgsl), each
  *   vertex landing by the map's shift, its height in the map's units (uSunShadow.w: 1 / heightScaleY);
  * - into the lamps' map (lampShadowMap.js), each row's triangle once a tile in use, in one draw (volumeLampVertex /
- *   volumeLampWgsl; E-389: three vertices a tile, vertex v corner v % 3 of tile v / 3): uSunShadow.xy 0, so the vertex
- *   stays on its floor point P = (x, screen y / groundScaleY), which lands along the tile's lamp's ray at
+ *   volumeLampWgsl; E-389: three vertices a tile, vertex v (aLampVertex) corner v % 3 of tile v / 3): uSunShadow.xy 0, so
+ *   the vertex stays on its floor point P = (x, screen y / groundScaleY), which lands along the tile's lamp's ray at
  *   L + (P - L) · E / (E - z) (DX-LAMPPANO: compressed into the floor's half of the tile out to the horizon, the stretch
  *   drawn at most LAMP_MAP_MAX_STRETCH), in the tile, drawn with w = (E - z) / E so the
  *   heights spread over the shadow as the rays carry them, cut to the tile by the fragment. The tile's lamp is the tiles'
@@ -37,13 +37,15 @@ function swap(source, find, put, what) {
 }
 
 // E-389: meshUvFill takes an instance's corner from the vertex index (E-419: 0, 1, 2 in each instance of 3 vertices). The
-// lamps' map draws three vertices a tile in use, so the corner is the index mod 3 and the tile the index over 3.
+// lamps' map draws three vertices a tile in use, numbered by an attribute (aLampVertex: a geometry whose only vertex
+// attribute the program does not read makes Pixi warn, a geometry a count of tiles), so the corner is that number mod 3
+// and the tile that number over 3.
 const CORNER_GLSL = 'vec2 aTri = vec2(gl_VertexID == 1 ? 1.0 : 0.0, gl_VertexID == 2 ? 1.0 : 0.0);';
 const LAMP_CORNER_GLSL =
-  'int lampCorner = gl_VertexID % 3;\n  vec2 aTri = vec2(lampCorner == 1 ? 1.0 : 0.0, lampCorner == 2 ? 1.0 : 0.0);';
+  'int lampVertex = int(aLampVertex + 0.5);\n  int lampCorner = lampVertex % 3;\n  vec2 aTri = vec2(lampCorner == 1 ? 1.0 : 0.0, lampCorner == 2 ? 1.0 : 0.0);';
 const CORNER_WGSL = 'let aTri = vec2<f32>(select(0.0, 1.0, vertexIndex == 1u), select(0.0, 1.0, vertexIndex == 2u));';
 const LAMP_CORNER_WGSL =
-  'let lampCorner = vertexIndex % 3u;\n  let aTri = vec2<f32>(select(0.0, 1.0, lampCorner == 1u), select(0.0, 1.0, lampCorner == 2u));';
+  'let lampVertex = u32(aLampVertex + 0.5);\n  let lampCorner = lampVertex % 3u;\n  let aTri = vec2<f32>(select(0.0, 1.0, lampCorner == 1u), select(0.0, 1.0, lampCorner == 2u));';
 
 /** The smallest w (1 / the stretch) a vertex under a lamp is drawn with. */
 const MIN_W = (1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
@@ -94,7 +96,7 @@ ${VOLUME_ID_GLSL}
   vTileUvW = vec3(-1.0, -1.0, 1.0);
   vLampE = 1.0;
   // E-389: one draw for every tile, three vertices a tile (LAMP_CORNER_GLSL).
-  int lampTile = gl_VertexID / 3;
+  int lampTile = lampVertex / 3;
   vec4 lamp = texelFetch(uLampTiles, ivec2(lampTile, 0), 0);
   float lampOwner = texelFetch(uLampTiles, ivec2(lampTile, 1), 0).x;
   float lampZ = max(aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x), 0.0) * uSunShadow.w;
@@ -123,8 +125,8 @@ ${VOLUME_ID_GLSL}
 
 /**
  * The lamps' map's vertex shader for the volumes (WebGL): meshUvFill.vert.glsl landing each vertex towards the lamp of
- * its tile, gl_VertexID / 3 (E-389: drawn with three vertices a tile in use, the corner gl_VertexID % 3), the tile's
- * lamp and owner read from the tiles' texture (uLampVolume: the tiles in use, tiles a row, a tile's texels, 1 /
+ * its tile, aLampVertex / 3 (E-389: drawn with three vertices a tile in use, numbered by aLampVertex, the corner its
+ * number % 3), the tile's lamp and owner read from the tiles' texture (uLampVolume: the tiles in use, tiles a row, a tile's texels, 1 /
  * groundScaleY; uSunShadow: 0, 0, 1 for the volumes' floor, 1 / heightScaleY), its height out (vSunZ) and the tile's own
  * coordinates for the fragment's clip.
  * @param {string} source meshUvFill.vert.glsl
@@ -134,6 +136,8 @@ export function volumeLampVertex(source) {
   const what = "the lamps' map's volumes";
   const decl =
     'out float vSunZ;\nout vec3 vTileUvW;\nflat out float vSunId;\nflat out float vLampE;\n' +
+    "// E-389: this vertex's number in the draw: tile number / 3, corner number % 3 (volumeLampVertexCount).\n" +
+    'in float aLampVertex;\n' +
     "// DX-SHADOW3D (F7): uLampVolume: the tiles in use, tiles a row, a tile's texels, 1 / groundScaleY; uLampTiles: the\n" +
     "// tiles' lamps (row 0) and their owners (row 1: the entity whose own volume casts nothing for the lamp).\n" +
     'uniform vec4 uLampVolume;\nuniform sampler2D uLampTiles;\n' + LAMP_PANO_GLSL;
@@ -168,7 +172,7 @@ const LAMP_WGSL = `  // DX-SHADOW3D (F7): towards this vertex's lamp (volumeShad
   // lamp's ray, in its tile, drawn with w = 1 / its stretch. A triangle past an edge of the tile is left out.
 ${VOLUME_ID_WGSL}  out.vTileUvW = vec3<f32>(-1.0, -1.0, 1.0);
   // E-389: one draw for every tile, three vertices a tile (LAMP_CORNER_WGSL).
-  let lampTile = i32(vertexIndex / 3u);
+  let lampTile = i32(lampVertex / 3u);
   let lamp = textureLoad(uLampTiles, vec2<i32>(lampTile, 0), 0);
   let lampOwner = textureLoad(uLampTiles, vec2<i32>(lampTile, 1), 0).x;
   let lampZ = max(height, 0.0) * sunShadow.uSunShadow.w;
@@ -238,6 +242,8 @@ export function volumeLampWgsl(source) {
     '  @location(8) vSunZ: f32,\n  @location(9) vTileUvW: vec3<f32>,\n  @location(10) @interpolate(flat) vSunId: f32,\n  @location(11) @interpolate(flat) vLampE: f32,\n',
     what,
   );
+  // E-389: the vertex's number in the draw (LAMP_CORNER_WGSL), after the rows' six vec4.
+  out = after(out, '  @location(5) aRow5: vec4<f32>,\n', '  @location(6) aLampVertex: f32,\n', what);
   out = swap(out, CORNER_WGSL, LAMP_CORNER_WGSL, what);
   out = after(out, '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n', LAMP_WGSL, what);
   return out + LAMP_FRAGMENT_WGSL;
@@ -275,12 +281,23 @@ export function writeVolumeLampTerms(sun, lamp, tiles, perRow, tileSize, scales)
 
 /**
  * E-389: the vertices the lamps' map volumes' one draw runs an instance (a row) for `tiles` tiles in use: three a tile,
- * vertex v corner v % 3 of tile v / 3 (volumeLampVertex). As meshUvFill's batch, the geometry gives only the count.
+ * vertex v corner v % 3 of tile v / 3 (volumeLampVertex).
  * @param {number} tiles
  * @returns {number}
  */
 export function volumeLampVertexCount(tiles) {
   return Math.max(1, tiles | 0) * 3;
+}
+
+/**
+ * E-389: the lamps' map volumes' vertex numbers for `tiles` tiles (aLampVertex: 0, 1, 2, ... a vertex).
+ * @param {number} tiles
+ * @returns {Float32Array}
+ */
+export function volumeLampVertices(tiles) {
+  const out = new Float32Array(volumeLampVertexCount(tiles));
+  for (let v = 0; v < out.length; v++) out[v] = v;
+  return out;
 }
 
 /**
