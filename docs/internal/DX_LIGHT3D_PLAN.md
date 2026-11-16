@@ -1497,3 +1497,32 @@ escritor):
 | 6 | La GPU del pase de luz (E-380, E-381, E-373, E-378) | 5,6 % (la ventana del alcance), 12 % (el panorámico), WebGL 11 % más lento que WebGPU, la profundidad por pixel +30/+90 % | lightingBasic.*, lampShadowMap.js | gpuPassBench por pase antes y después |
 
 Al final, todo junto en una sesión (la suma se mide, no se suma), contra main y contra la rama de antes.
+
+### 17.11 Cómo salió la fase 4 (2026-11-16, madrugada)
+
+**Fases 1 y 2** (R-1162, R-1163): el merge le cuesta a Predator crowd 2.5 +26,5 % de pre-render contra main (5,76 → 7,28
+ms: su gente pasó a DirectionalSprite) y a las escenas iluminadas como antes cerca de +5 % en pre-render y Pixi. Por pieza,
+en light3dCompare: todo prendido +46 %; mapa del sol +14 % (Pixi +24 %); mapa de faroles +10 % (Pixi +31 %); self y depth
+cerca de +1 %; DirectionalSprite +33 % de pre-render. Predator `?light3d=1` duplica la CPU de Pixi (1,4 → 3,0 ms).
+
+**La tanda de la fase 4** (opt/integrate, en main como ac73cf48; R-1164 a R-1170): filas 1 (en parte), 2, 3, 4, 5 y un paso
+de la 6 de la tabla de arriba.
+
+| Pieza | Kernel | Escena |
+| --- | --- | --- |
+| Elección por farol: anillos hasta 64, radix (E-315) | lampWasm 30,0 → 6,0 ms | lampShadowStress mapa 128 faroles: pre-render 2,32 → 1,18 ms |
+| Cuadros de faroles sin atan2 y pases de cuadros fusionados (E-369) | lampFrames 49 → 32 ms | light3dCompare `ds=1` de noche: pre-render −24,7 %; `lampMap=1`: −18,7 % (KEPT, 4/4) |
+| Palabras del G-buffer en el pack con clave (E-387) | empate en Node | Pixi −10,4 % (4/4) con mapa de faroles |
+| Setters (N-170, N-215) | — | basura de logic 201 → 24 KB/s |
+| texelFetch en el pase de luz (E-373) | WebGL light3d 1,170 → 1,106 ms | misma imagen |
+
+Predator crowd 2.5 de día: NEUTRAL. Sus cuadros del sol son de filas con clave, y ese pase en JS (E-370) no se tocó.
+
+**Lo que sigue**, con agentes en paralelo, uno por archivo:
+- E-372: el cuadro del sol escrito en el scan con clave de WASM, con las columnas de DirectionalSprite en la memoria de la
+  cola.
+- E-380 y E-381: lo que es por luz, precalculado en los datos de luz.
+- E-358 y E-359: las filas del stamp con stores fijos y las luces más cercanas juntas por caster.
+- La forma sin palabras del pack con clave volvió +7,8 % más lenta en el kernel: sus formas con palabras van a exports
+  propios.
+- La CPU de Pixi con `?light3d=1`: un pase de CPU por función.
