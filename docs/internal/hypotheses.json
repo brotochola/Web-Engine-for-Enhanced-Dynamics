@@ -19056,7 +19056,7 @@
     {
       "id": "E-444",
       "title": "Pre-render writes the G-buffer words of the rows it packs in JS (writeGbufWords): 9.4 % of pre-render in keyedPackStressScene gbuf=1 (865 ms in 8 s, about 1.8 ms a frame at 250 000 sprites), every row every frame though a still sprite's word never changes",
-      "status": "open",
+      "status": "kept-kernel",
       "statusText": "proposed 2026-11-16 from the cpu pass of keyedPackStressScene n=250000 churn=0.05 with gbuf=0 and gbuf=1 (profileSceneSweep, main 546f20f1)",
       "date": "2026-11-16",
       "area": "pre-render",
@@ -19068,7 +19068,8 @@
         "writeGbufWords in pre-render"
       ],
       "records": [
-        "R-1189"
+        "R-1189",
+        "R-1202"
       ]
     },
     {
@@ -31149,6 +31150,23 @@
       "title": "The CPU pass over all 34 demos: no new heavy hotspot; Box2D's pool at 1000 ms/s in every physics demo is a wait V8 counts as busy (badPiggies CSwitch: no thread over 319 ms/s); rebuildOwnedRows 30 % of spatial in boids (E-267)",
       "verdict": "note",
       "text": "**The CPU pass over all 34 demos on today's main found no new heavy engine hotspot. The Box2D pool threads' 1000 ms/s in every physics demo is a wait that V8's profiles count as busy: badPiggiesScene's CSwitch capture shows no thread above 319 ms/s on a CPU.**\n\nprofileSceneSweep --pass cpu --set demos, headed, 6 s after 6 s, in six chunks through the bench lock, main 3ba18d26 to bb3203b9, 2026-11-16 08:13 to 08:32 (the log).\n\nFindings:\n- Box2D's three pool threads show 1000 ms/s, 78 to 100 % in wasm-function[107], in every demo with physics, including ones with almost none (particleLab, lightBench, headlights, meshGallery). WPR with CSwitch on badPiggiesScene, 08:32 to 08:34: the busiest thread 319 ms/s on a CPU, the next 192 and 109. So in a light demo the pool waits (memory.atomic.wait, which V8 counts as busy) and burns nothing. E-426's 750 ms/s per pool thread belongs to Predator crowd 2.5's heavy steps.\n- Pixi's _waitForQueue (60 to 94 % of its busy time) and pre-render's _waitForPose (59 to 93 %) dominate their profiles in light demos (balls, littleCity, gearChain, boids, water), as waits counted busy. Their real CPU is E-442's question: the sub-millisecond ones spin on Windows.\n- Spatial's rebuildOwnedRows (JS) takes 30 % of each spatial worker in boidsScene, 18 % in Predator and 7 to 9 % in littleCity, beside gather_batch (35 to 46 %) and publish_batch (10 to 36 %): evidence for E-267, the full rebuild in cell order.\n- adobeAnimateScene: pre-render 673 ms/s (emit_rows 42 %, pack_sprites_split 28.5 %), Pixi 426 ms/s with 38.5 % in Pixi's own vendor code.\n- Predator: logic's fsm.tick 6.7 to 9.6 % and _tickIntervalBucket 8 %; Pixi's radix_simd 3.3 %.\n\nNothing in this pass reaches the 6 ms owner floor in a demo that the register does not already cover. The varied hypotheses of this morning came from the GPU sweeps instead (R-1195: E-448 to E-450) and from the agents' reports (E-451 to E-454)."
+    },
+    {
+      "id": "R-1202",
+      "date": "2026-11-16",
+      "time": "09:24",
+      "timeFrom": "recorded",
+      "title": "E-444 kept on its kernel: pre-render's split and indexed packs write the G-buffer words (kernel -13.2 %); the owner scene did not move (pre-render +1.4 %, 6/8 worse, NEUTRAL)",
+      "verdict": "kept-kernel",
+      "text": "**E-444 kept on its kernel: pre-render's split and indexed packs write the sprites' G-buffer words, and writeGbufWords is gone from pre-render's path. The kernel is -13.2 % in Node; the owner scene did not move in Chrome (pre-render +1.4 %, 6/8 pairs worse, NEUTRAL).** Built on opt/prerender-gbuf-words, merged into main 9ab1e87c:\n- fbf02723: the keyedPackStressScene ?pack=preRender knob.\n- d928944d: gpuPackIndexedMicrobench --gbuf.\n- 4b1db5f6: an out-of-range entity row is no entity, as on the key path.\n- 8f907b95: three exports, pack_sprites_split_gbuf, _split_scatter_gbuf and _indexed_scatter_gbuf. The forms are constants, and all 107 existing functions stay byte-identical (wasm-dis).\n- f7d24d6e: pre-render's _bindPackGbuf; the JS stays for 15-float rows, columns outside the memory, or a zIndex-user count that changed during the pack.\n\nKernel, Node 22 --no-liftoff, ABAB twice through the bench lock, same checksums:\n\n| shape | before | after |\n| --- | --- | --- |\n| no list, 250 000 rows (the owner scene's frame) | 3.400, 3.560 ms | 2.928, 3.115 ms (-13.2 %) |\n| indexed scatter, near order, 300 000 rows | 2.661, 2.685 | 2.274, 2.183 (-16.6 %) |\n| indexed scatter, random order with bands | 10.770, 11.113 | 10.280, 10.393 (-5.5 %) |\n| split scatter, near order | 5.919, 6.047 | 5.975, 5.473 (tie) |\n\nThe plain pack is 2.37 to 2.41 ms in both trees, so the words cost 1.0 to 1.2 ms in JS and 0.5 to 0.75 inside the pack. Under V8's default tiering the owner shape read only 3.308 / 3.310 -> 3.283 / 3.083 (N-226).\n\nPre-render per function, single profile runs by the agent (keyedPack pack=preRender n=250000 churn=0.05 gbuf=1): writeGbufWords 9.1 to 9.5 % before, gone after. The pack and its words go from 4.89 / 4.94 to 4.14 ms a frame.\n\nThe gate (runPredatorAbab --pool, headed, AC power, fbf02723 against f7d24d6e, pre-render as owner, STEP_MS - WAIT_MS), 4 pairs 09:04 to 09:09, then 4 more appended 09:19 to 09:24 (the logs):\n- first 4: pre-render 8.042 -> 8.332 ms (+2.9 %, 4/4 worse);\n- all 8: 8.232 -> 8.338 ms (+1.4 %, 6/8 worse, cv 4/4 %), NEUTRAL;\n- logic 3.221 -> 3.296 and Pixi 5.936 -> 6.185, both under the floor.\n\nThe profile's 0.75 ms saved a frame does not show in pre-render's STEP_MS - WAIT_MS in the sitting. Kept on the kernel rule (the kernel won, the scene not 3 % worse), with the open question in N-226: Chrome's tiering of the new exports, or work the words saved that was not on pre-render's measured path.\n\n- Tests: node 2828/2830 on the branch (the two path-import tests), demos 101/101. New gpuPackSplitGbuf.test.js and preRenderGbufPack.test.js; four mutations caught.\n- Follow-ups filed: N-226 (wasm benches timing Liftoff, and the tiering gap), E-455 (a words generation or a per-entity word column, with E-445).",
+      "commits": [
+        "fbf02723",
+        "d928944d",
+        "4b1db5f6",
+        "8f907b95",
+        "f7d24d6e",
+        "9ab1e87c"
+      ]
     }
   ],
   "leads": [
