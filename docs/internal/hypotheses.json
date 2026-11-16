@@ -19600,12 +19600,12 @@
     {
       "id": "N-231",
       "title": "runPredatorAbab reads an all-digit sha as a number: --vs 09443713 reached git as 9443713 and failed with \"Needed a single revision\"; revision arguments must stay strings",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the PR #12 sittings agent",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-16 by the PR #12 sittings agent; fixed 2026-11-16 in 922e0783",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "E-331's first sitting (12:06:38) died in one second; the full sha worked.",
+      "result": "Fixed (922e0783): the bench tools' parseArgs keeps a value with a leading zero a string; tests/node/microbenchParseArgs.test.js; node 2893/2893. E-331's first sitting (12:06:38) died in one second; the full sha worked.",
       "next": "parseArgs keeps --vs, --hyp-rev and every rev-like flag a string (or the runner String()s them before git), with a test on an all-digit short sha.",
       "refs": [],
       "aliases": [
