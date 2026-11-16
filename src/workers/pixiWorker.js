@@ -978,6 +978,15 @@ class PixiRenderer extends AbstractWorker {
     this._glowQuadBuffer = null;
     this._glowRtLayer = { resolution: 1 };
     this._glowRtTransform = new Matrix();
+    // E-404: the lightGlows layer drawn into a target a share of the canvas (the layer's resolution, from
+    // lighting.lightGlowResolution) and added to the frame once by a sprite; null while the glows draw onto the frame.
+    this._glowLayerRT = null;
+    this._glowLayerHost = null;
+    this._glowLayerSprite = null;
+    /** The resolution the target was made at (a double from the start; NaN: no target). */
+    this._glowLayerRes = NaN;
+    /** Canvas px to the target's px (the glow mesh keeps the canvas's camera placement under it). */
+    this._glowLayerTransform = new Matrix();
     this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
     // DX-SHADOW3D: lighting.sunShadows 'map' (src/render/sunShadowMap.js): the sun's shadow map, its pass and terms.
     this._sunMapOn = false;
@@ -3288,6 +3297,92 @@ class PixiRenderer extends AbstractWorker {
     if (started) this.lightsTimeThisFrame += performance.now() - started;
   }
 
+  /** E-404: the lightGlows layer's resolution now (its Layer's, from lighting.lightGlowResolution), in [1/16, 1]. */
+  _lightGlowLayerResolution() {
+    const id = Layer.get('lightGlows')?.id;
+    const v = id !== undefined && Layer._resolution ? Layer._resolution[id] : 1;
+    return v > 0 ? Math.min(1, Math.max(0.0625, v)) : 1;
+  }
+
+  /**
+   * E-404: the lightGlows layer drawn into a target `resolution` of the canvas and added to the frame once by a sprite at
+   * the layer's place (its zIndex, alpha and blend, ADD). The glows are pure fill: flashlightStressScene's 119 halos cost
+   * 4.83 ms of GPU a frame at 1920 x 1080 and 0.007 under a 1 px scissor. A halo is smooth, so a quarter of its pixels
+   * filtered up looks the same. Adding the glows into a cleared target and the target to the frame is the sum adding each
+   * glow to the frame was (their colour, alpha 0; both clamp at 1), but for the filtering and 8-bit rounding.
+   */
+  _createGlowLayerTarget(resolution) {
+    const mesh = this.spriteGlowMesh;
+    const w = rtPixelSize(this.canvasWidth, resolution);
+    const h = rtPixelSize(this.canvasHeight, resolution);
+    this._glowLayerRT = PIXI.RenderTexture.create({ width: w, height: h });
+    this._glowLayerHost = new PIXI.Container();
+    this._glowLayerHost.label = 'light-glows-target';
+    // A child draws with its own blend (a render's root would take normal); the camera's placement stays on the mesh.
+    mesh.blendMode = 'add';
+    this._glowLayerHost.addChild(mesh);
+    const sprite = new PIXI.Sprite(this._glowLayerRT);
+    sprite.label = 'light-glows';
+    sprite.renderable = false;
+    this._glowLayerSprite = sprite;
+    this._glowLayerRes = resolution;
+    this._fitGlowLayerTarget(w, h, this.canvasWidth, this.canvasHeight);
+    this._registerLayerDisplayObject('lightGlows', sprite);
+    this.pixiApp.stage.addChild(sprite);
+    this.pixiApp.stage.sortChildren();
+  }
+
+  /** E-404: the glow target's sprite over the canvas (`canvasW` x `canvasH`) and its px onto the target's (`w` x `h`). */
+  _fitGlowLayerTarget(w, h, canvasW, canvasH) {
+    const cw = canvasW || 1;
+    const ch = canvasH || 1;
+    this._glowLayerSprite.scale.set(cw / w, ch / h);
+    const mx = this._glowLayerTransform;
+    mx.a = w / cw;
+    mx.b = 0;
+    mx.c = 0;
+    mx.d = h / ch;
+    mx.tx = 0;
+    mx.ty = 0;
+  }
+
+  /**
+   * E-404: the glow target at the canvas's size now and the layer's resolution (a resize, Layer resolution set at run
+   * time). The sprite lets go of the old target before it goes.
+   */
+  _resizeGlowLayerTarget(resolution, canvasW, canvasH) {
+    if (this._glowLayerRT === null) return;
+    const w = rtPixelSize(canvasW, resolution);
+    const h = rtPixelSize(canvasH, resolution);
+    this._glowLayerRT = this._replaceRT(this._glowLayerRT, w, h, this._glowLayerSprite, null);
+    this._glowLayerRes = resolution;
+    this._fitGlowLayerTarget(w, h, canvasW, canvasH);
+  }
+
+  /**
+   * E-404: this frame's glows into the lightGlows target, with the frame's passes (after the sprites, whose pack fills the
+   * glow batch): cleared, then the glow mesh added in. A frame without glows draws nothing, and its sprite neither.
+   */
+  drawFrameGlowLayer() {
+    const sprite = this._glowLayerSprite;
+    if (sprite === null) return;
+    const resolution = this._lightGlowLayerResolution();
+    if (resolution !== this._glowLayerRes) this._resizeGlowLayerTarget(resolution, this.canvasWidth, this.canvasHeight);
+    const mesh = this.spriteGlowMesh;
+    const on = mesh !== null && mesh.visible === true;
+    if (sprite.renderable !== on) sprite.renderable = on;
+    if (!on) return;
+    const opts = this._rtRenderOpts;
+    opts.container = this._glowLayerHost;
+    opts.target = this._glowLayerRT;
+    opts.clear = true;
+    opts.clearColor = this._clearTransparent;
+    opts.transform = this._glowLayerTransform;
+    this._submitRender(opts);
+    opts.transform = null;
+    this._gpuPassesThisFrame++;
+  }
+
   /**
    * DX-EMISSIVE v2: the glow target (the canvas's size) and the glow layer, a quad over the canvas just above the lighting
    * layer that adds glow · (1 - light) (glowComposite.js), its blend additive.
@@ -3591,6 +3686,7 @@ class PixiRenderer extends AbstractWorker {
         this.drawFrameShadows();
         this.drawFrameCustomLayers();
         this.renderLightingToTexture();
+        this.drawFrameGlowLayer();
       }
       this.applyLayerVisibility();
       this.presentStage();
@@ -8005,6 +8101,33 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
+   * E-431: a GPU particle layer with a resolution under 1 and no look of its own is drawn into a target that share of the
+   * canvas (cl.rt, _renderGpuParticlesToRt) and composed onto the frame once by a sprite at the layer's place, as a look
+   * layer's picture is. Soft particles are fill: Predator's fire smoke cost about 0.9 to 1.3 ms of GPU a frame at 1920 x
+   * 1080, 0.003 under a 1 px scissor. Only where the target composes back what the particles drew (blend normal, whose
+   * over is associative, or add); a layer drawn among the entities (sortWithEntities) stays there. The layer's alpha then
+   * applies to its picture as a whole.
+   * @returns {boolean} whether the layer draws through a target
+   */
+  _gpuParticleLayerTarget(cl, gpuBatch, blend) {
+    const resolution = cl.resolution;
+    if (!(resolution > 0 && resolution < 1)) return false;
+    if (gpuBatch.look || gpuBatch.info.sortWithEntities) return false;
+    if (blend !== 'normal' && blend !== 'add') return false;
+    cl.rt = PIXI.RenderTexture.create({ width: this.canvasWidth * resolution, height: this.canvasHeight * resolution });
+    this._applyCustomLayerScaleMode(cl);
+    // No look: the sprite shows the target itself (_resizeCustomLayerRTs keeps it on cl.rt).
+    cl.shaderBypass = true;
+    const sprite = new PIXI.Sprite(cl.rt);
+    sprite.anchor.set(0, 0);
+    sprite.position.set(0, 0);
+    sprite.scale.set(1.0 / resolution);
+    sprite.renderable = false;
+    cl.displaySprite = sprite;
+    return true;
+  }
+
+  /**
    * A GPU particle layer's density pass: its meshes keep world positions, and the camera into the layer's RT is
    * the render transform (as a MESH layer's fill).
    */
@@ -8569,6 +8692,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         1.0 / res
       );
     }
+
+    // E-404: the lightGlows target follows the canvas.
+    if (this._glowLayerRT !== null) this._resizeGlowLayerTarget(this._glowLayerRes, width, height);
 
     // Viewport look/density RTs (compute layers have rtOut only).
     for (let i = 0; i < this._customLayerList.length; i++) {
@@ -9486,8 +9612,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._registerLayerDisplayObject('entities', this._entitiesRoot);
       this.pixiApp.stage.addChild(this._entitiesRoot);
       if (this.spriteGlowMesh) {
-        this._registerLayerDisplayObject('lightGlows', this.spriteGlowMesh);
-        this.pixiApp.stage.addChild(this.spriteGlowMesh);
+        const glowRes = this._lightGlowLayerResolution();
+        if (glowRes < 1) {
+          this._createGlowLayerTarget(glowRes);
+        } else {
+          this._registerLayerDisplayObject('lightGlows', this.spriteGlowMesh);
+          this.pixiApp.stage.addChild(this.spriteGlowMesh);
+        }
         if (!this._lightGlowAdd) this.spriteGlowMesh.visible = false;
       }
       const order = this._ySort ? 'painter' : 'emit order';
@@ -10253,6 +10384,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this._registerLayerDisplayObject(layerName, batch.mesh, cl.containerBlendSet);
         this.pixiApp.stage.addChild(batch.mesh);
         debugWorkerLog(`PIXI WORKER: Custom layer "${layerName}" initialized (no shader)`);
+      } else if (gpuBatch && this._gpuParticleLayerTarget(cl, gpuBatch, layerObj.blendMode)) {
+        // E-431: drawn into a target the layer's resolution of the canvas, composed once at the layer's place.
+        this._registerLayerDisplayObject(layerName, cl.displaySprite);
+        this.pixiApp.stage.addChild(cl.displaySprite);
+        debugWorkerLog(
+          `PIXI WORKER: GPU particle layer "${layerName}" initialized (${gpuBatch.rings.length} rings, resolution=${resolution})`
+        );
       } else if (gpuBatch) {
         // The layer's own blend mode on the container: its meshes draw with it (Pixi's group blend).
         this._registerLayerDisplayObject(layerName, gpuBatch.container, false);
@@ -10365,6 +10503,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       } else if (cl.gpu) {
         // Updated this frame by updateGpuParticleLayers; with a look shader, its density pass is drawn here.
         if (cl.rt) {
+          // E-431: a layer drawn at its resolution with no look shows nothing, and draws nothing, while no particle lives.
+          if (cl.shaderBypass && cl.displaySprite !== null) {
+            const live = cl.gpu.liveRecords > 0;
+            if (cl.displaySprite.renderable !== live) cl.displaySprite.renderable = live;
+            if (!live) continue;
+          }
           this._renderGpuParticlesToRt(cl);
           if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
             rtOpts.transform = null;
@@ -10679,7 +10823,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     } else if (this.spriteMesh) {
       this._registerLayerDisplayObject('entities', this.spriteMesh);
     }
-    if (this.spriteGlowMesh) {
+    if (this._glowLayerSprite !== null) {
+      this._registerLayerDisplayObject('lightGlows', this._glowLayerSprite);
+    } else if (this.spriteGlowMesh) {
       this._registerLayerDisplayObject('lightGlows', this.spriteGlowMesh);
       if (!this._lightGlowAdd) this.spriteGlowMesh.visible = false;
     }

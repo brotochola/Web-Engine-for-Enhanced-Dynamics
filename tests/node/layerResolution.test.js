@@ -83,3 +83,81 @@ test('the renderer remakes a layer\'s render textures once per resolution change
     Layer.reset();
   }
 });
+
+test('E-404: lighting.lightGlowResolution is the lightGlows layer\'s resolution, half the canvas unless a scene says', async () => {
+  const { lightGlowResolutionOf, LIGHTING_DEFAULTS } = await import('../../src/util/configDefaults.js');
+  const { initializeSceneLayers } = await import('../../src/util/sceneSharedBuffers.js');
+  assert.equal(LIGHTING_DEFAULTS.lightGlowResolution, 0.5);
+  assert.equal(lightGlowResolutionOf(undefined), 0.5);
+  assert.equal(lightGlowResolutionOf({ lightGlowResolution: 0.25 }), 0.25);
+  assert.equal(lightGlowResolutionOf({ lightGlowResolution: 2 }), 1, 'never past the canvas');
+  assert.equal(lightGlowResolutionOf({ lightGlowResolution: 0.001 }), 1 / 16);
+  for (const bad of [0, -1, NaN, 'x', null]) assert.equal(lightGlowResolutionOf({ lightGlowResolution: bad }), 0.5);
+  try {
+    Layer.reset();
+    initializeSceneLayers({ config: { lighting: { lightGlowResolution: 0.25 }, layers: {} }, numberOfLogicWorkers: 1 });
+    assert.equal(Layer.get('lightGlows').resolution, 0.25);
+    Layer.reset();
+    initializeSceneLayers({ config: { layers: {} }, numberOfLogicWorkers: 1 });
+    assert.equal(Layer.get('lightGlows').resolution, 0.5);
+    assert.equal(Layer.get('entities').resolution, 1, 'the other built-in layers keep theirs');
+  } finally {
+    Layer.reset();
+  }
+});
+
+test('E-404: the glows go into their target when there are some, the canvas onto the target and the sprite back over it', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig({}, { ...DEFAULT_LAYERS, lightGlows: { ...DEFAULT_LAYERS.lightGlows, resolution: 0.5 } }, true);
+    const renders = [];
+    const resized = [];
+    const sprite = { renderable: false, scale: { set(x, y) { this.x = x; this.y = y; } } };
+    const ctx = {
+      _glowLayerSprite: sprite,
+      _glowLayerHost: { label: 'host' },
+      _glowLayerRT: { label: 'rt' },
+      _glowLayerRes: 0.5,
+      _glowLayerTransform: { a: 0, b: 0, c: 0, d: 0, tx: 0, ty: 0 },
+      _rtRenderOpts: { container: null, target: null, clear: false, clearColor: null, transform: null },
+      _clearTransparent: [0, 0, 0, 0],
+      _gpuPassesThisFrame: 0,
+      spriteGlowMesh: { visible: false },
+      canvasWidth: 1920,
+      canvasHeight: 1080,
+      _lightGlowLayerResolution: PixiRenderer.prototype._lightGlowLayerResolution,
+      _resizeGlowLayerTarget(resolution, w, h) {
+        resized.push([resolution, w, h]);
+        this._glowLayerRes = resolution;
+      },
+      _submitRender(o) {
+        renders.push({ ...o, transform: { ...o.transform } });
+        return true;
+      },
+    };
+    const draw = () => PixiRenderer.prototype.drawFrameGlowLayer.call(ctx);
+    draw();
+    assert.equal(renders.length, 0, 'no glows: no pass');
+    assert.equal(sprite.renderable, false, 'and no sprite over the frame');
+    ctx.spriteGlowMesh.visible = true;
+    draw();
+    assert.equal(renders.length, 1);
+    assert.equal(renders[0].container, ctx._glowLayerHost);
+    assert.equal(renders[0].target, ctx._glowLayerRT);
+    assert.equal(renders[0].clear, true);
+    assert.equal(sprite.renderable, true);
+    assert.equal(ctx._rtRenderOpts.transform, null, 'the shared options lose the transform again');
+    assert.deepEqual(resized, []);
+    // Layer.get('lightGlows').resolution set at run time: the target is made again, once.
+    Layer.get('lightGlows').resolution = 0.25;
+    draw();
+    draw();
+    assert.deepEqual(resized, [[0.25, 1920, 1080]]);
+    // The canvas's px onto the target's and the sprite back over the canvas (480 x 270 at 0.25 of 1920 x 1080).
+    PixiRenderer.prototype._fitGlowLayerTarget.call(ctx, 480, 270, 1920, 1080);
+    assert.deepEqual([sprite.scale.x, sprite.scale.y], [4, 4]);
+    assert.deepEqual([ctx._glowLayerTransform.a, ctx._glowLayerTransform.d, ctx._glowLayerTransform.tx], [0.25, 0.25, 0]);
+  } finally {
+    Layer.reset();
+  }
+});
