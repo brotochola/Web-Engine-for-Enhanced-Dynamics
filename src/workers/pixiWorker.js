@@ -3328,6 +3328,24 @@ class PixiRenderer extends AbstractWorker {
     this.pixiApp.stage.sortChildren();
   }
 
+  /**
+   * N-222: the glow layer off the targets a resize is about to replace (EMPTY in their place), as the face map's
+   * resources are. _replaceRT destroys every bind group still listening on the old lighting target, the glow
+   * composite's own among them, and _bindGlowLayer's next read of it threw: the renderer died on a resize.
+   */
+  _unbindGlowLayer() {
+    const mesh = this._glowComposite;
+    if (mesh === null) return;
+    const res = mesh.shader.resources;
+    const empty = PIXI.Texture.EMPTY.source;
+    if (res.uGlow !== empty) res.uGlow = empty;
+    if (res.uLight !== empty) res.uLight = empty;
+    if (this._useWebGpu) {
+      if (res.uGlowSampler !== empty.style) res.uGlowSampler = empty.style;
+      if (res.uLightSampler !== empty.style) res.uLightSampler = empty.style;
+    }
+  }
+
   /** DX-EMISSIVE v2: the glow layer's targets as the light's and the glow's are now (a resize remakes them). */
   _bindGlowLayer() {
     const mesh = this._glowComposite;
@@ -8468,6 +8486,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         }
         this._createFaceMap(lw, lh);
       }
+      this._unbindGlowLayer();
       this.lightingRT = this._replaceRT(
         this.lightingRT,
         lw,
