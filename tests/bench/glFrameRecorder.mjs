@@ -16,10 +16,12 @@
  * With --gpu-passes, the GPU time of each pass in the real frame (a TIME_ELAPSED query from one framebuffer bind to
  * the next, labelled by framebuffer, viewport and first program), where the extension is exposed. A TIME_ELAPSED range
  * counts the GPU's idle gaps inside it too (commands the CPU had not submitted yet): a pass's time is an upper bound of
- * its work, read with the GPU's busy share (Nsight Systems' GR Active) when they disagree.
+ * its work, read with the GPU's busy share (Nsight Systems' GR Active) when they disagree. With --gpu-draws, a query
+ * around each draw call instead (labelled by its pass and its index there): each pass's draws summed leave out the
+ * gaps between them, so a pass whose draws sum far below its --gpu-passes time was waiting, not drawing.
  *
  *   node tests/bench/glFrameRecorder.mjs --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene
- *     [--query k=v&k2=v2] [--warmup-ms 12000] [--record-ms 3000] [--gpu-passes] [--output gl.json]
+ *     [--query k=v&k2=v2] [--warmup-ms 12000] [--record-ms 3000] [--gpu-passes | --gpu-draws] [--output gl.json]
  * From Git Bash set MSYS_NO_PATHCONV=1. Headed Chrome (a headless one draws on a software path). The wrappers add a
  * little time to each call, so the scene's speed during the window is not a measurement; the counts are.
  */
@@ -34,15 +36,18 @@ import { isCli, parseArgs } from './microbenchHelpers.mjs';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 /** Runs in the Pixi worker: wrap the context, record `ms`, unwrap, return the totals. */
-async function recordInWorker({ ms, gpuPasses }) {
+async function recordInWorker({ ms, gpuPasses, gpuDraws }) {
   const px = self.pixiRenderer;
   const gl = px?.pixiApp?.renderer?.gl;
   if (!gl) return { error: 'no WebGL context in the Pixi worker (a WebGPU backend?)' };
   const proto = Object.getPrototypeOf(gl);
   // GPU time by pass (gpuPasses): a TIME_ELAPSED query from each framebuffer bind to the next, labelled by the
   // framebuffer, the viewport set in it and its first program; results read without waiting, summed by label. The
-  // context's own methods (not the wrappers) run the queries, so they count in no total.
-  const timerExt = gpuPasses ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
+  // context's own methods (not the wrappers) run the queries, so they count in no total. gpuDraws: a query around each
+  // draw call instead (no pass query: they cannot nest), labelled by its pass and its place in it, so a pass's time
+  // splits into its draws and the idle gaps between them show as the difference from the pass mode's total.
+  const perDraw = !!gpuDraws;
+  const timerExt = gpuPasses || gpuDraws ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
   const raw = (n) => Object.getOwnPropertyDescriptor(proto, n).value;
   const qCreate = raw('createQuery');
   const qBegin = raw('beginQuery');
@@ -50,6 +55,7 @@ async function recordInWorker({ ms, gpuPasses }) {
   const qParam = raw('getQueryParameter');
   const qParamGl = raw('getParameter');
   const passes = new Map();
+  const drawPasses = new Map();
   const pending = [];
   const free = [];
   let seg = null;
@@ -75,16 +81,35 @@ async function recordInWorker({ ms, gpuPasses }) {
   const segLabel = (s) => `fbo#${s.fbo} ${s.viewport || '?'} prog#${s.program || 0} [${s.sig || ''}]`;
   const endSeg = () => {
     if (!seg) return;
-    qEnd.call(gl, timerExt.TIME_ELAPSED_EXT);
-    pending.push(seg);
+    if (!perDraw) {
+      qEnd.call(gl, timerExt.TIME_ELAPSED_EXT);
+      pending.push(seg);
+    }
     seg = null;
   };
   const beginSeg = (fbo) => {
     if (!timerExt) return;
     endSeg();
-    const q = free.pop() || qCreate.call(gl);
+    const q = perDraw ? null : free.pop() || qCreate.call(gl);
     seg = { q, fbo, viewport: '', program: 0, draws: 0, instances: 0 };
+    if (!perDraw) qBegin.call(gl, timerExt.TIME_ELAPSED_EXT, q);
+  };
+  // gpuDraws: the open draw's query, ended right after the draw call.
+  let drawQ = null;
+  const beginDraw = (n) => {
+    if (!perDraw || !seg) return;
+    const q = free.pop() || qCreate.call(gl);
+    // The draw's own program (the pass's label names its first one): what a costly draw in a pass of many programs is.
+    const pass = segLabel(seg);
+    const p = bound.program;
+    drawQ = { q, label: `${pass} draw ${seg.draws}: prog#${idOf(p)} [${signature(p)}]`, pass, draws: 1, instances: n };
     qBegin.call(gl, timerExt.TIME_ELAPSED_EXT, q);
+  };
+  const endDraw = () => {
+    if (!drawQ) return;
+    qEnd.call(gl, timerExt.TIME_ELAPSED_EXT);
+    pending.push(drawQ);
+    drawQ = null;
   };
   const collect = () => {
     for (let i = pending.length - 1; i >= 0; i--) {
@@ -93,13 +118,20 @@ async function recordInWorker({ ms, gpuPasses }) {
       const ns = qParam.call(gl, s.q, gl.QUERY_RESULT);
       if (qParamGl.call(gl, timerExt.GPU_DISJOINT_EXT)) disjoint++;
       else {
-        const k = segLabel(s);
+        const k = s.label || segLabel(s);
         const p = passes.get(k) || { label: k, ns: 0, segments: 0, draws: 0, instances: 0 };
         p.ns += ns;
         p.segments++;
         p.draws += s.draws;
         p.instances += s.instances;
         passes.set(k, p);
+        if (s.pass) {
+          const t = drawPasses.get(s.pass) || { label: s.pass, ns: 0, draws: 0, instances: 0 };
+          t.ns += ns;
+          t.draws++;
+          t.instances += s.instances;
+          drawPasses.set(s.pass, t);
+        }
       }
       pending.splice(i, 1);
       free.push(s.q);
@@ -129,14 +161,16 @@ async function recordInWorker({ ms, gpuPasses }) {
   };
   const viewBytes = (v) => (v && typeof v.byteLength === 'number' ? v.byteLength : 0);
   const wrapped = [];
-  const wrap = (name, before) => {
+  const wrap = (name, before, after) => {
     // The descriptor's value: reading proto[name] runs a getter (canvas, drawingBufferWidth) on the prototype and throws.
     const orig = Object.getOwnPropertyDescriptor(proto, name)?.value;
     if (typeof orig !== 'function') return;
     const fn = function (...args) {
       counts[name] = (counts[name] || 0) + 1;
       if (before) before(args);
-      return orig.apply(this, args);
+      const r = orig.apply(this, args);
+      if (after) after(args);
+      return r;
     };
     gl[name] = fn;
     wrapped.push(name);
@@ -163,9 +197,11 @@ async function recordInWorker({ ms, gpuPasses }) {
         seg.sig = signature(bound.program);
       }
     };
-    if (name === 'drawElements' || name === 'drawArrays') hook = () => { draws++; instances++; segDraw(1); };
-    else if (name === 'drawElementsInstanced') hook = (a) => { draws++; instances += a[4] | 0; segDraw(a[4] | 0); };
-    else if (name === 'drawArraysInstanced') hook = (a) => { draws++; instances += a[3] | 0; segDraw(a[3] | 0); };
+    let after = null;
+    if (name === 'drawElements' || name === 'drawArrays') hook = () => { draws++; instances++; segDraw(1); beginDraw(1); };
+    else if (name === 'drawElementsInstanced') hook = (a) => { draws++; instances += a[4] | 0; segDraw(a[4] | 0); beginDraw(a[4] | 0); };
+    else if (name === 'drawArraysInstanced') hook = (a) => { draws++; instances += a[3] | 0; segDraw(a[3] | 0); beginDraw(a[3] | 0); };
+    if (perDraw && name.startsWith('draw')) after = endDraw;
     else if (name === 'getParameter' || name === 'isEnabled') hook = (a) => note(`${name} 0x${(a[0] >>> 0).toString(16)}`, 0);
     else if (name === 'useProgram') {
       hook = (a) => {
@@ -222,7 +258,7 @@ async function recordInWorker({ ms, gpuPasses }) {
         state.set(key, val);
       };
     }
-    wrap(name, hook);
+    wrap(name, hook, after);
   }
   const timer = gl.getExtension('EXT_disjoint_timer_query_webgl2');
   const f0 = px.frameNumber | 0;
@@ -244,7 +280,14 @@ async function recordInWorker({ ms, gpuPasses }) {
       label: p.label, msPerFrame: perMs(p.ns), segmentsPerFrame: Math.round((p.segments / Math.max(1, frames)) * 10) / 10,
       drawsPerFrame: Math.round((p.draws / Math.max(1, frames)) * 10) / 10, instancesPerFrame: Math.round(p.instances / Math.max(1, frames)),
     }));
-    gpu = { msPerFrame: perMs([...passes.values()].reduce((s, p) => s + p.ns, 0)), disjoint, lost: pending.length, passes: rows };
+    gpu = { msPerFrame: perMs([...passes.values()].reduce((s, p) => s + p.ns, 0)), disjoint, lost: pending.length, passes: rows, perDraw };
+    // gpuDraws: each pass's draws summed (the pass's busy time, without the gaps between its draws).
+    if (perDraw) {
+      gpu.drawPasses = [...drawPasses.values()].sort((x, y) => y.ns - x.ns).map((p) => ({
+        label: p.label, msPerFrame: perMs(p.ns), drawsPerFrame: Math.round((p.draws / Math.max(1, frames)) * 10) / 10,
+        instancesPerFrame: Math.round(p.instances / Math.max(1, frames)),
+      }));
+    }
   }
   const per = (v) => Math.round((v / Math.max(1, frames)) * 10) / 10;
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, perFrame: per(n), redundantPerFrame: per(redundant[name] || 0) }));
@@ -282,7 +325,7 @@ export async function recordGlFrames(opts) {
     await page.waitForTimeout(opts.warmupMs);
     const worker = page.workers().find((w) => w.url().includes('pixiWorker'));
     if (!worker) throw new Error('no Pixi worker');
-    return await worker.evaluate(recordInWorker, { ms: opts.recordMs, gpuPasses: !!opts.gpuPasses });
+    return await worker.evaluate(recordInWorker, { ms: opts.recordMs, gpuPasses: !!opts.gpuPasses, gpuDraws: !!opts.gpuDraws });
   } finally {
     await browser.close();
     await server.close?.();
@@ -302,6 +345,7 @@ async function main() {
     warmupMs: Number(args['warmup-ms'] ?? 12000),
     recordMs: Number(args['record-ms'] ?? 3000),
     gpuPasses: !!args['gpu-passes'],
+    gpuDraws: !!args['gpu-draws'],
   });
   if (r.error) {
     console.error(r.error);
@@ -314,13 +358,22 @@ async function main() {
   for (const row of r.top.slice(0, 30)) console.log(`  ${String(row.perFrame).padStart(7)}  ${row.name}${row.redundantPerFrame ? `  (${row.redundantPerFrame} redundant)` : ''}`);
   console.log('uploads and queries, per frame:');
   for (const row of r.detail.slice(0, 20)) console.log(`  ${String(row.perFrame).padStart(6)} calls ${String(row.kbPerFrame).padStart(7)} KB  ${row.key}`);
-  if (r.gpu) {
+  if (r.gpu?.perDraw) {
+    console.log(`GPU time in draws (a timer query per draw, ${r.gpu.disjoint} disjoint, ${r.gpu.lost} unread): ${r.gpu.msPerFrame} ms a frame; by pass:`);
+    for (const row of r.gpu.drawPasses.slice(0, 20)) {
+      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  ${String(row.drawsPerFrame).padStart(5)} draws ${String(row.instancesPerFrame).padStart(7)} inst  ${row.label}`);
+    }
+    console.log('the costliest draws:');
+    for (const row of r.gpu.passes.slice(0, 30)) {
+      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${String(row.segmentsPerFrame).padStart(4)} ${String(row.instancesPerFrame).padStart(7)} inst  ${row.label}`);
+    }
+  } else if (r.gpu) {
     console.log(`GPU time by pass (timer queries, ${r.gpu.disjoint} disjoint, ${r.gpu.lost} unread): ${r.gpu.msPerFrame} ms a frame`);
     for (const row of r.gpu.passes.slice(0, 30)) {
       console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${String(row.segmentsPerFrame).padStart(4)}  ${String(row.drawsPerFrame).padStart(5)} draws ` +
         `${String(row.instancesPerFrame).padStart(7)} inst  ${row.label}`);
     }
-  } else if (args['gpu-passes']) console.log('GPU time by pass: no EXT_disjoint_timer_query_webgl2 in this context');
+  } else if (args['gpu-passes'] || args['gpu-draws']) console.log('GPU time: no EXT_disjoint_timer_query_webgl2 in this context');
   if (args.output) fs.writeFileSync(String(args.output), JSON.stringify(r, null, 1));
 }
 
