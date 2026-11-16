@@ -21,7 +21,9 @@
    bits (radix_select) instead of the quickselect; a tie at the cut (or among sorted rows) goes the old way, so the
    rows stay the same, bit for bit (tests/node/shadowStampSelect.test.js).
    E-359: a keyed row (the caster's 7 floats, the light after them) and a full row (22 floats, the light over the last 4)
-   go out in fixed stores, the light vec4 in one v128, converted once a light. The same rows, bit for bit
+   go out in fixed stores, the light vec4 in one v128, converted once a light. E-358: a caster's nearest lights are one
+   record, its maxShadowsPerEntity (float distance, light) pairs side by side (8 bytes a pair at T_NEAR_DIST), so a note
+   on a caster reads and moves whole pairs, mostly in one line. The same rows, bit for bit
    (tests/node/shadowStampWasm.test.js and shadowStampKeyed.test.js). */
 #include <stdint.h>
 #include <wasm_simd128.h>
@@ -35,6 +37,8 @@ enum {
   T_TMP_IDX, T_DIST, T_ORDER, T_KEEP, T_TMP_CAP,
   T_GRID_COUNTS, T_GRID_STARTS, T_GRID_ITEMS, T_GRID_COUNTS_CAP, T_GRID_ITEMS_CAP,
   T_STAMP, T_STAMP_FLOATS, T_STAMP_CAP, T_STAMP_BASE, T_STAMP_LIGHT_IDX, T_LIGHT_FLOAT,
+  /* E-358: T_NEAR_DIST holds the casters' records (maxShadowsPerEntity pairs each, 8 bytes a pair); the stamp does
+     not read T_NEAR_SLOT (the float32 test module, wasm/test/shadowStampF32.c, keeps its own light slots there). */
   T_NEAR_DIST, T_NEAR_SLOT, T_NEAR_COUNT,
   T_PACKED_X, T_PACKED_Y, T_CELL_OF, T_DIST64,
   SLOT_COUNT
@@ -195,29 +199,41 @@ INLINE int build_grid_packed(const float *sun, uint32_t nSun, uint32_t sf, int32
   return 1;
 }
 
-/* noteNearest: keep the closest lights on this caster; ties go to the smaller light index. */
-INLINE void note_nearest(float *nearDist, int32_t *nearSlot, uint8_t *nearCount, uint32_t caster, int32_t lightIndex,
-                         double d2, uint32_t maxPE) {
-  const uint32_t base = caster * maxPE;
+INLINE uint32_t f32_bits(float f) {
+  union { float f; uint32_t u; } b = { .f = f };
+  return b.u;
+}
+
+/* A nearest-light pair (E-358): its float distance in the low word, its light in the high one. */
+INLINE double pair_dist(uint64_t pair) {
+  union { uint32_t u; float f; } b = { .u = (uint32_t)pair };
+  return b.f;
+}
+
+INLINE int32_t pair_light(uint64_t pair) { return (int32_t)(uint32_t)(pair >> 32); }
+
+/* noteNearest: keep the closest lights on this caster; ties go to the smaller light index. The caster's record is its
+   maxPE pairs, nearest first: a pair moves as one word, the bits the float and the int had apart (a NaN distance
+   compares false whatever its bits). */
+INLINE void note_nearest(uint64_t *near, uint8_t *nearCount, uint32_t caster, int32_t lightIndex, double d2,
+                         uint32_t maxPE) {
+  uint64_t *rec = near + caster * maxPE;
   uint32_t n = nearCount[caster];
   if (n == maxPE) {
-    const uint32_t worst = base + n - 1;
-    const double wd = nearDist[worst];
-    if (d2 > wd || (d2 == wd && lightIndex >= nearSlot[worst])) return;
+    const uint64_t worst = rec[n - 1];
+    const double wd = pair_dist(worst);
+    if (d2 > wd || (d2 == wd && lightIndex >= pair_light(worst))) return;
     n--;
   }
   uint32_t i = n;
   while (i > 0) {
-    const uint32_t prev = base + i - 1;
-    const double pd = nearDist[prev];
-    const int32_t pl = nearSlot[prev];
-    if (pd < d2 || (pd == d2 && pl <= lightIndex)) break;
-    nearDist[base + i] = (float)pd;
-    nearSlot[base + i] = pl;
+    const uint64_t prev = rec[i - 1];
+    const double pd = pair_dist(prev);
+    if (pd < d2 || (pd == d2 && pair_light(prev) <= lightIndex)) break;
+    rec[i] = prev;
     i--;
   }
-  nearDist[base + i] = (float)d2;
-  nearSlot[base + i] = lightIndex;
+  rec[i] = (uint64_t)f32_bits((float)d2) | ((uint64_t)(uint32_t)lightIndex << 32);
   nearCount[caster] = (uint8_t)(n + 1);
 }
 
@@ -340,11 +356,6 @@ static void quicksort_order(uint32_t *order, const float *dist, int32_t left, in
 #define SEL_SMALL 32
 /* Fewer candidates than this: the quickselect (the bins' fixed cost would weigh more than its partitions). */
 #define SEL_MIN 64
-
-INLINE uint32_t f32_bits(float f) {
-  union { float f; uint32_t u; } b = { .f = f };
-  return b.u;
-}
 
 static int radix_select(const float *dist, uint32_t m, uint32_t lim, uint32_t kTop, uint32_t *order, uint32_t *list,
                         uint32_t *hist) {
@@ -575,14 +586,14 @@ INLINE int32_t stamp_light_rows(float *stamp, uint32_t df, int32_t cursor, const
   return written;
 }
 
-/* The rows of one caster's nearest lights (its slots, n lights), nearest first, until the stamp is full. lvt
+/* The rows of one caster's nearest lights (its record rec, n pairs), in the record's order, until the stamp is full. lvt
    (table 1): each light's vec4, made once a light; table 0 makes it row by row. folded: a cone or dim light's rows take
    their caster's place in the cone and its shade. table and folded are constants once inlined. */
 INLINE int32_t caster_rows(float *stamp, uint32_t df, int32_t cursor, int32_t cap, const float *s, uint32_t sf,
-                           uint32_t lightAt, int kind, const double *lights, const float *lvt, const int32_t *slots,
+                           uint32_t lightAt, int kind, const double *lights, const float *lvt, const uint64_t *rec,
                            uint32_t n, uint16_t *stampLightIdx, const int table, const int folded) {
   for (uint32_t k = 0; k < n && cursor < cap; k++) {
-    const int32_t li = slots[k];
+    const int32_t li = pair_light(rec[k]);
     const double *L = lights + (uint32_t)li * LIGHT_DOUBLES;
     v128_t lv = table ? wasm_v128_load(lvt + 4 * (uint32_t)li) : light_vec(L);
     if (folded && (L[7] > -1.0 || L[10] < 1.0)) {
@@ -597,12 +608,12 @@ INLINE int32_t caster_rows(float *stamp, uint32_t df, int32_t cursor, int32_t ca
 
 /* The rows of maxShadowsPerEntity, caster by caster in caster order, until the stamp is full. */
 INLINE int32_t stamp_nearest_rows(float *stamp, uint32_t df, int32_t cursor, int32_t cap, const float *sun, uint32_t sf,
-                                  uint32_t lightAt, const double *lights, const float *lvt, const int32_t *nearSlot,
+                                  uint32_t lightAt, const double *lights, const float *lvt, const uint64_t *near,
                                   const uint8_t *nearCount, uint32_t nSun, uint32_t maxPE, uint16_t *stampLightIdx,
                                   const int table, const int folded) {
   const int kind = row_kind(sf, df, lightAt);
   for (uint32_t c = 0; c < nSun && cursor < cap; c++) {
-    cursor = caster_rows(stamp, df, cursor, cap, sun + c * sf, sf, lightAt, kind, lights, lvt, nearSlot + c * maxPE,
+    cursor = caster_rows(stamp, df, cursor, cap, sun + c * sf, sf, lightAt, kind, lights, lvt, near + c * maxPE,
                          nearCount[c], stampLightIdx, table, folded);
   }
   return cursor;
@@ -789,8 +800,7 @@ int32_t stamp_light_range(uint32_t table) {
   int32_t cursor = (int32_t)t[T_STAMP_BASE];
   uint16_t *stampLightIdx = (uint16_t *)(uintptr_t)t[T_STAMP_LIGHT_IDX];
   const uint32_t lightAt = t[T_LIGHT_FLOAT];
-  float *nearDist = (float *)(uintptr_t)t[T_NEAR_DIST];
-  int32_t *nearSlot = (int32_t *)(uintptr_t)t[T_NEAR_SLOT];
+  uint64_t *near = (uint64_t *)(uintptr_t)t[T_NEAR_DIST];
   uint8_t *nearCount = (uint8_t *)(uintptr_t)t[T_NEAR_COUNT];
   float *px = (float *)(uintptr_t)t[T_PACKED_X];
   float *py = (float *)(uintptr_t)t[T_PACKED_Y];
@@ -850,7 +860,7 @@ int32_t stamp_light_range(uint32_t table) {
             const uint32_t p = order[k];
             const double dx = (double)px[p] - lx;
             const double dy = (double)py[p] - ly;
-            note_nearest(nearDist, nearSlot, nearCount, gridItems[p], i, dx * dx + dy * dy, maxPE);
+            note_nearest(near, nearCount, gridItems[p], i, dx * dx + dy * dy, maxPE);
           }
           continue;
         }
@@ -969,10 +979,10 @@ int32_t stamp_light_range(uint32_t table) {
         }
         for (int32_t k = 0; k < lim; k++) {
           const uint32_t at = order[k];
-          note_nearest(nearDist, nearSlot, nearCount, tmpIdx[at], i, d64[at], maxPE);
+          note_nearest(near, nearCount, tmpIdx[at], i, d64[at], maxPE);
         }
       } else {
-        for (uint32_t k = 0; k < m; k++) note_nearest(nearDist, nearSlot, nearCount, tmpIdx[k], i, d64[k], maxPE);
+        for (uint32_t k = 0; k < m; k++) note_nearest(near, nearCount, tmpIdx[k], i, d64[k], maxPE);
       }
       continue;
     }
@@ -1010,12 +1020,12 @@ int32_t stamp_light_range(uint32_t table) {
     /* Point lights at full shade only: each row is its caster's with the light's vec4. DX-SPOT: a call with a cone or
        dim light; that light's rows take their caster's place in the cone and its shade. */
     return anyFolded
-      ? stamp_nearest_rows(stamp, df, cursor, cap, sun, sf, lightAt, lights, lvt, nearSlot, nearCount, nSun, maxPE,
+      ? stamp_nearest_rows(stamp, df, cursor, cap, sun, sf, lightAt, lights, lvt, near, nearCount, nSun, maxPE,
                            stampLightIdx, 1, 1)
-      : stamp_nearest_rows(stamp, df, cursor, cap, sun, sf, lightAt, lights, lvt, nearSlot, nearCount, nSun, maxPE,
+      : stamp_nearest_rows(stamp, df, cursor, cap, sun, sf, lightAt, lights, lvt, near, nearCount, nSun, maxPE,
                            stampLightIdx, 1, 0);
   }
   /* More lights than dist holds (a few casters): each row makes its light's vec4, any light. */
-  return stamp_nearest_rows(stamp, df, cursor, cap, sun, sf, lightAt, lights, (const float *)0, nearSlot, nearCount, nSun,
+  return stamp_nearest_rows(stamp, df, cursor, cap, sun, sf, lightAt, lights, (const float *)0, near, nearCount, nSun,
                             maxPE, stampLightIdx, 0, 1);
 }

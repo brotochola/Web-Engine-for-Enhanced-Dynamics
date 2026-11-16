@@ -16,6 +16,8 @@ export const STAMP_SLOTS = [
   'tmpIdx', 'dist', 'order', 'keep', 'tmpCap',
   'gridCounts', 'gridStarts', 'gridItems', 'gridCountsCap', 'gridItemsCap',
   'stamp', 'stampFloats', 'stampCap', 'stampBase', 'stampLightIdx', 'lightFloat',
+  // E-358: 'nearDist' is the casters' records of nearest lights (maxPerEntity pairs of a float distance and an int32
+  // light, 8 bytes a pair); the stamp does not read 'nearSlot' (the float32 test module keeps its slots there).
   'nearDist', 'nearSlot', 'nearCount',
   // E-160: the casters' x and y packed in the grid's order, each caster's cell, the candidates' double distances.
   'packedX', 'packedY', 'cellOf', 'dist64',
@@ -70,8 +72,10 @@ export async function bindShadowStamp(memory, stamp) {
   table[ORDER] = stamp.orderByte;
   table[KEEP] = stamp.keepByte;
   table[LIGHT_FLOAT] = GPU_CASTER_LIGHT_FLOAT;
-  table[NEAR_DIST] = stamp.nearDistByte;
-  table[NEAR_SLOT] = stamp.nearSlotByte;
+  table[NEAR_DIST] = stamp.nearByte;
+  // The region's second half: wasm/test/shadowStampF32.c's float32 stamps keep their distances in its first half and
+  // their light slots there.
+  table[NEAR_SLOT] = stamp.nearByte + 4 * (stamp.maxSun | 0) * (stamp.maxPerEntity | 0);
   table[NEAR_COUNT] = stamp.nearCountByte;
   table[PACKED_X] = stamp.packedXByte;
   table[PACKED_Y] = stamp.packedYByte;
