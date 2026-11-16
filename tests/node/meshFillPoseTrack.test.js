@@ -114,9 +114,8 @@ function refPoseOrPresenceChanged(views, prevPose) {
     if ((prevPose.active[i] | 0) !== a || (prevPose.visible[i] | 0) !== vis) return true;
     if (!a || !vis) continue;
     const pose = refReadPose(i, views, refPoseSource(i, views));
-    if (pose[0] !== px[i] || pose[1] !== prevPose.y[i] || pose[2] !== prevPose.rotC[i] || pose[3] !== prevPose.rotS[i]) {
-      return true;
-    }
+    if (pose[0] !== px[i] || pose[1] !== prevPose.y[i]) return true;
+    if (pose[2] !== prevPose.rotC[i] || pose[3] !== prevPose.rotS[i]) return true;
   }
   return false;
 }
@@ -126,7 +125,8 @@ function refPresenceChanged(views, prevPose) {
   const pa = prevPose && prevPose.active;
   if (!pa || pa.length < n) return true;
   for (let i = 0; i < n; i++) {
-    if ((pa[i] | 0) !== (views.meshActive[i] | 0) || (prevPose.visible[i] | 0) !== (views.meshVisible[i] | 0)) return true;
+    if ((pa[i] | 0) !== (views.meshActive[i] | 0)) return true;
+    if ((prevPose.visible[i] | 0) !== (views.meshVisible[i] | 0)) return true;
   }
   return false;
 }
@@ -284,7 +284,7 @@ function makeScene(r, size, entityCount, shape) {
   return { w, views };
 }
 
-/** One game frame: presence toggles, live moves (inside and past the slack), publishes, turns, static bodies, sprite poses. */
+/** A game frame: presence toggles, live moves in and past the slack, publishes, turns, static bodies, sprite poses. */
 function gameFrame(r, scene, f, shape) {
   const { w, views } = scene;
   // A frame where nothing moved: the layers can skip, unless a repaint or a new fixture asks them to pack.
@@ -453,7 +453,8 @@ function uploadTables(r, views, layer, where, tally) {
     const count = list.length;
     const want = refUploadPoseTable(t.ref, list, count, views);
     assert.equal(proto.uploadPoseTable.call(t.rec, list, count, views, layer.rec), want, `${where}: batch ${b} count`);
-    assert.equal(proto.uploadPoseTable.call(t.sampled, list, count, views), want, `${where}: batch ${b} count, sampled`);
+    const sampledCount = proto.uploadPoseTable.call(t.sampled, list, count, views);
+    assert.equal(sampledCount, want, `${where}: batch ${b} count, sampled`);
     assertSameTable(t.ref.poseTable, t.rec.poseTable, `${where}: batch ${b} from the record`);
     assertSameTable(t.ref.poseTable, t.sampled.poseTable, `${where}: batch ${b} sampled`);
     for (const ctx of [t.rec, t.sampled]) {
@@ -526,7 +527,8 @@ function runScene(seed, shapeName, { size = 160, frames = 90, growAt = -1, shrin
       const wantSkip = refCanSkip(views, layer.lastRevision, layer.ref);
       const wantPresence = refPresenceChanged(views, layer.ref);
       const wantMoved = refPoseOrPresenceChanged(views, layer.ref);
-      assert.equal(colliderFillCanSkipPack(views, layer.lastRevision, layer.ref), wantSkip, `${where}: colliderFillCanSkipPack`);
+      const shippedSkip = colliderFillCanSkipPack(views, layer.lastRevision, layer.ref);
+      assert.equal(shippedSkip, wantSkip, `${where}: colliderFillCanSkipPack`);
       if (!wantSkip) refCopy(views, layer.ref);
       // The new one on its own.
       const moved = trackMeshFillPose(views, layer.rec);
@@ -562,9 +564,10 @@ test("trackMeshFillPose decides, flags and records as the old passes did, on Pix
     }
     // Every case the pass decides came up.
     assert.ok(total.skip > 20 && total.pack > 20, `${shapeName}: skips ${total.skip}, packs ${total.pack}`);
-    assert.ok(total.presence > 20 && total.pose > 20, `${shapeName}: presence moves ${total.presence}, pose moves ${total.pose}`);
-    assert.ok(total.liveStatic > 0 && total.liveGate > 0, `${shapeName}: static ${total.liveStatic}, gate ${total.liveGate}`);
-    if (shapeName.startsWith('pixi')) assert.ok(total.liveSlack > 0 && total.latched > 0, `${shapeName}: slack ${total.liveSlack}, latched ${total.latched}`);
+    const counts = `${shapeName}: ${JSON.stringify(total)}`;
+    assert.ok(total.presence > 20 && total.pose > 20, counts);
+    assert.ok(total.liveStatic > 0 && total.liveGate > 0, counts);
+    if (shapeName.startsWith('pixi')) assert.ok(total.liveSlack > 0 && total.latched > 0, counts);
     if (shapeName.endsWith('Queue')) assert.ok(total.queue > 0, `${shapeName}: sprite poses ${total.queue}`);
   }
 });
@@ -596,7 +599,7 @@ test('uploadPoseTable with the record sends the pose this frame was decided on, 
   for (const proto of [ColliderFillBatch.prototype, MeshUvFillBatch.prototype]) {
     const fromRecord = tableCtx();
     proto.uploadPoseTable.call(fromRecord, ids, ids.length, views, record);
-    assert.equal(fromRecord.poseTable[2 * 4], decided, 'the pose the record holds, which the layer compares next frame');
+    assert.equal(fromRecord.poseTable[2 * 4], decided, 'the pose the record holds, the one compared next frame');
     const sampled = tableCtx();
     proto.uploadPoseTable.call(sampled, ids, ids.length, views);
     assert.equal(sampled.poseTable[2 * 4], w.liveX[2], 'without it, the pose read now');
@@ -617,7 +620,12 @@ test('a record that holds fewer entities than the views is grown, and everything
     runScene(0xa11, shapeName, { size: 120, frames: 40, growAt: 17, shrinkBy: 9 });
   }
   const views = makeScene(rng(3), 8, 8, SHAPES.pixi).views;
-  for (const record of [{}, { x: new Float32Array(4), active: new Uint8Array(8) }, { x: new Float32Array(8), active: new Uint8Array(0) }]) {
+  const short = [
+    {},
+    { x: new Float32Array(4), active: new Uint8Array(8) },
+    { x: new Float32Array(8), active: new Uint8Array(0) },
+  ];
+  for (const record of short) {
     assert.equal(trackMeshFillPose(views, record), MESH_FILL_MOVED | MESH_FILL_PRESENCE_MOVED);
     assert.equal(record.x.length, 8);
     assert.equal(record.visible.length, 8);
@@ -633,7 +641,7 @@ test('a record that holds fewer entities than the views is grown, and everything
   assert.equal(trackMeshFillPose(none, { x: new Float32Array(0), active: new Uint8Array(0) }), 0);
 });
 
-// --- Pixi's real MESH layer pass (initializeCustomLayers, then updateCustomLayers a frame), as meshCornersWired runs it. ---
+// --- Pixi's real MESH layer pass: initializeCustomLayers, then updateCustomLayers per frame, as meshCornersWired does.
 
 const W_N = 64;
 const W_FRAMES = 160;
@@ -651,7 +659,9 @@ function buildWiredScene() {
   const scene = {
     totalEntityCount: W_N,
     nextComponentId: 4,
-    registeredClasses: [{ class: PoseThing, count: W_N, startIndex: 0, entityType: 0, components: PoseThing.components }],
+    registeredClasses: [
+      { class: PoseThing, count: W_N, startIndex: 0, entityType: 0, components: PoseThing.components },
+    ],
     componentPools: {
       Transform: { ComponentClass: Transform },
       RigidBody: { ComponentClass: RigidBody },
@@ -939,7 +949,8 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
             assert.equal(full, !e.topologyStable || failed, `${where}: full pack`);
             if (full) {
               assert.equal(fillUp, (cl.prevCount | 0) > 0, `${where}: fill pose table after the pack`);
-              assert.equal(uvUp, !!cl.uvFillBatch && (cl.uvPrevCount | 0) > 0, `${where}: UV pose table after the pack`);
+              const uvPacked = !!cl.uvFillBatch && (cl.uvPrevCount | 0) > 0;
+              assert.equal(uvUp, uvPacked, `${where}: UV pose table after the pack`);
               tally.full++;
             } else {
               assert.equal(fillUp, e.moved && e.fillCount > 0, `${where}: fill pose table`);
@@ -966,6 +977,8 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
   assert.ok(layers.every((cl) => cl.uvFillBatch), 'both layers draw UV rows too');
   assert.ok(compared > W_FRAMES, `${compared} pose tables compared`);
   assert.equal(keysAtBirth.size, 4);
-  for (const [batch, born] of keysAtBirth) assert.equal(keys(batch), born, `${batch.mesh.label}: no field added after construction`);
+  for (const [batch, born] of keysAtBirth) {
+    assert.equal(keys(batch), born, `${batch.mesh.label}: no field added after construction`);
+  }
   assert.ok(tally.skip > 10 && tally.full > 10 && tally.poseOnly > 50 && tally.packNoPose > 5, JSON.stringify(tally));
 });

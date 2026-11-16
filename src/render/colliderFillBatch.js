@@ -384,7 +384,7 @@ export function meshFillPoseOrPresenceChanged(views, prevPose) {
 
 /** trackMeshFillPose: a mesh's pose or an entity's presence moved (meshFillPoseOrPresenceChanged's question). */
 export const MESH_FILL_MOVED = 1;
-/** trackMeshFillPose: an entity's presence moved, so the packed rows are not the layer's any more. Comes with MESH_FILL_MOVED. */
+/** trackMeshFillPose: an entity's presence moved, so the packed rows are stale. Comes with MESH_FILL_MOVED. */
 export const MESH_FILL_PRESENCE_MOVED = 2;
 
 /**
@@ -487,7 +487,7 @@ function trackMeshPoseLiveOrLatched(views, prevPose, n) {
   return moved;
 }
 
-/** trackMeshPoseLiveOrLatched on a frame of sprite poses: a mesh whose sprite was drawn this frame takes its pose (N-138). */
+/** trackMeshPoseLiveOrLatched on a frame of sprite poses: a mesh whose sprite was drawn this frame takes its pose. */
 function trackMeshPoseQueued(views, prevPose, n) {
   const active = views.meshActive;
   const visible = views.meshVisible;
@@ -564,7 +564,7 @@ function trackMeshPoseQueued(views, prevPose, n) {
   return moved;
 }
 
-/** trackMeshFillPose on views without some pose column (tests, tools): meshFillPoseSource and readMeshFillPose per mesh. */
+/** trackMeshFillPose on views short of a pose column (tests, tools): meshFillPoseSource, readMeshFillPose per mesh. */
 function trackMeshPoseAnyViews(views, prevPose, n) {
   const active = views.meshActive;
   const visible = views.meshVisible;
