@@ -13857,7 +13857,8 @@
       ],
       "records": [
         "R-1103",
-        "R-1117"
+        "R-1117",
+        "R-1209"
       ]
     },
     {
@@ -16850,7 +16851,8 @@
       "records": [
         "R-1100",
         "R-1102",
-        "R-1112"
+        "R-1112",
+        "R-1209"
       ]
     },
     {
@@ -17058,7 +17060,8 @@
       "records": [
         "R-1100",
         "R-1102",
-        "R-1111"
+        "R-1111",
+        "R-1209"
       ]
     },
     {
@@ -17081,7 +17084,8 @@
       ],
       "records": [
         "R-1102",
-        "R-1112"
+        "R-1112",
+        "R-1209"
       ]
     },
     {
@@ -17108,7 +17112,8 @@
         "R-1118",
         "R-1180",
         "R-1192",
-        "R-1208"
+        "R-1208",
+        "R-1209"
       ]
     },
     {
@@ -17224,7 +17229,8 @@
       "records": [
         "R-1100",
         "R-1103",
-        "R-1117"
+        "R-1117",
+        "R-1209"
       ]
     },
     {
@@ -17412,7 +17418,8 @@
         "R-1103",
         "R-1104",
         "R-1115",
-        "R-1188"
+        "R-1188",
+        "R-1209"
       ]
     },
     {
@@ -17555,7 +17562,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1117"
+        "R-1117",
+        "R-1209"
       ]
     },
     {
@@ -17579,7 +17587,8 @@
       "records": [
         "R-1100",
         "R-1103",
-        "R-1117"
+        "R-1117",
+        "R-1209"
       ]
     },
     {
@@ -17602,7 +17611,8 @@
       ],
       "records": [
         "R-1103",
-        "R-1117"
+        "R-1117",
+        "R-1209"
       ]
     },
     {
@@ -17625,7 +17635,8 @@
       ],
       "records": [
         "R-1103",
-        "R-1117"
+        "R-1117",
+        "R-1209"
       ]
     },
     {
@@ -31367,6 +31378,18 @@
       "title": "PR #12 integrated on integrate/pr12: main's builds stay on all four twice-built pairs (E-315 a split: E-458), E-331 ported onto main's stamp, main's Box2D binary kept (E-357, E-316 blocked)",
       "verdict": "note",
       "text": "**PR #12 integrated on integrate/pr12, with main merged in (d0a041ff). On all four twice-built pairs main's build stays (E-315 is a split). E-331 is ported onto main's stamp. Main's Box2D binary stays, so E-357 and E-316 are blocked.** Before merging into main the branch takes one batch gate (R-1209); the 20 candidates left wait for their owner sittings.\n\n**The merge** (26357132, the integration agent):\n- The register: the merge driver kept main's statuses for E-315, N-170, E-358 and E-359, as R-1180 chose.\n- shadowStamp.c: main's stamp, with E-331's scan slots, grid_from_xy and f64x2 binning ported on.\n- gpuPack.c: E-372's framed scan and E-331's xy share one inline loop, so framed plus xy is a fourth form, with a new castFramesParity test.\n- gpuPackClient.js: packKeyedCastersScanWasm(..., sun, scan). E-337's rule (the type column only with shadow terms) now also covers E-387's G-buffer forms.\n- preRenderWorker.js: both columns.\n- logicWorker.js: E-364 and E-349.\n- gameObject.js: main's setters, plus PR #12's MeshRenderer alpha and visualOutset compares.\n- wasmMemoryMap.js: main's stampNear region.\n- Rebuilt from the merged C (buildWasm --check clean): engine.wasm 314 824 -> 332 704 B; the gpuPack, shadowStamp and shadowStampF32 fixtures.\n\n**The twice-built pairs.** Same checksums; Node with --no-liftoff and rotated rounds; Chrome 157 alternating rounds in one page; percentages are PR #12's build against main's (positive: PR #12 slower):\n\n| kernel | E-315 | E-358 | E-359 |\n| --- | --- | --- | --- |\n| Node, Predator fixture | +13.2 % (PR faster 0/4) | +5.2 % | +4.4 % |\n| Node, fixture as keyed rows | +11.4 % | +6.1 % | +0.9 % |\n| Node, lamps, no per-entity cap | +489 % (PR has no walk there) | +0.5 % | +3.0 % |\n| Node, lamps, 3 a entity | -3.1 % (4/4) | +0.3 % | +1.4 % |\n| Chrome, fixture as keyed rows | +27.9 % | +3.4 % | +1.1 % |\n| Chrome, lamps | +446 % | -0.8 % | -0.2 % |\n| Node replay, crowd 2.5 | -12.0 % and -20.1 % | +1.1 % | +26.5 % |\n| Chrome replay, crowd 2.5 | -10.1 % (9/9) | -0.3 % | +19.5 % |\n\n- E-315: main's stays. PR #12's walk wins on crowd 2.5's own frames, where most lights keep 73 casters, just past main's 64. It loses on the fixture, and has no walk for lights without a per-entity cap. The combined form is filed as E-458.\n- E-358: main's stays (ahead on the fixture, the rest within 3 %).\n- E-359: main's stays. PR #12's dim and cone rows keep the row-by-row loop without the 16-count skip, and its whole stamp replays crowd 2.5 10.9 % slower in Chrome (0/9).\n- N-170: main's stays. Both builds have the same 21 compares. setterMicrobench (00248ddf) has PR #12's inline bodies 12 to 21 % faster, but that gap is N-215's scratch, which main kept on scene evidence (R-1169). Filed as E-459.\n\n**Box2D:** PR #12's box2dWasm.wasm (E-357: eb42d5e; E-316: c5d1a03) is built from origin's solver-skip-second-point, a branch neither on Box2D main nor fetched in the local Box2D clone, and the LiquidFun gates never ran on it. Main's binary is kept (a5a03ca3). E-357 and E-316 are blocked until that branch reaches the Box2D repo with both builds and the gates. E-257 (weedjsPost.js, JS only) stays.\n\n**Tests:** node 2872/2874 on the branch (the two path-import tests), demos 101/101.\n\n**Left for owner sittings**, leave-one-out against the integrated branch:\n- pre-render: E-320, E-330, E-331. E-331's replay is 12.03 against 13.65 ms without the scan (-11.9 %, 8/8), but the scan's own writes are not counted there; its A side is spec.scanXY false.\n- spatial: E-329.\n- logic: E-344; E-282 (contactDrainStressScene, raise its load over 6 ms first).\n- hygiene, covered by the batch gate: E-348, E-349, E-350, E-351, E-257, E-336.\n- physics: E-357 and E-316, blocked; E-314 is not in PR #12 (origin/wave15-e314-finalize-loads).\n- Pixi: E-337 (keyedPackStressScene n=300000 churn=0.05); E-338 (no scene over 6 ms that re-sorts the painter: keyedPack bands=1?).\n- particle: E-334 (decorationSway, raise the count), E-335 (needs a moving camera over many decorations), E-354 (liquidFunStress or computeStress over 6 ms)."
+    },
+    {
+      "id": "R-1209",
+      "date": "2026-11-16",
+      "time": "11:03",
+      "timeFrom": "recorded",
+      "title": "PR #12 merged into main after its batch gate: Predator crowd 2.5 pre-render -3.2 % (KEPT product, -6.5 % against the others); physics' +15 % read in a loaded sitting, its quiet re-check owed",
+      "verdict": "passed",
+      "text": "**PR #12 merged into main (15cb911f) after its batch gate: Predator crowd 2.5's pre-render -3.2 % (KEPT, product; -6.5 % against the others, 4/4).** Physics read +15 % in a sitting where every worker ran high, so its re-check on a quiet machine is owed.\n\nrunPredatorAbab --pool, 4 pairs, headed, AC power, cf93c047 (main) against d0a041ff (integrate/pr12 with main merged in and main's Box2D binary), crowd=2.5 zoom=0.216, pre-render as owner, 2026-11-16 10:58 to 11:03 (the log):\n\n| worker | main -> PR #12 |\n| --- | --- |\n| pre-render | 8.851 -> 8.549 ms (-3.2 %, 1/4 worse; -6.5 % against the others, 4/4) |\n| logic | 9.133 -> 9.109 (+0.3 %; -7.8 % against the others) |\n| spatial | 14.081 -> 14.938 (+5.1 %, 2/4; -3.2 % against the others) |\n| physics | 37.128 -> 42.357 (+15.0 %, 3/4, cv 20 / 16 %) |\n| renderer | 4.902 -> 5.200 (under the floor) |\n| presented | 59.9 -> 60.0 |\n\nEvery worker sat far above its usual level (physics 37 ms against 13 to 15 in this morning's sittings; logic 9.1 against 6 to 7). The second Pixi agent was building and testing on the same machine (N-220). Physics' +15 % with cv 16 to 20 % is not a reading. The one physics-side change left in the merge is E-257 (the query services' closures made once, less garbage); the Box2D binary is main's. A physics-owned re-check on a quiet machine stays owed before E-257 and the hygiene group are final.\n\nMain's suites after the merge: node 2891/2891, demos 101/101. The integrated branch's suite had caught a register record of mine (R-1207) with a time and no timeFrom, fixed on main (3556eafa).\n\nNext, leave-one-out sittings for the speed candidates (R-1208's list):\n- pre-render: E-320, E-330, E-331;\n- spatial: E-329;\n- logic: E-344;\n- then the Pixi and particle ones, once their owner scenes reach 6 ms.",
+      "commits": [
+        "15cb911f"
+      ]
     }
   ],
   "leads": [
