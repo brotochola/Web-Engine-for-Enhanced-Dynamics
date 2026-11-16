@@ -23,10 +23,14 @@ export function savedBenchWindow() {
   return null;
 }
 
-/** Chrome's launch argument for the saved position (none when nothing is saved). */
+/**
+ * Chrome's launch arguments: the saved position (none when nothing is saved), and a device scale factor of 1, so a
+ * window on a screen scaled to 125 % (the owner's second screen) renders the canvas at the same pixels as on the 100 %
+ * one: the measurements do not depend on which screen the window is on.
+ */
 export function benchWindowArgs() {
   const p = savedBenchWindow();
-  return p ? [`--window-position=${p.left},${p.top}`] : [];
+  return [...(p ? [`--window-position=${p.left},${p.top}`] : []), '--force-device-scale-factor=1'];
 }
 
 /**
