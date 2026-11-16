@@ -15556,7 +15556,8 @@
         "_applyKeyedSunFrames cost"
       ],
       "records": [
-        "R-1155"
+        "R-1155",
+        "R-1157"
       ]
     },
     {
@@ -15635,7 +15636,8 @@
         "sun frames in WASM"
       ],
       "records": [
-        "R-1155"
+        "R-1155",
+        "R-1157"
       ]
     },
     {
@@ -16410,6 +16412,25 @@
       ]
     },
     {
+      "id": "N-215",
+      "title": "GameObject's x and y setters box their double wherever a game's tick leaves them out of its inlining (light3dCompareScene's walkers: 2.1 MB/s in the logic worker at 3 000 of them)",
+      "status": "open",
+      "statusText": "found 2026-11-15 in Phase 3's heap passes (main has the same setters); the stress scene now writes its columns",
+      "date": "2026-11-15",
+      "area": "engine",
+      "kind": "speed",
+      "result": "A walker's tick (`this.x = cx + c * r; this.y = ...`) allocated 2.1 MB/s once its own hashes were gone, 4.2 MB/s with them (more of the tick's inlining budget spent): each setter call left out boxes its value. lampShadowStressScene's walkers show it too (_tickNonDecimatedOneNoBody 177 KB/s at 6 000). Any game that moves its entities through the setters pays it.",
+      "next": "A setter small enough to be inlined always (V8 inlines a callee under 27 bytes of bytecode whatever the budget): the store and a call without doubles for the rare work (static scenery, a body's transform), or position setters that take their values through a Float64Array; read the logic worker's allocation before and after in a scene that moves its entities through them.",
+      "refs": [],
+      "aliases": [
+        "setter boxing",
+        "x y setter garbage"
+      ],
+      "records": [
+        "R-1157"
+      ]
+    },
+    {
       "id": "E-382",
       "title": "Predator's people (MySoldier, Civilian) on DirectionalSprite against main's hand-picked directions: what the branch charges Predator's logic and pre-render",
       "status": "open",
@@ -16492,7 +16513,8 @@
       ],
       "aliases": [],
       "records": [
-        "R-1152"
+        "R-1152",
+        "R-1157"
       ]
     },
     {
@@ -16510,7 +16532,27 @@
         "gbuf words cost"
       ],
       "records": [
-        "R-1155"
+        "R-1155",
+        "R-1157"
+      ]
+    },
+    {
+      "id": "E-388",
+      "title": "pickDirection's doubles boxed where TurboFan left its calls out: DirectionalSprite.resolve (facing, margin) and pre-render's sun and lamp frames (the turn); its angle math called wrapAngle and angleDistance",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-15 in Phase 3's heap passes and fixed the same evening (2993032c): pickDirectionArgs, its doubles in PICK_ARGS (the turn in SUN_TURN or LAMP_TURN), every wrap and distance written out; bit for bit the old results (spriteDirectionsParity)",
+      "date": "2026-11-15",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Allocation (heap pass, 8 s): directionalSpriteStressScene n=20000, logic 365.4 -> 24.3 KB/s; sunShadowMapStressScene lamps=48 hour=22 casters=3000, pre-render 357.8 -> 102.6 KB/s. A first form that still called wrapAngle past a turn allocated more (12.9 MB/s in pre-render: a facing plus the sun's turn passes 2π often). Node, 3e6 calls: 1.8 -> 9.7 M/s on an uneven 32-direction table, 24.6 -> 27.7 M/s on a uniform one. STEP_MS not measured yet.",
+      "next": "The logic and pre-render STEP_MS with the scenes of Phase 1 and 2 (directionalSpriteStressScene ?mode=ds, sunShadowMapStressScene ?lamps=, Predator ?light3d=1).",
+      "refs": [],
+      "aliases": [
+        "pick direction boxing",
+        "directional resolve garbage"
+      ],
+      "records": [
+        "R-1156"
       ]
     }
   ],
@@ -27537,6 +27579,27 @@
       "title": "Phase 3, Predator light3d night: the sun and lamp frames 11 % of pre-render, writeGbufWords 3.4 % of Pixi, steady deopts",
       "verdict": "note",
       "text": "Phase 3's first passes (DX_LIGHT3D_PLAN 17.9), Predator ?light3d=1&hour=22, crowd 1, the branch at 7614f83d (profileSceneSweep: cpu at 21:22, deopt 21:23, heap 21:23; 8 s warm-up, 8 s window; the owner's bench tab open, so shares within a worker, not ms).\n\nBusy ms/s: pixi 534 (its wait for the queue 25 %, Pixi's own code 28 %), pre-render 443, spatial 350, logic 319 and 293, particle 81 (the four physics threads read 1000: wasm threads in Atomics.wait).\n\nThe branch's code in the hot lists:\n- pre-render: applySunFramesFor 4.5 % (67 % of it on reading the row's scale back, `rows[at + GPU_ROW_SCALE_X]`, after writing its texture), applyLampFramesInto 3.7 % (the row's entity and the ray to its lamp), sunFrameFor 3.2 % (the entity's columns and the frame table): about 11 % of pre-render, 0.8 ms a frame (E-370 to E-372).\n- Pixi: writeGbufWords 3.4 % (E-387), compactColumnRows (E-379's columns) 169 ms in the window.\n- logic: DirectionalSprite.resolve 2.5 to 2.7 %.\n\nGarbage: Pixi 1316.9 KB/s, 96 of it from _lampCardGeometry made every frame and 36.5 from the volumes' boxed doubles: fixed (N-213, 504.2 KB/s after). Steady-state deopts that main has too: N-214."
+    },
+    {
+      "id": "R-1156",
+      "date": "2026-11-15",
+      "time": "21:50",
+      "timeFrom": "recorded",
+      "title": "pickDirection's doubles through PICK_ARGS: logic 365 -> 24, pre-render 358 -> 103 KB/s",
+      "verdict": "kept-hygiene",
+      "text": "Heap passes (8 s): directionalSpriteStressScene n=20000, logic 365.4 (21:38) -> 24.3 KB/s (21:50); sunShadowMapStressScene lamps=48 hour=22 casters=3000, pre-render 357.8 (21:36) -> 102.6 KB/s (21:49). A first form that kept wrapAngle calls past a turn allocated 12.9 MB/s in pre-render and 4.2 in logic there (a facing plus the sun's turn passes 2π often); written out entirely, none. Parity: spriteDirectionsParity, 72 000 cases. Node, 3e6 calls: 1.8 -> 9.7 M/s on an uneven 32-direction table, 24.6 -> 27.7 on a uniform one.",
+      "commits": [
+        "2993032c"
+      ]
+    },
+    {
+      "id": "R-1157",
+      "date": "2026-11-15",
+      "time": "21:38",
+      "timeFrom": "recorded",
+      "title": "Phase 3's second batch: lamps' frames a ninth of pre-render with DirectionalSprite people, quickselect a fifth at 128 lamps",
+      "verdict": "note",
+      "text": "Phase 3's second batch (DX_LIGHT3D_PLAN 17.9), the branch at 7614f83d, profileSceneSweep's cpu, deopt and heap passes, 8 s warm-up and 8 s window each (21:30 to 21:38; the owner's bench tab open: shares within a worker, not ms). Busy ms/s, then the hot engine functions:\n\n- light3dCompareScene ?all=1&hour=22 (3 000 people through DirectionalSprite, 400 props, 24 lamps with maps, self-shadow, pixel depth): pixi 254 (its wait 70 %), pre-render 210 (its wait for the pose 53 %; stamp_light_range 10 %, applyLampFramesInto 5.6 %, emit_rows 4.3 %, fastAtan2 3.8 %, lampFrameFor 3.2 %), logic 145 (DirectionalSprite.resolve 5.5 %, pickDirection 4 %). The lamps' frames (applyLampFramesInto, lampFrameFor, fastAtan2) are a ninth of pre-render's busy time here: each caster's frame a lamp, an atan2 each.\n- lampShadowStressScene ?lampShadows=map&lamps=128&walkers=6000: pre-render 222 (stamp_light_range 23 %, quickselect_order 21 %: each lamp's nearest casters chosen by maxShadowsPerLight, for the map as for the stamps), pixi 236 (its wait 76 %).\n- sunShadowMapStressScene ?lamps=48&hour=22&casters=3000: pixi 146 (compactColumnRows 2.3 %), pre-render 100 (stamp_light_range 11 %, quickselect_order 9.5 %, collect_sprites 8.8 %, persist_frame 7.8 %, wrapAngle 5.5 %, pack_casters 5.2 %, angleDistance 4.2 %, pickDirection 4 %).\n- directionalSpriteStressScene n=20000: logic 197 (resolve 15.5 %), pre-render 120 (emit_rows 44 %, collect_sprites 20 %, pack_sprites_split 15 %).\n\nNo steady-state engine deopts in the four. Garbage: logic 4274 KB/s in light3dCompareScene (the scene's own walkers: fixed, 47738ca8; the setters' part is N-215), 365 in the DirectionalSprite scene and 358 in pre-render under the renders (pickDirection's doubles: E-388, fixed, 24 and 103 after)."
     }
   ],
   "leads": [
