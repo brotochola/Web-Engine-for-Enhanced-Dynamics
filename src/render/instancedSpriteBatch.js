@@ -11,6 +11,7 @@
  */
 
 import {
+  Container,
   Geometry,
   Mesh,
   Shader,
@@ -21,6 +22,7 @@ import {
   State,
   Texture,
   TextureSource,
+  ViewContainer,
 } from '../vendor/pixi.min.js';
 
 import {
@@ -42,7 +44,8 @@ import {
   packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
 import {
-  faceFragmentGlsl, faceGbufFragment, faceGlowFragment, faceIdsFragment, faceMapVertex, faceMapWgsl, gbufAttributeGlsl, gbufAttributeWgsl,
+  faceFragmentGlsl, faceGbufFragment, faceGlowFragment, faceGlowMaskFragment, faceIdsFragment, faceMapVertex, faceMapWgsl,
+  gbufAttributeGlsl, gbufAttributeWgsl, glowMaskVertex,
 } from './faceMap.js';
 import { FRAME_UNSCANNED, TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW, TEX_LUT_SOFT_OR_GLOW, lutBaseFloats } from './frameBase.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from './pixelDepth.js';
@@ -79,8 +82,41 @@ export const AUX_FACE = 0;
 export const AUX_IDS = 1;
 export const AUX_GBUF = 2;
 export const AUX_GLOW = 3;
-const AUX_NAMES = ['face', 'ids', 'gbuf', 'glow'];
-const AUX_ENTRIES = ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragGlow'];
+/** E-457: the glow mask, the quads of the instances that can glow in the stencil, where the glow pass draws (glowPass). */
+export const AUX_GLOW_MASK = 4;
+const AUX_NAMES = ['face', 'ids', 'gbuf', 'glow', 'glowMask'];
+const AUX_ENTRIES = ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragGlow', 'mainFragGlowMask'];
+/** Pixi's STENCIL_MODES (the bundle does not export them): off, a mask drawn (equal to the reference, +1), a mask in use. */
+const STENCIL_OFF = 0;
+const STENCIL_MASK_ADD = 1;
+const STENCIL_MASK_ACTIVE = 2;
+
+/**
+ * E-457: the glow pass's stencil between its meshes, run by Pixi's custom render pipe as a RenderContainer is (the bundle
+ * exports ViewContainer, not RenderContainer): the stencil mode, its reference and the colour mask for the meshes after it.
+ * The mask is not popped: the target's next render clears the stencil, and the last step turns the test off.
+ */
+class GlowStencilStep extends ViewContainer {
+  constructor(mode, reference, colorMask) {
+    super({ label: 'weed-glow-stencil' });
+    this.renderPipeId = 'customRender';
+    this.batched = false;
+    this.cullable = false;
+    this._mode = mode;
+    this._reference = reference;
+    this._colorMask = colorMask;
+  }
+
+  updateBounds() {
+    this._bounds.clear();
+  }
+
+  render(renderer) {
+    if (this._mode === STENCIL_MASK_ADD) renderer.renderTarget.ensureDepthStencil();
+    renderer.stencil.setStencilMode(this._mode, this._reference);
+    renderer.colorMask.setMask(this._colorMask);
+  }
+}
 
 // E-177. A keyed frame saves KEYED_SAVED_BYTES a row against a split one (the slot pair instead of the statics) and
 // spends an update's bytes on each row it sends. When the updates outweigh the saving for KEYED_LOSS_FRAMES frames in a
@@ -514,10 +550,15 @@ export class InstancedSpriteBatch {
     this.keyedCasters = false;
     this._keyedCasterShaders = [null, null];
     // DX-FACES, DX-GBUF: the batch's passes over its own instances for the light (AUX_FACE: the face map; AUX_IDS: the
-    // entity ids map; AUX_GBUF: both in one pass, MRT; AUX_GLOW: the self-glowing colour): each kind's programs (plain,
-    // indexed, by row), its state and a mesh per geometry this batch draws (_auxMesh).
+    // entity ids map; AUX_GBUF: both in one pass, MRT; AUX_GLOW: the self-glowing colour; AUX_GLOW_MASK: where it is,
+    // E-457): each kind's programs (plain, indexed, by row), its state and a mesh per geometry this batch draws (_auxMesh).
     this._aux = AUX_NAMES.map(() => ({ meshes: [], state: null, shader: null, indexed: null, row: null }));
     this._auxShaderList = [];
+    // E-457: the glow pass's hosts, one a glow mesh (a geometry): { glow, host }, the host holding the glow mask and the
+    // glow mesh it masks (glowPass).
+    this._glowPasses = [];
+    // E-457: 1 while a sheet of the atlas glows by itself (setGlowSheets): the glow pass then draws unmasked.
+    this._glowSheets = 0;
     // DX-EMISSIVE v2 (F10): the glow pass draws the glowing pixels (glowMesh), so the G-buffer's passes leave them out;
     // false: the face map's glow code (v1). Set by the caller before a light pass is first drawn.
     this.emissiveGlow = false;
@@ -1640,6 +1681,53 @@ export class InstancedSpriteBatch {
   }
 
   /**
+   * E-457: the glow pass over this frame's geometry, a host of the glow mask (the quads of the instances that can glow,
+   * marked in the stencil: faceGlowMaskFragment) and the glow mesh drawn where they are (every instance, as before), the
+   * stencil set between them (GlowStencilStep). Elsewhere no instance adds anything to the glow's colour, so the target
+   * holds what the glow mesh alone drew, for the fill of the glowing quads: the rest were 0.81 ms of fill in Predator
+   * ?light3d=1. The glow mesh alone while a sheet glows (setGlowSheets: any instance may), or where the mask cannot be
+   * made. Needs words.
+   * @returns {Container|Mesh|null}
+   */
+  glowPass(heightScaleY, groundScaleY, maps) {
+    const glow = this.glowMesh(heightScaleY, groundScaleY, maps);
+    if (glow === null || this._glowSheets !== 0) return glow;
+    const passes = this._glowPasses;
+    for (let i = 0; i < passes.length; i++) {
+      if (passes[i].glow === glow) return passes[i].host;
+    }
+    const mask = this._auxMesh(AUX_GLOW_MASK, heightScaleY, groundScaleY, maps);
+    if (mask === null) return glow;
+    const host = new Container();
+    host.addChild(new GlowStencilStep(STENCIL_MASK_ADD, 0, 0));
+    host.addChild(mask);
+    host.addChild(new GlowStencilStep(STENCIL_MASK_ACTIVE, 1, 15));
+    host.addChild(glow);
+    host.addChild(new GlowStencilStep(STENCIL_OFF, 0, 15));
+    passes.push({ glow, host });
+    return host;
+  }
+
+  /**
+   * E-457: whether a sheet of the atlas glows by itself (its twin page's emissive code: the atlas's meta.emissive). Any
+   * instance may then glow, and the glow pass draws unmasked (glowPass); the programs see it in uFaceSpace.z.
+   * @param {boolean} on
+   */
+  setGlowSheets(on) {
+    const v = on ? 1 : 0;
+    if (this._glowSheets === v) return;
+    this._glowSheets = v;
+    const shaders = this._auxShaders();
+    for (let i = 0; i < shaders.length; i++) {
+      const group = shaders[i].resources.uniforms;
+      if (group && group.uniforms && group.uniforms.uFaceSpace) {
+        group.uniforms.uFaceSpace[2] = v;
+        group.update();
+      }
+    }
+  }
+
+  /**
    * DX-GBUF: one of the batch's passes over its own instances for the light (AUX_FACE, AUX_IDS, ...), over this frame's
    * geometry: one mesh a geometry the batch draws from, none swapped (the ring swaps the geometry every frame, and Mesh's
    * setter makes garbage), the program that reads that geometry's layout (plain, indexed, by row). The programs are made on
@@ -1676,7 +1764,8 @@ export class InstancedSpriteBatch {
     } else {
       uniforms = {
         uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
-        uFaceSpace: { value: new Float32Array([heightScaleY, groundScaleY, 0, 0]), type: 'vec4<f32>' },
+        // E-457: z, whether a sheet glows (setGlowSheets).
+        uFaceSpace: { value: new Float32Array([heightScaleY, groundScaleY, this._glowSheets, 0]), type: 'vec4<f32>' },
       };
       if (this._twoStreams) uniforms.uPoseAlpha = { value: 1, type: 'f32' };
     }
@@ -1685,14 +1774,16 @@ export class InstancedSpriteBatch {
     const name = `${this._label}-${AUX_NAMES[kind]}`;
     // DX-GBUF: with words, each entity's sprite as its normals and surface say (faceMap.frag.glsl's GBUF block); every kind
     // past the face map reads them.
-    const gbuf = { gbuf: kind === AUX_FACE ? this.gbuf : true, glow: this.emissiveGlow };
+    const gbuf = { gbuf: kind === AUX_FACE ? this.gbuf : true, glow: this.emissiveGlow, glowMask: kind === AUX_GLOW_MASK };
     const entry = AUX_ENTRIES[kind];
+    // E-457: the glow mask's vertex shader leaves out the instances that cannot glow.
+    const vertexOf = (source) => (kind === AUX_GLOW_MASK ? glowMaskVertex(faceMapVertex(source, gbuf)) : faceMapVertex(source, gbuf));
     const frag = this._useWebGpu ? null : this._auxFragment(kind);
     if (this._useWebGpu) {
       const source = faceMapWgsl(this._twoStreams ? shaders.spritePose : shaders.sprite, gbuf);
       aux.shader = new Shader({ gpuProgram: instancedSpriteGpuProgram(GpuProgram, source, entry, name, { maps: true }), resources });
     } else {
-      const vertex = faceMapVertex(this._twoStreams ? shaders.spriteVertPose : shaders.spriteVert, gbuf);
+      const vertex = vertexOf(this._twoStreams ? shaders.spriteVertPose : shaders.spriteVert);
       aux.shader = new Shader({ glProgram: instancedSpriteGlProgram(GlProgram, vertex, frag, name), resources });
     }
     // The shared group, for the kinds made after this one.
@@ -1713,7 +1804,7 @@ export class InstancedSpriteBatch {
               resources: indexedResources,
             }
           : {
-              glProgram: instancedSpriteGlProgram(GlProgram, spriteIndexedVertex(faceMapVertex(shaders.spriteVert, gbuf)), frag, indexedName),
+              glProgram: instancedSpriteGlProgram(GlProgram, spriteIndexedVertex(vertexOf(shaders.spriteVert)), frag, indexedName),
               resources: indexedResources,
             },
       );
@@ -1723,7 +1814,7 @@ export class InstancedSpriteBatch {
       aux.row = new Shader({
         glProgram: instancedSpriteGlProgram(
           GlProgram,
-          spriteIndexedVertex(faceMapVertex(shaders.spriteVert, gbuf), { poseBlock: this._poseBlock }),
+          spriteIndexedVertex(vertexOf(shaders.spriteVert), { poseBlock: this._poseBlock }),
           frag,
           `${name}-rows`,
         ),
@@ -1747,6 +1838,7 @@ export class InstancedSpriteBatch {
     if (kind === AUX_IDS) return faceIdsFragment({ glow });
     if (kind === AUX_GBUF) return faceGbufFragment(shaders.faceFrag, { glow });
     if (kind === AUX_GLOW) return faceGlowFragment();
+    if (kind === AUX_GLOW_MASK) return faceGlowMaskFragment();
     return faceFragmentGlsl(shaders.faceFrag, { gbuf: this.gbuf, glow });
   }
 

@@ -87,10 +87,11 @@ test('the G-buffer passes and the light pass declare every binding their layouts
   const { lightingGpuProgram } = await import('../../src/render/webgpu/pixiMeshWgsl.js');
   const sprite = shader('instancedSprite.wgsl');
   const pose = shader('instancedSpritePose.wgsl');
-  for (const [gbuf, glow] of [[false, false], [true, false], [true, true]]) {
-    const opts = { gbuf, glow };
-    for (const entry of gbuf ? ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragGlow'] : ['mainFragFace']) {
-      const label = `${entry} gbuf=${gbuf} glow=${glow}`;
+  for (const [gbuf, glow, glowMask] of [[false, false, false], [true, false, false], [true, true, false], [true, true, true]]) {
+    const opts = { gbuf, glow, glowMask };
+    const entries = glowMask ? ['mainFragGlowMask'] : gbuf ? ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragGlow'] : ['mainFragFace'];
+    for (const entry of entries) {
+      const label = `${entry} gbuf=${gbuf} glow=${glow} glowMask=${glowMask}`;
       assertLayoutDeclared(`face ${label}`, instancedSpriteGpuProgram(GpuProgram, faceMapWgsl(sprite, opts), entry, 'f', { maps: true }));
       assertLayoutDeclared(`face pose ${label}`, instancedSpriteGpuProgram(GpuProgram, faceMapWgsl(pose, opts), entry, 'f', { maps: true }));
       assertLayoutDeclared(

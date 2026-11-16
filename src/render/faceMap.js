@@ -167,6 +167,47 @@ void main() {
 }
 
 /**
+ * E-457: the glow mask's fragment shader (WebGL), over glowMaskVertex's outputs: each instance that can glow marks its
+ * whole quad in the stencil, with no colour (the mask's colour mask is off) and no work a pixel, so the GPU marks it as it
+ * rasterizes. The glow pass then draws every instance only where it is marked: elsewhere none adds anything to the
+ * glow's colour (a pixel that does not glow writes black with its alpha, which the glow layer does not read), so the
+ * target's colour is what drawing them all everywhere gave. A mask cut to the glowing pixels (a texture read and a
+ * discard a pixel), and Pixi's mask, which draws it again to pop it, cost emissiveStressScene more than they saved.
+ * @returns {string}
+ */
+export function faceGlowMaskFragment() {
+  return `#version 300 es
+precision highp float;
+out vec4 finalColor;
+
+void main() {
+  finalColor = vec4(0.0);
+}
+`;
+}
+
+/**
+ * E-457: which instances the glow mask draws (GLSL, in faceMapVertex's main with words): one whose word holds an emissive
+ * level (gbufWord.js bits 19-21). Any other goes off the target, so the mask fills the glowing instances' quads alone. A
+ * sheet that glows (its twin page's code) is not told apart from a frame with soft edges by the texture table's bit, so
+ * while one does the glow pass draws unmasked (InstancedSpriteBatch.glowPass).
+ */
+const GLOW_MASK_CUT_GLSL = `  if (((uint(aInstGbuf.x + 0.5) >> 19u) & 7u) == 0u) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+`;
+
+/**
+ * E-457: faceMapVertex's output (with words) as the glow mask's vertex shader: the instances that cannot glow go off the
+ * target (GLOW_MASK_CUT_GLSL). Their place is computed as the glow pass's, so the mask covers the pixels it draws.
+ * @param {string} source faceMapVertex(..., { gbuf: true })
+ * @returns {string}
+ */
+export function glowMaskVertex(source) {
+  const end = 'vTileOff = aInstTileOff;\n';
+  if (source.split(end).length !== 2) throw new Error('WeedJS: the glow mask needs one vTileOff in the sprite vertex shader');
+  return source.replace(end, () => end + GLOW_MASK_CUT_GLSL);
+}
+
+/**
  * DX-GBUF (plan §6.4, lighting.gbuffer 'mrt'): faceMap.frag.glsl writing the face map and the entity ids map in one pass,
  * two colour targets (WebGL 2's draw buffers): the face texel at location 0 as faceMap.frag.glsl writes it, the ids texel
  * at 1 (faceIdsFragment's), for the same coverage.
@@ -295,12 +336,13 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
  * faceMapVertex's WGSL form, on the sprite program before spriteIndexedWgsl if it is the indexed one, with the fragment
  * entry `mainFragFace` that writes the map (its texel from weedFace, faceFunctionsWgsl).
  * DX-GBUF: with `gbuf`, the instance's words (vGbuf) and its foot's world y (vFootY), as faceMapVertex passes them.
+ * E-457: with `glowMask` (and `gbuf`), the glow mask's vertex half (glowMaskVertex's cut); its entry is mainFragGlowMask.
  * @param {string} source instancedSprite.wgsl or instancedSpritePose.wgsl
- * @param {{ gbuf?: boolean }} [opts]
+ * @param {{ gbuf?: boolean, glow?: boolean, glowMask?: boolean }} [opts]
  * @returns {string}
  */
-export function faceMapWgsl(source, { gbuf = false, glow = false } = {}) {
-  return `${faceVertexWgsl(source, { gbuf })}${faceFunctionsWgsl({ gbuf, glow })}
+export function faceMapWgsl(source, { gbuf = false, glow = false, glowMask = false } = {}) {
+  return `${faceVertexWgsl(source, { gbuf, glowMask })}${faceFunctionsWgsl({ gbuf, glow })}
 // DX-FACES: faceMap.frag.glsl
 @fragment
 fn mainFragFace(in: VertexOut) -> @location(0) vec4<f32> {
@@ -334,6 +376,11 @@ fn mainFragGlow(in: VertexOut) -> @location(0) vec4<f32> {
   let t = textureSample(uTexture, uSampler, uv);
   let s = glowOf(in.vGbuf, uv);
   return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, t.a * in.vColor.a);
+}
+// E-457 (faceGlowMaskFragment): the quad of an instance that can glow, marked in the stencil, no colour.
+@fragment
+fn mainFragGlowMask(in: VertexOut) -> @location(0) vec4<f32> {
+  return vec4<f32>(0.0);
 }
 `;
 
@@ -373,12 +420,13 @@ fn mainFragGbuf(in: VertexOut) -> WeedGbufOut {
 
 /**
  * The face map's vertex half in a sprite WGSL (faceMapWgsl's): its uniform, the face's octahedral bytes and height out,
- * and with `gbuf` the words' input (gbufAttributeWgsl) and outputs.
+ * and with `gbuf` the words' input (gbufAttributeWgsl) and outputs. E-457: with `glowMask` (and `gbuf`) the glow mask's
+ * cut (glowMaskVertex's).
  * @param {string} source
- * @param {{ gbuf?: boolean }} [opts]
+ * @param {{ gbuf?: boolean, glowMask?: boolean }} [opts]
  * @returns {string}
  */
-export function faceVertexWgsl(source, { gbuf = false } = {}) {
+export function faceVertexWgsl(source, { gbuf = false, glowMask = false } = {}) {
   const once = (text, find, add) => {
     if (text.split(find).length !== 2) throw new Error(`WeedJS: the face map needs one "${find.trim()}" in the sprite WGSL`);
     return text.replace(find, () => find + add);
@@ -410,6 +458,7 @@ export function faceVertexWgsl(source, { gbuf = false } = {}) {
     out,
     '  out.vTileOff = aInstTileOff;\n',
     gbufOut +
+      (gbuf && glowMask ? GLOW_MASK_CUT_WGSL : '') +
       `  let faceCode = u32(aInstTileOff.x * 65535.0 + 0.5);
   out.vFaceOct = vec2<f32>(0.0);
   out.vFaceZ = 0.0;
@@ -435,6 +484,10 @@ export function faceVertexWgsl(source, { gbuf = false } = {}) {
   );
   return out;
 }
+
+/** E-457: GLOW_MASK_CUT_GLSL in WGSL (faceVertexWgsl's glowMask). */
+const GLOW_MASK_CUT_WGSL = `  if (((u32(aInstGbuf.x + 0.5) >> 19u) & 7u) == 0u) { out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0); }
+`;
 
 /** DX-GBUF's WGSL helpers (faceMap.frag.glsl twinHeight and heightNormal): normals 'height', the heights' Sobel. */
 const FACE_GBUF_HELPERS_WGSL = `

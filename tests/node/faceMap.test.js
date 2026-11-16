@@ -231,3 +231,35 @@ test('the G-buffer in one pass (MRT) writes the face texel at location 0 and the
   assert.match(wgsl, /fn mainFragGbuf\(in: VertexOut\) -> WeedGbufOut/);
   assert.match(wgsl, /@location\(1\) ids: vec4<f32>,/);
 });
+
+// E-457: the glow mask draws only the instances that can glow (an emissive level in their word, or while a sheet glows a
+// frame whose soft-or-glow bit is set) and marks only the pixels where they add glow; every other pass keeps its vertices.
+test('the glow mask leaves out the instances that cannot glow, in every sprite form and both languages', async () => {
+  const { faceGlowMaskFragment, glowMaskVertex } = await import('../../src/render/faceMap.js');
+  const cut = /& 7u\) == 0u\) gl_Position = vec4\(2\.0, 2\.0, 2\.0, 1\.0\);/;
+  for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
+    const plain = faceMapVertex(shader(name), { gbuf: true });
+    assert.doesNotMatch(plain, /2\.0, 2\.0, 2\.0, 1\.0/, name);
+    const mask = glowMaskVertex(plain);
+    assert.match(mask, cut, name);
+    // The cut comes after the place is computed, so the mask covers what the glow pass draws.
+    assert.ok(mask.indexOf('gl_Position = vec4(2.0') > mask.indexOf('gl_Position = vec4(clip.xy'), name);
+  }
+  const vert = faceMapVertex(shader('instancedSprite.vert.glsl'), { gbuf: true });
+  assert.match(spriteIndexedVertex(glowMaskVertex(vert)), cut, 'indexed');
+  assert.match(spriteIndexedVertex(glowMaskVertex(vert), { poseBlock: 1024 }), cut, 'by row');
+  assert.throws(() => glowMaskVertex('void main() {\n}\n'), /vTileOff/);
+  // A whole quad, no work a pixel: no discard and no texture read.
+  const frag = faceGlowMaskFragment();
+  assert.doesNotMatch(frag, /discard|texture\(/);
+  for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
+    assert.doesNotMatch(faceMapWgsl(shader(name), { gbuf: true, glow: true }), /vec4<f32>\(2\.0, 2\.0, 2\.0, 1\.0\)/, name);
+    const w = faceMapWgsl(shader(name), { gbuf: true, glow: true, glowMask: true });
+    assert.match(w, /& 7u\) == 0u\) \{ out\.position = vec4<f32>\(2\.0, 2\.0, 2\.0, 1\.0\); \}/, name);
+    assert.match(w, /fn mainFragGlowMask\(in: VertexOut\)/, name);
+    assert.ok(w.indexOf('out.position = vec4<f32>(2.0') > w.indexOf('out.position = vec4<f32>(clip.xy'), name);
+  }
+  const wcut = /out\.position = vec4<f32>\(2\.0, 2\.0, 2\.0, 1\.0\)/;
+  assert.match(spriteIndexedWgsl(faceMapWgsl(shader('instancedSprite.wgsl'), { gbuf: true, glowMask: true })), wcut);
+  assert.doesNotMatch(faceMapWgsl(shader('instancedSprite.wgsl'), { glowMask: true }), wcut, 'no words, no mask');
+});
