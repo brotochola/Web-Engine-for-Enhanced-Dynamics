@@ -18536,12 +18536,12 @@
     {
       "id": "E-418",
       "title": "The lamps' map redraws every caster into every nearby lamp's tile every frame (48 840 instances, 2.0 to 2.2 ms in light3dCompareScene all=1) though most casters (props, lamps) never move",
-      "status": "open",
+      "status": "dropped",
       "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on the light scenes (timer queries, GTX 1650, 1920 x 1080)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "light3dCompareScene all=1: the lamps' map (fbo 4096 x 1536, [uTexLut,uLampTiles,uTexture], 2 draws) 2.003 ms by day and 2.187 at night, 48 851 and 48 840 instances; lampMap=1 1.923.",
+      "result": "Dropped 2026-11-16 (R-1210): the cache attempt (c75fa514, not merged) made the lamps' map slower (1.856 -> 3.003 ms in light3dCompare all=1 staticProps=1); see E-460 for the version pre-render must make possible. light3dCompareScene all=1: the lamps' map (fbo 4096 x 1536, [uTexLut,uLampTiles,uTexture], 2 draws) 2.003 ms by day and 2.187 at night, 48 851 and 48 840 instances; lampMap=1 1.923.",
       "next": "Keep each lamp's tile of static casters (props, buildings) and draw only the moving ones over a copy of it each frame; redraw a tile when a static caster in it changes.",
       "refs": [],
       "aliases": [
@@ -18550,7 +18550,8 @@
       "records": [
         "R-1181",
         "R-1187",
-        "R-1190"
+        "R-1190",
+        "R-1210"
       ]
     },
     {
@@ -19309,7 +19310,8 @@
         "indexed mesh rows"
       ],
       "records": [
-        "R-1200"
+        "R-1200",
+        "R-1210"
       ]
     },
     {
@@ -19438,18 +19440,20 @@
     {
       "id": "E-457",
       "title": "The emissive glow pass draws every sprite (14 400 in Predator ?light3d=1) at 1920 x 1080 to show the few that glow: 0.81 ms of fill a frame, where only the glowing instances and the ids map that hides the rest are needed",
-      "status": "open",
+      "status": "kept",
       "statusText": "found 2026-11-16 by the pixi batch agent (opt/pixi-gpu-batch)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "A 1 px scissor probe: Predator's glow pass 0.81 -> 0.017 ms, emissiveStressScene 0.74 -> 0.054 ms: fill, not vertices. E-403 named this pass the G-buffer twice; it is the emissive glow (DX-EMISSIVE v2: _renderGlow draws batch.glowMesh into glowRT).",
+      "result": "Kept 2026-11-16 (R-1210): a stencil mask of the emissive instances' quads, the glow drawn only there; Predator light3d night glow pass 0.826 -> 0.095 ms; image identical. A 1 px scissor probe: Predator's glow pass 0.81 -> 0.017 ms, emissiveStressScene 0.74 -> 0.054 ms: fill, not vertices. E-403 named this pass the G-buffer twice; it is the emissive glow (DX-EMISSIVE v2: _renderGlow draws batch.glowMesh into glowRT).",
       "next": "Draw only the instances whose sheet or flags glow (a list the pack can keep), testing the ids map for occlusion; or draw the glow target at the light resolution and upsample; per draw before and after, the image within a stated tolerance.",
       "refs": [],
       "aliases": [
         "emissive glow pass draws all sprites"
       ],
-      "records": []
+      "records": [
+        "R-1210"
+      ]
     },
     {
       "id": "N-228",
@@ -19501,6 +19505,96 @@
       ],
       "records": [
         "R-1208"
+      ]
+    },
+    {
+      "id": "E-460",
+      "title": "E-418 v2: pre-render picks each lamp's static casters apart from its per-frame nearest-first budget, so a per-tile cache of them stays valid; the map then copies the cache and draws only the moving casters, its columns compacted to the moving rows",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the second pixi batch agent (opt/pixi-gpu-batch2)",
+      "date": "2026-11-16",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "E-418's attempt (opt/e418-lamp-cache-attempt c75fa514, not merged): the image identical, but the lamps' map went 1.856 -> 3.003 ms (light3dCompare all=1 staticProps=1: the cache redrawn every frame) and 2.931 -> 4.135 (sunShadowMap lamps=48 hour=22, cars moving: redrawn in 40 % of frames); best case (movers=0) 2.987 -> 2.922. The budget lets moving casters push static ones in and out of a tile; the 4096 x 1536 colour and depth blit costs 0.61 to 0.72 ms a frame; the columns are vertex work, so culled rows must be left out of the draw.",
+      "next": "_stampAgainstSun / stamp_light_range keep a lamp's static casters apart from the budget (their own list, refreshed when the static scenery generation moves); then the per-tile cache and the moving rows' compaction; best case about 2.2 ms saved minus the 0.6 to 0.7 ms blit.",
+      "refs": [],
+      "aliases": [
+        "lamp map static cache v2"
+      ],
+      "records": [
+        "R-1210"
+      ]
+    },
+    {
+      "id": "E-461",
+      "title": "The lamps' map columns are vertex-bound: culled in the vertex shader they still cost 1.09 + 1.07 ms against 1.80 + 1.07 drawn (sunShadowMapStressScene lamps=48 hour=22 movers=0): the rows that cast nothing must be left out of the draw before it, or drawn with fewer cells",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the second pixi batch agent (opt/pixi-gpu-batch2)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "Measured with every instance culled in the vertex shader during E-418's attempt. E-447 (the grid per frame size) was reverted: the frames there span about 35 map texels. E-420's premise (overdraw) did not hold either: R-1194.",
+      "next": "compactColumnRows (E-379) leaving out the rows whose caster cannot reach the tile (the stamp's own reach test on the CPU), or a per-frame solid-cell list drawn by vertex pulling; per draw before and after.",
+      "refs": [],
+      "aliases": [
+        "lamp map columns vertex-bound"
+      ],
+      "records": [
+        "R-1210"
+      ]
+    },
+    {
+      "id": "E-462",
+      "title": "A glow-only flag in the texture table would let E-457's stencil mask cover sheet glow too: today's soft-or-glow bit (E-429) marks nearly every frame of a soft sheet, so with a glowing sheet the glow pass draws unmasked as before",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the second pixi batch agent (opt/pixi-gpu-batch2)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "E-457 masks entity glow (the word's emissive level); with emissive=sheet in emissiveStressScene the mask would cover nearly everything through the soft-or-glow bit, so the pass stays unmasked there.",
+      "next": "A second flags texel (or bit) for glow alone, from the registry's scan (the CPU array already keeps soft, half and glow apart); the mask then takes the glowing frames; per draw on emissiveStressScene emissive=sheet before and after.",
+      "refs": [],
+      "aliases": [
+        "glow-only frame flag"
+      ],
+      "records": [
+        "R-1210"
+      ]
+    },
+    {
+      "id": "N-229",
+      "title": "compareCaptures is not deterministic for emissiveStressScene: its side B is the second page in the same browser, and an A/A reads 174 000 to 231 000 pixels off (max 183, mostly 1 to 8); first loads in separate browsers are byte-identical",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the second pixi batch agent (opt/pixi-gpu-batch2)",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "The agent captured each side as a first load in its own browser (scratchpad tools2/capture1.mjs) to compare E-457.",
+      "next": "compareCaptures loads each side in its own browser (or its own context with no shared caches), or reports an A/A of the scene first; then a scene whose second page differs is flagged, not compared.",
+      "refs": [],
+      "aliases": [
+        "compareCaptures side B"
+      ],
+      "records": [
+        "R-1210"
+      ]
+    },
+    {
+      "id": "N-230",
+      "title": "lampShadowStressScene's walkers all pace at speed 1: StressWalker.spawn() skips the key \"speed\" (a warning at load)",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the second pixi batch agent (opt/pixi-gpu-batch2)",
+      "date": "2026-11-16",
+      "area": "bench",
+      "kind": "bug",
+      "result": "The warning shows on load; it predates the second pixi batch.",
+      "next": "Pass the speed the way spawn takes it (a field the class declares, or onSpawned reads it) and check the warning is gone.",
+      "refs": [],
+      "aliases": [
+        "lampShadow walkers speed"
+      ],
+      "records": [
+        "R-1210"
       ]
     }
   ],
@@ -31386,9 +31480,21 @@
       "timeFrom": "recorded",
       "title": "PR #12 merged into main after its batch gate: Predator crowd 2.5 pre-render -3.2 % (KEPT product, -6.5 % against the others); physics' +15 % read in a loaded sitting, its quiet re-check owed",
       "verdict": "passed",
-      "text": "**PR #12 merged into main (15cb911f) after its batch gate: Predator crowd 2.5's pre-render -3.2 % (KEPT, product; -6.5 % against the others, 4/4).** Physics read +15 % in a sitting where every worker ran high, so its re-check on a quiet machine is owed.\n\nrunPredatorAbab --pool, 4 pairs, headed, AC power, cf93c047 (main) against d0a041ff (integrate/pr12 with main merged in and main's Box2D binary), crowd=2.5 zoom=0.216, pre-render as owner, 2026-11-16 10:58 to 11:03 (the log):\n\n| worker | main -> PR #12 |\n| --- | --- |\n| pre-render | 8.851 -> 8.549 ms (-3.2 %, 1/4 worse; -6.5 % against the others, 4/4) |\n| logic | 9.133 -> 9.109 (+0.3 %; -7.8 % against the others) |\n| spatial | 14.081 -> 14.938 (+5.1 %, 2/4; -3.2 % against the others) |\n| physics | 37.128 -> 42.357 (+15.0 %, 3/4, cv 20 / 16 %) |\n| renderer | 4.902 -> 5.200 (under the floor) |\n| presented | 59.9 -> 60.0 |\n\nEvery worker sat far above its usual level (physics 37 ms against 13 to 15 in this morning's sittings; logic 9.1 against 6 to 7). The second Pixi agent was building and testing on the same machine (N-220). Physics' +15 % with cv 16 to 20 % is not a reading. The one physics-side change left in the merge is E-257 (the query services' closures made once, less garbage); the Box2D binary is main's. A physics-owned re-check on a quiet machine stays owed before E-257 and the hygiene group are final.\n\nMain's suites after the merge: node 2891/2891, demos 101/101. The integrated branch's suite had caught a register record of mine (R-1207) with a time and no timeFrom, fixed on main (3556eafa).\n\nNext, leave-one-out sittings for the speed candidates (R-1208's list):\n- pre-render: E-320, E-330, E-331;\n- spatial: E-329;\n- logic: E-344;\n- then the Pixi and particle ones, once their owner scenes reach 6 ms.",
+      "text": "**PR #12 merged into main (15cb911f) after its batch gate: Predator crowd 2.5's pre-render -3.2 % (KEPT, product; -6.5 % against the others, 4/4).** Physics read +15 % in a sitting where every worker ran high, so its re-check on a quiet machine is owed.\n\nrunPredatorAbab --pool, 4 pairs, headed, AC power, cf93c047 (main) against d0a041ff (integrate/pr12 with main merged in and main's Box2D binary), crowd=2.5 zoom=0.216, pre-render as owner, 2026-11-16 10:58 to 11:03 (the log):\n\n| worker | main -> PR #12 |\n| --- | --- |\n| pre-render | 8.851 -> 8.549 ms (-3.2 %, 1/4 worse; -6.5 % against the others, 4/4) |\n| logic | 9.133 -> 9.109 (+0.3 %; -7.8 % against the others) |\n| spatial | 14.081 -> 14.938 (+5.1 %, 2/4; -3.2 % against the others) |\n| physics | 37.128 -> 42.357 (+15.0 %, 3/4, cv 20 / 16 %) |\n| renderer | 4.902 -> 5.200 (under the floor) |\n| presented | 59.9 -> 60.0 |\n\nEvery worker sat far above its usual level (physics 37 ms against 13 to 15 in this morning's sittings; logic 9.1 against 6 to 7). The second Pixi agent was building and testing on the same machine (N-220). Physics' +15 % with cv 16 to 20 % is not a reading. The one physics-side change left in the merge is E-257 (the query services' closures made once, less garbage); the Box2D binary is main's. A physics-owned re-check on a quiet machine stays owed before E-257 and the hygiene group are final.\n\nMain's suites after the merge: node 2891/2891, demos 101/101. The integrated branch's suite had caught a register record of mine (R-1207) with a time and no timeFrom, fixed on main (3556eafa).\n\nNext, leave-one-out sittings for the speed candidates (R-1208's list):\n- pre-render: E-320, E-330, E-331;\n- spatial: E-329;\n- logic: E-344;\n- then the Pixi and particle ones, once their owner scenes reach 6 ms.\n\n**Note, added 2026-11-16 later:** a runaway grep of the second pixi agent (over the one-line minified Pixi) held about 7.9 GB of committed memory from about 10:40 to 11:05, which covers this gate (10:58 to 11:03); Chrome runs failed with out-of-memory in that window. That explains every worker reading high here, physics most; the physics re-check is with the PR #12 sittings agent.",
       "commits": [
         "15cb911f"
+      ]
+    },
+    {
+      "id": "R-1210",
+      "date": "2026-11-16",
+      "title": "E-457 kept: the emissive glow through a stencil mask of the glowing instances, Predator light3d night 0.826 -> 0.095 ms, image identical; E-418's cache made the map slower (dropped, E-460)",
+      "verdict": "kept",
+      "text": "**E-457 kept: the emissive glow is drawn only through a stencil mask of the glowing instances. Predator ?light3d=1 by night's glow pass falls 0.826 -> 0.095 ms with the image identical. E-418's cache was built and made the map slower, so it is dropped until pre-render can keep static casters apart (E-460). E-453 waits for its wasm kernel (meshCorners.c), now free.** Built on opt/pixi-gpu-batch2, merged into main ad2f093c:\n- 4b51e362, 051c9291: emissiveStressScene ?still=1.\n- a262cd42: light3dCompareScene ?staticProps=1 and ?still=1, lampShadowStressScene ?still=1.\n- 53b3598e: the mask.\n- 6207fee8: the sheet flag stays on the CPU.\n\nE-457: first a stencil mask of the quads of the instances whose word has an emissive level (the fragment does nothing; the vertex shader sends every other instance off the target), then the glow mesh as before, drawn only where the mask marked. Small customRender steps set the stencil between the meshes (Pixi's own mask draws the mask twice on pop). While a sheet glows (meta.emissive) the pass draws unmasked as before.\n\n| glFrameRecorder --gpu-draws, base then branch back to back | before | after |\n| --- | --- | --- |\n| Predator zoom=0.3 light3d=1 hour=22 (P0, 1785 MHz both): glow and clear | 0.820 + 0.006 ms | mask 0.003 + glow 0.073 + clear 0.019 ms |\n| ... the whole frame's draws | 6.725 ms | 6.637 ms (the other passes drift run to run) |\n| emissiveStressScene (idle clocks 825 vs 510 MHz) | glow 1.65 x the face map's pass | 1.37 x it (about -17 %) |\n\n- Image: emissiveStressScene still=1, each capture a first load in its own browser, 0 of 921 600 pixels differ on WebGL (entity and sheet) and WebGPU (entity).\n- Tried and dropped: the glow target at the light's resolution (0.803 -> 0.458 ms, but every flame went blurry: 417 000 pixels off, max 215); a mask cut to the glowing pixels through Pixi's mask (its push and pop cost 0.66 ms); skipping the twin page in glowOf (no gain).\n- The glow target's clear went 0.006 -> 0.019 to 0.056 ms with its depth-stencil attachment; a stencil-only attachment would likely bring it back.\n\nE-418 (c75fa514 on opt/e418-lamp-cache-attempt, not merged): each static caster's stamp row tagged, a cache pass into a map-sized target with depth, and one blit a frame of colour and depth before the moving casters. The image was identical in three still scenes, but the map got slower: light3dCompare all=1 staticProps=1 1.856 -> 3.003 ms, sunShadowMap lamps=48 hour=22 with cars 2.931 -> 4.135, movers=0 2.987 -> 2.922. Why:\n- pre-render's per-lamp budget lets moving casters push static ones in and out of a tile, so the cache goes stale;\n- the blit costs 0.61 to 0.72 ms;\n- the columns are vertex work even when culled (E-461).\n\nFiled: E-460 (E-418 v2), E-461 (the lamps' map columns vertex-bound), E-462 (a glow-only flag for sheets), N-229 (compareCaptures' side B differs in emissiveStressScene), N-230 (lampShadowStressScene's walkers ignore speed).\n\nTests on the branch: node 2836/2838 (the two path-import tests), demos 101/101.\n\nThe agent's runaway grep (about 7.9 GB, 10:40 to 11:05) made Chrome runs fail with out-of-memory in that window, PR #12's batch gate among them (R-1209's note).",
+      "commits": [
+        "53b3598e",
+        "6207fee8",
+        "ad2f093c"
       ]
     }
   ],
