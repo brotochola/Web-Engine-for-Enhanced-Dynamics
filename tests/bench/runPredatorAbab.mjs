@@ -118,7 +118,7 @@ function expectedPopulation(scene, args) {
   return 0;
 }
 
-function resolveScene(args) {
+export function resolveScene(args) {
   const scenePath = args.scene ? String(args.scene) : null;
   const exportName = args['scene-export']
     ? String(args['scene-export'])
@@ -1040,7 +1040,7 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   printDecision(name, decision);
 }
 
-function printDecision(name, decision) {
+export function printDecision(name, decision) {
   console.log(`\n======== ${name}: ${decision.verdict} ========`);
   // A refusal carries no `kinds`: the whole point is that there is nothing to
   // tabulate. Iterating it unconditionally threw a TypeError *after* the
