@@ -93,6 +93,175 @@ function meshRowFollows(has) {
   return has.MeshRenderer === true || (has.ShadowCaster === true && VolumeShadowCaster.floorScaleY != null);
 }
 
+/**
+ * N-215: the value a per-frame setter was given (x, y, vx, vy, angularVelocity, alpha, the animation speed; two for
+ * setPosition, setVelocity and setScale). The setter stores it here and calls one of the functions below, which take
+ * the entity and no double. A setter TurboFan left out of a caller boxed its value at each call: a stress scene's
+ * walkers, moved through this.x and this.y, allocated 2.1 MB/s in the logic worker at 3 000 of them. Now the one-value
+ * setters are 26 bytes of bytecode, and TurboFan inlines 27 or less whatever its caller's budget
+ * (setterBytecodeSize.test.js keeps them there); a function behind one that TurboFan leaves out boxes nothing.
+ * Float32, so the functions read the value as its column will hold it (N-170's compare). Each reads it first, before
+ * it calls anything.
+ */
+const SETTER_ARGS = new Float32Array(2);
+
+/**
+ * A body moved by a position setter: its SET_TRANSFORM from the columns just written (the values queued before, as
+ * the ring stores float32). Kept out of the setters' work: a setter V8 has optimized on its own counts the bytecode
+ * that code inlined toward the 27, so the work an entity without a body runs stays small.
+ */
+function enqueuePoseOf(i) {
+  enqueueSetTransform(
+    i,
+    Transform.x[i],
+    Transform.y[i],
+    Transform.rotC ? Transform.rotC[i] : 1,
+    Transform.rotS ? Transform.rotS[i] : 0,
+  );
+}
+
+/** set x's work, its value in SETTER_ARGS[0]. */
+function setXFromArgs(e) {
+  const x = SETTER_ARGS[0];
+  const i = e.index;
+  if (Transform.x[i] === x) return;
+  Transform.x[i] = x;
+  staticSceneryChangedAt(i);
+  if (isCommandRingBound() && e._hasBox2dBody()) enqueuePoseOf(i);
+}
+
+/** set y's work, its value in SETTER_ARGS[0]. */
+function setYFromArgs(e) {
+  const y = SETTER_ARGS[0];
+  const i = e.index;
+  if (Transform.y[i] === y) return;
+  Transform.y[i] = y;
+  staticSceneryChangedAt(i);
+  if (isCommandRingBound() && e._hasBox2dBody()) enqueuePoseOf(i);
+}
+
+/** setPosition's work, x and y in SETTER_ARGS. Returns the entity. */
+function setPositionFromArgs(e) {
+  const x = SETTER_ARGS[0];
+  const y = SETTER_ARGS[1];
+  const i = e.index;
+  if (Transform.x[i] === x && Transform.y[i] === y) return e;
+  Transform.x[i] = x;
+  Transform.y[i] = y;
+  if (isCommandRingBound() && e._hasBox2dBody()) enqueuePoseOf(i);
+  return e;
+}
+
+/** set vx's work, its value in SETTER_ARGS[0]. */
+function setVxFromArgs(e) {
+  const vx = SETTER_ARGS[0];
+  if (!e._hasComponents.RigidBody) return;
+  const i = e.index;
+  if (RigidBody.vx[i] === vx) return;
+  RigidBody.vx[i] = vx;
+  if (isCommandRingBound()) enqueueSetVelocity(i, vx, RigidBody.vy[i]);
+}
+
+/** set vy's work, its value in SETTER_ARGS[0]. */
+function setVyFromArgs(e) {
+  const vy = SETTER_ARGS[0];
+  if (!e._hasComponents.RigidBody) return;
+  const i = e.index;
+  if (RigidBody.vy[i] === vy) return;
+  RigidBody.vy[i] = vy;
+  if (isCommandRingBound()) enqueueSetVelocity(i, RigidBody.vx[i], vy);
+}
+
+/** set angularVelocity's work, its value in SETTER_ARGS[0]. */
+function setAngularVelocityFromArgs(e) {
+  const w = SETTER_ARGS[0];
+  if (!e._hasComponents.RigidBody) return;
+  const i = e.index;
+  if (RigidBody.angularVelocity[i] === w) return;
+  RigidBody.angularVelocity[i] = w;
+  if (isCommandRingBound()) enqueueSetAngularVelocity(i, w);
+}
+
+/** setVelocity's work, vx and vy in SETTER_ARGS. Returns the entity. */
+function setVelocityFromArgs(e) {
+  const vx = SETTER_ARGS[0];
+  const vy = SETTER_ARGS[1];
+  if (!e._hasComponents.RigidBody) return e;
+  const i = e.index;
+  if (RigidBody.vx[i] === vx && RigidBody.vy[i] === vy) return e;
+  RigidBody.vx[i] = vx;
+  RigidBody.vy[i] = vy;
+  if (isCommandRingBound()) enqueueSetVelocity(i, vx, vy);
+  return e;
+}
+
+/** set alpha's and setAlpha's work, the alpha in SETTER_ARGS[0]. Returns the entity. */
+function setAlphaFromArgs(e) {
+  const a = SETTER_ARGS[0];
+  const i = e.index;
+  const has = e._hasComponents;
+  if (has.SpriteRenderer && SpriteRenderer.alpha[i] !== a) {
+    SpriteRenderer.alpha[i] = a;
+    SpriteRenderer.renderDirty[i] = 1;
+    SpriteRenderer.keyedDirty[i] = 1;
+  }
+  if (has.adobeAnimComponent) AdobeAnimComponent.alpha[i] = a;
+  if (meshRowFollows(has) && MeshRenderer.alpha[i] !== a) {
+    MeshRenderer.alpha[i] = a;
+    MeshRenderer.renderDirty[i] = 1;
+  }
+  return e;
+}
+
+/** setScale's work, x and y in SETTER_ARGS. Returns the entity. */
+function setScaleFromArgs(e) {
+  const x = SETTER_ARGS[0];
+  const y = SETTER_ARGS[1];
+  const i = e.index;
+  const has = e._hasComponents;
+  if (has.SpriteRenderer) {
+    // A flip stays on: it is the sign of the stored scale.
+    const flip = SpriteRenderer.flip[i];
+    const sx = flip & 1 ? -x : x;
+    const sy = flip & 2 ? -y : y;
+    let changed = false;
+    if (SpriteRenderer.scaleX[i] !== sx) {
+      SpriteRenderer.scaleX[i] = sx;
+      changed = true;
+    }
+    if (SpriteRenderer.scaleY[i] !== sy) {
+      SpriteRenderer.scaleY[i] = sy;
+      changed = true;
+    }
+    if (changed) {
+      SpriteRenderer.updateBounds(i);
+      SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.keyedDirty[i] = 1;
+    }
+  }
+  if (has.adobeAnimComponent) {
+    const flip = AdobeAnimComponent.flip[i];
+    AdobeAnimComponent.scaleX[i] = flip & 1 ? -x : x;
+    AdobeAnimComponent.scaleY[i] = flip & 2 ? -y : y;
+    AdobeAnimComponent.applyClipBounds(i);
+  }
+  return e;
+}
+
+/** setAnimationSpeed's work, the speed in SETTER_ARGS[0]. Returns the entity. */
+function setAnimationSpeedFromArgs(e) {
+  const speed = SETTER_ARGS[0];
+  if (!e._hasComponents.SpriteRenderer) return e;
+  const i = e.index;
+  if (SpriteRenderer.animationSpeed[i] !== speed) {
+    SpriteRenderer.animationSpeed[i] = speed;
+    // The clock's rate, not the statics (a frame it moves is a texture the emit sees move). Games set it every tick
+    // (Predator's walkers, from their speed): a keyed flag here rewrote thousands of store rows a frame (E-177).
+    SpriteRenderer.renderDirty[i] = 1;
+  }
+  return e;
+}
+
 /** className → methods already warned about a missing sprite (one warning each). */
 const _warnedNoSprite = new Map();
 function warnNoSpriteOnce(className, method) {
@@ -981,6 +1150,11 @@ export class GameObject {
   // ═══════════════════════════════════════════════════════════════════════════
   // PROPERTY ACCESSORS (GETTERS & SETTERS)
   // Grouped by component: Transform → RigidBody → SpriteRenderer → Collider
+  // N-170: the setters' early-outs compare a column with the value as float32 (Math.fround, or read back from
+  // SETTER_ARGS). The columns are Float32Arrays, so a value that rounds to what the column holds (0.3, a speed ×
+  // 0.00277) is the value already there: writing it again marks nothing dirty and sends Box2D nothing.
+  // N-215: the per-frame setters store their value in SETTER_ARGS and call a function that takes no double (above
+  // the class): keep them that small.
   // ═══════════════════════════════════════════════════════════════════════════
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1007,19 +1181,8 @@ export class GameObject {
     return Transform.x[this.index];
   }
   set x(value) {
-    const i = this.index;
-    if (Transform.x[i] === value) return;
-    Transform.x[i] = value;
-    staticSceneryChangedAt(i);
-    if (isCommandRingBound() && this._hasBox2dBody()) {
-      enqueueSetTransform(
-        i,
-        value,
-        Transform.y[i],
-        Transform.rotC ? Transform.rotC[i] : 1,
-        Transform.rotS ? Transform.rotS[i] : 0,
-      );
-    }
+    SETTER_ARGS[0] = value;
+    setXFromArgs(this);
   }
 
   /**
@@ -1029,19 +1192,8 @@ export class GameObject {
     return Transform.y[this.index];
   }
   set y(value) {
-    const i = this.index;
-    if (Transform.y[i] === value) return;
-    Transform.y[i] = value;
-    staticSceneryChangedAt(i);
-    if (isCommandRingBound() && this._hasBox2dBody()) {
-      enqueueSetTransform(
-        i,
-        Transform.x[i],
-        value,
-        Transform.rotC ? Transform.rotC[i] : 1,
-        Transform.rotS ? Transform.rotS[i] : 0,
-      );
-    }
+    SETTER_ARGS[0] = value;
+    setYFromArgs(this);
   }
 
   /**
@@ -1054,7 +1206,7 @@ export class GameObject {
   }
   set rotation(value) {
     const i = this.index;
-    if (Transform.rotation && Transform.rotation[i] === value) return;
+    if (Transform.rotation && Transform.rotation[i] === Math.fround(value)) return;
     if (Transform.rotation) Transform.rotation[i] = value;
     syncRotCSFromAngle(i, value);
     if (isCommandRingBound() && this._hasBox2dBody()) {
@@ -1097,14 +1249,8 @@ export class GameObject {
     return RigidBody.vx[this.index];
   }
   set vx(value) {
-    if (this._hasComponents.RigidBody) {
-      const i = this.index;
-      if (RigidBody.vx[i] === value) return;
-      RigidBody.vx[i] = value;
-      if (isCommandRingBound()) {
-        enqueueSetVelocity(i, value, RigidBody.vy[i]);
-      }
-    }
+    SETTER_ARGS[0] = value;
+    setVxFromArgs(this);
   }
 
   /** Velocity Y - returns 0 if entity has no RigidBody */
@@ -1113,14 +1259,8 @@ export class GameObject {
     return RigidBody.vy[this.index];
   }
   set vy(value) {
-    if (this._hasComponents.RigidBody) {
-      const i = this.index;
-      if (RigidBody.vy[i] === value) return;
-      RigidBody.vy[i] = value;
-      if (isCommandRingBound()) {
-        enqueueSetVelocity(i, RigidBody.vx[i], value);
-      }
-    }
+    SETTER_ARGS[0] = value;
+    setVyFromArgs(this);
   }
 
   /** Angular velocity (rad/s) */
@@ -1129,14 +1269,8 @@ export class GameObject {
     return RigidBody.angularVelocity[this.index];
   }
   set angularVelocity(value) {
-    if (this._hasComponents.RigidBody) {
-      const i = this.index;
-      if (RigidBody.angularVelocity[i] === value) return;
-      RigidBody.angularVelocity[i] = value;
-      if (isCommandRingBound()) {
-        enqueueSetAngularVelocity(i, value);
-      }
-    }
+    SETTER_ARGS[0] = value;
+    setAngularVelocityFromArgs(this);
   }
 
   /**
@@ -1223,18 +1357,8 @@ export class GameObject {
     return 1;
   }
   set alpha(value) {
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.alpha[this.index] !== value) {
-      SpriteRenderer.alpha[this.index] = value;
-      SpriteRenderer.renderDirty[this.index] = 1;
-      SpriteRenderer.keyedDirty[this.index] = 1;
-    }
-    if (this._hasComponents.adobeAnimComponent) {
-      AdobeAnimComponent.alpha[this.index] = value;
-    }
-    if (meshRowFollows(this._hasComponents) && MeshRenderer.alpha[this.index] !== value) {
-      MeshRenderer.alpha[this.index] = value;
-      MeshRenderer.renderDirty[this.index] = 1;
-    }
+    SETTER_ARGS[0] = value;
+    setAlphaFromArgs(this);
   }
 
   /** Tint color (0xRRGGBB) */
@@ -1305,7 +1429,7 @@ export class GameObject {
   set scaleX(value) {
     if (this._hasComponents.SpriteRenderer) {
       const v = SpriteRenderer.flip[this.index] & 1 ? -value : value;
-      if (SpriteRenderer.scaleX[this.index] !== v) {
+      if (SpriteRenderer.scaleX[this.index] !== Math.fround(v)) {
         SpriteRenderer.scaleX[this.index] = v;
         SpriteRenderer.updateBounds(this.index);
         SpriteRenderer.renderDirty[this.index] = 1;
@@ -1314,7 +1438,7 @@ export class GameObject {
     }
     if (this._hasComponents.adobeAnimComponent) {
       const v = AdobeAnimComponent.flip[this.index] & 1 ? -value : value;
-      if (AdobeAnimComponent.scaleX[this.index] !== v) {
+      if (AdobeAnimComponent.scaleX[this.index] !== Math.fround(v)) {
         AdobeAnimComponent.scaleX[this.index] = v;
         AdobeAnimComponent.applyClipBounds(this.index);
       }
@@ -1336,7 +1460,7 @@ export class GameObject {
   set scaleY(value) {
     if (this._hasComponents.SpriteRenderer) {
       const v = SpriteRenderer.flip[this.index] & 2 ? -value : value;
-      if (SpriteRenderer.scaleY[this.index] !== v) {
+      if (SpriteRenderer.scaleY[this.index] !== Math.fround(v)) {
         SpriteRenderer.scaleY[this.index] = v;
         SpriteRenderer.updateBounds(this.index);
         SpriteRenderer.renderDirty[this.index] = 1;
@@ -1345,7 +1469,7 @@ export class GameObject {
     }
     if (this._hasComponents.adobeAnimComponent) {
       const v = AdobeAnimComponent.flip[this.index] & 2 ? -value : value;
-      if (AdobeAnimComponent.scaleY[this.index] !== v) {
+      if (AdobeAnimComponent.scaleY[this.index] !== Math.fround(v)) {
         AdobeAnimComponent.scaleY[this.index] = v;
         AdobeAnimComponent.applyClipBounds(this.index);
       }
@@ -1479,19 +1603,8 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setAlpha(value) {
-    if (this._hasComponents.SpriteRenderer && SpriteRenderer.alpha[this.index] !== value) {
-      SpriteRenderer.alpha[this.index] = value;
-      SpriteRenderer.renderDirty[this.index] = 1;
-      SpriteRenderer.keyedDirty[this.index] = 1;
-    }
-    if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.alpha[this.index] !== value) {
-      AdobeAnimComponent.alpha[this.index] = value;
-    }
-    if (meshRowFollows(this._hasComponents) && MeshRenderer.alpha[this.index] !== value) {
-      MeshRenderer.alpha[this.index] = value;
-      MeshRenderer.renderDirty[this.index] = 1;
-    }
-    return this;
+    SETTER_ARGS[0] = value;
+    return setAlphaFromArgs(this);
   }
 
   /**
@@ -1778,34 +1891,10 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setScale(x, y) {
-    const yVal = y !== undefined ? y : x;
-    let changed = false;
-    if (this._hasComponents.SpriteRenderer) {
-      // A flip stays on: it is the sign of the stored scale.
-      const flip = SpriteRenderer.flip[this.index];
-      const sx = flip & 1 ? -x : x;
-      const sy = flip & 2 ? -yVal : yVal;
-      if (SpriteRenderer.scaleX[this.index] !== sx) {
-        SpriteRenderer.scaleX[this.index] = sx;
-        changed = true;
-      }
-      if (SpriteRenderer.scaleY[this.index] !== sy) {
-        SpriteRenderer.scaleY[this.index] = sy;
-        changed = true;
-      }
-    }
-    if (this._hasComponents.SpriteRenderer && changed) {
-      SpriteRenderer.updateBounds(this.index);
-      SpriteRenderer.renderDirty[this.index] = 1;
-      SpriteRenderer.keyedDirty[this.index] = 1;
-    }
-    if (this._hasComponents.adobeAnimComponent) {
-      const flip = AdobeAnimComponent.flip[this.index];
-      AdobeAnimComponent.scaleX[this.index] = flip & 1 ? -x : x;
-      AdobeAnimComponent.scaleY[this.index] = flip & 2 ? -yVal : yVal;
-      AdobeAnimComponent.applyClipBounds(this.index);
-    }
-    return this;
+    const a = SETTER_ARGS;
+    a[0] = x;
+    a[1] = y !== undefined ? y : x;
+    return setScaleFromArgs(this);
   }
 
   /**
@@ -1875,14 +1964,8 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setAnimationSpeed(speed) {
-    if (!this._hasComponents.SpriteRenderer) return this;
-    if (SpriteRenderer.animationSpeed[this.index] !== speed) {
-      SpriteRenderer.animationSpeed[this.index] = speed;
-      // The clock's rate, not the statics (a frame it moves is a texture the emit sees move). Games set it every tick
-      // (Predator's walkers, from their speed): a keyed flag here rewrote thousands of store rows a frame (E-177).
-      SpriteRenderer.renderDirty[this.index] = 1;
-    }
-    return this;
+    SETTER_ARGS[0] = speed;
+    return setAnimationSpeedFromArgs(this);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -1896,20 +1979,10 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setPosition(x, y) {
-    const i = this.index;
-    if (Transform.x[i] === x && Transform.y[i] === y) return this;
-    Transform.x[i] = x;
-    Transform.y[i] = y;
-    if (isCommandRingBound() && this._hasBox2dBody()) {
-      enqueueSetTransform(
-        i,
-        x,
-        y,
-        Transform.rotC ? Transform.rotC[i] : 1,
-        Transform.rotS ? Transform.rotS[i] : 0,
-      );
-    }
-    return this;
+    const a = SETTER_ARGS;
+    a[0] = x;
+    a[1] = y;
+    return setPositionFromArgs(this);
   }
 
   /**
@@ -1919,16 +1992,10 @@ export class GameObject {
    * @returns {this} For chaining
    */
   setVelocity(vx, vy) {
-    if (this._hasComponents.RigidBody) {
-      const i = this.index;
-      if (RigidBody.vx[i] === vx && RigidBody.vy[i] === vy) return this;
-      RigidBody.vx[i] = vx;
-      RigidBody.vy[i] = vy;
-      if (isCommandRingBound()) {
-        enqueueSetVelocity(i, vx, vy);
-      }
-    }
-    return this;
+    const a = SETTER_ARGS;
+    a[0] = vx;
+    a[1] = vy;
+    return setVelocityFromArgs(this);
   }
 
   /**
