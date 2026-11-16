@@ -12,7 +12,9 @@
  * which the painter sorts zIndex first), bits 0-7.
  *
  * Pre-render writes them for the rows it packs (the GPU queue's gbuf region, GPU_FLAG_GBUF); Pixi for the rows it packs,
- * from the queue's key column (the entity of a sprite row).
+ * from the queue's key column (the entity of a sprite row). E-387: on Pixi's keyed frames the keyed pack writes them
+ * (wasm/gpuPack.c pack_keyed, the same words as writeGbufWords from the key column): a change to the words is made in
+ * both, and gpuPackKeyedGbuf.test.js holds them equal.
  */
 
 /** SpriteRenderer.gbufFlags: normals in bits 0-1, the surface in bit 2, the emissive level in bits 3-5. */
@@ -101,7 +103,8 @@ export function decodeGbufWord(word) {
  * order), whose entity `entityOf(row)` gives (-1 for none). The band (y) counts the zIndex changes along the draw order
  * when `zIndex` is given and the order is the painter's (zIndex first): 0 otherwise.
  * A module function over the columns it is handed: the loop is hot in a scene with a G-buffer (one pass a frame over the
- * drawn instances).
+ * drawn instances). E-387: Pixi's keyed frames take the keyed pack's twin of it (gpuPack.c pack_keyed); this one writes
+ * the rest.
  * @param {Float32Array} out
  * @param {number} n
  * @param {Uint32Array|Int32Array|null} order
