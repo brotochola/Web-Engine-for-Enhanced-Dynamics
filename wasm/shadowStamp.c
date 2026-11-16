@@ -19,7 +19,10 @@
    E-315: a light that keeps at most KNN_MAX_LIM casters walks its cells nearest first and skips the cells too far to
    hold one of its kept (ring_select), and a larger budget picks its kept with a radix select on the float distances'
    bits (radix_select) instead of the quickselect; a tie at the cut (or among sorted rows) goes the old way, so the
-   rows stay the same, bit for bit (tests/node/shadowStampSelect.test.js). */
+   rows stay the same, bit for bit (tests/node/shadowStampSelect.test.js).
+   E-359: a keyed row (the caster's 7 floats, the light after them) and a full row (22 floats, the light over the last 4)
+   go out in fixed stores, the light vec4 in one v128, converted once a light. The same rows, bit for bit
+   (tests/node/shadowStampWasm.test.js and shadowStampKeyed.test.js). */
 #include <stdint.h>
 #include <wasm_simd128.h>
 
@@ -432,7 +435,8 @@ __attribute__((unused)) INLINE uint32_t take_closest(const uint32_t *tmpIdx, con
 }
 
 /* One caster row into a stamp row: a caster row's 22 floats in five v128 and a 64-bit lane when both strides are
-   that (a memcpy of 88 bytes would be memory.copy, a runtime call in V8); otherwise float by float. */
+   that (a memcpy of 88 bytes would be memory.copy, a runtime call in V8); otherwise float by float. put_row copies
+   the rows of any layout but its own two through it. */
 INLINE void copy_row(float *d, const float *s, uint32_t sf, uint32_t df) {
   if (sf == 22 && df == 22) {
     wasm_v128_store(d, wasm_v128_load(s));
@@ -445,6 +449,53 @@ INLINE void copy_row(float *d, const float *s, uint32_t sf, uint32_t df) {
   }
   const uint32_t row = sf < df ? sf : df;
   for (uint32_t f = 0; f < row; f++) d[f] = s[f];
+}
+
+/* E-359: the stamp rows pre-render writes (gpuQueueLayout.js): a keyed row (E-191 step 2) is the caster's 7 floats
+   with the light vec4 after them, 11 floats; a full row is the caster's 22 floats with the light over its last 4. */
+#define KEYED_CASTER_FLOATS 7
+#define KEYED_STAMP_FLOATS 11
+#define CASTER_FLOATS 22
+#define CASTER_LIGHT_FLOAT 18
+enum { ROW_ANY, ROW_KEYED, ROW_FULL };
+
+INLINE int row_kind(uint32_t sf, uint32_t df, uint32_t lightAt) {
+  if (sf == KEYED_CASTER_FLOATS && df == KEYED_STAMP_FLOATS && lightAt == KEYED_CASTER_FLOATS) return ROW_KEYED;
+  if (sf == CASTER_FLOATS && df == CASTER_FLOATS && lightAt == CASTER_LIGHT_FLOAT) return ROW_FULL;
+  return ROW_ANY;
+}
+
+/* A light's vec4 as the stamp rows hold it: x, y, intensity and rangeSq as float. */
+INLINE v128_t light_vec(const double *L) {
+  return wasm_f32x4_make((float)L[0], (float)L[1], (float)L[2], (float)L[3]);
+}
+
+/* One stamp row: caster row s with light vec4 lv (kind: row_kind's). A keyed row in fixed stores (the caster's floats
+   as a v128, a 64-bit and a 32-bit lane, then the light in one v128), a full row its first 18 floats and then the light,
+   each byte stored once and nothing read or written past either row; any other layout as it always went: copy_row,
+   then the light float by float. */
+INLINE void put_row(float *d, const float *s, uint32_t sf, uint32_t df, uint32_t lightAt, int kind, v128_t lv) {
+  if (kind == ROW_KEYED) {
+    wasm_v128_store(d, wasm_v128_load(s));
+    wasm_v128_store64_lane(d + 4, wasm_v128_load64_zero(s + 4), 0);
+    wasm_v128_store32_lane(d + 6, wasm_v128_load32_zero(s + 6), 0);
+    wasm_v128_store(d + KEYED_CASTER_FLOATS, lv);
+    return;
+  }
+  if (kind == ROW_FULL) {
+    wasm_v128_store(d, wasm_v128_load(s));
+    wasm_v128_store(d + 4, wasm_v128_load(s + 4));
+    wasm_v128_store(d + 8, wasm_v128_load(s + 8));
+    wasm_v128_store(d + 12, wasm_v128_load(s + 12));
+    wasm_v128_store64_lane(d + 16, wasm_v128_load64_zero(s + 16), 0);
+    wasm_v128_store(d + CASTER_LIGHT_FLOAT, lv);
+    return;
+  }
+  copy_row(d, s, sf, df);
+  d[lightAt] = wasm_f32x4_extract_lane(lv, 0);
+  d[lightAt + 1] = wasm_f32x4_extract_lane(lv, 1);
+  d[lightAt + 2] = wasm_f32x4_extract_lane(lv, 2);
+  d[lightAt + 3] = wasm_f32x4_extract_lane(lv, 3);
 }
 
 /* DX-SPOT: is a caster at (dx, dy) from a cone light inside its cone (factor above 0)? On the floor, with no root:
@@ -476,33 +527,35 @@ INLINE double cone_intensity(double dx, double dy, double intensity, const doubl
   return f * intensity * fd2 / (intensity + fd2 - f * intensity);
 }
 
-/* appendStampedCasters for one light vec4 (already float, as the JS Float32Array lightVec holds it). */
-INLINE int32_t append_stamped(float *dst, uint32_t df, int32_t out, const float *src, uint32_t sf, const uint32_t *indices,
-                              uint32_t n, const float *lightVec, int32_t cap, uint32_t lightAt) {
+/* appendStampedCasters for one light vec4 lv (made once for the light). */
+INLINE int32_t append_rows(float *dst, uint32_t df, int32_t out, const float *src, uint32_t sf, const uint32_t *indices,
+                           uint32_t n, v128_t lv, int32_t cap, uint32_t lightAt) {
+  const int kind = row_kind(sf, df, lightAt);
   for (uint32_t k = 0; k < n && out < cap; k++) {
-    float *d = dst + (uint32_t)out * df;
-    copy_row(d, src + indices[k] * sf, sf, df);
-    d[lightAt] = lightVec[0];
-    d[lightAt + 1] = lightVec[1];
-    d[lightAt + 2] = lightVec[2];
-    d[lightAt + 3] = lightVec[3];
+    put_row(dst + (uint32_t)out * df, src + indices[k] * sf, sf, df, lightAt, kind, lv);
     out++;
   }
   return out;
 }
 
-/* append_stamped for a cone light: each row's intensity from where its caster stands in the cone (cone_intensity). */
-INLINE int32_t append_stamped_cone(float *dst, uint32_t df, int32_t out, const float *src, uint32_t sf,
-                                   const uint32_t *indices, uint32_t n, const float *lightVec, int32_t cap,
-                                   uint32_t lightAt, double lx, double ly, double intensity, const double *L) {
+/* append_rows with the vec4 as floats (as the JS Float32Array lightVec holds it): the float32 test module's
+   (wasm/test/shadowStampF32.c). */
+__attribute__((unused)) INLINE int32_t append_stamped(float *dst, uint32_t df, int32_t out, const float *src, uint32_t sf,
+                                                      const uint32_t *indices, uint32_t n, const float *lightVec,
+                                                      int32_t cap, uint32_t lightAt) {
+  const v128_t lv = wasm_f32x4_make(lightVec[0], lightVec[1], lightVec[2], lightVec[3]);
+  return append_rows(dst, df, out, src, sf, indices, n, lv, cap, lightAt);
+}
+
+/* append_rows for a cone light: each row's intensity from where its caster stands in the cone (cone_intensity). */
+INLINE int32_t append_rows_cone(float *dst, uint32_t df, int32_t out, const float *src, uint32_t sf,
+                                const uint32_t *indices, uint32_t n, v128_t lv, int32_t cap, uint32_t lightAt, double lx,
+                                double ly, double intensity, const double *L) {
+  const int kind = row_kind(sf, df, lightAt);
   for (uint32_t k = 0; k < n && out < cap; k++) {
-    float *d = dst + (uint32_t)out * df;
     const float *s = src + indices[k] * sf;
-    copy_row(d, s, sf, df);
-    d[lightAt] = lightVec[0];
-    d[lightAt + 1] = lightVec[1];
-    d[lightAt + 2] = (float)cone_intensity((double)s[0] - lx, (double)s[1] - ly, intensity, L);
-    d[lightAt + 3] = lightVec[3];
+    const float f = (float)cone_intensity((double)s[0] - lx, (double)s[1] - ly, intensity, L);
+    put_row(dst + (uint32_t)out * df, s, sf, df, lightAt, kind, wasm_f32x4_replace_lane(lv, 2, f));
     out++;
   }
   return out;
@@ -514,12 +567,45 @@ INLINE int32_t stamp_light_rows(float *stamp, uint32_t df, int32_t cursor, const
                                 const uint32_t *keep, uint32_t n, int32_t cap, uint32_t lightAt, int folded, double lx,
                                 double ly, double intensity, double rangeSq, const double *L, uint16_t *stampLightIdx,
                                 int32_t i) {
-  const float lightVec[4] = { (float)lx, (float)ly, (float)intensity, (float)rangeSq };
+  const v128_t lv = wasm_f32x4_make((float)lx, (float)ly, (float)intensity, (float)rangeSq);
   const int32_t written = folded
-    ? append_stamped_cone(stamp, df, cursor, sun, sf, keep, n, lightVec, cap, lightAt, lx, ly, intensity, L)
-    : append_stamped(stamp, df, cursor, sun, sf, keep, n, lightVec, cap, lightAt);
+    ? append_rows_cone(stamp, df, cursor, sun, sf, keep, n, lv, cap, lightAt, lx, ly, intensity, L)
+    : append_rows(stamp, df, cursor, sun, sf, keep, n, lv, cap, lightAt);
   if (stampLightIdx) for (int32_t k = cursor; k < written; k++) stampLightIdx[k] = (uint16_t)i;
   return written;
+}
+
+/* The rows of one caster's nearest lights (its slots, n lights), nearest first, until the stamp is full. lvt
+   (table 1): each light's vec4, made once a light; table 0 makes it row by row. folded: a cone or dim light's rows take
+   their caster's place in the cone and its shade. table and folded are constants once inlined. */
+INLINE int32_t caster_rows(float *stamp, uint32_t df, int32_t cursor, int32_t cap, const float *s, uint32_t sf,
+                           uint32_t lightAt, int kind, const double *lights, const float *lvt, const int32_t *slots,
+                           uint32_t n, uint16_t *stampLightIdx, const int table, const int folded) {
+  for (uint32_t k = 0; k < n && cursor < cap; k++) {
+    const int32_t li = slots[k];
+    const double *L = lights + (uint32_t)li * LIGHT_DOUBLES;
+    v128_t lv = table ? wasm_v128_load(lvt + 4 * (uint32_t)li) : light_vec(L);
+    if (folded && (L[7] > -1.0 || L[10] < 1.0)) {
+      lv = wasm_f32x4_replace_lane(lv, 2, (float)cone_intensity((double)s[0] - L[0], (double)s[1] - L[1], L[2], L));
+    }
+    put_row(stamp + (uint32_t)cursor * df, s, sf, df, lightAt, kind, lv);
+    if (stampLightIdx) stampLightIdx[cursor] = (uint16_t)li;
+    cursor++;
+  }
+  return cursor;
+}
+
+/* The rows of maxShadowsPerEntity, caster by caster in caster order, until the stamp is full. */
+INLINE int32_t stamp_nearest_rows(float *stamp, uint32_t df, int32_t cursor, int32_t cap, const float *sun, uint32_t sf,
+                                  uint32_t lightAt, const double *lights, const float *lvt, const int32_t *nearSlot,
+                                  const uint8_t *nearCount, uint32_t nSun, uint32_t maxPE, uint16_t *stampLightIdx,
+                                  const int table, const int folded) {
+  const int kind = row_kind(sf, df, lightAt);
+  for (uint32_t c = 0; c < nSun && cursor < cap; c++) {
+    cursor = caster_rows(stamp, df, cursor, cap, sun + c * sf, sf, lightAt, kind, lights, lvt, nearSlot + c * maxPE,
+                         nearCount[c], stampLightIdx, table, folded);
+  }
+  return cursor;
 }
 
 /* E-315: a light that keeps at most KNN_MAX_LIM casters walks its cells nearest first and skips the cells too far to
@@ -710,7 +796,6 @@ int32_t stamp_light_range(uint32_t table) {
   float *py = (float *)(uintptr_t)t[T_PACKED_Y];
   int32_t *cellOf = (int32_t *)(uintptr_t)t[T_CELL_OF];
   double *d64 = (double *)(uintptr_t)t[T_DIST64];
-  float lightVec[4];
 
   if (begin < 0) begin = 0;
   if (nSun == 0) return cursor;
@@ -914,52 +999,23 @@ int32_t stamp_light_range(uint32_t table) {
                               stampLightIdx, i);
   }
   if (maxPE == 0) return cursor;
-  if (!anyFolded) {
-    /* Point lights at full shade only: each row is its caster's with the light's vec4. */
-    for (uint32_t c = 0; c < nSun && cursor < cap; c++) {
-      const uint32_t n = nearCount[c];
-      const uint32_t base = c * maxPE;
-      for (uint32_t k = 0; k < n && cursor < cap; k++) {
-        const int32_t li = nearSlot[base + k];
-        const double *L = lights + (uint32_t)li * LIGHT_DOUBLES;
-        lightVec[0] = (float)L[0];
-        lightVec[1] = (float)L[1];
-        lightVec[2] = (float)L[2];
-        lightVec[3] = (float)L[3];
-        float *d = stamp + (uint32_t)cursor * df;
-        copy_row(d, sun + c * sf, sf, df);
-        d[lightAt] = lightVec[0];
-        d[lightAt + 1] = lightVec[1];
-        d[lightAt + 2] = lightVec[2];
-        d[lightAt + 3] = lightVec[3];
-        if (stampLightIdx) stampLightIdx[cursor] = (uint16_t)li;
-        cursor++;
-      }
+  /* E-359: the lights' vec4s, once a light, into dist (the candidates' distances, free once the lights are done) when it
+     holds them: the gather may write min(tmpCap, nSun) floats there, four a vec4. The rows below read a light's there. */
+  const uint32_t room = tmpCap < nSun ? tmpCap : nSun;
+  if (capL > 0 && (uint32_t)capL <= room / 4) {
+    float *lvt = dist;
+    for (int32_t i = begin; i < capL; i += stride) {
+      wasm_v128_store(lvt + 4 * (uint32_t)i, light_vec(lights + (uint32_t)i * LIGHT_DOUBLES));
     }
-    return cursor;
+    /* Point lights at full shade only: each row is its caster's with the light's vec4. DX-SPOT: a call with a cone or
+       dim light; that light's rows take their caster's place in the cone and its shade. */
+    return anyFolded
+      ? stamp_nearest_rows(stamp, df, cursor, cap, sun, sf, lightAt, lights, lvt, nearSlot, nearCount, nSun, maxPE,
+                           stampLightIdx, 1, 1)
+      : stamp_nearest_rows(stamp, df, cursor, cap, sun, sf, lightAt, lights, lvt, nearSlot, nearCount, nSun, maxPE,
+                           stampLightIdx, 1, 0);
   }
-  /* DX-SPOT: a call with a cone or dim light; that light's rows take their caster's place in the cone and its shade. */
-  for (uint32_t c = 0; c < nSun && cursor < cap; c++) {
-    const uint32_t n = nearCount[c];
-    const uint32_t base = c * maxPE;
-    for (uint32_t k = 0; k < n && cursor < cap; k++) {
-      const int32_t li = nearSlot[base + k];
-      const double *L = lights + (uint32_t)li * LIGHT_DOUBLES;
-      lightVec[0] = (float)L[0];
-      lightVec[1] = (float)L[1];
-      lightVec[2] = (float)L[2];
-      lightVec[3] = (float)L[3];
-      float *d = stamp + (uint32_t)cursor * df;
-      const float *s = sun + c * sf;
-      copy_row(d, s, sf, df);
-      d[lightAt] = lightVec[0];
-      d[lightAt + 1] = lightVec[1];
-      d[lightAt + 2] = L[7] > -1.0 || L[10] < 1.0
-        ? (float)cone_intensity((double)s[0] - L[0], (double)s[1] - L[1], L[2], L) : lightVec[2];
-      d[lightAt + 3] = lightVec[3];
-      if (stampLightIdx) stampLightIdx[cursor] = (uint16_t)li;
-      cursor++;
-    }
-  }
-  return cursor;
+  /* More lights than dist holds (a few casters): each row makes its light's vec4, any light. */
+  return stamp_nearest_rows(stamp, df, cursor, cap, sun, sf, lightAt, lights, (const float *)0, nearSlot, nearCount, nSun,
+                            maxPE, stampLightIdx, 0, 1);
 }
