@@ -19,7 +19,10 @@ import {
 import { colliderFillGpuProgram } from './webgpu/colliderFillWgsl.js';
 import { colliderFillGlProgram } from './webgl/colliderFillGlsl.js';
 import { dummyLutSource } from './instancedSpriteBatch.js';
-import { FILL_ROW, MESH_UV_FILL_FLOATS, MESH_UV_FILL_STRIDE, writeMeshPoseTable } from './colliderFillBatch.js';
+import { MESH_UV_FILL_FLOATS, MESH_UV_FILL_STRIDE, writeMeshPoseTable } from './colliderFillBatch.js';
+
+/** The vec4 attributes a row is read as (aRow0..aRow5): MESH_UV_FILL_FLOATS / 4. */
+export const MESH_UV_ROW_VEC4 = MESH_UV_FILL_FLOATS / 4;
 
 export class MeshUvFillBatch {
   /**
@@ -46,26 +49,14 @@ export class MeshUvFillBatch {
     const tri = new Float32Array([0, 0, 1, 0, 0, 1]);
     const stride = MESH_UV_FILL_STRIDE;
     const buf = this.buffer;
-
-    this.geometry = new Geometry({
-      attributes: {
-        aTri: { buffer: tri, format: 'float32x2' },
-        aV0: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.V0 * 4, instance: true },
-        aV1: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.V1 * 4, instance: true },
-        aV2: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.V2 * 4, instance: true },
-        aInstXY: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.POS * 4, instance: true },
-        aInstRotCS: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.ROT * 4, instance: true },
-        aInstTintBits: { buffer: buf, format: 'float32', stride, offset: FILL_ROW.TINT_BITS * 4, instance: true },
-        aInstDepth: { buffer: buf, format: 'float32', stride, offset: FILL_ROW.DEPTH * 4, instance: true },
-        aInstTexId: { buffer: buf, format: 'float32', stride, offset: FILL_ROW.TEX_ID * 4, instance: true },
-        aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.TILE_INV * 4, instance: true },
-        aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.TILE_OFF * 4, instance: true },
-        aInstBody: { buffer: buf, format: 'float32', stride, offset: FILL_ROW.BODY * 4, instance: true },
-        aUV0: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.UV0 * 4, instance: true },
-        aUV1: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.UV1 * 4, instance: true },
-        aUV2: { buffer: buf, format: 'float32x2', stride, offset: FILL_ROW.UV2 * 4, instance: true },
-      },
-    });
+    // E-419: the row as MESH_UV_ROW_VEC4 vec4 in FILL_ROW's order (aRow0 floats 0-3, ...), which the shaders name field
+    // by field: one attribute a field (14) made the vertex stage twice as slow (meshUvFill.vert.glsl). The shaders take
+    // the corner from the vertex's index; aTri only gives an instance its 3 vertices (Geometry.vertexCount).
+    const attributes = { aTri: { buffer: tri, format: 'float32x2' } };
+    for (let k = 0; k < MESH_UV_ROW_VEC4; k++) {
+      attributes[`aRow${k}`] = { buffer: buf, format: 'float32x4', stride, offset: k * 16, instance: true };
+    }
+    this.geometry = new Geometry({ attributes });
     this.geometry.instanceCount = 0;
 
     const atlas = atlasSource || Texture.WHITE.source;

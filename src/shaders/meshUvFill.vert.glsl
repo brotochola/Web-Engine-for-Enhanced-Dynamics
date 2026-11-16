@@ -1,19 +1,13 @@
 #version 300 es
-in vec2 aTri;
-in vec2 aV0;
-in vec2 aV1;
-in vec2 aV2;
-in vec2 aInstXY;
-in vec2 aInstRotCS;
-in float aInstTintBits;
-in float aInstDepth;
-in float aInstTexId;
-in vec2 aInstTileInv;
-in vec2 aInstTileOff;
-in float aInstBody;
-in vec2 aUV0;
-in vec2 aUV1;
-in vec2 aUV2;
+// E-419: the row (FILL_ROW, colliderFillBatch.js) as 6 vec4 in its order, not one attribute a field, and the corner from
+// gl_VertexID, not an attribute: with 15 attributes the vertex stage took 1.86 ms for volumeStressScene's 486 408 rows,
+// with these 6 0.82 (meshFillGpuBench, GTX 1650). main() names the fields as they were.
+in vec4 aRow0; // v0, v1
+in vec4 aRow1; // v2, xy
+in vec4 aRow2; // rotation cos sin, tint bits, depth
+in vec4 aRow3; // texture id, tile inverse, tile offset x
+in vec4 aRow4; // tile offset y, body, uv0
+in vec4 aRow5; // uv1, uv2
 
 uniform mat3 uProjectionMatrix;
 uniform mat3 uWorldTransformMatrix;
@@ -35,6 +29,22 @@ out float vHasTex;
 out vec2 vMeshUV;
 
 void main() {
+  // The corner: 0, 1, 2 in each instance of 3 vertices.
+  vec2 aTri = vec2(gl_VertexID == 1 ? 1.0 : 0.0, gl_VertexID == 2 ? 1.0 : 0.0);
+  vec2 aV0 = aRow0.xy;
+  vec2 aV1 = aRow0.zw;
+  vec2 aV2 = aRow1.xy;
+  vec2 aInstXY = aRow1.zw;
+  vec2 aInstRotCS = aRow2.xy;
+  float aInstTintBits = aRow2.z;
+  float aInstDepth = aRow2.w;
+  float aInstTexId = aRow3.x;
+  vec2 aInstTileInv = aRow3.yz;
+  vec2 aInstTileOff = vec2(aRow3.w, aRow4.x);
+  float aInstBody = aRow4.y;
+  vec2 aUV0 = aRow4.zw;
+  vec2 aUV1 = aRow5.xy;
+  vec2 aUV2 = aRow5.zw;
   vec2 local = aV0 + aTri.x * (aV1 - aV0) + aTri.y * (aV2 - aV0);
   vec2 xy = aInstXY;
   vec2 cs = aInstRotCS;

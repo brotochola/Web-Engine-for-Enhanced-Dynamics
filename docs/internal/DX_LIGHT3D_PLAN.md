@@ -1565,3 +1565,19 @@ En la CPU:
 **La cola de `pixiWorker.js`**, un agente a la vez cuando termine el de tiles: volúmenes en un solo draw, glows y
 partículas a resolución reducida, columnas por grilla (E-447), face map por MRT, tilemap en una pasada, clear por
 mosaico, subida de palabras por rango. Después, PR #12: un merge de prueba dio 14 archivos en conflicto (R-1192).
+
+**Lo que ya entró a main esta mañana** (cada uno con su registro):
+
+| Qué | Antes → después | Registro |
+| --- | --- | --- |
+| Tiles de luces (E-205): cada pixel recorre solo las luces de su mosaico | pase de luz 3D de Predator `?light3d=1` de noche 5,5 → 1,47 ms de GPU; crowd 2.5 con light3d de noche dibuja 41,7 → 58,7 fps (+40,6 %, 4/4); imagen idéntica byte a byte | R-1198 |
+| Cuadros del sol de las filas completas en el pack (E-394) | pre-render 10,68 → 9,15 ms (−14,3 %, 4/4) en crowd 2.5 con light3d de día | R-1196 |
+| Cuadros de faroles en WASM (E-393) | kernel −42 %; escena neutral (−2,0 %) | R-1196 |
+| Pasada de bordes de DX-DEPTH (E-429, E-430) | −9 % en light3dCompare `all=1`, −30 % en Predator con light3d; imagen idéntica | R-1197 |
+| N-222: achicar la ventana mataba el renderer con glow | arreglado | — |
+| N-223: la escena del pack con clave no usaba el pack con clave | arreglada; sus lecturas de escena anteriores no valen | — |
+
+Con 40 % más de frames dibujados, los workers que el cambio no toca suben 7–9 % por frame: Pixi y el proceso GPU de
+Chrome hacen más trabajo por segundo en los mismos núcleos. Con los frames dibujados iguales no se mueven.
+
+En marcha: la tanda de `pixiWorker.js`, E-444 y E-419 (agentes).
