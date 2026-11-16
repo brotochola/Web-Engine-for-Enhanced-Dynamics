@@ -66,6 +66,59 @@ export function frameAlphaKinds(pixels, fx, fy, w, h) {
 }
 
 /**
+ * E-448: the texels of a frame's rectangle of an image's pixels (as frameAlphaKinds reads them) whose alpha is 255: what
+ * of it is solid, which the opaque pass's cover counts.
+ * @param {{ data: Uint8ClampedArray, x: number, y: number, width: number, height: number }} pixels
+ * @param {number} fx
+ * @param {number} fy
+ * @param {number} w
+ * @param {number} h
+ * @returns {number}
+ */
+export function frameSolidTexels(pixels, fx, fy, w, h) {
+  const data = pixels.data;
+  const iw = pixels.width;
+  const x0 = Math.max(fx, pixels.x) - pixels.x;
+  const y0 = Math.max(fy, pixels.y) - pixels.y;
+  const x1 = Math.min(fx + w, pixels.x + iw) - pixels.x;
+  const y1 = Math.min(fy + h, pixels.y + pixels.height) - pixels.y;
+  let solid = 0;
+  for (let y = y0; y < y1; y++) {
+    for (let at = (y * iw + x0) * 4 + 3, end = (y * iw + x1) * 4; at < end; at += 4) {
+      if (data[at] === 255) solid++;
+    }
+  }
+  return solid;
+}
+
+/**
+ * H-EDGE (E-448): a baked atlas's frames' `base.texels` and `base.solidTexels`, which a bake from before H-EDGE (or E-448) did
+ * not write (Predator's: every frame read as FRAME_UNSCANNED, so neither DX-DEPTH's edge pass nor the opaque pass knew
+ * one binary). Each frame without them gets frameAlphaKinds and frameSolidTexels of its rectangle in the atlas, read by
+ * `readPixels` (called once, only when one is missing: { data, x: 0, y: 0, width, height }). A sheet with maps may glow,
+ * which only its twin page tells, so an atlas with maps (meta.maps) is left as it is. Returns the frames filled.
+ * @param {{ frames?: Record<string, { frame?: { x: number, y: number, w: number, h: number }, base?: object }>,
+ *   meta?: { maps?: boolean } }} json
+ * @param {() => { data: Uint8ClampedArray, x: number, y: number, width: number, height: number } | null} readPixels
+ * @returns {number}
+ */
+export function fillFrameTexels(json, readPixels) {
+  const frames = json?.frames;
+  if (!frames || json.meta?.maps === true) return 0;
+  const missing = Object.values(frames).filter((f) => f && f.frame
+    && (typeof f.base?.texels !== 'number' || typeof f.base?.solidTexels !== 'number'));
+  if (missing.length === 0) return 0;
+  const pixels = readPixels();
+  if (!pixels) return 0;
+  for (const f of missing) {
+    const r = f.frame;
+    const texels = typeof f.base?.texels === 'number' ? f.base.texels : frameAlphaKinds(pixels, r.x, r.y, r.w, r.h);
+    f.base = { ...(f.base || {}), texels, solidTexels: frameSolidTexels(pixels, r.x, r.y, r.w, r.h) };
+  }
+  return missing.length;
+}
+
+/**
  * The base of a picture of one view, from its alpha: the lowest opaque row, the centre of what stands on it and the
  * ellipse's radii on the floor. A trunk (a narrow run 14 to 32 rows above the lowest row, under half as wide as what
  * spreads at the bottom) is round; feet are an ellipse 0.6 as deep as wide.
