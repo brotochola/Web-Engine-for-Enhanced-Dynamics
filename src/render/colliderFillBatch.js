@@ -596,6 +596,65 @@ function trackMeshPoseAnyViews(views, prevPose, n) {
   return moved;
 }
 
+/**
+ * Both batches' uploadPoseTable: the texel (x, y, cos, sin at entity * 4) of each entity in instanceEntity[0, n),
+ * once per stamp (a run of its rows, or a later one), in [0, entityCount). With framePose, the layer's record after
+ * this frame's trackMeshFillPose, a mesh it recorded live and visible takes the pose recorded there: this frame's,
+ * already the Float32 the table stores, so the same bits. Any other entity, or no framePose, samples its pose.
+ */
+export function writeMeshPoseTable(table, gen, stamp, instanceEntity, n, entityCount, views, framePose) {
+  if (
+    framePose && framePose.x && framePose.x.length >= entityCount &&
+    framePose.active && framePose.active.length >= entityCount
+  ) {
+    const fa = framePose.active;
+    const fv = framePose.visible;
+    const fx = framePose.x;
+    const fy = framePose.y;
+    const fc = framePose.rotC;
+    const fs = framePose.rotS;
+    let k = 0;
+    while (k < n) {
+      const i = instanceEntity[k] | 0;
+      let end = k + 1;
+      while (end < n && (instanceEntity[end] | 0) === i) end++;
+      k = end;
+      if (i < 0 || i >= entityCount || gen[i] === stamp) continue;
+      gen[i] = stamp;
+      const o = i * 4;
+      if (fa[i] !== 0 && fv[i] !== 0) {
+        table[o] = fx[i];
+        table[o + 1] = fy[i];
+        table[o + 2] = fc[i];
+        table[o + 3] = fs[i];
+      } else {
+        // Packed though the record saw it hidden: its presence moved since this frame's pass.
+        const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
+        table[o] = pose[0];
+        table[o + 1] = pose[1];
+        table[o + 2] = pose[2];
+        table[o + 3] = pose[3];
+      }
+    }
+    return;
+  }
+  let k = 0;
+  while (k < n) {
+    const i = instanceEntity[k] | 0;
+    let end = k + 1;
+    while (end < n && (instanceEntity[end] | 0) === i) end++;
+    k = end;
+    if (i < 0 || i >= entityCount || gen[i] === stamp) continue;
+    gen[i] = stamp;
+    const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
+    const o = i * 4;
+    table[o] = pose[0];
+    table[o + 1] = pose[1];
+    table[o + 2] = pose[2];
+    table[o + 3] = pose[3];
+  }
+}
+
 export function meshFillPaintDirty(views) {
   const ep = views.paintEpoch;
   if (ep) return (ep[0] | 0) !== (views.lastPaintEpoch | 0);
@@ -1243,9 +1302,11 @@ export class ColliderFillBatch {
 
   /**
    * One texel per body: xy in rg, rot cs in ba. The fat VBO stays resident.
+   * @param {object|null} [framePose] the layer's record after this frame's trackMeshFillPose: its poses, not sampled
+   *   again (writeMeshPoseTable)
    * @returns {number} instance count left on the mesh
    */
-  uploadPoseTable(instanceEntity, count, views) {
+  uploadPoseTable(instanceEntity, count, views, framePose = null) {
     const n = count | 0;
     if (n <= 0 || !instanceEntity) return 0;
     const entityCount = views.entityCount | 0;
@@ -1254,25 +1315,9 @@ export class ColliderFillBatch {
     const need = width * height * 4;
     if (!this.poseTable || this.poseTable.length < need) this.poseTable = new Float32Array(need);
     if (!this._poseGen || this._poseGen.length < entityCount) this._poseGen = new Int32Array(entityCount);
-    const table = this.poseTable;
-    const gen = this._poseGen;
     const stamp = (this._poseStamp + 1) | 0 || 1;
     this._poseStamp = stamp;
-    let k = 0;
-    while (k < n) {
-      const i = instanceEntity[k] | 0;
-      let end = k + 1;
-      while (end < n && (instanceEntity[end] | 0) === i) end++;
-      k = end;
-      if (i < 0 || i >= entityCount || gen[i] === stamp) continue;
-      gen[i] = stamp;
-      const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
-      const o = i * 4;
-      table[o] = pose[0];
-      table[o + 1] = pose[1];
-      table[o + 2] = pose[2];
-      table[o + 3] = pose[3];
-    }
+    writeMeshPoseTable(this.poseTable, this._poseGen, stamp, instanceEntity, n, entityCount, views, framePose);
     this._poseWidth = width;
     this._poseHeight = height;
     this._poseDirty = true;

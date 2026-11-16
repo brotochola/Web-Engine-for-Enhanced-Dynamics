@@ -6,7 +6,8 @@
 // live poses moving inside and past the 48 px slack, poses published or not, static bodies, rotations not published
 // yet, poses of sprites drawn this frame (N-138), views missing columns. Every frame and layer: the same skip
 // decision, the same two flags, and the same record (every presence; the pose of every mesh recorded live and
-// visible, the only poses anything reads).
+// visible, the only poses anything reads). Where the layer packs, both batches' pose tables: uploadPoseTable takes the
+// record's poses and must leave the texels sampling left, bit for bit.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -17,7 +18,9 @@ import {
   MESH_FILL_MOVED,
   MESH_FILL_PRESENCE_MOVED,
   COLLIDER_FILL_PACK_FIRST_FRAME,
+  ColliderFillBatch,
 } from '../../src/render/colliderFillBatch.js';
+import { MeshUvFillBatch } from '../../src/render/meshUvFillBatch.js';
 
 // --- The reference: src/render/colliderFillBatch.js's pose functions at a43899ed. ---
 
@@ -137,6 +140,42 @@ function refCanSkip(views, lastRevision, prevPose) {
     return false;
   }
   return !refPoseOrPresenceChanged(views, prevPose);
+}
+
+/** ColliderFillBatch.uploadPoseTable at a43899ed, on a batch-like ctx (MeshUvFillBatch's was the same). */
+function refUploadPoseTable(ctx, instanceEntity, count, views) {
+  const n = count | 0;
+  if (n <= 0 || !instanceEntity) return 0;
+  const entityCount = views.entityCount | 0;
+  const width = 256;
+  const height = Math.max(1, ((entityCount + width - 1) / width) | 0);
+  const need = width * height * 4;
+  if (!ctx.poseTable || ctx.poseTable.length < need) ctx.poseTable = new Float32Array(need);
+  if (!ctx._poseGen || ctx._poseGen.length < entityCount) ctx._poseGen = new Int32Array(entityCount);
+  const table = ctx.poseTable;
+  const gen = ctx._poseGen;
+  const stamp = (ctx._poseStamp + 1) | 0 || 1;
+  ctx._poseStamp = stamp;
+  let k = 0;
+  while (k < n) {
+    const i = instanceEntity[k] | 0;
+    let end = k + 1;
+    while (end < n && (instanceEntity[end] | 0) === i) end++;
+    k = end;
+    if (i < 0 || i >= entityCount || gen[i] === stamp) continue;
+    gen[i] = stamp;
+    const pose = refReadPose(i, views, refPoseSource(i, views));
+    const o = i * 4;
+    table[o] = pose[0];
+    table[o + 1] = pose[1];
+    table[o + 2] = pose[2];
+    table[o + 3] = pose[3];
+  }
+  ctx._poseWidth = width;
+  ctx._poseHeight = height;
+  ctx._poseDirty = true;
+  ctx.mesh.visible = true;
+  return n;
 }
 
 // --- Random scenes and frames. ---
@@ -341,9 +380,83 @@ function assertRecordHoldsFramePoses(views, rec, n, where) {
   }
 }
 
-/** A layer as Pixi keeps it: the record, the revision and paint epoch of its last pack. */
+/** A batch's pose table state as its constructor leaves it. */
+function tableCtx() {
+  return { poseTable: new Float32Array(256 * 4), mesh: { visible: false } };
+}
+
+/**
+ * A layer as Pixi keeps it: the record, the revision and paint epoch of its last pack, and per batch the pose table as
+ * the old upload left it (ref), as the shipped one leaves it from the record (rec) and without a record (sampled).
+ */
 function makeLayer(record) {
-  return { ref: {}, rec: record, lastRevision: COLLIDER_FILL_PACK_FIRST_FRAME, lastPaintEpoch: -1 };
+  return {
+    ref: {},
+    rec: record,
+    lastRevision: COLLIDER_FILL_PACK_FIRST_FRAME,
+    lastPaintEpoch: -1,
+    tables: [0, 1].map(() => ({ ref: tableCtx(), rec: tableCtx(), sampled: tableCtx() })),
+  };
+}
+
+/**
+ * A batch's instance list, as its pack writes it: in entity order, a run of rows per live, visible mesh the batch
+ * takes. Now and then a mesh hidden at this frame's pass (packed after its presence moved), an entity again after
+ * others, and ids past the entities (written by neither upload).
+ */
+function instanceList(r, views, takes) {
+  const ids = [];
+  const n = views.entityCount;
+  for (let i = 0; i < n; i++) {
+    if (!takes(i)) continue;
+    if ((!views.meshActive[i] || !views.meshVisible[i]) && r() > 0.05) continue;
+    const run = 1 + Math.floor(r() * 4);
+    for (let k = 0; k < run; k++) ids.push(i);
+  }
+  if (ids.length > 0 && r() < 0.2) ids.push(ids[0]);
+  if (r() < 0.1) ids.push(n + 3);
+  if (r() < 0.05) ids.push(0xffffffff);
+  return Uint32Array.from(ids);
+}
+
+function assertSameTable(want, have, where) {
+  assert.equal(have.length, want.length, `${where}: table length`);
+  const a = new Uint32Array(want.buffer, want.byteOffset, want.length);
+  const b = new Uint32Array(have.buffer, have.byteOffset, have.length);
+  for (let q = 0; q < a.length; q++) {
+    if (a[q] !== b[q]) assert.fail(`${where}: texel float ${q} (entity ${q >> 2}): ${have[q]}, sampled ${want[q]}`);
+  }
+}
+
+/**
+ * A packing layer's uploads: each batch's list through the old upload, the shipped one with the record, and the
+ * shipped one without; the same texels all three. Counts the texels taken from the record and sampled past it.
+ */
+function uploadTables(r, views, layer, where, tally) {
+  for (let b = 0; b < 2; b++) {
+    const list = instanceList(r, views, (i) => ((i * 7 + b) % 3) !== 0);
+    const t = layer.tables[b];
+    const proto = b === 0 ? ColliderFillBatch.prototype : MeshUvFillBatch.prototype;
+    const count = list.length;
+    const want = refUploadPoseTable(t.ref, list, count, views);
+    assert.equal(proto.uploadPoseTable.call(t.rec, list, count, views, layer.rec), want, `${where}: batch ${b} count`);
+    assert.equal(proto.uploadPoseTable.call(t.sampled, list, count, views), want, `${where}: batch ${b} count, sampled`);
+    assertSameTable(t.ref.poseTable, t.rec.poseTable, `${where}: batch ${b} from the record`);
+    assertSameTable(t.ref.poseTable, t.sampled.poseTable, `${where}: batch ${b} sampled`);
+    for (const ctx of [t.rec, t.sampled]) {
+      assert.equal(ctx._poseWidth, t.ref._poseWidth);
+      assert.equal(ctx._poseHeight, t.ref._poseHeight);
+      assert.equal(ctx.mesh.visible, t.ref.mesh.visible);
+    }
+    const seen = new Set();
+    for (const id of list) {
+      const i = id | 0;
+      if (i < 0 || i >= views.entityCount || seen.has(i)) continue;
+      seen.add(i);
+      if (layer.rec.active[i] && layer.rec.visible[i]) tally.fromRecord++;
+      else tally.sampledPastRecord++;
+    }
+  }
 }
 
 /**
@@ -365,7 +478,19 @@ function runScene(seed, shapeName, { size = 160, frames = 90, growAt = -1, shrin
     visible: new Uint8Array(0),
   });
   const layers = [makeLayer({}), makeLayer(empty())];
-  const tally = { skip: 0, pack: 0, presence: 0, pose: 0, queue: 0, liveStatic: 0, liveGate: 0, liveSlack: 0, latched: 0 };
+  const tally = {
+    skip: 0,
+    pack: 0,
+    presence: 0,
+    pose: 0,
+    queue: 0,
+    liveStatic: 0,
+    liveGate: 0,
+    liveSlack: 0,
+    latched: 0,
+    fromRecord: 0,
+    sampledPastRecord: 0,
+  };
   for (let f = 0; f < frames; f++) {
     if (f > 0) gameFrame(r, scene, f, shape);
     if (f === growAt) views.entityCount = size;
@@ -404,6 +529,7 @@ function runScene(seed, shapeName, { size = 160, frames = 90, growAt = -1, shrin
         tally.skip++;
       } else {
         tally.pack++;
+        uploadTables(r, views, layer, where, tally);
         layer.lastRevision = views.fixtureRevision[0] | 0;
         layer.lastPaintEpoch = views.paintEpoch[0] | 0;
       }
@@ -416,10 +542,10 @@ function runScene(seed, shapeName, { size = 160, frames = 90, growAt = -1, shrin
 
 test("trackMeshFillPose decides, flags and records as the old passes did, on Pixi's views", () => {
   for (const shapeName of ['pixiQueue', 'pixi', 'transformOnly', 'transformQueue']) {
-    const total = { skip: 0, pack: 0, presence: 0, pose: 0, queue: 0, liveStatic: 0, liveGate: 0, liveSlack: 0, latched: 0 };
+    const total = {};
     for (let seed = 1; seed <= 6; seed++) {
       const t = runScene(0x5eed + seed * 977, shapeName);
-      for (const k in total) total[k] += t[k];
+      for (const k in t) total[k] = (total[k] || 0) + t[k];
     }
     // Every case the pass decides came up.
     assert.ok(total.skip > 20 && total.pack > 20, `${shapeName}: skips ${total.skip}, packs ${total.pack}`);
@@ -427,6 +553,40 @@ test("trackMeshFillPose decides, flags and records as the old passes did, on Pix
     assert.ok(total.liveStatic > 0 && total.liveGate > 0, `${shapeName}: static ${total.liveStatic}, gate ${total.liveGate}`);
     if (shapeName.startsWith('pixi')) assert.ok(total.liveSlack > 0 && total.latched > 0, `${shapeName}: slack ${total.liveSlack}, latched ${total.latched}`);
     if (shapeName.endsWith('Queue')) assert.ok(total.queue > 0, `${shapeName}: sprite poses ${total.queue}`);
+  }
+});
+
+test('uploadPoseTable from the record leaves the texels sampling leaves, in both batches', () => {
+  const total = {};
+  for (const shapeName of Object.keys(SHAPES)) {
+    for (let seed = 1; seed <= 2; seed++) {
+      const t = runScene(0x7ab1e + seed * 31, shapeName, { size: 300, frames: 50 });
+      for (const k in t) total[k] = (total[k] || 0) + t[k];
+    }
+  }
+  // Both ways a texel is written: from the record, and sampled for a mesh the record saw hidden.
+  assert.ok(total.fromRecord > 10000, `${total.fromRecord} texels from the record`);
+  assert.ok(total.sampledPastRecord > 100, `${total.sampledPastRecord} sampled past it`);
+});
+
+test('uploadPoseTable with the record sends the pose this frame was decided on, not one written since', () => {
+  const { w, views } = makeScene(rng(9), 4, 4, SHAPES.pixi);
+  w.meshActive.fill(1);
+  w.meshVisible.fill(1);
+  w.rbStatic.fill(1);
+  const record = {};
+  trackMeshFillPose(views, record);
+  // Logic moves entity 2 after the pass, before the upload.
+  const decided = w.liveX[2];
+  w.liveX[2] = decided + 100;
+  const ids = new Uint32Array([0, 1, 2, 2, 3]);
+  for (const proto of [ColliderFillBatch.prototype, MeshUvFillBatch.prototype]) {
+    const fromRecord = tableCtx();
+    proto.uploadPoseTable.call(fromRecord, ids, ids.length, views, record);
+    assert.equal(fromRecord.poseTable[2 * 4], decided, 'the pose the record holds, which the layer compares next frame');
+    const sampled = tableCtx();
+    proto.uploadPoseTable.call(sampled, ids, ids.length, views);
+    assert.equal(sampled.poseTable[2 * 4], w.liveX[2], 'without it, the pose read now');
   }
 });
 

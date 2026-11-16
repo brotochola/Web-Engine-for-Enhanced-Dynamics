@@ -19,7 +19,7 @@ import {
 import { colliderFillGpuProgram } from './webgpu/colliderFillWgsl.js';
 import { colliderFillGlProgram } from './webgl/colliderFillGlsl.js';
 import { dummyLutSource } from './instancedSpriteBatch.js';
-import { FILL_ROW, MESH_UV_FILL_FLOATS, MESH_UV_FILL_STRIDE, sampleMeshFillPose } from './colliderFillBatch.js';
+import { FILL_ROW, MESH_UV_FILL_FLOATS, MESH_UV_FILL_STRIDE, writeMeshPoseTable } from './colliderFillBatch.js';
 
 export class MeshUvFillBatch {
   /**
@@ -185,7 +185,8 @@ export class MeshUvFillBatch {
     this._send();
   }
 
-  uploadPoseTable(instanceEntity, count, views) {
+  /** ColliderFillBatch.uploadPoseTable for the UV rows. */
+  uploadPoseTable(instanceEntity, count, views, framePose = null) {
     const n = count | 0;
     if (n <= 0 || !instanceEntity) return 0;
     const entityCount = views.entityCount | 0;
@@ -194,25 +195,9 @@ export class MeshUvFillBatch {
     const need = width * height * 4;
     if (!this.poseTable || this.poseTable.length < need) this.poseTable = new Float32Array(need);
     if (!this._poseGen || this._poseGen.length < entityCount) this._poseGen = new Int32Array(entityCount);
-    const table = this.poseTable;
-    const gen = this._poseGen;
     const stamp = (this._poseStamp + 1) | 0 || 1;
     this._poseStamp = stamp;
-    let k = 0;
-    while (k < n) {
-      const i = instanceEntity[k] | 0;
-      let end = k + 1;
-      while (end < n && (instanceEntity[end] | 0) === i) end++;
-      k = end;
-      if (i < 0 || i >= entityCount || gen[i] === stamp) continue;
-      gen[i] = stamp;
-      const pose = sampleMeshFillPose(i, views);
-      const o = i * 4;
-      table[o] = pose[0];
-      table[o + 1] = pose[1];
-      table[o + 2] = pose[2];
-      table[o + 3] = pose[3];
-    }
+    writeMeshPoseTable(this.poseTable, this._poseGen, stamp, instanceEntity, n, entityCount, views, framePose);
     this._poseWidth = width;
     this._poseHeight = height;
     this._poseDirty = true;
