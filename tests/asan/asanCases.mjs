@@ -72,11 +72,52 @@ export function relocateLayout(session, map, layout, prefix, placed = new Map())
     let at = placed.get(name);
     if (!at) {
       at = { ptr: session.malloc(region.bytes, name), bytes: region.bytes };
+      // Zeroed, as a fresh memory's regions are (the cases fill the scratch with their own bytes before each run).
+      new Uint8Array(session.buffer, at.ptr, at.bytes).fill(0);
       placed.set(name, at);
     }
     out[key] = at.ptr + (value - region.byte);
   }
   return { layout: out, placed };
+}
+
+/**
+ * relocateLayout for a whole layout tree (createRenderQueueMemory's layout with its emit, collect, custom layers...):
+ * every `…Byte` field at any depth moved into a block of its own, aligned to the product's cache line (64 bytes: a
+ * placed memory checks it), named after its region: the region named one of `prefixes` + the field's name, else the
+ * one whose bytes hold the offset. The tree is copied; -1 stays.
+ * @returns {{ layout: any, placed: Map<string, { ptr: number, bytes: number }> }}
+ */
+export function relocateTree(session, map, layout, prefixes = [''], placed = new Map()) {
+  const regions = Object.entries(map.regions);
+  const place = (key, value) => {
+    const base = key.slice(0, -4);
+    let name = prefixes.map((p) => (p ? `${p}${capitalize(base)}` : base)).find((n) => map.regions[n] && map.regions[n].byte === value);
+    if (!name) {
+      const hit = regions.find(([, r]) => r.bytes > 0 && value >= r.byte && value < r.byte + r.bytes);
+      if (!hit) throw new Error(`relocateTree: ${key} = ${value} is in no region`);
+      name = hit[0];
+    }
+    const region = map.regions[name];
+    let at = placed.get(name);
+    if (!at) {
+      at = { ptr: session.malloc(region.bytes, name, 0, 64), bytes: region.bytes };
+      // Zeroed, as a fresh memory's regions are: a table slot no writer touched reads 0 (absent) in the product.
+      new Uint8Array(session.buffer, at.ptr, at.bytes).fill(0);
+      placed.set(name, at);
+    }
+    return at.ptr + (value - region.byte);
+  };
+  const walk = (v) => {
+    if (Array.isArray(v)) return v.map(walk);
+    if (!v || typeof v !== 'object' || ArrayBuffer.isView(v)) return v;
+    const out = {};
+    for (const [key, value] of Object.entries(v)) {
+      out[key] = key.endsWith('Byte') && typeof value === 'number' && value >= 0 ? place(key, value) : walk(value);
+    }
+    return out;
+  };
+  return { layout: walk(layout), placed };
 }
 
 /** Byte views of placed regions (relocateLayout's), all but the `skip` names. */

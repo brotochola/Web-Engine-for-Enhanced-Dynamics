@@ -122,7 +122,8 @@ export function buildAsanKernel({ name, sources, exports, rev = null, log = () =
     return { repoPath, file };
   });
   const tools = findEmsdk();
-  const exported = ['_malloc', '_free', ...exports.map((e) => `_${e}`)];
+  // memalign: a region the product aligns to its cache line (a placed memory checks it) gets the same alignment here.
+  const exported = ['_malloc', '_memalign', '_free', ...exports.map((e) => `_${e}`)];
   const args = [
     ...ASAN_CFLAGS,
     ...files.map((f) => f.file),

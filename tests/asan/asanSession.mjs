@@ -69,11 +69,12 @@ export class AsanSession {
 
   /**
    * `bytes` bytes of the module's heap, named for the reports; `productBytes`, when the product's region is larger than
-   * what the case allocates, says so in a report past the array's end.
+   * what the case allocates, says so in a report past the array's end; `align`, an alignment (memalign) where the
+   * product's region has one the code checks (a cache line).
    */
-  malloc(bytes, name, productBytes = 0) {
+  malloc(bytes, name, productBytes = 0, align = 0) {
     const n = Math.max(0, Math.floor(bytes));
-    const ptr = this.mod._malloc(n);
+    const ptr = align > 0 ? this.mod._memalign(align, n) : this.mod._malloc(n);
     if (!ptr) throw new Error(`asan: malloc(${n}) for ${name} failed`);
     const rec = { ptr, bytes: n, name, productBytes };
     this.allocs.push(rec);
