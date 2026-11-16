@@ -11243,7 +11243,8 @@
       "records": [
         "R-0854",
         "R-0925",
-        "R-0927"
+        "R-0927",
+        "R-1218"
       ]
     },
     {
@@ -16645,7 +16646,8 @@
       ],
       "records": [
         "R-1101",
-        "R-1110"
+        "R-1110",
+        "R-1218"
       ]
     },
     {
@@ -16799,7 +16801,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1104"
+        "R-1104",
+        "R-1218"
       ]
     },
     {
@@ -31811,6 +31814,15 @@
         "7f6376a0",
         "27eb6a71"
       ]
+    },
+    {
+      "id": "R-1218",
+      "date": "2026-11-16",
+      "time": "15:18",
+      "timeFrom": "recorded",
+      "title": "Frame chain on today's main: workers still wake together (spread 0.1 ms); physics is the long pole at 13.4 ms (plain) and 14.4 ms (light3d night) of 16.7 at Predator crowd 2.5",
+      "verdict": "note",
+      "text": "**The frame chain on today's main (runFramePhase, first run since E-198 on 2026-11-12): every worker still starts within 0.1 ms of main's frame (\"wake-together\", spread 0.11 and 0.08 ms), and physics is the long pole: 13.4 ms a frame at Predator crowd 2.5 plain and 14.4 ms by night with light3d, against 16.7 ms of vsync.**\n\nrunFramePhase (`--query` since d55a0ac1), headed Chrome, 1280 x 720, 12 s warm-up, 6 s capture (361 samples), main 7e8fe900. Plain at 14:08, light3d=1 hour=22 at 15:18 (m47.log); both while the bench queue's old bash waiters kept Windows Defender at about 0.8 of a core (fixed at 15:29), so durations may read a little high.\n\nMedian slot duration a frame (ms), from the frame clock:\n\n| worker | plain | light3d night |\n| --- | --- | --- |\n| physics | 13.39 (312 of 361 frames) | 14.38 (346) |\n| spatial0 | 10.35 (337) | 9.40 (340) |\n| preRender | 6.91 | 9.82 |\n| logic0 / logic1 | 6.62 / 5.89 | 7.31 / 6.42 |\n| renderer (Pixi) | 8.23 | 6.46 |\n| particle | 0.67 | 0.66 |\n| main | 0.19 | 0.16 |\n\nWhat it says: the workers run in parallel inside one vsync, as E-198 left them; physics has about 2.3 to 3.3 ms of headroom at crowd 2.5 and is the first to miss a frame as the crowd grows, which is why the Box2D cluster (E-313, E-322, E-319/E-326, E-323 to E-327) leads the ranked list. By night pre-render grows by about 3 ms (the lamps' stamps and frames: stamp_light_range 23 %, pack_casters_scatter_framed 16 %, lamp_frames 5 % of its CPU in m43)."
     }
   ],
   "leads": [
