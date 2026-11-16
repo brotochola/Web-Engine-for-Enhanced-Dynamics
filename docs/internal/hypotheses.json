@@ -18164,7 +18164,8 @@
         "pixel shader latency bound"
       ],
       "records": [
-        "R-1175"
+        "R-1175",
+        "R-1177"
       ]
     },
     {
@@ -18183,7 +18184,8 @@
         "register pressure"
       ],
       "records": [
-        "R-1175"
+        "R-1175",
+        "R-1177"
       ]
     },
     {
@@ -18202,7 +18204,8 @@
         "CrGpuMain"
       ],
       "records": [
-        "R-1175"
+        "R-1175",
+        "R-1177"
       ]
     },
     {
@@ -18221,6 +18224,100 @@
       ],
       "records": [
         "R-1176"
+      ]
+    },
+    {
+      "id": "E-408",
+      "title": "The 3D light pass compiles to 1131 instruction slots and 24 temp registers in ANGLE's HLSL (the plain pass: 116 slots, 8 temps): one uber-shader whose register count caps the warps in flight (E-406's 16 % unallocated)",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from angleHlslDump + d3dShaderStats (ANGLE D3D11 HLSL of the light pass, d3dcompiler_47 ps_5_0)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "Static counts (ps_5_0, optimization level 3): plain 116 slots, 8 temps; flat 332, 13; light3d without lamps 562, 15; light3d pixel art 857, 21; light3d 1131 slots, 24 temps, 4 loops, 34 branches.",
+      "next": "Fewer live values across the light loop (the sun map's, the faces' and self-shadow's results computed before it), or the pass split by feature (sun and faces once, lamps in their own additive pass); d3dShaderStats' temps and the recorder's GPU time per pass before and after.",
+      "refs": [],
+      "aliases": [
+        "light pass registers",
+        "uber shader temps"
+      ],
+      "records": [
+        "R-1177"
+      ]
+    },
+    {
+      "id": "E-409",
+      "title": "The 3D light pass has 45 divisions or reciprocals and 14 square roots in its HLSL (the plain pass 4 and 1): per-light constants divided per pixel (the reach, the landing's length, e/room) where a multiply by a value packed once a light would do, without the extra fetch E-380 and E-381 added",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from angleHlslDump + d3dShaderStats (ANGLE D3D11 HLSL of the light pass, d3dcompiler_47 ps_5_0)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "d3dShaderStats light3d: div/rcp 45, sqrt/rsq 14; light3d without lamps 18 and 6; plain 4 and 1. E-380/E-381 moved them to the light data but read a fourth row per light, and the pass got 10 % slower (R-1173 era sittings, 2026-11-16 02:25).",
+      "next": "Pack the per-light constants into slots the pass already fetches (row 0's w with the tag in its sign, row 2's spare lanes for lights without a cone), never a new fetch per light; count the HLSL again and time light3d with gpuPassBench.",
+      "refs": [],
+      "aliases": [
+        "light pass divisions"
+      ],
+      "records": [
+        "R-1177"
+      ]
+    },
+    {
+      "id": "E-410",
+      "title": "The 3D light pass samples 31 times in its HLSL (the lamps' map five taps per lamp, the sun's map's taps): hardware comparison or a gather (four texels in one fetch) would cut the dependent fetches a pixel waits on (E-405)",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from angleHlslDump + d3dShaderStats (ANGLE D3D11 HLSL of the light pass, d3dcompiler_47 ps_5_0)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "d3dShaderStats light3d: 31 sample instructions, 14 ld (texelFetch); light3d without lamps 9 and 10; pixel art (one tap) 11 and 14.",
+      "next": "The lamps' map's 5 taps as one textureGather on its depth channel plus one tap, or a comparison sampler where the map holds depths; the same for the sun's; image within tolerance (captures), GPU time per pass.",
+      "refs": [],
+      "aliases": [
+        "shadow taps gather",
+        "lamp map taps"
+      ],
+      "records": [
+        "R-1177"
+      ]
+    },
+    {
+      "id": "E-411",
+      "title": "The 3D light pass takes 594 ms to link on WebGL (ANGLE + fxc; pixel art 373 ms, without lamps 231 ms): a program built while the game runs (a feature toggled, a variant first used) stalls the GPU process that long",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from angleHlslDump + d3dShaderStats (ANGLE D3D11 HLSL of the light pass, d3dcompiler_47 ps_5_0)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "angleHlslDump link times 2026-11-16 04:36 (headed Chrome, GTX 1650): plain 27 ms, flat 96, light3d without lamps 231, pixel art 373, light3d 594.",
+      "next": "List when the engine builds light pass variants after start (hour changes, lamps' map on, pixel art, a light count past MAX_LIGHTS) with the recorder's linkProgram calls; build them at load or with KHR_parallel_shader_compile; split the uber-shader (E-408) so each piece links fast.",
+      "refs": [],
+      "aliases": [
+        "light pass link time",
+        "shader compile hitch"
+      ],
+      "records": [
+        "R-1177"
+      ]
+    },
+    {
+      "id": "E-412",
+      "title": "Chrome's GPU process main thread spends 295 ms a second in CommandBufferService:PutChanged on Predator ?light3d=1 (4.9 ms a frame) against 135 ms without light3d: light3d's GL command stream costs the GPU process 2.7 ms a frame more",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from gpuProcessTrace on Predator (zoom 0.3, headed, 3 s after 12 s)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "CrGpuMain: light3d day 364.1 ms/s in slices, PutChanged 295.2 self (251 a second), CommandBufferStub::PerformWork 16.2, SkiaOutputSurfaceImplOnGpu::FinishPaintRenderPass 9.0, DXGISwapChainImageBacking::Present 8.3; plain 171.4 ms/s, PutChanged 135.2 (153 a second). VizCompositorThread about 55 ms/s in both.",
+      "next": "Break PutChanged down by command (--enable-gpu-service-tracing for the decoder's per-command slices) and cut the costly ones (E-389's redundant uniforms, E-391's draws, the uploads E-390/E-392/E-396).",
+      "refs": [],
+      "aliases": [
+        "gpu process putchanged",
+        "command buffer decode cost"
+      ],
+      "records": [
+        "R-1177"
       ]
     }
   ],
@@ -29540,6 +29637,20 @@
       "text": "**The keyed pack's owner scene (keyedPackStressScene, Pixi over 6 ms) and the setter bisect: the plain pack's exports and E-387 are NEUTRAL in the scene; logic's 43 % with ?gbuf=1 is not the setters (N-218).** `runPredatorAbab --pool`, 4 pairs, headed, AC power, 2026-11-16; STEP_MS - WAIT_MS.\n\n- **kp-exports (n=300000 churn=0.05, main a43899ed against opt/keyed-exports caa3aea0, Pixi owns), 04:07 to 04:12: NEUTRAL.** Pixi 6.700 -> 6.521 ms (paired -3.3 %, 1/4 worse, cv 2/8 %), pre-render 14.767 -> 14.349 (-3.1 %, 0/4 worse: a worker the change cannot reach, so drift), logic 4.435 -> 4.216. Against the drift the plain pack's own exports change nothing measurable in Pixi here: the kernel is a small part of Pixi's 6.5 ms. Its claim rests on the kernel (gpuPackKeyedMicrobench, run again in a quiet machine).\n- **kp-e387-gbuf (n=250000 churn=0.05 gbuf=1, bdcca2e7 against a43899ed, Pixi owns), 04:12 to 04:17: NEUTRAL.** Pixi 8.026 -> 8.170 (+2.0 %, 2/4 worse), pre-render 13.090 -> 13.178 (+0.7 %): the G-buffer words in the keyed pack do not show in this scene either (R-1167's lamps' map sitting read Pixi -10.4 % under the floor). Logic 2.958 -> 4.236 ms, 4 of 4 pairs (N-218).\n- **Setter bisect (n=300000 moving=0.5 churn=0, no gbuf, logic owns), 04:21 to 04:33:** N-215 alone (f2ef124e against 3cd0d1fc) logic 5.476 -> 5.214 (by pair -2.2, -15.9, +0.4, +3.8 %); N-170 alone (bdcca2e7 against f2ef124e) 5.287 -> 5.241 (+2.9, +1.8, -5.2, +0.6 %). Both NEUTRAL under the floor: neither setter commit costs logic when 150 000 sprites move through this.x and this.y.\n\nA deopt pass of the scene (n=300000 moving=0.5, main) found no megamorphic engine IC in the setters (three entity classes: polymorphic at most).",
       "commits": [
         "254f5837"
+      ]
+    },
+    {
+      "id": "R-1177",
+      "date": "2026-11-16",
+      "time": "04:37",
+      "timeFrom": "recorded",
+      "title": "The light pass in ANGLE's HLSL (1131 slots, 24 temps, 31 samples, 45 divisions) and Chrome's GPU process (4.9 ms a frame on light3d's command stream)",
+      "verdict": "note",
+      "text": "**The light pass in ANGLE's HLSL and Chrome's GPU process: light3d's pass is 1131 instruction slots with 24 temp registers, 31 samples and 45 divisions; the GPU process main thread spends 4.9 ms a frame on light3d's command stream (2.3 without).** Tools: tests/bench/angleHlslDump.mjs (0985ace4), tests/bench/d3dShaderStats.ps1 (1082052f), tests/bench/gpuProcessTrace.mjs (93979bfc); 2026-11-16 04:35 to 04:37 (the result files), headed Chrome 157, GTX 1650.\n\n**HLSL (d3dShaderStats, ps_5_0, optimization level 3, MAX_LIGHTS 16):**\n\n| variant | slots | temps | sample | ld | loops | branches | div/rcp | sqrt/rsq | link |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| plain | 116 | 8 | 1 | 5 | 0 | 3 | 4 | 1 | 27 ms |\n| flat (sun map, lamps' map, no faces) | 332 | 13 | 11 | 7 | 0 | 10 | 12 | 5 | 96 |\n| light3d without lamps | 562 | 15 | 9 | 10 | 3 | 15 | 18 | 6 | 231 |\n| light3d pixel art | 857 | 21 | 11 | 14 | 4 | 34 | 44 | 14 | 373 |\n| light3d | 1131 | 24 | 31 | 14 | 4 | 34 | 45 | 14 | 594 |\n\nFiled: E-408 (registers), E-409 (divisions), E-410 (taps), E-411 (link time).\n\n**GPU process (gpuProcessTrace, Predator zoom 0.3, 3 s after 12 s):** with ?light3d=1 by day CrGpuMain is 364.1 ms/s in slices, CommandBufferService:PutChanged 295.2 ms/s self (251 flushes a second), CommandBufferStub::PerformWork 16.2, FinishPaintRenderPass 9.0, the swap chain's Present 8.3; without light3d CrGpuMain 171.4 ms/s, PutChanged 135.2 (153 a second). VizCompositorThread about 55 ms/s either way. The decoder's per-command slices did not record (they need --enable-gpu-service-tracing). Filed: E-412.\n\nThe keyed pack in a quiet machine (gpuPackKeyedMicrobench, 04:37, three alternations): main 0.101, 0.072, 0.075 ms, opt/keyed-exports 0.067, 0.072, 0.071 (median 0.075 -> 0.071, the 0.072 it had before E-387): the plain pack's regression is gone in the kernel.",
+      "commits": [
+        "93979bfc",
+        "0985ace4",
+        "1082052f"
       ]
     }
   ],
