@@ -232,7 +232,11 @@ export class Decal {
     }
   }
 
-  static drainStampRing(onStamp) {
+  /**
+   * The particle worker's drain: each queued stamp to onStamp(x, y, tint, scaleX, scaleY, textureId, alpha, blendMode).
+   * E-351: `thisArg` is onStamp's `this`, so the worker passes its method and itself instead of a closure a frame.
+   */
+  static drainStampRing(onStamp, thisArg) {
     if (!stampRingI32 || typeof onStamp !== 'function') return 0;
     const cap = stampRingCap;
     let n = 0;
@@ -244,7 +248,8 @@ export class Decal {
       while (Atomics.load(stampRingI32, base) !== read + 1) {
         /* wait publish */
       }
-      onStamp(
+      onStamp.call(
+        thisArg,
         stampRingF32[base + 4],
         stampRingF32[base + 5],
         stampRingI32[base + 2] >>> 0,

@@ -133,6 +133,8 @@ export class Layer {
     static _feedIndexSABs = [];
     static _feedIndices = [];
     static _feedMax = [];
+    /** E-354: per layer, the feed list's slot index (Int32Array: pairs of index + 1 and slot, 0 empty), or null. */
+    static _feedSlots = [];
     static _feedOverflowWarned = 0;
 
     /** Same shape as above, for ParticleComponent pool indices (density + compute-particle layers). */
@@ -142,6 +144,7 @@ export class Layer {
     static _particleFeedIndexSABs = [];
     static _particleFeedIndices = [];
     static _particleFeedMax = [];
+    static _particleFeedSlots = [];
     static _particleFeedOverflowWarned = 0;
 
     // Per-layer uniform SABs (only for layers with shaders)
@@ -789,10 +792,12 @@ export class Layer {
         this._feedIndexSABs = [];
         this._feedIndices = [];
         this._feedMax = [];
+        this._feedSlots = [];
         this._feedOverflowWarned = 0;
         this._particleFeedIndexSABs = [];
         this._particleFeedIndices = [];
         this._particleFeedMax = [];
+        this._particleFeedSlots = [];
         this._particleFeedOverflowWarned = 0;
 
         // Allocate config SAB
@@ -850,10 +855,12 @@ export class Layer {
 
             if (compute) {
                 const maxBodies = Layer._normalizeMaxBodies(config.shader);
-                const sab = new SharedArrayBuffer(maxBodies * 4);
+                // E-354: the list, then its slot index.
+                const sab = new SharedArrayBuffer(maxBodies * 4 + Layer._feedSlotEntries(maxBodies) * 8);
                 this._feedIndexSABs[layer.id] = sab;
-                this._feedIndices[layer.id] = new Uint32Array(sab);
+                this._feedIndices[layer.id] = new Uint32Array(sab, 0, maxBodies);
                 this._feedMax[layer.id] = maxBodies;
+                this._feedSlots[layer.id] = Layer._feedSlotView(sab, maxBodies);
             }
 
             // Density-splat layers and compute layers with maxParticles > 0 (e.g. a
@@ -873,10 +880,11 @@ export class Layer {
                 const maxParticles = compute && compute.maxParticles > 0
                     ? compute.maxParticles
                     : (explicitMaxParticles || COMPUTE_LAYER_DEFAULT_MAX_PARTICLES);
-                const psab = new SharedArrayBuffer(maxParticles * 4);
+                const psab = new SharedArrayBuffer(maxParticles * 4 + Layer._feedSlotEntries(maxParticles) * 8);
                 this._particleFeedIndexSABs[layer.id] = psab;
-                this._particleFeedIndices[layer.id] = new Uint32Array(psab);
+                this._particleFeedIndices[layer.id] = new Uint32Array(psab, 0, maxParticles);
                 this._particleFeedMax[layer.id] = maxParticles;
+                this._particleFeedSlots[layer.id] = Layer._feedSlotView(psab, maxParticles);
             }
 
             if (config.shader) {
@@ -1209,6 +1217,31 @@ export class Layer {
         if (sab.byteLength >= this.MAX_LAYERS * 8) {
             this._particleFeedLock = new Int32Array(sab, this.MAX_LAYERS * 4, this.MAX_LAYERS);
         }
+    }
+
+    /**
+     * E-354: entries in a feed list's slot index, for a list of `cap`: a power of two at least twice the list (an
+     * open-addressing table kept at most half full).
+     */
+    static _feedSlotEntries(cap) {
+        let n = 2;
+        while (n < cap * 2) n *= 2;
+        return n;
+    }
+
+    /** E-354: the feed list's view, its `cap` slots at the start of its buffer (the whole buffer without a cap). */
+    static _feedListView(sab, cap) {
+        return cap > 0 && sab.byteLength >= cap * 4 ? new Uint32Array(sab, 0, cap) : new Uint32Array(sab);
+    }
+
+    /**
+     * E-354: the slot index after the list in its buffer: pairs (pool index + 1, the list slot that holds it), 0 for an
+     * empty entry, the buffer's zeros an empty index. Null where the buffer holds the list alone.
+     */
+    static _feedSlotView(sab, cap) {
+        if (!(cap > 0)) return null;
+        const entries = Layer._feedSlotEntries(cap);
+        return sab.byteLength >= cap * 4 + entries * 8 ? new Int32Array(sab, cap * 4, entries * 2) : null;
     }
 
     static _normalizeMaxBodies(shader) {
@@ -1823,10 +1856,12 @@ export class Layer {
         this._feedIndexSABs = [];
         this._feedIndices = [];
         this._feedMax = [];
+        this._feedSlots = [];
         this._feedOverflowWarned = 0;
         this._particleFeedIndexSABs = [];
         this._particleFeedIndices = [];
         this._particleFeedMax = [];
+        this._particleFeedSlots = [];
         this._particleFeedOverflowWarned = 0;
 
         // Create typed views over the shared config SAB
@@ -1909,9 +1944,12 @@ export class Layer {
         this._feedIndexSABs = data.feedIndexSABs || [];
         this._feedMax = data.feedMax || [];
         this._feedIndices = [];
+        this._feedSlots = [];
         for (let i = 0; i < this._feedIndexSABs.length; i++) {
             const sab = this._feedIndexSABs[i];
-            if (sab) this._feedIndices[i] = new Uint32Array(sab);
+            if (!sab) continue;
+            this._feedIndices[i] = Layer._feedListView(sab, this._feedMax[i] | 0);
+            this._feedSlots[i] = Layer._feedSlotView(sab, this._feedMax[i] | 0);
         }
 
         this._particleFeedCountSAB = data.particleFeedCountSAB || null;
@@ -1919,9 +1957,12 @@ export class Layer {
         this._particleFeedIndexSABs = data.particleFeedIndexSABs || [];
         this._particleFeedMax = data.particleFeedMax || [];
         this._particleFeedIndices = [];
+        this._particleFeedSlots = [];
         for (let i = 0; i < this._particleFeedIndexSABs.length; i++) {
             const sab = this._particleFeedIndexSABs[i];
-            if (sab) this._particleFeedIndices[i] = new Uint32Array(sab);
+            if (!sab) continue;
+            this._particleFeedIndices[i] = Layer._feedListView(sab, this._particleFeedMax[i] | 0);
+            this._particleFeedSlots[i] = Layer._feedSlotView(sab, this._particleFeedMax[i] | 0);
         }
 
         this.initialized = true;
@@ -1971,12 +2012,14 @@ export class Layer {
         this._feedIndexSABs = [];
         this._feedIndices = [];
         this._feedMax = [];
+        this._feedSlots = [];
         this._particleFeedCountSAB = null;
         this._particleFeedCount = null;
         this._particleFeedLock = null;
         this._particleFeedIndexSABs = [];
         this._particleFeedIndices = [];
         this._particleFeedMax = [];
+        this._particleFeedSlots = [];
         this._uniformSABs = [];
         this._uniformFloats = [];
         this._uniformDirty = [];

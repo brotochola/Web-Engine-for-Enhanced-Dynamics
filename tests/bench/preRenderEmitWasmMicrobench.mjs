@@ -29,8 +29,10 @@
  * props; 10 200 of 20 000 grass blades after them; shadow casters on every sprite; Y-sort on.
  *
  * One variant per process, through runKernelVariants.mjs, which rejects a variant whose checksum
- * differs; without --variant it times wasm, the shipped kernel (runKernelsVsRev.mjs passes none). The checksum covers every queue column of every written row and the animation state
- * (frame, clock, last texture, bounds) after each of 45 frames.
+ * differs; without --variant it times WEED_KERNEL_VARIANT when set, else wasm, the shipped kernel (runKernelsVsRev.mjs passes
+ * no --variant, so `WEED_KERNEL_VARIANT=wasmKeyedSkip node tests/bench/runKernelsVsRev.mjs --vs <rev> --only preRenderWorker`
+ * times the keyed emit against a revision: E-330's copy runs only on keyed frames). The checksum covers every queue column of every written row and the animation state
+ * (frame, clock, last texture, bounds) after each of 45 frames, and for the keyed variants the key column.
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/preRenderEmitWasmMicrobench.mjs --variants js,wasm --rounds 5
  *   node tests/bench/preRenderEmitWasmMicrobench.mjs --variant wasm [--scale 0.1] [--output path]
@@ -456,8 +458,10 @@ export async function setupEmitKernel(opts = {}) {
     return written;
   };
 
+  // The keyed variants hash the key column too (the marks the keyed emit writes); the others do not bind it.
   const hashed = [
     ...Object.values(QUEUE_COLUMNS).map((f) => worker[f]).filter(Boolean),
+    ...(opts.keyed ? [worker.renderQueueKey] : []),
   ];
   const state = [frameIndex, frameAccum, worker.entityLastTextureId, sr.boundsHalfW, sr.boundsHalfH];
   function hashFrame(h, written) {
@@ -479,7 +483,7 @@ function hashBytes(h, bytes) {
 
 async function main() {
   const args = parseArgs();
-  const variant = String(args.variant || 'wasm');
+  const variant = String(args.variant || process.env.WEED_KERNEL_VARIANT || 'wasm');
   if (!['js', 'wasm', 'wasmKeyed', 'wasmKeyedV2', 'wasmKeyedSkip'].includes(variant)) throw new Error(`unknown variant ${variant}`);
   const kernel = variant !== 'js';
   const k = await setupEmitKernel({

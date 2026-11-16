@@ -320,6 +320,9 @@ function stampLayout(r, stamp) {
     packedYByte: r.stampPackedY.byte,
     cellOfByte: r.stampCellOf.byte,
     dist64Byte: r.stampDist64.byte,
+    scanXByte: r.stampScanX.byte,
+    scanYByte: r.stampScanY.byte,
+    scanBoundsByte: r.stampScanBounds.byte,
     lightsByte: r.stampLights.byte,
     tableByte: r.stampTable.byte,
     // The cookies' queue (createRenderQueueViews at cookieQueueByte, cookies rows), -1 without one.

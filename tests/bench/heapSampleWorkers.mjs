@@ -18,6 +18,11 @@
  * here: the profiler slows every allocation. Only workers the page itself starts
  * are reached (the page's auto-attach), so a worker started by another worker
  * does not show up.
+ *
+ * Per frame too: the frames each sampled worker published in the window (the scene's running frame totals,
+ * src/util/frameTotals.js, read at the sample's start and stop) and its bytes per frame, since the profiler's
+ * slowdown changes the frame rate and with it the KB/s. A worker is matched to its totals by its file and its
+ * workerIndex; a tree whose scene keeps no totals reports KB/s only.
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -39,6 +44,41 @@ function parseArgs(argv) {
     else out[key] = argv[++i];
   }
   return out;
+}
+
+// Runs inside each worker: the engine worker object on self and its workerIndex (the physics host has none).
+const WORKER_ID_PROBE = `(() => {
+  for (const key of ['logicWorker', 'spatialWorker', 'preRenderWorker', 'particleWorker', 'pixiRenderer']) {
+    const w = self[key];
+    if (w && typeof w === 'object') return { key, index: typeof w.workerIndex === 'number' ? w.workerIndex : 0 };
+  }
+  return null;
+})()`;
+
+/** The benchmark's id for a worker (workerBenchmarkMetrics.js's layout): its file and WORKER_ID_PROBE's answer. */
+function workerId(file, probe) {
+  if (/box2d/i.test(file)) return 'physics';
+  if (!probe) return null;
+  switch (probe.key) {
+    case 'logicWorker': return `logic${probe.index}`;
+    case 'spatialWorker': return `spatial${probe.index}`;
+    case 'preRenderWorker': return `preRender${probe.index}`;
+    case 'particleWorker': return 'particle';
+    case 'pixiRenderer': return 'renderer';
+    default: return null;
+  }
+}
+
+/** Every worker's published frames so far ({ id: frames }), from the scene's running totals; null without them. */
+function readFrameTotals(page) {
+  return page.evaluate(async () => {
+    const scene = window.__WEED_BENCHMARK__.getScene?.();
+    if (!scene || !scene.buffers || !scene.buffers.frameTotals) return null;
+    const frameTotals = await import('/src/util/frameTotals.js');
+    const { createWorkerBenchmarkReader } = await import('/tests/bench/workerBenchmarkMetrics.js');
+    const snap = createWorkerBenchmarkReader(scene, { frameTotals }).snapshot(performance.now(), { totals: true });
+    return Object.fromEntries(snap.workers.map((w) => [w.id, w.totals ? w.totals.frames : null]));
+  }).catch(() => null);
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -114,6 +154,13 @@ try {
   run.catch(() => {});
 
   await new Promise((r) => setTimeout(r, warmupMs));
+  // Which benchmark worker each session is (logic0, physics, …), for its frame totals.
+  const ids = new Map();
+  for (const [sid, file] of sessions) {
+    const res = await sendTo(sid, 'Runtime.evaluate', { expression: WORKER_ID_PROBE, returnByValue: true }).catch(() => null);
+    const id = workerId(file, res && res.result && res.result.value);
+    if (id) ids.set(sid, id);
+  }
   for (const sid of [...sessions.keys()]) {
     try {
       await sendTo(sid, 'HeapProfiler.enable');
@@ -125,6 +172,7 @@ try {
       sessions.delete(sid);
     }
   }
+  const framesAtStart = await readFrameTotals(page);
   await new Promise((r) => setTimeout(r, sampleMs));
 
   const report = {};
@@ -132,6 +180,7 @@ try {
   // Every worker stops at once: one after another, the scene had ended (and its workers with it)
   // before the last stops of bulletStressScene came back (E-88).
   const live = [...sessions];
+  const framesAtStop = await readFrameTotals(page);
   const stops = await Promise.allSettled(live.map(([sid]) => sendTo(sid, 'HeapProfiler.stopSampling')));
   for (let k = 0; k < live.length; k++) {
     const [sid, name] = live[k];
@@ -155,20 +204,32 @@ try {
       for (const c of node.children || []) walk(c, key);
     };
     walk(profile.head, '');
+    const id = ids.get(sid) || null;
+    // A scene with one pre-render names it 'preRender' (workerBenchmarkMetrics.js), not 'preRender0'.
+    const key = id === 'preRender0' && framesAtStart && !(id in framesAtStart) ? 'preRender' : id;
+    const frames = key && framesAtStart && framesAtStop && framesAtStop[key] != null && framesAtStart[key] != null
+      ? framesAtStop[key] - framesAtStart[key]
+      : null;
     report[`${name} ${sid.slice(0, 6)}`] = {
+      worker: id,
       totalKbPerS: perS(total),
+      frames,
+      bytesPerFrame: frames > 0 ? Math.round(total / frames) : null,
       top: [...rows].sort((a, b) => b[1].bytes - a[1].bytes).slice(0, 25).map(([site, r]) => ({
         site,
         kbPerS: perS(r.bytes),
+        bytesPerFrame: frames > 0 ? Math.round(r.bytes / frames) : null,
         from: [...r.from].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([p, b]) => ({ caller: p, kbPerS: perS(b) })),
       })),
     };
   }
   if (typeof args.output === 'string') fs.writeFileSync(args.output, JSON.stringify(report, null, 2));
   for (const [worker, r] of Object.entries(report)) {
-    console.log(`\n== ${worker}: ${r.totalKbPerS} KB/s sampled`);
+    const perFrame = r.bytesPerFrame != null ? `, ${r.bytesPerFrame} B/frame over ${r.frames} frames (${r.worker})` : '';
+    console.log(`\n== ${worker}: ${r.totalKbPerS} KB/s sampled${perFrame}`);
     for (const t of r.top.slice(0, 15)) {
-      console.log(`${String(t.kbPerS).padStart(9)} KB/s  ${t.site}   <- ${t.from.map((f) => `${f.caller} (${f.kbPerS})`).join(' | ')}`);
+      const b = t.bytesPerFrame != null ? `${String(t.bytesPerFrame).padStart(7)} B/fr` : '';
+      console.log(`${String(t.kbPerS).padStart(9)} KB/s${b}  ${t.site}   <- ${t.from.map((f) => `${f.caller} (${f.kbPerS})`).join(' | ')}`);
     }
   }
 } finally {

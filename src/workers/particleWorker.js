@@ -7,6 +7,7 @@ import { bindParticleIntegrate, integrateParticlesWasm } from './particleIntegra
 import { bindParticleLists, buildActiveParticleListWasm, buildParticleListsWasm } from './particleListsClient.js';
 import { DecorationComponent as DecorationComponentImport } from '../components/decorationComponent.js';
 import { DecorationPool as DecorationPoolImport } from '../core/decorationPool.js';
+import { DecorationSpatial as DecorationSpatialImport } from '../core/decorationSpatial.js';
 import {
   SWAY_LOOP as SWAY_LOOPImport,
   SWAY_LOOP_SKEW as SWAY_LOOP_SKEWImport,
@@ -59,6 +60,7 @@ const ParticleComponent = ParticleComponentImport;
 const ParticleEmitter = ParticleEmitterImport;
 const DecorationComponent = DecorationComponentImport;
 const DecorationPool = DecorationPoolImport;
+const DecorationSpatial = DecorationSpatialImport;
 const SWAY_LOOP = SWAY_LOOPImport;
 const SWAY_LOOP_SKEW = SWAY_LOOP_SKEWImport;
 const SWAY_IMPULSE = SWAY_IMPULSEImport;
@@ -158,6 +160,172 @@ function decorationScreenFlips(activeData, start, count, cameraBounds) {
     prev = onScreen;
   }
   return flips;
+}
+
+/**
+ * E-335: the screen test through DecorationSpatial's grid, which holds the world-owned decorations by cell. The cells
+ * under the bounds are walked, the ones outside the grid (attached, or off the world) tested from a list, and the
+ * visible ones are marked by their row in the snapshot (a bit each, the high bit first) and emitted in snapshot order:
+ * the visible list and the flags are the full test's. Each step is a function of its own that returns right after
+ * its loop (E-179). GRID_RANGE holds the cells: minCol, maxCol, minRow, maxRow.
+ */
+const GRID_RANGE = new Int32Array(4);
+
+/**
+ * E-335: the cells a decoration on screen can be in, into GRID_RANGE: the ones under the bounds, a cell wider each way
+ * than the cell index's rounding reaches (an empty range when the view is off the grid). 0 when there is no range (a
+ * zoom that is not positive, bounds that are not finite) or it holds more than half the grid, where the full test is
+ * cheaper; 1 otherwise.
+ */
+function decorationGridRange(cameraBounds) {
+  const zoom = cameraBounds.zoom;
+  if (!(zoom > 0)) return 0;
+  const inv = DecorationSpatial.invCellSize;
+  const gridW = DecorationSpatial.gridWidth;
+  const gridH = DecorationSpatial.gridHeight;
+  const c0 = Math.floor(((cameraBounds.minX + cameraBounds.cameraOffsetX) / zoom) * inv) - 1;
+  const c1 = Math.floor(((cameraBounds.maxX + cameraBounds.cameraOffsetX) / zoom) * inv) + 1;
+  const r0 = Math.floor(((cameraBounds.minY + cameraBounds.cameraOffsetY) / zoom) * inv) - 1;
+  const r1 = Math.floor(((cameraBounds.maxY + cameraBounds.cameraOffsetY) / zoom) * inv) + 1;
+  if (!(c0 <= c1 && r0 <= r1)) return 0;
+  const minCol = c0 < 0 ? 0 : c0 > gridW ? gridW : c0;
+  const maxCol = c1 > gridW - 1 ? gridW - 1 : c1 < -1 ? -1 : c1;
+  const minRow = r0 < 0 ? 0 : r0 > gridH ? gridH : r0;
+  const maxRow = r1 > gridH - 1 ? gridH - 1 : r1 < -1 ? -1 : r1;
+  const cols = maxCol < minCol ? 0 : maxCol - minCol + 1;
+  const rows = maxRow < minRow ? 0 : maxRow - minRow + 1;
+  if (cols * rows * 2 > gridW * gridH) return 0;
+  GRID_RANGE[0] = minCol;
+  GRID_RANGE[1] = maxCol;
+  GRID_RANGE[2] = minRow;
+  GRID_RANGE[3] = maxRow;
+  return 1;
+}
+
+/**
+ * E-335: each snapshot decoration's row into snapPos, and the ones outside the grid into `outside` (snapshot order);
+ * returns how many are outside.
+ */
+function indexDecorationSnapshot(snap, snapCount, snapPos, outside) {
+  const cellOf = DecorationSpatial.cellOf;
+  let n = 0;
+  for (let k = 0; k < snapCount; k++) {
+    const i = snap[k];
+    snapPos[i] = k;
+    if (cellOf[i] < 0) outside[n++] = i;
+  }
+  return n;
+}
+
+/** E-335: the last test's visible decorations off screen; the walk sets the ones still on screen again. */
+function clearDecorationFlags(list, count) {
+  const isItOnScreen = DecorationComponent.isItOnScreen;
+  for (let k = 0; k < count; k++) isItOnScreen[list[k]] = 0;
+}
+
+/** E-335: the test on the snapshot's decorations outside the grid: each one's flag, its row's bit when on screen. */
+function decorationScreenOutside(cameraBounds, outside, outsideCount, snapPos, bits) {
+  const x = DecorationComponent.x;
+  const y = DecorationComponent.y;
+  const active = DecorationComponent.active;
+  const isItOnScreen = DecorationComponent.isItOnScreen;
+  const camZoom = cameraBounds.zoom;
+  const cameraOffsetX = cameraBounds.cameraOffsetX;
+  const cameraOffsetY = cameraBounds.cameraOffsetY;
+  const minX = cameraBounds.minX;
+  const maxX = cameraBounds.maxX;
+  const minY = cameraBounds.minY;
+  const maxY = cameraBounds.maxY;
+  for (let k = 0; k < outsideCount; k++) {
+    const i = outside[k];
+    if (!active[i]) continue;
+    const screenXVal = x[i] * camZoom - cameraOffsetX;
+    const screenYVal = y[i] * camZoom - cameraOffsetY;
+    if (screenXVal > minX && screenXVal < maxX && screenYVal > minY && screenYVal < maxY) {
+      isItOnScreen[i] = 1;
+      const pos = snapPos[i];
+      bits[pos >> 5] |= 1 << (31 - (pos & 31));
+    } else {
+      isItOnScreen[i] = 0;
+    }
+  }
+}
+
+/**
+ * E-335: the test on the decorations in GRID_RANGE's cells that the snapshot holds (snapPos finds their row; one
+ * spawned since the copy is left alone, as the full test leaves it), under the grid's lock (its writers' protocol, as
+ * queryCircle takes it): each one's flag, its row's bit when on screen.
+ */
+function decorationScreenGridCells(cameraBounds, snap, snapCount, snapPos, bits) {
+  const x = DecorationComponent.x;
+  const y = DecorationComponent.y;
+  const active = DecorationComponent.active;
+  const isItOnScreen = DecorationComponent.isItOnScreen;
+  const camZoom = cameraBounds.zoom;
+  const cameraOffsetX = cameraBounds.cameraOffsetX;
+  const cameraOffsetY = cameraBounds.cameraOffsetY;
+  const minX = cameraBounds.minX;
+  const maxX = cameraBounds.maxX;
+  const minY = cameraBounds.minY;
+  const maxY = cameraBounds.maxY;
+  const head = DecorationSpatial.head;
+  const next = DecorationSpatial.next;
+  const EMPTY = DecorationSpatial.empty;
+  const gridW = DecorationSpatial.gridWidth;
+  const minCol = GRID_RANGE[0];
+  const maxCol = GRID_RANGE[1];
+  const minRow = GRID_RANGE[2];
+  const maxRow = GRID_RANGE[3];
+  DecorationSpatial._lockSpatial();
+  try {
+    for (let row = minRow; row <= maxRow; row++) {
+      const rowBase = row * gridW;
+      for (let col = minCol; col <= maxCol; col++) {
+        let i = head[rowBase + col];
+        while (i !== EMPTY) {
+          const pos = snapPos[i];
+          if (pos < snapCount && snap[pos] === i && active[i]) {
+            const screenXVal = x[i] * camZoom - cameraOffsetX;
+            const screenYVal = y[i] * camZoom - cameraOffsetY;
+            if (screenXVal > minX && screenXVal < maxX && screenYVal > minY && screenYVal < maxY) {
+              isItOnScreen[i] = 1;
+              bits[pos >> 5] |= 1 << (31 - (pos & 31));
+            } else {
+              isItOnScreen[i] = 0;
+            }
+          }
+          i = next[i];
+        }
+      }
+    }
+  } finally {
+    DecorationSpatial._unlockSpatial();
+  }
+}
+
+/** E-335: the marked rows' decorations in snapshot order, into the visible list and `prev`; the bits cleared. */
+function emitDecorationBits(bits, words, snap, visibleData, prev) {
+  let count = 0;
+  for (let w = 0; w < words; w++) {
+    let word = bits[w];
+    if (word === 0) continue;
+    bits[w] = 0;
+    const base = w << 5;
+    while (word !== 0) {
+      const b = Math.clz32(word);
+      const i = snap[base + b];
+      visibleData[1 + count] = i;
+      prev[count] = i;
+      count++;
+      word ^= 1 << (31 - b);
+    }
+  }
+  return count;
+}
+
+/** E-335: the full test's visible list, kept as the last test's (prev). */
+function copyVisibleDecorations(prev, visibleData, count) {
+  for (let k = 0; k < count; k++) prev[k] = visibleData[1 + k];
 }
 const OCCUPIED_SLOT = 1;
 const TOMBSTONE_SLOT = 2;
@@ -362,7 +530,9 @@ class ParticleWorker extends AbstractWorker {
     this.decalsTotalTiles = 0;
     this.decalsTilesRGBA = null;
     this.decalsTilesDirty = null;
-    this.particlesToStamp = null;
+    // E-336: an empty list of the stamp list's class (initialize binds the integrate's, Uint32Array past 65 535
+    // particles): from null V8 typed the field Any.
+    this.particlesToStamp = new Uint16Array(0);
     this.particlesToStampCount = 0;
     this.decalTextures = {};
 
@@ -372,6 +542,10 @@ class ParticleWorker extends AbstractWorker {
     this._swayFrameCounter = 0;
     this._activeDecorationSnapshot = null;
     this._activeDecorationSnapshotCount = 0;
+    // E-334: the snapshot's decorations that have a parent, in its order, listed when it is copied (empty while the
+    // pool's header counts none attached); the attached pass walks these, not the whole snapshot.
+    this._attachedDecorationSnapshot = new Uint32Array(0);
+    this._attachedDecorationSnapshotCount = 0;
     // E-179c: the list count (DecorationPool.listEpoch) the snapshot was copied at (-1: none); the screen test's last
     // inputs: the list and move counts and the camera bounds it ran with; and whether this frame's attached
     // decorations moved.
@@ -476,6 +650,20 @@ class ParticleWorker extends AbstractWorker {
     this._decorationScreenProbe = 0;
     this._decorationScreenWindow = 0;
     this._decorationScreenScratch = new Uint32Array(0);
+    // E-335: the screen test through DecorationSpatial's grid. How many times the snapshot was copied, and the copy and
+    // move count the index below was built at; each snapshot decoration's row (snapPos) and the snapshot's decorations
+    // outside the grid; a bit a snapshot row for the visible ones; the last test's visible list, whose flags the next
+    // walk clears, and whether it is known (a full test wrote every flag since boot). Sized at init.
+    this._decoSnapshotCopies = 0;
+    this._decoIndexedCopy = -1;
+    this._decoIndexedMoveEpoch = -1;
+    this._decoSnapPos = new Int32Array(0);
+    this._decoOutside = new Uint32Array(0);
+    this._decoOutsideCount = 0;
+    this._decoVisibleBits = new Int32Array(0);
+    this._decoPrevVisible = new Uint32Array(0);
+    this._decoPrevVisibleCount = 0;
+    this._decoPrevKnown = false;
     // N-112: the visible decorations' published list (header and three copies, bound at init). Empty when the worker
     // was handed one list (a kernel or a test): the screen test then writes visibleDecorationsData in place.
     this.visibleDecorationsCtl = new Int32Array(0);
@@ -510,6 +698,10 @@ class ParticleWorker extends AbstractWorker {
     this.maxParticles = data.maxParticles || 0;
     this.maxDecorations = data.maxDecorations || 0;
     this._decorationScreenScratch = new Uint32Array(this.maxDecorations);
+    this._decoSnapPos = new Int32Array(this.maxDecorations);
+    this._decoOutside = new Uint32Array(this.maxDecorations);
+    this._decoVisibleBits = new Int32Array((this.maxDecorations + 31) >> 5);
+    this._decoPrevVisible = new Uint32Array(this.maxDecorations);
     this.maxBullets = data.maxBullets || 0;
     this.globalEntityCount = data.globalEntityCount || 0;
 
@@ -558,6 +750,7 @@ class ParticleWorker extends AbstractWorker {
       const swayView = (Type, byte, length) => (swayLayout ? new Type(swayBuffer, byte, length) : new Type(length));
       // E-129: u32 past 65 535 decorations, as the sway regions and the kernel bound for them.
       this._activeDecorationSnapshot = swayView(PoolSlotArray(this.maxDecorations), swayLayout?.snapshotByte, this.maxDecorations);
+      this._attachedDecorationSnapshot = new Uint32Array(this.maxDecorations);
       if (this._swayBuckets) {
         this._phaseSin = swayView(Float32Array, swayLayout?.phaseSinByte, this.maxDecorations);
         this._phaseCos = swayView(Float32Array, swayLayout?.phaseCosByte, this.maxDecorations);
@@ -816,9 +1009,8 @@ class ParticleWorker extends AbstractWorker {
     // Stamp collected particles onto blood decal tiles
     startTime = shouldProfile ? performance.now() : 0;
     this.stampCollectedParticles();
-    const ringStamps = Decal.drainStampRing((x, y, tint, scaleX, scaleY, textureId, alpha, blendMode) => {
-      this.stampParticleToTile(x, y, tint, scaleX, scaleY, textureId, alpha, blendMode);
-    });
+    // E-351: the method and this worker, not an arrow over them: that was a context and a closure every frame.
+    const ringStamps = Decal.drainStampRing(this.stampParticleToTile, this);
     // W26: the frame's stamps, queued as records, in one kernel call.
     this.flushDecalStamps();
     this.particlesStampedThisFrame += ringStamps;
@@ -850,6 +1042,7 @@ class ParticleWorker extends AbstractWorker {
   refreshActiveDecorationSnapshot() {
     if (!this._activeDecorationSnapshot) {
       this._activeDecorationSnapshotCount = 0;
+      this._attachedDecorationSnapshotCount = 0;
       return 0;
     }
     // E-179c: an active list that has not changed since the last copy (its count holds) leaves the copy as it is.
@@ -857,7 +1050,34 @@ class ParticleWorker extends AbstractWorker {
     if (epoch >= 0 && epoch === this._decoSnapshotEpoch) return this._activeDecorationSnapshotCount;
     this._activeDecorationSnapshotCount = DecorationPool.copyActiveSnapshot(this._activeDecorationSnapshot);
     this._decoSnapshotEpoch = epoch;
+    this._decoSnapshotCopies++;
+    this._listAttachedDecorations();
     return this._activeDecorationSnapshotCount;
+  }
+
+  /**
+   * E-334: the copied snapshot's decorations that have a parent, in its order, into _attachedDecorationSnapshot. A
+   * decoration gets or loses its parent only when it spawns or despawns, which changes the list (and its epoch), so
+   * the list holds until the next copy. None when the pool's header counts none attached (read after the copy: a
+   * spawn the copy holds counted before it); the whole snapshot is read where the header has no such word.
+   */
+  _listAttachedDecorations() {
+    const out = this._attachedDecorationSnapshot;
+    const attached = DecorationPool.attachedCount();
+    if (attached === 0 || out.length === 0 || !DecorationComponent.parentEntityIndex) {
+      this._attachedDecorationSnapshotCount = 0;
+      return;
+    }
+    const snap = this._activeDecorationSnapshot;
+    const count = this._activeDecorationSnapshotCount;
+    const parentEntityIndex = DecorationComponent.parentEntityIndex;
+    const noParent = this._noParent;
+    let n = 0;
+    for (let k = 0; k < count; k++) {
+      const i = snap[k];
+      if (parentEntityIndex[i] !== noParent) out[n++] = i;
+    }
+    this._attachedDecorationSnapshotCount = n;
   }
 
   /**
@@ -986,8 +1206,9 @@ class ParticleWorker extends AbstractWorker {
     this._decoAttachedMoved = false;
     if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
 
-    const activeData = this._activeDecorationSnapshot;
-    const activeCount = this._activeDecorationSnapshotCount;
+    // E-334: the snapshot's attached decorations, listed when it was copied (none: no pass).
+    const activeData = this._attachedDecorationSnapshot;
+    const activeCount = this._attachedDecorationSnapshotCount;
     if (activeCount === 0) return;
 
     this._latchPose();
@@ -1194,6 +1415,11 @@ class ParticleWorker extends AbstractWorker {
     const ctl = this.visibleDecorationsCtl;
     const copy = ctl.length === 0 ? -1 : backPublishedList(ctl);
     if (copy >= 0) this.visibleDecorationsData = this.visibleDecorationsCopies[copy];
+    // E-335: through the decoration grid where it can (the same list and flags); the full test otherwise.
+    if (this._updateDecorationScreenGrid()) {
+      if (copy >= 0) publishList(ctl, copy);
+      return;
+    }
     const activeCount = this._activeDecorationSnapshotCount;
     const scratch = this._decorationScreenScratch;
     if (this._decorationScreenFlips * 8 > activeCount && scratch.length >= activeCount) {
@@ -1202,8 +1428,60 @@ class ParticleWorker extends AbstractWorker {
       this.updateDecorationScreenVisibility();
     }
     if (copy >= 0) publishList(ctl, copy);
+    if (DecorationSpatial.head !== null) this._rememberDecorationScreen();
     this._decorationScreenProbe = (this._decorationScreenProbe + 1) & 15;
     if (this._decorationScreenProbe === 0) this._sampleDecorationScreenFlips();
+  }
+
+  /**
+   * E-335: the screen test through DecorationSpatial's grid: last test's visible flags cleared, the decorations outside
+   * the grid (from a list built with the snapshot's rows when it was copied or a decoration moved) and the ones in the
+   * cells under the bounds tested, the visible ones emitted in snapshot order. The list and the flags are the full
+   * test's: it writes 0 for every snapshot decoration off screen, and one that is off screen now and was not on screen
+   * at the last test already holds 0. False, with nothing written, where it cannot run: no grid; no counters in the
+   * list header (the snapshot is copied every frame then, and the index with it); no full test since boot (flags it
+   * did not write may be 1); the view over more than half the grid; no camera or no decorations (the full test writes
+   * the empty list).
+   */
+  _updateDecorationScreenGrid() {
+    if (!this._decoPrevKnown || DecorationSpatial.head === null || DecorationSpatial.cellOf === null) return false;
+    const snapCount = this._activeDecorationSnapshotCount;
+    const visibleData = this.visibleDecorationsData;
+    if (snapCount === 0 || !this.cameraData || !visibleData || !DecorationComponent.active) return false;
+    const moveEpoch = DecorationPool.moveEpoch();
+    if (moveEpoch < 0 || this._decoSnapshotEpoch < 0) return false;
+    const cameraBounds = this._decorationCameraBounds();
+    if (!cameraBounds || decorationGridRange(cameraBounds) === 0) return false;
+    const snap = this._activeDecorationSnapshot;
+    const snapPos = this._decoSnapPos;
+    if (this._decoIndexedCopy !== this._decoSnapshotCopies || this._decoIndexedMoveEpoch !== moveEpoch) {
+      this._decoOutsideCount = indexDecorationSnapshot(snap, snapCount, snapPos, this._decoOutside);
+      this._decoIndexedCopy = this._decoSnapshotCopies;
+      this._decoIndexedMoveEpoch = moveEpoch;
+    }
+    const bits = this._decoVisibleBits;
+    const prev = this._decoPrevVisible;
+    clearDecorationFlags(prev, this._decoPrevVisibleCount);
+    decorationScreenOutside(cameraBounds, this._decoOutside, this._decoOutsideCount, snapPos, bits);
+    decorationScreenGridCells(cameraBounds, snap, snapCount, snapPos, bits);
+    const count = emitDecorationBits(bits, (snapCount + 31) >> 5, snap, visibleData, prev);
+    visibleData[0] = count;
+    this._decoPrevVisibleCount = count;
+    return true;
+  }
+
+  /**
+   * E-335: after a full test that ran (a camera, bounds), its visible list as the last test's, and the flags known: it
+   * wrote every snapshot decoration's.
+   */
+  _rememberDecorationScreen() {
+    const visibleData = this.visibleDecorationsData;
+    if (!visibleData || !this.cameraData || !this._decorationCameraBounds()) return;
+    const count = visibleData[0];
+    if (count > this._decoPrevVisible.length) return;
+    copyVisibleDecorations(this._decoPrevVisible, visibleData, count);
+    this._decoPrevVisibleCount = count;
+    this._decoPrevKnown = true;
   }
 
   /**
@@ -1354,7 +1632,18 @@ class ParticleWorker extends AbstractWorker {
   stampCollectedParticles() {
     const n = this.particlesToStampCount;
     if (n === 0) return;
+    const list = this.particlesToStamp;
+    const b = this._decalWasm;
+    if (!this.decalsEnabled || b === null) {
+      // Nothing stamps (stampParticleToTile left out every stamp without the kernel): the particles go back to the pool.
+      for (let i = 0; i < n; i++) ParticleEmitter.returnToPool(list[i]);
+      this.particlesStampedThisFrame = this.decalsEnabled ? n : 0;
+      return;
+    }
 
+    // E-336: each particle's W26 record, written here from its columns as stampParticleToTile writes it. Passed to
+    // stampParticleToTile, its five doubles crossed a call TurboFan left out (that callee also holds a warning, a Set
+    // and a flush): 63-76 KB/s of heap numbers in Predator (R-1100).
     const particleX = ParticleComponent.x;
     const particleY = ParticleComponent.y;
     const particleTint = ParticleComponent.baseTint;
@@ -1363,41 +1652,64 @@ class ParticleWorker extends AbstractWorker {
     const particleTextureId = ParticleComponent.textureId;
     const particleAlpha = ParticleComponent.alpha;
     const particleBlendMode = ParticleComponent.blendMode;
-    const decalsEnabled = this.decalsEnabled;
-
+    const textures = this.decalTextures;
+    const f64 = b.f64;
+    const u32 = b.u32;
+    const maxStamps = b.maxStamps;
+    let k = b.count;
     for (let i = 0; i < n; i++) {
-      const particleIndex = this.particlesToStamp[i];
-
-      if (decalsEnabled) {
-        this.stampParticleToTile(
-          particleX[particleIndex],
-          particleY[particleIndex],
-          particleTint[particleIndex],
-          particleScaleX[particleIndex],
-          particleScaleY[particleIndex],
-          particleTextureId[particleIndex],
-          particleAlpha[particleIndex],
-          particleBlendMode[particleIndex]
-        );
+      const p = list[i];
+      const textureId = particleTextureId[p];
+      const texture = textures[textureId];
+      if (texture) {
+        const byte = texture.wasmByte;
+        if (byte >= 0) {
+          if (k === maxStamps) {
+            b.count = k;
+            this.flushDecalStamps();
+            k = b.count;
+          }
+          const f = k << 3;
+          const u = k << 4;
+          f64[f] = particleX[p];
+          f64[f + 1] = particleY[p];
+          f64[f + 2] = particleScaleX[p];
+          f64[f + 3] = particleScaleY[p];
+          f64[f + 4] = particleAlpha[p];
+          u32[u + 10] = particleTint[p];
+          u32[u + 11] = particleBlendMode[p] === 1 ? 1 : 0;
+          u32[u + 12] = byte;
+          u32[u + 13] = texture.width;
+          u32[u + 14] = texture.height;
+          k++;
+        } else {
+          this._decalTextureNotInMemory(textureId);
+        }
       }
-      ParticleEmitter.returnToPool(particleIndex);
+      ParticleEmitter.returnToPool(p);
     }
+    b.count = k;
+    this.particlesStampedThisFrame = n;
+  }
 
-    this.particlesStampedThisFrame = decalsEnabled ? n : 0;
+  /** A decal texture the decal memory left out (no pixels to stamp): its stamps are skipped, with one warning. */
+  _decalTextureNotInMemory(textureId) {
+    if (!this._decalTexturesMissing.has(textureId)) {
+      this._decalTexturesMissing.add(textureId);
+      console.warn(`[PARTICLE WORKER] decal texture ${textureId} is not in the decal memory (no pixels?); its stamps are skipped`);
+    }
   }
 
   stampParticleToTile(worldX, worldY, tint, scaleX, scaleY, textureId, alpha, blendMode) {
     const texture = this.decalTextures[textureId];
     if (!texture) return;
     // W26: a record for decalStamp.wasm (written here, so no double crosses a call), stamped at the flush.
+    // stampCollectedParticles writes the same record inline: a change here goes there too.
     const b = this._decalWasm;
     if (b === null) return;
     // The memory holds every well-formed texture (createDecalMemory): one it left out has no pixels to stamp.
     if (texture.wasmByte < 0) {
-      if (!this._decalTexturesMissing.has(textureId)) {
-        this._decalTexturesMissing.add(textureId);
-        console.warn(`[PARTICLE WORKER] decal texture ${textureId} is not in the decal memory (no pixels?); its stamps are skipped`);
-      }
+      this._decalTextureNotInMemory(textureId);
       return;
     }
     if (b.count === b.maxStamps) this.flushDecalStamps();

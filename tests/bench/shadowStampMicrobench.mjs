@@ -16,6 +16,11 @@
  *
  *   node tests/bench/shadowStampMicrobench.mjs [--lamps 128] [--walkers 6000]
  *   node tests/bench/shadowStampMicrobench.mjs --output out.json
+ *   node --no-liftoff tests/bench/shadowStampMicrobench.mjs --wasm path/engine.wasm --cases stampWasm,lampWasm
+ * --wasm times stamp_light_range from another engine.wasm (another build of the stamp, on the same table), so two builds
+ * compare in alternating processes of one tree. --cases times only the cases listed (the JS reference's stamp and
+ * takeClosest too only when listed); stampWasmKeyed (the fixture as keyed rows) runs only when listed. --no-liftoff: the kernel's warm-up counts calls (N-226), so a late tier-up may
+ * leave Liftoff code in the timed calls without it.
  */
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -27,7 +32,11 @@ import { createStampKernelFor, setupLampStamp, setupStamp, stampChecksum } from 
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
 const TAKE = { base: takeClosest };
-const KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../../src/wasm/engine.wasm'));
+const KERNEL_CASES = ['stampWasm', 'lampWasm', 'lampWasmPerEntity', 'lampWasm512'];
+/** Kernel cases timed only when --cases lists them. */
+const EXTRA_CASES = ['stampWasmKeyed'];
+const JS_CASES = ['stamp', 'takeClosest'];
+let KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../../src/wasm/engine.wasm'));
 
 export { setupStamp } from './shadowStampKernel.mjs';
 
@@ -41,16 +50,17 @@ function candidateStats(s) {
  * One kernel case: the setup in one shared memory with the shipped kernel, the kernel's rows checked against the JS
  * reference's, then timed after the kernel reached TurboFan.
  */
-async function kernelCase(name, label, setup) {
+async function kernelCase(name, label, setup, { reference = true } = {}) {
   const k = await createStampKernelFor(setup, KERNEL_URL);
   const rows = new Uint8Array(k.spec.stamp.buffer, k.spec.stamp.byteOffset, k.spec.stamp.byteLength);
-  rows.fill(0);
-  const jsWritten = stampLightRange(k.spec);
-  const jsChecksum = stampChecksum(k.spec, jsWritten);
+  // The JS reference stamps full rows only: a keyed case's checksum is compared across builds by the caller.
+  if (reference) rows.fill(0);
+  const jsWritten = reference ? stampLightRange(k.spec) : -1;
+  const jsChecksum = reference ? stampChecksum(k.spec, jsWritten) : -1;
   rows.fill(0);
   const written = k.stampWasm();
   const checksum = stampChecksum(k.spec, written);
-  if (written !== jsWritten || checksum !== jsChecksum) {
+  if (reference && (written !== jsWritten || checksum !== jsChecksum)) {
     throw new Error(`${name}: the kernel wrote ${written} rows (checksum ${checksum}), the JS reference ${jsWritten} (${jsChecksum})`);
   }
   const tier = await warmWasm(k.stampRange, k.stampWasm, { calls: 300 });
@@ -75,6 +85,12 @@ async function main() {
   if (!take) throw new Error(`unknown variant ${variant}`);
   const lamps = Number(args.lamps ?? 128);
   const walkers = Number(args.walkers ?? 6000);
+  if (args.wasm) KERNEL_URL = pathToFileURL(path.resolve(String(args.wasm)));
+  const only = args.cases ? new Set(String(args.cases).split(',')) : null;
+  for (const c of only ?? []) {
+    if (!KERNEL_CASES.includes(c) && !EXTRA_CASES.includes(c) && !JS_CASES.includes(c)) throw new Error(`unknown case ${c}`);
+  }
+  const want = (c) => only === null || only.has(c);
   const fx = loadPredatorFixture();
   if (!fx) throw new Error('missing tests/fixtures/predator-frame.bin (run capturePredatorFixture.mjs)');
   const s = setupStamp(fx);
@@ -107,23 +123,41 @@ async function main() {
     takeChecksum = (Math.imul(takeChecksum ^ checksumInts(out, k), 16777619) >>> 0);
   }
 
-  const cases = {
-    stamp: timeIt(`stampLightRange (${s.lights.length} lights, ${s.sunN} casters)`, () => stampLightRange(s.spec), {
+  const cases = {};
+  if (want('stamp')) {
+    cases.stamp = timeIt(`stampLightRange (${s.lights.length} lights, ${s.sunN} casters)`, () => stampLightRange(s.spec), {
       iterations: 20,
       warmup: 20,
-    }),
-    takeClosest: timeIt(`takeClosest ${variant} (${s.candidates.length} lights, max m ${maxM})`, () => takeAll(), {
+    });
+  }
+  if (want('takeClosest')) {
+    cases.takeClosest = timeIt(`takeClosest ${variant} (${s.candidates.length} lights, max m ${maxM})`, () => takeAll(), {
       iterations: 20,
       warmup: 20,
-    }),
-  };
+    });
+  }
   const lampOpts = { lamps, walkers };
-  cases.stampWasm = await kernelCase('stampWasm', `(Predator fixture, ${s.lights.length} lights, 512 per light, 3 per entity)`, setupStamp(fx));
-  cases.lampWasm = await kernelCase('lampWasm', `(${lamps} lamps, ${walkers} walkers, 15 per light)`, setupLampStamp(lampOpts));
-  cases.lampWasmPerEntity = await kernelCase('lampWasmPerEntity', `(${lamps} lamps, ${walkers} walkers, 15 per light, 3 per entity)`,
-    setupLampStamp({ ...lampOpts, maxPerEntity: 3 }));
-  cases.lampWasm512 = await kernelCase('lampWasm512', `(${lamps} lamps, ${walkers} walkers, 512 per light)`,
-    setupLampStamp({ ...lampOpts, maxPerLight: 512 }));
+  if (want('stampWasm')) {
+    cases.stampWasm = await kernelCase('stampWasm', `(Predator fixture, ${s.lights.length} lights, 512 per light, 3 per entity)`,
+      setupStamp(fx));
+  }
+  if (only !== null && only.has('stampWasmKeyed')) {
+    // The fixture as E-191 step 2's keyed rows (7 floats, the stamp's 11), as pre-render stamps them in Predator.
+    cases.stampWasmKeyed = await kernelCase('stampWasmKeyed',
+      `(Predator fixture as keyed rows, ${s.lights.length} lights, 512 per light, 3 per entity)`, setupStamp(fx, { keyed: true }),
+      { reference: false });
+  }
+  if (want('lampWasm')) {
+    cases.lampWasm = await kernelCase('lampWasm', `(${lamps} lamps, ${walkers} walkers, 15 per light)`, setupLampStamp(lampOpts));
+  }
+  if (want('lampWasmPerEntity')) {
+    cases.lampWasmPerEntity = await kernelCase('lampWasmPerEntity',
+      `(${lamps} lamps, ${walkers} walkers, 15 per light, 3 per entity)`, setupLampStamp({ ...lampOpts, maxPerEntity: 3 }));
+  }
+  if (want('lampWasm512')) {
+    cases.lampWasm512 = await kernelCase('lampWasm512', `(${lamps} lamps, ${walkers} walkers, 512 per light)`,
+      setupLampStamp({ ...lampOpts, maxPerLight: 512 }));
+  }
   const report = {
     feature: 'shadow-stamp',
     functions: ['stampLightRange', 'takeClosest', 'shadowStamp.stamp_light_range'],
@@ -135,6 +169,7 @@ async function main() {
     candidatesPerLight: candidateStats(s),
     lamps,
     walkers,
+    wasm: KERNEL_URL.href,
     stampWritten: written,
     stampChecksum: stampChecksumJs,
     checksum: takeChecksum,
@@ -151,7 +186,7 @@ async function main() {
       stampChecksum: stampChecksumJs,
       takeChecksum,
       m: report.candidatesPerLight,
-      kernel: Object.fromEntries(['stampWasm', 'lampWasm', 'lampWasmPerEntity', 'lampWasm512'].map((n) => [n, {
+      kernel: Object.fromEntries([...KERNEL_CASES, ...EXTRA_CASES].filter((n) => cases[n]).map((n) => [n, {
         opsPerSec: Math.round(cases[n].opsPerSec), checksum: cases[n].checksum, m: cases[n].candidatesPerLight,
       }])),
     }));

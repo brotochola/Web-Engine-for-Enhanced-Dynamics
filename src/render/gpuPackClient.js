@@ -103,6 +103,7 @@ export async function bindGpuPack(memory, layout) {
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
     'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed', 'pack_casters_keyed_scan',
+    'pack_casters_keyed_scan_xy',
     'pack_sprites_keyed_rows', 'pack_sprites_keyed_gbuf', 'pack_sprites_keyed_rows_gbuf', 'lamp_frames',
     'pack_casters_framed', 'pack_casters_scatter_framed', 'pack_sprites_split_gbuf', 'pack_sprites_split_scatter_gbuf',
     'pack_sprites_indexed_scatter_gbuf',
@@ -136,6 +137,8 @@ export async function bindGpuPack(memory, layout) {
     castersKeyed: k.pack_casters_keyed,
     // E-192: the same rows for the casters it finds in the queue itself.
     castersKeyedScan: k.pack_casters_keyed_scan,
+    // E-331: the same, also writing the casters' x, y and bounds for the shadow stamp.
+    castersKeyedScanXy: k.pack_casters_keyed_scan_xy,
     // E-393: the lamps' frames of directional casters in the stamp rows.
     lampFrames: k.lamp_frames,
     // Close-out group B: packInstancedRows' slow path (a type filter, screen space, pixel snap), its parameters 16
@@ -465,6 +468,8 @@ function splitGbufByte(b, gbuf, n, rows) {
  * carries GPU_KEYED_TEX_ONLY goes there as a texture update (GPU_KEYED_TEX_WORDS) instead, counted in `keyed.texUpdates`.
  * E-387: with `keyed.gbufOut` and `keyed.gbufFlags` (keyedGbufByte's columns), each slot's G-buffer words go there too,
  * the words gbufWord.js writeGbufWords writes from the key column, and `keyed.gbufWritten` says whether they did.
+ * E-337: the type column (ctx.typeArr) goes to the kernel only with the shadow terms, whose glow test reads it; the
+ * count of type-1 rows it also gives (ctx.particleCount) is read by no caller of a keyed pack, so it is 0 without them.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
 export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
@@ -487,13 +492,13 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   // E-387: the slots' G-buffer words too where the caller hands their columns (the kernel packs min(count, capacity)).
   const gbufByte = keyedGbufByte(b, keyed, count < (capacity | 0) ? count : capacity | 0);
   const texByte = keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0;
+  // E-337: the type column only for the shadow terms' glow test; without them it fed only an unread particle count.
+  const typeByte = shadowByte > 0 && typeArr ? typeArr.byteOffset : 0;
   const out = gbufByte > 0
     ? b.spritesKeyedGbuf(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
-      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
-      shadowByte, texByte, gbufByte)
+      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, texByte, gbufByte)
     : b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
-      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
-      shadowByte, texByte);
+      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, texByte);
   keyed.shadowed = shadowByte > 0;
   keyed.gbufWritten = gbufByte > 0;
   const r = b.particlesByte >> 2;
@@ -527,13 +532,12 @@ export function packKeyedRowsByRowWasm(b, q, ctx, rows, slots, keyed, capacity) 
   const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
   const gbufByte = keyedGbufByte(b, keyed, count < (capacity | 0) ? count : capacity | 0);
   const texByte = keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0;
+  const typeByte = shadowByte > 0 && typeArr ? typeArr.byteOffset : 0; // E-337, as packKeyedRowsWasm
   const out = gbufByte > 0
     ? b.spritesKeyedRowsGbuf(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, rows.byteOffset,
-      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
-      shadowByte, texByte, gbufByte)
+      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, texByte, gbufByte)
     : b.spritesKeyedRows(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, rows.byteOffset,
-      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
-      shadowByte, texByte);
+      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, texByte);
   keyed.shadowed = shadowByte > 0;
   keyed.gbufWritten = gbufByte > 0;
   const r = b.particlesByte >> 2;
@@ -651,9 +655,12 @@ function keyedSunByte(b, sun, count) {
  * (spritesheetId) and the entities' `frames` (null for none of the last four). It sets `sun.framed`, whether the kernel
  * wrote them (else every row keeps 0), and `sun.listed`, the rows it left at 0 for the JS (pairs in b.keyedSun.list,
  * keyed row then entity; past its listCap only counted).
+ * E-331: with `scan` (shadowStampClient.js stampScanTarget, in the same memory) the kernel also writes the rows' x and y
+ * and their bounds there for the shadow stamp; capacity must not pass what it holds.
+ * @param {{ xByte: number, yByte: number, boundsByte: number, maxSun: number }|null} [scan]
  * @returns {number} the rows written, or -1
  */
-export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity, sun = null) {
+export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity, sun = null, scan = null) {
   if (!b || !b.castersKeyedScan || !q || !dst) return -1;
   const key = q.key;
   if (!key || key.buffer !== b.buffer || dst.buffer !== b.buffer || !q.shadowH || q.shadowH.buffer !== b.buffer) return -1;
@@ -661,9 +668,13 @@ export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity, su
   if (type && type.buffer !== b.buffer) return -1;
   const table = tableFor(b, q);
   if (table < 0) return -1;
+  if (scan !== null && (capacity >>> 0) > (scan.maxSun >>> 0)) throw new Error('gpuPack: the caster scan outruns the stamp\'s x and y');
   const sunAt = sun !== null ? keyedSunByte(b, sun, count >>> 0) : 0;
-  const out = b.castersKeyedScan(table, key.byteOffset, type ? type.byteOffset : 0, count >>> 0, capacity >>> 0,
-    dst.byteOffset, keyBase >>> 0, sunAt);
+  const out = scan !== null
+    ? b.castersKeyedScanXy(table, key.byteOffset, type ? type.byteOffset : 0, count >>> 0, capacity >>> 0,
+      dst.byteOffset, keyBase >>> 0, sunAt, scan.xByte >>> 0, scan.yByte >>> 0, scan.boundsByte >>> 0)
+    : b.castersKeyedScan(table, key.byteOffset, type ? type.byteOffset : 0, count >>> 0, capacity >>> 0,
+      dst.byteOffset, keyBase >>> 0, sunAt);
   if (sun !== null) {
     sun.framed = sunAt > 0;
     sun.listed = sunAt > 0 ? b.keyedSun.block[KEYED_SUN.LISTED] : 0;

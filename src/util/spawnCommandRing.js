@@ -117,9 +117,12 @@ export function tryPushDespawn(entityIndex) {
 
 /**
  * Single consumer (logic0). No alloc. Returns drained count.
+ * E-351: `thisArg` is the visitor's `this`, so a caller passes a method and its object instead of making a closure
+ * over them on every drain.
  * @param {(kind: number, typeId: number, entityIndex: number, x: number, y: number, owner: number) => void} visitor
+ * @param {*} [thisArg]
  */
-export function drainSpawnCommands(visitor) {
+export function drainSpawnCommands(visitor, thisArg) {
   if (!ringI32 || typeof visitor !== 'function') return 0;
   const cap = capacity;
   if (!(cap > 0)) return 0;
@@ -128,7 +131,8 @@ export function drainSpawnCommands(visitor) {
     const read = Atomics.load(ringI32, HDR_READ);
     const base = SPAWN_CMD_HEADER_I32 + (read % cap) * SPAWN_CMD_STRIDE_I32;
     if (Atomics.load(ringI32, base) !== read + 1) break;
-    visitor(
+    visitor.call(
+      thisArg,
       ringI32[base + 1] | 0,
       ringI32[base + 2] | 0,
       ringI32[base + 3] | 0,

@@ -181,7 +181,7 @@ export class MeshRenderer extends Component {
     let a = +value;
     if (a < 0) a = 0;
     else if (a > 1) a = 1;
-    if (MeshRenderer.alpha[this.index] === a) return;
+    if (MeshRenderer.alpha[this.index] === Math.fround(a)) return;
     MeshRenderer.alpha[this.index] = a;
     markPaint(this.index);
   }
@@ -254,7 +254,7 @@ export class MeshRenderer extends Component {
   set visualOutset(value) {
     let v = +value;
     if (!(v > 0)) v = 0;
-    if (MeshRenderer.visualOutset[this.index] === v) return;
+    if (MeshRenderer.visualOutset[this.index] === Math.fround(v)) return;
     MeshRenderer.visualOutset[this.index] = v;
     bumpOutsetEpoch();
   }

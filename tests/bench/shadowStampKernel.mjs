@@ -16,6 +16,10 @@
  *   node tests/bench/chromeKernel.mjs --module /tests/bench/shadowStampKernel.mjs [--args '{"rounds":7}']
  *   node tests/bench/chromeKernel.mjs --module /tests/bench/shadowStampKernel.mjs \
  *     --args '{"variants":"wasm,wasm-f32x4","keyed":true}'
+ * `other` is stamp_light_range from another engine.wasm (`otherWasm`: its path as the server serves it), so two builds
+ * of the stamp alternate in one page on the same frame; `setup` "lamp" stamps setupLampStamp's frame instead of the
+ * fixture (`lamps`, `walkers`, `maxPerLight`, `maxPerEntity` as setupLampStamp takes them):
+ *     --args '{"variants":"wasm,other","otherWasm":"/tests/results/stamp-variants/b.wasm","setup":"lamp","maxPerEntity":3}'
  */
 import {
   GPU_CASTER_FLOATS,
@@ -217,7 +221,8 @@ export async function createStampKernelFor(s, kernelUrl) {
   regions.push(
     { name: 'lightVec', owner: 'pre-render', bytes: 16 },
     { name: 'lights', owner: 'pre-render', bytes: spec.lights.length * STAMP_LIGHT_DOUBLES * 8 },
-    { name: 'nearDist', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 4 },
+    // 8 bytes a slot: room for a record of the distance and the light side by side (E-358), a float array before it.
+    { name: 'nearDist', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 8 },
     { name: 'nearSlot', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 4 },
     { name: 'nearCount', owner: 'pre-render', bytes: Math.max(1, s.sunN) },
     { name: 'packedX', owner: 'pre-render', bytes: Math.max(1, s.sunN) * 4 },
@@ -308,9 +313,18 @@ export async function run(args = {}) {
   const rounds = Number(args.rounds ?? 7);
   const minMs = Number(args.minMs ?? 200);
   const opts = args.maxPerEntity !== undefined ? { maxPerEntity: Number(args.maxPerEntity) } : {};
-  const bytes = new Uint8Array(await (await fetch(new URL('../fixtures/predator-frame.bin', import.meta.url))).arrayBuffer());
   if (args.keyed === true) opts.keyed = true;
-  const k = await createStampKernel(parsePredatorFixture(bytes), opts, new URL('../../src/wasm/engine.wasm', import.meta.url));
+  const kernelUrl = new URL('../../src/wasm/engine.wasm', import.meta.url);
+  let k;
+  if (args.setup === 'lamp') {
+    if (opts.keyed) throw new Error('the lamp frame stamps full rows only');
+    const lampOpts = { ...opts };
+    for (const key of ['lamps', 'walkers', 'maxPerLight']) if (args[key] !== undefined) lampOpts[key] = Number(args[key]);
+    k = await createStampKernelFor(setupLampStamp(lampOpts), kernelUrl);
+  } else {
+    const bytes = new Uint8Array(await (await fetch(new URL('../fixtures/predator-frame.bin', import.meta.url))).arrayBuffer());
+    k = await createStampKernel(parsePredatorFixture(bytes), opts, kernelUrl);
+  }
   const f32Url = new URL('../fixtures/wasm/shadowStampF32.wasm', import.meta.url);
   const variants = String(args.variants ?? 'wasm,js').split(',');
   const sides = {};
@@ -319,6 +333,10 @@ export async function run(args = {}) {
     else if (v === 'js') {
       if (opts.keyed) throw new Error('the JS stamps full rows only');
       sides.js = () => stampLightRange(k.spec);
+    } else if (v === 'other') {
+      if (typeof args.otherWasm !== 'string') throw new Error('the other side needs otherWasm (a served engine.wasm)');
+      const m = await loadWasmKernel('shadowStamp', new URL(args.otherWasm, location.href), k.memory, ['stamp_light_range']);
+      sides.other = () => k.stampWith(m.stamp_light_range);
     } else if (v === 'wasm-f32' || v === 'wasm-f32x4') {
       const fn = v === 'wasm-f32' ? 'stamp_light_range_f32' : 'stamp_light_range_f32x4';
       const m = await loadWasmKernel('shadowStampF32', f32Url, k.memory, [fn]);
@@ -350,6 +368,8 @@ export async function run(args = {}) {
   }
   return {
     feature: 'shadow-stamp-chrome',
+    setup: args.setup === 'lamp' ? 'lamp' : 'predator-fixture',
+    otherWasm: typeof args.otherWasm === 'string' ? args.otherWasm : null,
     casters: k.sunN,
     lights: k.lights.length,
     maxPerEntity: k.spec.maxPerEntity,

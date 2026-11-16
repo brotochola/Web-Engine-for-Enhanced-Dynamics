@@ -14,11 +14,12 @@ import { computeBufferSize, createViews } from '../../src/render/renderQueueLayo
 
 /**
  * Fields `this.X =` writes in a class's methods other than the constructor and
- * initialize, from the source.
+ * initialize (and the methods in `bootMethods`, which also run before the frame
+ * loop), from the source.
  */
-function fieldsWrittenAfterBoot(file, className) {
+function fieldsWrittenAfterBoot(file, className, bootMethods = []) {
   const lines = fs.readFileSync(new URL(`../../src/workers/${file}`, import.meta.url), 'utf8').split('\n');
-  const start = lines.findIndex((l) => new RegExp(`^class ${className}\\b`).test(l));
+  const start = lines.findIndex((l) => new RegExp(`^(?:export )?class ${className}\\b`).test(l));
   assert.ok(start >= 0, `class ${className} in ${file}`);
   const indent = lines.slice(start + 1).find((l) => l.trim()).match(/^ */)[0].length;
   const header = new RegExp(`^ {${indent}}(?:static\\s+|async\\s+)*([A-Za-z_$][\\w$]*)\\s*\\([^)]*\\)\\s*\\{\\s*$`);
@@ -29,7 +30,7 @@ function fieldsWrittenAfterBoot(file, className) {
   for (let i = start + 1; i < lines.length && !/^}/.test(lines[i]); i++) {
     const m = lines[i].match(header);
     if (m && !/^(if|for|while|switch|catch)$/.test(m[1])) method = m[1];
-    if (method === 'constructor' || method === 'initialize' || comment.test(lines[i])) continue;
+    if (method === 'constructor' || method === 'initialize' || bootMethods.includes(method) || comment.test(lines[i])) continue;
     for (const w of lines[i].matchAll(write)) {
       if (!out.has(w[1])) out.set(w[1], `${method}, line ${i + 1}`);
     }
@@ -55,6 +56,11 @@ const BOUND_BY_INITIALIZE = {
   ParticleWorker: ['activeParticlesData', 'visibleParticlesData', 'visibleDecorationsData', 'visibleBulletsData'],
   LogicWorker: ['_tickAllScratch'],
 };
+// E-350: AbstractWorker's own methods run on every worker too (the frame loop, pause, resume, a resize message), so
+// each worker's check also scans them. These run before the frame loop, from the 'init' message: what they bind is
+// born then, as initialize's is.
+const ABSTRACT_BOOT_METHODS = ['initializeCommonBuffers', 'initializeAllComponents', 'registerCoreClasses', 'initSeededRandom', 'initializeWorkerPorts'];
+const abstractWritten = fieldsWrittenAfterBoot('abstractWorker.js', 'AbstractWorker', ABSTRACT_BOOT_METHODS);
 for (const [file, selfKey, className, minFields] of [
   ['preRenderWorker.js', 'preRenderWorker', 'PreRenderWorker', 40],
   ['pixiWorker.js', 'pixiRenderer', 'PixiRenderer', 40],
@@ -66,6 +72,8 @@ for (const [file, selfKey, className, minFields] of [
     const worker = await loadWorker(file, selfKey);
     const written = fieldsWrittenAfterBoot(file, className);
     assert.ok(written.size > minFields, `the scan found the frame paths (${written.size} fields)`);
+    assert.ok(abstractWritten.size > 5, `the scan found AbstractWorker's frame paths (${abstractWritten.size} fields)`);
+    for (const [name, at] of abstractWritten) if (!written.has(name)) written.set(name, `AbstractWorker.${at}`);
     const bound = BOUND_BY_INITIALIZE[className] || [];
     const missing = [...written].filter(([name]) => !Object.hasOwn(worker, name) && !bound.includes(name));
     assert.deepEqual(
@@ -73,6 +81,57 @@ for (const [file, selfKey, className, minFields] of [
       [],
       'declare these in the constructor',
     );
+  });
+}
+
+// E-350. A field whose first value is a Smi (0) and that later holds a fraction changes representation on its first
+// fractional write, from Smi to double, which moves the object to a new map: a deopt of every method that saw the old
+// one, once per worker. A field that holds fractions starts as a double: -0 (falsy, and equal to 0 in every comparison
+// and sum) or NaN where it must read as "none".
+/** A number V8 stores as a Smi: an integer in the 31-bit range, not -0 (a double). */
+function isSmi(x) {
+  return Number.isInteger(x) && !Object.is(x, -0) && x >= -(2 ** 30) && x < 2 ** 30;
+}
+/** The object's own number fields and those of the plain objects it holds, by dotted path. */
+function numberFields(obj) {
+  const out = new Map();
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'number') out.set(k, v);
+    else if (v !== null && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) {
+      for (const [g, x] of Object.entries(v)) if (typeof x === 'number') out.set(`${k}.${g}`, x);
+    }
+  }
+  return out;
+}
+// The fields every worker's frame writes a fraction into (AbstractWorker's timing), and those a worker of its own
+// writes a fraction into that the frame-timing run below does not reach (tests/bench/fieldTypeAudit.mjs lists them
+// from a running scene).
+const FRACTION_FIELDS = [
+  'accumulatedTime', 'currentFPS', 'stepTimeThisFrame', 'messageTimeThisFrame', 'idleTimeThisFrame', '_lastFrameEndAt',
+  '_injectedDeltaTime', '_timing.deltaTime', '_timing.dtRatio',
+];
+const FRACTION_FIELDS_BY_CLASS = {};
+for (const [file, selfKey, className] of [
+  ['preRenderWorker.js', 'preRenderWorker', 'PreRenderWorker'],
+  ['pixiWorker.js', 'pixiRenderer', 'PixiRenderer'],
+  ['spatialWorker.js', 'spatialWorker', 'SpatialWorker'],
+  ['particleWorker.js', 'particleWorker', 'ParticleWorker'],
+  ['logicWorker.js', 'logicWorker', 'LogicWorker'],
+]) {
+  test(`${className}: fields that hold fractions start as doubles`, async () => {
+    const worker = await loadWorker(file, selfKey);
+    const birth = numberFields(worker);
+    const listed = [...FRACTION_FIELDS, ...(FRACTION_FIELDS_BY_CLASS[className] || [])];
+    const missing = listed.filter((f) => !birth.has(f));
+    assert.deepEqual(missing, [], 'declared from the constructor');
+    // A frame's timing on a fresh worker: a fractional wall delta writes fractions into whatever it times.
+    worker.lastFrameTime = performance.now() - 16.3;
+    worker.updateFrameTiming();
+    const after = numberFields(worker);
+    const timed = [...after].filter(([f, v]) => !Number.isInteger(v) && birth.has(f)).map(([f]) => f);
+    assert.ok(timed.includes('currentFPS') && timed.includes('_timing.dtRatio'), `the timing ran (${timed.join(' ')})`);
+    const smi = [...new Set([...listed, ...timed])].filter((f) => isSmi(birth.get(f)));
+    assert.deepEqual(smi.map((f) => `${f} (${birth.get(f)})`), [], 'start these as doubles (-0, or NaN for "none")');
   });
 }
 

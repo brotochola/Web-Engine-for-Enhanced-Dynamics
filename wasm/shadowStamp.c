@@ -25,7 +25,9 @@
    record, its maxShadowsPerEntity (float distance, light) pairs side by side (8 bytes a pair at T_NEAR_DIST), so a note
    on a caster reads and moves whole pairs, mostly in one line; the rows of the nearest lights test the counts sixteen
    at a time and skip the unlit casters. The same rows, bit for bit (tests/node/shadowStampWasm.test.js and
-   shadowStampKeyed.test.js). */
+   shadowStampKeyed.test.js).
+   E-331: pre-render's keyed caster scan can hand the grid the casters' x and y and their bounds (the scan slots), so the
+   build skips its pass over the rows (grid_from_xy), and a grid that clamps nothing bins four casters at a time. */
 #include <stdint.h>
 #include <wasm_simd128.h>
 
@@ -42,6 +44,7 @@ enum {
      not read T_NEAR_SLOT (the float32 test module, wasm/test/shadowStampF32.c, keeps its own light slots there). */
   T_NEAR_DIST, T_NEAR_SLOT, T_NEAR_COUNT,
   T_PACKED_X, T_PACKED_Y, T_CELL_OF, T_DIST64,
+  T_SCAN_X, T_SCAN_Y, T_SCAN_BOUNDS,
   SLOT_COUNT
 };
 
@@ -134,30 +137,17 @@ __attribute__((unused)) INLINE int build_grid(const float *sun, uint32_t nSun, u
   return 1;
 }
 
-/* build_grid, with the casters' x and y packed in its item order (cell by cell, caster order within a cell) at px
-   and py. The first pass keeps each row's x and y at tx and ty (scratch the gather does not use until the first
-   light), and the other passes read them there: the same cells and items as build_grid. */
-INLINE int build_grid_packed(const float *sun, uint32_t nSun, uint32_t sf, int32_t *counts, int32_t *starts,
-                             uint32_t *items, uint32_t countsCap, uint32_t itemsCap, Grid *g, float *tx, float *ty,
-                             float *px, float *py, int32_t *cellOf) {
-  double minX = __builtin_inf();
-  double minY = __builtin_inf();
-  double maxX = -__builtin_inf();
-  double maxY = -__builtin_inf();
-  int nan = 0;
-  for (uint32_t c = 0; c < nSun; c++) {
-    const float fx = sun[c * sf];
-    const float fy = sun[c * sf + 1];
-    tx[c] = fx;
-    ty[c] = fy;
-    const double x = fx;
-    const double y = fy;
-    nan |= (x != x) | (y != y);
-    if (x < minX) minX = x;
-    if (y < minY) minY = y;
-    if (x > maxX) maxX = x;
-    if (y > maxY) maxY = y;
-  }
+/* E-331: the grid's cells and items from the casters' x and y as two float arrays (tx, ty) and their bounds: minX, minY,
+   maxX, maxY over them as doubles, nan 1 when an x or y is NaN. build_grid_packed works those out of the rows;
+   pre-render's caster scan (gpuPack.c, pack_casters_keyed_scan_xy) hands them over instead (stamp_light_range's scan
+   slots). On a clean grid (finite bounds, no NaN, no width or height that ToInt32 wrapped) every caster's column and row
+   are in the grid without a clamp, so the second pass takes four casters at a time in f64x2: the same doubles, the floor,
+   and a truncation of what is already an integer in range (what floor_int32 does to it); (x - minX) * 2^-8 is
+   (x - minX) / 256, both exact roundings of one value. The rest as build_grid's, the casters' x and y packed in its item
+   order (cell by cell, caster order within a cell) at px and py. */
+INLINE int grid_from_xy(const float *tx, const float *ty, uint32_t nSun, double minX, double minY, double maxX,
+                        double maxY, int32_t nan, int32_t *counts, int32_t *starts, uint32_t *items, uint32_t countsCap,
+                        uint32_t itemsCap, Grid *g, float *px, float *py, int32_t *cellOf) {
   if (!(minX - minX == 0.0)) return 0; /* !Number.isFinite(minX) */
   g->exact = !nan && minX >= -KNN_COORD_MAX && maxX <= KNN_COORD_MAX && minY >= -KNN_COORD_MAX && maxY <= KNN_COORD_MAX;
   const int64_t gw64 = (int64_t)floor_int32((maxX - minX) / STAMP_CELL) + 1;
@@ -167,8 +157,36 @@ INLINE int build_grid_packed(const float *sun, uint32_t nSun, uint32_t sf, int32
   const int32_t gw = (int32_t)gw64;
   const int32_t gh = (int32_t)gh64;
   const int32_t n = (int32_t)cells;
+  const int clean = !nan && maxX - minX < STAMP_CELL * (double)gw && maxY - minY < STAMP_CELL * (double)gh;
   for (int32_t i = 0; i < n; i++) counts[i] = 0;
-  for (uint32_t c = 0; c < nSun; c++) {
+  uint32_t c = 0;
+  if (clean) {
+    const v128_t mx = wasm_f64x2_splat(minX);
+    const v128_t my = wasm_f64x2_splat(minY);
+    const v128_t inv = wasm_f64x2_splat(1.0 / STAMP_CELL);
+    const v128_t gwv = wasm_i32x4_splat(gw);
+    for (; c + 4 <= nSun; c += 4) {
+      const v128_t xf = wasm_v128_load(tx + c);
+      const v128_t yf = wasm_v128_load(ty + c);
+      const v128_t x01 = wasm_f64x2_promote_low_f32x4(xf);
+      const v128_t x23 = wasm_f64x2_promote_low_f32x4(wasm_i32x4_shuffle(xf, xf, 2, 3, 0, 1));
+      const v128_t y01 = wasm_f64x2_promote_low_f32x4(yf);
+      const v128_t y23 = wasm_f64x2_promote_low_f32x4(wasm_i32x4_shuffle(yf, yf, 2, 3, 0, 1));
+      const v128_t c01 = wasm_i32x4_trunc_sat_f64x2_zero(wasm_f64x2_floor(wasm_f64x2_mul(wasm_f64x2_sub(x01, mx), inv)));
+      const v128_t c23 = wasm_i32x4_trunc_sat_f64x2_zero(wasm_f64x2_floor(wasm_f64x2_mul(wasm_f64x2_sub(x23, mx), inv)));
+      const v128_t r01 = wasm_i32x4_trunc_sat_f64x2_zero(wasm_f64x2_floor(wasm_f64x2_mul(wasm_f64x2_sub(y01, my), inv)));
+      const v128_t r23 = wasm_i32x4_trunc_sat_f64x2_zero(wasm_f64x2_floor(wasm_f64x2_mul(wasm_f64x2_sub(y23, my), inv)));
+      const v128_t col = wasm_i32x4_shuffle(c01, c23, 0, 1, 4, 5);
+      const v128_t row = wasm_i32x4_shuffle(r01, r23, 0, 1, 4, 5);
+      const v128_t cell = wasm_i32x4_add(wasm_i32x4_mul(row, gwv), col);
+      wasm_v128_store(cellOf + c, cell);
+      counts[wasm_i32x4_extract_lane(cell, 0)]++;
+      counts[wasm_i32x4_extract_lane(cell, 1)]++;
+      counts[wasm_i32x4_extract_lane(cell, 2)]++;
+      counts[wasm_i32x4_extract_lane(cell, 3)]++;
+    }
+  }
+  for (; c < nSun; c++) {
     int32_t col = floor_int32(((double)tx[c] - minX) / STAMP_CELL);
     int32_t row = floor_int32(((double)ty[c] - minY) / STAMP_CELL);
     if (col < 0) col = 0;
@@ -187,17 +205,45 @@ INLINE int build_grid_packed(const float *sun, uint32_t nSun, uint32_t sf, int32
   starts[n] = (int32_t)nSun;
   int32_t *cursor = counts;
   for (int32_t i = 0; i < n; i++) cursor[i] = starts[i];
-  for (uint32_t c = 0; c < nSun; c++) {
-    const int32_t p = cursor[cellOf[c]]++;
-    items[p] = c;
-    px[p] = tx[c];
-    py[p] = ty[c];
+  for (uint32_t k = 0; k < nSun; k++) {
+    const int32_t p = cursor[cellOf[k]]++;
+    items[p] = k;
+    px[p] = tx[k];
+    py[p] = ty[k];
   }
   g->minX = minX;
   g->minY = minY;
   g->gw = gw;
   g->gh = gh;
   return 1;
+}
+
+/* build_grid, with the casters' x and y packed in its item order at px and py (grid_from_xy). The first pass keeps each
+   row's x and y at tx and ty (scratch the gather does not use until the first light) with their bounds, and
+   grid_from_xy reads them there: the same cells and items as build_grid. */
+INLINE int build_grid_packed(const float *sun, uint32_t nSun, uint32_t sf, int32_t *counts, int32_t *starts,
+                             uint32_t *items, uint32_t countsCap, uint32_t itemsCap, Grid *g, float *tx, float *ty,
+                             float *px, float *py, int32_t *cellOf) {
+  double minX = __builtin_inf();
+  double minY = __builtin_inf();
+  double maxX = -__builtin_inf();
+  double maxY = -__builtin_inf();
+  int32_t nan = 0;
+  for (uint32_t c = 0; c < nSun; c++) {
+    const float fx = sun[c * sf];
+    const float fy = sun[c * sf + 1];
+    tx[c] = fx;
+    ty[c] = fy;
+    const double x = fx;
+    const double y = fy;
+    nan |= (x != x) | (y != y);
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  return grid_from_xy(tx, ty, nSun, minX, minY, maxX, maxY, nan, counts, starts, items, countsCap, itemsCap, g, px, py,
+                      cellOf);
 }
 
 INLINE uint32_t f32_bits(float f) {
@@ -827,12 +873,19 @@ int32_t stamp_light_range(uint32_t table) {
   if (maxPE > 0) for (uint32_t c = 0; c < nSun; c++) nearCount[c] = 0;
   Grid g;
   g.exact = 0;
-  /* tmpIdx and dist hold the rows' x and y while the grid is built: they are maxSun long, and the gather does not
-     use them until the first light. */
-  const int grid = gridCounts && gridStarts && gridItems
-    ? build_grid_packed(sun, nSun, sf, gridCounts, gridStarts, gridItems, t[T_GRID_COUNTS_CAP], t[T_GRID_ITEMS_CAP], &g,
-                        dist, (float *)tmpIdx, px, py, cellOf)
-    : 0;
+  /* E-331: the caster scan's x, y and bounds for these rows (its row count is the call's), or none: the build then reads
+     them out of the rows. Without them, tmpIdx and dist hold the rows' x and y while the grid is built: they are maxSun
+     long, and the gather does not use them until the first light. */
+  const float *scanX = (const float *)(uintptr_t)t[T_SCAN_X];
+  const float *scanY = (const float *)(uintptr_t)t[T_SCAN_Y];
+  const double *scanBounds = (const double *)(uintptr_t)t[T_SCAN_BOUNDS];
+  const int scan = scanX && scanY && scanBounds && scanBounds[5] == (double)nSun;
+  const int grid = !(gridCounts && gridStarts && gridItems) ? 0
+    : scan
+    ? grid_from_xy(scanX, scanY, nSun, scanBounds[0], scanBounds[1], scanBounds[2], scanBounds[3], scanBounds[4] != 0.0,
+                   gridCounts, gridStarts, gridItems, t[T_GRID_COUNTS_CAP], t[T_GRID_ITEMS_CAP], &g, px, py, cellOf)
+    : build_grid_packed(sun, nSun, sf, gridCounts, gridStarts, gridItems, t[T_GRID_COUNTS_CAP], t[T_GRID_ITEMS_CAP], &g,
+                        dist, (float *)tmpIdx, px, py, cellOf);
   /* E-315: the ring walk needs cells that bound their casters, and a scratch that holds every candidate (the gather
      stops at tmpCap; the walk keeps no list to stop at that place). */
   const int knn = grid && g.exact && tmpCap >= nSun;

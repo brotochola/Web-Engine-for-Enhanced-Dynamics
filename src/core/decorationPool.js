@@ -17,7 +17,13 @@ import { SharedAtomicPool } from './sharedAtomicPool.js';
 import { randomRange } from '../util/utils.js';
 import { Layer } from './layer.js';
 import { evictDecorationFacade, clearAllDecorationFacades } from '../util/decorationFacades.js';
-import { DECORATION_LIST_EPOCH, DECORATION_MAX_REACH, DECORATION_MOVE_EPOCH, DecorationSpatial } from './decorationSpatial.js';
+import {
+  DECORATION_ATTACHED_COUNT,
+  DECORATION_LIST_EPOCH,
+  DECORATION_MAX_REACH,
+  DECORATION_MOVE_EPOCH,
+  DecorationSpatial,
+} from './decorationSpatial.js';
 import {
   DECORATION_Y_SORT_SCALE,
   DECORATION_INNER_Z_MIN,
@@ -122,6 +128,18 @@ export class DecorationPool extends SharedAtomicPool {
   static listEpoch() {
     const lock = this._activeListLock;
     return lock !== null && lock.length > DECORATION_LIST_EPOCH ? Atomics.load(lock, DECORATION_LIST_EPOCH) : -1;
+  }
+
+  /** E-334: one more (+1) or one fewer (-1) attached decoration in the active list, under its lock. */
+  static _countAttached(delta) {
+    const lock = this._activeListLock;
+    if (lock !== null && lock.length > DECORATION_ATTACHED_COUNT) Atomics.add(lock, DECORATION_ATTACHED_COUNT, delta);
+  }
+
+  /** E-334: how many decorations of the active list have a parent; -1 without the header word. */
+  static attachedCount() {
+    const lock = this._activeListLock;
+    return lock !== null && lock.length > DECORATION_ATTACHED_COUNT ? Atomics.load(lock, DECORATION_ATTACHED_COUNT) : -1;
   }
 
   /** N-141: the bigAtlas frame size of a decoration texture (an animation index), cached; null when unknown. */
@@ -330,16 +348,17 @@ export class DecorationPool extends SharedAtomicPool {
       const d = idxArr[row + k];
       idxArr[row + k] = 0;
       DecorationComponent.parentEntityIndex[d] = decorationNoParent();
-      this._despawnDecorationCore(d);
+      this._despawnDecorationCore(d, true);
     }
   }
 
   /**
    * Core despawn: inactive + compact list + free list. Does not touch attachment table.
    * @param {number} index
+   * @param {boolean} [wasAttached] - it had a parent (the caller cleared it): one fewer attached in the list (E-334)
    * @returns {boolean}
    */
-  static _despawnDecorationCore(index) {
+  static _despawnDecorationCore(index, wasAttached = false) {
     if (!this.initialized || !this.freeList || !this.freeListTop) {
       return false;
     }
@@ -381,6 +400,7 @@ export class DecorationPool extends SharedAtomicPool {
             listPos[moved] = at + 1;
             listPos[index] = 0;
           }
+          if (wasAttached) this._countAttached(-1);
           this._countListChange();
         }
       } finally {
@@ -606,6 +626,7 @@ export class DecorationPool extends SharedAtomicPool {
         this.activeDecorationsData[1 + slot] = i;
         this.activeDecorationsData[0] = slot + 1;
         if (DecorationComponent.listPos) DecorationComponent.listPos[i] = slot + 1;
+        if (hasParent) this._countAttached(1);
         this._countListChange();
       } finally {
         this._unlockActiveList();
@@ -712,12 +733,13 @@ export class DecorationPool extends SharedAtomicPool {
     }
 
     const p = DecorationComponent.parentEntityIndex[index];
-    if (p !== decorationNoParent()) {
+    const wasAttached = p !== decorationNoParent();
+    if (wasAttached) {
       this.removeAttached(p, index);
     }
     DecorationComponent.parentEntityIndex[index] = decorationNoParent();
 
-    return this._despawnDecorationCore(index);
+    return this._despawnDecorationCore(index, wasAttached);
   }
 
   /**
@@ -756,6 +778,10 @@ export class DecorationPool extends SharedAtomicPool {
         // N-141: no decoration left, no reach.
         if (this._activeListLock !== null && this._activeListLock.length > DECORATION_MAX_REACH) {
           Atomics.store(this._activeListLock, DECORATION_MAX_REACH, 0);
+        }
+        // E-334: none attached either.
+        if (this._activeListLock !== null && this._activeListLock.length > DECORATION_ATTACHED_COUNT) {
+          Atomics.store(this._activeListLock, DECORATION_ATTACHED_COUNT, 0);
         }
         this._countListChange();
       } finally {

@@ -52,6 +52,7 @@ import {
   writeEmitTextures,
   writePersistColumns,
   setEmitKeyFrames,
+  EMIT_SLOTS,
 } from '../../src/workers/preRenderEmitClient.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
 import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
@@ -879,6 +880,97 @@ test('E-312 step 2: with K_SKIP the emit writes the statics of marked keyed rows
   // Frame 3, not told to skip: every row written, and Pixi's texture (frames 1 to 3's marks) holds them all.
   emitAt(3, 2, false);
   checkKeys(k, n, 'frame 3', st);
+});
+
+// E-320: the collect writes the poses into the queue being written (E-98d), so the emit's stash is that queue's own pose
+// columns and the kernel leaves them where they are (a sprite that does not inherit its rotation still takes its own).
+// From the same start, the frames with the stash in the queue write what the frames write copying it from elsewhere
+// (queue buffer B's pose columns, given A's before each frame): every byte of queue A and the animation state.
+// E-330: a keyed frame with every column present and Y-sorted keys takes the in-place copy without the column tests;
+// the frames copying the stash take the loop with them all.
+/** E-330: the table slots preRenderEmit.c's all_columns needs (with the sort-key and Y-sort flags). */
+const ALL_COLUMNS = ['qKey', 'kChange', 'aLastTex', 'sKeyedDirty', 'qType', 'sZ', 'scActive', 'scH', 'scOffX', 'scOffY',
+  'qShadowH', 'qShadowOffX', 'qShadowOffY', 'qRepeatX', 'qRepeatY', 'qTileMode', 'qTileOffU', 'qTileOffV', 'qTileMulX',
+  'qTileMulY', 'qSortKey'];
+
+test('E-320, E-330: the emit with the poses already in the queue writes what it writes copying them from elsewhere', async (t) => {
+  const cases = [
+    { ySort: true },
+    { ySort: false, seed: 0xbeef },
+    { ySort: true, keyed: true, allColumns: true },
+    { ySort: true, keyed: true, skip: true, allColumns: true, seed: 0x330 },
+    { ySort: false, keyed: true, seed: 0x331 },
+    { ySort: true, keyed: true, keyedDecorations: true, faces: true, allColumns: true, seed: 0x332 },
+    { ySort: true, faces: true },
+    { ySort: true, bullets: true, lights: true, particles: true, seed: 0x320 },
+  ];
+  for (const opts of cases) {
+    const k = await setup(opts);
+    const { worker: w, b, source, count, maxItems } = k;
+    const n = Math.min(count, maxItems);
+    const A = w.renderQueueBuffers[0];
+    const B = w.renderQueueBuffers[1];
+    assert.equal(source.stashX, A.x, 'the stash is queue A\'s pose columns');
+    assert.equal(w.renderQueueX, A.x, 'the emit writes queue A');
+    // Every column a row gets but the poses holds a marker at the start, so a store one loop leaves out shows.
+    for (const c of [...ROW_COLUMNS.slice(6), 'renderQueueKey']) {
+      if (c === 'renderQueueRotC' || c === 'renderQueueRotS') continue;
+      const v = w[c];
+      if (v && v.length) new Uint8Array(v.buffer, v.byteOffset, n * v.BYTES_PER_ELEMENT).fill(0x5a);
+    }
+    const memory = new Uint8Array(k.m.buffer);
+    const startMemory = memory.slice();
+    const start = k.snapshot();
+    const queueA = new Uint8Array(k.m.buffer, k.m.layout.queueAByte, computeBufferSize(maxItems));
+    const run = (inQueue) => {
+      memory.set(startMemory);
+      k.restore(start);
+      b.testKeyFrame = 0;
+      if (k.keyed) SpriteRenderer.keyedDirty.fill(1);
+      const src = { ...source, persist: k.keyed ? true : source.persist };
+      if (!inQueue) Object.assign(src, { stashX: B.x, stashY: B.y, stashRotC: B.rotC, stashRotS: B.rotS });
+      const frames = [];
+      for (let f = 0; f < 12; f++) {
+        if (!inQueue) {
+          B.x.set(A.x.subarray(0, n));
+          B.y.set(A.y.subarray(0, n));
+          B.rotC.set(A.rotC.subarray(0, n));
+          B.rotS.set(A.rotS.subarray(0, n));
+        }
+        // Pixi drew the frame before; with \`skip\`, nothing reads an unmarked row's statics (K_SKIP).
+        setEmitKeyFrames(b, f + 1, f, opts.skip === true);
+        assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, src), 'every column is in the memory');
+        if (f === 0 && inQueue) {
+          const missing = ALL_COLUMNS.filter((name) => b.table[EMIT_SLOTS.indexOf(name)] === 0);
+          if (opts.allColumns) assert.deepEqual(missing, [], 'the frame takes the all-columns copy (E-330)');
+          else assert.ok(missing.length > 0 || !opts.ySort, 'the frame takes another copy');
+        }
+        writeEmitBulletColumns(b, BulletComponent, w._resolveBuiltinTextureId('_bulletTrail'));
+        writeEmitGlowColumns(b, LightEmitter, Transform, w._resolveBuiltinTextureId('_lightGradient'));
+        writeEmitParticleColumns(b, ParticleComponent, w._resolveBuiltinTextureId('_whiteCircle'),
+          w.zenithalMaxHeight, w.zenithalScaleFactor, w.zenithalAlphaFade);
+        const tilesDirty = w.renderQueueTileMode !== null && (w._faces || w._tiledTileColumns.has(w.renderQueueTileMode));
+        const flags = EMIT_SORT_KEY | (k.ySort ? EMIT_Y_SORT : 0) | (tilesDirty ? EMIT_TILES_DIRTY : 0) | EMIT_BOUNDS;
+        assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n, `frame ${f}: rows`);
+        if (b.results[2] && w.renderQueueTileMode !== null) w._tiledTileColumns.add(w.renderQueueTileMode);
+        frames.push({ queue: queueA.slice(), state: k.snapshot().state, counts: Array.from(b.results.subarray(0, 4)) });
+      }
+      return frames;
+    };
+    const copied = run(false);
+    const inQueue = run(true);
+    for (let f = 0; f < copied.length; f++) {
+      const at = inQueue[f].queue.findIndex((x, i) => x !== copied[f].queue[i]);
+      assert.equal(at, -1, `${JSON.stringify(opts)} frame ${f}: queue A differs at byte ${at}`);
+      assert.deepEqual(inQueue[f].counts, copied[f].counts, `${JSON.stringify(opts)} frame ${f}: the counts`);
+      inQueue[f].state.forEach((v, s) => {
+        const c = copied[f].state[s];
+        assert.deepEqual(Buffer.from(v.buffer, v.byteOffset, v.byteLength), Buffer.from(c.buffer, c.byteOffset, c.byteLength),
+          `${JSON.stringify(opts)} frame ${f}: state ${s}`);
+      });
+    }
+    t.diagnostic(`${JSON.stringify(opts)}: ${n} rows, ${new Set(k.types.slice(0, n)).size} row types`);
+  }
 });
 
 test('the emit kernel fills a queue to its capacity', async (t) => {

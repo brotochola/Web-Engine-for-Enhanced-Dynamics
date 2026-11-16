@@ -109,7 +109,7 @@ INLINE uint32_t gather(
     int32_t maxCellRadius,
     uint32_t patternByte,       /* i32 [dr, dc] pairs, every radius in turn */
     uint32_t patternIndexByte,  /* i32 [first pair, pair count] per radius 0..maxCellRadius */
-    uint32_t markerByte,        /* i32 per entity: this worker's dedup stamps */
+    uint32_t markerByte,        /* i32 per entity: this worker's dedup stamps (only Bs in range are stamped) */
     uint32_t stampFrame,
     uint32_t truncatedByte,     /* u8 per entity: 1 when the row hit maxNeighbors */
     int wide) {
@@ -163,20 +163,22 @@ INLINE uint32_t gather(
       for (uint32_t j = 0; j < count; j++) {
         const uint32_t entityB = wide ? grid32[at + j] : grid16[at + j];
         if (entityA == entityB) continue;
-        if (marker[entityB] == stampedA) continue;
-        marker[entityB] = stampedA;
+        /* E-329: the range test first, the dedup mark only for a B in range. A B out of range fails the same test in
+           every cell it is listed in (the same doubles), so leaving it unmarked keeps it out of the row as the mark
+           did, and the rows, their order and the truncation stay the same; about 3 visits in 4 are such rejects. */
         const double dx = (double)pos[entityB * 4u] - myX;
         const double dy = (double)pos[entityB * 4u + 1u] - myY;
         const double effectiveRange = searchRange + (double)pos[entityB * 4u + 2u];
-        if (dx * dx + dy * dy < effectiveRange * effectiveRange) {
-          if (candCount < maxNeighbors) {
-            if (wide) cand32[candBase + 1u + candCount] = entityB;
-            else cand16[candBase + 1u + candCount] = (uint16_t)entityB;
-            candCount++;
-          } else {
-            truncated = 1;
-            break;
-          }
+        if (!(dx * dx + dy * dy < effectiveRange * effectiveRange)) continue;
+        if (marker[entityB] == stampedA) continue;
+        marker[entityB] = stampedA;
+        if (candCount < maxNeighbors) {
+          if (wide) cand32[candBase + 1u + candCount] = entityB;
+          else cand16[candBase + 1u + candCount] = (uint16_t)entityB;
+          candCount++;
+        } else {
+          truncated = 1;
+          break;
         }
       }
       if (truncated) break;

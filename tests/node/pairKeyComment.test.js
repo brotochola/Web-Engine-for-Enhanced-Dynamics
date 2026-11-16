@@ -46,13 +46,16 @@ const IDW = 'src/util/entityIdWidth.js';
 test('logicWorker.js keeps the pair key out of any Float64Array, and no comment claims one', () => {
   // Strip comments first, or the note that explains the removal documents the very
   // symbol it is reporting as absent - the trap that broke four earlier test files.
-  // E-125 added one Float64Array, the spawn sort's packed keys; the pair key is still a Map key.
+  // E-125 added one Float64Array, the spawn sort's packed keys (E-344 the despawn sort's). E-282 moved the pair from a Map key to two
+  // Int32Array columns of an open-addressing table.
   const src = code(LOGIC);
   const uses = src.match(/[\w.]*\s*=\s*new Float64Array\(/g) || [];
   for (const use of uses) {
-    assert.match(use, /_spawnSortKeys/, `logicWorker.js makes a Float64Array other than the spawn keys: ${use}`);
+    // E-344 sorts the despawn batch with the same packed keys.
+    assert.match(use, /_(de)?spawnSortKeys/, `logicWorker.js makes a Float64Array other than the spawn keys: ${use}`);
   }
-  assert.ok(/this\._pairSlot = new Map\(/.test(src), 'the pair key is a Map key');
+  assert.ok(/this\._pairHashMin = new Int32Array\(/.test(src), 'the pair table keeps its ids in Int32Arrays');
+  assert.ok(!/_pairSlot/.test(src), 'no Map of pair keys is left');
 });
 
 test('the removal note does not itself read as the claim it removes', () => {
@@ -85,26 +88,19 @@ test('no floating JSDoc sits between FOREIGN_SWEEP_FRAMES and the B-09 block', (
   void b09Doc;
 });
 
-test('the pointer sits on the Map that actually stores the key', () => {
+test('the pointer sits on the table that actually stores the pair', () => {
   const src = read(LOGIC);
-  const at = src.indexOf('this._pairSlot = new Map();');
-  assert.ok(at > 0, '_pairSlot is no longer a Map');
-  // The note is BELOW the declaration. Looking above finds the neighbouring
-  // "Tracked contact pairs" block and passes for the wrong reason - the same class of
-  // mistake as the forward-searching doc assertion in preRenderLightTimers.test.js.
-  // 2600 chars because the note is ~1200 long; a window shorter than the comment it is
-  // looking for finds the tail and misses its subject.
-  const after = src.slice(at, at + 2600);
-  assert.match(after, /collisionPairKey/, 'the Map that stores the key has no note about the key');
+  const at = src.indexOf('this._pairHashMin = new Int32Array(0);');
+  assert.ok(at > 0, 'the pair table is gone');
+  // E-282: the note now sits just ABOVE the table it explains (it names the Map it replaced
+  // and the key that Map used). The window stops at the declaration, and nothing may
+  // separate the two: a blank line between them would make the note float again.
+  const note = src.slice(src.lastIndexOf('E-282:', at), at);
+  assert.match(note, /collisionPairKey/, 'the table has no note about the key it replaced');
   // And it must name where the real explanation lives, so the reader is sent there
   // rather than left with a pointer that goes nowhere.
-  assert.match(after, /entityIdWidth\.js/, 'the note does not say where the key is built');
-  // Nothing may float between the declaration and its own note.
-  const firstBreak = after.search(/\n\s*\n/);
-  assert.ok(
-    firstBreak > 0 && after.slice(0, firstBreak).includes('entityIdWidth.js'),
-    'the note is not adjacent to the declaration it explains',
-  );
+  assert.match(note, /entityIdWidth\.js/, 'the note does not say where the key is built');
+  assert.ok(note.length < 1200 && !/\n\s*\n/.test(note), 'the note is not adjacent to the declaration it explains');
 });
 
 // --- the replacement is accurate -------------------------------------------

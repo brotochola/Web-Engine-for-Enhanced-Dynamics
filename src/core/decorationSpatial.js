@@ -21,6 +21,11 @@ export const DECORATION_MOVE_EPOCH = 2;
  * decorations' screen test with it, so a large one is kept while any part of it shows.
  */
 export const DECORATION_MAX_REACH = 3;
+/**
+ * E-334: how many decorations the active list holds with a parent (spawned attached, not yet despawned), changed under
+ * the list's lock with the list. The particle worker skips the attached pass when it reads 0.
+ */
+export const DECORATION_ATTACHED_COUNT = 4;
 
 export class DecorationSpatial {
   static cellSize = 0;

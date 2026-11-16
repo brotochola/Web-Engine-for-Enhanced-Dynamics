@@ -792,9 +792,14 @@ INLINE int32_t keyed_sun_frame(uint32_t e, uint32_t entities, const uint8_t *act
 /* E-192: pack_casters_keyed over the casters it finds itself: the queue rows whose shadowH is above 0 and whose type is
    not a glow's (compactShadowCasterIndices' test), in the queue's order, until cap rows; the same rows the compaction
    and pack_casters_keyed write. 0xffffffff at a caster with no key below keyBase. typeByte 0: no type column. E-372:
-   framed (a constant, so each form is a copy) writes each row's sun frame from the block at S. */
+   framed (a constant, so each form is a copy) writes each row's sun frame from the block at S. xy (E-331, a constant
+   too): also each row's x and y into xs and ys, and at bounds the six doubles the shadow stamp's grid build would work
+   out of the rows (wasm/shadowStamp.c, grid_from_xy): minX, minY, maxX, maxY over the x and y as doubles (its
+   comparisons, in its order: a NaN takes no part), 1 when an x or y is NaN (else 0), and the row count. Written only
+   when the scan returns its rows. */
 INLINE uint32_t casters_keyed_scan(const uint32_t *t, const uint32_t *key, const uint8_t *type, uint32_t count,
-                                   uint32_t cap, float *d, uint32_t keyBase, uint32_t *S, const int framed) {
+                                   uint32_t cap, float *d, uint32_t keyBase, uint32_t *S, const int framed, float *xs,
+                                   float *ys, double *bounds, const int xy) {
   const float *X = F32(t, COL_X), *Y = F32(t, COL_Y);
   const float *SH = F32(t, COL_SHADOW_H), *SOX = F32(t, COL_SHADOW_OFF_X), *SOY = F32(t, COL_SHADOW_OFF_Y);
   const uint8_t *rowType = framed ? (const uint8_t *)(uintptr_t)S[KS_TYPES] : 0;
@@ -813,6 +818,11 @@ INLINE uint32_t casters_keyed_scan(const uint32_t *t, const uint32_t *key, const
   uint32_t *list = framed ? (uint32_t *)(uintptr_t)S[KS_LIST] : 0;
   const uint32_t listCap = framed ? S[KS_LIST_CAP] : 0;
   uint32_t listed = 0;
+  double minX = __builtin_inf();
+  double minY = __builtin_inf();
+  double maxX = -__builtin_inf();
+  double maxY = -__builtin_inf();
+  int32_t nan = 0;
   uint32_t n = 0;
   for (uint32_t i = 0; i < count && n < cap; i++) {
     if (type && type[i] == 3) continue;
@@ -824,8 +834,10 @@ INLINE uint32_t casters_keyed_scan(const uint32_t *t, const uint32_t *key, const
       return 0xffffffffu;
     }
     float *r = d + n * KEYED_CASTER_FLOATS;
-    r[0] = X[i];
-    r[1] = Y[i];
+    const float fx = X[i];
+    const float fy = Y[i];
+    r[0] = fx;
+    r[1] = fy;
     r[2] = (float)s;
     int32_t v = 0;
     if (framed && rowType[i] == 0) {
@@ -844,9 +856,28 @@ INLINE uint32_t casters_keyed_scan(const uint32_t *t, const uint32_t *key, const
     r[4] = sh;
     r[5] = SOX[i];
     r[6] = SOY[i];
+    if (xy) {
+      xs[n] = fx;
+      ys[n] = fy;
+      const double x = fx;
+      const double y = fy;
+      nan |= (x != x) | (y != y);
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
     n++;
   }
   if (framed) S[KS_LISTED] = listed;
+  if (xy) {
+    bounds[0] = minX;
+    bounds[1] = minY;
+    bounds[2] = maxX;
+    bounds[3] = maxY;
+    bounds[4] = nan ? 1.0 : 0.0;
+    bounds[5] = (double)n;
+  }
   return n;
 }
 
@@ -858,8 +889,29 @@ uint32_t pack_casters_keyed_scan(uint32_t table, uint32_t keyByte, uint32_t type
   const uint32_t *key = (const uint32_t *)(uintptr_t)keyByte;
   const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
   float *d = (float *)(uintptr_t)dst;
-  if (sunByte) return casters_keyed_scan(t, key, type, count, cap, d, keyBase, (uint32_t *)(uintptr_t)sunByte, 1);
-  return casters_keyed_scan(t, key, type, count, cap, d, keyBase, 0, 0);
+  if (sunByte) {
+    return casters_keyed_scan(t, key, type, count, cap, d, keyBase, (uint32_t *)(uintptr_t)sunByte, 1, 0, 0, 0, 0);
+  }
+  return casters_keyed_scan(t, key, type, count, cap, d, keyBase, 0, 0, 0, 0, 0, 0);
+}
+
+/* E-331: pack_casters_keyed_scan that also hands the shadow stamp its casters' x, y and bounds (casters_keyed_scan's
+   xy) at xByte, yByte and boundsByte. */
+__attribute__((export_name("pack_casters_keyed_scan_xy")))
+uint32_t pack_casters_keyed_scan_xy(uint32_t table, uint32_t keyByte, uint32_t typeByte, uint32_t count, uint32_t cap,
+                                    uint32_t dst, uint32_t keyBase, uint32_t sunByte, uint32_t xByte, uint32_t yByte,
+                                    uint32_t boundsByte) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint32_t *key = (const uint32_t *)(uintptr_t)keyByte;
+  const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
+  float *d = (float *)(uintptr_t)dst;
+  float *xs = (float *)(uintptr_t)xByte;
+  float *ys = (float *)(uintptr_t)yByte;
+  double *bounds = (double *)(uintptr_t)boundsByte;
+  if (sunByte) {
+    return casters_keyed_scan(t, key, type, count, cap, d, keyBase, (uint32_t *)(uintptr_t)sunByte, 1, xs, ys, bounds, 1);
+  }
+  return casters_keyed_scan(t, key, type, count, cap, d, keyBase, 0, 0, xs, ys, bounds, 1);
 }
 
 /* E-394: the full caster rows' sun frames in the pack (pack and pack_scatter framed), from the block at S (KS_*, as the
