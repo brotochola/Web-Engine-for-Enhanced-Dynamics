@@ -18769,7 +18769,7 @@
     {
       "id": "E-429",
       "title": "DX-DEPTH's edge pass draws every sprite's whole quad again (the opaque pass's instances) and costs nearly as much as the opaque pass, 1.25 against 1.39 ms in light3dCompare all=1 and 0.95 against 1.05 ms in Predator ?light3d=1, though the people's sheets have no soft texels: for them it draws nothing visible",
-      "status": "running",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws (a timer query per draw; GTX 1650, 1920 x 1080, headed Chrome 157); an agent builds it in the weed-par-stamp worktree",
       "date": "2026-11-16",
       "area": "render",
@@ -18783,13 +18783,14 @@
       ],
       "records": [
         "R-1187",
-        "R-1190"
+        "R-1190",
+        "R-1197"
       ]
     },
     {
       "id": "E-430",
       "title": "DX-DEPTH's passes fetch the maps texel and compute the floor depth before the alpha test: the opaque pass could discard alpha below 0.5 first (it can never be solid) and the edge pass alpha 0, saving the fetch and the math on the quads' transparent pixels",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws (a timer query per draw; GTX 1650, 1920 x 1080, headed Chrome 157)",
       "date": "2026-11-16",
       "area": "render",
@@ -18801,7 +18802,8 @@
         "pixel depth discard order"
       ],
       "records": [
-        "R-1187"
+        "R-1187",
+        "R-1197"
       ]
     },
     {
@@ -19124,8 +19126,8 @@
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "bunnyMarkScene: one draw of 159 735 instances, 16.1 ms of draws a recorded frame, drawn in 70 % of the frames (the frame pacer skips the rest: the GPU is the limit); under a 1 px scissor 3.1 ms with 250 000 bunnies (the scene adds bunnies while it keeps its frame rate, so it grew once the fill was gone): about 12 ns a bunny of vertex work, so some 87 % of the drawn cost is fill. bunny.png 26 x 37: 41 % transparent, 59 % opaque, no texel between. The same holds for the LPC people (civil1 to civil4: 5 soft texels in 2.9 M) that Predator and light3dCompare draw by the tens of thousands. instancedSprite.vert.glsl already writes gl_Position.z = aInstDepth; gpuPack.c writes it from the draw order; no batch draws with a depth test today (E-186's note). Under DX-DEPTH it does not apply: gl_FragDepth turns early depth off.",
-      "next": "A per-frame bit for frames with no soft or glowing texel (the one E-429 adds to the frame table), the batch drawing those instances under an opaque tint in reverse order with depth test and write, no blend, discarding alpha under 0.5, then the others in painter order blended with the test and no write. The pack writes the opaque ones reversed into their own range. The image is identical for binary frames; bunnyMark (GPU per drawn frame and the frames drawn) and Predator crowd 2.5 before and after.",
+      "result": "bunnyMarkScene: one draw of 159 735 instances, 16.1 ms of draws a recorded frame, drawn in 70 % of the frames (the frame pacer skips the rest: the GPU is the limit); under a 1 px scissor 3.1 ms with 250 000 bunnies (the scene adds bunnies while it keeps its frame rate, so it grew once the fill was gone): about 12 ns a bunny of vertex work, so some 87 % of the drawn cost is fill. bunny.png 26 x 37: 41 % transparent, 59 % opaque, no texel between. The same holds for the LPC people (civil1 to civil4: 5 soft texels in 2.9 M) that Predator and light3dCompare draw by the tens of thousands. instancedSprite.vert.glsl already writes gl_Position.z = aInstDepth; gpuPack.c writes it from the draw order; no batch draws with a depth test today (E-186's note). Under DX-DEPTH it does not apply: gl_FragDepth turns early depth off. Caveat (R-1197): the atlas is sampled linearly, so even a binary frame's edge pixels carry alpha between 0 and 1 and must still blend: an opaque-only pass would harden the edges.",
+      "next": "Two passes, as DX-DEPTH F5 v2 has them but with the painter's order as the depth (no gl_FragDepth, so early depth stays on): the frames whose texels are only 0 or 255 (E-429's table keeps soft and half apart) under an opaque tint draw their solid pixels (alpha 0.5 and up) in reverse order with depth test and write, no blend; then every instance in painter order, blended, testing depth without writing it, keeping the edge pixels (linear sampling gives a binary sheet's edges fractional alpha: 10.5 % of civil1's drawn pixels at zoom 0.3, R-1197) and the frames that are not binary. Pixels behind a nearer solid one are then rejected by early depth in both passes. The pack writes the opaque instances reversed into their own range. The image stays identical; bunnyMark (GPU per drawn frame, the bunnies it holds at 60 fps) and Predator crowd 2.5 before and after.",
       "refs": [],
       "aliases": [
         "opaque sprites front to back",
@@ -19184,6 +19186,22 @@
       "refs": [],
       "aliases": [
         "glow composite resize crash"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-223",
+      "title": "keyedPackStressScene never drew a keyed frame: keyed frames run only where Pixi packs (preRender.packGpuSprites 'pixi'), and the scene left the default ('preRender'); R-1176's scene readings measured pre-render's pack",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-16 by the edge agent; fixed in 0ea7e5d7 (the scene sets packGpuSprites: pixi)",
+      "date": "2026-11-16",
+      "area": "bench",
+      "kind": "bug",
+      "result": "pixiWorker.js: keyed frames where Pixi packs into the render-queue memory (_pixiKeyed). The scene's kp sittings (R-1176: kp-exports, kp-e387-gbuf) and N-218's profiles ran pre-render's pack (pack_sprites_split and its JS writeGbufWords: E-444's evidence stays, for scenes where pre-render packs). The keyed pack's claims rest on their kernels (gpuPackKeyedMicrobench) and on light3dCompareScene lampMap=1 (E-387, R-1167).",
+      "next": "Measure the keyed pack in its owner scene now that it runs there (E-387's words and the plain pack's exports), and check whether N-218's logic slowdown holds with Pixi packing.",
+      "refs": [],
+      "aliases": [
+        "keyed pack scene not keyed"
       ],
       "records": []
     }
@@ -30911,6 +30929,18 @@
         "2bb13a1d",
         "675db241",
         "5790446b"
+      ]
+    },
+    {
+      "id": "R-1197",
+      "date": "2026-11-16",
+      "title": "E-430 and E-429 kept: alpha first in DX-DEPTH's passes, and a soft-or-glow bit a frame dropping a plain frame's solid pixels from the edge pass early: edge pass -9 % (light3dCompare all=1), -30 % (Predator light3d), image identical",
+      "verdict": "kept",
+      "text": "**E-430 and E-429 kept: DX-DEPTH's passes test the texture's alpha first, and a soft-or-glow bit per frame lets the edge pass drop a plain frame's solid pixels before the twin page. The edge pass is -9 % in light3dCompare all=1 and -30 % in Predator ?light3d=1; the image is pixel-identical.** Built on opt/edge-skip (c95688a6, 5802e20f), merged into main 5af07ff2.\n\n- c95688a6 (E-430): both passes read the alpha first, in GLSL and WGSL. The opaque pass discards alpha under 0.5, and the edge pass alpha 0, before the maps fetch and the depth math.\n- 5802e20f (E-429): a bit per frame, set when the frame has a texel of alpha 1 to 127 or a glowing texel, and also set for frames never scanned.\n  - The registry scans each frame where the trim already reads its pixels and writes the result into the frame's json `base`.\n  - On the CPU it is one byte per frame beside the LUT (textureLutTexels: soft, half, glow, unscanned).\n  - On the GPU it is a flags texel at the end of each LUT row (width 3 x perRow + 1; every shader still takes perRow as width / 3).\n  - The edge pass discards solid pixels early when the bit is clear and the instance has no emissive bits.\n\nThe plan as filed, collapsing the edge pass's quad for binary frames, would have changed the image. Both scenes sample the atlas linearly, so a binary sheet still has bilinear edge pixels (0 < alpha < 0.5) that only the edge pass draws: 10.5 % of civil1.png's drawn pixels at zoom 0.3 in the agent's simulation. The collapse is exact only for atlases sampled nearest without mipmaps, and was not built.\n\nglFrameRecorder --gpu-draws, GTX 1650, 1920 x 1080, one sitting, base -> step 2 -> final:\n\n| scene | edge pass | opaque pass |\n| --- | --- | --- |\n| light3dCompare walkers=20000 props=2000 lamps=48 hour=12 all=1 | 1.228 -> 1.200 -> 1.118 ms (-9 %) | 1.454 -> 1.384 -> 1.377 ms |\n| Predator zoom=0.3 light3d=1 | 1.029 -> 0.848 -> 0.721 ms (-30 %) | 1.10 / 0.98 / 1.41 (the scene varies run to run) |\n\nThe pass costs mostly its fragments: a test that discarded everything but the edge pixels reached only 1.035 ms in light3dCompare. A glow-only bit reads 1.044 ms there, since the props (houses, trees, barrels, rocks) have soft texels. A second bit would recover that 0.07 ms.\n\n- Image: depthSortCheck's still scenes, 16 captures on WebGL and WebGPU, pixel-identical across base, step 2 and final.\n- Tests: new tests/node/frameTexels.test.js covers soft, half, glow, binary and unscanned frames, the json, the CPU array and the GPU bit. Node 2813/2813 and demos 101/101 on the branch.\n\nE-448 needs more than this bit: a draw without blending must also exclude alpha 128 to 254, which the CPU array keeps as its own flag, and linear sampling's edge pixels (see E-448's update).",
+      "commits": [
+        "c95688a6",
+        "5802e20f",
+        "5af07ff2"
       ]
     }
   ],
