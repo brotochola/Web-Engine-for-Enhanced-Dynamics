@@ -15668,7 +15668,8 @@
         "R-1155",
         "R-1157",
         "R-1164",
-        "R-1172"
+        "R-1172",
+        "R-1182"
       ]
     },
     {
@@ -17758,7 +17759,8 @@
         "R-1102",
         "R-1118",
         "R-1178",
-        "R-1180"
+        "R-1180",
+        "R-1182"
       ]
     },
     {
@@ -17782,7 +17784,8 @@
         "R-1102",
         "R-1118",
         "R-1178",
-        "R-1180"
+        "R-1180",
+        "R-1182"
       ]
     },
     {
@@ -18602,6 +18605,24 @@
         "self-shadow projection once"
       ],
       "records": []
+    },
+    {
+      "id": "N-220",
+      "title": "The emit's persist flow never writes the emit table's gate slots for bullets, glows, particles and LiquidFun (bActive, lColor, pcX, lfX): it leans on the memory starting zeroed, and a non-zero table traps emit_rows in trail_row",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the ASan harness (tests/asan), a test-side dependency: the product writes those slots every frame (_writeEmitTable)",
+      "date": "2026-11-16",
+      "area": "pre-render",
+      "kind": "bug",
+      "result": "Under the harness, with relocated regions not zeroed, emit_rows trapped in trail_row (wasm/preRenderEmit.c:852) on the persist path; zero-filled, every case matched the shipped kernel. In the product _writeEmitTable writes the slots each frame, so no frame reaches it today.",
+      "next": "Write the gate slots on the persist path too (or assert them), so a frame that skips _writeEmitTable for those systems cannot read stale slots; a node test with a dirtied table.",
+      "refs": [],
+      "aliases": [
+        "emit persist gate slots"
+      ],
+      "records": [
+        "R-1182"
+      ]
     }
   ],
   "records": [
@@ -30162,6 +30183,18 @@
       "commits": [
         "1082052f",
         "758faade"
+      ]
+    },
+    {
+      "id": "R-1182",
+      "date": "2026-11-16",
+      "time": "05:30",
+      "timeFrom": "recorded",
+      "title": "AddressSanitizer harness on the wasm kernels: no finding in the stamp, the packs, the collect and the emit (main and tonight's branches)",
+      "verdict": "note",
+      "text": "**AddressSanitizer on the wasm kernels: no finding in shadowStamp, gpuPack, preRenderCollect or preRenderEmit, on main and on opt/stamp-rows (e8574ad4) and opt/sunframes-wasm (fe48e8d9).** The harness (tests/asan, merged 2560f0c5; `node tests/asan/runAsan.mjs [kernel[@rev] ...] [--quick] [--list]`) compiles a kernel's C with emcc -fsanitize=address (recover mode, -O1 -g, the shipped SIMD and no-FMA flags, a pthread build so its memory is shared), runs the real clients (bindShadowStamp, bindGpuPack, the collect and emit binders, a branch's own copies from git) against it with every array in its own malloc (sized exactly to the call, so an overrun hits a redzone), runs each call again on the shipped kernel with the same inputs and compares every output byte (scratch filled differently each run, so a read of unwritten scratch shows). A canary must report an off-by-one read, an off-by-one write and a trap at their lines or the run fails; shortened arrays were caught on purpose.\n\nCoverage: shadowStamp 1 056 calls (the shadowStampWasm frames as full and keyed rows, shadowStampSelect's 195 selection frames, 501 edge cases: counts and budgets around 16/64/256, a 128 x 128 grid and a column past it, tmpCap 0/1, refused grids, the stamp exactly full or one row short, cap 0, no or empty lights, ring-walk bounds, E-359's limit); gpuPack 369 calls (every export, keys at keyBase, capacity 0 and 1, the G-buffer columns' ends) and 168 scans with sun frames on fe48e8d9 (each frame table in its own block, entities and directions past every end, lists of 8192/3/1/0 pairs); preRenderCollect 24 cases, 560 calls; preRenderEmit 17 scenes x 30 frames and the persist path, 838 calls. Not covered: spatial, particles, bullets, decals, mesh, nav, painter, visibility; adobe_advance; overruns between columns inside one block; UBSan. Filed: N-220 (the persist path's zeroed gate slots).",
+      "commits": [
+        "2560f0c5"
       ]
     }
   ],
