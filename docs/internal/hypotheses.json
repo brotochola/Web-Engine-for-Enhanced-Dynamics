@@ -20025,6 +20025,23 @@
       "records": [
         "R-1226"
       ]
+    },
+    {
+      "id": "N-239",
+      "status": "open",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "title": "Every ABAB sitting measures main again on its own: when several changes are judged in the same scene and query, a multi-arm sitting (A, B1, B2, ... interleaved in each round) would share the base side and save about a quarter to a third of the bench queue's time; runPredatorAbab takes one --hyp-rev",
+      "statusText": "raised 2026-11-16 by the owner (\"lo que está corriendo ahora, ¿no le sirve también al otro agente?\") while the queue was 8 to 14 turns deep",
+      "result": "On 2026-11-16 the queue held three Predator crowd 2.5 sittings (E-448 gate, E-476, the d8 fixes' guard) and two keyedPack ones, each with its own four runs of main.",
+      "next": "runPredatorAbab --hyp-rev a,b,c (or a new runner): each round runs A and every B in a rotated order, each B judged against the same A with the usual rules (≥ 3 %, ≥ 75 % of pairs, load keys within 5 %); a test on decide's inputs; then batch same-scene hypotheses into one sitting.",
+      "refs": [],
+      "aliases": [
+        "multi-arm sitting",
+        "shared base side"
+      ],
+      "records": []
     }
   ],
   "records": [
