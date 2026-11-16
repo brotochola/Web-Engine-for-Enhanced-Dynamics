@@ -13837,13 +13837,13 @@
     {
       "id": "E-257",
       "title": "Physics' JS service loop allocates about 65 KB/s once Box2D's clock is quiet (serviceChainQueries, LiquidFun queries, pumpQueryWake, waitForLogic)",
-      "status": "running",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-13 from the heap sample after E-256, not tested",
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
       "rank": 30,
-      "result": "Predator, physics after E-256 (87.5 KB/s in all): serviceChainQueries 17.1, serviceLiquidFunQuery 13.1, pumpQueryWake 8.2, serviceLiquidFunExtract 7.9, gameLoop 7.3, waitForLogic 6.8, doStep 4.6 KB/s.",
+      "result": "Kept as hygiene 2026-11-16 (R-1209 batch gate, R-1211 quiet physics check: physics -3.8 %): nothing worse. Predator, physics after E-256 (87.5 KB/s in all): serviceChainQueries 17.1, serviceLiquidFunQuery 13.1, pumpQueryWake 8.2, serviceLiquidFunExtract 7.9, gameLoop 7.3, waitForLogic 6.8, doStep 4.6 KB/s.",
       "next": "Mechanism (R-1103): each service* function creates its closure before checking for a pending query (6 per doStep plus 6 per serviceChainQueries wake); each query adds an options literal and a results subarray; each re-arm a closure, a waitAsync result, a promise and a then closure. Module-level functions and the pending check first; heapSampleWorkers on physics. E-222 sites of the service loop (which allocation each is: closures, boxed numbers, the wake's promises); fix the cheap ones; heap sample again.",
       "refs": [
         "EXECUTION_PLAN.md#E-257"
@@ -13858,7 +13858,8 @@
       "records": [
         "R-1103",
         "R-1117",
-        "R-1209"
+        "R-1209",
+        "R-1211"
       ]
     },
     {
@@ -16832,13 +16833,13 @@
     {
       "id": "E-320",
       "title": "Pre-render's emit copies poses onto themselves: the collect writes poses straight into the queue (E-98d), so sprite_row loads and stores x and y (and rc, rs) at the same address, and deco_row all four",
-      "status": "running",
+      "status": "kept-kernel",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
       "rank": 12,
-      "result": "Verified 2026-11-14 (R-1100, R-1102): without Adobe roots C_STASH_X == Q_X and out == i; persist_frame already tests inQueue, emit_rows does not. About 4 of ~27 loads and 4 of ~13 stores a sprite row; emit_rows is 28.2 % of pre-render at crowd 2.5 and bound by instructions, not memory (R-0997). Estimate emit -5 to -10 %, pre-render -2 to -4 %.",
+      "result": "Kept on its kernel 2026-11-16 (R-1211): emit -11.5 %; Predator crowd 2.5 shadowLights=96 pre-render -1.6 % (-1.0 % against the others), NEUTRAL, product-neutral. Verified 2026-11-14 (R-1100, R-1102): without Adobe roots C_STASH_X == Q_X and out == i; persist_frame already tests inQueue, emit_rows does not. About 4 of ~27 loads and 4 of ~13 stores a sprite row; emit_rows is 28.2 % of pre-render at crowd 2.5 and bound by instructions, not memory (R-0997). Estimate emit -5 to -10 %, pre-render -2 to -4 %.",
       "next": "A variant in preRenderEmitWasmMicrobench with stash == queue (checksum unchanged), the test kept outside the per-row work (an unswitched or copied loop); then Predator crowd 2.5.",
       "refs": [
         "EXECUTION_PLAN.md#E-320"
@@ -16852,7 +16853,8 @@
         "R-1100",
         "R-1102",
         "R-1112",
-        "R-1209"
+        "R-1209",
+        "R-1211"
       ]
     },
     {
@@ -17041,13 +17043,13 @@
     {
       "id": "E-329",
       "title": "The gather marks every visited candidate before its range test: about 3 visits in 4 are rejects, each reading and writing marker[B] (the marks are 15 % of the gather, R-1033)",
-      "status": "running",
+      "status": "screened",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "spatial",
       "kind": "speed",
       "rank": 27,
-      "result": "Read (R-1102): Predator's cell radius 2 (about 21 cells of 128 px against a ~153 px circle); a rejected B fails the same double test in every cell, so rows, order and truncation stay identical. gather_batch is 42.4 % of spatial at crowd 2.5 (R-1100). Estimate gather -5 to -10 % (the low end: E-309 found far rejects cheap).",
+      "result": "Screened 2026-11-16 (R-1211): Predator crowd 2.5 spatial -0.9 % at a ±0.9 % limit, where the Node kernel (gather -9.6 %) predicts about -4 %; the Chrome replay (spatialGatherReplayKernel) was never run. Read (R-1102): Predator's cell radius 2 (about 21 cells of 128 px against a ~153 px circle); a rejected B fails the same double test in every cell, so rows, order and truncation stay identical. gather_batch is 42.4 % of spatial at crowd 2.5 (R-1100). Estimate gather -5 to -10 % (the low end: E-309 found far rejects cheap).",
       "next": "Test the position first and touch the marker only for a passing B: spatialGatherWasmMicrobench --n 57600 --workers 1 --per-cell 32 --types predator with equal checksums, then spatialGatherReplayKernel in Chrome. Variant: each entity inserted in one cell (its centre) with the query widened by the largest half extent, so no candidate repeats and no marks at all.",
       "refs": [
         "EXECUTION_PLAN.md#E-329"
@@ -17061,19 +17063,20 @@
         "R-1100",
         "R-1102",
         "R-1111",
-        "R-1209"
+        "R-1209",
+        "R-1211"
       ]
     },
     {
       "id": "E-330",
       "title": "Pre-render's sprite_row runs about 20 tests whose answer never changes in the loop (columns present, sortKey, ySort, tilesDirty): about 68 branch sites in the compiled sprite path",
-      "status": "running",
+      "status": "kept-kernel",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
       "rank": 29,
-      "result": "Read (R-1102): sKeyedDirty, qKey with kChange, aLastTex, sZ, the seven in queue_shadow, qType and others are tested per row. Estimate 10-15 % fewer instructions there, pre-render -2 to -4 %, on top of the self-copy row.",
+      "result": "Kept on its kernel 2026-11-16 (R-1211): -9.3 % / -7.4 %; Predator crowd 2.5 shadowLights=96, two sittings (one with the sides swapped), about -2.5 % against the others over 8 pairs: under the bar, product-neutral. Read (R-1102): sKeyedDirty, qKey with kChange, aLastTex, sZ, the seven in queue_shadow, qType and others are tested per row. Estimate 10-15 % fewer instructions there, pre-render -2 to -4 %, on top of the self-copy row.",
       "next": "One flags word picks a copy in which every column is known present (as collect's MODE_ copies); preRenderEmitWasmMicrobench with the same checksum, watching code size.",
       "refs": [
         "EXECUTION_PLAN.md#E-330"
@@ -17085,19 +17088,20 @@
       "records": [
         "R-1102",
         "R-1112",
-        "R-1209"
+        "R-1209",
+        "R-1211"
       ]
     },
     {
       "id": "E-331",
       "title": "The stamp's grid build makes three passes over every sun caster each frame, and the first re-reads the 28-byte keyed rows pack_casters_keyed_scan just wrote",
-      "status": "running",
+      "status": "screened",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
       "rank": 31,
-      "result": "Read (R-1102): the grid build was 38 % of the stamp before E-160; pack_casters_keyed_scan is 4.8 % of pre-render at crowd 2.5 (R-1100). Estimate pre-render -1.5 to -2 %.",
+      "result": "Screened 2026-11-16 (R-1211): Predator crowd 2.5 shadowLights=96 with the scan taken out, pre-render +1.6 % raw, -0.6 % against the others: a tie; its kernel claim (replay -11.9 %) does not count the scan's x/y/bounds stores: a replay of pack and stamp together is owed. Read (R-1102): the grid build was 38 % of the stamp before E-160; pack_casters_keyed_scan is 4.8 % of pre-render at crowd 2.5 (R-1100). Estimate pre-render -1.5 to -2 %.",
       "next": "The scan also writes x/y arrays and the min/max (pass 1 goes); pass 2's floor((x - minX) / 256) in f64x2 (exact); shadowStampReplay checksum, then Chrome.",
       "refs": [
         "EXECUTION_PLAN.md#E-331"
@@ -17113,7 +17117,8 @@
         "R-1180",
         "R-1192",
         "R-1208",
-        "R-1209"
+        "R-1209",
+        "R-1211"
       ]
     },
     {
@@ -17211,13 +17216,13 @@
     {
       "id": "E-336",
       "title": "The particle worker's stamp loop passes five doubles to stampParticleToTile: stampCollectedParticles makes 63-76 KB/s, about 40 % of the worker's garbage",
-      "status": "running",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "particle",
       "kind": "speed",
       "rank": 62,
-      "result": "Heap pass (R-1100): the particle worker 155 KB/s, stampCollectedParticles 66.6; code pass: stampCollectedParticles stays in Maglev (231 bytes). Read (R-1103): the callee has a warn path, a Set and a flush and competes for the 920-byte budget; particlesToStamp starts as null (the field rule) and is read through this on every pass.",
+      "result": "Kept as hygiene 2026-11-16 (R-1209 batch gate, R-1211 quiet physics check: physics -3.8 %): nothing worse. Heap pass (R-1100): the particle worker 155 KB/s, stampCollectedParticles 66.6; code pass: stampCollectedParticles stays in Maglev (231 bytes). Read (R-1103): the callee has a warn path, a Set and a flush and competes for the 920-byte budget; particlesToStamp starts as null (the field rule) and is read through this on every pass.",
       "next": "Write the W26 record (b.f64/b.u32) straight from the columns inside the loop; particlesToStamp starts as an empty typed array; heapSampleWorkers on the particle worker, A/B.",
       "refs": [
         "EXECUTION_PLAN.md#E-336"
@@ -17230,7 +17235,8 @@
         "R-1100",
         "R-1103",
         "R-1117",
-        "R-1209"
+        "R-1209",
+        "R-1211"
       ]
     },
     {
@@ -17398,13 +17404,13 @@
     {
       "id": "E-344",
       "title": "Despawns shift the shared active lists one entity at a time (a copyWithin of activeEntitiesData, 115 KB at crowd 2.5, and of the type list)",
-      "status": "running",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
       "rank": 72,
-      "result": "Reads (R-1103, R-1104): O(n x D) a frame on logic0, rewritten under every reader; both logic workers rebuild the tick buckets of every changed type each frame; logic0's extra serial work unbalances the pair (4.85 against 4.56 ms, R-0354) and physics waits for the slower. CPU pass (R-1100): removeFromActiveEntities 2.5 % of logic0. Spawns already merge per batch.",
+      "result": "Kept as hygiene with its kernel claim 2026-11-16 (R-1211): Predator logic0 -2.4 % (NEUTRAL; logic's limit there is ±6.4 %); nothing regressed. Reads (R-1103, R-1104): O(n x D) a frame on logic0, rewritten under every reader; both logic workers rebuild the tick buckets of every changed type each frame; logic0's extra serial work unbalances the pair (4.85 against 4.56 ms, R-0354) and physics waits for the slower. CPU pass (R-1100): removeFromActiveEntities 2.5 % of logic0. Spawns already merge per batch.",
       "next": "Sort the despawn batch and compact once; Predator crowd 2.5 logic0 against logic1.",
       "refs": [
         "EXECUTION_PLAN.md#E-344"
@@ -17419,7 +17425,8 @@
         "R-1104",
         "R-1115",
         "R-1188",
-        "R-1209"
+        "R-1209",
+        "R-1211"
       ]
     },
     {
@@ -17544,13 +17551,13 @@
     {
       "id": "E-348",
       "title": "rng() loads globalThis.rng on every call and is inlined in many functions, so a global written in play deopts them all (dependent prototype chain changed)",
-      "status": "running",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
       "rank": 78,
-      "result": "Deopt pass (R-1100): 102 \"dependent prototype chain changed\" deopts in the run; the steady ones in person.js, civilian.js, particleTween.js, soundManager.js and scene.js, twice each (once a logic worker). Globals written after start: self.__weedPageOrigin from a message (abstractWorker.js), globalThis.rng in scene.js's constructor and in sceneSharedBuffers.js's cleanup.",
+      "result": "Kept as hygiene 2026-11-16 (R-1209 batch gate, R-1211 quiet physics check: physics -3.8 %): nothing worse. Deopt pass (R-1100): 102 \"dependent prototype chain changed\" deopts in the run; the steady ones in person.js, civilian.js, particleTween.js, soundManager.js and scene.js, twice each (once a logic worker). Globals written after start: self.__weedPageOrigin from a message (abstractWorker.js), globalThis.rng in scene.js's constructor and in sceneSharedBuffers.js's cleanup.",
       "next": "Keep the generator in a module binding set at init (rng() reads it; globalThis.rng stays for user code); a deopt pass shows the prototype-chain deopts gone; the rng kernel unchanged.",
       "refs": [
         "EXECUTION_PLAN.md#E-348"
@@ -17563,19 +17570,20 @@
       "records": [
         "R-1100",
         "R-1117",
-        "R-1209"
+        "R-1209",
+        "R-1211"
       ]
     },
     {
       "id": "E-349",
       "title": "The tick bucket's typeInfo literal gains six fields on its first frame (logicWorker.js), which matches _tickIntervalBucket compiled twice",
-      "status": "running",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
       "rank": 79,
-      "result": "Verified 2026-11-14 in the code (R-1103); CPU pass (R-1100): _tickIntervalBucket 3.9-6.9 % of a logic worker.",
+      "result": "Kept as hygiene 2026-11-16 (R-1209 batch gate, R-1211 quiet physics check: physics -3.8 %): nothing worse. Verified 2026-11-14 in the code (R-1103); CPU pass (R-1100): _tickIntervalBucket 3.9-6.9 % of a logic worker.",
       "next": "Declare the six fields in the literal; the code pass shows one compile.",
       "refs": [
         "EXECUTION_PLAN.md#E-349"
@@ -17588,19 +17596,20 @@
         "R-1100",
         "R-1103",
         "R-1117",
-        "R-1209"
+        "R-1209",
+        "R-1211"
       ]
     },
     {
       "id": "E-350",
       "title": "Fraction fields start as Smi 0 on every worker (abstractWorker.js's timing fields): each first fractional write migrates the map, a warm-up deopt",
-      "status": "running",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "engine",
       "kind": "speed",
       "rank": 80,
-      "result": "Read (R-1103); fieldTypeAudit.mjs only checks fields that start null and later hold a typed array.",
+      "result": "Kept as hygiene 2026-11-16 (R-1209 batch gate, R-1211 quiet physics check: physics -3.8 %): nothing worse. Read (R-1103); fieldTypeAudit.mjs only checks fields that start null and later hold a typed array.",
       "next": "Start them as doubles (NaN where falsy is needed); extend fieldTypeAudit to Smi-then-double fields; workerShape.test for the other workers.",
       "refs": [
         "EXECUTION_PLAN.md#E-350"
@@ -17612,19 +17621,20 @@
       "records": [
         "R-1103",
         "R-1117",
-        "R-1209"
+        "R-1209",
+        "R-1211"
       ]
     },
     {
       "id": "E-351",
       "title": "Arrow closures are still made every frame: logic0's _drainSpawnCommandRing builds a context and a closure, and the particle worker's drainStampRing too (with 5 doubles a stamp)",
-      "status": "running",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "engine",
       "kind": "speed",
       "rank": 81,
-      "result": "Read (R-1103): about 4-8 KB/s; Hot-path Hyp 5 fixed only the contact rings.",
+      "result": "Kept as hygiene 2026-11-16 (R-1209 batch gate, R-1211 quiet physics check: physics -3.8 %): nothing worse. Read (R-1103): about 4-8 KB/s; Hot-path Hyp 5 fixed only the contact rings.",
       "next": "Module-level functions with their state passed in; heapSampleWorkers on logic and particle.",
       "refs": [
         "EXECUTION_PLAN.md#E-351"
@@ -17636,7 +17646,8 @@
       "records": [
         "R-1103",
         "R-1117",
-        "R-1209"
+        "R-1209",
+        "R-1211"
       ]
     },
     {
@@ -19596,6 +19607,39 @@
       "records": [
         "R-1210"
       ]
+    },
+    {
+      "id": "N-231",
+      "title": "runPredatorAbab reads an all-digit sha as a number: --vs 09443713 reached git as 9443713 and failed with \"Needed a single revision\"; revision arguments must stay strings",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the PR #12 sittings agent",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "E-331's first sitting (12:06:38) died in one second; the full sha worked.",
+      "next": "parseArgs keeps --vs, --hyp-rev and every rev-like flag a string (or the runner String()s them before git), with a test on an all-digit short sha.",
+      "refs": [],
+      "aliases": [
+        "abab digit sha"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-232",
+      "title": "Leave-one-out Predator sittings of small builds read 4/4 shifts on workers the change cannot reach (spatial +7.5 %, physics +5.8 %, logic +9 %) while the A/A reads ±0.3 %: the two builds play different battles from one seed (BODY_MOVED_COUNT differs 4/4), so such verdicts need --restore (E-210) or the unreachable workers fitted against their load key",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the PR #12 sittings agent",
+      "date": "2026-11-16",
+      "area": "bench",
+      "kind": "bug",
+      "result": "E-330's first sitting: REGRESSION on spatial +7.5 % and physics +5.8 % (4/4) with moved bodies +1.2 to +2.5 % on B, gone with the sides swapped; E-331's: logic +9 % 4/4 with 12.8 % more moved bodies in one pair. Today's A/A: every worker within ±1 %.",
+      "next": "Default leave-one-out sittings of a build to --restore (the same world each run), or make the runner fit spatial and physics against BODY_MOVED_COUNT before it calls a regression on them (HOW_WE_MEASURE says so for emergent scenes); and note the floor: on a quiet machine Predator crowd 2.5's pre-render and logic run 5.4 to 6.1 ms, so pre-render owners need shadowLights=96 and logic has no knob there.",
+      "refs": [],
+      "aliases": [
+        "battle drift in leave-one-out",
+        "predator floor quiet"
+      ],
+      "records": []
     }
   ],
   "records": [
@@ -31496,6 +31540,15 @@
         "6207fee8",
         "ad2f093c"
       ]
+    },
+    {
+      "id": "R-1211",
+      "date": "2026-11-16",
+      "time": "12:41",
+      "timeFrom": "recorded",
+      "title": "PR #12's leave-one-outs on a quiet machine: none clears 3 % alone (E-330 -2.5 % against the others over 8 pairs); physics -3.8 % (no regression); the whole merge pre-render -10.9 %",
+      "verdict": "note",
+      "text": "**PR #12's leave-one-out sittings, on a quiet machine. None of the five candidates clears the 3 % product bar on its own, and nothing regressed. Physics, re-checked, reads -3.8 % (R-1209's +15 % was the loaded machine). The whole merge measures pre-render -10.9 % (-5.2 % against the others).** Every sitting through the FIFO lock, runPredatorAbab --pool --pairs 4, headed, AC power, CPU load 0 to 4 % before each, 2026-11-16 11:35 to 12:41 (the sittings agent's logs). A sides are main with the candidate taken out, B is main fedfc5d5.\n\nChanges from the brief:\n- Pre-render sittings ran at shadowLights=96. On the quiet machine, Predator crowd 2.5's pre-render reads 5.5 to 5.7 ms, under the floor (5.9 at 72 lights, 6.5 at 96); a probe at 96 confirmed every frame takes E-330's copy and the scan's xy (298 of 298).\n- E-331's A side sets the scan to null, so A does not pay its stores (0 of 292 stamp calls used the scan's xy on A).\n- E-320's A side keeps E-330 (built on E-320's rows_in_place) with inq 0 at both in-place calls.\n\nToday's A/A (aa-loo, 12:16 to 12:21): every worker within ±1 %. Detection limits at 4 pairs: spatial ±0.9 %, physics ±1.9 %, pre-render ±4.7 % raw / ±3.5 % against the others, logic ±6.4 % / ±5.9 %. At 8 pairs, pre-render ±3.3 % / ±2.5 %.\n\n| sitting | A -> B | time | owner A -> B | paired | against the others | verdict | others |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| pr12-physics | cf93c047 -> 15cb911f | 11:35 to 11:40 | physics 13.159 -> 12.659 | -3.8 % (1/4 worse) | | KEPT (product) | pre-render -10.9 % (-5.2 % against the others, 4/4), logic -8.5 %, spatial -3.0 %, renderer -5.6 % |\n| E-320-loo-sl96 | 09545ba0 -> fedfc5d5 | 12:36 to 12:41 | pre-render 6.319 -> 6.170 | -1.6 % (0/4) | -1.0 % | NEUTRAL | logic -6.0 % |\n| E-330-loo-sl96 | ce4dcde9 -> fedfc5d5 | 11:52 to 11:55 | 6.288 -> 6.669 | +6.2 % (3/4) | -3.2 % | REGRESSION on spatial +7.5 %, physics +5.8 % (4/4) | moved bodies +1.2 to +2.5 % on B |\n| E-330-loo-sl96-swap | fedfc5d5 -> ce4dcde9 | 12:00 to 12:05 | 6.060 -> 6.268 (the side without E-330 worse) | +3.6 % | +2.5 % | the first sitting's regression did not repeat | spatial +1.1 %, physics +0.3 % |\n| E-330 both, 8 pairs | | | | | about -2.5 % (6/8) | | |\n| E-331-loo-sl96 | 09443713 -> fedfc5d5 | 12:07 to 12:12 | 6.152 -> 6.302 | +1.6 % (2/4) | -0.6 % | NEUTRAL | pair 3: 12.8 % more moved bodies, physics +10.8 % |\n| E-329-loo (spatial) | 990801bb -> fedfc5d5 | 12:25 to 12:30 | spatial 9.872 -> 9.786 | -0.9 % (1/4) | | NEUTRAL | physics -2.6 % |\n| E-344-loo (logic) | 5108d83a -> fedfc5d5 | 12:31 to 12:36 | logic 6.035 -> 5.954 | -2.4 % (2/4) | -1.9 % | NEUTRAL | |\n\nE-320's first sitting at 48 lights (11:41 to 11:46) was under the floor and not judged.\n\nVerdicts:\n- E-320: kept on its kernel (emit -11.5 %), scene product-neutral.\n- E-330: kept on its kernel (-9.3 % / -7.4 %). The scene reads about -2.5 % against the others over 8 pairs, under the bar; both REGRESSION verdicts were the battle's drift and did not repeat swapped.\n- E-331: screened. The scene is a tie, and its kernel claim (stamp replay -11.9 %) does not count the scan's own x/y/bounds stores; a replay of pack and stamp together is owed.\n- E-329: screened. The Node kernel's gather -9.6 % predicts spatial about -4 %, but the scene reads -0.9 % at a ±0.9 % limit; the Chrome replay was never run (R-1111).\n- E-344: kept-hygiene with its kernel claim. Predator cannot resolve it (logic ±6.4 %, and its whole possible gain is about 2.5 % of logic0).\n- E-257 and the hygiene group (E-348 to E-351, E-336): kept-hygiene. The quiet physics check and the batch gate show nothing worse.\n\nThe three pre-render leave-one-outs (-1.0, -2.5 and -0.6 % against the others) add up to about -4 %, which fits the merge's -5.2 %.\n\nOdd:\n- Workers the change cannot reach moved 4/4 one way in some sittings: spatial +7.5 %, physics +5.8 % and logic +8.9 % in E-330's first; logic +9 % in E-331's. The A/A read ±0.3 %. Physics follows BODY_MOVED_COUNT, so the two builds play different battles from one seed (N-232).\n- The runner read an all-digit --vs sha (09443713) as a number, and git failed (N-231)."
     }
   ],
   "leads": [
