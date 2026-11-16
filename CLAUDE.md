@@ -10,13 +10,19 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
 - **Engine or demo?** If a request could mean either ("fix the camera", "make it faster"), ask.
   Engine work stays generic: no special case for one demo inside `src/`. Demo work uses public
   APIs. (`.cursor/rules/engine-vs-demo.mdc`)
+- **Judgment over procedure.** These rules are tools: decide from a change's size and risk how much it
+  needs, skip a step that cannot change the verdict (say so in a line), and fix a rule that keeps getting
+  in the way. A speed claim is still measured in the scene that runs it: one idea in four still loses there.
 - **Speed claims:** read what was already tried first (`node scripts/hypotheses.mjs find <words>`),
-  then follow `docs/internal/HOW_WE_MEASURE.md`. A record is evidence about one sitting, not a ban.
+  then follow `docs/internal/HOW_WE_MEASURE.md`. A record is evidence about one sitting, not a ban:
+  reopen dropped ideas when the code moved or a better way to write them appears (a kernel that won
+  and a scene that lost first).
 - **The register:** `docs/internal/hypotheses.json` holds every hypothesis (status, one-line result,
   rank while pending) and every record of the work on it (each sitting, kernel run, gate and decision,
   with its date, its time when known, its verdict and its numbers). After a sitting, the same day:
   `node scripts/hypotheses.mjs record --hyp <id> --title "…" --verdict <word> [--status <word>]
-  --text-file <note.md>`; `show <id>` and `log` read it, and `node scripts/buildHypothesesPage.mjs --open`
+  --text-file <note.md>`, a few lines (numbers, verdict, why in one sentence), committed once per session
+  or batch, not one commit per record; `show <id>` and `log` read it, and `node scripts/buildHypothesesPage.mjs --open`
   builds the page with its timeline (`hypotheses.html`, not committed). Its links into the docs name a row
   by key, never by line (`EXECUTION_PLAN.md#E-82b`); a node test fails when a key finds no row or several.
   `HYPOTHESIS_LOG.md` is only a pointer now: its rows are records. Branches merge the register by key
@@ -98,6 +104,9 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
 
 ## Measuring (digest of HOW_WE_MEASURE)
 
+- How much, by size: a big plain change (a trace shows it, ≥ 10 % expected) runs `--early` on its owner
+  scene; one near the bar (3–10 %) runs everything below; a fix off the hot path needs only the suites
+  (HOW_WE_MEASURE "Judgment first").
 - Lowest layer that can see the change: kernel → stress scene → gameplay scene (Predator).
 - Kernel: calls the shipped function, never writes `src/`, reports ops/s with a checksum, warms up
   through short calls so the timed code is a normal compile, not OSR (say which tier it timed;

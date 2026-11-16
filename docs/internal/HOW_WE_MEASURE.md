@@ -14,6 +14,28 @@ a ban](#old-records-are-evidence-not-a-ban)).
 
 Plans, this document, records and reports are written in English, in full sentences.
 
+## Judgment first
+
+These rules are tools, not a ritual. Whoever does the work, a person or a model, decides from a change's
+size and risk how much measuring it needs, and skips a step that cannot change the verdict, with one line
+in the record saying which and why. A rule that keeps getting in the way is changed here, the day it does.
+
+The register on 2026-11-16 gives the reason for both halves. About one speed idea in four still lost or
+tied in its scene (one in two in September), some after a kernel that had won by far, so a speed claim is
+still measured in the scene that runs it. But the median keep was 15 % and three keeps in four were 7 % or
+more, which one honest sitting sees; the fine machinery below (the session's A/A, 4 + 4 pairs, 75 % of the
+pairs) exists for the claims near 3 %. So there are three lanes:
+
+- **A big, plain change** (a trace shows the cost, the owner is expected to get 10 % cheaper or more): its
+  owner scene with `--early` (2 pairs, kept when both clear twice the bar), read against the scene's last
+  A/A on record. No Predator gate of its own: it joins the next batch's.
+- **A change near the bar** (3 to 10 %): every rule below. They were written for this.
+- **A fix or cleanup off the hot path:** the suites are the check (`test:node`, and `test:demos` when a game
+  can see it); no sitting. On a hot path it joins a batch's gate.
+
+Rules also leave: one nobody has needed for a month moves to the appendix as history, and a new rule names
+the incident that paid for it and the rule it replaces.
+
 ## The rules on one page
 
 1. **Climb only as far as the claim needs:** kernel, then the owner scene (a seeded stress scene that runs
@@ -53,8 +75,9 @@ Plans, this document, records and reports are written in English, in full senten
 8. **Correctness first, by a test:** bit-identical when that is free, within a stated tolerance held by a
    test when exactness would cost speed. A timing whose checksum differs does not exist.
 9. **One benchmark at a time, on a quiet machine.** Agents write kernels and tests; they do not time.
-10. **Write the record the same day** with the numbers that decided it and the sitting's detection limit
-    (`node scripts/hypotheses.mjs record`). Raw result files are not kept.
+10. **Write the record the same day**, short: the numbers that decided it, the sitting's detection limit,
+    and why it won or lost in one sentence (`node scripts/hypotheses.mjs record`). Records are committed
+    together, once per session or batch of sittings. Raw result files are not kept.
 11. **A total is measured, not added:** what a campaign gained, a projection or a README number comes from
     one sitting that runs the changes together. The register's percentages, added up, overstate it.
 
@@ -431,10 +454,13 @@ CPU samples say where time goes; they are never a speed verdict.
 
 - **The register is the record.** After a sitting, the same day:
   `node scripts/hypotheses.mjs record --hyp <id> --title "…" --verdict <word> [--status <word>]
-  [--commits <ids>] --text-file <note.md>`. The text says the hypothesis in one sentence, what ran (kernel,
-  scene, knobs, pairs), both sides' medians with their cv, the load keys, the verdict and why, in words a
-  newcomer can read, and the sitting's detection limit, whatever the verdict. `--status` also sets the
-  hypothesis's status; update its one-line `result` with `--result`.
+  [--commits <ids>] --text-file <note.md>`. The text is a few lines a newcomer can read: the hypothesis in
+  one sentence, what ran (kernel, scene, knobs, pairs), both sides' medians, the verdict with the sitting's
+  detection limit, and why it won or lost in one sentence. That last sentence is what a later reopening
+  needs ("the slot Map eats the sqrt"). `--status` also sets the hypothesis's status; update its one-line
+  `result` with `--result`.
+- **Short, and committed together.** A note without a verdict is written only when it changes a decision
+  or a plan. The register goes in one commit of its own per session or batch of sittings, not one per record.
 - **A report** (`docs/internal/reports/`, full prose) only for a campaign, or a result that needs the
   story; the record links it.
 - **Raw results are not kept.** `tests/results/` is gitignored and holds thousands of files nobody keeps;
@@ -451,10 +477,14 @@ verdict was written. Measure again when:
   sort, the WASM kernels and this protocol have all moved);
 - the sitting was thin or flawed: one short run, detailed stats on, the wrong regime, unmatched load, a
   side served from the main folder, a contaminated machine, a floor that has since been replaced;
-- the scene or config differs from the question now.
+- the scene or config differs from the question now;
+- the kernel won and the scene lost: the idea may be right and the way it was wired in wrong ("Stay without
+  sqrt": kernel +553 % ops/s, logic +20.4 % because the slot Map ate the sqrt). These come first;
+- whoever looks again, a person or a newer model, sees a better way to write it.
 
-Reopen an old verdict as a new hypothesis that points at the old one (E-123 to E-128 did), and leave the
-old record as it was.
+Every so often, after a new model or a big change to the engine, go through the dropped and tied hypotheses
+and reopen the promising ones: the register keeps every try for this. Reopen an old verdict as a new
+hypothesis that points at the old one (E-123 to E-128 did), and leave the old record as it was.
 
 ## Engine-wide claim
 
