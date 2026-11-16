@@ -106,8 +106,8 @@ export function decodeGbufWord(word) {
  * when `zIndex` is given and the order is the painter's (zIndex first): 0 otherwise. A row whose entity, from the key
  * or the collector, is at or past `entities` is none (E-444: the kernels read no column past it).
  * A module function over the columns it is handed: the loop is hot in a scene with a G-buffer (one pass a frame over the
- * drawn instances). E-387: Pixi's keyed frames take the keyed pack's twin of it (gpuPack.c pack_keyed); this one writes
- * the rest.
+ * drawn instances). E-387: Pixi's keyed frames take the keyed pack's twin of it (gpuPack.c pack_keyed); E-444:
+ * pre-render's split and indexed frames, the split and indexed packs' (their _gbuf exports); this one writes the rest.
  * @param {Float32Array} out
  * @param {number} n
  * @param {Uint32Array|Int32Array|null} order
