@@ -107,10 +107,12 @@ import {
   lampColumnIndex,
   lampTileLayout,
   writeLampTile,
+  writeLampTileOwner,
 } from '../render/lampShadowMap.js';
 import { instancedSpriteGlProgram, pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
 import {
   VOLUME_LAMP_FRAGMENT,
+  volumeLampVertices,
   volumeLampVertex,
   volumeLampWgsl,
   volumeMapGpuProgram,
@@ -123,6 +125,7 @@ import {
   gidPageSize,
   gidPageByteLength,
   gidPageHasTile,
+  gidPageQuads,
   packGidPageRgba8,
 } from '../render/tilemapGid.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
@@ -435,6 +438,9 @@ function mapDepthState() {
   state.culling = false;
   return state;
 }
+
+/** E-404: the glows' bounds' seed (a module constant: CLAUDE.md, the global Infinity in a branch boxes its doubles). */
+const GLOW_BOUND_INF = Infinity;
 
 /** Umbra floor. Matches ShadowCaster pointShadowAlphaScale so a hard block is not pitch black. */
 const UMBRA_FLOOR = 0.33;
@@ -976,6 +982,19 @@ class PixiRenderer extends AbstractWorker {
     this._glowQuadBuffer = null;
     this._glowRtLayer = { resolution: 1 };
     this._glowRtTransform = new Matrix();
+    // E-404: the lightGlows layer drawn into a target a share of the canvas (the layer's resolution, from
+    // lighting.lightGlowResolution) and added to the frame once by a sprite; null while the glows draw onto the frame.
+    this._glowLayerRT = null;
+    this._glowLayerHost = null;
+    this._glowLayerSprite = null;
+    /** The resolution the target was made at (a double from the start; NaN: no target). */
+    this._glowLayerRes = NaN;
+    /** Canvas px to the target's px (the glow mesh keeps the canvas's camera placement under it). */
+    this._glowLayerTransform = new Matrix();
+    /** The sprite's texture: the target's part this frame's glows cover (its frame, in the target's px). */
+    this._glowLayerTexture = null;
+    /** This frame's glows' rect on the canvas (x0, y0, x1, y1; px), _glowScreenBounds. */
+    this._glowLayerBounds = new Float64Array(4);
     this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
     // DX-SHADOW3D: lighting.sunShadows 'map' (src/render/sunShadowMap.js): the sun's shadow map, its pass and terms.
     this._sunMapOn = false;
@@ -986,8 +1005,8 @@ class PixiRenderer extends AbstractWorker {
     // World px to the sun map's texels, (world - camera) · screenScale as its cards land, for the volumes (written when
     // it changes: a Matrix's fields are tagged, each double written a heap number).
     this._volumeMapTransform = new Matrix();
-    // DX-SHADOW3D (F7): the volumes in the lamps' map: { batch, host, meshes: a mesh a tile } a volumes' batch, and their
-    // program's options and state (made on first use).
+    // DX-SHADOW3D (F7): the volumes in the lamps' map: { batch, host, mesh, byTiles: its geometry for each count of tiles
+    // (E-389: one draw for every tile) } a volumes' batch, and their program's options and state (made on first use).
     this._volumeLampEntries = [];
     this._volumeLampProgram = null;
     this._volumeLampState = null;
@@ -1017,8 +1036,9 @@ class PixiRenderer extends AbstractWorker {
     this._lampStripBySource = new Map();
     this._lampMapClear = false;
     this._lampMapDrew = false;
-    // Each tile's lamp (floor point, height, reach) as RGBA32F, a texel a tile; entity -> tile; last frame's lamps.
-    this._lampTileData = new Float32Array(4);
+    // Each tile's lamp (floor point, height, reach) as RGBA32F, a texel a tile, and below it (row 1) its owner (E-389);
+    // entity -> tile; last frame's lamps.
+    this._lampTileData = new Float32Array(8);
     this._lampTileSource = null;
     this._lampTileOf = new Int16Array(0);
     /** N-212: each lamp's map shadow fade at the cut, by entity (1 inside it), read with its tile (_readLampTiles). */
@@ -3285,6 +3305,229 @@ class PixiRenderer extends AbstractWorker {
     if (started) this.lightsTimeThisFrame += performance.now() - started;
   }
 
+  /** E-404: the lightGlows layer's resolution now (its Layer's, from lighting.lightGlowResolution), in [1/16, 1]. */
+  _lightGlowLayerResolution() {
+    const id = Layer.get('lightGlows')?.id;
+    const v = id !== undefined && Layer._resolution ? Layer._resolution[id] : 1;
+    return v > 0 ? Math.min(1, Math.max(0.0625, v)) : 1;
+  }
+
+  /**
+   * E-404: the lightGlows layer drawn into a target `resolution` of the canvas and added to the frame once by a sprite at
+   * the layer's place (its zIndex, alpha and blend, ADD). The glows are pure fill: flashlightStressScene's 119 halos cost
+   * 4.83 ms of GPU a frame at 1920 x 1080 and 0.007 under a 1 px scissor. A halo is smooth, so a quarter of its pixels
+   * filtered up looks the same. Adding the glows into a cleared target and the target to the frame is the sum adding each
+   * glow to the frame was (their colour, alpha 0; both clamp at 1), but for the filtering and 8-bit rounding.
+   */
+  _createGlowLayerTarget(resolution) {
+    const mesh = this.spriteGlowMesh;
+    const w = rtPixelSize(this.canvasWidth, resolution);
+    const h = rtPixelSize(this.canvasHeight, resolution);
+    this._glowLayerRT = PIXI.RenderTexture.create({ width: w, height: h });
+    this._glowLayerHost = new PIXI.Container();
+    this._glowLayerHost.label = 'light-glows-target';
+    // A child draws with its own blend (a render's root would take normal); the camera's placement stays on the mesh.
+    mesh.blendMode = 'add';
+    this._glowLayerHost.addChild(mesh);
+    this._glowLayerTexture = this._glowLayerFrameTexture(this._glowLayerRT, w, h);
+    const sprite = new PIXI.Sprite(this._glowLayerTexture);
+    sprite.label = 'light-glows';
+    sprite.renderable = false;
+    this._glowLayerSprite = sprite;
+    this._glowLayerRes = resolution;
+    this._fitGlowLayerTarget(w, h, this.canvasWidth, this.canvasHeight);
+    this._registerLayerDisplayObject('lightGlows', sprite);
+    this.pixiApp.stage.addChild(sprite);
+    this.pixiApp.stage.sortChildren();
+  }
+
+  /** E-404: the glow target's sprite over the canvas (`canvasW` x `canvasH`) and its px onto the target's (`w` x `h`). */
+  _fitGlowLayerTarget(w, h, canvasW, canvasH) {
+    const cw = canvasW || 1;
+    const ch = canvasH || 1;
+    this._glowLayerSprite.scale.set(cw / w, ch / h);
+    // The whole target until _fitGlowLayerPart takes this frame's part.
+    this._glowLayerSprite.position.set(0, 0);
+    const mx = this._glowLayerTransform;
+    mx.a = w / cw;
+    mx.b = 0;
+    mx.c = 0;
+    mx.d = h / ch;
+    mx.tx = 0;
+    mx.ty = 0;
+  }
+
+  /**
+   * E-404: the glow target at the canvas's size now and the layer's resolution (a resize, Layer resolution set at run
+   * time). The sprite lets go of the old target before it goes.
+   */
+  _resizeGlowLayerTarget(resolution, canvasW, canvasH) {
+    if (this._glowLayerRT === null) return;
+    const w = rtPixelSize(canvasW, resolution);
+    const h = rtPixelSize(canvasH, resolution);
+    this._glowLayerRT = this._replaceRT(this._glowLayerRT, w, h, this._glowLayerSprite, null);
+    // The old part went with its target (its source destroyed): a new one over the new target.
+    if (this._glowLayerTexture !== null) this._glowLayerTexture.destroy(false);
+    this._glowLayerTexture = this._glowLayerFrameTexture(this._glowLayerRT, w, h);
+    this._glowLayerSprite.texture = this._glowLayerTexture;
+    this._glowLayerRes = resolution;
+    this._fitGlowLayerTarget(w, h, canvasW, canvasH);
+  }
+
+  /** E-404: a texture over `rt`'s part the glows cover (its frame set each frame: dynamic, so the sprite follows it). */
+  _glowLayerFrameTexture(rt, w, h) {
+    return new PIXI.Texture({ source: rt.source, frame: new PIXI.Rectangle(0, 0, w, h), dynamic: true, label: 'light-glows' });
+  }
+
+  /**
+   * E-404: the canvas rect (px) this frame's glows cover, into _glowLayerBounds, from the glow batch's rows: each quad's
+   * corners as instancedSprite.vert.glsl places them (its frame's trim and anchor from the texture table, its scale; a
+   * turned one by its reach around its anchor), through the glow mesh's camera placement. False when none is on the
+   * canvas. The composite then draws over that rect alone: one torch's glow does not cost a pass over the whole canvas.
+   * @param {import('pixi.js').Mesh} mesh the glow mesh (its rows: InstancedSpriteBatch's, INSTANCED_SPRITE_FLOATS each)
+   */
+  _glowScreenBounds(mesh) {
+    const batch = this.entitiesGlowBatch;
+    const lut = this._texLut;
+    const n = batch !== null ? mesh.geometry.instanceCount | 0 : 0;
+    if (n <= 0 || !lut) return false;
+    const rows = batch.data;
+    const F = INSTANCED_SPRITE_FLOATS;
+    const ids = (lut.length / TEX_LUT_FLOATS) | 0;
+    let x0 = GLOW_BOUND_INF;
+    let y0 = GLOW_BOUND_INF;
+    let x1 = -GLOW_BOUND_INF;
+    let y1 = -GLOW_BOUND_INF;
+    let whole = false;
+    for (let i = 0, at = 0; i < n && at + F <= rows.length; i++, at += F) {
+      const id = rows[at + 10] | 0;
+      if (id < 0 || id >= ids) continue;
+      const l = id * TEX_LUT_FLOATS;
+      const sx = rows[at + 2];
+      const sy = rows[at + 3];
+      // The quad's corners around its anchor (content - anchor · size) · scale, as the vertex shader has them.
+      const ax = rows[at + 4] * lut[l];
+      const ay = rows[at + 5] * lut[l + 1];
+      const ux = (lut[l + 6] - ax) * sx;
+      const vx = (lut[l + 6] + lut[l + 8] - ax) * sx;
+      const uy = (lut[l + 7] - ay) * sy;
+      const vy = (lut[l + 7] + lut[l + 9] - ay) * sy;
+      const x = rows[at];
+      const y = rows[at + 1];
+      const c = rows[at + 6];
+      const sn = rows[at + 7];
+      if (c === 1 && sn === 0) {
+        const lx = ux < vx ? ux : vx;
+        const hx = ux < vx ? vx : ux;
+        const ly = uy < vy ? uy : vy;
+        const hy = uy < vy ? vy : uy;
+        if (x + lx < x0) x0 = x + lx;
+        if (x + hx > x1) x1 = x + hx;
+        if (y + ly < y0) y0 = y + ly;
+        if (y + hy > y1) y1 = y + hy;
+      } else if (c > 1.005) {
+        // Sheared (instancedSprite.vert.glsl's c past 1): no bound kept here, the whole canvas.
+        whole = true;
+        break;
+      } else {
+        // Turned: its reach around the anchor, both sides.
+        const mx = Math.max(Math.abs(ux), Math.abs(vx));
+        const my = Math.max(Math.abs(uy), Math.abs(vy));
+        const r = Math.sqrt(mx * mx + my * my);
+        if (x - r < x0) x0 = x - r;
+        if (x + r > x1) x1 = x + r;
+        if (y - r < y0) y0 = y - r;
+        if (y + r > y1) y1 = y + r;
+      }
+    }
+    const cw = this.canvasWidth || 0;
+    const ch = this.canvasHeight || 0;
+    const b = this._glowLayerBounds;
+    if (whole) {
+      b[0] = 0;
+      b[1] = 0;
+      b[2] = cw;
+      b[3] = ch;
+      return true;
+    }
+    if (!(x1 >= x0) || !(y1 >= y0)) return false;
+    // World to canvas px: the glow mesh's own placement (_placeWorldCamera), turned or not: the box of its corners.
+    mesh.updateLocalTransform();
+    const m = mesh.localTransform;
+    b[0] = GLOW_BOUND_INF;
+    b[1] = GLOW_BOUND_INF;
+    b[2] = -GLOW_BOUND_INF;
+    b[3] = -GLOW_BOUND_INF;
+    for (let k = 0; k < 4; k++) {
+      const wx = (k & 1) === 0 ? x0 : x1;
+      const wy = (k & 2) === 0 ? y0 : y1;
+      const px = m.a * wx + m.c * wy + m.tx;
+      const py = m.b * wx + m.d * wy + m.ty;
+      if (px < b[0]) b[0] = px;
+      if (py < b[1]) b[1] = py;
+      if (px > b[2]) b[2] = px;
+      if (py > b[3]) b[3] = py;
+    }
+    return b[2] > 0 && b[3] > 0 && b[0] < cw && b[1] < ch;
+  }
+
+  /**
+   * E-404: the sprite over this frame's glows' part of the target (_glowLayerBounds in its px, a texel more each side for
+   * the filtering up; on its grid, so each texel lands where the whole target's sprite put it).
+   */
+  _fitGlowLayerPart() {
+    const rt = this._glowLayerRT;
+    const tex = this._glowLayerTexture;
+    const rw = rt.width;
+    const rh = rt.height;
+    const kx = rw / (this.canvasWidth || 1);
+    const ky = rh / (this.canvasHeight || 1);
+    const b = this._glowLayerBounds;
+    let fx0 = Math.floor(b[0] * kx) - 1;
+    let fy0 = Math.floor(b[1] * ky) - 1;
+    let fx1 = Math.ceil(b[2] * kx) + 1;
+    let fy1 = Math.ceil(b[3] * ky) + 1;
+    if (fx0 < 0) fx0 = 0;
+    if (fy0 < 0) fy0 = 0;
+    if (fx1 > rw) fx1 = rw;
+    if (fy1 > rh) fy1 = rh;
+    const f = tex.frame;
+    if (f.x !== fx0 || f.y !== fy0 || f.width !== fx1 - fx0 || f.height !== fy1 - fy0) {
+      f.x = fx0;
+      f.y = fy0;
+      f.width = fx1 - fx0;
+      f.height = fy1 - fy0;
+      tex.update();
+      this._glowLayerSprite.position.set(fx0 / kx, fy0 / ky);
+    }
+  }
+
+  /**
+   * E-404: this frame's glows into the lightGlows target, with the frame's passes (after the sprites, whose pack fills the
+   * glow batch): cleared, then the glow mesh added in. A frame without glows on the canvas draws nothing, and its sprite
+   * neither; the sprite shows the part they cover.
+   */
+  drawFrameGlowLayer() {
+    const sprite = this._glowLayerSprite;
+    if (sprite === null) return;
+    const resolution = this._lightGlowLayerResolution();
+    if (resolution !== this._glowLayerRes) this._resizeGlowLayerTarget(resolution, this.canvasWidth, this.canvasHeight);
+    const mesh = this.spriteGlowMesh;
+    const on = mesh !== null && mesh.visible === true && this._glowScreenBounds(mesh);
+    if (sprite.renderable !== on) sprite.renderable = on;
+    if (!on) return;
+    this._fitGlowLayerPart();
+    const opts = this._rtRenderOpts;
+    opts.container = this._glowLayerHost;
+    opts.target = this._glowLayerRT;
+    opts.clear = true;
+    opts.clearColor = this._clearTransparent;
+    opts.transform = this._glowLayerTransform;
+    this._submitRender(opts);
+    opts.transform = null;
+    this._gpuPassesThisFrame++;
+  }
+
   /**
    * DX-EMISSIVE v2: the glow target (the canvas's size) and the glow layer, a quad over the canvas just above the lighting
    * layer that adds glow · (1 - light) (glowComposite.js), its blend additive.
@@ -3588,6 +3831,7 @@ class PixiRenderer extends AbstractWorker {
         this.drawFrameShadows();
         this.drawFrameCustomLayers();
         this.renderLightingToTexture();
+        this.drawFrameGlowLayer();
       }
       this.applyLayerVisibility();
       this.presentStage();
@@ -6656,8 +6900,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     const cap = Math.max(1, ids ? ids.length : 1);
     if (this._lampTileIds.length < cap) this._lampTileIds = new Uint32Array(cap);
-    if (this._lampTileData.length < cap * 4) this._lampTileData = new Float32Array(cap * 4);
+    if (this._lampTileData.length < cap * 8) this._lampTileData = new Float32Array(cap * 8);
     const data = this._lampTileData;
+    // E-389: the texture's width; row 1 holds each tile's owner.
+    const width = data.length >> 3;
     const groundInvY = this._groundInvScaleY || 1;
     let maxReach = 0.5;
     const worldX = Transform.x;
@@ -6680,23 +6926,29 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const elevation = LightEmitter.elevation[id];
       const reach = LightEmitter.radius[id];
       writeLampTile(data, t, x, y, elevation, reach);
+      writeLampTileOwner(data, width, t, id);
       if (elevation > 0 && reach > maxReach) maxReach = reach;
     }
     this._lampMaxReach = maxReach;
-    data.fill(0, n * 4, Math.max(n, this._lampTileCount) * 4);
+    const stale = Math.max(n, this._lampTileCount);
+    data.fill(0, n * 4, stale * 4);
+    for (let t = n; t < stale; t++) writeLampTileOwner(data, width, t, -1);
     this._lampTileCount = n;
     this._uploadLampTiles();
   }
 
-  /** DX-SHADOW3D (F7): the tiles' texture (a texel a tile), made on first use, written each frame. */
+  /**
+   * DX-SHADOW3D (F7): the tiles' texture (a texel a tile: its lamp in row 0, its owner in row 1), made on first use,
+   * written each frame.
+   */
   _uploadLampTiles() {
-    const width = Math.max(1, this._lampTileData.length / 4);
+    const width = Math.max(1, this._lampTileData.length >> 3);
     if (this._lampTileSource === null || this._lampTileSource.width !== width) {
       const old = this._lampTileSource;
       this._lampTileSource = PIXI.TextureSource.from({
         resource: this._lampTileData,
         width,
-        height: 1,
+        height: 2,
         format: 'rgba32float',
         scaleMode: 'nearest',
         addressMode: 'clamp-to-edge',
@@ -6711,15 +6963,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     if (this._useWebGpu) {
       const renderer = this.pixiApp?.renderer;
-      if (renderer?.gpu?.device) writeRgba32Float(renderer, this._lampTileSource, this._lampTileData, width, 1, 'weed-lamp-tiles');
+      if (renderer?.gpu?.device) writeRgba32Float(renderer, this._lampTileSource, this._lampTileData, width, 2, 'weed-lamp-tiles');
       return;
     }
-    this._uploadRgba32FloatGl(this._lampTileSource, this._lampTileData, width, 1);
+    this._uploadRgba32FloatGl(this._lampTileSource, this._lampTileData, width, 2);
   }
 
   /**
    * DX-SHADOW3D (F7): every program that binds the tiles' lamps (uLampTiles) on the current source: the lamps' map's cards
-   * and columns, and each tile's volumes mesh.
+   * and columns, and each volumes' layer's mesh.
    */
   _pointLampTilePrograms() {
     const source = this._lampTileSource;
@@ -6729,10 +6981,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._lampMapColumns && this._lampMapColumns.shader,
       this._lampMapColumns && this._lampMapColumns.shaderCeil,
     ];
-    for (let i = 0; i < this._volumeLampEntries.length; i++) {
-      const meshes = this._volumeLampEntries[i].meshes;
-      for (let k = 0; k < meshes.length; k++) shaders.push(meshes[k].shader);
-    }
+    for (let i = 0; i < this._volumeLampEntries.length; i++) shaders.push(this._volumeLampEntries[i].mesh.shader);
     for (let i = 0; i < shaders.length; i++) {
       const shader = shaders[i];
       if (shader && shader.resources.uLampTiles !== source) shader.resources.uLampTiles = source;
@@ -6949,11 +7198,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * DX-SHADOW3D (F7): each sun-projected volumes' layer drawn into the lamps' map once a tile in use, in one render: a mesh
-   * a tile over the layer's rows (volumeShadowMap.js volumeLampVertex / volumeLampWgsl), each vertex landing on the floor
-   * along that tile's lamp's ray (the tiles' texture holds the lamps; uLampVolume says which), its height out, max
-   * blending. A triangle past an edge of a tile is left out in its vertices, and one of the tile's lamp's own entity.
-   * Last frame's rows, as the sun map's volumes.
+   * DX-SHADOW3D (F7): each sun-projected volumes' layer drawn into the lamps' map, every tile in use in one draw (E-389):
+   * three vertices a tile, the row's triangle once for each (volumeShadowMap.js volumeLampVertex / volumeLampWgsl), each
+   * vertex landing on the floor along its tile's lamp's ray (the tiles' texture holds the lamps and their owners), its
+   * height out, max blending. A triangle past an edge of a tile is left out in its vertices, and one of the tile's lamp's
+   * own entity. Last frame's rows, as the sun map's volumes. A mesh a tile drew the same: about 47 draws and as many
+   * uniform syncs a frame in Predator ?light3d=1.
    */
   _drawVolumesInLampMap(rtOpts) {
     const shaders = this._engineShaders;
@@ -6965,32 +7215,29 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       const batch = cl.sunProjected ? cl.uvFillBatch : null;
-      if (!batch || (batch.geometry.instanceCount | 0) <= 0) continue;
+      const rows = batch ? batch.geometry.instanceCount | 0 : 0;
+      if (rows <= 0) continue;
       let entry = null;
       for (let k = 0; k < this._volumeLampEntries.length; k++) {
         if (this._volumeLampEntries[k].batch === batch) entry = this._volumeLampEntries[k];
       }
       if (entry === null) {
-        entry = { batch, host: new PIXI.Container(), meshes: [] };
+        entry = this._volumeLampEntry(batch);
         this._volumeLampEntries.push(entry);
       }
-      const meshes = entry.meshes;
-      while (meshes.length < tiles) meshes.push(this._volumeLampMesh(batch, entry.host));
-      for (let t = 0; t < meshes.length; t++) {
-        const mesh = meshes[t];
-        const on = t < tiles;
-        if (mesh.visible !== on) mesh.visible = on;
-        if (!on) continue;
-        if (mesh.geometry !== batch.geometry) mesh.geometry = batch.geometry;
-        this._syncVolumeResources(mesh.shader, batch);
-        const group = mesh.shader.resources.sunShadow;
-        const u = group.uniforms;
-        // The tile's lamp's own entity casts nothing for it (_readLampTiles: tile t is entity _lampTileIds[t]'s light).
-        const owner = t < this._lampTileIds.length ? this._lampTileIds[t] : -1;
-        const perRow = this._lampTilesPerRow;
-        if (writeVolumeLampTerms(u.uSunShadow, u.uLampVolume, u.uLampOwner, t, owner, perRow, this._lampTileSize, VOLUME_LAMP_SCALES)) {
-          group.update();
-        }
+      let geometry = entry.byTiles.get(tiles);
+      if (geometry === undefined) {
+        geometry = this._volumeLampGeometry(batch, tiles);
+        entry.byTiles.set(tiles, geometry);
+      }
+      geometry.instanceCount = rows;
+      const mesh = entry.mesh;
+      if (mesh.geometry !== geometry) mesh.geometry = geometry;
+      this._syncVolumeResources(mesh.shader, batch);
+      const group = mesh.shader.resources.sunShadow;
+      const u = group.uniforms;
+      if (writeVolumeLampTerms(u.uSunShadow, u.uLampVolume, tiles, this._lampTilesPerRow, this._lampTileSize, VOLUME_LAMP_SCALES)) {
+        group.update();
       }
       rtOpts.container = entry.host;
       rtOpts.clear = false;
@@ -7000,10 +7247,38 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * DX-SHADOW3D (F7): a mesh over a volumes' batch for one tile of the lamps' map, with its own terms (sunShadow: uSunShadow,
-   * uLampVolume, then uLampOwner, the WGSL struct's order), in `host`. The program and state are made once.
+   * E-389: the lamps' map volumes' geometry for `tiles` tiles: three vertices a tile in use, numbered (aLampVertex: the
+   * program takes the corner and the tile from that number) over the batch's instance attributes (its rows). Made once a
+   * count of tiles.
    */
-  _volumeLampMesh(batch, host) {
+  _volumeLampGeometry(batch, tiles) {
+    const attributes = { aLampVertex: { buffer: volumeLampVertices(tiles), format: 'float32' } };
+    for (const [name, a] of Object.entries(batch.geometry.attributes)) {
+      if (name === 'aTri') continue;
+      attributes[name] = { buffer: a.buffer, format: a.format, stride: a.stride, offset: a.offset, instance: true };
+    }
+    const geometry = new PIXI.Geometry({ attributes });
+    geometry.instanceCount = 0;
+    return geometry;
+  }
+
+  /**
+   * DX-SHADOW3D (F7): a volumes' batch's entry in the lamps' map: one mesh, its own terms (sunShadow: uSunShadow, then
+   * uLampVolume, the WGSL struct's order), in its own host; its geometry by the count of tiles (_volumeLampGeometry).
+   */
+  _volumeLampEntry(batch) {
+    const host = new PIXI.Container();
+    const geometry = this._volumeLampGeometry(batch, 1);
+    const byTiles = new Map();
+    byTiles.set(1, geometry);
+    return { batch, host, mesh: this._volumeLampMesh(batch, host, geometry), byTiles };
+  }
+
+  /**
+   * DX-SHADOW3D (F7): the mesh over a volumes' batch in the lamps' map, with its terms, in `host`. The program and state
+   * are made once.
+   */
+  _volumeLampMesh(batch, host, geometry) {
     if (this._volumeLampProgram === null) {
       const shaders = this._engineShaders;
       this._volumeLampProgram = this._useWebGpu
@@ -7030,15 +7305,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         uTexLut: r.uTexLut,
         uPoseTable: r.uPoseTable,
         uLampTiles: this._lampTileSource,
-        // A tile of -1 until the frame writes this mesh's terms (writeVolumeLampTerms).
+        // No tile in use until the frame writes this mesh's terms (writeVolumeLampTerms).
         sunShadow: {
           uSunShadow: { value: new Float32Array(4), type: 'vec4<f32>' },
-          uLampVolume: { value: new Float32Array([-1, 0, 0, 0]), type: 'vec4<f32>' },
-          uLampOwner: { value: new Float32Array([-1, 0, 0, 0]), type: 'vec4<f32>' },
+          uLampVolume: { value: new Float32Array(4), type: 'vec4<f32>' },
         },
       },
     });
-    const mesh = new PIXI.Mesh({ geometry: batch.geometry, shader, state: this._volumeLampState, label: 'lamp-map-volumes' });
+    const mesh = new PIXI.Mesh({ geometry, shader, state: this._volumeLampState, label: 'lamp-map-volumes' });
     // A depth test keeps the highest point and its entity; a mesh's blend mode holds only as a child (the sun map's host
     // says why).
     mesh.blendMode = 'none';
@@ -7971,6 +8245,33 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
+   * E-431: a GPU particle layer with a resolution under 1 and no look of its own is drawn into a target that share of the
+   * canvas (cl.rt, _renderGpuParticlesToRt) and composed onto the frame once by a sprite at the layer's place, as a look
+   * layer's picture is. Soft particles are fill: Predator's fire smoke cost about 0.9 to 1.3 ms of GPU a frame at 1920 x
+   * 1080, 0.003 under a 1 px scissor. Only where the target composes back what the particles drew (blend normal, whose
+   * over is associative, or add); a layer drawn among the entities (sortWithEntities) stays there. The layer's alpha then
+   * applies to its picture as a whole.
+   * @returns {boolean} whether the layer draws through a target
+   */
+  _gpuParticleLayerTarget(cl, gpuBatch, blend) {
+    const resolution = cl.resolution;
+    if (!(resolution > 0 && resolution < 1)) return false;
+    if (gpuBatch.look || gpuBatch.info.sortWithEntities) return false;
+    if (blend !== 'normal' && blend !== 'add') return false;
+    cl.rt = PIXI.RenderTexture.create({ width: this.canvasWidth * resolution, height: this.canvasHeight * resolution });
+    this._applyCustomLayerScaleMode(cl);
+    // No look: the sprite shows the target itself (_resizeCustomLayerRTs keeps it on cl.rt).
+    cl.shaderBypass = true;
+    const sprite = new PIXI.Sprite(cl.rt);
+    sprite.anchor.set(0, 0);
+    sprite.position.set(0, 0);
+    sprite.scale.set(1.0 / resolution);
+    sprite.renderable = false;
+    cl.displaySprite = sprite;
+    return true;
+  }
+
+  /**
    * A GPU particle layer's density pass: its meshes keep world positions, and the camera into the layer's RT is
    * the render transform (as a MESH layer's fill).
    */
@@ -8536,6 +8837,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       );
     }
 
+    // E-404: the lightGlows target follows the canvas.
+    if (this._glowLayerRT !== null) this._resizeGlowLayerTarget(this._glowLayerRes, width, height);
+
     // Viewport look/density RTs (compute layers have rtOut only).
     for (let i = 0; i < this._customLayerList.length; i++) {
       this._resizeCustomLayerRTs(this._customLayerList[i], width, height);
@@ -8857,6 +9161,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const { pageW, pageH } = gidPageSize(page);
         if (pageW <= 0 || pageH <= 0) continue;
         if (!gidPageHasTile(layer.data, tileMapData.mapWidth, page)) continue;
+        // E-432: the page drawn only over its chunks with tiles, not as one quad.
+        const quads = gidPageQuads(layer.data, tileMapData.mapWidth, page, tw, th);
+        if (quads.quads === 0) continue;
         const bytes = new Uint8Array(gidPageByteLength(pageW, pageH));
         packGidPageRgba8(layer.data, tileMapData.mapWidth, page, bytes);
         const gidSource = TextureSource.from({
@@ -8874,18 +9181,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           gidSource.style.scaleMode = 'nearest';
           gidSource.style.addressMode = 'clamp-to-edge';
         }
-        const x0 = page.minX * tw;
-        const y0 = page.minY * th;
-        const x1 = page.maxX * tw;
-        const y1 = page.maxY * th;
         const geometry = new Geometry({
           attributes: {
             aPosition: {
-              buffer: new Float32Array([x0, y0, x1, y0, x1, y1, x0, y1]),
+              buffer: quads.positions,
               format: 'float32x2',
             },
           },
-          indexBuffer: new Uint16Array([0, 1, 2, 0, 2, 3]),
+          indexBuffer: quads.indices,
         });
         const uniforms = {
           uTileSize: { value: new Float32Array([tw, th]), type: 'vec2<f32>' },
@@ -9452,8 +9755,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._registerLayerDisplayObject('entities', this._entitiesRoot);
       this.pixiApp.stage.addChild(this._entitiesRoot);
       if (this.spriteGlowMesh) {
-        this._registerLayerDisplayObject('lightGlows', this.spriteGlowMesh);
-        this.pixiApp.stage.addChild(this.spriteGlowMesh);
+        const glowRes = this._lightGlowLayerResolution();
+        if (glowRes < 1) {
+          this._createGlowLayerTarget(glowRes);
+        } else {
+          this._registerLayerDisplayObject('lightGlows', this.spriteGlowMesh);
+          this.pixiApp.stage.addChild(this.spriteGlowMesh);
+        }
         if (!this._lightGlowAdd) this.spriteGlowMesh.visible = false;
       }
       const order = this._ySort ? 'painter' : 'emit order';
@@ -10219,6 +10527,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this._registerLayerDisplayObject(layerName, batch.mesh, cl.containerBlendSet);
         this.pixiApp.stage.addChild(batch.mesh);
         debugWorkerLog(`PIXI WORKER: Custom layer "${layerName}" initialized (no shader)`);
+      } else if (gpuBatch && this._gpuParticleLayerTarget(cl, gpuBatch, layerObj.blendMode)) {
+        // E-431: drawn into a target the layer's resolution of the canvas, composed once at the layer's place.
+        this._registerLayerDisplayObject(layerName, cl.displaySprite);
+        this.pixiApp.stage.addChild(cl.displaySprite);
+        debugWorkerLog(
+          `PIXI WORKER: GPU particle layer "${layerName}" initialized (${gpuBatch.rings.length} rings, resolution=${resolution})`
+        );
       } else if (gpuBatch) {
         // The layer's own blend mode on the container: its meshes draw with it (Pixi's group blend).
         this._registerLayerDisplayObject(layerName, gpuBatch.container, false);
@@ -10331,6 +10646,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       } else if (cl.gpu) {
         // Updated this frame by updateGpuParticleLayers; with a look shader, its density pass is drawn here.
         if (cl.rt) {
+          // E-431: a layer drawn at its resolution with no look shows nothing, and draws nothing, while no particle lives.
+          if (cl.shaderBypass && cl.displaySprite !== null) {
+            const live = cl.gpu.liveRecords > 0;
+            if (cl.displaySprite.renderable !== live) cl.displaySprite.renderable = live;
+            if (!live) continue;
+          }
           this._renderGpuParticlesToRt(cl);
           if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
             rtOpts.transform = null;
@@ -10645,7 +10966,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     } else if (this.spriteMesh) {
       this._registerLayerDisplayObject('entities', this.spriteMesh);
     }
-    if (this.spriteGlowMesh) {
+    if (this._glowLayerSprite !== null) {
+      this._registerLayerDisplayObject('lightGlows', this._glowLayerSprite);
+    } else if (this.spriteGlowMesh) {
       this._registerLayerDisplayObject('lightGlows', this.spriteGlowMesh);
       if (!this._lightGlowAdd) this.spriteGlowMesh.visible = false;
     }

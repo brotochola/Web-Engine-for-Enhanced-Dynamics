@@ -10,6 +10,7 @@ import {
   gidPageSize,
   gidPageByteLength,
   gidPageHasTile,
+  gidPageQuads,
   packGidPageRgba8,
   unpackGidRgba8,
   decodeTiledGid,
@@ -160,4 +161,49 @@ test('pageUvToLocalTile matches shader floor/fract on 0..1 page UV', () => {
   assert.equal(inside.localY, 5);
   assert.ok(Math.abs(inside.localU - 0.3) < 1e-4);
   assert.ok(Math.abs(inside.localV - 0.8) < 1e-4);
+});
+
+test('E-432: a page is drawn over its chunks with tiles, a quad a run of them along a chunk row, and every tile is covered', () => {
+  // A 20 x 12 map of 8-tile chunks (3 x 2): tiles in chunk (0, 0), in (1, 0) and (2, 0) (one run), and in (2, 1).
+  const w = 20;
+  const h = 12;
+  const data = new Int32Array(w * h);
+  const put = (x, y) => { data[y * w + x] = 7; };
+  put(1, 1);
+  put(9, 7);
+  put(19, 0);
+  put(17, 11);
+  const page = listGidPages(w, h)[0];
+  const q = gidPageQuads(data, w, page, 24, 16, 8);
+  assert.equal(q.quads, 2);
+  // Row 0: chunks 0 to 2, x 0 to the map's 20 tiles; row 1: chunk 2, x 16 to 20, y 8 to the map's 12.
+  assert.deepEqual(Array.from(q.positions.subarray(0, 8)), [0, 0, 480, 0, 480, 128, 0, 128]);
+  assert.deepEqual(Array.from(q.positions.subarray(8, 16)), [384, 128, 480, 128, 480, 192, 384, 192]);
+  assert.deepEqual(Array.from(q.indices), [0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+  assert.ok(q.indices instanceof Uint16Array);
+  // Every tile lies in a quad (what a quad leaves out had no tile to draw).
+  const inQuad = (x, y) => {
+    for (let k = 0; k < q.quads; k++) {
+      const p = q.positions.subarray(k * 8, k * 8 + 8);
+      if (x * 24 >= p[0] && (x + 1) * 24 <= p[2] && y * 16 >= p[1] && (y + 1) * 16 <= p[5]) return true;
+    }
+    return false;
+  };
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (data[y * w + x]) assert.ok(inQuad(x, y), `tile ${x}, ${y}`);
+  // An empty page: no quad; a page off the map's origin keeps its own place.
+  assert.equal(gidPageQuads(new Int32Array(w * h), w, page, 24, 16).quads, 0);
+  const second = gidPageQuads(data, w, { minX: 16, minY: 8, maxX: 20, maxY: 12 }, 24, 16, 8);
+  assert.deepEqual(Array.from(second.positions), [384, 128, 480, 128, 480, 192, 384, 192]);
+});
+
+test('E-432: a page of more than 16 384 quads indexes them in 32 bits', () => {
+  const w = 2048;
+  const h = 2048;
+  const data = new Int32Array(w * h);
+  // A tile in every other chunk of 8: 128 runs a chunk row, 256 rows.
+  for (let cy = 0; cy < 256; cy++) for (let cx = 0; cx < 256; cx += 2) data[cy * 8 * w + cx * 8] = 1;
+  const q = gidPageQuads(data, w, listGidPages(w, h)[0], 1, 1, 8);
+  assert.equal(q.quads, 128 * 256);
+  assert.ok(q.indices instanceof Uint32Array);
+  assert.equal(Math.max(...q.indices.subarray(q.indices.length - 6)), q.quads * 4 - 1);
 });

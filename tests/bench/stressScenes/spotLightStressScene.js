@@ -14,7 +14,8 @@ const { Scene, Camera, LAYER_KIND } = WEED;
  * `?cars=` (default 48), `?props=` (default 300), `?shadowLights=` (default 48: lighting.maxShadowCastingLights, at most
  * the cars; raise it with the cars to load the stamp), `?cone=`, `?aperture=`, `?softness=`, `?shadowRange=` (default 0: the
  * radius), `?groundScaleY=` (default 1: straight down), `?backend=webgpu`, `?faces=1` (lighting.faces on, no face
- * decorations: the faces branch's cost alone).
+ * decorations: the faces branch's cost alone), `?still=1` (the cars parked where they start: still frames to compare),
+ * `?ambient=` (lighting.baseAmbient, default 0.06; 1 shows the ground as it is drawn).
  */
 const VIEW_W = 1280;
 const VIEW_H = 720;
@@ -49,6 +50,8 @@ export const SHADOW_RANGE = queryNumber('shadowRange', 0);
 export const GROUND_SCALE_Y = queryNumber('groundScaleY', 1);
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 export const FACES = queryNumber('faces', 0) === 1;
+export const STILL = queryNumber('still', 0) === 1;
+export const AMBIENT = queryNumber('ambient', 0.06);
 
 export const stressSceneConfig = {
   requested: {
@@ -75,7 +78,7 @@ export class SpotLightStressScene extends Scene {
     camera: { floorScaleY: GROUND_SCALE_Y },
     lighting: {
       enabled: true,
-      baseAmbient: 0.06,
+      baseAmbient: AMBIENT,
       maxLights: CARS,
       shadowsEnabled: true,
       maxShadowCastingLights: Math.min(CARS, SHADOW_LIGHTS),
@@ -118,7 +121,8 @@ export class SpotLightStressScene extends Scene {
         cx: VX + 120 + rng() * (VIEW_W - 240),
         cy: VY + 100 + rng() * (VIEW_H - 200),
         r: 60 + rng() * 140,
-        w: (rng() < 0.5 ? -1 : 1) * (0.3 + rng() * 0.6),
+        // The same draws with ?still=1, so the cars stand where the moving ones start.
+        w: (rng() < 0.5 ? -1 : 1) * (0.3 + rng() * 0.6) * (STILL ? 0 : 1),
         p: rng() * Math.PI * 2,
         cone: CONE ? APERTURE : 0,
         softness: SOFTNESS,

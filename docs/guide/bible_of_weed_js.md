@@ -619,7 +619,7 @@ Which blend a layer draws with depends on how many passes it takes. `blendMode` 
 
 So `fx: { blendMode: BLEND_MODES.ADD }` is an additive sprite layer, and `shader: { containerBlend }` is only for the pass into a render texture. (Up to 0.14, a layer drawn in one pass ignored `blendMode` and drew with `containerBlend`, normal by default.)
 
-The entities list sorts by `SpriteRenderer.zIndex` (larger is in front). `renderer.ySort` (default false) orders by Y inside the same zIndex. With both off and every zIndex at 0, the queue stays in emit order. `lighting.lightGlow` (`'add'` default) keeps glows on the ADD mesh; `'sprite'` leaves them in the entity list.
+The entities list sorts by `SpriteRenderer.zIndex` (larger is in front). `renderer.ySort` (default false) orders by Y inside the same zIndex. With both off and every zIndex at 0, the queue stays in emit order. `lighting.lightGlow` (`'add'` default) keeps glows on the ADD mesh; `'sprite'` leaves them in the entity list. With `'add'`, `lighting.lightGlowResolution` (default 0.5) is the size of the target the glows are drawn into against the canvas, added to the frame once: a halo is smooth, and half the size costs a quarter of its fill. 1 draws them onto the frame; `Layer.get('lightGlows').resolution` changes it at run time.
 
 ### Full-screen passes (`LAYER_KIND.SCREEN`)
 

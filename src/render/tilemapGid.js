@@ -78,6 +78,72 @@ export function gidPageHasTile(layerInt32, mapW, pageRect) {
 }
 
 /**
+ * E-432: the side (tiles) of the chunks a GID page's quads are cut to (gidPageQuads).
+ */
+export const TILEMAP_GID_CHUNK_TILES = 8;
+
+/**
+ * E-432: a layer's GID page drawn only where it has tiles: the page split into chunks of `chunk` tiles a side, each run of
+ * chunks along a chunk row that holds a tile one quad (two triangles over four corners), in world px (`tileW` x `tileH` a
+ * tile). Each layer drew a quad over its whole page, and every pixel under it fetched its GID and was discarded where the
+ * layer has no tile: Predator's 7 layers, full-screen each, 0.74 to 1.07 ms of GPU a frame at 1920 x 1080. Its layers'
+ * chunks of 8 hold 40 % of that area. The fragments drawn are the same (the page's UV comes from the position), so is the
+ * picture. Load-only.
+ * @param {ArrayLike<number>} layerInt32 row-major mapW * mapH
+ * @param {number} mapW
+ * @param {{ minX: number, minY: number, maxX: number, maxY: number }} pageRect
+ * @param {number} tileW
+ * @param {number} tileH
+ * @param {number} [chunk]
+ * @returns {{ positions: Float32Array, indices: Uint16Array|Uint32Array, quads: number }} no quad: the page has no tile
+ */
+export function gidPageQuads(layerInt32, mapW, pageRect, tileW, tileH, chunk = TILEMAP_GID_CHUNK_TILES) {
+  const mw = mapW | 0;
+  const minX = pageRect.minX | 0;
+  const minY = pageRect.minY | 0;
+  const maxX = pageRect.maxX | 0;
+  const maxY = pageRect.maxY | 0;
+  const c = Math.max(1, chunk | 0);
+  const cw = maxX > minX ? Math.ceil((maxX - minX) / c) : 0;
+  const ch = maxY > minY ? Math.ceil((maxY - minY) / c) : 0;
+  const filled = new Uint8Array(cw * ch);
+  for (let y = minY; y < maxY; y++) {
+    const row = y * mw;
+    const cy = ((y - minY) / c) | 0;
+    for (let x = minX; x < maxX; x++) {
+      if (layerInt32[row + x]) filled[cy * cw + (((x - minX) / c) | 0)] = 1;
+    }
+  }
+  // The runs: [x0, x1) in chunks along each chunk row.
+  const runs = [];
+  for (let cy = 0; cy < ch; cy++) {
+    let cx = 0;
+    while (cx < cw) {
+      if (!filled[cy * cw + cx]) {
+        cx++;
+        continue;
+      }
+      const start = cx;
+      while (cx < cw && filled[cy * cw + cx]) cx++;
+      runs.push(start, cx, cy);
+    }
+  }
+  const quads = runs.length / 3;
+  const positions = new Float32Array(quads * 8);
+  const indices = quads * 4 > 65536 ? new Uint32Array(quads * 6) : new Uint16Array(quads * 6);
+  for (let q = 0; q < quads; q++) {
+    const x0 = (minX + runs[q * 3] * c) * tileW;
+    const x1 = Math.min(maxX, minX + runs[q * 3 + 1] * c) * tileW;
+    const y0 = (minY + runs[q * 3 + 2] * c) * tileH;
+    const y1 = Math.min(maxY, minY + (runs[q * 3 + 2] + 1) * c) * tileH;
+    positions.set([x0, y0, x1, y0, x1, y1, x0, y1], q * 8);
+    const v = q * 4;
+    indices.set([v, v + 1, v + 2, v, v + 2, v + 3], q * 6);
+  }
+  return { positions, indices, quads };
+}
+
+/**
  * Pack a map-local tile rect into RGBA8 (byte-identical to Int32 little-endian).
  * @param {ArrayLike<number>} layerInt32 row-major mapW * mapH
  * @param {number} mapW

@@ -16,6 +16,8 @@ const { Scene, GameObject, SpriteRenderer, ParticleEmitter, Camera, SharedResour
 //   ?trail=<n>              n movers (at most 1024) that each call emitGpu every tick, one particle with a second of
 //                           life a call, on a layer of their own whose rings go to the logic worker: the call-per-tick
 //                           pattern (E-161). With ?sort=1 each mover sorts at its own row.
+//   ?res=<f>                the smoke and fire layers' resolution (E-431: drawn into a target that share of the canvas
+//                           with ?sort=0 and no look); left out, the layers' default
 
 function param(name, fallback) {
   try {
@@ -35,6 +37,8 @@ const INTERP = param('interp', '0') === '1';
 const HOLD = Math.max(0, parseInt(param('hold', '0'), 10) || 0);
 const MAX_TRAIL = 1024;
 const TRAIL = Math.min(MAX_TRAIL, Math.max(0, parseInt(param('trail', '0'), 10) || 0));
+const RES = Number(param('res', 'NaN'));
+const RES_KEY = RES > 0 ? { resolution: RES } : {};
 
 export const stressSceneConfig = {
   requested: { backend: BACKEND, sort: SORT, columns: COLUMNS, count: COUNT, look: LOOK, interp: INTERP, hold: HOLD, trail: TRAIL },
@@ -212,6 +216,7 @@ export class GpuParticlesStressScene extends Scene {
         zIndex: 3.5,
         maxParticles: 120000,
         sortWithEntities: SORT,
+        ...RES_KEY,
         ...(LOOK ? { shader: { fragment: 'gpuSmokeLook', containerBlend: BLEND_MODES.ADD } } : {}),
       },
       fire: {
@@ -220,6 +225,7 @@ export class GpuParticlesStressScene extends Scene {
         maxParticles: 40000,
         blendMode: BLEND_MODES.ADD,
         sortWithEntities: SORT,
+        ...RES_KEY,
       },
       trail: {
         kind: LAYER_KIND.GPU_PARTICLES,

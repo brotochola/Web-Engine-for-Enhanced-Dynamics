@@ -44,6 +44,7 @@ import {
   DEFAULT_LAYERS,
   LIGHTING_DEFAULTS,
   PRE_RENDER_DEFAULTS,
+  lightGlowResolutionOf,
 } from './configDefaults.js';
 import { Sun } from '../core/sun.js';
 import { Layer } from '../core/layer.js';
@@ -783,6 +784,8 @@ export function initializeSceneLayers(scene) {
       ySorting: name === 'entities' ? defaultYSorting : defaults.ySorting,
     };
   }
+  // E-404: the glows' target, a share of the canvas (lighting.lightGlowResolution; the layer's resolution at run time).
+  if (builtInLayers.lightGlows) builtInLayers.lightGlows.resolution = lightGlowResolutionOf(config.lighting);
   Layer.initializeFromConfig(config.layers, builtInLayers);
   // GPU_PARTICLES layers: one memory each, a ring per writer thread; the main thread writes ring 0.
   GpuParticles.initializeFromConfig(config.layers, scene.numberOfLogicWorkers);

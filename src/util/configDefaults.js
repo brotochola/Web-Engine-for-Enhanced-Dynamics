@@ -838,6 +838,14 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * Source-over, so the soft edge can gray, and lighting multiply sits on top.
    */
   lightGlow: 'add',
+  /**
+   * E-404: the lightGlows layer's resolution against the canvas, in (0, 1]: with 'add', the glows are drawn into a target
+   * this share of the canvas and added to the frame once, filtered up. A halo is pure fill (flashlightStressScene: 119
+   * halos 4.8 ms of GPU a frame at 1920 x 1080, 0.007 ms under a 1 px scissor) and smooth enough that half the size does
+   * not show. 1 draws them straight onto the frame. The lightGlows layer's resolution (Layer.get('lightGlows').resolution)
+   * changes it at run time.
+   */
+  lightGlowResolution: 0.5,
   /** Additive radial quads for ParticleEmitter `lightRadius`. Off unless a scene opts in. */
   particleLights: Object.freeze({
     enabled: false,
@@ -845,6 +853,18 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   }),
   sun: SUN_DEFAULTS,
 });
+
+/**
+ * E-404: a scene's lightGlows resolution (lighting.lightGlowResolution), in [1/16, 1]; the default for a value that is not
+ * a positive number.
+ * @param {object|undefined} lighting config.lighting
+ * @returns {number}
+ */
+export function lightGlowResolutionOf(lighting) {
+  const v = Number(lighting?.lightGlowResolution);
+  if (!(v > 0) || !Number.isFinite(v)) return LIGHTING_DEFAULTS.lightGlowResolution;
+  return Math.min(1, Math.max(1 / 16, v));
+}
 
 // ============================================================================
 // CAMERA DEFAULTS (DX-CAMERA)

@@ -367,6 +367,14 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   gbuffer?: 'pass' | 'mrt';
   /** DX-EMISSIVE: spriteRenderer.emissive glows here even without maps, faces or a shadow map. Default false. */
   emissive?: boolean;
+  /** 'add' (default): the lights' glows on the lightGlows layer, added over the lighting; 'sprite': in the entity list. */
+  lightGlow?: 'add' | 'sprite';
+  /**
+   * The lightGlows layer's size against the canvas, 1/16 to 1 (default 0.5): the glows are drawn into a target that size
+   * and added to the frame once, filtered up; a halo is smooth, and its fill costs a quarter at 0.5. 1 draws them onto the
+   * frame. `Layer.get('lightGlows').resolution` changes it at run time.
+   */
+  lightGlowResolution?: number;
   /** The sun and the day (src/util/configDefaults.js SUN_DEFAULTS). */
   sun?: SunInitConfig & { dayCycle?: { enabled?: boolean; speed?: number; dayDurationMinutes?: number } };
 }
@@ -2858,6 +2866,11 @@ export interface LayerSceneConfigEntry {
   /** `kind: LAYER_KIND.GPU_PARTICLES`: snap each particle's center to the pixel grid. */
   pixelSnap?: boolean;
   ySorting?: boolean;
+  /**
+   * The layer's render target against the canvas (default 1). A shader layer draws its picture at it. A GPU_PARTICLES
+   * layer under 1, with blend normal or add and not `sortWithEntities`, is drawn into a target that size and composed once
+   * (soft smoke at 0.5 costs a quarter of the fill; the layer's alpha then applies to its picture as a whole).
+   */
   resolution?: number;
   /** Pixi upsample filter when resolution &lt; 1. Default {@link LAYER_SCALE_MODE}.LINEAR. */
   scaleMode?: LayerScaleMode;
