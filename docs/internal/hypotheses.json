@@ -7129,7 +7129,8 @@
       "aliases": [],
       "records": [
         "R-0353",
-        "R-0371"
+        "R-0371",
+        "R-1184"
       ]
     },
     {
@@ -14860,7 +14861,8 @@
         "R-1023",
         "R-1024",
         "R-1037",
-        "R-1041"
+        "R-1041",
+        "R-1184"
       ]
     },
     {
@@ -18645,6 +18647,79 @@
       ],
       "records": [
         "R-1183"
+      ]
+    },
+    {
+      "id": "E-426",
+      "title": "Box2D's three pool threads stay on a CPU about 750 ms a second each (2.25 cores) through the step's spin (E-298's step 1), are preempted 126 to 143 times a second and leave the logic workers preempted 36 to 39 times a second: Predator crowd 2.5 has more runnable threads than cores at the frame's peak",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from a WPR capture with CSwitch and ReadyThread (cswitchStats.mjs, wprPmc.mjs) on Predator crowd 2.5",
+      "date": "2026-11-16",
+      "area": "physics",
+      "kind": "speed",
+      "result": "Window 8.76 s: physics thread 950 ms/s on CPU (84 preemptions a second); pool threads 754, 752, 743 ms/s (WrAlertByThreadId about 62 a second: one sleep a frame; 126 to 143 preemptions a second; 45 to 50 CCX moves a second); logic 610 and 538 ms/s (39 and 36 preemptions); spatial and pre-render 708 and 572. E-298 kept the spin on ballsHeavy (physics -7.7 %) with a clean Predator gate.",
+      "next": "A pool of two threads, or a spin bounded by the step's own work, measured on every worker of Predator crowd 2.5 (not only physics): the cores the spin takes may cost logic, spatial and pre-render more than the solver gains.",
+      "refs": [],
+      "aliases": [
+        "box2d pool oversubscription"
+      ],
+      "records": [
+        "R-1184"
+      ]
+    },
+    {
+      "id": "E-427",
+      "title": "The workers move between the 4800H's two core complexes (CPUs 0-7 and 8-15, a separate L3 each) 24 to 50 times a second: each move starts on a cold L2 and L3",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from a WPR capture with CSwitch and ReadyThread (cswitchStats.mjs, wprPmc.mjs) on Predator crowd 2.5",
+      "date": "2026-11-16",
+      "area": "engine",
+      "kind": "speed",
+      "result": "CCX moves a second: physics 28, pool threads 45 to 50, logic 33 and 33, spatial and pre-render 31 and 29, Pixi 47; moves overall 73 to 128 a second a thread.",
+      "next": "Not set from JavaScript (no affinity): fewer runnable threads (the previous row), longer runs between waits, or a thread count that fits one complex; read the moves again after each.",
+      "refs": [],
+      "aliases": [
+        "ccx migrations"
+      ],
+      "records": [
+        "R-1184"
+      ]
+    },
+    {
+      "id": "E-428",
+      "title": "Chrome's GPU process main thread (native, no V8 code) wakes 478 times a second, 8 a frame, and runs 305 ms a second in Predator crowd 2.5: a wake a command-buffer flush",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from a WPR capture with CSwitch and ReadyThread (cswitchStats.mjs, wprPmc.mjs) on Predator crowd 2.5",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "Thread 8476 (chrome.exe, no V8 samples): 305 ms/s on CPU, 478 switches a second (UserRequest 460 a second), ready to run p50/p90 5/10 us. The decoder trace (R-1181): 232 to 251 PutChanged a second in Predator ?light3d=1.",
+      "next": "Count the Pixi worker's flush points (an upload larger than the transfer buffer, a sync query, a texImage) and bring a frame to one or two flushes; the GPU process's wakes and CPU after.",
+      "refs": [],
+      "aliases": [
+        "gpu process wakes",
+        "command buffer flushes"
+      ],
+      "records": [
+        "R-1184"
+      ]
+    },
+    {
+      "id": "N-221",
+      "title": "Background processes took part of the machine during sittings: VS Code (the agents' host) 6.5 % and Microsoft Defender 3.7 % of the instruction samples in an 8.8 s Predator window",
+      "status": "open",
+      "statusText": "found 2026-11-16 in the contention capture",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "wprPmc by process: chrome.exe 68.4 %, wpr.exe 9.1 % (the capture), code.exe 6.5 %, msmpeng.exe 3.7 %, system 2.8 %, claude.exe 1.7 %.",
+      "next": "Sittings while agents build and test read their load: run sittings with the agents idle (the bench lock covers browsers, not builds); a Defender exclusion for the repo, the worktrees and D:\\tmp is the owner's call.",
+      "refs": [],
+      "aliases": [
+        "background load during sittings"
+      ],
+      "records": [
+        "R-1184"
       ]
     }
   ],
@@ -30233,6 +30308,15 @@
         "0b0ec824",
         "7daf6d14"
       ]
+    },
+    {
+      "id": "R-1184",
+      "date": "2026-11-16",
+      "time": "05:47",
+      "timeFrom": "recorded",
+      "title": "Contention on Predator crowd 2.5: Box2D's pool 2.25 cores, core complex moves 24-50/s, the GPU process waking 8 times a frame",
+      "verdict": "note",
+      "text": "**Contention on Predator crowd 2.5 (a WPR capture with CSwitch and ReadyThread, cswitchStats.mjs and wprPmc.mjs): Box2D's pool threads take about 2.25 cores through the step, threads move between the two core complexes 24 to 50 times a second, Chrome's GPU process wakes 8 times a frame.** wprScene.sh (TotalIssues at 100 000, the profile's CSwitch and ReadyThread keywords added for the capture and removed after), main 0f3f79a2, 2026-11-16 05:44 to 05:47 (the capture's window 8.76 s); the scene's STEP_MS in that run (capture load included): spatial 13.9, physics 24.3, Pixi 6.2, logic 9.9, pre-render 9.5 ms.\n\n| thread (by its V8 code) | on CPU ms/s | switches/s | CCX moves/s | preempted/s | ready to run p50/p90/p99 us | why it left |\n| --- | --- | --- | --- | --- | --- | --- |\n| physics (14952) | 950 | 132 | 28 | 84 | 6/11/579 | UserRequest 24/s, WrAlertByThreadId 10/s |\n| Box2D pool (15832, 9608, 16468) | 754, 752, 743 | 207 to 221 | 45 to 50 | 126 to 143 | 6/13-14/490-810 | WrAlertByThreadId 62 to 63/s |\n| spatial / pre-render (12180, 11344) | 708, 572 | 124 | 31, 29 | 72, 56 | 6/19/136, 5/16/62 | UserRequest 41, 60/s |\n| logic (2984, 17356) | 610, 538 | 127 | 33, 33 | 39, 36 | 5/10/210, 5/13/746 | UserRequest 62, 60/s |\n| Pixi (10620) | 380 | 199 | 47 | 37 | 5/10/58 | UserRequest 147/s |\n| particle (2608) | 58 | 83 | 27 | 21 | 5/8/13 | UserRequest 60/s |\n| Chrome GPU process main (8476, native) | 305 | 478 | 102 | 1 | 5/10/43 | UserRequest 460/s |\n\nTwo other busy threads (10216 at 629 ms/s, 3504 at 497 ms/s pinned to CPU 15) carry no V8 code. By process (instruction samples): chrome.exe 68.4 %, wpr.exe 9.1 %, code.exe 6.5 %, msmpeng.exe 3.7 %. Filed: E-426 (the pool's spin against the other workers), E-427 (core complex moves), E-428 (the GPU process's wakes), N-221 (background load during sittings)."
     }
   ],
   "leads": [
