@@ -26,7 +26,8 @@
  *     [--query k=v&k2=v2] [--warmup-ms 12000] [--record-ms 3000] [--gpu-passes | --gpu-draws [--probe-scissor re]]
  *     [--output gl.json]
  * From Git Bash set MSYS_NO_PATHCONV=1. Headed Chrome (a headless one draws on a software path). The wrappers add a
- * little time to each call, so the scene's speed during the window is not a measurement; the counts are.
+ * little time to each call, so the scene's speed during the window is not a measurement; the counts are. The WebGPU
+ * backend's side is webgpuFrameRecorder.mjs.
  */
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -43,7 +44,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../
 async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
   const px = self.pixiRenderer;
   const gl = px?.pixiApp?.renderer?.gl;
-  if (!gl) return { error: 'no WebGL context in the Pixi worker (a WebGPU backend?)' };
+  if (!gl) return { error: 'no WebGL context in the Pixi worker (a WebGPU backend? webgpuFrameRecorder.mjs records that one)' };
   const proto = Object.getPrototypeOf(gl);
   // GPU time by pass (gpuPasses): a TIME_ELAPSED query from each framebuffer bind to the next, labelled by the
   // framebuffer, the viewport set in it and its first program; results read without waiting, summed by label. The
