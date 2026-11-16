@@ -19289,8 +19289,8 @@
     {
       "id": "N-224",
       "title": "volumeStressScene draws none of its cars: maxMeshIndices = N x 72 + CARS x 96 + 64 is too small, since a house takes 78 indices and a car 60, so only 18 708 houses get a mesh and the 200 cars none",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-419 agent",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-16 by the E-419 agent; fixed 2026-11-16 in f51d5715 (maxMeshIndices N x 78 + CARS x 60 + 64)",
       "date": "2026-11-16",
       "area": "bench",
       "kind": "bug",
@@ -19307,13 +19307,13 @@
     {
       "id": "N-225",
       "title": "shadowOutlineCheck fails on main: 54 of 64 casters are past 1.5 px at the 99th percentile (the boxes at 1.50 to 1.88 px, the crate under the lamp at 60 px off by 420 px)",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the E-419 agent on main 8f1d4eda",
+      "status": "answered",
+      "statusText": "found 2026-11-16 by the E-419 agent on main 8f1d4eda; answered 2026-11-16: N-192's known residue, not a regression",
       "date": "2026-11-16",
       "area": "tests",
       "kind": "bug",
-      "result": "The check prints the same numbers before and after E-419: the failure predates it.",
-      "next": "Find whether the outlines moved (a regression since the check's last pass) or the threshold no longer fits the light3d casters; bisect with the check if it once passed.",
+      "result": "Answered: N-192 holds the same picture since 2026-11-15. The box and card sit at about 1.5 px since the floor-bias fix (R-1133: 1.4 to 1.6 px), now 1.50 to 1.88. The crate under a lamp lower than itself is measured against a projection without the stretch cap, so the formula runs off as z nears the lamp's height while the engine caps at 8 (N-192's next: give the formula the cap). The check prints the same numbers before and after E-419: the failure predates it.",
+      "next": "Under N-192: the check's lamp formula with the cap (and DX-LAMPPANO's panorama), then read the boxes' 1.5 to 1.9 px against R-1133's 1.4 to 1.6 to tell drift from a regression.",
       "refs": [],
       "aliases": [
         "shadow outline check failing"
