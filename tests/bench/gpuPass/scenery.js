@@ -157,6 +157,12 @@ export async function buildScenery(p) {
     lightData.set([k, 0.85 * k, 0.6 * k, l.elevation], (maxLights + i) * 4);
     // N-212: no lamp fades at the cut here.
     lightData.set([1, 0, 0, 0], (maxLights * 3 + i) * 4);
+    // DX-SPOT: the first p.cones lights are cones: a direction on the floor, the cosine of a 30 to 60 degree half aperture
+    // and 1 / the soft edge's width (0.25).
+    if (i < p.cones) {
+      const a = rng() * Math.PI * 2;
+      lightData.set([Math.cos(a), Math.sin(a), Math.cos(((30 + rng() * 30) * Math.PI) / 180), 4], (maxLights * 2 + i) * 4);
+    }
   }
 
   // One empty footprint row (the columns' uFoot: no footprint, nothing swept north).

@@ -43,6 +43,8 @@ const FORMATS = {
   rgba16f: { internal: 'RGBA16F', format: 'RGBA', type: 'HALF_FLOAT', float: true },
   r32f: { internal: 'R32F', format: 'RED', type: 'FLOAT', float: true, wide: true },
   rgba32f: { internal: 'RGBA32F', format: 'RGBA', type: 'FLOAT', float: true, wide: true },
+  // E-205: the light tiles' words (read with texelFetch, never filtered or drawn into).
+  r32ui: { internal: 'R32UI', format: 'RED_INTEGER', type: 'UNSIGNED_INT', float: false, wide: true },
 };
 
 const IDENTITY3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
