@@ -19426,12 +19426,12 @@
     {
       "id": "N-228",
       "title": "Since E-419, MeshUvFillBatch makes Pixi warn \"Attribute aTri is not present in the shader\": the geometry keeps aTri though the program now takes the corner from the vertex index",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the pixi batch agent (opt/pixi-gpu-batch)",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-16 by the pixi batch agent (opt/pixi-gpu-batch); fixed 2026-11-16 in e9f9fb10",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "bug",
-      "result": "The warning shows on main after 61170219 (E-419); the lamps' map volumes had printed it once per tile count until d7b7a36b numbered their vertices by an attribute.",
+      "result": "Fixed (e9f9fb10): the geometry draws with the index buffer [0, 1, 2] (Uint32: WebGPU refused a 6-byte Uint16 buffer) and no aTri attribute; compareCaptures --vs HEAD on volumeStressScene still=1 dayMinutes=0: 0 of 921 600 pixels differ on WebGL, WebGPU and api=volume; node 2848/2848, demos 101/101. The warning shows on main after 61170219 (E-419); the lamps' map volumes had printed it once per tile count until d7b7a36b numbered their vertices by an attribute.",
       "next": "Drop aTri from the geometry where the program no longer reads it (or keep a program input that uses it); check the console of volumeStressScene and Predator ?light3d=1.",
       "refs": [],
       "aliases": [
