@@ -93,7 +93,8 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * With `stamp` (E-114, the shadow stamp `shadowStamp.wasm`, which reads the sun rows and writes the stamp
  * rows where the GPU queues hold them), its scratch: the candidates, their distances, order and the kept
  * list (one entry per sun caster each), the stamp grid's counts, starts and items, the nearest lights per
- * caster (maxShadowsPerEntity slots each), the light table (five doubles a light) and its column table.
+ * caster (E-358: one record a caster, its maxShadowsPerEntity (float distance, int32 light) pairs side by side) and
+ * their counts, the light table (STAMP_LIGHT_DOUBLES a light) and its column table.
  * With `sway` (W22, the decoration sway `decorationSway.wasm`, which the particle worker runs on the
  * decorations block above), the particle worker's sway arrays: the frame's active snapshot (u16), the
  * phase tables (f32 per decoration), this frame's sin and cos per bucket (f32), the bucket cache (u16
@@ -224,8 +225,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'stampGridCounts', owner: 'pre-render', bytes: STAMP_GRID_CELLS * 4 },
       { name: 'stampGridStarts', owner: 'pre-render', bytes: (STAMP_GRID_CELLS + 1) * 4 },
       { name: 'stampGridItems', owner: 'pre-render', bytes: sun * 4 },
-      { name: 'stampNearDist', owner: 'pre-render', bytes: near * 4 },
-      { name: 'stampNearSlot', owner: 'pre-render', bytes: near * 4 },
+      // E-358: each caster's nearest lights as one record, 8 bytes a pair (wasm/shadowStamp.c note_nearest).
+      { name: 'stampNear', owner: 'pre-render', bytes: near * 8 },
       { name: 'stampNearCount', owner: 'pre-render', bytes: sun },
       // E-160: the grid's packed x and y, each caster's cell, and the candidates' double distances.
       { name: 'stampPackedX', owner: 'pre-render', bytes: sun * 4 },
