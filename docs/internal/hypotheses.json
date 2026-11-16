@@ -18225,7 +18225,8 @@
         "R-1181",
         "R-1187",
         "R-1190",
-        "R-1191"
+        "R-1191",
+        "R-1195"
       ]
     },
     {
@@ -18837,7 +18838,8 @@
       ],
       "records": [
         "R-1187",
-        "R-1190"
+        "R-1190",
+        "R-1195"
       ]
     },
     {
@@ -19110,6 +19112,61 @@
       ],
       "records": [
         "R-1194"
+      ]
+    },
+    {
+      "id": "E-448",
+      "title": "Sprites whose frames have no soft texels (alpha 0 or 255) blend back to front, so every covered pixel is shaded once per sprite over it: drawn front to back with the depth test (the pack already writes the painter's order as each instance's depth, 1 - (k + 1) / denom), early depth would shade each pixel about once. bunnyMark's 160 000 bunnies cost 16.1 ms of GPU a frame, 3.1 under a 1 px scissor",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws over the demos and stress scenes (GTX 1650, 1920 x 1080); the fill measured with --probe-scissor",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "bunnyMarkScene: one draw of 159 735 instances, 16.1 ms of draws a recorded frame, drawn in 70 % of the frames (the frame pacer skips the rest: the GPU is the limit); under a 1 px scissor 3.1 ms with 250 000 bunnies (the scene adds bunnies while it keeps its frame rate, so it grew once the fill was gone): about 12 ns a bunny of vertex work, so some 87 % of the drawn cost is fill. bunny.png 26 x 37: 41 % transparent, 59 % opaque, no texel between. The same holds for the LPC people (civil1 to civil4: 5 soft texels in 2.9 M) that Predator and light3dCompare draw by the tens of thousands. instancedSprite.vert.glsl already writes gl_Position.z = aInstDepth; gpuPack.c writes it from the draw order; no batch draws with a depth test today (E-186's note). Under DX-DEPTH it does not apply: gl_FragDepth turns early depth off.",
+      "next": "A per-frame bit for frames with no soft or glowing texel (the one E-429 adds to the frame table), the batch drawing those instances under an opaque tint in reverse order with depth test and write, no blend, discarding alpha under 0.5, then the others in painter order blended with the test and no write. The pack writes the opaque ones reversed into their own range. The image is identical for binary frames; bunnyMark (GPU per drawn frame and the frames drawn) and Predator crowd 2.5 before and after.",
+      "refs": [],
+      "aliases": [
+        "opaque sprites front to back",
+        "early depth for binary sprites"
+      ],
+      "records": [
+        "R-1195"
+      ]
+    },
+    {
+      "id": "E-449",
+      "title": "waterAndBoxesScene's drops draw the 200 px light gradient at scale 10 (2 000 px across against a visual range of 120): 4 000 of them cost the water's density target (480 x 270) 7.8 ms of GPU a frame",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws over the demos and stress scenes (GTX 1650, 1920 x 1080)",
+      "date": "2026-11-16",
+      "area": "demos",
+      "kind": "speed",
+      "result": "waterAndBoxesScene: fbo 480 x 270 [uTexLut,uTexture] one draw, 4 000 instances, 7.799 ms of 7.897 a frame. waterBall.js: setSprite('_lightGradient') (LIGHT_GRADIENT_TEXTURE_RADIUS: 200 px across), setScale(collider.radius * 0.5) with radius 20, visualRange radius * 6; the layer at resolution 0.25 with additive blending, then the metaball threshold.",
+      "next": "Scale each drop's gradient to the radius the threshold (0.8) keeps (about the visual range), retuning the threshold if the look moves; the recorder before and after. A demo change: the engine's density path is fine at a sane scale.",
+      "refs": [],
+      "aliases": [
+        "water drops oversized"
+      ],
+      "records": [
+        "R-1195"
+      ]
+    },
+    {
+      "id": "E-450",
+      "title": "platformerGameScene's bloom layer blurs with a 2D stack blur at full resolution, nested loops over (2R + 1)^2 taps a pixel: 11.0 ms of GPU a frame for one draw",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws over the demos and stress scenes (GTX 1650, 1920 x 1080)",
+      "date": "2026-11-16",
+      "area": "demos",
+      "kind": "speed",
+      "result": "platformerGameScene: fbo#7 one draw, one instance, the bloom layer's shader [uTexture]: 11.006 ms of 11.412 a frame. demos/shaders/bloom.frag: two nested loops over ±STACKBLUR_MAX_R; BLOOM_RESOLUTION 1; uBlurSize 12.",
+      "next": "A separable blur (two passes of 2R + 1 taps, or a downsampled chain), or the layer at resolution 0.5 or 0.25 (a bloom is smooth); the recorder before and after. A demo change; an engine helper for two-pass layer shaders would let games do it without writing it.",
+      "refs": [],
+      "aliases": [
+        "platformer bloom 11 ms"
+      ],
+      "records": [
+        "R-1195"
       ]
     }
   ],
@@ -30813,6 +30870,15 @@
       "commits": [
         "6aa3566b"
       ]
+    },
+    {
+      "id": "R-1195",
+      "date": "2026-11-16",
+      "time": "07:11",
+      "timeFrom": "recorded",
+      "title": "The GPU draw by draw over 21 demos and stress scenes: bunnyMark 16.1 ms (87 % fill: E-448), the platformer's bloom 11.0 ms (E-450), the water's drops 7.8 ms (E-449), glows in headlights and sunStreet",
+      "verdict": "note",
+      "text": "**The GPU draw by draw beyond the light scenes, over 21 demos and stress scenes. The big costs are fill: bunnyMark's bunnies (16.1 ms a frame, about 87 % fill), the platformer's bloom (11.0 ms, demo shader), the water's density (7.8 ms, oversized drops), and glows in headlights and sunStreet (1.4 ms each).**\n\nglFrameRecorder --gpu-draws, headed Chrome 157, GTX 1650, 1920 x 1080, 3 s after 10 s, main 63cc2f86 to f586c759, 2026-11-16 07:02 to 07:10 (the result files). bunnyMark's probe ended at 07:11.\n\n| scene | GPU in draws a frame | what costs |\n| --- | --- | --- |\n| bunnyMarkScene | 16.144 to 16.315 ms | one draw of 160 000 to 165 000 bunnies, drawn in 60 to 70 % of the frames; under a 1 px scissor 3.1 ms with 250 000 (E-448) |\n| platformerGameScene | 11.412 | the bloom layer's one draw 11.006 (a 2D stack blur at full resolution: E-450) |\n| waterAndBoxesScene | 7.897 | the drops into the 480 x 270 density target 7.799 (4 000 instances, each 2 000 px across: E-449) |\n| sunStreetScene | 3.905 | 13 big instances [uTexLut,uTexture] 1.439 (glows: E-404); the mesh fill 0.908 (60 413 instances) |\n| headlightsScene | 3.161 | 7 big instances 1.379 (the headlights' glows: E-404) |\n| bunnyMarkStressScene | 3.613 | 19 980 instances 3.567 |\n| littleCityScene | 2.508 | tilemap, 8 draws 1.805 (E-432) |\n| decalBlitStressScene | 2.240 | 347 draws and 16 701 GL calls a frame (the scene's PIXI.Sprite per tile and uploads, by design) |\n| liquidFunDemoScene | 1.443 | the density pass 0.460 (690) |\n| spritePackStressScene, adobeAnimateScene, liquidFunStressScene | 1.0 to 1.4 | sprites |\n| ballsScene, boidsScene, particleEmitStressScene | 0.4 to 1.1 | |\n| particleLabScene, tilemapStressScene, decorationSwayStressScene | 0.36 to 0.38 (a clear) | no draw in the window: CPU stresses or a demo that emits on input |\n| gpuGalaxyScene, meshGalleryScene, destructibleTerrainScene | | WebGPU: the recorder reads WebGL only |\n\nThe first clear on the screen reads 0.3 to 0.45 ms in some of these scenes, against 0.003 to 0.03 elsewhere. It is probably the wait for the back buffer, not the clear's cost.\n\nFiled:\n- E-448: binary-alpha sprites front to back with the depth test. The pack already writes each instance's depth from the draw order.\n- E-449: the water drops' scale (demo).\n- E-450: the platformer's bloom (demo)."
     }
   ],
   "leads": [
