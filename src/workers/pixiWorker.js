@@ -438,6 +438,8 @@ const SELF_LIT_NO_FACING = 1e30;
  * of its half aperture, 1 / its soft edge's width (the shaders' CONE variant reads them as aCone).
  */
 const CONE_FLOATS = 4;
+/** DX-LAMPPANO: how many of the stamp batch's geometries keep a lamp card strip of their own (its ring's slots, then some). */
+const LAMP_STRIP_SOURCES = 8;
 /**
  * E-260. Floats per vertex of a sprite-masked self-lit batch: x, y; u, v; the light's x, y, intensity and the body's
  * radius; the light's r, g, b and the attenuation scale; the body's centre; the light's cone (as CONE_FLOATS).
@@ -992,6 +994,8 @@ class PixiRenderer extends AbstractWorker {
     this._lampStripIndex = new Uint16Array(0);
     this._lampStripGeometry = null;
     this._lampStripSource = null;
+    /** The strip's geometry for each geometry of the batch's ring it was drawn over (made once each, a few at most). */
+    this._lampStripBySource = new Map();
     this._lampMapClear = false;
     this._lampMapDrew = false;
     // Each tile's lamp (floor point, height, reach) as RGBA32F, a texel a tile; entity -> tile; last frame's lamps.
@@ -6719,6 +6723,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._lampStripIndex = strip.indices;
       this._lampStripGeometry = this._lampCardGeometry(batch);
       this._lampStripSource = batch.mesh.geometry;
+      this._lampStripBySource.set(this._lampStripSource, this._lampStripGeometry);
       this._lampMapMesh = new PIXI.Mesh({ geometry: this._lampStripGeometry, shader, state, label: 'lamp-map' });
       this._lampMapMeshCeil = new PIXI.Mesh({ geometry: this._lampStripGeometry, shader: shaderCeil, state, label: 'lamp-map-ceiling' });
       // A depth test keeps the highest caster point and its entity; a mesh's blend mode holds only as a child (the sun
@@ -6766,12 +6771,24 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let i = 0, at = GPU_CASTER_LIGHT_FLOAT + 2; i < keep; i++, at += GPU_CASTER_FLOATS) data[at] = tiles[i] + 1;
     if (!batch.commitInstances(keep)) return false;
     // DX-LAMPPANO: the strip's geometry follows the batch's (a new one when the batch grows), drawn for these rows.
-    if (this._lampStripSource !== batch.mesh.geometry) {
-      this._lampStripGeometry.destroy();
-      this._lampStripGeometry = this._lampCardGeometry(batch);
-      this._lampStripSource = batch.mesh.geometry;
-      this._lampMapMesh.geometry = this._lampStripGeometry;
-      this._lampMapMeshCeil.geometry = this._lampStripGeometry;
+    const source = batch.mesh.geometry;
+    if (this._lampStripSource !== source) {
+      // The batch draws from a ring of geometries, a slot each frame: a strip over each, made once. Made again whenever
+      // the slot changed, it was a geometry a frame (96 KB/s of Pixi's garbage in Predator ?light3d=1). A batch that grew
+      // makes new ones: past a few, the strips go and are made again.
+      let strip = this._lampStripBySource.get(source);
+      if (strip === undefined) {
+        if (this._lampStripBySource.size >= LAMP_STRIP_SOURCES) {
+          for (const g of this._lampStripBySource.values()) g.destroy();
+          this._lampStripBySource.clear();
+        }
+        strip = this._lampCardGeometry(batch);
+        this._lampStripBySource.set(source, strip);
+      }
+      this._lampStripGeometry = strip;
+      this._lampStripSource = source;
+      this._lampMapMesh.geometry = strip;
+      this._lampMapMeshCeil.geometry = strip;
     }
     this._lampStripGeometry.instanceCount = keep;
     for (let half = 0; half < 2; half++) {
