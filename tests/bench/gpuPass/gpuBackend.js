@@ -17,6 +17,8 @@ const FORMATS = {
   rgba16f: { gpu: 'rgba16float', bytes: 8, filterable: true },
   r32f: { gpu: 'r32float', bytes: 4, filterable: false, wide: true },
   rgba32f: { gpu: 'rgba32float', bytes: 16, filterable: false, wide: true },
+  // E-205: the light tiles' words (textureLoad only; a data texture 64 texels wide or a multiple: rows of 256 bytes).
+  r32ui: { gpu: 'r32uint', bytes: 4, filterable: false, wide: true },
 };
 
 function blendState(mode) {

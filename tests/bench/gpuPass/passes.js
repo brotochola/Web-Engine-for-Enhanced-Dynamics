@@ -13,10 +13,13 @@
  *   sunMap       the sun's map: N cards (sunMapVertex), max blending
  *   sunColumns   the sun's map: renders as columns (sunMapColumnsVertex, 24 x 24 cells each)
  *   lampMap      the lamps' map: one tile a lamp, `casters` cards each (lampMapVertex)
- *   light        today's light pass (lightingBasic, no blocks)
- *   light3d      the light pass with the G-buffer, the sun's map and the lamps' map (FACES, SUNMAP, LAMPMAP)
+ *   light        today's light pass (lightingBasic, no blocks but E-205's TILES: each pixel loops over the lights of its
+ *                screen tile, src/render/lightTiles.js, binned here for the bench's camera)
+ *   light3d      the light pass with the G-buffer, the sun's map and the lamps' map (FACES, SUNMAP, LAMPMAP), tiled
  *   selfShadow   light3d with SELFSHADOW: `steps` steps, `rays` rays (1, 2 or 4; 2 and 4 are the bench's transform
- *                when the shader has one ray: raysSource below)
+ *                when the shader has one ray: raysSource below), tiled
+ *   lightUntiled, light3dUntiled, selfShadowUntiled  the same passes looping over every light at every pixel (the
+ *                shader without TILES): the same image, so their hashes match the tiled ones'
  *   multiply     today's composition of the light layer: the light texture over the colour, MULTIPLY
  *   compose      DX-EMISSIVE's composition (§6.9): lit colour x light + self glow, one full-resolution pass reading
  *                three textures (the bench's shader: the engine has none yet)
@@ -31,6 +34,10 @@ import {
 import { lampCardStrip, lampMapFragment, lampMapVertex, lampMapWgsl } from '../../../src/render/lampShadowMap.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from '../../../src/render/pixelDepth.js';
 import { FOOTPRINT_TEXELS } from '../../../src/render/frameBase.js';
+import {
+  LightTiles, TILE_CAM_COS, TILE_CAM_FULL_H, TILE_CAM_FULL_W, TILE_CAM_GROUND_INV_Y, TILE_CAM_SIN, TILE_CAM_X, TILE_CAM_Y,
+  TILE_CAM_ZOOM, binLightTiles, layoutLightTiles, writeLightTileUniforms,
+} from '../../../src/render/lightTiles.js';
 import { projection } from './scenery.js';
 
 const SHADER_FILES = {
@@ -230,6 +237,8 @@ fn mainFrag(in: ComposeOut) -> @location(0) vec4<f32> {
 export const NEEDS = {
   light3d: ['gbuffer', 'sunMap', 'lampMap'],
   selfShadow: ['gbuffer', 'sunMap', 'lampMap'],
+  light3dUntiled: ['gbuffer', 'sunMap', 'lampMap'],
+  selfShadowUntiled: ['gbuffer', 'sunMap', 'lampMap'],
   multiply: ['color', 'light'],
   compose: ['color', 'light'],
 };
@@ -256,6 +265,24 @@ export function buildFrame(p, sh, sc, backend) {
   const [sx, sy, sz] = sc.sun.towards;
   const tiles = sc.tileLayout;
 
+  // E-205: the lights by tile, for the light pass's camera below (zoom 1 at the origin, not turned), as pixiWorker's
+  // _updateLightTiles bins them each frame; rows 64 texels wide or more, for WebGPU's writeTexture.
+  const lightTiles = new LightTiles();
+  layoutLightTiles(lightTiles, lw, lh, sc.maxLights, 64, p.lightTile);
+  const tileCam = lightTiles.cam;
+  tileCam[TILE_CAM_ZOOM] = 1;
+  tileCam[TILE_CAM_X] = 0;
+  tileCam[TILE_CAM_Y] = 0;
+  tileCam[TILE_CAM_COS] = 1;
+  tileCam[TILE_CAM_SIN] = 0;
+  tileCam[TILE_CAM_FULL_W] = W;
+  tileCam[TILE_CAM_FULL_H] = H;
+  tileCam[TILE_CAM_GROUND_INV_Y] = Math.fround(1 / g);
+  binLightTiles(lightTiles, sc.lightData, sc.maxLights, p.lights);
+  const tileGrid = new Float32Array(4);
+  const tileWords = new Float32Array(4);
+  writeLightTileUniforms(lightTiles, tileGrid, tileWords);
+
   const textures = {
     atlas: { kind: 'bitmap', bitmap: sc.atlas, premultiply: true, filter: 'linear' },
     twin: { kind: 'data', format: 'rgba8', width: sc.atlasSize[0], height: sc.atlasSize[1], data: sc.twin, filter: 'nearest' },
@@ -263,6 +290,7 @@ export function buildFrame(p, sh, sc, backend) {
     lutRender: { kind: 'data', format: 'rgba32f', width: sc.lutSize[0], height: sc.lutSize[1], data: sc.lutRender },
     lutMixed: { kind: 'data', format: 'rgba32f', width: sc.lutMixedSize[0], height: sc.lutMixedSize[1], data: sc.lutMixed },
     lightData: { kind: 'data', format: 'rgba32f', width: sc.maxLights, height: sc.lightData.length / (4 * sc.maxLights), data: sc.lightData },
+    lightTiles: { kind: 'data', format: 'r32ui', width: lightTiles.texWidth, height: lightTiles.texHeight, data: lightTiles.bits },
     lampTiles: { kind: 'data', format: 'rgba32f', width: sc.lampCount, height: 1, data: sc.lampTiles },
     foot: { kind: 'data', format: 'rgba32f', width: FOOTPRINT_TEXELS, height: 1, data: sc.foot },
     color: { kind: 'target', format: 'rgba8', width: W, height: H, filter: 'linear' },
@@ -314,6 +342,7 @@ export function buildFrame(p, sh, sc, backend) {
   const lightPass = (name, flags, label) => {
     let frag = lightingSource(sh.lightFrag, flags).replace(/MAX_LIGHTS/g, maxLights);
     let wgsl = lightingSource(sh.lightWgsl, flags).replace(/MAX_LIGHTS/g, maxLights);
+    const tiled = Boolean(flags.tiles);
     let how = '';
     if (flags.selfShadow) {
       const a = raysSource(frag, p.rays, false);
@@ -331,7 +360,7 @@ export function buildFrame(p, sh, sc, backend) {
         wgsl: { code: wgsl, vertexEntry: 'mainVert', fragmentEntry: 'mainFrag' },
         vertex: screen,
         instances: null,
-        textures: { uLightData: 'lightData', uFaceMap: 'gbuf', uSunMap: 'sunMap', uLampMap: 'lampMap' },
+        textures: { uLightData: 'lightData', uFaceMap: 'gbuf', uSunMap: 'sunMap', uLampMap: 'lampMap', ...(tiled ? { uLightTiles: 'lightTiles' } : {}) },
         uniforms: {
           ...pixi(lw, lh),
           uCameraPos: [0, 0],
@@ -342,7 +371,7 @@ export function buildFrame(p, sh, sc, backend) {
           uInvResolution: 1 / p.res,
           uLightTexWidth: sc.maxLights,
           uLightCount: p.lights,
-          uConeCount: 0,
+          uConeCount: Math.min(p.cones, p.lights),
           uBaseAmbient: 0.1,
           uSunIntensity: p.night ? 0 : 0.6,
           uSunR: 1,
@@ -359,6 +388,7 @@ export function buildFrame(p, sh, sc, backend) {
           uSunMapK: [kx, ky, g, 0.7],
           uSelfShadow: [4, p.steps, 3, p.rays],
           uLampAtlas: [tiles.perRow, tiles.size, tiles.width, tiles.height],
+          ...(tiled ? { uTileGrid: [...tileGrid], uTileWords: [...tileWords] } : {}),
         },
         targets: ['light'],
         blend: ['none'],
@@ -511,13 +541,28 @@ export function buildFrame(p, sh, sc, backend) {
       },
     }));
   }
-  add('light', () => lightPass('light', { faces: false, sunMap: false }, `light pass (today's), ${p.lights} of ${sc.maxLights} lights, ${lw}x${lh}`));
-  add('light3d', () =>
-    lightPass('light3d', { faces: true, sunMap: true, lampMap: true }, `light pass with G-buffer, sun map and lamps' map, ${p.lights} of ${sc.maxLights} lights, ${lw}x${lh}`),
-  );
-  add('selfShadow', () =>
-    lightPass('selfShadow', { faces: true, sunMap: true, lampMap: true, selfShadow: true }, `light3d with self-shadow, ${p.rays} ray(s), ${p.steps} steps, ${p.lights} lights, ${lw}x${lh}`),
-  );
+  // E-205: each light pass tiled (as the engine draws it) and untiled (every light at every pixel).
+  for (const tiled of [true, false]) {
+    const suffix = tiled ? '' : 'Untiled';
+    const how = tiled ? `, tiled (${lightTiles.tilePx} px tiles)` : ', every light at every pixel';
+    add(`light${suffix}`, () =>
+      lightPass(`light${suffix}`, { faces: false, sunMap: false, tiles: tiled }, `light pass (today's), ${p.lights} of ${sc.maxLights} lights, ${lw}x${lh}${how}`),
+    );
+    add(`light3d${suffix}`, () =>
+      lightPass(
+        `light3d${suffix}`,
+        { faces: true, sunMap: true, lampMap: true, tiles: tiled },
+        `light pass with G-buffer, sun map and lamps' map, ${p.lights} of ${sc.maxLights} lights, ${lw}x${lh}${how}`,
+      ),
+    );
+    add(`selfShadow${suffix}`, () =>
+      lightPass(
+        `selfShadow${suffix}`,
+        { faces: true, sunMap: true, lampMap: true, selfShadow: true, tiles: tiled },
+        `light3d with self-shadow, ${p.rays} ray(s), ${p.steps} steps, ${p.lights} lights, ${lw}x${lh}${how}`,
+      ),
+    );
+  }
   add('multiply', () => ({
     label: `light layer over the picture (MULTIPLY), ${W}x${H}`,
     spec: {
