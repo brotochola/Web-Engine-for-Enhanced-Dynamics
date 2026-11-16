@@ -95,6 +95,8 @@ import { Layer } from '../core/layer.js';
 import { computeBufferSize, createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
     bindGpuPack, packIndexedRowsWasm, packInstancedRowsWasm, packKeyedCastersScanWasm, packSplitRowsWasm,
+    KEYED_SUN_DEFER, KEYED_SUN_SHEET, KEYED_SUN_SHEETS, KEYED_SUN_SHEET_WORDS, KEYED_SUN_SOLID, KEYED_SUN_TABLE,
+    KEYED_SUN_UNIFORM,
 } from '../render/gpuPackClient.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, radixSortIndicesWasm } from '../render/painterRadixClient.js';
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
@@ -449,6 +451,84 @@ export function applyKeyedSunFramesFor(rows, keyedN, count, qType, shadowH, type
         const v = sunFrameFor(entities[i], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
         if (v !== 0) rows[k * GPU_KEYED_CASTER_FLOATS + 3] = v;
     }
+}
+
+/**
+ * E-372: the keyed rows pack_casters_keyed_scan left at frame 0 for the JS, `listed` pairs in `list` (keyed row, entity):
+ * the casters of a table that is not uniform or that its region does not hold, and those with no direction drawn yet.
+ * Each gets sunFrameFor, as applyKeyedSunFramesFor gives it (prepareSunFrames ran this call).
+ */
+export function applyListedSunFramesFor(rows, list, listed, active, mode, casts, sheets, dirs, anims, frames, tables, shift,
+    orients, kinds) {
+    for (let m = 0; m < listed; m++) {
+        const v = sunFrameFor(list[2 * m + 1], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
+        if (v !== 0) rows[list[2 * m] * GPU_KEYED_CASTER_FLOATS + 3] = v;
+    }
+}
+
+/**
+ * E-372: the sun frames' tables where pack_casters_keyed_scan reads them (`sun`, gpuPackClient.js keyedSunViews), after
+ * prepareSunFrames: by sheet id a descriptor (KEYED_SUN_SHEET) and, in the pool, the table's frames by absolute direction
+ * (frameAt, which a fixed card reads at its front) and a uniform table's for this turn (frameOf). Written again, every
+ * sheet's, only when a table's frames are not the ones the region holds (a new step of the sun's turn, a new proxy map,
+ * other tables): a few hundred words a sheet, now and then. A sheet whose frames the pool does not hold, or whose front
+ * is not one of its directions, has its casters left to the JS (KEYED_SUN_DEFER).
+ * @param {object} sun the region's views
+ * @param {Array} tables the direction tables by sheet id (sunFrameTables)
+ */
+export function syncKeyedSunTables(sun, tables) {
+    if (sun.tables === tables && !keyedSunTablesMoved(sun, tables)) return;
+    const desc = sun.sheets;
+    const pool = sun.pool;
+    desc.fill(0);
+    sun.frameOf.fill(null);
+    sun.frameAt.fill(null);
+    sun.frameShift.fill(-2);
+    let at = 0;
+    const n = tables.length < KEYED_SUN_SHEETS ? tables.length : KEYED_SUN_SHEETS;
+    for (let sheet = 0; sheet < n; sheet++) {
+        const t = tables[sheet];
+        if (t === undefined) continue;
+        const w = sheet * KEYED_SUN_SHEET_WORDS;
+        const size = t.count * t.groups * t.maxFrames;
+        const need = t.uniform ? 2 * size : size;
+        let flags = KEYED_SUN_TABLE | (t.solid ? KEYED_SUN_SOLID : 0);
+        if (size > 0 && t.front >= 0 && t.front < t.count && t.frameAt.length >= size
+            && (!t.uniform || t.frameOf.length >= size) && at + need <= pool.length) {
+            desc[w + KEYED_SUN_SHEET.FRAME_AT] = sun.poolByte + at * 4;
+            for (let k = 0; k < size; k++) pool[at + k] = t.frameAt[k];
+            at += size;
+            if (t.uniform) {
+                flags |= KEYED_SUN_UNIFORM;
+                desc[w + KEYED_SUN_SHEET.FRAME_OF] = sun.poolByte + at * 4;
+                for (let k = 0; k < size; k++) pool[at + k] = t.frameOf[k];
+                at += size;
+            }
+        } else {
+            flags |= KEYED_SUN_DEFER;
+        }
+        desc[w + KEYED_SUN_SHEET.FLAGS] = flags;
+        desc[w + KEYED_SUN_SHEET.COUNT] = t.count;
+        desc[w + KEYED_SUN_SHEET.GROUPS] = t.groups;
+        desc[w + KEYED_SUN_SHEET.MAX_FRAMES] = t.maxFrames;
+        desc[w + KEYED_SUN_SHEET.FRONT] = t.front;
+        sun.frameAt[sheet] = t.frameAt;
+        sun.frameOf[sheet] = t.frameOf;
+        sun.frameShift[sheet] = t.frameShift;
+    }
+    sun.tables = tables;
+}
+
+/** E-372: whether a table's frames are not the ones syncKeyedSunTables last copied for its sheet. */
+function keyedSunTablesMoved(sun, tables) {
+    const n = tables.length < KEYED_SUN_SHEETS ? tables.length : KEYED_SUN_SHEETS;
+    for (let sheet = 0; sheet < n; sheet++) {
+        const t = tables[sheet];
+        if (t === undefined) continue;
+        if (sun.frameAt[sheet] !== t.frameAt) return true;
+        if (t.uniform && (sun.frameOf[sheet] !== t.frameOf || sun.frameShift[sheet] !== t.frameShift)) return true;
+    }
+    return false;
 }
 
 /**
@@ -1203,6 +1283,23 @@ class PreRenderWorker extends AbstractWorker {
         // DX-SHADOW3D: a uniform table's turn towards the sun in whole steps, by sheet id, and the sun's turn it is for.
         this._sunShift = new Int16Array(256);
         this._sunShiftTurn = new Float64Array(256).fill(NaN);
+        // E-372: the columns the keyed caster scan reads for the keyed rows' sun frames (packKeyedCastersScanWasm's `sun`,
+        // bound by _keyedSunFrames), and what the scan did: whether it wrote them, and the rows it left to the JS.
+        this._keyedSun = {
+            types: EMPTY_U8,
+            entities: EMPTY_I32,
+            active: EMPTY_U8,
+            mode: EMPTY_U8,
+            dirs: EMPTY_U8,
+            anims: EMPTY_U8,
+            casts: null,
+            orients: null,
+            kinds: null,
+            sheets: EMPTY_U8,
+            frames: null,
+            framed: false,
+            listed: 0,
+        };
         // DX-CASTER (F9): whether casters ask for their own way (rescanned every 30 frames), and each one's code.
         this._casterKindsOn = false;
         this._casterScanTick = 0;
@@ -4265,12 +4362,13 @@ class PreRenderWorker extends AbstractWorker {
         if (count > 0 && !this._casterKindsOn && this._keyedCastersLive()) {
             // E-191 step 2: a pose, a key and the shadow terms a caster, for the casters the kernel finds in the queue
             // (E-192); -1 when a caster has no entity key (its statics are not in Pixi's texture), and the frame lists
-            // the casters and packs the full rows.
-            const keyedN = packKeyedCastersScanWasm(this._gpuPackWasm, q, count, dst.sun, this._keyedKeyBase, caps.maxSun);
+            // the casters and packs the full rows. DX-SHADOW3D (plan §17.2): a DirectionalSprite's row carries the frame
+            // the sun sees (its fourth float); E-372: the kernel writes it with the row, and the JS the rows it leaves.
+            const sun = this._keyedSunFrames(q);
+            const keyedN = packKeyedCastersScanWasm(this._gpuPackWasm, q, count, dst.sun, this._keyedKeyBase, caps.maxSun, sun);
             if (keyedN >= 0) {
                 this._gpuSunKeyed = true;
-                // DX-SHADOW3D (plan §17.2): a DirectionalSprite's row carries the frame the sun sees (its fourth float).
-                if (this._sunFrameTables !== null && keyedN > 0 && DirectionalSprite.active) this._applyKeyedSunFrames(q, dst.sun, keyedN, count);
+                if (sun !== null && keyedN > 0) this._finishKeyedSunFrames(q, dst.sun, keyedN, count, sun);
                 return keyedN;
             }
         }
@@ -4433,19 +4531,53 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * DX-SHADOW3D (plan §17.2): _applySunFrames for keyed caster rows. The kernel wrote a row for each queue row it found
-     * casting (type 3 left out, a shadow height above 0), in queue order, with 0 in its fourth float; this walks the
-     * queue the same way and writes there a DirectionalSprite's sun frame (applyKeyedSunFramesFor, ±(textureId + 1),
-     * negative mirrored), which the keyed shadow programs take instead of the sprite's own.
+     * DX-SHADOW3D (plan §17.2): _applySunFrames for keyed caster rows. The kernel writes a row for each queue row it finds
+     * casting (type 3 left out, a shadow height above 0), in queue order; a DirectionalSprite's row carries in its fourth
+     * float the frame the sun sees (±(textureId + 1), negative mirrored; 0 for the sprite's own), which the keyed shadow
+     * programs take instead of the sprite's own. The frame passes' per-call part runs here, before the scan
+     * (_prepareSunFrames). E-372: the scan writes the frames itself, from these columns and the tables brought to this
+     * turn in its region (syncKeyedSunTables); _finishKeyedSunFrames writes the rows it leaves.
+     * @returns {object|null} the columns for packKeyedCastersScanWasm, or null when the rows carry no frame this call
      */
-    _applyKeyedSunFrames(q, rows, keyedN, count) {
-        const qType = q.type || this.renderQueueType;
-        const shadowH = q.shadowH;
-        if ((q.count | 0) !== this._collectedRows || !shadowH || !this._prepareSunFrames()) return;
-        applyKeyedSunFramesFor(rows, keyedN, count, qType, shadowH, this._renderableType, this._renderableIndex,
-            DirectionalSprite.active, DirectionalSprite.mode, ShadowCaster.active || null, SpriteRenderer.spritesheetId,
-            DirectionalSprite.directionIndex, DirectionalSprite.animation, this.entityFrameIndex || null,
-            this._sunFrameTables, this._sunShift, ShadowCaster.orient || null, ShadowCaster.sunKind || null);
+    _keyedSunFrames(q) {
+        if (this._sunFrameTables === null || !DirectionalSprite.active || (q.count | 0) !== this._collectedRows || !q.shadowH
+            || !this._prepareSunFrames()) {
+            return null;
+        }
+        const sun = this._keyedSun;
+        sun.types = this._renderableType;
+        sun.entities = this._renderableIndex;
+        sun.active = DirectionalSprite.active;
+        sun.mode = DirectionalSprite.mode;
+        sun.dirs = DirectionalSprite.directionIndex;
+        sun.anims = DirectionalSprite.animation;
+        sun.casts = ShadowCaster.active || null;
+        sun.orients = ShadowCaster.orient || null;
+        sun.kinds = ShadowCaster.sunKind || null;
+        sun.sheets = SpriteRenderer.spritesheetId;
+        sun.frames = this.entityFrameIndex || null;
+        const region = this._gpuPackWasm ? this._gpuPackWasm.keyedSun : null;
+        if (region) syncKeyedSunTables(region, this._sunFrameTables);
+        return sun;
+    }
+
+    /**
+     * E-372: the keyed rows' sun frames the scan did not write (prepareSunFrames ran this call): the rows it listed
+     * (applyListedSunFramesFor), or every row (applyKeyedSunFramesFor, walking the queue as the scan did) when it wrote
+     * none (no region, a column outside the memory) or listed more than its list holds.
+     */
+    _finishKeyedSunFrames(q, rows, keyedN, count, sun) {
+        const region = sun.framed ? this._gpuPackWasm.keyedSun : null;
+        if (region !== null && sun.listed <= region.listCap) {
+            if (sun.listed > 0) {
+                applyListedSunFramesFor(rows, region.list, sun.listed, sun.active, sun.mode, sun.casts, sun.sheets, sun.dirs,
+                    sun.anims, sun.frames, this._sunFrameTables, this._sunShift, sun.orients, sun.kinds);
+            }
+            return;
+        }
+        applyKeyedSunFramesFor(rows, keyedN, count, q.type || this.renderQueueType, q.shadowH, sun.types, sun.entities,
+            sun.active, sun.mode, sun.casts, sun.sheets, sun.dirs, sun.anims, sun.frames, this._sunFrameTables, this._sunShift,
+            sun.orients, sun.kinds);
     }
 
     _ensureStampScratch(sunN) {

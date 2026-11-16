@@ -762,6 +762,7 @@ function initializeRenderQueueMemory(scene) {
   if (e.decorationByte >= 0) buffers.componentDataByte.DecorationComponent = e.decorationByte;
   if (e.lightEmitterByte >= 0) buffers.componentDataByte.LightEmitter = e.lightEmitterByte;
   if (e.adobeAnimByte >= 0) buffers.componentDataByte.AdobeAnimComponent = e.adobeAnimByte;
+  if (e.directionalSpriteByte >= 0) buffers.componentDataByte.DirectionalSprite = e.directionalSpriteByte;
 }
 
 /**
@@ -805,7 +806,7 @@ export function customLayerQueueSpecs() {
 
 /**
  * The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster, decorations, LightEmitter,
- * the particle memory and the LiquidFun render buffer; with
+ * DirectionalSprite (E-372), the particle memory and the LiquidFun render buffer; with
  * Adobe Animate characters (W27), AdobeAnimComponent and room for the assets' tables
  * (preRender.adobeTablesMB: the assets load after this memory is made, so their size is not known yet).
  */
@@ -830,6 +831,9 @@ function emitBlocks(scene) {
     decorationBytes: maxDecorations > 0 ? DecorationComponent.getBufferSize(maxDecorations) : 0,
     // The glow rows' LightEmitter columns.
     lightBytes: pools.LightEmitter?.ComponentClass ? LightEmitter.getBufferSize(n) : 0,
+    // E-372: DirectionalSprite's columns, where pre-render's keyed caster scan reads them for the sun's frames (with the
+    // frames' tables: renderQueueMemory.js withSunFrameRegions).
+    directionalBytes: pools.DirectionalSprite?.ComponentClass ? DirectionalSprite.getBufferSize(n) : 0,
     // The particle rows' ParticleComponent, in the particle memory's regions.
     particleBytes: maxParticles > 0 ? particleMemoryBytes(maxParticles, ParticleComponent.getBufferSize(maxParticles)) : 0,
     // The LiquidFun rows' render buffer and previous positions.

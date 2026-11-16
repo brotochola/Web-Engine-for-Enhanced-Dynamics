@@ -19,12 +19,58 @@ export const GPU_PACK_COLUMNS = [
 ];
 
 /**
+ * E-372: the sun frames' region (renderQueueMemory.js `keyedSun`), where the keyed caster scan reads what it needs to
+ * write each keyed caster row's sun frame: a block of KEYED_SUN_BLOCK_WORDS u32, the sheet table (a descriptor of
+ * KEYED_SUN_SHEET_WORDS u32 a sheet id), the list of the rows the scan leaves to the JS (KEYED_SUN_LIST_CAP pairs:
+ * keyed row, entity) and the pool the descriptors' frames are copied into (i32).
+ */
+export const KEYED_SUN_BLOCK_WORDS = 16;
+export const KEYED_SUN_SHEETS = 256;
+export const KEYED_SUN_SHEET_WORDS = 8;
+export const KEYED_SUN_LIST_CAP = 8192;
+export const KEYED_SUN_POOL_WORDS = 65536;
+
+/** E-372: the sun frames' region's bytes. */
+export function keyedSunRegionBytes() {
+  const tables = KEYED_SUN_BLOCK_WORDS + KEYED_SUN_SHEETS * KEYED_SUN_SHEET_WORDS;
+  return (tables + 2 * KEYED_SUN_LIST_CAP + KEYED_SUN_POOL_WORDS) * 4;
+}
+
+/**
+ * E-372: views of the sun frames' region at `byte` (null for none, 0 or less), and what its sheet table holds:
+ * preRenderWorker.js syncKeyedSunTables writes it (`tables`, and by sheet id the frames it copied and their turn).
+ * @param {ArrayBufferLike} buffer
+ * @param {number} byte
+ */
+export function keyedSunViews(buffer, byte) {
+  if (!(byte > 0)) return null;
+  const sheetsByte = byte + KEYED_SUN_BLOCK_WORDS * 4;
+  const listByte = sheetsByte + KEYED_SUN_SHEETS * KEYED_SUN_SHEET_WORDS * 4;
+  const poolByte = listByte + 2 * KEYED_SUN_LIST_CAP * 4;
+  return {
+    byte,
+    block: new Uint32Array(buffer, byte, KEYED_SUN_BLOCK_WORDS),
+    sheets: new Uint32Array(buffer, sheetsByte, KEYED_SUN_SHEETS * KEYED_SUN_SHEET_WORDS),
+    sheetsByte,
+    list: new Uint32Array(buffer, listByte, 2 * KEYED_SUN_LIST_CAP),
+    listByte,
+    listCap: KEYED_SUN_LIST_CAP,
+    pool: new Int32Array(buffer, poolByte, KEYED_SUN_POOL_WORDS),
+    poolByte,
+    tables: null,
+    frameOf: new Array(KEYED_SUN_SHEETS).fill(null),
+    frameAt: new Array(KEYED_SUN_SHEETS).fill(null),
+    frameShift: new Int32Array(KEYED_SUN_SHEETS).fill(-2),
+  };
+}
+
+/**
  * Bind the kernel to the render-queue memory.
  * @param {WebAssembly.Memory} memory
  * @param {{ tableByte: number, tableSlots: number, indexByte: number, indexCap: number, particlesByte: number }} layout
  *   createRenderQueueMemory's layout: room for `tableSlots` column tables, an index scratch of
  *   `indexCap` u32, the scatter's inverse (`inverseByte`, one u32 per queue row; 0 for none) and one
- *   u32 for the particle count
+ *   u32 for the particle count; E-372: the sun frames' region (`keyedSunByte`, -1 or none: no region)
  */
 /** The doubles the general pack reads (wasm/gpuPack.c pack_general): flags, then the camera, snap and type values. */
 const GENERAL_PARAMS = 16;
@@ -71,6 +117,8 @@ export async function bindGpuPack(memory, layout) {
     indexByte: layout.indexByte,
     indexCap: layout.indexCap,
     particlesByte: layout.particlesByte,
+    // E-372: the sun frames' region (null: the keyed caster scan writes no frame).
+    keyedSun: keyedSunViews(memory.buffer, layout.keyedSunByte | 0),
   };
 }
 
@@ -404,14 +452,83 @@ export function packKeyedCastersWasm(b, q, indices, count, dst, keyBase, capacit
   return out === 0xffffffff ? -1 : out;
 }
 
+/** E-372: the sun frames' block's words (gpuPack.c KS_*), the first of the region's (keyedSunViews' `block`). */
+export const KEYED_SUN = Object.freeze({
+  TYPES: 0, ENTITIES: 1, ENTITY_COUNT: 2, ACTIVE: 3, MODE: 4, DIRECTION: 5, ANIMATION: 6, CASTS: 7, ORIENT: 8, KIND: 9,
+  SHEET: 10, FRAME: 11, SHEETS: 12, LIST: 13, LIST_CAP: 14, LISTED: 15,
+});
+/**
+ * E-372: a sheet descriptor's words (gpuPack.c SF_*): flags, the direction count, groups, the frames axis (maxFrames),
+ * a fixed card's direction (front), the bytes of a uniform table's frames for the sun's turn (frameOf) and of the frames
+ * by absolute direction (frameAt); and its flags: a table, uniform (frameOf copied), its sheet casts its solid for the
+ * sun, its casters left to the JS (its frames not copied).
+ */
+export const KEYED_SUN_SHEET = Object.freeze({
+  FLAGS: 0, COUNT: 1, GROUPS: 2, MAX_FRAMES: 3, FRONT: 4, FRAME_OF: 5, FRAME_AT: 6,
+});
+export const KEYED_SUN_TABLE = 1;
+export const KEYED_SUN_UNIFORM = 2;
+export const KEYED_SUN_SOLID = 4;
+export const KEYED_SUN_DEFER = 8;
+
+/** E-372: whether column v is one the kernel reads at its byte: in the memory, past byte 0, `min` elements at least. */
+function kernelColumn(v, buffer, min) {
+  return !!v && v.buffer === buffer && v.byteOffset > 0 && v.length >= min;
+}
+
+/**
+ * E-372: the sun frames' block (gpuPack.c KS_*) for `sun`'s columns, written in the region's first words: the region's
+ * byte for the kernel, or 0 (no frame written) when there is no region or the kernel cannot read a column: one outside
+ * the memory, a row column shorter than the `count` rows scanned, an entity column shorter than `sun.active`.
+ */
+function keyedSunByte(b, sun, count) {
+  const region = b.keyedSun;
+  if (region === null) return 0;
+  const buf = b.buffer;
+  if (!sun.active) return 0;
+  const n = sun.active.length;
+  if (!kernelColumn(sun.types, buf, count) || !kernelColumn(sun.entities, buf, count)) return 0;
+  if (!kernelColumn(sun.active, buf, n) || !kernelColumn(sun.mode, buf, n) || !kernelColumn(sun.dirs, buf, n)
+    || !kernelColumn(sun.anims, buf, n) || !kernelColumn(sun.sheets, buf, n)) return 0;
+  if (sun.casts !== null && !kernelColumn(sun.casts, buf, n)) return 0;
+  if (sun.orients !== null && !kernelColumn(sun.orients, buf, n)) return 0;
+  if (sun.kinds !== null && !kernelColumn(sun.kinds, buf, n)) return 0;
+  if (sun.frames !== null && !kernelColumn(sun.frames, buf, n)) return 0;
+  const B = region.block;
+  B[KEYED_SUN.TYPES] = sun.types.byteOffset;
+  B[KEYED_SUN.ENTITIES] = sun.entities.byteOffset;
+  B[KEYED_SUN.ENTITY_COUNT] = n;
+  B[KEYED_SUN.ACTIVE] = sun.active.byteOffset;
+  B[KEYED_SUN.MODE] = sun.mode.byteOffset;
+  B[KEYED_SUN.DIRECTION] = sun.dirs.byteOffset;
+  B[KEYED_SUN.ANIMATION] = sun.anims.byteOffset;
+  B[KEYED_SUN.CASTS] = sun.casts !== null ? sun.casts.byteOffset : 0;
+  B[KEYED_SUN.ORIENT] = sun.orients !== null ? sun.orients.byteOffset : 0;
+  B[KEYED_SUN.KIND] = sun.kinds !== null ? sun.kinds.byteOffset : 0;
+  B[KEYED_SUN.SHEET] = sun.sheets.byteOffset;
+  B[KEYED_SUN.FRAME] = sun.frames !== null ? sun.frames.byteOffset : 0;
+  B[KEYED_SUN.SHEETS] = region.sheetsByte;
+  B[KEYED_SUN.LIST] = region.listByte;
+  B[KEYED_SUN.LIST_CAP] = region.listCap;
+  B[KEYED_SUN.LISTED] = 0;
+  return region.byte;
+}
+
 /**
  * E-192: packKeyedCastersWasm's rows for the casters of the queue's first `count` rows (shadowH above 0, not a glow: the
  * test of compactShadowCasterIndices, in the queue's order), at most `capacity`, without a list of them. -1 when the call
  * is not one the kernel takes or a caster has no key below `keyBase`: the caller lists the casters and packs the full
  * rows.
+ * E-372: with `sun` (null: none), each row's sun frame in its fourth float too, as preRenderWorker.js sunFrameFor gives it,
+ * from the sun frames' region (b.keyedSun, its tables brought to this turn by syncKeyedSunTables) and `sun`'s columns:
+ * `types` and `entities` (the collector's, by queue row), DirectionalSprite's `active`, `mode`, `dirs` (directionIndex)
+ * and `anims` (animation), ShadowCaster's `casts` (active), `orients` and `kinds` (sunKind), SpriteRenderer's `sheets`
+ * (spritesheetId) and the entities' `frames` (null for none of the last four). It sets `sun.framed`, whether the kernel
+ * wrote them (else every row keeps 0), and `sun.listed`, the rows it left at 0 for the JS (pairs in b.keyedSun.list,
+ * keyed row then entity; past its listCap only counted).
  * @returns {number} the rows written, or -1
  */
-export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity) {
+export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity, sun = null) {
   if (!b || !b.castersKeyedScan || !q || !dst) return -1;
   const key = q.key;
   if (!key || key.buffer !== b.buffer || dst.buffer !== b.buffer || !q.shadowH || q.shadowH.buffer !== b.buffer) return -1;
@@ -419,8 +536,13 @@ export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity) {
   if (type && type.buffer !== b.buffer) return -1;
   const table = tableFor(b, q);
   if (table < 0) return -1;
+  const sunAt = sun !== null ? keyedSunByte(b, sun, count >>> 0) : 0;
   const out = b.castersKeyedScan(table, key.byteOffset, type ? type.byteOffset : 0, count >>> 0, capacity >>> 0,
-    dst.byteOffset, keyBase >>> 0);
+    dst.byteOffset, keyBase >>> 0, sunAt);
+  if (sun !== null) {
+    sun.framed = sunAt > 0;
+    sun.listed = sunAt > 0 ? b.keyedSun.block[KEYED_SUN.LISTED] : 0;
+  }
   return out === 0xffffffff ? -1 : out;
 }
 

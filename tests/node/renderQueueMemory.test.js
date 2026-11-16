@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 
 import { computeBufferSize, createViews } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, createGpuQueueViews, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
-import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
-import { GPU_PACK_COLUMNS } from '../../src/render/gpuPackClient.js';
+import { createRenderQueueMemory, renderQueueMemoryBytes } from '../../src/util/renderQueueMemory.js';
+import { GPU_PACK_COLUMNS, keyedSunRegionBytes } from '../../src/render/gpuPackClient.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { DirectionalSprite } from '../../src/components/directionalSprite.js';
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES, EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_TABLE_SLOTS, PAINTER_HIST_WORDS, PAINTER_SLOTS, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS, SWAY_LIST_CAP, SWAY_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
 
@@ -141,6 +142,60 @@ test('with the emit spec, the component blocks and the emit state are regions ap
 test('without the emit spec the layout has no emit regions', () => {
   const { m } = setup();
   assert.equal(m.layout.emit, null);
+});
+
+// E-372: DirectionalSprite's block and pre-render's sun frames' region (the keyed caster scan reads both), laid past every
+// other region, which keep their places.
+test('with DirectionalSprite in the emit spec, its block and the sun frames\' region come after the others', () => {
+  const caps = gpuQueueCaps(MAX, { enabled: true });
+  const queueBytes = computeBufferSize(MAX);
+  const gpuBytes = computeGpuQueueBufferSize(caps);
+  const entities = 3000;
+  const emit = { entities, spriteBytes: SpriteRenderer.getBufferSize(entities), casterBytes: 0, decorationBytes: 0 };
+  const directionalBytes = DirectionalSprite.getBufferSize(entities);
+  const withDs = { ...emit, directionalBytes };
+  const without = createRenderQueueMemory(MAX, queueBytes, gpuBytes, emit);
+  const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, withDs);
+  const L = m.layout;
+  assert.equal(without.layout.keyedSunByte, -1, 'no sun frames\' region without DirectionalSprite');
+  assert.equal(without.layout.emit.directionalSpriteByte, -1, 'no DirectionalSprite block');
+  const same = (a, b, path) => {
+    for (const [k, v] of Object.entries(a)) {
+      if (k === 'keyedSunByte' || k === 'directionalSpriteByte') continue;
+      if (v && typeof v === 'object') same(v, b[k], `${path}.${k}`);
+      else assert.equal(b[k], v, `${path}.${k} keeps its place`);
+    }
+  };
+  same(without.layout, L, 'layout');
+  const at = L.emit.directionalSpriteByte;
+  const sun = L.keyedSunByte;
+  const regionBytes = keyedSunRegionBytes();
+  assert.ok(at >= renderQueueMemoryBytes(MAX, queueBytes, gpuBytes, emit) && at % 64 === 0, `the block past the others (${at})`);
+  assert.ok(sun >= at + directionalBytes && sun % 64 === 0, `the sun frames' region past the block (${sun})`);
+  assert.ok(sun + regionBytes <= m.buffer.byteLength, 'the region fits');
+  assert.ok(renderQueueMemoryBytes(MAX, queueBytes, gpuBytes, withDs) >= sun + regionBytes, 'and is counted');
+  // DirectionalSprite bound in its block writes only there.
+  DirectionalSprite.initializeArrays(m.buffer, entities, at);
+  try {
+    for (const v of Object.values(DirectionalSprite)) if (ArrayBuffer.isView(v)) v.fill(1);
+    const all = new Uint8Array(m.buffer);
+    let outside = 0;
+    for (let i = 0; i < all.length; i++) {
+      if (i >= at && i < at + directionalBytes) continue;
+      outside += all[i];
+    }
+    assert.equal(outside, 0, 'nothing written outside the DirectionalSprite block');
+  } finally {
+    DirectionalSprite.clearArrays();
+  }
+  // In a given memory from its byte (Phase 4), shifted by it as every region.
+  const base = 65536 * 2;
+  const pages = Math.ceil((base + renderQueueMemoryBytes(MAX, queueBytes, gpuBytes, withDs)) / 65536);
+  const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
+  const placed = createRenderQueueMemory(MAX, queueBytes, gpuBytes, withDs, null, null, false, null, null, { memory, baseByte: base });
+  assert.ok(placed, 'placed in a block that holds it');
+  assert.equal(placed.layout.emit.directionalSpriteByte, at + base);
+  assert.equal(placed.layout.keyedSunByte, sun + base);
 });
 
 test('with the stamp spec, the shadow stamp scratch and light table are regions apart from the rest', () => {

@@ -512,36 +512,137 @@ uint32_t pack_casters_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, 
   return n;
 }
 
+/* E-372: with the sun frames' region (sunByte, gpuPackClient.js keyedSunViews), the scan writes each keyed row's sun
+   frame in its fourth float as pre-render's sunFrameFor (preRenderWorker.js) works it out for a DirectionalSprite: the
+   frame the sun sees, ±(textureId + 1), negative mirrored; 0 for the sprite's own. The region starts with the block,
+   KS_WORDS u32: the collector's row types (u8) and entities (i32) by queue row, the entity count (DirectionalSprite's
+   active's length), DirectionalSprite's active, mode, directionIndex and animation, ShadowCaster's active, orient and
+   sunKind (0: none), SpriteRenderer's spritesheetId (u8 each), the entities' frames of the cycle (u16, 0: none), the sheet
+   table (SF_WORDS u32 a sheet id: flags, the direction count, groups, the frames axis, a fixed card's direction, the
+   bytes of a uniform table's frames for the sun's turn (frameOf) and of the frames by absolute direction (frameAt), each
+   (direction, group, frame) as sunFrameFor indexes them), the list of the rows left to the JS (keyed row, entity) and its
+   capacity in pairs, then the rows the scan listed, which it writes. A caster the descriptors do not decide (a table that
+   is not uniform, or that the region does not hold; a direction past the table's: none drawn yet) keeps 0 and is listed;
+   past the capacity it is only counted, and the JS writes every row's frame. */
+enum {
+  KS_TYPES, KS_ENTITIES, KS_ENTITY_COUNT, KS_ACTIVE, KS_MODE, KS_DIRECTION, KS_ANIMATION, KS_CASTS, KS_ORIENT, KS_KIND,
+  KS_SHEET, KS_FRAME, KS_SHEETS, KS_LIST, KS_LIST_CAP, KS_LISTED, KS_WORDS
+};
+enum { SF_FLAGS, SF_COUNT, SF_GROUPS, SF_MAX_FRAMES, SF_FRONT, SF_FRAME_OF, SF_FRAME_AT, SF_WORDS = 8 };
+#define SF_TABLE 1u
+#define SF_UNIFORM 2u
+#define SF_SOLID 4u
+#define SF_DEFER 8u
+/* ShadowCaster's kind for a light that casts its card (shadowCaster.js CAST_KIND.SPRITE). */
+#define CAST_CARD 1u
+/* keyed_sun_frame's answer for a caster it leaves to the JS: no frame is this value (a texture id is a u16). */
+#define SUN_FRAME_JS ((int32_t)0x80000000)
+
+/* sunFrameFor for entity e, its tests in its order: an active DirectionalSprite playing a group, casting (ShadowCaster's
+   active), whose sheet has a table and whose kind for the sun is a card; then a fixed card's frame at the table's front
+   in frameAt (what sunFrameFor's slot path gives there), or a uniform table's at the direction drawn in frameOf, the
+   frame of the cycle 0 past the frames axis. */
+INLINE int32_t keyed_sun_frame(uint32_t e, uint32_t entities, const uint8_t *active, const uint8_t *mode,
+                               const uint8_t *casts, const uint8_t *sheet, const uint32_t *sheets, const uint8_t *kind,
+                               const uint8_t *orient, const uint8_t *direction, const uint8_t *animation,
+                               const uint16_t *frame) {
+  if (e >= entities || active[e] != 1 || mode[e] != 1) return 0;
+  if (casts && casts[e] != 1) return 0;
+  const uint32_t *t = sheets + (uint32_t)sheet[e] * SF_WORDS;
+  const uint32_t flags = t[SF_FLAGS];
+  if (!(flags & SF_TABLE)) return 0;
+  const uint32_t k = kind ? kind[e] : 0;
+  if (k != CAST_CARD && (k != 0 || (flags & SF_SOLID))) return 0;
+  if (flags & SF_DEFER) return SUN_FRAME_JS;
+  uint32_t d;
+  uint32_t at;
+  if (orient && orient[e] == 1) {
+    d = t[SF_FRONT];
+    at = t[SF_FRAME_AT];
+  } else {
+    d = direction[e];
+    if (!(flags & SF_UNIFORM) || d >= t[SF_COUNT]) return SUN_FRAME_JS;
+    at = t[SF_FRAME_OF];
+  }
+  const uint32_t groups = t[SF_GROUPS];
+  const uint32_t most = t[SF_MAX_FRAMES];
+  const uint32_t g = animation[e];
+  uint32_t f = frame ? frame[e] : 0;
+  if (f >= most) f = 0;
+  return ((const int32_t *)(uintptr_t)at)[(d * groups + (g < groups ? g : 0)) * most + f];
+}
+
 /* E-192: pack_casters_keyed over the casters it finds itself: the queue rows whose shadowH is above 0 and whose type is
    not a glow's (compactShadowCasterIndices' test), in the queue's order, until cap rows; the same rows the compaction
-   and pack_casters_keyed write. 0xffffffff at a caster with no key below keyBase. typeByte 0: no type column. */
-__attribute__((export_name("pack_casters_keyed_scan")))
-uint32_t pack_casters_keyed_scan(uint32_t table, uint32_t keyByte, uint32_t typeByte, uint32_t count, uint32_t cap,
-                                 uint32_t dst, uint32_t keyBase) {
-  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
-  const uint32_t *key = (const uint32_t *)(uintptr_t)keyByte;
-  const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
+   and pack_casters_keyed write. 0xffffffff at a caster with no key below keyBase. typeByte 0: no type column. E-372:
+   framed (a constant, so each form is a copy) writes each row's sun frame from the block at S. */
+INLINE uint32_t casters_keyed_scan(const uint32_t *t, const uint32_t *key, const uint8_t *type, uint32_t count,
+                                   uint32_t cap, float *d, uint32_t keyBase, uint32_t *S, const int framed) {
   const float *X = F32(t, COL_X), *Y = F32(t, COL_Y);
   const float *SH = F32(t, COL_SHADOW_H), *SOX = F32(t, COL_SHADOW_OFF_X), *SOY = F32(t, COL_SHADOW_OFF_Y);
-  float *d = (float *)(uintptr_t)dst;
+  const uint8_t *rowType = framed ? (const uint8_t *)(uintptr_t)S[KS_TYPES] : 0;
+  const int32_t *rowEntity = framed ? (const int32_t *)(uintptr_t)S[KS_ENTITIES] : 0;
+  const uint32_t entities = framed ? S[KS_ENTITY_COUNT] : 0;
+  const uint8_t *active = framed ? (const uint8_t *)(uintptr_t)S[KS_ACTIVE] : 0;
+  const uint8_t *mode = framed ? (const uint8_t *)(uintptr_t)S[KS_MODE] : 0;
+  const uint8_t *direction = framed ? (const uint8_t *)(uintptr_t)S[KS_DIRECTION] : 0;
+  const uint8_t *animation = framed ? (const uint8_t *)(uintptr_t)S[KS_ANIMATION] : 0;
+  const uint8_t *casts = framed ? (const uint8_t *)(uintptr_t)S[KS_CASTS] : 0;
+  const uint8_t *orient = framed ? (const uint8_t *)(uintptr_t)S[KS_ORIENT] : 0;
+  const uint8_t *kind = framed ? (const uint8_t *)(uintptr_t)S[KS_KIND] : 0;
+  const uint8_t *sheet = framed ? (const uint8_t *)(uintptr_t)S[KS_SHEET] : 0;
+  const uint16_t *frame = framed ? (const uint16_t *)(uintptr_t)S[KS_FRAME] : 0;
+  const uint32_t *sheets = framed ? (const uint32_t *)(uintptr_t)S[KS_SHEETS] : 0;
+  uint32_t *list = framed ? (uint32_t *)(uintptr_t)S[KS_LIST] : 0;
+  const uint32_t listCap = framed ? S[KS_LIST_CAP] : 0;
+  uint32_t listed = 0;
   uint32_t n = 0;
   for (uint32_t i = 0; i < count && n < cap; i++) {
     if (type && type[i] == 3) continue;
     const float sh = SH[i];
     if (!(sh > 0.0f)) continue;
     const uint32_t s = key[i] & ~KEY_FLAGS;
-    if (s >= keyBase) return 0xffffffffu;
+    if (s >= keyBase) {
+      if (framed) S[KS_LISTED] = listed;
+      return 0xffffffffu;
+    }
     float *r = d + n * KEYED_CASTER_FLOATS;
     r[0] = X[i];
     r[1] = Y[i];
     r[2] = (float)s;
-    r[3] = 0.0f;
+    int32_t v = 0;
+    if (framed && rowType[i] == 0) {
+      const uint32_t e = (uint32_t)rowEntity[i];
+      v = keyed_sun_frame(e, entities, active, mode, casts, sheet, sheets, kind, orient, direction, animation, frame);
+      if (v == SUN_FRAME_JS) {
+        if (listed < listCap) {
+          list[2 * listed] = n;
+          list[2 * listed + 1] = e;
+        }
+        listed++;
+        v = 0;
+      }
+    }
+    r[3] = (float)v;
     r[4] = sh;
     r[5] = SOX[i];
     r[6] = SOY[i];
     n++;
   }
+  if (framed) S[KS_LISTED] = listed;
   return n;
+}
+
+/* E-372: sunByte, the sun frames' region (0: no frames, the fourth float 0 as before). */
+__attribute__((export_name("pack_casters_keyed_scan")))
+uint32_t pack_casters_keyed_scan(uint32_t table, uint32_t keyByte, uint32_t typeByte, uint32_t count, uint32_t cap,
+                                 uint32_t dst, uint32_t keyBase, uint32_t sunByte) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint32_t *key = (const uint32_t *)(uintptr_t)keyByte;
+  const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
+  float *d = (float *)(uintptr_t)dst;
+  if (sunByte) return casters_keyed_scan(t, key, type, count, cap, d, keyBase, (uint32_t *)(uintptr_t)sunByte, 1);
+  return casters_keyed_scan(t, key, type, count, cap, d, keyBase, 0, 0);
 }
 
 /* packInstancedRows' slow path, its parameters as doubles at `params` (gpuPackClient.js GENERAL_PARAMS): flags
