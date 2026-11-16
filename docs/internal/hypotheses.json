@@ -30767,7 +30767,7 @@
     {
       "id": "R-1192",
       "date": "2026-11-16",
-      "time": "06:55",
+      "time": "06:48",
       "timeFrom": "recorded",
       "title": "PR #12 merged on trial into main 8f1d4eda: 14 files conflict (gameObject, logicWorker, preRenderWorker, gpuPack.c, shadowStamp.c, the wasm)",
       "verdict": "note",
@@ -30776,7 +30776,7 @@
     {
       "id": "R-1193",
       "date": "2026-11-16",
-      "time": "06:56",
+      "time": "06:55",
       "timeFrom": "recorded",
       "title": "94 of 130 redundant sampler uniforms a frame come from the volumes drawn into the lamps' map once per tile (_drawVolumesInLampMap: a Pixi mesh a tile, ~47 draws): one instanced draw over rows x tiles",
       "verdict": "note",
