@@ -2,14 +2,16 @@
 
 WeedJS is a multithreaded 2D web game engine: logic, spatial, physics (Box2D 3 WASM + LiquidFun),
 particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` is the product;
-`demos/` exist to exercise, show and measure it. This file is a digest of the rules spread over
-`.cursor/rules/` and `docs/internal/` (≈13k lines); follow the linked documents for detail.
+`demos/` exist to exercise, show and measure it. This file holds the working rules and a digest
+of `docs/internal/` (≈13k lines); follow the linked documents for detail.
 
 ## Before you change code
 
 - **Engine or demo?** If a request could mean either ("fix the camera", "make it faster"), ask.
+  Skip the question when the user named a path (`src/…`, `demos/<scene>`), a worker, an API or a demo.
   Engine work stays generic: no special case for one demo inside `src/`. Demo work uses public
-  APIs. (`.cursor/rules/engine-vs-demo.mdc`)
+  APIs; when a demo needs something the engine lacks, say so and ask: add it to the engine, or fake
+  it in the scene.
 - **Judgment over procedure.** These rules are tools: decide from a change's size and risk how much it
   needs, skip a step that cannot change the verdict (say so in a line), and fix a rule that keeps getting
   in the way. A speed claim is still measured in the scene that runs it: one idea in four still loses there.
@@ -50,8 +52,8 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
 
 - One change per commit; the title says what code changed. Measurement tools (new kernel cases,
   scene knobs) go in their own commit before the change they measure.
-- **No AI or Cursor attribution trailers.** Commits belong to the human author
-  (`.cursor/rules/no-cursor-attribution.mdc`; the commit-msg hook strips Cursor trailers).
+- **No AI attribution trailers** (no `Co-authored-by`, no "Made with"). Commits belong to the human
+  author configured in git; the commit-msg hook strips Cursor's old trailers.
 - Commits leave the version alone. Only `npm run release -- patch|minor` changes it: it builds
   and checks the bundles, commits and tags `vX.Y.Z`, publishes to npm and pushes. `dist/` is
   fresh when it was built from the working tree's sources (`npm run check:dist`, a hash in
@@ -62,7 +64,7 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
 
 ## Engine code rules
 
-- **No `Math.hypot`**: `Math.sqrt(dx * dx + dy * dy)` (`.cursor/rules/no-hypot.mdc`).
+- **No `Math.hypot`** (slower): `Math.sqrt(dx * dx + dy * dy)`.
 - **Declare every field in the constructor** of worker classes and per-frame objects. A field
   first written after the frame loop starts reshapes the object and deoptimizes every method
   that saw the old shape (review N-32: one warning flag cost pre-render ~8 s of per-frame
