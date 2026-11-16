@@ -423,7 +423,9 @@ export class InstancedSpriteBatch {
     // W30: in a private memory (sharedCopy.createPrivateArena) when Pixi passes one, so the copies out of the
     // render-queue memory run as memory.copy (copyIn); else arrays of the batch's own.
     this.data = (arena && arena.f32(this.capacity * this._floats)) || new Float32Array(this.capacity * this._floats);
-    this.dataU32 = new Uint32Array(this.data.buffer);
+    // Its bits, over the same words: in the arena, from the array's own place in it, not from the arena's start (so is
+    // staticDataU32).
+    this.dataU32 = new Uint32Array(this.data.buffer, this.data.byteOffset, this.data.length);
     // W9d: a plain sprite batch may pack through gpuPack.wasm (`gpuPack`, gpuPackClient.bindGpuPack) into rows
     // of the render-queue memory (`data`); they are copied into `this.data` before the upload, as
     // _commitPackedBatch copies pre-render's. Uploading from the shared rows themselves made every other
@@ -442,7 +444,7 @@ export class InstancedSpriteBatch {
     // slot's GPU copy holds (-1: none).
     this.staticData = (this._twoStreams && arena && arena.f32(this.capacity * POSE_STATIC_FLOATS))
       || new Float32Array(this._twoStreams ? this.capacity * POSE_STATIC_FLOATS : 0);
-    this.staticDataU32 = new Uint32Array(this.staticData.buffer);
+    this.staticDataU32 = new Uint32Array(this.staticData.buffer, this.staticData.byteOffset, this.staticData.length);
     // W30: the arena's copy, the shared buffer it copies from and the arena's own (null: TypedArray.set).
     this._copy = arena ? arena.copy : null;
     this._copySource = arena ? arena.source : null;
