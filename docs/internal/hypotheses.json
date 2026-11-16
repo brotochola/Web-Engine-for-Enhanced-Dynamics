@@ -17869,7 +17869,8 @@
       ],
       "records": [
         "R-1173",
-        "R-1175"
+        "R-1175",
+        "R-1181"
       ]
     },
     {
@@ -17907,7 +17908,8 @@
       "records": [
         "R-1173",
         "R-1174",
-        "R-1175"
+        "R-1175",
+        "R-1181"
       ]
     },
     {
@@ -18089,7 +18091,8 @@
         "light pass resolution"
       ],
       "records": [
-        "R-1174"
+        "R-1174",
+        "R-1181"
       ]
     },
     {
@@ -18126,7 +18129,8 @@
         "statics scatter gpu"
       ],
       "records": [
-        "R-1174"
+        "R-1174",
+        "R-1181"
       ]
     },
     {
@@ -18144,7 +18148,8 @@
         "clears gpu"
       ],
       "records": [
-        "R-1174"
+        "R-1174",
+        "R-1181"
       ]
     },
     {
@@ -18162,7 +18167,8 @@
         "gbuffer drawn twice"
       ],
       "records": [
-        "R-1174"
+        "R-1174",
+        "R-1181"
       ]
     },
     {
@@ -18180,7 +18186,8 @@
         "lamp glow pass gpu"
       ],
       "records": [
-        "R-1174"
+        "R-1174",
+        "R-1181"
       ]
     },
     {
@@ -18240,7 +18247,8 @@
       ],
       "records": [
         "R-1175",
-        "R-1177"
+        "R-1177",
+        "R-1181"
       ]
     },
     {
@@ -18352,7 +18360,208 @@
         "command buffer decode cost"
       ],
       "records": [
-        "R-1177"
+        "R-1177",
+        "R-1181"
+      ]
+    },
+    {
+      "id": "E-413",
+      "title": "light3dCompareScene's colour pass times 9.2 ms a frame without light3d's pieces and 2.9 ms with every piece on (twice the instances): a costly plain path, or the timer counting the GPU idle inside the pass",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on the light scenes (timer queries, GTX 1650, 1920 x 1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "walkers=20000 props=2000 lamps=48 hour=12: plain, colour pass (fbo#0, [uTexture], 4 draws, 22 003 instances) 9.234 ms of 11.786 ms; all=1, the colour pass (5 draws, 44 003 instances) 2.859 of 8.458; sunMap=1 2.156; lampMap=1 1.539; self=1 3.361; depth=1 3.532.",
+      "next": "Nsight Systems' GR Active and the WDDM queue for both (busy or idle), then the plain path's draws one by one (what the plain colour pass binds that light3d's does not: the sprite shadows drawn into it?).",
+      "refs": [],
+      "aliases": [
+        "plain colour pass 9 ms"
+      ],
+      "records": [
+        "R-1181"
+      ]
+    },
+    {
+      "id": "E-414",
+      "title": "With light3d each instanced draw costs Chrome's GPU process about 79 us (30 us without): about 9 a frame, 0.7 ms of the GPU process's main thread a frame",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from gpuProcessTrace --decoder (Chrome's GPU process, a slice per GL command), Predator zoom 0.3",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "light3d day: glDrawElementsInstancedANGLE 41.55 ms/s self, 529 a second; glDrawArraysInstancedANGLE 25.65 ms/s, 2 997 a second (8.6 us each, 50 a frame); plain: glDrawElementsInstancedANGLE 8.98 ms/s, 301 a second.",
+      "next": "Find what a light3d draw makes ANGLE redo (uniform blocks re-uploaded into D3D11 constant buffers when a uniform changed, MRT state, texture rebinds): draw sorted by program, uniforms set once, the columns' 50 draws merged (E-391); the decoder trace before and after.",
+      "refs": [],
+      "aliases": [
+        "angle draw cost",
+        "instanced draw gpu process"
+      ],
+      "records": [
+        "R-1181"
+      ]
+    },
+    {
+      "id": "E-415",
+      "title": "Chrome's GPU process calls glObjectLabelKHR 180 to 254 times a frame (10 781 to 15 223 a second) though the page creates no GL object a frame: Chrome labelling resources, perhaps only with service tracing on",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from gpuProcessTrace --decoder (Chrome's GPU process, a slice per GL command), Predator zoom 0.3",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "light3d day glObjectLabelKHR 23.20 ms/s self, 15 223 a second; plain 16.67 ms/s, 10 781 a second; the page side (glFrameRecorder) creates no texture, buffer or vertex array a frame.",
+      "next": "The same trace without --enable-gpu-service-tracing (the labels show as ANGLE calls in a gpu.angle category, or nsys) to tell an artifact from a real cost; if real, which resources (transfer buffers, shared images).",
+      "refs": [],
+      "aliases": [
+        "object label gpu process"
+      ],
+      "records": [
+        "R-1181"
+      ]
+    },
+    {
+      "id": "E-416",
+      "title": "With light3d the GPU process waits on fences 13 times a frame (glClientWaitSync, 792 a second; 334 without) behind the page's one fenceSync and getSyncParameter a frame",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from gpuProcessTrace --decoder (Chrome's GPU process, a slice per GL command), Predator zoom 0.3",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "light3d day glClientWaitSync 6.38 ms/s self, 792 a second; plain 2.38 ms/s, 334 a second. The page: fenceSync 1, getSyncParameter 1, deleteSync 1 a frame (glFrameRecorder).",
+      "next": "Who polls (the engine's GPU readback or frame fence, Pixi, Chrome's own shared-image sync) and whether light3d's extra targets add waits; poll once a frame or not at all.",
+      "refs": [],
+      "aliases": [
+        "client wait sync",
+        "fence polling"
+      ],
+      "records": [
+        "R-1181"
+      ]
+    },
+    {
+      "id": "E-417",
+      "title": "With light3d the frame binds a texture 144 times and switches the active unit 64 times (8 522 and 3 763 a second in the GPU process): textures rebound for every draw",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from gpuProcessTrace --decoder (Chrome's GPU process, a slice per GL command), Predator zoom 0.3",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "light3d day glBindTexture 8.92 ms/s, 8 522 a second; glActiveTexture 3.87 ms/s; glUniform1i 3 578 a second (E-389: 132 of 133 a frame redundant on the page side); plain glBindTexture 5 543 a second.",
+      "next": "Pin each program's samplers to fixed units and skip binding a texture already on its unit (Pixi's texture system patched, or our raw passes); the recorder's redundant binds and the decoder trace before and after.",
+      "refs": [],
+      "aliases": [
+        "texture rebinding"
+      ],
+      "records": [
+        "R-1181"
+      ]
+    },
+    {
+      "id": "E-418",
+      "title": "The lamps' map redraws every caster into every nearby lamp's tile every frame (48 840 instances, 2.0 to 2.2 ms in light3dCompareScene all=1) though most casters (props, lamps) never move",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on the light scenes (timer queries, GTX 1650, 1920 x 1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "light3dCompareScene all=1: the lamps' map (fbo 4096 x 1536, [uTexLut,uLampTiles,uTexture], 2 draws) 2.003 ms by day and 2.187 at night, 48 851 and 48 840 instances; lampMap=1 1.923.",
+      "next": "Keep each lamp's tile of static casters (props, buildings) and draw only the moving ones over a copy of it each frame; redraw a tile when a static caster in it changes.",
+      "refs": [],
+      "aliases": [
+        "lamp map static casters"
+      ],
+      "records": [
+        "R-1181"
+      ]
+    },
+    {
+      "id": "E-419",
+      "title": "volumeStressScene's mesh fill pass draws 230 058 instances (7.06 ms of GPU) every other frame: the scene runs at about 49 fps, GPU-bound",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on the light scenes (timer queries, GTX 1650, 1920 x 1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "volume (defaults): fbo#3 [uTexLut,uPoseTable,uTexture] 7.055 ms, 0.5 draws a frame, 230 058 instances; the colour pass 1.142; 148 frames in 3.04 s.",
+      "next": "What an instance is there (a mesh fill row: a triangle?), and static meshes in a vertex buffer drawn whole, culled to the view; the recorder before and after.",
+      "refs": [],
+      "aliases": [
+        "volume mesh fill instances"
+      ],
+      "records": [
+        "R-1181"
+      ]
+    },
+    {
+      "id": "E-420",
+      "title": "Column casters cost the shadow maps 1 to 2 us an instance: selfShadowStressScene's sun map 2.1 ms for 1 006 instances, sunShadowMapStressScene's lamps' map 2.84 ms for 2 864",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on the light scenes (timer queries, GTX 1650, 1920 x 1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "selfShadow: fbo#3 960 x 540 [uTexLut,uTexture] 2 draws 1 006 instances 2.115 ms; sunShadowMap lamps=48 hour=22: lamps' map 4 draws 2 864 instances 2.841 ms (Predator's: 30 700 instances in 1.2 ms).",
+      "next": "The columns' quads stretched along the light cover far more texels than the column casts on (overdraw in the map): clip each to the map region its shadow can reach (as E-375 did for the lamps' tile edges), or a coarser grid for columns far from the camera.",
+      "refs": [],
+      "aliases": [
+        "column casters overdraw"
+      ],
+      "records": [
+        "R-1181"
+      ]
+    },
+    {
+      "id": "E-421",
+      "title": "flashlightStressScene's colour pass costs 4.76 ms for 242 instances (20 us each): something drawn huge, perhaps the visibility polygons or a full-screen layer",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on the light scenes (timer queries, GTX 1650, 1920 x 1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "flashlight: fbo#0 1920 x 1080 [uTexture] 4 draws 242 instances 4.761 ms of 5.382; the 480 x 270 pass 0.621 ms.",
+      "next": "List the 4 draws (sizes, blending) and cut what covers the screen needlessly.",
+      "refs": [],
+      "aliases": [
+        "flashlight colour pass"
+      ],
+      "records": [
+        "R-1181"
+      ]
+    },
+    {
+      "id": "E-422",
+      "title": "Sprites with maps cost the colour pass about 2 us an instance (spriteMapsStressScene: 2.4 ms for 1 204): the maps' sampling per pixel",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on the light scenes (timer queries, GTX 1650, 1920 x 1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "spriteMaps: fbo#0 1920 x 1080 [uTextures] 4 draws 1 204 instances 2.436 ms of 4.242.",
+      "next": "Count the maps' fetches per pixel in the sprite program (d3dShaderStats on its HLSL) and skip the maps' work where the sprite's map is flat.",
+      "refs": [],
+      "aliases": [
+        "sprite maps fragment cost"
+      ],
+      "records": [
+        "R-1181"
+      ]
+    },
+    {
+      "id": "N-219",
+      "title": "glFrameRecorder --gpu-passes timed nothing in a frame that never bound a framebuffer (depthSortStressScene read 0 ms), and a TIME_ELAPSED pass includes the GPU's idle gaps inside it",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-16 reading the light scenes' recordings",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "depthSort: 3 draws a frame, GPU time 0 ms. Fixed 758faade: a draw with no pass open opens one; the header now says a pass time is an upper bound when the CPU submits slowly.",
+      "next": "Read pass times with the GPU's busy share (Nsight GR Active) where they disagree (E-413).",
+      "refs": [],
+      "aliases": [
+        "gpu passes recorder fix"
+      ],
+      "records": [
+        "R-1181"
       ]
     }
   ],
@@ -29901,6 +30110,19 @@
       "text": "**PR #12 (Wave 15, 25 candidates built and kernel-screened, branch head c824fd62) merged into main's register by key: its records R-1105 to R-1118 and its statuses (running: built, waiting for the owner sittings; rejected: E-360, E-275).** mergeRegister (base cb6a01e6, the PR's merge base with main): 24 hypotheses take the PR's status, records R-1105 to R-1118 come in; two clashes keep main's status: E-315 (kept, R-1165: main's ring walk and radix select) and N-170 (kept-hygiene, R-1168: main's Math.fround compare). Its code is not on main.\n\nBuilt twice, on main (or tonight's branches) and in PR #12, differently: E-315 (main: ring walk up to 64 and radix select, R-1165; PR #12: R-1118), N-170 (main f2ef124e; PR #12 R-1105), E-358 and E-359 (opt/stamp-rows, R-1178; PR #12 R-1118), and E-331 (PR #12 only, R-1118: stamp replay -44 %, inflated by its replay). When PR #12 merges, each pair runs in the same kernels and the faster build stays; the rest of PR #12 waits for its owner sittings as R-1111 to R-1118 list them.",
       "commits": [
         "c824fd62"
+      ]
+    },
+    {
+      "id": "R-1181",
+      "date": "2026-11-16",
+      "time": "04:58",
+      "timeFrom": "recorded",
+      "title": "GPU time by pass in every light scene and light3dCompare's pieces; Chrome's GPU process command by command (draws 79 us each with light3d)",
+      "verdict": "note",
+      "text": "**GPU time by pass in every light scene and light3dCompareScene's pieces (glFrameRecorder --gpu-passes), and Chrome's GPU process command by command.** Headed Chrome 157, GTX 1650, 1920 x 1080, 3 s after 10 s, main 1082052f, 2026-11-16 04:45 to 04:58 (the result files). A pass is a TIME_ELAPSED range from one framebuffer bind to the next: an upper bound where the CPU submits slowly (N-219).\n\n| scene (query) | GPU a frame | its passes (ms, instances) |\n| --- | --- | --- |\n| lampShadowStress lampShadows=map lamps=48 walkers=2000 | 3.073 | light 1.381; colour 0.659 (1 813); lamps' 47-instance pass 0.610; lamps' map 0.344 (1 424) |\n| lampShadowStress (stamps) | 2.173 | colour 0.837; light 0.730; shadow stamps 0.606 (768) |\n| sunShadowMap lamps=48 hour=22 | 7.612 | lamps' map 2.841 (2 864); light 2.217; colour 1.529; 48-instance pass 0.690; maps 0.334 |\n| selfShadow | 5.830 | sun map 2.115 (1 006); light 1.854; colour 0.974; G-buffer 0.885 (600) |\n| depthSort | 0 (N-219) | |\n| emissive | 5.590 | colour 2.385 (6 003); light 1.649; G-buffer 1920 x 1080 0.784 and 960 x 540 0.773 (2 983 each) |\n| spriteMaps | 4.242 | colour 2.436 (1 204); light 0.990; sun map 0.507 (190); G-buffer 0.308 (594) |\n| volume | 8.209 | mesh fill 7.055 (230 058, every other frame); colour 1.142 |\n| flashlight | 5.382 | colour 4.761 (242); light 0.621 |\n| spot | 3.970 | colour 2.162 (358); shadows 1.199 (3 103); light 0.609 |\n| gallery | 5.679 | colour 3.698 (47); 960 x 540 pass 1.981 (294) |\n| light3dCompare hour=12 | 11.786 | colour 9.234 (22 003); sprite shadows 1.303 (46 345); statics scatter 0.518 (3 243); light 0.455; no-draw segments 0.275 |\n| ... all=1 hour=12 | 8.458 | colour 2.859 (44 003); lamps' map 2.003 (48 851); sun map 0.966 (21 878); light 0.717; scatter 0.682; no-draw 0.648; G-buffer 0.391 |\n| ... all=1 hour=22 | 8.057 | colour 2.892; lamps' map 2.187 (48 840); scatter 0.711; light 0.709; 48-instance pass 0.607; no-draw 0.561 |\n| ... sunMap=1 | 6.673 | colour 2.156; sun map 1.312 (24 605); light 0.840; shadows 0.792; scatter 0.628 |\n| ... lampMap=1 hour=22 | 6.285 | lamps' map 1.923 (48 840); colour 1.539; light 0.943; 48-instance pass 0.538 |\n| ... self=1 (maps, pitch 47) | 6.945 | colour 3.361; sun map 1.580; scatter 0.716 |\n| ... depth=1 (maps, pitch 47) | 7.163 | colour 3.532; sun map 1.518; scatter 0.712 |\n\n**Chrome's GPU process, command by command** (gpuProcessTrace --decoder, Predator zoom 0.3, 2 s after 12 s): with light3d CrGpuMain 379.1 ms/s in slices: PutChanged's own 131.8; glDrawElementsInstancedANGLE 41.6 (529 a second, about 79 us each), glDrawArraysInstancedANGLE 25.7 (2 997 a second), glObjectLabelKHR 23.2 (15 223 a second), glBufferSubData 20.5 (530), glFlush 14.9 (59), glDrawElements 12.2 (1 234), glBindTexture 8.9 (8 522), glTexSubImage2DRobustANGLE 8.8 (374), glClientWaitSync 6.4 (792), glGetGraphicsResetStatusARB 4.5, glUniform1i 3.9 (3 578), glActiveTexture 3.9 (3 763), glClear 3.3 (529). Without light3d CrGpuMain 213.3 ms/s: PutChanged's own 77.9, glObjectLabelKHR 16.7 (10 781), glFlush 16.0, glDrawElements 10.8 (1 203), glTexSubImage2D 9.1, glDrawElementsInstancedANGLE 9.0 (301 a second, about 30 us each), glBindTexture 5.9 (5 543), glBufferSubData 5.6, glClientWaitSync 2.4 (334). light3dCompare all=1 at night (no decoder slices): CrGpuMain 194.5 ms/s, PutChanged 144.2.\n\nFiled: E-413 to E-422, N-219 (fixed). Evidence added: E-399 (the 3D light pass 0.7 ms in light3dCompare at lighting resolution 0.25 against 5.5 in Predator at 0.5), E-403 (the G-buffer's program twice in emissive too), E-404 (the lamps' 47- or 48-instance pass 0.5 to 0.7 ms in every lamp scene; the gallery's 47-instance colour draws 3.7 ms), E-401 (the scatter 0.5 to 0.7 ms in light3dCompare), E-402 (no-draw segments up to 0.65 ms), E-391 (the columns' 50 draws a frame cost the GPU process 25.7 ms/s).",
+      "commits": [
+        "1082052f",
+        "758faade"
       ]
     }
   ],
