@@ -43,23 +43,33 @@ fn meshUv(vMeshUV: vec2<f32>, vAtlasUV: vec4<f32>) -> vec2<f32> {
 
 @vertex
 fn mainVert(
-  @location(0) aTri: vec2<f32>,
-  @location(1) aV0: vec2<f32>,
-  @location(2) aV1: vec2<f32>,
-  @location(3) aV2: vec2<f32>,
-  @location(4) aInstXY: vec2<f32>,
-  @location(5) aInstRotCS: vec2<f32>,
-  @location(6) aInstTintBits: f32,
-  @location(7) aInstDepth: f32,
-  @location(8) aInstTexId: f32,
-  @location(9) aInstTileInv: vec2<f32>,
-  @location(10) aInstTileOff: vec2<f32>,
-  @location(11) aInstBody: f32,
-  @location(12) aUV0: vec2<f32>,
-  @location(13) aUV1: vec2<f32>,
-  @location(14) aUV2: vec2<f32>,
+  // E-419: the corner from the vertex's index, and the row (FILL_ROW) as 6 vec4 in its order, not one attribute a field
+  // (meshUvFill.vert.glsl says why).
+  @builtin(vertex_index) vertexIndex: u32,
+  @location(0) aRow0: vec4<f32>,
+  @location(1) aRow1: vec4<f32>,
+  @location(2) aRow2: vec4<f32>,
+  @location(3) aRow3: vec4<f32>,
+  @location(4) aRow4: vec4<f32>,
+  @location(5) aRow5: vec4<f32>,
 ) -> VertexOut {
   var out: VertexOut;
+  // The corner: 0, 1, 2 in each instance of 3 vertices.
+  let aTri = vec2<f32>(select(0.0, 1.0, vertexIndex == 1u), select(0.0, 1.0, vertexIndex == 2u));
+  let aV0 = aRow0.xy;
+  let aV1 = aRow0.zw;
+  let aV2 = aRow1.xy;
+  let aInstXY = aRow1.zw;
+  let aInstRotCS = aRow2.xy;
+  let aInstTintBits = aRow2.z;
+  let aInstDepth = aRow2.w;
+  let aInstTexId = aRow3.x;
+  let aInstTileInv = aRow3.yz;
+  let aInstTileOff = vec2<f32>(aRow3.w, aRow4.x);
+  let aInstBody = aRow4.y;
+  let aUV0 = aRow4.zw;
+  let aUV1 = aRow5.xy;
+  let aUV2 = aRow5.zw;
   let local = aV0 + aTri.x * (aV1 - aV0) + aTri.y * (aV2 - aV0);
   var xy = aInstXY;
   var cs = aInstRotCS;
