@@ -73,7 +73,13 @@ async function stampCall(ctx, S, f) {
   sun.set(f.rows.subarray(0, f.nSun * sf));
   const b = await S.client.bindShadowStamp(session.memory, layout);
   const shipped = b.stampRange;
-  const asan = session.fn('stamp_light_range');
+  const asanFn = session.fn('stamp_light_range');
+  // Counted: a call the client took no kernel for would compare two untouched stamps.
+  let asanCalls = 0;
+  const asan = (table) => {
+    asanCalls++;
+    return asanFn(table);
+  };
   const spec = (stamp, lightIdx, cap) => ({
     sun,
     sunN: f.nSun,
@@ -122,8 +128,11 @@ async function stampCall(ctx, S, f) {
   };
   const got = run(asan, 0xa5);
   const want = run(shipped, 0x5a);
-  const out = { calls: 1, rows: Math.max(0, want.cursor - (f.stampBase | 0)), mismatch: null };
-  if (got.cursor !== want.cursor) {
+  const out = { calls: asanCalls, rows: Math.max(0, want.cursor - (f.stampBase | 0)), mismatch: null };
+  if (f.nSun > 0 && asanCalls === 0) {
+    // stampLightRangeWasm returns early only without casters.
+    out.mismatch = 'the client called no kernel';
+  } else if (got.cursor !== want.cursor) {
     out.mismatch = `cursor ${got.cursor}, the shipped kernel's ${want.cursor}`;
   } else {
     const at = firstDifference(got.rows, want.rows);
