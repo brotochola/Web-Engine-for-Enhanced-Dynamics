@@ -98,6 +98,7 @@ export async function bindGpuPack(memory, layout) {
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
     'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed', 'pack_casters_keyed_scan',
     'pack_sprites_keyed_rows', 'pack_sprites_keyed_gbuf', 'pack_sprites_keyed_rows_gbuf', 'lamp_frames',
+    'pack_casters_framed', 'pack_casters_scatter_framed',
   ]);
   return {
     buffer: memory.buffer,
@@ -105,6 +106,9 @@ export async function bindGpuPack(memory, layout) {
     casters: k.pack_casters,
     spritesScatter: k.pack_sprites_scatter,
     castersScatter: k.pack_casters_scatter,
+    // E-394: the caster rows with their sun frames and entities from the sun frames' region (exports of their own).
+    castersFramed: k.pack_casters_framed,
+    castersScatterFramed: k.pack_casters_scatter_framed,
     spritesSplit: k.pack_sprites_split,
     spritesSplitScatter: k.pack_sprites_split_scatter,
     // E-162: the pose and the statics' row in draw order, the statics in the queue's row order.
@@ -197,9 +201,19 @@ function indexByteFor(b, ctx, count, capacity) {
 
 /**
  * packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast) through the kernel.
+ * E-394: with `sun` (caster rows; null: none), the columns packKeyedCastersScanWasm takes, each row's entity in its tint
+ * float and its sun frame (its texture, and its scale's sign for a mirrored frame) too, as preRenderWorker.js
+ * applySunFramesFor writes them with the queue's scales, from the sun frames' region (its tables brought to this turn by
+ * syncKeyedSunTables). It sets `sun.framed`, whether the kernel wrote them (not on the general path, a column outside the
+ * memory, no region), and `sun.listed`, the rows it left for the JS (pairs in b.keyedSun.list: output row, entity; past
+ * its listCap only counted).
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
-export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shadowCast) {
+export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shadowCast, sun = null) {
+  if (sun !== null) {
+    sun.framed = false;
+    sun.listed = 0;
+  }
   if (!b || !q || !dst || !ctx) return -1;
   const o = ctx.o || ctx;
   const general = Boolean(ctx.useScreen || o.pixelSnap || ctx.filterTypes);
@@ -244,13 +258,29 @@ export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shado
   // W9b: a long list over most of the queue goes through its inverse, reading the queue in order.
   // The kernel declines (-1) a list with a repeated or out-of-range row, and the gather packs it.
   const rows = q.count | 0;
+  // E-394: the caster rows' sun frames in the pack where the region and every column are there.
+  const sunAt = sun !== null && shadowCast && b.castersFramed ? keyedSunByte(b, sun, rows) : 0;
   if (indexByte && b.inverseByte && count >= SCATTER_MIN_ROWS && count * 2 >= rows && rows <= b.indexCap) {
-    const scatter = shadowCast ? b.castersScatter : b.spritesScatter;
-    out = scatter(table, indexByte, count, capacity | 0, invDepthDenom, dst.byteOffset, typeByte, b.particlesByte, b.inverseByte, rows);
+    if (sunAt > 0) {
+      out = b.castersScatterFramed(table, indexByte, count, capacity | 0, invDepthDenom, dst.byteOffset, typeByte,
+        b.particlesByte, b.inverseByte, rows, sunAt);
+    } else {
+      const scatter = shadowCast ? b.castersScatter : b.spritesScatter;
+      out = scatter(table, indexByte, count, capacity | 0, invDepthDenom, dst.byteOffset, typeByte, b.particlesByte, b.inverseByte, rows);
+    }
   }
   if (out < 0) {
-    const pack = shadowCast ? b.casters : b.sprites;
-    out = pack(table, indexByte, count, capacity | 0, invDepthDenom, dst.byteOffset, typeByte, b.particlesByte);
+    if (sunAt > 0) {
+      out = b.castersFramed(table, indexByte, count, capacity | 0, invDepthDenom, dst.byteOffset, typeByte, b.particlesByte,
+        sunAt);
+    } else {
+      const pack = shadowCast ? b.casters : b.sprites;
+      out = pack(table, indexByte, count, capacity | 0, invDepthDenom, dst.byteOffset, typeByte, b.particlesByte);
+    }
+  }
+  if (sunAt > 0) {
+    sun.framed = true;
+    sun.listed = b.keyedSun.block[KEYED_SUN.LISTED];
   }
   ctx.particleCount = b.u32[b.particlesByte >> 2];
   return out;

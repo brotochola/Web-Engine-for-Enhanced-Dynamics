@@ -49,14 +49,34 @@ INLINE void sprite_row(const uint32_t *t, uint32_t i, float *d, double depth) {
   d[14] = (float)((double)U16(t, COL_TILE_OFF_V)[i] * inv65535);
 }
 
+/* E-394: the columns of E-372's sun frames' region a framed caster pack reads (sun_cols, defined with the region below),
+   and a full caster row's sun frame and entity (full_row_sun_frame). */
+typedef struct {
+  const uint8_t *rowType;
+  const int32_t *rowEntity;
+  uint32_t entities;
+  const uint8_t *active, *mode, *direction, *animation, *casts, *orient, *kind, *sheet;
+  const uint16_t *frame;
+  const uint32_t *sheets;
+  uint32_t *list;
+  uint32_t listCap;
+} SunCols;
+INLINE void sun_cols(const uint32_t *S, SunCols *c);
+INLINE void full_row_sun_frame(float *d, uint32_t i, uint32_t k, const SunCols *c, uint32_t *listed);
+INLINE void sun_cols_listed(uint32_t *S, uint32_t listed);
+
 /* Writes min(count, cap) rows, row k from queue row indices[k] (or k when indices is 0), at dst.
-   The rows whose type is 1 are counted into *particles when type is not 0. caster: 22-float rows. */
+   The rows whose type is 1 are counted into *particles when type is not 0. caster: 22-float rows. E-394: framed (a
+   constant, so each form is a copy) writes each caster row's sun frame and entity from the region's block at S. */
 INLINE uint32_t pack(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
-                     float *dst, uint32_t typeByte, uint32_t *particles, int caster) {
+                     float *dst, uint32_t typeByte, uint32_t *particles, int caster, uint32_t *S, const int framed) {
   const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
   const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
   const uint32_t n = count < cap ? count : cap;
   const uint32_t stride = caster ? 22 : 15;
+  SunCols sc;
+  uint32_t listed = 0;
+  if (framed) sun_cols(S, &sc);
   uint32_t p = 0;
   for (uint32_t k = 0; k < n; k++) {
     const uint32_t i = indices ? idx[k] : k;
@@ -72,7 +92,9 @@ INLINE uint32_t pack(const uint32_t *t, uint32_t indices, uint32_t count, uint32
       d[20] = 0;
       d[21] = 0;
     }
+    if (framed) full_row_sun_frame(d, i, k, &sc, &listed);
   }
+  if (framed) sun_cols_listed(S, listed);
   *particles = p;
   return n;
 }
@@ -84,7 +106,7 @@ INLINE uint32_t pack(const uint32_t *t, uint32_t indices, uint32_t count, uint32
    caller gathers. inv holds rowCount u32. */
 INLINE uint32_t pack_scatter(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
                              float *dst, uint32_t typeByte, uint32_t *particles, uint32_t invByte, uint32_t rowCount,
-                             int caster) {
+                             int caster, uint32_t *S, const int framed) {
   const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
   const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
   uint32_t *inv = (uint32_t *)(uintptr_t)invByte;
@@ -96,6 +118,9 @@ INLINE uint32_t pack_scatter(const uint32_t *t, uint32_t indices, uint32_t count
     if (r >= rowCount || inv[r] != 0xffffffffu) return 0xffffffffu;
     inv[r] = k;
   }
+  SunCols sc;
+  uint32_t listed = 0;
+  if (framed) sun_cols(S, &sc);
   uint32_t p = 0;
   for (uint32_t i = 0; i < rowCount; i++) {
     const uint32_t k = inv[i];
@@ -112,7 +137,9 @@ INLINE uint32_t pack_scatter(const uint32_t *t, uint32_t indices, uint32_t count
       d[20] = 0;
       d[21] = 0;
     }
+    if (framed) full_row_sun_frame(d, i, k, &sc, &listed);
   }
+  if (framed) sun_cols_listed(S, listed);
   *particles = p;
   return n;
 }
@@ -396,28 +423,28 @@ __attribute__((export_name("pack_sprites")))
 uint32_t pack_sprites(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
                       uint32_t dst, uint32_t typeByte, uint32_t particlesOut) {
   return pack((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
-              (float *)(uintptr_t)dst, typeByte, (uint32_t *)(uintptr_t)particlesOut, 0);
+              (float *)(uintptr_t)dst, typeByte, (uint32_t *)(uintptr_t)particlesOut, 0, 0, 0);
 }
 
 __attribute__((export_name("pack_casters")))
 uint32_t pack_casters(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
                       uint32_t dst, uint32_t typeByte, uint32_t particlesOut) {
   return pack((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
-              (float *)(uintptr_t)dst, typeByte, (uint32_t *)(uintptr_t)particlesOut, 1);
+              (float *)(uintptr_t)dst, typeByte, (uint32_t *)(uintptr_t)particlesOut, 1, 0, 0);
 }
 
 __attribute__((export_name("pack_sprites_scatter")))
 uint32_t pack_sprites_scatter(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
                               uint32_t dst, uint32_t typeByte, uint32_t particlesOut, uint32_t invByte, uint32_t rowCount) {
   return pack_scatter((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
-                      (float *)(uintptr_t)dst, typeByte, (uint32_t *)(uintptr_t)particlesOut, invByte, rowCount, 0);
+                      (float *)(uintptr_t)dst, typeByte, (uint32_t *)(uintptr_t)particlesOut, invByte, rowCount, 0, 0, 0);
 }
 
 __attribute__((export_name("pack_casters_scatter")))
 uint32_t pack_casters_scatter(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
                               uint32_t dst, uint32_t typeByte, uint32_t particlesOut, uint32_t invByte, uint32_t rowCount) {
   return pack_scatter((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
-                      (float *)(uintptr_t)dst, typeByte, (uint32_t *)(uintptr_t)particlesOut, invByte, rowCount, 1);
+                      (float *)(uintptr_t)dst, typeByte, (uint32_t *)(uintptr_t)particlesOut, invByte, rowCount, 1, 0, 0);
 }
 
 /* E-82b: the pose stream at dstPose, and the statics at dstStatic unless it is 0. */
@@ -673,6 +700,77 @@ uint32_t pack_casters_keyed_scan(uint32_t table, uint32_t keyByte, uint32_t type
   float *d = (float *)(uintptr_t)dst;
   if (sunByte) return casters_keyed_scan(t, key, type, count, cap, d, keyBase, (uint32_t *)(uintptr_t)sunByte, 1);
   return casters_keyed_scan(t, key, type, count, cap, d, keyBase, 0, 0);
+}
+
+/* E-394: the full caster rows' sun frames in the pack (pack and pack_scatter framed), from the block at S (KS_*, as the
+   keyed scan reads it): each row's entity in its tint float as pre-render's applySunFramesFor writes it (-1 for a row
+   that is not an entity's sprite) and, for a DirectionalSprite, the frame the sun sees (keyed_sun_frame): its texture
+   (|frame| - 1) and its scale's sign flipped when the frame is mirrored the other way. A row the descriptors do not decide
+   (keyed_sun_frame's SUN_FRAME_JS), or whose mirrored frame would flip a NaN scale, keeps the pack's texture and scale and
+   is listed (output row, entity); past the list's capacity it is only counted, and the JS writes every row's frame. */
+INLINE void sun_cols(const uint32_t *S, SunCols *c) {
+  c->rowType = (const uint8_t *)(uintptr_t)S[KS_TYPES];
+  c->rowEntity = (const int32_t *)(uintptr_t)S[KS_ENTITIES];
+  c->entities = S[KS_ENTITY_COUNT];
+  c->active = (const uint8_t *)(uintptr_t)S[KS_ACTIVE];
+  c->mode = (const uint8_t *)(uintptr_t)S[KS_MODE];
+  c->direction = (const uint8_t *)(uintptr_t)S[KS_DIRECTION];
+  c->animation = (const uint8_t *)(uintptr_t)S[KS_ANIMATION];
+  c->casts = (const uint8_t *)(uintptr_t)S[KS_CASTS];
+  c->orient = (const uint8_t *)(uintptr_t)S[KS_ORIENT];
+  c->kind = (const uint8_t *)(uintptr_t)S[KS_KIND];
+  c->sheet = (const uint8_t *)(uintptr_t)S[KS_SHEET];
+  c->frame = (const uint16_t *)(uintptr_t)S[KS_FRAME];
+  c->sheets = (const uint32_t *)(uintptr_t)S[KS_SHEETS];
+  c->list = (uint32_t *)(uintptr_t)S[KS_LIST];
+  c->listCap = S[KS_LIST_CAP];
+}
+
+INLINE void sun_cols_listed(uint32_t *S, uint32_t listed) { S[KS_LISTED] = listed; }
+
+/* Output row k (d), queue row i. */
+INLINE void full_row_sun_frame(float *d, uint32_t i, uint32_t k, const SunCols *c, uint32_t *listed) {
+  if (c->rowType[i] != 0) {
+    d[9] = -1.0f;
+    return;
+  }
+  const int32_t e = c->rowEntity[i];
+  d[9] = (float)e;
+  const int32_t v = keyed_sun_frame((uint32_t)e, c->entities, c->active, c->mode, c->casts, c->sheet, c->sheets, c->kind,
+                                    c->orient, c->direction, c->animation, c->frame);
+  if (v == 0) return;
+  if (v != SUN_FRAME_JS) {
+    const float sx = d[2];
+    if (!(v < 0 && sx != sx)) {
+      d[10] = (float)((v < 0 ? -v : v) - 1);
+      if ((v < 0) != (sx < 0.0f)) d[2] = -sx;
+      return;
+    }
+  }
+  const uint32_t m = *listed;
+  if (m < c->listCap) {
+    c->list[2 * m] = k;
+    c->list[2 * m + 1] = (uint32_t)e;
+  }
+  *listed = m + 1;
+}
+
+/* E-394: pack_casters with the rows' sun frames and entities from the sun frames' region at sunByte. */
+__attribute__((export_name("pack_casters_framed")))
+uint32_t pack_casters_framed(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
+                             uint32_t dst, uint32_t typeByte, uint32_t particlesOut, uint32_t sunByte) {
+  return pack((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom, (float *)(uintptr_t)dst, typeByte,
+              (uint32_t *)(uintptr_t)particlesOut, 1, (uint32_t *)(uintptr_t)sunByte, 1);
+}
+
+/* E-394: pack_casters_scatter with the rows' sun frames and entities from the sun frames' region at sunByte. */
+__attribute__((export_name("pack_casters_scatter_framed")))
+uint32_t pack_casters_scatter_framed(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
+                                     uint32_t dst, uint32_t typeByte, uint32_t particlesOut, uint32_t invByte,
+                                     uint32_t rowCount, uint32_t sunByte) {
+  return pack_scatter((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom, (float *)(uintptr_t)dst,
+                      typeByte, (uint32_t *)(uintptr_t)particlesOut, invByte, rowCount, 1, (uint32_t *)(uintptr_t)sunByte,
+                      1);
 }
 
 /* E-393: the lamps' frames of directional casters in the stamp rows, as pre-render's applyKeyedLampFramesInto (keyed rows)

@@ -467,6 +467,41 @@ export function applyListedSunFramesFor(rows, list, listed, active, mode, casts,
 }
 
 /**
+ * E-394: the full sun rows the framed pack left to the JS, `listed` pairs in `list` (output row, entity): each gets
+ * sunFrameFor's frame, its texture and its scale's flip, as applySunFramesFor gives them (the pack left the row's scale
+ * the queue's; prepareSunFrames ran this call). The pack wrote every row's entity.
+ */
+export function applyListedFullSunFramesFor(rows, list, listed, active, mode, casts, sheets, dirs, anims, frames, tables,
+    shift, orients, kinds) {
+    for (let m = 0; m < listed; m++) {
+        const v = sunFrameFor(list[2 * m + 1], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
+        if (v === 0) continue;
+        const at = list[2 * m] * GPU_CASTER_FLOATS;
+        rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
+        const sx = rows[at + GPU_ROW_SCALE_X];
+        if ((v < 0) !== (sx < 0)) rows[at + GPU_ROW_SCALE_X] = -sx;
+    }
+}
+
+/**
+ * E-394: the full sun rows' frames after the framed pack (gpuPackClient.js packInstancedRowsWasm with `sun`, the columns
+ * _keyedSunFrames binds): the rows it listed (applyListedFullSunFramesFor), or, when it wrote no frame or listed past its
+ * list, every row (applySunFramesFor with the queue's scales `scaleX`, which writes again, the same, what the pack
+ * wrote). prepareSunFrames ran this call.
+ */
+export function finishFullSunFrames(rows, sunN, sun, region, casters, types, entities, tables, shift, scaleX) {
+    if (sun.framed && sun.listed <= region.listCap) {
+        if (sun.listed > 0) {
+            applyListedFullSunFramesFor(rows, region.list, sun.listed, sun.active, sun.mode, sun.casts, sun.sheets, sun.dirs,
+                sun.anims, sun.frames, tables, shift, sun.orients, sun.kinds);
+        }
+        return;
+    }
+    applySunFramesFor(rows, sunN, casters, types, entities, sun.active, sun.mode, sun.casts, sun.sheets, sun.dirs, sun.anims,
+        sun.frames, tables, shift, sun.orients, sun.kinds, scaleX);
+}
+
+/**
  * E-372: the sun frames' tables where pack_casters_keyed_scan reads them (`sun`, gpuPackClient.js keyedSunViews), after
  * prepareSunFrames: by sheet id a descriptor (KEYED_SUN_SHEET) and, in the pool, the table's frames by absolute direction
  * (frameAt, which a fixed card reads at its front) and a uniform table's for this turn (frameOf). Written again, every
@@ -4569,13 +4604,30 @@ class PreRenderWorker extends AbstractWorker {
             opts.indexCount = sunN;
             opts.sortKey = null;
             const sctx = makePackContext(q, opts, caps.maxSun, this._gpuPackCtx);
+            // E-394: the pack writes the rows' sun frames and entities itself (the frames' tables brought to this turn in
+            // its region) when no shadow texture changes the rows after it and the queue's scales are there.
+            const sun = sctx && !this._shadowFramesOn && q.scaleX ? this._keyedSunFrames(q) : null;
+            if (sun !== null) {
+                sun.framed = false;
+                sun.listed = 0;
+            }
             sunN = sctx
-                ? this._packRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
+                ? this._packRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true, sun)
                 : 0;
             if (this._shadowFramesOn && sunN > 0) this._applyShadowTextures(q, dst.sun, sunN);
             // E-370: the sun's frames write the rows' entities in the same pass; without it, _tagCasterEntities below.
-            const tagged = sunN > 0 && this._sunFrameTables !== null && !!DirectionalSprite.active
-                && this._applySunFrames(q, dst.sun, sunN);
+            let tagged = false;
+            if (sun !== null) {
+                tagged = sunN > 0;
+                if (tagged) {
+                    const region = this._gpuPackWasm ? this._gpuPackWasm.keyedSun : null;
+                    finishFullSunFrames(dst.sun, sunN, sun, region, this._gpuCasterIdx, this._renderableType, this._renderableIndex,
+                        this._sunFrameTables, this._sunShift, q.scaleX);
+                }
+            } else {
+                tagged = sunN > 0 && this._sunFrameTables !== null && !!DirectionalSprite.active
+                    && this._applySunFrames(q, dst.sun, sunN);
+            }
             if (this._casterKindsOn && sunN > 0) this._tagCasterRows(q, dst.sun, sunN);
             // The rows' entities: the lamps' frames and their own entities' stamps read them.
             if (sunN > 0 && !tagged) this._tagCasterEntities(q, dst.sun, sunN);
@@ -4739,7 +4791,8 @@ class PreRenderWorker extends AbstractWorker {
      * float the frame the sun sees (±(textureId + 1), negative mirrored; 0 for the sprite's own), which the keyed shadow
      * programs take instead of the sprite's own. The frame passes' per-call part runs here, before the scan
      * (_prepareSunFrames). E-372: the scan writes the frames itself, from these columns and the tables brought to this
-     * turn in its region (syncKeyedSunTables); _finishKeyedSunFrames writes the rows it leaves.
+     * turn in its region (syncKeyedSunTables); _finishKeyedSunFrames writes the rows it leaves. E-394: the full rows' pack
+     * takes the same columns (packInstancedRowsWasm's `sun`), and finishFullSunFrames writes the rows it leaves.
      * @returns {object|null} the columns for packKeyedCastersScanWasm, or null when the rows carry no frame this call
      */
     _keyedSunFrames(q) {
@@ -5074,10 +5127,10 @@ class PreRenderWorker extends AbstractWorker {
     /**
      * A queue's rows through gpuPack.wasm (E-76 W9, close-out group B: every call, the JS packer it replaced is
      * tests/reference/gpuPackJs.mjs); a call it cannot take (a column outside the render-queue memory) packs nothing
-     * and says so once.
+     * and says so once. E-394: with `sun`, the caster rows' sun frames too (packInstancedRowsWasm's).
      */
-    _packRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast) {
-        const n = packInstancedRowsWasm(this._gpuPackWasm, q, ctx, dst, floatsPer, capacity, shadowCast);
+    _packRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast, sun = null) {
+        const n = packInstancedRowsWasm(this._gpuPackWasm, q, ctx, dst, floatsPer, capacity, shadowCast, sun);
         if (n >= 0) return n;
         if (!this._packRefusedWarned) {
             this._packRefusedWarned = true;

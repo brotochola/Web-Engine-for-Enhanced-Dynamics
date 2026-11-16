@@ -69,6 +69,8 @@
         "pack_casters_keyed",
         "pack_casters_keyed_scan",
         "lamp_frames",
+        "pack_casters_framed",
+        "pack_casters_scatter_framed",
         "pack_sprites_general",
         "pack_casters_general",
         "pack_pose",
@@ -241,6 +243,8 @@
         "pack_casters_keyed",
         "pack_casters_keyed_scan",
         "lamp_frames",
+        "pack_casters_framed",
+        "pack_casters_scatter_framed",
         "pack_sprites_general",
         "pack_casters_general",
         "pack_pose"
