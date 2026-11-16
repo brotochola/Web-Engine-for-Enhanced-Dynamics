@@ -10005,7 +10005,8 @@
         "R-0923",
         "R-0926",
         "R-0931",
-        "R-0955"
+        "R-0955",
+        "R-1161"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -10909,7 +10910,8 @@
       "records": [
         "R-0842",
         "R-0843",
-        "R-0844"
+        "R-0844",
+        "R-1160"
       ]
     },
     {
@@ -12191,7 +12193,8 @@
         "blob workers"
       ],
       "records": [
-        "R-0931"
+        "R-0931",
+        "R-1161"
       ]
     },
     {
@@ -15137,7 +15140,9 @@
         "REVIEW_PLAN.md#DX-CAMERA",
         "DX_LIGHT3D_PLAN.md"
       ],
-      "records": [],
+      "records": [
+        "R-1160"
+      ],
       "date": "2026-11-14",
       "area": "engine",
       "kind": "dx",
@@ -15162,7 +15167,8 @@
         "R-1056",
         "R-1057",
         "R-1058",
-        "R-1120"
+        "R-1120",
+        "R-1160"
       ],
       "date": "2026-11-14",
       "area": "engine",
@@ -15192,7 +15198,8 @@
         "R-1060",
         "R-1065",
         "R-1120",
-        "R-1132"
+        "R-1132",
+        "R-1160"
       ],
       "date": "2026-11-14",
       "area": "render",
@@ -15214,7 +15221,8 @@
         "DX_LIGHT3D_PLAN.md"
       ],
       "records": [
-        "R-1061"
+        "R-1061",
+        "R-1160"
       ],
       "date": "2026-11-14",
       "area": "render",
@@ -15235,7 +15243,8 @@
         "DX_LIGHT3D_PLAN.md"
       ],
       "records": [
-        "R-1062"
+        "R-1062",
+        "R-1160"
       ],
       "date": "2026-11-14",
       "area": "render",
@@ -15256,7 +15265,8 @@
         "DX_LIGHT3D_PLAN.md"
       ],
       "records": [
-        "R-1063"
+        "R-1063",
+        "R-1160"
       ],
       "date": "2026-11-14",
       "area": "render",
@@ -15277,7 +15287,8 @@
         "DX_LIGHT3D_PLAN.md"
       ],
       "records": [
-        "R-1064"
+        "R-1064",
+        "R-1160"
       ],
       "date": "2026-11-14",
       "area": "engine",
@@ -16234,7 +16245,8 @@
         "panoramic lamp map"
       ],
       "records": [
-        "R-1147"
+        "R-1147",
+        "R-1160"
       ]
     },
     {
@@ -16307,7 +16319,8 @@
         "pixel art shadows"
       ],
       "records": [
-        "R-1146"
+        "R-1146",
+        "R-1160"
       ]
     },
     {
@@ -28893,6 +28906,31 @@
       "title": "Worker sync and cross-core traffic read (the frame chain mapped from the code): ten candidates, one bug",
       "verdict": "note",
       "text": "**Worker sync and cross-core traffic, read from the code, 2026-11-14, done 22:18.** A read-only agent at 775b053a.\n\n**The frame chain:** every worker's own rAF fires within ~0.2 ms of the vsync (R-0354, R-0927); main publishes the frame (chain[1]++\nand notify); the two logic workers wait on chain[1] at most 0.95 ms, tick (rows two logic frames old, Transform live, the contact\nring), then chain[0] += 1 and ring the bell (chain[2]); physics sleeps on the bell until chain[0] rose by nLogic, budget\nmin(T - step - 6, 0.4T) (below zero at crowd 2.5: no wait), then sync, commands, queries, accelerations, b2World_Step (3 pool threads\nspin), publishPose into pose A/B, afterStep; spatial and particle do not wait; pre-render skips when Pixi is more than one behind and\nwaits on the pose, budget min(T - step - 4, 0.6T); Pixi waits on the queue, budget min(T - step - 1, 0.75T). Pose and render queue\nare double-buffered with backpressure; Transform, rows, grid and pos single-buffered and read live; contacts a ring; particle lists\ntriple-buffered. At crowd 2.5 physics starts at the vsync and publishes about 14 ms in: in the first 7 ms about 10 threads are runnable\non 8 cores, from 11 to 16.7 ms the machine is nearly idle.\n\nRanked: N-171 (E-198's waits do not notice a lost frame: a bug), E-328 (a second spatial worker started by logic's bell), E-317 (touch\nthe next rows' heads ahead, then pack), E-318 (logic loads the next row heads ahead), E-341 (logic's input wait after the input-free\nwork, with Atomics.pause), E-327 (publishPose skips unchanged rotations, copies on the pool), E-319 (E-298's spin re-judged at crowd 2.5),\nE-342 (tick phases by id blocks), E-339 (Pixi's uploads before its queue wait), E-344 (despawn compaction), E-346 (a neighbour's x, y\nand type in one read).\n\n**E-226, instances:** the 4-16 byte handshake buffers (sceneSharedBuffers.js) are probably packed several to a line by Chrome's\nallocator, and bodyGenEpoch gets an Atomics.add on every spawn: pad each to 64 bytes; the contact ring does an Atomics.add, a seq-cst\nstore and two loads per event on physics' serial path; with two or more spatial workers pos lines mix owners and are rewritten\nunconditionally (spatialWorker.js); grid cells are 68 bytes, so sparse cells straddle lines under the spiral walk.\n\n**Found fine:** the logic split (sorted type lists, contiguous id ranges per worker); frame totals, wasm regions and spatial's slices\nline-aligned; the handshake order (publishPose before afterStep, one ahead with backpressure, physics on the bell); E-274, E-308 and\nE-268 already stop identical rewrites; Predator uses grid rays, so E-57's tail never runs; movedBits and decoration flags have no\nreader on another core."
+    },
+    {
+      "id": "R-1160",
+      "date": "2026-11-15",
+      "time": "22:31",
+      "timeFrom": "recorded",
+      "title": "DX-LIGHT3D merged into main (f025d0c9)",
+      "verdict": "kept",
+      "text": "**DX-LIGHT3D merged into main** (f025d0c9, --no-ff, at the owner's ask, 2026-11-15 ~22:30: \"¿estamos listos para mergear a main? o qué falta? hacelo\").\n\nHow: main (0c33673e: four docs and register commits, Wave 15's candidates and N-170 to N-172) was merged into dx/light3d first (1688df57; REVIEW_PLAN's two appended lists kept both, main's first; the register merged by key with no id in both); then main's merge commit was made with commit-tree on the branch's tree (main an ancestor of it, so the tree is the branch's), the folder's files never changing under the owner's open bench tab.\n\nWhat merged: config.camera (pitch, floorScaleY, heightScaleY; lighting.groundScaleY and raycasted retired), DirectionalSprite (Predator, carScene, littleCity and Buenos Aires migrated), height and normal maps in the atlas's twin page (DX-MAPS), the G-buffer (DX-GBUF), pixel depth (DX-DEPTH), the sun's and the lamps' shadow maps (DX-SHADOW3D, DX-LAMPPANO's panoramic tiles), self-shadow (DX-SELFSHADOW), one ShadowCaster (DX-CASTER: VolumeShadowCaster and LightOccluder gone), emissive sprites (DX-EMISSIVE), pixel-art lighting (DX-PIXELSHADOW), the light ending at its radius (N-204), the cut of maxShadowCastingLights fading (N-212), the light bench, and the fixes N-180 to N-215.\n\nThe checks it merged on: test:node 2752/2752 and test:demos 101/101 on the merge's tree; every light pass variant compiling (headless WebGL2) and linking on ANGLE D3D11 (653 ms, 407 with pixel art); WebGL and WebGPU smokes of the light scenes; the owner's visual approval of the light bench (\"está todo bien ahora\", 2026-11-15). NOT measured against main before the merge: DX_LIGHT3D_PLAN 17.9's phase 1 (Predator crowd 2.5 with the camera pinned, light3dCompareScene, the demo guards) and the scoreboard were waiting for a quiet machine; they run on main.",
+      "commits": [
+        "1688df57",
+        "f025d0c9"
+      ]
+    },
+    {
+      "id": "R-1161",
+      "date": "2026-11-15",
+      "time": "22:54",
+      "timeFrom": "recorded",
+      "title": "The bundles of f025d0c9 (DX-LIGHT3D) tested; prod bundle against its sources NEUTRAL on Predator and Boids",
+      "verdict": "passed",
+      "text": "**The bundles of f025d0c9 (DX-LIGHT3D merged into main) tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `9461601e`.\n\n- Node 2752 of 2752, demos 101 of 101 on the merge's tree.\n- `check:dist` passes (inputs 132bd6b469e78af1); embed and browser smokes OK on all 8 bundles.\n- `test:node:bundle` 308 of 308 on each of the 8.\n\nThe prod ESM bundle against its sources (`runPredatorAbab --vs HEAD --hyp-rev HEAD --full-rev --pool --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, no other bench browser, the owner's Chrome at about 0.08 of a core:\n- **Predator, 4 pairs, 22:39 to 22:44: NEUTRAL.** Every worker under the 6 ms floor (not judged), and every one but particle as fast or faster on the bundle: logic 2.163 → 2.070, spatial 3.448 → 3.322, physics 3.494 → 3.109, renderer 1.266 → 1.155, pre-render 2.342 → 2.266, particle 0.695 → 0.765 ms; loads within 0.6 % (GPU_CASTERS 13 678 → 13 609, RENDER_QUEUE_SIZE 13 989 → 13 912).\n- **Boids, 8 pairs, 22:44 to 22:54: NEUTRAL (below the floor).** Spatial 4.756 → 4.660, physics 3.382 → 3.387, logic 1.035 → 1.066, pre-render 1.474 → 1.450 ms; loads within 0.1 %.",
+      "commits": [
+        "9461601e"
+      ]
     }
   ],
   "leads": [
