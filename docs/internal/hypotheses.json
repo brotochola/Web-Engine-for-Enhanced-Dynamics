@@ -18170,7 +18170,8 @@
         "R-1187",
         "R-1198",
         "R-1212",
-        "R-1215"
+        "R-1215",
+        "R-1224"
       ]
     },
     {
@@ -19964,6 +19965,25 @@
       ],
       "records": [
         "R-1222"
+      ]
+    },
+    {
+      "id": "E-475",
+      "title": "Pixi links each shader program the first time it draws with it and waits for the link: Predator crowd 2.5 by night links 16 programs in its first 10 s and blocks 2.1 s on them, the 3D light pass's alone 1.29 s (a 1.3 s freeze while the scene starts); by day 11 programs, 0.53 s",
+      "status": "open",
+      "statusText": "found 2026-11-16 from m43's CPU pass (Pixi's generateProgram 146 ms/s in a window from 8 s, by night) and a probe of every link (programProbe.mjs: linkProgram to the LINK_STATUS answer, patched into the Pixi worker)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 25 s from the Pixi worker's start: 16 links, 2 137 ms blocked (0-5 s: 11 links 1 717 ms; 5-10 s: 5 links 420 ms; none after); the light pass (unnamed: pixi-program) 1 287 ms, entities-instanced-glowMask-rows 180, gbuf-rows 107, lamp-map 93, entities-instanced-rows 90. Plain: 11 links, 525 ms, all in the first 1.6 s (22 to 90 ms each). Steady state links nothing.",
+      "next": "Compile every program a scene will use at load, without waiting (KHR_parallel_shader_compile: link all, poll COMPLETION_STATUS_KHR, start drawing when done or behind the loading screen), so no frame links; name the light pass's program; and look at the light pass's HLSL size (m46's d3dShaderStats) for its 1.3 s. The scene's first 10 s of Pixi's frame times and the time to first frame before and after.",
+      "refs": [],
+      "aliases": [
+        "lazy shader links",
+        "parallel shader compile"
+      ],
+      "records": [
+        "R-1224"
       ]
     }
   ],
@@ -31993,6 +32013,15 @@
       "title": "E-319's thread arm: Box2D on 3 threads at crowd 2.5 makes physics +10.4 % (4/4) but logic -10.0 % and spatial -4.6 % (0/4 worse): the physics threads take cores the others need; 4 stay, the spin arm next",
       "verdict": "note",
       "text": "**E-319, first arm: Box2D on 3 threads instead of 4 at Predator crowd 2.5 is a regression for physics (+10.4 %, 4/4 pairs worse), but every other worker gets faster with the core it frees: logic -10.0 % and spatial -4.6 % (0/4 worse each).** So the physics threads do take cores the other workers need (the contention R-1100 and R-1219's tails point at), and physics, the frame's long pole (R-1218), still gains from its fourth thread. Four threads stay.\n\nrunPredatorAbab --name e319-threads3 --vs HEAD --pool --query \"crowd=2.5&zoom=0.216\" --query-b \"physicsWorkers=3\" --pairs 4 --owner physics (the knob is e0f871a0), one build, the runtime switch the only difference; through the bench lock, 17:54 to 18:00 (the sitting folder and summary.json).\n\n| worker | 4 threads | 3 threads | paired | worse |\n| --- | --- | --- | --- | --- |\n| physics | 12.837 | 14.029 | +10.4 % | 4/4 |\n| logic | 6.062 | 5.398 | -10.0 % | 0/4 |\n| spatial | 9.980 | 9.537 | -4.6 % | 0/4 |\n| pre-render | 5.799 | 5.482 | (under the floor) | |\n| renderer | 3.049 | 3.190 | (under the floor) | |\n\nLoad keys within 0.3 % (BODY_COUNT 38 329 -> 38 385). Presented 60.0 fps both sides.\n\nNext for E-319: the other arm, E-298's spin (B2_SCHEDULER_SPIN_MILLISECONDS 0.05 in scheduler.c, compile time) against no spin on four threads, judged on every worker, since what freed logic and spatial here may be the spinning more than the thread."
+    },
+    {
+      "id": "R-1224",
+      "date": "2026-11-16",
+      "time": "17:10",
+      "timeFrom": "recorded",
+      "title": "Pixi links shader programs on first use and blocks: Predator by night 16 links and 2.1 s blocked in its first 10 s, the light pass alone 1.29 s; by day 0.53 s; no links later (E-475)",
+      "verdict": "note",
+      "text": "**Pixi's shader programs link on first use and block: Predator crowd 2.5 by night links 16 programs in its first 10 s and waits 2.1 s for them, the 3D light pass's alone 1.29 s; by day 11 programs and 0.53 s, all in the first 1.6 s; neither links anything later.** This is what m43's CPU pass by night caught as generateProgram at 146 ms/s (its window began at 8 s, inside the night scene's links): a start-up cost, not a steady one. Filed as E-475.\n\nprogramProbe.mjs (scratchpad tools: WebGL2's shaderSource, attachShader, linkProgram and getProgramParameter wrapped in the Pixi worker as soon as it exists; each link timed from linkProgram to the LINK_STATUS answer, named by SHADER_NAME), headed Chrome, 25 s, through the bench lock; plain ended 15:56, by night 17:10 (the result files).\n\n| run | links | blocked | when |\n| --- | --- | --- | --- |\n| crowd=2.5 zoom=0.216 | 11 | 525 ms | 0.5 to 1.6 s after the patch (22 to 90 ms each) |\n| ... light3d=1 hour=22 | 16 | 2 137 ms | 11 in 0-5 s (1 717 ms), 5 in 5-10 s (420 ms) |\n\nBy night: the light pass (an unnamed Pixi program) 1 287 ms; entities-instanced-glowMask-rows 180; gbuf-rows 107; lamp-map 93; entities-instanced-rows 90; lamp-map-volumes 75; edge 65; glow 52; mesh-uv-6 47; shadows-instanced 46."
     }
   ],
   "leads": [
