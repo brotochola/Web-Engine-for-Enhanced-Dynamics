@@ -11412,7 +11412,8 @@
         "tiled lighting"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-1173"
       ]
     },
     {
@@ -13176,7 +13177,8 @@
         "timestamp query"
       ],
       "records": [
-        "R-0976"
+        "R-0976",
+        "R-1173"
       ]
     },
     {
@@ -15557,12 +15559,12 @@
     {
       "id": "E-370",
       "title": "_applyKeyedSunFrames is a second JS pass over every keyed caster row after the WASM pack (48 % on the store into the row): 4.3 % of pre-render in Predator crowd 2.5 (~0.55 ms a frame)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-15 on dx/light3d (pre-render is agent R's file until its branch merges)",
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "result": "",
+      "result": "The keyed caster scan (WASM) writes each DirectionalSprite caster's sun frame from DirectionalSprite's block and the tables in the render-queue memory; the JS only the rows it lists: sunFramesMicrobench --path scan -31 % (0.85 -> 0.59 ms at 38 000 casters), Predator crowd 2.5 pre-render 7.376 -> 6.921 ms (-8.6 %, 4/4); light3dCompareScene ds=1 day -4.5 % (below the floor).",
       "next": "Write the frame inside the keyed pack, or store only changed frames; gpuPackCastersKeyedMicrobench, then Predator crowd 2.5.",
       "refs": [
         "EXECUTION_PLAN.md#E-370"
@@ -15574,7 +15576,8 @@
       "records": [
         "R-1155",
         "R-1157",
-        "R-1164"
+        "R-1164",
+        "R-1172"
       ]
     },
     {
@@ -15640,12 +15643,12 @@
     {
       "id": "E-372",
       "title": "The frames' gather in WASM, inside the keyed pack (the alternative to E-371)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-15 on dx/light3d",
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "result": "",
+      "result": "The keyed caster scan (WASM) writes each DirectionalSprite caster's sun frame from DirectionalSprite's block and the tables in the render-queue memory; the JS only the rows it lists: sunFramesMicrobench --path scan -31 % (0.85 -> 0.59 ms at 38 000 casters), Predator crowd 2.5 pre-render 7.376 -> 6.921 ms (-8.6 %, 4/4); light3dCompareScene ds=1 day -4.5 % (below the floor).",
       "next": "Only if E-371 does not land: the pack writes the frame; gpuPackCastersKeyedMicrobench, Predator crowd 2.5.",
       "refs": [
         "EXECUTION_PLAN.md#E-372"
@@ -15656,7 +15659,8 @@
       "records": [
         "R-1155",
         "R-1157",
-        "R-1164"
+        "R-1164",
+        "R-1172"
       ]
     },
     {
@@ -15845,7 +15849,7 @@
       "date": "2026-11-15",
       "area": "render",
       "kind": "speed",
-      "result": "texelFetch at integer texels for the light data (a0f12347): gpuPassBench WebGL light3d 1.170 -> 1.106 ms (-5.5 %), light 0.755 -> 0.755, same images. Next: E-380 (the reach's division) and E-381 (the lamps' lookup).",
+      "result": "texelFetch at integer texels for the light data (a0f12347): gpuPassBench WebGL light3d 1.300 -> 1.242 ms (-4.5 %, the bench fixed in a43899ed: R-1170's runs drew no lamp shadow), light equal, same images; WebGPU light3d 1.208 ms. E-380 and E-381's attempt made it slower (their record).",
       "next": "Read ANGLE's HLSL against Tint's; texelFetch for the light data; the reach per light; time terms in gpuPassBench.",
       "refs": [
         "EXECUTION_PLAN.md#E-373"
@@ -15854,7 +15858,8 @@
         "light3d WebGL slower"
       ],
       "records": [
-        "R-1170"
+        "R-1170",
+        "R-1171"
       ]
     },
     {
@@ -17801,6 +17806,224 @@
       "records": [
         "R-1102",
         "R-1100"
+      ]
+    },
+    {
+      "id": "E-389",
+      "title": "With light3d Pixi sets about 132 sampler uniforms a frame to the unit they already hold (uniform1i: 133 a frame, 132 of them redundant, against 18 without light3d)",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder on Predator",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "glFrameRecorder, Predator zoom 0.3, 3 s after 12 s: plain 17.6 uniform1i a frame (16.9 redundant); ?light3d=1 by day 132.8 (132.1), by night 130.7 (130.2).",
+      "next": "Find which programs set them (the light3d passes, Pixi's sampler sync) and skip a same-value uniform1i; the recorder and Pixi's CPU per function before and after.",
+      "refs": [],
+      "aliases": [
+        "redundant uniform1i",
+        "sampler uniforms light3d"
+      ],
+      "records": [
+        "R-1173"
+      ]
+    },
+    {
+      "id": "E-390",
+      "title": "With light3d by day Pixi uploads 2.3 MB of buffers a frame against 0.73 MB without it: two bufferSubData of 1196 KB and 844 KB a frame",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder on Predator",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "glFrameRecorder, Predator zoom 0.3: plain 733.7 KB of buffers a frame; ?light3d=1 by day 2317.4 KB (buffer#7 1196.4 KB, buffer#9 844.1 KB, one call each a frame), by night 1121.9 KB.",
+      "next": "Name the two buffers (the maps' passes' full caster rows? light3d's casters ask for kinds, so their rows are full: E-395) and upload only what changed; the recorder before and after.",
+      "refs": [],
+      "aliases": [
+        "light3d buffer uploads"
+      ],
+      "records": [
+        "R-1173"
+      ]
+    },
+    {
+      "id": "E-391",
+      "title": "light3d adds 54 draws a frame to Predator (27 -> 81, drawArraysInstanced 2 -> 51) and the uniforms set per draw (uniformMatrix3fv 28 -> 94, uniform4f 9 -> 101 a frame)",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder on Predator",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "glFrameRecorder, Predator zoom 0.3: plain 557.4 GL calls, 27 draws (34 194 instances) a frame; ?light3d=1 by day 1066 calls, 80.6 draws (104 663 instances), by night 1003.7 calls, 77.7 draws.",
+      "next": "List the draws by pass (the columns grids of the sun map, the lamps' map and the sprite shadows, per range?) and draw in one call what a pass can; the recorder and Pixi's CPU.",
+      "refs": [],
+      "aliases": [
+        "light3d draw calls"
+      ],
+      "records": [
+        "R-1173"
+      ]
+    },
+    {
+      "id": "E-392",
+      "title": "E-201's pose texture takes every queue row's pose every frame: four column copies and four texSubImage2D of 1024 x rows RGBA32UI (640 KB a frame at Predator crowd 2.5), however few poses moved",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder and instancedSpriteBatch.js _uploadPoseRows",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "glFrameRecorder: 4 texSubImage2D a frame of 1024 x 4 texels (Predator crowd 1) and 1024 x 10 (crowd 2.5), RGBA32UI: 256 and 640 KB a frame; _uploadPoseRows copies x, y, rotC and rotS of the first n rows into blocks first.",
+      "next": "Upload the rows whose pose changed (a dirty range from the emit), or the rotation as one u32 (E-362); a scene that stands still must stop uploading. A static stress scene, Pixi STEP_MS over 6 ms.",
+      "refs": [],
+      "aliases": [
+        "pose texture upload",
+        "uploadPoseRows"
+      ],
+      "records": [
+        "R-1173"
+      ]
+    },
+    {
+      "id": "E-393",
+      "title": "The lamps' frames of directional casters in WASM: applyLampFramesInto is 5.3 to 5.8 % of pre-render in Predator ?light3d=1 and applyKeyedLampFramesInto 2.2 % at crowd 2.5 (a JS walk of every stamp row and its entity's columns)",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from the traces of main ac73cf48 (q-predator-day, q-predator-night, q-predator-crowd)",
+      "date": "2026-11-16",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "CPU passes 2026-11-16 02:13 to 02:25: Predator ?light3d=1 applyLampFramesInto 5.8 % (day) and 5.3 % (night) of pre-render; crowd 2.5 applyKeyedLampFramesInto 2.2 %.",
+      "next": "A kernel over the stamp rows with E-372's region (DirectionalSprite's block, frameAt in the pool) plus each lamp's x, y and id and each sheet's lamp geometry (lampQuarter, lampGeo); rows it cannot decide listed for the JS; parity against the JS; lampFramesMicrobench, then Predator ?light3d=1.",
+      "refs": [],
+      "aliases": [
+        "lamp frames wasm"
+      ],
+      "records": [
+        "R-1173"
+      ]
+    },
+    {
+      "id": "E-394",
+      "title": "The full caster rows' sun frames in WASM: light3d scenes pack full rows (their casters ask for kinds), where sunFrameFor is 2.5 to 3 % of pre-render and applySunFramesFor writes the frames in JS",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from the traces of main ac73cf48 (q-predator-day, q-predator-night)",
+      "date": "2026-11-16",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "CPU passes: Predator ?light3d=1 sunFrameFor 2.5 % (day) and 3.0 % (night) of pre-render, pack_casters_scatter 3 %.",
+      "next": "pack_casters_scatter (or the full rows' kernel) writes the frame from E-372's region as the keyed scan does; or E-395 makes light3d use keyed rows.",
+      "refs": [],
+      "aliases": [
+        "full rows sun frames wasm"
+      ],
+      "records": [
+        "R-1173"
+      ]
+    },
+    {
+      "id": "E-395",
+      "title": "Keyed caster rows for casters that ask for a kind (DX-CASTER): one such caster turns the keyed caster path off for the whole scene (_casterKindsOn), so light3d scenes pack full rows and E-372 does not serve them",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from preRenderWorker.js _packGpuSun and the traces (pack_casters_scatter in Predator ?light3d=1)",
+      "date": "2026-11-16",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "",
+      "next": "Carry the caster's code in the keyed row (a spare float, or the key's high bits) so the keyed scan and the keyed shadow programs serve kinds too; then Predator ?light3d=1's pre-render.",
+      "refs": [],
+      "aliases": [
+        "keyed rows caster kinds"
+      ],
+      "records": [
+        "R-1173"
+      ]
+    },
+    {
+      "id": "E-396",
+      "title": "The light data texture goes up whole every frame (maxLights 256 x 4 rows, 16 KB) while a scene lights a few; _uploadRgba32FloatGl is 2 to 4 % of Pixi in the light scenes' traces",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from the light scenes' traces and glFrameRecorder (texture#2 256 x 4 RGBA32F, 16 KB a frame)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "CPU passes 2026-11-16: _uploadRgba32FloatGl 2.2 to 4.0 % of Pixi in lampShadowStress, selfShadow, spot, gallery, lightBench, volume.",
+      "next": "Upload only the live columns (UNPACK_ROW_LENGTH = maxLights), zeros once when the count drops; or only the rows a frame changed.",
+      "refs": [],
+      "aliases": [
+        "light data upload"
+      ],
+      "records": [
+        "R-1173"
+      ]
+    },
+    {
+      "id": "E-397",
+      "title": "writeMeshPoseTable walks every mesh fill row (about 524 000 in volumeStressScene) to find each entity's run of rows",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 by opt/mesh-pose's agent (its next hotspot)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "",
+      "next": "A per-batch list of distinct entities with their runs, rebuilt on full packs (their only writer); volumeStressScene's Pixi CPU.",
+      "refs": [],
+      "aliases": [
+        "mesh pose table rows"
+      ],
+      "records": [
+        "R-1173"
+      ]
+    },
+    {
+      "id": "E-398",
+      "title": "Mesh fill poses read on the GPU by entity, as E-201 reads sprite poses by queue row: no pose table built and uploaded by the CPU (the pose code was 55 % of Pixi's busy time in volumeStressScene)",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from the volume scene's trace (q-volume: meshFillPoseSource 15.8 %, uploadPoseTable 12.0 %, readMeshFillPose 11.8 %, meshFillPoseOrPresenceChanged 11.8 %)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "next": "The mesh programs fetch each instance's pose from the pose columns (a texture by entity, or the queue's by row); the CPU only says which entities draw. After opt/mesh-pose is measured.",
+      "refs": [],
+      "aliases": [
+        "mesh poses on the gpu"
+      ],
+      "records": [
+        "R-1173"
+      ]
+    },
+    {
+      "id": "N-216",
+      "title": "glFrameRecorder counts a texture upload's whole source view when the call passes a sub-range (srcOffset): Predator's pose texture read 7.5 MB a frame for 256 KB",
+      "status": "open",
+      "statusText": "found 2026-11-16 reading Predator's recordings",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "Its texSubImage2D hook adds view.byteLength whenever a view is passed; _uploadPoseRows and the GPU particle records pass the whole Uint32Array with an offset.",
+      "next": "Count width x height x bytes per texel when the call gives them (and a bufferSubData's length argument when given).",
+      "refs": [],
+      "aliases": [
+        "gl recorder texture bytes"
+      ],
+      "records": [
+        "R-1173"
+      ]
+    },
+    {
+      "id": "N-217",
+      "title": "Steady-state deopts left in Predator crowd 2.5: particleWorker.js:1179 (visibleData[0] after the screen loop) x157 in 8 s, weedjsPost.js:720 and :689 (OSR exits) x150 and x53, box2dMovedBodiesImpl.js:186 x48, and N-214's logicWorker.js:901/912",
+      "status": "open",
+      "statusText": "found 2026-11-16 in the deopt passes of main ac73cf48 (q-predator-crowd, q-predator-day)",
+      "date": "2026-11-16",
+      "area": "engine",
+      "kind": "bug",
+      "result": "Deopt pass, Predator crowd 2.5 (8 s): particleWorker.js:1179:20 generic keyed access x157; weedjsPost.js:720:5 and :689:5 exit from OSR'd inner loop x150 and x53; logicWorker.js:901:10 x84. Predator ?light3d=1 by day: box2dMovedBodiesImpl.js:186:13 x48, logicWorker.js:901/912 x112 each.",
+      "next": "Read each with the V8 log (--keep-traces): code compiled before the store or branch after its loop had run, as N-214's; move the store out or hoist it.",
+      "refs": [],
+      "aliases": [
+        "steady deopts crowd"
+      ],
+      "records": [
+        "R-1173"
       ]
     }
   ],
@@ -29052,6 +29275,42 @@
       "commits": [
         "a0f12347"
       ]
+    },
+    {
+      "id": "R-1171",
+      "date": "2026-11-16",
+      "time": "02:27",
+      "timeFrom": "recorded",
+      "title": "E-373's texelFetch again with the bench fixed (four light data rows): WebGL light3d 1.300 -> 1.242 ms (-4.5 %)",
+      "verdict": "kept",
+      "text": "**E-373's texelFetch measured again with the bench fixed: the WebGL light3d pass -4.5 % (1.300 -> 1.242 ms), not R-1170's -5.5 %.** R-1170's runs had a broken bench: since N-212 the light pass reads a lamp's fade from the light data's fourth row, but gpuPass/scenery.js built three rows, so light3d read row 3 out of the texture, its fade was 0 and no lamp shadow drew (WebGPU skipped the lookup). The bench builds four rows now, every lamp fading 1 (a43899ed).\n\ngpuPassBench --backend webgl --passes light,light3d (GTX 1650, ANGLE D3D11, 960x540, 32 of 256 lights, 48 lamps), bdcca2e7 with the bench fix against main a43899ed, alternated twice, 2026-11-16 02:25 to 02:27 (the result files): light3d 1.3009 and 1.2984 ms against 1.2431 and 1.2404 (-4.5 %), image 8f1baf36 on every run; the plain light pass 0.6787 and 0.6782 against 0.6898 and 0.6786 (equal), image fedf51fb on every run. WebGPU on main (its WGSL already loads by integer texel): light3d 1.208 ms, light 0.72.",
+      "commits": [
+        "a0f12347",
+        "a43899ed"
+      ]
+    },
+    {
+      "id": "R-1172",
+      "date": "2026-11-16",
+      "time": "02:38",
+      "timeFrom": "recorded",
+      "title": "E-372 kept: the keyed caster scan writes the sun frames; Predator crowd 2.5 pre-render 7.376 -> 6.921 ms (-8.6 %, 4/4)",
+      "verdict": "kept",
+      "text": "**E-372 kept: the keyed caster scan writes the DirectionalSprite casters' sun frames itself; the JS fixes only the rows it lists (fe48e8d9). Predator crowd 2.5's pre-render -8.6 % (4/4).** The design: DirectionalSprite's block and a sun frames region (328 KB: a parameter block, a descriptor a sheet id, a list of the rows left to the JS, a pool for the frame tables) appended to the render-queue memory past the other regions (c062e3e3); pack_casters_keyed_scan takes the region's byte (0: the old loop) and runs sunFrameFor's tests in its order for each entity row: a fixed card reads frameAt at the table's front, a uniform table frameOf at the direction drawn; a table that is not uniform, no direction drawn yet, a sheet the pool cannot hold or a front past the directions is listed and applyListedSunFramesFor writes it; the full JS pass only past 8 192 listed rows, without the region, or with a column outside the memory. syncKeyedSunTables copies the tables when a table's frameOf, frameAt or turn step changes. Same frames bit for bit (castFramesParity's four new random-scene tests against the E-368 reference, directionalSpriteBlock, the real worker's _packGpuSun with the real kernel).\n\n- sunFramesMicrobench --path scan (Node 22, 57 633 slots, 38 000 directional casters), e9c29a64 (the tool, the old code) against fe48e8d9, alternated twice, 2026-11-16 02:25, same checksums: 42.5 and 43.0 ms for 50 frames against 29.2 and 29.8 (-31 %, 0.85 -> 0.59 ms a frame). The plain scan (gpuPackCastersKeyedMicrobench): 0.062 ms on both.\n- Predator crowd 2.5 (?zoom=0.216), ac73cf48 against fe48e8d9, `runPredatorAbab --pool`, 4 pairs, headed, AC power, 02:29 to 02:34 (the result files): KEPT (product). Pre-render 7.376 -> 6.921 ms (paired -8.6 %, 0/4 worse, -7.2 % against the other workers, cv 6/7 %); logic 6.093 -> 6.263 (+2.0 %, 2/4), spatial +0.7 %, physics -1.9 %; Pixi 2.976 -> 3.373 under the floor (by pair -5.1, +18.8, +1.4, +18.9 %: inside the A/A's -14.2 to +22.0 %, R-1162; nothing here reaches Pixi); loads within 0.2 %.\n- light3dCompareScene walkers=20000 props=2000 lamps=48 hour=12 ds=1, 02:34 to 02:38: NEUTRAL (below the floor), pre-render 5.470 -> 5.222 (-4.5 %), logic +0.2 %.\n\nWhat is left of the frames: the kernel's random reads of the entity columns (E-371 would move the pick to the shadow programs), the full rows' sun frames (light3d scenes take the full rows when casters ask for kinds: sunFrameFor and applySunFramesFor there) and the lamps' frames (applyLampFramesInto 5 to 6 % of pre-render in Predator ?light3d=1).",
+      "commits": [
+        "e9c29a64",
+        "c062e3e3",
+        "fe48e8d9"
+      ]
+    },
+    {
+      "id": "R-1173",
+      "date": "2026-11-16",
+      "time": "03:06",
+      "timeFrom": "recorded",
+      "title": "The GPU side on main: light3d doubles Predator's GL calls, adds 54 draws and 132 redundant sampler uniforms a frame; the light passes linear in the light count",
+      "verdict": "note",
+      "text": "**What the GPU side shows on main a43899ed (the GL recorder on Predator, the light passes against the light count): light3d doubles Predator's GL calls (557 -> 1066 a frame), adds 54 draws and 132 redundant sampler uniforms a frame and triples the buffer uploads; the light passes cost about 21 us (light) and 30 us (light3d) a light, every light at every pixel.** Twelve hypotheses filed from these and the traces of the night (E-389 to E-398, N-216, N-217).\n\n**glFrameRecorder (E-230), Predator, headed Chrome, 3 s recorded after 12 s, 2026-11-16 03:04 to 03:06 (the result files):**\n\n| a frame | zoom 0.3 | ?light3d=1 day | ?light3d=1 night | crowd 2.5 |\n| --- | --- | --- | --- | --- |\n| GL calls | 557.4 | 1066 | 1003.7 | 612.1 |\n| draws (instances) | 27 (34 194) | 80.6 (104 663) | 77.7 (90 761) | 28.8 (82 039) |\n| redundant calls | 47 | 164.2 | 160.9 | 42.5 |\n| uniform1i (redundant) | 17.6 (16.9) | 132.8 (132.1) | 130.7 (130.2) | 17.2 (16.8) |\n| uniformMatrix3fv, uniform4f | 28, 9 | 93.5, 101.4 | 87.7, 100.4 | 27.8, 5.9 |\n| drawArraysInstanced | 2 | 50.7 | 49.7 | 2 |\n| buffer uploads | 733.7 KB | 2317.4 KB | 1121.9 KB | 1502.8 KB |\n\n- Day's buffers: buffer#7 1196.4 KB and buffer#9 844.1 KB a frame, one bufferSubData each (E-390). Crowd 2.5: buffer#6 1034 KB a frame.\n- Textures: the recorder read 7.6 to 9.4 MB a frame, but it counts a source view whole when the call passes a sub-range (N-216). The real uploads are E-201's pose texture, 4 texSubImage2D of 1024 x 4 RGBA32UI texels a frame (256 KB; 1024 x 10, 640 KB, at crowd 2.5: E-392), and the light data's 256 x 4 RGBA32F (16 KB: E-396).\n- \"Calls that wait\" (10 to 12 a frame) are binding queries (TEXTURE_BINDING_2D 5 to 7, FRAMEBUFFER, READ_FRAMEBUFFER, CURRENT_PROGRAM, VERTEX_ARRAY, ARRAY_BUFFER: once each), which Blink answers from its own state; one getSyncParameter. EXT_disjoint_timer_query_webgl2 is exposed in this Chrome.\n\n**gpuPassBench on main a43899ed (GTX 1650, 960x540, res 0.5, the bench fixed), the light count with lamps = min(lights, 48), 03:01 to 03:03:**\n\n| lights | 4 | 16 | 32 | 64 | 128 |\n| --- | --- | --- | --- | --- | --- |\n| WebGL light | 0.189 | 0.341 | 0.681 | 1.357 | 2.708 ms |\n| WebGL light3d | 0.236 | 0.672 | 1.272 | 2.236 | 3.935 ms |\n| WebGPU light | 0.103 | 0.370 | 0.791 | 1.404 | 2.750 ms |\n| WebGPU light3d | 0.256 | 0.680 | 1.211 | 2.198 | 3.991 ms |\n\nLinear in the light count on both backends: each pixel loops over every light however far (E-205's tiles would give each pixel the lights that reach it).\n\nNot done yet: GPU time per pass inside the real frame (the timer query is there; a RenderDoc 1.47 capture of Chrome's GPU process is next)."
     }
   ],
   "leads": [
