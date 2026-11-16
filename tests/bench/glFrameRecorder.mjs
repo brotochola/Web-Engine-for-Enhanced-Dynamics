@@ -89,11 +89,16 @@ async function recordInWorker({ ms }) {
     else if (name === 'bufferSubData') hook = (a) => { const b = a[4] ? (a[4] | 0) * (a[2].BYTES_PER_ELEMENT || 1) : viewBytes(a[2]); bytesBuffer += b; note(`bufferSubData buffer#${idOf(bound.buf.get(a[0]))} target ${a[0]}`, b); };
     else if (name === 'texImage2D' || name === 'texSubImage2D' || name === 'texImage3D' || name === 'texSubImage3D') {
       hook = (a) => {
+        // N-216: the region the call names (width x height [x depth] x bytes a texel), not the source view: a call that
+        // passes a sub-range of a large view (srcOffset) uploads only its region.
         const view = a.find((x) => x && typeof x.byteLength === 'number');
         const before = bytesTexture;
-        if (view) bytesTexture += view.byteLength;
-        else if (name === 'texSubImage2D' && typeof a[4] === 'number' && typeof a[5] === 'number') bytesTexture += a[4] * a[5] * bpp(a[6], a[7]);
-        else if (name === 'texImage2D' && typeof a[3] === 'number' && typeof a[4] === 'number') bytesTexture += a[3] * a[4] * bpp(a[6], a[7]);
+        const num = (...ix) => ix.every((i) => typeof a[i] === 'number');
+        if (name === 'texSubImage2D' && num(4, 5, 6, 7)) bytesTexture += a[4] * a[5] * bpp(a[6], a[7]);
+        else if (name === 'texImage2D' && num(3, 4, 6, 7) && a.length >= 9) bytesTexture += view ? a[3] * a[4] * bpp(a[6], a[7]) : 0;
+        else if (name === 'texSubImage3D' && num(5, 6, 7, 8, 9)) bytesTexture += a[5] * a[6] * a[7] * bpp(a[8], a[9]);
+        else if (name === 'texImage3D' && num(3, 4, 5, 7, 8)) bytesTexture += view ? a[3] * a[4] * a[5] * bpp(a[7], a[8]) : 0;
+        else if (view) bytesTexture += view.byteLength;
         else if (a[a.length - 1] && a[a.length - 1].width) bytesTexture += a[a.length - 1].width * a[a.length - 1].height * 4;
         const dims = name === 'texSubImage2D' ? `${a[4]}x${a[5]}` : name === 'texImage2D' ? `${a[3]}x${a[4]}` : '';
         note(`${name} texture#${idOf(bound.tex.get(`${bound.unit}:${a[0]}`))} ${dims} format ${a[name === 'texSubImage2D' ? 6 : 6]} type ${a[7]}`, bytesTexture - before);
