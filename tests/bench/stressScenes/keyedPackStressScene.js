@@ -21,13 +21,18 @@ export const GBUF = queryNumber('gbuf', 0) === 1;
 export const BANDS = queryNumber('bands', 0) === 1;
 /** `?scale=`: each bunny's scale (default 0.25: about 7 x 9 px, so the GPU's fill stays small). */
 export const SCALE = queryNumber('scale', 0.25);
+/**
+ * `?pack=preRender`: pre-render packs the sprites (preRender.packGpuSprites 'preRender', the scene before N-223), for
+ * pre-render's split pack and, with ?gbuf=1, its G-buffer words (E-444); no keyed frame is drawn then. Default 'pixi'.
+ */
+export const PACK = WEED.params?.get('pack') === 'preRender' ? 'preRender' : 'pixi';
 
 const MOVERS = Math.floor(N * MOVING);
 const CHURNERS = Math.floor(N * CHURN);
 const STILLS = Math.max(0, N - MOVERS - CHURNERS);
 
 export const stressSceneConfig = {
-  requested: { n: N, moving: MOVING, churn: CHURN, gbuf: GBUF ? 1 : 0, bands: BANDS ? 1 : 0, scale: SCALE },
+  requested: { n: N, moving: MOVING, churn: CHURN, gbuf: GBUF ? 1 : 0, bands: BANDS ? 1 : 0, scale: SCALE, pack: PACK },
 };
 
 /**
@@ -53,8 +58,9 @@ export class KeyedPackStressScene extends Scene {
       maxVisibleRenderables: N,
     },
     // N-223: Pixi packs (keyed frames run only where Pixi packs into the render-queue memory: pixiWorker.js E-177); with
-    // the default ('preRender') this scene measured pre-render's pack and never drew a keyed frame.
-    preRender: { skipCull: true, noLimitFPS: false, packGpuSprites: 'pixi' },
+    // the default ('preRender') this scene measured pre-render's pack and never drew a keyed frame. ?pack=preRender
+    // brings that pack back (E-444's measurement).
+    preRender: { skipCull: true, noLimitFPS: false, packGpuSprites: PACK },
     lighting: GBUF ? { enabled: true, emissive: true, ambient: 0.8 } : { enabled: false },
   };
 
