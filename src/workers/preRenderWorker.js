@@ -628,7 +628,8 @@ function frameFacing(e, t, d, anims, frames) {
  * E-372: the lamp's place read once a run of its rows (the stamp lists come by light); a uniform table's turn from the
  * ray's quarter and the borders it has passed (lampTurnGeometry), no arctangent, no division, the same direction as
  * lampFrameFor's (which still takes the rays near a border, the other tables and the casters with no direction); the scale
- * written only when the flip changes its sign.
+ * written only when the flip changes its sign. E-370: a row whose caster is its own lamp's entity is dropped in the same
+ * pass (dropOwnStampsInto's work, which runs alone only when this pass does not): the rows are walked once.
  */
 export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive, dsMode,
     dirs, anims, sheets, orients, kinds = null) {
@@ -636,11 +637,23 @@ export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables
     const entities = dsActive.length;
     let li = -1;
     let L = null;
+    let lid = -1;
     let lx = 0;
     let ly = 0;
     for (let k = 0; k < stampN; k++) {
         const at = k * GPU_CASTER_FLOATS;
+        const i = lightIdx[k];
+        if (i !== li) {
+            li = i;
+            L = lights[i];
+            if (L) {
+                lid = L.id;
+                lx = L.x;
+                ly = L.y;
+            }
+        }
         const e = rows[at + GPU_ROW_TINT] | 0;
+        if (L && e === lid) rows[at + GPU_SPRITE_FLOATS] = 0;
         if (e < 0 || e >= entities || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
         const t = tables[sheets[e]];
         if (t === undefined) continue;
@@ -650,15 +663,6 @@ export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables
         const fixed = orients !== null && orients[e] === 1;
         let v = 0;
         if (card && !fixed) {
-            const i = lightIdx[k];
-            if (i !== li) {
-                li = i;
-                L = lights[i];
-                if (L) {
-                    lx = L.x;
-                    ly = L.y;
-                }
-            }
             if (!L) continue;
             const dx = rows[at] - lx;
             const dy = (rows[at + 1] - ly) * invG;
@@ -723,7 +727,8 @@ function dropOwnKeyedStampsInto(rows, stampN, lightIdx, lights) {
 
 /**
  * DX-SHADOW3D: applyLampFramesInto for keyed stamp rows: the frame float, ±(textureId + 1), negative mirrored. E-372: the
- * lamp's place once a run of its rows, a uniform table's turn from the borders (applyLampFramesInto's copy).
+ * lamp's place once a run of its rows, a uniform table's turn from the borders (applyLampFramesInto's copy). E-370: and
+ * a row whose key is its own lamp's entity dropped in the same pass (dropOwnKeyedStampsInto's work).
  */
 export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive,
     dsMode, dirs, anims, sheets, orients, kinds = null) {
@@ -731,11 +736,23 @@ export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, t
     const entities = dsActive.length;
     let li = -1;
     let L = null;
+    let lid = -1;
     let lx = 0;
     let ly = 0;
     for (let k = 0; k < stampN; k++) {
         const at = k * GPU_KEYED_STAMP_FLOATS;
+        const i = lightIdx[k];
+        if (i !== li) {
+            li = i;
+            L = lights[i];
+            if (L) {
+                lid = L.id;
+                lx = L.x;
+                ly = L.y;
+            }
+        }
         const e = rows[at + 2] | 0;
+        if (L && e === lid) rows[at + 4] = 0;
         if (e < 0 || e >= entities || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
         const t = tables[sheets[e]];
         if (t === undefined) continue;
@@ -749,15 +766,6 @@ export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, t
         if (orients !== null && orients[e] === 1) {
             v = frameFacing(e, t, t.front, anims, frames);
         } else {
-            const i = lightIdx[k];
-            if (i !== li) {
-                li = i;
-                L = lights[i];
-                if (L) {
-                    lx = L.x;
-                    ly = L.y;
-                }
-            }
             if (!L) continue;
             const dx = rows[at] - lx;
             const dy = (rows[at + 1] - ly) * invG;
@@ -4353,12 +4361,16 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
-    /** DX-SHADOW3D: the full stamp rows' frames as their lamps see them (applyLampFramesInto). */
+    /**
+     * DX-SHADOW3D: the stamp rows' frames as their lamps see them (applyLampFramesInto, applyKeyedLampFramesInto). E-370:
+     * the same pass drops the rows of each lamp's own entity.
+     * @returns {boolean} whether it ran (else dropOwnStampsInto or dropOwnKeyedStampsInto drops them)
+     */
     _applyLampFrames(dst, stampN) {
         const proxy = this.proxyToGlobalAnim;
         const starts = this.animationFrameStart;
         const counts = this.animationFrameCount;
-        if (!proxy || !starts || !counts || !this._stampLights || !dst.stampLightIdx) return;
+        if (!proxy || !starts || !counts || !this._stampLights || !dst.stampLightIdx) return false;
         const apply = this._gpuSunKeyed ? applyKeyedLampFramesInto : applyLampFramesInto;
         apply(
             dst.stamp, stampN, dst.stampLightIdx, this._stampLights, 1 / cameraFloorScaleY(this.config), this._sunFrameTables,
@@ -4366,6 +4378,7 @@ class PreRenderWorker extends AbstractWorker {
             DirectionalSprite.directionIndex, DirectionalSprite.animation, SpriteRenderer.spritesheetId, ShadowCaster.orient || null,
             ShadowCaster.lampKind || null,
         );
+        return true;
     }
 
     /**
@@ -4659,10 +4672,13 @@ class PreRenderWorker extends AbstractWorker {
         // DX-SHADOW3D: a lamp's silhouettes in the direction that lamp sees (full rows; keyed ones keep the sun's).
         if (stamp > 0 && this._stampLights && dst.stampLightIdx) {
             // A lamp is not shaded by its own entity (a car's headlights by the car); a directional caster shows it the frame
-            // it sees. Full rows name their entity in the tint float, keyed rows in their key.
-            if (this._gpuSunKeyed) dropOwnKeyedStampsInto(dst.stamp, stamp, dst.stampLightIdx, this._stampLights);
-            else dropOwnStampsInto(dst.stamp, stamp, dst.stampLightIdx, this._stampLights);
-            if (this._sunFrameTables !== null && DirectionalSprite.active) this._applyLampFrames(dst, stamp);
+            // it sees. Full rows name their entity in the tint float, keyed rows in their key. E-370: the frames' pass drops
+            // the own rows as it goes; without it, the drop alone.
+            const framed = this._sunFrameTables !== null && !!DirectionalSprite.active && this._applyLampFrames(dst, stamp);
+            if (!framed) {
+                if (this._gpuSunKeyed) dropOwnKeyedStampsInto(dst.stamp, stamp, dst.stampLightIdx, this._stampLights);
+                else dropOwnStampsInto(dst.stamp, stamp, dst.stampLightIdx, this._stampLights);
+            }
         }
         const cookie = this.visibilityPolygonsEnabled ? 0 : this._packGpuCookies(dst);
         res.sun = sunN;

@@ -7,7 +7,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { GPU_CASTER_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS } from '../../src/render/gpuQueueLayout.js';
+import {
+  GPU_CASTER_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS, GPU_SPRITE_FLOATS,
+} from '../../src/render/gpuQueueLayout.js';
 import { DirectionalSprite } from '../../src/components/directionalSprite.js';
 import { PICK_ARGS, pickDirection, pickDirectionArgs, wrapAngle } from '../../src/core/spriteDirections.js';
 import { mulberry32 } from '../bench/benchMath.js';
@@ -287,6 +289,24 @@ function refApplyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, table
       v = refLampFrameFor(e, t, dirs, anims, frames);
     }
     if (v !== 0) rows[at + 3] = v;
+  }
+}
+
+/** The worker's drop of a lamp's own entity from its full stamp rows, which ran before the frames pass. */
+function refDropOwnStampsInto(rows, stampN, lightIdx, lights) {
+  for (let k = 0; k < stampN; k++) {
+    const at = k * GPU_CASTER_FLOATS;
+    const L = lights[lightIdx[k]];
+    if (L && (rows[at + GPU_ROW_TINT] | 0) === L.id) rows[at + GPU_SPRITE_FLOATS] = 0;
+  }
+}
+
+/** The same for keyed stamp rows. */
+function refDropOwnKeyedStampsInto(rows, stampN, lightIdx, lights) {
+  for (let k = 0; k < stampN; k++) {
+    const at = k * GPU_KEYED_STAMP_FLOATS;
+    const L = lights[lightIdx[k]];
+    if (L && (rows[at + 2] | 0) === L.id) rows[at + 4] = 0;
   }
 }
 
@@ -765,13 +785,14 @@ test('E-370: keyed sun rows: the same frames as before', async () => {
 // ---------------------------------------------------------------------------------------------------------------------
 // The lamps' rows.
 
-function makeLights(r) {
+/** Lamps; half of them an entity's own (a car's headlights), whose rows of that entity they drop. */
+function makeLights(r, n) {
   const lights = [];
   for (let i = 0; i < LIGHTS - 2; i++) {
     // Whole-pixel lamps most of the time (a row's x and y are float32), some anywhere.
     const x = r() < 0.7 ? Math.round(r() * 1500) : r() * 1500;
     const y = r() < 0.7 ? Math.round(r() * 1500) : r() * 1500;
-    lights.push({ id: 100000 + i, x, y, intensity: 1.4, rangeSq: 90000 });
+    lights.push({ id: r() < 0.5 ? Math.floor(r() * n) : 100000 + i, x, y, intensity: 1.4, rangeSq: 90000 });
   }
   return lights;
 }
@@ -819,6 +840,8 @@ function stampRows(s, lights, invG, stampN, floats, entityFloat, keyed) {
     const x = r();
     rows[at + entityFloat] = x < 0.02 ? -1 : x < 0.04 ? n + Math.floor(r() * 50) : x < 0.06 ? Math.floor(r() * n) + 0.5 : Math.floor(r() * n);
     const L = lights[l];
+    // Rows of the lamp's own entity now and then.
+    if (L && r() < 0.05) rows[at + entityFloat] = L.id;
     if (L) {
       const [dx, dy] = ray(r);
       rows[at] = L.x + dx;
@@ -841,7 +864,7 @@ test('E-372: fastAtan2 stays within 2e-5 rad of the arctangent (the lamps\' bord
   assert.ok(worst < 2e-5, `worst ${worst}`);
 });
 
-test('E-372: full lamp rows: the same textures and flips as before', async () => {
+test('E-372: full lamp rows: the same textures, flips and own rows dropped as before', async () => {
   const m = await worker();
   for (const seed of [31, 32, 33, 34]) {
     const s = makeScene(seed, 1500);
@@ -851,11 +874,12 @@ test('E-372: full lamp rows: the same textures and flips as before', async () =>
     for (let frame = 0; frame < 5; frame++) {
       const variant = (seed * 3 + frame) & 15;
       const c = columns(s, variant);
-      const lights = makeLights(s.r);
+      const lights = makeLights(s.r, s.n);
       const invG = frame & 1 ? 1 : 1 / 0.7364;
       const proxy = frame === 2 ? JSON.parse(JSON.stringify(s.proxy)) : s.proxy;
       const { rows: ref, lightIdx } = stampRows(s, lights, invG, 6000, GPU_CASTER_FLOATS, GPU_ROW_TINT, false);
       const got = ref.slice();
+      refDropOwnStampsInto(ref, 6000, lightIdx, lights);
       refApplyLampFramesInto(ref, 6000, lightIdx, lights, invG, refTables, proxy, s.starts, s.counts, c.frames, s.e.active,
         s.e.mode, s.e.dirs, s.e.anims, s.e.sheets, c.orients, c.lampKinds);
       m.applyLampFramesInto(got, 6000, lightIdx, lights, invG, newTables, proxy, s.starts, s.counts, c.frames, s.e.active,
@@ -866,7 +890,7 @@ test('E-372: full lamp rows: the same textures and flips as before', async () =>
   }
 });
 
-test('E-372: keyed lamp rows: the same frames as before', async () => {
+test('E-372: keyed lamp rows: the same frames and own rows dropped as before', async () => {
   const m = await worker();
   for (const seed of [41, 42, 43, 44]) {
     const s = makeScene(seed, 1500);
@@ -876,10 +900,11 @@ test('E-372: keyed lamp rows: the same frames as before', async () => {
     for (let frame = 0; frame < 5; frame++) {
       const variant = (seed * 3 + frame) & 15;
       const c = columns(s, variant);
-      const lights = makeLights(s.r);
+      const lights = makeLights(s.r, s.n);
       const invG = frame & 1 ? 1 / 0.7364 : 1;
       const { rows: ref, lightIdx } = stampRows(s, lights, invG, 6000, GPU_KEYED_STAMP_FLOATS, 2, true);
       const got = ref.slice();
+      refDropOwnKeyedStampsInto(ref, 6000, lightIdx, lights);
       refApplyKeyedLampFramesInto(ref, 6000, lightIdx, lights, invG, refTables, s.proxy, s.starts, s.counts, c.frames,
         s.e.active, s.e.mode, s.e.dirs, s.e.anims, s.e.sheets, c.orients, c.lampKinds);
       m.applyKeyedLampFramesInto(got, 6000, lightIdx, lights, invG, newTables, s.proxy, s.starts, s.counts, c.frames,
@@ -927,10 +952,91 @@ test('E-372: a lamp all around a caster of each uniform table: every direction a
     }
     const got = ref.slice();
     const lightIdx = new Uint8Array(stampN);
+    refDropOwnKeyedStampsInto(ref, stampN, lightIdx, lights);
     refApplyKeyedLampFramesInto(ref, stampN, lightIdx, lights, invG, refTables, s.proxy, s.starts, s.counts, e.frames,
       e.active, e.mode, e.dirs, e.anims, e.sheets, e.orients, e.lampKind);
     m.applyKeyedLampFramesInto(got, stampN, lightIdx, lights, invG, newTables, s.proxy, s.starts, s.counts, e.frames,
       e.active, e.mode, e.dirs, e.anims, e.sheets, e.orients, e.lampKind);
     sameBits(ref, got, `invG ${invG}`, GPU_KEYED_STAMP_FLOATS);
+  }
+});
+
+test('E-370: _packGpuShadows on the real worker (sun pack and stamp stood in for): own rows dropped, frames as before', async () => {
+  const m = await worker();
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const { ShadowCaster } = await import('../../src/components/shadowCaster.js');
+  const { SpriteRenderer } = await import('../../src/components/spriteRenderer.js');
+  const { cameraFloorScaleY } = await import('../../src/util/cameraView.js');
+  const n = 1500;
+  const s = makeScene(71, n);
+  bindDirectionalSprite(s.ds);
+  const { e } = s;
+  DirectionalSprite.active = e.active;
+  DirectionalSprite.mode = e.mode;
+  DirectionalSprite.directionIndex = e.dirs;
+  DirectionalSprite.animation = e.anims;
+  SpriteRenderer.spritesheetId = e.sheets;
+  ShadowCaster.orient = e.orients;
+  ShadowCaster.lampKind = e.lampKind;
+  // An oblique camera: the lamps' rays are stretched by 1 / its floor scale (invG).
+  const config = { camera: { pitch: 47 } };
+  const invG = 1 / cameraFloorScaleY(config);
+  const stampN = 3000;
+  const lights = makeLights(s.r, n);
+  const cases = [
+    { keyed: false, frames: true, proxy: true },
+    { keyed: true, frames: true, proxy: true },
+    { keyed: false, frames: true, proxy: false },
+    { keyed: true, frames: false, proxy: true },
+    { keyed: false, frames: false, proxy: true },
+  ];
+  for (let c = 0; c < cases.length; c++) {
+    const { keyed, frames, proxy } = cases[c];
+    const floats = keyed ? GPU_KEYED_STAMP_FLOATS : GPU_CASTER_FLOATS;
+    const { rows: stamped, lightIdx } = stampRows(s, lights, invG, stampN, floats, keyed ? 2 : GPU_ROW_TINT, keyed);
+    const refTables = refSunFrameTables(s.sources);
+    Object.assign(pre, {
+      config,
+      shadowsEnabled: true,
+      gpuQueueCaps: { maxSun: 8, maxStamp: stampN, maxCookie: 8 },
+      shadowUpdateInterval: 1,
+      visibilityPolygonsEnabled: false,
+      _emitSkippedStatics: false,
+      _stampLights: lights,
+      _stampLightCount: lights.length,
+      _sunFrameTables: frames ? m.sunFrameTables(s.sources) : null,
+      proxyToGlobalAnim: proxy ? s.proxy : null,
+      animationFrameStart: s.starts,
+      animationFrameCount: s.counts,
+      entityFrameIndex: e.frames,
+    });
+    pre._packGpuSun = () => {
+      pre._gpuSunKeyed = keyed;
+      return 5;
+    };
+    pre._stampAgainstSun = (dst) => {
+      dst.stamp.set(stamped);
+      dst.stampLightIdx.set(lightIdx);
+      return stampN;
+    };
+    pre._packGpuCookies = () => 0;
+    const dst = {
+      sun: new Float32Array(8 * GPU_CASTER_FLOATS),
+      stamp: new Float32Array(stampN * floats),
+      stampLightIdx: new Uint8Array(stampN),
+      cookie: new Float32Array(8 * GPU_SPRITE_FLOATS),
+    };
+    const res = pre._packGpuShadows(dst, {});
+    assert.equal(res.stamp, stampN, `case ${c}: the stamp rows`);
+    const ref = stamped.slice();
+    if (keyed) refDropOwnKeyedStampsInto(ref, stampN, lightIdx, lights);
+    else refDropOwnStampsInto(ref, stampN, lightIdx, lights);
+    if (frames && proxy) {
+      const apply = keyed ? refApplyKeyedLampFramesInto : refApplyLampFramesInto;
+      apply(ref, stampN, lightIdx, lights, invG, refTables, s.proxy, s.starts, s.counts, e.frames, e.active, e.mode, e.dirs,
+        e.anims, e.sheets, e.orients, e.lampKind);
+    }
+    sameBits(ref, dst.stamp, `case ${c}`, floats);
+    stepScene(s);
   }
 });
