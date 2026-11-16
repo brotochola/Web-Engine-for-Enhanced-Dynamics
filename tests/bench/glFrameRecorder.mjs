@@ -96,13 +96,41 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws }) {
   };
   // gpuDraws: the open draw's query, ended right after the draw call.
   let drawQ = null;
+  // The textures Pixi has bound on the first units (its texture system's own record: a texture bound before the window
+  // drew no bindTexture during it), by label and size, so that a costly draw of a common program can be named.
+  const texNames = () => {
+    try {
+      const b = px.pixiApp.renderer.texture._boundTextures;
+      const names = [];
+      for (let i = 0; i < Math.min(4, b.length); i++) {
+        const s = b[i];
+        if (s) names.push(`${String(s.label || `#${s.uid}`).split('/').pop().slice(0, 24)} ${s.pixelWidth ?? s.width}x${s.pixelHeight ?? s.height}`);
+      }
+      return names.length ? ` {${names.join('; ')}}` : '';
+    } catch {
+      return '';
+    }
+  };
   const beginDraw = (n) => {
     if (!perDraw || !seg) return;
     const q = free.pop() || qCreate.call(gl);
     // The draw's own program (the pass's label names its first one): what a costly draw in a pass of many programs is.
     const pass = segLabel(seg);
     const p = bound.program;
-    drawQ = { q, label: `${pass} draw ${seg.draws}: prog#${idOf(p)} [${signature(p)}]`, pass, draws: 1, instances: n };
+    drawQ = { q, label: `${pass} draw ${seg.draws}: prog#${idOf(p)} [${signature(p)}]${texNames()}`, pass, draws: 1, instances: n };
+    qBegin.call(gl, timerExt.TIME_ELAPSED_EXT, q);
+  };
+  // gpuDraws: a clear or a blit timed like a draw (E-402: what the passes with no draw spend).
+  const beginOp = (name) => {
+    if (!perDraw || !timerExt) return;
+    if (!seg) {
+      const fb = bound.fbo.get(0x8ca9) ?? bound.fbo.get(0x8d40) ?? null;
+      beginSeg(idOf(fb));
+      seg.fboObj = fb;
+    }
+    const q = free.pop() || qCreate.call(gl);
+    const pass = segLabel(seg);
+    drawQ = { q, label: `${pass} ${name}`, pass, draws: 0, instances: 0 };
     qBegin.call(gl, timerExt.TIME_ELAPSED_EXT, q);
   };
   const endDraw = () => {
@@ -128,7 +156,7 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws }) {
         if (s.pass) {
           const t = drawPasses.get(s.pass) || { label: s.pass, ns: 0, draws: 0, instances: 0 };
           t.ns += ns;
-          t.draws++;
+          t.draws += s.draws;
           t.instances += s.instances;
           drawPasses.set(s.pass, t);
         }
@@ -201,7 +229,7 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws }) {
     if (name === 'drawElements' || name === 'drawArrays') hook = () => { draws++; instances++; segDraw(1); beginDraw(1); };
     else if (name === 'drawElementsInstanced') hook = (a) => { draws++; instances += a[4] | 0; segDraw(a[4] | 0); beginDraw(a[4] | 0); };
     else if (name === 'drawArraysInstanced') hook = (a) => { draws++; instances += a[3] | 0; segDraw(a[3] | 0); beginDraw(a[3] | 0); };
-    if (perDraw && name.startsWith('draw')) after = endDraw;
+    else if (perDraw && (name === 'clear' || name.startsWith('clearBuffer') || name === 'blitFramebuffer')) hook = () => beginOp(name);
     else if (name === 'getParameter' || name === 'isEnabled') hook = (a) => note(`${name} 0x${(a[0] >>> 0).toString(16)}`, 0);
     else if (name === 'useProgram') {
       hook = (a) => {
@@ -258,6 +286,9 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws }) {
         state.set(key, val);
       };
     }
+    const timed = name === 'drawElements' || name === 'drawArrays' || name === 'drawElementsInstanced' || name === 'drawArraysInstanced'
+      || name === 'clear' || name.startsWith('clearBuffer') || name === 'blitFramebuffer';
+    if (perDraw && timed) after = endDraw;
     wrap(name, hook, after);
   }
   const timer = gl.getExtension('EXT_disjoint_timer_query_webgl2');
