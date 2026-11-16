@@ -18217,7 +18217,8 @@
         "R-1174",
         "R-1181",
         "R-1187",
-        "R-1190"
+        "R-1190",
+        "R-1191"
       ]
     },
     {
@@ -18562,7 +18563,8 @@
       ],
       "records": [
         "R-1181",
-        "R-1190"
+        "R-1190",
+        "R-1191"
       ]
     },
     {
@@ -18806,7 +18808,8 @@
         "particle draw 1 ms"
       ],
       "records": [
-        "R-1187"
+        "R-1187",
+        "R-1191"
       ]
     },
     {
@@ -30740,6 +30743,18 @@
       "title": "Every light scene draw by draw: columns in the shadow maps (E-420), the volume's mesh fill (E-419) and the flashlights' glows (4.83 ms, E-404/E-421) are real work; DX-DEPTH's edge pass in six scenes (E-429); the lamps' map clear 0.32 ms (E-446)",
       "verdict": "note",
       "text": "**Every light scene draw by draw. In these GPU-bound stress scenes the pass readings were mostly work, unlike Predator's. Real: the columns' cost in the shadow maps (E-420), the volume's mesh fill (E-419), the flashlights' glows (E-404, E-421). DX-DEPTH's edge pass (E-429) shows in six scenes.**\n\nglFrameRecorder --gpu-draws (2fdfa8e9), headed Chrome 157, GTX 1650, 1920 x 1080, 3 s after 10 s, main 546f20f1, 2026-11-16 06:30 to 06:36 (the log). Each scene is compared with its pass ranges in R-1181.\n\n| scene | draws (ranges in R-1181) | what costs |\n| --- | --- | --- |\n| lampShadowStress lampShadows=map lamps=48 walkers=2000 | 2.953 ms (3.073) | 3D light 1.261; lamps' 48 instances 0.515; the lamps' map's clear 0.324 (E-446) |\n| lampShadowStress (stamps) | 2.345 (2.173) | colour 1.272; 2D light 0.624; the stamps' 48 instances 0.421 |\n| sunShadowMap lamps=48 hour=22 | 7.050 (7.612) | lamps' map 2.521 for 1 440 column instances (E-420); 3D light 2.228; opaque 0.653 and edge 0.569 (3 375 each) |\n| selfShadow | 5.458 (5.830) | sun map 2.085 for 406 columns, 5 us each (E-420); 3D light 1.415; G-buffer 0.612 (600) |\n| depthSort | 2.596 (0: N-219) | two programs over 3 240 instances, 1.502 and 0.871 (opaque and edge) |\n| emissive | 5.466 (5.590) | G-buffer 1920 x 1080 1.807 and 960 x 540 0.443 (E-403); opaque 1.055, edge 0.658; light 1.149 |\n| spriteMaps | 2.956 (4.242) | opaque 0.935 and edge 0.695 (601 each: E-422 is partly the edge pass); light 0.592 |\n| volume | 4.414 (8.209) | mesh fill 4.239 a frame (8.5 ms on the frames that draw it, 231 623 instances: E-419) |\n| flashlight | 5.595 (5.382) | the 119 lights' glows 4.829 ms, 40 us each (glow 0.15 over a radius of 380 px: E-404, E-421); light 0.565 |\n| spot | 3.719 (3.970) | tilemap 1.652 in 8 draws (E-432); the 48 instances' shadows 0.929; light 0.607 |\n| gallery | 5.166 (5.679) | 2D light into the screen 2.027 (one draw); 12 big instances 1.707 and 7 more 0.991 (glows: E-404) |\n\n- E-421 named: flashlight's 4.83 ms is the lights' glows. Each walker's light has glow 0.15 at radius 380, so it draws a 760 x 760 px quad.\n- E-422: spriteMaps' colour pass is opaque plus edge (DX-DEPTH). Its 2 us an instance halves if E-429 skips the edge pass.\n- E-429's edge pass is 50 to 90 % of the opaque pass's cost wherever pixel depth is on: light3dCompare 1.251 of 1.390, Predator light3d 0.945 of 1.053, emissive 0.658 of 1.055, sunShadowMap 0.569 of 0.653, spriteMaps 0.695 of 0.935.\n- New: E-446, the lamps' 4096 x 1536 map cleared whole each frame (0.324 ms here)."
+    },
+    {
+      "id": "R-1191",
+      "date": "2026-11-16",
+      "time": "06:46",
+      "timeFrom": "recorded",
+      "title": "The flashlights' glows (4.83 -> 0.007 ms under a 1 px scissor) and Predator's GPU particles (0.9 -> 0.003 ms) are all fill: soft additive layers at reduced resolution",
+      "verdict": "note",
+      "text": "**The flashlights' glows and Predator's GPU particles are all fill. Under a 1 px scissor the glows' draw costs 0.007 ms instead of 4.829, and the particles' 0.003 instead of about 0.9.** Their cost is pixels: a halo's or a smoke puff's soft quad blended over hundreds of thousands of pixels. Vertex work and uploads are a rounding error.\n\nglFrameRecorder --gpu-draws with --probe-scissor (14f1f660), headed Chrome 157, GTX 1650, 1920 x 1080, 3 s after 12 s, main 034c3768, 2026-11-16 06:44 to 06:46 (the log):\n\n| run | the draw | GPU in draws a frame |\n| --- | --- | --- |\n| Predator crowd=2.5 zoom=0.216 | particles ([uTexLut,uTexture] in the colour pass, 2 to 68 instances as the fires burn): about 0.90 ms in all | 4.122 |\n| ... the particles under the probe | 0.003 ms (80 instances) | 4.519 (the frames differ: the fires are random) |\n| flashlightStressScene (120 lights, glow 0.15, radius 380) under the probe | the glows' draw, 119 instances: 0.007 ms (R-1190: 4.829) | 0.975 (R-1190: 5.595) |\n\n- E-404 and E-421: the glows are 4.6 of flashlight's 5.6 ms of GPU a frame. Each halo is a quad 1.7 x the light's radius wide, at full resolution with additive blending.\n- E-431: the particles' 0.9 to 1.3 ms is fill. Fire's smoke grows to 3 x baseScale at alpha 0.15 to 0.3.\n- What would cut it, for both: draw the soft additive layers (lightGlows, and GPU particle layers that opt in) into a half or quarter resolution target and composite once, which gives 4 to 16 times fewer pixels. A halo and a smoke puff are smooth enough that the upsample does not show. Short of that, a quad fitted to the halo's visible radius (the falloff over 1/255) and trimmed to the texture's opaque bounds.\n\nBoth changes live in pixiWorker.js's layer targets. They wait until the light-tiles work there is done (one writer per file).",
+      "commits": [
+        "14f1f660"
+      ]
     }
   ],
   "leads": [
