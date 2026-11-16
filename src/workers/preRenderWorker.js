@@ -211,8 +211,13 @@ export function sunFrameTables(byId) {
             frameShift: -1,
             // E-369: the frames by absolute direction (no turn), (direction, group, frame) as frameOf, for the lamps' rows.
             frameAt: new Int32Array(0),
+            // E-372: the borders of a uniform table's directions for the lamps' turn (lampTurnGeometry); 0 and empty for a
+            // table that keeps lampFrameFor's turn.
+            lampQuarter: 0,
+            lampGeo: new Float64Array(0),
         };
         entry.front = pickDirection(entry, Math.PI / 2, 255, 0);
+        lampTurnGeometry(entry);
         out[id | 0] = entry;
         any = true;
     }
@@ -378,18 +383,53 @@ function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables
  * DX-SHADOW3D: a directional sprite's full sun row draws the frame the sun sees (sunFrameFor): its texture, and the flip in
  * its scale's sign. E-368: each row's frame is worked out where it is written (prepareSunFrames ran this call): no pass
  * over every slot before it, no per-entity array between them.
+ * E-370: the same pass names each row's entity in its tint float for the lamps' frames (-1 for a row that is not an
+ * entity's sprite), the work of _tagCasterEntities, which runs only when this pass does not: the rows are walked once.
+ * `scaleX` is the queue's column the pack copied each row's scale from, when no pass has changed a row's scale since (no
+ * shadow textures): the flip's sign is read there and the rows are only written, a scale only when the frame flips it the
+ * other way. With null the row's scale is read back (applySunFramesReadBack).
  */
 export function applySunFramesFor(rows, sunN, casters, types, entities, active, mode, casts, sheets, dirs, anims, frames,
-    tables, shift, orients, kinds = null) {
+    tables, shift, orients, kinds = null, scaleX = null) {
+    if (scaleX === null) {
+        applySunFramesReadBack(rows, sunN, casters, types, entities, active, mode, casts, sheets, dirs, anims, frames, tables,
+            shift, orients, kinds);
+        return;
+    }
     for (let k = 0; k < sunN; k++) {
         const row = casters[k];
-        if (types[row] !== 0) continue;
-        const v = sunFrameFor(entities[row], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
-        if (v === 0) continue;
         const at = k * GPU_CASTER_FLOATS;
+        if (types[row] !== 0) {
+            rows[at + GPU_ROW_TINT] = -1;
+            continue;
+        }
+        const e = entities[row];
+        rows[at + GPU_ROW_TINT] = e;
+        const v = sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
+        if (v === 0) continue;
+        rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
+        const sx = scaleX[row];
+        if ((v < 0) !== (sx < 0)) rows[at + GPU_ROW_SCALE_X] = -sx;
+    }
+}
+
+/** E-370: applySunFramesFor after a pass that changed the rows' scales (shadow textures): the flips read from the rows. */
+function applySunFramesReadBack(rows, sunN, casters, types, entities, active, mode, casts, sheets, dirs, anims, frames,
+    tables, shift, orients, kinds) {
+    for (let k = 0; k < sunN; k++) {
+        const row = casters[k];
+        const at = k * GPU_CASTER_FLOATS;
+        if (types[row] !== 0) {
+            rows[at + GPU_ROW_TINT] = -1;
+            continue;
+        }
+        const e = entities[row];
+        rows[at + GPU_ROW_TINT] = e;
+        const v = sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
+        if (v === 0) continue;
         rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
         const sx = rows[at + GPU_ROW_SCALE_X];
-        rows[at + GPU_ROW_SCALE_X] = (v < 0) === (sx < 0) ? sx : -sx;
+        if ((v < 0) !== (sx < 0)) rows[at + GPU_ROW_SCALE_X] = -sx;
     }
 }
 
@@ -531,6 +571,45 @@ function lampFrameFor(e, t, dirs, anims, frames) {
 const LAMP_RAY = new Float64Array(2);
 
 /**
+ * E-372: how near, as a share of its length, a lamp's ray may pass a border between two directions of its caster's table
+ * and still have its direction told without an arctangent (lampTurnGeometry). lampFrameFor's turn puts the borders within
+ * fastAtan2's error of the true ones (under 2e-5 rad, castFramesParity.test.js) and the products here are within 1e-14:
+ * a ray farther than 1e-4 rad from both borders of its sector gets lampFrameFor's direction; a nearer one, lampFrameFor.
+ */
+const LAMP_TURN_MARGIN = 1e-4;
+/** E-372: a ray shorter than this (|u| + |w|) would leave the borders' products to subnormals: lampFrameFor. */
+const LAMP_TURN_MIN = 1e-200;
+/** E-372: a quarter turn's rotation back into the first quarter, by quarter (cos and sin of -q·π/2, exact). */
+const QUARTER_C = Float64Array.of(1, 0, -1, 0);
+const QUARTER_S = Float64Array.of(0, 1, 0, -1);
+
+/**
+ * E-372: a uniform table's borders for the lamps' turn without an arctangent. lampFrameFor's turn is the angle of
+ * (-dy, -dx) rounded to whole steps: turned on by half a step, the sector of j steps starts at j steps, so each quarter of
+ * the turn holds count / 4 sectors, whose borders lie i steps into it (i = 0 to count / 4, the ends exact). lampGeo: the
+ * cos and sin of half a step, then each border's. Only a count that is a multiple of 4 with a step that is a whole turn's
+ * share: any other table (lampQuarter 0) keeps lampFrameFor's turn.
+ */
+function lampTurnGeometry(t) {
+    const n = t.count;
+    if (!t.uniform || n < 4 || (n & 3) !== 0 || !(Math.abs(t.step * n - 2 * Math.PI) < 1e-9)) return;
+    const quarter = n >> 2;
+    const geo = new Float64Array(4 + 2 * quarter);
+    geo[0] = Math.cos(t.step / 2);
+    geo[1] = Math.sin(t.step / 2);
+    geo[2] = 1;
+    geo[3] = 0;
+    for (let i = 1; i < quarter; i++) {
+        geo[2 + 2 * i] = Math.cos(i * t.step);
+        geo[3 + 2 * i] = Math.sin(i * t.step);
+    }
+    geo[2 + 2 * quarter] = 0;
+    geo[3 + 2 * quarter] = 1;
+    t.lampQuarter = quarter;
+    t.lampGeo = geo;
+}
+
+/**
  * N-203: directional caster e's frame in direction d of its table (no turn), ±(textureId + 1), 0 when the table lacks it:
  * its front for a fixed card (t.front), the camera's (the direction the logic worker drew) for columns.
  */
@@ -546,14 +625,36 @@ function frameFacing(e, t, d, anims, frames) {
  * DX-SHADOW3D: each full stamp row of a directional caster drawn with the frame its lamp sees: the direction the logic
  * worker drew turned by the angle from the camera's view to the lamp's (along the shadow, from the lamp to the caster, on
  * the floor). The row's entity is in its tint float (pre-render wrote it into the sun row the kernel copied).
+ * E-372: the lamp's place read once a run of its rows (the stamp lists come by light); a uniform table's turn from the
+ * ray's quarter and the borders it has passed (lampTurnGeometry), no arctangent, no division, the same direction as
+ * lampFrameFor's (which still takes the rays near a border, the other tables and the casters with no direction); the scale
+ * written only when the flip changes its sign. E-370: a row whose caster is its own lamp's entity is dropped in the same
+ * pass (dropOwnStampsInto's work, which runs alone only when this pass does not): the rows are walked once.
  */
 export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive, dsMode,
     dirs, anims, sheets, orients, kinds = null) {
     prepareLampFrames(tables, proxy, starts, counts);
+    const entities = dsActive.length;
+    let li = -1;
+    let L = null;
+    let lid = -1;
+    let lx = 0;
+    let ly = 0;
     for (let k = 0; k < stampN; k++) {
         const at = k * GPU_CASTER_FLOATS;
+        const i = lightIdx[k];
+        if (i !== li) {
+            li = i;
+            L = lights[i];
+            if (L) {
+                lid = L.id;
+                lx = L.x;
+                ly = L.y;
+            }
+        }
         const e = rows[at + GPU_ROW_TINT] | 0;
-        if (e < 0 || e >= dsActive.length || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
+        if (L && e === lid) rows[at + GPU_SPRITE_FLOATS] = 0;
+        if (e < 0 || e >= entities || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
         const t = tables[sheets[e]];
         if (t === undefined) continue;
         // N-197, N-203: a card takes the frame its lamp sees (a fixed card its front); columns, the frame the camera sees
@@ -562,18 +663,54 @@ export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables
         const fixed = orients !== null && orients[e] === 1;
         let v = 0;
         if (card && !fixed) {
-            const L = lights[lightIdx[k]];
             if (!L) continue;
-            LAMP_RAY[0] = rows[at] - L.x;
-            LAMP_RAY[1] = (rows[at + 1] - L.y) * invG;
-            v = lampFrameFor(e, t, dirs, anims, frames);
+            const dx = rows[at] - lx;
+            const dy = (rows[at + 1] - ly) * invG;
+            const quarter = t.lampQuarter;
+            const cur = dirs[e];
+            let d = -1;
+            if (quarter > 0 && cur < t.count) {
+                // (-dy, -dx) turned on by half a step: its quarter from the signs, its sector in the quarter from the
+                // borders it has passed, kept when both of that sector's borders are farther than the margin.
+                const geo = t.lampGeo;
+                const c = geo[0];
+                const s = geo[1];
+                const X = dx * s - dy * c;
+                const Y = -(dx * c + dy * s);
+                const below = (Y < 0) & 1;
+                const quad = (below << 1) | (((X < 0) & 1) ^ below);
+                const qc = QUARTER_C[quad];
+                const qs = QUARTER_S[quad];
+                const u = qc * X + qs * Y;
+                const w = qc * Y - qs * X;
+                const len = Math.abs(u) + Math.abs(w);
+                let j = 0;
+                for (let b = 4; b <= 2 * quarter; b += 2) j += (geo[b] * w - geo[b + 1] * u >= 0) & 1;
+                const lo = 2 + 2 * j;
+                const margin = LAMP_TURN_MARGIN * len;
+                if (len > LAMP_TURN_MIN && geo[lo] * w - geo[lo + 1] * u > margin
+                    && geo[lo + 3] * u - geo[lo + 2] * w > margin) {
+                    d = cur + quad * quarter + j;
+                    if (d >= t.count) d -= t.count;
+                }
+            }
+            if (d >= 0) {
+                const g = anims[e];
+                let f = frames !== null ? frames[e] | 0 : 0;
+                if (f < 0 || f >= t.maxFrames) f = 0;
+                v = t.frameAt[(d * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
+            } else {
+                LAMP_RAY[0] = dx;
+                LAMP_RAY[1] = dy;
+                v = lampFrameFor(e, t, dirs, anims, frames);
+            }
         } else {
             v = frameFacing(e, t, card ? t.front : dirs[e], anims, frames);
         }
         if (v === 0) continue;
         rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
         const sx = rows[at + GPU_ROW_SCALE_X];
-        rows[at + GPU_ROW_SCALE_X] = (v < 0) === (sx < 0) ? sx : -sx;
+        if ((v < 0) !== (sx < 0)) rows[at + GPU_ROW_SCALE_X] = -sx;
     }
 }
 
@@ -589,14 +726,35 @@ function dropOwnKeyedStampsInto(rows, stampN, lightIdx, lights) {
     }
 }
 
-/** DX-SHADOW3D: applyLampFramesInto for keyed stamp rows: the frame float, ±(textureId + 1), negative mirrored. */
+/**
+ * DX-SHADOW3D: applyLampFramesInto for keyed stamp rows: the frame float, ±(textureId + 1), negative mirrored. E-372: the
+ * lamp's place once a run of its rows, a uniform table's turn from the borders (applyLampFramesInto's copy). E-370: and
+ * a row whose key is its own lamp's entity dropped in the same pass (dropOwnKeyedStampsInto's work).
+ */
 export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive,
     dsMode, dirs, anims, sheets, orients, kinds = null) {
     prepareLampFrames(tables, proxy, starts, counts);
+    const entities = dsActive.length;
+    let li = -1;
+    let L = null;
+    let lid = -1;
+    let lx = 0;
+    let ly = 0;
     for (let k = 0; k < stampN; k++) {
         const at = k * GPU_KEYED_STAMP_FLOATS;
+        const i = lightIdx[k];
+        if (i !== li) {
+            li = i;
+            L = lights[i];
+            if (L) {
+                lid = L.id;
+                lx = L.x;
+                ly = L.y;
+            }
+        }
         const e = rows[at + 2] | 0;
-        if (e < 0 || e >= dsActive.length || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
+        if (L && e === lid) rows[at + 4] = 0;
+        if (e < 0 || e >= entities || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
         const t = tables[sheets[e]];
         if (t === undefined) continue;
         // N-197, N-203: a card takes the frame its lamp sees (a fixed card its front); columns, the sprite's own frame (0),
@@ -609,11 +767,45 @@ export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, t
         if (orients !== null && orients[e] === 1) {
             v = frameFacing(e, t, t.front, anims, frames);
         } else {
-            const L = lights[lightIdx[k]];
             if (!L) continue;
-            LAMP_RAY[0] = rows[at] - L.x;
-            LAMP_RAY[1] = (rows[at + 1] - L.y) * invG;
-            v = lampFrameFor(e, t, dirs, anims, frames);
+            const dx = rows[at] - lx;
+            const dy = (rows[at + 1] - ly) * invG;
+            const quarter = t.lampQuarter;
+            const cur = dirs[e];
+            let d = -1;
+            if (quarter > 0 && cur < t.count) {
+                const geo = t.lampGeo;
+                const c = geo[0];
+                const s = geo[1];
+                const X = dx * s - dy * c;
+                const Y = -(dx * c + dy * s);
+                const below = (Y < 0) & 1;
+                const quad = (below << 1) | (((X < 0) & 1) ^ below);
+                const qc = QUARTER_C[quad];
+                const qs = QUARTER_S[quad];
+                const u = qc * X + qs * Y;
+                const w = qc * Y - qs * X;
+                const len = Math.abs(u) + Math.abs(w);
+                let j = 0;
+                for (let b = 4; b <= 2 * quarter; b += 2) j += (geo[b] * w - geo[b + 1] * u >= 0) & 1;
+                const lo = 2 + 2 * j;
+                const margin = LAMP_TURN_MARGIN * len;
+                if (len > LAMP_TURN_MIN && geo[lo] * w - geo[lo + 1] * u > margin
+                    && geo[lo + 3] * u - geo[lo + 2] * w > margin) {
+                    d = cur + quad * quarter + j;
+                    if (d >= t.count) d -= t.count;
+                }
+            }
+            if (d >= 0) {
+                const g = anims[e];
+                let f = frames !== null ? frames[e] | 0 : 0;
+                if (f < 0 || f >= t.maxFrames) f = 0;
+                v = t.frameAt[(d * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
+            } else {
+                LAMP_RAY[0] = dx;
+                LAMP_RAY[1] = dy;
+                v = lampFrameFor(e, t, dirs, anims, frames);
+            }
         }
         if (v !== 0) rows[at + 3] = v;
     }
@@ -4094,10 +4286,12 @@ class PreRenderWorker extends AbstractWorker {
                 ? this._packRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
                 : 0;
             if (this._shadowFramesOn && sunN > 0) this._applyShadowTextures(q, dst.sun, sunN);
-            if (this._sunFrameTables !== null && sunN > 0 && DirectionalSprite.active) this._applySunFrames(q, dst.sun, sunN);
+            // E-370: the sun's frames write the rows' entities in the same pass; without it, _tagCasterEntities below.
+            const tagged = sunN > 0 && this._sunFrameTables !== null && !!DirectionalSprite.active
+                && this._applySunFrames(q, dst.sun, sunN);
             if (this._casterKindsOn && sunN > 0) this._tagCasterRows(q, dst.sun, sunN);
             // The rows' entities: the lamps' frames and their own entities' stamps read them.
-            if (sunN > 0) this._tagCasterEntities(q, dst.sun, sunN);
+            if (sunN > 0 && !tagged) this._tagCasterEntities(q, dst.sun, sunN);
         }
         return sunN;
     }
@@ -4155,7 +4349,10 @@ class PreRenderWorker extends AbstractWorker {
         return true;
     }
 
-    /** DX-SHADOW3D: each full sun row's entity in its tint float, for the lamps' frames (applyLampFramesInto). */
+    /**
+     * DX-SHADOW3D: each full sun row's entity in its tint float, for the lamps' frames (applyLampFramesInto). E-370: when
+     * the sun's frames do not run (applySunFramesFor writes them as it goes).
+     */
     _tagCasterEntities(q, rows, sunN) {
         if ((q.count | 0) !== this._collectedRows) return;
         const casters = this._gpuCasterIdx;
@@ -4167,12 +4364,16 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
-    /** DX-SHADOW3D: the full stamp rows' frames as their lamps see them (applyLampFramesInto). */
+    /**
+     * DX-SHADOW3D: the stamp rows' frames as their lamps see them (applyLampFramesInto, applyKeyedLampFramesInto). E-370:
+     * the same pass drops the rows of each lamp's own entity.
+     * @returns {boolean} whether it ran (else dropOwnStampsInto or dropOwnKeyedStampsInto drops them)
+     */
     _applyLampFrames(dst, stampN) {
         const proxy = this.proxyToGlobalAnim;
         const starts = this.animationFrameStart;
         const counts = this.animationFrameCount;
-        if (!proxy || !starts || !counts || !this._stampLights || !dst.stampLightIdx) return;
+        if (!proxy || !starts || !counts || !this._stampLights || !dst.stampLightIdx) return false;
         const apply = this._gpuSunKeyed ? applyKeyedLampFramesInto : applyLampFramesInto;
         apply(
             dst.stamp, stampN, dst.stampLightIdx, this._stampLights, 1 / cameraFloorScaleY(this.config), this._sunFrameTables,
@@ -4180,6 +4381,7 @@ class PreRenderWorker extends AbstractWorker {
             DirectionalSprite.directionIndex, DirectionalSprite.animation, SpriteRenderer.spritesheetId, ShadowCaster.orient || null,
             ShadowCaster.lampKind || null,
         );
+        return true;
     }
 
     /**
@@ -4217,14 +4419,17 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * DX-SHADOW3D: a directional sprite's full sun row draws the frame the sun sees (applySunFramesFor): its texture and
-     * the flip of its scale.
+     * the flip of its scale. E-370: and every row's entity in its tint float (_tagCasterEntities' work); the flips' signs
+     * from the queue's scales the pack copied, unless shadow textures changed the rows' scales after it.
+     * @returns {boolean} whether the pass ran (the rows' entities are written)
      */
     _applySunFrames(q, rows, sunN) {
-        if ((q.count | 0) !== this._collectedRows || !this._prepareSunFrames()) return;
+        if ((q.count | 0) !== this._collectedRows || !this._prepareSunFrames()) return false;
         applySunFramesFor(rows, sunN, this._gpuCasterIdx, this._renderableType, this._renderableIndex, DirectionalSprite.active,
             DirectionalSprite.mode, ShadowCaster.active || null, SpriteRenderer.spritesheetId, DirectionalSprite.directionIndex,
             DirectionalSprite.animation, this.entityFrameIndex || null, this._sunFrameTables, this._sunShift,
-            ShadowCaster.orient || null, ShadowCaster.sunKind || null);
+            ShadowCaster.orient || null, ShadowCaster.sunKind || null, this._shadowFramesOn || !q.scaleX ? null : q.scaleX);
+        return true;
     }
 
     /**
@@ -4470,10 +4675,13 @@ class PreRenderWorker extends AbstractWorker {
         // DX-SHADOW3D: a lamp's silhouettes in the direction that lamp sees (full rows; keyed ones keep the sun's).
         if (stamp > 0 && this._stampLights && dst.stampLightIdx) {
             // A lamp is not shaded by its own entity (a car's headlights by the car); a directional caster shows it the frame
-            // it sees. Full rows name their entity in the tint float, keyed rows in their key.
-            if (this._gpuSunKeyed) dropOwnKeyedStampsInto(dst.stamp, stamp, dst.stampLightIdx, this._stampLights);
-            else dropOwnStampsInto(dst.stamp, stamp, dst.stampLightIdx, this._stampLights);
-            if (this._sunFrameTables !== null && DirectionalSprite.active) this._applyLampFrames(dst, stamp);
+            // it sees. Full rows name their entity in the tint float, keyed rows in their key. E-370: the frames' pass drops
+            // the own rows as it goes; without it, the drop alone.
+            const framed = this._sunFrameTables !== null && !!DirectionalSprite.active && this._applyLampFrames(dst, stamp);
+            if (!framed) {
+                if (this._gpuSunKeyed) dropOwnKeyedStampsInto(dst.stamp, stamp, dst.stampLightIdx, this._stampLights);
+                else dropOwnStampsInto(dst.stamp, stamp, dst.stampLightIdx, this._stampLights);
+            }
         }
         const cookie = this.visibilityPolygonsEnabled ? 0 : this._packGpuCookies(dst);
         res.sun = sunN;
