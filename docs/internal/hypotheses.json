@@ -16175,7 +16175,8 @@
       ],
       "records": [
         "R-1150",
-        "R-1213"
+        "R-1213",
+        "R-1220"
       ]
     },
     {
@@ -16754,7 +16755,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1104"
+        "R-1104",
+        "R-1219"
       ]
     },
     {
@@ -16802,7 +16804,8 @@
       "records": [
         "R-1100",
         "R-1104",
-        "R-1218"
+        "R-1218",
+        "R-1219"
       ]
     },
     {
@@ -16904,7 +16907,8 @@
         "Morton order bodies"
       ],
       "records": [
-        "R-1101"
+        "R-1101",
+        "R-1219"
       ]
     },
     {
@@ -16995,7 +16999,8 @@
         "pool wake latency"
       ],
       "records": [
-        "R-1101"
+        "R-1101",
+        "R-1219"
       ]
     },
     {
@@ -31823,6 +31828,24 @@
       "title": "Frame chain on today's main: workers still wake together (spread 0.1 ms); physics is the long pole at 13.4 ms (plain) and 14.4 ms (light3d night) of 16.7 at Predator crowd 2.5",
       "verdict": "note",
       "text": "**The frame chain on today's main (runFramePhase, first run since E-198 on 2026-11-12): every worker still starts within 0.1 ms of main's frame (\"wake-together\", spread 0.11 and 0.08 ms), and physics is the long pole: 13.4 ms a frame at Predator crowd 2.5 plain and 14.4 ms by night with light3d, against 16.7 ms of vsync.**\n\nrunFramePhase (`--query` since d55a0ac1), headed Chrome, 1280 x 720, 12 s warm-up, 6 s capture (361 samples), main 7e8fe900. Plain at 14:08, light3d=1 hour=22 at 15:18 (m47.log); both while the bench queue's old bash waiters kept Windows Defender at about 0.8 of a core (fixed at 15:29), so durations may read a little high.\n\nMedian slot duration a frame (ms), from the frame clock:\n\n| worker | plain | light3d night |\n| --- | --- | --- |\n| physics | 13.39 (312 of 361 frames) | 14.38 (346) |\n| spatial0 | 10.35 (337) | 9.40 (340) |\n| preRender | 6.91 | 9.82 |\n| logic0 / logic1 | 6.62 / 5.89 | 7.31 / 6.42 |\n| renderer (Pixi) | 8.23 | 6.46 |\n| particle | 0.67 | 0.66 |\n| main | 0.19 | 0.16 |\n\nWhat it says: the workers run in parallel inside one vsync, as E-198 left them; physics has about 2.3 to 3.3 ms of headroom at crowd 2.5 and is the first to miss a frame as the crowd grows, which is why the Box2D cluster (E-313, E-322, E-319/E-326, E-323 to E-327) leads the ranked list. By night pre-render grows by about 3 ms (the lamps' stamps and frames: stamp_light_range 23 %, pack_casters_scatter_framed 16 %, lamp_frames 5 % of its CPU in m43)."
+    },
+    {
+      "id": "R-1219",
+      "date": "2026-11-16",
+      "time": "16:41",
+      "timeFrom": "recorded",
+      "title": "Workers' tails, first reading: Predator crowd 2.5 physics p50 13.5 / p95 21.4 / p99 34.5 / max 69.8 ms, 17 % of frames 16 ms or more; spatial 14 %; logic and pre-render short tails (caveat: Defender noise from the old queue waiters)",
+      "verdict": "note",
+      "text": "**Every worker's tail, first reading (frameTotals' p99, longest frame and frames of 16 ms or more of own work, 8f7981d9): at Predator crowd 2.5 plain, physics' median frame is 13.5 ms but its p95 21.4 ms, p99 34.5 ms and longest 69.8 ms, with 299 of 1 741 frames (17 %) at 16 ms or more; spatial the same shape (p95 23.2 ms, 249 frames, 14 %). Logic and pre-render have short tails (p99 about 10 ms).**\n\nrunIntegratedWorkerBenchmark --src --headed --no-collect-detailed-stats, Predator crowd=2.5 zoom=0.216, 12 s warm-up, 30 s window, main at 2ea438bb's code (the run ended 16:41, m48-plain.txt's time). The window's \"exact\" totals (src/util/frameTotals.js), own work a frame (STEP_MS - WAIT_MS), ms:\n\n| worker | frames | mean step | p50 | p95 | p99 | longest | frames >= 16 ms |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| physics | 1741 | 14.43 | 13.48 | 21.37 | 34.45 | 69.75 | 299 |\n| spatial0 | 1765 | 11.72 | 10.75 | 23.23 | 32.27 | 56.00 | 249 |\n| logic0 | 1801 | 6.85 | 6.45 | 9.04 | 10.37 | 26.00 | 1 |\n| logic1 | 1801 | 6.26 | 5.87 | 8.49 | 9.54 | 26.00 | 2 |\n| preRender | 1795 | 6.90 | 6.58 | 9.39 | 10.47 | 28.25 | 1 |\n| renderer (Pixi) | 1797 | 7.07 (wait 3.55) | 3.35 | 5.35 | 6.83 | 9.00 | 0 |\n| particle | 1800 | 0.66 | 0.60 | 1.09 | 1.29 | 3.13 | 0 |\n\nCaveat: this ran while the bench queue's old bash waiters still kept Windows Defender busy (about 0.8 of a core, bursts of up to 4 cores reported by the E-459 agent; the new waiter, waitTurn.mjs, starts nothing since 15:29, but the waiters queued before kept the old loop until their turn). Physics (four threads) and spatial are the workers that compete for cores most, so part of their tail may be that noise: re-read on a quiet machine before a claim. Even so, the shape says the frame budget's risk is a tail, not the mean: physics misses a 60 Hz vsync on its own in about one frame in six here.\n\nLeads, all in the register: E-319 and E-326 (the pool's thread count, spin and wake: oversubscription makes tails), E-322 and E-433 (body order and the finalize's line transfers), E-317 and E-318 (spatial's neighbour rows a core apart)."
+    },
+    {
+      "id": "R-1220",
+      "date": "2026-11-16",
+      "time": "17:05",
+      "timeFrom": "recorded",
+      "title": "N-202: R-1213's keyless-decorations guess is wrong (decorations stay keyed at crowd 2.5); an agent reproduces it on fix/n202",
+      "verdict": "note",
+      "text": "**Correction to R-1213 (2026-11-16, later):** the guess that decorations go keyless at crowd 2.5 is wrong: keyedDecorationsFit (src/render/rendererBackend.js) allows INDEXED_SPRITES_MAX_WEBGL = 4096 x 1024 keys, and Predator crowd 2.5 needs entities + 20 000 decorations + the queue's rows, far fewer, so its decorations stay keyed. An agent reproduces N-202 at crowd=2.5 zoom=1 on fix/n202 (an in-engine statics check and cell captures), looking at what crowd 2.5 changes instead: rows and statics updates a frame, the resync path for decoration keys, the double-buffered queue."
     }
   ],
   "leads": [
