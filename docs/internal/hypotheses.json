@@ -11295,7 +11295,8 @@
       "records": [
         "R-0854",
         "R-0865",
-        "R-0862"
+        "R-0862",
+        "R-1226"
       ]
     },
     {
@@ -16808,7 +16809,8 @@
         "R-1104",
         "R-1218",
         "R-1219",
-        "R-1223"
+        "R-1223",
+        "R-1226"
       ]
     },
     {
@@ -20003,6 +20005,25 @@
       ],
       "records": [
         "R-1225"
+      ]
+    },
+    {
+      "id": "E-476",
+      "status": "open",
+      "date": "2026-11-16",
+      "area": "spatial",
+      "kind": "speed",
+      "title": "Spatial's long frames are periodic: E-200's typed refresh gives each class only T phases (tickBucketPhase(i, T)) inside a refresh period P = ceil(neighborTickInterval / T) x T, so a class's whole refresh lands on T frames of every P (civilians T 4, P 16: 4 frames heavy, 12 light); at Predator crowd 2.5 by night spatial runs 3 to 4 ms on some frames and 28 to 46 ms on others in a 32-frame cycle (lag-32 autocorrelation 0.68), p99 37.9 ms",
+      "statusText": "found 2026-11-16 from every frame's slots over 10 s (runFramePhase's samples.json, 9ebebff7), after frameTotals showed spatial's tail (R-1219)",
+      "result": "Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 600 frames: spatial0 p50 8.7, p90 16.2, p99 37.9, max 47.0 ms; autocorrelation 0.68 at lag 32 (0.45 / 0.44 at 31 / 33); per 32-frame row about 15, 8, 3-4, 7-9, 13-15, then 28-46 ms on frames 20-22, then 3-5. Physics has no period (lag-1 0.27; its tail is contention, R-1223), pre-render and logic none either.",
+      "next": "Spread each entity's refresh over the period's P / T tick occurrences: offset = (tickBucketPhase(i, T) - LEAD + T x k) mod P with k = an even spread of the class's slots over P / T (a slot's list still comes LEAD frames before one of its ticks and lasts P frames, as fresh at its tick as now), so each frame refreshes about 1/P of the class; likewise stagger neighborReuseMaxFrames' forced rebuilds. Judge on spatial's tail (frameTotals p95/p99 and frames >= 16 ms) and its mean, Predator crowd 2.5 and Boids; lists identical at each tick.",
+      "refs": [],
+      "aliases": [
+        "spatial periodic spikes",
+        "typed refresh phases"
+      ],
+      "records": [
+        "R-1226"
       ]
     }
   ],
@@ -32054,6 +32075,15 @@
         "ce12106c",
         "ba7614e8"
       ]
+    },
+    {
+      "id": "R-1226",
+      "date": "2026-11-16",
+      "time": "18:54",
+      "timeFrom": "recorded",
+      "title": "Every frame's slots over 10 s: spatial's tail is periodic (32-frame cycle, 3 to 46 ms, lag-32 autocorrelation 0.68) from E-200's typed refresh phases (E-476); physics' tail is not periodic (contention)",
+      "verdict": "note",
+      "text": "**Every frame of each worker over 10 s at Predator crowd 2.5 by night: spatial's tail is periodic (a 32-frame cycle, lag-32 autocorrelation 0.68), physics' is not.** runFramePhase with its new samples.json (9ebebff7), 12 s warm-up, 10 s, 600 frames, through the bench lock, the file written 18:54.\n\n| worker | p50 | p90 | p99 | max | strongest autocorrelation (lag: r) |\n| --- | --- | --- | --- | --- | --- |\n| spatial0 | 8.7 | 16.2 | 37.9 | 47.0 | 32: 0.68, 31: 0.45, 33: 0.44 |\n| physics | 14.0 | 15.1 | 16.6 | 23.5 | 1: 0.27, 2: 0.24 |\n| preRender | 8.6 | 10.3 | 11.9 | 14.8 | 1: 0.20 |\n| logic0 | 6.9 | 8.5 | 9.5 | 12.7 | 1: 0.11 |\n| renderer | 5.8 | 6.8 | 13.1 | 15.2 | 1 to 4: 0.59 to 0.42 (slow drift) |\n\nSpatial a frame, rows of 32 frames (ms): 15 14 16 14 7 8 8 7 3 3 4 3 7 9 9 10 13 14 15 13 . 28 18 3 4 4 4 3 5 5 12 11, and every row the same shape, with 29 to 46 ms around frames 20 to 22. Cause, from the code: E-200's typed refresh (spatialWorker.js _setupTypedNeighborStagger) gives a class only T phases inside its refresh period P = ceil(neighborTickInterval / T) x T, so the class's whole refresh lands on T frames of every P. Filed as E-476 (spread each slot over the period's P / T tick occurrences).\n\nPhysics' tail is not periodic: contention (the cores, R-1223, and the CSwitch capture's CPU skew), not scheduled work."
     }
   ],
   "leads": [
