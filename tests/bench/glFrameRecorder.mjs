@@ -198,6 +198,10 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
   let bytesBuffer = 0;
   let bytesTexture = 0;
   const bound = { program: null, vao: null, fbo: new Map(), rbo: null, unit: 0, tex: new Map(), buf: new Map() };
+  // What the context has bound when the window opens: a scene that draws with one program binds it once, before.
+  bound.program = qParamGl.call(gl, gl.CURRENT_PROGRAM);
+  bound.unit = qParamGl.call(gl, gl.ACTIVE_TEXTURE);
+  bound.fbo.set(0x8ca9, qParamGl.call(gl, gl.DRAW_FRAMEBUFFER_BINDING));
   // What the uploads and queries were: calls and bytes per texture size and format, per buffer object, per pname.
   const detail = new Map();
   const ids = new WeakMap();
