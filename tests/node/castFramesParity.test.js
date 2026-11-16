@@ -838,7 +838,9 @@ function stampRows(s, lights, invG, stampN, floats, entityFloat, keyed) {
     lightIdx[k] = l;
     const at = k * floats;
     const x = r();
-    rows[at + entityFloat] = x < 0.02 ? -1 : x < 0.04 ? n + Math.floor(r() * 50) : x < 0.06 ? Math.floor(r() * n) + 0.5 : Math.floor(r() * n);
+    // An entity, none (-1), one out of range, one not a whole number.
+    const ent = Math.floor(r() * n);
+    rows[at + entityFloat] = x < 0.02 ? -1 : x < 0.04 ? n + Math.floor(r() * 50) : x < 0.06 ? ent + 0.5 : ent;
     const L = lights[l];
     // Rows of the lamp's own entity now and then.
     if (L && r() < 0.05) rows[at + entityFloat] = L.id;

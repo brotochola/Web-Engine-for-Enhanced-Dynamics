@@ -413,7 +413,7 @@ export function applySunFramesFor(rows, sunN, casters, types, entities, active, 
     }
 }
 
-/** E-370: applySunFramesFor after a pass that changed the rows' scales (shadow textures): the flip's sign read from the row. */
+/** E-370: applySunFramesFor after a pass that changed the rows' scales (shadow textures): the flips read from the rows. */
 function applySunFramesReadBack(rows, sunN, casters, types, entities, active, mode, casts, sheets, dirs, anims, frames,
     tables, shift, orients, kinds) {
     for (let k = 0; k < sunN; k++) {
@@ -688,7 +688,8 @@ export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables
                 for (let b = 4; b <= 2 * quarter; b += 2) j += (geo[b] * w - geo[b + 1] * u >= 0) & 1;
                 const lo = 2 + 2 * j;
                 const margin = LAMP_TURN_MARGIN * len;
-                if (len > LAMP_TURN_MIN && geo[lo] * w - geo[lo + 1] * u > margin && geo[lo + 3] * u - geo[lo + 2] * w > margin) {
+                if (len > LAMP_TURN_MIN && geo[lo] * w - geo[lo + 1] * u > margin
+                    && geo[lo + 3] * u - geo[lo + 2] * w > margin) {
                     d = cur + quad * quarter + j;
                     if (d >= t.count) d -= t.count;
                 }
@@ -789,7 +790,8 @@ export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, t
                 for (let b = 4; b <= 2 * quarter; b += 2) j += (geo[b] * w - geo[b + 1] * u >= 0) & 1;
                 const lo = 2 + 2 * j;
                 const margin = LAMP_TURN_MARGIN * len;
-                if (len > LAMP_TURN_MIN && geo[lo] * w - geo[lo + 1] * u > margin && geo[lo + 3] * u - geo[lo + 2] * w > margin) {
+                if (len > LAMP_TURN_MIN && geo[lo] * w - geo[lo + 1] * u > margin
+                    && geo[lo + 3] * u - geo[lo + 2] * w > margin) {
                     d = cur + quad * quarter + j;
                     if (d >= t.count) d -= t.count;
                 }
@@ -4285,7 +4287,8 @@ class PreRenderWorker extends AbstractWorker {
                 : 0;
             if (this._shadowFramesOn && sunN > 0) this._applyShadowTextures(q, dst.sun, sunN);
             // E-370: the sun's frames write the rows' entities in the same pass; without it, _tagCasterEntities below.
-            const tagged = sunN > 0 && this._sunFrameTables !== null && !!DirectionalSprite.active && this._applySunFrames(q, dst.sun, sunN);
+            const tagged = sunN > 0 && this._sunFrameTables !== null && !!DirectionalSprite.active
+                && this._applySunFrames(q, dst.sun, sunN);
             if (this._casterKindsOn && sunN > 0) this._tagCasterRows(q, dst.sun, sunN);
             // The rows' entities: the lamps' frames and their own entities' stamps read them.
             if (sunN > 0 && !tagged) this._tagCasterEntities(q, dst.sun, sunN);
