@@ -1,16 +1,12 @@
 #version 300 es
-in vec2 aTri;
-in vec2 aV0;
-in vec2 aV1;
-in vec2 aV2;
-in vec2 aInstXY;
-in vec2 aInstRotCS;
-in float aInstTintBits;
-in float aInstDepth;
-in float aInstTexId;
-in vec2 aInstTileInv;
-in vec2 aInstTileOff;
-in float aInstBody;
+// E-452: the row (FILL_ROW, colliderFillBatch.js) as 4 vec4 and a vec2 in its order, not one attribute a field, and the
+// corner from gl_VertexID, not an attribute, as E-419 made meshUvFill.vert.glsl: the vertex stage's cost was its attribute
+// count. main() names the fields as they were.
+in vec4 aRow0; // v0, v1
+in vec4 aRow1; // v2, xy
+in vec4 aRow2; // rotation cos sin, tint bits, depth
+in vec4 aRow3; // texture id, tile inverse, tile offset x
+in vec2 aRow4; // tile offset y, body
 
 uniform mat3 uProjectionMatrix;
 uniform mat3 uWorldTransformMatrix;
@@ -28,6 +24,19 @@ out vec2 vTileOff;
 out float vHasTex;
 
 void main() {
+  // The corner: 0, 1, 2 in each instance of 3 vertices.
+  vec2 aTri = vec2(gl_VertexID == 1 ? 1.0 : 0.0, gl_VertexID == 2 ? 1.0 : 0.0);
+  vec2 aV0 = aRow0.xy;
+  vec2 aV1 = aRow0.zw;
+  vec2 aV2 = aRow1.xy;
+  vec2 aInstXY = aRow1.zw;
+  vec2 aInstRotCS = aRow2.xy;
+  float aInstTintBits = aRow2.z;
+  float aInstDepth = aRow2.w;
+  float aInstTexId = aRow3.x;
+  vec2 aInstTileInv = aRow3.yz;
+  vec2 aInstTileOff = vec2(aRow3.w, aRow4.x);
+  float aInstBody = aRow4.y;
   vec2 local = aV0 + aTri.x * (aV1 - aV0) + aTri.y * (aV2 - aV0);
   vec2 xy = aInstXY;
   vec2 cs = aInstRotCS;

@@ -72,6 +72,8 @@ export const FILL_ROW = Object.freeze({
 
 export const COLLIDER_FILL_FLOATS = R_BODY + 1;
 export const COLLIDER_FILL_STRIDE = COLLIDER_FILL_FLOATS * 4;
+/** E-452: the vec4 attributes a collider row is read as (aRow0..aRow3); its last 2 floats are aRow4, a vec2. */
+export const COLLIDER_ROW_VEC4 = COLLIDER_FILL_FLOATS >> 2;
 /** Explicit mesh with per-vertex UVs. 18 collider floats plus uv0, uv1, uv2. */
 export const MESH_UV_FILL_FLOATS = R_UV2 + 2;
 export const MESH_UV_FILL_STRIDE = MESH_UV_FILL_FLOATS * 4;
@@ -1159,26 +1161,25 @@ export class ColliderFillBatch {
       label: label || 'collider-fill',
     });
 
-    const tri = new Float32Array([0, 0, 1, 0, 0, 1]);
     const stride = COLLIDER_FILL_STRIDE;
     const buf = this.buffer;
-
-    this.geometry = new Geometry({
-      attributes: {
-        aTri: { buffer: tri, format: 'float32x2' },
-        aV0: { buffer: buf, format: 'float32x2', stride, offset: R_V0 * 4, instance: true },
-        aV1: { buffer: buf, format: 'float32x2', stride, offset: R_V1 * 4, instance: true },
-        aV2: { buffer: buf, format: 'float32x2', stride, offset: R_V2 * 4, instance: true },
-        aInstXY: { buffer: buf, format: 'float32x2', stride, offset: R_POS * 4, instance: true },
-        aInstRotCS: { buffer: buf, format: 'float32x2', stride, offset: R_ROT * 4, instance: true },
-        aInstTintBits: { buffer: buf, format: 'float32', stride, offset: R_TINT_BITS * 4, instance: true },
-        aInstDepth: { buffer: buf, format: 'float32', stride, offset: R_DEPTH * 4, instance: true },
-        aInstTexId: { buffer: buf, format: 'float32', stride, offset: R_TEX_ID * 4, instance: true },
-        aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: R_TILE_INV * 4, instance: true },
-        aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: R_TILE_OFF * 4, instance: true },
-        aInstBody: { buffer: buf, format: 'float32', stride, offset: R_BODY * 4, instance: true },
-      },
-    });
+    // E-452: the row as COLLIDER_ROW_VEC4 vec4 and a vec2 in FILL_ROW's order (aRow0 floats 0-3, ..., aRow4 16-17), which
+    // the shaders name field by field, and the corner from the vertex's index, as MeshUvFillBatch reads its rows (E-419):
+    // one attribute a field (11, and aTri) is what the vertex stage paid for. The index buffer [0, 1, 2] gives an instance
+    // its 3 vertices (N-228).
+    const attributes = {};
+    for (let k = 0; k < COLLIDER_ROW_VEC4; k++) {
+      attributes[`aRow${k}`] = { buffer: buf, format: 'float32x4', stride, offset: k * 16, instance: true };
+    }
+    attributes[`aRow${COLLIDER_ROW_VEC4}`] = {
+      buffer: buf,
+      format: 'float32x2',
+      stride,
+      offset: COLLIDER_ROW_VEC4 * 16,
+      instance: true,
+    };
+    // Uint32: 12 bytes (WebGPU makes no buffer whose size is not a multiple of 4; Uint16 [0, 1, 2] is 6).
+    this.geometry = new Geometry({ attributes, indexBuffer: new Uint32Array([0, 1, 2]) });
     this.geometry.instanceCount = 0;
 
     const atlas = atlasSource || Texture.WHITE.source;
