@@ -33,11 +33,9 @@ uniform float uNightG;
 uniform float uNightB;
 
 // The light data texture's rows (3 texels tall, sampled at their centres).
-const float ROW0 = 1.0 / 8.0;
-const float ROW1 = 3.0 / 8.0;
-const float ROW2 = 5.0 / 8.0;
-// N-212: a lamp's map shadow fade at the cut of maxShadowCastingLights (x; 1 for a light not fading).
-const float ROW3 = 7.0 / 8.0;
+// The light data's rows, read by texelFetch (E-373: an integer texel, the same as the WGSL's textureLoad, a Load on
+// ANGLE's D3D11 where a textureLod at a normalized coordinate was a sampled read): 0 position and I', 1 colour and
+// height, 2 a cone, 3 x a lamp's map shadow fade at the cut of maxShadowCastingLights (N-212; 1 for a light not fading).
 
 // DX-SPOT: how far inside its cone a point at floor offset delta from the light is: 1 inside, 0 outside, smooth across
 // the soft edge. At the light itself, 1.
@@ -159,16 +157,16 @@ float lampTap(vec2 cell, vec2 uv, float h, vec2 toAtlas, float bound, float self
 }
 
 // How much of the light at floor point l, height e reaches point p (x, y on the floor, z up): 1 lit, 0 in its shadow,
-// five taps. tag: the light's first row's w; intensity: its I'; selfId: the pixel's entity (its own shade skipped); u: its
+// five taps. tag: the light's first row's w; intensity: its I'; selfId: the pixel's entity (its own shade skipped); li: its
 // column in the light data, whose fourth row holds its fade at the cut (N-212: the shade lightens as it fades, read only
 // for a point the lamp's map covers).
-float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float selfId, float u) {
+float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float selfId, int li) {
   if (tag >= 0.0 || e <= 0.0) return 1.0;
   float reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
   // DX-LAMPPANO: past the reach on the floor the lamp gives no light (reachWindow), so nothing to read.
   vec2 fromLamp = p.xy - l;
   if (reach <= 0.0 || dot(fromLamp, fromLamp) >= reach * reach) return 1.0;
-  float fade = textureLod(uLightData, vec2(u, ROW3), 0.0).x;
+  float fade = texelFetch(uLightData, ivec2(li, 3), 0).x;
   if (fade <= 0.0) return 1.0;
   // DX-LAMPPANO: a point higher than the lamp reads the ceiling's half, landing as its mirror (2E - z) does.
   bool upper = p.z > e;
@@ -203,13 +201,13 @@ float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float 
 // DX-LAMPPANO: lampVisibility for a floor point (z 0, the flat path): always under the lamp, on the floor's half, no bias.
 // Its own small body: with the full lookup inlined at the flat path's two loops too, ANGLE's D3D11 compiler failed to link
 // the light pass (2.9 s, no log); so it links in about the time the stretch-capped map's pass did.
-float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, float intensity, float u) {
+float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, float intensity, int li) {
   if (tag >= 0.0 || e <= 0.0) return 1.0;
   float reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
   vec2 fromLamp = p - l;
   if (reach <= 0.0 || dot(fromLamp, fromLamp) >= reach * reach) return 1.0;
   // N-212: its fade at the cut (lampVisibility says how).
-  float fade = textureLod(uLightData, vec2(u, ROW3), 0.0).x;
+  float fade = texelFetch(uLightData, ivec2(li, 3), 0).x;
   if (fade <= 0.0) return 1.0;
   vec2 uv = lampPanoUv(fromLamp, reach);
   float tile = lampTile(tag);
@@ -328,20 +326,19 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
   int coneCount = int(uConeCount);
   for (int i = 0; i < MAX_LIGHTS; i++) {
     if (i >= coneCount) break;
-    float u = (float(i) + 0.5) / uLightTexWidth;
-    vec4 posInt = textureLod(uLightData, vec2(u, ROW0), 0.0);
+    vec4 posInt = texelFetch(uLightData, ivec2(i, 0), 0);
     if (posInt.z <= 0.0) continue;
-    vec4 col = textureLod(uLightData, vec2(u, ROW1), 0.0);
+    vec4 col = texelFetch(uLightData, ivec2(i, 1), 0);
     vec3 toLight = vec3(posInt.xy, col.a) - p;
     float d = length(toLight);
     float cosine = (dot(n, toLight) / max(d, 0.001) + uFaceLight.y) / (1.0 + uFaceLight.y);
     if (cosine <= 0.0 && !both) continue;
     float scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     float intensityScaled = posInt.z * scaled;
-    float cone = coneFactor(p.xy - posInt.xy, textureLod(uLightData, vec2(u, ROW2), 0.0))
+    float cone = coneFactor(p.xy - posInt.xy, texelFetch(uLightData, ivec2(i, 2), 0))
       * reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
 // #if LAMPMAP
-    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, u);
+    cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
 // #endif LAMPMAP
     if (cosine > 0.0) {
       total += col.rgb * cosine * uFaceLight.z * cone * intensityScaled
@@ -352,10 +349,9 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
   for (int j = 0; j < MAX_LIGHTS; j++) {
     int i = j + coneCount;
     if (i >= uLightCount) break;
-    float u = (float(i) + 0.5) / uLightTexWidth;
-    vec4 posInt = textureLod(uLightData, vec2(u, ROW0), 0.0);
+    vec4 posInt = texelFetch(uLightData, ivec2(i, 0), 0);
     if (posInt.z <= 0.0) continue;
-    vec4 col = textureLod(uLightData, vec2(u, ROW1), 0.0);
+    vec4 col = texelFetch(uLightData, ivec2(i, 1), 0);
     vec3 toLight = vec3(posInt.xy, col.a) - p;
     float d = length(toLight);
     float cosine = (dot(n, toLight) / max(d, 0.001) + uFaceLight.y) / (1.0 + uFaceLight.y);
@@ -366,7 +362,7 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     float lampVis = 1.0;
     float lampSelf = 1.0;
 // #if LAMPMAP
-    lampVis = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, u);
+    lampVis = lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
     cosine *= lampVis;
 // #if SELFSHADOW
     // DX-SELFSHADOW (F8): a lamp with a tile in the lamps' map steps over the face map towards it too, unless the pixel is
@@ -455,11 +451,10 @@ void main() {
   int coneCount = int(uConeCount);
   for (int i = 0; i < MAX_LIGHTS; i++) {
     if (i >= coneCount) break;
-    float u = (float(i) + 0.5) / uLightTexWidth;
-    vec4 posInt = textureLod(uLightData, vec2(u, ROW0), 0.0);
+    vec4 posInt = texelFetch(uLightData, ivec2(i, 0), 0);
     if (posInt.z <= 0.0) continue;
-    vec4 col = textureLod(uLightData, vec2(u, ROW1), 0.0);
-    vec4 cone = textureLod(uLightData, vec2(u, ROW2), 0.0);
+    vec4 col = texelFetch(uLightData, ivec2(i, 1), 0);
+    vec4 cone = texelFetch(uLightData, ivec2(i, 2), 0);
     const float DISTANCE_SCALE = 1.0 / 1024.0;
     vec2 deltaScaled = (fragWorld - posInt.xy) * DISTANCE_SCALE;
     float d2Scaled = dot(deltaScaled, deltaScaled);
@@ -467,7 +462,7 @@ void main() {
     float attenuation = intensityScaled / (intensityScaled + d2Scaled)
       * reachWindow(dot(fragWorld - posInt.xy, fragWorld - posInt.xy), posInt.z, col.a);
 // #if LAMPMAP
-    attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z, u);
+    attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z, i);
 // #endif LAMPMAP
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
   }
@@ -476,9 +471,8 @@ void main() {
     int i = j + coneCount;
     if (i >= uLightCount) break;
 
-    float u = (float(i) + 0.5) / uLightTexWidth;
-    vec4 posInt = textureLod(uLightData, vec2(u, ROW0), 0.0);
-    vec4 col = textureLod(uLightData, vec2(u, ROW1), 0.0);
+    vec4 posInt = texelFetch(uLightData, ivec2(i, 0), 0);
+    vec4 col = texelFetch(uLightData, ivec2(i, 1), 0);
 
     vec2 lightWorld = posInt.xy;
     float intensity = posInt.z;
@@ -492,7 +486,7 @@ void main() {
       float attenuation = intensityScaled / (intensityScaled + d2Scaled)
         * reachWindow(dot(fragWorld - lightWorld, fragWorld - lightWorld), intensity, col.a);
 // #if LAMPMAP
-      attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity, u);
+      attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity, i);
 // #endif LAMPMAP
       totalLight += color * attenuation;
     }
