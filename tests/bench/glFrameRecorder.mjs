@@ -18,10 +18,13 @@
  * counts the GPU's idle gaps inside it too (commands the CPU had not submitted yet): a pass's time is an upper bound of
  * its work, read with the GPU's busy share (Nsight Systems' GR Active) when they disagree. With --gpu-draws, a query
  * around each draw call instead (labelled by its pass and its index there): each pass's draws summed leave out the
- * gaps between them, so a pass whose draws sum far below its --gpu-passes time was waiting, not drawing.
+ * gaps between them, so a pass whose draws sum far below its --gpu-passes time was waiting, not drawing. With
+ * --probe-scissor <regex> as well, the draws whose label matches run under a 1 px scissor: their time against a run
+ * without the probe is what their pixels cost (the frame drawn is then not the scene's).
  *
  *   node tests/bench/glFrameRecorder.mjs --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene
- *     [--query k=v&k2=v2] [--warmup-ms 12000] [--record-ms 3000] [--gpu-passes | --gpu-draws] [--output gl.json]
+ *     [--query k=v&k2=v2] [--warmup-ms 12000] [--record-ms 3000] [--gpu-passes | --gpu-draws [--probe-scissor re]]
+ *     [--output gl.json]
  * From Git Bash set MSYS_NO_PATHCONV=1. Headed Chrome (a headless one draws on a software path). The wrappers add a
  * little time to each call, so the scene's speed during the window is not a measurement; the counts are.
  */
@@ -36,7 +39,7 @@ import { isCli, parseArgs } from './microbenchHelpers.mjs';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 /** Runs in the Pixi worker: wrap the context, record `ms`, unwrap, return the totals. */
-async function recordInWorker({ ms, gpuPasses, gpuDraws }) {
+async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
   const px = self.pixiRenderer;
   const gl = px?.pixiApp?.renderer?.gl;
   if (!gl) return { error: 'no WebGL context in the Pixi worker (a WebGPU backend?)' };
@@ -111,13 +114,28 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws }) {
       return '';
     }
   };
+  // probeScissor: the draws whose label matches it run under a 1 px scissor (the state put back after), so their time
+  // without the fill is read against a run without the probe: how much of a costly draw is pixels.
+  const probeRe = perDraw && probeScissor ? new RegExp(probeScissor) : null;
+  const rawEnable = raw('enable');
+  const rawDisable = raw('disable');
+  const rawIsEnabled = raw('isEnabled');
+  const rawScissor = raw('scissor');
+  let probeSaved = null;
   const beginDraw = (n) => {
     if (!perDraw || !seg) return;
     const q = free.pop() || qCreate.call(gl);
     // The draw's own program (the pass's label names its first one): what a costly draw in a pass of many programs is.
     const pass = segLabel(seg);
     const p = bound.program;
-    drawQ = { q, label: `${pass} draw ${seg.draws}: prog#${idOf(p)} [${signature(p)}]${texNames()}`, pass, draws: 1, instances: n };
+    let label = `${pass} draw ${seg.draws}: prog#${idOf(p)} [${signature(p)}]`;
+    if (probeRe && probeRe.test(label)) {
+      probeSaved = { on: rawIsEnabled.call(gl, gl.SCISSOR_TEST), box: qParamGl.call(gl, gl.SCISSOR_BOX) };
+      rawEnable.call(gl, gl.SCISSOR_TEST);
+      rawScissor.call(gl, 0, 0, 1, 1);
+      label += ' (scissor 1 px)';
+    }
+    drawQ = { q, label: `${label}${texNames()}`, pass, draws: 1, instances: n };
     qBegin.call(gl, timerExt.TIME_ELAPSED_EXT, q);
   };
   // gpuDraws: a clear or a blit timed like a draw (E-402: what the passes with no draw spend).
@@ -138,6 +156,12 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws }) {
     qEnd.call(gl, timerExt.TIME_ELAPSED_EXT);
     pending.push(drawQ);
     drawQ = null;
+    if (probeSaved !== null) {
+      if (!probeSaved.on) rawDisable.call(gl, gl.SCISSOR_TEST);
+      const b = probeSaved.box;
+      rawScissor.call(gl, b[0], b[1], b[2], b[3]);
+      probeSaved = null;
+    }
   };
   const collect = () => {
     for (let i = pending.length - 1; i >= 0; i--) {
@@ -356,7 +380,7 @@ export async function recordGlFrames(opts) {
     await page.waitForTimeout(opts.warmupMs);
     const worker = page.workers().find((w) => w.url().includes('pixiWorker'));
     if (!worker) throw new Error('no Pixi worker');
-    return await worker.evaluate(recordInWorker, { ms: opts.recordMs, gpuPasses: !!opts.gpuPasses, gpuDraws: !!opts.gpuDraws });
+    return await worker.evaluate(recordInWorker, { ms: opts.recordMs, gpuPasses: !!opts.gpuPasses, gpuDraws: !!opts.gpuDraws, probeScissor: opts.probeScissor || null });
   } finally {
     await browser.close();
     await server.close?.();
@@ -377,6 +401,7 @@ async function main() {
     recordMs: Number(args['record-ms'] ?? 3000),
     gpuPasses: !!args['gpu-passes'],
     gpuDraws: !!args['gpu-draws'],
+    probeScissor: typeof args['probe-scissor'] === 'string' ? args['probe-scissor'] : null,
   });
   if (r.error) {
     console.error(r.error);
