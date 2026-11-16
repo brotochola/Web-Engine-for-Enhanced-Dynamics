@@ -16464,7 +16464,8 @@
       ],
       "records": [
         "R-1157",
-        "R-1169"
+        "R-1169",
+        "R-1176"
       ]
     },
     {
@@ -16575,7 +16576,8 @@
       "records": [
         "R-1155",
         "R-1157",
-        "R-1167"
+        "R-1167",
+        "R-1176"
       ]
     },
     {
@@ -16786,7 +16788,8 @@
       ],
       "records": [
         "R-1103",
-        "R-1168"
+        "R-1168",
+        "R-1176"
       ]
     },
     {
@@ -18200,6 +18203,24 @@
       ],
       "records": [
         "R-1175"
+      ]
+    },
+    {
+      "id": "N-218",
+      "title": "Logic got 43 % slower in keyedPackStressScene with ?gbuf=1 between bdcca2e7 and main (2.96 -> 4.24 ms, 4 of 4 pairs), though neither setter commit in that range slows it without gbuf and churn",
+      "status": "open",
+      "statusText": "found 2026-11-16 in the keyed pack sittings (kp-e387-gbuf); not reproduced by the setter bisect",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "bug",
+      "result": "kp-e387-gbuf (n=250000 churn=0.05 gbuf=1, bdcca2e7 against a43899ed, 04:12 to 04:17): logic raw STEP 3.018 -> 4.086, 2.908 -> 3.997, 2.920 -> 4.418, 2.996 -> 4.386 ms; Pixi +2.0 %, pre-render +0.7 %. The setter bisect (n=300000 moving=0.5 churn=0, no gbuf, 04:21 to 04:33): N-215 alone 5.476 -> 5.214, N-170 alone 5.287 -> 5.241. Only gameObject.js changed in logic's code between the two revisions.",
+      "next": "Bisect the configuration (gbuf=1 alone, churn=0.05 alone: the tint setter every frame for 12 500 churners) and the revisions (f2ef124e, 3cd0d1fc) with logic as owner over 6 ms; a logic CPU pass of both sides; check whether lighting's emissive path adds logic work.",
+      "refs": [],
+      "aliases": [
+        "logic regression keyed pack gbuf"
+      ],
+      "records": [
+        "R-1176"
       ]
     }
   ],
@@ -29508,6 +29529,18 @@
       "title": "Nsight Systems on Predator light3d: GPU 78 % busy with latency-bound pixel work (SM issue 29 %, DRAM 10 %); Chrome's GPU process main thread 2.6 ms a frame",
       "verdict": "note",
       "text": "**Nsight Systems on Predator ?light3d=1: the GPU 78 % busy with pixel work that waits on fetches (SM issue 29 %, DRAM 10 %), and Chrome's GPU process main thread 2.6 ms a frame on the command stream.** Nsight Systems 2026.6.1 (installed 2026-11-16 in D:\\perf-tools\\NsightSystems-2026.6.1), elevated (WDDM and GPU metrics need an administrator), `nsys profile -t dx11,wddm --gpu-metrics-devices=all -y 40 -d 5` launching Google Chrome with the bench page; the scene prepared over CDP at 03:56:41, the window 03:57:00 to 03:57:10 (the report's GPU metrics span 9.95 s); report and SQLite export in D:\\perf-tools\\captures\\nsys-predator-l3d. The DX11 trace did not reach Chrome's GPU process (a child): no API rows.\n\n**GPU metrics (GTX 1650, Chrome window 1400 x 900):** GR Active 78.4 % (74 to 82 % in every 500 ms), SMs Active 71.3 %, SM Issue 28.8 %, Pixel Warps in Flight 54.6 % (34.9 warps a cycle), Vertex/Tess/Geometry 0.74 %, Unallocated Warps in Active SMs 16.0 %, DRAM read 9.9 % and write 4.4 %, PCIe RX 0.70 GB/s and TX 0.72 GB/s (the whole machine), no compute. The graphics engine is busy most of the frame with pixel shading that issues an instruction on fewer than a third of the cycles while DRAM is nearly idle: latency-bound fetches (E-405), with warp slots left free (E-406).\n\n**CPU by thread (scheduling, the window):** the profiled Chrome: its GPU process's CrGpuMain 154.8 ms/s (E-407), an unnamed thread there 41.4, VizCompositorThread 37.0, Chrome_ChildIOThread 32.8; the renderer's workers 147.3, 142.4, 142.2, 115.2, 91.3, 88.3, 67.4, 66.3, 66.0 ms/s (Predator's logic, spatial, pre-render, Pixi, particle, physics). The owner's Chrome was playing a video meanwhile: its CrRendererMain 133.9 ms/s and five dav1d-worker threads about 15 ms/s each, its GPU process 28.2 ms/s.\n\nNsight Graphics 2026.4.0 is installed too (D:\\perf-tools\\NsightGraphics-2026.4.0) but its CLI could not start from this session (\"no Qt platform plugin could be initialized\"); RenderDoc 1.47 could not capture Chrome's GPU process (R-1174)."
+    },
+    {
+      "id": "R-1176",
+      "date": "2026-11-16",
+      "time": "04:33",
+      "timeFrom": "recorded",
+      "title": "The keyed pack's owner scene: the plain pack's exports and E-387 NEUTRAL in Pixi; the setter bisect clears N-170 and N-215; logic +43 % with gbuf=1 open (N-218)",
+      "verdict": "note",
+      "text": "**The keyed pack's owner scene (keyedPackStressScene, Pixi over 6 ms) and the setter bisect: the plain pack's exports and E-387 are NEUTRAL in the scene; logic's 43 % with ?gbuf=1 is not the setters (N-218).** `runPredatorAbab --pool`, 4 pairs, headed, AC power, 2026-11-16; STEP_MS - WAIT_MS.\n\n- **kp-exports (n=300000 churn=0.05, main a43899ed against opt/keyed-exports caa3aea0, Pixi owns), 04:07 to 04:12: NEUTRAL.** Pixi 6.700 -> 6.521 ms (paired -3.3 %, 1/4 worse, cv 2/8 %), pre-render 14.767 -> 14.349 (-3.1 %, 0/4 worse: a worker the change cannot reach, so drift), logic 4.435 -> 4.216. Against the drift the plain pack's own exports change nothing measurable in Pixi here: the kernel is a small part of Pixi's 6.5 ms. Its claim rests on the kernel (gpuPackKeyedMicrobench, run again in a quiet machine).\n- **kp-e387-gbuf (n=250000 churn=0.05 gbuf=1, bdcca2e7 against a43899ed, Pixi owns), 04:12 to 04:17: NEUTRAL.** Pixi 8.026 -> 8.170 (+2.0 %, 2/4 worse), pre-render 13.090 -> 13.178 (+0.7 %): the G-buffer words in the keyed pack do not show in this scene either (R-1167's lamps' map sitting read Pixi -10.4 % under the floor). Logic 2.958 -> 4.236 ms, 4 of 4 pairs (N-218).\n- **Setter bisect (n=300000 moving=0.5 churn=0, no gbuf, logic owns), 04:21 to 04:33:** N-215 alone (f2ef124e against 3cd0d1fc) logic 5.476 -> 5.214 (by pair -2.2, -15.9, +0.4, +3.8 %); N-170 alone (bdcca2e7 against f2ef124e) 5.287 -> 5.241 (+2.9, +1.8, -5.2, +0.6 %). Both NEUTRAL under the floor: neither setter commit costs logic when 150 000 sprites move through this.x and this.y.\n\nA deopt pass of the scene (n=300000 moving=0.5, main) found no megamorphic engine IC in the setters (three entity classes: polymorphic at most).",
+      "commits": [
+        "254f5837"
+      ]
     }
   ],
   "leads": [
