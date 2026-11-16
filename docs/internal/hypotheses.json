@@ -16692,7 +16692,8 @@
         "R-1102",
         "R-1165",
         "R-1118",
-        "R-1180"
+        "R-1180",
+        "R-1192"
       ]
     },
     {
@@ -16816,7 +16817,8 @@
         "R-1168",
         "R-1176",
         "R-1105",
-        "R-1180"
+        "R-1180",
+        "R-1192"
       ]
     },
     {
@@ -17097,7 +17099,8 @@
         "R-1100",
         "R-1102",
         "R-1118",
-        "R-1180"
+        "R-1180",
+        "R-1192"
       ]
     },
     {
@@ -17778,7 +17781,8 @@
         "R-1180",
         "R-1182",
         "R-1183",
-        "R-1185"
+        "R-1185",
+        "R-1192"
       ]
     },
     {
@@ -17805,7 +17809,8 @@
         "R-1180",
         "R-1182",
         "R-1183",
-        "R-1185"
+        "R-1185",
+        "R-1192"
       ]
     },
     {
@@ -17893,7 +17898,8 @@
       "records": [
         "R-1173",
         "R-1175",
-        "R-1181"
+        "R-1181",
+        "R-1193"
       ]
     },
     {
@@ -17932,7 +17938,8 @@
         "R-1173",
         "R-1174",
         "R-1175",
-        "R-1181"
+        "R-1181",
+        "R-1193"
       ]
     },
     {
@@ -18431,7 +18438,8 @@
         "instanced draw gpu process"
       ],
       "records": [
-        "R-1181"
+        "R-1181",
+        "R-1193"
       ]
     },
     {
@@ -30755,6 +30763,24 @@
       "commits": [
         "14f1f660"
       ]
+    },
+    {
+      "id": "R-1192",
+      "date": "2026-11-16",
+      "time": "06:55",
+      "timeFrom": "recorded",
+      "title": "PR #12 merged on trial into main 8f1d4eda: 14 files conflict (gameObject, logicWorker, preRenderWorker, gpuPack.c, shadowStamp.c, the wasm)",
+      "verdict": "note",
+      "text": "**PR #12 (wave15-speed-candidates, c824fd62) merged on trial into main 8f1d4eda: 14 files conflict.** The merge was a dry run in a throwaway worktree, aborted and removed; nothing was measured.\n\n- Source: src/core/gameObject.js, src/workers/logicWorker.js, src/workers/preRenderWorker.js, src/render/gpuPackClient.js, src/util/wasmMemoryMap.js.\n- C: wasm/gpuPack.c, wasm/shadowStamp.c.\n- Binaries: src/wasm/engine.wasm and the fixtures gpuPack.wasm, shadowStamp.wasm, shadowStampF32.wasm. These are rebuilt after the C resolves, not merged.\n- Tests: tests/node/engineFeatureCatalog.test.js, tests/node/renderQueueMemory.test.js.\n- The register: the merge driver resolves it by key once it is defined in the clone.\n\nThe five hypotheses built twice meet head-on in these files: E-315 and E-358/E-359 in shadowStamp.c, N-170 in gameObject.js. E-331 exists only in PR #12. The integration therefore starts by picking each pair's build in the same kernels, as R-1180 says. The rest of the PR follows, each candidate measured in its owner scene. This work comes after the light campaign, in the owner's order."
+    },
+    {
+      "id": "R-1193",
+      "date": "2026-11-16",
+      "time": "06:56",
+      "timeFrom": "recorded",
+      "title": "94 of 130 redundant sampler uniforms a frame come from the volumes drawn into the lamps' map once per tile (_drawVolumesInLampMap: a Pixi mesh a tile, ~47 draws): one instanced draw over rows x tiles",
+      "verdict": "note",
+      "text": "**E-389 named: 94 of the frame's 130 redundant sampler uniforms come from one program: the volumes drawn into the lamps' map, once per lamp tile.** E-391's 50 draws are the same draws.\n\nglFrameRecorder with the redundant calls noted by program (the commit after 8f1d4eda), Predator zoom=0.3 light3d=1, headed, 3 s after 12 s, 2026-11-16 06:56 (the result file):\n\n| redundant a frame | program |\n| --- | --- |\n| 94.4 uniform1i | prog [uTexLut,uPoseTable,uLampTiles], the volumes in the lamps' map (volumeShadowMap.js volumeLampVertex) |\n| 9.8 bindTexture | prog [uTexLut,uTexture] |\n| 6.9 uniform1i | the tilemap's [uGid,uTileset] |\n| 4.9 uniform1i | the 3D light pass |\n| 3.9 uniform1i each | the lamps' map sprites, and the four sprite programs with poses and maps |\n\nTotals a frame: 1 098 GL calls, 80.8 draws, 162 redundant calls.\n\nThe cause is pixiWorker.js `_drawVolumesInLampMap`, which makes one Pixi mesh per lamp tile in use, each with its own shader and uniform group (uLampVolume: the tile). Pixi binds each mesh's program, syncs its group (the uniform4f E-391 counts) and its two samplers (the uniform1i), then draws: about 47 draws a frame for the 47 lamp tiles. In the GPU process they are 2 997 glDrawArraysInstancedANGLE a second, 8.6 us each (E-414).\n\nFix: one mesh drawn with instanceCount = rows x tiles, the vertex stage taking the tile from gl_InstanceID / rows (a uniform) and the owner from the tiles' texture. That is one draw and one sync where there are about 47 now. Each tile's draw already runs every row's vertices and leaves out the triangles past its tile, so the vertex work stays the same. It goes in pixiWorker.js and volumeShadowMap.js (both shaders), after the light-tiles work there."
     }
   ],
   "leads": [
