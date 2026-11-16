@@ -1141,6 +1141,7 @@ const EMPTY_U8 = new Uint8Array(0);
 const EMPTY_U16 = new Uint16Array(0);
 const EMPTY_U32 = new Uint32Array(0);
 const EMPTY_I32 = new Int32Array(0);
+const EMPTY_I16 = new Int16Array(0);
 // A caster row's terms DX-SHADOWTEX changes, by float: the sprite row of wasm/gpuPack.c sprite_row.
 const GPU_ROW_SCALE_X = 2;
 // DX-CASTER: a full caster row's depth float carries its caster code (the shadow programs read no depth).
@@ -1533,6 +1534,15 @@ class PreRenderWorker extends AbstractWorker {
         // worker runs the G-buffer pass (faces, a sheet with maps, a shadow map).
         this._gbufOn = false;
         this._collectedRows = 0; // the rows the last sprite queue's collect held
+        // E-444: the columns the split or indexed pack writes the sprites' G-buffer words from (gpuPackClient.js
+        // packSplitRowsWasm's `gbuf`; empty columns: none), whether this frame hands them (_bindPackGbuf), and whether
+        // the pack wrote them (_writeGbufWords then takes them as they are).
+        this._packGbuf = {
+            out: EMPTY_F32, flags: EMPTY_U8, self: EMPTY_U8, z: EMPTY_I16, types: EMPTY_U8, entities: EMPTY_I32,
+            written: false,
+        };
+        this._packGbufAsk = false;
+        this._packGbufWritten = false;
         /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
         this._keyedHeader = EMPTY_U32;
         /**
@@ -5191,16 +5201,19 @@ class PreRenderWorker extends AbstractWorker {
         const slot = this._queueBuf & 1;
         const genView = this.renderQueueStaticGen;
         const sorted = ctx.useIndices && ctx.indices !== this._gpuIdxEntity;
+        // E-444: the sprites' G-buffer words in the pack, where this frame hands their columns (_bindPackGbuf).
+        const gbuf = this._packGbufAsk ? this._packGbuf : null;
         if (sorted && this._gpuIndexed) {
-            const indexed = this._packSpritesIndexed(q, ctx, dst, cap, slot, genView);
+            const indexed = this._packSpritesIndexed(q, ctx, dst, cap, slot, genView, gbuf);
             if (indexed >= 0) return indexed;
         }
         const scan = ctx.scanCount | 0;
         const rows = scan < cap ? scan : cap;
         const gen = sorted ? this._sortedStaticGen(ctx, genView, rows) : genView.length ? genView[0] >>> 0 : 0;
         const current = gen !== 0 && this._gpuStaticGen[slot] === gen && this._gpuStaticRows[slot] === rows;
-        const n = packSplitRowsWasm(this._gpuPackWasm, q, ctx, dst.spritePose, current ? null : dst.spriteStatic, cap);
+        const n = packSplitRowsWasm(this._gpuPackWasm, q, ctx, dst.spritePose, current ? null : dst.spriteStatic, cap, gbuf);
         if (n < 0) return -1;
+        this._packGbufWritten = gbuf !== null && gbuf.written;
         this._gpuStaticGen[slot] = gen;
         this._gpuStaticRows[slot] = n;
         // The split statics lie over an indexed frame's slots and statics.
@@ -5217,14 +5230,15 @@ class PreRenderWorker extends AbstractWorker {
      * rows. The painter's order and the depth scale are the slots', so they move no statics. -1 when the kernel does not
      * take the frame (a list under SCATTER_MIN_ROWS or under half the queue); the caller then packs it split.
      */
-    _packSpritesIndexed(q, ctx, dst, cap, slot, genView) {
+    _packSpritesIndexed(q, ctx, dst, cap, slot, genView, gbuf) {
         const gen = genView.length ? genView[0] >>> 0 : 0;
         const rows = q.count | 0;
         const current = gen !== 0 && this._gpuIndexedGen[slot] === gen && this._gpuIndexedRows[slot] === rows;
         const n = packIndexedRowsWasm(
-            this._gpuPackWasm, q, ctx, dst.spritePose, dst.spriteSlots, current ? null : dst.spriteRowStatics, cap
+            this._gpuPackWasm, q, ctx, dst.spritePose, dst.spriteSlots, current ? null : dst.spriteRowStatics, cap, gbuf
         );
         if (n < 0) return -1;
+        this._packGbufWritten = gbuf !== null && gbuf.written;
         this._gpuIndexedGen[slot] = gen;
         this._gpuIndexedRows[slot] = rows;
         // The slot pairs lie over the split statics.
@@ -5305,6 +5319,8 @@ class PreRenderWorker extends AbstractWorker {
         this._packIndexedGen = 0;
         this._packIndexedRows = 0;
         this._packIndexedSlotsGen = 0;
+        this._packGbufAsk = false;
+        this._packGbufWritten = false;
         if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER || count <= 0 || !caps) {
             res.sprite = 0;
             res.glow = 0;
@@ -5345,6 +5361,9 @@ class PreRenderWorker extends AbstractWorker {
         spec.keysU32 = allowSort ? q.sortKeyU32 : null;
         spec.addSortMs = this.collectDetailedStats ? this._addPackSortMs : null;
         spec.glowCapacity = caps.maxGlow | 0;
+        // E-444: the split or indexed pack writes the sprites' G-buffer words where it can (_writeGbufWords takes them),
+        // with bands where the frame goes in the painter's order (packSpriteLayer sorts it, or the queue is presorted).
+        this._packGbufAsk = this._gbufOn && this._bindPackGbuf(dst, q, presorted || !!(spec.painter && spec.keysU32));
         const packed = packSpriteLayer(spec);
         res.sprite = packed.sprite;
         res.glow = packed.glow;
@@ -5401,7 +5420,9 @@ class PreRenderWorker extends AbstractWorker {
      * (its painter order or the queue's), into the queue buffer's gbuf region: its entity's id and flags (SpriteRenderer
      * gbufFlags, ShadowCaster selfShadow) and, when the painter ordered the rows zIndex first, its zIndex band. Queue rows
      * are the collector's one to one unless Adobe roots expanded in the frame: such a frame sends none (GPU_FLAG_GBUF off),
-     * and Pixi lights its sprites as it always did.
+     * and Pixi lights its sprites as it always did. E-444: the split or indexed pack wrote them, the same words, where it
+     * took the columns _bindPackGbuf handed it with the bands this frame takes; this writes the rest (the 15-float rows,
+     * a column outside the memory).
      * @returns {boolean} whether the region holds this frame's words
      */
     _writeGbufWords(dst, q, sprites) {
@@ -5411,10 +5432,34 @@ class PreRenderWorker extends AbstractWorker {
         const flags = SpriteRenderer.gbufFlags;
         if (!flags) return false;
         const sorted = (sprites.flags & GPU_FLAG_SORTED) !== 0 && SpriteRenderer.zIndexUsers() > 0;
+        const g = this._packGbuf;
+        if (this._packGbufWritten && g.out === out && g.flags === flags && sorted === (g.z.length > 0)) return true;
         writeGbufWords(
             out, n, sprites.indices || null, this._renderableType, this._renderableIndex, null, flags.length, flags,
             ShadowCaster.selfShadow || null, sorted ? SpriteRenderer.zIndex : null,
         );
+        return true;
+    }
+
+    /**
+     * E-444: the columns the split or indexed pack writes this frame's sprite G-buffer words from (_packGbuf), the ones
+     * _writeGbufWords reads: the collector's row types and entities, SpriteRenderer.gbufFlags, ShadowCaster.selfShadow and,
+     * where the frame goes in the painter's order (`ordered`) while zIndex is in use, SpriteRenderer.zIndex for the
+     * bands. False, no words asked of the pack, where _writeGbufWords would send none: no region or flags, or queue rows
+     * that are not the collector's.
+     */
+    _bindPackGbuf(dst, q, ordered) {
+        const out = dst.spriteGbuf;
+        const flags = SpriteRenderer.gbufFlags;
+        if (!out || out.length === 0 || !flags || (q.count | 0) !== this._collectedRows) return false;
+        const g = this._packGbuf;
+        g.out = out;
+        g.flags = flags;
+        g.self = ShadowCaster.selfShadow || EMPTY_U8;
+        g.z = ordered && SpriteRenderer.zIndexUsers() > 0 ? SpriteRenderer.zIndex || EMPTY_I16 : EMPTY_I16;
+        g.types = this._renderableType;
+        g.entities = this._renderableIndex;
+        g.written = false;
         return true;
     }
 
