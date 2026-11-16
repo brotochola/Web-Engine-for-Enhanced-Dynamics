@@ -10,7 +10,7 @@
 
 import { Component } from '../core/component.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
-import { angleDistance, pickDirection, wrapAngle } from '../core/spriteDirections.js';
+import { PICK_ARGS, angleDistance, pickDirectionArgs, wrapAngle } from '../core/spriteDirections.js';
 import { warnOnce } from '../util/dxWarn.js';
 import { LightEmitter } from './lightEmitter.js';
 import { RigidBody } from './rigidBody.js';
@@ -306,8 +306,11 @@ export class DirectionalSprite extends Component {
     const m = DirectionalSprite.turnMargin[i];
     const from = DirectionalSprite.facingFrom[i];
     let dir = cur;
+    // E-388: pickDirection's doubles through PICK_ARGS (a double passed to a call TurboFan leaves out is boxed).
+    PICK_ARGS[1] = m === m ? m : t.margin;
     if (from === FACING_FROM.MANUAL) {
-      dir = pickDirection(t, DirectionalSprite.facing[i], cur, m === m ? m : t.margin);
+      PICK_ARGS[0] = DirectionalSprite.facing[i];
+      dir = pickDirectionArgs(t, cur);
     } else {
       let vx;
       let vy;
@@ -340,10 +343,12 @@ export class DirectionalSprite extends Component {
         if (!kept) {
           const facing = Math.atan2(vy, vx);
           DirectionalSprite.facing[i] = facing;
-          dir = pickDirection(t, facing, cur, m === m ? m : t.margin);
+          PICK_ARGS[0] = facing;
+          dir = pickDirectionArgs(t, cur);
         }
       } else if (cur >= count) {
-        dir = pickDirection(t, DirectionalSprite.facing[i], cur, m === m ? m : t.margin);
+        PICK_ARGS[0] = DirectionalSprite.facing[i];
+        dir = pickDirectionArgs(t, cur);
       }
     }
     if (dir !== cur) DirectionalSprite.directionIndex[i] = dir;

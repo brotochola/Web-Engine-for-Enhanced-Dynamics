@@ -15,7 +15,7 @@ import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRend
 import { AdobeAnimComponent as AdobeAnimComponentImport } from '../components/adobeAnimComponent.js';
 import { ShadowCaster as ShadowCasterImport } from '../components/shadowCaster.js';
 import { DirectionalSprite } from '../components/directionalSprite.js';
-import { pickDirection, wrapAngle } from '../core/spriteDirections.js';
+import { PICK_ARGS, pickDirection, pickDirectionArgs, wrapAngle } from '../core/spriteDirections.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
 import { FlashComponent as FlashComponentImport } from '../components/flashComponent.js';
 import { LightOccluder as LightOccluderImport, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
@@ -299,6 +299,8 @@ export function computeSunFramesInto(out, n, active, mode, casts, sheets, dirs, 
 
 /** E-368: the sun's turn this call (prepareSunFrames writes it): a double the frame passes read, not one they are handed. */
 const SUN_TURN = new Float64Array(1);
+/** E-388: a lamp's turn for sunFrameDirection (lampFrameFor writes it), as SUN_TURN carries the sun's. */
+const LAMP_TURN = new Float64Array(1);
 /** N-197: a caster's kind for a light that casts its card (CAST_KIND.SPRITE, shadowCaster.js). */
 const CARD_KIND = 1;
 
@@ -360,7 +362,7 @@ function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables
         const g = anims[e];
         return t.frameOf[(cur * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
     } else {
-        d = sunFrameDirection(t, e, SUN_TURN[0]);
+        d = sunFrameDirection(t, e, SUN_TURN);
     }
     const g = anims[e];
     const slot = (g < t.groups ? g : 0) * t.count + d;
@@ -516,7 +518,8 @@ function lampFrameFor(e, t, dirs, anims, frames) {
         d = (cur + Math.round(wrapAngle(turn) / t.step)) % t.count;
         if (d < 0) d += t.count;
     } else {
-        d = sunFrameDirection(t, e, -1.5707963267948966 - Math.atan2(LAMP_RAY[1], LAMP_RAY[0]));
+        LAMP_TURN[0] = -1.5707963267948966 - Math.atan2(LAMP_RAY[1], LAMP_RAY[0]);
+        d = sunFrameDirection(t, e, LAMP_TURN);
     }
     const g = anims[e];
     let f = frames !== null ? frames[e] | 0 : 0;
@@ -626,11 +629,15 @@ function dropOwnStampsInto(rows, stampN, lightIdx, lights) {
 }
 
 /** A table that is not uniform (or a sprite with no direction yet): the facing turned by the sun, nearest direction. */
+/** The direction a light turned by turn[0] from the camera sees (turn: SUN_TURN or LAMP_TURN, a double not passed). */
 function sunFrameDirection(t, e, turn) {
     const ax = DirectionalSprite.aimX[e];
     const ay = DirectionalSprite.aimY[e];
     const facing = DirectionalSprite.facingFrom[e] !== 0 && (ax !== 0 || ay !== 0) ? Math.atan2(ay, ax) : DirectionalSprite.facing[e];
-    return pickDirection(t, facing + turn, 255, 0);
+    // E-388: the turn read here and the facing through PICK_ARGS: no double crosses a call (they were boxed per caster).
+    PICK_ARGS[0] = facing + turn[0];
+    PICK_ARGS[1] = 0;
+    return pickDirectionArgs(t, 255);
 }
 const FlashComponent = FlashComponentImport;
 const LightOccluder = LightOccluderImport;

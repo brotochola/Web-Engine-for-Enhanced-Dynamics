@@ -9,6 +9,8 @@
 export const DIRECTION_NAMES = Object.freeze(['right', 'downRight', 'down', 'downLeft', 'left', 'upLeft', 'up', 'upRight']);
 
 const TWO_PI = Math.PI * 2;
+/** Two whole turns: wrapAngle's second fast case ends there. */
+const TWO_TURNS = 2 * TWO_PI;
 const DEG = Math.PI / 180;
 /** A group spec's own keys: never a direction. */
 const GROUP_KEYS = new Set(['count', 'startAngle', 'clockwise', 'anims', 'mirrorX']);
@@ -235,33 +237,117 @@ export function buildDirectionTable(sheetName, spec, animationNames, problems = 
 
 /**
  * The direction to draw for `facing`: the nearest of the table's, unless the current one is within `margin` of it
- * (so a facing on a border does not flicker between two).
+ * (so a facing on a border does not flicker between two). pickDirectionArgs with its doubles passed here.
  * @param {{ count: number, uniform: boolean, start: number, step: number, angles: ArrayLike<number> }} t
  * @param {number} facing radians
  * @param {number} current the direction drawn now, or 255 for none
  * @param {number} margin radians
  */
 export function pickDirection(t, facing, current, margin) {
+  PICK_ARGS[0] = facing;
+  PICK_ARGS[1] = margin;
+  return pickDirectionArgs(t, current);
+}
+
+/**
+ * pickDirection's doubles for pickDirectionArgs: [facing, margin] (radians). A hot caller writes them here and passes the
+ * integers alone: a double passed to a call TurboFan leaves out is boxed (DirectionalSprite.resolve and pre-render's sun
+ * frames made 228 + 115 and 263 KB/s of heap numbers that way, CLAUDE.md's E-85).
+ */
+export const PICK_ARGS = new Float64Array(2);
+const INF = Infinity;
+
+/**
+ * pickDirection, its facing and margin in PICK_ARGS. The angles' wrapping (wrapAngle) and distances (angleDistance) are
+ * written out, every case of them, so no double crosses a call wherever this is inlined or not (a facing plus a light's
+ * turn runs past a whole turn often: a wrapAngle call there boxed its argument, 12.9 MB/s in pre-render). Bit for bit what
+ * pickDirection gave (spriteDirectionsParity.test.js).
+ * @returns {number} the direction to draw
+ */
+export function pickDirectionArgs(t, current) {
+  const facing = PICK_ARGS[0];
+  const margin = PICK_ARGS[1];
   const count = t.count;
+  const angles = t.angles;
+  // wf: wrapAngle(facing).
+  let wf = facing;
+  if (wf >= 0) {
+    if (!(wf < TWO_PI)) wf = wf < TWO_TURNS ? wf - TWO_PI : wf % TWO_PI;
+  } else if (wf >= -TWO_PI) {
+    wf += TWO_PI;
+    if (!(wf < TWO_PI)) wf = 0;
+  } else {
+    wf %= TWO_PI;
+    if (wf < 0) wf += TWO_PI;
+  }
   let best;
   let bestD;
   if (t.uniform) {
-    const step = t.step;
-    const k = Math.round(wrapAngle(facing - t.start) / step);
+    // a: wrapAngle(facing - start).
+    let a = facing - t.start;
+    if (a >= 0) {
+      if (!(a < TWO_PI)) a = a < TWO_TURNS ? a - TWO_PI : a % TWO_PI;
+    } else if (a >= -TWO_PI) {
+      a += TWO_PI;
+      if (!(a < TWO_PI)) a = 0;
+    } else {
+      a %= TWO_PI;
+      if (a < 0) a += TWO_PI;
+    }
+    const k = Math.round(a / t.step);
     best = k >= count ? k - count : k;
     if (best === current) return current;
-    bestD = angleDistance(facing, t.angles[best]);
+    // angleDistance(facing, angles[best]).
+    let b = angles[best];
+    if (b >= 0) {
+      if (!(b < TWO_PI)) b = b < TWO_TURNS ? b - TWO_PI : b % TWO_PI;
+    } else if (b >= -TWO_PI) {
+      b += TWO_PI;
+      if (!(b < TWO_PI)) b = 0;
+    } else {
+      b %= TWO_PI;
+      if (b < 0) b += TWO_PI;
+    }
+    const d = Math.abs(wf - b);
+    bestD = d > Math.PI ? TWO_PI - d : d;
   } else {
     best = 0;
-    bestD = Infinity;
+    bestD = INF;
     for (let k = 0; k < count; k++) {
-      const d = angleDistance(facing, t.angles[k]);
+      // angleDistance(facing, angles[k]).
+      let b = angles[k];
+      if (b >= 0) {
+        if (!(b < TWO_PI)) b = b < TWO_TURNS ? b - TWO_PI : b % TWO_PI;
+      } else if (b >= -TWO_PI) {
+        b += TWO_PI;
+        if (!(b < TWO_PI)) b = 0;
+      } else {
+        b %= TWO_PI;
+        if (b < 0) b += TWO_PI;
+      }
+      let d = Math.abs(wf - b);
+      if (d > Math.PI) d = TWO_PI - d;
       if (d < bestD) {
         bestD = d;
         best = k;
       }
     }
   }
-  if (current < count && current !== best && angleDistance(facing, t.angles[current]) <= bestD + margin) return current;
+  if (current < count && current !== best) {
+    // angleDistance(facing, angles[current]).
+    let b = angles[current];
+    if (b >= 0) {
+      if (!(b < TWO_PI)) b = b < TWO_TURNS ? b - TWO_PI : b % TWO_PI;
+    } else if (b >= -TWO_PI) {
+      b += TWO_PI;
+      if (!(b < TWO_PI)) b = 0;
+    } else {
+      b %= TWO_PI;
+      if (b < 0) b += TWO_PI;
+    }
+    let d = Math.abs(wf - b);
+    if (d > Math.PI) d = TWO_PI - d;
+    if (d <= bestD + margin) return current;
+  }
   return best;
 }
