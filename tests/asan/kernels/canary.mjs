@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { symbolize } from '../asanSession.mjs';
+import { symbolize, symbolizeStack } from '../asanSession.mjs';
 
 /** The line of canary.c that carries `mark`. */
 function markedLine(root, mark) {
@@ -31,7 +31,7 @@ function check(ctx, op, mark) {
 export default {
   name: 'canary',
   sources: ['tests/asan/canary.c'],
-  exports: ['canary_read', 'canary_write'],
+  exports: ['canary_read', 'canary_write', 'canary_wild'],
   workingTree: true,
 
   async groups() {
@@ -44,9 +44,25 @@ export default {
         return { calls: 1, mismatch: check(ctx, op, mark) };
       },
     });
+    // A pointer past the memory traps; the harness must name the trap's line (runAsan.mjs prints it for a case that throws).
+    const wild = {
+      label: 'a trap on a pointer past the memory, at its line',
+      run: async (ctx) => {
+        const line = markedLine(ctx.harnessRoot, 'CANARY_WILD');
+        let stack = '';
+        try {
+          ctx.session.fn('canary_wild')(0xfff00000);
+        } catch (err) {
+          stack = err?.stack ?? '';
+        }
+        const top = symbolizeStack(ctx.session.build, stack)[0] ?? '';
+        const ok = /memory access out of bounds/.test(stack) && top.includes(`canary.c:${line}:`);
+        return { calls: 1, mismatch: ok ? null : `the trap ${stack ? `symbolized as '${top}'` : 'did not happen'}, not canary.c:${line}` };
+      },
+    };
     return [{
-      label: 'ASan sees an off-by-one read and write',
-      cases: [one('READ', 'CANARY_READ', 'canary_read'), one('WRITE', 'CANARY_WRITE', 'canary_write')],
+      label: 'ASan sees an off-by-one read and write; a trap is named by its line',
+      cases: [one('READ', 'CANARY_READ', 'canary_read'), one('WRITE', 'CANARY_WRITE', 'canary_write'), wild],
       // The write went into the redzone: the runner starts a fresh module after the group.
       resetAfter: true,
     }];

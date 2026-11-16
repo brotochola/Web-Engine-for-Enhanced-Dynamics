@@ -27,7 +27,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { asanResults, buildAsanKernel, repoRoot, revHash } from './asanBuild.mjs';
-import { describeReport, reportKey, AsanSession } from './asanSession.mjs';
+import { describeReport, reportKey, symbolizeStack, AsanSession } from './asanSession.mjs';
 import { importerFor, revisionRoot } from './asanCases.mjs';
 
 const KERNELS = ['shadowStamp', 'gpuPack', 'preRenderCollect', 'preRenderEmit'];
@@ -93,9 +93,11 @@ async function runKernel(spec, log) {
     for (const c of g.cases) {
       if (spec.verbose) console.log(`    ${c.label}`);
       let result = null;
+      let threw = false;
       try {
         result = await c.run(ctx);
       } catch (err) {
+        threw = true;
         errors.push({ label: c.label, error: err });
       }
       const reports = session.takeReports();
@@ -114,9 +116,9 @@ async function runKernel(spec, log) {
           log.push(`--- ${kernel.name}${at} / ${g.label} / ${c.label}`, ...rep.raw);
         }
       }
-      if (reports && reports.some((rep) => rep.access?.op !== 'READ')) {
-        // What the kernel wrote into a redzone may have broken the allocator's records (it keeps them there): a fresh
-        // module. A bad read changed nothing.
+      if (threw || (reports && reports.some((rep) => rep.access?.op !== 'READ'))) {
+        // What the kernel wrote into a redzone may have broken the allocator's records (it keeps them there), and a trap
+        // leaves the module's stack where it was: a fresh module. A bad read changed nothing.
         await session.reset();
       } else if (!g.resetAfter) {
         session.checkGrowth();
@@ -137,19 +139,26 @@ async function runKernel(spec, log) {
     }
     for (const m of mismatches.slice(0, 5)) console.log(`        differs from the shipped kernel: ${m.label}: ${m.text}`);
     if (mismatches.length > 5) console.log(`        ... and ${mismatches.length - 5} more cases that differ`);
-    for (const e of errors.slice(0, 5)) console.log(`        error in ${e.label}: ${e.error?.stack?.split('\n').slice(0, 3).join(' | ') ?? e.error}`);
-    if (errors.length > 5) console.log(`        ... and ${errors.length - 5} more errors`);
-    if (errors.length) {
-      // A case that threw may have left its arrays allocated.
-      session.freeAll();
+    for (const e of errors.slice(0, 5)) {
+      console.log(`        error in ${e.label}: ${e.error?.stack?.split('\n').slice(0, 3).join(' | ') ?? e.error}`);
+      // A trap in the ASan build (an address past the whole memory), at its source line.
+      for (const l of symbolizeStack(build, e.error?.stack ?? '').slice(0, 6)) console.log(`          ${l}`);
     }
+    if (errors.length > 5) console.log(`        ... and ${errors.length - 5} more errors`);
   }
-  if (session.instances > 1) console.log(`  (${session.instances} module instances: a fresh one after a call that wrote into a redzone)`);
+  if (session.instances > 1) console.log(`  (${session.instances} module instances: a fresh one after a call that wrote into a redzone or trapped)`);
   return allPassed;
 }
 
 async function main() {
-  const specs = parseArgs(process.argv.slice(2));
+  let specs;
+  try {
+    specs = parseArgs(process.argv.slice(2));
+  } catch (err) {
+    console.error(err.message);
+    process.exitCode = 2;
+    return;
+  }
   fs.mkdirSync(asanResults, { recursive: true });
   let ok = true;
   for (const spec of specs) {
@@ -168,7 +177,7 @@ async function main() {
       fs.rmSync(file);
     }
   }
-  console.log(ok ? '\nASan: every group passed' : '\nASan: some groups FAILED');
+  if (!specs[0].list) console.log(ok ? '\nASan: every group passed' : '\nASan: some groups FAILED');
   process.exitCode = ok ? 0 : 1;
 }
 

@@ -14,3 +14,10 @@ __attribute__((export_name("canary_write")))
 void canary_write(uint32_t *p, uint32_t n) {
   for (uint32_t i = 0; i <= n; i++) p[i] = i; /* CANARY_WRITE: i == n is past the array */
 }
+
+/* A wild pointer past the whole memory: ASan's shadow check of it traps (memory access out of bounds) before it can
+   report, and the harness names the trap's line from the JavaScript stack. */
+__attribute__((export_name("canary_wild")))
+uint32_t canary_wild(const uint32_t *p) {
+  return p[3]; /* CANARY_WILD */
+}

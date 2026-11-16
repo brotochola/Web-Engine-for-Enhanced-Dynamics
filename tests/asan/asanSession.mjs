@@ -211,6 +211,25 @@ export function symbolize(build, pcs) {
   return pcs.map((pc) => symbolCache.get(key(pc)) || []);
 }
 
+/**
+ * The source frames of a JavaScript stack's frames in the build's module (a trap, `memory access out of bounds`, is
+ * how an address past the whole memory shows: ASan's shadow check of it traps before it can report), as lines. The
+ * stack's offsets are the module's byte offsets, as ASan's pcs are: llvm-symbolizer takes those for a wasm file.
+ */
+export function symbolizeStack(build, stack) {
+  const name = path.basename(build.wasm, '.wasm');
+  const pcs = [];
+  for (const m of String(stack).matchAll(/wasm:\/\/wasm\/([\w.-]+?)(?:-[0-9a-f]+)?:wasm-function\[\d+\]:0x([0-9a-f]+)/g)) {
+    if (m[1].replace(/\.wasm$/, '') !== name) continue;
+    pcs.push(parseInt(m[2], 16));
+  }
+  const out = [];
+  for (const frames of symbolize(build, pcs)) {
+    for (const f of frames) out.push(`${out.length ? 'in' : 'at'} ${f.fn} ${f.file}:${f.line}:${f.col}`);
+  }
+  return out;
+}
+
 /** A DWARF file name of the build as the repo path it came from. */
 function repoFile(build, file) {
   const norm = (p) => path.resolve(p).replace(/\\/g, '/').toLowerCase();
