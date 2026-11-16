@@ -16,9 +16,15 @@
  * 'texture'` marks them for their texture alone (with the texture-only bit, preRenderEmit.c KEY_TEX_ONLY) and gives the
  * pack room for texture updates: a tree whose pack knows them sends 8 bytes a row, one that does not sends the row whole
  * (its key reads as one without a key), so the two trees' times compare what a texture-only change costs each.
+ * E-387: `gbuf` also times the instances' G-buffer words (gbufWord.js), from each entity's SpriteRenderer.gbufFlags,
+ * ShadowCaster.selfShadow and (`gbuf: 'bands'`, the painter's zIndex bands) SpriteRenderer.zIndex, columns of the memory
+ * as the scene keeps them there:
+ *   - keyedWords: the keyed pack, then the words in JavaScript from the key column (writeGbufWords: Pixi's frame today);
+ *   - keyedGbuf: the keyed pack writing them itself, then their copy out of the memory (commitGbuf's), where the tree's
+ *            pack takes the columns (it says so in keyed.gbufWritten). Its words must be keyedWords'.
  *
  *   node tests/bench/gpuPackKeyedMicrobench.mjs [--rows 14000] [--entities 42600] [--dirty 0.05] [--order random|near]
- *     [--marked [texture]] [--frames 61] [--output path]
+ *     [--marked [texture]] [--gbuf [bands]] [--frames 61] [--output path]
  *   node tests/bench/chromeKernel.mjs --module /tests/bench/gpuPackKeyedMicrobench.mjs --args '{"order":"random"}'
  *
  * Reports the median ms of a pack, a checksum of the pose stream (the same on both cases) and the keyed case's updates
@@ -26,6 +32,7 @@
  */
 import { GPU_INDEXED_SLOT_FLOATS, GPU_POSE_FLOATS, GPU_SPACE_WORLD, GPU_STATIC_FLOATS, makePackContext } from '../../src/render/gpuQueueLayout.js';
 import * as client from '../../src/render/gpuPackClient.js';
+import { writeGbufWords } from '../../src/render/gbufWord.js';
 
 const KEY_NONE = 0xffffffff;
 const KEY_CHANGED = 0x80000000;
@@ -46,7 +53,7 @@ function mulberry32(seed) {
 
 export async function setup(rows, entities, orderKind) {
   const keyRows = entities + rows;
-  const bytes = rows * 160 + keyRows * ROW_WORDS * 4 + rows * ROW_WORDS * 4 + (2 << 20);
+  const bytes = rows * 160 + keyRows * ROW_WORDS * 4 + rows * ROW_WORDS * 4 + entities * 4 + rows * 8 + (2 << 20);
   const memory = new WebAssembly.Memory({ initial: Math.ceil(bytes / 65536) + 16, maximum: 32768, shared: true });
   const buf = memory.buffer;
   let top = 64;
@@ -130,17 +137,40 @@ export async function setup(rows, entities, orderKind) {
   top += rows * 4;
   const particlesByte = (top = (top + 63) & ~63);
   top += 16 + 16 * 8;
+  // E-387: the entity columns the G-buffer words read and the words' region, after the rest (whose places stay as they
+  // were), from a generator of their own (the queue stays the same); the batch's own copy of the words.
+  const g = mulberry32(387);
+  const gbufFlags = alloc(Uint8Array, entities);
+  const selfShadow = alloc(Uint8Array, entities);
+  const zIndex = alloc(Int16Array, entities);
+  for (let x = 0; x < entities; x++) {
+    gbufFlags[x] = (g() * 64) | 0;
+    selfShadow[x] = (g() * 3) | 0;
+    zIndex[x] = (g() * 4) | 0;
+  }
+  const gbufOut = alloc(Float32Array, rows * 2);
+  const gbufData = new Float32Array(rows * 2);
   if (top > buf.byteLength) throw new Error('gpuPackKeyedMicrobench: the memory is too small');
   // Pixi's binding: no inverse, so every pack gathers in the painter's order.
   const b = await client.bindGpuPack(memory, {
     tableByte, tableSlots: 4, indexByte, indexCap: rows, particlesByte, inverseByte: 0, keyedInverseByte: inverse.byteOffset,
   });
-  return { q, b, order, splitPose, splitStat, pose, slots, keyTable, stamps, updates, texUpdates, shadow, rng };
+  return {
+    q, b, order, splitPose, splitStat, pose, slots, keyTable, stamps, updates, texUpdates, shadow, rng, gbufFlags, selfShadow,
+    zIndex, gbufOut, gbufData,
+  };
 }
 
 function poseSum(pose, n) {
   let s = 0;
   for (let k = 0; k < n * GPU_POSE_FLOATS; k += 97) s += pose[k];
+  return s;
+}
+
+/** E-387: a checksum of the instances' words and bands. */
+function wordSum(words, n) {
+  let s = 0;
+  for (let k = 0; k < n; k++) s += words[2 * k] + words[2 * k + 1] * 7;
   return s;
 }
 
@@ -161,7 +191,9 @@ export function framesMs(change, pack, frames, warm = 20) {
   return times[(times.length / 2) | 0];
 }
 
-export async function run({ rows = 14000, entities = 42600, dirty = 0.05, order = 'random', frames = 61, marked = false } = {}) {
+export async function run({
+  rows = 14000, entities = 42600, dirty = 0.05, order = 'random', frames = 61, marked = false, gbuf = false,
+} = {}) {
   const s = await setup(rows | 0, entities | 0, order);
   const opts = { space: GPU_SPACE_WORLD, indices: s.order, indexCount: rows, type: s.q.type };
   const ctx = () => makePackContext(s.q, opts, rows, {});
@@ -221,8 +253,44 @@ export async function run({ rows = 14000, entities = 42600, dirty = 0.05, order 
       if (cases.keyedScatter.check !== cases.split.check) throw new Error('the keyed scatter pose stream is not the split one');
     }
     s.b = scatterB;
+    if (gbuf) {
+      // E-387: Pixi's keyed frame with its instances' G-buffer words, gathering in the painter's order.
+      s.b = gatherB;
+      const zIndex = gbuf === 'bands' ? s.zIndex : null;
+      const words = (n) => writeGbufWords(s.gbufData, n, s.order, null, null, s.q.key, entities, s.gbufFlags, s.selfShadow, zIndex);
+      // The words' loop compiled by short calls first, as the game's frames compile it (warmNormalCompile, N-28).
+      for (let c = 0; c < 3000; c++) words(64);
+      const packAndWords = () => {
+        pack();
+        words(rows);
+      };
+      cases.keyedWords = { ms: framesMs(change, packAndWords, frames), check: wordSum(s.gbufData, rows) };
+      keyed.gbufOut = s.gbufOut;
+      keyed.gbufFlags = s.gbufFlags;
+      keyed.gbufSelf = s.selfShadow;
+      keyed.gbufZ = zIndex || new Int16Array(0);
+      pack();
+      if (keyed.gbufWritten === true) {
+        const packAndCopy = () => {
+          pack();
+          s.gbufData.set(s.gbufOut.subarray(0, rows * 2));
+        };
+        cases.keyedGbuf = { ms: framesMs(change, packAndCopy, frames), check: wordSum(s.gbufData, rows) };
+        const got = Uint32Array.from(new Uint32Array(s.gbufData.buffer, 0, rows * 2));
+        words(rows);
+        const want = new Uint32Array(s.gbufData.buffer, 0, rows * 2);
+        for (let w = 0; w < rows * 2; w++) {
+          if (got[w] !== want[w]) throw new Error(`the keyed pack's G-buffer float ${w} is not writeGbufWords'`);
+        }
+      }
+      keyed.gbufOut = null;
+      keyed.gbufFlags = null;
+      keyed.gbufSelf = null;
+      keyed.gbufZ = null;
+      s.b = scatterB;
+    }
   }
-  return { feature: 'gpu-pack-keyed', rows, entities, dirty, order, frames, marked: marked || false, cases };
+  return { feature: 'gpu-pack-keyed', rows, entities, dirty, order, frames, marked: marked || false, gbuf: gbuf || false, cases };
 }
 
 const fromCli =
@@ -240,6 +308,7 @@ if (fromCli) {
     order: String(args.order ?? 'random'),
     frames: Number(args.frames ?? 61),
     marked: args.marked === 'texture' ? 'texture' : Boolean(args.marked),
+    gbuf: args.gbuf === 'bands' ? 'bands' : Boolean(args.gbuf),
   });
   for (const [name, c] of Object.entries(report.cases)) {
     const extra = c.updatesPerFrame !== undefined ? `, ${c.updatesPerFrame.toFixed(0)} updates a frame` : '';

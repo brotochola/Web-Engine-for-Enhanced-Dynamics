@@ -111,6 +111,10 @@ const EMPTY_UPLOAD_OPTS = Object.freeze({
   indexCount: 0,
 });
 
+// E-387: the G-buffer columns a keyed pack has not been handed (setGbufColumns): none.
+const NO_GBUF_U8 = new Uint8Array(0);
+const NO_GBUF_I16 = new Int16Array(0);
+
 /**
  * Per-textureId LUT: origW, origH, u0, v0, u1, v1, trimX, trimY, trimW, trimH, and the frame's base (frameBase.js
  * lutBaseFloats: where it stands, read by the shadow passes only).
@@ -332,6 +336,8 @@ export class InstancedSpriteBatch {
     // The instances whose words the CPU copy holds as zeros (commitGbuf with none), so a run of frames without words
     // uploads its zeros once.
     this._gbufZeros = 0;
+    // E-387: whether the last upload's keyed pack wrote this frame's words (packedGbuf), from setGbufColumns' columns.
+    this.gbufPacked = false;
     // The ring slot the last upload drew from: its gbuf buffer is the one this frame's words go to.
     this._lastRing = 0;
     // E-162: a split batch given `statics` also takes indexed frames: the poses, a slot stream (each instance's statics
@@ -406,6 +412,13 @@ export class InstancedSpriteBatch {
     // static stream's half of the shared rows, its updates and their copy, and the resync header.
     const k = this.keyed ? keyed : null;
     const buf = this._sharedStatic.buffer;
+    // E-387: a keyed batch's G-buffer words, which its keyed pack writes into the render-queue memory after the slot
+    // stream (the static stream's half of the shared rows holds POSE_STATIC_FLOATS a row; a keyed frame writes
+    // GPU_INDEXED_SLOT_FLOATS of them) and commitGbuf copies into gbufData.
+    const gbufAt = this.capacity * GPU_INDEXED_SLOT_FLOATS;
+    this._sharedGbuf = k && this.gbuf
+      ? this._sharedStatic.subarray(gbufAt, gbufAt + this.capacity * GPU_GBUF_FLOATS)
+      : new Float32Array(0);
     this._keyedPack = {
       keyBase: k ? k.keyBase | 0 : 0,
       updatesByte: k ? k.updatesByte | 0 : 0,
@@ -416,6 +429,13 @@ export class InstancedSpriteBatch {
       // E-189: the texture updates' byte (0: none, the texture-only rows go up whole) and the last pack's count.
       texUpdatesByte: k && k.texUpdatesByte > 0 ? k.texUpdatesByte | 0 : 0,
       texUpdates: 0,
+      // E-387: the G-buffer words' destination, the columns they come from (setGbufColumns; empty: none) and whether
+      // the last pack wrote them.
+      gbufOut: this._sharedGbuf,
+      gbufFlags: NO_GBUF_U8,
+      gbufSelf: NO_GBUF_U8,
+      gbufZ: NO_GBUF_I16,
+      gbufWritten: false,
     };
     this._sharedSlots = k ? this._sharedStatic.subarray(0, this.capacity * GPU_INDEXED_SLOT_FLOATS) : new Float32Array(0);
     const updateWords = k ? this.capacity * GPU_KEYED_ROW_WORDS : 0;
@@ -708,6 +728,28 @@ export class InstancedSpriteBatch {
   /** DX-GBUF: the words' CPU copy, for a caller that writes them itself (gbufWord.js writeGbufWords), then commitGbuf. */
   get gbufData() {
     return this._gbufData;
+  }
+
+  /**
+   * E-387: the columns a keyed frame's pack writes the instances' G-buffer words from, the words gbufWord.js
+   * writeGbufWords writes from the queue's key column: SpriteRenderer.gbufFlags (its length is the entity count),
+   * ShadowCaster.selfShadow and, where the painter orders by zIndex, SpriteRenderer.zIndex (null: none). Handed before
+   * the upload: one drawn keyed with them sets gbufPacked, and commitGbuf(packedGbuf, count) takes its words; any other
+   * frame leaves them to the caller.
+   * @param {Uint8Array|null} flags
+   * @param {Uint8Array|null} selfShadow
+   * @param {Int16Array|null} zIndex
+   */
+  setGbufColumns(flags, selfShadow, zIndex) {
+    const k = this._keyedPack;
+    k.gbufFlags = flags || NO_GBUF_U8;
+    k.gbufSelf = selfShadow || NO_GBUF_U8;
+    k.gbufZ = zIndex || NO_GBUF_I16;
+  }
+
+  /** E-387: the words the last upload's keyed pack wrote, in draw order (read them while gbufPacked says so). */
+  get packedGbuf() {
+    return this._sharedGbuf;
   }
 
   /** E-191: a ring slot's buffer of the keyed frames' shadow terms. */
@@ -1335,6 +1377,7 @@ export class InstancedSpriteBatch {
    */
   upload(q, opts) {
     this.keyedShadowReady = false;
+    this.gbufPacked = false;
     if (this.poseInterp) return this._uploadPose(q, opts);
     if (this.split) return this._uploadSplit(q, opts);
     const ctx = this._beginUpload(q, opts);
@@ -1449,6 +1492,8 @@ export class InstancedSpriteBatch {
       ? packKeyedRowsByRowWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity)
       : packKeyedRowsWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity);
     if (out < 0) return this._keyedMiss(H);
+    // E-387: the words too, when it had their columns.
+    this.gbufPacked = k.gbufWritten;
     // E-312 step 2: drawn keyed again after a pause or a miss, so pre-render may skip unmarked rows' statics again.
     if (this._keyFull && this._keyPause === 0) {
       this._keyFull = false;
