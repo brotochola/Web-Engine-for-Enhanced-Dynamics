@@ -439,6 +439,12 @@ export type SceneConfig = Record<string, unknown> & {
      * (docs/guide/COMMON_MISTAKES.md). false turns them off. The production bundle has none.
      */
     checks?: boolean;
+    /**
+     * For GPU profilers (WebGPU, default false): the device also requests Chrome's
+     * 'chromium-experimental-timestamp-query-inside-passes' when the adapter has it (Chrome exposes it behind flags),
+     * so a tool can time each draw. The engine writes no timestamp itself.
+     */
+    gpuTimestampsInsidePasses?: boolean;
   };
   preRender?: Record<string, unknown> & {
     /**

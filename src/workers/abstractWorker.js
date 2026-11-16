@@ -59,6 +59,7 @@ import { Decal } from '../core/decal.js';
 import { bindSpawnCommandRing } from '../util/spawnCommandRing.js';
 import { bindEntityIdWidth, resolveEntityIdWidth, EntityIdArray, entityIdNone } from '../util/entityIdWidth.js';
 import { setVerboseWorkers, debugWorkerLog } from '../util/debugLog.js';
+import { setGpuTimestampsInsidePasses } from '../render/webgpu/requestGpuDevice.js';
 import { bindBox2dHotFields, bindWeedPoseFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { bindQueryAabbSab } from '../box2d/box2dQueryAabb.js';
@@ -559,6 +560,8 @@ export class AbstractWorker {
     this.collectDetailedStats = !!(this.config.debug?.collectDetailedStats);
     this.collectGpuStats = !!(this.config.debug?.collectGpuStats);
     setVerboseWorkers(!!this.config.debug?.verboseWorkers);
+    // Read where a worker asks for its WebGPU device (the Pixi worker's initialize, after this).
+    setGpuTimestampsInsidePasses(!!this.config.debug?.gpuTimestampsInsidePasses);
     Ray.collectDetailedStats = this.collectDetailedStats;
     Box2d.collectDetailedStats = this.collectDetailedStats;
     Ray.assertRotCSUnit = !!(this.config.debug?.assertRotCSUnit);

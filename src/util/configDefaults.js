@@ -1003,6 +1003,12 @@ export const DEBUG_DEFAULTS = Object.freeze({
    */
   collectGpuStats: false,
   /**
+   * For GPU profilers (WebGPU): the device also requests 'chromium-experimental-timestamp-query-inside-passes' when the
+   * adapter has it (Chrome exposes it behind flags), so a timestamp can be written around each draw. The engine writes
+   * none itself. Default off.
+   */
+  gpuTimestampsInsidePasses: false,
+  /**
    * Init / worker console.log spam (Scene bootstrap, pool init, atlas bake).
    * Independent of collectDetailedStats. Default off.
    */

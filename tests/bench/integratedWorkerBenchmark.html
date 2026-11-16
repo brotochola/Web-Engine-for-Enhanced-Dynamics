@@ -112,6 +112,8 @@
             ? true
             : Boolean(options.collectDetailedStats),
         collectGpuStats: Boolean(options.collectGpuStats),
+        // webgpuFrameRecorder.mjs --gpu-draws: the device asks for timestamps inside passes (config.debug).
+        gpuTimestampsInsidePasses: Boolean(options.gpuTimestampsInsidePasses),
         // DX-GUARDS: off unless the runner's --dev-checks asks (a measurement does not time them).
         devChecks: Boolean(options.devChecks),
         // --camera-zoom: min (Camera.minZoom) or a zoom, set once the scene has been created.
@@ -321,6 +323,7 @@
           ...(SceneClass.config.debug || {}),
           collectDetailedStats: config.collectDetailedStats,
           collectGpuStats: config.collectGpuStats,
+          ...(config.gpuTimestampsInsidePasses ? { gpuTimestampsInsidePasses: true } : {}),
           checks: config.devChecks,
         },
         ...(wasmOff.length
