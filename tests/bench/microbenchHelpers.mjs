@@ -144,7 +144,9 @@ export function parseArgs(argv = process.argv.slice(2)) {
       continue;
     }
     i++;
-    if (/^-?\d+(\.\d+)?$/.test(next)) {
+    // N-231: a value with a leading zero (an all-digit git sha, 09443713) stays a string: as a number it lost the zero
+    // and named another revision.
+    if (/^-?\d+(\.\d+)?$/.test(next) && !/^-?0\d/.test(next)) {
       out[key] = Number(next);
     } else {
       out[key] = next;
