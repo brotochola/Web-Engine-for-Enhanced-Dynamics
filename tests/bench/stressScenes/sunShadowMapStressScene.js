@@ -3,6 +3,7 @@ import { mulberry32 } from '../benchMath.js';
 import {
   BENCH_CAMERA, BENCH_DIR, CAST_KINDS, benchSheets, benchSize, gridCells, param, paramBackend, paramCount, paramNumber,
 } from './light3d/benchSheets.js';
+import { StressLamp } from './lampShadow/lampShadowEntities.js';
 import { MapCar, MapProp } from './sunShadowMap/sunShadowMapEntities.js';
 
 const { Scene, Camera, Sun, LAYER_KIND } = WEED;
@@ -35,6 +36,9 @@ const { Scene, Camera, Sun, LAYER_KIND } = WEED;
  *   cycle the run starts at 13 h: keep the day long enough for the warm-up and the window to end before the evening
  *   (24 / D game hours a real minute: D ≥ 2 for 10 s + 10 s, D ≥ 4 for a headed 25 s + 18 s).
  * - `?hour=` (default 16, as the light bench; 13 with a day cycle), `?backend=webgl|webgpu` (default webgl).
+ * - `?lamps=` (E-386 c; default 0): that many raised lamps on a grid, casting into the lamps' map (lighting.lampShadows
+ *   'map') over the same renders, each through its columns or card as `?kind=` says; with `?hour=22` the night, the
+ *   lamps alone. `?lampElevation=` their height (default 110 px). Left at 0, the scene is as its sittings ran it.
  */
 const W = 3840;
 const H = 2160;
@@ -55,6 +59,8 @@ export const CACHE_DEG = param('cacheDeg') === null ? null : Math.max(0, paramNu
 export const DAY_CYCLE = Math.max(0, paramNumber('dayCycle', 0));
 export const HOUR = paramNumber('hour', DAY_CYCLE > 0 ? 13 : 16);
 export const BACKEND = paramBackend();
+export const LAMPS = paramCount('lamps', 0, 0, 256);
+export const LAMP_ELEVATION = Math.max(1, paramNumber('lampElevation', 110));
 
 export const stressSceneConfig = {
   requested: {
@@ -67,6 +73,8 @@ export const stressSceneConfig = {
     dayCycle: DAY_CYCLE,
     hour: HOUR,
     backend: BACKEND,
+    lamps: LAMPS,
+    lampElevation: LAMP_ELEVATION,
   },
 };
 
@@ -90,6 +98,11 @@ const lighting = {
     shadowStretchAlphaFactor: 0,
   },
 };
+if (LAMPS > 0) {
+  lighting.lampShadows = 'map';
+  lighting.maxLights = Math.max(64, LAMPS + 8);
+  lighting.maxShadowCastingLights = LAMPS;
+}
 if (CACHE !== null) lighting.sunShadowCache = CACHE;
 if (CACHE_DEG !== null) lighting.sunShadowCacheDegrees = CACHE_DEG;
 
@@ -118,6 +131,7 @@ export class SunShadowMapStressScene extends Scene {
   static entities = [
     [MapProp, CASTERS],
     [MapCar, Math.max(1, MOVERS)],
+    [StressLamp, Math.max(1, LAMPS)],
   ];
 
   create() {
@@ -149,6 +163,18 @@ export class SunShadowMapStressScene extends Scene {
         wrapW: W,
         scale: carScale,
         kind: KIND,
+      });
+    }
+    // ?lamps=: on a grid over the town, a little jitter, their pools overlapping.
+    const cols = Math.max(1, Math.ceil(Math.sqrt(LAMPS * (W / H))));
+    const rows = Math.max(1, Math.ceil(LAMPS / cols));
+    for (let i = 0; i < LAMPS; i++) {
+      StressLamp.spawn({
+        x: ((i % cols) + 0.5) / cols * W + (rng() - 0.5) * 80,
+        y: (Math.floor(i / cols) + 0.5) / rows * H + (rng() - 0.5) * 80,
+        elevation: LAMP_ELEVATION,
+        radius: 420 + rng() * 120,
+        sway: 0,
       });
     }
   }
