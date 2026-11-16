@@ -16371,7 +16371,8 @@
         "flickering shadows"
       ],
       "records": [
-        "R-1151"
+        "R-1151",
+        "R-1159"
       ]
     },
     {
@@ -27613,6 +27614,18 @@
       "commits": [
         "e334063b",
         "68c0d0c5"
+      ]
+    },
+    {
+      "id": "R-1159",
+      "date": "2026-11-15",
+      "time": "22:14",
+      "timeFrom": "recorded",
+      "title": "The adaptive shadow budget left off with the lamps' map",
+      "verdict": "kept-hygiene",
+      "text": "lighting.adaptiveShadowBudget lowers each light's casters when zoomed out, for the stamps on the shadows' layer (texels that follow the zoom); with lampShadows 'map' the same stamp rows feed the map's tiles, which keep their size, so zoomed out a crowd's shadows were cut to each lamp's nearest and the set changed as people walked. adaptiveStampBudget(lighting) leaves it off with the map (test in stampLightCutFade). In Predator ?light3d=1 (shadowResolution 0.5, a TallLight's shadowRange 400) the budget kept the cap of 512 down to zoom 0.28, so at its default zoom (0.30) the change shows only when zoomed out further; maxShadowsPerLight (512) and maxShadowsPerEntity (3) still choose by distance.",
+      "commits": [
+        "3a160eac"
       ]
     }
   ],
