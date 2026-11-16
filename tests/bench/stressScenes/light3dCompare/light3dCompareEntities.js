@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, SpriteRenderer, ShadowCaster, LightEmitter } = WEED;
+const { GameObject, SpriteRenderer, ShadowCaster, LightEmitter, Transform } = WEED;
 
 /**
  * light3dCompareScene's people, lamps and props: only the API main has too (SpriteRenderer, ShadowCaster, LightEmitter),
@@ -22,10 +22,33 @@ function hash01(i, salt) {
   return (h >>> 0) / 4294967296;
 }
 const DIRS = ['right', 'down', 'left', 'up'];
+const WALKS = DIRS.map((d) => `walk_${d}`);
+
+/**
+ * Each walker's loop by entity index, worked out on its first tick (the same on any logic worker): centre x and y,
+ * radius, speed, phase; NaN until then. In typed arrays so a tick carries no doubles into a call.
+ */
+const LOOP_CAP = 1 << 17;
+const LOOP_CX = new Float64Array(LOOP_CAP).fill(NaN);
+const LOOP_CY = new Float64Array(LOOP_CAP);
+const LOOP_R = new Float64Array(LOOP_CAP);
+const LOOP_W = new Float64Array(LOOP_CAP);
+const LOOP_PHASE = new Float64Array(LOOP_CAP);
+
+function loopOf(i) {
+  const h1 = hash01(i, 0x9e3779b9);
+  const h2 = hash01(i, 0x85ebca6b);
+  const h3 = hash01(i, 0xc2b2ae35);
+  LOOP_CX[i] = 120 + h1 * (CompareWalker.worldW - 240);
+  LOOP_CY[i] = 120 + h2 * (CompareWalker.worldH - 240);
+  LOOP_R[i] = 30 + h3 * 70;
+  LOOP_W[i] = 0.4 + h2 * 0.6;
+  LOOP_PHASE[i] = h1 * 6.283;
+}
 
 /**
  * A person who walks a loop around its own centre (a function of the clock: any logic worker can tick it), its walk
- * facing the way it goes: walk_<dir> by hand on SpriteRenderer, or DirectionalSprite's 'walk' turned to its heading.
+ * facing the way it goes: walk_<dir> by hand on SpriteRenderer, or DirectionalSprite's 'walk' facing where it moves.
  */
 export class CompareWalker extends GameObject {
   static components = DS ? [DirectionalSprite, ShadowCaster] : [SpriteRenderer, ShadowCaster];
@@ -33,10 +56,11 @@ export class CompareWalker extends GameObject {
   onSpawned(spec = {}) {
     this.setSpritesheet(SHEETS[(spec.sheet ?? 0) % SHEETS.length]);
     if (DS) {
-      this.directionalSprite.facingFrom = 'manual';
+      this.directionalSprite.facingFrom = 'velocity';
       this.directionalSprite.turnMargin = 0;
       this.setAnimation('walk');
     } else {
+      this._dir = 1;
       this.setAnimation('walk_down');
     }
     this.setAnimationSpeed(0.15);
@@ -50,32 +74,25 @@ export class CompareWalker extends GameObject {
     this._place();
   }
 
-  /** Its loop from its index: centre, radius, speed and phase; its heading from the loop's tangent. */
+  /** Its loop from its index (loopOf): where it is now; by hand on SpriteRenderer, its walk from the loop's tangent. */
   _place() {
     const i = this.index;
-    const h1 = hash01(i, 0x9e3779b9);
-    const h2 = hash01(i, 0x85ebca6b);
-    const h3 = hash01(i, 0xc2b2ae35);
-    const cx = 120 + h1 * (CompareWalker.worldW - 240);
-    const cy = 120 + h2 * (CompareWalker.worldH - 240);
-    const r = 30 + h3 * 70;
-    const w = 0.4 + h2 * 0.6;
-    const t = (performance.now() / 1000) * w + h1 * 6.283;
+    if (LOOP_CX[i] !== LOOP_CX[i]) loopOf(i);
+    const t = (performance.now() / 1000) * LOOP_W[i] + LOOP_PHASE[i];
     const c = Math.cos(t);
     const s = Math.sin(t);
-    this.x = cx + c * r;
-    this.y = cy + s * r * 0.6;
-    // The tangent of the loop, its heading.
-    const vx = -s;
-    const vy = c * 0.6;
-    if (DS) {
-      this.directionalSprite.facing = Math.atan2(vy, vx);
-    } else {
-      const a = Math.atan2(vy, vx);
-      const d = DIRS[((Math.round(a / (Math.PI / 2)) % 4) + 4) % 4];
+    const r = LOOP_R[i];
+    // Its column written here: a walker has no body and is no static scenery, so the x and y setters would do just
+    // this, and passed a double they boxed it (2.1 MB/s at 3 000 walkers: the tick's inlining budget left them out).
+    Transform.x[i] = LOOP_CX[i] + c * r;
+    Transform.y[i] = LOOP_CY[i] + s * r * 0.6;
+    if (!DS) {
+      // The tangent of the loop, its heading.
+      const a = Math.atan2(c * 0.6, -s);
+      const d = ((Math.round(a / (Math.PI / 2)) % 4) + 4) % 4;
       if (d !== this._dir) {
         this._dir = d;
-        this.setAnimation(`walk_${d}`);
+        this.setAnimation(WALKS[d]);
       }
     }
   }
