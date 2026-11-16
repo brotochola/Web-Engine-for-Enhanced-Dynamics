@@ -386,7 +386,13 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
       bytesBuffer: per(bytesBuffer),
       bytesTexture: per(bytesTexture),
       redundant: per(Object.values(redundant).reduce((s, n) => s + n, 0)),
-      syncCalls: per(['readPixels', 'getError', 'finish', 'clientWaitSync', 'getQueryParameter', 'getBufferSubData', 'getParameter'].reduce((s, n) => s + (counts[n] || 0), 0)),
+      // N-233: a getParameter of a binding (a texture, buffer, framebuffer, renderbuffer, program, vertex array, sampler
+      // or transform feedback object, or the active unit) returns what only Blink holds, so Blink answers it without the
+      // GPU process: not a wait. Predator's 11 a frame were all of those.
+      syncCalls: per(['readPixels', 'getError', 'finish', 'clientWaitSync', 'getQueryParameter', 'getBufferSubData'].reduce((s, n) => s + (counts[n] || 0), 0)
+        + [...detail].reduce((s, [k, d]) => s + (k.startsWith('getParameter 0x') && !new Set([0x8069, 0x806a, 0x8c1d, 0x8514, 0x8ca6,
+          0x8caa, 0x8ca7, 0x8b8d, 0x85b5, 0x8894, 0x8895, 0x8a28, 0x88ed, 0x88ef, 0x8f36, 0x8f37, 0x8e25, 0x8919, 0x84e0])
+          .has(parseInt(k.slice(15), 16)) ? d.calls : 0), 0)),
     },
     top,
     detail: [...detail]
@@ -474,7 +480,7 @@ async function main() {
   const p = r.perFrame;
   console.log(`${r.frames} frames in ${r.ms} ms; per frame: ${p.calls} GL calls, ${p.draws} draws (${p.instances} instances), ` +
     `${p.redundant} redundant, ${(p.bytesBuffer / 1024).toFixed(1)} KB buffers, ${(p.bytesTexture / 1024).toFixed(1)} KB textures, ` +
-    `${p.syncCalls} calls that wait for the GPU; timer queries: ${r.timerQuery ? 'yes' : 'no'}`);
+    `${p.syncCalls} calls that can wait for the GPU (binding queries left out, N-233); timer queries: ${r.timerQuery ? 'yes' : 'no'}`);
   for (const row of r.top.slice(0, 30)) console.log(`  ${String(row.perFrame).padStart(7)}  ${row.name}${row.redundantPerFrame ? `  (${row.redundantPerFrame} redundant)` : ''}`);
   console.log('uploads and queries, per frame:');
   for (const row of r.detail.slice(0, 20)) console.log(`  ${String(row.perFrame).padStart(6)} calls ${String(row.kbPerFrame).padStart(7)} KB  ${row.key}`);
