@@ -8,7 +8,9 @@
  * vertex and setup work, the rest is fill.
  *
  * Ways (--ways, comma separated; all by default):
- *   inst      the batch as shipped: an instance a row, 3 vertices, its 14 attributes (MeshUvFillBatch), meshUvFill.*.glsl
+ *   inst      the batch as shipped (MeshUvFillBatch, meshUvFill.*.glsl), in whichever form its program declares: an
+ *             instance a row, 3 vertices, its 14 attributes or 6 vec4 (E-419), or each mesh's vertices once as 4 vec4
+ *             (aVert0..aVert3, E-453) drawn through the index buffer
  *   instVs    the batch as the --vs tree ships it
  *   instMin   the same instances, a shader that only places the corner (what the pipeline costs without the shader)
  *   instVec4  the same instances, the row read as 6 vec4 attributes
@@ -349,6 +351,7 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
     }
   }
   const ivBuf = buffer(gl.ARRAY_BUFFER, iv);
+  const ixBuf = buffer(gl.ELEMENT_ARRAY_BUFFER, ix);
 
   function attrib(p, name, buf, size, stride, offset, divisor) {
     const at = gl.getAttribLocation(p, name);
@@ -359,13 +362,22 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
     gl.vertexAttribDivisor(at, divisor);
   }
   const OFFSETS = { aV0: 0, aV1: 2, aV2: 4, aInstXY: 6, aInstRotCS: 8, aInstTintBits: 10, aInstDepth: 11, aInstTexId: 12, aInstTileInv: 13, aInstTileOff: 15, aInstBody: 17, aUV0: 18, aUV1: 20, aUV2: 22 };
-  // The batch's attributes in either form it has shipped in: the row's 14 fields, or the row as 6 vec4 (aRow0..aRow5).
-  // A name the program does not have is left unbound.
+  // The batch's attributes in any form it has shipped in: the row's 14 fields, the row as 6 vec4 (aRow0..aRow5), or
+  // (E-453) each mesh's vertices once as 4 vec4 (aVert0..aVert3) with the index buffer. iv holds MeshUvFillBatch's
+  // records in MESH_UV_VERT's order, but for float 9: the row's depth there, where the batch keeps the entity's reach,
+  // which only the lamps' map reads. A name the program does not have is left unbound.
+  const indexedForm = (p) => gl.getAttribLocation(p, 'aVert0') >= 0;
   const shippedAttribs = (p) => {
     attrib(p, 'aTri', triBuf, 2, 0, 0, 0);
     for (const [name, off] of Object.entries(OFFSETS)) attrib(p, name, rowBuf, TYPES[name] ? 1 : 2, STRIDE, off * 4, 1);
     for (let r = 0; r < 6; r++) attrib(p, `aRow${r}`, rowBuf, 4, STRIDE, r * 16, 1);
+    for (let r = 0; r < 4; r++) attrib(p, `aVert${r}`, ivBuf, 4, VERT * 4, r * 16, 0);
+    if (indexedForm(p)) gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ixBuf);
   };
+  // The batch's draw in the form its program declares.
+  const shippedDraw = (p) => (indexedForm(p)
+    ? () => gl.drawElements(gl.TRIANGLES, triCount * 3, gl.UNSIGNED_INT, 0)
+    : () => gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, triCount));
   // The collider batch's attributes in either form: its 11 fields, or its 18 floats as 4 vec4 and a vec2 (E-452).
   const colAttribs = (p) => {
     attrib(p, 'aTri', triBuf, 2, 0, 0, 0);
@@ -375,7 +387,7 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
     for (let r = 0; r < 5; r++) attrib(p, `aRow${r}`, colBuf, r < 4 ? 4 : 2, COL_ROW * 4, r * 16, 1);
   };
   const WAYS = {
-    inst: { vs: () => vert, fs: () => frag, bind: shippedAttribs, draw: () => gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, triCount) },
+    inst: { vs: () => vert, fs: () => frag, bind: shippedAttribs, drawFor: shippedDraw },
     // The batch as another tree (--vs) ships it, timed in the same page as inst.
     instVs: {
       vs: () => {
@@ -384,7 +396,7 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
       },
       fs: () => fragVs,
       bind: shippedAttribs,
-      draw: () => gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, triCount),
+      drawFor: shippedDraw,
     },
     instMin: { vs: () => vMin, fs: () => fMin, bind: shippedAttribs, draw: () => gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, triCount) },
     instVec4: {
@@ -479,7 +491,7 @@ void main() { finalColor = vec4(0.0, 0.0, 0.0, 1.0); }
     gl.uniform1i(u('uTexLut'), 1);
     gl.uniform1i(u('uPoseTable'), 2);
     gl.uniform1i(u('uRows'), 3);
-    built[name] = { p, vao, draw: way.draw };
+    built[name] = { p, vao, draw: way.drawFor ? way.drawFor(p) : way.draw };
   }
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, whiteTex);
