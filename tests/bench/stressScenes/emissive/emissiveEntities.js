@@ -30,11 +30,11 @@ export class Fire extends GameObject {
   }
 }
 
-/** A fire's light: low (a flame's height), warm, flickering; it casts no shadow (the scene has none). */
+/** A fire's light: low (a flame's height), warm, flickering (`flicker: false`: steady); it casts no shadow (the scene has none). */
 export class FireLight extends GameObject {
   static components = [LightEmitter];
 
-  onSpawned({ x = 0, y = 0, radius = 240, color = 0xff9a40, phase = 0 } = {}) {
+  onSpawned({ x = 0, y = 0, radius = 240, color = 0xff9a40, phase = 0, flicker = true } = {}) {
     const light = this.lightEmitter;
     light.radius = radius;
     light.color = color;
@@ -42,11 +42,13 @@ export class FireLight extends GameObject {
     light.elevation = 24;
     light.castShadows = 0;
     this._t = phase;
+    this._flicker = flicker;
     this.x = x;
     this.y = y;
   }
 
   tick(dtRatio, deltaTime) {
+    if (!this._flicker) return;
     this._t += (deltaTime > 0 ? deltaTime : 16.7) * 0.001;
     this.lightEmitter.brightness = 1.15 + 0.2 * Math.sin(this._t * 9.1) * Math.sin(this._t * 2.3);
   }

@@ -27,6 +27,8 @@ const { Scene, Camera, LAYER_KIND } = WEED;
  *   engine has spriteRenderer.emissive, `sheet` where it does not. `entity` on an engine without it draws nothing
  *   emissive, and says so on the console (`[bench]`).
  * - `?backend=webgl|webgpu` (default webgl).
+ * - `?still=1`: nothing moves (the people stand, the flames hold their first frame, the lights do not flicker), for
+ *   byte-for-byte captures (compareCaptures.mjs). The same places as without it.
  */
 const W = VIEW_W;
 const H = VIEW_H;
@@ -38,6 +40,7 @@ export const PEOPLE = paramCount('people', 2400, 0, 60000);
 export const LIGHTS = paramCount('lights', 24, 0, Math.min(256, FIRES));
 export const EMISSIVE = EMISSIVE_MODES.includes(param('emissive')) ? param('emissive') : ENTITY_EMISSIVE ? 'entity' : 'sheet';
 export const BACKEND = paramBackend();
+export const STILL = param('still') === '1';
 
 if (EMISSIVE === 'entity' && !ENTITY_EMISSIVE && typeof document !== 'undefined') {
   console.warn('[bench] emissiveStressScene: this engine has no spriteRenderer.emissive, so ?emissive=entity draws nothing emissive (?emissive=sheet is the per-sheet one)');
@@ -50,6 +53,7 @@ export const stressSceneConfig = {
     lights: LIGHTS,
     emissive: EMISSIVE,
     backend: BACKEND,
+    still: STILL ? 1 : 0,
   },
 };
 
@@ -102,21 +106,23 @@ export class EmissiveStressScene extends Scene {
     // A flame about a cell wide (its frames are 150 px square, the fire in them about 95 px wide).
     const fireScale = Math.min(0.6, Math.max(0.15, (0.9 * grid.side) / 95));
     for (const [x, y] of grid.cells) {
-      Fire.spawn({ x, y, scale: fireScale * (0.85 + rng() * 0.3), rate: 0.22 + rng() * 0.16, flip: rng() < 0.5, emissive: EMISSIVE === 'entity' });
+      const scale = fireScale * (0.85 + rng() * 0.3);
+      const rate = 0.22 + rng() * 0.16;
+      Fire.spawn({ x, y, scale, rate: STILL ? 0 : rate, flip: rng() < 0.5, emissive: EMISSIVE === 'entity' });
     }
     // The lights on fires spread over the field.
     for (let j = 0; j < LIGHTS; j++) {
       const [x, y] = grid.cells[Math.floor(((j + 0.5) * grid.cells.length) / LIGHTS)];
-      FireLight.spawn({ x, y: y - 8, radius: 200 + rng() * 100, color: rng() < 0.5 ? 0xff9a40 : 0xffb060, phase: rng() * 6.283 });
+      FireLight.spawn({ x, y: y - 8, radius: 200 + rng() * 100, color: rng() < 0.5 ? 0xff9a40 : 0xffb060, phase: rng() * 6.283, flicker: !STILL });
     }
     for (let k = 0; k < PEOPLE; k++) {
-      Stroller.spawn({
-        x: rng() * W,
-        y: rng() * H,
-        heading: rng() * Math.PI * 2,
-        turn: (rng() * 2 - 1) * 0.35,
-        pace: 22 + rng() * 26,
-      });
+      const x = rng() * W;
+      const y = rng() * H;
+      const heading = rng() * Math.PI * 2;
+      const turn = (rng() * 2 - 1) * 0.35;
+      const pace = 22 + rng() * 26;
+      const person = Stroller.spawn({ x, y, heading, turn: STILL ? 0 : turn, pace: STILL ? 0 : pace });
+      if (STILL && person) person.setAnimationSpeed(0);
     }
   }
 }
