@@ -1945,6 +1945,11 @@ class PixiRenderer extends AbstractWorker {
       // E-177: a keyed batch takes the queue frame it draws (its changed marks are that frame's) and its buffer.
       this.entitiesBatch.keyedFrame = this.lastReadFrame;
       this.entitiesBatch.keyedBuffer = (this.lastReadFrame - 1) & 1;
+      // E-387: and the columns its keyed pack writes the instances' G-buffer words from (_commitPixiGbuf takes them).
+      if (this.entitiesBatch.gbuf && this.entitiesBatch.keyed) {
+        this.entitiesBatch.setGbufColumns(SpriteRenderer.gbufFlags, ShadowCaster.selfShadow,
+          this._painter !== null && SpriteRenderer.zIndexUsers() > 0 ? SpriteRenderer.zIndex : null);
+      }
       const n = this.entitiesBatch.upload(this._packQ, packOpts);
       packOpts.prevX = null;
       packOpts.prevY = null;
@@ -2181,10 +2186,15 @@ class PixiRenderer extends AbstractWorker {
   /**
    * DX-GBUF: the G-buffer words of the `count` instances Pixi just packed (`order`: their queue rows, null: row k), from
    * the queue's key column (a sprite row's entity: a keyed scene's emit writes it, pre-render writes it for the others),
-   * SpriteRenderer.gbufFlags and ShadowCaster.selfShadow, with zIndex bands when the painter ordered them.
+   * SpriteRenderer.gbufFlags and ShadowCaster.selfShadow, with zIndex bands when the painter ordered them. E-387: a
+   * frame drawn keyed has them from its pack (the columns _writeEntitySprites hands the batch); the others, here.
    */
   _commitPixiGbuf(order, count) {
     const batch = this.entitiesBatch;
+    if (batch.gbufPacked) {
+      batch.commitGbuf(batch.packedGbuf, count);
+      return;
+    }
     const flags = SpriteRenderer.gbufFlags;
     const keys = this.renderQueueKey;
     if (!flags || !keys || keys.length === 0) {
