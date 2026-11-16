@@ -19321,6 +19321,40 @@
       "records": [
         "R-1200"
       ]
+    },
+    {
+      "id": "N-226",
+      "title": "Wasm kernel benches that warm a new export with a few short frames time its Liftoff code, not TurboFan's: a 5 000-row pack read 0.104 ms warmed so against 0.065 ms under --no-liftoff, and gpuPackKeyedMicrobench (20 warm frames) may have timed E-387's 0.1318 ms that way",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-444 agent (opt/prerender-gbuf-words)",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "gpuPackIndexedMicrobench, E-444's export: 0.104 ms (10 small warm frames) against 0.065 ms (--no-liftoff) at 5 000 rows; with 250 ms of warm-up per case the owner shape still read 13 % faster under --no-liftoff than under V8's default tiering (3.308 / 3.310 -> 3.283 / 3.083 against 3.400 / 3.560 -> 2.928 / 3.115), unexplained. HOW_WE_MEASURE asks for TurboFan, not Liftoff, in wasm kernels.",
+      "next": "Audit the wasm kernel benches' warm-up (a time-based warm-up, or a --no-liftoff run beside the default one, as kernelTierAudit does for JS), re-read gpuPackKeyedMicrobench for E-387, and find why default tiering trails --no-liftoff after 250 ms (a function Liftoff keeps because it is called rarely: each call a big frame?).",
+      "refs": [],
+      "aliases": [
+        "liftoff in wasm benches",
+        "wasm tiering gap"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-455",
+      "title": "The G-buffer words are written again every frame for every row though most rows' words never change: a words generation (as the statics' gen) would skip both pre-render's rewrite and Pixi's re-upload of unchanged words, or a per-entity word column would let the pack read one u32 instead of the type, entity, flags, self-shadow and a modulo",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-444 agent (opt/prerender-gbuf-words)",
+      "date": "2026-11-16",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "After E-444 the pack writes the words at 0.5 to 0.75 ms a frame (keyedPackStressScene pack=preRender n=250000 churn=0.05 gbuf=1), against 1.0 to 1.2 ms in JS before; Pixi's updateBuffer is 57 to 59 % of Pixi in that scene (E-445).",
+      "next": "A per-entity word column refreshed when flags, band or self-shadow change (the setters mark it), the packs reading it; then rows whose word did not change skip the write and the upload range (with E-445); pre-render's and Pixi's CPU per function before and after.",
+      "refs": [],
+      "aliases": [
+        "gbuf words generation",
+        "per-entity word column"
+      ],
+      "records": []
     }
   ],
   "records": [
