@@ -782,7 +782,9 @@ uint32_t pack_casters_scatter_framed(uint32_t table, uint32_t indices, uint32_t 
    (u8 each), the entities' frames of the cycle (u16, 0: none), the entity count (DirectionalSprite's active's length), the
    sheet table, the light table (LAMP_LIGHT_DOUBLES a stamp light index: x, y, the light's entity, 1 for a light and 0 for
    none), the list of the rows left to the JS (a u32 each: the stamp row) and its capacity; then the rows listed and the rows
-   gone through, which it writes. Each row in the JS's order: a row of its lamp's own entity drops its shadow (its shadow
+   gone through, which it writes; and the quarter turns' table (8 f64: preRenderWorker.js QUARTER_C then QUARTER_S), read
+   by index as the JS reads it: a select between those constants was a branch on the ray's quarter in TurboFan's code, a
+   mispredicted one on every other row. Each row in the JS's order: a row of its lamp's own entity drops its shadow (its shadow
    height 0); an active DirectionalSprite playing a group whose sheet has a table takes, when its kind for the lamps is a
    card, the frame its lamp sees: a fixed card its table's front, any other the direction drawn turned by the ray from the
    lamp, told from the quarter and the borders it has passed as the JS tells it (the same doubles, the same operations); a
@@ -793,7 +795,7 @@ uint32_t pack_casters_scatter_framed(uint32_t table, uint32_t indices, uint32_t 
    ends the call: it and the rows after it stay as they were, for the JS. */
 enum {
   LF_ACTIVE, LF_MODE, LF_DIRECTION, LF_ANIMATION, LF_ORIENT, LF_KIND, LF_SHEET, LF_FRAME, LF_ENTITY_COUNT, LF_SHEETS,
-  LF_LIGHTS, LF_LIST, LF_LIST_CAP, LF_LISTED, LF_DONE, LF_WORDS
+  LF_LIGHTS, LF_LIST, LF_LIST_CAP, LF_LISTED, LF_DONE, LF_QUARTER, LF_WORDS
 };
 #define SF_CONTACT 16u
 #define SF_LAMP_GEO 32u
@@ -812,6 +814,7 @@ typedef struct {
   const uint16_t *frame;
   uint32_t entities;
   const uint32_t *sheets;
+  const double *quarter;
 } LampCols;
 
 /* One stamp row (r) for its light (present: a light; its entity lid at lx, ly): 1 when it is left to the JS. */
@@ -851,9 +854,9 @@ INLINE int lamp_frame_row(float *r, const LampCols *c, int present, double lid, 
     const double Y = -(dx * gc + dy * gs);
     const uint32_t below = Y < 0.0;
     const uint32_t quad = (below << 1) | ((uint32_t)(X < 0.0) ^ below);
-    /* QUARTER_C and QUARTER_S: cos and sin of -quad quarter turns, exact. */
-    const double qc = quad == 0 ? 1.0 : quad == 2 ? -1.0 : 0.0;
-    const double qs = quad == 1 ? 1.0 : quad == 3 ? -1.0 : 0.0;
+    /* QUARTER_C and QUARTER_S: cos and sin of -quad quarter turns, exact, from the table (no branch on the quarter). */
+    const double qc = c->quarter[quad];
+    const double qs = c->quarter[4 + quad];
     const double u = qc * X + qs * Y;
     const double w = qc * Y - qs * X;
     const double len = __builtin_fabs(u) + __builtin_fabs(w);
@@ -907,6 +910,7 @@ INLINE uint32_t lamp_frame_rows(float *rows, uint32_t stampN, const uint16_t *li
   c.frame = (const uint16_t *)(uintptr_t)B[LF_FRAME];
   c.entities = B[LF_ENTITY_COUNT];
   c.sheets = (const uint32_t *)(uintptr_t)B[LF_SHEETS];
+  c.quarter = (const double *)(uintptr_t)B[LF_QUARTER];
   const double *lights = (const double *)(uintptr_t)B[LF_LIGHTS];
   uint32_t *list = (uint32_t *)(uintptr_t)B[LF_LIST];
   const uint32_t listCap = B[LF_LIST_CAP];

@@ -32,10 +32,12 @@ export const KEYED_SUN_SHEET_WORDS = 8;
 export const KEYED_SUN_LIST_CAP = 8192;
 export const KEYED_SUN_POOL_WORDS = 65536;
 /**
- * E-393: past the pool, the lamps' frames' block (LAMP_FRAMES_BLOCK_WORDS u32, gpuPack.c LF_*) and light table
- * (LAMP_FRAMES_LIGHTS lights of LAMP_LIGHT_DOUBLES f64: x, y, the light's entity, 1 for a light and 0 for none).
+ * E-393: past the pool, the lamps' frames' block (LAMP_FRAMES_BLOCK_WORDS u32, gpuPack.c LF_*), the quarter turns' table
+ * (LAMP_QUARTER_DOUBLES f64: preRenderWorker.js QUARTER_C then QUARTER_S) and the light table (LAMP_FRAMES_LIGHTS lights
+ * of LAMP_LIGHT_DOUBLES f64: x, y, the light's entity, 1 for a light and 0 for none).
  */
 export const LAMP_FRAMES_BLOCK_WORDS = 16;
+export const LAMP_QUARTER_DOUBLES = 8;
 export const LAMP_FRAMES_LIGHTS = 1024;
 export const LAMP_LIGHT_DOUBLES = 4;
 
@@ -43,13 +45,14 @@ export const LAMP_LIGHT_DOUBLES = 4;
 export function keyedSunRegionBytes() {
   const tables = KEYED_SUN_BLOCK_WORDS + KEYED_SUN_SHEETS * KEYED_SUN_SHEET_WORDS;
   return (tables + 2 * KEYED_SUN_LIST_CAP + KEYED_SUN_POOL_WORDS + LAMP_FRAMES_BLOCK_WORDS) * 4
-    + LAMP_FRAMES_LIGHTS * LAMP_LIGHT_DOUBLES * 8;
+    + (LAMP_QUARTER_DOUBLES + LAMP_FRAMES_LIGHTS * LAMP_LIGHT_DOUBLES) * 8;
 }
 
 /**
  * E-372: views of the sun frames' region at `byte` (null for none, 0 or less), and what its sheet table holds:
  * preRenderWorker.js syncKeyedSunTables writes it (`tables`, and by sheet id the frames it copied and their turn).
- * E-393: the lamps' block and light table past the pool (lamp_frames lists its rows in `list`, a row a word).
+ * E-393: the lamps' block, quarter turns' table and light table past the pool (lamp_frames lists its rows in `list`, a
+ * row a word).
  * @param {ArrayBufferLike} buffer
  * @param {number} byte
  */
@@ -59,7 +62,8 @@ export function keyedSunViews(buffer, byte) {
   const listByte = sheetsByte + KEYED_SUN_SHEETS * KEYED_SUN_SHEET_WORDS * 4;
   const poolByte = listByte + 2 * KEYED_SUN_LIST_CAP * 4;
   const lampByte = poolByte + KEYED_SUN_POOL_WORDS * 4;
-  const lightsByte = lampByte + LAMP_FRAMES_BLOCK_WORDS * 4;
+  const quarterByte = lampByte + LAMP_FRAMES_BLOCK_WORDS * 4;
+  const lightsByte = quarterByte + LAMP_QUARTER_DOUBLES * 8;
   return {
     byte,
     block: new Uint32Array(buffer, byte, KEYED_SUN_BLOCK_WORDS),
@@ -72,6 +76,8 @@ export function keyedSunViews(buffer, byte) {
     poolByte,
     lampBlock: new Uint32Array(buffer, lampByte, LAMP_FRAMES_BLOCK_WORDS),
     lampByte,
+    quarter: new Float64Array(buffer, quarterByte, LAMP_QUARTER_DOUBLES),
+    quarterByte,
     lights: new Float64Array(buffer, lightsByte, LAMP_FRAMES_LIGHTS * LAMP_LIGHT_DOUBLES),
     lightsByte,
     tables: null,
@@ -618,8 +624,10 @@ export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity, su
 /** E-393: the lamps' frames' block's words (gpuPack.c LF_*: keyedSunViews' `lampBlock`). */
 export const LAMP_FRAMES = Object.freeze({
   ACTIVE: 0, MODE: 1, DIRECTION: 2, ANIMATION: 3, ORIENT: 4, KIND: 5, SHEET: 6, FRAME: 7, ENTITY_COUNT: 8, SHEETS: 9,
-  LIGHTS: 10, LIST: 11, LIST_CAP: 12, LISTED: 13, DONE: 14,
+  LIGHTS: 10, LIST: 11, LIST_CAP: 12, LISTED: 13, DONE: 14, QUARTER: 15,
 });
+/** E-393: preRenderWorker.js QUARTER_C then QUARTER_S, the cos and sin of -q quarter turns (q = 0 to 3), exact. */
+const LAMP_QUARTER = Float64Array.of(1, 0, -1, 0, 0, 1, 0, -1);
 
 /** E-393: whether column v is one the kernel reads at its byte, `bytes` an element: kernelColumn, its element's size too. */
 function lampColumn(v, buffer, min, bytes) {
@@ -686,6 +694,8 @@ export function lampFramesWasm(b, rows, stampN, lightIdx, lights, lightCount, in
   B[LAMP_FRAMES.LIST] = region.listByte;
   B[LAMP_FRAMES.LIST_CAP] = region.list.length;
   B[LAMP_FRAMES.LISTED] = 0;
+  region.quarter.set(LAMP_QUARTER);
+  B[LAMP_FRAMES.QUARTER] = region.quarterByte;
   const done = b.lampFrames(rows.byteOffset, n, lightIdx.byteOffset, m, invG, region.lampByte, keyed ? 1 : 0) >>> 0;
   cols.listed = B[LAMP_FRAMES.LISTED];
   return done;
