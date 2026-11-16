@@ -52,7 +52,9 @@ export class KeyedPackStressScene extends Scene {
       ySort: false,
       maxVisibleRenderables: N,
     },
-    preRender: { skipCull: true, noLimitFPS: false },
+    // N-223: Pixi packs (keyed frames run only where Pixi packs into the render-queue memory: pixiWorker.js E-177); with
+    // the default ('preRender') this scene measured pre-render's pack and never drew a keyed frame.
+    preRender: { skipCull: true, noLimitFPS: false, packGpuSprites: 'pixi' },
     lighting: GBUF ? { enabled: true, emissive: true, ambient: 0.8 } : { enabled: false },
   };
 
