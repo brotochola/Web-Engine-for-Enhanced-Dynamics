@@ -1710,21 +1710,11 @@ export class InstancedSpriteBatch {
 
   /**
    * E-457: whether a sheet of the atlas glows by itself (its twin page's emissive code: the atlas's meta.emissive). Any
-   * instance may then glow, and the glow pass draws unmasked (glowPass); the programs see it in uFaceSpace.z.
+   * instance may then glow, and the glow pass draws unmasked (glowPass).
    * @param {boolean} on
    */
   setGlowSheets(on) {
-    const v = on ? 1 : 0;
-    if (this._glowSheets === v) return;
-    this._glowSheets = v;
-    const shaders = this._auxShaders();
-    for (let i = 0; i < shaders.length; i++) {
-      const group = shaders[i].resources.uniforms;
-      if (group && group.uniforms && group.uniforms.uFaceSpace) {
-        group.uniforms.uFaceSpace[2] = v;
-        group.update();
-      }
-    }
+    this._glowSheets = on ? 1 : 0;
   }
 
   /**
@@ -1764,8 +1754,7 @@ export class InstancedSpriteBatch {
     } else {
       uniforms = {
         uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
-        // E-457: z, whether a sheet glows (setGlowSheets).
-        uFaceSpace: { value: new Float32Array([heightScaleY, groundScaleY, this._glowSheets, 0]), type: 'vec4<f32>' },
+        uFaceSpace: { value: new Float32Array([heightScaleY, groundScaleY, 0, 0]), type: 'vec4<f32>' },
       };
       if (this._twoStreams) uniforms.uPoseAlpha = { value: 1, type: 'f32' };
     }
