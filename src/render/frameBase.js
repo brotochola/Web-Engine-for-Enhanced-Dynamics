@@ -16,6 +16,56 @@
 export const CONTACT_HEIGHT = 1.5;
 
 /**
+ * H-EDGE: what a frame's texels hold, as the registry scans them (spriteSheetRegistry.js: the atlas's json frame base's
+ * `texels`): FRAME_SOFT a texel of alpha 1 to 127, FRAME_HALF one of 128 to 254, FRAME_GLOW a glowing texel in the
+ * atlas's twin page. A frame with none is binary: every texel's alpha 0 or 255, none glowing. The texture table keeps them
+ * a frame on the CPU (instancedSpriteBatch.js textureLutTexels), FRAME_UNSCANNED for a frame the registry did not scan.
+ */
+export const FRAME_SOFT = 1;
+export const FRAME_HALF = 2;
+export const FRAME_GLOW = 4;
+export const FRAME_UNSCANNED = 8;
+
+/**
+ * H-EDGE: the texture table's soft-or-glow bit (instancedSpriteBatch.js packTextureLutRgba), set for a frame that has a
+ * texel of alpha 1 to 127 or a glowing one (or was not scanned): the frames whose pixels DX-DEPTH's edge pass may draw
+ * with an opaque tint besides the soft edges linear filtering makes. A bit a frame, at its slot in its row (t % perRow),
+ * in a flags texel after the row's frames (textureLutLayout), TEX_LUT_FLAG_BITS a channel (whole numbers a float32 holds
+ * exactly), so TEX_LUT_FLAGS_PER_ROW slots a row have one; a shader reads a slot past them, or a table without the texel,
+ * as set. Every shader that reads the table still finds perRow as its width / 3.
+ */
+export const TEX_LUT_SOFT_OR_GLOW = FRAME_SOFT | FRAME_GLOW | FRAME_UNSCANNED;
+export const TEX_LUT_FLAG_BITS = 24;
+export const TEX_LUT_FLAGS_PER_ROW = 4 * TEX_LUT_FLAG_BITS;
+
+/**
+ * H-EDGE: FRAME_SOFT and FRAME_HALF for a frame's rectangle of an image's pixels (spriteSheetRegistry.js _readImagePixels:
+ * { data, x, y, width, height }); what lies outside the read rectangle is transparent.
+ * @param {{ data: Uint8ClampedArray, x: number, y: number, width: number, height: number }} pixels
+ * @param {number} fx
+ * @param {number} fy
+ * @param {number} w
+ * @param {number} h
+ * @returns {number}
+ */
+export function frameAlphaKinds(pixels, fx, fy, w, h) {
+  const data = pixels.data;
+  const iw = pixels.width;
+  const x0 = Math.max(fx, pixels.x) - pixels.x;
+  const y0 = Math.max(fy, pixels.y) - pixels.y;
+  const x1 = Math.min(fx + w, pixels.x + iw) - pixels.x;
+  const y1 = Math.min(fy + h, pixels.y + pixels.height) - pixels.y;
+  let kinds = 0;
+  for (let y = y0; y < y1 && kinds !== (FRAME_SOFT | FRAME_HALF); y++) {
+    for (let at = (y * iw + x0) * 4 + 3, end = (y * iw + x1) * 4; at < end; at += 4) {
+      const a = data[at];
+      if (a !== 0 && a !== 255) kinds |= a < 128 ? FRAME_SOFT : FRAME_HALF;
+    }
+  }
+  return kinds;
+}
+
+/**
  * The base of a picture of one view, from its alpha: the lowest opaque row, the centre of what stands on it and the
  * ellipse's radii on the floor. A trunk (a narrow run 14 to 32 rows above the lowest row, under half as wide as what
  * spreads at the bottom) is round; feet are an ellipse 0.6 as deep as wide.
@@ -137,8 +187,10 @@ export function isRenderDirections(spec) {
  * A frame's base as the texture table's two spare floats (instancedSpriteBatch.js writeLutSlot), read by the shadow
  * shaders: [0, 0] none; an ellipse [cx + 1, rx] (feet, ry = 0.6 rx) or [cx + 1, -rx] (a round trunk); a render
  * [-(1 + its lowest contact row), 0], or -0.5 in the second when it casts its card for the sun (base.card: the sheet's
- * shadowCast.sun 'sprite'). writeLutSlot then puts its footprint row there, + 1, with that sign.
- * @param {{ cx?: number, rx?: number, ry?: number, contact?: number } | null | undefined} base
+ * shadowCast.sun 'sprite'). writeLutSlot then puts its footprint row there, + 1, with that sign. H-EDGE: a base also says
+ * what its frame's texels hold (base.texels, FRAME_SOFT...), which the texture table keeps apart (buildTextureLut); a
+ * base of that alone floats as none.
+ * @param {{ cx?: number, rx?: number, ry?: number, contact?: number, texels?: number } | null | undefined} base
  * @param {Float32Array|number[]} out
  * @param {number} at
  */

@@ -50,8 +50,9 @@ test('the opaque pass keeps the opaque pixels and the edge pass the others, in b
 test('H-EDGE: each pass leaves before the twin page and the depth for the pixels it draws nothing for, in both languages', () => {
   const frag = shader('instancedSpriteBlend.frag.glsl');
   // The opaque pass keeps no pixel under alpha 0.5; the edge pass draws one of alpha 0 as nothing (premultiplied 0, no
-  // depth written), so neither needs the twin page's texel or the depth for them.
-  for (const [edge, early] of [[false, 'if (ad < 0.5) discard;'], [true, 'if (ad <= 0.0) discard;']]) {
+  // depth written), nor a solid one of a plain frame's instance (no soft or glowing texel, no emissive word: it cannot
+  // glow), so neither needs the twin page's texel or the depth for them.
+  for (const [edge, early] of [[false, 'if (ad < 0.5) discard;'], [true, 'if (ad <= 0.0 || (ad >= 0.5 && vPlain > 0.5)) discard;']]) {
     for (const gbuf of [false, true]) {
       const src = pixelDepthFragment(frag, { edge, gbuf });
       const at = src.indexOf(early);
@@ -64,7 +65,7 @@ test('H-EDGE: each pass leaves before the twin page and the depth for the pixels
     }
   }
   const wgsl = pixelDepthWgsl(shader('instancedSprite.wgsl'), { gbuf: true });
-  const early = wgsl.indexOf('if (select(ad < 0.5, ad <= 0.0, edge)) { discard; }');
+  const early = wgsl.indexOf('if (select(ad < 0.5, ad <= 0.0 || (ad >= 0.5 && in.vPlain > 0.5), edge)) { discard; }');
   assert.ok(early > wgsl.indexOf('let ad = textureSample(uTexture, uSampler, uvd).a * in.vColor.a;'), 'after the alpha');
   assert.ok(early < wgsl.indexOf('textureLoad(uMaps'), 'before the twin page');
   assert.match(wgsl, /fn mainFrag\(in: VertexOut\) -> WeedDepthOut \{[^}]*weedPixelDepth\(in, false\)/);

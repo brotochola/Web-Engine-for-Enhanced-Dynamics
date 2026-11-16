@@ -2,8 +2,10 @@
 // Provides string->index mapping for animations without runtime overhead
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
-import { frameTwinTexels, opaqueMask, readHeights } from '../render/spriteMaps.js';
-import { isRenderDirections, measureLowestContact, measureStandingBase, readFootprint } from '../render/frameBase.js';
+import { frameTwinTexels, opaqueMask, readHeights, twinHasGlow } from '../render/spriteMaps.js';
+import {
+  FRAME_GLOW, FRAME_HALF, FRAME_SOFT, frameAlphaKinds, isRenderDirections, measureLowestContact, measureStandingBase, readFootprint,
+} from '../render/frameBase.js';
 import {
   create2dCanvas,
   createCircularGradientCanvas,
@@ -927,10 +929,11 @@ class SpriteSheetRegistry {
           let width = img.width;
           let height = img.height;
           let trimInfo = null;
+          let trimResult = null;
 
           // Apply trimming to individual images (not spritesheet frames)
           if (trimImages) {
-            const trimResult = this._trimImage(img, trimAlphaThreshold);
+            trimResult = this._trimImage(img, trimAlphaThreshold);
             if (trimResult) {
               if (trimResult.wasTrimmed) {
                 sourceImg = trimResult.canvas;
@@ -964,6 +967,8 @@ class SpriteSheetRegistry {
             sourceHeight: height,
             isSpritesheetFrame: false,
             trimInfo: trimInfo,       // Store trim info for debugging
+            // H-EDGE: what its alphas hold (frameBase.js FRAME_SOFT, FRAME_HALF), from the trim's scan.
+            texels: trimImages && trimResult ? trimResult.bounds.kinds : undefined,
           });
 
           // Create a single-frame "animation" for this image
@@ -1105,6 +1110,10 @@ class SpriteSheetRegistry {
                 maps,
                 // DX-SHADOW3D: its base in its own pixels (untrimmed); a render's lowest contact replaces it (_paintMapsPage).
                 base,
+                // H-EDGE: what the drawn part's alphas hold (frameBase.js FRAME_SOFT, FRAME_HALF), from the pixels the trim read.
+                texels: sheetPixels
+                  ? frameAlphaKinds(sheetPixels, frame.x + trimOffsetX, frame.y + trimOffsetY, packedWidth, packedHeight)
+                  : undefined,
                 footprint: Array.isArray(footprints) ? readFootprint(footprints[frameOrdinal]) : null,
                 sunCard,
                 renderDirections: isRenderDirections(config.directions ?? jsonDirections),
@@ -1416,6 +1425,8 @@ class SpriteSheetRegistry {
       // A render with its footprint casts its solid swept north to it (the Pixi worker's footprint texture).
       if (b.contact >= 0 && d.footprint) frames[d.name].footprint = d.footprint;
     }
+    // H-EDGE: what each frame's texels hold, in its base too (the texture table keeps them a frame).
+    this._markFrameTexels(frames, imagesToPack, padding);
 
     // Register individual texture names as spritesheet IDs
     // This allows setSpritesheet("ball") to work for static textures
@@ -1520,6 +1531,8 @@ class SpriteSheetRegistry {
         gray: d.maps.gray,
         emissive: d.maps.emissive === true,
       });
+      // H-EDGE: a glowing texel in the frame's rectangle (_markFrameTexels).
+      d.glow = twinHasGlow(texels);
       if (texels !== null) {
         ctx.putImageData(new ImageData(texels, w, h), d.rect.x, d.rect.y);
         if (keep !== null) {
@@ -1535,6 +1548,25 @@ class SpriteSheetRegistry {
       }
     }
     return page;
+  }
+
+  /**
+   * H-EDGE: each packed frame's `base.texels` in the atlas's json (frameBase.js FRAME_SOFT, FRAME_HALF, FRAME_GLOW), for
+   * the texture table (instancedSpriteBatch.js buildTextureLut): its alphas as the scans found them (d.texels: the frame's
+   * drawn rectangle of its sheet, or its image), and FRAME_GLOW when its rectangle of the twin page holds a glowing texel
+   * (_paintMapsPage's d.glow). The page's read reaches a texel past a frame's border at most, so with no padding between
+   * the rectangles every frame may glow once one does. A frame no scan read keeps no key (FRAME_UNSCANNED in the table).
+   * @param {Record<string, { base?: object }>} frames the atlas's json frames
+   * @param {Array<{ name: string, texels?: number, glow?: boolean }>} imagesToPack
+   * @param {number} padding the atlas's padding around each rectangle
+   */
+  static _markFrameTexels(frames, imagesToPack, padding) {
+    const allGlow = !(padding >= 1) && imagesToPack.some((d) => d.glow === true);
+    for (const d of imagesToPack) {
+      const f = frames[d.name];
+      if (!f || typeof d.texels !== 'number') continue;
+      f.base = { ...(f.base || {}), texels: d.texels | (allGlow || d.glow === true ? FRAME_GLOW : 0) };
+    }
   }
 
   /**
@@ -1592,11 +1624,14 @@ class SpriteSheetRegistry {
     const data = imageData.data;
 
     let minX = w, minY = h, maxX = -1, maxY = -1;
+    // H-EDGE: what its alphas hold (frameBase.js FRAME_SOFT, FRAME_HALF).
+    let kinds = 0;
 
     // Scan for non-transparent pixels
     for (let y = 0; y < h; y++) {
       for (let x = 0; x < w; x++) {
         const alpha = data[(y * w + x) * 4 + 3];
+        if (alpha !== 0 && alpha !== 255) kinds |= alpha < 128 ? FRAME_SOFT : FRAME_HALF;
         if (alpha > alphaThreshold) {
           if (x < minX) minX = x;
           if (x > maxX) maxX = x;
@@ -1616,6 +1651,7 @@ class SpriteSheetRegistry {
       y: minY,
       width: maxX - minX + 1,
       height: maxY - minY + 1,
+      kinds,
     };
   }
 

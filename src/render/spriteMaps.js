@@ -235,3 +235,17 @@ export function emissiveTexels(height, opaque, w, h) {
   }
   return out;
 }
+
+/**
+ * H-EDGE: whether twin texels hold a glowing one (EMISSIVE_CODE where the normal goes): a pixel DX-DEPTH's edge pass
+ * draws whatever its alpha (pixelDepth.js reads it as b under 0.5/255 and a over 254.5/255).
+ * @param {Uint8ClampedArray|null} texels RGBA
+ * @returns {boolean}
+ */
+export function twinHasGlow(texels) {
+  if (texels === null) return false;
+  for (let i = 0; i < texels.length; i += 4) {
+    if (texels[i + 2] === EMISSIVE_CODE[0] && texels[i + 3] === EMISSIVE_CODE[1]) return true;
+  }
+  return false;
+}

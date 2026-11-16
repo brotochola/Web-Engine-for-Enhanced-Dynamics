@@ -1,7 +1,8 @@
 // N-111: the texture LUT (uTexLut) had one row per atlas frame, so an atlas with more frames than the GPU's
 // MAX_TEXTURE_SIZE (9 020 on SwiftShader's 8 192) did not upload and nothing drew. Past TEX_LUT_MAX_ROWS frames the
 // rows hold several now: textureLutLayout says how many, packTextureLutRgba puts each frame where every shader that
-// reads the LUT fetches it, and below the limit the texture is the one it always was.
+// reads the LUT fetches it, and below the limit the frames' texels are the ones they always were. H-EDGE: each row ends
+// with its frames' flags texel, which every shader's width / 3 leaves out.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -37,33 +38,36 @@ function shaderRead(rgba, width, height, tid) {
 
 test('the layout: one frame a row up to TEX_LUT_MAX_ROWS, then several, never a side past it', () => {
   assert.equal(TEX_LUT_MAX_ROWS, 2048, "WebGL 2's promised MAX_TEXTURE_SIZE");
-  assert.deepEqual(textureLutLayout(0), { perRow: 1, width: 3, height: 1 });
-  assert.deepEqual(textureLutLayout(1), { perRow: 1, width: 3, height: 1 });
-  assert.deepEqual(textureLutLayout(2048), { perRow: 1, width: 3, height: 2048 });
-  assert.deepEqual(textureLutLayout(2049), { perRow: 2, width: 6, height: 1025 });
-  assert.deepEqual(textureLutLayout(9020), { perRow: 5, width: 15, height: 1804 }, "Conurbano-weed's atlas");
+  assert.deepEqual(textureLutLayout(0), { perRow: 1, width: 4, height: 1 });
+  assert.deepEqual(textureLutLayout(1), { perRow: 1, width: 4, height: 1 });
+  assert.deepEqual(textureLutLayout(2048), { perRow: 1, width: 4, height: 2048 });
+  assert.deepEqual(textureLutLayout(2049), { perRow: 2, width: 7, height: 1025 });
+  assert.deepEqual(textureLutLayout(9020), { perRow: 5, width: 16, height: 1804 }, "Conurbano-weed's atlas");
   for (const n of [1, 7, 2047, 2048, 2049, 4097, 9020, 100000, 682 * 2048]) {
     const { perRow, width, height } = textureLutLayout(n);
     assert.ok(width <= TEX_LUT_MAX_ROWS && height <= TEX_LUT_MAX_ROWS, `${n}: ${width} x ${height}`);
+    assert.equal(Math.floor(width / 3), perRow, `${n}: the shaders' width / 3 is the frames a row`);
     assert.ok(perRow * height >= n && perRow * (height - 1) < n, `${n}: every frame has a slot, the last row is used`);
   }
   assert.throws(() => textureLutLayout(682 * 2048 + 1), /the atlas has 1396737 frames; its texture table holds at most 1396736/);
 });
 
-test('below the limit the packed LUT is the one it always was, bit for bit', () => {
+test('below the limit each row is its frame\'s texels as they always were, bit for bit, then its flags texel', () => {
   for (const n of [1, 5, 2048]) {
     const lut = cpuLut(n);
     const rgba = packTextureLutRgba(lut, n);
-    assert.equal(rgba.length, n * TEX_LUT_RGBA_WIDTH * 4);
-    const old = new Float32Array(n * 12);
-    for (let i = 0; i < n; i++) old.set(lut.subarray(i * TEX_LUT_FLOATS, (i + 1) * TEX_LUT_FLOATS), i * 12);
-    assert.deepEqual(rgba, old, `${n} frames`);
+    assert.equal(rgba.length, n * (TEX_LUT_RGBA_WIDTH + 1) * 4);
+    for (let i = 0; i < n; i++) {
+      const row = rgba.subarray(i * 16, (i + 1) * 16);
+      assert.deepEqual(row.subarray(0, 12), lut.subarray(i * TEX_LUT_FLOATS, (i + 1) * TEX_LUT_FLOATS), `${n} frames, frame ${i}`);
+      assert.deepEqual(Array.from(row.subarray(12)), [1, 0, 0, 0], 'a LUT with no texels: its frame may be soft or glow');
+    }
   }
 });
 
 test('folded, every frame is where the shaders fetch it, and the slots past the last frame read zero', () => {
   // A small limit folds a small atlas the way 2048 folds a big one; then Conurbano-weed's 9 020 frames.
-  for (const [n, maxRows] of [[20, 9], [9020, TEX_LUT_MAX_ROWS]]) {
+  for (const [n, maxRows] of [[20, 10], [9020, TEX_LUT_MAX_ROWS]]) {
     const lut = cpuLut(n);
     const rgba = packTextureLutRgba(lut, n, maxRows);
     const { perRow, width, height } = textureLutLayout(n, maxRows);

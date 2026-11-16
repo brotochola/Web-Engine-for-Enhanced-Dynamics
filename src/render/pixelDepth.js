@@ -22,6 +22,8 @@
  * WebGL (pixelDepthVertex, pixelDepthFragment) and WebGPU (pixelDepthWgsl).
  */
 
+import { TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW } from './frameBase.js';
+
 /** The floor span's margin past the view, floor px: a tall object's top in view stands this far past its floor place. */
 export const PIXEL_DEPTH_MARGIN = 1024;
 /** Floor places the depth tells apart (13 bits), zIndex bands (3 bits) and painter steps (7 bits): 23 bits in all. */
@@ -56,8 +58,27 @@ export function pixelDepthValue(band, u, instance) {
 }
 
 /**
+ * H-EDGE: whether this instance's frame is plain (vPlain 1.0, GLSL): its soft-or-glow bit clear in its row's flags texel
+ * (frameBase.js TEX_LUT_SOFT_OR_GLOW), read after the vertex shader's own LUT read (its tid, lutSize and lutPerRow), and
+ * with `gbuf` no emissive level in its word. A table without the texel, or a slot past it, reads as not plain.
+ */
+function plainGlsl(gbuf) {
+  return `
+  vPlain = 0.0;
+  if (tid >= 0 && tid < lutPerRow * lutSize.y && lutSize.x > 3 * lutPerRow) {
+    int weedSlot = tid % lutPerRow;
+    if (weedSlot < ${TEX_LUT_FLAGS_PER_ROW}) {
+      vec4 weedFlags = texelFetch(uTexLut, ivec2(3 * lutPerRow, tid / lutPerRow), 0);
+      int weedC = weedSlot / ${TEX_LUT_FLAG_BITS};
+      float weedF = weedC == 0 ? weedFlags.x : (weedC == 1 ? weedFlags.y : (weedC == 2 ? weedFlags.z : weedFlags.w));
+      if (((uint(weedF) >> uint(weedSlot - ${TEX_LUT_FLAG_BITS} * weedC)) & 1u) == 0u) vPlain = 1.0;
+    }
+  }${gbuf ? '\n  if (((uint(aInstGbuf.x + 0.5) >> 19u) & 7u) != 0u) vPlain = 0.0;' : ''}`;
+}
+
+/**
  * A sprite vertex shader (instancedSprite.vert.glsl, or its indexed forms) passing on its foot's floor y, its painter step
- * (the instance index's low bits) and, with `gbuf`, its words (the zIndex band and the surface).
+ * (the instance index's low bits), with `gbuf` its words (the zIndex band and the surface), and H-EDGE's vPlain.
  * @param {string} source
  * @param {{ gbuf?: boolean }} [opts]
  */
@@ -72,11 +93,11 @@ export function pixelDepthVertex(source, { gbuf = false } = {}) {
     : '';
   // N-194: vPainter's y is the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
   return source
-    .replace(decl, () => `${decl}out float vFootFloor;\nflat out vec2 vPainter;\nuniform vec4 uDepth;\n${words}`)
+    .replace(decl, () => `${decl}out float vFootFloor;\nflat out vec2 vPainter;\nflat out float vPlain;\nuniform vec4 uDepth;\n${words}`)
     .replace(
       pos,
       () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n  vPainter = vec2(float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1}), abs(aInstScale.y));` +
-        (gbuf ? '\n  vDepthWord = aInstGbuf;' : ''),
+        (gbuf ? '\n  vDepthWord = aInstGbuf;' : '') + plainGlsl(gbuf),
     );
 }
 
@@ -84,9 +105,11 @@ export function pixelDepthVertex(source, { gbuf = false } = {}) {
  * H-EDGE: the pixels a pass draws nothing for, known from the texture's alpha times the tint's (`ad`, GLSL and WGSL alike),
  * so they leave before the twin page and the depth. The opaque pass keeps none under 0.5 (whether it glows or not). The
  * edge pass draws a pixel of alpha 0 as nothing: its colour is premultiplied 0 (the atlas's alpha is premultiplied on
- * upload, and the tint's alpha scales the colour too), it writes no depth, and a zero blends to the pixel under it.
+ * upload, and the tint's alpha scales the colour too), it writes no depth, and a zero blends to the pixel under it. Nor
+ * does it draw a solid one (alpha 0.5 and up) unless it glows, which an instance of a plain frame (`plain`, the vertex
+ * stage's vPlain: no soft or glowing texel, no emissive word) never does.
  */
-const EARLY_DISCARD = (edge) => (edge ? 'ad <= 0.0' : 'ad < 0.5');
+const EARLY_DISCARD = (edge, plain = 'vPlain') => (edge ? `ad <= 0.0 || (ad >= 0.5 && ${plain} > 0.5)` : 'ad < 0.5');
 
 /** DEPTH_BODY's depth from the floor place, the band and the painter step (GLSL and WGSL alike). */
 const DEPTH_FORMULA = `(${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS}.0
@@ -142,7 +165,7 @@ export function pixelDepthFragment(source, { edge = false, gbuf = false } = {}) 
   return source
     .replace(
       decl,
-      () => `${decl}uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\nflat in vec2 vPainter;\n${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}`,
+      () => `${decl}uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\nflat in vec2 vPainter;\n${edge ? 'flat in float vPlain;\n' : ''}${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}`,
     )
     .replace(main, () => `${main}${depthBodyGlsl({ edge, gbuf })}`);
 }
@@ -164,7 +187,7 @@ struct WeedDepthOut {
 fn weedPixelDepth(in: VertexOut, edge: bool) -> vec2<f32> {
   let uvd = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
   let ad = textureSample(uTexture, uSampler, uvd).a * in.vColor.a;
-  if (select(${EARLY_DISCARD(false)}, ${EARLY_DISCARD(true)}, edge)) { discard; }
+  if (select(${EARLY_DISCARD(false)}, ${EARLY_DISCARD(true, 'in.vPlain')}, edge)) { discard; }
   let md = textureLoad(uMaps, vec2<i32>(uvd * vec2<f32>(textureDimensions(uMaps, 0))), 0);
   let zd = (floor(md.r * 255.0 + 0.5) * 256.0 + floor(md.g * 255.0 + 0.5)) / 64.0 * in.vDepthFoot.z;
   var glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
@@ -185,6 +208,21 @@ ${gbuf
 `;
 
 const FRAGMENT_ENTRY_WGSL = /@fragment\nfn (\w+)\(in: VertexOut\) -> @location\(0\) vec4<f32> \{/g;
+
+/** H-EDGE: plainGlsl in WGSL (out.vPlain), after mainVert's own LUT read (its tid, lutSize and lutPerRow). */
+function plainWgsl(gbuf) {
+  return `  out.vPlain = 0.0;
+  if (tid >= 0 && tid < lutPerRow * i32(lutSize.y) && i32(lutSize.x) > 3 * lutPerRow) {
+    let weedSlot = tid % lutPerRow;
+    if (weedSlot < ${TEX_LUT_FLAGS_PER_ROW}) {
+      let weedFlags = textureLoad(uTexLut, vec2<i32>(3 * lutPerRow, tid / lutPerRow), 0);
+      let weedC = weedSlot / ${TEX_LUT_FLAG_BITS};
+      let weedF = select(select(select(weedFlags.w, weedFlags.z, weedC == 2), weedFlags.y, weedC == 1), weedFlags.x, weedC == 0);
+      if (((u32(weedF) >> u32(weedSlot - ${TEX_LUT_FLAG_BITS} * weedC)) & 1u) == 0u) { out.vPlain = 1.0; }
+    }
+  }
+${gbuf ? '  if (((u32(aInstGbuf.x + 0.5) >> 19u) & 7u) != 0u) { out.vPlain = 0.0; }\n' : ''}`;
+}
 
 /**
  * pixelDepthVertex and pixelDepthFragment in one, for the sprite WGSL (instancedSprite.wgsl or instancedSpritePose.wgsl,
@@ -212,7 +250,8 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false } = {})
     out,
     '  @location(5) vTileOff: vec2<f32>,\n',
     '  @location(8) @interpolate(flat) vDepthFoot: vec3<f32>,\n' +
-      (gbuf ? '  @location(13) @interpolate(flat) vDepthWord: vec2<f32>,\n' : ''),
+      (gbuf ? '  @location(13) @interpolate(flat) vDepthWord: vec2<f32>,\n' : '') +
+      '  @location(14) @interpolate(flat) vPlain: f32,\n',
     'vTileOff',
   );
   out = once(out, '  @location(1) aInstXY: vec2<f32>,\n', '  @builtin(instance_index) weedInstance: u32,\n', 'aInstXY');
@@ -221,7 +260,7 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false } = {})
     '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
     // N-194: z, the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
     `  out.vDepthFoot = vec3<f32>(aInstXY.y * uniforms.uDepth.x, f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u), abs(aInstScale.y));\n` +
-      (gbuf ? '  out.vDepthWord = aInstGbuf;\n' : ''),
+      (gbuf ? '  out.vDepthWord = aInstGbuf;\n' : '') + plainWgsl(gbuf),
     'out.position',
   );
   const entries = [];
