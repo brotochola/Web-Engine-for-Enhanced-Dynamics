@@ -44,7 +44,9 @@ export class StressWalker extends GameObject {
     this._cx = spec.x ?? 0;
     this._cy = spec.y ?? 0;
     this._r = spec.r ?? 40;
-    this._w = spec.speed ?? 1;
+    // N-230: `pace`, not `speed`: spawn writes every config key onto the instance, and GameObject.speed is read-only
+    // (spawn warned and skipped it; onSpawned still read it from the config).
+    this._w = spec.pace ?? 1;
     this._t = spec.phase ?? 0;
     // `still`: it stands where its loop starts (its phase) and does not walk.
     this._still = spec.still === true;

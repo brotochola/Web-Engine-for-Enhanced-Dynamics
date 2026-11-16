@@ -106,7 +106,7 @@ export class LampShadowStressScene extends Scene {
         x: rng() * WORLD_W,
         y: rng() * WORLD_H,
         r: 20 + rng() * 60,
-        speed: 0.4 + rng() * 0.8,
+        pace: 0.4 + rng() * 0.8,
         phase: rng() * 6.283,
         scale: 0.35 + rng() * 0.3,
         still: STILL,
