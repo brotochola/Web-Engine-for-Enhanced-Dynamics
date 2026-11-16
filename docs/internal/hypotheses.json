@@ -16697,14 +16697,15 @@
         "R-1165",
         "R-1118",
         "R-1180",
-        "R-1192"
+        "R-1192",
+        "R-1208"
       ]
     },
     {
       "id": "E-316",
       "title": "Box2D's wide contact solver computes the second manifold point with zero masses for circle contacts, which have one: about 40 % of the contact stages' arithmetic and 192 of 592 bytes a wide constraint",
-      "status": "running",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "blocked",
+      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested; blocked 2026-11-16: its Box2D build (origin's solver-skip-second-point) is not in the local Box2D clone, so main keeps its box2dWasm.wasm (integrate/pr12 a5a03ca3); it waits for that branch in the Box2D repo (SIMD and no-SIMD builds) and the LiquidFun gates",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
@@ -16722,7 +16723,8 @@
       "records": [
         "R-1101",
         "R-1106",
-        "R-1108"
+        "R-1108",
+        "R-1208"
       ]
     },
     {
@@ -16822,7 +16824,8 @@
         "R-1176",
         "R-1105",
         "R-1180",
-        "R-1192"
+        "R-1192",
+        "R-1208"
       ]
     },
     {
@@ -17104,7 +17107,8 @@
         "R-1102",
         "R-1118",
         "R-1180",
-        "R-1192"
+        "R-1192",
+        "R-1208"
       ]
     },
     {
@@ -17740,8 +17744,8 @@
     {
       "id": "E-357",
       "title": "b2MinW/b2MaxW compile to compare+bitselect (emscripten's _mm_min_ps emulation) where wasm_f32x4_pmin/pmax are one instruction each",
-      "status": "running",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "blocked",
+      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested; blocked 2026-11-16: its Box2D build (origin's solver-skip-second-point) is not in the local Box2D clone, so main keeps its box2dWasm.wasm (integrate/pr12 a5a03ca3); it waits for that branch in the Box2D repo (SIMD and no-SIMD builds) and the LiquidFun gates",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
@@ -17758,7 +17762,8 @@
       "records": [
         "R-1101",
         "R-1106",
-        "R-1107"
+        "R-1107",
+        "R-1208"
       ]
     },
     {
@@ -17786,7 +17791,8 @@
         "R-1182",
         "R-1183",
         "R-1185",
-        "R-1192"
+        "R-1192",
+        "R-1208"
       ]
     },
     {
@@ -17814,7 +17820,8 @@
         "R-1182",
         "R-1183",
         "R-1185",
-        "R-1192"
+        "R-1192",
+        "R-1208"
       ]
     },
     {
@@ -19448,6 +19455,42 @@
         "aTri not present warning"
       ],
       "records": []
+    },
+    {
+      "id": "E-458",
+      "title": "E-315 combined: PR #12's early-stopping square-ring walk for the lights with a per-entity cap whose cell rectangle holds more than lim casters (falling back to the gather on a tie at the cut, to stay exact), main's ring walk and radix select everywhere else",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 by the PR #12 integration agent (integrate/pr12), from the twice-built pairs' kernels",
+      "date": "2026-11-16",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "In the merged tree, same checksums: PR #12's walk is 10 to 20 % faster on Predator crowd 2.5's own stamp frames (Node replay -12.0 and -20.1 %, Chrome -10.1 %, 9/9: 34 of its 48 lights keep 73 casters, past main's limit of 64, so main gathers every candidate and radix-selects) and 11 to 28 % slower on the default Predator fixture (512 a light, about 142 candidates, nothing to select); it has no walk for lights without a per-entity cap (main's lamps' frames 5 times faster there). Main's limit raised to 128: +10.5 % Node, +11.9 % Chrome.",
+      "next": "Count the candidates in a light's cell rectangle (the grid's cell counts) and take the walk only above lim with a cap; the stamp replay of crowd 2.5 and the fixture, both, alternated in Node and Chrome; then Predator crowd 2.5 pre-render.",
+      "refs": [],
+      "aliases": [
+        "stamp walk by candidate count"
+      ],
+      "records": [
+        "R-1208"
+      ]
+    },
+    {
+      "id": "E-459",
+      "title": "N-215's Float32-scratch setters run 12 to 21 % slower than inline setter bodies wherever the caller inlines them: an inline early-out under TurboFan's 27-byte budget, or a scratch that keeps the value a double, might keep N-215's no-boxing guarantee without the round trip",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 by the PR #12 integration agent (integrate/pr12), from the twice-built pairs' kernels",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "setterMicrobench (00248ddf, normal compile checked with kernelTierAudit): PR #12's setter bodies (the same 21 Math.fround compares as main's N-170, inline, no scratch) 12.2 % faster when moving (8/8) and 20.8 % faster on equal values (7/8). Main kept N-215 on scene evidence: logic's garbage 201 -> 24 KB/s (R-1169).",
+      "next": "A setter body that stays within the 27-byte budget with the compare inline and the scratch only on the slow path (the store), or a Float64 scratch; setterMicrobench and logic's garbage (heapSampleWorkers) both, then Predator crowd 2.5 logic.",
+      "refs": [],
+      "aliases": [
+        "setter scratch cost"
+      ],
+      "records": [
+        "R-1208"
+      ]
     }
   ],
   "records": [
@@ -31316,6 +31359,13 @@
       "verdict": "note",
       "text": "**The session's A/A: main against itself on Predator crowd 2.5 moves logic 3.2 %, pre-render 1.0 % and physics 0.4 % (4/4 one way). Logic's level differs by 20 % between sittings of the same code (6.1 ms in R-1206, 7.3 ms here) while agents build and test on the same machine.** R-1206's logic +5.3 % (3/4) sits at the edge of this sitting's noise. Read within a sitting, and only beyond about 3 to 5 % for logic.\n\nrunPredatorAbab --pool, 4 pairs, headed, AC power, 6bfeba44 against 6bfeba44, crowd=2.5 zoom=0.216, Pixi as owner, 2026-11-16 10:12 to 10:16 (the log): NEUTRAL.\n\n| worker | A -> B |\n| --- | --- |\n| logic | 7.321 -> 7.115 ms (-3.2 %, 1/4 worse, cv 1/11 %) |\n| spatial | 11.496 -> 11.552 (-0.4 %) |\n| physics | 14.943 -> 15.050 (+0.4 %, 4/4 worse) |\n| pre-render | 7.234 -> 7.310 (+1.0 %, 3/4 worse, cv 6/5 %) |\n| renderer | 3.650 -> 3.747 (under the floor) |\n\nThe two agents (PR #12's integration and the second Pixi batch) built and tested during these sittings (N-220: background load).",
       "time": "10:16"
+    },
+    {
+      "id": "R-1208",
+      "date": "2026-11-16",
+      "title": "PR #12 integrated on integrate/pr12: main's builds stay on all four twice-built pairs (E-315 a split: E-458), E-331 ported onto main's stamp, main's Box2D binary kept (E-357, E-316 blocked)",
+      "verdict": "note",
+      "text": "**PR #12 integrated on integrate/pr12, with main merged in (d0a041ff). On all four twice-built pairs main's build stays (E-315 is a split). E-331 is ported onto main's stamp. Main's Box2D binary stays, so E-357 and E-316 are blocked.** Before merging into main the branch takes one batch gate (R-1209); the 20 candidates left wait for their owner sittings.\n\n**The merge** (26357132, the integration agent):\n- The register: the merge driver kept main's statuses for E-315, N-170, E-358 and E-359, as R-1180 chose.\n- shadowStamp.c: main's stamp, with E-331's scan slots, grid_from_xy and f64x2 binning ported on.\n- gpuPack.c: E-372's framed scan and E-331's xy share one inline loop, so framed plus xy is a fourth form, with a new castFramesParity test.\n- gpuPackClient.js: packKeyedCastersScanWasm(..., sun, scan). E-337's rule (the type column only with shadow terms) now also covers E-387's G-buffer forms.\n- preRenderWorker.js: both columns.\n- logicWorker.js: E-364 and E-349.\n- gameObject.js: main's setters, plus PR #12's MeshRenderer alpha and visualOutset compares.\n- wasmMemoryMap.js: main's stampNear region.\n- Rebuilt from the merged C (buildWasm --check clean): engine.wasm 314 824 -> 332 704 B; the gpuPack, shadowStamp and shadowStampF32 fixtures.\n\n**The twice-built pairs.** Same checksums; Node with --no-liftoff and rotated rounds; Chrome 157 alternating rounds in one page; percentages are PR #12's build against main's (positive: PR #12 slower):\n\n| kernel | E-315 | E-358 | E-359 |\n| --- | --- | --- | --- |\n| Node, Predator fixture | +13.2 % (PR faster 0/4) | +5.2 % | +4.4 % |\n| Node, fixture as keyed rows | +11.4 % | +6.1 % | +0.9 % |\n| Node, lamps, no per-entity cap | +489 % (PR has no walk there) | +0.5 % | +3.0 % |\n| Node, lamps, 3 a entity | -3.1 % (4/4) | +0.3 % | +1.4 % |\n| Chrome, fixture as keyed rows | +27.9 % | +3.4 % | +1.1 % |\n| Chrome, lamps | +446 % | -0.8 % | -0.2 % |\n| Node replay, crowd 2.5 | -12.0 % and -20.1 % | +1.1 % | +26.5 % |\n| Chrome replay, crowd 2.5 | -10.1 % (9/9) | -0.3 % | +19.5 % |\n\n- E-315: main's stays. PR #12's walk wins on crowd 2.5's own frames, where most lights keep 73 casters, just past main's 64. It loses on the fixture, and has no walk for lights without a per-entity cap. The combined form is filed as E-458.\n- E-358: main's stays (ahead on the fixture, the rest within 3 %).\n- E-359: main's stays. PR #12's dim and cone rows keep the row-by-row loop without the 16-count skip, and its whole stamp replays crowd 2.5 10.9 % slower in Chrome (0/9).\n- N-170: main's stays. Both builds have the same 21 compares. setterMicrobench (00248ddf) has PR #12's inline bodies 12 to 21 % faster, but that gap is N-215's scratch, which main kept on scene evidence (R-1169). Filed as E-459.\n\n**Box2D:** PR #12's box2dWasm.wasm (E-357: eb42d5e; E-316: c5d1a03) is built from origin's solver-skip-second-point, a branch neither on Box2D main nor fetched in the local Box2D clone, and the LiquidFun gates never ran on it. Main's binary is kept (a5a03ca3). E-357 and E-316 are blocked until that branch reaches the Box2D repo with both builds and the gates. E-257 (weedjsPost.js, JS only) stays.\n\n**Tests:** node 2872/2874 on the branch (the two path-import tests), demos 101/101.\n\n**Left for owner sittings**, leave-one-out against the integrated branch:\n- pre-render: E-320, E-330, E-331. E-331's replay is 12.03 against 13.65 ms without the scan (-11.9 %, 8/8), but the scan's own writes are not counted there; its A side is spec.scanXY false.\n- spatial: E-329.\n- logic: E-344; E-282 (contactDrainStressScene, raise its load over 6 ms first).\n- hygiene, covered by the batch gate: E-348, E-349, E-350, E-351, E-257, E-336.\n- physics: E-357 and E-316, blocked; E-314 is not in PR #12 (origin/wave15-e314-finalize-loads).\n- Pixi: E-337 (keyedPackStressScene n=300000 churn=0.05); E-338 (no scene over 6 ms that re-sorts the painter: keyedPack bands=1?).\n- particle: E-334 (decorationSway, raise the count), E-335 (needs a moving camera over many decorations), E-354 (liquidFunStress or computeStress over 6 ms)."
     }
   ],
   "leads": [
