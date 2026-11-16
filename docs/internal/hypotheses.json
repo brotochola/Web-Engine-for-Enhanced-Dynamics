@@ -13842,7 +13842,6 @@
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
-      "rank": 30,
       "result": "Kept as hygiene 2026-11-16 (R-1209 batch gate, R-1211 quiet physics check: physics -3.8 %): nothing worse. Predator, physics after E-256 (87.5 KB/s in all): serviceChainQueries 17.1, serviceLiquidFunQuery 13.1, pumpQueryWake 8.2, serviceLiquidFunExtract 7.9, gameLoop 7.3, waitForLogic 6.8, doStep 4.6 KB/s.",
       "next": "Mechanism (R-1103): each service* function creates its closure before checking for a pending query (6 per doStep plus 6 per serviceChainQueries wake); each query adds an options literal and a results subarray; each re-arm a closure, a waitAsync result, a promise and a then closure. Module-level functions and the pending check first; heapSampleWorkers on physics. E-222 sites of the service loop (which allocation each is: closures, boxed numbers, the wake's promises); fix the cheap ones; heap sample again.",
       "refs": [
@@ -16838,7 +16837,6 @@
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "rank": 12,
       "result": "Kept on its kernel 2026-11-16 (R-1211): emit -11.5 %; Predator crowd 2.5 shadowLights=96 pre-render -1.6 % (-1.0 % against the others), NEUTRAL, product-neutral. Verified 2026-11-14 (R-1100, R-1102): without Adobe roots C_STASH_X == Q_X and out == i; persist_frame already tests inQueue, emit_rows does not. About 4 of ~27 loads and 4 of ~13 stores a sprite row; emit_rows is 28.2 % of pre-render at crowd 2.5 and bound by instructions, not memory (R-0997). Estimate emit -5 to -10 %, pre-render -2 to -4 %.",
       "next": "A variant in preRenderEmitWasmMicrobench with stash == queue (checksum unchanged), the test kept outside the per-row work (an unswitched or copied loop); then Predator crowd 2.5.",
       "refs": [
@@ -17048,7 +17046,6 @@
       "date": "2026-11-15",
       "area": "spatial",
       "kind": "speed",
-      "rank": 27,
       "result": "Screened 2026-11-16 (R-1211): Predator crowd 2.5 spatial -0.9 % at a ±0.9 % limit, where the Node kernel (gather -9.6 %) predicts about -4 %; the Chrome replay (spatialGatherReplayKernel) was never run. Read (R-1102): Predator's cell radius 2 (about 21 cells of 128 px against a ~153 px circle); a rejected B fails the same double test in every cell, so rows, order and truncation stay identical. gather_batch is 42.4 % of spatial at crowd 2.5 (R-1100). Estimate gather -5 to -10 % (the low end: E-309 found far rejects cheap).",
       "next": "Test the position first and touch the marker only for a passing B: spatialGatherWasmMicrobench --n 57600 --workers 1 --per-cell 32 --types predator with equal checksums, then spatialGatherReplayKernel in Chrome. Variant: each entity inserted in one cell (its centre) with the query widened by the largest half extent, so no candidate repeats and no marks at all.",
       "refs": [
@@ -17075,7 +17072,6 @@
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "rank": 29,
       "result": "Kept on its kernel 2026-11-16 (R-1211): -9.3 % / -7.4 %; Predator crowd 2.5 shadowLights=96, two sittings (one with the sides swapped), about -2.5 % against the others over 8 pairs: under the bar, product-neutral. Read (R-1102): sKeyedDirty, qKey with kChange, aLastTex, sZ, the seven in queue_shadow, qType and others are tested per row. Estimate 10-15 % fewer instructions there, pre-render -2 to -4 %, on top of the self-copy row.",
       "next": "One flags word picks a copy in which every column is known present (as collect's MODE_ copies); preRenderEmitWasmMicrobench with the same checksum, watching code size.",
       "refs": [
@@ -17100,7 +17096,6 @@
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "rank": 31,
       "result": "Screened 2026-11-16 (R-1211): Predator crowd 2.5 shadowLights=96 with the scan taken out, pre-render +1.6 % raw, -0.6 % against the others: a tie; its kernel claim (replay -11.9 %) does not count the scan's x/y/bounds stores: a replay of pack and stamp together is owed. Read (R-1102): the grid build was 38 % of the stamp before E-160; pack_casters_keyed_scan is 4.8 % of pre-render at crowd 2.5 (R-1100). Estimate pre-render -1.5 to -2 %.",
       "next": "The scan also writes x/y arrays and the min/max (pass 1 goes); pass 2's floor((x - minX) / 256) in f64x2 (exact); shadowStampReplay checksum, then Chrome.",
       "refs": [
@@ -17221,7 +17216,6 @@
       "date": "2026-11-15",
       "area": "particle",
       "kind": "speed",
-      "rank": 62,
       "result": "Kept as hygiene 2026-11-16 (R-1209 batch gate, R-1211 quiet physics check: physics -3.8 %): nothing worse. Heap pass (R-1100): the particle worker 155 KB/s, stampCollectedParticles 66.6; code pass: stampCollectedParticles stays in Maglev (231 bytes). Read (R-1103): the callee has a warn path, a Set and a flush and competes for the 920-byte budget; particlesToStamp starts as null (the field rule) and is read through this on every pass.",
       "next": "Write the W26 record (b.f64/b.u32) straight from the columns inside the loop; particlesToStamp starts as an empty typed array; heapSampleWorkers on the particle worker, A/B.",
       "refs": [
@@ -17409,7 +17403,6 @@
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "rank": 72,
       "result": "Kept as hygiene with its kernel claim 2026-11-16 (R-1211): Predator logic0 -2.4 % (NEUTRAL; logic's limit there is ±6.4 %); nothing regressed. Reads (R-1103, R-1104): O(n x D) a frame on logic0, rewritten under every reader; both logic workers rebuild the tick buckets of every changed type each frame; logic0's extra serial work unbalances the pair (4.85 against 4.56 ms, R-0354) and physics waits for the slower. CPU pass (R-1100): removeFromActiveEntities 2.5 % of logic0. Spawns already merge per batch.",
       "next": "Sort the despawn batch and compact once; Predator crowd 2.5 logic0 against logic1.",
       "refs": [
@@ -17556,7 +17549,6 @@
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "rank": 78,
       "result": "Kept as hygiene 2026-11-16 (R-1209 batch gate, R-1211 quiet physics check: physics -3.8 %): nothing worse. Deopt pass (R-1100): 102 \"dependent prototype chain changed\" deopts in the run; the steady ones in person.js, civilian.js, particleTween.js, soundManager.js and scene.js, twice each (once a logic worker). Globals written after start: self.__weedPageOrigin from a message (abstractWorker.js), globalThis.rng in scene.js's constructor and in sceneSharedBuffers.js's cleanup.",
       "next": "Keep the generator in a module binding set at init (rng() reads it; globalThis.rng stays for user code); a deopt pass shows the prototype-chain deopts gone; the rng kernel unchanged.",
       "refs": [
@@ -17582,7 +17574,6 @@
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "rank": 79,
       "result": "Kept as hygiene 2026-11-16 (R-1209 batch gate, R-1211 quiet physics check: physics -3.8 %): nothing worse. Verified 2026-11-14 in the code (R-1103); CPU pass (R-1100): _tickIntervalBucket 3.9-6.9 % of a logic worker.",
       "next": "Declare the six fields in the literal; the code pass shows one compile.",
       "refs": [
@@ -17608,7 +17599,6 @@
       "date": "2026-11-15",
       "area": "engine",
       "kind": "speed",
-      "rank": 80,
       "result": "Kept as hygiene 2026-11-16 (R-1209 batch gate, R-1211 quiet physics check: physics -3.8 %): nothing worse. Read (R-1103); fieldTypeAudit.mjs only checks fields that start null and later hold a typed array.",
       "next": "Start them as doubles (NaN where falsy is needed); extend fieldTypeAudit to Smi-then-double fields; workerShape.test for the other workers.",
       "refs": [
@@ -17633,7 +17623,6 @@
       "date": "2026-11-15",
       "area": "engine",
       "kind": "speed",
-      "rank": 81,
       "result": "Kept as hygiene 2026-11-16 (R-1209 batch gate, R-1211 quiet physics check: physics -3.8 %): nothing worse. Read (R-1103): about 4-8 KB/s; Hot-path Hyp 5 fixed only the contact rings.",
       "next": "Module-level functions with their state passed in; heapSampleWorkers on logic and particle.",
       "refs": [
