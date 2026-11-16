@@ -444,6 +444,13 @@ CPU samples say where time goes; they are never a speed verdict.
   `node tests/bench/heapSampleWorkers.mjs --scene … --workers preRenderWorker,logicWorker` prints KB/s per
   site; `heapSampleNode.mjs` is the fast loop for one kernel. To prove a site, remove the suspect statement
   in a scratch copy and sample again.
+- **Inlining and boxing claims need Chrome's V8.** Chrome 157 (V8 15.7) and d8 16 inline a callee of up to 75
+  bytes of its own bytecode whatever its caller's budget when the call passes a heap number
+  (`--max-inlined-bytecode-size-small-with-heapnum-in-out`); Node 22's V8 has no such rule, so a setter that
+  stays inlined in Chrome is left out (and boxes) in a Node kernel. Judge such a claim in d8 16 or Chrome
+  (E-459). The small-function rule (30 bytes, 27 in Node 22) also counts what the callee's own optimized code
+  inlined, so a source-size test alone does not prove a function stays inlined; a bundle's sizes can differ
+  from the source's (N-234).
 - **Busy is not CPU.** A thread blocked in `Atomics.wait` samples as busy on Windows (Box2D's pool threads
   read 1000 ms/s each); for a worker that blocks, use the operating system's process time.
 - **Inventories:** `node tests/bench/profileSceneSweep.mjs` profiles every demo and stress scene
