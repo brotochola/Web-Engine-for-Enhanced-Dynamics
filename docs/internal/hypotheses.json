@@ -18153,7 +18153,8 @@
         "R-1174",
         "R-1181",
         "R-1187",
-        "R-1198"
+        "R-1198",
+        "R-1212"
       ]
     },
     {
@@ -18865,7 +18866,8 @@
       "records": [
         "R-1187",
         "R-1191",
-        "R-1205"
+        "R-1205",
+        "R-1212"
       ]
     },
     {
@@ -19186,7 +19188,8 @@
       ],
       "records": [
         "R-1195",
-        "R-1204"
+        "R-1204",
+        "R-1212"
       ]
     },
     {
@@ -19522,7 +19525,8 @@
         "lamp map static cache v2"
       ],
       "records": [
-        "R-1210"
+        "R-1210",
+        "R-1212"
       ]
     },
     {
@@ -19540,7 +19544,8 @@
         "lamp map columns vertex-bound"
       ],
       "records": [
-        "R-1210"
+        "R-1210",
+        "R-1212"
       ]
     },
     {
@@ -19629,6 +19634,25 @@
         "predator floor quiet"
       ],
       "records": []
+    },
+    {
+      "id": "E-463",
+      "title": "light3d's face map and ids (the G-buffer MRT at 960 x 540) shade every sprite's quad back to front with no depth test: 1.315 ms a frame by night at Predator crowd 2.5 (38 706 instances), the frame's third costliest draw after DX-DEPTH's two passes; R-1205 found it all fill (0.52 -> 0.044 ms under a 1 px scissor at zoom 0.3), so it grows with the crowd's overdraw",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from Predator's re-trace draw by draw on main 7e8fe900 (glFrameRecorder --gpu-draws, GTX 1650 at P0)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 13:44: the pass (prog#19 [uTexLut,uStatics,uPoses,uTexture,uMaps], fbo 960 x 540) 1.315 ms of 8.978 ms of draws a frame; by day at zoom 0.3 (14 326 instances) 0.559 ms.",
+      "next": "E-448's idea for this pass once E-448 has its verdict: the binary frames' solid texels front to back with a depth attachment and the painter's order as the depth (early depth on, no gl_FragDepth), then the edges; or the ids written by the colour pass's opaque draw if it already has them. Per draw before and after, the light pass's image identical.",
+      "refs": [],
+      "aliases": [
+        "face map early depth",
+        "G-buffer MRT early depth"
+      ],
+      "records": [
+        "R-1212"
+      ]
     }
   ],
   "records": [
@@ -31538,6 +31562,15 @@
       "title": "PR #12's leave-one-outs on a quiet machine: none clears 3 % alone (E-330 -2.5 % against the others over 8 pairs); physics -3.8 % (no regression); the whole merge pre-render -10.9 %",
       "verdict": "note",
       "text": "**PR #12's leave-one-out sittings, on a quiet machine. None of the five candidates clears the 3 % product bar on its own, and nothing regressed. Physics, re-checked, reads -3.8 % (R-1209's +15 % was the loaded machine). The whole merge measures pre-render -10.9 % (-5.2 % against the others).** Every sitting through the FIFO lock, runPredatorAbab --pool --pairs 4, headed, AC power, CPU load 0 to 4 % before each, 2026-11-16 11:35 to 12:41 (the sittings agent's logs). A sides are main with the candidate taken out, B is main fedfc5d5.\n\nChanges from the brief:\n- Pre-render sittings ran at shadowLights=96. On the quiet machine, Predator crowd 2.5's pre-render reads 5.5 to 5.7 ms, under the floor (5.9 at 72 lights, 6.5 at 96); a probe at 96 confirmed every frame takes E-330's copy and the scan's xy (298 of 298).\n- E-331's A side sets the scan to null, so A does not pay its stores (0 of 292 stamp calls used the scan's xy on A).\n- E-320's A side keeps E-330 (built on E-320's rows_in_place) with inq 0 at both in-place calls.\n\nToday's A/A (aa-loo, 12:16 to 12:21): every worker within ±1 %. Detection limits at 4 pairs: spatial ±0.9 %, physics ±1.9 %, pre-render ±4.7 % raw / ±3.5 % against the others, logic ±6.4 % / ±5.9 %. At 8 pairs, pre-render ±3.3 % / ±2.5 %.\n\n| sitting | A -> B | time | owner A -> B | paired | against the others | verdict | others |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| pr12-physics | cf93c047 -> 15cb911f | 11:35 to 11:40 | physics 13.159 -> 12.659 | -3.8 % (1/4 worse) | | KEPT (product) | pre-render -10.9 % (-5.2 % against the others, 4/4), logic -8.5 %, spatial -3.0 %, renderer -5.6 % |\n| E-320-loo-sl96 | 09545ba0 -> fedfc5d5 | 12:36 to 12:41 | pre-render 6.319 -> 6.170 | -1.6 % (0/4) | -1.0 % | NEUTRAL | logic -6.0 % |\n| E-330-loo-sl96 | ce4dcde9 -> fedfc5d5 | 11:52 to 11:55 | 6.288 -> 6.669 | +6.2 % (3/4) | -3.2 % | REGRESSION on spatial +7.5 %, physics +5.8 % (4/4) | moved bodies +1.2 to +2.5 % on B |\n| E-330-loo-sl96-swap | fedfc5d5 -> ce4dcde9 | 12:00 to 12:05 | 6.060 -> 6.268 (the side without E-330 worse) | +3.6 % | +2.5 % | the first sitting's regression did not repeat | spatial +1.1 %, physics +0.3 % |\n| E-330 both, 8 pairs | | | | | about -2.5 % (6/8) | | |\n| E-331-loo-sl96 | 09443713 -> fedfc5d5 | 12:07 to 12:12 | 6.152 -> 6.302 | +1.6 % (2/4) | -0.6 % | NEUTRAL | pair 3: 12.8 % more moved bodies, physics +10.8 % |\n| E-329-loo (spatial) | 990801bb -> fedfc5d5 | 12:25 to 12:30 | spatial 9.872 -> 9.786 | -0.9 % (1/4) | | NEUTRAL | physics -2.6 % |\n| E-344-loo (logic) | 5108d83a -> fedfc5d5 | 12:31 to 12:36 | logic 6.035 -> 5.954 | -2.4 % (2/4) | -1.9 % | NEUTRAL | |\n\nE-320's first sitting at 48 lights (11:41 to 11:46) was under the floor and not judged.\n\nVerdicts:\n- E-320: kept on its kernel (emit -11.5 %), scene product-neutral.\n- E-330: kept on its kernel (-9.3 % / -7.4 %). The scene reads about -2.5 % against the others over 8 pairs, under the bar; both REGRESSION verdicts were the battle's drift and did not repeat swapped.\n- E-331: screened. The scene is a tie, and its kernel claim (stamp replay -11.9 %) does not count the scan's own x/y/bounds stores; a replay of pack and stamp together is owed.\n- E-329: screened. The Node kernel's gather -9.6 % predicts spatial about -4 %, but the scene reads -0.9 % at a ±0.9 % limit; the Chrome replay was never run (R-1111).\n- E-344: kept-hygiene with its kernel claim. Predator cannot resolve it (logic ±6.4 %, and its whole possible gain is about 2.5 % of logic0).\n- E-257 and the hygiene group (E-348 to E-351, E-336): kept-hygiene. The quiet physics check and the batch gate show nothing worse.\n\nThe three pre-render leave-one-outs (-1.0, -2.5 and -0.6 % against the others) add up to about -4 %, which fits the merge's -5.2 %.\n\nOdd:\n- Workers the change cannot reach moved 4/4 one way in some sittings: spatial +7.5 %, physics +5.8 % and logic +8.9 % in E-330's first; logic +9 % in E-331's. The A/A read ±0.3 %. Physics follows BODY_MOVED_COUNT, so the two builds play different battles from one seed (N-232).\n- The runner read an all-digit --vs sha (09443713) as a number, and git failed (N-231)."
+    },
+    {
+      "id": "R-1212",
+      "date": "2026-11-16",
+      "time": "13:45",
+      "timeFrom": "recorded",
+      "title": "Predator re-traced draw by draw on today's main: light3d by day 12.752 -> 6.592 ms of draws since 06:08 (light pass 5.49 -> 1.47); by night crowd 2.5 the GPU is 59 % busy at 60 fps, DX-DEPTH's two passes 3.35 ms the biggest; E-463 filed",
+      "verdict": "note",
+      "text": "**Predator re-traced draw by draw on today's main (7e8fe900, after the light pass's tiles, the frames, the edge pass, the volumes, the Pixi GPU batches, E-457 and PR #12): with light3d by day the frame's draws went 12.752 -> 6.592 ms since 06:08 (R-1187), the 3D light pass 5.49 -> 1.47 ms; by night at crowd 2.5 the GPU is 59 % busy at full clock and the scene draws 60 fps.**\n\nglFrameRecorder --gpu-draws (a timer query per draw, clear and blit; 0 disjoint, 0 unread), headed Chrome 157, GTX 1650, 1920 x 1080, 4 s after 12 s, every run through the bench lock, 2026-11-16 13:42 to 13:45 (the log and the result files). nvidia-smi sampled in each window.\n\n| run | GPU in draws a frame | clock in the window | frames |\n| --- | --- | --- | --- |\n| Predator crowd=2.5 zoom=0.216 | 5.232 ms | P3, 660 MHz, 38 % busy | 241 in 4.0 s |\n| ... light3d=1 hour=22 (night) | 8.978 | P0, 1785 MHz, 59 % busy | 240 in 4.0 s |\n| Predator zoom=0.3 light3d=1 (day) | 6.592 | P0, 1785 MHz, 46 % busy | 240 in 4.0 s |\n\nThe plain run idled at the low clock, so its 5.232 ms (5.217 at 06:08, clock not read then) is time at 660 MHz: the GPU is not that scene's limit. The light3d runs are at full clock.\n\nNight, crowd 2.5 (38 706 sprites), by draw (a frame's mean):\n\n| draw | ms |\n| --- | --- |\n| DX-DEPTH opaque pass, colour target, about 38 000 instances (prog#32) | 1.938 |\n| DX-DEPTH edge pass, the same instances (prog#33) | 1.415 |\n| the face map and ids (light3d's G-buffer, MRT) at 960 x 540, 38 706 instances (prog#19) | 1.315 |\n| the 3D light pass, one quad (prog#24, tiles) | 1.271 |\n| the lamps' map 4096 x 1536, 3 draws, 31 445 instances, plus its clear 0.133 | 1.249 |\n| tilemap, 7 layers | about 0.48 |\n| GPU particles at 960 x 540, 108 instances | 0.242 |\n| the emissive glow pass at 1920 x 1080 (E-457's stencil mask, then the glow), 2 draws of 38 706 | 0.173 |\n| the lamps' glows at 960 x 540, 48 instances | 0.169 |\n\nDay, zoom 0.3 (14 326 sprites): light pass 1.474, opaque 0.87, edge 0.67, lamps' map 0.782 + clear 0.092, face map and ids at half resolution 0.559, the sun's map at 960 x 540 0.483 (2 draws, 14 012 instances), particles 0.279 (107 instances), the lamps' glows 0.227 (47), the emissive glow pass 0.057.\n\nPlain, crowd 2.5 at 660 MHz: the colour pass's sprite draw 1.955 ms (38 295 instances), GPU particles at 960 x 540 0.614 ms (100 instances; 1.10 to 1.28 ms in R-1187, before the half-resolution layers), the 2D light pass 0.208, the tilemap's 7 draws about 1.08, the three composites 0.447. Uploads a frame: 1 041 KB of instance rows (one bufferSubData) and 637 KB of poses (four texSubImage2D of 1024 x 10 RGBA32UI), 1.5 MB of buffers and 0.69 MB of textures in all.\n\nWhat it means:\n- The light pass is no longer the frame's biggest draw: by night the sprites' two DX-DEPTH passes are (3.35 ms together), which is E-448's target (an agent builds it).\n- The half-resolution face map and ids are the next one at crowd 2.5 (1.315 ms). R-1205 measured that pass as fill (0.52 -> 0.044 ms under a 1 px scissor at zoom 0.3), so it grows with the crowd's overdraw: filed as E-463, the same early-depth idea for that pass once E-448 has its verdict.\n- The lamps' map (1.25 ms by night) is E-460's and E-461's."
     }
   ],
   "leads": [
