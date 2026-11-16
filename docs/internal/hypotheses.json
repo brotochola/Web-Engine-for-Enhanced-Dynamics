@@ -11390,7 +11390,8 @@
         "GPU timestamp"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-1174"
       ]
     },
     {
@@ -11413,7 +11414,8 @@
       ],
       "records": [
         "R-0854",
-        "R-1173"
+        "R-1173",
+        "R-1174"
       ]
     },
     {
@@ -13178,7 +13180,8 @@
       ],
       "records": [
         "R-0976",
-        "R-1173"
+        "R-1173",
+        "R-1174"
       ]
     },
     {
@@ -15963,7 +15966,8 @@
         "colorDepth cost"
       ],
       "records": [
-        "R-1129"
+        "R-1129",
+        "R-1174"
       ]
     },
     {
@@ -17860,7 +17864,8 @@
         "light3d draw calls"
       ],
       "records": [
-        "R-1173"
+        "R-1173",
+        "R-1174"
       ]
     },
     {
@@ -18024,6 +18029,116 @@
       ],
       "records": [
         "R-1173"
+      ]
+    },
+    {
+      "id": "E-399",
+      "title": "The 3D light pass is 5.5 ms of Predator's GPU frame with ?light3d=1 (5.49 by day, 5.47 at night, of 14.6 and 14.5 ms): one full-screen draw at lighting resolution 0.5 (960 x 540) where every pixel loops over every light; the plain light pass at 0.25 costs 0.7 to 0.9",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on Predator (timer queries, GTX 1650, 1920x1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "light3d day: 5.489 ms (1 draw, [uLightData,uShadowMap,uSunMap,uLampMap,uFaceMap,uFaceIds]); night 5.467; plain light pass 0.899 (day) and 0.699 (night) at resolution 0.25. gpuPassBench: linear in the light count (R-1173).",
+      "next": "Per-tile light lists (E-205) so a pixel loops over the lights that reach it; or the pass at 0.25 with an edge-aware upsample; the recorder before and after, both backends.",
+      "refs": [],
+      "aliases": [
+        "light3d pass gpu",
+        "light pass resolution"
+      ],
+      "records": [
+        "R-1174"
+      ]
+    },
+    {
+      "id": "E-400",
+      "title": "The colour pass to the screen is the largest GPU pass without light3d: 2.7 to 3.4 ms at crowd 1, 5.9 ms at crowd 2.5 (38 600 instances), and 4.7 to 5.0 ms with ?light3d=1 (+1.3 to 2.3 ms: pixel depth and the G-buffer's reads, E-378)",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on Predator (timer queries, GTX 1650, 1920x1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "plain zoom 0.3: 3.421 ms by day, 2.696 at night (21 draws, 14 200 instances); light3d 4.672 (day), 5.031 (night); crowd 2.5 zoom 0.216: 5.868 ms (23 draws, 38 634 instances).",
+      "next": "Overdraw and fill rate (E-204: the tiles under the sprites, alpha-blended quads at 1920 x 1080), a depth pre-pass or early-z for opaque sprites, E-378 for pixel depth; the recorder per pass.",
+      "refs": [],
+      "aliases": [
+        "colour pass gpu",
+        "screen pass fill"
+      ],
+      "records": [
+        "R-1174"
+      ]
+    },
+    {
+      "id": "E-401",
+      "title": "The keyed statics scatter costs the GPU 0.35 to 0.52 ms a frame for about 900 to 1 300 updates, and 1.05 ms at crowd 2.5 (2 884): about 0.36 us an update of three texels",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on Predator (timer queries, GTX 1650, 1920x1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "statics scatter (fbo 3072 x 178, 2 draws): 0.521 ms (898 updates, plain day), 0.431 (829, night), 0.372 and 0.348 with light3d; crowd 2.5 (3072 x 222): 1.049 ms for 2 884.",
+      "next": "Read why a point scatter of 3 texels costs that (the target is RGBA32UI 3072 wide: the whole target loaded and stored each pass?); texSubImage2D of the changed rows when few, or rows sorted into runs; the recorder before and after.",
+      "refs": [],
+      "aliases": [
+        "statics scatter gpu"
+      ],
+      "records": [
+        "R-1174"
+      ]
+    },
+    {
+      "id": "E-402",
+      "title": "The frame's clears and blits outside any draw cost the GPU 0.2 to 0.5 ms (0.51 ms at Predator crowd 2.5)",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on Predator (timer queries, GTX 1650, 1920x1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "The screen framebuffer's segments with no draw: 0.229 to 0.282 ms at crowd 1, 0.510 ms at crowd 2.5.",
+      "next": "List the clears and blits a frame makes (the recorder counts clear and blitFramebuffer) and drop those whose target the frame overwrites whole.",
+      "refs": [],
+      "aliases": [
+        "clears gpu"
+      ],
+      "records": [
+        "R-1174"
+      ]
+    },
+    {
+      "id": "E-403",
+      "title": "With ?light3d=1 the sprites go through the G-buffer's program twice: at 1920 x 1080 (0.9 to 1.1 ms) and again at 960 x 540 (0.56 to 0.63 ms), 14 300 instances each",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on Predator (timer queries, GTX 1650, 1920x1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "light3d day: fbo 1920 x 1080 1.109 ms and fbo 960 x 540 0.557 ms, both [uTexLut,uStatics,uPoses,uTexture,uMaps], 14 285 instances; night 0.886 and 0.627.",
+      "next": "Name the second pass (the face map at the light resolution?) and take it from the full-size one (a downsample) or write it in the same pass (MRT); the recorder before and after.",
+      "refs": [],
+      "aliases": [
+        "gbuffer drawn twice"
+      ],
+      "records": [
+        "R-1174"
+      ]
+    },
+    {
+      "id": "E-404",
+      "title": "The lamps' 47-instance pass (glows or cards, [uTexLut,uTexture]) costs the GPU 0.25 to 0.34 ms a frame: big quads, fill-bound",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on Predator (timer queries, GTX 1650, 1920x1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "light3d day: fbo#12 0.247 ms for 47 instances; night: 960 x 540, 0.343 ms.",
+      "next": "Name it; its quads' size against what they light; a smaller quad or a cheaper fragment; the recorder before and after.",
+      "refs": [],
+      "aliases": [
+        "lamp glow pass gpu"
+      ],
+      "records": [
+        "R-1174"
       ]
     }
   ],
@@ -29311,6 +29426,18 @@
       "title": "The GPU side on main: light3d doubles Predator's GL calls, adds 54 draws and 132 redundant sampler uniforms a frame; the light passes linear in the light count",
       "verdict": "note",
       "text": "**What the GPU side shows on main a43899ed (the GL recorder on Predator, the light passes against the light count): light3d doubles Predator's GL calls (557 -> 1066 a frame), adds 54 draws and 132 redundant sampler uniforms a frame and triples the buffer uploads; the light passes cost about 21 us (light) and 30 us (light3d) a light, every light at every pixel.** Twelve hypotheses filed from these and the traces of the night (E-389 to E-398, N-216, N-217).\n\n**glFrameRecorder (E-230), Predator, headed Chrome, 3 s recorded after 12 s, 2026-11-16 03:04 to 03:06 (the result files):**\n\n| a frame | zoom 0.3 | ?light3d=1 day | ?light3d=1 night | crowd 2.5 |\n| --- | --- | --- | --- | --- |\n| GL calls | 557.4 | 1066 | 1003.7 | 612.1 |\n| draws (instances) | 27 (34 194) | 80.6 (104 663) | 77.7 (90 761) | 28.8 (82 039) |\n| redundant calls | 47 | 164.2 | 160.9 | 42.5 |\n| uniform1i (redundant) | 17.6 (16.9) | 132.8 (132.1) | 130.7 (130.2) | 17.2 (16.8) |\n| uniformMatrix3fv, uniform4f | 28, 9 | 93.5, 101.4 | 87.7, 100.4 | 27.8, 5.9 |\n| drawArraysInstanced | 2 | 50.7 | 49.7 | 2 |\n| buffer uploads | 733.7 KB | 2317.4 KB | 1121.9 KB | 1502.8 KB |\n\n- Day's buffers: buffer#7 1196.4 KB and buffer#9 844.1 KB a frame, one bufferSubData each (E-390). Crowd 2.5: buffer#6 1034 KB a frame.\n- Textures: the recorder read 7.6 to 9.4 MB a frame, but it counts a source view whole when the call passes a sub-range (N-216). The real uploads are E-201's pose texture, 4 texSubImage2D of 1024 x 4 RGBA32UI texels a frame (256 KB; 1024 x 10, 640 KB, at crowd 2.5: E-392), and the light data's 256 x 4 RGBA32F (16 KB: E-396).\n- \"Calls that wait\" (10 to 12 a frame) are binding queries (TEXTURE_BINDING_2D 5 to 7, FRAMEBUFFER, READ_FRAMEBUFFER, CURRENT_PROGRAM, VERTEX_ARRAY, ARRAY_BUFFER: once each), which Blink answers from its own state; one getSyncParameter. EXT_disjoint_timer_query_webgl2 is exposed in this Chrome.\n\n**gpuPassBench on main a43899ed (GTX 1650, 960x540, res 0.5, the bench fixed), the light count with lamps = min(lights, 48), 03:01 to 03:03:**\n\n| lights | 4 | 16 | 32 | 64 | 128 |\n| --- | --- | --- | --- | --- | --- |\n| WebGL light | 0.189 | 0.341 | 0.681 | 1.357 | 2.708 ms |\n| WebGL light3d | 0.236 | 0.672 | 1.272 | 2.236 | 3.935 ms |\n| WebGPU light | 0.103 | 0.370 | 0.791 | 1.404 | 2.750 ms |\n| WebGPU light3d | 0.256 | 0.680 | 1.211 | 2.198 | 3.991 ms |\n\nLinear in the light count on both backends: each pixel loops over every light however far (E-205's tiles would give each pixel the lights that reach it).\n\nNot done yet: GPU time per pass inside the real frame (the timer query is there; a RenderDoc 1.47 capture of Chrome's GPU process is next)."
+    },
+    {
+      "id": "R-1174",
+      "date": "2026-11-16",
+      "time": "03:47",
+      "timeFrom": "recorded",
+      "title": "Predator's GPU frame by pass (timer queries): 4.7 to 5.8 ms plain, 14.5 to 14.6 ms with light3d; the 3D light pass 5.5 ms",
+      "verdict": "note",
+      "text": "**Predator's GPU frame by pass, for the first time in the real frame: 4.7 to 5.8 ms without light3d, 14.5 to 14.6 ms with ?light3d=1 on a GTX 1650 at 1920 x 1080; the 3D light pass alone is 5.5 ms.** glFrameRecorder --gpu-passes (0f5600e4: a TIME_ELAPSED query from each draw framebuffer bind to the next; zero disjoint, zero unread), headed Chrome 157, 3 s recorded after 12 s, main at ae06f1ee, 2026-11-16 03:40 to 03:47 (the result files). RenderDoc 1.47 could not capture Chrome's GPU process (child hooking: Chrome turned its GPU off; injected into the GPU process alone: that process restarted without it); Nsight Graphics needs an NVIDIA account to download.\n\n| pass (its program's samplers) | plain day | plain night | light3d day | light3d night | crowd 2.5 |\n| --- | --- | --- | --- | --- | --- |\n| total GPU a frame | 5.754 | 4.659 | 14.633 | 14.493 | 8.994 ms |\n| 3D / plain light pass, 1 draw [uLightData,uShadowMap(,uSunMap,uLampMap,uFaceMap,uFaceIds)] | 0.899 | 0.699 | 5.489 | 5.467 | 0.798 |\n| colour pass to the screen [uGid,uTileset], 21 to 23 draws | 3.421 | 2.696 | 4.672 | 5.031 | 5.868 |\n| lamps' map, atlas 4096 x 1536, 49 draws [uTexLut,uLampTiles,uTexture] | | | 1.207 | 1.586 | |\n| G-buffer 1920 x 1080 [uTexLut,uStatics,uPoses,uTexture,uMaps] | | | 1.109 | 0.886 | |\n| the same program at 960 x 540 | | | 0.557 | 0.627 | |\n| sun map 960 x 540 [uTexLut,uTexture] | | | 0.684 | | |\n| sprite shadows 480 x 270 [uTexLut,uStatics,uTexture] | 0.683 | 0.599 | | | 0.769 |\n| keyed statics scatter 3072 x 178 (222 at crowd 2.5) | 0.521 | 0.431 | 0.372 | 0.348 | 1.049 |\n| lamps' 47-instance pass [uTexLut,uTexture] | | | 0.247 | 0.343 | |\n| the screen's segments with no draw (clears, blits) | 0.229 | 0.233 | 0.282 | 0.205 | 0.510 |\n\nInstances: plain 14 200 in the colour pass, 18 600 in the shadows; light3d 28 600 to 28 900 in the colour pass, 30 400 to 30 700 in the lamps' map, 14 300 in each G-buffer pass; crowd 2.5 38 634 and 41 364. Lighting resolution: Predator sets 0.5 with ?light3d=1 and 0.25 without, so the 3D pass shades four times the pixels of the plain one.\n\nWhat it says: with light3d the GPU frame nearly fills 16.7 ms on this card, so light3d's limit is the GPU, not the CPU; the 3D light pass is 38 % of it, the colour pass 32 %, the lamps' map 8 to 11 %. Filed from it: E-399 (the 3D light pass), E-400 (the colour pass's fill), E-401 (the statics scatter's cost an update), E-402 (clears and blits), E-403 (the G-buffer's program drawn twice), E-404 (the lamps' 47-instance pass); E-391's 49 draws of the lamps' map are 1.2 to 1.6 ms.",
+      "commits": [
+        "0f5600e4"
+      ]
     }
   ],
   "leads": [
