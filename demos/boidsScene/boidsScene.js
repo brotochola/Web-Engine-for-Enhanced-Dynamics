@@ -6,6 +6,11 @@ import WEED from '/src/index.js';
 
 const { Scene, Camera } = WEED;
 
+// `?boids=<n>`: the flock spawned (40 000 by default, the pool's 65 000 at most), a load knob for spatial sittings:
+// 40 000 boids run each spatial worker about 5 ms, under the 6 ms floor a STEP_MS verdict needs.
+const POOL = 65000;
+const BOIDS = Math.max(0, Math.min(POOL, Number(WEED.params?.get('boids') ?? 40000) | 0));
+
 export class BoidsScene extends Scene {
   static config = {
     worldWidth: 4000,
@@ -68,7 +73,7 @@ export class BoidsScene extends Scene {
   };
 
   static entities = [
-    [Boid, 65000],
+    [Boid, POOL],
   ];
 
   constructor(game) {
@@ -84,7 +89,7 @@ export class BoidsScene extends Scene {
   }
 
   createNewGame() {
-    this.spawnBoids(40000);
+    this.spawnBoids(BOIDS);
   }
 
   update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
