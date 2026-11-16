@@ -15555,7 +15555,9 @@
         "keyed sun frames pass",
         "_applyKeyedSunFrames cost"
       ],
-      "records": []
+      "records": [
+        "R-1155"
+      ]
     },
     {
       "id": "N-183",
@@ -15612,7 +15614,9 @@
         "sun frames on the GPU",
         "shadow frame in the vertex shader"
       ],
-      "records": []
+      "records": [
+        "R-1155"
+      ]
     },
     {
       "id": "E-372",
@@ -15630,7 +15634,9 @@
       "aliases": [
         "sun frames in WASM"
       ],
-      "records": []
+      "records": [
+        "R-1155"
+      ]
     },
     {
       "id": "N-185",
@@ -16367,6 +16373,43 @@
       ]
     },
     {
+      "id": "N-213",
+      "title": "Pixi's garbage on the lamps' map path (DX-LAMPPANO, F7): a card strip geometry made every frame, and the volumes' lamp terms' doubles boxed a tile a frame",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-15 in Phase 3's first heap pass (Predator ?light3d=1&hour=22) and fixed the same evening (b9d36346, 27d7113b)",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "bug",
+      "result": "Pixi's allocation in Predator ?light3d=1&hour=22, crowd 1 (profileSceneSweep's heap pass, 8 s): 1316.9 KB/s, then 554.7 with a strip a ring slot (the stamp batch's geometry changes slot every frame, and the strip was made again each time: _lampCardGeometry 96 KB/s and Pixi's geometry setup 400 KB/s), then 504.2 with writeVolumeLampTerms' two scales in a Float64Array (_drawVolumesInLampMap's 36.5 KB/s). 62 % less in all.",
+      "next": "Pixi's own sites lead now (execute 79, bind 58, ge.emit 37 KB/s): the batches' buffer updates (onBufferUpdate) and the render groups.",
+      "refs": [],
+      "aliases": [
+        "lamp strip garbage",
+        "pixi light3d allocation"
+      ],
+      "records": [
+        "R-1154"
+      ]
+    },
+    {
+      "id": "N-214",
+      "title": "Steady-state deopts in Predator (main too): spatialWorker _flushWasmPublish, weedjsPost publishPose, logicWorker's spawn list",
+      "status": "open",
+      "statusText": "found 2026-11-15 in Phase 3's deopt pass of Predator ?light3d=1&hour=22; the sites are the same on main (spatialWorker.js and weedjsPost.js unchanged by dx/light3d)",
+      "date": "2026-11-15",
+      "area": "engine",
+      "kind": "bug",
+      "result": "In steady state (8 s): spatialWorker.js:1764:22 (_flushWasmPublish, this._wasmPub.queued) deopt-eager \"Insufficient type feedback for generic named access\" x391; box2d/weedjsPost.js:662:31 (the N-86 epoch check after the pose copy) \"Insufficient type feedback for call\" x286; logicWorker.js:912:11 (compare) x70 and :901:10 (named access) x68 (the spawn batch sort); util/gameObjectActiveState.js:140:17 (unary) x13. A site that keeps deopting in steady state recompiles its function each time.",
+      "next": "Read each site with the code pass (summarizeV8Code) and --trace-deopt: a branch that warm-up never reaches (fill its feedback early, or move it to a function of its own), a call target that changes; check main has the same counts.",
+      "refs": [],
+      "aliases": [
+        "steady deopts predator"
+      ],
+      "records": [
+        "R-1155"
+      ]
+    },
+    {
       "id": "E-382",
       "title": "Predator's people (MySoldier, Civilian) on DirectionalSprite against main's hand-picked directions: what the branch charges Predator's logic and pre-render",
       "status": "open",
@@ -16450,6 +16493,24 @@
       "aliases": [],
       "records": [
         "R-1152"
+      ]
+    },
+    {
+      "id": "E-387",
+      "title": "writeGbufWords costs Pixi 3.4 % in Predator ?light3d=1 (285 ms in an 8 s window, about 0.6 ms a frame at 14 600 instances): an entity's word made per instance from four entity columns read at random",
+      "status": "open",
+      "statusText": "proposed 2026-11-15 from Phase 3's first CPU pass",
+      "date": "2026-11-15",
+      "area": "render",
+      "kind": "speed",
+      "result": "Its hot lines: 43 % the word ((e % 65535) + 1 + (flags[e] & 63) * 65536 + selfShadow), 36 % the row's key, 13 % the store.",
+      "next": "Keep each entity's word in an entity column refreshed when its flags or self-shadow change (one read an instance), or write the words in the keyed pack kernel, which already reads each row's key; then the Pixi worker's CPU per function before and after (Predator ?light3d=1).",
+      "refs": [],
+      "aliases": [
+        "gbuf words cost"
+      ],
+      "records": [
+        "R-1155"
       ]
     }
   ],
@@ -27454,6 +27515,28 @@
       "title": "carScene, littleCity and burningBoxes run under the 6 ms floor: guards against main, DirectionalSprite's cost from its stress scene",
       "verdict": "note",
       "text": "Load levels read before the sittings (2026-11-15 21:19, the branch at 7614f83d, one headed run each, 5 s warm-up and 5 s window, detailed stats off; the owner's bench tab open, so levels only):\n\n| Scene | spatial | physics | renderer | particle | logic | pre-render |\n| --- | --- | --- | --- | --- | --- | --- |\n| carScene | 1.30 | 0.33 | 0.42 | 0.17 | 0.46 | 0.21 |\n| littleCity | 4.37 / 3.61 | 2.90 | 0.36 | 0.27 | 2.93 | 0.44 |\n| burningBoxes | 0.07 / 0.07 | 0.20 | 0.93 | 0.06 | 0.07 | 0.43 |\n\n(ms of work a frame.) None of the three reaches HOW_WE_MEASURE's 6 ms floor on the worker the question owns (DirectionalSprite's frames are pre-render's and the facing logic's; burningBoxes' side light is Pixi's and the GPU's), and neither main's nor the branch's carScene, littleCity or burningBoxes has a load knob (their populations are fixed in create). Against main they can only show a gross regression: Phase 1 runs them as guards (4 pairs, --full-rev, since the branch's demos use DirectionalSprite, which main lacks). The cost of DirectionalSprite itself comes from directionalSpriteStressScene ?mode=hand|ds at a population that reaches the floor, read per entity and carried to these scenes' counts (carScene 21 cars and 1 000 people; littleCity's traffic)."
+    },
+    {
+      "id": "R-1154",
+      "date": "2026-11-15",
+      "time": "21:28",
+      "timeFrom": "recorded",
+      "title": "Pixi's lamp map garbage: 1316.9 -> 504.2 KB/s in Predator light3d",
+      "verdict": "kept-hygiene",
+      "text": "Heap passes of profileSceneSweep (Predator ?light3d=1&hour=22, crowd 1, 8 s): 1316.9 KB/s at 7614f83d (21:23), 554.7 with a lamp card strip a ring slot (21:26), 504.2 with writeVolumeLampTerms' scales in a Float64Array (21:28). The first: the stamp batch draws from a ring of geometries, a slot each frame, and the strip was made again whenever it changed; the second: two doubles passed a tile a frame to a call TurboFan left out.",
+      "commits": [
+        "b9d36346",
+        "27d7113b"
+      ]
+    },
+    {
+      "id": "R-1155",
+      "date": "2026-11-15",
+      "time": "21:23",
+      "timeFrom": "recorded",
+      "title": "Phase 3, Predator light3d night: the sun and lamp frames 11 % of pre-render, writeGbufWords 3.4 % of Pixi, steady deopts",
+      "verdict": "note",
+      "text": "Phase 3's first passes (DX_LIGHT3D_PLAN 17.9), Predator ?light3d=1&hour=22, crowd 1, the branch at 7614f83d (profileSceneSweep: cpu at 21:22, deopt 21:23, heap 21:23; 8 s warm-up, 8 s window; the owner's bench tab open, so shares within a worker, not ms).\n\nBusy ms/s: pixi 534 (its wait for the queue 25 %, Pixi's own code 28 %), pre-render 443, spatial 350, logic 319 and 293, particle 81 (the four physics threads read 1000: wasm threads in Atomics.wait).\n\nThe branch's code in the hot lists:\n- pre-render: applySunFramesFor 4.5 % (67 % of it on reading the row's scale back, `rows[at + GPU_ROW_SCALE_X]`, after writing its texture), applyLampFramesInto 3.7 % (the row's entity and the ray to its lamp), sunFrameFor 3.2 % (the entity's columns and the frame table): about 11 % of pre-render, 0.8 ms a frame (E-370 to E-372).\n- Pixi: writeGbufWords 3.4 % (E-387), compactColumnRows (E-379's columns) 169 ms in the window.\n- logic: DirectionalSprite.resolve 2.5 to 2.7 %.\n\nGarbage: Pixi 1316.9 KB/s, 96 of it from _lampCardGeometry made every frame and 36.5 from the volumes' boxed doubles: fixed (N-213, 504.2 KB/s after). Steady-state deopts that main has too: N-214."
     }
   ],
   "leads": [
