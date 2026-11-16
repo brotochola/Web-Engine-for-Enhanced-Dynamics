@@ -14,7 +14,9 @@
  * GPU time per frame when EXT_disjoint_timer_query_webgl2 is there (most Windows Chrome builds do not expose it).
  *
  * With --gpu-passes, the GPU time of each pass in the real frame (a TIME_ELAPSED query from one framebuffer bind to
- * the next, labelled by framebuffer, viewport and first program), where the extension is exposed.
+ * the next, labelled by framebuffer, viewport and first program), where the extension is exposed. A TIME_ELAPSED range
+ * counts the GPU's idle gaps inside it too (commands the CPU had not submitted yet): a pass's time is an upper bound of
+ * its work, read with the GPU's busy share (Nsight Systems' GR Active) when they disagree.
  *
  *   node tests/bench/glFrameRecorder.mjs --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene
  *     [--query k=v&k2=v2] [--warmup-ms 12000] [--record-ms 3000] [--gpu-passes] [--output gl.json]
@@ -145,8 +147,14 @@ async function recordInWorker({ ms, gpuPasses }) {
   for (const name of Object.getOwnPropertyNames(proto)) {
     if (typeof Object.getOwnPropertyDescriptor(proto, name)?.value !== 'function' || name === 'constructor') continue;
     let hook = null;
-    // A pass's draws, and its program when the segment drew with the one already bound.
+    // A pass's draws, and its program when the segment drew with the one already bound. A draw with no pass open (the
+    // frame drew into the framebuffer bound before the recording, with no bind since) opens one for that framebuffer.
     const segDraw = (n) => {
+      if (!seg && timerExt) {
+        const fb = bound.fbo.get(0x8ca9) ?? bound.fbo.get(0x8d40) ?? null;
+        beginSeg(idOf(fb));
+        seg.fboObj = fb;
+      }
       if (!seg) return;
       seg.draws++;
       seg.instances += n;
