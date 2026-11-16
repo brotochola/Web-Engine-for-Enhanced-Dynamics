@@ -16604,7 +16604,8 @@
         "R-1179",
         "R-1183",
         "R-1185",
-        "R-1189"
+        "R-1189",
+        "R-1221"
       ]
     },
     {
@@ -17123,7 +17124,8 @@
         "R-1192",
         "R-1208",
         "R-1209",
-        "R-1211"
+        "R-1211",
+        "R-1221"
       ]
     },
     {
@@ -18012,7 +18014,8 @@
       ],
       "records": [
         "R-1173",
-        "R-1196"
+        "R-1196",
+        "R-1221"
       ]
     },
     {
@@ -18032,7 +18035,8 @@
       "records": [
         "R-1173",
         "R-1196",
-        "R-1206"
+        "R-1206",
+        "R-1221"
       ]
     },
     {
@@ -19121,7 +19125,8 @@
       "records": [
         "R-1189",
         "R-1202",
-        "R-1206"
+        "R-1206",
+        "R-1221"
       ]
     },
     {
@@ -19426,7 +19431,7 @@
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "keyedPackStressScene n=250000 churn=0.05, Pixi packing, 2026-11-16 09:33 to 09:34: with gbuf=1 Pixi's fillQueueIndices (gpuQueueLayout.js) 674 ms in an 8 s window (12.7 %), none with gbuf=0. pixiWorker.js: splitGlow = _lightGlowAdd && typeArr && idxE && (painter || lightingEnabled), with no look at the frame's glow rows; packSpriteLayer then runs fillQueueIndices(excl 3), fillQueueIndices(incl 3) and a loop counting particle rows over the entity list. Pre-render knows its glow rows (E-216, R-0904).",
+      "result": "keyedPackStressScene n=250000 churn=0.05, Pixi packing, 2026-11-16 09:33 to 09:34: with gbuf=1 Pixi's fillQueueIndices (gpuQueueLayout.js) 674 ms in an 8 s window (12.7 %), none with gbuf=0. pixiWorker.js: splitGlow = _lightGlowAdd && typeArr && idxE && (painter || lightingEnabled), with no look at the frame's glow rows; packSpriteLayer then runs fillQueueIndices(excl 3), fillQueueIndices(incl 3) and a loop counting particle rows over the entity list. Pre-render knows its glow rows (E-216, R-0904). d8 machine code (R-1222): packSpriteLayer's 920-byte budget holds one fillQueueIndices, so the entity fill (250 000 rows) is a real call at about 33 instructions a row (the limit and type reloaded from stack slots, outIdx's map re-checked and its pointer decoded every stored row because _identityRows.delete(outIdx) sits between .length and the loop, no unrolling) and the particle count about 17 an element. glowSplitMicrobench at 250 000 rows, ms a frame (no glow rows / 24 glow rows): shipped Node 1.036 / 0.873, d8 0.736 / 0.750; one fused pass for both lists and the count Node 0.305 / 0.347, d8 0.268 / 0.413 (-64 to -71 %); _identityRows.delete moved after each loop alone d8 -13 % / -27 %, bit-identical; the identity copy floor 0.124 / 0.216.",
       "next": "Pre-render writes the frame's glow-row count into the queue (it counts them for E-216) and Pixi takes the dense path when it is 0; when there are glow rows, one pass fills the entity list, the glow list and the particle count together. Pixi's CPU per function before and after (keyedPack gbuf=1, Predator ?light3d=1).",
       "refs": [],
       "aliases": [
@@ -19434,7 +19439,8 @@
         "fillQueueIndices in pixi"
       ],
       "records": [
-        "R-1203"
+        "R-1203",
+        "R-1222"
       ]
     },
     {
@@ -19521,7 +19527,8 @@
       ],
       "records": [
         "R-1208",
-        "R-1217"
+        "R-1217",
+        "R-1222"
       ]
     },
     {
@@ -19848,6 +19855,114 @@
       ],
       "records": [
         "R-1217"
+      ]
+    },
+    {
+      "id": "E-471",
+      "title": "rebuildOwnedRows re-checks its typed arrays every entity: the loop is too big to peel, so each array a local took from a null-started field or a Grid static gets a map check and a pointer decode at its first use, every entity (14 map checks, 11 Smi checks, Grid.maxEntitiesPerCell re-read, countNoBody a generic ToBoolean, the cell range stored as Smis every entity)",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "date": "2026-11-16",
+      "area": "spatial",
+      "kind": "speed",
+      "result": "rebuildOwnedRowsMicrobench (boids' grid), variant `checked` (maps known before the loops, | 0 on the Grid integers, maxEntitiesPerCell hoisted, countNoBody boolean, the cell range in locals), bit-identical: points (boids) Node 2.058 -> 1.840 ms (-10.6 %, 4/6), d8 2.187 -> 1.970 (-9.9 %, 5/6); circles d8 -16.4 % (4/4), Node -9.0 %; boxes d8 -10.0 % (4/4), Node +1.5 %. About 2 to 3 % of the spatial worker in boids and Predator.",
+      "next": "Build `checked` into spatialWorker.js (empty typed arrays of their class at construction where the class is known; EntityIdArray can be 16 or 32 bits); the kernel, then boids' and Predator's spatial STEP_MS.",
+      "refs": [],
+      "aliases": [
+        "rebuildOwnedRows map checks"
+      ],
+      "records": [
+        "R-1222"
+      ]
+    },
+    {
+      "id": "E-472",
+      "title": "A point entity whose single cell row belongs to the other spatial worker can skip its cell range in rebuildOwnedRows (posY * invCellSize | 0, not the fround home row): on top of the map-check fix, -16 to -19 % of the rebuild on boids",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "date": "2026-11-16",
+      "area": "spatial",
+      "kind": "speed",
+      "result": "rebuildOwnedRowsMicrobench variant `pointSkip` (with `checked`), bit-identical: boids Node 2.058 -> 1.735 ms (-15.7 %, 6/6), d8 2.187 -> 1.766 (-19.2 %, 6/6); about 5 to 6 % of the spatial worker in boids.",
+      "next": "After the map-check fix, the point skip; the kernel and boids' spatial STEP_MS (with spatialWorkers 2 where rows are split).",
+      "refs": [],
+      "aliases": [
+        "rebuildOwnedRows point skip"
+      ],
+      "records": [
+        "R-1222"
+      ]
+    },
+    {
+      "id": "E-473",
+      "title": "N-215's SETTER_ARGS is an on-heap Float32Array, so every setter access loads and decodes its length, base and external pointer and bounds-checks; a Float32Array on a SharedArrayBuffer gets an immediate address and no bounds check in d8",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "setterMicrobench moving, 4096 walkers: d8 all inlined -8.6 %, budget spent -7.7 %; Node +3.0 % / -6.4 %. With E-474: -22 to -33 % in d8.",
+      "next": "SETTER_ARGS on a SharedArrayBuffer (or a view whose backing store is off-heap); d8 16 and Chrome's logic per function (keyedPack).",
+      "refs": [],
+      "aliases": [
+        "setter args off heap"
+      ],
+      "records": [
+        "R-1222"
+      ]
+    },
+    {
+      "id": "E-474",
+      "title": "gameObject.js reads Transform, staticSceneryChangedAt and isCommandRingBound through import cells: setXFromArgs does 6 cell loads, 6 hole checks, 2 map checks and 2 pointer decodes; module-const aliases (allowed: those exporters are outside gameObject.js's 22-module import cycle, importAliases.test.js) cut it to 2 cell loads and 0 decodes, 258 -> 178 instructions",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "setterMicrobench moving: aliased imports d8 -30.2 % (all inlined) and -10.2 % (budget spent, a game tick's shape); Node -13.5 % / -1.2 %; with E-473 d8 -32.6 % / -22.2 %; on top of E-459 d8 -33.1 % / -25.1 %. setXFromArgs was about 6.5 % of logic in keyedPack (R-1203): about 1 to 2 % of logic.",
+      "next": "Alias the three as module consts (RigidBody, SpriteRenderer, MeshRenderer are inside the cycle: not those); judged in d8 16 or Chrome (HOW_WE_MEASURE: Node 22 shows import forms less).",
+      "refs": [],
+      "aliases": [
+        "gameObject import aliases"
+      ],
+      "records": [
+        "R-1222"
+      ]
+    },
+    {
+      "id": "N-236",
+      "title": "The d8kit bundle distorts what it times: esbuild turns every top-level const into var, so TurboFan stops folding module consts (const Transform = TransformImport); the bundled rebuildChecked ran 43 ns an entity against 25 ns as native modules",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "The agent loaded src/ and the variants as native modules with shims in a prelude: scratchpad d8hot/tools/buildExt.mjs.",
+      "next": "Add buildExt's native-module mode to D:/perf-tools/d8kit and use it by default; note it in perf-tools.",
+      "refs": [],
+      "aliases": [
+        "d8kit const to var"
+      ],
+      "records": [
+        "R-1222"
+      ]
+    },
+    {
+      "id": "N-237",
+      "title": "setterMicrobench's second case runs on different code: its \"same\" case calls setupSetters again, which rebinds Transform's columns, so every setter deopts (dependent field type constness changed) and \"same\" runs with the columns no longer constant",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "date": "2026-11-16",
+      "area": "bench",
+      "kind": "bug",
+      "result": "Seen by the d8 agent; every setter deopts at the second setup.",
+      "next": "One case per process (or set up once and reset the values instead of rebinding the columns); re-time the \"same\" case.",
+      "refs": [],
+      "aliases": [
+        "setterMicrobench rebind deopt"
+      ],
+      "records": [
+        "R-1222"
       ]
     }
   ],
@@ -31846,6 +31961,28 @@
       "title": "N-202: R-1213's keyless-decorations guess is wrong (decorations stay keyed at crowd 2.5); an agent reproduces it on fix/n202",
       "verdict": "note",
       "text": "**Correction to R-1213 (2026-11-16, later):** the guess that decorations go keyless at crowd 2.5 is wrong: keyedDecorationsFit (src/render/rendererBackend.js) allows INDEXED_SPRITES_MAX_WEBGL = 4096 x 1024 keys, and Predator crowd 2.5 needs entities + 20 000 decorations + the queue's rows, far fewer, so its decorations stay keyed. An agent reproduces N-202 at crowd=2.5 zoom=1 on fix/n202 (an in-engine statics check and cell captures), looking at what crowd 2.5 changes instead: rows and statics updates a frame, the resync path for decoration keys, the double-buffered queue."
+    },
+    {
+      "id": "R-1221",
+      "date": "2026-11-16",
+      "title": "ASan covers every gpuPack.c export: the seven new ones and two the map had missed, 892 cases, no report, outputs equal to the shipped kernel's",
+      "verdict": "note",
+      "text": "**ASan now covers every gpuPack.c export the client binds: the seven added since the harness (pack_casters_framed, pack_casters_scatter_framed, pack_sprites_split_gbuf, pack_sprites_split_scatter_gbuf, pack_sprites_indexed_scatter_gbuf, pack_casters_keyed_scan_xy, lamp_frames) and two the case file's export map had missed (pack_sprites_keyed_gbuf, pack_sprites_keyed_rows_gbuf, E-387): 10 groups, 892 cases, no ASan report and every output equal to the shipped kernel's (32 s, inside the bench lock).** Commit 9e4bb4c9 (tests/asan/kernels/gpuPack.mjs only).\n\nCases per export: framed casters 90 and 60 (E-394's group, as pre-render calls them, the caster list in the index scratch and in memory), split and indexed G-buffer packs 20, 22 and 30 (E-444's group, including the kernel declining a list with a row twice), the keyed scan's xy 132 (E-331's group, 12 without sun frames), lamp_frames 116 (E-393's group: prepareLampFrames, syncKeyedSunTables, lampFramesWasm as applyLampFramesWasm does, tables from the revision's sunFrameTables; lists of 0, 1, 3 and 7 that run out, light counts of 0, negative, past the lights and past 1024, indices past the table, entities out of range, NaN lamps). Each case fails unless its own export ran on the ASan build (per-export call counters in bindPack) and, where the output can show it, did real work.\n\nHarness notes: the G-buffer group and 10 of 11 edge cases had been calling the shipped kernel alone on main (\"the client called no kernel\"), since the harness predates caa3aea0; and a module's memory grew past ASan's initial size after about 640 cases, so each new group starts on a fresh module (reset()). A revision run (gpuPack@<rev>) before E-444 (8f907b95) will likely fail to link now.",
+      "commits": [
+        "9e4bb4c9"
+      ]
+    },
+    {
+      "id": "R-1222",
+      "date": "2026-11-16",
+      "time": "17:08",
+      "timeFrom": "recorded",
+      "title": "d8 machine code of the hot JS: glow split one pass -64 to -71 % (E-456), rebuildOwnedRows map checks -10 to -16 % (E-471) and point skip -19 % (E-472), setters off-heap args and import aliases -22 to -33 % in d8 (E-473, E-474)",
+      "verdict": "note",
+      "text": "**The hot JS read in machine code (d8 16 release and Node 22.16): fixable per-row and per-call costs in all three spots the owner named. Pixi's glow split: one fused pass -64 to -71 % (E-456). Spatial's rebuildOwnedRows: maps re-checked every entity, -10 % on boids, -16 % on circles in d8 (E-471), -16 to -19 % with the point skip (E-472). The setters: SETTER_ARGS off heap and module-const imports, -22 % (a tick's shape) to -33 % in d8 (E-473, E-474).** Kernels merged 9000b893 (glowSplitMicrobench, rebuildOwnedRowsMicrobench and its variants); sittings 2026-11-16 15:46 to 15:49 and 17:06 to 17:08 under the bench lock, each case in its own process, alternated; every variant writes the shipped bytes (checksums over lists, counts, grid cells, poses, owned lists); kernelTierAudit: no OSR code timed.\n\n- fillQueueIndices (Pixi's glow split): packSpriteLayer's 920-byte budget holds one copy, so the entity fill over 250 000 rows is a real call, about 33 instructions a row (limit and type reloaded from stack slots, outIdx's map re-checked and its pointer decoded every stored row since _identityRows.delete(outIdx) sits between .length and the loop, two overflow checks, an interrupt check every row); the particle count about 17 an element. No allocation, megamorphic access or steady deopt. Numbers in E-456's result.\n- rebuildOwnedRows (boids' grid, colliders off: points): 6212 bytes, getCellRange inlined, no calls; the entity loop is too big to peel, so 14 map checks with pointer decodes, 11 Smi checks (_cellIdStride, _headerIds, cellByteSize hoisted without | 0), Grid.maxEntitiesPerCell re-read, countNoBody a generic ToBoolean, the cell range Smi-tagged into _cellRangeResult every entity, about 105 stack-slot operands. The verbatim control copy read +14.9 % in d8's second sitting, so d8 gains are read against shipped.\n- Setters: in setterMicrobench's frame d8 inlines all setters and their FromArgs (759 of 920); with the budget spent (a game tick) it inlines the five under 27 bytes and calls the FromArgs out of line, no double crossing a call. SETTER_ARGS is on-heap (length, base and external pointer decoded, bounds-checked); gameObject.js reads Transform, staticSceneryChangedAt and isCommandRingBound through import cells (setXFromArgs: 6 cell loads, 6 hole checks, 2 map checks, 2 decodes; with both fixes 2 cell loads, 0 decodes, 258 -> 178 instructions). E-459's branch keeps the import cells; its +37.8 % in Node with the budget spent is Node 22 lacking the heap-number rule.\n\nTool findings: the d8kit bundle turns top-level const into var and stops TurboFan folding module consts (rebuildChecked 43 against 25 ns an entity), N-236; setterMicrobench's \"same\" case rebinds the columns and deopts every setter, N-237. Raw results: scratchpad d8hot/results/timing.log and timing2.log (not kept).",
+      "commits": [
+        "9000b893"
+      ]
     }
   ],
   "leads": [
