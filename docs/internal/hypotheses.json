@@ -16401,14 +16401,15 @@
       "date": "2026-11-15",
       "area": "engine",
       "kind": "bug",
-      "result": "In steady state (8 s): spatialWorker.js:1764:22 (_flushWasmPublish, this._wasmPub.queued) deopt-eager \"Insufficient type feedback for generic named access\" x391; box2d/weedjsPost.js:662:31 (the N-86 epoch check after the pose copy) \"Insufficient type feedback for call\" x286; logicWorker.js:912:11 (compare) x70 and :901:10 (named access) x68 (the spawn batch sort); util/gameObjectActiveState.js:140:17 (unary) x13. A site that keeps deopting in steady state recompiles its function each time.",
-      "next": "Read each site with the code pass (summarizeV8Code) and --trace-deopt: a branch that warm-up never reaches (fill its feedback early, or move it to a function of its own), a call target that changes; check main has the same counts.",
+      "result": "In steady state (8 s): spatialWorker.js:1764:22 (_flushWasmPublish, this._wasmPub.queued) deopt-eager \"Insufficient type feedback for generic named access\" x391; box2d/weedjsPost.js:662:31 (the N-86 epoch check after the pose copy) \"Insufficient type feedback for call\" x286; logicWorker.js:912:11 (compare) x70 and :901:10 (named access) x68 (the spawn batch sort); util/gameObjectActiveState.js:140:17 (unary) x13. A site that keeps deopting in steady state recompiles its function each time. Fixed 2026-11-15 (R-1158): the spatial publish (391 -> 0, e334063b) and the Box2D pose epoch (287 -> 0, 68c0d0c5): code compiled before a branch at its end had run, deopting there every frame and never replaced.",
+      "next": "logicWorker _processSpawnSoA's batch path (cold in one logic worker when it tiered); the LiquidFun gate for 68c0d0c5.",
       "refs": [],
       "aliases": [
         "steady deopts predator"
       ],
       "records": [
-        "R-1155"
+        "R-1155",
+        "R-1158"
       ]
     },
     {
@@ -27600,6 +27601,19 @@
       "title": "Phase 3's second batch: lamps' frames a ninth of pre-render with DirectionalSprite people, quickselect a fifth at 128 lamps",
       "verdict": "note",
       "text": "Phase 3's second batch (DX_LIGHT3D_PLAN 17.9), the branch at 7614f83d, profileSceneSweep's cpu, deopt and heap passes, 8 s warm-up and 8 s window each (21:30 to 21:38; the owner's bench tab open: shares within a worker, not ms). Busy ms/s, then the hot engine functions:\n\n- light3dCompareScene ?all=1&hour=22 (3 000 people through DirectionalSprite, 400 props, 24 lamps with maps, self-shadow, pixel depth): pixi 254 (its wait 70 %), pre-render 210 (its wait for the pose 53 %; stamp_light_range 10 %, applyLampFramesInto 5.6 %, emit_rows 4.3 %, fastAtan2 3.8 %, lampFrameFor 3.2 %), logic 145 (DirectionalSprite.resolve 5.5 %, pickDirection 4 %). The lamps' frames (applyLampFramesInto, lampFrameFor, fastAtan2) are a ninth of pre-render's busy time here: each caster's frame a lamp, an atan2 each.\n- lampShadowStressScene ?lampShadows=map&lamps=128&walkers=6000: pre-render 222 (stamp_light_range 23 %, quickselect_order 21 %: each lamp's nearest casters chosen by maxShadowsPerLight, for the map as for the stamps), pixi 236 (its wait 76 %).\n- sunShadowMapStressScene ?lamps=48&hour=22&casters=3000: pixi 146 (compactColumnRows 2.3 %), pre-render 100 (stamp_light_range 11 %, quickselect_order 9.5 %, collect_sprites 8.8 %, persist_frame 7.8 %, wrapAngle 5.5 %, pack_casters 5.2 %, angleDistance 4.2 %, pickDirection 4 %).\n- directionalSpriteStressScene n=20000: logic 197 (resolve 15.5 %), pre-render 120 (emit_rows 44 %, collect_sprites 20 %, pack_sprites_split 15 %).\n\nNo steady-state engine deopts in the four. Garbage: logic 4274 KB/s in light3dCompareScene (the scene's own walkers: fixed, 47738ca8; the setters' part is N-215), 365 in the DirectionalSprite scene and 358 in pre-render under the renders (pickDirection's doubles: E-388, fixed, 24 and 103 after)."
+    },
+    {
+      "id": "R-1158",
+      "date": "2026-11-15",
+      "time": "22:05",
+      "timeFrom": "recorded",
+      "title": "Two of the steady deopt loops fixed: spatial publish 391 -> 0, Box2D pose epoch 287 -> 0",
+      "verdict": "kept-hygiene",
+      "text": "Deopt passes of Predator ?light3d=1&hour=22 (8 s each). The kept V8 log (22:00) named the code: _findNeighbors' TurboFan code, with _flushWasmPublish inlined at its end, deopted 706 times in two passes at spatialWorker.js:1764 (the same code object every time): the search tiers up in its first frames, before anything is published, so the inlined body had no feedback, and V8 never replaced that code. Called from update() after the search (e334063b): gone (22:02). weedjsPost.js:662, the N-86 epoch re-read after the fast path that no warm-up frame took (Predator's crowd respawns): read every frame, it moved to the comparison after it (282 at :666, 22:04); compared every frame too (68c0d0c5): gone (22:05). Left: logicWorker.js:901/912 (_processSpawnSoA's batch path, cold when it tiered: about 110 in 8 s in some runs, none in others), a few OSR exits. The Box2D worker change (one atomic load a frame) waits for the LiquidFun gate (liquidFunStress ?water=1.5, liquidFunBodyCouple) with Phase 1's sittings.",
+      "commits": [
+        "e334063b",
+        "68c0d0c5"
+      ]
     }
   ],
   "leads": [
