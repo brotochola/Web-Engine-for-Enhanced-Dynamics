@@ -11,8 +11,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { MESH_UV_FILL_FLOATS, COLLIDER_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
+import { MESH_UV_FILL_FLOATS, MESH_UV_VERT_FLOATS, COLLIDER_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
 import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
+import { rewriteMeshUvVerts } from '../reference/meshUvVerts.mjs';
 import { bindMeshCorners, rewriteCornersWasm } from '../../src/render/meshCornersClient.js';
 import { E, frameCall, rng, setup } from '../helpers/meshCornerFrames.mjs';
 import {
@@ -349,10 +350,26 @@ async function run(px, kernel) {
   assert.equal(MeshGeometry.indexWidth, 32, 'the scene bound a 32-bit arena');
   // Each rewrite's return code: a rewrite that answers -1 sends Pixi to a full pack, whose rows match anyway.
   const codes = [];
-  // The JS run: the rewrite Pixi shipped, in place of its own.
-  const rewrite = kernel ? Object.getPrototypeOf(px)._rewriteMeshCorners : rewriteExplicitMeshCorners;
+  // The JS run: the JS rewrites, in place of Pixi's own (E-453: the UV batch's records through rewriteMeshUvVerts).
+  const proto = Object.getPrototypeOf(px);
+  const rewrite = kernel ? proto._rewriteMeshCorners : rewriteExplicitMeshCorners;
   px._rewriteMeshCorners = function (...args) {
     const code = rewrite.apply(this, args);
+    codes.push(code);
+    return code;
+  };
+  px._rewriteMeshUvVerts = function (...args) {
+    let code;
+    if (kernel) {
+      code = proto._rewriteMeshUvVerts.apply(this, args);
+    } else {
+      const r = rewriteMeshUvVerts(...args);
+      code = r.result;
+      this._cornerFirstRow = code > 0 ? r.firstRow : 0;
+      this._cornerPastRow = code > 0 ? r.pastRow : 0;
+      this._cornerFirstIndex = code > 0 ? r.firstIndex : 0;
+      this._cornerPastIndex = code > 0 ? r.pastIndex : 0;
+    }
     codes.push(code);
     return code;
   };
@@ -380,12 +397,15 @@ async function run(px, kernel) {
       px.updateCustomLayers();
       const fillN = cl.prevCount | 0;
       const uvN = cl.uvPrevCount | 0;
+      const uvM = cl.uvIndexCount | 0;
       const fill = cl.fillBatch.dataU32.slice(0, fillN * COLLIDER_FILL_FLOATS);
-      const uv = cl.uvFillBatch ? cl.uvFillBatch.dataU32.slice(0, uvN * MESH_UV_FILL_FLOATS) : new Uint32Array(0);
-      frames.push({ fillN, uvN, fill, uv });
+      const uv = cl.uvFillBatch ? cl.uvFillBatch.dataU32.slice(0, uvN * MESH_UV_VERT_FLOATS) : new Uint32Array(0);
+      const uvIndices = cl.uvFillBatch ? cl.uvFillBatch.indexData.slice(0, uvM) : new Uint32Array(0);
+      frames.push({ fillN, uvN, uvM, fill, uv, uvIndices });
     }
   });
   delete px._rewriteMeshCorners;
+  delete px._rewriteMeshUvVerts;
   return { scene, cl, frames, codes, kernel: px._meshCornersWasm };
 }
 
@@ -402,17 +422,21 @@ test('Pixi draws the same rows of a 32-bit arena through the kernel as the JS re
   assert.deepEqual(wasm.codes, js.codes, 'the kernel answers each rewrite as the JS does');
   const done = js.codes.filter((c) => c === 1).length;
   assert.ok(done > FRAMES, `${done} of ${js.codes.length} rewrites done`);
-  let uvRows = 0;
+  let uvTriangles = 0;
   for (let f = 0; f < FRAMES; f++) {
     const a = js.frames[f];
     const other = wasm.frames[f];
     assert.equal(other.fillN, a.fillN, `frame ${f}: fill rows`);
-    assert.equal(other.uvN, a.uvN, `frame ${f}: UV rows`);
+    assert.equal(other.uvN, a.uvN, `frame ${f}: UV records`);
+    assert.equal(other.uvM, a.uvM, `frame ${f}: UV indices`);
     const atFill = firstDiff(other.fill, a.fill);
     assert.equal(atFill, -1, `frame ${f}: fill row ${Math.floor(atFill / COLLIDER_FILL_FLOATS)}`);
     const atUv = firstDiff(other.uv, a.uv);
-    assert.equal(atUv, -1, `frame ${f}: UV row ${Math.floor(atUv / MESH_UV_FILL_FLOATS)}`);
-    uvRows += a.uvN;
+    assert.equal(atUv, -1, `frame ${f}: UV record ${Math.floor(atUv / MESH_UV_VERT_FLOATS)}`);
+    const atIx = firstDiff(other.uvIndices, a.uvIndices);
+    assert.equal(atIx, -1, `frame ${f}: UV index ${atIx}`);
+    uvTriangles += a.uvM / 3;
   }
-  assert.ok(uvRows > FRAMES * BIG_SEGS[0] * BIG_SEGS[1] * 2, `${uvRows} UV rows compared`);
+  // The big plane's indices name records past 65 535 (rewrite_verts_u32 reads them as 32-bit).
+  assert.ok(uvTriangles > FRAMES * BIG_SEGS[0] * BIG_SEGS[1] * 2, `${uvTriangles} UV triangles compared`);
 });

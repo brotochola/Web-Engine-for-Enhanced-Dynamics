@@ -112,7 +112,6 @@ import {
 import { instancedSpriteGlProgram, pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
 import {
   VOLUME_LAMP_FRAGMENT,
-  volumeLampVertices,
   volumeLampVertex,
   volumeLampWgsl,
   volumeMapGpuProgram,
@@ -192,16 +191,26 @@ import {
   ColliderFillBatch,
   packColliderFill,
   packColliderFillPoseOnly,
-  packMeshUvFill,
+  packMeshUvVerts,
+  packMeshUvVertsPaint,
+  packedMeshUvIndices,
   colliderFillEpochsMatch,
   trackMeshFillPose,
   clearMeshFillPaintDirty,
   MESH_FILL_PRESENCE_MOVED,
   COLLIDER_FILL_PACK_FIRST_FRAME,
   COLLIDER_FILL_FLOATS,
-  MESH_UV_FILL_FLOATS,
+  MESH_UV_VERT_FLOATS,
 } from '../render/colliderFillBatch.js';
-import { bindMeshCorners, rewriteCornersWasm, rewrittenFirstRow, rewrittenPastRow } from '../render/meshCornersClient.js';
+import {
+  bindMeshCorners,
+  rewriteCornersWasm,
+  rewriteVertsWasm,
+  rewrittenFirstIndex,
+  rewrittenFirstRow,
+  rewrittenPastIndex,
+  rewrittenPastRow,
+} from '../render/meshCornersClient.js';
 import { meshLayerCapacities } from '../util/meshMemory.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { ComputeLayer } from '../render/webgpu/computeLayer.js';
@@ -896,6 +905,8 @@ class PixiRenderer extends AbstractWorker {
     this._layerRuntime = Object.create(null); // layerName -> display object
     this._cornerFirstRow = 0; // the rows the last corner rewrite wrote: [first, past)
     this._cornerPastRow = 0;
+    this._cornerFirstIndex = 0; // E-453: the UV batch's indices the last vertex rewrite wrote: [first, past)
+    this._cornerPastIndex = 0;
     this._sunLayers = []; // layers with alphaBySun: { layerId, name, spec }
     this._layerSunFactor = new Float32Array(0); // by layer id: the sun's factor on its alpha (1 without alphaBySun)
     this.layerRefs = {};
@@ -1005,8 +1016,9 @@ class PixiRenderer extends AbstractWorker {
     // World px to the sun map's texels, (world - camera) · screenScale as its cards land, for the volumes (written when
     // it changes: a Matrix's fields are tagged, each double written a heap number).
     this._volumeMapTransform = new Matrix();
-    // DX-SHADOW3D (F7): the volumes in the lamps' map: { batch, host, mesh, byTiles: its geometry for each count of tiles
-    // (E-389: one draw for every tile) } a volumes' batch, and their program's options and state (made on first use).
+    // DX-SHADOW3D (F7): the volumes in the lamps' map: { batch, host, mesh, geometry: the batch's vertices and indices,
+    // drawn with an instance a tile in use (E-389, E-453) } a volumes' batch, and their program's options and state (made
+    // on first use).
     this._volumeLampEntries = [];
     this._volumeLampProgram = null;
     this._volumeLampState = null;
@@ -7202,11 +7214,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   /**
    * DX-SHADOW3D (F7): each sun-projected volumes' layer drawn into the lamps' map, every tile in use in one draw (E-389):
-   * three vertices a tile, the row's triangle once for each (volumeShadowMap.js volumeLampVertex / volumeLampWgsl), each
-   * vertex landing on the floor along its tile's lamp's ray (the tiles' texture holds the lamps and their owners), its
-   * height out, max blending. A triangle past an edge of a tile is left out in its vertices, and one of the tile's lamp's
-   * own entity. Last frame's rows, as the sun map's volumes. A mesh a tile drew the same: about 47 draws and as many
-   * uniform syncs a frame in Predator ?light3d=1.
+   * the batch's vertices and indices with an instance a tile (E-453; volumeShadowMap.js volumeLampVertex /
+   * volumeLampWgsl), each vertex landing on the floor along its tile's lamp's ray (the tiles' texture holds the lamps and
+   * their owners), its height out, max blending. A mesh past an edge of a tile is left out in its vertices, and one of the
+   * tile's lamp's own entity. Last frame's records, as the sun map's volumes. A mesh a tile drew the same: about 47 draws
+   * and as many uniform syncs a frame in Predator ?light3d=1.
    */
   _drawVolumesInLampMap(rtOpts) {
     const shaders = this._engineShaders;
@@ -7218,8 +7230,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       const batch = cl.sunProjected ? cl.uvFillBatch : null;
-      const rows = batch ? batch.geometry.instanceCount | 0 : 0;
-      if (rows <= 0) continue;
+      // instanceCount 1: the batch has triangles (MeshUvFillBatch.upload).
+      if (batch === null || (batch.geometry.instanceCount | 0) <= 0) continue;
       let entry = null;
       for (let k = 0; k < this._volumeLampEntries.length; k++) {
         if (this._volumeLampEntries[k].batch === batch) entry = this._volumeLampEntries[k];
@@ -7228,12 +7240,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         entry = this._volumeLampEntry(batch);
         this._volumeLampEntries.push(entry);
       }
-      let geometry = entry.byTiles.get(tiles);
-      if (geometry === undefined) {
-        geometry = this._volumeLampGeometry(batch, tiles);
-        entry.byTiles.set(tiles, geometry);
-      }
-      geometry.instanceCount = rows;
+      const geometry = entry.geometry;
+      geometry.instanceCount = tiles;
       const mesh = entry.mesh;
       if (mesh.geometry !== geometry) mesh.geometry = geometry;
       this._syncVolumeResources(mesh.shader, batch);
@@ -7250,31 +7258,28 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * E-389: the lamps' map volumes' geometry for `tiles` tiles: three vertices a tile in use, numbered (aLampVertex: the
-   * program takes the corner and the tile from that number) over the batch's instance attributes (its rows). Made once a
-   * count of tiles.
+   * E-389, E-453: the lamps' map volumes' geometry: the batch's vertex attributes and its index buffer (the same buffers:
+   * what the batch's last upload sent), drawn with an instance a tile in use (the program takes the tile from the
+   * instance's number). One a batch: the frame sets its instanceCount to the tiles.
    */
-  _volumeLampGeometry(batch, tiles) {
-    const attributes = { aLampVertex: { buffer: volumeLampVertices(tiles), format: 'float32' } };
+  _volumeLampGeometry(batch) {
+    const attributes = {};
     for (const [name, a] of Object.entries(batch.geometry.attributes)) {
-      if (name === 'aTri') continue;
-      attributes[name] = { buffer: a.buffer, format: a.format, stride: a.stride, offset: a.offset, instance: true };
+      attributes[name] = { buffer: a.buffer, format: a.format, stride: a.stride, offset: a.offset };
     }
-    const geometry = new PIXI.Geometry({ attributes });
+    const geometry = new PIXI.Geometry({ attributes, indexBuffer: batch.indexBuffer });
     geometry.instanceCount = 0;
     return geometry;
   }
 
   /**
    * DX-SHADOW3D (F7): a volumes' batch's entry in the lamps' map: one mesh, its own terms (sunShadow: uSunShadow, then
-   * uLampVolume, the WGSL struct's order), in its own host; its geometry by the count of tiles (_volumeLampGeometry).
+   * uLampVolume, the WGSL struct's order), in its own host, over its geometry (_volumeLampGeometry).
    */
   _volumeLampEntry(batch) {
     const host = new PIXI.Container();
-    const geometry = this._volumeLampGeometry(batch, 1);
-    const byTiles = new Map();
-    byTiles.set(1, geometry);
-    return { batch, host, mesh: this._volumeLampMesh(batch, host, geometry), byTiles };
+    const geometry = this._volumeLampGeometry(batch);
+    return { batch, host, mesh: this._volumeLampMesh(batch, host, geometry), geometry };
   }
 
   /**
@@ -8086,12 +8091,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
   }
 
-  /** E-76 W11. A MESH layer's instance lists and generation copies, in its regions of the mesh memory. */
+  /**
+   * E-76 W11. A MESH layer's instance list and generation copies, in its regions of the mesh memory (the UV batch holds
+   * its records' entities itself, E-453).
+   */
   _bindMeshSkipRegions(skip, r) {
     const buf = this._meshMemoryBuffer;
     const n = this._meshMemoryLayout.entities | 0;
     skip.instanceEntity = new Uint32Array(buf, r.fillEntityByte, r.fillRows);
-    skip.uvInstanceEntity = new Uint32Array(buf, r.uvEntityByte, r.uvRows);
     skip.lastVertGen = new Uint32Array(buf, r.lastVertGenByte, n);
     skip.frameVertGen = new Uint32Array(buf, r.frameVertGenByte, n);
     skip.lastUvGen = new Uint32Array(buf, r.lastUvGenByte, n);
@@ -8111,23 +8118,49 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return result;
   }
 
+  /**
+   * E-453. The UV batch's vertex rewrite, through the corner kernel (rewriteVertsWasm): the records and indices it wrote
+   * into _cornerFirstRow.._cornerPastRow and _cornerFirstIndex.._cornerPastIndex.
+   */
+  _rewriteMeshUvVerts(batch, count, views, lastVertGen, genNow, lastUvGen, uvGenNow) {
+    const b = this._meshCornersWasm;
+    if (b === null) throw new Error('meshCorners: a vertex rewrite without the mesh memory');
+    const result = rewriteVertsWasm(b, batch, count, views, lastVertGen, genNow, lastUvGen, uvGenNow);
+    const done = result > 0;
+    this._cornerFirstRow = done ? rewrittenFirstRow(b) : 0;
+    this._cornerPastRow = done ? rewrittenPastRow(b) : 0;
+    this._cornerFirstIndex = done ? rewrittenFirstIndex(b) : 0;
+    this._cornerPastIndex = done ? rewrittenPastIndex(b) : 0;
+    return result;
+  }
+
   _ensureMeshUvBatch(cl) {
     if (cl.uvFillBatch) return cl.uvFillBatch;
-    const cap = cl.uvCapacity | 0;
-    if (cap <= 0) return null;
-    // E-76 W11: the rows in the mesh memory when the layer has its regions there.
+    const cap = cl.uvVertCapacity | 0;
+    const indexCap = cl.uvIndexCapacity | 0;
+    if (cap <= 0 || indexCap < 3) return null;
+    // E-76 W11, E-453: the vertex records, their entities, the indices and the span table in the mesh memory when the
+    // layer has its regions there.
     const region = cl.meshRegion;
+    const buf = this._meshMemoryBuffer;
+    const there = !!(region && buf && region.uvVerts === cap && region.uvIndices === indexCap);
+    const entities = there ? this._meshMemoryLayout.entities | 0 : this.globalEntityCount | 0;
+    const renderer = this.pixiApp?.renderer;
     const batch = new MeshUvFillBatch({
-      bufferSystem: this.pixiApp?.renderer?.buffer ?? null,
+      bufferSystem: renderer?.buffer ?? null,
+      geometrySystem: renderer?.geometry ?? null,
       capacity: cap,
+      indexCapacity: indexCap,
+      entities,
       label: `mesh-uv-${cl.layerId}`,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
       atlasSource: this._resolveAtlasSource(),
       lutSource: this._texLutSource,
-      data: region && region.uvRows === cap
-        ? new Float32Array(this._meshMemoryBuffer, region.uvRowsByte, cap * MESH_UV_FILL_FLOATS)
-        : null,
+      data: there ? new Float32Array(buf, region.uvVertsByte, cap * MESH_UV_VERT_FLOATS) : null,
+      vertexEntity: there ? new Uint32Array(buf, region.uvVertEntityByte, cap) : null,
+      indices: there ? new Uint32Array(buf, region.uvIndicesByte, indexCap) : null,
+      indexSpan: there ? new Uint32Array(buf, region.uvIndexSpanByte, entities * 2) : null,
     });
     batch.mesh.blendMode = cl.fillBatch?.mesh?.blendMode || cl.containerBlend || 'normal';
     cl.uvFillBatch = batch;
@@ -8220,29 +8253,28 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
   // vertgen-end
 
+  /**
+   * E-453: the layer's UV meshes, each mesh's vertices once and its triangles as indices of them (packMeshUvVerts):
+   * cl.uvPrevCount the records, cl.uvIndexCount the indices drawn.
+   */
   _packMeshUvLayer(cl, views, skip) {
     if (!views.layerHasVertexUv) {
       if (cl.uvFillBatch) {
-        cl.uvFillBatch.upload(0);
+        cl.uvFillBatch.upload(0, 0);
         skip.uvLocalsReady = false;
         cl.uvPrevCount = 0;
+        cl.uvIndexCount = 0;
       }
       return;
     }
     const batch = this._ensureMeshUvBatch(cl);
     if (!batch) return;
-    const cap = batch.capacity;
-    if (!skip.uvInstanceEntity || skip.uvInstanceEntity.length < cap) {
-      skip.uvInstanceEntity = new Uint32Array(cap);
-    }
-    views.instanceEntity = skip.uvInstanceEntity;
-    views.outU32 = batch.rowsU32;
-    const packed = packMeshUvFill(batch.rows, cap, cl.layerId, views);
+    const packed = packMeshUvVerts(batch, cl.layerId, views);
     skip.uvLocalsReady = packed > 0;
     cl.uvPrevCount = packed;
-    batch.upload(packed);
+    cl.uvIndexCount = batch.upload(packed, packedMeshUvIndices());
     if (packed > 0) {
-      batch.uploadPoseTable(skip.uvInstanceEntity, packed, views, skip.prevPose);
+      batch.uploadPoseTable(batch.vertexEntity, packed, views, skip.prevPose);
       this._uploadMeshPoseSource(batch, 'mesh-uv-pose');
     }
   }
@@ -10159,7 +10191,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let i = 0; i < layers.length; i++) {
       const r = layers[i];
       if (r.layerId !== layerId) continue;
-      return r.fillRows === caps.fill && r.uvRows === caps.uv ? r : null;
+      return r.fillRows === caps.fill && r.uvVerts === caps.uvVerts && r.uvIndices === caps.uvIndices ? r : null;
     }
     return null;
   }
@@ -10233,6 +10265,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       let batch = null;
       let fillBatch = null;
       let meshRegion = null;
+      // E-453: the UV batch's vertex records and indices, made when the layer first packs a mesh with UVs.
+      let uvVertCapacity = 0;
+      let uvIndexCapacity = 0;
       if (isMesh) {
         const maxFx =
           (data.config?.physics?.maxFixturePoolSize | 0) ||
@@ -10267,7 +10302,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             ? new Float32Array(this._meshMemoryBuffer, meshRegion.fillRowsByte, caps.fill * COLLIDER_FILL_FLOATS)
             : null,
         });
-        fillBatch._uvCapacity = caps.uv;
+        uvVertCapacity = caps.uvVerts;
+        uvIndexCapacity = caps.uvIndices;
         fillBatch.mesh.blendMode = containerBlend;
       }
       let sortKeyU32ByBuf = null;
@@ -10358,8 +10394,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         batch,
         fillBatch,
         uvFillBatch: null,
-        uvCapacity: fillBatch?._uvCapacity | 0,
+        uvVertCapacity,
+        uvIndexCapacity,
+        // E-453: the UV batch's vertex records and the indices it draws.
         uvPrevCount: 0,
+        uvIndexCount: 0,
         // E-76 W11: this MESH layer's regions of the mesh memory, or null.
         meshRegion,
         splatBatch,
@@ -10711,9 +10750,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             // E-118: the UV generations drawn and this frame's copy (_captureUvGen).
             lastUvGen: new Uint32Array(0),
             frameUvGen: new Uint32Array(0),
-            // Each batch's instance-to-entity list, written by its full pack.
+            // The fill batch's instance-to-entity list, written by its full pack (the UV batch holds its own, E-453).
             instanceEntity: new Uint32Array(0),
-            uvInstanceEntity: new Uint32Array(0),
             // The layer's record of every mesh's presence and pose, which trackMeshFillPose compares and updates once a
             // frame and the pose tables upload from; sized on the first frame.
             prevPose: {
@@ -10771,11 +10809,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           const genNow = full || vertsMoved ? this._captureVertGen(skip, views) : null;
           // E-118: the UV generations right after, for the same reads.
           const uvGenNow = genNow ? this._captureUvGen(skip, views) : null;
-          // The rows of each batch this frame's rewrite touched: a mesh edit anywhere moves the one vertex epoch.
+          // The rows of each batch this frame's rewrite touched: a mesh edit anywhere moves the one vertex epoch. E-453: the
+          // UV batch's records, and the indices of its triangles.
           let fillFirst = 0;
           let fillPast = lastPacked;
           let uvFirst = 0;
           let uvPast = cl.uvPrevCount | 0;
+          let uvIndexFirst = 0;
+          let uvIndexPast = 0;
           if (!full && vertsMoved) {
             this._cornerFirstRow = 0;
             this._cornerPastRow = lastPacked;
@@ -10793,14 +10834,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             const uvCount = cl.uvPrevCount | 0;
             this._cornerFirstRow = 0;
             this._cornerPastRow = !cl.uvFillBatch ? 0 : uvCount;
+            this._cornerFirstIndex = 0;
+            this._cornerPastIndex = 0;
             const uvRewrite = !cl.uvFillBatch || uvCount <= 0
               ? 1
-              : this._rewriteMeshCorners(
-                cl.uvFillBatch.rows,
+              : this._rewriteMeshUvVerts(
+                cl.uvFillBatch,
                 uvCount,
-                skip.uvInstanceEntity,
                 views,
-                MESH_UV_FILL_FLOATS,
                 skip.lastVertGen,
                 genNow,
                 skip.lastUvGen,
@@ -10808,6 +10849,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               );
             uvFirst = this._cornerFirstRow;
             uvPast = this._cornerPastRow;
+            uvIndexFirst = this._cornerFirstIndex;
+            uvIndexPast = this._cornerPastIndex;
             if (fillRewrite < 0 || uvRewrite < 0) full = true;
           }
           const noRowMoved = !full && vertsMoved && !paintMoved && !poseMoved && fillPast <= fillFirst && uvPast <= uvFirst;
@@ -10838,26 +10881,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 );
               }
               const uvCount = cl.uvPrevCount | 0;
-              if (cl.uvFillBatch && uvCount > 0 && skip.uvInstanceEntity) {
-                views.outU32 = cl.uvFillBatch.rowsU32;
-                packColliderFillPoseOnly(
-                  cl.uvFillBatch.rows,
-                  cl.uvFillBatch.capacity,
-                  uvCount,
-                  skip.uvInstanceEntity,
-                  views,
-                  MESH_UV_FILL_FLOATS,
-                );
-              }
+              if (cl.uvFillBatch && uvCount > 0) packMeshUvVertsPaint(cl.uvFillBatch, uvCount, views);
             }
             if (paintMoved) {
               if (lastPacked > 0) cl.fillBatch.upload(lastPacked);
               const uvCount = cl.uvPrevCount | 0;
-              if (cl.uvFillBatch && uvCount > 0) cl.uvFillBatch.upload(uvCount);
+              // The indices too: this frame's rewrite may have written some.
+              if (cl.uvFillBatch && uvCount > 0) cl.uvIndexCount = cl.uvFillBatch.upload(uvCount, cl.uvIndexCount);
             } else if (vertsMoved) {
               // Only the rows the rewrite wrote; none on a layer the edit did not reach.
               if (fillPast > fillFirst) cl.fillBatch.uploadRange(fillFirst, fillPast);
               if (cl.uvFillBatch && uvPast > uvFirst) cl.uvFillBatch.uploadRange(uvFirst, uvPast);
+              if (cl.uvFillBatch && uvIndexPast > uvIndexFirst) cl.uvFillBatch.uploadIndexRange(uvIndexFirst, uvIndexPast);
             }
             if (poseMoved) {
               if (lastPacked > 0) {
@@ -10865,8 +10900,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 this._uploadMeshPoseSource(cl.fillBatch, 'mesh-pose');
               }
               const uvCount = cl.uvPrevCount | 0;
-              if (cl.uvFillBatch && uvCount > 0 && skip.uvInstanceEntity) {
-                cl.uvFillBatch.uploadPoseTable(skip.uvInstanceEntity, uvCount, views, skip.prevPose);
+              if (cl.uvFillBatch && uvCount > 0) {
+                cl.uvFillBatch.uploadPoseTable(cl.uvFillBatch.vertexEntity, uvCount, views, skip.prevPose);
                 this._uploadMeshPoseSource(cl.uvFillBatch, 'mesh-uv-pose');
               }
             }
@@ -10885,7 +10920,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           packedThisFrame = !noRowMoved;
         }
         densityMesh = cl.fillBatch.mesh;
-        this._meshFillInstancesThisFrame += (cl.prevCount | 0) + (cl.uvPrevCount | 0);
+        // Triangles, as when the UV batch drew a row a triangle (E-453: its indices over 3).
+        this._meshFillInstancesThisFrame += (cl.prevCount | 0) + (((cl.uvIndexCount | 0) / 3) | 0);
         const camChanged =
           skip.camX !== this._renderCameraX ||
           skip.camY !== this._renderCameraY ||

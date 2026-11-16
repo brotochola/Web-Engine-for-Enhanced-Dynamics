@@ -991,10 +991,9 @@ function expectRow(out, row, base, want) {
   }
 }
 
-// E-419, E-452: both batches read their row as vec4 (aRow0, ...; the collider's last 2 floats a vec2) and their shaders
-// name the fields from them.
-const FIELD_FLOATS = { V0: 2, V1: 2, V2: 2, POS: 2, ROT: 2, TINT_BITS: 1, DEPTH: 1, TEX_ID: 1, TILE_INV: 2, TILE_OFF: 2, BODY: 1, UV0: 2, UV1: 2, UV2: 2 };
-const UV_FIELDS = new Set(['UV0', 'UV1', 'UV2']);
+// E-452: the collider batch reads its row as 4 vec4 and a vec2 (aRow0..aRow4) and its shaders name the fields from them,
+// as E-419 made the UV batch read its rows (which E-453 made vertex records: meshUvVerts.test.js).
+const FIELD_FLOATS = { V0: 2, V1: 2, V2: 2, POS: 2, ROT: 2, TINT_BITS: 1, DEPTH: 1, TEX_ID: 1, TILE_INV: 2, TILE_OFF: 2, BODY: 1 };
 
 /** The row floats a shader's `aV0 = aRow0.xy;` (GLSL or WGSL) reads, in order. */
 function rowFloats(source, name, what) {
@@ -1008,13 +1007,13 @@ function rowFloats(source, name, what) {
 }
 
 /** Each field the batch's shaders name from aRow0.. (GLSL and WGSL) reads the floats FILL_ROW puts it at. */
-function expectShaderFields(files, uv) {
+function expectShaderFields(files) {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const shader = (name) => fs.readFileSync(path.join(here, '../../src/shaders', name), 'utf8');
   for (const file of files) {
     const source = shader(file);
     for (const [name, field] of Object.entries(ROW_ATTR)) {
-      if (!uv && UV_FIELDS.has(field)) continue;
+      if (!FIELD_FLOATS[field]) continue;
       const want = Array.from({ length: FIELD_FLOATS[field] }, (_, i) => FILL_ROW[field] + i);
       assert.deepEqual(rowFloats(source, name, file), want, `${file}: ${name} reads FILL_ROW.${field}`);
     }
@@ -1047,32 +1046,7 @@ test('fill row: the collider batch reads FILL_ROW as 4 vec4 and a vec2, and both
     end += k < 4 ? 4 : 2;
   }
   assert.equal(end, COLLIDER_FILL_FLOATS);
-  expectShaderFields(['colliderFill.vert.glsl', 'colliderFill.wgsl'], false);
-});
-
-test('fill row: the UV batch reads FILL_ROW as 6 vec4, and both its shaders name each field where FILL_ROW puts it', () => {
-  assert.equal(MESH_UV_FILL_FLOATS, FILL_ROW.UV2 + 2);
-  const batch = wgslFillBatch(MeshUvFillBatch);
-  const attrs = batch.geometry.attributes;
-  const wgslAttrs = batch.shader.gpuProgram.attributeData;
-  const rows = Object.keys(attrs);
-  // N-228: no aTri attribute: the index buffer [0, 1, 2] gives an instance its 3 vertices, and the shaders take the
-  // corner from the vertex's index.
-  assert.equal(attrs.aTri, undefined);
-  assert.deepEqual(Array.from(batch.geometry.indexBuffer.data), [0, 1, 2]);
-  assert.equal(wgslAttrs.aTri, undefined);
-  assert.deepEqual(rows.sort(), Object.keys(wgslAttrs).sort());
-  assert.equal(rows.length, MESH_UV_FILL_FLOATS / 4);
-  for (let k = 0; k < rows.length; k++) {
-    const a = attrs[`aRow${k}`];
-    assert.ok(a, `aRow${k}`);
-    assert.equal(a.format, 'float32x4', `aRow${k}`);
-    assert.equal(wgslAttrs[`aRow${k}`].format, 'float32x4', `aRow${k} in the WGSL`);
-    assert.equal(a.instance, true, `aRow${k}`);
-    assert.equal(a.stride, MESH_UV_FILL_FLOATS * 4, `aRow${k}`);
-    assert.equal(a.offset, k * 16, `aRow${k}`);
-  }
-  expectShaderFields(['meshUvFill.vert.glsl', 'meshUvFill.wgsl'], true);
+  expectShaderFields(['colliderFill.vert.glsl', 'colliderFill.wgsl']);
 });
 
 test('fill row: the full pack and the pose-only refill write FILL_ROW', () => {

@@ -2,8 +2,8 @@
 // corners as three x, y pairs from float 0 and, on the UV batch, three u, v pairs from float R_UV0; it stores
 // NAN_BITS where the JS stores undefined; it reads its arguments from a table whose slots its enum names and the
 // client fills by MESH_CORNER_SLOTS; and it takes a UV generation slot of 0 as "none". The mesh memory sizes the
-// batches' rows with MESH_FILL_ROW_BYTES and MESH_UV_ROW_BYTES, which wasmMemoryMap.js keeps as numbers of its
-// own because colliderFillBatch.js loads Pixi and the main thread does not.
+// fill batch's rows with MESH_FILL_ROW_BYTES and the UV batch's vertex records (E-453) with MESH_UV_VERT_BYTES, which
+// wasmMemoryMap.js keeps as numbers of its own because colliderFillBatch.js loads Pixi and the main thread does not.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -15,13 +15,15 @@ import {
   FILL_ROW,
   MESH_UV_FILL_FLOATS,
   MESH_UV_FILL_STRIDE,
+  MESH_UV_VERT_FLOATS,
+  MESH_UV_VERT_STRIDE,
 } from '../../src/render/colliderFillBatch.js';
-import { bindMeshCorners, MESH_CORNER_SLOTS, rewriteCornersWasm } from '../../src/render/meshCornersClient.js';
+import { bindMeshCorners, MESH_CORNER_SLOTS, rewriteCornersWasm, rewriteVertsWasm } from '../../src/render/meshCornersClient.js';
 import {
   layoutRegions,
   MESH_CORNER_TABLE_SLOTS,
   MESH_FILL_ROW_BYTES,
-  MESH_UV_ROW_BYTES,
+  MESH_UV_VERT_BYTES,
   meshMemoryRegions,
 } from '../../src/util/wasmMemoryMap.js';
 
@@ -78,15 +80,25 @@ test('the kernel stores undefined as the JS does', () => {
   assert.equal(new Uint32Array(f.buffer)[0], define('NAN_BITS'));
 });
 
-test('the mesh memory sizes the rows as the batches do', () => {
+test('the mesh memory sizes the rows and the vertex records as the batches do', () => {
   assert.equal(MESH_FILL_ROW_BYTES, COLLIDER_FILL_STRIDE);
-  assert.equal(MESH_UV_ROW_BYTES, MESH_UV_FILL_STRIDE);
+  assert.equal(MESH_UV_VERT_BYTES, MESH_UV_VERT_STRIDE);
   const geometryBytes = MeshGeometry.getBufferSize(256, 768, 40);
-  const { regions } = meshMemoryRegions(geometryBytes, 40, [{ fillRows: 70, uvRows: 33 }, { fillRows: 5, uvRows: 0 }]);
+  const { regions } = meshMemoryRegions(geometryBytes, 40, [
+    { fillRows: 70, uvVerts: 33, uvIndices: 99 },
+    { fillRows: 5, uvVerts: 0, uvIndices: 0 },
+  ]);
   assert.equal(regions.meshFillRows0.bytes, 70 * COLLIDER_FILL_STRIDE);
-  assert.equal(regions.meshUvRows0.bytes, 33 * MESH_UV_FILL_STRIDE);
+  assert.equal(regions.meshFillEntity0.bytes, 70 * 4);
+  // E-453: the UV batch's records, their entities, its indices and a span (first index, count) per entity.
+  assert.equal(regions.meshUvVerts0.bytes, 33 * MESH_UV_VERT_STRIDE);
+  assert.equal(regions.meshUvVertEntity0.bytes, 33 * 4);
+  assert.equal(regions.meshUvIndices0.bytes, 99 * 4);
+  assert.equal(regions.meshUvIndexSpan0.bytes, 40 * 8);
   assert.equal(regions.meshFillRows1.bytes, 5 * COLLIDER_FILL_STRIDE);
-  assert.equal(regions.meshUvRows1.bytes, 0);
+  assert.equal(regions.meshUvVerts1.bytes, 0);
+  assert.equal(regions.meshUvIndices1.bytes, 0);
+  assert.equal(regions.meshUvIndexSpan1.bytes, 0, 'no records, no span table');
   assert.equal(regions.meshCornerTable.bytes, MESH_CORNER_TABLE_SLOTS * 4);
   // A UV generation slot of 0 means none: MeshGeometry holds byte 0, and no generation array starts there.
   assert.equal(regions.meshGeometry.byte, 0);
@@ -114,6 +126,8 @@ test('the client writes each slot the value its name says', async () => {
     { name: 'uvGen', owner: 'test', bytes: (E + 1) * 4 },
     { name: 'lastUv', owner: 'test', bytes: (E + 3) * 4 },
     { name: 'table', owner: 'test', bytes: MESH_CORNER_TABLE_SLOTS * 4 },
+    { name: 'draw', owner: 'test', bytes: 12 * 4 },
+    { name: 'span', owner: 'test', bytes: E * 8 },
   ]);
   const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
   const buffer = memory.buffer;
@@ -166,4 +180,38 @@ test('the client writes each slot the value its name says', async () => {
   assert.equal(slot('step'), COLLIDER_FILL_FLOATS);
   assert.equal(slot('uvOn'), 0);
   for (const name of ['uvGen', 'uvGenLen', 'lastUv', 'lastUvLen']) assert.equal(slot(name), 0, `${name} none`);
+
+  // E-453: the UV batch's vertex rewrite, its records, entities, indices and span table.
+  const target = {
+    verts: new Float32Array(buffer, R.rows.byte, 3 * MESH_UV_VERT_FLOATS),
+    vertexEntity: entity,
+    indices: new Uint32Array(buffer, R.draw.byte, 12),
+    indexSpan: new Uint32Array(buffer, R.span.byte, (E - 2) * 2),
+  };
+  assert.equal(rewriteVertsWasm(b, target, 3, views, last, gen, lastUv, uvGen), 1);
+  assert.equal(b.calls, 3);
+  assert.equal(slot('out'), target.verts.byteOffset);
+  assert.equal(slot('count'), 3);
+  assert.equal(slot('step'), MESH_UV_VERT_FLOATS);
+  assert.equal(slot('uvOn'), 1);
+  assert.equal(slot('entity'), entity.byteOffset);
+  assert.equal(slot('gen'), gen.byteOffset);
+  assert.equal(slot('genLen'), E);
+  assert.equal(slot('last'), last.byteOffset);
+  assert.equal(slot('lastLen'), E + 2);
+  assert.equal(slot('uvGen'), uvGen.byteOffset);
+  assert.equal(slot('uvGenLen'), E + 1);
+  assert.equal(slot('lastUv'), lastUv.byteOffset);
+  assert.equal(slot('lastUvLen'), E + 3);
+  assert.equal(slot('drawIndices'), target.indices.byteOffset);
+  assert.equal(slot('span'), target.indexSpan.byteOffset);
+  assert.equal(slot('spanLen'), E - 2, 'the entities the span table covers');
+  // Nothing moved: no record and no index written.
+  assert.ok(slot('firstRow') >= slot('pastRow'));
+  assert.ok(slot('firstIndex') >= slot('pastIndex'));
+  // Without the UV generations: none in the table.
+  assert.equal(rewriteVertsWasm(b, target, 3, views, last, gen), 1);
+  for (const name of ['uvGen', 'uvGenLen', 'lastUv', 'lastUvLen']) assert.equal(slot(name), 0, `${name} none`);
+  // A call the kernel cannot take: records outside the memory.
+  assert.throws(() => rewriteVertsWasm(b, { ...target, verts: new Float32Array(3 * MESH_UV_VERT_FLOATS) }, 3, views, last, gen), /cannot take/);
 });

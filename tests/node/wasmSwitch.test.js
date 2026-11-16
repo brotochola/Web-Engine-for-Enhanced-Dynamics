@@ -205,7 +205,8 @@ test('with a MESH layer MeshGeometry and the MESH layers\' batches live in the m
   assert.deepEqual(mem.layout.layers.map((l) => l.layerId), [Layer.get('ground').id, Layer.get('cloth').id], 'each MESH layer, in order');
   for (const l of mem.layout.layers) {
     assert.equal(l.fillRows, caps.fill, 'the fill rows Pixi gives the layer');
-    assert.equal(l.uvRows, caps.uv, 'the UV rows Pixi gives the layer');
+    assert.equal(l.uvVerts, caps.uvVerts, 'the UV vertex records Pixi gives the layer (E-453)');
+    assert.equal(l.uvIndices, caps.uvIndices, 'and their indices');
   }
   assert.equal(mem.layout.geometryBytes, MeshGeometry.getBufferSize(512, 1536, 1000));
 

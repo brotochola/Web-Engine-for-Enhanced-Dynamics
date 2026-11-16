@@ -1,7 +1,7 @@
 /**
  * Instanced fill of this entity's collider (LAYER_KIND.MESH).
  * Explicit MeshGeometry wins. Else fixtures, else primary polygon / box /
- * display 8-gon for a physics circle. Per-vertex UVs go to packMeshUvFill.
+ * display 8-gon for a physics circle. Per-vertex UVs go to packMeshUvVerts (E-453).
  * One PIXI.Mesh per MESH slot. VS applies packed pose (published display pose
  * when pixi latched it, else live Transform).
  * Static bodies pack live Transform: pose lags a remesh/spawn and the island snaps.
@@ -1030,6 +1030,8 @@ function writeUvTri(
 /**
  * Per-vertex UV meshes on this MESH layer. Stride is MESH_UV_FILL_FLOATS.
  * Collider fill and tile-mode explicit meshes stay in packColliderFill.
+ * E-453: MeshUvFillBatch draws packMeshUvVerts' vertex records; these rows, a triangle each, are what its tests compare
+ * the indexed batch's triangles with.
  * @returns {number} instance count
  */
 export function packMeshUvFill(out, cap, layerId, views) {
@@ -1128,6 +1130,239 @@ export function packMeshUvFill(out, cap, layerId, views) {
   return written;
 }
 
+// E-453: a UV mesh's vertex record, as MeshUvFillBatch draws them: each mesh's vertices once and its triangles an index
+// buffer of them, where a row (FILL_ROW) gave every triangle its 3 corners again (a house's vertex is in 3 to 6 of its
+// triangles). The writers index with literals, as FILL_ROW's do (R13); meshUvVerts.test.js ties them to this table.
+export const MESH_UV_VERT = Object.freeze({
+  XY: 0, // the vertex: x, y
+  UV: 2, // its u, v (DX-SUNMESH: u is its height)
+  POS: 4, // its entity's pose when packed: x, y (the shader's when the pose table's has no rotation)
+  ROT: 6, // cos, sin
+  TINT_BITS: 8, // u32: alpha << 24 | rgb
+  REACH: 9, // its entity's longest vertex, the same in each of them: the lamps' map cull (volumeShadowMap.js)
+  TEX_ID: 10,
+  BODY: 11, // its entity
+  TILE_INV: 12, // tix, tiy
+  TILE_OFF: 14, // tou, tov (DX-VOLUME: tou is a volume's floor scale)
+});
+export const MESH_UV_VERT_FLOATS = 16;
+export const MESH_UV_VERT_STRIDE = MESH_UV_VERT_FLOATS * 4;
+
+/** The indices the last packMeshUvVerts wrote. */
+let _uvIndexCount = 0;
+
+/** @returns {number} the indices the last packMeshUvVerts wrote into its target's `indices` */
+export function packedMeshUvIndices() {
+  return _uvIndexCount;
+}
+
+/**
+ * E-453: the UV meshes of this MESH layer as MeshUvFillBatch draws them, each mesh's vertices once. The meshes, their
+ * order and their triangles are packMeshUvFill's, and each vertex record (MESH_UV_VERT_FLOATS) carries what that row
+ * carried for its corner: its x, y and u, v, its entity's pose, paint and entity (no depth: the layer's draw neither
+ * tests nor writes it, N-119), and its entity's reach. Into `target`:
+ * - verts / vertsU32: the records from 0, a mesh's vertices in its order; vertexEntity: each record's entity;
+ * - indices: each triangle's 3 records, from 0, in packMeshUvFill's row order (a triangle with a corner past its mesh
+ *   left out, as there);
+ * - indexSpan: per entity, where its indices start and how many there are (the corner rewrite's: rewriteMeshUvVerts).
+ *   An entity past its length gets none, and a rewrite of its mesh repacks.
+ * A mesh whose vertices pass `capacity`, or a triangle whose indices pass `indexCapacity`, ends the pack, the mesh's
+ * earlier triangles kept.
+ * @param {{ verts: Float32Array, vertsU32: Uint32Array, capacity: number, vertexEntity: Uint32Array,
+ *   indices: Uint32Array, indexCapacity: number, indexSpan: Uint32Array }} target
+ * @param {number} layerId
+ * @param {object} views
+ * @returns {number} the vertex records written; packedMeshUvIndices() the indices
+ */
+export function packMeshUvVerts(target, layerId, views) {
+  _uvIndexCount = 0;
+  const maxVerts = target.capacity | 0;
+  const maxIndices = target.indexCapacity | 0;
+  if (maxVerts <= 0 || maxIndices < 3 || !views.meshHasUv || !views.meshVertexX) return 0;
+  const out = target.verts;
+  const outU32 = target.vertsU32;
+  const vertexEntity = target.vertexEntity;
+  const ix = target.indices;
+  const span = target.indexSpan;
+  const spanEntities = span.length >> 1;
+  const entityCount = views.entityCount | 0;
+  const meshActive = views.meshActive;
+  const meshVisible = views.meshVisible;
+  const meshMask = views.meshLayerMask;
+  const meshTint = views.meshTint;
+  const meshAlpha = views.meshAlpha;
+  const meshBits = views.meshBits | 0;
+  const bit = 1 << (layerId | 0);
+  const mx = views.meshVertexX;
+  const my = views.meshVertexY;
+  const mu = views.meshUvU;
+  const mv = views.meshUvV;
+  const indices = views.meshIndices;
+  const floorScale = views.meshFloorScale || null;
+  let written = 0;
+  let at = 0;
+
+  for (let i = 0; i < entityCount; i++) {
+    if (!meshActive[i] || !meshVisible[i]) continue;
+    if (!views.meshHasUv[i]) continue;
+    const mask = meshMask[i] | 0;
+    if (!(mask & bit) || !(mask & meshBits)) continue;
+    const meshAt = explicitMeshOffset(i, views);
+    if (meshAt < 0) continue;
+    const vcount = views.meshVertCount ? (views.meshVertCount[i] | 0) : 0;
+    if (vcount < 3 || !mu || !mv) continue;
+    if (written + vcount > maxVerts) break;
+
+    bindMeshPaint(i, views);
+    // DX-VOLUME: a volume has no tiles, and its floor scale goes to the shader in the record's tile offset.
+    if (floorScale !== null && floorScale[i] > 0) _paint.tou = floorScale[i];
+    const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
+    const px = pose[0];
+    const py = pose[1];
+    const rc = pose[2];
+    const rs = pose[3];
+    let a = meshAlpha ? meshAlpha[i] : 1;
+    if (a < 0) a = 0;
+    else if (a > 1) a = 1;
+    const a8 = (a * 255 + 0.5) | 0;
+    const packed = (((a8 & 255) << 24) | ((meshTint[i] >>> 0) & 0xffffff)) >>> 0;
+    const texId = _paint.texId;
+    const tix = _paint.tix;
+    const tiy = _paint.tiy;
+    const tou = _paint.tou;
+    const tov = _paint.tov;
+    // The reach: how far from the anchor its farthest vertex stands, before the pose turns it.
+    let far = 0;
+    for (let v = 0; v < vcount; v++) {
+      const x = mx[meshAt + v];
+      const y = my[meshAt + v];
+      const d = x * x + y * y;
+      if (d > far) far = d;
+    }
+    const reach = Math.sqrt(far);
+    for (let v = 0; v < vcount; v++) {
+      const src = meshAt + v;
+      const o = (written + v) * 16;
+      out[o] = mx[src];
+      out[o + 1] = my[src];
+      out[o + 2] = mu[src];
+      out[o + 3] = mv[src];
+      out[o + 4] = px;
+      out[o + 5] = py;
+      out[o + 6] = rc;
+      out[o + 7] = rs;
+      outU32[o + 8] = packed;
+      out[o + 9] = reach;
+      out[o + 10] = texId;
+      out[o + 11] = i;
+      out[o + 12] = tix;
+      out[o + 13] = tiy;
+      out[o + 14] = tou;
+      out[o + 15] = tov;
+      vertexEntity[written + v] = i;
+    }
+
+    const first = at;
+    let full = false;
+    const ixAt = views.meshIndexOffset ? (views.meshIndexOffset[i] | 0) : -1;
+    if (ixAt >= 0 && indices && views.meshIndexCount) {
+      const triN = ((views.meshIndexCount[i] | 0) / 3) | 0;
+      for (let t = 0; t < triN; t++) {
+        const o = ixAt + t * 3;
+        const ia = indices[o] | 0;
+        const ib = indices[o + 1] | 0;
+        const icx = indices[o + 2] | 0;
+        if (ia < 0 || ib < 0 || icx < 0 || ia >= vcount || ib >= vcount || icx >= vcount) continue;
+        if (at + 3 > maxIndices) {
+          full = true;
+          break;
+        }
+        ix[at] = written + ia;
+        ix[at + 1] = written + ib;
+        ix[at + 2] = written + icx;
+        at += 3;
+      }
+    } else {
+      const fans = vcount - 2;
+      for (let t = 0; t < fans; t++) {
+        if (at + 3 > maxIndices) {
+          full = true;
+          break;
+        }
+        ix[at] = written;
+        ix[at + 1] = written + t + 1;
+        ix[at + 2] = written + t + 2;
+        at += 3;
+      }
+    }
+    if (i < spanEntities) {
+      span[i * 2] = first;
+      span[i * 2 + 1] = at - first;
+    }
+    written += vcount;
+    if (full) break;
+  }
+  _uvIndexCount = at;
+  return written;
+}
+
+/**
+ * E-453: packColliderFillPoseOnly for the UV batch's vertex records: each record's pose and paint from its entity now,
+ * as packMeshUvVerts writes them (the floor scale of a volume included), its vertex, UV, reach and entity as packed.
+ * @param {{ verts: Float32Array, vertsU32: Uint32Array, vertexEntity: Uint32Array }} target
+ * @param {number} count records packed
+ * @param {object} views
+ * @returns {number} count
+ */
+export function packMeshUvVertsPaint(target, count, views) {
+  const n = count | 0;
+  if (n <= 0) return 0;
+  const out = target.verts;
+  const outU32 = target.vertsU32;
+  const vertexEntity = target.vertexEntity;
+  const meshTint = views.meshTint;
+  const meshAlpha = views.meshAlpha;
+  const floorScale = views.meshFloorScale || null;
+  let k = 0;
+  while (k < n) {
+    const i = vertexEntity[k] | 0;
+    let end = k + 1;
+    while (end < n && (vertexEntity[end] | 0) === i) end++;
+    bindMeshPaint(i, views);
+    if (floorScale !== null && floorScale[i] > 0) _paint.tou = floorScale[i];
+    const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
+    const px = pose[0];
+    const py = pose[1];
+    const rc = pose[2];
+    const rs = pose[3];
+    let a = meshAlpha ? meshAlpha[i] : 1;
+    if (a < 0) a = 0;
+    else if (a > 1) a = 1;
+    const a8 = (a * 255 + 0.5) | 0;
+    const packed = (((a8 & 255) << 24) | ((meshTint[i] >>> 0) & 0xffffff)) >>> 0;
+    const texId = _paint.texId;
+    const tix = _paint.tix;
+    const tiy = _paint.tiy;
+    const tou = _paint.tou;
+    const tov = _paint.tov;
+    for (let v = k; v < end; v++) {
+      const o = v * 16;
+      out[o + 4] = px;
+      out[o + 5] = py;
+      out[o + 6] = rc;
+      out[o + 7] = rs;
+      outU32[o + 8] = packed;
+      out[o + 10] = texId;
+      out[o + 12] = tix;
+      out[o + 13] = tiy;
+      out[o + 14] = tou;
+      out[o + 15] = tov;
+    }
+    k = end;
+  }
+  return n;
+}
+
 export class ColliderFillBatch {
   /**
    * @param {object} opts
@@ -1164,7 +1399,7 @@ export class ColliderFillBatch {
     const stride = COLLIDER_FILL_STRIDE;
     const buf = this.buffer;
     // E-452: the row as COLLIDER_ROW_VEC4 vec4 and a vec2 in FILL_ROW's order (aRow0 floats 0-3, ..., aRow4 16-17), which
-    // the shaders name field by field, and the corner from the vertex's index, as MeshUvFillBatch reads its rows (E-419):
+    // the shaders name field by field, and the corner from the vertex's index, as E-419 made MeshUvFillBatch read its rows:
     // one attribute a field (11, and aTri) is what the vertex stage paid for. The index buffer [0, 1, 2] gives an instance
     // its 3 vertices (N-228).
     const attributes = {};
