@@ -17885,12 +17885,12 @@
     {
       "id": "E-389",
       "title": "With light3d Pixi sets about 132 sampler uniforms a frame to the unit they already hold (uniform1i: 133 a frame, 132 of them redundant, against 18 without light3d)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 from glFrameRecorder on Predator",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "glFrameRecorder, Predator zoom 0.3, 3 s after 12 s: plain 17.6 uniform1i a frame (16.9 redundant); ?light3d=1 by day 132.8 (132.1), by night 130.7 (130.2).",
+      "result": "Kept 2026-11-16 (R-1205): the lamps' map volumes in one draw; Predator light3d uniform1i 132 -> 40 a frame, redundant calls 167.5 -> 75.6. glFrameRecorder, Predator zoom 0.3, 3 s after 12 s: plain 17.6 uniform1i a frame (16.9 redundant); ?light3d=1 by day 132.8 (132.1), by night 130.7 (130.2).",
       "next": "Find which programs set them (the light3d passes, Pixi's sampler sync) and skip a same-value uniform1i; the recorder and Pixi's CPU per function before and after.",
       "refs": [],
       "aliases": [
@@ -17901,7 +17901,8 @@
         "R-1173",
         "R-1175",
         "R-1181",
-        "R-1193"
+        "R-1193",
+        "R-1205"
       ]
     },
     {
@@ -17925,12 +17926,12 @@
     {
       "id": "E-391",
       "title": "light3d adds 54 draws a frame to Predator (27 -> 81, drawArraysInstanced 2 -> 51) and the uniforms set per draw (uniformMatrix3fv 28 -> 94, uniform4f 9 -> 101 a frame)",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 from glFrameRecorder on Predator",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "glFrameRecorder, Predator zoom 0.3: plain 557.4 GL calls, 27 draws (34 194 instances) a frame; ?light3d=1 by day 1066 calls, 80.6 draws (104 663 instances), by night 1003.7 calls, 77.7 draws.",
+      "result": "Kept 2026-11-16 (R-1205): Predator light3d draws 79.9 -> 33.3 a frame, drawArraysInstanced 50 -> 4, GL calls 1069 -> 697. glFrameRecorder, Predator zoom 0.3: plain 557.4 GL calls, 27 draws (34 194 instances) a frame; ?light3d=1 by day 1066 calls, 80.6 draws (104 663 instances), by night 1003.7 calls, 77.7 draws.",
       "next": "List the draws by pass (the columns grids of the sun map, the lamps' map and the sprite shadows, per range?) and draw in one call what a pass can; the recorder and Pixi's CPU.",
       "refs": [],
       "aliases": [
@@ -17941,7 +17942,8 @@
         "R-1174",
         "R-1175",
         "R-1181",
-        "R-1193"
+        "R-1193",
+        "R-1205"
       ]
     },
     {
@@ -18209,18 +18211,19 @@
         "R-1174",
         "R-1181",
         "R-1187",
-        "R-1190"
+        "R-1190",
+        "R-1205"
       ]
     },
     {
       "id": "E-404",
       "title": "The lamps' 47-instance pass (glows or cards, [uTexLut,uTexture]) costs the GPU 0.25 to 0.34 ms a frame: big quads, fill-bound",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on Predator (timer queries, GTX 1650, 1920x1080)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "light3d day: fbo#12 0.247 ms for 47 instances; night: 960 x 540, 0.343 ms.",
+      "result": "Kept 2026-11-16 (R-1205): lighting.lightGlowResolution 0.5: flashlight glows 4.72 -> 2.25 ms, Predator crowd 2.5 1.02 -> 0.50, lightGallery 0.91 -> 0.46; image within 2 to 3 / 255. light3d day: fbo#12 0.247 ms for 47 instances; night: 960 x 540, 0.343 ms.",
       "next": "Name it; its quads' size against what they light; a smaller quad or a cheaper fragment; the recorder before and after.",
       "refs": [],
       "aliases": [
@@ -18232,7 +18235,8 @@
         "R-1187",
         "R-1190",
         "R-1191",
-        "R-1195"
+        "R-1195",
+        "R-1205"
       ]
     },
     {
@@ -18447,7 +18451,8 @@
       ],
       "records": [
         "R-1181",
-        "R-1193"
+        "R-1193",
+        "R-1205"
       ]
     },
     {
@@ -18568,12 +18573,12 @@
     {
       "id": "E-421",
       "title": "flashlightStressScene's colour pass costs 4.76 ms for 242 instances (20 us each): something drawn huge, perhaps the visibility polygons or a full-screen layer",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on the light scenes (timer queries, GTX 1650, 1920 x 1080)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "flashlight: fbo#0 1920 x 1080 [uTexture] 4 draws 242 instances 4.761 ms of 5.382; the 480 x 270 pass 0.621 ms.",
+      "result": "Kept 2026-11-16 (R-1205): flashlight GPU in draws 5.38 -> 3.21 ms (the glows at half resolution). flashlight: fbo#0 1920 x 1080 [uTexture] 4 draws 242 instances 4.761 ms of 5.382; the 480 x 270 pass 0.621 ms.",
       "next": "List the 4 draws (sizes, blending) and cut what covers the screen needlessly.",
       "refs": [],
       "aliases": [
@@ -18582,7 +18587,8 @@
       "records": [
         "R-1181",
         "R-1190",
-        "R-1191"
+        "R-1191",
+        "R-1205"
       ]
     },
     {
@@ -18817,12 +18823,12 @@
     {
       "id": "E-431",
       "title": "Predator's GPU particles cost the colour pass 1.10 to 1.28 ms a frame for about 100 instances, more than its 38 555 sprites (1.14 ms): fill-bound big soft quads (fire's smoke grows to 3 x baseScale at alpha 0.15 to 0.3), or a sync of the record ring at the draw",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws (a timer query per draw; GTX 1650, 1920 x 1080, headed Chrome 157)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "Per draw, the program [uTexLut,uTexture] of gpuParticle.vert.glsl, the colour pass's last draw: Predator crowd 2.5 1.279 ms (100 instances), zoom=0.3 light3d=1 1.098 ms (107); the same draw read 0.95 to 1.14 ms in the first sittings. Its fragment shader is one texture sample and a multiply.",
+      "result": "Kept as an opt-in 2026-11-16 (R-1205): a layer resolution under 1 for GPU particle layers, heavy smoke 1.65 -> 0.93 ms, light smoke worse (0.42 -> 0.83). Premise corrected: Predator's \"particles\" were its lightGlows layer. Per draw, the program [uTexLut,uTexture] of gpuParticle.vert.glsl, the colour pass's last draw: Predator crowd 2.5 1.279 ms (100 instances), zoom=0.3 light3d=1 1.098 ms (107); the same draw read 0.95 to 1.14 ms in the first sittings. Its fragment shader is one texture sample and a multiply.",
       "next": "Separate fill from everything else: the same draw under a 1 px scissor (a recorder probe), and the particles' screen area a frame; then half-resolution soft particles (the layer resolution the engine already has), quads trimmed to the texture's opaque bounds, or the ring's upload kept out of the draw.",
       "refs": [],
       "aliases": [
@@ -18831,18 +18837,19 @@
       ],
       "records": [
         "R-1187",
-        "R-1191"
+        "R-1191",
+        "R-1205"
       ]
     },
     {
       "id": "E-432",
       "title": "Predator's tilemap draws a full-screen quad per layer and page (7 draws of the [uGid,uTileset] program, 0.06 to 0.16 ms each): 0.74 to 1.07 ms a frame of overdraw for the ground",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws (a timer query per draw; GTX 1650, 1920 x 1080, headed Chrome 157)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "Per draw, Predator crowd 2.5: 7 draws 1.071 ms by program (0.825 to 1.071 across sittings); zoom=0.3 light3d=1: 0.744 to 0.766 ms. tilemapGid.frag.glsl fetches the layer's gid texel per pixel, discards empty tiles, samples the tileset and blends: every layer pays the quad's rasterization and a framebuffer read-modify-write where it has tiles.",
+      "result": "Kept 2026-11-16 (R-1205): each layer drawn over its chunks with tiles; Predator crowd 2.5 tilemap 1.103 -> 0.730 ms, spotLight 1.978 -> 1.099 ms; image identical. Per draw, Predator crowd 2.5: 7 draws 1.071 ms by program (0.825 to 1.071 across sittings); zoom=0.3 light3d=1: 0.744 to 0.766 ms. tilemapGid.frag.glsl fetches the layer's gid texel per pixel, discards empty tiles, samples the tileset and blends: every layer pays the quad's rasterization and a framebuffer read-modify-write where it has tiles.",
       "next": "One pass over a tilemap's layers (their gid pages as layers of an array texture, composited front to back in the shader, stopping at the first opaque texel), or each layer's quad cut to its tiles' bounds in view; per draw before and after.",
       "refs": [],
       "aliases": [
@@ -18851,7 +18858,8 @@
       "records": [
         "R-1187",
         "R-1190",
-        "R-1195"
+        "R-1195",
+        "R-1205"
       ]
     },
     {
@@ -19089,7 +19097,8 @@
       ],
       "records": [
         "R-1189",
-        "R-1203"
+        "R-1203",
+        "R-1205"
       ]
     },
     {
@@ -19107,7 +19116,8 @@
         "lamp map clear"
       ],
       "records": [
-        "R-1190"
+        "R-1190",
+        "R-1205"
       ]
     },
     {
@@ -19126,7 +19136,8 @@
         "columns per map texel"
       ],
       "records": [
-        "R-1194"
+        "R-1194",
+        "R-1205"
       ]
     },
     {
@@ -31258,6 +31269,25 @@
       "text": "**E-451 not reproduced after E-419: the GPU sits at P0 through bunnyMark (1590 MHz, 99 % busy, at its power cap) and through volumeStressScene (1785 MHz, 44 % busy).** The idle clock (P8) the E-419 agent saw through the volume scene went with the load before E-419, when the frame pacer skipped about half the ticks. The recorder now samples the clocks with every recording (d9fdf9fd), so a scene GPU number states its clock.\n\nglFrameRecorder --gpu-draws with nvidia-smi sampling every 200 ms, headed Chrome 157, GTX 1650 (driver 596.36), 5 s after 12 s, main 95ced984, 2026-11-16 09:37 to 09:38 (the log):\n\n| scene | GPU in draws a frame | clocks in the window |\n| --- | --- | --- |\n| bunnyMarkScene | 16.286 ms (0.6 draws a frame: the pacer skips 40 %) | P0 100 %, median 1590 MHz, 99 % busy |\n| volumeStressScene (E-419 and N-224's cars in) | 6.179 ms (2.6 draws a frame, 340 514 instances) | P0 100 %, median 1785 MHz, 44 % busy |\n\nnvidia-smi -q during bunnyMark: P0, 1590 MHz of 1785, 49.5 W, SW Power Cap active (33 ms of capping counted). bunnyMark runs at the laptop GPU's power limit, so E-448's fill savings would show there as frames drawn.",
       "commits": [
         "d9fdf9fd"
+      ]
+    },
+    {
+      "id": "R-1205",
+      "date": "2026-11-16",
+      "time": "09:47",
+      "timeFrom": "recorded",
+      "title": "The Pixi GPU batch merged: the lamps' map volumes in one draw (GL calls 1069 -> 697), glows at half resolution (flashlight GPU 5.38 -> 3.21 ms), the tilemap by chunks (-34 to -44 %); Predator gate NEUTRAL, no regression",
+      "verdict": "kept",
+      "text": "**The Pixi worker's GPU batch, merged into main a3570ad4. Kept: the volumes go into every lamp tile in one draw (E-389, E-391), the glows draw at half resolution (E-404, E-421), GPU particle layers can opt into a lower resolution (E-431), and the tilemap draws only its chunks that hold tiles (E-432). Not built or reverted: E-403, E-446 and E-445 (their premises failed) and E-447 (reverted).** The Predator gate shows no regression.\n\nglFrameRecorder --gpu-draws, GTX 1650, before and after in the same lock sitting each (the agent's two measuring trees):\n\n| item | before -> after |\n| --- | --- |\n| E-389/E-391: the lamps' map volumes, one draw over 3 x tiles vertices a row (tile = vertex / 3, owner in a second row of the tiles' texture) | Predator zoom=0.3 light3d=1: GL calls 1069 -> 697 a frame, draws 79.9 -> 33.3, redundant calls 167.5 -> 75.6, uniform1i 132 -> 40, uniform4f 105 -> 11, drawArraysInstanced 50 -> 4; the volumes 48 draws 0.164 ms -> 1 draw 0.034 ms; the whole lamps' map 0.987 -> 0.854 ms |\n| E-404/E-421: lighting.lightGlowResolution (default 0.5), composited once over the glows' screen rect | flashlight GPU in draws 5.38 -> 3.21 ms (glows 4.72 -> 2.14 + 0.11 composite; 2.63 at 0.25); Predator crowd 2.5 glows 1.02 -> 0.46 + 0.04; dxCapture lights=8 night 1.58 -> 0.74 + 0.11; lightGallery 0.91 -> 0.36 + 0.10 |\n| E-431: a layer resolution under 1 for GPU particle layers (opt-in) | heavy smoke (hold=24 count=3000) 1.65 -> 0.93 ms; light smoke (hold=6) 0.42 -> 0.83 ms (two composites cost more than the fill they save), hence opt-in |\n| E-432: each tilemap layer's quads cut to its 8 x 8-tile chunks with tiles | Predator crowd 2.5 1.103 -> 0.730 ms (-34 %); spotLight 1.978 -> 1.099 ms (-44 %) |\n\nPictures:\n- E-389: kind=mix (a new knob: stamp cards and volumes in the lamps' map), main against the branch, 0 of 921 600 px differ on WebGL and WebGPU. The control, main with its lamp-map volumes off, differs in 548 554 px.\n- E-404 at glowRes 0.5: 92 245 px differ, max 2 / 255 (dxCapture night max 3). glowRes 1 is identical to before.\n- E-432: spotLight still=1 ambient=1, 0 px differ on both backends.\n\nNot built:\n- E-403: the 1920 x 1080 pass is the emissive glow pass, and both it and the face/ids MRT are fill (a 1 px scissor: Predator 0.81 -> 0.017 and 0.52 -> 0.044 ms). Merging them saves about 0.07 ms of vertices against four times the face map's fill. Its waste is filed as E-457.\n- E-446: every one of the 48 tiles is in use, and the clear measured 0.10 to 0.20 ms.\n- E-445: +9 ms/s of updateBuffer in the fixed scene, not +203.\n- E-447: built, then reverted (05eaeb82). The lamps' map columns went 2.78 -> 2.51 ms in sunShadowMap, but with 4 more draws and 43 more GL calls a frame and shadow-edge pixels changed, and nothing elsewhere.\n\nE-431's premise is corrected: what R-1191 called Predator's GPU particles is the lightGlows layer (the fires' and lamps' glows). Predator has no GPU_PARTICLES layer.\n\n**The gate**, runPredatorAbab --pool, 4 pairs, headed, AC power, 97352c42 against a3570ad4, Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, Pixi as owner, 2026-11-16 09:41 to 09:47 (the log): NEUTRAL.\n\n| worker | before -> after |\n| --- | --- |\n| renderer (Pixi) | 7.011 -> 6.753 ms (-4.6 %, 0/4 worse; -2.3 % against the others) |\n| logic | 7.953 -> 7.677 (-4.9 %) |\n| spatial | 12.797 -> 12.391 (-2.9 %) |\n| physics | 16.320 -> 16.131 (-1.3 %) |\n| pre-render | 11.436 -> 11.475 (-0.9 % paired) |\n| drawn | 59.4 -> 59.7 fps |\n\nNo worker regressed; the CPU side is neutral to slightly better. The claims are the GPU numbers above.\n\nSuites on main after the merge: node 2848/2848, demos 101/101. Filed from the work: N-227 (volumes cast no lamp shadow without sprite casters), E-457 (the emissive glow pass draws all sprites), N-228 (E-419's aTri warning).",
+      "commits": [
+        "0e7e8998",
+        "fbc438a3",
+        "d7b7a36b",
+        "55ac876c",
+        "4dea70d0",
+        "ade8740c",
+        "05eaeb82",
+        "a3570ad4"
       ]
     }
   ],
