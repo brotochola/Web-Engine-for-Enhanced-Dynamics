@@ -18051,7 +18051,8 @@
         "mesh pose table rows"
       ],
       "records": [
-        "R-1173"
+        "R-1173",
+        "R-1199"
       ]
     },
     {
@@ -18678,12 +18679,12 @@
     {
       "id": "E-425",
       "title": "Pixi's mesh fill poses took up to four passes over every entity a frame (meshFillPoseOrPresenceChanged twice, meshFillPresenceChanged, copyMeshFillPoseScratch) plus a pose decision per uploaded instance: about 55 % of Pixi's busy time in volumeStressScene",
-      "status": "running",
+      "status": "kept",
       "statusText": "found 2026-11-16 in the volume scene's CPU pass (q-volume); built on opt/mesh-pose and merged into main 7daf6d14 (local) with parity; its scene not measured yet",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "Built (b23fbf89, 4e8a1b78, 58926604, fcdb82b6, 5a4e50d3): trackMeshFillPose decides each live, visible mesh's pose source once a layer and frame, compares and records it, and returns the presence and pose bits the skip test, topologyStable and poseMoved use; uploadPoseTable copies the recorded poses (writeMeshPoseTable); copyMeshFillPoseScratch and meshFillPresenceChanged are gone. Parity: meshFillPoseTrack.test.js against the a43899ed functions (random scenes on 10 view shapes, Pixi's real pass on two layers for 160 frames, 26 mutants caught). Profile before: meshFillPoseSource 15.8 %, uploadPoseTable 12.0 %, readMeshFillPose 11.8 %, meshFillPoseOrPresenceChanged 11.8 %, copyMeshFillPoseScratch 4.2 % of Pixi in volumeStressScene.",
+      "result": "Kept 2026-11-16 (R-1199): Pixi's pose work in volumeStressScene 485 -> 228 ms in an 8 s window (-53 %), Pixi busy 82 -> 60 ms/s (CPU pass; the scene is GPU-bound). Built (b23fbf89, 4e8a1b78, 58926604, fcdb82b6, 5a4e50d3): trackMeshFillPose decides each live, visible mesh's pose source once a layer and frame, compares and records it, and returns the presence and pose bits the skip test, topologyStable and poseMoved use; uploadPoseTable copies the recorded poses (writeMeshPoseTable); copyMeshFillPoseScratch and meshFillPresenceChanged are gone. Parity: meshFillPoseTrack.test.js against the a43899ed functions (random scenes on 10 view shapes, Pixi's real pass on two layers for 160 frames, 26 mutants caught). Profile before: meshFillPoseSource 15.8 %, uploadPoseTable 12.0 %, readMeshFillPose 11.8 %, meshFillPoseOrPresenceChanged 11.8 %, copyMeshFillPoseScratch 4.2 % of Pixi in volumeStressScene.",
       "next": "A Pixi CPU pass of volumeStressScene before and after (the scene is GPU-bound at about 49 fps, E-419: STEP_MS would read the GPU's wait); E-397 next (writeMeshPoseTable's row walk).",
       "refs": [],
       "aliases": [
@@ -18692,7 +18693,8 @@
       ],
       "records": [
         "R-1183",
-        "R-1185"
+        "R-1185",
+        "R-1199"
       ]
     },
     {
@@ -30959,6 +30961,23 @@
         "2d54fb1b",
         "b33b5549",
         "2e35222a"
+      ]
+    },
+    {
+      "id": "R-1199",
+      "date": "2026-11-16",
+      "time": "08:12",
+      "timeFrom": "recorded",
+      "title": "E-425 kept: the fused mesh fill poses halve Pixi's pose work in volumeStressScene (485 -> 228 ms in 8 s), Pixi busy 82 -> 60 ms/s; writeMeshPoseTable now on top (E-397)",
+      "verdict": "kept",
+      "text": "**E-425 kept: the mesh fill pose passes fused halve Pixi's pose work in volumeStressScene (485 -> 228 ms in an 8 s window), and Pixi's busy time drops 82 -> 60 ms/s (-27 %).** The scene is GPU-bound (about 49 fps, E-419), so STEP_MS would read the GPU's wait; the CPU pass per function is the measurement.\n\nCPU pass (profileSceneSweep --pass cpu, headed, 8 s after 8 s), volumeStressScene defaults, 2026-11-16 08:11 to 08:12 (the log):\n- before: 7daf6d14 with the mesh-pose merge (57ddaa15) reverted;\n- after: 7daf6d14.\n\nThe two trees differ only by E-425's JS. The first tries at 17d0e4fd and 57ddaa15 failed: those intermediate trees' engine.wasm lacked the keyed exports, which 7daf6d14 rebuilt.\n\n| Pixi, self ms in 8 s | before | after |\n| --- | --- | --- |\n| busy | 82 ms/s | 60 ms/s |\n| meshFillPoseSource | 144.3 | (fused) |\n| uploadPoseTable | 113.0 | (writeMeshPoseTable 144.8) |\n| meshFillPoseOrPresenceChanged | 97.3 | (trackMeshPoseLiveOrLatched 83.6) |\n| readMeshFillPose | 82.2 | |\n| copyMeshFillPoseScratch | 39.1 | gone |\n| meshFillPresenceChanged | 9.5 | gone |\n| the pose work in all | 485.4 | 228.4 (-53 %) |\n| _waitForQueue (a wait V8 counts as busy) | 132.6 | 133.5 |\n\nNext: writeMeshPoseTable is now Pixi's top function (23.9 %), which is E-397's row walk.",
+      "commits": [
+        "b23fbf89",
+        "4e8a1b78",
+        "58926604",
+        "fcdb82b6",
+        "5a4e50d3",
+        "57ddaa15"
       ]
     }
   ],
