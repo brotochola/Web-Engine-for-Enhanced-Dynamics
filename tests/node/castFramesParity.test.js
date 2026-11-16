@@ -5,6 +5,9 @@
 // types, entities out of range, lamps all around their casters (rays along the borders between two directions too) and
 // lights missing. The reference is the passes as they were (E-368, E-369), copied here. E-372: the keyed sun rows' frames
 // written by the keyed caster scan (gpuPack.wasm) itself, and the rows it leaves to the JS, against the same reference.
+// E-393: the lamps' frames of the keyed and full stamp rows written by gpuPack.wasm's lamp_frames, and the rows it leaves
+// to the JS, against the JS passes (applyKeyedLampFramesInto, applyLampFramesInto) and the reference. E-394: the full sun
+// rows' frames written by the caster pack itself (its framed gather and scatter), and the rows it leaves to the JS.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -12,8 +15,8 @@ import {
   GPU_CASTER_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS, GPU_SPRITE_FLOATS,
 } from '../../src/render/gpuQueueLayout.js';
 import {
-  GPU_PACK_COLUMNS, KEYED_SUN_DEFER, KEYED_SUN_SHEET, KEYED_SUN_SHEET_WORDS, bindGpuPack, keyedSunRegionBytes, keyedSunViews,
-  packKeyedCastersScanWasm,
+  GPU_PACK_COLUMNS, KEYED_SUN_DEFER, KEYED_SUN_LAMP_GEO, KEYED_SUN_SHEET, KEYED_SUN_SHEET_WORDS, bindGpuPack,
+  keyedSunRegionBytes, keyedSunViews, packInstancedRowsWasm, packKeyedCastersScanWasm,
 } from '../../src/render/gpuPackClient.js';
 import { DirectionalSprite } from '../../src/components/directionalSprite.js';
 import { PICK_ARGS, pickDirection, pickDirectionArgs, wrapAngle } from '../../src/core/spriteDirections.js';
@@ -1363,6 +1366,740 @@ test('E-372: _packGpuSun keyed on the real worker, the scan writing the frames: 
     region.listCap = listCap;
     delete pre._keyedCastersLive;
     Object.assign(ShadowCaster, caster);
+    Sun.unbind();
+  }
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// E-393: the lamps' frames of the stamp rows written by gpuPack.wasm's lamp_frames.
+
+/**
+ * One shared memory holding what lamp_frames reads, the kernel bound on it: `stampN` stamp rows of `floats`, their u16
+ * light index, the entity columns the lamps' passes read and the sun frames' region.
+ */
+async function lampMemory(stampN, floats, n, pages = 48) {
+  const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
+  const buf = memory.buffer;
+  let top = 64;
+  const place = (bytes) => {
+    top = (top + 63) & ~63;
+    const at = top;
+    top += bytes;
+    return at;
+  };
+  const alloc = (Ctor, len) => new Ctor(buf, place(len * Ctor.BYTES_PER_ELEMENT), len);
+  const mem = {
+    rows: alloc(Float32Array, stampN * floats),
+    lightIdx: alloc(Uint16Array, stampN),
+    active: alloc(Uint8Array, n),
+    mode: alloc(Uint8Array, n),
+    sheets: alloc(Uint8Array, n),
+    kinds: alloc(Uint8Array, n),
+    orients: alloc(Uint8Array, n),
+    dirs: alloc(Uint8Array, n),
+    anims: alloc(Uint8Array, n),
+    frames: alloc(Uint16Array, n),
+  };
+  const tableByte = place(4 * GPU_PACK_COLUMNS.length * 4);
+  const indexByte = place(64);
+  const particlesByte = place(144);
+  const keyedSunByte = place(keyedSunRegionBytes());
+  if (top > buf.byteLength) throw new Error('the test memory is too small');
+  const b = await bindGpuPack(memory, {
+    tableByte, tableSlots: 4, indexByte, indexCap: 16, particlesByte, inverseByte: 0, keyedSunByte,
+  });
+  return { mem, b };
+}
+
+/** Scene s's entity columns into the lamps' memory (the lamps' kind in `kinds`). */
+function loadLampColumns(s, mem) {
+  const { e } = s;
+  mem.active.set(e.active);
+  mem.mode.set(e.mode);
+  mem.sheets.set(e.sheets);
+  mem.kinds.set(e.lampKind);
+  mem.orients.set(e.orients);
+  mem.dirs.set(e.dirs);
+  mem.anims.set(e.anims);
+  mem.frames.set(e.frames);
+}
+
+/** The kernel's columns for a variant (columns(s, variant)'s nulls), in the lamps' memory. */
+function lampCols(mem, variant) {
+  return {
+    active: mem.active,
+    mode: mem.mode,
+    dirs: mem.dirs,
+    anims: mem.anims,
+    sheets: mem.sheets,
+    orients: variant & 4 ? null : mem.orients,
+    kinds: variant & 8 ? null : mem.kinds,
+    frames: variant & 2 ? null : mem.frames,
+    listed: 0,
+  };
+}
+
+const ODD_ENTITY = [NaN, Infinity, -Infinity, 3e9, -3e9, -2147483648, 2147483520, -0.75];
+
+/**
+ * Rows the kernel must leave to the JS or get right at the edges: entity floats that are no int32 (NaN, infinities, past
+ * the range), frame floats NaN or -0 (keyed), scales NaN, 0 or -0 (full).
+ */
+function oddStampRows(r, rows, stampN, floats, keyed) {
+  const entityFloat = keyed ? 2 : GPU_ROW_TINT;
+  for (let k = 0; k < stampN; k++) {
+    const at = k * floats;
+    if (r() < 0.01) rows[at + entityFloat] = ODD_ENTITY[Math.floor(r() * ODD_ENTITY.length)];
+    const y = r();
+    if (keyed) {
+      if (y < 0.02) rows[at + 3] = y < 0.01 ? NaN : -0;
+    } else if (y < 0.03) {
+      rows[at + GPU_ROW_SCALE_X] = y < 0.01 ? NaN : y < 0.02 ? 0 : -0;
+    }
+  }
+}
+
+/**
+ * Random scenes' stamp rows (keyed or full) through the JS pass and through applyLampFramesWasm, the kernel and the JS for
+ * the rows it lists: the same rows bit for bit. With `odd`, lights missing (past the list, or null), a lamp at NaN, a
+ * light count below the lights the rows name and oddStampRows' rows; always lamps of their own entities, a new proxy map,
+ * both floor scales, columns missing.
+ * @returns {{ listed: number, rows: number, written: number }} the rows the kernel left to the JS, of all the rows, and
+ *   the rows whose frame (keyed) or texture (full) changed
+ */
+async function lampKernelScenes(keyed, seeds, framesPer, adjust = null, odd = true) {
+  const m = await worker();
+  const n = 1500;
+  const stampN = 6000;
+  const floats = keyed ? GPU_KEYED_STAMP_FLOATS : GPU_CASTER_FLOATS;
+  const frameFloat = keyed ? 3 : GPU_ROW_TEXTURE;
+  let listed = 0;
+  let rowsSeen = 0;
+  let written = 0;
+  for (const seed of seeds) {
+    const s = makeScene(seed, n);
+    if (adjust && adjust.scene) adjust.scene(s);
+    bindDirectionalSprite(s.ds);
+    const lm = await lampMemory(stampN, floats, n);
+    const tables = m.sunFrameTables(s.sources);
+    if (adjust && adjust.tables) adjust.tables(tables, lm);
+    for (let frame = 0; frame < framesPer; frame++) {
+      const variant = (seed * 3 + frame) & 15;
+      loadLampColumns(s, lm.mem);
+      const lights = makeLights(s.r, n);
+      if (odd && frame === 1) lights[3] = null;
+      if (odd && frame === 4) lights[5].x = NaN;
+      // Without `odd`, every light the rows name (LIGHTS of them) is there.
+      if (!odd) lights.push(...makeLights(s.r, n).slice(0, LIGHTS - lights.length));
+      const lightCount = odd && frame === 3 ? 8 : lights.length;
+      const invG = frame & 1 ? 1 / 0.7364 : 1;
+      const proxy = frame === 2 ? JSON.parse(JSON.stringify(s.proxy)) : s.proxy;
+      const { rows, lightIdx } = stampRows(s, lights, invG, stampN, floats, keyed ? 2 : GPU_ROW_TINT, keyed);
+      if (odd) oddStampRows(s.r, rows, stampN, floats, keyed);
+      const cols = lampCols(lm.mem, variant);
+      const ref = rows.slice();
+      const apply = keyed ? m.applyKeyedLampFramesInto : m.applyLampFramesInto;
+      apply(ref, stampN, lightIdx, lights, invG, tables, proxy, s.starts, s.counts, cols.frames, cols.active, cols.mode,
+        cols.dirs, cols.anims, cols.sheets, cols.orients, cols.kinds);
+      lm.mem.rows.set(rows);
+      lm.mem.lightIdx.set(lightIdx);
+      const ran = m.applyLampFramesWasm(lm.b, lm.mem.rows, stampN, lm.mem.lightIdx, lights, lightCount, invG, tables, proxy,
+        s.starts, s.counts, cols, keyed);
+      assert.equal(ran, true, `seed ${seed} frame ${frame}: the kernel took the call`);
+      sameBits(ref, lm.mem.rows, `seed ${seed} frame ${frame}`, floats);
+      for (let k = 0; k < stampN; k++) if (!Object.is(rows[k * floats + frameFloat], ref[k * floats + frameFloat])) written++;
+      listed += cols.listed;
+      rowsSeen += stampN;
+      if (adjust && adjust.after) adjust.after(lm, tables);
+      stepScene(s);
+      if (adjust && adjust.scene) adjust.scene(s);
+    }
+  }
+  return { listed, rows: rowsSeen, written };
+}
+
+test('E-393: keyed lamp rows through lamp_frames: the same frames and own rows dropped as the JS pass', async () => {
+  const { listed, rows } = await lampKernelScenes(true, [91, 92, 93, 94], 6);
+  assert.ok(listed > 200, `rows left to the JS: uneven tables, no direction drawn, borders, lights unknown (${listed})`);
+  assert.ok(listed < rows * 0.6, `the kernel decided rows (${listed} of ${rows} listed)`);
+});
+
+test('E-393: full lamp rows through lamp_frames: the same textures, flips and own rows dropped as the JS pass', async () => {
+  const { listed, rows } = await lampKernelScenes(false, [95, 96, 97, 98], 6);
+  assert.ok(listed > 200 && listed < rows * 0.6, `rows left to the JS (${listed} of ${rows})`);
+});
+
+test('E-393: on tables whose borders the kernel reads, it decides every row but the rays near a border', async () => {
+  // Only uniform tables of a multiple of four directions a whole turn's share apart, each caster's direction one of them.
+  const quartered = (s) => {
+    for (const id of Object.keys(s.sources)) {
+      const src = s.sources[id];
+      if (!src.uniform || src.count % 4 !== 0 || !(Math.abs(src.step * src.count - TWO_PI) < 1e-9)) delete s.sources[id];
+    }
+    for (let i = 0; i < s.n; i++) {
+      const src = s.sources[s.e.sheets[i]];
+      if (src) s.e.dirs[i] %= src.count;
+    }
+  };
+  for (const keyed of [true, false]) {
+    const { listed, rows, written } = await lampKernelScenes(keyed, [106, 107], 4, { scene: quartered }, false);
+    const what = keyed ? 'keyed' : 'full';
+    assert.ok(listed < rows * 0.12, `${what}: the rays near a border alone left to the JS (${listed} of ${rows})`);
+    assert.ok(written > rows * 0.2, `${what}: frames written (${written} of ${rows})`);
+  }
+});
+
+test('E-393: lamp_frames with a short list stops at the row it cannot list, and the JS pass does the rest', async () => {
+  for (const keyed of [true, false]) {
+    const adjust = {
+      tables(tables, lm) {
+        const region = keyedSunViews(lm.b.buffer, lm.b.keyedSun.byte);
+        region.list = region.list.subarray(0, 7);
+        lm.b.keyedSun = region;
+      },
+    };
+    const { listed } = await lampKernelScenes(keyed, [101, 102], 4, adjust);
+    assert.ok(listed > 0 && listed <= 7 * 8, `the list held what it could (${listed})`);
+  }
+});
+
+test('E-393: a pool that holds few sheets: their lamp rows go to the JS (no frames, no geometry), as before', async () => {
+  let deferred = 0;
+  for (const keyed of [true, false]) {
+    const adjust = {
+      tables(tables, lm) {
+        const region = keyedSunViews(lm.b.buffer, lm.b.keyedSun.byte);
+        region.pool = region.pool.subarray(0, 300);
+        lm.b.keyedSun = region;
+      },
+      after(lm, tables) {
+        let n = 0;
+        for (let sheet = 0; sheet < tables.length; sheet++) {
+          const flags = lm.b.keyedSun.sheets[sheet * KEYED_SUN_SHEET_WORDS + KEYED_SUN_SHEET.FLAGS];
+          if (tables[sheet] !== undefined && (flags & (KEYED_SUN_DEFER | KEYED_SUN_LAMP_GEO)) !== KEYED_SUN_LAMP_GEO) n++;
+        }
+        if (n > deferred) deferred = n;
+      },
+    };
+    const { listed } = await lampKernelScenes(keyed, [103, 104], 3, adjust);
+    assert.ok(listed > 300, `rows left to the JS (${listed})`);
+  }
+  assert.ok(deferred >= 3, `sheets without their frames or geometry in the pool (${deferred})`);
+});
+
+test('E-393: the region holds each uniform table’s border geometry, as lampTurnGeometry made it', async () => {
+  const m = await worker();
+  const s = makeScene(105, 64);
+  const tables = m.sunFrameTables(s.sources);
+  m.prepareSunFrames(tables, s.proxy, s.starts, s.counts, new Int16Array(256), new Float64Array(256).fill(NaN), 0.4);
+  const lm = await lampMemory(16, GPU_KEYED_STAMP_FLOATS, 64);
+  m.syncKeyedSunTables(lm.b.keyedSun, tables);
+  let geo = 0;
+  for (let sheet = 0; sheet < tables.length; sheet++) {
+    const t = tables[sheet];
+    if (t === undefined) continue;
+    const w = sheet * KEYED_SUN_SHEET_WORDS;
+    const flags = lm.b.keyedSun.sheets[w + KEYED_SUN_SHEET.FLAGS];
+    assert.equal((flags & KEYED_SUN_LAMP_GEO) !== 0, t.lampQuarter > 0, `sheet ${sheet}: the geometry where the table has it`);
+    if (t.lampQuarter > 0) {
+      const at = lm.b.keyedSun.sheets[w + KEYED_SUN_SHEET.LAMP_GEO];
+      assert.equal(at % 8, 0, 'doubles on their own boundary');
+      const copy = new Float64Array(lm.b.buffer, at, t.lampGeo.length);
+      assert.deepEqual(Array.from(copy), Array.from(t.lampGeo));
+      geo++;
+    }
+  }
+  assert.ok(geo >= 3, `uniform tables with the geometry (${geo})`);
+});
+
+test('E-393: a lamp all around a caster of each uniform table, through lamp_frames: every direction as the JS pass', async () => {
+  const m = await worker();
+  const s = makeScene(51, 64);
+  bindDirectionalSprite(s.ds);
+  const tables = m.sunFrameTables(s.sources);
+  const ids = Object.keys(s.sources).map(Number);
+  const e = s.e;
+  for (let i = 0; i < ids.length; i++) {
+    e.active[i] = 1;
+    e.mode[i] = 1;
+    e.sheets[i] = ids[i];
+    e.lampKind[i] = 1;
+    e.orients[i] = 0;
+    e.dirs[i] = i % s.sources[ids[i]].count;
+    e.anims[i] = 0;
+  }
+  const lights = [{ id: -5, x: 0, y: 0 }];
+  const per = 2000;
+  const stampN = ids.length * per;
+  for (const keyed of [true, false]) {
+    const floats = keyed ? GPU_KEYED_STAMP_FLOATS : GPU_CASTER_FLOATS;
+    const lm = await lampMemory(stampN, floats, 64, 96);
+    loadLampColumns(s, lm.mem);
+    for (const invG of [1, 1 / 0.7364]) {
+      const rows = new Float32Array(stampN * floats);
+      for (let i = 0; i < ids.length; i++) {
+        const count = s.sources[ids[i]].count;
+        const step = TWO_PI / count;
+        for (let k = 0; k < per; k++) {
+          const at = (i * per + k) * floats;
+          // Half the rays sweep the whole turn, half sit within 2e-4 rad of a border.
+          const phi = k & 1 ? (k / per) * TWO_PI : (Math.floor((k / per) * count) + 0.5) * step + ((k % 97) - 48) * 4e-6;
+          rows[at] = -Math.sin(phi) * 250;
+          rows[at + 1] = (-Math.cos(phi) * 250) / invG;
+          rows[at + (keyed ? 2 : GPU_ROW_TINT)] = i;
+          if (!keyed) rows[at + GPU_ROW_SCALE_X] = k % 3 === 0 ? -1.25 : 0.75;
+        }
+      }
+      const lightIdx = new Uint16Array(stampN);
+      const cols = lampCols(lm.mem, 0);
+      const ref = rows.slice();
+      const apply = keyed ? m.applyKeyedLampFramesInto : m.applyLampFramesInto;
+      apply(ref, stampN, lightIdx, lights, invG, tables, s.proxy, s.starts, s.counts, cols.frames, cols.active, cols.mode,
+        cols.dirs, cols.anims, cols.sheets, cols.orients, cols.kinds);
+      lm.mem.rows.set(rows);
+      lm.mem.lightIdx.set(lightIdx);
+      assert.equal(m.applyLampFramesWasm(lm.b, lm.mem.rows, stampN, lm.mem.lightIdx, lights, 1, invG, tables, s.proxy,
+        s.starts, s.counts, cols, keyed), true);
+      sameBits(ref, lm.mem.rows, `${keyed ? 'keyed' : 'full'} invG ${invG}`, floats);
+      assert.ok(cols.listed > 0 && cols.listed < stampN * 0.9, `the rays near a border left to the JS (${cols.listed})`);
+    }
+  }
+});
+
+test('E-393: _packGpuShadows on the real worker, the lamp frames through lamp_frames: the rows as the old passes left them', async () => {
+  const m = await worker();
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const { ShadowCaster } = await import('../../src/components/shadowCaster.js');
+  const { SpriteRenderer } = await import('../../src/components/spriteRenderer.js');
+  const { cameraFloorScaleY } = await import('../../src/util/cameraView.js');
+  const n = 1500;
+  const s = makeScene(111, n);
+  bindDirectionalSprite(s.ds);
+  const stampN = 3000;
+  const config = { camera: { pitch: 47 } };
+  const invG = 1 / cameraFloorScaleY(config);
+  const caster = { orient: ShadowCaster.orient, lampKind: ShadowCaster.lampKind };
+  const cases = [
+    { what: 'keyed rows, the kernel', keyed: true, kernel: true },
+    { what: 'full rows, the kernel', keyed: false, kernel: true },
+    { what: 'no region: the JS pass', keyed: true, kernel: false, region: false },
+    { what: 'the light index outside the memory: the JS pass', keyed: false, kernel: false, lightIdxOut: true },
+    { what: 'the entities’ frames outside the memory: the JS pass', keyed: false, kernel: false, framesOut: true },
+  ];
+  try {
+    for (let c = 0; c < cases.length; c++) {
+      const k = cases[c];
+      const floats = k.keyed ? GPU_KEYED_STAMP_FLOATS : GPU_CASTER_FLOATS;
+      const lm = await lampMemory(stampN, floats, n);
+      loadLampColumns(s, lm.mem);
+      DirectionalSprite.active = lm.mem.active;
+      DirectionalSprite.mode = lm.mem.mode;
+      DirectionalSprite.directionIndex = lm.mem.dirs;
+      DirectionalSprite.animation = lm.mem.anims;
+      SpriteRenderer.spritesheetId = lm.mem.sheets;
+      ShadowCaster.orient = lm.mem.orients;
+      ShadowCaster.lampKind = lm.mem.kinds;
+      const lights = makeLights(s.r, n);
+      const { rows: stamped, lightIdx } = stampRows(s, lights, invG, stampN, floats, k.keyed ? 2 : GPU_ROW_TINT, k.keyed);
+      oddStampRows(s.r, stamped, stampN, floats, k.keyed);
+      let calls = 0;
+      const real = lm.b.lampFrames;
+      lm.b.lampFrames = (...args) => {
+        calls++;
+        return real(...args);
+      };
+      if (k.region === false) lm.b.keyedSun = null;
+      Object.assign(pre, {
+        config,
+        shadowsEnabled: true,
+        gpuQueueCaps: { maxSun: 8, maxStamp: stampN, maxCookie: 8 },
+        shadowUpdateInterval: 1,
+        visibilityPolygonsEnabled: false,
+        _emitSkippedStatics: false,
+        _stampLights: lights,
+        _stampLightCount: lights.length,
+        _sunFrameTables: m.sunFrameTables(s.sources),
+        _gpuPackWasm: lm.b,
+        proxyToGlobalAnim: s.proxy,
+        animationFrameStart: s.starts,
+        animationFrameCount: s.counts,
+        entityFrameIndex: k.framesOut ? Uint16Array.from(lm.mem.frames) : lm.mem.frames,
+      });
+      pre._packGpuSun = () => {
+        pre._gpuSunKeyed = k.keyed;
+        return 5;
+      };
+      pre._stampAgainstSun = (dst) => {
+        dst.stamp.set(stamped);
+        dst.stampLightIdx.set(lightIdx);
+        return stampN;
+      };
+      pre._packGpuCookies = () => 0;
+      const dst = {
+        sun: new Float32Array(8 * GPU_CASTER_FLOATS),
+        stamp: lm.mem.rows,
+        stampLightIdx: k.lightIdxOut ? new Uint16Array(stampN) : lm.mem.lightIdx,
+        cookie: new Float32Array(8 * GPU_SPRITE_FLOATS),
+      };
+      const res = pre._packGpuShadows(dst, {});
+      assert.equal(res.stamp, stampN, `${k.what}: the stamp rows`);
+      assert.equal(calls > 0, k.kernel, `${k.what}: the kernel ran or not`);
+      // The reference: the drop of each lamp's own entity, then the frames' pass as it was.
+      const refTables = refSunFrameTables(s.sources);
+      const ref = stamped.slice();
+      if (k.keyed) refDropOwnKeyedStampsInto(ref, stampN, lightIdx, lights);
+      else refDropOwnStampsInto(ref, stampN, lightIdx, lights);
+      const apply = k.keyed ? refApplyKeyedLampFramesInto : refApplyLampFramesInto;
+      apply(ref, stampN, lightIdx, lights, invG, refTables, s.proxy, s.starts, s.counts, lm.mem.frames, lm.mem.active,
+        lm.mem.mode, lm.mem.dirs, lm.mem.anims, lm.mem.sheets, lm.mem.orients, lm.mem.kinds);
+      sameBits(ref, dst.stamp, k.what, floats);
+      stepScene(s);
+    }
+  } finally {
+    // The worker is the module's one instance: later tests run its own methods.
+    delete pre._stampAgainstSun;
+    delete pre._packGpuSun;
+    delete pre._packGpuCookies;
+    pre._gpuPackWasm = null;
+    Object.assign(ShadowCaster, caster);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// E-394: the full sun rows' frames written by the caster pack itself (gpuPack.wasm pack_casters_framed and
+// pack_casters_scatter_framed through packInstancedRowsWasm with `sun`).
+
+/**
+ * One shared memory for the full rows' pack with frames: the queue's columns, the collector's row types and entities, the
+ * entity columns sunFrameFor reads, two sets of full rows (the reference's and the framed pack's), the index scratch, the
+ * scatter's inverse and the sun frames' region; the kernel bound on it.
+ */
+async function fullSunMemory(rows, n, pages = 64) {
+  const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
+  const buf = memory.buffer;
+  let top = 64;
+  const place = (bytes) => {
+    top = (top + 63) & ~63;
+    const at = top;
+    top += bytes;
+    return at;
+  };
+  const alloc = (Ctor, len) => new Ctor(buf, place(len * Ctor.BYTES_PER_ELEMENT), len);
+  const u16 = new Set(['textureId', 'tileOffsetU', 'tileOffsetV']);
+  const q = { count: rows, key: alloc(Uint32Array, rows), type: alloc(Uint8Array, rows) };
+  for (const c of GPU_PACK_COLUMNS) q[c] = alloc(c === 'tint' ? Uint32Array : u16.has(c) ? Uint16Array : Float32Array, rows);
+  const mem = {
+    types: alloc(Uint8Array, rows),
+    entities: alloc(Int32Array, rows),
+    active: alloc(Uint8Array, n),
+    mode: alloc(Uint8Array, n),
+    casts: alloc(Uint8Array, n),
+    sheets: alloc(Uint8Array, n),
+    kinds: alloc(Uint8Array, n),
+    orients: alloc(Uint8Array, n),
+    dirs: alloc(Uint8Array, n),
+    anims: alloc(Uint8Array, n),
+    frames: alloc(Uint16Array, n),
+    ref: alloc(Float32Array, rows * GPU_CASTER_FLOATS),
+    got: alloc(Float32Array, rows * GPU_CASTER_FLOATS),
+  };
+  const tableByte = place(4 * GPU_PACK_COLUMNS.length * 4);
+  const indexByte = place(rows * 4);
+  const particlesByte = place(144);
+  const inverseByte = place(rows * 4);
+  const keyedSunByte = place(keyedSunRegionBytes());
+  if (top > buf.byteLength) throw new Error('the test memory is too small');
+  const b = await bindGpuPack(memory, {
+    tableByte, tableSlots: 4, indexByte, indexCap: rows, particlesByte, inverseByte, keyedSunByte,
+  });
+  return { q, mem, b };
+}
+
+/** loadScanFrame's frame, and the queue's scales (mirrored, NaN and ±0 among them) and the rest of its columns. */
+function loadFullFrame(s, fm, qq) {
+  loadScanFrame(s, fm, qq);
+  const { r } = s;
+  const { q } = fm;
+  q.scaleX.set(qq.scaleX);
+  for (let i = 0; i < q.count; i++) {
+    q.scaleY[i] = 0.5 + r();
+    q.rotC[i] = 1;
+    q.rotS[i] = 0;
+    q.alpha[i] = r();
+    q.tint[i] = (r() * 0xffffff) >>> 0;
+    q.textureId[i] = Math.floor(r() * 3000);
+    q.anchorX[i] = 0.5;
+    q.anchorY[i] = 1;
+  }
+}
+
+/** The casters of queue q in queue order (compactShadowCasterIndices), in a plain array as pre-render keeps it. */
+function casterList(q) {
+  const out = new Uint32Array(q.count);
+  let n = 0;
+  for (let i = 0; i < q.count; i++) if (q.type[i] !== 3 && q.shadowH[i] > 0) out[n++] = i;
+  return { list: out, n };
+}
+
+/** _packGpuSun's options for the sun rows (world space, no snap, the queue's type column). */
+function sunPackOpts(q, list, n) {
+  return {
+    includeType: -1, excludeType0: -1, excludeType1: -1, indices: list, indexCount: n, sortKey: null, space: 0, zoom: 1,
+    cameraX: 0, cameraY: 0, resolution: 1, depthDenom: q.count, pixelSnap: false, type: q.type,
+  };
+}
+
+/**
+ * Random scenes' full sun rows packed twice: the plain pack, then applySunFramesFor with the queue's scales (the worker's
+ * old path); and the framed pack (its tables synced into the region), then finishFullSunFrames. The same rows bit for bit.
+ * @returns {{ framed: number, listed: number, scatter: number, gather: number }}
+ */
+async function fullSunScenes(seeds, frames, rows, adjust = null) {
+  const m = await worker();
+  const { makePackContext } = await import('../../src/render/gpuQueueLayout.js');
+  const n = 1500;
+  let framed = 0;
+  let listed = 0;
+  let scatter = 0;
+  let gather = 0;
+  for (const seed of seeds) {
+    const s = makeScene(seed, n);
+    bindDirectionalSprite(s.ds);
+    const fm = await fullSunMemory(rows, n);
+    const { q, mem, b } = fm;
+    const realScatter = b.castersScatterFramed;
+    const realGather = b.castersFramed;
+    b.castersScatterFramed = (...a) => {
+      scatter++;
+      return realScatter(...a);
+    };
+    b.castersFramed = (...a) => {
+      gather++;
+      return realGather(...a);
+    };
+    const tables = m.sunFrameTables(s.sources);
+    if (adjust) adjust.tables(tables, fm);
+    const shift = new Int16Array(256);
+    const shiftTurn = new Float64Array(256).fill(NaN);
+    for (let frame = 0; frame < frames; frame++) {
+      const variant = (seed * 5 + frame) & 15;
+      loadFullFrame(s, fm, makeQueue(s, rows));
+      const { list, n: casters } = casterList(q);
+      const cap = frame & 1 ? casters : Math.max(1, casters - 37);
+      const turn = SUN_TURNS[(seed + frame) % SUN_TURNS.length];
+      const proxy = frame === 3 ? JSON.parse(JSON.stringify(s.proxy)) : s.proxy;
+      m.prepareSunFrames(tables, proxy, s.starts, s.counts, shift, shiftTurn, turn);
+      if (b.keyedSun) m.syncKeyedSunTables(b.keyedSun, tables);
+      const sun = scanColumns(mem, variant);
+      const opts = sunPackOpts(q, list, casters);
+      mem.ref.fill(-7);
+      mem.got.fill(-7);
+      const nRef = packInstancedRowsWasm(b, q, makePackContext(q, opts, cap, {}), mem.ref, GPU_CASTER_FLOATS, cap, true);
+      assert.ok(nRef > 0, `seed ${seed} frame ${frame}: the pack took the queue`);
+      m.applySunFramesFor(mem.ref, nRef, list, mem.types, mem.entities, mem.active, mem.mode, sun.casts, mem.sheets, mem.dirs,
+        mem.anims, sun.frames, tables, shift, sun.orients, sun.kinds, q.scaleX);
+      const nGot = packInstancedRowsWasm(b, q, makePackContext(q, opts, cap, {}), mem.got, GPU_CASTER_FLOATS, cap, true, sun);
+      assert.equal(nGot, nRef, `seed ${seed} frame ${frame}: as many rows`);
+      if (adjust && adjust.framed !== undefined) assert.equal(sun.framed, adjust.framed, `seed ${seed} frame ${frame}: framed`);
+      else assert.equal(sun.framed, true, `seed ${seed} frame ${frame}: the pack wrote the frames`);
+      listed += sun.listed;
+      m.finishFullSunFrames(mem.got, nGot, sun, b.keyedSun, list, mem.types, mem.entities, tables, shift, q.scaleX);
+      const floats = nRef * GPU_CASTER_FLOATS;
+      sameBits(mem.ref.subarray(0, floats), mem.got.subarray(0, floats), `seed ${seed} frame ${frame}`);
+      if (sun.framed) framed += nGot - Math.min(sun.listed, nGot);
+      stepScene(s);
+    }
+  }
+  return { framed, listed, scatter, gather };
+}
+
+test('E-394: full sun rows from the framed pack, gathered: the same rows as the pack and applySunFramesFor', async () => {
+  const { framed, listed, gather, scatter } = await fullSunScenes([121, 122, 123], 6, 1500);
+  assert.ok(gather > 0 && scatter === 0, `the gather took these lists (${gather}, ${scatter})`);
+  assert.ok(framed > 3000, `rows framed by the pack (${framed})`);
+  assert.ok(listed > 30, `rows left to the JS: uneven tables, no direction drawn, NaN scales (${listed})`);
+});
+
+test('E-394: full sun rows from the framed pack, scattered: the same rows as the pack and applySunFramesFor', async () => {
+  const { framed, scatter } = await fullSunScenes([124, 125], 4, 8000);
+  assert.ok(scatter > 0, `the scatter took these lists (${scatter})`);
+  assert.ok(framed > 10000, `rows framed by the pack (${framed})`);
+});
+
+test('E-394: more rows for the JS than the list holds: applySunFramesFor writes every row again, the same', async () => {
+  const adjust = {
+    tables(tables, fm) {
+      fm.b.keyedSun.listCap = 3;
+    },
+  };
+  const { listed } = await fullSunScenes([126, 127], 4, 1500, adjust);
+  assert.ok(listed > 3 * 8, `rows listed past the list (${listed})`);
+});
+
+test('E-394: a pool that holds few sheets, or no region: the JS writes their frames, as before', async () => {
+  const small = {
+    tables(tables, fm) {
+      const region = keyedSunViews(fm.b.buffer, fm.b.keyedSun.byte);
+      region.pool = region.pool.subarray(0, 300);
+      fm.b.keyedSun = region;
+    },
+  };
+  const { listed } = await fullSunScenes([128], 4, 1500, small);
+  assert.ok(listed > 100, `rows of the sheets the pool does not hold left to the JS (${listed})`);
+  const none = {
+    framed: false,
+    tables(tables, fm) {
+      fm.b.keyedSun = null;
+    },
+  };
+  await fullSunScenes([129], 3, 1500, none);
+});
+
+test('E-394: _packGpuSun full rows on the real worker, the pack writing the frames: the rows as the old passes left them', async () => {
+  const m = await worker();
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const { ShadowCaster } = await import('../../src/components/shadowCaster.js');
+  const { SpriteRenderer } = await import('../../src/components/spriteRenderer.js');
+  const { Sun } = await import('../../src/core/sun.js');
+  const { cameraFloorScaleY } = await import('../../src/util/cameraView.js');
+  const { makePackContext } = await import('../../src/render/gpuQueueLayout.js');
+  const n = 1500;
+  const rows = 1400;
+  const cap = 700;
+  const s = makeScene(131, n);
+  bindDirectionalSprite(s.ds);
+  const { r, e } = s;
+  const fm = await fullSunMemory(rows, n);
+  const { q, mem, b } = fm;
+  const region = b.keyedSun;
+  const listCap = region.listCap;
+  let framedCalls = 0;
+  const realScatter = b.castersScatterFramed;
+  const realGather = b.castersFramed;
+  b.castersScatterFramed = (...a) => {
+    framedCalls++;
+    return realScatter(...a);
+  };
+  b.castersFramed = (...a) => {
+    framedCalls++;
+    return realGather(...a);
+  };
+  DirectionalSprite.active = mem.active;
+  DirectionalSprite.mode = mem.mode;
+  DirectionalSprite.directionIndex = mem.dirs;
+  DirectionalSprite.animation = mem.anims;
+  SpriteRenderer.spritesheetId = mem.sheets;
+  const saved = { ...ShadowCaster };
+  const shadowCaster = {
+    active: mem.casts,
+    sunKind: mem.kinds,
+    lampKind: e.lampKind,
+    orient: mem.orients,
+    opacity: Float32Array.from({ length: n }, () => (r() < 0.8 ? 1 : r())),
+    baseRadius: Float32Array.from({ length: n }, () => (r() < 0.8 ? 0 : 3 + r() * 9)),
+    textureId: Uint16Array.from({ length: n }, () => (r() < 0.7 ? 0 : 1 + Math.floor(r() * 400))),
+    textureScaleX: Float32Array.from({ length: n }, () => (r() < 0.3 ? 0 : (r() < 0.3 ? -1 : 1) * (0.5 + r()))),
+    textureScaleY: Float32Array.from({ length: n }, () => (r() < 0.3 ? 0 : 0.5 + r())),
+    textureAnchorX: Float32Array.from({ length: n }, () => (r() < 0.5 ? NaN : r())),
+    textureAnchorY: Float32Array.from({ length: n }, () => (r() < 0.5 ? NaN : r())),
+  };
+  Object.assign(ShadowCaster, shadowCaster);
+  delete pre._packGpuSun;
+  delete pre._packRows;
+  Sun.initialize(new SharedArrayBuffer(Sun.BYTE_LENGTH));
+  try {
+    const config = { camera: { pitch: 50 } };
+    Object.assign(pre, {
+      config,
+      shadowsEnabled: true,
+      gpuQueueCaps: { maxSun: cap },
+      _gpuPackOpts: {},
+      _gpuPackCtx: {},
+      _gpuPackWasm: b,
+      _gpuCasterIdx: new Uint32Array(rows),
+      renderQueueMaxItems: rows,
+      _atlasNearest: false,
+      _casterScanTick: 1e9,
+      _sunFrameTables: m.sunFrameTables(s.sources),
+      _sunShift: new Int16Array(256),
+      _sunShiftTurn: new Float64Array(256).fill(NaN),
+      proxyToGlobalAnim: s.proxy,
+      animationFrameStart: s.starts,
+      animationFrameCount: s.counts,
+      _renderableType: mem.types,
+      _renderableIndex: mem.entities,
+      renderQueueType: q.type,
+    });
+    const refTables = refSunFrameTables(s.sources);
+    const refShift = new Int16Array(256);
+    const refShiftTurn = new Float64Array(256).fill(NaN);
+    const cases = [
+      { what: 'the pack writes the frames, kinds in use', kernel: true, kinds: true },
+      { what: 'the pack writes the frames, the keyed rows not live', kernel: true, kinds: false },
+      { what: 'shadow textures: the JS pass after them', kernel: false, kinds: true, textures: true },
+      { what: 'more rows for the JS than the list holds', kernel: true, kinds: true, listCap: 3 },
+      { what: 'no region: the JS pass', kernel: false, kinds: true, region: false },
+      { what: 'the entities’ frames outside the memory: the JS pass', kernel: false, kinds: false, framesOut: true },
+      { what: 'a queue that is not the collector’s rows: no frames', kernel: false, kinds: true, rowsOff: true },
+      { what: 'no sun: the rows’ entities alone', kernel: false, kinds: true, noSun: true },
+    ];
+    for (let c = 0; c < cases.length; c++) {
+      const k = cases[c];
+      const angle = c * 1.3 - 2;
+      Sun._float32[Sun.F32.SHADOW_DIR_X] = Math.cos(angle);
+      Sun._float32[Sun.F32.SHADOW_DIR_Y] = Math.sin(angle);
+      if (k.noSun) Sun._sab = null;
+      const qq = makeQueue(s, rows);
+      loadFullFrame(s, fm, qq);
+      b.keyedSun = k.region === false ? null : region;
+      region.listCap = k.listCap ?? listCap;
+      Object.assign(pre, {
+        entityFrameIndex: k.framesOut ? Uint16Array.from(mem.frames) : mem.frames,
+        _collectedRows: k.rowsOff ? rows - 1 : rows,
+        _shadowFramesOn: !!k.textures,
+        _casterKindsOn: k.kinds,
+      });
+      pre._keyedCastersLive = () => false;
+      framedCalls = 0;
+      mem.got.fill(-7);
+      const sunN = pre._packGpuSun({ sun: mem.got }, q);
+      assert.equal(pre._gpuSunKeyed, false, `${k.what}: full rows`);
+      assert.equal(framedCalls > 0, k.kernel, `${k.what}: the framed pack ran or not`);
+      // The reference: the plain pack, then the old passes (shadow textures, the sun's frames, the caster codes, the
+      // rows' entities).
+      const { list, n: casters } = casterList(q);
+      const want = Math.min(casters, cap);
+      assert.equal(sunN, want, `${k.what}: the rows packed`);
+      mem.ref.fill(-7);
+      const opts = sunPackOpts(q, list, want);
+      assert.equal(packInstancedRowsWasm(b, q, makePackContext(q, opts, cap, {}), mem.ref, GPU_CASTER_FLOATS, cap, true), sunN);
+      const collected = !k.rowsOff;
+      if (k.textures && collected) refApplyShadowTextures(mem.ref, sunN, list, mem.types, mem.entities, ShadowCaster);
+      const sunOn = collected && !k.noSun;
+      if (sunOn) {
+        const turn = -Math.PI / 2 - Math.atan2(Sun.shadowDirY / cameraFloorScaleY(config), Sun.shadowDirX);
+        refPrepareSunFrames(refTables, s.proxy, s.starts, s.counts, refShift, refShiftTurn, turn);
+        refApplySunFramesFor(mem.ref, sunN, list, mem.types, mem.entities, mem.active, mem.mode, mem.casts, mem.sheets, mem.dirs,
+          mem.anims, mem.frames, refTables, refShift, mem.orients, mem.kinds);
+      }
+      if (k.kinds && collected) {
+        const codes = new Int32Array(n);
+        m.computeCasterCodes(codes, mem.casts, mem.kinds, e.lampKind, mem.orients, ShadowCaster.opacity, mem.active,
+          s.ds.facing, n, pre._sunFrameTables, mem.sheets, mem.dirs);
+        refTagCasterRows(mem.ref, sunN, list, mem.types, mem.entities, codes, ShadowCaster.baseRadius);
+      }
+      if (collected) refTagCasterEntities(mem.ref, sunN, list, mem.types, mem.entities);
+      const floats = sunN * GPU_CASTER_FLOATS;
+      sameBits(mem.ref.subarray(0, floats), mem.got.subarray(0, floats), k.what);
+      if (k.noSun) Sun.initialize(new SharedArrayBuffer(Sun.BYTE_LENGTH));
+      stepScene(s);
+    }
+  } finally {
+    b.keyedSun = region;
+    region.listCap = listCap;
+    delete pre._keyedCastersLive;
+    pre._gpuPackWasm = null;
+    Object.assign(ShadowCaster, saved);
     Sun.unbind();
   }
 });
