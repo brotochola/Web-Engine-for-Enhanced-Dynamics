@@ -95,7 +95,7 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
     if (!timerExt) return;
     endSeg();
     const q = perDraw ? null : free.pop() || qCreate.call(gl);
-    seg = { q, fbo, viewport: '', program: 0, draws: 0, instances: 0 };
+    seg = { q, fbo, viewport: '', program: 0, draws: 0, instances: 0, frame: px.frameNumber | 0 };
     if (!perDraw) qBegin.call(gl, timerExt.TIME_ELAPSED_EXT, q);
   };
   // gpuDraws: the open draw's query, ended right after the draw call.
@@ -241,6 +241,12 @@ async function recordInWorker({ ms, gpuPasses, gpuDraws, probeScissor }) {
     // A pass's draws, and its program when the segment drew with the one already bound. A draw with no pass open (the
     // frame drew into the framebuffer bound before the recording, with no bind since) opens one for that framebuffer.
     const segDraw = (n) => {
+      // A new Pixi frame starts a new segment on the same framebuffer (no bind in between).
+      if (seg && seg.frame !== (px.frameNumber | 0)) {
+        const fb = seg.fboObj;
+        beginSeg(seg.fbo);
+        seg.fboObj = fb;
+      }
       if (!seg && timerExt) {
         const fb = bound.fbo.get(0x8ca9) ?? bound.fbo.get(0x8d40) ?? null;
         beginSeg(idOf(fb));
