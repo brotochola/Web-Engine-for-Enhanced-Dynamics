@@ -151,7 +151,7 @@ test('a caster with a height map casts columns: each cell where it is in 3D, the
   assert.match(src, /vSunZ = mix\(zA, z, aCell\.z\);/);
   assert.match(src, /float zA = 0\.0;/);
   // E-447: the instance's grid (aBlock.w), the finest when it has none.
-  assert.ok(src.includes(`/ ((aBlock.w > 0.5 ? aBlock.w : ${SUN_MAP_COLUMNS}.0) * blocks);`));
+  assert.ok(src.includes(`/ ((aBlock.w > 1.5 ? aBlock.w : ${SUN_MAP_COLUMNS}.0) * blocks);`));
   // With a footprint row (the base's second float, + 1): the cell swept north at its height to the footprint's edge.
   assert.match(src, /float footprintNorth\(int slot, float x\)/);
   assert.match(src, /if \(aInstBase\.y >= 1\.0\) \{/);

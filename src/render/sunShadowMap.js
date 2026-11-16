@@ -321,8 +321,9 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
   vec2 pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   vec2 base = vec2(pix.x, (pix.y + uSunK.w * z) * uGroundInvScaleY);
-  // E-447: the instance's grid (aBlock.w: COLUMN_GRIDS), the finest when it has none.
-  vec2 cell = abs(aInstTrim.zw * aInstScale) / ((aBlock.w > 0.5 ? aBlock.w : ${cells.toFixed(1)}) * blocks);
+  // E-447: the instance's grid (aBlock.w: COLUMN_GRIDS), the finest when it has none (under 2: a row without one, or a
+  // geometry without aBlock, whose default w is 1).
+  vec2 cell = abs(aInstTrim.zw * aInstScale) / ((aBlock.w > 1.5 ? aBlock.w : ${cells.toFixed(1)}) * blocks);
   float width = 1.1 * max(cell.x, cell.y * uGroundInvScaleY) + 1.0;
   // A column from the cell's floor point (height 0) to where its top lands; with a footprint, the cell swept north at
   // its own height to the footprint's edge, as the light bench's heightmap did (light passes under a belly, between
@@ -501,7 +502,7 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
   let pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   let base = vec2<f32>(pix.x, (pix.y + uniforms.uSunK.w * z) * uniforms.uGroundInvScaleY);
   // E-447: the instance's grid (aBlock.w), the finest when it has none.
-  let cell = abs(aInstTrim.zw * aInstScale) / (select(${cells.toFixed(1)}, aBlock.w, aBlock.w > 0.5) * blocks);
+  let cell = abs(aInstTrim.zw * aInstScale) / (select(${cells.toFixed(1)}, aBlock.w, aBlock.w > 1.5) * blocks);
   let width = 1.1 * max(cell.x, cell.y * uniforms.uGroundInvScaleY) + 1.0;
   // A column, or with a footprint the cell swept north at its own height (sunMapColumnsVertex says why).
   var a = base;
