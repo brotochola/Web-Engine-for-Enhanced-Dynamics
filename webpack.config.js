@@ -86,6 +86,10 @@ const optimization = {
                     // DX-GUARDS' run-time checks speak from the workers. Production drops every console call.
                     drop_console: isProd,
                     drop_debugger: true,
+                    // E-469: terser writes a function with one caller in another scope into that caller as a function
+                    // expression called on the spot: a closure made at each call. reduce_funcs: false keeps it a function
+                    // (terser 5 still reads this "legacy" option for exactly that); one whose body is an expression is still inlined.
+                    reduce_funcs: false,
                     pure_funcs: ['console.debug', 'console.log']
                 },
                 mangle: {

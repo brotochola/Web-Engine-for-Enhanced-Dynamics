@@ -107,6 +107,10 @@ const umdConfig = {
                     compress: {
                         drop_console: false,
                         drop_debugger: true,
+                        // E-469: terser writes a function with one caller in another scope into that caller as a function
+                        // expression called on the spot: a closure made at each call. reduce_funcs: false keeps it a function
+                        // (terser 5 still reads this "legacy" option for exactly that); one whose body is an expression is still inlined.
+                        reduce_funcs: false,
                         // Keep console.warn/error — Layer and others use them as API.
                         pure_funcs: isProd
                             ? ['console.debug', 'console.log']
