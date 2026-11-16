@@ -13093,7 +13093,8 @@
         "SharedArrayBuffer layout"
       ],
       "records": [
-        "R-1104"
+        "R-1104",
+        "R-1188"
       ]
     },
     {
@@ -16244,7 +16245,7 @@
     {
       "id": "E-380",
       "title": "The light pass's reach window divides per light and pixel (1 / (100 (I' - h^2))): +5.6 % of the WebGL light3d pass (N-204); a per-light 1 / radius^2 written with the light data would make it a multiply",
-      "status": "open",
+      "status": "dropped",
       "statusText": "proposed 2026-11-15 on dx/light3d with N-204",
       "date": "2026-11-15",
       "area": "render",
@@ -16253,7 +16254,9 @@
       "next": "A free float per light in the light data (or a fourth row) for 1 / radius^2, against the division and against the subtract-the-edge form ((a - a_R) / (1 - a_R)); gpuPassBench light and light3d, res 0.5, 32 lights, both backends.",
       "refs": [],
       "aliases": [],
-      "records": []
+      "records": [
+        "R-1186"
+      ]
     },
     {
       "id": "DX-LAMPPANO",
@@ -16351,7 +16354,7 @@
     {
       "id": "E-381",
       "title": "DX-LAMPPANO's lamp lookup costs the WebGL light3d pass 12 % (1.302 -> 1.461 ms at 48 lamps), WebGPU none",
-      "status": "open",
+      "status": "dropped",
       "statusText": "proposed 2026-11-15 with DX-LAMPPANO; for the optimization plan (no benchmarks until then, the owner)",
       "date": "2026-11-15",
       "area": "render",
@@ -16360,7 +16363,9 @@
       "next": "Read ANGLE's HLSL for the light pass (the branch at the reach a real one?), a cheaper landing (squared radii), the ceiling half only for points above some lamp; gpuPassBench light3d both backends.",
       "refs": [],
       "aliases": [],
-      "records": []
+      "records": [
+        "R-1186"
+      ]
     },
     {
       "id": "N-210",
@@ -17345,7 +17350,8 @@
         "id % T"
       ],
       "records": [
-        "R-1104"
+        "R-1104",
+        "R-1188"
       ]
     },
     {
@@ -17393,7 +17399,8 @@
         "R-1100",
         "R-1103",
         "R-1104",
-        "R-1115"
+        "R-1115",
+        "R-1188"
       ]
     },
     {
@@ -17415,7 +17422,8 @@
         "rbAx zero write"
       ],
       "records": [
-        "R-1100"
+        "R-1100",
+        "R-1188"
       ]
     },
     {
@@ -18106,7 +18114,8 @@
       ],
       "records": [
         "R-1174",
-        "R-1181"
+        "R-1181",
+        "R-1187"
       ]
     },
     {
@@ -18131,12 +18140,12 @@
     {
       "id": "E-401",
       "title": "The keyed statics scatter costs the GPU 0.35 to 0.52 ms a frame for about 900 to 1 300 updates, and 1.05 ms at crowd 2.5 (2 884): about 0.36 us an update of three texels",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on Predator (timer queries, GTX 1650, 1920x1080)",
+      "status": "rejected",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on Predator (timer queries, GTX 1650, 1920x1080); rejected 2026-11-16 by R-1187 (per-draw GPU timer)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "statics scatter (fbo 3072 x 178, 2 draws): 0.521 ms (898 updates, plain day), 0.431 (829, night), 0.372 and 0.348 with light3d; crowd 2.5 (3072 x 222): 1.049 ms for 2 884.",
+      "result": "Rejected 2026-11-16 (R-1187): the scatter's own draws cost the GPU 0.03 to 0.07 ms a frame (crowd 2.5 0.048, Predator light3d 0.068, light3dCompare 0.044 to 0.060); the 0.35 to 1.05 ms pass ranges were the GPU waiting for the Pixi worker's next commands. statics scatter (fbo 3072 x 178, 2 draws): 0.521 ms (898 updates, plain day), 0.431 (829, night), 0.372 and 0.348 with light3d; crowd 2.5 (3072 x 222): 1.049 ms for 2 884.",
       "next": "Read why a point scatter of 3 texels costs that (the target is RGBA32UI 3072 wide: the whole target loaded and stored each pass?); texSubImage2D of the changed rows when few, or rows sorted into runs; the recorder before and after.",
       "refs": [],
       "aliases": [
@@ -18144,18 +18153,19 @@
       ],
       "records": [
         "R-1174",
-        "R-1181"
+        "R-1181",
+        "R-1187"
       ]
     },
     {
       "id": "E-402",
       "title": "The frame's clears and blits outside any draw cost the GPU 0.2 to 0.5 ms (0.51 ms at Predator crowd 2.5)",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on Predator (timer queries, GTX 1650, 1920x1080)",
+      "status": "rejected",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on Predator (timer queries, GTX 1650, 1920x1080); rejected 2026-11-16 by R-1187 (per-draw GPU timer)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "The screen framebuffer's segments with no draw: 0.229 to 0.282 ms at crowd 1, 0.510 ms at crowd 2.5.",
+      "result": "Rejected 2026-11-16 (R-1187): clears and blits cost 0.032 ms a frame at crowd 2.5 and 0.151 ms with light3d (0.083 of it the lamps' 4096 x 1536 map, not covered whole by the frame); the segments with no draw were idle. The screen framebuffer's segments with no draw: 0.229 to 0.282 ms at crowd 1, 0.510 ms at crowd 2.5.",
       "next": "List the clears and blits a frame makes (the recorder counts clear and blitFramebuffer) and drop those whose target the frame overwrites whole.",
       "refs": [],
       "aliases": [
@@ -18163,7 +18173,8 @@
       ],
       "records": [
         "R-1174",
-        "R-1181"
+        "R-1181",
+        "R-1187"
       ]
     },
     {
@@ -18182,7 +18193,8 @@
       ],
       "records": [
         "R-1174",
-        "R-1181"
+        "R-1181",
+        "R-1187"
       ]
     },
     {
@@ -18201,7 +18213,8 @@
       ],
       "records": [
         "R-1174",
-        "R-1181"
+        "R-1181",
+        "R-1187"
       ]
     },
     {
@@ -18381,19 +18394,20 @@
     {
       "id": "E-413",
       "title": "light3dCompareScene's colour pass times 9.2 ms a frame without light3d's pieces and 2.9 ms with every piece on (twice the instances): a costly plain path, or the timer counting the GPU idle inside the pass",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on the light scenes (timer queries, GTX 1650, 1920 x 1080)",
+      "status": "rejected",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on the light scenes (timer queries, GTX 1650, 1920 x 1080); rejected 2026-11-16 by R-1187 (per-draw GPU timer)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "walkers=20000 props=2000 lamps=48 hour=12: plain, colour pass (fbo#0, [uTexture], 4 draws, 22 003 instances) 9.234 ms of 11.786 ms; all=1, the colour pass (5 draws, 44 003 instances) 2.859 of 8.458; sunMap=1 2.156; lampMap=1 1.539; self=1 3.361; depth=1 3.532.",
+      "result": "Rejected 2026-11-16 (R-1187): the plain colour pass reads 1.818 ms as a range and 1.737 ms in its draws (sprites 1.350 ms) in a sitting under the bench lock; the 9.234 ms of 04:45 was idle time inside the range (no lock then). walkers=20000 props=2000 lamps=48 hour=12: plain, colour pass (fbo#0, [uTexture], 4 draws, 22 003 instances) 9.234 ms of 11.786 ms; all=1, the colour pass (5 draws, 44 003 instances) 2.859 of 8.458; sunMap=1 2.156; lampMap=1 1.539; self=1 3.361; depth=1 3.532.",
       "next": "Nsight Systems' GR Active and the WDDM queue for both (busy or idle), then the plain path's draws one by one (what the plain colour pass binds that light3d's does not: the sprite shadows drawn into it?).",
       "refs": [],
       "aliases": [
         "plain colour pass 9 ms"
       ],
       "records": [
-        "R-1181"
+        "R-1181",
+        "R-1187"
       ]
     },
     {
@@ -18485,7 +18499,8 @@
         "lamp map static casters"
       ],
       "records": [
-        "R-1181"
+        "R-1181",
+        "R-1187"
       ]
     },
     {
@@ -18726,6 +18741,279 @@
       ],
       "records": [
         "R-1184"
+      ]
+    },
+    {
+      "id": "E-429",
+      "title": "DX-DEPTH's edge pass draws every sprite's whole quad again (the opaque pass's instances) and costs nearly as much as the opaque pass, 1.25 against 1.39 ms in light3dCompare all=1 and 0.95 against 1.05 ms in Predator ?light3d=1, though the people's sheets have no soft texels: for them it draws nothing visible",
+      "status": "running",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws (a timer query per draw; GTX 1650, 1920 x 1080, headed Chrome 157); an agent builds it in the weed-par-stamp worktree",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "Per draw, light3dCompare walkers=20000 props=2000 lamps=48 hour=12 all=1: colour pass draw 3 (the opaque program) 1.390 ms and draw 4 (its -edge program) 1.251 ms, 21 633 instances each, of 6.466 ms of draws a frame; Predator zoom=0.3 light3d=1: 1.053 and 0.945 ms by program, 14 420 instances. civil1 to civil4 (both scenes' people): 1 and 5 texels with 0 < alpha < 128 in 2.9 M, every other texel 0 or 255. The edge pass keeps alpha x tint < 0.5 or glowing pixels; for a binary sheet under an opaque tint that is only alpha-0 texels (premultiplied zero), yet every fragment fetches the maps page and computes the depth, and gl_FragDepth turns early depth off.",
+      "next": "A per-frame bit (a texel with 0 < alpha < 128, or a glowing texel in its maps page) from the registry's trim scan, read where the edge pass's vertex stage reads the frame, which collapses the quad when the bit is clear, the tint opaque and the word has no emissive bits; both backends; the image identical; the recorder's per-draw GPU before and after in both scenes.",
+      "refs": [],
+      "aliases": [
+        "edge pass skip",
+        "pixel depth edge pass"
+      ],
+      "records": [
+        "R-1187"
+      ]
+    },
+    {
+      "id": "E-430",
+      "title": "DX-DEPTH's passes fetch the maps texel and compute the floor depth before the alpha test: the opaque pass could discard alpha below 0.5 first (it can never be solid) and the edge pass alpha 0, saving the fetch and the math on the quads' transparent pixels",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws (a timer query per draw; GTX 1650, 1920 x 1080, headed Chrome 157)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "pixelDepth.js depthBodyGlsl: texelFetch(uMaps), the height, the glow test and gl_FragDepth come first, the texture's alpha last (`solid`); in the WGSL weedPixelDepth the alpha is read first but the maps fetch is unconditional. The people's quads are trimmed but still about half transparent around a walking figure.",
+      "next": "Alpha first and an early discard in each pass (the edge pass only where an alpha-0 texel cannot glow: check what the colour body does with one), measured per draw in light3dCompare all=1 after the edge-pass row above.",
+      "refs": [],
+      "aliases": [
+        "pixel depth discard order"
+      ],
+      "records": [
+        "R-1187"
+      ]
+    },
+    {
+      "id": "E-431",
+      "title": "Predator's GPU particles cost the colour pass 1.10 to 1.28 ms a frame for about 100 instances, more than its 38 555 sprites (1.14 ms): fill-bound big soft quads (fire's smoke grows to 3 x baseScale at alpha 0.15 to 0.3), or a sync of the record ring at the draw",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws (a timer query per draw; GTX 1650, 1920 x 1080, headed Chrome 157)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "Per draw, the program [uTexLut,uTexture] of gpuParticle.vert.glsl, the colour pass's last draw: Predator crowd 2.5 1.279 ms (100 instances), zoom=0.3 light3d=1 1.098 ms (107); the same draw read 0.95 to 1.14 ms in the first sittings. Its fragment shader is one texture sample and a multiply.",
+      "next": "Separate fill from everything else: the same draw under a 1 px scissor (a recorder probe), and the particles' screen area a frame; then half-resolution soft particles (the layer resolution the engine already has), quads trimmed to the texture's opaque bounds, or the ring's upload kept out of the draw.",
+      "refs": [],
+      "aliases": [
+        "gpu particles fill",
+        "particle draw 1 ms"
+      ],
+      "records": [
+        "R-1187"
+      ]
+    },
+    {
+      "id": "E-432",
+      "title": "Predator's tilemap draws a full-screen quad per layer and page (7 draws of the [uGid,uTileset] program, 0.06 to 0.16 ms each): 0.74 to 1.07 ms a frame of overdraw for the ground",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws (a timer query per draw; GTX 1650, 1920 x 1080, headed Chrome 157)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "Per draw, Predator crowd 2.5: 7 draws 1.071 ms by program (0.825 to 1.071 across sittings); zoom=0.3 light3d=1: 0.744 to 0.766 ms. tilemapGid.frag.glsl fetches the layer's gid texel per pixel, discards empty tiles, samples the tileset and blends: every layer pays the quad's rasterization and a framebuffer read-modify-write where it has tiles.",
+      "next": "One pass over a tilemap's layers (their gid pages as layers of an array texture, composited front to back in the shader, stopping at the first opaque texel), or each layer's quad cut to its tiles' bounds in view; per draw before and after.",
+      "refs": [],
+      "aliases": [
+        "tilemap layers overdraw"
+      ],
+      "records": [
+        "R-1187"
+      ]
+    },
+    {
+      "id": "E-433",
+      "title": "Box2D's finalize writes x, y, vx, vy, w and clears the sleeping byte of every awake body from four solver threads at entity slots in awake-set order: when that order is scrambled (E-322) the threads share the channels' lines, an estimated 800 to 39 400 line transfers a step at crowd 2.5",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "date": "2026-11-16",
+      "area": "physics",
+      "kind": "speed",
+      "result": "Candidate 1 of the audit: box2d.x .. box2d.angularVelocity (2 502 lines a channel over the crowd), box2d.sleeping (627 lines); 819 transfers a step if the awake set were in slot order (block edges only), 39 407 if random (15.2 awake bodies a 16-slot line, 4 threads). Evidence: toiPoseExport.wasm.test.js (the finalize exports each awake body, E-182), R-1041 (b2FinalizeBodiesTask 2.1 refills an instruction), E-325, E-322.",
+      "next": "Confirm first: E-322's coherence dump of the awake set's slot order, and DCRefillFromSystem per function on b2FinalizeBodiesTask at a fresh start against after a minute of churn. Fix: per-thread sequential staging rows scattered by the serial export, finalize blocks by slot range, or the awake set kept in slot order (a Morton re-sort would make it worse; E-353 would add a channel).",
+      "refs": [],
+      "aliases": [
+        "finalize false sharing",
+        "awake set order false sharing"
+      ],
+      "records": [
+        "R-1188"
+      ]
+    },
+    {
+      "id": "E-434",
+      "title": "Logic stores RigidBody.sleeping = 0 on every addAcceleration, also when it is 0, into the byte channel physics paints and clears every step: an estimated 1 250 line transfers a frame at crowd 2.5, and the cheapest of the audit's fixes",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Candidate 5: src/core/gameObject.js (addAcceleration), the buckets split by logicBlockRange (logicWorker.js), E-325 (the paint writes 38 000 bytes a step, the finalize clears them); 627 lines a frame taken from physics by logic and back by the next paint.",
+      "next": "`if (RigidBody.sleeping[i] !== 0) RigidBody.sleeping[i] = 0` (a read keeps the line shared; physics wakes a body whose acceleration is not zero), or drop the store; logic and physics STEP_MS at crowd 2.5, DCRefill per function to confirm.",
+      "refs": [],
+      "aliases": [
+        "sleeping store on every acceleration"
+      ],
+      "records": [
+        "R-1188"
+      ]
+    },
+    {
+      "id": "E-435",
+      "title": "The particle worker stores RigidBody.speed of every opted-in body every frame, also when it did not change (sleeping and still bodies), into lines logic reads at each tick: an estimated 5 000 line transfers a frame at crowd 2.5",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "date": "2026-11-16",
+      "area": "particle",
+      "kind": "speed",
+      "result": "Candidate 3: src/workers/particleWorker.js (the unconditional store), demos/predatorScene/gameObjects/person.js (deriveSpeed, the read); 2 502 lines written a frame. Related: E-178 (the derive pass), E-353 (computing it in Box2D).",
+      "next": "Store only when the value changed; if E-353 moves the store into the finalize, keep it slot-partitioned (the finalize row above).",
+      "refs": [],
+      "aliases": [
+        "speed store on change"
+      ],
+      "records": [
+        "R-1188"
+      ]
+    },
+    {
+      "id": "E-436",
+      "title": "SpriteRenderer.keyedDirty and renderDirty are written by both sides: logic sets them when statics change, pre-render fetch_or's the texture bit at each frame advance and exchanges or clears them at the emit, on the same lines: an estimated 950 line transfers a frame",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "date": "2026-11-16",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "Candidate 6: directionalSprite.js and spriteRenderer.js (the sets), wasm/preRenderEmit.c (fetch_or, exchange, the renderDirty clear); about 472 lines set by logic and 552 written by pre-render a frame (assumes 4 000 sprites on screen, a frame advance every 6 frames, 10 % of ticks changing statics).",
+      "next": "The texture bit in a region pre-render owns (beside emitKeyChange), and keyedDirty and renderDirty as logic-written generations pre-render compares with its own last-seen copy, so pre-render never writes the shared column; pre-render and logic STEP_MS.",
+      "refs": [],
+      "aliases": [
+        "dirty flags written by both"
+      ],
+      "records": [
+        "R-1188"
+      ]
+    },
+    {
+      "id": "E-437",
+      "title": "The particle and bullet free lists hand out slots with interleave 1, so concurrent emits of logic0 and logic1 write adjacent slots of every column, and the particle worker integrates and frees on the same lines: an estimated 780 line transfers a frame",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Candidate 7: sceneSharedBuffers.js (resetFreeList(..., 1) for particles and bullets; entity pools use 8), atomicFreeList.js, particleEmitter.js, particleIntegrateClient.js, bulletPool.js; about 378 lines written by both logic workers a frame (10 bursts of 10, 10 shots).",
+      "next": "A line-aligned run of slots per pop for each logic worker (a per-worker slot cache), or free lists interleaved by a line (16 f32 slots); the particle worker pushes the frame's dead as one chain (one CAS a frame instead of one per particle).",
+      "refs": [],
+      "aliases": [
+        "free list interleave"
+      ],
+      "records": [
+        "R-1188"
+      ]
+    },
+    {
+      "id": "E-438",
+      "title": "Hits write the victim's columns from logic worker targetId % workers, and panic spreads from the hit civilian's worker, while each entity's tick runs on the worker owning its half: two logic workers write the same lines in a frame (an estimated 300 transfers)",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Candidate 8: logicWorker.js (targetId % totalWorkers; pairs by minE % workers), logicOwner.js (tick halves), person.js, civilian.js, explosion.js; about 150 lines a frame (20 impacts, about 6 columns each, 3 panic writes).",
+      "next": "Route impacts to the worker that ticks the target (the same logicBlockRange split), or hand cross-entity writes to the owner through a per-worker queue.",
+      "refs": [],
+      "aliases": [
+        "hit routing false sharing"
+      ],
+      "records": [
+        "R-1188"
+      ]
+    },
+    {
+      "id": "E-439",
+      "title": "Box2D's command ring keeps WRITE (a CAS by each producer) and READ (physics) in one header line, its 32-byte records start at byte 16 and straddle lines, and logic0's and logic1's records interleave: an estimated 100 line transfers a frame",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "date": "2026-11-16",
+      "area": "physics",
+      "kind": "speed",
+      "result": "Candidate 9: box2dCommandRingImpl.js (header and claims), person.js (the commands).",
+      "next": "A command ring per producer (as listUpdateRings and navRequestRings), or a line of records claimed per CAS; WRITE and READ on separate lines.",
+      "refs": [],
+      "aliases": [
+        "command ring header line"
+      ],
+      "records": [
+        "R-1188"
+      ]
+    },
+    {
+      "id": "E-440",
+      "title": "The workers' small control words share cache lines: frameClock's 32-byte slots (two workers a line), the published lists' published and reading words in one 8 bytes, poseSync's and renderQueueSync's consumedFrame beside the producer's readyFrame, frameChain's three words, the contact ring's header, and small SharedArrayBuffers the allocator may pack together: an estimated 70 line transfers a frame in all",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "date": "2026-11-16",
+      "area": "workers",
+      "kind": "speed",
+      "result": "Candidates 11 to 20: frameClock.js (SLOT_BYTES 32; frameTotals.js already uses 64), publishedList.js, poseSync and renderQueueSync (weedjsPost.js, preRenderWorker.js, pixiWorker.js), frameChain (logicWorker.js, scene.js), box2dContactRingImpl.js, sceneSharedBuffers.js (PartitionAlloc packing: a model, not verified in Chrome); columns aligned only to their element size (component.js), 3 region boundaries inside a line with different writers.",
+      "next": "One control SharedArrayBuffer of 64-byte slots for every sync word (each worker's word on its own line), frameClock SLOT_BYTES 64, consumer words on their own line, columns rounded to 64 bytes; small each, so one batch measured once (DCRefill per function, every worker's STEP_MS).",
+      "refs": [],
+      "aliases": [
+        "control words share lines"
+      ],
+      "records": [
+        "R-1188"
+      ]
+    },
+    {
+      "id": "E-441",
+      "title": "Several CAS spin locks and lap waits spin with no Atomics.pause and no bound (the decoration pool's lock is held for its whole snapshot copy, the sound bus lock is taken by logic0, logic1 and main on every play; box2dSyncSlot spins 100 000 loads before its 2 ms wait)",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "date": "2026-11-16",
+      "area": "engine",
+      "kind": "speed",
+      "result": "The audit's list: decorationPool.js (held through the snapshot copy), decorationSpatial.js, soundManager.js (bus lock), layerFeed.js, spawnCommandRing.js, messageRing.js, decal.js, box2dCommandRingImpl.js, sharedAtomicPool.js, weedjsPost.js, box2dSyncSlotImpl.js.",
+      "next": "Atomics.pause in the loops (Chrome 133+), a bounded spin then Atomics.wait on the lock word, the decoration snapshot copied outside the lock (double buffer); the CPU pass's self time of these functions and Windows per-thread CPU (a waiting thread looks busy in V8 profiles).",
+      "refs": [],
+      "aliases": [
+        "spin locks without pause"
+      ],
+      "records": [
+        "R-1188"
+      ]
+    },
+    {
+      "id": "E-442",
+      "title": "Pre-render's pose wait and Pixi's queue wait run when their budget is over 0.5 ms, so a wait of 0.5 to 1 ms spins a whole core on Windows, and physics' bell loop ends in sub-millisecond waits",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "date": "2026-11-16",
+      "area": "workers",
+      "kind": "speed",
+      "result": "The audit's note (d): preRenderWorker.js _waitForPose and pixiWorker.js _waitForQueue (budget > 0.5 ms), weedjsPost.js's bell loop (waits `left` ms, under 1 ms near its end); logic's beforeUpdate wait is E-341. CLAUDE.md: under 1 ms V8's Atomics.wait spins on Windows.",
+      "next": "Wait only when the budget is 1 ms or more (or not at all) in pre-render and Pixi, end physics' loop when less than 1 ms is left; cswitchStats.mjs on a CSwitch capture (the waiting threads' CPU ms a second) and WAIT_MS against the band.",
+      "refs": [],
+      "aliases": [
+        "sub-ms waits spin"
+      ],
+      "records": [
+        "R-1188"
+      ]
+    },
+    {
+      "id": "E-443",
+      "title": "Dormant: with more than one spatial worker every worker owning a row an entity's box touches stores its spatial pos every frame, whatever the change test found: 0 now (one spatial worker) but an estimated 25 000 line transfers a frame with spatialWorkers=2 and 39 000 with 4",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "date": "2026-11-16",
+      "area": "spatial",
+      "kind": "speed",
+      "result": "Candidate 25: spatialWorker.js (the stores after the E-136 compare, ownership by home row), R-1104; spatial.pos 16 bytes an entity, 14 409 lines at crowd 2.5.",
+      "next": "Store pos only when the compare found a change, and only from the home-row owner (a single writer a line); measure with ?spatialWorkers=2 (DCRefill per function: rebuildOwnedRows, gather_batch, publish_batch) before anyone raises the default.",
+      "refs": [],
+      "aliases": [
+        "spatial pos stores with two workers"
+      ],
+      "records": [
+        "R-1188"
       ]
     }
   ],
@@ -30334,6 +30622,40 @@
       "text": "**Tonight's integration (E-372, E-358/E-359, the plain keyed pack's exports, E-425) against the pushed main: Predator crowd 2.5 KEPT, pre-render 7.439 -> 6.422 ms (-13.9 %, 4/4).** `runPredatorAbab --pool --pairs 4 --vs 0b0ec824 --hyp-rev 7daf6d14 --query crowd=2.5&zoom=0.216 --owner preRender`, headed, AC power, 2026-11-16 05:53 to 05:58 (three agents were building and testing in their worktrees meanwhile). Pre-render paired -13.9 % (0/4 worse, -11.5 % against the other workers, cv 3/4 %); physics 13.757 -> 13.213 (-6.1 %, 0/4 worse), logic 6.410 -> 6.227 (-2.6 %), spatial 10.325 -> 10.129 (-1.6 %), Pixi 3.339 -> 3.048 (under the floor); loads equal (GPU_CASTERS 37 858 -> 38 153, RENDER_QUEUE_SIZE 38 547 -> 38 558). The merge of DX-LIGHT3D had put Predator crowd 2.5's pre-render at +1.5 ms against main before it (R-1162: 5.757 -> 7.283); tonight's work brings back about 1 ms of it (chained across sittings, so a rough figure).",
       "commits": [
         "7daf6d14"
+      ]
+    },
+    {
+      "id": "R-1186",
+      "date": "2026-11-16",
+      "time": "02:52",
+      "timeFrom": "recorded",
+      "title": "E-380 and E-381 dropped: the per-light terms in the light data made the WebGL light3d pass slower (+10.6 % together, +6.3 % E-380 alone)",
+      "verdict": "dropped",
+      "text": "**E-380 and E-381 dropped: the per-light terms moved into the light data made the WebGL light3d pass slower, together +10.6 % and E-380 alone +6.3 %.** The branch opt/light-reach wrote 1 / radius^2 (E-380) and the lamp's landing terms (E-381) per light into the light data, so the pass no longer divides per light and pixel; but the lamp tag and fade it needs came from a fourth row read for every light, outside the reach's early out, and that fetch cost more than the division it saved.\n\ngpuPassBench --passes light,light3d (GTX 1650, ANGLE D3D11, 960 x 540, 32 of 256 lights, 48 lamps), alternated twice, 2026-11-16 (the queue's log):\n\n| 02:25 to 02:28, E-380 + E-381 (opt/light-reach) | main a43899ed | branch |\n| --- | --- | --- |\n| WebGL light3d | 1.243, 1.240 ms | 1.371, 1.374 ms (+10.6 %) |\n| WebGL light | 0.690, 0.679 | 0.677, 0.682 (equal) |\n| WebGPU light3d | 1.208, 1.208 | 1.293, 1.288 (+6.8 %) |\n| glslLink, light3d program | 551 ms | 841 ms (+53 %) |\n| glslLink, pixel art variant | 360 ms | 465 ms (+29 %) |\n\n| 02:50 to 02:52, E-380 alone (55af8b14 with the branch's bench) | main | E-380 |\n| --- | --- | --- |\n| WebGL light3d | 1.250, 1.244 ms | 1.325, 1.326 ms (+6.3 %) |\n| WebGL light | 0.704, 0.680 | 0.689, 0.679 (equal) |\n| WebGPU light3d | 1.249, 1.255 | 1.215, 1.214 (-3.0 %) |\n| WebGPU light | 0.714, 0.738 (spread 4 %) | 0.819, 0.885 (spread 17 to 19 %) |\n\nWebGL is the backend most players draw with, and it lost in both forms. E-380 alone gave a different light3d image hash on each of its two runs (4ed53389, d570ee00), which the other builds did not. Main keeps the division and the lamp lookup as they are, and the branch is not merged. A second try would read the lamp's tag where the pass already reads row 0, for example in the sign of its w, so that row 3 is fetched only inside the lamp's lookup, past the reach test."
+    },
+    {
+      "id": "R-1187",
+      "date": "2026-11-16",
+      "time": "06:24",
+      "timeFrom": "recorded",
+      "title": "GPU time draw by draw: pass ranges counted the GPU's idle time; E-401, E-402 and E-413 rejected; DX-DEPTH's edge pass 1.25 ms (E-429), particles 1.1-1.3 ms (E-431), tilemap 0.7-1.1 ms (E-432)",
+      "verdict": "note",
+      "text": "**GPU time draw by draw (glFrameRecorder --gpu-draws, 587c9052): many pass readings were the GPU sitting idle, not working, and E-401, E-402 and E-413 lose their premises.** A pass's TIME_ELAPSED range runs from one framebuffer bind to the next, so it also counts the time the GPU waits for commands the CPU has not sent yet. A query around each draw (and, from the second commit, each clear and blit) leaves those gaps out.\n\nHeaded Chrome 157, GTX 1650, 1920 x 1080, 3 s recorded after 12 s, main 6bfe39e3 with the integration (7daf6d14), 2026-11-16 06:08 to 06:24 (the logs). Every run went through the bench lock.\n\n| scene | GPU in pass ranges | GPU in draws | gap |\n| --- | --- | --- | --- |\n| light3dCompare walkers=20000 props=2000 lamps=48 hour=12 | 5.704 ms | 3.534 ms | 2.17 |\n| ... all=1 | 8.482 | 6.478 (6.466 named) | 2.00 |\n| Predator zoom=0.3 light3d=1 | 14.910 | 12.752 (12.766 with clears) | 2.16 |\n| Predator crowd=2.5 zoom=0.216 | 14.061 | 5.217 (5.425 with clears) | 8.84 |\n\nRange against its own draws, in the same sitting:\n\n| pass | range | its draws |\n| --- | --- | --- |\n| light3dCompare plain, colour (fbo#0, 22 003 instances) | 1.818 | 1.737 |\n| light3dCompare plain, statics scatter (3072 x 44) | 0.684 | 0.060 |\n| light3dCompare all=1, G-buffer 960 x 540 | 0.920 | 0.489 |\n| Predator light3d, statics scatter (3072 x 178) | 0.444 | 0.068 |\n| Predator light3d, segment with no draw | 0.461 | (clears: 0.151 in the whole frame) |\n| Predator crowd 2.5, colour | 10.795 | 3.690 |\n| Predator crowd 2.5, statics scatter (3072 x 222) | 0.997 | 0.048 |\n| Predator crowd 2.5, segment with no draw | 0.420 | (clears: 0.032 in the whole frame) |\n\n- **E-413 rejected.** The plain colour pass that read 9.234 ms at 04:45 reads 1.818 ms as a range in this sitting and 1.737 in its draws; its sprites' draw is 1.350 ms. The 04:45 sitting ran before the bench lock existed (05:33), so another browser's work or the CPU's pace probably filled the range. The plain path is not costly.\n- **E-401 rejected.** The scatter's own draws cost 0.03 to 0.07 ms a frame (crowd 2.5 0.048, Predator light3d 0.068, light3dCompare 0.044 to 0.060). The 0.35 to 1.05 ms readings were idle time. The agent on it was redirected before it changed code.\n- **E-402 rejected.** Clears and blits cost 0.032 ms a frame at crowd 2.5 and 0.151 ms with light3d; 0.083 of that is the lamps' 4096 x 1536 map, which the frame does not cover whole. The segments with no draw (0.42 to 0.58 ms) were idle.\n- **Real work confirmed:**\n  - E-403 (the G-buffer twice): 0.822 ms at 1920 x 1080 and 0.505 at 960 x 540, Predator light3d, by program.\n  - E-404 (the lamps' 47 or 48 instances): 0.194 to 0.208 ms in Predator light3d, 0.148 in light3dCompare.\n  - E-418 (the lamps' map): floor half 1.197 ms and ceiling half 0.514 ms for 24 160 instances in light3dCompare all=1; 0.729 ms in Predator light3d (19 440 instances over 50 draws) plus 0.186 for its pose-table program.\n  - E-399: the 3D light pass is 5.485 to 5.567 ms in Predator light3d, 44 % of the frame's draws, as busy as its range. In light3dCompare it is 0.709 ms (lighting resolution 0.25).\n- **New, filed:**\n  - E-429: DX-DEPTH's edge pass, 1.251 ms against the opaque pass's 1.390 in light3dCompare all=1 and 0.945 against 1.053 in Predator light3d, for sheets with no soft texels. An agent builds it.\n  - E-430: the depth body's order (maps fetch before the alpha test).\n  - E-431: Predator's GPU particles, 1.10 to 1.28 ms for about 100 instances, more than its 38 555 sprites.\n  - E-432: Predator's tilemap, 7 full-screen draws at 0.74 to 1.07 ms.\n\nIn a scene the CPU paces (crowd 2.5), a pass's range says how long the Pixi worker took to send it. It does not say what the pass costs: read the draw mode, or Nsight's GR Active, before a GPU claim. E-380 and E-381 were measured with gpuPassBench, which times its passes alone, so they are not affected.",
+      "commits": [
+        "587c9052"
+      ]
+    },
+    {
+      "id": "R-1188",
+      "date": "2026-11-16",
+      "time": "06:23",
+      "timeFrom": "recorded",
+      "title": "The false-sharing audit (falseSharingAudit.mjs): Predator crowd 2.5's shared layouts ranked by estimated line transfers; E-433 to E-443 filed",
+      "verdict": "note",
+      "text": "**The false-sharing audit (E-226): a tool that builds Predator crowd 2.5's real shared layouts in Node and ranks the cache lines that may move between cores. Twelve hypotheses were filed from it (E-433 to E-443). Every count is an estimate, and nothing was measured.**\n\n`tests/bench/falseSharingAudit.mjs` (4fe3bcc9, merged 05bceebe) does no measuring. It builds the layouts:\n- the scene's own constructor;\n- the engine block at a 64-byte line;\n- `createSceneSharedBuffers`, recording every SharedArrayBuffer;\n- the physics rings;\n- Box2D's state channels, from the shipped wasm after the physics worker's init calls.\n\nIt prints all 564 regions in 145 buffers, each with its alignment and its writers and hot readers (a file:line per claim, from code reads), then the candidates ranked by estimated transfers a frame. `--assume` changes the guesses. To run it: `node tests/bench/falseSharingAudit.mjs --findings [--query \"crowd=2.5&spatialWorkers=2\"]`. A check run on main, 2026-11-16 06:31, printed 25 candidates.\n\n| rank | candidate (estimated transfers a frame) | row |\n| --- | --- | --- |\n| 1 | Box2D's finalize writes awake bodies' channels from 4 solver threads in awake-set order: 819 (slot order) to 39 407 (random) a step | E-433 |\n| 2 | Logic zeroes ax, ay, angularAccel each tick over every line: about 15 000 (true sharing, redundant stores) | E-342, E-345 |\n| 3 | The particle worker stores RigidBody.speed every frame for every opted-in body: about 5 000 | E-435 |\n| 4 | A despawn shifts the active lists (copyWithin) under spatial's and logic's reads: about 2 000 at one despawn a frame | E-344 |\n| 5 | `sleeping = 0` on every addAcceleration: about 1 250 (the cheapest fix) | E-434 |\n| 6 | keyedDirty and renderDirty written by logic and pre-render: about 950 | E-436 |\n| 7 | Particle and bullet free lists, interleave 1: about 780 | E-437 |\n| 8 | Hits routed by targetId % workers: about 300 | E-438 |\n| 9 | Command ring header and records: about 100 | E-439 |\n| 10 to 20 | Control words sharing lines (sound bus, free-list tops, frameClock, published lists, frameChain, poseSync, contact ring, camera, boundaries, renderQueueSync): 4 to 36 each, about 70 in all | E-440 |\n| 25 | Dormant: spatial pos stored by every row owner: 0 now, about 25 000 with spatialWorkers=2 and 39 000 with 4 | E-443 |\n| (d) | CAS spin locks with no Atomics.pause; sub-millisecond waits in pre-render, Pixi and physics' bell loop | E-441, E-442 |\n\nConfirming any item takes a capture: `wprScene.sh DCRefillFromSystem`, then `wprPmc.mjs` and `pmcCompare.mjs`, comparing refills per instruction by function before and after.",
+      "commits": [
+        "4fe3bcc9",
+        "05bceebe"
       ]
     }
   ],
