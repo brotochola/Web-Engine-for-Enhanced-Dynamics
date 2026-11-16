@@ -3618,7 +3618,10 @@ class PixiRenderer extends AbstractWorker {
     }
     const batch = this.entitiesBatch;
     const maps = this.atlasMapsSource ?? this._emptyMapsSource();
-    const glow = batch !== null && batch.mesh.visible ? batch.glowMesh(this._faces.heightScaleY, this._groundScaleY || 1, maps) : null;
+    // E-457: the glow mask, then the glow drawn where it marked (InstancedSpriteBatch.glowPass); while a sheet glows, the
+    // glow unmasked.
+    if (batch !== null) batch.setGlowSheets(this._atlasEmissive);
+    const glow = batch !== null && batch.mesh.visible ? batch.glowPass(this._faces.heightScaleY, this._groundScaleY || 1, maps) : null;
     const opts = this._rtRenderOpts;
     opts.container = glow !== null ? glow : this._rtEmptyContainer;
     opts.target = this.glowRT;

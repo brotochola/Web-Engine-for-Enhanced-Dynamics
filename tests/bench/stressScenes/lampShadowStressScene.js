@@ -11,7 +11,8 @@ const { Scene, Camera, LAYER_KIND } = WEED;
  * `?walkers=`.
  *
  * `?lamps=` (default 48), `?walkers=` (default 2000), `?lampShadows=map|sprite`, `?tile=` (lighting.lampShadowTile,
- * default 256), `?sway=0` (the lamps still), `?elevation=` (px, default 70), `?backend=webgpu`.
+ * default 256), `?sway=0` (the lamps still), `?elevation=` (px, default 70), `?backend=webgpu`. `?still=1`: nothing moves
+ * (the walkers stand where their loops start, the lamps do not sway), for byte-for-byte captures (compareCaptures.mjs).
  */
 const WORLD_W = 2400;
 const WORLD_H = 1400;
@@ -35,12 +36,16 @@ export const LAMPS = Math.max(1, Math.floor(queryNumber('lamps', 48)));
 export const WALKERS = Math.max(0, Math.floor(queryNumber('walkers', 2000)));
 export const LAMP_SHADOWS = query('lampShadows') === 'map' ? 'map' : 'sprite';
 export const TILE = Math.max(32, Math.floor(queryNumber('tile', 256)));
-export const SWAY = queryNumber('sway', 1) !== 0;
+export const STILL = queryNumber('still', 0) === 1;
+export const SWAY = queryNumber('sway', 1) !== 0 && !STILL;
 export const ELEVATION = queryNumber('elevation', 70);
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 
 export const stressSceneConfig = {
-  requested: { lamps: LAMPS, walkers: WALKERS, lampShadows: LAMP_SHADOWS, tile: TILE, sway: SWAY ? 1 : 0, elevation: ELEVATION, backend: BACKEND },
+  requested: {
+    lamps: LAMPS, walkers: WALKERS, lampShadows: LAMP_SHADOWS, tile: TILE, sway: SWAY ? 1 : 0, elevation: ELEVATION, backend: BACKEND,
+    still: STILL ? 1 : 0,
+  },
 };
 
 export class LampShadowStressScene extends Scene {
@@ -104,6 +109,7 @@ export class LampShadowStressScene extends Scene {
         speed: 0.4 + rng() * 0.8,
         phase: rng() * 6.283,
         scale: 0.35 + rng() * 0.3,
+        still: STILL,
       });
     }
     Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.5);

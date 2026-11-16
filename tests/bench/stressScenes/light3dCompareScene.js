@@ -16,6 +16,8 @@ const { Scene, Camera, LAYER_KIND, Sun } = WEED;
  * oblique camera, e.g. 47), `?sunMap=1` (lighting.sunShadows 'map'), `?lampMap=1` (lighting.lampShadows 'map'), `?self=1`
  * (lighting.selfShadow), `?depth=1` (renderer.pixelDepth), `?maps=1` (the people's height and normal maps), `?ds=1` (the
  * people through DirectionalSprite), `?all=1` (all of them, pitch 47). `?backend=webgpu`.
+ * `?staticProps=1`: the props declare isStatic (static scenery, E-127; the lamps' map caches their shadows, E-418).
+ * `?still=1`: the walkers stand where their loops start, not animated, for byte-for-byte captures (compareCaptures.mjs).
  */
 const P = WEED.params;
 function num(key, fallback) {
@@ -38,11 +40,14 @@ export const DEPTH = on('depth');
 export const MAPS = on('maps');
 export const DS = on('ds');
 export const BACKEND = P?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+export const STATIC_PROPS = P?.get('staticProps') === '1';
+export const STILL = P?.get('still') === '1';
 
 export const stressSceneConfig = {
   requested: {
     walkers: WALKERS, props: PROPS, lamps: LAMPS, hour: HOUR, pitch: PITCH, sunMap: SUN_MAP ? 1 : 0, lampMap: LAMP_MAP ? 1 : 0,
     self: SELF ? 1 : 0, depth: DEPTH ? 1 : 0, maps: MAPS ? 1 : 0, ds: DS ? 1 : 0, backend: BACKEND,
+    staticProps: STATIC_PROPS ? 1 : 0, still: STILL ? 1 : 0,
   },
 };
 
