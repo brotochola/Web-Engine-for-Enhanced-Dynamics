@@ -16356,13 +16356,15 @@
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
-      "result": "Not reproduced yet. A fire's light flickers on purpose (its shadows with it); these are others, which come and go.",
-      "next": "Reproduce in the owner's scene; leads: a cap that cuts a different set each frame as lights or casters sort (lighting.maxShadowCastingLights, the lamps' map tiles, maxShadowSprites, the sun's caster rows maxSun), muzzle flashes taking shadow-casting lights from the lamps, keyed caster rows read while Pixi's statics texture is not recent (KEYED_CASTERS_LAG), and keyed rows drawn before their statics were sent (N-202's probe saw 15 sprites in one frame of Predator ?light3d=1).",
+      "result": "Predator (crowd 1): 58-61 shadow-casting lights in view against maxShadowCastingLights 48 (67-70 with ?light3d=1), the kept set (nearest the view centre) taking in 0-3 new lights every 2 s: their shadows popped. Fixed for that cut (e47c5442, R-1151): the kept lights fade their shadows over the last 20 % of the cut distance (stamps, cookies, the lamps' map). Still: 15-24 lights in view without shadows (the cap), the per-entity (3 nearest) and per-light caster cuts pop; the owner's scene not confirmed.",
+      "next": "Confirm with the owner (scene, URL); then Predator's cap (raise it or thin its lights) and a fade in shadowStamp.c's per-entity and per-light cuts; measure the light pass's extra texel (gpuPassBench lampMap).",
       "refs": [],
       "aliases": [
         "flickering shadows"
       ],
-      "records": []
+      "records": [
+        "R-1151"
+      ]
     },
     {
       "id": "E-382",
@@ -27411,6 +27413,18 @@
       "text": "Two ways to catch a decoration drawn with another row's statics, 2026-11-15 20:20 to 20:42, the branch at 259aba3a (visible Chrome, the owner's GPU).\n\n1. keyedStaticsProbeScene (committed with this record's work): a still grid of 858 grass decorations in a still view, 200 walkers crossing a column and bullets with trails a row, so the y-sorted rows shift and trail rows come and go every frame. n202probe.mjs captured the canvas 60 to 150 times a run and compared each of the 625 cells outside the bands with its reference (the pixels' median of the first five, or, with the grass swaying, the cell's lit and white pixel counts' median over every capture). No cell changed in any run: plain (60 captures), ?sway=1 (120), ?sway=1&alphaChurn=1 (every decoration marked every frame, 120), ?sway=1&particles=1&fill=19000 (Predator's particle worker and 20 000 decorations, 150).\n\n2. A statics check inside the engine (a scratch tree, never committed): instancedSpriteBatch's keyed upload kept a CPU mirror of the statics texture's texture word, fed the same updates and texture updates the scatter sends, and checked every drawn instance of each keyed frame (by row) against its queue row's texture. Predator default crowd 1, 60 s: 3 272 keyed frames, 0 mismatched instances. Predator ?light3d=1&hour=22, 60 s: 3 185 keyed frames, 15 mismatches, all in one frame (663): sprite rows (type 0, keyed) drawn while their statics row had never been sent (have -1, want 1522; since 662, drawn 663), none after; a second 30 s run had none. Those rows show the texture row's first content for a frame (zeros: scale 0, nothing drawn), or a pool slot's last occupant: a rare race between a spawn's marks and the emit, noted under N-212's leads.\n\nSo the main batch draws each row with its own texture, in both modes. The line the owner saw is not a keyed statics mix-up in the main pass; what is left: another pass or batch drawing a decoration's pose with a trail row's statics (the light passes, the glow batch, the shadows), or the scene the owner was in (asked).",
       "commits": [
         "cca57dea"
+      ]
+    },
+    {
+      "id": "R-1151",
+      "date": "2026-11-15",
+      "time": "21:15",
+      "timeFrom": "recorded",
+      "title": "Predator: 15 to 24 lights in view past the cap of 48, the kept set swapping; the cut now fades",
+      "verdict": "note",
+      "text": "The owner's scene not named yet; Predator read for the leads, 2026-11-15 21:05 to 21:15 (n212lights.mjs: every 2 s, the shadow-casting lights that pass pre-render's view test, _collectStampLights' own: active, castShadows, radius > 0, within the view grown by the radius; ranked by distance to the view's centre as stampLightOrder does).\n\n- Predator default, crowd 1 (zoom 0.30, hours 16 to 3): 113 to 116 lights pass the test, 58 to 61 of them in the view, against maxShadowCastingLights 48: 15 to 17 lights in view cast no shadows, and the kept set took in 0 to 3 new lights every 2 s (the squad camera drifting, fires coming and going), so those lights' shadows popped on and off.\n- Predator ?light3d=1&hour=22: 121 to 124 pass, 67 to 70 in view, 21 to 24 in view without shadows, 0 to 3 swaps every 2 s. The lamps' map takes the same list (pre-render's stamp lights), so its lamps pop the same way.\n- The other cuts read too: maxShadowsPerEntity 3 keeps each caster's three nearest lights by distance (shadowStamp.c note_nearest), not by brightness, so a fire's flicker does not reorder them (a person walking between lights still swaps the fourth); maxShadowsPerLight (512, the adaptive budget lowers it when zoomed out: a TallLight's 400 px shadow range gives about 141 at zoom 0.3) keeps each light's nearest casters.\n\nFixed for the light cap (e47c5442): the kept lights fade their shadows over the last 20 % of the cut's distance, down to 0 at the first light left out (fadeStampLightsAtCut), so a light crossing the cut fades instead of popping; the stamps and cookies take the fade through their shade, the lamps' map through a fourth row of the light data (stampLightFade in the GPU queue; lampVisibility lightens by it and skips the taps at 0). Tests: stampLightCutFade, lampCutFade. The light pass links in 653 ms (576) on ANGLE D3D11, 407 (356) with pixel art. Not measured yet (the light pass reads one more texel per lamp with a tile, after its reach test).\n\nLeft: 15 to 24 of Predator's lights in view still cast no shadows (its cap of 48: raising it costs stamps, or lamp tiles that get smaller); the per-entity and per-light cuts still pop (a fade there is in shadowStamp.c); whether this is what the owner saw.",
+      "commits": [
+        "e47c5442"
       ]
     }
   ],
