@@ -101,7 +101,8 @@ export function decodeGbufWord(word) {
 /**
  * The words of `n` instances in draw order (out[2k], out[2k + 1]): instance k is queue row `order[k]` (or k with no
  * order), whose entity `entityOf(row)` gives (-1 for none). The band (y) counts the zIndex changes along the draw order
- * when `zIndex` is given and the order is the painter's (zIndex first): 0 otherwise.
+ * when `zIndex` is given and the order is the painter's (zIndex first): 0 otherwise. A row whose entity, from the key
+ * or the collector, is at or past `entities` is none (E-444: the kernels read no column past it).
  * A module function over the columns it is handed: the loop is hot in a scene with a G-buffer (one pass a frame over the
  * drawn instances). E-387: Pixi's keyed frames take the keyed pack's twin of it (gpuPack.c pack_keyed); this one writes
  * the rest.
@@ -109,7 +110,7 @@ export function decodeGbufWord(word) {
  * @param {number} n
  * @param {Uint32Array|Int32Array|null} order
  * @param {Uint8Array} rowType the collector's types (0: a sprite entity), or null with `rowKey`
- * @param {Int32Array} rowEntity the collector's entity indices, or null with `rowKey`
+ * @param {Int32Array} rowEntity the collector's entity indices (one at or past `entities` is none), or null with `rowKey`
  * @param {Uint32Array|null} rowKey the queue's key column (E-177: entity | flag bits), instead of the collector's
  * @param {number} entities the entity count (a key at or past it is a decoration's or a particle's)
  * @param {Uint8Array} flags SpriteRenderer.gbufFlags
@@ -130,7 +131,8 @@ export function writeGbufWords(out, n, order, rowType, rowEntity, rowKey, entiti
         if (ke < entities) e = ke;
       }
     } else if (rowType[row] === 0) {
-      e = rowEntity[row];
+      const re = rowEntity[row];
+      if (re < entities) e = re;
     }
     let word = 0;
     let z = 0;

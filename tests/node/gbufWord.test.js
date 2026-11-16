@@ -79,6 +79,25 @@ test('from the queue\'s keys: a key past the entities (a decoration\'s) is no en
   assert.equal(out[6], gbufWord(2, SPRITE_NORMALS.FLAT, 0));
 });
 
+// E-444: as from the keys, a collector row whose entity is at or past the entity count is no entity: the word 0 and zIndex
+// 0 for the bands (the split and indexed packs read no column past the count, and write the same).
+test('from the collector: a sprite row whose entity is at or past the entity count is no entity', () => {
+  const rowType = Uint8Array.from([0, 0, 0, 0, 0]);
+  const rowEntity = Int32Array.from([3, 10, 4, 12, -1]);
+  const flags = new Uint8Array(10).fill(GBUF_FLAGS.FLOOR);
+  const self = new Uint8Array(16).fill(1);
+  const z = new Int16Array(16).fill(5);
+  z[4] = 0;
+  const out = new Float32Array(10);
+  writeGbufWords(out, 5, null, rowType, rowEntity, null, 10, flags, self, z);
+  assert.equal(out[0], gbufWord(3, GBUF_FLAGS.FLOOR, 1));
+  assert.equal(out[2], 0, 'the entity count itself');
+  assert.equal(out[4], gbufWord(4, GBUF_FLAGS.FLOOR, 1));
+  assert.equal(out[6], 0, 'past the count, though the selfShadow and zIndex columns are longer');
+  assert.equal(out[8], 0, 'a negative entity');
+  assert.deepEqual([out[1], out[3], out[5], out[7], out[9]], [0, 1, 1, 1, 1], 'zIndex 5, 0, 0, 0, 0');
+});
+
 test('bands stop at the most the depth holds', () => {
   const n = GBUF_MAX_BANDS + 4;
   const rowType = new Uint8Array(n);
