@@ -31358,7 +31358,8 @@
       "title": "The session's A/A on Predator crowd 2.5: logic moves 3.2 %, pre-render 1.0 %, physics 0.4 %; logic's level differs 20 % between sittings while agents build",
       "verdict": "note",
       "text": "**The session's A/A: main against itself on Predator crowd 2.5 moves logic 3.2 %, pre-render 1.0 % and physics 0.4 % (4/4 one way). Logic's level differs by 20 % between sittings of the same code (6.1 ms in R-1206, 7.3 ms here) while agents build and test on the same machine.** R-1206's logic +5.3 % (3/4) sits at the edge of this sitting's noise. Read within a sitting, and only beyond about 3 to 5 % for logic.\n\nrunPredatorAbab --pool, 4 pairs, headed, AC power, 6bfeba44 against 6bfeba44, crowd=2.5 zoom=0.216, Pixi as owner, 2026-11-16 10:12 to 10:16 (the log): NEUTRAL.\n\n| worker | A -> B |\n| --- | --- |\n| logic | 7.321 -> 7.115 ms (-3.2 %, 1/4 worse, cv 1/11 %) |\n| spatial | 11.496 -> 11.552 (-0.4 %) |\n| physics | 14.943 -> 15.050 (+0.4 %, 4/4 worse) |\n| pre-render | 7.234 -> 7.310 (+1.0 %, 3/4 worse, cv 6/5 %) |\n| renderer | 3.650 -> 3.747 (under the floor) |\n\nThe two agents (PR #12's integration and the second Pixi batch) built and tested during these sittings (N-220: background load).",
-      "time": "10:16"
+      "time": "10:16",
+      "timeFrom": "recorded"
     },
     {
       "id": "R-1208",
