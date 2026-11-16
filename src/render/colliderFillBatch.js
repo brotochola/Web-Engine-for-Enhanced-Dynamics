@@ -264,22 +264,19 @@ function fanLocalVerts(out, outU32, base, written, maxOut, depthDenom, vx, vy, v
  */
 export function ensureMeshFillPoseScratch(prevPose, entityCount) {
   const n = entityCount | 0;
-  if (!prevPose.x || prevPose.x.length < n) {
-    prevPose.x = new Float32Array(n);
-    prevPose.y = new Float32Array(n);
-    prevPose.rotC = new Float32Array(n);
-    prevPose.rotS = new Float32Array(n);
-    prevPose.active = new Uint8Array(n);
-    prevPose.visible = new Uint8Array(n);
-  }
+  if (!prevPose.x || prevPose.x.length < n) allocMeshFillPoseScratch(prevPose, n);
   return prevPose;
 }
 
-/**
- * Copy current mesh pose + presence into prevPose after a successful pack.
- * @param {object} views
- * @param {object} prevPose
- */
+function allocMeshFillPoseScratch(prevPose, n) {
+  prevPose.x = new Float32Array(n);
+  prevPose.y = new Float32Array(n);
+  prevPose.rotC = new Float32Array(n);
+  prevPose.rotS = new Float32Array(n);
+  prevPose.active = new Uint8Array(n);
+  prevPose.visible = new Uint8Array(n);
+}
+
 const MESH_LIVE_POSE_SLACK_SQ = 48 * 48;
 
 /** Where a mesh's pose comes from: the latched (published) pose, the live Transform, or its sprite's this frame. */
@@ -331,6 +328,11 @@ function readMeshFillPose(i, views, source) {
   return MESH_POSE;
 }
 
+/**
+ * Copy current mesh pose + presence into prevPose after a successful pack.
+ * @param {object} views
+ * @param {object} prevPose
+ */
 export function copyMeshFillPoseScratch(views, prevPose) {
   const n = views.entityCount | 0;
   ensureMeshFillPoseScratch(prevPose, n);
@@ -380,6 +382,279 @@ export function meshFillPoseOrPresenceChanged(views, prevPose) {
   return false;
 }
 
+/** trackMeshFillPose: a mesh's pose or an entity's presence moved (meshFillPoseOrPresenceChanged's question). */
+export const MESH_FILL_MOVED = 1;
+/** trackMeshFillPose: an entity's presence moved, so the packed rows are stale. Comes with MESH_FILL_MOVED. */
+export const MESH_FILL_PRESENCE_MOVED = 2;
+
+/**
+ * A MESH layer's one pass over every entity per frame, where Pixi ran up to four (meshFillPoseOrPresenceChanged
+ * twice, a presence scan and copyMeshFillPoseScratch), each deciding every pose again: decides the pose source of
+ * each live, visible mesh once (meshFillPoseSource's tests, in its order), compares that pose and every entity's
+ * presence with the layer's record (prevPose) as those compared them, and writes into the record what moved.
+ * After it the record holds every entity's presence and every live, visible mesh's pose this frame, as the Float32
+ * the pose table stores: uploadPoseTable takes those poses from it (framePose). A hidden mesh's pose is left as it
+ * was, as nothing reads it: the compare skips a hidden mesh, and one shown again has moved its presence.
+ * @param {object} views
+ * @param {object} prevPose the layer's record; new arrays (and everything moved) when it holds fewer entities
+ * @returns {number} 0 when nothing moved, else MESH_FILL_MOVED, with MESH_FILL_PRESENCE_MOVED if a presence moved
+ */
+export function trackMeshFillPose(views, prevPose) {
+  const n = views.entityCount | 0;
+  let moved = 0;
+  if (!prevPose.x || prevPose.x.length < n || !prevPose.active || prevPose.active.length < n) {
+    allocMeshFillPoseScratch(prevPose, n);
+    moved = MESH_FILL_MOVED | MESH_FILL_PRESENCE_MOVED;
+  }
+  if (
+    views.liveX && views.liveY && views.liveRotC && views.liveRotS &&
+    views.x && views.y && views.rotC && views.rotS && views.rbStatic
+  ) {
+    if (!(views.queueFrame > 0)) return moved | trackMeshPoseLiveOrLatched(views, prevPose, n);
+    if (views.queueStamp && views.queuePose) return moved | trackMeshPoseQueued(views, prevPose, n);
+  }
+  return moved | trackMeshPoseAnyViews(views, prevPose, n);
+}
+
+/**
+ * trackMeshFillPose with every pose column and no frame of sprite poses: the live pose for a static body, a rotation
+ * not published yet or a published pose past the slack, else the published one. The moved bits are literals: an OSR
+ * compile reads a module const with a TDZ check (R13).
+ */
+function trackMeshPoseLiveOrLatched(views, prevPose, n) {
+  const active = views.meshActive;
+  const visible = views.meshVisible;
+  const rbStatic = views.rbStatic;
+  const bx = views.x;
+  const by = views.y;
+  const bc = views.rotC;
+  const bs = views.rotS;
+  const lx = views.liveX;
+  const ly = views.liveY;
+  const lc = views.liveRotC;
+  const ls = views.liveRotS;
+  const pa = prevPose.active;
+  const pv = prevPose.visible;
+  const px = prevPose.x;
+  const py = prevPose.y;
+  const pc = prevPose.rotC;
+  const ps = prevPose.rotS;
+  const slackSq = MESH_LIVE_POSE_SLACK_SQ;
+  let moved = 0;
+  for (let i = 0; i < n; i++) {
+    const a = active[i] | 0;
+    const vis = visible[i] | 0;
+    if ((pa[i] | 0) !== a || (pv[i] | 0) !== vis) {
+      moved = 3;
+      pa[i] = a;
+      pv[i] = vis;
+    }
+    if (a === 0 || vis === 0) continue;
+    let live = true;
+    if (!rbStatic[i]) {
+      const rc = bc[i];
+      const rs = bs[i];
+      // Same gate as poseRotationLive: zeros mean this life has not been published.
+      if (!(rc * rc + rs * rs <= 0.25)) {
+        const dx = lx[i] - bx[i];
+        const dy = ly[i] - by[i];
+        live = dx * dx + dy * dy > slackSq;
+      }
+    }
+    let x;
+    let y;
+    let c;
+    let s;
+    if (live) {
+      x = lx[i];
+      y = ly[i];
+      c = lc[i];
+      s = ls[i];
+    } else {
+      x = bx[i];
+      y = by[i];
+      c = bc[i];
+      s = bs[i];
+    }
+    if (x !== px[i] || y !== py[i] || c !== pc[i] || s !== ps[i]) {
+      moved |= 1;
+      px[i] = x;
+      py[i] = y;
+      pc[i] = c;
+      ps[i] = s;
+    }
+  }
+  return moved;
+}
+
+/** trackMeshPoseLiveOrLatched on a frame of sprite poses: a mesh whose sprite was drawn this frame takes its pose. */
+function trackMeshPoseQueued(views, prevPose, n) {
+  const active = views.meshActive;
+  const visible = views.meshVisible;
+  const rbStatic = views.rbStatic;
+  const bx = views.x;
+  const by = views.y;
+  const bc = views.rotC;
+  const bs = views.rotS;
+  const lx = views.liveX;
+  const ly = views.liveY;
+  const lc = views.liveRotC;
+  const ls = views.liveRotS;
+  const frame = views.queueFrame;
+  const stamp = views.queueStamp;
+  const queued = views.queuePose;
+  const pa = prevPose.active;
+  const pv = prevPose.visible;
+  const px = prevPose.x;
+  const py = prevPose.y;
+  const pc = prevPose.rotC;
+  const ps = prevPose.rotS;
+  const slackSq = MESH_LIVE_POSE_SLACK_SQ;
+  let moved = 0;
+  for (let i = 0; i < n; i++) {
+    const a = active[i] | 0;
+    const vis = visible[i] | 0;
+    if ((pa[i] | 0) !== a || (pv[i] | 0) !== vis) {
+      moved = 3;
+      pa[i] = a;
+      pv[i] = vis;
+    }
+    if (a === 0 || vis === 0) continue;
+    let x;
+    let y;
+    let c;
+    let s;
+    if (stamp[i] === frame) {
+      const o = i * 4;
+      x = queued[o];
+      y = queued[o + 1];
+      c = queued[o + 2];
+      s = queued[o + 3];
+    } else {
+      let live = true;
+      if (!rbStatic[i]) {
+        const rc = bc[i];
+        const rs = bs[i];
+        if (!(rc * rc + rs * rs <= 0.25)) {
+          const dx = lx[i] - bx[i];
+          const dy = ly[i] - by[i];
+          live = dx * dx + dy * dy > slackSq;
+        }
+      }
+      if (live) {
+        x = lx[i];
+        y = ly[i];
+        c = lc[i];
+        s = ls[i];
+      } else {
+        x = bx[i];
+        y = by[i];
+        c = bc[i];
+        s = bs[i];
+      }
+    }
+    if (x !== px[i] || y !== py[i] || c !== pc[i] || s !== ps[i]) {
+      moved |= 1;
+      px[i] = x;
+      py[i] = y;
+      pc[i] = c;
+      ps[i] = s;
+    }
+  }
+  return moved;
+}
+
+/** trackMeshFillPose on views short of a pose column (tests, tools): meshFillPoseSource, readMeshFillPose per mesh. */
+function trackMeshPoseAnyViews(views, prevPose, n) {
+  const active = views.meshActive;
+  const visible = views.meshVisible;
+  const pa = prevPose.active;
+  const pv = prevPose.visible;
+  const px = prevPose.x;
+  const py = prevPose.y;
+  const pc = prevPose.rotC;
+  const ps = prevPose.rotS;
+  let moved = 0;
+  for (let i = 0; i < n; i++) {
+    const a = active[i] | 0;
+    const vis = visible[i] | 0;
+    if ((pa[i] | 0) !== a || (pv[i] | 0) !== vis) {
+      moved = 3;
+      pa[i] = a;
+      pv[i] = vis;
+    }
+    if (a === 0 || vis === 0) continue;
+    const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
+    if (pose[0] !== px[i] || pose[1] !== py[i] || pose[2] !== pc[i] || pose[3] !== ps[i]) {
+      moved |= 1;
+      px[i] = pose[0];
+      py[i] = pose[1];
+      pc[i] = pose[2];
+      ps[i] = pose[3];
+    }
+  }
+  return moved;
+}
+
+/**
+ * Both batches' uploadPoseTable: the texel (x, y, cos, sin at entity * 4) of each entity in instanceEntity[0, n),
+ * once per stamp (a run of its rows, or a later one), in [0, entityCount). With framePose, the layer's record after
+ * this frame's trackMeshFillPose, a mesh it recorded live and visible takes the pose recorded there: this frame's,
+ * already the Float32 the table stores, so the same bits. Any other entity, or no framePose, samples its pose.
+ */
+export function writeMeshPoseTable(table, gen, stamp, instanceEntity, n, entityCount, views, framePose) {
+  if (
+    framePose && framePose.x && framePose.x.length >= entityCount &&
+    framePose.active && framePose.active.length >= entityCount
+  ) {
+    const fa = framePose.active;
+    const fv = framePose.visible;
+    const fx = framePose.x;
+    const fy = framePose.y;
+    const fc = framePose.rotC;
+    const fs = framePose.rotS;
+    let k = 0;
+    while (k < n) {
+      const i = instanceEntity[k] | 0;
+      let end = k + 1;
+      while (end < n && (instanceEntity[end] | 0) === i) end++;
+      k = end;
+      if (i < 0 || i >= entityCount || gen[i] === stamp) continue;
+      gen[i] = stamp;
+      const o = i * 4;
+      if (fa[i] !== 0 && fv[i] !== 0) {
+        table[o] = fx[i];
+        table[o + 1] = fy[i];
+        table[o + 2] = fc[i];
+        table[o + 3] = fs[i];
+      } else {
+        // Packed though the record saw it hidden: its presence moved since this frame's pass.
+        const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
+        table[o] = pose[0];
+        table[o + 1] = pose[1];
+        table[o + 2] = pose[2];
+        table[o + 3] = pose[3];
+      }
+    }
+    return;
+  }
+  let k = 0;
+  while (k < n) {
+    const i = instanceEntity[k] | 0;
+    let end = k + 1;
+    while (end < n && (instanceEntity[end] | 0) === i) end++;
+    k = end;
+    if (i < 0 || i >= entityCount || gen[i] === stamp) continue;
+    gen[i] = stamp;
+    const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
+    const o = i * 4;
+    table[o] = pose[0];
+    table[o + 1] = pose[1];
+    table[o + 2] = pose[2];
+    table[o + 3] = pose[3];
+  }
+}
+
 export function meshFillPaintDirty(views) {
   const ep = views.paintEpoch;
   if (ep) return (ep[0] | 0) !== (views.lastPaintEpoch | 0);
@@ -413,7 +688,18 @@ function readMeshGeomRevision(views) {
  * @param {object} prevPose
  */
 export function colliderFillCanSkipPack(views, lastRevision, prevPose) {
-  if ((lastRevision | 0) < 0 || !prevPose) return false;
+  if (!prevPose || !colliderFillEpochsMatch(views, lastRevision)) return false;
+  return !meshFillPoseOrPresenceChanged(views, prevPose);
+}
+
+/**
+ * colliderFillCanSkipPack without its pose scan: true when the layer has packed and no fixture revision, mesh
+ * revision, outset, vertex epoch or paint moved since. Pixi asks trackMeshFillPose about poses and presence.
+ * @param {object} views
+ * @param {number} lastRevision
+ */
+export function colliderFillEpochsMatch(views, lastRevision) {
+  if ((lastRevision | 0) < 0) return false;
   if (readFixtureRevision(views) !== (lastRevision | 0)) return false;
   if (views.meshGeomRevision) {
     if (readMeshGeomRevision(views) !== (views.lastMeshRevision | 0)) return false;
@@ -429,7 +715,7 @@ export function colliderFillCanSkipPack(views, lastRevision, prevPose) {
   } else if (meshFillPaintDirty(views)) {
     return false;
   }
-  return !meshFillPoseOrPresenceChanged(views, prevPose);
+  return true;
 }
 
 /**
@@ -660,19 +946,6 @@ export function packColliderFill(out, cap, layerId, views) {
 /** Prior full pack wrote instance→entity, so pose-only refill is legal. */
 export function meshFillHasLocals(views) {
   return !!(views && views.instanceEntity);
-}
-
-export function meshFillPresenceChanged(views, prevPose) {
-  const n = views.entityCount | 0;
-  const pa = prevPose && prevPose.active;
-  if (!pa || pa.length < n) return true;
-  const pv = prevPose.visible;
-  const active = views.meshActive;
-  const visible = views.meshVisible;
-  for (let i = 0; i < n; i++) {
-    if ((pa[i] | 0) !== (active[i] | 0) || (pv[i] | 0) !== (visible[i] | 0)) return true;
-  }
-  return false;
 }
 
 /**
@@ -922,6 +1195,12 @@ export class ColliderFillBatch {
     });
     this._poseSource.uploadMethodId = 'external';
     this.poseTable = new Float32Array(256 * 4);
+    // uploadPoseTable's state, declared here: written first at the first upload, it reshaped the batch mid-run (N-32).
+    this._poseGen = new Int32Array(0);
+    this._poseStamp = 0;
+    this._poseWidth = 0;
+    this._poseHeight = 0;
+    this._poseDirty = false;
     const resources = {
       uTexture: atlas,
       uSampler: atlas.style,
@@ -1016,9 +1295,11 @@ export class ColliderFillBatch {
 
   /**
    * One texel per body: xy in rg, rot cs in ba. The fat VBO stays resident.
+   * @param {object|null} [framePose] the layer's record after this frame's trackMeshFillPose: its poses, not sampled
+   *   again (writeMeshPoseTable)
    * @returns {number} instance count left on the mesh
    */
-  uploadPoseTable(instanceEntity, count, views) {
+  uploadPoseTable(instanceEntity, count, views, framePose = null) {
     const n = count | 0;
     if (n <= 0 || !instanceEntity) return 0;
     const entityCount = views.entityCount | 0;
@@ -1027,25 +1308,9 @@ export class ColliderFillBatch {
     const need = width * height * 4;
     if (!this.poseTable || this.poseTable.length < need) this.poseTable = new Float32Array(need);
     if (!this._poseGen || this._poseGen.length < entityCount) this._poseGen = new Int32Array(entityCount);
-    const table = this.poseTable;
-    const gen = this._poseGen;
     const stamp = (this._poseStamp + 1) | 0 || 1;
     this._poseStamp = stamp;
-    let k = 0;
-    while (k < n) {
-      const i = instanceEntity[k] | 0;
-      let end = k + 1;
-      while (end < n && (instanceEntity[end] | 0) === i) end++;
-      k = end;
-      if (i < 0 || i >= entityCount || gen[i] === stamp) continue;
-      gen[i] = stamp;
-      const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
-      const o = i * 4;
-      table[o] = pose[0];
-      table[o + 1] = pose[1];
-      table[o + 2] = pose[2];
-      table[o + 3] = pose[3];
-    }
+    writeMeshPoseTable(this.poseTable, this._poseGen, stamp, instanceEntity, n, entityCount, views, framePose);
     this._poseWidth = width;
     this._poseHeight = height;
     this._poseDirty = true;

@@ -82,7 +82,7 @@ test('the dirty check reads the captured generations, not the live ones', () => 
 });
 
 test('Pixi captures before both vertex-reading paths and commits the capture', () => {
-  const block = pixi.slice(pixi.indexOf('const vertsMoved = vertEpoch'), pixi.indexOf('copyMeshFillPoseScratch(views, skip.prevPose);'));
+  const block = pixi.slice(pixi.indexOf('const vertsMoved = vertEpoch'), pixi.indexOf('skip.lastRevision = rev;'));
   const capture = block.indexOf('this._captureVertGen(skip, views)');
   const rewrite = block.indexOf('this._rewriteMeshCorners(');
   assert.ok(capture > 0, 'captured');
