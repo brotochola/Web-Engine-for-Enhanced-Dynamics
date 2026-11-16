@@ -1090,6 +1090,11 @@ async function scanMemory(rows, n) {
     frames: alloc(Uint16Array, n),
     ref: alloc(Float32Array, rows * GPU_KEYED_CASTER_FLOATS),
     got: alloc(Float32Array, rows * GPU_KEYED_CASTER_FLOATS),
+    // E-331: the framed scan that also writes the stamp's x, y and bounds (its rows, then those three).
+    xyRows: alloc(Float32Array, rows * GPU_KEYED_CASTER_FLOATS),
+    xs: alloc(Float32Array, rows),
+    ys: alloc(Float32Array, rows),
+    bounds: alloc(Float64Array, 6),
   };
   const tableByte = place(4 * GPU_PACK_COLUMNS.length * 4);
   const indexByte = place(rows * 4);
@@ -1174,6 +1179,7 @@ function scanBoth(m, sm, refTables, refShift, newTables, newShift, variant, type
   assert.equal(packKeyedCastersScanWasm(b, qq, count, mem.got, SCAN_KEY_BASE, cap, sun), keyedN, `${label}: as many rows`);
   assert.equal(sun.framed, true, `${label}: the scan wrote the frames`);
   assert.ok(sun.listed <= b.keyedSun.listCap, `${label}: the list holds the rows left (${sun.listed})`);
+  framedWithXy(sm, qq, count, cap, variant, keyedN, sun.listed, label);
   let framed = 0;
   for (let k = 0; k < keyedN; k++) if (mem.got[k * GPU_KEYED_CASTER_FLOATS + 3] !== 0) framed++;
   m.applyListedSunFramesFor(mem.got, b.keyedSun.list, sun.listed, mem.active, mem.mode, sun.casts, mem.sheets, mem.dirs,
@@ -1181,6 +1187,48 @@ function scanBoth(m, sm, refTables, refShift, newTables, newShift, variant, type
   const floats = keyedN * GPU_KEYED_CASTER_FLOATS;
   sameBits(mem.ref.subarray(0, floats), mem.got.subarray(0, floats), label, GPU_KEYED_CASTER_FLOATS);
   return { framed, listed: sun.listed };
+}
+
+/**
+ * E-331 with E-372: the framed scan that also writes the stamp's x, y and bounds (pack_casters_keyed_scan_xy with the sun
+ * frames' region) writes the framed scan's rows bit for bit and lists the same rows, with each row's x and y and their
+ * bounds (minX, minY, maxX, maxY as doubles, the NaN flag, the row count) beside them. Run right after the framed scan
+ * into mem.got (its list still in the region).
+ */
+function framedWithXy(sm, qq, count, cap, variant, keyedN, listed, label) {
+  const { mem, b } = sm;
+  const listWords = 2 * Math.min(listed, b.keyedSun.listCap);
+  const list = b.keyedSun.list.slice(0, listWords);
+  const sun = scanColumns(mem, variant);
+  mem.xyRows.fill(-7);
+  mem.xs.fill(-5);
+  mem.ys.fill(-5);
+  mem.bounds.fill(-5);
+  const scan = { xByte: mem.xs.byteOffset, yByte: mem.ys.byteOffset, boundsByte: mem.bounds.byteOffset, maxSun: mem.xs.length };
+  assert.equal(packKeyedCastersScanWasm(b, qq, count, mem.xyRows, SCAN_KEY_BASE, cap, sun, scan), keyedN,
+    `${label}: the xy scan's rows`);
+  assert.equal(sun.framed, true, `${label}: the xy scan wrote the frames`);
+  assert.equal(sun.listed, listed, `${label}: the xy scan listed as many rows`);
+  assert.deepEqual(b.keyedSun.list.slice(0, listWords), list, `${label}: the same rows listed`);
+  const floats = keyedN * GPU_KEYED_CASTER_FLOATS;
+  sameBits(mem.got.subarray(0, floats), mem.xyRows.subarray(0, floats), `${label} (xy)`, GPU_KEYED_CASTER_FLOATS);
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let nan = 0;
+  for (let k = 0; k < keyedN; k++) {
+    const x = mem.got[k * GPU_KEYED_CASTER_FLOATS];
+    const y = mem.got[k * GPU_KEYED_CASTER_FLOATS + 1];
+    assert.ok(Object.is(mem.xs[k], x) && Object.is(mem.ys[k], y), `${label}: row ${k}'s x and y`);
+    if (x !== x || y !== y) nan = 1;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  if (keyedN < mem.xs.length) assert.equal(mem.xs[keyedN], -5, `${label}: nothing past the rows`);
+  assert.deepEqual([...mem.bounds], [minX, minY, maxX, maxY, nan, keyedN], `${label}: the bounds`);
 }
 
 /** Random scenes' frames through scanBoth: the sun's turn, the columns' variant, the type column and the cap change. */

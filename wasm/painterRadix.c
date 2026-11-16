@@ -387,6 +387,33 @@ INLINE uint32_t sort_runs(const uint32_t *t, uint32_t *order, uint32_t ne, const
   return 1;
 }
 
+/* E-338: each slot of `rows` (0: the dense [0, ne)) its key into prev, and whether some key is not 0: the writes the
+   walk of the sorted order made, where `rows` holds the order's slots, each as often (the same key written again is the
+   same write). The radix's order is the slot list permuted, so painter_order passes the list: read in its own order
+   (slot order where the queue's type filter builds it) instead of the sorted one, which is random over the slots, it
+   reads keys and writes prev ascending; the dense list is a copy and an OR. One copy for every variant (it does not
+   depend on the core), called once a sort. */
+NOINLINE uint32_t remember_keys(uint32_t *restrict prev, const uint32_t *restrict rows, uint32_t ne,
+                                const uint32_t *restrict keys) {
+  if (rows) {
+    uint32_t any = 0;
+    for (uint32_t i = 0; i < ne; i++) {
+      const uint32_t slot = rows[i];
+      const uint32_t key = keys[slot];
+      prev[slot] = key;
+      any |= key;
+    }
+    return any != 0;
+  }
+  __builtin_memcpy(prev, keys, ne * 4u);
+  v128_t acc = wasm_i32x4_splat(0);
+  uint32_t i = 0;
+  for (; i + 4u <= ne; i += 4u) acc = wasm_v128_or(acc, wasm_v128_load(keys + i));
+  uint32_t any = 0;
+  for (; i < ne; i++) any |= keys[i];
+  return (wasm_v128_any_true(acc) | (any != 0)) ? 1u : 0u;
+}
+
 INLINE uint32_t painter_order(const uint32_t *t, const uint32_t *idxE, uint32_t ne, const uint32_t *keys, const int core) {
   uint32_t *order = slot_u32(t, P_ORDER);
   if (idxE) {
@@ -394,16 +421,13 @@ INLINE uint32_t painter_order(const uint32_t *t, const uint32_t *idxE, uint32_t 
   } else {
     for (uint32_t i = 0; i < ne; i++) order[i] = i;
   }
-  if (!sort_runs(t, order, ne, keys, core)) radix_core(t, order, ne, keys, core);
-  uint32_t *prev = slot_u32(t, P_PREV_KEY);
-  uint32_t live = 0;
-  for (uint32_t i = 0; i < ne; i++) {
-    const uint32_t slot = order[i];
-    const uint32_t key = keys[slot];
-    prev[slot] = key;
-    live |= key != 0;
-  }
-  return live;
+  const uint32_t runs = sort_runs(t, order, ne, keys, core);
+  if (!runs) radix_core(t, order, ne, keys, core);
+  /* E-338: after the radix (or the runs of the dense list, distinct slots) the order holds the list's slots, so the
+     list is walked. After the runs of a slot list the order is walked as before: it is near slot order already, and
+     where the list repeats a slot the expanded runs can leave rows of the list behind (sort_runs), so the order's
+     slots are not the list's. */
+  return remember_keys(slot_u32(t, P_PREV_KEY), runs && idxE ? order : idxE, ne, keys);
 }
 
 /* ---- reinsertChangedSlots ---- */

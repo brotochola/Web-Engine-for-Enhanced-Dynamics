@@ -8,7 +8,7 @@ import {
 import {
   GPU_KEYED_CHANGED, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_ONLY, GPU_KEYED_TEX_WORDS, bindGpuPack,
   packKeyedCastersScanWasm, packKeyedCastersWasm,
-  packKeyedRowsWasm, packSplitRowsWasm,
+  packKeyedRowsByRowWasm, packKeyedRowsWasm, packSplitRowsWasm,
 } from '../../src/render/gpuPackClient.js';
 import { compactShadowCasterIndices } from '../../src/render/gpuShadowCasters.js';
 
@@ -120,7 +120,8 @@ function checkPack(s, label, opts, cap) {
   s.slots.fill(-7);
   const ctx = makePackContext(s.q, opts, cap, {});
   assert.equal(packKeyedRowsWasm(s.b, s.q, ctx, s.pose, s.slots, s.keyed, cap), n, `${label}: rows`);
-  assert.equal(ctx.particleCount, splitCtx.particleCount, `${label}: particles`);
+  // E-337: the type column (and so the particle count) only goes to the kernel with the shadow terms.
+  assert.equal(ctx.particleCount, s.keyed.shadowed ? splitCtx.particleCount : 0, `${label}: particles`);
   const sp = words(s.splitPose, n * GPU_POSE_FLOATS);
   const ss = words(s.splitStat, n * GPU_STATIC_FLOATS);
   const kp = words(s.pose, n * GPU_POSE_FLOATS);
@@ -240,6 +241,65 @@ test('the keyed pack writes each slot\'s shadow terms when asked, zeros for a gl
   assert.ok(glows > 0, 'some glow rows');
 });
 
+// E-337: without shadow terms the keyed pack leaves the type column out. The kernel's output with it is the output
+// without it, word for word, but for the count of type-1 rows, which no caller of a keyed pack reads: the call the
+// client made is run again with the type column, and only the count differs. With shadows the column still goes in.
+test('the keyed pack reads the type column only with shadow terms, and it changes nothing but the particle count', async () => {
+  const exports = [['spritesKeyed', packKeyedRowsWasm], ['spritesKeyedRows', packKeyedRowsByRowWasm]];
+  for (const [name, pack] of exports) {
+    const s = await setup(337);
+    const { q, b } = s;
+    s.keyed.texUpdatesByte = s.texUpdates.byteOffset;
+    const opts = { space: GPU_SPACE_WORLD, indices: s.order, indexCount: N, type: q.type };
+    const raw = b[name];
+    let args = null;
+    b[name] = (...a) => {
+      args = a;
+      return raw(...a);
+    };
+    const outputs = () => [
+      Uint32Array.from(new Uint32Array(s.pose.buffer, s.pose.byteOffset, s.pose.length)),
+      Uint32Array.from(new Uint32Array(s.slots.buffer, s.slots.byteOffset, s.slots.length)),
+      Uint32Array.from(s.updates), Uint32Array.from(s.texUpdates),
+    ];
+    s.pose.fill(-7);
+    s.slots.fill(-7);
+    s.updates.fill(0xdeadbeef);
+    s.texUpdates.fill(0xdeadbeef);
+    const ctx = makePackContext(q, opts, N, {});
+    assert.equal(pack(b, q, ctx, s.pose, s.slots, s.keyed, N), N, `${name}: rows`);
+    assert.equal(s.keyed.shadowed, false);
+    assert.equal(args[10], 0, `${name}: no type column without shadow terms`);
+    assert.equal(ctx.particleCount, 0, `${name}: no particle count without shadow terms`);
+    const without = outputs();
+    const results = [s.keyed.updates, s.keyed.texUpdates];
+    assert.ok(results[0] > 0 && results[1] > 0, `${name}: updates and texture updates (${results})`);
+    s.pose.fill(-7);
+    s.slots.fill(-7);
+    s.updates.fill(0xdeadbeef);
+    s.texUpdates.fill(0xdeadbeef);
+    const withType = args.slice();
+    withType[10] = q.type.byteOffset;
+    assert.equal(raw(...withType), N, `${name}: rows with the type column`);
+    const r = b.particlesByte >> 2;
+    let particles = 0;
+    for (let k = 0; k < N; k++) particles += q.type[s.order[k]] === 1;
+    assert.ok(particles > 0);
+    assert.equal(b.u32[r], particles, `${name}: the type column counts the type-1 rows`);
+    assert.deepEqual([b.u32[r + 1], b.u32[r + 2]], results, `${name}: the same update counts`);
+    const withOut = outputs();
+    for (let j = 0; j < without.length; j++) assert.deepEqual(withOut[j], without[j], `${name}: output ${j} word for word`);
+    // With shadow terms the glow test reads the column, so it still goes in (and gives the count).
+    s.keyed.shadowByte = s.shadow.byteOffset;
+    const shadowCtx = makePackContext(q, opts, N, {});
+    assert.equal(pack(b, q, shadowCtx, s.pose, s.slots, s.keyed, N), N);
+    assert.equal(s.keyed.shadowed, true);
+    assert.equal(args[10], q.type.byteOffset, `${name}: the type column with shadow terms`);
+    assert.equal(shadowCtx.particleCount, particles, `${name}: the particle count with shadow terms`);
+    b[name] = raw;
+  }
+});
+
 // E-191 step 2: keyed caster rows for a list of queue rows: x, y, the key (without the changed bit) as a float and a
 // zero, the shadow terms; a listed row without a key (none, or one at or past keyBase) declines the call.
 test('pack_casters_keyed writes a pose, a key and the shadow terms a listed row, and declines a row without a key', async () => {
@@ -327,4 +387,73 @@ test('pack_casters_keyed_scan writes the compaction\'s keyed rows, and declines 
   assert.equal(packKeyedCastersScanWasm(b, { ...q, key: new Uint32Array(N) }, N, got, KEY_BASE, N), -1,
     'a key column outside the memory');
   assert.equal(packKeyedCastersScanWasm(b, q, 0, got, KEY_BASE, N), 0);
+});
+
+// E-331: with a target for the shadow stamp, the scan writes the same rows, each row's x and y into two float arrays, and
+// the bounds the stamp's grid build works out of the rows (minX, minY, maxX, maxY over them as doubles, a NaN flag, the
+// row count); a declined scan leaves the bounds as they were.
+test('pack_casters_keyed_scan_xy writes the scan\'s rows, their x and y, and the stamp grid\'s bounds', async () => {
+  const s = await setup(331);
+  const { q, b } = s;
+  for (let i = 0; i < N; i++) {
+    const r = s.rng();
+    q.shadowH[i] = r < 0.1 ? 0 : s.rng() * 2;
+    if (((q.key[i] & ~KEY_FLAGS) >>> 0) >= KEY_BASE) q.shadowH[i] = 0;
+    q.shadowOffX[i] = s.rng() * 4 - 2;
+    q.shadowOffY[i] = s.rng() * 4 - 2;
+  }
+  const rowsBytes = N * GPU_KEYED_CASTER_FLOATS * 4;
+  const end = b.buffer.byteLength - 2 * rowsBytes - 2 * N * 4 - 64;
+  assert.ok(end > s.pose.byteOffset + s.pose.byteLength, 'room past the regions of the setup');
+  const want = new Float32Array(b.buffer, end, N * GPU_KEYED_CASTER_FLOATS);
+  const got = new Float32Array(b.buffer, end + rowsBytes, N * GPU_KEYED_CASTER_FLOATS);
+  const xs = new Float32Array(b.buffer, end + 2 * rowsBytes, N);
+  const ys = new Float32Array(b.buffer, end + 2 * rowsBytes + N * 4, N);
+  const bounds = new Float64Array(b.buffer, end + 2 * rowsBytes + 2 * N * 4, 6);
+  const scan = { xByte: xs.byteOffset, yByte: ys.byteOffset, boundsByte: bounds.byteOffset, maxSun: N };
+  for (const [label, count, cap, nanAt] of [['every row', N, N, -1], ['a cap under the casters', N, 900, -1], ['a NaN x and y', N, N, 40]]) {
+    if (nanAt >= 0) {
+      let seen = 0;
+      for (let i = 0; i < N; i++) {
+        if (!(q.shadowH[i] > 0) || q.type[i] === 3) continue;
+        if (seen === nanAt) q.x[i] = NaN;
+        if (seen === nanAt + 3) q.y[i] = NaN;
+        seen++;
+      }
+    }
+    const n = packKeyedCastersScanWasm(b, q, count, want, KEY_BASE, cap);
+    assert.ok(n > 100, `${label}: rows`);
+    xs.fill(-5);
+    ys.fill(-5);
+    bounds.fill(-5);
+    assert.equal(packKeyedCastersScanWasm(b, q, count, got, KEY_BASE, cap, null, scan), n, `${label}: as many`);
+    const W = new Uint32Array(want.buffer, want.byteOffset, n * GPU_KEYED_CASTER_FLOATS);
+    const G = new Uint32Array(got.buffer, got.byteOffset, n * GPU_KEYED_CASTER_FLOATS);
+    assert.equal(G.findIndex((w, i) => w !== W[i]), -1, `${label}: the rows`);
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    let nan = 0;
+    for (let c = 0; c < n; c++) {
+      const x = want[c * GPU_KEYED_CASTER_FLOATS];
+      const y = want[c * GPU_KEYED_CASTER_FLOATS + 1];
+      assert.ok(Object.is(xs[c], x) && Object.is(ys[c], y), `${label}: caster ${c}'s x and y`);
+      if (x !== x || y !== y) nan = 1;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+    assert.equal(xs[n], -5, `${label}: nothing past the rows`);
+    assert.deepEqual([...bounds], [minX, minY, maxX, maxY, nan, n], `${label}: the bounds`);
+    assert.equal(nan, nanAt >= 0 ? 1 : 0, `${label}: the NaN flag`);
+  }
+  bounds.fill(-5);
+  const keyless = q.key.findIndex((k) => ((k & ~KEY_FLAGS) >>> 0) >= KEY_BASE);
+  q.shadowH[keyless] = 1;
+  q.type[keyless] = 0;
+  assert.equal(packKeyedCastersScanWasm(b, q, N, got, KEY_BASE, N, null, scan), -1, 'a caster without a key');
+  assert.deepEqual([...bounds], [-5, -5, -5, -5, -5, -5], 'a declined scan writes no bounds');
+  assert.throws(() => packKeyedCastersScanWasm(b, q, N, got, KEY_BASE, N + 1, null, scan), /outruns/, 'a cap past the arrays');
 });

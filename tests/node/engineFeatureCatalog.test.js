@@ -56,12 +56,19 @@ const REQUIRED = [
   'decorationCollectYSort',
   'attachedSway',
   'attachedWalls',
+  'attachedScanNone',
+  'attachedScanFew',
+  'decorationVisibilityGrid',
+  'layerFeedParticles',
+  'layerFeedBodies',
   'textureUpload',
   // DX-LIGHT3D owner scenes (plan §10).
   'sunShadowMap',
   'selfShadow',
   'depthSort',
   'emissive',
+  'tweenPool',
+  'despawnLists',
 ];
 
 test('catalog has one unique row per hot engine feature', () => {

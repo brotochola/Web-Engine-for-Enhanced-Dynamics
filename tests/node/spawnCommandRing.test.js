@@ -112,3 +112,23 @@ test('spawn and despawn stay interleaved FIFO', () => {
   assert.equal(got[3].entityIndex, 6);
   bindSpawnCommandRing(null);
 });
+
+// E-351: logic0 drains with a method and itself (thisArg) instead of a closure made every frame.
+test('a visitor with thisArg gets it as this, and every command in order', () => {
+  bindFresh(8);
+  assert.equal(tryPushSpawn(2, 40, 1.25, -3.5, 0), true);
+  assert.equal(tryPushDespawn(41), true);
+  const sink = {
+    got: [],
+    visit(kind, typeId, entityIndex, x, y, owner) {
+      this.got.push([kind, typeId, entityIndex, x, y, owner]);
+    },
+  };
+  assert.equal(drainSpawnCommands(sink.visit, sink), 2);
+  assert.deepEqual(sink.got, [
+    [SPAWN_CMD_KIND.SPAWN, 2, 40, 1.25, -3.5, 0],
+    [SPAWN_CMD_KIND.DESPAWN, 0, 41, 0, 0, -1],
+  ]);
+  assert.equal(drainSpawnCommands(sink.visit, sink), 0, 'drained');
+  bindSpawnCommandRing(null);
+});

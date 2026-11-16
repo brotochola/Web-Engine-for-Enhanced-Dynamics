@@ -653,6 +653,26 @@ export const ENGINE_FEATURES = [
     load: [],
   },
   {
+    id: 'tweenPool',
+    name: 'Tween pool tick (65535 alpha tweens)',
+    module: 'src/core/tween.js',
+    // tick = tweenStressScene's slot i -> entity i; scattered = the same tweens on shuffled entities (E-275).
+    kernel: { script: 'tests/bench/tweenPoolMicrobench.mjs', opsKey: 'cases.tick.opsPerSec' },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'despawnLists',
+    name: 'Despawn pass over the shared active lists',
+    module: 'src/workers/logicWorker.js',
+    // logic0's _processDespawnSoA on a real LogicWorker: 57344 listed entities, batches of 8, 64, 512 (E-344).
+    kernel: { script: 'tests/bench/despawnBatchMicrobench.mjs', opsKey: 'cases.d64.opsPerSec' },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
+  {
     id: 'shadowStamp',
     name: 'Shadow caster stamp',
     // shadowStamp.wasm only (the JS stamp is tests/reference/shadowStamp.mjs): the kernel's microbench, wasm.
@@ -759,6 +779,60 @@ export const ENGINE_FEATURES = [
     // DX-DECOSKEW: the same pass over 40 000 still, unturned pieces, every other one sheared (skewY) where the columns
     // exist; a rev without them places the same pieces unsheared.
     kernel: { script: 'tests/bench/attachedSwayMicrobench.mjs', opsKey: 'cases.walls.opsPerSec' },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'layerFeedParticles',
+    name: 'Particle feed lists, add and remove',
+    module: 'src/util/layerFeed.js',
+    // E-354: syncParticleFeed churning 6 000 particles out of and into a LiquidFun density layer's feed (8 192 long),
+    // a quarter of them also in a compute layer's particle feed.
+    kernel: { script: 'tests/bench/layerFeedMicrobench.mjs', opsKey: 'cases.particles.opsPerSec' },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'layerFeedBodies',
+    name: 'Body feed lists, add and remove',
+    module: 'src/util/layerFeed.js',
+    // E-354: syncColliderFeed churning 6 000 bodies out of and into a compute layer's body feed (8 192 long), a quarter
+    // of them also in a second compute layer's.
+    kernel: { script: 'tests/bench/layerFeedMicrobench.mjs', opsKey: 'cases.bodies.opsPerSec' },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'decorationVisibilityGrid',
+    name: 'Decoration screen test, Predator view over a grid',
+    module: 'src/workers/particleWorker.js',
+    // E-335: updateDecorationScreen over Predator's 20 000 grass blades with DecorationSpatial's grid (cell 128) and
+    // the list header's counters, a 1920 x 1080 view mid-world (about 4 % on screen), each call a camera move.
+    kernel: { script: 'tests/bench/decorationVisibilityGridMicrobench.mjs', opsKey: 'opsPerSec' },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'attachedScanNone',
+    name: 'Attached-decoration step, none attached',
+    module: 'src/workers/particleWorker.js',
+    // E-334: refreshActiveDecorationSnapshot and resolveAttachedDecorations over Predator's 20 000 grass decorations,
+    // none attached, the list unchanged from frame to frame (the header's counters).
+    kernel: { script: 'tests/bench/attachedDecorationScanMicrobench.mjs', opsKey: 'cases.none.opsPerSec' },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'attachedScanFew',
+    name: 'Attached-decoration step, 64 of 20 000 attached',
+    module: 'src/workers/particleWorker.js',
+    // E-334: the same step with 64 decorations hung from 16 stand-in parents, half of them swaying on screen.
+    kernel: { script: 'tests/bench/attachedDecorationScanMicrobench.mjs', opsKey: 'cases.few.opsPerSec' },
     scene: null,
     primary: ['particle_STEP_MS'],
     load: [],

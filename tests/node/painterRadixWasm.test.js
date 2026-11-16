@@ -253,6 +253,15 @@ test('painter_order_* = radixPainterOrder: runs that pay, runs that do not, gaps
   const oneLive = FAMILIES.allZero(3000, r);
   oneLive[1234] = 0x80000000; // -0: not the integer 0, so live
   cases.push(['all zero but a -0', oneLive, null]);
+  // E-338: the dense list's keys are copied and ORed four at a time, then the rows past the last block of four.
+  const tailLive = FAMILIES.allZero(3001, r);
+  tailLive[3000] = 0x80000000;
+  cases.push(['all zero but a -0 in the last row, past the blocks of four', tailLive, null]);
+  const blockLive = FAMILIES.allZero(3001, r);
+  blockLive[2999] = 1;
+  cases.push(['all zero but one in the last block of four', blockLive, null]);
+  cases.push(['one row, live', Uint32Array.of(0x3f800000), null]);
+  cases.push(['one row, cold', Uint32Array.of(0), null]);
   for (const name of ['sprite', 'stressGrid', 'aboveOrigin', 'zBands', 'rawBits', 'allEqual']) {
     const bits = FAMILIES[name](CAP, r);
     cases.push([`${name}, slot list with gaps`, bits, LISTS.gaps(Math.floor(CAP * 0.55), r, CAP)]);
@@ -263,6 +272,8 @@ test('painter_order_* = radixPainterOrder: runs that pay, runs that do not, gaps
   for (let i = 0; i < CAP; i++) if (r() > 0.05) kept.push(i);
   cases.push(['runs, glow rows left out', runBits, kept]);
   cases.push(['runs, repeated slots', runBits, [...kept.slice(0, 500), ...kept.slice(200, 900), 7, 7, 7, ...kept.slice(0, 50)]]);
+  // E-338: keys that bail out of the runs on a list that repeats slots: the radix's order is the list permuted.
+  cases.push(['sprite, repeated slots (the radix)', FAMILIES.sprite(CAP, r), [...LISTS.shuffled(3000, r), ...LISTS.gaps(2000, r, 5000), 9, 9]]);
   for (const core of CORES) {
     for (const [label, bits, list] of cases) orderCase(core, bits, list, `${core} ${label}`);
   }

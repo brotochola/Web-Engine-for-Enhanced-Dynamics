@@ -233,6 +233,11 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'stampPackedY', owner: 'pre-render', bytes: sun * 4 },
       { name: 'stampCellOf', owner: 'pre-render', bytes: sun * 4 },
       { name: 'stampDist64', owner: 'pre-render', bytes: sun * 8 },
+      // E-331: the casters' x and y and their bounds as pre-render's caster scan writes them (pack_casters_keyed_scan_xy):
+      // minX, minY, maxX, maxY, a NaN flag, the row count (STAMP_SCAN_BOUNDS_DOUBLES).
+      { name: 'stampScanX', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampScanY', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampScanBounds', owner: 'pre-render', bytes: STAMP_SCAN_BOUNDS_DOUBLES * 8 },
       { name: 'stampLights', owner: 'pre-render', bytes: (stamp.maxLights | 0) * STAMP_LIGHT_DOUBLES * 8 },
       { name: 'stampTable', owner: 'pre-render', bytes: STAMP_TABLE_SLOTS * 4 },
       // The light cookies' queue, the render queue's layout at maxCookie rows (renderQueueLayout.js).
@@ -406,8 +411,10 @@ export const STAMP_GRID_CELLS = 128 * 128;
  * over groundScaleY, cos, 1/span, 1/g²), then its shade (min(brightness, 1)).
  */
 export const STAMP_LIGHT_DOUBLES = 11;
+/** E-331: the caster scan's bounds for the stamp (doubles): minX, minY, maxX, maxY, 1 when an x or y is NaN, the row count. */
+export const STAMP_SCAN_BOUNDS_DOUBLES = 6;
 /** Room for the stamp kernel's column table (shadowStampClient.js STAMP_SLOTS). */
-export const STAMP_TABLE_SLOTS = 32;
+export const STAMP_TABLE_SLOTS = 35;
 
 /** The emit's texture tables (E-112): spritesheetId and animationState are u8, texture ids u16. */
 export const EMIT_PROXY_SHEETS = 256;
