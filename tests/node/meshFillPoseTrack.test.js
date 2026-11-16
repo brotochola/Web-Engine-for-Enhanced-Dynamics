@@ -858,9 +858,13 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
   };
   // Each upload against the old one on a table of its own, the table the old flow would have left on the batch.
   const refTables = new Map();
+  // A batch's fields before its first upload: the uploads add none (its constructor declares them).
+  const keysAtBirth = new Map();
+  const keys = (batch) => Object.keys(batch).filter((k) => k !== 'uploadPoseTable').join();
   let compared = 0;
   const spy = (batch, name) => {
     const own = Object.getPrototypeOf(batch).uploadPoseTable;
+    keysAtBirth.set(batch, keys(batch));
     refTables.set(batch, tableCtx());
     batch.uploadPoseTable = function (instanceEntity, count, views, framePose) {
       log.uploads.add(name);
@@ -961,5 +965,7 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
   }
   assert.ok(layers.every((cl) => cl.uvFillBatch), 'both layers draw UV rows too');
   assert.ok(compared > W_FRAMES, `${compared} pose tables compared`);
+  assert.equal(keysAtBirth.size, 4);
+  for (const [batch, born] of keysAtBirth) assert.equal(keys(batch), born, `${batch.mesh.label}: no field added after construction`);
   assert.ok(tally.skip > 10 && tally.full > 10 && tally.poseOnly > 50 && tally.packNoPose > 5, JSON.stringify(tally));
 });

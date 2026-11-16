@@ -82,6 +82,12 @@ export class MeshUvFillBatch {
     });
     this._poseSource.uploadMethodId = 'external';
     this.poseTable = new Float32Array(256 * 4);
+    // ColliderFillBatch's uploadPoseTable state, declared here as there.
+    this._poseGen = new Int32Array(0);
+    this._poseStamp = 0;
+    this._poseWidth = 0;
+    this._poseHeight = 0;
+    this._poseDirty = false;
     this._sunShadow = new Float32Array(4);
     const resources = {
       uTexture: atlas,

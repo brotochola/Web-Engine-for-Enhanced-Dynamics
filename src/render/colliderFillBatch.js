@@ -1195,6 +1195,12 @@ export class ColliderFillBatch {
     });
     this._poseSource.uploadMethodId = 'external';
     this.poseTable = new Float32Array(256 * 4);
+    // uploadPoseTable's state, declared here: written first at the first upload, it reshaped the batch mid-run (N-32).
+    this._poseGen = new Int32Array(0);
+    this._poseStamp = 0;
+    this._poseWidth = 0;
+    this._poseHeight = 0;
+    this._poseDirty = false;
     const resources = {
       uTexture: atlas,
       uSampler: atlas.style,
