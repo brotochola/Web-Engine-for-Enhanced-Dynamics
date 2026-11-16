@@ -19300,7 +19300,8 @@
       ],
       "records": [
         "R-1200",
-        "R-1204"
+        "R-1204",
+        "R-1229"
       ]
     },
     {
@@ -19438,7 +19439,7 @@
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "keyedPackStressScene n=250000 churn=0.05, Pixi packing, 2026-11-16 09:33 to 09:34: with gbuf=1 Pixi's fillQueueIndices (gpuQueueLayout.js) 674 ms in an 8 s window (12.7 %), none with gbuf=0. pixiWorker.js: splitGlow = _lightGlowAdd && typeArr && idxE && (painter || lightingEnabled), with no look at the frame's glow rows; packSpriteLayer then runs fillQueueIndices(excl 3), fillQueueIndices(incl 3) and a loop counting particle rows over the entity list. Pre-render knows its glow rows (E-216, R-0904). d8 machine code (R-1222): packSpriteLayer's 920-byte budget holds one fillQueueIndices, so the entity fill (250 000 rows) is a real call at about 33 instructions a row (the limit and type reloaded from stack slots, outIdx's map re-checked and its pointer decoded every stored row because _identityRows.delete(outIdx) sits between .length and the loop, no unrolling) and the particle count about 17 an element. glowSplitMicrobench at 250 000 rows, ms a frame (no glow rows / 24 glow rows): shipped Node 1.036 / 0.873, d8 0.736 / 0.750; one fused pass for both lists and the count Node 0.305 / 0.347, d8 0.268 / 0.413 (-64 to -71 %); _identityRows.delete moved after each loop alone d8 -13 % / -27 %, bit-identical; the identity copy floor 0.124 / 0.216.",
+      "result": "keyedPackStressScene n=250000 churn=0.05, Pixi packing, 2026-11-16 09:33 to 09:34: with gbuf=1 Pixi's fillQueueIndices (gpuQueueLayout.js) 674 ms in an 8 s window (12.7 %), none with gbuf=0. pixiWorker.js: splitGlow = _lightGlowAdd && typeArr && idxE && (painter || lightingEnabled), with no look at the frame's glow rows; packSpriteLayer then runs fillQueueIndices(excl 3), fillQueueIndices(incl 3) and a loop counting particle rows over the entity list. Pre-render knows its glow rows (E-216, R-0904). d8 machine code (R-1222): packSpriteLayer's 920-byte budget holds one fillQueueIndices, so the entity fill (250 000 rows) is a real call at about 33 instructions a row (the limit and type reloaded from stack slots, outIdx's map re-checked and its pointer decoded every stored row because _identityRows.delete(outIdx) sits between .length and the loop, no unrolling) and the particle count about 17 an element. glowSplitMicrobench at 250 000 rows, ms a frame (no glow rows / 24 glow rows): shipped Node 1.036 / 0.873, d8 0.736 / 0.750; one fused pass for both lists and the count Node 0.305 / 0.347, d8 0.268 / 0.413 (-64 to -71 %); _identityRows.delete moved after each loop alone d8 -13 % / -27 %, bit-identical; the identity copy floor 0.124 / 0.216. Sweep (R-1229): in keyedPack gbuf=1 indexByteFor's copy into the kernel scratch (gpuPackClient.js:213) is 11.5 ms/s more, and packSpriteLayer spends 784 of its 920-byte budget, leaving fillQueueIndices, orderSpriteIndices and _uploadSplit out of line.",
       "next": "Pre-render writes the frame's glow-row count into the queue (it counts them for E-216) and Pixi takes the dense path when it is 0; when there are glow rows, one pass fills the entity list, the glow list and the particle count together. Pixi's CPU per function before and after (keyedPack gbuf=1, Predator ?light3d=1).",
       "refs": [],
       "aliases": [
@@ -19447,7 +19448,8 @@
       ],
       "records": [
         "R-1203",
-        "R-1222"
+        "R-1222",
+        "R-1229"
       ]
     },
     {
@@ -20173,6 +20175,294 @@
         "opaque pass cpu cost"
       ],
       "records": []
+    },
+    {
+      "id": "N-244",
+      "title": "keyedPackStressScene gbuf=1 has a steady deopt loop in Pixi: packSpriteLayer.js:72 (`flags |= orderSpriteIndices(...)` after the OSR'd loop at :69, insufficient type feedback for a binary op) 116 steady deopts in 8 s, and gpuPackClient.js:214 indexByteFor (`return b.indexByte` after its OSR'd copy loop) 18; TurboFan recompiled packSpriteLayer 2x, indexByteFor 2x, fillQueueIndices 3x",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "bug",
+      "result": "Deopt pass at 27eb6a71, keyedPack gbuf=1 (the E-251 / N-214 / N-217 pattern: a cold site after an OSR loop).",
+      "next": "Seed the binary op and the return with feedback before the loop runs hot (the N-214 fixes), or split the loop into its own function so the site after it is compiled normally; the deopt pass before and after.",
+      "refs": [],
+      "aliases": [
+        "packSpriteLayer deopt loop"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "N-245",
+      "title": "Boids still has steady deopt loops: weedjsPost.js:665 `Atomics.load(poseGenEpoch)` (insufficient feedback for call) 47 in 8 s although N-214 fixed it in Predator (R-1158: 287 -> 0), and spatialWorker.js:1758, the publish loop's cold else-branch `this._entityReuseInitialized[entityA] = 0`, 36",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "physics",
+      "kind": "bug",
+      "result": "Deopt pass on the demos, 17:50 to 20:39 (newer main).",
+      "next": "Give each site feedback before it runs in an optimized frame (the N-214 way), or move the cold branch out of the loop; the deopt pass in Boids and Predator.",
+      "refs": [],
+      "aliases": [
+        "boids deopt loops"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "E-480",
+      "title": "carScene's spatial worker allocates 4.45 KB a frame (261 KB/s) at _findNeighbors spatialWorker.js:1564 (planetPhysics 1.64, littleCity 0.73 KB/f); the one call in its loop that passes doubles is _storeNeighborReuseSignature (four of them, :1755)",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "spatial",
+      "kind": "speed",
+      "result": "Heap pass on the demos (heapSampleWorkers); the call is a suspicion, no code pass ran for carScene.",
+      "next": "Pass the signature through a module Float64Array (CLAUDE.md: no doubles across a call TurboFan may leave out); heap pass before and after.",
+      "refs": [],
+      "aliases": [
+        "findNeighbors garbage"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "E-481",
+      "title": "sunStreetScene's Pixi allocates 3.76 KB a frame (221 KB/s) at _writeSelfLitSpriteQuads pixiWorker.js:5809, and writeOrientedBoxVerts angularSweep.js:102 (20 KB/s) is called from it with 8 doubles",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "Heap pass on the changed scenes at 27eb6a71.",
+      "next": "Results into the destination arrays or a module Float64Array instead of double arguments and returned objects; heap pass before and after.",
+      "refs": [],
+      "aliases": [
+        "self-lit quads garbage"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "E-482",
+      "title": "sunStreetScene's pre-render allocates 1.8 KB a frame (106 KB/s) in _collectVisibleLights preRenderWorker.js:5523 itself (N-157 fixed only its sort)",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "Heap pass on the changed scenes.",
+      "next": "Find the allocation (a list, a closure, a boxed double) and reuse a field; heap pass before and after.",
+      "refs": [],
+      "aliases": [
+        "collectVisibleLights garbage"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "E-483",
+      "title": "landing's Pixi allocates 1.31 KB a frame in updateCustomLayers pixiWorker.js:10607: the frame's doubles are written into shared option objects (frameUniforms.*, _splatUploadOpts.zoom and camera), and sunStreet also shows a subarray made there",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "Heap pass on the demos.",
+      "next": "Doubles into Float64Array fields (CLAUDE.md: per-frame doubles in typed arrays, not object fields), the subarray made once; heap pass before and after.",
+      "refs": [],
+      "aliases": [
+        "custom layers frame doubles"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "E-484",
+      "title": "meshGalleryScene's logic allocates 1.26 KB a frame in MeshGeometry.replace meshGeometry.js:439, plus copyPointList meshRenderer.js:51 (23 KB/s)",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Heap pass on the demos.",
+      "next": "Reuse the geometry's arrays when the point count does not grow; heap pass before and after.",
+      "refs": [],
+      "aliases": [
+        "mesh replace garbage"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "E-485",
+      "title": "On WebGPU Pixi's own code allocates 6 to 13 KB a frame (badPiggies 7.6, landing 12.8, destructibleTerrain 6.3 KB/f, part of burningBoxes' 16.6): getUniformBindGroup, getDescriptor, execute, a Promise per renderStart, Object.create in _resetBindGroups (E-152 fixed only the draw path; E-227 was measured on WebGL)",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "Heap pass on the WebGPU demos.",
+      "next": "Patch Pixi (small, marked, as E-152): reuse the bind group lookups and descriptors, no Promise or Object.create per frame; heap pass before and after.",
+      "refs": [],
+      "aliases": [
+        "pixi webgpu garbage"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "E-486",
+      "title": "gpuGalaxy's logic spends 52 to 58 % of each worker in GPU particles' _emit (Math.sin and Math.cos at gpuParticles.js:579-580 are 44 % of it) and 21 to 26 % in travelExtent, where Math.exp(-d * T) at :195 is 72 % although drag and lifespan are constant within a call",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "CPU pass on the demos (gpuGalaxy, 4 logic workers).",
+      "next": "Hoist exp(-d * T) out of the per-particle loop; a sin/cos table or a rotation recurrence for the emit angles if the image stays within tolerance; the logic CPU per function before and after.",
+      "refs": [],
+      "aliases": [
+        "gpu particle emit trig"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "E-487",
+      "title": "spawnStormScene's logic spends 24 % of itself on each spawn's Box2D bookkeeping: publishBodyDirty box2dBodySync.js:189-190 (two Atomics.or) 15.9 ms/s, advanceBodyGeneration :237-238 (a generation add and a global epoch add a spawn) 12.4, the ring's enqueue 17.2",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "CPU pass on stress chunk 1 (14:58 to 15:03).",
+      "next": "Batch the dirty bits and generations per frame (one Atomics.or a word, one epoch add a frame), plain stores where only this worker writes; the logic CPU per function before and after.",
+      "refs": [],
+      "aliases": [
+        "spawn bookkeeping atomics"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "E-488",
+      "title": "gpuGalaxy's Pixi spends 12.6 % of itself (16.5 ms/s) in GpuParticleBatch._copy gpuParticleBatch.js:308-309, a TypedArray.set from the shared ring; W30's memory.copy (sharedCopy.js) would do it if the ring lived in a WebAssembly.Memory",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "CPU pass on the demos.",
+      "next": "Put the ring in a shared WebAssembly.Memory (or the queue memory) and copy with the arena; Pixi CPU per function before and after.",
+      "refs": [],
+      "aliases": [
+        "gpu particle ring copy"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "E-489",
+      "title": "littleCity's logic spends 5.7 % (10.8 ms/s) in requestVectorFromStaticFlowfield navGrid.js:447: a Map.get by name on every call (:448) and doubles stored into the caller's object (:465-466)",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "CPU pass on the demos.",
+      "next": "Resolve the flowfield once per caller (an index), write the vector into a Float32Array or the caller's columns; logic CPU before and after.",
+      "refs": [],
+      "aliases": [
+        "flowfield lookup by name"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "E-490",
+      "title": "adobeAnimateScene's logic spends 8.2 % (7.8 ms/s) in Mouse.isButton0Down -> isDownAt mouse.js:238: 10 000 reads a frame at about 12 ns each",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "CPU pass on the demos.",
+      "next": "A per-frame snapshot of the button state in a plain field the getter returns (or a frame-cached value); logic CPU before and after.",
+      "refs": [],
+      "aliases": [
+        "mouse button reads"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "E-491",
+      "title": "landing's Pixi spends 6.8 % of its non-wait time (5.6 ms/s) in _snapshotComputePose pixiWorker.js:1488-1504: 8 pose arrays copied at full capacity every frame while any compute layer exists",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "CPU pass on the demos.",
+      "next": "Copy only the rows the compute layers read (their count), or skip when the poses did not change; Pixi CPU before and after.",
+      "refs": [],
+      "aliases": [
+        "compute pose snapshot"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "N-246",
+      "title": "profileSceneSweep's passes read each other's files: the code pass reads <out>/<scene>/cpu-summary.json and the inventory the cpu pass's results.json, so a per-pass --out directory needs the cpu files copied in first or its inventory comes out empty",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "Seen by the sweep agent running passes into separate folders.",
+      "next": "Say it in the tool's header, or let each pass take --cpu-from <dir>.",
+      "refs": [],
+      "aliases": [
+        "sweep pass layout"
+      ],
+      "records": [
+        "R-1229"
+      ]
+    },
+    {
+      "id": "N-247",
+      "title": "Keyboard.isPressed runs _normalizeKeyName's toLowerCase on every call (keyboard.js:144): 341 B a frame in burningBoxes",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
+      "date": "2026-11-16",
+      "area": "engine",
+      "kind": "bug",
+      "result": "Heap pass on the demos.",
+      "next": "Normalize once per key name (a cache) or at registration; heap pass before and after.",
+      "refs": [],
+      "aliases": [
+        "keyboard key name garbage"
+      ],
+      "records": [
+        "R-1229"
+      ]
     }
   ],
   "records": [
@@ -32262,6 +32552,15 @@
         "0fe1f767",
         "aa9041cb"
       ]
+    },
+    {
+      "id": "R-1229",
+      "date": "2026-11-16",
+      "time": "20:39",
+      "timeFrom": "recorded",
+      "title": "The scoped trace sweep (103 units): two new steady deopt loops (N-244, N-245), seven new allocation sites (E-480..E-485, N-247), six new CPU hot spots (E-486..E-491); light scenes' GPU down since the morning; E-451's low clocks reproduce",
+      "verdict": "note",
+      "text": "**The scoped trace sweep: 103 of 103 units (one deopt pass timed out), cpu, deopt and heap over the ten scene variants today's changes reached, GPU per draw over eight of them, the code pass over keyedPack gbuf=1 and light3dCompare, deopt and heap over the 31 other demos (Predator traced apart, R-1212).** Times: stress cpu chunk 1 14:58 to 15:03 at 7e8fe900; the priority scenes 16:25 to 17:41 at 27eb6a71; GPU 17:43 to 17:47 (before the owner's game and before E-452/E-453); the demos 17:50 to 20:39 on newer main (the d8 fixes, then aa9041cb). The demos' cpu pass is the 08:16 one.\n\nNew rows: N-244 (keyedPack gbuf=1 steady deopt loop at packSpriteLayer.js:72, 116 in 8 s, and indexByteFor, 18), N-245 (Boids: weedjsPost.js:665's Atomics.load still deopts 47, N-214's fix held in Predator only; spatialWorker.js:1758's cold branch 36), E-480 (carScene spatial _findNeighbors 4.45 KB a frame), E-481 (sunStreet Pixi self-lit quads 3.76 KB/f), E-482 (sunStreet pre-render _collectVisibleLights 1.8 KB/f), E-483 (landing Pixi frame doubles in shared option objects, 1.31 KB/f), E-484 (meshGallery logic MeshGeometry.replace 1.26 KB/f), E-485 (Pixi's own code on WebGPU 6 to 13 KB/f), E-486 (gpuGalaxy emit: sin/cos 44 % of _emit, a constant Math.exp 72 % of travelExtent), E-487 (spawnStorm: 24 % of logic in a spawn's Box2D bookkeeping atomics), E-488 (gpuGalaxy Pixi ring copy by TypedArray.set, 12.6 %), E-489 (littleCity flowfield lookup by name, 5.7 %), E-490 (adobeAnimate 10 000 mouse button reads a frame, 8.2 %), E-491 (landing's compute pose snapshot at full capacity, 6.8 %), N-246 (profileSceneSweep's pass layout), N-247 (Keyboard.isPressed's toLowerCase per call). Added to E-456: indexByteFor's copy 11.5 ms/s, and packSpriteLayer's 784-of-920-byte inline budget.\n\nKnown and still there: volume logic _tickNonDecimatedOneNoBody 4.9 KB/f (E-244), destructibleTerrain _polygonRayDistance 4.5 KB/f (E-291), mamushkaDig pre-render 4.3 KB/f (E-283), burningBoxes Pixi packBox2dBodies 3.9 KB/f (E-279), light3dCompare spatial _rebuildMovedRows (E-243: OSR code), gpuGalaxy logic _emit about 1 KB/f a worker (E-149's rest), Pixi's WebGL light scenes 3 to 8 KB/f (E-227); stationarySpatialWide _scanColliderBounds 61 % (E-266's next); volume Pixi rewrite_corners_u32 10.8 % (before E-453), writeMeshPoseTable (E-397), trackMeshPoseLiveOrLatched (E-425's area); compoundVisPoly collect_solid_f32x4 48 %, _buildSelfLitBatch (E-135), the Box2D pool's spin (E-426); light3dCompare DirectionalSprite.resolve 6.5 % (E-363). Megamorphic engine ICs: none a frame (init and teardown only, as R-0980). Load-time deopts (frame trimming, cut(), flowfield decode) counted as steady by the pass's 6 s split.\n\nGPU per draw against R-1195 and R-1190 (ms a frame): sunStreet 3.905 -> 3.235 (glows 1.439 -> 0.345 to 0.430 at 960 x 540, E-404), headlights 3.161 -> 2.144 (glows 1.379 -> 0.294), sunShadowMap lamps=48 hour=22 7.050 -> 5.564 (3D light 2.228 -> 0.607; the lamps' map 2.521 -> 2.860 in 4 draws, E-420/E-461), emissive 5.466 -> 5.096 (G-buffer 1.807 -> 0.846, light 1.149 -> 0.363), lampShadow 2.345 -> 1.739, volume unchanged before E-453, light3dCompare all=1 3.635, plain 2.326. E-451 reproduces: emissive and light3dCompare all=1 ran at P3 (540 to 585 MHz), the plain one at P5 405 MHz, lampShadow at P5 645, headlights and sunStreet partly at P5; only volume and sunShadowMap at P0, so the low-clock readings read high.\n\nThe bench queue gave the sweep one turn every 60 to 90 minutes this afternoon (N-239's multi-arm runner answers part of that). Raw results under scratchpad sweeps/ (not kept)."
     }
   ],
   "leads": [
