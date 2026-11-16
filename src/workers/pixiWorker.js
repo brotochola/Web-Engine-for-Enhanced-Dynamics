@@ -2966,6 +2966,10 @@ class PixiRenderer extends AbstractWorker {
       // DX-GBUF (plan §6.4): each instance's G-buffer words (gbufWord.js), where the G-buffer pass runs (faces, a sheet
       // with maps, a shadow map: gbufWanted, as pre-render decides it).
       gbuf: gbufWanted(this.config, this.atlasMapsSource !== null),
+      // A pose batch's vertex buffers bound by ANGLE as they are (one upload a frame): no copy of every draw's attributes.
+      // Not a keyed or split one, which the hint made slower on the GPU (why is not traced): Predator's keyed colour pass
+      // 1.66 -> 2.12 ms (~800 MHz), bunnyMarkStress's split frames 3.12 -> 3.23 ms (medians of 4).
+      staticBuffers: this._queueInterp,
       // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
       // stream and statics rows; a keyed one's slot stream, updates (its statics are scattered on the GPU) and, E-191, the
       // shadow stream of the sun's pass over its instances (3 floats a row).

@@ -370,6 +370,8 @@ export class InstancedSpriteBatch {
    *   sprites' statics by entity in the texture, sent when the emit marked them changed. Each upload then needs the
    *   queue's frame number and buffer (`keyedFrame`, `keyedBuffer`, set by the caller). E-191: `shadowByte` (-1 for none),
    *   the shadow stream's region, which enableKeyedShadows turns on for the sun's pass over these instances
+   * @param {boolean} [opts.staticBuffers=false] - the vertex buffers made with a static usage hint on WebGL, which ANGLE
+   *   binds directly instead of copying each draw's attributes; for a batch that uploads once a frame
    */
   constructor({
     capacity,
@@ -395,8 +397,16 @@ export class InstancedSpriteBatch {
     posesByRow = false,
     pixelDepth = null,
     gbuf = false,
+    staticBuffers = false,
   }) {
     this.capacity = Math.max(1, capacity | 0);
+    // The vertex buffers' usage. ANGLE's D3D11 backend binds a buffer made with DYNAMIC_DRAW to no draw directly: it copies
+    // the attributes each draw reads into a streaming buffer of its own, on the GPU process's main thread (instances x
+    // stride bytes: bunnyMark's 250 000 sprites, 17 MB and 5.7 ms a draw, found in E-448's sitting). A STATIC_DRAW buffer
+    // is bound as it is, rewritten every frame or not, but a rewrite then waits on the GPU for the draws still reading
+    // it: `staticBuffers` (WebGL) for a batch that uploads once a frame, whose ring of two the frame pacer keeps clear
+    // (with every batch static, light3dCompare's lamps' map pass took 1.23 -> 1.67 ms of GPU). WebGPU has no such hint.
+    this._vertexUsage = BufferUsage.VERTEX | BufferUsage.COPY_DST | (staticBuffers && !useWebGpu ? BufferUsage.STATIC : 0);
     this.poseInterp = !!poseInterp;
     this.shadowCast = !!shadowCast && !poseInterp;
     this.split = !!split && !this.poseInterp && !this.shadowCast;
@@ -733,7 +743,7 @@ export class InstancedSpriteBatch {
   _makeInstanceBuffer(label) {
     return new Buffer({
       data: this.data,
-      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      usage: this._vertexUsage,
       label,
     });
   }
@@ -741,7 +751,7 @@ export class InstancedSpriteBatch {
   _makeStaticBuffer(label) {
     return new Buffer({
       data: this.staticData,
-      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      usage: this._vertexUsage,
       label,
     });
   }
@@ -749,7 +759,7 @@ export class InstancedSpriteBatch {
   _makeSlotBuffer(label) {
     return new Buffer({
       data: this._slotData,
-      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      usage: this._vertexUsage,
       label,
     });
   }
@@ -758,7 +768,7 @@ export class InstancedSpriteBatch {
   _makeGbufBuffer(label) {
     return new Buffer({
       data: this._gbufData,
-      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      usage: this._vertexUsage,
       label,
     });
   }
@@ -835,7 +845,7 @@ export class InstancedSpriteBatch {
   _makeShadowBuffer(label) {
     return new Buffer({
       data: this._shadowData,
-      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      usage: this._vertexUsage,
       label,
     });
   }
