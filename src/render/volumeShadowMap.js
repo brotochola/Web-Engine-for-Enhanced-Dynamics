@@ -226,11 +226,13 @@ export function volumeLampWgsl(source) {
  * @param {Float32Array} sun
  * @param {Float32Array} lamp
  * @param {Float32Array} owner
+ * @param {Float64Array} scales [1 / heightScaleY, 1 / groundScaleY]: in an array, since a double passed to a call
+ *   TurboFan leaves out is boxed (a tile a frame, CLAUDE.md's E-85)
  * @returns {boolean} whether any changed (the group needs an update)
  */
-export function writeVolumeLampTerms(
-  sun, lamp, owner, tile, ownerEntity, perRow, tileSize, invHeightScaleY, invGroundScaleY,
-) {
+export function writeVolumeLampTerms(sun, lamp, owner, tile, ownerEntity, perRow, tileSize, scales) {
+  const invHeightScaleY = scales[0];
+  const invGroundScaleY = scales[1];
   if (
     sun[0] === 0 && sun[1] === 0 && sun[2] === 1 && sun[3] === Math.fround(invHeightScaleY)
     && lamp[0] === tile && lamp[1] === perRow && lamp[2] === tileSize && lamp[3] === Math.fround(invGroundScaleY)

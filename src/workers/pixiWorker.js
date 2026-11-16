@@ -440,6 +440,8 @@ const SELF_LIT_NO_FACING = 1e30;
 const CONE_FLOATS = 4;
 /** DX-LAMPPANO: how many of the stamp batch's geometries keep a lamp card strip of their own (its ring's slots, then some). */
 const LAMP_STRIP_SOURCES = 8;
+/** DX-SHADOW3D (F7): the volumes' lamp terms' scales, 1 / heightScaleY and 1 / groundScaleY (writeVolumeLampTerms). */
+const VOLUME_LAMP_SCALES = new Float64Array(2);
 /**
  * E-260. Floats per vertex of a sprite-masked self-lit batch: x, y; u, v; the light's x, y, intensity and the body's
  * radius; the light's r, g, b and the attenuation scale; the body's centre; the light's cone (as CONE_FLOATS).
@@ -6847,8 +6849,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const tiles = this._lampTileCount | 0;
     if (tiles <= 0 || this._lampTileSource === null) return;
     if (!(this._useWebGpu ? shaders?.meshUvFill : shaders?.meshUvFillVert)) return;
-    const invHs = 1 / (this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1);
-    const invG = this._groundInvScaleY || 1;
+    VOLUME_LAMP_SCALES[0] = 1 / (this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1);
+    VOLUME_LAMP_SCALES[1] = this._groundInvScaleY || 1;
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       const batch = cl.sunProjected ? cl.uvFillBatch : null;
@@ -6875,7 +6877,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         // The tile's lamp's own entity casts nothing for it (_readLampTiles: tile t is entity _lampTileIds[t]'s light).
         const owner = t < this._lampTileIds.length ? this._lampTileIds[t] : -1;
         const perRow = this._lampTilesPerRow;
-        if (writeVolumeLampTerms(u.uSunShadow, u.uLampVolume, u.uLampOwner, t, owner, perRow, this._lampTileSize, invHs, invG)) {
+        if (writeVolumeLampTerms(u.uSunShadow, u.uLampVolume, u.uLampOwner, t, owner, perRow, this._lampTileSize, VOLUME_LAMP_SCALES)) {
           group.update();
         }
       }
