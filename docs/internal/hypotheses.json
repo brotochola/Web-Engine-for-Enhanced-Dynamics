@@ -18312,7 +18312,8 @@
       ],
       "records": [
         "R-1176",
-        "R-1189"
+        "R-1189",
+        "R-1203"
       ]
     },
     {
@@ -19087,7 +19088,8 @@
         "gbuf words upload every frame"
       ],
       "records": [
-        "R-1189"
+        "R-1189",
+        "R-1203"
       ]
     },
     {
@@ -19356,6 +19358,25 @@
         "per-entity word column"
       ],
       "records": []
+    },
+    {
+      "id": "E-456",
+      "title": "Where Pixi packs (Predator, light3dCompare) and lighting draws glows, packSpriteLayer splits the glow rows every frame with two filtered passes over every row plus a third counting particles, even when the frame has no glow row: 12.7 % of Pixi in keyedPackStressScene gbuf=1 (fillQueueIndices, about 1.4 ms a frame at 250 000 rows). E-216's skip for frames without glow rows reaches only pre-render's collector",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from the cpu pass of keyedPackStressScene (Pixi packing, N-223) with gbuf=0 and gbuf=1",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "keyedPackStressScene n=250000 churn=0.05, Pixi packing, 2026-11-16 09:33 to 09:34: with gbuf=1 Pixi's fillQueueIndices (gpuQueueLayout.js) 674 ms in an 8 s window (12.7 %), none with gbuf=0. pixiWorker.js: splitGlow = _lightGlowAdd && typeArr && idxE && (painter || lightingEnabled), with no look at the frame's glow rows; packSpriteLayer then runs fillQueueIndices(excl 3), fillQueueIndices(incl 3) and a loop counting particle rows over the entity list. Pre-render knows its glow rows (E-216, R-0904).",
+      "next": "Pre-render writes the frame's glow-row count into the queue (it counts them for E-216) and Pixi takes the dense path when it is 0; when there are glow rows, one pass fills the entity list, the glow list and the particle count together. Pixi's CPU per function before and after (keyedPack gbuf=1, Predator ?light3d=1).",
+      "refs": [],
+      "aliases": [
+        "pixi glow split every frame",
+        "fillQueueIndices in pixi"
+      ],
+      "records": [
+        "R-1203"
+      ]
     }
   ],
   "records": [
@@ -31167,6 +31188,15 @@
         "f7d24d6e",
         "9ab1e87c"
       ]
+    },
+    {
+      "id": "R-1203",
+      "date": "2026-11-16",
+      "time": "09:34",
+      "timeFrom": "recorded",
+      "title": "N-218 holds with Pixi packing (keyedPack fixed): logic 225 -> 280 ms/s with gbuf=1, the same functions slower in proportion; Pixi's glow split runs every frame (E-456: 12.7 % of Pixi)",
+      "verdict": "note",
+      "text": "**N-218 holds with Pixi packing: in keyedPackStressScene (fixed by N-223), logic runs 225 ms/s with gbuf=0 and 280 with gbuf=1 (+24 %), the same functions slower in proportion.** It is the same contention pattern as R-1189's (pre-render packing). Nothing in logic's code differs between the two.\n\nCPU pass, keyedPackStressScene n=250000 churn=0.05 (Pixi packs), main 5be1d88a, 2026-11-16 09:33 to 09:34 (the log):\n\n| | gbuf=0 | gbuf=1 |\n| --- | --- | --- |\n| logic busy | 225 ms/s | 280 ms/s |\n| _tickNonDecimatedOneNoBody | 1 124.9 | 1 611.6 |\n| PackMover.tick | 582.8 | 655.7 |\n| setXFromArgs | 117.4 | 143.0 |\n| Pixi busy | 684 ms/s (67.7 % _waitForQueue) | 473 ms/s |\n| Pixi's packs | pack_sprites_keyed_rows 674 | pack_sprites_keyed_rows_gbuf 1 219.7 |\n| fillQueueIndices (Pixi) | none | 674.1 (12.7 %, E-456) |\n| pre-render busy | 567 ms/s | 578 ms/s |\n\nWith the G-buffer words on, Pixi waits less and works more: the keyed pack with words, the glow split's passes (E-456), and the words' upload (E-445, E-455). Logic slows while it does.\n\nE-444's agent also saw logic, Pixi and pre-render's untouched code drop when the JS words pass left pre-render. That points the same way: memory traffic from another worker slows logic."
     }
   ],
   "leads": [
