@@ -183,6 +183,8 @@ import {
   packTextureLutRgba,
   TEX_LUT_FLOATS,
   textureLutLayout,
+  textureLutSolid,
+  textureLutTexels,
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, wasmPainterState } from '../render/painterRadixClient.js';
@@ -340,6 +342,7 @@ import { poseBlockFloats } from '../render/spriteIndexed.js';
 import { createStaticsScatterGpu, scatterStaticsGpu } from '../render/webgpu/staticsScatterGpu.js';
 import { createPrivateArena } from '../render/sharedCopy.js';
 import { GpuFramePacer } from '../render/gpuFramePacer.js';
+import { OPAQUE_POSE_TEXELS } from '../render/opaquePass.js';
 
 // Bundles embed the engine shaders (WEED.EngineShaders, posted at init): an npm
 // install has no /src/shaders to fetch. Source builds fetch them.
@@ -683,6 +686,9 @@ class PixiRenderer extends AbstractWorker {
     this._ySort = false;
     this._ySortMode = false;
     this._entitiesRoot = null;
+    // E-448: whether the last frame drew the entities in chunks around GPU particle groups (_applyProxies), which the
+    // opaque pass cannot.
+    this._entityChunksActive = false;
     this._lightGlowAdd = true;
     // _refusePackedFrame said its reason.
     this._refusedFrameWarned = false;
@@ -2099,6 +2105,12 @@ class PixiRenderer extends AbstractWorker {
       return;
     }
 
+    // E-448: the opaque pass needs the canvas's depth and the entities drawn in one piece: not through a SCREEN layer
+    // (the stage's target there has no depth on WebGL), nor in chunks around GPU particle groups (last frame's).
+    this.entitiesBatch.setOpaqueAllowed(!this._entityChunksActive && !this._screenLayersShown());
+    // And it draws when its rows cover enough of the canvas at the camera's zoom to pay for their second vertex pass.
+    this.entitiesBatch.setOpaqueView(this._renderZoom || 1, this.canvasWidth * this.canvasHeight);
+
     const gpu = this._gpuQueueRead;
     const packedN = gpu && gpu.header ? (gpu.header[GPU_HDR_SPRITE] | 0) : 0;
     const soaN = this.renderQueueCount ? (this.renderQueueCount[0] | 0) : 0;
@@ -2486,7 +2498,11 @@ class PixiRenderer extends AbstractWorker {
     this._uploadTexLutTexture();
     this._rebuildGpuAnimStartLookup();
     const src = this._resolveAtlasSource();
-    if (this.entitiesBatch) this.entitiesBatch.setAtlasSource(src);
+    if (this.entitiesBatch) {
+      this.entitiesBatch.setAtlasSource(src);
+      // E-448: which frames the opaque pass may draw.
+      this.entitiesBatch.setFrameTexels(textureLutTexels(this._texLut), textureLutSolid(this._texLut));
+    }
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setAtlasSource(src);
     if (this.shadowBatch) this.shadowBatch.setAtlasSource(src);
     if (this.gpuCasterBatch) this.gpuCasterBatch.setAtlasSource(src);
@@ -2566,12 +2582,39 @@ class PixiRenderer extends AbstractWorker {
         return source;
       },
       upload: (source, bits, width, height, y0, rows) => this._gpuRecordRowsGl(source, bits, width, height, y0, rows),
+      // E-448: the first rows of a record texture from a vertex buffer's words, on the GPU (at render time).
+      fromBuffer: (renderer, source, buffer, width, rows) => this._gpuRecordRowsFromBufferGl(renderer, source, buffer, width, rows),
       // E-177: a keyed batch's changed statics into its texture.
       // E-189: and its texture updates.
       scatter: (source, updates, count, width, height, texUpdates, texCount) =>
         this._scatterStaticsGl(source, updates, count, width, height, texUpdates, texCount),
     };
     return this._gpuRecordTextureOps;
+  }
+
+  /**
+   * E-448: rows [0, rows) of a record texture (`width` texels each) from Pixi vertex buffer `buffer`'s first words, by a
+   * pixel unpack from it: the GPU copies them, nothing goes up from the CPU. The buffer is uploaded first if Pixi has not
+   * yet this frame (it then skips it at its draw), and must hold the rows whole. Every binding it touches goes back.
+   */
+  _gpuRecordRowsFromBufferGl(renderer, source, buffer, width, rows) {
+    const gl = renderer?.gl;
+    const texSys = renderer?.texture;
+    const bufSys = renderer?.buffer;
+    if (!gl || !texSys || !bufSys || !(rows > 0)) return;
+    bufSys.updateBuffer(buffer);
+    const glBuffer = bufSys.getGlBuffer(buffer);
+    texSys.bind(source, this._gpuRecordTextureOps.unit);
+    const glSource = texSys.getGlSource(source);
+    const prev = gl.getParameter(gl.TEXTURE_BINDING_2D);
+    gl.bindTexture(gl.TEXTURE_2D, glSource.texture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, glBuffer.buffer);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, 0);
+    gl.bindBuffer(gl.PIXEL_UNPACK_BUFFER, null);
+    gl.bindTexture(gl.TEXTURE_2D, prev);
   }
 
   /** Rows [y0, y0 + rows) of a record texture from `bits`; rows < 0 allocates it with all of `bits`. */
@@ -2739,6 +2782,7 @@ class PixiRenderer extends AbstractWorker {
   _applyProxies(half) {
     const chunks = this._entityChunks;
     const count = half !== null ? Math.min(Atomics.load(half.header, 0), PROXY_MAX_ENTRIES) : 0;
+    this._entityChunksActive = count > 0;
     if (count <= 0) {
       chunks.clear();
       return;
@@ -2770,6 +2814,9 @@ class PixiRenderer extends AbstractWorker {
       }
     }
     this._proxyApplyHalf = half;
+    // E-448: the entries drawn between the entities' chunks test no depth, so the opaque pass would draw the entities in
+    // front of them first and lose them under them (from the next frame on it is not allowed: _entityChunksActive).
+    this.entitiesBatch.dropOpaquePass();
     const mesh = this.entitiesBatch.mesh;
     chunks.apply(half, count, mesh.visible ? mesh.geometry.instanceCount | 0 : 0, this._proxyDrawEntry);
   }
@@ -2966,14 +3013,19 @@ class PixiRenderer extends AbstractWorker {
       // DX-GBUF (plan §6.4): each instance's G-buffer words (gbufWord.js), where the G-buffer pass runs (faces, a sheet
       // with maps, a shadow map: gbufWanted, as pre-render decides it).
       gbuf: gbufWanted(this.config, this.atlasMapsSource !== null),
+      // E-448: the binary frames' solid pixels first, nearest first, with the canvas's depth (opaquePass.js), through the
+      // record textures (the pass's pose texture); the batch takes it where it can (WebGL, no pixel depth, no G-buffer
+      // words).
+      opaquePass: pixelDepth === null && !this._useWebGpu ? this._gpuRecordTexture() : null,
       // A pose batch's vertex buffers bound by ANGLE as they are (one upload a frame): no copy of every draw's attributes.
       // Not a keyed or split one, which the hint made slower on the GPU (why is not traced): Predator's keyed colour pass
       // 1.66 -> 2.12 ms (~800 MHz), bunnyMarkStress's split frames 3.12 -> 3.23 ms (medians of 4).
       staticBuffers: this._queueInterp,
       // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
       // stream and statics rows; a keyed one's slot stream, updates (its statics are scattered on the GPU) and, E-191, the
-      // shadow stream of the sun's pass over its instances (3 floats a row).
-      arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)
+      // shadow stream of the sun's pass over its instances (3 floats a row). E-448: a pose texture row more for the pose
+      // stream, which the opaque pass copies whole rows of.
+      arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS) + OPAQUE_POSE_TEXELS * 4
         + (keyed !== null
           ? maxItems * (GPU_INDEXED_SLOT_FLOATS + GPU_KEYED_ROW_WORDS + 3)
           : indexed ? maxItems * GPU_INDEXED_SLOT_FLOATS + gpuIndexedStaticRows(maxItems) * GPU_INDEXED_STATIC_FLOATS : 0)
@@ -4064,6 +4116,13 @@ class PixiRenderer extends AbstractWorker {
     }
   }
 
+  /** DX-POST: whether a SCREEN layer is visible, so the stage goes into a target of its own (_presentThroughScreenLayers). */
+  _screenLayersShown() {
+    const layers = this._screenLayers;
+    for (let i = 0; i < layers.length; i++) if (layerIsVisible(layers[i].layerId)) return true;
+    return false;
+  }
+
   /**
    * DX-POST: with a visible SCREEN layer, the stage goes into a target the canvas's size, cleared to the canvas's
    * background. Each visible SCREEN layer then, in zIndex order, reads what came before it and draws into its own
@@ -4076,6 +4135,8 @@ class PixiRenderer extends AbstractWorker {
     if (last < 0) return false;
     const app = this.pixiApp;
     if (!app?.renderer || !app.stage) return false;
+    // E-448: the stage's target here has no depth buffer on WebGL, which the opaque pass draws with.
+    if (this.entitiesBatch !== null) this.entitiesBatch.dropOpaquePass();
     const width = this.canvasWidth;
     const height = this.canvasHeight;
     this._screenSceneRT = this._screenTarget(this._screenSceneRT, width, height);
@@ -9756,6 +9817,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
       this._entitiesRoot = new Container();
       this._entitiesRoot.label = 'entities-root';
+      // E-448: the batch's opaque pass right before it.
+      if (this.entitiesBatch.opaqueHost !== null) this._entitiesRoot.addChild(this.entitiesBatch.opaqueHost);
       this._entitiesRoot.addChild(this.spriteMesh);
       // DX-DEPTH (F5 v2): with pixel depth, the batch's edge pass right after its opaque one.
       if (this.entitiesBatch.edgeMesh !== null) this._entitiesRoot.addChild(this.entitiesBatch.edgeMesh);

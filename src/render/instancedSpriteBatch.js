@@ -48,6 +48,10 @@ import {
   gbufAttributeGlsl, gbufAttributeWgsl, glowMaskVertex,
 } from './faceMap.js';
 import { FRAME_UNSCANNED, TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW, TEX_LUT_SOFT_OR_GLOW, lutBaseFloats } from './frameBase.js';
+import {
+  OPAQUE_KEYED_ROW_FLOATS, OPAQUE_MAX_ROWS, OPAQUE_POSE_TEXELS, OPAQUE_ROW_FLOATS, buildOpaqueKeyedRows, buildOpaqueRows,
+  opaqueFragment, opaquePassPays, opaquePoseTextureRows, opaqueRowVertex, opaqueVertex,
+} from './opaquePass.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from './pixelDepth.js';
 import {
   POSE_ROW_FLOATS, POSE_TEX_TEXELS, STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, poseBlockFloats, spriteIndexedVertex,
@@ -115,6 +119,32 @@ class GlowStencilStep extends ViewContainer {
     if (this._mode === STENCIL_MASK_ADD) renderer.renderTarget.ensureDepthStencil();
     renderer.stencil.setStencilMode(this._mode, this._reference);
     renderer.colorMask.setMask(this._colorMask);
+  }
+}
+
+/** E-448: what the opaque mesh draws: a pose or split frame's rows (its poses copied each frame), a by-row keyed frame's. */
+const OPAQUE_KIND_POSE = 0;
+const OPAQUE_KIND_KEYED_ROWS = 1;
+
+/**
+ * E-448: the opaque pass's step before its mesh, run by Pixi's custom render pipe where the mesh's draw is: this frame's
+ * poses into the pass's pose texture (InstancedSpriteBatch._copyOpaquePoses), on the GPU.
+ */
+class OpaquePoseStep extends ViewContainer {
+  constructor(batch) {
+    super({ label: 'weed-opaque-poses' });
+    this.renderPipeId = 'customRender';
+    this.batched = false;
+    this.cullable = false;
+    this._batch = batch;
+  }
+
+  updateBounds() {
+    this._bounds.clear();
+  }
+
+  render(renderer) {
+    this._batch._copyOpaquePoses(renderer);
   }
 }
 
@@ -229,6 +259,12 @@ function writeLutSlot(lut, base, tex) {
   if (tex.weedFootSlot >= 0 && lut[base + 10] < 0) lut[base + 11] = (lut[base + 11] < 0 ? -1 : 1) * (tex.weedFootSlot + 1);
 }
 
+/** E-448: a texture's frame's solid texels (alpha 255: its json base's `solidTexels`), 0 when its scan did not count them. */
+function frameSolid(tex) {
+  const n = tex && tex.weedBase ? tex.weedBase.solidTexels : undefined;
+  return typeof n === 'number' && n > 0 ? n : 0;
+}
+
 /** H-EDGE: what a texture's frame's texels hold (frameBase.js FRAME_*: its json base's `texels`, else FRAME_UNSCANNED). */
 function frameTexels(tex) {
   const t = tex && tex.weedBase ? tex.weedBase.texels : undefined;
@@ -241,6 +277,8 @@ function frameTexels(tex) {
  * its length). packTextureLutRgba puts their soft-or-glow bit in each row's flags texel; textureLutTexels reads them.
  */
 const LUT_TEXELS = new WeakMap();
+/** E-448: a CPU LUT's frames' solid texels, beside it as its texels are (textureLutSolid). */
+const LUT_SOLID = new WeakMap();
 
 /**
  * H-EDGE: what each textureId's frame's texels hold (frameBase.js FRAME_SOFT, FRAME_HALF, FRAME_GLOW, FRAME_UNSCANNED), a
@@ -252,11 +290,22 @@ export function textureLutTexels(lut) {
   return (lut && LUT_TEXELS.get(lut)) || null;
 }
 
+/**
+ * E-448: each textureId's frame's solid texels (alpha 255; 0 where its scan did not count them), for a LUT
+ * buildTextureLut made; null for any other.
+ * @param {Float32Array} lut
+ * @returns {Float32Array|null}
+ */
+export function textureLutSolid(lut) {
+  return (lut && LUT_SOLID.get(lut)) || null;
+}
+
 /** The CPU LUT of `flatTextures`: TEX_LUT_FLOATS a textureId, one slot at least; H-EDGE's texels beside it (textureLutTexels). */
 export function buildTextureLut(flatTextures, fallbackTexture) {
   const n = flatTextures?.length || 0;
   const lut = new Float32Array(Math.max(1, n) * TEX_LUT_FLOATS);
   const texels = new Uint8Array(Math.max(1, n)).fill(FRAME_UNSCANNED);
+  const solid = new Float32Array(Math.max(1, n));
   const fb = fallbackTexture || Texture.WHITE;
   for (let i = 0; i < n; i++) {
     const tex = flatTextures[i];
@@ -268,6 +317,7 @@ export function buildTextureLut(flatTextures, fallbackTexture) {
     } else {
       writeLutSlot(lut, i * TEX_LUT_FLOATS, tex);
       texels[i] = frameTexels(tex);
+      solid[i] = frameSolid(tex);
     }
   }
   if (n === 0) {
@@ -275,6 +325,7 @@ export function buildTextureLut(flatTextures, fallbackTexture) {
     writeLutSlot(lut, 0, fb);
   }
   LUT_TEXELS.set(lut, texels);
+  LUT_SOLID.set(lut, solid);
   return lut;
 }
 
@@ -370,6 +421,13 @@ export class InstancedSpriteBatch {
    *   sprites' statics by entity in the texture, sent when the emit marked them changed. Each upload then needs the
    *   queue's frame number and buffer (`keyedFrame`, `keyedBuffer`, set by the caller). E-191: `shadowByte` (-1 for none),
    *   the shadow stream's region, which enableKeyedShadows turns on for the sun's pass over these instances
+   * @param {object|null} [opts.opaquePass] - E-448 (opaquePass.js): the instances whose frames are binary drawn first,
+   *   nearest first, unblended, writing depth (opaqueHost, which the caller puts right before the batch's own mesh), and
+   *   the batch's own mesh testing it: the record texture helper its pose texture is made with and copied into
+   *   (pixiWorker._gpuRecordTexture: `make`, `fromBuffer`; null: none). Only a WebGL pose or split batch with normal
+   *   premultiplied blending, without pixel depth or G-buffer words, takes it (opaqueOn), on its pose and split frames and
+   *   its keyed frames drawn by queue row (not its indexed ones, nor keyed ones drawn by their poses); its target needs a
+   *   depth buffer
    * @param {boolean} [opts.staticBuffers=false] - the vertex buffers made with a static usage hint on WebGL, which ANGLE
    *   binds directly instead of copying each draw's attributes; for a batch that uploads once a frame
    */
@@ -397,6 +455,7 @@ export class InstancedSpriteBatch {
     posesByRow = false,
     pixelDepth = null,
     gbuf = false,
+    opaquePass = null,
     staticBuffers = false,
   }) {
     this.capacity = Math.max(1, capacity | 0);
@@ -431,8 +490,13 @@ export class InstancedSpriteBatch {
     if (this.shadowCast) this._floats += 7;
     this._strideBytes = this._floats * 4;
     // W30: in a private memory (sharedCopy.createPrivateArena) when Pixi passes one, so the copies out of the
-    // render-queue memory run as memory.copy (copyIn); else arrays of the batch's own.
-    this.data = (arena && arena.f32(this.capacity * this._floats)) || new Float32Array(this.capacity * this._floats);
+    // render-queue memory run as memory.copy (copyIn); else arrays of the batch's own. E-448: a pose or split batch that
+    // may draw the opaque pass copies its pose buffer into a texture in whole texture rows (opaquePass.js), so its data
+    // reaches the last one.
+    const dataFloats = Math.max(this.capacity * this._floats, opaquePass !== null && this._twoStreams
+      ? opaquePoseTextureRows(this.capacity, this._floats) * OPAQUE_POSE_TEXELS * 4
+      : 0);
+    this.data = (arena && arena.f32(dataFloats)) || new Float32Array(dataFloats);
     // Its bits, over the same words: in the arena, from the array's own place in it, not from the arena's start (so is
     // staticDataU32).
     this.dataU32 = new Uint32Array(this.data.buffer, this.data.byteOffset, this.data.length);
@@ -640,6 +704,15 @@ export class InstancedSpriteBatch {
     this._edgeIndexedShader = null;
     this._edgeRowShader = null;
     this.edgeMesh = null;
+    // E-448: the colour program's sources on WebGL (_makeSpriteShader) and the by-row one's before its depth
+    // (_makeRowShader), which the opaque pass's programs are made from; whether the batch takes the pass (opaqueOn once
+    // made): a WebGL pose or split batch with normal premultiplied blending, without pixel depth or G-buffer words.
+    this._colorVertex = '';
+    this._colorFragment = '';
+    this._colorRowVertex = '';
+    this._opWanted = opaquePass !== null && typeof opaquePass?.make === 'function' && typeof opaquePass.fromBuffer === 'function'
+      && !useWebGpu && this._twoStreams && this._premultiplyAlpha && (blendMode || 'normal') === 'normal'
+      && this._pixelDepth === null && !this.gbuf && this.capacity <= OPAQUE_MAX_ROWS;
     this.shader = this._makeSpriteShader(atlas, lut, cut, label || 'instanced-sprites');
     // E-162: the statics texture and the program that reads it; the mesh draws with it on indexed frames.
     this._statics = this.indexed ? statics : null;
@@ -711,6 +784,50 @@ export class InstancedSpriteBatch {
       this.edgeMesh.blendMode = state.blendMode;
       this.edgeMesh.cullable = false;
     }
+    // E-448 (opaquePass.js): the opaque pass: its host (the pose step and its mesh), its rows (each one's statics and painter
+    // slot, nearest first: OPAQUE_ROW_FLOATS) and their count, their version and each ring slot's GPU copy's (-1: none), the
+    // pose texture this frame's poses are copied into and its rows, the frames' texels the rows are chosen by
+    // (setFrameTexels) and their version, what the rows were built from (the statics' version, the rows, the texels'), and
+    // whether the caller lets it draw this frame (setOpaqueAllowed). The batch's own mesh takes _depthState (the depth
+    // tested, not written) on the frames the opaque pass draws, _blendState on the others.
+    this.opaqueOn = false;
+    this.opaqueHost = null;
+    this.opaqueMesh = null;
+    this._opShader = null;
+    this._opBuffers = null;
+    this._opGeometries = null;
+    this._opRows = new Float32Array(0);
+    this._opRowsU32 = new Uint32Array(0);
+    this._opCount = 0;
+    this._opVersion = 0;
+    this._opRingVersion = [-1, -1];
+    this._opTextures = null;
+    this._opPoseSource = null;
+    this._opPoseRows = 0;
+    // E-448: a keyed batch's frames drawn by queue row: their opaque rows (OPAQUE_KEYED_ROW_FLOATS: the row, the key, the
+    // draw slot), a buffer of them and a geometry a ring slot, their program, and what the opaque mesh drew last
+    // (OPAQUE_KIND_*: which program and rows it holds, and whether the poses are copied).
+    this._opKeyedRows = new Float32Array(0);
+    this._opKeyedBuffers = null;
+    this._opKeyedGeometries = null;
+    this._opRowShader = null;
+    this._opKind = OPAQUE_KIND_POSE;
+    this._opTexels = new Uint8Array(0);
+    // Each frame's solid texels (setFrameTexels; empty: unknown, the pass always drawn), the rows' cover (world px: their
+    // frames' solid texels at their scale), the view's zoom and the target's pixels (setOpaqueView), by which each frame
+    // decides whether the pass pays (opaquePass.js opaquePassPays).
+    this._opArea = new Float32Array(0);
+    this._opCover = new Float64Array(1);
+    this._opZoom = 1;
+    this._opScreen = 0;
+    this._opTexelsVersion = 1;
+    this._opBuiltTexels = 0;
+    this._opBuiltStatics = -1;
+    this._opBuiltRows = -1;
+    this._opAllowed = true;
+    this._blendState = state;
+    this._depthState = state;
+    if (this._opWanted && this._colorVertex !== '' && this._colorFragment !== '') this._makeOpaquePass(labelName, opaquePass);
     this._show(false);
     this.mesh.cullable = false; // bounds ignore instance attrs; don't frustum-cull the batch
     this._uploadCtx = {
@@ -962,7 +1079,10 @@ export class InstancedSpriteBatch {
   _makeRowShader(name) {
     this._poseSource = this._statics.make(this._poseRowsU32, POSE_TEX_TEXELS, this._poseTexRows * 4, `${name}-poses`);
     const shaders = this._engineShaders;
-    const rowVertex = this._depthVertex(spriteIndexedVertex(shaders.spriteVert, { poseBlock: this._poseBlock }));
+    const rowBase = this._depthVertex(spriteIndexedVertex(shaders.spriteVert, { poseBlock: this._poseBlock }));
+    // E-448: with the opaque pass, at the painter's depth (its own draw slot), which the pass's twin writes.
+    this._colorRowVertex = this._opWanted && rowBase ? rowBase : '';
+    const rowVertex = this._colorRowVertex !== '' ? opaqueRowVertex(rowBase, false) : rowBase;
     const color = pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders);
     const glProgram = instancedSpriteGlProgram(GlProgram, rowVertex, this._depthFragment(color), `${name}-rows`);
     const r = this.shader.resources;
@@ -1038,6 +1158,8 @@ export class InstancedSpriteBatch {
       uniforms.uPoseAlpha = { value: 1, type: 'f32' };
     }
     if (this._pixelDepth) uniforms.uDepth = { value: this._depthTerms, type: 'vec4<f32>' };
+    // E-448: the painter's depth step of a by-row keyed frame (opaquePass.js opaqueRowVertex), 1 / denom.
+    if (this._opWanted && this.posesByRow) uniforms.uOpDepth = { value: 1 / (this.capacity + 1), type: 'f32' };
     const resources = {
       uTexture: atlas,
       uSampler: atlas.style,
@@ -1088,6 +1210,8 @@ export class InstancedSpriteBatch {
       vert = pixelDepthVertex(vert, { gbuf: this.gbuf });
       frag = pixelDepthFragment(frag, { gbuf: this.gbuf });
     }
+    this._colorVertex = vert || '';
+    this._colorFragment = frag || '';
     const glProgram = instancedSpriteGlProgram(GlProgram, vert, frag, name);
     const shader = new Shader({ glProgram, resources });
     if (depth) {
@@ -1200,9 +1324,242 @@ export class InstancedSpriteBatch {
     return shader;
   }
 
+  /**
+   * E-448: the opaque pass (opaquePass.js): its rows and a buffer of them a ring slot, each with a geometry (the statics as
+   * the batch's own geometry reads them, the painter slot), the pose texture the pose buffer is copied into, its program
+   * (opaqueVertex and opaqueFragment over the colour program's sources) over the colour program's resources and uniform
+   * group, unblended with the depth tested and written, the step that copies the poses before it, and the depth-testing
+   * twin of the batch's own state.
+   */
+  _makeOpaquePass(name, textures) {
+    const cap = this.capacity;
+    const poseWords = this._floats;
+    this._opRows = new Float32Array(cap * OPAQUE_ROW_FLOATS);
+    this._opRowsU32 = new Uint32Array(this._opRows.buffer);
+    const buffer = (label) => new Buffer({ data: this._opRows, usage: this._vertexUsage, label });
+    this._opBuffers = [buffer(`${name}-opaque`), buffer(`${name}-opaque-ring`)];
+    const stride = OPAQUE_ROW_FLOATS * 4;
+    this._opGeometries = this._opBuffers.map((buf) => {
+      const geometry = new Geometry({
+        attributes: {
+          aQuad: { buffer: this._quad, format: 'float32x2' },
+          aInstScale: { buffer: buf, format: 'float32x2', stride, offset: 0, instance: true },
+          aInstAnchor: { buffer: buf, format: 'float32x2', stride, offset: 8, instance: true },
+          aInstDepth: { buffer: buf, format: 'float32', stride, offset: 16, instance: true },
+          aInstTintBits: { buffer: buf, format: 'float32', stride, offset: 20, instance: true },
+          aInstTexId: { buffer: buf, format: 'float32', stride, offset: 24, instance: true },
+          aInstTileInv: { buffer: buf, format: 'float32x2', stride, offset: 28, instance: true },
+          aInstTileOff: { buffer: buf, format: 'float32x2', stride, offset: 36, instance: true },
+          aInstSlot: { buffer: buf, format: 'float32', stride, offset: POSE_STATIC_FLOATS * 4, instance: true },
+        },
+        indexBuffer: this._index,
+      });
+      geometry.instanceCount = 0;
+      return geometry;
+    });
+    this._opTextures = textures;
+    this._opPoseRows = opaquePoseTextureRows(cap, poseWords);
+    this._opPoseSource = textures.make(new Uint32Array(OPAQUE_POSE_TEXELS * 4 * this._opPoseRows), OPAQUE_POSE_TEXELS,
+      this._opPoseRows, `${name}-opaque-poses`);
+    const r = this.shader.resources;
+    this._opShader = new Shader({
+      glProgram: instancedSpriteGlProgram(GlProgram, opaqueVertex(this._colorVertex, poseWords), opaqueFragment(this._colorFragment),
+        `${name}-opaque`),
+      resources: { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uniforms: r.uniforms, uOpPoses: this._opPoseSource },
+    });
+    if (this._rowShader !== null && this._colorRowVertex !== '') {
+      // A by-row keyed frame's: its rows read their pose from the queue's columns (uPoses) and their statics by key
+      // (uStatics), as the batch's by-row program does, at the draw slot each carries.
+      this._opKeyedRows = new Float32Array(cap * OPAQUE_KEYED_ROW_FLOATS);
+      const keyedBuffer = (label) => new Buffer({ data: this._opKeyedRows, usage: this._vertexUsage, label });
+      this._opKeyedBuffers = [keyedBuffer(`${name}-opaque-rows`), keyedBuffer(`${name}-opaque-rows-ring`)];
+      const ks = OPAQUE_KEYED_ROW_FLOATS * 4;
+      this._opKeyedGeometries = this._opKeyedBuffers.map((buf) => {
+        const geometry = new Geometry({
+          attributes: {
+            aQuad: { buffer: this._quad, format: 'float32x2' },
+            aInstRow: { buffer: buf, format: 'float32', stride: ks, offset: 0, instance: true },
+            aInstSlot: { buffer: buf, format: 'float32', stride: ks, offset: 4, instance: true },
+            aInstPainter: { buffer: buf, format: 'float32', stride: ks, offset: 8, instance: true },
+          },
+          indexBuffer: this._index,
+        });
+        geometry.instanceCount = 0;
+        return geometry;
+      });
+      const rr = this._rowShader.resources;
+      this._opRowShader = new Shader({
+        glProgram: instancedSpriteGlProgram(GlProgram, opaqueRowVertex(this._colorRowVertex, true), opaqueFragment(this._colorFragment),
+          `${name}-opaque-rows`),
+        resources: {
+          uTexture: rr.uTexture, uSampler: rr.uSampler, uTexLut: rr.uTexLut, uniforms: rr.uniforms, uStatics: rr.uStatics, uPoses: rr.uPoses,
+        },
+      });
+    }
+    const opaque = new State();
+    opaque.blend = false;
+    opaque.depthTest = true;
+    opaque.depthMask = true;
+    opaque.culling = false;
+    this.opaqueMesh = new Mesh({ geometry: this._opGeometries[0], shader: this._opShader, state: opaque, label: `${name}-opaque` });
+    this.opaqueMesh.cullable = false;
+    this.opaqueHost = new Container();
+    this.opaqueHost.label = `${name}-opaque-pass`;
+    this.opaqueHost.addChild(new OpaquePoseStep(this));
+    this.opaqueHost.addChild(this.opaqueMesh);
+    this.opaqueHost.visible = false;
+    const tested = new State();
+    tested.blend = true;
+    tested.blendMode = this._blendState.blendMode;
+    tested.depthTest = true;
+    tested.depthMask = false;
+    tested.culling = false;
+    this._depthState = tested;
+    this.opaqueOn = true;
+  }
+
+  /**
+   * E-448: what each textureId's frame's texels hold (textureLutTexels of the LUT this batch draws with), which the opaque
+   * pass reads to choose its rows; an empty table (or none) keeps every row out. With `solid` (textureLutSolid), each
+   * frame's solid texels, by which a frame's rows say whether the pass pays (setOpaqueView).
+   * @param {Uint8Array|null} texels
+   * @param {Float32Array|null} [solid]
+   */
+  setFrameTexels(texels, solid = null) {
+    this._opTexels = texels instanceof Uint8Array ? texels : new Uint8Array(0);
+    this._opArea = solid instanceof Float32Array ? solid : new Float32Array(0);
+    this._opTexelsVersion++;
+  }
+
+  /**
+   * E-448: the view the next frames are drawn at: the world's px to the target's (the camera's zoom times the resolution)
+   * and the target's pixels. The opaque pass draws a frame when its rows cover enough of it (opaquePass.js
+   * opaquePassPays); without a view (0 pixels), whenever its rows' frames average OPAQUE_ROW_PIXELS.
+   * @param {number} zoom
+   * @param {number} pixels
+   */
+  setOpaqueView(zoom, pixels) {
+    this._opZoom = zoom > 0 ? +zoom : 1;
+    this._opScreen = pixels > 0 ? +pixels : 0;
+  }
+
+  /** E-448: whether the opaque pass over `rows` rows whose cover _opCover holds pays at the view (always, areas unknown). */
+  _opaquePays(rows) {
+    if (this._opArea.length === 0) return true;
+    const z = this._opZoom;
+    return opaquePassPays(this._opCover[0] * z * z, this._opScreen, rows);
+  }
+
+  /**
+   * E-448: whether the opaque pass may draw from the next upload on (the caller's: a frame whose target has no depth
+   * buffer, or whose painter draws other things between the batch's instances, must not).
+   * @param {boolean} on
+   */
+  setOpaqueAllowed(on) {
+    this._opAllowed = !!on;
+  }
+
+  /** E-448: this frame draws no opaque pass (the batch's own mesh blends every instance, untested, as without it). */
+  dropOpaquePass() {
+    if (this.opaqueHost === null) return;
+    this.opaqueHost.visible = false;
+    if (this.mesh.state !== this._blendState) this.mesh.state = this._blendState;
+  }
+
+  /**
+   * E-448: the opaque pass over the `n` instances the upload just drew from ring slot _lastRing: its rows rebuilt from
+   * the statics when they moved since they were built (_staticVersion), the rows did or the frames' texels did, and
+   * uploaded into that ring slot's buffer when it holds older ones; the batch's own mesh testing the depth while the pass
+   * draws. Its poses go into the pass's texture at render time (_copyOpaquePoses).
+   * @param {number} n
+   */
+  _commitOpaque(n) {
+    if (n <= 0 || !this._opAllowed || this.mesh.blendMode !== 'normal') {
+      this.dropOpaquePass();
+      return;
+    }
+    if (this._opBuiltStatics !== this._staticVersion || this._opBuiltRows !== n || this._opBuiltTexels !== this._opTexelsVersion) {
+      this._opCount = buildOpaqueRows(this.staticData, this.staticDataU32, POSE_STATIC_FLOATS, n, this._opTexels, this._opArea,
+        this._opRows, this._opRowsU32, this._opCover);
+      this._opBuiltStatics = this._staticVersion;
+      this._opBuiltRows = n;
+      this._opBuiltTexels = this._opTexelsVersion;
+      this._opVersion++;
+    }
+    const m = this._opCount;
+    if (m <= 0 || !this._opaquePays(m)) {
+      this.dropOpaquePass();
+      return;
+    }
+    const ring = this._lastRing;
+    if (this._opRingVersion[ring] !== this._opVersion) {
+      this._opBuffers[ring].update(m * OPAQUE_ROW_FLOATS * 4);
+      this._opRingVersion[ring] = this._opVersion;
+    }
+    const geometry = this._opGeometries[ring];
+    geometry.instanceCount = m;
+    this._showOpaque(OPAQUE_KIND_POSE, this._opShader, geometry);
+  }
+
+  /**
+   * E-448: the opaque pass over a by-row keyed frame's `n` draw slots (this.data: each one's queue row, _slotData: its
+   * key; `q`: the queue, whose alpha and texture columns choose the rows), built and uploaded every frame (the painter's
+   * order moves), at the painter's depth step of `ctx`.
+   * @param {number} n
+   * @param {object} q
+   * @param {object} ctx
+   */
+  _commitOpaqueRows(n, q, ctx) {
+    if (n <= 0 || !this._opAllowed || this.mesh.blendMode !== 'normal' || this._opRowShader === null || !q.alpha || !q.textureId
+      || !q.scaleX || !q.scaleY) {
+      this.dropOpaquePass();
+      return;
+    }
+    const m = buildOpaqueKeyedRows(this.data, this._slotData, n, q.alpha, q.textureId, q.scaleX, q.scaleY, this._opTexels,
+      this._opArea, this._opKeyedRows, this._opCover);
+    if (m <= 0 || !this._opaquePays(m)) {
+      this.dropOpaquePass();
+      return;
+    }
+    const group = this.shader.resources.uniforms;
+    const step = 1 / (ctx.depthDenom > 0 ? ctx.depthDenom : this.capacity + 1);
+    if (group.uniforms.uOpDepth !== step) {
+      group.uniforms.uOpDepth = step;
+      group.update();
+    }
+    const ring = this._lastRing;
+    this._opKeyedBuffers[ring].update(m * OPAQUE_KEYED_ROW_FLOATS * 4);
+    const geometry = this._opKeyedGeometries[ring];
+    geometry.instanceCount = m;
+    this._showOpaque(OPAQUE_KIND_KEYED_ROWS, this._opRowShader, geometry);
+  }
+
+  /** E-448: the opaque mesh draws `geometry` with `shader` (a frame of `kind`), and the batch's own mesh tests the depth. */
+  _showOpaque(kind, shader, geometry) {
+    this._opKind = kind;
+    const mesh = this.opaqueMesh;
+    if (mesh.shader !== shader) mesh.shader = shader;
+    if (mesh.geometry !== geometry) mesh.geometry = geometry;
+    this.opaqueHost.visible = true;
+    if (this.mesh.state !== this._depthState) this.mesh.state = this._depthState;
+  }
+
+  /**
+   * E-448 (OpaquePoseStep, at render time): this frame's pose buffer (ring slot _lastRing, uploaded now if Pixi has not
+   * yet) into the opaque pass's pose texture, the texture rows its rows reach, on the GPU.
+   * @param {object} renderer
+   */
+  _copyOpaquePoses(renderer) {
+    if (this.opaqueHost === null || !this.opaqueHost.visible || this._opKind !== OPAQUE_KIND_POSE) return;
+    const rows = opaquePoseTextureRows(this._opBuiltRows, this._floats);
+    this._opTextures.fromBuffer(renderer, this._opPoseSource, this._buffers[this._lastRing], OPAQUE_POSE_TEXELS,
+      rows < this._opPoseRows ? rows : this._opPoseRows);
+  }
+
   _show(on) {
     this.mesh.visible = on;
     if (this.edgeMesh !== null) this.edgeMesh.visible = on;
+    if (!on) this.dropOpaquePass();
   }
 
   /** The batch draws nothing this frame (its mesh and, with pixel depth, its edge pass hidden). */
@@ -1239,7 +1596,7 @@ export class InstancedSpriteBatch {
       this._rowShader.resources.uTexture = source;
       this._rowShader.resources.uSampler = source.style;
     }
-    for (const edge of [this._edgeShader, this._edgeIndexedShader, this._edgeRowShader]) {
+    for (const edge of [this._edgeShader, this._edgeIndexedShader, this._edgeRowShader, this._opShader, this._opRowShader]) {
       if (edge !== null) {
         edge.resources.uTexture = source;
         edge.resources.uSampler = source.style;
@@ -1266,7 +1623,7 @@ export class InstancedSpriteBatch {
     const aux = this._auxShaders();
     for (let i = 0; i < aux.length; i++) aux[i].resources.uTexLut = source;
     if (this._rowShader !== null) this._rowShader.resources.uTexLut = source;
-    for (const edge of [this._edgeShader, this._edgeIndexedShader, this._edgeRowShader]) {
+    for (const edge of [this._edgeShader, this._edgeIndexedShader, this._edgeRowShader, this._opShader, this._opRowShader]) {
       if (edge !== null) edge.resources.uTexLut = source;
     }
   }
@@ -1524,7 +1881,9 @@ export class InstancedSpriteBatch {
       this.copyIn(this.data, this._sharedPose, out * POSE_DYN_FLOATS);
       if (!current) this.copyIn(this.staticData, this._sharedStatic, out * POSE_STATIC_FLOATS);
     }
-    return this._finishUpload(out, POSE_DYN_FLOATS * 4);
+    const drawn = this._finishUpload(out, POSE_DYN_FLOATS * 4);
+    if (this.opaqueOn) this._commitOpaque(drawn);
+    return drawn;
   }
 
   /**
@@ -1548,7 +1907,9 @@ export class InstancedSpriteBatch {
       this.copyIn(this.data, this._sharedPose, out * SPLIT_POSE_FLOATS);
       if (!current) this.copyIn(this.staticData, this._sharedStatic, out * POSE_STATIC_FLOATS);
     }
-    return this._finishUpload(out, SPLIT_POSE_FLOATS * 4);
+    const drawn = this._finishUpload(out, SPLIT_POSE_FLOATS * 4);
+    if (this.opaqueOn) this._commitOpaque(drawn);
+    return drawn;
   }
 
   /**
@@ -1628,6 +1989,9 @@ export class InstancedSpriteBatch {
       this._slotsVersion++;
     }
     const drawn = byRow ? this._finishUpload(out, 4, 'rows') : this._finishUpload(out, SPLIT_POSE_FLOATS * 4, true);
+    // E-448: a frame drawn by queue row takes the opaque pass; a keyed frame drawn by its pose stream does not.
+    if (byRow && this.opaqueOn) this._commitOpaqueRows(drawn, q, ctx);
+    else this.dropOpaquePass();
     if (shadowed && out > 0) {
       // The ring slot _finishUpload just took.
       const ring = this._ring ^ 1;
@@ -2061,7 +2425,9 @@ export class InstancedSpriteBatch {
       this.copyIn(this.staticData, stat, keep * POSE_STATIC_FLOATS);
     }
     this.copyIn(this.data, pose, keep * SPLIT_POSE_FLOATS);
-    return this._finishUpload(keep, SPLIT_POSE_FLOATS * 4);
+    const drawn = this._finishUpload(keep, SPLIT_POSE_FLOATS * 4);
+    if (this.opaqueOn) this._commitOpaque(drawn);
+    return drawn;
   }
 
   /**
@@ -2097,6 +2463,8 @@ export class InstancedSpriteBatch {
       this.copyIn(this._slotData, slots, keep * GPU_INDEXED_SLOT_FLOATS);
     }
     this.copyIn(this.data, pose, keep * SPLIT_POSE_FLOATS);
+    // E-448: an indexed frame draws no opaque pass.
+    this.dropOpaquePass();
     return this._finishUpload(keep, SPLIT_POSE_FLOATS * 4, true);
   }
 

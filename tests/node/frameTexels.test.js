@@ -15,7 +15,9 @@ import {
   FRAME_GLOW, FRAME_HALF, FRAME_SOFT, FRAME_UNSCANNED, TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW, fillFrameTexels,
   frameAlphaKinds, frameSolidTexels, lutBaseFloats, sheetCastsSolid,
 } from '../../src/render/frameBase.js';
-import { buildTextureLut, packTextureLutRgba, textureLutLayout, textureLutTexels } from '../../src/render/instancedSpriteBatch.js';
+import {
+  buildTextureLut, packTextureLutRgba, textureLutLayout, textureLutSolid, textureLutTexels,
+} from '../../src/render/instancedSpriteBatch.js';
 import { pixelDepthFragment, pixelDepthVertex, pixelDepthWgsl } from '../../src/render/pixelDepth.js';
 
 const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
@@ -205,9 +207,14 @@ test('the texture table keeps each frame\'s texels on the CPU and its soft-or-gl
       assert.deepEqual(Array.from(rgba.subarray(at, at + 2)), [8, 8], `frame ${t}'s size`);
     }
   }
+  // E-448: each frame's solid texels beside the table too, 0 where its base has none.
+  const solidOf = [37, undefined, 0];
+  const withSolid = textures(3, () => 0).map((tex, i) => (solidOf[i] === undefined ? tex : { ...tex, weedBase: { texels: 0, solidTexels: solidOf[i] } }));
+  assert.deepEqual(Array.from(textureLutSolid(buildTextureLut(withSolid))), [37, 0, 0]);
   // A table this module did not make (12 floats a frame and nothing beside): every frame may be soft or glow.
   const plain = packTextureLutRgba(new Float32Array(12 * 4), 4);
   assert.equal(textureLutTexels(new Float32Array(12)), null);
+  assert.equal(textureLutSolid(new Float32Array(12)), null);
   for (let t = 0; t < 4; t++) assert.equal(shaderSoftOrGlow(plain, 4, 4, t), 1);
   // A table without the flags texel (three texels a row, as another layout would have it) reads as set too.
   assert.equal(shaderSoftOrGlow(new Float32Array(12), 3, 1, 0), 1);
