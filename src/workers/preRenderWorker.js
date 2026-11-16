@@ -779,6 +779,17 @@ function stampLightOrder(a, b) {
     return a.id - b.id;
 }
 
+/**
+ * Whether each light's casters follow lighting.adaptiveShadowBudget (fewer when zoomed out): for the stamps on the shadows'
+ * layer, whose texels follow the zoom. N-212: not with lighting.lampShadows 'map', whose tiles keep their size: zoomed out,
+ * the budget cut a crowd's shadows to each lamp's nearest and the set changed as people walked (a TallLight's 400 px of
+ * shadows at shadowResolution 0.5 keep 512 down to zoom 0.28, then fewer).
+ * @param {object|undefined} lighting config.lighting
+ */
+export function adaptiveStampBudget(lighting) {
+    return lighting?.adaptiveShadowBudget !== false && lighting?.lampShadows !== 'map';
+}
+
 /** N-212: the part of the cut's distance over which the kept lights' shadows fade out (fadeStampLightsAtCut). */
 export const STAMP_CUT_FADE = 0.2;
 
@@ -1816,7 +1827,7 @@ class PreRenderWorker extends AbstractWorker {
             this.shadowUpdateInterval = (data.shadows.shadowUpdateInterval | 0)
                 || (this.config.lighting?.shadowUpdateInterval | 0)
                 || 1;
-            this.adaptiveShadowBudget = this.config.lighting?.adaptiveShadowBudget !== false;
+            this.adaptiveShadowBudget = adaptiveStampBudget(this.config.lighting);
             this._shadowUpdateTick = 0;
         }
 

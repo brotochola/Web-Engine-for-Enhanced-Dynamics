@@ -72,3 +72,12 @@ test('N-212: pre-render publishes each stamp light\'s fade beside its id', async
   assert.deepEqual(Array.from(dst.stampLightIds), [7, 3, 9]);
   assert.deepEqual(Array.from(dst.stampLightFade), [1, 0.5, 0]);
 });
+
+test('N-212: the adaptive budget is the stamps\' only, not the lamps\' map\'s', async () => {
+  const { adaptiveStampBudget } = await load();
+  assert.equal(adaptiveStampBudget({}), true, 'on by default');
+  assert.equal(adaptiveStampBudget(undefined), true);
+  assert.equal(adaptiveStampBudget({ lampShadows: 'sprite' }), true);
+  assert.equal(adaptiveStampBudget({ adaptiveShadowBudget: false }), false);
+  assert.equal(adaptiveStampBudget({ lampShadows: 'map' }), false, 'the map\'s tiles keep their size whatever the zoom');
+});
