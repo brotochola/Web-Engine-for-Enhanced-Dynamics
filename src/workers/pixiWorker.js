@@ -59,6 +59,24 @@ import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource, resolveFaces, shaderWithFlag } from '../render/faceMap.js';
+import {
+  LightTiles,
+  TILE_CAM_COS,
+  TILE_CAM_FULL_H,
+  TILE_CAM_FULL_W,
+  TILE_CAM_GROUND_INV_Y,
+  TILE_CAM_SIN,
+  TILE_CAM_SNAP,
+  TILE_CAM_X,
+  TILE_CAM_Y,
+  TILE_CAM_ZOOM,
+  binLightTiles,
+  layoutLightTiles,
+  lightTilesGpuProgram,
+  uploadLightTilesGl,
+  uploadLightTilesGpu,
+  writeLightTileUniforms,
+} from '../render/lightTiles.js';
 import { gbufEntityId, gbufWanted, writeGbufWords } from '../render/gbufWord.js';
 import { GLOW_COMPOSITE_FRAG, GLOW_COMPOSITE_VERT, glowCompositeGpuProgram, glowQuadPositions } from '../render/glowComposite.js';
 import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
@@ -288,7 +306,7 @@ function applyComputeTexSizeUniform(cl) {
     cl.compute.numY
   );
 }
-import { writeRgba32Float, writeRgba8 } from '../render/webgpu/pinGpuTexture.js';
+import { pinGpuTexture, writeRgba32Float, writeRgba8 } from '../render/webgpu/pinGpuTexture.js';
 import { bindDecalPremultiply, premultiplyDecalTile } from '../render/decalPremultiplyClient.js';
 import { createSharedTextureSource, createWorldRectMesh } from '../render/worldTextureMesh.js';
 import { uploadSharedImage } from '../render/sharedTextureUpload.js';
@@ -1033,6 +1051,14 @@ class PixiRenderer extends AbstractWorker {
     this.lightingDisplaySprite = null; // Sprite to display the lightingRT on stage
     this._lightDataFloats = null; // Float32Array RGBA32F payload (maxLights x 2)
     this._lightDataSource = null; // BufferImageSource uploading _lightDataFloats
+    // E-205: the light pass loops over the lights of each pixel's tile (src/render/lightTiles.js), not over every light.
+    // The bins, their R32UI texture, the texture unit WebGL uploads it in (the shader sync's for integer textures, N-109)
+    // and whether that texture holds the grid's size yet.
+    this._lightTilesOn = false;
+    this._lightTiles = new LightTiles();
+    this._lightTilesSource = null;
+    this._lightTilesUnit = 0;
+    this._lightTilesMade = false;
     // E-259: each float data source's GL texture once allocated, and its size: later uploads are a texSubImage2D on it.
     this._floatTexHeld = new WeakMap();
     // config.camera.floorScaleY and its inverse: light falloff measures the floor distance
@@ -4195,6 +4221,27 @@ LIGHTING SYSTEM SETUP
     // DX-GBUF: the entity ids map, where the entities carry their words and something reads ids (self-shadow, a map).
     this._faceIdsOn = facesOn && !!this.entitiesBatch?.gbuf && (this._selfShadowOn || this._sunMapOn || this._lampMapOn);
     if (this._faceIdsOn) lightingResources.uFaceIds = PIXI.Texture.EMPTY.source;
+    if (this._lightTilesOn) {
+      // E-205: the lights by tile (lightTiles.js), after every other uniform (the WGSL struct's order); updateLighting lays
+      // the grid out at the pass's size and fills the texture before the pass draws.
+      this._lightTiles.cam[TILE_CAM_SNAP] = this._pixelArtLight ? 0.5 : 0;
+      this._lightTilesSource = PIXI.TextureSource.from({
+        resource: new Uint32Array(1),
+        width: 1,
+        height: 1,
+        format: 'r32uint',
+        scaleMode: 'nearest',
+        addressMode: 'clamp-to-edge',
+        autoGenerateMipmaps: false,
+        label: 'weed-light-tiles',
+      });
+      this._lightTilesSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
+      const gl = this._useWebGpu ? null : this.pixiApp?.renderer?.gl;
+      this._lightTilesUnit = gl ? gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS) - 1 : 0;
+      lightingResources.uLightTiles = this._lightTilesSource;
+      lightingResources.uniforms.uTileGrid = { value: new Float32Array(4), type: 'vec4<f32>' };
+      lightingResources.uniforms.uTileWords = { value: new Float32Array(4), type: 'vec4<f32>' };
+    }
     const lightingSrc = lightingSource(this._engineShaders?.lightingFrag || '', {
       faces: facesOn,
       sunMap: this._sunMapOn,
@@ -4202,6 +4249,7 @@ LIGHTING SYSTEM SETUP
       lampMap: this._lampMapOn,
       ids: this._faceIdsOn,
       pixelArt: this._pixelArtLight,
+      tiles: this._lightTilesOn,
     }).replace(
       /MAX_LIGHTS/g,
       String(this.maxLights | 0 || 64)
@@ -4210,9 +4258,11 @@ LIGHTING SYSTEM SETUP
       if (!lightingSrc) {
         throw new Error('WeedJS: Failed to compile look shader "lighting_basic" for layer "LIGHTING" on WebGPU: lighting_basic.wgsl is missing.');
       }
-      const gpuProgram = lightingGpuProgram(
-        GpuProgram, lightingSrc, 'lighting-basic', facesOn, this._sunMapOn, this._lampMapOn, this._faceIdsOn,
+      const makeProgram = (Gp) => lightingGpuProgram(
+        Gp, lightingSrc, 'lighting-basic', facesOn, this._sunMapOn, this._lampMapOn, this._faceIdsOn,
       );
+      // E-205: with the tiles, their texture at binding 8 of the pass's group.
+      const gpuProgram = this._lightTilesOn ? lightTilesGpuProgram(GpuProgram, makeProgram) : makeProgram(GpuProgram);
       this.lightingShader = new PIXI.Shader({ gpuProgram, resources: lightingResources });
     } else {
       if (!lightingSrc) {
@@ -6005,6 +6055,37 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
+   * E-205: the packed lights binned into the light pass's tiles (lightTiles.js) for the camera, viewport and floor scale the
+   * pass reads this frame (its uniforms, float32 as the GPU gets them), the bands in use sent up and the grid's uniforms
+   * written. The grid follows the pass's size (a resize lays it out again and makes the texture anew).
+   */
+  _updateLightTiles(u, count) {
+    const t = this._lightTiles;
+    if (layoutLightTiles(t, u.uViewport[0] | 0, u.uViewport[1] | 0, this.maxLights | 0, this._useWebGpu ? 64 : 1)) {
+      this._lightTilesMade = false;
+    }
+    const cam = t.cam;
+    cam[TILE_CAM_ZOOM] = Math.fround(u.uZoom);
+    cam[TILE_CAM_X] = u.uCameraPos[0];
+    cam[TILE_CAM_Y] = u.uCameraPos[1];
+    cam[TILE_CAM_COS] = u.uCameraRot[0];
+    cam[TILE_CAM_SIN] = u.uCameraRot[1];
+    cam[TILE_CAM_FULL_W] = u.uFullCanvasSize[0];
+    cam[TILE_CAM_FULL_H] = u.uFullCanvasSize[1];
+    cam[TILE_CAM_GROUND_INV_Y] = Math.fround(u.uGroundInvScaleY);
+    binLightTiles(t, this._lightDataFloats, this.maxLights | 0, count);
+    const renderer = this.pixiApp?.renderer;
+    if (this._useWebGpu) {
+      uploadLightTilesGpu(renderer, this._lightTilesSource, t, pinGpuTexture);
+    } else {
+      if (uploadLightTilesGl(renderer, this._lightTilesSource, t, this._lightTilesUnit, !this._lightTilesMade)) {
+        this._lightTilesMade = true;
+      }
+    }
+    writeLightTileUniforms(t, u.uTileGrid, u.uTileWords);
+  }
+
+  /**
    * E-311. updateLighting's sun and night uniforms. In its own method for the reason _packLightData is: inside
    * updateLighting TurboFan boxed more of these doubles (12 KB/s with the pack already out, about 3 alone).
    */
@@ -6092,6 +6173,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Update light count uniform
     uniformGroup.uniforms.uLightCount = countToRender;
     uniformGroup.uniforms.uConeCount = coneCount;
+
+    // E-205: the frame's lights by tile, for the camera stamped above (the raycasted path draws no light pass).
+    if (this._lightTilesSource !== null && !this._visPolyEnabled) this._updateLightTiles(uniformGroup.uniforms, countToRender);
 
     // ========================================
     // SUN UNIFORMS
@@ -9386,6 +9470,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (lightingConfig.selfShadow === true) this._selfShadowOn = true;
       // DX-PIXELSHADOW: each world pixel lit whole, the maps read with one tap (lighting.pixelArt).
       this._pixelArtLight = lightingConfig.pixelArt === true;
+      // E-205: the light pass loops over the lights of each pixel's screen tile: the same picture, faster at every light
+      // count gpuPassBench measured (4 to 128). The shader keeps the loop over every light for when this is false.
+      this._lightTilesOn = true;
       // DX-GBUF (plan §6.4): the G-buffer's targets in one pass (MRT, the default: E-377) or a pass each.
       const gbufMode = lightingConfig.gbuffer ?? 'mrt';
       if (gbufMode !== 'pass' && gbufMode !== 'mrt') {

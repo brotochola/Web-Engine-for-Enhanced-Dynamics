@@ -169,4 +169,8 @@ test('both lighting shaders add the night term, and the WGSL struct lists what t
   const start = pixi.lastIndexOf('uCameraPos:', end);
   const declared = [...pixi.slice(start, end).matchAll(/^\s*(u\w+):/gm)].map((m) => m[1]);
   assert.deepEqual(declared, names, 'Pixi lays the buffer out in the group order');
+  const added = ['uFaceLight', 'uFaceSun', 'uSunMapK', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords'].map((name) =>
+    pixi.indexOf(`lightingResources.uniforms.${name} =`),
+  );
+  assert.ok(added.every((at, k) => at > end && (k === 0 || at > added[k - 1])), 'the worker adds the optional ones in that order');
 });
