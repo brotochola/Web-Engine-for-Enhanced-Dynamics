@@ -15669,7 +15669,8 @@
         "R-1157",
         "R-1164",
         "R-1172",
-        "R-1182"
+        "R-1182",
+        "R-1183"
       ]
     },
     {
@@ -16582,7 +16583,8 @@
         "R-1157",
         "R-1167",
         "R-1176",
-        "R-1179"
+        "R-1179",
+        "R-1183"
       ]
     },
     {
@@ -17760,7 +17762,8 @@
         "R-1118",
         "R-1178",
         "R-1180",
-        "R-1182"
+        "R-1182",
+        "R-1183"
       ]
     },
     {
@@ -17785,7 +17788,8 @@
         "R-1118",
         "R-1178",
         "R-1180",
-        "R-1182"
+        "R-1182",
+        "R-1183"
       ]
     },
     {
@@ -18622,6 +18626,25 @@
       ],
       "records": [
         "R-1182"
+      ]
+    },
+    {
+      "id": "E-425",
+      "title": "Pixi's mesh fill poses took up to four passes over every entity a frame (meshFillPoseOrPresenceChanged twice, meshFillPresenceChanged, copyMeshFillPoseScratch) plus a pose decision per uploaded instance: about 55 % of Pixi's busy time in volumeStressScene",
+      "status": "running",
+      "statusText": "found 2026-11-16 in the volume scene's CPU pass (q-volume); built on opt/mesh-pose and merged into main 7daf6d14 (local) with parity; its scene not measured yet",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "Built (b23fbf89, 4e8a1b78, 58926604, fcdb82b6, 5a4e50d3): trackMeshFillPose decides each live, visible mesh's pose source once a layer and frame, compares and records it, and returns the presence and pose bits the skip test, topologyStable and poseMoved use; uploadPoseTable copies the recorded poses (writeMeshPoseTable); copyMeshFillPoseScratch and meshFillPresenceChanged are gone. Parity: meshFillPoseTrack.test.js against the a43899ed functions (random scenes on 10 view shapes, Pixi's real pass on two layers for 160 frames, 26 mutants caught). Profile before: meshFillPoseSource 15.8 %, uploadPoseTable 12.0 %, readMeshFillPose 11.8 %, meshFillPoseOrPresenceChanged 11.8 %, copyMeshFillPoseScratch 4.2 % of Pixi in volumeStressScene.",
+      "next": "A Pixi CPU pass of volumeStressScene before and after (the scene is GPU-bound at about 49 fps, E-419: STEP_MS would read the GPU's wait); E-397 next (writeMeshPoseTable's row walk).",
+      "refs": [],
+      "aliases": [
+        "mesh fill pose passes fused",
+        "trackMeshFillPose"
+      ],
+      "records": [
+        "R-1183"
       ]
     }
   ],
@@ -30195,6 +30218,20 @@
       "text": "**AddressSanitizer on the wasm kernels: no finding in shadowStamp, gpuPack, preRenderCollect or preRenderEmit, on main and on opt/stamp-rows (e8574ad4) and opt/sunframes-wasm (fe48e8d9).** The harness (tests/asan, merged 2560f0c5; `node tests/asan/runAsan.mjs [kernel[@rev] ...] [--quick] [--list]`) compiles a kernel's C with emcc -fsanitize=address (recover mode, -O1 -g, the shipped SIMD and no-FMA flags, a pthread build so its memory is shared), runs the real clients (bindShadowStamp, bindGpuPack, the collect and emit binders, a branch's own copies from git) against it with every array in its own malloc (sized exactly to the call, so an overrun hits a redzone), runs each call again on the shipped kernel with the same inputs and compares every output byte (scratch filled differently each run, so a read of unwritten scratch shows). A canary must report an off-by-one read, an off-by-one write and a trap at their lines or the run fails; shortened arrays were caught on purpose.\n\nCoverage: shadowStamp 1 056 calls (the shadowStampWasm frames as full and keyed rows, shadowStampSelect's 195 selection frames, 501 edge cases: counts and budgets around 16/64/256, a 128 x 128 grid and a column past it, tmpCap 0/1, refused grids, the stamp exactly full or one row short, cap 0, no or empty lights, ring-walk bounds, E-359's limit); gpuPack 369 calls (every export, keys at keyBase, capacity 0 and 1, the G-buffer columns' ends) and 168 scans with sun frames on fe48e8d9 (each frame table in its own block, entities and directions past every end, lists of 8192/3/1/0 pairs); preRenderCollect 24 cases, 560 calls; preRenderEmit 17 scenes x 30 frames and the persist path, 838 calls. Not covered: spatial, particles, bullets, decals, mesh, nav, painter, visibility; adobe_advance; overruns between columns inside one block; UBSan. Filed: N-220 (the persist path's zeroed gate slots).",
       "commits": [
         "2560f0c5"
+      ]
+    },
+    {
+      "id": "R-1183",
+      "date": "2026-11-16",
+      "time": "05:46",
+      "timeFrom": "recorded",
+      "title": "main pushed with its bundles tested (Boids bundle against sources NEUTRAL); tonight's kept branches integrated into main locally (7daf6d14)",
+      "verdict": "note",
+      "text": "**main pushed (0c33673e..0b0ec824, 2026-11-16 05:41), with its bundles tested; then tonight's kept branches integrated into main locally (7daf6d14, not pushed).**\n\nBefore the push (merge-ships-bundles): node 2792/2792 and demos 101/101 (05:15 to 05:16), make_bundle (05:16 to 05:19), check:dist (inputs 92ed04cc0c16b519), the 8 bundles' browser smoke, test:node:bundle 309/309 (05:21); dist committed (79d9af2a). The prod ESM bundle against its sources, `runPredatorAbab --full-rev --pool --query-b weedBundle=weed.prod.bundle.esm.min.js`:\n- **Boids, 8 pairs, 05:28 to 05:38: NEUTRAL (below the floor).** Spatial 5.398 -> 5.179 ms, physics 3.889 -> 3.801, pre-render 1.589 -> 1.549, logic 1.055 -> 1.092, Pixi 0.458 -> 0.473; loads within 0.2 %.\n- **Predator, 4 pairs, 05:22 to 05:28: NEUTRAL (below the floor), not usable:** every worker read slower on the bundle (physics +42 %, pre-render +29 %), pairs 3 and 4 by +50 to +103 % while the ASan harness's builds ran (its last commit 05:29); pairs 1 and 2 read -10 to +25 %. Boids decides (the bundle against its sources is noisy in Predator).\nPR #11 shows Closed on GitHub (closed by its owner before the push); its code is on GitHub's main now.\n\nIntegrated after the push (opt/integrate2, fast-forwarded into main): opt/sunframes-wasm (E-372), opt/stamp-rows (E-358, E-359), opt/keyed-exports (E-387's plain pack), opt/mesh-pose (E-425); engine.wasm and the gpuPack fixture rebuilt from the merged C (only the binaries conflicted); node 2806/2806 and demos 101/101 (05:44 to 05:46); 7daf6d14. The integration's Predator gate is queued.",
+      "commits": [
+        "79d9af2a",
+        "0b0ec824",
+        "7daf6d14"
       ]
     }
   ],
