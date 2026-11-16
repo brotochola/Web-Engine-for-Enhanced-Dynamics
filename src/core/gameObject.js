@@ -94,22 +94,29 @@ function meshRowFollows(has) {
 }
 
 /**
- * N-215: the value a per-frame setter was given (x, y, vx, vy, angularVelocity, alpha, the animation speed; two for
- * setPosition, setVelocity and setScale). The setter stores it here and calls one of the functions below, which take
- * the entity and no double. A setter TurboFan left out of a caller boxed its value at each call: a stress scene's
- * walkers, moved through this.x and this.y, allocated 2.1 MB/s in the logic worker at 3 000 of them. Now the one-value
- * setters are 26 bytes of bytecode, and TurboFan inlines 27 or less whatever its caller's budget
- * (setterBytecodeSize.test.js keeps them there); a function behind one that TurboFan leaves out boxes nothing.
- * Float32, so the functions read the value as its column will hold it (N-170's compare). Each reads it first, before
- * it calls anything.
+ * N-215, E-459: no per-frame setter passes its double to a call TurboFan may leave out. A setter TurboFan did not
+ * inline boxed the value it was given: a stress scene's walkers, moved through this.x and this.y, allocated 2.1 MB/s
+ * in the logic worker at 3 000 of them.
+ *
+ * V8 inlines a callee whatever its caller's budget in two cases. Its own bytecode plus the bytecode its own optimized
+ * code inlined is 30 bytes or less (27 in Node 22's V8). Or the call passes a heap number (a double from arithmetic, a
+ * Float64 field, a non-Smi constant) and the callee's own bytecode is 75 bytes or less
+ * (--max-inlined-bytecode-size-small-with-heapnum-in-out, in Chrome 157's V8 15.7 and V8 16; not in Node 22). Ticks
+ * call a setter from the interpreter first, so V8 optimizes it on its own early, and once that code inlined the setter's
+ * work the first rule no longer held (N-215's 26-byte set x counted 26 + 181 in Node 22): the second rule is the one
+ * that keeps setters inlined. Elsewhere (a value from a phi, a load or a call) a setter is an ordinary candidate,
+ * inlined while the caller's budget lasts, whatever its form.
+ *
+ * set x and set y, the setters every moving entity calls, compare and store inline, in 75 bytes or less
+ * (setterBytecodeSize.test.js), and call poseMoved, which takes no double. The other setters store their value here
+ * (two for setPosition, setVelocity and setScale) and call a function below that takes the entity and no double. A
+ * compare-inline form would not keep them under 75 bytes in a bundle: a module's functions and imports past its 255th
+ * slot take 4 bytes more each (set vx: 69 bytes from source, 77 after esbuild and terser). Float32, so the functions
+ * read the value as its column will hold it (N-170's compare); each reads it first, before it calls anything.
  */
 const SETTER_ARGS = new Float32Array(2);
 
-/**
- * A body moved by a position setter: its SET_TRANSFORM from the columns just written (the values queued before, as
- * the ring stores float32). Kept out of the setters' work: a setter V8 has optimized on its own counts the bytecode
- * that code inlined toward the 27, so the work an entity without a body runs stays small.
- */
+/** A body moved by a position setter: its SET_TRANSFORM from the columns just written (the ring stores float32). */
 function enqueuePoseOf(i) {
   enqueueSetTransform(
     i,
@@ -120,22 +127,12 @@ function enqueuePoseOf(i) {
   );
 }
 
-/** set x's work, its value in SETTER_ARGS[0]. */
-function setXFromArgs(e) {
-  const x = SETTER_ARGS[0];
+/**
+ * set x's and set y's work once their column changed: the static scenery counter, a body's pose. Two callers: a
+ * function with one would be inlined by terser into the setter as a closure made at each call.
+ */
+function poseMoved(e) {
   const i = e.index;
-  if (Transform.x[i] === x) return;
-  Transform.x[i] = x;
-  staticSceneryChangedAt(i);
-  if (isCommandRingBound() && e._hasBox2dBody()) enqueuePoseOf(i);
-}
-
-/** set y's work, its value in SETTER_ARGS[0]. */
-function setYFromArgs(e) {
-  const y = SETTER_ARGS[0];
-  const i = e.index;
-  if (Transform.y[i] === y) return;
-  Transform.y[i] = y;
   staticSceneryChangedAt(i);
   if (isCommandRingBound() && e._hasBox2dBody()) enqueuePoseOf(i);
 }
@@ -1153,8 +1150,8 @@ export class GameObject {
   // N-170: the setters' early-outs compare a column with the value as float32 (Math.fround, or read back from
   // SETTER_ARGS). The columns are Float32Arrays, so a value that rounds to what the column holds (0.3, a speed ×
   // 0.00277) is the value already there: writing it again marks nothing dirty and sends Box2D nothing.
-  // N-215: the per-frame setters store their value in SETTER_ARGS and call a function that takes no double (above
-  // the class): keep them that small.
+  // N-215, E-459: no per-frame setter passes its double to a call (SETTER_ARGS, above the class, says why): keep their
+  // work in the functions they call (setterBytecodeSize.test.js).
   // ═══════════════════════════════════════════════════════════════════════════
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -1181,8 +1178,12 @@ export class GameObject {
     return Transform.x[this.index];
   }
   set x(value) {
-    SETTER_ARGS[0] = value;
-    setXFromArgs(this);
+    const i = this.index;
+    const col = Transform.x;
+    if (col[i] !== Math.fround(value)) {
+      col[i] = value;
+      poseMoved(this);
+    }
   }
 
   /**
@@ -1192,8 +1193,12 @@ export class GameObject {
     return Transform.y[this.index];
   }
   set y(value) {
-    SETTER_ARGS[0] = value;
-    setYFromArgs(this);
+    const i = this.index;
+    const col = Transform.y;
+    if (col[i] !== Math.fround(value)) {
+      col[i] = value;
+      poseMoved(this);
+    }
   }
 
   /**
