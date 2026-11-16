@@ -17964,37 +17964,39 @@
     {
       "id": "E-393",
       "title": "The lamps' frames of directional casters in WASM: applyLampFramesInto is 5.3 to 5.8 % of pre-render in Predator ?light3d=1 and applyKeyedLampFramesInto 2.2 % at crowd 2.5 (a JS walk of every stamp row and its entity's columns)",
-      "status": "open",
+      "status": "kept-kernel",
       "statusText": "proposed 2026-11-16 from the traces of main ac73cf48 (q-predator-day, q-predator-night, q-predator-crowd)",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
-      "result": "CPU passes 2026-11-16 02:13 to 02:25: Predator ?light3d=1 applyLampFramesInto 5.8 % (day) and 5.3 % (night) of pre-render; crowd 2.5 applyKeyedLampFramesInto 2.2 %.",
+      "result": "Kept on its kernel 2026-11-16 (R-1196): lamp_frames in wasm, lampFramesMicrobench keyed -42 %, full -41 %; Predator crowd 2.5 pre-render 6.299 -> 5.998 ms (-2.0 %, NEUTRAL). Merged into main 5790446b. CPU passes 2026-11-16 02:13 to 02:25: Predator ?light3d=1 applyLampFramesInto 5.8 % (day) and 5.3 % (night) of pre-render; crowd 2.5 applyKeyedLampFramesInto 2.2 %.",
       "next": "A kernel over the stamp rows with E-372's region (DirectionalSprite's block, frameAt in the pool) plus each lamp's x, y and id and each sheet's lamp geometry (lampQuarter, lampGeo); rows it cannot decide listed for the JS; parity against the JS; lampFramesMicrobench, then Predator ?light3d=1.",
       "refs": [],
       "aliases": [
         "lamp frames wasm"
       ],
       "records": [
-        "R-1173"
+        "R-1173",
+        "R-1196"
       ]
     },
     {
       "id": "E-394",
       "title": "The full caster rows' sun frames in WASM: light3d scenes pack full rows (their casters ask for kinds), where sunFrameFor is 2.5 to 3 % of pre-render and applySunFramesFor writes the frames in JS",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 from the traces of main ac73cf48 (q-predator-day, q-predator-night)",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
-      "result": "CPU passes: Predator ?light3d=1 sunFrameFor 2.5 % (day) and 3.0 % (night) of pre-render, pack_casters_scatter 3 %.",
+      "result": "Kept 2026-11-16 (R-1196): pack_casters_framed and _scatter_framed write the full rows' sun frames and entities; sunFramesMicrobench --path full -18 %; Predator crowd 2.5 light3d day pre-render 10.683 -> 9.150 ms (-14.3 %, 4/4). Merged into main 5790446b. CPU passes: Predator ?light3d=1 sunFrameFor 2.5 % (day) and 3.0 % (night) of pre-render, pack_casters_scatter 3 %.",
       "next": "pack_casters_scatter (or the full rows' kernel) writes the frame from E-372's region as the keyed scan does; or E-395 makes light3d use keyed rows.",
       "refs": [],
       "aliases": [
         "full rows sun frames wasm"
       ],
       "records": [
-        "R-1173"
+        "R-1173",
+        "R-1196"
       ]
     },
     {
@@ -19168,6 +19170,22 @@
       "records": [
         "R-1195"
       ]
+    },
+    {
+      "id": "N-222",
+      "title": "Resizing a scene whose glow composite exists kills the renderer: scene.resize(1280, 720) in lampShadowStressScene (lampShadows=map) throws a FATAL ERROR in _bindGlowLayer on both backends",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the light-tiles agent, reproduced on main 5790446b (without the tiles)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "bug",
+      "result": "The resize path replaces lightingRT with _replaceRT, whose _releaseTextureBindGroups destroys every Pixi BindGroup still listening on the old source (releasePixiBindGroups.js): the glow composite's own group, which holds uGlow and uLight, among them. _bindGlowLayer then reads res.uGlow, a getter into that destroyed group (BindGroup.resources is null), and the worker dies. Repro: the agent's scratchpad tiles/mainResize.sh (engineExact.mjs --resize 1280x720 on lampShadowStressScene lampShadows=map lamps=48 walkers=2000).",
+      "next": "Detach the composite from the old sources (EMPTY) before the targets are replaced, so its group stops listening and survives; bind the new ones after. A test that resizes a scene with the composite (the real worker or the browser repro).",
+      "refs": [],
+      "aliases": [
+        "glow composite resize crash"
+      ],
+      "records": []
     }
   ],
   "records": [
@@ -30879,6 +30897,21 @@
       "title": "The GPU draw by draw over 21 demos and stress scenes: bunnyMark 16.1 ms (87 % fill: E-448), the platformer's bloom 11.0 ms (E-450), the water's drops 7.8 ms (E-449), glows in headlights and sunStreet",
       "verdict": "note",
       "text": "**The GPU draw by draw beyond the light scenes, over 21 demos and stress scenes. The big costs are fill: bunnyMark's bunnies (16.1 ms a frame, about 87 % fill), the platformer's bloom (11.0 ms, demo shader), the water's density (7.8 ms, oversized drops), and glows in headlights and sunStreet (1.4 ms each).**\n\nglFrameRecorder --gpu-draws, headed Chrome 157, GTX 1650, 1920 x 1080, 3 s after 10 s, main 63cc2f86 to f586c759, 2026-11-16 07:02 to 07:10 (the result files). bunnyMark's probe ended at 07:11.\n\n| scene | GPU in draws a frame | what costs |\n| --- | --- | --- |\n| bunnyMarkScene | 16.144 to 16.315 ms | one draw of 160 000 to 165 000 bunnies, drawn in 60 to 70 % of the frames; under a 1 px scissor 3.1 ms with 250 000 (E-448) |\n| platformerGameScene | 11.412 | the bloom layer's one draw 11.006 (a 2D stack blur at full resolution: E-450) |\n| waterAndBoxesScene | 7.897 | the drops into the 480 x 270 density target 7.799 (4 000 instances, each 2 000 px across: E-449) |\n| sunStreetScene | 3.905 | 13 big instances [uTexLut,uTexture] 1.439 (glows: E-404); the mesh fill 0.908 (60 413 instances) |\n| headlightsScene | 3.161 | 7 big instances 1.379 (the headlights' glows: E-404) |\n| bunnyMarkStressScene | 3.613 | 19 980 instances 3.567 |\n| littleCityScene | 2.508 | tilemap, 8 draws 1.805 (E-432) |\n| decalBlitStressScene | 2.240 | 347 draws and 16 701 GL calls a frame (the scene's PIXI.Sprite per tile and uploads, by design) |\n| liquidFunDemoScene | 1.443 | the density pass 0.460 (690) |\n| spritePackStressScene, adobeAnimateScene, liquidFunStressScene | 1.0 to 1.4 | sprites |\n| ballsScene, boidsScene, particleEmitStressScene | 0.4 to 1.1 | |\n| particleLabScene, tilemapStressScene, decorationSwayStressScene | 0.36 to 0.38 (a clear) | no draw in the window: CPU stresses or a demo that emits on input |\n| gpuGalaxyScene, meshGalleryScene, destructibleTerrainScene | | WebGPU: the recorder reads WebGL only |\n\nThe first clear on the screen reads 0.3 to 0.45 ms in some of these scenes, against 0.003 to 0.03 elsewhere. It is probably the wait for the back buffer, not the clear's cost.\n\nFiled:\n- E-448: binary-alpha sprites front to back with the depth test. The pack already writes each instance's depth from the draw order.\n- E-449: the water drops' scale (demo).\n- E-450: the platformer's bloom (demo)."
+    },
+    {
+      "id": "R-1196",
+      "date": "2026-11-16",
+      "time": "07:26",
+      "timeFrom": "recorded",
+      "title": "E-394 kept: full caster rows' sun frames in the pack, Predator crowd 2.5 light3d day pre-render 10.683 -> 9.150 ms (-14.3 %, 4/4); E-393 kept on its kernel (lamp frames in wasm, -42 %), neutral in crowd 2.5",
+      "verdict": "kept",
+      "text": "**E-394 kept: pre-render -14.3 % in Predator crowd 2.5 with light3d by day. The full caster rows' pack writes their sun frames and entities (pack_casters_framed, _scatter_framed). E-393 kept on its kernel: the lamps' frames of the stamp rows in a wasm kernel (lamp_frames), -42 % keyed and -41 % full, neutral in Predator crowd 2.5.** Built on opt/lamp-frames-wasm (8ce268c7 tools; 1b7653c7 E-393; 2bb13a1d E-394; 675db241 the quarter turns from a table) and merged into main 5790446b.\n\nKernels, Node, ms for 50 calls, alternated twice, same checksums on every revision (the agent's runs through the bench lock):\n\n| path | JS before | final |\n| --- | --- | --- |\n| lamp, keyed rows | 35.3 / 32.0 | 19.8 / 19.3 (-42 %) |\n| lamp, full rows | 46.4 / 38.7 | 25.1 / 24.9 (-41 %) |\n| sun, full rows | 71.6 / 75.6 | 57.5 / 63.0 (-18 %) |\n\nThe sun's gain is smaller because the pack itself dominates that path.\n\nParity: castFramesParity has 13 new random-scene tests and real-worker tests of both paths and their fallbacks. Kernel mutations fail 4 to 6 tests each. After the merge: node 2819/2819, demos 101/101.\n\nSittings, runPredatorAbab --pool, 4 pairs, headed, AC power, main 990a58d8 against 675db241, pre-render as owner, STEP_MS - WAIT_MS, 2026-11-16 (the log):\n\n| sitting | time | pre-render | the workers it cannot reach | verdict |\n| --- | --- | --- | --- | --- |\n| crowd=2.5 zoom=0.216 (keyed lamp rows) | 07:17 to 07:21 | 6.299 -> 5.998 ms (-2.0 %, 2/4 worse, cv 4/11 %) | logic +1.8, spatial -1.9, physics -0.3 % | NEUTRAL |\n| crowd=2.5 zoom=0.216 light3d=1 by day (full rows) | 07:21 to 07:26 | 10.683 -> 9.150 ms (-14.3 %, 0/4 worse, cv 1/3 %; -11.6 % against the others) | logic -2.5, spatial -2.7, physics -3.1 % (drift) | KEPT (product) |\n\nLeft from the agent's report:\n- The lamp turn now has a third copy (lampTurnFrame in the fix-ups), so a change to the JS pass must be mirrored in the C. The parity tests catch drift.\n- tests/asan does not cover the new exports yet.\n- The kernels were timed in Node only, not in Chrome.",
+      "commits": [
+        "1b7653c7",
+        "2bb13a1d",
+        "675db241",
+        "5790446b"
+      ]
     }
   ],
   "leads": [
