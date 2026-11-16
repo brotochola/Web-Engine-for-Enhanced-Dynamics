@@ -1581,3 +1581,18 @@ Con 40 % más de frames dibujados, los workers que el cambio no toca suben 7–9
 Chrome hacen más trabajo por segundo en los mismos núcleos. Con los frames dibujados iguales no se mueven.
 
 En marcha: la tanda de `pixiWorker.js`, E-444 y E-419 (agentes).
+
+**Después, en la misma mañana:**
+
+| Qué | Antes → después | Registro |
+| --- | --- | --- |
+| Volume: la fila de malla en 6 vec4 y la esquina desde el índice de vértice (E-419) | 1,86 → 0,82 ms por draw a reloj alto; volumeStress dibuja 34–42 fps en vez de 17–18; imagen idéntica | R-1200 |
+| Poses de malla fusionadas (E-425) | trabajo de poses de Pixi en volume −53 % | R-1199 |
+| Palabras del G-buffer en el pack de pre-render (E-444) | kernel −13 %; escena neutral (se queda por el kernel) | R-1202 |
+| Volúmenes del mapa de faroles en un solo draw (E-389) | llamadas GL por frame en Predator con light3d 1069 → 697; draws 80 → 33 | R-1205 |
+| Glows a media resolución (E-404) | flashlight 5,38 → 3,21 ms de GPU; imagen a 2–3/255 | R-1205 |
+| Tilemap por chunks (E-432) | −34 % en Predator, −44 % en spotLight; imagen idéntica | R-1205 |
+
+Descartadas o rechazadas por premisa: E-403 (era la pasada de glow emisivo; ahora E-457), E-445, E-446, E-447. N-224
+(volume no dibujaba los autos) y N-228 (el aviso de aTri) arreglados. En marcha: la integración de PR #12 y una
+segunda tanda en `pixiWorker.js` (E-457, E-418, E-453).
