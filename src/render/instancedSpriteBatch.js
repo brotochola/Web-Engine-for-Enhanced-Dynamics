@@ -2000,7 +2000,9 @@ export class InstancedSpriteBatch {
     if (out > 0) {
       if (byRow) {
         this.copyIn(this.data, this._sharedPose, out);
-        this._uploadPoseRows(q, ctx.scanCount | 0);
+        // N-202: a list's rows reach past its length (Pixi's entity list leaves out the glow rows, which sit before the
+        // decorations' and bullets'), so the poses of every queue row go up, not of as many rows as the list holds.
+        this._uploadPoseRows(q, ctx.useIndices ? q.count | 0 : ctx.scanCount | 0);
       } else {
         this.copyIn(this.data, this._sharedPose, out * SPLIT_POSE_FLOATS);
       }

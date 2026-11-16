@@ -93,6 +93,8 @@
         "stamp_tiles",
         "rewrite_corners",
         "rewrite_corners_u32",
+        "rewrite_verts",
+        "rewrite_verts_u32",
         "compute_flowfield",
         "astar_path",
         "collect_sprites",
@@ -330,7 +332,9 @@
       "output": "tests/fixtures/wasm/meshCorners.wasm",
       "exports": [
         "rewrite_corners",
-        "rewrite_corners_u32"
+        "rewrite_corners_u32",
+        "rewrite_verts",
+        "rewrite_verts_u32"
       ],
       "maxMemoryPages": 32768,
       "test": true,
@@ -500,6 +504,8 @@
       "exports": [
         "rewrite_corners",
         "rewrite_corners_u32",
+        "rewrite_verts",
+        "rewrite_verts_u32",
         "rewrite_corners_f32",
         "rewrite_corners_f32x4"
       ],

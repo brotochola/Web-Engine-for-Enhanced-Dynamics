@@ -15,7 +15,9 @@
    E-130: MeshGeometry's vertex counts and triangle indices are uint16 while renderer.maxMeshVerts is at most
    65535 and uint32 past that. rewrite_corners reads the 16-bit columns and is the code it was before;
    rewrite_corners_u32 is a copy of it (and of the loops that read indices) over the 32-bit ones. The client
-   binds the export of the arena's width. */
+   binds the export of the arena's width.
+   E-453: the UV batch draws each mesh's vertices once through an index buffer (colliderFillBatch.js
+   packMeshUvVerts), and rewrite_verts (rewrite_verts_u32 on a 32-bit arena) is its rewrite: see there. */
 #include <stdint.h>
 #include <wasm_simd128.h>
 
@@ -24,6 +26,9 @@
 #define NAN_BITS 0x7fc00000u
 /* MESH_UV_FILL rows: u, v of each corner from float 18. */
 #define R_UV0 18u
+/* E-453: MESH_UV_VERT records: x, y, u, v from float 0 of 16, the entity's reach at float 9. */
+#define V_FLOATS 16u
+#define V_REACH 9u
 
 enum {
   T_OUT, T_COUNT, T_STEP, T_UV_ON, T_ENTITY, T_GEN, T_GEN_LEN, T_LAST, T_LAST_LEN,
@@ -33,6 +38,9 @@ enum {
   T_UV_GEN, T_UV_GEN_LEN, T_LAST_UV, T_LAST_UV_LEN,
   /* DX-MESHUPLOAD, written back: the rows this call rewrote, [first, past). first >= past: none. */
   T_FIRST_ROW, T_PAST_ROW,
+  /* E-453, rewrite_verts only: the batch's indices, each entity's first index there and their count (2 u32 an
+     entity), the entities that table covers, and, written back, the indices the call rewrote, [first, past). */
+  T_DRAW_INDICES, T_SPAN, T_SPAN_LEN, T_FIRST_INDEX, T_PAST_INDEX,
   SLOT_COUNT
 };
 
@@ -403,4 +411,153 @@ int32_t rewrite_corners_u32(uint32_t table) {
   ((uint32_t *)(uintptr_t)table)[T_FIRST_ROW] = firstRow;
   ((uint32_t *)(uintptr_t)table)[T_PAST_ROW] = pastRow;
   return 1;
+}
+
+/* E-453: the UV batch's rewrite. Its vertex records (MESH_UV_VERT: V_FLOATS floats a vertex, a mesh's vertices in its
+   order) are written by packMeshUvVerts with the indices of its triangles, and where each entity's indices start and how
+   many there are (the span table, 2 u32 an entity). A run of records of one entity whose vertex or UV generation moved
+   (the same tests as rewrite_corners) gets, when its mesh still has its vertices (offset 0 or more):
+   - its vertices again: x and y, and u and v unless the UV generations say they did not move (E-118);
+   - its entity's reach again, in every record: the longest vertex, the square root of the largest x * x + y * y in
+     doubles, rounded once to float, as packMeshUvVerts computes it;
+   - its triangles' indices again (MeshGeometry's, or its fan's), each the run's first record plus the mesh's index,
+     at the entity's span.
+   Returns -1, the caller repacking, when the records or the triangles no longer match the mesh: an entity past the
+   MeshGeometry columns or the span table, a vertex count other than the run's (or under 3), a triangle count other
+   than the span's (a mesh the pack left a triangle of out included), a span past its column (a mesh torn by a replace
+   between the reads), or an index past the mesh, found before the run is written. Else 1 (0: no records), with the
+   records and the indices it wrote, [T_FIRST_ROW, T_PAST_ROW) and [T_FIRST_INDEX, T_PAST_INDEX) (first >= past: none;
+   T_FIRST_INDEX starts at 0xffffffff). wide (E-130): the vertex counts and indices are uint32, else uint16. */
+typedef float __attribute__((may_alias)) mfloat;
+
+/* A vertex count or an index: uint32 where wide, uint16 else. */
+INLINE uint32_t narrow_or_wide(const void *column, uint32_t at, int wide) {
+  return wide ? ((const uint32_t *)column)[at] : ((const uint16_t *)column)[at];
+}
+
+/* The vertices of a run (x, y; u, v too where uv), and the reach, into the records from `rec`. */
+INLINE void verts_run(word *rec, uint32_t vN, int uv, const uint32_t *x, const uint32_t *y, const uint32_t *u,
+                      const uint32_t *v) {
+  const mfloat *fx = (const mfloat *)x;
+  const mfloat *fy = (const mfloat *)y;
+  double farthest = 0.0;
+  for (uint32_t i = 0; i < vN; i++, rec += V_FLOATS) {
+    *(pair *)rec = corner(x, y, i);
+    if (uv) *(pair *)(rec + 2) = corner(u, v, i);
+    const double dx = fx[i];
+    const double dy = fy[i];
+    const double d = dx * dx + dy * dy;
+    if (d > farthest) farthest = d;
+  }
+  const float reach = (float)__builtin_sqrt(farthest);
+  rec -= vN * V_FLOATS;
+  for (uint32_t i = 0; i < vN; i++, rec += V_FLOATS) *(mfloat *)(rec + V_REACH) = reach;
+}
+
+INLINE int32_t verts_walk(uint32_t table, int wide) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  /* Every slot is read once: the stores below may alias the table as far as the compiler knows. */
+  word *out = PTR(word, T_OUT);
+  const uint32_t n = t[T_COUNT];
+  const uint32_t *ent = PTR(const uint32_t, T_ENTITY);
+  const uint32_t *gen = PTR(const uint32_t, T_GEN);
+  const uint32_t genLen = t[T_GEN_LEN];
+  const uint32_t *last = PTR(const uint32_t, T_LAST);
+  const uint32_t lastLen = t[T_LAST_LEN];
+  const int32_t *vertOffset = PTR(const int32_t, T_VERT_OFFSET);
+  const void *vertCount = PTR(const void, T_VERT_COUNT);
+  const int32_t *indexOffset = PTR(const int32_t, T_INDEX_OFFSET);
+  const uint32_t *indexCount = PTR(const uint32_t, T_INDEX_COUNT);
+  const uint32_t geomN = t[T_GEOM_N];
+  const uint32_t *vx = PTR(const uint32_t, T_VX);
+  const uint32_t *vy = PTR(const uint32_t, T_VY);
+  const uint32_t *u = PTR(const uint32_t, T_U);
+  const uint32_t *v = PTR(const uint32_t, T_V);
+  const uint32_t vertCap = t[T_VERT_CAP];
+  const void *indices = PTR(const void, T_INDICES);
+  const uint32_t indexCap = t[T_INDEX_CAP];
+  const int uvGenOn = t[T_UV_GEN] != 0;
+  const uint32_t *uvGen = PTR(const uint32_t, T_UV_GEN);
+  const uint32_t uvGenLen = t[T_UV_GEN_LEN];
+  const uint32_t *lastUv = PTR(const uint32_t, T_LAST_UV);
+  const uint32_t lastUvLen = t[T_LAST_UV_LEN];
+  word *draw = PTR(word, T_DRAW_INDICES);
+  const uint32_t *span = PTR(const uint32_t, T_SPAN);
+  const uint32_t spanN = t[T_SPAN_LEN];
+
+  if (n == 0) return 0;
+  uint32_t k = 0;
+  uint32_t firstRow = n;
+  uint32_t pastRow = 0;
+  uint32_t firstIndex = 0xffffffffu;
+  uint32_t pastIndex = 0;
+  while (k < n) {
+    const uint32_t id = ent[k];
+    const uint32_t end = run_end(ent, k, n);
+    const uint32_t run = end - k;
+    const int vertDirty = id < genLen && gen[id] != (id < lastLen ? last[id] : 0u);
+    const int uvDirty = uvGenOn && id < uvGenLen && uvGen[id] != (id < lastUvLen ? lastUv[id] : 0u);
+    if (vertDirty || uvDirty) {
+      if (id >= geomN) return -1;
+      const int32_t vOff = vertOffset[id];
+      if (vOff >= 0) {
+        const uint32_t vN = narrow_or_wide(vertCount, id, wide);
+        if (vN != run || vN < 3) return -1;
+        const int32_t iAt = indexOffset[id];
+        const uint32_t tris = iAt >= 0 ? indexCount[id] / 3u : vN - 2;
+        if (id >= spanN) return -1;
+        const uint32_t at = span[2 * id];
+        const uint32_t count = span[2 * id + 1];
+        if (count != tris * 3u) return -1;
+        if ((uint64_t)(uint32_t)vOff + vN > vertCap) return -1;
+        if (iAt >= 0) {
+          if ((uint64_t)(uint32_t)iAt + count > indexCap) return -1;
+          for (uint32_t j = 0; j < count; j++) {
+            if (narrow_or_wide(indices, (uint32_t)iAt + j, wide) >= vN) return -1;
+          }
+        }
+        if (k < firstRow) firstRow = k;
+        pastRow = end;
+        const uint32_t o = (uint32_t)vOff;
+        word *rec = out + k * V_FLOATS;
+        if (!uvGenOn || uvDirty) {
+          verts_run(rec, vN, 1, vx + o, vy + o, u + o, v + o);
+        } else {
+          verts_run(rec, vN, 0, vx + o, vy + o, u, v);
+        }
+        if (count > 0) {
+          if (at < firstIndex) firstIndex = at;
+          if (at + count > pastIndex) pastIndex = at + count;
+          word *d = draw + at;
+          if (iAt >= 0) {
+            for (uint32_t j = 0; j < count; j++) d[j] = k + narrow_or_wide(indices, (uint32_t)iAt + j, wide);
+          } else {
+            for (uint32_t tri = 0; tri < tris; tri++, d += 3) {
+              d[0] = k;
+              d[1] = k + tri + 1;
+              d[2] = k + tri + 2;
+            }
+          }
+        }
+      }
+    }
+    k = end;
+  }
+  uint32_t *back = (uint32_t *)(uintptr_t)table;
+  back[T_FIRST_ROW] = firstRow;
+  back[T_PAST_ROW] = pastRow;
+  back[T_FIRST_INDEX] = firstIndex;
+  back[T_PAST_INDEX] = pastIndex;
+  return 1;
+}
+
+__attribute__((export_name("rewrite_verts")))
+int32_t rewrite_verts(uint32_t table) {
+  return verts_walk(table, 0);
+}
+
+/* rewrite_verts on a 32-bit arena (E-130): the vertex counts and indices read as uint32. */
+__attribute__((export_name("rewrite_verts_u32")))
+int32_t rewrite_verts_u32(uint32_t table) {
+  return verts_walk(table, 1);
 }

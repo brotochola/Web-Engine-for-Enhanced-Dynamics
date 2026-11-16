@@ -14,8 +14,9 @@ const WASM_MAX_PAGES = 32768;
 /**
  * The batch capacities Pixi gives every MESH layer (pixiWorker initializeCustomLayers): fixtures or one
  * primary shape per entity, each convex at most MAX_POLYGON_VERTICES - 2 fans, plus the explicit meshes'
- * fans and indexed triangles; the UV batch holds the explicit ones only.
- * @returns {{ fill: number, uv: number }} rows
+ * fans and indexed triangles. The UV batch holds the explicit ones only, each mesh's vertices once (E-453):
+ * every vertex MeshGeometry has, and 3 indices for each of those triangles.
+ * @returns {{ fill: number, uvVerts: number, uvIndices: number }} fill rows, UV vertex records and indices
  */
 export function meshLayerCapacities(maxFixtures, entities, maxMeshVerts, maxMeshIndices) {
   const colliderCap = Math.max(maxFixtures | 0, entities | 0) * (MAX_POLYGON_VERTICES - 2);
@@ -23,7 +24,11 @@ export function meshLayerCapacities(maxFixtures, entities, maxMeshVerts, maxMesh
   const fanCap = verts > 2 ? verts - 2 : 0;
   const indexCap = ((maxMeshIndices | 0) / 3) | 0;
   const explicitCap = fanCap + indexCap;
-  return { fill: Math.max(1, colliderCap + explicitCap), uv: explicitCap };
+  return {
+    fill: Math.max(1, colliderCap + explicitCap),
+    uvVerts: explicitCap > 0 ? Math.max(verts, 0) : 0,
+    uvIndices: explicitCap * 3,
+  };
 }
 
 /** The MESH layers Pixi gives batches to (initializeCustomLayers), in the order of the layer metadata. */
@@ -45,19 +50,25 @@ export function meshLayerIds(metadata) {
  * @param {number} geometryBytes MeshGeometry.getBufferSize(maxVerts, maxIndices, entities)
  * @param {number} entities
  * @param {number[]} layerIds meshLayerIds(Layer metadata)
- * @param {{ fill: number, uv: number }} caps meshLayerCapacities(...)
+ * @param {{ fill: number, uvVerts: number, uvIndices: number }} caps meshLayerCapacities(...)
  * @returns {null | { memory: WebAssembly.Memory, buffer: SharedArrayBuffer, layout: Record<string, any> }}
  */
 export function createMeshMemory(geometryBytes, entities, layerIds, caps) {
   if (!layerIds || layerIds.length === 0) return null;
   const fill = caps.fill | 0;
-  const uv = caps.uv | 0;
-  const map = meshMemoryRegions(geometryBytes | 0, entities | 0, layerIds.map(() => ({ fillRows: fill, uvRows: uv })));
+  const uvVerts = caps.uvVerts | 0;
+  const uvIndices = caps.uvIndices | 0;
+  const map = meshMemoryRegions(
+    geometryBytes | 0,
+    entities | 0,
+    layerIds.map(() => ({ fillRows: fill, uvVerts, uvIndices })),
+  );
   const mb = Math.ceil((map.pages * 65536) / 1048576);
   if (map.pages > WASM_MAX_PAGES) {
     throw new Error(
-      `mesh memory: ${mb} MB (${entities | 0} entities, ${layerIds.length} MESH layers of ${fill} + ${uv} rows) is past the ` +
-        `${WASM_MAX_PAGES / 16} MB a kernel memory can take; lower renderer.maxMeshVerts or the fixture pool`,
+      `mesh memory: ${mb} MB (${entities | 0} entities, ${layerIds.length} MESH layers of ${fill} rows and ${uvVerts} ` +
+        `vertices) is past the ${WASM_MAX_PAGES / 16} MB a kernel memory can take; lower renderer.maxMeshVerts or the ` +
+        'fixture pool',
     );
   }
   const r = map.regions;
@@ -78,11 +89,14 @@ export function createMeshMemory(geometryBytes, entities, layerIds, caps) {
       layers: layerIds.map((layerId, k) => ({
         layerId,
         fillRows: fill,
-        uvRows: uv,
+        uvVerts,
+        uvIndices,
         fillRowsByte: r[`meshFillRows${k}`].byte,
-        uvRowsByte: r[`meshUvRows${k}`].byte,
         fillEntityByte: r[`meshFillEntity${k}`].byte,
-        uvEntityByte: r[`meshUvEntity${k}`].byte,
+        uvVertsByte: r[`meshUvVerts${k}`].byte,
+        uvVertEntityByte: r[`meshUvVertEntity${k}`].byte,
+        uvIndicesByte: r[`meshUvIndices${k}`].byte,
+        uvIndexSpanByte: r[`meshUvIndexSpan${k}`].byte,
         lastVertGenByte: r[`meshLastVertGen${k}`].byte,
         frameVertGenByte: r[`meshFrameVertGen${k}`].byte,
         lastUvGenByte: r[`meshLastUvGen${k}`].byte,

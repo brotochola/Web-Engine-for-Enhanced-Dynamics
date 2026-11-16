@@ -8,6 +8,7 @@ import { chromium, firefox } from 'playwright';
 import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
 import { createStockFirefox, stockFirefoxExe } from './stockFirefox.mjs';
+import { benchWindowArgs, rememberBenchWindow } from './benchWindow.mjs';
 import { assertDistFreshForRun } from '../../scripts/distVersion.js';
 import {
   DEFAULT_DURATION_MS,
@@ -563,6 +564,8 @@ async function main() {
     userDataDir,
     enableLogging: Boolean(jsFlags) || dumpio,
   });
+  // Headed: the window opens where the owner last left one (benchWindow.mjs), not over what they are doing.
+  if (headed && !stockFirefox) launchArgs.push(...benchWindowArgs());
   const launchOptions = {
     headless: !headed,
     ...(launchArgs.length > 0 ? { args: launchArgs } : {}),
@@ -842,6 +845,8 @@ async function main() {
     }
     inputStop = true;
     if (inputLoop) await inputLoop;
+    // Where the window is now: the next headed run opens there (benchWindow.mjs).
+    if (headed && !stockFirefox) await rememberBenchWindow(page);
 
     if (trace) {
       const memoryUsage = await page.evaluate(() => {

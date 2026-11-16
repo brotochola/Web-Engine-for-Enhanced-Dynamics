@@ -502,7 +502,8 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
  */
 export function volumeMapVertex(source) {
   const decl = 'out vec2 vMeshUV;\n';
-  const pos = 'gl_Position = vec4(clip.xy, aInstDepth, 1.0);';
+  // E-453: the vertex's own height (meshUvFill.vert.glsl's `height`, its U), no corner to place.
+  const pos = 'gl_Position = vec4(clip.xy, 0.5, 1.0);';
   for (const mark of [decl, pos]) {
     if (source.split(mark).length !== 2) throw new Error(`WeedJS: the sun map's volumes need the mesh vertex shader (${mark.trim()})`);
   }
@@ -510,7 +511,7 @@ export function volumeMapVertex(source) {
     .replace(decl, `${decl}out float vSunZ;\nflat out float vSunId;\n`)
     .replace(
       pos,
-      `${pos}\n  vSunZ = (aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x)) * uSunShadow.w;\n  vSunId = float(int(aInstBody + 0.5) % 65535 + 1);\n  gl_Position.z = 1.0 - 2.0 * clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);`,
+      `${pos}\n  vSunZ = height * uSunShadow.w;\n  vSunId = float(int(aInstBody + 0.5) % 65535 + 1);\n  gl_Position.z = 1.0 - 2.0 * clamp(vSunZ / ${SUN_MAP_ZMAX}.0, 0.0, 1.0);`,
     );
 }
 

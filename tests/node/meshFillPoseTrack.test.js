@@ -866,6 +866,12 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
     if (code < 0) log.failedRewrite.add(args[2]);
     return code;
   };
+  // E-453: the UV batch's vertex rewrite, its records' entity list for its failures.
+  px._rewriteMeshUvVerts = function (...args) {
+    const code = proto._rewriteMeshUvVerts.apply(this, args);
+    if (code < 0) log.failedRewrite.add(args[0].vertexEntity);
+    return code;
+  };
   // Each upload against the old one on a table of its own, the table the old flow would have left on the batch.
   const refTables = new Map();
   // A batch's fields before its first upload: the uploads add none (its constructor declares them).
@@ -945,7 +951,8 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
             tally.skip++;
           } else {
             const full = log.full.has(skip);
-            const failed = log.failedRewrite.has(skip.instanceEntity) || log.failedRewrite.has(skip.uvInstanceEntity);
+            const failed = log.failedRewrite.has(skip.instanceEntity) ||
+              (!!cl.uvFillBatch && log.failedRewrite.has(cl.uvFillBatch.vertexEntity));
             assert.equal(full, !e.topologyStable || failed, `${where}: full pack`);
             if (full) {
               assert.equal(fillUp, (cl.prevCount | 0) > 0, `${where}: fill pose table after the pack`);
@@ -969,6 +976,7 @@ test("Pixi's MESH layers decide, record and upload as the old passes did", async
     delete px._ensureVertGenScratch;
     delete px._packMeshUvLayer;
     delete px._rewriteMeshCorners;
+    delete px._rewriteMeshUvVerts;
     delete px._ensureMeshUvBatch;
     px._meshPoseLists = [];
     px.lastReadFrame = -1;

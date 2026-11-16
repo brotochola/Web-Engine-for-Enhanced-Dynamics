@@ -22,6 +22,7 @@ import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkSer
 import { parseArgs } from './microbenchHelpers.mjs';
 import { median as benchMedian } from './benchMath.js';
 import { summarizePhase } from './framePhaseSummary.mjs';
+import { benchWindowArgs, rememberBenchWindow } from './benchWindow.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const args = parseArgs(process.argv.slice(2));
@@ -80,6 +81,7 @@ const browser = await chromium.launch({
     // Same as runIntegratedWorkerBenchmark: without it Windows reports a covered
     // window as hidden and Chrome throttles its frames (review M9).
     ...(process.platform === 'win32' ? ['--disable-features=CalculateNativeWinOcclusion'] : []),
+    ...benchWindowArgs(),
   ],
 });
 
@@ -112,6 +114,7 @@ try {
     scene._phaseLog = null;
     return log;
   });
+  await rememberBenchWindow(page);
 
   const summary = summarizePhase(samples);
   const table = phaseTable(samples);
@@ -128,6 +131,9 @@ try {
   };
   await fs.mkdir(outDir, { recursive: true });
   await fs.writeFile(path.join(outDir, 'summary.json'), JSON.stringify(payload, null, 2) + '\n');
+  // Every frame's slots too (start, end, generation a worker), for a worker's time series: a spike every N frames is
+  // amortized work, spikes at random are contention.
+  await fs.writeFile(path.join(outDir, 'samples.json'), JSON.stringify(samples) + '\n');
   console.log(JSON.stringify({ verdict: summary.verdict, spreadMs: summary.spreadMs, samples: summary.samples, reason: summary.reason, broken: summary.broken }, null, 2));
   console.log(JSON.stringify(table, null, 2));
   console.log(`wrote ${path.join(outDir, 'summary.json')}`);

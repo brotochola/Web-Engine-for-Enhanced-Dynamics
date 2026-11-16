@@ -37,6 +37,7 @@ import { chromium } from 'playwright';
 
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
+import { benchWindowArgs, rememberBenchWindow } from './benchWindow.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -436,7 +437,7 @@ function summariseClocks(text) {
 
 export async function recordGlFrames(opts) {
   const server = await createStaticBenchmarkServer(repoRoot);
-  const browser = await chromium.launch({ headless: false, channel: 'chrome', args: ['--mute-audio'] });
+  const browser = await chromium.launch({ headless: false, channel: 'chrome', args: ['--mute-audio', ...benchWindowArgs()] });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.on('pageerror', (e) => console.error('[page error]', e.message));
@@ -450,6 +451,7 @@ export async function recordGlFrames(opts) {
     const { result, clocks } = await withGpuClocks(() => worker.evaluate(recordInWorker,
       { ms: opts.recordMs, gpuPasses: !!opts.gpuPasses, gpuDraws: !!opts.gpuDraws, probeScissor: opts.probeScissor || null }));
     if (result && !result.error) result.gpuClocks = clocks;
+    await rememberBenchWindow(page);
     return result;
   } finally {
     await browser.close();

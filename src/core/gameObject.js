@@ -4,7 +4,7 @@
 import { syncRotCSFromAngle } from '../box2d/box2dHotFields.js';
 import { Camera } from './camera.js';
 import { isEngineAccessor, markEngineAccessor } from './engineAccessors.js';
-import { Transform } from '../components/transform.js';
+import { Transform as TransformImport } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer, DEFAULT_ANIMATION_SPEED } from '../components/spriteRenderer.js';
@@ -57,7 +57,7 @@ import {
   enqueueSetAngularVelocity,
   enqueueSetFixedRotation,
   enqueueSetAwake,
-  isCommandRingBound,
+  isCommandRingBound as isCommandRingBoundImport,
 } from '../box2d/box2dCommandRing.js';
 import {
   BODY_DIRTY,
@@ -73,12 +73,22 @@ import {
   resolveForceProcessOnLogicWorker,
 } from '../util/logicOwner.js';
 import { isXyOnlySpawnConfig } from '../util/createSpawnBatch.js';
-import { staticSceneryChanged, staticSceneryChangedAt } from './staticScenery.js';
+import { staticSceneryChanged, staticSceneryChangedAt as staticSceneryChangedAtImport } from './staticScenery.js';
 import { isSpawnCommandRingBound, tryPushSpawn } from '../util/spawnCommandRing.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from './messages.js';
 import { Tween } from './tween.js';
+
+// E-474: the setters' hot reads as module consts, not imports. TurboFan folds a module const (and the typed arrays its
+// class holds); an import is a cell it loads and hole-checks at each use (R-1222: setXFromArgs, before E-459, did 6 cell
+// loads, 6 hole checks, 2 map checks and 2 pointer decodes). Only exporters outside this module's import cycle can be
+// aliased (importAliases.test.js): RigidBody, SpriteRenderer and MeshRenderer are in it. See HOW_WE_MEASURE, "Imports in
+// hot code".
+const Transform = TransformImport;
+const staticSceneryChangedAt = staticSceneryChangedAtImport;
+const isCommandRingBound = isCommandRingBoundImport;
+
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
@@ -113,8 +123,13 @@ function meshRowFollows(has) {
  * compare-inline form would not keep them under 75 bytes in a bundle: a module's functions and imports past its 255th
  * slot take 4 bytes more each (set vx: 69 bytes from source, 77 after esbuild and terser). Float32, so the functions
  * read the value as its column will hold it (N-170's compare); each reads it first, before it calls anything.
+ *
+ * E-473: on a SharedArrayBuffer, whose backing store is off V8's heap and can never be detached, so TurboFan gives its
+ * two floats an immediate address; an on-heap Float32Array(2) had its length, base and external pointer loaded,
+ * decoded and bounds-checked at each access. A plain ArrayBuffer on a page without SharedArrayBuffer (not cross-origin
+ * isolated), where the engine does not start and no setter runs a frame.
  */
-const SETTER_ARGS = new Float32Array(2);
+const SETTER_ARGS = new Float32Array(new (typeof SharedArrayBuffer === 'function' ? SharedArrayBuffer : ArrayBuffer)(8));
 
 /** A body moved by a position setter: its SET_TRANSFORM from the columns just written (the ring stores float32). */
 function enqueuePoseOf(i) {

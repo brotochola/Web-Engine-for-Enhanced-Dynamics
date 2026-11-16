@@ -11295,7 +11295,8 @@
       "records": [
         "R-0854",
         "R-0865",
-        "R-0862"
+        "R-0862",
+        "R-1226"
       ]
     },
     {
@@ -16162,12 +16163,12 @@
     {
       "id": "N-202",
       "title": "Predator: decorations now and then show another texture for a few frames, one of them the bullets' trail line (_bulletTrail): a thin bright horizontal line, seen where a TallLight lights the grass",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "reported by the owner 2026-11-15 (\"sale de la talllight, no de un disparo\"); left for later at the owner's word the same day; found by the owner 2026-11-15 before 20:00: \"hay decorations que cada algunos frames cambian de imagen, y una de esas es la línea horizontal que usamos para las fireLines\"",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
-      "result": "The owner's capture: a crowd, a TallLight's red glow, and a white line one or two pixels high and level across it; first taken for the bullets' trails or the shots' flashes, then placed on the TallLight itself. Not reproduced: 60 captures around tall lights (default Predator, free camera, zoom 1.5) and 40 where shots were fired showed no such line to a row scan (a run of 25+ px brighter than 3 px above and below). Ruled out: the bullets' rows (rotation and trail terms right for every active bullet). Not known yet whether it is new on dx/light3d or older. The owner's finding: the line is a decoration drawn with the trail's texture for some frames (visible at night only where a light reaches it). Read since: the emit kernel writes a trail row keyless (qKey KEY_NONE, its texture _bulletTrail) and a decoration row keyed (dKeyBase + its pool slot, its statics compared with its record and marked when they change); Pixi's statics texture keys the entities, then the keyed decorations (maxDecorations, when keyedDecorationsFit), then the keyed LiquidFun particles, then a slot per queue row for keyless rows (pixiKeyBase): no overlap in that layout. The TallLight has no attached decorations.",
+      "result": "Fixed 2026-11-16 (ce12106c, merged ba7614e8): the by-row pose upload sent only the list's length of rows, and Pixi's entity list leaves out the glow rows that sit among the entities' rows, so the last rows (decorations, bullets, trails) drew this frame's texture at an older frame's pose: 76 233 instances over 1 603 keyed frames at crowd 2.5 by night, 58 765 at crowd 1; 0 with the fix. The owner's capture: a crowd, a TallLight's red glow, and a white line one or two pixels high and level across it; first taken for the bullets' trails or the shots' flashes, then placed on the TallLight itself. Not reproduced: 60 captures around tall lights (default Predator, free camera, zoom 1.5) and 40 where shots were fired showed no such line to a row scan (a run of 25+ px brighter than 3 px above and below). Ruled out: the bullets' rows (rotation and trail terms right for every active bullet). Not known yet whether it is new on dx/light3d or older. The owner's finding: the line is a decoration drawn with the trail's texture for some frames (visible at night only where a light reaches it). Read since: the emit kernel writes a trail row keyless (qKey KEY_NONE, its texture _bulletTrail) and a decoration row keyed (dKeyBase + its pool slot, its statics compared with its record and marked when they change); Pixi's statics texture keys the entities, then the keyed decorations (maxDecorations, when keyedDecorationsFit), then the keyed LiquidFun particles, then a slot per queue row for keyless rows (pixiKeyBase): no overlap in that layout. The TallLight has no attached decorations.",
       "next": "Reproduce: Predator by night, zoomed on grass a TallLight lights while shots fly, frames captured; then main against the branch (is it the branch's?). Leads: how a keyless row's statics slot is refreshed when its queue row held another kind the frame before; a keyed decoration whose record Pixi keeps while the emit marked no change (the double-buffered queue, KEYED_CASTERS_LAG); keyedDecorationsFit failing at crowd 2.5 (decorations keyless then).",
       "refs": [],
       "aliases": [
@@ -16176,7 +16177,8 @@
       "records": [
         "R-1150",
         "R-1213",
-        "R-1220"
+        "R-1220",
+        "R-1225"
       ]
     },
     {
@@ -16604,7 +16606,8 @@
         "R-1179",
         "R-1183",
         "R-1185",
-        "R-1189"
+        "R-1189",
+        "R-1221"
       ]
     },
     {
@@ -16805,7 +16808,9 @@
         "R-1100",
         "R-1104",
         "R-1218",
-        "R-1219"
+        "R-1219",
+        "R-1223",
+        "R-1226"
       ]
     },
     {
@@ -17123,7 +17128,8 @@
         "R-1192",
         "R-1208",
         "R-1209",
-        "R-1211"
+        "R-1211",
+        "R-1221"
       ]
     },
     {
@@ -18012,7 +18018,8 @@
       ],
       "records": [
         "R-1173",
-        "R-1196"
+        "R-1196",
+        "R-1221"
       ]
     },
     {
@@ -18032,7 +18039,8 @@
       "records": [
         "R-1173",
         "R-1196",
-        "R-1206"
+        "R-1206",
+        "R-1221"
       ]
     },
     {
@@ -18165,7 +18173,8 @@
         "R-1187",
         "R-1198",
         "R-1212",
-        "R-1215"
+        "R-1215",
+        "R-1224"
       ]
     },
     {
@@ -19121,7 +19130,8 @@
       "records": [
         "R-1189",
         "R-1202",
-        "R-1206"
+        "R-1206",
+        "R-1221"
       ]
     },
     {
@@ -19296,30 +19306,31 @@
     {
       "id": "E-452",
       "title": "ColliderFillBatch reads its row as 11 instance attributes plus aTri: the repack that halved MeshUvFillBatch's vertex stage (E-419: 6 vec4, the corner from the vertex index) should do the same for it",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 by the E-419 agent (opt/volume-fill), from its microbench and scene recordings",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "E-419: the cost of MeshUvFillBatch's draw was its attribute count, not its math (15 attributes 1.88 ms, the shader cut to placing the corner 1.04, 6 vec4 0.93, with the corner from gl_VertexID 0.83 ms, at 1782 MHz). ColliderFillBatch's layout: 11 instance attributes plus aTri.",
+      "result": "Kept 2026-11-16 (R-1228, a05a4e45): meshFillGpuBench 1.587 -> 0.723 ms a draw at 1769 MHz (1.567 -> 0.695 under the scissor), pictures identical; meshFillPanScene 4.10/4.50 -> 4.06/4.02 ms (its draw is vertex and setup work). E-419: the cost of MeshUvFillBatch's draw was its attribute count, not its math (15 attributes 1.88 ms, the shader cut to placing the corner 1.04, 6 vec4 0.93, with the corner from gl_VertexID 0.83 ms, at 1782 MHz). ColliderFillBatch's layout: 11 instance attributes plus aTri.",
       "next": "4 vec4 plus 1 vec2 (or 5 vec4), the corner from the vertex index; meshFillGpuBench's way for the collider fill and its scenes per draw; the image identical.",
       "refs": [],
       "aliases": [
         "collider fill attributes"
       ],
       "records": [
-        "R-1200"
+        "R-1200",
+        "R-1228"
       ]
     },
     {
       "id": "E-453",
       "title": "A mesh layer's rows repeat each shared vertex in every triangle: each mesh's vertices once plus an index buffer cut the mesh fill draw to 0.63 ms (vertex stage 0.18) against 0.82 after E-419, and the bytes read a draw from about 47 to 30 MB",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 by the E-419 agent (opt/volume-fill), from its microbench and scene recordings",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "meshFillGpuBench at 1782 MHz: rows as 6 vec4 with the corner from the vertex index 0.83 ms; each mesh's vertices once, indexed 0.63 ms, 0.18 under a 1 px scissor. At the scene's idle clock the vertex work under the scissor is still 6.7 ms a draw.",
+      "result": "Kept 2026-11-16 (R-1228, 0fe1f767): meshFillGpuBench 0.860 -> 0.625 ms a draw (vertex stage 0.855 -> 0.176); volumeStressScene 8.13/8.33 -> 5.32/5.35 ms a draw (the indexed side at a 20 % higher clock), its layer region 88 -> 37 MB; 19 still captures identical, the shadow maps included. meshFillGpuBench at 1782 MHz: rows as 6 vec4 with the corner from the vertex index 0.83 ms; each mesh's vertices once, indexed 0.63 ms, 0.18 under a 1 px scissor. At the scene's idle clock the vertex work under the scissor is still 6.7 ms a draw.",
       "next": "The packer keeps each row's vertex ids (a vertex table a mesh and the index buffer it draws); the lamps' map cull, which uses each triangle's corner lengths, needs a per-entity reach instead. Per draw before and after, the image identical.",
       "refs": [],
       "aliases": [
@@ -19327,7 +19338,8 @@
       ],
       "records": [
         "R-1200",
-        "R-1210"
+        "R-1210",
+        "R-1228"
       ]
     },
     {
@@ -19426,7 +19438,7 @@
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "keyedPackStressScene n=250000 churn=0.05, Pixi packing, 2026-11-16 09:33 to 09:34: with gbuf=1 Pixi's fillQueueIndices (gpuQueueLayout.js) 674 ms in an 8 s window (12.7 %), none with gbuf=0. pixiWorker.js: splitGlow = _lightGlowAdd && typeArr && idxE && (painter || lightingEnabled), with no look at the frame's glow rows; packSpriteLayer then runs fillQueueIndices(excl 3), fillQueueIndices(incl 3) and a loop counting particle rows over the entity list. Pre-render knows its glow rows (E-216, R-0904).",
+      "result": "keyedPackStressScene n=250000 churn=0.05, Pixi packing, 2026-11-16 09:33 to 09:34: with gbuf=1 Pixi's fillQueueIndices (gpuQueueLayout.js) 674 ms in an 8 s window (12.7 %), none with gbuf=0. pixiWorker.js: splitGlow = _lightGlowAdd && typeArr && idxE && (painter || lightingEnabled), with no look at the frame's glow rows; packSpriteLayer then runs fillQueueIndices(excl 3), fillQueueIndices(incl 3) and a loop counting particle rows over the entity list. Pre-render knows its glow rows (E-216, R-0904). d8 machine code (R-1222): packSpriteLayer's 920-byte budget holds one fillQueueIndices, so the entity fill (250 000 rows) is a real call at about 33 instructions a row (the limit and type reloaded from stack slots, outIdx's map re-checked and its pointer decoded every stored row because _identityRows.delete(outIdx) sits between .length and the loop, no unrolling) and the particle count about 17 an element. glowSplitMicrobench at 250 000 rows, ms a frame (no glow rows / 24 glow rows): shipped Node 1.036 / 0.873, d8 0.736 / 0.750; one fused pass for both lists and the count Node 0.305 / 0.347, d8 0.268 / 0.413 (-64 to -71 %); _identityRows.delete moved after each loop alone d8 -13 % / -27 %, bit-identical; the identity copy floor 0.124 / 0.216.",
       "next": "Pre-render writes the frame's glow-row count into the queue (it counts them for E-216) and Pixi takes the dense path when it is 0; when there are glow rows, one pass fills the entity list, the glow list and the particle count together. Pixi's CPU per function before and after (keyedPack gbuf=1, Predator ?light3d=1).",
       "refs": [],
       "aliases": [
@@ -19434,7 +19446,8 @@
         "fillQueueIndices in pixi"
       ],
       "records": [
-        "R-1203"
+        "R-1203",
+        "R-1222"
       ]
     },
     {
@@ -19521,7 +19534,8 @@
       ],
       "records": [
         "R-1208",
-        "R-1217"
+        "R-1217",
+        "R-1222"
       ]
     },
     {
@@ -19849,6 +19863,316 @@
       "records": [
         "R-1217"
       ]
+    },
+    {
+      "id": "E-471",
+      "title": "rebuildOwnedRows re-checks its typed arrays every entity: the loop is too big to peel, so each array a local took from a null-started field or a Grid static gets a map check and a pointer decode at its first use, every entity (14 map checks, 11 Smi checks, Grid.maxEntitiesPerCell re-read, countNoBody a generic ToBoolean, the cell range stored as Smis every entity)",
+      "status": "kept",
+      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "date": "2026-11-16",
+      "area": "spatial",
+      "kind": "speed",
+      "result": "Kept 2026-11-16 (R-1227, d8920938): kernel points d8 -14.2 %, Node -8.3 %; with E-472 boids spatial 7.925 -> 7.723 ms (-5.5 %, 0/4 worse). rebuildOwnedRowsMicrobench (boids' grid), variant `checked` (maps known before the loops, | 0 on the Grid integers, maxEntitiesPerCell hoisted, countNoBody boolean, the cell range in locals), bit-identical: points (boids) Node 2.058 -> 1.840 ms (-10.6 %, 4/6), d8 2.187 -> 1.970 (-9.9 %, 5/6); circles d8 -16.4 % (4/4), Node -9.0 %; boxes d8 -10.0 % (4/4), Node +1.5 %. About 2 to 3 % of the spatial worker in boids and Predator.",
+      "next": "Build `checked` into spatialWorker.js (empty typed arrays of their class at construction where the class is known; EntityIdArray can be 16 or 32 bits); the kernel, then boids' and Predator's spatial STEP_MS.",
+      "refs": [],
+      "aliases": [
+        "rebuildOwnedRows map checks"
+      ],
+      "records": [
+        "R-1222",
+        "R-1227"
+      ]
+    },
+    {
+      "id": "E-472",
+      "title": "A point entity whose single cell row belongs to the other spatial worker can skip its cell range in rebuildOwnedRows (posY * invCellSize | 0, not the fround home row): on top of the map-check fix, -16 to -19 % of the rebuild on boids",
+      "status": "kept",
+      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "date": "2026-11-16",
+      "area": "spatial",
+      "kind": "speed",
+      "result": "Kept 2026-11-16 (R-1227, 2e43e6dd): over E-471 points d8 -9.3 %, Node -7.6 %; with E-471 boids spatial -5.5 % (0/4 worse). rebuildOwnedRowsMicrobench variant `pointSkip` (with `checked`), bit-identical: boids Node 2.058 -> 1.735 ms (-15.7 %, 6/6), d8 2.187 -> 1.766 (-19.2 %, 6/6); about 5 to 6 % of the spatial worker in boids.",
+      "next": "After the map-check fix, the point skip; the kernel and boids' spatial STEP_MS (with spatialWorkers 2 where rows are split).",
+      "refs": [],
+      "aliases": [
+        "rebuildOwnedRows point skip"
+      ],
+      "records": [
+        "R-1222",
+        "R-1227"
+      ]
+    },
+    {
+      "id": "E-473",
+      "title": "N-215's SETTER_ARGS is an on-heap Float32Array, so every setter access loads and decodes its length, base and external pointer and bounds-checks; a Float32Array on a SharedArrayBuffer gets an immediate address and no bounds check in d8",
+      "status": "kept",
+      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Kept 2026-11-16 (R-1227, de0a1238): setter frame d8 -4.0 % / -7.4 % (budget spent); with E-474 keyedPack logic 11.648 -> 10.296 ms (-13.2 %, 0/4 worse). setterMicrobench moving, 4096 walkers: d8 all inlined -8.6 %, budget spent -7.7 %; Node +3.0 % / -6.4 %. With E-474: -22 to -33 % in d8.",
+      "next": "SETTER_ARGS on a SharedArrayBuffer (or a view whose backing store is off-heap); d8 16 and Chrome's logic per function (keyedPack).",
+      "refs": [],
+      "aliases": [
+        "setter args off heap"
+      ],
+      "records": [
+        "R-1222",
+        "R-1227"
+      ]
+    },
+    {
+      "id": "E-474",
+      "title": "gameObject.js reads Transform, staticSceneryChangedAt and isCommandRingBound through import cells: setXFromArgs does 6 cell loads, 6 hole checks, 2 map checks and 2 pointer decodes; module-const aliases (allowed: those exporters are outside gameObject.js's 22-module import cycle, importAliases.test.js) cut it to 2 cell loads and 0 decodes, 258 -> 178 instructions",
+      "status": "kept",
+      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "date": "2026-11-16",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Kept 2026-11-16 (R-1227, bd83d3db): over E-473 setter frame d8 -20.0 % / -12.9 %; with E-473 keyedPack logic -13.2 % (0/4 worse), the setters group 617-650 -> 241-275 ms self. setterMicrobench moving: aliased imports d8 -30.2 % (all inlined) and -10.2 % (budget spent, a game tick's shape); Node -13.5 % / -1.2 %; with E-473 d8 -32.6 % / -22.2 %; on top of E-459 d8 -33.1 % / -25.1 %. setXFromArgs was about 6.5 % of logic in keyedPack (R-1203): about 1 to 2 % of logic.",
+      "next": "Alias the three as module consts (RigidBody, SpriteRenderer, MeshRenderer are inside the cycle: not those); judged in d8 16 or Chrome (HOW_WE_MEASURE: Node 22 shows import forms less).",
+      "refs": [],
+      "aliases": [
+        "gameObject import aliases"
+      ],
+      "records": [
+        "R-1222",
+        "R-1227"
+      ]
+    },
+    {
+      "id": "N-236",
+      "title": "The d8kit bundle distorts what it times: esbuild turns every top-level const into var, so TurboFan stops folding module consts (const Transform = TransformImport); the bundled rebuildChecked ran 43 ns an entity against 25 ns as native modules",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "The agent loaded src/ and the variants as native modules with shims in a prelude: scratchpad d8hot/tools/buildExt.mjs.",
+      "next": "Add buildExt's native-module mode to D:/perf-tools/d8kit and use it by default; note it in perf-tools.",
+      "refs": [],
+      "aliases": [
+        "d8kit const to var"
+      ],
+      "records": [
+        "R-1222"
+      ]
+    },
+    {
+      "id": "N-237",
+      "title": "setterMicrobench's second case runs on different code: its \"same\" case calls setupSetters again, which rebinds Transform's columns, so every setter deopts (dependent field type constness changed) and \"same\" runs with the columns no longer constant",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the d8 machine-code agent (tools/d8-hot), Node 22.16 and d8 16.0.39, kernels merged 9000b893",
+      "date": "2026-11-16",
+      "area": "bench",
+      "kind": "bug",
+      "result": "Seen by the d8 agent; every setter deopts at the second setup.",
+      "next": "One case per process (or set up once and reset the values instead of rebinding the columns); re-time the \"same\" case.",
+      "refs": [],
+      "aliases": [
+        "setterMicrobench rebind deopt"
+      ],
+      "records": [
+        "R-1222"
+      ]
+    },
+    {
+      "id": "E-475",
+      "title": "Pixi links each shader program the first time it draws with it and waits for the link: Predator crowd 2.5 by night links 16 programs in its first 10 s and blocks 2.1 s on them, the 3D light pass's alone 1.29 s (a 1.3 s freeze while the scene starts); by day 11 programs, 0.53 s",
+      "status": "open",
+      "statusText": "found 2026-11-16 from m43's CPU pass (Pixi's generateProgram 146 ms/s in a window from 8 s, by night) and a probe of every link (programProbe.mjs: linkProgram to the LINK_STATUS answer, patched into the Pixi worker)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 25 s from the Pixi worker's start: 16 links, 2 137 ms blocked (0-5 s: 11 links 1 717 ms; 5-10 s: 5 links 420 ms; none after); the light pass (unnamed: pixi-program) 1 287 ms, entities-instanced-glowMask-rows 180, gbuf-rows 107, lamp-map 93, entities-instanced-rows 90. Plain: 11 links, 525 ms, all in the first 1.6 s (22 to 90 ms each). Steady state links nothing.",
+      "next": "Compile every program a scene will use at load, without waiting (KHR_parallel_shader_compile: link all, poll COMPLETION_STATUS_KHR, start drawing when done or behind the loading screen), so no frame links; name the light pass's program; and look at the light pass's HLSL size (m46's d3dShaderStats) for its 1.3 s. The scene's first 10 s of Pixi's frame times and the time to first frame before and after.",
+      "refs": [],
+      "aliases": [
+        "lazy shader links",
+        "parallel shader compile"
+      ],
+      "records": [
+        "R-1224"
+      ]
+    },
+    {
+      "id": "N-238",
+      "status": "open",
+      "date": "2026-11-16",
+      "area": "pre-render",
+      "kind": "bug",
+      "title": "At Predator crowd 2.5 about 258 keyed sprite instances a frame draw a statics row whose texture word is 0 (never written): their keys are never marked changed again, probably because E-312's marks are consumed in a queue frame Pixi skipped or drew split while the entity was then culled in the frame Pixi drew keyed",
+      "statusText": "found 2026-11-16 by the N-202 agent with its in-worker statics and pose probe (fix/n202), GPU readback confirmed",
+      "result": "Predator ?src=1&crowd=2.5&zoom=1, day and night: about 258 type-0 instances every keyed frame with statics texture word 0 against 6 to 30 wanted (379 694 over 1 466 frames); 0 at crowd 1. Their keys (inferred from the entity list's order, unconfirmed: houses or TallLights 1983-2317, trees 27403-32082, a barrel 33243, trash 57545-57604) are never marked changed; already zero when the probe was installed (about 10 s in); most likely drawn at scale 0 (invisible), not read.",
+      "next": "Confirm with the agent's probe2.mjs (scratchpad n202/, about 3 min in the lock: early install, sent flags, full GPU rows, class ranges). Likely fix (preRenderEmit.c sprite_row ~733 `full |= kAll | (kc[0] > kSince)`, deco_key ~780 and the persist path ~1588 share the pattern): when an entity was not emitted in the previous queue frame, set kc[0] = kFrame on its reappearance (deco_key already moves its change frame), so a mark consumed in a frame Pixi never drew keyed is sent again; one 64-byte update per entity entering the view. A test that skips Pixi's keyed draw for a frame while an entity is culled.",
+      "refs": [],
+      "aliases": [
+        "keyed statics never written"
+      ],
+      "records": [
+        "R-1225"
+      ]
+    },
+    {
+      "id": "E-476",
+      "status": "open",
+      "date": "2026-11-16",
+      "area": "spatial",
+      "kind": "speed",
+      "title": "Spatial's long frames are periodic: E-200's typed refresh gives each class only T phases (tickBucketPhase(i, T)) inside a refresh period P = ceil(neighborTickInterval / T) x T, so a class's whole refresh lands on T frames of every P (civilians T 4, P 16: 4 frames heavy, 12 light); at Predator crowd 2.5 by night spatial runs 3 to 4 ms on some frames and 28 to 46 ms on others in a 32-frame cycle (lag-32 autocorrelation 0.68), p99 37.9 ms",
+      "statusText": "found 2026-11-16 from every frame's slots over 10 s (runFramePhase's samples.json, 9ebebff7), after frameTotals showed spatial's tail (R-1219)",
+      "result": "Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 600 frames: spatial0 p50 8.7, p90 16.2, p99 37.9, max 47.0 ms; autocorrelation 0.68 at lag 32 (0.45 / 0.44 at 31 / 33); per 32-frame row about 15, 8, 3-4, 7-9, 13-15, then 28-46 ms on frames 20-22, then 3-5. Physics has no period (lag-1 0.27; its tail is contention, R-1223), pre-render and logic none either.",
+      "next": "Spread each entity's refresh over the period's P / T tick occurrences: offset = (tickBucketPhase(i, T) - LEAD + T x k) mod P with k = an even spread of the class's slots over P / T (a slot's list still comes LEAD frames before one of its ticks and lasts P frames, as fresh at its tick as now), so each frame refreshes about 1/P of the class; likewise stagger neighborReuseMaxFrames' forced rebuilds. Judge on spatial's tail (frameTotals p95/p99 and frames >= 16 ms) and its mean, Predator crowd 2.5 and Boids; lists identical at each tick.",
+      "refs": [],
+      "aliases": [
+        "spatial periodic spikes",
+        "typed refresh phases"
+      ],
+      "records": [
+        "R-1226"
+      ]
+    },
+    {
+      "id": "N-239",
+      "status": "open",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "title": "Every ABAB sitting measures main again on its own: when several changes are judged in the same scene and query, a multi-arm sitting (A, B1, B2, ... interleaved in each round) would share the base side and save about a quarter to a third of the bench queue's time; runPredatorAbab takes one --hyp-rev",
+      "statusText": "raised 2026-11-16 by the owner (\"lo que está corriendo ahora, ¿no le sirve también al otro agente?\") while the queue was 8 to 14 turns deep",
+      "result": "On 2026-11-16 the queue held three Predator crowd 2.5 sittings (E-448 gate, E-476, the d8 fixes' guard) and two keyedPack ones, each with its own four runs of main.",
+      "next": "runPredatorAbab --hyp-rev a,b,c (or a new runner): each round runs A and every B in a rotated order, each B judged against the same A with the usual rules (≥ 3 %, ≥ 75 % of pairs, load keys within 5 %); a test on decide's inputs; then batch same-scene hypotheses into one sitting.",
+      "refs": [],
+      "aliases": [
+        "multi-arm sitting",
+        "shared base side"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-240",
+      "title": "A paint change on a volumes layer dropped every volume's floor scale until the next full pack: on UV rows packColliderFillPoseOnly wrote _paint.tou without the floor-scale override packMeshUvFill applies, so the shader read f = 0",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "bug",
+      "result": "Found reading the paint path while building E-453; E-453 replaced that path (packMeshUvVertsPaint keeps the floor scale, tested against a repack), so main is fixed by E-453 (0fe1f767, merged aa9041cb).",
+      "next": "Nothing left while E-453 stays; if E-453 is ever reverted, the row path needs the override.",
+      "refs": [],
+      "aliases": [
+        "volume paint floor scale"
+      ],
+      "records": [
+        "R-1228"
+      ]
+    },
+    {
+      "id": "E-477",
+      "title": "Scene mesh-fill draws cost several times what meshFillGpuBench pays a row at the same clock, even with no uploads: meshFillPanScene spends about 4.3 ms on 296 400 rows at about 1 GHz (mostly still under a 1 px scissor), the upload scene 6.3 ms for 400 000 at 1785 MHz, against 0.86 ms for 486 408 in the bench",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "E-452/E-453 agent, 17:13 to 17:38; the diagnostic runs (movers=other, volumeStressScene still=1) were stopped when the owner started playing.",
+      "next": "Find what the scene adds over the bench (state changes, the depth or blend state, the target, interleaved draws, per-draw uniform uploads): per draw with and without each, at matched clocks.",
+      "refs": [],
+      "aliases": [
+        "scene fill vs bench"
+      ],
+      "records": [
+        "R-1228"
+      ]
+    },
+    {
+      "id": "E-478",
+      "title": "The collider batch's explicit meshes and fixture fans could take E-453's indexed form: an 8-gon fan is 18 corners for 8 vertices",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "E-453 cut the UV fill's vertex stage 0.855 -> 0.176 ms under the scissor in meshFillGpuBench by drawing each vertex once.",
+      "next": "Indexed records for ColliderFillBatch (fans and explicit meshes), its pack and paint; meshFillGpuBench col/colVs before and after, pictures identical.",
+      "refs": [],
+      "aliases": [
+        "collider fill indexed"
+      ],
+      "records": [
+        "R-1228"
+      ]
+    },
+    {
+      "id": "N-241",
+      "title": "The lamps' map cull drops geometry that would still draw: since DX-LAMPPANO, landings past a lamp's reach still fall inside the tile's outer band, so culling by reach (per triangle before E-453, per mesh now) can drop what that band would show",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "bug",
+      "result": "Seen by the E-453 agent; its captures (shadowOutlineScene part=lamp, light3dCompare all=1 by night) showed 0 pixels changed, so no case found yet.",
+      "next": "Decide what the cull may drop (the tile's outer band against the lamp's reach) and make it conservative; a capture with a volume just past a lamp's reach.",
+      "refs": [],
+      "aliases": [
+        "lamp map cull outer band"
+      ],
+      "records": [
+        "R-1228"
+      ]
+    },
+    {
+      "id": "N-242",
+      "title": "packMeshUvFill, the row kernel's UV path (rewrite_corners with stride 24) and the UV case of packColliderFillPoseOnly are unused by the engine since E-453; they stay only as test references",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "bug",
+      "result": "E-453 agent.",
+      "next": "Remove them (or keep them as the references the tests name, moved under tests/reference), with the wasm export if nothing else calls it.",
+      "refs": [],
+      "aliases": [
+        "dead uv row pack"
+      ],
+      "records": [
+        "R-1228"
+      ]
+    },
+    {
+      "id": "N-243",
+      "title": "glFrameRecorder rounds draws a frame to 0.1, so per-draw times of layers that redraw in fewer than every frame read about +-8 %",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "E-453 agent normalised the row draws by their instance counts instead.",
+      "next": "Report draws a frame and ms a draw unrounded (or ms a draw from the totals), the table rounded only when printed.",
+      "refs": [],
+      "aliases": [
+        "recorder draw rounding"
+      ],
+      "records": [
+        "R-1228"
+      ]
+    },
+    {
+      "id": "E-479",
+      "status": "open",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "title": "E-448's opaque pass on a by-row keyed frame builds its 12-byte rows in JS over every draw slot every frame (buildOpaqueKeyedRows): at Predator crowd 2.5 zoom 1, where the pass pays on the GPU (entity colour pass 1.14 -> 0.86 ms), Pixi's own time rose 2.085 -> 2.703 ms; the gate weighs GPU fill against GPU vertex work only, not this CPU or whether the GPU is the limit",
+      "statusText": "found 2026-11-16 by E-448's gate (gate/e448 against main, Predator crowd=2.5&zoom=1, 4 pairs, 20:01)",
+      "result": "e448-gate-z1: renderer (Pixi STEP - WAIT) 2.085 -> 2.703 ms (under the 6 ms floor, not judged by the runner); logic +1.5 %, spatial +2.0 %, physics -0.0 % (worse 2-3/4, within noise). At Predator default (pass off) the rows were also built every frame until gate/e448's 15-frame skip (renderer 1.287 -> 1.711 ms before it; a second gate checks the skip). Pose and split frames cache their rows by the statics' version, so bunnyMark pays no such CPU.",
+      "next": "Emit the opaque rows (row, key, slot) and the cover sum from the keyed pack kernel (gpuPack.c), which already walks every row, so the pass costs Pixi no JS pass; and let the gate take the GPU's state (GpuFramePacer: frames skipped while the GPU is the limit) so a CPU-bound scene keeps the pass off when its GPU saving is small. Pixi's CPU per function and per draw at Predator crowd 2.5 zoom 1 and bunnyMark keyed by row, before and after.",
+      "refs": [],
+      "aliases": [
+        "opaque rows in the kernel",
+        "opaque pass cpu cost"
+      ],
+      "records": []
     }
   ],
   "records": [
@@ -31846,6 +32170,98 @@
       "title": "N-202: R-1213's keyless-decorations guess is wrong (decorations stay keyed at crowd 2.5); an agent reproduces it on fix/n202",
       "verdict": "note",
       "text": "**Correction to R-1213 (2026-11-16, later):** the guess that decorations go keyless at crowd 2.5 is wrong: keyedDecorationsFit (src/render/rendererBackend.js) allows INDEXED_SPRITES_MAX_WEBGL = 4096 x 1024 keys, and Predator crowd 2.5 needs entities + 20 000 decorations + the queue's rows, far fewer, so its decorations stay keyed. An agent reproduces N-202 at crowd=2.5 zoom=1 on fix/n202 (an in-engine statics check and cell captures), looking at what crowd 2.5 changes instead: rows and statics updates a frame, the resync path for decoration keys, the double-buffered queue."
+    },
+    {
+      "id": "R-1221",
+      "date": "2026-11-16",
+      "title": "ASan covers every gpuPack.c export: the seven new ones and two the map had missed, 892 cases, no report, outputs equal to the shipped kernel's",
+      "verdict": "note",
+      "text": "**ASan now covers every gpuPack.c export the client binds: the seven added since the harness (pack_casters_framed, pack_casters_scatter_framed, pack_sprites_split_gbuf, pack_sprites_split_scatter_gbuf, pack_sprites_indexed_scatter_gbuf, pack_casters_keyed_scan_xy, lamp_frames) and two the case file's export map had missed (pack_sprites_keyed_gbuf, pack_sprites_keyed_rows_gbuf, E-387): 10 groups, 892 cases, no ASan report and every output equal to the shipped kernel's (32 s, inside the bench lock).** Commit 9e4bb4c9 (tests/asan/kernels/gpuPack.mjs only).\n\nCases per export: framed casters 90 and 60 (E-394's group, as pre-render calls them, the caster list in the index scratch and in memory), split and indexed G-buffer packs 20, 22 and 30 (E-444's group, including the kernel declining a list with a row twice), the keyed scan's xy 132 (E-331's group, 12 without sun frames), lamp_frames 116 (E-393's group: prepareLampFrames, syncKeyedSunTables, lampFramesWasm as applyLampFramesWasm does, tables from the revision's sunFrameTables; lists of 0, 1, 3 and 7 that run out, light counts of 0, negative, past the lights and past 1024, indices past the table, entities out of range, NaN lamps). Each case fails unless its own export ran on the ASan build (per-export call counters in bindPack) and, where the output can show it, did real work.\n\nHarness notes: the G-buffer group and 10 of 11 edge cases had been calling the shipped kernel alone on main (\"the client called no kernel\"), since the harness predates caa3aea0; and a module's memory grew past ASan's initial size after about 640 cases, so each new group starts on a fresh module (reset()). A revision run (gpuPack@<rev>) before E-444 (8f907b95) will likely fail to link now.",
+      "commits": [
+        "9e4bb4c9"
+      ]
+    },
+    {
+      "id": "R-1222",
+      "date": "2026-11-16",
+      "time": "17:08",
+      "timeFrom": "recorded",
+      "title": "d8 machine code of the hot JS: glow split one pass -64 to -71 % (E-456), rebuildOwnedRows map checks -10 to -16 % (E-471) and point skip -19 % (E-472), setters off-heap args and import aliases -22 to -33 % in d8 (E-473, E-474)",
+      "verdict": "note",
+      "text": "**The hot JS read in machine code (d8 16 release and Node 22.16): fixable per-row and per-call costs in all three spots the owner named. Pixi's glow split: one fused pass -64 to -71 % (E-456). Spatial's rebuildOwnedRows: maps re-checked every entity, -10 % on boids, -16 % on circles in d8 (E-471), -16 to -19 % with the point skip (E-472). The setters: SETTER_ARGS off heap and module-const imports, -22 % (a tick's shape) to -33 % in d8 (E-473, E-474).** Kernels merged 9000b893 (glowSplitMicrobench, rebuildOwnedRowsMicrobench and its variants); sittings 2026-11-16 15:46 to 15:49 and 17:06 to 17:08 under the bench lock, each case in its own process, alternated; every variant writes the shipped bytes (checksums over lists, counts, grid cells, poses, owned lists); kernelTierAudit: no OSR code timed.\n\n- fillQueueIndices (Pixi's glow split): packSpriteLayer's 920-byte budget holds one copy, so the entity fill over 250 000 rows is a real call, about 33 instructions a row (limit and type reloaded from stack slots, outIdx's map re-checked and its pointer decoded every stored row since _identityRows.delete(outIdx) sits between .length and the loop, two overflow checks, an interrupt check every row); the particle count about 17 an element. No allocation, megamorphic access or steady deopt. Numbers in E-456's result.\n- rebuildOwnedRows (boids' grid, colliders off: points): 6212 bytes, getCellRange inlined, no calls; the entity loop is too big to peel, so 14 map checks with pointer decodes, 11 Smi checks (_cellIdStride, _headerIds, cellByteSize hoisted without | 0), Grid.maxEntitiesPerCell re-read, countNoBody a generic ToBoolean, the cell range Smi-tagged into _cellRangeResult every entity, about 105 stack-slot operands. The verbatim control copy read +14.9 % in d8's second sitting, so d8 gains are read against shipped.\n- Setters: in setterMicrobench's frame d8 inlines all setters and their FromArgs (759 of 920); with the budget spent (a game tick) it inlines the five under 27 bytes and calls the FromArgs out of line, no double crossing a call. SETTER_ARGS is on-heap (length, base and external pointer decoded, bounds-checked); gameObject.js reads Transform, staticSceneryChangedAt and isCommandRingBound through import cells (setXFromArgs: 6 cell loads, 6 hole checks, 2 map checks, 2 decodes; with both fixes 2 cell loads, 0 decodes, 258 -> 178 instructions). E-459's branch keeps the import cells; its +37.8 % in Node with the budget spent is Node 22 lacking the heap-number rule.\n\nTool findings: the d8kit bundle turns top-level const into var and stops TurboFan folding module consts (rebuildChecked 43 against 25 ns an entity), N-236; setterMicrobench's \"same\" case rebinds the columns and deopts every setter, N-237. Raw results: scratchpad d8hot/results/timing.log and timing2.log (not kept).",
+      "commits": [
+        "9000b893"
+      ]
+    },
+    {
+      "id": "R-1223",
+      "date": "2026-11-16",
+      "time": "18:00",
+      "timeFrom": "recorded",
+      "title": "E-319's thread arm: Box2D on 3 threads at crowd 2.5 makes physics +10.4 % (4/4) but logic -10.0 % and spatial -4.6 % (0/4 worse): the physics threads take cores the others need; 4 stay, the spin arm next",
+      "verdict": "note",
+      "text": "**E-319, first arm: Box2D on 3 threads instead of 4 at Predator crowd 2.5 is a regression for physics (+10.4 %, 4/4 pairs worse), but every other worker gets faster with the core it frees: logic -10.0 % and spatial -4.6 % (0/4 worse each).** So the physics threads do take cores the other workers need (the contention R-1100 and R-1219's tails point at), and physics, the frame's long pole (R-1218), still gains from its fourth thread. Four threads stay.\n\nrunPredatorAbab --name e319-threads3 --vs HEAD --pool --query \"crowd=2.5&zoom=0.216\" --query-b \"physicsWorkers=3\" --pairs 4 --owner physics (the knob is e0f871a0), one build, the runtime switch the only difference; through the bench lock, 17:54 to 18:00 (the sitting folder and summary.json).\n\n| worker | 4 threads | 3 threads | paired | worse |\n| --- | --- | --- | --- | --- |\n| physics | 12.837 | 14.029 | +10.4 % | 4/4 |\n| logic | 6.062 | 5.398 | -10.0 % | 0/4 |\n| spatial | 9.980 | 9.537 | -4.6 % | 0/4 |\n| pre-render | 5.799 | 5.482 | (under the floor) | |\n| renderer | 3.049 | 3.190 | (under the floor) | |\n\nLoad keys within 0.3 % (BODY_COUNT 38 329 -> 38 385). Presented 60.0 fps both sides.\n\nNext for E-319: the other arm, E-298's spin (B2_SCHEDULER_SPIN_MILLISECONDS 0.05 in scheduler.c, compile time) against no spin on four threads, judged on every worker, since what freed logic and spatial here may be the spinning more than the thread."
+    },
+    {
+      "id": "R-1224",
+      "date": "2026-11-16",
+      "time": "18:00",
+      "timeFrom": "recorded",
+      "title": "Pixi links shader programs on first use and blocks: Predator by night 16 links and 2.1 s blocked in its first 10 s, the light pass alone 1.29 s; by day 0.53 s; no links later (E-475)",
+      "verdict": "note",
+      "text": "**Pixi's shader programs link on first use and block: Predator crowd 2.5 by night links 16 programs in its first 10 s and waits 2.1 s for them, the 3D light pass's alone 1.29 s; by day 11 programs and 0.53 s, all in the first 1.6 s; neither links anything later.** This is what m43's CPU pass by night caught as generateProgram at 146 ms/s (its window began at 8 s, inside the night scene's links): a start-up cost, not a steady one. Filed as E-475.\n\nprogramProbe.mjs (scratchpad tools: WebGL2's shaderSource, attachShader, linkProgram and getProgramParameter wrapped in the Pixi worker as soon as it exists; each link timed from linkProgram to the LINK_STATUS answer, named by SHADER_NAME), headed Chrome, 25 s, through the bench lock; plain ended 17:09, by night 18:00 (the result files).\n\n| run | links | blocked | when |\n| --- | --- | --- | --- |\n| crowd=2.5 zoom=0.216 | 11 | 525 ms | 0.5 to 1.6 s after the patch (22 to 90 ms each) |\n| ... light3d=1 hour=22 | 16 | 2 137 ms | 11 in 0-5 s (1 717 ms), 5 in 5-10 s (420 ms) |\n\nBy night: the light pass (an unnamed Pixi program) 1 287 ms; entities-instanced-glowMask-rows 180; gbuf-rows 107; lamp-map 93; entities-instanced-rows 90; lamp-map-volumes 75; edge 65; glow 52; mesh-uv-6 47; shadows-instanced 46."
+    },
+    {
+      "id": "R-1225",
+      "date": "2026-11-16",
+      "time": "18:07",
+      "timeFrom": "recorded",
+      "title": "N-202 fixed: by-row keyed frames uploaded only the list's length of poses, and the list leaves out glow rows, so decorations, bullets and trails drew at an older frame's pose (76 233 instances over 1 603 frames -> 0); N-238 found",
+      "verdict": "kept-hygiene",
+      "text": "**N-202 fixed: the thin white line and the grass that keeps changing its picture were rows drawn with this frame's texture at an older frame's pose.** Keyed frames drawn by queue row upload the poses by row, but `_uploadKeyed` sent only as many rows as the list held (`_uploadPoseRows(q, ctx.scanCount)`), and Pixi's entity list leaves out the glow rows (packSpriteLayer: fillQueueIndices excluding type 3), which the collect places among the entities' rows, before the decorations', bullets' and trails'. So the last rows of the queue (types 2, 4, 5) never got this frame's pose and drew their own, current texture wherever an earlier frame had left that texture row's pose: several rows piled on one stale spot (the owner's tuft that keeps switching asset), and a trail row at a grass tuft's old rotation (the level white line). It happens wherever glow rows exist (TallLights, lit things), at any crowd.\n\nFix ce12106c (fix/n202, merged ba7614e8; node 2900/2900, demos 101/101): with a list, the by-row upload sends every queue row's pose (q.count); rows below the list's length go up as before, so the image is unchanged where the bug did not occur; the extra data is the glow rows' poses, a few dozen a frame. The sun's keyed by-row shadow pass and the G-buffer's aux meshes read the same pose texture and are fixed with it. Test: tests/node/instancedSpriteKeyedRowPoses.test.js (a real keyed by-row batch, day frames then night frames whose list leaves out glow rows): 100 instances at an earlier pose before the fix, 0 after.\n\nHow it was found (the agent's in-worker probe on `_uploadKeyed` and the statics scatter, comparing every drawn instance's statics row, mirror and GPU readback, and its pose in the by-row texture against its queue row; rev worktrees, through the bench lock, 18:04 to 18:07):\n\n| run | instances drawn at an older pose |\n| --- | --- |\n| main, crowd 2.5, night | 76 233 over 1 603 keyed frames (every frame, up to 48 rows) |\n| main, crowd 2.5, hour 12 | 59 508 over 1 294 |\n| main, crowd 1, night | 58 765 over 1 279 |\n| fix, crowd 2.5, night | 0 over 1 466 |\n\nR-1150's check compared textures only, which is why it found nothing; R-1213's keyless guess was wrong (keyBase 77 633 = 57 633 entities + 20 000 decorations: keyed). A second bug the probe saw at crowd 2.5 only (about 258 sprite instances a frame drawing a statics row never written) is N-238.",
+      "commits": [
+        "ce12106c",
+        "ba7614e8"
+      ]
+    },
+    {
+      "id": "R-1226",
+      "date": "2026-11-16",
+      "time": "18:54",
+      "timeFrom": "recorded",
+      "title": "Every frame's slots over 10 s: spatial's tail is periodic (32-frame cycle, 3 to 46 ms, lag-32 autocorrelation 0.68) from E-200's typed refresh phases (E-476); physics' tail is not periodic (contention)",
+      "verdict": "note",
+      "text": "**Every frame of each worker over 10 s at Predator crowd 2.5 by night: spatial's tail is periodic (a 32-frame cycle, lag-32 autocorrelation 0.68), physics' is not.** runFramePhase with its new samples.json (9ebebff7), 12 s warm-up, 10 s, 600 frames, through the bench lock, the file written 18:54.\n\n| worker | p50 | p90 | p99 | max | strongest autocorrelation (lag: r) |\n| --- | --- | --- | --- | --- | --- |\n| spatial0 | 8.7 | 16.2 | 37.9 | 47.0 | 32: 0.68, 31: 0.45, 33: 0.44 |\n| physics | 14.0 | 15.1 | 16.6 | 23.5 | 1: 0.27, 2: 0.24 |\n| preRender | 8.6 | 10.3 | 11.9 | 14.8 | 1: 0.20 |\n| logic0 | 6.9 | 8.5 | 9.5 | 12.7 | 1: 0.11 |\n| renderer | 5.8 | 6.8 | 13.1 | 15.2 | 1 to 4: 0.59 to 0.42 (slow drift) |\n\nSpatial a frame, rows of 32 frames (ms): 15 14 16 14 7 8 8 7 3 3 4 3 7 9 9 10 13 14 15 13 . 28 18 3 4 4 4 3 5 5 12 11, and every row the same shape, with 29 to 46 ms around frames 20 to 22. Cause, from the code: E-200's typed refresh (spatialWorker.js _setupTypedNeighborStagger) gives a class only T phases inside its refresh period P = ceil(neighborTickInterval / T) x T, so the class's whole refresh lands on T frames of every P. Filed as E-476 (spread each slot over the period's P / T tick occurrences).\n\nPhysics' tail is not periodic: contention (the cores, R-1223, and the CSwitch capture's CPU skew), not scheduled work."
+    },
+    {
+      "id": "R-1227",
+      "date": "2026-11-16",
+      "time": "19:21",
+      "timeFrom": "recorded",
+      "title": "E-471..E-474 kept: rebuildOwnedRows checked and point skip (boids spatial -5.5 %), setters' args off heap and import aliases (keyedPack logic -13.2 %); Predator crowd 2.5 neutral",
+      "verdict": "kept",
+      "text": "**E-471, E-472, E-473 and E-474 kept: spatial's rebuildOwnedRows with its arrays checked before the loop and a point skip (boids spatial -5.5 %, 0/4 worse), and the setters' args off heap with the gameObject import aliases (keyedPack logic -13.2 %, 0/4 worse); Predator crowd 2.5 NEUTRAL with no worker worse.** Branch opt/d8-fixes, merged 89f5cd71 (node 2904/2904, demos 101/101).\n\nCommits: dbe6ca84 (boidsScene ?boids=<n>, a load knob: the default 40 000 ran spatial at about 5.1 ms, under the floor), 838d22da (rebuildOwnedRowsGolden: the full rebuild's bytes, 16- and 32-bit ids, every shape, NaN offsets, 364 and 408 points whose float32 home row differs from their cell's row, cells at their cap; hashes from before E-471), d8920938 (E-471), 2e43e6dd (E-472: the skip keyed on posY * invCellSize | 0, not the fround home row, which the golden catches), 708607dd (the kernel's control copy regenerated), de0a1238 (E-473: SETTER_ARGS on a SharedArrayBuffer, an ArrayBuffer on non-isolated pages), bd83d3db (E-474).\n\nKernels (2026-11-16 18:12 to 18:14, trees alternated, identical checksums): rebuildOwnedRowsMicrobench points Node 2.038 -> 1.843 ms (E-471, -8.3 %, 6/6), d8 2.195 -> 1.901 (-14.2 %, 6/6); with E-472 Node -15.8 %, d8 -20.4 %; circles E-471 -9.2 / -10.7 % (E-472 +4.2 % Node, +0.1 % d8: a compare where there are no points); boxes -6.2 / -8.3 %. setterMicrobench moving, 4096 walkers, one process a run, 5 rounds: E-473 d8 -4.0 % all inlined (5/5), -7.4 % budget spent (4/5); E-474 over it d8 -20.0 % (5/5) and -12.9 % (5/5), Node -16.1 % / -2.0 %; both d8 -21.6 % / -18.6 %.\n\nScenes (4 pairs each, headed, AC power): boids ?boids=55000, spatial owner, 19:09 to 19:16: spatial 7.925 -> 7.723 ms, paired -5.5 % (pair deltas -0.3, -21.2, -4.9, -6.2; pair 2 moved every worker 15 to 31 %, drift), load keys within 5 %, KEPT. keyedPackStressScene n=400000 moving=1 churn=0, logic owner, 19:16 to 19:21: logic 11.648 -> 10.296 ms, paired -13.2 % (-16.1, -3.9, -19.5, -10.3), pre-render +1.3 %, the renderer +8.5 % under its floor (3.86 -> 4.14 ms, not judged), KEPT. keyedPack's CPU per function (n=300000 moving=0.5, alternated twice, 18:16 to 18:19): the setters' group self time 617 and 650 -> 241 and 275 ms in the window; logic busy 377 and 382 -> 295 and 337 ms/s. Predator crowd 2.5, all four against c08399ab, 18:20 to 18:26: NEUTRAL, logic -1.5 %, spatial -2.3 %, physics -0.2 %, pre-render -1.6 % (pair 2 +17 to +23 % on every worker: drift).",
+      "commits": [
+        "d8920938",
+        "2e43e6dd",
+        "de0a1238",
+        "bd83d3db",
+        "89f5cd71"
+      ]
+    },
+    {
+      "id": "R-1228",
+      "date": "2026-11-16",
+      "time": "17:38",
+      "timeFrom": "recorded",
+      "title": "E-452 and E-453 kept: collider fill row as 4 vec4 + vec2 (1.59 -> 0.72 ms a draw), UV fill vertices once, indexed (volumeStress 8.1 -> 5.3 ms a draw, 88 -> 37 MB); pictures identical; N-240 fixed with it",
+      "verdict": "kept",
+      "text": "**E-452 and E-453 kept: the collider fill reads its row as 4 vec4 and a vec2 with the corner from the vertex index (meshFillGpuBench 1.587 -> 0.723 ms a draw), and the UV fill draws each mesh's vertices once through an index buffer (0.860 -> 0.625 ms, its vertex stage 0.855 -> 0.176 under a 1 px scissor; volumeStressScene's draw 8.1 -> 5.3 ms and its layer region 88 -> 37 MB). Every picture identical.** Branch opt/fill-attrs, merged aa9041cb (node 2913/2913, demos 101/101).\n\nCommits: 409822fe (meshFillGpuBench: the collider ways col, colVs), a05a4e45 (E-452: colliderFillBatch.js, colliderFill.vert.glsl, colliderFill.wgsl; the [0,1,2] index buffer as N-228), 7b7f0e9f (meshFillGpuBench: the indexed UV form), 0fe1f767 (E-453: 16-float vertex records read as 4 vec4, Uint32 indices in the rows' order, the entity's reach in the depth slot no draw of the layer tests; packMeshUvVerts, packMeshUvVertsPaint; wasm rewrite_verts and _u32 in meshCorners.c, client rewriteVertsWasm, JS reference tests/reference/meshUvVerts.mjs; engine.wasm and both fixtures rebuilt; the lamps' map draws vertices and indices with one instance a tile and culls by the entity's reach; tests/node/meshUvVerts.test.js and ten test files updated).\n\nTimings 2026-11-16 17:13 to 17:38 (before the owner's game; the later session's timing runs were stopped at 19:36 before any ran):\n\n| measure | before | after |\n| --- | --- | --- |\n| meshFillGpuBench collider (486 408 rows, 1769 MHz) | 1.587 ms (scissor 1.567) | 0.723 (0.695) |\n| meshFillGpuBench UV | 0.860 (0.855) | 0.625 (0.176) |\n| meshFillPanScene collider fans (296 400 rows, about 1 GHz) | 4.10, 4.50 (scissor 4.39) | 4.06, 4.02 (3.56) |\n| volumeStressScene UV draw | 8.13, 8.33 ms (870 MHz) | 5.32, 5.35 (1050-1065 MHz) |\n| meshUploadStressScene movers=one | 5.87 ms (1785 MHz) | 1.38 (660 MHz: the GPU dropped its clock) |\n\nThe clocks never matched across sides in the scenes (the indexed side about 20 % faster in volumeStress); the benches are at one clock. Pictures: 0 of 921 600 pixels differ in meshLayerOrderScene tris=20000 (WebGL, WebGPU), meshFillStaticScene, and E-453's 19 captures (volumeStressScene WebGL, WebGPU, api=volume, 12 lamps at hour 22; sunMeshParityScene both backends; meshApiStressScene uv and plane; shadowOutlineScene part=sun and part=lamp both backends; light3dCompareScene all=1 still=1 by day and night, WebGPU at night). The lamps' map cull is per mesh now (a superset of triangles).\n\nNew: N-240 (a paint change dropped volumes' floor scale on main; fixed by E-453's paint path), E-477 (scene fill draws cost several times the bench a row), E-478 (the collider batch's fans indexed), N-241 (the lamps' map cull and the tile's outer band), N-242 (the unused UV row pack), N-243 (glFrameRecorder rounds draws a frame).",
+      "commits": [
+        "a05a4e45",
+        "0fe1f767",
+        "aa9041cb"
+      ]
     }
   ],
   "leads": [

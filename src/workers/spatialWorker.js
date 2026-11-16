@@ -527,7 +527,8 @@ class SpatialWorker extends AbstractWorker {
     const colliderActive = Collider.active;
     const spriteRendererActive = SpriteRenderer.active;
     const rigidActive = RigidBody.active;
-    const countNoBody = this.collectDetailedStats;
+    // E-471: a boolean, so the per-entity test is one compare, not ToBoolean of a field typed any value.
+    const countNoBody = this.collectDetailedStats === true;
     let noBody = 0;
 
     const gridWidth = this.gridWidth;
@@ -537,8 +538,12 @@ class SpatialWorker extends AbstractWorker {
     const entityPosData = this.entityPosData;
     const gridCounts = Grid._gridCounts;
     const gridEntities = Grid._gridEntities;
-    const cellStride = Grid._cellIdStride;
-    const cellHeader = Grid._headerIds;
+    // E-471: the grid's integers as int32, read once: as they were, each was Smi-checked and untagged at every cell
+    // it is used in, and maxEntitiesPerCell read again from Grid at each one.
+    const cellStride = Grid._cellIdStride | 0;
+    const cellHeader = Grid._headerIds | 0;
+    const maxPerCell = Grid.maxEntitiesPerCell | 0;
+    const cellByteSize = Grid.cellByteSize | 0;
 
     const maxCol = gridWidth - 1;
     const maxRow = this.gridHeight - 1;
@@ -562,100 +567,127 @@ class SpatialWorker extends AbstractWorker {
     }
 
     const activeEntitiesData = this.activeEntitiesData;
-    const totalActiveEntities = activeEntitiesData ? activeEntitiesData[0] : 0;
+    // E-471: every array the entity loop indexes is looked at here, before it. Their fields start null (typed any
+    // value) or are another module's statics, and the loop is too big for TurboFan to peel, so it checked each one's
+    // map (and decoded its data pointer) where the loop first indexed it: at every entity. Looked at here, their maps
+    // are known inside. No active list (a hand-made layout: _rebuildGrid) bins nothing, as before; nor does an array
+    // a worker never sized (none is empty after initialize).
+    if (
+      activeEntitiesData !== null &&
+      activeEntitiesData.length > 0 &&
+      rowOwnership.length > 0 &&
+      localCounts.length > 0 &&
+      ownedList.length > 0 &&
+      entityPosData.length > 0 &&
+      gridEntities.length > 0 &&
+      gridCounts.length > 0
+    ) {
+      const totalActiveEntities = activeEntitiesData[0];
+      for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
+        const i = activeEntitiesData[1 + activeIdx];
 
-    for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
-      const i = activeEntitiesData[1 + activeIdx];
-
-      if (!colliderActive[i] && !spriteRendererActive[i]) continue;
-      if (
-        countNoBody &&
-        spriteRendererActive[i] &&
-        !colliderActive[i] &&
-        !(rigidActive && rigidActive[i])
-      ) {
-        noBody++;
-      }
-
-      let posX;
-      let posY;
-      let halfW = 0;
-      let halfH = 0;
-      if (colliderActive[i] && shapeType[i] === SHAPE_CIRCLE) {
-        // Same math as getColliderBounds' circle branch, without the call.
-        posX = x[i] + (offsetX[i] || 0);
-        posY = y[i] + (offsetY[i] || 0);
-        halfW = radius[i] || 0;
-        halfH = halfW;
-      } else if (colliderActive[i] && shapeType[i] === SHAPE_BOX) {
-        // E-245: getColliderBounds' box branch, without the call (the world box of the turned box).
-        const c = rotC ? rotC[i] : 1;
-        const sn = rotS ? rotS[i] : 0;
-        const ox = offsetX[i] || 0;
-        const oy = offsetY[i] || 0;
-        posX = x[i] + c * ox - sn * oy;
-        posY = y[i] + sn * ox + c * oy;
-        const hw = (boxWidth[i] || 0) * 0.5;
-        const hh = (boxHeight[i] || 0) * 0.5;
-        const ac = c < 0 ? -c : c;
-        const as = sn < 0 ? -sn : sn;
-        halfW = ac * hw + as * hh;
-        halfH = as * hw + ac * hh;
-      } else if (colliderActive[i]) {
-        getColliderBounds(i, _boundsResult);
-        posX = _boundsResult.posX;
-        posY = _boundsResult.posY;
-        halfW = _boundsResult.halfW;
-        halfH = _boundsResult.halfH;
-      } else {
-        posX = x[i] + offsetX[i];
-        posY = y[i] + offsetY[i];
-      }
-
-      if (posX !== posX || posY !== posY) continue;
-
-      const maxHalfExtent = halfW > halfH ? halfW : halfH;
-      // Home row from the Float32 Y that findNeighbors reads back from entityPosData.
-      let homeRow = (Math.fround(posY) * invCellSize) | 0;
-      homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
-      if (rowOwnership[homeRow] === workerId) ownedList[ownedCount++] = i;
-
-      getCellRange(posX, posY, halfW, halfH, invCellSize, maxCol, maxRow, _cellRangeResult);
-      const minCol = _cellRangeResult.minCol;
-      const maxColBB = _cellRangeResult.maxCol;
-      const minRow = _cellRangeResult.minRow;
-      const maxRowBB = _cellRangeResult.maxRow;
-
-      let wroteEntityPos = false;
-      for (let row = minRow; row <= maxRowBB; row++) {
-        if (rowOwnership[row] !== workerId) continue;
-
-        if (!wroteEntityPos) {
-          const baseIdx = i * 4;
-          // E-136: one pose that changed is enough to move the generation this frame.
-          if (
-            !poseChanged &&
-            (entityPosData[baseIdx] !== Math.fround(posX) ||
-              entityPosData[baseIdx + 1] !== Math.fround(posY) ||
-              entityPosData[baseIdx + 2] !== Math.fround(maxHalfExtent))
-          ) {
-            poseChanged = true;
-          }
-          entityPosData[baseIdx] = posX;
-          entityPosData[baseIdx + 1] = posY;
-          entityPosData[baseIdx + 2] = maxHalfExtent;
-          wroteEntityPos = true;
+        if (!colliderActive[i] && !spriteRendererActive[i]) continue;
+        if (
+          countNoBody &&
+          spriteRendererActive[i] &&
+          !colliderActive[i] &&
+          !(rigidActive && rigidActive[i])
+        ) {
+          noBody++;
         }
 
-        const rowBase = row * gridWidth;
+        let posX;
+        let posY;
+        let halfW = 0;
+        let halfH = 0;
+        if (colliderActive[i] && shapeType[i] === SHAPE_CIRCLE) {
+          // Same math as getColliderBounds' circle branch, without the call.
+          posX = x[i] + (offsetX[i] || 0);
+          posY = y[i] + (offsetY[i] || 0);
+          halfW = radius[i] || 0;
+          halfH = halfW;
+        } else if (colliderActive[i] && shapeType[i] === SHAPE_BOX) {
+          // E-245: getColliderBounds' box branch, without the call (the world box of the turned box).
+          const c = rotC ? rotC[i] : 1;
+          const sn = rotS ? rotS[i] : 0;
+          const ox = offsetX[i] || 0;
+          const oy = offsetY[i] || 0;
+          posX = x[i] + c * ox - sn * oy;
+          posY = y[i] + sn * ox + c * oy;
+          const hw = (boxWidth[i] || 0) * 0.5;
+          const hh = (boxHeight[i] || 0) * 0.5;
+          const ac = c < 0 ? -c : c;
+          const as = sn < 0 ? -sn : sn;
+          halfW = ac * hw + as * hh;
+          halfH = as * hw + ac * hh;
+        } else if (colliderActive[i]) {
+          getColliderBounds(i, _boundsResult);
+          posX = _boundsResult.posX;
+          posY = _boundsResult.posY;
+          halfW = _boundsResult.halfW;
+          halfH = _boundsResult.halfH;
+        } else {
+          posX = x[i] + offsetX[i];
+          posY = y[i] + offsetY[i];
+        }
 
-        for (let col = minCol; col <= maxColBB; col++) {
-          const cellIndex = rowBase + col;
-          const localCount = localCounts[cellIndex];
+        if (posX !== posX || posY !== posY) continue;
 
-          if (localCount < Grid.maxEntitiesPerCell) {
-            gridEntities[cellIndex * cellStride + cellHeader + localCount] = i;
-            localCounts[cellIndex] = localCount + 1;
+        const maxHalfExtent = halfW > halfH ? halfW : halfH;
+        // Home row from the Float32 Y that findNeighbors reads back from entityPosData.
+        let homeRow = (Math.fround(posY) * invCellSize) | 0;
+        homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
+        if (rowOwnership[homeRow] === workerId) ownedList[ownedCount++] = i;
+        // E-472: a point (no extent: a sprite without a collider, every boid) covers one cell, in the row its Y falls
+        // in: the cell range's row below, not the home row (they differ where the float32 Y rounds across a cell's
+        // edge). When another worker owns that row nothing below writes anything, so the cell range is skipped.
+        if (halfW === 0 && halfH === 0) {
+          const pointRow = (posY * invCellSize) | 0;
+          if (rowOwnership[pointRow < 0 ? 0 : pointRow > maxRow ? maxRow : pointRow] !== workerId) continue;
+        }
+
+        // E-471: getCellRange's arithmetic in locals. Through _cellRangeResult (a module object, so the stores stay),
+        // its four results were Smi-tagged, stored and read back at every entity.
+        const c0 = ((posX - halfW) * invCellSize) | 0;
+        const c1 = ((posX + halfW) * invCellSize) | 0;
+        const r0 = ((posY - halfH) * invCellSize) | 0;
+        const r1 = ((posY + halfH) * invCellSize) | 0;
+        const minCol = c0 < 0 ? 0 : c0 > maxCol ? maxCol : c0;
+        const maxColBB = c1 < 0 ? 0 : c1 > maxCol ? maxCol : c1;
+        const minRow = r0 < 0 ? 0 : r0 > maxRow ? maxRow : r0;
+        const maxRowBB = r1 < 0 ? 0 : r1 > maxRow ? maxRow : r1;
+
+        let wroteEntityPos = false;
+        for (let row = minRow; row <= maxRowBB; row++) {
+          if (rowOwnership[row] !== workerId) continue;
+
+          if (!wroteEntityPos) {
+            const baseIdx = i * 4;
+            // E-136: one pose that changed is enough to move the generation this frame.
+            if (
+              !poseChanged &&
+              (entityPosData[baseIdx] !== Math.fround(posX) ||
+                entityPosData[baseIdx + 1] !== Math.fround(posY) ||
+                entityPosData[baseIdx + 2] !== Math.fround(maxHalfExtent))
+            ) {
+              poseChanged = true;
+            }
+            entityPosData[baseIdx] = posX;
+            entityPosData[baseIdx + 1] = posY;
+            entityPosData[baseIdx + 2] = maxHalfExtent;
+            wroteEntityPos = true;
+          }
+
+          const rowBase = row * gridWidth;
+
+          for (let col = minCol; col <= maxColBB; col++) {
+            const cellIndex = rowBase + col;
+            const localCount = localCounts[cellIndex];
+
+            if (localCount < maxPerCell) {
+              gridEntities[cellIndex * cellStride + cellHeader + localCount] = i;
+              localCounts[cellIndex] = localCount + 1;
+            }
           }
         }
       }
@@ -664,7 +696,6 @@ class SpatialWorker extends AbstractWorker {
     // E-274: a count is written only when it changed. Each cell's count is a cache line of the shared grid (an empty
     // world's cells too); this worker's copy of what it wrote is a dense array, and only the owner writes a count.
     const writtenCounts = this._writtenCounts;
-    const cellByteSize = Grid.cellByteSize;
     for (let r = 0; r < ownedRowCount; r++) {
       const row = ownedRows[r];
       const rowBase = row * gridWidth;

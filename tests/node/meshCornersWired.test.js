@@ -1,11 +1,12 @@
 // E-76 W11, wired: the Pixi worker's real MESH layer path (initializeCustomLayers once, then updateCustomLayers
-// every frame) on scenes that createSceneSharedBuffers builds, on the mesh memory, two ways: the JS rewrite Pixi
-// shipped (tests/reference/meshCorners.mjs, in place of its _rewriteMeshCorners) and the corner kernel. Every frame the game side edits meshes through
-// the MeshRenderer API (setVertices on grids, fans and stars; setRope; setMesh with new UVs or new indices; the
-// same setPlane again; now and then a new topology or a clearMesh) and repaints one, and all three runs must
-// hold the same rows in both batches, word for word. On the mesh memory the batches write their rows there and
-// upload arrays of their own (E-123), so each frame also checks that the rows the upload sent are the rows the
-// memory holds. Pixi runs on the WebGPU program path, which builds in Node; with no renderer, its uploads stop
+// every frame) on scenes that createSceneSharedBuffers builds, on the mesh memory, two ways: the JS rewrites
+// (tests/reference/meshCorners.mjs and, for the UV batch's vertex records since E-453, tests/reference/meshUvVerts.mjs,
+// in place of its _rewriteMeshCorners and _rewriteMeshUvVerts) and the corner kernel. Every frame the game side edits
+// meshes through the MeshRenderer API (setVertices on grids, fans and stars; setRope; setMesh with new UVs or new
+// indices; the same setPlane again; now and then a new topology or a clearMesh) and repaints one, and both runs must
+// hold the same rows in the fill batch and the same records and indices in the UV batch, word for word. On the mesh
+// memory the batches write there and upload arrays of their own (E-123), so each frame also checks that what the
+// uploads sent is what the memory holds. Pixi runs on the WebGPU program path, which builds in Node; with no renderer, its uploads stop
 // before the GPU.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -20,8 +21,9 @@ import { MeshGeometry } from '../../src/core/meshGeometry.js';
 import { Layer } from '../../src/core/layer.js';
 import { Query } from '../../src/core/query.js';
 import { GameObject } from '../../src/core/gameObject.js';
-import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
+import { COLLIDER_FILL_FLOATS, MESH_UV_VERT_FLOATS } from '../../src/render/colliderFillBatch.js';
 import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
+import { rewriteMeshUvVerts } from '../reference/meshUvVerts.mjs';
 import { LAYER_KIND, WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 import { createWeedPosePayload, initWeedPoseDefaults } from '../../src/box2d/box2dHotFields.js';
@@ -226,13 +228,31 @@ function gameFrame(r, api, shapes) {
 }
 
 /**
- * One run: the scene, Pixi bound to it, FRAMES frames of game edits then Pixi's frame, the rows of both batches
- * after each. `kernel` false runs the JS rewrite Pixi shipped in place of its own (the memory's arrays either way).
+ * The UV batch's vertex rewrite through the JS reference, in place of Pixi's _rewriteMeshUvVerts: the same arguments,
+ * result and ranges.
+ */
+function rewriteMeshUvVertsJs(batch, count, views, lastVertGen, genNow, lastUvGen, uvGenNow) {
+  const r = rewriteMeshUvVerts(batch, count, views, lastVertGen, genNow, lastUvGen, uvGenNow);
+  const done = r.result > 0;
+  this._cornerFirstRow = done ? r.firstRow : 0;
+  this._cornerPastRow = done ? r.pastRow : 0;
+  this._cornerFirstIndex = done ? r.firstIndex : 0;
+  this._cornerPastIndex = done ? r.pastIndex : 0;
+  return r.result;
+}
+
+/**
+ * One run: the scene, Pixi bound to it, FRAMES frames of game edits then Pixi's frame, the fill batch's rows and the
+ * UV batch's records and indices after each. `kernel` false runs the JS rewrites in place of Pixi's own (the memory's
+ * arrays either way).
  */
 async function run(px, kernel) {
   const scene = await quietly(() => buildScene());
   await quietly(() => initPixi(px, scene));
-  if (!kernel) px._rewriteMeshCorners = rewriteExplicitMeshCorners;
+  if (!kernel) {
+    px._rewriteMeshCorners = rewriteExplicitMeshCorners;
+    px._rewriteMeshUvVerts = rewriteMeshUvVertsJs;
+  }
   const layerId = Layer.get('mesh').id;
   const cl = px._customLayers[layerId];
   assert.ok(cl?.fillBatch, 'the MESH layer has its fill batch');
@@ -260,20 +280,26 @@ async function run(px, kernel) {
       px.updateCustomLayers();
       const fillN = cl.prevCount | 0;
       const uvN = cl.uvPrevCount | 0;
+      const uvM = cl.uvIndexCount | 0;
       // What the uploads sent: each Buffer's own array.
       const fill = cl.fillBatch.dataU32.slice(0, fillN * COLLIDER_FILL_FLOATS);
-      const uv = cl.uvFillBatch ? cl.uvFillBatch.dataU32.slice(0, uvN * MESH_UV_FILL_FLOATS) : new Uint32Array(0);
-      // E-123: on the mesh memory, the rows the writers left there, every one of them copied before the upload.
+      const uv = cl.uvFillBatch ? cl.uvFillBatch.dataU32.slice(0, uvN * MESH_UV_VERT_FLOATS) : new Uint32Array(0);
+      const uvIndices = cl.uvFillBatch ? cl.uvFillBatch.indexData.slice(0, uvM) : new Uint32Array(0);
+      // E-123: on the mesh memory, what the writers left there, every word of it copied before the upload.
       const fillAt = firstDiff(cl.fillBatch.rowsU32.subarray(0, fill.length), fill);
       assert.equal(fillAt, -1, `frame ${f}: fill float ${fillAt} is not what the upload sent`);
       if (cl.uvFillBatch) {
-        const uvAt = firstDiff(cl.uvFillBatch.rowsU32.subarray(0, uv.length), uv);
-        assert.equal(uvAt, -1, `frame ${f}: UV float ${uvAt} is not what the upload sent`);
+        const uvAt = firstDiff(cl.uvFillBatch.vertsU32.subarray(0, uv.length), uv);
+        assert.equal(uvAt, -1, `frame ${f}: UV record float ${uvAt} is not what the upload sent`);
+        const ixAt = firstDiff(cl.uvFillBatch.indices.subarray(0, uvM), uvIndices);
+        assert.equal(ixAt, -1, `frame ${f}: UV index ${ixAt} is not what the upload sent`);
+        assert.equal(cl.uvFillBatch.indexBuffer.data.length, uvM, `frame ${f}: the index buffer draws its indices`);
       }
-      frames.push({ fillN, uvN, fill, uv });
+      frames.push({ fillN, uvN, uvM, fill, uv, uvIndices });
     }
   });
   delete px._rewriteMeshCorners;
+  delete px._rewriteMeshUvVerts;
   return { scene, cl, frames, kernel: px._meshCornersWasm, skip: px._colliderFillSkip[layerId] };
 }
 
@@ -295,17 +321,33 @@ test('Pixi draws the same mesh rows on the mesh memory through the kernel as the
   assert.ok(js.cl.meshRegion, 'the layer has its regions');
   assert.equal(js.cl.fillBatch.rows.buffer, mem.buffer, 'fill rows in the memory');
   assert.equal(js.cl.fillBatch.rows.byteOffset, js.cl.meshRegion.fillRowsByte);
-  assert.equal(js.cl.uvFillBatch.rows.buffer, mem.buffer, 'UV rows in the memory');
-  assert.equal(js.cl.uvFillBatch.rows.byteOffset, js.cl.meshRegion.uvRowsByte);
+  // E-453: the UV batch's records, their entities, its indices and its span table in the memory, at the layer's regions.
+  const uvBatch = js.cl.uvFillBatch;
+  const region = js.cl.meshRegion;
+  for (const [name, view, byte] of [
+    ['records', uvBatch.verts, region.uvVertsByte],
+    ['record words', uvBatch.vertsU32, region.uvVertsByte],
+    ['entities', uvBatch.vertexEntity, region.uvVertEntityByte],
+    ['indices', uvBatch.indices, region.uvIndicesByte],
+    ['span table', uvBatch.indexSpan, region.uvIndexSpanByte],
+  ]) {
+    assert.equal(view.buffer, mem.buffer, `UV ${name} in the memory`);
+    assert.equal(view.byteOffset, byte, `UV ${name} at its region`);
+  }
+  assert.equal(uvBatch.capacity, region.uvVerts);
+  assert.equal(uvBatch.indexCapacity, region.uvIndices);
+  assert.equal(uvBatch.indexSpan.length, N * 2, 'a span for each entity');
   // E-123: each Pixi Buffer uploads an array of its own, not a view on the memory.
-  for (const batch of [js.cl.fillBatch, js.cl.uvFillBatch]) {
+  for (const batch of [js.cl.fillBatch, uvBatch]) {
     assert.equal(batch.buffer.data, batch.data);
     assert.ok(!(batch.data.buffer instanceof SharedArrayBuffer), 'the upload array is not shared');
     assert.equal(batch.dataU32.buffer, batch.data.buffer);
-    assert.equal(batch.rowsU32.buffer, mem.buffer);
-    assert.equal(batch.rowsU32.byteOffset, batch.rows.byteOffset);
   }
-  for (const name of ['instanceEntity', 'uvInstanceEntity', 'lastVertGen', 'frameVertGen', 'lastUvGen', 'frameUvGen']) {
+  assert.equal(js.cl.fillBatch.rowsU32.buffer, mem.buffer);
+  assert.equal(js.cl.fillBatch.rowsU32.byteOffset, js.cl.fillBatch.rows.byteOffset);
+  assert.equal(uvBatch.indexBuffer.data.buffer, uvBatch.indexData.buffer, 'the indices from an array of their own too');
+  assert.ok(!(uvBatch.indexData.buffer instanceof SharedArrayBuffer));
+  for (const name of ['instanceEntity', 'lastVertGen', 'frameVertGen', 'lastUvGen', 'frameUvGen']) {
     assert.equal(js.skip[name].buffer, mem.buffer, `${name} in the memory`);
   }
 
@@ -316,21 +358,24 @@ test('Pixi draws the same mesh rows on the mesh memory through the kernel as the
   assert.ok(wasm.kernel.calls > FRAMES / 2, `the kernel ran (${wasm.kernel.calls} calls)`);
 
   let rewrites = 0;
-  let uvRows = 0;
+  let uvTriangles = 0;
   for (let f = 0; f < FRAMES; f++) {
     const a = js.frames[f];
     const other = wasm.frames[f];
     assert.equal(other.fillN, a.fillN, `frame ${f}: fill rows`);
-    assert.equal(other.uvN, a.uvN, `frame ${f}: UV rows`);
+    assert.equal(other.uvN, a.uvN, `frame ${f}: UV records`);
+    assert.equal(other.uvM, a.uvM, `frame ${f}: UV indices`);
     const atFill = firstDiff(other.fill, a.fill);
     assert.equal(atFill, -1, `frame ${f}: fill row ${Math.floor(atFill / COLLIDER_FILL_FLOATS)}, float ${atFill % COLLIDER_FILL_FLOATS}`);
     const atUv = firstDiff(other.uv, a.uv);
-    assert.equal(atUv, -1, `frame ${f}: UV row ${Math.floor(atUv / MESH_UV_FILL_FLOATS)}, float ${atUv % MESH_UV_FILL_FLOATS}`);
+    assert.equal(atUv, -1, `frame ${f}: UV record ${Math.floor(atUv / MESH_UV_VERT_FLOATS)}, float ${atUv % MESH_UV_VERT_FLOATS}`);
+    const atIx = firstDiff(other.uvIndices, a.uvIndices);
+    assert.equal(atIx, -1, `frame ${f}: UV index ${atIx}`);
     if (f > 0 && a.uvN === js.frames[f - 1].uvN) rewrites++;
-    uvRows += a.uvN;
+    uvTriangles += a.uvM / 3;
   }
   assert.ok(rewrites > FRAMES / 2, `${rewrites} frames kept their topology`);
-  assert.ok(uvRows > FRAMES * 100, `${uvRows} UV rows compared`);
+  assert.ok(uvTriangles > FRAMES * 100, `${uvTriangles} UV triangles compared`);
 });
 
 test('a mesh edit uploads nothing on another MESH layer, and only the rows it touched on its own', async () => {
@@ -356,16 +401,21 @@ test('a mesh edit uploads nothing on another MESH layer, and only the rows it to
     Transform.rotS[i] = 0;
     mr.setPlane(40, 30, 3, 2);
   }
+  // E-453: the UV batch's records, and the ranges of its indices the rewrite wrote (each mesh's triangles again).
   const spy = (batch) => {
-    const log = { whole: 0, ranges: [] };
-    const { upload, uploadRange } = batch;
-    batch.upload = function (n) {
+    const log = { whole: 0, ranges: [], indexRanges: [] };
+    const { upload, uploadRange, uploadIndexRange } = batch;
+    batch.upload = function (...args) {
       log.whole++;
-      return upload.call(this, n);
+      return upload.apply(this, args);
     };
     batch.uploadRange = function (first, past) {
       log.ranges.push([first, past]);
       return uploadRange.call(this, first, past);
+    };
+    batch.uploadIndexRange = function (first, past) {
+      log.indexRanges.push([first, past]);
+      return uploadIndexRange.call(this, first, past);
     };
     return log;
   };
@@ -373,10 +423,11 @@ test('a mesh edit uploads nothing on another MESH layer, and only the rows it to
     px.updateCustomLayers();
     px.updateCustomLayers();
   });
-  // setPlane's meshes carry UVs, so their rows are the UV batch's.
+  // setPlane's meshes carry UVs, so their vertices are the UV batch's records.
   const stillLog = spy(still.uvFillBatch);
   const movingLog = spy(moving.uvFillBatch);
   const planeTris = 3 * 2 * 2;
+  const planeVerts = 4 * 3;
   const plane = (v) => {
     const xy = [];
     for (let j = 0; j <= 2; j++) for (let i = 0; i <= 3; i++) xy.push(-20 + (40 * i) / 3 + v, -15 + 15 * j);
@@ -386,22 +437,27 @@ test('a mesh edit uploads nothing on another MESH layer, and only the rows it to
   // One mesh on the moving layer: entity 42, the third of its eight.
   api[42].setVertices(plane(3));
   await quietly(() => px.updateCustomLayers());
-  assert.deepEqual(stillLog, { whole: 0, ranges: [] }, 'the still layer sends nothing');
-  assert.deepEqual(movingLog, { whole: 0, ranges: [[2 * planeTris, 3 * planeTris]] }, 'the moving layer sends one mesh');
-  const at = 2 * planeTris * MESH_UV_FILL_FLOATS;
-  const end = at + planeTris * MESH_UV_FILL_FLOATS;
+  assert.deepEqual(stillLog, { whole: 0, ranges: [], indexRanges: [] }, 'the still layer sends nothing');
+  assert.deepEqual(
+    movingLog,
+    { whole: 0, ranges: [[2 * planeVerts, 3 * planeVerts]], indexRanges: [[2 * planeTris * 3, 3 * planeTris * 3]] },
+    'the moving layer sends one mesh',
+  );
+  const at = 2 * planeVerts * MESH_UV_VERT_FLOATS;
+  const end = at + planeVerts * MESH_UV_VERT_FLOATS;
   assert.equal(
-    firstDiff(moving.uvFillBatch.dataU32.subarray(at, end), moving.uvFillBatch.rowsU32.subarray(at, end)),
+    firstDiff(moving.uvFillBatch.dataU32.subarray(at, end), moving.uvFillBatch.vertsU32.subarray(at, end)),
     -1,
-    'and the Buffer holds the new rows',
+    'and the Buffer holds the new records',
   );
 
-  // Two meshes far apart in the row order: the range spans them.
+  // Two meshes far apart in the record order: the range spans them.
   api[41].setVertices(plane(1));
   api[46].setVertices(plane(2));
   await quietly(() => px.updateCustomLayers());
-  assert.deepEqual(movingLog.ranges[1], [1 * planeTris, 7 * planeTris]);
-  assert.deepEqual(stillLog, { whole: 0, ranges: [] });
+  assert.deepEqual(movingLog.ranges[1], [1 * planeVerts, 7 * planeVerts]);
+  assert.deepEqual(movingLog.indexRanges[1], [1 * planeTris * 3, 7 * planeTris * 3]);
+  assert.deepEqual(stillLog, { whole: 0, ranges: [], indexRanges: [] });
 
   // A frame with no edit sends nothing, and a repaint still sends the layer whole.
   await quietly(() => px.updateCustomLayers());
