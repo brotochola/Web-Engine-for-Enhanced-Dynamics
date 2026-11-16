@@ -4,6 +4,7 @@
 // height), the light's reachWindow there, and the tile the shader looks the point up in.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import {
   LIGHT_TILE_BORDER,
@@ -21,8 +22,11 @@ import {
   TILE_CAM_ZOOM,
   binLightTiles,
   layoutLightTiles,
+  lightTilesGpuProgram,
   writeLightTileUniforms,
 } from '../../src/render/lightTiles.js';
+import { lightingSource } from '../../src/render/faceMap.js';
+import { lightingGpuProgram } from '../../src/render/webgpu/pixiMeshWgsl.js';
 import { LIGHT_DATA_TEX_HEIGHT } from '../../src/util/utils.js';
 
 const f32 = Math.fround;
@@ -292,4 +296,38 @@ test('the layout: a word\'s band is the grid and the every-light row; WebGPU row
   const tall = new LightTiles();
   layoutLightTiles(tall, 2048, 8192, 1024, 1);
   assert.ok(tall.texHeight <= 4096 && tall.tilePx > LIGHT_TILE_PX);
+});
+
+test('both shaders: with tiles each path walks its tile\'s bits in one loop, without them the old loops stay', () => {
+  const flags = { faces: true, sunMap: true, selfShadow: true, lampMap: true, ids: true };
+  const cases = [
+    ['lightingBasic.frag.glsl', 'lowBit(bits)', 'if (i < coneCount) {'],
+    ['lightingBasic.wgsl', 'firstTrailingBit(bits)', 'if (i < nCones) {'],
+  ];
+  for (const [name, bit, cone] of cases) {
+    const source = fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+    const old = lightingSource(source, flags);
+    const tiled = lightingSource(source, { ...flags, tiles: true });
+    assert.equal(old.match(/< MAX_LIGHTS/g).length, 4, `${name}: the cones' loop and the others', in the faces' path and the floor's`);
+    // One loop a path over the tile's lights (E-205: two loops each linked ANGLE's light3d pass a third slower), the
+    // cones' body and the others' its two arms.
+    assert.equal(tiled.split(bit).length - 1, 2, `${name}: a tiled loop in each path`);
+    assert.equal(tiled.split(cone).length - 1, 2, `${name}: the cones first in each`);
+    assert.doesNotMatch(tiled, /< MAX_LIGHTS|#if|#endif/, name);
+    assert.doesNotMatch(old, /uLightTiles|uTileGrid/, name);
+  }
+});
+
+test('the tiled WebGPU program binds the tiles\' texture at group 2, binding 8, as the WGSL declares it', () => {
+  const wgsl = fs.readFileSync(new URL('../../src/shaders/lightingBasic.wgsl', import.meta.url), 'utf8');
+  const source = lightingSource(wgsl, { faces: true, sunMap: true, lampMap: true, tiles: true });
+  assert.match(source, /@group\(2\) @binding\(8\) var uLightTiles: texture_2d<u32>;/);
+  const GpuProgram = { from: (o) => o };
+  const program = lightTilesGpuProgram(GpuProgram, (G) => lightingGpuProgram(G, source, 'l', true, true, true, false));
+  assert.equal(program.layout[2].uLightTiles, 8);
+  const entry = program.gpuLayout[2].find((e) => e.binding === 8);
+  assert.equal(entry.texture.sampleType, 'uint');
+  // The program without tiles is left as it was.
+  const plain = lightingGpuProgram(GpuProgram, source, 'l', true, true, true, false);
+  assert.equal(plain.layout[2].uLightTiles, undefined);
 });

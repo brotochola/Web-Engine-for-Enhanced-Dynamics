@@ -31,6 +31,32 @@ uniform float uGroundInvScaleY;
 uniform float uNightR;
 uniform float uNightG;
 uniform float uNightB;
+// #if TILES
+
+// E-205: the lights by tile (src/render/lightTiles.js): a bit a light in its slot (the cones first), 32 a word; word k of
+// tile (x, y) at texel (x, y + k · uTileWords.y), the last row of each word's band every light. A pixel loops over its
+// tile's lights in the order the old loops took them: a light whose reach misses the tile added 0 there (reachWindow).
+uniform highp usampler2D uLightTiles;
+uniform vec4 uTileGrid; // a tile's px, the border's tiles, the grid's columns and rows (border included)
+uniform vec4 uTileWords; // words in use, texel rows a word's band (the grid's rows + 1)
+
+// The tile of a point of this pass's target in unflipped px (x right, y down: weedWorldToNorm × uViewport); past the grid,
+// the every-light row.
+ivec2 lightTile(vec2 px) {
+  vec2 t = floor(px / uTileGrid.x) + uTileGrid.y;
+  return t.x >= 0.0 && t.y >= 0.0 && t.x < uTileGrid.z && t.y < uTileGrid.w ? ivec2(t) : ivec2(0, int(uTileGrid.w));
+}
+
+// Word k of a tile: its lights 32k to 32k + 31.
+highp uint tileWord(ivec2 tile, int k) {
+  return texelFetch(uLightTiles, ivec2(tile.x, tile.y + k * int(uTileWords.y)), 0).r;
+}
+
+// The index of the lowest bit set (ES 3.00 has no findLSB): that bit alone is a power of two, its float's exponent.
+int lowBit(highp uint bits) {
+  return int(floatBitsToUint(float(bits & (0u - bits))) >> 23u) - 127;
+}
+// #endif TILES
 
 // The light data texture's rows (3 texels tall, sampled at their centres).
 // The light data's rows, read by texelFetch (E-373: an integer texel, the same as the WGSL's textureLoad, a Load on
@@ -294,6 +320,11 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
   n = normalize(n);
   float z = (kRule ? q - 32768.0 : q) / 8.0;
   vec3 p = vec3(world.x, (world.y + z * uFaceLight.x) * uGroundInvScaleY, z);
+// #if TILES
+  // E-205: the tile of the floor point under p, where a light's reach is measured (lightTiles.js bins the floor's).
+  ivec2 tile = lightTile(weedWorldToNorm(vec2(world.x, world.y + z * uFaceLight.x)) * uViewport);
+  int tileWords = int(uTileWords.x);
+// #endif TILES
   float sunDirect = min(max(dot(n, uFaceSun.xyz), 0.0) * uFaceSun.w, 1.6);
   // The sun on a pixel lit as drawn: the floor's, its map's shade and its own shade.
   float sunFlat = 1.0;
@@ -324,8 +355,26 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
   const float DISTANCE_SCALE = 1.0 / 1024.0;
   // The cones first, then every other light as before.
   int coneCount = int(uConeCount);
+// #if !TILES
   for (int i = 0; i < MAX_LIGHTS; i++) {
     if (i >= coneCount) break;
+// #endif !TILES
+// #if TILES
+  // E-205: one loop over the tile's lights, a step a light or a step on to the next word (each word read once). The
+  // cones are the first slots, so they come first, as in the two loops without tiles.
+  int tw = -1;
+  highp uint bits = 0u;
+  for (int ts = 0; ts < 2 * MAX_LIGHTS; ts++) {
+    if (bits == 0u) {
+      tw++;
+      if (tw >= tileWords) break;
+      bits = tileWord(tile, tw);
+      continue;
+    }
+    int i = tw * 32 + lowBit(bits);
+    bits &= bits - 1u;
+    if (i < coneCount) {
+// #endif TILES
     vec4 posInt = texelFetch(uLightData, ivec2(i, 0), 0);
     if (posInt.z <= 0.0) continue;
     vec4 col = texelFetch(uLightData, ivec2(i, 1), 0);
@@ -345,10 +394,15 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
     if (both) lampFlat += col.rgb * uFaceLight.z * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+// #if !TILES
   }
   for (int j = 0; j < MAX_LIGHTS; j++) {
     int i = j + coneCount;
     if (i >= uLightCount) break;
+// #endif !TILES
+// #if TILES
+    } else {
+// #endif TILES
     vec4 posInt = texelFetch(uLightData, ivec2(i, 0), 0);
     if (posInt.z <= 0.0) continue;
     vec4 col = texelFetch(uLightData, ivec2(i, 1), 0);
@@ -386,6 +440,9 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
     if (both) lampFlat += col.rgb * (lampVis * lampSelf * win) * uFaceLight.z * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+// #if TILES
+    }
+// #endif TILES
   }
   if (!both) return total;
   vec3 totalFlat = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB) + vec3(uSunR, uSunG, uSunB) * uSunIntensity * sunFlat
@@ -449,8 +506,30 @@ void main() {
 
   // The cones first (each times its cone), then every other light as before.
   int coneCount = int(uConeCount);
+// #if TILES
+  // E-205: this pixel's tile (a floor pixel: its own place).
+  ivec2 tile = lightTile(vec2(gl_FragCoord.x, y));
+  int tileWords = int(uTileWords.x);
+// #endif TILES
+// #if !TILES
   for (int i = 0; i < MAX_LIGHTS; i++) {
     if (i >= coneCount) break;
+// #endif !TILES
+// #if TILES
+  // E-205: one loop over the tile's lights, the cones first (faceLight's says how).
+  int tw = -1;
+  highp uint bits = 0u;
+  for (int ts = 0; ts < 2 * MAX_LIGHTS; ts++) {
+    if (bits == 0u) {
+      tw++;
+      if (tw >= tileWords) break;
+      bits = tileWord(tile, tw);
+      continue;
+    }
+    int i = tw * 32 + lowBit(bits);
+    bits &= bits - 1u;
+    if (i < coneCount) {
+// #endif TILES
     vec4 posInt = texelFetch(uLightData, ivec2(i, 0), 0);
     if (posInt.z <= 0.0) continue;
     vec4 col = texelFetch(uLightData, ivec2(i, 1), 0);
@@ -465,11 +544,16 @@ void main() {
     attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z, i);
 // #endif LAMPMAP
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
+// #if !TILES
   }
 
   for (int j = 0; j < MAX_LIGHTS; j++) {
     int i = j + coneCount;
     if (i >= uLightCount) break;
+// #endif !TILES
+// #if TILES
+    } else {
+// #endif TILES
 
     vec4 posInt = texelFetch(uLightData, ivec2(i, 0), 0);
     vec4 col = texelFetch(uLightData, ivec2(i, 1), 0);
@@ -490,6 +574,9 @@ void main() {
 // #endif LAMPMAP
       totalLight += color * attenuation;
     }
+// #if TILES
+    }
+// #endif TILES
   }
 
   if (uShadowComposite > 0.5) {

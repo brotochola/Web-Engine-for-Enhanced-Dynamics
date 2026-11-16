@@ -103,6 +103,7 @@ test('the G-buffer passes and the light pass declare every binding their layouts
   const glow = glowCompositeGpuProgram(GpuProgram);
   assertLayoutDeclared('glow layer', glow);
   const lighting = shader('lightingBasic.wgsl');
+  const { lightTilesGpuProgram } = await import('../../src/render/lightTiles.js');
   for (const faces of [false, true]) {
     for (const sunMap of [false, true]) {
       for (const lampMap of [false, true]) {
@@ -111,6 +112,12 @@ test('the G-buffer passes and the light pass declare every binding their layouts
           assertLayoutDeclared(
             `lighting faces=${faces} sunMap=${sunMap} lampMap=${lampMap} ids=${ids}`,
             lightingGpuProgram(GpuProgram, source, 'l', faces, sunMap, lampMap, ids),
+          );
+          // E-205: the light tiles' texture at binding 8.
+          const tiled = lightingSource(lighting, { faces, sunMap, selfShadow: true, lampMap, ids, tiles: true });
+          assertLayoutDeclared(
+            `lighting tiles faces=${faces} sunMap=${sunMap} lampMap=${lampMap} ids=${ids}`,
+            lightTilesGpuProgram(GpuProgram, (G) => lightingGpuProgram(G, tiled, 'l', faces, sunMap, lampMap, ids)),
           );
         }
       }
