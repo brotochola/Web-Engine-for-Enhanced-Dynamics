@@ -96,9 +96,13 @@ enum {
   LF_CHECKED, LF_CMP_EPOCH,
   /* E-312, keyed frames v2: a keyed row's KEY_CHANGED says its statics changed in a queue frame after K_SINCE, the
      frame Pixi last drew keyed (a value; 0: none yet, every keyed row marked), so a queue frame Pixi skips loses no
-     change. K_CHANGE: two u32 an entity, the queue frame its statics last changed and the one its texture last did;
-     D_CHANGE and LF_CHANGE: a u32 a keyed decoration slot and LiquidFun particle, the frame its record last changed
-     (0 for each: the old marks, this frame's changes only). K_FRAME: the queue frame being written (a value). */
+     change. K_CHANGE: K_CHANGE_WORDS u32 an entity, the queue frame its statics last changed, the one its texture last
+     did and (N-238) the last one it was emitted in; D_CHANGE and LF_CHANGE: CHANGE_WORDS u32 a keyed decoration slot and
+     LiquidFun particle, the frame its record last changed and the last one it was emitted in (0 for each: the old
+     marks, this frame's changes only). K_FRAME: the queue frame being written (a value). N-238: a key missing from the
+     queue frame before (it entered the view; the emitted frames start at 0, never) counts as changed in this one: a
+     mark it took in a frame Pixi never drew keyed, while it was out of view in the one Pixi then drew keyed, would
+     otherwise be lost, its statics never sent. */
   K_CHANGE, D_CHANGE, LF_CHANGE, K_FRAME, K_SINCE,
   /* E-312 step 2: 1 when nothing reads an unmarked keyed sprite row's statics this frame (a value): the emit leaves its
      alpha, scale, tint and anchor unwritten (Pixi's statics texture holds them by key). */
@@ -118,6 +122,10 @@ enum {
 /* E-188: a keyed decoration's record: scaleX, scaleY, alpha, tint, texture, anchorX, anchorY as the row got them, and the
    epoch of that emit. */
 #define DECO_KEYED_WORDS 8u
+/* E-312, N-238: an entity's change words (K_CHANGE: statics frame, texture frame, last emitted frame), and a keyed
+   decoration slot's or LiquidFun particle's (D_CHANGE, LF_CHANGE: record frame, last emitted frame). */
+#define K_CHANGE_WORDS 3u
+#define CHANGE_WORDS 2u
 
 /* emitSpriteQueue's loop-invariant switches. */
 #define F_SORT_KEY 1u    /* rqSortKey && source.hasOrder */
@@ -593,9 +601,14 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out, int inq, int all) {
     changed = d & KEYED_DIRTY_STATICS;
     texMoved = (d & KEYED_DIRTY_TEXTURE) != 0;
   }
-  /* E-312: the frame this sprite's statics changed in, now; its key is marked for a change after K_SINCE. */
-  uint32_t *kc = HAS(e->qKey) && HAS(e->kChange) ? e->kChange + 2u * (uint32_t)idx : 0;
-  if (HAS(kc) && changed) kc[0] = e->kFrame;
+  /* E-312: the frame this sprite's statics changed in, now; its key is marked for a change after K_SINCE. N-238: the
+     frame it enters the view in too (missing from the queue frame before). */
+  uint32_t *kc = HAS(e->qKey) && HAS(e->kChange) ? e->kChange + K_CHANGE_WORDS * (uint32_t)idx : 0;
+  if (HAS(kc)) {
+    const uint32_t seen = kc[2];
+    kc[2] = e->kFrame;
+    if (changed | (e->kFrame - seen > 1u)) kc[0] = e->kFrame;
+  }
   const uint32_t lastTex = HAS(e->qKey) && HAS(e->aLastTex) ? e->aLastTex[idx] : 0;
   if (FLAG(e->sortKey)) e->qSortKey[out] = (float)order_key_k(e, i, idx, all);
   const float x = inq ? 0.0f : e->stX[i];
@@ -749,6 +762,19 @@ INLINE void plain_head_k(const Emit *e, uint32_t i, uint32_t out, int all) {
 
 INLINE void plain_head(const Emit *e, uint32_t i, uint32_t out) { plain_head_k(e, i, out, 0); }
 
+/* E-312: whether a keyed decoration slot's or LiquidFun particle's key is marked (`changed`: its record moved), from its
+   change words `c` (CHANGE_WORDS): a change after K_SINCE, on its first row of this frame (a marked key's change frame
+   moves to this one, so a later frame Pixi skips still marks it and its later rows here do not), or (N-238) its entering
+   the view, missing from the queue frame before. */
+INLINE uint32_t change_mark(const Emit *e, uint32_t *c, uint32_t changed) {
+  const uint32_t at = c[0];
+  const uint32_t seen = c[1];
+  c[1] = e->kFrame;
+  const uint32_t mark = changed | (e->kFrame - seen > 1u) | ((e->kAll | (at > e->kSince)) & (at != e->kFrame));
+  if (mark) c[0] = e->kFrame;
+  return mark;
+}
+
 /* E-188: a decoration row's key: its pool slot past the entities, with KEY_CHANGED when the statics the row got differ
    from the ones the slot last emitted, or those are from an earlier epoch (a resync, or never emitted: the records start
    at zero and the epochs at 1); the record then takes this row's. */
@@ -773,13 +799,9 @@ INLINE uint32_t deco_key(const Emit *e, int32_t idx, uint32_t out) {
     r[7] = e->dKeyEpoch;
   }
   /* E-312: marked for a change after the frame Pixi last drew keyed, on the slot's first row of this frame: the marking
-     row moves its change frame to this one (a later frame Pixi skips still marks it), so its later rows here do not. */
-  uint32_t mark = changed;
-  if (e->dChange) {
-    const uint32_t at = e->dChange[idx];
-    mark = changed | ((e->kAll | (at > e->kSince)) & (at != e->kFrame));
-    if (mark) e->dChange[idx] = e->kFrame;
-  }
+     row moves its change frame to this one (a later frame Pixi skips still marks it), so its later rows here do not.
+     N-238: and as it enters the view (change_mark). */
+  const uint32_t mark = e->dChange ? change_mark(e, e->dChange + CHANGE_WORDS * (uint32_t)idx, changed) : changed;
   return (e->dKeyBase + (uint32_t)idx) | (mark << 31);
 }
 
@@ -1015,13 +1037,9 @@ INLINE uint32_t lf_key(const Emit *e, int32_t idx, uint32_t out) {
   if ((uint32_t)idx >= e->lfKeyedCount) return KEY_NONE;
   /* Step 2: a record checked at the current compare epoch still holds this row's statics. */
   if (e->lfChecked && e->lfChecked[idx] == e->lfCmpEpoch) {
-    /* E-312: unread, but still marked while Pixi has not drawn the frame it last changed in (once a frame, as below). */
-    uint32_t mark = 0;
-    if (e->lfChange) {
-      const uint32_t at = e->lfChange[idx];
-      mark = (e->kAll | (at > e->kSince)) & (at != e->kFrame);
-      if (mark) e->lfChange[idx] = e->kFrame;
-    }
+    /* E-312: unread, but still marked while Pixi has not drawn the frame it last changed in (once a frame, as below),
+       and (N-238) as it enters the view. */
+    const uint32_t mark = e->lfChange ? change_mark(e, e->lfChange + CHANGE_WORDS * (uint32_t)idx, 0u) : 0u;
     return (e->lfKeyBase + (uint32_t)idx) | (mark << 31);
   }
   union { float f; uint32_t u; } sx = {e->qScaleX[out]}, sy = {e->qScaleY[out]}, al = {e->qAlpha[out]};
@@ -1039,12 +1057,7 @@ INLINE uint32_t lf_key(const Emit *e, int32_t idx, uint32_t out) {
     r[7] = e->dKeyEpoch;
   }
   if (e->lfChecked) e->lfChecked[idx] = e->lfCmpEpoch;
-  uint32_t mark = changed;
-  if (e->lfChange) {
-    const uint32_t at = e->lfChange[idx];
-    mark = changed | ((e->kAll | (at > e->kSince)) & (at != e->kFrame));
-    if (mark) e->lfChange[idx] = e->kFrame;
-  }
+  const uint32_t mark = e->lfChange ? change_mark(e, e->lfChange + CHANGE_WORDS * (uint32_t)idx, changed) : changed;
   return (e->lfKeyBase + (uint32_t)idx) | (mark << 31);
 }
 
@@ -1455,6 +1468,11 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
      full emit then flags it), and a hit rewrites the sprites' keys below. */
   uint32_t *qKey = PTR(uint32_t, Q_KEY);
   const int keyed = qKey != 0 && sKeyedDirty != 0;
+  /* N-238: a sprite missing from the queue frame before (the other buffer's) enters the view in this one, and its mark
+     sends the statics its row holds, which this buffer's last emit may have left unwritten (K_SKIP): a miss, so the full
+     emit writes them. */
+  const uint32_t *kSeen = keyed ? PTR(const uint32_t, K_CHANGE) : 0;
+  const uint32_t kNow = t[K_FRAME];
   /* Rows past the buffer pass the check (the JS reads undefined on both sides of each comparison there)
      and count as other types (their type reads undefined). */
   const uint32_t n = count < maxItems ? count : maxItems;
@@ -1471,6 +1489,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
       continue;
     }
     if (sDirty && sDirty[idx]) return PERSIST_MISS;
+    if (kSeen && kNow - kSeen[K_CHANGE_WORDS * (uint32_t)idx + 2u] > 1u) return PERSIST_MISS;
     const uint32_t anim = sAnim[idx];
     if (pAnim[i] != anim) return PERSIST_MISS;
     const uint32_t frame = aFrame[idx];
@@ -1581,8 +1600,9 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
         texOnly = !c && (d & KEYED_DIRTY_TEXTURE) != 0;
       }
       if (kChange) {
-        /* E-312: as sprite_row marks it. */
-        uint32_t *kc = kChange + 2u * (uint32_t)idx;
+        /* E-312: as sprite_row marks it (N-238: the walk missed on a sprite entering the view, so none does here). */
+        uint32_t *kc = kChange + K_CHANGE_WORDS * (uint32_t)idx;
+        kc[2] = kFrame;
         if (d & KEYED_DIRTY_STATICS) kc[0] = kFrame;
         if (d & KEYED_DIRTY_TEXTURE) kc[1] = kFrame;
         c |= (kSince == 0) | (kc[0] > kSince);

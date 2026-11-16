@@ -181,11 +181,12 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitLfKeyed', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedLiquidFun | 0) * EMIT_DECO_KEYED_BYTES : 0 },
       // E-194: the compare epoch each LiquidFun particle's record was last checked at (u32 an index).
       { name: 'emitLfChecked', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedLiquidFun | 0) * 4 : 0 },
-      // E-312: the queue frame each entity's statics and its texture last changed in (two u32 an entity), and each keyed
-      // decoration slot's and LiquidFun particle's record (a u32 each), so a key stays marked until Pixi draws past it.
-      { name: 'emitKeyChange', owner: 'pre-render', bytes: emit.pixiKeyed ? e * 8 : 0 },
-      { name: 'emitDecoChange', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedDecorations | 0) * 4 : 0 },
-      { name: 'emitLfChange', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedLiquidFun | 0) * 4 : 0 },
+      // E-312: the queue frame each entity's statics and its texture last changed in, and each keyed decoration slot's and
+      // LiquidFun particle's record, so a key stays marked until Pixi draws past it; N-238: then the last queue frame each
+      // was emitted in, so one entering the view is marked (preRenderEmit.c K_CHANGE_WORDS, CHANGE_WORDS: u32 each).
+      { name: 'emitKeyChange', owner: 'pre-render', bytes: emit.pixiKeyed ? e * 12 : 0 },
+      { name: 'emitDecoChange', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedDecorations | 0) * 8 : 0 },
+      { name: 'emitLfChange', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedLiquidFun | 0) * 8 : 0 },
     );
     // Each custom sprite layer's two queue buffers (pre-render writes, Pixi reads) and its collector: y and index
     // (u32 each), the pose stash x, y, rotC, rotS (f32 each), then type (u8) per row: CUSTOM_COLLECTOR_ROW_BYTES.
