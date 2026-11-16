@@ -23,8 +23,9 @@
    E-359: a keyed row (the caster's 7 floats, the light after them) and a full row (22 floats, the light over the last 4)
    go out in fixed stores, the light vec4 in one v128, converted once a light. E-358: a caster's nearest lights are one
    record, its maxShadowsPerEntity (float distance, light) pairs side by side (8 bytes a pair at T_NEAR_DIST), so a note
-   on a caster reads and moves whole pairs, mostly in one line. The same rows, bit for bit
-   (tests/node/shadowStampWasm.test.js and shadowStampKeyed.test.js). */
+   on a caster reads and moves whole pairs, mostly in one line; the rows of the nearest lights test the counts sixteen
+   at a time and skip the unlit casters. The same rows, bit for bit (tests/node/shadowStampWasm.test.js and
+   shadowStampKeyed.test.js). */
 #include <stdint.h>
 #include <wasm_simd128.h>
 
@@ -606,13 +607,27 @@ INLINE int32_t caster_rows(float *stamp, uint32_t df, int32_t cursor, int32_t ca
   return cursor;
 }
 
-/* The rows of maxShadowsPerEntity, caster by caster in caster order, until the stamp is full. */
+/* E-358: the rows of maxShadowsPerEntity, caster by caster in caster order, until the stamp is full. The counts are
+   tested sixteen at a time (one i8x16 compare and its bitmask): a block of unlit casters costs one test, and each lit
+   caster of a block is found by its bit, in order. */
 INLINE int32_t stamp_nearest_rows(float *stamp, uint32_t df, int32_t cursor, int32_t cap, const float *sun, uint32_t sf,
                                   uint32_t lightAt, const double *lights, const float *lvt, const uint64_t *near,
                                   const uint8_t *nearCount, uint32_t nSun, uint32_t maxPE, uint16_t *stampLightIdx,
                                   const int table, const int folded) {
   const int kind = row_kind(sf, df, lightAt);
-  for (uint32_t c = 0; c < nSun && cursor < cap; c++) {
+  const uint32_t blocks = nSun & ~15u;
+  uint32_t c = 0;
+  for (; c < blocks && cursor < cap; c += 16) {
+    const v128_t unlit = wasm_i8x16_eq(wasm_v128_load(nearCount + c), wasm_i8x16_splat(0));
+    uint32_t lit = (uint32_t)wasm_i8x16_bitmask(unlit) ^ 0xffffu;
+    while (lit && cursor < cap) {
+      const uint32_t at = c + (uint32_t)__builtin_ctz(lit);
+      lit &= lit - 1u;
+      cursor = caster_rows(stamp, df, cursor, cap, sun + at * sf, sf, lightAt, kind, lights, lvt, near + at * maxPE,
+                           nearCount[at], stampLightIdx, table, folded);
+    }
+  }
+  for (; c < nSun && cursor < cap; c++) {
     cursor = caster_rows(stamp, df, cursor, cap, sun + c * sf, sf, lightAt, kind, lights, lvt, near + c * maxPE,
                          nearCount[c], stampLightIdx, table, folded);
   }
