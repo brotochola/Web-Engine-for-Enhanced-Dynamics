@@ -112,7 +112,7 @@ import {
 import { instancedSpriteGlProgram, pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
 import {
   VOLUME_LAMP_FRAGMENT,
-  volumeLampCorners,
+  volumeLampVertexCount,
   volumeLampVertex,
   volumeLampWgsl,
   volumeMapGpuProgram,
@@ -7006,12 +7006,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * E-389: the lamps' map volumes' geometry for `tiles` tiles: the triangle's corners repeated a tile (volumeLampCorners,
-   * so the draw runs three vertices a tile) over the batch's instance attributes (its rows). Made once a count of tiles.
+   * E-389: the lamps' map volumes' geometry for `tiles` tiles: three vertices a tile in use (volumeLampVertexCount; the
+   * program takes the corner and the tile from the vertex index, so aTri only sizes the draw, as in the batch's own
+   * geometry) over the batch's instance attributes (its rows). Made once a count of tiles.
    */
   _volumeLampGeometry(batch, tiles) {
-    const corners = new Buffer({ data: volumeLampCorners(tiles), usage: BufferUsage.VERTEX, label: 'lamp-map-volume-corners' });
-    const attributes = { aTri: { buffer: corners, format: 'float32x2', stride: 8, offset: 0 } };
+    const vertices = new Float32Array(volumeLampVertexCount(tiles) * 2);
+    const attributes = { aTri: { buffer: vertices, format: 'float32x2' } };
     for (const [name, a] of Object.entries(batch.geometry.attributes)) {
       if (name === 'aTri') continue;
       attributes[name] = { buffer: a.buffer, format: a.format, stride: a.stride, offset: a.offset, instance: true };
