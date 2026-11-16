@@ -10,7 +10,7 @@ const { Scene, Camera, LAYER_KIND, BLEND_MODES } = WEED;
  * block it. compareCaptures.mjs compares this scene written in one API against the same lamps written in another.
  *
  * `?raycast=1`, `?groundScaleY=` (default 1), `?backend=webgpu`, `?glowMode=sprite` (lighting.lightGlow), `?ambient=`
- * (default 0.05). `?cones=1` (DX-SPOT): lamp 1 takes a cone of 360 degrees (it must draw as the point light it was),
+ * (default 0.05), `?glowRes=` (lighting.lightGlowResolution, E-404; left out, the engine's default). `?cones=1` (DX-SPOT): lamp 1 takes a cone of 360 degrees (it must draw as the point light it was),
  * lamps 4, 7 and 11 real cones (a hard edge turned by `direction`, a soft one on a turned entity, a fully soft one).
  */
 const WORLD_W = 1280;
@@ -36,6 +36,8 @@ export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 export const GLOW_MODE = query('glowMode') === 'sprite' ? 'sprite' : 'add';
 export const AMBIENT = queryNumber('ambient', 0.05);
 export const CONES = queryNumber('cones', 0) === 1;
+/** E-404: lighting.lightGlowResolution, written only when given (a revision without it ignores the key). */
+export const GLOW_RES = queryNumber('glowRes', NaN);
 
 /** ?cones=1: the cone fields some lamps take (by index). */
 const CONE_LAMPS = {
@@ -98,6 +100,7 @@ export class LightGalleryScene extends Scene {
       maxLights: 32,
       shadowsEnabled: true,
       lightGlow: GLOW_MODE,
+      ...(Number.isFinite(GLOW_RES) ? { lightGlowResolution: GLOW_RES } : {}),
       maxShadowCastingLights: 16,
       maxShadowsPerLight: 32,
       maxPolygonVertices: 2048,
