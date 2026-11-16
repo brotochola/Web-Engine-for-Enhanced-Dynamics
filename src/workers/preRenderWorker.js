@@ -94,9 +94,9 @@ import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_S
 import { Layer } from '../core/layer.js';
 import { computeBufferSize, createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
-    bindGpuPack, packIndexedRowsWasm, packInstancedRowsWasm, packKeyedCastersScanWasm, packSplitRowsWasm,
-    KEYED_SUN_DEFER, KEYED_SUN_SHEET, KEYED_SUN_SHEETS, KEYED_SUN_SHEET_WORDS, KEYED_SUN_SOLID, KEYED_SUN_TABLE,
-    KEYED_SUN_UNIFORM,
+    bindGpuPack, lampFramesWasm, packIndexedRowsWasm, packInstancedRowsWasm, packKeyedCastersScanWasm, packSplitRowsWasm,
+    KEYED_SUN_CONTACT, KEYED_SUN_DEFER, KEYED_SUN_LAMP_GEO, KEYED_SUN_SHEET, KEYED_SUN_SHEETS, KEYED_SUN_SHEET_WORDS,
+    KEYED_SUN_SOLID, KEYED_SUN_TABLE, KEYED_SUN_UNIFORM,
 } from '../render/gpuPackClient.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, radixSortIndicesWasm } from '../render/painterRadixClient.js';
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
@@ -473,6 +473,9 @@ export function applyListedSunFramesFor(rows, list, listed, active, mode, casts,
  * sheet's, only when a table's frames are not the ones the region holds (a new step of the sun's turn, a new proxy map,
  * other tables): a few hundred words a sheet, now and then. A sheet whose frames the pool does not hold, or whose front
  * is not one of its directions, has its casters left to the JS (KEYED_SUN_DEFER).
+ * E-393: and for the lamps' frames (lamp_frames), a sheet that stands on a contact (KEYED_SUN_CONTACT) and, past every
+ * sheet's frames where the pool has room, each uniform table's border geometry for the lamps' turn (lampTurnGeometry's
+ * lampGeo, doubles; KEYED_SUN_LAMP_GEO): a table without it has its casters' lamp rows left to the JS.
  * @param {object} sun the region's views
  * @param {Array} tables the direction tables by sheet id (sunFrameTables)
  */
@@ -492,7 +495,7 @@ export function syncKeyedSunTables(sun, tables) {
         const w = sheet * KEYED_SUN_SHEET_WORDS;
         const size = t.count * t.groups * t.maxFrames;
         const need = t.uniform ? 2 * size : size;
-        let flags = KEYED_SUN_TABLE | (t.solid ? KEYED_SUN_SOLID : 0);
+        let flags = KEYED_SUN_TABLE | (t.solid ? KEYED_SUN_SOLID : 0) | (t.contact ? KEYED_SUN_CONTACT : 0);
         if (size > 0 && t.front >= 0 && t.front < t.count && t.frameAt.length >= size
             && (!t.uniform || t.frameOf.length >= size) && at + need <= pool.length) {
             desc[w + KEYED_SUN_SHEET.FRAME_AT] = sun.poolByte + at * 4;
@@ -516,8 +519,30 @@ export function syncKeyedSunTables(sun, tables) {
         sun.frameOf[sheet] = t.frameOf;
         sun.frameShift[sheet] = t.frameShift;
     }
+    // E-393: the lamps' border geometries after the frames (each table's own, fixed with it), on an even word: doubles.
+    for (let sheet = 0; sheet < n; sheet++) {
+        const t = tables[sheet];
+        if (t === undefined || !(t.lampQuarter > 0)) continue;
+        const w = sheet * KEYED_SUN_SHEET_WORDS;
+        const geo = t.lampGeo;
+        at += at & 1;
+        if ((desc[w + KEYED_SUN_SHEET.FLAGS] & KEYED_SUN_DEFER) !== 0 || t.lampQuarter !== t.count >> 2
+            || geo.length !== 4 + 2 * t.lampQuarter || at + 2 * geo.length > pool.length) continue;
+        desc[w + KEYED_SUN_SHEET.LAMP_GEO] = sun.poolByte + at * 4;
+        for (let k = 0; k < geo.length; k++) {
+            LAMP_GEO_F64[0] = geo[k];
+            pool[at + 2 * k] = LAMP_GEO_I32[0];
+            pool[at + 2 * k + 1] = LAMP_GEO_I32[1];
+        }
+        at += 2 * geo.length;
+        desc[w + KEYED_SUN_SHEET.FLAGS] |= KEYED_SUN_LAMP_GEO;
+    }
     sun.tables = tables;
 }
+
+/** E-393: a double's two words, for the geometries syncKeyedSunTables writes through the pool's int32 view. */
+const LAMP_GEO_F64 = new Float64Array(1);
+const LAMP_GEO_I32 = new Int32Array(LAMP_GEO_F64.buffer);
 
 /** E-372: whether a table's frames are not the ones syncKeyedSunTables last copied for its sheet. */
 function keyedSunTablesMoved(sun, tables) {
@@ -710,9 +735,10 @@ function frameFacing(e, t, d, anims, frames) {
  * lampFrameFor's (which still takes the rays near a border, the other tables and the casters with no direction); the scale
  * written only when the flip changes its sign. E-370: a row whose caster is its own lamp's entity is dropped in the same
  * pass (dropOwnStampsInto's work, which runs alone only when this pass does not): the rows are walked once.
+ * E-393: from row `begin` (the rows before it the kernel's: applyLampFramesWasm).
  */
 export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive, dsMode,
-    dirs, anims, sheets, orients, kinds = null) {
+    dirs, anims, sheets, orients, kinds = null, begin = 0) {
     prepareLampFrames(tables, proxy, starts, counts);
     const entities = dsActive.length;
     let li = -1;
@@ -720,7 +746,7 @@ export function applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables
     let lid = -1;
     let lx = 0;
     let ly = 0;
-    for (let k = 0; k < stampN; k++) {
+    for (let k = begin; k < stampN; k++) {
         const at = k * GPU_CASTER_FLOATS;
         const i = lightIdx[k];
         if (i !== li) {
@@ -809,10 +835,11 @@ function dropOwnKeyedStampsInto(rows, stampN, lightIdx, lights) {
 /**
  * DX-SHADOW3D: applyLampFramesInto for keyed stamp rows: the frame float, ±(textureId + 1), negative mirrored. E-372: the
  * lamp's place once a run of its rows, a uniform table's turn from the borders (applyLampFramesInto's copy). E-370: and
- * a row whose key is its own lamp's entity dropped in the same pass (dropOwnKeyedStampsInto's work).
+ * a row whose key is its own lamp's entity dropped in the same pass (dropOwnKeyedStampsInto's work). E-393: from row
+ * `begin` (the rows before it the kernel's: applyLampFramesWasm).
  */
 export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, frames, dsActive,
-    dsMode, dirs, anims, sheets, orients, kinds = null) {
+    dsMode, dirs, anims, sheets, orients, kinds = null, begin = 0) {
     prepareLampFrames(tables, proxy, starts, counts);
     const entities = dsActive.length;
     let li = -1;
@@ -820,7 +847,7 @@ export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, t
     let lid = -1;
     let lx = 0;
     let ly = 0;
-    for (let k = 0; k < stampN; k++) {
+    for (let k = begin; k < stampN; k++) {
         const at = k * GPU_KEYED_STAMP_FLOATS;
         const i = lightIdx[k];
         if (i !== li) {
@@ -888,6 +915,155 @@ export function applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, t
             }
         }
         if (v !== 0) rows[at + 3] = v;
+    }
+}
+
+/**
+ * E-393: the stamp rows' lamp frames through the kernel (gpuPackClient.js lampFramesWasm, gpuPack.c lamp_frames: the
+ * frames it can tell and the drops of each lamp's own entity, as applyKeyedLampFramesInto and applyLampFramesInto write
+ * them), then the rows it listed in JS (applyListedKeyedLampFramesFor, applyListedLampFramesFor) and, when its list ran
+ * out, the JS pass from the first row it could not list. The tables' slots and frames first (prepareLampFrames, as the JS
+ * passes build them), brought into the sun frames' region (syncKeyedSunTables: a copy only when they moved).
+ * @param {object|null} b the pack kernel (bindGpuPack)
+ * @param {Array} lights the stamp's lights, the first `lightCount` the ones its rows name
+ * @param {object} cols the columns (lampFramesWasm's), and `listed` after the call
+ * @param {boolean} keyed keyed stamp rows (else full)
+ * @returns {boolean} whether it ran: false, nothing written (the JS pass writes every row)
+ */
+export function applyLampFramesWasm(b, rows, stampN, lightIdx, lights, lightCount, invG, tables, proxy, starts, counts,
+    cols, keyed) {
+    const region = b ? b.keyedSun : null;
+    if (!region || !b.lampFrames) return false;
+    prepareLampFrames(tables, proxy, starts, counts);
+    syncKeyedSunTables(region, tables);
+    const done = lampFramesWasm(b, rows, stampN, lightIdx, lights, lightCount, invG, cols, keyed);
+    if (done < 0) return false;
+    const listed = cols.listed;
+    if (keyed) {
+        if (listed > 0) {
+            applyListedKeyedLampFramesFor(rows, region.list, listed, lightIdx, lights, invG, tables, cols.frames, cols.active,
+                cols.mode, cols.dirs, cols.anims, cols.sheets, cols.orients, cols.kinds);
+        }
+        if (done < stampN) {
+            applyKeyedLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, cols.frames,
+                cols.active, cols.mode, cols.dirs, cols.anims, cols.sheets, cols.orients, cols.kinds, done);
+        }
+        return true;
+    }
+    if (listed > 0) {
+        applyListedLampFramesFor(rows, region.list, listed, lightIdx, lights, invG, tables, cols.frames, cols.active,
+            cols.mode, cols.dirs, cols.anims, cols.sheets, cols.orients, cols.kinds);
+    }
+    if (done < stampN) {
+        applyLampFramesInto(rows, stampN, lightIdx, lights, invG, tables, proxy, starts, counts, cols.frames, cols.active,
+            cols.mode, cols.dirs, cols.anims, cols.sheets, cols.orients, cols.kinds, done);
+    }
+    return true;
+}
+
+/**
+ * E-393: the frame its lamp sees of directional caster e, a card that is not fixed, for the ray in LAMP_RAY (dx, dy on
+ * the floor), as applyLampFramesInto works it out: a uniform table's turn from the ray's quarter and the borders it has
+ * passed (lampTurnGeometry), or lampFrameFor's (a ray near a border, another table, no direction drawn).
+ */
+function lampTurnFrame(e, t, dirs, anims, frames) {
+    const dx = LAMP_RAY[0];
+    const dy = LAMP_RAY[1];
+    const quarter = t.lampQuarter;
+    const cur = dirs[e];
+    let d = -1;
+    if (quarter > 0 && cur < t.count) {
+        const geo = t.lampGeo;
+        const c = geo[0];
+        const s = geo[1];
+        const X = dx * s - dy * c;
+        const Y = -(dx * c + dy * s);
+        const below = (Y < 0) & 1;
+        const quad = (below << 1) | (((X < 0) & 1) ^ below);
+        const qc = QUARTER_C[quad];
+        const qs = QUARTER_S[quad];
+        const u = qc * X + qs * Y;
+        const w = qc * Y - qs * X;
+        const len = Math.abs(u) + Math.abs(w);
+        let j = 0;
+        for (let b = 4; b <= 2 * quarter; b += 2) j += (geo[b] * w - geo[b + 1] * u >= 0) & 1;
+        const lo = 2 + 2 * j;
+        const margin = LAMP_TURN_MARGIN * len;
+        if (len > LAMP_TURN_MIN && geo[lo] * w - geo[lo + 1] * u > margin && geo[lo + 3] * u - geo[lo + 2] * w > margin) {
+            d = cur + quad * quarter + j;
+            if (d >= t.count) d -= t.count;
+        }
+    }
+    if (d < 0) return lampFrameFor(e, t, dirs, anims, frames);
+    const g = anims[e];
+    let f = frames !== null ? frames[e] | 0 : 0;
+    if (f < 0 || f >= t.maxFrames) f = 0;
+    return t.frameAt[(d * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
+}
+
+/**
+ * E-393: the keyed stamp rows lamp_frames left to the JS (`listed` rows in `list`, a row a word), each as
+ * applyKeyedLampFramesInto writes it: dropped when its caster is its lamp's entity, and the frame its lamp sees.
+ */
+export function applyListedKeyedLampFramesFor(rows, list, listed, lightIdx, lights, invG, tables, frames, dsActive, dsMode,
+    dirs, anims, sheets, orients, kinds) {
+    const entities = dsActive.length;
+    for (let m = 0; m < listed; m++) {
+        const k = list[m];
+        const at = k * GPU_KEYED_STAMP_FLOATS;
+        const L = lights[lightIdx[k]];
+        const e = rows[at + 2] | 0;
+        if (L && e === L.id) rows[at + 4] = 0;
+        if (e < 0 || e >= entities || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
+        const t = tables[sheets[e]];
+        if (t === undefined) continue;
+        if (!castsCard(t, kinds, e, true)) {
+            if (rows[at + 3] !== 0) rows[at + 3] = 0;
+            continue;
+        }
+        let v = 0;
+        if (orients !== null && orients[e] === 1) {
+            v = frameFacing(e, t, t.front, anims, frames);
+        } else {
+            if (!L) continue;
+            LAMP_RAY[0] = rows[at] - L.x;
+            LAMP_RAY[1] = (rows[at + 1] - L.y) * invG;
+            v = lampTurnFrame(e, t, dirs, anims, frames);
+        }
+        if (v !== 0) rows[at + 3] = v;
+    }
+}
+
+/**
+ * E-393: the full stamp rows lamp_frames left to the JS (`listed` rows in `list`, a row a word), each as
+ * applyLampFramesInto writes it: dropped when its caster is its lamp's entity, its texture and its scale's flip.
+ */
+export function applyListedLampFramesFor(rows, list, listed, lightIdx, lights, invG, tables, frames, dsActive, dsMode, dirs,
+    anims, sheets, orients, kinds) {
+    const entities = dsActive.length;
+    for (let m = 0; m < listed; m++) {
+        const k = list[m];
+        const at = k * GPU_CASTER_FLOATS;
+        const L = lights[lightIdx[k]];
+        const e = rows[at + GPU_ROW_TINT] | 0;
+        if (L && e === L.id) rows[at + GPU_SPRITE_FLOATS] = 0;
+        if (e < 0 || e >= entities || dsActive[e] !== 1 || dsMode[e] !== 1) continue;
+        const t = tables[sheets[e]];
+        if (t === undefined) continue;
+        const card = castsCard(t, kinds, e, true);
+        let v = 0;
+        if (card && !(orients !== null && orients[e] === 1)) {
+            if (!L) continue;
+            LAMP_RAY[0] = rows[at] - L.x;
+            LAMP_RAY[1] = (rows[at + 1] - L.y) * invG;
+            v = lampTurnFrame(e, t, dirs, anims, frames);
+        } else {
+            v = frameFacing(e, t, card ? t.front : dirs[e], anims, frames);
+        }
+        if (v === 0) continue;
+        rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
+        const sx = rows[at + GPU_ROW_SCALE_X];
+        if ((v < 0) !== (sx < 0)) rows[at + GPU_ROW_SCALE_X] = -sx;
     }
 }
 
@@ -1298,6 +1474,19 @@ class PreRenderWorker extends AbstractWorker {
             sheets: EMPTY_U8,
             frames: null,
             framed: false,
+            listed: 0,
+        };
+        // E-393: the columns the lamps' frames' kernel reads (applyLampFramesWasm's `cols`, bound by _applyLampFrames), and
+        // the rows it left to the JS.
+        this._lampCols = {
+            active: EMPTY_U8,
+            mode: EMPTY_U8,
+            dirs: EMPTY_U8,
+            anims: EMPTY_U8,
+            sheets: EMPTY_U8,
+            orients: null,
+            kinds: null,
+            frames: null,
             listed: 0,
         };
         // DX-CASTER (F9): whether casters ask for their own way (rescanned every 30 frames), and each one's code.
@@ -4464,7 +4653,8 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * DX-SHADOW3D: the stamp rows' frames as their lamps see them (applyLampFramesInto, applyKeyedLampFramesInto). E-370:
-     * the same pass drops the rows of each lamp's own entity.
+     * the same pass drops the rows of each lamp's own entity. E-393: through the kernel (applyLampFramesWasm: the JS the
+     * rows it lists), the JS pass alone when the kernel cannot take the call.
      * @returns {boolean} whether it ran (else dropOwnStampsInto or dropOwnKeyedStampsInto drops them)
      */
     _applyLampFrames(dst, stampN) {
@@ -4472,13 +4662,26 @@ class PreRenderWorker extends AbstractWorker {
         const starts = this.animationFrameStart;
         const counts = this.animationFrameCount;
         if (!proxy || !starts || !counts || !this._stampLights || !dst.stampLightIdx) return false;
-        const apply = this._gpuSunKeyed ? applyKeyedLampFramesInto : applyLampFramesInto;
-        apply(
-            dst.stamp, stampN, dst.stampLightIdx, this._stampLights, 1 / cameraFloorScaleY(this.config), this._sunFrameTables,
-            proxy, starts, counts, this.entityFrameIndex || null, DirectionalSprite.active, DirectionalSprite.mode,
-            DirectionalSprite.directionIndex, DirectionalSprite.animation, SpriteRenderer.spritesheetId, ShadowCaster.orient || null,
-            ShadowCaster.lampKind || null,
-        );
+        const c = this._lampCols;
+        c.active = DirectionalSprite.active;
+        c.mode = DirectionalSprite.mode;
+        c.dirs = DirectionalSprite.directionIndex;
+        c.anims = DirectionalSprite.animation;
+        c.sheets = SpriteRenderer.spritesheetId;
+        c.orients = ShadowCaster.orient || null;
+        c.kinds = ShadowCaster.lampKind || null;
+        c.frames = this.entityFrameIndex || null;
+        const invG = 1 / cameraFloorScaleY(this.config);
+        const keyed = this._gpuSunKeyed;
+        // The lights the stamp went through (_stampAgainstSun's): its rows name no other.
+        const lightCount = Math.min(this._stampLightCount | 0, this.maxShadowCastingLights | 0);
+        if (applyLampFramesWasm(this._gpuPackWasm, dst.stamp, stampN, dst.stampLightIdx, this._stampLights, lightCount, invG,
+            this._sunFrameTables, proxy, starts, counts, c, keyed)) {
+            return true;
+        }
+        const apply = keyed ? applyKeyedLampFramesInto : applyLampFramesInto;
+        apply(dst.stamp, stampN, dst.stampLightIdx, this._stampLights, invG, this._sunFrameTables, proxy, starts, counts, c.frames,
+            c.active, c.mode, c.dirs, c.anims, c.sheets, c.orients, c.kinds);
         return true;
     }
 

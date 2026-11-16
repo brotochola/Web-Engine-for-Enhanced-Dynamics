@@ -675,6 +675,182 @@ uint32_t pack_casters_keyed_scan(uint32_t table, uint32_t keyByte, uint32_t type
   return casters_keyed_scan(t, key, type, count, cap, d, keyBase, 0, 0);
 }
 
+/* E-393: the lamps' frames of directional casters in the stamp rows, as pre-render's applyKeyedLampFramesInto (keyed rows)
+   and applyLampFramesInto (full rows) write them (preRenderWorker.js), from the sun frames' region: E-372's sheet table,
+   whose descriptors also say whether a sheet stands on a contact (SF_CONTACT) and, for a uniform table whose borders the
+   lamps' turn reads without an arctangent (lampTurnGeometry), SF_LAMP_GEO and the byte of that geometry (SF_GEO: the cos
+   and sin of half a step, then each border's in the first quarter), and the lamp block at B, LF_WORDS u32: DirectionalSprite's
+   active, mode, directionIndex and animation, ShadowCaster's orient and lampKind (0: none), SpriteRenderer's spritesheetId
+   (u8 each), the entities' frames of the cycle (u16, 0: none), the entity count (DirectionalSprite's active's length), the
+   sheet table, the light table (LAMP_LIGHT_DOUBLES a stamp light index: x, y, the light's entity, 1 for a light and 0 for
+   none), the list of the rows left to the JS (a u32 each: the stamp row) and its capacity; then the rows listed and the rows
+   gone through, which it writes. Each row in the JS's order: a row of its lamp's own entity drops its shadow (its shadow
+   height 0); an active DirectionalSprite playing a group whose sheet has a table takes, when its kind for the lamps is a
+   card, the frame its lamp sees: a fixed card its table's front, any other the direction drawn turned by the ray from the
+   lamp, told from the quarter and the borders it has passed as the JS tells it (the same doubles, the same operations); a
+   full row whose kind is no card the camera's direction, a keyed one frame 0. A row the kernel does not decide goes in
+   the list untouched but for its drop: a light index past the table, an entity float that is not an int32, a sheet whose
+   frames the region does not hold, a table without the geometry, no direction drawn, a ray within the margin of a
+   border (lampFrameFor's arctangent), a full row whose mirrored frame flips a NaN scale. A row that finds the list full
+   ends the call: it and the rows after it stay as they were, for the JS. */
+enum {
+  LF_ACTIVE, LF_MODE, LF_DIRECTION, LF_ANIMATION, LF_ORIENT, LF_KIND, LF_SHEET, LF_FRAME, LF_ENTITY_COUNT, LF_SHEETS,
+  LF_LIGHTS, LF_LIST, LF_LIST_CAP, LF_LISTED, LF_DONE, LF_WORDS
+};
+#define SF_CONTACT 16u
+#define SF_LAMP_GEO 32u
+/* A sheet descriptor's word for its lamp geometry's byte (E-372 left it free). */
+#define SF_GEO 7
+#define LAMP_LIGHT_DOUBLES 4
+/* The stamp rows: keyed (KEYED_CASTER_FLOATS and the light) and full (gpuQueueLayout.js GPU_CASTER_FLOATS). */
+#define KEYED_STAMP_FLOATS (KEYED_CASTER_FLOATS + 4)
+#define FULL_STAMP_FLOATS 22
+/* preRenderWorker.js LAMP_TURN_MARGIN and LAMP_TURN_MIN. */
+#define LAMP_TURN_MARGIN 1e-4
+#define LAMP_TURN_MIN 1e-200
+
+typedef struct {
+  const uint8_t *active, *mode, *direction, *animation, *orient, *kind, *sheet;
+  const uint16_t *frame;
+  uint32_t entities;
+  const uint32_t *sheets;
+} LampCols;
+
+/* One stamp row (r) for its light (present: a light; its entity lid at lx, ly): 1 when it is left to the JS. */
+INLINE int lamp_frame_row(float *r, const LampCols *c, int present, double lid, double lx, double ly, double invG,
+                          const int keyed) {
+  const float ef = r[keyed ? 2 : 9];
+  /* The JS reads the entity with `| 0`: past the int32 range (NaN too) it is its own. */
+  if (!(ef >= -2147483648.0f && ef < 2147483648.0f)) return 1;
+  const int32_t e = (int32_t)ef;
+  if (present && (double)e == lid) r[keyed ? 4 : 15] = 0.0f;
+  if (e < 0 || (uint32_t)e >= c->entities || c->active[e] != 1 || c->mode[e] != 1) return 0;
+  const uint32_t *t = c->sheets + (uint32_t)c->sheet[e] * SF_WORDS;
+  const uint32_t flags = t[SF_FLAGS];
+  if (!(flags & SF_TABLE)) return 0;
+  const uint32_t k = c->kind ? c->kind[e] : 0;
+  const int card = k == CAST_CARD || (k == 0 && !(flags & SF_CONTACT));
+  if (keyed && !card) {
+    if (!(r[3] == 0.0f)) r[3] = 0.0f;
+    return 0;
+  }
+  const int fixed = c->orient && c->orient[e] == 1;
+  const uint32_t count = t[SF_COUNT];
+  uint32_t d;
+  if (card && !fixed) {
+    if (!present) return 0;
+    if ((flags & (SF_DEFER | SF_LAMP_GEO)) != SF_LAMP_GEO) return 1;
+    const uint32_t cur = c->direction[e];
+    if (cur >= count) return 1;
+    /* applyLampFramesInto's turn: (-dy, -dx) turned on by half a step, its quarter from the signs, its sector from the
+       borders it has passed, kept when both of the sector's borders are farther than the margin. */
+    const double *geo = (const double *)(uintptr_t)t[SF_GEO];
+    const double dx = (double)r[0] - lx;
+    const double dy = ((double)r[1] - ly) * invG;
+    const double gc = geo[0];
+    const double gs = geo[1];
+    const double X = dx * gs - dy * gc;
+    const double Y = -(dx * gc + dy * gs);
+    const uint32_t below = Y < 0.0;
+    const uint32_t quad = (below << 1) | ((uint32_t)(X < 0.0) ^ below);
+    /* QUARTER_C and QUARTER_S: cos and sin of -quad quarter turns, exact. */
+    const double qc = quad == 0 ? 1.0 : quad == 2 ? -1.0 : 0.0;
+    const double qs = quad == 1 ? 1.0 : quad == 3 ? -1.0 : 0.0;
+    const double u = qc * X + qs * Y;
+    const double w = qc * Y - qs * X;
+    const double len = __builtin_fabs(u) + __builtin_fabs(w);
+    const uint32_t quarter = count >> 2;
+    uint32_t j = 0;
+    for (uint32_t b = 4; b <= 2 * quarter; b += 2) j += geo[b] * w - geo[b + 1] * u >= 0.0;
+    const uint32_t lo = 2 + 2 * j;
+    const double margin = LAMP_TURN_MARGIN * len;
+    if (!(len > LAMP_TURN_MIN && geo[lo] * w - geo[lo + 1] * u > margin && geo[lo + 3] * u - geo[lo + 2] * w > margin)) {
+      return 1;
+    }
+    d = cur + quad * quarter + j;
+    if (d >= count) d -= count;
+  } else {
+    if (flags & SF_DEFER) return 1;
+    /* frameFacing: a fixed card's front, the camera's direction for columns; none past the table's directions. */
+    d = card ? t[SF_FRONT] : c->direction[e];
+    if (d >= count) return 0;
+  }
+  const uint32_t groups = t[SF_GROUPS];
+  const uint32_t most = t[SF_MAX_FRAMES];
+  const uint32_t g = c->animation[e];
+  uint32_t f = c->frame ? c->frame[e] : 0;
+  if (f >= most) f = 0;
+  const int32_t v = ((const int32_t *)(uintptr_t)t[SF_FRAME_AT])[(d * groups + (g < groups ? g : 0)) * most + f];
+  if (keyed) {
+    if (v != 0) r[3] = (float)v;
+    return 0;
+  }
+  if (v == 0) return 0;
+  const float sx = r[2];
+  if (v < 0 && sx != sx) return 1;
+  r[10] = (float)((v < 0 ? -v : v) - 1);
+  if ((v < 0) != (sx < 0.0f)) r[2] = -sx;
+  return 0;
+}
+
+/* E-393: stampN rows (keyed, a constant, so each form is a copy) whose light is lightIdx[k] (u16): the lamp block at B,
+   the light table's first lightCount lights. The light is read once a run of its rows (the stamp lists come by light).
+   Returns the rows gone through (B[LF_DONE] too). */
+INLINE uint32_t lamp_frame_rows(float *rows, uint32_t stampN, const uint16_t *lightIdx, uint32_t lightCount, double invG,
+                                uint32_t *B, const int keyed) {
+  LampCols c;
+  c.active = (const uint8_t *)(uintptr_t)B[LF_ACTIVE];
+  c.mode = (const uint8_t *)(uintptr_t)B[LF_MODE];
+  c.direction = (const uint8_t *)(uintptr_t)B[LF_DIRECTION];
+  c.animation = (const uint8_t *)(uintptr_t)B[LF_ANIMATION];
+  c.orient = (const uint8_t *)(uintptr_t)B[LF_ORIENT];
+  c.kind = (const uint8_t *)(uintptr_t)B[LF_KIND];
+  c.sheet = (const uint8_t *)(uintptr_t)B[LF_SHEET];
+  c.frame = (const uint16_t *)(uintptr_t)B[LF_FRAME];
+  c.entities = B[LF_ENTITY_COUNT];
+  c.sheets = (const uint32_t *)(uintptr_t)B[LF_SHEETS];
+  const double *lights = (const double *)(uintptr_t)B[LF_LIGHTS];
+  uint32_t *list = (uint32_t *)(uintptr_t)B[LF_LIST];
+  const uint32_t listCap = B[LF_LIST_CAP];
+  const uint32_t stride = keyed ? KEYED_STAMP_FLOATS : FULL_STAMP_FLOATS;
+  uint32_t listed = 0;
+  uint32_t li = 0xffffffffu;
+  int known = 0;
+  int present = 0;
+  double lid = 0.0, lx = 0.0, ly = 0.0;
+  uint32_t k = 0;
+  for (; k < stampN; k++) {
+    const uint32_t i = lightIdx[k];
+    if (i != li) {
+      li = i;
+      known = i < lightCount;
+      if (known) {
+        const double *L = lights + i * LAMP_LIGHT_DOUBLES;
+        lx = L[0];
+        ly = L[1];
+        lid = L[2];
+        present = L[3] != 0.0;
+      }
+    }
+    if (known && !lamp_frame_row(rows + k * stride, &c, present, lid, lx, ly, invG, keyed)) continue;
+    if (listed == listCap) break;
+    list[listed++] = k;
+  }
+  B[LF_LISTED] = listed;
+  B[LF_DONE] = k;
+  return k;
+}
+
+__attribute__((export_name("lamp_frames")))
+uint32_t lamp_frames(uint32_t rowsByte, uint32_t stampN, uint32_t lightIdxByte, uint32_t lightCount, double invG,
+                     uint32_t blockByte, uint32_t keyed) {
+  float *rows = (float *)(uintptr_t)rowsByte;
+  const uint16_t *lightIdx = (const uint16_t *)(uintptr_t)lightIdxByte;
+  uint32_t *B = (uint32_t *)(uintptr_t)blockByte;
+  if (keyed) return lamp_frame_rows(rows, stampN, lightIdx, lightCount, invG, B, 1);
+  return lamp_frame_rows(rows, stampN, lightIdx, lightCount, invG, B, 0);
+}
+
 /* packInstancedRows' slow path, its parameters as doubles at `params` (gpuPackClient.js GENERAL_PARAMS): flags
    (screen 1, a turned camera 2, pixel snap 4, a type filter 8, an include type 16), the camera's x and y, the screen
    scale, the turn's cos and sin, its focus x and y, half the canvas in pixels, the snap camera's x and y and zoom,

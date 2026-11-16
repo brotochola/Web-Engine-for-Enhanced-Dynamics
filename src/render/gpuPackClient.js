@@ -5,7 +5,9 @@
 // copied into the memory's index scratch first. Anything else returns -1 and the caller packs in JS.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
-import { GPU_CASTER_FLOATS, GPU_GBUF_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_SPRITE_FLOATS } from './gpuQueueLayout.js';
+import {
+  GPU_CASTER_FLOATS, GPU_GBUF_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_STAMP_FLOATS, GPU_SPRITE_FLOATS,
+} from './gpuQueueLayout.js';
 import { engineWasmUrl } from '../wasm/engine.js';
 
 
@@ -29,16 +31,25 @@ export const KEYED_SUN_SHEETS = 256;
 export const KEYED_SUN_SHEET_WORDS = 8;
 export const KEYED_SUN_LIST_CAP = 8192;
 export const KEYED_SUN_POOL_WORDS = 65536;
+/**
+ * E-393: past the pool, the lamps' frames' block (LAMP_FRAMES_BLOCK_WORDS u32, gpuPack.c LF_*) and light table
+ * (LAMP_FRAMES_LIGHTS lights of LAMP_LIGHT_DOUBLES f64: x, y, the light's entity, 1 for a light and 0 for none).
+ */
+export const LAMP_FRAMES_BLOCK_WORDS = 16;
+export const LAMP_FRAMES_LIGHTS = 1024;
+export const LAMP_LIGHT_DOUBLES = 4;
 
-/** E-372: the sun frames' region's bytes. */
+/** E-372: the sun frames' region's bytes (E-393: with the lamps' block and light table). */
 export function keyedSunRegionBytes() {
   const tables = KEYED_SUN_BLOCK_WORDS + KEYED_SUN_SHEETS * KEYED_SUN_SHEET_WORDS;
-  return (tables + 2 * KEYED_SUN_LIST_CAP + KEYED_SUN_POOL_WORDS) * 4;
+  return (tables + 2 * KEYED_SUN_LIST_CAP + KEYED_SUN_POOL_WORDS + LAMP_FRAMES_BLOCK_WORDS) * 4
+    + LAMP_FRAMES_LIGHTS * LAMP_LIGHT_DOUBLES * 8;
 }
 
 /**
  * E-372: views of the sun frames' region at `byte` (null for none, 0 or less), and what its sheet table holds:
  * preRenderWorker.js syncKeyedSunTables writes it (`tables`, and by sheet id the frames it copied and their turn).
+ * E-393: the lamps' block and light table past the pool (lamp_frames lists its rows in `list`, a row a word).
  * @param {ArrayBufferLike} buffer
  * @param {number} byte
  */
@@ -47,6 +58,8 @@ export function keyedSunViews(buffer, byte) {
   const sheetsByte = byte + KEYED_SUN_BLOCK_WORDS * 4;
   const listByte = sheetsByte + KEYED_SUN_SHEETS * KEYED_SUN_SHEET_WORDS * 4;
   const poolByte = listByte + 2 * KEYED_SUN_LIST_CAP * 4;
+  const lampByte = poolByte + KEYED_SUN_POOL_WORDS * 4;
+  const lightsByte = lampByte + LAMP_FRAMES_BLOCK_WORDS * 4;
   return {
     byte,
     block: new Uint32Array(buffer, byte, KEYED_SUN_BLOCK_WORDS),
@@ -57,6 +70,10 @@ export function keyedSunViews(buffer, byte) {
     listCap: KEYED_SUN_LIST_CAP,
     pool: new Int32Array(buffer, poolByte, KEYED_SUN_POOL_WORDS),
     poolByte,
+    lampBlock: new Uint32Array(buffer, lampByte, LAMP_FRAMES_BLOCK_WORDS),
+    lampByte,
+    lights: new Float64Array(buffer, lightsByte, LAMP_FRAMES_LIGHTS * LAMP_LIGHT_DOUBLES),
+    lightsByte,
     tables: null,
     frameOf: new Array(KEYED_SUN_SHEETS).fill(null),
     frameAt: new Array(KEYED_SUN_SHEETS).fill(null),
@@ -80,7 +97,7 @@ export async function bindGpuPack(memory, layout) {
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
     'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed', 'pack_casters_keyed_scan',
-    'pack_sprites_keyed_rows', 'pack_sprites_keyed_gbuf', 'pack_sprites_keyed_rows_gbuf',
+    'pack_sprites_keyed_rows', 'pack_sprites_keyed_gbuf', 'pack_sprites_keyed_rows_gbuf', 'lamp_frames',
   ]);
   return {
     buffer: memory.buffer,
@@ -103,6 +120,8 @@ export async function bindGpuPack(memory, layout) {
     castersKeyed: k.pack_casters_keyed,
     // E-192: the same rows for the casters it finds in the queue itself.
     castersKeyedScan: k.pack_casters_keyed_scan,
+    // E-393: the lamps' frames of directional casters in the stamp rows.
+    lampFrames: k.lamp_frames,
     // Close-out group B: packInstancedRows' slow path (a type filter, screen space, pixel snap), its parameters 16
     // bytes into the results region (GENERAL_PARAMS doubles).
     spritesGeneral: k.pack_sprites_general,
@@ -477,12 +496,19 @@ export const KEYED_SUN = Object.freeze({
  * sun, its casters left to the JS (its frames not copied).
  */
 export const KEYED_SUN_SHEET = Object.freeze({
-  FLAGS: 0, COUNT: 1, GROUPS: 2, MAX_FRAMES: 3, FRONT: 4, FRAME_OF: 5, FRAME_AT: 6,
+  FLAGS: 0, COUNT: 1, GROUPS: 2, MAX_FRAMES: 3, FRONT: 4, FRAME_OF: 5, FRAME_AT: 6, LAMP_GEO: 7,
 });
 export const KEYED_SUN_TABLE = 1;
 export const KEYED_SUN_UNIFORM = 2;
 export const KEYED_SUN_SOLID = 4;
 export const KEYED_SUN_DEFER = 8;
+/**
+ * E-393: and for the lamps' frames (lamp_frames): the sheet stands on a contact (its casters left to it cast their solid
+ * for the lamps), and the table's border geometry for the lamps' turn is in the pool (lampTurnGeometry's lampGeo, its
+ * byte at LAMP_GEO; doubles).
+ */
+export const KEYED_SUN_CONTACT = 16;
+export const KEYED_SUN_LAMP_GEO = 32;
 
 /** E-372: whether column v is one the kernel reads at its byte: in the memory, past byte 0, `min` elements at least. */
 function kernelColumn(v, buffer, min) {
@@ -557,6 +583,82 @@ export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity, su
     sun.listed = sunAt > 0 ? b.keyedSun.block[KEYED_SUN.LISTED] : 0;
   }
   return out === 0xffffffff ? -1 : out;
+}
+
+/** E-393: the lamps' frames' block's words (gpuPack.c LF_*: keyedSunViews' `lampBlock`). */
+export const LAMP_FRAMES = Object.freeze({
+  ACTIVE: 0, MODE: 1, DIRECTION: 2, ANIMATION: 3, ORIENT: 4, KIND: 5, SHEET: 6, FRAME: 7, ENTITY_COUNT: 8, SHEETS: 9,
+  LIGHTS: 10, LIST: 11, LIST_CAP: 12, LISTED: 13, DONE: 14,
+});
+
+/** E-393: whether column v is one the kernel reads at its byte, `bytes` an element: kernelColumn, its element's size too. */
+function lampColumn(v, buffer, min, bytes) {
+  return kernelColumn(v, buffer, min) && v.BYTES_PER_ELEMENT === bytes;
+}
+
+/**
+ * E-393: the lamps' frames of `stampN` stamp rows (`rows`: keyed rows when `keyed`, GPU_KEYED_STAMP_FLOATS each, else
+ * full rows of GPU_CASTER_FLOATS) through the kernel (gpuPack.c lamp_frames), as preRenderWorker.js
+ * applyKeyedLampFramesInto and applyLampFramesInto write them, from the sun frames' region (its sheet table brought to
+ * `cols`' tables by syncKeyedSunTables). `lightIdx` (u16) names each row's light in `lights`, whose first `lightCount` (at
+ * most LAMP_FRAMES_LIGHTS) go into the light table (x, y, id; none for a missing one); `cols` holds the columns, as
+ * _applyLampFrames binds them: DirectionalSprite's `active`, `mode`, `dirs` (directionIndex) and `anims` (animation),
+ * SpriteRenderer's `sheets` (spritesheetId), ShadowCaster's `orients` and `kinds` (lampKind) and the entities' `frames`
+ * (null for none of the last three). -1, nothing written, when the call is not one the kernel takes: no region or kernel,
+ * the rows or the light index outside the memory, a column outside it, of another element size or shorter than
+ * `cols.active`. Else the rows the kernel went through: every row, or the first one its list had no room for (it and the
+ * rows after it as they were, for the JS); `cols.listed` the rows before it left to the JS, a row a word in
+ * b.keyedSun.list.
+ * @returns {number}
+ */
+export function lampFramesWasm(b, rows, stampN, lightIdx, lights, lightCount, invG, cols, keyed) {
+  const region = b ? b.keyedSun : null;
+  if (region === null || !b.lampFrames || !rows || !lightIdx || !cols.active) return -1;
+  const buf = b.buffer;
+  const n = stampN >>> 0;
+  const floats = keyed ? GPU_KEYED_STAMP_FLOATS : GPU_CASTER_FLOATS;
+  if (rows.buffer !== buf || rows.length < n * floats || !lampColumn(lightIdx, buf, n, 2)) return -1;
+  const entities = cols.active.length;
+  if (!lampColumn(cols.active, buf, entities, 1) || !lampColumn(cols.mode, buf, entities, 1)
+    || !lampColumn(cols.dirs, buf, entities, 1) || !lampColumn(cols.anims, buf, entities, 1)
+    || !lampColumn(cols.sheets, buf, entities, 1)) return -1;
+  if (cols.orients !== null && !lampColumn(cols.orients, buf, entities, 1)) return -1;
+  if (cols.kinds !== null && !lampColumn(cols.kinds, buf, entities, 1)) return -1;
+  if (cols.frames !== null && !lampColumn(cols.frames, buf, entities, 2)) return -1;
+  let m = lightCount | 0;
+  if (m > lights.length) m = lights.length;
+  if (m > LAMP_FRAMES_LIGHTS) m = LAMP_FRAMES_LIGHTS;
+  if (m < 0) m = 0;
+  const T = region.lights;
+  for (let i = 0, at = 0; i < m; i++, at += LAMP_LIGHT_DOUBLES) {
+    const L = lights[i];
+    if (L) {
+      T[at] = L.x;
+      T[at + 1] = L.y;
+      T[at + 2] = L.id;
+      T[at + 3] = 1;
+    } else {
+      T[at + 3] = 0;
+    }
+  }
+  const B = region.lampBlock;
+  B[LAMP_FRAMES.ACTIVE] = cols.active.byteOffset;
+  B[LAMP_FRAMES.MODE] = cols.mode.byteOffset;
+  B[LAMP_FRAMES.DIRECTION] = cols.dirs.byteOffset;
+  B[LAMP_FRAMES.ANIMATION] = cols.anims.byteOffset;
+  B[LAMP_FRAMES.ORIENT] = cols.orients !== null ? cols.orients.byteOffset : 0;
+  B[LAMP_FRAMES.KIND] = cols.kinds !== null ? cols.kinds.byteOffset : 0;
+  B[LAMP_FRAMES.SHEET] = cols.sheets.byteOffset;
+  B[LAMP_FRAMES.FRAME] = cols.frames !== null ? cols.frames.byteOffset : 0;
+  B[LAMP_FRAMES.ENTITY_COUNT] = entities;
+  B[LAMP_FRAMES.SHEETS] = region.sheetsByte;
+  B[LAMP_FRAMES.LIGHTS] = region.lightsByte;
+  B[LAMP_FRAMES.LIST] = region.listByte;
+  B[LAMP_FRAMES.LIST_CAP] = region.list.length;
+  B[LAMP_FRAMES.LISTED] = 0;
+  const done = b.lampFrames(rows.byteOffset, n, lightIdx.byteOffset, m, invG, region.lampByte, keyed ? 1 : 0) >>> 0;
+  cols.listed = B[LAMP_FRAMES.LISTED];
+  return done;
 }
 
 /**
