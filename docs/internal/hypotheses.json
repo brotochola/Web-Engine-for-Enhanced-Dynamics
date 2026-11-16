@@ -16162,12 +16162,12 @@
     {
       "id": "N-202",
       "title": "Predator: decorations now and then show another texture for a few frames, one of them the bullets' trail line (_bulletTrail): a thin bright horizontal line, seen where a TallLight lights the grass",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "reported by the owner 2026-11-15 (\"sale de la talllight, no de un disparo\"); left for later at the owner's word the same day; found by the owner 2026-11-15 before 20:00: \"hay decorations que cada algunos frames cambian de imagen, y una de esas es la línea horizontal que usamos para las fireLines\"",
       "date": "2026-11-15",
       "area": "render",
       "kind": "bug",
-      "result": "The owner's capture: a crowd, a TallLight's red glow, and a white line one or two pixels high and level across it; first taken for the bullets' trails or the shots' flashes, then placed on the TallLight itself. Not reproduced: 60 captures around tall lights (default Predator, free camera, zoom 1.5) and 40 where shots were fired showed no such line to a row scan (a run of 25+ px brighter than 3 px above and below). Ruled out: the bullets' rows (rotation and trail terms right for every active bullet). Not known yet whether it is new on dx/light3d or older. The owner's finding: the line is a decoration drawn with the trail's texture for some frames (visible at night only where a light reaches it). Read since: the emit kernel writes a trail row keyless (qKey KEY_NONE, its texture _bulletTrail) and a decoration row keyed (dKeyBase + its pool slot, its statics compared with its record and marked when they change); Pixi's statics texture keys the entities, then the keyed decorations (maxDecorations, when keyedDecorationsFit), then the keyed LiquidFun particles, then a slot per queue row for keyless rows (pixiKeyBase): no overlap in that layout. The TallLight has no attached decorations.",
+      "result": "Fixed 2026-11-16 (ce12106c, merged ba7614e8): the by-row pose upload sent only the list's length of rows, and Pixi's entity list leaves out the glow rows that sit among the entities' rows, so the last rows (decorations, bullets, trails) drew this frame's texture at an older frame's pose: 76 233 instances over 1 603 keyed frames at crowd 2.5 by night, 58 765 at crowd 1; 0 with the fix. The owner's capture: a crowd, a TallLight's red glow, and a white line one or two pixels high and level across it; first taken for the bullets' trails or the shots' flashes, then placed on the TallLight itself. Not reproduced: 60 captures around tall lights (default Predator, free camera, zoom 1.5) and 40 where shots were fired showed no such line to a row scan (a run of 25+ px brighter than 3 px above and below). Ruled out: the bullets' rows (rotation and trail terms right for every active bullet). Not known yet whether it is new on dx/light3d or older. The owner's finding: the line is a decoration drawn with the trail's texture for some frames (visible at night only where a light reaches it). Read since: the emit kernel writes a trail row keyless (qKey KEY_NONE, its texture _bulletTrail) and a decoration row keyed (dKeyBase + its pool slot, its statics compared with its record and marked when they change); Pixi's statics texture keys the entities, then the keyed decorations (maxDecorations, when keyedDecorationsFit), then the keyed LiquidFun particles, then a slot per queue row for keyless rows (pixiKeyBase): no overlap in that layout. The TallLight has no attached decorations.",
       "next": "Reproduce: Predator by night, zoomed on grass a TallLight lights while shots fly, frames captured; then main against the branch (is it the branch's?). Leads: how a keyless row's statics slot is refreshed when its queue row held another kind the frame before; a keyed decoration whose record Pixi keeps while the emit marked no change (the double-buffered queue, KEYED_CASTERS_LAG); keyedDecorationsFit failing at crowd 2.5 (decorations keyless then).",
       "refs": [],
       "aliases": [
@@ -16176,7 +16176,8 @@
       "records": [
         "R-1150",
         "R-1213",
-        "R-1220"
+        "R-1220",
+        "R-1225"
       ]
     },
     {
@@ -19984,6 +19985,24 @@
       ],
       "records": [
         "R-1224"
+      ]
+    },
+    {
+      "id": "N-238",
+      "status": "open",
+      "date": "2026-11-16",
+      "area": "pre-render",
+      "kind": "bug",
+      "title": "At Predator crowd 2.5 about 258 keyed sprite instances a frame draw a statics row whose texture word is 0 (never written): their keys are never marked changed again, probably because E-312's marks are consumed in a queue frame Pixi skipped or drew split while the entity was then culled in the frame Pixi drew keyed",
+      "statusText": "found 2026-11-16 by the N-202 agent with its in-worker statics and pose probe (fix/n202), GPU readback confirmed",
+      "result": "Predator ?src=1&crowd=2.5&zoom=1, day and night: about 258 type-0 instances every keyed frame with statics texture word 0 against 6 to 30 wanted (379 694 over 1 466 frames); 0 at crowd 1. Their keys (inferred from the entity list's order, unconfirmed: houses or TallLights 1983-2317, trees 27403-32082, a barrel 33243, trash 57545-57604) are never marked changed; already zero when the probe was installed (about 10 s in); most likely drawn at scale 0 (invisible), not read.",
+      "next": "Confirm with the agent's probe2.mjs (scratchpad n202/, about 3 min in the lock: early install, sent flags, full GPU rows, class ranges). Likely fix (preRenderEmit.c sprite_row ~733 `full |= kAll | (kc[0] > kSince)`, deco_key ~780 and the persist path ~1588 share the pattern): when an entity was not emitted in the previous queue frame, set kc[0] = kFrame on its reappearance (deco_key already moves its change frame), so a mark consumed in a frame Pixi never drew keyed is sent again; one 64-byte update per entity entering the view. A test that skips Pixi's keyed draw for a frame while an entity is culled.",
+      "refs": [],
+      "aliases": [
+        "keyed statics never written"
+      ],
+      "records": [
+        "R-1225"
       ]
     }
   ],
@@ -32022,6 +32041,19 @@
       "title": "Pixi links shader programs on first use and blocks: Predator by night 16 links and 2.1 s blocked in its first 10 s, the light pass alone 1.29 s; by day 0.53 s; no links later (E-475)",
       "verdict": "note",
       "text": "**Pixi's shader programs link on first use and block: Predator crowd 2.5 by night links 16 programs in its first 10 s and waits 2.1 s for them, the 3D light pass's alone 1.29 s; by day 11 programs and 0.53 s, all in the first 1.6 s; neither links anything later.** This is what m43's CPU pass by night caught as generateProgram at 146 ms/s (its window began at 8 s, inside the night scene's links): a start-up cost, not a steady one. Filed as E-475.\n\nprogramProbe.mjs (scratchpad tools: WebGL2's shaderSource, attachShader, linkProgram and getProgramParameter wrapped in the Pixi worker as soon as it exists; each link timed from linkProgram to the LINK_STATUS answer, named by SHADER_NAME), headed Chrome, 25 s, through the bench lock; plain ended 17:09, by night 18:00 (the result files).\n\n| run | links | blocked | when |\n| --- | --- | --- | --- |\n| crowd=2.5 zoom=0.216 | 11 | 525 ms | 0.5 to 1.6 s after the patch (22 to 90 ms each) |\n| ... light3d=1 hour=22 | 16 | 2 137 ms | 11 in 0-5 s (1 717 ms), 5 in 5-10 s (420 ms) |\n\nBy night: the light pass (an unnamed Pixi program) 1 287 ms; entities-instanced-glowMask-rows 180; gbuf-rows 107; lamp-map 93; entities-instanced-rows 90; lamp-map-volumes 75; edge 65; glow 52; mesh-uv-6 47; shadows-instanced 46."
+    },
+    {
+      "id": "R-1225",
+      "date": "2026-11-16",
+      "time": "18:07",
+      "timeFrom": "recorded",
+      "title": "N-202 fixed: by-row keyed frames uploaded only the list's length of poses, and the list leaves out glow rows, so decorations, bullets and trails drew at an older frame's pose (76 233 instances over 1 603 frames -> 0); N-238 found",
+      "verdict": "kept-hygiene",
+      "text": "**N-202 fixed: the thin white line and the grass that keeps changing its picture were rows drawn with this frame's texture at an older frame's pose.** Keyed frames drawn by queue row upload the poses by row, but `_uploadKeyed` sent only as many rows as the list held (`_uploadPoseRows(q, ctx.scanCount)`), and Pixi's entity list leaves out the glow rows (packSpriteLayer: fillQueueIndices excluding type 3), which the collect places among the entities' rows, before the decorations', bullets' and trails'. So the last rows of the queue (types 2, 4, 5) never got this frame's pose and drew their own, current texture wherever an earlier frame had left that texture row's pose: several rows piled on one stale spot (the owner's tuft that keeps switching asset), and a trail row at a grass tuft's old rotation (the level white line). It happens wherever glow rows exist (TallLights, lit things), at any crowd.\n\nFix ce12106c (fix/n202, merged ba7614e8; node 2900/2900, demos 101/101): with a list, the by-row upload sends every queue row's pose (q.count); rows below the list's length go up as before, so the image is unchanged where the bug did not occur; the extra data is the glow rows' poses, a few dozen a frame. The sun's keyed by-row shadow pass and the G-buffer's aux meshes read the same pose texture and are fixed with it. Test: tests/node/instancedSpriteKeyedRowPoses.test.js (a real keyed by-row batch, day frames then night frames whose list leaves out glow rows): 100 instances at an earlier pose before the fix, 0 after.\n\nHow it was found (the agent's in-worker probe on `_uploadKeyed` and the statics scatter, comparing every drawn instance's statics row, mirror and GPU readback, and its pose in the by-row texture against its queue row; rev worktrees, through the bench lock, 18:04 to 18:07):\n\n| run | instances drawn at an older pose |\n| --- | --- |\n| main, crowd 2.5, night | 76 233 over 1 603 keyed frames (every frame, up to 48 rows) |\n| main, crowd 2.5, hour 12 | 59 508 over 1 294 |\n| main, crowd 1, night | 58 765 over 1 279 |\n| fix, crowd 2.5, night | 0 over 1 466 |\n\nR-1150's check compared textures only, which is why it found nothing; R-1213's keyless guess was wrong (keyBase 77 633 = 57 633 entities + 20 000 decorations: keyed). A second bug the probe saw at crowd 2.5 only (about 258 sprite instances a frame drawing a statics row never written) is N-238.",
+      "commits": [
+        "ce12106c",
+        "ba7614e8"
+      ]
     }
   ],
   "leads": [
