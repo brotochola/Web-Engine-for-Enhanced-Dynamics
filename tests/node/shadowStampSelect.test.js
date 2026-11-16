@@ -22,6 +22,8 @@ const H = 1400;
 const BUDGETS = [1, 2, 3, 7, 15, 16, 31, 32, 33, 63, 64, 65, 100, 300, 511, 512, 513, 5000];
 /** maxShadowsPerLight per frame (0: each light's own budget, or every caster). */
 const MAX_PER_LIGHT = [0, 1, 15, 32, 64, 65, 512];
+/** Frame kinds (selectFrame). */
+const KINDS = 12;
 
 /** The casters of a frame into dst.sun: x, y, then random floats so that each row is its own. */
 function writeCasters(dst, xy, r) {
@@ -118,14 +120,15 @@ function longestRun(keys) {
  * 0 crowd under lamps · 1 rings cut inside a tie · 2 a stack of casters on one spot · 3 ties among the kept, the cut
  * clear · 4 few casters (lim >= m, lim = m, lim = m - 1) · 5 cone and dim lights over a crowd · 6 lights outside the
  * casters' box, infinite and huge ranges · 7 NaN, infinite or far casters · 8 coordinates past 2^24 px · 9 lim = 1 at a
- * tie.
+ * tie · 10 a dense crowd, budgets in the hundreds and thousands (many candidates per sixteenth of an octave of d²) ·
+ * 11 tight rings: distances a few float steps apart (they share all but the last bits).
  */
 function selectFrame(r, k, dst) {
-  const kind = k % 10;
+  const kind = k % KINDS;
   const xy = [];
   const lights = [];
   let maxPerLight = MAX_PER_LIGHT[(k >> 1) % MAX_PER_LIGHT.length];
-  const maxPerEntity = [0, 1, PER_ENTITY][Math.floor(k / 10) % 3];
+  const maxPerEntity = [0, 1, PER_ENTITY][Math.floor(k / KINDS) % 3];
   const budget = () => BUDGETS[Math.floor(r() * BUDGETS.length)];
   if (kind === 0) {
     crowd(xy, r, 2600 + Math.floor(r() * 300));
@@ -184,7 +187,7 @@ function selectFrame(r, k, dst) {
     for (let i = 0; i < 6; i++) lights.push(light(200 + r() * 1800, 200 + r() * 1000, 200 + r() * 200, budget(), r));
   } else if (kind === 7) {
     crowd(xy, r, 2200);
-    const sub = Math.floor(k / 10) % 3;
+    const sub = Math.floor(k / KINDS) % 3;
     if (sub === 0) xy.push(NaN, 700, 900, NaN, NaN, NaN);
     else if (sub === 1) xy.push(Infinity, 600, 1200, -Infinity);
     else xy.push(3.5e7, 800);
@@ -197,6 +200,29 @@ function selectFrame(r, k, dst) {
     for (let c = 0; c < 2000; c++) xy.push(Math.fround(x0 + r() * 3000), Math.fround(x0 + r() * 2000));
     const n = 6 + Math.floor(r() * 8);
     for (let i = 0; i < n; i++) lights.push(light(x0 + r() * 3000, x0 + r() * 2000, 200 + r() * 200, budget(), r));
+  } else if (kind === 10) {
+    crowd(xy, r, 2900, 700, 300, 900, 900);
+    maxPerLight = 0;
+    const n = 4 + Math.floor(r() * 6);
+    for (let i = 0; i < n; i++) {
+      lights.push(light(1150 + (r() - 0.5) * 200, 750 + (r() - 0.5) * 200, 380 + r() * 120, [512, 700, 1000, 1500, 2000, 15, 64][i % 7], r));
+    }
+  } else if (kind === 11) {
+    const cx = 1200.25;
+    const cy = 700.75;
+    for (const [rho, n, jitter] of [[40, 60, 0.002], [90, 120, 0.0005], [150, 90, 0.00003], [210, 70, 0]]) {
+      const a0 = r() * Math.PI * 2;
+      for (let j = 0; j < n; j++) {
+        const a = a0 + (j / n) * Math.PI * 2;
+        const d = rho + (r() - 0.5) * jitter;
+        xy.push(Math.fround(cx + d * Math.cos(a)), Math.fround(cy + d * Math.sin(a)));
+      }
+    }
+    crowd(xy, r, 600, cx - 260, cy - 260, 520, 520);
+    maxPerLight = 0;
+    lights.push(light(cx, cy, 250, 0, r));
+    lights.push(light(cx, cy, 250, 0, r));
+    lights.push(light(cx, cy, 250, 0, r));
   }
   const nSun = writeCasters(dst, xy, r);
   const keysOf = (L) => candidateKeys(dst, nSun, L);
@@ -210,6 +236,13 @@ function selectFrame(r, k, dst) {
     // lim = 1 where the nearest distance is shared: the light sits at the centre of the (3, 4) and (0, 5) rings.
     lights[0].maxShadows = 1;
     lights[1].maxShadows = 1;
+  } else if (kind === 11) {
+    // Cuts inside each tight ring (past the crowd's casters nearer than it), one at a random place.
+    const keys = keysOf(lights[0]);
+    const within = (rho) => keys.filter((d) => d < (rho - 1) * (rho - 1)).length;
+    lights[0].maxShadows = within(90) + 1 + Math.floor(r() * 110);
+    lights[1].maxShadows = within(150) + 1 + Math.floor(r() * 80);
+    lights[2].maxShadows = within(40) + 1 + Math.floor(r() * 50);
   } else if (kind === 2) {
     // The stack is the longest run: cut inside it, right after it, right before it.
     lights.forEach((L, i) => {
@@ -279,7 +312,18 @@ function firstDifference(a, b) {
   return a.length === b.length ? -1 : Math.min(a.length, b.length);
 }
 
-/** What a frame exercises: per point light, its candidates against its budget. */
+const F32 = new Float32Array(1);
+const U32 = new Uint32Array(F32.buffer);
+const bitsOf = (x) => {
+  F32[0] = x;
+  return U32[0];
+};
+
+/**
+ * What a frame exercises: per point light, its candidates against its budget; and how many candidates share the high
+ * bits of the lim-th distance (wasm/shadowStamp.c's radix select sorts a cut's bin of at most 32 outright, and splits a
+ * larger one by its next 8 bits: wideBin when the first bin is larger, wideSub when the next is too).
+ */
 function tally(t, dst, f) {
   for (const L of f.lights) {
     const keys = candidateKeys(dst, f.nSun, L);
@@ -298,18 +342,24 @@ function tally(t, dst, f) {
     if (lim === 1) t.limOne++;
     if (keys[lim - 1] === keys[lim]) t.cutTie++;
     else if (tieRun(keys.slice(0, lim))) t.keptTie++;
+    const cut = bitsOf(keys[lim - 1]);
+    const share = (shift) => keys.filter((d) => bitsOf(d) >>> shift === cut >>> shift).length;
+    if (keys[lim - 1] !== keys[lim] && share(19) > 32) {
+      t.wideBin++;
+      if (share(11) > 32) t.wideSub++;
+    }
   }
 }
 
 test('the kernel keeps the JS reference\'s casters, in its order, on frames built for the selection', async (t) => {
   const s = await setup({ allPairs: true });
   const r = rng(0x5e1ec7);
-  const seen = { select: 0, manyPerKept: 0, cutTie: 0, keptTie: 0, limOne: 0, oneOver: 0, keepAll: 0, limIsM: 0 };
+  const seen = { select: 0, manyPerKept: 0, cutTie: 0, keptTie: 0, limOne: 0, oneOver: 0, keepAll: 0, limIsM: 0, wideBin: 0, wideSub: 0 };
   let rows = 0;
-  for (let k = 0; k < 150; k++) {
+  for (let k = 0; k < 15 * KINDS; k++) {
     const f = selectFrame(r, k, s.dst);
     tally(seen, s.dst, f);
-    rows += compare(s, f, `frame ${k} (kind ${k % 10}, ${f.nSun} casters, ${f.lights.length} lights, maxPL ${f.maxPerLight}, maxPE ${f.maxPerEntity})`);
+    rows += compare(s, f, `frame ${k} (kind ${k % KINDS}, ${f.nSun} casters, ${f.lights.length} lights, maxPL ${f.maxPerLight}, maxPE ${f.maxPerEntity})`);
   }
   t.diagnostic(`${rows} rows; point lights: ${JSON.stringify(seen)}`);
   assert.ok(seen.manyPerKept > 100, `lights with 20 times more candidates than they keep (${seen.manyPerKept})`);
@@ -318,5 +368,6 @@ test('the kernel keeps the JS reference\'s casters, in its order, on frames buil
   assert.ok(seen.limOne > 10, `lim 1 (${seen.limOne})`);
   assert.ok(seen.oneOver > 0, `m = lim + 1 (${seen.oneOver})`);
   assert.ok(seen.keepAll > 50 && seen.limIsM > 0, `lights that keep every candidate (${seen.keepAll}, ${seen.limIsM} with lim = m)`);
+  assert.ok(seen.wideBin > 10 && seen.wideSub > 3, `cuts in crowded bins (${seen.wideBin}, ${seen.wideSub} past the next 8 bits)`);
   assert.ok(rows > 30000, `the frames stamp something (${rows} rows)`);
 });
