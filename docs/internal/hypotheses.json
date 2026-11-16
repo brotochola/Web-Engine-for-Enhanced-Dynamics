@@ -20156,6 +20156,23 @@
       "records": [
         "R-1228"
       ]
+    },
+    {
+      "id": "E-479",
+      "status": "open",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "title": "E-448's opaque pass on a by-row keyed frame builds its 12-byte rows in JS over every draw slot every frame (buildOpaqueKeyedRows): at Predator crowd 2.5 zoom 1, where the pass pays on the GPU (entity colour pass 1.14 -> 0.86 ms), Pixi's own time rose 2.085 -> 2.703 ms; the gate weighs GPU fill against GPU vertex work only, not this CPU or whether the GPU is the limit",
+      "statusText": "found 2026-11-16 by E-448's gate (gate/e448 against main, Predator crowd=2.5&zoom=1, 4 pairs, 20:01)",
+      "result": "e448-gate-z1: renderer (Pixi STEP - WAIT) 2.085 -> 2.703 ms (under the 6 ms floor, not judged by the runner); logic +1.5 %, spatial +2.0 %, physics -0.0 % (worse 2-3/4, within noise). At Predator default (pass off) the rows were also built every frame until gate/e448's 15-frame skip (renderer 1.287 -> 1.711 ms before it; a second gate checks the skip). Pose and split frames cache their rows by the statics' version, so bunnyMark pays no such CPU.",
+      "next": "Emit the opaque rows (row, key, slot) and the cover sum from the keyed pack kernel (gpuPack.c), which already walks every row, so the pass costs Pixi no JS pass; and let the gate take the GPU's state (GpuFramePacer: frames skipped while the GPU is the limit) so a CPU-bound scene keeps the pass off when its GPU saving is small. Pixi's CPU per function and per draw at Predator crowd 2.5 zoom 1 and bunnyMark keyed by row, before and after.",
+      "refs": [],
+      "aliases": [
+        "opaque rows in the kernel",
+        "opaque pass cpu cost"
+      ],
+      "records": []
     }
   ],
   "records": [
