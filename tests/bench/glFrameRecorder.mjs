@@ -13,8 +13,11 @@
  *     clientWaitSync, getQueryParameter, getBufferSubData)
  * GPU time per frame when EXT_disjoint_timer_query_webgl2 is there (most Windows Chrome builds do not expose it).
  *
+ * With --gpu-passes, the GPU time of each pass in the real frame (a TIME_ELAPSED query from one framebuffer bind to
+ * the next, labelled by framebuffer, viewport and first program), where the extension is exposed.
+ *
  *   node tests/bench/glFrameRecorder.mjs --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene
- *     [--query k=v&k2=v2] [--warmup-ms 12000] [--record-ms 3000] [--output gl.json]
+ *     [--query k=v&k2=v2] [--warmup-ms 12000] [--record-ms 3000] [--gpu-passes] [--output gl.json]
  * From Git Bash set MSYS_NO_PATHCONV=1. Headed Chrome (a headless one draws on a software path). The wrappers add a
  * little time to each call, so the scene's speed during the window is not a measurement; the counts are.
  */
@@ -29,11 +32,79 @@ import { isCli, parseArgs } from './microbenchHelpers.mjs';
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 
 /** Runs in the Pixi worker: wrap the context, record `ms`, unwrap, return the totals. */
-async function recordInWorker({ ms }) {
+async function recordInWorker({ ms, gpuPasses }) {
   const px = self.pixiRenderer;
   const gl = px?.pixiApp?.renderer?.gl;
   if (!gl) return { error: 'no WebGL context in the Pixi worker (a WebGPU backend?)' };
   const proto = Object.getPrototypeOf(gl);
+  // GPU time by pass (gpuPasses): a TIME_ELAPSED query from each framebuffer bind to the next, labelled by the
+  // framebuffer, the viewport set in it and its first program; results read without waiting, summed by label. The
+  // context's own methods (not the wrappers) run the queries, so they count in no total.
+  const timerExt = gpuPasses ? gl.getExtension('EXT_disjoint_timer_query_webgl2') : null;
+  const raw = (n) => Object.getOwnPropertyDescriptor(proto, n).value;
+  const qCreate = raw('createQuery');
+  const qBegin = raw('beginQuery');
+  const qEnd = raw('endQuery');
+  const qParam = raw('getQueryParameter');
+  const qParamGl = raw('getParameter');
+  const passes = new Map();
+  const pending = [];
+  const free = [];
+  let seg = null;
+  let disjoint = 0;
+  // A program's first uniform names (its samplers name the pass: uLightData, uSunMap, uLampMap...), read once.
+  const progSig = new Map();
+  const uParam = raw('getProgramParameter');
+  const uActive = raw('getActiveUniform');
+  const signature = (p) => {
+    if (!p) return '';
+    let s = progSig.get(p);
+    if (s !== undefined) return s;
+    const names = [];
+    const n = uParam.call(gl, p, gl.ACTIVE_UNIFORMS) | 0;
+    for (let i = 0; i < n && names.length < 8; i++) {
+      const u = uActive.call(gl, p, i);
+      if (u && u.type >= 0x8b5e && u.type <= 0x8dd8 && /^u/.test(u.name)) names.push(u.name.replace(/\[0\]$/, ''));
+    }
+    s = names.join(',');
+    progSig.set(p, s);
+    return s;
+  };
+  const segLabel = (s) => `fbo#${s.fbo} ${s.viewport || '?'} prog#${s.program || 0} [${s.sig || ''}]`;
+  const endSeg = () => {
+    if (!seg) return;
+    qEnd.call(gl, timerExt.TIME_ELAPSED_EXT);
+    pending.push(seg);
+    seg = null;
+  };
+  const beginSeg = (fbo) => {
+    if (!timerExt) return;
+    endSeg();
+    const q = free.pop() || qCreate.call(gl);
+    seg = { q, fbo, viewport: '', program: 0, draws: 0, instances: 0 };
+    qBegin.call(gl, timerExt.TIME_ELAPSED_EXT, q);
+  };
+  const collect = () => {
+    for (let i = pending.length - 1; i >= 0; i--) {
+      const s = pending[i];
+      if (!qParam.call(gl, s.q, gl.QUERY_RESULT_AVAILABLE)) continue;
+      const ns = qParam.call(gl, s.q, gl.QUERY_RESULT);
+      if (qParamGl.call(gl, timerExt.GPU_DISJOINT_EXT)) disjoint++;
+      else {
+        const k = segLabel(s);
+        const p = passes.get(k) || { label: k, ns: 0, segments: 0, draws: 0, instances: 0 };
+        p.ns += ns;
+        p.segments++;
+        p.draws += s.draws;
+        p.instances += s.instances;
+        passes.set(k, p);
+      }
+      pending.splice(i, 1);
+      free.push(s.q);
+    }
+  };
+  let poll = 0;
+  if (timerExt) poll = setInterval(collect, 4);
   const counts = Object.create(null);
   const redundant = Object.create(null);
   let draws = 0;
@@ -74,16 +145,45 @@ async function recordInWorker({ ms }) {
   for (const name of Object.getOwnPropertyNames(proto)) {
     if (typeof Object.getOwnPropertyDescriptor(proto, name)?.value !== 'function' || name === 'constructor') continue;
     let hook = null;
-    if (name === 'drawElements' || name === 'drawArrays') hook = () => { draws++; instances++; };
-    else if (name === 'drawElementsInstanced') hook = (a) => { draws++; instances += a[4] | 0; };
-    else if (name === 'drawArraysInstanced') hook = (a) => { draws++; instances += a[3] | 0; };
+    // A pass's draws, and its program when the segment drew with the one already bound.
+    const segDraw = (n) => {
+      if (!seg) return;
+      seg.draws++;
+      seg.instances += n;
+      if (!seg.program && bound.program) {
+        seg.program = idOf(bound.program);
+        seg.sig = signature(bound.program);
+      }
+    };
+    if (name === 'drawElements' || name === 'drawArrays') hook = () => { draws++; instances++; segDraw(1); };
+    else if (name === 'drawElementsInstanced') hook = (a) => { draws++; instances += a[4] | 0; segDraw(a[4] | 0); };
+    else if (name === 'drawArraysInstanced') hook = (a) => { draws++; instances += a[3] | 0; segDraw(a[3] | 0); };
     else if (name === 'getParameter' || name === 'isEnabled') hook = (a) => note(`${name} 0x${(a[0] >>> 0).toString(16)}`, 0);
-    else if (name === 'useProgram') hook = (a) => { if (bound.program === a[0]) redo(name); bound.program = a[0]; };
+    else if (name === 'useProgram') {
+      hook = (a) => {
+        if (bound.program === a[0]) redo(name);
+        bound.program = a[0];
+        if (seg && !seg.program && a[0]) {
+          seg.program = idOf(a[0]);
+          seg.sig = signature(a[0]);
+        }
+      };
+    }
     else if (name === 'bindVertexArray') hook = (a) => { if (bound.vao === a[0]) redo(name); bound.vao = a[0]; };
     else if (name === 'activeTexture') hook = (a) => { if (bound.unit === a[0]) redo(name); bound.unit = a[0]; };
     else if (name === 'bindTexture') hook = (a) => { const k = `${bound.unit}:${a[0]}`; if (bound.tex.get(k) === a[1]) redo(name); bound.tex.set(k, a[1]); };
     else if (name === 'bindBuffer') hook = (a) => { if (bound.buf.get(a[0]) === a[1]) redo(name); bound.buf.set(a[0], a[1]); };
-    else if (name === 'bindFramebuffer') hook = (a) => { if (bound.fbo.get(a[0]) === a[1]) redo(name); bound.fbo.set(a[0], a[1]); };
+    else if (name === 'bindFramebuffer') {
+      hook = (a) => {
+        if (bound.fbo.get(a[0]) === a[1]) redo(name);
+        bound.fbo.set(a[0], a[1]);
+        // A new pass where the draw framebuffer changes (FRAMEBUFFER 0x8d40 or DRAW_FRAMEBUFFER 0x8ca9).
+        if (timerExt && (a[0] === 0x8d40 || a[0] === 0x8ca9) && (!seg || seg.fboObj !== a[1])) {
+          beginSeg(idOf(a[1]));
+          seg.fboObj = a[1];
+        }
+      };
+    }
     else if (name === 'bindRenderbuffer') hook = (a) => { if (bound.rbo === a[1]) redo(name); bound.rbo = a[1]; };
     else if (name === 'bufferData') hook = (a) => { const b = typeof a[1] === 'number' ? a[1] : viewBytes(a[1]); bytesBuffer += b; note(`bufferData buffer#${idOf(bound.buf.get(a[0]))} target ${a[0]}`, b); };
     else if (name === 'bufferSubData') hook = (a) => { const b = a[4] ? (a[4] | 0) * (a[2].BYTES_PER_ELEMENT || 1) : viewBytes(a[2]); bytesBuffer += b; note(`bufferSubData buffer#${idOf(bound.buf.get(a[0]))} target ${a[0]}`, b); };
@@ -107,6 +207,7 @@ async function recordInWorker({ ms }) {
       hook = (a) => { const k = a[0]; if (k && uniformLast.get(k) === a[1]) redo(name); uniformLast.set(k, a[1]); };
     } else if (['enable', 'disable', 'blendFunc', 'blendFuncSeparate', 'blendEquation', 'blendEquationSeparate', 'depthMask', 'depthFunc', 'colorMask', 'viewport', 'scissor', 'cullFace', 'frontFace', 'clearColor', 'pixelStorei', 'stencilMask', 'stencilFunc', 'stencilOp'].includes(name)) {
       hook = (a) => {
+        if (name === 'viewport' && seg && !seg.viewport) seg.viewport = `${a[2]}x${a[3]}`;
         const key = name === 'enable' || name === 'disable' ? `cap:${a[0]}` : name === 'pixelStorei' ? `${name}:${a[0]}` : name;
         const val = name === 'enable' ? 1 : name === 'disable' ? 0 : a.join(',');
         if (state.get(key) === val) redo(name);
@@ -122,12 +223,28 @@ async function recordInWorker({ ms }) {
   const frames = (px.frameNumber | 0) - f0;
   const elapsed = performance.now() - t0;
   for (const name of wrapped) delete gl[name];
+  let gpu = null;
+  if (timerExt) {
+    endSeg();
+    for (let t = 0; t < 50 && pending.length; t++) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      collect();
+    }
+    clearInterval(poll);
+    const perMs = (ns) => Math.round((ns / 1e6 / Math.max(1, frames)) * 1000) / 1000;
+    const rows = [...passes.values()].sort((x, y) => y.ns - x.ns).map((p) => ({
+      label: p.label, msPerFrame: perMs(p.ns), segmentsPerFrame: Math.round((p.segments / Math.max(1, frames)) * 10) / 10,
+      drawsPerFrame: Math.round((p.draws / Math.max(1, frames)) * 10) / 10, instancesPerFrame: Math.round(p.instances / Math.max(1, frames)),
+    }));
+    gpu = { msPerFrame: perMs([...passes.values()].reduce((s, p) => s + p.ns, 0)), disjoint, lost: pending.length, passes: rows };
+  }
   const per = (v) => Math.round((v / Math.max(1, frames)) * 10) / 10;
   const top = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ name, perFrame: per(n), redundantPerFrame: per(redundant[name] || 0) }));
   return {
     frames,
     ms: Math.round(elapsed),
     timerQuery: Boolean(timer),
+    gpu,
     perFrame: {
       calls: per(Object.values(counts).reduce((s, n) => s + n, 0)),
       draws: per(draws),
@@ -157,7 +274,7 @@ export async function recordGlFrames(opts) {
     await page.waitForTimeout(opts.warmupMs);
     const worker = page.workers().find((w) => w.url().includes('pixiWorker'));
     if (!worker) throw new Error('no Pixi worker');
-    return await worker.evaluate(recordInWorker, { ms: opts.recordMs });
+    return await worker.evaluate(recordInWorker, { ms: opts.recordMs, gpuPasses: !!opts.gpuPasses });
   } finally {
     await browser.close();
     await server.close?.();
@@ -176,6 +293,7 @@ async function main() {
     query: typeof args.query === 'string' ? args.query.replace(/^\?/, '') : '',
     warmupMs: Number(args['warmup-ms'] ?? 12000),
     recordMs: Number(args['record-ms'] ?? 3000),
+    gpuPasses: !!args['gpu-passes'],
   });
   if (r.error) {
     console.error(r.error);
@@ -188,6 +306,13 @@ async function main() {
   for (const row of r.top.slice(0, 30)) console.log(`  ${String(row.perFrame).padStart(7)}  ${row.name}${row.redundantPerFrame ? `  (${row.redundantPerFrame} redundant)` : ''}`);
   console.log('uploads and queries, per frame:');
   for (const row of r.detail.slice(0, 20)) console.log(`  ${String(row.perFrame).padStart(6)} calls ${String(row.kbPerFrame).padStart(7)} KB  ${row.key}`);
+  if (r.gpu) {
+    console.log(`GPU time by pass (timer queries, ${r.gpu.disjoint} disjoint, ${r.gpu.lost} unread): ${r.gpu.msPerFrame} ms a frame`);
+    for (const row of r.gpu.passes.slice(0, 30)) {
+      console.log(`  ${row.msPerFrame.toFixed(3).padStart(7)} ms  x${String(row.segmentsPerFrame).padStart(4)}  ${String(row.drawsPerFrame).padStart(5)} draws ` +
+        `${String(row.instancesPerFrame).padStart(7)} inst  ${row.label}`);
+    }
+  } else if (args['gpu-passes']) console.log('GPU time by pass: no EXT_disjoint_timer_query_webgl2 in this context');
   if (args.output) fs.writeFileSync(String(args.output), JSON.stringify(r, null, 1));
 }
 
