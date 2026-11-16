@@ -7,7 +7,8 @@
  * shader compiles) shows here.
  *
  *   node tests/bench/gpuProcessTrace.mjs --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene
- *     [--query k=v&k2=v2] [--warmup-ms 12000] [--trace-ms 3000] [--categories a,b,...] [--output dir] [--raw]
+ *     [--query k=v&k2=v2] [--warmup-ms 12000] [--trace-ms 3000] [--categories a,b,...] [--decoder] [--output dir] [--raw]
+ * --decoder starts Chrome with --enable-gpu-service-tracing: the decoder's per-command slices.
  * From Git Bash set MSYS_NO_PATHCONV=1. Headed Chrome (a headless one draws on a software path).
  */
 import fs from 'node:fs';
@@ -92,7 +93,11 @@ export function summariseTrace(events, procRe = /GPU Process/i) {
 
 export async function traceGpuProcess(opts) {
   const server = await createStaticBenchmarkServer(repoRoot);
-  const browser = await chromium.launch({ headless: false, channel: 'chrome', args: ['--mute-audio', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'] });
+  // --decoder: the GPU service's own tracing on, so the command decoder records a slice per GL command (its name, as
+  // kTexSubImage2D, kDrawArraysInstancedANGLE) under CommandBufferService:PutChanged.
+  const flags = ['--mute-audio', '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'];
+  if (opts.decoder) flags.push('--enable-gpu-service-tracing');
+  const browser = await chromium.launch({ headless: false, channel: 'chrome', args: flags });
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.on('pageerror', (e) => console.error('[page error]', e.message));
@@ -139,6 +144,7 @@ async function main() {
     warmupMs: Number(args['warmup-ms'] ?? 12000),
     traceMs: Number(args['trace-ms'] ?? 3000),
     categories,
+    decoder: !!args.decoder,
   });
   const summary = summariseTrace(events);
   console.log(`${events.length} events over ${summary.spanS.toFixed(2)} s; GPU process threads by busy time:`);
