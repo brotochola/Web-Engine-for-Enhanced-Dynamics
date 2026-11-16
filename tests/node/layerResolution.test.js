@@ -112,7 +112,7 @@ test('E-404: the glows go into their target when there are some, the canvas onto
     Layer.initializeFromConfig({}, { ...DEFAULT_LAYERS, lightGlows: { ...DEFAULT_LAYERS.lightGlows, resolution: 0.5 } }, true);
     const renders = [];
     const resized = [];
-    const sprite = { renderable: false, scale: { set(x, y) { this.x = x; this.y = y; } } };
+    const sprite = { renderable: false, scale: { set(x, y) { this.x = x; this.y = y; } }, position: { set(x, y) { this.x = x; this.y = y; } } };
     const ctx = {
       _glowLayerSprite: sprite,
       _glowLayerHost: { label: 'host' },
@@ -126,6 +126,8 @@ test('E-404: the glows go into their target when there are some, the canvas onto
       canvasWidth: 1920,
       canvasHeight: 1080,
       _lightGlowLayerResolution: PixiRenderer.prototype._lightGlowLayerResolution,
+      _glowScreenBounds: () => true,
+      _fitGlowLayerPart() {},
       _resizeGlowLayerTarget(resolution, w, h) {
         resized.push([resolution, w, h]);
         this._glowLayerRes = resolution;
@@ -160,4 +162,49 @@ test('E-404: the glows go into their target when there are some, the canvas onto
   } finally {
     Layer.reset();
   }
+});
+
+test("E-404: the glows' composite covers the canvas rect their quads reach, on the target's grid, a texel more each side", () => {
+  // Two glows (rows as InstancedSpriteBatch lays them: x, y, scale, anchor, cos, sin, depth, tint, texture id, ...) of a
+  // 100 x 80 frame trimmed to 10..90 x 0..80, anchored at its centre: one at (200, 100) at scale 1, one at (500, 300) at
+  // scale 0.5; the camera at zoom 2 from (100, 50).
+  const lut = new Float32Array(12);
+  lut.set([100, 80, 0, 0, 1, 1, 10, 0, 80, 80, 0, 0]);
+  const row = (x, y, scale) => [x, y, scale, scale, 0.5, 0.5, 1, 0, 0, 0, 0, 0, 0, 0, 0];
+  const data = new Float32Array([...row(200, 100, 1), ...row(500, 300, 0.5)]);
+  const mesh = {
+    geometry: { instanceCount: 2 },
+    localTransform: { a: 2, b: 0, c: 0, d: 2, tx: -200, ty: -100 },
+    updateLocalTransform() {},
+  };
+  const frame = { x: 0, y: 0, width: 960, height: 540 };
+  let updates = 0;
+  const ctx = {
+    entitiesGlowBatch: { data },
+    _texLut: lut,
+    canvasWidth: 1920,
+    canvasHeight: 1080,
+    _glowLayerBounds: new Float64Array(4),
+    _glowLayerRT: { width: 960, height: 540 },
+    _glowLayerTexture: { frame, update() { updates++; } },
+    _glowLayerSprite: { position: { set(x, y) { this.x = x; this.y = y; } } },
+  };
+  assert.equal(PixiRenderer.prototype._glowScreenBounds.call(ctx, mesh), true);
+  // World: x 160..240 and 480..520 (the trim around the 50 px anchor, the second at half scale), y 60..140 and 280..320: on the canvas,
+  // (world - camera) * 2.
+  assert.deepEqual(Array.from(ctx._glowLayerBounds), [120, 20, 840, 540]);
+  PixiRenderer.prototype._fitGlowLayerPart.call(ctx);
+  assert.deepEqual([frame.x, frame.y, frame.width, frame.height], [59, 9, 362, 262]);
+  assert.equal(updates, 1);
+  assert.deepEqual([ctx._glowLayerSprite.position.x, ctx._glowLayerSprite.position.y], [118, 18]);
+  PixiRenderer.prototype._fitGlowLayerPart.call(ctx);
+  assert.equal(updates, 1, 'the same part: the texture is not touched');
+  // Off the canvas: no composite at all.
+  mesh.localTransform.tx = -5000;
+  assert.equal(PixiRenderer.prototype._glowScreenBounds.call(ctx, mesh), false);
+  // A sheared quad (cos past 1): the whole canvas.
+  data[6] = 1.6;
+  mesh.localTransform.tx = -200;
+  assert.equal(PixiRenderer.prototype._glowScreenBounds.call(ctx, mesh), true);
+  assert.deepEqual(Array.from(ctx._glowLayerBounds), [0, 0, 1920, 1080]);
 });

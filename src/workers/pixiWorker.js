@@ -440,6 +440,9 @@ function mapDepthState() {
   return state;
 }
 
+/** E-404: the glows' bounds' seed (a module constant: CLAUDE.md, the global Infinity in a branch boxes its doubles). */
+const GLOW_BOUND_INF = Infinity;
+
 /** Umbra floor. Matches ShadowCaster pointShadowAlphaScale so a hard block is not pitch black. */
 const UMBRA_FLOOR = 0.33;
 /** Rest of the radial, added by the visibility fan and by the lit face. */
@@ -989,6 +992,10 @@ class PixiRenderer extends AbstractWorker {
     this._glowLayerRes = NaN;
     /** Canvas px to the target's px (the glow mesh keeps the canvas's camera placement under it). */
     this._glowLayerTransform = new Matrix();
+    /** The sprite's texture: the target's part this frame's glows cover (its frame, in the target's px). */
+    this._glowLayerTexture = null;
+    /** This frame's glows' rect on the canvas (x0, y0, x1, y1; px), _glowScreenBounds. */
+    this._glowLayerBounds = new Float64Array(4);
     this.atlasMapsSource = null; // DX-MAPS: the atlas's twin page (src/render/spriteMaps.js), when a sheet has maps
     // DX-SHADOW3D: lighting.sunShadows 'map' (src/render/sunShadowMap.js): the sun's shadow map, its pass and terms.
     this._sunMapOn = false;
@@ -3323,7 +3330,8 @@ class PixiRenderer extends AbstractWorker {
     // A child draws with its own blend (a render's root would take normal); the camera's placement stays on the mesh.
     mesh.blendMode = 'add';
     this._glowLayerHost.addChild(mesh);
-    const sprite = new PIXI.Sprite(this._glowLayerRT);
+    this._glowLayerTexture = this._glowLayerFrameTexture(this._glowLayerRT, w, h);
+    const sprite = new PIXI.Sprite(this._glowLayerTexture);
     sprite.label = 'light-glows';
     sprite.renderable = false;
     this._glowLayerSprite = sprite;
@@ -3339,6 +3347,8 @@ class PixiRenderer extends AbstractWorker {
     const cw = canvasW || 1;
     const ch = canvasH || 1;
     this._glowLayerSprite.scale.set(cw / w, ch / h);
+    // The whole target until _fitGlowLayerPart takes this frame's part.
+    this._glowLayerSprite.position.set(0, 0);
     const mx = this._glowLayerTransform;
     mx.a = w / cw;
     mx.b = 0;
@@ -3357,13 +3367,146 @@ class PixiRenderer extends AbstractWorker {
     const w = rtPixelSize(canvasW, resolution);
     const h = rtPixelSize(canvasH, resolution);
     this._glowLayerRT = this._replaceRT(this._glowLayerRT, w, h, this._glowLayerSprite, null);
+    // The old part went with its target (its source destroyed): a new one over the new target.
+    if (this._glowLayerTexture !== null) this._glowLayerTexture.destroy(false);
+    this._glowLayerTexture = this._glowLayerFrameTexture(this._glowLayerRT, w, h);
+    this._glowLayerSprite.texture = this._glowLayerTexture;
     this._glowLayerRes = resolution;
     this._fitGlowLayerTarget(w, h, canvasW, canvasH);
   }
 
+  /** E-404: a texture over `rt`'s part the glows cover (its frame set each frame: dynamic, so the sprite follows it). */
+  _glowLayerFrameTexture(rt, w, h) {
+    return new PIXI.Texture({ source: rt.source, frame: new PIXI.Rectangle(0, 0, w, h), dynamic: true, label: 'light-glows' });
+  }
+
+  /**
+   * E-404: the canvas rect (px) this frame's glows cover, into _glowLayerBounds, from the glow batch's rows: each quad's
+   * corners as instancedSprite.vert.glsl places them (its frame's trim and anchor from the texture table, its scale; a
+   * turned one by its reach around its anchor), through the glow mesh's camera placement. False when none is on the
+   * canvas. The composite then draws over that rect alone: one torch's glow does not cost a pass over the whole canvas.
+   * @param {import('pixi.js').Mesh} mesh the glow mesh (its rows: InstancedSpriteBatch's, INSTANCED_SPRITE_FLOATS each)
+   */
+  _glowScreenBounds(mesh) {
+    const batch = this.entitiesGlowBatch;
+    const lut = this._texLut;
+    const n = batch !== null ? mesh.geometry.instanceCount | 0 : 0;
+    if (n <= 0 || !lut) return false;
+    const rows = batch.data;
+    const F = INSTANCED_SPRITE_FLOATS;
+    const ids = (lut.length / TEX_LUT_FLOATS) | 0;
+    let x0 = GLOW_BOUND_INF;
+    let y0 = GLOW_BOUND_INF;
+    let x1 = -GLOW_BOUND_INF;
+    let y1 = -GLOW_BOUND_INF;
+    let whole = false;
+    for (let i = 0, at = 0; i < n && at + F <= rows.length; i++, at += F) {
+      const id = rows[at + 10] | 0;
+      if (id < 0 || id >= ids) continue;
+      const l = id * TEX_LUT_FLOATS;
+      const sx = rows[at + 2];
+      const sy = rows[at + 3];
+      // The quad's corners around its anchor (content - anchor · size) · scale, as the vertex shader has them.
+      const ax = rows[at + 4] * lut[l];
+      const ay = rows[at + 5] * lut[l + 1];
+      const ux = (lut[l + 6] - ax) * sx;
+      const vx = (lut[l + 6] + lut[l + 8] - ax) * sx;
+      const uy = (lut[l + 7] - ay) * sy;
+      const vy = (lut[l + 7] + lut[l + 9] - ay) * sy;
+      const x = rows[at];
+      const y = rows[at + 1];
+      const c = rows[at + 6];
+      const sn = rows[at + 7];
+      if (c === 1 && sn === 0) {
+        const lx = ux < vx ? ux : vx;
+        const hx = ux < vx ? vx : ux;
+        const ly = uy < vy ? uy : vy;
+        const hy = uy < vy ? vy : uy;
+        if (x + lx < x0) x0 = x + lx;
+        if (x + hx > x1) x1 = x + hx;
+        if (y + ly < y0) y0 = y + ly;
+        if (y + hy > y1) y1 = y + hy;
+      } else if (c > 1.005) {
+        // Sheared (instancedSprite.vert.glsl's c past 1): no bound kept here, the whole canvas.
+        whole = true;
+        break;
+      } else {
+        // Turned: its reach around the anchor, both sides.
+        const mx = Math.max(Math.abs(ux), Math.abs(vx));
+        const my = Math.max(Math.abs(uy), Math.abs(vy));
+        const r = Math.sqrt(mx * mx + my * my);
+        if (x - r < x0) x0 = x - r;
+        if (x + r > x1) x1 = x + r;
+        if (y - r < y0) y0 = y - r;
+        if (y + r > y1) y1 = y + r;
+      }
+    }
+    const cw = this.canvasWidth || 0;
+    const ch = this.canvasHeight || 0;
+    const b = this._glowLayerBounds;
+    if (whole) {
+      b[0] = 0;
+      b[1] = 0;
+      b[2] = cw;
+      b[3] = ch;
+      return true;
+    }
+    if (!(x1 >= x0) || !(y1 >= y0)) return false;
+    // World to canvas px: the glow mesh's own placement (_placeWorldCamera), turned or not: the box of its corners.
+    mesh.updateLocalTransform();
+    const m = mesh.localTransform;
+    b[0] = GLOW_BOUND_INF;
+    b[1] = GLOW_BOUND_INF;
+    b[2] = -GLOW_BOUND_INF;
+    b[3] = -GLOW_BOUND_INF;
+    for (let k = 0; k < 4; k++) {
+      const wx = (k & 1) === 0 ? x0 : x1;
+      const wy = (k & 2) === 0 ? y0 : y1;
+      const px = m.a * wx + m.c * wy + m.tx;
+      const py = m.b * wx + m.d * wy + m.ty;
+      if (px < b[0]) b[0] = px;
+      if (py < b[1]) b[1] = py;
+      if (px > b[2]) b[2] = px;
+      if (py > b[3]) b[3] = py;
+    }
+    return b[2] > 0 && b[3] > 0 && b[0] < cw && b[1] < ch;
+  }
+
+  /**
+   * E-404: the sprite over this frame's glows' part of the target (_glowLayerBounds in its px, a texel more each side for
+   * the filtering up; on its grid, so each texel lands where the whole target's sprite put it).
+   */
+  _fitGlowLayerPart() {
+    const rt = this._glowLayerRT;
+    const tex = this._glowLayerTexture;
+    const rw = rt.width;
+    const rh = rt.height;
+    const kx = rw / (this.canvasWidth || 1);
+    const ky = rh / (this.canvasHeight || 1);
+    const b = this._glowLayerBounds;
+    let fx0 = Math.floor(b[0] * kx) - 1;
+    let fy0 = Math.floor(b[1] * ky) - 1;
+    let fx1 = Math.ceil(b[2] * kx) + 1;
+    let fy1 = Math.ceil(b[3] * ky) + 1;
+    if (fx0 < 0) fx0 = 0;
+    if (fy0 < 0) fy0 = 0;
+    if (fx1 > rw) fx1 = rw;
+    if (fy1 > rh) fy1 = rh;
+    const f = tex.frame;
+    if (f.x !== fx0 || f.y !== fy0 || f.width !== fx1 - fx0 || f.height !== fy1 - fy0) {
+      f.x = fx0;
+      f.y = fy0;
+      f.width = fx1 - fx0;
+      f.height = fy1 - fy0;
+      tex.update();
+      this._glowLayerSprite.position.set(fx0 / kx, fy0 / ky);
+    }
+  }
+
   /**
    * E-404: this frame's glows into the lightGlows target, with the frame's passes (after the sprites, whose pack fills the
-   * glow batch): cleared, then the glow mesh added in. A frame without glows draws nothing, and its sprite neither.
+   * glow batch): cleared, then the glow mesh added in. A frame without glows on the canvas draws nothing, and its sprite
+   * neither; the sprite shows the part they cover.
    */
   drawFrameGlowLayer() {
     const sprite = this._glowLayerSprite;
@@ -3371,9 +3514,10 @@ class PixiRenderer extends AbstractWorker {
     const resolution = this._lightGlowLayerResolution();
     if (resolution !== this._glowLayerRes) this._resizeGlowLayerTarget(resolution, this.canvasWidth, this.canvasHeight);
     const mesh = this.spriteGlowMesh;
-    const on = mesh !== null && mesh.visible === true;
+    const on = mesh !== null && mesh.visible === true && this._glowScreenBounds(mesh);
     if (sprite.renderable !== on) sprite.renderable = on;
     if (!on) return;
+    this._fitGlowLayerPart();
     const opts = this._rtRenderOpts;
     opts.container = this._glowLayerHost;
     opts.target = this._glowLayerRT;
