@@ -6,7 +6,7 @@
  * and the sun's turn moves every `--turnEvery` calls (default 600: about ten seconds at 60).
  *
  *   node tests/bench/sunFramesMicrobench.mjs [--slots 57633] [--casters 38000] [--change 0.25] [--reps 7] [--output f]
- *     [--path slots|keyed|scan]
+ *     [--path slots|keyed|scan|full]
  *
  * --path keyed: the keyed rows' pass as a frame runs it: a render queue (the casters, the other sprites, some glows, in a
  * shuffled order) whose keyed rows the pack wrote (their frame float zeroed before each call, as the pack does), and the
@@ -19,13 +19,19 @@
  * (the sun frames' region, syncKeyedSunTables), prepareSunFrames, the tables brought into the region and the scan alone
  * (and the rows it lists, applyListedSunFramesFor). The checksum is the rows' (every float the scan writes).
  *
+ * --path full (E-394): the same queue's full caster rows as _packGpuSun packs them in light3d scenes (casters that ask for
+ * kinds take the full rows): the casters listed in queue order, the pack (gpuPack.wasm through packInstancedRowsWasm, its
+ * scatter at this size, on the same shared memory), then prepareSunFrames and applySunFramesFor with the queue's scales;
+ * or, on a tree whose pack writes the frames (finishFullSunFrames), prepareSunFrames, the tables brought into the region,
+ * the pack with them and the rows it lists. The checksum is the rows' (all of each row's floats).
+ *
  * Calls the shipped function (preRenderWorker.js export), checksums what it writes (the sum of the out column), warms up
  * through short calls so the timed code is a normal compile.
  */
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
 
-import { GPU_KEYED_CASTER_FLOATS } from '../../src/render/gpuQueueLayout.js';
+import { GPU_CASTER_FLOATS, GPU_KEYED_CASTER_FLOATS } from '../../src/render/gpuQueueLayout.js';
 import { checksumFloats, checksumInts, isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { loadWorker } from './workerHarness.mjs';
 
@@ -77,10 +83,10 @@ function animationTables() {
  * keyed rows), and the tree's gpuPackClient.js: an allocator on it, and the bytes of the sun frames' region where the tree
  * has one (E-372; 0 before).
  */
-async function scanMemory(rows, slots, keyed) {
+async function scanMemory(rows, slots, keyed, floats = GPU_KEYED_CASTER_FLOATS) {
   const client = await import(pathToFileURL(path.resolve('src/render/gpuPackClient.js')).href);
   const region = typeof client.keyedSunRegionBytes === 'function' ? client.keyedSunRegionBytes() : 0;
-  const pages = Math.ceil((rows * 96 + slots * 16 + keyed * GPU_KEYED_CASTER_FLOATS * 4 + region + (1 << 20)) / 65536);
+  const pages = Math.ceil((rows * 100 + slots * 16 + keyed * floats * 4 + region + (1 << 20)) / 65536);
   const memory = new WebAssembly.Memory({ initial: pages, maximum: pages, shared: true });
   let top = 64;
   const place = (bytes) => {
@@ -98,10 +104,13 @@ export async function setup({ slots = 57633, casters = 38000, others = 9000, cha
   await loadWorker('preRenderWorker.js', 'preRenderWorker');
   const mod = await import(pathToFileURL(path.resolve('src/workers/preRenderWorker.js')).href);
   const { computeSunFramesInto, sunFrameTables, applyKeyedSunFramesInto, prepareSunFrames, applyKeyedSunFramesFor } = mod;
-  const { syncKeyedSunTables, applyListedSunFramesFor } = mod;
-  // --path scan: the columns in one shared memory, where the scan reads them (each column the same values).
+  const { syncKeyedSunTables, applyListedSunFramesFor, applySunFramesFor, finishFullSunFrames } = mod;
+  // --path scan and full: the columns in one shared memory, where the kernel reads them (each column the same values).
   const glows = 500;
-  const mem = mode === 'scan' ? await scanMemory(casters + others + glows, slots, casters) : null;
+  const fullRows = mode === 'full';
+  const mem = mode === 'scan' || fullRows
+    ? await scanMemory(casters + others + glows, slots, casters, fullRows ? GPU_CASTER_FLOATS : GPU_KEYED_CASTER_FLOATS)
+    : null;
   const column = (Ctor, n) => (mem !== null ? mem.alloc(Ctor, n) : new Ctor(n));
   const rng = mulberry32(seed);
   const tables = sunFrameTables(directionTables());
@@ -171,7 +180,7 @@ export async function setup({ slots = 57633, casters = 38000, others = 9000, cha
     }
   }
   const keyedN = casters;
-  const rows = column(Float32Array, keyedN * GPU_KEYED_CASTER_FLOATS);
+  const rows = column(Float32Array, keyedN * (fullRows ? GPU_CASTER_FLOATS : GPU_KEYED_CASTER_FLOATS));
   const fused = mode === 'keyed' && typeof applyKeyedSunFramesFor === 'function';
   // --path scan: the queue's other columns (each row's key its entity's, as the emit writes it; poses at random), the
   // kernel's scratch and, on a tree that has it, the sun frames' region; the scan bound on the memory.
@@ -191,17 +200,33 @@ export async function setup({ slots = 57633, casters = 38000, others = 9000, cha
     const tableByte = mem.place(4 * client.GPU_PACK_COLUMNS.length * 4);
     const indexByte = mem.place(count * 4);
     const particlesByte = mem.place(144);
+    // --path full: the scatter's inverse (one u32 a queue row), as the render-queue memory has it.
+    const inverseByte = fullRows ? mem.place(count * 4) : 0;
     const keyedSunByte = mem.region > 0 ? mem.place(mem.region) : -1;
     const b = await client.bindGpuPack(mem.memory, {
-      tableByte, tableSlots: 4, indexByte, indexCap: count, particlesByte, inverseByte: 0, keyedSunByte,
+      tableByte, tableSlots: 4, indexByte, indexCap: count, particlesByte, inverseByte, keyedSunByte,
     });
-    const framed = Boolean(b.keyedSun) && typeof syncKeyedSunTables === 'function';
+    const framed = Boolean(b.keyedSun) && typeof (fullRows ? finishFullSunFrames : syncKeyedSunTables) === 'function';
     const sun = framed
       ? {
           types, entities, active, mode: modeCol, dirs, anims, casts, orients, kinds: null, sheets, frames, framed: false, listed: 0,
         }
       : null;
-    scan = { b, q, pack: client.packKeyedCastersScanWasm, framed, sun };
+    scan = { b, q, pack: client.packKeyedCastersScanWasm, framed, sun, full: null };
+    if (fullRows) {
+      // The casters in queue order (compactShadowCasterIndices' list, in a plain array as pre-render keeps it) and the
+      // pack's options as _packGpuSun sets them (world space, no snap, the queue's type column).
+      const layout = await import(pathToFileURL(path.resolve('src/render/gpuQueueLayout.js')).href);
+      const casterIdx = new Uint32Array(count);
+      let n = 0;
+      for (let i = 0; i < count; i++) if (qType[i] !== 3 && shadowH[i] > 0) casterIdx[n++] = i;
+      const opts = {
+        includeType: -1, excludeType0: -1, excludeType1: -1, indices: casterIdx, indexCount: n, sortKey: null,
+        space: layout.GPU_SPACE_WORLD, zoom: 1, cameraX: 0, cameraY: 0, resolution: 1, depthDenom: count, pixelSnap: false,
+        type: qType,
+      };
+      scan.full = { makePackContext: layout.makePackContext, pack: client.packInstancedRowsWasm, casterIdx, opts, ctx: {} };
+    }
   }
   /** One frame: some casters walk a frame or turn, the sun now and then, then the call. */
   const frame = () => {
@@ -212,6 +237,24 @@ export async function setup({ slots = 57633, casters = 38000, others = 9000, cha
       if ((k & 15) === 0) dirs[e] = (dirs[e] + 1) % DIRS;
     }
     if (++call % turnEvery === 0) turn += 0.01;
+    if (scan !== null && fullRows) {
+      // As _packGpuSun runs the full path (light3d): E-394's frames in the pack (the rows it lists, or every row when it
+      // wrote none or listed past its list, in JS), or the pack and then applySunFramesFor with the queue's scales.
+      const { b, q, sun, full } = scan;
+      const ctx = full.makePackContext(q, full.opts, keyedN, full.ctx);
+      if (scan.framed) {
+        prepareSunFrames(tables, proxy, starts, counts, shift, shiftTurn, turn);
+        syncKeyedSunTables(b.keyedSun, tables);
+        const n = full.pack(b, q, ctx, rows, GPU_CASTER_FLOATS, keyedN, true, sun);
+        finishFullSunFrames(rows, n, sun, b.keyedSun, full.casterIdx, types, entities, tables, shift, q.scaleX);
+      } else {
+        const n = full.pack(b, q, ctx, rows, GPU_CASTER_FLOATS, keyedN, true);
+        prepareSunFrames(tables, proxy, starts, counts, shift, shiftTurn, turn);
+        applySunFramesFor(rows, n, full.casterIdx, types, entities, active, modeCol, casts, sheets, dirs, anims, frames, tables,
+          shift, orients, null, q.scaleX);
+      }
+      return;
+    }
     if (scan !== null) {
       // As _packGpuSun runs the keyed path: E-372's frames in the scan (the rows it lists, or every row past its list, in
       // JS), or the scan and then the keyed rows' pass.
@@ -252,7 +295,7 @@ export async function setup({ slots = 57633, casters = 38000, others = 9000, cha
       applyKeyedSunFramesInto(rows, keyedN, count, qType, shadowH, types, entities, out);
     }
   };
-  const checksum = () => (mode === 'keyed' || mode === 'scan' ? checksumFloats(rows) : checksumInts(out));
+  const checksum = () => (mode === 'keyed' || mode === 'scan' || fullRows ? checksumFloats(rows) : checksumInts(out));
   return { frame, checksum, slots, casters, out, fused, framed: scan !== null && scan.framed };
 }
 
@@ -263,7 +306,9 @@ export async function run(opts = {}) {
   const before = s.checksum();
   const keyedWhat = s.fused ? 'keyed rows, fused (E-368)' : 'keyed rows: computeSunFramesInto + applyKeyedSunFramesInto';
   const scanWhat = s.framed ? 'keyed caster scan writing the frames (E-372)' : 'keyed caster scan, then applyKeyedSunFramesFor';
-  const what = opts.path === 'scan' ? scanWhat : opts.path === 'keyed' ? keyedWhat : 'computeSunFramesInto';
+  const fullWhat = s.framed ? 'full caster rows\' pack writing the frames (E-394)' : 'full caster rows\' pack, then applySunFramesFor';
+  const pathWhat = { full: fullWhat, scan: scanWhat, keyed: keyedWhat };
+  const what = pathWhat[opts.path] ?? 'computeSunFramesInto';
   const timed = timeIt(`${what} (${s.slots} slots, ${s.casters} directional casters)`, s.frame, {
     iterations: 50,
     warmup: 10,
