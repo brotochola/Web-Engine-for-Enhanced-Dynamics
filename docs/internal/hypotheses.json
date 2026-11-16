@@ -16594,7 +16594,8 @@
         "R-1176",
         "R-1179",
         "R-1183",
-        "R-1185"
+        "R-1185",
+        "R-1189"
       ]
     },
     {
@@ -18194,7 +18195,8 @@
       "records": [
         "R-1174",
         "R-1181",
-        "R-1187"
+        "R-1187",
+        "R-1190"
       ]
     },
     {
@@ -18214,7 +18216,8 @@
       "records": [
         "R-1174",
         "R-1181",
-        "R-1187"
+        "R-1187",
+        "R-1190"
       ]
     },
     {
@@ -18293,7 +18296,8 @@
         "logic regression keyed pack gbuf"
       ],
       "records": [
-        "R-1176"
+        "R-1176",
+        "R-1189"
       ]
     },
     {
@@ -18500,7 +18504,8 @@
       ],
       "records": [
         "R-1181",
-        "R-1187"
+        "R-1187",
+        "R-1190"
       ]
     },
     {
@@ -18518,7 +18523,8 @@
         "volume mesh fill instances"
       ],
       "records": [
-        "R-1181"
+        "R-1181",
+        "R-1190"
       ]
     },
     {
@@ -18536,7 +18542,8 @@
         "column casters overdraw"
       ],
       "records": [
-        "R-1181"
+        "R-1181",
+        "R-1190"
       ]
     },
     {
@@ -18554,7 +18561,8 @@
         "flashlight colour pass"
       ],
       "records": [
-        "R-1181"
+        "R-1181",
+        "R-1190"
       ]
     },
     {
@@ -18572,7 +18580,8 @@
         "sprite maps fragment cost"
       ],
       "records": [
-        "R-1181"
+        "R-1181",
+        "R-1190"
       ]
     },
     {
@@ -18759,7 +18768,8 @@
         "pixel depth edge pass"
       ],
       "records": [
-        "R-1187"
+        "R-1187",
+        "R-1190"
       ]
     },
     {
@@ -18814,7 +18824,8 @@
         "tilemap layers overdraw"
       ],
       "records": [
-        "R-1187"
+        "R-1187",
+        "R-1190"
       ]
     },
     {
@@ -19014,6 +19025,60 @@
       ],
       "records": [
         "R-1188"
+      ]
+    },
+    {
+      "id": "E-444",
+      "title": "Pre-render writes the G-buffer words of the rows it packs in JS (writeGbufWords): 9.4 % of pre-render in keyedPackStressScene gbuf=1 (865 ms in 8 s, about 1.8 ms a frame at 250 000 sprites), every row every frame though a still sprite's word never changes",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from the cpu pass of keyedPackStressScene n=250000 churn=0.05 with gbuf=0 and gbuf=1 (profileSceneSweep, main 546f20f1)",
+      "date": "2026-11-16",
+      "area": "pre-render",
+      "kind": "speed",
+      "result": "gbuf=1: pre-render 741 ms/s busy, emit_rows 39.9 %, pack_sprites_split 26.3 %, collect_sprites 16.9 %, writeGbufWords (gbufWord.js) 9.4 %; gbuf=0: 679 ms/s, no writeGbufWords. E-387 moved the words into the keyed pack's C loop for Pixi's keyed frames only.",
+      "next": "Write the words inside pack_sprites_split's loop (as E-387's keyed forms do, a copy of the loop with the words), or keep each entity's word in a column refreshed when its flags, band or self-shadow change; pre-render's CPU per function before and after (keyedPack gbuf=1, Predator ?light3d=1).",
+      "refs": [],
+      "aliases": [
+        "writeGbufWords in pre-render"
+      ],
+      "records": [
+        "R-1189"
+      ]
+    },
+    {
+      "id": "E-445",
+      "title": "With the G-buffer words on, Pixi's buffer uploads more than double: updateBuffer 145 -> 348 ms/s and copyIn 32 ms/s in keyedPackStressScene (250 000 instances): every instance's words go up every frame though the keyed rows' words do not change",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from the cpu pass of keyedPackStressScene n=250000 churn=0.05 with gbuf=0 and gbuf=1 (profileSceneSweep, main 546f20f1)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "Pixi busy 269 -> 410 ms/s (gbuf=0 -> 1): updateBuffer (pixi.min.js) 1 161 -> 2 782 ms in 8 s, wasm-function[0] (the keyed pack) 1 342 -> 1 263, copyIn (instancedSpriteBatch.js) 0 -> 256 ms.",
+      "next": "Upload only the ranges whose words changed (the keyed rows keep their slots), or carry the word in an attribute the instance already uploads; the recorder's bytes a frame and Pixi's CPU per function before and after.",
+      "refs": [],
+      "aliases": [
+        "gbuf words upload every frame"
+      ],
+      "records": [
+        "R-1189"
+      ]
+    },
+    {
+      "id": "E-446",
+      "title": "The lamps' shadow map (4096 x 1536) is cleared whole every frame: 0.32 ms of GPU in lampShadowStressScene (lampShadows=map, 48 lamps), 0.08 ms in Predator ?light3d=1",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws on the light scenes (GTX 1650, 1920 x 1080)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "Per draw with clears timed: lampShadow lampShadows=map lamps=48 walkers=2000, a pass on fbo 4096 x 1536 with no draw, 0.324 ms (its clear); Predator zoom=0.3 light3d=1: the map's clear 0.083 ms of 0.151 for every clear of the frame.",
+      "next": "Clear only the lamps' tiles in use (a scissored clear per tile, or the tiles' quads drawn with the far value), or skip the clear of tiles the frame redraws whole; per draw before and after.",
+      "refs": [],
+      "aliases": [
+        "lamp map clear"
+      ],
+      "records": [
+        "R-1190"
       ]
     }
   ],
@@ -30657,6 +30722,24 @@
         "4fe3bcc9",
         "05bceebe"
       ]
+    },
+    {
+      "id": "R-1189",
+      "date": "2026-11-16",
+      "time": "06:38",
+      "timeFrom": "recorded",
+      "title": "N-218 on main: with gbuf=1 every logic function is 10-40 % slower and nothing new runs (contention, not logic's code); pre-render's writeGbufWords 9.4 % (E-444), Pixi's uploads x2.4 (E-445)",
+      "verdict": "note",
+      "text": "**N-218 on main: with gbuf=1 logic runs the same functions as with gbuf=0, each 10 to 40 % slower, and no new logic work appears.** The +9 % busy time is spread over every logic function. That points to contention from pre-render's and Pixi's G-buffer work, not to logic's code.\n\nCPU pass (profileSceneSweep --pass cpu, headed, 8 s after 8 s), keyedPackStressScene n=250000 churn=0.05, main 546f20f1, 2026-11-16 06:37 to 06:38 (the log):\n\n| logic, self ms in 8 s | gbuf=0 | gbuf=1 |\n| --- | --- | --- |\n| busy | 402 ms/s | 438 ms/s (+9 %) |\n| _tickNonDecimatedOneNoBody | 2 712.6 | 3 036.4 (+12 %) |\n| PackMover.tick | 781.8 | 949.4 (+21 %) |\n| _tickNonDecimatedTypeNoBody | 360.4 | 440.9 (+22 %) |\n| setXFromArgs | 205.3 | 267.8 (+30 %) |\n| setYFromArgs | 127.6 | 180.7 (+42 %) |\n| beforeUpdate | 93.1 | 141.2 |\n| set tint | 72.8 | 93.4 |\n\nThe other workers in the same windows:\n\n| worker | gbuf=0 | gbuf=1 |\n| --- | --- | --- |\n| pre-render | 679 ms/s | 741 ms/s, with writeGbufWords in JS at 9.4 % (E-444) |\n| Pixi | 269 ms/s | 410 ms/s; updateBuffer 1 161 -> 2 782 ms, copyIn 256 ms (E-445) |\n\nWith gbuf=1 more cores are busy, and pre-render and Pixi move more memory. The pattern, every logic function slower in proportion with stores slowed most, fits shared-core (SMT) or cache contention.\n\nThe sitting that found N-218 compared revisions (bdcca2e7 against a43899ed, both gbuf=1). Between those two revisions E-387 moved the words into Pixi's keyed pack. Its logic +43 % is likely the same effect, larger.\n\nNext: an A/B on main with E-387's commits reverted, gbuf=1, logic as the owner, with n raised until logic is over 6 ms. In the same sitting, a CSwitch capture (which CPUs logic shared with whom) or PMC per function (logic's cycles per instruction)."
+    },
+    {
+      "id": "R-1190",
+      "date": "2026-11-16",
+      "time": "06:36",
+      "timeFrom": "recorded",
+      "title": "Every light scene draw by draw: columns in the shadow maps (E-420), the volume's mesh fill (E-419) and the flashlights' glows (4.83 ms, E-404/E-421) are real work; DX-DEPTH's edge pass in six scenes (E-429); the lamps' map clear 0.32 ms (E-446)",
+      "verdict": "note",
+      "text": "**Every light scene draw by draw. In these GPU-bound stress scenes the pass readings were mostly work, unlike Predator's. Real: the columns' cost in the shadow maps (E-420), the volume's mesh fill (E-419), the flashlights' glows (E-404, E-421). DX-DEPTH's edge pass (E-429) shows in six scenes.**\n\nglFrameRecorder --gpu-draws (2fdfa8e9), headed Chrome 157, GTX 1650, 1920 x 1080, 3 s after 10 s, main 546f20f1, 2026-11-16 06:30 to 06:36 (the log). Each scene is compared with its pass ranges in R-1181.\n\n| scene | draws (ranges in R-1181) | what costs |\n| --- | --- | --- |\n| lampShadowStress lampShadows=map lamps=48 walkers=2000 | 2.953 ms (3.073) | 3D light 1.261; lamps' 48 instances 0.515; the lamps' map's clear 0.324 (E-446) |\n| lampShadowStress (stamps) | 2.345 (2.173) | colour 1.272; 2D light 0.624; the stamps' 48 instances 0.421 |\n| sunShadowMap lamps=48 hour=22 | 7.050 (7.612) | lamps' map 2.521 for 1 440 column instances (E-420); 3D light 2.228; opaque 0.653 and edge 0.569 (3 375 each) |\n| selfShadow | 5.458 (5.830) | sun map 2.085 for 406 columns, 5 us each (E-420); 3D light 1.415; G-buffer 0.612 (600) |\n| depthSort | 2.596 (0: N-219) | two programs over 3 240 instances, 1.502 and 0.871 (opaque and edge) |\n| emissive | 5.466 (5.590) | G-buffer 1920 x 1080 1.807 and 960 x 540 0.443 (E-403); opaque 1.055, edge 0.658; light 1.149 |\n| spriteMaps | 2.956 (4.242) | opaque 0.935 and edge 0.695 (601 each: E-422 is partly the edge pass); light 0.592 |\n| volume | 4.414 (8.209) | mesh fill 4.239 a frame (8.5 ms on the frames that draw it, 231 623 instances: E-419) |\n| flashlight | 5.595 (5.382) | the 119 lights' glows 4.829 ms, 40 us each (glow 0.15 over a radius of 380 px: E-404, E-421); light 0.565 |\n| spot | 3.719 (3.970) | tilemap 1.652 in 8 draws (E-432); the 48 instances' shadows 0.929; light 0.607 |\n| gallery | 5.166 (5.679) | 2D light into the screen 2.027 (one draw); 12 big instances 1.707 and 7 more 0.991 (glows: E-404) |\n\n- E-421 named: flashlight's 4.83 ms is the lights' glows. Each walker's light has glow 0.15 at radius 380, so it draws a 760 x 760 px quad.\n- E-422: spriteMaps' colour pass is opaque plus edge (DX-DEPTH). Its 2 us an instance halves if E-429 skips the edge pass.\n- E-429's edge pass is 50 to 90 % of the opaque pass's cost wherever pixel depth is on: light3dCompare 1.251 of 1.390, Predator light3d 0.945 of 1.053, emissive 0.658 of 1.055, sunShadowMap 0.569 of 0.653, spriteMaps 0.695 of 0.935.\n- New: E-446, the lamps' 4096 x 1536 map cleared whole each frame (0.324 ms here)."
     }
   ],
   "leads": [
