@@ -18526,12 +18526,12 @@
     {
       "id": "E-419",
       "title": "volumeStressScene's mesh fill pass draws 230 058 instances (7.06 ms of GPU) every other frame: the scene runs at about 49 fps, GPU-bound",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on the light scenes (timer queries, GTX 1650, 1920 x 1080)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "volume (defaults): fbo#3 [uTexLut,uPoseTable,uTexture] 7.055 ms, 0.5 draws a frame, 230 058 instances; the colour pass 1.142; 148 frames in 3.04 s.",
+      "result": "Kept 2026-11-16 (R-1200): the row as 6 vec4 attributes and the corner from the vertex index; meshFillGpuBench 1.864 -> 0.817 ms a draw at 1782 MHz; volumeStressScene frames drawn 17.8 / 17.1 -> 42.0 / 34.0 a second (the GPU at P8); image identical. volume (defaults): fbo#3 [uTexLut,uPoseTable,uTexture] 7.055 ms, 0.5 draws a frame, 230 058 instances; the colour pass 1.142; 148 frames in 3.04 s.",
       "next": "What an instance is there (a mesh fill row: a triangle?), and static meshes in a vertex buffer drawn whole, culled to the view; the recorder before and after.",
       "refs": [],
       "aliases": [
@@ -18539,7 +18539,8 @@
       ],
       "records": [
         "R-1181",
-        "R-1190"
+        "R-1190",
+        "R-1200"
       ]
     },
     {
@@ -19208,6 +19209,115 @@
         "keyed pack scene not keyed"
       ],
       "records": []
+    },
+    {
+      "id": "E-451",
+      "title": "In scenes the frame pacer limits, the GPU stays at its idle clock (P8, 300 to 645 MHz): volumeStressScene's mesh fill draw takes 12.3 ms there against 1.86 ms at 1782 MHz. The pacer's skips and the driver's clock governor may feed each other, and every scene GPU timing in the register is at whatever clock the GPU sat at",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 by the E-419 agent (opt/volume-fill), from its microbench and scene recordings",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "nvidia-smi through volumeStressScene's recording: P8, 300 to 645 MHz the whole window. GpuFramePacer finds the frame before last unfinished and skips (0.5 fences a tick before E-419, 0.6 to 0.7 drawn a tick after). meshFillGpuBench keeps the GPU busy: 1.864 ms a draw at 1782 MHz, against 12.30 / 12.64 ms in the scene.",
+      "next": "Log nvidia-smi's pstate and graphics clock with every GPU recording (glFrameRecorder, gpuPassBench) and say the clock beside each scene GPU number. Then test whether the pacer's skip lets the clock fall: drawn frames and clock with the pacer's threshold raised, or with the driver's power setting at maximum performance, as a measurement only.",
+      "refs": [],
+      "aliases": [
+        "gpu idle clock p8",
+        "pacer and gpu clock"
+      ],
+      "records": [
+        "R-1200"
+      ]
+    },
+    {
+      "id": "E-452",
+      "title": "ColliderFillBatch reads its row as 11 instance attributes plus aTri: the repack that halved MeshUvFillBatch's vertex stage (E-419: 6 vec4, the corner from the vertex index) should do the same for it",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 by the E-419 agent (opt/volume-fill), from its microbench and scene recordings",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "E-419: the cost of MeshUvFillBatch's draw was its attribute count, not its math (15 attributes 1.88 ms, the shader cut to placing the corner 1.04, 6 vec4 0.93, with the corner from gl_VertexID 0.83 ms, at 1782 MHz). ColliderFillBatch's layout: 11 instance attributes plus aTri.",
+      "next": "4 vec4 plus 1 vec2 (or 5 vec4), the corner from the vertex index; meshFillGpuBench's way for the collider fill and its scenes per draw; the image identical.",
+      "refs": [],
+      "aliases": [
+        "collider fill attributes"
+      ],
+      "records": [
+        "R-1200"
+      ]
+    },
+    {
+      "id": "E-453",
+      "title": "A mesh layer's rows repeat each shared vertex in every triangle: each mesh's vertices once plus an index buffer cut the mesh fill draw to 0.63 ms (vertex stage 0.18) against 0.82 after E-419, and the bytes read a draw from about 47 to 30 MB",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 by the E-419 agent (opt/volume-fill), from its microbench and scene recordings",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "meshFillGpuBench at 1782 MHz: rows as 6 vec4 with the corner from the vertex index 0.83 ms; each mesh's vertices once, indexed 0.63 ms, 0.18 under a 1 px scissor. At the scene's idle clock the vertex work under the scissor is still 6.7 ms a draw.",
+      "next": "The packer keeps each row's vertex ids (a vertex table a mesh and the index buffer it draws); the lamps' map cull, which uses each triangle's corner lengths, needs a per-entity reach instead. Per draw before and after, the image identical.",
+      "refs": [],
+      "aliases": [
+        "indexed mesh rows"
+      ],
+      "records": [
+        "R-1200"
+      ]
+    },
+    {
+      "id": "E-454",
+      "title": "Opaque untextured mesh layers (volumes, black sun-projected meshes) blend every pixel over about 7 layers of overdraw: their rows are alpha 255 with no texture, so they could draw without blending, or with a stencil early-out, for the same pixels",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 by the E-419 agent (opt/volume-fill), from its microbench and scene recordings",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "volumeStressScene after E-419: fill about 1.5 to 2.8 ms of the 8.2 to 9.5 ms a draw at P8; the town covers about 99 % of its 1920 x 1080 target with about 7 times overdraw, black, premultiplied, normal blending.",
+      "next": "When every row of a layer is opaque and untextured (a flag the packer can keep), draw it with blending off, or stencil first and color after; the image identical; per draw before and after.",
+      "refs": [],
+      "aliases": [
+        "opaque mesh layers no blend"
+      ],
+      "records": [
+        "R-1200"
+      ]
+    },
+    {
+      "id": "N-224",
+      "title": "volumeStressScene draws none of its cars: maxMeshIndices = N x 72 + CARS x 96 + 64 is too small, since a house takes 78 indices and a car 60, so only 18 708 houses get a mesh and the 200 cars none",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-419 agent",
+      "date": "2026-11-16",
+      "area": "bench",
+      "kind": "bug",
+      "result": "486 408 rows = 18 708 houses x 26 triangles (a box: 2 roof + 8 sides; the hexagonal tank: 4 roof + 12 sides), no car rows. N x 78 + CARS x 60 + 64 fits them all.",
+      "next": "Fix the scene's budget, in its own commit, after the sittings that compare with the old scene.",
+      "refs": [],
+      "aliases": [
+        "volume scene cars missing"
+      ],
+      "records": [
+        "R-1200"
+      ]
+    },
+    {
+      "id": "N-225",
+      "title": "shadowOutlineCheck fails on main: 54 of 64 casters are past 1.5 px at the 99th percentile (the boxes at 1.50 to 1.88 px, the crate under the lamp at 60 px off by 420 px)",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-419 agent on main 8f1d4eda",
+      "date": "2026-11-16",
+      "area": "tests",
+      "kind": "bug",
+      "result": "The check prints the same numbers before and after E-419: the failure predates it.",
+      "next": "Find whether the outlines moved (a regression since the check's last pass) or the threshold no longer fits the light3d casters; bisect with the check if it once passed.",
+      "refs": [],
+      "aliases": [
+        "shadow outline check failing"
+      ],
+      "records": [
+        "R-1200"
+      ]
     }
   ],
   "records": [
@@ -30978,6 +31088,20 @@
         "fcdb82b6",
         "5a4e50d3",
         "57ddaa15"
+      ]
+    },
+    {
+      "id": "R-1200",
+      "date": "2026-11-16",
+      "time": "08:10",
+      "timeFrom": "recorded",
+      "title": "E-419 kept: the mesh fill row as 6 vec4 attributes, the corner from the vertex index: 1.864 -> 0.817 ms a draw at full clock, volumeStressScene draws 34-42 frames a second instead of 17-18, image identical",
+      "verdict": "kept",
+      "text": "**E-419 kept: MeshUvFillBatch reads each row as 6 vec4 attributes and takes the corner from the vertex index. The mesh fill draw falls 1.864 -> 0.817 ms at full clock, and volumeStressScene draws 34 to 42 frames a second instead of 17 to 18. The image is identical.** Built on opt/volume-fill (094185d1 meshFillGpuBench; 025460dc the layout), merged into main 61170219.\n\nWhat the pass is:\n- An instance is one triangle row: 24 floats from packMeshUvFill (3 corners, a fallback pose, tint and alpha bits, depth, texture id, tile inverse and offset, the entity, 3 UVs with U the vertex's height on a sun-projected layer).\n- It draws with drawArraysInstanced(TRIANGLES, 0, 3, n), n = 486 408 here (18 708 houses x 26 triangles; N-224: no cars).\n- Before: per vertex 15 attributes (aTri and 14 instance attributes), a texelFetch of the pose table, the rotation, the sun shift, the mvp, 8 varyings. The fragment is untextured opaque black, normal blending into the layer's 1920 x 1080 target, with about 7 times overdraw.\n\nWhere the time went:\n- The scene's per-draw probe, before: 9.88 ms in full, 7.70 under a 1 px scissor, so about 78 % vertex and setup work.\n- meshFillGpuBench (new, 094185d1), ms a draw at 1734 to 1782 MHz, full / scissor:\n\n| way | ms a draw |\n| --- | --- |\n| shipped, 15 attributes | 1.88 / 1.83 |\n| the shader cut to placing the corner | 1.04 |\n| the row as 6 vec4 | 0.93 |\n| 6 vec4, the corner from gl_VertexID (built) | 0.83 |\n| each mesh's vertices once, indexed (E-453) | 0.63 / 0.18 |\n| the rows in a texture | 0.90 |\n| two rows an instance | 1.72 |\n\nEvery way drew a byte-identical picture: the cost is the attribute count, not the math.\n\nThe pass in the scene, base and branch interleaved in one sitting, the GPU at its idle clock P8 (E-451), 2026-11-16 07:4x to 08:10 (the agent's logs s1 07:46, s2 08:10):\n\n| volumeStressScene defaults | pair 1 | pair 2 |\n| --- | --- | --- |\n| ms a draw | 12.30 -> 9.51 | 12.64 -> 8.21 |\n| ms a tick | 6.15 -> 5.71 | 6.32 -> 4.92 |\n| ticks a second | 35.6 -> 60.0 | 34.3 -> 56.7 |\n| frames drawn a second | 17.8 -> 42.0 | 17.1 -> 34.0 |\n\nWith `?dayMinutes=0&still=1` the pass draws 0 times in 3 s on both sides: a frame where nothing changed already keeps its target. The microbench in one page at 1782 MHz: 1.864 -> 0.817 ms a draw, 1.829 -> 0.846 under the scissor.\n\n- Image: still captures base against branch, 0 of 921 600 pixels differ in five cases (WebGL, WebGL with n=1000 cars, WebGPU, api=volume, api=volume with cars). shadowOutlineCheck prints the same numbers on both (N-225: it already fails on main).\n- Tests: node 2794/2796 on the branch (the 2 path-import tests pass with the redirect loader), demos 101/101.\n\nFiled from this work:\n- E-451: the GPU's idle clock in paced scenes, so scene GPU timings read at idle clocks.\n- E-452: ColliderFillBatch's 11 attributes.\n- E-453: indexed mesh rows.\n- E-454: opaque untextured layers without blending.\n- N-224: the scene's index budget.\n- N-225: shadowOutlineCheck failing on main.\n\nEvery GPU number taken in a scene tonight (R-1187, R-1190, R-1191, R-1194, R-1195) was read at whatever clock the GPU sat at. Compare them within a sitting, not across sittings or against a bench.",
+      "commits": [
+        "094185d1",
+        "025460dc",
+        "61170219"
       ]
     }
   ],
