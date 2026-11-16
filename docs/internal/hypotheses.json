@@ -19176,12 +19176,12 @@
     {
       "id": "N-222",
       "title": "Resizing a scene whose glow composite exists kills the renderer: scene.resize(1280, 720) in lampShadowStressScene (lampShadows=map) throws a FATAL ERROR in _bindGlowLayer on both backends",
-      "status": "open",
-      "statusText": "found 2026-11-16 by the light-tiles agent, reproduced on main 5790446b (without the tiles)",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-16 by the light-tiles agent, reproduced on main 5790446b (without the tiles); fixed 2026-11-16 in 898979e9 (merged a5f63eb8): the composite takes EMPTY before the targets are replaced",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "bug",
-      "result": "The resize path replaces lightingRT with _replaceRT, whose _releaseTextureBindGroups destroys every Pixi BindGroup still listening on the old source (releasePixiBindGroups.js): the glow composite's own group, which holds uGlow and uLight, among them. _bindGlowLayer then reads res.uGlow, a getter into that destroyed group (BindGroup.resources is null), and the worker dies. Repro: the agent's scratchpad tiles/mainResize.sh (engineExact.mjs --resize 1280x720 on lampShadowStressScene lampShadows=map lamps=48 walkers=2000).",
+      "result": "Fixed (898979e9): _unbindGlowLayer sets uGlow and uLight (and their samplers on WebGPU) to EMPTY before _replaceRT, as the face map's resources are; _bindGlowLayer binds the new targets after. The repro after the fix: no fatal error, the light pass draws at 320 x 180 after scene.resize(1280, 720), tiled and untiled identical (0 of 230 400 bytes). Main's suites after the merge: node 2836/2836, demos 101/101. The resize path replaces lightingRT with _replaceRT, whose _releaseTextureBindGroups destroys every Pixi BindGroup still listening on the old source (releasePixiBindGroups.js): the glow composite's own group, which holds uGlow and uLight, among them. _bindGlowLayer then reads res.uGlow, a getter into that destroyed group (BindGroup.resources is null), and the worker dies. Repro: the agent's scratchpad tiles/mainResize.sh (engineExact.mjs --resize 1280x720 on lampShadowStressScene lampShadows=map lamps=48 walkers=2000).",
       "next": "Detach the composite from the old sources (EMPTY) before the targets are replaced, so its group stops listening and survives; bind the new ones after. A test that resizes a scene with the composite (the real worker or the browser repro).",
       "refs": [],
       "aliases": [
