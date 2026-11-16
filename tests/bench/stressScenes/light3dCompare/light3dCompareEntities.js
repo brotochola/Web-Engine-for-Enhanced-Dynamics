@@ -8,6 +8,10 @@ const { GameObject, SpriteRenderer, ShadowCaster, LightEmitter, Transform } = WE
  * The knobs come from WEED.params, the same on the page and in every worker.
  */
 const DS = WEED.params?.get('ds') === '1' || WEED.params?.get('all') === '1';
+/** `?still=1`: the walkers stand where their loop starts (its phase), facing along it, not animated. */
+const STILL = WEED.params?.get('still') === '1';
+/** `?staticProps=1`: the props declare isStatic (static scenery, E-127), as a game's furniture would. */
+const STATIC_PROPS = WEED.params?.get('staticProps') === '1';
 const DirectionalSprite = DS ? WEED.DirectionalSprite : null;
 if (DS && !DirectionalSprite) throw new Error('light3dCompareScene: ?ds=1 needs DirectionalSprite (dx/light3d)');
 
@@ -63,11 +67,17 @@ export class CompareWalker extends GameObject {
       this._dir = 1;
       this.setAnimation('walk_down');
     }
-    this.setAnimationSpeed(0.15);
+    this.setAnimationSpeed(STILL ? 0 : 0.15);
     this.setScale(spec.scale ?? 0.9);
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.98;
     this._place();
+    if (STILL && DS) {
+      // Facing along the loop where it stands (from its velocity it would be its first frame's, whichever that was).
+      const ph = LOOP_PHASE[this.index];
+      this.directionalSprite.facingFrom = 'manual';
+      this.directionalSprite.facing = Math.atan2(Math.cos(ph) * 0.6, -Math.sin(ph));
+    }
   }
 
   tick() {
@@ -78,7 +88,7 @@ export class CompareWalker extends GameObject {
   _place() {
     const i = this.index;
     if (LOOP_CX[i] !== LOOP_CX[i]) loopOf(i);
-    const t = (performance.now() / 1000) * LOOP_W[i] + LOOP_PHASE[i];
+    const t = STILL ? LOOP_PHASE[i] : (performance.now() / 1000) * LOOP_W[i] + LOOP_PHASE[i];
     const c = Math.cos(t);
     const s = Math.sin(t);
     const r = LOOP_R[i];
@@ -102,6 +112,7 @@ CompareWalker.worldH = 2000;
 
 /** A still prop that casts: a house, a tree, a barrel or a rock. */
 export class CompareProp extends GameObject {
+  static isStatic = STATIC_PROPS;
   static components = [SpriteRenderer, ShadowCaster];
 
   onSpawned(spec = {}) {

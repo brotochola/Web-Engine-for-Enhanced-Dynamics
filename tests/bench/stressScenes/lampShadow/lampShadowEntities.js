@@ -46,11 +46,14 @@ export class StressWalker extends GameObject {
     this._r = spec.r ?? 40;
     this._w = spec.speed ?? 1;
     this._t = spec.phase ?? 0;
-    this.x = this._cx;
-    this.y = this._cy;
+    // `still`: it stands where its loop starts (its phase) and does not walk.
+    this._still = spec.still === true;
+    this.x = this._still ? this._cx + Math.cos(this._t) * this._r : this._cx;
+    this.y = this._still ? this._cy + Math.sin(this._t) * this._r * 0.6 : this._cy;
   }
 
   tick(dt, deltaTime) {
+    if (this._still) return;
     this._t += (deltaTime / 1000) * this._w;
     this.x = this._cx + Math.cos(this._t) * this._r;
     this.y = this._cy + Math.sin(this._t) * this._r * 0.6;
