@@ -18194,12 +18194,12 @@
     {
       "id": "E-403",
       "title": "With ?light3d=1 the sprites go through the G-buffer's program twice: at 1920 x 1080 (0.9 to 1.1 ms) and again at 960 x 540 (0.56 to 0.63 ms), 14 300 instances each",
-      "status": "open",
+      "status": "rejected",
       "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-passes on Predator (timer queries, GTX 1650, 1920x1080)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "light3d day: fbo 1920 x 1080 1.109 ms and fbo 960 x 540 0.557 ms, both [uTexLut,uStatics,uPoses,uTexture,uMaps], 14 285 instances; night 0.886 and 0.627.",
+      "result": "Rejected 2026-11-16 (R-1205): the 1920 x 1080 pass is the emissive glow pass, not the G-buffer; both it and the face/ids MRT are fill at their own size (a 1 px scissor: Predator 0.81 -> 0.017 and 0.52 -> 0.044 ms), so merging saves at most about 0.07 ms of vertex work while it would quadruple the face map's fill, and needs a different blend per target. E-457 takes the glow pass's own waste. light3d day: fbo 1920 x 1080 1.109 ms and fbo 960 x 540 0.557 ms, both [uTexLut,uStatics,uPoses,uTexture,uMaps], 14 285 instances; night 0.886 and 0.627.",
       "next": "Name the second pass (the face map at the light resolution?) and take it from the full-size one (a downsample) or write it in the same pass (MRT); the recorder before and after.",
       "refs": [],
       "aliases": [
@@ -19076,12 +19076,12 @@
     {
       "id": "E-445",
       "title": "With the G-buffer words on, Pixi's buffer uploads more than double: updateBuffer 145 -> 348 ms/s and copyIn 32 ms/s in keyedPackStressScene (250 000 instances): every instance's words go up every frame though the keyed rows' words do not change",
-      "status": "open",
+      "status": "rejected",
       "statusText": "proposed 2026-11-16 from the cpu pass of keyedPackStressScene n=250000 churn=0.05 with gbuf=0 and gbuf=1 (profileSceneSweep, main 546f20f1)",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "Pixi busy 269 -> 410 ms/s (gbuf=0 -> 1): updateBuffer (pixi.min.js) 1 161 -> 2 782 ms in 8 s, wasm-function[0] (the keyed pack) 1 342 -> 1 263, copyIn (instancedSpriteBatch.js) 0 -> 256 ms.",
+      "result": "Rejected 2026-11-16 (R-1205): in the fixed keyedPackStressScene (Pixi packs, N-223) updateBuffer goes 29.0 -> 38.3 ms/s with the words on (+9, not the +203 read with pre-render packing); Pixi busy 477 -> 497 ms/s. The words still go up every frame (2 734 -> 4 662 KB a frame): E-455's words generation is where that goes. Pixi busy 269 -> 410 ms/s (gbuf=0 -> 1): updateBuffer (pixi.min.js) 1 161 -> 2 782 ms in 8 s, wasm-function[0] (the keyed pack) 1 342 -> 1 263, copyIn (instancedSpriteBatch.js) 0 -> 256 ms.",
       "next": "Upload only the ranges whose words changed (the keyed rows keep their slots), or carry the word in an attribute the instance already uploads; the recorder's bytes a frame and Pixi's CPU per function before and after.",
       "refs": [],
       "aliases": [
@@ -19095,12 +19095,12 @@
     {
       "id": "E-446",
       "title": "The lamps' shadow map (4096 x 1536) is cleared whole every frame: 0.32 ms of GPU in lampShadowStressScene (lampShadows=map, 48 lamps), 0.08 ms in Predator ?light3d=1",
-      "status": "open",
+      "status": "rejected",
       "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws on the light scenes (GTX 1650, 1920 x 1080)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "Per draw with clears timed: lampShadow lampShadows=map lamps=48 walkers=2000, a pass on fbo 4096 x 1536 with no draw, 0.324 ms (its clear); Predator zoom=0.3 light3d=1: the map's clear 0.083 ms of 0.151 for every clear of the frame.",
+      "result": "Rejected 2026-11-16 (R-1205): lampShadowStressScene (map, 48 lamps) and Predator light3d use 48 of 48 tiles, so clearing only the tiles in use clears the same area; the clear measured 0.10 to 0.20 ms (whether ANGLE's clear of that target is a fast clear is still open). Per draw with clears timed: lampShadow lampShadows=map lamps=48 walkers=2000, a pass on fbo 4096 x 1536 with no draw, 0.324 ms (its clear); Predator zoom=0.3 light3d=1: the map's clear 0.083 ms of 0.151 for every clear of the frame.",
       "next": "Clear only the lamps' tiles in use (a scissored clear per tile, or the tiles' quads drawn with the far value), or skip the clear of tiles the frame redraws whole; per draw before and after.",
       "refs": [],
       "aliases": [
@@ -19113,12 +19113,12 @@
     {
       "id": "E-447",
       "title": "Column casters run their whole 24 x 24 grid (576 cells, 2 304 vertex invocations) for every instance whatever size the frame takes on the map: the columns' cost in the shadow maps is vertex work (61 % to all of it survives a 1 px scissor)",
-      "status": "open",
+      "status": "dropped",
       "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws --probe-scissor on the column casters (GTX 1650, 1920 x 1080)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "selfShadowStressScene: the sun map's columns program [uTexture,uTexLut,uMaps,uFoot], 404 instances, 1.282 ms under a 1 px scissor against 2.085 ms drawn (R-1190); sunShadowMapStressScene lamps=48 hour=22: the lamps' map's columns program [uTexture,uMaps,uTexLut,uLampTiles], two draws of 716 instances, 1.653 + 1.755 ms under the scissor (2.521 drawn in R-1190: the per-draw split overlaps there). sunShadowMap.js: SUN_MAP_COLUMNS 24, COLUMN_CELL_PX 8 (the most px a cell spans; E-379's blocks for big frames), each cell four vertices (E-376's index buffer). A 64 px frame thus draws 2.7 px cells into a map that resolves no less than its own texel.",
+      "result": "Dropped 2026-11-16 (R-1205, reverted 05eaeb82): the columns by the grid they need cut sunShadowMapStressScene's lamps' map columns 2.78 -> 2.51 ms but drew 12 -> 16 draws and 195 -> 238 GL calls a frame and changed shadow-edge pixels (max 13 to 48); selfShadow and light3dCompare all=1 unchanged (their frames span about 35 map texels). The solid-cell list (vertex pulling) remains the way for selfShadow's 1.5 ms. selfShadowStressScene: the sun map's columns program [uTexture,uTexLut,uMaps,uFoot], 404 instances, 1.282 ms under a 1 px scissor against 2.085 ms drawn (R-1190); sunShadowMapStressScene lamps=48 hour=22: the lamps' map's columns program [uTexture,uMaps,uTexLut,uLampTiles], two draws of 716 instances, 1.653 + 1.755 ms under the scissor (2.521 drawn in R-1190: the per-draw split overlaps there). sunShadowMap.js: SUN_MAP_COLUMNS 24, COLUMN_CELL_PX 8 (the most px a cell spans; E-379's blocks for big frames), each cell four vertices (E-376's index buffer). A 64 px frame thus draws 2.7 px cells into a map that resolves no less than its own texel.",
       "next": "Bucket the column instances by the grid their frame needs at the map's texel size (cells of about one map texel: a 64 px person at resolution 0.5 needs 8 x 8 or fewer), compactColumnRows (E-379) writing each bucket's rows and the pass drawing one call a bucket with its own grid; or a per-frame list of the solid cells (most of a sprite frame is empty) drawn by vertex pulling. The image changes only where a cell was finer than the map's texel; per draw before and after on selfShadow, sunShadowMap and light3dCompare all=1.",
       "refs": [],
       "aliases": [
@@ -19379,6 +19379,54 @@
       "records": [
         "R-1203"
       ]
+    },
+    {
+      "id": "N-227",
+      "title": "Volumes cast no lamp shadow in a scene without sprite casters: the lamps' map draws its volumes only after its stamp cards, and a lamp gets a tile only from pre-render's stamp lights",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the pixi batch agent (opt/pixi-gpu-batch)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "bug",
+      "result": "sunShadowMapStressScene kind=box lamps=48 hour=22 draws no 4096 x 1536 pass at all (no stamp rows, so no lamp tile), while kind=mix (volumes beside stamp rows) does.",
+      "next": "Give a lamp a tile when a volume (not only a stamp row) is within its reach, and draw the volumes' pass whether or not stamp cards ran; a picture test with volumes alone under lamps.",
+      "refs": [],
+      "aliases": [
+        "volumes need stamp casters for lamp shadows"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-457",
+      "title": "The emissive glow pass draws every sprite (14 400 in Predator ?light3d=1) at 1920 x 1080 to show the few that glow: 0.81 ms of fill a frame, where only the glowing instances and the ids map that hides the rest are needed",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the pixi batch agent (opt/pixi-gpu-batch)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "A 1 px scissor probe: Predator's glow pass 0.81 -> 0.017 ms, emissiveStressScene 0.74 -> 0.054 ms: fill, not vertices. E-403 named this pass the G-buffer twice; it is the emissive glow (DX-EMISSIVE v2: _renderGlow draws batch.glowMesh into glowRT).",
+      "next": "Draw only the instances whose sheet or flags glow (a list the pack can keep), testing the ids map for occlusion; or draw the glow target at the light resolution and upsample; per draw before and after, the image within a stated tolerance.",
+      "refs": [],
+      "aliases": [
+        "emissive glow pass draws all sprites"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-228",
+      "title": "Since E-419, MeshUvFillBatch makes Pixi warn \"Attribute aTri is not present in the shader\": the geometry keeps aTri though the program now takes the corner from the vertex index",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the pixi batch agent (opt/pixi-gpu-batch)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "bug",
+      "result": "The warning shows on main after 61170219 (E-419); the lamps' map volumes had printed it once per tile count until d7b7a36b numbered their vertices by an attribute.",
+      "next": "Drop aTri from the geometry where the program no longer reads it (or keep a program input that uses it); check the console of volumeStressScene and Predator ?light3d=1.",
+      "refs": [],
+      "aliases": [
+        "aTri not present warning"
+      ],
+      "records": []
     }
   ],
   "records": [
