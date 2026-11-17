@@ -17,6 +17,7 @@ import {
   createHalfCircularGradientCanvas,
   createMetaballCanvas,
   createBulletTrailCanvas,
+  LIGHT_GLOW_COMPACT_SPAN,
   LIGHT_GRADIENT_TEXTURE_RADIUS,
   METABALL_TEXTURE_RADIUS,
 } from '../util/utils.js';
@@ -1248,6 +1249,23 @@ class SpriteSheetRegistry {
       isSpritesheetFrame: false,
     });
     animations['_lightGradient'] = ['_lightGradient'];
+    // E-498: the compact glow, the halos with their own size (glowRadius): the same curve, its visible part over the
+    // whole texture; unshaded with the gradient (DX-GLOWRADIUS).
+    const lightGlowCanvas = createCircularGradientCanvas(LIGHT_GRADIENT_TEXTURE_RADIUS, 0xffffff, LIGHT_GLOW_COMPACT_SPAN);
+    imagesToPack.push({
+      name: '_lightGlow',
+      unshaded: unshadedGlows === true,
+      sourceImg: lightGlowCanvas,
+      sourceRect: null,
+      width: lightGlowCanvas.width,
+      height: lightGlowCanvas.height,
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: lightGlowCanvas.width,
+      sourceHeight: lightGlowCanvas.height,
+      isSpritesheetFrame: false,
+    });
+    animations['_lightGlow'] = ['_lightGlow'];
     debugWorkerLog(
       `  ✅ Generated built-in: _lightGradient (${lightGradientCanvas.width}x${lightGradientCanvas.height})`
     );

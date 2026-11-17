@@ -163,6 +163,7 @@ function emitSpriteQueue(deltaTime, source) {
     const glowSprite = LightEmitter.glow;
     const glowRadius = LightEmitter.glowRadius;
     const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
+    const lightGlowTextureId = this._resolveBuiltinTextureId('_lightGlow');
     const whiteCircleTextureId = this._resolveBuiltinTextureId('_whiteCircle');
 
     const decoX = DecorationComponent.x;
@@ -621,7 +622,8 @@ function emitSpriteQueue(deltaTime, source) {
             }
             rqRotC[out] = 1;
             rqRotS[out] = 0;
-            rqTextureId[out] = lightGradientTextureId;
+            // E-498: a halo with its own radius draws the compact glow.
+            rqTextureId[out] = ownRadius ? lightGlowTextureId : lightGradientTextureId;
             rqAnchorX[out] = 0.5;
             rqAnchorY[out] = anchorY;
             if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;

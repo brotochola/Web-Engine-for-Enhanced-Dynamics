@@ -109,6 +109,9 @@ enum {
   K_SKIP,
   /* DX-GLOWRADIUS: the glow rows' halo radius (LightEmitter.glowRadius, px; 0: 0.85 of the light's radius). */
   L_GLOW_RADIUS,
+  /* E-498: the compact glow's texture (a value: _resolveBuiltinTextureId('_lightGlow')), what a halo with its own radius
+     draws. */
+  L_GLOW_TEX,
   SLOT_COUNT
 };
 
@@ -329,6 +332,7 @@ typedef struct {
   const uint32_t *lColor;
   const float *lBright, *lRadius, *lGlowOff, *lGlow, *tX, *tY, *lOffX, *lOffY, *tRc, *tRs, *lGlowRadius;
   uint32_t lGradientTex;
+  uint32_t lGlowTex;
   const float *pcX, *pcY, *pcZ, *pcScaleX, *pcScaleY;
   const uint8_t *pcFlipX, *pcFlipY;
   const float *pcRotC, *pcRotS, *pcAlpha;
@@ -489,6 +493,7 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->tRc = PTR(const float, T_ROT_C);
   e->tRs = PTR(const float, T_ROT_S);
   e->lGradientTex = t[L_GRADIENT_TEX];
+  e->lGlowTex = t[L_GLOW_TEX];
   e->pcX = PTR(const float, PC_X);
   e->pcY = PTR(const float, PC_Y);
   e->pcZ = PTR(const float, PC_Z);
@@ -984,7 +989,8 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
   }
   e->qRotC[out] = 1.0f;
   e->qRotS[out] = 0.0f;
-  e->qTexture[out] = (uint16_t)e->lGradientTex;
+  /* E-498: a halo with its own radius draws the compact glow (its visible part fills the quad). */
+  e->qTexture[out] = (uint16_t)(ownRadius ? e->lGlowTex : e->lGradientTex);
   e->qAnchorX[out] = 0.5f;
   e->qAnchorY[out] = (float)anchorY;
   if (e->qType) e->qType[out] = 3;

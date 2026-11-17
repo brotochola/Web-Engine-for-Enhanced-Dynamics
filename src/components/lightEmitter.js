@@ -23,8 +23,9 @@ const FULL_TURN = Math.PI * 2;
  * - `elevation` lifts the source off the floor without moving its pool: the falloff becomes I / (I + h² + d²), a wider,
  *   flatter pool with the same reach (a lamp post rather than a torch on the ground).
  * - `glow` is the alpha of the halo drawn on the bulb (0, the default, draws none). `glowRadius` is the halo's radius in
- *   px; 0, the default, makes it 0.85 of the light's radius (a spark's big soft flash), so a lamp that lights a whole
- *   street gives its bulb a small one. `glowOffsetY` moves it on the screen (negative is up: put it on the bulb),
+ *   px, as it shows (E-498: a compact glow that falls to under 1 % at that radius); 0, the default, draws the light's
+ *   wide gradient at 0.85 of its radius (a spark's big soft flash), so a lamp that lights a whole street gives its bulb a
+ *   small one. `glowOffsetY` moves it on the screen (negative is up: put it on the bulb),
  *   `glowLayer` puts it on one layer (a layer name; null keeps the entity's layers). With lighting.lightGlow 'sprite'
  *   the halo is drawn right after its entity's sprite (over it, and under whatever stands in front of it) and unshaded:
  *   the night does not darken it.
@@ -67,7 +68,7 @@ export class LightEmitter extends Component {
     coneInvSpan: Float32Array, // 1 / (cos of the inner edge - coneCos), the soft edge without a divide
     followFlip: Uint8Array, // 1 = offsetX and direction mirror with the entity's flipX
     // DX-GLOWRADIUS, appended (append, don't move):
-    glowRadius: Float32Array, // px, the halo's radius; 0 = 0.85 of the light's radius
+    glowRadius: Float32Array, // px, the halo's radius as it shows (E-498's compact glow); 0 = 0.85 of the light's radius
   };
 
   /**
