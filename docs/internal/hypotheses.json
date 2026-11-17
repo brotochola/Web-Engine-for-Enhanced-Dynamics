@@ -21706,7 +21706,8 @@
       ],
       "records": [
         "R-1280",
-        "R-1284"
+        "R-1284",
+        "R-1285"
       ],
       "result": "GTX 1650, the barrio held: the floor draw (1.91 ms) becomes a 0.17 ms copy; captures byte-identical cached and not (WebGL, WebGPU); the GPU then lowers its clock (total ms a frame 5.94 -> 5.92) and even at 4K draws 60 either way: not GPU-bound here. Merged 9d483258.",
       "next": "Read the gain where the GPU is the limit: the ASUS's HD 620 (the barrio, ?floorCache=0 against 1, drawn frames). Then a world-space tile cache for a camera that pans (re-paint only the strip that comes into view), and the default on for worldRect layers that do not read the frame's time.",
@@ -34448,6 +34449,15 @@
         "6ce252d8",
         "9d483258"
       ]
+    },
+    {
+      "id": "R-1285",
+      "date": "2026-11-17",
+      "time": "07:48",
+      "timeFrom": "recorded",
+      "title": "E-504 on the Intel HD 620 (Parque Chas at 22 h, still camera): the floor cache draws 21.2 fps against 16.6 without it (+27.7 %, 4/4)",
+      "verdict": "note",
+      "text": "**E-504's floor cache on the Intel HD 620, where the GPU is the limit.** ASUS laptop, Parque Chas (buenosAiresScene) at `hour=22`, camera still (no input). Main 6d7bf4a0, one build: the cache on (A) against `?floorCache=0` (B). 4 pairs, `--full-rev`, 2026-11-17 07:40 (asus-e504-floorcache).\n\n| | Cache on (A) | Cache off (B) | Change |\n|---|---|---|---|\n| drawn | 21.2 fps | 16.6 fps | the cache +27.7 % (B −21.2 %, 4/4; pairs 20.7–21.5 against 16.5–16.9) |\n| presented | 59.3 fps | 59.4 fps | |\n| renderer | 6.00 ms | 6.21 ms | +0.8 % (B) |\n\nThe CPU workers read cheaper with the cache off: spatial 18.2 → 10.7 ms, physics 15.2 → 9.9, pre-render 12.6 → 8.4, logic 6.9 → 5.9 (each 0/4 worse). With more frames drawn, Chrome's GPU process and the integrated GPU take more of the 4 logical CPUs and the shared 15 W, so the same workers read dearer. This is a laptop effect, not the cache's code.\n\nOn the GTX 1650 the barrio draws 60 fps either way (R-1284), so the cache pays where the GPU is the limit."
     }
   ],
   "leads": [
