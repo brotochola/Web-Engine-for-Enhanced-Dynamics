@@ -20497,12 +20497,12 @@
     {
       "id": "N-249",
       "title": "main's committed dist/ is stale: it predates source changes since 842c41c6, so a game that copies the bundles from git gets older code than src/",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "found 2026-11-16 by the E-469 agent (opt/terser-closures) while building the bundles",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "npm run check:dist fails on main 1f94af82 (the input hash in dist/.build-inputs is 842c41c6's).",
+      "result": "Fixed 2026-11-16 (aa4317f0): dist rebuilt from main 81a45b45, check:dist passes; bundle smokes 8/8, node on the bundles 322/322. N-164 (dist out of git) still stands. npm run check:dist fails on main 1f94af82 (the input hash in dist/.build-inputs is 842c41c6's).",
       "next": "Rebuild the bundles before the next push (merge-ships-bundles), or N-164 (dist out of git, built at release only).",
       "refs": [],
       "aliases": [
