@@ -261,6 +261,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'swayTrig', owner: 'particle', bytes: d * 4 },
       { name: 'swayTrigValue', owner: 'particle', bytes: d * 8 },
       { name: 'swayTable', owner: 'particle', bytes: SWAY_TABLE_SLOTS * 4 },
+      // E-506: the snapshot's swaying decorations, the list the sway kernels walk.
+      { name: 'swaySwaying', owner: 'particle', bytes: d * s },
     );
   }
   if ((pixiRows | 0) > 0 || pixiExtra) {

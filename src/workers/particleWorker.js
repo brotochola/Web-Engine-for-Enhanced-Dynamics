@@ -40,7 +40,7 @@ import { IMPACT_FLOATS, bindImpactRing, publishImpacts } from '../util/impactRin
 import { backPublishedList, publishList } from '../util/publishedList.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
-import { bindDecorationSway, writeSwayColumns } from './decorationSwayClient.js';
+import { bindDecorationSway, swayingInMemory, writeSwayColumns } from './decorationSwayClient.js';
 import { bindBulletTick } from '../core/bulletTickClient.js';
 import { bindNavFlowfield } from './navFlowfieldClient.js';
 import { bindNavRequestRings, drainNavRequests, NAV_REQUEST_FLOWFIELD } from '../util/navRequestRing.js';
@@ -542,6 +542,12 @@ class ParticleWorker extends AbstractWorker {
     this._swayFrameCounter = 0;
     this._activeDecorationSnapshot = null;
     this._activeDecorationSnapshotCount = 0;
+    // E-506: the snapshot's swaying decorations (sway not off), in its order, the list the sway kernels walk; its count,
+    // and the snapshot copy and sway epoch it was made from.
+    this._swayingDecorations = null;
+    this._swayingCount = 0;
+    this._swayingCopy = -1;
+    this._swayingEpoch = -1;
     // E-334: the snapshot's decorations that have a parent, in its order, listed when it is copied (empty while the
     // pool's header counts none attached); the attached pass walks these, not the whole snapshot.
     this._attachedDecorationSnapshot = new Uint32Array(0);
@@ -750,6 +756,10 @@ class ParticleWorker extends AbstractWorker {
       const swayView = (Type, byte, length) => (swayLayout ? new Type(swayBuffer, byte, length) : new Type(length));
       // E-129: u32 past 65 535 decorations, as the sway regions and the kernel bound for them.
       this._activeDecorationSnapshot = swayView(PoolSlotArray(this.maxDecorations), swayLayout?.snapshotByte, this.maxDecorations);
+      this._swayingDecorations = swayLayout && swayLayout.swayingByte !== undefined
+        ? swayView(PoolSlotArray(this.maxDecorations), swayLayout.swayingByte, this.maxDecorations)
+        : null;
+      this._swayingCopy = -1;
       this._attachedDecorationSnapshot = new Uint32Array(this.maxDecorations);
       if (this._swayBuckets) {
         this._phaseSin = swayView(Float32Array, swayLayout?.phaseSinByte, this.maxDecorations);
@@ -1758,7 +1768,32 @@ class ParticleWorker extends AbstractWorker {
     }
     if (!this._swayReady()) return;
     const bound = this._swayWasm;
-    bound.free(bound.tableByte, activeCount, deltaTime, swayBaseAngle);
+    bound.free(bound.tableByte, this._swayKernelCount(), deltaTime, swayBaseAngle);
+  }
+
+  /**
+   * E-506: how many entries the sway kernels walk: the swaying list's (made again when the snapshot was copied since, or
+   * the pool's sway epoch moved), or the whole snapshot's where the list is not in the kernel's memory.
+   */
+  _swayKernelCount() {
+    if (!swayingInMemory(this, this._swayWasm)) return this._activeDecorationSnapshotCount;
+    const epoch = DecorationPool.swayEpoch();
+    if (this._swayingCopy !== this._decoSnapshotCopies || epoch !== this._swayingEpoch || epoch < 0) {
+      const snap = this._activeDecorationSnapshot;
+      const out = this._swayingDecorations;
+      const sway = DecorationComponent.sway;
+      const count = this._activeDecorationSnapshotCount;
+      let n = 0;
+      for (let k = 0; k < count; k++) {
+        const i = snap[k];
+        out[n] = i;
+        n += sway[i] !== SWAY_OFF ? 1 : 0;
+      }
+      this._swayingCount = n;
+      this._swayingCopy = this._decoSnapshotCopies;
+      this._swayingEpoch = epoch;
+    }
+    return this._swayingCount;
   }
 
   /**
@@ -1782,7 +1817,7 @@ class ParticleWorker extends AbstractWorker {
     }
     if (!this._swayReady()) return;
     const bound = this._swayWasm;
-    const n = bound.sway(bound.tableByte, this._activeDecorationSnapshotCount, k, deltaTime);
+    const n = bound.sway(bound.tableByte, this._swayKernelCount(), k, deltaTime);
     if (n > 0) bound.finishTrig(bound.tableByte, n, bound.trigIndexMask, bound.trigImpulse);
   }
 

@@ -107,10 +107,21 @@ export function writeSwayColumns(b, w, DecorationComponent) {
   }
   // The snapshot at the kernel's width (E-129).
   if (w._activeDecorationSnapshot.BYTES_PER_ELEMENT !== b.slotBytes) return false;
+  // E-506: the kernels walk the swaying decorations' list where the worker keeps one in this memory (swayingInMemory).
+  if (swayingInMemory(w, b)) t[SLOT.snapshot] = w._swayingDecorations.byteOffset;
   if (w._swayBuckets > b.buckets) return false;
   t[SLOT.list] = b.listByte;
   t[SLOT.listCap] = b.listCap;
   t[SLOT.trig] = b.trig.byteOffset;
   t[SLOT.trigValue] = b.trigValue.byteOffset;
   return true;
+}
+
+/**
+ * E-506: whether the particle worker's list of the snapshot's swaying decorations is in the kernel's memory, at its width:
+ * the kernels then walk it (the worker's updateDecorationSway passes its count), else the whole snapshot, as before.
+ */
+export function swayingInMemory(w, b) {
+  const list = w._swayingDecorations;
+  return list !== null && list.buffer === b.buffer && list.BYTES_PER_ELEMENT === b.slotBytes;
 }
