@@ -269,7 +269,9 @@ test('the reference set names catalogued scenes, and a run query carries the fix
   for (const key of REFERENCE_SET) assert.ok(CAPACITY_SCENES[key], key);
   assert.equal(sceneQuery(CAPACITY_SCENES.predator, 1.85), 'zoom=0.216&crowd=1.85');
   assert.equal(sceneQuery(CAPACITY_SCENES.bunnyMark, 250000), 'bunnies=250000');
-  assert.equal(sceneQuery(CAPACITY_SCENES.boids, 80000), 'ids=32&boids=80000');
+  assert.equal(sceneQuery(CAPACITY_SCENES.boids, 40000), 'boids=40000');
+  // A physics scene boots 65 535 entities at most (physicsHostImpl.js MAX_BODIES), and every boid is a body.
+  assert.ok(CAPACITY_SCENES.boids.max <= 65535);
   for (const def of Object.values(CAPACITY_SCENES)) {
     assert.ok(def.min > 0 && def.max >= def.min && def.start >= def.min && def.start <= def.max, def.key);
     assert.ok(def.entities(def.max) <= 500000, `${def.key}: the engine holds 500 000 entities at most`);
