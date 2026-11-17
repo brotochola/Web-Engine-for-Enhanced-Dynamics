@@ -2153,7 +2153,10 @@ class PixiRenderer extends AbstractWorker {
 
     // E-448: the opaque pass needs the canvas's depth and the entities drawn in one piece: not through a SCREEN layer
     // (the stage's target there has no depth on WebGL), nor in chunks around GPU particle groups (last frame's).
-    this.entitiesBatch.setOpaqueAllowed(!this._entityChunksActive && !this._screenLayersShown());
+    // debug.opaquePass false never draws it (E-502's benches).
+    this.entitiesBatch.setOpaqueAllowed(
+      this.config.debug?.opaquePass !== false && !this._entityChunksActive && !this._screenLayersShown(),
+    );
     // And it draws when its rows cover enough of the canvas at the camera's zoom to pay for their second vertex pass.
     this.entitiesBatch.setOpaqueView(this._renderZoom || 1, this.canvasWidth * this.canvasHeight);
 

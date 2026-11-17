@@ -1031,6 +1031,11 @@ export const DEBUG_DEFAULTS = Object.freeze({
    */
   gpuTimestampsInsidePasses: false,
   /**
+   * E-448's opaque pass (binary sprites' solid pixels first, nearest first, depth tested) wherever its gate says it
+   * pays. false never draws it: benches time a GPU with and without it (E-502: an integrated GPU drew slower with it).
+   */
+  opaquePass: true,
+  /**
    * Init / worker console.log spam (Scene bootstrap, pool init, atlas bake).
    * Independent of collectDetailedStats. Default off.
    */

@@ -315,6 +315,8 @@
       const wasmOff = (new URLSearchParams(location.search).get('wasmOff') || '').split(',').filter(Boolean);
       // ?physicsMemoryMB=N runs the scene with that physics.wasmMemoryMB (BOX2D_MEMORY_PLAN BM-10).
       const physicsMemoryMB = Number(new URLSearchParams(location.search).get('physicsMemoryMB')) || 0;
+      // ?opaquePass=0 never draws E-448's opaque pass (debug.opaquePass), to time a GPU with and without it (E-502).
+      const opaquePassOff = new URLSearchParams(location.search).get('opaquePass') === '0';
 
       // Override scene debug flags before Scene applies defaults / boots workers
       SceneClass.config = {
@@ -324,6 +326,7 @@
           collectDetailedStats: config.collectDetailedStats,
           collectGpuStats: config.collectGpuStats,
           ...(config.gpuTimestampsInsidePasses ? { gpuTimestampsInsidePasses: true } : {}),
+          ...(opaquePassOff ? { opaquePass: false } : {}),
           checks: config.devChecks,
         },
         ...(wasmOff.length
