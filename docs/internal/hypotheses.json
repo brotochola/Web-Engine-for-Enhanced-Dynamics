@@ -21394,7 +21394,9 @@
       "aliases": [
         "heightmap depth interleave"
       ],
-      "records": [],
+      "records": [
+        "R-1306"
+      ],
       "result": "",
       "next": "Idea: a pixel never nearer than its own footprint's front (its foot plus frameBase's ry, scaled); cars have pixels well in front of their centre, so the clamp needs each frame's footprint. Or better height maps for the LPC people.",
       "id": "N-262",
@@ -21871,6 +21873,23 @@
       "date": "2026-11-17",
       "title": "With lampShadows 'map', a light at elevation 0 (the barrio's headlights) takes a tile and a maxShadowCastingLights slot, and pre-render stamps casters for it, though its map casts nothing",
       "statusText": "seen 2026-11-17 in Buenos Aires at night: 4 of 16 tiles held headlights (elevation 0: lampCasts false), so the atlas kept 16 tiles and lamps farther from the view's centre lost their slots"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "unshaded ghost",
+        "lamp post ghost"
+      ],
+      "records": [],
+      "id": "N-266",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "Where an unshaded sprite and a lit one are about as deep, the unshaded one shows half through the other: the canvas and the unshaded target disagree on which is in front",
+      "statusText": "seen 2026-11-17 in depthPairScene (a lit lamp, a person 1 to 2 px behind it): the post shows over the person's chest at about half strength, pinkish",
+      "result": "",
+      "next": "Find which pass keeps which: the canvas draws the lamp's unshaded pixels in the edge pass against the people's depth, and the unshaded target draws them again (unshadedComposite.js: final = lit · light + unshaded · (1 - light)); if the two passes' depths differ (another target, another resolution, a depth the target's pass writes or not), a pixel shows the person's colour in one and the lamp's in the other, and the composite adds the lamp's over the person. Capture depthPairScene at ?step=0.5 with both targets read back."
     }
   ],
   "records": [
@@ -34789,6 +34808,18 @@
       "commits": [
         "d02c9161",
         "3063c42e"
+      ]
+    },
+    {
+      "id": "R-1306",
+      "date": "2026-11-17",
+      "title": "N-262 reproduced (depthPairScene) and fixed on a branch: a height map's floor place clamped to its feet's footprint; awaiting the owner's eye",
+      "verdict": "note",
+      "text": "**N-262: reproduced (depthPairScene) and a fix on branch n262-depth-footprint, not merged: the owner judges the pictures.**\n\n- **Cause**: a lit street lamp is unshaded, and an unshaded pixel writes no depth: the lamp tests its foot's floor place\n  against the person's pixels, whose floor place comes from the LPC height map. Its errors put a head pixel tens of floor\n  px in front of its foot: with the person 16 to 18 px behind the lamp (depthPairScene ?step=2), the hair shows over the\n  lamp's cap, the owner's catch; at 1 to 2 px the post ghosts over the chest.\n- **Fix** (`d9769a52`; the scene `1fa09348`, `3ee75f91`): pixel depth clamps a height map's floor place to the frame's\n  feet's footprint, either side of its foot (frameBase.js's base ellipse from the texture table: 0.6 rx |scale x|; a round\n  trunk and a render's contact are left alone, so a tree's crown keeps standing past its trunk). GLSL and WGSL (in\n  vDepthFoot's w).\n- **Pictures** (D:\\claude\\handoffs\\n262\\: main left, the fix right): the lamps stand in front of the people behind them\n  from 2 px on, WebGL and WebGPU; at 1 px the footprints overlap and nothing changes (the ghost there is N-266).\n  light3dCompareScene ?all=1&still=1&hour=22: 232 of 921 600 pixels move; spriteMapsStressScene ?still=1 identical.\n  test:node 3020.",
+      "commits": [
+        "1fa09348",
+        "3ee75f91",
+        "d9769a52"
       ]
     }
   ],
