@@ -11,6 +11,7 @@ import {
   pixelDepthVertex,
   pixelDepthWgsl,
 } from '../../src/render/pixelDepth.js';
+import { spriteIndexedWgsl } from '../../src/render/spriteIndexed.js';
 
 const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
 
@@ -124,4 +125,56 @@ test('faces: the plane depth comes from the vertex, innerZ breaks ties, and only
   // The row carries innerZ in its height's top bits; the normal is any face's.
   assert.equal(encodeFaceHeight(10, 2) >>> 13, 2);
   assert.ok(encodeFaceNormal(0, 1, 0) > 0);
+});
+
+/** The source without its comments, which may hold a lone parenthesis ("1)") that the compiler never reads. */
+function code(source) {
+  return source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+}
+
+function assertBalanced(source, label) {
+  const body = code(source);
+  for (const [open, close] of [['(', ')'], ['{', '}'], ['[', ']']]) {
+    let depth = 0;
+    for (const ch of body) {
+      if (ch === open) depth++;
+      else if (ch === close && --depth < 0) break;
+    }
+    assert.equal(depth, 0, `${label}: unbalanced ${open}${close}`);
+  }
+}
+
+test('every depth variant the batch builds is balanced, in both languages (an unbalanced formula drew no entity)', () => {
+  const bools = [false, true];
+  for (const vert of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
+    for (const gbuf of bools) {
+      for (const faces of bools) {
+        for (const cull of faces ? ['none', 'flat', 'heights'] : ['none']) {
+          assertBalanced(pixelDepthVertex(shader(vert), { gbuf, faces, cull }), `${vert} gbuf ${gbuf} faces ${faces} cull ${cull}`);
+        }
+      }
+    }
+  }
+  for (const frag of ['instancedSpriteBlend.frag.glsl', 'instancedSprite.frag.glsl']) {
+    for (const gbuf of bools) {
+      for (const edge of bools) {
+        for (const faces of bools) {
+          assertBalanced(pixelDepthFragment(shader(frag), { edge, gbuf, faces }), `${frag} edge ${edge} gbuf ${gbuf} faces ${faces}`);
+        }
+      }
+      assertBalanced(pixelDepthFragment(shader(frag), { gbuf, vertexDepth: true }), `${frag} gbuf ${gbuf} vertexDepth`);
+    }
+  }
+  const plain = shader('instancedSprite.wgsl');
+  for (const [name, source, poseAlphas] of [['instancedSprite.wgsl', plain, [false]], ['indexed', spriteIndexedWgsl(plain), bools]]) {
+    for (const poseAlpha of poseAlphas) {
+      for (const gbuf of bools) {
+        for (const faces of bools) {
+          for (const cull of ['none', 'flat', 'heights']) {
+            assertBalanced(pixelDepthWgsl(source, { poseAlpha, gbuf, faces, cull }), `${name} poseAlpha ${poseAlpha} gbuf ${gbuf} faces ${faces} cull ${cull}`);
+          }
+        }
+      }
+    }
+  }
 });

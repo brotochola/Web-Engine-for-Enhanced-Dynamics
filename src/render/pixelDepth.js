@@ -100,7 +100,7 @@ function plainGlsl(gbuf) {
 }
 
 /** DEPTH_BODY's depth from the floor place, the band and the painter step (GLSL and WGSL alike). */
-const DEPTH_FORMULA = `(${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS}.0
+const DEPTH_FORMULA = `((${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS}.0
       + (${PIXEL_DEPTH_FLOOR_STEPS - 1}.0 - floor(u * ${PIXEL_DEPTH_FLOOR_STEPS - 1}.0)) * ${PIXEL_DEPTH_PAINTER_STEPS}.0
       + (${PIXEL_DEPTH_PAINTER_STEPS - 1}.0 - painter)) / ${PIXEL_DEPTH_BANDS * PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS}.0`;
 
@@ -108,7 +108,7 @@ const DEPTH_FORMULA = `(${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPTH_FLOOR
  * DX-FACEDEPTH: DEPTH_FORMULA without the floor() of the floor place, where faces are on: a face's depth comes from its
  * vertices, interpolated, so every depth is on that one continuous scale.
  */
-const DEPTH_FORMULA_FACES = `(${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS}.0
+const DEPTH_FORMULA_FACES = `((${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS}.0
       + (${PIXEL_DEPTH_FLOOR_STEPS - 1}.0 - u * ${PIXEL_DEPTH_FLOOR_STEPS - 1}.0) * ${PIXEL_DEPTH_PAINTER_STEPS}.0
       + (${PIXEL_DEPTH_PAINTER_STEPS - 1}.0 - painter)) / ${PIXEL_DEPTH_BANDS * PIXEL_DEPTH_FLOOR_STEPS * PIXEL_DEPTH_PAINTER_STEPS}.0`;
 
