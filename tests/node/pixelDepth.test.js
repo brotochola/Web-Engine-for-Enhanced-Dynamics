@@ -73,3 +73,55 @@ test('H-EDGE: each pass leaves before the twin page and the depth for the pixels
   // The colour's textureSample still comes first, in uniform control flow.
   assert.match(wgsl, /o\.color = mainFragColor\(in\);\n  let d = weedPixelDepth\(in, true\);/);
 });
+
+// DX-FACEDEPTH: a face's plane depth from its vertices (linear on the screen), its innerZ in the painter's 7 bits, no
+// floor() of the floor place; the opaque pass in two programs, the frames with heights writing gl_FragDepth and every other
+// instance the depth its vertices wrote (E-378), in both languages. Without faces, the programs are as they were.
+test('faces: the plane depth comes from the vertex, innerZ breaks ties, and only frames with heights write their depth', async () => {
+  const { FACE_PAINTER_STEP } = await import('../../src/render/pixelDepth.js');
+  const { encodeFaceHeight, encodeFaceNormal } = await import('../../src/render/faceMap.js');
+  const vert = shader('instancedSprite.vert.glsl');
+  const frag = shader('instancedSpriteBlend.frag.glsl');
+  for (const gbuf of [false, true]) {
+    assert.equal(pixelDepthVertex(vert, { gbuf }), pixelDepthVertex(vert, { gbuf, faces: false, cull: 'heights' }), 'no faces: no cull');
+    assert.doesNotMatch(pixelDepthVertex(vert, { gbuf }), /vDepthFloor|dfCode/);
+    const v = pixelDepthVertex(vert, { gbuf, faces: true, cull: 'flat' });
+    assert.match(v, /out float vDepthFloor;/);
+    assert.match(v, /depthPainter = dfInner \* 16\.0;/);
+    assert.match(v, /if \(!twinHeights\(vMapsWin\)\) gl_Position = vec4\(2\.0, 2\.0, 2\.0, 1\.0\);/);
+    const vd = pixelDepthVertex(vert, { gbuf, faces: true, cull: 'heights' });
+    assert.match(vd, /gl_Position\.z = \(/);
+    assert.doesNotMatch(vd, /floor\(u \*/, 'continuous');
+    const f = pixelDepthFragment(frag, { gbuf, faces: true });
+    assert.match(f, /in float vDepthFloor;/);
+    assert.match(f, /float floorY = vDepthFloor;/);
+    assert.doesNotMatch(f, /floor\(u \*/, 'no floor() of the floor place with faces');
+    assert.match(pixelDepthFragment(frag, { gbuf }), /floor\(u \*/, 'without faces, as it was');
+    const fd = pixelDepthFragment(frag, { gbuf, vertexDepth: true });
+    assert.doesNotMatch(fd, /gl_FragDepth/, 'the vertex-depth program keeps early depth');
+    assert.match(fd, /if \(ad < 0\.5 \|\| glow\) discard;/);
+  }
+  for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
+    const w = pixelDepthWgsl(shader(name), { gbuf: true, faces: true, cull: 'flat' });
+    assert.match(w, /@location\(6\) vDepthFloor: f32,/, name);
+    assert.match(w, /fn mainFragEdge\(in: VertexOut\) -> WeedDepthOut/, name);
+    const wd = pixelDepthWgsl(shader(name), { gbuf: true, faces: true, cull: 'heights' });
+    assert.match(wd, /out\.position\.z = /, name);
+    assert.match(wd, /fn mainFrag\(in: VertexOut\) -> @location\(0\) vec4<f32> \{\n  let c = mainFragColor\(in\);\n  if \(!weedVertexDepthKeep\(in\)\) \{ discard; \}/, name);
+    assert.doesNotMatch(wd, /fn mainFragEdge/, name);
+    const out = w.slice(w.indexOf('struct VertexOut {'), w.indexOf('}', w.indexOf('struct VertexOut {')));
+    const locs = [...out.matchAll(/@location\((\d+)\)/g)].map((m) => +m[1]);
+    assert.ok(Math.max(...locs) <= 15 && new Set(locs).size === locs.length, `${name}: within 16 outputs, each its own`);
+  }
+  // The values: a wall (innerZ 0) and a poster on it (innerZ 2) at the same floor place: the poster in front by 32 steps of
+  // a 24-bit depth buffer (2 of the 23 bits' painter units a 16-step), under a floor step.
+  const wall = pixelDepthValue(0, 0.5, 0, true);
+  const poster = pixelDepthValue(0, 0.5, 2 * FACE_PAINTER_STEP, true);
+  const step = 1 / (8 * 8192 * 128);
+  assert.ok(poster < wall, 'the poster is nearer');
+  assert.ok(Math.abs((wall - poster) / step - 2 * FACE_PAINTER_STEP) < 1e-6);
+  assert.ok(wall - pixelDepthValue(0, 0.5 + 1 / 8191, 0, true) > (wall - poster), 'a floor step outweighs innerZ 2');
+  // The row carries innerZ in its height's top bits; the normal is any face's.
+  assert.equal(encodeFaceHeight(10, 2) >>> 13, 2);
+  assert.ok(encodeFaceNormal(0, 1, 0) > 0);
+});

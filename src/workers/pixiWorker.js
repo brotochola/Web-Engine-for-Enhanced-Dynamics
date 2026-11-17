@@ -3059,8 +3059,11 @@ class PixiRenderer extends AbstractWorker {
     // frame's (_ensureTargetDepth).
     const wantDepth = this.config?.renderer?.pixelDepth;
     const oblique = cameraFloorScaleY(this.config) < 1 && cameraHeightScaleY(this.config) > 0;
-    const pixelDepth = this.atlasMapsSource !== null && (wantDepth === true || (wantDepth !== false && oblique))
-      ? { maps: this.atlasMapsSource }
+    // DX-FACEDEPTH: faces turn it on too, without a map sheet (an empty twin page: no frame has a window in it), and the
+    // depth programs then read them: a face's plane depth, its innerZ in the ties, the opaque pass in two programs.
+    const facesDepth = this._faceDepthWanted();
+    const pixelDepth = (this.atlasMapsSource !== null || facesDepth) && (wantDepth === true || (wantDepth !== false && oblique))
+      ? { maps: this.atlasMapsSource ?? this._emptyMapsSource() }
       : null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
@@ -3095,6 +3098,7 @@ class PixiRenderer extends AbstractWorker {
       keyed,
       posesByRow: this._keyedPosesByRow,
       pixelDepth,
+      depthFaces: facesDepth,
       // E-496: each frame's window in the twin page, for every program of the batch that reads it.
       mapsTable: this._mapsTableSourceOrEmpty(),
       // DX-GBUF (plan §6.4): each instance's G-buffer words (gbufWord.js), where the G-buffer pass runs (faces, a sheet
@@ -3790,6 +3794,27 @@ class PixiRenderer extends AbstractWorker {
       this.faceIdsRT = PIXI.RenderTexture.create({ width, height, scaleMode: 'nearest' });
       if (res) res.uFaceIds = this.faceIdsRT.source;
     }
+  }
+
+  /**
+   * DX-FACEDEPTH: whether the entities' depth reads faces: a lit scene (not raycasted) whose decorations carry normals.
+   */
+  _faceDepthWanted() {
+    const lighting = this.config?.lighting;
+    return !!(lighting && lighting.enabled && !lighting.raycasted && lighting.faces?.enabled === true);
+  }
+
+  /**
+   * DX-FACEDEPTH: the entities batch's pixel depth meshes in their places among the entities' root: the vertex-depth opaque
+   * program right before the batch's own mesh, the edge pass right after it.
+   */
+  _placeDepthMeshes() {
+    const root = this._entitiesRoot;
+    const batch = this.entitiesBatch;
+    if (!root || !batch || this.spriteMesh?.parent !== root) return;
+    const { before, after } = batch.pixelDepthMeshes();
+    if (before !== null && before.parent !== root) root.addChildAt(before, root.getChildIndex(this.spriteMesh));
+    if (after !== null && after.parent !== root) root.addChildAt(after, root.getChildIndex(this.spriteMesh) + 1);
   }
 
   /** DX-MAPS: a 1 × 1 twin page that says "no map", for the faces' pass when no sheet has maps. */
@@ -9962,8 +9987,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // E-448: the batch's opaque pass right before it.
       if (this.entitiesBatch.opaqueHost !== null) this._entitiesRoot.addChild(this.entitiesBatch.opaqueHost);
       this._entitiesRoot.addChild(this.spriteMesh);
-      // DX-DEPTH (F5 v2): with pixel depth, the batch's edge pass right after its opaque one.
-      if (this.entitiesBatch.edgeMesh !== null) this._entitiesRoot.addChild(this.entitiesBatch.edgeMesh);
+      // DX-DEPTH (F5 v2): with pixel depth, the batch's edge pass right after its opaque one; DX-FACEDEPTH: its vertex-depth
+      // opaque program right before.
+      this._placeDepthMeshes();
       this._registerLayerDisplayObject('entities', this._entitiesRoot);
       this.pixiApp.stage.addChild(this._entitiesRoot);
       if (this.spriteGlowMesh) {

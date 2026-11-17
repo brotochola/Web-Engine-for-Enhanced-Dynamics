@@ -71,6 +71,12 @@ test('the volumes\' map programs declare every binding their layouts name', () =
 test('the sprites\' pixel depth programs declare every binding their layouts name', () => {
   const sprite = shader('instancedSprite.wgsl');
   const pose = shader('instancedSpritePose.wgsl');
+  // DX-FACEDEPTH: the opaque pass's two programs and the edge pass's, with faces.
+  for (const cull of ['none', 'flat', 'heights']) {
+    for (const src of [sprite, pose]) {
+      assertLayoutDeclared(`sprite-depth faces ${cull}`, instancedSpriteGpuProgram(GpuProgram, pixelDepthWgsl(src, { faces: true, cull }), 'mainFrag', 'f', { maps: true }));
+    }
+  }
   assertLayoutDeclared('sprite-depth', instancedSpriteGpuProgram(GpuProgram, pixelDepthWgsl(sprite), 'mainFrag', 's', { maps: true }));
   assertLayoutDeclared('sprite-pose-depth', instancedSpriteGpuProgram(GpuProgram, pixelDepthWgsl(pose), 'mainFrag', 'p', { maps: true }));
   const indexed = spriteIndexedWgsl(sprite);

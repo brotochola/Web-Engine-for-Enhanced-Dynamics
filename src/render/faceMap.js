@@ -5,7 +5,9 @@
  * What a face carries, in two u16 columns that reach the GPU in the row's tile offsets (a face is never a tiled sprite):
  * - its normal, octahedral, one byte each from 1 to 253 (±1/2 falls on a byte: walls turned 45 degrees are common), so that
  *   0 reads "no face";
- * - the height of the sprite's position above the floor, in steps of 1/FACE_Z_UNITS px.
+ * - the height of the sprite's position above the floor, in steps of 1/FACE_Z_UNITS px, in its low FACE_INNER_Z_SHIFT bits
+ *   (up to 1023.875 px), and in its top 3 its innerZ (DX-FACEDEPTH: 0 a wall, 1 to 7 what is stuck on it, in stacking order:
+ *   the depth's tie on a shared plane, pixelDepth.js).
  *
  * The frame's picture of them is the face map: the same instances drawn again at the light pass's resolution in painter
  * order, RGBA8: the normal's two bytes, then the height's two. A sprite that is no face writes 0, so a person in front of a
@@ -20,6 +22,13 @@ import { resolveHeightScaleY } from '../util/cameraView.js';
 import { MAPS_MARKS_GLSL, MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, TWIN_GLSL, TWIN_WGSL, withTwinGlsl } from './twinTexel.js';
 
 export const FACE_Z_UNITS = 8;
+/** DX-FACEDEPTH: where a face's innerZ starts in its height code; the heights below it, up to FACE_Z_HEIGHT_MAX_CODE. */
+export const FACE_INNER_Z_SHIFT = 13;
+export const FACE_Z_HEIGHT_MAX_CODE = (1 << FACE_INNER_Z_SHIFT) - 1;
+/** The highest innerZ a face carries (a wall's things stacked on it). */
+export const FACE_INNER_Z_MAX = 7;
+/** innerZ's step in the height code's normalized u16 (aInstTileOff.y), which the shaders take off before the height. */
+const FACE_INNER_Z_UNIT = ((1 << FACE_INNER_Z_SHIFT) / 65535).toFixed(12);
 
 export const FACE_DEFAULTS = Object.freeze({
   enabled: false,
@@ -334,7 +343,9 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
     vec2 faceD = world - aInstXY;
     float faceSlope = faceN.z + faceN.y * uFaceSpace.x / uFaceSpace.y;
     float faceDz = abs(faceSlope) > 0.02 ? -(faceN.x * faceD.x + faceN.y * faceD.y / uFaceSpace.y) / faceSlope : 0.0;
-    vFaceZ = aInstTileOff.y * ${(65535 / FACE_Z_UNITS).toFixed(4)} + faceDz;
+    // DX-FACEDEPTH: the row's innerZ (its height code's top bits) off before the height; innerZ 0 takes nothing off.
+    float faceInner = float(uint(aInstTileOff.y * 65535.0 + 0.5) >> ${FACE_INNER_Z_SHIFT}u);
+    vFaceZ = (aInstTileOff.y - faceInner * ${FACE_INNER_Z_UNIT}) * ${(65535 / FACE_Z_UNITS).toFixed(4)} + faceDz;
   }
 `,
     );
@@ -490,7 +501,9 @@ export function faceVertexWgsl(source, { gbuf = false, unshadedMask = false } = 
     if (abs(faceSlope) > 0.02) {
       faceDz = -(faceN.x * faceD.x + faceN.y * faceD.y / uniforms.uFaceSpace.y) / faceSlope;
     }
-    out.vFaceZ = aInstTileOff.y * ${(65535 / FACE_Z_UNITS).toFixed(4)} + faceDz;
+    // DX-FACEDEPTH: the row's innerZ off before the height (faceMapVertex).
+    let faceInner = f32(u32(aInstTileOff.y * 65535.0 + 0.5) >> ${FACE_INNER_Z_SHIFT}u);
+    out.vFaceZ = (aInstTileOff.y - faceInner * ${FACE_INNER_Z_UNIT}) * ${(65535 / FACE_Z_UNITS).toFixed(4)} + faceDz;
   }
 `,
   );
@@ -711,8 +724,19 @@ export function turnFrameNormal(n, c, s, sx, sy, out) {
   return out;
 }
 
-/** @returns {number} the u16 of faceZ */
-export function encodeFaceHeight(z) {
+/**
+ * @param {number} z the face's height at its position, px (0 to FACE_Z_HEIGHT_MAX_CODE / FACE_Z_UNITS)
+ * @param {number} [innerZ] DX-FACEDEPTH: 0 a wall, 1 to FACE_INNER_Z_MAX what is stuck on it (clamped)
+ * @returns {number} the u16 of faceZ: the height in its low FACE_INNER_Z_SHIFT bits, innerZ above
+ */
+export function encodeFaceHeight(z, innerZ = 0) {
   const code = Math.round(z * FACE_Z_UNITS);
-  return code < 0 ? 0 : code > 65535 ? 65535 : code;
+  const h = code < 0 ? 0 : code > FACE_Z_HEIGHT_MAX_CODE ? FACE_Z_HEIGHT_MAX_CODE : code;
+  const k = innerZ | 0;
+  return ((k < 0 ? 0 : k > FACE_INNER_Z_MAX ? FACE_INNER_Z_MAX : k) << FACE_INNER_Z_SHIFT) | h;
+}
+
+/** DX-FACEDEPTH: a faceZ's parts, { height (px), innerZ }. */
+export function decodeFaceHeight(code) {
+  return { height: (code & FACE_Z_HEIGHT_MAX_CODE) / FACE_Z_UNITS, innerZ: code >>> FACE_INNER_Z_SHIFT };
 }
