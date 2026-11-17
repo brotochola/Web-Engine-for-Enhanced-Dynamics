@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  GPU_DISCRETE, GPU_INTEGRATED, GPU_SOFTWARE, GPU_TILED, GPU_UNKNOWN, gpuClassOf, webglRendererName,
+  GPU_DISCRETE, GPU_INTEGRATED, GPU_SOFTWARE, GPU_TILED, GPU_UNKNOWN, gpuClassOf, gpuVendorOf, webglRendererName,
 } from '../../src/render/gpuClass.js';
 import { opaquePassOn, opaquePassSuits } from '../../src/render/opaquePass.js';
 import { DEBUG_DEFAULTS } from '../../src/util/configDefaults.js';
 
 // E-502: the GPU's class from its renderer name, as browsers give it (ANGLE on Windows and macOS, Mesa on Linux, the
-// mobile drivers' own), and E-448's opaque pass kept off where the class says it costs.
+// mobile drivers' own), and E-448's opaque pass kept off where the GPU's class and maker say it costs.
 
 const NAMES = {
   [GPU_INTEGRATED]: [
@@ -90,23 +90,58 @@ test('webglRendererName takes the unmasked name, else the plain one, else none',
   assert.equal(webglRendererName(null), '');
 });
 
-test('the opaque pass suits discrete, software and unknown GPUs, not integrated or tile-based ones', () => {
-  assert.equal(opaquePassSuits(GPU_DISCRETE), true);
-  assert.equal(opaquePassSuits(GPU_SOFTWARE), true);
-  assert.equal(opaquePassSuits(GPU_UNKNOWN), true);
-  assert.equal(opaquePassSuits(GPU_INTEGRATED), false);
-  assert.equal(opaquePassSuits(GPU_TILED), false);
+test('gpuVendorOf names the maker in WebGPU\'s spelling', () => {
+  const cases = [
+    [NAMES[GPU_INTEGRATED][0], 'intel'],
+    ['ANGLE (Intel Inc., ANGLE Metal Renderer: Intel(R) Iris(TM) Plus Graphics, Unspecified Version)', 'intel'],
+    ['ANGLE (AMD, AMD Radeon(TM) Graphics (0x00001636) Direct3D11 vs_5_0 ps_5_0, D3D11)', 'amd'],
+    ['ANGLE (ATI Technologies Inc., ANGLE Metal Renderer: AMD Radeon Pro 5500M, Unspecified Version)', 'amd'],
+    ['AMD Custom GPU 0405 (vangogh, LLVM 15.0.7, DRM 3.54, 6.1.52-valve9-1-neptune-61)', 'amd'],
+    [NAMES[GPU_DISCRETE][0], 'nvidia'],
+    ['NVIDIA Tegra X1 (nvgpu)/integrated', 'nvidia'],
+    ['ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)', 'apple'],
+    ['ANGLE (ARM, Mali-G710, OpenGL ES 3.2)', 'arm'],
+    ['Adreno (TM) 650', 'qualcomm'],
+    ['PowerVR Rogue GE8320', 'imagination'],
+    ['V3D 4.2', 'broadcom'],
+    ['Google SwiftShader', ''],
+    ['llvmpipe (LLVM 15.0.7, 256 bits)', ''],
+    ['', ''],
+  ];
+  for (const [name, vendor] of cases) assert.equal(gpuVendorOf(name), vendor, name);
+  assert.equal(gpuVendorOf(null), '');
 });
 
-test('debug.opaquePass: auto follows the GPU class, true and false force it', () => {
-  assert.equal(DEBUG_DEFAULTS.opaquePass, 'auto');
-  for (const gpuClass of Object.keys(NAMES)) {
-    assert.equal(opaquePassOn('auto', gpuClass), opaquePassSuits(gpuClass), gpuClass);
-    assert.equal(opaquePassOn(undefined, gpuClass), opaquePassSuits(gpuClass), gpuClass);
-    assert.equal(opaquePassOn(true, gpuClass), true, gpuClass);
-    assert.equal(opaquePassOn(false, gpuClass), false, gpuClass);
+/** Whether 'auto' draws the opaque pass on the GPU a renderer name names. */
+const autoOn = (name) => opaquePassOn('auto', gpuClassOf(name), gpuVendorOf(name));
+
+test('the opaque pass suits every GPU but Intel\'s integrated ones and tile-based ones', () => {
+  for (const [gpuClass, names] of Object.entries(NAMES)) {
+    for (const name of names) {
+      const off = gpuClass === GPU_TILED || (gpuClass === GPU_INTEGRATED && gpuVendorOf(name) === 'intel');
+      assert.equal(opaquePassSuits(gpuClass, gpuVendorOf(name)), !off, name);
+    }
   }
-  // The HD 620 the pass was measured on (R-1277) and the GTX 1650 its gate's costs come from.
-  assert.equal(opaquePassOn('auto', gpuClassOf(NAMES[GPU_INTEGRATED][0])), false);
-  assert.equal(opaquePassOn('auto', gpuClassOf(NAMES[GPU_DISCRETE][0])), true);
+  // Measured: the Intel HD 620 draws slower with the pass (R-1277), the GTX 1650 its gate's costs come from and the
+  // Ryzen 4800H's Radeon (Vega) faster.
+  assert.equal(autoOn(NAMES[GPU_INTEGRATED][0]), false);
+  assert.equal(autoOn('ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 (0x00001F99) Direct3D11 vs_5_0 ps_5_0, D3D11)'), true);
+  assert.equal(autoOn('ANGLE (AMD, AMD Radeon(TM) Graphics (0x00001636) Direct3D11 vs_5_0 ps_5_0, D3D11)'), true);
+  // Intel's Arc cards are discrete and keep it; tile-based GPUs do not.
+  assert.equal(autoOn('ANGLE (Intel, Intel(R) Arc(TM) A770 Graphics (0x000056A0) Direct3D11 vs_5_0 ps_5_0, D3D11)'), true);
+  assert.equal(autoOn('ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)'), false);
+});
+
+test('debug.opaquePass: auto follows the GPU, true and false force it', () => {
+  assert.equal(DEBUG_DEFAULTS.opaquePass, 'auto');
+  for (const names of Object.values(NAMES)) {
+    for (const name of names) {
+      const gpuClass = gpuClassOf(name);
+      const vendor = gpuVendorOf(name);
+      assert.equal(opaquePassOn('auto', gpuClass, vendor), opaquePassSuits(gpuClass, vendor), name);
+      assert.equal(opaquePassOn(undefined, gpuClass, vendor), opaquePassSuits(gpuClass, vendor), name);
+      assert.equal(opaquePassOn(true, gpuClass, vendor), true, name);
+      assert.equal(opaquePassOn(false, gpuClass, vendor), false, name);
+    }
+  }
 });

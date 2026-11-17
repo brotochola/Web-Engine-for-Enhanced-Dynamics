@@ -17,8 +17,8 @@
  * - 'discrete': a card with its own memory: NVIDIA GeForce, Quadro and RTX, AMD Radeon RX, Pro and HD, Intel Arc A or B.
  * - 'unknown': an empty or masked name, or one the rules do not know.
  *
- * E-502 reads it to keep E-448's opaque pass off where the hardware does not gain from it (opaquePass.js
- * opaquePassSuits).
+ * E-502 reads the class and the maker (gpuVendorOf) to keep E-448's opaque pass off where the hardware does not gain
+ * from it (opaquePass.js opaquePassSuits).
  */
 
 export const GPU_DISCRETE = 'discrete';
@@ -54,6 +54,35 @@ export function gpuClassOf(renderer) {
   if (NVIDIA.test(renderer)) return NVIDIA_TEGRA.test(renderer) ? GPU_INTEGRATED : GPU_DISCRETE;
   if (TILED.test(renderer)) return GPU_TILED;
   return GPU_UNKNOWN;
+}
+
+/** The GPU makers gpuVendorOf tells apart, by the names WebGPU's adapter info gives them (GPUAdapterInfo.vendor). */
+export const GPU_VENDOR_INTEL = 'intel';
+export const GPU_VENDOR_AMD = 'amd';
+export const GPU_VENDOR_NVIDIA = 'nvidia';
+
+const VENDORS = [
+  [INTEL, GPU_VENDOR_INTEL],
+  [AMD, GPU_VENDOR_AMD],
+  [NVIDIA, GPU_VENDOR_NVIDIA],
+  [/\bapple\b/i, 'apple'],
+  [/\bmali\b|immortalis|\barm\b/i, 'arm'],
+  [/adreno|qualcomm/i, 'qualcomm'],
+  [/powervr|\bimg\b|imagination/i, 'imagination'],
+  [/videocore|\bv3d\b|broadcom/i, 'broadcom'],
+];
+
+/**
+ * The maker of the GPU a renderer name names, in WebGPU's spelling ('intel', 'amd', 'nvidia', 'apple', 'arm',
+ * 'qualcomm', 'imagination', 'broadcom'), or '' (software renderers, unknown names). Checked in that order, as
+ * gpuClassOf: an Intel or AMD GPU in a Mac names Apple's Metal too.
+ * @param {string|null|undefined} renderer
+ * @returns {string}
+ */
+export function gpuVendorOf(renderer) {
+  if (typeof renderer !== 'string' || renderer === '' || SOFTWARE.test(renderer)) return '';
+  for (const [pattern, vendor] of VENDORS) if (pattern.test(renderer)) return vendor;
+  return '';
 }
 
 /**

@@ -1038,9 +1038,9 @@ export const DEBUG_DEFAULTS = Object.freeze({
   gpuTimestampsInsidePasses: false,
   /**
    * E-448's opaque pass (binary sprites' solid pixels first, nearest first, depth tested) wherever its gate says it
-   * pays. 'auto' draws it on discrete GPUs only, by the renderer's name (E-502: the Intel HD 620 drew slower with it;
-   * tile-based GPUs remove hidden surfaces themselves). true draws it on every GPU, false on none: benches time a GPU
-   * with and without it.
+   * pays. 'auto' draws it on every GPU but Intel's integrated ones and tile-based ones, by the renderer's name (E-502:
+   * the Intel HD 620 drew slower with it, an AMD APU faster; tile-based GPUs remove hidden surfaces themselves). true
+   * draws it on every GPU, false on none: benches time a GPU with and without it.
    */
   opaquePass: 'auto',
   /**
