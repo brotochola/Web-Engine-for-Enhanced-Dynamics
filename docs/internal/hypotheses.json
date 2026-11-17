@@ -21777,12 +21777,14 @@
         "attached pass",
         "branches pass"
       ],
-      "records": [],
-      "result": "",
+      "records": [
+        "R-1300"
+      ],
+      "result": "kept: Buenos Aires' particle worker 0.872 -> 0.728 ms (-16.5 %, 4/4, under the floor); kernel trees +25.9 %",
       "id": "E-507",
       "kind": "speed",
       "area": "particle",
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-17",
       "title": "The attached decorations' pass (resolveAttachedDecorations) places and turns every attached decoration every frame, the off-screen branches of trees that never move too",
       "statusText": "found 2026-11-17 by the barrio's third CPU trace: after E-506 it is 45 % of the particle worker (~0.4 ms a frame of ~0.9)",
@@ -21796,13 +21798,14 @@
       ],
       "records": [
         "R-1297",
-        "R-1298"
+        "R-1298",
+        "R-1299"
       ],
-      "result": "",
+      "result": "kept: Buenos Aires on the Intel HD 620 21.3 -> 28.3 drawn fps still (+31 %), 16.6 -> 21.2 panning (+27 %); GTX 1650 lamp atlas 2.00 -> 1.19 ms; captures identical",
       "id": "E-508",
       "kind": "gpu",
       "area": "render",
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-17",
       "title": "The lamps' shadow maps are drawn whole every frame: the static casters (houses, trees, props) into a cached map per lamp, the moving ones (people, cars) over it",
       "statusText": "found 2026-11-17 reading the barrio's GPU at 22 h (GTX 1650): the 16 lamps' panorama maps (a 4096 x 2048 atlas) 0.84 ms of 5.9, for casters that almost all stand still",
@@ -34649,6 +34652,34 @@
       "title": "E-508's lamp cache on the Intel HD 620: +31 % drawn frames with the camera still (27.5-29.0 against 21.2-21.4 fps), +27 % moving; the atlas pass 7.93 -> 3.84 ms",
       "verdict": "note",
       "text": "**E-508's lamp cache on the Intel HD 620: +31 % drawn frames with the camera still, +27 % moving.** The barrio session's branch perf/e508-lamp-cache (19868fa7), one build: the cache on (A) against `&lampCache=0` (B, today's direct volumes draw). Parque Chas at `hour=22&dayMinutes=0`, 4 pairs each, `--full-rev`, ASUS laptop, 2026-11-17 09:45 to 10:10 (job 0871).\n\n| Camera | Cache on | Cache off | Gain |\n|---|---|---|---|\n| still (asus-e508-still) | 27.5–29.0 fps | 21.2–21.4 fps | +31 %, 4/4 |\n| `&pan=40` (asus-e508-pan) | 21.0–21.4 fps | 16.4–16.9 fps | +27 %, 4/4 |\n\n- Pixi's CPU rises about 1 ms with the camera still (6.9–7.6 against 6.0–6.4 ms), as it draws more frames. Moving, it is level.\n- `--gpu-draws` with the cache on: the lamps' atlas pass is 3.84 ms of a drawn frame, against 7.93 drawn direct (R-1296). The copy from the cache ([uLampTiles,uCacheColor,uCacheDepth], 5 instances) is 1.42 ms on this GPU, against 0.47 on the GTX 1650. The cache's fill (fbo 4096x1024, [uTexLut,uPoseTable,uLampTiles]) is 0.16 ms in the frames that redraw it. The direct volumes draw shows in 0.1 of the frames, at 0.17 ms. All draws: 17.1 ms (18.6 before)."
+    },
+    {
+      "id": "R-1299",
+      "date": "2026-11-17",
+      "time": "09:49",
+      "timeFrom": "recorded",
+      "title": "E-508 kept: a still lamp's volumes drawn once into a cache and copied each frame; HD 620 +31 % drawn frames still, +27 % panning; GTX lamp atlas 2.00 -> 1.19 ms",
+      "verdict": "kept",
+      "text": "**E-508 kept: a still lamp's volumes are drawn once into a cache and copied into its tile each frame; Buenos Aires' lamp atlas 2.00 -> 1.19 ms of GPU on a GTX 1650; the Intel HD 620 +31 % drawn frames still, +27 % panning (R-1298).**\n\n- **Why**: the HD 620's draw-by-draw reading (R-1296) put the lamps' atlas at 7.93 of 16.6 ms, nearly all of it the volumes'\n  draw (6.94 ms, every house volume once a lamp in use), 87 % of it the vertices (R-1297: 6.01 ms under a 1 px scissor).\n  Houses and street lamps stand still.\n- **Change** (`19868fa7`, knobs `03aa8df6`, merged `aeb2ce0a`): lampVolumeCache.js plans each frame. A lamp whose\n  tile key (floor point, height, reach) held 2 frames under volumes that held (an epoch: MeshUvFillBatch.version, the\n  layers, the scales, the cache's size) is painted into a cache slot, the cache whole at once and at most every 30 frames;\n  each frame its slot is copied into its tile after the cards and the columns, the texel with the depth it was drawn at\n  (its float's bytes in a second colour target), so the map's depth test keeps what it kept. Moving lamps (headlights)\n  draw as before; lamps keep their slots when the distance order moves their tiles. The volumes' draws read their tiles\n  from lists in the tiles' texture's new row 2. Only when the volumes draw ≥ 0.5 indices a texel of a floor half\n  (lampCachePays): a copy writes every texel. lighting.lampMapCache (default true).\n- **Measured** (GTX 1650, glFrameRecorder --gpu-draws, window still): Buenos Aires 22 h, lamp atlas 1.997 -> 1.193 ms (the\n  volumes' draw 1.332 ms, the copy 0.468), GPU frame 5.834 -> 5.336 ms. lampShadowStressScene ?volumes=300 (0.14 an index\n  a texel) drew in 0.80 and copied in 1.16 ms (hence the bar); ?volumes=3000 (1.37) 3.96 against 0.83. Captures cache\n  on/off identical (?volumes=3000&still=1, WebGL and WebGPU, 0 of 921 600 pixels). The CPU side, the barrio's ABAB on the GTX machine (main `c25782dd` against `19868fa7`, 4 pairs, headed, ended 09:49): NEUTRAL, every worker within 2 % (pixi 1.059 -> 1.042 ms). The HD 620 (R-1298, the other session): drawn 21.3 -> 28.3 fps still, 16.6 -> 21.2 panning, 4/4 each; its copy costs 1.42 ms there (0.47 on the GTX), the next thing to look at. test:node 3020, test:demos\n  121, check:types.",
+      "commits": [
+        "03aa8df6",
+        "19868fa7",
+        "aeb2ce0a"
+      ]
+    },
+    {
+      "id": "R-1300",
+      "date": "2026-11-17",
+      "time": "10:05",
+      "timeFrom": "recorded",
+      "title": "E-507 kept: the attached decorations' pass reads a parent's pose once a run and writes a place only where it changes; barrio particle 0.872 -> 0.728 ms",
+      "verdict": "kept",
+      "text": "**E-507 kept: the attached decorations' pass reads a parent's pose once a run and writes a place only where it changes; Buenos Aires' particle worker 0.872 -> 0.728 ms (-16.5 %, 4/4).**\n\n- **Why**: the barrio's CPU trace at night (main `c25782dd`, 8 s): resolveAttachedDecorations 65 % of the particle worker\n  (about 0.49 of 0.75 ms a frame), its hot lines the parent's pose lookups (31 %) and the moved test after the write (11 %),\n  not the sines (5 % of the trees in view).\n- **Change** (`da686a40`; kernel case `118b638d`; merged `ce72b461`): the parent's pose is read when the parent changes along the list (a\n  tree's branches hang together); x and y rounded to float32 and written only when they differ (the moved flag rises then,\n  as before); the facing written as before (comparing it first cost the walls case 3 %). Skipping a still parent's\n  decorations was not done: games write DecorationComponent.localX directly (the barrio's beacon dots).\n- **Kernel** (attachedSwayMicrobench, runKernelsVsRev --vs HEAD, 5 rounds a side, same checksum): trees (40 000 branches\n  in runs under 2 000 still parents, 5 % in view) 0.634 -> 0.504 ms a pass (+25.9 %, 5/5); sway (all swaying, a third in\n  view, no runs) +2.0 % (5/5); walls -0.6 % (tie).\n- **Scene**: Buenos Aires 22 h, both sides in worktrees, main `c25782dd` against the change, 4 pairs, headed, ended 10:05: particle 0.872 -> 0.728 ms (-16.5 %, 4/4: 0.800/0.705, 0.877/0.770, 0.943/0.683, 0.813/0.745), under the 6 ms floor (the barrio's particle load), so the kernel decides; the workers it cannot reach within 3.3 % both ways. test:node 3013, test:demos 121.",
+      "commits": [
+        "118b638d",
+        "da686a40",
+        "ce72b461"
+      ]
     }
   ],
   "leads": [
