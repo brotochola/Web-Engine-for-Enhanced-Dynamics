@@ -80,6 +80,19 @@
   }
 
   /**
+   * E-298: whether Box2D's pool threads should spin through a step instead of sleeping between its phases. Spinning
+   * saves the ~1.5 ms a wake takes on Windows, but a spinner holds its CPU: it pays only where every engine thread has
+   * a logical CPU of its own. On a 2-core / 4-thread laptop the spinners starved the other workers and the physics
+   * thread itself. `logicalCpus` 0 (unknown) keeps the spin.
+   * @param {number} logicalCpus navigator.hardwareConcurrency
+   * @param {number} engineThreads every engine worker plus Box2D's pool threads
+   */
+  function stepSpinPays(logicalCpus, engineThreads) {
+    var cpus = logicalCpus | 0;
+    return cpus <= 0 || cpus >= (engineThreads | 0);
+  }
+
+  /**
    * Merge `next` over `current` (or the defaults) and clamp each value to what
    * Box2D accepts. A key missing from both falls back to the default.
    */
@@ -147,6 +160,7 @@
     BOX2D_MAX_WORKERS: BOX2D_MAX_WORKERS,
     PHYSICS_SIM_DEFAULTS: PHYSICS_SIM_DEFAULTS,
     physicsWorkerCount: physicsWorkerCount,
+    stepSpinPays: stepSpinPays,
     validatePhysicsConfig: validatePhysicsConfig,
   });
 })(typeof globalThis !== 'undefined' ? globalThis : self);

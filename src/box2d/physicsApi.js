@@ -18,6 +18,7 @@ function createPhysicsApi(Module) {
     "number",
     "number",
   ]);
+  const worldSetStepSpin = wrap("world_set_step_spin", null, ["number", "number"]);
   const bindGameBuffers = wrap("bind_game_buffers", "number", ["number"]);
   const createBodyBox = wrap("create_body_box", "number", [
     "number",
@@ -971,6 +972,11 @@ function createPhysicsApi(Module) {
 
     enableSleeping(enable = true) {
       worldEnableSleeping(this.worldId, enable ? 1 : 0);
+    }
+
+    /** E-298: Box2D's pool threads spin through a step (true) or sleep between its phases (false). */
+    setStepSpin(enable) {
+      worldSetStepSpin(this.worldId, enable ? 1 : 0);
     }
 
     bindBuffers(maxBodies) {
