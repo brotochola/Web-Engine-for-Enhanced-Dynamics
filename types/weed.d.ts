@@ -342,6 +342,11 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   /** Texels a side of a lamp's tile in the lamps' map, 32 to 1024 (default 256). The tile spans the lamp's radius. */
   lampShadowTile?: number | 'auto';
   /**
+   * With `lampShadows: 'map'`: a lamp that stays still draws the volumes' shadows (VolumeShadowCaster) into its tile once,
+   * into a cache, and copies them each frame until it or a volume moves (default true). false draws them every frame.
+   */
+  lampMapCache?: boolean;
+  /**
    * Pixel-art lighting: each world pixel is lit whole, at its centre, and the sun's and the lamps' maps are read with one
    * tap, so light and shadows fall crisply on the art's pixel grid. Best with lighting.resolution 1 and
    * renderer.atlasScaleMode 'nearest'. Default false.

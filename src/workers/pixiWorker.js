@@ -114,13 +114,25 @@ import {
 } from '../render/lampShadowMap.js';
 import { instancedSpriteGlProgram, pickInstancedSpriteFragmentGlsl } from '../render/webgl/instancedSpriteGlsl.js';
 import {
+  LAMP_CACHE_COPY_FRAGMENT,
+  LAMP_CACHE_COPY_VERTEX,
+  VOLUME_LAMP_CACHE_FRAGMENT,
   VOLUME_LAMP_FRAGMENT,
+  lampCacheCopyGpuProgram,
   volumeLampVertex,
   volumeLampWgsl,
   volumeMapGpuProgram,
   volumeMapWgsl,
   writeVolumeLampTerms,
 } from '../render/volumeShadowMap.js';
+import {
+  LAMP_TILE_ROWS,
+  createLampVolumeCache,
+  lampCacheLayout,
+  lampCachePays,
+  planLampVolumeCache,
+  writeDirectLampList,
+} from '../render/lampVolumeCache.js';
 import { TileMap } from '../core/tileMap.js';
 import {
   listGidPages,
@@ -1053,6 +1065,26 @@ class PixiRenderer extends AbstractWorker {
     this._volumeLampEntries = [];
     this._volumeLampProgram = null;
     this._volumeLampState = null;
+    // E-508: the lamps' volumes' cache (lampVolumeCache.js): lighting.lampMapCache; the volumes' program into its two
+    // colours; its plan; its target (two colour textures, a slot a still lamp's floor half, and a depth buffer), its
+    // slots and their layout; the copy's mesh into the lamps' map; the volumes' epoch (it moves when a volume, the
+    // volumes' layers or their scales move) and what it was taken from.
+    this._lampCacheOn = true;
+    this._volumeLampCacheProgram = null;
+    this._lampCache = createLampVolumeCache();
+    this._lampCacheTarget = null;
+    this._lampCacheColor = null;
+    this._lampCacheDepth = null;
+    this._lampCacheSlots = 0;
+    this._lampCacheSize = 0;
+    this._lampCachePerRow = 1;
+    this._lampCacheCopy = null;
+    this._lampVolumesEpoch = 0;
+    this._lampVolumesSeen = 0;
+    this._lampVolumeScales = new Float64Array(2);
+    // This frame's volumes' entries in order (_drawVolumesInLampMap), and how many.
+    this._volumeLampActive = [];
+    this._volumeLampActiveCount = 0;
     this._lampTileSize = 256;
     /** N-196: lampShadowTile 'auto' (the tile follows the widest casting lamp's reach and the shadows' resolution). */
     this._lampTileAuto = false;
@@ -1081,7 +1113,8 @@ class PixiRenderer extends AbstractWorker {
     this._lampMapDrew = false;
     // Each tile's lamp (floor point, height, reach) as RGBA32F, a texel a tile, and below it (row 1) its owner (E-389);
     // entity -> tile; last frame's lamps.
-    this._lampTileData = new Float32Array(8);
+    // E-508: a third row, the volumes' draws' lists (lampVolumeCache.js).
+    this._lampTileData = new Float32Array(4 * LAMP_TILE_ROWS);
     this._lampTileSource = null;
     this._lampTileOf = new Int16Array(0);
     /** N-212: each lamp's map shadow fade at the cut, by entity (1 inside it), read with its tile (_readLampTiles). */
@@ -7263,10 +7296,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     const cap = Math.max(1, ids ? ids.length : 1);
     if (this._lampTileIds.length < cap) this._lampTileIds = new Uint32Array(cap);
-    if (this._lampTileData.length < cap * 8) this._lampTileData = new Float32Array(cap * 8);
+    if (this._lampTileData.length < cap * 4 * LAMP_TILE_ROWS) this._lampTileData = new Float32Array(cap * 4 * LAMP_TILE_ROWS);
     const data = this._lampTileData;
-    // E-389: the texture's width; row 1 holds each tile's owner.
-    const width = data.length >> 3;
+    // E-389: the texture's width; row 1 holds each tile's owner, row 2 the volumes' draws' lists (E-508).
+    const width = data.length / (4 * LAMP_TILE_ROWS);
     const groundInvY = this._groundInvScaleY || 1;
     let maxReach = 0.5;
     const worldX = Transform.x;
@@ -7305,13 +7338,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * written each frame.
    */
   _uploadLampTiles() {
-    const width = Math.max(1, this._lampTileData.length >> 3);
+    const width = Math.max(1, this._lampTileData.length / (4 * LAMP_TILE_ROWS));
     if (this._lampTileSource === null || this._lampTileSource.width !== width) {
       const old = this._lampTileSource;
       this._lampTileSource = PIXI.TextureSource.from({
         resource: this._lampTileData,
         width,
-        height: 2,
+        height: LAMP_TILE_ROWS,
         format: 'rgba32float',
         scaleMode: 'nearest',
         addressMode: 'clamp-to-edge',
@@ -7326,10 +7359,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     if (this._useWebGpu) {
       const renderer = this.pixiApp?.renderer;
-      if (renderer?.gpu?.device) writeRgba32Float(renderer, this._lampTileSource, this._lampTileData, width, 2, 'weed-lamp-tiles');
+      if (renderer?.gpu?.device) writeRgba32Float(renderer, this._lampTileSource, this._lampTileData, width, LAMP_TILE_ROWS, 'weed-lamp-tiles');
       return;
     }
-    this._uploadRgba32FloatGl(this._lampTileSource, this._lampTileData, width, 2);
+    this._uploadRgba32FloatGl(this._lampTileSource, this._lampTileData, width, LAMP_TILE_ROWS);
   }
 
   /**
@@ -7344,7 +7377,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._lampMapColumns && this._lampMapColumns.shader,
       this._lampMapColumns && this._lampMapColumns.shaderCeil,
     ];
-    for (let i = 0; i < this._volumeLampEntries.length; i++) shaders.push(this._volumeLampEntries[i].mesh.shader);
+    for (let i = 0; i < this._volumeLampEntries.length; i++) {
+      shaders.push(this._volumeLampEntries[i].mesh.shader, this._volumeLampEntries[i].paintMesh.shader);
+    }
+    if (this._lampCacheCopy !== null) shaders.push(this._lampCacheCopy.mesh.shader);
     for (let i = 0; i < shaders.length; i++) {
       const shader = shaders[i];
       if (shader && shader.resources.uLampTiles !== source) shader.resources.uLampTiles = source;
@@ -7565,9 +7601,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * DX-SHADOW3D (F7): each sun-projected volumes' layer drawn into the lamps' map, every tile in use in one draw (E-389):
    * the batch's vertices and indices with an instance a tile (E-453; volumeShadowMap.js volumeLampVertex /
    * volumeLampWgsl), each vertex landing on the floor along its tile's lamp's ray (the tiles' texture holds the lamps and
-   * their owners), its height out, max blending. A mesh past an edge of a tile is left out in its vertices, and one of the
-   * tile's lamp's own entity. Last frame's records, as the sun map's volumes. A mesh a tile drew the same: about 47 draws
-   * and as many uniform syncs a frame in Predator ?light3d=1.
+   * their owners), its height out, the highest kept by the depth test. A mesh past an edge of a tile is left out in its
+   * vertices, and one of the tile's lamp's own entity. Last frame's records, as the sun map's volumes. A mesh a tile drew
+   * the same: about 47 draws and as many uniform syncs a frame in Predator ?light3d=1.
+   *
+   * E-508 (lighting.lampMapCache): a lamp still for a few frames, under volumes that held too, is drawn into the cache
+   * once (_paintLampCache) and copied into its tile each frame (_copyLampCache), after the cards and the columns as the
+   * volumes were; the others draw as before. The draws take their tiles from lists in the tiles' texture's row 2
+   * (lampVolumeCache.js), written here, after the map's layout is this frame's, and sent again.
    */
   _drawVolumesInLampMap(rtOpts) {
     const shaders = this._engineShaders;
@@ -7576,6 +7617,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!(this._useWebGpu ? shaders?.meshUvFill : shaders?.meshUvFillVert)) return;
     VOLUME_LAMP_SCALES[0] = 1 / (this._heightScaleY > 0 ? this._heightScaleY : 1);
     VOLUME_LAMP_SCALES[1] = this._groundInvScaleY || 1;
+    // This frame's volumes' layers, in order; E-508: whether they, their records or their scales moved (the epoch).
+    const active = this._volumeLampActive;
+    let count = 0;
+    let indices = 0;
+    let moved = false;
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       const batch = cl.sunProjected ? cl.uvFillBatch : null;
@@ -7589,27 +7635,213 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         entry = this._volumeLampEntry(batch);
         this._volumeLampEntries.push(entry);
       }
-      const geometry = entry.geometry;
-      geometry.instanceCount = tiles;
-      const mesh = entry.mesh;
-      if (mesh.geometry !== geometry) mesh.geometry = geometry;
-      this._syncVolumeResources(mesh.shader, batch);
-      const group = mesh.shader.resources.sunShadow;
-      const u = group.uniforms;
-      if (writeVolumeLampTerms(u.uSunShadow, u.uLampVolume, tiles, this._lampTilesPerRow, this._lampTileSize, VOLUME_LAMP_SCALES)) {
-        group.update();
+      if (count >= active.length) active.push(entry);
+      if (active[count] !== entry) {
+        active[count] = entry;
+        moved = true;
       }
-      rtOpts.container = entry.host;
-      rtOpts.clear = false;
-      this._submitRender(rtOpts);
-      this._gpuPassesThisFrame++;
+      count++;
+      indices += batch.indexCount;
+      if (entry.version !== batch.version) {
+        entry.version = batch.version;
+        moved = true;
+      }
     }
+    if (count !== this._volumeLampActiveCount) {
+      this._volumeLampActiveCount = count;
+      moved = true;
+    }
+    if (count === 0) return;
+    const scales = this._lampVolumeScales;
+    if (scales[0] !== VOLUME_LAMP_SCALES[0] || scales[1] !== VOLUME_LAMP_SCALES[1]) {
+      scales[0] = VOLUME_LAMP_SCALES[0];
+      scales[1] = VOLUME_LAMP_SCALES[1];
+      moved = true;
+    }
+    if (moved) this._lampVolumesEpoch = (this._lampVolumesEpoch + 1) | 0;
+    const data = this._lampTileData;
+    const width = data.length / (4 * LAMP_TILE_ROWS);
+    const perRow = this._lampTilesPerRow;
+    let direct = tiles;
+    let cached = 0;
+    let paint = false;
+    // E-508: only volumes heavy enough for their lamps' tiles (lampCachePays): a copy writes every texel of the half.
+    const pays = lampCachePays(indices, this._lampTileSize);
+    if (this._lampCacheOn && pays && this._ensureLampCache(this._lampMapLights | 0, this._lampTileSize)) {
+      const plan = planLampVolumeCache(
+        this._lampCache, this._lampTileIds, data, width, tiles, perRow, this._lampCacheSlots, this._lampCachePerRow,
+        this._lampVolumesEpoch,
+      );
+      direct = plan.direct;
+      cached = plan.cached;
+      paint = plan.paint;
+    } else {
+      writeDirectLampList(data, width, tiles, perRow);
+    }
+    this._uploadLampTiles();
+    rtOpts.clear = false;
+    if (direct > 0) {
+      for (let k = 0; k < count; k++) {
+        const entry = active[k];
+        this._drawVolumeLampMesh(entry.batch, entry.mesh, entry.host, entry.geometry, direct, 0, rtOpts);
+      }
+    }
+    if (paint) this._paintLampCache(active, count, cached, direct, rtOpts);
+    if (cached > 0) this._copyLampCache(cached, direct, rtOpts);
+  }
+
+  /** One volumes' mesh into the target in rtOpts: `instances` entries of the draws' list from `listStart`. */
+  _drawVolumeLampMesh(batch, mesh, host, geometry, instances, listStart, rtOpts) {
+    geometry.instanceCount = instances;
+    if (mesh.geometry !== geometry) mesh.geometry = geometry;
+    this._syncVolumeResources(mesh.shader, batch);
+    const group = mesh.shader.resources.sunShadow;
+    const u = group.uniforms;
+    if (writeVolumeLampTerms(u.uSunShadow, u.uLampVolume, listStart, this._lampTilesPerRow, this._lampTileSize, VOLUME_LAMP_SCALES)) {
+      group.update();
+    }
+    rtOpts.container = host;
+    this._submitRender(rtOpts);
+    this._gpuPassesThisFrame++;
+  }
+
+  /**
+   * E-508: the cache painted again, whole: each volumes' layer drawn for the `cached` lamps of the list (from
+   * `listStart`), each into its slot, the texel and its depth's bits (VOLUME_LAMP_CACHE_FRAGMENT), the first clearing it.
+   */
+  _paintLampCache(active, count, cached, listStart, rtOpts) {
+    const map = rtOpts.target;
+    rtOpts.target = this._lampCacheTarget;
+    for (let k = 0; k < count; k++) {
+      const entry = active[k];
+      rtOpts.clear = k === 0;
+      this._drawVolumeLampMesh(entry.batch, entry.paintMesh, entry.paintHost, entry.paintGeometry, cached, listStart, rtOpts);
+    }
+    rtOpts.clear = false;
+    rtOpts.target = map;
+  }
+
+  /**
+   * E-508: the cached lamps' slots copied into their tiles (`cached` entries of the list from `listStart`), each texel a
+   * volume drew with the depth it drew at, so the map's depth test keeps what drawing the volumes there would have.
+   */
+  _copyLampCache(cached, listStart, rtOpts) {
+    const copy = this._lampCacheCopyMesh();
+    copy.geometry.instanceCount = cached;
+    const v = copy.group.uniforms.uLampVolume;
+    if (v[0] !== listStart || v[1] !== this._lampTilesPerRow || v[2] !== this._lampTileSize) {
+      v[0] = listStart;
+      v[1] = this._lampTilesPerRow;
+      v[2] = this._lampTileSize;
+      v[3] = 0;
+      copy.group.update();
+    }
+    rtOpts.container = copy.host;
+    this._submitRender(rtOpts);
+    this._gpuPassesThisFrame++;
+  }
+
+  /**
+   * E-508: the cache's target, `slots` floor halves of `size` texels (lampCacheLayout), two colours (the texels, their
+   * depths' bits) and a depth buffer; made again when the slots or their size change (the epoch moves: nothing in it
+   * holds). False where it cannot be made (no RenderTarget class: the volumes then draw directly).
+   */
+  _ensureLampCache(slots, size) {
+    if (this._lampCacheTarget !== null && this._lampCacheSlots === slots && this._lampCacheSize === size) return true;
+    const RenderTargetClass = this.pixiApp?.renderer?.view?.renderTarget?.constructor;
+    if (slots <= 0 || typeof RenderTargetClass !== 'function') return false;
+    const layout = lampCacheLayout(slots, size, 4096);
+    const opts = { width: layout.width, height: layout.height, scaleMode: 'nearest' };
+    const color = PIXI.RenderTexture.create(opts);
+    const depth = PIXI.RenderTexture.create(opts);
+    const target = new RenderTargetClass({ colorTextures: [color, depth], label: 'weed-lamp-volume-cache' });
+    if (typeof target.ensureDepthStencilTexture !== 'function') {
+      color.destroy(true);
+      depth.destroy(true);
+      this._lampCacheOn = false;
+      return false;
+    }
+    target.ensureDepthStencilTexture();
+    const oldColor = this._lampCacheColor;
+    const oldDepth = this._lampCacheDepth;
+    this._releaseLampCacheTarget();
+    this._lampCacheTarget = target;
+    this._lampCacheColor = color;
+    this._lampCacheDepth = depth;
+    // The copy lets go of the old textures before they go (Pixi warns of a source destroyed while bound).
+    if (this._lampCacheCopy !== null) {
+      const res = this._lampCacheCopy.mesh.shader.resources;
+      res.uCacheColor = color.source;
+      res.uCacheDepth = depth.source;
+    }
+    if (oldColor) oldColor.destroy(true);
+    if (oldDepth) oldDepth.destroy(true);
+    this._lampCacheSlots = slots;
+    this._lampCacheSize = size;
+    this._lampCachePerRow = layout.perRow;
+    this._lampVolumesEpoch = (this._lampVolumesEpoch + 1) | 0;
+    return true;
+  }
+
+  /** E-508: the cache's target's GPU side, through the render target system's records (_releaseGbufTarget says why). */
+  _releaseLampCacheTarget() {
+    const target = this._lampCacheTarget;
+    if (target === null) return;
+    this._lampCacheTarget = null;
+    const system = this.pixiApp?.renderer?.renderTarget;
+    const gpuTargets = system ? system._gpuRenderTargetHash : null;
+    const gpu = gpuTargets ? gpuTargets[target.uid] : null;
+    if (gpu && system.adaptor && typeof system.adaptor.destroyGpuRenderTarget === 'function') {
+      gpuTargets[target.uid] = null;
+      system.adaptor.destroyGpuRenderTarget(gpu);
+    }
+    if (system && system._renderSurfaceToRenderTargetHash) system._renderSurfaceToRenderTargetHash.delete(target);
+    if (typeof target.destroy === 'function') target.destroy();
+  }
+
+  /**
+   * E-508: the copy's mesh (made once): a quad an instance (a cached lamp), its program (volumeShadowMap.js
+   * LAMP_CACHE_COPY_*), the tiles' texture, the cache's two colours and its terms (lampCopy: uLampVolume), the depth test
+   * and write of the map's other draws.
+   */
+  _lampCacheCopyMesh() {
+    if (this._lampCacheCopy !== null) return this._lampCacheCopy;
+    const program = this._useWebGpu
+      ? { gpuProgram: lampCacheCopyGpuProgram(GpuProgram, 'lamp-map-volume-copy') }
+      : {
+          glProgram: PIXI.GlProgram.from({
+            vertex: LAMP_CACHE_COPY_VERTEX,
+            fragment: LAMP_CACHE_COPY_FRAGMENT,
+            name: 'lamp-map-volume-copy',
+          }),
+        };
+    const quad = new Buffer({ data: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), usage: BufferUsage.VERTEX, label: 'lamp-cache-quad' });
+    const geometry = new PIXI.Geometry({
+      attributes: { aPosition: { buffer: quad, format: 'float32x2', stride: 8, offset: 0 } },
+      indexBuffer: new Uint16Array([0, 1, 2, 0, 2, 3]),
+    });
+    geometry.instanceCount = 0;
+    const shader = new PIXI.Shader({
+      ...program,
+      resources: {
+        uLampTiles: this._lampTileSource,
+        uCacheColor: this._lampCacheColor.source,
+        uCacheDepth: this._lampCacheDepth.source,
+        lampCopy: { uLampVolume: { value: new Float32Array(4), type: 'vec4<f32>' } },
+      },
+    });
+    const mesh = new PIXI.Mesh({ geometry, shader, state: mapDepthState(), label: 'lamp-map-volume-copy' });
+    mesh.blendMode = 'none';
+    const host = new PIXI.Container();
+    host.addChild(mesh);
+    this._lampCacheCopy = { mesh, host, geometry, group: shader.resources.lampCopy };
+    return this._lampCacheCopy;
   }
 
   /**
    * E-389, E-453: the lamps' map volumes' geometry: the batch's vertex attributes and its index buffer (the same buffers:
-   * what the batch's last upload sent), drawn with an instance a tile in use (the program takes the tile from the
-   * instance's number). One a batch: the frame sets its instanceCount to the tiles.
+   * what the batch's last upload sent), drawn with an instance an entry of the draw's list (E-508). Two a batch, the
+   * direct draw's and the cache's paint's: the frame sets each one's instanceCount.
    */
   _volumeLampGeometry(batch) {
     const attributes = {};
@@ -7623,19 +7855,31 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   /**
    * DX-SHADOW3D (F7): a volumes' batch's entry in the lamps' map: one mesh, its own terms (sunShadow: uSunShadow, then
-   * uLampVolume, the WGSL struct's order), in its own host, over its geometry (_volumeLampGeometry).
+   * uLampVolume, the WGSL struct's order), in its own host, over its geometry (_volumeLampGeometry). E-508: and its twin
+   * for the cache's paint (its program writes two colours), and the batch's version the cache last saw.
    */
   _volumeLampEntry(batch) {
     const host = new PIXI.Container();
     const geometry = this._volumeLampGeometry(batch);
-    return { batch, host, mesh: this._volumeLampMesh(batch, host, geometry), geometry };
+    const paintHost = new PIXI.Container();
+    const paintGeometry = this._volumeLampGeometry(batch);
+    return {
+      batch,
+      host,
+      mesh: this._volumeLampMesh(batch, host, geometry, false),
+      geometry,
+      paintHost,
+      paintMesh: this._volumeLampMesh(batch, paintHost, paintGeometry, true),
+      paintGeometry,
+      version: -1,
+    };
   }
 
   /**
-   * DX-SHADOW3D (F7): the mesh over a volumes' batch in the lamps' map, with its terms, in `host`. The program and state
-   * are made once.
+   * DX-SHADOW3D (F7): the mesh over a volumes' batch in the lamps' map, with its terms, in `host`; E-508: `cache`, the
+   * cache's paint's (two colours). The programs and state are made once.
    */
-  _volumeLampMesh(batch, host, geometry) {
+  _volumeLampMesh(batch, host, geometry, cache) {
     if (this._volumeLampProgram === null) {
       const shaders = this._engineShaders;
       this._volumeLampProgram = this._useWebGpu
@@ -7651,11 +7895,24 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               name: 'lamp-map-volumes',
             }),
           };
+      this._volumeLampCacheProgram = this._useWebGpu
+        ? {
+            gpuProgram: volumeMapGpuProgram(GpuProgram, volumeLampWgsl(shaders.meshUvFill), 'mainFragLampCache', 'lamp-map-volume-cache', {
+              lampTiles: true,
+            }),
+          }
+        : {
+            glProgram: PIXI.GlProgram.from({
+              vertex: volumeLampVertex(shaders.meshUvFillVert),
+              fragment: VOLUME_LAMP_CACHE_FRAGMENT,
+              name: 'lamp-map-volume-cache',
+            }),
+          };
       this._volumeLampState = mapDepthState();
     }
     const r = batch.shader.resources;
     const shader = new PIXI.Shader({
-      ...this._volumeLampProgram,
+      ...(cache ? this._volumeLampCacheProgram : this._volumeLampProgram),
       resources: {
         uTexture: r.uTexture,
         uSampler: r.uSampler,
@@ -7669,7 +7926,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         },
       },
     });
-    const mesh = new PIXI.Mesh({ geometry, shader, state: this._volumeLampState, label: 'lamp-map-volumes' });
+    const label = cache ? 'lamp-map-volume-cache' : 'lamp-map-volumes';
+    const mesh = new PIXI.Mesh({ geometry, shader, state: this._volumeLampState, label });
     // A depth test keeps the highest point and its entity; a mesh's blend mode holds only as a child (the sun map's host
     // says why).
     mesh.blendMode = 'none';
@@ -10249,6 +10507,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           const tile = lightingConfig.lampShadowTile;
           this._lampTileAuto = tile === undefined || tile === null || tile === 'auto';
           this._lampTileSize = this._lampTileAuto ? 256 : Math.max(32, Math.min(1024, (tile | 0) || 256));
+          // E-508: a still lamp's volumes drawn once into a cache and copied each frame (default on).
+          this._lampCacheOn = lightingConfig.lampMapCache !== false;
         }
       }
       // DX-MAPS: a sprite with height and normal maps is lit as the surface they say, through the faces' pass. DX-GBUF: so

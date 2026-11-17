@@ -96,6 +96,11 @@ export class MeshUvFillBatch {
       shrinkToFit: false,
     });
     this.indexCount = 0;
+    /**
+     * E-508: moves on every upload of the records, the indices or the poses: the lamps' volumes' cache was painted from
+     * what the batch draws while it holds.
+     */
+    this.version = 0;
 
     const stride = MESH_UV_VERT_STRIDE;
     const buf = this.buffer;
@@ -188,6 +193,7 @@ export class MeshUvFillBatch {
    * @returns {number} the indices drawn
    */
   upload(count, indexCount) {
+    this.version = (this.version + 1) | 0;
     const n = Math.min(count | 0, this.capacity);
     const m = Math.min(indexCount | 0, this.indexCapacity);
     if (n <= 0 || m < 3) {
@@ -258,6 +264,7 @@ export class MeshUvFillBatch {
 
   /** ColliderFillBatch.uploadRange for records [first, past), which an upload of the same layout already placed. */
   uploadRange(first, past) {
+    this.version = (this.version + 1) | 0;
     const from = first * MESH_UV_VERT_FLOATS;
     if (this.verts !== this.data) this.data.set(this.verts.subarray(from, past * MESH_UV_VERT_FLOATS), from);
     this.buffer.update((past - first) * MESH_UV_VERT_STRIDE, first * MESH_UV_VERT_STRIDE);
@@ -266,6 +273,7 @@ export class MeshUvFillBatch {
 
   /** Send indices [first, past) of the drawn ones, which the corner rewrite wrote again. */
   uploadIndexRange(first, past) {
+    this.version = (this.version + 1) | 0;
     const from = first | 0;
     const end = Math.min(past | 0, this.indexCount);
     if (end <= from) return;
@@ -276,6 +284,7 @@ export class MeshUvFillBatch {
 
   /** ColliderFillBatch.uploadPoseTable for the records: `instanceEntity` is vertexEntity, `count` the records. */
   uploadPoseTable(instanceEntity, count, views, framePose = null) {
+    this.version = (this.version + 1) | 0;
     const n = count | 0;
     if (n <= 0 || !instanceEntity) return 0;
     const entityCount = views.entityCount | 0;
