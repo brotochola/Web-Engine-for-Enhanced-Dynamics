@@ -86,6 +86,7 @@ for (const w of workers) {
   if (retimeEvery > 0) w._mvRetimeEvery = retimeEvery;
   if (probeEvery > 0) w._mvProbeEvery = probeEvery;
   if (probeEvery > 0) w._mvProbeIn = probeEvery;
+  if (probeEvery > 0) w._mvProbeGap = probeEvery;
   w.collectDetailedStats = detailed;
 }
 

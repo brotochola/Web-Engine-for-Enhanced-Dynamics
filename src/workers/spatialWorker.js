@@ -96,10 +96,17 @@ const MOVERS_RETIME_FRAMES = 256;
 const MOVERS_RETIME_STRETCH = 32;
 const MOVERS_PROBE_FRAMES = 512;
 const MOVERS_PROBE_LENGTH = 16;
+// E-503: a probe the rewrite lost doubles the gap to the next, up to this many times MOVERS_PROBE_FRAMES; one it won
+// resets it.
+const MOVERS_PROBE_STRETCH = 16;
+// E-503: entering the rewrite takes a moved count under this share of the limit, staying in it under the limit: a
+// count that hovers at the tie does not pay a latch (about 2.5 rebuilds) each time it crosses.
+const MOVERS_ENTRY_SHARE = 0.8;
 // E-503: what a grid step did (_stepGrid), so _rebuildGrid knows which path its time was.
 const GRID_STEP_FULL = 1; // the full rebuild alone
 const GRID_STEP_REWRITE = 2; // a rewrite that held
-const GRID_STEP_MOVERS = 3; // a latch, or a rewrite given up and the rebuild after it: the rewrite's path too
+const GRID_STEP_GAVE_UP = 3; // a rewrite given up, and the rebuild or latch after it: the rewrite's cost too
+const GRID_STEP_LATCH = 4; // a latch from the rebuild (the limit, a probe): an entry, not a cost per moved body
 // SpatialWorker._gridMoversMode.
 const GRID_MOVERS_AUTO = 0; // by the moved count against the limit where the two paths' timed costs tie
 const GRID_MOVERS_OFF = 1; // the full rebuild every frame
@@ -280,6 +287,8 @@ class SpatialWorker extends AbstractWorker {
     this._mvMoversFrameMs = NaN;
     /** Physics' moved count this frame (_stepGrid). */
     this._mvCount = 0;
+    /** The last rewrite gave up: the latch that follows is the rewrite's cost, not an entry's. */
+    this._mvAfterGiveUp = false;
     /** Rewrites since the last timed full rebuild; frames of full rebuilds left before the next probe. */
     this._mvRewrites = 0;
     this._mvProbeIn = MOVERS_PROBE_FRAMES;
@@ -289,6 +298,9 @@ class SpatialWorker extends AbstractWorker {
     /** The next frame rebuilds in full, timed; frames a probe has left on the rewrite's path (its limit is the cap). */
     this._mvRetimeFull = false;
     this._mvProbeLeft = 0;
+    /** The run of rewrites a probe started, not yet judged; the gap before the next probe (MOVERS_PROBE_STRETCH). */
+    this._mvFromProbe = false;
+    this._mvProbeGap = MOVERS_PROBE_FRAMES;
     /** readMovedBodiesHeader's [generation, count, sequence]. */
     this._mvHead = new Int32Array(3);
     // Sized on the first latch (_allocMovers). Per entity:
@@ -782,14 +794,21 @@ class SpatialWorker extends AbstractWorker {
     const start = performance.now();
     const step = this._stepGrid(mode, activeData);
     const ms = performance.now() - start;
-    if (step !== GRID_STEP_FULL) this._timeMovers(ms, this._mvCount, step === GRID_STEP_REWRITE);
-    else if (retime && ms < this._mvFullMs) this._mvFullMs = ms;
-    else this._timeFull(ms);
+    if (step === GRID_STEP_FULL) {
+      if (retime && ms < this._mvFullMs) this._mvFullMs = ms;
+      else this._timeFull(ms);
+    } else if (step !== GRID_STEP_LATCH || this._mvAfterGiveUp) {
+      this._timeMovers(ms, this._mvCount, step === GRID_STEP_REWRITE);
+    } else if (this._mvProbeLeft > 0) {
+      this._mvProbeLeft--;
+    }
+    this._mvAfterGiveUp = step === GRID_STEP_GAVE_UP;
   }
 
   /**
    * E-126. The grid step _rebuildGrid chose a path for: the rewrite, the full rebuild, or a latch.
-   * @returns {number} GRID_STEP_FULL, GRID_STEP_REWRITE or GRID_STEP_MOVERS (E-503: which path the time was)
+   * @returns {number} GRID_STEP_FULL, GRID_STEP_REWRITE, GRID_STEP_GAVE_UP or GRID_STEP_LATCH (E-503: which path
+   *   the time was)
    */
   _stepGrid(mode, activeData) {
     const head = this._mvHead;
@@ -820,10 +839,22 @@ class SpatialWorker extends AbstractWorker {
           this._mvGen = gen;
           this._gridMoversThisFrame = 1;
           this._mvFailures = 0;
+          // E-503: a rewrite that holds past its probe's window: the probe won, the gap starts over.
+          if (this._mvFromProbe && this._mvProbeLeft === 0) {
+            this._mvFromProbe = false;
+            this._mvProbeGap = this._mvProbeEvery;
+          }
           return GRID_STEP_REWRITE;
         }
         gaveUp = true;
       }
+      // E-503: a probe's run that ends on the limit (not given up): the rewrite lost, the next probe waits longer.
+      if (this._mvFromProbe && !gaveUp && moved > limit) {
+        const gap = this._mvProbeGap * 2;
+        const most = this._mvProbeEvery * MOVERS_PROBE_STRETCH;
+        this._mvProbeGap = gap < most ? gap : most;
+      }
+      this._mvFromProbe = false;
       // The state is spent, and the grid may be half rewritten: the rebuild below writes all of it.
       this._mvSeeded = false;
       this._mvProbeLeft = 0;
@@ -834,29 +865,34 @@ class SpatialWorker extends AbstractWorker {
         this._mvBackoff = this._mvFailures < 2 ? 0 : this._mvFailures > 8 ? 128 : 1 << (this._mvFailures - 1);
       }
     }
-    // E-503: rebuilding while the limit (or no timing yet) says so, with a probe now and then.
+    // E-503: rebuilding while the limit (or no timing yet) says so, with a probe now and then. Coming from the
+    // rebuild, the count must be under MOVERS_ENTRY_SHARE of a timed limit.
+    const entry = timed && !gaveUp && this._mvProbeLeft === 0 && this._mvFullMs > 0 && this._mvPerMovedMs > 0
+      ? limit * MOVERS_ENTRY_SHARE
+      : limit;
     const probe =
       timed &&
-      count > limit &&
+      count > entry &&
       this._mvBackoff === 0 &&
       !this._mvRetimeFull &&
       --this._mvProbeIn <= 0 &&
       count <= active * MOVERS_CAP_FRACTION;
-    if (!probe && (this._mvRetimeFull || this._mvBackoff > 0 || count > limit)) {
+    if (!probe && (this._mvRetimeFull || this._mvBackoff > 0 || count > entry)) {
       if (this._mvBackoff > 0) this._mvBackoff--;
       this._mvSeeded = false;
       this._mvRetimeFull = false;
       this.rebuildOwnedRows();
-      return gaveUp ? GRID_STEP_MOVERS : GRID_STEP_FULL;
+      return gaveUp ? GRID_STEP_GAVE_UP : GRID_STEP_FULL;
     }
     if (probe) {
-      this._mvProbeIn = this._mvProbeEvery;
+      this._mvProbeIn = this._mvProbeGap;
       this._mvProbeLeft = MOVERS_PROBE_LENGTH;
+      this._mvFromProbe = true;
     }
     this._allocMovers();
     this._mvGen = gen;
     this._mvSeeded = this._rebuildOwnedRowsLatched();
-    return GRID_STEP_MOVERS;
+    return gaveUp ? GRID_STEP_GAVE_UP : GRID_STEP_LATCH;
   }
 
   /**
@@ -882,9 +918,10 @@ class SpatialWorker extends AbstractWorker {
   }
 
   /**
-   * E-503. A frame on the rewrite's path into its moving averages, per moved body and whole (a latch costs about a
-   * rebuild, so a sample counts up to 8× the average); a frame physics did not publish, or without its list, says
-   * nothing of the cost per body. After MOVERS_RETIME_FRAMES rewrites (times a rebuild's cost over these frames', up
+   * E-503. A frame on the rewrite's path into its moving averages, per moved body and whole: a rewrite, one given up
+   * with the rebuild after it, the latch after that (a latch costs about 2.5 rebuilds, so a sample counts up to 8× the
+   * average); not a latch the choice made on purpose (an entry, which MOVERS_ENTRY_SHARE pays for). A frame physics
+   * did not publish, or without its list, says nothing of the cost per body. After MOVERS_RETIME_FRAMES rewrites (times a rebuild's cost over these frames', up
    * to MOVERS_RETIME_STRETCH, so a world that sleeps pays little for it), a full rebuild is timed again; a lower time
    * replaces the average (a stale one, or the load's), a higher one joins it.
    */
