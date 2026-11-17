@@ -24,6 +24,7 @@
  */
 
 import { FRAME_GLOW, FRAME_HALF, FRAME_SOFT, FRAME_UNSCANNED } from './frameBase.js';
+import { GPU_INTEGRATED, GPU_TILED, GPU_VENDOR_INTEL } from './gpuClass.js';
 import { GPU_STATIC_FLOATS } from './gpuQueueLayout.js';
 
 /** The frame texels (frameBase.js FRAME_*) that keep a frame out of the opaque pass: any alpha but 0 and 255, glow, unknown. */
@@ -68,6 +69,39 @@ export const OPAQUE_ROW_PIXELS = 160;
  */
 export function opaquePassPays(cover, screen, rows) {
   return cover - OPAQUE_FRAGMENTS_KEPT * Math.min(cover, screen) >= OPAQUE_ROW_PIXELS * rows;
+}
+
+/**
+ * E-502: whether the opaque pass may draw on a GPU of this class and maker (gpuClass.js gpuClassOf, gpuVendorOf).
+ * opaquePassPays's costs are the GTX 1650's, and integrated GPUs split by maker:
+ * - Intel's draw slower with the pass even where that gate says it pays: the HD 620 drew bunnyMark (100 000) 53 % and
+ *   bunnyMarkStress 78 % more frames without it, Predator level (R-1277). The cost is the pass's drawing, not its pose
+ *   copy. Only Gen9 was measured; the other Intel generations follow it.
+ * - AMD's gain from it like a discrete GPU: the Ryzen 4800H's Radeon (Vega) drew bunnyMark 100 000 at 43.6 fps with the
+ *   pass and 32.0 without (-27 %, 4/4).
+ * A tile-based GPU (Apple, Mali, Adreno, PowerVR) removes hidden surfaces on chip by itself, and its makers warn that a
+ * draw with discard and depth writes (the pass's) defeats that: off there, not measured. Every other GPU keeps it.
+ * @param {string} gpuClass
+ * @param {string} vendor
+ * @returns {boolean}
+ */
+export function opaquePassSuits(gpuClass, vendor) {
+  if (gpuClass === GPU_TILED) return false;
+  return gpuClass !== GPU_INTEGRATED || vendor !== GPU_VENDOR_INTEL;
+}
+
+/**
+ * Whether the opaque pass may draw, from the setting debug.opaquePass (true always, false never, anything else the GPU
+ * decides: opaquePassSuits) and the GPU's class and maker.
+ * @param {boolean|string|undefined} setting
+ * @param {string} gpuClass
+ * @param {string} vendor
+ * @returns {boolean}
+ */
+export function opaquePassOn(setting, gpuClass, vendor) {
+  if (setting === true) return true;
+  if (setting === false) return false;
+  return opaquePassSuits(gpuClass, vendor);
 }
 
 /**

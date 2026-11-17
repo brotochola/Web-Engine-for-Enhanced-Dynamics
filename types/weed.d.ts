@@ -479,10 +479,12 @@ export type SceneConfig = Record<string, unknown> & {
      */
     gpuTimestampsInsidePasses?: boolean;
     /**
-     * The opaque pass for binary sprites (default true): their solid pixels drawn first, nearest first, with the depth
-     * test, wherever it spares more fill than it costs. false never draws it, to time a GPU with and without it.
+     * The opaque pass for binary sprites: their solid pixels drawn first, nearest first, with the depth test, wherever
+     * it spares more fill than it costs. 'auto' (default) draws it on every GPU but Intel's integrated ones and
+     * tile-based ones (Apple, mobile), read from the renderer's name: those draw slower with it. true draws it on every
+     * GPU, false on none, to time a GPU with and without it.
      */
-    opaquePass?: boolean;
+    opaquePass?: boolean | 'auto';
   };
   preRender?: Record<string, unknown> & {
     /**
@@ -1970,6 +1972,15 @@ export declare class Decal {
   static stamp(config: Record<string, unknown>): void;
 }
 
+/** The GPU a scene draws on ({@link Scene.gpu}). */
+export interface SceneGpu {
+  readonly backend: 'webgl' | 'webgpu';
+  readonly name: string;
+  /** The maker in WebGPU's spelling: 'intel', 'amd', 'nvidia', 'apple', 'arm', 'qualcomm', … or ''. */
+  readonly vendor: string;
+  readonly kind: 'discrete' | 'integrated' | 'tiled' | 'software' | 'unknown';
+}
+
 export declare class Scene {
   static WORKER_INDICES: Readonly<Record<string, number>>;
   static config: SceneConfig;
@@ -2003,6 +2014,14 @@ export declare class Scene {
   /** Proxied view of `config.physics`; writes forward to workers via {@link Scene.updatePhysicsConfig}. */
   physics: Record<string, unknown>;
   workerReadyStates: Record<string, boolean>;
+  /**
+   * The GPU the browser gave the page, set before `preload()` and `create()` run (null until then). `name` is the
+   * browser's name for it (WebGL's renderer string, or the WebGPU adapter's vendor and architecture), `vendor` its
+   * maker; `kind` is read from that name: 'integrated' (shares the CPU's memory: Intel HD/UHD/Iris, AMD APUs),
+   * 'discrete', 'tiled' (Apple, mobile), 'software' (drawn by the CPU) or 'unknown'. On an integrated GPU the engine
+   * also warns once in the console; what to tell players is the game's choice.
+   */
+  readonly gpu: SceneGpu | null;
   numberOfSpatialWorkers: number;
   totalWorkers: number;
   buffers: SceneBuffers;

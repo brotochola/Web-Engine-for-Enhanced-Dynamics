@@ -139,6 +139,26 @@ with) must allow `'unsafe-eval'`: the engine compiles a few small functions at r
 scene's module, the field accessors of every component) and compiles its WebAssembly, which `'unsafe-eval'` also
 allows. Without it the engine does not start.
 
+## The player's GPU
+
+A laptop with two GPUs usually gives the browser its integrated one (Intel HD/UHD/Iris, an AMD APU), even when the
+page asks for high performance. `scene.gpu` says which GPU the page got, from `preload()` on:
+`{ backend, name, vendor, kind }`, with `vendor` the maker (`'intel'`, `'amd'`, `'nvidia'`, …) and `kind` one of
+`'integrated'`, `'discrete'`, `'tiled'` (Apple, phones), `'software'` (drawn by the CPU) or `'unknown'`. The engine
+warns once in the console on an integrated GPU and shows players nothing; what to tell them is the game's choice. No
+browser lists a machine's GPUs, so the game cannot know whether a faster one exists:
+
+```js
+create() {
+  if (this.gpu?.kind === 'integrated') {
+    const tip = document.createElement('p');
+    tip.textContent = `Drawing on ${this.gpu.name}. If this computer has a dedicated GPU, Windows can give it to the ` +
+      'browser in Settings > System > Display > Graphics.';
+    document.body.append(tip);
+  }
+}
+```
+
 ## Builds
 
 - Develop with the debug build (`@weed.js/engine/debug`, or `weed.bundle*.min.js` on the CDN): debug panel, `DebugDraw`, overlays.
