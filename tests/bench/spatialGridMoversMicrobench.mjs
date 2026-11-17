@@ -8,7 +8,8 @@
  *
  *   base    _gridMoversMode 1: the full rebuild every frame (rebuildOwnedRows)
  *   movers  _gridMoversMode 2: the grid rewritten for the bodies that moved whenever the state allows
- *   auto    _gridMoversMode 0: the shipped choice, by the moved fraction (MOVERS_MAX_FRACTION)
+ *   auto    _gridMoversMode 0: the shipped choice, by the two paths' timed costs (E-503)
+ *   fixed   _gridMoversMode 3: the choice by the moved fraction alone (MOVERS_MAX_FRACTION; auto before E-503)
  *
  * The three write the same bytes (tests/node/spatialGridMovers.test.js); the checksum covers the
  * cells, poses, owned list and cell counts of 12 frames per case, so runKernelVariants rejects a
@@ -37,7 +38,7 @@ import { KERNEL_SAMPLE_MS } from './benchmarkDefaults.mjs';
 import { isCli, mulberry32, parseArgs, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { setupSpatialKernel } from './spatialWorkerMicrobench.mjs';
 
-const VARIANTS = { auto: 0, base: 1, movers: 2 };
+const VARIANTS = { auto: 0, base: 1, movers: 2, fixed: 3 };
 const CASES = [0, 5, 35, 50, 100];
 // movedBodiesStillScene.js
 const COLS = 220;

@@ -14,8 +14,11 @@ import { Worker } from 'node:worker_threads';
 // its own thread (Grid is static state).
 
 const OFF = 1;
-const AUTO = 0;
+const AUTO = 0; // E-503: by the two paths' timed costs
 const FORCE = 2;
+const FIXED = 3; // by the moved fraction alone, so the path does not hang on the clock
+// E-503: the timed choice with its retime and probe intervals short, so 90 frames take every transition.
+const TIMED = { mode: AUTO, retimeEvery: 5, probeEvery: 7 };
 
 function run(workerData) {
   return new Promise((resolve, reject) => {
@@ -42,13 +45,19 @@ function transitions(path) {
   return { toFull, toMovers };
 }
 
-test('the grid rewritten for what changed is the full rebuild, byte for byte (auto and forced)', async () => {
-  const [base, auto, forced] = await Promise.all([run({ mode: OFF }), run({ mode: AUTO }), run({ mode: FORCE })]);
+test('the grid rewritten for what changed is the full rebuild, byte for byte (fixed, timed and forced)', async () => {
+  const [base, auto, forced, timed] = await Promise.all([run({ mode: OFF }), run({ mode: FIXED }), run({ mode: FORCE }), run(TIMED)]);
   assert.ok(base.paths.every((p) => p.every((v) => v === 0)), 'mode 1 rebuilds every frame');
   assert.ok(base.overfull === 0, 'mode 1 latches nothing');
 
   assert.equal(firstDiff(base, auto), -1, `auto differs from the full rebuild from frame ${firstDiff(base, auto)}`);
   assert.equal(firstDiff(base, forced), -1, `forced differs from the full rebuild from frame ${firstDiff(base, forced)}`);
+  assert.equal(firstDiff(base, timed), -1, `timed differs from the full rebuild from frame ${firstDiff(base, timed)}`);
+  // The timed choice took both paths (its retimes and probes among them), whichever the clock found cheaper.
+  for (const path of timed.paths) {
+    const { toFull, toMovers } = transitions(path);
+    assert.ok(toFull >= 2 && toMovers >= 2, `timed switched to the rebuild ${toFull}× and back ${toMovers}×`);
+  }
 
   // The switch ran both ways in auto: the moved share crosses the threshold up and down.
   for (const path of auto.paths) {
@@ -69,12 +78,14 @@ test('the grid rewritten for what changed is the full rebuild, byte for byte (au
 
 // E-266: without a physics worker the rewrite finds what changed by comparing each collider's bounds with the ones
 // its cells were written from; the same world, its poses changed by the script, no list bound or published.
-test('without a physics list the rewrite finds what changed itself, byte for byte (auto and forced)', async () => {
-  const [base, auto, forced] = await Promise.all([
+test('without a physics list the rewrite finds what changed itself, byte for byte (fixed, timed and forced)', async () => {
+  const [base, auto, forced, timed] = await Promise.all([
     run({ mode: OFF, noPhysics: true }),
-    run({ mode: AUTO, noPhysics: true }),
+    run({ mode: FIXED, noPhysics: true }),
     run({ mode: FORCE, noPhysics: true }),
+    run({ ...TIMED, noPhysics: true }),
   ]);
+  assert.equal(firstDiff(base, timed), -1, `timed differs from the full rebuild from frame ${firstDiff(base, timed)}`);
   assert.equal(firstDiff(base, auto), -1, `auto differs from the full rebuild from frame ${firstDiff(base, auto)}`);
   assert.equal(firstDiff(base, forced), -1, `forced differs from the full rebuild from frame ${firstDiff(base, forced)}`);
   for (const path of forced.paths) {
