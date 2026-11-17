@@ -1,0 +1,54 @@
+{
+  "format": 1,
+  "script": "../../../buenosAiresScene/buenosAiresScene.js",
+  "export": "BuenosAiresScene",
+  "entities": [
+    { "name": "Casa1", "x": 100, "y": 200, "prefab": "casa_a", "config": { "k": "poste", "l": 1 }, "decorations": [{ "class": "Grafiti", "textures": ["gr_big_3"], "frame": [0], "x": [2], "y": [-12], "innerZ": [2], "faceNormalX": [0], "faceNormalY": [1], "faceNormalZ": [0], "faceHeight": [12] }] },
+    { "name": "Arbol1", "x": 300, "y": 220, "prefab": "fresno", "config": { "fl": 1 } },
+    { "name": "Cartel1", "class": "Prop", "x": 410, "y": 260, "parent": "Farol1", "config": { "f": "z_cartel" } },
+    { "name": "Farol1", "x": 400, "y": 250, "rotation": 0.5, "prefab": "farol_con_luz" },
+    { "name": "Lugar1", "class": "LugarAuto", "x": 500, "y": 300, "rotation": 2.39, "config": { "color": "blue", "moving": true } },
+    { "name": "Raro1", "class": "Desconocida", "x": 0, "y": 0 }
+  ],
+  "decorations": [
+    {
+      "class": "Prop",
+      "textures": ["pl_malvon_0", "yy_avena_2", "no_existe"],
+      "frame": [0, 1, 2, 0],
+      "x": [600, 610, 620, 630],
+      "y": [400, 402, 404, 406],
+      "scaleX": [0.6, -0.6, 1, -0.6]
+    },
+    {
+      "class": "Cable",
+      "x": [700],
+      "y": [100],
+      "rotation": [2.29],
+      "scaleX": [33.9],
+      "tint": [0]
+    }
+  ],
+  "prefabs": {
+    "casa_a": {
+      "class": "Casa",
+      "config": { "col": [[-10, -5], [10, -5], [10, 5], [-10, 5]], "sp": [-10, -5, 0, 10, -5, 0, 10, 5, 0, -10, 5, 0, 0, 0, 40], "k": "casa" },
+      "decorations": [
+        { "class": "Cara", "textures": ["caras0_t0_0_0", "_white"], "frame": [0, 1, 0], "x": [-5, 0, 5], "y": [-20, -10, -20], "scaleX": [1, 0.5, -1], "sortOffsetY": [5, 5, 5], "innerZ": [0, 0, 0], "faceNormalX": [0, 0.71, 0], "faceNormalY": [1, 0.71, 1], "faceNormalZ": [0, 0, 0], "faceHeight": [20, 10, 20] },
+        { "class": "Ventana", "textures": ["v_1"], "frame": [0, 0], "x": [-3, 3], "y": [-15, -15], "innerZ": [1, 1], "alpha": [1, 1] }
+      ]
+    },
+    "fresno": {
+      "class": "Arbol",
+      "config": { "sil": "fresno_1_sil", "trunk": "fresno_1_0" },
+      "decorations": [
+        { "class": "Rama", "attached": true, "textures": ["fresno_r1", "fresno_r2"], "frame": [0, 1], "x": [0, 2], "y": [-30, -40], "rotation": [0.5, -0.25], "innerZ": [1, 2], "sway": [1, 0] }
+      ]
+    },
+    "farol_con_luz": {
+      "class": "Prop",
+      "config": { "f": "u_farol_hierro" },
+      "children": [{ "class": "Luz", "x": 0, "y": -12 }]
+    }
+  },
+  "cruces": [[100, 100, 1, 1, 0, 12]]
+}
