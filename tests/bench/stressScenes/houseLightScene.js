@@ -22,6 +22,10 @@ const { Scene, GameObject, SpriteRenderer, ShadowCaster, LightEmitter, Camera, S
  * `?hour=` (default 15; 22 by night, the lamp on), `?side=faces|maps` (that half alone, at `?zoom=`, default 2),
  * `?mapCast=heightMap` (the map houses cast their height maps instead of the hull), `?mapNormals=0` (the map houses
  * without their normal map: normals from the heights), `?resolution=` (lighting's, default 1), `?backend=webgpu`.
+ *
+ * `?bench=faces|maps`: the cost of each way instead. A grid of `?cols=` by `?rows=` houses (default 12 by 8, 170 by 190 px a
+ * house, the two alternating) of that way alone, a street lamp at the curb before every other house (lit by night), no trees
+ * or people, the camera at its middle at `?zoom=` (default 1): about the barrio's density of houses on the screen.
  */
 const P = WEED.params;
 function num(key, fallback) {
@@ -31,19 +35,25 @@ function num(key, fallback) {
 }
 const HOUR = num('hour', 15);
 const SIDE = P?.get('side') === 'faces' || P?.get('side') === 'maps' ? P.get('side') : '';
-const ZOOM = num('zoom', SIDE ? 2 : 0.96);
+const ZOOM = num('zoom', SIDE ? 2 : P?.get('bench') ? 1 : 0.96);
 const MAP_CAST = P?.get('mapCast') === 'heightMap' ? 'heightMap' : 'hull';
 const MAP_NORMALS = P?.get('mapNormals') !== '0';
 const RESOLUTION = num('resolution', 1);
 const BACKEND = P?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+const BENCH = P?.get('bench') === 'faces' || P?.get('bench') === 'maps' ? P.get('bench') : '';
+const BENCH_COLS = Math.max(1, Math.floor(num('cols', 12)));
+const BENCH_ROWS = Math.max(1, Math.floor(num('rows', 8)));
+const BENCH_CELL = [170, 190];
+const BENCH_HOUSES = BENCH ? BENCH_COLS * BENCH_ROWS : 0;
+const BENCH_LAMPS = Math.ceil(BENCH_HOUSES / 2);
 const HERE = '/tests/bench/stressScenes/houseLight/';
 /** The houses, by their prefab in the package (the sheet's frames have the same names). */
 const HOUSES = ['casa_125', 'casa_168'];
 const TREES = ['arbol_fresno_1', 'arbol_platano_0'];
 /** Each half of the world: the faces' on the left, the maps' on the right. */
 const HALF = 660;
-const W = 2 * HALF;
-const H = 720;
+const W = BENCH ? BENCH_COLS * BENCH_CELL[0] : 2 * HALF;
+const H = BENCH ? BENCH_ROWS * BENCH_CELL[1] + 120 : 720;
 /** Within a half: each house's foot, each tree's, the people's and the lamp's. */
 const HOUSE_AT = [[220, 400], [520, 400]];
 /** Each tree on its house's sunny side in the afternoon (west), so its shadow falls on the house. */
@@ -55,7 +65,10 @@ const LAMP_AT = [400, 455];
 const DET = 5 / 3;
 
 export const stressSceneConfig = {
-  requested: { hour: HOUR, side: SIDE || 'both', zoom: ZOOM, mapCast: MAP_CAST, mapNormals: MAP_NORMALS ? 1 : 0, resolution: RESOLUTION, backend: BACKEND },
+  requested: {
+    hour: HOUR, side: SIDE || 'both', zoom: ZOOM, mapCast: MAP_CAST, mapNormals: MAP_NORMALS ? 1 : 0, resolution: RESOLUTION, backend: BACKEND,
+    bench: BENCH || 'off', cols: BENCH_COLS, rows: BENCH_ROWS,
+  },
 };
 
 const editorSheet = (name) => ({ json: `${BARRIO}img/${name}.json`, png: `${BARRIO}img/${name}.png` });
@@ -130,20 +143,20 @@ export class HouseLightScene extends Scene {
     logic: { numberOfLogicWorkers: 1, staggeredUpdates: true },
     physics: { subStepCount: 1, gravity: { x: 0, y: 0 } },
     particle: { maxParticles: 0, decals: false },
-    decoration: { maxDecorations: 4096 },
+    decoration: { maxDecorations: BENCH ? 65536 : 4096 },
     renderer: { backend: BACKEND, ySort: true },
     camera: { floorScaleY: META.SYN, heightScaleY: META.CZ },
     lighting: {
       enabled: true,
       lightGlow: 'sprite',
       baseAmbient: 0.04,
-      maxLights: 8,
-      maxVolumes: 16,
+      maxLights: BENCH ? BENCH_LAMPS + 8 : 8,
+      maxVolumes: BENCH ? BENCH_HOUSES + 8 : 16,
       shadowsEnabled: true,
       sunShadows: 'map',
       lampShadows: 'map',
       selfShadow: true,
-      maxShadowCastingLights: 4,
+      maxShadowCastingLights: BENCH ? 16 : 4,
       maxShadowsPerLight: 64,
       maxShadowsPerEntity: 2,
       resolution: RESOLUTION,
@@ -158,7 +171,9 @@ export class HouseLightScene extends Scene {
 
   static assets = { spritesheets: SHEETS };
 
-  static entities = [[Casa, 2], [Arbol, 4], [MapHouse, 2], [Person, 4], [Lamp, 2]];
+  static entities = BENCH
+    ? [[Casa, BENCH === 'faces' ? BENCH_HOUSES : 1], [MapHouse, BENCH === 'maps' ? BENCH_HOUSES : 1], [Lamp, BENCH_LAMPS]]
+    : [[Casa, 2], [Arbol, 4], [MapHouse, 2], [Person, 4], [Lamp, 2]];
 
   async preload() {
     const [doc, anchors] = await Promise.all([
@@ -169,6 +184,7 @@ export class HouseLightScene extends Scene {
     // decorations on a house, its graffiti, left out: the map houses have none).
     const prefabs = {};
     for (const name of [...HOUSES, ...TREES]) prefabs[name] = doc.prefabs[name];
+    if (BENCH) return this.benchGrid(doc, prefabs, anchors);
     const entities = [
       ...HOUSES.map((prefab, i) => ({ name: `Casa${i}`, x: HOUSE_AT[i][0], y: HOUSE_AT[i][1], prefab })),
       ...TREES.map((prefab, i) => ({ name: `Arbol${i}`, x: TREE_AT[i][0], y: TREE_AT[i][1], prefab })),
@@ -188,11 +204,37 @@ export class HouseLightScene extends Scene {
     });
   }
 
+  /** `?bench=`: the grid of houses of one way, each cell's foot at its middle, 60 px above its bottom. */
+  async benchGrid(doc, prefabs, anchors) {
+    const cells = [];
+    for (let row = 0; row < BENCH_ROWS; row++) {
+      for (let col = 0; col < BENCH_COLS; col++) {
+        cells.push({ x: (col + 0.5) * BENCH_CELL[0], y: 60 + (row + 1) * BENCH_CELL[1] - 60, house: HOUSES[(row + col) & 1] });
+      }
+    }
+    if (BENCH === 'faces') {
+      const entities = cells.map((c, i) => ({ name: `Casa${i}`, x: c.x, y: c.y, prefab: c.house }));
+      await loadBarrio({ format: doc.format, script: doc.script, export: doc.export, prefabs, entities, decorations: [] }, {
+        where: 'houseLightScene',
+        classes: { Casa: (config) => (Casa.spawn(config)?.index ?? -1) },
+        decorations: DECORATION_CLASSES,
+        spawnDecorations: (config) => Decoration.spawnMany(config),
+        spawnDecoration: (config) => Decoration.spawn(config),
+        random: () => 0.5,
+      });
+    } else {
+      for (const c of cells) MapHouse.spawn({ x: c.x, y: c.y, frame: c.house, anchor: anchors[c.house], sp: doc.prefabs[c.house].config.sp });
+    }
+    cells.forEach((c, i) => {
+      if ((i & 1) === 0) Lamp.spawn({ x: c.x + 80, y: c.y + 30 });
+    });
+  }
+
   create() {
     Sun.setTimeOfDay(HOUR);
     // The floor: a grey sheet hung from the world's north edge, so its foot is behind everything.
     Decoration.spawn({ x: W / 2, y: 0, texture: '_white', scaleX: (W + 8) / 8, scaleY: (H + 8) / 8, anchorX: 0.5, anchorY: 0, tint: 0x8a8578 });
-    for (const x0 of [0, HALF]) {
+    for (const x0 of BENCH ? [] : [0, HALF]) {
       for (const [x, y] of PEOPLE_AT) Person.spawn({ x: x0 + x, y });
       Lamp.spawn({ x: x0 + LAMP_AT[0], y: LAMP_AT[1] });
     }
