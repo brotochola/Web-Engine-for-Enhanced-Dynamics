@@ -321,6 +321,7 @@ fn selfShadowToward(p: vec3<f32>, l: vec3<f32>, reach: f32, selfId: f32) -> f32 
     let q = p + l * t;
     let nc = weedWorldToNorm(vec2<f32>(q.x, q.y * s - q.z * uniforms.uFaceLight.x));
     let fc = vec2<f32>(nc.x, select(nc.y, 1.0 - nc.y, uniforms.uFlipY > 0.5));
+    // N-272: a step past the map's edge knows nothing (lightingBasic.frag.glsl does the same).
     if (any(fc < vec2<f32>(0.0)) || any(fc >= vec2<f32>(1.0))) { continue; }
     let f = textureLoad(uFaceMap, vec2<i32>(fc * size), 0);
 // #if IDS

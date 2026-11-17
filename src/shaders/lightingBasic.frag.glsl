@@ -292,6 +292,8 @@ float selfShadowToward(vec3 p, vec3 l, float reach, float selfId) {
     vec3 q = p + l * t;
     vec2 nc = weedWorldToNorm(vec2(q.x, q.y * s - q.z * uFaceLight.x));
     vec2 fc = vec2(nc.x, uFlipY > 0.5 ? 1.0 - nc.y : nc.y);
+    // N-272: a step past the map's edge knows nothing (the sampler would repeat the edge's texel there).
+    if (any(lessThan(fc, vec2(0.0))) || any(greaterThanEqual(fc, vec2(1.0)))) continue;
     vec4 f = textureLod(uFaceMap, fc, 0.0);
 // #if IDS
     if (selfId > 0.5) {
