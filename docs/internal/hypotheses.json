@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-16",
+  "updated": "2026-11-17",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -550,7 +550,8 @@
       "aliases": [],
       "next": "Only inside W7, if W7 runs.",
       "records": [
-        "R-0508"
+        "R-0508",
+        "R-1248"
       ]
     },
     {
@@ -979,7 +980,8 @@
         "R-0639",
         "R-0640",
         "R-0642",
-        "R-0643"
+        "R-0643",
+        "R-1246"
       ],
       "next": "Nothing: EXECUTION_PLAN's Wave 7 holds what is left."
     },
@@ -8389,7 +8391,8 @@
         "R-0677",
         "R-0686",
         "R-0693",
-        "R-0712"
+        "R-0712",
+        "R-1245"
       ],
       "id": "E-147",
       "title": "The spatial kernels wait on memory: less work per frame",
@@ -11609,7 +11612,8 @@
         "auto workers"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-1244"
       ]
     },
     {
@@ -16794,7 +16798,8 @@
         "R-1223",
         "R-1226",
         "R-1231",
-        "R-1238"
+        "R-1238",
+        "R-1244"
       ]
     },
     {
@@ -18752,7 +18757,8 @@
         "R-1184",
         "R-1201",
         "R-1236",
-        "R-1238"
+        "R-1238",
+        "R-1244"
       ],
       "rank": 5
     },
@@ -19396,7 +19402,9 @@
         "liftoff in wasm benches",
         "wasm tiering gap"
       ],
-      "records": []
+      "records": [
+        "R-1247"
+      ]
     },
     {
       "id": "E-455",
@@ -33239,6 +33247,49 @@
       "commits": [
         "d77de12c"
       ]
+    },
+    {
+      "id": "R-1244",
+      "date": "2026-11-17",
+      "time": "00:33",
+      "timeFrom": "recorded",
+      "title": "ASUS (2 cores / 4 threads): ballsScene with 3 against 4 Box2D threads, saturated (9 000) and comfortable (6 500), with an A/A: the thread count should follow the load",
+      "verdict": "note",
+      "text": "**On a 4-thread laptop, Box2D's fourth thread does not speed physics when the machine is saturated and takes CPU from the other workers; when the machine has room it helps physics, the bottleneck. The right thread count depends on the load, not only on the core count (DX-AUTOQUALITY). One sitting per regime, not a verdict yet.**\n\nMachine: the ASUS test laptop (X507UB, i7-7500U, 2 cores / 4 threads, 15 W, Intel HD 620 through ANGLE D3D11, 8 GB), Chrome 157, the laptop's own dev server at 85c52b16 with a local `?balls=N` knob for ballsScene (asus-lab 352c273b, default 9000 unchanged), `?src=1`, detailed stats off, warm-up 10 s, window 10 s, 20 s between runs, AB BA order (a scratch CDP driver calling the bench page's `__WEED_BENCHMARK__.run`; the CPU clock was read before and after every run). Times are own time (STEP_MS - WAIT_MS), medians of each arm, paired median of B against A.\n\n- **Saturated, 9 000 balls (00:09 to 00:17), A = 4 threads, B = 3, 4 pairs:** physics 12.72 -> 12.38 ms (paired +5.3 %, B cheaper 1/4); physics long frames, median per run, 12.5 -> 2.5; physics p95 14.9 -> 13.9 ms; preRender 1.35 -> 1.07 ms (-14.8 %, 4/4); spatial 1.57 -> 1.31 ms (-7.4 %, 3/4). With 3 threads the clock stayed near 119 %; with 4 it fell to about 108 % over a run.\n- **A/A, 6 500 balls (00:20 to 00:27), 4 threads both sides:** physics -6.6 % (3/4), preRender -8.9 % (2/4), logic +11.2 % (1/4), renderer -4.7 % (3/4). The laptop's detection limit at 4 pairs is about 7 % for physics and about 10 % for the sub-millisecond workers.\n- **Comfortable, 6 500 balls (00:27 to 00:33), A = 4, B = 3:** physics 7.91 -> 8.40 ms (+3.1 %, B cheaper 0/4); renderer 0.32 -> 0.24 ms (-22.8 %, 4/4), preRender -15.1 % (3/4), logic -7.1 %, spatial -3.4 % (3/4 each).\n\nReading: in milliseconds the small workers' gains (about 0.1 to 0.5 ms a frame) weigh against physics' cost (about +0.5 ms comfortable, about 0 saturated). Saturated, 3 threads keep physics as fast with far fewer long frames; comfortable, 4 threads keep the bottleneck worker cheaper. Still owed: the saturated A/A and 8 pairs per regime."
+    },
+    {
+      "id": "R-1245",
+      "date": "2026-11-17",
+      "time": "00:08",
+      "timeFrom": "recorded",
+      "title": "The gather in float32x4 on Intel in Node: +19.0 % over the double gather (ASUS); with R-0686's Chrome +9 to 12 %, a candidate to reopen",
+      "verdict": "note",
+      "text": "**The gather in float32x4 wins on Intel in Node too: +19.0 % over the double gather in the same order (ASUS). With R-0686's Chrome replay on the Ryzen (+9 to 12 %, exact) and the one Boids sitting that rejected it (-3.0 %, near that scene's noise), a candidate to reopen as a new hypothesis.**\n\nspatialGatherWasmMicrobench on the ASUS test laptop (i7-7500U, Node 22.16, 85c52b16), runKernelVariants, 4 alternating rounds, 2026-11-17 00:02 to 00:08: base 124.3, wasm 129.3, ordered 147.0, wasm-f32 145.7, wasm-f32x4 153.9 frames/s. On the Ryzen, Node read f32x4 at -1.2 % (R-0571) and Chrome at +8 to 12 % (R-0686): the two machines' Node disagree, so Chrome on the ASUS should decide next. `ordered` (the shipped cell order) and float32x4 are separate changes; their combination was not measured."
+    },
+    {
+      "id": "R-1246",
+      "date": "2026-11-17",
+      "time": "00:08",
+      "timeFrom": "recorded",
+      "title": "Every WASM kernel's variants on Intel (ASUS): all shipped choices hold, the known kernel wins reproduce (hypot x20, gpuPack x3.3-4.0, painter simd +342 %, integrate f32x4 +70 %)",
+      "verdict": "answered",
+      "text": "**Every WASM kernel's variants on Intel (the ASUS test laptop): every choice shipped from the Ryzen's measurements holds, and the known kernel wins reproduce with the same direction and a similar size. A kernel verdict read on that laptop speaks for today's x86 machines.**\n\nASUS X507UB (i7-7500U, Kaby Lake, 2 cores / 4 threads, Node 22.16 like the main PC, 85c52b16), runKernelVariants, 4 alternating rounds, 2026-11-16 23:54 to 23:57 (known wins) and 2026-11-17 00:02 to 00:08 (16 WASM kernels):\n\n- Known wins, ASUS against the register's Ryzen numbers: Math.sqrt over Math.hypot x20 to x23 at every scale, 5/5 (Ryzen x16, H-03); gpuPack JS -> WASM x3.3 sprites, x4.0 casters (Ryzen x3.1, W9); painter JS -> simd +342 %, scalar +114 % (Ryzen +304 %, W10); particle integrate JS -> f32x4 +70 %, double +30 % (Ryzen +68 %, W12).\n- Shipped choices: painter simd_inplace best on reinsert (4 746 ops/s), stress-move and stress-rebuild, simd 12 % ahead on predator-rebuild only (10 949 against 9 760); shadow stamp double 1 897 ops/s against f32 962 and f32x4 1 086; visibility f32 485 = simd 477 (JS 193); decoration sway f32x4 +20 % over double; particle lists f32x4 best in 3 cases of 4 (sparse -32 %, microseconds); decal premultiply simd x4.1, scalar x3.0; decal stamp x3.5, scalar -5.8 % (Ryzen x4.7, -10.6 %); nav flowfield x17; pre-render collect, emit and persist x1.6 to x3.3; mesh corners and bullet lean tie with their alternatives.\n- The laptop's turbo falls from about 117 % to 95 % of nominal under sustained load: single rounds spread up to 50 %, the medians of alternating rounds hold. Absolute speed is about half the Ryzen's."
+    },
+    {
+      "id": "R-1247",
+      "date": "2026-11-17",
+      "title": "painterRadixWasmMicrobench with one case times its JS base about 25 % slower than with every case (ASUS): JS -> WASM ratios from one case read about 1.3x high",
+      "verdict": "note",
+      "text": "**painterRadixWasmMicrobench times its JS base about 25 % slower with `--cases predator-rebuild` than with its whole case list, so a JS -> WASM ratio read on one case comes out about 1.3x too high.** Same family as this row: what a kernel's warm-up and case order leave compiled decides what it times.\n\nASUS test laptop (i7-7500U, Node 22.16, 85c52b16), 2026-11-17 between the WASM sweep's end (00:08) and the next sitting (00:10), three alternating pairs of processes, `--variant base`, predator-rebuild ops/s: alone 2 684, 2 270, 1 988; with every case 3 067, 3 203, 2 804. Each median is over windows of 3 to 5 ms (the 3 ms sample floor), short on a machine whose clock moves under load. Earlier the same night a one-case run read 1 428 against 4 176 in the full sweep; most of that gap was the clock (hot against cold)."
+    },
+    {
+      "id": "R-1248",
+      "date": "2026-11-17",
+      "time": "00:08",
+      "timeFrom": "recorded",
+      "title": "spatialRebuildWasmMicrobench's C copy is stale: its checksum no longer matches rebuildOwnedRows after seven JS changes (never shipped)",
+      "verdict": "note",
+      "text": "**spatialRebuildWasmMicrobench's `wasm` variant is stale: runKernelVariants rejects it on its checksum, because the C copy (wasm/test/spatialRebuild.c, 1a03f8ce, 2026-10-23) predates the JS rebuild's later changes.** Not a correctness issue in the product: the C rebuild was screened and never shipped. Its +23.3 % on the ASUS (Node, 4 rounds, 2026-11-17 00:08) measures a different computation.\n\nrebuildOwnedRows changed after the copy in E-126, E-136, E-176b, E-268, E-299, E-471 and E-472. Before using this kernel again, port those changes to the C or drop the variant."
     }
   ],
   "leads": [
