@@ -21707,7 +21707,8 @@
       "records": [
         "R-1274",
         "R-1277",
-        "R-1318"
+        "R-1318",
+        "R-1321"
       ]
     },
     {
@@ -35403,6 +35404,15 @@
       "title": "E-513 on the HD 620 (ASUS 0884): pre-render -17 %, drawn frames level, renderer +4 % a frame with 17 % more frames presented",
       "verdict": "note",
       "text": "**E-513 on the Intel HD 620.** ASUS laptop, job 0884, 2026-11-17 16:46 to 16:56 (its 16:22 start had ended at once, before its bundle was there). Barrio at `hour=22&dayMinutes=0`, camera still, src, 4 pairs of 10 s windows after a 10 s warm-up. A = main 108b40dd (after E-511), B = a4ecf651 (E-513 with E-515's pose snap in wasm, what ships).\n\n| Worker | A → B | Pairs worse | Against the other workers |\n|---|---|---|---|\n| pre-render | 21.80 → 17.86 ms (−17.2 %, cv 6/2 %) | 0/4 | −11.4 % |\n| renderer (step − wait) | 7.185 → 7.575 ms (+4.0 %, cv 3/3 %) | 4/4 | +10.7 % |\n| logic | −3.8 % | — | — |\n| physics | −3.3 % (cv 9/13 %) | — | — |\n| spatial | +3.9 % (cv 42 %, not blocking) | 2/4 | — |\n\n- Drawn frames 37.6 → 37.7 fps (+0.9 %, judged).\n- Presented frames 47.1 → 55.0 fps (+12.7 %, reported only).\n- Load keys equal (RENDER_QUEUE 11 613, ENTITIES_PROCESSED 21 190). GPU_CASTERS and GPU_SHADOW_LIGHTS were +4.9 %.\n\nThe runner called it REGRESSION, from the renderer. The barrio session reads it as the pack moving out of pre-render, with drawn frames held. The renderer's +4 % is per frame while it presents 17 % more frames."
+    },
+    {
+      "id": "R-1321",
+      "date": "2026-11-17",
+      "time": "18:36",
+      "timeFrom": "recorded",
+      "title": "E-502 checked on the HD 620: auto reads it as integrated Intel and leaves the pass off; drawn frames +72 % bunnyMarkStress, +52 % bunnyMark 100 000 against the pass forced on",
+      "verdict": "kept",
+      "text": "**E-502's rule on the Intel HD 620 it was made for: `auto` reads the GPU as integrated Intel and leaves the pass off.** ASUS laptop, job 0885, 2026-11-17 18:27 to 18:36, one build (perf/e502-opaque-igpu 7b69be48, whose rule gives the same answer for Intel as the merged one), side A forced the pass on (`?opaquePass=1`), side B `auto`, src, 4 pairs.\n\n- GPU names Chrome gives a page there: the installed Chrome, headed and headless, and Playwright's Chromium headed: \"ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)\" → integrated. Playwright's Chromium headless: SwiftShader → software.\n\n| Scene | drawn fps, forced on → auto | Other workers |\n|---|---|---|\n| bunnyMarkStress (asus-e502b-bunnystress) | 34.8 → 60.1 (+72.3 %, 4/4, cv 1/0 %) | below the floor |\n| bunnyMark 100 000 (asus-e502b-bunny) | 7.9 → 11.9 (+51.9 %, 4/4, cv 2/3 %) | renderer 10.33 → 9.30 ms (−8.9 %, 0/4 worse); pre-render 6.64 → 6.73 ms (+4.3 % paired, 3/4, cv 5/3 %) |\n\nThe runner called bunnyMark REGRESSION from pre-render's +4.3 %. Pre-render's code does not change with the pass (only the renderer's draw does): it is the laptop's shared 15 W budget, where drawing half again as many frames makes the CPU dearer, as in the earlier HD 620 sittings. It matches R-1277's on/off (+53.5 %, +77.8 %): the rule is wired and reads this GPU right."
     }
   ],
   "leads": [
