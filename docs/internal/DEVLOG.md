@@ -157,7 +157,25 @@ two passes (E-448):
   nearer solid one is rejected before its shader runs.
 
 The edges, where linear filtering makes alpha fractional, still blend as they did, and the image is identical: 0 of
-921 600 pixels differ. The depth is the painter's own order, which the GPU pack already wrote, so nothing is sorted
+921 600 pixels differ.
+
+This is a depth two-pass again, and in September we killed one ("Sprites Should Composite Like a PNG", "Kill the
+Two-Pass", 22 and 23 September). That one put the y-sort key into the depth. A sprite's nearly opaque core (alpha 254/255
+after linear filtering) wrote it, and the rim blended in a second pass that did not follow the painter. Depth remembered
+one winner per pixel and forgot the sprite that belonged underneath, so fringes showed the background colour. A rim
+behind could blend over a rim in front. And the alphas that linear filtering invents on a hard atlas fell out of both
+passes. We went back to one painter on the CPU, one blend, no Z, and it stayed.
+
+This two-pass keeps that painter whole:
+- **Its second pass is the September painter:** every sprite, back to front, blended, in the order the CPU computes.
+- **The depth is that order itself, not a separate key:** the painter slot the GPU pack already wrote.
+- **Depth only drops what could not show anyway:** it is written only where the final alpha, texture times tint, is
+  exactly 1, where source-over replaces whatever is under the pixel.
+- **Fractional alpha never writes depth:** rims, soft frames and glows blend as they always did.
+- **Only binary frames enter the first pass.** A frame with a single soft texel never does, and the fractional edges that
+  filtering makes on binary ones go through the normal pass.
+
+That is why the picture comes out identical this time. The depth is the painter's own order, which the GPU pack already wrote, so nothing is sorted
 again, and there is no `gl_FragDepth` to switch early depth off. WebGL 2 cannot read instances backwards. So the opaque
 rows are built when the statics change, and their poses are read in the vertex shader from a texture the GPU fills
 from the pose buffer each frame; uploading the poses twice had doubled Chrome's GPU-process work. A frame decides whether
