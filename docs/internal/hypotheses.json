@@ -11635,10 +11635,10 @@
     {
       "id": "DX-IGPUWARN",
       "title": "An integrated GPU, recognised by its name, reported to the game (a warning the developer handles)",
-      "status": "open",
+      "status": "kept",
       "statusText": "Owner-approved idea (2026-11-17), not built",
       "date": "2026-11-17",
-      "result": "",
+      "result": "Done (9c30e3b5): scene.gpu = { backend, name, vendor, kind } before preload()/create(), one console warning a page on an integrated GPU, WebGPU adapters classed by vendor and architecture (AMD through a throwaway WebGL context's name); checked in both browsers on the owner's PC, WebGL and WebGPU.",
       "next": "Read the GPU the page got (WEBGL_debug_renderer_info, WebGPU adapter.info), tell whether it is integrated by its name, expose it to the game with one console warning; no engine UI and no benchmark at run time.",
       "area": "engine",
       "kind": "dx",
@@ -11657,7 +11657,8 @@
       "records": [
         "R-1249",
         "R-1254",
-        "R-1274"
+        "R-1274",
+        "R-1319"
       ]
     },
     {
@@ -21687,10 +21688,10 @@
     {
       "id": "E-502",
       "title": "E-448's opaque pass makes an integrated GPU draw slower: the Intel HD 620 draws bunnyMark (100 000) 24 % fewer frames with it; its gate's costs come from the GTX 1650",
-      "status": "open",
+      "status": "kept",
       "statusText": "found 2026-11-17 on the ASUS laptop (v0.14.0 against main, then E-448 against its parent)",
       "date": "2026-11-17",
-      "result": "HD 620, pass on -> off in one build (R-1277): bunnyMark 100 000 drawn 7.6 -> 11.7 fps (+53.5 %), bunnyMarkStress 33.7 -> 59.9 (+77.8 %), Predator crowd 0.5 zoom 1 level; uploading the pose texture from the CPU changes nothing (the drawing costs, not the copy).",
+      "result": "Kept (b033d7a9): debug.opaquePass 'auto' leaves E-448's opaque pass off on Intel's integrated GPUs (HD 620 drew bunnyMark 100 000 +53 % and bunnyMarkStress +78 % frames without it, R-1277) and on tile-based ones (vendor guidance, not measured); AMD's APUs keep it (Ryzen 4800H Radeon: bunnyMark 100 000 43.6 fps with it, 32.0 without). Class and maker read from the WebGL renderer name (gpuClass.js).",
       "next": "Decide the policy: the gate by GPU class (integrated and tile-based off unless far past break-even, from the renderer string DX-IGPUWARN reads) or a gate that follows the frame pacer (E-479). To know which part of the pass the HD 620 pays (vertex texture fetch, discard with depth writes, depth traffic): Intel GPA on the laptop, or shader variants behind debug switches.",
       "area": "render",
       "kind": "speed",
@@ -21705,7 +21706,8 @@
       ],
       "records": [
         "R-1274",
-        "R-1277"
+        "R-1277",
+        "R-1318"
       ]
     },
     {
@@ -21950,7 +21952,8 @@
       ],
       "records": [
         "R-1310",
-        "R-1311"
+        "R-1311",
+        "R-1320"
       ],
       "result": "kept: the barrio's buffer uploads 895 -> 430 KB a frame, CrGpuMain 173 -> 154 ms/s (GTX machine); captures identical; pre-render +4.7 % under the floor",
       "next": "A painter-sorted scene (the barrio: people move, so the order moves every frame) keeps its statics stable only on E-162's indexed path (statics in row order in a texture, per frame the pose and slot streams, about 24 bytes an instance), not the plain split (its statics follow the painter's order and upload again). Both refuse pixel snapping (gpuPackClient.js packSplitRowsWasm / packIndexedRowsWasm: o.pixelSnap), and Pixi turns split off for 'nearest' (pixiWorker's batch options), pre-render's _resetGpuPackOpts sets pixelSnap from the atlas. Plan: a snap state the client sets before the pack (an export with snapX, snapY, zoom) and, in gpuPack.c, the split and indexed loops copied with snapping as a constant (as withGbuf is), snap_world on the pose's x and y; renderer.indexedSprites on in the barrio; check the pixel-depth, edge, G-buffer and unshaded programs' indexed forms; byte-identical captures against today on nearest scenes (depthPairScene, the barrio's still frames); then bytesBuffer, gpuProcessTrace --decoder (glDrawElementsInstanced, PutChanged) and the HD 620's drawn frames. E-512's lesson: keep the per-frame streams DYNAMIC (a STATIC rewrite stalls the GPU); the statics live in a texture, not a vertex stream.",
@@ -35364,6 +35367,42 @@
       "title": "One light system planned (DX-ONELIGHT, OL-1 to OL-4): the flat view gets every lighting option and raycasted lighting stops being a pass of its own; nothing built or measured",
       "verdict": "note",
       "text": "**One light system planned (DX-ONELIGHT, OL-1 to OL-4, `ONE_LIGHT_PLAN.md`): a reading of the light's code and a chat with the owner; nothing built, run or measured.** The owner asked what the engine does about \"self lit\" now that it has normal maps, height maps and a G-buffer, then for the plan in the backlog, detailed enough for a session of its own to build it.\n\n- **What the reading found (main at 1951de51).** A flat camera (`camera.pitch` 90 or 0) lights with raycasted lighting, a pass of its own from the spatial worker to its three shader pairs, where normal maps, height maps, `unshaded` and the shadow maps do nothing and a lamp casts walls only. Its self-lit fill lights a wall's own pixels (the visibility polygon ends at the wall's edge) and fakes a sphere normal to light the side that faces the light; the shadow maps solve the same thing by a rule (a pixel skips its own entity's texels). The layer and the map modes of `sunShadows` / `lampShadows` are two outputs of one casters' engine (the same rows, `_sunShadowProgram`'s four programs), not two systems. A sprite's own normals show by the lamps' share of its light (`k`), which nobody chooses. Raycast-only code: about 5 000 lines and about 3 500 of tests.\n- **Decided with the owner.** What casts (the sprite or the height map, sun and lamps apart) and where shadows are drawn (the layer or a map) stay the developer's options; removing the layer mode was proposed and rejected (\"los sprites estampados quedan bien\"). The layer mode is named `'layer'` and the glow among the entities `'sorted'` (both were `'sprite'`). A sprite's normals under the sun and under the lamps become an option. The flat view gets every option, and raycasted lighting stops being a pass of its own. The engine does not invent what the developer did not bring. Making the raycast pass read the G-buffer was dropped: one more combination.\n- **Order.** OL-1 (names) and OL-2 (the normals' option) stand alone. OL-3 races a flat stress scene on the sweep against the lamps' maps (walls as tall volumes), on the main machine and the ASUS, and decides OL-4's final: A, the maps everywhere and the sweep deleted, or B, the sweep kept as each lamp's visibility for the common light pass. In both, the fans, the self-lit fills, the wedges and their shaders go (N-38 and N-163 with them). The planner's guess, unmeasured: B.\n- **Corrected on the way.** The planner first called the layer mode a third shadow system and proposed deleting it; the code says otherwise (above), and the owner wants it. Predator is not a raycast scene: it lights with the common pass and the layer."
+    },
+    {
+      "id": "R-1318",
+      "date": "2026-11-17",
+      "time": "17:33",
+      "timeFrom": "recorded",
+      "title": "E-502 on the Ryzen's AMD APU: the opaque pass helps there (bunnyMark 100 000 43.6 -> 32.0 fps without it, -27 %); auto turns it off only on Intel's integrated and tile-based GPUs",
+      "verdict": "kept",
+      "text": "**On an AMD integrated GPU the opaque pass helps, so \"integrated\" was the wrong line.** The owner's PC, 2026-11-17 17:22 to 17:33.\n\nSetup:\n- The Ryzen 7 4800H's Radeon (Vega), the GPU Playwright's own Chromium gets there; the installed Chrome gets the GTX 1650.\n- One build, perf/e502-opaque-igpu 80c2e917, run with `runPredatorAbab --channel chromium`. Side A forced the pass on (`?opaquePass=1`); side B ran 7b69be48's `auto`, which kept every integrated GPU off.\n- src, 4 pairs.\n\n| Scene | drawn fps, pass on → off | Renderer CPU (step) |\n|---|---|---|\n| bunnyMark 100 000 (pc-amd-e502-bunny) | 43.6 → 32.0 (−27.1 %, 4/4, cv 6/1 %) | 2.17 → 3.95 ms |\n| bunnyMarkStress (pc-amd-e502-bunnystress) | 60.0 → 60.0, the GPU is not the limit | below the floor |\n\nThe Intel HD 620 goes the other way: it draws 53 % and 78 % more frames without the pass (R-1277).\n\n**Decided and kept** (1d7ec48a, merged): `opaquePassSuits(class, vendor)` turns the pass off only on Intel's integrated GPUs and on tile-based ones. `gpuVendorOf(name)` reads the maker from the renderer name.\n- AMD's APUs, discrete, software and unknown GPUs keep the pass.\n- Only Gen9 was measured on the Intel side; the other Intel generations follow it.\n- Tile-based GPUs are off on their makers' guidance about discard with depth writes, not measured.\n- The Intel rule's check on the ASUS (HD 620, auto against forced on, job 0885) is queued.",
+      "commits": [
+        "7b69be48",
+        "1d7ec48a",
+        "b033d7a9"
+      ]
+    },
+    {
+      "id": "R-1319",
+      "date": "2026-11-17",
+      "time": "17:50",
+      "timeFrom": "recorded",
+      "title": "scene.gpu { backend, name, vendor, kind } and one console warning on an integrated GPU, built and merged",
+      "verdict": "kept",
+      "text": "**Built (feat/igpu-report, merged).** `scene.gpu = { backend, name, vendor, kind }`, set before `preload()` and `create()`, plus one console warning a page when `kind` is `'integrated'`. No engine UI, no benchmark at run time.\n\n- **WebGL:** the name is `WEBGL_debug_renderer_info`'s unmasked renderer, else the plain `RENDERER`. The class comes from `gpuClassOf(name)` in `src/render/gpuClass.js`, the same reader E-502 uses.\n- **WebGPU:** the adapter info gives vendor, architecture and, behind Chrome's developer features, a description. Intel's `xe-hpg` and `12hp` architectures are discrete cards; other Intel architectures are integrated. NVIDIA is discrete; Apple, ARM and Qualcomm are tiled; SwiftShader, WARP and fallback adapters are software.\n- **AMD under WebGPU:** its APUs and cards share architectures, so the info cannot tell them apart. The renderer then reads the name of a throwaway WebGL 2 context on an OffscreenCanvas and takes it when it names the same vendor. This PC's APU reads \"amd gcn-5\" through WebGPU and \"AMD Radeon(TM) Graphics\" through WebGL.\n\nChecked in real browsers on the owner's PC (2026-11-17), with the WebGL demo ballsScene and the WebGPU demo gearChainScene:\n- The system Chrome gets the GTX 1650 and reports it as discrete, with no warning.\n- Playwright's Chromium gets the AMD APU and reports it as integrated, with one warning.\n\nThe guide covers it in DEPLOY.md, under \"The player's GPU\".",
+      "commits": [
+        "cef20cc3",
+        "9c30e3b5"
+      ]
+    },
+    {
+      "id": "R-1320",
+      "date": "2026-11-17",
+      "time": "16:56",
+      "timeFrom": "recorded",
+      "title": "E-513 on the HD 620 (ASUS 0884): pre-render -17 %, drawn frames level, renderer +4 % a frame with 17 % more frames presented",
+      "verdict": "note",
+      "text": "**E-513 on the Intel HD 620.** ASUS laptop, job 0884, 2026-11-17 16:46 to 16:56 (its 16:22 start had ended at once, before its bundle was there). Barrio at `hour=22&dayMinutes=0`, camera still, src, 4 pairs of 10 s windows after a 10 s warm-up. A = main 108b40dd (after E-511), B = a4ecf651 (E-513 with E-515's pose snap in wasm, what ships).\n\n| Worker | A → B | Pairs worse | Against the other workers |\n|---|---|---|---|\n| pre-render | 21.80 → 17.86 ms (−17.2 %, cv 6/2 %) | 0/4 | −11.4 % |\n| renderer (step − wait) | 7.185 → 7.575 ms (+4.0 %, cv 3/3 %) | 4/4 | +10.7 % |\n| logic | −3.8 % | — | — |\n| physics | −3.3 % (cv 9/13 %) | — | — |\n| spatial | +3.9 % (cv 42 %, not blocking) | 2/4 | — |\n\n- Drawn frames 37.6 → 37.7 fps (+0.9 %, judged).\n- Presented frames 47.1 → 55.0 fps (+12.7 %, reported only).\n- Load keys equal (RENDER_QUEUE 11 613, ENTITIES_PROCESSED 21 190). GPU_CASTERS and GPU_SHADOW_LIGHTS were +4.9 %.\n\nThe runner called it REGRESSION, from the renderer. The barrio session reads it as the pack moving out of pre-render, with drawn frames held. The renderer's +4 % is per frame while it presents 17 % more frames."
     }
   ],
   "leads": [
