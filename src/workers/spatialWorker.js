@@ -87,12 +87,13 @@ const SHAPE_BOX = SHAPE_BOXImport;
 const MOVERS_MAX_FRACTION = 0.2;
 const MOVERS_MIN_FRACTION = 0.05;
 const MOVERS_CAP_FRACTION = 0.5;
-// E-503: in a run of rewrites, one full rebuild timed after this many, up to MOVERS_RETIME_STRETCH times as many when
-// the rewrite's frames cost far less (the scene may have changed what a rebuild costs, and the first rebuilds may have
-// been timed while the page loaded); while rebuilding, a probe this often when the moved count is under the cap: a
-// latch and MOVERS_PROBE_LENGTH frames of rewrites, timed, whatever the limit says.
+// E-503: in a run of rewrites, one full rebuild timed after this many, times the ratio of a rebuild's cost to a rewrite
+// frame's up to MOVERS_RETIME_STRETCH (the further apart the costs, the rarer: the scene may have changed what a
+// rebuild costs, and the first rebuilds may have been timed while the page loaded); while rebuilding, a probe this
+// often when the moved count is under the cap: a latch and MOVERS_PROBE_LENGTH frames of rewrites, timed, whatever the
+// limit says.
 const MOVERS_RETIME_FRAMES = 256;
-const MOVERS_RETIME_STRETCH = 16;
+const MOVERS_RETIME_STRETCH = 32;
 const MOVERS_PROBE_FRAMES = 512;
 const MOVERS_PROBE_LENGTH = 16;
 // E-503: what a grid step did (_stepGrid), so _rebuildGrid knows which path its time was.
@@ -883,23 +884,23 @@ class SpatialWorker extends AbstractWorker {
   /**
    * E-503. A frame on the rewrite's path into its moving averages, per moved body and whole (a latch costs about a
    * rebuild, so a sample counts up to 8× the average); a frame physics did not publish, or without its list, says
-   * nothing of the cost per body. After MOVERS_RETIME_FRAMES rewrites (stretched up to MOVERS_RETIME_STRETCH times
-   * where these frames cost far less than a rebuild, so a world that sleeps pays little for it), a full rebuild is
-   * timed again; a lower time replaces the average (a stale one, or the load's), a higher one joins it.
+   * nothing of the cost per body. After MOVERS_RETIME_FRAMES rewrites (times a rebuild's cost over these frames', up
+   * to MOVERS_RETIME_STRETCH, so a world that sleeps pays little for it), a full rebuild is timed again; a lower time replaces the average (a stale one, or the load's), a higher one joins it.
    */
   _timeMovers(ms, moved, rewrote) {
     if (moved > 0) {
       const per = ms / moved;
       const avg = this._mvPerMovedMs;
       this._mvPerMovedMs = avg > 0 ? avg + ((per > avg * 8 ? avg * 8 : per) - avg) * 0.125 : per;
-      const frame = this._mvMoversFrameMs;
-      this._mvMoversFrameMs = frame > 0 ? frame + ((ms > frame * 8 ? frame * 8 : ms) - frame) * 0.125 : ms;
     }
+    // Every frame on the path, a still one too: a world that sleeps then stretches its retimes to the most.
+    const last = this._mvMoversFrameMs;
+    this._mvMoversFrameMs = last > 0 ? last + ((ms > last * 8 ? last * 8 : ms) - last) * 0.125 : ms;
     if (this._mvProbeLeft > 0) this._mvProbeLeft--;
     if (rewrote) {
       const full = this._mvFullMs;
       const frame = this._mvMoversFrameMs;
-      let stretch = full > 0 && frame > 0 ? full / (frame * 2) : 1;
+      let stretch = full > 0 && frame > 0 ? full / frame : 1;
       stretch = stretch > 1 ? (stretch < MOVERS_RETIME_STRETCH ? stretch : MOVERS_RETIME_STRETCH) : 1;
       if (++this._mvRewrites >= this._mvRetimeEvery * stretch) {
         this._mvRewrites = 0;
