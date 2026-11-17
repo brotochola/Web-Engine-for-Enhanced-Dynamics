@@ -21900,7 +21900,9 @@
         "unshaded ghost",
         "lamp post ghost"
       ],
-      "records": [],
+      "records": [
+        "R-1326"
+      ],
       "id": "N-266",
       "kind": "bug",
       "area": "render",
@@ -22208,7 +22210,9 @@
         "shadows at the screen edge",
         "selfShadow clamp"
       ],
-      "records": [],
+      "records": [
+        "R-1327"
+      ],
       "result": "",
       "next": "Skip the steps past the face map in GLSL as the WGSL does (one line), film the drift with ?selfShadow=0 against on, WebGL against WebGPU. Left after it: a self-shadow from a part of the house that has left the screen is lost (the face map covers the view only); a face map with a margin on the sun's side would keep it.",
       "id": "N-272",
@@ -22337,7 +22341,8 @@
         "own volume shades roof"
       ],
       "records": [
-        "R-1322"
+        "R-1322",
+        "R-1328"
       ],
       "result": "",
       "next": "Merge fix/decoration-owner with fix/gbuffer-depth once measured. Later, the editor could export volumes as levels (body + tank: addLevel) instead of a convex hull, for truer ground shadows too.",
@@ -22357,7 +22362,8 @@
         "shadows on top of everything"
       ],
       "records": [
-        "R-1322"
+        "R-1322",
+        "R-1328"
       ],
       "result": "",
       "next": "Merge with N-275 once measured; then the unshaded pass (N-266) the same way, and E-463's cost read again (early depth for the frames without heights).",
@@ -22377,7 +22383,8 @@
         "attached decoration owner"
       ],
       "records": [
-        "R-1322"
+        "R-1322",
+        "R-1328"
       ],
       "result": "",
       "next": "Merge with N-274 once measured; the HD 620 drawn frames with the words at three floats.",
@@ -22397,7 +22404,8 @@
         "lamp map ring depth"
       ],
       "records": [
-        "R-1323"
+        "R-1323",
+        "R-1328"
       ],
       "result": "",
       "next": "Merge with the N-273..N-275 stack; Predator gate and the HD 620 drawn frames.",
@@ -35542,6 +35550,44 @@
       "title": "The owner confirmed it on the ASUS: no texture flicker left while the camera pans",
       "verdict": "kept-hygiene",
       "text": "The owner, on the HD 620 laptop, after the merge (266230d9): no more flicker of the walls' textures while moving the camera."
+    },
+    {
+      "id": "R-1326",
+      "date": "2026-11-17",
+      "time": "19:34",
+      "timeFrom": "recorded",
+      "title": "The unshaded pass takes the canvas's pixel depth in one draw: the lamp post's ghost through a person is gone, no measurable cost",
+      "verdict": "kept-hygiene",
+      "text": "Fixed on fix/gbuffer-depth (79c3bac8, af0c21de). With pixel depth the unshaded pass tests and writes the canvas's depth past its alpha cut (gbufDepthFragment / gbufDepthWgsl, the unshaded entry), in one draw. The G-buffer's and the unshaded passes now take the canvas's own formula: DEPTH_FORMULA_FACES with faces, the stepped DEPTH_FORMULA without them. With the continuous one alone a 3 px tie split into rows the canvas never had (depthPairScene); that also fixes N-274's pass in scenes without faces.\n\ndepthPairScene, lamps lit: the half-strength ghost is gone at gaps 1 and 2, and the post stays whole in front from gap 3 on; WebGL and WebGPU equal. A two-pass form (opaque writing, edges testing, as the canvas) gave the same picture (0 px differ) for about +0.06 ms GPU, so one pass stays.\n\nCost, Buenos Aires at 22:00, GTX, glFrameRecorder --gpu-draws, all runs at P0: the unshaded pass's draws 0.091 and 0.093 ms against 0.083 and 0.097 ms before; against an unchanged draw of the same frame, 0.81 and 0.89 against 0.79 and 0.91. spriteMapsStressScene against HEAD within its own A/A. Hygiene keep.",
+      "commits": [
+        "79c3bac8",
+        "af0c21de"
+      ]
+    },
+    {
+      "id": "R-1327",
+      "date": "2026-11-17",
+      "time": "19:40",
+      "timeFrom": "recorded",
+      "title": "WebGL's self-shadow march skips the steps past the face map, as WebGPU's: merged into fix/gbuffer-depth",
+      "verdict": "kept-hygiene",
+      "text": "Parity fix (two lines): WebGL's march read the face map's edge texel for every step past the screen; WebGPU's skipped them. Merged into the stack. houseLightScene at 15 h (nothing at the screen's edge) against the commit before: 0 px differ; the node suite green. Its owner's sighting (shadows on the houses against the bottom edge) was mostly N-274's hidden walls; this keeps the edge from adding its own.",
+      "commits": [
+        "755af901",
+        "bf9bc79a"
+      ]
+    },
+    {
+      "id": "R-1328",
+      "date": "2026-11-17",
+      "time": "18:59",
+      "timeFrom": "recorded",
+      "title": "Predator's gate for the stack (main against fix/gbuffer-depth): NEUTRAL",
+      "verdict": "tie",
+      "text": "runPredatorAbab --vs main --hyp-rev 1adaf04a, 4 pairs, headed Chrome, GTX, AC power: NEUTRAL. Every worker under the 6 ms floor (logic 2.11 -> 2.15, spatial 3.48 -> 3.77, physics 3.33 -> 4.03, renderer 1.37 -> 1.49, pre-render 1.92 -> 2.04 ms): all moved up together, physics most, which no change in the stack reaches, so drift. Presented 60.0 both, load keys within 0.5 %.",
+      "commits": [
+        "1adaf04a"
+      ]
     }
   ],
   "leads": [
