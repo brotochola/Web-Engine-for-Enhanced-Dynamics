@@ -1751,8 +1751,8 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueShadowOffX = EMPTY_F32;
         this.renderQueueShadowOffY = EMPTY_F32;
         this.renderQueueTileMode = EMPTY_U8;
-        this.renderQueueTileOffsetU = EMPTY_U16;
-        this.renderQueueTileOffsetV = EMPTY_U16;
+        this.renderQueueTileOffsetU = EMPTY_U32;
+        this.renderQueueTileOffsetV = EMPTY_U32;
         this.renderQueueTileMulX = EMPTY_F32;
         this.renderQueueTileMulY = EMPTY_F32;
         this._vpWriteBuffer = null;

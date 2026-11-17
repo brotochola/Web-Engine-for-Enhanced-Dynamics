@@ -22,6 +22,10 @@ enum {
 
 #define F32(t, c) ((const float *)(uintptr_t)(t)[c])
 #define U16(t, c) ((const uint16_t *)(uintptr_t)(t)[c])
+#define U32(t, c) ((const uint32_t *)(uintptr_t)(t)[c])
+/* N-271: the tile offsets, u32 columns, reach the GPU as value / 65536: exact for a face's 24-bit codes (faceMap.js), and
+   a tiled sprite's 0..65535 read as UV 0..1 within 1/65536. */
+#define TILE_OFF_SCALE (1.0 / 65536.0)
 
 INLINE uint32_t packed_tint(double a, uint32_t tint) {
   if (!(a >= 0)) a = 0; /* NaN too: JS clamps nothing, then `| 0` makes it 0 */
@@ -32,7 +36,6 @@ INLINE uint32_t packed_tint(double a, uint32_t tint) {
 
 /* One row's first 15 floats. */
 INLINE void sprite_row(const uint32_t *t, uint32_t i, float *d, double depth) {
-  const double inv65535 = 1.0 / 65535.0;
   d[0] = F32(t, COL_X)[i];
   d[1] = F32(t, COL_Y)[i];
   d[2] = F32(t, COL_SCALE_X)[i];
@@ -46,8 +49,8 @@ INLINE void sprite_row(const uint32_t *t, uint32_t i, float *d, double depth) {
   d[10] = (float)U16(t, COL_TEXTURE)[i];
   d[11] = F32(t, COL_TILE_MUL_X)[i];
   d[12] = F32(t, COL_TILE_MUL_Y)[i];
-  d[13] = (float)((double)U16(t, COL_TILE_OFF_U)[i] * inv65535);
-  d[14] = (float)((double)U16(t, COL_TILE_OFF_V)[i] * inv65535);
+  d[13] = (float)((double)U32(t, COL_TILE_OFF_U)[i] * TILE_OFF_SCALE);
+  d[14] = (float)((double)U32(t, COL_TILE_OFF_V)[i] * TILE_OFF_SCALE);
 }
 
 /* E-394: the columns of E-372's sun frames' region a framed caster pack reads (sun_cols, defined with the region below),
@@ -227,7 +230,6 @@ INLINE void sprite_pose(const uint32_t *t, uint32_t i, float *d) {
 }
 
 INLINE void sprite_static(const uint32_t *t, uint32_t i, float *d, double depth) {
-  const double inv65535 = 1.0 / 65535.0;
   d[0] = F32(t, COL_SCALE_X)[i];
   d[1] = F32(t, COL_SCALE_Y)[i];
   d[2] = F32(t, COL_ANCHOR_X)[i];
@@ -237,8 +239,8 @@ INLINE void sprite_static(const uint32_t *t, uint32_t i, float *d, double depth)
   d[6] = (float)U16(t, COL_TEXTURE)[i];
   d[7] = F32(t, COL_TILE_MUL_X)[i];
   d[8] = F32(t, COL_TILE_MUL_Y)[i];
-  d[9] = (float)((double)U16(t, COL_TILE_OFF_U)[i] * inv65535);
-  d[10] = (float)((double)U16(t, COL_TILE_OFF_V)[i] * inv65535);
+  d[9] = (float)((double)U32(t, COL_TILE_OFF_U)[i] * TILE_OFF_SCALE);
+  d[10] = (float)((double)U32(t, COL_TILE_OFF_V)[i] * TILE_OFF_SCALE);
 }
 
 /* pack() for the two streams; statics 0 writes the pose alone. E-444: withGbuf and withBands (constants, so each form is
@@ -391,7 +393,6 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
                            uint32_t typeByte, uint32_t *results, float *shadow, const int withShadow,
                            uint32_t *texUpdates, float *rows, const int byRow, const uint32_t *G, const int withGbuf,
                            const int withBands) {
-  const double inv65535 = 1.0 / 65535.0;
   float *GW = withGbuf ? (float *)(uintptr_t)G[GB_DST] : 0;
   const uint8_t *GF = withGbuf ? (const uint8_t *)(uintptr_t)G[GB_FLAGS] : 0;
   const uint8_t *GS = withGbuf ? (const uint8_t *)(uintptr_t)G[GB_SELF] : 0;
@@ -408,7 +409,8 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
   const float *SX = F32(t, COL_SCALE_X), *SY = F32(t, COL_SCALE_Y), *AX = F32(t, COL_ANCHOR_X), *AY = F32(t, COL_ANCHOR_Y);
   const float *A = F32(t, COL_ALPHA), *TMX = F32(t, COL_TILE_MUL_X), *TMY = F32(t, COL_TILE_MUL_Y);
   const uint32_t *TINT = (const uint32_t *)(uintptr_t)t[COL_TINT];
-  const uint16_t *TEX = U16(t, COL_TEXTURE), *TOU = U16(t, COL_TILE_OFF_U), *TOV = U16(t, COL_TILE_OFF_V);
+  const uint16_t *TEX = U16(t, COL_TEXTURE);
+  const uint32_t *TOU = U32(t, COL_TILE_OFF_U), *TOV = U32(t, COL_TILE_OFF_V);
   const uint32_t n = count < cap ? count : cap;
   uint32_t p = 0;
   uint32_t u = 0;
@@ -439,7 +441,7 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
       wasm_v128_store(up, wasm_f32x4_make(SX[i], SY[i], AX[i], AY[i]));
       wasm_v128_store(up + 4, wasm_i32x4_replace_lane(wasm_f32x4_make(0.0f, 0.0f, (float)TEX[i], TMX[i]), 1,
                                                        (int32_t)packed_tint((double)A[i], TINT[i])));
-      wasm_v128_store(up + 8, wasm_f32x4_make(TMY[i], (float)((double)TOU[i] * inv65535), (float)((double)TOV[i] * inv65535), 0.0f));
+      wasm_v128_store(up + 8, wasm_f32x4_make(TMY[i], (float)((double)TOU[i] * TILE_OFF_SCALE), (float)((double)TOV[i] * TILE_OFF_SCALE), 0.0f));
       wasm_v128_store(up + 12, wasm_i32x4_make((int32_t)s, 0, 0, 0));
       u++;
     }

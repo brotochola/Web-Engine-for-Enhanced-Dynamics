@@ -34,7 +34,7 @@ function queue(seed, gen) {
     alpha: new Float32Array(N).map(() => rng()), tint: new Uint32Array(N).map(() => (rng() * 0xffffff) | 0),
     textureId: new Uint16Array(N).map(() => (rng() * 400) | 0), anchorX: f32(), anchorY: f32(),
     repeatX: new Uint16Array(N), repeatY: new Uint16Array(N), tileMode: new Uint8Array(N),
-    tileOffsetU: new Uint16Array(N).map(() => (rng() * 65535) | 0), tileOffsetV: new Uint16Array(N),
+    tileOffsetU: new Uint32Array(N).map(() => (rng() * 65535) | 0), tileOffsetV: new Uint32Array(N),
     tileMulX: f32(), tileMulY: f32(), type: new Uint8Array(N), staticGen: new Uint32Array([gen]),
   };
 }
@@ -80,7 +80,7 @@ test('the two streams hold what the 17-float pose record held', () => {
     assert.equal(st[sb + 6], q.textureId[k]);
     assert.equal(st[sb + 7], q.tileMulX[k]);
     assert.equal(st[sb + 8], q.tileMulY[k]);
-    assert.equal(st[sb + 9], Math.fround(q.tileOffsetU[k] * (1 / 65535)));
+    assert.equal(st[sb + 9], Math.fround(q.tileOffsetU[k] * (1 / 65536)));
   }
 });
 

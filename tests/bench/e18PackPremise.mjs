@@ -37,8 +37,8 @@ function buildQueue(fx, rows) {
     anchorX: f32(), anchorY: f32(),
     repeatX: f32(), repeatY: f32(),
     tileMulX: f32(), tileMulY: f32(),
-    tileOffsetU: new Uint16Array(n),
-    tileOffsetV: new Uint16Array(n),
+    tileOffsetU: new Uint32Array(n),
+    tileOffsetV: new Uint32Array(n),
     type: new Uint8Array(n),
   };
   for (let r = 0; r < n; r++) {

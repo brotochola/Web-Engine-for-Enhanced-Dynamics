@@ -123,7 +123,7 @@ test('faces: the plane depth comes from the vertex, innerZ breaks ties, and only
   assert.ok(Math.abs((wall - poster) / step - 2 * FACE_PAINTER_STEP) < 1e-6);
   assert.ok(wall - pixelDepthValue(0, 0.5 + 1 / 8191, 0, true) > (wall - poster), 'a floor step outweighs innerZ 2');
   // The row carries innerZ in its height's top bits; the normal is any face's.
-  assert.equal(encodeFaceHeight(10, 2) >>> 13, 2);
+  assert.equal(encodeFaceHeight(10, 2) >>> 21, 2);
   assert.ok(encodeFaceNormal(0, 1, 0) > 0);
 });
 

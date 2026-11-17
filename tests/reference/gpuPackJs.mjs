@@ -22,6 +22,9 @@ import {
  * InstancedSpriteBatch.upload).
  * @returns {number} instances written
  */
+// N-271: the tile offsets (u32 columns) reach the GPU as value / 65536, as gpuPack.c sends them.
+const TILE_OFF_SCALE = 1 / 65536;
+
 export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast) {
   if (!q || !dst || !ctx) return 0;
   const o = ctx.o || ctx;
@@ -59,7 +62,6 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
   const rqTileOffU = q.tileOffsetU;
   const rqTileOffV = q.tileOffsetV;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
-  const INV_65535 = 1 / 65535;
   let base = 0;
   let out = 0;
   let particles = 0;
@@ -92,8 +94,8 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
         dst[base + 10] = rqTextureId[i];
         dst[base + 11] = invX;
         dst[base + 12] = invY;
-        dst[base + 13] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
-        dst[base + 14] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
+        dst[base + 13] = rqTileOffU ? rqTileOffU[i] * TILE_OFF_SCALE : 0;
+        dst[base + 14] = rqTileOffV ? rqTileOffV[i] * TILE_OFF_SCALE : 0;
         base += 15;
         out++;
       }
@@ -131,8 +133,8 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
         dst[base + 10] = rqTextureId[i];
         dst[base + 11] = invX;
         dst[base + 12] = invY;
-        dst[base + 13] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
-        dst[base + 14] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
+        dst[base + 13] = rqTileOffU ? rqTileOffU[i] * TILE_OFF_SCALE : 0;
+        dst[base + 14] = rqTileOffV ? rqTileOffV[i] * TILE_OFF_SCALE : 0;
         dst[base + 15] = qShadowH ? qShadowH[i] : 0;
         dst[base + 16] = qShadowOffX ? qShadowOffX[i] : 0;
         dst[base + 17] = qShadowOffY ? qShadowOffY[i] : 0;
@@ -205,8 +207,8 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
     dst[base + 10] = rqTextureId[i];
     dst[base + 11] = invX;
     dst[base + 12] = invY;
-    dst[base + 13] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
-    dst[base + 14] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
+    dst[base + 13] = rqTileOffU ? rqTileOffU[i] * TILE_OFF_SCALE : 0;
+    dst[base + 14] = rqTileOffV ? rqTileOffV[i] * TILE_OFF_SCALE : 0;
     if (shadowCast && fp >= GPU_CASTER_FLOATS) {
       const sh = q.shadowH;
       const shAt = GPU_SPRITE_FLOATS;
@@ -267,7 +269,6 @@ export function packSplitRows(q, ctx, pose, stat, statU32, capacity) {
   }
   const depthDenom = ctx.depthDenom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
-  const INV_65535 = 1 / 65535;
   const rqScaleX = q.scaleX;
   const rqScaleY = q.scaleY;
   const rqAlpha = q.alpha;
@@ -309,8 +310,8 @@ export function packSplitRows(q, ctx, pose, stat, statU32, capacity) {
     stat[sBase + 6] = rqTextureId[i];
     stat[sBase + 7] = invX;
     stat[sBase + 8] = invY;
-    stat[sBase + 9] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
-    stat[sBase + 10] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
+    stat[sBase + 9] = rqTileOffU ? rqTileOffU[i] * TILE_OFF_SCALE : 0;
+    stat[sBase + 10] = rqTileOffV ? rqTileOffV[i] * TILE_OFF_SCALE : 0;
     base += GPU_POSE_FLOATS;
     sBase += GPU_STATIC_FLOATS;
     out++;
@@ -577,8 +578,8 @@ function _packPoseAndStatics(q, ctx) {
     stat[sBase + 6] = rqTextureId[i];
     stat[sBase + 7] = invX;
     stat[sBase + 8] = invY;
-    stat[sBase + 9] = rqTileOffU ? rqTileOffU[i] * (1 / 65535) : 0;
-    stat[sBase + 10] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
+    stat[sBase + 9] = rqTileOffU ? rqTileOffU[i] * TILE_OFF_SCALE : 0;
+    stat[sBase + 10] = rqTileOffV ? rqTileOffV[i] * TILE_OFF_SCALE : 0;
     base += POSE_DYN_FLOATS;
     sBase += POSE_STATIC_FLOATS;
     out++;

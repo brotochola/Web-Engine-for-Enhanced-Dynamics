@@ -45,7 +45,7 @@ function queue(seed, gen) {
     alpha: new Float32Array(N).map(() => rng()), tint: new Uint32Array(N).map(() => (rng() * 0xffffff) | 0),
     textureId: new Uint16Array(N).map(() => (rng() * 400) | 0), anchorX: f32(), anchorY: f32(),
     repeatX: new Uint16Array(N), repeatY: new Uint16Array(N), tileMode: new Uint8Array(N),
-    tileOffsetU: new Uint16Array(N).map(() => (rng() * 65535) | 0), tileOffsetV: new Uint16Array(N),
+    tileOffsetU: new Uint32Array(N).map(() => (rng() * 65535) | 0), tileOffsetV: new Uint32Array(N),
     tileMulX: f32(), tileMulY: f32(), type: new Uint8Array(N).map(() => (rng() * 5) | 0), staticGen: new Uint32Array([gen]),
   };
 }

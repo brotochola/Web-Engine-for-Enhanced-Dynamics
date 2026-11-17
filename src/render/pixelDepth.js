@@ -30,7 +30,7 @@
  */
 
 import { TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW } from './frameBase.js';
-import { FACE_INNER_Z_SHIFT, FACE_Z_UNITS } from './faceMap.js';
+import { FACE_CODE_SCALE, FACE_INNER_Z_SHIFT, FACE_OCT_HALF, FACE_OCT_MID, FACE_ROW_Z_UNITS, FACE_Z_HEIGHT_MAX_CODE } from './faceMap.js';
 import { MAPS_MARKS_GLSL, MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl } from './twinTexel.js';
 
 /** The floor span's margin past the view, floor px: a tall object's top in view stands this far past its floor place. */
@@ -44,13 +44,6 @@ export const PIXEL_DEPTH_PAINTER_STEPS = 128;
  * 24-bit depth buffer), above interpolation error and under a floor step.
  */
 export const FACE_PAINTER_STEP = 16;
-/**
- * DX-FACEDEPTH: a face row's height code (faceMap.js encodeFaceHeight) holds innerZ in its top bits. The vertex reads it as
- * a normalized u16 (aInstTileOff.y), so the height is (y - innerZ · FACE_INNER_Z_UNIT) · FACE_Z_SCALE: for innerZ 0 the
- * face map's own float, bit for bit.
- */
-const FACE_INNER_Z_UNIT = (1 << FACE_INNER_Z_SHIFT) / 65535;
-const FACE_Z_SCALE = 65535 / FACE_Z_UNITS;
 
 /** The terms the programs read (uDepth): 1 / floorScaleY, heightScaleY, the view's nearest-to-north floor y, 1 / range. */
 export function pixelDepthTerms(out, floorScaleY, heightScaleY, viewTopY, viewHeight, margin = PIXEL_DEPTH_MARGIN) {
@@ -123,18 +116,19 @@ function facesDepthGlsl(gbuf) {
   float depthFloor = aInstXY.y * uDepth.x;
   float depthPainter = float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1});
   {
-    uint dfCode = uint(aInstTileOff.x * 65535.0 + 0.5);
+    uint dfCode = uint(aInstTileOff.x * ${FACE_CODE_SCALE}.0 + 0.5);
     if (dfCode != 0u && aInstTileInv == vec2(0.0)) {
-      vec2 dfF = (vec2(float(dfCode >> 8u), float(dfCode & 255u)) - 127.0) / 126.0;
+      vec2 dfF = (vec2(float(dfCode >> 12u), float(dfCode & 4095u)) - ${FACE_OCT_MID}.0) / ${FACE_OCT_HALF}.0;
       vec3 dfN = vec3(dfF, 1.0 - abs(dfF.x) - abs(dfF.y));
       float dfT = max(-dfN.z, 0.0);
       dfN.x += dfN.x >= 0.0 ? -dfT : dfT;
       dfN.y += dfN.y >= 0.0 ? -dfT : dfT;
-      float dfInner = float(uint(aInstTileOff.y * 65535.0 + 0.5) >> ${FACE_INNER_Z_SHIFT}u);
+      uint dfHeight = uint(aInstTileOff.y * ${FACE_CODE_SCALE}.0 + 0.5);
+      float dfInner = float(dfHeight >> ${FACE_INNER_Z_SHIFT}u);
       vec2 dfD = world - aInstXY;
       float dfSlope = dfN.z + dfN.y * uDepth.y * uDepth.x;
       float dfDz = abs(dfSlope) > 0.02 ? -(dfN.x * dfD.x + dfN.y * dfD.y * uDepth.x) / dfSlope : 0.0;
-      float dfZ = (aInstTileOff.y - dfInner * ${FACE_INNER_Z_UNIT.toFixed(12)}) * ${FACE_Z_SCALE.toFixed(4)} + dfDz;
+      float dfZ = float(dfHeight & ${FACE_Z_HEIGHT_MAX_CODE}u) / ${FACE_ROW_Z_UNITS}.0 + dfDz;
       depthFloor = (world.y + uDepth.y * dfZ) * uDepth.x;
       depthPainter = dfInner * ${FACE_PAINTER_STEP}.0;
     }${gbuf ? ` else {
@@ -364,19 +358,20 @@ function facesDepthWgsl(gbuf, cull) {
       : '';
   return `  var depthFloor = aInstXY.y * uniforms.uDepth.x;
   var depthPainter = f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u);
-  let dfCode = u32(aInstTileOff.x * 65535.0 + 0.5);
+  let dfCode = u32(aInstTileOff.x * ${FACE_CODE_SCALE}.0 + 0.5);
   if (dfCode != 0u && all(aInstTileInv == vec2<f32>(0.0))) {
-    let dfF = (vec2<f32>(f32(dfCode >> 8u), f32(dfCode & 255u)) - 127.0) / 126.0;
+    let dfF = (vec2<f32>(f32(dfCode >> 12u), f32(dfCode & 4095u)) - ${FACE_OCT_MID}.0) / ${FACE_OCT_HALF}.0;
     var dfN = vec3<f32>(dfF, 1.0 - abs(dfF.x) - abs(dfF.y));
     let dfT = max(-dfN.z, 0.0);
     dfN.x += select(dfT, -dfT, dfN.x >= 0.0);
     dfN.y += select(dfT, -dfT, dfN.y >= 0.0);
-    let dfInner = f32(u32(aInstTileOff.y * 65535.0 + 0.5) >> ${FACE_INNER_Z_SHIFT}u);
+    let dfHeight = u32(aInstTileOff.y * ${FACE_CODE_SCALE}.0 + 0.5);
+    let dfInner = f32(dfHeight >> ${FACE_INNER_Z_SHIFT}u);
     let dfD = world - aInstXY;
     let dfSlope = dfN.z + dfN.y * uniforms.uDepth.y * uniforms.uDepth.x;
     var dfDz = 0.0;
     if (abs(dfSlope) > 0.02) { dfDz = -(dfN.x * dfD.x + dfN.y * dfD.y * uniforms.uDepth.x) / dfSlope; }
-    let dfZ = (aInstTileOff.y - dfInner * ${FACE_INNER_Z_UNIT.toFixed(12)}) * ${FACE_Z_SCALE.toFixed(4)} + dfDz;
+    let dfZ = f32(dfHeight & ${FACE_Z_HEIGHT_MAX_CODE}u) / ${FACE_ROW_Z_UNITS}.0 + dfDz;
     depthFloor = (world.y + uniforms.uDepth.y * dfZ) * uniforms.uDepth.x;
     depthPainter = dfInner * ${FACE_PAINTER_STEP}.0;
   }${gbuf ? ` else {

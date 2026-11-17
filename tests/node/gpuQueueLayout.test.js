@@ -157,8 +157,8 @@ test('writeGpuSpriteRow matches packInstancedRows for one SoA row', () => {
     alphaCutOff: new Uint8Array([40]),
     tileMulX: new Float32Array([0.5]),
     tileMulY: new Float32Array([0.25]),
-    tileOffsetU: new Uint16Array([32768]),
-    tileOffsetV: new Uint16Array([0]),
+    tileOffsetU: new Uint32Array([32768]),
+    tileOffsetV: new Uint32Array([0]),
   };
   const packed = new Float32Array(GPU_SPRITE_FLOATS);
   const packedU32 = new Uint32Array(packed.buffer);
@@ -169,7 +169,7 @@ test('writeGpuSpriteRow matches packInstancedRows for one SoA row', () => {
   writeGpuSpriteRow(direct, directU32, 0, {
     x: 12, y: 34, sx: 2, sy: 3, ax: 0.5, ay: 1, rc: 0.8, rs: 0.6,
     a: 0.25, tint: 0x112233, tex: 7, invX: 0.5, invY: 0.25,
-    u: 32768 * (1 / 65535), v: 0, cut: 40, sk: 99,
+    u: 32768 * (1 / 65536), v: 0, cut: 40, sk: 99,
   }, { worldHeight: 10000, depthDenom: 2 });
   assert.deepEqual(Array.from(direct), Array.from(packed));
 });
