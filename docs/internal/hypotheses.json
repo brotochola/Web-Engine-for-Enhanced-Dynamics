@@ -11623,7 +11623,8 @@
         "R-1254",
         "R-1271",
         "R-1275",
-        "R-1278"
+        "R-1278",
+        "R-1314"
       ]
     },
     {
@@ -16061,7 +16062,8 @@
         "R-1302",
         "R-1303",
         "R-1307",
-        "R-1312"
+        "R-1312",
+        "R-1314"
       ]
     },
     {
@@ -34983,6 +34985,15 @@
         "583b966d",
         "ffc6da4a"
       ]
+    },
+    {
+      "id": "R-1314",
+      "date": "2026-11-17",
+      "time": "14:17",
+      "timeFrom": "recorded",
+      "title": "The barrio on the ASUS: 4 Box2D threads beat 2 (physics +27-54 % with 2), and in runs where the renderer froze physics fell to 9-10 ms: its ~35 ms is contention with the iGPU",
+      "verdict": "note",
+      "text": "**The barrio on the ASUS: 4 Box2D threads beat 2, and physics' cost there is mostly contention with the GPU.** One build of main 3dae017f, Parque Chas at `hour=22&dayMinutes=0`, camera still, 4 pairs each, `--full-rev`, ASUS laptop (Intel HD 620, 4 logical CPUs), 2026-11-17 13:44 to 14:05 (job 0879; 0877 had split its command, see the lab notes).\n\n**4 against `&physicsWorkers=2`** (asus-barrio-phys4v2), per pair:\n\n| Pair | physics | logic | pre-render | drawn | renderer |\n|---|---|---|---|---|---|\n| 1 | 9.7 → 42.8 ms | 5.2 → 11.8 | 15.2 → 20.2 | 9.2 → 37.4 fps | 184 → 7.5 ms |\n| 2 | 38.0 → 58.7 ms | 12.3 → 12.2 | 24.9 → 22.0 | 38.9 → 39.4 fps | 7.2 → 6.9 ms |\n| 3 | 34.7 → 44.1 ms | 13.1 → 11.1 | 23.8 → 21.7 | 38.0 → 38.9 fps | 7.3 → 6.8 ms |\n| 4 | 9.3 → 44.5 ms | 4.8 → 11.2 | 15.6 → 21.2 | 7.5 → 37.5 fps | 229 → 7.3 ms |\n\n- In the clean pairs (2 and 3), 2 threads cost physics 27–54 %. Logic and pre-render are level or a little better, drawn frames level.\n- In pairs 1 and 4 the A run's renderer froze (184 and 229 ms, 7–9 fps drawn). In those runs physics fell to 9–10 ms and logic to 5. With the GPU barely drawing, physics costs a quarter of its usual ~35 ms. On this laptop most of physics' time in the barrio is contention for the shared cores and power with the iGPU and Chrome's GPU process (R-1307), not its own work.\n\n**2 against 1** (asus-barrio-phys2v1): physics 42.5 → 41.4 ms (level), logic +8.3 %, spatial +11.5 %, pre-render +6.8 % with 1. Drawn level.\n\nSo a core-aware default with fewer Box2D threads does not help the barrio here. Four stays."
     }
   ],
   "leads": [
