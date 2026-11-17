@@ -9,7 +9,8 @@
 //   cars.js           the cars; carModels.js which model each car is; walkers.js the people; traffic.js the law;
 //   litWindows.js     the windows at dusk; standardObjects.js the objects' index, as the classes need it
 //
-// URL: ?hour=17.5, ?dayMinutes=8 (0 stops the clock), ?people=5000, ?resolution=0.5, ?backend=webgpu.
+// URL: ?hour=17.5, ?dayMinutes=8 (0 stops the clock), ?people=5000, ?resolution=0.5, ?backend=webgpu, ?floorCache=0
+// (paint the floor every frame), ?pan=40 (the camera drifts right by itself, world px a second).
 // Drag, the wheel or WASD move the camera; Z and X move the hour while held; H hides the panel.
 
 import WEED from '/src/index.js';
@@ -48,6 +49,8 @@ const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
  * frame, to compare.
  */
 const FLOOR_CACHE = WEED.params?.get('floorCache') !== '0';
+/** `?pan=40`: the camera drifts right that many world px a second by itself, to measure a view that never holds. */
+const PAN_DRIFT = param('pan', 0);
 const CORES = globalThis.navigator?.hardwareConcurrency || 4;
 /** The night's own blue light (lighting.sun.night), on the N key. */
 const NIGHT_LIGHT = 0.25;
@@ -503,6 +506,7 @@ export class BuenosAiresScene extends Scene {
     if (Keyboard.d || Keyboard.arrowright) this.focusX += pan;
     if (Keyboard.w || Keyboard.arrowup) this.focusY -= pan;
     if (Keyboard.s || Keyboard.arrowdown) this.focusY += pan;
+    if (PAN_DRIFT) this.focusX += (PAN_DRIFT / 60) * dtRatio;
     this.keepInView();
     Camera.targetZoom = this.zoomTarget;
     Camera.follow(this.focusX, this.focusY, 0.35, dtRatio);
