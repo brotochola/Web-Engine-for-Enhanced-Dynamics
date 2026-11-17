@@ -32,6 +32,21 @@ export class StressLamp extends GameObject {
   }
 }
 
+/**
+ * A still block that casts a box volume (ShadowCaster.setBox), as a house does in Buenos Aires: the lamps' map draws its
+ * volume into every lamp's tile in reach (E-508's load).
+ */
+export class StressBlock extends GameObject {
+  static isStatic = true;
+  static components = [ShadowCaster];
+
+  onSpawned(spec = {}) {
+    this.x = spec.x ?? 0;
+    this.y = spec.y ?? 0;
+    this.shadowCaster.setBox(spec.width ?? 40, spec.depth ?? 30, spec.height ?? 50);
+  }
+}
+
 /** A walker that casts a shadow: it paces on a loop around its own centre. */
 export class StressWalker extends GameObject {
   static components = [SpriteRenderer, ShadowCaster];
