@@ -21813,6 +21813,59 @@
       "title": "The lamps' shadow maps are drawn whole every frame: the static casters (houses, trees, props) into a cached map per lamp, the moving ones (people, cars) over it",
       "statusText": "found 2026-11-17 reading the barrio's GPU at 22 h (GTX 1650): the 16 lamps' panorama maps (a 4096 x 2048 atlas) 0.84 ms of 5.9, for casters that almost all stand still",
       "next": "Step 0: the HD 620's draw by draw on the barrio (the other session's), to know whether the lamps' maps weigh there. Then: the stamp's rows split by caster kind (a body that is static or no body, decorations, against the rest); a lamp's static part drawn into its own tile when the lamp turns on, moves or its static casters change (an epoch), and each frame that tile copied (or the max blend started from it) before the moving casters; captures identical; glFrameRecorder per draw on both GPUs."
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "unshaded discard",
+        "unshaded composite discard"
+      ],
+      "records": [
+        "R-1302"
+      ],
+      "result": "",
+      "next": "",
+      "id": "E-509",
+      "kind": "gpu",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "The unshaded layer's composite discards a pixel with no unshaded colour before it reads the light: it added zero there, after four light reads and a blended write",
+      "statusText": "found 2026-11-17 in the barrio's HD 620 reading (R-1301): the unshaded halves 0.87 ms of a drawn frame, for lamps' bulbs, lit windows and traffic lights"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "lamp shadow reach",
+        "shadowRange in the lamps map"
+      ],
+      "records": [],
+      "result": "",
+      "next": "",
+      "id": "E-510",
+      "kind": "gpu",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "The lamps' map honours LightEmitter.shadowRange: a lamp's tile spans how far its shadows reach, and the light pass reads it and steps the self-shadow only within that",
+      "statusText": "found 2026-11-17 weighing the barrio's light pass (GTX 1650): the lamps' five taps a pixel were about 35 % of it, out to the 690 px radius of lamps whose shadowRange is 260; the tile spanned the radius too"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "elevation 0 lamp tiles",
+        "headlight tiles"
+      ],
+      "records": [],
+      "result": "",
+      "next": "Leave lights at elevation 0 out of the stamp lights in 'map' mode (pre-render _collectStampLights), unless something else needs them there: their cookies (_packGpuCookies) lighten the shadows layer under the lamp, so check with captures (barrio by night, headlightsScene) that the picture holds; then the freed slots go to lamps that cast. Or the demo gives its headlights a height, which casts but draws the volumes every frame for a moving tile (E-508's direct path).",
+      "id": "N-265",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "With lampShadows 'map', a light at elevation 0 (the barrio's headlights) takes a tile and a maxShadowCastingLights slot, and pre-render stamps casters for it, though its map casts nothing",
+      "statusText": "seen 2026-11-17 in Buenos Aires at night: 4 of 16 tiles held headlights (elevation 0: lampCasts false), so the atlas kept 16 tiles and lamps farther from the view's centre lost their slots"
     }
   ],
   "records": [
