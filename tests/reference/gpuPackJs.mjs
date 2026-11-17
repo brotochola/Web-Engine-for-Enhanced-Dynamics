@@ -1,6 +1,6 @@
 // The JS instanced-row packers gpuPack.wasm replaced (E-76 W9, W9b, W9d, W9e, E-82b; close-out group B), as they were in
-// src/render/gpuQueueLayout.js and InstancedSpriteBatch: packInstancedRows (every call: world and screen space, pixel
-// snap, type filters, casters), packSplitRows and splitInterleavedRows (the two streams of a split batch), and a
+// src/render/gpuQueueLayout.js and InstancedSpriteBatch: packInstancedRows (every call: world and screen space, type
+// filters, casters; N-271: without the pixel snap, which the sprite vertex shaders do now), packSplitRows and splitInterleavedRows (the two streams of a split batch), and a
 // batch's pose-batch packers. The kernel's parity tests and the pack benches compare with them; installBatchPackJs
 // gives a batch its JS packing back (every upload in JS, as a batch without a kernel packed before).
 import {
@@ -17,35 +17,14 @@ import {
   SPLIT_POSE_FLOATS,
 } from '../../src/render/instancedSpriteBatch.js';
 
-export function snapWorldToPixel(v, cam, zoom) {
-  if (!(zoom > 0)) return v;
-  return Math.round((v - cam) * zoom) / zoom + cam;
-}
-
-// The scratch snapSpritePos returns (one call at a time).
-const _snapXY = { x: 0, y: 0 };
-
-function snapSpritePos(x, y, o, useScreen) {
-  if (!o.pixelSnap) {
-    _snapXY.x = x;
-    _snapXY.y = y;
-    return _snapXY;
-  }
-  if (useScreen) {
-    _snapXY.x = Math.round(x);
-    _snapXY.y = Math.round(y);
-    return _snapXY;
-  }
-  _snapXY.x = snapWorldToPixel(x, o.snapCameraX, o.snapZoom);
-  _snapXY.y = snapWorldToPixel(y, o.snapCameraY, o.snapZoom);
-  return _snapXY;
-}
-
 /**
  * Pack SoA queue rows into interleaved instance floats (same layout as
  * InstancedSpriteBatch.upload).
  * @returns {number} instances written
  */
+// N-271: the tile offsets (u32 columns) reach the GPU as value / 65536, as gpuPack.c sends them.
+const TILE_OFF_SCALE = 1 / 65536;
+
 export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast) {
   if (!q || !dst || !ctx) return 0;
   const o = ctx.o || ctx;
@@ -82,16 +61,11 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
   const rqTileMulY = q.tileMulY;
   const rqTileOffU = q.tileOffsetU;
   const rqTileOffV = q.tileOffsetV;
-  const pixelSnap = !!o.pixelSnap;
-  const snapCamX = o.snapCameraX || 0;
-  const snapCamY = o.snapCameraY || 0;
-  const snapZoom = o.snapZoom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
-  const INV_65535 = 1 / 65535;
   let base = 0;
   let out = 0;
   let particles = 0;
-  if (!useScreen && !pixelSnap && !filterTypes) {
+  if (!useScreen && !filterTypes) {
     if (!shadowCast && fp === GPU_SPRITE_FLOATS) {
       for (let k = 0; k < scanCount; k++) {
         if (out >= cap) break;
@@ -120,8 +94,8 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
         dst[base + 10] = rqTextureId[i];
         dst[base + 11] = invX;
         dst[base + 12] = invY;
-        dst[base + 13] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
-        dst[base + 14] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
+        dst[base + 13] = rqTileOffU ? rqTileOffU[i] * TILE_OFF_SCALE : 0;
+        dst[base + 14] = rqTileOffV ? rqTileOffV[i] * TILE_OFF_SCALE : 0;
         base += 15;
         out++;
       }
@@ -159,8 +133,8 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
         dst[base + 10] = rqTextureId[i];
         dst[base + 11] = invX;
         dst[base + 12] = invY;
-        dst[base + 13] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
-        dst[base + 14] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
+        dst[base + 13] = rqTileOffU ? rqTileOffU[i] * TILE_OFF_SCALE : 0;
+        dst[base + 14] = rqTileOffV ? rqTileOffV[i] * TILE_OFF_SCALE : 0;
         dst[base + 15] = qShadowH ? qShadowH[i] : 0;
         dst[base + 16] = qShadowOffX ? qShadowOffX[i] : 0;
         dst[base + 17] = qShadowOffY ? qShadowOffY[i] : 0;
@@ -210,15 +184,6 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
       sx *= screenScale;
       sy *= screenScale;
     }
-    if (pixelSnap) {
-      if (useScreen) {
-        x = Math.round(x);
-        y = Math.round(y);
-      } else {
-        x = snapWorldToPixel(x, snapCamX, snapZoom);
-        y = snapWorldToPixel(y, snapCamY, snapZoom);
-      }
-    }
     const depth = 1.0 - (out + 1) * invDepthDenom;
 
     let a = rqAlpha[i];
@@ -242,8 +207,8 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
     dst[base + 10] = rqTextureId[i];
     dst[base + 11] = invX;
     dst[base + 12] = invY;
-    dst[base + 13] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
-    dst[base + 14] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
+    dst[base + 13] = rqTileOffU ? rqTileOffU[i] * TILE_OFF_SCALE : 0;
+    dst[base + 14] = rqTileOffV ? rqTileOffV[i] * TILE_OFF_SCALE : 0;
     if (shadowCast && fp >= GPU_CASTER_FLOATS) {
       const sh = q.shadowH;
       const shAt = GPU_SPRITE_FLOATS;
@@ -273,7 +238,7 @@ export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shad
 export function packSplitRows(q, ctx, pose, stat, statU32, capacity) {
   if (!q || !pose || !ctx) return -1;
   const o = ctx.o || ctx;
-  if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
+  if (ctx.useScreen || ctx.filterTypes) return -1;
   const indices = ctx.indices;
   const useIndices = ctx.useIndices;
   const typeArr = ctx.typeArr;
@@ -304,7 +269,6 @@ export function packSplitRows(q, ctx, pose, stat, statU32, capacity) {
   }
   const depthDenom = ctx.depthDenom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
-  const INV_65535 = 1 / 65535;
   const rqScaleX = q.scaleX;
   const rqScaleY = q.scaleY;
   const rqAlpha = q.alpha;
@@ -346,8 +310,8 @@ export function packSplitRows(q, ctx, pose, stat, statU32, capacity) {
     stat[sBase + 6] = rqTextureId[i];
     stat[sBase + 7] = invX;
     stat[sBase + 8] = invY;
-    stat[sBase + 9] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
-    stat[sBase + 10] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
+    stat[sBase + 9] = rqTileOffU ? rqTileOffU[i] * TILE_OFF_SCALE : 0;
+    stat[sBase + 10] = rqTileOffV ? rqTileOffV[i] * TILE_OFF_SCALE : 0;
     base += GPU_POSE_FLOATS;
     sBase += GPU_STATIC_FLOATS;
     out++;
@@ -398,7 +362,7 @@ export function splitInterleavedRows(src, srcU32, n, pose, stat, statU32) {
   }
 }
 
-/** The calls packSplitRows does not take (screen space, pixel snap, a type filter): 15-float rows, split. */
+/** The calls packSplitRows does not take (screen space, a type filter): 15-float rows, split. */
 function _packSplitFromRows(q, ctx, current) {
   const floats = this.capacity * INSTANCED_SPRITE_FLOATS;
   if (!this._splitScratch || this._splitScratch.length < floats) {
@@ -481,12 +445,6 @@ function _packPoseOnly(q, ctx) {
         py = (py - cameraY) * screenScale;
       }
     }
-    const snapped = snapSpritePos(x, y, o, useScreen);
-    x = snapped.x;
-    y = snapped.y;
-    const snappedPrev = snapSpritePos(px, py, o, useScreen);
-    px = snappedPrev.x;
-    py = snappedPrev.y;
     let rc = rqRotC[i];
     let rs = rqRotS[i];
     if (useScreen && ctx.cameraRot) {
@@ -586,12 +544,6 @@ function _packPoseAndStatics(q, ctx) {
       sx *= screenScale;
       sy *= screenScale;
     }
-    const snapped = snapSpritePos(x, y, o, useScreen);
-    x = snapped.x;
-    y = snapped.y;
-    const snappedPrev = snapSpritePos(px, py, o, useScreen);
-    px = snappedPrev.x;
-    py = snappedPrev.y;
     const depth = 1.0 - (out + 1) / depthDenom;
     let a = rqAlpha[i];
     if (a < 0) a = 0;
@@ -626,8 +578,8 @@ function _packPoseAndStatics(q, ctx) {
     stat[sBase + 6] = rqTextureId[i];
     stat[sBase + 7] = invX;
     stat[sBase + 8] = invY;
-    stat[sBase + 9] = rqTileOffU ? rqTileOffU[i] * (1 / 65535) : 0;
-    stat[sBase + 10] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
+    stat[sBase + 9] = rqTileOffU ? rqTileOffU[i] * TILE_OFF_SCALE : 0;
+    stat[sBase + 10] = rqTileOffV ? rqTileOffV[i] * TILE_OFF_SCALE : 0;
     base += POSE_DYN_FLOATS;
     sBase += POSE_STATIC_FLOATS;
     out++;

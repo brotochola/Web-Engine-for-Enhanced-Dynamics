@@ -1893,7 +1893,7 @@ function casterList(q) {
 function sunPackOpts(q, list, n) {
   return {
     includeType: -1, excludeType0: -1, excludeType1: -1, indices: list, indexCount: n, sortKey: null, space: 0, zoom: 1,
-    cameraX: 0, cameraY: 0, resolution: 1, depthDenom: q.count, pixelSnap: false, type: q.type,
+    cameraX: 0, cameraY: 0, resolution: 1, depthDenom: q.count, type: q.type,
   };
 }
 

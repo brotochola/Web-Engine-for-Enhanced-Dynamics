@@ -68,10 +68,10 @@ export class DecorationComponent extends Component {
     skewY: Float32Array,
 
     // === Face (DX-FACES) ===
-    // A flat face of a volume, lit as a surface: its normal (octahedral, 0 = no face) and the height of its position
-    // above the floor, in 1/FACE_Z_UNITS px (src/render/faceMap.js).
-    faceOct: Uint16Array,
-    faceZ: Uint16Array,
+    // A flat face of a volume, lit as a surface: its normal (octahedral, 12 bits a component, 0 = no face) and the height
+    // of its position above the floor, in 1/FACE_ROW_Z_UNITS px, innerZ above it (src/render/faceMap.js).
+    faceOct: Uint32Array,
+    faceZ: Uint32Array,
 
     // === Place in the active list (E-273) ===
     // DecorationPool's activeDecorationsData row this decoration sits in, plus 1 (0: not listed), so a despawn swaps it

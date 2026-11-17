@@ -49,8 +49,8 @@ function makeSoA(n, xs, ys, extras = {}) {
     alphaCutOff: extras.alphaCutOff || new Uint8Array(n),
     tileMulX: extras.tileMulX || new Float32Array(n),
     tileMulY: extras.tileMulY || new Float32Array(n),
-    tileOffsetU: extras.tileOffsetU || new Uint16Array(n),
-    tileOffsetV: extras.tileOffsetV || new Uint16Array(n),
+    tileOffsetU: extras.tileOffsetU || new Uint32Array(n),
+    tileOffsetV: extras.tileOffsetV || new Uint32Array(n),
   };
   return q;
 }
@@ -67,7 +67,7 @@ test('writeGpuSpriteRow matches packInstancedRows on 16 floats (H-born row)', ()
     alphaCutOff: new Uint8Array([40, 0]),
     tileMulX: new Float32Array([0.5, 0]),
     tileMulY: new Float32Array([0.25, 0]),
-    tileOffsetU: new Uint16Array([32768, 0]),
+    tileOffsetU: new Uint32Array([32768, 0]),
   });
   const packed = new Float32Array(2 * GPU_SPRITE_FLOATS);
   const packedU32 = new Uint32Array(packed.buffer);
@@ -82,7 +82,7 @@ test('writeGpuSpriteRow matches packInstancedRows on 16 floats (H-born row)', ()
       ax: q.anchorX[i], ay: q.anchorY[i], rc: q.rotC[i], rs: q.rotS[i],
       a: q.alpha[i], tint: q.tint[i], tex: q.textureId[i],
       invX: q.tileMulX[i], invY: q.tileMulY[i],
-      u: q.tileOffsetU[i] * (1 / 65535), v: 0, cut: q.alphaCutOff[i],
+      u: q.tileOffsetU[i] * (1 / 65536), v: 0, cut: q.alphaCutOff[i],
     }, { depthDenom: 2 });
   }
   assert.deepEqual(Array.from(direct), Array.from(packed));

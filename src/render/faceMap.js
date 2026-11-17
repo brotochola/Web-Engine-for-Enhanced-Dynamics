@@ -2,12 +2,14 @@
  * DX-FACES: a sprite that is a flat face of a volume. A decoration can say where its surface looks and how high it is, and
  * the light pass then lights it as a surface in 3D instead of as the floor under its pixels.
  *
- * What a face carries, in two u16 columns that reach the GPU in the row's tile offsets (a face is never a tiled sprite):
- * - its normal, octahedral, one byte each from 1 to 253 (±1/2 falls on a byte: walls turned 45 degrees are common), so that
- *   0 reads "no face";
- * - the height of the sprite's position above the floor, in steps of 1/FACE_Z_UNITS px, in its low FACE_INNER_Z_SHIFT bits
- *   (up to 1023.875 px), and in its top 3 its innerZ (DX-FACEDEPTH: 0 a wall, 1 to 7 what is stuck on it, in stacking order:
- *   the depth's tie on a shared plane, pixelDepth.js).
+ * What a face carries, in two u32 columns that reach the GPU in the row's tile offsets as code / FACE_CODE_SCALE (a face is
+ * never a tiled sprite), 24 bits each (N-271: pieces on one wall but anchored apart must land on one plane, so the depth
+ * reads them finer than the face map's bytes):
+ * - its normal, octahedral, 12 bits each from 1 to 4093 (±1/2 falls on a step: walls turned 45 degrees are common), so
+ *   that 0 reads "no face";
+ * - the height of the sprite's position above the floor, in steps of 1/FACE_ROW_Z_UNITS px, in its low FACE_INNER_Z_SHIFT
+ *   bits (up to 32 767 px), and in its top 3 its innerZ (DX-FACEDEPTH: 0 a wall, 1 to 7 what is stuck on it, in stacking
+ *   order: the depth's tie on a shared plane, pixelDepth.js).
  *
  * The frame's picture of them is the face map: the same instances drawn again at the light pass's resolution in painter
  * order, RGBA8: the normal's two bytes, then the height's two. A sprite that is no face writes 0, so a person in front of a
@@ -17,18 +19,23 @@
  * px of height rises heightScaleY px on the screen.
  */
 
-/** Height steps a px. 16 bits hold 8 191 px. */
 import { resolveHeightScaleY } from '../util/cameraView.js';
 import { MAPS_MARKS_GLSL, MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl, withTwinGlsl } from './twinTexel.js';
 
+/** The face map texel's height steps a px (15 bits: 4 095 px). */
 export const FACE_Z_UNITS = 8;
+/** N-271: a face row's codes reach the GPU as code / FACE_CODE_SCALE in its tile offsets: exact in a float32 to 2^24. */
+export const FACE_CODE_SCALE = 65536;
+/** N-271: the normal's octahedral u and v in a face row, 12 bits each: FACE_OCT_MID + FACE_OCT_HALF · u. */
+export const FACE_OCT_MID = 2047;
+export const FACE_OCT_HALF = 2046;
+/** N-271: a face row's height steps a px. */
+export const FACE_ROW_Z_UNITS = 64;
 /** DX-FACEDEPTH: where a face's innerZ starts in its height code; the heights below it, up to FACE_Z_HEIGHT_MAX_CODE. */
-export const FACE_INNER_Z_SHIFT = 13;
+export const FACE_INNER_Z_SHIFT = 21;
 export const FACE_Z_HEIGHT_MAX_CODE = (1 << FACE_INNER_Z_SHIFT) - 1;
 /** The highest innerZ a face carries (a wall's things stacked on it). */
 export const FACE_INNER_Z_MAX = 7;
-/** innerZ's step in the height code's normalized u16 (aInstTileOff.y), which the shaders take off before the height. */
-const FACE_INNER_Z_UNIT = ((1 << FACE_INNER_Z_SHIFT) / 65535).toFixed(12);
 
 /**
  * DX-BARRIOS: faces have no switch: the G-buffer turns on by itself when a decoration carries a normal (DecorationPool's
@@ -322,7 +329,7 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
       end,
       end +
         gbufOut +
-        `  uint faceCode = uint(aInstTileOff.x * 65535.0 + 0.5);
+        `  uint faceCode = uint(aInstTileOff.x * ${FACE_CODE_SCALE}.0 + 0.5);
   vFaceOct = vec2(0.0);
   vFaceZ = 0.0;
   // N-194: a sprite drawn at a scale stands that much taller, so its twin's heights (frame px) scale with it.
@@ -332,9 +339,9 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
   // N-258: its normals turn with it and mirror with a negative scale (a shear turns none: DX-DECOSKEW's marker).
   vNormalTurn = vec4(isShear ? 1.0 : c, isShear ? 0.0 : s, aInstScale.x < 0.0 ? -1.0 : 1.0, aInstScale.y < 0.0 ? -1.0 : 1.0);
   if (faceCode != 0u && aInstTileInv == vec2(0.0)) {
-    vec2 faceBytes = vec2(float(faceCode >> 8u), float(faceCode & 255u));
-    vFaceOct = faceBytes / 255.0;
-    vec2 faceF = (faceBytes - 127.0) / 126.0;
+    vec2 faceF = (vec2(float(faceCode >> 12u), float(faceCode & 4095u)) - ${FACE_OCT_MID}.0) / ${FACE_OCT_HALF}.0;
+    // The face map keeps the normal in bytes, 127 + 126 u (the texel rounds them).
+    vFaceOct = (faceF * 126.0 + 127.0) / 255.0;
     vec3 faceN = vec3(faceF, 1.0 - abs(faceF.x) - abs(faceF.y));
     float faceT = max(-faceN.z, 0.0);
     faceN.x += faceN.x >= 0.0 ? -faceT : faceT;
@@ -342,9 +349,9 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
     vec2 faceD = world - aInstXY;
     float faceSlope = faceN.z + faceN.y * uFaceSpace.x / uFaceSpace.y;
     float faceDz = abs(faceSlope) > 0.02 ? -(faceN.x * faceD.x + faceN.y * faceD.y / uFaceSpace.y) / faceSlope : 0.0;
-    // DX-FACEDEPTH: the row's innerZ (its height code's top bits) off before the height; innerZ 0 takes nothing off.
-    float faceInner = float(uint(aInstTileOff.y * 65535.0 + 0.5) >> ${FACE_INNER_Z_SHIFT}u);
-    vFaceZ = (aInstTileOff.y - faceInner * ${FACE_INNER_Z_UNIT}) * ${(65535 / FACE_Z_UNITS).toFixed(4)} + faceDz;
+    // DX-FACEDEPTH: the height code's low bits; innerZ is in its top ones.
+    uint faceHeight = uint(aInstTileOff.y * ${FACE_CODE_SCALE}.0 + 0.5);
+    vFaceZ = float(faceHeight & ${FACE_Z_HEIGHT_MAX_CODE}u) / ${FACE_ROW_Z_UNITS}.0 + faceDz;
   }
 `,
     );
@@ -477,7 +484,7 @@ export function faceVertexWgsl(source, { gbuf = false, unshadedMask = false } = 
     '  out.vTileOff = aInstTileOff;\n',
     gbufOut +
       (gbuf && unshadedMask ? UNSHADED_MASK_CUT_WGSL : '') +
-      `  let faceCode = u32(aInstTileOff.x * 65535.0 + 0.5);
+      `  let faceCode = u32(aInstTileOff.x * ${FACE_CODE_SCALE}.0 + 0.5);
   out.vFaceOct = vec2<f32>(0.0);
   out.vFaceZ = 0.0;
   // N-194: a scaled sprite's twin heights scale with it (faceMapVertex).
@@ -487,9 +494,9 @@ export function faceVertexWgsl(source, { gbuf = false, unshadedMask = false } = 
   // N-258: its normals turn with it and mirror with a negative scale (faceMapVertex).
   out.vNormalTurn = vec4<f32>(select(c, 1.0, isShear), select(s, 0.0, isShear), select(1.0, -1.0, aInstScale.x < 0.0), select(1.0, -1.0, aInstScale.y < 0.0));
   if (faceCode != 0u && all(aInstTileInv == vec2<f32>(0.0))) {
-    let faceBytes = vec2<f32>(f32(faceCode >> 8u), f32(faceCode & 255u));
-    out.vFaceOct = faceBytes / 255.0;
-    let faceF = (faceBytes - 127.0) / 126.0;
+    let faceF = (vec2<f32>(f32(faceCode >> 12u), f32(faceCode & 4095u)) - ${FACE_OCT_MID}.0) / ${FACE_OCT_HALF}.0;
+    // The face map keeps the normal in bytes, 127 + 126 u (faceMapVertex).
+    out.vFaceOct = (faceF * 126.0 + 127.0) / 255.0;
     var faceN = vec3<f32>(faceF, 1.0 - abs(faceF.x) - abs(faceF.y));
     let faceT = max(-faceN.z, 0.0);
     faceN.x += select(faceT, -faceT, faceN.x >= 0.0);
@@ -500,9 +507,9 @@ export function faceVertexWgsl(source, { gbuf = false, unshadedMask = false } = 
     if (abs(faceSlope) > 0.02) {
       faceDz = -(faceN.x * faceD.x + faceN.y * faceD.y / uniforms.uFaceSpace.y) / faceSlope;
     }
-    // DX-FACEDEPTH: the row's innerZ off before the height (faceMapVertex).
-    let faceInner = f32(u32(aInstTileOff.y * 65535.0 + 0.5) >> ${FACE_INNER_Z_SHIFT}u);
-    out.vFaceZ = (aInstTileOff.y - faceInner * ${FACE_INNER_Z_UNIT}) * ${(65535 / FACE_Z_UNITS).toFixed(4)} + faceDz;
+    // DX-FACEDEPTH: the height code's low bits (faceMapVertex).
+    let faceHeight = u32(aInstTileOff.y * ${FACE_CODE_SCALE}.0 + 0.5);
+    out.vFaceZ = f32(faceHeight & ${FACE_Z_HEIGHT_MAX_CODE}u) / ${FACE_ROW_Z_UNITS}.0 + faceDz;
   }
 `,
   );
@@ -680,7 +687,7 @@ export function resolveFaces(lighting, camera = null) {
  * @param {number} nx
  * @param {number} ny
  * @param {number} nz
- * @returns {number} the u16 of faceOct; 0 for a zero vector (no face)
+ * @returns {number} faceOct, 24 bits (12 a component); 0 for a zero vector (no face)
  */
 export function encodeFaceNormal(nx, ny, nz) {
   const sum = Math.abs(nx) + Math.abs(ny) + Math.abs(nz);
@@ -692,13 +699,13 @@ export function encodeFaceNormal(nx, ny, nz) {
     v = (1 - Math.abs(u)) * (v >= 0 ? 1 : -1);
     u = fu;
   }
-  return (Math.round(u * 126 + 127) << 8) | Math.round(v * 126 + 127);
+  return (Math.round(u * FACE_OCT_HALF + FACE_OCT_MID) << 12) | Math.round(v * FACE_OCT_HALF + FACE_OCT_MID);
 }
 
 /** What the shaders decode: a unit normal, in `out`. */
 export function decodeFaceNormal(code, out) {
-  const fx = (((code >> 8) & 255) - 127) / 126;
-  const fy = ((code & 255) - 127) / 126;
+  const fx = (((code >>> 12) & 4095) - FACE_OCT_MID) / FACE_OCT_HALF;
+  const fy = ((code & 4095) - FACE_OCT_MID) / FACE_OCT_HALF;
   let z = 1 - Math.abs(fx) - Math.abs(fy);
   const t = z < 0 ? -z : 0;
   const x = fx + (fx >= 0 ? -t : t);
@@ -731,12 +738,12 @@ export function turnFrameNormal(n, c, s, sx, sy, out) {
 }
 
 /**
- * @param {number} z the face's height at its position, px (0 to FACE_Z_HEIGHT_MAX_CODE / FACE_Z_UNITS)
+ * @param {number} z the face's height at its position, px (0 to FACE_Z_HEIGHT_MAX_CODE / FACE_ROW_Z_UNITS)
  * @param {number} [innerZ] DX-FACEDEPTH: 0 a wall, 1 to FACE_INNER_Z_MAX what is stuck on it (clamped)
- * @returns {number} the u16 of faceZ: the height in its low FACE_INNER_Z_SHIFT bits, innerZ above
+ * @returns {number} faceZ, 24 bits: the height in its low FACE_INNER_Z_SHIFT bits, innerZ above
  */
 export function encodeFaceHeight(z, innerZ = 0) {
-  const code = Math.round(z * FACE_Z_UNITS);
+  const code = Math.round(z * FACE_ROW_Z_UNITS);
   const h = code < 0 ? 0 : code > FACE_Z_HEIGHT_MAX_CODE ? FACE_Z_HEIGHT_MAX_CODE : code;
   const k = innerZ | 0;
   return ((k < 0 ? 0 : k > FACE_INNER_Z_MAX ? FACE_INNER_Z_MAX : k) << FACE_INNER_Z_SHIFT) | h;
@@ -744,5 +751,5 @@ export function encodeFaceHeight(z, innerZ = 0) {
 
 /** DX-FACEDEPTH: a faceZ's parts, { height (px), innerZ }. */
 export function decodeFaceHeight(code) {
-  return { height: (code & FACE_Z_HEIGHT_MAX_CODE) / FACE_Z_UNITS, innerZ: code >>> FACE_INNER_Z_SHIFT };
+  return { height: (code & FACE_Z_HEIGHT_MAX_CODE) / FACE_ROW_Z_UNITS, innerZ: code >>> FACE_INNER_Z_SHIFT };
 }

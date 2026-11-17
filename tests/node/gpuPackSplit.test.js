@@ -39,7 +39,7 @@ async function setup(seed) {
     count: N, x: f32(), y: f32(), scaleX: f32(), scaleY: f32(), rotC: f32(), rotS: f32(), alpha: f32(),
     tint: alloc(Uint32Array, N), textureId: alloc(Uint16Array, N), anchorX: f32(), anchorY: f32(),
     repeatX: alloc(Uint16Array, N), repeatY: alloc(Uint16Array, N), tileMulX: f32(), tileMulY: f32(),
-    tileOffsetU: alloc(Uint16Array, N), tileOffsetV: alloc(Uint16Array, N),
+    tileOffsetU: alloc(Uint32Array, N), tileOffsetV: alloc(Uint32Array, N),
     shadowH: f32(), shadowOffX: f32(), shadowOffY: f32(), type: alloc(Uint8Array, N),
   };
   for (let i = 0; i < N; i++) {
@@ -178,21 +178,6 @@ test('the pose alone leaves the statics as they were', async () => {
   assert.equal(packSplitRows(s.q, jsCtx, pose, null, null, N), ref.n);
   sameWords(ref.pose, words(pose, ref.n * GPU_POSE_FLOATS), 'js pose');
   assert.equal(jsCtx.particleCount, ref.particles, 'js particles');
-});
-
-test('E-513: with a nearest atlas\'s pixel snap the kernel\'s two streams are the snapped 15-float rows\' own', async () => {
-  const s = await setup(7);
-  const opts = { space: GPU_SPACE_WORLD, pixelSnap: true, snapZoom: 2.5, snapCameraX: 13.25, snapCameraY: -7.5 };
-  const ref = reference(s.q, opts, N);
-  const ctx = makePackContext(s.q, opts, N, {});
-  assert.equal(packSplitRowsWasm(s.b, s.q, ctx, s.pose, s.stat, N), ref.n);
-  sameWords(ref.pose, words(s.pose, ref.n * GPU_POSE_FLOATS), 'snapped pose');
-  sameWords(ref.stat, words(s.stat, ref.n * GPU_STATIC_FLOATS), 'statics');
-  // Not a no-op: some pose moved under the snap.
-  const plain = reference(s.q, { space: GPU_SPACE_WORLD }, N);
-  let moved = 0;
-  for (let k = 0; k < ref.pose.length; k++) if (ref.pose[k] !== plain.pose[k]) moved++;
-  assert.ok(moved > 0, 'the snap moves poses');
 });
 
 test('both decline what the fast path does not take', async () => {

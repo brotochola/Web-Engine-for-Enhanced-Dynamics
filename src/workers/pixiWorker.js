@@ -59,6 +59,7 @@ import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource, shaderWithFlag } from '../render/faceMap.js';
+import { applyPixelSnap } from '../render/pixelSnap.js';
 import { packMapsTable } from '../render/mapsTable.js';
 import { setTwinFormat } from '../render/twinTexel.js';
 import {
@@ -1243,10 +1244,6 @@ class PixiRenderer extends AbstractWorker {
       cameraX: 0,
       cameraY: 0,
       resolution: 1,
-      pixelSnap: false,
-      snapZoom: 1,
-      snapCameraX: 0,
-      snapCameraY: 0,
       depthMode: BATCH_DEPTH.INDEX,
       depthDenom: 1,
       worldHeight: 10000,
@@ -2066,10 +2063,6 @@ class PixiRenderer extends AbstractWorker {
     opts.texLut = this._texLut;
     opts.texLutCount = this._texLutCount;
     opts.textures = this.flatTextures;
-    opts.pixelSnap = this.atlasScaleMode === 'nearest';
-    opts.snapZoom = this._renderZoom;
-    opts.snapCameraX = this._renderCameraX;
-    opts.snapCameraY = this._renderCameraY;
     opts.cameraRot = 0;
   }
 
@@ -3159,7 +3152,7 @@ class PixiRenderer extends AbstractWorker {
       data: this._pixiInstanceRows,
       gpuPack: this._pixiGpuPack,
       // E-82b: the plain sprites in two streams, the statics uploaded when they change. E-513: a nearest atlas too (its
-      // pixel snap goes on the poses after the split and indexed packs: gpuPack.c snap_poses).
+      // pixel snap is in the sprite vertex shaders: N-271, pixelSnap.js).
       split: !this._queueInterp,
       // E-162: with the queue's indexed frames (renderer.indexedSprites), where their statics go: a texture through the
       // record texture helper (WebGL), or a storage buffer within the device's binding size (WebGPU), which a keyed
@@ -10214,6 +10207,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       atlasScaleMode === 'nearest' || atlasScaleMode === 'linear'
         ? atlasScaleMode
         : RENDERER_DEFAULTS.atlasScaleMode;
+    // N-271: a nearest atlas snaps each sprite's origin to the pixel grid in its vertex shader (pixelSnap.js), before any
+    // sprite program is made from these sources; the packs leave the poses as they are.
+    if (this.atlasScaleMode === 'nearest') applyPixelSnap(this._engineShaders, this._useWebGpu);
 
     this.decorationFadeStartZoom =
       preCfg.startFadingDecorationsAtZoom !== undefined

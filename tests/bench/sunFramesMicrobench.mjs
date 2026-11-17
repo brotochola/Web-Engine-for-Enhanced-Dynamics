@@ -222,7 +222,7 @@ export async function setup({ slots = 57633, casters = 38000, others = 9000, cha
       for (let i = 0; i < count; i++) if (qType[i] !== 3 && shadowH[i] > 0) casterIdx[n++] = i;
       const opts = {
         includeType: -1, excludeType0: -1, excludeType1: -1, indices: casterIdx, indexCount: n, sortKey: null,
-        space: layout.GPU_SPACE_WORLD, zoom: 1, cameraX: 0, cameraY: 0, resolution: 1, depthDenom: count, pixelSnap: false,
+        space: layout.GPU_SPACE_WORLD, zoom: 1, cameraX: 0, cameraY: 0, resolution: 1, depthDenom: count,
         type: qType,
       };
       scan.full = { makePackContext: layout.makePackContext, pack: client.packInstancedRowsWasm, casterIdx, opts, ctx: {} };

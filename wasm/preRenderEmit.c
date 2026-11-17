@@ -282,7 +282,7 @@ typedef struct {
   const float *scH, *scOx, *scOy;
   const float *dScaleX, *dScaleY, *dAlpha;
   const uint32_t *dTint;
-  const uint16_t *dFaceOct, *dFaceZ;
+  const uint32_t *dFaceOct, *dFaceZ;
   const uint16_t *dTexture;
   const float *dAnchorX, *dAnchorY;
   uint16_t *aFrame;
@@ -302,7 +302,7 @@ typedef struct {
   float *qSortKey;
   uint16_t *qRepeatX, *qRepeatY;
   uint8_t *qTileMode;
-  uint16_t *qTileOffU, *qTileOffV;
+  uint32_t *qTileOffU, *qTileOffV;
   float *qTileMulX, *qTileMulY, *qShadowH, *qShadowOffX, *qShadowOffY;
   uint32_t *qKey;
   uint8_t *sKeyedDirty;
@@ -390,8 +390,8 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->dScaleY = PTR(const float, D_SCALE_Y);
   e->dAlpha = PTR(const float, D_ALPHA);
   e->dTint = PTR(const uint32_t, D_TINT);
-  e->dFaceOct = PTR(const uint16_t, D_FACE_OCT);
-  e->dFaceZ = PTR(const uint16_t, D_FACE_Z);
+  e->dFaceOct = PTR(const uint32_t, D_FACE_OCT);
+  e->dFaceZ = PTR(const uint32_t, D_FACE_Z);
   e->dTexture = PTR(const uint16_t, D_TEXTURE);
   e->dAnchorX = PTR(const float, D_ANCHOR_X);
   e->dAnchorY = PTR(const float, D_ANCHOR_Y);
@@ -422,8 +422,8 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->qRepeatX = PTR(uint16_t, Q_REPEAT_X);
   e->qRepeatY = PTR(uint16_t, Q_REPEAT_Y);
   e->qTileMode = PTR(uint8_t, Q_TILE_MODE);
-  e->qTileOffU = PTR(uint16_t, Q_TILE_OFF_U);
-  e->qTileOffV = PTR(uint16_t, Q_TILE_OFF_V);
+  e->qTileOffU = PTR(uint32_t, Q_TILE_OFF_U);
+  e->qTileOffV = PTR(uint32_t, Q_TILE_OFF_V);
   e->qTileMulX = PTR(float, Q_TILE_MUL_X);
   e->qTileMulY = PTR(float, Q_TILE_MUL_Y);
   e->qShadowH = PTR(float, Q_SHADOW_H);
@@ -856,8 +856,8 @@ INLINE void deco_face(const Emit *e, uint32_t i, uint32_t out) {
 /* The rows of a frame without Adobe roots, where row i is collector row i: a loop of their own, so that a scene without
    faces pays one test a frame and deco_row none (it is on every decoration's path). It takes the columns, not the Emit:
    a call the inliner leaves out would otherwise put emit_rows' Emit on the stack (E-330's copy made it leave it out). */
-static void deco_faces(const uint8_t *cType, const int32_t *cIndex, const uint16_t *faceOct, const uint16_t *faceZ,
-                       uint16_t *offU, uint16_t *offV, uint32_t n) {
+static void deco_faces(const uint8_t *cType, const int32_t *cIndex, const uint32_t *faceOct, const uint32_t *faceZ,
+                       uint32_t *offU, uint32_t *offV, uint32_t n) {
   for (uint32_t i = 0; i < n; i++) {
     if (cType[i] == 2) {
       const int32_t idx = cIndex[i];

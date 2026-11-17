@@ -30,7 +30,8 @@ const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, im
 
 const angleDeg = (a, b) => (Math.acos(Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2])) * 180) / Math.PI;
 
-test('a normal comes back within a degree, whichever way it looks, and no code has a zero byte', () => {
+// N-271: 12 bits a component, so that pieces anchored apart on one wall keep one plane in the depth.
+test('a normal comes back within a tenth of a degree, whichever way it looks, and no code has a zero half', () => {
   const out = [0, 0, 0];
   let seed = 7;
   const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1;
@@ -39,8 +40,8 @@ test('a normal comes back within a degree, whichever way it looks, and no code h
     const len = Math.sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
     const n = v.map((c) => c / len);
     const code = encodeFaceNormal(n[0], n[1], n[2]);
-    assert.ok(code >> 8 > 0 && (code & 255) > 0, `code ${code} would read as no face`);
-    assert.ok(angleDeg(n, decodeFaceNormal(code, out)) < 1, `${n} came back as ${out}`);
+    assert.ok(code >>> 12 > 0 && (code & 4095) > 0 && code < 1 << 24, `code ${code} would read as no face`);
+    assert.ok(angleDeg(n, decodeFaceNormal(code, out)) < 0.1, `${n} came back as ${out}`);
   }
 });
 
@@ -58,18 +59,18 @@ test('a normal need not be unit length, and a zero one is no face', () => {
   assert.equal(encodeFaceNormal(3, 4, 0), encodeFaceNormal(0.6, 0.8, 0));
 });
 
-// DX-FACEDEPTH: 13 bits of height (1023.875 px) and innerZ in the top 3, clamped to 0..7.
-test('a height is kept in eighths of a px in 13 bits, the face\'s innerZ in the top 3', async () => {
+// DX-FACEDEPTH, N-271: 21 bits of height in 1/64 px (32 767 px) and innerZ in the top 3, clamped to 0..7.
+test('a height is kept in 64ths of a px in 21 bits, the face\'s innerZ in the top 3', async () => {
   const { decodeFaceHeight, FACE_INNER_Z_SHIFT, FACE_Z_HEIGHT_MAX_CODE } = await import('../../src/render/faceMap.js');
   assert.equal(encodeFaceHeight(0), 0);
-  assert.equal(encodeFaceHeight(1.25), 10);
+  assert.equal(encodeFaceHeight(1.25), 80);
   assert.equal(encodeFaceHeight(-3), 0);
   assert.equal(encodeFaceHeight(1e6), FACE_Z_HEIGHT_MAX_CODE);
-  assert.equal(encodeFaceHeight(1.25, 3), (3 << FACE_INNER_Z_SHIFT) | 10);
+  assert.equal(encodeFaceHeight(1.25, 3), (3 << FACE_INNER_Z_SHIFT) | 80);
   assert.equal(encodeFaceHeight(1.25, 9) >>> FACE_INNER_Z_SHIFT, 7, 'innerZ past 7 is 7');
-  assert.equal(encodeFaceHeight(1.25, -4), 10, 'a negative innerZ (an attached piece\'s) is 0 on a face');
-  assert.deepEqual(decodeFaceHeight(encodeFaceHeight(109.8, 2)), { height: 109.75, innerZ: 2 });
-  assert.ok(encodeFaceHeight(1e6, 7) <= 65535);
+  assert.equal(encodeFaceHeight(1.25, -4), 80, 'a negative innerZ (an attached piece\'s) is 0 on a face');
+  assert.deepEqual(decodeFaceHeight(encodeFaceHeight(109.8, 2)), { height: 109.796875, innerZ: 2 });
+  assert.ok(encodeFaceHeight(1e6, 7) < 1 << 24, 'a code is exact in a float32');
 });
 
 // DX-BARRIOS: no lighting.faces: a scene's light can take faces where it is lit and not raycasted (whether any decoration
@@ -113,10 +114,10 @@ test('the face map is made from every sprite vertex shader the batch uses', () =
   for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
     const v = faceMapVertex(shader(name));
     assert.match(v, /flat out vec2 vFaceOct;/, name);
-    assert.match(v, /vFaceZ = \(aInstTileOff\.y - faceInner \* [\d.]+\) \* /, name);
+    assert.match(v, /vFaceZ = float\(faceHeight & \d+u\) \/ [\d.]+ \+ faceDz;/, name);
   }
   const indexed = spriteIndexedVertex(faceMapVertex(shader('instancedSprite.vert.glsl')));
-  assert.match(indexed, /vFaceZ = \(aInstTileOff\.y - faceInner \* [\d.]+\) \* /);
+  assert.match(indexed, /vFaceZ = float\(faceHeight & \d+u\) \/ [\d.]+ \+ faceDz;/);
   assert.throws(() => faceMapVertex('void main() {\n}\n'), /vTileOff/);
   for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
     const w = faceMapWgsl(shader(name));
@@ -128,14 +129,16 @@ test('the face map is made from every sprite vertex shader the batch uses', () =
 });
 
 test('the height scale of the shaders is the encoder\'s', () => {
-  // A face at 100 px reads back as 100 in the vertex shader's float: u16 / 65535 * scale.
+  // N-271: a face's code reaches the vertex as code / 65536 in a float32 (gpuPack.c TILE_OFF_SCALE), which it reads back
+  // whole; its height is the low 21 bits in 1/64 px, innerZ above them.
   const v = faceMapVertex(shader('instancedSprite.vert.glsl'));
-  const [, unit, scale] = v.match(/vFaceZ = \(aInstTileOff\.y - faceInner \* ([\d.]+)\) \* ([\d.]+)/).map(Number);
-  const code = encodeFaceHeight(100);
-  assert.ok(Math.abs((code / 65535) * scale - 100) < 1e-3);
-  // DX-FACEDEPTH: with innerZ in the top bits, the shader takes it off before the height.
-  const stuck = encodeFaceHeight(100, 5);
-  assert.ok(Math.abs((stuck / 65535 - (stuck >>> 13) * unit) * scale - 100) < 1e-3);
+  const [, scale, mask, units] = v.match(/uint faceHeight = uint\(aInstTileOff\.y \* ([\d.]+) \+ 0\.5\);\n\s*vFaceZ = float\(faceHeight & (\d+)u\) \/ ([\d.]+) \+ faceDz;/).map(Number);
+  for (const [z, k] of [[100, 0], [100, 5], [0.015625, 7], [32767.984375, 7], [3.2, 1]]) {
+    const code = encodeFaceHeight(z, k);
+    const read = Math.floor(Math.fround(code / 65536) * scale + 0.5);
+    assert.equal(read, code, `${z}, ${k}: the code comes back whole`);
+    assert.ok(Math.abs((read & mask) / units - z) <= 1 / 128, `${z}, ${k}`);
+  }
   assert.match(shader('faceMap.frag.glsl'), /clamp\(z \* 8\.0/);
   // DX-MAPS: a twin texel's height is in spriteMaps.js's units (twinTexel.js twinZ; N-194: times the sprite's scale where
   // it is written).
@@ -176,7 +179,7 @@ test('spawnMany takes a face per decoration', () => {
   });
   assert.equal(made, 3);
   assert.deepEqual([...out].map((i) => D.faceOct[i]), [encodeFaceNormal(1, 0, 0), encodeFaceNormal(0, 1, 0), encodeFaceNormal(0, 0, 1)]);
-  assert.deepEqual([...out].map((i) => D.faceZ[i]), [80, 160, 240]);
+  assert.deepEqual([...out].map((i) => D.faceZ[i]), [640, 1280, 1920]);
 });
 
 // DX-MAPS on WebGPU: the face pass's WGSL reads the atlas's twin page at group 2's binding 5, and its programs' explicit
@@ -399,7 +402,7 @@ test('spawnMany takes innerZ a decoration, and a face carries it in its row', ()
     faceNormalX: [0, 0, 0], faceNormalY: [1, 1, 1], faceNormalZ: [0, 0, 0], faceHeight: [20, 20, 20], out,
   });
   assert.equal(n, 3);
-  assert.deepEqual([...out].map((i) => D.faceZ[i] >>> 13), [0, 2, 7], 'innerZ in the top bits, 7 at most');
-  assert.deepEqual([...out].map((i) => (D.faceZ[i] & 8191) / 8), [20, 20, 20], 'the height below');
+  assert.deepEqual([...out].map((i) => D.faceZ[i] >>> 21), [0, 2, 7], 'innerZ in the top bits, 7 at most');
+  assert.deepEqual([...out].map((i) => (D.faceZ[i] & 2097151) / 64), [20, 20, 20], 'the height below');
   assert.deepEqual([...out].map((i) => D.innerZ[i]), [0, 2, 9], 'the sort keeps its own innerZ');
 });

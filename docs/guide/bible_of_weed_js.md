@@ -1787,7 +1787,7 @@ static config = {
 ```
 
 - It turns on by itself with an oblique camera (`floorScaleY` under 1) when at least one sheet has a `heightMap`, a `normalMap` or a `reliefMap`, or once a decoration carries a face's normal. `renderer.pixelDepth: false` turns it off; `true` turns it on with any camera, still only with maps or faces.
-- A face writes its plane's depth, so a wall goes whole: no need to cut it into columns for the painter. Pieces stuck on a wall, on its plane (a window, its lit pane, a poster), say their order on it with `innerZ`: 0 the wall, 1 to 7 what lies on it, in stacking order.
+- A face writes its plane's depth, so a wall goes whole: no need to cut it into columns for the painter. Pieces stuck on a wall, on its plane (a window, its lit pane, a poster), say their order on it with `innerZ`: 0 the wall, 1 to 7 what lies on it, in stacking order. Each step brings a piece a quarter of a floor px nearer than its wall, more than the plane's rounding and less than anything standing in front of the wall, so a window stays on its wall however the camera moves; give it the wall's normal and the height of the wall's plane at its own position.
 - WebGL and WebGPU.
 - An unshaded pixel writes no depth, and an unshaded sheet does not turn pixel depth on.
 
@@ -1866,7 +1866,7 @@ create() {
 }
 ```
 
-The normal is in the floor's space: x along the screen, y across the floor towards the camera, z up. It need not be unit length. `faceHeight` is the height, in px (0 to 1023.875), of the point of the face at the decoration's position; the rest of the sprite follows from the plane, so a pitched roof takes one number, and so does a wall sheared with `skewX` and `skewY`. Leave `faceNormalX` out and the decoration is no face. `spawnMany` takes all four, and `innerZ`, as arrays.
+The normal is in the floor's space: x along the screen, y across the floor towards the camera, z up. It need not be unit length. `faceHeight` is the height, in px (0 to 32 767, kept in 64ths), of the point of the face at the decoration's position; the rest of the sprite follows from the plane, so a pitched roof takes one number, and so does a wall sheared with `skewX` and `skewY`. Leave `faceNormalX` out and the decoration is no face. `spawnMany` takes all four, and `innerZ`, as arrays.
 
 After the spawn, `Decoration.get(i)` reaches the same things: `setFaceNormal(x, y, z)` (0, 0, 0 makes it a sprite again), `getFaceNormal(out)`, `faceHeight`, `isFace`, and `innerZ`, which on a face is also its order among the pieces of its plane.
 

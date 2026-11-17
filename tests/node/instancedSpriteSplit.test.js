@@ -45,7 +45,7 @@ function queue(seed, gen) {
     alpha: new Float32Array(N).map(() => rng()), tint: new Uint32Array(N).map(() => (rng() * 0xffffff) | 0),
     textureId: new Uint16Array(N).map(() => (rng() * 400) | 0), anchorX: f32(), anchorY: f32(),
     repeatX: new Uint16Array(N), repeatY: new Uint16Array(N), tileMode: new Uint8Array(N),
-    tileOffsetU: new Uint16Array(N).map(() => (rng() * 65535) | 0), tileOffsetV: new Uint16Array(N),
+    tileOffsetU: new Uint32Array(N).map(() => (rng() * 65535) | 0), tileOffsetV: new Uint32Array(N),
     tileMulX: f32(), tileMulY: f32(), type: new Uint8Array(N).map(() => (rng() * 5) | 0), staticGen: new Uint32Array([gen]),
   };
 }
@@ -89,7 +89,6 @@ test('a split batch is a plain batch in two streams, on the fast path and the fa
     ['dense', opts(q)],
     ['indices', opts(q, { indices: idx, indexCount: N })],
     ['screen space (the fallback)', opts(q, { space: BATCH_SPACE.SCREEN, zoom: 1.5, cameraX: 10, cameraY: -4 })],
-    ['pixel snap (the fallback)', opts(q, { pixelSnap: true, snapZoom: 2, snapCameraX: 3, snapCameraY: 1 })],
     ['type filter (the fallback)', opts(q, { includeType: 2 })],
   ];
   for (const [label, o] of cases) {

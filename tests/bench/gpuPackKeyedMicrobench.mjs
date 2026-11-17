@@ -69,7 +69,7 @@ export async function setup(rows, entities, orderKind) {
     count: rows, x: f32(), y: f32(), scaleX: f32(), scaleY: f32(), rotC: f32(), rotS: f32(), alpha: f32(),
     tint: alloc(Uint32Array, rows), textureId: alloc(Uint16Array, rows), anchorX: f32(), anchorY: f32(),
     repeatX: alloc(Uint16Array, rows), repeatY: alloc(Uint16Array, rows), tileMulX: f32(), tileMulY: f32(),
-    tileOffsetU: alloc(Uint16Array, rows), tileOffsetV: alloc(Uint16Array, rows),
+    tileOffsetU: alloc(Uint32Array, rows), tileOffsetV: alloc(Uint32Array, rows),
     shadowH: f32(), shadowOffX: f32(), shadowOffY: f32(), type: alloc(Uint8Array, rows), key: alloc(Uint32Array, rows),
   };
   // The sprites' keys: distinct entities, ascending in the queue's order, as the emit writes them.

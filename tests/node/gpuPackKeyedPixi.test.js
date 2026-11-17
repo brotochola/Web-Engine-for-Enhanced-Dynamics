@@ -252,8 +252,8 @@ function rowStatics(q, i) {
   f[6] = q.textureId[i];
   f[7] = q.tileMulX[i];
   f[8] = q.tileMulY[i];
-  f[9] = q.tileOffsetU[i] * (1 / 65535);
-  f[10] = q.tileOffsetV[i] * (1 / 65535);
+  f[9] = q.tileOffsetU[i] * (1 / 65536);
+  f[10] = q.tileOffsetV[i] * (1 / 65536);
   return u;
 }
 

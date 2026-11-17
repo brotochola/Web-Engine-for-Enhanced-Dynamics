@@ -59,7 +59,7 @@ async function setup(seed) {
     count: N, x: f32(), y: f32(), scaleX: f32(), scaleY: f32(), rotC: f32(), rotS: f32(), alpha: f32(),
     tint: alloc(Uint32Array, N), textureId: alloc(Uint16Array, N), anchorX: f32(), anchorY: f32(),
     repeatX: alloc(Uint16Array, N), repeatY: alloc(Uint16Array, N), tileMode: alloc(Uint8Array, N),
-    tileMulX: f32(), tileMulY: f32(), tileOffsetU: alloc(Uint16Array, N), tileOffsetV: alloc(Uint16Array, N),
+    tileMulX: f32(), tileMulY: f32(), tileOffsetU: alloc(Uint32Array, N), tileOffsetV: alloc(Uint32Array, N),
     shadowH: f32(), shadowOffX: f32(), shadowOffY: f32(), type: alloc(Uint8Array, N),
   };
   const prevX = f32();
@@ -139,15 +139,11 @@ test('pack_pose writes what the pose batch writes, both streams and the pose alo
     ['world', { space: BATCH_SPACE.WORLD }],
     ['world, the previous pose', { space: BATCH_SPACE.WORLD, ...prev }],
     ['world, the pose snap', { space: BATCH_SPACE.WORLD, ...prev, snap: true }],
-    ['world, pixel snap', { space: BATCH_SPACE.WORLD, ...prev, pixelSnap: true, snapCameraX: 17.3, snapCameraY: -9.75, snapZoom: 2.5 }],
-    ['world, pixel snap without a zoom', { space: BATCH_SPACE.WORLD, ...prev, pixelSnap: true }],
     ['screen', { ...cam, space: BATCH_SPACE.SCREEN, ...prev }],
     ['screen, turned', { ...cam, space: BATCH_SPACE.SCREEN, cameraRot: 0.61, ...prev }],
-    ['screen, snapped', { ...cam, space: BATCH_SPACE.SCREEN, pixelSnap: true, ...prev }],
-    ['screen, turned, snapped', { ...cam, space: BATCH_SPACE.SCREEN, cameraRot: -1.2, pixelSnap: true, ...prev }],
     ['include a type', { space: BATCH_SPACE.WORLD, type: s.q.type, includeType: 3, ...prev }],
     ['exclude two types', { space: BATCH_SPACE.WORLD, type: s.q.type, excludeType0: 1, excludeType1: 4, ...prev }],
-    ['screen, include, snapped', { ...cam, space: BATCH_SPACE.SCREEN, type: s.q.type, includeType: 2, pixelSnap: true, ...prev }],
+    ['screen, include', { ...cam, space: BATCH_SPACE.SCREEN, type: s.q.type, includeType: 2, ...prev }],
     ['indices in the memory', { space: BATCH_SPACE.WORLD, indices: s.inMemory, indexCount: N, ...prev }],
     ['indices copied in', { ...cam, space: BATCH_SPACE.SCREEN, cameraRot: 0.3, indices: s.outside, indexCount: 2222, ...prev }],
     ['a depth denominator', { space: BATCH_SPACE.WORLD, depthDenom: 5000, ...prev }],
@@ -187,7 +183,7 @@ test('a pose batch on the Pixi region uploads through the kernel what the JS pos
   assert.ok(!(wasm.data.buffer instanceof SharedArrayBuffer), 'and uploads a private copy (E-123)');
   const opts = {
     space: BATCH_SPACE.WORLD, includeType: -1, excludeType0: -1, excludeType1: -1,
-    prevX: s.prevX, prevY: s.prevY, pixelSnap: true, snapCameraX: 3.5, snapCameraY: -2.25, snapZoom: 1.5,
+    prevX: s.prevX, prevY: s.prevY,
   };
   // Three frames: the first packs the statics, then the pose alone (statics current), then both again after the
   // queue's statics generation would have moved (a row count that differs).

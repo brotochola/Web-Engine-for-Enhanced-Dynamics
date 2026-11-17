@@ -51,7 +51,7 @@ async function setup(seed) {
     count: N, x: f32(), y: f32(), scaleX: f32(), scaleY: f32(), rotC: f32(), rotS: f32(), alpha: f32(),
     tint: alloc(Uint32Array, N), textureId: alloc(Uint16Array, N), anchorX: f32(), anchorY: f32(),
     repeatX: alloc(Uint16Array, N), repeatY: alloc(Uint16Array, N), tileMulX: f32(), tileMulY: f32(),
-    tileOffsetU: alloc(Uint16Array, N), tileOffsetV: alloc(Uint16Array, N),
+    tileOffsetU: alloc(Uint32Array, N), tileOffsetV: alloc(Uint32Array, N),
     shadowH: f32(), shadowOffX: f32(), shadowOffY: f32(), type: alloc(Uint8Array, N), key: alloc(Uint32Array, N),
   };
   for (let i = 0; i < N; i++) {
@@ -200,7 +200,6 @@ test('the keyed pack declines what it does not take', async () => {
   const { q, b, pose, slots, keyed, order } = s;
   const run = (opts, qq = q, p = pose, sl = slots) => packKeyedRowsWasm(b, qq, makePackContext(qq, opts, N, {}), p, sl, keyed, N);
   assert.equal(run({ space: GPU_SPACE_SCREEN, zoom: 1, indices: order, indexCount: N }), -1, 'screen space');
-  assert.equal(run({ space: GPU_SPACE_WORLD, pixelSnap: true, indices: order, indexCount: N }), -1, 'pixel snap');
   assert.equal(run({ space: GPU_SPACE_WORLD, type: q.type, includeType: 0 }), -1, 'a type filter');
   assert.equal(run({ space: GPU_SPACE_WORLD, indices: order, indexCount: N }, { ...q, key: null }), -1, 'no key column');
   assert.equal(run({ space: GPU_SPACE_WORLD, indices: order, indexCount: N }, { ...q, key: new Uint32Array(N) }), -1,

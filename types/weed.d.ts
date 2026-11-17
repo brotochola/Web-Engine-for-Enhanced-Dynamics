@@ -1233,7 +1233,7 @@ export interface DecorationSpawnConfig {
   faceNormalX?: number;
   faceNormalY?: number;
   faceNormalZ?: number;
-  /** Px above the floor of the face at this decoration's position, 0 to 1023.875. Default 0. */
+  /** Px above the floor of the face at this decoration's position, 0 to 32767 (kept in 64ths of a px). Default 0. */
   faceHeight?: number;
   sway?: boolean;
   /** Shear the sway instead of turning the sprite (it then ignores `rotation` and the parent's). */

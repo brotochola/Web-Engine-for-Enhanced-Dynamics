@@ -40,7 +40,7 @@ async function setup(seed) {
     count: N, x: f32(), y: f32(), scaleX: f32(), scaleY: f32(), rotC: f32(), rotS: f32(), alpha: f32(),
     tint: alloc(Uint32Array, N), textureId: alloc(Uint16Array, N), anchorX: f32(), anchorY: f32(),
     repeatX: alloc(Uint16Array, N), repeatY: alloc(Uint16Array, N), tileMulX: f32(), tileMulY: f32(),
-    tileOffsetU: alloc(Uint16Array, N), tileOffsetV: alloc(Uint16Array, N),
+    tileOffsetU: alloc(Uint32Array, N), tileOffsetV: alloc(Uint32Array, N),
     shadowH: f32(), shadowOffX: f32(), shadowOffY: f32(), type: alloc(Uint8Array, N),
   };
   for (let i = 0; i < N; i++) {
@@ -152,14 +152,6 @@ test('without the statics the indexed scatter writes the pose and the slots and 
   for (let k = 0; k < n; k++) assert.equal(s.slots[k * GPU_INDEXED_SLOT_FLOATS], s.order[k]);
   assert.deepEqual(words(s.stat, N * GPU_INDEXED_STATIC_FLOATS), before, 'the statics as they were');
   assert.equal(ctx.particleCount, splitCtx.particleCount);
-});
-
-test('E-513: with a nearest atlas\'s pixel snap the indexed pose is the split pack\'s snapped pose', async () => {
-  const s = await setup(10);
-  const opts = { space: GPU_SPACE_WORLD, indices: s.inMemory, indexCount: N, type: s.q.type, pixelSnap: true, snapZoom: 3, snapCameraX: -4.75, snapCameraY: 9.5 };
-  const n = packSplitRowsWasm(s.b, s.q, makePackContext(s.q, opts, N, {}), s.splitPose, null, N);
-  assert.equal(packIndexedRowsWasm(s.b, s.q, makePackContext(s.q, opts, N, {}), s.pose, s.slots, s.stat, N), n);
-  assert.deepEqual(words(s.pose, n * GPU_POSE_FLOATS), words(s.splitPose, n * GPU_POSE_FLOATS));
 });
 
 test('the indexed pack declines what it does not take, and the kernel a list that is not distinct rows', async () => {

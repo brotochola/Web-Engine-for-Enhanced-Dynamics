@@ -34,10 +34,11 @@ const FIELDS = [
     // World-space tile period in px; 0 = stretch. A u16 pair.
     ['repeatX',     Uint16Array,            2,   0],
     ['repeatY',     Uint16Array,            2,   0],
-    // SPRITE_TILE_MODE; offset 0..65535 = UV 0..1; signed mul written by pre_render.
+    // SPRITE_TILE_MODE; offset 0..65535 = UV 0..1; signed mul written by pre_render. N-271: u32, so that a face's 24-bit
+    // codes (its normal, its height and innerZ: faceMap.js) ride in them; the packs send code / 65536 to the GPU.
     ['tileMode',    Uint8Array,             1,   0],
-    ['tileOffsetU', Uint16Array,            2,   0],
-    ['tileOffsetV', Uint16Array,            2,   0],
+    ['tileOffsetU', Uint32Array,            4,   0],
+    ['tileOffsetV', Uint32Array,            4,   0],
     ['tileMulX',    Float32Array,           4,   0],
     ['tileMulY',    Float32Array,           4,   0],
     // ShadowCaster height and anchor offsets. 0 height means this row casts nothing.

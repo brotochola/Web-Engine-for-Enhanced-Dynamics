@@ -106,7 +106,7 @@ export async function bindGpuPack(memory, layout) {
     'pack_casters_keyed_scan_xy',
     'pack_sprites_keyed_rows', 'pack_sprites_keyed_gbuf', 'pack_sprites_keyed_rows_gbuf', 'lamp_frames',
     'pack_casters_framed', 'pack_casters_scatter_framed', 'pack_sprites_split_gbuf', 'pack_sprites_split_scatter_gbuf',
-    'pack_sprites_indexed_scatter_gbuf', 'snap_poses',
+    'pack_sprites_indexed_scatter_gbuf',
   ]);
   return {
     buffer: memory.buffer,
@@ -127,7 +127,6 @@ export async function bindGpuPack(memory, layout) {
     spritesSplitScatterGbuf: k.pack_sprites_split_scatter_gbuf,
     spritesIndexedScatterGbuf: k.pack_sprites_indexed_scatter_gbuf,
     // E-513, E-515: a nearest atlas's pixel snap on the two-stream packs' poses.
-    snapPoses: k.snap_poses,
     // E-177: the pose and the statics' key in draw order, the statics that changed as updates of a table by key.
     spritesKeyed: k.pack_sprites_keyed,
     // E-201: the same with each drawn instance's queue row instead of its pose (the shader fetches the pose by row).
@@ -232,8 +231,7 @@ export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shado
     sun.listed = 0;
   }
   if (!b || !q || !dst || !ctx) return -1;
-  const o = ctx.o || ctx;
-  const general = Boolean(ctx.useScreen || o.pixelSnap || ctx.filterTypes);
+  const general = Boolean(ctx.useScreen || ctx.filterTypes);
   if ((floatsPer | 0) !== (shadowCast ? GPU_CASTER_FLOATS : GPU_SPRITE_FLOATS)) return -1;
   if (dst.buffer !== b.buffer) return -1;
   const typeArr = ctx.typeArr;
@@ -249,7 +247,7 @@ export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shado
   if (general) {
     // The slow path: packInstancedRows' own values, read as it reads them.
     const P = b.params;
-    P[0] = (ctx.useScreen ? 1 : 0) | (ctx.useScreen && ctx.cameraRot ? 2 : 0) | (o.pixelSnap ? 4 : 0)
+    P[0] = (ctx.useScreen ? 1 : 0) | (ctx.useScreen && ctx.cameraRot ? 2 : 0)
       | (ctx.filterTypes ? 8 : 0) | (ctx.hasInclude ? 16 : 0);
     P[1] = ctx.cameraX || 0;
     P[2] = ctx.cameraY || 0;
@@ -260,9 +258,9 @@ export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shado
     P[7] = ctx.focusY;
     P[8] = ctx.halfW;
     P[9] = ctx.halfH;
-    P[10] = o.snapCameraX || 0;
-    P[11] = o.snapCameraY || 0;
-    P[12] = o.snapZoom || 1;
+    P[10] = 0;
+    P[11] = 0;
+    P[12] = 0;
     P[13] = ctx.includeType | 0;
     P[14] = ctx.exclude0 | 0;
     P[15] = ctx.exclude1 | 0;
@@ -313,8 +311,6 @@ export function packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shado
 export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity, gbuf = null) {
   if (gbuf !== null) gbuf.written = false;
   if (!b || !q || !pose || !ctx) return -1;
-  const o = ctx.o || ctx;
-  // E-513: a nearest atlas's pixel snap goes on the poses after the kernel (gpuPack.c snap_poses).
   if (ctx.useScreen || ctx.filterTypes) return -1;
   if (pose.buffer !== b.buffer || (stat !== null && stat.buffer !== b.buffer)) return -1;
   const typeArr = ctx.typeArr;
@@ -349,7 +345,6 @@ export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity, gbuf = null) 
   }
   if (gbufByte > 0) gbuf.written = true;
   ctx.particleCount = b.u32[b.particlesByte >> 2];
-  if (o.pixelSnap && out > 0) b.snapPoses(pose.byteOffset, out, o.snapCameraX || 0, o.snapCameraY || 0, o.snapZoom || 1);
   return out;
 }
 
@@ -363,8 +358,6 @@ export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity, gbuf = null) 
 export function packIndexedRowsWasm(b, q, ctx, pose, slots, stat, capacity, gbuf = null) {
   if (gbuf !== null) gbuf.written = false;
   if (!b || !q || !pose || !slots || !ctx || !b.spritesIndexedScatter) return -1;
-  const o = ctx.o || ctx;
-  // E-513: a nearest atlas's pixel snap goes on the poses after the kernel (gpuPack.c snap_poses).
   if (ctx.useScreen || ctx.filterTypes) return -1;
   if (pose.buffer !== b.buffer || slots.buffer !== b.buffer || (stat !== null && stat.buffer !== b.buffer)) return -1;
   const typeArr = ctx.typeArr;
@@ -389,7 +382,6 @@ export function packIndexedRowsWasm(b, q, ctx, pose, slots, stat, capacity, gbuf
   if (out < 0) return -1;
   if (gbufByte > 0) gbuf.written = true;
   ctx.particleCount = b.u32[b.particlesByte >> 2];
-  if (o.pixelSnap && out > 0) b.snapPoses(pose.byteOffset, out, o.snapCameraX || 0, o.snapCameraY || 0, o.snapZoom || 1);
   return out;
 }
 
@@ -480,8 +472,7 @@ function splitGbufByte(b, gbuf, n, rows) {
  */
 export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   if (!b || !q || !pose || !slots || !ctx || !keyed || !b.spritesKeyed) return -1;
-  const o = ctx.o || ctx;
-  if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
+  if (ctx.useScreen || ctx.filterTypes) return -1;
   const key = q.key;
   if (!key || key.buffer !== b.buffer || pose.buffer !== b.buffer || slots.buffer !== b.buffer) return -1;
   const typeArr = ctx.typeArr;
@@ -522,8 +513,7 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
  */
 export function packKeyedRowsByRowWasm(b, q, ctx, rows, slots, keyed, capacity) {
   if (!b || !q || !rows || !slots || !ctx || !keyed || !b.spritesKeyedRows) return -1;
-  const o = ctx.o || ctx;
-  if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
+  if (ctx.useScreen || ctx.filterTypes) return -1;
   const key = q.key;
   if (!key || key.buffer !== b.buffer || rows.buffer !== b.buffer || slots.buffer !== b.buffer) return -1;
   const typeArr = ctx.typeArr;
@@ -791,7 +781,7 @@ export function packPoseRowsWasm(b, q, ctx, pose, stat, capacity) {
   const indexByte = indexByteFor(b, ctx, count, capacity);
   if (indexByte < 0) return -1;
   const P = b.params;
-  P[0] = (ctx.useScreen ? 1 : 0) | (ctx.useScreen && ctx.cameraRot ? 2 : 0) | (o.pixelSnap ? 4 : 0)
+  P[0] = (ctx.useScreen ? 1 : 0) | (ctx.useScreen && ctx.cameraRot ? 2 : 0)
     | (ctx.filterTypes ? 8 : 0) | (ctx.hasInclude ? 16 : 0);
   P[1] = ctx.cameraX;
   P[2] = ctx.cameraY;
@@ -802,9 +792,9 @@ export function packPoseRowsWasm(b, q, ctx, pose, stat, capacity) {
   P[7] = ctx.focusY;
   P[8] = ctx.halfW;
   P[9] = ctx.halfH;
-  P[10] = o.snapCameraX;
-  P[11] = o.snapCameraY;
-  P[12] = o.snapZoom;
+  P[10] = 0;
+  P[11] = 0;
+  P[12] = 0;
   P[13] = ctx.includeType | 0;
   P[14] = ctx.exclude0 | 0;
   P[15] = ctx.exclude1 | 0;

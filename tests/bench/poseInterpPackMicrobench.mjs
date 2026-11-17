@@ -2,7 +2,7 @@
 /**
  * Kernel (E-76 W9e): a pose batch's upload (renderer.interpolation), the batch's own JS packers
  * (InstancedSpriteBatch._packPoseOnly, _packPoseAndStatics) against gpuPack.wasm's pack_pose, on bunnyMarkScene's
- * shape: 250 000 sprites in world space, pixel snap on (snapZoom 1), the previous pose from the other queue, no
+ * shape: 250 000 sprites in world space, the previous pose from the other queue, no
  * index list (ySort off), every row packed.
  *
  *   js    the batch's JS packer into its own arrays
@@ -55,7 +55,7 @@ export async function setupPoseKernel({ n = 250000, seed = 0xb0ee5 } = {}) {
     count: n, x: f32(), y: f32(), scaleX: f32(), scaleY: f32(), rotC: f32(), rotS: f32(), alpha: f32(),
     tint: alloc(Uint32Array, n), textureId: alloc(Uint16Array, n), anchorX: f32(), anchorY: f32(),
     repeatX: alloc(Uint16Array, n), repeatY: alloc(Uint16Array, n), tileMode: alloc(Uint8Array, n),
-    tileMulX: f32(), tileMulY: f32(), tileOffsetU: alloc(Uint16Array, n), tileOffsetV: alloc(Uint16Array, n),
+    tileMulX: f32(), tileMulY: f32(), tileOffsetU: alloc(Uint32Array, n), tileOffsetV: alloc(Uint32Array, n),
     shadowH: f32(), shadowOffX: f32(), shadowOffY: f32(), type: alloc(Uint8Array, n),
   };
   const prevX = f32();
@@ -93,7 +93,7 @@ export async function setupPoseKernel({ n = 250000, seed = 0xb0ee5 } = {}) {
   const batch = installBatchPackJs(new InstancedSpriteBatch({ capacity: n, label: 'w9e-bench', poseInterp: true, useWebGpu: false, shaders }));
   const opts = {
     space: BATCH_SPACE.WORLD, includeType: -1, excludeType0: -1, excludeType1: -1,
-    prevX, prevY, pixelSnap: true, snapCameraX: 0, snapCameraY: 0, snapZoom: 1,
+    prevX, prevY,
   };
   /** One upload's pack: `rows` rows (all by default), both streams or the pose alone. */
   const runWith = (wasm, statics) => (rows = n) => {
