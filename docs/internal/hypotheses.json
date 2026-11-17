@@ -10049,7 +10049,9 @@
     },
     {
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-1317"
+      ],
       "refs": [
         "REVIEW_PLAN.md#N-38"
       ],
@@ -14384,7 +14386,8 @@
         "bracket edges"
       ],
       "records": [
-        "R-0977"
+        "R-0977",
+        "R-1317"
       ]
     },
     {
@@ -22209,6 +22212,116 @@
       "date": "2026-11-17",
       "title": "WebGL's self-shadow march reads the face map's edge texel, clamped, for every step past the screen: near the edge the sun's side looks at (the bottom, with the sun in the south), pixels take shadows from whatever wall stands at the edge, and they slide as the camera moves; WebGPU's march skips those steps",
       "statusText": "seen 2026-11-17 by the owner while the barrio's camera drifted north (shadows on houses against the bottom edge looked wrong); the volumes are not culled (meshUvFillBatch draws them all), so the sun's map is whole: the self-shadow march (lightingBasic.frag.glsl selfShadowToward, textureLod with clamp) is the part that leaves the screen"
+    },
+    {
+      "id": "DX-ONELIGHT",
+      "title": "One light system for every camera: a flat view (camera.pitch 90 or 0) gets the same lighting options as any other camera (normal and height maps, unshaded, the shadow maps, sprite and height map shadows from the lamps), raycasted lighting stops being a pass of its own, and the engine stops inventing what the developer did not bring (the self-lit fill's sphere normal, the automatic strength of a sprite's normals)",
+      "status": "open",
+      "statusText": "Owner-approved plan (2026-11-17), not started: \"agregá esto al backlog, bien detallado\"; to be built by a session of its own, from the plan alone. Decided with the owner: what casts (the sprite or the height map) and where shadows are drawn (the layer or a map) stay the developer's options; removing the painted (layer) mode was proposed and rejected (\"los sprites estampados quedan bien, son opciones que los devs tienen\")",
+      "date": "2026-11-17",
+      "result": "",
+      "next": "OL-1 (the names) and OL-2 (the normals' option) stand alone; OL-3 (the race) decides how OL-4 is built; nothing is deleted before OL-4's pictures and numbers are accepted. Estimate: about 16 to 23 h in a row. The owner's open decisions are in the plan's section 5.",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "ONE_LIGHT_PLAN.md"
+      ],
+      "aliases": [
+        "one light system",
+        "flat view lighting",
+        "raycasted lighting retired"
+      ],
+      "records": [
+        "R-1317"
+      ],
+      "rank": 20
+    },
+    {
+      "id": "OL-1",
+      "title": "Names: the shadows' painted mode is lighting.sunShadows / lampShadows 'layer' (was 'sprite') and a halo drawn among the entities is lighting.lightGlow 'sorted' (was 'sprite'); 'sprite' keeps meaning the sprite that casts (setSprite, shadowCast.sun) or cuts (setWall's shape)",
+      "status": "open",
+      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), not started; the owner approved both names. The word cost the planning chat an hour: \"sprite shadows\" was read as the sprite that casts",
+      "date": "2026-11-17",
+      "result": "",
+      "next": "Two commits (the shadows' value, the glow's). No code compares the shadow modes with 'sprite' (everything asks === 'map'): the two defaults, a check that warns once on any other value, the six reads of lightGlow, then types, guide, demos, stress scenes, checks and tests (the plan lists them). No aliases. No picture changes, so no sitting: the suites and check:types.",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "ONE_LIGHT_PLAN.md#OL-1"
+      ],
+      "aliases": [
+        "layer shadows",
+        "sorted glow",
+        "shadow mode names"
+      ],
+      "records": [
+        "R-1317"
+      ]
+    },
+    {
+      "id": "OL-2",
+      "title": "A sprite's normals under the sun and under the lamps as the developer's option (lighting.normalStrength { sun, lamps } recommended), instead of the light pass's automatic blend by the lamps' share of the light (k = lamps / (lamps + ambient + sun): by day as drawn, at night by the normals)",
+      "status": "open",
+      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), not started; the owner asked for the option (\"estas cuestiones automáticas que hace weedjs no me copan tanto\") and picks its default from pictures",
+      "date": "2026-11-17",
+      "result": "",
+      "next": "faceLight in lightingBasic (GLSL and WGSL): each kind of light mixes \"as drawn\" and \"by its normal\" by its own strength, no k; normalLightCheck and faceLightCheck updated; captures of the light bench at noon, dusk and night and of Predator ?light3d=1 by night, old against new, for the owner (recommended default sun 0, lamps 1: today's picture at both ends of the old blend); every variant still links on WebGL; gpuPassBench on both backends and the Predator gate once.",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "ONE_LIGHT_PLAN.md#OL-2"
+      ],
+      "aliases": [
+        "normalStrength",
+        "normals with the sun",
+        "automatic normal strength"
+      ],
+      "records": [
+        "R-1317"
+      ]
+    },
+    {
+      "id": "OL-3",
+      "title": "The race: one flat stress scene on raycasted lighting (the CPU sweep) against the lamps' shadow maps (walls as volumes taller than the lamps), at 8 to 128 casting lights, on the main machine and on the ASUS: what should stop the lamps in a flat view",
+      "status": "open",
+      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), not started; a measurement, nothing changes in src/",
+      "date": "2026-11-17",
+      "result": "",
+      "next": "A knob on visPolyStressScene for the maps' arm (no pitch, lampShadows 'map', each occluder a volume taller than the lamps, lamps with an elevation), a capture showing the two arms' shadows match, then R M R M pairs: pre-render's and Pixi's STEP_MS − WAIT_MS on both arms, the GPU's time a frame, the frames drawn on the ASUS, and a shadow's edge zoomed in for the owner. Proposed rule: final A (the maps, the sweep deleted) when the maps are within the detection limit at 32 and 64 lamps on both machines and the owner accepts the edges; else final B (the sweep stays and feeds the common light pass). The planner's guess, unmeasured: B (the maps hold 64 lamps at 256 texels and run on the GPU, which limits the ASUS; the sweep ran 720 lights).",
+      "area": "render",
+      "kind": "speed",
+      "refs": [
+        "ONE_LIGHT_PLAN.md#OL-3"
+      ],
+      "aliases": [
+        "flat view race",
+        "raycast against lamp maps"
+      ],
+      "records": [
+        "R-1317"
+      ]
+    },
+    {
+      "id": "OL-4",
+      "title": "The flat view on the common light pass: lighting.raycasted no longer picks the pass, a wall stops a lamp through the lamps' maps (final A) or through the sweep's result read by the light pass (final B), and the fans, the self-lit fills, the wedges and their shaders are deleted (about 2 000 lines in final B; about 5 000 and 3 500 of tests in final A)",
+      "status": "open",
+      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), not started; waits for OL-3 and the owner's choice of final",
+      "date": "2026-11-17",
+      "result": "",
+      "next": "Pitch 90 first, then pitch 0 (neither has run on the common pass). A wall's own pixels are lit by the maps' rule (the pixel's entity is the caster's) instead of self-lit's made-up sphere, so the look of every raycast scene changes: captures and films for the owner, who also decides how a wall's own sprite is lit (whole, or to a depth from the edge the lamp sees: N-38's fix). Then the 8 demos and 7 stress scenes moved, the owner scenes (visPoly, compoundVisPoly, flashlight) and the Predator gate, and only then the deletion. Closes N-38 and N-163 by deletion.",
+      "area": "render",
+      "kind": "feature",
+      "refs": [
+        "ONE_LIGHT_PLAN.md#OL-4"
+      ],
+      "aliases": [
+        "flat view on the light pass",
+        "self-lit removed",
+        "raycast pass deleted"
+      ],
+      "records": [
+        "R-1317"
+      ]
     }
   ],
   "records": [
@@ -35242,6 +35355,15 @@
         "cec344c7",
         "266230d9"
       ]
+    },
+    {
+      "id": "R-1317",
+      "date": "2026-11-17",
+      "time": "16:59",
+      "timeFrom": "recorded",
+      "title": "One light system planned (DX-ONELIGHT, OL-1 to OL-4): the flat view gets every lighting option and raycasted lighting stops being a pass of its own; nothing built or measured",
+      "verdict": "note",
+      "text": "**One light system planned (DX-ONELIGHT, OL-1 to OL-4, `ONE_LIGHT_PLAN.md`): a reading of the light's code and a chat with the owner; nothing built, run or measured.** The owner asked what the engine does about \"self lit\" now that it has normal maps, height maps and a G-buffer, then for the plan in the backlog, detailed enough for a session of its own to build it.\n\n- **What the reading found (main at 1951de51).** A flat camera (`camera.pitch` 90 or 0) lights with raycasted lighting, a pass of its own from the spatial worker to its three shader pairs, where normal maps, height maps, `unshaded` and the shadow maps do nothing and a lamp casts walls only. Its self-lit fill lights a wall's own pixels (the visibility polygon ends at the wall's edge) and fakes a sphere normal to light the side that faces the light; the shadow maps solve the same thing by a rule (a pixel skips its own entity's texels). The layer and the map modes of `sunShadows` / `lampShadows` are two outputs of one casters' engine (the same rows, `_sunShadowProgram`'s four programs), not two systems. A sprite's own normals show by the lamps' share of its light (`k`), which nobody chooses. Raycast-only code: about 5 000 lines and about 3 500 of tests.\n- **Decided with the owner.** What casts (the sprite or the height map, sun and lamps apart) and where shadows are drawn (the layer or a map) stay the developer's options; removing the layer mode was proposed and rejected (\"los sprites estampados quedan bien\"). The layer mode is named `'layer'` and the glow among the entities `'sorted'` (both were `'sprite'`). A sprite's normals under the sun and under the lamps become an option. The flat view gets every option, and raycasted lighting stops being a pass of its own. The engine does not invent what the developer did not bring. Making the raycast pass read the G-buffer was dropped: one more combination.\n- **Order.** OL-1 (names) and OL-2 (the normals' option) stand alone. OL-3 races a flat stress scene on the sweep against the lamps' maps (walls as tall volumes), on the main machine and the ASUS, and decides OL-4's final: A, the maps everywhere and the sweep deleted, or B, the sweep kept as each lamp's visibility for the common light pass. In both, the fans, the self-lit fills, the wedges and their shaders go (N-38 and N-163 with them). The planner's guess, unmeasured: B.\n- **Corrected on the way.** The planner first called the layer mode a third shadow system and proposed deleting it; the code says otherwise (above), and the owner wants it. Predator is not a raycast scene: it lights with the common pass and the layer."
     }
   ],
   "leads": [
