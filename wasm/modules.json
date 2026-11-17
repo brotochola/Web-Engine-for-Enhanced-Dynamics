@@ -78,7 +78,6 @@
         "pack_sprites_general",
         "pack_casters_general",
         "pack_pose",
-        "snap_poses",
         "emit_rows",
         "persist_frame",
         "persist_remember",
@@ -260,8 +259,7 @@
         "pack_casters_keyed_scan_xy",
         "pack_sprites_general",
         "pack_casters_general",
-        "pack_pose",
-        "snap_poses"
+        "pack_pose"
       ],
       "maxMemoryPages": 32768,
       "test": true,

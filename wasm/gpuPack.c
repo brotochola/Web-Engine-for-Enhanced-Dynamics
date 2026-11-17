@@ -1166,27 +1166,15 @@ uint32_t lamp_frames(uint32_t rowsByte, uint32_t stampN, uint32_t lightIdxByte, 
 }
 
 /* packInstancedRows' slow path, its parameters as doubles at `params` (gpuPackClient.js GENERAL_PARAMS): flags
-   (screen 1, a turned camera 2, pixel snap 4, a type filter 8, an include type 16), the camera's x and y, the screen
-   scale, the turn's cos and sin, its focus x and y, half the canvas in pixels, the snap camera's x and y and zoom,
-   and the include and two exclude types (-1 for none). A filtered row does not take a slot; the depth and the
-   particle count follow the rows written. Arithmetic as the JS: float32 columns widened, every operation in
-   double, Math.round as V8 rounds, each value stored as a Float32Array stores it. */
+   (screen 1, a turned camera 2, a type filter 8, an include type 16), the camera's x and y, the screen scale, the
+   turn's cos and sin, its focus x and y, half the canvas in pixels, three unused, and the include and two exclude
+   types (-1 for none). A filtered row does not take a slot; the depth and the particle count follow the rows
+   written. Arithmetic as the JS: float32 columns widened, every operation in double, each value stored as a
+   Float32Array stores it. N-271: no pixel snap here; the sprite vertex shaders snap where they draw (pixelSnap.js). */
 #define G_SCREEN 1u
 #define G_TURNED 2u
-#define G_SNAP 4u
 #define G_FILTER 8u
 #define G_INCLUDE 16u
-
-INLINE double js_round(double x) {
-  double r = __builtin_ceil(x);
-  if (r - 0.5 > x) r -= 1.0;
-  return r;
-}
-
-INLINE double snap_world(double v, double cam, double zoom) {
-  if (!(zoom > 0)) return v;
-  return js_round((v - cam) * zoom) / zoom + cam;
-}
 
 INLINE uint32_t pack_general(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
                              float *dst, uint32_t typeByte, uint32_t *particles, const double *P, int caster) {
@@ -1196,12 +1184,10 @@ INLINE uint32_t pack_general(const uint32_t *t, uint32_t indices, uint32_t count
   const uint32_t flags = (uint32_t)P[0];
   const int screen = (flags & G_SCREEN) != 0;
   const int turned = (flags & G_TURNED) != 0;
-  const int snap = (flags & G_SNAP) != 0;
   const int filter = (flags & G_FILTER) != 0 && type;
   const int hasInclude = (flags & G_INCLUDE) != 0;
   const double camX = P[1], camY = P[2], scale = P[3], camC = P[4], camS = P[5];
   const double focusX = P[6], focusY = P[7], halfW = P[8], halfH = P[9];
-  const double snapX = P[10], snapY = P[11], snapZoom = P[12];
   const int32_t include = (int32_t)P[13], exclude0 = (int32_t)P[14], exclude1 = (int32_t)P[15];
   const float *X = F32(t, COL_X), *Y = F32(t, COL_Y), *SX = F32(t, COL_SCALE_X), *SY = F32(t, COL_SCALE_Y);
   const float *RC = F32(t, COL_ROT_C), *RS = F32(t, COL_ROT_S);
@@ -1237,15 +1223,6 @@ INLINE uint32_t pack_general(const uint32_t *t, uint32_t indices, uint32_t count
       }
       sx *= scale;
       sy *= scale;
-    }
-    if (snap) {
-      if (screen) {
-        x = js_round(x);
-        y = js_round(y);
-      } else {
-        x = snap_world(x, snapX, snapZoom);
-        y = snap_world(y, snapY, snapZoom);
-      }
     }
     float *d = dst + out * stride;
     sprite_row(t, i, d, 1.0 - (double)(out + 1) * invDepthDenom);
@@ -1286,25 +1263,11 @@ uint32_t pack_casters_general(uint32_t table, uint32_t indices, uint32_t count, 
                       (const double *)(uintptr_t)paramsByte, 1);
 }
 
-/* E-513, E-515: a nearest atlas's pixel snap on `n` rows of a pose stream at poseByte (POSE_FLOATS a row: x, y, then the
-   turn), pack_general's snap_world on x and y, after the split or indexed pack wrote the rows: the two streams then carry
-   what the 15-float rows did. */
-__attribute__((export_name("snap_poses")))
-void snap_poses(uint32_t poseByte, uint32_t n, double camX, double camY, double zoom) {
-  if (!(zoom > 0)) return;
-  float *pose = (float *)(uintptr_t)poseByte;
-  for (uint32_t k = 0; k < n; k++) {
-    float *p = pose + k * POSE_FLOATS;
-    p[0] = (float)snap_world((double)p[0], camX, zoom);
-    p[1] = (float)snap_world((double)p[1], camY, zoom);
-  }
-}
-
 /* W9e. A pose batch's streams (renderer.interpolation: instancedSpriteBatch.js _packPoseOnly and
    _packPoseAndStatics). Per row the pose x, y, rotC, rotS and the previous x, y (POSE_DYN_FLOATS, 6), and, unless
    stat is 0, the statics in E-82's order (sprite_static's, the scale in screen units). The previous pose is read
    from prevX and prevY (0: the current one, as the JS does without them or with the pose snap), and it goes through
-   the same screen transform and pixel snap. Parameters as pack_general's, at `params`; the depth is the JS's
+   the same screen transform. Parameters as pack_general's, at `params`; the depth is the JS's
    1 - (out + 1) / depthDenom. A filtered row does not take a slot. */
 #define POSE_DYN_FLOATS 6
 
@@ -1316,12 +1279,10 @@ INLINE uint32_t pack_pose_rows(const uint32_t *t, uint32_t indices, uint32_t cou
   const uint32_t flags = (uint32_t)P[0];
   const int screen = (flags & G_SCREEN) != 0;
   const int turned = (flags & G_TURNED) != 0;
-  const int snap = (flags & G_SNAP) != 0;
   const int filter = (flags & G_FILTER) != 0 && type;
   const int hasInclude = (flags & G_INCLUDE) != 0;
   const double camX = P[1], camY = P[2], scale = P[3], camC = P[4], camS = P[5];
   const double focusX = P[6], focusY = P[7], halfW = P[8], halfH = P[9];
-  const double snapX = P[10], snapY = P[11], snapZoom = P[12];
   const int32_t include = (int32_t)P[13], exclude0 = (int32_t)P[14], exclude1 = (int32_t)P[15];
   const float *X = F32(t, COL_X), *Y = F32(t, COL_Y), *SX = F32(t, COL_SCALE_X), *SY = F32(t, COL_SCALE_Y);
   const float *RC = F32(t, COL_ROT_C), *RS = F32(t, COL_ROT_S);
@@ -1362,19 +1323,6 @@ INLINE uint32_t pack_pose_rows(const uint32_t *t, uint32_t indices, uint32_t cou
       if (statics) {
         sx *= scale;
         sy *= scale;
-      }
-    }
-    if (snap) {
-      if (screen) {
-        x = js_round(x);
-        y = js_round(y);
-        px = js_round(px);
-        py = js_round(py);
-      } else {
-        x = snap_world(x, snapX, snapZoom);
-        y = snap_world(y, snapY, snapZoom);
-        px = snap_world(px, snapX, snapZoom);
-        py = snap_world(py, snapY, snapZoom);
       }
     }
     double rc = RC[i];

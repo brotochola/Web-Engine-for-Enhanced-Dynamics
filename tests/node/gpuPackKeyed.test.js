@@ -200,7 +200,6 @@ test('the keyed pack declines what it does not take', async () => {
   const { q, b, pose, slots, keyed, order } = s;
   const run = (opts, qq = q, p = pose, sl = slots) => packKeyedRowsWasm(b, qq, makePackContext(qq, opts, N, {}), p, sl, keyed, N);
   assert.equal(run({ space: GPU_SPACE_SCREEN, zoom: 1, indices: order, indexCount: N }), -1, 'screen space');
-  assert.equal(run({ space: GPU_SPACE_WORLD, pixelSnap: true, indices: order, indexCount: N }), -1, 'pixel snap');
   assert.equal(run({ space: GPU_SPACE_WORLD, type: q.type, includeType: 0 }), -1, 'a type filter');
   assert.equal(run({ space: GPU_SPACE_WORLD, indices: order, indexCount: N }, { ...q, key: null }), -1, 'no key column');
   assert.equal(run({ space: GPU_SPACE_WORLD, indices: order, indexCount: N }, { ...q, key: new Uint32Array(N) }), -1,

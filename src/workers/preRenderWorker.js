@@ -80,7 +80,6 @@ import { Time } from '../core/timeScale.js';
 import { GpuParticles } from '../core/gpuParticles.js';
 import { PROXY_CAMERA, PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, proxyView } from '../render/gpuParticleProxies.js';
 import {
-    RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
     LIGHTING_DEFAULTS,
     resolvePreRenderInterpolation,
@@ -2286,7 +2285,6 @@ class PreRenderWorker extends AbstractWorker {
                 }
                 this._gpuCounts = { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0 };
                 this._gpuPainter = this._ySort && this._gpuPainterWasm ? createWasmPainterState(this._gpuPainterWasm) : null;
-                this._atlasNearest = (rendererConfig.atlasScaleMode || RENDERER_DEFAULTS.atlasScaleMode) === 'nearest';
             }
 
             // Initialize per-custom-layer collectors and render queue buffers
@@ -4539,10 +4537,6 @@ class PreRenderWorker extends AbstractWorker {
         opts.resolution = 1;
         opts.depthDenom = this.renderQueueMaxItems;
         opts.worldHeight = this.config.worldHeight || 10000;
-        opts.pixelSnap = false;
-        opts.snapZoom = this._frameCameraZoom;
-        opts.snapCameraX = this._frameCameraX;
-        opts.snapCameraY = this._frameCameraY;
         opts.type = this.renderQueueType;
         opts.sortKey = null;
     }

@@ -154,14 +154,6 @@ test('without the statics the indexed scatter writes the pose and the slots and 
   assert.equal(ctx.particleCount, splitCtx.particleCount);
 });
 
-test('E-513: with a nearest atlas\'s pixel snap the indexed pose is the split pack\'s snapped pose', async () => {
-  const s = await setup(10);
-  const opts = { space: GPU_SPACE_WORLD, indices: s.inMemory, indexCount: N, type: s.q.type, pixelSnap: true, snapZoom: 3, snapCameraX: -4.75, snapCameraY: 9.5 };
-  const n = packSplitRowsWasm(s.b, s.q, makePackContext(s.q, opts, N, {}), s.splitPose, null, N);
-  assert.equal(packIndexedRowsWasm(s.b, s.q, makePackContext(s.q, opts, N, {}), s.pose, s.slots, s.stat, N), n);
-  assert.deepEqual(words(s.pose, n * GPU_POSE_FLOATS), words(s.splitPose, n * GPU_POSE_FLOATS));
-});
-
 test('the indexed pack declines what it does not take, and the kernel a list that is not distinct rows', async () => {
   const s = await setup(9);
   const { q, b, pose, slots, stat, inMemory } = s;

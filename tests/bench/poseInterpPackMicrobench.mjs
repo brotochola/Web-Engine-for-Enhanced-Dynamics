@@ -2,7 +2,7 @@
 /**
  * Kernel (E-76 W9e): a pose batch's upload (renderer.interpolation), the batch's own JS packers
  * (InstancedSpriteBatch._packPoseOnly, _packPoseAndStatics) against gpuPack.wasm's pack_pose, on bunnyMarkScene's
- * shape: 250 000 sprites in world space, pixel snap on (snapZoom 1), the previous pose from the other queue, no
+ * shape: 250 000 sprites in world space, the previous pose from the other queue, no
  * index list (ySort off), every row packed.
  *
  *   js    the batch's JS packer into its own arrays
@@ -93,7 +93,7 @@ export async function setupPoseKernel({ n = 250000, seed = 0xb0ee5 } = {}) {
   const batch = installBatchPackJs(new InstancedSpriteBatch({ capacity: n, label: 'w9e-bench', poseInterp: true, useWebGpu: false, shaders }));
   const opts = {
     space: BATCH_SPACE.WORLD, includeType: -1, excludeType0: -1, excludeType1: -1,
-    prevX, prevY, pixelSnap: true, snapCameraX: 0, snapCameraY: 0, snapZoom: 1,
+    prevX, prevY,
   };
   /** One upload's pack: `rows` rows (all by default), both streams or the pose alone. */
   const runWith = (wasm, statics) => (rows = n) => {

@@ -113,18 +113,15 @@ test('the WASM pack writes what packInstancedRows writes', async () => {
 });
 
 // Close-out group B: packInstancedRows' slow path in the kernel (pack_sprites_general, pack_casters_general).
-test('the WASM pack writes what packInstancedRows writes on its slow path: screen space, a turned camera, pixel snap, a type filter', async () => {
+test('the WASM pack writes what packInstancedRows writes on its slow path: screen space, a turned camera, a type filter', async () => {
   const s = await setup(4);
   const cam = { zoom: 0.73, cameraX: -812.5, cameraY: 333.25, resolution: 1.5, canvasW: 1280, canvasH: 720 };
   const cases = [
     ['screen', { ...cam, space: GPU_SPACE_SCREEN }],
     ['screen, turned', { ...cam, space: GPU_SPACE_SCREEN, cameraRot: 0.61 }],
-    ['world, snapped', { ...cam, space: GPU_SPACE_WORLD, pixelSnap: true, snapCameraX: 17.3, snapCameraY: -9.75, snapZoom: 2.5 }],
-    ['screen, snapped', { ...cam, space: GPU_SPACE_SCREEN, pixelSnap: true }],
-    ['screen, turned, snapped', { ...cam, space: GPU_SPACE_SCREEN, cameraRot: -1.2, pixelSnap: true }],
     ['include a type', { space: GPU_SPACE_WORLD, type: s.q.type, includeType: 3 }],
     ['exclude two types', { space: GPU_SPACE_WORLD, type: s.q.type, excludeType0: 1, excludeType1: 5 }],
-    ['include, screen, snapped', { ...cam, space: GPU_SPACE_SCREEN, type: s.q.type, includeType: 1, pixelSnap: true }],
+    ['include, screen', { ...cam, space: GPU_SPACE_SCREEN, type: s.q.type, includeType: 1 }],
   ];
   for (const shadowCast of [false, true]) {
     for (const [label, opts] of cases) {

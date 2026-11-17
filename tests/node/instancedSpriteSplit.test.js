@@ -89,7 +89,6 @@ test('a split batch is a plain batch in two streams, on the fast path and the fa
     ['dense', opts(q)],
     ['indices', opts(q, { indices: idx, indexCount: N })],
     ['screen space (the fallback)', opts(q, { space: BATCH_SPACE.SCREEN, zoom: 1.5, cameraX: 10, cameraY: -4 })],
-    ['pixel snap (the fallback)', opts(q, { pixelSnap: true, snapZoom: 2, snapCameraX: 3, snapCameraY: 1 })],
     ['type filter (the fallback)', opts(q, { includeType: 2 })],
   ];
   for (const [label, o] of cases) {
