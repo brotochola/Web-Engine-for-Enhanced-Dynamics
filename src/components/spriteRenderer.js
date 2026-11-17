@@ -301,16 +301,6 @@ export class SpriteRenderer extends Component {
     if (users) Atomics.add(users, 0, on ? 1 : -1);
   }
 
-  /** DX-UNSHADED: `emissive` is `unshaded` now, yes or no: said once, and passed on. */
-  get emissive() {
-    warnGbufOnce('spriteRenderer.emissive is spriteRenderer.unshaded now (true or false)');
-    return this.unshaded;
-  }
-  set emissive(value) {
-    warnGbufOnce('spriteRenderer.emissive is spriteRenderer.unshaded now (true or false)');
-    this.unshaded = value === true || +value > 0;
-  }
-
   /** A spawned sprite's G-buffer flags back to every default (the spawn's reset calls it), unshaded off. */
   static resetGbufRow(i) {
     const flags = SpriteRenderer.gbufFlags;

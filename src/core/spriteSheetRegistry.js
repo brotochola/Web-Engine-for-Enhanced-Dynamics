@@ -24,14 +24,6 @@ import { ASSETS_DEFAULTS } from '../util/configDefaults.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { fetchAssetJson, fetchAssetRead, imageLoadError } from '../util/fetchAsset.js';
 
-/** DX-UNSHADED: the sheets whose `emissive` was said to be `unshaded` now. */
-const _renamedUnshaded = new Set();
-function warnRenamedUnshaded(sheet) {
-  if (_renamedUnshaded.has(sheet)) return;
-  _renamedUnshaded.add(sheet);
-  console.warn(`WeedJS: spritesheet "${sheet}": \`emissive\` is \`unshaded\` now (true or false), in its assets entry and its json's meta.`);
-}
-
 /**
  * MaxRectsPacker - Rectangle packing algorithm for texture atlas generation
  * Port of the MaxRects algorithm for efficient sprite packing
@@ -1952,10 +1944,8 @@ class SpriteSheetRegistry {
       reliefUrl ? this._loadImage(reliefUrl) : null,
     ]);
     // DX-UNSHADED: a sheet no light touches (its assets config or its json's meta): a mark a frame in the maps table, no
-    // twin page. `emissive`, its old name, is said once and read as it.
-    if (config.emissive !== undefined || jsonData?.meta?.emissive !== undefined) warnRenamedUnshaded(name);
-    const unshaded = config.unshaded === true || jsonData?.meta?.unshaded === true
-      || config.emissive === true || jsonData?.meta?.emissive === true;
+    // twin page.
+    const unshaded = config.unshaded === true || jsonData?.meta?.unshaded === true;
     const gray = Number(heightSpec?.gray) > 0 ? Number(heightSpec.gray) : 0;
     const reliefStrength = Number(reliefSpec?.strength) > 0 ? Number(reliefSpec.strength) : RELIEF_STRENGTH;
     // E-496: which map files these are: sheets with the same key share the twin page's rectangles (_paintMapsPage).

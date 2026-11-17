@@ -72,16 +72,4 @@ test('spriteRenderer.unshaded is yes or no, counted once, and emissive passes on
   s.unshaded = 'yes';
   assert.equal(s.unshaded, false, 'only true turns it on');
   assert.equal(SpriteRenderer.unshadedUsers(), 0);
-  const warn = console.warn;
-  const said = [];
-  console.warn = (t) => said.push(t);
-  try {
-    s.emissive = true;
-    s.emissive = 1.5;
-  } finally {
-    console.warn = warn;
-  }
-  assert.equal(s.unshaded, true);
-  assert.equal(said.length, 1, 'said once');
-  assert.match(said[0], /unshaded/);
 });
