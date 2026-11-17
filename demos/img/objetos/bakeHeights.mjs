@@ -5,10 +5,10 @@
 //   node demos/img/objetos/bakeHeights.mjs
 //
 // Every frame is a standing card on its own lowest row with the prop dome (--profile prop --surface standing
-// --base frame: these frames are separate objects, not an animation that must not bounce), for the barrio's camera:
-// a px of height rises cos 30° = 0.866 px on the screen and the floor is drawn half as deep as wide (the editor's CZ
-// and SYN, the demo's camera.heightScaleY and floorScaleY). A scene with another camera changes BARRIO_CAMERA and
-// runs this again.
+// --base frame: these frames are separate objects, not an animation that must not bounce), for the standard art's
+// camera, the one the LPC people, the MinZiin cars, the light bench and the barrio editor's export share: a px of
+// height rises 0.752 px on the screen and the floor is drawn at 0.736 of its width (camera.heightScaleY and
+// floorScaleY). Art made for another camera changes STANDARD_ART_CAMERA and runs this again.
 //
 // A standing card makes a thing as tall as its picture, floor depth included: right for a lamp post or a plant, wrong
 // for what lies on the floor, whose picture is mostly its top (a pallet lying down came out 1.5 m tall). So the frames
@@ -30,10 +30,10 @@ import { decodePng, encodePng } from '../../lightBenchScene/tools/png.mjs';
 const OBJECTS_FOLDER = path.dirname(fileURLToPath(import.meta.url));
 const WEED_MAPS = path.join(OBJECTS_FOLDER, '..', '..', '..', 'scripts', 'weedMaps.mjs');
 
-/** The barrio's camera: screen px a px of height rises (cos 30°) and how deep the floor is drawn (0.5). */
-const BARRIO_CAMERA = ['--height-scale-y', String(Math.cos(Math.PI / 6)), '--floor-scale-y', '0.5'];
+/** The standard art's camera: screen px a px of height rises (0.752) and how deep the floor is drawn (0.736). */
+const STANDARD_ART_CAMERA = ['--height-scale-y', '0.752', '--floor-scale-y', '0.736'];
 /** Options every run shares: the prop dome, heights only, each frame on its own lowest row. */
-const SHARED_OPTIONS = ['--profile', 'prop', '--no-normal', '--base', 'frame', ...BARRIO_CAMERA];
+const SHARED_OPTIONS = ['--profile', 'prop', '--no-normal', '--base', 'frame', ...STANDARD_ART_CAMERA];
 const STANDING_OPTIONS = ['--surface', 'standing'];
 const FLOOR_OPTIONS = {
   lying: ['--surface', 'floor'],

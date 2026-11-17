@@ -45,12 +45,13 @@ which runs, for each sheet,
 
 ```sh
 npm run maps -- demos/img/objetos/<sheet>.json --profile prop --no-normal --surface standing --base frame \
-  --height-scale-y 0.8660254037844387 --floor-scale-y 0.5 --out demos/img/objetos
+  --height-scale-y 0.752 --floor-scale-y 0.736 --out demos/img/objetos
 ```
 
-- The camera is the barrio's: a px of height rises cos 30° = 0.866 px on the screen (the editor's `CZ`) and the floor
-  is drawn half as deep as wide (`SYN`), the demo's `camera.heightScaleY` and `floorScaleY`. A height map holds for
-  the camera it was made for: a scene with another camera bakes them again (`BARRIO_CAMERA` in the script).
+- The camera is the standard art's, the one the LPC people, the MinZiin cars, the light bench and the barrio editor's
+  export share: a px of height rises 0.752 px on the screen and the floor is drawn at 0.736 of its width
+  (`camera.heightScaleY` and `floorScaleY`). A height map holds for the camera it was made for: art for another camera
+  bakes them again (`STANDARD_ART_CAMERA` in the script).
 - `--base frame`: each frame stands on its own lowest opaque row. These are separate objects, not an animation that
   must not bounce; `--base auto` (one row for all the frames of one height) put four sawhorses, two flowers and a bin
   a px off.
