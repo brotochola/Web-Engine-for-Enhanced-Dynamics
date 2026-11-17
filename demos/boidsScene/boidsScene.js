@@ -6,16 +6,21 @@ import WEED from '/src/index.js';
 
 const { Scene, Camera } = WEED;
 
-// `?boids=<n>`: the flock spawned (40 000 by default, the pool's 65 000 at most), a load knob for spatial sittings:
-// 40 000 boids run each spatial worker about 5 ms, under the 6 ms floor a STEP_MS verdict needs.
-const POOL = 65000;
-const BOIDS = Math.max(0, Math.min(POOL, Number(WEED.params?.get('boids') ?? 40000) | 0));
+// `?boids=<n>`: the flock spawned (40 000 by default), a load knob for spatial sittings: 40 000 boids run each spatial
+// worker about 5 ms, under the 6 ms floor a STEP_MS verdict needs. The pool holds 65 000, or the flock past that up to
+// the engine's 500 000 entities (the scene then takes 32-bit entity ids: entityIdWidth 'auto'), so a capacity search
+// (tests/bench/runCapacity.mjs) can go past the 65 000 that 60 fps already held. `?ids=32` takes 32-bit ids at any
+// flock, so the search compares like with like on both sides of 65 535.
+const BOIDS = Math.max(0, Math.min(500000, Number(WEED.params?.get('boids') ?? 40000) | 0));
+const POOL = Math.max(65000, BOIDS);
+const ENTITY_ID_WIDTH = WEED.params?.get('ids') === '32' ? 32 : 'auto';
 
 export class BoidsScene extends Scene {
   static config = {
     worldWidth: 4000,
     worldHeight: 4000,
     seed: 123456,
+    entityIdWidth: ENTITY_ID_WIDTH,
     // debug: {
     //   maxDebugDrawEntries: 30192,
     //   collectDetailedStats: true,
@@ -48,12 +53,15 @@ export class BoidsScene extends Scene {
       noLimitFPS: false,
       sleeping: false,
       gravity: { x: 0, y: 0 },
+      // Every boid is a body: 65 000 fill about 87 MB of the default 128 (with the render queue's regions), so a
+      // flock past the pool's 65 000 gets 128 MB for each 65 000.
+      ...(BOIDS > 65000 ? { wasmMemoryMB: Math.min(2048, 128 * Math.ceil(BOIDS / 65000)) } : {}),
     },
 
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      maxVisibleRenderables: 65530,
+      maxVisibleRenderables: Math.max(65530, BOIDS),
       ySort: false,
     },
     preRender: {
