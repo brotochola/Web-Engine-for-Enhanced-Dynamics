@@ -6,6 +6,172 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Monday 16 – Tuesday 17 November 2026 (night) — How Many Can It Hold?
+
+By Monday evening the owner asked for an outside look at how we work, as if an engineer had joined that morning. The
+answer was uncomfortable. We judged every change by one worker's mean time in one scene, needed 3 % to keep it, and
+spent ten to fifteen minutes of a single laptop on each sitting, so a 2 % idea cost as much to measure as a 40 % one.
+The big wins of the last days had not come from that: they came from design changes, the light tiles, early depth,
+indexed meshes. And the rule had just rejected a change that halved the hitches, because it raised the mean. The owner
+said yes to all of it: a capacity metric, the frame's critical path first, a front for the long pole (physics) and one
+for the tails, a replay to measure fast, and a triage of the register.
+
+**Which worker sets the pace.** The frame clock already stamped every worker's start and end in every frame, so a small
+tool reads them and says who finished last (E-223). In Predator with 38 000 people at night, physics gates 80 % of the
+frames, by a median of 4.9 ms over the next worker, and stays within budget (p95 15.6 ms). Spatial gates only 18 %, but
+it causes 53 of the 64 frames that go over 16.7 ms. Physics sets how many entities fit; spatial sets how smooth it looks.
+
+**Capacity, the number that answers "is it better".** `runCapacity` grows a scene's load knob until something breaks,
+bisects to the edge and re-runs it. A load passes when the page presents 59 frames a second, the renderer draws them, and
+every worker's p99 stays under 16.7 ms. The first baseline: Predator holds about 25 000 to 27 000 civilians and soldiers
+(it breaks first on spatial's tail, then on physics), keyedPack 265 000 sprites, bunnyMark 499 999 bunnies, and boids
+65 000. The last two did not break at all: they hit walls. bunnyMark hit the engine's 500 000 entities, and boids hit a
+physics scene's 65 535, a check that counts every entity instead of every body. One lesson about the metric itself: the
+same search moved 10 % between two sittings an hour apart, so a verdict needs several searches a side.
+
+**A replay instead of a scene.** The spatial worker's inputs are now recorded from a live Predator: each frame, only
+the columns that changed. They are replayed into the real worker in Node or in d8, with no browser and no other worker
+running. The Node and d8 replays publish identical neighbour rows on all 600 frames, and a four-pair comparison takes
+four minutes instead of fifteen plus the queue.
+
+**The hitch that did not want to go.** Spatial's tail is periodic: it swings from 3 to 46 ms in a 32-frame cycle,
+because the typed neighbour refresh put a quarter of the civilians' lists in each of four consecutive frames and none in
+the next twelve. Spreading the refresh over every frame of the period halved the slow frames, from 78 to 37 a run, but
+raised spatial's mean by 12.6 %. Refreshing in two bursts sat exactly halfway. The replay said why the mean rose, and it
+was not what we thought. On identical inputs the spread costs spatial nothing (+1.3 % in Node, −2.2 % in d8, inside the
+noise). The extra time in the scene comes from running beside logic and physics all the time instead of in bursts:
+cores shared with another thread, cache lines crossing between cores, or a lower clock. The capacity check did not move
+either, so the spread stays on its branch with the next experiments written down.
+
+**The first frame.** Pixi linked each shader program the first time it drew with it, and waited. Predator at night
+blocked 2.1 s in its first frames, 1.3 s of it for the light pass alone. Now the Pixi worker links every program it made
+during start-up at once, on the driver's threads (`KHR_parallel_shader_compile`), and reports ready when they are done.
+Blocked time fell to 0.54 s, and the first drawn frame went from 1.3 s to 70 ms. The programs a pass makes on its first
+draw are the next 620 ms.
+
+**On the physics front,** E-298's idle spin became a knob, built and still to be measured. Sorting the bodies by place
+(Morton order) made Box2D's step 5.8 % faster in the crowd harness, 15 % right after the sort, fading as the crowd mixes.
+That points at re-sorting every couple of seconds.
+
+The register went from 215 pending rows to 18 ranked by milliseconds on the long pole, and 32 small ones parked. Main
+was left tidy for the night, with its bundles rebuilt and tested. And after bunnyMark, the next ask was easy to guess:
+entities up to a million, as decorations already are (DX-ENT1M). At 500 000 bunnies the GPU uses 9.2 of its 16.7 ms,
+so bunnyMark should go well past 800 000 once the cap moves.
+
+## Monday 16 November 2026 (afternoon and evening) — Half a Million Bunnies
+
+The GPU, draw by draw, over 21 demos and stress scenes. The biggest cost was not a light: bunnyMark's one draw of
+160 000 bunnies took 16.1 ms a frame. Under a one-pixel scissor, where the GPU paints almost nothing, the draw took
+3.1 ms even with 250 000 bunnies: about 12 ns a bunny of vertex work. So 87 % of it was painting pixels.
+
+The painter draws its sprites back to front and blends each one over what is already there. At 250 000 bunnies the
+screen is covered 115 times, so every pixel was painted 115 times, once for each bunny on top of it, although only the
+top one shows. GPUs have a trick for this, early depth: a pixel behind something already drawn is thrown away before its
+shader runs. But it needs a depth written by something nearer first, and the painter draws the nearest last.
+
+A bunny has no soft pixels: 41 % of its texels are fully transparent and 59 % fully opaque. So the entity batch now draws
+two passes (E-448):
+
+- First, only the frames whose texels are all 0 or 255, nearest first, with the depth test on and depth written, no
+  blending, and keeping only the pixels that come out exactly opaque. A table built when the atlas loads says which
+  frames are binary.
+- Then every sprite, in painter order as before, blended, testing depth without writing it. Every pixel hidden behind a
+  nearer solid one is rejected before its shader runs.
+
+The edges, where linear filtering makes alpha fractional, still blend as they did, and the image is identical: 0 of
+921 600 pixels differ. The depth is the painter's own order, which the GPU pack already wrote, so nothing is sorted
+again, and there is no `gl_FragDepth` to switch early depth off. WebGL 2 cannot read instances backwards. So the opaque
+rows are built when the statics change, and their poses are read in the vertex shader from a texture the GPU fills
+from the pose buffer each frame; uploading the poses twice had doubled Chrome's GPU-process work. A frame decides whether
+the pass pays: it costs about 9 ns a sprite of vertex work and saves about 80 ps a covered pixel. Predator zoomed out does
+not run it; zoomed in, its colour pass drops by a quarter.
+
+At 250 000 bunnies the GPU went from 23.5 ms a drawn frame, two frames drawn in three, to 5.3 ms in every frame. The
+bunnies held at 60 fps went from about 160 000 to 499 999, the engine's cap. There the GPU uses 9.2 ms, and every
+worker stays under budget.
+
+The afternoon had smaller wins in the same spirit:
+- The emissive glow is drawn only through a stencil mask of the glowing instances: 0.826 to 0.095 ms in Predator at
+  night.
+- The collider and UV fills read their rows as vec4 attributes and their vertices once, indexed: volumeStress 8.1 to
+  5.3 ms a draw, 88 to 37 MB.
+- `set x` and `set y` compare and store inline, and the shipped bundle stopped making a closure in every setter call.
+  terser had been writing one-caller functions into their callers as functions called on the spot: 389 of them in the
+  worker build, now 49. A tick past TurboFan's budget got 20 % faster in d8, with no garbage left. A release check now
+  reads the shipped setters' bytecode.
+- rebuildOwnedRows' map checks and the setters' arguments off the heap: boids spatial −5.5 %, keyedPack logic −13.2 %.
+
+Two bugs the owner spotted on screen were fixed. Decorations, bullets and trails drew at an older frame's pose, because
+by-row frames uploaded only the list's length of poses (N-202). And 256 keyed sprites drew from statics nobody had
+written since the start (N-238). The tools learned to report each worker's tail (p50, p95, p99, the longest frame, the
+frames past 16 ms), to time WebGPU draw by draw, and to run several changes against the same base in one sitting.
+
+## Monday 16 November 2026 (morning) — The Light Pass Stops Looking at Every Lamp
+
+Predator's GPU frame, pass by pass: 4.7 to 5.8 ms plain, 14.5 ms with the 3D lights, 5.5 ms of it in the light pass.
+Nsight showed the GPU 78 % busy with pixel work waiting on its own fetches. ANGLE's HLSL showed why: 1 131 instruction
+slots, and a loop over every lamp for every pixel.
+
+The light pass now loops only over the lights that reach its tile (E-205). A 16-pixel tile keeps a bitmask of its
+lights in a small texture, written once a frame. The 3D light pass went from 5.5 to 1.47 ms, byte for byte the same
+image. Predator with 38 000 people at night drew 41.7 frames a second before and 58.7 after.
+
+The rest of the morning went to the passes around it:
+- The volume mesh fill reads its row as six vec4 attributes and takes its corner from the vertex index: 1.86 to 0.82 ms
+  a draw. volumeStress draws 34 to 42 frames a second instead of 17.
+- Pixi's GPU batch: the lamps' map volumes in one draw (GL calls 1 069 to 697), glows at half resolution (the
+  flashlights 5.38 to 3.21 ms), the tilemap by chunks (−34 to −44 %).
+- The sun's frames of full caster rows went into the pack: pre-render −14.3 % in Predator by day.
+
+Measured in one sitting against the main pushed at dawn, Predator at night went from 46.5 drawn frames a second to 60.
+By day the GPU's draws went from 12.8 to 6.6 ms a frame, and the GPU from 78 % busy to 33 %. PR #12, a branch of
+twenty candidates from the night before, was merged after its gate (pre-render −3.2 %).
+
+## Sunday 15 – Monday 16 November 2026 (night) — Paying Back What the Light Cost
+
+The merge had a price, and it was measured that same night against the main before it. Predator with 38 000 people:
+pre-render +26.5 %, about 1.5 ms a frame. Its people had become `DirectionalSprite`s, so every caster row now picked
+the frame the sun saw and the frame each lamp saw. Scenes lit as before: about +5 % in pre-render and Pixi.
+
+The fixes went at that cost directly:
+- The keyed caster scan writes the sun's frames as it goes (E-372): pre-render −8.6 %.
+- The lamps' frames: a ring walk and a radix select (E-315), 30 ms to 6 ms in their kernel.
+- The frames passes fused: lampFrames −35.5 %, light3dCompare's pre-render −25 %.
+- The G-buffer words written in the keyed pack (E-387).
+
+The night's integration, measured against the main pushed at dawn: Predator's pre-render 7.44 to 6.42 ms (−13.9 %). The
+same night, an AddressSanitizer harness ran every wasm kernel's export (no finding), and a false-sharing audit ranked the
+shared buffers by the cache lines they move between cores.
+
+## Sunday 15 November 2026 — The Light Comes Home
+
+Sunday was for making DX-LIGHT3D good enough to merge, and fast enough not to cost the crowd scenes.
+
+The cost came first:
+- **Directions on tick frames.** A staggered type resolves its sprites' directions only on the frames it ticks: logic
+  −32 % in the directional stress scene.
+- **The sun's and the lamps' frames:** pre-render −9.6 % in Predator.
+- **A lamp's self-shadow** only inside its radius, and ES 3.0 reads: that pass 3.33 to 1.61 ms on WebGL, 3.54 to 1.60 on
+  WebGPU.
+- **The shadow maps** take their depth from their vertices (the sun's map −35 to −48 %), and their caster columns are
+  cut where they leave a lamp's reach (the lamps' map −65 %), drawing only the rows that cast columns. Predator with the
+  3D lights went from 34.5 to 60 frames a second.
+- **The G-buffer.** A GPU tournament with real waits picked the multiple-render-target G-buffer, a third cheaper, as the
+  default.
+
+A long list of visual fixes made it look right:
+- shadows that follow a sprite's scale;
+- cars drawn by their real headings;
+- a solid's card that takes its light's frame;
+- a face the sun cannot reach that takes no other shadow;
+- lamps whose light ends at their radius.
+
+Two features were added. `lighting.pixelArt` lights each world pixel whole. The lamps' map became a panorama, a floor
+half and a ceiling half. Two steady deopt loops went too: spatial's publish (391 a second to 0) and Box2D's pose epoch
+(287 to 0). The garbage of the direction picks fell from 365 to 24 KB/s in logic. A scoreboard of the sixteen catalog
+scenes found no regression in scenes without the new lighting. At 22:34 the branch was merged into main, and its bundles
+were tested that night.
+
 ## Saturday 14 – Sunday 15 November 2026 (night) — Sprites That Cast What Each Light Sees
 
 The idea came from a small web app, a light and shadow bench, where a farm of sprites was lit as if it were 3D: props
