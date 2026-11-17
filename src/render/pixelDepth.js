@@ -187,7 +187,7 @@ export function pixelDepthVertex(source, { gbuf = false, faces = false, cull = '
     if (source.split(mark).length !== 2) throw new Error(`WeedJS: pixel depth needs the sprite vertex shader (${mark.trim()})`);
   }
   const words = gbuf
-    ? `${source.includes('in vec2 aInstGbuf;') ? '' : 'in vec2 aInstGbuf;\n'}flat out vec2 vDepthWord;\n`
+    ? `${source.includes('in vec3 aInstGbuf;') ? '' : 'in vec3 aInstGbuf;\n'}flat out vec2 vDepthWord;\n`
     : '';
   const facesDecl = faces ? `out float vDepthFloor;\n${MAPS_MARKS_GLSL}` : '';
   // N-194: vPainter's y is the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
@@ -199,7 +199,7 @@ export function pixelDepthVertex(source, { gbuf = false, faces = false, cull = '
     .replace(
       pos,
       () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n  vPainter = vec2(float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1}), abs(aInstScale.y));\n  vMapsWin = twinWindow(tid);` +
-        (gbuf ? '\n  vDepthWord = aInstGbuf;' : '') + plainGlsl(gbuf) + (faces ? facesDepthGlsl(gbuf) + cullGlsl(cull, gbuf) : ''),
+        (gbuf ? '\n  vDepthWord = aInstGbuf.xy;' : '') + plainGlsl(gbuf) + (faces ? facesDepthGlsl(gbuf) + cullGlsl(cull, gbuf) : ''),
     );
 }
 
@@ -440,7 +440,7 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false, faces 
     '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
     // N-194: z, the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
     `  out.vDepthFoot = vec3<f32>(aInstXY.y * uniforms.uDepth.x, f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u), abs(aInstScale.y));\n` +
-      (gbuf ? '  out.vDepthWord = aInstGbuf;\n' : '') + '  out.vMapsWin = twinWindow(tid);\n' + plainWgsl(gbuf) +
+      (gbuf ? '  out.vDepthWord = aInstGbuf.xy;\n' : '') + '  out.vMapsWin = twinWindow(tid);\n' + plainWgsl(gbuf) +
       (faces ? facesDepthWgsl(gbuf, cull) : ''),
     'out.position',
   );

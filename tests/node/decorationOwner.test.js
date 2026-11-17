@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { buildPoolScene } from '../helpers/poolScene.mjs';
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { DecorationPool } from '../../src/core/decorationPool.js';
-import { writeGbufWords } from '../../src/render/gbufWord.js';
+import { GBUF_FOOT_NONE, writeGbufWords } from '../../src/render/gbufWord.js';
 
 // N-273: a decoration can name the entity it is part of (a house's walls and roofs). Its rows then carry that entity's
 // G-buffer id, so the light pass takes its pixels as the entity's and the entity's own shadow volume leaves them lit.
@@ -39,13 +39,23 @@ test('N-273: a decoration row with an owner carries the owner\'s id alone; one w
   // Rows: an entity's sprite, then decorations 0 to 4 (type 2), and a particle (type 1) with decoration 1's index.
   const rowType = new Uint8Array([0, 2, 2, 2, 2, 2, 1]);
   const rowEntity = new Int32Array([3, 0, 1, 2, 3, 4, 1]);
-  const out = new Float32Array(rowType.length * 2);
-  writeGbufWords(out, rowType.length, null, rowType, rowEntity, null, entities, flags, selfShadow, null, owner);
+  const out = new Float32Array(rowType.length * 3);
+  const ownerY = new Float32Array(entities);
+  ownerY[0] = 512;
+  ownerY[8] = 700.5;
+  writeGbufWords(out, rowType.length, null, rowType, rowEntity, null, entities, flags, selfShadow, null, owner, ownerY);
   const words = [];
-  for (let k = 0; k < rowType.length; k++) words.push(out[2 * k]);
+  const feet = [];
+  for (let k = 0; k < rowType.length; k++) {
+    words.push(out[3 * k]);
+    feet.push(out[3 * k + 2]);
+  }
   const sprite = 4 + 63 * 65536 + 3 * 4194304;
   // Decoration 0 has none; 1 is entity 0's; 2 entity 65535's, id 1 past the wrap; 3 past the entities; 4 entity 8's.
   assert.deepEqual(words, [sprite, 0, 1, 1, 0, 9, 0], 'the owner\'s id ((entity % 65535) + 1), no flags');
+  // N-275: an owned decoration stands on its owner's foot (its Transform y); any other row on its own.
+  const N = GBUF_FOOT_NONE;
+  assert.deepEqual(feet, [N, N, 512, 0, N, 700.5, N], 'the owner\'s y, the others none');
   writeGbufWords(out, rowType.length, null, rowType, rowEntity, null, entities, flags, selfShadow, null, null);
-  assert.equal(out[2], 0, 'without the column a decoration is no entity, as before');
+  assert.equal(out[3], 0, 'without the column a decoration is no entity, as before');
 });

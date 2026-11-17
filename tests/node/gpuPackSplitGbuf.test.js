@@ -215,8 +215,8 @@ function checkWords(s, calls, label, { kind = 'split', opts, cap = N, statics = 
   let entityRows = 0;
   let maxBand = 0;
   for (let k = 0; k < n; k++) {
-    if (words[2 * k] !== 0) entityRows++;
-    if (words[2 * k + 1] > maxBand) maxBand = words[2 * k + 1];
+    if (words[3 * k] !== 0) entityRows++;
+    if (words[3 * k + 1] > maxBand) maxBand = words[3 * k + 1];
   }
   return { n, entityRows, maxBand };
 }

@@ -134,7 +134,7 @@ function gbufColumns(alloc, rows) {
   const flags = alloc(Uint8Array, entities);
   const self = alloc(Uint8Array, entities);
   const zIndex = alloc(Int16Array, entities);
-  const out = alloc(Float32Array, rows * 2);
+  const out = alloc(Float32Array, rows * 3);
   let e = 0;
   for (let i = 0; i < rows; i++) {
     e += rng() < 0.25 ? 2 : 1;
@@ -179,9 +179,9 @@ function warmFor(fn, ms = 250) {
 
 /** E-444: a hash of the words' bits (FNV-1a over their u32). */
 function wordsHash(words, n) {
-  const bits = new Uint32Array(words.buffer, words.byteOffset, n * 2);
+  const bits = new Uint32Array(words.buffer, words.byteOffset, n * 3);
   let h = 2166136261;
-  for (let w = 0; w < n * 2; w++) h = Math.imul(h ^ bits[w], 16777619) >>> 0;
+  for (let w = 0; w < n * 3; w++) h = Math.imul(h ^ bits[w], 16777619) >>> 0;
   return h >>> 0;
 }
 
@@ -203,13 +203,13 @@ function gbufCases(s, cases, rows, listed, bands, packs) {
     };
     warmFor(plainAndWords);
     cases[`${name}Words`] = { ms: medianMs(plainAndWords, 15, 0), check: wordsHash(g.out, rows) };
-    const want = Uint32Array.from(new Uint32Array(g.out.buffer, g.out.byteOffset, rows * 2));
+    const want = Uint32Array.from(new Uint32Array(g.out.buffer, g.out.byteOffset, rows * 3));
     g.out.fill(-7);
     const cols = { out: g.out, flags: g.flags, self: g.self, z, types: g.rowType, entities: g.rowEntity, written: false };
     if (withCols(cols) !== rows) throw new Error(`the ${name} pack with the G-buffer columns did not take the frame`);
     if (cols.written !== true) continue;
-    const got = new Uint32Array(g.out.buffer, g.out.byteOffset, rows * 2);
-    for (let w = 0; w < rows * 2; w++) {
+    const got = new Uint32Array(g.out.buffer, g.out.byteOffset, rows * 3);
+    for (let w = 0; w < rows * 3; w++) {
       if (got[w] !== want[w]) throw new Error(`the ${name} pack's G-buffer float ${w} is not writeGbufWords'`);
     }
     const packWithWords = () => withCols(cols);

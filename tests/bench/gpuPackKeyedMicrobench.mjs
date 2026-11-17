@@ -148,8 +148,8 @@ export async function setup(rows, entities, orderKind) {
     selfShadow[x] = (g() * 3) | 0;
     zIndex[x] = (g() * 4) | 0;
   }
-  const gbufOut = alloc(Float32Array, rows * 2);
-  const gbufData = new Float32Array(rows * 2);
+  const gbufOut = alloc(Float32Array, rows * 3);
+  const gbufData = new Float32Array(rows * 3);
   if (top > buf.byteLength) throw new Error('gpuPackKeyedMicrobench: the memory is too small');
   // Pixi's binding: no inverse, so every pack gathers in the painter's order.
   const b = await client.bindGpuPack(memory, {
@@ -273,12 +273,12 @@ export async function run({
       if (keyed.gbufWritten === true) {
         const packAndCopy = () => {
           pack();
-          s.gbufData.set(s.gbufOut.subarray(0, rows * 2));
+          s.gbufData.set(s.gbufOut.subarray(0, rows * 3));
         };
         cases.keyedGbuf = { ms: framesMs(change, packAndCopy, frames), check: wordSum(s.gbufData, rows) };
-        const got = Uint32Array.from(new Uint32Array(s.gbufData.buffer, 0, rows * 2));
+        const got = Uint32Array.from(new Uint32Array(s.gbufData.buffer, 0, rows * 3));
         words(rows);
-        const want = new Uint32Array(s.gbufData.buffer, 0, rows * 2);
+        const want = new Uint32Array(s.gbufData.buffer, 0, rows * 3);
         for (let w = 0; w < rows * 2; w++) {
           if (got[w] !== want[w]) throw new Error(`the keyed pack's G-buffer float ${w} is not writeGbufWords'`);
         }

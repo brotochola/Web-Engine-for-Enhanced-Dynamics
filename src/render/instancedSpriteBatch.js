@@ -930,7 +930,7 @@ export class InstancedSpriteBatch {
     if (this._gbufBuffers === null) return geometry;
     geometry.addAttribute('aInstGbuf', {
       buffer: this._gbufBuffers[ring],
-      format: 'float32x2',
+      format: 'float32x3',
       stride: GPU_GBUF_FLOATS * 4,
       offset: 0,
       instance: true,

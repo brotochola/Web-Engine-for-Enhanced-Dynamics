@@ -455,6 +455,9 @@ function splitGbufByte(b, gbuf, n, rows) {
   const owned = owner && owner.length > 0 && owner.buffer === b.buffer && owner.BYTES_PER_ELEMENT === 4;
   b.u32[at + 8] = owned ? owner.byteOffset : 0;
   b.u32[at + 9] = owned ? owner.length : 0;
+  // N-275: the owners' feet (Transform.y, GB_OWNER_Y), none without the owners or outside the memory.
+  const ownerY = gbuf.ownerY;
+  b.u32[at + 10] = owned && ownerY && ownerY.buffer === b.buffer && ownerY.length > 0 ? ownerY.byteOffset : 0;
   return b.paramsByte;
 }
 

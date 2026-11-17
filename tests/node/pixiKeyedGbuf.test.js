@@ -188,8 +188,8 @@ function assertWords(label, got, n, order, keys, flags, self, z) {
   let words = 0;
   let bands = 0;
   for (let k = 0; k < n; k++) {
-    if (want[2 * k] !== 0) words++;
-    if (want[2 * k + 1] > bands) bands = want[2 * k + 1];
+    if (want[3 * k] !== 0) words++;
+    if (want[3 * k + 1] > bands) bands = want[3 * k + 1];
   }
   return { words, bands };
 }

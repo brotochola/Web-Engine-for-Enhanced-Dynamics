@@ -207,9 +207,10 @@ test('the face programs take the G-buffer words only when the batch carries them
   const vert = shader('instancedSprite.vert.glsl');
   assert.doesNotMatch(faceMapVertex(vert), /aInstGbuf|vFootY/);
   const on = faceMapVertex(vert, { gbuf: true });
-  assert.match(on, /in vec2 aInstGbuf;/);
+  assert.match(on, /in vec3 aInstGbuf;/);
   assert.match(on, /flat out vec2 vGbuf;/);
-  assert.match(on, /vFootY = world\.y - /);
+  // N-275: an owned decoration stands on its owner's foot (the words' z), any other row on its own.
+  assert.match(on, /vFootY = aInstGbuf\.z > -1\.0e29 \? aInstGbuf\.z\s*: world\.y - /);
   assert.match(spriteIndexedVertex(faceMapVertex(vert, { gbuf: true })), /vFootY = /, 'the indexed form keeps them');
   const frag = shader('faceMap.frag.glsl');
   assert.doesNotMatch(faceFragmentGlsl(frag), /vGbuf|#if|discard;\n\s*\/\/ #endif/);
@@ -228,12 +229,12 @@ test('the face programs take the G-buffer words only when the batch carries them
     const off = faceMapWgsl(shader(name));
     assert.doesNotMatch(off, /aInstGbuf|vGbuf/, name);
     const w = faceMapWgsl(shader(name), { gbuf: true });
-    assert.match(w, /@location\(12\) aInstGbuf: vec2<f32>,/, name);
+    assert.match(w, /@location\(12\) aInstGbuf: vec3<f32>,/, name);
     assert.match(w, /@location\(9\) @interpolate\(flat\) vGbuf: vec2<f32>,/, name);
     assert.match(w, /fn faceHeightNormal/, name);
     assert.equal(gbufAttributeWgsl(w), w, 'declared once');
   }
-  assert.match(spriteIndexedWgsl(faceMapWgsl(shader('instancedSprite.wgsl'), { gbuf: true })), /aInstGbuf: vec2<f32>/);
+  assert.match(spriteIndexedWgsl(faceMapWgsl(shader('instancedSprite.wgsl'), { gbuf: true })), /aInstGbuf: vec3<f32>/);
   assert.match(gbufAttributeWgsl(shader('instancedSprite.wgsl')), /@location\(12\) aInstGbuf/);
 });
 
@@ -244,9 +245,9 @@ test('a GLSL colour program takes the G-buffer words, read or not, once, in ever
   for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
     for (const [form, src] of [['plain', shader(name)], ['indexed', spriteIndexedVertex(shader(name))]]) {
       const out = gbufAttributeGlsl(src);
-      assert.equal(out.split('in vec2 aInstGbuf;').length, 2, `${name} ${form}: declared once`);
+      assert.equal(out.split('in vec3 aInstGbuf;').length, 2, `${name} ${form}: declared once`);
       assert.ok(out.includes('  if (aInstGbuf.x < -1.0) gl_Position.x += aInstGbuf.y;\n'), `${name} ${form}: kept alive`);
-      assert.ok(out.indexOf('in vec2 aInstGbuf;') < out.indexOf('void main() {'), `${name} ${form}: at global scope`);
+      assert.ok(out.indexOf('in vec3 aInstGbuf;') < out.indexOf('void main() {'), `${name} ${form}: at global scope`);
       assert.equal(gbufAttributeGlsl(out), out, `${name} ${form}: twice is once`);
     }
   }

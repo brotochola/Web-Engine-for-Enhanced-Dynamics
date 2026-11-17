@@ -223,10 +223,10 @@ test('E-444: pre-render\'s sprite G-buffer words, from the pack where it takes t
         const wantBits = new Uint32Array(want.buffer);
         for (let w = 0; w < n * GPU_GBUF_FLOATS; w++) {
           if (got[w] !== wantBits[w]) {
-            assert.fail(`${label}: slot ${w >> 1} ${w & 1 ? 'band' : 'word'}: ${dst.spriteGbuf[w]}, not ${want[w]}`);
+            assert.fail(`${label}: slot ${(w / 3) | 0} ${['word', 'band', 'foot'][w % 3]}: ${dst.spriteGbuf[w]}, not ${want[w]}`);
           }
         }
-        if (sorted) assert.ok(want[2 * n - 1] > 0, `${label}: bands`);
+        if (sorted) assert.ok(want[3 * n - 2] > 0, `${label}: bands`);
         pre.publishFrame();
       }
     }

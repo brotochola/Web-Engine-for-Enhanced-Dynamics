@@ -1237,7 +1237,9 @@ export interface DecorationSpawnConfig {
   faceHeight?: number;
   /**
    * The entity this decoration is part of (a house's walls and roofs), or its index: the light takes its pixels as that
-   * entity's, so the entity's own shadow volume does not fall on them. Default none.
+   * entity's, so the entity's own shadow volume does not fall on them, and a decoration without a face or a height map
+   * stands on the entity's foot (a tree's branches on its trunk's base) instead of lying where its pixels are. Default:
+   * an attached decoration's parent, else none.
    */
   owner?: GameObject | number | null;
   sway?: boolean;

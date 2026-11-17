@@ -1543,7 +1543,7 @@ class PreRenderWorker extends AbstractWorker {
         // the pack wrote them (_writeGbufWords then takes them as they are).
         this._packGbuf = {
             out: EMPTY_F32, flags: EMPTY_U8, self: EMPTY_U8, z: EMPTY_I16, types: EMPTY_U8, entities: EMPTY_I32,
-            owner: EMPTY_U32, written: false,
+            owner: EMPTY_U32, ownerY: EMPTY_F32, written: false,
         };
         this._packGbufAsk = false;
         this._packGbufWritten = false;
@@ -5569,6 +5569,7 @@ class PreRenderWorker extends AbstractWorker {
         writeGbufWords(
             out, n, sprites.indices || null, this._renderableType, this._renderableIndex, null, flags.length, flags,
             ShadowCaster.selfShadow || null, sorted ? SpriteRenderer.zIndex : null, DecorationComponent.owner || null,
+            Transform.y || null,
         );
         return true;
     }
@@ -5592,6 +5593,7 @@ class PreRenderWorker extends AbstractWorker {
         g.types = this._renderableType;
         g.entities = this._renderableIndex;
         g.owner = DecorationComponent.owner || EMPTY_U32;
+        g.ownerY = Transform.y || EMPTY_F32;
         g.written = false;
         return true;
     }

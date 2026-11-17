@@ -597,8 +597,9 @@ export class DecorationPool extends SharedAtomicPool {
       // DX-BARRIOS: faces in use, for good (the G-buffer turns on by itself).
       if (oct !== 0) this._markFacesInUse();
     }
-    // N-273: the entity it is part of (a slot from the pool must not keep the last one's).
-    DecorationComponent.owner[i] = ownerSlot(config.owner);
+    // N-273: the entity it is part of (a slot from the pool must not keep the last one's). N-275: an attached one is part
+    // of its parent unless it says otherwise.
+    DecorationComponent.owner[i] = config.owner !== undefined ? ownerSlot(config.owner) : hasParent ? (config.parent | 0) + 1 : 0;
 
     // Visual properties
     scaleX[i] = randomRange(config.scaleX, 1);
