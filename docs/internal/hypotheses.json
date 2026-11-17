@@ -21893,6 +21893,24 @@
       "statusText": "seen 2026-11-17 in depthPairScene (a lit lamp, a person 1 to 2 px behind it): the post shows over the person's chest at about half strength, pinkish",
       "result": "",
       "next": "Diagnosed 2026-11-17: the unshaded pass (pixiWorker _renderUnshaded, faceMap.js faceUnshadedFragment) draws the entities into the unshaded target blended in painter order with no depth, while the canvas orders them by pixel depth; where pixel depth puts a sprite in front of an unshaded one the painter drew later, the canvas shows the sprite and the unshaded target the unshaded colour, and the composite adds it over the sprite. A fix gives the unshaded pass the canvas's visibility: its own depth buffer and the depth programs' two passes (opaque writing, edges testing), or the entities' pass writing both targets at once (MRT sharing the canvas's depth). With N-262's footprint clamp it shows only where two footprints overlap (depthPairScene at 1 px), which the barrio's colliders mostly keep apart: low priority."
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "light data partial upload"
+      ],
+      "records": [
+        "R-1309"
+      ],
+      "id": "E-511",
+      "kind": "speed",
+      "area": "pixi",
+      "status": "kept-hygiene",
+      "date": "2026-11-17",
+      "title": "The light data texture uploads only the columns that changed (this frame's lights and last frame's), not its maxLights columns every frame",
+      "statusText": "found 2026-11-17 reading the barrio's WebGL uploads (glFrameRecorder): 64 KB a frame of the 100 KB of textures was the whole 1024-wide light data for about 54 lights, while Chrome's GPU process main thread on the HD 620 laptop was saturated",
+      "result": "kept: texture uploads 100 340 -> 38 217 bytes a frame in the barrio; captures identical",
+      "next": ""
     }
   ],
   "records": [
@@ -34843,6 +34861,17 @@
       "commits": [
         "a2904527",
         "36dd2cb3"
+      ]
+    },
+    {
+      "id": "R-1309",
+      "date": "2026-11-17",
+      "title": "E-511 kept (hygiene): the light data uploads only its changed columns; the barrio's texture uploads 100 -> 38 KB a frame",
+      "verdict": "kept",
+      "text": "**E-511 kept (hygiene): the light data texture uploads only the columns that changed; the barrio's texture uploads 100 340 -> 38 217 bytes a frame.**\n\n- **Change** (`b4d710fd`, merged `ec9a83c6`): updateLighting uploads max(lights now, lights at the last upload) columns\n  (WebGL texSubImage2D with UNPACK_ROW_LENGTH, WebGPU writeTexture with the rows' bytesPerRow) and clears only up to\n  there; a new texture whole once.\n- **Measured** (glFrameRecorder, the barrio at 22 h, GTX 1650): texture bytes a frame 100 340 -> 38 217 (the light data\n  64 KB -> about 3.4 KB). Captures against main identical (light3dCompareScene ?all=1&still=1&hour=22 WebGL and WebGPU,\n  lampShadowStressScene ?lampShadows=map&still=1). Aimed at Chrome's GPU process on the HD 620 laptop (its main thread\n  1033 ms/s, the other session's probe); its effect there is not measured yet. test:node 3021, test:demos 121.",
+      "commits": [
+        "b4d710fd",
+        "ec9a83c6"
       ]
     }
   ],
