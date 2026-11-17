@@ -56,6 +56,8 @@ import { GpuEncoderSystem } from '../node_modules/pixi.js/lib/rendering/renderer
 import { BindGroupSystem } from '../node_modules/pixi.js/lib/rendering/renderers/gpu/BindGroupSystem.mjs';
 import { PipelineSystem } from '../node_modules/pixi.js/lib/rendering/renderers/gpu/pipeline/PipelineSystem.mjs';
 import { GpuMeshAdapter } from '../node_modules/pixi.js/lib/scene/mesh/gpu/GpuMeshAdapter.mjs';
+// The WebGL shader system scripts/buildPixi.mjs patches (patchPixiParallelLinks), for tests/node/pixiParallelLinks.test.js.
+import { GlShaderSystem } from '../node_modules/pixi.js/lib/rendering/renderers/gl/shader/GlShaderSystem.mjs';
 
 export {
   extensions,
@@ -92,4 +94,5 @@ export {
   BindGroupSystem,
   PipelineSystem,
   GpuMeshAdapter,
+  GlShaderSystem,
 };

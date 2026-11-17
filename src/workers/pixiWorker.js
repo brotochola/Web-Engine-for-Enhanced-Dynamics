@@ -633,6 +633,9 @@ const PIXI = Object.freeze({
 
 const QUERY_LIGHT_EMITTER = [LightEmitter];
 
+/** E-475: the longest the worker waits for its programs' links before it reports ready (a driver that never answers). */
+const LINK_AHEAD_WAIT_MS = 20000;
+
 // Make PIXI namespace available globally (renderer-specific)
 self.PIXI = PIXI;
 
@@ -678,6 +681,9 @@ class PixiRenderer extends AbstractWorker {
     this._staticsScatterGl = null;
     // E-187: the keyed statics scatter's pipelines and buffers on WebGPU (staticsScatterGpu.js), made on first use.
     this._staticsScatterGpu = null;
+    // E-475: the WebGL programs made while the worker starts (GlProgram.weedMade), linked together before it reports
+    // ready (_linkProgramsAhead).
+    this._madePrograms = [];
     // The glow batch's rows in the render-queue memory (pixi pack mode), or null.
     this._pixiGlowRows = null;
     // W30. The batches Pixi fills from the render-queue memory keep their arrays in private WebAssembly.Memories, copied
@@ -4618,6 +4624,7 @@ LIGHTING SYSTEM SETUP
   }
   `,
         fragment: lightingSrc,
+        name: 'lighting-basic',
       });
       this.lightingShader = new PIXI.Shader({ glProgram, resources: lightingResources });
     }
@@ -9353,6 +9360,27 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
+   * E-475: links every WebGL program made while the worker started (GlProgram.weedMade) all at once and waits for them
+   * without blocking (KHR_parallel_shader_compile: the driver links on its own threads, and COMPLETION_STATUS_KHR, asked
+   * every few ms, never waits), so the worker reports ready with its programs linked and no frame waits for one. Pixi
+   * linked each program on its first bind and waited for it: Predator by night waited 2.1 s in its first frames, 1.3 s of
+   * it for the light pass. A program made later (a pass's on its first use) Pixi links as before.
+   */
+  async _linkProgramsAhead() {
+    const made = this._madePrograms;
+    PIXI.GlProgram.weedMade = null;
+    const shaders = this._useWebGpu ? null : this.pixiApp?.renderer?.shader;
+    if (shaders && typeof shaders.weedLinkAhead === 'function') {
+      for (let i = 0; i < made.length; i++) shaders.weedLinkAhead(made[i]);
+      const deadline = performance.now() + LINK_AHEAD_WAIT_MS;
+      while (shaders.weedLinksRunning() > 0 && performance.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 4));
+      }
+    }
+    made.length = 0;
+  }
+
+  /**
    * Initialize the PIXI renderer with provided data
    */
   async initialize(data) {
@@ -9361,6 +9389,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     );
     this._rendererBackend = backend;
     this._useWebGpu = backend === RENDERER_BACKEND_WEBGPU;
+    // E-475: every WebGL program made from here to the end of initialize is linked ahead, all together.
+    if (!this._useWebGpu) PIXI.GlProgram.weedMade = this._madePrograms;
 
     embeddedEngineShaders = data.engineShaders || null;
     this._engineShaders = {};
@@ -10002,6 +10032,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // LAYER REFERENCES MAP - For debug UI control
     // ========================================
     this.buildLayerRefsMap();
+
+    await this._linkProgramsAhead();
 
     debugWorkerLog('PIXI WORKER: Initialization complete, waiting for start signal...');
     debugWorkerLog(
