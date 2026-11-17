@@ -348,5 +348,6 @@ function swayLayout(r, sway) {
     trigByte: r.swayTrig.byte,
     trigValueByte: r.swayTrigValue.byte,
     tableByte: r.swayTable.byte,
+    swayingByte: r.swaySwaying.byte,
   };
 }

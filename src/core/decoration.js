@@ -322,6 +322,7 @@ export class Decoration {
     if (!this._isCurrent() || this._sheared()) return;
     DecorationComponent.sway[this.index] = v ? SWAY_LOOP : SWAY_OFF;
     if (!v) DecorationComponent.swayPhase[this.index] = 0;
+    else DecorationPool._countSwayStart(); // E-506: the particle worker lists it among the swaying ones
   }
 
   get swayAmplitude() {
@@ -354,6 +355,7 @@ export class Decoration {
     DecorationComponent.swayAmplitude[i] = amplitude;
     DecorationComponent.swayFrequency[i] = frequency < 0 ? -frequency : frequency;
     DecorationComponent.swayPhase[i] = 0;
+    DecorationPool._countSwayStart(); // E-506
   }
 
   get rotation() {

@@ -47,6 +47,12 @@ export {
  * once a decoration carries a face's normal: faces are in use, and the G-buffer turns on by itself (no lighting.faces).
  */
 export const DECORATION_FACES_IN_USE = 5;
+/**
+ * E-506: the word of the list header that moves (+1) each time a decoration starts swaying after its spawn (the facade's
+ * sway = true, impulseSway): the particle worker lists the swaying decorations again then. A spawn moves the list's own
+ * epoch, which does the same.
+ */
+export const DECORATION_SWAY_EPOCH = 6;
 
 /** Sentinel: decoration not parented. Width 16 = 0xffff; width 32 = 0xffffffff. */
 export function decorationNoParent() {
@@ -148,6 +154,18 @@ export class DecorationPool extends SharedAtomicPool {
   static listEpoch() {
     const lock = this._activeListLock;
     return lock !== null && lock.length > DECORATION_LIST_EPOCH ? Atomics.load(lock, DECORATION_LIST_EPOCH) : -1;
+  }
+
+  /** E-506: the sway epoch (DECORATION_SWAY_EPOCH), -1 without the word (the swaying list is then made every frame). */
+  static swayEpoch() {
+    const lock = this._activeListLock;
+    return lock !== null && lock.length > DECORATION_SWAY_EPOCH ? Atomics.load(lock, DECORATION_SWAY_EPOCH) : -1;
+  }
+
+  /** E-506: a decoration started swaying after its spawn. */
+  static _countSwayStart() {
+    const lock = this._activeListLock;
+    if (lock !== null && lock.length > DECORATION_SWAY_EPOCH) Atomics.add(lock, DECORATION_SWAY_EPOCH, 1);
   }
 
   /** E-334: one more (+1) or one fewer (-1) attached decoration in the active list, under its lock. */
