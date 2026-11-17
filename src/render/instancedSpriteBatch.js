@@ -91,13 +91,8 @@ export const AUX_GBUF = 2;
 export const AUX_UNSHADED = 3;
 /** E-457: the unshaded mask, the quads of the instances that can be unshaded in the stencil, where the unshaded pass draws. */
 export const AUX_UNSHADED_MASK = 4;
-/**
- * N-266: with pixel depth the unshaded pass is two, as the canvas's colour is: AUX_UNSHADED the solid pixels that are not
- * unshaded (black, writing the depth), this one the soft and the unshaded ones (testing it).
- */
-export const AUX_UNSHADED_EDGE = 5;
-const AUX_NAMES = ['face', 'ids', 'gbuf', 'unshaded', 'unshadedMask', 'unshadedEdge'];
-const AUX_ENTRIES = ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragUnshaded', 'mainFragUnshadedMask', 'mainFragUnshadedEdge'];
+const AUX_NAMES = ['face', 'ids', 'gbuf', 'unshaded', 'unshadedMask'];
+const AUX_ENTRIES = ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragUnshaded', 'mainFragUnshadedMask'];
 /** Pixi's STENCIL_MODES (the bundle does not export them): off, a mask drawn (equal to the reference, +1), a mask in use. */
 const STENCIL_OFF = 0;
 const STENCIL_MASK_ADD = 1;
@@ -1224,7 +1219,6 @@ export class InstancedSpriteBatch {
     // N-274, N-266: the G-buffer's and the unshaded passes are made again on their next use, with the depth or without.
     this._aux[AUX_GBUF] = { meshes: [], state: null, shader: null, indexed: null, row: null };
     this._aux[AUX_UNSHADED] = { meshes: [], state: null, shader: null, indexed: null, row: null };
-    this._aux[AUX_UNSHADED_EDGE] = { meshes: [], state: null, shader: null, indexed: null, row: null };
     const r = this.shader.resources;
     const wasRow = this._rowShader !== null && this.mesh.shader === this._rowShader;
     const wasIndexed = this._indexedShader !== null && this.mesh.shader === this._indexedShader;
@@ -2338,14 +2332,11 @@ export class InstancedSpriteBatch {
     }
     const mask = this._auxMesh(AUX_UNSHADED_MASK, heightScaleY, groundScaleY, maps);
     if (mask === null) return mesh;
-    // N-266: with pixel depth, the edge pass after the opaque one (the stencil step makes the target's depth).
-    const edge = this._pixelDepth !== null ? this._auxMesh(AUX_UNSHADED_EDGE, heightScaleY, groundScaleY, maps) : null;
     const host = new Container();
     host.addChild(new UnshadedStencilStep(STENCIL_MASK_ADD, 0, 0));
     host.addChild(mask);
     host.addChild(new UnshadedStencilStep(STENCIL_MASK_ACTIVE, 1, 15));
     host.addChild(mesh);
-    if (edge !== null) host.addChild(edge);
     host.addChild(new UnshadedStencilStep(STENCIL_OFF, 0, 15));
     passes.push({ mesh, host });
     return host;
@@ -2404,7 +2395,7 @@ export class InstancedSpriteBatch {
     // N-274: the G-buffer's one pass takes the colour pass's depth (pixelDepth.js gbufDepthVertex, gbufDepthFragment,
     // gbufDepthWgsl), so it keeps the surface the canvas shows at each texel; N-266: so does the unshaded pass, so a lit
     // sprite in front of an unshaded one covers it there as on the canvas, whichever the painter drew last.
-    const depth = (kind === AUX_GBUF || kind === AUX_UNSHADED || kind === AUX_UNSHADED_EDGE) && this._pixelDepth !== null;
+    const depth = (kind === AUX_GBUF || kind === AUX_UNSHADED) && this._pixelDepth !== null;
     // N-266: the colour pass's formula, stepped without faces.
     const depthOpts = { faces: this._depthFaces };
     const depthWgsl = (source) => (depth ? gbufDepthWgsl(source, depthOpts) : source);
@@ -2460,10 +2451,10 @@ export class InstancedSpriteBatch {
     const state = new State();
     // The G-buffer's targets hold codes: written as they are. The unshaded target is a colour, blended as the sprites are
     // (PMA).
-    state.blendMode = kind === AUX_UNSHADED || kind === AUX_UNSHADED_EDGE ? 'normal' : 'none';
+    state.blendMode = kind === AUX_UNSHADED ? 'normal' : 'none';
     // N-274, N-266: the G-buffer's and the unshaded passes test and write the depth (less) in their target's depth attachment.
     state.depthTest = depth;
-    state.depthMask = depth && kind !== AUX_UNSHADED_EDGE;
+    state.depthMask = depth;
     state.culling = false;
     aux.state = state;
     return true;
@@ -2476,7 +2467,6 @@ export class InstancedSpriteBatch {
     if (kind === AUX_IDS) return faceIdsFragment({ unshaded });
     if (kind === AUX_GBUF) return faceGbufFragment(shaders.faceFrag, { unshaded });
     if (kind === AUX_UNSHADED) return faceUnshadedFragment({ depth });
-    if (kind === AUX_UNSHADED_EDGE) return faceUnshadedFragment({ depth: true, edge: true });
     if (kind === AUX_UNSHADED_MASK) return faceUnshadedMaskFragment();
     return faceFragmentGlsl(shaders.faceFrag, { gbuf: this.gbuf, unshaded });
   }

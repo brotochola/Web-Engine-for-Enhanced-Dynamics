@@ -153,20 +153,16 @@ export function faceFragmentGlsl(faceFrag, { gbuf = false, unshaded = false } = 
  * DX-UNSHADED (was DX-EMISSIVE v2, plan §6.9, F10): the unshaded pass's fragment shader (WebGL), over faceMapVertex's
  * outputs with words: an unshaded pixel writes its colour, any other black with its alpha, both premultiplied and blended
  * normally in painter order, so a sprite in front of a flame covers it in proportion to its alpha. The unshaded layer adds
- * it where the light is short (unshadedComposite.js). N-266: with `depth` (the batch's pixel depth) it is drawn as the
- * canvas is, in two passes with the colour pass's depth (pixelDepth.js gbufDepthFragment): the opaque one (`edge` false)
- * keeps the solid pixels that are not unshaded, black, writing the depth; the edge one (`edge` true) the soft and the
- * unshaded ones, testing it. So a lit sprite in front of an unshaded one covers it there as on the canvas, whichever the
- * painter drew last.
- * @param {{ depth?: boolean, edge?: boolean }} [opts]
+ * it where the light is short (unshadedComposite.js). N-266: with `depth` (the batch's pixel depth) a texel under half
+ * covered is cut and the rest test and write the colour pass's depth (pixelDepth.js gbufDepthFragment), so the target keeps
+ * the surface the canvas shows: a lit sprite in front of an unshaded one covers it there, whichever the painter drew last.
+ * One pass gives what the canvas's two give (its opaque pass writing, its edge pass, where the unshaded texels are, testing):
+ * an unshaded texel in front of a lit one wins either way, behind it loses either way.
+ * @param {{ depth?: boolean }} [opts]
  * @returns {string}
  */
-export function faceUnshadedFragment({ depth = false, edge = false } = {}) {
-  const cut = !depth
-    ? ''
-    : edge
-      ? '  float ad = t.a * vColor.a;\n  if (ad <= 0.0 || (ad >= 0.5 && unshadedOf(vGbuf) <= 0.0)) discard;\n  // weed:depth\n'
-      : '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n  if (unshadedOf(vGbuf) > 0.0) discard;\n';
+export function faceUnshadedFragment({ depth = false } = {}) {
+  const cut = depth ? '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n' : '';
   return `#version 300 es
 precision highp float;
 in vec2 vLocal;
