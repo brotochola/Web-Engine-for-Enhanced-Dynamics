@@ -405,6 +405,129 @@ function patchPixiIntegerFormats() {
   };
 }
 
+/**
+ * E-475: Pixi links a WebGL program the first time it binds it and waits for the link (generateProgram reads
+ * LINK_STATUS right after linkProgram): Predator by night waited 2.1 s in its first frames, 1.3 s of it for the light
+ * pass. With KHR_parallel_shader_compile the driver links on threads of its own, and nothing waits until something is
+ * read back from the program. So:
+ * - generateProgram comes in two halves: weedStartProgram compiles, attaches and links, reading nothing back;
+ *   weedFinishProgram reads the link (LINK_STATUS, attributes, uniforms) and makes the GlProgramData.
+ * - GlShaderSystem.weedLinkAhead(program) starts a program's link; weedLinksRunning() asks COMPLETION_STATUS_KHR of the
+ *   links started (never waiting: Chrome answers from a query); the program's first bind finishes the link started
+ *   instead of starting another (_createProgramData).
+ * - GlProgram.weedMade: when the engine sets it to an array, every program made from then on is pushed on it.
+ */
+function patchPixiParallelLinks() {
+  return {
+    name: 'patch-pixi-parallel-links',
+    setup(build) {
+      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gl[\\/]shader[\\/]program[\\/]generateProgram\.mjs$/, (src, file) => {
+        src = replaceOnce(src, 'function generateProgram(gl, program) {\n', 'function weedStartProgram(gl, program) {\n', file);
+        src = replaceOnce(
+          src,
+          '  gl.linkProgram(webGLProgram);\n',
+          '  gl.linkProgram(webGLProgram);\n' +
+            '  return { webGLProgram, glVertShader, glFragShader, done: false };\n' +
+            '}\n' +
+            'function weedFinishProgram(gl, program, { webGLProgram, glVertShader, glFragShader }) {\n',
+          file,
+        );
+        return replaceOnce(
+          src,
+          'export { generateProgram };',
+          'function generateProgram(gl, program) {\n' +
+            '  return weedFinishProgram(gl, program, weedStartProgram(gl, program));\n' +
+            '}\n\n' +
+            'export { generateProgram, weedStartProgram, weedFinishProgram };',
+          file,
+        );
+      });
+      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gl[\\/]shader[\\/]GlShaderSystem\.mjs$/, (src, file) => {
+        src = replaceOnce(
+          src,
+          "import { generateProgram } from './program/generateProgram.mjs';",
+          "import { generateProgram, weedStartProgram, weedFinishProgram } from './program/generateProgram.mjs';",
+          file,
+        );
+        src = replaceOnce(
+          src,
+          '    this._renderer = renderer;\n  }\n  contextChange(gl) {\n    this._gl = gl;\n',
+          '    this._renderer = renderer;\n' +
+            '    this._weedLinks = /* @__PURE__ */ Object.create(null);\n' +
+            '    this._weedParallel = null;\n' +
+            '  }\n' +
+            '  contextChange(gl) {\n' +
+            '    this._gl = gl;\n' +
+            '    this._weedLinks = /* @__PURE__ */ Object.create(null);\n' +
+            // Enabled before any link: Chrome begins a link's completion query only while the extension is on.
+            '    this._weedParallel = gl.getExtension("KHR_parallel_shader_compile");\n',
+          file,
+        );
+        return replaceOnce(
+          src,
+          `  _createProgramData(program) {
+    const key = program._key;
+    this._programDataHash[key] = generateProgram(this._gl, program);
+    return this._programDataHash[key];
+  }
+`,
+          `  _createProgramData(program) {
+    const key = program._key;
+    const weedStarted = this._weedLinks[key];
+    if (weedStarted !== void 0) {
+      delete this._weedLinks[key];
+      this._programDataHash[key] = weedFinishProgram(this._gl, program, weedStarted);
+    } else {
+      this._programDataHash[key] = generateProgram(this._gl, program);
+    }
+    return this._programDataHash[key];
+  }
+  /** WeedJS (E-475): starts \`program\`'s link, reading nothing back; returns whether it started one. */
+  weedLinkAhead(program) {
+    const key = program._key;
+    if (this._programDataHash[key] || this._weedLinks[key] !== void 0 || program.vertex === null) return false;
+    this._weedLinks[key] = weedStartProgram(this._gl, program);
+    return true;
+  }
+  /** WeedJS (E-475): how many links weedLinkAhead started are still running; 0 without the extension. Never waits. */
+  weedLinksRunning() {
+    const ext = this._weedParallel;
+    if (ext === null) return 0;
+    const gl = this._gl;
+    let running = 0;
+    for (const key in this._weedLinks) {
+      const link = this._weedLinks[key];
+      if (link.done) continue;
+      // false while it links; true once done, null on a lost context (nothing to wait for then).
+      if (gl.getProgramParameter(link.webGLProgram, ext.COMPLETION_STATUS_KHR) === false) running++;
+      else link.done = true;
+    }
+    return running;
+  }
+`,
+          file,
+        );
+      });
+      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gl[\\/]shader[\\/]GlProgram\.mjs$/, (src, file) => {
+        src = replaceOnce(
+          src,
+          '    this._key = createIdFromString(`${this.vertex}:${this.fragment}`, "gl-program");\n  }\n',
+          '    this._key = createIdFromString(`${this.vertex}:${this.fragment}`, "gl-program");\n' +
+            '    if (_GlProgram.weedMade !== null) _GlProgram.weedMade.push(this);\n' +
+            '  }\n',
+          file,
+        );
+        return replaceOnce(
+          src,
+          '_GlProgram.defaultOptions = {\n',
+          '_GlProgram.weedMade = null;\n_GlProgram.defaultOptions = {\n',
+          file,
+        );
+      });
+    },
+  };
+}
+
 const result = await esbuild.build({
   absWorkingDir: root,
   entryPoints: [path.join(root, 'scripts', 'buildPixiWorker.js')],
@@ -412,7 +535,7 @@ const result = await esbuild.build({
   format: 'esm',
   minify: true,
   outfile: path.join(root, 'src', 'vendor', 'pixi.min.js'),
-  plugins: [stubPixiBackends(), patchPixiDrawGarbage(), patchPixiPassGarbage(), patchPixiIntegerFormats()],
+  plugins: [stubPixiBackends(), patchPixiDrawGarbage(), patchPixiPassGarbage(), patchPixiIntegerFormats(), patchPixiParallelLinks()],
   logLevel: 'info',
 });
 
