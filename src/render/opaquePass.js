@@ -24,6 +24,7 @@
  */
 
 import { FRAME_GLOW, FRAME_HALF, FRAME_SOFT, FRAME_UNSCANNED } from './frameBase.js';
+import { GPU_INTEGRATED, GPU_TILED } from './gpuClass.js';
 import { GPU_STATIC_FLOATS } from './gpuQueueLayout.js';
 
 /** The frame texels (frameBase.js FRAME_*) that keep a frame out of the opaque pass: any alpha but 0 and 255, glow, unknown. */
@@ -68,6 +69,32 @@ export const OPAQUE_ROW_PIXELS = 160;
  */
 export function opaquePassPays(cover, screen, rows) {
   return cover - OPAQUE_FRAGMENTS_KEPT * Math.min(cover, screen) >= OPAQUE_ROW_PIXELS * rows;
+}
+
+/**
+ * E-502: whether the opaque pass may draw on a GPU of this class (gpuClass.js gpuClassOf). opaquePassPays's costs are the
+ * GTX 1650's. An integrated GPU draws slower with the pass even where that gate says it pays: the Intel HD 620 drew
+ * bunnyMark (100 000) 53 % and bunnyMarkStress 78 % more frames without it, and Predator level (R-1277). The cost is the
+ * pass's drawing, not its pose copy. A tile-based GPU removes hidden surfaces on chip by itself, so the pass is only its
+ * cost there (not measured). Discrete, software and unknown GPUs keep it.
+ * @param {string} gpuClass
+ * @returns {boolean}
+ */
+export function opaquePassSuits(gpuClass) {
+  return gpuClass !== GPU_INTEGRATED && gpuClass !== GPU_TILED;
+}
+
+/**
+ * Whether the opaque pass may draw, from the setting debug.opaquePass (true always, false never, anything else the GPU's
+ * class decides: opaquePassSuits) and the GPU's class.
+ * @param {boolean|string|undefined} setting
+ * @param {string} gpuClass
+ * @returns {boolean}
+ */
+export function opaquePassOn(setting, gpuClass) {
+  if (setting === true) return true;
+  if (setting === false) return false;
+  return opaquePassSuits(gpuClass);
 }
 
 /**
