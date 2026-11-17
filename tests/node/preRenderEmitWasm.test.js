@@ -882,6 +882,190 @@ test('E-312 step 2: with K_SKIP the emit writes the statics of marked keyed rows
   checkKeys(k, n, 'frame 3', st);
 });
 
+// N-238: a mark a sprite took in a queue frame Pixi never drew keyed (it took a newer one, or drew that one split) was lost
+// when the sprite was out of view in the frame Pixi then drew keyed: K_SINCE passed its change frame, so the frame it came
+// back in left it unmarked, and Pixi drew it from a statics row never written (its first frame in view was the skipped
+// one) or an old one (its change was). Predator: Pixi's first keyed frame was queue frame 2, whose camera had jumped away
+// from frame 1's, so the trees, lamps and rocks first seen in frame 1 and back in view from frame 3 on were drawn from
+// rows of zeros (scale 0). The emit marks a sprite entering the view (missing from the queue frame before) as changed,
+// once; a persist frame misses on one, so the full emit writes the statics the mark sends.
+test('N-238: a sprite out of view in the frame Pixi drew keyed is marked as it comes back', async () => {
+  const k = await setup({ ySort: true, keyed: true });
+  const { worker: w, b, source, count, maxItems } = k;
+  const n = Math.min(count, maxItems);
+  const kernelSource = { ...source, persist: true };
+  const cIndex = w._renderableIndex;
+  SpriteRenderer.keyedDirty.fill(1);
+  const st = { tex: new Uint32Array(N * 12) };
+  const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS;
+  const emitAt = (frame, since) => {
+    setEmitKeyFrames(b, frame, since);
+    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
+  };
+  const plain = (e) => SpriteRenderer.repeatX[e] === 0 && SpriteRenderer.repeatY[e] === 0;
+  // 40 rows of sprites that do not repeat (a repeating one is marked every frame), and entities never in the queue to
+  // stand in for theirs while they are out of view.
+  const inQueue = new Set();
+  const rows = [];
+  for (let r = 0; r < n; r++) {
+    if (w._renderableType[r] !== 0) continue;
+    inQueue.add(cIndex[r]);
+    if (rows.length < 40 && r % 3 === 0 && plain(cIndex[r])) rows.push(r);
+  }
+  const spare = [];
+  for (let e = 0; e < N; e++) if (!inQueue.has(e) && plain(e)) spare.push(e);
+  assert.ok(rows.length === 40 && spare.length >= 61, `${rows.length} rows, ${spare.length} spare entities`);
+  const own = rows.map((r) => cIndex[r]);
+  const hold = (list) => rows.forEach((r, j) => { cIndex[r] = list[j]; });
+  const fullMarks = () => {
+    const out = new Set();
+    for (let r = 0; r < n; r++) {
+      const raw = w.renderQueueKey[r];
+      if (w._renderableType[r] === 0 && raw >= KEY_CHANGED && (raw & KEY_TEX_ONLY) === 0) out.add(cIndex[r]);
+    }
+    return out;
+  };
+  // Frame 1, which Pixi does not draw (the scene's first: every row marked, every flag taken): all 40 in view.
+  hold(own);
+  emitAt(1, 0);
+  // Frame 2, drawn keyed (still marking every row): the first 20 out of view (stand-ins hold their rows).
+  hold([...spare.slice(0, 20), ...own.slice(20)]);
+  emitAt(2, 0);
+  checkKeys(k, n, 'frame 2', st);
+  // Frame 3, which Pixi does not draw: the last 20 change a static.
+  for (const e of own.slice(20)) {
+    SpriteRenderer.scaleX[e] *= 1.25;
+    SpriteRenderer.keyedDirty[e] = 1;
+  }
+  emitAt(3, 2);
+  // Frame 4, drawn keyed: all 40 out of view.
+  hold(spare.slice(20, 60));
+  emitAt(4, 2);
+  checkKeys(k, n, 'frame 4, all 40 out of view', st);
+  // Frame 5: back in view, marked (the first 20's statics never sent, the last 20's sent before frame 3), so Pixi's
+  // texture holds them.
+  hold(own);
+  emitAt(5, 4);
+  const marks = fullMarks();
+  for (const e of own) assert.ok(marks.has(e), `entity ${e}: back in view, marked`);
+  for (const e of marks) assert.ok(own.includes(e) || !plain(e), `entity ${e}: marked, but neither back in view nor repeating`);
+  checkKeys(k, n, 'frame 5, all 40 back in view', st);
+  // Frame 6: marked once.
+  emitAt(6, 5);
+  const again = fullMarks();
+  for (const e of own) assert.ok(!again.has(e), `entity ${e}: not marked again`);
+  checkKeys(k, n, 'frame 6', st);
+
+  // A persist frame: buffer 0 and buffer 1 hold their rows (each frame's full emit and its remember), then buffer 0's
+  // rows again with a sprite that was out of view in buffer 1's frame: a miss (a hit would leave it unmarked).
+  const persistAt = (frame, buf) => {
+    w._queueBuf = buf;
+    w._setWriteBuffer(buf);
+    setEmitKeyFrames(b, frame, frame - 1);
+    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    assert.ok(writePersistColumns(b, w, SpriteRenderer, buf));
+    const got = b.persistFrame(b.tableByte, count, maxItems, flags, DT / 1000, w._zBand);
+    if (got === EMIT_PERSIST_MISS) {
+      assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
+      b.persistRemember(b.tableByte, count, maxItems);
+    }
+    return got;
+  };
+  persistAt(7, 0);
+  cIndex[rows[0]] = spare[60];
+  persistAt(8, 1);
+  cIndex[rows[0]] = own[0];
+  assert.equal(persistAt(9, 0), EMIT_PERSIST_MISS, 'buffer 0\'s rows, a sprite among them out of view in the frame before');
+  assert.equal(fullMarks().has(own[0]), true, 'the full emit marks it');
+  persistAt(10, 1);
+  assert.notEqual(persistAt(11, 0), EMIT_PERSIST_MISS, 'buffer 0\'s rows, every sprite in view in the frame before');
+});
+
+// N-238, the keys by slot and by index: a keyed decoration slot first in view in a frame Pixi skipped, and a LiquidFun
+// particle whose statics changed there, out of view in the frame Pixi then drew keyed, are marked as they come back.
+test('N-238: a decoration slot or LiquidFun particle out of view in the frame Pixi drew keyed is marked as it comes back', async () => {
+  const k = await setup({ ySort: true, keyed: true, keyedDecorations: true, liquidFun: true, keyedLiquidFun: true });
+  const { worker: w, b, source, count, maxItems } = k;
+  const n = Math.min(count, maxItems);
+  const kernelSource = { ...source, persist: true };
+  const lf = w.liquidFun;
+  const white = w._resolveBuiltinTextureId('_whiteCircle');
+  const cType = w._renderableType;
+  const cIndex = w._renderableIndex;
+  SpriteRenderer.keyedDirty.fill(1);
+  // Pixi's statics texture for the decoration and LiquidFun keys, as the marked rows of the frames it draws leave it.
+  const copy = new Uint32Array((DECOS + LFN) * 12);
+  const ours = (r) => cType[r] === 2 || cType[r] === 7;
+  const keyOf = (r) => (cType[r] === 2 ? cIndex[r] : DECOS + cIndex[r]);
+  const emitAt = (frame, since, drawn) => {
+    setEmitKeyFrames(b, frame, since);
+    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    assert.ok(writeEmitLiquidFunColumns(b, lf, w._prevLfX, w._prevLfY, 0, w._poseAlpha, white));
+    const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS;
+    assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
+    const marked = new Set();
+    for (let r = 0; drawn && r < n; r++) {
+      if (!ours(r) || w.renderQueueKey[r] < KEY_CHANGED) continue;
+      copy.set(rowStatics(w, r), keyOf(r) * 12);
+      marked.add(keyOf(r));
+    }
+    for (let r = 0; drawn && r < n; r++) {
+      if (!ours(r)) continue;
+      const want = rowStatics(w, r);
+      for (let j = 0; j < 12; j++) {
+        if (copy[keyOf(r) * 12 + j] !== want[j]) {
+          assert.fail(`frame ${frame}: row ${r}'s ${cType[r] === 2 ? 'decoration' : 'particle'} ${cIndex[r]}, statics word ${j}: ${copy[keyOf(r) * 12 + j]} vs ${want[j]}`);
+        }
+      }
+    }
+    return marked;
+  };
+  // Ten decoration rows, and slots in no row to hold them: ten stand-ins, and ten first in view in the skipped frame.
+  const decoRows = [];
+  const used = new Set();
+  for (let r = 0; r < n; r++) {
+    if (cType[r] !== 2) continue;
+    used.add(cIndex[r]);
+    if (decoRows.length < 10 && r % 2 === 0) decoRows.push(r);
+  }
+  const spareSlots = [];
+  for (let d = 0; d < DECOS; d++) if (!used.has(d)) spareSlots.push(d);
+  assert.ok(decoRows.length === 10 && spareSlots.length >= 20, `${decoRows.length} rows, ${spareSlots.length} spare slots`);
+  const standIns = spareSlots.slice(0, 10);
+  const firstSeen = spareSlots.slice(10, 20);
+  const holdDecos = (list) => decoRows.forEach((r, j) => { cIndex[r] = list[j]; });
+  // Three LiquidFun particles in view, every row of theirs, and a particle in view to stand in for them.
+  const lfRows = [];
+  for (let r = 0; r < n; r++) if (cType[r] === 7) lfRows.push(r);
+  const particles = [...new Set(lfRows.map((r) => cIndex[r]))].slice(0, 4);
+  assert.equal(particles.length, 4);
+  const [stand, ...changed] = particles;
+  const theirRows = lfRows.filter((r) => changed.includes(cIndex[r]));
+  // Frame 1, drawn.
+  holdDecos(standIns);
+  emitAt(1, 0, true);
+  // Frame 2, which Pixi does not draw: ten slots enter the view, three particles change a static (physics announces it).
+  holdDecos(firstSeen);
+  for (const p of changed) lf.tint[p] = (lf.tint[p] ^ 0x00ff00) >>> 0;
+  Atomics.add(lf.staticsEpoch, 0, 1);
+  emitAt(2, 1, false);
+  // Frame 3, drawn keyed: the ten slots and the three particles out of view.
+  holdDecos(standIns);
+  for (const r of theirRows) cIndex[r] = stand;
+  emitAt(3, 1, true);
+  // Frame 4: back in view, marked, so Pixi's copy holds their statics (emitAt checks every row's).
+  holdDecos(firstSeen);
+  lfRows.forEach((r) => { if (theirRows.includes(r)) cIndex[r] = k.indices[r]; });
+  const back = emitAt(4, 3, true);
+  for (const d of firstSeen) assert.ok(back.has(d), `decoration ${d}: back in view, marked`);
+  for (const p of changed) assert.ok(back.has(DECOS + p), `particle ${p}: back in view, marked`);
+  // Frame 5: marked once.
+  const again = emitAt(5, 4, true);
+  for (const d of firstSeen) assert.ok(!again.has(d), `decoration ${d}: not marked again`);
+  for (const p of changed) assert.ok(!again.has(DECOS + p), `particle ${p}: not marked again`);
+});
+
 // E-320: the collect writes the poses into the queue being written (E-98d), so the emit's stash is that queue's own pose
 // columns and the kernel leaves them where they are (a sprite that does not inherit its rotation still takes its own).
 // From the same start, the frames with the stash in the queue write what the frames write copying it from elsewhere

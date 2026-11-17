@@ -197,8 +197,9 @@ function regionList(tex) {
   col('table', Uint32Array, SLOTS.length);
   // E-177: the sprites' keyed flags (bound only by the wasmKeyed variants).
   col('sKeyedDirty', Uint8Array, N);
-  // E-312: each entity's change frames, statics and texture (bound only by wasmKeyedV2 and wasmKeyedSkip).
-  col('kChange', Uint32Array, 2 * N);
+  // E-312: each entity's change frames, statics and texture (bound only by wasmKeyedV2 and wasmKeyedSkip); N-238: and
+  // the last frame it was emitted in, three u32 an entity (a kernel from before, two an entity, uses two thirds).
+  col('kChange', Uint32Array, 3 * N);
   return list.map((r) => ({ ...r, owner: 'preRender' }));
 }
 
