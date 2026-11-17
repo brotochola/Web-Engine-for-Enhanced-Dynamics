@@ -16060,7 +16060,8 @@
         "R-1301",
         "R-1302",
         "R-1303",
-        "R-1307"
+        "R-1307",
+        "R-1312"
       ]
     },
     {
@@ -21964,6 +21965,24 @@
       "statusText": "found 2026-11-17 measuring E-513: the barrio's texture uploads 38 KB -> 629 KB a frame on the indexed path",
       "result": "",
       "next": "WebGL already scatters statics rows into a texture (render/webgl/staticsScatterGl.js, the keyed path's _scatterStaticsGl). Plan: pre-render's indexed kernel compares each row's new statics with what its queue buffer slot held (two frames back, a superset of last frame's changes) and lists the rows that differ; Pixi scatters those rows into its statics texture instead of uploading it whole. The double buffer's catch: Pixi must know its texture holds the statics the list is relative to (a skipped frame, a resume): the frame carries the generation the list starts from, and Pixi uploads whole when its own differs. Measure bytesTexture and gpuProcessTrace in the barrio, and the HD 620's drawn frames (the laptop's CrGpuMain is the target). Also: E-513's snap in C instead of JS (pre-render +4.7 % under the floor)."
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "snap poses in C"
+      ],
+      "records": [
+        "R-1313"
+      ],
+      "id": "E-515",
+      "kind": "speed",
+      "area": "pre-render",
+      "status": "kept-hygiene",
+      "date": "2026-11-17",
+      "title": "E-513's pixel snap of the two-stream poses in gpuPack.wasm (snap_poses), not a JS loop over every drawn row",
+      "statusText": "found 2026-11-17 in the night's total sitting on the GTX machine: pre-render 1.839 -> 1.955 ms (+6.3 %, under the floor) after E-513",
+      "result": "kept: the snap in C, byte-identical; its saving under the sitting floor",
+      "next": ""
     }
   ],
   "records": [
@@ -34943,6 +34962,26 @@
       "commits": [
         "582cf530",
         "7be8dfb9"
+      ]
+    },
+    {
+      "id": "R-1312",
+      "date": "2026-11-17",
+      "time": "13:10",
+      "timeFrom": "recorded",
+      "title": "The barrio's night on the GTX machine's CPU in one sitting: particle -63 %, the rest within 6 %",
+      "verdict": "note",
+      "text": "**The barrio's night on the GTX machine's CPU in one sitting: particle -63 %, the rest within 6 %.**\n\n- runPredatorAbab, main `6d7bf4a0` (R-1307's base: before E-504's adaptive cache and E-506 to E-513) against `96c68aae`,\n  Buenos Aires hour=22&dayMinutes=0, 4 pairs, headed, ended 13:10: particle 1.996 -> 0.739 ms (-63 %), spatial 2.349 ->\n  2.259 (-3.8 %), physics 1.965 -> 1.907, logic 1.458 -> 1.418, renderer 1.104 -> 1.100, pre-render 1.839 -> 1.955\n  (+6.3 %: E-513's JS snap, now in C as E-515); every worker under the 6 ms floor, NEUTRAL. The GPU side is R-1307 (the\n  HD 620: drawn 21.1 -> 35.9 fps)."
+    },
+    {
+      "id": "R-1313",
+      "date": "2026-11-17",
+      "title": "E-515 kept (hygiene): E-513's pose snap runs in gpuPack.wasm, byte-identical",
+      "verdict": "kept",
+      "text": "**E-515 kept (hygiene): E-513's pose snap runs in gpuPack.wasm; byte-identical.**\n\n- **Change** (`583b966d`, merged `ffc6da4a`): gpuPack.c snap_poses (pack_general's snap_world on the pose stream's x and y),\n  called by packSplitRowsWasm and packIndexedRowsWasm after the kernel; the JS loop went.\n- **Checked**: the split and indexed packs' snapped poses against the JS reference (gpuPackSplit, gpuPackIndexed);\n  depthPairScene ?step=2 against main identical (WebGL, WebGPU). Its saving (about 11 600 rows a frame of JS in the\n  barrio) is under what a pre-render sitting resolves; the night's total read pre-render +6.3 % with the JS loop.\n  test:node 3023, test:demos 121, the bundles' suites.",
+      "commits": [
+        "583b966d",
+        "ffc6da4a"
       ]
     }
   ],
