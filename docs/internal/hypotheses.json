@@ -8449,7 +8449,8 @@
       ],
       "records": [
         "R-0652",
-        "R-0658"
+        "R-0658",
+        "R-1260"
       ],
       "id": "E-148",
       "title": "Pixi's WebGL shader sync walks a per-shader plan, not for…in",
@@ -8459,7 +8460,7 @@
       "area": "pixi",
       "kind": "js",
       "result": "kept (f2d34f6a): Pixi in Predator 1 214.5 → 522.6 KB/s, in gpuParticlesStressScene 8 073.5 → 663 KB/s (G_ gone); its GL calls match Pixi’s polyfill (tests/node/pixiShaderSync.test.js)",
-      "next": "Nothing pending. A Pixi upgrade that moves the patched code fails the build (replaceOnce)."
+      "next": "Nothing pending. A Pixi upgrade that moves the patched code fails the build (replaceOnce). Pixi 8.23 changes what the stub replaces (fixed uniform-block slots, #12307; groups keyed by name, #12293) and drops the BindGroup patch that gives _weedKeys: the stub is ported with DX-PIXI823."
     },
     {
       "aliases": [],
@@ -8527,7 +8528,8 @@
       ],
       "records": [
         "R-0657",
-        "R-0658"
+        "R-0658",
+        "R-1260"
       ],
       "id": "E-152",
       "title": "Pixi's WebGPU draw path makes no garbage",
@@ -8537,7 +8539,7 @@
       "area": "pixi",
       "kind": "js",
       "result": "kept (55c6ba0f): gpuParticlesStressScene?backend=webgpu, Pixi 6 000.7 → 131.2 KB/s; renderer 5.216 → 3.625 ms (−35.6 %, worse 0/4, cv 8/8 %); frames byte-identical",
-      "next": "Nothing pending. A Pixi upgrade that moves the patched code fails the build (replaceOnce)."
+      "next": "Nothing pending. A Pixi upgrade that moves the patched code fails the build (replaceOnce). On Pixi 8.23 the BindGroup, GpuEncoderSystem and BindGroupSystem patches lose their anchors because upstream does the same (#12229, #12278, #12288): dropped with DX-PIXI823, the garbage checked again."
     },
     {
       "aliases": [],
@@ -9306,7 +9308,8 @@
         "REVIEW_PLAN.md#N-95"
       ],
       "records": [
-        "R-0766"
+        "R-0766",
+        "R-1260"
       ],
       "id": "N-95",
       "title": "Pixi allocated the WebGL integer textures with an invalid texImage2D",
@@ -9316,7 +9319,7 @@
       "area": "engine",
       "kind": "bug",
       "result": "Fixed f3d3d33f: buildPixi.mjs maps Pixi's integer formats to RED/RG/RGBA_INTEGER; carScene's statics texture no longer logs GL_INVALID_OPERATION.",
-      "next": "Nothing pending."
+      "next": "Nothing pending. Fixed upstream in Pixi 8.22 (#12230): the patch goes with DX-PIXI823."
     },
     {
       "aliases": [],
@@ -15731,14 +15734,16 @@
       "area": "render",
       "kind": "bug",
       "result": "dx/par-render stores entity % 65535 + 1 in 16 bits (the ids map, the maps' texels). A scene past 65 535 entities (Predator's pools are 57 633) has pairs that share an id.",
-      "next": "A wider id (a third byte in the ids map and the maps' texels) when the entity count passes 65 535, or the id of a slot among the drawn rows instead of the entity.",
+      "next": "A wider id (a third byte in the ids map and the maps' texels) when the entity count passes 65 535, or the id of a slot among the drawn rows instead of the entity. Pixi 8.23 lets each colour attachment have its own format (#12357, DX-PIXI823): the ids map can be r32uint in the face map's MRT pass; the shadow maps' texels would need a wider format of their own.",
       "refs": [
         "REVIEW_PLAN.md#N-185"
       ],
       "aliases": [
         "entity id wraps at 65535"
       ],
-      "records": []
+      "records": [
+        "R-1260"
+      ]
     },
     {
       "id": "N-186",
@@ -19611,14 +19616,15 @@
       "area": "pre-render",
       "kind": "speed",
       "result": "E-418's attempt (opt/e418-lamp-cache-attempt c75fa514, not merged): the image identical, but the lamps' map went 1.856 -> 3.003 ms (light3dCompare all=1 staticProps=1: the cache redrawn every frame) and 2.931 -> 4.135 (sunShadowMap lamps=48 hour=22, cars moving: redrawn in 40 % of frames); best case (movers=0) 2.987 -> 2.922. The budget lets moving casters push static ones in and out of a tile; the 4096 x 1536 colour and depth blit costs 0.61 to 0.72 ms a frame; the columns are vertex work, so culled rows must be left out of the draw.",
-      "next": "_stampAgainstSun / stamp_light_range keep a lamp's static casters apart from the budget (their own list, refreshed when the static scenery generation moves); then the per-tile cache and the moving rows' compaction; best case about 2.2 ms saved minus the 0.6 to 0.7 ms blit.",
+      "next": "_stampAgainstSun / stamp_light_range keep a lamp's static casters apart from the budget (their own list, refreshed when the static scenery generation moves); then the per-tile cache and the moving rows' compaction; best case about 2.2 ms saved minus the 0.6 to 0.7 ms blit. An alternative without the copy: E-499 (skip the tiles nothing changed).",
       "refs": [],
       "aliases": [
         "lamp map static cache v2"
       ],
       "records": [
         "R-1210",
-        "R-1212"
+        "R-1212",
+        "R-1260"
       ]
     },
     {
@@ -19774,14 +19780,15 @@
       "area": "render",
       "kind": "speed",
       "result": "Predator light3d night: 5.88 ms of passes in a 7.74 ms span; light3dCompare 5.93 in 10.09; Predator crowd 2.5 3.34 in 9.56 (its clock lower). WebGPU makes 302 calls a frame there against WebGL's 706.",
-      "next": "Fold the uniform copy into the render call's own encoder (one submit per render call, or one a frame); Pixi's STEP_MS, the GPU process's CPU (gpuProcessTrace) and the frame span before and after.",
+      "next": "Fold the uniform copy into the render call's own encoder (one submit per render call, or one a frame); Pixi's STEP_MS, the GPU process's CPU (gpuProcessTrace) and the frame span before and after. Pixi 8.23 does this upstream (#12345: the shifted buffer written with queue.writeBuffer, no submit of its own), so DX-PIXI823 closes it; a backport patch if the upgrade waits.",
       "refs": [],
       "aliases": [
         "webgpu double submit",
         "pixi uniform batch submit"
       ],
       "records": [
-        "R-1215"
+        "R-1215",
+        "R-1260"
       ]
     },
     {
@@ -21519,6 +21526,100 @@
       "date": "2026-11-17",
       "title": "Halos measured: thousands of lights with a halo in lightGlow 'sprite' (DX-GLOWRADIUS: a sort key a halo, the unshaded pass on) against 'add', pre-render's STEP_MS and the GPU per draw",
       "statusText": "listed 2026-11-17 with the owner: DX-GLOWRADIUS is tested and checked in captures, not measured with many halos"
+    },
+    {
+      "id": "DX-PIXI823",
+      "title": "Pixi 8.20.1 to 8.23: four build patches become upstream code, the WebGL sync stub moves to fixed uniform-block slots, WebGPU loses a submit per render call (nice to have)",
+      "status": "open",
+      "statusText": "Nice to have, no rush (owner, 2026-11-17); a pseudo-plan in PIXI_823_PLAN.md",
+      "date": "2026-11-17",
+      "result": "buildPixi.mjs's plugins against 8.23.0's lib: 12 of 16 patches apply; E-152's BindGroup, GpuEncoderSystem and BindGroupSystem and N-95's mapFormatToGlFormat lose their anchors (upstream #12229, #12278, #12288, #12230). The engine's Pixi bundle without patches: 446 335 -> 482 366 bytes minified, 129 684 -> 140 146 gzip.",
+      "next": "If scheduled: pixi.js 8.23.0, drop the four patches and check the garbage again (E-152's scene on WebGPU); port the WebGL sync stub (E-148) to fixed block slots and _resourceKeys; drop gpuParticleBatch's hand flush; captures on both backends (N-264), webgpuFrameRecorder submits (E-464), Pixi STEP_MS ABAB on WebGL and WebGPU.",
+      "area": "pixi",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-PIXI823",
+        "PIXI_823_PLAN.md"
+      ],
+      "aliases": [
+        "pixi upgrade",
+        "pixi 8.23",
+        "pixijs upgrade",
+        "buildPixi patches",
+        "pixi 3d",
+        "pixijs 3d"
+      ],
+      "records": [
+        "R-1260"
+      ]
+    },
+    {
+      "id": "N-264",
+      "title": "On WebGPU, Pixi before 8.23 blends add with src-alpha / one-minus-src-alpha alpha factors: an additive pass drawn into a transparent target writes half WebGL's alpha (127 against 254), so it may composite dimmer (to check)",
+      "status": "open",
+      "statusText": "found 2026-11-17 reading Pixi 8.23's release notes (#12290; DX-PIXI823); not yet seen in the engine",
+      "date": "2026-11-17",
+      "result": "",
+      "next": "WebGL and WebGPU captures of flashlightStressScene and lightGallery (the glows at half resolution, E-404); fixed by DX-PIXI823, or by a blend-table patch if that waits.",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-264"
+      ],
+      "aliases": [
+        "webgpu add blend alpha",
+        "additive alpha webgpu",
+        "blend parity"
+      ],
+      "records": [
+        "R-1260"
+      ]
+    },
+    {
+      "id": "E-498",
+      "title": "Pixi's WebGPU passes are encoded again every frame: record each instanced pass once as a render bundle with indirect draws (the instance count written beside the pack), recorded again only when the pass's structure changes",
+      "status": "open",
+      "statusText": "found 2026-11-17 reading PixiJS 3D's code (renderForwardBatchesGpu.ts, ShadowRenderPassGpu.ts: bundles replayed, recorded again when stale); not measured",
+      "date": "2026-11-17",
+      "result": "",
+      "next": "Count the encoder calls a pass makes (webgpuFrameRecorder); after DX-PIXI823 (8.21's bundles stamped with their baked state), one pass as a bundle with drawIndirect; the Pixi worker's STEP_MS on WebGPU ABAB in Predator ?light3d=1 (1.4 -> 3.0 ms of Pixi CPU with light3d). WebGPU only.",
+      "area": "pixi",
+      "kind": "speed",
+      "refs": [
+        "PIXI_823_PLAN.md"
+      ],
+      "aliases": [
+        "render bundles",
+        "gpu render bundle",
+        "drawIndirect",
+        "indirect draws",
+        "webgpu encoding"
+      ],
+      "records": [
+        "R-1260"
+      ]
+    },
+    {
+      "id": "E-499",
+      "title": "The lamps' map skips a lamp's tile that nothing changed (not cleared, not drawn) instead of copying a cache under the movers (E-460)",
+      "status": "open",
+      "statusText": "found 2026-11-17 reading PixiJS 3D's shadows: each map is redrawn by rate (shadow.update) or when stale (cascadeRenderSkip, needsRender) and otherwise kept, never composited; not measured",
+      "date": "2026-11-17",
+      "result": "",
+      "next": "Pre-render marks a lamp's tile dirty when the lamp, its picked casters or their poses changed (a hash a lamp); Pixi clears and draws only the dirty tiles (a scissored clear, E-446's whole-map clear otherwise); light3dCompare all=1 staticProps=1 and sunShadowMap lamps=48 against E-418's and E-460's numbers.",
+      "area": "render",
+      "kind": "speed",
+      "refs": [
+        "PIXI_823_PLAN.md"
+      ],
+      "aliases": [
+        "lamp map tile skip",
+        "shadow map update rate",
+        "dirty lamp tiles"
+      ],
+      "records": [
+        "R-1260"
+      ]
     }
   ],
   "records": [
@@ -33952,6 +34053,13 @@
         "09b7a57d",
         "05dcb7b4"
       ]
+    },
+    {
+      "id": "R-1260",
+      "date": "2026-11-17",
+      "title": "PixiJS 3D reviewed and kept out; Pixi 8.23 read against the engine: 12 of 16 build patches apply, four now upstream, the WebGL sync stub to port (DX-PIXI823)",
+      "verdict": "note",
+      "text": "**PixiJS 3D's open beta and Pixi 8.20.1 to 8.23.0 read against main (ef81812d); backlog, no rush (owner).** The\nanalysis and the steps are in PIXI_823_PLAN.md.\n\n- **PixiJS 3D** (`@pixi/3d` 0.1.0, pixijs/3d at 8dab2a2, needs pixi.js 8.23): kept out of the engine. Point lights\n  cast no shadows, 32 lights a view, a masked Sprite3D casts a solid quad (its lit-sprites example is paused on it),\n  one JS object per mesh. Ideas taken: E-498 (render bundles with indirect draws), E-499 (lamp tiles skipped, not\n  copied), the ids map in r32uint for N-185.\n- **Pixi 8.23**, 96 commits since 8.20.1. buildPixi.mjs's plugins run against 8.23.0's lib (outside the repo): 12\n  of 16 patches apply; E-152's BindGroup, GpuEncoderSystem and BindGroupSystem and N-95's integer formats lose their\n  anchors because upstream did the same (#12229, #12278, #12288, #12230). The WebGL sync stub (E-148) needs a port:\n  8.23 binds each uniform block to a fixed slot (#12307) and its polyfill still walks for...in per draw.\n- **Gains** that reach the engine: no extra submit per render call on WebGPU (#12345, E-464), WebGL ranged updates\n  at the call (#12316, #12331, #12342), per-attachment formats (#12357), WebGPU's additive alpha (#12290, N-264), the\n  preferred canvas format (#12380), device-loss restore and leak fixes (8.21).\n- **Size**, the engine's Pixi bundle without patches: 446 335 -> 482 366 bytes minified, 129 684 -> 140 146 gzip.\n\nNothing measured in a browser: no verdict on speed."
     }
   ],
   "leads": [
