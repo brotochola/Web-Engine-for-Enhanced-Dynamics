@@ -6,6 +6,84 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Tuesday 17 November 2026 — Instruments That See What the Machine Actually Does
+
+Chrome's profiler says which function took the time. It does not say why: whether the CPU waited on memory, whether
+TurboFan boxed a number, whether a thread was really running or asleep in `Atomics.wait`, whether the GPU was painting or
+idle. Between 13 and 16 November the engine got a set of instruments for the "why". This is what each one shows, and the
+first thing it found.
+
+**The CPU, instruction by instruction.**
+
+- **d8, V8's own shell (debug build).** It is the only V8 here that prints the machine code TurboFan writes: Chrome's
+  release builds have no disassembler. A small kit bundles an engine kernel for d8 with esbuild, and the hot loop can be
+  read instruction by instruction.
+  - The first lesson was about the tool: in Chrome's V8 a megamorphic `this.x` is a short inline check of a map cache,
+    while Node 22's older V8 calls a stub. Chrome's code is read in d8, not in Node.
+  - Then the findings: rebuildOwnedRows re-checked every array's map at every entity (−10 to −16 % once hoisted). Pixi's
+    glow split ran three passes where one would do (−64 to −71 %). And V8 inlines a setter that receives a heap number up
+    to 75 bytes, whatever its optimized code already holds, which is what keeps `set x` fast.
+- **Hardware counters per JS and wasm function.** AMD's profiler cannot see JIT code at all: it drops every sample
+  outside a loaded module, so Chrome's JS and wasm were invisible. Windows' own recorder (WPR) keeps every sample with its
+  instruction address. Mapped to V8's code log, each sample lands on a function. Two scheduled tasks the owner installed
+  once start and stop it without a prompt.
+  - One capture per counter: instructions, cache accesses, or cache refills.
+  - First reading, Predator: one function of the demo's AI took 9.6 % of all of Chrome's instructions, and the keyed sprite
+    pack refilled the cache five times per instruction.
+  - Later, with a Box2D build that keeps its names: b2ExecuteBlock takes 10.9 % of the refills and b2CollideTask 8 %, in
+    proportion to their time, while spatial's gather takes 12.6 %.
+- **Who really runs, and where.** The same recorder logs every context switch, which gives each thread's real time on a
+  core. Chrome's profile counts a thread asleep in `Atomics.wait` as busy; this does not.
+  - Box2D's pool threads take about 2.25 cores in Predator: they spin waiting for work.
+  - Threads hop between the CPU's two core complexes 24 to 50 times a second.
+  - Chrome's GPU process wakes 8 times a frame.
+- **Deopts and garbage, as they happen in Chrome.** A V8 log summary separates steady deopt loops from warm-up, and a heap
+  sampler names the allocation sites in each worker.
+  - Two loops ran forever: spatial's publish, 391 deopts a run, and a Box2D pose read, 287. Both now 0.
+  - The direction picks made 365 KB/s of garbage in logic, now 24.
+- **AddressSanitizer on the wasm kernels.** Every export of the C kernels runs under ASan, with each array in its own
+  allocation of exactly the size the call uses: 892 cases, no finding.
+- **Cache lines shared between cores.** A false-sharing audit builds the scene's real shared buffers in Node and ranks the
+  cache lines that two workers write. These are estimates, not measurements, and they gave twelve hypotheses.
+
+**The GPU, draw by draw.**
+
+- **A timer around every draw** (`glFrameRecorder --gpu-draws`). WebGL's timer queries wrap each draw, clear and blit,
+  labelled by pass, program and bound textures, and each recording logs the GPU's clock.
+  - Its first finding was against an earlier tool: timing whole passes had counted the GPU waiting for the CPU, and three
+    hypotheses built on that idle time were dropped.
+  - `--probe-scissor` runs chosen draws under a one-pixel scissor. What survives is vertex work; what disappears was
+    painting pixels. That is how bunnyMark's cost showed itself as 87 % fill, which led to drawing solid pixels first and
+    half a million bunnies. The flashlights' glows went from 4.83 ms to 0.007 under the scissor: all fill.
+  - It also counts redundant calls by program: 94 of the 130 useless sampler uniforms of a frame came from one place, the
+    volumes drawn into the lamps' map once per lamp tile.
+- **The same on WebGPU** (`webgpuFrameRecorder`). Predator at night costs the GPU the same on both backends (5.9 against
+  6.0 ms), but WebGPU submitted 17 times a frame.
+- **What the GPU itself reports** (Nsight Systems). It shows how busy the graphics engine is, how often its units issue an
+  instruction, and how much memory traffic there is. With the 3D lights, the GPU was 78 % busy, mostly waiting on its own
+  texture fetches. After the light tiles, 33 %.
+- **The shader as the GPU gets it.** On Windows, Chrome turns WebGL's GLSL into HLSL (ANGLE) and compiles it with
+  Direct3D's compiler. Dumping that HLSL and compiling it the same way gives the real cost: the 3D light pass was
+  1 131 instruction slots, 24 temporaries, 31 texture samples, 45 divisions, and 699 ms to link.
+- **Chrome's GPU process** (`gpuProcessTrace`). It times the process that runs the GL commands: 2.6 ms a frame on its main
+  thread, 79 µs per draw with the 3D lights.
+
+**The frame and the scene.**
+
+- **Every worker's tail.** Every frame's time per worker, not only the mean: p50, p95, p99, the longest frame, and the
+  frames over 16 ms. The per-frame series showed spatial's hitches coming every 32 frames, an autocorrelation of 0.68 at
+  lag 32.
+- **The critical path:** which worker finished last in each frame.
+- **Capacity:** how many entities a scene holds at 60 fps with every worker's p99 in budget.
+- **Replay:** a worker's recorded inputs, replayed in Node or d8.
+- **Several arms in one sitting:** one baseline and several variants per round, in rotated order.
+- **The first frames:** a probe that times every shader link the Pixi worker waits for.
+
+**What did not work, so nobody tries again.** AMD uProf cannot see V8's JIT or wasm code. RenderDoc and Nsight Graphics
+cannot capture Chrome's GPU process: hooking it turns Chrome's GPU off. And WPR's counters lie when a capture keeps too
+many samples: one capture mixed two threads' functions, and two runs of the same scene differed sixteenfold. Count
+fewer samples, and compare by function name.
+
 ## Monday 16 – Tuesday 17 November 2026 (night) — How Many Can It Hold?
 
 By Monday evening the owner asked for an outside look at how we work, as if an engineer had joined that morning. The
