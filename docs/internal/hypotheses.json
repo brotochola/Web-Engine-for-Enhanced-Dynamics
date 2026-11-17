@@ -21911,6 +21911,40 @@
       "statusText": "found 2026-11-17 reading the barrio's WebGL uploads (glFrameRecorder): 64 KB a frame of the 100 KB of textures was the whole 1024-wide light data for about 54 lights, while Chrome's GPU process main thread on the HD 620 laptop was saturated",
       "result": "kept: texture uploads 100 340 -> 38 217 bytes a frame in the barrio; captures identical",
       "next": ""
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "static vertex buffers",
+        "ANGLE streaming copy"
+      ],
+      "records": [],
+      "result": "Dropped: in the GPU process (gpuProcessTrace --decoder, the barrio at 22 h, GTX 1650) glDrawElementsInstanced's self time fell 44.1 -> 17.0 ms/s but the decoder's own rose 38.8 -> 52.4 and CrGpuMain stayed at 173 -> 172 ms/s; on the GPU the G-buffer pass, the first draw after each rewrite, went 0.33 -> 4.57 ms (the GPU waits for the rewrite) and the frame 3.9 -> 6.4 ms. As instancedSpriteBatch.js's note found for keyed and split batches.",
+      "next": "",
+      "id": "E-512",
+      "kind": "gpu",
+      "area": "pixi",
+      "status": "dropped",
+      "date": "2026-11-17",
+      "title": "The barrio's sprite batch with STATIC_DRAW vertex buffers, so ANGLE's D3D11 binds them instead of copying each draw's attributes into a streaming buffer",
+      "statusText": "tried 2026-11-17 (a local patch, not kept) after Chrome's GPU process on the HD 620 laptop showed its main thread saturated (R-1307's probe)"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "split pack nearest",
+        "pose snapping split kernel"
+      ],
+      "records": [],
+      "result": "",
+      "next": "pixiWorker's batch options: split: !this._queueInterp && this.atlasScaleMode !== 'nearest'. Give the split kernel (gpuPack's split path) the pose snap the full rows get for a nearest atlas, byte-identical captures against today on a nearest scene (the barrio still, depthPairScene), then the barrio's uploads (glFrameRecorder bytesBuffer), the GPU process (gpuProcessTrace --decoder: glDrawElementsInstanced and PutChanged) and the HD 620's drawn frames.",
+      "id": "E-513",
+      "kind": "speed",
+      "area": "pixi",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "A nearest-sampled atlas keeps the sprite batch on full 15-float rows, every frame, because the split pack does not snap poses: with snapping in the split kernel, a pixel-art scene would upload a 16-byte pose a sprite and its statics only when they change",
+      "statusText": "found 2026-11-17 in the barrio (atlasScaleMode 'nearest'): about 680 KB of instance rows uploaded a frame for 11 620 rows that mostly never change, and ANGLE copies each draw's attributes from a DYNAMIC_DRAW buffer (glDrawElementsInstanced 44 ms/s of the GPU process's main thread on the GTX machine, which is saturated on the HD 620 laptop)"
     }
   ],
   "records": [
