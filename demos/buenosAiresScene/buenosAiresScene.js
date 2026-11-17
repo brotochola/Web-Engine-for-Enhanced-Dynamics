@@ -42,6 +42,11 @@ const DAY_MINUTES = param('dayMinutes', 8);
 const RESOLUTIONS = [0.25, 0.5, 1];
 const RESOLUTION = RESOLUTIONS.includes(param('resolution', 0.5)) ? param('resolution', 0.5) : 0.5;
 const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+/**
+ * The floor is painted pixel by pixel by its shader (floor.frag), which costs about a third of the GPU's frame: cached,
+ * it is painted again only when the camera moves (E-504). `?floorCache=0` paints it every frame, to compare.
+ */
+const FLOOR_CACHE = WEED.params?.get('floorCache') !== '0';
 const CORES = globalThis.navigator?.hardwareConcurrency || 4;
 /** The night's own blue light (lighting.sun.night), on the N key. */
 const NIGHT_LIGHT = 0.25;
@@ -218,6 +223,7 @@ export class BuenosAiresScene extends Scene {
         zIndex: 0.5,
         shader: {
           fragment: { webgl: '/demos/buenosAiresScene/floor.frag', webgpu: '/demos/buenosAiresScene/floor.wgsl' },
+          cache: FLOOR_CACHE,
           worldRect: { width: META.WW, height: META.WH },
           textures: [
             { name: 'cellA', format: 'rgba8unorm', size: { width: META.CW, height: META.CH } },
