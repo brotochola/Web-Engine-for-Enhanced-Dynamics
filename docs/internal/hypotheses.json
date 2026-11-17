@@ -19039,7 +19039,7 @@
       "area": "pre-render",
       "kind": "speed",
       "result": "Candidate 6: directionalSprite.js and spriteRenderer.js (the sets), wasm/preRenderEmit.c (fetch_or, exchange, the renderDirty clear); about 472 lines set by logic and 552 written by pre-render a frame (assumes 4 000 sprites on screen, a frame advance every 6 frames, 10 % of ticks changing statics).",
-      "next": "The texture bit in a region pre-render owns (beside emitKeyChange), and keyedDirty and renderDirty as logic-written generations pre-render compares with its own last-seen copy, so pre-render never writes the shared column; pre-render and logic STEP_MS.",
+      "next": "The texture bit in a region pre-render owns (beside emitKeyChange), and keyedDirty and renderDirty as logic-written generations pre-render compares with its own last-seen copy, so pre-render never writes the shared column; pre-render and logic STEP_MS. A design that also closes N-103's trap: DX-STATICSGEN.",
       "refs": [],
       "aliases": [
         "dirty flags written by both"
@@ -21620,6 +21620,89 @@
       "records": [
         "R-1260"
       ]
+    },
+    {
+      "id": "DX-PIXIUPSTREAM",
+      "title": "Send upstream the Pixi patches the build still carries (E-475's parallel links, the pass-garbage patches, the WebGL sync stub), so an upgrade stops porting them (nice to have)",
+      "status": "open",
+      "statusText": "Nice to have, no rush (owner, 2026-11-17); Pixi took the same class of fix in 8.22 and 8.23 (E-152's and N-95's patches now upstream)",
+      "date": "2026-11-17",
+      "result": "",
+      "next": "If scheduled: one pull request per patch to pixijs/pixijs, each with Pixi's own test and the engine's numbers (E-475: the first frames' link waits; the pass garbage: heap samples per render call; E-148: garbage per WebGL draw).",
+      "area": "pixi",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-PIXIUPSTREAM",
+        "PIXI_823_PLAN.md"
+      ],
+      "aliases": [
+        "pixi upstream",
+        "pixi pull requests",
+        "buildPixi patches upstream"
+      ],
+      "records": []
+    },
+    {
+      "id": "DX-BACKENDDEFAULT",
+      "title": "Decide the default backend with numbers: the engine defaults to WebGPU, Pixi to WebGL since April 2024 (#10367) and still in 8.23 (nice to have)",
+      "status": "open",
+      "statusText": "Nice to have, no rush (owner, 2026-11-17); after DX-PIXI823",
+      "date": "2026-11-17",
+      "result": "Pixi 8.23's autoDetectRenderer tries webgl, webgpu, canvas in that order; the engine's renderer.backend default is 'webgpu' (configDefaults.js). R-1215: Predator by night costs the GPU about the same on both (5.88 against 6.04 ms), with two submits per render call on WebGPU (E-464).",
+      "next": "After DX-PIXI823: the owner scenes on both backends (Pixi STEP_MS, GPU by pass, first-frame time) and M14's captures; then keep WebGPU, default to WebGL and take WebGPU where compute layers need it, or choose by adapter.",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-BACKENDDEFAULT"
+      ],
+      "aliases": [
+        "default renderer",
+        "webgl or webgpu",
+        "backend default"
+      ],
+      "records": []
+    },
+    {
+      "id": "DX-AGENTEVAL",
+      "title": "An eval of agents building WeedJS games: fixed tasks done with and without the WeedJS skill, scored on steps, cost and a game that runs (nice to have)",
+      "status": "open",
+      "statusText": "Nice to have, no rush (owner, 2026-11-17); from PixiJS 3D's creation-evals (its docs/skills.md: a recipe-style skill cut the cost per working result from $0.23 to $0.14 and the steps from 11.6 to 6.5)",
+      "date": "2026-11-17",
+      "result": "",
+      "next": "If scheduled: five to ten tasks (a top-down scene with lamps, particles, a physics toy, a tilemap level), three trials each, with and without the skill; the guide's and the skill's code blocks checked to run; then decide whether the guide and the skill move to complete recipes with the silent pitfalls in their first 150 lines.",
+      "area": "tools",
+      "kind": "tools",
+      "refs": [
+        "REVIEW_PLAN.md#DX-AGENTEVAL"
+      ],
+      "aliases": [
+        "agent eval",
+        "creation evals",
+        "skill eval",
+        "agent usability"
+      ],
+      "records": []
+    },
+    {
+      "id": "DX-STATICSGEN",
+      "title": "One statics generation per sprite in place of renderDirty and keyedDirty: setters bump it, the persist path and the keyed frames each keep their own last-seen copy, and a debug build warns when statics change without it moving (nice to have)",
+      "status": "open",
+      "statusText": "Nice to have, no rush (owner, 2026-11-17); from PixiJS 3D's change counters (a DirtyId, and a watermark that moves only where the work ran); joins N-103's trap and E-436's shared lines",
+      "date": "2026-11-17",
+      "result": "Every statics setter (SpriteRenderer's, gameObject.markDirty, tweens, DirectionalSprite) writes renderDirty and keyedDirty together; pre-render's persist path misses on renderDirty and clears it at the emit, the keyed frames exchange keyedDirty, and pre-render fetch_or's its texture bit at each frame advance (wasm/preRenderEmit.c). A direct SoA write that forgets either flag shows only on the frames the emit runs in full (N-103).",
+      "next": "If scheduled: one generation logic bumps, two last-seen copies pre-render owns (persist, keyed) and the texture bit in pre-render's own region (E-436); then a debug check with a shadow copy of each drawn sprite's statics that warns once per type when they changed and the generation did not; pre-render and logic STEP_MS, node tests for the persist and keyed paths.",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-STATICSGEN"
+      ],
+      "aliases": [
+        "statics generation",
+        "dirty flags",
+        "renderDirty keyedDirty",
+        "markDirty trap"
+      ],
+      "records": []
     }
   ],
   "records": [
