@@ -30,16 +30,15 @@ export const FACE_INNER_Z_MAX = 7;
 /** innerZ's step in the height code's normalized u16 (aInstTileOff.y), which the shaders take off before the height. */
 const FACE_INNER_Z_UNIT = ((1 << FACE_INNER_Z_SHIFT) / 65535).toFixed(12);
 
+/**
+ * DX-BARRIOS: faces have no switch: the G-buffer turns on by itself when a decoration carries a normal (DecorationPool's
+ * faces-in-use word). The sun's share from the sky is Sun.skyLight (lighting.sun.skyLight); `wrap` and `gain` went (a
+ * light's own brightness covers gain); a px of height rises the camera's heightScaleY.
+ */
 export const FACE_DEFAULTS = Object.freeze({
   enabled: false,
   /** Screen px a px of height rises: config.camera.heightScaleY (resolveFaces fills it in). */
   heightScaleY: 1,
-  /** A light's cosine lifted past the terminator: 0 = hard Lambert, 1 = half-Lambert. */
-  wrap: 0,
-  /** A light's strength on a face against the floor's. */
-  gain: 1,
-  /** How much of the sun's term depends on where a face looks; the rest is its sky, the same on every face. */
-  sunDirect: 0.6,
 });
 
 /**
@@ -662,12 +661,13 @@ export function lightingSource(source, { faces, sunMap, selfShadow = false, lamp
   return shaderWithFlag(shaderWithFlag(withTiles, 'PIXELART', pixelArt), '!PIXELART', !pixelArt);
 }
 
-/** config.lighting.faces over its defaults. */
+/**
+ * Whether a scene's light can take faces (lit, not raycasted: `enabled`) and the px a px of height rises (the camera's).
+ * DX-BARRIOS: no lighting.faces any more; whether faces are in use is DecorationPool.facesInUse().
+ */
 export function resolveFaces(lighting, camera = null) {
-  const faces = lighting?.faces;
   const heightScaleY = resolveHeightScaleY(camera);
-  if (!faces?.enabled || lighting.raycasted) return { ...FACE_DEFAULTS, heightScaleY };
-  return { ...FACE_DEFAULTS, ...faces, heightScaleY };
+  return { enabled: !!(lighting && lighting.enabled && !lighting.raycasted), heightScaleY };
 }
 
 /**

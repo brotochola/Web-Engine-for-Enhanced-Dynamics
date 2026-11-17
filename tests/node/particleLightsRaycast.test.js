@@ -32,7 +32,8 @@ test('without raycasting the config is honoured as before', () => {
 test('Pixi decides before it builds the lighting system and the splat', () => {
   const pixi = readFileSync(join(root, 'src/workers/pixiWorker.js'), 'utf8');
   const resolve = pixi.indexOf('resolveParticleLights(');
-  const build = pixi.indexOf('this.createLightingSystem();');
+  // The init's call, the last (DX-BARRIOS: _rebuildLightPass calls it again when faces turn on later).
+  const build = pixi.lastIndexOf('this.createLightingSystem();');
   const splat = pixi.indexOf('this._createParticleLightSplat(this._particleLightMax);');
   assert.ok(resolve > 0 && resolve < build && build < splat);
   assert.match(pixi.slice(resolve, build), /data\.visibilityPolygons && data\.visibilityPolygons\.enabled/);

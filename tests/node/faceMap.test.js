@@ -72,14 +72,30 @@ test('a height is kept in eighths of a px in 13 bits, the face\'s innerZ in the 
   assert.ok(encodeFaceHeight(1e6, 7) <= 65535);
 });
 
-test('resolveFaces: off without the option or with raycasted lighting, and the defaults under what the scene sets', () => {
+// DX-BARRIOS: no lighting.faces: a scene's light can take faces where it is lit and not raycasted (whether any decoration
+// carries a normal is DecorationPool.facesInUse); no wrap, gain or sunDirect (Sun.skyLight).
+test('resolveFaces: a lit scene\'s light takes faces, a raycasted or unlit one does not; no wrap, gain or sunDirect', () => {
   assert.deepEqual(resolveFaces(null), { ...FACE_DEFAULTS });
-  assert.deepEqual(resolveFaces({ faces: { enabled: false, wrap: 1 } }), { ...FACE_DEFAULTS });
-  assert.equal(resolveFaces({ raycasted: true, faces: { enabled: true } }).enabled, false);
-  const on = resolveFaces({ faces: { enabled: true, wrap: 0.5 } });
-  assert.equal(on.enabled, true);
-  assert.equal(on.wrap, 0.5);
-  assert.equal(on.gain, FACE_DEFAULTS.gain);
+  assert.equal(resolveFaces({ enabled: false }).enabled, false);
+  assert.equal(resolveFaces({ enabled: true, raycasted: true }).enabled, false);
+  const on = resolveFaces({ enabled: true, faces: { enabled: false, wrap: 0.5 } });
+  assert.equal(on.enabled, true, 'the old switch is not read');
+  assert.deepEqual(Object.keys(on).sort(), ['enabled', 'heightScaleY']);
+});
+
+// DX-BARRIOS: a decoration with a normal turns the faces-in-use word on, for good; one without leaves it.
+test('the first decoration with a face normal turns faces on, and nothing turns them off', async () => {
+  buildPoolScene({ decorations: 8 });
+  assert.equal(DecorationPool.facesInUse(), false);
+  const plain = DecorationPool.spawn({ x: 1, y: 1 });
+  assert.equal(DecorationPool.facesInUse(), false, 'no normal, no faces');
+  DecorationPool.spawn({ x: 2, y: 2, faceNormalX: 0, faceNormalY: 0, faceNormalZ: 0 });
+  assert.equal(DecorationPool.facesInUse(), false, 'a zero normal is no face');
+  const face = DecorationPool.spawn({ x: 3, y: 3, faceNormalX: 0, faceNormalY: 1, faceNormalZ: 0, faceHeight: 10 });
+  assert.equal(DecorationPool.facesInUse(), true);
+  DecorationPool.despawn(face);
+  DecorationPool.despawn(plain);
+  assert.equal(DecorationPool.facesInUse(), true, 'for good');
 });
 
 test('without faces the light pass is the old one: no face code left in either shader', () => {

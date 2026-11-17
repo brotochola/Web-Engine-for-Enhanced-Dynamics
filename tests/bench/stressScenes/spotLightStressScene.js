@@ -2,7 +2,7 @@ import WEED from '/src/index.js';
 import { mulberry32 } from '../benchMath.js';
 import { SpotCar, SpotProp } from './spotLight/spotLightEntities.js';
 
-const { Scene, Camera, LAYER_KIND } = WEED;
+const { Scene, Camera, Decoration, LAYER_KIND } = WEED;
 
 /**
  * Headlights at night, seen from straight above (DX-SPOT): cars driving circles over a top-down terrain tilemap, each
@@ -13,8 +13,8 @@ const { Scene, Camera, LAYER_KIND } = WEED;
  *
  * `?cars=` (default 48), `?props=` (default 300), `?shadowLights=` (default 48: lighting.maxShadowCastingLights, at most
  * the cars; raise it with the cars to load the stamp), `?cone=`, `?aperture=`, `?softness=`, `?shadowRange=` (default 0: the
- * radius), `?groundScaleY=` (default 1: straight down), `?backend=webgpu`, `?faces=1` (lighting.faces on, no face
- * decorations: the faces branch's cost alone), `?still=1` (the cars parked where they start: still frames to compare),
+ * radius), `?groundScaleY=` (default 1: straight down), `?backend=webgpu`, `?faces=1` (one face decoration out of view,
+ * which turns the G-buffer on by itself: the faces branch's cost alone), `?still=1` (the cars parked where they start: still frames to compare),
  * `?ambient=` (lighting.baseAmbient, default 0.06; 1 shows the ground as it is drawn).
  */
 const VIEW_W = 1280;
@@ -71,6 +71,8 @@ export class SpotLightStressScene extends Scene {
     logic: { numberOfLogicWorkers: 1, staggeredUpdates: false },
     physics: { subStepCount: 1, gravity: { x: 0, y: 0 } },
     particle: { maxParticles: 0, decals: false },
+    // ?faces=1: room for its one face.
+    ...(FACES ? { decoration: { maxDecorations: 8 } } : {}),
     renderer: { backend: BACKEND, maxVisibleRenderables: 4000, ySort: false },
     layers: {
       ground: { kind: LAYER_KIND.TILEMAP, tilemap: 'terrain', scale: 1, zIndex: 0.5 },
@@ -83,7 +85,6 @@ export class SpotLightStressScene extends Scene {
       shadowsEnabled: true,
       maxShadowCastingLights: Math.min(CARS, SHADOW_LIGHTS),
       maxShadowsPerLight: 64,
-      ...(FACES ? { faces: { enabled: true } } : {}),
       sun: { enabled: false },
     },
   };
@@ -106,6 +107,8 @@ export class SpotLightStressScene extends Scene {
 
   create() {
     const rng = mulberry32(SEED);
+    // ?faces=1: one face out of view, a decoration with a normal: the G-buffer turns on by itself (DX-BARRIOS).
+    if (FACES) Decoration.spawn({ x: -4096, y: -4096, texture: 'rock1', faceNormalX: 0, faceNormalY: 1, faceNormalZ: 0, faceHeight: 0 });
     for (let i = 0; i < PROPS; i++) {
       const x = VX + rng() * VIEW_W;
       const y = VY + rng() * VIEW_H;

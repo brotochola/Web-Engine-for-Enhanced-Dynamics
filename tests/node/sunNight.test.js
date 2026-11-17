@@ -174,3 +174,22 @@ test('both lighting shaders add the night term, and the WGSL struct lists what t
   );
   assert.ok(added.every((at, k) => at > end && (k === 0 || at > added[k - 1])), 'the worker adds the optional ones in that order');
 });
+
+// DX-BARRIOS: Sun.skyLight, the sun's share from the sky on every surface (was lighting.faces.sunDirect's complement).
+test('Sun.skyLight comes from lighting.sun.skyLight, 0.4 by default, within 0..1, and is published', () => {
+  bootSun();
+  assert.equal(Sun.skyLight, Math.fround(0.4));
+  assert.equal(SUN_DEFAULTS.skyLight, 0.4);
+  assert.equal(1 - SUN_DEFAULTS.skyLight, 0.6, 'the old sunDirect default, exactly');
+  bootSun({ skyLight: 0.25 });
+  assert.equal(Sun.skyLight, 0.25);
+  Sun.skyLight = 3;
+  assert.equal(Sun.skyLight, 1);
+  Sun.skyLight = -1;
+  assert.equal(Sun.skyLight, 0);
+  Sun.skyLight = 0.5;
+  Sun.publish();
+  assert.equal(new Float32Array(Sun.buffer)[Sun.F32.SKY_LIGHT], 0.5, 'in the shared buffer the workers read');
+  Sun.unbind();
+  assert.equal(Sun.skyLight, Sun.SKY_LIGHT_DEFAULT, 'without a sun buffer, the default');
+});

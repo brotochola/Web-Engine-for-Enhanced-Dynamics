@@ -58,7 +58,7 @@ import {
 import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
-import { lightingSource, resolveFaces, shaderWithFlag } from '../render/faceMap.js';
+import { lightingSource, shaderWithFlag } from '../render/faceMap.js';
 import { packMapsTable } from '../render/mapsTable.js';
 import {
   LightTiles,
@@ -1097,7 +1097,14 @@ class PixiRenderer extends AbstractWorker {
     this._sunMapDrew = false;
     this._sunMapClear = false;
     this._noMapsSource = null; // DX-MAPS: its stand-in when none has (_emptyMapsSource)
-    this._faces = resolveFaces(null);
+    // DX-BARRIOS: faces have no switch. Whether the light pass reads the face map, whether the faces-in-use word was acted
+    // on (_useFaces), whether this scene's light can take faces (lit, not raycasted); the px a px of height rises (the
+    // camera's); the faces' light terms (uFaceLight: heightScaleY, 0, 0, the sun's direct share 1 - Sun.skyLight).
+    this._facesOn = false;
+    this._facesUsed = false;
+    this._facesWatch = false;
+    this._heightScaleY = NaN;
+    this._faceLight = new Float32Array(4);
     this._faceSun = new Float32Array(4); // towards the sun, once a frame
     this._faceRtLayer = { resolution: 1 }; // _writeCameraRtTransform's layer for the face map
     this._faceRtTransform = new Matrix();
@@ -3767,7 +3774,7 @@ class PixiRenderer extends AbstractWorker {
     const maps = this.atlasMapsSource ?? this._emptyMapsSource();
     // E-457: the unshaded mask (an unshaded word or sheet), then the unshaded pass drawn where it marked
     // (InstancedSpriteBatch.unshadedPass).
-    const pass = batch !== null && batch.mesh.visible ? batch.unshadedPass(this._faces.heightScaleY, this._groundScaleY || 1, maps) : null;
+    const pass = batch !== null && batch.mesh.visible ? batch.unshadedPass(this._heightScaleY, this._groundScaleY || 1, maps) : null;
     const opts = this._rtRenderOpts;
     opts.container = pass !== null ? pass : this._rtEmptyContainer;
     opts.target = this.unshadedRT;
@@ -3800,8 +3807,67 @@ class PixiRenderer extends AbstractWorker {
    * DX-FACEDEPTH: whether the entities' depth reads faces: a lit scene (not raycasted) whose decorations carry normals.
    */
   _faceDepthWanted() {
-    const lighting = this.config?.lighting;
-    return !!(lighting && lighting.enabled && !lighting.raycasted && lighting.faces?.enabled === true);
+    return DecorationPool.facesInUse();
+  }
+
+  /**
+   * DX-BARRIOS: faces have no switch. Once a decoration carries a normal (DecorationPool.facesInUse: normally the first frame,
+   * as a scene's create() spawns them): the entities' depth reads faces (DX-FACEDEPTH; an oblique scene without a map sheet
+   * turns pixel depth on for them), and a lit scene's light pass, made again, reads the face map. Once.
+   */
+  _useFaces() {
+    this._facesUsed = true;
+    const batch = this.entitiesBatch;
+    if (batch) {
+      if (batch.pixelDepthOn) batch.setDepthFaces(true);
+      else if (this._pixelDepthWanted()) batch.enablePixelDepth(this.atlasMapsSource ?? this._emptyMapsSource(), true);
+      this._placeDepthMeshes();
+    }
+    if (this.lightingEnabled && this._facesWatch && !this._facesOn) {
+      this._facesOn = true;
+      this._rebuildLightPass();
+    }
+  }
+
+  /** DX-DEPTH: whether the entities take pixel depth by the scene's camera (renderer.pixelDepth true, or oblique). */
+  _pixelDepthWanted() {
+    const want = this.config?.renderer?.pixelDepth;
+    return want === true || (want !== false && cameraFloorScaleY(this.config) < 1 && cameraHeightScaleY(this.config) > 0);
+  }
+
+  /**
+   * DX-BARRIOS: the light pass made again (faces turned on after it was made): what createLightingSystem put on the stage
+   * and in its targets goes, unbound first (as a resize unbinds), and it makes them again, now with the face map.
+   */
+  _rebuildLightPass() {
+    if (!this.lightingMesh) return;
+    const empty = PIXI.Texture.EMPTY.source;
+    const res = this.lightingShader?.resources;
+    if (res) {
+      if (res.uFaceMap) res.uFaceMap = empty;
+      if (res.uFaceIds) res.uFaceIds = empty;
+    }
+    if (this._unshadedComposite !== null) {
+      this._unbindUnshadedLayer();
+      this._unshadedComposite.removeFromParent();
+      this._unshadedComposite = null;
+    }
+    this._releaseGbufTarget();
+    if (this.lightingDisplaySprite) {
+      this.lightingDisplaySprite.removeFromParent();
+      this.lightingDisplaySprite.destroy();
+      this.lightingDisplaySprite = null;
+    } else {
+      this.lightingMesh.removeFromParent();
+    }
+    for (const rt of [this.faceRT, this.faceIdsRT, this.unshadedRT, this.lightingRT]) if (rt) rt.destroy(true);
+    this.faceRT = null;
+    this.faceIdsRT = null;
+    this.unshadedRT = null;
+    this.lightingRT = null;
+    this.lightingMesh = null;
+    this.createLightingSystem();
+    this.pixiApp?.stage?.sortChildren();
   }
 
   /**
@@ -3851,7 +3917,7 @@ class PixiRenderer extends AbstractWorker {
   _renderFaceMap() {
     const batch = this.entitiesBatch;
     const maps = this.atlasMapsSource ?? this._emptyMapsSource();
-    const mesh = batch !== null ? batch.faceMesh(this._faces.heightScaleY, this._groundScaleY || 1, maps) : null;
+    const mesh = batch !== null ? batch.faceMesh(this._heightScaleY, this._groundScaleY || 1, maps) : null;
     const opts = this._rtRenderOpts;
     opts.container = mesh !== null && batch.mesh.visible ? mesh : this._rtEmptyContainer;
     opts.target = this.faceRT;
@@ -3872,7 +3938,7 @@ class PixiRenderer extends AbstractWorker {
     const mrt = this._gbufMrt && this.faceIdsRT !== null ? this._ensureGbufTarget() : null;
     if (mrt !== null) {
       // DX-GBUF (lighting.gbuffer 'mrt'): both targets in this one pass.
-      const both = batch !== null ? batch.gbufMesh(this._faces.heightScaleY, this._groundScaleY || 1, maps) : null;
+      const both = batch !== null ? batch.gbufMesh(this._heightScaleY, this._groundScaleY || 1, maps) : null;
       opts.container = both !== null && batch.mesh.visible ? both : this._rtEmptyContainer;
       opts.target = mrt;
       this._submitRender(opts);
@@ -3881,7 +3947,7 @@ class PixiRenderer extends AbstractWorker {
     }
     this._submitRender(opts);
     if (this.faceIdsRT !== null) {
-      const ids = batch !== null ? batch.idsMesh(this._faces.heightScaleY, this._groundScaleY || 1, maps) : null;
+      const ids = batch !== null ? batch.idsMesh(this._heightScaleY, this._groundScaleY || 1, maps) : null;
       opts.container = ids !== null && batch.mesh.visible ? ids : this._rtEmptyContainer;
       opts.target = this.faceIdsRT;
       this._submitRender(opts);
@@ -3994,6 +4060,8 @@ class PixiRenderer extends AbstractWorker {
       if (this.shouldDrawFrameLockedPasses(consumedNewFrame, resuming)) {
         this.syncLayerResolutionFromSharedState();
         this.uploadTextureLookupIfNeeded();
+        // DX-BARRIOS: the first decoration with a normal turns faces on (the G-buffer, the depth's planes).
+        if (!this._facesUsed && DecorationPool.facesInUse()) this._useFaces();
         this.drawFrameLights();
         // E-191: the sprites first, so a keyed frame's statics texture and instances are this frame's when the sun's
         // shadow pass draws them.
@@ -4637,12 +4705,15 @@ LIGHTING SYSTEM SETUP
       ...this._lightingShadowResources(),
     };
 
-    const facesOn = this._faces.enabled;
+    const facesOn = this._facesOn;
     if (facesOn) {
-      lightingResources.uniforms.uFaceLight = {
-        value: new Float32Array([this._faces.heightScaleY, this._faces.wrap, this._faces.gain, this._faces.sunDirect]),
-        type: 'vec4<f32>',
-      };
+      // DX-BARRIOS: no wrap or gain any more; the sun's direct share follows Sun.skyLight (_writeFaceSun, each frame).
+      const faceLight = this._faceLight;
+      faceLight[0] = this._heightScaleY > 0 ? this._heightScaleY : 1;
+      faceLight[1] = 0;
+      faceLight[2] = 0;
+      faceLight[3] = 1 - Sun.skyLight;
+      lightingResources.uniforms.uFaceLight = { value: faceLight, type: 'vec4<f32>' };
       lightingResources.uniforms.uFaceSun = { value: this._faceSun, type: 'vec4<f32>' };
       lightingResources.uFaceMap = PIXI.Texture.EMPTY.source;
     }
@@ -6914,7 +6985,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     u.uGroundInvScaleY = this._groundInvScaleY || 1;
     u.uSunK[0] = this._sunMapTerms[0];
     u.uSunK[1] = this._sunMapTerms[1];
-    u.uSunK[3] = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
+    u.uSunK[3] = this._heightScaleY > 0 ? this._heightScaleY : 1;
     u.uSunPerp[0] = this._sunMapTerms[2];
     u.uSunPerp[1] = this._sunMapTerms[3];
     this._sunMapUniforms.update();
@@ -6967,7 +7038,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const shaders = this._engineShaders;
     if (!(this._useWebGpu ? shaders?.meshUvFill : shaders?.meshUvFillVert)) return;
     const t = this._sunMapTerms;
-    const hs = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
+    const hs = this._heightScaleY > 0 ? this._heightScaleY : 1;
     const g = this._groundScaleY || 1;
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
@@ -7341,7 +7412,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       u.uTileWorld[0] = this._lampTilesPerRow;
       u.uTileWorld[1] = this._lampTileSize;
       u.uTileWorld[2] = half;
-      u.uSunK[3] = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
+      u.uSunK[3] = this._heightScaleY > 0 ? this._heightScaleY : 1;
       u.uGroundInvScaleY = this._groundInvScaleY || 1;
       group.update();
     }
@@ -7392,7 +7463,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const tiles = this._lampTileCount | 0;
     if (tiles <= 0 || this._lampTileSource === null) return;
     if (!(this._useWebGpu ? shaders?.meshUvFill : shaders?.meshUvFillVert)) return;
-    VOLUME_LAMP_SCALES[0] = 1 / (this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1);
+    VOLUME_LAMP_SCALES[0] = 1 / (this._heightScaleY > 0 ? this._heightScaleY : 1);
     VOLUME_LAMP_SCALES[1] = this._groundInvScaleY || 1;
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
@@ -7733,7 +7804,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const t = sunMapTerms(this._faceSun, this._sunMapTerms, Sun.shadowMaxLengthRatio);
       u.uSunK[0] = t[0];
       u.uSunK[1] = t[1];
-      u.uSunK[3] = this._faces.heightScaleY > 0 ? this._faces.heightScaleY : 1;
+      u.uSunK[3] = this._heightScaleY > 0 ? this._heightScaleY : 1;
       u.uSunPerp[0] = t[2];
       u.uSunPerp[1] = t[3];
     } else {
@@ -8648,6 +8719,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     sun[1] = (-dirY / len) * cosE;
     sun[2] = sinE;
     sun[3] = 1 / (sinE > 0.25 ? sinE : 0.25);
+    // DX-BARRIOS: the sun's share that follows where a face looks; the rest is its sky (Sun.skyLight), on every face.
+    this._faceLight[3] = 1 - Sun.skyLight;
   }
 
   _lightingShadowResources() {
@@ -10019,10 +10092,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         ? new Uint16Array(data.buffers.visibleLightsData)
         : null;
       this.lightingResolution = lightingConfig.resolution || 1.0;
-      this._faces = resolveFaces(lightingConfig, this.config.camera);
-      if (lightingConfig.faces?.enabled && !this._faces.enabled) {
-        console.warn('WeedJS: lighting.faces does not work with raycasted lighting yet: faces are off');
-      }
+      // DX-BARRIOS: a px of height rises the camera's heightScaleY; faces have no switch: the light pass reads the face map
+      // with maps or a shadow map (below), or once a decoration carries a normal (_useFaces). Not with raycasted lighting.
+      this._heightScaleY = cameraHeightScaleY(this.config);
+      this._facesWatch = !lightingConfig.raycasted;
+      this._facesOn = this._facesWatch && DecorationPool.facesInUse();
       // DX-SHADOW3D: the sun's shadows from a shadow map, the sun's term alone (WebGL and WebGPU).
       if (lightingConfig.sunShadows === 'map') {
         if (lightingConfig.raycasted) {
@@ -10059,11 +10133,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // DX-MAPS: a sprite with height and normal maps is lit as the surface they say, through the faces' pass. DX-GBUF: so
       // is every entity's in the shadow maps' modes (a card standing on its foot, plan §5.4): the maps keep their highest
       // caster's entity, and a caster's own shadow never paints its own sprite.
-      if ((this.atlasMapsSource !== null || this._sunMapOn || this._lampMapOn) && !this._faces.enabled) {
+      if ((this.atlasMapsSource !== null || this._sunMapOn || this._lampMapOn) && !this._facesOn) {
         if (lightingConfig.raycasted) {
           console.warn('WeedJS: sprites with height or normal maps are lit flat with raycasted lighting');
         } else {
-          this._faces = { ...this._faces, enabled: true };
+          this._facesOn = true;
         }
       }
       // baseAmbient is the night/minimum light level (when sun is down)

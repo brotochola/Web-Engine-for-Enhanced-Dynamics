@@ -705,8 +705,13 @@ export const SUN_DEFAULTS = Object.freeze({
   color: 0xffffff,
   shadowAlpha: 0.4,
   startHour: 12,
-  /** Degrees the sun reaches at noon on a day cycle. 90 = overhead, walls get no sun then (lighting.faces). */
+  /** Degrees the sun reaches at noon on a day cycle. 90 = overhead, walls get no sun then (faces). */
   maxElevation: 90,
+  /**
+   * DX-BARRIOS (Sun.skyLight): the share of the sun's light that comes from the sky and lights every surface whatever way it
+   * faces (faces, sprites with normals); the rest depends on where a surface looks. 0 to 1.
+   */
+  skyLight: 0.4,
   shadowAngleOffset: Math.PI,
   shadowMinLengthRatio: 0.2,
   shadowMaxLengthRatio: 2.0,
@@ -777,13 +782,6 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * a diagnostic to compare the two (the same picture, more work).
    */
   keyedCasters: true,
-  /**
-   * DX-FACES: decorations with a normal are lit as surfaces (Decoration.spawn's faceNormalX, ...). A second draw of the
-   * entity batch into a map at `resolution`, and the light pass reads it. Off, a scene pays nothing.
-   * { enabled, wrap, gain, sunDirect }: src/render/faceMap.js; a px of height rises config.camera.heightScaleY. Not with
-   * raycasted lighting.
-   */
-  faces: Object.freeze({ enabled: false }),
   /**
    * DX-SHADOW3D: how the sun casts the ShadowCasters' shadows. 'sprite' (default): each caster's card on the shadows'
    * layer, darkening every light. 'map': a shadow map in the floor's terms (src/render/sunShadowMap.js) that takes out the
@@ -879,7 +877,7 @@ export function lightGlowResolutionOf(lighting) {
  *   light reaches R across and R * floorScaleY up and down: an ellipse. 1 = straight down (round pools), ~0.7 = a 3/4
  *   top-down view, 0.5 = 2:1 isometric. Point, raycasted, particle and LiquidFun lights, cones, point-light shadows and
  *   the default floorScaleY of a ShadowCaster's volume read it.
- * - heightScaleY: screen px that a px of height rises (lighting.faces).
+ * - heightScaleY: screen px that a px of height rises (faces, height maps, volumes).
  * - yaw: degrees the view turns about the vertical (45 for an isometric diamond). Read by nothing yet.
  */
 export const CAMERA_DEFAULTS = Object.freeze({

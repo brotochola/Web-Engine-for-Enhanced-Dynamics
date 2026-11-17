@@ -42,6 +42,12 @@ export {
   ENTITY_GLOW_SORT_BIAS,
   PARTICLE_SORT_BIAS,
 };
+/**
+ * DX-BARRIOS: the word of the pool's list header (its lock's buffer, after decorationSpatial.js's) that turns 1, for good,
+ * once a decoration carries a face's normal: faces are in use, and the G-buffer turns on by itself (no lighting.faces).
+ */
+export const DECORATION_FACES_IN_USE = 5;
+
 /** Sentinel: decoration not parented. Width 16 = 0xffff; width 32 = 0xffffffff. */
 export function decorationNoParent() {
   return entityIdNone;
@@ -116,6 +122,12 @@ export class DecorationPool extends SharedAtomicPool {
 
   static _unlockActiveList() {
     if (this._activeListLock) Atomics.store(this._activeListLock, 0, 0);
+  }
+
+  /** DX-BARRIOS: whether any decoration has carried a face's normal (DECORATION_FACES_IN_USE); false without the word. */
+  static facesInUse() {
+    const lock = this._activeListLock;
+    return lock !== null && lock.length > DECORATION_FACES_IN_USE && Atomics.load(lock, DECORATION_FACES_IN_USE) !== 0;
   }
 
   /** E-179c: one more change of the active list, under its lock (a reader that saw the old count copies it again). */
@@ -427,7 +439,7 @@ export class DecorationPool extends SharedAtomicPool {
    * @param {number} [config.anchorY=1] - Anchor Y (0-1)
    * @param {number} [config.offsetX=0] - Draw offset X: the sprite draws at x + offsetX; it sorts and culls at x
    * @param {number} [config.offsetY=0] - Draw offset Y: the sprite draws at y + offsetY; it sorts and culls at y
-   * @param {number} [config.faceNormalX] - With faceNormalY and faceNormalZ: this sprite is a flat face that looks that way, in the floor's space (x along the screen, y towards the camera, z up), lit as a surface where config.lighting.faces is on
+   * @param {number} [config.faceNormalX] - With faceNormalY and faceNormalZ: this sprite is a flat face that looks that way, in the floor's space (x along the screen, y towards the camera, z up), lit as a surface: the first one turns the G-buffer on (DX-BARRIOS)
    * @param {number} [config.faceNormalY]
    * @param {number} [config.faceNormalZ]
    * @param {number} [config.faceHeight=0] - Px above the floor of the face at this decoration's position (up to 1023.875)
@@ -546,8 +558,14 @@ export class DecorationPool extends SharedAtomicPool {
     if (config.faceNormalX === undefined) {
       DecorationComponent.faceOct[i] = 0;
     } else {
-      DecorationComponent.faceOct[i] = encodeFaceNormal(config.faceNormalX, config.faceNormalY, config.faceNormalZ);
+      const oct = encodeFaceNormal(config.faceNormalX, config.faceNormalY, config.faceNormalZ);
+      DecorationComponent.faceOct[i] = oct;
       DecorationComponent.faceZ[i] = encodeFaceHeight(config.faceHeight ?? 0, innerZClamped);
+      // DX-BARRIOS: faces in use, for good (the G-buffer turns on by itself). A store only the first time.
+      const lock = this._activeListLock;
+      if (oct !== 0 && lock !== null && lock.length > DECORATION_FACES_IN_USE && lock[DECORATION_FACES_IN_USE] === 0) {
+        Atomics.store(lock, DECORATION_FACES_IN_USE, 1);
+      }
     }
 
     // Visual properties

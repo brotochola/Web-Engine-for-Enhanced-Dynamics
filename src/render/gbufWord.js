@@ -43,8 +43,7 @@ export const GBUF_UNSHADED_BIT = 21;
 export const GBUF_MAX_BANDS = 8;
 
 /**
- * Whether a scene's Pixi worker runs the G-buffer pass, so its sprite instances carry words: lit (not raycasted), with
- * faces, a sheet with maps or an unshaded sheet, a shadow map (the maps keep their highest caster's entity, which a
+ * Whether a scene's sprite instances carry G-buffer words: lit (not raycasted), with a sheet with maps or an unshaded sheet, a shadow map (the maps keep their highest caster's entity, which a
  * sprite's pixels compare with their own: a caster's own shadow never paints its own sprite), or lighting.unshaded (a
  * sprite's own spriteRenderer.unshaded). Pre-render and Pixi decide it the same way.
  * @param {object} config the scene's config
@@ -55,8 +54,8 @@ export function gbufWanted(config, atlas) {
   const lighting = config?.lighting;
   if (!lighting || !lighting.enabled || lighting.raycasted) return false;
   const atlasMaps = atlas === true || (atlas !== null && typeof atlas === 'object' && (atlas.maps === true || atlas.unshaded === true));
-  return lighting.faces?.enabled === true || atlasMaps || lighting.sunShadows === 'map' || lighting.lampShadows === 'map'
-    || lighting.unshaded === true;
+  // DX-BARRIOS: faces need no words (a decoration is no entity); they turn the G-buffer pass on by themselves.
+  return atlasMaps || lighting.sunShadows === 'map' || lighting.lampShadows === 'map' || lighting.unshaded === true;
 }
 
 /** An entity's id in the G-buffer: 1 to 65535, never 0 (0 is "no entity"). */
