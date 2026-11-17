@@ -21864,13 +21864,15 @@
         "elevation 0 lamp tiles",
         "headlight tiles"
       ],
-      "records": [],
-      "result": "",
+      "records": [
+        "R-1308"
+      ],
+      "result": "fixed: lights at elevation 0 left out of the stamp lights with lampShadows 'map'; captures identical (1/255 on 112 px at elevation 0)",
       "next": "Leave lights at elevation 0 out of the stamp lights in 'map' mode (pre-render _collectStampLights), unless something else needs them there: their cookies (_packGpuCookies) lighten the shadows layer under the lamp, so check with captures (barrio by night, headlightsScene) that the picture holds; then the freed slots go to lamps that cast. Or the demo gives its headlights a height, which casts but draws the volumes every frame for a moving tile (E-508's direct path).",
       "id": "N-265",
       "kind": "bug",
       "area": "render",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-17",
       "title": "With lampShadows 'map', a light at elevation 0 (the barrio's headlights) takes a tile and a maxShadowCastingLights slot, and pre-render stamps casters for it, though its map casts nothing",
       "statusText": "seen 2026-11-17 in Buenos Aires at night: 4 of 16 tiles held headlights (elevation 0: lampCasts false), so the atlas kept 16 tiles and lamps farther from the view's centre lost their slots"
@@ -34831,6 +34833,17 @@
       "title": "The barrio's night on the HD 620 in one sitting: drawn 21.1 -> 35.9 fps (+69.7 %), particle -68.5 %; physics +104 % and logic +53 % as the iGPU takes the laptop's shared cores and power",
       "verdict": "note",
       "text": "**The barrio's night on the Intel HD 620, measured in one sitting: drawn 21.1 → 35.9 fps (+69.7 %, 4/4).** Main 6d7bf4a0 (before E-504's adaptive cache and E-506 to E-510) against 69d1a10f, Parque Chas at `hour=22&dayMinutes=0`, camera still, 4 pairs, `--full-rev`, ASUS laptop, 2026-11-17 11:15 to 11:30 (asus-barrio-night, job 0875).\n\n- **Drawn:** 21.1–21.4 → 35.4–36.1 fps in the clean pairs. A second pair's A run hitched (5.2 fps, renderer 342 ms), as in R-1292 and R-1294.\n- **Particle:** 6.92 → 2.19 ms, −68.5 % (E-506, E-507).\n\n**The CPU pays for it on that laptop:**\n\n| Worker | Before | After | Change |\n|---|---|---|---|\n| physics | 17.2 ms | 33.8 ms | +104 %, 4/4 |\n| logic | | | +53 % |\n| pre-render | | | +37 % |\n| renderer | | | +14 % |\n| spatial | | | level |\n\nNone of the night's changes touch physics or logic. With 70 % more frames drawn, the integrated GPU and Chrome's GPU process take more of the 4 logical CPUs and the shared 15 W. This is the effect R-1285 and R-1302 showed, added up. Physics then runs near 30 Hz, and presented frames fall 59.3 → 57.4. On a 2-core laptop with an iGPU, a GPU saving there partly moves the bottleneck to the CPU.\n\nThe load keys GPU_CASTERS and GPU_SHADOW_LIGHTS fall 13 %: that is E-510's shorter reach.\n\n**GPU now** (main 69d1a10f, the same setup; `--gpu-passes`): 15.3 ms of GPU a drawn frame.\n\n| Pass | ms |\n|---|---|\n| the stage | 9.52 |\n| the 3D light pass | 2.29 |\n| the lamps' atlas | 1.17 |\n| the G-buffer | 1.00 |\n| the 1920x1080 pass | 0.93 |\n| the rest | 0.40 |\n\nCostliest draws (`--gpu-draws`), ms:\n\n| Draw | ms |\n|---|---|\n| the light pass | 2.53 |\n| the two stage entity draws | 2.10 and 1.84 |\n| the stage composite | 1.18 |\n| the G-buffer entities | 1.10 |\n| the [uLight] halves | 0.83 and 0.82 |\n| prog#30 [] | 0.70 |\n| draw 4 [..,uMaps] | 0.60 |"
+    },
+    {
+      "id": "R-1308",
+      "date": "2026-11-17",
+      "title": "N-265 fixed: elevation-0 lights take no lamp tile or shadow slot in 'map' mode; the barrio's 4 headlight slots go to street lamps",
+      "verdict": "kept",
+      "text": "**N-265 fixed: with the lamps' shadow map, a light at elevation 0 takes no tile and no maxShadowCastingLights slot.**\n\n- **Change** (`a2904527`, merged `36dd2cb3`): pre-render's stamp lights leave out, with lampShadows 'map', the lights whose\n  elevation is not above 0 (lampCasts: they cast nothing in the map); in the barrio the 4 slots its headlights held go to\n  street lamps, which cast.\n- **Checked**: lampShadowStressScene ?lampShadows=map&still=1 against main: ?elevation=0 112 of 921 600 pixels by 1/255\n  (those lights' cookies added nothing), ?elevation=70 identical. The barrio's GPU frame 3.895 -> 3.885 ms (GTX 1650), the\n  atlas the same size. test:node 3020, test:demos 121, the bundles' suites.",
+      "commits": [
+        "a2904527",
+        "36dd2cb3"
+      ]
     }
   ],
   "leads": [
