@@ -5,6 +5,7 @@
 import { cameraFloorScaleY } from '../util/cameraView.js';
 import { ParticleComponent as ParticleComponentImport } from '../components/particleComponent.js';
 import { DecorationComponent as DecorationComponentImport } from '../components/decorationComponent.js';
+import { DecorationPool } from '../core/decorationPool.js';
 import { BulletComponent as BulletComponentImport } from '../components/bulletComponent.js';
 import { Transform as TransformImport, LINK_LIST_SEQ, LINK_LIST_COUNT } from '../components/transform.js';
 import { entityIdNone } from '../util/entityIdWidth.js';
@@ -1530,7 +1531,10 @@ class PreRenderWorker extends AbstractWorker {
         this._casterKindsOn = false;
         this._casterScanTick = 0;
         this._casterCode = new Int32Array(0);
-        this._faces = false; // config.lighting.faces: decoration rows carry their face in the tile offsets
+        // DX-FACES: decoration rows carry their face in the tile offsets, this frame (the faces-in-use word, once a
+        // decoration got a normal), in a lit scene that is not raycasted (_facesWatch).
+        this._faces = false;
+        this._facesWatch = false;
         // DX-GBUF (plan §6.4): the sprite rows' G-buffer words go with the GPU queue (gbufWord.js): a lit scene whose Pixi
         // worker runs the G-buffer pass (faces, a sheet with maps, a shadow map).
         this._gbufOn = false;
@@ -2352,8 +2356,10 @@ class PreRenderWorker extends AbstractWorker {
         // so it can never outlive them (a cached null would silently pin every
         // sort line to the pose for the rest of the session).
         this._spriteSortArrays = null;
-        this._faces = resolveFaces(this.config?.lighting).enabled;
-        this._gbufOn = gbufWanted(this.config, data.spritesheetMetadata?.spritesheets?.bigAtlas?.meta?.maps === true);
+        this._facesWatch = resolveFaces(this.config?.lighting).enabled;
+        this._faces = false;
+        // The atlas meta whole: a sheet with maps, or an unshaded one, turns the words on.
+        this._gbufOn = gbufWanted(this.config, data.spritesheetMetadata?.spritesheets?.bigAtlas?.meta ?? null);
 
         if (
             data.shadows &&
@@ -4135,7 +4141,9 @@ class PreRenderWorker extends AbstractWorker {
         if (detail) this.sortTimeThisFrame = 0;
         const tEmit = detail ? performance.now() : 0;
         const rqTileMode = this.renderQueueTileMode;
-        // DX-FACES: decorations write the tile offsets, so every other row must clear what a face left in its slot.
+        // DX-FACES: faces have no switch: once a decoration carries a normal (one atomic read a frame), decoration rows
+        // write their face in the tile offsets, so every other row must clear what a face left in its slot.
+        this._faces = this._facesWatch && DecorationPool.facesInUse();
         const tilesDirty = rqTileMode !== null && (this._faces || this._tiledTileColumns.has(rqTileMode));
         const writeSortKey = !!(this.renderQueueSortKey && source.hasOrder);
         const ySort = !!source.ySort;
