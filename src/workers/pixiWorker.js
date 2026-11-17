@@ -1163,6 +1163,8 @@ class PixiRenderer extends AbstractWorker {
     this._lightEdgesGeometry = null;
     this._lightDataFloats = null; // Float32Array RGBA32F payload (maxLights x 2)
     this._lightDataSource = null; // BufferImageSource uploading _lightDataFloats
+    /** E-511: the lights the light data texture held at its last upload (-1: none yet, upload it whole). */
+    this._lightDataLive = -1;
     // E-205: the light pass loops over the lights of each pixel's tile (src/render/lightTiles.js), not over every light.
     // The bins, their R32UI texture, the texture unit WebGL uploads it in (the shader sync's for integer textures, N-109)
     // and whether that texture holds the grid's size yet.
@@ -2533,7 +2535,11 @@ class PixiRenderer extends AbstractWorker {
     if (this.entitiesBatch) this.entitiesBatch.setMapsTable(source);
   }
 
-  _uploadRgba32FloatGl(source, data, width, height) {
+  /**
+   * @param {number} [columns] E-511: only each row's first `columns` texels changed (the rows of `data` stay `width`
+   *   long); a texture this source already holds gets just those
+   */
+  _uploadRgba32FloatGl(source, data, width, height, columns = width) {
     const renderer = this.pixiApp?.renderer;
     const gl = renderer?.gl;
     if (!gl || !source || !data || !renderer?.texture) return;
@@ -2546,12 +2552,21 @@ class PixiRenderer extends AbstractWorker {
     if (held !== undefined && held.width === width && held.height === height) {
       const current = typeof texSys0.getGlSource === 'function' ? texSys0.getGlSource(source) : null;
       if (current && current.texture === held.texture) {
+        const cols = columns < width ? (columns > 0 ? columns | 0 : 0) : width;
+        if (cols === 0) return;
         const prevHeld = gl.getParameter(gl.TEXTURE_BINDING_2D);
         gl.bindTexture(held.target, held.texture);
         gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
         if (gl.UNPACK_FLIP_Y_WEBGL != null) gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
         if (gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL != null) gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
-        gl.texSubImage2D(held.target, 0, 0, 0, width, height, gl.RGBA, gl.FLOAT, data);
+        if (cols < width) {
+          // E-511: the rows' first texels, read from rows `width` long.
+          gl.pixelStorei(gl.UNPACK_ROW_LENGTH, width);
+          gl.texSubImage2D(held.target, 0, 0, 0, cols, height, gl.RGBA, gl.FLOAT, data);
+          gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
+        } else {
+          gl.texSubImage2D(held.target, 0, 0, 0, width, height, gl.RGBA, gl.FLOAT, data);
+        }
         gl.bindTexture(held.target, prevHeld);
         return;
       }
@@ -4791,6 +4806,7 @@ LIGHTING SYSTEM SETUP
     const maxLights = this.maxLights;
 
     this._lightDataFloats = new Float32Array(lightDataTextureFloatCount(maxLights));
+    this._lightDataLive = -1;
     this._lightDataSource = PIXI.TextureSource.from({
       resource: this._lightDataFloats,
       width: maxLights,
@@ -6591,24 +6607,26 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
   /**
    * Pack path mutates _lightDataFloats in place. Pin RGBA32F GPUTexture (no RENDER_ATTACHMENT).
    */
-  _uploadLightDataTexture() {
+  _uploadLightDataTexture(columns = this.maxLights) {
     const source = this._lightDataSource;
     const data = this._lightDataFloats;
-    if (!source || !data) return;
+    if (!source || !data) return false;
     if (this._useWebGpu) {
       const renderer = this.pixiApp?.renderer;
-      if (!renderer?.gpu?.device) return;
+      if (!renderer?.gpu?.device) return false;
       writeRgba32Float(
         renderer,
         source,
         data,
         this.maxLights,
         LIGHT_DATA_TEX_HEIGHT,
-        'weed-light-data'
+        'weed-light-data',
+        columns,
       );
-      return;
+      return true;
     }
-    this._uploadRgba32FloatGl(source, data, this.maxLights, LIGHT_DATA_TEX_HEIGHT);
+    this._uploadRgba32FloatGl(source, data, this.maxLights, LIGHT_DATA_TEX_HEIGHT, columns);
+    return true;
   }
 
   /* =====================
@@ -6827,10 +6845,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // E-311: the per-light pack in its own method (see _packLightData).
     this._packLightData(countToRender, visibleLights, coneCosSeen, coneCount, lightData, row1, row2, groundInvY, vr);
 
-    clearUnusedLightDataTexels(lightData, maxLights, countToRender);
+    // E-511: the columns that changed since the last upload, the lights now and last frame's (now cleared); the whole
+    // texture after it is made (_lightDataLive -1). The barrio uploaded its 1024 columns (64 KB) a frame for a few dozen.
+    const lastLive = this._lightDataLive;
+    const columns = lastLive < 0 || lastLive > maxLights ? maxLights : Math.max(countToRender, lastLive);
+    clearUnusedLightDataTexels(lightData, maxLights, countToRender, columns);
 
-    if (this._lightDataSource) {
-      this._uploadLightDataTexture();
+    if (this._lightDataSource && this._uploadLightDataTexture(columns)) {
+      this._lightDataLive = countToRender;
     }
 
     // Update light count uniform

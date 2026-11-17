@@ -301,11 +301,13 @@ export function packLightDataTexel(data, maxLights, lightIndex, x, y, intensity,
  * Zero compact slots [liveCount, maxLights) so leftover lights cannot ghost.
  * One fill per row, no alloc.
  */
-export function clearUnusedLightDataTexels(data, maxLights, liveCount) {
+export function clearUnusedLightDataTexels(data, maxLights, liveCount, upTo = maxLights) {
   const n = maxLights | 0;
   const live = Math.max(0, Math.min(liveCount | 0, n));
-  if (live >= n) return;
-  for (let row = 0; row < LIGHT_DATA_TEX_HEIGHT; row++) data.fill(0, row * n * 4 + live * 4, (row + 1) * n * 4);
+  // E-511: up to `upTo` (the texels the last frame's lights held): past it they are clear already.
+  const end = Math.max(live, Math.min(upTo | 0, n));
+  if (live >= end) return;
+  for (let row = 0; row < LIGHT_DATA_TEX_HEIGHT; row++) data.fill(0, row * n * 4 + live * 4, row * n * 4 + end * 4);
 }
 
 /** Read back a packed light (for tests / debug). Writes into `out` and returns it. */
