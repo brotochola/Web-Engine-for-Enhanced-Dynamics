@@ -45,8 +45,12 @@
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/decorationSwayWasmMicrobench.mjs --variants js,wasm --rounds 5
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/decorationSwayWasmMicrobench.mjs --variants wasm,wasm-f32x4 --rounds 5
  *   node tests/bench/decorationSwayWasmMicrobench.mjs --variant wasm [--on-screen 1] [--n 20000] [--check] [--output path]
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/decorationSwayWasmMicrobench.mjs --variants wasm,wasm-f32x4 -- --free
  *
  * --on-screen is the share of the world's width in view (1: every blade on screen, Q3's fixture).
+ * --free (E-505): no frequency grid (particle.swayFrequencyBuckets 0, the default), so the worker runs the free sway
+ * (sway_free; sway_free_f32x4 for wasm-f32x4), on the barrio's tree branches in place of the grass: loop decorations
+ * (three in ten skew), amplitudes 0.01 to 0.05, frequencies 0.4 to 0.9.
  */
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { DecorationPool } from '../../src/core/decorationPool.js';
@@ -193,10 +197,13 @@ const CHECK_FRAMES = 8;
 /** The scene clock at the first frame (the Predator fixture's 12 s warm-up). */
 const START_MS = 12000;
 
-/** A view of the same kind as `from` (or of `Type`) at `region`, holding what `from` holds. */
-function moved(buffer, region, from, Type = from.constructor) {
-  const view = new Type(buffer, region.byte, from.length);
-  view.set(from);
+/**
+ * A view of the same kind as `from` (or of `Type`) at `region`, holding what `from` holds; an empty one where the
+ * worker has none (--free: without a grid it keeps no phase or bucket tables, and the kernel's table needs offsets).
+ */
+function moved(buffer, region, from, Type = from ? from.constructor : Float32Array) {
+  const view = new Type(buffer, region.byte, from ? from.length : 0);
+  if (from) view.set(from);
   return view;
 }
 
@@ -263,12 +270,26 @@ export async function setupSwayKernel(opts = {}) {
   worker._swayBucketOf = moved(buffer, R.bucketOf, worker._swayBucketOf);
   worker._swayBucketFreq = moved(buffer, R.bucketFreq, worker._swayBucketFreq);
 
-  // Predator's grass (predatorScene.js spawnGrass), from the scene's sequential free list.
+  // Predator's grass (predatorScene.js spawnGrass), from the scene's sequential free list; or the barrio's branches.
   resetFreeList(DecorationPool.freeListTop, DecorationPool.freeList, n, 1);
   const rng = mulberry32(opts.seed ?? 0x9a55);
   for (let s = 0; s < n; s++) {
     const x = rng() * WORLD_W;
     const y = rng() * WORLD_H;
+    if (opts.branches) {
+      const i = DecorationPool.spawn({
+        x,
+        y,
+        anchorX: 0.5,
+        anchorY: 1.0,
+        sway: true,
+        swaySkew: rng() < 0.3,
+        swayAmplitude: 0.01 + rng() * 0.04,
+        swayFrequency: 0.4 + rng() * 0.5,
+      });
+      if (i < 0) throw new Error('the decoration pool filled up');
+      continue;
+    }
     const scale = 0.2 + rng() * 0.1;
     rng(); // the grass texture
     const i = DecorationPool.spawn({
@@ -455,16 +476,23 @@ async function main() {
   const variant = String(args.variant || 'js');
   if (!['js', 'wasm', ...Object.keys(SWAY_F32_EXPORTS)].includes(variant)) throw new Error(`unknown variant ${variant}`);
   const f32 = variant in SWAY_F32_EXPORTS;
-  const s = await setupSwayKernel({ n: Number(args.n ?? GRASS), onScreen: Number(args['on-screen'] ?? ON_SCREEN) });
+  // --free: the free sway, which the binding holds as `free` (the bucketed one as `sway`).
+  const free = Boolean(args.free);
+  const slot = free ? 'free' : 'sway';
+  const s = await setupSwayKernel({
+    n: Number(args.n ?? GRASS),
+    onScreen: Number(args['on-screen'] ?? ON_SCREEN),
+    ...(free ? { k: 0, branches: true } : {}),
+  });
   const { worker, b } = s;
   let listed = 0;
   let lastListed = 0;
   // js: the JS sway; else the shipped path with the kernel bound. Over the checksum frames the kernel's call counts
   // what it lists; the timed frames call it bare.
   worker._swayWasm = variant === 'js' ? null : b;
-  const shipped = b.sway;
+  const shipped = b[slot];
   // wasm-f32x4: the function the worker binds with wasm.decorationSwayF32 on (bindDecorationSway's `f32`).
-  const kernel = f32 ? (await bindSwayKernel(s.memory, s.regions, worker, b.listCap, { f32: true })).sway : shipped;
+  const kernel = f32 ? (await bindSwayKernel(s.memory, s.regions, worker, b.listCap, { f32: true }))[slot] : shipped;
   const counted = (fn, count) => (...callArgs) => {
     const n = fn(...callArgs);
     lastListed = n;
@@ -473,7 +501,7 @@ async function main() {
   };
   const countedKernel = counted(kernel, true);
   const countedShipped = counted(shipped, false);
-  b.sway = countedKernel;
+  b[slot] = countedKernel;
   const sway = variant === 'js' ? () => updateDecorationSwayJs(worker, DT) : () => worker.updateDecorationSway(DT);
   const frame = () => {
     worker.accumulatedTime += DT;
@@ -497,7 +525,7 @@ async function main() {
     worker.accumulatedTime += DT;
     const before = bytes.slice();
     const cacheK = worker._swayBucketCacheK;
-    b.sway = countedShipped;
+    b[slot] = countedShipped;
     sway();
     const refTrig = trigList();
     checksum = hashSwayState(checksum, worker);
@@ -505,7 +533,7 @@ async function main() {
     const refCacheK = worker._swayBucketCacheK;
     bytes.set(before);
     worker._swayBucketCacheK = cacheK;
-    b.sway = countedKernel;
+    b[slot] = countedKernel;
     sway();
     const bad = compareSwayStates(views, ref, bytes.slice(), refTrig, trigList(), flips);
     if (bad && !violation) violation = `tolerance: frame ${f}: ${bad}`;
@@ -513,7 +541,7 @@ async function main() {
     worker._swayBucketCacheK = refCacheK;
   }
   const checkedListed = listed;
-  b.sway = kernel;
+  b[slot] = kernel;
   if (violation) checksum = violation;
   const line = `checksum ${checksum} (${CHECK_FRAMES} frames, ${s.n} decorations, ${s.onScreen} on screen${variant !== 'js' ? `, ${checkedListed} listed for Math.sin / Math.cos` : ''})`;
   if (args.check) {
@@ -528,7 +556,7 @@ async function main() {
     frame();
   };
   let tier = null;
-  if (variant !== 'js') tier = await warmWasm(b.sway, short);
+  if (variant !== 'js') tier = await warmWasm(b[slot], short);
   else warmNormalCompile(short);
   worker._activeDecorationSnapshotCount = count;
   const cases = {
@@ -537,7 +565,10 @@ async function main() {
   const report = {
     feature: 'decoration-sway-wasm',
     variant,
-    functions: [variant === 'js' ? 'swayBucketsJs' : 'ParticleWorker._updateDecorationSwayBuckets', f32 ? `${SWAY_F32_MODULE}.${SWAY_F32_EXPORTS[variant]}` : 'decorationSway.sway_decorations'],
+    functions: free
+      ? ['ParticleWorker.updateDecorationSway', `decorationSway.${f32 ? 'sway_free_f32x4' : 'sway_free'}`]
+      : [variant === 'js' ? 'swayBucketsJs' : 'ParticleWorker._updateDecorationSwayBuckets', f32 ? `${SWAY_F32_MODULE}.${SWAY_F32_EXPORTS[variant]}` : 'decorationSway.sway_decorations'],
+    free,
     n: s.n,
     onScreen: s.onScreen,
     buckets: s.k,
