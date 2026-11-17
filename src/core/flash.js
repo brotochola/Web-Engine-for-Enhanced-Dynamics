@@ -37,6 +37,8 @@ export class Flash extends GameObject {
     radius: 1000,
     brightness: 1,
     glow: 0.2,
+    // DX-GLOWRADIUS: the halo's own radius (a double from the start: NaN until a spawn writes it).
+    glowRadius: NaN,
     castShadows: 1,
     // DX-SPOT: a cone. Doubles from the start (NaN until a spawn writes them), so the payload keeps one shape.
     direction: NaN,
@@ -83,6 +85,8 @@ export class Flash extends GameObject {
    * @param {number} [config.radius=1000] - Initial reach in px
    * @param {number} [config.brightness=1] - Times the colour and the glow
    * @param {number} [config.glow=0.2] - Initial halo alpha (0 = no halo)
+   * @param {number} [config.glowRadius=0] - The halo's radius in px, as it shows (LightEmitter.glowRadius: a compact
+   *   glow); 0 draws the wide gradient at 0.85 of the radius
    * @param {boolean|number} [config.castShadows=true] - Point shadows (false/0 = lighting only)
    * @param {number} [config.coneAngle=2π] - A cone's whole aperture in radians (2π: round), as LightEmitter's
    * @param {number} [config.coneSoftness=0] - 0..1, how much of the cone's edge fades
@@ -124,6 +128,7 @@ export class Flash extends GameObject {
     s.radius = config.radius ?? 1000;
     s.brightness = config.brightness ?? 1;
     s.glow = config.glow ?? 0.2;
+    s.glowRadius = config.glowRadius ?? 0;
     s.castShadows =
       config.castShadows !== 0 && config.castShadows !== false ? 1 : 0;
     s.direction = config.direction ?? 0;
@@ -148,6 +153,7 @@ export class Flash extends GameObject {
     this.lightEmitter.radius = spawnConfig.radius ?? 1000;
     this.lightEmitter.brightness = spawnConfig.brightness ?? 1;
     this.lightEmitter.glow = spawnConfig.glow ?? 0.2;
+    this.lightEmitter.glowRadius = spawnConfig.glowRadius ?? 0;
     this.lightEmitter.active = 1;
 
     // Set flash component properties

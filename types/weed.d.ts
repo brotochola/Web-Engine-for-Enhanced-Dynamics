@@ -1179,6 +1179,8 @@ export interface FlashCreateConfig {
   brightness?: number;
   /** Initial halo alpha, 0 = none. Default 0.2. */
   glow?: number;
+  /** The halo's radius in px, as it shows (a compact glow); 0 draws the wide gradient at 0.85 of the radius. Default 0. */
+  glowRadius?: number;
   /** Point shadows. Default true. */
   castShadows?: boolean;
   /** A cone's whole aperture in radians, as LightEmitter.coneAngle. Default 2π (round). */
