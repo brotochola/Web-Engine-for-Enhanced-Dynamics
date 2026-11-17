@@ -20010,8 +20010,8 @@
       "kind": "speed",
       "title": "Spatial's long frames are periodic: E-200's typed refresh gives each class only T phases (tickBucketPhase(i, T)) inside a refresh period P = ceil(neighborTickInterval / T) x T, so a class's whole refresh lands on T frames of every P (civilians T 4, P 16: 4 frames heavy, 12 light); at Predator crowd 2.5 by night spatial runs 3 to 4 ms on some frames and 28 to 46 ms on others in a 32-frame cycle (lag-32 autocorrelation 0.68), p99 37.9 ms",
       "statusText": "found 2026-11-16 from every frame's slots over 10 s (runFramePhase's samples.json, 9ebebff7), after frameTotals showed spatial's tail (R-1219)",
-      "result": "Two sittings 2026-11-16 (R-1233): spreading the refresh halves spatial's long frames but raises its mean: interleaved +7.7 % (4/4 worse), by contiguous blocks +11.5 % (4/4 worse); not merged (branch opt/e476-spread). Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 600 frames: spatial0 p50 8.7, p90 16.2, p99 37.9, max 47.0 ms; autocorrelation 0.68 at lag 32 (0.45 / 0.44 at 31 / 33); per 32-frame row about 15, 8, 3-4, 7-9, 13-15, then 28-46 ms on frames 20-22, then 3-5. Physics has no period (lag-1 0.27; its tail is contention, R-1223), pre-render and logic none either.",
-      "next": "Find what grows with the spread (a per-frame cost in gather_batch or publish_batch paid every frame instead of on T of P frames, the reuse bookkeeping): spatial's CPU per function on main against the branch; then a spread that keeps the mean, or accept the tail fix as the owner decides. Spread each entity's refresh over the period's P / T tick occurrences: offset = (tickBucketPhase(i, T) - LEAD + T x k) mod P with k = an even spread of the class's slots over P / T (a slot's list still comes LEAD frames before one of its ticks and lasts P frames, as fresh at its tick as now), so each frame refreshes about 1/P of the class; likewise stagger neighborReuseMaxFrames' forced rebuilds. Judge on spatial's tail (frameTotals p95/p99 and frames >= 16 ms) and its mean, Predator crowd 2.5 and Boids; lists identical at each tick.",
+      "result": "2026-11-16 (R-1242): the spread halves slow frames, raises spatial's mean 12.6 % (two bursts: -40 % and +5.9 %), does not raise capacity; on replay spatial's own work is unchanged (R-1239), so the rise comes from running beside logic and physics. Two sittings 2026-11-16 (R-1233): spreading the refresh halves spatial's long frames but raises its mean: interleaved +7.7 % (4/4 worse), by contiguous blocks +11.5 % (4/4 worse); not merged (branch opt/e476-spread). Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 600 frames: spatial0 p50 8.7, p90 16.2, p99 37.9, max 47.0 ms; autocorrelation 0.68 at lag 32 (0.45 / 0.44 at 31 / 33); per 32-frame row about 15, 8, 3-4, 7-9, 13-15, then 28-46 ms on frames 20-22, then 3-5. Physics has no period (lag-1 0.27; its tail is contention, R-1223), pre-render and logic none either.",
+      "next": "Find what slows spatial when its work is spread: a replay with a second thread reading the published rows (cross-core lines); the spread with E-319's spin off (cores freed); WPR counters at TotalIssues 100 000. Then a spread that keeps the mean, judged by capacity (several searches a side: one search moves ~10 %).",
       "refs": [],
       "aliases": [
         "spatial periodic spikes",
@@ -20023,7 +20023,8 @@
         "R-1236",
         "R-1237",
         "R-1239",
-        "R-1240"
+        "R-1240",
+        "R-1242"
       ],
       "rank": 10
     },
@@ -32904,6 +32905,19 @@
         "b00b73d6",
         "fa701474",
         "5a688166"
+      ]
+    },
+    {
+      "id": "R-1242",
+      "date": "2026-11-16",
+      "time": "23:29",
+      "timeFrom": "recorded",
+      "title": "E-476's spread dropped: one multi-arm sitting, full spread slow frames -53 % but mean +12.6 %, two bursts -40 % and +5.9 %; capacity not raised (main 27 200, spread 24 000, searches move ~10 %); the mean's rise is outside spatial's own work",
+      "verdict": "dropped",
+      "text": "**E-476 in one multi-arm sitting: the full spread halves spatial's slow frames but raises its mean +12.6 %; two bursts a period sit halfway (slow frames -40 %, mean +5.9 %). Neither keeps both gains. The worker replay (R-1239) shows the spread adds no work of spatial's own, so the mean's rise comes from outside the worker.** runMultiArm, Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 4 rounds, spatial owner, main 528130e2 (src as 1f94af82) against opt/e476-spread c5743006 (refresh at every tick, by blocks) and opt/e476-spread2 c837e0a2 (two bursts a period: civilians 1/8 of the class on 8 of 16 frames), through the bench lock, ended 23:17.\n\n| arm | spatial mean (paired) | p95 | p99 | frames >= 16 ms a run | the other workers |\n| --- | --- | --- | --- | --- | --- |\n| main | 11.32 ms | 23.4 | 41.1 | 89, 70, 85, 66 | |\n| full spread | +12.6 % (3/4 worse; +8.6 % against the others) | 18.1 | 33.7 | 53, 37, 26, 32 | physics +3.3 % (3/4), logic -0.9 %, pre-render +1.3 % |\n| two bursts | +5.9 % (3/4 worse; +4.7 % against the others) | 19.2 | 35.8 | 65, 48, 37, 39 | renderer -4.8 %, pre-render -2.6 %, physics +0.5 % |\n\nBoth arms read REGRESSION on spatial's mean.\n\nWhy the mean rises:\n- Not more work: on replay, the same inputs cost +1.3 % in Node and -2.2 % in d8, inside the A/A.\n- Not the gather batch's size either: two bursts keep batches twice as big and still pay half the cost.\n- What one thread lacks is left: spatial's work spread over every frame overlaps logic's and physics' busiest part, either on a shared core (Windows packs the busy threads on CPUs 8-15, R-1231), through cache lines crossing cores, or at a lower clock.\n- The hardware-counter capture meant to tell these apart failed (m56: thread attribution mixed, refill counts 16 times apart).\n\nJudged by capacity (runCapacity, Predator zoom 0.216 by day, seeded at crowd 1.55, back to back, 23:19 to 23:29):\n- main: 27 200 civilians and soldiers (crowd 1.7, held in 2 runs); 1.75 and 1.85 broke on spatial0 p99 26.4 and 17.0 ms.\n- full spread: 24 000 (crowd 1.5, held in 2 runs); 1.55 broke on physics p99 20.5 ms.\n\nThe spread does not raise the capacity. Main's own capacity read 24 800 at 22:45 and 27 200 at 23:20, so one search moves about 10 % from sitting to sitting: the difference is not a loss either.\n\nNot merged. Branches opt/e476-spread and opt/e476-spread2 are kept.\n\nNext:\n- A replay with a second thread reading the published rows (cross-core).\n- The spread together with E-319's spin off (the three idle physics threads free their cores).\n- The WPR counters again with fewer samples (TotalIssues at 100 000).\n- Judge by capacity on main's next capacity line.",
+      "commits": [
+        "c5743006",
+        "c837e0a2"
       ]
     }
   ],
