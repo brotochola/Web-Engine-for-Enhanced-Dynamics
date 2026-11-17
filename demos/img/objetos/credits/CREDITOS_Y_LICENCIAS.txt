@@ -1,0 +1,31 @@
+Proyecto Buenos Aires: objetos de ciudad elegidos
+
+Escala: 31,25 px por metro, pensada para personajes LPC (frame de 64 px, persona de ~49 px de alto).
+Sombras horneadas quitadas. Colores originales de cada pack (sin unificar todavia).
+
+== 0-mem0ry
+0-mem0ry (0-mem0ry.itch.io). Uso comercial y no comercial; se puede modificar. NO se puede revender ni redistribuir el pack. NO usar para entrenar IA ni con herramientas de IA generativa. (Aca solo se cortaron y escalaron con scripts, sin generar nada; igual, no pasarlos por Gemini ni similares.)
+Packs: 0-mem0ry Coastal Furniture, 0-mem0ry Garden Planters, 0-mem0ry Messy Asset Pack, 0-mem0ry Post Apoc Office  Asset Pack, 0-mem0ry Post Apoc Shelter  Asset Pack, 0-mem0ry PostApoc Workshop, 0-mem0ry Public Bathroom, 0-mem0ry makeshift
+
+== Cainos
+Cainos - Pixel Art Platformer Village Props (cainos.itch.io). Revisar la licencia de su pagina de itch antes de publicar.
+Packs: Cainos Village Props
+
+== GandalfHardcore
+GandalfHardcore. Uso comercial y no comercial, modificables. NO revender, reempaquetar ni redistribuir; NO usar para entrenar IA ni NFT.
+Packs: GandalfHardcore Platformer
+
+== LPC Revised
+LPC Revised (github.com/ElizaWy/LPC). CC-BY 3.0 / OGA-BY 3.0: uso libre, incluso comercial, ACREDITANDO a los autores de CREDITS_LPC_*.txt.
+Packs: LPC Revised (hojas), LPC Revised (recortado)
+
+== karsiori
+karsiori (karsiori.itch.io). Packs gratis; uso en juegos permitido segun su pagina de itch. No redistribuir el pack tal cual.
+Packs: karsiori AC Units, karsiori Bar & Cafe, karsiori Flower Pack, karsiori Mountains (deco), karsiori Rock Pile Pack, karsiori Trash Pack, karsiori Vending Machines
+
+
+== Unificación aplicada (referencia: 5.250 personajes LPC de bigAtlas.png)
+1) Saturación y brillo de cada pack llevados a los de los personajes (saturación media 0.51).
+2) Contorno con la regla de los personajes (OKLab): L_borde = 0.246*L_interior + 0.095; croma = 0.45*croma_interior. Se recolorean contornos negros o claros y líneas negras internas; a los objetos sin contorno se les agrega 1 px por fuera. En objetos chicos o finos (flores, botellas) el contorno es más suave, para que no quede casi negro.
+3) Los objetos de LPC Revised quedan exactamente como venían (ya son estilo LPC).
+4) Paleta: 315 colores = los que usan los personajes del atlas (99,7 por ciento de sus pixeles) + 32 colores que necesitaban los objetos (paleta.png).
