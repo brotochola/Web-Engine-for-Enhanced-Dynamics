@@ -22169,6 +22169,46 @@
         "markDirty trap"
       ],
       "records": []
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "wall flicker",
+        "window flicker",
+        "innerZ tie",
+        "pixel snap depth",
+        "face plane precision"
+      ],
+      "records": [
+        "R-1316"
+      ],
+      "result": "fixed: flicker while panning 197/209 hot tiles a film -> 1; stuck pieces +-0.045 floor px off their walls (was +-1.06 from the engine's rounding, +-0.4 from the data); barrio NEUTRAL",
+      "next": "Film the barrio panning on the HD 620 laptop, where the owner saw it (the ASUS session).",
+      "id": "N-271",
+      "kind": "bug",
+      "area": "render",
+      "status": "kept-hygiene",
+      "date": "2026-11-17",
+      "title": "Windows, doors and trims stuck on a wall (innerZ 1..7) flicker or hide behind it while the camera moves: pixel depth's innerZ tie (16 painter steps, 0.05 floor px at zoom 1.2) is smaller than the pixel snap's shift of each piece's plane, the 8-bit normal's rounding and the editor's rounding of the data",
+      "statusText": "reported 2026-11-17 by the owner on the HD 620 laptop (walls and their doors and windows vanishing and coming back while panning the barrio); reproduced on the GTX at full rate (CDP screencast while the camera drifts)"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "self shadow edge",
+        "shadows at the screen edge",
+        "selfShadow clamp"
+      ],
+      "records": [],
+      "result": "",
+      "next": "Skip the steps past the face map in GLSL as the WGSL does (one line), film the drift with ?selfShadow=0 against on, WebGL against WebGPU. Left after it: a self-shadow from a part of the house that has left the screen is lost (the face map covers the view only); a face map with a margin on the sun's side would keep it.",
+      "id": "N-272",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "WebGL's self-shadow march reads the face map's edge texel, clamped, for every step past the screen: near the edge the sun's side looks at (the bottom, with the sun in the south), pixels take shadows from whatever wall stands at the edge, and they slide as the camera moves; WebGPU's march skips those steps",
+      "statusText": "seen 2026-11-17 by the owner while the barrio's camera drifted north (shadows on houses against the bottom edge looked wrong); the volumes are not culled (meshUvFillBatch draws them all), so the sun's map is whole: the self-shadow march (lightingBasic.frag.glsl selfShadowToward, textureLod with clamp) is the part that leaves the screen"
     }
   ],
   "records": [
@@ -35185,6 +35225,23 @@
       "title": "PixiJS 3D reviewed and kept out; Pixi 8.23 read against the engine: 12 of 16 build patches apply, four now upstream, the WebGL sync stub to port (DX-PIXI823)",
       "verdict": "note",
       "text": "**PixiJS 3D's open beta and Pixi 8.20.1 to 8.23.0 read against main (ef81812d); backlog, no rush (owner).** The\nanalysis and the steps are in PIXI_823_PLAN.md.\n\n- **PixiJS 3D** (`@pixi/3d` 0.1.0, pixijs/3d at 8dab2a2, needs pixi.js 8.23): kept out of the engine. Point lights\n  cast no shadows, 32 lights a view, a masked Sprite3D casts a solid quad (its lit-sprites example is paused on it),\n  one JS object per mesh. Ideas taken: E-516 (render bundles with indirect draws), E-517 (lamp tiles skipped, not\n  copied), the ids map in r32uint for N-185.\n- **Pixi 8.23**, 96 commits since 8.20.1. buildPixi.mjs's plugins run against 8.23.0's lib (outside the repo): 12\n  of 16 patches apply; E-152's BindGroup, GpuEncoderSystem and BindGroupSystem and N-95's integer formats lose their\n  anchors because upstream did the same (#12229, #12278, #12288, #12230). The WebGL sync stub (E-148) needs a port:\n  8.23 binds each uniform block to a fixed slot (#12307) and its polyfill still walks for...in per draw.\n- **Gains** that reach the engine: no extra submit per render call on WebGPU (#12345, E-464), WebGL ranged updates\n  at the call (#12316, #12331, #12342), per-attachment formats (#12357), WebGPU's additive alpha (#12290, N-270), the\n  preferred canvas format (#12380), device-loss restore and leak fixes (8.21).\n- **Size**, the engine's Pixi bundle without patches: 446 335 -> 482 366 bytes minified, 129 684 -> 140 146 gzip.\n\nNothing measured in a browser: no verdict on speed."
+    },
+    {
+      "id": "R-1316",
+      "date": "2026-11-17",
+      "time": "16:28",
+      "timeFrom": "recorded",
+      "title": "Windows and doors stay on their walls: pixel snap in the shaders, 24-bit face codes, a floor-px innerZ tie, full-precision export",
+      "verdict": "kept",
+      "text": "Cause (the barrio, GTX 1650, films by CDP screencast at ~55 fps while the camera drifts, ?panY=-60): a piece stuck on a\nwall (innerZ 1..7) beat it in pixel depth by 16 of 128 painter steps, 0.05 floor px at zoom 1.2, while (1) the packs'\nper-instance pixel snap moved each piece's plane by up to ~0.8 floor px, differently every frame as the camera moved;\n(2) the 8-bit octahedral normal put coplanar pieces anchored apart +-1.06 floor px apart with perfect data (p1/p99,\n31 814 pieces); (3) the editor rounded normals to 0.01 and heights to 0.01 m: +-0.4 floor px (p5/p95).\n\nFix, branch fix/face-snap-depth: pixel snap in the sprite vertex shaders (pixelSnap.js; aInstXY keeps the true place,\nthe packs' snap code removed); face codes in 24 bits (12-bit octahedral normals, heights in 1/64 px; u32 columns, sent\nas code / 65536); innerZ's tie as 0.25 floor px a step (FACE_INNER_Z_TIE), painter step 0; the editor exports full\nprecision (ceb002d) and the barrio is re-exported.\n\nNumbers: vertical pan, 8 s, hot 16 px tiles that differ from both neighbouring frames while those agree: main 197 and\n209 (A/B alternated), the shader snap alone 1 and 1, the whole branch 1 in 465 frames. Stuck pieces off their walls as\nthe shader decodes them: +-0.045 floor px (p5/p95), none past the tie (was 4031 of 31 814 at zoom 1.2). Captures:\ndepthPairScene identical to main (WebGL, WebGPU); faceLightScene 2021 px at 1/255 after the 24-bit codes.\nBarrio at 22 h, ABAB 4 pairs, 162e6c5a against cec344c7 (GTX machine, on AC): NEUTRAL, every worker under the 6 ms floor and within ~2 % (renderer 1.204 -> 1.231 ms, pre-render 1.980 -> 1.993, particle 0.684 -> 0.673), load keys equal (GPU_CASTERS 380.6 -> 380.3, VISIBLE_ENTITIES 392.6 -> 392.3). Hygiene keep. No Predator gate: its path changed by 4 bytes a row of the pack (u32 tile offsets), under its 8-13 % noise. Merged 266230d9, bundles 01778c47.",
+      "commits": [
+        "beb192f4",
+        "d54f658a",
+        "93eca726",
+        "65829959",
+        "cec344c7",
+        "266230d9"
+      ]
     }
   ],
   "leads": [
