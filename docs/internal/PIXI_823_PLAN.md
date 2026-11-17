@@ -2,7 +2,8 @@
 
 Status: backlog, no rush (owner, 2026-11-17), not scheduled. Written from a review of PixiJS 3D's open beta and of
 Pixi 8.20.1 → 8.23.0 against `main` at `ef81812d` (0.14.0). Register rows: DX-PIXI823 (`REVIEW_PLAN.md#DX-PIXI823`),
-N-264, E-498, E-499; it adds to E-464, N-185, E-148, E-152, N-95 and E-460. Record: R-1260.
+N-264, E-498, E-499; it adds to E-464, N-185, E-148, E-152, N-95 and E-460. Record: R-1260. Test items from the
+commits' lessons (§4): `REVIEW_PLAN.md` M14 to M16.
 
 ## 1. PixiJS 3D: not in the engine
 
@@ -136,6 +137,47 @@ polyfill); the WebGL upload changes measured ABAB (updates land at the call now,
 
 **Not worth copying:** compute culling (the painter order is built on the CPU anyway), its light tiles (coarser),
 its particles (closed-form on the GPU, as ours), its shader linking (no parallel link: E-475 is ahead), PCF taps.
+
+## 4. What the 8.21–8.23 commits teach
+
+Why Pixi made the changes, read from the 96 commits' messages:
+
+1. **PixiJS 3D pushed the core.** The bundle API's "only known consumer"; its geometry atlas lost meshes to the
+   one pending index range (#12331); its material store left thousands of listeners on one buffer (#12373); its
+   rebuild-every-frame bench found the sampler stamping (#12288); its depth copy pass (#12276); its scene outputs
+   (#12357).
+2. **WebGL and WebGPU did different things:** ranged buffer updates (#12316), `BufferResource` offsets in bytes
+   against 256-byte blocks (#12307), the additive alpha hidden by the opaque canvas since v8's first commit
+   (#12290), the winding after a flipY change (#12206, #12207).
+3. **Leaks that a long session builds up** (8.21): listeners left on shared objects, `Geometry.destroy` removing
+   its listeners before emitting `unload` (#12190), caller-made render targets (#12192), bind groups never evicted
+   (#12193), stencil records per target uid (#12194), a GC sweep that skipped entries (#12191).
+4. **Keys and bits that collided:** the 17th colour format over the winding bit (#12356), a fast path reusing
+   another renderer's bind group (#12278), a texture marked before the flush that opened its batch (#12379).
+5. **CPU per call (V8):** `for…in`, string keys, implicit globals in generated particle code (2.4 to 3.3 times
+   faster once declared, #12326), an array uniform sync reading past its array (right picture, every float boxed,
+   #12228), `tint` through `Color` (#12321), an extra submit per render (#12345).
+6. **Phones and platforms:** `TexturePool` rounding to powers of two because `setScreenSize` was gone since v8
+   (2048 × 4096 for a 1170 × 2532 phone, #12198), MSAA restore only on tile-based GPUs (Intel lost 7 to 11 ms,
+   #12225), a Safari 27.2 device loss (#12348), Android's canvas format (#12380).
+
+**What the upgrade takes away and what it does not.** DX-PIXI823 removes Pixi's own bugs that reach the engine:
+the four patched areas, the pending range behind `gpuParticleBatch.js`'s flush, the render-target leak behind
+`_releaseGbufTarget`, the extra submit (E-464), the additive alpha (N-264), the leaks of §3 and the key collision
+of §4 (the engine draws into fewer than 17 colour formats, as far as is known). It does not touch what is the
+engine's: N-185, the WebGL sync stub, and how the engine tests itself. New Pixi code brings bugs of its own too:
+8.20.0 broke depth on antialiased targets (fixed in #12276), and 8.21's screen-sized pool made filters warn after
+a resize (fixed in #12259). So three test items stay useful after the upgrade, and protect the next one:
+
+- **M14:** compare intermediate targets on both backends, not only the final canvas.
+- **M15:** a test per packed word that each field fits its bits, the field that can grow on top.
+- **M16:** a soak run of resizes and scene loads that counts GPU objects and the heap.
+
+**WeedJS found several of these on its own:** N-95 is #12230, E-148 and E-152 are #12229, #12278 and #12288, the
+flush is #12316, `_releaseGbufTarget` is #12192. Pixi takes that class of fix now; sending upstream what the build
+still patches (E-475's parallel links, the pass-garbage patches) would spare porting them at each upgrade. Already
+fine in the engine: the scripts of bundled workers run with `'use strict'` and the compiled accessors use only
+their parameters, so #12326's implicit globals cannot happen there.
 
 ## Sources
 
