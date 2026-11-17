@@ -4229,8 +4229,9 @@ export declare class LightEmitter extends Component {
   get glow(): number;
   set glow(value: number);
   /**
-   * The halo's radius in px, at least 0; 0 (the default) makes it 0.85 of the light's radius (a spark's big soft flash),
-   * so give a lamp that lights a whole street a small one here.
+   * The halo's radius in px as it shows (a compact glow that falls to under 1 % there), at least 0; 0 (the default)
+   * draws the light's wide gradient at 0.85 of its radius (a spark's big soft flash), so give a lamp that lights a whole
+   * street a small one here.
    */
   get glowRadius(): number;
   set glowRadius(value: number);
