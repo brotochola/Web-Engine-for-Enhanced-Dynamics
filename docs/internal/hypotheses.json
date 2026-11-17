@@ -8392,7 +8392,8 @@
         "R-0686",
         "R-0693",
         "R-0712",
-        "R-1245"
+        "R-1245",
+        "R-1255"
       ],
       "id": "E-147",
       "title": "The spatial kernels wait on memory: less work per frame",
@@ -10067,7 +10068,8 @@
         "R-0867",
         "R-0868",
         "R-0872",
-        "R-0874"
+        "R-0874",
+        "R-1256"
       ],
       "status": "open",
       "date": "2026-11-01",
@@ -11616,7 +11618,8 @@
         "R-1244",
         "R-1249",
         "R-1250",
-        "R-1252"
+        "R-1252",
+        "R-1254"
       ]
     },
     {
@@ -11642,7 +11645,8 @@
         "dual GPU"
       ],
       "records": [
-        "R-1249"
+        "R-1249",
+        "R-1254"
       ]
     },
     {
@@ -17081,7 +17085,8 @@
       "records": [
         "R-1100",
         "R-1104",
-        "R-1236"
+        "R-1236",
+        "R-1257"
       ],
       "rank": 7
     },
@@ -20391,19 +20396,20 @@
     {
       "id": "E-486",
       "title": "gpuGalaxy's logic spends 52 to 58 % of each worker in GPU particles' _emit (Math.sin and Math.cos at gpuParticles.js:579-580 are 44 % of it) and 21 to 26 % in travelExtent, where Math.exp(-d * T) at :195 is 72 % although drag and lifespan are constant within a call",
-      "status": "open",
+      "status": "kept",
       "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
       "date": "2026-11-16",
       "area": "logic",
       "kind": "speed",
-      "result": "CPU pass on the demos (gpuGalaxy, 4 logic workers).",
+      "result": "Kept (ba0f2915): emit kernel -15.0 % (Ryzen) and -16.9 % (i7-7500U), 6/6, identical records; gpuGalaxy logic 1.084 -> 0.860 ms (Ryzen, 4/4) and 2.295 -> 1.617 ms (ASUS, 8/8)",
       "next": "Hoist exp(-d * T) out of the per-particle loop; a sin/cos table or a rotation recurrence for the emit angles if the image stays within tolerance; the logic CPU per function before and after.",
       "refs": [],
       "aliases": [
         "gpu particle emit trig"
       ],
       "records": [
-        "R-1229"
+        "R-1229",
+        "R-1253"
       ]
     },
     {
@@ -33642,6 +33648,56 @@
       "title": "ASUS, Predator at crowd 0.25: 4, 3 or 2 Box2D threads about level (8 pairs + A/A); with R-1250, the thread count Box2D should get follows how far the scene overruns the machine; ballsScene's scaling curve",
       "verdict": "note",
       "text": "**Predator at crowd 0.25 on the ASUS (a load it carries: physics about 4 ms, pre-render about 6 ms, 60 frames a second): 4, 3 or 2 Box2D threads read about level. With R-1250 (ballsScene: 3 threads cost physics 12.7 %; Predator at crowd 0.5: 2 threads cut every worker 25 to 68 %), how many threads Box2D should get depends on how far the scene's threads overrun the machine's.**\n\nASUS i7-7500U (2 cores / 4 threads), Chrome 157, `?src=1`, the laptop's dev server, AB BA, 20 s between runs, 10 s + 10 s, from its job queue; own times, paired medians of B against A.\n\n- A/A, 4 threads both sides, 8 pairs (01:25 to 01:38): every worker within -3.4 to +3.5 % (physics +3.5 % 4/8, pre-render +2.8 % 3/8).\n- A = 4 threads, B = 2, 8 pairs (01:38 to 01:51): physics 4.04 -> 3.63 ms (-9.6 %, B cheaper 5/8), pre-render 6.47 -> 6.31 ms (-4.5 %, 5/8), spatial -3.5 % (5/8), particle -6.2 % (5/8), the rest level. Short of 75 % of the pairs: not a keep.\n- A = 4 threads, B = 3, 8 pairs (01:51 to 02:04): every worker within -5.4 to +3.1 %, a tie.\n\nAlso from the same queue, the ballsScene scaling curve (E-224, 4 threads, 2 pairs a point, 02:18 to 02:26): physics 1.2 ms at 2 000 balls, 5.0 at 4 000, 7.6 at 6 000, 11.5 at 8 000, 17.6 at 10 000 (270 to 386 long frames), 34 at 12 000. Per ball 0.6 µs, then about 1.3 µs from 4 000 to 8 000 (the balls pile up and touch, more contacts each), then rising past the frame budget near 9 000."
+    },
+    {
+      "id": "R-1253",
+      "date": "2026-11-17",
+      "time": "03:46",
+      "timeFrom": "recorded",
+      "title": "E-486 kept: the emit's travel exp once a particle and an inline sincos; gpuGalaxy logic -21.4 % (Ryzen, 4/4), -29.5 % (ASUS, 8/8)",
+      "verdict": "kept",
+      "text": "**Kept.** `travelExtent`'s `1 - exp(-d T)` is computed once a particle (`TRAVEL[5]`), and `Math.sin` and `Math.cos` become one inline Cody-Waite reduction with musl's kernels, through a module Float64Array (no double crosses a call). The records are identical (hash 177066130 on both sides). The pair is within 1 ulp of Math.sin/cos in double, and 0 float32 records differed over 10 M angles.\n\n- Kernel, `emitGpuCallMicrobench --galaxy` (256 particles a call), 6 alternating rounds:\n  - i7-7500U (ASUS): 179.6 → 148.8 ns a particle (−16.9 %, 6/6).\n  - Ryzen 7 4800H: 129.3 → 109.6 (−15.0 %, 6/6).\n  - The four emit sites: −8.6 % and −4.0 % (4/4).\n  - The exp alone: −4.9 % (4/6) on the Ryzen. The trig is the win.\n- Scene, gpuGalaxy, owner logic. Logic is under the 6 ms floor on both machines, so these were read by hand; a heavier load could not change the verdict.\n  - Ryzen: 1.084 → 0.860 ms (−21.4 %, 4/4, pairs −15.4 to −24.5 %). The A/A median is −1.2 % and its widest pair +15.1 %. Renderer within its A/A.\n  - ASUS, the official runner run there: 2.295 → 1.617 ms (−29.5 %, 8/8). Renderer −3.6 % (limit ±21.9 %).\n- Merged in ba0f2915. Suites 2963/2963, demos 101/101. Bundles rebuilt and smoked (ea7967f1).",
+      "commits": [
+        "2041eb98",
+        "46685a9f",
+        "ba0f2915"
+      ]
+    },
+    {
+      "id": "R-1254",
+      "date": "2026-11-17",
+      "time": "03:46",
+      "timeFrom": "recorded",
+      "title": "Paired on the ASUS: the GeForce MX110 makes volume's renderer -45 % and light3d's workers -5 to -9 %; pass by pass it wins heavy shading and loses fill (corrects R-1249)",
+      "verdict": "note",
+      "text": "**This corrects R-1249's \"32 to 47 % cheaper\": those were unpaired runs from different sittings.** Paired runs alternated the GPU (job 039): Windows' per-app preference was switched between runs, and each run checked which GPU it got.\n\n- volumeStressScene, 2 pairs (early stop):\n  - renderer 4.71 → 2.57 ms (−45.5 %, 2/2); presented 56 → 60 fps;\n  - spatial −17 %, logic −29 %, physics −40 % (the 15 W package is shared);\n  - preRender +33 % (0/2).\n- light3dCompareScene, 8 pairs: every worker 4 to 9 % cheaper, 7/8 each (renderer −4.6 %, logic −6.8 %, preRender −6.6 %, spatial −9.0 %). This is near the ASUS's A/A spread (±2–4 % at 8 pairs), but every worker moved the same way.\n- GPU passes alone (gpuPassBench, job 090, same Chrome, 42 passes for each API):\n  - WebGL: the MX110 is the cheaper GPU for heavy shading (light3d −17 to −37 %, self-shadow −25 %, a 10 000-silhouette sun map −35 %, multiply and compose −45 to −50 %). It is the dearer one for plain fill (colour +16 %, lamp maps +16 to +29 %). Median 0.94×.\n  - WebGPU: it is dearer more often than not (median 1.08×, colour +55 %).\n\nSo a weak discrete GPU is not always the better one. The warning names the GPU the page got and does not promise a speed-up. The CPU side gains either way, because the integrated GPU shares the package's power."
+    },
+    {
+      "id": "R-1255",
+      "date": "2026-11-17",
+      "time": "03:46",
+      "timeFrom": "recorded",
+      "title": "Intel in Chrome: the float32x4 gather +15 % on a full rebuild, -2.7 % on Predator's incremental capture; a dispatch by batch size is the shape that could ship",
+      "verdict": "note",
+      "text": "**Intel in Chrome (ASUS, i7-7500U, Chrome 157).** The spatial gather's variants were replayed on one captured frame (R-0686's method), 9 rounds each. Rows were identical in every variant.\n\n- Capture \"every list rebuilt\": f32 +3.8 %, f32x4 +15.1 %, exact +13.5 % faster than the shipped f64 (23.16 → 20.11 and 20.41 ms a frame).\n- Capture \"Predator's skin and stagger\": f32x4 −2.7 % and exact −1.2 % (slower).\n\nOn the Ryzen both captures won (R-0686). On Intel only the big rebuild wins, and Predator's small incremental batches lose. The shape that could ship is a dispatch by batch size: the f32x4 or exact path only for a big gather. The scenes lost on the Ryzen (Boids +3 %, 4/4), so the dispatch has to come before another sitting."
+    },
+    {
+      "id": "R-1256",
+      "date": "2026-11-17",
+      "time": "03:46",
+      "timeFrom": "recorded",
+      "title": "Intel, one shared L3: the keyed pack reads rows another core just wrote 18 % slower (0.115 against 0.098 ms a pack)",
+      "verdict": "note",
+      "text": "**Intel (ASUS: two cores, one shared L3), gpuPackKeyedCrossCoreMicrobench, 3 rounds.** The keyed pack's gather read rows that had just been written:\n\n- by nobody: 0.097–0.098 ms a pack (the first round's 0.154 was warm-up);\n- by the same core: 0.096–0.103 ms;\n- by the other core: 0.112–0.120 ms (+18 %).\n\nSo the cross-core cost does not come only from the Ryzen's two L3 complexes: rows handed from one core to another cost about a fifth more even under one L3. That favours E-193's \"fewer bytes a row\" (less to move)."
+    },
+    {
+      "id": "R-1257",
+      "date": "2026-11-17",
+      "time": "03:46",
+      "timeFrom": "recorded",
+      "title": "E-327 not pursued now: the rotation skip's ceiling is about 2 % of the physics thread, under every scene's detection limit",
+      "verdict": "note",
+      "text": "**Not pursued now (judgment, no code).** Skipping unchanged rotations saves at most the rotation half of publishPose, about 2 % of the physics thread (R-1100: publishPose is 4.2 %). That is under the detection limit of every scene that could measure it: the main PC's 3 % bar, and the ASUS reads ±2–4 % at 8 pairs. Reopen it when publishPose grows (more bodies a step), or bundle it with the copy as a pool task, which is the larger half of the idea."
     }
   ],
   "leads": [
