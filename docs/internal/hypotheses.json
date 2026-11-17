@@ -21716,7 +21716,8 @@
         "R-1284",
         "R-1285",
         "R-1290",
-        "R-1292"
+        "R-1292",
+        "R-1293"
       ],
       "result": "GTX 1650, the barrio held: the floor draw (1.91 ms) becomes a 0.17 ms copy; Intel HD 620: 16.6 -> 21.2 fps drawn (+27.7 %, R-1285). Default since e0b831ff: after 2 changed frames the layer draws on the stage, 2 held frames bring the target back; captures identical (WebGL, WebGPU).",
       "next": "A moving camera's cost against main on the HD 620 (by construction main's draw after two frames). A world-space tile cache, so a camera that pans re-paints only the strip that comes into view.",
@@ -34528,6 +34529,17 @@
       "title": "E-504's adaptive default with a moving camera (pan=40) on the HD 620: the cache off draws ~4 % more frames (3 clean pairs), small next to its +27.7 % with a still camera",
       "verdict": "note",
       "text": "**E-504's adaptive default with the camera moving on the Intel HD 620.** Parque Chas at `hour=22&pan=40` (the camera drifts 40 world px a second), main 0ea0ee8d, one build: the default (A) against `?floorCache=0` (B). 4 pairs, `--full-rev`, 2026-11-17 08:05 to 08:13 (asus-e504-adaptive-pan).\n\n- Drawn: A 16.2–16.6 fps against B 17.0–17.2 in three pairs, so the cache off drew ~4 % more frames each time.\n- The fourth pair's B run had a one-off hitch (5.7 fps, renderer 297 ms) and is left out. The runner's paired median, with it in: +3.6 % for B, fewer 1/4.\n- Renderer: −0.3 % with it, 6.09–6.82 against 5.89–6.43 ms in the clean pairs.\n- Logic, spatial, physics and pre-render are within noise.\n\nSo it is not quite a tie on this GPU: about 4 % of the drawn frames go to the adaptive path with a camera that never holds. It is the holder, the per-frame view compare, or the frames before it switches to drawing straight on the stage. That is small next to the +27.7 % the cache gives a still camera (R-1285)."
+    },
+    {
+      "id": "R-1293",
+      "date": "2026-11-17",
+      "title": "E-504: R-1292's 4 % with a moving camera was a bug (the layer registered as its sprite, the target's copy drawn too), fixed",
+      "verdict": "kept-hygiene",
+      "text": "**E-504: R-1292's 4 % with a moving camera was a bug, fixed: the cached layer was registered as its sprite, so a moving camera drew the target's copy too.**\n\n- **Found**: glFrameRecorder `--gpu-draws` on the barrio at 22 h with `?pan=40` (GTX 1650): the floor drawn on the stage\n  (direct mode, as meant) and, every frame, a 0.114 ms batch draw sampling the 1920 x 1080 target. Instrumented: 120 of 120\n  frames in direct mode with both the stage mesh and the target's sprite visible; a trap on the sprite's `visible` showed\n  `_applyLayerVisibility` turning it on each frame. `buildLayerRefsMap` registers each custom layer's display object again\n  after init and took `cl.displaySprite` first, so the layer's visibility, applied every frame, showed the sprite.\n- **Fix** (`6f1637cc`, merged): the holder first in that list (and counted as one pass for the container blend), and the\n  direct and paint branches set both visibilities whenever either is off.\n- **Checked**: pan=40, the target's copy gone (only the floor's stage draw); still, the floor from the target (a 0.171 ms\n  copy, no floor draw); dxCaptureScene `?worldFloor=1` cached against `?worldFloorCache=0` byte-identical, WebGL and\n  WebGPU; test:node 3011, test:demos 121, the bundles' suites. The HD 620's pan=40 pairs to read again on this main.",
+      "commits": [
+        "6f1637cc",
+        "60b00295"
+      ]
     }
   ],
   "leads": [
