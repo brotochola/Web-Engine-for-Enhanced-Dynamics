@@ -11421,7 +11421,8 @@
         "R-1174",
         "R-1175",
         "R-1198",
-        "R-1206"
+        "R-1206",
+        "R-1230"
       ]
     },
     {
@@ -13441,7 +13442,8 @@
         "R-0995",
         "R-0997",
         "R-1010",
-        "R-1038"
+        "R-1038",
+        "R-1231"
       ]
     },
     {
@@ -16651,7 +16653,8 @@
       "records": [
         "R-1101",
         "R-1110",
-        "R-1218"
+        "R-1218",
+        "R-1231"
       ]
     },
     {
@@ -16759,7 +16762,8 @@
       "records": [
         "R-1100",
         "R-1104",
-        "R-1219"
+        "R-1219",
+        "R-1231"
       ]
     },
     {
@@ -16781,7 +16785,8 @@
         "neighborCount miss"
       ],
       "records": [
-        "R-1104"
+        "R-1104",
+        "R-1231"
       ]
     },
     {
@@ -16810,7 +16815,8 @@
         "R-1218",
         "R-1219",
         "R-1223",
-        "R-1226"
+        "R-1226",
+        "R-1231"
       ]
     },
     {
@@ -16913,7 +16919,8 @@
       ],
       "records": [
         "R-1101",
-        "R-1219"
+        "R-1219",
+        "R-1231"
       ]
     },
     {
@@ -16936,7 +16943,8 @@
         "hot-first finalize"
       ],
       "records": [
-        "R-1101"
+        "R-1101",
+        "R-1231"
       ]
     },
     {
@@ -18381,7 +18389,8 @@
         "uber shader temps"
       ],
       "records": [
-        "R-1177"
+        "R-1177",
+        "R-1230"
       ]
     },
     {
@@ -18399,7 +18408,8 @@
         "light pass divisions"
       ],
       "records": [
-        "R-1177"
+        "R-1177",
+        "R-1230"
       ]
     },
     {
@@ -18418,7 +18428,8 @@
         "lamp map taps"
       ],
       "records": [
-        "R-1177"
+        "R-1177",
+        "R-1230"
       ]
     },
     {
@@ -18437,7 +18448,8 @@
         "shader compile hitch"
       ],
       "records": [
-        "R-1177"
+        "R-1177",
+        "R-1230"
       ]
     },
     {
@@ -19994,25 +20006,27 @@
         "parallel shader compile"
       ],
       "records": [
-        "R-1224"
+        "R-1224",
+        "R-1230"
       ]
     },
     {
       "id": "N-238",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "bug",
       "title": "At Predator crowd 2.5 about 258 keyed sprite instances a frame draw a statics row whose texture word is 0 (never written): their keys are never marked changed again, probably because E-312's marks are consumed in a queue frame Pixi skipped or drew split while the entity was then culled in the frame Pixi drew keyed",
       "statusText": "found 2026-11-16 by the N-202 agent with its in-worker statics and pose probe (fix/n202), GPU readback confirmed",
-      "result": "Predator ?src=1&crowd=2.5&zoom=1, day and night: about 258 type-0 instances every keyed frame with statics texture word 0 against 6 to 30 wanted (379 694 over 1 466 frames); 0 at crowd 1. Their keys (inferred from the entity list's order, unconfirmed: houses or TallLights 1983-2317, trees 27403-32082, a barrel 33243, trash 57545-57604) are never marked changed; already zero when the probe was installed (about 10 s in); most likely drawn at scale 0 (invisible), not read.",
+      "result": "Fixed 2026-11-16 (11cfeb16, merged 2c183763): a key missing from the previous queue frame is marked changed when it comes back (sprite_row before K_SKIP, deco_key and lf_key through change_mark; persist_frame misses on a re-entering sprite); 256 never-written statics rows drawn every frame -> 0; pre-render NEUTRAL at crowd 2.5. Predator ?src=1&crowd=2.5&zoom=1, day and night: about 258 type-0 instances every keyed frame with statics texture word 0 against 6 to 30 wanted (379 694 over 1 466 frames); 0 at crowd 1. Their keys (inferred from the entity list's order, unconfirmed: houses or TallLights 1983-2317, trees 27403-32082, a barrel 33243, trash 57545-57604) are never marked changed; already zero when the probe was installed (about 10 s in); most likely drawn at scale 0 (invisible), not read.",
       "next": "Confirm with the agent's probe2.mjs (scratchpad n202/, about 3 min in the lock: early install, sent flags, full GPU rows, class ranges). Likely fix (preRenderEmit.c sprite_row ~733 `full |= kAll | (kc[0] > kSince)`, deco_key ~780 and the persist path ~1588 share the pattern): when an entity was not emitted in the previous queue frame, set kc[0] = kFrame on its reappearance (deco_key already moves its change frame), so a mark consumed in a frame Pixi never drew keyed is sent again; one 64-byte update per entity entering the view. A test that skips Pixi's keyed draw for a frame while an entity is culled.",
       "refs": [],
       "aliases": [
         "keyed statics never written"
       ],
       "records": [
-        "R-1225"
+        "R-1225",
+        "R-1232"
       ]
     },
     {
@@ -20023,8 +20037,8 @@
       "kind": "speed",
       "title": "Spatial's long frames are periodic: E-200's typed refresh gives each class only T phases (tickBucketPhase(i, T)) inside a refresh period P = ceil(neighborTickInterval / T) x T, so a class's whole refresh lands on T frames of every P (civilians T 4, P 16: 4 frames heavy, 12 light); at Predator crowd 2.5 by night spatial runs 3 to 4 ms on some frames and 28 to 46 ms on others in a 32-frame cycle (lag-32 autocorrelation 0.68), p99 37.9 ms",
       "statusText": "found 2026-11-16 from every frame's slots over 10 s (runFramePhase's samples.json, 9ebebff7), after frameTotals showed spatial's tail (R-1219)",
-      "result": "Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 600 frames: spatial0 p50 8.7, p90 16.2, p99 37.9, max 47.0 ms; autocorrelation 0.68 at lag 32 (0.45 / 0.44 at 31 / 33); per 32-frame row about 15, 8, 3-4, 7-9, 13-15, then 28-46 ms on frames 20-22, then 3-5. Physics has no period (lag-1 0.27; its tail is contention, R-1223), pre-render and logic none either.",
-      "next": "Spread each entity's refresh over the period's P / T tick occurrences: offset = (tickBucketPhase(i, T) - LEAD + T x k) mod P with k = an even spread of the class's slots over P / T (a slot's list still comes LEAD frames before one of its ticks and lasts P frames, as fresh at its tick as now), so each frame refreshes about 1/P of the class; likewise stagger neighborReuseMaxFrames' forced rebuilds. Judge on spatial's tail (frameTotals p95/p99 and frames >= 16 ms) and its mean, Predator crowd 2.5 and Boids; lists identical at each tick.",
+      "result": "Two sittings 2026-11-16 (R-1233): spreading the refresh halves spatial's long frames but raises its mean: interleaved +7.7 % (4/4 worse), by contiguous blocks +11.5 % (4/4 worse); not merged (branch opt/e476-spread). Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 600 frames: spatial0 p50 8.7, p90 16.2, p99 37.9, max 47.0 ms; autocorrelation 0.68 at lag 32 (0.45 / 0.44 at 31 / 33); per 32-frame row about 15, 8, 3-4, 7-9, 13-15, then 28-46 ms on frames 20-22, then 3-5. Physics has no period (lag-1 0.27; its tail is contention, R-1223), pre-render and logic none either.",
+      "next": "Find what grows with the spread (a per-frame cost in gather_batch or publish_batch paid every frame instead of on T of P frames, the reuse bookkeeping): spatial's CPU per function on main against the branch; then a spread that keeps the mean, or accept the tail fix as the owner decides. Spread each entity's refresh over the period's P / T tick occurrences: offset = (tickBucketPhase(i, T) - LEAD + T x k) mod P with k = an even spread of the class's slots over P / T (a slot's list still comes LEAD frames before one of its ticks and lasts P frames, as fresh at its tick as now), so each frame refreshes about 1/P of the class; likewise stagger neighborReuseMaxFrames' forced rebuilds. Judge on spatial's tail (frameTotals p95/p99 and frames >= 16 ms) and its mean, Predator crowd 2.5 and Boids; lists identical at each tick.",
       "refs": [],
       "aliases": [
         "spatial periodic spikes",
@@ -20462,6 +20476,42 @@
       ],
       "records": [
         "R-1229"
+      ]
+    },
+    {
+      "id": "N-248",
+      "title": "Predator's drawn camera jumps for one frame at startup: queue frame 1 at (4040, 1960), frame 2 at (1846, 727), frame 3 at (3631, 1732), and Pixi's first keyed draw is frame 2",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the N-238 agent (probe3: every sprite's enter, leave and mark frames, and Pixi's keyed draws)",
+      "date": "2026-11-16",
+      "area": "engine",
+      "kind": "bug",
+      "result": "Seen in every probe run at crowd 2.5 and crowd 1 (main 9c40fda7 and the fix). The jump is what left N-238's keys unmarked.",
+      "next": "Find where frame 2's camera comes from (the scene's zoom or follow settling, a camera reset before the first follow): log the camera each of the first frames; the jump gone or explained.",
+      "refs": [],
+      "aliases": [
+        "camera jump at startup"
+      ],
+      "records": [
+        "R-1232"
+      ]
+    },
+    {
+      "id": "E-492",
+      "title": "At Predator crowd 2.5 zoom 1 Pixi scatters about 9 500 statics updates a keyed frame while pre-render full-marks only about 1 500 sprites: most scatters may be redundant (texture-only or animation updates, or decorations and particles counted in)",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the N-238 agent (probe3: every sprite's enter, leave and mark frames, and Pixi's keyed draws)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "N-238 agent's probe, crowd 2.5, zoom 1, hour 22.",
+      "next": "Break the 9 500 down by kind (full statics, texture word, decorations, particles, GPU-particle proxies) with the probe; then send each only when its words changed; Pixi's scatter time and the GPU's scatter draw before and after.",
+      "refs": [],
+      "aliases": [
+        "statics scatter count"
+      ],
+      "records": [
+        "R-1232"
       ]
     }
   ],
@@ -32561,6 +32611,37 @@
       "title": "The scoped trace sweep (103 units): two new steady deopt loops (N-244, N-245), seven new allocation sites (E-480..E-485, N-247), six new CPU hot spots (E-486..E-491); light scenes' GPU down since the morning; E-451's low clocks reproduce",
       "verdict": "note",
       "text": "**The scoped trace sweep: 103 of 103 units (one deopt pass timed out), cpu, deopt and heap over the ten scene variants today's changes reached, GPU per draw over eight of them, the code pass over keyedPack gbuf=1 and light3dCompare, deopt and heap over the 31 other demos (Predator traced apart, R-1212).** Times: stress cpu chunk 1 14:58 to 15:03 at 7e8fe900; the priority scenes 16:25 to 17:41 at 27eb6a71; GPU 17:43 to 17:47 (before the owner's game and before E-452/E-453); the demos 17:50 to 20:39 on newer main (the d8 fixes, then aa9041cb). The demos' cpu pass is the 08:16 one.\n\nNew rows: N-244 (keyedPack gbuf=1 steady deopt loop at packSpriteLayer.js:72, 116 in 8 s, and indexByteFor, 18), N-245 (Boids: weedjsPost.js:665's Atomics.load still deopts 47, N-214's fix held in Predator only; spatialWorker.js:1758's cold branch 36), E-480 (carScene spatial _findNeighbors 4.45 KB a frame), E-481 (sunStreet Pixi self-lit quads 3.76 KB/f), E-482 (sunStreet pre-render _collectVisibleLights 1.8 KB/f), E-483 (landing Pixi frame doubles in shared option objects, 1.31 KB/f), E-484 (meshGallery logic MeshGeometry.replace 1.26 KB/f), E-485 (Pixi's own code on WebGPU 6 to 13 KB/f), E-486 (gpuGalaxy emit: sin/cos 44 % of _emit, a constant Math.exp 72 % of travelExtent), E-487 (spawnStorm: 24 % of logic in a spawn's Box2D bookkeeping atomics), E-488 (gpuGalaxy Pixi ring copy by TypedArray.set, 12.6 %), E-489 (littleCity flowfield lookup by name, 5.7 %), E-490 (adobeAnimate 10 000 mouse button reads a frame, 8.2 %), E-491 (landing's compute pose snapshot at full capacity, 6.8 %), N-246 (profileSceneSweep's pass layout), N-247 (Keyboard.isPressed's toLowerCase per call). Added to E-456: indexByteFor's copy 11.5 ms/s, and packSpriteLayer's 784-of-920-byte inline budget.\n\nKnown and still there: volume logic _tickNonDecimatedOneNoBody 4.9 KB/f (E-244), destructibleTerrain _polygonRayDistance 4.5 KB/f (E-291), mamushkaDig pre-render 4.3 KB/f (E-283), burningBoxes Pixi packBox2dBodies 3.9 KB/f (E-279), light3dCompare spatial _rebuildMovedRows (E-243: OSR code), gpuGalaxy logic _emit about 1 KB/f a worker (E-149's rest), Pixi's WebGL light scenes 3 to 8 KB/f (E-227); stationarySpatialWide _scanColliderBounds 61 % (E-266's next); volume Pixi rewrite_corners_u32 10.8 % (before E-453), writeMeshPoseTable (E-397), trackMeshPoseLiveOrLatched (E-425's area); compoundVisPoly collect_solid_f32x4 48 %, _buildSelfLitBatch (E-135), the Box2D pool's spin (E-426); light3dCompare DirectionalSprite.resolve 6.5 % (E-363). Megamorphic engine ICs: none a frame (init and teardown only, as R-0980). Load-time deopts (frame trimming, cut(), flowfield decode) counted as steady by the pass's 6 s split.\n\nGPU per draw against R-1195 and R-1190 (ms a frame): sunStreet 3.905 -> 3.235 (glows 1.439 -> 0.345 to 0.430 at 960 x 540, E-404), headlights 3.161 -> 2.144 (glows 1.379 -> 0.294), sunShadowMap lamps=48 hour=22 7.050 -> 5.564 (3D light 2.228 -> 0.607; the lamps' map 2.521 -> 2.860 in 4 draws, E-420/E-461), emissive 5.466 -> 5.096 (G-buffer 1.807 -> 0.846, light 1.149 -> 0.363), lampShadow 2.345 -> 1.739, volume unchanged before E-453, light3dCompare all=1 3.635, plain 2.326. E-451 reproduces: emissive and light3dCompare all=1 ran at P3 (540 to 585 MHz), the plain one at P5 405 MHz, lampShadow at P5 645, headlights and sunStreet partly at P5; only volume and sunShadowMap at P0, so the low-clock readings read high.\n\nThe bench queue gave the sweep one turn every 60 to 90 minutes this afternoon (N-239's multi-arm runner answers part of that). Raw results under scratchpad sweeps/ (not kept)."
+    },
+    {
+      "id": "R-1230",
+      "date": "2026-11-16",
+      "time": "21:20",
+      "timeFrom": "recorded",
+      "title": "The light pass's HLSL with E-205's tiles (as shipped): light3d 1194 slots, 27 temps, 31 samples, 47 divisions, 699 ms link; the tiles grew the code a little while cutting the pass 5.5 -> 1.5 ms; no program links in steady state",
+      "verdict": "note",
+      "text": "**The light pass's HLSL as the engine ships it (with E-205's tiles): light3d 1194 instruction slots, 27 temps, 31 samples, 16 loads, 47 divisions, 699 ms to link in isolation; the tiles made the code a little larger (+63 slots, +3 temps over the variant without them) while the pass's GPU time fell 5.5 -> 1.5 ms, since a pixel's loop now runs over its tile's lights only.** angleHlslDump only built the variants without tiles, so this morning's numbers (R-1177) were the old code; it now dumps the tiles variants too (90d56379). d3dShaderStats (d3dcompiler_47, ps_5_0), 2026-11-16 21:20, through the bench lock.\n\n| variant | slots | temps | sample | ld | loops | ifs | div/rcp | sqrt/rsq | link |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n| plain | 116 | 8 | 1 | 5 | 0 | 3 | 4 | 1 | 33 ms |\n| flat | 332 | 13 | 11 | 7 | 0 | 10 | 12 | 5 | 110 |\n| flat, tiles | 359 | 16 | 11 | 8 | 0 | 11 | 12 | 5 | 134 |\n| light3d without lamps | 562 | 15 | 9 | 10 | 3 | 15 | 18 | 6 | 212 |\n| light3d without lamps, tiles | 626 | 18 | 9 | 12 | 2 | 17 | 20 | 6 | 262 |\n| light3d pixel art | 857 | 21 | 11 | 14 | 4 | 34 | 44 | 14 | 398 |\n| light3d pixel art, tiles | 920 | 23 | 11 | 16 | 3 | 36 | 46 | 14 | 414 |\n| light3d | 1131 | 24 | 31 | 14 | 4 | 34 | 45 | 14 | 648 |\n| **light3d, tiles (Predator)** | **1194** | **27** | **31** | **16** | **3** | **36** | **47** | **14** | **699** |\n\nWhat is left per pixel is the 31 samples (the sun's and the lamps' maps' taps, the face map), with 27 temps capping the warps in flight that hide them: Nsight's light3d window showed the SMs waiting on fetches (R-1214). E-410 (taps), E-408 (registers), E-409 (divisions) stand on the tiles variant; E-411 and E-475 on its link (699 ms here, 971 to 1 287 ms inside the scene).\n\nProgram links in steady state: a 45 s probe at Predator zoom=0.3 light3d=1 hour=22 (21:17) linked 16 programs, all in the first 5 s (the light pass 971 ms), none after; the GPU process trace's Program::MainLinkLoadEvent::wait (2 a second in its window, m44) is not the engine's."
+    },
+    {
+      "id": "R-1231",
+      "date": "2026-11-16",
+      "time": "21:09",
+      "timeFrom": "recorded",
+      "title": "Box2D by name under cache refills: spatial gather_batch 12.6 % of Chrome's refills, b2ExecuteBlock 10.9 %, b2CollideTask 8.0 %, Box2D about 30 % in proportion to its time; the busy threads on one CCX's SMT siblings; the GPU process by decoder slice",
+      "verdict": "note",
+      "text": "**Box2D by name under cache refills, and the contention capture's threads: at Predator crowd 2.5 the function that waits on memory most is spatial's gather_batch (12.6 % of Chrome's DCRefillFromSystem samples), then Box2D's solver blocks (b2ExecuteBlock 10.9 %) and its collide (b2CollideTask 8.0 %); Box2D's functions together take about 30 % of the refills, in proportion to their time (R-1041): no single pathological site in Box2D.**\n\nWPR, one sampled counter (DCRefillFromSystem; the other two were cut to keep the bench queue moving), the names build of the shipped Box2D (C:/weed-traces/b2names, f053121, LTO, --profiling-funcs) swapped into a rev worktree of main, Predator crowd=2.5 zoom=0.216, 2026-11-16 21:07 to 21:09 (m45b). The owner's game was still open (java.exe 6 % of the samples, code.exe 8 %). Engine.wasm's functions are labelled by the first worker that logged them, so their worker column is not reliable (gather_batch is spatial's).\n\n| function | share of Chrome's refills |\n| --- | --- |\n| gather_batch (spatial) | 12.59 % |\n| b2ExecuteBlock | 10.90 % |\n| b2CollideTask | 8.02 % |\n| _checkCellEntities (logic, ray.js) | 4.76 % |\n| publish_batch (spatial) | 4.45 % |\n| findACivilianToShoot (Predator's code) | 4.32 % |\n| b2FinalizeBodiesTask | 3.70 % |\n| b2ComputeFatShapeAABB | 2.42 % |\n| step_world | 1.68 % |\n| b2SplitIsland, b2PlaceLeaf, b2SolverTask, b2CollideCrossPairs, b2DynamicTree_Rebuild | 0.97, 0.75, 0.37, 0.32, 0.26 % |\n\nFor E-313 and E-322 this says the collide and the solver both stall on memory about as much as their time share, so a layout change pays in both (E-322's body order, E-323's hot-first structs) rather than in the collide alone. Spatial's gather and publish are the largest single memory-bound site: E-317 and E-318 (neighbour rows 2 KB apart), E-240 (logic reading them a core away).\n\nThe contention capture (CSwitch and ReadyThread, Predator crowd 2.5 light3d by night, 18:26 to 18:34, m44; the game started later) mapped by thread: physics' own thread 916 ms/s on the CPU, its three pool threads about 745 each; spatial, pre-render and Pixi's threads 748 to 793; the two logic threads 576 and 507. Ready to running p50 5 to 6 us, p90 about 11 us, p99 22 to 206 us; 17 to 56 preemptions and 15 to 43 CCX moves a second a thread. The ten busy threads (6.5 cores' worth) ran about 68 % of their time on logical CPUs 8 to 15 (switch-ins weighted): Windows favours one CCX (its preferred cores) and the busy threads share its four cores' SMT siblings, which fits E-319's sitting (a physics thread fewer: logic -10 %, spatial -4.6 %, R-1223).\n\nChrome's GPU process by decoder slice (gpuProcessTrace --decoder, Predator zoom=0.3 light3d by night, 19:18 to 20:10, partly during the owner's game): CrGpuMain 372 ms/s with tracing on (PutChanged 111 ms/s self, glDrawElementsInstancedANGLE 584 a second 38.6 ms/s, glDrawElements 1 296 a second 21.0, glFlush 59 a second 24.3, glBufferSubData 468 a second 12.6, glTexSubImage2D 449 a second 11.1); glObjectLabelKHR at 12 049 a second (26.5 ms/s) is the trace's own labelling (WebGL has no object labels); Program::MainLinkLoadEvent::wait 2 a second is not the engine's (no engine link after 5 s, R-1230)."
+    },
+    {
+      "id": "R-1232",
+      "date": "2026-11-16",
+      "time": "21:06",
+      "timeFrom": "recorded",
+      "title": "N-238 fixed: keys marked in a frame Pixi did not draw keyed, then out of view, never marked again (256 never-written statics rows drawn every frame -> 0); pre-render neutral; N-248 and E-492 filed",
+      "verdict": "kept-hygiene",
+      "text": "**N-238 fixed: keyed sprites, decoration slots and LiquidFun particles marked in a queue frame Pixi did not draw keyed, then out of view in the next keyed frame, were never marked again, and drew a never-written statics row (256 keys every frame at Predator crowd 2.5 zoom 1 by night, 507 927 instances over 2 029 frames; 197 at crowd 1).** Fix 11cfeb16 (fix/n238 on 93f722fd, merged 2c183763; node 2916/2916, demos 101/101 on main).\n\nHow: probe3 (the agent's: every sprite's enter, leave and mark frames in pre-render, every keyed draw, scatter key and texture word in Pixi, a GPU readback every 60 frames). Every bad key had the history E1 F1 L2 E3: Pixi's first keyed draw is queue frame 2 and the drawn camera jumps at startup (frame 1 at 4040,1960; frame 2 at 1846,727; frame 3 at 3631,1732), so things in view in frame 1 spent their spawn mark there, were out of view in frame 2, and came back with kc[0] = 1 <= K_SINCE 2. By class: Tree 185, Rock 24, TallLight 11, Barrel 10, Trash 10, House 1, Destination 1; about 9 600 Civilians and MySoldiers too, until a later setter or animation marked them (one at scale 0 for about 240 frames). Cause: wasm/preRenderEmit.c marks a key only when its change frame is past K_SINCE (sprite_row, deco_key, lf_key, persist_frame); nothing checked the key was in the frame Pixi drew keyed.\n\nFix: each key records the last queue frame it was emitted in (K_CHANGE 3 u32 an entity, D_CHANGE and LF_CHANGE 2 a slot or particle; wasmMemoryMap.js regions grown); a key missing from the previous queue frame counts as changed (sprite_row before the K_SKIP test; deco_key and lf_key through change_mark); persist_frame misses on a re-entering sprite. Cost: one 64-byte update per key entering the view (1 to 5 a frame after startup at zoom 1). Tests in preRenderEmitWasm.test.js (sprites, a decoration, a LiquidFun particle) fail on the old kernel. Probe on the fix: 0 never-written rows at crowd 2.5 and crowd 1; compareCaptures DxCaptureScene A/A 0 px, main vs fix 0 px at hour 22 and 12; keyed emit kernel 2377 -> 2249 ops/s (TIE, 36 % rounds); Predator crowd 2.5 pre-render sitting (93f722fd vs 11cfeb16, 4 pairs, ended 21:06): NEUTRAL, pre-render -0.4 % (1/4 worse), no worker worse. Leads filed: N-248 (the camera's startup jump), E-492 (about 9 500 statics scatters a keyed frame against about 1 500 full marks).",
+      "commits": [
+        "11cfeb16",
+        "2c183763"
+      ]
     }
   ],
   "leads": [
