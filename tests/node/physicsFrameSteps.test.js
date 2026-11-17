@@ -38,6 +38,19 @@ test('an ordinary frame is one step of its own dt; a long hitch is cut at 4 stab
   assert.equal(hitch.dt, 1 / 30);
 });
 
+// N-264. On a 2-core laptop a Predator step cost 20 to 60 ms: a long frame took two steps, the next frame came as long,
+// and physics fell to 16 to 388 frames in 10 s. A step that costs more than half the stable dt takes no catch-up steps.
+test('a frame catches up only while one step costs under half the stable dt', () => {
+  const cheap = splitFrameDt(1 / 20, 9);
+  assert.equal(cheap.steps, 2, 'a 9 ms step still catches a 50 ms frame up');
+  assert.ok(Math.abs(cheap.dt - 1 / 40) < 1e-12);
+  const dear = splitFrameDt(1 / 20, 25);
+  assert.equal(dear.steps, 1, 'a 25 ms step takes one step');
+  assert.equal(dear.dt, 1 / 30, 'the one step stays the stable one: the frame loses the rest');
+  assert.deepEqual({ ...splitFrameDt(1 / 60, 25) }, { dt: 1 / 60, steps: 1 }, 'an ordinary frame is untouched');
+  assert.equal(splitFrameDt(1 / 20, NaN).steps, 2, 'no step measured yet (or lockstep): as before');
+});
+
 function hostStepLoop(steps, radialGravityAccel = 0) {
   const calls = [];
   const world = {

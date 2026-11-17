@@ -569,6 +569,8 @@
     box2dReady: false,
     isPaused: true,
     lastFrameTime: 0,
+    // N-264: the last frame's own time a step (its wait for logic left out), for the next frame's catch-up (NaN: none yet).
+    ownStepMs: NaN,
     frameNumber: 0,
     currentFPS: 0,
     messageTimeThisFrame: 0,
@@ -1271,18 +1273,27 @@
   /** Most ordinary steps one frame may take; past that the frame is cut short. */
   var MAX_FRAME_STEPS = 4;
   var _frameSplit = { dt: 0, steps: 1 };
+  /**
+   * N-264: past this a step costs more than half the stable dt, so the steps that would catch a long frame up do not
+   * fit in a frame either: the next frame comes as long, takes as many steps, and physics never gets back (on a
+   * 2-core laptop Predator crowd 0.5 fell to 16 to 388 physics frames in 10 s, ~560 without the spiral). One step a
+   * frame then: the world runs slower than the clock until a step is cheap again. Not in lockstep (fixedFps).
+   */
+  var CATCH_UP_STEP_MS = (1000 * MAX_STABLE_DT) / 2;
 
   /**
    * B7. A frame's scaled dt as equal steps no longer than MAX_STABLE_DT. It was
    * one step capped at 1/30 s, so Time.scale above 2 at 60 Hz ran at 2 and
    * fixedFps under 30 ran slow. Scale 3 at 60 Hz is 2 steps of 1/40 s; fixedFps
    * 20 is 2 of 1/40 s. Past MAX_FRAME_STEPS (a long hitch at scale 4) the steps
-   * stay at MAX_STABLE_DT and the frame loses the rest, as the cap did.
+   * stay at MAX_STABLE_DT and the frame loses the rest, as the cap did. `ownStepMs`, the last frame's own time a
+   * step: past CATCH_UP_STEP_MS one step (N-264).
    */
-  function splitFrameDt(dt) {
+  function splitFrameDt(dt, ownStepMs) {
     var steps = Math.ceil(dt / MAX_STABLE_DT - 1e-9);
     if (!(steps >= 1)) steps = 1;
     if (steps > MAX_FRAME_STEPS) steps = MAX_FRAME_STEPS;
+    if (steps > 1 && ownStepMs > CATCH_UP_STEP_MS) steps = 1;
     var step = dt / steps;
     if (step > MAX_STABLE_DT) step = MAX_STABLE_DT;
     _frameSplit.dt = step;
@@ -1339,13 +1350,15 @@
       WAIT_METER.ms = 0;
       if (dt > 0) {
         // B7: a long frame is several stable steps, not one capped step.
-        var split = splitFrameDt(dt);
+        // N-264's cut only off lockstep: a fixed rate fires the same steps on every machine, slow or not.
+        var split = splitFrameDt(dt, state.fixedFps > 0 ? NaN : state.ownStepMs);
         state._inStep = true;
         try {
           weedjsDoStep(split.dt, state.settings.subStepCount, split.steps);
         } finally {
           state._inStep = false;
         }
+        state.ownStepMs = (performance.now() - t0 - WAIT_METER.ms) / split.steps;
       }
       if (state.stats) {
         var stepMs = performance.now() - t0;
