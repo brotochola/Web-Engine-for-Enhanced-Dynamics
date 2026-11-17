@@ -21009,7 +21009,7 @@
       "statusText": "Owner-approved plan (2026-11-17), not started: \"hacé un plan para esto y llamale scene start up time, y agregalo al backlog, lo hacemos otro día\"",
       "date": "2026-11-17",
       "result": "",
-      "next": "SST-0 first (the load waterfall and its baseline), then the items in the plan's order. The owner's rule: nothing loads, decodes or compiles after the start; starting with sounds still loading was rejected.",
+      "next": "SST-0 first (the load waterfall), then the items in the plan's order. The light protocol (owner, 2026-11-17): the suites on every commit, one quick first-frame number per item, the full matrix once at the end. Estimate: about 9 to 10 h in a row for everything but SST-9, 4 to 5 h with agents in parallel, SST-9 another 3 to 5 h. The owner's rule: nothing loads, decodes or compiles after the start; starting with sounds still loading was rejected.",
       "area": "load",
       "kind": "dx",
       "refs": [
@@ -21030,12 +21030,12 @@
     },
     {
       "id": "SST-0",
-      "title": "The load waterfall: every start-up phase of the main thread and of each worker on one clock, the first drawn frame and the longest frame of the first 5 s; the baseline on three scenes, source and bundle, cold and warm, on both machines",
+      "title": "The load waterfall: every start-up phase of the main thread and of each worker on one clock, the first drawn frame and the longest frame of the first 5 s; one quick waterfall of each of three scenes to order the items",
       "status": "open",
       "statusText": "Planned 2026-11-17 (DX-STARTUP), not started",
       "date": "2026-11-17",
       "result": "",
-      "next": "Marks per phase (Scene.init steps, preloadAssets branches, the atlas inside, each worker from module load to ready), a runner with a table and the critical path of the load; extend isolationLoadTime.mjs; add a \"Load time\" section to HOW_WE_MEASURE.",
+      "next": "Marks per phase (Scene.init steps, preloadAssets branches, the atlas inside, each worker from module load to ready), a runner with a table and the critical path of the load; extend isolationLoadTime.mjs; add a \"Load time\" section to HOW_WE_MEASURE. The full matrix waits for the end of the campaign.",
       "area": "load",
       "kind": "tools",
       "refs": [
