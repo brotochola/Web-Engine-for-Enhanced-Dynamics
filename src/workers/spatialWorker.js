@@ -87,11 +87,18 @@ const SHAPE_BOX = SHAPE_BOXImport;
 const MOVERS_MAX_FRACTION = 0.2;
 const MOVERS_MIN_FRACTION = 0.05;
 const MOVERS_CAP_FRACTION = 0.5;
-// E-503: in a run of rewrites that cost over half the last timed full rebuild (near the tie), one full rebuild this
-// often, timed (the scene may have changed what one costs); while rebuilding, one latch and rewrite this often, timed,
-// when the moved count is under the cap.
+// E-503: in a run of rewrites, one full rebuild timed after this many, up to MOVERS_RETIME_STRETCH times as many when
+// the rewrite's frames cost far less (the scene may have changed what a rebuild costs, and the first rebuilds may have
+// been timed while the page loaded); while rebuilding, a probe this often when the moved count is under the cap: a
+// latch and MOVERS_PROBE_LENGTH frames of rewrites, timed, whatever the limit says.
 const MOVERS_RETIME_FRAMES = 256;
+const MOVERS_RETIME_STRETCH = 16;
 const MOVERS_PROBE_FRAMES = 512;
+const MOVERS_PROBE_LENGTH = 16;
+// E-503: what a grid step did (_stepGrid), so _rebuildGrid knows which path its time was.
+const GRID_STEP_FULL = 1; // the full rebuild alone
+const GRID_STEP_REWRITE = 2; // a rewrite that held
+const GRID_STEP_MOVERS = 3; // a latch, or a rewrite given up and the rebuild after it: the rewrite's path too
 // SpatialWorker._gridMoversMode.
 const GRID_MOVERS_AUTO = 0; // by the moved count against the limit where the two paths' timed costs tie
 const GRID_MOVERS_OFF = 1; // the full rebuild every frame
@@ -264,18 +271,23 @@ class SpatialWorker extends AbstractWorker {
     // E-503: the two paths' costs, timed in AUTO (moving averages; NaN until the first sample).
     /** ms of a full rebuild (rebuildOwnedRows). */
     this._mvFullMs = NaN;
-    /** ms of a rewrite per body physics listed as moved, and of a rewrite. */
+    /**
+     * ms of a frame on the rewrite's path (a rewrite, a latch, a rewrite given up and the rebuild after it) per body
+     * physics listed as moved, and of such a frame.
+     */
     this._mvPerMovedMs = NaN;
-    this._mvRewriteMs = NaN;
+    this._mvMoversFrameMs = NaN;
+    /** Physics' moved count this frame (_stepGrid). */
+    this._mvCount = 0;
     /** Rewrites since the last timed full rebuild; frames of full rebuilds left before the next probe. */
     this._mvRewrites = 0;
     this._mvProbeIn = MOVERS_PROBE_FRAMES;
     /** MOVERS_RETIME_FRAMES and MOVERS_PROBE_FRAMES (tests shorten them, to run every transition). */
     this._mvRetimeEvery = MOVERS_RETIME_FRAMES;
     this._mvProbeEvery = MOVERS_PROBE_FRAMES;
-    /** The next frame rebuilds in full, timed; the next rewrite is a probe's (its limit is the cap). */
+    /** The next frame rebuilds in full, timed; frames a probe has left on the rewrite's path (its limit is the cap). */
     this._mvRetimeFull = false;
-    this._mvProbing = false;
+    this._mvProbeLeft = 0;
     /** readMovedBodiesHeader's [generation, count, sequence]. */
     this._mvHead = new Int32Array(3);
     // Sized on the first latch (_allocMovers). Per entity:
@@ -744,14 +756,16 @@ class SpatialWorker extends AbstractWorker {
   /**
    * E-126. This frame's grid: rewritten for the entities that changed (_rebuildMovedRows) when
    * physics moved at most the limit (_moversLimit: where the two paths' timed costs tie, E-503), rebuilt
-   * otherwise. Chosen here, before either loop. The rewrite starts from the state a latched rebuild leaves
-   * and needs physics' moved list of every publish since; a publish missed or torn, or a frame the rewrite
-   * gives up on, rebuilds and latches again (after a backoff when that keeps happening). Either path writes
-   * the same bytes, so the choice (and the clock it reads) changes the cost only.
+   * otherwise (_stepGrid). The rewrite starts from the state a latched rebuild leaves and needs physics'
+   * moved list of every publish since; a publish missed or torn, or a frame the rewrite gives up on,
+   * rebuilds and latches again (after a backoff when that keeps happening). Either path writes the same
+   * bytes, so the choice (and the clock it reads) changes the cost only.
+   * E-503: in AUTO the whole step is timed, so a rewrite given up and the latch after it count against the
+   * rewrite's path: in a crowd whose cells fill (Buenos Aires with 15 000 people), timing the rewrites that held
+   * alone took the path at a cost 15 to 20 % over the rebuild.
    */
   _rebuildGrid() {
     const mode = this._gridMoversMode;
-    const head = this._mvHead;
     const activeData = this.activeEntitiesData;
     this._gridMoversThisFrame = 0;
     if (mode === GRID_MOVERS_OFF || !activeData) {
@@ -759,6 +773,25 @@ class SpatialWorker extends AbstractWorker {
       this.rebuildOwnedRows();
       return;
     }
+    if (mode !== GRID_MOVERS_AUTO) {
+      this._stepGrid(mode, activeData);
+      return;
+    }
+    const retime = this._mvRetimeFull;
+    const start = performance.now();
+    const step = this._stepGrid(mode, activeData);
+    const ms = performance.now() - start;
+    if (step !== GRID_STEP_FULL) this._timeMovers(ms, this._mvCount, step === GRID_STEP_REWRITE);
+    else if (retime && ms < this._mvFullMs) this._mvFullMs = ms;
+    else this._timeFull(ms);
+  }
+
+  /**
+   * E-126. The grid step _rebuildGrid chose a path for: the rewrite, the full rebuild, or a latch.
+   * @returns {number} GRID_STEP_FULL, GRID_STEP_REWRITE or GRID_STEP_MOVERS (E-503: which path the time was)
+   */
+  _stepGrid(mode, activeData) {
+    const head = this._mvHead;
     // E-266: no physics worker, so no moved list: the rewrite compares every collider's bounds with the ones its
     // cells were written from (_scanColliderBounds) instead of reading which bodies moved.
     const listed = readMovedBodiesHeader(head);
@@ -769,6 +802,8 @@ class SpatialWorker extends AbstractWorker {
     const auto = timed || mode === GRID_MOVERS_FIXED;
     const active = activeData[0];
     const limit = timed ? this._moversLimit(active) : auto ? active * MOVERS_MAX_FRACTION : this.globalEntityCount;
+    let gaveUp = false;
+    this._mvCount = count;
     if (this._mvSeeded && !this._mvRetimeFull) {
       // Bodies physics moved since the state: none when it has not published since, its list
       // when it published once (and not while the header was being written).
@@ -780,18 +815,17 @@ class SpatialWorker extends AbstractWorker {
             ? count
             : -1;
       if (moved !== -1 && moved <= limit) {
-        const start = timed ? performance.now() : 0;
         if (this._rebuildMovedRows(moved, seq, limit)) {
-          if (timed) this._timeRewrite(performance.now() - start, moved);
           this._mvGen = gen;
           this._gridMoversThisFrame = 1;
           this._mvFailures = 0;
-          return;
+          return GRID_STEP_REWRITE;
         }
+        gaveUp = true;
       }
       // The state is spent, and the grid may be half rewritten: the rebuild below writes all of it.
       this._mvSeeded = false;
-      this._mvProbing = false;
+      this._mvProbeLeft = 0;
       // One rewrite after a latch already pays for it. A latch that gets none costs a rebuild and
       // more for nothing: when that repeats, wait 2, 4, … 128 frames before the next latch.
       if (auto) {
@@ -799,8 +833,7 @@ class SpatialWorker extends AbstractWorker {
         this._mvBackoff = this._mvFailures < 2 ? 0 : this._mvFailures > 8 ? 128 : 1 << (this._mvFailures - 1);
       }
     }
-    // E-503: rebuilding while the limit (or no timing yet) says so, a probe now and then: a latch, and the next
-    // frame's rewrite timed under the cap.
+    // E-503: rebuilding while the limit (or no timing yet) says so, with a probe now and then.
     const probe =
       timed &&
       count > limit &&
@@ -812,31 +845,26 @@ class SpatialWorker extends AbstractWorker {
       if (this._mvBackoff > 0) this._mvBackoff--;
       this._mvSeeded = false;
       this._mvRetimeFull = false;
-      if (timed) {
-        const start = performance.now();
-        this.rebuildOwnedRows();
-        this._timeFull(performance.now() - start);
-      } else {
-        this.rebuildOwnedRows();
-      }
-      return;
+      this.rebuildOwnedRows();
+      return gaveUp ? GRID_STEP_MOVERS : GRID_STEP_FULL;
     }
     if (probe) {
       this._mvProbeIn = this._mvProbeEvery;
-      this._mvProbing = true;
+      this._mvProbeLeft = MOVERS_PROBE_LENGTH;
     }
     this._allocMovers();
     this._mvGen = gen;
     this._mvSeeded = this._rebuildOwnedRowsLatched();
+    return GRID_STEP_MOVERS;
   }
 
   /**
-   * E-503. The most moved bodies the rewrite takes: the count at which its timed cost per moved body adds up to
-   * a timed full rebuild, kept between MOVERS_MIN_FRACTION and MOVERS_CAP_FRACTION of the active entities;
-   * MOVERS_MAX_FRACTION until both are timed, and the cap for a probe's rewrite.
+   * E-503. The most moved bodies the rewrite takes: the count at which the rewrite path's timed cost per moved body
+   * adds up to a timed full rebuild, kept between MOVERS_MIN_FRACTION and MOVERS_CAP_FRACTION of the active
+   * entities; MOVERS_MAX_FRACTION until both are timed, and the cap while a probe lasts.
    */
   _moversLimit(active) {
-    if (this._mvProbing) return active * MOVERS_CAP_FRACTION;
+    if (this._mvProbeLeft > 0) return active * MOVERS_CAP_FRACTION;
     const full = this._mvFullMs;
     const perMoved = this._mvPerMovedMs;
     if (!(full > 0) || !(perMoved > 0)) return active * MOVERS_MAX_FRACTION;
@@ -853,22 +881,30 @@ class SpatialWorker extends AbstractWorker {
   }
 
   /**
-   * E-503. A rewrite's ms per moved body into its moving average (frames physics did not publish, or without its
-   * list, say nothing of that cost); after MOVERS_RETIME_FRAMES of them, a full rebuild is timed again if the rewrite
-   * costs over half the last one (near the tie, where the choice hangs on it).
+   * E-503. A frame on the rewrite's path into its moving averages, per moved body and whole (a latch costs about a
+   * rebuild, so a sample counts up to 8× the average); a frame physics did not publish, or without its list, says
+   * nothing of the cost per body. After MOVERS_RETIME_FRAMES rewrites (stretched up to MOVERS_RETIME_STRETCH times
+   * where these frames cost far less than a rebuild, so a world that sleeps pays little for it), a full rebuild is
+   * timed again; a lower time replaces the average (a stale one, or the load's), a higher one joins it.
    */
-  _timeRewrite(ms, moved) {
+  _timeMovers(ms, moved, rewrote) {
     if (moved > 0) {
       const per = ms / moved;
       const avg = this._mvPerMovedMs;
-      this._mvPerMovedMs = avg > 0 ? avg + ((per > avg * 4 ? avg * 4 : per) - avg) * 0.125 : per;
-      const frame = this._mvRewriteMs;
-      this._mvRewriteMs = frame > 0 ? frame + ((ms > frame * 4 ? frame * 4 : ms) - frame) * 0.125 : ms;
-      this._mvProbing = false;
+      this._mvPerMovedMs = avg > 0 ? avg + ((per > avg * 8 ? avg * 8 : per) - avg) * 0.125 : per;
+      const frame = this._mvMoversFrameMs;
+      this._mvMoversFrameMs = frame > 0 ? frame + ((ms > frame * 8 ? frame * 8 : ms) - frame) * 0.125 : ms;
     }
-    if (++this._mvRewrites >= this._mvRetimeEvery) {
-      this._mvRewrites = 0;
-      if (this._mvRewriteMs * 2 > this._mvFullMs) this._mvRetimeFull = true;
+    if (this._mvProbeLeft > 0) this._mvProbeLeft--;
+    if (rewrote) {
+      const full = this._mvFullMs;
+      const frame = this._mvMoversFrameMs;
+      let stretch = full > 0 && frame > 0 ? full / (frame * 2) : 1;
+      stretch = stretch > 1 ? (stretch < MOVERS_RETIME_STRETCH ? stretch : MOVERS_RETIME_STRETCH) : 1;
+      if (++this._mvRewrites >= this._mvRetimeEvery * stretch) {
+        this._mvRewrites = 0;
+        this._mvRetimeFull = true;
+      }
     }
   }
 
