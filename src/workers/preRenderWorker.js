@@ -3927,18 +3927,12 @@ class PreRenderWorker extends AbstractWorker {
         const none = entityIdNone;
         const end = count < list.length ? count : list.length;
         let m = 0;
-        // E-499: the list is in slot order, and children spawned together sit in a row of slots: a parent's drawn pose
-        // once for each run of its children (any order stays right: a new parent is posed again).
-        let posed = -1;
         for (let k = 0; k < end; k++) {
             const c = list[k];
             if (!(c >= 0 && c < n)) continue;
             const p = parent[c];
             if (!(p < none) || active[c] !== 1 || active[p] !== 1) continue;
-            if (p !== posed) {
-                this._displayPose(p, pose);
-                posed = p;
-            }
+            this._displayPose(p, pose);
             const t = c * 3;
             const lr = localRot[c];
             if (lr !== turn[t]) {
