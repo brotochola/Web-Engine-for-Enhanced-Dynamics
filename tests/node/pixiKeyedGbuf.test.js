@@ -109,11 +109,11 @@ function pixiScene(backend) {
   return scene;
 }
 
-/** Pixi bound as its init binds it, its config's lighting asking for the G-buffer (gbufWanted: emissive sprites). */
+/** Pixi bound as its init binds it, its config's lighting asking for the G-buffer (gbufWanted: unshaded sprites). */
 async function bindPixi(px, scene, webgpu, byRow) {
   const m = scene.renderQueueMemory;
   const data = { renderQueueMemory: m.memory, renderQueueLayout: m.layout };
-  px.config = { ...scene.config, lighting: { ...scene.config.lighting, enabled: true, emissive: true } };
+  px.config = { ...scene.config, lighting: { ...scene.config.lighting, enabled: true, unshaded: true } };
   px._ySort = true;
   px._packGpuSpritesOn = 'pixi';
   px._queueInterp = false;

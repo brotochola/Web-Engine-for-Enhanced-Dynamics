@@ -1,6 +1,6 @@
 // H-EDGE on real code: what a frame's texels hold, from the registry's scans to DX-DEPTH's edge pass. The registry reads
 // each frame's alphas (frameBase.js frameAlphaKinds: a texel of 1 to 127 is soft, 128 to 254 half) and whether its
-// rectangle of the atlas's twin page glows (spriteMaps.js twinHasGlow, spriteSheetRegistry.js _paintMapsPage), and writes
+// sheet is unshaded (DX-UNSHADED: the sheet's mark, spriteSheetRegistry.js createBigAtlas), and writes
 // them in the frame's json base (_markFrameTexels). The texture table keeps them a frame on the CPU
 // (instancedSpriteBatch.js buildTextureLut, textureLutTexels) and their soft-or-glow bit in each row's flags texel
 // (packTextureLutRgba), where the depth programs' vertex stage reads it (pixelDepth.js), as shaderSoftOrGlow below does:
@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { HEIGHT_UNITS, frameTwinTexels, twinHasGlow } from '../../src/render/spriteMaps.js';
+import { HEIGHT_UNITS, frameTwinTexels } from '../../src/render/spriteMaps.js';
 import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
 import {
   FRAME_GLOW, FRAME_HALF, FRAME_SOFT, FRAME_UNSCANNED, TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW, fillFrameTexels,
@@ -57,13 +57,12 @@ test('a frame\'s alphas: soft (1 to 127), half (128 to 254), or binary', () => {
   assert.equal(frameAlphaKinds(pixelsOf(binary, 10, 20), 30, 30, 6, H), 0, 'outside it: nothing');
 });
 
-test('a frame glows in the twin page when it has a glowing texel there: soft and binary alpha alike do not', () => {
-  assert.equal(twinHasGlow(frameTwinTexels({ color: binary, height: heights(W, H), normal: null, w: W, h: H })), false, 'binary alpha');
-  assert.equal(twinHasGlow(frameTwinTexels({ color: soft, height: heights(W, H), normal: null, w: W, h: H })), false, 'soft texels');
-  assert.equal(twinHasGlow(frameTwinTexels({ color: binary, height: heights(W, H), normal: null, w: W, h: H, emissive: true })), true, 'an emissive sheet');
-  assert.equal(twinHasGlow(frameTwinTexels({ color: binary, height: null, normal: null, w: W, h: H, emissive: true })), true, 'emissive, no heights');
-  assert.equal(twinHasGlow(frameTwinTexels({ color: colour(W, H, () => 0), height: null, normal: null, w: W, h: H, emissive: true })), false, 'emissive, no opaque texel');
-  assert.equal(twinHasGlow(null), false, 'no maps');
+// DX-UNSHADED: the twin page holds no code for unshaded pixels any more (the maps table's mark says it): a frame without
+// height or normal maps has no twin texels at all, unshaded or not.
+test('the twin page holds maps alone: no frame without maps has twin texels', () => {
+  assert.equal(frameTwinTexels({ color: binary, height: null, normal: null, w: W, h: H }), null);
+  const t = frameTwinTexels({ color: binary, height: heights(W, H), normal: null, w: W, h: H });
+  for (let i = 0; i < t.length; i += 4) assert.ok(t[i + 2] !== 0 || t[i + 3] !== 255, 'no (0, 255) code where a normal goes');
 });
 
 /** A 2D canvas in memory: what _paintMapsPage draws and reads (spriteMaps.test.js's). */
@@ -97,7 +96,7 @@ class MemCanvas {
   }
 }
 
-test('the twin page marks each frame it paints: glowing, or not', () => {
+test('an unshaded sheet glows by its mark, with or without a twin page', () => {
   const saved = [globalThis.OffscreenCanvas, globalThis.ImageData];
   globalThis.OffscreenCanvas = MemCanvas;
   globalThis.ImageData = class {
@@ -111,16 +110,19 @@ test('the twin page marks each frame it paints: glowing, or not', () => {
     const frames = [
       { name: 'a', sourceImg: img(binary), sourceRect: { x: 0, y: 0, w: W, h: H }, rect: { x: 0, y: 0, width: W, height: H }, maps: { heightImg: hm, normalImg: null, gray: 0 } },
       { name: 'b', sourceImg: img(soft), sourceRect: { x: 0, y: 0, w: W, h: H }, rect: { x: 8, y: 0, width: W, height: H }, maps: { heightImg: hm, normalImg: null, gray: 0 } },
-      { name: 'c', sourceImg: img(binary), sourceRect: { x: 0, y: 0, w: W, h: H }, rect: { x: 0, y: 6, width: W, height: H }, maps: { heightImg: null, normalImg: null, gray: 0, emissive: true } },
+      { name: 'c', sourceImg: img(binary), sourceRect: { x: 0, y: 0, w: W, h: H }, rect: { x: 0, y: 6, width: W, height: H }, maps: null, unshaded: true, glow: true },
     ];
-    assert.notEqual(SpriteSheetRegistry._paintMapsPage(frames, 16, 12), null);
-    assert.deepEqual(frames.map((d) => d.glow), [false, false, true]);
+    const twin = SpriteSheetRegistry._paintMapsPage(frames, 64, 64);
+    assert.notEqual(twin, null);
+    assert.equal(frames[2].mapsAt, undefined, 'an unshaded sheet without maps has no window');
+    assert.deepEqual(frames.map((d) => d.glow === true), [false, false, true], 'the painter leaves the marks alone');
+    assert.equal(SpriteSheetRegistry._paintMapsPage([frames[2]], 64, 64), null, 'an unshaded sheet alone makes no twin page');
   } finally {
     [globalThis.OffscreenCanvas, globalThis.ImageData] = saved;
   }
 });
 
-test('each frame\'s json base says what its texels hold; with no padding, every frame may glow once one does', () => {
+test('each frame\'s json base says what its texels hold, and only a glowing frame glows', () => {
   const json = () => ({ a: { base: { cx: 3, rx: 2, ry: 1.2 } }, b: {}, c: {}, d: {} });
   const packed = [
     { name: 'a', texels: 0, glow: false },
@@ -130,19 +132,14 @@ test('each frame\'s json base says what its texels hold; with no padding, every 
     { name: 'gone', texels: 0, glow: true },
   ];
   const f = json();
-  SpriteSheetRegistry._markFrameTexels(f, packed, 2);
+  SpriteSheetRegistry._markFrameTexels(f, packed);
   assert.deepEqual(f.a.base, { cx: 3, rx: 2, ry: 1.2, texels: 0 }, 'binary, its stand base kept');
   assert.deepEqual(f.b.base, { texels: FRAME_SOFT });
   assert.deepEqual(f.c.base, { texels: FRAME_HALF | FRAME_GLOW });
   assert.equal(f.d.base, undefined, 'a frame no scan read keeps no key');
   assert.equal(f.gone, undefined, 'only the json\'s frames');
-  // The page's read can reach a texel past a frame's border, the next frame's when nothing pads them.
-  const g = json();
-  SpriteSheetRegistry._markFrameTexels(g, packed, 0);
-  assert.deepEqual([g.a.base.texels, g.b.base.texels], [FRAME_GLOW, FRAME_SOFT | FRAME_GLOW]);
-  const h = json();
-  SpriteSheetRegistry._markFrameTexels(h, packed.slice(0, 2), 0);
-  assert.deepEqual([h.a.base.texels, h.b.base.texels], [0, FRAME_SOFT], 'no glowing frame: none may glow');
+  // E-496: the twin page pads its rectangles, so a frame's read never reaches another's: no frame glows by its neighbour.
+  assert.deepEqual([f.a.base.texels, f.b.base.texels], [0, FRAME_SOFT], 'not glowing with c');
   // A base that only says what its texels hold stands nowhere: the shadow passes read it as no base, and a sheet with it
   // casts no solid.
   const out = [7, 7];
@@ -228,7 +225,7 @@ test('the depth programs read the bit after their own LUT read and the edge pass
     assert.ok(read > vert.indexOf('int lutPerRow = lutSize.x / 3;'), 'after the shader\'s own table read');
     assert.ok(vert.includes('lutSize.x > 3 * lutPerRow'), 'only when the table has the flags texel');
     assert.ok(vert.includes('& 1u) == 0u) vPlain = 1.0;'), 'plain when the bit is clear');
-    assert.equal(vert.includes('if (((uint(aInstGbuf.x + 0.5) >> 19u) & 7u) != 0u) vPlain = 0.0;'), gbuf, 'an emissive word glows');
+    assert.equal(vert.includes('if (((uint(aInstGbuf.x + 0.5) >> 21u) & 1u) != 0u) vPlain = 0.0;'), gbuf, 'an unshaded word');
     const edge = pixelDepthFragment(shader('instancedSpriteBlend.frag.glsl'), { edge: true, gbuf });
     assert.match(edge, /flat in float vPlain;/);
     assert.match(edge, /if \(ad <= 0\.0 \|\| \(ad >= 0\.5 && vPlain > 0\.5\)\) discard;/);
@@ -237,7 +234,7 @@ test('the depth programs read the bit after their own LUT read and the edge pass
     assert.match(wgsl, /@location\(14\) @interpolate\(flat\) vPlain: f32,/);
     assert.ok(wgsl.indexOf('textureLoad(uTexLut, vec2<i32>(3 * lutPerRow, tid / lutPerRow), 0)') > wgsl.indexOf('let lutPerRow = i32(lutSize.x) / 3;'));
     assert.ok(wgsl.includes('& 1u) == 0u) { out.vPlain = 1.0; }'));
-    assert.equal(wgsl.includes('if (((u32(aInstGbuf.x + 0.5) >> 19u) & 7u) != 0u) { out.vPlain = 0.0; }'), gbuf);
+    assert.equal(wgsl.includes('if (((u32(aInstGbuf.x + 0.5) >> 21u) & 1u) != 0u) { out.vPlain = 0.0; }'), gbuf);
     assert.match(wgsl, /ad <= 0\.0 \|\| \(ad >= 0\.5 && in\.vPlain > 0\.5\)/);
   }
 });

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * DX-EMISSIVE against the design (plan §8.2, §6.9: "final = lit colour × light + own glow"): at night a lamp lights the
- * white floor behind a flame that glows by itself (checks/emissiveScene.js: an opaque core in a glow of alpha a =
+ * DX-UNSHADED (was DX-EMISSIVE) against the design (plan §8.2, §6.9: "final = lit colour × light + own colour"): at night
+ * a lamp lights the white floor behind a flame no light touches (checks/unshadedScene.js: an opaque core in a glow of alpha a =
  * 128/255), a white person in front of its right edge. Worked out here from the layout:
  *
  *   the floor:             F = ambient + lamp · I_l / (I_l + h² + d²)        (I_l = (radius / 10)², d on the floor)
@@ -9,7 +9,7 @@
  *   the core:              flame                          (its colour, not darkened by the night)
  *   the person over it:    the person's own pixels a px beyond the flame (it covers glow and floor alike)
  *
- *   node tests/bench/emissiveCheck.mjs [--backend webgl|webgpu|both] [--tolerance 3] [--save dir] [--headless]
+ *   node tests/bench/unshadedCheck.mjs [--backend webgl|webgpu|both] [--tolerance 3] [--save dir] [--headless]
  *     [--wait-ms 3000] [--query k=v]
  *
  * Pixels within 1 px of a part's edge are left out. Exit 0 when the floor, the glow and the core are each within
@@ -18,10 +18,10 @@
 import path from 'node:path';
 
 import { FLOOR_SCALE_Y as G, PICTURES, pictureAlpha } from './checks/checkShapes.js';
-import { EMISSIVE as L } from './checks/layouts.js';
+import { UNSHADED as L } from './checks/layouts.js';
 import { captureStill, parseCheckCli, percentile, queryOf, rgbAt, verdict, withCheckBrowser } from './checks/checkLib.mjs';
 
-const USAGE = 'node tests/bench/emissiveCheck.mjs [--backend webgl|webgpu|both] [--tolerance 3] [--save dir] [--headless]';
+const USAGE = 'node tests/bench/unshadedCheck.mjs [--backend webgl|webgpu|both] [--tolerance 3] [--save dir] [--headless]';
 
 function stat() {
   return { deltas: [], worst: null };
@@ -45,8 +45,8 @@ async function main() {
   await withCheckBrowser(opts, async (ctx) => {
     for (const backend of opts.backends) {
       const query = queryOf(opts, { backend });
-      const save = opts.save ? path.join(opts.save, `emissive-${backend}.png`) : null;
-      const { pixels, errors } = await captureStill(ctx, { scene: '/tests/bench/checks/emissiveScene.js', sceneExport: 'EmissiveScene', query, waitMs: opts.waitMs, save });
+      const save = opts.save ? path.join(opts.save, `unshaded-${backend}.png`) : null;
+      const { pixels, errors } = await captureStill(ctx, { scene: '/tests/bench/checks/unshadedScene.js', sceneExport: 'UnshadedScene', query, waitMs: opts.waitMs, save });
       const F = PICTURES.flame;
       const B = PICTURES.walker;
       const flameRgb = F.color.map((v) => v / 255);
@@ -113,7 +113,7 @@ async function main() {
       if (errors.length) console.log(`  ${backend}: page errors: ${errors.slice(0, 3).join(' | ')}`);
       const within = (s, t) => s.worst !== null && s.worst.delta <= t;
       verdict(
-        `emissive ${backend}`,
+        `unshaded ${backend}`,
         errors.length === 0 && within(sFloor, opts.tolerance) && within(sGlow, opts.tolerance) && within(sCore, opts.tolerance) && within(sPerson, 2 * opts.tolerance),
         `what is seen through the flame keeps its own light, the flame its colour (tolerance ${opts.tolerance})`,
       );

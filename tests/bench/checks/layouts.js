@@ -87,8 +87,8 @@ export const SEPARATION = {
   lamp: { x: 720, y: 430, elevation: 70, radius: 1000, brightness: 0.8, color: 0xffffff },
 };
 
-/** emissiveCheck: a flame (an opaque core in a 50 % glow) on a lamp-lit floor at night, a person half in front of it. */
-export const EMISSIVE = {
+/** unshadedCheck: a flame (an opaque core in a 50 % glow) on a lamp-lit floor at night, a person half in front of it. */
+export const UNSHADED = {
   ambient: 0.1,
   flame: { x: 600, y: 400 },
   // A lamp behind the flame, so the floor seen through its glow has light of its own (not the flame's).

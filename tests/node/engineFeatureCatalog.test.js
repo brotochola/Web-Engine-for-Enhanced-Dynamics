@@ -66,7 +66,7 @@ const REQUIRED = [
   'sunShadowMap',
   'selfShadow',
   'depthSort',
-  'emissive',
+  'unshaded',
   'tweenPool',
   'despawnLists',
 ];

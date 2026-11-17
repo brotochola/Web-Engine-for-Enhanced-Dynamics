@@ -6,7 +6,7 @@
 //   drew, a floor that is not foreshortened and heights that rise as many px as they measure.
 // - floorScaleY: how tall the floor is drawn against its width, in (0, 1]: sin(pitch) unless set. A circle on the
 //   floor is that many times as tall as it is wide (light pools, cones, volumes).
-// - heightScaleY: screen px that a px of height rises: cos(pitch) unless set (lighting.faces, volumes).
+// - heightScaleY: screen px that a px of height rises: cos(pitch) unless set (faces, height maps, volumes).
 // - yaw: degrees the view turns about the vertical (45 for an isometric diamond). Read by nothing yet.
 //
 // The two scales are separate keys because pictures do not always follow the trigonometry: LPC characters and the

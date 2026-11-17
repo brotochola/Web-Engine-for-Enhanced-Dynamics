@@ -44,7 +44,8 @@ export class Sun {
         NIGHT_FROM: 72, // Float32 (sun intensity at which the night light starts)
         NIGHT_TO: 76, // Float32 (sun intensity at which it is full)
         MAX_ELEVATION: 80, // Float32 (degrees at noon on a day cycle; set once from config)
-        // reserved: 84-95
+        SKY_LIGHT: 84, // Float32 (0-1: the sun's share from the sky, the same on every surface; lighting.sun.skyLight)
+        // reserved: 88-95
     };
 
     // Float32 indices (offset / 4)
@@ -67,6 +68,7 @@ export class Sun {
         NIGHT_FROM: 18,
         NIGHT_TO: 19,
         MAX_ELEVATION: 20,
+        SKY_LIGHT: 21,
     };
 
     // Uint32 indices (offset / 4)
@@ -77,6 +79,9 @@ export class Sun {
 
     // Sun intensity at or under which the sun casts no shadow
     static SHADOW_MIN_INTENSITY = 0.1;
+
+    // DX-BARRIOS: Sun.skyLight where no scene set it (no sun buffer): SUN_DEFAULTS.skyLight's
+    static SKY_LIGHT_DEFAULT = 0.4;
 
     // Default sun colors for different times of day
     static DEFAULT_COLORS = [
@@ -209,6 +214,22 @@ export class Sun {
         if (this._uint8) {
             this._uint8[Sun.OFFSETS.ENABLED] = v ? 1 : 0;
             this._written |= 1;
+        }
+    }
+
+    /**
+     * DX-BARRIOS: the share of the sun's light that comes from the sky, which lights every surface whatever way it faces;
+     * the rest depends on where a surface looks (a face's or a sprite's normal: the light pass's faces term). 0 to 1, 0.4
+     * by default (lighting.sun.skyLight). It was lighting.faces.sunDirect, its complement.
+     */
+    static get skyLight() {
+        return this._float32 ? this._float32[Sun.F32.SKY_LIGHT] : Sun.SKY_LIGHT_DEFAULT;
+    }
+    static set skyLight(v) {
+        if (this._float32) {
+            const n = +v;
+            this._float32[Sun.F32.SKY_LIGHT] = n > 1 ? 1 : n > 0 ? n : 0;
+            this._written |= 1 << Sun.F32.SKY_LIGHT;
         }
     }
 
@@ -621,6 +642,9 @@ export class Sun {
             this.nightFrom = night.from;
             this.nightTo = night.to;
         }
+
+        // DX-BARRIOS: the sky's share of the sun on every surface
+        this.skyLight = config.skyLight ?? Sun.SKY_LIGHT_DEFAULT;
 
         // Shadow config
         this.maxElevation = config.maxElevation;

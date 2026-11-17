@@ -1,6 +1,8 @@
 /**
- * DX-MAPS: a sheet's height and normal maps, packed into the atlas's twin page. The twin page has the atlas's size and the
- * same rectangles: where a frame's colour is in the atlas, its maps are in the twin, so a shader samples both with one UV.
+ * DX-MAPS: a sheet's height and normal maps, packed into the atlas's twin page. E-496: the twin page holds only the frames
+ * with maps, each in a window of its own (spriteSheetRegistry.js _paintMapsPage), and the maps table (mapsTable.js) says
+ * where each frame's window is: a shader reads a frame's twin texel at its atlas texel plus that window's offset
+ * (twinTexel.js). Sheets that name the same map files share one rectangle of it.
  *
  * What a twin texel holds (RGBA8):
  * - R, G: the height above the floor of what the pixel shows, R·256 + G in 1/HEIGHT_UNITS px (up to 1023.98 px);
@@ -10,8 +12,14 @@
  * What a sheet gives (assets.spritesheets.<name>):
  * - `heightMap`: a PNG twin of its sheet (same frames, same places). Its height is R·256 + G in 1/64 px by default; a
  *   greyscale picture says so, `heightMap: { png, gray: 120 }` (white is 120 px).
- * - `normalMap`: a PNG twin in the usual RGB encoding, in the camera's space: x right, y up, z out of the screen (OpenGL's).
- * Without a normal map the normals come from the height (a Sobel gradient). Normals are in the camera's space throughout.
+ * - `normalMap`: a PNG twin in the usual RGB encoding, in the camera's space: x right, y up, z out of the screen (OpenGL's
+ *   convention, green up; DirectX's is not supported).
+ * - `reliefMap` (DX-RELIEF): a greyscale PNG twin of how far the shape bulges, not how high it is (what many 2D tools give),
+ *   `{ png, strength }`: white bulges `strength` px (RELIEF_STRENGTH by default). Its normals come from it (a Sobel
+ *   gradient); its height above the floor is its surface's (N-257: a card standing on its foot, or the floor). The twin
+ *   holds the relief where heights go, and the maps table marks the frame (mapsTable.js MAPS_RELIEF).
+ * Without a normal or relief map the normals come from the height (a Sobel gradient). Normals are in the camera's space
+ * throughout. A sheet with a normal map and no height map stands as its surface says too (N-257).
  */
 
 /** Height steps a px in a twin texel (and in an rg16 heightMap). */
@@ -20,6 +28,40 @@ export const HEIGHT_UNITS = 64;
 export const HEIGHT_MAX = 65535 / HEIGHT_UNITS;
 /** An edge pixel lower than every opaque neighbour by more than this (px) takes their height: see fixOutline. */
 export const OUTLINE_STEP = 3;
+/** DX-RELIEF: how far a relief map's white bulges (px) when its sheet does not say (`reliefMap: { png, strength }`). */
+export const RELIEF_STRENGTH = 8;
+
+/**
+ * DX-MAPCAMERA: the camera a sheet's pictures and maps were drawn for (its json's meta.artCamera, or its assets entry's
+ * artCamera, which wins), `{ floorScaleY, heightScaleY }`, both positive; null for anything else (the scene's own).
+ * @param {unknown} spec
+ * @returns {{ floorScaleY: number, heightScaleY: number } | null}
+ */
+export function readArtCamera(spec) {
+  if (!spec || typeof spec !== 'object') return null;
+  const floorScaleY = Number(spec.floorScaleY);
+  const heightScaleY = Number(spec.heightScaleY);
+  if (!(floorScaleY > 0) || !(heightScaleY > 0) || !Number.isFinite(floorScaleY) || !Number.isFinite(heightScaleY)) return null;
+  return { floorScaleY, heightScaleY };
+}
+
+/**
+ * DX-MAPCAMERA: how much a sheet's heights (and relief) are scaled at load so a pixel rises on the scene's screen as much
+ * as on its art's: its art camera's heightScaleY over the scene's (a height map made for 0.752 shown with 0.866: 0.868). 1
+ * without an art camera or a scene camera.
+ * @param {{ heightScaleY: number } | null} artCamera
+ * @param {number} sceneHeightScaleY
+ */
+export function artCameraHeightScale(artCamera, sceneHeightScaleY) {
+  if (!artCamera || !(sceneHeightScaleY > 0)) return 1;
+  return artCamera.heightScaleY / sceneHeightScaleY;
+}
+
+/** A frame's heights (or relief), px, times `scale` in place (DX-MAPCAMERA); the array. */
+function scaleHeights(heights, scale) {
+  if (scale !== 1) for (let i = 0; i < heights.length; i++) heights[i] *= scale;
+  return heights;
+}
 
 /**
  * A normal's octahedral bytes, 1..253 each (0 stays "none"). The vector need not be unit.
@@ -202,50 +244,139 @@ export function opaqueMask(rgba, w, h, threshold = 127) {
 
 /**
  * Everything above for one frame: its colour, its maps (either may be null), and the twin texels for its rectangle.
- * @param {{ color: Uint8ClampedArray, height: Uint8ClampedArray|null, normal: Uint8ClampedArray|null, w: number, h: number,
- *   gray?: number, strength?: number }} frame
+ * @param {{ color: Uint8ClampedArray, height: Uint8ClampedArray|null, normal: Uint8ClampedArray|null,
+ *   relief?: Uint8ClampedArray|null, w: number, h: number, gray?: number, strength?: number, reliefStrength?: number,
+ *   heightScale?: number }} frame
  * @returns {Uint8ClampedArray|null} null when the frame has no map
  */
-export function frameTwinTexels({ color, height, normal, w, h, gray = 0, strength = 1, emissive = false }) {
-  if (height === null && normal === null && !emissive) return null;
-  const opaque = opaqueMask(color, w, h);
-  if (height === null && normal === null) return emissiveTexels(null, opaque, w, h);
+export function frameTwinTexels({
+  color, height, normal, relief = null, w, h, gray = 0, strength = 1, reliefStrength = RELIEF_STRENGTH, heightScale = 1,
+}) {
+  if (height === null && normal === null && relief === null) return null;
+  return maskTwinTexels({ opaque: opaqueMask(color, w, h), height, normal, relief, w, h, gray, strength, reliefStrength, heightScale });
+}
+
+/**
+ * frameTwinTexels over an opaque mask instead of a colour (E-496: the twin page's rectangle that several sheets share, the
+ * union of their frames' opaque pixels). DX-RELIEF: a relief map (greyscale, white `reliefStrength` px) gives the normals
+ * unless a normal map does, and where the frame has no height map its relief goes where the heights go. DX-MAPCAMERA: the
+ * heights and the relief times `heightScale` (artCameraHeightScale), before anything reads them, the Sobel's normals too.
+ * @param {{ opaque: Uint8Array, height: Uint8ClampedArray|null, normal: Uint8ClampedArray|null,
+ *   relief?: Uint8ClampedArray|null, w: number, h: number, gray?: number, strength?: number, reliefStrength?: number,
+ *   heightScale?: number }} frame
+ * @returns {Uint8ClampedArray|null} null when the frame has no map
+ */
+export function maskTwinTexels({
+  opaque, height, normal, relief = null, w, h, gray = 0, strength = 1, reliefStrength = RELIEF_STRENGTH, heightScale = 1,
+}) {
+  if (height === null && normal === null && relief === null) return null;
   let heights = null;
   if (height !== null) {
-    heights = readHeights(height, w, h, gray);
+    heights = scaleHeights(readHeights(height, w, h, gray), heightScale);
     fixOutline(heights, opaque, w, h);
   }
-  const normals = normal !== null ? readNormals(normal, w, h) : normalsFromHeight(heights, opaque, w, h, strength);
-  return emissive ? emissiveTexels(heights, opaque, w, h) : twinTexels(heights, normals, opaque, w, h);
-}
-
-/** DX-EMISSIVE: the normal bytes that mark a glowing pixel in the twin page (no octahedral normal reaches 0 or 255). */
-export const EMISSIVE_CODE = [0, 255];
-
-/**
- * DX-EMISSIVE (F10): a glowing frame's twin texels: its heights when it has them, and EMISSIVE_CODE where a normal would
- * be. The face pass passes the code on, the light pass gives such a pixel full light.
- */
-export function emissiveTexels(height, opaque, w, h) {
-  const out = twinTexels(height, null, opaque, w, h);
-  for (let p = 0; p < w * h; p++) {
-    if (!opaque[p]) continue;
-    out[p * 4 + 2] = EMISSIVE_CODE[0];
-    out[p * 4 + 3] = EMISSIVE_CODE[1];
-  }
-  return out;
+  const reliefs = relief !== null
+    ? scaleHeights(readHeights(relief, w, h, reliefStrength > 0 ? reliefStrength : RELIEF_STRENGTH), heightScale)
+    : null;
+  const normals = normal !== null
+    ? readNormals(normal, w, h)
+    : reliefs !== null ? normalsFromHeight(reliefs, opaque, w, h, 1) : normalsFromHeight(heights, opaque, w, h, strength);
+  return twinTexels(heights !== null ? heights : reliefs, normals, opaque, w, h);
 }
 
 /**
- * H-EDGE: whether twin texels hold a glowing one (EMISSIVE_CODE where the normal goes): a pixel DX-DEPTH's edge pass
- * draws whatever its alpha (pixelDepth.js reads it as b under 0.5/255 and a over 254.5/255).
- * @param {Uint8ClampedArray|null} texels RGBA
- * @returns {boolean}
+ * E-497: a format-A twin page (RGBA8: height R·256 + G, the octahedral normal in B, A) in another format (twinTexel.js
+ * says each): 'B' two heights to an RGBA8 texel (x even in R, G; x odd in B, A), each the height's code + 1 (0: no map),
+ * the page half as wide; 'C' those heights and, in the rows below them (half the page's height more), the normals at half
+ * resolution (the mean of each 2 x 2 block's, octahedral), packed two to a texel as the heights are. 'A' as it is. The
+ * page's width and height are even (spriteSheetRegistry.js _paintMapsPage), so neither packing splits a rectangle.
+ * @param {Uint8ClampedArray} texels format A, width·height·4
+ * @param {number} width
+ * @param {number} height
+ * @param {'A'|'B'|'C'} format
+ * @returns {{ texels: Uint8ClampedArray, width: number, height: number }}
  */
-export function twinHasGlow(texels) {
-  if (texels === null) return false;
-  for (let i = 0; i < texels.length; i += 4) {
-    if (texels[i + 2] === EMISSIVE_CODE[0] && texels[i + 3] === EMISSIVE_CODE[1]) return true;
+export function twinPageInFormat(texels, width, height, format) {
+  if (format !== 'B' && format !== 'C') return { texels, width, height };
+  const ow = Math.max(1, Math.ceil(width / 2));
+  const hw = Math.ceil(width / 2);
+  const hh = Math.ceil(height / 2);
+  const oh = format === 'C' ? height + hh : height;
+  const out = new Uint8ClampedArray(ow * oh * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const a = (y * width + x) * 4;
+      if (texels[a + 2] + texels[a + 3] === 0) continue;
+      const v = Math.min(texels[a] * 256 + texels[a + 1] + 1, 65535);
+      const o = (y * ow + (x >> 1)) * 4 + (x & 1) * 2;
+      out[o] = v >> 8;
+      out[o + 1] = v & 255;
+    }
   }
-  return false;
+  if (format === 'C') {
+    const pair = [0, 0];
+    for (let v = 0; v < hh; v++) {
+      for (let u = 0; u < hw; u++) {
+        let nx = 0;
+        let ny = 0;
+        let nz = 0;
+        let any = false;
+        for (let dy = 0; dy < 2; dy++) {
+          const y = 2 * v + dy;
+          if (y >= height) continue;
+          for (let dx = 0; dx < 2; dx++) {
+            const x = 2 * u + dx;
+            if (x >= width) continue;
+            const a = (y * width + x) * 4;
+            if (texels[a + 2] + texels[a + 3] === 0) continue;
+            const n = decodeOctahedral(texels[a + 2], texels[a + 3]);
+            nx += n[0];
+            ny += n[1];
+            nz += n[2];
+            any = true;
+          }
+        }
+        if (!any) continue;
+        encodeOctahedral(nx, ny, nz, pair, 0);
+        const o = ((height + v) * ow + (u >> 1)) * 4 + (u & 1) * 2;
+        out[o] = pair[0];
+        out[o + 1] = pair[1];
+      }
+    }
+  }
+  return { texels: out, width: ow, height: oh };
+}
+
+/**
+ * E-497: what a twin page of any format holds at full-resolution twin texel (x, y), as the shaders read it (twinTexel.js
+ * twinRaw, twinStoredNormal): whether it holds a map, its height (px), and its stored normal (null in format B).
+ * @param {Uint8ClampedArray} texels the page in `format`
+ * @param {number} width the page's width in texels (format B and C: half the full resolution's)
+ * @param {number} height the page's height in texels (format C: the heights' and the normals' rows)
+ * @param {number} x
+ * @param {number} y
+ * @param {'A'|'B'|'C'} format
+ * @returns {{ present: boolean, z: number, normal: [number, number, number] | null }}
+ */
+export function twinPageTexel(texels, width, height, x, y, format) {
+  if (format !== 'B' && format !== 'C') {
+    const a = (y * width + x) * 4;
+    const present = texels[a + 2] + texels[a + 3] > 0;
+    return {
+      present,
+      z: (texels[a] * 256 + texels[a + 1]) / HEIGHT_UNITS,
+      normal: present ? decodeOctahedral(texels[a + 2], texels[a + 3]) : null,
+    };
+  }
+  const o = (y * width + (x >> 1)) * 4 + (x & 1) * 2;
+  const v = texels[o] * 256 + texels[o + 1];
+  if (v === 0) return { present: false, z: 0, normal: null };
+  let normal = null;
+  if (format === 'C') {
+    const top = (height * 2) / 3;
+    const u = x >> 1;
+    const n = ((top + (y >> 1)) * width + (u >> 1)) * 4 + (u & 1) * 2;
+    normal = decodeOctahedral(texels[n], texels[n + 1]);
+  }
+  return { present: true, z: (v - 1) / HEIGHT_UNITS, normal };
 }

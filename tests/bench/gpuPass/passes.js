@@ -21,7 +21,7 @@
  *   lightUntiled, light3dUntiled, selfShadowUntiled  the same passes looping over every light at every pixel (the
  *                shader without TILES): the same image, so their hashes match the tiled ones'
  *   multiply     today's composition of the light layer: the light texture over the colour, MULTIPLY
- *   compose      DX-EMISSIVE's composition (§6.9): lit colour x light + self glow, one full-resolution pass reading
+ *   compose      DX-UNSHADED's composition (§6.9, was DX-EMISSIVE): lit colour x light + own colour, one full-resolution pass reading
  *                three textures (the bench's shader: the engine has none yet)
  */
 
@@ -34,6 +34,7 @@ import {
 import { lampCardStrip, lampMapFragment, lampMapVertex, lampMapWgsl } from '../../../src/render/lampShadowMap.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from '../../../src/render/pixelDepth.js';
 import { FOOTPRINT_TEXELS } from '../../../src/render/frameBase.js';
+import { packMapsTable } from '../../../src/render/mapsTable.js';
 import {
   LightTiles, TILE_CAM_COS, TILE_CAM_FULL_H, TILE_CAM_FULL_W, TILE_CAM_GROUND_INV_Y, TILE_CAM_SIN, TILE_CAM_X, TILE_CAM_Y,
   TILE_CAM_ZOOM, binLightTiles, layoutLightTiles, writeLightTileUniforms,
@@ -162,7 +163,7 @@ uniform sampler2D uLitTex;
 uniform sampler2D uGlowTex;
 uniform sampler2D uLightTex;
 out vec4 finalColor;
-// DX-EMISSIVE (plan §6.9): what receives light times the light, plus what glows by itself.
+// DX-UNSHADED (plan §6.9, was DX-EMISSIVE): what receives light times the light, plus what no light touches.
 void main() {
   vec4 lit = texture(uLitTex, vUv);
   vec4 glow = texture(uGlowTex, vUv);
@@ -200,7 +201,7 @@ fn mainVert(@location(0) aPosition: vec2<f32>) -> ComposeOut {
   return o;
 }
 
-// DX-EMISSIVE (plan §6.9): what receives light times the light, plus what glows by itself.
+// DX-UNSHADED (plan §6.9, was DX-EMISSIVE): what receives light times the light, plus what no light touches.
 @fragment
 fn mainFrag(in: ComposeOut) -> @location(0) vec4<f32> {
   let lit = textureSample(uLitTex, uLinear, in.uv);
@@ -283,8 +284,12 @@ export function buildFrame(p, sh, sc, backend) {
   const tileWords = new Float32Array(4);
   writeLightTileUniforms(lightTiles, tileGrid, tileWords);
 
+  // E-496: this bench's twin page has its atlas's layout, so its maps table reads every textureId at its atlas texel.
+  const lutIds = Math.max(sc.lutSize[0] / 3 * sc.lutSize[1], sc.lutMixedSize[0] / 3 * sc.lutMixedSize[1]) | 0;
+  const mapsTable = packMapsTable(Array.from({ length: lutIds }, () => ({})), true);
   const textures = {
     atlas: { kind: 'bitmap', bitmap: sc.atlas, premultiply: true, filter: 'linear' },
+    mapsTable: { kind: 'data', format: 'rgba32f', width: mapsTable.width, height: mapsTable.height, data: mapsTable.data },
     twin: { kind: 'data', format: 'rgba8', width: sc.atlasSize[0], height: sc.atlasSize[1], data: sc.twin, filter: 'nearest' },
     lutCard: { kind: 'data', format: 'rgba32f', width: sc.lutSize[0], height: sc.lutSize[1], data: sc.lutCard },
     lutRender: { kind: 'data', format: 'rgba32f', width: sc.lutSize[0], height: sc.lutSize[1], data: sc.lutRender },
@@ -336,7 +341,7 @@ export function buildFrame(p, sh, sc, backend) {
     uSunPerp: [px, py, 0, 0],
     ...extra,
   });
-  const spriteTextures = { uTexture: 'atlas', uTexLut: 'lutCard', uMaps: 'twin' };
+  const spriteTextures = { uTexture: 'atlas', uTexLut: 'lutCard', uMaps: 'twin', uMapsLut: 'mapsTable' };
   const maxLights = String(sc.maxLights);
 
   const lightPass = (name, flags, label) => {
@@ -512,7 +517,7 @@ export function buildFrame(p, sh, sc, backend) {
       wgsl: { code: sunMapColumnsWgsl(sh.shadowWgsl), vertexEntry: 'mainVert', fragmentEntry: 'mainFragMap' },
       vertex: grid,
       instances: p.cards > 0 ? sc.columnRows : sc.renders,
-      textures: { uTexture: 'atlas', uTexLut: p.cards > 0 ? 'lutMixed' : 'lutRender', uMaps: 'twin', uFoot: 'foot' },
+      textures: { uTexture: 'atlas', uTexLut: p.cards > 0 ? 'lutMixed' : 'lutRender', uMaps: 'twin', uMapsLut: 'mapsTable', uFoot: 'foot' },
       uniforms: shadowUniforms(),
       targets: ['sunMap'],
       // As the engine draws it (mapDepthState): the highest caster point by a depth test, no blending.
@@ -579,7 +584,7 @@ export function buildFrame(p, sh, sc, backend) {
     },
   }));
   add('compose', () => ({
-    label: `emissive composition (lit x light + glow, the bench's shader), ${W}x${H}`,
+    label: `unshaded composition (lit x light + own colour, the bench's shader), ${W}x${H}`,
     spec: {
       name: 'compose',
       glsl: { vertex: COMPOSE_VERTEX, fragment: COMPOSE_FRAGMENT },

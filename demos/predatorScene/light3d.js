@@ -1,7 +1,7 @@
 // Predator with DX-LIGHT3D's pieces on: ?light3d=1 (DX_LIGHT3D_PLAN.md F11). An oblique camera (camera.pitch), the sun's and
 // the lamps' shadow maps, self-shadow and pixel depth; the light bench's barn as each house (a box for its shadow) and its
 // trees with their height and normal maps (their silhouettes), borrowed by path from demos/lightBenchScene/assets/; lamp
-// posts that cast the sun's shadow; fires and bonfires that glow (spriteRenderer.emissive). People are DirectionalSprites
+// posts that cast the sun's shadow; fires and bonfires no light touches (spriteRenderer.unshaded). People are DirectionalSprites
 // already: each light sees its own view of them. ?light3d=1&hour=22 pins the hour (no day cycle): night, with the lamps.
 //
 // Without the knob nothing here changes a thing: Predator is the engine's regression guard, and its default draws and costs

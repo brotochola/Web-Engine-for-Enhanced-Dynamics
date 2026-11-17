@@ -6,7 +6,7 @@
  *
  *   node tests/bench/faceLightCheck.mjs [--query k=v ...] [--tolerance 3] [--headless] [--save file.png]
  *
- * --query: the scene's knobs (hour, wrap, gain, sunDirect, groundScaleY, heightScaleY, backend and the sprite paths).
+ * --query: the scene's knobs (hour, skyLight, groundScaleY, heightScaleY, backend and the sprite paths).
  * Exit 0 when every sample is within --tolerance of 255. Prints the worst sample of each face.
  */
 import fs from 'node:fs';
@@ -39,7 +39,8 @@ function parseCli(argv) {
 /** The light at point p on a face looking along n, 0..1 for each channel, as the design says it should be. */
 function lightAt(p, n, env, lamps) {
   const sunRatio = Math.min(Math.max(0, n[0] * env.sun[0] + n[1] * env.sun[1] + n[2] * env.sun[2]) / Math.max(env.sun[2], 0.25), 1.6);
-  const sunTerm = env.intensity * (1 - env.sunDirect + env.sunDirect * sunRatio);
+  // DX-BARRIOS: the sky's share (Sun.skyLight) lights every face alike; the rest follows where it looks.
+  const sunTerm = env.intensity * (env.skyLight + (1 - env.skyLight) * sunRatio);
   const out = [0, 1, 2].map((i) => env.ambient + env.sunColor[i] * sunTerm);
   for (const lamp of lamps) {
     const lx = lamp.x - p[0];
@@ -47,10 +48,10 @@ function lightAt(p, n, env, lamps) {
     const lz = lamp.elevation - p[2];
     const d2 = lx * lx + ly * ly + lz * lz;
     const d = Math.sqrt(d2);
-    const cosine = ((n[0] * lx + n[1] * ly + n[2] * lz) / d + env.wrap) / (1 + env.wrap);
+    const cosine = (n[0] * lx + n[1] * ly + n[2] * lz) / d;
     if (cosine <= 0) continue;
     const I = (lamp.radius * lamp.radius) / 100;
-    const a = (env.gain * cosine * I) / (I + d2);
+    const a = (cosine * I) / (I + d2);
     for (let i = 0; i < 3; i++) out[i] += a;
   }
   return out.map((v) => Math.min(v, 1));
@@ -120,9 +121,7 @@ async function main() {
       intensity: sun.intensity,
       sunColor: [((sun.color >> 16) & 255) / 255, ((sun.color >> 8) & 255) / 255, (sun.color & 255) / 255],
       sun: [(-sun.dirX / dirLen) * Math.cos(a), (-dirY / dirLen) * Math.cos(a), Math.sin(a)],
-      sunDirect: knob('sunDirect', 0.6),
-      wrap: knob('wrap', 0),
-      gain: knob('gain', 1),
+      skyLight: knob('skyLight', 0.4),
     };
     let worstAll = 0;
     for (const f of layout.faces) {

@@ -19,7 +19,7 @@ export const N = Math.min(499998, Math.max(1, Math.floor(queryNumber('n', 150000
 export const MOVING = Math.min(1, Math.max(0, queryNumber('moving', 0.25)));
 /** `?churn=`: the share whose tint flips every frame (default 0.01): their keys are marked, their statics go up again. */
 export const CHURN = Math.min(1, Math.max(0, queryNumber('churn', 0.01)));
-/** `?gbuf=1`: lighting with emissive on, so the batch writes each instance's G-buffer words (E-387's keyed forms). */
+/** `?gbuf=1`: lighting with unshaded on, so the batch writes each instance's G-buffer words (E-387's keyed forms). */
 export const GBUF = queryNumber('gbuf', 0) === 1;
 /** `?bands=1`: four zIndex values, so the painter orders by zIndex and the words carry their bands. */
 export const BANDS = queryNumber('bands', 0) === 1;
@@ -65,7 +65,7 @@ export class KeyedPackStressScene extends Scene {
     // the default ('preRender') this scene measured pre-render's pack and never drew a keyed frame. ?pack=preRender
     // brings that pack back (E-444's measurement).
     preRender: { skipCull: true, noLimitFPS: false, packGpuSprites: PACK },
-    lighting: GBUF ? { enabled: true, emissive: true, ambient: 0.8 } : { enabled: false },
+    lighting: GBUF ? { enabled: true, unshaded: true, ambient: 0.8 } : { enabled: false },
   };
 
   static assets = {

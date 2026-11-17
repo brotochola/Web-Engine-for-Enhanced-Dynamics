@@ -13,7 +13,7 @@ import { savePopulation } from '../bench/saveEncodeMicrobench.mjs';
 // DX 3.3 added SpriteRenderer.flip (one Uint8 per entity, saved like any
 // field): +17 bytes per entity here (24 × 17 = 408), size and hash re-taken. E-177 added SpriteRenderer.keyedDirty
 // (one Uint8, saved like the other flags): +23 bytes per entity (24 × 23 = 552), size and hash re-taken. DX-GBUF added
-// SpriteRenderer.gbufFlags (normals, surface, emissive; one Uint8): +22 bytes per entity (24 × 22 = 528), re-taken.
+// SpriteRenderer.gbufFlags (normals, surface, unshaded; one Uint8): +22 bytes per entity (24 × 22 = 528), re-taken.
 // DX-PARENT added Transform.parent, localX, localY and localRotation (saved like any field): +83 bytes per entity
 // (24 × 83 = 1992), size and hash re-taken.
 

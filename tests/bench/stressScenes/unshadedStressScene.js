@@ -4,28 +4,28 @@ import {
   BENCH_CAMERA, VIEW_H, VIEW_W, benchSheets, gridCells, param, paramBackend, paramCount,
 } from './light3d/benchSheets.js';
 import { Stroller } from './light3d/stroller.js';
-import { ENTITY_EMISSIVE, Fire, FireLight } from './emissive/emissiveEntities.js';
+import { ENTITY_UNSHADED, Fire, FireLight } from './unshaded/unshadedEntities.js';
 
 const { Scene, Camera, LAYER_KIND } = WEED;
 
 /**
- * Two colours a pixel (DX-EMISSIVE F10, plan §6.9 and §10): a night field of fires and a crowd of the light bench's LPC
- * people (with their height and normal maps) strolling among them, in front of some fires and behind others. A fire glows
- * on its own: the night does not darken it and a person passing in front covers it, glow and all, in the proportion of
- * their alpha. Some fires carry a light, which shows the people's normals. No shadows.
+ * Two colours a pixel (DX-UNSHADED, was DX-UNSHADED F10, plan §6.9 and §10): a night field of fires and a crowd of the
+ * light bench's LPC people (with their height and normal maps) strolling among them, in front of some fires and behind
+ * others. No light touches a fire: the night does not darken it and a person passing in front covers it in the proportion
+ * of their alpha. Some fires carry a light, which shows the people's normals. No shadows.
  *
- * Owner: the presented (drawn) frames: the emissive colour is written by every sprite pixel of the entity pass (a second
+ * Owner: the presented (drawn) frames: the unshaded colour is written by every sprite pixel of the entity pass (a second
  * target, or a pass more) and composed with the light (`runPredatorAbab --scene
- * /tests/bench/stressScenes/emissiveStressScene.js --scene-export EmissiveStressScene --owner presented`, the same build
- * with `--query-a emissive=0 --query-b emissive=entity`). Pixi's step is the guard. Load keys: VISIBLE_ENTITIES,
+ * /tests/bench/stressScenes/unshadedStressScene.js --scene-export UnshadedStressScene --owner presented`, the same build
+ * with `--query-a unshaded=0 --query-b unshaded=entity`). Pixi's step is the guard. Load keys: VISIBLE_ENTITIES,
  * RENDER_QUEUE_SIZE. The whole world is in view and the crowd stays in it.
  *
  * - `?fires=` (default 600), `?people=` (default 2400): the load knobs (the frames fall as the overdraw grows).
  * - `?lights=` fires that carry a light (default 24, at most the fires).
- * - `?emissive=entity|sheet|0`: `entity` each fire's spriteRenderer.emissive (DX-EMISSIVE v2); `sheet` the fire sheet's
- *   assets.spritesheets.fire.emissive (v1, the fallback); `0` nothing glows (the reference). Left out: `entity` where the
- *   engine has spriteRenderer.emissive, `sheet` where it does not. `entity` on an engine without it draws nothing
- *   emissive, and says so on the console (`[bench]`).
+ * - `?unshaded=entity|sheet|0`: `entity` each fire's spriteRenderer.unshaded; `sheet` the fire sheet's
+ *   assets.spritesheets.fire.unshaded (the maps table's mark); `0` nothing is unshaded (the reference). Left out: `entity`
+ *   where the engine has spriteRenderer.unshaded, `sheet` where it does not. `entity` on an engine without it draws
+ *   nothing unshaded, and says so on the console (`[bench]`).
  * - `?backend=webgl|webgpu` (default webgl).
  * - `?still=1`: nothing moves (the people stand, the flames hold their first frame, the lights do not flicker), for
  *   byte-for-byte captures (compareCaptures.mjs). The same places as without it.
@@ -33,17 +33,17 @@ const { Scene, Camera, LAYER_KIND } = WEED;
 const W = VIEW_W;
 const H = VIEW_H;
 const SEED = 0xe715;
-const EMISSIVE_MODES = ['entity', 'sheet', '0'];
+const UNSHADED_MODES = ['entity', 'sheet', '0'];
 
 export const FIRES = paramCount('fires', 600, 1, 30000);
 export const PEOPLE = paramCount('people', 2400, 0, 60000);
 export const LIGHTS = paramCount('lights', 24, 0, Math.min(256, FIRES));
-export const EMISSIVE = EMISSIVE_MODES.includes(param('emissive')) ? param('emissive') : ENTITY_EMISSIVE ? 'entity' : 'sheet';
+export const UNSHADED = UNSHADED_MODES.includes(param('unshaded')) ? param('unshaded') : ENTITY_UNSHADED ? 'entity' : 'sheet';
 export const BACKEND = paramBackend();
 export const STILL = param('still') === '1';
 
-if (EMISSIVE === 'entity' && !ENTITY_EMISSIVE && typeof document !== 'undefined') {
-  console.warn('[bench] emissiveStressScene: this engine has no spriteRenderer.emissive, so ?emissive=entity draws nothing emissive (?emissive=sheet is the per-sheet one)');
+if (UNSHADED === 'entity' && !ENTITY_UNSHADED && typeof document !== 'undefined') {
+  console.warn('[bench] unshadedStressScene: this engine has no spriteRenderer.unshaded, so ?unshaded=entity draws nothing unshaded (?unshaded=sheet is the per-sheet one)');
 }
 
 export const stressSceneConfig = {
@@ -51,16 +51,16 @@ export const stressSceneConfig = {
     fires: FIRES,
     people: PEOPLE,
     lights: LIGHTS,
-    emissive: EMISSIVE,
+    unshaded: UNSHADED,
     backend: BACKEND,
     still: STILL ? 1 : 0,
   },
 };
 
 const fireSheet = { json: '/demos/img/fuego/fuego.json', png: '/demos/img/fuego/fuego.png' };
-if (EMISSIVE === 'sheet') fireSheet.emissive = true;
+if (UNSHADED === 'sheet') fireSheet.unshaded = true;
 
-export class EmissiveStressScene extends Scene {
+export class UnshadedStressScene extends Scene {
   static config = {
     worldWidth: W,
     worldHeight: H,
@@ -73,11 +73,11 @@ export class EmissiveStressScene extends Scene {
     preRender: { noLimitFPS: false },
     camera: { ...BENCH_CAMERA },
     layers: { ground: { kind: LAYER_KIND.TILING, texture: 'ground', tileScale: 1, parallax: 1, zIndex: 0 } },
-    // Night: no sun, a little ambient; the fires' lights and their glow are what shows.
+    // Night: no sun, a little ambient; the fires' lights and their own colour are what shows.
     lighting: {
       enabled: true,
-      // ?emissive=entity: spriteRenderer.emissive needs the sprites' G-buffer words (the people's maps bring them too).
-      emissive: EMISSIVE === 'entity',
+      // ?unshaded=entity: spriteRenderer.unshaded needs the sprites' G-buffer words (the people's maps bring them too).
+      unshaded: UNSHADED === 'entity',
       baseAmbient: 0.07,
       maxLights: Math.max(8, LIGHTS + 4),
       resolution: 0.5,
@@ -108,7 +108,7 @@ export class EmissiveStressScene extends Scene {
     for (const [x, y] of grid.cells) {
       const scale = fireScale * (0.85 + rng() * 0.3);
       const rate = 0.22 + rng() * 0.16;
-      Fire.spawn({ x, y, scale, rate: STILL ? 0 : rate, flip: rng() < 0.5, emissive: EMISSIVE === 'entity' });
+      Fire.spawn({ x, y, scale, rate: STILL ? 0 : rate, flip: rng() < 0.5, unshaded: UNSHADED === 'entity' });
     }
     // The lights on fires spread over the field.
     for (let j = 0; j < LIGHTS; j++) {

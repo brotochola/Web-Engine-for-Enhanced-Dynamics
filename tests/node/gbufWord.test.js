@@ -3,22 +3,20 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  EMISSIVE_LEVEL_MAX,
-  EMISSIVE_LEVEL_ON,
   GBUF_FLAGS,
   GBUF_MAX_BANDS,
+  GBUF_UNSHADED_BIT,
   SPRITE_NORMALS,
   decodeGbufWord,
-  emissiveLevel,
-  emissiveValue,
   gbufEntityId,
+  gbufWanted,
   gbufWord,
   writeGbufWords,
 } from '../../src/render/gbufWord.js';
 
 test('a word holds its entity, flags and selfShadow, and every word is an exact float32', () => {
   for (const e of [0, 1, 65534, 65535, 70000, 1 << 20]) {
-    for (const flags of [0, 1, 2, 3, GBUF_FLAGS.FLOOR, 7 << 3, 63]) {
+    for (const flags of [0, 1, 2, 3, GBUF_FLAGS.FLOOR, GBUF_FLAGS.UNSHADED, 63]) {
       for (const self of [0, 1, 2]) {
         const w = gbufWord(e, flags, self);
         assert.equal(Math.fround(w), w, `${w} is a float32`);
@@ -28,7 +26,7 @@ test('a word holds its entity, flags and selfShadow, and every word is an exact 
         assert.ok(d.id >= 1 && d.id <= 65535, 'an entity never reads as none');
         assert.equal(d.normals, flags & 3);
         assert.equal(d.floor, (flags & GBUF_FLAGS.FLOOR) !== 0);
-        assert.equal(d.emissive, (flags >> 3) & 7);
+        assert.equal(d.unshaded, (flags & GBUF_FLAGS.UNSHADED) !== 0);
         assert.equal(d.selfShadow, self);
       }
     }
@@ -36,16 +34,22 @@ test('a word holds its entity, flags and selfShadow, and every word is an exact 
   assert.equal(gbufWord(-1, 63, 2), 0, 'no entity, no word');
 });
 
-test('emissive: false is off, true the sprite\'s colour, a number a glow in quarters', () => {
-  assert.equal(emissiveLevel(false), 0);
-  assert.equal(emissiveLevel(0), 0);
-  assert.equal(emissiveLevel(true), EMISSIVE_LEVEL_ON);
-  assert.equal(emissiveLevel(1), EMISSIVE_LEVEL_ON);
-  assert.equal(emissiveLevel(0.01), 1);
-  assert.equal(emissiveLevel(9), EMISSIVE_LEVEL_MAX);
-  assert.equal(emissiveValue(0), false);
-  assert.equal(emissiveValue(EMISSIVE_LEVEL_ON), true);
-  assert.equal(emissiveValue(6), 1.5);
+// DX-UNSHADED: one bit, the word's GBUF_UNSHADED_BIT (the shaders read `(word >> 21u) & 1u`), where DX-EMISSIVE's level
+// had its top bit: a saved `emissive = true` (level 4, flags 32) reads as unshaded.
+test('unshaded is one bit of the flags, the top one of the old emissive level', () => {
+  assert.equal(GBUF_FLAGS.UNSHADED, 4 << 3, 'emissive = true stored level 4 in bits 3-5');
+  assert.equal(GBUF_UNSHADED_BIT, 16 + Math.log2(GBUF_FLAGS.UNSHADED));
+  assert.equal(decodeGbufWord(gbufWord(3, GBUF_FLAGS.UNSHADED, 0)).unshaded, true);
+  assert.equal(decodeGbufWord(gbufWord(3, 3 << 3, 0)).unshaded, false, 'bits 3-4 are free');
+  for (const [lighting, atlas, want] of [
+    [{ enabled: true, unshaded: true }, false, true],
+    [{ enabled: true }, { maps: false, unshaded: true }, true],
+    [{ enabled: true }, { maps: true }, true],
+    [{ enabled: true }, false, false],
+    [{ enabled: true, unshaded: true, raycasted: true }, false, false],
+  ]) {
+    assert.equal(gbufWanted({ lighting }, atlas), want, JSON.stringify([lighting, atlas]));
+  }
 });
 
 test('the words follow the draw order, rows without an entity read 0, and zIndex bands count along it', () => {

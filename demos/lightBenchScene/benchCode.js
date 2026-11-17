@@ -132,7 +132,7 @@ export function elementCode(el, { maps }) {
     const why = { map: 'its normal map', height: 'normals from its height map', flat: 'flat: lit as the floor' }[look.normals];
     out.push(line(4, `this.spriteRenderer.normals = '${look.normals}';`, why));
   }
-  if (look.emissive) out.push(line(4, 'this.spriteRenderer.emissive = true;', 'it glows: no night or shadow darkens it'));
+  if (look.unshaded) out.push(line(4, 'this.spriteRenderer.unshaded = true;', 'unshaded: no light, night or shadow touches it'));
   out.push('  }');
   if (el.kind === 'char') {
     out.push('');

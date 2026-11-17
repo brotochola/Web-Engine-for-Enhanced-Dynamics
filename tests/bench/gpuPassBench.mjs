@@ -55,7 +55,7 @@ const SUITES = {
     ...[0.25, 0.5, 1].flatMap((res) => [8, 32, 256].map((lights) => light(res, lights))),
     // Self-shadow: 1, 2 and 4 rays.
     ...[1, 2, 4].map((rays) => ({ passes: 'light3d,selfShadow', query: { res: 1, lights: 32, rays } })),
-    // The composition: today's light layer, and the emissive composition.
+    // The composition: today's light layer, and the unshaded composition.
     { passes: 'multiply,compose', query: { res: 0.5 } },
   ],
   quick: [
