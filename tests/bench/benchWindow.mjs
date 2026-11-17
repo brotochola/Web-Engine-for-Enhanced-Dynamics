@@ -30,8 +30,12 @@ export function savedBenchWindow() {
  */
 export function benchWindowArgs() {
   const p = savedBenchWindow();
+  launchedAt = p;
   return [...(p ? [`--window-position=${p.left},${p.top}`] : []), '--force-device-scale-factor=1'];
 }
+
+/** Where this process launched its window (benchWindowArgs), so only a window the owner moved is saved. */
+let launchedAt = null;
 
 /**
  * Save where `page`'s window is now, when it is a normal window (not minimized, maximized or full screen). Never
@@ -45,6 +49,9 @@ export async function rememberBenchWindow(page) {
     const { bounds } = await cdp.send('Browser.getWindowBounds', { windowId });
     await cdp.detach().catch(() => {});
     if (bounds.windowState !== 'normal' || !Number.isFinite(bounds.left) || !Number.isFinite(bounds.top)) return;
+    // Only a window the owner moved during the run: one still where it was launched says nothing new, and saving it
+    // would undo a position written meanwhile (the owner's screens changed while a run's window sat off them).
+    if (launchedAt && launchedAt.left === bounds.left && launchedAt.top === bounds.top) return;
     const prev = savedBenchWindow();
     if (prev && prev.left === bounds.left && prev.top === bounds.top) return;
     fs.writeFileSync(benchWindowFile(), JSON.stringify({ left: bounds.left, top: bounds.top, savedAt: new Date().toISOString() }) + '\n');
