@@ -21653,8 +21653,8 @@
       "status": "open",
       "statusText": "found 2026-11-17 on the ASUS laptop (v0.14.0 against main, then E-448 against its parent)",
       "date": "2026-11-17",
-      "result": "E-448 merge against its parent on the HD 620: drawn 11.8 -> 9.0 fps (-24.0 %, 4/4); pre-render -39.6 %, renderer -15.2 %.",
-      "next": "A bench switch for the pass first (its own commit), to read it over the scenes on the HD 620. Then pick: the gate by GPU class (integrated and tile-based off unless far past break-even, from the renderer string DX-IGPUWARN reads), a gate that follows the frame pacer (E-479), or the iGPU-dear part made cheaper.",
+      "result": "HD 620, pass on -> off in one build (R-1277): bunnyMark 100 000 drawn 7.6 -> 11.7 fps (+53.5 %), bunnyMarkStress 33.7 -> 59.9 (+77.8 %), Predator crowd 0.5 zoom 1 level; uploading the pose texture from the CPU changes nothing (the drawing costs, not the copy).",
+      "next": "Decide the policy: the gate by GPU class (integrated and tile-based off unless far past break-even, from the renderer string DX-IGPUWARN reads) or a gate that follows the frame pacer (E-479). To know which part of the pass the HD 620 pays (vertex texture fetch, discard with depth writes, depth traffic): Intel GPA on the laptop, or shader variants behind debug switches.",
       "area": "render",
       "kind": "speed",
       "refs": [],
@@ -21667,7 +21667,8 @@
         "bunnyMark"
       ],
       "records": [
-        "R-1274"
+        "R-1274",
+        "R-1277"
       ]
     }
   ],
@@ -34288,6 +34289,18 @@
       "title": "No Box2D wasm since v0.14.0 is dearer per awake body on the ASUS (B/A 0.60 to 1.32, 2 pairs each); the scene's heavier frame tips it, the spin and catch-up made it fall",
       "verdict": "note",
       "text": "**No Box2D wasm since v0.14.0 makes Predator's step dearer per awake body on the ASUS. The scene got heavier around physics.** Each build against v0.14.0, or against its own parent after the spin; Predator crowd 0.5, detailed stats on (`--hyp` with no probe), 2 pairs each, 2026-11-17 05:47 to 06:07. Box2D's own step (PROFILE_STEP_MS) per 1 000 awake bodies (the sample average):\n\n| Build | Against | B/A |\n|---|---|---|\n| E-235 912e9f44 | v0.14.0 | 0.67 |\n| E-255 3ed0c280 | v0.14.0 | 0.60 |\n| E-256 12e1acaf | v0.14.0 | 0.84 |\n| E-288 f44815c0 | E-298 | 1.32 |\n| E-305 92bae6a0 | E-288 | 0.85 |\n| E-308 5ccca35d | E-305 | 0.99 |\n\n- Runs within one build range 1.3 to 4.5 ms a 1 000, so E-288's 1.32 is inside that.\n- Main (with E-501 and N-264) read 12.9 to 16.1 in two runs that were deep in the spiral (49 and 95 physics frames). v0.14.0 in a spiral also rises, to 4.0.\n- E-308's runs (the Nov 14 tree, spin on) did not spiral (~500 frames). Main's (Nov 17) did.\n- So what tips the ASUS over is the rest of the frame since Nov 15, on 4 logical CPUs: spatial +3 ms and pre-render +2 ms there against v0.14.0. That raises the odds; E-298's spin and the catch-up steps made it fall. E-501 and N-264 cut those two links.\n- To go further: a deterministic physics replay (record a Predator world, replay it per wasm build). Box2D's own recorder misses E-288's accelerations, which go from memory into the solver, so it needs WeedJS's own record of the columns."
+    },
+    {
+      "id": "R-1277",
+      "date": "2026-11-17",
+      "time": "06:48",
+      "timeFrom": "recorded",
+      "title": "E-502 on and off in one build on the HD 620: bunnyMark +53.5 %, bunnyMarkStress +77.8 % drawn frames without the pass, Predator zoom 1 level; the pose copy is not the cost",
+      "verdict": "note",
+      "text": "**E-448's opaque pass on and off in one build (main 1835b772, `?opaquePass=0` on side B, the bench switch from that commit), ASUS laptop, Intel HD 620, 4 pairs each, 2026-11-17 06:18 to 06:49.**\n\n| Scene | drawn fps, pass on → off | Renderer CPU |\n|---|---|---|\n| bunnyMark 100 000 (asus-e502-bunny) | 7.6 → 11.7 (+53.5 %, 4/4) | 10.1 → 9.5 ms |\n| bunnyMarkStress (asus-e502-bunnystress) | 33.7 → 59.9 (+77.8 %, 4/4) | 2.88 → 0.48 ms |\n| Predator crowd 0.5 zoom 1 (asus-e502-pred-z1) | 50.7 → 49.3 (−1.8 %, within noise) | — |\n\nPredator's spatial, physics and pre-render are within noise too.\n\n**Not the pose copy.** A variant that uploads the pose texture from the batch's CPU words, instead of unpacking it from the vertex buffer, drew the same: bunnyMarkStress 34.0 → 34.9 fps, bunnyMark 7.8 → 7.8. It cost the renderer +18.8 % (4/4) in bunnyMark, re-uploading 1.6 MB a frame. The variant was dropped, its branch deleted.\n\nWhat costs the HD 620 is the pass's drawing. One of three:\n- the second vertex pass, which fetches each pose from an integer texture in the vertex shader;\n- the fragment shader's `discard` with depth writes, which on many GPUs costs early depth for that draw;\n- the depth traffic on single-channel shared memory.\n\nThe renderer's extra CPU in bunnyMarkStress looks like waiting on a saturated GPU. Telling the three apart takes a GPU profiler on the laptop (Intel GPA) or shader variants.\n\nUntil then the options stand: the gate by GPU class (integrated and tile-based GPUs off unless far past break-even), or a gate that follows the frame pacer (E-479).",
+      "commits": [
+        "1835b772"
+      ]
     }
   ],
   "leads": [
