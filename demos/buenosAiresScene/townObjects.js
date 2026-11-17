@@ -143,11 +143,11 @@ const LAMP_RADIUS = 10 * Math.sqrt(1800 * 2.2);
 /**
  * Its halo on the bulb (LightEmitter.glow and glowRadius). The scene's halos join the entities (lightGlow 'sprite'): each
  * is drawn right after its lamp, so it shines over the lamp and a tree or a house in front of the lamp covers it, and
- * it is unshaded, so the night does not darken it. The engine's gradient halves its alpha every 2 % of its radius, so a
- * 220 px radius shows about 20 px of glow around the glass: a bulb's glow, not a haze over the street the lamp lights.
+ * it is unshaded, so the night does not darken it. glowRadius is the glow one sees round the glass (35 px: a bulb's glow,
+ * not a haze over the street the lamp lights).
  */
 const LAMP_GLOW = 0.6;
-const LAMP_GLOW_RADIUS = 220;
+const LAMP_GLOW_RADIUS = 35;
 /** A lamp's shadows (the lamps' shadow map) reach 260 px: cheaper than its whole pool. */
 const LAMP_SHADOW_RANGE = 260;
 

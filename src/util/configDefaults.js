@@ -820,6 +820,12 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   pixelArt: false,
   /**
+   * DX-LIGHTEDGES (lightEdges.js): the light, computed at a share of the canvas (resolution under 1), shown without crossing
+   * the floor's edges where the entities write depth (pixel depth): a head in front of shaded floor keeps no rim of its own
+   * light. false shows it stretched as a plain texture.
+   */
+  lightEdges: true,
+  /**
    * DX-SELFSHADOW: faces and sprites with height maps shade themselves and each other from the sun: steps towards it over
    * the face map's heights in the light pass (a crate's lid edge over its front, an arm over a body). WebGL for now.
    */

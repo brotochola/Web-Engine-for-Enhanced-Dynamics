@@ -664,7 +664,7 @@ async function runCase(t, opts) {
   for (let f = 0; f < FRAMES; f++) {
     assert.ok(writeEmitColumnsNext(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource), 'every column is in the memory');
     assert.equal(writeEmitBulletColumns(b, BulletComponent, worker._resolveBuiltinTextureId('_bulletTrail')), k.bullets, 'the bullet columns');
-    assert.equal(writeEmitGlowColumns(b, LightEmitter, Transform, worker._resolveBuiltinTextureId('_lightGradient')), k.lights, 'the glow columns');
+    assert.equal(writeEmitGlowColumns(b, LightEmitter, Transform, worker._resolveBuiltinTextureId('_lightGradient'), worker._resolveBuiltinTextureId('_lightGlow')), k.lights, 'the glow columns');
     assert.equal(writeEmitParticleColumns(b, ParticleComponent, worker._resolveBuiltinTextureId('_whiteCircle'),
       worker.zenithalMaxHeight, worker.zenithalScaleFactor, worker.zenithalAlphaFade), k.particles, 'the particle columns');
     const lfPrev = worker.interpolatePhysicsPose && worker._prevLfX ? worker._prevLfCount : 0;

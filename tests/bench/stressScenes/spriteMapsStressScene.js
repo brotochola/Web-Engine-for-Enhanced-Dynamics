@@ -17,6 +17,9 @@ export const N = Math.max(1, Math.floor(queryNumber('n', 600)));
 /** `?lights=`: lamps wandering among them (default 12). */
 export const LIGHTS = Math.max(0, Math.floor(queryNumber('lights', 12)));
 /** `?res=`: lighting.resolution (default 0.5). */
+/** `?twinFormat=B` or `C`: the twin page's other formats (E-497); `?still=1`: the lamps stay where they start (captures). */
+const TWIN_FORMAT = ['A', 'B', 'C'].includes(WEED.params?.get('twinFormat')) ? WEED.params.get('twinFormat') : 'A';
+const STILL = WEED.params?.get('still') === '1';
 export const RES = queryNumber('res', 0.5);
 /** `?hour=`: the sun's hour (default 22, night: the lamps show the normals). */
 export const HOUR = queryNumber('hour', 22);
@@ -66,7 +69,7 @@ class Lamp extends GameObject {
   }
 
   tick(dtRatio, dt) {
-    this.phase += (dt || 16.7) * 0.0004;
+    if (!STILL) this.phase += (dt || 16.7) * 0.0004;
     this.setPosition(this.cx + Math.cos(this.phase) * this.r, this.cy + Math.sin(this.phase) * this.r * 0.7);
   }
 }
@@ -85,6 +88,7 @@ export class SpriteMapsStressScene extends Scene {
     worldWidth: W,
     worldHeight: H,
     seed: 0x3a95,
+    assets: { twinFormat: TWIN_FORMAT },
     spatial: { numberOfSpatialWorkers: 1, cellSize: 128, maxNeighbors: 16, maxEntitiesPerCell: 255, noLimitFPS: false },
     logic: { numberOfLogicWorkers: 1, noLimitFPS: false },
     physics: { subStepCount: 1, noLimitFPS: false, gravity: { x: 0, y: 0 } },

@@ -607,5 +607,11 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     totalLight *= (1.0 - sh.a);
   }
   totalLight = min(totalLight, vec3<f32>(1.0));
+// #if EDGES
+  // DX-LIGHTEDGES: alpha says the floor lit this texel (0); a G-buffer entry's texels keep 1 (lightEdges.js).
+  return vec4<f32>(totalLight, 0.0);
+// #endif EDGES
+// #if !EDGES
   return vec4<f32>(totalLight, 1.0);
+// #endif !EDGES
 }

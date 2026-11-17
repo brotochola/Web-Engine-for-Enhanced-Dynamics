@@ -1130,7 +1130,17 @@ export function createHalfCircularGradientCanvas(radius = LIGHT_GRADIENT_TEXTURE
   return canvas;
 }
 
-export function createCircularGradientCanvas(radius = LIGHT_GRADIENT_TEXTURE_RADIUS, color = 0xffffff) {
+/**
+ * E-498: how much of the light gradient's curve the compact glow (the halos with their own glowRadius) spreads over its
+ * whole radius: its inner 16 %, where the gradient falls to under 1 % (2^-7), so the glow fills its quad.
+ */
+export const LIGHT_GLOW_COMPACT_SPAN = 0.16;
+
+/**
+ * A white radial gradient `radius` px round, its alpha 2^(1 - i) at the i-th of 50 stops, held at 1 inside the first.
+ * `span` (E-498) squeezes the curve: the canvas holds its inner `span` of it, stretched to the whole radius.
+ */
+export function createCircularGradientCanvas(radius = LIGHT_GRADIENT_TEXTURE_RADIUS, color = 0xffffff, span = 1) {
   radius = Math.round(radius);
   const size = radius * 2;
   const canvas = create2dCanvas(size, size);
@@ -1155,7 +1165,8 @@ export function createCircularGradientCanvas(radius = LIGHT_GRADIENT_TEXTURE_RAD
   // Uses 2^(1-i) for smooth falloff: 1.0 → 0.5 → 0.25 → 0.125 → ...
   const numStops = 50;
   for (let i = 1; i <= numStops; i++) {
-    const alpha = Math.pow(2, 1 - i);
+    // The curve at this stop, i / numStops of the canvas being span of the gradient (1: the stops as they were).
+    const alpha = Math.min(1, Math.pow(2, 1 - i * span));
     gradient.addColorStop(i / numStops, `rgba(${r},${g},${b},${alpha})`);
   }
 

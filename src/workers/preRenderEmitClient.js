@@ -66,6 +66,8 @@ export const EMIT_SLOTS = [
   'kSkip',
   // DX-GLOWRADIUS: the glow rows' halo radius (LightEmitter.glowRadius).
   'lGlowRadius',
+  // E-498: the compact glow's texture (a value), what a halo with its own radius draws.
+  'lGlowTexture',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -546,13 +548,15 @@ export function writeEmitBulletColumns(b, BulletComponent, trailTexture) {
  * and Transform's x and y (in the collect's), all in the memory, or lColor 0 and emit_rows lists the glow rows for
  * the JS.
  * @param {number} gradientTexture the glow's texture (_resolveBuiltinTextureId('_lightGradient'))
+ * @param {number} glowTexture E-498: the compact glow's (_resolveBuiltinTextureId('_lightGlow')), a halo with its own radius's
  * @returns {boolean} whether the kernel writes the glow rows this frame
  */
-export function writeEmitGlowColumns(b, LightEmitter, Transform, gradientTexture) {
+export function writeEmitGlowColumns(b, LightEmitter, Transform, gradientTexture, glowTexture) {
   let ok = putSlot(b, 'tX', Transform.x) && putSlot(b, 'tY', Transform.y)
     && putSlot(b, 'tRotC', Transform.rotC) && putSlot(b, 'tRotS', Transform.rotS);
   for (let k = 0; ok && k < EMIT_GLOW_COLUMNS.length; k++) ok = putSlot(b, EMIT_GLOW_COLUMNS[k][0], LightEmitter[EMIT_GLOW_COLUMNS[k][1]]);
   b.table[SLOT.lGradientTexture] = gradientTexture;
+  b.table[SLOT.lGlowTexture] = glowTexture;
   if (!ok) b.table[SLOT.lColor] = 0;
   return ok;
 }

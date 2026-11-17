@@ -81,6 +81,7 @@ import {
 } from '../render/lightTiles.js';
 import { gbufEntityId, gbufWanted, writeGbufWords } from '../render/gbufWord.js';
 import { UNSHADED_COMPOSITE_FRAG, UNSHADED_COMPOSITE_VERT, unshadedCompositeGpuProgram, unshadedQuadPositions } from '../render/unshadedComposite.js';
+import { lightEdgesHost, lightEdgesQuad, rgbOnlyHost, unshadedEdgesHost } from '../render/lightEdges.js';
 import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
 import {
   SUN_MAP_COLUMNS,
@@ -1111,6 +1112,15 @@ class PixiRenderer extends AbstractWorker {
     this._faceRtTransform = new Matrix();
     this._faceCamera = new Float64Array(4).fill(NaN); // the camera _faceRtTransform was written for
     this.lightingDisplaySprite = null; // Sprite to display the lightingRT on stage
+    // DX-LIGHTEDGES (lightEdges.js): the light shown without crossing the floor's edges, where the entities write depth:
+    // its host in the lighting layer's place (the sprite above then stays off the stage), the unshaded layer's two
+    // halves, and the canvas quad they share.
+    this._lightEdgesOn = false;
+    this._lightEdges = null;
+    this._unshadedEdges = null;
+    this._lightEdgesQuad = new Float32Array(8);
+    this._lightEdgesQuadBuffer = null;
+    this._lightEdgesGeometry = null;
     this._lightDataFloats = null; // Float32Array RGBA32F payload (maxLights x 2)
     this._lightDataSource = null; // BufferImageSource uploading _lightDataFloats
     // E-205: the light pass loops over the lights of each pixel's tile (src/render/lightTiles.js), not over every light.
@@ -3687,10 +3697,76 @@ class PixiRenderer extends AbstractWorker {
    * DX-UNSHADED: the unshaded target (the canvas's size) and the unshaded layer, a quad over the canvas just above the
    * lighting layer that adds unshaded · (1 - light) (unshadedComposite.js), its blend additive.
    */
+  /** DX-LIGHTEDGES: the programs' environment for lightEdges.js. */
+  _lightEdgesEnv() {
+    return { GpuProgram, GlProgram: PIXI.GlProgram, useWebGpu: this._useWebGpu };
+  }
+
+  /** DX-LIGHTEDGES: the light's host (lightEdges.js) over the canvas quad, in the lighting layer's place. */
+  _createLightEdges() {
+    unshadedQuadPositions(this._lightEdgesQuad, this.canvasWidth, this.canvasHeight);
+    this._lightEdgesQuadBuffer = new Buffer({ data: this._lightEdgesQuad, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST });
+    this._lightEdgesGeometry = lightEdgesQuad(this._lightEdgesQuadBuffer);
+    this._lightEdges = lightEdgesHost(this._lightEdgesEnv(), this._lightEdgesGeometry, this.lightingRT.source);
+    this._registerLayerDisplayObject('lighting', this._lightEdges.host);
+    this.pixiApp.stage.addChild(this._lightEdges.host);
+  }
+
+  /** DX-LIGHTEDGES: the lighting layer's display: the edges' host, or the stretched sprite. */
+  _lightingDisplay() {
+    return this._lightEdges !== null ? this._lightEdges.host : this.lightingDisplaySprite;
+  }
+
+  /**
+   * DX-LIGHTEDGES: every mesh of the edges' hosts on `light` (and the unshaded halves on `unshaded`): EMPTY before a
+   * resize replaces the targets (_replaceRT destroys the bind groups still listening on the old ones), the new ones after.
+   */
+  _bindLightEdges(light, unshaded) {
+    if (this._lightEdges !== null) {
+      const meshes = this._lightEdges.meshes;
+      for (let i = 0; i < meshes.length; i++) {
+        const res = meshes[i].shader.resources;
+        if (res.uLight !== light) res.uLight = light;
+      }
+    }
+    if (this._unshadedEdges !== null) {
+      const meshes = this._unshadedEdges.meshes;
+      for (let i = 0; i < meshes.length; i++) {
+        const res = meshes[i].shader.resources;
+        if (res.uLight !== light) res.uLight = light;
+        if (res.uUnshaded !== unshaded) res.uUnshaded = unshaded;
+        if (this._useWebGpu && res.uUnshadedSampler !== unshaded.style) res.uUnshadedSampler = unshaded.style;
+      }
+    }
+  }
+
+  /** DX-LIGHTEDGES: the hosts off the stage and destroyed (a light pass made again, or a teardown). */
+  _releaseLightEdges() {
+    const empty = PIXI.Texture.EMPTY.source;
+    this._bindLightEdges(empty, empty);
+    if (this._lightEdges !== null) {
+      this._lightEdges.host.removeFromParent();
+      this._lightEdges.host.destroy({ children: true });
+      this._lightEdges = null;
+    }
+    this._unshadedEdges = null;
+  }
+
   _createUnshadedLayer() {
     const width = this.canvasWidth;
     const height = this.canvasHeight;
     this.unshadedRT = PIXI.RenderTexture.create({ width, height });
+    if (this._lightEdges !== null) {
+      // DX-LIGHTEDGES: the two halves over the light host's stencil marks, drawn right after it (same zIndex, added later).
+      this._unshadedEdges = unshadedEdgesHost(this._lightEdgesEnv(), this._lightEdgesGeometry, this.lightingRT.source, this.unshadedRT.source);
+      const host = this._unshadedEdges.host;
+      host.visible = false;
+      host.zIndex = this._lightEdges.host.zIndex;
+      this._unshadedComposite = host;
+      this.pixiApp.stage.addChild(host);
+      this.pixiApp.stage.sortChildren();
+      return;
+    }
     unshadedQuadPositions(this._unshadedQuad, width, height);
     this._unshadedQuadBuffer = new Buffer({ data: this._unshadedQuad, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST });
     const geometry = new PIXI.Geometry({
@@ -3734,6 +3810,11 @@ class PixiRenderer extends AbstractWorker {
   _unbindUnshadedLayer() {
     const mesh = this._unshadedComposite;
     if (mesh === null) return;
+    if (this._unshadedEdges !== null) {
+      const empty = PIXI.Texture.EMPTY.source;
+      this._bindLightEdges(empty, empty);
+      return;
+    }
     const res = mesh.shader.resources;
     const empty = PIXI.Texture.EMPTY.source;
     if (res.uUnshaded !== empty) res.uUnshaded = empty;
@@ -3748,6 +3829,10 @@ class PixiRenderer extends AbstractWorker {
   _bindUnshadedLayer() {
     const mesh = this._unshadedComposite;
     if (mesh === null || this.unshadedRT === null || this.lightingRT === null) return;
+    if (this._unshadedEdges !== null) {
+      this._bindLightEdges(this.lightingRT.source, this.unshadedRT.source);
+      return;
+    }
     const res = mesh.shader.resources;
     const glow = this.unshadedRT.source;
     const light = this.lightingRT.source;
@@ -3785,7 +3870,7 @@ class PixiRenderer extends AbstractWorker {
     this._submitRender(opts);
     opts.transform = null;
     this._gpuPassesThisFrame++;
-    const display = this.lightingDisplaySprite;
+    const display = this._lightingDisplay();
     if (display && mesh.zIndex !== display.zIndex) mesh.zIndex = display.zIndex;
     if (!mesh.visible) mesh.visible = true;
   }
@@ -3853,6 +3938,7 @@ class PixiRenderer extends AbstractWorker {
       this._unshadedComposite.removeFromParent();
       this._unshadedComposite = null;
     }
+    this._releaseLightEdges();
     this._releaseGbufTarget();
     if (this.lightingDisplaySprite) {
       this.lightingDisplaySprite.removeFromParent();
@@ -4755,6 +4841,10 @@ LIGHTING SYSTEM SETUP
       lightingResources.uniforms.uTileGrid = { value: new Float32Array(4), type: 'vec4<f32>' };
       lightingResources.uniforms.uTileWords = { value: new Float32Array(4), type: 'vec4<f32>' };
     }
+    // DX-LIGHTEDGES: the light at a share of the canvas over entities that write depth (pixel depth) is shown without
+    // crossing the floor's edges; lighting.lightEdges false stretches it as a plain texture.
+    this._lightEdgesOn = this.lightingResolution < 1 && !!this.entitiesBatch?.pixelDepthOn && !this._visPolyEnabled
+      && this.config?.lighting?.lightEdges !== false;
     const lightingSrc = lightingSource(this._engineShaders?.lightingFrag || '', {
       faces: facesOn,
       sunMap: this._sunMapOn,
@@ -4763,6 +4853,7 @@ LIGHTING SYSTEM SETUP
       ids: this._faceIdsOn,
       pixelArt: this._pixelArtLight,
       tiles: this._lightTilesOn,
+      edges: this._lightEdgesOn,
     }).replace(
       /MAX_LIGHTS/g,
       String(this.maxLights | 0 || 64)
@@ -4816,8 +4907,12 @@ LIGHTING SYSTEM SETUP
       this.lightingDisplaySprite.anchor.set(0, 0); // Ensure top-left anchor
       this.lightingDisplaySprite.position.set(0, 0); // Position at top-left of screen
       this.lightingDisplaySprite.scale.set(this.canvasWidth / lw, this.canvasHeight / lh);
-      this._registerLayerDisplayObject('lighting', this.lightingDisplaySprite);
-      this.pixiApp.stage.addChild(this.lightingDisplaySprite);
+      if (this._lightEdgesOn) {
+        this._createLightEdges();
+      } else {
+        this._registerLayerDisplayObject('lighting', this.lightingDisplaySprite);
+        this.pixiApp.stage.addChild(this.lightingDisplaySprite);
+      }
       this._applyLightingViewport(this.canvasWidth, this.canvasHeight);
       if (this._unshadedOn) this._createUnshadedLayer();
 
@@ -4857,6 +4952,8 @@ LIGHTING SYSTEM SETUP
       },
     });
     splat.mesh.blendMode = 'add';
+    // DX-LIGHTEDGES: in RGB alone, so the light target's alpha keeps the light pass's floor mark.
+    splat.lightHost = rgbOnlyHost(splat.mesh, this._useWebGpu);
     return splat;
   }
 
@@ -4880,7 +4977,7 @@ LIGHTING SYSTEM SETUP
       }
     }
     const rtOpts = this._rtRenderOptsNoClear;
-    rtOpts.container = splat.mesh;
+    rtOpts.container = splat.lightHost !== null ? splat.lightHost : splat.mesh;
     rtOpts.target = this.lightingRT;
     this._submitRender(rtOpts);
   }
@@ -5040,6 +5137,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     this._visPolyDisplaySprite.scale.set(1.0 / res);
 
     // Replace the existing lighting display on the LIGHTING layer
+    if (this._lightEdges !== null) this.pixiApp.stage.removeChild(this._lightEdges.host);
     if (this.lightingDisplaySprite) {
       this.pixiApp.stage.removeChild(this.lightingDisplaySprite);
     } else if (this.lightingMesh) {
@@ -9076,6 +9174,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this._createFaceMap(lw, lh);
       }
       this._unbindUnshadedLayer();
+      if (this._lightEdges !== null) {
+        // DX-LIGHTEDGES: off the old target before _replaceRT destroys its bind groups; the canvas quad at the new size.
+        this._bindLightEdges(PIXI.Texture.EMPTY.source, PIXI.Texture.EMPTY.source);
+        unshadedQuadPositions(this._lightEdgesQuad, width, height);
+        if (this._lightEdgesQuadBuffer !== null) this._lightEdgesQuadBuffer.update();
+      }
       this.lightingRT = this._replaceRT(
         this.lightingRT,
         lw,
@@ -9083,6 +9187,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this.lightingDisplaySprite,
         null
       );
+      if (this._lightEdges !== null && this._unshadedEdges === null) this._bindLightEdges(this.lightingRT.source, PIXI.Texture.EMPTY.source);
       if (this.lightingDisplaySprite) {
         this.lightingDisplaySprite.scale.set(width / lw, height / lh);
       }
@@ -11294,6 +11399,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (!this._lightGlowAdd) this.spriteGlowMesh.visible = false;
     }
     if (this._visPolyDisplaySprite) this._registerLayerDisplayObject('lighting', this._visPolyDisplaySprite);
+    else if (this._lightEdges !== null) this._registerLayerDisplayObject('lighting', this._lightEdges.host);
     else if (this.lightingDisplaySprite) this._registerLayerDisplayObject('lighting', this.lightingDisplaySprite);
     else if (this.lightingMesh) this._registerLayerDisplayObject('lighting', this.lightingMesh);
     for (let i = 0; i < this._customLayerList.length; i++) {
