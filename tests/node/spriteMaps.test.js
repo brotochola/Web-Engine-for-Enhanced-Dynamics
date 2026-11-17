@@ -296,3 +296,68 @@ test('a sheet drawn for another camera has its heights scaled to the scene\'s, i
   assert.deepEqual(SpriteSheetRegistry.artCameraOf(SpriteSheetRegistry.getSpritesheetId('autoRojo')), art);
   assert.equal(SpriteSheetRegistry.artCameraOf('nothing-here'), null);
 });
+
+// E-497: the twin page's format, a tournament behind assets.twinFormat. B keeps heights alone (2 bytes a texel, code + 1
+// marks a map, so a height-0 opaque pixel counts); C adds the normals at half resolution below them. Every format reads back
+// the same heights and presence at full resolution, as the shaders do.
+test('the twin page in formats B and C reads back the same heights; C keeps half-resolution normals', async () => {
+  const { twinPageInFormat, twinPageTexel, twinTexels } = await import('../../src/render/spriteMaps.js');
+  const { setTwinFormat, twinFormat, twinGlsl, twinWgsl, withTwinGlsl } = await import('../../src/render/twinTexel.js');
+  // A 6 x 4 page: a 4 x 4 frame at (2, 0), heights 0..15 px, its normals tilting right with x; nothing in columns 0-1.
+  const W = 6;
+  const H = 4;
+  const frame = twinTexels(
+    Float32Array.from({ length: 16 }, (_, i) => i),
+    Float32Array.from({ length: 48 }, (_, i) => [((i / 3) | 0) % 4 * 0.2, 0, 1][i % 3]),
+    new Uint8Array(16).fill(1), 4, 4,
+  );
+  const page = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < 4; y++) page.set(frame.subarray(y * 16, (y + 1) * 16), (y * W + 2) * 4);
+  const a = (x, y) => twinPageTexel(page, W, H, x, y, 'A');
+  for (const format of ['B', 'C']) {
+    const p = twinPageInFormat(page, W, H, format);
+    assert.equal(p.width, W / 2);
+    assert.equal(p.height, format === 'C' ? H + H / 2 : H);
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const got = twinPageTexel(p.texels, p.width, p.height, x, y, format);
+        assert.equal(got.present, a(x, y).present, `${format} ${x},${y}`);
+        assert.equal(got.z, a(x, y).z, `${format} ${x},${y}: the height`);
+      }
+    }
+    assert.ok(twinPageTexel(p.texels, p.width, p.height, 2, 0, format).present, 'a height-0 pixel still holds a map');
+  }
+  const c = twinPageInFormat(page, W, H, 'C');
+  const n = twinPageTexel(c.texels, c.width, c.height, 4, 2, 'C').normal;
+  const want = [a(4, 2).normal, a(5, 2).normal, a(4, 3).normal, a(5, 3).normal].reduce((s, v) => s.map((q, k) => q + v[k]), [0, 0, 0]);
+  const len = Math.sqrt(want[0] ** 2 + want[1] ** 2 + want[2] ** 2);
+  for (let k = 0; k < 3; k++) assert.ok(Math.abs(n[k] - want[k] / len) < 0.03, `the 2 x 2 block's mean normal: ${n} ${want}`);
+  assert.equal(twinPageTexel(twinPageInFormat(page, W, H, 'B').texels, W / 2, H, 4, 2, 'B').normal, null, 'B keeps none');
+  // The shaders read each format; the readers' programs take the worker's (setTwinFormat).
+  assert.match(twinGlsl('B'), /const bool TWIN_NORMALS = false;/);
+  assert.match(twinGlsl('B'), /texelFetch\(uMaps, ivec2\(c\.x >> 1, c\.y\), 0\)/);
+  assert.match(twinGlsl('C'), /int top = \(textureSize\(uMaps, 0\)\.y \* 2\) \/ 3;/);
+  assert.match(twinWgsl('C'), /let top = \(i32\(textureDimensions\(uMaps, 0\)\.y\) \* 2\) \/ 3;/);
+  assert.match(twinWgsl('B'), /const TWIN_NORMALS: bool = false;/);
+  assert.equal(twinFormat(), 'A');
+  try {
+    setTwinFormat('C');
+    assert.match(withTwinGlsl('// weed:twin\n'), /E-497: format C/);
+    setTwinFormat('Z');
+    assert.equal(twinFormat(), 'A', 'an unknown format reads as A');
+  } finally {
+    setTwinFormat('A');
+  }
+  // B where a sheet brings a normal map, or no format: A, said once each.
+  const warn = console.warn;
+  const said = [];
+  console.warn = (t) => said.push(t);
+  try {
+    assert.equal(SpriteSheetRegistry._twinFormatFor('B', [{ maps: { normalImg: {} } }]), 'A');
+    assert.equal(SpriteSheetRegistry._twinFormatFor('B', [{ maps: { heightImg: {} } }]), 'B');
+    assert.equal(SpriteSheetRegistry._twinFormatFor('Q', []), 'A');
+  } finally {
+    console.warn = warn;
+  }
+  assert.equal(said.length, 2);
+});

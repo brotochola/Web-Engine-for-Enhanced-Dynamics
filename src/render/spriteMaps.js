@@ -283,3 +283,100 @@ export function maskTwinTexels({
     : reliefs !== null ? normalsFromHeight(reliefs, opaque, w, h, 1) : normalsFromHeight(heights, opaque, w, h, strength);
   return twinTexels(heights !== null ? heights : reliefs, normals, opaque, w, h);
 }
+
+/**
+ * E-497: a format-A twin page (RGBA8: height R·256 + G, the octahedral normal in B, A) in another format (twinTexel.js
+ * says each): 'B' two heights to an RGBA8 texel (x even in R, G; x odd in B, A), each the height's code + 1 (0: no map),
+ * the page half as wide; 'C' those heights and, in the rows below them (half the page's height more), the normals at half
+ * resolution (the mean of each 2 x 2 block's, octahedral), packed two to a texel as the heights are. 'A' as it is. The
+ * page's width and height are even (spriteSheetRegistry.js _paintMapsPage), so neither packing splits a rectangle.
+ * @param {Uint8ClampedArray} texels format A, width·height·4
+ * @param {number} width
+ * @param {number} height
+ * @param {'A'|'B'|'C'} format
+ * @returns {{ texels: Uint8ClampedArray, width: number, height: number }}
+ */
+export function twinPageInFormat(texels, width, height, format) {
+  if (format !== 'B' && format !== 'C') return { texels, width, height };
+  const ow = Math.max(1, Math.ceil(width / 2));
+  const hw = Math.ceil(width / 2);
+  const hh = Math.ceil(height / 2);
+  const oh = format === 'C' ? height + hh : height;
+  const out = new Uint8ClampedArray(ow * oh * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const a = (y * width + x) * 4;
+      if (texels[a + 2] + texels[a + 3] === 0) continue;
+      const v = Math.min(texels[a] * 256 + texels[a + 1] + 1, 65535);
+      const o = (y * ow + (x >> 1)) * 4 + (x & 1) * 2;
+      out[o] = v >> 8;
+      out[o + 1] = v & 255;
+    }
+  }
+  if (format === 'C') {
+    const pair = [0, 0];
+    for (let v = 0; v < hh; v++) {
+      for (let u = 0; u < hw; u++) {
+        let nx = 0;
+        let ny = 0;
+        let nz = 0;
+        let any = false;
+        for (let dy = 0; dy < 2; dy++) {
+          const y = 2 * v + dy;
+          if (y >= height) continue;
+          for (let dx = 0; dx < 2; dx++) {
+            const x = 2 * u + dx;
+            if (x >= width) continue;
+            const a = (y * width + x) * 4;
+            if (texels[a + 2] + texels[a + 3] === 0) continue;
+            const n = decodeOctahedral(texels[a + 2], texels[a + 3]);
+            nx += n[0];
+            ny += n[1];
+            nz += n[2];
+            any = true;
+          }
+        }
+        if (!any) continue;
+        encodeOctahedral(nx, ny, nz, pair, 0);
+        const o = ((height + v) * ow + (u >> 1)) * 4 + (u & 1) * 2;
+        out[o] = pair[0];
+        out[o + 1] = pair[1];
+      }
+    }
+  }
+  return { texels: out, width: ow, height: oh };
+}
+
+/**
+ * E-497: what a twin page of any format holds at full-resolution twin texel (x, y), as the shaders read it (twinTexel.js
+ * twinRaw, twinStoredNormal): whether it holds a map, its height (px), and its stored normal (null in format B).
+ * @param {Uint8ClampedArray} texels the page in `format`
+ * @param {number} width the page's width in texels (format B and C: half the full resolution's)
+ * @param {number} height the page's height in texels (format C: the heights' and the normals' rows)
+ * @param {number} x
+ * @param {number} y
+ * @param {'A'|'B'|'C'} format
+ * @returns {{ present: boolean, z: number, normal: [number, number, number] | null }}
+ */
+export function twinPageTexel(texels, width, height, x, y, format) {
+  if (format !== 'B' && format !== 'C') {
+    const a = (y * width + x) * 4;
+    const present = texels[a + 2] + texels[a + 3] > 0;
+    return {
+      present,
+      z: (texels[a] * 256 + texels[a + 1]) / HEIGHT_UNITS,
+      normal: present ? decodeOctahedral(texels[a + 2], texels[a + 3]) : null,
+    };
+  }
+  const o = (y * width + (x >> 1)) * 4 + (x & 1) * 2;
+  const v = texels[o] * 256 + texels[o + 1];
+  if (v === 0) return { present: false, z: 0, normal: null };
+  let normal = null;
+  if (format === 'C') {
+    const top = (height * 2) / 3;
+    const u = x >> 1;
+    const n = ((top + (y >> 1)) * width + (u >> 1)) * 4 + (u & 1) * 2;
+    normal = decodeOctahedral(texels[n], texels[n + 1]);
+  }
+  return { present: true, z: (v - 1) / HEIGHT_UNITS, normal };
+}

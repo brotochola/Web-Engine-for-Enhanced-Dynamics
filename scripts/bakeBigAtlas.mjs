@@ -115,6 +115,8 @@ async function main() {
           keepMapsTexels: true,
           // DX-MAPCAMERA: a sheet drawn for another camera has its heights scaled to the scene's.
           camera: scene.config?.camera ?? null,
+          // E-497: the twin page's format.
+          twinFormat: assetsConfig.twinFormat ?? 'A',
         });
 
         if (!packed.json?.meta?.proxySheets) {

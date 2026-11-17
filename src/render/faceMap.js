@@ -19,7 +19,7 @@
 
 /** Height steps a px. 16 bits hold 8 191 px. */
 import { resolveHeightScaleY } from '../util/cameraView.js';
-import { MAPS_MARKS_GLSL, MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, TWIN_GLSL, TWIN_WGSL, withTwinGlsl } from './twinTexel.js';
+import { MAPS_MARKS_GLSL, MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl, withTwinGlsl } from './twinTexel.js';
 
 export const FACE_Z_UNITS = 8;
 /** DX-FACEDEPTH: where a face's innerZ starts in its height code; the heights below it, up to FACE_Z_HEIGHT_MAX_CODE. */
@@ -116,7 +116,7 @@ out vec4 finalColor;
 
 ${WEED_UV_GLSL}
 
-${TWIN_GLSL}
+${twinGlsl()}
 ${IDS_TEXEL_GLSL}
 
 ${UNSHADED_OF_GLSL}
@@ -166,7 +166,7 @@ out vec4 finalColor;
 
 ${WEED_UV_GLSL}
 
-${TWIN_GLSL}
+${twinGlsl()}
 ${UNSHADED_OF_GLSL}
 
 void main() {
@@ -517,7 +517,7 @@ const UNSHADED_MASK_CUT_WGSL = `  if (((u32(aInstGbuf.x + 0.5) >> 21u) & 1u) == 
 const FACE_GBUF_HELPERS_WGSL = `
 // DX-GBUF: a twin texel's height (px), or \`here\` where it has no map (faceMap.frag.glsl twinHeight).
 fn faceTwinHeight(c: vec2<i32>, here: f32) -> f32 {
-  let m = textureLoad(uMaps, c, 0);
+  let m = twinRaw(c);
   return select(here, twinZ(m), twinPresent(m));
 }
 
@@ -559,9 +559,10 @@ ${unshaded ? '  // DX-UNSHADED: an unshaded entity writes nothing here.\n  if ((
       if (twinHeights(in.vMapsWin)) { zw = zm * in.vMapScale; }
       else if ((flags & 4u) == 0u) { zw = max(in.vFootY - in.vWorld.y, 0.0) / uniforms.uFaceSpace.x; }
       if (normals == 3u) { return faceTexel(${flat}, zw, false); }
-      var n = faceOctDecode(floor(m.ba * 255.0 + 0.5));
-      // The Sobel reads the frame's own heights or relief (DX-RELIEF); a normal map alone keeps its own normals.
-      if (normals == 2u && (twinHeights(in.vMapsWin) || twinRelief(in.vMapsWin))) { n = faceHeightNormal(tc, zm); }
+      var n = twinStoredNormal(m, tc);
+      // The Sobel reads the frame's own heights or relief (DX-RELIEF); a normal map alone keeps its own normals. E-497:
+      // a format that keeps no normals (B) always takes the Sobel.
+      if ((normals == 2u || !TWIN_NORMALS) && (twinHeights(in.vMapsWin) || twinRelief(in.vMapsWin))) { n = faceHeightNormal(tc, zm); }
       n = turnNormal(n, in.vNormalTurn);
       return faceTexel(faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zw, true);
     }
@@ -576,7 +577,7 @@ ${unshaded ? '  // DX-UNSHADED: an unshaded entity writes nothing here.\n  if ((
 // DX-MAPS: the atlas's twin page (spriteMaps.js). Binding 5: the indexed program takes 4.
 @group(2) @binding(5) var uMaps: texture_2d<f32>;
 
-${TWIN_WGSL}
+${twinWgsl()}
 ${MAPS_TABLE_WGSL}
 fn faceOctDecode(bytes: vec2<f32>) -> vec3<f32> {
   let f = (bytes - 127.0) / 126.0;
@@ -608,7 +609,7 @@ fn turnNormal(n: vec3<f32>, t: vec4<f32>) -> vec3<f32> {
   let f = n.xy * t.zw;
   return vec3<f32>(f.x * t.x + f.y * t.y, f.y * t.x - f.x * t.y, n.z);
 }
-${gbuf ? FACE_GBUF_HELPERS_WGSL : ''}
+${FACE_GBUF_HELPERS_WGSL}
 // DX-FACES (faceMap.frag.glsl): what this pixel is, in painter order, or a discard where the sprite is not opaque.
 fn weedFace(in: VertexOut) -> vec4<f32> {
   let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
@@ -626,7 +627,10 @@ fn weedFace(in: VertexOut) -> vec4<f32> {
   let noFace = all(oct == vec2<f32>(0.0));
   let sc = normalize(vec2<f32>(uniforms.uFaceSpace.y, uniforms.uFaceSpace.x));
 ${gbufBlock}  if (noFace && twinPresent(m)) {
-    let n = turnNormal(faceOctDecode(floor(m.ba * 255.0 + 0.5)), in.vNormalTurn);
+    var stored = twinStoredNormal(m, tc);
+    // E-497: a format that keeps no normals (B) takes the Sobel of the heights.
+    if (!TWIN_NORMALS) { stored = faceHeightNormal(tc, twinZ(m)); }
+    let n = turnNormal(stored, in.vNormalTurn);
     oct = faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x));
     // N-257: without words a frame without heights lies on the floor (faceMap.frag.glsl).
     z = select(0.0, twinZ(m) * in.vMapScale, twinHeights(in.vMapsWin));

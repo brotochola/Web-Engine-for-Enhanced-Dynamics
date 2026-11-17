@@ -358,13 +358,13 @@ test('a sprite\'s normals mirror with a negative scale and turn with its rotatio
   const vert = faceMapVertex(shader('instancedSprite.vert.glsl'), { gbuf: true });
   assert.match(vert, /vNormalTurn = vec4\(isShear \? 1\.0 : c, isShear \? 0\.0 : s, aInstScale\.x < 0\.0 \? -1\.0 : 1\.0, aInstScale\.y < 0\.0 \? -1\.0 : 1\.0\);/);
   const frag = faceFragmentGlsl(shader('faceMap.frag.glsl'), { gbuf: true });
-  assert.match(frag, /vec3 n = turnNormal\(sobel \? heightNormal\(tc, zm\) : octDecode/, 'the map\'s normal and the Sobel\'s alike');
-  assert.match(frag, /vec3 n = turnNormal\(octDecode\(floor\(m\.ba/, 'without words too');
+  assert.match(frag, /vec3 n = turnNormal\(sobel \? heightNormal\(tc, zm\) : twinStoredNormal\(m, tc\)\);/, 'the map\'s normal and the Sobel\'s alike');
+  assert.match(frag, /vec3 n = turnNormal\(TWIN_NORMALS \? twinStoredNormal\(m, tc\) : heightNormal\(tc, twinZ\(m\)\)\);/, 'without words too');
   for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
     const w = faceMapWgsl(shader(name), { gbuf: true });
     assert.match(w, /@location\(13\) @interpolate\(flat\) vNormalTurn: vec4<f32>,/, name);
     assert.match(w, /n = turnNormal\(n, in\.vNormalTurn\);/, name);
-    assert.match(w, /let n = turnNormal\(faceOctDecode\(floor\(m\.ba \* 255\.0 \+ 0\.5\)\), in\.vNormalTurn\);/, name);
+    assert.match(w, /let n = turnNormal\(stored, in\.vNormalTurn\);/, name);
     // Within WebGPU's 16 vertex outputs (locations 0..15), none used twice.
     const out = w.slice(w.indexOf('struct VertexOut {'), w.indexOf('}', w.indexOf('struct VertexOut {')));
     const locs = [...out.matchAll(/@location\((\d+)\)/g)].map((m) => +m[1]);
@@ -378,7 +378,7 @@ test('a sprite\'s normals mirror with a negative scale and turn with its rotatio
 test('a frame without heights takes its surface\'s height in the G-buffer, depth and the columns', async () => {
   const frag = faceFragmentGlsl(shader('faceMap.frag.glsl'), { gbuf: true });
   assert.match(frag, /float zw = twinHeights\(vMapsWin\) \? zm \* vMapScale\s*: \(\(flags & 4u\) == 0u \? max\(vFootY - vWorld\.y, 0\.0\) \/ uFaceSpace\.x : 0\.0\);/);
-  assert.match(frag, /bool sobel = normals == 2u && \(twinHeights\(vMapsWin\) \|\| twinRelief\(vMapsWin\)\);/);
+  assert.match(frag, /bool sobel = \(normals == 2u \|\| !TWIN_NORMALS\) && \(twinHeights\(vMapsWin\) \|\| twinRelief\(vMapsWin\)\);/);
   const depth = pixelDepthFragment(shader('instancedSprite.frag.glsl'), { gbuf: true });
   assert.match(depth, /if \(twinPresent\(md\) && twinHeights\(vMapsWin\) && !glow\) floorY = /);
   assert.match(pixelDepthWgsl(shader('instancedSprite.wgsl'), { gbuf: true }), /if \(twinPresent\(md\) && twinHeights\(in\.vMapsWin\) && !glow\)/);

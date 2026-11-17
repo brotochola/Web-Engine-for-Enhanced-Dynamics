@@ -3,7 +3,7 @@
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
 import {
-  RELIEF_STRENGTH, artCameraHeightScale, maskTwinTexels, opaqueMask, readArtCamera, readHeights,
+  RELIEF_STRENGTH, artCameraHeightScale, maskTwinTexels, opaqueMask, readArtCamera, readHeights, twinPageInFormat,
 } from '../render/spriteMaps.js';
 import { resolveHeightScaleY } from '../util/cameraView.js';
 import { evenTexels, TWIN_PAD } from '../render/mapsTable.js';
@@ -900,6 +900,7 @@ class SpriteSheetRegistry {
    * @param {string} options.heuristic - Packing heuristic (default: 'best-short-side')
    * @param {boolean} [options.keepMapsTexels] - DX-MAPS: also return the twin page's texels as they are (`mapsTexels`),
    *   for the bake: its canvas stores premultiplied alpha, which loses a height under a low A (default: false)
+   * @param {'A'|'B'|'C'} [options.twinFormat] - E-497: the twin page's format (twinTexel.js; assets.twinFormat, default 'A')
    * @param {object} [options.camera] - DX-MAPCAMERA: the scene's camera (config.camera): a sheet drawn for another camera
    *   (its artCamera) has its heights scaled to it at load (spriteMaps.js artCameraHeightScale); without it, none is
    * @returns {Promise<Object>} - { canvas, mapsCanvas, mapsTexels, json, proxySheets }
@@ -928,6 +929,7 @@ class SpriteSheetRegistry {
       heuristic = ASSETS_DEFAULTS.heuristic,
       keepMapsTexels = false,
       camera = null,
+      twinFormat = ASSETS_DEFAULTS.twinFormat,
     } = options;
     // DX-MAPCAMERA: the scene's heightScaleY, to which a sheet drawn for another camera has its heights scaled.
     const sceneHeightScaleY = camera ? resolveHeightScaleY(camera) : NaN;
@@ -1466,7 +1468,10 @@ class SpriteSheetRegistry {
 
     // DX-MAPS: the twin page, when a sheet has maps; the bake asks for its texels too (keepMapsTexels). E-496: the page
     // holds the frames with maps alone, each frame's window in its json frame (`maps`), its size in meta.mapsSize.
-    const twin = this._paintMapsPage(imagesToPack, maxWidth, maxHeight, keepMapsTexels);
+    const format = this._twinFormatFor(twinFormat, imagesToPack);
+    const twinA = this._paintMapsPage(imagesToPack, maxWidth, maxHeight, keepMapsTexels || format !== 'A');
+    // E-497: the page in its format (the windows stay in full-resolution texels; the shaders read through the format).
+    const twin = twinA !== null && format !== 'A' ? this._twinPageIn(twinA, format, keepMapsTexels) : twinA;
     const mapsCanvas = twin !== null ? twin.canvas : null;
     const mapsTexels = twin !== null ? twin.texels : null;
     if (twin !== null) {
@@ -1518,6 +1523,8 @@ class SpriteSheetRegistry {
         maps: mapsCanvas !== null,
         // E-496: the twin page's own size (each frame's window in it: its json frame's `maps`).
         ...(twin !== null ? { mapsSize: { w: twin.width, h: twin.height } } : {}),
+        // E-497: the twin page's format, when it is not A (the renderer's setTwinFormat).
+        ...(twin !== null && format !== 'A' ? { mapsFormat: format } : {}),
         // DX-UNSHADED: a sheet is unshaded (assets or its json's meta.unshaded): the Pixi worker runs the unshaded pass.
         unshaded: imagesToPack.some((d) => d.unshaded === true),
       },
@@ -1698,6 +1705,30 @@ class SpriteSheetRegistry {
       for (const d of g.members) d.mapsAt = { x: g.x + (d.sourceX | 0) - g.x0, y: g.y + (d.sourceY | 0) - g.y0 };
     }
     return { canvas: page, texels, width, height };
+  }
+
+  /**
+   * E-497: the twin page's format for an atlas: the one asked for (assets.twinFormat), but A where it is no format, or for
+   * B where a sheet brings a normal map (B keeps heights alone), said once.
+   */
+  static _twinFormatFor(asked, imagesToPack) {
+    if (asked !== 'A' && asked !== 'B' && asked !== 'C') {
+      if (asked !== undefined && asked !== null) console.warn(`WeedJS: assets.twinFormat is 'A', 'B' or 'C', not ${JSON.stringify(asked)}: the twin page is A`);
+      return 'A';
+    }
+    if (asked === 'B' && imagesToPack.some((d) => d.maps && d.maps.normalImg)) {
+      console.warn("WeedJS: assets.twinFormat 'B' keeps heights alone, and a sheet brings a normal map: the twin page is A");
+      return 'A';
+    }
+    return asked;
+  }
+
+  /** E-497: a format-A twin page (_paintMapsPage's, with its texels) in format B or C, its canvas and (`keep`) texels. */
+  static _twinPageIn(twin, format, keep) {
+    const page = twinPageInFormat(twin.texels, twin.width, twin.height, format);
+    const canvas = create2dCanvas(page.width, page.height);
+    canvas.getContext('2d', { willReadFrequently: true }).putImageData(new ImageData(page.texels, page.width, page.height), 0, 0);
+    return { canvas, texels: keep ? page.texels : null, width: page.width, height: page.height };
   }
 
   /**

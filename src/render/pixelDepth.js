@@ -31,7 +31,7 @@
 
 import { TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW } from './frameBase.js';
 import { FACE_INNER_Z_SHIFT, FACE_Z_UNITS } from './faceMap.js';
-import { MAPS_MARKS_GLSL, MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, TWIN_GLSL, TWIN_WGSL } from './twinTexel.js';
+import { MAPS_MARKS_GLSL, MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl } from './twinTexel.js';
 
 /** The floor span's margin past the view, floor px: a tall object's top in view stands this far past its floor place. */
 export const PIXEL_DEPTH_MARGIN = 1024;
@@ -273,13 +273,13 @@ export function pixelDepthFragment(source, { edge = false, gbuf = false, faces =
   }
   if (vertexDepth) {
     return source
-      .replace(decl, () => `${decl}uniform sampler2D uMaps;\n${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}flat in vec4 vMapsWin;\n${TWIN_GLSL}`)
+      .replace(decl, () => `${decl}uniform sampler2D uMaps;\n${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}flat in vec4 vMapsWin;\n${twinGlsl()}`)
       .replace(main, () => `${main}${vertexDepthBodyGlsl(gbuf)}`);
   }
   const inputs = `uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\n${faces ? 'in float vDepthFloor;\n' : ''}flat in vec2 vPainter;\n`
     + `${edge ? 'flat in float vPlain;\n' : ''}${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}flat in vec4 vMapsWin;\n`;
   return source
-    .replace(decl, () => `${decl}${inputs}${TWIN_GLSL}`)
+    .replace(decl, () => `${decl}${inputs}${twinGlsl()}`)
     .replace(main, () => `${main}${depthBodyGlsl({ edge, gbuf, faces })}`);
 }
 
@@ -290,7 +290,7 @@ const depthWgsl = ({ gbuf, faces }) => `
 // DX-DEPTH: the atlas's twin page (spriteMaps.js), read where the colour is (pixelDepth.js).
 @group(2) @binding(5) var uMaps: texture_2d<f32>;
 
-${TWIN_WGSL}
+${twinWgsl()}
 ${MAPS_TABLE_WGSL}
 struct WeedDepthOut {
   @location(0) color: vec4<f32>,

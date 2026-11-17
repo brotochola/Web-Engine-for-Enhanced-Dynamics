@@ -60,6 +60,7 @@ import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource, shaderWithFlag } from '../render/faceMap.js';
 import { packMapsTable } from '../render/mapsTable.js';
+import { setTwinFormat } from '../render/twinTexel.js';
 import {
   LightTiles,
   TILE_CAM_COS,
@@ -8019,6 +8020,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           // no premultiplied alpha. The G-buffer pass samples it with the colour's UV.
           // DX-UNSHADED: a sheet of the atlas is unshaded (spriteSheetRegistry createBigAtlas's meta.unshaded).
           this._atlasUnshaded = jsonData.meta?.unshaded === true;
+          // E-497: the twin page's format (meta.mapsFormat; A without one), before any of its readers' programs is made.
+          setTwinFormat(jsonData.meta?.mapsFormat);
           // E-496: a twin page without frame windows is a bake's from before them, laid out as the atlas.
           this._mapsAtlasLayout = jsonData.meta?.maps === true && !Object.values(jsonData.frames).some((f) => f && f.maps);
           if (data.mapsBitmap) {

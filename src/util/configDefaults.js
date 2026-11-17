@@ -283,6 +283,12 @@ export const CAMERA_TYPES = Object.freeze({
 
 export const ASSETS_DEFAULTS = Object.freeze({
   /**
+   * E-497: the twin page's format (src/render/twinTexel.js), a tournament: 'A' (default) RGBA8, height and normal; 'B'
+   * heights alone, 2 bytes a texel, normals from the shader's Sobel (not with a normal map: A then); 'C' heights and normals
+   * at half resolution below them.
+   */
+  twinFormat: 'A',
+  /**
    * Maximum atlas width in pixels (GPU texture limit). Past 4096 a scene asks for more than some mobile and older GPUs
    * hold (their textures stop at 4096 a side); the packer never goes past this, so it is the scene's choice.
    */

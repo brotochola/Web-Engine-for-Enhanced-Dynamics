@@ -16,7 +16,7 @@
  */
 
 import { FOOTPRINT_MAX_VERTICES } from './frameBase.js';
-import { MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, TWIN_GLSL, TWIN_WGSL } from './twinTexel.js';
+import { MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, twinGlsl, twinWgsl } from './twinTexel.js';
 
 /** Height (px) that the map's 8 bits span: 2 px a step. */
 export const SUN_MAP_ZMAX = 512;
@@ -262,7 +262,7 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   const head = card
     .slice(0, card.indexOf(after))
     .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nin vec4 aBlock; // E-379: this instance\'s block of its frame (x, y) and the blocks a side (z, 0 or 1: one)\nvec2 aQuad;\nuniform sampler2D uTexture;\n')
-    .replace(main, `${FOOTPRINT_GLSL}${TWIN_GLSL}${MAPS_TABLE_GLSL}${main}  float blocks = max(aBlock.z, 1.0);\n  aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
+    .replace(main, `${FOOTPRINT_GLSL}${twinGlsl()}${MAPS_TABLE_GLSL}${main}  float blocks = max(aBlock.z, 1.0);\n  aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
   return `${head}  vec2 uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
   // E-496: the cell's twin texel, through its frame's window (the maps table). N-257: only heights stand a column.
   vec4 win = twinWindow(tid);
@@ -495,7 +495,7 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
 `;
   return `${head}${columns}${card.slice(to + end.length)}`.replace(
     '@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n',
-    `@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n${TWIN_WGSL}${MAPS_TABLE_WGSL}${FOOTPRINT_WGSL}`,
+    `@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n${twinWgsl()}${MAPS_TABLE_WGSL}${FOOTPRINT_WGSL}`,
   );
 }
 

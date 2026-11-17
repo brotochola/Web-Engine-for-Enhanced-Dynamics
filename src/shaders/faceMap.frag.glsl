@@ -69,10 +69,9 @@ vec3 turnNormal(vec3 n) {
   return vec3(f.x * vNormalTurn.x + f.y * vNormalTurn.y, f.y * vNormalTurn.x - f.x * vNormalTurn.y, n.z);
 }
 
-// #if GBUF
 // DX-GBUF: a twin texel's height (px), or `here` where the texel has no map (a transparent pixel of the frame).
 float twinHeight(ivec2 c, float here) {
-  vec4 m = texelFetch(uMaps, c, 0);
+  vec4 m = twinRaw(c);
   return twinPresent(m) ? twinZ(m) : here;
 }
 
@@ -91,7 +90,6 @@ vec3 heightNormal(ivec2 c, float z) {
   float gy = (e + 2.0 * g + h - a - 2.0 * b - d) / 8.0;
   return normalize(vec3(-gx, gy, 1.0));
 }
-// #endif GBUF
 
 // DX-FACES: what this pixel is, in painter order: a face's normal and height, or 0 where a sprite that is no face covers it.
 // DX-MAPS: a sprite with maps writes its pixel's own: the twin's normal turned from the camera's space into the floor's
@@ -141,8 +139,9 @@ void main() {
         }
         // The Sobel reads the frame's own heights, or its relief (DX-RELIEF): a scale stretches the heights and the texels
         // alike. A normal map alone has none to read: its own normals.
-        bool sobel = normals == 2u && (twinHeights(vMapsWin) || twinRelief(vMapsWin));
-        vec3 n = turnNormal(sobel ? heightNormal(tc, zm) : octDecode(floor(m.ba * 255.0 + 0.5)));
+        // E-497: a format that keeps no normals (B) always takes the Sobel.
+        bool sobel = (normals == 2u || !TWIN_NORMALS) && (twinHeights(vMapsWin) || twinRelief(vMapsWin));
+        vec3 n = turnNormal(sobel ? heightNormal(tc, zm) : twinStoredNormal(m, tc));
         finalColor = faceTexel(octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zw, true);
         return;
       }
@@ -155,7 +154,7 @@ void main() {
     }
 // #endif GBUF
     if (twinPresent(m)) {
-      vec3 n = turnNormal(octDecode(floor(m.ba * 255.0 + 0.5)));
+      vec3 n = turnNormal(TWIN_NORMALS ? twinStoredNormal(m, tc) : heightNormal(tc, twinZ(m)));
       oct = octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x));
       // N-257: without words a frame without heights lies on the floor, as a decoration without maps does.
       z = twinHeights(vMapsWin) ? twinZ(m) * vMapScale : 0.0;
