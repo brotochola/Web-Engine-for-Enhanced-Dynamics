@@ -180,6 +180,21 @@ test('the pose alone leaves the statics as they were', async () => {
   assert.equal(jsCtx.particleCount, ref.particles, 'js particles');
 });
 
+test('E-513: with a nearest atlas\'s pixel snap the kernel\'s two streams are the snapped 15-float rows\' own', async () => {
+  const s = await setup(7);
+  const opts = { space: GPU_SPACE_WORLD, pixelSnap: true, snapZoom: 2.5, snapCameraX: 13.25, snapCameraY: -7.5 };
+  const ref = reference(s.q, opts, N);
+  const ctx = makePackContext(s.q, opts, N, {});
+  assert.equal(packSplitRowsWasm(s.b, s.q, ctx, s.pose, s.stat, N), ref.n);
+  sameWords(ref.pose, words(s.pose, ref.n * GPU_POSE_FLOATS), 'snapped pose');
+  sameWords(ref.stat, words(s.stat, ref.n * GPU_STATIC_FLOATS), 'statics');
+  // Not a no-op: some pose moved under the snap.
+  const plain = reference(s.q, { space: GPU_SPACE_WORLD }, N);
+  let moved = 0;
+  for (let k = 0; k < ref.pose.length; k++) if (ref.pose[k] !== plain.pose[k]) moved++;
+  assert.ok(moved > 0, 'the snap moves poses');
+});
+
 test('both decline what the fast path does not take', async () => {
   const s = await setup(5);
   const { q, b, pose, stat } = s;
@@ -189,7 +204,6 @@ test('both decline what the fast path does not take', async () => {
     return [js, wasm];
   };
   assert.deepEqual(both({ space: GPU_SPACE_SCREEN, zoom: 1 }), [-1, -1], 'screen space');
-  assert.deepEqual(both({ space: GPU_SPACE_WORLD, pixelSnap: true }), [-1, -1], 'pixel snap');
   assert.deepEqual(both({ space: GPU_SPACE_WORLD, type: q.type, includeType: 3 }), [-1, -1], 'type filter');
   const ctx = makePackContext(q, { space: GPU_SPACE_WORLD }, N, {});
   assert.equal(packSplitRowsWasm(b, q, ctx, new Float32Array(N * 4), stat, N), -1, 'pose outside the memory');

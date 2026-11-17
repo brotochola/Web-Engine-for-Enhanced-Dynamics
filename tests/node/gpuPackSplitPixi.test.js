@@ -214,24 +214,17 @@ test('Pixi commits a split GPU queue in two streams, its statics when their gene
   for (let k = 0; k < 2400 * 15; k++) if (got[k] !== rows[k]) assert.fail(`after the refused frames: word ${k} ${got[k]} vs ${rows[k]}`);
 });
 
-test('a plain batch (a nearest atlas) commits 15-float rows and draws a split frame empty, not as rows', async () => {
+test('E-513: a nearest atlas makes a split batch too, which draws a split frame as pre-render packed it (its poses snapped there)', async () => {
   const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
   const s = await quietly(() => scene());
   await quietly(() => bindPixi(px, s, true));
-  assert.equal(px.entitiesBatch.split, false);
-  const rows = writeGpuFrame(px, 0, 100, false, 0, 1);
+  assert.equal(px.entitiesBatch.split, true);
+  const rows = writeGpuFrame(px, 0, 100, true, 3, 1);
   px._setReadBuffer(0);
-  px.updateSpritesFromRenderQueue();
-  assert.equal(px.visibleEntityCount, 100);
-  assert.deepEqual(batchRows(px.entitiesBatch, 100), rows, '15-float rows commit as they are');
-  let commits = 0;
-  const commit = px._commitPackedBatch.bind(px);
-  px._commitPackedBatch = (...a) => { commits++; return commit(...a); };
-  writeGpuFrame(px, 1, 100, true, 3, 2);
-  px._setReadBuffer(1);
   await quietly(() => px.updateSpritesFromRenderQueue());
-  assert.equal(commits, 0, 'a split frame is not read as rows');
-  assert.equal(px.visibleEntityCount, 0, 'nor drawn');
+  assert.equal(px.visibleEntityCount, 100, 'a split frame drawn');
+  const got = batchRows(px.entitiesBatch, 100);
+  for (let k = 0; k < 100 * 15; k++) if (got[k] !== rows[k]) assert.fail(`word ${k} ${got[k]} vs ${rows[k]}`);
 });
 
 // Frames read outside the consume/release handshake (before Pixi took its first, or a resume redrawing the last one)

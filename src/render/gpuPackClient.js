@@ -6,7 +6,7 @@
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import {
-  GPU_CASTER_FLOATS, GPU_GBUF_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_STAMP_FLOATS, GPU_SPRITE_FLOATS,
+  GPU_CASTER_FLOATS, GPU_GBUF_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_STAMP_FLOATS, GPU_POSE_FLOATS, GPU_SPRITE_FLOATS,
 } from './gpuQueueLayout.js';
 import { engineWasmUrl } from '../wasm/engine.js';
 
@@ -312,7 +312,8 @@ export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity, gbuf = null) 
   if (gbuf !== null) gbuf.written = false;
   if (!b || !q || !pose || !ctx) return -1;
   const o = ctx.o || ctx;
-  if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
+  // E-513: a nearest atlas's pixel snap goes on the poses after the kernel (snapPoseRows).
+  if (ctx.useScreen || ctx.filterTypes) return -1;
   if (pose.buffer !== b.buffer || (stat !== null && stat.buffer !== b.buffer)) return -1;
   const typeArr = ctx.typeArr;
   if (typeArr && typeArr.buffer !== b.buffer) return -1;
@@ -346,6 +347,7 @@ export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity, gbuf = null) 
   }
   if (gbufByte > 0) gbuf.written = true;
   ctx.particleCount = b.u32[b.particlesByte >> 2];
+  if (o.pixelSnap && out > 0) snapPoseRows(pose, out, o.snapCameraX || 0, o.snapCameraY || 0, o.snapZoom || 1);
   return out;
 }
 
@@ -360,7 +362,8 @@ export function packIndexedRowsWasm(b, q, ctx, pose, slots, stat, capacity, gbuf
   if (gbuf !== null) gbuf.written = false;
   if (!b || !q || !pose || !slots || !ctx || !b.spritesIndexedScatter) return -1;
   const o = ctx.o || ctx;
-  if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
+  // E-513: a nearest atlas's pixel snap goes on the poses after the kernel (snapPoseRows).
+  if (ctx.useScreen || ctx.filterTypes) return -1;
   if (pose.buffer !== b.buffer || slots.buffer !== b.buffer || (stat !== null && stat.buffer !== b.buffer)) return -1;
   const typeArr = ctx.typeArr;
   if (typeArr && typeArr.buffer !== b.buffer) return -1;
@@ -384,7 +387,27 @@ export function packIndexedRowsWasm(b, q, ctx, pose, slots, stat, capacity, gbuf
   if (out < 0) return -1;
   if (gbufByte > 0) gbuf.written = true;
   ctx.particleCount = b.u32[b.particlesByte >> 2];
+  if (o.pixelSnap && out > 0) snapPoseRows(pose, out, o.snapCameraX || 0, o.snapCameraY || 0, o.snapZoom || 1);
   return out;
+}
+
+/**
+ * E-513: a nearest atlas's pixel snap on `n` rows of a pose stream (GPU_POSE_FLOATS a row: x, y, then the turn), as
+ * gpuPack.c's pack_general snaps a full row's x and y in world space (snap_world: round((v - camera) · zoom) / zoom +
+ * camera, Math.round's ties, which its js_round copies): the two-stream packs then carry what the 15-float rows did, and
+ * a pixel-art scene draws its sprites from the split or indexed frames, statics uploaded when they change.
+ * @param {Float32Array} pose
+ * @param {number} n
+ * @param {number} cameraX the snap camera's x (the frame's camera)
+ * @param {number} cameraY
+ * @param {number} zoom
+ */
+export function snapPoseRows(pose, n, cameraX, cameraY, zoom) {
+  if (!(zoom > 0)) return;
+  for (let k = 0, at = 0; k < n; k++, at += GPU_POSE_FLOATS) {
+    pose[at] = Math.round((pose[at] - cameraX) * zoom) / zoom + cameraX;
+    pose[at + 1] = Math.round((pose[at + 1] - cameraY) * zoom) / zoom + cameraY;
+  }
 }
 
 /** E-177: the words of an update (gpuPack.c KEYED_ROW_WORDS): the statics, then the key. */
