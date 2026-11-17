@@ -32,6 +32,38 @@ export const OUTLINE_STEP = 3;
 export const RELIEF_STRENGTH = 8;
 
 /**
+ * DX-MAPCAMERA: the camera a sheet's pictures and maps were drawn for (its json's meta.artCamera, or its assets entry's
+ * artCamera, which wins), `{ floorScaleY, heightScaleY }`, both positive; null for anything else (the scene's own).
+ * @param {unknown} spec
+ * @returns {{ floorScaleY: number, heightScaleY: number } | null}
+ */
+export function readArtCamera(spec) {
+  if (!spec || typeof spec !== 'object') return null;
+  const floorScaleY = Number(spec.floorScaleY);
+  const heightScaleY = Number(spec.heightScaleY);
+  if (!(floorScaleY > 0) || !(heightScaleY > 0) || !Number.isFinite(floorScaleY) || !Number.isFinite(heightScaleY)) return null;
+  return { floorScaleY, heightScaleY };
+}
+
+/**
+ * DX-MAPCAMERA: how much a sheet's heights (and relief) are scaled at load so a pixel rises on the scene's screen as much
+ * as on its art's: its art camera's heightScaleY over the scene's (a height map made for 0.752 shown with 0.866: 0.868). 1
+ * without an art camera or a scene camera.
+ * @param {{ heightScaleY: number } | null} artCamera
+ * @param {number} sceneHeightScaleY
+ */
+export function artCameraHeightScale(artCamera, sceneHeightScaleY) {
+  if (!artCamera || !(sceneHeightScaleY > 0)) return 1;
+  return artCamera.heightScaleY / sceneHeightScaleY;
+}
+
+/** A frame's heights (or relief), px, times `scale` in place (DX-MAPCAMERA); the array. */
+function scaleHeights(heights, scale) {
+  if (scale !== 1) for (let i = 0; i < heights.length; i++) heights[i] *= scale;
+  return heights;
+}
+
+/**
  * A normal's octahedral bytes, 1..253 each (0 stays "none"). The vector need not be unit.
  * @param {number} x
  * @param {number} y
@@ -213,30 +245,39 @@ export function opaqueMask(rgba, w, h, threshold = 127) {
 /**
  * Everything above for one frame: its colour, its maps (either may be null), and the twin texels for its rectangle.
  * @param {{ color: Uint8ClampedArray, height: Uint8ClampedArray|null, normal: Uint8ClampedArray|null,
- *   relief?: Uint8ClampedArray|null, w: number, h: number, gray?: number, strength?: number, reliefStrength?: number }} frame
+ *   relief?: Uint8ClampedArray|null, w: number, h: number, gray?: number, strength?: number, reliefStrength?: number,
+ *   heightScale?: number }} frame
  * @returns {Uint8ClampedArray|null} null when the frame has no map
  */
-export function frameTwinTexels({ color, height, normal, relief = null, w, h, gray = 0, strength = 1, reliefStrength = RELIEF_STRENGTH }) {
+export function frameTwinTexels({
+  color, height, normal, relief = null, w, h, gray = 0, strength = 1, reliefStrength = RELIEF_STRENGTH, heightScale = 1,
+}) {
   if (height === null && normal === null && relief === null) return null;
-  return maskTwinTexels({ opaque: opaqueMask(color, w, h), height, normal, relief, w, h, gray, strength, reliefStrength });
+  return maskTwinTexels({ opaque: opaqueMask(color, w, h), height, normal, relief, w, h, gray, strength, reliefStrength, heightScale });
 }
 
 /**
  * frameTwinTexels over an opaque mask instead of a colour (E-496: the twin page's rectangle that several sheets share, the
  * union of their frames' opaque pixels). DX-RELIEF: a relief map (greyscale, white `reliefStrength` px) gives the normals
- * unless a normal map does, and where the frame has no height map its relief goes where the heights go.
+ * unless a normal map does, and where the frame has no height map its relief goes where the heights go. DX-MAPCAMERA: the
+ * heights and the relief times `heightScale` (artCameraHeightScale), before anything reads them, the Sobel's normals too.
  * @param {{ opaque: Uint8Array, height: Uint8ClampedArray|null, normal: Uint8ClampedArray|null,
- *   relief?: Uint8ClampedArray|null, w: number, h: number, gray?: number, strength?: number, reliefStrength?: number }} frame
+ *   relief?: Uint8ClampedArray|null, w: number, h: number, gray?: number, strength?: number, reliefStrength?: number,
+ *   heightScale?: number }} frame
  * @returns {Uint8ClampedArray|null} null when the frame has no map
  */
-export function maskTwinTexels({ opaque, height, normal, relief = null, w, h, gray = 0, strength = 1, reliefStrength = RELIEF_STRENGTH }) {
+export function maskTwinTexels({
+  opaque, height, normal, relief = null, w, h, gray = 0, strength = 1, reliefStrength = RELIEF_STRENGTH, heightScale = 1,
+}) {
   if (height === null && normal === null && relief === null) return null;
   let heights = null;
   if (height !== null) {
-    heights = readHeights(height, w, h, gray);
+    heights = scaleHeights(readHeights(height, w, h, gray), heightScale);
     fixOutline(heights, opaque, w, h);
   }
-  const reliefs = relief !== null ? readHeights(relief, w, h, reliefStrength > 0 ? reliefStrength : RELIEF_STRENGTH) : null;
+  const reliefs = relief !== null
+    ? scaleHeights(readHeights(relief, w, h, reliefStrength > 0 ? reliefStrength : RELIEF_STRENGTH), heightScale)
+    : null;
   const normals = normal !== null
     ? readNormals(normal, w, h)
     : reliefs !== null ? normalsFromHeight(reliefs, opaque, w, h, 1) : normalsFromHeight(heights, opaque, w, h, strength);

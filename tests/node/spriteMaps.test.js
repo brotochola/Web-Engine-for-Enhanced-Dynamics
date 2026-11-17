@@ -260,3 +260,39 @@ test('a relief map gives normals from its bulge and is marked relief, not height
   const table = packMapsTable([{ frame: { x: 0, y: 0 }, weedMaps: { x: 2, y: 2, relief: true } }]);
   assert.equal(table.data[2], MAPS_TWIN | MAPS_RELIEF, 'relief, not heights');
 });
+
+// DX-MAPCAMERA: a sheet drawn for another camera (meta.artCamera, or its assets entry's artCamera) has its heights scaled at
+// load so a pixel rises as much on the scene's screen: a height map made for 0.752 shown with a 0.866 camera, x 0.868. The
+// Sobel's normals see the scaled heights; a sheet without one, or a scene without a camera, keeps its heights.
+test('a sheet drawn for another camera has its heights scaled to the scene\'s, its normals with them', async () => {
+  const { artCameraHeightScale, readArtCamera, frameTwinTexels: twin } = await import('../../src/render/spriteMaps.js');
+  const { resolveHeightScaleY } = await import('../../src/util/cameraView.js');
+  const art = readArtCamera({ floorScaleY: 0.736, heightScaleY: 0.752 });
+  assert.deepEqual(art, { floorScaleY: 0.736, heightScaleY: 0.752 });
+  for (const bad of [null, 3, {}, { floorScaleY: 0.7 }, { floorScaleY: 0, heightScaleY: 0.7 }, { floorScaleY: 'x', heightScaleY: 1 }]) {
+    assert.equal(readArtCamera(bad), null, JSON.stringify(bad));
+  }
+  const scene = resolveHeightScaleY({ heightScaleY: 0.866 });
+  const k = artCameraHeightScale(art, scene);
+  assert.ok(Math.abs(k - 0.752 / 0.866) < 1e-12 && Math.abs(k - 0.868) < 1e-3);
+  assert.equal(artCameraHeightScale(null, scene), 1, 'no art camera: as drawn');
+  assert.equal(artCameraHeightScale(art, NaN), 1, 'no scene camera: as drawn');
+  // A 3 x 1 ramp, 0, 32, 64 px high: scaled by k, and its normal leans less.
+  const color = image(3, 1, () => [255, 255, 255, 255]).data;
+  const height = image(3, 1, (x) => {
+    const z = x * 32 * HEIGHT_UNITS;
+    return [z >> 8, z & 255, 0, 255];
+  }).data;
+  const plain = twin({ color, height, normal: null, w: 3, h: 1 });
+  const scaled = twin({ color, height, normal: null, w: 3, h: 1, heightScale: k });
+  const z = (t, x) => ((t[x * 4] << 8) | t[x * 4 + 1]) / HEIGHT_UNITS;
+  assert.equal(z(plain, 2), 64);
+  assert.ok(Math.abs(z(scaled, 2) - 64 * k) < 1 / HEIGHT_UNITS, `${z(scaled, 2)}`);
+  const lean = (t) => Math.abs(decodeOctahedral(t[6], t[7])[0]);
+  assert.ok(lean(scaled) < lean(plain), 'the Sobel sees the scaled heights');
+  // Every worker finds a sheet's art camera on its proxy, by name or id.
+  SpriteSheetRegistry.registerProxy('autoRojo', { isProxy: true, prefix: 'autoRojo_', animations: {}, indexToName: {}, artCamera: art });
+  assert.deepEqual(SpriteSheetRegistry.artCameraOf('autoRojo'), art);
+  assert.deepEqual(SpriteSheetRegistry.artCameraOf(SpriteSheetRegistry.getSpritesheetId('autoRojo')), art);
+  assert.equal(SpriteSheetRegistry.artCameraOf('nothing-here'), null);
+});

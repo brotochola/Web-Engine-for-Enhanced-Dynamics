@@ -113,6 +113,8 @@ async function main() {
           heuristic: 'best-short-side',
           // DX-MAPS: the twin page's texels as they are; its canvas would premultiply them.
           keepMapsTexels: true,
+          // DX-MAPCAMERA: a sheet drawn for another camera has its heights scaled to the scene's.
+          camera: scene.config?.camera ?? null,
         });
 
         if (!packed.json?.meta?.proxySheets) {

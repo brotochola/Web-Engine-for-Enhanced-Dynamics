@@ -2,7 +2,10 @@
 // Provides string->index mapping for animations without runtime overhead
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
-import { RELIEF_STRENGTH, maskTwinTexels, opaqueMask, readHeights } from '../render/spriteMaps.js';
+import {
+  RELIEF_STRENGTH, artCameraHeightScale, maskTwinTexels, opaqueMask, readArtCamera, readHeights,
+} from '../render/spriteMaps.js';
+import { resolveHeightScaleY } from '../util/cameraView.js';
 import { evenTexels, TWIN_PAD } from '../render/mapsTable.js';
 import {
   FRAME_GLOW, FRAME_HALF, FRAME_SOFT, frameAlphaKinds, frameSolidTexels, isRenderDirections, measureLowestContact,
@@ -855,6 +858,19 @@ class SpriteSheetRegistry {
   }
 
   /**
+   * DX-MAPCAMERA: the camera a sheet's pictures and maps were drawn for, `{ floorScaleY, heightScaleY }` (its json's
+   * meta.artCamera or its assets entry's artCamera), or null: the scene's own. By sheet name or id, on every worker (the
+   * proxies carry it).
+   * @param {string|number} sheet
+   * @returns {{ floorScaleY: number, heightScaleY: number } | null}
+   */
+  static artCameraOf(sheet) {
+    const name = typeof sheet === 'number' ? this.getSpritesheetName(sheet) : sheet;
+    const data = name ? this.spritesheets.get(name) : null;
+    return data && data.artCamera ? data.artCamera : null;
+  }
+
+  /**
    * Get spritesheet name from numeric ID
    * Used by pixi worker to resolve spritesheet from SharedArrayBuffer
    *
@@ -884,6 +900,8 @@ class SpriteSheetRegistry {
    * @param {string} options.heuristic - Packing heuristic (default: 'best-short-side')
    * @param {boolean} [options.keepMapsTexels] - DX-MAPS: also return the twin page's texels as they are (`mapsTexels`),
    *   for the bake: its canvas stores premultiplied alpha, which loses a height under a low A (default: false)
+   * @param {object} [options.camera] - DX-MAPCAMERA: the scene's camera (config.camera): a sheet drawn for another camera
+   *   (its artCamera) has its heights scaled to it at load (spriteMaps.js artCameraHeightScale); without it, none is
    * @returns {Promise<Object>} - { canvas, mapsCanvas, mapsTexels, json, proxySheets }
    *
    * @example
@@ -909,7 +927,10 @@ class SpriteSheetRegistry {
       trimAlphaThreshold = ASSETS_DEFAULTS.trimAlphaThreshold,
       heuristic = ASSETS_DEFAULTS.heuristic,
       keepMapsTexels = false,
+      camera = null,
     } = options;
+    // DX-MAPCAMERA: the scene's heightScaleY, to which a sheet drawn for another camera has its heights scaled.
+    const sceneHeightScaleY = camera ? resolveHeightScaleY(camera) : NaN;
 
     debugWorkerLog('🎨 Creating BigAtlas from assets...');
     if (trimImages) {
@@ -995,7 +1016,7 @@ class SpriteSheetRegistry {
       for (const [sheetName, config] of Object.entries(assetsConfig.spritesheets)) {
         spritesheetPromises.push(
           this._loadSpritesheet(sheetName, config).then((sheetData) => {
-            const { img, jsonData, maps, unshaded = false } = sheetData;
+            const { img, jsonData, maps, unshaded = false, artCamera = null } = sheetData;
             const excluded = config.excludeAnimations || [];
 
             // 1. Determine which animations and frames are actually needed
@@ -1024,6 +1045,16 @@ class SpriteSheetRegistry {
             // DX-DIRSPRITE: the directions its json declares (an exporter writes them); the scene builds the table.
             const jsonDirections = jsonData.directions ?? jsonData.meta?.directions;
             if (jsonDirections !== undefined) proxySheets[sheetName].directionsSpec = jsonDirections;
+            // DX-MAPCAMERA: the camera its pictures and maps were drawn for, on its proxy (every worker gets the proxies:
+            // SpriteSheetRegistry.artCameraOf), and its heights scaled to the scene's camera.
+            if (artCamera !== null) {
+              proxySheets[sheetName].artCamera = { floorScaleY: artCamera.floorScaleY, heightScaleY: artCamera.heightScaleY };
+              const k = maps ? artCameraHeightScale(artCamera, sceneHeightScaleY) : 1;
+              if (k !== 1) {
+                maps.heightScale = k;
+                maps.key += `|${k}`;
+              }
+            }
 
             // The sheet's pixels under the frames it keeps, read back once: each frame's trim is found in them, and a trimmed
             // frame is drawn into the atlas straight from the sheet, through its trimmed rectangle. A readback and a canvas a
@@ -1620,6 +1651,7 @@ class SpriteSheetRegistry {
         h: gh,
         gray: g.maps.gray,
         reliefStrength: g.maps.reliefStrength,
+        heightScale: g.maps.heightScale ?? 1,
       });
       if (g.texels !== null) placed.push(g);
     }
@@ -1632,6 +1664,8 @@ class SpriteSheetRegistry {
         const sr = d.sourceRect;
         const opaque = opaqueMask(colours.get(d), sr.w, sr.h);
         const heights = readHeights(cut(pixelsOf(g.maps.heightImg), sr), sr.w, sr.h, g.maps.gray);
+        const k = g.maps.heightScale ?? 1;
+        if (k !== 1) for (let p = 0; p < heights.length; p++) heights[p] *= k;
         const lowest = measureLowestContact((i, j) => opaque[j * sr.w + i] !== 0, (i, j) => heights[j * sr.w + i], sr.w, sr.h);
         if (lowest !== null) d.base = { contact: lowest + (d.sourceY | 0) };
       }
@@ -1895,8 +1929,10 @@ class SpriteSheetRegistry {
     const reliefStrength = Number(reliefSpec?.strength) > 0 ? Number(reliefSpec.strength) : RELIEF_STRENGTH;
     // E-496: which map files these are: sheets with the same key share the twin page's rectangles (_paintMapsPage).
     const key = JSON.stringify([heightUrl || '', config.normalMap || '', gray, reliefUrl || '', reliefUrl ? reliefStrength : 0]);
-    const maps = heightImg || normalImg || reliefImg ? { heightImg, normalImg, reliefImg, gray, reliefStrength, key } : null;
-    return { img, jsonData, maps, unshaded };
+    const maps = heightImg || normalImg || reliefImg ? { heightImg, normalImg, reliefImg, gray, reliefStrength, key, heightScale: 1 } : null;
+    // DX-MAPCAMERA: the camera its art was drawn for: its assets entry's, else its json's (createBigAtlas scales to it).
+    const artCamera = readArtCamera(config.artCamera) ?? readArtCamera(jsonData?.meta?.artCamera);
+    return { img, jsonData, maps, unshaded, artCamera };
   }
 
   /**
