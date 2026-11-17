@@ -488,7 +488,10 @@ fn ${entry}(in: VertexOut) -> WeedDepthOut {
  * shows there, whatever order the painter drew them in. Before, the pass drew back to front with no depth, and where
  * pixel depth put a house in front of a wall the painter drew later, the light pass lit and shadowed the hidden wall over
  * the house. Its depth terms ride in uFaceSpace (x heightScaleY, y floorScaleY, z the view's top floor place, w 1 / its
- * span: pixelDepthTerms' third and fourth), and it takes DEPTH_FORMULA_FACES, the continuous form, faces or not.
+ * span: pixelDepthTerms' third and fourth). N-266: with the colour pass's formula too: DEPTH_FORMULA_FACES (continuous) when
+ * the batch's depth reads faces, else DEPTH_FORMULA, whose floor place goes in steps and leaves a tie within a step to the
+ * painter's order; with the continuous one a near tie went the other way in rows, as the canvas never did (a lamp post
+ * 3 px before a person, depthPairScene).
  */
 const GBUF_DEPTH_TERMS_GLSL = 'vec4 uDepth = vec4(1.0 / uFaceSpace.y, uFaceSpace.x, uFaceSpace.z, uFaceSpace.w);';
 const GBUF_DEPTH_TERMS_WGSL = 'let weedDepth = vec4<f32>(1.0 / uniforms.uFaceSpace.y, uniforms.uFaceSpace.x, uniforms.uFaceSpace.z, uniforms.uFaceSpace.w);';
@@ -521,9 +524,10 @@ export function gbufDepthVertex(source) {
  * N-274: the G-buffer's fragment shader (faceMap.js faceGbufFragment) writing that depth for every texel it keeps: the
  * floor place its vertex wrote, or its own height where its frame has a height map, the zIndex band of its words.
  * @param {string} source
+ * @param {{ faces?: boolean }} [opts] whether the batch's depth reads faces (the colour pass's formula, N-266)
  * @returns {string}
  */
-export function gbufDepthFragment(source) {
+export function gbufDepthFragment(source, { faces = true } = {}) {
   const main = 'void main() {\n';
   const cut = '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n';
   if (source.split(main).length !== 2) throw new Error('WeedJS: the G-buffer\'s depth needs the face map\'s fragment (main)');
@@ -541,21 +545,68 @@ float weedGbufDepth(vec2 uv) {
   float band = min(vGbuf.y, ${PIXEL_DEPTH_BANDS - 1}.0);
   float u = clamp((floorY - uDepth.z) * uDepth.w, 0.0, 1.0);
   float painter = vGbufPainter;
-  return ${DEPTH_FORMULA_FACES};
+  return ${faces ? DEPTH_FORMULA_FACES : DEPTH_FORMULA};
 }
 
 `;
-  return gbufOnce(source.replace(main, () => depth + main), cut, '  gl_FragDepth = weedGbufDepth(uv);\n', 'its alpha cut');
+  // N-266: the unshaded pass's edge fragment has its own cut, and a marker where the depth goes.
+  const at = source.includes(cut) ? cut : '  // weed:depth\n';
+  return gbufOnce(source.replace(main, () => depth + main), at, '  gl_FragDepth = weedGbufDepth(uv);\n', 'its alpha cut');
 }
+
+/** The unshaded pass's entry in a face module with words (faceMap.js faceIdsEntryWgsl), as N-266 replaces it. */
+const UNSHADED_ENTRY_WGSL = `fn mainFragUnshaded(in: VertexOut) -> @location(0) vec4<f32> {
+  let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
+  let t = textureSample(uTexture, uSampler, uv);
+  let s = unshadedOf(in.vGbuf, in.vMapsWin);
+  return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, t.a * in.vColor.a);
+}
+`;
+
+/**
+ * N-266: the unshaded pass's two entries with the colour pass's depth (faceMap.js faceUnshadedFragment with depth): the
+ * opaque one (the solid pixels that are not unshaded, black, writing it) and the edge one (the soft and the unshaded ones,
+ * testing it).
+ */
+const UNSHADED_DEPTH_ENTRY_WGSL = `fn mainFragUnshaded(in: VertexOut) -> WeedUnshadedOut {
+  let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
+  let t = textureSample(uTexture, uSampler, uv);
+  let s = unshadedOf(in.vGbuf, in.vMapsWin);
+  if (t.a * in.vColor.a < 0.5 || s > 0.0) { discard; }
+  var o: WeedUnshadedOut;
+  o.color = vec4<f32>(0.0, 0.0, 0.0, t.a * in.vColor.a);
+  o.depth = weedGbufDepth(in);
+  return o;
+}
+
+@fragment
+fn mainFragUnshadedEdge(in: VertexOut) -> WeedUnshadedOut {
+  let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
+  let t = textureSample(uTexture, uSampler, uv);
+  let s = unshadedOf(in.vGbuf, in.vMapsWin);
+  let ad = t.a * in.vColor.a;
+  if (ad <= 0.0 || (ad >= 0.5 && s <= 0.0)) { discard; }
+  var o: WeedUnshadedOut;
+  o.color = vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, ad);
+  o.depth = weedGbufDepth(in);
+  return o;
+}
+
+struct WeedUnshadedOut {
+  @location(0) color: vec4<f32>,
+  @builtin(frag_depth) depth: f32,
+}
+`;
 
 /**
  * N-274: gbufDepthVertex and gbufDepthFragment in WGSL, over faceMap.js faceMapWgsl with words (indexed or not): the
  * floor place and painter step out of the vertex (locations 8 and 14, free in the face map's), and the one pass's entry
  * (mainFragGbuf) writing the depth (@builtin(frag_depth)).
  * @param {string} source
+ * @param {{ faces?: boolean }} [opts] whether the batch's depth reads faces (the colour pass's formula, N-266)
  * @returns {string}
  */
-export function gbufDepthWgsl(source) {
+export function gbufDepthWgsl(source, { faces = true } = {}) {
   let out = gbufOnce(
     source,
     '  @location(5) vTileOff: vec2<f32>,\n',
@@ -573,6 +624,8 @@ export function gbufDepthWgsl(source) {
   );
   out = gbufOnce(out, '  @location(1) ids: vec4<f32>,\n', '  @builtin(frag_depth) depth: f32,\n', 'the one pass\'s outputs');
   out = gbufOnce(out, 'fn mainFragGbuf(in: VertexOut) -> WeedGbufOut {\n  var o: WeedGbufOut;\n', '  o.depth = weedGbufDepth(in);\n', 'mainFragGbuf');
+  // N-266: the unshaded pass's entry, where the module has one, writes the same depth (a texel under half covered cut).
+  if (out.split(UNSHADED_ENTRY_WGSL).length === 2) out = out.replace(UNSHADED_ENTRY_WGSL, () => UNSHADED_DEPTH_ENTRY_WGSL);
   return `${out}
 // N-274: this texel's depth, as the colour pass's (pixelDepth.js weedPixelDepth with faces).
 fn weedGbufDepth(in: VertexOut) -> f32 {
@@ -586,7 +639,7 @@ fn weedGbufDepth(in: VertexOut) -> f32 {
   let band = min(in.vGbuf.y, ${PIXEL_DEPTH_BANDS - 1}.0);
   let u = clamp((floorY - weedDepth.z) * weedDepth.w, 0.0, 1.0);
   let painter = in.vGbufPainter;
-  return ${DEPTH_FORMULA_FACES};
+  return ${faces ? DEPTH_FORMULA_FACES : DEPTH_FORMULA};
 }
 `;
 }

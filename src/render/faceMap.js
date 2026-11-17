@@ -153,10 +153,20 @@ export function faceFragmentGlsl(faceFrag, { gbuf = false, unshaded = false } = 
  * DX-UNSHADED (was DX-EMISSIVE v2, plan §6.9, F10): the unshaded pass's fragment shader (WebGL), over faceMapVertex's
  * outputs with words: an unshaded pixel writes its colour, any other black with its alpha, both premultiplied and blended
  * normally in painter order, so a sprite in front of a flame covers it in proportion to its alpha. The unshaded layer adds
- * it where the light is short (unshadedComposite.js).
+ * it where the light is short (unshadedComposite.js). N-266: with `depth` (the batch's pixel depth) it is drawn as the
+ * canvas is, in two passes with the colour pass's depth (pixelDepth.js gbufDepthFragment): the opaque one (`edge` false)
+ * keeps the solid pixels that are not unshaded, black, writing the depth; the edge one (`edge` true) the soft and the
+ * unshaded ones, testing it. So a lit sprite in front of an unshaded one covers it there as on the canvas, whichever the
+ * painter drew last.
+ * @param {{ depth?: boolean, edge?: boolean }} [opts]
  * @returns {string}
  */
-export function faceUnshadedFragment() {
+export function faceUnshadedFragment({ depth = false, edge = false } = {}) {
+  const cut = !depth
+    ? ''
+    : edge
+      ? '  float ad = t.a * vColor.a;\n  if (ad <= 0.0 || (ad >= 0.5 && unshadedOf(vGbuf) <= 0.0)) discard;\n  // weed:depth\n'
+      : '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n  if (unshadedOf(vGbuf) > 0.0) discard;\n';
   return `#version 300 es
 precision highp float;
 in vec2 vLocal;
@@ -167,7 +177,7 @@ in vec2 vTileInv;
 in vec2 vTileOff;
 flat in vec2 vGbuf;
 flat in vec4 vMapsWin;
-uniform sampler2D uTexture;
+${depth ? 'flat in float vMapScale;\nuniform vec4 uFaceSpace;\n' : ''}uniform sampler2D uTexture;
 uniform sampler2D uMaps;
 out vec4 finalColor;
 
@@ -179,7 +189,7 @@ ${UNSHADED_OF_GLSL}
 void main() {
   vec2 uv = weedUv();
   vec4 t = texture(uTexture, uv);
-  float s = unshadedOf(vGbuf);
+${cut}  float s = unshadedOf(vGbuf);
   finalColor = vec4(t.rgb * vColor.rgb * vColor.a * s, t.a * vColor.a);
 }
 `;
