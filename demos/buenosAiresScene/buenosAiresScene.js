@@ -269,7 +269,9 @@ export class BuenosAiresScene extends Scene {
   focusX = META.WW / 2;
   focusY = META.WH / 2;
   zoomTarget = 1.2;
-  drag = null;
+  /** Where the pointer was last frame while dragging (canvas px), NaN when not dragging: no array a frame. */
+  dragX = NaN;
+  dragY = NaN;
   panel = null;
   paused = DAY_MINUTES <= 0;
   nightOn = false;
@@ -465,13 +467,15 @@ export class BuenosAiresScene extends Scene {
     if (Mouse.count === 1) {
       const canvasX = Mouse.canvasXAt(0);
       const canvasY = Mouse.canvasYAt(0);
-      if (this.drag) {
-        this.focusX -= (canvasX - this.drag[0]) / zoom;
-        this.focusY -= (canvasY - this.drag[1]) / zoom;
+      if (!Number.isNaN(this.dragX)) {
+        this.focusX -= (canvasX - this.dragX) / zoom;
+        this.focusY -= (canvasY - this.dragY) / zoom;
       }
-      this.drag = [canvasX, canvasY];
+      this.dragX = canvasX;
+      this.dragY = canvasY;
     } else {
-      this.drag = null;
+      this.dragX = NaN;
+      this.dragY = NaN;
     }
     if (Mouse.count >= 2) this.zoomBy(Mouse.pinchRatio());
     if (Mouse.wheel) this.zoomBy(Math.exp(-Mouse.wheel * 0.0012));
