@@ -57,7 +57,7 @@ main { padding: 16px; }
 .s-open { color: var(--open); background: var(--openbg); }
 .s-running { color: var(--run); background: var(--runbg); }
 .s-blocked { color: var(--block); background: var(--blockbg); }
-.s-tie, .s-mixed, .s-screened, .s-superseded, .s-answered, .s-note, .s-passed { color: var(--gray); background: var(--graybg); }
+.s-tie, .s-mixed, .s-screened, .s-superseded, .s-answered, .s-note, .s-passed, .s-parked { color: var(--gray); background: var(--graybg); }
 .s-journal { color: var(--jour); background: var(--jourbg); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin: 0 0 10px; }
 .top { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
@@ -107,7 +107,7 @@ function client() {
     hypsOf.get(id).push(h);
   }
   const recById = new Map(R.map((r) => [r.id, r]));
-  const GROUPS = { '@pending': ['open', 'running', 'blocked'], '@kept': ['kept', 'kept-kernel', 'kept-hygiene'], '@notkept': ['dropped', 'rejected', 'fail'], '@neutral': ['tie', 'mixed', 'screened', 'passed', 'answered', 'note', 'superseded'] };
+  const GROUPS = { '@pending': ['open', 'running', 'blocked'], '@kept': ['kept', 'kept-kernel', 'kept-hygiene'], '@notkept': ['dropped', 'rejected', 'fail'], '@neutral': ['tie', 'mixed', 'screened', 'passed', 'answered', 'note', 'superseded', 'parked'] };
   const LABEL = { 'kept-kernel': 'kept (kernel)', 'kept-hygiene': 'kept (hygiene)' };
   const PART = { 'small hours': '03:00', 'early morning': '07:00', morning: '09:00', 'late morning': '11:00', midday: '12:30', noon: '12:30', afternoon: '15:00', 'late afternoon': '17:00', evening: '19:00', night: '22:00', 'late night': '23:30' };
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);

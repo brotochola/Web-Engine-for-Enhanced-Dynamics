@@ -17,7 +17,8 @@
     "superseded": "Replaced by a later entry.",
     "answered": "A question or check that was answered (not a speed claim).",
     "note": "A campaign note: measurements without a verdict of their own.",
-    "passed": "A gate that found no regression: a check on a batch, not a speed claim."
+    "passed": "A gate that found no regression: a check on a batch, not a speed claim.",
+    "parked": "Untested and set aside by a triage: its expected gain is under the detection limit or no reference scene shows it; reopen when the code moves."
   },
   "hypotheses": [
     {
@@ -8434,7 +8435,6 @@
       "date": "2026-10-26",
       "area": "pre-render",
       "kind": "gpu",
-      "rank": 58,
       "result": "Wave 7 sweep (R-0645): at the minimum zoom emit_rows is 44 % and pack_sprites_split 28 % of a 696 ms/s pre-render, and W27b showed the expansion bound by its stores. One row per character, with the piece tables on the GPU, writes far fewer bytes and drops most of Pixi's 15 MB copy (W30).",
       "next": "The prototype in ADOBE_GPU_PLAN.md's order: the piece table texture, the record writer, the Adobe batch in Pixi, the sitting on adobeAnimateScene."
     },
@@ -9679,7 +9679,6 @@
         "EXECUTION_PLAN.md#E-185"
       ],
       "statusText": "open: E-188 keyed the decorations (R-0810); particles, glows and bullets remain",
-      "rank": 25,
       "area": "render",
       "result": "",
       "next": "The rows still without a key (particles, glows, bullets: about 200 a Predator frame) go up every frame at keyBase plus their slot. A slot-indexed fingerprint, read in slot order, would send only the slots whose occupant changed: about 13 KB a frame at most, small unless a scene puts thousands of such rows in the main queue (LiquidFun: E-194)."
@@ -10055,8 +10054,7 @@
       "area": "render",
       "kind": "bug",
       "result": "",
-      "next": "Planet demo with the covering ranges (the chunks around the shaft). A fill lit only near its visible surface (a depth falloff from the polygon edge, in Pixi's self-lit shader) would hide the seams.",
-      "rank": 43
+      "next": "Planet demo with the covering ranges (the chunks around the shaft). A fill lit only near its visible surface (a depth falloff from the polygon edge, in Pixi's self-lit shader) would hide the seams."
     },
     {
       "aliases": [],
@@ -10079,8 +10077,7 @@
       "statusText": "open: step 1 dropped (R-0864); step 0 answered (R-0867); the shadow terms gone (E-211, R-0868), the slot depth gone (E-186, R-0872), texture-only updates (E-189, R-0874)",
       "area": "render",
       "result": "E-211 (R-0868): the shadow terms out of the keyed pack, pack_sprites_keyed 79-119 -> 57-59 ms/s, renderer -4.5 % at Predator crowd 1.5",
-      "next": "Fewer bytes a row still: a pose only for a row that moved. Owner: Predator crowd 1.5's renderer.",
-      "rank": 24
+      "next": "Fewer bytes a row still: a pose only for a row that moved. Owner: Predator crowd 1.5's renderer."
     },
     {
       "aliases": [],
@@ -11270,8 +11267,7 @@
       "records": [
         "R-0854",
         "R-0898"
-      ],
-      "rank": 26
+      ]
     },
     {
       "id": "E-200",
@@ -11346,8 +11342,7 @@
       ],
       "records": [
         "R-0854"
-      ],
-      "rank": 28
+      ]
     },
     {
       "id": "E-203",
@@ -11741,8 +11736,7 @@
       ],
       "records": [
         "R-0860"
-      ],
-      "rank": 48
+      ]
     },
     {
       "id": "DX-GUARDS",
@@ -12187,7 +12181,6 @@
       "status": "open",
       "statusText": "found 2026-11-12 (R-0927, R-0931); not explained",
       "date": "2026-11-12",
-      "rank": 45,
       "result": "Boids spatial +4.1 % (13/16) and +4.2 % (7/8) bundle against source since E-198; Windows per-thread CPU of spatial and physics 3 to 15 % more in the bundle; same wasm bytes and weedjsPost.",
       "next": "Bisect: bundles at E-198's own commits, or one E-198 wait off at a time in both builds; then the wasm loaded by URL in the bundle (code caching, tier-up).",
       "area": "engine",
@@ -12622,7 +12615,6 @@
       "date": "2026-11-12",
       "area": "render",
       "kind": "bug",
-      "rank": 44,
       "result": "The same count with and without cones (raycast 79 499 both; basic 97 951 and 96 252); traced in the session to the lamp whose halo is on its own layer (glowLayer); predates the light API change.",
       "next": "A capture with that lamp's glowLayer cleared on both backends; then the custom layer's composite on WebGPU (its blend or premultiplication) against WebGL's.",
       "refs": [
@@ -12695,7 +12687,6 @@
       "date": "2026-11-12",
       "area": "engine",
       "kind": "speed",
-      "rank": 41,
       "result": "_runFrame 7–9 KB/s per worker, _waitForPose/_waitForQueue 6–8, pre-render camera bounds ~20 (doubles in shared-map objects), writeGatherColumns put closure 4.9, renderVisibilityLighting clear colour and options 5.4.",
       "next": "Left (Predator, R-0960): subarray per frame in bulletPool._tickWasm, _collectVisibleEntitiesWasm, _collectEntityGlowRows; camera bounds (resetFrameCounters, calculateCameraScreenBounds, _readFollowSnapshot); most per-frame rows are lower-tier boxing (E-239).",
       "refs": [
@@ -12768,7 +12759,6 @@
       "date": "2026-11-13",
       "area": "harness",
       "kind": "bug",
-      "rank": 47,
       "result": "load not comparable (median 0 on both sides) and under the 3 ms floor at ?plays=1200.",
       "next": "A load count the scene publishes (plays a tick or voices playing) as the load key, and ?plays= high enough for logic0 past 3 ms.",
       "refs": [
@@ -12979,12 +12969,11 @@
     {
       "id": "E-222",
       "title": "A line-level audit of every hot function in TurboFan's graphs (boxes, allocations, calls not inlined, checks, deopt points)",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-13 (Wave 13), not tested",
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
-      "rank": 49,
       "next": "Predator, flashlights, BunnyMark, Boids, LiquidFun with --no-concurrent-recompilation and --log-code, joined with heap KB/s and CPU self ms; each finding its own row.",
       "refs": [
         "EXECUTION_PLAN.md#E-222"
@@ -13005,7 +12994,7 @@
         "R-0965",
         "R-0980"
       ],
-      "result": "The tool exists (summarizeTurboSites.mjs, uncommitted); a first run on flashlightStressScene found E-221."
+      "result": "Parked by the 2026-11-16 triage (expected gain none (its sweep produced E-475..E-491); Method done: findings live in their own rows): reopen when the code moves or a scene shows it. The tool exists (summarizeTurboSites.mjs, uncommitted); a first run on flashlightStressScene found E-221."
     },
     {
       "id": "E-223",
@@ -13015,7 +13004,6 @@
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
-      "rank": 51,
       "next": "A tool reading the frame clock per frame: who finished last on the chain, how often each worker gates.",
       "refs": [
         "EXECUTION_PLAN.md#E-223"
@@ -13029,8 +13017,10 @@
       "records": [
         "R-1029",
         "R-1044",
-        "R-1046"
-      ]
+        "R-1046",
+        "R-1236"
+      ],
+      "rank": 1
     },
     {
       "id": "E-224",
@@ -13040,7 +13030,6 @@
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
-      "rank": 52,
       "next": "Each stress scene's load knob at 1k..64k, STEP_MS per worker against N, the cost per 1000 and where it bends.",
       "refs": [
         "EXECUTION_PLAN.md#E-224"
@@ -13056,12 +13045,11 @@
     {
       "id": "E-225",
       "title": "GC pauses against the long frames (--trace-gc-nvp with the frame histogram)",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-13 (Wave 13), not tested",
       "date": "2026-11-13",
       "area": "engine",
       "kind": "speed",
-      "rank": 55,
       "next": "Each scavenge's time against the worker's frame times; the share of over-budget frames that held a GC.",
       "refs": [
         "EXECUTION_PLAN.md#E-225"
@@ -13076,7 +13064,7 @@
       "records": [
         "R-0961"
       ],
-      "result": "First reading (R-0961): GC per worker over a 26 s Predator CPU trace is 1 to 25 ms in all, under 0.1 % of each worker; the frame histogram join is still to do."
+      "result": "Parked by the 2026-11-16 triage (expected gain GC under 0.1 % of each worker (R-0961); GC is negligible on the first reading): reopen when the code moves or a scene shows it. First reading (R-0961): GC per worker over a 26 s Predator CPU trace is 1 to 25 ms in all, under 0.1 % of each worker; the frame histogram join is still to do."
     },
     {
       "id": "E-226",
@@ -13105,12 +13093,11 @@
     {
       "id": "E-227",
       "title": "Pixi's own allocations (~140 KB/s): fewer render calls and buffer updates a frame",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-13 (Wave 13), not tested",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 36,
       "next": "Count render calls and buffer updates per frame; skip an unchanged buffer's update, merge render calls on one target.",
       "refs": [
         "EXECUTION_PLAN.md#E-227"
@@ -13121,7 +13108,8 @@
         "render calls",
         "Pixi garbage"
       ],
-      "records": []
+      "records": [],
+      "result": "Parked by the 2026-11-16 triage (expected gain 140 KB/s of garbage, GC negligible; Allocation-only; below detection): reopen when the code moves or a scene shows it."
     },
     {
       "id": "E-228",
@@ -13197,12 +13185,11 @@
     {
       "id": "E-231",
       "title": "A CPU-trace diff between two revisions, function by function",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-13 (Wave 13), not tested",
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
-      "rank": 54,
       "next": "A tool over two summarizeChromeCpuTrace outputs: the functions whose share moved most.",
       "refs": [
         "EXECUTION_PLAN.md#E-231"
@@ -13212,7 +13199,8 @@
         "regression finder",
         "cpu trace"
       ],
-      "records": []
+      "records": [],
+      "result": "Parked by the 2026-11-16 triage (expected gain none; Small tool with no pull): reopen when the code moves or a scene shows it."
     },
     {
       "id": "E-232",
@@ -13370,7 +13358,6 @@
       "date": "2026-11-13",
       "area": "particle",
       "kind": "speed",
-      "rank": 33,
       "result": "_spawn 17, rng 6, randomRange 5, copyEmitFields 4 KB/s per logic worker.",
       "next": "E-222 on the emit path once optimized; the doubles into a Float64Array scratch where they cross calls.",
       "refs": [
@@ -13421,7 +13408,6 @@
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 8,
       "result": "get neighborCount 710 ms (12.0 %), getNeighbor 483 ms (8.2 %) of a logic worker over 26 s: a field test and one shared-buffer read each. Machine code (Node 22, R-0992): neighborCount reads `_neighborOffset` and `_neighborReaderMarked` through megamorphic loads (E-289), so part of the cost may be the generic load, not only the row crossing cores.",
       "next": "E-289 took the getters' megamorphic loads (R-1010: 4.7 -> 3.2 ns a read, the bare row 2.5). What is left is the rows crossing cores: the two-thread kernel with Predator's row size, padded rows against not.",
       "refs": [
@@ -13473,13 +13459,12 @@
     {
       "id": "E-242",
       "title": "The raycast's polygon build allocates 311 KB/s in one run and about 1 in another",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-13 from E-222's heap samples, not tested",
       "date": "2026-11-13",
       "area": "preRender",
       "kind": "speed",
-      "rank": 34,
-      "result": "flashlightStressScene: _buildVisibilityPolygonsSwept 311.1 KB/s; R-0958's samples of the same query had pre-render at 39 to 45 KB/s in all.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 311 KB/s in one run; Allocation-only): reopen when the code moves or a scene shows it. flashlightStressScene: _buildVisibilityPolygonsSwept 311.1 KB/s; R-0958's samples of the same query had pre-render at 39 to 45 KB/s in all.",
       "next": "Three runs with --log-deopt and --log-code: tier and deopts against KB/s per run; E-222 sites.",
       "refs": [
         "EXECUTION_PLAN.md#E-242"
@@ -13526,13 +13511,12 @@
     {
       "id": "E-244",
       "title": "Per-entity tick paths allocate on some calls (Boids' Boid.tick 460 KB/s a logic worker; the flashlight walkers 263)",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-13 from E-222's heap samples, not tested",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 35,
-      "result": "Boids: about 460 KB/s in each of four logic workers in Boid.tick (1.5 bytes a call); flashlights: _tickNonDecimatedOneNoBody 263 KB/s.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 460 KB/s in Boids; Allocation-only, GC negligible): reopen when the code moves or a scene shows it. Boids: about 460 KB/s in each of four logic workers in Boid.tick (1.5 bytes a call); flashlights: _tickNonDecimatedOneNoBody 263 KB/s.",
       "next": "E-222 sites for both; engine side in the engine, the demo's in the demo.",
       "refs": [
         "EXECUTION_PLAN.md#E-244"
@@ -13743,13 +13727,12 @@
     {
       "id": "E-253",
       "title": "The FSM's tick takes 7 to 9 % of a logic worker in Predator (fsm.tick dispatch)",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-13 from Predator's CPU trace, not tested",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 23,
-      "result": "fsm.tick 15.9 ms/s (7.0 %) and 17.9 ms/s (8.8 %) of the two logic workers. Machine code (Node 22, R-0992): the FSM's `onUpdate` reads `fsm` and `changeState` reads `stateIndex` through megamorphic loads; the state's tick is a call TurboFan does not inline (Call_ReceiverIsAny).",
+      "result": "Parked by the 2026-11-16 triage (expected gain 7-9 % of a logic worker; E-301 took the transitions; What is left is the minimum dispatch): reopen when the code moves or a scene shows it. fsm.tick 15.9 ms/s (7.0 %) and 17.9 ms/s (8.8 %) of the two logic workers. Machine code (Node 22, R-0992): the FSM's `onUpdate` reads `fsm` and `changeState` reads `stateIndex` through megamorphic loads; the state's tick is a call TurboFan does not inline (Call_ReceiverIsAny).",
       "next": "E-301 took the transitions (R-1016). Left: the per-tick onUpdate dispatch (one indirect call a tick, the minimum for 17 targets) and changeState's megamorphic stateIndex load.",
       "refs": [
         "EXECUTION_PLAN.md#E-253"
@@ -13988,7 +13971,6 @@
       "date": "2026-11-13",
       "area": "core",
       "kind": "speed",
-      "rank": 22,
       "result": "FL4's Int32 head is (tag << 19, 20 on deco/1m) | (index + 1): with a 13 (12) bit tag most heads pass 2^30, outside a Smi, and E-87 measured that Chrome then returns a heap number from every Atomics.load and compareExchange (~14 ns an op). The wide pools (decorations, particles and bullets past 65 535) and 32-bit entity ids pop and push through FL4. E-87 left FL4 as it was on purpose (\"its window is already small\") after measuring 70 against 28.5 ns a step with values past 2^30 in a Chrome worker.",
       "next": "A Chrome kernel (scratch fl4/kernel.mjs: 20 index bits, a 12-bit tag against a 10-bit one under 2^30) in ns an op and heap; then weigh the ABA window (4 096 against 1 024 operations held between one thread's load and its exchange) before any change.",
       "refs": [
@@ -14086,7 +14068,6 @@
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 40,
       "result": "CPU sweep: rebuildOwnedRows is 28 to 32 % of Boids' spatial and 48 to 51 % of stationarySpatialWide's (12.5 % in Predator when W6 was screened). Boids' hot lines: the owned-list append 26 % (the stall of the loads before it), localCounts[cellIndex] 22 %, the cell write 6 %: scattered cell accesses. W6's bit-exact C port ran +10.9 % in its kernel on Predator's mix and 1.48x on a mix of every shape, screened then because the rebuild was small in Predator.",
       "next": "Waits with E-295 for scenes of tens of thousands of entities per worker. Seen: every spatial worker computes every entity's bounds (three times with three workers).",
       "refs": [
@@ -14130,13 +14111,12 @@
     {
       "id": "E-269",
       "title": "Mesh UV fills copy their rows from the mesh memory into Pixi's buffer every frame (meshApiStressScene: uploadRange 100 % on data.set(rows.subarray(...)))",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-13 from the CPU sweep's hot lines, not tested",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 6,
-      "result": "CPU sweep, meshApiStressScene: MeshUvFillBatch.uploadRange (meshUvFillBatch.js) spends 990 ms of the window (100 % of its self time) on `if (this.rows !== this.data) this.data.set(this.rows.subarray(from, past * MESH_UV_FILL_FLOATS), from)`: the corner kernel writes the rows in the mesh memory (W11), and they are copied into the Pixi buffer's own array before its upload; a subarray each time.",
+      "result": "Parked by the 2026-11-16 triage (expected gain none; the copy is the data; Row copy is irreducible without E-12x kernel): reopen when the code moves or a scene shows it. CPU sweep, meshApiStressScene: MeshUvFillBatch.uploadRange (meshUvFillBatch.js) spends 990 ms of the window (100 % of its self time) on `if (this.rows !== this.data) this.data.set(this.rows.subarray(from, past * MESH_UV_FILL_FLOATS), from)`: the corner kernel writes the rows in the mesh memory (W11), and they are copied into the Pixi buffer's own array before its upload; a subarray each time.",
       "next": "The copy is only the written range (pixiWorker passes [first, past)); in meshApiStress every mesh changes each frame, so the copy is the data. The remedy left: the corner kernel writing Pixi's own non-shared buffer (E-123 showed uploads from the shared view cost the other workers ~6 %). A design of its own.",
       "refs": [
         "EXECUTION_PLAN.md#E-269"
@@ -14157,7 +14137,6 @@
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "rank": 9,
       "result": "CPU sweep: decalStampStressScene's Pixi spends 173 ms in _uploadDecalRgba8 (89 % on its texSubImage2D of the whole tile) and 157 ms in premultiplyDecalTile (100 % on dst.set(b.scratch)); decalBlitStressScene 415 ms in the upload (68 %).",
       "next": "Upload from the premultiplied scratch (no copy), and only the rows (or rect) a stamp touched; the decal kernels and the two decal stress scenes' Pixi STEP_MS.",
       "refs": [
@@ -14330,8 +14309,7 @@
       ],
       "records": [
         "R-0977"
-      ],
-      "rank": 42
+      ]
     },
     {
       "id": "E-277",
@@ -14390,12 +14368,12 @@
     {
       "id": "E-279",
       "title": "packBox2dBodies allocates 278 KB/s in a loop with no object (burningBoxes Pixi)",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
       "date": "2026-11-13",
       "area": "pixi",
       "kind": "speed",
-      "result": "Heap pass: burningBoxesScene's Pixi allocates 902 KB/s, 278 of it in `packBox2dBodies` (box2dBodyPack.js), whose loop builds no object: PACK_OUT and the pack options are reused. The likely source is boxed doubles: `writeBody` takes 17 arguments, 13 of them doubles, called twice in the loop.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 278 KB/s; Allocation-only): reopen when the code moves or a scene shows it. Heap pass: burningBoxesScene's Pixi allocates 902 KB/s, 278 of it in `packBox2dBodies` (box2dBodyPack.js), whose loop builds no object: PACK_OUT and the pack options are reused. The likely source is boxed doubles: `writeBody` takes 17 arguments, 13 of them doubles, called twice in the loop.",
       "next": "`--trace-turbo-inlining` and `--trace-deopt` on the pack; if writeBody does not inline, write the body's floats in the loop (or through a module Float64Array); burningBoxes' Pixi heap and STEP_MS.",
       "refs": [
         "EXECUTION_PLAN.md#E-279"
@@ -14407,8 +14385,7 @@
       ],
       "records": [
         "R-0980"
-      ],
-      "rank": 37
+      ]
     },
     {
       "id": "E-280",
@@ -14454,8 +14431,7 @@
       ],
       "records": [
         "R-0980"
-      ],
-      "rank": 40
+      ]
     },
     {
       "id": "E-282",
@@ -14483,12 +14459,12 @@
     {
       "id": "E-283",
       "title": "Pre-render's collect re-enters its wasm kernel per non-sprite with ten doubles (mamushkaDig: 242 KB/s)",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
       "date": "2026-11-13",
       "area": "pre-render",
       "kind": "speed",
-      "result": "Heap pass: mamushkaDigScene's pre-render allocates 342 KB/s, 242 of it in `_collectVisibleEntitiesWasm`: the kernel stops at each entity that is not a plain sprite, JS collects it, and the next call passes the camera's doubles again (zoom, offsets, bounds, alpha).",
+      "result": "Parked by the 2026-11-16 triage (expected gain 342 KB/s in mamushkaDig; Allocation-only, one scene): reopen when the code moves or a scene shows it. Heap pass: mamushkaDigScene's pre-render allocates 342 KB/s, 242 of it in `_collectVisibleEntitiesWasm`: the kernel stops at each entity that is not a plain sprite, JS collects it, and the next call passes the camera's doubles again (zoom, offsets, bounds, alpha).",
       "next": "The camera's doubles in the kernel's memory once a frame, integer arguments per call (one boundary call per batch, HOW_WE_MEASURE); the collect kernel with stops, then mamushkaDig's pre-render.",
       "refs": [
         "EXECUTION_PLAN.md#E-283"
@@ -14500,8 +14476,7 @@
       ],
       "records": [
         "R-0980"
-      ],
-      "rank": 39
+      ]
     },
     {
       "id": "E-284",
@@ -14585,7 +14560,6 @@
       "date": "2026-11-13",
       "area": "physics",
       "kind": "speed",
-      "rank": 59,
       "result": "Box2D by name (a --profiling-funcs build of weedjs/e256 swapped in for one CPU pass, 2026-11-13): ballsHeavyStressScene's physics threads spend 25.6 % in b2ExecuteBlock (the solver's blocks, its stage functions inlined), 8.4 % in b2CollideTask, 7.7 % in b2SolverTask's own code and 4.2 % in b2FinalizeBodiesTask, the rest waiting on a futex; gearChain 9.5, 4.2 and 4.6 %. With the stages inlined into b2ExecuteBlock, b2SolverTask's own time is most likely its workers polling the stage's sync bits between blocks.",
       "next": "A counted build first (spins per stage, stage lengths, blocks per worker) on ballsHeavy; then the levers inside the scheduler: fewer workers on small islands, bigger blocks, or a stage the main thread finishes alone under a size; the Box2D repo's SIMD and no-SIMD builds both (box2d-simd-and-no-simd). Balls heavy's physics STEP_MS.",
       "refs": [
@@ -14665,7 +14639,6 @@
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 63,
       "result": "Machine code (Node 22, componentGetterMicrobench): the GameObject constructor makes 3 megamorphic stores and 5 megamorphic loads (`_ensureComponentAccessors`, `_componentSlotCount`, `_c0`, `_c1`, `bindToEntitySlot`) and 2 allocations; `bindToEntitySlot` 10 megamorphic stores, 9 megamorphic loads, 4 megamorphic keyed stores and 6 allocations. Each lazily made instance (`_makeInstance`, a spawn's first tick or callback) pays them.",
       "next": "Count instance binds per second in Predator and the spawn-heavy scenes first (a counter, not a trace); if they matter, give every class's instances one shape (fields declared in GameObject's constructor in one order, component slots in a fixed array) and check the machine code again.",
       "refs": [
@@ -14712,7 +14685,6 @@
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "rank": 65,
       "result": "Code pass: the game's neighbour loop `civilianBehaviorFsm.js:63` (334 B) stayed in Maglev for the whole run, its sibling at line 38 reached TurboFan at 2.5 s. One run with `--efficiency-mode=false` (to test V8's efficiency-mode TurboFan delay) left every JS function below TurboFan, wasm still tiering: logic STEP_MS 3.51/3.19 → 4.53/4.15 ms, particle 0.66 → 0.94, renderer 6.58 → 7.62, physics a tie (one run a side, both with the code log: an estimate, not a verdict). That flag cannot test the delay.",
       "next": "The code pass over the owner scenes: hot functions (≥ 1 % self) that end a run below TurboFan; engine ones, why (OSR from Maglev, deopts, size); demo loops, whether the per-entity body as its own function tiers up sooner. Then a kernel or scene for the largest.",
       "refs": [
@@ -14782,7 +14754,6 @@
       "date": "2026-11-13",
       "area": "spatial",
       "kind": "speed",
-      "rank": 73,
       "result": "Ceiling (kernels, entities renumbered in home-cell order): publish +16 % at 16 500 and +20 % at 60 000; whole spatial frame -4 % and -15 % (R-1009). Not worth a per-frame copy at Predator's size; worth it at tens of thousands if E-267's counting pass yields the cell order.",
       "next": "Split the refills between the gather's reads and the publish's writes (a kernel with the scene's layout), then write only rows that changed or pack the published fields; spatial STEP_MS on stationarySpatialWide and Predator.",
       "refs": [
@@ -16637,7 +16608,6 @@
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 1,
       "result": "Read (R-1101): per contact 2 fatAABB lines, 4 body-sim lines (the 96-byte sim read at offsets 0-96) and, on a full update, about 3 lines of the 280-byte b2Shape (type@20, material@24-40, circle@124, enableHitEvents@273); contacts are recycled only within the 2 px speculative distance, so walkers take a full update every 1-2 steps. Counters: b2CollideTask 2.0 refills an instruction (R-1034, R-1041). Estimate ~7.5 -> ~4 lines a contact: collide -25 to -40 %, physics STEP -5 to -9 %.",
       "next": "Flag bodies whose only shape is a circle centred on localCenter (set in b2UpdateBodyMassData and wherever localCenter changes) and collide them from the body sims (b2Circle{localCenter, maxExtent} is bit-identical); friction, restitution, rollingResistance, tangentSpeed and the hit flag cached in the contact sim (filled by the slow path, invalidated by the material setters); b2BodySim reordered {p, q, invMass, invInertia, maxExtent, flags} first. First: the Node harness A/B at 38 000 walkers, b2Counters.recycledContactCount, how many Predator bodies have offset 0. Manifolds bit-identical, B2_SNAP_VERSION bumped, preSolve and friction callbacks keep the slow path, both builds, the LiquidFun gates.",
       "refs": [
@@ -16652,8 +16622,10 @@
         "R-1101",
         "R-1110",
         "R-1218",
-        "R-1231"
-      ]
+        "R-1231",
+        "R-1236"
+      ],
+      "rank": 3
     },
     {
       "id": "E-314",
@@ -16663,7 +16635,6 @@
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 2,
       "result": "Verified 2026-11-14 (R-1100): __builtin_prefetch compiles to nothing in wasm, so Box2D's own prefetch loops (the pair-set probes in broad_phase.c) are dead code. Box2D's hot loops are memory-bound: finalize 2.1, collide 2.0, solver 1.7 refills an instruction (R-1034, R-1041). Read (R-1101): the finalize's chain is 4-6 dependent misses inside a ~400-instruction iteration. Estimate physics STEP -3 to -7 %, more once the refit drops its fences.",
       "next": "Early loads in batches of 16 with a tight first loop: the finalize in 2 stages, each 8 bodies ahead; collide the AABB tests and body-sim loads of 16 contacts; the solver the 8 body states of wide constraint i+2; the pair-set probes as real loads. Node harness A/B per loop (results unchanged; it can lose where the data already hits).",
       "refs": [
@@ -16678,8 +16649,10 @@
         "R-1100",
         "R-1101",
         "R-1106",
-        "R-1109"
-      ]
+        "R-1109",
+        "R-1236"
+      ],
+      "rank": 4
     },
     {
       "id": "E-315",
@@ -16719,7 +16692,6 @@
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 4,
       "result": "Read (R-1101): circle-circle and circle-polygon manifolds always have 1 point; every stage (prepare, warm start, solve, relax, restitution, store) still computes point 2, plus 2 divides in prepare. Estimate contact stages -20 to -30 %, physics STEP -2 to -4 %.",
       "next": "Prepare sets a per-constraint flag from b2AnyTrueW(twoPointMask); point-2 fields go to the struct's tail, each point-2 block under that branch; store writes points[1] only when pointCount > 1. Node harness A/B and a 600-step pose hash against main (identical but for signed zeros); the no-SIMD build gets it through the scalar b2FloatW code; LiquidFun gates.",
       "refs": [
@@ -16745,7 +16717,6 @@
       "date": "2026-11-15",
       "area": "spatial",
       "kind": "speed",
-      "rank": 5,
       "result": "Verified (R-1100): predatorScene.js sets maxNeighbors 1024, two rows per 4 KB page. E-307 found the publish's cost is writing these rows; gather_batch + publish_batch are 69 % of spatial at crowd 2.5 and the largest refills in Chrome (19.3 + 4.9 % of all, R-1100; E-295). The candidate loop fills the reorder buffer before the next entity's row head is asked for (R-1104); wasm has no prefetch instruction. Estimate spatial -5 to -15 %.",
       "next": "Load entity n+8's row and cand heads into an unused local in the publish (and the gather) so the misses overlap: spatialPublishWasmMicrobench --n 57600 with and without (same rows). Then the structural one, E-15's packed rows (prefix-sum offsets, one region per worker: 2.5-3.6x in its kernel at 17 500 entities), or a smaller maxNeighbors where the scene allows it.",
       "refs": [
@@ -16761,8 +16732,10 @@
         "R-1100",
         "R-1104",
         "R-1219",
-        "R-1231"
-      ]
+        "R-1231",
+        "R-1236"
+      ],
+      "rank": 9
     },
     {
       "id": "E-318",
@@ -16772,7 +16745,6 @@
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "rank": 7,
       "result": "Read (R-1104): a tick bucket's ids rise by T and each tick needs the count at once. E-240's counters found the neighbour loops instruction-bound (R-0997): this targets only the head's miss, not the loop. Estimate logic -3 to -6 %.",
       "next": "In a copy of the bucket loop used only for types that read neighbours (rule R8), load list[i+16]'s row head on each tick; neighborAccessMicrobench at 57 600 entities, stride 1025, bucket order; then Predator crowd 2.5 logic.",
       "refs": [
@@ -16784,8 +16756,10 @@
       ],
       "records": [
         "R-1104",
-        "R-1231"
-      ]
+        "R-1231",
+        "R-1236"
+      ],
+      "rank": 17
     },
     {
       "id": "E-319",
@@ -16795,7 +16769,6 @@
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 10,
       "result": "Scheduling (R-1100, WPR CSwitch at crowd 2.5): the physics thread 908 ms/s on CPU, each of the 3 pool threads 732-734 ms/s (E-298's spin about 275 ms/s each), pool threads preempted 45-55 times a second and moved between the CCX 34-36 times; logic threads 412-475 ms/s with 46-50 CCX moves a second. R-1041: the spin about 5 % and futex waits 14 % of the physics threads. E-298 was gated at crowd 1.5, where cores were free (R-1104). Nothing in the register on the thread count (Predator uses 4).",
       "next": "A 2x2 at crowd 2.5 judged on every worker (logic, spatial and pre-render as well as physics): 3 against 4 threads, the spin against the previous Box2D wasm. If the spin loses: spin only while busy threads are fewer than cores, or an imported Atomics.pause every N turns.",
       "refs": [
@@ -16880,7 +16853,6 @@
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "rank": 13,
       "result": "Heap pass (R-1100): logic 1 346 and 1 072 KB/s; _spawn 299/213, randomRange 100/65, copyEmitFields 78/51, rng 78/62 KB/s. Read (R-1103): _spawn leaves its randomRange calls out (R-0994). Not E-278 (dropped: R-1012 added JS draws inside the big function): this removes the per-particle JS.",
       "next": "Resolve each field once per emit into a Float64Array (lo, span, ease, flags); one wasm call fills count slots on the particle Memory (ParticleComponent lives there), drawing mulberry32 on rng's state copied in and out, so no random double exists in JS. particleEmitMicrobench and heapSampleNode, then Predator's logic heap. New goldens (the random stream's order changes); logic workers load the module on the particle Memory.",
       "refs": [
@@ -16904,7 +16876,6 @@
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 14,
       "result": "Read (R-1101): every id order is spatially random (predatorScene.js spawns); E-309's ablation: ids numbered in home-cell order cut spatial's frame 8 %. Gain unknown, possibly 5-15 % of physics.",
       "next": "Dump the coherence once; a harness ceiling with Morton-order against random spawn order. If it pays: every N steps permute bodySims and bodyStates and remap localIndex and encodedBodySim through a table; sort each non-overflow colour by body index (no dynamic body repeats within a colour: bit-identical solve; event and moved-list order change); try slot order and the tree's DFS-leaf order as keys.",
       "refs": [
@@ -16918,8 +16889,10 @@
       "records": [
         "R-1101",
         "R-1219",
-        "R-1231"
-      ]
+        "R-1231",
+        "R-1236"
+      ],
+      "rank": 2
     },
     {
       "id": "E-323",
@@ -16929,7 +16902,6 @@
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 15,
       "result": "Read (R-1101): b2ComputeFatShapeAABB (5.4 %) is the shape's first touch; per body the finalize touches shape offsets 12-136 and the 100-byte b2Body at 0-86, plus a random b2Island read for the awake-island bit. Estimate finalize -15 to -25 %, physics STEP -2 to -4 %.",
       "next": "b2Shape: {type, bools, nextShapeId, proxyKey, aabbMargin, 4 material scalars, aabb} first, then the union, padded to 320 bytes; b2Body: the finalize's and E-288's fields in its first 40 bytes, padded to 128; the awake-island bit set by island id (islandCount is in g_counters[4]). Node harness A/B; B2_SNAP_VERSION; about 15 % more memory for these structs.",
       "refs": [
@@ -16953,7 +16925,6 @@
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 16,
       "result": "Read (R-1101): ~19 000 moved leaves each do an i32.atomic.rmw.or whose result is used (a lock cmpxchg loop in V8, a full fence) on a random node; the refit scans the tree serially on the physics thread and b2GatherMovedSiblings scans it again. Estimate 0.3-0.6 ms serial, physics STEP -2 to -4 %.",
       "next": "The finalize writes only the leaf and a tree-dirty flag; the refit propagates MOVED from children while it unions the AABBs; the refit split into 8-16 DFS subtree ranges under b2ParallelFor, each emitting the moved-sibling list the next step reuses (unless API calls or bullets changed the tree). First a build without B2_COARSE_PROFILE reading the refit and pairs timers; the parallel refit bit-identical to the serial one.",
       "refs": [
@@ -16965,8 +16936,10 @@
         "MarkProxyMoved"
       ],
       "records": [
-        "R-1101"
-      ]
+        "R-1101",
+        "R-1236"
+      ],
+      "rank": 8
     },
     {
       "id": "E-325",
@@ -16976,7 +16949,6 @@
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 17,
       "result": "Read (R-1101): export_body_move_events reads g_still[slot] and, per moved body, x, y, rotC and rotS at a random slot (cross-core misses); step_world's own time is 1.9 % of the four threads (~1 ms a step, serial); the sleep paint before the step scans ~57 000 slots and writes 38 000 bytes the finalize clears again. A concrete form of E-298's untried \"finalize's pose copy\". Estimate 0.3-0.8 ms serial, physics STEP -2 to -6 %.",
       "next": "Export inside the finalize after CCD (solver.c's move of 669-676 below 715), writing movedSlot[simIndex] sequentially; the serial pass becomes a sequential 160 KB compaction; bullets and bodies that fell asleep handled explicitly; the sleep flag painted incrementally. First emscripten_get_now around both loops in a scratch build, in Chrome at crowd 2.5; LiquidFun's re-export kept.",
       "refs": [
@@ -16988,8 +16960,10 @@
         "sleep paint"
       ],
       "records": [
-        "R-1101"
-      ]
+        "R-1101",
+        "R-1236"
+      ],
+      "rank": 6
     },
     {
       "id": "E-326",
@@ -16999,7 +16973,6 @@
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 18,
       "result": "Read (R-1101): E-298 spins only inside b2World_Step; the first parallel-for of each step (the pair tasks) wakes the workers from the semaphore. Estimate 0-1 ms, physics STEP 0 to -7 %.",
       "next": "Signal the sleepers and set stepping at step_world's entry, before the sleep paint and b2GatherMovedSiblings; if that lead is too short, a prewake export called from doStep after waitForLogic, with a timeout. First a counted build logging the time from the step's first enqueue to the first pool claim (or WPR's ready-to-run times); mind the spin's cost on shared cores (E-319).",
       "refs": [
@@ -17022,7 +16995,6 @@
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 20,
       "result": "Read (R-1104): rotations are half of every publish; W15's reopen condition (the pose buffers in Box2D's block) is met, so the copy can be a task while the pool idles after the step. CPU and counters (R-1100): publishPose 4.2 % of the physics thread, 2.07 % of Chrome's instructions. Estimate physics -2 to -3 %.",
       "next": "Skip unchanged rotations (as E-308 did in the export); then the remaining copy as a pool task. A respawn or a teleport must write the rotation into both pose buffers. Predator crowd 2.5 physics.",
       "refs": [
@@ -17034,8 +17006,10 @@
       ],
       "records": [
         "R-1100",
-        "R-1104"
-      ]
+        "R-1104",
+        "R-1236"
+      ],
+      "rank": 7
     },
     {
       "id": "E-328",
@@ -17045,7 +17019,6 @@
       "date": "2026-11-15",
       "area": "spatial",
       "kind": "speed",
-      "rank": 21,
       "result": "Read (R-1104): rows are read two logic frames later and Box2D rewrites Transform only at its finalize, so spatial1 can wait on chain[2] (notified, >= 1 ms) and run from about 7 to 14.3 ms, when cores are free; the particle worker could do the same. At crowd 2.5 the machine is nearly idle from about 11 to 16.7 ms.",
       "next": "E-310's sitting (crowd 2.5, spatialWorkers=2) with spatial1 gated on the bell, judged on spatial and logic; a fallback start time if logic is late. Rows at the ownership boundary see the other worker's cells a frame older; particles a frame later.",
       "refs": [
@@ -17056,8 +17029,10 @@
         "spatial on the bell"
       ],
       "records": [
-        "R-1104"
-      ]
+        "R-1104",
+        "R-1236"
+      ],
+      "rank": 18
     },
     {
       "id": "E-329",
@@ -17141,13 +17116,12 @@
     {
       "id": "E-332",
       "title": "Decoration rows still write their 7 statics every frame and deco_key reads them back from the queue; decorationSway rewrites the constant rotC 1.5 every frame",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "rank": 46,
-      "result": "Read (R-1102): E-312 covers sprites only. For Predator's 20 000 grass decorations when they are drawn, roughly 2-5 % of pre-render; nothing past hideDecorationsAtZoom (0.25), as in crowd 2.5's view. decorationSway.c stores rotC = 1.5 on lines pre-render reads (E-308's pattern).",
+      "result": "Parked by the 2026-11-16 triage (expected gain 2-5 % when decorations drawn, none at crowd 2.5 zoom; Below detection in the reference view): reopen when the code moves or a scene shows it. Read (R-1102): E-312 covers sprites only. For Predator's 20 000 grass decorations when they are drawn, roughly 2-5 % of pre-render; nothing past hideDecorationsAtZoom (0.25), as in crowd 2.5's view. decorationSway.c stores rotC = 1.5 on lines pre-render reads (E-308's pattern).",
       "next": "Compare the computed values with the slot record in registers and write the statics only when the row is marked or K_SKIP is off; store rotC only when it differs. Judge on Predator at play zoom or a decoration stress scene.",
       "refs": [
         "EXECUTION_PLAN.md#E-332"
@@ -17164,13 +17138,12 @@
     {
       "id": "E-333",
       "title": "persist_remember runs every frame in Predator though the persist path never hits (0 of 631 tries, R-1045): 2.4 % of pre-render at crowd 2.5",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pre-render",
       "kind": "speed",
-      "rank": 57,
-      "result": "CPU pass (R-1100): persist_remember 2.4 % of pre-render. Read (R-1102): its other job, clearing SpriteRenderer.renderDirty, has one reader, persist_frame.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 2.4 % of pre-render (about 0.2 ms); Under the 3 % detection limit): reopen when the code moves or a scene shows it. CPU pass (R-1100): persist_remember 2.4 % of pre-render. Read (R-1102): its other job, clearing SpriteRenderer.renderDirty, has one reader, persist_frame.",
       "next": "After N misses stop remembering; every M frames re-arm with one full emit plus remember. A Predator pair; BunnyMark, where persist hits, must not get worse. N-170 first: the Float32 early-outs may be why persist never hits.",
       "refs": [
         "EXECUTION_PLAN.md#E-333"
@@ -17307,7 +17280,6 @@
       "date": "2026-11-15",
       "area": "pixi",
       "kind": "speed",
-      "rank": 67,
       "result": "Read (R-1104). CPU pass (R-1100): _waitForQueue 47.9 % of Pixi's busy time at crowd 2.5 (a wait), _uploadDecalRgba8 2.7 %.",
       "next": "Issue the decal and lookup uploads and a gl.flush before _waitForQueue, so the GPU process uploads during the wait (the chain's tail 0.2-0.5 ms shorter); Predator crowd 2.5 Pixi and the frame clock.",
       "refs": [
@@ -17329,7 +17301,6 @@
       "date": "2026-11-15",
       "area": "renderer",
       "kind": "gpu",
-      "rank": 68,
       "result": "Scheduling (R-1100): the GPU process's thread 405 ms/s on CPU, 61 % of it on CPU 15, never preempted; at crowd 2.5 the machine holds about 6.8 busy cores of 8. Nothing in the register on the GPU process's CPU (N-77 is its memory).",
       "next": "Count GL calls, state changes and buffer uploads a frame (Spector.js or chrome://tracing's gpu categories, E-230); the same scene on WebGPU (Dawn on D3D12) with the GPU process's CPU from WPR; then the largest call sources.",
       "refs": [
@@ -17352,7 +17323,6 @@
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "rank": 69,
       "result": "Read (R-1104): list updates, impacts, collision callbacks (8-12 % of logic) and messages need no input; a sub-ms wait on Windows loops on SleepConditionVariableSRW(0) and may retake V8's process-wide waiter mutex (not verified), which may delay main's notify and the pool's wakes at the same vsync. Estimate logic's wait near 0, ~0.6 ms a frame of spinning freed.",
       "next": "Run the input-free work first, then the edge flags; if main is still not out, spin on Atomics.load with Atomics.pause. First a Node two-thread kernel measuring notify latency while one thread loops Atomics.wait(..., 0.9). Collision callbacks then see input edges a frame late: check the games.",
       "refs": [
@@ -17375,7 +17345,6 @@
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "rank": 70,
       "result": "Read (R-1104): logic streams whole arrays; (id >> 6) % T would touch 1/T of the lines. The three copies of the phase formula (logicOwner.js, gameObject.js, spatialWorker.js) must agree; load balance for small types. Estimate logic -2 to -5 %.",
       "next": "A tickLoopKernel variant with block phases; Predator crowd 2.5 logic and physics.",
       "refs": [
@@ -17393,13 +17362,12 @@
     {
       "id": "E-343",
       "title": "Every precomputed query is republished on any population change: Predator's Flash per shot (no sprite) republishes the sprite query and pre-render re-copies it",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "rank": 71,
-      "result": "Read (R-1103): one boolean decides (querySystem.js, logicWorker.js); E-217's open note. CPU pass (R-1100): copyTypeActiveListToBuffer 3.4 % of a logic worker at crowd 2.5.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 3.4 % of a logic worker; Under the detection limit): reopen when the code moves or a scene shows it. Read (R-1103): one boolean decides (querySystem.js, logicWorker.js); E-217's open note. CPU pass (R-1100): copyTypeActiveListToBuffer 3.4 % of a logic worker at crowd 2.5.",
       "next": "A dirty-type mask; republish only the queries that intersect it; publishes a frame and the collect kernel.",
       "refs": [
         "EXECUTION_PLAN.md#E-343"
@@ -17448,7 +17416,6 @@
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "rank": 74,
       "result": "Read 2026-11-14 (R-1100): logicWorker.js writes rbAx[entityIndex] = 0 (and ay, aa) in the tick paths; E-140 skips types without a RigidBody, not zero rows; physics reads every body's accelerations each step.",
       "next": "Count nonzero-to-zero writes in Predator; if most are zero already, write only when nonzero (a test on a line already loaded); tickLoopKernel, then crowd 2.5 logic and physics.",
       "refs": [
@@ -17471,7 +17438,6 @@
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "rank": 75,
       "result": "Read (R-1104): the pad could hold the type; an accessor over pos would serve the soldiers' scans (findACivilianToShoot 8.1 % of Chrome's instructions at crowd 2.5, R-1100; 9.6 % in R-0997). It is the collider centre, not Transform. Close to E-199.",
       "next": "neighborAccessMicrobench with a pos-slot accessor; Predator's soldier scan.",
       "refs": [
@@ -17494,7 +17460,6 @@
       "date": "2026-11-15",
       "area": "engine",
       "kind": "bug",
-      "rank": 76,
       "result": "Found 2026-11-14 in the worker-sync read (R-1104), not run: only 'timed-out' turns these waits off (kept so by N-146); the period is each worker's own frame gap, so a skipped frame stretches it; physics turns its wait off on a late wake (weedjsPost.js), these two do not. At crowd 2.5 the pose arrives about 14 ms in against a 5.7 ms budget, and whether the wait ends by timeout or by notify depends on where Windows' 15.6 ms timer tick falls (it drifts about 1 ms a vsync): expect bursts where pre-render runs past its vsync and Pixi draws an old queue.",
       "next": "First, no code change: the frame clock at crowd 2.5 (pre-render starts a second, WAIT_MS, Pixi's new queues a second). Fix: the period from main's frame clock; a wake whose end plus the worker's own step passes the vsync counts as a miss; skip the wait when the upstream cannot fit; never wait under 1 ms.",
       "refs": [
@@ -17539,13 +17504,12 @@
     {
       "id": "E-347",
       "title": "updateNavGrid rebuilds the walkability every 300 frames in Predator and clears every flowfield and path even when nothing changed, so every requester recomputes every 5 s",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "nav",
       "kind": "speed",
-      "rank": 77,
-      "result": "Read (R-1103): predatorScene.js -> navGrid.js -> particleWorker.js -> NavGrid.invalidate. Heap pass (R-1100): getColliderBounds 12-17 and rebuildWalkabilityFromIndices 11-12 KB/s (a cold handler that boxes every double).",
+      "result": "Parked by the 2026-11-16 triage (expected gain 11-17 KB/s; Allocation-only): reopen when the code moves or a scene shows it. Read (R-1103): predatorScene.js -> navGrid.js -> particleWorker.js -> NavGrid.invalidate. Heap pass (R-1100): getColliderBounds 12-17 and rebuildWalkabilityFromIndices 11-12 KB/s (a cold handler that boxes every double).",
       "next": "Build into a scratch, compare, swap and invalidate only on a change; flowfieldsComputedThisFrame over 10 s.",
       "refs": [
         "EXECUTION_PLAN.md#E-347"
@@ -17665,7 +17629,6 @@
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "rank": 82,
       "result": "Heap pass (R-1100): copyEmitFields 78 and 51 KB/s. Read (R-1103): plus _mergeCfg's for-in.",
       "next": "ParticleEmitter.preset() returning an object in emitScratch's shape that the game reuses (public API: the owner's call); _mergeCfg as named stores; heap sample.",
       "refs": [
@@ -17688,7 +17651,6 @@
       "date": "2026-11-15",
       "area": "particle",
       "kind": "speed",
-      "rank": 83,
       "result": "CPU pass (R-1100): updateDerivedProperties 14.1 % of the particle worker at crowd 2.5. Read (R-1103): b2FinalizeBodies holds each velocity in a register, in a parallel task; a sleeping body gets 0. R-0752 kept this off the logic workers.",
       "next": "Write speed in the finalize (C: SIMD and no-SIMD builds, the LiquidFun gates; the owner decides); the particle worker's and physics' STEP_MS.",
       "refs": [
@@ -17728,13 +17690,12 @@
     {
       "id": "E-355",
       "title": "Box2D splits the same island every step when one body is sleepy and any of its contacts broke: b2SplitIsland 1.6 % of the physics threads",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 85,
-      "result": "Read (R-1101): in a crowd the island stays connected, or its pieces re-merge serially the next step. Estimate 0.5-2 %.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 0.5-2 %; Under the detection limit): reopen when the code moves or a scene shows it. Read (R-1101): in a crowd the island stays connected, or its pieces re-merge serially the next step. Estimate 0.5-2 %.",
       "next": "After a split that finds one component, skip that island as a candidate for K steps (sleep starts later; still deterministic); harness A/B.",
       "refs": [
         "EXECUTION_PLAN.md#E-355"
@@ -17750,13 +17711,12 @@
     {
       "id": "E-356",
       "title": "Box2D's serial contact paths re-resolve each begin/end event through three validated API calls per side, and b2CreateContact re-reads shapes and bodies after a QSORT",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 86,
-      "result": "Read (R-1101): about 2 % of pairs begin or end a frame (E-252). Estimate 0.1-0.4 ms serial.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 0.1-0.4 ms serial (1-3 %); Under the detection limit): reopen when the code moves or a scene shows it. Read (R-1101): about 2 % of pairs begin or end a frame (E-252). Estimate 0.1-0.4 ms serial.",
       "next": "Count events and new pairs a step; slot pairs written where the collide loop holds the bodies; candidates carry precomputed fields; a radix sort.",
       "refs": [
         "EXECUTION_PLAN.md#E-356"
@@ -17772,13 +17732,12 @@
     {
       "id": "E-357",
       "title": "b2MinW/b2MaxW compile to compare+bitselect (emscripten's _mm_min_ps emulation) where wasm_f32x4_pmin/pmax are one instruction each",
-      "status": "blocked",
+      "status": "parked",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested; blocked 2026-11-16: its Box2D build (origin's solver-skip-second-point) is not in the local Box2D clone, so main keeps its box2dWasm.wasm (integrate/pr12 a5a03ca3); it waits for that branch in the Box2D repo (SIMD and no-SIMD builds) and the LiquidFun gates",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "rank": 87,
-      "result": "Read (R-1101): emsdk compat/xmmintrin.h's own TODO; under 1-2 % of the solver; the SIMD build only.",
+      "result": "Parked by the 2026-11-16 triage (expected gain under 1-2 % of the solver; Built; blocked; gain below detection limit): reopen when the code moves or a scene shows it. Read (R-1101): emsdk compat/xmmintrin.h's own TODO; under 1-2 % of the solver; the SIMD build only.",
       "next": "pmin/pmax in contact_solver_wide.inl (with NaN semantics checked); harness A/B.",
       "refs": [
         "EXECUTION_PLAN.md#E-357"
@@ -17882,7 +17841,6 @@
       "date": "2026-11-15",
       "area": "render",
       "kind": "gpu",
-      "rank": 91,
       "result": "Keyed frames (E-201, E-312) send a row only when its key changed; Predator's walkers animate all the time and call setAnimationSpeed every tick (N-170), so animation likely drives most marked keys (R-1100). R-0190 (\"Animation frame in the shader\") was dropped on September's architecture.",
       "next": "Count marked keys a frame by cause (animation, pose, statics) at crowd 2.5; if animation leads, frame = base + floor((t - t0) x speed) mod count in the vertex shader, with t0, speed and count in the row's statics.",
       "refs": [
@@ -17904,7 +17862,6 @@
       "date": "2026-11-15",
       "area": "pixi",
       "kind": "speed",
-      "rank": 92,
       "result": "Read (R-1102): memory.copy is 5-7 % of Pixi (R-1100: wasm-function[0] 5.1 %), so about 2 % of Pixi; not exact (about 6e-5 rad); the shaders and packs change. It belongs under E-193's \"fewer bytes a row\" and is not listed there.",
       "next": "The owner's call on the error; a pack kernel variant and a visual check.",
       "refs": [
@@ -18065,12 +18022,12 @@
     {
       "id": "E-396",
       "title": "The light data texture goes up whole every frame (maxLights 256 x 4 rows, 16 KB) while a scene lights a few; _uploadRgba32FloatGl is 2 to 4 % of Pixi in the light scenes' traces",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-16 from the light scenes' traces and glFrameRecorder (texture#2 256 x 4 RGBA32F, 16 KB a frame)",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "CPU passes 2026-11-16: _uploadRgba32FloatGl 2.2 to 4.0 % of Pixi in lampShadowStress, selfShadow, spot, gallery, lightBench, volume.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 16 KB/frame, 2-4 % of Pixi in light scenes; Tiny): reopen when the code moves or a scene shows it. CPU passes 2026-11-16: _uploadRgba32FloatGl 2.2 to 4.0 % of Pixi in lampShadowStress, selfShadow, spot, gallery, lightBench, volume.",
       "next": "Upload only the live columns (UNPACK_ROW_LENGTH = maxLights), zeros once when the count drops; or only the rows a frame changed.",
       "refs": [],
       "aliases": [
@@ -18083,12 +18040,12 @@
     {
       "id": "E-397",
       "title": "writeMeshPoseTable walks every mesh fill row (about 524 000 in volumeStressScene) to find each entity's run of rows",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-16 by opt/mesh-pose's agent (its next hotspot)",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "",
+      "result": "Parked by the 2026-11-16 triage (expected gain volumeStress only; Stress scene only): reopen when the code moves or a scene shows it.",
       "next": "A per-batch list of distinct entities with their runs, rebuilt on full packs (their only writer); volumeStressScene's Pixi CPU.",
       "refs": [],
       "aliases": [
@@ -18102,12 +18059,12 @@
     {
       "id": "E-398",
       "title": "Mesh fill poses read on the GPU by entity, as E-201 reads sprite poses by queue row: no pose table built and uploaded by the CPU (the pose code was 55 % of Pixi's busy time in volumeStressScene)",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-16 from the volume scene's trace (q-volume: meshFillPoseSource 15.8 %, uploadPoseTable 12.0 %, readMeshFillPose 11.8 %, meshFillPoseOrPresenceChanged 11.8 %)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "",
+      "result": "Parked by the 2026-11-16 triage (expected gain volume scene only; Same scene): reopen when the code moves or a scene shows it.",
       "next": "The mesh programs fetch each instance's pose from the pose columns (a texture by entity, or the queue's by row); the CPU only says which entities draw. After opt/mesh-pose is measured.",
       "refs": [],
       "aliases": [
@@ -18194,8 +18151,10 @@
         "screen pass fill"
       ],
       "records": [
-        "R-1174"
-      ]
+        "R-1174",
+        "R-1236"
+      ],
+      "rank": 14
     },
     {
       "id": "E-401",
@@ -18301,8 +18260,10 @@
       ],
       "records": [
         "R-1175",
-        "R-1177"
-      ]
+        "R-1177",
+        "R-1236"
+      ],
+      "rank": 12
     },
     {
       "id": "E-406",
@@ -18343,8 +18304,10 @@
         "R-1175",
         "R-1177",
         "R-1181",
-        "R-1214"
-      ]
+        "R-1214",
+        "R-1236"
+      ],
+      "rank": 13
     },
     {
       "id": "N-218",
@@ -18363,8 +18326,10 @@
       "records": [
         "R-1176",
         "R-1189",
-        "R-1203"
-      ]
+        "R-1203",
+        "R-1236"
+      ],
+      "rank": 16
     },
     {
       "id": "E-408",
@@ -18775,8 +18740,10 @@
       ],
       "records": [
         "R-1184",
-        "R-1201"
-      ]
+        "R-1201",
+        "R-1236"
+      ],
+      "rank": 5
     },
     {
       "id": "E-427",
@@ -19103,12 +19070,12 @@
     {
       "id": "E-443",
       "title": "Dormant: with more than one spatial worker every worker owning a row an entity's box touches stores its spatial pos every frame, whatever the change test found: 0 now (one spatial worker) but an estimated 25 000 line transfers a frame with spatialWorkers=2 and 39 000 with 4",
-      "status": "open",
+      "status": "parked",
       "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
       "date": "2026-11-16",
       "area": "spatial",
       "kind": "speed",
-      "result": "Candidate 25: spatialWorker.js (the stores after the E-136 compare, ownership by home row), R-1104; spatial.pos 16 bytes an entity, 14 409 lines at crowd 2.5.",
+      "result": "Parked by the 2026-11-16 triage (expected gain dormant (spatialWorkers>1); Dormant path): reopen when the code moves or a scene shows it. Candidate 25: spatialWorker.js (the stores after the E-136 compare, ownership by home row), R-1104; spatial.pos 16 bytes an entity, 14 409 lines at crowd 2.5.",
       "next": "Store pos only when the compare found a change, and only from the home-row owner (a single writer a line); measure with ?spatialWorkers=2 (DCRefill per function: rebuildOwnedRows, gather_batch, publish_batch) before anyone raises the default.",
       "refs": [],
       "aliases": [
@@ -19523,8 +19490,10 @@
         "stamp walk by candidate count"
       ],
       "records": [
-        "R-1208"
-      ]
+        "R-1208",
+        "R-1236"
+      ],
+      "rank": 15
     },
     {
       "id": "E-459",
@@ -19587,12 +19556,12 @@
     {
       "id": "E-462",
       "title": "A glow-only flag in the texture table would let E-457's stencil mask cover sheet glow too: today's soft-or-glow bit (E-429) marks nearly every frame of a soft sheet, so with a glowing sheet the glow pass draws unmasked as before",
-      "status": "open",
+      "status": "parked",
       "statusText": "found 2026-11-16 by the second pixi batch agent (opt/pixi-gpu-batch2)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "E-457 masks entity glow (the word's emissive level); with emissive=sheet in emissiveStressScene the mask would cover nearly everything through the soft-or-glow bit, so the pass stays unmasked there.",
+      "result": "Parked by the 2026-11-16 triage (expected gain sheet glow only; Small and one scene): reopen when the code moves or a scene shows it. E-457 masks entity glow (the word's emissive level); with emissive=sheet in emissiveStressScene the mask would cover nearly everything through the soft-or-glow bit, so the pass stays unmasked there.",
       "next": "A second flags texel (or bit) for glow alone, from the registry's scan (the CPU array already keeps soft, half and glow apart); the mask then takes the glowing frames; per draw on emissiveStressScene emissive=sheet before and after.",
       "refs": [],
       "aliases": [
@@ -20003,8 +19972,10 @@
       ],
       "records": [
         "R-1224",
-        "R-1230"
-      ]
+        "R-1230",
+        "R-1236"
+      ],
+      "rank": 11
     },
     {
       "id": "N-238",
@@ -20042,8 +20013,10 @@
       ],
       "records": [
         "R-1226",
-        "R-1233"
-      ]
+        "R-1233",
+        "R-1236"
+      ],
+      "rank": 10
     },
     {
       "id": "N-239",
@@ -20101,12 +20074,12 @@
     {
       "id": "E-478",
       "title": "The collider batch's explicit meshes and fixture fans could take E-453's indexed form: an 8-gon fan is 18 corners for 8 vertices",
-      "status": "open",
+      "status": "parked",
       "statusText": "found 2026-11-16 by the E-452/E-453 agent (opt/fill-attrs)",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "E-453 cut the UV fill's vertex stage 0.855 -> 0.176 ms under the scissor in meshFillGpuBench by drawing each vertex once.",
+      "result": "Parked by the 2026-11-16 triage (expected gain -; No reference scene uses it): reopen when the code moves or a scene shows it. E-453 cut the UV fill's vertex stage 0.855 -> 0.176 ms under the scissor in meshFillGpuBench by drawing each vertex once.",
       "next": "Indexed records for ColliderFillBatch (fans and explicit meshes), its pack and paint; meshFillGpuBench col/colVs before and after, pictures identical.",
       "refs": [],
       "aliases": [
@@ -20226,12 +20199,12 @@
     {
       "id": "E-480",
       "title": "carScene's spatial worker allocates 4.45 KB a frame (261 KB/s) at _findNeighbors spatialWorker.js:1564 (planetPhysics 1.64, littleCity 0.73 KB/f); the one call in its loop that passes doubles is _storeNeighborReuseSignature (four of them, :1755)",
-      "status": "open",
+      "status": "parked",
       "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
       "date": "2026-11-16",
       "area": "spatial",
       "kind": "speed",
-      "result": "Heap pass on the demos (heapSampleWorkers); the call is a suspicion, no code pass ran for carScene.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 261 KB/s; Allocation-only): reopen when the code moves or a scene shows it. Heap pass on the demos (heapSampleWorkers); the call is a suspicion, no code pass ran for carScene.",
       "next": "Pass the signature through a module Float64Array (CLAUDE.md: no doubles across a call TurboFan may leave out); heap pass before and after.",
       "refs": [],
       "aliases": [
@@ -20244,12 +20217,12 @@
     {
       "id": "E-481",
       "title": "sunStreetScene's Pixi allocates 3.76 KB a frame (221 KB/s) at _writeSelfLitSpriteQuads pixiWorker.js:5809, and writeOrientedBoxVerts angularSweep.js:102 (20 KB/s) is called from it with 8 doubles",
-      "status": "open",
+      "status": "parked",
       "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "Heap pass on the changed scenes at 27eb6a71.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 221 KB/s; Allocation-only): reopen when the code moves or a scene shows it. Heap pass on the changed scenes at 27eb6a71.",
       "next": "Results into the destination arrays or a module Float64Array instead of double arguments and returned objects; heap pass before and after.",
       "refs": [],
       "aliases": [
@@ -20262,12 +20235,12 @@
     {
       "id": "E-482",
       "title": "sunStreetScene's pre-render allocates 1.8 KB a frame (106 KB/s) in _collectVisibleLights preRenderWorker.js:5523 itself (N-157 fixed only its sort)",
-      "status": "open",
+      "status": "parked",
       "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
       "date": "2026-11-16",
       "area": "pre-render",
       "kind": "speed",
-      "result": "Heap pass on the changed scenes.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 106 KB/s; Allocation-only): reopen when the code moves or a scene shows it. Heap pass on the changed scenes.",
       "next": "Find the allocation (a list, a closure, a boxed double) and reuse a field; heap pass before and after.",
       "refs": [],
       "aliases": [
@@ -20280,12 +20253,12 @@
     {
       "id": "E-483",
       "title": "landing's Pixi allocates 1.31 KB a frame in updateCustomLayers pixiWorker.js:10607: the frame's doubles are written into shared option objects (frameUniforms.*, _splatUploadOpts.zoom and camera), and sunStreet also shows a subarray made there",
-      "status": "open",
+      "status": "parked",
       "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "Heap pass on the demos.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 1.3 KB/frame; Allocation-only): reopen when the code moves or a scene shows it. Heap pass on the demos.",
       "next": "Doubles into Float64Array fields (CLAUDE.md: per-frame doubles in typed arrays, not object fields), the subarray made once; heap pass before and after.",
       "refs": [],
       "aliases": [
@@ -20298,12 +20271,12 @@
     {
       "id": "E-484",
       "title": "meshGalleryScene's logic allocates 1.26 KB a frame in MeshGeometry.replace meshGeometry.js:439, plus copyPointList meshRenderer.js:51 (23 KB/s)",
-      "status": "open",
+      "status": "parked",
       "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
       "date": "2026-11-16",
       "area": "logic",
       "kind": "speed",
-      "result": "Heap pass on the demos.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 1.3 KB/frame; Allocation-only): reopen when the code moves or a scene shows it. Heap pass on the demos.",
       "next": "Reuse the geometry's arrays when the point count does not grow; heap pass before and after.",
       "refs": [],
       "aliases": [
@@ -20316,12 +20289,12 @@
     {
       "id": "E-485",
       "title": "On WebGPU Pixi's own code allocates 6 to 13 KB a frame (badPiggies 7.6, landing 12.8, destructibleTerrain 6.3 KB/f, part of burningBoxes' 16.6): getUniformBindGroup, getDescriptor, execute, a Promise per renderStart, Object.create in _resetBindGroups (E-152 fixed only the draw path; E-227 was measured on WebGL)",
-      "status": "open",
+      "status": "parked",
       "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "Heap pass on the WebGPU demos.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 6-13 KB/frame, WebGPU; Allocation-only): reopen when the code moves or a scene shows it. Heap pass on the WebGPU demos.",
       "next": "Patch Pixi (small, marked, as E-152): reuse the bind group lookups and descriptors, no Promise or Object.create per frame; heap pass before and after.",
       "refs": [],
       "aliases": [
@@ -20388,12 +20361,12 @@
     {
       "id": "E-489",
       "title": "littleCity's logic spends 5.7 % (10.8 ms/s) in requestVectorFromStaticFlowfield navGrid.js:447: a Map.get by name on every call (:448) and doubles stored into the caller's object (:465-466)",
-      "status": "open",
+      "status": "parked",
       "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
       "date": "2026-11-16",
       "area": "logic",
       "kind": "speed",
-      "result": "CPU pass on the demos.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 5.7 %; Under limit): reopen when the code moves or a scene shows it. CPU pass on the demos.",
       "next": "Resolve the flowfield once per caller (an index), write the vector into a Float32Array or the caller's columns; logic CPU before and after.",
       "refs": [],
       "aliases": [
@@ -20406,12 +20379,12 @@
     {
       "id": "E-490",
       "title": "adobeAnimateScene's logic spends 8.2 % (7.8 ms/s) in Mouse.isButton0Down -> isDownAt mouse.js:238: 10 000 reads a frame at about 12 ns each",
-      "status": "open",
+      "status": "parked",
       "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
       "date": "2026-11-16",
       "area": "logic",
       "kind": "speed",
-      "result": "CPU pass on the demos.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 8 % of one scene; Small, scene-specific): reopen when the code moves or a scene shows it. CPU pass on the demos.",
       "next": "A per-frame snapshot of the button state in a plain field the getter returns (or a frame-cached value); logic CPU before and after.",
       "refs": [],
       "aliases": [
@@ -20424,12 +20397,12 @@
     {
       "id": "E-491",
       "title": "landing's Pixi spends 6.8 % of its non-wait time (5.6 ms/s) in _snapshotComputePose pixiWorker.js:1488-1504: 8 pose arrays copied at full capacity every frame while any compute layer exists",
-      "status": "open",
+      "status": "parked",
       "statusText": "found 2026-11-16 by the scoped trace sweep (cpu, deopt, heap, code and GPU passes over the changed scenes and the demos, R-1229)",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "CPU pass on the demos.",
+      "result": "Parked by the 2026-11-16 triage (expected gain 6.8 % in landing; Small): reopen when the code moves or a scene shows it. CPU pass on the demos.",
       "next": "Copy only the rows the compute layers read (their count), or skip when the poses did not change; Pixi CPU before and after.",
       "refs": [],
       "aliases": [
@@ -32724,6 +32697,13 @@
         "9950879d",
         "1f94af82"
       ]
+    },
+    {
+      "id": "R-1236",
+      "date": "2026-11-16",
+      "title": "The register triaged from the critical-path view: 18 ranked (E-223, physics, spatial, the GPU), 32 speed rows under the detection limit parked, stale rows closed",
+      "verdict": "note",
+      "text": "**The register triaged from the critical-path view (the owner's \"sí a todo\", 2026-11-16): 215 pending rows read; 18 ranked, 32 speed rows parked under the detection limit, 16 stale rows closed (R-1235's batch).** A read-only agent estimated each pending row's target worker, gain on the long pole, cost and probability from its own numbers. At Predator crowd 2.5 the pole is physics (13-14 ms), then spatial (10-12 ms with a periodic tail), pre-render (7-10 ms), logic (6-7 ms) and the GPU (33-60 % busy). The list is in the session's scratchpad (triage.md, triage.json). Gains are estimates; most Box2D ones are the register's own estimates, not measurements.\n\nThe ranks before predated this view: small allocation rows ranked, GPU rows unranked. Every rank is cleared. The new order:\n\n| rank | row | why |\n| --- | --- | --- |\n| 1 | E-223 | which worker gates each frame: cost S, it picks the pole |\n| 2 | E-322 | awake bodies in random spatial order (0.7-2 ms of physics); takes E-433 |\n| 3 | E-313 | circle contacts touch b2Shape and four body lines; takes E-323 |\n| 4 | E-314 | batched early loads in finalize: built and screened, owes its crowd 2.5 verdict |\n| 5 | E-426 | the physics pool's spin (about 2.25 cores); takes E-319, E-326, E-427, E-442 |\n| 6 | E-325 | serial walk of 38 000 awake bodies (0.5-1 ms) |\n| 7 | E-327 | publishPose skips unchanged rotations (S) |\n| 8 | E-324 | an atomic OR per moved leaf, then a serial refit |\n| 9 | E-317 | neighbour rows 2 050 B apart: overlap the misses; takes E-295 |\n| 10 | E-476 | spatial's periodic long frames (the spread halves them, mean +7.7 to +11.5 %) |\n| 11 | E-475 | shader links block Pixi 2.1 s at start; takes E-411 |\n| 12 | E-405 | the light3d pass's instruction slots and temps; takes E-406, E-408 to E-410, E-373, E-423, E-424 |\n| 13 | E-407 | Chrome's GPU process main thread 2.6 ms a frame; takes E-340, E-412, E-414 to E-417, E-428 |\n| 14 | E-400 | early depth for the colour pass (E-448's idea); takes E-204, E-378, E-422, E-463, E-468 |\n| 15 | E-458 | PR #12's stamp walk: the cap and a Predator pair left |\n| 16 | N-218 | logic 43 % slower in keyedPack with gbuf=1: bisect |\n| 17 | E-318 | prefetch the neighbour-count row head per tick; takes E-240, E-346 |\n| 18 | E-328 | a second spatial worker on logic's frame-end bell (L) |\n\nParked (the new status: untested, set aside, reopen when the code moves): E-222 E-225 E-227 E-231 E-242 E-244 E-253 E-269 E-279 E-283 E-332 E-333 E-343 E-347 E-355 E-356 E-357 E-396 E-397 E-398 E-443 E-462 E-478 E-480 to E-485 E-489 E-490 E-491. The allocation-only ones make garbage that costs GC under 0.1 % of a worker (R-0961). Features (DX-*), bugs and the rows the agent proposed to merge stay as they were. The merges are a proposal: each folds when its target row is worked."
     }
   ],
   "leads": [
