@@ -10,8 +10,11 @@ function queryNumber(key, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** `?maps=both` (default), `height` (normals from the heights), `normal` (no heights), `0` (no maps: lit as the floor). */
-export const MAPS = ['0', 'height', 'normal', 'both'].includes(WEED.params?.get('maps')) ? WEED.params.get('maps') : 'both';
+/**
+ * `?maps=both` (default), `height` (normals from the heights), `normal` (no heights), `relief` (DX-RELIEF: the heights
+ * picture as a relief map, its normals with the surface's height), `0` (no maps: lit as the floor).
+ */
+export const MAPS = ['0', 'height', 'normal', 'both', 'relief'].includes(WEED.params?.get('maps')) ? WEED.params.get('maps') : 'both';
 /** `?n=`: shapes (default 600), the load. */
 export const N = Math.max(1, Math.floor(queryNumber('n', 600)));
 /** `?lights=`: lamps wandering among them (default 12). */
@@ -77,6 +80,7 @@ class Lamp extends GameObject {
 const sheet = { json: '/tests/bench/stressScenes/maps/shapes.json', png: '/tests/bench/stressScenes/maps/shapes.png' };
 if (MAPS === 'height' || MAPS === 'both') sheet.heightMap = '/tests/bench/stressScenes/maps/shapes_h.png';
 if (MAPS === 'normal' || MAPS === 'both') sheet.normalMap = '/tests/bench/stressScenes/maps/shapes_n.png';
+if (MAPS === 'relief') sheet.reliefMap = { png: '/tests/bench/stressScenes/maps/shapes_h.png', strength: 1 };
 
 /**
  * DX-MAPS / DX-GBUF's owner scene: N ray-traced shapes (a sphere, a pillar, a crate) at night under wandering lamps, with

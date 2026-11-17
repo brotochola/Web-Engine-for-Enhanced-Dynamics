@@ -895,3 +895,147 @@ void sway_trig(uint32_t table, uint32_t n, uint32_t indexMask, uint32_t impulseB
     sway_rotate(i, delta, rotC, rotS, baseRotC, baseRotS);
   }
 }
+
+/* E-505: the free sway (sway_free, sway_free_u32) in float32, four loop decorations at a time: what
+   sway_decorations_f32x4 is to sway_decorations, bound in sway_free's place when wasm.decorationSwayF32 is on (the
+   default). A loop or skew decoration's angle, sin(baseAngle * frequency + i * 0.1) * amplitude: the argument in
+   double in the JS order and reduced to [-pi, pi] in double, its sine in float32 (an odd polynomial over
+   [-pi/2, pi/2], sin(pi - x) = sin x folding the rest), the amplitude's product and a loop decoration's small-angle
+   rotation (its base composed with (1, angle)) in float32. Four entries of the list at once when all four are loop
+   or skew decorations and every loop one's angle is under 0.08 rad (in float32: an angle that rounds across it takes
+   the other side of the JS's step, as in sway_decorations_f32x4); an impulse, or an angle past it, takes
+   sway_free_one for the four, exact as sway_free. tests/node/decorationSwayWasm.test.js states the tolerance. */
+
+/* sin over [-pi, pi] in float32 lanes: x + c3 x^3 + ... + c9 x^9 over [-pi/2, pi/2], minimax with the slope at 0 kept
+   at 1 (Lawson's iteration on Chebyshev nodes): 4.6e-9 in double, 1.1e-7 with float32's roundings (float32 evaluation
+   emulated against Math.sin, 400 001 points). */
+INLINE v128_t sin_pi_f32x4(v128_t x) {
+  const v128_t halfPi = wasm_f32x4_splat(1.5707963267948966f);
+  const v128_t pi = wasm_f32x4_splat(3.1415926535897932f);
+  const v128_t over = wasm_f32x4_gt(x, halfPi);
+  const v128_t under = wasm_f32x4_lt(x, wasm_f32x4_neg(halfPi));
+  x = wasm_v128_bitselect(wasm_f32x4_sub(pi, x), x, over);
+  x = wasm_v128_bitselect(wasm_f32x4_sub(wasm_f32x4_neg(pi), x), x, under);
+  const v128_t x2 = wasm_f32x4_mul(x, x);
+  v128_t p = wasm_f32x4_splat(2.60005436e-6f);
+  p = wasm_f32x4_add(wasm_f32x4_mul(p, x2), wasm_f32x4_splat(-1.98066147e-4f));
+  p = wasm_f32x4_add(wasm_f32x4_mul(p, x2), wasm_f32x4_splat(8.33301712e-3f));
+  p = wasm_f32x4_add(wasm_f32x4_mul(p, x2), wasm_f32x4_splat(-1.66666567e-1f));
+  return wasm_f32x4_add(x, wasm_f32x4_mul(wasm_f32x4_mul(p, x2), x));
+}
+
+/* Past fdlibm's medium reduction (|x| >= 2^20 pi/2) an argument keeps nothing of its angle, and sway_sincos's
+   reduction decides what the sine is: such a four (or a NaN) takes the scalar step, which is that reduction. */
+#define SWAY_F32_ARG_MAX 0x1.921fb54442d18p+20
+
+/* Two of the four arguments, baseAngle * frequency + i * 0.1 in double. */
+INLINE v128_t sway_args2(v128_t base, v128_t freq2, double i0, double i1) {
+  return wasm_f64x2_add(wasm_f64x2_mul(base, freq2), wasm_f64x2_make(i0 * 0.1, i1 * 0.1));
+}
+
+/* Two arguments reduced to [-pi, pi], in double. */
+INLINE v128_t sway_reduce2(v128_t a) {
+  const v128_t turns = wasm_f64x2_nearest(wasm_f64x2_mul(a, wasm_f64x2_splat(1.0 / TWO_PI)));
+  return wasm_f64x2_sub(a, wasm_f64x2_mul(turns, wasm_f64x2_splat(TWO_PI)));
+}
+
+/* Four entries of the list in float32, or 0 when one of them is not for this path (nothing is written then). */
+INLINE int sway_free_four_f32(uint32_t i0, uint32_t i1, uint32_t i2, uint32_t i3, double baseAngle,
+                              const uint8_t *sway, const float *amplitude, const float *frequency, float *rotC,
+                              float *rotS, const float *baseRotC, const float *baseRotS) {
+  const uint32_t m0 = sway[i0], m1 = sway[i1], m2 = sway[i2], m3 = sway[i3];
+  /* SWAY_LOOP (1) and SWAY_LOOP_SKEW (3) only (m | 2 is 3 for those two alone): an impulse, or a mode the JS does not
+     sway (it keeps the base rotation), takes the scalar step. */
+  if ((((m0 | 2u) ^ 3u) | ((m1 | 2u) ^ 3u) | ((m2 | 2u) ^ 3u) | ((m3 | 2u) ^ 3u)) != 0) return 0;
+  const v128_t f = gather4(frequency, i0, i1, i2, i3);
+  const v128_t base = wasm_f64x2_splat(baseAngle);
+  const v128_t a01 = sway_args2(base, wasm_f64x2_promote_low_f32x4(f), (double)i0, (double)i1);
+  const v128_t a23 = sway_args2(base, wasm_f64x2_promote_low_f32x4(wasm_i32x4_shuffle(f, f, 2, 3, 0, 1)), (double)i2,
+                                (double)i3);
+  const v128_t most = wasm_f64x2_splat(SWAY_F32_ARG_MAX);
+  if (!wasm_i64x2_all_true(wasm_f64x2_lt(wasm_f64x2_abs(a01), most)) ||
+      !wasm_i64x2_all_true(wasm_f64x2_lt(wasm_f64x2_abs(a23), most)))
+    return 0;
+  const v128_t r01 = sway_reduce2(a01);
+  const v128_t r23 = sway_reduce2(a23);
+  const v128_t r = wasm_i32x4_shuffle(wasm_f32x4_demote_f64x2_zero(r01), wasm_f32x4_demote_f64x2_zero(r23), 0, 1, 4, 5);
+  const v128_t d = wasm_f32x4_mul(sin_pi_f32x4(r), gather4(amplitude, i0, i1, i2, i3));
+  /* A loop decoration's angle at 0.08 or more (or NaN) needs its sine and cosine: the four go the scalar way. */
+  const v128_t loop = wasm_i32x4_make(m0 == SWAY_LOOP ? -1 : 0, m1 == SWAY_LOOP ? -1 : 0, m2 == SWAY_LOOP ? -1 : 0,
+                                      m3 == SWAY_LOOP ? -1 : 0);
+  const v128_t small = wasm_f32x4_lt(wasm_f32x4_abs(d), wasm_f32x4_splat((float)SMALL_ANGLE));
+  if (wasm_v128_any_true(wasm_v128_andnot(loop, small))) return 0;
+  const v128_t bc = gather4(baseRotC, i0, i1, i2, i3);
+  const v128_t bs = gather4(baseRotS, i0, i1, i2, i3);
+  const v128_t c = wasm_f32x4_sub(bc, wasm_f32x4_mul(bs, d));
+  const v128_t s = wasm_f32x4_add(bs, wasm_f32x4_mul(bc, d));
+  rotC[i0] = m0 == SWAY_LOOP ? wasm_f32x4_extract_lane(c, 0) : SWAY_SKEW_C;
+  rotS[i0] = m0 == SWAY_LOOP ? wasm_f32x4_extract_lane(s, 0) : wasm_f32x4_extract_lane(d, 0);
+  rotC[i1] = m1 == SWAY_LOOP ? wasm_f32x4_extract_lane(c, 1) : SWAY_SKEW_C;
+  rotS[i1] = m1 == SWAY_LOOP ? wasm_f32x4_extract_lane(s, 1) : wasm_f32x4_extract_lane(d, 1);
+  rotC[i2] = m2 == SWAY_LOOP ? wasm_f32x4_extract_lane(c, 2) : SWAY_SKEW_C;
+  rotS[i2] = m2 == SWAY_LOOP ? wasm_f32x4_extract_lane(s, 2) : wasm_f32x4_extract_lane(d, 2);
+  rotC[i3] = m3 == SWAY_LOOP ? wasm_f32x4_extract_lane(c, 3) : SWAY_SKEW_C;
+  rotS[i3] = m3 == SWAY_LOOP ? wasm_f32x4_extract_lane(s, 3) : wasm_f32x4_extract_lane(d, 3);
+  return 1;
+}
+
+/* sway_free_one out of line, for the float32 sway's rare scalar entries: its fdlibm sine inlined once. */
+__attribute__((noinline)) static void sway_free_one_out(uint32_t i, double baseAngle, double dtAngle, uint8_t *sway,
+                                                        const float *amplitude, const float *frequency, float *phase,
+                                                        float *rotC, float *rotS, const float *baseRotC,
+                                                        const float *baseRotS) {
+  sway_free_one(i, baseAngle, dtAngle, sway, amplitude, frequency, phase, rotC, rotS, baseRotC, baseRotS);
+}
+
+/* sway_free in float32. Returns 0, as sway_free. */
+__attribute__((export_name("sway_free_f32x4")))
+uint32_t sway_free_f32x4(uint32_t table, uint32_t count, double deltaTime, double baseAngle) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint16_t *snapshot = PTR(const uint16_t, T_SNAPSHOT);
+  uint16_t *list = PTR(uint16_t, T_LIST);
+  SWAY_FREE_COLUMNS
+  for (uint32_t begin = 0; begin < count; begin += cap) {
+    const uint32_t end = count - begin > cap ? begin + cap : count;
+    const uint32_t n = wide
+      ? let_through(snapshot, begin, end, active, parent16, parent32, 1, noParent, onScreen, sway, list)
+      : let_through(snapshot, begin, end, active, parent16, parent32, 0, noParent, onScreen, sway, list);
+    uint32_t e = 0;
+    for (; e + 4 <= n; e += 4) {
+      if (sway_free_four_f32(list[e], list[e + 1], list[e + 2], list[e + 3], baseAngle, sway, amplitude, frequency,
+                             rotC, rotS, baseRotC, baseRotS))
+        continue;
+      for (uint32_t q = e; q < e + 4; q++)
+        sway_free_one_out(list[q], baseAngle, dtAngle, sway, amplitude, frequency, phase, rotC, rotS, baseRotC, baseRotS);
+    }
+    for (; e < n; e++)
+      sway_free_one_out(list[e], baseAngle, dtAngle, sway, amplitude, frequency, phase, rotC, rotS, baseRotC, baseRotS);
+  }
+  return 0;
+}
+
+/* sway_free_f32x4 on a u32 snapshot and list (past 65 535 decorations, E-129). */
+__attribute__((export_name("sway_free_f32x4_u32")))
+uint32_t sway_free_f32x4_u32(uint32_t table, uint32_t count, double deltaTime, double baseAngle) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint32_t *snapshot = PTR(const uint32_t, T_SNAPSHOT);
+  uint32_t *list = PTR(uint32_t, T_LIST);
+  SWAY_FREE_COLUMNS
+  for (uint32_t begin = 0; begin < count; begin += cap) {
+    const uint32_t end = count - begin > cap ? begin + cap : count;
+    const uint32_t n = wide
+      ? let_through_u32(snapshot, begin, end, active, parent16, parent32, 1, noParent, onScreen, sway, list)
+      : let_through_u32(snapshot, begin, end, active, parent16, parent32, 0, noParent, onScreen, sway, list);
+    uint32_t e = 0;
+    for (; e + 4 <= n; e += 4) {
+      if (sway_free_four_f32(list[e], list[e + 1], list[e + 2], list[e + 3], baseAngle, sway, amplitude, frequency,
+                             rotC, rotS, baseRotC, baseRotS))
+        continue;
+      for (uint32_t q = e; q < e + 4; q++)
+        sway_free_one_out(list[q], baseAngle, dtAngle, sway, amplitude, frequency, phase, rotC, rotS, baseRotC, baseRotS);
+    }
+    for (; e < n; e++)
+      sway_free_one_out(list[e], baseAngle, dtAngle, sway, amplitude, frequency, phase, rotC, rotS, baseRotC, baseRotS);
+  }
+  return 0;
+}

@@ -326,6 +326,7 @@ function applyComputeTexSizeUniform(cl) {
 import { pinGpuTexture, writeRgba32Float, writeRgba8 } from '../render/webgpu/pinGpuTexture.js';
 import { bindDecalPremultiply, premultiplyDecalTile } from '../render/decalPremultiplyClient.js';
 import { createSharedTextureSource, createWorldRectMesh } from '../render/worldTextureMesh.js';
+import { createWorldRectCache, readsFrameTime, worldRectCacheStale } from '../render/worldRectCache.js';
 import { uploadSharedImage } from '../render/sharedTextureUpload.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl, isWgslSource } from '../render/webgpu/pixiMeshWgsl.js';
@@ -1379,6 +1380,8 @@ class PixiRenderer extends AbstractWorker {
     // Per MESH layer: last packed ColliderFixture.revision + pose scratch.
     // ponytail: first frame / replace / moving mesh always pack; skip keeps instanceCount.
     this._colliderFillSkip = [];
+    /** E-504: cached worldRect layers drawn into their targets, since the start (tests read it). */
+    this._worldRectDraws = 0;
     // E-76 W11: the mesh memory (meshMemory.js) the MESH layers' batches live in, and the corner kernel.
     this._meshMemoryBuffer = null;
     this._meshMemoryLayout = null;
@@ -10443,9 +10446,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return slot.byteView;
   }
 
+  /** @returns {number} how many pictures went up this frame */
   _uploadSharedPictures(cl) {
     const bag = Layer.textureSlotsFor(cl.layerId);
-    if (!bag) return;
+    if (!bag) return 0;
+    let uploaded = 0;
     const renderer = this.pixiApp && this.pixiApp.renderer;
     // for...in, not Object.keys: this runs per layer per frame (review G7).
     for (const name in bag) {
@@ -10483,7 +10488,40 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       });
       source._weedGlReady = true;
       source.uploadMethodId = 'external';
+      uploaded++;
     }
+    return uploaded;
+  }
+
+  /**
+   * E-504. A cached worldRect layer's target, drawn again when what the layer shows changed since it was (the camera,
+   * the canvas' size, its uniforms or pictures, or every frame for a shader that reads the frame's time), with the
+   * camera placed on its mesh as the stage would (_placeWorldCamera), so the target holds what the mesh would draw.
+   */
+  _drawWorldRectCache(cl, changed) {
+    const zoom = this._renderZoom;
+    const x = this._renderCameraX;
+    const y = this._renderCameraY;
+    const rot = this._renderCameraRot || 0;
+    const w = Math.max(1, this.canvasWidth | 0);
+    const h = Math.max(1, this.canvasHeight | 0);
+    const resized = cl.worldCache.w !== w || cl.worldCache.h !== h;
+    if (!worldRectCacheStale(cl.worldCache, zoom, x, y, rot, w, h, changed || cl.worldEveryFrame)) return;
+    if (resized && (cl.worldRt.width !== w || cl.worldRt.height !== h)) {
+      const old = cl.worldRt;
+      cl.worldRt = PIXI.RenderTexture.create({ width: w, height: h });
+      cl.displaySprite.texture = cl.worldRt;
+      old.destroy(true);
+    }
+    this._placeWorldCamera(cl.worldMesh, zoom, x, y, rot);
+    const o = this._rtRenderOpts;
+    o.container = cl.worldRoot;
+    o.target = cl.worldRt;
+    o.clear = true;
+    o.clearColor = this._clearTransparent;
+    o.transform = null;
+    this._submitRender(o);
+    this._worldRectDraws++;
   }
 
   _initWorldTextureLayer(cl, config) {
@@ -10532,9 +10570,24 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     cl.shader = built.shader;
     cl.uniformStore = built.shader.resources?.customUniforms?.uniforms || null;
     cl.uniformEntries = config.uniformMap ? Object.entries(config.uniformMap) : null;
-    this._registerLayerDisplayObject(cl.layerName, built.mesh, cl.containerBlendSet);
-    this.pixiApp.stage.addChild(built.mesh);
-    debugWorkerLog(`PIXI WORKER: world-rect layer "${cl.layerName}" ${rect.width}x${rect.height}`);
+    if (config.shaderCache === true) {
+      // E-504: drawn into a target the canvas' size when what it shows changes (_drawWorldRectCache); the target's
+      // sprite, 1:1 on the screen, is the layer.
+      cl.worldRt = PIXI.RenderTexture.create({ width: Math.max(1, this.canvasWidth | 0), height: Math.max(1, this.canvasHeight | 0) });
+      cl.worldRoot = new PIXI.Container();
+      cl.worldRoot.addChild(built.mesh);
+      cl.worldCache = createWorldRectCache();
+      cl.worldEveryFrame = readsFrameTime(fragment);
+      cl.displaySprite = new PIXI.Sprite(cl.worldRt);
+      cl.displaySprite.anchor.set(0, 0);
+      cl.displaySprite.position.set(0, 0);
+      this._registerLayerDisplayObject(cl.layerName, cl.displaySprite, cl.containerBlendSet);
+      this.pixiApp.stage.addChild(cl.displaySprite);
+    } else {
+      this._registerLayerDisplayObject(cl.layerName, built.mesh, cl.containerBlendSet);
+      this.pixiApp.stage.addChild(built.mesh);
+    }
+    debugWorkerLog(`PIXI WORKER: world-rect layer "${cl.layerName}" ${rect.width}x${rect.height}${cl.worldRt ? ' (cached)' : ''}`);
   }
 
   /**
@@ -10591,6 +10644,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let i = 0; i < prev.length; i++) {
       const old = prev[i];
       if (old && old.worldMesh) old.worldMesh.destroy(true);
+      if (old && old.worldRt) {
+        old.displaySprite?.destroy();
+        old.worldRt.destroy(true);
+      }
       if (old && old.gpu) old.gpu.destroy();
       const sources = old && old.sharedSources;
       if (!sources) continue;
@@ -10804,6 +10861,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         shaderMesh: null,
         shader: null,
         displaySprite: null,
+        // E-504: a worldRect layer's mesh, and with shader.cache its target, the container it is drawn from, what the
+        // target was drawn for, and whether its shader reads the frame's time (drawn every frame then).
+        worldMesh: null,
+        worldRt: null,
+        worldRoot: null,
+        worldCache: null,
+        worldEveryFrame: false,
         uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
         uniformStore: null,
         shaderBypass: false,
@@ -11004,14 +11068,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (cl.displaySprite) cl.displaySprite.renderable = false;
         if (cl.uvFillBatch) cl.uvFillBatch.mesh.renderable = false;
       }
-      this._uploadSharedPictures(cl);
+      const uploaded = this._uploadSharedPictures(cl);
       const renderToRT = !!cl.rt;
       let densityMesh = null;
+      let uniformsChanged = false;
 
       if (cl.shader && Layer._uniformDirty[cl.layerId]) {
         const dirtyRef = Layer._uniformDirty[cl.layerId];
         if (Atomics.load(dirtyRef, 0) === 1) {
           Atomics.store(dirtyRef, 0, 0);
+          uniformsChanged = true;
           const floats = Layer._uniformFloats[cl.layerId];
           const entries = cl.uniformEntries;
           const u = cl.uniformStore;
@@ -11044,6 +11110,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       frameUniforms.worldW = finiteOrZero(this.worldWidth);
       frameUniforms.worldH = finiteOrZero(this.worldHeight);
       applyEngineLookUniforms(cl, frameUniforms);
+      // E-504: a cached worldRect layer draws its target when what it shows changed; nothing else of it runs here.
+      if (cl.worldRt !== null) {
+        this._drawWorldRectCache(cl, uploaded > 0 || uniformsChanged);
+        continue;
+      }
 
       const rtOpts = this._rtRenderOpts;
       if (cl.compute) {

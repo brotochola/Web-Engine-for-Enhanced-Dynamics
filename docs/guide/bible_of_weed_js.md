@@ -984,6 +984,20 @@ planet: {
 
 Two calls in one tick union into one copy. A whole-picture call replaces that rectangle. Nothing is copied when the picture did not change. A compute pass that ping-pongs or swaps the same name throws, because that picture is filled by the compute program.
 
+`shader.cache: true` paints a `worldRect` layer into a texture the size of the canvas, and paints it again only when what it shows changes: the camera (position, zoom, roll), the canvas size, its uniforms or one of its pictures. While the camera holds, the layer costs one copy instead of running its fragment shader on every pixel. Use it for a picture that only depends on the world position, such as a procedural floor. A shader that declares `uTime` or `uDt` changes every frame, so it is painted every frame anyway. A camera that moves every frame gains nothing and pays the copy.
+
+```javascript
+floor: {
+  zIndex: 0.5,
+  shader: {
+    fragment: { webgl: '/shaders/floor.frag', webgpu: '/shaders/floor.wgsl' },
+    worldRect: { width: WORLD_W, height: WORLD_H },
+    cache: true,
+    textures: [{ name: 'cells', format: 'rgba8unorm', size: { width: CELLS_W, height: CELLS_H } }],
+  },
+}
+```
+
 ### Supported Uniform Types
 
 | Type | Size (floats) | Example |

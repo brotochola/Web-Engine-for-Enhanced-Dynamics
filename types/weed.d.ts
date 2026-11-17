@@ -3013,6 +3013,13 @@ export interface LayerSceneConfigEntry {
       intensity?: number;
     };
     uniforms?: Record<string, LayerUniformDef>;
+    /** One world-sized rectangle under the fragment shader, moved by the camera. */
+    worldRect?: { width: number; height: number };
+    /**
+     * With `worldRect`: paint the layer into a canvas-sized texture, again only when the camera, the canvas size, its
+     * uniforms or its pictures change (a shader that declares `uTime` or `uDt` is painted every frame). Default false.
+     */
+    cache?: boolean;
   };
 }
 

@@ -1,7 +1,7 @@
 // Thread for tests/node/spatialGridMovers.test.js (E-126). Three real spatial workers in WASM mode
 // (the grid in the spatial publish memory, the WASM gather) run one scripted world for some frames,
-// with the grid rebuilt every frame (mode 1), chosen by the moved fraction (mode 0) or rewritten for
-// what changed whenever the state allows (mode 2). Every frame posts a checksum of the whole publish
+// with the grid rebuilt every frame (mode 1), chosen by the timed costs (mode 0, E-503) or the moved fraction alone
+// (mode 3), or rewritten for what changed whenever the state allows (mode 2). Every frame posts a checksum of the whole publish
 // memory (cells, poses, neighbour rows, candidates, markers) and of each worker's owned list, cell
 // counts and counters, so the paths are compared byte for byte. Each thread has its own Grid statics
 // and its own moved-bodies buffer, which this script publishes as the physics worker would.
@@ -27,7 +27,7 @@ import { variantClass } from '../bench/methodVariant.mjs';
 import { setupSpatialKernel } from '../bench/spatialWorkerMicrobench.mjs';
 
 // noPhysics (E-266): no physics worker, so no moved list is bound or published; the poses change as before.
-const { mode, detailed = false, patches = null, frames = 90, noPhysics = false } = workerData;
+const { mode, detailed = false, patches = null, frames = 90, noPhysics = false, retimeEvery = 0, probeEvery = 0 } = workerData;
 
 const N = 3000;
 const MAX_PER_CELL = 32;
@@ -82,6 +82,11 @@ const queryVersion = new Int32Array(new SharedArrayBuffer(4));
 for (const w of workers) {
   w.queryVersionData = queryVersion;
   w._gridMoversMode = mode;
+  // E-503: shorter retime and probe intervals, so a short run takes every transition of the timed choice.
+  if (retimeEvery > 0) w._mvRetimeEvery = retimeEvery;
+  if (probeEvery > 0) w._mvProbeEvery = probeEvery;
+  if (probeEvery > 0) w._mvProbeIn = probeEvery;
+  if (probeEvery > 0) w._mvProbeGap = probeEvery;
   w.collectDetailedStats = detailed;
 }
 

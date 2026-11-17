@@ -54,6 +54,9 @@ const sunSpec = (key) => {
 };
 /** Moves the lamps down, for a picture to hold `?lampOffset=` against. */
 export const LAMP_SHIFT = queryNumber('lampShift', 0);
+/** `?worldFloor=1`: a procedural floor (a worldRect layer) over the ground; `?worldFloorCache=1` caches it (E-504). */
+export const WORLD_FLOOR = queryNumber('worldFloor', 0) === 1;
+export const WORLD_FLOOR_CACHE = queryNumber('worldFloorCache', 0) === 1;
 export const stressSceneConfig = {
   requested: {
     hour: HOUR,
@@ -68,6 +71,8 @@ export const stressSceneConfig = {
     shadeMeshAlpha: SHADE_MESH_ALPHA,
     deco: DECO ? 1 : 0,
     decoAlpha: DECO_ALPHA,
+    worldFloor: WORLD_FLOOR ? 1 : 0,
+    worldFloorCache: WORLD_FLOOR_CACHE ? 1 : 0,
   },
 };
 
@@ -92,6 +97,22 @@ export class DxCaptureScene extends Scene {
     preRender: { noLimitFPS: false, packGpuSprites: 'pixi', sortSprites: 'pixi' },
     layers: {
       ground: { kind: LAYER_KIND.TILING, texture: 'ground', tileScale: 1, parallax: 1, zIndex: 0 },
+      ...(WORLD_FLOOR
+        ? {
+            worldFloor: {
+              zIndex: 0.5,
+              shader: {
+                fragment: {
+                  webgl: '/tests/bench/stressScenes/shaders/floorProbe.frag',
+                  webgpu: '/tests/bench/stressScenes/shaders/floorProbe.wgsl',
+                },
+                worldRect: { width: WORLD_W, height: WORLD_H },
+                cache: WORLD_FLOOR_CACHE,
+                textures: [{ name: 'cells', format: 'r8unorm', size: { width: 1, height: 1 } }],
+              },
+            },
+          }
+        : {}),
       overlay: {
         zIndex: 1.6,
         ySorting: false,
