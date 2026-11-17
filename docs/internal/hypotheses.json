@@ -13081,12 +13081,11 @@
     {
       "id": "E-226",
       "title": "False sharing: words of different writers in one 64-byte cache line of a shared buffer",
-      "status": "open",
+      "status": "superseded",
       "statusText": "proposed 2026-11-13 (Wave 13), not tested",
       "date": "2026-11-13",
       "area": "engine",
       "kind": "speed",
-      "rank": 53,
       "next": "Read every SAB layout for words with different writers within 64 bytes (the frame clock's 32-byte slots first); a two-thread kernel padded and not. Instances to start from (R-1104): the 4-16 byte handshake buffers in sceneSharedBuffers.js and bodyGenEpoch's Atomics.add per spawn; the contact ring's atomics per event; pos lines with two or more spatial workers; 68-byte grid cells.",
       "refs": [
         "EXECUTION_PLAN.md#E-226"
@@ -13100,7 +13099,8 @@
       "records": [
         "R-1104",
         "R-1188"
-      ]
+      ],
+      "result": "The audit is done (falseSharingAudit.mjs, R-1188); its instances are E-433 to E-443."
     },
     {
       "id": "E-227",
@@ -13126,12 +13126,11 @@
     {
       "id": "E-228",
       "title": "The OS's view (ETW): context switches, wake latency after a notify, core moves, frequency",
-      "status": "open",
+      "status": "answered",
       "statusText": "unblocked 2026-11-14: WPR runs elevated through two owner-made tasks (D:perf-toolswpr-elevated); PMC sampling done (R-0997), context switches and wake latency still to record",
       "date": "2026-11-13",
       "area": "tools",
       "kind": "speed",
-      "rank": 56,
       "next": "WPR's scheduling profile over Predator, read in WPA. Needs the owner's OK to install the Windows ADK's WPA.",
       "refs": [
         "EXECUTION_PLAN.md#E-228"
@@ -13144,7 +13143,8 @@
         "wake latency",
         "context switch"
       ],
-      "records": []
+      "records": [],
+      "result": "WPR's scheduling data over Predator is in R-1100 and R-1181 (cores, spin, Atomics.wait wakes)."
     },
     {
       "id": "E-229",
@@ -13601,13 +13601,12 @@
     {
       "id": "E-247",
       "title": "The particle worker's JS decoration passes: a third of the worker in Predator",
-      "status": "open",
+      "status": "superseded",
       "statusText": "proposed 2026-11-13 from Predator's CPU trace, not tested",
       "date": "2026-11-13",
       "area": "particle",
       "kind": "speed",
-      "rank": 32,
-      "result": "decorationScreenBranchless 5.4 ms/s, updateDerivedProperties 5.3, resolveAttachedDecorations 3.0, copyDecorationScratch 1.1 of 42.",
+      "result": "E-334 and E-335 took the particle worker's largest JS decoration passes (both on main). decorationScreenBranchless 5.4 ms/s, updateDerivedProperties 5.3, resolveAttachedDecorations 3.0, copyDecorationScratch 1.1 of 42.",
       "next": "E-222 sites; a kernel for the largest.",
       "refs": [
         "EXECUTION_PLAN.md#E-247"
@@ -14461,12 +14460,12 @@
     {
       "id": "E-282",
       "title": "Collision pairs live in a Map keyed by a number (littleCity logic: 140 KB/s in Map.set)",
-      "status": "running",
+      "status": "kept-kernel",
       "statusText": "proposed 2026-11-13 from the heap pass over all scenes, not tested",
       "date": "2026-11-13",
       "area": "logic",
       "kind": "speed",
-      "result": "Heap pass: littleCityScene's logic spends 140 KB/s in `Map.prototype.set` from `_applyContactBegin`: `_pairSlot` maps a pair key to its slot, and every begun contact adds an entry (the table grows and rehashes; a Cantor key over 2^31 under 32-bit ids is a heap number).",
+      "result": "On main since PR #12 (26357132, 2026-11-16): its batch gate passed (R-1209) and no leave-one-out cleared 3 % alone (R-1211), so it stays on its kernel win: contactDrain -17.7 % (R-1115, 303fc204). Heap pass: littleCityScene's logic spends 140 KB/s in `Map.prototype.set` from `_applyContactBegin`: `_pairSlot` maps a pair key to its slot, and every begun contact adds an entry (the table grows and rehashes; a Cantor key over 2^31 under 32-bit ids is a heap number).",
       "next": "An open-addressing table on typed arrays (key halves in two Uint32Arrays, slot in an Int32Array), or the Map kept with a Smi key under 16-bit ids; the contact kernel, then littleCity's and carScene's logic.",
       "refs": [
         "EXECUTION_PLAN.md#E-282"
@@ -14479,8 +14478,7 @@
       "records": [
         "R-0980",
         "R-1115"
-      ],
-      "rank": 38
+      ]
     },
     {
       "id": "E-283",
@@ -15432,12 +15430,12 @@
     {
       "id": "E-363",
       "title": "DirectionalSprite's setters resolve even when the value does not change (Predator: 13 % of the resolves come from facingFrom set again in each FSM onEnter)",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "proposed 2026-11-15 on dx/light3d",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "result": "",
+      "result": "On main since PR #12 (55bb3d72): DirectionalSprite setters given the value they hold return before the resolve; no measurement of its own, inside the batch gate (R-1209).",
       "next": "The setters return early on an unchanged value; Predator crowd 2.5 against the branch.",
       "refs": [
         "EXECUTION_PLAN.md#E-363"
@@ -17189,13 +17187,12 @@
     {
       "id": "E-334",
       "title": "resolveAttachedDecorations scans all 20 000 decorations every frame to find the attached ones, and Predator attaches none (about 10 % of the particle worker)",
-      "status": "running",
+      "status": "kept-kernel",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "particle",
       "kind": "speed",
-      "rank": 60,
-      "result": "Read (R-1103): two loads per decoration a frame; parentEntityIndex changes only at spawn and despawn, and refreshActiveDecorationSnapshot already watches that list's epoch. CPU pass: 2.9 % of the particle worker at crowd 2.5 (R-1100), 3.0 ms/s in R-0963.",
+      "result": "On main since PR #12 (26357132, 2026-11-16): its batch gate passed (R-1209) and no leave-one-out cleared 3 % alone (R-1211), so it stays on its kernel win: the attached pass skipped while none is attached (R-1114, fcb57ed2). Read (R-1103): two loads per decoration a frame; parentEntityIndex changes only at spawn and despawn, and refreshActiveDecorationSnapshot already watches that list's epoch. CPU pass: 2.9 % of the particle worker at crowd 2.5 (R-1100), 3.0 ms/s in R-0963.",
       "next": "An attached-count word (the pass skipped at 0) and a sublist built when the snapshot is copied; a workerHarness kernel with 20 000 unattached decorations.",
       "refs": [
         "EXECUTION_PLAN.md#E-334"
@@ -17212,13 +17209,12 @@
     {
       "id": "E-335",
       "title": "The decoration screen test checks all 20 000 decorations on every frame the camera moves while about 5 % are visible; DecorationSpatial's grid serves only queryCircle",
-      "status": "running",
+      "status": "kept-kernel",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "particle",
       "kind": "speed",
-      "rank": 61,
-      "result": "Read (R-1103): 5.4 + 1.1 ms/s (E-247); Predator's world is 10 000 x 5 000.",
+      "result": "On main since PR #12 (26357132, 2026-11-16): its batch gate passed (R-1209) and no leave-one-out cleared 3 % alone (R-1211), so it stays on its kernel win: the decoration screen test x10.9 (R-1114, 868e95f8). Read (R-1103): 5.4 + 1.1 ms/s (E-247); Predator's world is 10 000 x 5 000.",
       "next": "Walk the grid cells under the padded bounds: interior cells appended without a test, border cells tested, last frame's visible ones that left cleared. decorationVisibilityMicrobench with a grid variant and parity on the visible set and the flags. Risk: the list order pre-render receives changes; the grid's lock.",
       "refs": [
         "EXECUTION_PLAN.md#E-335"
@@ -17260,13 +17256,12 @@
     {
       "id": "E-337",
       "title": "Pixi's keyed pack reads the type column in painter order only for a particle count nobody in Pixi reads (pack_sprites_keyed_rows 8.4 % of Pixi)",
-      "status": "running",
+      "status": "kept-kernel",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pixi",
       "kind": "speed",
-      "rank": 64,
-      "result": "Read (R-1102): type[i] feeds `p` (ctx.particleCount; only pre-render reads its own) and the glow test with shadow terms, off since E-211; E-193 and E-294 found the pack's cost is lines fetched from pre-render's core, and type is about a fifth of them. CPU pass: 8.4 % of Pixi at crowd 2.5 (R-1100). Estimate pack -10 to -20 %.",
+      "result": "On main since PR #12 (26357132, 2026-11-16): its batch gate passed (R-1209) and no leave-one-out cleared 3 % alone (R-1211), so it stays on its kernel win: keyed pack kernel -7.9 % (R-1111, eae462ef). Read (R-1102): type[i] feeds `p` (ctx.particleCount; only pre-render reads its own) and the glow test with shadow terms, off since E-211; E-193 and E-294 found the pack's cost is lines fetched from pre-render's core, and type is about a fifth of them. CPU pass: 8.4 % of Pixi at crowd 2.5 (R-1100). Estimate pack -10 to -20 %.",
       "next": "Pass typeByte = 0 when shadowByte is 0 (exact); gpuPackKeyedCrossCoreMicrobench, then Predator crowd 2.5's Pixi.",
       "refs": [
         "EXECUTION_PLAN.md#E-337"
@@ -17284,13 +17279,12 @@
     {
       "id": "E-338",
       "title": "After each radix the painter reads keys[slot] and writes prev[slot] in sorted order, random over ~60 000 slots (painter_order_simd 3 % of Pixi)",
-      "status": "running",
+      "status": "kept-kernel",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "pixi",
       "kind": "speed",
-      "rank": 66,
-      "result": "Read (R-1102): Predator's slot set changes most frames (R-1045), so painter_order runs then. Counters (R-1100): painter_order_simd 1.2 % of Chrome's L1 refills.",
+      "result": "On main since PR #12 (26357132, 2026-11-16): its batch gate passed (R-1209) and no leave-one-out cleared 3 % alone (R-1211), so it stays on its kernel win: painter order kernel -8.5 % (R-1111, 9a856428). Read (R-1102): Predator's slot set changes most frames (R-1045), so painter_order runs then. Counters (R-1100): painter_order_simd 1.2 % of Chrome's L1 refills.",
       "next": "The same writes walking idxE in ascending order, or memcpy plus a SIMD OR when the list is dense (exact); painterRadixWasmMicrobench predator-rebuild and painterRadixWasm.test.js.",
       "refs": [
         "EXECUTION_PLAN.md#E-338"
@@ -17712,13 +17706,12 @@
     {
       "id": "E-354",
       "title": "Layer feed lists scan linearly on every add and remove while holding a cross-worker spin lock: O(n) per particle birth and death",
-      "status": "running",
+      "status": "kept-kernel",
       "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
       "date": "2026-11-15",
       "area": "particle",
       "kind": "speed",
-      "rank": 84,
-      "result": "Read (R-1103): nothing in Predator; quadratic in scenes with particles in density or compute layers.",
+      "result": "On main since PR #12 (26357132, 2026-11-16): its batch gate passed (R-1209) and no leave-one-out cleared 3 % alone (R-1211), so it stays on its kernel win: layer feeds x38 (R-1114, b7701ab2). Read (R-1103): nothing in Predator; quadratic in scenes with particles in density or compute layers.",
       "next": "A per-layer slot index (add O(1), remove a swap); a layer-feed stress case.",
       "refs": [
         "EXECUTION_PLAN.md#E-354"
@@ -18127,12 +18120,12 @@
     {
       "id": "N-216",
       "title": "glFrameRecorder counts a texture upload's whole source view when the call passes a sub-range (srcOffset): Predator's pose texture read 7.5 MB a frame for 256 KB",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "found 2026-11-16 reading Predator's recordings",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "Its texSubImage2D hook adds view.byteLength whenever a view is passed; _uploadPoseRows and the GPU particle records pass the whole Uint32Array with an offset.",
+      "result": "Fixed 2026-11-16 (ae06f1ee): a texture upload counts the region it names, not its whole source view. Its texSubImage2D hook adds view.byteLength whenever a view is passed; _uploadPoseRows and the GPU particle records pass the whole Uint32Array with an offset.",
       "next": "Count width x height x bytes per texel when the call gives them (and a bufferSubData's length argument when given).",
       "refs": [],
       "aliases": [
@@ -19208,12 +19201,12 @@
     {
       "id": "E-448",
       "title": "Sprites whose frames have no soft texels (alpha 0 or 255) blend back to front, so every covered pixel is shaded once per sprite over it: drawn front to back with the depth test (the pack already writes the painter's order as each instance's depth, 1 - (k + 1) / denom), early depth would shade each pixel about once. bunnyMark's 160 000 bunnies cost 16.1 ms of GPU a frame, 3.1 under a 1 px scissor",
-      "status": "open",
+      "status": "kept",
       "statusText": "proposed 2026-11-16 from glFrameRecorder --gpu-draws over the demos and stress scenes (GTX 1650, 1920 x 1080); the fill measured with --probe-scissor",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "bunnyMarkScene: one draw of 159 735 instances, 16.1 ms of draws a recorded frame, drawn in 70 % of the frames (the frame pacer skips the rest: the GPU is the limit); under a 1 px scissor 3.1 ms with 250 000 bunnies (the scene adds bunnies while it keeps its frame rate, so it grew once the fill was gone): about 12 ns a bunny of vertex work, so some 87 % of the drawn cost is fill. bunny.png 26 x 37: 41 % transparent, 59 % opaque, no texel between. The same holds for the LPC people (civil1 to civil4: 5 soft texels in 2.9 M) that Predator and light3dCompare draw by the tens of thousands. instancedSprite.vert.glsl already writes gl_Position.z = aInstDepth; gpuPack.c writes it from the draw order; no batch draws with a depth test today (E-186's note). Under DX-DEPTH it does not apply: gl_FragDepth turns early depth off. Caveat (R-1197): the atlas is sampled linearly, so even a binary frame's edge pixels carry alpha between 0 and 1 and must still blend: an opaque-only pass would harden the edges.",
+      "result": "Kept and merged 2026-11-16 (7134f2e7): bunnyMark 250 000 bunnies 23.5 -> 5.3 ms of GPU a drawn frame, held at 60 fps about 160 000 -> 499 999; Predator gates neutral by default, Pixi +0.45 ms at zoom 1 (rows built in JS: E-479). bunnyMarkScene: one draw of 159 735 instances, 16.1 ms of draws a recorded frame, drawn in 70 % of the frames (the frame pacer skips the rest: the GPU is the limit); under a 1 px scissor 3.1 ms with 250 000 bunnies (the scene adds bunnies while it keeps its frame rate, so it grew once the fill was gone): about 12 ns a bunny of vertex work, so some 87 % of the drawn cost is fill. bunny.png 26 x 37: 41 % transparent, 59 % opaque, no texel between. The same holds for the LPC people (civil1 to civil4: 5 soft texels in 2.9 M) that Predator and light3dCompare draw by the tens of thousands. instancedSprite.vert.glsl already writes gl_Position.z = aInstDepth; gpuPack.c writes it from the draw order; no batch draws with a depth test today (E-186's note). Under DX-DEPTH it does not apply: gl_FragDepth turns early depth off. Caveat (R-1197): the atlas is sampled linearly, so even a binary frame's edge pixels carry alpha between 0 and 1 and must still blend: an opaque-only pass would harden the edges.",
       "next": "Two passes, as DX-DEPTH F5 v2 has them but with the painter's order as the depth (no gl_FragDepth, so early depth stays on): the frames whose texels are only 0 or 255 (E-429's table keeps soft and half apart) under an opaque tint draw their solid pixels (alpha 0.5 and up) in reverse order with depth test and write, no blend; then every instance in painter order, blended, testing depth without writing it, keeping the edge pixels (linear sampling gives a binary sheet's edges fractional alpha: 10.5 % of civil1's drawn pixels at zoom 0.3, R-1197) and the frames that are not binary. Pixels behind a nearer solid one are then rejected by early depth in both passes. The pack writes the opaque instances reversed into their own range. The image stays identical; bunnyMark (GPU per drawn frame, the bunnies it holds at 60 fps) and Predator crowd 2.5 before and after.",
       "refs": [],
       "aliases": [
@@ -19224,7 +19217,8 @@
         "R-1195",
         "R-1204",
         "R-1212",
-        "R-1214"
+        "R-1214",
+        "R-1234"
       ]
     },
     {
@@ -19809,19 +19803,20 @@
     {
       "id": "E-469",
       "title": "The shipped bundle's terser (reduce_vars) inlines single-caller functions as closures made at each call: dist's set x read `q[0]=e,function(e){...}(this)` (a CreateClosure, 24 bytes), and N-215's terser-minified setters allocated 64 B an entity in a tick out of budget (d8 16); the same applies to every remaining FromArgs setter and probably engine-wide",
-      "status": "open",
+      "status": "kept-kernel",
       "statusText": "found 2026-11-16 by the E-459 agent (opt/setter-inline), in d8 16, Node 22 and Chrome 157",
       "date": "2026-11-16",
       "area": "engine",
       "kind": "speed",
-      "result": "E-459 avoided it for set x and set y (poseMoved has two callers). The other setters' helpers have one caller each.",
+      "result": "Kept 2026-11-16 (9950879d, terser reduce_funcs off): functions called on the spot 389 -> 49; d8 16 tick past the budget 172.3 -> 134.9 ns an entity (-20.1 %), 160 -> 0 B of garbage; bundle +0.08 %. E-459 avoided it for set x and set y (poseMoved has two callers). The other setters' helpers have one caller each.",
       "next": "Find terser's setting in the bundle build (webpack.config.js / make_bundle: inline or reduce_vars for single-use functions) that keeps them functions; d8 heap and the prod bundle's Predator (weedBundle) before and after.",
       "refs": [],
       "aliases": [
         "terser single-caller closures"
       ],
       "records": [
-        "R-1217"
+        "R-1217",
+        "R-1235"
       ]
     },
     {
@@ -19845,19 +19840,20 @@
     {
       "id": "N-234",
       "title": "Nothing checks the bundle's bytecode sizes: esbuild makes N-215's set x 32 bytes (past the 30-byte small-function rule) and terser widens operands past a module's 255th slot, while setterBytecodeSize.test.js measures the sources only",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "found 2026-11-16 by the E-459 agent (opt/setter-inline), in d8 16, Node 22 and Chrome 157",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
-      "result": "E-459: set x 58 bytes from source, 62 after esbuild and terser; compare-inline vx 69 from source, 77 after.",
+      "result": "Fixed 2026-11-16 (7c92a0d2, 1f94af82): scripts/checkBundleSetters.mjs reads the shipped setters' bytecode in d8 and the release runs it. E-459: set x 58 bytes from source, 62 after esbuild and terser; compare-inline vx 69 from source, 77 after.",
       "next": "A release check: d8 --no-lazy --print-bytecode on the built worker bundles for the setters setterBytecodeSize.test.js names, failing past their limits.",
       "refs": [],
       "aliases": [
         "bundle bytecode size check"
       ],
       "records": [
-        "R-1217"
+        "R-1217",
+        "R-1235"
       ]
     },
     {
@@ -20051,13 +20047,13 @@
     },
     {
       "id": "N-239",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-16",
       "area": "tools",
       "kind": "bug",
       "title": "Every ABAB sitting measures main again on its own: when several changes are judged in the same scene and query, a multi-arm sitting (A, B1, B2, ... interleaved in each round) would share the base side and save about a quarter to a third of the bench queue's time; runPredatorAbab takes one --hyp-rev",
       "statusText": "raised 2026-11-16 by the owner (\"lo que está corriendo ahora, ¿no le sirve también al otro agente?\") while the queue was 8 to 14 turns deep",
-      "result": "On 2026-11-16 the queue held three Predator crowd 2.5 sittings (E-448 gate, E-476, the d8 fixes' guard) and two keyedPack ones, each with its own four runs of main.",
+      "result": "Done 2026-11-16 (2fc78fa4): tests/bench/runMultiArm.mjs runs A and several arms per round, rotated, each judged against the same A. On 2026-11-16 the queue held three Predator crowd 2.5 sittings (E-448 gate, E-476, the d8 fixes' guard) and two keyedPack ones, each with its own four runs of main.",
       "next": "runPredatorAbab --hyp-rev a,b,c (or a new runner): each round runs A and every B in a rotated order, each B judged against the same A with the usual rules (≥ 3 %, ≥ 75 % of pairs, load keys within 5 %); a test on decide's inputs; then batch same-scene hypotheses into one sitting.",
       "refs": [],
       "aliases": [
@@ -20514,6 +20510,54 @@
       "records": [
         "R-1232"
       ]
+    },
+    {
+      "id": "N-249",
+      "title": "main's committed dist/ is stale: it predates source changes since 842c41c6, so a game that copies the bundles from git gets older code than src/",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-469 agent (opt/terser-closures) while building the bundles",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "npm run check:dist fails on main 1f94af82 (the input hash in dist/.build-inputs is 842c41c6's).",
+      "next": "Rebuild the bundles before the next push (merge-ships-bundles), or N-164 (dist out of git, built at release only).",
+      "refs": [],
+      "aliases": [
+        "stale dist"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-250",
+      "title": "The bundle build imports webpack-obfuscator even with OBFUSCATE off: about 46 s of every build",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-469 agent (opt/terser-closures) while building the bundles",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "speed",
+      "result": "Measured by the E-469 agent (a build with the import and without it).",
+      "next": "Import it only when OBFUSCATE is on (a dynamic import in the webpack config); build time before and after.",
+      "refs": [],
+      "aliases": [
+        "obfuscator import cost"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-251",
+      "title": "scripts/buildBundle.js cannot run in a git worktree (it resolves paths or node_modules from the main folder), so a branch cannot build and time its own bundle in a worktree",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-469 agent (opt/terser-closures) while building the bundles",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "Seen by the E-469 agent in D:/xampp/htdocs/weed-par-* worktrees.",
+      "next": "Resolve paths from the script's own tree and node_modules through the loader the worktrees use; a worktree build matching the main folder's byte for byte.",
+      "refs": [],
+      "aliases": [
+        "buildBundle in worktrees"
+      ],
+      "records": []
     }
   ],
   "records": [
@@ -32652,6 +32696,34 @@
       "title": "E-476's two sittings: the spread halves spatial's long frames but raises its mean (+7.7 % interleaved, +11.5 % by blocks, 4/4 worse); not merged; the owner wants both gains",
       "verdict": "note",
       "text": "**E-476's two sittings: spreading spatial's typed refresh over the period halves its frames of 16 ms or more but raises its mean: interleaved +7.7 % (4/4 worse), by contiguous blocks +11.5 % (4/4 worse). Not merged (opt/e476-spread).** Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 4 pairs each, the branch with main merged in, spatial owner, through the bench lock; the first ended 20:46, the second 21:14 (the owner's game still open in the second).\n\n| sitting | spatial mean | paired | frames >= 16 ms a run, main | with the spread |\n| --- | --- | --- | --- | --- |\n| e476 (interleaved) | 13.469 -> 14.314 ms | +7.7 % | 106, 137, 123, 138 | 57, 52, 106, 59 |\n| e476b (blocks) | 11.897 -> 13.099 ms | +11.5 % | 121, 83, 101, 93 | 82, 57, 42, 38 |\n\nThe other workers moved within their noise (logic +7.2 % in e476b, 3/4 worse, with the game open). The blocks did not bring the mean back, so the slots' own memory order is not the cause. Lead: a burst of a quarter of the civilians' gathers shares a warm grid (their cells and candidate rows stay in cache across the burst's queries; gather_batch is the largest cache-refill site, R-1231), and spread thin each frame's gathers start colder. The owner asked to keep both gains (2026-11-16): next, variants that keep gathers in bursts but split them (2 tick occurrences instead of 4), or group a frame's refreshes by place (cell rows) so they share the grid, judged on the mean and the tail together."
+    },
+    {
+      "id": "R-1234",
+      "date": "2026-11-16",
+      "time": "21:34",
+      "timeFrom": "recorded",
+      "title": "E-448 kept and merged: bunnyMark 250k 23.5 -> 5.3 ms of GPU a drawn frame, 160 000 -> 499 999 bunnies at 60 fps; Predator gates neutral by default, Pixi +0.45 ms at zoom 1 (E-479)",
+      "verdict": "kept",
+      "text": "**E-448 kept and merged (7134f2e7): binary sprites' solid pixels drawn first, nearest first, depth tested and written, then every sprite blended in painter order testing the depth: bunnyMark 250 000 bunnies 23.5 -> 5.3 ms of GPU a drawn frame (drawn in every frame instead of 0.66), and the bunnies it holds at 60 fps about 160 000 -> 499 999 (the entity cap).** The image is unchanged (solid pixels only; soft edges still blend). glFrameRecorder --gpu-draws and runIntegratedWorkerBenchmark, headed Chrome 157, GTX 1650, 1920 x 1080, worktrees, 2026-11-16 11:48-16:52 (8fb70b75's message).\n\nThe Predator gates (crowd 2.5, renderer owner, 4 pairs each, the branch with main merged in):\n\n| sitting | ended | renderer (Pixi) STEP_MS | the rest |\n| --- | --- | --- | --- |\n| e448-gate3, default zoom | 21:22 | 1.356 -> 1.323 ms (-4.2 %, below the 6 ms floor) | neutral |\n| e448-gate3-z1, zoom 1 | 21:34 | 1.960 -> 2.411 ms (+23.0 %, 4/4) | logic -6.9 %, spatial -6.2 %, physics -6.7 % (0/4 worse) |\n\nBefore the skip (dc2d8273) Pixi read 1.29 -> 1.71 ms in Predator: the by-row batch built its opaque rows every frame for a pass that did not pay. Since dc2d8273 it skips them for 15 frames after a frame where the pass did not pay, at the same zoom and screen. At zoom 1 the rows are still built in JS every frame they pay: that cost (+0.45 ms of Pixi, under the 6 ms floor) is E-479 (the rows in the keyed pack kernel).",
+      "commits": [
+        "8fb70b75",
+        "dc2d8273",
+        "7134f2e7"
+      ]
+    },
+    {
+      "id": "R-1235",
+      "date": "2026-11-16",
+      "time": "21:34",
+      "timeFrom": "recorded",
+      "title": "E-469 kept on its kernel: terser keeps one-caller functions functions (closures 389 -> 49, d8 tick past budget -20.1 %, 160 -> 0 B an entity); N-234 fixed: the release checks the shipped setters' bytecode",
+      "verdict": "kept-kernel",
+      "text": "**E-469 kept on its kernel (9950879d), N-234 fixed (7c92a0d2, 1f94af82): the bundle build no longer writes one-caller functions into their caller as closures (terser's reduce_funcs off), and the release checks the shipped setters' bytecode.** Functions called on the spot in the prod worker build: 389 -> 49 (189 in 123 class members -> 0). d8 16, the shipped GameObject in a tick past TurboFan's budget: 160 -> 0 B of garbage an entity; 172.3 -> 134.9 ns an entity (-20.1 % paired, faster in 5/6). The in-budget setter frame: 10.28 -> 10.80 ns (+4.8 %, slower in 4/6; the GC rounds 10.62 -> 10.67). Sizes: weed.prod.bundle.esm.min.js +2 885 B (+0.08 %), its compressed twin +405 B. Predator on the prod bundle neutral (20:47-20:53). The agent's work ran 2026-11-16 to 21:34 (the commits).\n\nscripts/checkBundleSetters.mjs compiles the bundles' GameObject in d8 (--no-lazy --print-bytecode), fails a setter over 75 bytes (the heap-number inlining rule) or one that makes a closure; `npm run release` runs it after the dist check.\n\nFound on the way (filed): main's committed dist/ predates sources changed since 842c41c6 (N-249); the bundle build imports webpack-obfuscator even with OBFUSCATE off, about 46 s a build (N-250); scripts/buildBundle.js cannot run in a worktree (N-251).",
+      "commits": [
+        "7c92a0d2",
+        "9950879d",
+        "1f94af82"
+      ]
     }
   ],
   "leads": [
