@@ -99,6 +99,8 @@ function main() {
   // 3. the bundles, and every check
   step('build the bundles', 'npm', ['run', 'make_bundle']);
   step('dist matches the sources', process.execPath, ['scripts/assertDistFresh.js']);
+  // N-234: GameObject's setters as the bundles ship them: at most 75 bytes of bytecode and no closure made per call.
+  step('setter bytecode in the bundles (N-234)', process.execPath, ['scripts/checkBundleSetters.mjs']);
   step('bundle embed smoke', process.execPath, ['scripts/smokeBundleEmbed.mjs']);
   step('bundle browser smoke', process.execPath, ['scripts/smokeBundleBrowser.mjs']);
   step('node tests on the bundles', 'npm', ['run', 'test:node:bundle']);

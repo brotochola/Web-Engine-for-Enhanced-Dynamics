@@ -143,8 +143,9 @@ function enqueuePoseOf(i) {
 }
 
 /**
- * set x's and set y's work once their column changed: the static scenery counter, a body's pose. Two callers: a
- * function with one would be inlined by terser into the setter as a closure made at each call.
+ * set x's and set y's work once their column changed: the static scenery counter, a body's pose. (The bundle build
+ * keeps one-caller functions functions since E-469, terser's reduce_funcs off; scripts/checkBundleSetters.mjs checks
+ * the shipped setters make no closure.)
  */
 function poseMoved(e) {
   const i = e.index;
