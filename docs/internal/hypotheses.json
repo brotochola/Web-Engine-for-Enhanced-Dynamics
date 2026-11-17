@@ -19964,12 +19964,12 @@
     {
       "id": "E-475",
       "title": "Pixi links each shader program the first time it draws with it and waits for the link: Predator crowd 2.5 by night links 16 programs in its first 10 s and blocks 2.1 s on them, the 3D light pass's alone 1.29 s (a 1.3 s freeze while the scene starts); by day 11 programs, 0.53 s",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "found 2026-11-16 from m43's CPU pass (Pixi's generateProgram 146 ms/s in a window from 8 s, by night) and a probe of every link (programProbe.mjs: linkProgram to the LINK_STATUS answer, patched into the Pixi worker)",
       "date": "2026-11-16",
       "area": "pixi",
       "kind": "speed",
-      "result": "Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 25 s from the Pixi worker's start: 16 links, 2 137 ms blocked (0-5 s: 11 links 1 717 ms; 5-10 s: 5 links 420 ms; none after); the light pass (unnamed: pixi-program) 1 287 ms, entities-instanced-glowMask-rows 180, gbuf-rows 107, lamp-map 93, entities-instanced-rows 90. Plain: 11 links, 525 ms, all in the first 1.6 s (22 to 90 ms each). Steady state links nothing.",
+      "result": "Kept 2026-11-16 (5a688166): programs linked ahead in parallel; Predator by night blocked 2.0 -> 0.54 s, first frame 1.3 s -> 70 ms, image unchanged (R-1241). Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 25 s from the Pixi worker's start: 16 links, 2 137 ms blocked (0-5 s: 11 links 1 717 ms; 5-10 s: 5 links 420 ms; none after); the light pass (unnamed: pixi-program) 1 287 ms, entities-instanced-glowMask-rows 180, gbuf-rows 107, lamp-map 93, entities-instanced-rows 90. Plain: 11 links, 525 ms, all in the first 1.6 s (22 to 90 ms each). Steady state links nothing.",
       "next": "Compile every program a scene will use at load, without waiting (KHR_parallel_shader_compile: link all, poll COMPLETION_STATUS_KHR, start drawing when done or behind the loading screen), so no frame links; name the light pass's program; and look at the light pass's HLSL size (m46's d3dShaderStats) for its 1.3 s. The scene's first 10 s of Pixi's frame times and the time to first frame before and after.",
       "refs": [],
       "aliases": [
@@ -19979,9 +19979,9 @@
       "records": [
         "R-1224",
         "R-1230",
-        "R-1236"
-      ],
-      "rank": 11
+        "R-1236",
+        "R-1241"
+      ]
     },
     {
       "id": "N-238",
@@ -20630,6 +20630,42 @@
       ],
       "records": [
         "R-1240"
+      ]
+    },
+    {
+      "id": "E-494",
+      "title": "After E-475, the programs the engine makes the first time a pass draws still block the second frame for about 620 ms at Predator crowd 2.5 by night (glowMask-rows 203 ms, gbuf-rows 85, lamp-map 72, glow-rows 55, lamp-map-volumes 49, mesh-uv-6 34)",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-475 agent",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "Made in InstancedSpriteBatch._makeAux, _lampMapProgram, _volumeLampMesh, _ensureMeshUvBatch and the statics scatter's first call.",
+      "next": "Make them at init when the config says the pass will run, so _linkProgramsAhead links them with the rest; stop linking the 10 programs made at init that are never bound. programLinkProbe before and after.",
+      "refs": [],
+      "aliases": [
+        "first-use program links"
+      ],
+      "records": [
+        "R-1241"
+      ]
+    },
+    {
+      "id": "E-495",
+      "title": "WebGPU: Pixi makes render pipelines on first use with the synchronous createRenderPipeline; Dawn compiles each on the GPU process's thread and stalls the frames waiting to be presented (the worker's STEP_MS does not show it)",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the E-475 agent",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "Read in PipelineSystem.getPipeline, not measured.",
+      "next": "Warm the pipelines a scene will use with createRenderPipelineAsync (Pixi's key: geometry layout, program, state, blend, topology, targets, depth/stencil, MSAA); a WebGPU scene's first seconds before and after.",
+      "refs": [],
+      "aliases": [
+        "webgpu pipelines on first use"
+      ],
+      "records": [
+        "R-1241"
       ]
     }
   ],
@@ -32852,6 +32888,22 @@
         "9fbd6d46",
         "0081822b",
         "3e258cbc"
+      ]
+    },
+    {
+      "id": "R-1241",
+      "date": "2026-11-16",
+      "time": "23:08",
+      "timeFrom": "recorded",
+      "title": "E-475 kept: Pixi's programs linked ahead in parallel before the worker reports ready; Predator crowd 2.5 night blocked on links 2.0 -> 0.54 s, first drawn frame 1.3 s -> 70 ms, image unchanged",
+      "verdict": "kept-hygiene",
+      "text": "**E-475 kept (hygiene, merged 5a688166): the Pixi worker links every WebGL program it made while starting all at once, in parallel (KHR_parallel_shader_compile), and reports ready once they are linked. Predator crowd 2.5 by night: blocked on links 1960 and 2122 -> 522 and 556 ms; the light pass's link 1248 and 1283 -> 0 ms; the first drawn frame 1324 and 1359 -> 65 and 75 ms; the longest frame in the first 10 s 1.33 s -> 0.63 s. The image is unchanged (compareCaptures, 0 pixels).** The shader agent, 2026-11-16, its last result file 23:08. Headed Chrome, a fresh profile each run, 2 runs a side ABAB, main's src against fa701474.\n\nHow:\n- The Pixi bundle patch (scripts/buildPixi.mjs patchPixiParallelLinks; a rebuild without the patch reproduces the old bundle byte for byte) splits generateProgram into a start and a finish half.\n- The shader system gains weedLinkAhead and weedLinksRunning (COMPLETION_STATUS_KHR, never waits). A program's first bind finishes the link already started.\n- KHR_parallel_shader_compile is turned on at context setup: Chrome starts its completion query only for links made while it is on.\n- The light pass's program is named lighting-basic.\n- tests/bench/programLinkProbe.mjs times the blocking LINK_STATUS reads, the links started ahead and never bound, and the first frames.\n- Suites in the worktree: node 2926/2928 (the two worktree pixi tests), demos 101/101.\n\nStill blocking (E-494): the programs the engine makes the first time a pass draws, all in the second frame: glowMask-rows 203 ms, gbuf-rows 85, lamp-map 72, glow-rows 55, lamp-map-volumes 49, mesh-uv-6 34, Pixi's batch 13, statics scatter 11. Made in InstancedSpriteBatch._makeAux, _lampMapProgram, _volumeLampMesh, _ensureMeshUvBatch and the statics scatter's first call.\n\nWaste: 10 of the 16 programs linked ahead are never bound (plain, edge and indexed sprite variants, gpu-casters, gpu-casters-sun, mesh, big-triangle, mesh-layer-volumeShadows). They link on the driver's threads, but that is GPU-process CPU.\n\nWebGPU (read, not measured; E-495): Pixi makes pipelines with the synchronous createRenderPipeline on first use. Dawn compiles them on the GPU process's thread and stalls the frames waiting to be presented. The fix would warm them with createRenderPipelineAsync.\n\nNot measured: the day variant; frameTotals with a short warm-up (the runner refuses --warmup-ms 0); a returning user's profile, whose shader cache may hide much of this.",
+      "commits": [
+        "1dc6450c",
+        "ce0614f7",
+        "b00b73d6",
+        "fa701474",
+        "5a688166"
       ]
     }
   ],
