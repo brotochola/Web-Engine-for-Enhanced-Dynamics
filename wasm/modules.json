@@ -89,6 +89,8 @@
         "sway_decorations_f32x4_u32",
         "sway_free",
         "sway_free_u32",
+        "sway_free_f32x4",
+        "sway_free_f32x4_u32",
         "sway_trig",
         "stamp_tiles",
         "rewrite_corners",
@@ -309,6 +311,8 @@
         "sway_decorations_f32x4_u32",
         "sway_free",
         "sway_free_u32",
+        "sway_free_f32x4",
+        "sway_free_f32x4_u32",
         "sway_trig"
       ],
       "maxMemoryPages": 32768,

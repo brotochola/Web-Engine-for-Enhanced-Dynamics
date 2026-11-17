@@ -376,6 +376,61 @@ test('wasm.decorationSwayF32 (default on) binds the float32 sway, within its tol
   t.diagnostic(`${frames} frames: rotation error at most ${(stats.worst * 100).toFixed(0)} % of its slack, ${stats.stepFlips} across the 0.08 rad step`);
 });
 
+// E-505: without a frequency grid and with wasm.decorationSwayF32 (default on), the worker binds sway_free_f32x4, and
+// its frames on the worker's own path stay within compareSwayStates' tolerance of the same path with sway_free (which
+// the test above ties to the JS): the random frames above, then frames of the barrio's branches (loop and skew
+// decorations, amplitudes 0.01 to 0.05, frequencies 0.4 to 0.9, every one on screen), where it takes four at a time.
+test('without a frequency grid the float32 sway binds sway_free_f32x4, within its tolerance of sway_free', async (t) => {
+  const { m, worker } = await bootWired(0, null);
+  const bound = worker._swayWasm;
+  assert.ok(bound, 'the worker bound the kernel without a grid');
+  assert.equal(bound.f32, true, 'the default binds the float32 sway');
+  assert.equal(worker._swayBuckets, 0);
+  const f32 = bound.free;
+  const f64 = (await bindDecorationSway(m.memory, m.layout.sway, { f32: false })).free;
+  assert.notEqual(f32, f64, 'sway_free_f32x4 is bound, not sway_free');
+  const none = { trig: new Uint32Array(0), value: new Float64Array(0) };
+  const st = { worker };
+  const r = rng(0x5ee4);
+  const mem = new Uint8Array(m.buffer);
+  const stats = { stepFlips: 0, worst: 0 };
+  const D = DecorationComponent;
+  let frames = 0;
+  for (let f = 0; f < 80; f++) {
+    if (f < 50) {
+      scramble(r, st, 2, f === 0 ? 1 : 0.25, false);
+    } else {
+      for (let i = 0; i < N; i++) {
+        D.active[i] = 1;
+        D.parentEntityIndex[i] = worker._noParent;
+        D.isItOnScreen[i] = 1;
+        D.sway[i] = r() < 0.7 ? SWAY_LOOP : SWAY_LOOP_SKEW;
+        D.swayAmplitude[i] = 0.01 + r() * 0.04;
+        D.swayFrequency[i] = 0.4 + r() * 0.5;
+        const a = r() * 2 * Math.PI;
+        D.baseRotC[i] = Math.cos(a);
+        D.baseRotS[i] = Math.sin(a);
+      }
+    }
+    pickSnapshot(r, st);
+    const deltaTime = frameDelta(r);
+    worker.accumulatedTime += DT;
+    const before = mem.slice();
+    bound.free = f64;
+    worker.updateDecorationSway(deltaTime);
+    const ref = mem.slice();
+    mem.set(before);
+    bound.free = f32;
+    worker.updateDecorationSway(deltaTime);
+    // Without a grid the worker keeps no phase or bucket tables (their views are undefined).
+    const bad = compareSwayStates(stateViews(st).filter(([, v]) => v), ref, mem.slice(), none, none, stats);
+    assert.equal(bad, null, `frame ${f}`);
+    frames++;
+  }
+  assert.ok(frames >= 80, `${frames} frames swayed`);
+  t.diagnostic(`${frames} frames: rotation error at most ${(stats.worst * 100).toFixed(0)} % of its slack, ${stats.stepFlips} across the 0.08 rad step`);
+});
+
 // Close-out group B: the sway runs only in its kernel. A worker whose memory has no sway regions for its decorations
 // (a memory made by hand, as setupSwayKernel's) leaves their rotations as they are, and says so once.
 test('a frame the sway kernel cannot take does not sway, and says so once', async () => {

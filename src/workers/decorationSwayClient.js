@@ -6,9 +6,10 @@
 // angle of 0.08 rad or more) come back in the trig list, which sway_trig finishes. Without a frequency grid
 // (particle.swayFrequencyBuckets 0 or 1) sway_free runs the whole loop, every sine in the kernel. With `f32`
 // (wasm.decorationSwayF32, the particle worker's default) the kernel's float32 sway, sway_decorations_f32x4,
-// is bound in sway_decorations' place, once; the table, the call and the JS around it are the same. E-129: past
-// 65 535 decorations the snapshot and the chunk list are u32 and the _u32 export is bound, whose trig list puts
-// the impulse at bit 31; the binding carries the trig list's index mask and impulse bit for the JS that finishes it.
+// is bound in sway_decorations' place, once, and sway_free_f32x4 in sway_free's (E-505); the table, the call and the
+// JS around them are the same. E-129: past 65 535 decorations the snapshot and the chunk list are u32 and the _u32
+// export is bound, whose trig list puts the impulse at bit 31; the binding carries the trig list's index mask and
+// impulse bit for the JS that finishes it.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { poolSlotBytes } from '../util/poolSlotWidth.js';
@@ -51,7 +52,8 @@ const WORKER_COLUMNS = [
 export async function bindDecorationSway(memory, sway, { f32 = false } = {}) {
   const wide = (sway.slotBytes ?? poolSlotBytes(sway.decorations | 0)) === 4;
   const exportName = `${f32 ? 'sway_decorations_f32x4' : 'sway_decorations'}${wide ? '_u32' : ''}`;
-  const freeName = wide ? 'sway_free_u32' : 'sway_free';
+  // E-505: with f32, the free sway's float32 kernel too.
+  const freeName = `${f32 ? 'sway_free_f32x4' : 'sway_free'}${wide ? '_u32' : ''}`;
   const k = await loadWasmKernel('decorationSway', engineWasmUrl, memory, [exportName, freeName, 'sway_trig']);
   const buffer = memory.buffer;
   return {
