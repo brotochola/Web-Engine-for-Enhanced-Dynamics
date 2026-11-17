@@ -380,7 +380,7 @@ test('a frame without heights takes its surface\'s height in the G-buffer, depth
   assert.match(frag, /float zw = twinHeights\(vMapsWin\) \? zm \* vMapScale\s*: \(\(flags & 4u\) == 0u \? max\(vFootY - vWorld\.y, 0\.0\) \/ uFaceSpace\.x : 0\.0\);/);
   assert.match(frag, /bool sobel = \(normals == 2u \|\| !TWIN_NORMALS\) && \(twinHeights\(vMapsWin\) \|\| twinRelief\(vMapsWin\)\);/);
   const depth = pixelDepthFragment(shader('instancedSprite.frag.glsl'), { gbuf: true });
-  assert.match(depth, /if \(twinPresent\(md\) && twinHeights\(vMapsWin\) && !glow\) floorY = /);
+  assert.match(depth, /if \(twinPresent\(md\) && twinHeights\(vMapsWin\) && !glow\) \{\s*floorY = /);
   assert.match(pixelDepthWgsl(shader('instancedSprite.wgsl'), { gbuf: true }), /if \(twinPresent\(md\) && twinHeights\(in\.vMapsWin\) && !glow\)/);
   assert.match(sunMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl')), /float z = twinHeights\(win\) \? twinZ\(m\)/);
   assert.match(lampMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl')), /float z = twinHeights\(win\) \? twinZ\(m\)/);
