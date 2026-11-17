@@ -15,6 +15,9 @@
  * DecorationComponent has the shear columns; on a rev without them none is, which is the baseline a sheared piece is
  * weighed against. Its checksum is the positions.
  *
+ * Case `trees` (E-507): Buenos Aires' trees, each tree's branches in a run of the list (they hang when it spawns), still
+ * parents and a twentieth of them in view, the rest placed and not swayed.
+ *
  *   node tests/bench/attachedSwayMicrobench.mjs [--n 40000] [--check] [--output path]
  *   node tests/bench/runKernelsVsRev.mjs --vs <rev> --only attachedSway
  */
@@ -34,7 +37,7 @@ const ON_SCREEN = 1 / 3;
 /**
  * The worker with `n` decorations attached to `parents` stand-in entities, `onScreen` of the world's width in view.
  * `frame()` runs the pass once.
- * @param {{ n?: number, parents?: number, onScreen?: number, seed?: number }} [opts]
+ * @param {{ n?: number, parents?: number, onScreen?: number, seed?: number, runs?: boolean, walls?: boolean }} [opts]
  */
 export async function setupAttachedSway(opts = {}) {
   const n = opts.n ?? DECOS;
@@ -58,7 +61,8 @@ export async function setupAttachedSway(opts = {}) {
   const D = DecorationComponent;
   const shown = [];
   for (let i = 0; i < n; i++) {
-    const p = i % parents;
+    // A run of decorations a parent (E-507's trees), or each next one on the next parent.
+    const p = opts.runs ? Math.floor((i * parents) / n) : i % parents;
     const rotation = (rng() - 0.5) * 1.6;
     D.parentEntityIndex[i] = p;
     D.localX[i] = (rng() - 0.5) * 120;
@@ -138,14 +142,15 @@ async function main() {
   }
   const resolve = await timeCase('attached sway', { n });
   const walls = await timeCase('attached walls', { n, walls: true });
+  const trees = await timeCase('attached trees', { n, parents: Math.max(1, Math.round(n / 20)), runs: true, onScreen: 0.05 });
   const report = {
     feature: 'attached-decoration-sway',
     functions: ['ParticleWorker.resolveAttachedDecorations'],
     decorations: resolve.s.n,
     parents: resolve.s.parents,
     onScreen: resolve.s.onScreen,
-    checksum: (resolve.checksum ^ walls.checksum) >>> 0,
-    cases: { resolve: resolve.timed, walls: walls.timed },
+    checksum: (resolve.checksum ^ walls.checksum ^ trees.checksum) >>> 0,
+    cases: { resolve: resolve.timed, walls: walls.timed, trees: trees.timed },
   };
   if (args.output) writeReport(String(args.output), report);
   else {
