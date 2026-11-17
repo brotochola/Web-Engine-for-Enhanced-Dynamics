@@ -185,6 +185,8 @@ export class BuenosAiresScene extends Scene {
     camera: { floorScaleY: META.SYN, heightScaleY: META.CZ },
     lighting: {
       enabled: true,
+      // ?lightEdges=0 stretches the light as a plain texture (DX-LIGHTEDGES off), to compare.
+      lightEdges: WEED.params?.get('lightEdges') !== '0',
       lightGlow: 'sprite',
       baseAmbient: 0.04,
       maxLights: 1024,
