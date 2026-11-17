@@ -285,8 +285,9 @@ class SpatialWorker extends AbstractWorker {
      */
     this._mvPerMovedMs = NaN;
     this._mvMoversFrameMs = NaN;
-    /** Physics' moved count this frame (_stepGrid). */
+    /** Physics' moved count this frame (_stepGrid), and its moving average (NaN until the first frame). */
     this._mvCount = 0;
+    this._mvCountAvg = NaN;
     /** The last rewrite gave up: the latch that follows is the rewrite's cost, not an entry's. */
     this._mvAfterGiveUp = false;
     /** Rewrites since the last timed full rebuild; frames of full rebuilds left before the next probe. */
@@ -824,6 +825,10 @@ class SpatialWorker extends AbstractWorker {
     const limit = timed ? this._moversLimit(active) : auto ? active * MOVERS_MAX_FRACTION : this.globalEntityCount;
     let gaveUp = false;
     this._mvCount = count;
+    if (timed) {
+      const avg = this._mvCountAvg;
+      this._mvCountAvg = avg === avg ? avg + (count - avg) * 0.25 : count;
+    }
     if (this._mvSeeded && !this._mvRetimeFull) {
       // Bodies physics moved since the state: none when it has not published since, its list
       // when it published once (and not while the header was being written).
@@ -848,8 +853,9 @@ class SpatialWorker extends AbstractWorker {
         }
         gaveUp = true;
       }
-      // E-503: a probe's run that ends on the limit (not given up): the rewrite lost, the next probe waits longer.
-      if (this._mvFromProbe && !gaveUp && moved > limit) {
+      // E-503: a probe's run that ends before a rewrite held past its window (on the limit, or given up): the rewrite
+      // lost, the next probe waits longer.
+      if (this._mvFromProbe) {
         const gap = this._mvProbeGap * 2;
         const most = this._mvProbeEvery * MOVERS_PROBE_STRETCH;
         this._mvProbeGap = gap < most ? gap : most;
@@ -866,18 +872,20 @@ class SpatialWorker extends AbstractWorker {
       }
     }
     // E-503: rebuilding while the limit (or no timing yet) says so, with a probe now and then. Coming from the
-    // rebuild, the count must be under MOVERS_ENTRY_SHARE of a timed limit.
+    // rebuild, the count and its recent average must be under MOVERS_ENTRY_SHARE of a timed limit (one short list,
+    // physics not stepping, is no reason to latch).
     const entry = timed && !gaveUp && this._mvProbeLeft === 0 && this._mvFullMs > 0 && this._mvPerMovedMs > 0
       ? limit * MOVERS_ENTRY_SHARE
       : limit;
+    const over = count > entry || (timed && this._mvCountAvg > entry);
     const probe =
       timed &&
-      count > entry &&
+      over &&
       this._mvBackoff === 0 &&
       !this._mvRetimeFull &&
       --this._mvProbeIn <= 0 &&
       count <= active * MOVERS_CAP_FRACTION;
-    if (!probe && (this._mvRetimeFull || this._mvBackoff > 0 || count > entry)) {
+    if (!probe && (this._mvRetimeFull || this._mvBackoff > 0 || over)) {
       if (this._mvBackoff > 0) this._mvBackoff--;
       this._mvSeeded = false;
       this._mvRetimeFull = false;
