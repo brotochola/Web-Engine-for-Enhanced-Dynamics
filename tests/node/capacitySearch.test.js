@@ -275,3 +275,24 @@ test('the reference set names catalogued scenes, and a run query carries the fix
     assert.ok(def.entities(def.max) <= 500000, `${def.key}: the engine holds 500 000 entities at most`);
   }
 });
+
+test('nightlyCapacity: power from Win32_Battery, a seeded start from the last comparable line, the change against it', async () => {
+  const { powerFromBatteryStatus, seedStart, deltaVsPrevious, formatTable } = await import('../../scripts/nightlyCapacity.mjs');
+  assert.equal(powerFromBatteryStatus('BatteryStatus=2'), 'ac');
+  assert.equal(powerFromBatteryStatus('BatteryStatus=1'), 'battery');
+  assert.equal(powerFromBatteryStatus('BatteryStatus=6'), 'ac');
+  assert.equal(powerFromBatteryStatus(''), 'none');
+
+  const def = CAPACITY_SCENES.boids;
+  const rule = { budgetMs: 16.7, fpsMin: 59, tail: 'p99' };
+  const line = (capacity, extra = {}) => ({ scene: 'boids', knob: def.knob, query: def.query, rule, capacity, entities: capacity, ...extra });
+  const history = [line(50000), line(52000), line(null, { skipped: 'on battery' }), line(30000, { rule: { ...rule, tail: 'p95' } })];
+  assert.equal(seedStart(history, def, rule), 52000, 'the p95 line and the skipped one do not seed a p99 search');
+  assert.equal(seedStart([], def, rule), null);
+  assert.equal(seedStart([line(9e9)], def, rule), def.max, 'clamped to the knob range');
+  assert.ok(Math.abs(deltaVsPrevious(history, line(54600)) - 5) < 1e-9);
+  const table = formatTable([line(54600, { sha: 'abcdef123456', limitingText: 'spatial0 p99 18 ms > 16.7', runs: 5, minutes: 3.2 })], history);
+  assert.match(table, /54 600/);
+  assert.match(table, /\+5\.0 %/);
+  assert.match(table, /spatial0 p99 18 ms/);
+});
