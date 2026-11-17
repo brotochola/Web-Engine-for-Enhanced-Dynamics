@@ -21822,14 +21822,15 @@
         "unshaded composite discard"
       ],
       "records": [
-        "R-1302"
+        "R-1302",
+        "R-1304"
       ],
-      "result": "",
+      "result": "kept: on the Intel HD 620 the unshaded halves 0.873 -> 0.335 ms a drawn frame, drawn +4.5 % (R-1302); captures identical",
       "next": "",
       "id": "E-509",
       "kind": "gpu",
       "area": "render",
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-17",
       "title": "The unshaded layer's composite discards a pixel with no unshaded colour before it reads the light: it added zero there, after four light reads and a blended write",
       "statusText": "found 2026-11-17 in the barrio's HD 620 reading (R-1301): the unshaded halves 0.87 ms of a drawn frame, for lamps' bulbs, lit windows and traffic lights"
@@ -21841,14 +21842,15 @@
         "shadowRange in the lamps map"
       ],
       "records": [
-        "R-1303"
+        "R-1303",
+        "R-1305"
       ],
-      "result": "",
+      "result": "kept: Buenos Aires on the Intel HD 620 27.8 -> 34.3 drawn fps (+25.5 %, R-1303); identical where no light sets a shorter shadowRange",
       "next": "",
       "id": "E-510",
       "kind": "gpu",
       "area": "render",
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-17",
       "title": "The lamps' map honours LightEmitter.shadowRange: a lamp's tile spans how far its shadows reach, and the light pass reads it and steps the self-shadow only within that",
       "statusText": "found 2026-11-17 weighing the barrio's light pass (GTX 1650): the lamps' five taps a pixel were about 35 % of it, out to the 690 px radius of lamps whose shadowRange is 260; the tile spanned the radius too"
@@ -34766,6 +34768,28 @@
       "title": "E-510 on the HD 620: drawn +25.5 % (27.6 -> 34.5 fps, 4/4); the lamps' atlas 3.84 -> 1.44 ms, the light pass 2.97 -> 2.26 ms",
       "verdict": "note",
       "text": "**E-510 on the Intel HD 620: drawn +25.5 % (4/4), the lamps' atlas 3.84 → 1.44 ms, the light pass 2.97 → 2.26 ms.** The barrio session's perf/e510-lamp-shadow-reach (d02c9161): the lamps' map honours LightEmitter.shadowRange (the street lamps: 260 of a 690 px radius), so a tile spans 260 and the atlas shrinks from 4096x2048 to 4096x512. Main bae9c742 (A) against it (B). Parque Chas at `hour=22&dayMinutes=0`, camera still, 4 pairs, `--full-rev`, ASUS laptop, 2026-11-17 10:49 to 11:05 (asus-e510, job 0874).\n\n**Drawn: 27.1–28.5 → 33.9–34.7 fps, +25.5 %, 0/4 worse.**\n\nThe runner says FAIL (load) on GPU_CASTERS −8.8 % and GPU_SHADOW_LIGHTS −9.0 %. That is the change itself: fewer casters and lights inside the shorter reach. Visible entities, decorations and the render queue are identical.\n\nThe CPU workers are within noise, except physics +11.4 % (3/4): the laptop's shared power with more frames drawn (R-1285, R-1302). Spatial −9.5 %, the renderer −2.9 %.\n\n`--gpu-draws` on B, ms a drawn frame:\n\n| | Before | E-510 |\n|---|---|---|\n| the lamps' atlas pass (4096x512) | 3.84 (R-1298, on 4096x2048) | 1.435 |\n| its clear | 0.742 | 0.089 |\n| the cache copy | 1.42 | 0.005, in few frames |\n| the cache's fill (4096x256) | — | 0.108, in the frames that redraw it |\n| the 3D light pass | 2.974 (R-1301) | 2.255 |\n| all draws | 16.6 (R-1301) | 15.72 |"
+    },
+    {
+      "id": "R-1304",
+      "date": "2026-11-17",
+      "title": "E-509 kept: the unshaded composite discards where nothing is unshaded; HD 620 halves 0.87 -> 0.34 ms, drawn +4.5 %",
+      "verdict": "kept",
+      "text": "**E-509 kept: the unshaded composite discards a pixel with no unshaded colour before it reads the light; on the Intel HD 620 its halves 0.87 -> 0.34 ms a drawn frame (R-1302).**\n\n- **Why**: the barrio's HD 620 reading (R-1301): the unshaded layer's two halves (DX-LIGHTEDGES) 0.458 + 0.415 ms of a drawn\n  frame, adding zero wherever the unshaded target is black (all but the bulbs, lit windows and traffic lights), after four\n  light reads and a blended write.\n- **Change** (`3e3fe990`, merged `a79a202b`): lightEdges.js's unshaded halves and unshadedComposite.js read the unshaded\n  colour first and discard where it is black (the plain composite reads its light at level 0 after the discard).\n- **Measured**: captures against main identical (unshadedStressScene ?still=1, WebGL and WebGPU; a first WebGPU run read\n  211 868 pixels apart and three runs since, an A/A among them, 0). GTX 1650 (glFrameRecorder, the barrio at 22 h): the\n  halves 0.293 -> 0.123 ms (the clocks differed; the light halves beside them 0.252 -> 0.215). HD 620 (R-1302, the other\n  session): the halves 0.873 -> 0.335 ms, drawn 27.7 -> 28.7 fps (+4.5 %, 3/4); its CPU workers' +4-11 % is the laptop's\n  shared power (more frames drawn), as with E-504. test:node 3020.",
+      "commits": [
+        "3e3fe990",
+        "a79a202b"
+      ]
+    },
+    {
+      "id": "R-1305",
+      "date": "2026-11-17",
+      "title": "E-510 kept: the lamps' map honours shadowRange; HD 620 27.8 -> 34.3 drawn fps (+25.5 %), lamps' atlas 3.84 -> 1.44 ms",
+      "verdict": "kept",
+      "text": "**E-510 kept: the lamps' map honours LightEmitter.shadowRange; Buenos Aires on the Intel HD 620 27.8 -> 34.3 drawn fps (+25.5 %, R-1303).**\n\n- **Why**: weighing the barrio's light pass on the GTX 1650 (22 h): self-shadow 1.44 -> 1.18 ms off (`?selfShadow=0`), the\n  lamps' map taps 1.18 -> 0.77 ms off (a temporary patch, not kept): about 35 % of the pass, five taps a lamp a pixel out\n  to the lamps' 690 px radius, though the barrio sets shadowRange 260 (\"the lamps' shadow map: cheaper than its whole\n  pool\"). In 'map' mode only the cards honoured it; the tile spanned the radius.\n- **Change** (`d02c9161`, merged `3063c42e`): a lamp's tile spans its shadowRange where that is under its radius (the\n  auto tile follows: the barrio's 512 -> 256, the atlas 4096 x 2048 -> 4096 x 512, a texel 3.7 -> 2.5 floor px); the light\n  data's fourth row carries that reach (y), so lampVisibility and its floor twin read the map within it and fade its\n  shadows over its last fifth, and the lamps' self-shadow steps only there (GLSL, WGSL). Past it a lamp lights unshadowed,\n  as the API says (\"how far its shadows reach\").\n- **Measured**: captures against main identical where no light sets a shorter shadowRange (lampShadowStressScene\n  ?lampShadows=map&still=1&volumes=3000, light3dCompareScene ?all=1&still=1&hour=22, WebGL and WebGPU, 0 of 921 600). In\n  the barrio the houses' shadows from lamps farther than 260 px are gone (a diff map: faint, a lamp gives about a tenth of\n  its light there). GTX 1650: light pass 0.984 -> 0.792 ms, lamps' atlas 0.922 -> 0.444, GPU frame 4.136 -> 3.817 (the\n  branch at a lower clock). HD 620 (R-1303): drawn 27.8 -> 34.3 fps (4/4), the lamps' atlas 3.84 -> 1.44 ms (its clear 0.74\n  -> 0.09), the light pass 2.97 -> 2.26, all draws 16.6 -> 15.7 ms; GPU_CASTERS -8.8 % is the change itself (fewer casters\n  within the reach), physics +11.4 % the laptop's shared power. A probe in the barrio on the GTX: 14 of 16 tiles copied\n  from E-508's cache, none drawn directly, no repaints. test:node 3020, test:demos 121, the bundles' suites.",
+      "commits": [
+        "d02c9161",
+        "3063c42e"
+      ]
     }
   ],
   "leads": [
