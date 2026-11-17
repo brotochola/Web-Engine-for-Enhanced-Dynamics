@@ -3340,6 +3340,7 @@
       numberOfPhysicsWorkers: data.numberOfPhysicsWorkers,
     });
     world.enableSleeping(sleepingEnabled);
+    world.setStepSpin(data.stepSpin !== false);
     const slots = world.getMaxBodySlots();
     if (maxBodies <= 0 || maxBodies > slots) {
       throw new Error(
