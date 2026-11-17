@@ -109,7 +109,55 @@
     active: Uint8Array,
     entityType: Uint8Array,
     isItOnScreen: Uint8Array,
+    // DX-PARENT: an EntityIdArray, Uint32Array at an id width of 32 (transformSchema).
+    parent: Uint16Array,
+    localX: Float32Array,
+    localY: Float32Array,
+    localRotation: Float32Array,
   };
+
+  // transform-links-start (tests/node/transformParent.test.js binds this block against Transform's own layout)
+  // DX-PARENT: Transform's columns, its parent column at the scene's entity id width, and after them its link region
+  // (src/components/transform.js linkRegionLayout, by hand: a classic script cannot import it).
+  var LINK_WORDS = 8;
+  var LINK_ORPHAN_CAP = 1024;
+
+  /** TRANSFORM_SCHEMA with its parent column for an entity id width of 16 or 32. */
+  function transformSchema(entityIdWidth) {
+    if (entityIdWidth !== 32) return TRANSFORM_SCHEMA;
+    var wide = Object.assign({}, TRANSFORM_SCHEMA);
+    wide.parent = Uint32Array;
+    return wide;
+  }
+
+  /** The bytes a schema of plain column types takes for `count` entities (Component.getBufferSize). */
+  function plainSchemaBytes(count, schema) {
+    var offset = 0;
+    var names = Object.keys(schema);
+    for (var i = 0; i < names.length; i++) {
+      var bytesPerElement = schema[names[i]].BYTES_PER_ELEMENT;
+      var remainder = offset % bytesPerElement;
+      if (remainder !== 0) offset += bytesPerElement - remainder;
+      offset += count * bytesPerElement;
+    }
+    return offset;
+  }
+
+  /** Transform's link region in `buffer`, for its block at `byte` laid out by `schema`. */
+  function bindTransformLinks(buffer, count, byte, schema) {
+    var n = count | 0;
+    var at = (byte | 0) + ((plainSchemaBytes(n, schema) + 7) & ~7);
+    var parentGen = at + LINK_WORDS * 4;
+    var list = parentGen + n * 4;
+    var orphans = list + n * 4;
+    return {
+      words: new Int32Array(buffer, at, LINK_WORDS),
+      parentGen: new Int32Array(buffer, parentGen, n),
+      list: new Int32Array(buffer, list, n),
+      orphans: new Int32Array(buffer, orphans, LINK_ORPHAN_CAP),
+    };
+  }
+  // transform-links-end
 
   var RIGIDBODY_SCHEMA = {
     active: Uint8Array,
@@ -504,6 +552,9 @@
     jointBreakSab: null,
     bodySyncViews: null,
     transform: null,
+    // DX-PARENT: Transform's link region (bindTransformLinks) and its parent column's id width.
+    transformLinks: null,
+    transformIdWidth: 16,
     rigidBody: null,
     collider: null,
     jointsEnabled: false,
@@ -744,6 +795,20 @@
           dirtyWords: packView(state.bodySyncViews.dirtyWords),
           generation: packView(state.bodySyncViews.generation),
           epoch: state.bodySyncViews.epoch ? packView(state.bodySyncViews.epoch) : null,
+        }
+        : null,
+      // DX-PARENT: what weedjsPost's writeChildPoses reads and writes.
+      links: state.transformLinks
+        ? {
+          words: packView(state.transformLinks.words),
+          parent: packView(T.parent),
+          parentWidth: state.transformIdWidth,
+          localX: packView(T.localX),
+          localY: packView(T.localY),
+          localRotation: packView(T.localRotation),
+          parentGen: packView(state.transformLinks.parentGen),
+          list: packView(state.transformLinks.list),
+          orphans: packView(state.transformLinks.orphans),
         }
         : null,
       views: {
@@ -1022,11 +1087,23 @@
 
     // Each block's byte in its buffer: a region of the render-queue memory (Phase 4: Box2D's block), else 0.
     var componentByte = buffers.componentDataByte || {};
+    // The scene's entity id width (resolveEntityIdWidth: the scene writes the one it chose back into its config).
+    var idWidthRaw = state.config.entityIdWidth;
+    state.transformIdWidth = idWidthRaw === 32 || idWidthRaw === '32'
+      ? 32
+      : idWidthRaw === 16 || idWidthRaw === '16' ? 16 : state.globalEntityCount > 65535 ? 32 : 16;
+    var transformSchemaNow = transformSchema(state.transformIdWidth);
     state.transform = bindSchema(
       componentData.Transform,
       state.globalEntityCount,
-      TRANSFORM_SCHEMA,
+      transformSchemaNow,
       componentByte.Transform,
+    );
+    state.transformLinks = bindTransformLinks(
+      componentData.Transform,
+      state.globalEntityCount,
+      componentByte.Transform,
+      transformSchemaNow,
     );
     state.rigidBody = bindSchema(
       componentData.RigidBody,
