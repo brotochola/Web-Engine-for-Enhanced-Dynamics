@@ -110,6 +110,7 @@ export {
   SWAY_LOOP,
   SWAY_LOOP_SKEW,
   SWAY_IMPULSE,
+  DecorationPool,
 } from './core/decorationPool.js';
 export { Decoration } from './core/decoration.js';
 export { DecorationSpatial } from './core/decorationSpatial.js';
@@ -245,6 +246,7 @@ import {
   SWAY_LOOP,
   SWAY_LOOP_SKEW,
   SWAY_IMPULSE,
+  DecorationPool,
 } from './core/decorationPool.js';
 import { Decoration } from './core/decoration.js';
 import { DecorationSpatial } from './core/decorationSpatial.js';
@@ -412,6 +414,7 @@ const WEED = Object.freeze({
 
   // Decorations
   Decoration,
+  DecorationPool,
   DecorationComponent,
   DecorationSpatial,
   SWAY_OFF,
