@@ -21402,13 +21402,15 @@
     {
       "refs": [],
       "aliases": [],
-      "records": [],
-      "result": "",
+      "records": [
+        "R-1286"
+      ],
+      "result": "Facade: isFace, setFaceNormal, getFaceNormal, faceHeight; innerZ on a face moves its depth tie; DecorationPool named and on WEED. Merged 767a872c.",
       "next": "",
       "id": "N-263",
       "kind": "bug",
       "area": "core",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-17",
       "title": "Public API gaps the DX-BARRIOS docs pass found: DecorationPool is declared in weed.d.ts but not exported (facesInUse unreachable); Decoration.get(i).innerZ changes the sort key only, not a face's depth tie; no facade for a face's normal or height",
       "statusText": "listed 2026-11-17 by the docs pass of DX-BARRIOS; not fixed"
@@ -21519,14 +21521,15 @@
       ],
       "records": [
         "R-1265",
-        "R-1281"
+        "R-1281",
+        "R-1288"
       ],
-      "result": "",
+      "result": "No map kind and no load step costs on its own: every kind costs the pixel depth and G-buffer it turns on (no maps 3.15 ms, height 5.89, normal 5.80, both 5.83, relief 5.83 of GPU); the height rescale at load 3.3 ms for the barrio's whole twin page.",
       "next": "Left: the relief map (spriteMapsStressScene ?maps=relief, tool 74b90c44, against ?maps=height on the GPU draw by draw) and DX-MAPCAMERA's rescale at load. The kinds (R-1281): no maps 3.15 ms of GPU, height 5.89, normal 5.80, both 5.83: the pixel depth and the G-buffer they turn on cost, not the kind.",
       "id": "DX-MAPSBENCH",
       "kind": "tools",
       "area": "bench",
-      "status": "open",
+      "status": "answered",
       "date": "2026-11-17",
       "title": "Maps measured: what each kind costs in the G-buffer pass and in memory (heightMap, normalMap, DX-RELIEF's reliefMap, normal maps at half size), the twin page's formats A/B/C (E-497's tournament), E-496's saving (a twin only for mapped sheets, shared rectangles: memory and load time) and DX-MAPCAMERA's height rescale at load",
       "statusText": "listed 2026-11-17 with the owner: features of DX-BARRIOS tested but not measured; E-497 is the tournament's own row; first part 2026-11-17: E-496's saving and E-497's tournament"
@@ -21589,9 +21592,11 @@
       "aliases": [
         "face depth prepass"
       ],
-      "records": [],
+      "records": [
+        "R-1287"
+      ],
       "result": "",
-      "next": "faceLightScene town=80000: the GPU frame 5.79 -> 7.92 ms since DX-BARRIOS, the pre-pass 1.58 of it. Measure the barrio too (walls stacked: the pre-pass likely pays there) before choosing a rule (overdraw estimate, faces' share, a knob); per draw before and after, the picture identical.",
+      "next": "Step 0 done (R-1287): the pre-pass costs about the main pass and spares it nothing in the barrio too (0.43 ms), and it is part of the picture: drawn without it the frame is black. Next, a design change on the batch: face rows write their own plane depth in the main pass (depthMask on for them, the vertex depth the pre-pass computes) and the pre-pass goes; or the pre-pass only for faces that cover a share of the screen. Captures against main identical where nothing stands behind a face.",
       "id": "E-500",
       "kind": "gpu",
       "area": "render",
@@ -21710,7 +21715,7 @@
         "R-1285"
       ],
       "result": "GTX 1650, the barrio held: the floor draw (1.91 ms) becomes a 0.17 ms copy; captures byte-identical cached and not (WebGL, WebGPU); the GPU then lowers its clock (total ms a frame 5.94 -> 5.92) and even at 4K draws 60 either way: not GPU-bound here. Merged 9d483258.",
-      "next": "Read the gain where the GPU is the limit: the ASUS's HD 620 (the barrio, ?floorCache=0 against 1, drawn frames). Then a world-space tile cache for a camera that pans (re-paint only the strip that comes into view), and the default on for worldRect layers that do not read the frame's time.",
+      "next": "HD 620 read (R-1285): the barrio draws 16.6 -> 21.2 fps with the cache (+27.7 %, 4/4). Next: an adaptive default (after a few redraws in a row the layer draws straight on the stage, back to the cache once the camera holds), then on for every worldRect layer that does not read the frame's time; a world-space tile cache for a camera that pans.",
       "id": "E-504",
       "kind": "gpu",
       "area": "render",
@@ -34458,6 +34463,31 @@
       "title": "E-504 on the Intel HD 620 (Parque Chas at 22 h, still camera): the floor cache draws 21.2 fps against 16.6 without it (+27.7 %, 4/4)",
       "verdict": "note",
       "text": "**E-504's floor cache on the Intel HD 620, where the GPU is the limit.** ASUS laptop, Parque Chas (buenosAiresScene) at `hour=22`, camera still (no input). Main 6d7bf4a0, one build: the cache on (A) against `?floorCache=0` (B). 4 pairs, `--full-rev`, 2026-11-17 07:40 (asus-e504-floorcache).\n\n| | Cache on (A) | Cache off (B) | Change |\n|---|---|---|---|\n| drawn | 21.2 fps | 16.6 fps | the cache +27.7 % (B −21.2 %, 4/4; pairs 20.7–21.5 against 16.5–16.9) |\n| presented | 59.3 fps | 59.4 fps | |\n| renderer | 6.00 ms | 6.21 ms | +0.8 % (B) |\n\nThe CPU workers read cheaper with the cache off: spatial 18.2 → 10.7 ms, physics 15.2 → 9.9, pre-render 12.6 → 8.4, logic 6.9 → 5.9 (each 0/4 worse). With more frames drawn, Chrome's GPU process and the integrated GPU take more of the 4 logical CPUs and the shared 15 W, so the same workers read dearer. This is a laptop effect, not the cache's code.\n\nOn the GTX 1650 the barrio draws 60 fps either way (R-1284), so the cache pays where the GPU is the limit."
+    },
+    {
+      "id": "R-1286",
+      "date": "2026-11-17",
+      "title": "N-263 fixed: the Decoration facade's face API (setFaceNormal, getFaceNormal, faceHeight, isFace), a face's innerZ moving its tie, DecorationPool exported",
+      "verdict": "kept-hygiene",
+      "text": "**N-263 fixed: a face through the Decoration facade.**\n\n- `Decoration.get(i).innerZ` on a face also moves its depth's tie on a shared plane (the top bits of its faceZ, clamped to\n  0..7), where it moved only the sort key; a plain decoration's row is left alone.\n- New on the facade: `isFace`, `setFaceNormal(x, y, z)` ((0, 0, 0) makes it a sprite again; the first face turns faces on,\n  through `DecorationPool._markFacesInUse`, which spawn uses too), `getFaceNormal(out)`, `faceHeight`.\n- `DecorationPool` is public: named export and on WEED (workers had it already; `workerWeed.test.js` now expects no\n  worker-only name). Types and the guide's faces section.\n- Tests: `decorationFaceFacade.test.js` (3). test:node 3009, test:demos 121, check:types; merged `767a872c`, dist `31449518`.",
+      "commits": [
+        "2b8fe773",
+        "767a872c"
+      ]
+    },
+    {
+      "id": "R-1287",
+      "date": "2026-11-17",
+      "title": "E-500 step 0: the barrio's face pre-pass costs about the main pass (0.43 ms) and spares it nothing, but it cannot be left out: the frame goes black",
+      "verdict": "note",
+      "text": "**E-500 step 0: in the barrio too the faces' vertex-depth pre-pass costs about what the main pass does and spares it nothing; it cannot simply be left out.**\n\n- **The barrio** (22 h, main `6d7bf4a0` with E-504's floor cache, glFrameRecorder `--gpu-draws`, GTX 1650): the pre-pass draw\n  0.434 ms and the entities' main draw 0.419; with the pre-pass not drawn (a temporary switch on the batch, not kept) the\n  main draw reads 0.436. So the early depth it buys is about nothing here, as in faceLightScene town=80000 (DX-FACESBENCH:\n  1.58 ms of a 7.92 ms GPU frame). The totals (5.95 against 5.88) say little: this GPU lowers its clock for a light frame.\n- **But it is not optional as built**: faceLightScene with the switch, captures against the same scene with it on (an A/A\n  first: 0 of 921 600 pixels differ, so the scene holds still): 917 806 pixels differ, max 214, the frame black but for the\n  faces' edges, WebGL and WebGPU. The depth the pre-pass writes is what the rest of the frame reads; the switch was dropped\n  rather than shipped as a bench knob that blacks the picture.\n- **Next**: the faces' rows write their own plane depth in the main pass (depthMask on for face rows, vertex depth as the\n  pre-pass computes it), the pre-pass then removed; or the pre-pass only for face rows that cover more than a share of the\n  screen. Either is a design change on the batch: captures against main must stay identical where nothing stands behind\n  a face."
+    },
+    {
+      "id": "R-1288",
+      "date": "2026-11-17",
+      "title": "DX-MAPSBENCH answered: a relief map costs what a height map does; DX-MAPCAMERA's rescale is 3.3 ms once at load",
+      "verdict": "answered",
+      "text": "**DX-MAPSBENCH, the relief map: it costs what a height map costs.**\n\nspriteMapsStressScene `?n=3000` at 22 h, 12 lamps, resolution 0.5, WebGL, glFrameRecorder `--gpu-draws` (GTX 1650, main\n`6d7bf4a0`, tool `74b90c44`): `?maps=relief` (the heights picture as a relief map, strength 1: normals from its Sobel,\nheights from the sheet's surface) 5.83 ms of GPU a frame against `?maps=height` 5.78; pass by pass the same (the entity pass\n2.374 against 2.360 ms, the edge pass 1.729 against 1.694, the G-buffer 0.754 against 0.757). With R-1281 (no maps 3.15,\nheight 5.89, normal 5.80, both 5.83): every kind costs the pixel depth and G-buffer it turns on and nothing of its own.\nDX-MAPCAMERA's rescale at load (scaleHeights in spriteMaps.js: one multiply a height texel, once) over the barrio's whole twin page, 970 x 4096 = 3 973 120 texels, takes 3.3 ms in Node 22 (20 passes after 5 to warm): an upper bound, since only the mapped frames are scaled, against a load of about 30 s. DX-MAPSBENCH is answered: no map kind and no load step costs on its own; the pixel depth they turn on is the cost (E-500, the edge pass)."
     }
   ],
   "leads": [
