@@ -4539,7 +4539,7 @@ class PreRenderWorker extends AbstractWorker {
         opts.resolution = 1;
         opts.depthDenom = this.renderQueueMaxItems;
         opts.worldHeight = this.config.worldHeight || 10000;
-        opts.pixelSnap = !!this._atlasNearest;
+        opts.pixelSnap = false;
         opts.snapZoom = this._frameCameraZoom;
         opts.snapCameraX = this._frameCameraX;
         opts.snapCameraY = this._frameCameraY;

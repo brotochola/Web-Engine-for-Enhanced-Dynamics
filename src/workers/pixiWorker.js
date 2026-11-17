@@ -59,6 +59,7 @@ import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource, shaderWithFlag } from '../render/faceMap.js';
+import { applyPixelSnap } from '../render/pixelSnap.js';
 import { packMapsTable } from '../render/mapsTable.js';
 import { setTwinFormat } from '../render/twinTexel.js';
 import {
@@ -2066,7 +2067,7 @@ class PixiRenderer extends AbstractWorker {
     opts.texLut = this._texLut;
     opts.texLutCount = this._texLutCount;
     opts.textures = this.flatTextures;
-    opts.pixelSnap = this.atlasScaleMode === 'nearest';
+    opts.pixelSnap = false;
     opts.snapZoom = this._renderZoom;
     opts.snapCameraX = this._renderCameraX;
     opts.snapCameraY = this._renderCameraY;
@@ -10214,6 +10215,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       atlasScaleMode === 'nearest' || atlasScaleMode === 'linear'
         ? atlasScaleMode
         : RENDERER_DEFAULTS.atlasScaleMode;
+    // N-271: a nearest atlas snaps each sprite's origin to the pixel grid in its vertex shader (pixelSnap.js), before any
+    // sprite program is made from these sources; the packs leave the poses as they are.
+    if (this.atlasScaleMode === 'nearest') applyPixelSnap(this._engineShaders, this._useWebGpu);
 
     this.decorationFadeStartZoom =
       preCfg.startFadingDecorationsAtZoom !== undefined
