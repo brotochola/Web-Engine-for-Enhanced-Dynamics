@@ -4,7 +4,7 @@
 import { syncRotCSFromAngle } from '../box2d/box2dHotFields.js';
 import { Camera } from './camera.js';
 import { isEngineAccessor, markEngineAccessor } from './engineAccessors.js';
-import { Transform as TransformImport } from '../components/transform.js';
+import { Transform as TransformImport, ACTIVE_DESPAWNING } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer, DEFAULT_ANIMATION_SPEED } from '../components/spriteRenderer.js';
@@ -2698,11 +2698,13 @@ export class GameObject {
       return;
     }
     const i = this.index;
-    const activeState = Transform.active[i];
-    // Prevent double-despawn which corrupts the free list
-    // 0 = inactive, 1 = active. During spawn, onSpawned may reject before activate.
-    if (activeState === 0) {
-      this._spawnAborted = true;
+    // Claim the slot once: of two despawns at once (logic0's of an orphaned child and its own on another worker, or
+    // two workers) one runs, and the other finds ACTIVE_DESPAWNING, as does a despawn from inside onDespawned. A plain
+    // read let both through, and the free list then had the slot twice.
+    // 0 = inactive: during spawn, onSpawned may reject before activate.
+    const activeState = Atomics.compareExchange(Transform.active, i, 1, ACTIVE_DESPAWNING);
+    if (activeState !== 1) {
+      if (activeState === 0) this._spawnAborted = true;
       return;
     }
 
