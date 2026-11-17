@@ -13,6 +13,9 @@
  * Every arm and A run from their own worktrees (revWorktree.mjs; --pool: the fixed trees pool-a, pool-b1, pool-b2 ...).
  * Writes tests/results/predator-abab/<name>/summary.json (all rounds) and <name>-<label>/summary.json per arm, in
  * runPredatorAbab's summary format, so `runPredatorAbab --decide-only --name <name>-<label>` re-judges one arm.
+ * --arm-queries "<q1>;<q2>;...": the arms are runtime switches of one build instead of revisions (E-319: Box2D's thread
+ *   count and spin): every arm runs the --vs tree with its own scene parameters on top of --query (a key the arm names
+ *   replaces the shared one, as runPredatorAbab's --query-b), and --hyp-revs is left out. Separate the arms with ";".
  * No --append, --early or --hyp probes here: they stay ABAB's. Keep arms to three or four: the more arms, the farther
  * an arm's run from A's within a round.
  * From Git Bash set MSYS_NO_PATHCONV=1 for /demos/... paths. There is no --help: read this comment.
@@ -25,7 +28,7 @@ import { writeJson } from './featureTournamentLib.mjs';
 import { repoRoot, runIntegratedWithRetry } from './measureLib.mjs';
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
 import { ensureRevWorktree } from './revWorktree.mjs';
-import { decideAbab, predatorMetrics, printDecision, resolveScene } from './runPredatorAbab.mjs';
+import { decideAbab, predatorMetrics, printDecision, resolveScene, sideQuery } from './runPredatorAbab.mjs';
 
 /**
  * The order of the arms in round `round`: `labels` rotated by the round, reversed on odd rounds.
@@ -52,11 +55,16 @@ export function armPairs(rounds, label) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const name = String(args.name || 'multi');
-  const revs = String(args['hyp-revs'] || '').split(',').map((s) => s.trim()).filter(Boolean);
-  if (!args.vs || revs.length === 0) throw new Error('runMultiArm needs --vs <base rev> and --hyp-revs <rev>[,<rev>...]');
+  const armQueries = typeof args['arm-queries'] === 'string' ? args['arm-queries'].split(';').map((q) => q.trim()) : null;
+  if (armQueries && args['hyp-revs']) throw new Error('--arm-queries or --hyp-revs, not both');
+  const revs = armQueries ? armQueries.map(() => String(args.vs))
+    : String(args['hyp-revs'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!args.vs || revs.length === 0) {
+    throw new Error('runMultiArm needs --vs <base rev> and --hyp-revs <rev>[,<rev>...] or --arm-queries "<q1>;<q2>"');
+  }
   const labels = typeof args.labels === 'string' ? args.labels.split(',').map((s) => s.trim()) : revs.map((_, i) => `B${i + 1}`);
   if (labels.length !== revs.length || new Set(labels).size !== labels.length || labels.includes('A')) {
-    throw new Error('--labels: one distinct label per --hyp-revs entry, not "A"');
+    throw new Error('--labels: one distinct label per arm (--hyp-revs or --arm-queries entry), not "A"');
   }
   const owners = typeof args.owners === 'string' ? args.owners.split(',').map((s) => s.trim())
     : revs.map(() => (args.owner ? String(args.owner) : null));
@@ -74,9 +82,12 @@ async function main() {
   const pool = Boolean(args.pool);
   const roots = { A: ensureRevWorktree(String(args.vs), { srcOnly: true, ...(pool ? { pool: 'a' } : {}) }).root };
   revs.forEach((rev, i) => {
-    roots[labels[i]] = ensureRevWorktree(rev, { tag: `b${i + 1}`, srcOnly: true, ...(pool ? { pool: `b${i + 1}` } : {}) }).root;
+    roots[labels[i]] = armQueries ? roots.A
+      : ensureRevWorktree(rev, { tag: `b${i + 1}`, srcOnly: true, ...(pool ? { pool: `b${i + 1}` } : {}) }).root;
   });
-  for (const [label, root] of Object.entries(roots)) console.log(`${label}: ${root}`);
+  const queries = { A: opts.query };
+  labels.forEach((label, i) => { queries[label] = armQueries ? sideQuery(opts.query, armQueries[i]) : opts.query; });
+  for (const [label, root] of Object.entries(roots)) console.log(`${label}: ${root}${armQueries ? ` ?${queries[label]}` : ''}`);
   const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   fs.mkdirSync(outDir, { recursive: true });
   const all = ['A', ...labels];
@@ -85,13 +96,18 @@ async function main() {
     const round = {};
     for (const label of armOrder(all, r)) {
       console.log(`\n======== ${name} round ${r + 1}/${nRounds} arm ${label} ========`);
-      const res = runIntegratedWithRetry(scene, path.join(outDir, `${label}-r${r}.json`), { ...opts, root: roots[label] });
+      const res = runIntegratedWithRetry(scene, path.join(outDir, `${label}-r${r}.json`), {
+        ...opts, root: roots[label], query: queries[label],
+      });
       if (!res.ok) throw new Error(`${label} r${r}: ${res.error}`);
       round[label] = predatorMetrics(res.report);
     }
     rounds.push(round);
   }
-  const protocol = { ...opts, rounds: nRounds, order: 'rotated, reversed on odd rounds', vs: String(args.vs), revs, labels };
+  const protocol = {
+    ...opts, rounds: nRounds, order: 'rotated, reversed on odd rounds', vs: String(args.vs), revs, labels,
+    ...(armQueries ? { armQueries: queries } : {}),
+  };
   const decisions = {};
   labels.forEach((label, i) => {
     const pairs = armPairs(rounds, label);
