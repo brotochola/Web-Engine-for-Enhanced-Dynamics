@@ -20668,6 +20668,25 @@
       "records": [
         "R-1241"
       ]
+    },
+    {
+      "id": "N-256",
+      "title": "Split src/workers/pixiWorker.js (11 140 lines, 269 methods, a 779-line constructor, 110 commits since 2026-11-01) into subsystem classes under src/render/pixi/, so Pixi work can run in parallel and agents read only what they change",
+      "status": "open",
+      "statusText": "planned 2026-11-16 at the owner's ask (PIXI_WORKER_SPLIT_PLAN.md)",
+      "date": "2026-11-16",
+      "area": "pixi",
+      "kind": "refactor",
+      "result": "Not started. The plan: whole subsystems as classes (not mixins), pure moves, the shape rules in every class, hot paths kept with their data, one phase at a time with Pixi frozen meanwhile; items PW-1 to PW-12.",
+      "next": "Phase 1 (PW-1 asset loading, PW-2 initialize in steps, PW-5 scenery and tilemap): pure moves, suites, compareCaptures, workerShape extended; then phases 2 to 4; one Pixi-owner sitting per two phases (hygiene keep). preRenderWorker.js (6 277 lines) after, by the same rules.",
+      "refs": [
+        "PIXI_WORKER_SPLIT_PLAN.md"
+      ],
+      "aliases": [
+        "pixiWorker split",
+        "split pixi worker"
+      ],
+      "records": []
     }
   ],
   "records": [
