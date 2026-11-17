@@ -3,8 +3,14 @@
 
 import { syncRotCSFromAngle } from '../box2d/box2dHotFields.js';
 import { Camera } from './camera.js';
+import { Box2d } from './box2d.js';
 import { isEngineAccessor, markEngineAccessor } from './engineAccessors.js';
-import { Transform as TransformImport } from '../components/transform.js';
+import {
+  Transform as TransformImport,
+  ACTIVE_DESPAWNING,
+  LINK_COUNT,
+  hasParent,
+} from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
 import { SpriteRenderer, DEFAULT_ANIMATION_SPEED } from '../components/spriteRenderer.js';
@@ -27,7 +33,8 @@ import { ChainPoints } from './chainPoints.js';
 import { MeshGeometry } from './meshGeometry.js';
 import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../util/configDefaults.js';
 import { collectComponents, collisionPairKey, distanceSq2D, debugWorkerLog } from '../util/utils.js';
-import { entityIdBytes, EntityIdArray } from '../util/entityIdWidth.js';
+import { entityIdBytes, EntityIdArray, entityIdNone } from '../util/entityIdWidth.js';
+import { warnOnce } from '../util/dxWarn.js';
 import {
   resetEntity,
   popEntity,
@@ -67,6 +74,8 @@ import {
   markBodyDirty,
   beginBodyDirtyDeferred,
   endBodyDirtyDeferred,
+  bodyGenerationOf,
+  setBodyRemadeHook,
 } from '../box2d/box2dBodySync.js';
 import {
   FORCE_PROCESS_ON_LOGIC_WORKER_NONE,
@@ -142,15 +151,231 @@ function enqueuePoseOf(i) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DX-PARENT: Transform.parent. What may link, the warnings (they name the class), and the links made while their
+// parent is still spawning. The mechanics (columns, words, the first pose) are Transform's; physics writes a child's
+// pose after each step and finds the orphans, which logic0 despawns (childOrphaned, logicWorker).
+// ═══════════════════════════════════════════════════════════════════════════
+
+/** Entities in their spawn's config and onSpawned on this worker, innermost last: a link to one waits for it. */
+const spawningHere = new Int32Array(32);
+let spawningDepth = 0;
+/** Links held until their parent, spawning on this worker, activates (its generation moves then): child, parent. */
+let pendingLinkChild = new Int32Array(8);
+let pendingLinkParent = new Int32Array(8);
+let pendingLinkCount = 0;
+
+/** Whether entity p is in its spawn (config keys, onSpawned) on this worker. */
+function isSpawningHere(p) {
+  for (let k = 0; k < spawningDepth; k++) if (spawningHere[k] === p) return true;
+  return false;
+}
+
+/** The class name of entity i, for a warning. */
+function entityName(i) {
+  const types = Transform.entityType;
+  const C = types && i >= 0 && i < types.length ? GameObject.classByType[types[i]] : undefined;
+  return C !== undefined && C !== null ? C.name : 'An entity';
+}
+
+/** Whether entity i has a body now (RigidBody or Collider on: dynamic, static or chain). */
+function slotHasBody(i) {
+  return !!((RigidBody.active && RigidBody.active[i]) || (Collider.active && Collider.active[i]));
+}
+
+/**
+ * Whether child i may have a body, now or later: one is on, or its class lists RigidBody or Collider (a body turned on
+ * later needs one of them, so refusing the class covers it).
+ */
+function childMayHaveBody(i) {
+  if (slotHasBody(i)) return true;
+  const instance = GameObject._at(i);
+  const has = instance !== undefined && instance !== null ? instance._hasComponents : null;
+  return !!(has && (has.RigidBody || has.Collider));
+}
+
+function rememberPendingLink(c, p) {
+  if (pendingLinkCount === pendingLinkChild.length) {
+    const child = new Int32Array(pendingLinkCount * 2);
+    const parent = new Int32Array(pendingLinkCount * 2);
+    child.set(pendingLinkChild);
+    parent.set(pendingLinkParent);
+    pendingLinkChild = child;
+    pendingLinkParent = parent;
+  }
+  pendingLinkChild[pendingLinkCount] = c;
+  pendingLinkParent[pendingLinkCount] = p;
+  pendingLinkCount++;
+}
+
+/**
+ * Parent p activated (its generation moved there): the links made to it while it spawned take that generation and go
+ * to physics. `settle` false: its spawn ended without it (aborted, or threw), and physics finds those children orphans.
+ */
+function endPendingLinks(p, settle) {
+  let changed = false;
+  let k = 0;
+  while (k < pendingLinkCount) {
+    if (pendingLinkParent[k] !== p) {
+      k++;
+      continue;
+    }
+    const c = pendingLinkChild[k];
+    // Still this parent's child: not unlinked or linked elsewhere since (that moved the version already).
+    if (Transform.parent[c] === p) {
+      if (settle) Transform.settleLink(c, bodyGenerationOf(p));
+      else {
+        // No life of its parent has this generation: an orphan, which physics queues and logic0 despawns.
+        Transform.parentGen[c] = -1;
+        changed = true;
+      }
+    }
+    const last = --pendingLinkCount;
+    pendingLinkChild[k] = pendingLinkChild[last];
+    pendingLinkParent[k] = pendingLinkParent[last];
+  }
+  if (changed) Transform.bumpLinks();
+}
+
+/**
+ * What `transform.parent = value` and the spawn key `parent` run for child i: value is an entity, its index, or null
+ * (unlink: it stays where it is). v1: the parent has a body (a body-less one moves in logic, which runs before physics
+ * on another worker); the child has none (its position would be physics' twice).
+ */
+function linkParent(i, value) {
+  if (value === null || value === undefined) {
+    Transform.clearLink(i);
+    return;
+  }
+  const p = typeof value === 'number' ? value : typeof value === 'object' ? value.index : NaN;
+  const types = Transform.entityType;
+  const name = entityName(i);
+  if (!(p >= 0 && (p | 0) === p && types && p < types.length)) {
+    warnOnce(name, 'parent-value', `${name}: transform.parent takes an entity or its index (null unlinks), not ${String(value)}: not linked.`);
+    return;
+  }
+  if (Box2d.physicsWorkerAbsent) {
+    warnOnce(name, 'parent-physics', `${name}: transform.parent needs physics, and this scene has it off (physics.enabled false): not linked.`);
+    return;
+  }
+  if (childMayHaveBody(i)) {
+    warnOnce(name, 'parent-child-body', `${name}: a body's position belongs to physics; attach it with a joint (Joint.addWeld, Joint.addRevolute), not with transform.parent: not linked.`);
+    return;
+  }
+  if (p === i) {
+    warnOnce(name, 'parent-self', `${name}: an entity cannot be its own parent: not linked.`);
+    return;
+  }
+  if (!slotHasBody(p)) {
+    const parentName = entityName(p);
+    warnOnce(name, 'parent-no-body', `${name}: its parent, a ${parentName}, has no body (RigidBody or Collider); transform.parent follows a body for now: not linked.`);
+    return;
+  }
+  const state = Transform.active[p];
+  if (state === 1) {
+    Transform.writeLink(i, p, bodyGenerationOf(p), true);
+    return;
+  }
+  if (state === 0 && isSpawningHere(p)) {
+    // Its onSpawned spawns its children (LuzAuto.spawn({ parent: this })): the link waits for its activation.
+    Transform.writeLink(i, p, 0, false);
+    rememberPendingLink(i, p);
+    return;
+  }
+  const parentName = entityName(p);
+  warnOnce(name, 'parent-dead', `${name}: its parent, a ${parentName} (entity ${p}), is not alive: not linked.`);
+}
+
+/** The spawn keys parent, localX, localY and localRotation, after the others (before onSpawned). */
+function applySpawnLink(i, spawnConfig) {
+  if (spawnConfig.localX !== undefined) Transform.localX[i] = +spawnConfig.localX || 0;
+  if (spawnConfig.localY !== undefined) Transform.localY[i] = +spawnConfig.localY || 0;
+  if (spawnConfig.localRotation !== undefined) Transform.localRotation[i] = +spawnConfig.localRotation || 0;
+  const parent = spawnConfig.parent;
+  if (parent !== undefined && parent !== null) linkParent(i, parent);
+}
+
+/** A pose write to child i from logic: its pose is physics' (from its parent); said once per class, not written. */
+function ignoreChildPoseWrite(i) {
+  const name = entityName(i);
+  warnOnce(
+    name,
+    'parent-pose',
+    `${name}: its position and rotation come from its parent (transform.parent); set transform.localX, localY or localRotation instead. The write was ignored.`,
+  );
+}
+
+/**
+ * remakeBody gave live entity p a new generation (its sensor flag or hit events changed): it is still its children's
+ * parent. Rare, so a scan of the parent column, and only while some link exists.
+ */
+function relinkChildrenOf(p) {
+  if (Atomics.load(Transform.links, LINK_COUNT) === 0) return;
+  const parent = Transform.parent;
+  const gen = bodyGenerationOf(p);
+  let found = false;
+  for (let c = 0; c < parent.length; c++) {
+    if (parent[c] !== p) continue;
+    Transform.parentGen[c] = gen;
+    found = true;
+  }
+  if (found) Transform.bumpLinks();
+}
+
+/**
+ * DX-PARENT (logic0): whether child c, which physics queued as an orphan, still is one: alive, linked, and its parent
+ * not alive or not the life it was linked to (its body generation moved). False after a relink, a despawn, or a
+ * parent whose generation remakeBody moved.
+ * @param {number} c
+ */
+export function childOrphaned(c) {
+  if (Transform.active[c] !== 1) return false;
+  const p = Transform.parent[c];
+  if (!(p < entityIdNone)) return false;
+  const gen = Transform.parentGen[c];
+  // Generation 0: the link waits for its parent, still spawning (on another logic worker).
+  if (gen === 0) return false;
+  return Transform.active[p] !== 1 || bodyGenerationOf(p) !== gen;
+}
+
+/**
+ * DX-PARENT: a restored entity's link. The save wrote its parent column raw, then its id was remapped to this load's;
+ * linked here as a game links (the parent's generation is this life's). `hadParent`: the save had one, and it was not
+ * restored (not serializable, or no room): the child stays where it is, with a warning.
+ * @param {number} i
+ * @param {boolean} hadParent
+ */
+export function relinkRestoredChild(i, hadParent) {
+  const p = Transform.parent[i];
+  // Raw, as the save wrote it: that write was never counted as a link.
+  Transform.parent[i] = entityIdNone;
+  if (p < entityIdNone) {
+    linkParent(i, p);
+    return;
+  }
+  if (hadParent) {
+    const name = entityName(i);
+    warnOnce(name, 'parent-not-restored', `${name}: its parent was not in the saved game (or found no room), so it stays where it is.`);
+  }
+}
+
 /**
  * set x's and set y's work once their column changed: the static scenery counter, a body's pose. (The bundle build
  * keeps one-caller functions functions since E-469, terser's reduce_funcs off; scripts/checkBundleSetters.mjs checks
- * the shipped setters make no closure.)
+ * the shipped setters make no closure.) DX-PARENT: a child's pose is physics' (body-less entities only, a child has no
+ * body): put back, said once.
  */
 function poseMoved(e) {
   const i = e.index;
   staticSceneryChangedAt(i);
   if (isCommandRingBound() && e._hasBox2dBody()) enqueuePoseOf(i);
+  else if (Transform.parent[i] < entityIdNone) childPoseWritten(i);
+}
+
+/** A set x or set y wrote child i's column: its pose put back from its parent, and the warning. */
+function childPoseWritten(i) {
+  Transform.composeChildPose(i);
+  ignoreChildPoseWrite(i);
 }
 
 /** setPosition's work, x and y in SETTER_ARGS. Returns the entity. */
@@ -159,6 +384,10 @@ function setPositionFromArgs(e) {
   const y = SETTER_ARGS[1];
   const i = e.index;
   if (Transform.x[i] === x && Transform.y[i] === y) return e;
+  if (Transform.parent[i] < entityIdNone) {
+    ignoreChildPoseWrite(i);
+    return e;
+  }
   Transform.x[i] = x;
   Transform.y[i] = y;
   if (isCommandRingBound() && e._hasBox2dBody()) enqueuePoseOf(i);
@@ -1228,6 +1457,11 @@ export class GameObject {
   set rotation(value) {
     const i = this.index;
     if (Transform.rotation && Transform.rotation[i] === Math.fround(value)) return;
+    // DX-PARENT: a child turns with its parent (localRotation).
+    if (Transform.parent[i] < entityIdNone) {
+      ignoreChildPoseWrite(i);
+      return;
+    }
     if (Transform.rotation) Transform.rotation[i] = value;
     syncRotCSFromAngle(i, value);
     if (isCommandRingBound() && this._hasBox2dBody()) {
@@ -1248,6 +1482,11 @@ export class GameObject {
    */
   setRotationCS(c, s) {
     const i = this.index;
+    // DX-PARENT: a child turns with its parent (localRotation).
+    if (Transform.parent[i] < entityIdNone) {
+      ignoreChildPoseWrite(i);
+      return;
+    }
     if (Transform.rotC) {
       Transform.rotC[i] = c;
       Transform.rotS[i] = s;
@@ -2635,6 +2874,9 @@ export class GameObject {
    * @param {number} i
    */
   static _releaseSlotResources(i) {
+    // DX-PARENT: a child lets its parent go (one read for any other entity). A parent's own children are physics' to
+    // find orphaned, by its generation, which the despawn moves.
+    if (hasParent(i)) Transform.clearLink(i);
     if (Collider.layerMask) {
       const old = Collider.layerMask[i] | 0;
       if (old) {
@@ -2698,11 +2940,13 @@ export class GameObject {
       return;
     }
     const i = this.index;
-    const activeState = Transform.active[i];
-    // Prevent double-despawn which corrupts the free list
-    // 0 = inactive, 1 = active. During spawn, onSpawned may reject before activate.
-    if (activeState === 0) {
-      this._spawnAborted = true;
+    // Claim the slot once: of two despawns at once (logic0's of an orphaned child and its own on another worker, or
+    // two workers) one runs, and the other finds ACTIVE_DESPAWNING, as does a despawn from inside onDespawned. A plain
+    // read let both through, and the free list then had the slot twice.
+    // 0 = inactive: during spawn, onSpawned may reject before activate.
+    const activeState = Atomics.compareExchange(Transform.active, i, 1, ACTIVE_DESPAWNING);
+    if (activeState !== 1) {
+      if (activeState === 0) this._spawnAborted = true;
       return;
     }
 
@@ -3261,6 +3505,11 @@ export class GameObject {
     Transform.rotation[i] = 0;
     if (Transform.rotC) Transform.rotC[i] = 1;
     if (Transform.rotS) Transform.rotS[i] = 0;
+    // DX-PARENT: no parent and no offset from the slot's last entity (its despawn unlinked it).
+    if (hasParent(i)) Transform.clearLink(i);
+    Transform.localX[i] = 0;
+    Transform.localY[i] = 0;
+    Transform.localRotation[i] = 0;
 
     if (has.Collider) {
       Collider.active[i] = 1;
@@ -3413,6 +3662,11 @@ export class GameObject {
     // any this entity still holds, so a child spawned from a parent's
     // onSpawned gets a body with the real shape.
     beginBodyDirtyDeferred();
+    // DX-PARENT: in its spawn on this worker; a link made to it now (its onSpawned spawning its children) waits for its
+    // activation, where its generation moves.
+    const spawnSlot = spawningDepth < spawningHere.length;
+    if (spawnSlot) spawningHere[spawningDepth++] = i;
+    let spawnSetUp = false;
     try {
       // Size before other spawnConfig keys (and before onSpawned damping/static).
       // Skip active — Transform.active stays 0 until the bump below.
@@ -3422,6 +3676,7 @@ export class GameObject {
         if (spawnConfig.height != null) instance.height = spawnConfig.height;
       }
       const skipKeys = readOnlySpawnKeys !== null ? readOnlySpawnKeys.get(EntityClass) ?? null : null;
+      let linkKeys = false;
       for (const key in spawnConfig) {
         // E-169: the position, in nearly every config, by name and in its place in the config's order. A key read and
         // written through `instance[key]` goes megamorphic over the names and classes this one loop sees, and the
@@ -3445,6 +3700,11 @@ export class GameObject {
         ) {
           continue;
         }
+        // DX-PARENT's keys, taken after the loop (applySpawnLink).
+        if (key === 'parent' || key === 'localX' || key === 'localY' || key === 'localRotation') {
+          linkKeys = true;
+          continue;
+        }
         const current = instance[key];
         if (current !== undefined && typeof current !== 'function') {
           if (skipKeys !== null && skipKeys.has(key)) continue;
@@ -3462,6 +3722,10 @@ export class GameObject {
       } else if (spawnConfig.layer != null) {
         instance.setLayer(spawnConfig.layer);
       }
+
+      // DX-PARENT: linked after the other keys (an x or y key is not a write to a child) and before onSpawned, which
+      // finds the entity where its parent puts it.
+      if (linkKeys) applySpawnLink(i, spawnConfig);
 
       // A hot reload puts the entity back as it was: its saved components already
       // hold what onSpawned did, and onSpawned again would spawn children twice.
@@ -3503,8 +3767,12 @@ export class GameObject {
         // DX-CASTER: the wall follows the kinds the save brought back (its columns are internal, so not in the save).
         if (has.ShadowCaster) restoreCasterWall(i);
       }
+      spawnSetUp = true;
     } finally {
       endBodyDirtyDeferred();
+      if (spawnSlot) spawningDepth--;
+      // A throw out of the spawn (outside a worker): the links waiting for it end, their children orphans.
+      if (!spawnSetUp && pendingLinkCount !== 0) endPendingLinks(i, false);
     }
 
     // Initialize tick decimation countdown (if staggeredUpdates enabled)
@@ -3521,6 +3789,8 @@ export class GameObject {
 
     if (instance._spawnAborted) {
       instance._spawnAborted = false;
+      // DX-PARENT: children it spawned are orphans (physics finds them and logic0 despawns them).
+      if (pendingLinkCount !== 0) endPendingLinks(i, false);
       GameObject._releaseSlotResources(i);
       Transform.active[i] = 0;
       if (has.RigidBody) {
@@ -3545,6 +3815,8 @@ export class GameObject {
     const hasBody = has.RigidBody || has.Collider;
     if (hasBody) advanceBodyGeneration(i);
     Transform.active[i] = 1;
+    // DX-PARENT: the children its onSpawned linked take the generation it lives with, and go to physics.
+    if (pendingLinkCount !== 0) endPendingLinks(i, true);
     // A ShadowCaster's volume given in onSpawned draws with the entity's MeshRenderer row, its own or the volume's.
     if (has.MeshRenderer || (has.ShadowCaster && holdsVolume(i))) MeshRenderer.active[i] = 1;
     if (hasBody) markBodyDirty(i, BODY_DIRTY.LIFECYCLE, true);
@@ -3803,3 +4075,9 @@ setDevLookups(
   (i) => GameObject.classByType[Transform.entityType?.[i]]?.name ?? 'An entity',
   (i) => Transform.active?.[i] === 1 && !!(RigidBody.active?.[i] || Collider.active?.[i]) && !bodyLifecyclePending(i),
 );
+
+// DX-PARENT: what transform.parent and a pose write to a child run, and the children of a parent whose body
+// remakeBody made again (its generation moved without a despawn).
+Transform._linkPolicy = linkParent;
+Transform._poseWriteIgnored = ignoreChildPoseWrite;
+setBodyRemadeHook(relinkChildrenOf);

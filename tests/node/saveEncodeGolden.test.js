@@ -14,6 +14,8 @@ import { savePopulation } from '../bench/saveEncodeMicrobench.mjs';
 // field): +17 bytes per entity here (24 × 17 = 408), size and hash re-taken. E-177 added SpriteRenderer.keyedDirty
 // (one Uint8, saved like the other flags): +23 bytes per entity (24 × 23 = 552), size and hash re-taken. DX-GBUF added
 // SpriteRenderer.gbufFlags (normals, surface, emissive; one Uint8): +22 bytes per entity (24 × 22 = 528), re-taken.
+// DX-PARENT added Transform.parent, localX, localY and localRotation (saved like any field): +83 bytes per entity
+// (24 × 83 = 1992), size and hash re-taken.
 
 function payloadOf(entities) {
   return {
@@ -30,10 +32,10 @@ function payloadOf(entities) {
 test('a fixed population saves to the same bytes as before', () => {
   const entities = collectSerializableEntities(savePopulation(24, 0x5a7e));
   const bytes = encodeBinarySaveBody(payloadOf(entities));
-  assert.equal(bytes.length, 53396);
+  assert.equal(bytes.length, 55388);
   assert.equal(
     createHash('sha256').update(bytes).digest('hex'),
-    '294c6ffaddc83e524127795089929f8ac3e7f22a13284de771a215833dd69c6a',
+    '0c3182a4c20c680783fed4dec636284b7630e30d2c0383a63f59fd7fd4130806',
   );
 });
 

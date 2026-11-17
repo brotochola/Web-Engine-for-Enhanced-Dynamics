@@ -6,7 +6,8 @@ import { cameraFloorScaleY } from '../util/cameraView.js';
 import { ParticleComponent as ParticleComponentImport } from '../components/particleComponent.js';
 import { DecorationComponent as DecorationComponentImport } from '../components/decorationComponent.js';
 import { BulletComponent as BulletComponentImport } from '../components/bulletComponent.js';
-import { Transform as TransformImport } from '../components/transform.js';
+import { Transform as TransformImport, LINK_LIST_SEQ, LINK_LIST_COUNT } from '../components/transform.js';
+import { entityIdNone } from '../util/entityIdWidth.js';
 import { RigidBody as RigidBodyImport } from '../components/rigidBody.js';
 import { Collider as ColliderImport } from '../components/collider.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
@@ -1613,6 +1614,16 @@ class PreRenderWorker extends AbstractWorker {
 
         // Physics pose publish latch (mirror renderQueueSync)
         this._rbActive = null;
+        // DX-PARENT: the children physics publishes (Transform.childList), composed each frame from their parent's
+        // drawn pose (_composeChildren): 1 where _displayPose gives that pose (sized at init), and, made with the first
+        // child, [x, y, rotC, rotS] per entity, [localRotation, its cos, its sin] per entity, and this frame's children.
+        this._childMark = new Uint8Array(0);
+        this._childPose = new Float64Array(0);
+        this._childTurn = new Float64Array(0);
+        this._childMarked = new Int32Array(0);
+        this._childMarkedCount = 0;
+        // The parent's drawn pose while a child is composed.
+        this._childParentPose = Float64Array.of(0, 0, 1, 0);
 
         // Pose smoothing (preRender.interpolation) - self-measured physics-step
         // timing, no cross-worker config needed. Computed once per tick in
@@ -1999,6 +2010,8 @@ class PreRenderWorker extends AbstractWorker {
 
         // Store counts
         this.globalEntityCount = data.globalEntityCount || 0;
+        this._childMark = new Uint8Array(this.globalEntityCount);
+        this._childMarkedCount = 0;
         this.maxParticles = data.maxParticles || 0;
         this.liquidFunMaxCount = data.liquidFunMaxCount || 0;
         if (data.buffers?.liquidFunRender && this.liquidFunMaxCount > 0) {
@@ -2634,6 +2647,7 @@ class PreRenderWorker extends AbstractWorker {
     latchPhysicsPose() {
         if (this._poseWait && this.poseSync && this.poseBuffers[0]) this._waitForPose();
         this._latchPose();
+        this._composeChildren();
         if (this._poseReadyFrame > 0) this._poseWaitLatched = this._poseReadyFrame;
         if (this.renderQueuePoseReady) this.renderQueuePoseReady[0] = this._poseReadyFrame;
         // E-197: this queue shows the newer of the input logic has acted on (bodiless entities, read live) and the one
@@ -3834,12 +3848,92 @@ class PreRenderWorker extends AbstractWorker {
             out[3] = poseRotS[idx];
             return;
         }
+        // DX-PARENT: a child where its parent is drawn (_composeChildren), not its live pose. A body is never a child.
+        if (this._childMark[idx] === 1) {
+            const cp = this._childPose;
+            const at = idx * 4;
+            out[0] = cp[at];
+            out[1] = cp[at + 1];
+            out[2] = cp[at + 2];
+            out[3] = cp[at + 3];
+            return;
+        }
         out[0] = Transform.x[idx];
         out[1] = Transform.y[idx];
         const rotC = Transform.rotC;
         const rotS = Transform.rotS;
         out[2] = rotC && rotC[idx] !== undefined ? rotC[idx] : 1;
         out[3] = rotS ? (rotS[idx] || 0) : 0;
+    }
+
+    /**
+     * DX-PARENT: each child physics publishes (Transform.childList, read under its seqlock) composed from its parent's
+     * drawn pose (_displayPose: the latched pose, interpolated under preRender.interpolation) in a pass of its own, so
+     * _displayPose gives a child that pose rather than its live Transform, which physics composed from the parent's
+     * pose after its step (the same one while the frame chain holds and nothing interpolates). With no link, a word
+     * read. A list physics rewrites meanwhile: the children are drawn at their live pose this frame.
+     */
+    _composeChildren() {
+        const words = Transform.links;
+        const seq = Atomics.load(words, LINK_LIST_SEQ);
+        const count = (seq & 1) === 0 ? Atomics.load(words, LINK_LIST_COUNT) : 0;
+        const marked = this._childMarkedCount;
+        if (count === 0 && marked === 0) return;
+        const mark = this._childMark;
+        const markedList = this._childMarked;
+        for (let k = 0; k < marked; k++) mark[markedList[k]] = 0;
+        this._childMarkedCount = 0;
+        if (count === 0) return;
+        const n = mark.length;
+        if (this._childPose.length !== n * 4) {
+            this._childPose = new Float64Array(n * 4);
+            this._childTurn = new Float64Array(n * 3).fill(NaN);
+            this._childMarked = new Int32Array(n);
+        }
+        const list = Transform.childList;
+        const parent = Transform.parent;
+        const active = Transform.active;
+        const localX = Transform.localX;
+        const localY = Transform.localY;
+        const localRot = Transform.localRotation;
+        const cp = this._childPose;
+        const turn = this._childTurn;
+        const out = this._childMarked;
+        const pose = this._childParentPose;
+        const none = entityIdNone;
+        const end = count < list.length ? count : list.length;
+        let m = 0;
+        for (let k = 0; k < end; k++) {
+            const c = list[k];
+            if (!(c >= 0 && c < n)) continue;
+            const p = parent[c];
+            if (!(p < none) || active[c] !== 1 || active[p] !== 1) continue;
+            this._displayPose(p, pose);
+            const t = c * 3;
+            const lr = localRot[c];
+            if (lr !== turn[t]) {
+                turn[t] = lr;
+                turn[t + 1] = Math.cos(lr);
+                turn[t + 2] = Math.sin(lr);
+            }
+            const pc = pose[2];
+            const ps = pose[3];
+            const lx = localX[c];
+            const ly = localY[c];
+            const lc = turn[t + 1];
+            const ls = turn[t + 2];
+            const at = c * 4;
+            cp[at] = pose[0] + pc * lx - ps * ly;
+            cp[at + 1] = pose[1] + ps * lx + pc * ly;
+            cp[at + 2] = pc * lc - ps * ls;
+            cp[at + 3] = ps * lc + pc * ls;
+            mark[c] = 1;
+            out[m++] = c;
+        }
+        this._childMarkedCount = m;
+        if (Atomics.load(words, LINK_LIST_SEQ) === seq) return;
+        for (let k = 0; k < m; k++) mark[out[k]] = 0;
+        this._childMarkedCount = 0;
     }
 
     /**

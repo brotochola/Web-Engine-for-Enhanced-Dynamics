@@ -7,7 +7,7 @@ self.postMessage({
 // Runs GameObject.tick / AI; steering writes RigidBody accel fields for Box2D
 
 // Import engine dependencies
-import { GameObject, bindLogicWorkerRef } from '../core/gameObject.js';
+import { GameObject, bindLogicWorkerRef, childOrphaned, relinkRestoredChild } from '../core/gameObject.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
@@ -17,7 +17,12 @@ import { drainMessages } from '../util/messageRing.js';
 import { definesBelow } from '../util/listenerTags.js';
 import { Joint } from '../core/joint.js';
 import { Mouse } from '../core/mouse.js';
-import { Transform } from '../components/transform.js';
+import {
+  Transform,
+  LINK_ORPHAN_CAP,
+  LINK_ORPHAN_HEAD,
+  LINK_ORPHAN_TAIL,
+} from '../components/transform.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { DirectionalSprite, NO_DIRECTION } from '../components/directionalSprite.js';
@@ -1231,6 +1236,8 @@ class LogicWorker extends AbstractWorker {
     // All spawn/despawn list updates are queued and processed here BEFORE any ticks.
     // This ensures single-threaded list operations, avoiding race conditions.
     if (this.workerIndex === 0) {
+      // DX-PARENT: the children physics found orphaned last step, despawned before their list updates are taken.
+      this._drainOrphanedChildren();
       this._drainSpawnCommandRing();
       this._drainListUpdateRings();
       this.processListUpdates();
@@ -2770,6 +2777,16 @@ class LogicWorker extends AbstractWorker {
       if (!EntityClass) continue;
       remapEntityIdFields(EntityClass, neu, rec.components, mapGet);
     }
+    // DX-PARENT: the children, linked again to their remapped parents (whose body generations are this load's).
+    for (let r = 0; r < entities.length; r++) {
+      const rec = entities[r];
+      const saved = rec.components?.Transform?.fields?.parent;
+      // Unlinked in the save: 0xffff or 0xffffffff, whatever id width it was made with.
+      if (typeof saved !== 'number' || saved === 0xffff || saved === 0xffffffff || rec.entityIndex == null) continue;
+      const neu = mapGet(rec.entityIndex);
+      if (neu == null) continue;
+      relinkRestoredChild(neu, true);
+    }
 
     if (joints.length && typeof Joint.restoreFromSave === 'function') {
       Joint.restoreFromSave(joints, oldToNew);
@@ -3069,6 +3086,34 @@ class LogicWorker extends AbstractWorker {
       // null here is onSpawned despawning its own entity: a choice, not an error.
       debugWorkerLog(`LOGIC WORKER ${this.workerIndex}: ${className}[${entityIndex}] spawn did not complete`);
     }
+  }
+
+  /**
+   * DX-PARENT (logic0): despawn the children physics queued as orphans (their parent despawned, or its slot holds
+   * another entity now), each checked again here: one relinked, despawned or remade since is left alone, and physics
+   * is told to read the links again. With nothing queued, two plain reads. Returns the children despawned.
+   */
+  _drainOrphanedChildren() {
+    const words = Transform.links;
+    let tail = words[LINK_ORPHAN_TAIL];
+    if (words[LINK_ORPHAN_HEAD] === tail) return 0;
+    const head = Atomics.load(words, LINK_ORPHAN_HEAD);
+    const ring = Transform.orphans;
+    let despawned = 0;
+    let kept = false;
+    while (tail !== head) {
+      const c = ring[tail & (LINK_ORPHAN_CAP - 1)];
+      tail = (tail + 1) | 0;
+      if (childOrphaned(c)) {
+        if (GameObject.despawn(c)) despawned++;
+      } else {
+        kept = true;
+      }
+    }
+    Atomics.store(words, LINK_ORPHAN_TAIL, tail);
+    // Physics holds a child it queued as unwritten until it reads the links again.
+    if (kept) Transform.bumpLinks();
+    return despawned;
   }
 
   /**
