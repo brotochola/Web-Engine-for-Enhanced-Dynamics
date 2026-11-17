@@ -61,6 +61,8 @@ const LAMP_CACHE = WEED.params?.get('lampCache') !== '0';
 const SELF_SHADOW = WEED.params?.get('selfShadow') !== '0';
 /** `?pan=40`: the camera drifts right that many world px a second by itself, to measure a view that never holds. */
 const PAN_DRIFT = param('pan', 0);
+/** `?panY=-60`: the same drift up or down the screen (negative: north), to film what a vertical pan does to walls. */
+const PAN_DRIFT_Y = param('panY', 0);
 const CORES = globalThis.navigator?.hardwareConcurrency || 4;
 /**
  * `?physicsWorkers=N`: Box2D's solver threads (physics.numberOfPhysicsWorkers; the engine's default, 4, without it), to
@@ -526,6 +528,7 @@ export class BuenosAiresScene extends Scene {
     if (Keyboard.w || Keyboard.arrowup) this.focusY -= pan;
     if (Keyboard.s || Keyboard.arrowdown) this.focusY += pan;
     if (PAN_DRIFT) this.focusX += (PAN_DRIFT / 60) * dtRatio;
+    if (PAN_DRIFT_Y) this.focusY += (PAN_DRIFT_Y / 60) * dtRatio;
     this.keepInView();
     Camera.targetZoom = this.zoomTarget;
     Camera.follow(this.focusX, this.focusY, 0.35, dtRatio);
