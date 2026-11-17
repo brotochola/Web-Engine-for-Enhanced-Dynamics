@@ -171,8 +171,8 @@ export class Prop extends GameObject {
   }
 
   /**
-   * A lamp's light, if the object has bulbs: from the bulb's height (OBJECTS[f].bulbHeightM, else measured on the
-   * picture from its bulbs), which is also where its halo shows and what makes its shadows long or short.
+   * A lamp's light, if the object has bulbs: from the bulbs' height as the picture draws them, so the light sits where
+   * the bulb is; that is also where its halo shows, and what makes its shadows long or short.
    */
   setLamp(object, x, y) {
     const light = this.lightEmitter;
@@ -195,13 +195,15 @@ export class Prop extends GameObject {
   }
 
   /**
-   * The bulb's height above the floor in px of height (a metre is SF px): the index's bulbHeightM, else read off the
-   * picture (a bulb is [x, y] fractions of the frame; its height on the screen over CZ, the rise of a px of height).
+   * The bulbs' height above the floor in world px of height (a metre is SF px), read off the picture with the scene's
+   * camera: a bulb is [x, y] fractions of the frame; how far it is drawn above the entity's foot (its collider's centre
+   * for a solid object), over CZ, the screen px a px of height rises. Several bulbs: their mean.
    */
   bulbHeightPx(object) {
-    if (object.bulbHeightM > 0) return object.bulbHeightM * META.SF;
     const frameHeight = Array.isArray(object.size) ? object.size[1] : 0;
-    return heightAboveAnchor(object, object.bulbs[0][1] * frameHeight) / META.CZ;
+    let sum = 0;
+    for (const bulb of object.bulbs) sum += heightAboveAnchor(object, bulb[1] * frameHeight);
+    return sum / object.bulbs.length / META.CZ;
   }
 
   /** The lamp's picture: lit (its glass glowing, unshaded) or not. */
