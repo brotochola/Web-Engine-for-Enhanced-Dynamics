@@ -11615,7 +11615,8 @@
         "R-0854",
         "R-1244",
         "R-1249",
-        "R-1250"
+        "R-1250",
+        "R-1252"
       ]
     },
     {
@@ -11642,6 +11643,32 @@
       ],
       "records": [
         "R-1249"
+      ]
+    },
+    {
+      "id": "DX-ELASTIC",
+      "title": "Elastic workers: park and wake workers at run time from the stages' times and the free CPU (nice to have)",
+      "status": "open",
+      "statusText": "Nice to have (owner, 2026-11-17); a pseudo-plan in ELASTIC_WORKERS_PLAN.md",
+      "date": "2026-11-17",
+      "result": "",
+      "next": "If scheduled: a per-frame saturation signal, then park and wake Box2D's pool threads from it behind a switch (A/B with A/A on the ASUS and the main PC), then logic, then spatial.",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-ELASTIC",
+        "ELASTIC_WORKERS_PLAN.md"
+      ],
+      "aliases": [
+        "elastic pool",
+        "dynamic load balancing",
+        "work stealing",
+        "malleable parallelism",
+        "park workers",
+        "auto-scaling"
+      ],
+      "records": [
+        "R-1252"
       ]
     },
     {
@@ -13073,7 +13100,9 @@
         "per-entity cost",
         "knee"
       ],
-      "records": []
+      "records": [
+        "R-1252"
+      ]
     },
     {
       "id": "E-225",
@@ -16828,7 +16857,8 @@
         "R-1231",
         "R-1238",
         "R-1244",
-        "R-1250"
+        "R-1250",
+        "R-1252"
       ]
     },
     {
@@ -18788,7 +18818,8 @@
         "R-1236",
         "R-1238",
         "R-1244",
-        "R-1250"
+        "R-1250",
+        "R-1252"
       ],
       "rank": 5
     },
@@ -33602,6 +33633,15 @@
       "title": "Scene start up time planned: the load path read from loadScene to the first drawn frame, on every thread; nothing measured",
       "verdict": "note",
       "text": "**Scene start up time planned (DX-STARTUP, SST-0 to SST-10, `SCENE_STARTUP_TIME_PLAN.md`): a reading of the load path from `loadScene` to the first drawn frame, on the main thread and in every worker; nothing run or measured.** The owner asked for it on 2026-11-17 (\"sé que se puede hacer más rápido, y que la sensación para el jugador y para el dev sea mejor\"), to be done another day.\n\n- **The owner's rule:** the game starts with everything ready (every asset decoded, audio included; textures on the GPU; programs built). Starting with sounds still loading was proposed and rejected. Time comes from parallel, earlier and once, not later.\n- **What the reading found:** `Scene.init` awaits its steps in a row and the workers stay idle until the assets are done (their 'init' waits for the atlas). engine.wasm (337 KB) is fetched and compiled by every worker that uses it, after 'init', with `WebAssembly.compile(bytes)`. Bundle workers fetch the game's scripts one at a time and then fetch each again, in every worker. The atlas is packed, drawn and copied on the main thread. Pixi uploads the atlas at the first draw and builds nothing ahead on WebGPU. A scene change terminates and recreates every worker.\n- **Order:** SST-0 (the load waterfall and a baseline: Buenos Aires, Predator light3d by night, bunnyMark; source and bundle; cold and warm; main machine and the ASUS), then SST-2 and SST-1, SST-4, SST-3, SST-7 with E-494, SST-5 and SST-6, SST-8, SST-10, SST-9 apart."
+    },
+    {
+      "id": "R-1252",
+      "date": "2026-11-17",
+      "time": "02:26",
+      "timeFrom": "recorded",
+      "title": "ASUS, Predator at crowd 0.25: 4, 3 or 2 Box2D threads about level (8 pairs + A/A); with R-1250, the thread count Box2D should get follows how far the scene overruns the machine; ballsScene's scaling curve",
+      "verdict": "note",
+      "text": "**Predator at crowd 0.25 on the ASUS (a load it carries: physics about 4 ms, pre-render about 6 ms, 60 frames a second): 4, 3 or 2 Box2D threads read about level. With R-1250 (ballsScene: 3 threads cost physics 12.7 %; Predator at crowd 0.5: 2 threads cut every worker 25 to 68 %), how many threads Box2D should get depends on how far the scene's threads overrun the machine's.**\n\nASUS i7-7500U (2 cores / 4 threads), Chrome 157, `?src=1`, the laptop's dev server, AB BA, 20 s between runs, 10 s + 10 s, from its job queue; own times, paired medians of B against A.\n\n- A/A, 4 threads both sides, 8 pairs (01:25 to 01:38): every worker within -3.4 to +3.5 % (physics +3.5 % 4/8, pre-render +2.8 % 3/8).\n- A = 4 threads, B = 2, 8 pairs (01:38 to 01:51): physics 4.04 -> 3.63 ms (-9.6 %, B cheaper 5/8), pre-render 6.47 -> 6.31 ms (-4.5 %, 5/8), spatial -3.5 % (5/8), particle -6.2 % (5/8), the rest level. Short of 75 % of the pairs: not a keep.\n- A = 4 threads, B = 3, 8 pairs (01:51 to 02:04): every worker within -5.4 to +3.1 %, a tie.\n\nAlso from the same queue, the ballsScene scaling curve (E-224, 4 threads, 2 pairs a point, 02:18 to 02:26): physics 1.2 ms at 2 000 balls, 5.0 at 4 000, 7.6 at 6 000, 11.5 at 8 000, 17.6 at 10 000 (270 to 386 long frames), 34 at 12 000. Per ball 0.6 µs, then about 1.3 µs from 4 000 to 8 000 (the balls pile up and touch, more contacts each), then rising past the frame budget near 9 000."
     }
   ],
   "leads": [
