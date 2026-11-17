@@ -2,7 +2,7 @@
 
 Status: backlog, no rush (owner, 2026-11-17), not scheduled. Written from a review of PixiJS 3D's open beta and of
 Pixi 8.20.1 → 8.23.0 against `main` at `ef81812d` (0.14.0). Register rows: DX-PIXI823 (`REVIEW_PLAN.md#DX-PIXI823`),
-N-264, E-498, E-499; it adds to E-464, N-185, E-148, E-152, N-95 and E-460. Record: R-1260. Test items from the
+N-270, E-516, E-517; it adds to E-464, N-185, E-148, E-152, N-95 and E-460. Record: R-1315. Test items from the
 commits' lessons (§4): `REVIEW_PLAN.md` M14 to M16.
 
 ## 1. PixiJS 3D: not in the engine
@@ -45,7 +45,7 @@ Only what reaches the engine; text, SVG, accessibility, events, `SmoothGraphics`
 - The WebGPU renderer comes back after a device loss (#12173); Text regenerated after a WebGL context loss (#12170).
 - Leaks closed on destroy: cached GPU render targets (#12192), a Geometry's VAOs and buffer listeners (#12190), idle
   WebGPU bind groups swept by the GC (#12193). The engine recreates targets on resize and on every `loadScene`.
-- Render bundles stamped with the pipeline state they baked (#12158): what E-498 needs.
+- Render bundles stamped with the pipeline state they baked (#12158): what E-516 needs.
 - Behaviour changes that do not reach the engine: `Matrix.decompose` of mirrored matrices, `TexturePool` sized to
   the screen (no filters here), `frontFaceInverted` deprecated (not used).
 
@@ -65,7 +65,7 @@ Only what reaches the engine; text, SVG, accessibility, events, `SmoothGraphics`
   neutral on a Pixel 9 and Safari.
 - Colour attachments with their own formats, written per the shader's outputs (#12357): N-185's ids map can be
   `r32uint`.
-- WebGPU's `add` and `erase` blends match WebGL's alpha (#12290): N-264.
+- WebGPU's `add` and `erase` blends match WebGL's alpha (#12290): N-270.
 - The WebGPU canvas takes the preferred format (#12380): Android prefers `rgba8unorm`, and Chrome copies every frame
   when the canvas is in another one. The engine sets no format, so it gets `bgra8unorm` today.
 - Numeric bind group keys (#12278) and no sampler stamping on rebind (#12288): the rest of E-152's ground, upstream.
@@ -96,8 +96,8 @@ minified (+8 %), 129 684 → 140 146 gzip.
 1. WebGPU, the default backend: one submit less per render call (E-464: 17 submits a frame in Predator light3d).
 2. Four patches become upstream code, and the hand flush in `gpuParticleBatch.js` can go.
 3. It opens: the ids map in `r32uint` (N-185), uploads by range on WebGL (the words' upload by range in the Pixi
-   worker's queue), render bundles (E-498), partial texture uploads.
-4. Parity and robustness: WebGPU's additive alpha (N-264), Android's canvas format, device loss, the leaks.
+   worker's queue), render bundles (E-516), partial texture uploads.
+4. Parity and robustness: WebGPU's additive alpha (N-270), Android's canvas format, device loss, the leaks.
 
 ### What it costs
 
@@ -111,20 +111,20 @@ polyfill); the WebGL upload changes measured ABAB (updates land at the call now,
    the garbage again (E-152's `gpuParticlesStressScene?backend=webgpu`, `heapSampleWorkers.mjs`).
 2. Port the stub to fixed block slots and `_resourceKeys`; its test green.
 3. Drop the hand flush in `gpuParticleBatch.js` once ranged updates land at the call.
-4. Measure: the suites; captures on both backends (the glow scenes for N-264); `webgpuFrameRecorder` submits
+4. Measure: the suites; captures on both backends (the glow scenes for N-270); `webgpuFrameRecorder` submits
    (E-464); the Pixi worker's STEP_MS ABAB on WebGL and WebGPU in the owner scenes (gpuParticlesStress,
    keyedPackStress, Predator `?light3d=1`); Android WebGPU if a phone is at hand.
 5. `dist/` only through the release flow.
 
 ## 3. Ideas from PixiJS 3D's code
 
-- **E-498, render bundles with indirect draws on WebGPU.** PixiJS 3D records each forward pass and each shadow
+- **E-516, render bundles with indirect draws on WebGPU.** PixiJS 3D records each forward pass and each shadow
   cascade once as a `GPURenderBundle` and replays it, recording again only when its draw list or camera bind group
   went stale (`src/core/gpu/renderForwardBatchesGpu.ts`, `ShadowRenderPassGpu.ts`); instance counts come from
   indirect buffers. The engine's instanced passes keep their pipelines, bind groups and buffers from frame to frame;
   if the pack wrote each pass's instance count into an indirect buffer, most passes would almost never be recorded
   again. Aimed at the Pixi worker's CPU (1.4 → 3.0 ms with light3d). WebGPU only.
-- **E-499, skip a lamp's tile instead of copying a cache.** PixiJS 3D never composites a still layer under a moving
+- **E-517, skip a lamp's tile instead of copying a cache.** PixiJS 3D never composites a still layer under a moving
   one: each shadow map is redrawn by rate (`shadow.update`, per cascade, or `'manual'`) or when stale
   (`cascadeRenderSkip`, `needsRender`), and otherwise left as it is. E-460 copies a cache and draws the movers over
   it, which is what made E-418 slower (1.856 → 3.003 ms). Instead: a tile whose lamp, picked casters and their
@@ -163,7 +163,7 @@ Why Pixi made the changes, read from the 96 commits' messages:
 
 **What the upgrade takes away and what it does not.** DX-PIXI823 removes Pixi's own bugs that reach the engine:
 the four patched areas, the pending range behind `gpuParticleBatch.js`'s flush, the render-target leak behind
-`_releaseGbufTarget`, the extra submit (E-464), the additive alpha (N-264), the leaks of §3 and the key collision
+`_releaseGbufTarget`, the extra submit (E-464), the additive alpha (N-270), the leaks of §3 and the key collision
 of §4 (the engine draws into fewer than 17 colour formats, as far as is known). It does not touch what is the
 engine's: N-185, the WebGL sync stub, and how the engine tests itself. New Pixi code brings bugs of its own too:
 8.20.0 broke depth on antialiased targets (fixed in #12276), and 8.21's screen-sized pool made filters warn after
