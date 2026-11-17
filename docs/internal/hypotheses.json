@@ -16055,7 +16055,8 @@
         "R-1258",
         "R-1280",
         "R-1296",
-        "R-1297"
+        "R-1297",
+        "R-1298"
       ]
     },
     {
@@ -21794,7 +21795,8 @@
         "static shadow cache"
       ],
       "records": [
-        "R-1297"
+        "R-1297",
+        "R-1298"
       ],
       "result": "",
       "id": "E-508",
@@ -34638,6 +34640,15 @@
       "title": "The barrio's lamp-volume draw on the HD 620 is vertex-bound: 6.01 of its 6.94 ms stay under a 1 px scissor",
       "verdict": "note",
       "text": "**The lamps' volume draw on the Intel HD 620 is vertex work, not fill.** `_drawVolumesInLampMap`: every house volume once per lamp tile in use, 6 tiles; prog [uTexLut,uPoseTable,uLampTiles]. glFrameRecorder `--gpu-draws --probe-scissor uTexLut,uPoseTable,uLampTiles`, same tree and setup as R-1296 (main 038af4a5, Parque Chas at `hour=22&dayMinutes=0`, camera still), 2026-11-17 09:14 (job 0870).\n\n- Under a 1 px scissor the draw still takes 6.01 ms of a drawn frame, against 6.94 ms drawn whole (R-1296). About 87 % of it is the vertex side, about 0.9 ms its pixels.\n- For E-508: a cache that skips the redraw wins nearly all of it; smaller tiles or a scissor would win little. With a moving camera, what counts is whether the lamps in use, and with them the tiles, change: per-tile caching keeps the redraws to the tiles that changed."
+    },
+    {
+      "id": "R-1298",
+      "date": "2026-11-17",
+      "time": "10:08",
+      "timeFrom": "recorded",
+      "title": "E-508's lamp cache on the Intel HD 620: +31 % drawn frames with the camera still (27.5-29.0 against 21.2-21.4 fps), +27 % moving; the atlas pass 7.93 -> 3.84 ms",
+      "verdict": "note",
+      "text": "**E-508's lamp cache on the Intel HD 620: +31 % drawn frames with the camera still, +27 % moving.** The barrio session's branch perf/e508-lamp-cache (19868fa7), one build: the cache on (A) against `&lampCache=0` (B, today's direct volumes draw). Parque Chas at `hour=22&dayMinutes=0`, 4 pairs each, `--full-rev`, ASUS laptop, 2026-11-17 09:45 to 10:10 (job 0871).\n\n| Camera | Cache on | Cache off | Gain |\n|---|---|---|---|\n| still (asus-e508-still) | 27.5–29.0 fps | 21.2–21.4 fps | +31 %, 4/4 |\n| `&pan=40` (asus-e508-pan) | 21.0–21.4 fps | 16.4–16.9 fps | +27 %, 4/4 |\n\n- Pixi's CPU rises about 1 ms with the camera still (6.9–7.6 against 6.0–6.4 ms), as it draws more frames. Moving, it is level.\n- `--gpu-draws` with the cache on: the lamps' atlas pass is 3.84 ms of a drawn frame, against 7.93 drawn direct (R-1296). The copy from the cache ([uLampTiles,uCacheColor,uCacheDepth], 5 instances) is 1.42 ms on this GPU, against 0.47 on the GTX 1650. The cache's fill (fbo 4096x1024, [uTexLut,uPoseTable,uLampTiles]) is 0.16 ms in the frames that redraw it. The direct volumes draw shows in 0.1 of the frames, at 0.17 ms. All draws: 17.1 ms (18.6 before)."
     }
   ],
   "leads": [
