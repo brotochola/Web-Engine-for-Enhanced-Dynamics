@@ -107,6 +107,8 @@ enum {
   /* E-312 step 2: 1 when nothing reads an unmarked keyed sprite row's statics this frame (a value): the emit leaves its
      alpha, scale, tint and anchor unwritten (Pixi's statics texture holds them by key). */
   K_SKIP,
+  /* DX-GLOWRADIUS: the glow rows' halo radius (LightEmitter.glowRadius, px; 0: 0.85 of the light's radius). */
+  L_GLOW_RADIUS,
   SLOT_COUNT
 };
 
@@ -325,7 +327,7 @@ typedef struct {
   const float *bSpriteRc, *bSpriteRs, *bRc, *bRs, *bTrailW, *bAnchorX, *bAnchorY;
   uint32_t bTrailTex;
   const uint32_t *lColor;
-  const float *lBright, *lRadius, *lGlowOff, *lGlow, *tX, *tY, *lOffX, *lOffY, *tRc, *tRs;
+  const float *lBright, *lRadius, *lGlowOff, *lGlow, *tX, *tY, *lOffX, *lOffY, *tRc, *tRs, *lGlowRadius;
   uint32_t lGradientTex;
   const float *pcX, *pcY, *pcZ, *pcScaleX, *pcScaleY;
   const uint8_t *pcFlipX, *pcFlipY;
@@ -479,6 +481,7 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->lRadius = PTR(const float, L_RADIUS);
   e->lGlowOff = PTR(const float, L_GLOW_OFFSET);
   e->lGlow = PTR(const float, L_GLOW);
+  e->lGlowRadius = PTR(const float, L_GLOW_RADIUS);
   e->tX = PTR(const float, T_X);
   e->tY = PTR(const float, T_Y);
   e->lOffX = PTR(const float, L_OFFSET_X);
@@ -954,18 +957,26 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
   if (e->qShadowH) e->qShadowH[out] = 0.0f;
   if (e->qShadowOffX) e->qShadowOffX[out] = 0.0f;
   if (e->qShadowOffY) e->qShadowOffY[out] = 0.0f;
-  /* The glow is about 0.85 of the radius wide: sqrt(I) = radius / 10 times lightGlowScale's factor. */
-  const double scale = (((double)or0(e->lRadius[idx]) / 10.0) * GLOW_RADIUS_SCALE) / GRADIENT_RADIUS;
+  /* DX-GLOWRADIUS: its own radius (px) over the gradient's; without one, 0.85 of the light's radius (sqrt(I) = radius /
+     10 times lightGlowScale's factor), hidden under a scale of 0.1 as before. An own radius is hidden under 1 px. */
+  const double glowRadius = (double)or0(e->lGlowRadius[idx]);
+  const int ownRadius = glowRadius > 0.0;
+  const double scale = ownRadius ? glowRadius / GRADIENT_RADIUS
+    : (((double)or0(e->lRadius[idx]) / 10.0) * GLOW_RADIUS_SCALE) / GRADIENT_RADIUS;
   const double glowAlpha = (double)e->lGlow[idx] * (double)e->lBright[idx];
-  if (scale < 0.1 || glowAlpha < 0.001) {
+  double anchorY = 0.5;
+  if (scale < (ownRadius ? 0.01 : 0.1) || glowAlpha < 0.001) {
     hide_row(e, out);
   } else {
     const double ox = (double)e->lOffX[idx];
     const double oy = (double)e->lOffY[idx];
     const double c = (double)e->tRc[idx];
     const double s = (double)e->tRs[idx];
+    /* DX-GLOWRADIUS: at its light's foot, so its pixel depth is its lamp's (a person just behind the lamp stays behind
+       its halo); glowOffsetY lifts the picture through its anchor (the quad is 2 * GRADIENT_RADIUS * scale tall). */
     e->qX[out] = (float)((double)e->tX[idx] + ox * c - oy * s);
-    e->qY[out] = (float)((double)e->tY[idx] + ox * s + oy * c + (double)or0(e->lGlowOff[idx]));
+    e->qY[out] = (float)((double)e->tY[idx] + ox * s + oy * c);
+    anchorY = 0.5 - (double)or0(e->lGlowOff[idx]) / (2.0 * GRADIENT_RADIUS * scale);
     e->qScaleX[out] = (float)scale;
     e->qScaleY[out] = (float)scale;
     e->qAlpha[out] = (float)glowAlpha;
@@ -975,7 +986,7 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
   e->qRotS[out] = 0.0f;
   e->qTexture[out] = (uint16_t)e->lGradientTex;
   e->qAnchorX[out] = 0.5f;
-  e->qAnchorY[out] = 0.5f;
+  e->qAnchorY[out] = (float)anchorY;
   if (e->qType) e->qType[out] = 3;
   if (e->qKey) e->qKey[out] = KEY_NONE;
 }

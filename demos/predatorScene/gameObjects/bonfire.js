@@ -1,5 +1,5 @@
 // A bonfire for ?light3d=1 (light3d.js): a fire that keeps burning where it was lit, its flames glowing in the dark
-// (spriteRenderer.emissive) and its light flickering at the flames' height. Only registered with the knob.
+// (spriteRenderer.unshaded) and its light flickering at the flames' height. Only registered with the knob.
 
 import WEED from '/src/index.js';
 import { FireComponent } from '../components/fireComponent.js';
@@ -40,8 +40,8 @@ export class Bonfire extends Fire {
     fc.elapsedTime = 0;
     fc.lifespan = 0;
 
-    // The flames glow: no night or shadow darkens them (DX-EMISSIVE).
-    this.spriteRenderer.emissive = true;
+    // The flames are unshaded: no night or shadow darkens them (DX-UNSHADED).
+    this.spriteRenderer.unshaded = true;
   }
 
   tick(dtRatio, deltaTime) {

@@ -257,7 +257,7 @@ float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, float intensity, i
 // #if FACES
 // DX-FACES: this pixel's face, in the face map, drawn at this pass's size.
 uniform sampler2D uFaceMap;
-uniform vec4 uFaceLight; // heightScaleY, wrap, gain, sunDirect
+uniform vec4 uFaceLight; // heightScaleY, 0, 0, the sun's direct share (1 - Sun.skyLight)
 uniform vec4 uFaceSun; // towards the sun in the floor's space; w: 1 / its height, so a flat surface reads as the floor
 // #if IDS
 // DX-GBUF (plan §6.4): the G-buffer's entity ids (faceMap.js FACE_IDS_SELF), drawn with the face map.
@@ -380,7 +380,7 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     vec4 col = texelFetch(uLightData, ivec2(i, 1), 0);
     vec3 toLight = vec3(posInt.xy, col.a) - p;
     float d = length(toLight);
-    float cosine = (dot(n, toLight) / max(d, 0.001) + uFaceLight.y) / (1.0 + uFaceLight.y);
+    float cosine = dot(n, toLight) / max(d, 0.001);
     if (cosine <= 0.0 && !both) continue;
     float scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     float intensityScaled = posInt.z * scaled;
@@ -390,10 +390,10 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
 // #endif LAMPMAP
     if (cosine > 0.0) {
-      total += col.rgb * cosine * uFaceLight.z * cone * intensityScaled
+      total += col.rgb * cosine * cone * intensityScaled
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
-    if (both) lampFlat += col.rgb * uFaceLight.z * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    if (both) lampFlat += col.rgb * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
 // #if !TILES
   }
   for (int j = 0; j < MAX_LIGHTS; j++) {
@@ -408,7 +408,7 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     vec4 col = texelFetch(uLightData, ivec2(i, 1), 0);
     vec3 toLight = vec3(posInt.xy, col.a) - p;
     float d = length(toLight);
-    float cosine = (dot(n, toLight) / max(d, 0.001) + uFaceLight.y) / (1.0 + uFaceLight.y);
+    float cosine = dot(n, toLight) / max(d, 0.001);
     if (cosine <= 0.0 && !both) continue;
     // The source's height is folded into I' and the colour (I' = I + h²): I / (I + d²) = k I' / (I' - h² + d²).
     float scaled = DISTANCE_SCALE * DISTANCE_SCALE;
@@ -436,10 +436,10 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     // The light ends at its radius (reachWindow), and its shadows fade out with it.
     float win = reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
     if (cosine > 0.0) {
-      total += col.rgb * cosine * win * uFaceLight.z * intensityScaled
+      total += col.rgb * cosine * win * intensityScaled
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
-    if (both) lampFlat += col.rgb * (lampVis * lampSelf * win) * uFaceLight.z * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    if (both) lampFlat += col.rgb * (lampVis * lampSelf * win) * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
 // #if TILES
     }
 // #endif TILES
@@ -475,7 +475,7 @@ void main() {
 // #endif PIXELART
 // #if FACES
   vec4 face = textureLod(uFaceMap, gl_FragCoord.xy / uViewport, 0.0);
-  // DX-EMISSIVE (F10): a glowing pixel keeps its own colour (the face pass's (1/255, 0)).
+  // DX-UNSHADED: an unshaded pixel keeps its own colour (the face pass's (1/255, 0)).
   if (face.r > 0.0 && face.g < 0.5 / 255.0) {
     finalColor = vec4(1.0);
     return;

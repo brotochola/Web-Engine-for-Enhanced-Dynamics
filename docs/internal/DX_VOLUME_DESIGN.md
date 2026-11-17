@@ -2,8 +2,8 @@
 
 Phases 0 and 1 are built, on `dx/volume-shadow-caster`: see [What was built](#what-was-built-phases-0-and-1). The owner took the
 recommended answers to the decisions below on 2026-11-06. Phases 2 to 4 are still a plan: a lamp's shadow needs its prototype first. Written 2026-11-05 on
-`dx/sun-lights-meshes`, after Sun Street tried volumes and occluders side by side. It goes with [`DX_SUNMASK_DESIGN.md`](./DX_SUNMASK_DESIGN.md) and
-[`DX_NORMALS_DESIGN.md`](./DX_NORMALS_DESIGN.md).
+`dx/sun-lights-meshes`, after Sun Street tried volumes and occluders side by side. It goes with [`DX_SUNMASK_DESIGN.md`](./reports/DX_SUNMASK_DESIGN.md) and
+[`DX_NORMALS_DESIGN.md`](./reports/DX_NORMALS_DESIGN.md).
 
 ## What is wrong today
 
@@ -82,7 +82,7 @@ It answers the question phase 4 rests on and touches no public API.
 
 ### Phase 3: point lights (large)
 
-Worked out on 2026-11-11 in [`DX_VOLLIGHTS_DESIGN.md`](./DX_VOLLIGHTS_DESIGN.md): what a game writes, the picture case by case,
+Worked out on 2026-11-11 in [`DX_VOLLIGHTS_DESIGN.md`](./reports/DX_VOLLIGHTS_DESIGN.md): what a game writes, the picture case by case,
 and how basic and raycasted lighting each draw it. The sketch below is where it started.
 
 `castsLights` draws the volume's shadow on the floor for each shadow-casting light. A vertex at height `h`, under a light at

@@ -39,7 +39,7 @@ struct LightingUniforms {
   // 1 / the soft edge's width); they loop apart, so a point light runs the loop it always ran. A float (see pixiWorker).
   uConeCount: f32,
 // #if FACES
-  uFaceLight: vec4<f32>, // heightScaleY, wrap, gain, sunDirect
+  uFaceLight: vec4<f32>, // heightScaleY, 0, 0, the sun's direct share (1 - Sun.skyLight)
   uFaceSun: vec4<f32>, // towards the sun in the floor's space; w: 1 / its height, so a flat surface reads as the floor
 // #endif FACES
 // #if SUNMAP
@@ -409,7 +409,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     let col = textureLoad(uLightData, vec2<i32>(i, 1), 0);
     let toLight = vec3<f32>(posInt.xy, col.a) - p;
     let d = length(toLight);
-    let cosine = (dot(n, toLight) / max(d, 0.001) + lit.y) / (1.0 + lit.y);
+    let cosine = dot(n, toLight) / max(d, 0.001);
     if (cosine <= 0.0 && !both) { continue; }
     let scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     let intensityScaled = posInt.z * scaled;
@@ -419,9 +419,9 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
 // #endif LAMPMAP
     if (cosine > 0.0) {
-      total += col.rgb * cosine * lit.z * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+      total += col.rgb * cosine * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
-    if (both) { lampFlat += col.rgb * lit.z * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled); }
+    if (both) { lampFlat += col.rgb * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled); }
 // #if !TILES
   }
   for (var j = 0; j < MAX_LIGHTS; j++) {
@@ -436,7 +436,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     let col = textureLoad(uLightData, vec2<i32>(i, 1), 0);
     let toLight = vec3<f32>(posInt.xy, col.a) - p;
     let d = length(toLight);
-    let cosine = (dot(n, toLight) / max(d, 0.001) + lit.y) / (1.0 + lit.y);
+    let cosine = dot(n, toLight) / max(d, 0.001);
     if (cosine <= 0.0 && !both) { continue; }
     // The source's height is folded into I' and the colour (I' = I + h²): I / (I + d²) = k I' / (I' - h² + d²).
     let scaled = DISTANCE_SCALE * DISTANCE_SCALE;
@@ -464,7 +464,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     // The light ends at its radius (reachWindow), and its shadows fade out with it.
     let win = reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
     if (cosine > 0.0) {
-      total += col.rgb * cosine * shade * win * lit.z * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+      total += col.rgb * cosine * shade * win * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
     if (both) {
       var lampShade = shade * win;
@@ -473,7 +473,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
       lampShade = flatShade * win;
 // #endif SELFSHADOW
 // #endif LAMPMAP
-      lampFlat += col.rgb * lampShade * lit.z * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+      lampFlat += col.rgb * lampShade * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
 // #if TILES
     }
@@ -504,7 +504,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
 // #endif PIXELART
 // #if FACES
   let face = textureLoad(uFaceMap, vec2<i32>(in.position.xy), 0);
-  // DX-EMISSIVE (F10): a glowing pixel keeps its own colour (the face pass's (1/255, 0)).
+  // DX-UNSHADED: an unshaded pixel keeps its own colour (the face pass's (1/255, 0)).
   if (face.r > 0.0 && face.g < 0.5 / 255.0) {
     return vec4<f32>(1.0);
   }

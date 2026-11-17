@@ -44,7 +44,7 @@ export function defaultLook(sheet) {
     normals: 'auto',
     base: 0,
     opacity: 1,
-    emissive: false,
+    unshaded: false,
   };
 }
 
@@ -167,5 +167,5 @@ export function applyLook(go, sheet, look, hull, facing) {
   if (look.opacity < 1) caster.opacity = look.opacity;
   const sprite = go.spriteRenderer;
   if (look.normals !== 'auto') sprite.normals = look.normals;
-  if (look.emissive) sprite.emissive = true;
+  if (look.unshaded) sprite.unshaded = true;
 }

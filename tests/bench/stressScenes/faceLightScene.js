@@ -6,11 +6,13 @@ const { Scene, Camera, Sun, Decoration, GameObject, LightEmitter, Collider, enum
 const { ShapeType } = enums;
 
 /**
- * lighting.faces (DX-FACES) on plain white faces, still, so that every pixel is the light itself: faceLightCheck.mjs
- * samples the canvas against the formula. The layout, with what each face and lamp is, is in faces/faceLightLayout.js.
+ * Faces (DX-FACES) on plain white decorations, still, so that every pixel is the light itself: faceLightCheck.mjs samples the
+ * canvas against the formula. The layout, with what each face and lamp is, is in faces/faceLightLayout.js. The G-buffer
+ * turns on by itself, as the decorations carry normals (DX-BARRIOS: no lighting.faces); the scene is its own gate
+ * (faces pay pixel depth and the edge pass in an oblique view).
  *
- * `?faces=0` turns the map off (the same sprites, lit as the floor), `?hour=` (default 22), `?resolution=` (default 1),
- * `?wrap=`, `?gain=`, `?sunDirect=`, `?groundScaleY=` (default 0.5), `?heightScaleY=` (default 0.866),
+ * `?faces=0` spawns them without normals (the same sprites, lit as the floor), `?hour=` (default 22), `?resolution=`
+ * (default 1), `?skyLight=` (lighting.sun.skyLight, default 0.4), `?groundScaleY=` (default 0.5), `?heightScaleY=` (default 0.866),
  * `?backend=webgpu`, `?columns=` and `?rows=` (default 1): the layout that many times over, the load for a measurement.
  * The sprite paths, one key each: `?ySort=0`, `?indexed=0`, `?interpolation=1`, `?nearest=1` (the plain rows), `?pack=pixi`
  * (keyed frames on WebGL). The load for a measurement: `?town=` that many small faces on the screen, `?lamps=` that many more
@@ -84,13 +86,10 @@ export class FaceLightScene extends Scene {
       baseAmbient: 0.1,
       maxLights: 64,
       resolution: RESOLUTION,
-      faces: {
-        enabled: FACES,
-        wrap: queryNumber('wrap', 0),
-        gain: queryNumber('gain', 1),
-        sunDirect: queryNumber('sunDirect', 0.6),
+      sun: {
+        enabled: true, angle: 135, elevation: 40, intensity: 1, startHour: HOUR, dayCycle: { enabled: false },
+        skyLight: queryNumber('skyLight', 0.4),
       },
-      sun: { enabled: true, angle: 135, elevation: 40, intensity: 1, startHour: HOUR, dayCycle: { enabled: false } },
     },
   };
   static assets = { textures: {} };
@@ -111,10 +110,7 @@ export class FaceLightScene extends Scene {
         scaleY: 2,
         anchorX: 0.5,
         anchorY: 0.5,
-        faceNormalX: look[0],
-        faceNormalY: look[1],
-        faceNormalZ: look[2],
-        faceHeight: 20,
+        ...(FACES ? { faceNormalX: look[0], faceNormalY: look[1], faceNormalZ: look[2], faceHeight: 20 } : {}),
       });
     }
     for (let i = 0; i < LAMPS; i++) {
@@ -146,10 +142,7 @@ export class FaceLightScene extends Scene {
             anchorX: 0.5,
             anchorY: 0.5,
             sortOffsetY: f.sortOffsetY,
-            faceNormalX: f.normal[0],
-            faceNormalY: f.normal[1],
-            faceNormalZ: f.normal[2],
-            faceHeight: f.height,
+            ...(FACES ? { faceNormalX: f.normal[0], faceNormalY: f.normal[1], faceNormalZ: f.normal[2], faceHeight: f.height } : {}),
           });
         }
         for (const l of LAYOUT.lamps) {

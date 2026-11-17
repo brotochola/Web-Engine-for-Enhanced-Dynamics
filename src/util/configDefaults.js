@@ -283,6 +283,12 @@ export const CAMERA_TYPES = Object.freeze({
 
 export const ASSETS_DEFAULTS = Object.freeze({
   /**
+   * E-497: the twin page's format (src/render/twinTexel.js), a tournament: 'A' (default) RGBA8, height and normal; 'B'
+   * heights alone, 2 bytes a texel, normals from the shader's Sobel (not with a normal map: A then); 'C' heights and normals
+   * at half resolution below them.
+   */
+  twinFormat: 'A',
+  /**
    * Maximum atlas width in pixels (GPU texture limit). Past 4096 a scene asks for more than some mobile and older GPUs
    * hold (their textures stop at 4096 a side); the packer never goes past this, so it is the scene's choice.
    */
@@ -639,7 +645,7 @@ export const RENDERER_DEFAULTS = Object.freeze({
   maxVisibleRenderables: null,
   /**
    * DX-DEPTH (F5): each entity pixel's floor place corrects the painter (pixelDepth.js). null: on with an oblique camera
-   * and height maps (WebGL for now); true or false forces it.
+   * and maps (heights, normals or relief) or faces, on WebGL and WebGPU; true or false forces it.
    */
   pixelDepth: null,
   maxDecalTileUploadsPerFrame: 32,
@@ -705,8 +711,13 @@ export const SUN_DEFAULTS = Object.freeze({
   color: 0xffffff,
   shadowAlpha: 0.4,
   startHour: 12,
-  /** Degrees the sun reaches at noon on a day cycle. 90 = overhead, walls get no sun then (lighting.faces). */
+  /** Degrees the sun reaches at noon on a day cycle. 90 = overhead, walls get no sun then (faces). */
   maxElevation: 90,
+  /**
+   * DX-BARRIOS (Sun.skyLight): the share of the sun's light that comes from the sky and lights every surface whatever way it
+   * faces (faces, sprites with normals); the rest depends on where a surface looks. 0 to 1.
+   */
+  skyLight: 0.4,
   shadowAngleOffset: Math.PI,
   shadowMinLengthRatio: 0.2,
   shadowMaxLengthRatio: 2.0,
@@ -778,13 +789,6 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   keyedCasters: true,
   /**
-   * DX-FACES: decorations with a normal are lit as surfaces (Decoration.spawn's faceNormalX, ...). A second draw of the
-   * entity batch into a map at `resolution`, and the light pass reads it. Off, a scene pays nothing.
-   * { enabled, wrap, gain, sunDirect }: src/render/faceMap.js; a px of height rises config.camera.heightScaleY. Not with
-   * raycasted lighting.
-   */
-  faces: Object.freeze({ enabled: false }),
-  /**
    * DX-SHADOW3D: how the sun casts the ShadowCasters' shadows. 'sprite' (default): each caster's card on the shadows'
    * layer, darkening every light. 'map': a shadow map in the floor's terms (src/render/sunShadowMap.js) that takes out the
    * sun alone, falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit.
@@ -828,14 +832,16 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   gbuffer: 'mrt',
   /**
-   * DX-EMISSIVE: spriteRenderer.emissive glows in this scene: the sprites carry their G-buffer words even without maps,
-   * faces or a shadow map (which turn them on by themselves, as a sheet's own emissive does). Off, a scene pays nothing.
+   * DX-UNSHADED: spriteRenderer.unshaded works in this scene: the sprites carry their G-buffer words even without maps
+   * or a shadow map (which turn them on by themselves, as an unshaded sheet does; faces do not). Off, a scene pays nothing.
    */
-  emissive: false,
+  unshaded: false,
   /**
-   * 'add' — type 3 glows go to the lightGlows ADD mesh.
-   * 'sprite' — same quads join the entity list (sort bias already above the body).
-   * Source-over, so the soft edge can gray, and lighting multiply sits on top.
+   * 'add' — type 3 glows go to the lightGlows ADD mesh: over everything, after the light (nothing in front covers them).
+   * 'sprite' — the same quads join the entity list, each right after its entity's sprite (on its sort line), so it is
+   *   drawn over its own entity and whatever stands in front covers it; unshaded (DX-GLOWRADIUS: the light gradient's
+   *   frame carries DX-UNSHADED's mark), so the night does not darken a light's halo. That turns the G-buffer and the
+   *   unshaded pass on.
    */
   lightGlow: 'add',
   /**
@@ -853,6 +859,16 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   }),
   sun: SUN_DEFAULTS,
 });
+
+/**
+ * DX-GLOWRADIUS: whether a scene's halos are unshaded: a lit scene whose halos join the entities (lightGlow 'sprite'). The
+ * atlas then marks the light gradient's frame unshaded (SpriteSheetRegistry.createBigAtlas's unshadedGlows).
+ * @param {object|undefined} lighting config.lighting
+ * @returns {boolean}
+ */
+export function unshadedGlowsOf(lighting) {
+  return lighting?.enabled === true && (lighting.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
+}
 
 /**
  * E-404: a scene's lightGlows resolution (lighting.lightGlowResolution), in [1/16, 1]; the default for a value that is not
@@ -879,7 +895,7 @@ export function lightGlowResolutionOf(lighting) {
  *   light reaches R across and R * floorScaleY up and down: an ellipse. 1 = straight down (round pools), ~0.7 = a 3/4
  *   top-down view, 0.5 = 2:1 isometric. Point, raycasted, particle and LiquidFun lights, cones, point-light shadows and
  *   the default floorScaleY of a ShadowCaster's volume read it.
- * - heightScaleY: screen px that a px of height rises (lighting.faces).
+ * - heightScaleY: screen px that a px of height rises (faces, height maps, volumes).
  * - yaw: degrees the view turns about the vertical (45 for an isometric diamond). Read by nothing yet.
  */
 export const CAMERA_DEFAULTS = Object.freeze({

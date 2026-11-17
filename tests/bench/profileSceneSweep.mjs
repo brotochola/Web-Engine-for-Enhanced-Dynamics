@@ -72,7 +72,7 @@ const STRESS = [
   'cmdSamePoseStressScene',
   // The lights' and shadows' scenes (DX-LIGHT3D and before).
   'lampShadowStressScene', 'sunShadowMapStressScene', 'selfShadowStressScene', 'depthSortStressScene',
-  'emissiveStressScene', 'spriteMapsStressScene', 'directionalSpriteStressScene', 'volumeStressScene',
+  'unshadedStressScene', 'spriteMapsStressScene', 'directionalSpriteStressScene', 'volumeStressScene',
   'flashlightStressScene', 'spotLightStressScene', 'lightGalleryScene', 'lightMotionScene', 'sunMeshParityScene',
   'dxCaptureScene', 'light3dCompareScene', 'keyedPackStressScene',
 ].map((n) => `/tests/bench/stressScenes/${n}.js`);

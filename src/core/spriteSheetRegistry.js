@@ -2,7 +2,11 @@
 // Provides string->index mapping for animations without runtime overhead
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
-import { frameTwinTexels, opaqueMask, readHeights, twinHasGlow } from '../render/spriteMaps.js';
+import {
+  RELIEF_STRENGTH, artCameraHeightScale, maskTwinTexels, opaqueMask, readArtCamera, readHeights, twinPageInFormat,
+} from '../render/spriteMaps.js';
+import { resolveHeightScaleY } from '../util/cameraView.js';
+import { evenTexels, TWIN_PAD } from '../render/mapsTable.js';
 import {
   FRAME_GLOW, FRAME_HALF, FRAME_SOFT, frameAlphaKinds, frameSolidTexels, isRenderDirections, measureLowestContact,
   measureStandingBase, readFootprint,
@@ -846,6 +850,19 @@ class SpriteSheetRegistry {
   }
 
   /**
+   * DX-MAPCAMERA: the camera a sheet's pictures and maps were drawn for, `{ floorScaleY, heightScaleY }` (its json's
+   * meta.artCamera or its assets entry's artCamera), or null: the scene's own. By sheet name or id, on every worker (the
+   * proxies carry it).
+   * @param {string|number} sheet
+   * @returns {{ floorScaleY: number, heightScaleY: number } | null}
+   */
+  static artCameraOf(sheet) {
+    const name = typeof sheet === 'number' ? this.getSpritesheetName(sheet) : sheet;
+    const data = name ? this.spritesheets.get(name) : null;
+    return data && data.artCamera ? data.artCamera : null;
+  }
+
+  /**
    * Get spritesheet name from numeric ID
    * Used by pixi worker to resolve spritesheet from SharedArrayBuffer
    *
@@ -875,6 +892,11 @@ class SpriteSheetRegistry {
    * @param {string} options.heuristic - Packing heuristic (default: 'best-short-side')
    * @param {boolean} [options.keepMapsTexels] - DX-MAPS: also return the twin page's texels as they are (`mapsTexels`),
    *   for the bake: its canvas stores premultiplied alpha, which loses a height under a low A (default: false)
+   * @param {'A'|'B'|'C'} [options.twinFormat] - E-497: the twin page's format (twinTexel.js; assets.twinFormat, default 'A')
+   * @param {object} [options.camera] - DX-MAPCAMERA: the scene's camera (config.camera): a sheet drawn for another camera
+   *   (its artCamera) has its heights scaled to it at load (spriteMaps.js artCameraHeightScale); without it, none is
+   * @param {boolean} [options.unshadedGlows] - DX-GLOWRADIUS: the light gradient's frame is unshaded (configDefaults.js
+   *   unshadedGlowsOf: a lit scene whose halos join the entities), so the night does not darken a light's halo
    * @returns {Promise<Object>} - { canvas, mapsCanvas, mapsTexels, json, proxySheets }
    *
    * @example
@@ -900,7 +922,12 @@ class SpriteSheetRegistry {
       trimAlphaThreshold = ASSETS_DEFAULTS.trimAlphaThreshold,
       heuristic = ASSETS_DEFAULTS.heuristic,
       keepMapsTexels = false,
+      camera = null,
+      unshadedGlows = false,
+      twinFormat = ASSETS_DEFAULTS.twinFormat,
     } = options;
+    // DX-MAPCAMERA: the scene's heightScaleY, to which a sheet drawn for another camera has its heights scaled.
+    const sceneHeightScaleY = camera ? resolveHeightScaleY(camera) : NaN;
 
     debugWorkerLog('🎨 Creating BigAtlas from assets...');
     if (trimImages) {
@@ -986,7 +1013,7 @@ class SpriteSheetRegistry {
       for (const [sheetName, config] of Object.entries(assetsConfig.spritesheets)) {
         spritesheetPromises.push(
           this._loadSpritesheet(sheetName, config).then((sheetData) => {
-            const { img, jsonData, maps } = sheetData;
+            const { img, jsonData, maps, unshaded = false, artCamera = null } = sheetData;
             const excluded = config.excludeAnimations || [];
 
             // 1. Determine which animations and frames are actually needed
@@ -1015,6 +1042,16 @@ class SpriteSheetRegistry {
             // DX-DIRSPRITE: the directions its json declares (an exporter writes them); the scene builds the table.
             const jsonDirections = jsonData.directions ?? jsonData.meta?.directions;
             if (jsonDirections !== undefined) proxySheets[sheetName].directionsSpec = jsonDirections;
+            // DX-MAPCAMERA: the camera its pictures and maps were drawn for, on its proxy (every worker gets the proxies:
+            // SpriteSheetRegistry.artCameraOf), and its heights scaled to the scene's camera.
+            if (artCamera !== null) {
+              proxySheets[sheetName].artCamera = { floorScaleY: artCamera.floorScaleY, heightScaleY: artCamera.heightScaleY };
+              const k = maps ? artCameraHeightScale(artCamera, sceneHeightScaleY) : 1;
+              if (k !== 1) {
+                maps.heightScale = k;
+                maps.key += `|${k}`;
+              }
+            }
 
             // The sheet's pixels under the frames it keeps, read back once: each frame's trim is found in them, and a trimmed
             // frame is drawn into the atlas straight from the sheet, through its trimmed rectangle. A readback and a canvas a
@@ -1111,6 +1148,13 @@ class SpriteSheetRegistry {
                 isTrimmed: trimmed,
                 // DX-MAPS: the sheet's height and normal maps (one object per sheet), read through the same sourceRect.
                 maps,
+                // E-496: the frame's rectangle in its sheet, untrimmed: sheets naming the same map files share the twin's
+                // rectangle of a frame at the same place (_paintMapsPage).
+                frameRect: frame,
+                // DX-UNSHADED: no light touches the sheet's pixels (its json frame's `unshaded`, the maps table's mark);
+                // H-EDGE: its frames may draw their solid pixels in DX-DEPTH's edge pass (FRAME_GLOW).
+                unshaded,
+                glow: unshaded,
                 // DX-SHADOW3D: its base in its own pixels (untrimmed); a render's lowest contact replaces it (_paintMapsPage).
                 base,
                 // H-EDGE: what the drawn part's alphas hold (frameBase.js FRAME_SOFT, FRAME_HALF), from the pixels the trim read.
@@ -1187,10 +1231,12 @@ class SpriteSheetRegistry {
     });
     debugWorkerLog(`  ✅ Generated built-in: _empty (1x1 transparent)`);
 
-    // Light glow gradient (200px diameter white radial gradient)
+    // Light glow gradient (200px diameter white radial gradient). DX-GLOWRADIUS: unshaded where the halos join the
+    // entities (unshadedGlows), as an unshaded sheet's frames are: the maps table's mark.
     const lightGradientCanvas = createCircularGradientCanvas(LIGHT_GRADIENT_TEXTURE_RADIUS, 0xffffff);
     imagesToPack.push({
       name: '_lightGradient',
+      unshaded: unshadedGlows === true,
       sourceImg: lightGradientCanvas,
       sourceRect: null,
       width: lightGradientCanvas.width,
@@ -1417,11 +1463,28 @@ class SpriteSheetRegistry {
       }
     }
 
-    // DX-MAPS: the twin page, when a sheet has maps; the bake asks for its texels too (keepMapsTexels).
-    const mapsTexels = keepMapsTexels && imagesToPack.some((d) => d.maps && d.rect && d.sourceRect)
-      ? new Uint8ClampedArray(actualWidth * actualHeight * 4)
-      : null;
-    const mapsCanvas = this._paintMapsPage(imagesToPack, actualWidth, actualHeight, mapsTexels);
+    // DX-MAPS: the twin page, when a sheet has maps; the bake asks for its texels too (keepMapsTexels). E-496: the page
+    // holds the frames with maps alone, each frame's window in its json frame (`maps`), its size in meta.mapsSize.
+    const format = this._twinFormatFor(twinFormat, imagesToPack);
+    const twinA = this._paintMapsPage(imagesToPack, maxWidth, maxHeight, keepMapsTexels || format !== 'A');
+    // E-497: the page in its format (the windows stay in full-resolution texels; the shaders read through the format).
+    const twin = twinA !== null && format !== 'A' ? this._twinPageIn(twinA, format, keepMapsTexels) : twinA;
+    const mapsCanvas = twin !== null ? twin.canvas : null;
+    const mapsTexels = twin !== null ? twin.texels : null;
+    if (twin !== null) {
+      for (const d of imagesToPack) {
+        if (!d.mapsAt || !frames[d.name]) continue;
+        // Its marks: heights (a height map), relief (DX-RELIEF: a relief map and no height map).
+        const at = { x: d.mapsAt.x, y: d.mapsAt.y };
+        if (d.maps.heightImg) at.heights = true;
+        else if (d.maps.reliefImg) at.relief = true;
+        frames[d.name].maps = at;
+      }
+    }
+    // DX-UNSHADED: an unshaded sheet's frames say so in their json frame (the maps table's mark), without a twin page.
+    for (const d of imagesToPack) {
+      if (d.unshaded === true && frames[d.name]) frames[d.name].unshaded = true;
+    }
     // DX-SHADOW3D: each frame's base travels with its rectangle (the Pixi worker writes it into the texture table).
     for (const d of imagesToPack) {
       const b = d.base;
@@ -1433,7 +1496,7 @@ class SpriteSheetRegistry {
       if (b.contact >= 0 && d.footprint) frames[d.name].footprint = d.footprint;
     }
     // H-EDGE: what each frame's texels hold, in its base too (the texture table keeps them a frame).
-    this._markFrameTexels(frames, imagesToPack, padding);
+    this._markFrameTexels(frames, imagesToPack);
 
     // Register individual texture names as spritesheet IDs
     // This allows setSpritesheet("ball") to work for static textures
@@ -1455,8 +1518,12 @@ class SpriteSheetRegistry {
         proxySheets,
         individualTextures,
         maps: mapsCanvas !== null,
-        // DX-EMISSIVE v2: a sheet glows by itself (assets or its json's meta.emissive): the Pixi worker runs the glow pass.
-        emissive: imagesToPack.some((d) => d.maps && d.maps.emissive === true),
+        // E-496: the twin page's own size (each frame's window in it: its json frame's `maps`).
+        ...(twin !== null ? { mapsSize: { w: twin.width, h: twin.height } } : {}),
+        // E-497: the twin page's format, when it is not A (the renderer's setTwinFormat).
+        ...(twin !== null && format !== 'A' ? { mapsFormat: format } : {}),
+        // DX-UNSHADED: a sheet is unshaded (assets or its json's meta.unshaded): the Pixi worker runs the unshaded pass.
+        unshaded: imagesToPack.some((d) => d.unshaded === true),
       },
     };
 
@@ -1487,16 +1554,25 @@ class SpriteSheetRegistry {
   }
 
   /**
-   * DX-MAPS: the atlas's twin page (spriteMaps.js): each frame of a sheet with maps gets its heights and normals at its
-   * own rectangle. Each sheet's colour and maps are read back once, each frame cut out of them in memory.
-   * @param {Uint8ClampedArray|null} [keep] width·height·4: the texels are also copied here, as they are (the bake)
-   * @returns {HTMLCanvasElement|OffscreenCanvas|null} null when no sheet has maps
+   * DX-MAPS: the atlas's twin page (spriteMaps.js). E-496: it holds the frames with maps alone, not the atlas's whole size:
+   * each frame's heights and normals in a rectangle of the page, which frames of sheets naming the same map files share
+   * (the same map pixels, at the same place of their sheets: the untrimmed frameRect), the union of their trims, each
+   * frame's window in it its own trim (d.mapsAt, its top left in the page). The opaque pixels a shared rectangle holds maps
+   * for are those of every frame in it (a frame's own colour still decides what it draws). The rectangles are TWIN_PAD
+   * texels apart from each other and from the page's edges, at even texels and with even sizes (the Sobel's taps read
+   * zeros past them; E-497's half resolution splits no rectangle). Each sheet's colour and maps are read back once, each
+   * frame cut out of them in memory.
+   * @param {Array<object>} imagesToPack the atlas's frames (createBigAtlas), placed (`rect`)
+   * @param {number} maxWidth the page's largest width (the atlas's)
+   * @param {number} maxHeight
+   * @param {boolean} [keep] also return the texels as they are (`texels`: the bake, and the packed page's bitmap; its 2D
+   *   canvas keeps premultiplied alpha, which loses a height under a low A)
+   * @returns {{ canvas: HTMLCanvasElement|OffscreenCanvas, texels: Uint8ClampedArray|null, width: number, height: number }
+   *   | null} null when no sheet has maps
    */
-  static _paintMapsPage(imagesToPack, width, height, keep = null) {
+  static _paintMapsPage(imagesToPack, maxWidth, maxHeight, keep = false) {
     const withMaps = imagesToPack.filter((d) => d.maps && d.rect && d.sourceRect);
     if (withMaps.length === 0) return null;
-    const page = create2dCanvas(width, height);
-    const ctx = page.getContext('2d', { willReadFrequently: true });
     const read = new Map();
     const pixelsOf = (img) => {
       if (!img) return null;
@@ -1522,57 +1598,149 @@ class SpriteSheetRegistry {
       }
       return out;
     };
+    // A sheet's maps say which files they are (_loadSpritesheet's key); maps without one are their own.
+    const ids = new Map();
+    const keyOf = (maps) => {
+      if (typeof maps.key === 'string') return maps.key;
+      let id = ids.get(maps);
+      if (id === undefined) ids.set(maps, (id = `#${ids.size}`));
+      return id;
+    };
+    const groups = new Map();
+    const colours = new Map();
     for (const d of withMaps) {
       const sr = d.sourceRect;
       const w = sr.w | 0;
       const h = sr.h | 0;
       if (w <= 0 || h <= 0 || w !== d.rect.width || h !== d.rect.height) continue;
-      const color = cut(pixelsOf(d.sourceImg), sr);
-      const height = d.maps.heightImg ? cut(pixelsOf(d.maps.heightImg), sr) : null;
-      const texels = frameTwinTexels({
-        color,
-        height,
-        normal: d.maps.normalImg ? cut(pixelsOf(d.maps.normalImg), sr) : null,
-        w,
-        h,
-        gray: d.maps.gray,
-        emissive: d.maps.emissive === true,
-      });
-      // H-EDGE: a glowing texel in the frame's rectangle (_markFrameTexels).
-      d.glow = twinHasGlow(texels);
-      if (texels !== null) {
-        ctx.putImageData(new ImageData(texels, w, h), d.rect.x, d.rect.y);
-        if (keep !== null) {
-          for (let y = 0; y < h; y++) keep.set(texels.subarray(y * w * 4, (y + 1) * w * 4), ((d.rect.y + y) * width + d.rect.x) * 4);
+      const tx = d.sourceX | 0;
+      const ty = d.sourceY | 0;
+      const fr = d.frameRect || { x: sr.x - tx, y: sr.y - ty, w: d.sourceWidth | 0, h: d.sourceHeight | 0 };
+      const key = `${keyOf(d.maps)}|${fr.x},${fr.y},${fr.w},${fr.h}`;
+      let g = groups.get(key);
+      if (g === undefined) {
+        g = { members: [], fr, maps: d.maps, x0: tx, y0: ty, x1: tx + w, y1: ty + h, texels: null, x: 0, y: 0 };
+        groups.set(key, g);
+      }
+      g.members.push(d);
+      if (tx < g.x0) g.x0 = tx;
+      if (ty < g.y0) g.y0 = ty;
+      if (tx + w > g.x1) g.x1 = tx + w;
+      if (ty + h > g.y1) g.y1 = ty + h;
+    }
+    const placed = [];
+    for (const g of groups.values()) {
+      const gw = g.x1 - g.x0;
+      const gh = g.y1 - g.y0;
+      // The union of its frames' opaque pixels, in the rectangle's own texels.
+      const opaque = new Uint8Array(gw * gh);
+      for (const d of g.members) {
+        const sr = d.sourceRect;
+        const color = cut(pixelsOf(d.sourceImg), sr);
+        colours.set(d, color);
+        const mask = opaqueMask(color, sr.w, sr.h);
+        const ox = (d.sourceX | 0) - g.x0;
+        const oy = (d.sourceY | 0) - g.y0;
+        for (let y = 0; y < sr.h; y++) {
+          for (let x = 0; x < sr.w; x++) if (mask[y * sr.w + x] !== 0) opaque[(oy + y) * gw + ox + x] = 1;
         }
       }
-      // DX-SHADOW3D: a render stands on its contact nearest the light (frameBase.js), in its untrimmed frame's rows.
-      if (d.renderDirections && height !== null) {
-        const opaque = opaqueMask(color, w, h);
-        const heights = readHeights(height, w, h, d.maps.gray);
-        const lowest = measureLowestContact((i, j) => opaque[j * w + i] !== 0, (i, j) => heights[j * w + i], w, h);
+      const src = { x: g.fr.x + g.x0, y: g.fr.y + g.y0, w: gw, h: gh };
+      g.texels = maskTwinTexels({
+        opaque,
+        height: g.maps.heightImg ? cut(pixelsOf(g.maps.heightImg), src) : null,
+        normal: g.maps.normalImg ? cut(pixelsOf(g.maps.normalImg), src) : null,
+        relief: g.maps.reliefImg ? cut(pixelsOf(g.maps.reliefImg), src) : null,
+        w: gw,
+        h: gh,
+        gray: g.maps.gray,
+        reliefStrength: g.maps.reliefStrength,
+        heightScale: g.maps.heightScale ?? 1,
+      });
+      if (g.texels !== null) placed.push(g);
+    }
+    // DX-SHADOW3D: a render stands on its contact nearest the light (frameBase.js), in its untrimmed frame's rows: its own
+    // colour's opaque pixels, its own trim of the heights.
+    for (const g of groups.values()) {
+      if (!g.maps.heightImg) continue;
+      for (const d of g.members) {
+        if (!d.renderDirections) continue;
+        const sr = d.sourceRect;
+        const opaque = opaqueMask(colours.get(d), sr.w, sr.h);
+        const heights = readHeights(cut(pixelsOf(g.maps.heightImg), sr), sr.w, sr.h, g.maps.gray);
+        const k = g.maps.heightScale ?? 1;
+        if (k !== 1) for (let p = 0; p < heights.length; p++) heights[p] *= k;
+        const lowest = measureLowestContact((i, j) => opaque[j * sr.w + i] !== 0, (i, j) => heights[j * sr.w + i], sr.w, sr.h);
         if (lowest !== null) d.base = { contact: lowest + (d.sourceY | 0) };
       }
     }
-    return page;
+    if (placed.length === 0) return null;
+    placed.sort((a, b) => Math.max(b.x1 - b.x0, b.y1 - b.y0) - Math.max(a.x1 - a.x0, a.y1 - a.y0));
+    const packer = new this.MaxRectsPacker(maxWidth, maxHeight, TWIN_PAD);
+    let right = 0;
+    let bottom = 0;
+    for (const g of placed) {
+      const r = packer.insert(evenTexels(g.x1 - g.x0), evenTexels(g.y1 - g.y0), 'best-short-side');
+      if (!r) throw new Error(`The twin page (height and normal maps) does not fit in ${maxWidth}x${maxHeight}: raise maxAtlasWidth/maxAtlasHeight.`);
+      g.x = r.x;
+      g.y = r.y;
+      if (r.x + r.width > right) right = r.x + r.width;
+      if (r.y + r.height > bottom) bottom = r.y + r.height;
+    }
+    const width = evenTexels(right + TWIN_PAD);
+    const height = evenTexels(bottom + TWIN_PAD);
+    const page = create2dCanvas(width, height);
+    const ctx = page.getContext('2d', { willReadFrequently: true });
+    const texels = keep ? new Uint8ClampedArray(width * height * 4) : null;
+    for (const g of placed) {
+      const gw = g.x1 - g.x0;
+      const gh = g.y1 - g.y0;
+      ctx.putImageData(new ImageData(g.texels, gw, gh), g.x, g.y);
+      if (texels !== null) {
+        for (let y = 0; y < gh; y++) texels.set(g.texels.subarray(y * gw * 4, (y + 1) * gw * 4), ((g.y + y) * width + g.x) * 4);
+      }
+      for (const d of g.members) d.mapsAt = { x: g.x + (d.sourceX | 0) - g.x0, y: g.y + (d.sourceY | 0) - g.y0 };
+    }
+    return { canvas: page, texels, width, height };
+  }
+
+  /**
+   * E-497: the twin page's format for an atlas: the one asked for (assets.twinFormat), but A where it is no format, or for
+   * B where a sheet brings a normal map (B keeps heights alone), said once.
+   */
+  static _twinFormatFor(asked, imagesToPack) {
+    if (asked !== 'A' && asked !== 'B' && asked !== 'C') {
+      if (asked !== undefined && asked !== null) console.warn(`WeedJS: assets.twinFormat is 'A', 'B' or 'C', not ${JSON.stringify(asked)}: the twin page is A`);
+      return 'A';
+    }
+    if (asked === 'B' && imagesToPack.some((d) => d.maps && d.maps.normalImg)) {
+      console.warn("WeedJS: assets.twinFormat 'B' keeps heights alone, and a sheet brings a normal map: the twin page is A");
+      return 'A';
+    }
+    return asked;
+  }
+
+  /** E-497: a format-A twin page (_paintMapsPage's, with its texels) in format B or C, its canvas and (`keep`) texels. */
+  static _twinPageIn(twin, format, keep) {
+    const page = twinPageInFormat(twin.texels, twin.width, twin.height, format);
+    const canvas = create2dCanvas(page.width, page.height);
+    canvas.getContext('2d', { willReadFrequently: true }).putImageData(new ImageData(page.texels, page.width, page.height), 0, 0);
+    return { canvas, texels: keep ? page.texels : null, width: page.width, height: page.height };
   }
 
   /**
    * H-EDGE: each packed frame's `base.texels` in the atlas's json (frameBase.js FRAME_SOFT, FRAME_HALF, FRAME_GLOW), for
    * the texture table (instancedSpriteBatch.js buildTextureLut): its alphas as the scans found them (d.texels: the frame's
-   * drawn rectangle of its sheet, or its image), and FRAME_GLOW when its rectangle of the twin page holds a glowing texel
-   * (_paintMapsPage's d.glow). The page's read reaches a texel past a frame's border at most, so with no padding between
-   * the rectangles every frame may glow once one does. A frame no scan read keeps no key (FRAME_UNSCANNED in the table).
+   * drawn rectangle of its sheet, or its image), and FRAME_GLOW when its sheet is unshaded (d.glow: DX-UNSHADED, the
+   * sheet's mark). A frame no scan read keeps no key (FRAME_UNSCANNED in the table).
    * @param {Record<string, { base?: object }>} frames the atlas's json frames
    * @param {Array<{ name: string, texels?: number, glow?: boolean }>} imagesToPack
-   * @param {number} padding the atlas's padding around each rectangle
    */
-  static _markFrameTexels(frames, imagesToPack, padding) {
-    const allGlow = !(padding >= 1) && imagesToPack.some((d) => d.glow === true);
+  static _markFrameTexels(frames, imagesToPack) {
     for (const d of imagesToPack) {
       const f = frames[d.name];
       if (!f || typeof d.texels !== 'number') continue;
-      f.base = { ...(f.base || {}), texels: d.texels | (allGlow || d.glow === true ? FRAME_GLOW : 0) };
+      f.base = { ...(f.base || {}), texels: d.texels | (d.glow === true ? FRAME_GLOW : 0) };
       // E-448: its solid texels (alpha 255), which the opaque pass's cover counts.
       if (typeof d.solidTexels === 'number') f.base.solidTexels = d.solidTexels;
     }
@@ -1769,19 +1937,28 @@ class SpriteSheetRegistry {
     // DX-GUARDS C6: a 404 used to reach .json() and read "Unexpected token '<'".
     const heightSpec = config.heightMap;
     const heightUrl = typeof heightSpec === 'string' ? heightSpec : heightSpec?.png;
-    const [jsonData, img, heightImg, normalImg] = await Promise.all([
+    // DX-RELIEF: a greyscale relief map, `{ png, strength }` (or its url): its normals, its surface's height.
+    const reliefSpec = config.reliefMap;
+    const reliefUrl = typeof reliefSpec === 'string' ? reliefSpec : reliefSpec?.png;
+    const [jsonData, img, heightImg, normalImg, reliefImg] = await Promise.all([
       fetchAssetJson(config.json, `spritesheet "${name}" JSON`),
       this._loadImage(config.png),
       // DX-MAPS: the sheet's twins, same frames in the same places.
       heightUrl ? this._loadImage(heightUrl) : null,
       config.normalMap ? this._loadImage(config.normalMap) : null,
+      reliefUrl ? this._loadImage(reliefUrl) : null,
     ]);
-    // DX-EMISSIVE: a sheet that glows (assets config or its json's meta) gets a twin page with the emissive code.
-    const emissive = config.emissive === true || jsonData?.meta?.emissive === true;
-    const maps = heightImg || normalImg || emissive
-      ? { heightImg, normalImg, gray: Number(heightSpec?.gray) > 0 ? Number(heightSpec.gray) : 0, emissive }
-      : null;
-    return { img, jsonData, maps };
+    // DX-UNSHADED: a sheet no light touches (its assets config or its json's meta): a mark a frame in the maps table, no
+    // twin page.
+    const unshaded = config.unshaded === true || jsonData?.meta?.unshaded === true;
+    const gray = Number(heightSpec?.gray) > 0 ? Number(heightSpec.gray) : 0;
+    const reliefStrength = Number(reliefSpec?.strength) > 0 ? Number(reliefSpec.strength) : RELIEF_STRENGTH;
+    // E-496: which map files these are: sheets with the same key share the twin page's rectangles (_paintMapsPage).
+    const key = JSON.stringify([heightUrl || '', config.normalMap || '', gray, reliefUrl || '', reliefUrl ? reliefStrength : 0]);
+    const maps = heightImg || normalImg || reliefImg ? { heightImg, normalImg, reliefImg, gray, reliefStrength, key, heightScale: 1 } : null;
+    // DX-MAPCAMERA: the camera its art was drawn for: its assets entry's, else its json's (createBigAtlas scales to it).
+    const artCamera = readArtCamera(config.artCamera) ?? readArtCamera(jsonData?.meta?.artCamera);
+    return { img, jsonData, maps, unshaded, artCamera };
   }
 
   /**

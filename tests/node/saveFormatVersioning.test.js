@@ -175,7 +175,10 @@ test('fingerprints are stable', () => {
   assert.equal(sharedResourceFingerprint(Probe), fnv1a32('Probe|a:Float32Array:1|b:Int32Array:2:atomic'));
   // The component fingerprint moved onto fnv1a32 without changing its value.
   const parts = ['Transform'];
-  for (const [n, t] of Object.entries(Transform.ARRAY_SCHEMA)) parts.push(`${n}:${t.name}:1`);
+  // DX-PARENT: Transform.parent is a spec ({ type, entityId: true }), which the fingerprint marks.
+  for (const [n, t] of Object.entries(Transform.ARRAY_SCHEMA)) {
+    parts.push(t.entityId ? `${n}:${t.type.name}:1:entityId` : `${n}:${t.name}:1`);
+  }
   parts.push('pose:x,y,rotC,rotS');
   let h = 2166136261;
   const s = parts.join('|');

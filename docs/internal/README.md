@@ -30,9 +30,6 @@ tried, what is planned, and the journal of building the engine. They are not the
 | [`REVIEW_PLAN.md`](./REVIEW_PLAN.md) | Review items (bugs, cleanups, docs: B, M, D, R, G, V, N, DOC), open and closed. |
 | [`NEXT_RELEASE.md`](./NEXT_RELEASE.md) | What a game will see change in behaviour at the next release, for its notes. |
 | [`DX_LIGHTAPI_DESIGN.md`](./DX_LIGHTAPI_DESIGN.md) | The light API made clear (radius, brightness, glow, elevation, castShadows, shadowRange; DX-LIGHTAPI), then cone lights (DX-SPOT): the mapping from the old API, the phases, how they are measured. |
-| [`DX_SUNMASK_DESIGN.md`](./DX_SUNMASK_DESIGN.md) | A design, not built: the sun's shadow inside the light sum, for the owner to decide. |
-| [`DX_NORMALS_DESIGN.md`](./DX_NORMALS_DESIGN.md) | A design, not built: light by the way a surface faces (normal maps), for the owner to decide. |
-| [`DX_VOLLIGHTS_DESIGN.md`](./DX_VOLLIGHTS_DESIGN.md) | A plan, not built: lamps and headlights cast a `VolumeShadowCaster`'s shadow, in basic and raycasted lighting (DX-VOLUME's phase 3), for the owner to decide on. |
 | [`DX_POST_DESIGN.md`](./DX_POST_DESIGN.md) | DX-POST: full-screen passes (`LAYER_KIND.SCREEN`), how they draw, the identity test, the commands to time them. |
 | [`DX_VOLUME_DESIGN.md`](./DX_VOLUME_DESIGN.md) | A plan, not built: `VolumeShadowCaster`, an object's volume for the sun and for point lights, in phases, for the owner to decide on. |
 | [`DX_LIGHT3D_PLAN.md`](./DX_LIGHT3D_PLAN.md) | DX-LIGHT3D, a plan in Spanish being built on `dx/light3d`: `DirectionalSprite`, height and normal maps per sheet, a G-buffer, per-light shadow maps (shadows on sprites, each light apart), depth that corrects the painter, self-shadow, one `ShadowCaster`, `config.camera`; the phases, tests, kernels, GPU microbench and stress scenes. Rows DX-DIRSPRITE, DX-CAMERA, DX-MAPS, DX-GBUF, DX-DEPTH, DX-SHADOW3D, DX-SELFSHADOW, DX-CASTER, DX-EMISSIVE. |
@@ -125,3 +122,6 @@ results are records of the register.
 | [`TEXTURE_UPLOAD_TRACE.md`](./reports/TEXTURE_UPLOAD_TRACE.md) | October 2026. A full-picture upload is the renderer's cost; a dirty row is not. |
 | [`PERFORMANCE_AND_ERGONOMICS_AUDIT.md`](./reports/PERFORMANCE_AND_ERGONOMICS_AUDIT.md) | October 2026. Performance, GC pressure and API ergonomics, with its plan. |
 | [`REVIEW_LIVE_REPORT.md`](./reports/REVIEW_LIVE_REPORT.md) | October 2026. The progress log of implementing the 2026-10-20 review. |
+| [`DX_SUNMASK_DESIGN.md`](./reports/DX_SUNMASK_DESIGN.md) | November 2026. A design never built as written: the sun's shadow inside the light sum. Superseded by DX-LIGHT3D's shadow maps and DX-BARRIOS. |
+| [`DX_NORMALS_DESIGN.md`](./reports/DX_NORMALS_DESIGN.md) | November 2026. A design never built as written: light by the way a surface faces (normal maps), and what DX-FACES built. Superseded by DX-LIGHT3D's maps and DX-BARRIOS. |
+| [`DX_VOLLIGHTS_DESIGN.md`](./reports/DX_VOLLIGHTS_DESIGN.md) | November 2026. A plan never built as written: lamps and headlights cast a volume's shadow (DX-VOLUME's phase 3). Superseded by DX-LIGHT3D's lamp shadow maps and DX-BARRIOS. |

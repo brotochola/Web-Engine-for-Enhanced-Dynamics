@@ -87,7 +87,6 @@ export const SCENE_CONFIG_SCHEMA = Object.freeze({
     // directionalCasters: the scene sets it (sceneWorkerBootstrap), from its classes. raycasted: the scene derives it from
     // camera.pitch (Scene._applyConfigDefaults) for the code that reads it; a scene that writes it is told it is retired.
     ...keys(LIGHTING_DEFAULTS, ['directionalCasters', 'raycasted']),
-    faces: keys(LIGHTING_DEFAULTS.faces, ['gain', 'sunDirect', 'wrap']),
     particleLights: keys(LIGHTING_DEFAULTS.particleLights),
     sun: {
       ...keys(SUN_DEFAULTS),
@@ -107,7 +106,11 @@ export const RETIRED_CONFIG_KEYS = Object.freeze({
   'renderer.tilemapCull': 'tilemaps upload once, there is no chunk stream',
   'preRender.numberOfPreRenderWorkers': 'there is one pre-render worker',
   'lighting.groundScaleY': 'the floor\'s foreshortening is config.camera.floorScaleY now, or camera.pitch (DX-CAMERA)',
-  'lighting.faces.heightScaleY': 'the px a px of height rises is config.camera.heightScaleY now, or camera.pitch (DX-CAMERA)',
+  'lighting.faces':
+    'faces turn on by themselves when a decoration carries a normal (Decoration.spawn\'s faceNormalX...); the sun\'s share ' +
+    'from the sky is config.lighting.sun.skyLight (1 - sunDirect), and a px of height rises config.camera.heightScaleY ' +
+    '(DX-BARRIOS)',
+  'lighting.emissive': 'it is config.lighting.unshaded now, yes or no (DX-UNSHADED)',
   'lighting.raycasted':
     'raycasted lighting is on when config.camera.pitch is 90 or 0, a flat view, and lighting is enabled; a side view whose ' +
     'lights pool on the backdrop also writes camera.floorScaleY: 1 (DX-CASTER)',

@@ -73,9 +73,10 @@ async function main() {
 
     const result = await page.evaluate(
       async ({ sceneModule, sceneExport }) => {
-        const [{ SpriteSheetRegistry }, sceneExports] = await Promise.all([
+        const [{ SpriteSheetRegistry }, sceneExports, { unshadedGlowsOf }] = await Promise.all([
           import('/src/index.js'),
           import(sceneModule),
+          import('/src/util/configDefaults.js'),
         ]);
         const SceneClass = sceneExports[sceneExport];
         if (!SceneClass) {
@@ -113,6 +114,12 @@ async function main() {
           heuristic: 'best-short-side',
           // DX-MAPS: the twin page's texels as they are; its canvas would premultiply them.
           keepMapsTexels: true,
+          // DX-MAPCAMERA: a sheet drawn for another camera has its heights scaled to the scene's.
+          camera: scene.config?.camera ?? null,
+          // E-497: the twin page's format.
+          twinFormat: assetsConfig.twinFormat ?? 'A',
+          // DX-GLOWRADIUS: halos that join the entities are unshaded.
+          unshadedGlows: unshadedGlowsOf(scene.config?.lighting),
         });
 
         if (!packed.json?.meta?.proxySheets) {
@@ -202,10 +209,12 @@ async function main() {
         }
 
         const size = packed.json.meta.size;
+        // E-496: the twin page has its own size (meta.mapsSize; each frame's window is in its json frame's `maps`).
+        const mapsSize = packed.json.meta.mapsSize ?? size;
         return {
           json: packed.json,
           pngDataUrl: packed.canvas.toDataURL('image/png'),
-          mapsPngDataUrl: packed.mapsTexels ? await encodeRgbaPng(size.w, size.h, packed.mapsTexels) : null,
+          mapsPngDataUrl: packed.mapsTexels ? await encodeRgbaPng(mapsSize.w, mapsSize.h, packed.mapsTexels) : null,
           size,
           proxyCount: Object.keys(packed.json.meta.proxySheets).length,
           frameCount: Object.keys(packed.json.frames).length,

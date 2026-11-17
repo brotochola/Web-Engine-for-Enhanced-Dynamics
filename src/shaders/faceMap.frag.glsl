@@ -10,6 +10,10 @@ flat in vec2 vFaceOct;
 in float vFaceZ;
 // N-194: the sprite's |scale y|: its twin's heights (frame px) times this are its world heights.
 flat in float vMapScale;
+// E-496: the frame's window in the twin page and its marks (the maps table, mapsTable.js).
+flat in vec4 vMapsWin;
+// N-258: how the sprite turns its frame's normals: its rotation's cosine and sine, the signs of its scale (a flip).
+flat in vec4 vNormalTurn;
 // #if GBUF
 // DX-GBUF: the instance's words (gbufWord.js: its entity's id, normals, surface, ...) and its foot's world y.
 flat in vec2 vGbuf;
@@ -20,6 +24,8 @@ uniform sampler2D uTexture;
 uniform sampler2D uMaps;
 uniform vec4 uFaceSpace; // heightScaleY, groundScaleY
 out vec4 finalColor;
+
+// weed:twin
 
 vec2 weedUv() {
   vec2 t = vLocal;
@@ -56,11 +62,17 @@ vec4 faceTexel(vec2 oct, float z, bool k) {
   return vec4(oct, floor(q / 256.0) / 255.0, mod(q, 256.0) / 255.0);
 }
 
-// #if GBUF
+// N-258: a frame's normal (its own camera space: x right, y up) as its sprite draws it: mirrored where its scale is
+// negative (flipX, flipY), then turned with it (the screen's rotation, y down, is the opposite turn with y up).
+vec3 turnNormal(vec3 n) {
+  vec2 f = n.xy * vNormalTurn.zw;
+  return vec3(f.x * vNormalTurn.x + f.y * vNormalTurn.y, f.y * vNormalTurn.x - f.x * vNormalTurn.y, n.z);
+}
+
 // DX-GBUF: a twin texel's height (px), or `here` where the texel has no map (a transparent pixel of the frame).
 float twinHeight(ivec2 c, float here) {
-  vec4 m = texelFetch(uMaps, c, 0);
-  return m.b + m.a > 0.0 ? (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 : here;
+  vec4 m = twinRaw(c);
+  return twinPresent(m) ? twinZ(m) : here;
 }
 
 // DX-GBUF: normals 'height': the twin page's heights around texel c through spriteMaps.js normalsFromHeight's Sobel, in
@@ -78,7 +90,6 @@ vec3 heightNormal(ivec2 c, float z) {
   float gy = (e + 2.0 * g + h - a - 2.0 * b - d) / 8.0;
   return normalize(vec3(-gx, gy, 1.0));
 }
-// #endif GBUF
 
 // DX-FACES: what this pixel is, in painter order: a face's normal and height, or 0 where a sprite that is no face covers it.
 // DX-MAPS: a sprite with maps writes its pixel's own: the twin's normal turned from the camera's space into the floor's
@@ -86,44 +97,52 @@ vec3 heightNormal(ivec2 c, float z) {
 void main() {
   vec2 uv = weedUv();
   if (texture(uTexture, uv).a * vColor.a < 0.5) discard;
+  // DX-UNSHADED: a pixel of an unshaded sheet (the maps table's mark), face or not. With the unshaded pass (UNSHADED) it
+  // writes nothing here, and what is behind it is lit; without, (1/255, 0) in the face map, which the light pass lights
+  // fully.
+  if (twinUnshaded(vMapsWin)) {
+// #if UNSHADED
+    discard;
+// #endif UNSHADED
+// #if !UNSHADED
+    finalColor = vec4(1.0 / 255.0, 0.0, 0.0, 0.0);
+    return;
+// #endif !UNSHADED
+  }
   vec2 oct = vFaceOct;
   float z = vFaceZ;
   if (oct == vec2(0.0)) {
-    ivec2 tc = ivec2(uv * vec2(textureSize(uMaps, 0)));
-    vec4 m = texelFetch(uMaps, tc, 0);
-    // DX-EMISSIVE: a glowing pixel (normal bytes 0, 255). F10 v1: (1/255, 0) in the face map, the light pass lights it
-    // fully. v2 (GLOW: the glow pass draws its glow): it writes nothing here, and what is behind it is lit.
-    if (m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0) {
-// #if GLOW
-      discard;
-// #endif GLOW
-// #if !GLOW
-      finalColor = vec4(1.0 / 255.0, 0.0, 0.0, 0.0);
-      return;
-// #endif !GLOW
-    }
+    ivec2 tc = twinCoord(uv, vMapsWin);
+    vec4 m = twinHas(vMapsWin) ? texelFetch(uMaps, tc, 0) : vec4(0.0);
     vec2 sc = normalize(vec2(uFaceSpace.y, uFaceSpace.x)); // sin, cos of the camera's pitch
 // #if GBUF
     // DX-GBUF (plan §5.4): an entity's sprite as its normals and surface say. With maps: the twin's height, and its normal
     // (normals 'auto' or 'map'), the heights' (normals 'height') or none (normals 'flat': lit as drawn). Without: a card
     // standing on its foot (surface 'standing'), a row's height its rise over the foot's, lit as drawn; or the floor.
     uint word = uint(vGbuf.x + 0.5);
-// #if GLOW
-    // DX-EMISSIVE v2: an entity that glows by itself (its word's emissive level) writes nothing here either.
-    if (((word >> 19u) & 7u) != 0u) discard;
-// #endif GLOW
+// #if UNSHADED
+    // DX-UNSHADED: an unshaded entity (its word's unshaded bit, gbufWord.js) writes nothing here either.
+    if (((word >> 21u) & 1u) != 0u) discard;
+// #endif UNSHADED
     if ((word & 65535u) != 0u) {
       uint flags = (word >> 16u) & 63u;
       uint normals = flags & 3u;
-      if (m.b + m.a > 0.0) {
-        float zm = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0;
+      if (twinPresent(m)) {
+        float zm = twinZ(m);
+        // N-257: a frame without heights (a normal or a relief map alone) stands as its surface says, as a sprite without
+        // maps does: a card on its foot, or the floor.
+        float zw = twinHeights(vMapsWin) ? zm * vMapScale
+          : ((flags & 4u) == 0u ? max(vFootY - vWorld.y, 0.0) / uFaceSpace.x : 0.0);
         if (normals == 3u) {
-          finalColor = faceTexel(vec2(254.0 / 255.0), zm * vMapScale, false);
+          finalColor = faceTexel(vec2(254.0 / 255.0), zw, false);
           return;
         }
-        // The Sobel reads the frame's own heights: a scale stretches the heights and the texels alike.
-        vec3 n = normals == 2u ? heightNormal(tc, zm) : octDecode(floor(m.ba * 255.0 + 0.5));
-        finalColor = faceTexel(octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zm * vMapScale, true);
+        // The Sobel reads the frame's own heights, or its relief (DX-RELIEF): a scale stretches the heights and the texels
+        // alike. A normal map alone has none to read: its own normals.
+        // E-497: a format that keeps no normals (B) always takes the Sobel.
+        bool sobel = (normals == 2u || !TWIN_NORMALS) && (twinHeights(vMapsWin) || twinRelief(vMapsWin));
+        vec3 n = turnNormal(sobel ? heightNormal(tc, zm) : twinStoredNormal(m, tc));
+        finalColor = faceTexel(octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zw, true);
         return;
       }
       if ((flags & 4u) == 0u) {
@@ -134,10 +153,11 @@ void main() {
       return;
     }
 // #endif GBUF
-    if (m.b + m.a > 0.0) {
-      vec3 n = octDecode(floor(m.ba * 255.0 + 0.5));
+    if (twinPresent(m)) {
+      vec3 n = turnNormal(TWIN_NORMALS ? twinStoredNormal(m, tc) : heightNormal(tc, twinZ(m)));
       oct = octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x));
-      z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * vMapScale;
+      // N-257: without words a frame without heights lies on the floor, as a decoration without maps does.
+      z = twinHeights(vMapsWin) ? twinZ(m) * vMapScale : 0.0;
     }
   }
   finalColor = faceTexel(oct, z, false);

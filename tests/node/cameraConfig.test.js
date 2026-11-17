@@ -78,7 +78,9 @@ test('values out of range are clamped, and a value that is no number is ignored,
 
 test('the old keys say where they went', () => {
   const items = unknownConfigKeys({ lighting: { groundScaleY: 0.7, faces: { enabled: true, heightScaleY: 0.8 } } });
-  assert.deepEqual(items.map((i) => i.path), ['lighting.groundScaleY', 'lighting.faces.heightScaleY']);
+  // DX-BARRIOS: lighting.faces as a whole (its heightScaleY was DX-CAMERA's first), with where each piece went.
+  assert.deepEqual(items.map((i) => i.path), ['lighting.groundScaleY', 'lighting.faces']);
+  assert.match(unknownConfigKeyText('Town', items[1]), /lighting\.sun\.skyLight/);
   assert.match(unknownConfigKeyText('Town', items[0]), /config\.camera\.floorScaleY/);
   assert.match(unknownConfigKeyText('Town', items[1]), /config\.camera\.heightScaleY/);
   assert.deepEqual(unknownConfigKeys({ camera: { pitch: 47, yaw: 0, floorScaleY: 0.7, heightScaleY: 0.7 } }), []);

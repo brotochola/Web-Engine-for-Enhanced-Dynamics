@@ -28,9 +28,8 @@ export class NormalLightScene extends Scene {
     lighting: {
       baseAmbient: L.ambient,
       shadowsEnabled: false,
-      // The sun's whole term follows the normal (sunDirect 1): each pixel against N·L.
-      faces: { enabled: true, wrap: 0, gain: 1, sunDirect: 1 },
-      sun: PART === 'sun' ? sunConfig({ hour: L.sun.hour, towards: L.sun.towards }) : { enabled: false },
+      // The sun's whole term follows the normal (no sky share: lighting.sun.skyLight 0): each pixel against N·L.
+      sun: PART === 'sun' ? { ...sunConfig({ hour: L.sun.hour, towards: L.sun.towards }), skyLight: 0 } : { enabled: false },
     },
   });
 

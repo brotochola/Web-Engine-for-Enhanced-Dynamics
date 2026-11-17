@@ -7,8 +7,8 @@ las sesiones de código lo ejecuten fase por fase. Se está construyendo en la r
 
 Filas propuestas para [REVIEW_PLAN.md](./REVIEW_PLAN.md): **DX-DIRSPRITE**, **DX-CAMERA**, **DX-MAPS**,
 **DX-GBUF**, **DX-DEPTH**, **DX-SHADOW3D**, **DX-SELFSHADOW**, **DX-CASTER**, **DX-EMISSIVE**. Toma y cierra
-diseños abiertos: [DX_NORMALS](./DX_NORMALS_DESIGN.md), [DX_SUNMASK](./DX_SUNMASK_DESIGN.md),
-[DX_VOLLIGHTS](./DX_VOLLIGHTS_DESIGN.md) (fase 3 de [DX_VOLUME](./DX_VOLUME_DESIGN.md)), y generaliza lo que ya
+diseños abiertos: [DX_NORMALS](./reports/DX_NORMALS_DESIGN.md), [DX_SUNMASK](./reports/DX_SUNMASK_DESIGN.md),
+[DX_VOLLIGHTS](./reports/DX_VOLLIGHTS_DESIGN.md) (fase 3 de [DX_VOLUME](./DX_VOLUME_DESIGN.md)), y generaliza lo que ya
 existe de [DX-FACES](../../src/render/faceMap.js) y [DX-LIGHTAPI](./DX_LIGHTAPI_DESIGN.md).
 
 ---

@@ -131,6 +131,17 @@ export const CAMERA_TYPES: Readonly<Record<string, number>>;
 export type SpawnConfig = Record<string, any> & {
   /** Worker index that must run this entity’s logic. Omit or −1 to keep stride. */
   forceProcessOnLogicWorker?: number;
+  /**
+   * DX-PARENT: the entity this one follows (an entity or its index), as `transform.parent`; applied after the other keys
+   * and before onSpawned. A parent's onSpawned may spawn its children with `parent: this`.
+   */
+  parent?: GameObject | number | null;
+  /** Its offset in the parent's frame, px (`transform.localX`). */
+  localX?: number;
+  /** `transform.localY`. */
+  localY?: number;
+  /** Its turn relative to the parent, radians (`transform.localRotation`). */
+  localRotation?: number;
 };
 
 /** Do not force this entity onto one worker: use stride `activeListSlot % logicWorkerCount`. */
@@ -280,18 +291,6 @@ export type SceneEntityDefinitionTuple = [typeof GameObject, number];
 
 export type SceneQueryTuple = readonly (typeof Component)[];
 
-/** `config.lighting.faces` (DX-FACES): decorations with a normal, and sprites with maps, lit as surfaces in 3D. */
-export interface SceneLightingFacesConfig {
-  /** Default false. A sheet with a heightMap, a normalMap or `emissive` turns the faces' pass on by itself. */
-  enabled?: boolean;
-  /** A lamp's light past the terminator: 0 (the default) stops hard, 1 is half-Lambert. */
-  wrap?: number;
-  /** A lamp's strength on a face against the floor's. Default 1. */
-  gain?: number;
-  /** How much of the sun's light depends on where a face looks; the rest is sky. Default 0.6. */
-  sunDirect?: number;
-}
-
 /**
  * `config.lighting`. The keys of the 3D light mode (DX-LIGHT3D) and the common ones are typed; the others are in
  * LIGHTING_DEFAULTS (src/util/configDefaults.js) and the guide's "Lights and shadows".
@@ -325,8 +324,6 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   maxPolygonVertices?: number;
   /** shadowCaster.setSprite({ frame }) works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
   keyedCasters?: boolean;
-  /** DX-FACES: decorations with a normal are lit as surfaces. Not with raycasted lighting. */
-  faces?: SceneLightingFacesConfig;
   /**
    * DX-SHADOW3D: how the sun casts. 'sprite' (default): each caster's shadow on the shadows' layer, darkening every light
    * by Sun.shadowOpacity. 'map': a shadow map in the floor's terms that takes out the sun's light alone (Sun.shadowAlpha
@@ -365,9 +362,18 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    * pass each. Same picture; one pass costs about a third less.
    */
   gbuffer?: 'pass' | 'mrt';
-  /** DX-EMISSIVE: spriteRenderer.emissive glows here even without maps, faces or a shadow map. Default false. */
-  emissive?: boolean;
-  /** 'add' (default): the lights' glows on the lightGlows layer, added over the lighting; 'sprite': in the entity list. */
+  /**
+   * DX-UNSHADED: spriteRenderer.unshaded works in this scene even without a sheet with maps, an unshaded sheet,
+   * `lightGlow: 'sprite'` or a shadow map (which give the sprites their G-buffer words by themselves; faces do not).
+   * Default false: a scene without them pays nothing.
+   */
+  unshaded?: boolean;
+  /**
+   * How the lights' halos (LightEmitter.glow) are drawn. 'add' (default): on the lightGlows layer, added over the lighting
+   * and over everything (nothing in front covers them). 'sprite': each right after its entity's sprite, on its sort line,
+   * so what stands in front covers it, and unshaded (the night does not darken it); it turns the G-buffer and the
+   * unshaded pass on.
+   */
   lightGlow?: 'add' | 'sprite';
   /**
    * The lightGlows layer's size against the canvas, 1/16 to 1 (default 0.5): the glows are drawn into a target that size
@@ -387,9 +393,10 @@ export interface SceneRendererConfig extends Record<string, unknown> {
   ySort?: boolean;
   /**
    * DX-DEPTH: each entity pixel's place on the floor corrects the painter: a pixel with a height map at its own height,
-   * every other pixel at its sprite's foot, the painter breaking ties. Unset (the default), on with an oblique camera
-   * (floorScaleY under 1) when a sheet has maps (heightMap, normalMap or emissive); true or false forces it (true still
-   * needs a sheet with maps). WebGL only for now.
+   * a face (a decoration with a normal) at its plane's depth, every other pixel at its sprite's foot, the painter breaking
+   * ties. Unset (the default), on with an oblique camera (floorScaleY under 1) when a sheet has maps (heightMap, normalMap
+   * or reliefMap) or a decoration carries a face's normal; true or false forces it (true still needs maps or faces).
+   * WebGL and WebGPU.
    */
   pixelDepth?: boolean;
 }
@@ -409,9 +416,28 @@ export type SceneConfig = Record<string, unknown> & {
    * trigonometry. An oblique camera (floorScaleY under 1) is what turns renderer.pixelDepth on by itself. A flat view,
    * `pitch` 90 or 0, lights with raycasted lighting when lighting is enabled: a visibility polygon a light, cut by the
    * ShadowCasters' walls (setWall), without faces, maps or shadow maps; a side view whose lights pool on the backdrop
-   * also writes `floorScaleY: 1`. Replaces lighting.groundScaleY, lighting.faces.heightScaleY and lighting.raycasted.
+   * also writes `floorScaleY: 1`. Replaces lighting.groundScaleY and lighting.raycasted. A sheet whose pictures and maps
+   * were drawn for another camera says so ({@link SceneSpritesheetAsset.artCamera}): its heights are scaled to this one
+   * at load.
    */
   camera?: { pitch?: number; yaw?: number; floorScaleY?: number; heightScaleY?: number };
+  /**
+   * How the scene's atlas is packed (the rest of the keys are in ASSETS_DEFAULTS, src/util/configDefaults.js). Not the
+   * scene's `static assets`, which lists the files.
+   */
+  assets?: Record<string, unknown> & {
+    /**
+     * E-497: the format of the atlas's twin page (the page that holds the sheets' height and normal maps). 'A' (default):
+     * RGBA8, a height and a normal a texel. 'B': heights alone, 2 bytes a texel, normals from the heights in the shader
+     * (a sheet with a normalMap keeps 'A', with a warning). 'C': B's heights and the normals at half resolution. Any other
+     * value is 'A', with a warning.
+     */
+    twinFormat?: 'A' | 'B' | 'C';
+    /** The atlas's largest width in px (default 4096). */
+    maxAtlasWidth?: number;
+    /** The atlas's largest height in px (default 4096). */
+    maxAtlasHeight?: number;
+  };
   /** Scene lighting; the 3D light mode's keys are typed in {@link SceneLightingConfig}. */
   lighting?: SceneLightingConfig;
   /** The renderer: the backend, the painter and pixel depth ({@link SceneRendererConfig}). */
@@ -828,6 +854,14 @@ export interface BigAtlasJsonMeta {
   proxySheets?: Record<string, unknown>;
   /** Static texture names registered as spritesheet IDs */
   individualTextures?: string[];
+  /** DX-MAPS: the atlas has a twin page (a sheet brought a heightMap, normalMap or reliefMap). */
+  maps?: boolean;
+  /** E-496: the twin page's own size; each frame with maps has its window in it (its json frame's `maps`). */
+  mapsSize?: { w: number; h: number };
+  /** E-497: the twin page's format, when it is not 'A'. */
+  mapsFormat?: 'B' | 'C';
+  /** DX-UNSHADED: a sheet of the atlas is unshaded (its frames say so: their json frame's `unshaded`). */
+  unshaded?: boolean;
 }
 
 export interface SpriteSheetCreateBigAtlasOptions {
@@ -837,10 +871,22 @@ export interface SpriteSheetCreateBigAtlasOptions {
   trimImages?: boolean;
   trimAlphaThreshold?: number;
   heuristic?: 'best-short-side' | 'best-long-side' | 'best-area' | string;
+  /** DX-MAPS: also return the twin page's texels as they are (`mapsTexels`), for the bake. Default false. */
+  keepMapsTexels?: boolean;
+  /** E-497: the twin page's format (config.assets.twinFormat). Default 'A'. */
+  twinFormat?: 'A' | 'B' | 'C';
+  /** DX-MAPCAMERA: the scene's camera (config.camera): a sheet drawn for another one has its heights scaled to it. */
+  camera?: { pitch?: number; floorScaleY?: number; heightScaleY?: number } | null;
+  /** DX-GLOWRADIUS: the light gradient's frame is unshaded (a lit scene whose halos join the entities). Default false. */
+  unshadedGlows?: boolean;
 }
 
 export interface BigAtlasCreateResult {
   canvas: HTMLCanvasElement | OffscreenCanvas;
+  /** DX-MAPS: the twin page (the sheets' height and normal maps), or null when no sheet has maps. */
+  mapsCanvas?: HTMLCanvasElement | OffscreenCanvas | null;
+  /** The twin page's texels as they are, with `keepMapsTexels`; else null. */
+  mapsTexels?: Uint8ClampedArray | null;
   json: {
     frames: Record<string, unknown>;
     animations: Record<string, unknown>;
@@ -853,6 +899,11 @@ export interface BigAtlasCreateResult {
 export interface SceneBigAtlasAsset {
   json: string;
   png: string;
+  /**
+   * DX-MAPS: the baked twin page (the sheets' height and normal maps). Left out: the file the json's `meta.mapsImage`
+   * names beside the png (`npm run bake:atlas` writes `bigAtlas_maps.png`).
+   */
+  maps?: string;
 }
 
 /** One direction's animation: its name, or `{ anim, flipX }` to draw it mirrored. */
@@ -872,9 +923,10 @@ export type SpriteDirectionGroup =
 export interface SceneSpritesheetAsset extends Record<string, unknown> {
   /**
    * The sheet's json. For the 3D light mode it may carry `directions` (at its top or in its `meta`, as below) and, in its
-   * `meta`: `emissive: true`, `shadowCast: { sun: 'sprite' }` (or `light3d: { cast: { sun: 'sprite' } }`, as the light
-   * bench's converter writes it: its renders cast their card for the sun instead of their solid) and `footprints` (or
-   * `light3d.footprints`: a floor polygon a frame, for `lighting.footprintSolids`).
+   * `meta`: `unshaded: true`, `artCamera: { floorScaleY, heightScaleY }` (as {@link artCamera}; the assets entry's wins),
+   * `shadowCast: { sun: 'sprite' }` (or `light3d: { cast: { sun: 'sprite' } }`, as the light bench's converter writes it:
+   * its renders cast their card for the sun instead of their solid) and `footprints` (or `light3d.footprints`: a floor
+   * polygon a frame, for `lighting.footprintSolids`).
    */
   json?: string;
   png?: string;
@@ -887,17 +939,33 @@ export interface SceneSpritesheetAsset extends Record<string, unknown> {
   /**
    * DX-MAPS: a twin of the sheet (same frames, same places) with each pixel's height above the floor: R·256 + G in 1/64
    * px, or `{ png, gray }` for a greyscale picture whose white is `gray` px. With lighting, the sheet's sprites are lit as
-   * the surface it says (and the normals come from it when there is no normalMap).
+   * the surface it says (and the normals come from it when there is no normalMap or reliefMap).
    */
   heightMap?: string | { png: string; gray?: number };
-  /** DX-MAPS: a twin of the sheet with each pixel's normal, RGB in the camera's space (x right, y up, z out of the screen). */
+  /**
+   * DX-MAPS: a twin of the sheet with each pixel's normal, RGB in the camera's space: x right, y up, z out of the screen
+   * (OpenGL's convention, green up; DirectX's is not supported). Without a heightMap the pixels stand where the sprite's
+   * `surface` puts them (a card on its foot, or the floor). The normals mirror and turn with the sprite.
+   */
   normalMap?: string;
   /**
-   * DX-EMISSIVE: every opaque pixel of the sheet glows: it keeps its own colour whatever the light (night, shadows), still
-   * drawn in the painter's order, so what stands in front hides it. Needs lighting (not raycasted) and the entities layer.
-   * Its normals give way to the glow. Or `emissive: true` in its json's meta. Default false.
+   * DX-RELIEF: a greyscale twin of how far the shape bulges, not how high it is above the floor (what many 2D tools
+   * give): white bulges `strength` px (default 8). It gives normals only: the height is the heightMap's, else the
+   * sprite's `surface`. A normalMap's normals win over it.
    */
-  emissive?: boolean;
+  reliefMap?: string | { png: string; strength?: number };
+  /**
+   * DX-MAPCAMERA: the camera the sheet's pictures and maps were drawn for, both positive. Its heights are scaled at load
+   * by its heightScaleY over the scene's (config.camera), so a pixel rises on the scene's screen as on the art's.
+   * Or `meta.artCamera` in its json; this one wins. Left out: the scene's own camera.
+   */
+  artCamera?: { floorScaleY: number; heightScaleY: number };
+  /**
+   * DX-UNSHADED: no light touches the sheet's pixels: no shading, no shadows, no night. Each opaque pixel keeps its own
+   * colour, still drawn in the painter's order, so what stands in front hides it. It lights nothing around it. Or
+   * `unshaded: true` in its json's meta. Default false.
+   */
+  unshaded?: boolean;
 }
 
 export interface SceneAssetsManifest {
@@ -1143,13 +1211,15 @@ export interface DecorationSpawnConfig {
   /** Vertical shear, y += skewY·x: a wall seen at an angle (vertical lines stay vertical). Default 0. */
   skewY?: number;
   /**
-   * With faceNormalY and faceNormalZ, under `lighting.faces`: this sprite is a flat face that looks that way, in the
-   * floor's space (x along the screen, y across the floor towards the camera, z up), and lights as a surface in 3D.
+   * With faceNormalY and faceNormalZ: this sprite is a flat face that looks that way, in the floor's space (x along the
+   * screen, y across the floor towards the camera, z up; need not be unit length), and lights as a surface in 3D. There
+   * is no switch: the scene's first face turns the faces' G-buffer on in a lit scene, and pixel depth with an oblique
+   * camera (a face writes its plane's depth). Not with raycasted lighting. Left out: no face.
    */
   faceNormalX?: number;
   faceNormalY?: number;
   faceNormalZ?: number;
-  /** Px above the floor of the face at this decoration's position. Default 0. */
+  /** Px above the floor of the face at this decoration's position, 0 to 1023.875. Default 0. */
   faceHeight?: number;
   sway?: boolean;
   /** Shear the sway instead of turning the sprite (it then ignores `rotation` and the parent's). */
@@ -1160,6 +1230,11 @@ export interface DecorationSpawnConfig {
   layer?: string | number;
   /** Layer names / ids; wins over `layer`. */
   layers?: string | number | Array<string | number>;
+  /**
+   * Its place among what shares its sort point (DECORATION_INNER_Z_MIN..MAX; negative draws behind an attached
+   * decoration's parent). On a face, 0 is the wall and 1 to 7 what is stuck on it, in stacking order (a window, its lit
+   * pane, a poster): the depth's tie on a shared plane. Default 0.
+   */
   innerZ?: number;
   zIndex?: number;
   parent?: number | null;
@@ -1170,14 +1245,14 @@ export interface DecorationSpawnConfig {
 
 /**
  * spawnMany's config: spawn()'s, where x, y, texture, scaleX, scaleY, rotation, alpha, tint, sortOffsetY, skewX, skewY,
- * faceNormalX, faceNormalY, faceNormalZ and faceHeight may also be arrays (or typed arrays) with one value per decoration.
- * count then defaults to the first array's length.
+ * faceNormalX, faceNormalY, faceNormalZ, faceHeight and innerZ may also be arrays (or typed arrays) with one value per
+ * decoration. count then defaults to the first array's length.
  */
 export interface DecorationSpawnManyConfig
   extends Omit<
     DecorationSpawnConfig,
     | 'x' | 'y' | 'texture' | 'scaleX' | 'scaleY' | 'rotation' | 'alpha' | 'tint' | 'sortOffsetY' | 'skewX' | 'skewY'
-    | 'faceNormalX' | 'faceNormalY' | 'faceNormalZ' | 'faceHeight'
+    | 'faceNormalX' | 'faceNormalY' | 'faceNormalZ' | 'faceHeight' | 'innerZ'
   > {
   count?: number;
   x?: WeedNumOrRange | ArrayLike<number>;
@@ -1195,6 +1270,7 @@ export interface DecorationSpawnManyConfig
   faceNormalY?: number | ArrayLike<number>;
   faceNormalZ?: number | ArrayLike<number>;
   faceHeight?: number | ArrayLike<number>;
+  innerZ?: number | ArrayLike<number>;
   /** With per-decoration arrays: receives each spawned decoration's pool index, in order. */
   out?: Int32Array | Uint32Array | number[];
 }
@@ -2699,6 +2775,8 @@ export interface SunOffsets {
   readonly NIGHT_INTENSITY: 68;
   readonly NIGHT_FROM: 72;
   readonly NIGHT_TO: 76;
+  readonly MAX_ELEVATION: 80;
+  readonly SKY_LIGHT: 84;
 }
 
 /** Float32 slot indices (byte offset / 4) for Sun SAB. */
@@ -2720,6 +2798,8 @@ export interface SunF32Indices {
   readonly NIGHT_INTENSITY: 17;
   readonly NIGHT_FROM: 18;
   readonly NIGHT_TO: 19;
+  readonly MAX_ELEVATION: 20;
+  readonly SKY_LIGHT: 21;
 }
 
 /** Uint32 slot indices (byte offset / 4) for Sun SAB. */
@@ -2751,6 +2831,11 @@ export interface SunInitConfig {
   startHour?: number;
   /** Degrees the sun reaches at noon on a day cycle. Default 90: overhead. */
   maxElevation?: number;
+  /**
+   * The share of the sun's light that comes from the sky and lights every surface (faces, sprites with maps) whatever way
+   * it faces; the rest depends on where the surface looks. 0 to 1, default 0.4 ({@link Sun.skyLight}).
+   */
+  skyLight?: number;
   shadowAngleOffset?: number;
   shadowMinLengthRatio?: number;
   shadowMaxLengthRatio?: number;
@@ -2791,6 +2876,15 @@ export declare class Sun {
 
   static get maxElevation(): number;
   static set maxElevation(value: number);
+  /** What Sun.skyLight reads where no scene set it (no sun buffer): 0.4. */
+  static readonly SKY_LIGHT_DEFAULT: number;
+  /**
+   * The share of the sun's light that comes from the sky, the same on every surface whatever way it faces; the rest
+   * depends on where a surface looks (a face's or a sprite's normal). 0 to 1, clamped; 0.4 by default
+   * (lighting.sun.skyLight).
+   */
+  static get skyLight(): number;
+  static set skyLight(value: number);
   static get shadowAngleOffset(): number;
   static set shadowAngleOffset(value: number);
   static get shadowMinLengthRatio(): number;
@@ -3223,6 +3317,11 @@ export declare class SpriteSheetRegistry {
   static registerSpritesheetId(name: string): number;
   static getSpritesheetId(name: string): number;
   static getSpritesheetName(id: number): string;
+  /**
+   * DX-MAPCAMERA: the camera a sheet's pictures and maps were drawn for (its assets entry's or json's artCamera), by name
+   * or id, on every worker; null when it has none (the scene's own).
+   */
+  static artCameraOf(sheet: string | number): { floorScaleY: number; heightScaleY: number } | null;
   static createBigAtlas(
     assetsConfig: Record<string, unknown>,
     options?: SpriteSheetCreateBigAtlasOptions
@@ -3387,10 +3486,25 @@ export declare class Transform extends Component {
     active: typeof Uint8Array;
     entityType: typeof Uint8Array;
     isItOnScreen: typeof Uint8Array;
+    parent: { type: typeof Uint16Array | typeof Uint32Array; entityId: true };
+    localX: typeof Float32Array;
+    localY: typeof Float32Array;
+    localRotation: typeof Float32Array;
   };
+  /** 0 = inactive, 1 = active, 2 while its despawn runs. */
   static active: Uint8Array;
   static entityType: Uint8Array;
   static isItOnScreen: Uint8Array;
+  /**
+   * DX-PARENT: the entity each one follows, or the "no entity" id of the scene's width (0xffff, or 0xffffffff with 32-bit
+   * ids). Written through `transform.parent`; a saved game remaps it.
+   */
+  static parent: Uint16Array | Uint32Array;
+  /** Where each child sits in its parent's frame: px, turned with the parent. */
+  static localX: Float32Array;
+  static localY: Float32Array;
+  /** Each child's turn relative to its parent, radians. */
+  static localRotation: Float32Array;
   /** HEAP-bound after `box2dReady`. */
   static x: Float32Array;
   static y: Float32Array;
@@ -3399,6 +3513,25 @@ export declare class Transform extends Component {
   /** Cos/sin of body angle (`b2Rot`); SoA truth for facing. */
   static rotC: Float32Array;
   static rotS: Float32Array;
+  /**
+   * DX-PARENT: the entity this one follows, as its index (`GameObject.get(index)` gives the entity), or null. Set an
+   * entity or its index to link it (physics then puts it at the parent's position plus its local offset, turned by the
+   * parent's rotation, after each step); null unlinks it, and it stays where it is. v1: the parent must have a body
+   * (RigidBody or Collider) and be alive, the child must have none (its class may not list RigidBody or Collider: attach
+   * a body with a joint), and the scene needs physics; otherwise it warns once and does not link. A child's own pose
+   * writes (x, y, rotation, setPosition) are ignored with a warning, and a child is despawned within a frame of its
+   * parent's despawn.
+   */
+  get parent(): number | null;
+  set parent(value: GameObject | number | null);
+  /** Its offset in the parent's frame, px (turned with the parent). Physics places it there after its next step. */
+  get localX(): number;
+  set localX(value: number);
+  get localY(): number;
+  set localY(value: number);
+  /** Its turn relative to the parent, radians: its rotation is the parent's plus this. */
+  get localRotation(): number;
+  set localRotation(value: number);
 }
 
 export declare class RigidBody extends Component {
@@ -3719,22 +3852,26 @@ export declare class SpriteRenderer extends Component {
   set tileOffsetU(value: number);
   get tileOffsetV(): number;
   set tileOffsetV(value: number);
-  /** DX-GBUF: normals (bits 0-1), surface 'floor' (bit 2), emissive level in quarters (bits 3-5). */
+  /** DX-GBUF: normals (bits 0-1), surface 'floor' (bit 2), unshaded (bit 5). */
   static gbufFlags: Uint8Array;
   static readonly NORMALS: Readonly<{ AUTO: 0; MAP: 1; HEIGHT: 2; FLAT: 3 }>;
-  /** A spawned slot's normals, surface and emissive back to their defaults. */
+  /** A spawned slot's normals, surface and unshaded back to their defaults. */
   static resetGbufRow(i: number): void;
-  /** How many live sprites glow on their own (spriteRenderer.emissive). */
-  static emissiveUsers(): number;
+  /** How many live sprites are unshaded (spriteRenderer.unshaded): the unshaded pass runs while any is. */
+  static unshadedUsers(): number;
   /** Where the light pass takes the sprite's normals from: the normal map, its height, or flat (lit as drawn). */
   get normals(): 'auto' | 'map' | 'height' | 'flat';
   set normals(v: 'auto' | 'map' | 'height' | 'flat');
   /** The height of a sprite without a height map: a card standing on its foot, or flat on the floor. */
   get surface(): 'standing' | 'floor';
   set surface(v: 'standing' | 'floor');
-  /** Glows on its own: kept bright at night, sorted with the entities; true, or a strength up to 1.75 in quarters. */
-  get emissive(): boolean | number;
-  set emissive(v: boolean | number);
+  /**
+   * DX-UNSHADED: no light touches the sprite: no shading, no shadows, no night; it keeps its own colour, still sorted with
+   * the entities. true or false (default; only `true` turns it on). In a scene without a sheet with maps, an unshaded
+   * sheet or a shadow map it also needs `lighting.unshaded: true` (a warning says so).
+   */
+  get unshaded(): boolean;
+  set unshaded(v: boolean);
   static getOriginalWidth(entityIndex: number): number;
   static getOriginalHeight(entityIndex: number): number;
   static updateBounds(entityIndex: number): void;
@@ -3995,7 +4132,10 @@ export declare class DecorationComponent extends Component {
   /** The shear as set (DX-DECOSKEW); what is drawn is in the facing columns. */
   static skewX: Float32Array;
   static skewY: Float32Array;
-  /** A face's normal, octahedral, and its height in 1/8 px (lighting.faces, src/render/faceMap.js); 0 = no face. */
+  /**
+   * A face's normal, octahedral (0 = no face), and its height in 1/8 px in faceZ's low 13 bits, its innerZ (0 to 7) in
+   * the top 3 (src/render/faceMap.js encodeFaceHeight).
+   */
   static faceOct: Uint16Array;
   static faceZ: Uint16Array;
   static decorationCount: number;
@@ -4023,6 +4163,7 @@ export declare class LightEmitter extends Component {
     coneCos: typeof Float32Array;
     coneInvSpan: typeof Float32Array;
     followFlip: typeof Uint8Array;
+    glowRadius: typeof Float32Array;
   };
   static active: Uint8Array;
   /** 0xRRGGBB. */
@@ -4044,8 +4185,13 @@ export declare class LightEmitter extends Component {
    * 0 casts none there.
    */
   static elevation: Float32Array;
-  /** The halo's alpha; 0 (the default) draws none. The halo is about 0.85 of the radius wide. */
+  /**
+   * The halo's alpha; 0 (the default) draws none. With lighting.lightGlow 'sprite' the halo is drawn right after its
+   * entity's sprite (over it, under what stands in front) and unshaded: the night does not darken it.
+   */
   static glow: Float32Array;
+  /** DX-GLOWRADIUS: the halo's radius in px; 0 (the default) is 0.85 of the light's radius. */
+  static glowRadius: Float32Array;
   /** Screen px from the light to its halo; negative is up (put the halo on the bulb). */
   static glowOffsetY: Float32Array;
   /** The halo's layer id; 0 = the entity's layers. Set it by name with `glowLayer`. */
@@ -4080,6 +4226,12 @@ export declare class LightEmitter extends Component {
   /** The halo's alpha, at least 0. */
   get glow(): number;
   set glow(value: number);
+  /**
+   * The halo's radius in px, at least 0; 0 (the default) makes it 0.85 of the light's radius (a spark's big soft flash),
+   * so give a lamp that lights a whole street a small one here.
+   */
+  get glowRadius(): number;
+  set glowRadius(value: number);
   /** The layer the halo is drawn on, by name; null follows the entity's layers. */
   get glowLayer(): string | null;
   set glowLayer(name: string | null);
@@ -4629,6 +4781,11 @@ export declare class DecorationPool extends SharedAtomicPool {
   static clearAttachedAndDespawnAll(entityIdx: number): void;
   static spawn(config: DecorationSpawnConfig): number;
   static spawnMany(config: DecorationSpawnManyConfig): number;
+  /**
+   * DX-BARRIOS: whether any decoration has carried a face's normal (faceNormalX…) since the scene started: faces are on,
+   * for good (the faces' G-buffer and pixel depth turn on by themselves). False before the pool is bound.
+   */
+  static facesInUse(): boolean;
   static despawn(index: number): boolean;
   static despawnAll(): void;
   static initializeActiveList(
@@ -4642,6 +4799,13 @@ export declare class Decoration {
   index: number;
   constructor(index: number);
   static get(id: number): Decoration;
+  /** Spawn one decoration; its pool index, or -1 when the pool is full. */
+  static spawn(config: DecorationSpawnConfig): number;
+  /** Spawn several (`count`, or one per element of the arrays it is given); how many spawned. */
+  static spawnMany(config: DecorationSpawnManyConfig): number;
+  /** Despawn by pool index. */
+  static despawn(index: number): boolean;
+  static despawnAll(): void;
   static ensureForParented(id: number): Decoration;
   static evictFacade(id: number): void;
   /** World-owned decorations only; fills out with pool indices (a Uint32Array past 65 535 decorations); returns count. */

@@ -17,8 +17,8 @@ export const CONTACT_HEIGHT = 1.5;
 
 /**
  * H-EDGE: what a frame's texels hold, as the registry scans them (spriteSheetRegistry.js: the atlas's json frame base's
- * `texels`): FRAME_SOFT a texel of alpha 1 to 127, FRAME_HALF one of 128 to 254, FRAME_GLOW a glowing texel in the
- * atlas's twin page. A frame with none is binary: every texel's alpha 0 or 255, none glowing. The texture table keeps them
+ * `texels`): FRAME_SOFT a texel of alpha 1 to 127, FRAME_HALF one of 128 to 254, FRAME_GLOW a frame of an unshaded sheet
+ * (DX-UNSHADED: the sheet's mark). A frame with none is binary: every texel's alpha 0 or 255, none unshaded. The texture table keeps them
  * a frame on the CPU (instancedSpriteBatch.js textureLutTexels), FRAME_UNSCANNED for a frame the registry did not scan.
  */
 export const FRAME_SOFT = 1;
@@ -96,7 +96,8 @@ export function frameSolidTexels(pixels, fx, fy, w, h) {
  * not write (Predator's: every frame read as FRAME_UNSCANNED, so neither DX-DEPTH's edge pass nor the opaque pass knew
  * one binary). Each frame without them gets frameAlphaKinds and frameSolidTexels of its rectangle in the atlas, read by
  * `readPixels` (called once, only when one is missing: { data, x: 0, y: 0, width, height }). A sheet with maps may glow,
- * which only its twin page tells, so an atlas with maps (meta.maps) is left as it is. Returns the frames filled.
+ * which only its twin page told before DX-UNSHADED, so an atlas with maps (meta.maps) is left as it is. Returns the frames
+ * filled.
  * @param {{ frames?: Record<string, { frame?: { x: number, y: number, w: number, h: number }, base?: object }>,
  *   meta?: { maps?: boolean } }} json
  * @param {() => { data: Uint8ClampedArray, x: number, y: number, width: number, height: number } | null} readPixels

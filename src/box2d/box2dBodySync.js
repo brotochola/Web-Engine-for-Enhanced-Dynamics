@@ -242,6 +242,28 @@ export function advanceBodyGeneration(entityIndex) {
   return next;
 }
 
+/** DX-PARENT: what remakeBody calls after it moved a live entity's generation (the entity did not despawn). */
+let bodyRemadeHook = null;
+
+/**
+ * DX-PARENT: `fn(entityIndex)` runs after remakeBody gives a live entity a new generation, so the children that keep
+ * its generation (Transform.parentGen) take the new one: a parent whose sensor flag changes is still their parent.
+ * @param {((entityIndex: number) => void) | null} fn
+ */
+export function setBodyRemadeHook(fn) {
+  bodyRemadeHook = typeof fn === 'function' ? fn : null;
+}
+
+/**
+ * DX-PARENT: slot i's body generation (Atomics.load; 0 when unbound or out of range): what a child keeps of its parent.
+ * @param {number} entityIndex
+ */
+export function bodyGenerationOf(entityIndex) {
+  const i = entityIndex | 0;
+  if (!generation || i < 0 || i >= generation.length) return 0;
+  return Atomics.load(generation, i) | 0;
+}
+
 /**
  * A property Box2D reads only when it makes the body (a shape's sensor flag, its hit events) changed. LIFECYCLE alone
  * does nothing to a body that exists (syncBodySlot remakes one only for a new generation), so a live slot gets a new
@@ -251,8 +273,10 @@ export function advanceBodyGeneration(entityIndex) {
  * @param {boolean} live the entity is active (Transform.active)
  */
 export function remakeBody(entityIndex, live) {
-  if (live) bumpBodyGeneration(entityIndex);
-  else markBodyDirty(entityIndex, BODY_DIRTY.LIFECYCLE);
+  if (live) {
+    bumpBodyGeneration(entityIndex);
+    if (bodyRemadeHook !== null) bodyRemadeHook(entityIndex | 0);
+  } else markBodyDirty(entityIndex, BODY_DIRTY.LIFECYCLE);
 }
 
 export function bumpBodyGeneration(entityIndex) {

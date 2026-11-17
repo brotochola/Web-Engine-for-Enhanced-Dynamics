@@ -10760,7 +10760,7 @@
       "id": "DX-SUNMASK",
       "title": "The sun's shadow inside the light sum",
       "status": "open",
-      "statusText": "A design for the owner to decide on: docs/internal/DX_SUNMASK_DESIGN.md",
+      "statusText": "A design for the owner to decide on: docs/internal/reports/DX_SUNMASK_DESIGN.md",
       "date": "2026-11-05",
       "result": "",
       "next": "",
@@ -10778,7 +10778,7 @@
       "id": "DX-NORMALS",
       "title": "Light by the way a surface faces",
       "status": "open",
-      "statusText": "A design for the owner to decide on: docs/internal/DX_NORMALS_DESIGN.md",
+      "statusText": "A design for the owner to decide on: docs/internal/reports/DX_NORMALS_DESIGN.md",
       "date": "2026-11-05",
       "result": "",
       "next": "",
@@ -10827,7 +10827,7 @@
       "kind": "dx",
       "refs": [
         "REVIEW_PLAN.md#DX-VOLUME",
-        "DX_VOLLIGHTS_DESIGN.md"
+        "reports/DX_VOLLIGHTS_DESIGN.md"
       ],
       "aliases": [
         "VolumeShadowCaster",
@@ -11779,7 +11779,7 @@
       "id": "DX-VOLLIGHTS",
       "title": "Lamps and headlights cast a VolumeShadowCaster's shadow, in basic and raycasted lighting",
       "status": "open",
-      "statusText": "A plan for the owner to decide (DX_VOLLIGHTS_DESIGN.md), not built",
+      "statusText": "A plan for the owner to decide (reports/DX_VOLLIGHTS_DESIGN.md), not built",
       "date": "2026-11-11",
       "result": "",
       "next": "Decisions first (eight, in the design). Then step 0 (volumeStressScene ?castsLights= ?raycast=, a reference outline, vertices × casting lights at Sun Street's and Conurbano's sizes), basic lighting into shadowRT, raycasted lighting as a mask on each fan, receivers, Sun Street without LightOccluder.",
@@ -11787,7 +11787,7 @@
       "kind": "dx",
       "refs": [
         "REVIEW_PLAN.md#DX-VOLLIGHTS",
-        "DX_VOLLIGHTS_DESIGN.md"
+        "reports/DX_VOLLIGHTS_DESIGN.md"
       ],
       "aliases": [
         "castsLights",

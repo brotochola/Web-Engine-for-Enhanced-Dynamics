@@ -43,7 +43,7 @@ static ARRAY_SCHEMA = {
 };
 ```
 
-`entityIdNone` (`0xffff` / `0xffffffff`) stays empty. `0` is a real entity. An id whose entity was not in the save becomes `entityIdNone`. Camera follow uses the same map (`0` means no follow, otherwise `entityIndex + 1`). Joints already remapped this way.
+`entityIdNone` (`0xffff` / `0xffffffff`) stays empty. `0` is a real entity. An id whose entity was not in the save becomes `entityIdNone`. Camera follow uses the same map (`0` means no follow, otherwise `entityIndex + 1`). Joints already remapped this way, and so is `Transform.parent`: a restored child is linked again to its restored parent; one whose parent was not in the save stays where it is, with a warning.
 
 After restore, the physics host marks the Box2D body dirty when **either** `RigidBody` or `Collider` is active on the entity (RigidBody-only / Collider-only / both). See [PHYSICS.md, composition](./PHYSICS.md#rigidbody--collider-composition).
 

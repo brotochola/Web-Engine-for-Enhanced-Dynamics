@@ -780,6 +780,201 @@
     notePosePublishStats();
   }
 
+  /** DX-PARENT: Transform's link views from the init payload (physicsHostImpl's links), or none. */
+  function bindChildLinks(desc, entityCount) {
+    if (!desc || !desc.words || !desc.parent) {
+      useChildLinks(null, null, 0xffff, null, null, null, null, null, null, 0);
+      return;
+    }
+    const wide = desc.parentWidth === 32;
+    useChildLinks(
+      viewFromDesc(desc.words, Int32Array),
+      viewFromDesc(desc.parent, wide ? Uint32Array : Uint16Array),
+      wide ? 0xffffffff : 0xffff,
+      viewFromDesc(desc.localX, Float32Array),
+      viewFromDesc(desc.localY, Float32Array),
+      viewFromDesc(desc.localRotation, Float32Array),
+      viewFromDesc(desc.parentGen, Int32Array),
+      viewFromDesc(desc.list, Int32Array),
+      viewFromDesc(desc.orphans, Int32Array),
+      entityCount,
+    );
+  }
+
+  // child-links-start (tests/node/transformParent.test.js runs this block as shipped)
+  // DX-PARENT: Transform.parent. Physics is the one writer of a linked child's pose: after the step and before the pose
+  // is published (doStep's writeChildPoses), every child goes where its parent is: parent.xy + rotate(parent.rotation,
+  // local.xy), turned by parent.rotation + localRotation. Every reader of a light's owner (pre-render's and Pixi's light
+  // gathering, the WASM glow rows) runs after the pose is published, so it finds the child where its parent is in the
+  // same frame. The child list is rebuilt from Transform.parent only when logic moves the link version: an entity
+  // without a parent costs nothing, and with no link at all a step reads one word. A child whose parent is not active,
+  // or whose parent's body generation moved (it despawned, maybe respawned in the same frame), is an orphan: it is no
+  // longer written and goes in the ring logic0 drains (it despawns it), so it never follows the slot's next occupant.
+  // Links are one level deep: a parent has a body and a child has none, so no child is a parent.
+  const CHILD_PI = Math.PI;
+  const CHILD_TWO_PI = 2 * Math.PI;
+  // Transform's link words and columns (src/components/transform.js: LINK_* and the region after the columns).
+  let linkWords = null;
+  let linkParent = null;
+  let linkNone = 0xffff;
+  let linkLocalX = null;
+  let linkLocalY = null;
+  let linkLocalRot = null;
+  let linkParentGen = null;
+  let linkPublished = null;
+  let linkOrphans = null;
+  // Physics' compact child list, its length, and the link version it was built from (0: none was ever made).
+  let childList = new Int32Array(0);
+  let childCount = 0;
+  let childVersion = 0;
+  // 1 for a child queued as an orphan since the list was built: neither written nor published.
+  let childQueued = new Uint8Array(0);
+  // cos and sin of each listed child's localRotation, and the value they are of (NaN: not computed yet).
+  let childCos = new Float64Array(0);
+  let childSin = new Float64Array(0);
+  let childTurn = new Float64Array(0);
+  // The published list is behind physics' own (a rebuild, a new orphan).
+  let childPublishDue = false;
+
+  function useChildLinks(words, parent, none, localX, localY, localRot, parentGen, published, orphans, entityCount) {
+    linkWords = words;
+    linkParent = parent;
+    linkNone = none;
+    linkLocalX = localX;
+    linkLocalY = localY;
+    linkLocalRot = localRot;
+    linkParentGen = parentGen;
+    linkPublished = published;
+    linkOrphans = orphans;
+    const n = words !== null ? entityCount | 0 : 0;
+    childList = new Int32Array(n);
+    childQueued = new Uint8Array(n);
+    childCos = new Float64Array(n);
+    childSin = new Float64Array(n);
+    childTurn = new Float64Array(n);
+    childCount = 0;
+    childVersion = 0;
+    childPublishDue = false;
+  }
+
+  /** After the step, before publishPose: every linked child where its parent is. */
+  function writeChildPoses() {
+    const words = linkWords;
+    if (words === null || bodyGeneration === null) return;
+    const version = Atomics.load(words, 0);
+    if (version !== childVersion) rebuildChildList(version);
+    if (childCount > 0) walkChildren(childCount);
+    if (childPublishDue) publishChildList();
+  }
+
+  /** The child list from Transform.parent: every slot with a parent (a spawning child too; the walk skips it). */
+  function rebuildChildList(version) {
+    childVersion = version;
+    const parent = linkParent;
+    const none = linkNone;
+    const list = childList;
+    const turn = childTurn;
+    const n = parent.length < list.length ? parent.length : list.length;
+    childQueued.fill(0);
+    let count = 0;
+    for (let c = 0; c < n; c++) {
+      if (parent[c] === none) continue;
+      list[count] = c;
+      turn[count] = NaN;
+      count++;
+    }
+    childCount = count;
+    childPublishDue = true;
+  }
+
+  function walkChildren(n) {
+    const list = childList;
+    const parent = linkParent;
+    const none = linkNone;
+    const active = views.entityActive;
+    const gen = bodyGeneration;
+    const parentGen = linkParentGen;
+    const queued = childQueued;
+    const x = views.x;
+    const y = views.y;
+    const rotation = views.rotation;
+    const rotC = views.rotC;
+    const rotS = views.rotS;
+    const localX = linkLocalX;
+    const localY = linkLocalY;
+    const localRot = linkLocalRot;
+    const cosT = childCos;
+    const sinT = childSin;
+    const turn = childTurn;
+    for (let k = 0; k < n; k++) {
+      const c = list[k];
+      // A child spawning (0) or despawning (2) is left alone, as is one already queued.
+      if (active[c] !== 1 || queued[c] !== 0) continue;
+      const p = parent[c];
+      // Unlinked since the list was built: the version moved, the next step rebuilds.
+      if (p === none) continue;
+      // A plain read of the generation: a bump it misses is seen the next step. A link kept at generation 0 waits for
+      // its parent, still spawning on a logic worker (a body's generation is 1 or more once it has spawned).
+      if (active[p] !== 1 || gen[p] !== parentGen[c]) {
+        if (parentGen[c] !== 0) queueOrphan(c);
+        continue;
+      }
+      const lr = localRot[c];
+      if (lr !== turn[k]) {
+        turn[k] = lr;
+        cosT[k] = Math.cos(lr);
+        sinT[k] = Math.sin(lr);
+      }
+      const pc = rotC[p];
+      const ps = rotS[p];
+      const lx = localX[c];
+      const ly = localY[c];
+      x[c] = x[p] + pc * lx - ps * ly;
+      y[c] = y[p] + ps * lx + pc * ly;
+      const lc = cosT[k];
+      const ls = sinT[k];
+      rotC[c] = pc * lc - ps * ls;
+      rotS[c] = ps * lc + pc * ls;
+      let r = rotation[p] + lr;
+      if (r > CHILD_PI) r -= CHILD_TWO_PI;
+      else if (r <= -CHILD_PI) r += CHILD_TWO_PI;
+      rotation[c] = r;
+    }
+  }
+
+  /** Child c lost its parent: into the ring for logic0 (which checks it again and despawns it). Full: next step. */
+  function queueOrphan(c) {
+    const words = linkWords;
+    const ring = linkOrphans;
+    // The head is this worker's own word; the tail is logic0's.
+    const head = words[4];
+    if (((head - Atomics.load(words, 5)) | 0) >= ring.length) return;
+    ring[head & (ring.length - 1)] = c;
+    Atomics.store(words, 4, (head + 1) | 0);
+    childQueued[c] = 1;
+    childPublishDue = true;
+  }
+
+  /** The children physics writes, for pre-render (which composes them from their parent's drawn pose), under a seqlock. */
+  function publishChildList() {
+    childPublishDue = false;
+    const words = linkWords;
+    const out = linkPublished;
+    const list = childList;
+    const queued = childQueued;
+    const n = childCount;
+    const seq = words[2];
+    Atomics.store(words, 2, (seq + 1) | 0);
+    let m = 0;
+    for (let k = 0; k < n; k++) {
+      const c = list[k];
+      if (queued[c] === 0) out[m++] = c;
+    }
+    Atomics.store(words, 3, m);
+    Atomics.store(words, 2, (seq + 2) | 0);
+  }
+  // child-links-end
+
   function isFixedRotation(i) {
     return !!(views.fixedRotation && views.fixedRotation[i]);
   }
@@ -3082,6 +3277,7 @@
       applyAccelerations();
       cullLiquidFunOutsideWorld();
       stepWorld(dt, solverSteps);
+      writeChildPoses();
       maybePublishPose(entityCount);
       afterStep();
       noteChainStep(stepStart);
@@ -3107,6 +3303,7 @@
     cullLiquidFunOutsideWorld();
     stepWorld(dt, solverSteps);
     const t5 = performance.now();
+    writeChildPoses();
     maybePublishPose(entityCount);
     afterStep();
     const t6 = performance.now();
@@ -3453,6 +3650,7 @@
     pendingTeleportBits = new Uint8Array(entityCount);
     pendingTeleportList = new Uint32Array(entityCount);
     pendingTeleportCount = 0;
+    bindChildLinks(data.links, entityCount);
 
     const ready = world.getReadyPayload();
     bindStateChannels(ready, entityCount);

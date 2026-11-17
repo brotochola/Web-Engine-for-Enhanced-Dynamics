@@ -10,12 +10,18 @@ import {
   decodeFaceNormal,
   encodeFaceHeight,
   encodeFaceNormal,
+  faceFragmentGlsl,
   faceMapVertex,
   faceMapWgsl,
   resolveFaces,
   shaderWithFlag,
 } from '../../src/render/faceMap.js';
 import { spriteIndexedVertex, spriteIndexedWgsl } from '../../src/render/spriteIndexed.js';
+import { TWIN_GLSL, TWIN_WGSL, twinPresent, twinZ } from '../../src/render/twinTexel.js';
+import { encodeOctahedral, twinTexels } from '../../src/render/spriteMaps.js';
+import { pixelDepthFragment, pixelDepthWgsl } from '../../src/render/pixelDepth.js';
+import { sunMapColumnsVertex, sunMapColumnsWgsl } from '../../src/render/sunShadowMap.js';
+import { lampMapColumnsVertex, lampMapColumnsWgsl } from '../../src/render/lampShadowMap.js';
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { DecorationPool } from '../../src/core/decorationPool.js';
 import { buildPoolScene } from '../helpers/poolScene.mjs';
@@ -52,21 +58,44 @@ test('a normal need not be unit length, and a zero one is no face', () => {
   assert.equal(encodeFaceNormal(3, 4, 0), encodeFaceNormal(0.6, 0.8, 0));
 });
 
-test('a height is kept in eighths of a px, inside 16 bits', () => {
+// DX-FACEDEPTH: 13 bits of height (1023.875 px) and innerZ in the top 3, clamped to 0..7.
+test('a height is kept in eighths of a px in 13 bits, the face\'s innerZ in the top 3', async () => {
+  const { decodeFaceHeight, FACE_INNER_Z_SHIFT, FACE_Z_HEIGHT_MAX_CODE } = await import('../../src/render/faceMap.js');
   assert.equal(encodeFaceHeight(0), 0);
   assert.equal(encodeFaceHeight(1.25), 10);
   assert.equal(encodeFaceHeight(-3), 0);
-  assert.equal(encodeFaceHeight(1e6), 65535);
+  assert.equal(encodeFaceHeight(1e6), FACE_Z_HEIGHT_MAX_CODE);
+  assert.equal(encodeFaceHeight(1.25, 3), (3 << FACE_INNER_Z_SHIFT) | 10);
+  assert.equal(encodeFaceHeight(1.25, 9) >>> FACE_INNER_Z_SHIFT, 7, 'innerZ past 7 is 7');
+  assert.equal(encodeFaceHeight(1.25, -4), 10, 'a negative innerZ (an attached piece\'s) is 0 on a face');
+  assert.deepEqual(decodeFaceHeight(encodeFaceHeight(109.8, 2)), { height: 109.75, innerZ: 2 });
+  assert.ok(encodeFaceHeight(1e6, 7) <= 65535);
 });
 
-test('resolveFaces: off without the option or with raycasted lighting, and the defaults under what the scene sets', () => {
+// DX-BARRIOS: no lighting.faces: a scene's light can take faces where it is lit and not raycasted (whether any decoration
+// carries a normal is DecorationPool.facesInUse); no wrap, gain or sunDirect (Sun.skyLight).
+test('resolveFaces: a lit scene\'s light takes faces, a raycasted or unlit one does not; no wrap, gain or sunDirect', () => {
   assert.deepEqual(resolveFaces(null), { ...FACE_DEFAULTS });
-  assert.deepEqual(resolveFaces({ faces: { enabled: false, wrap: 1 } }), { ...FACE_DEFAULTS });
-  assert.equal(resolveFaces({ raycasted: true, faces: { enabled: true } }).enabled, false);
-  const on = resolveFaces({ faces: { enabled: true, wrap: 0.5 } });
-  assert.equal(on.enabled, true);
-  assert.equal(on.wrap, 0.5);
-  assert.equal(on.gain, FACE_DEFAULTS.gain);
+  assert.equal(resolveFaces({ enabled: false }).enabled, false);
+  assert.equal(resolveFaces({ enabled: true, raycasted: true }).enabled, false);
+  const on = resolveFaces({ enabled: true, faces: { enabled: false, wrap: 0.5 } });
+  assert.equal(on.enabled, true, 'the old switch is not read');
+  assert.deepEqual(Object.keys(on).sort(), ['enabled', 'heightScaleY']);
+});
+
+// DX-BARRIOS: a decoration with a normal turns the faces-in-use word on, for good; one without leaves it.
+test('the first decoration with a face normal turns faces on, and nothing turns them off', async () => {
+  buildPoolScene({ decorations: 8 });
+  assert.equal(DecorationPool.facesInUse(), false);
+  const plain = DecorationPool.spawn({ x: 1, y: 1 });
+  assert.equal(DecorationPool.facesInUse(), false, 'no normal, no faces');
+  DecorationPool.spawn({ x: 2, y: 2, faceNormalX: 0, faceNormalY: 0, faceNormalZ: 0 });
+  assert.equal(DecorationPool.facesInUse(), false, 'a zero normal is no face');
+  const face = DecorationPool.spawn({ x: 3, y: 3, faceNormalX: 0, faceNormalY: 1, faceNormalZ: 0, faceHeight: 10 });
+  assert.equal(DecorationPool.facesInUse(), true);
+  DecorationPool.despawn(face);
+  DecorationPool.despawn(plain);
+  assert.equal(DecorationPool.facesInUse(), true, 'for good');
 });
 
 test('without faces the light pass is the old one: no face code left in either shader', () => {
@@ -84,10 +113,10 @@ test('the face map is made from every sprite vertex shader the batch uses', () =
   for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
     const v = faceMapVertex(shader(name));
     assert.match(v, /flat out vec2 vFaceOct;/, name);
-    assert.match(v, /vFaceZ = aInstTileOff\.y \* /, name);
+    assert.match(v, /vFaceZ = \(aInstTileOff\.y - faceInner \* [\d.]+\) \* /, name);
   }
   const indexed = spriteIndexedVertex(faceMapVertex(shader('instancedSprite.vert.glsl')));
-  assert.match(indexed, /vFaceZ = aInstTileOff\.y \* /);
+  assert.match(indexed, /vFaceZ = \(aInstTileOff\.y - faceInner \* [\d.]+\) \* /);
   assert.throws(() => faceMapVertex('void main() {\n}\n'), /vTileOff/);
   for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
     const w = faceMapWgsl(shader(name));
@@ -100,13 +129,21 @@ test('the face map is made from every sprite vertex shader the batch uses', () =
 
 test('the height scale of the shaders is the encoder\'s', () => {
   // A face at 100 px reads back as 100 in the vertex shader's float: u16 / 65535 * scale.
-  const scale = Number(faceMapVertex(shader('instancedSprite.vert.glsl')).match(/aInstTileOff\.y \* ([\d.]+)/)[1]);
+  const v = faceMapVertex(shader('instancedSprite.vert.glsl'));
+  const [, unit, scale] = v.match(/vFaceZ = \(aInstTileOff\.y - faceInner \* ([\d.]+)\) \* ([\d.]+)/).map(Number);
   const code = encodeFaceHeight(100);
   assert.ok(Math.abs((code / 65535) * scale - 100) < 1e-3);
+  // DX-FACEDEPTH: with innerZ in the top bits, the shader takes it off before the height.
+  const stuck = encodeFaceHeight(100, 5);
+  assert.ok(Math.abs((stuck / 65535 - (stuck >>> 13) * unit) * scale - 100) < 1e-3);
   assert.match(shader('faceMap.frag.glsl'), /clamp\(z \* 8\.0/);
-  // DX-MAPS: a twin texel's height is in spriteMaps.js's units (N-194: times the sprite's scale where it is written).
-  assert.match(shader('faceMap.frag.glsl'), new RegExp(`\\) / ${HEIGHT_UNITS}\\.0( \\* vMapScale)?;`));
-  assert.match(faceMapWgsl(shader('instancedSprite.wgsl')), new RegExp(`\\) / ${HEIGHT_UNITS}\\.0 \\* in\\.vMapScale;`));
+  // DX-MAPS: a twin texel's height is in spriteMaps.js's units (twinTexel.js twinZ; N-194: times the sprite's scale where
+  // it is written).
+  for (const twin of [TWIN_GLSL, TWIN_WGSL]) assert.match(twin, new RegExp(`\\) / ${HEIGHT_UNITS}\\.0;`));
+  // N-257: a frame's own heights where it has them (twinHeights), its surface's or the floor's where it does not.
+  assert.match(faceFragmentGlsl(shader('faceMap.frag.glsl')), /z = twinHeights\(vMapsWin\) \? twinZ\(m\) \* vMapScale : 0\.0;/);
+  assert.match(faceMapWgsl(shader('instancedSprite.wgsl')), /z = select\(0\.0, twinZ\(m\) \* in\.vMapScale, twinHeights\(in\.vMapsWin\)\);/);
+  assert.match(faceFragmentGlsl(shader('faceMap.frag.glsl'), { gbuf: true }), /float zw = twinHeights\(vMapsWin\) \? zm \* vMapScale/);
   assert.match(shader('lightingBasic.frag.glsl'), /\/ 8\.0;/);
 });
 
@@ -174,10 +211,14 @@ test('the face programs take the G-buffer words only when the batch carries them
   const frag = shader('faceMap.frag.glsl');
   assert.doesNotMatch(faceFragmentGlsl(frag), /vGbuf|#if|discard;\n\s*\/\/ #endif/);
   assert.match(faceFragmentGlsl(frag, { gbuf: true }), /flat in vec2 vGbuf;/);
-  // DX-EMISSIVE: v1 writes the glow code, v2 (glow) leaves a glowing pixel out of the face map.
+  // DX-UNSHADED: without the unshaded pass an unshaded pixel writes the face map's code; with it, nothing. The sheet's mark
+  // (the maps table's) comes before the face branch: an unshaded face is unshaded; the entity's word (its bit 21) too.
   assert.match(faceFragmentGlsl(frag), /finalColor = vec4\(1\.0 \/ 255\.0, 0\.0, 0\.0, 0\.0\);/);
-  assert.doesNotMatch(faceFragmentGlsl(frag, { glow: true }), /finalColor = vec4\(1\.0 \/ 255\.0, 0\.0, 0\.0, 0\.0\);/);
-  assert.match(faceFragmentGlsl(frag, { gbuf: true, glow: true }), /\(\(word >> 19u\) & 7u\) != 0u\) discard;/);
+  assert.doesNotMatch(faceFragmentGlsl(frag, { unshaded: true }), /finalColor = vec4\(1\.0 \/ 255\.0, 0\.0, 0\.0, 0\.0\);/);
+  const withPass = faceFragmentGlsl(frag, { gbuf: true, unshaded: true });
+  assert.match(withPass, /\(\(word >> 21u\) & 1u\) != 0u\) discard;/);
+  assert.ok(withPass.indexOf('if (twinUnshaded(vMapsWin))') < withPass.indexOf('vec2 oct = vFaceOct;'), 'before the face branch');
+  assert.doesNotMatch(withPass, /254\.5 \/ 255\.0/, 'no code in the twin page any more');
   assert.ok(frag.includes(`vec2(${FACE_FLAT_CODE}.0 / 255.0)`), 'the FLAT code');
   assert.ok(frag.includes(`${FACE_K_BIT - 1}.0)) + (k ? ${FACE_K_BIT}.0`), 'heights of 15 bits and the k bit');
   for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
@@ -232,34 +273,133 @@ test('the G-buffer in one pass (MRT) writes the face texel at location 0 and the
   assert.match(wgsl, /@location\(1\) ids: vec4<f32>,/);
 });
 
-// E-457: the glow mask draws only the instances that can glow (an emissive level in their word, or while a sheet glows a
-// frame whose soft-or-glow bit is set) and marks only the pixels where they add glow; every other pass keeps its vertices.
-test('the glow mask leaves out the instances that cannot glow, in every sprite form and both languages', async () => {
-  const { faceGlowMaskFragment, glowMaskVertex } = await import('../../src/render/faceMap.js');
-  const cut = /& 7u\) == 0u\) gl_Position = vec4\(2\.0, 2\.0, 2\.0, 1\.0\);/;
+// E-457: the unshaded mask draws only the instances that can be unshaded (their word's unshaded bit, or their frame's sheet's
+// mark in the maps table) and marks only the pixels where they add colour; every other pass keeps its vertices.
+test('the unshaded mask leaves out the instances that cannot be unshaded, in every sprite form and both languages', async () => {
+  const { faceUnshadedMaskFragment, unshadedMaskVertex } = await import('../../src/render/faceMap.js');
+  const cut = /& 1u\) == 0u && !twinUnshaded\(twinWindow\(int\(aInstTexId \+ 0\.5\)\)\)\) gl_Position = vec4\(2\.0, 2\.0, 2\.0, 1\.0\);/;
   for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
     const plain = faceMapVertex(shader(name), { gbuf: true });
     assert.doesNotMatch(plain, /2\.0, 2\.0, 2\.0, 1\.0/, name);
-    const mask = glowMaskVertex(plain);
+    const mask = unshadedMaskVertex(plain);
     assert.match(mask, cut, name);
-    // The cut comes after the place is computed, so the mask covers what the glow pass draws.
+    assert.ok(mask.indexOf('bool twinUnshaded(vec4 win)') < mask.indexOf('void main()'), 'the marks before main');
+    // The cut comes after the place is computed, so the mask covers what the unshaded pass draws.
     assert.ok(mask.indexOf('gl_Position = vec4(2.0') > mask.indexOf('gl_Position = vec4(clip.xy'), name);
   }
   const vert = faceMapVertex(shader('instancedSprite.vert.glsl'), { gbuf: true });
-  assert.match(spriteIndexedVertex(glowMaskVertex(vert)), cut, 'indexed');
-  assert.match(spriteIndexedVertex(glowMaskVertex(vert), { poseBlock: 1024 }), cut, 'by row');
-  assert.throws(() => glowMaskVertex('void main() {\n}\n'), /vTileOff/);
+  assert.match(spriteIndexedVertex(unshadedMaskVertex(vert)), cut, 'indexed');
+  assert.match(spriteIndexedVertex(unshadedMaskVertex(vert), { poseBlock: 1024 }), cut, 'by row');
+  assert.throws(() => unshadedMaskVertex('void main() {\n}\n'), /vTileOff/);
   // A whole quad, no work a pixel: no discard and no texture read.
-  const frag = faceGlowMaskFragment();
+  const frag = faceUnshadedMaskFragment();
   assert.doesNotMatch(frag, /discard|texture\(/);
   for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
-    assert.doesNotMatch(faceMapWgsl(shader(name), { gbuf: true, glow: true }), /vec4<f32>\(2\.0, 2\.0, 2\.0, 1\.0\)/, name);
-    const w = faceMapWgsl(shader(name), { gbuf: true, glow: true, glowMask: true });
-    assert.match(w, /& 7u\) == 0u\) \{ out\.position = vec4<f32>\(2\.0, 2\.0, 2\.0, 1\.0\); \}/, name);
-    assert.match(w, /fn mainFragGlowMask\(in: VertexOut\)/, name);
+    assert.doesNotMatch(faceMapWgsl(shader(name), { gbuf: true, unshaded: true }), /vec4<f32>\(2\.0, 2\.0, 2\.0, 1\.0\)/, name);
+    const w = faceMapWgsl(shader(name), { gbuf: true, unshaded: true, unshadedMask: true });
+    assert.match(w, /& 1u\) == 0u && !twinUnshaded\(twinWindow\(tid\)\)\) \{ out\.position = vec4<f32>\(2\.0, 2\.0, 2\.0, 1\.0\); \}/, name);
+    assert.match(w, /fn mainFragUnshadedMask\(in: VertexOut\)/, name);
     assert.ok(w.indexOf('out.position = vec4<f32>(2.0') > w.indexOf('out.position = vec4<f32>(clip.xy'), name);
   }
   const wcut = /out\.position = vec4<f32>\(2\.0, 2\.0, 2\.0, 1\.0\)/;
-  assert.match(spriteIndexedWgsl(faceMapWgsl(shader('instancedSprite.wgsl'), { gbuf: true, glowMask: true })), wcut);
-  assert.doesNotMatch(faceMapWgsl(shader('instancedSprite.wgsl'), { glowMask: true }), wcut, 'no words, no mask');
+  assert.match(spriteIndexedWgsl(faceMapWgsl(shader('instancedSprite.wgsl'), { gbuf: true, unshadedMask: true })), wcut);
+  assert.doesNotMatch(faceMapWgsl(shader('instancedSprite.wgsl'), { unshadedMask: true }), wcut, 'no words, no mask');
+});
+
+// DX-MAPS: one twinPresent (twinTexel.js) says "this twin texel holds a map" for every reader, in both languages, and it
+// agrees with the texels spriteMaps.js writes: a mapped texel's normal bytes are 1..253, an unmapped texel is all zeros.
+test('every reader of the twin page asks twinTexel.js whether a texel holds a map, and the texels agree', () => {
+  const height = new Float32Array([0, 12.5, 40]);
+  const normals = new Float32Array([0, 0, 1, 0.3, 0.2, 0.9, -1, 0, 0]);
+  const texels = twinTexels(height, normals, new Uint8Array([1, 1, 0]), 3, 1);
+  assert.equal(twinPresent(texels, 0), true, 'a height-0 opaque texel still holds a map (its normal)');
+  assert.equal(twinPresent(texels, 4), true);
+  assert.equal(twinPresent(texels, 8), false, 'a transparent pixel holds none');
+  assert.equal(twinZ(texels, 4), 12.5);
+  const oct = [0, 0];
+  encodeOctahedral(0, 0, -1, oct, 0);
+  assert.ok(oct[0] > 0 || oct[1] > 0, 'no normal encodes to two zero bytes');
+  const sh = (n) => shader(n);
+  const readers = {
+    face: faceFragmentGlsl(sh('faceMap.frag.glsl'), { gbuf: true }),
+    faceWgsl: faceMapWgsl(sh('instancedSprite.wgsl'), { gbuf: true }),
+    depth: pixelDepthFragment(sh('instancedSprite.frag.glsl'), { gbuf: true }),
+    depthWgsl: pixelDepthWgsl(sh('instancedSprite.wgsl'), { gbuf: true }),
+    sun: sunMapColumnsVertex(sh('instancedSpriteShadow.vert.glsl')),
+    sunWgsl: sunMapColumnsWgsl(sh('instancedSpriteShadow.wgsl')),
+    lamp: lampMapColumnsVertex(sh('instancedSpriteShadow.vert.glsl')),
+    lampWgsl: lampMapColumnsWgsl(sh('instancedSpriteShadow.wgsl')),
+  };
+  for (const [name, src] of Object.entries(readers)) {
+    const defs = src.split(name.endsWith('Wgsl') ? 'fn twinPresent(' : 'bool twinPresent(').length - 1;
+    assert.equal(defs, 1, `${name}: one twinPresent`);
+    assert.ok(src.split('twinPresent(').length - 1 >= 2, `${name}: reads it`);
+    const own = src.split(TWIN_GLSL).join('').split(TWIN_WGSL).join('');
+    assert.doesNotMatch(own, /\.b \+ m?d?\.a [<>]/, `${name}: no presence test of its own`);
+  }
+});
+
+// N-258: a mirrored or rotated sprite's normals turn with it in the G-buffer pass. A mirrored car (flipX, a negative scale
+// x) lit by a lamp on its left: its frame's normal that faces right must face left on the screen, as its pixels do.
+test('a sprite\'s normals mirror with a negative scale and turn with its rotation, in both languages', async () => {
+  const { turnFrameNormal } = await import('../../src/render/faceMap.js');
+  const out = [0, 0, 0];
+  assert.deepEqual(turnFrameNormal([0.6, 0.3, 0.74], 1, 0, 1, 1, out), [0.6, 0.3, 0.74], 'unturned: the same bits');
+  assert.deepEqual(turnFrameNormal([0.6, 0.3, 0.74], 1, 0, -1, 1, out), [-0.6, 0.3, 0.74], 'flipX mirrors x');
+  assert.deepEqual(turnFrameNormal([0.6, 0.3, 0.74], 1, 0, 1, -1, out), [0.6, -0.3, 0.74], 'flipY mirrors y');
+  // A quarter turn on the screen (y down: x goes to screen down) takes a right-facing normal to camera-space down (y up).
+  turnFrameNormal([1, 0, 0], 0, 1, 1, 1, out);
+  assert.ok(Math.abs(out[0]) < 1e-12 && Math.abs(out[1] + 1) < 1e-12, `a quarter turn: ${out}`);
+  // The vertex stage's local x axis under that turn, as instancedSprite.vert.glsl spins it, lands where the normal points.
+  const c = 0;
+  const s = 1;
+  const spun = [1 * c - 0 * s, 1 * s + 0 * c];
+  assert.deepEqual([spun[0], -spun[1]], [0, -1], 'screen down is camera-space down');
+  const vert = faceMapVertex(shader('instancedSprite.vert.glsl'), { gbuf: true });
+  assert.match(vert, /vNormalTurn = vec4\(isShear \? 1\.0 : c, isShear \? 0\.0 : s, aInstScale\.x < 0\.0 \? -1\.0 : 1\.0, aInstScale\.y < 0\.0 \? -1\.0 : 1\.0\);/);
+  const frag = faceFragmentGlsl(shader('faceMap.frag.glsl'), { gbuf: true });
+  assert.match(frag, /vec3 n = turnNormal\(sobel \? heightNormal\(tc, zm\) : twinStoredNormal\(m, tc\)\);/, 'the map\'s normal and the Sobel\'s alike');
+  assert.match(frag, /vec3 n = turnNormal\(TWIN_NORMALS \? twinStoredNormal\(m, tc\) : heightNormal\(tc, twinZ\(m\)\)\);/, 'without words too');
+  for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
+    const w = faceMapWgsl(shader(name), { gbuf: true });
+    assert.match(w, /@location\(13\) @interpolate\(flat\) vNormalTurn: vec4<f32>,/, name);
+    assert.match(w, /n = turnNormal\(n, in\.vNormalTurn\);/, name);
+    assert.match(w, /let n = turnNormal\(stored, in\.vNormalTurn\);/, name);
+    // Within WebGPU's 16 vertex outputs (locations 0..15), none used twice.
+    const out = w.slice(w.indexOf('struct VertexOut {'), w.indexOf('}', w.indexOf('struct VertexOut {')));
+    const locs = [...out.matchAll(/@location\((\d+)\)/g)].map((m) => +m[1]);
+    assert.ok(Math.max(...locs) <= 15, name);
+    assert.equal(new Set(locs).size, locs.length, `${name}: each output its own location`);
+  }
+});
+
+// N-257: a sprite with a normal map and no height map (or a relief map) stands as its surface says in the G-buffer, pixel
+// depth and the shadow maps: its frame's heights are read only where the maps table marks heights.
+test('a frame without heights takes its surface\'s height in the G-buffer, depth and the columns', async () => {
+  const frag = faceFragmentGlsl(shader('faceMap.frag.glsl'), { gbuf: true });
+  assert.match(frag, /float zw = twinHeights\(vMapsWin\) \? zm \* vMapScale\s*: \(\(flags & 4u\) == 0u \? max\(vFootY - vWorld\.y, 0\.0\) \/ uFaceSpace\.x : 0\.0\);/);
+  assert.match(frag, /bool sobel = \(normals == 2u \|\| !TWIN_NORMALS\) && \(twinHeights\(vMapsWin\) \|\| twinRelief\(vMapsWin\)\);/);
+  const depth = pixelDepthFragment(shader('instancedSprite.frag.glsl'), { gbuf: true });
+  assert.match(depth, /if \(twinPresent\(md\) && twinHeights\(vMapsWin\) && !glow\) floorY = /);
+  assert.match(pixelDepthWgsl(shader('instancedSprite.wgsl'), { gbuf: true }), /if \(twinPresent\(md\) && twinHeights\(in\.vMapsWin\) && !glow\)/);
+  assert.match(sunMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl')), /float z = twinHeights\(win\) \? twinZ\(m\)/);
+  assert.match(lampMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl')), /float z = twinHeights\(win\) \? twinZ\(m\)/);
+  assert.match(sunMapColumnsWgsl(shader('instancedSpriteShadow.wgsl')), /let z = select\(0\.0, twinZ\(m\) \* height \* abs\(aInstScale\.y\), twinHeights\(win\)\);/);
+  assert.match(lampMapColumnsWgsl(shader('instancedSpriteShadow.wgsl')), /let z = select\(0\.0, twinZ\(m\) \* height \* abs\(aInstScale\.y\), twinHeights\(win\)\);/);
+});
+
+// DX-FACEDEPTH: spawnMany takes innerZ one a decoration; a face carries it in its height's top bits (0..7), and it still
+// sorts the decoration (DecorationComponent.innerZ) as it always did.
+test('spawnMany takes innerZ a decoration, and a face carries it in its row', () => {
+  buildPoolScene({ decorations: 8 });
+  const D = DecorationComponent;
+  const out = new Int32Array(3);
+  const n = DecorationPool.spawnMany({
+    x: [0, 1, 2], y: [0, 0, 0], innerZ: [0, 2, 9],
+    faceNormalX: [0, 0, 0], faceNormalY: [1, 1, 1], faceNormalZ: [0, 0, 0], faceHeight: [20, 20, 20], out,
+  });
+  assert.equal(n, 3);
+  assert.deepEqual([...out].map((i) => D.faceZ[i] >>> 13), [0, 2, 7], 'innerZ in the top bits, 7 at most');
+  assert.deepEqual([...out].map((i) => (D.faceZ[i] & 8191) / 8), [20, 20, 20], 'the height below');
+  assert.deepEqual([...out].map((i) => D.innerZ[i]), [0, 2, 9], 'the sort keeps its own innerZ');
 });

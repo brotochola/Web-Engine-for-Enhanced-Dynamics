@@ -8,7 +8,7 @@
  *   light = ambient + night + sun · I · (1 - s + s · min(max(N·S, 0) / max(S_z, 0.25), 1.6))
  *           + Σ lamp · brightness · max(N·L̂, 0) · I_l / (I_l + |L - p|²),   I_l = (radius / 10)²
  *
- * (s = lighting.faces.sunDirect, 1 in the scene: the whole sun term follows the normal), clamped at 1. The floor around
+ * (s = 1 - lighting.sun.skyLight, 1 in the scene: the whole sun term follows the normal), clamped at 1. The floor around
  * the ball is checked too (the floor path: ambient + sun · I, or each lamp's I_l / (I_l + h² + d²)).
  *
  *   node tests/bench/normalLightCheck.mjs [--backend webgl|webgpu|both] [--part sun|lamp|both] [--tolerance 3]
@@ -33,7 +33,7 @@ function lightAt(p, n, env) {
   if (env.sun) {
     const S = env.sun.towards;
     const ratio = Math.min(Math.max(0, n[0] * S[0] + n[1] * S[1] + n[2] * S[2]) * env.sun.w, 1.6);
-    const term = 1 - env.sunDirect + env.sunDirect * ratio;
+    const term = env.skyLight + (1 - env.skyLight) * ratio;
     for (let c = 0; c < 3; c++) {
       lit[c] += env.sun.rgb[c] * env.sun.intensity * term;
       flat[c] += env.sun.rgb[c] * env.sun.intensity;
@@ -112,7 +112,7 @@ async function main() {
           ambient: L.ambient,
           night: part === 'sun' && sun.enabled ? sun.night : [0, 0, 0],
           sun: part === 'sun' ? { ...sunGeometry(sun, G), rgb: sunRgb(sun), intensity: sun.intensity } : null,
-          sunDirect: 1,
+          skyLight: 0,
           lamps: part === 'lamp' ? [L.lamp] : [],
           strength: opts.strength,
         };

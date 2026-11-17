@@ -58,8 +58,8 @@ export class Fire extends GameObject {
 
     // Set fixed animation speed
     this.setAnimationSpeed(this.fireComponent.baseAnimationSpeed);
-    // ?light3d=1: the flames glow, no night or shadow darkens them (DX-EMISSIVE).
-    if (LIGHT3D) this.spriteRenderer.emissive = true;
+    // ?light3d=1: the flames are unshaded, no night or shadow darkens them (DX-UNSHADED).
+    if (LIGHT3D) this.spriteRenderer.unshaded = true;
     SoundManager.play('explosion_de_fuego', 0.8, 0.9, 1.1, 0, 0, this.x, this.y, 'sfx');
   }
 
