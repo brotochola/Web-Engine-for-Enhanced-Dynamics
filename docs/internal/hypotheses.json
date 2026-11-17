@@ -11621,7 +11621,8 @@
         "R-1250",
         "R-1252",
         "R-1254",
-        "R-1271"
+        "R-1271",
+        "R-1275"
       ]
     },
     {
@@ -11648,7 +11649,8 @@
       ],
       "records": [
         "R-1249",
-        "R-1254"
+        "R-1254",
+        "R-1274"
       ]
     },
     {
@@ -14669,7 +14671,8 @@
         "R-1018",
         "R-1023",
         "R-1024",
-        "R-1037"
+        "R-1037",
+        "R-1276"
       ]
     },
     {
@@ -14910,7 +14913,8 @@
         "R-1024",
         "R-1037",
         "R-1041",
-        "R-1184"
+        "R-1184",
+        "R-1276"
       ]
     },
     {
@@ -19276,7 +19280,8 @@
         "R-1204",
         "R-1212",
         "R-1214",
-        "R-1234"
+        "R-1234",
+        "R-1274"
       ]
     },
     {
@@ -20255,7 +20260,9 @@
         "opaque rows in the kernel",
         "opaque pass cpu cost"
       ],
-      "records": []
+      "records": [
+        "R-1274"
+      ]
     },
     {
       "id": "N-244",
@@ -21611,7 +21618,9 @@
       ],
       "records": [
         "R-1268",
-        "R-1271"
+        "R-1271",
+        "R-1275",
+        "R-1276"
       ]
     },
     {
@@ -21634,7 +21643,31 @@
       ],
       "records": [
         "R-1269",
-        "R-1271"
+        "R-1271",
+        "R-1276"
+      ]
+    },
+    {
+      "id": "E-502",
+      "title": "E-448's opaque pass makes an integrated GPU draw slower: the Intel HD 620 draws bunnyMark (100 000) 24 % fewer frames with it; its gate's costs come from the GTX 1650",
+      "status": "open",
+      "statusText": "found 2026-11-17 on the ASUS laptop (v0.14.0 against main, then E-448 against its parent)",
+      "date": "2026-11-17",
+      "result": "E-448 merge against its parent on the HD 620: drawn 11.8 -> 9.0 fps (-24.0 %, 4/4); pre-render -39.6 %, renderer -15.2 %.",
+      "next": "A bench switch for the pass first (its own commit), to read it over the scenes on the HD 620. Then pick: the gate by GPU class (integrated and tile-based off unless far past break-even, from the renderer string DX-IGPUWARN reads), a gate that follows the frame pacer (E-479), or the iGPU-dear part made cheaper.",
+      "area": "render",
+      "kind": "speed",
+      "refs": [],
+      "aliases": [
+        "opaque pass",
+        "integrated GPU",
+        "iGPU",
+        "HD 620",
+        "early depth",
+        "bunnyMark"
+      ],
+      "records": [
+        "R-1274"
       ]
     }
   ],
@@ -34228,6 +34261,33 @@
       "title": "E-487 is a design change, not a kernel: each spawn is its own window and the epoch is publishPose's seqlock",
       "verdict": "note",
       "text": "**Read 2026-11-17: not a kernel yet, a design change.** Each spawn makes four atomic read-modify-writes: the slot's generation, the global `bodyGenEpoch`, the slot's dirty flags and the slot's half-word bit.\n\n- Batching \"per window\" saves nothing: each spawn already opens and closes its own window (`beginBodyDirtyDeferred` and `endBodyDirtyDeferred` around one spawn, E-92).\n- The epoch cannot move to the frame's end. It is pose publishing's seqlock (`weedjsPost.js` publishPose, N-86, N-214): the fast path trusts \"nobody respawned\" when the epoch did not move between its two reads. A generation advance that bumps the epoch only later lets a publish write the old body's pose over the invalidated slot for a frame.\n- The flags need their `Atomics.or`, because physics clears them. A single-writer `Atomics.store` of the generation costs the same as the add on x86 (an xchg).\n\nThe shape that could pay: logic defers its spawns' generation advances and LIFECYCLE publishes to the end of its tick, then makes one epoch add after them, all before the frame's bell. Physics already picks up a mid-tick LIFECYCLE on its next step at the earliest, so bodies should not come later. It needs a test of a respawn during publishPose, then spawnStorm's logic. Ceiling: the bookkeeping's 45 ms/s (about 0.75 ms a frame) if all of it went."
+    },
+    {
+      "id": "R-1274",
+      "date": "2026-11-17",
+      "time": "06:08",
+      "timeFrom": "recorded",
+      "title": "E-448's opaque pass on the Intel HD 620: bunnyMark 100 000 draws 11.8 -> 9.0 fps (-24 %, 4/4) though its CPU work falls",
+      "verdict": "note",
+      "text": "**E-448's opaque pass makes the Intel HD 620 draw bunnyMark slower.** ASUS laptop (i7-7500U, HD 620, Chrome 157, WebGL), bunnyMark at a fixed 100 000 bunnies, src only (the scene with `?bunnies` from the clone), 4 pairs each, 2026-11-17.\n\n- v0.14.0 against main (asus-bunny-v014): drawn 12.2 → 8.5 fps (−29.5 %, 4/4), pre-render −33.6 %, renderer +1.1 %.\n- E-448's merge 7134f2e7 against its parent (asus-bunny-e448): drawn 11.8 → 9.0 fps (−24.0 %, 4/4), pre-render −39.6 %, renderer −15.2 %.\n\nThe CPU gains, but the integrated GPU draws a quarter fewer frames. On the GTX 1650 the same pass took bunnyMark's GPU from 23.5 to 5.3 ms a drawn frame.\n\nThe gate (`opaquePassPays`) weighs about 9 ns a row of vertex work against 80 ps a spared blended fragment, both measured on the GTX 1650. On the HD 620, with single-channel shared memory, the second vertex pass, the per-frame pose copy into a texture, or the depth traffic costs more than the fill it saves. Which of the three is not yet known.\n\nOptions:\n- (a) The gate's costs by GPU class: integrated off unless the overdraw is far past break-even, from the renderer string DX-IGPUWARN reads. Tile-based GPUs (Apple, mobile) remove hidden surfaces themselves, so the pass is pure cost there too.\n- (b) A gate that follows the GPU's state (the frame pacer's skipped frames, as E-479 proposes).\n- (c) Find the part that costs on the iGPU and make it cheaper.\n\nA bench switch for the pass (its own commit) comes first, to read it over the scenes."
+    },
+    {
+      "id": "R-1275",
+      "date": "2026-11-17",
+      "time": "06:08",
+      "timeFrom": "recorded",
+      "title": "With E-501 and N-264 in, 4 Box2D threads is the best count on the ASUS for Predator crowd 0.5 (2 close, 1 +30 %)",
+      "verdict": "note",
+      "text": "**With E-501 and N-264 in, 4 Box2D threads is the best count on the ASUS laptop (4 logical CPUs) for Predator crowd 0.5.** Same build both sides (main b49e6f0d, `--query-b physicsWorkers=n`), 4 pairs each, 2026-11-17 05:38 to 05:47.\n\n- 4 against 2 (asus-pred05-threads2): physics 24–136 → 25–33 ms. Two threads take the bad tails away (two 4-thread runs at 49 and 136 ms), the median is close. Spatial, logic, pre-render and renderer are within each other but for those two runs.\n- 4 against 1 (asus-pred05-threads1): physics 23–29 → 26–36 ms (+30 %, 4/4 worse).\n\nR-1252's \"2 threads give −25 to −68 % for every worker\" was measured before E-501. It was the spin starving the machine, which E-501 now turns off there.\n\nThread count does not explain the step's 2× against v0.14.0 at the same ~4 000 awake bodies (main 20–30 ms, v0.14.0 ~9–12 ms). That is being split into Box2D's own step and the JS around it (detailed stats, job 0858)."
+    },
+    {
+      "id": "R-1276",
+      "date": "2026-11-17",
+      "time": "06:08",
+      "timeFrom": "recorded",
+      "title": "No Box2D wasm since v0.14.0 is dearer per awake body on the ASUS (B/A 0.60 to 1.32, 2 pairs each); the scene's heavier frame tips it, the spin and catch-up made it fall",
+      "verdict": "note",
+      "text": "**No Box2D wasm since v0.14.0 makes Predator's step dearer per awake body on the ASUS. The scene got heavier around physics.** Each build against v0.14.0, or against its own parent after the spin; Predator crowd 0.5, detailed stats on (`--hyp` with no probe), 2 pairs each, 2026-11-17 05:47 to 06:07. Box2D's own step (PROFILE_STEP_MS) per 1 000 awake bodies (the sample average):\n\n| Build | Against | B/A |\n|---|---|---|\n| E-235 912e9f44 | v0.14.0 | 0.67 |\n| E-255 3ed0c280 | v0.14.0 | 0.60 |\n| E-256 12e1acaf | v0.14.0 | 0.84 |\n| E-288 f44815c0 | E-298 | 1.32 |\n| E-305 92bae6a0 | E-288 | 0.85 |\n| E-308 5ccca35d | E-305 | 0.99 |\n\n- Runs within one build range 1.3 to 4.5 ms a 1 000, so E-288's 1.32 is inside that.\n- Main (with E-501 and N-264) read 12.9 to 16.1 in two runs that were deep in the spiral (49 and 95 physics frames). v0.14.0 in a spiral also rises, to 4.0.\n- E-308's runs (the Nov 14 tree, spin on) did not spiral (~500 frames). Main's (Nov 17) did.\n- So what tips the ASUS over is the rest of the frame since Nov 15, on 4 logical CPUs: spatial +3 ms and pre-render +2 ms there against v0.14.0. That raises the odds; E-298's spin and the catch-up steps made it fall. E-501 and N-264 cut those two links.\n- To go further: a deterministic physics replay (record a Predator world, replay it per wasm build). Box2D's own recorder misses E-288's accelerations, which go from memory into the solver, so it needs WeedJS's own record of the columns."
     }
   ],
   "leads": [
