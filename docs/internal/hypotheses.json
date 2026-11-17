@@ -21717,7 +21717,8 @@
         "R-1285",
         "R-1290",
         "R-1292",
-        "R-1293"
+        "R-1293",
+        "R-1294"
       ],
       "result": "GTX 1650, the barrio held: the floor draw (1.91 ms) becomes a 0.17 ms copy; Intel HD 620: 16.6 -> 21.2 fps drawn (+27.7 %, R-1285). Default since e0b831ff: after 2 changed frames the layer draws on the stage, 2 held frames bring the target back; captures identical (WebGL, WebGPU).",
       "next": "A moving camera's cost against main on the HD 620 (by construction main's draw after two frames). A world-space tile cache, so a camera that pans re-paints only the strip that comes into view.",
@@ -34540,6 +34541,15 @@
         "6f1637cc",
         "60b00295"
       ]
+    },
+    {
+      "id": "R-1294",
+      "date": "2026-11-17",
+      "time": "08:50",
+      "timeFrom": "recorded",
+      "title": "E-504 with the holder fix, camera moving (pan=40) on the HD 620: a tie with the cache off (17.1-17.4 against 17.2-17.3 fps)",
+      "verdict": "note",
+      "text": "**With the holder fix (R-1293), E-504's adaptive default ties the cache off with the camera moving on the Intel HD 620.** Parque Chas at `hour=22&pan=40`, main 32d07048, one build: the default (A) against `?floorCache=0` (B). 4 pairs, `--full-rev`, 2026-11-17 08:40 (asus-e504-adaptive-pan2).\n\n- Drawn: 17.4/17.3, 17.4/17.2 and 17.1/17.2 fps in three pairs; renderer 5.41–6.38 against 5.64–6.34 ms. The runner's paired median for drawn frames is −0.0 %.\n- Before the fix (R-1292) the default drew ~4 % less.\n\nSide note: the fourth pair hitched again, this time on A (3.5 fps, renderer 516 ms), as the fourth pair's B did in R-1292. A late run of a barrio sitting freezing on this 8 GB laptop (335 232 decorations) looks like memory pressure. Watch it before trusting a barrio sitting's last pair there."
     }
   ],
   "leads": [
