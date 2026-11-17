@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-16",
+  "updated": "2026-11-17",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -20943,6 +20943,25 @@
       ],
       "next": "Reproduce with a small scene on main; then the fountain's water can sort with the trees.",
       "records": []
+    },
+    {
+      "id": "DX-ENT1M",
+      "title": "Entities up to about a million (1 048 575, as DX-DECO1M did for decorations): the 32-bit id width's ceiling is 500 000 today, and bunnyMark already holds 499 999 bunnies at 60 fps (E-448), so the cap, not the engine's speed, sets its capacity",
+      "status": "open",
+      "statusText": "asked by the owner on 2026-11-17 after E-448: \"que el máximo de entidades sea hasta un millón, como tenemos con las decorations; y medir bunnymark\"",
+      "date": "2026-11-17",
+      "area": "engine",
+      "kind": "feature",
+      "result": "src/util/entityIdWidth.js: MAX_ENTITIES_U32 = 500 000, because the spatial worker's processed-pair stamp packs 19 id bits and 13 frame bits in 32 (500 000 < 2^19). The free list is FL4 (DX-DECO1M took decorations' FL4 to a 20-bit index, 1 048 575 slots, R-0973). At 499 999 bunnies bunnyMark's GPU runs 9.2 ms a frame (76 % busy) and every worker's p99 is under 16.7 ms (pre-render 13.4, renderer 12.5: R-1240), so it should hold several hundred thousand more.",
+      "next": "1. Read every place the 500 000 ceiling or 19 id bits reaches: entityIdWidth (the stamp: 20 id bits leave 12 frame bits, so the marker buffer clears every 4096 frames instead of 8192), the free list, the pair packers (PAIR3), the grid and neighbour lists, the render queue's row ids, the GPU pack's instance ids and painter depth (denom), Pixi's batch capacity, the per-entity SAB sizes (memory at a million: list it per worker) and the wasm memory maps. 2. Raise it behind the same width switch, with tests at 1 048 575 (spawn, despawn, reuse, pairs, neighbours). 3. bunnyMark's capacity with runCapacity (cap raised in its catalog), several searches; the figure for the README if it holds (about 800 000 expected). Physics scenes stay at 65 535 until N-253.",
+      "refs": [],
+      "aliases": [
+        "a million entities",
+        "entity cap 1M",
+        "bunnymark 1M"
+      ],
+      "records": [],
+      "rank": 1
     }
   ],
   "records": [
