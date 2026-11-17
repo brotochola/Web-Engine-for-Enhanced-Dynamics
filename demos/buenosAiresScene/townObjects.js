@@ -18,6 +18,11 @@ const {
 } = WEED;
 const { ShapeType } = enums;
 
+/** A frame of the editor's arboles sheet by its atlas name, whether the package wrote the sheet's prefix or not. */
+function treeAtlasName(name) {
+  return name.startsWith('arboles_') ? name : `arboles_${name}`;
+}
+
 // ---- houses ----
 
 /**
@@ -92,11 +97,12 @@ export class Arbol extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = Math.max(2, config.r || 3);
     const mirror = config.fl ? -1 : 1;
-    const silhouette = config.sil ? `arboles_${config.sil}` : '';
+    // The package names the trunk and the silhouette by their atlas names (arboles_tronco, arboles_fresno_1_sil).
+    const silhouette = config.sil ? treeAtlasName(config.sil) : '';
     const [silAnchorX, silAnchorY] = pair(config.silAnchor, 0.5, 1);
     const [silScaleX, silScaleY] = pair(config.silScale, 1, 1);
     if (config.trunk) {
-      this.setSprite('arboles', config.trunk, 0);
+      this.setSprite(treeAtlasName(config.trunk));
       const [anchorX, anchorY] = pair(config.trunkAnchor, 0.5, 1);
       const [scaleX, scaleY] = pair(config.trunkScale, 1, 1);
       this.spriteRenderer.anchorX = anchorX;

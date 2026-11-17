@@ -62,7 +62,10 @@ const HOUSES = count('nCasas');
 const TREES = count('nArboles');
 /** Every loose object: more than the ones that stop a car (the entities), so it is room enough for them. */
 const OBJECTS_PLACED = count('nProps');
-const TRAFFIC_LIGHTS = TRAFFIC.nSem | 0;
+/** Every traffic light the barrio places (META.nSemaforos): those at a crossing the traffic table knows and the rest. */
+const TRAFFIC_LIGHTS = count('nSemaforos', TRAFFIC.nSem | 0);
+/** The barrio's fountains, each throwing its water. */
+const FOUNTAINS = count('nFuentes', 4);
 const CAR_PLACES = count('nAutos');
 const DRIVING_CARS = count('nAutosM', CAR_PLACES);
 const POLICE_CARS = count('nPoli', CAR_PLACES);
@@ -70,7 +73,7 @@ const PARKED_CARS = Math.max(0, CAR_PLACES - DRIVING_CARS);
 /** A scene with physics holds 65 535 entities at most (N-253): the people get what the barrio leaves. */
 const ENTITY_LIMIT = 65535;
 const POOLS_BUT_PEOPLE =
-  HOUSES + 8 + TREES + 8 + OBJECTS_PLACED + 64 + TRAFFIC_LIGHTS + 8 + 4 * (TRAFFIC_LIGHTS + 8) + 8 +
+  HOUSES + 8 + TREES + 8 + OBJECTS_PLACED + 64 + TRAFFIC_LIGHTS + 8 + 4 * (TRAFFIC_LIGHTS + 8) + FOUNTAINS + 4 +
   DRIVING_CARS + 8 + PARKED_CARS + 8 + DRIVING_CARS + 2 * POLICE_CARS + 16;
 const PEOPLE_MAX = Math.max(0, ENTITY_LIMIT - POOLS_BUT_PEOPLE - 64);
 const PEOPLE = Math.max(0, Math.min(PEOPLE_MAX, Math.floor(param('people', 5000))));
@@ -112,6 +115,9 @@ for (const name of WALK_FIELDS) FLOWFIELDS[name] = `${BARRIO}ff_${name}.bin`;
 export const DECORATION_CLASSES = {
   // The houses' walls and roofs: the editor's caras sheets (their names are the atlas's), each a face with its normal.
   Cara: { anchorX: 0.5, anchorY: 0.5 },
+  // A house's accessories (water tanks, air conditioners, antennas, roof pots): pictures with no plane of their own,
+  // drawn over the face behind them (the editor gives them that face's sort point and innerZ 1).
+  Accesorio: { anchorX: 0.5, anchorY: 0.5 },
   // What is on a wall: graffiti, signs, climbers (the editor's grafitis sheet).
   Grafiti: { sheet: 'grafitis', anchorX: 0.5, anchorY: 0.5 },
   // The windows' lit panes: hidden; at dusk the scene lights a share of them (LitWindows).
@@ -259,7 +265,7 @@ export class BuenosAiresScene extends Scene {
     [Prop, OBJECTS_PLACED + 64],
     [Semaforo, TRAFFIC_LIGHTS + 8],
     [SemaforoLuz, 4 * (TRAFFIC_LIGHTS + 8)],
-    [Fuente, 8],
+    [Fuente, FOUNTAINS + 4],
     [AutoIA, DRIVING_CARS + 8],
     [AutoEstacionado, PARKED_CARS + 8],
     [LuzAuto, DRIVING_CARS + 2 * POLICE_CARS + 16],
