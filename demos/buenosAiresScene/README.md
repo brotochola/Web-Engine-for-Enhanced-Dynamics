@@ -12,7 +12,7 @@ Open it from the demo menu (Buenos Aires), or `demos/index.html?scene=buenosaire
 | Feature | Where |
 | --- | --- |
 | Faces that light as surfaces | the houses: every wall and roof a world decoration with its normal (`faceNormalX/Y/Z`, `faceHeight`), placed once at load |
-| `lighting.sunShadows: 'map'`, `lampShadows: 'map'`, `selfShadow` | the sun's and each lamp's shadow on whatever has height; a surface's shade on itself |
+| `lighting.sunShadows: 'map'`, `lampShadows: 'map'`, `selfShadow` | the sun's and each lamp's shadow on whatever has height; each surface's self-shadow |
 | `ShadowCaster.setHull` | each house's volume, from the editor's points, with room in `lighting.maxVolumes` |
 | `ShadowCaster.setSprite({ frame })` | a tree casts its whole silhouette (its branches are decorations, which cast none) |
 | Height maps, pixel depth | people (LPC), cars (MinZiin) and objects bring a height map (no normal map): lit as the surfaces they show, in front of or behind each part of a wall |

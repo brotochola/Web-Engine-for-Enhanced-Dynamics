@@ -3439,7 +3439,7 @@ class PixiRenderer extends AbstractWorker {
       this._unshadedWarned = true;
       console.warn(
         'WeedJS: spriteRenderer.unshaded is set, but this scene draws no G-buffer, so nothing is unshaded: set ' +
-          'config.lighting.unshaded = true (maps, an unshaded sheet, faces or a shadow map turn it on too).',
+          'config.lighting.unshaded = true (maps, an unshaded sheet or a shadow map turn it on too).',
       );
     }
     if (this._visPolyEnabled) {
@@ -3805,7 +3805,7 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * DX-FACEDEPTH: whether the entities' depth reads faces: a lit scene (not raycasted) whose decorations carry normals.
+   * DX-FACEDEPTH: whether the entities' depth reads faces: once a decoration carries a normal (DecorationPool.facesInUse).
    */
   _faceDepthWanted() {
     return DecorationPool.facesInUse();

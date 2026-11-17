@@ -645,7 +645,7 @@ export const RENDERER_DEFAULTS = Object.freeze({
   maxVisibleRenderables: null,
   /**
    * DX-DEPTH (F5): each entity pixel's floor place corrects the painter (pixelDepth.js). null: on with an oblique camera
-   * and height maps (WebGL for now); true or false forces it.
+   * and maps (heights, normals or relief) or faces, on WebGL and WebGPU; true or false forces it.
    */
   pixelDepth: null,
   maxDecalTileUploadsPerFrame: 32,
@@ -832,8 +832,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   gbuffer: 'mrt',
   /**
-   * DX-UNSHADED: spriteRenderer.unshaded works in this scene: the sprites carry their G-buffer words even without maps,
-   * faces or a shadow map (which turn them on by themselves, as an unshaded sheet does). Off, a scene pays nothing.
+   * DX-UNSHADED: spriteRenderer.unshaded works in this scene: the sprites carry their G-buffer words even without maps
+   * or a shadow map (which turn them on by themselves, as an unshaded sheet does; faces do not). Off, a scene pays nothing.
    */
   unshaded: false,
   /**

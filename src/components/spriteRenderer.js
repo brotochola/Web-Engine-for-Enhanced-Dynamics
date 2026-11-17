@@ -284,8 +284,8 @@ export class SpriteRenderer extends Component {
    * Its lit colour is the light's like any sprite's, and its own colour comes on top where the light is short of it
    * (final = lit · light + colour · (1 - light)), so by day it looks as drawn and at night it keeps its colour. It writes
    * neither the G-buffer nor depth: what is behind it is lit. A sheet's own (assets.spritesheets.<name>.unshaded) makes
-   * every opaque pixel of its frames unshaded. Needs the G-buffer (a scene with faces, a sheet with maps or an unshaded
-   * one, a shadow map, or lighting.unshaded).
+   * every opaque pixel of its frames unshaded. Needs the G-buffer words (a sheet with maps or an unshaded one, a shadow
+   * map, or lighting.unshaded; faces alone do not turn them on).
    */
   get unshaded() {
     return (SpriteRenderer.gbufFlags[this.index] & GBUF_FLAGS.UNSHADED) !== 0;

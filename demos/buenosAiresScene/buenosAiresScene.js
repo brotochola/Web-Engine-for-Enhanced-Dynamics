@@ -1,6 +1,6 @@
 // Buenos Aires: Parque Chas, a barrio of the city, as the Editor de Barrios exports it (its package is barrio/), lit by
 // WeedJS's 3D light: every wall lit as the surface it is (the houses are faces with a normal each), the sun's and the
-// lamps' shadows from shadow maps, each surface's shade on itself, depth by the pixel. The people are the demos'
+// lamps' shadows from shadow maps, each surface's self-shadow, depth by the pixel. The people are the demos'
 // standard LPC characters and the cars the standard MinZiin ones, each with its height map; the loose objects are the
 // standard objects. The cars keep the traffic law (traffic.js); lamps, headlights and windows come on with the hour.
 //
