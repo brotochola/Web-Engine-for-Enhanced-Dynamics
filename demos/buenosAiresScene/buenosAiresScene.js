@@ -168,7 +168,8 @@ export class BuenosAiresScene extends Scene {
     worldWidth: META.WW,
     worldHeight: META.WH,
     seed: 7,
-    assets: { maxAtlasWidth: 8192, maxAtlasHeight: 4096 },
+    // ?twinFormat=B or C: the twin page's other formats (E-497's tournament), to compare.
+    assets: { maxAtlasWidth: 8192, maxAtlasHeight: 4096, twinFormat: ['A', 'B', 'C'].includes(WEED.params?.get('twinFormat')) ? WEED.params.get('twinFormat') : 'A' },
     spatial: { cellSize: 64, maxNeighbors: 48, maxEntitiesPerCell: 192, numberOfSpatialWorkers: CORES >= 6 ? 2 : 1 },
     logic: { numberOfLogicWorkers: CORES >= 8 ? 3 : 2, staggeredUpdates: true },
     physics: { gravity: { x: 0, y: 0 }, sleeping: true, subStepCount: 0, commandRingCapacity: 65536 },
