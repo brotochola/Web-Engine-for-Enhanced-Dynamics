@@ -208,57 +208,25 @@ export function opaqueMask(rgba, w, h, threshold = 127) {
  *   gray?: number, strength?: number }} frame
  * @returns {Uint8ClampedArray|null} null when the frame has no map
  */
-export function frameTwinTexels({ color, height, normal, w, h, gray = 0, strength = 1, emissive = false }) {
-  if (height === null && normal === null && !emissive) return null;
-  return maskTwinTexels({ opaque: opaqueMask(color, w, h), height, normal, w, h, gray, strength, emissive });
+export function frameTwinTexels({ color, height, normal, w, h, gray = 0, strength = 1 }) {
+  if (height === null && normal === null) return null;
+  return maskTwinTexels({ opaque: opaqueMask(color, w, h), height, normal, w, h, gray, strength });
 }
 
 /**
  * frameTwinTexels over an opaque mask instead of a colour (E-496: the twin page's rectangle that several sheets share, the
  * union of their frames' opaque pixels).
  * @param {{ opaque: Uint8Array, height: Uint8ClampedArray|null, normal: Uint8ClampedArray|null, w: number, h: number,
- *   gray?: number, strength?: number, emissive?: boolean }} frame
+ *   gray?: number, strength?: number }} frame
  * @returns {Uint8ClampedArray|null} null when the frame has no map
  */
-export function maskTwinTexels({ opaque, height, normal, w, h, gray = 0, strength = 1, emissive = false }) {
-  if (height === null && normal === null && !emissive) return null;
-  if (height === null && normal === null) return emissiveTexels(null, opaque, w, h);
+export function maskTwinTexels({ opaque, height, normal, w, h, gray = 0, strength = 1 }) {
+  if (height === null && normal === null) return null;
   let heights = null;
   if (height !== null) {
     heights = readHeights(height, w, h, gray);
     fixOutline(heights, opaque, w, h);
   }
   const normals = normal !== null ? readNormals(normal, w, h) : normalsFromHeight(heights, opaque, w, h, strength);
-  return emissive ? emissiveTexels(heights, opaque, w, h) : twinTexels(heights, normals, opaque, w, h);
-}
-
-/** DX-EMISSIVE: the normal bytes that mark a glowing pixel in the twin page (no octahedral normal reaches 0 or 255). */
-export const EMISSIVE_CODE = [0, 255];
-
-/**
- * DX-EMISSIVE (F10): a glowing frame's twin texels: its heights when it has them, and EMISSIVE_CODE where a normal would
- * be. The face pass passes the code on, the light pass gives such a pixel full light.
- */
-export function emissiveTexels(height, opaque, w, h) {
-  const out = twinTexels(height, null, opaque, w, h);
-  for (let p = 0; p < w * h; p++) {
-    if (!opaque[p]) continue;
-    out[p * 4 + 2] = EMISSIVE_CODE[0];
-    out[p * 4 + 3] = EMISSIVE_CODE[1];
-  }
-  return out;
-}
-
-/**
- * H-EDGE: whether twin texels hold a glowing one (EMISSIVE_CODE where the normal goes): a pixel DX-DEPTH's edge pass
- * draws whatever its alpha (pixelDepth.js reads it as b under 0.5/255 and a over 254.5/255).
- * @param {Uint8ClampedArray|null} texels RGBA
- * @returns {boolean}
- */
-export function twinHasGlow(texels) {
-  if (texels === null) return false;
-  for (let i = 0; i < texels.length; i += 4) {
-    if (texels[i + 2] === EMISSIVE_CODE[0] && texels[i + 3] === EMISSIVE_CODE[1]) return true;
-  }
-  return false;
+  return twinTexels(heights, normals, opaque, w, h);
 }

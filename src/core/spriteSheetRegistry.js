@@ -2,7 +2,7 @@
 // Provides string->index mapping for animations without runtime overhead
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
-import { maskTwinTexels, opaqueMask, readHeights, twinHasGlow } from '../render/spriteMaps.js';
+import { maskTwinTexels, opaqueMask, readHeights } from '../render/spriteMaps.js';
 import { evenTexels, TWIN_PAD } from '../render/mapsTable.js';
 import {
   FRAME_GLOW, FRAME_HALF, FRAME_SOFT, frameAlphaKinds, frameSolidTexels, isRenderDirections, measureLowestContact,
@@ -20,6 +20,14 @@ import {
 import { ASSETS_DEFAULTS } from '../util/configDefaults.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { fetchAssetJson, fetchAssetRead, imageLoadError } from '../util/fetchAsset.js';
+
+/** DX-UNSHADED: the sheets whose `emissive` was said to be `unshaded` now. */
+const _renamedUnshaded = new Set();
+function warnRenamedUnshaded(sheet) {
+  if (_renamedUnshaded.has(sheet)) return;
+  _renamedUnshaded.add(sheet);
+  console.warn(`WeedJS: spritesheet "${sheet}": \`emissive\` is \`unshaded\` now (true or false), in its assets entry and its json's meta.`);
+}
 
 /**
  * MaxRectsPacker - Rectangle packing algorithm for texture atlas generation
@@ -987,7 +995,7 @@ class SpriteSheetRegistry {
       for (const [sheetName, config] of Object.entries(assetsConfig.spritesheets)) {
         spritesheetPromises.push(
           this._loadSpritesheet(sheetName, config).then((sheetData) => {
-            const { img, jsonData, maps } = sheetData;
+            const { img, jsonData, maps, unshaded = false } = sheetData;
             const excluded = config.excludeAnimations || [];
 
             // 1. Determine which animations and frames are actually needed
@@ -1115,6 +1123,10 @@ class SpriteSheetRegistry {
                 // E-496: the frame's rectangle in its sheet, untrimmed: sheets naming the same map files share the twin's
                 // rectangle of a frame at the same place (_paintMapsPage).
                 frameRect: frame,
+                // DX-UNSHADED: no light touches the sheet's pixels (its json frame's `unshaded`, the maps table's mark);
+                // H-EDGE: its frames may draw their solid pixels in DX-DEPTH's edge pass (FRAME_GLOW).
+                unshaded,
+                glow: unshaded,
                 // DX-SHADOW3D: its base in its own pixels (untrimmed); a render's lowest contact replaces it (_paintMapsPage).
                 base,
                 // H-EDGE: what the drawn part's alphas hold (frameBase.js FRAME_SOFT, FRAME_HALF), from the pixels the trim read.
@@ -1432,6 +1444,10 @@ class SpriteSheetRegistry {
         frames[d.name].maps = d.maps.heightImg ? { x: d.mapsAt.x, y: d.mapsAt.y, heights: true } : { x: d.mapsAt.x, y: d.mapsAt.y };
       }
     }
+    // DX-UNSHADED: an unshaded sheet's frames say so in their json frame (the maps table's mark), without a twin page.
+    for (const d of imagesToPack) {
+      if (d.unshaded === true && frames[d.name]) frames[d.name].unshaded = true;
+    }
     // DX-SHADOW3D: each frame's base travels with its rectangle (the Pixi worker writes it into the texture table).
     for (const d of imagesToPack) {
       const b = d.base;
@@ -1467,8 +1483,8 @@ class SpriteSheetRegistry {
         maps: mapsCanvas !== null,
         // E-496: the twin page's own size (each frame's window in it: its json frame's `maps`).
         ...(twin !== null ? { mapsSize: { w: twin.width, h: twin.height } } : {}),
-        // DX-EMISSIVE v2: a sheet glows by itself (assets or its json's meta.emissive): the Pixi worker runs the glow pass.
-        emissive: imagesToPack.some((d) => d.maps && d.maps.emissive === true),
+        // DX-UNSHADED: a sheet is unshaded (assets or its json's meta.unshaded): the Pixi worker runs the unshaded pass.
+        unshaded: imagesToPack.some((d) => d.unshaded === true),
       },
     };
 
@@ -1598,14 +1614,8 @@ class SpriteSheetRegistry {
         w: gw,
         h: gh,
         gray: g.maps.gray,
-        emissive: g.maps.emissive === true,
       });
       if (g.texels !== null) placed.push(g);
-    }
-    // H-EDGE: a glowing texel in a frame's rectangle (_markFrameTexels); a shared rectangle's frames all glow or none.
-    for (const g of groups.values()) {
-      const glow = twinHasGlow(g.texels);
-      for (const d of g.members) d.glow = glow;
     }
     // DX-SHADOW3D: a render stands on its contact nearest the light (frameBase.js), in its untrimmed frame's rows: its own
     // colour's opaque pixels, its own trim of the heights.
@@ -1653,9 +1663,8 @@ class SpriteSheetRegistry {
   /**
    * H-EDGE: each packed frame's `base.texels` in the atlas's json (frameBase.js FRAME_SOFT, FRAME_HALF, FRAME_GLOW), for
    * the texture table (instancedSpriteBatch.js buildTextureLut): its alphas as the scans found them (d.texels: the frame's
-   * drawn rectangle of its sheet, or its image), and FRAME_GLOW when its rectangle of the twin page holds a glowing texel
-   * (_paintMapsPage's d.glow). E-496: the twin page pads its rectangles, so no frame's read reaches another's. A frame no
-   * scan read keeps no key (FRAME_UNSCANNED in the table).
+   * drawn rectangle of its sheet, or its image), and FRAME_GLOW when its sheet is unshaded (d.glow: DX-UNSHADED, the
+   * sheet's mark). A frame no scan read keeps no key (FRAME_UNSCANNED in the table).
    * @param {Record<string, { base?: object }>} frames the atlas's json frames
    * @param {Array<{ name: string, texels?: number, glow?: boolean }>} imagesToPack
    */
@@ -1867,13 +1876,16 @@ class SpriteSheetRegistry {
       heightUrl ? this._loadImage(heightUrl) : null,
       config.normalMap ? this._loadImage(config.normalMap) : null,
     ]);
-    // DX-EMISSIVE: a sheet that glows (assets config or its json's meta) gets a twin page with the emissive code.
-    const emissive = config.emissive === true || jsonData?.meta?.emissive === true;
+    // DX-UNSHADED: a sheet no light touches (its assets config or its json's meta): a mark a frame in the maps table, no
+    // twin page. `emissive`, its old name, is said once and read as it.
+    if (config.emissive !== undefined || jsonData?.meta?.emissive !== undefined) warnRenamedUnshaded(name);
+    const unshaded = config.unshaded === true || jsonData?.meta?.unshaded === true
+      || config.emissive === true || jsonData?.meta?.emissive === true;
     const gray = Number(heightSpec?.gray) > 0 ? Number(heightSpec.gray) : 0;
     // E-496: which map files these are: sheets with the same key share the twin page's rectangles (_paintMapsPage).
-    const key = JSON.stringify([heightUrl || '', config.normalMap || '', gray, emissive, heightUrl || config.normalMap ? '' : name]);
-    const maps = heightImg || normalImg || emissive ? { heightImg, normalImg, gray, emissive, key } : null;
-    return { img, jsonData, maps };
+    const key = JSON.stringify([heightUrl || '', config.normalMap || '', gray]);
+    const maps = heightImg || normalImg ? { heightImg, normalImg, gray, key } : null;
+    return { img, jsonData, maps, unshaded };
   }
 
   /**

@@ -828,10 +828,10 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   gbuffer: 'mrt',
   /**
-   * DX-EMISSIVE: spriteRenderer.emissive glows in this scene: the sprites carry their G-buffer words even without maps,
-   * faces or a shadow map (which turn them on by themselves, as a sheet's own emissive does). Off, a scene pays nothing.
+   * DX-UNSHADED: spriteRenderer.unshaded works in this scene: the sprites carry their G-buffer words even without maps,
+   * faces or a shadow map (which turn them on by themselves, as an unshaded sheet does). Off, a scene pays nothing.
    */
-  emissive: false,
+  unshaded: false,
   /**
    * 'add' — type 3 glows go to the lightGlows ADD mesh.
    * 'sprite' — same quads join the entity list (sort bias already above the body).

@@ -87,11 +87,11 @@ test('the G-buffer passes and the light pass declare every binding their layouts
   const { lightingGpuProgram } = await import('../../src/render/webgpu/pixiMeshWgsl.js');
   const sprite = shader('instancedSprite.wgsl');
   const pose = shader('instancedSpritePose.wgsl');
-  for (const [gbuf, glow, glowMask] of [[false, false, false], [true, false, false], [true, true, false], [true, true, true]]) {
-    const opts = { gbuf, glow, glowMask };
-    const entries = glowMask ? ['mainFragGlowMask'] : gbuf ? ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragGlow'] : ['mainFragFace'];
+  for (const [gbuf, unshaded, unshadedMask] of [[false, false, false], [true, false, false], [true, true, false], [true, true, true]]) {
+    const opts = { gbuf, unshaded, unshadedMask };
+    const entries = unshadedMask ? ['mainFragUnshadedMask'] : gbuf ? ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragUnshaded'] : ['mainFragFace'];
     for (const entry of entries) {
-      const label = `${entry} gbuf=${gbuf} glow=${glow} glowMask=${glowMask}`;
+      const label = `${entry} gbuf=${gbuf} unshaded=${unshaded} unshadedMask=${unshadedMask}`;
       assertLayoutDeclared(`face ${label}`, instancedSpriteGpuProgram(GpuProgram, faceMapWgsl(sprite, opts), entry, 'f', { maps: true }));
       assertLayoutDeclared(`face pose ${label}`, instancedSpriteGpuProgram(GpuProgram, faceMapWgsl(pose, opts), entry, 'f', { maps: true }));
       assertLayoutDeclared(
@@ -100,9 +100,9 @@ test('the G-buffer passes and the light pass declare every binding their layouts
       );
     }
   }
-  const { glowCompositeGpuProgram } = await import('../../src/render/glowComposite.js');
-  const glow = glowCompositeGpuProgram(GpuProgram);
-  assertLayoutDeclared('glow layer', glow);
+  const { unshadedCompositeGpuProgram } = await import('../../src/render/unshadedComposite.js');
+  const layer = unshadedCompositeGpuProgram(GpuProgram);
+  assertLayoutDeclared('unshaded layer', layer);
   const lighting = shader('lightingBasic.wgsl');
   const { lightTilesGpuProgram } = await import('../../src/render/lightTiles.js');
   for (const faces of [false, true]) {

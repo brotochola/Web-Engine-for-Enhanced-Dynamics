@@ -3,7 +3,7 @@
  * and the checks' camera (pitch 45, the art's: checkShapes.js), a white floor under everything (a cover layer: floor to
  * the light pass, never a standing sprite), the checks' art as spritesheets, a lamp, and the sun turned to come from a
  * given direction at a given hour. Written against DX-LIGHT3D's API (plan §5): `camera.pitch`, a caster lists only
- * ShadowCaster, `spriteRenderer.emissive`.
+ * ShadowCaster, `spriteRenderer.unshaded`.
  */
 import WEED from '/src/index.js';
 import { ART_URL, SHEETS } from './layouts.js';

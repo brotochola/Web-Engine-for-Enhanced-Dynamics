@@ -17,7 +17,7 @@
 
 /** Height steps a px. 16 bits hold 8 191 px. */
 import { resolveHeightScaleY } from '../util/cameraView.js';
-import { MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, TWIN_GLSL, TWIN_WGSL, withTwinGlsl } from './twinTexel.js';
+import { MAPS_MARKS_GLSL, MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, TWIN_GLSL, TWIN_WGSL, withTwinGlsl } from './twinTexel.js';
 
 export const FACE_Z_UNITS = 8;
 
@@ -35,7 +35,7 @@ export const FACE_DEFAULTS = Object.freeze({
 
 /**
  * DX-GBUF (plan §6.4): the face map's codes beyond a normal. A normal's bytes are 1..253, so (0, 0) is "no face" (the
- * floor), (1, 0) a glowing pixel (DX-EMISSIVE v1) and (254, 254) a pixel lit as drawn at its place in 3D (FLAT: a sprite
+ * floor), (1, 0) an unshaded pixel (DX-UNSHADED, where no unshaded pass draws it) and (254, 254) a pixel lit as drawn at its place in 3D (FLAT: a sprite
  * with normals 'flat', or a standing card). A height's top bit (FACE_K_BIT, of its 16) marks a sprite's own normal (its
  * map's or its heights'), which shows as much as the lamps' share of the light (plan §5.4): heights hold 15 bits.
  */
@@ -76,24 +76,21 @@ const IDS_TEXEL_GLSL = `vec4 idsTexel(vec2 gbuf, bool isRender) {
 }`;
 
 /**
- * DX-EMISSIVE v2 (GLSL 300): whether a pixel glows by itself: its entity's emissive level (gbufWord.js bits 19-21) or its
- * sheet's code in the twin page (spriteMaps.js EMISSIVE_CODE, normal bytes 0, 255), and how much (a level's quarters, 1
- * for the sheet's). 0 for a pixel that does not.
+ * DX-UNSHADED (GLSL 300): 1 for an unshaded pixel, its entity's (its word's unshaded bit, gbufWord.js GBUF_UNSHADED_BIT)
+ * or its sheet's (the maps table's mark, its instance's vMapsWin); 0 for any other.
  */
-const GLOW_OF_GLSL = `float glowOf(vec2 gbuf, vec2 uv) {
-  uint level = (uint(gbuf.x + 0.5) >> 19u) & 7u;
-  if (level != 0u) return float(level) / 4.0;
-  vec4 m = twinTexel(uv, vMapsWin);
-  return m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0 ? 1.0 : 0.0;
+const UNSHADED_OF_GLSL = `float unshadedOf(vec2 gbuf) {
+  return ((uint(gbuf.x + 0.5) >> 21u) & 1u) != 0u || twinUnshaded(vMapsWin) ? 1.0 : 0.0;
 }`;
 
 /**
  * The ids map's fragment shader (WebGL): over faceMapVertex's outputs with words, the face map's coverage, the ids texel.
- * With `glow` (DX-EMISSIVE v2) a glowing pixel writes nothing, as in the face map: what is behind it is lit.
- * @param {{ glow?: boolean }} [opts]
+ * With `unshaded` (DX-UNSHADED, the unshaded pass on) an unshaded pixel writes nothing, as in the face map: what is behind
+ * it is lit.
+ * @param {{ unshaded?: boolean }} [opts]
  * @returns {string}
  */
-export function faceIdsFragment({ glow = false } = {}) {
+export function faceIdsFragment({ unshaded = false } = {}) {
   return `#version 300 es
 precision highp float;
 in vec2 vLocal;
@@ -114,36 +111,37 @@ ${WEED_UV_GLSL}
 ${TWIN_GLSL}
 ${IDS_TEXEL_GLSL}
 
-${GLOW_OF_GLSL}
+${UNSHADED_OF_GLSL}
 
 // DX-GBUF: the entity ids map (faceMap.js FACE_IDS_SELF): what entity covers this pixel, in painter order.
 void main() {
   vec2 uv = weedUv();
   if (texture(uTexture, uv).a * vColor.a < 0.5) discard;
-${glow ? '  if (glowOf(vGbuf, uv) > 0.0) discard;\n' : ''}  finalColor = idsTexel(vGbuf, vRender > 0.5);
+${unshaded ? '  if (unshadedOf(vGbuf) > 0.0) discard;\n' : ''}  finalColor = idsTexel(vGbuf, vRender > 0.5);
 }
 `;
 }
 
 /**
- * faceMap.frag.glsl with its blocks for a batch's options: GBUF (the words: normals and surface) and GLOW / !GLOW
- * (DX-EMISSIVE v2: a glowing pixel writes nothing, the glow pass draws it; v1: the face map's glow code), and the twin
- * texel's helpers (twinTexel.js) at its "// weed:twin" line.
+ * faceMap.frag.glsl with its blocks for a batch's options: GBUF (the words: normals and surface) and UNSHADED / !UNSHADED
+ * (DX-UNSHADED: an unshaded pixel writes nothing, the unshaded pass draws it; without the pass, the face map's code), and
+ * the twin texel's helpers (twinTexel.js) at its "// weed:twin" line.
  * @param {string} faceFrag
- * @param {{ gbuf?: boolean, glow?: boolean }} [opts]
+ * @param {{ gbuf?: boolean, unshaded?: boolean }} [opts]
  */
-export function faceFragmentGlsl(faceFrag, { gbuf = false, glow = false } = {}) {
-  return withTwinGlsl(shaderWithFlag(shaderWithFlag(shaderWithFlag(faceFrag, 'GBUF', gbuf), 'GLOW', glow), '!GLOW', !glow));
+export function faceFragmentGlsl(faceFrag, { gbuf = false, unshaded = false } = {}) {
+  const flagged = shaderWithFlag(shaderWithFlag(faceFrag, 'UNSHADED', unshaded), '!UNSHADED', !unshaded);
+  return withTwinGlsl(shaderWithFlag(flagged, 'GBUF', gbuf));
 }
 
 /**
- * DX-EMISSIVE v2 (plan §6.9, F10): the glow pass's fragment shader (WebGL), over faceMapVertex's outputs with words: a
- * glowing pixel writes its colour times its glow, any other black with its alpha, both premultiplied and blended normally
- * in painter order, so a sprite in front of a flame covers its glow in proportion to its alpha. The glow layer adds it
- * where the light is short (glowComposite.js).
+ * DX-UNSHADED (was DX-EMISSIVE v2, plan §6.9, F10): the unshaded pass's fragment shader (WebGL), over faceMapVertex's
+ * outputs with words: an unshaded pixel writes its colour, any other black with its alpha, both premultiplied and blended
+ * normally in painter order, so a sprite in front of a flame covers it in proportion to its alpha. The unshaded layer adds
+ * it where the light is short (unshadedComposite.js).
  * @returns {string}
  */
-export function faceGlowFragment() {
+export function faceUnshadedFragment() {
   return `#version 300 es
 precision highp float;
 in vec2 vLocal;
@@ -161,27 +159,27 @@ out vec4 finalColor;
 ${WEED_UV_GLSL}
 
 ${TWIN_GLSL}
-${GLOW_OF_GLSL}
+${UNSHADED_OF_GLSL}
 
 void main() {
   vec2 uv = weedUv();
   vec4 t = texture(uTexture, uv);
-  float s = glowOf(vGbuf, uv);
+  float s = unshadedOf(vGbuf);
   finalColor = vec4(t.rgb * vColor.rgb * vColor.a * s, t.a * vColor.a);
 }
 `;
 }
 
 /**
- * E-457: the glow mask's fragment shader (WebGL), over glowMaskVertex's outputs: each instance that can glow marks its
- * whole quad in the stencil, with no colour (the mask's colour mask is off) and no work a pixel, so the GPU marks it as it
- * rasterizes. The glow pass then draws every instance only where it is marked: elsewhere none adds anything to the
- * glow's colour (a pixel that does not glow writes black with its alpha, which the glow layer does not read), so the
- * target's colour is what drawing them all everywhere gave. A mask cut to the glowing pixels (a texture read and a
- * discard a pixel), and Pixi's mask, which draws it again to pop it, cost emissiveStressScene more than they saved.
+ * E-457: the unshaded mask's fragment shader (WebGL), over unshadedMaskVertex's outputs: each instance that can be
+ * unshaded marks its whole quad in the stencil, with no colour (the mask's colour mask is off) and no work a pixel, so
+ * the GPU marks it as it rasterizes. The unshaded pass then draws every instance only where it is marked: elsewhere none
+ * adds anything to its colour (a pixel that is not unshaded writes black with its alpha, which the unshaded layer does not
+ * read), so the target's colour is what drawing them all everywhere gave. A mask cut to the unshaded pixels (a texture
+ * read and a discard a pixel), and Pixi's mask, which draws it again to pop it, cost the stress scene more than they saved.
  * @returns {string}
  */
-export function faceGlowMaskFragment() {
+export function faceUnshadedMaskFragment() {
   return `#version 300 es
 precision highp float;
 out vec4 finalColor;
@@ -193,24 +191,24 @@ void main() {
 }
 
 /**
- * E-457: which instances the glow mask draws (GLSL, in faceMapVertex's main with words): one whose word holds an emissive
- * level (gbufWord.js bits 19-21). Any other goes off the target, so the mask fills the glowing instances' quads alone. A
- * sheet that glows (its twin page's code) is not told apart from a frame with soft edges by the texture table's bit, so
- * while one does the glow pass draws unmasked (InstancedSpriteBatch.glowPass).
+ * E-457: which instances the unshaded mask draws (GLSL, in faceMapVertex's main with words): one whose word is unshaded
+ * (gbufWord.js GBUF_UNSHADED_BIT) or whose frame's sheet is (DX-UNSHADED: the maps table's mark). Any other goes off the
+ * target, so the mask fills the unshaded instances' quads alone.
  */
-const GLOW_MASK_CUT_GLSL = `  if (((uint(aInstGbuf.x + 0.5) >> 19u) & 7u) == 0u) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+const UNSHADED_MASK_CUT_GLSL = `  if (((uint(aInstGbuf.x + 0.5) >> 21u) & 1u) == 0u && !twinUnshaded(twinWindow(int(aInstTexId + 0.5)))) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
 `;
 
 /**
- * E-457: faceMapVertex's output (with words) as the glow mask's vertex shader: the instances that cannot glow go off the
- * target (GLOW_MASK_CUT_GLSL). Their place is computed as the glow pass's, so the mask covers the pixels it draws.
+ * E-457: faceMapVertex's output (with words) as the unshaded mask's vertex shader: the instances that cannot be unshaded
+ * go off the target (UNSHADED_MASK_CUT_GLSL). Their place is computed as the unshaded pass's, so the mask covers the
+ * pixels it draws.
  * @param {string} source faceMapVertex(..., { gbuf: true })
  * @returns {string}
  */
-export function glowMaskVertex(source) {
+export function unshadedMaskVertex(source) {
   const end = 'vTileOff = aInstTileOff;\n';
-  if (source.split(end).length !== 2) throw new Error('WeedJS: the glow mask needs one vTileOff in the sprite vertex shader');
-  return source.replace(end, () => end + GLOW_MASK_CUT_GLSL);
+  if (source.split(end).length !== 2) throw new Error('WeedJS: the unshaded mask needs one vTileOff in the sprite vertex shader');
+  return source.replace(end, () => end + UNSHADED_MASK_CUT_GLSL);
 }
 
 /**
@@ -220,8 +218,8 @@ export function glowMaskVertex(source) {
  * @param {string} faceFrag faceMap.frag.glsl
  * @returns {string}
  */
-export function faceGbufFragment(faceFrag, { glow = false } = {}) {
-  const src = faceFragmentGlsl(faceFrag, { gbuf: true, glow });
+export function faceGbufFragment(faceFrag, { unshaded = false } = {}) {
+  const src = faceFragmentGlsl(faceFrag, { gbuf: true, unshaded });
   const out = 'out vec4 finalColor;\n';
   const cut = '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n';
   for (const mark of [out, cut]) {
@@ -310,7 +308,7 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
     .replace(
       main,
       'uniform vec4 uFaceSpace; // heightScaleY, groundScaleY\nflat out vec2 vFaceOct;\nout float vFaceZ;\nflat out float vMapScale;\n' +
-        'flat out vec4 vMapsWin;\n' + MAPS_TABLE_GLSL + gbufDecl + '\n' + main,
+        'flat out vec4 vMapsWin;\n' + MAPS_MARKS_GLSL + MAPS_TABLE_GLSL + gbufDecl + '\n' + main,
     )
     .replace(
       end,
@@ -344,55 +342,54 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
  * faceMapVertex's WGSL form, on the sprite program before spriteIndexedWgsl if it is the indexed one, with the fragment
  * entry `mainFragFace` that writes the map (its texel from weedFace, faceFunctionsWgsl).
  * DX-GBUF: with `gbuf`, the instance's words (vGbuf) and its foot's world y (vFootY), as faceMapVertex passes them.
- * E-457: with `glowMask` (and `gbuf`), the glow mask's vertex half (glowMaskVertex's cut); its entry is mainFragGlowMask.
+ * E-457: with `unshadedMask` (and `gbuf`), the unshaded mask's vertex half (unshadedMaskVertex's cut); its entry is
+ * mainFragUnshadedMask. DX-UNSHADED: with `unshaded`, the unshaded pass draws the unshaded pixels, so the G-buffer's
+ * entries leave them out.
  * @param {string} source instancedSprite.wgsl or instancedSpritePose.wgsl
- * @param {{ gbuf?: boolean, glow?: boolean, glowMask?: boolean }} [opts]
+ * @param {{ gbuf?: boolean, unshaded?: boolean, unshadedMask?: boolean }} [opts]
  * @returns {string}
  */
-export function faceMapWgsl(source, { gbuf = false, glow = false, glowMask = false } = {}) {
-  return `${faceVertexWgsl(source, { gbuf, glowMask })}${faceFunctionsWgsl({ gbuf, glow })}
+export function faceMapWgsl(source, { gbuf = false, unshaded = false, unshadedMask = false } = {}) {
+  return `${faceVertexWgsl(source, { gbuf, unshadedMask })}${faceFunctionsWgsl({ gbuf, unshaded })}
 // DX-FACES: faceMap.frag.glsl
 @fragment
 fn mainFragFace(in: VertexOut) -> @location(0) vec4<f32> {
   return weedFace(in);
 }
-${gbuf ? faceIdsEntryWgsl({ glow }) : ''}`;
+${gbuf ? faceIdsEntryWgsl({ unshaded }) : ''}`;
 }
 
 /**
- * DX-GBUF: the ids map's texel and its fragment entry (faceIdsFragment's WGSL), the one pass's entry (MRT) and the glow
- * pass's (faceGlowFragment's), in a face module with words.
+ * DX-GBUF: the ids map's texel and its fragment entry (faceIdsFragment's WGSL), the one pass's entry (MRT) and the
+ * unshaded pass's (faceUnshadedFragment's), in a face module with words.
  */
-const faceIdsEntryWgsl = ({ glow }) => `
-// DX-EMISSIVE v2: how much a pixel glows by itself (faceMap.js GLOW_OF_GLSL), 0 for one that does not.
-fn glowOf(gbuf: vec2<f32>, uv: vec2<f32>, win: vec4<f32>) -> f32 {
-  let level = (u32(gbuf.x + 0.5) >> 19u) & 7u;
-  if (level != 0u) { return f32(level) / 4.0; }
-  let m = twinTexel(uv, win);
-  return select(0.0, 1.0, m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0);
+const faceIdsEntryWgsl = ({ unshaded }) => `
+// DX-UNSHADED: 1 for an unshaded pixel (faceMap.js UNSHADED_OF_GLSL), 0 for any other.
+fn unshadedOf(gbuf: vec2<f32>, win: vec4<f32>) -> f32 {
+  return select(0.0, 1.0, ((u32(gbuf.x + 0.5) >> 21u) & 1u) != 0u || twinUnshaded(win));
 }
 ${FACE_IDS_ENTRY_WGSL.replace(
     '  if (t.a * in.vColor.a < 0.5) { discard; }\n  return idsTexel(',
-    glow
-      ? '  if (t.a * in.vColor.a < 0.5) { discard; }\n  if (glowOf(in.vGbuf, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff), in.vMapsWin) > 0.0) { discard; }\n  return idsTexel('
+    unshaded
+      ? '  if (t.a * in.vColor.a < 0.5) { discard; }\n  if (unshadedOf(in.vGbuf, in.vMapsWin) > 0.0) { discard; }\n  return idsTexel('
       : '  if (t.a * in.vColor.a < 0.5) { discard; }\n  return idsTexel(',
   )}
-// DX-EMISSIVE v2 (faceGlowFragment): a glowing pixel's colour times its glow, any other black with its alpha.
+// DX-UNSHADED (faceUnshadedFragment): an unshaded pixel's colour, any other black with its alpha.
 @fragment
-fn mainFragGlow(in: VertexOut) -> @location(0) vec4<f32> {
+fn mainFragUnshaded(in: VertexOut) -> @location(0) vec4<f32> {
   let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
   let t = textureSample(uTexture, uSampler, uv);
-  let s = glowOf(in.vGbuf, uv, in.vMapsWin);
+  let s = unshadedOf(in.vGbuf, in.vMapsWin);
   return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, t.a * in.vColor.a);
 }
-// E-457 (faceGlowMaskFragment): the quad of an instance that can glow, marked in the stencil, no colour.
+// E-457 (faceUnshadedMaskFragment): the quad of an instance that can be unshaded, marked in the stencil, no colour.
 @fragment
-fn mainFragGlowMask(in: VertexOut) -> @location(0) vec4<f32> {
+fn mainFragUnshadedMask(in: VertexOut) -> @location(0) vec4<f32> {
   return vec4<f32>(0.0);
 }
 `;
 
-/** The ids entry and the one pass's (faceIdsEntryWgsl adds the glow's discard and the glow entry). */
+/** The ids entry and the one pass's (faceIdsEntryWgsl adds the unshaded discard and the unshaded entry). */
 const FACE_IDS_ENTRY_WGSL = `
 // DX-GBUF: the ids map's texel of a word (faceMap.js IDS_TEXEL_GLSL).
 fn idsTexel(gbuf: vec2<f32>, isRender: bool) -> vec4<f32> {
@@ -428,13 +425,13 @@ fn mainFragGbuf(in: VertexOut) -> WeedGbufOut {
 
 /**
  * The face map's vertex half in a sprite WGSL (faceMapWgsl's): its uniform, the face's octahedral bytes and height out,
- * and with `gbuf` the words' input (gbufAttributeWgsl) and outputs. E-457: with `glowMask` (and `gbuf`) the glow mask's
- * cut (glowMaskVertex's).
+ * and with `gbuf` the words' input (gbufAttributeWgsl) and outputs. E-457: with `unshadedMask` (and `gbuf`) the
+ * unshaded mask's cut (unshadedMaskVertex's).
  * @param {string} source
- * @param {{ gbuf?: boolean, glowMask?: boolean }} [opts]
+ * @param {{ gbuf?: boolean, unshadedMask?: boolean }} [opts]
  * @returns {string}
  */
-export function faceVertexWgsl(source, { gbuf = false, glowMask = false } = {}) {
+export function faceVertexWgsl(source, { gbuf = false, unshadedMask = false } = {}) {
   const once = (text, find, add) => {
     if (text.split(find).length !== 2) throw new Error(`WeedJS: the face map needs one "${find.trim()}" in the sprite WGSL`);
     return text.replace(find, () => find + add);
@@ -466,7 +463,7 @@ export function faceVertexWgsl(source, { gbuf = false, glowMask = false } = {}) 
     out,
     '  out.vTileOff = aInstTileOff;\n',
     gbufOut +
-      (gbuf && glowMask ? GLOW_MASK_CUT_WGSL : '') +
+      (gbuf && unshadedMask ? UNSHADED_MASK_CUT_WGSL : '') +
       `  let faceCode = u32(aInstTileOff.x * 65535.0 + 0.5);
   out.vFaceOct = vec2<f32>(0.0);
   out.vFaceZ = 0.0;
@@ -495,8 +492,8 @@ export function faceVertexWgsl(source, { gbuf = false, glowMask = false } = {}) 
   return out;
 }
 
-/** E-457: GLOW_MASK_CUT_GLSL in WGSL (faceVertexWgsl's glowMask). */
-const GLOW_MASK_CUT_WGSL = `  if (((u32(aInstGbuf.x + 0.5) >> 19u) & 7u) == 0u) { out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0); }
+/** E-457: UNSHADED_MASK_CUT_GLSL in WGSL (faceVertexWgsl's unshadedMask). */
+const UNSHADED_MASK_CUT_WGSL = `  if (((u32(aInstGbuf.x + 0.5) >> 21u) & 1u) == 0u && !twinUnshaded(twinWindow(tid))) { out.position = vec4<f32>(2.0, 2.0, 2.0, 1.0); }
 `;
 
 /** DX-GBUF's WGSL helpers (faceMap.frag.glsl twinHeight and heightNormal): normals 'height', the heights' Sobel. */
@@ -530,12 +527,12 @@ fn faceHeightNormal(c: vec2<i32>, z: f32) -> vec3<f32> {
  * @param {{ gbuf?: boolean }} [opts]
  * @returns {string}
  */
-export function faceFunctionsWgsl({ gbuf = false, glow = false } = {}) {
+export function faceFunctionsWgsl({ gbuf = false, unshaded = false } = {}) {
   const flat = `vec2<f32>(${FACE_FLAT_CODE}.0 / 255.0)`;
   const gbufBlock = gbuf
     ? `  // DX-GBUF (plan §5.4): an entity's sprite as its normals and surface say (faceMap.frag.glsl's GBUF block).
   let word = u32(in.vGbuf.x + 0.5);
-${glow ? '  // DX-EMISSIVE v2: an entity that glows by itself writes nothing here.\n  if (((word >> 19u) & 7u) != 0u) { discard; }\n' : ''}  if (noFace && (word & 65535u) != 0u) {
+${unshaded ? '  // DX-UNSHADED: an unshaded entity writes nothing here.\n  if (((word >> 21u) & 1u) != 0u) { discard; }\n' : ''}  if (noFace && (word & 65535u) != 0u) {
     let flags = (word >> 16u) & 63u;
     let normals = flags & 3u;
     if (twinPresent(m)) {
@@ -591,13 +588,14 @@ fn weedFace(in: VertexOut) -> vec4<f32> {
   let tc = twinCoord(uv, in.vMapsWin);
   let m = twinTexel(uv, in.vMapsWin);
   if (t.a * in.vColor.a < 0.5) { discard; }
+  // DX-UNSHADED: a pixel of an unshaded sheet, face or not: (1/255, 0) in the face map, or nothing (unshaded: the unshaded
+  // pass draws it).
+  if (twinUnshaded(in.vMapsWin)) {
+    ${unshaded ? 'discard;' : 'return vec4<f32>(1.0 / 255.0, 0.0, 0.0, 0.0);'}
+  }
   var oct = in.vFaceOct;
   var z = in.vFaceZ;
   let noFace = all(oct == vec2<f32>(0.0));
-  // DX-EMISSIVE: a glowing pixel is (1/255, 0) in the face map (v1), or nothing (v2, glow: the glow pass draws it).
-  if (noFace && m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0) {
-    ${glow ? 'discard;' : 'return vec4<f32>(1.0 / 255.0, 0.0, 0.0, 0.0);'}
-  }
   let sc = normalize(vec2<f32>(uniforms.uFaceSpace.y, uniforms.uFaceSpace.x));
 ${gbufBlock}  if (noFace && twinPresent(m)) {
     let n = faceOctDecode(floor(m.ba * 255.0 + 0.5));

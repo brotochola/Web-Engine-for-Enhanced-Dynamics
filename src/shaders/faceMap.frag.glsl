@@ -90,32 +90,33 @@ vec3 heightNormal(ivec2 c, float z) {
 void main() {
   vec2 uv = weedUv();
   if (texture(uTexture, uv).a * vColor.a < 0.5) discard;
+  // DX-UNSHADED: a pixel of an unshaded sheet (the maps table's mark), face or not. With the unshaded pass (UNSHADED) it
+  // writes nothing here, and what is behind it is lit; without, (1/255, 0) in the face map, which the light pass lights
+  // fully.
+  if (twinUnshaded(vMapsWin)) {
+// #if UNSHADED
+    discard;
+// #endif UNSHADED
+// #if !UNSHADED
+    finalColor = vec4(1.0 / 255.0, 0.0, 0.0, 0.0);
+    return;
+// #endif !UNSHADED
+  }
   vec2 oct = vFaceOct;
   float z = vFaceZ;
   if (oct == vec2(0.0)) {
     ivec2 tc = twinCoord(uv, vMapsWin);
-    vec4 m = vMapsWin.z > 0.5 ? texelFetch(uMaps, tc, 0) : vec4(0.0);
-    // DX-EMISSIVE: a glowing pixel (normal bytes 0, 255). F10 v1: (1/255, 0) in the face map, the light pass lights it
-    // fully. v2 (GLOW: the glow pass draws its glow): it writes nothing here, and what is behind it is lit.
-    if (m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0) {
-// #if GLOW
-      discard;
-// #endif GLOW
-// #if !GLOW
-      finalColor = vec4(1.0 / 255.0, 0.0, 0.0, 0.0);
-      return;
-// #endif !GLOW
-    }
+    vec4 m = twinHas(vMapsWin) ? texelFetch(uMaps, tc, 0) : vec4(0.0);
     vec2 sc = normalize(vec2(uFaceSpace.y, uFaceSpace.x)); // sin, cos of the camera's pitch
 // #if GBUF
     // DX-GBUF (plan §5.4): an entity's sprite as its normals and surface say. With maps: the twin's height, and its normal
     // (normals 'auto' or 'map'), the heights' (normals 'height') or none (normals 'flat': lit as drawn). Without: a card
     // standing on its foot (surface 'standing'), a row's height its rise over the foot's, lit as drawn; or the floor.
     uint word = uint(vGbuf.x + 0.5);
-// #if GLOW
-    // DX-EMISSIVE v2: an entity that glows by itself (its word's emissive level) writes nothing here either.
-    if (((word >> 19u) & 7u) != 0u) discard;
-// #endif GLOW
+// #if UNSHADED
+    // DX-UNSHADED: an unshaded entity (its word's unshaded bit, gbufWord.js) writes nothing here either.
+    if (((word >> 21u) & 1u) != 0u) discard;
+// #endif UNSHADED
     if ((word & 65535u) != 0u) {
       uint flags = (word >> 16u) & 63u;
       uint normals = flags & 3u;

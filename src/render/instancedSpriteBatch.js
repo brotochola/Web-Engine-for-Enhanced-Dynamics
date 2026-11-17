@@ -44,8 +44,8 @@ import {
   packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
 import {
-  faceFragmentGlsl, faceGbufFragment, faceGlowFragment, faceGlowMaskFragment, faceIdsFragment, faceMapVertex, faceMapWgsl,
-  gbufAttributeGlsl, gbufAttributeWgsl, glowMaskVertex,
+  faceFragmentGlsl, faceGbufFragment, faceIdsFragment, faceMapVertex, faceMapWgsl, faceUnshadedFragment,
+  faceUnshadedMaskFragment, gbufAttributeGlsl, gbufAttributeWgsl, unshadedMaskVertex,
 } from './faceMap.js';
 import { FRAME_UNSCANNED, TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW, TEX_LUT_SOFT_OR_GLOW, lutBaseFloats } from './frameBase.js';
 import {
@@ -80,29 +80,30 @@ export const BATCH_DEPTH = Object.freeze({ INDEX: 0 });
 
 /**
  * DX-FACES, DX-GBUF: the batch's passes over its own instances for the light (InstancedSpriteBatch._auxMesh): the face
- * map, the entity ids map, both in one pass (MRT), the self-glowing colour. Their names and fragment entries (WGSL).
+ * map, the entity ids map, both in one pass (MRT), the unshaded colour (DX-UNSHADED). Their names and fragment entries
+ * (WGSL).
  */
 export const AUX_FACE = 0;
 export const AUX_IDS = 1;
 export const AUX_GBUF = 2;
-export const AUX_GLOW = 3;
-/** E-457: the glow mask, the quads of the instances that can glow in the stencil, where the glow pass draws (glowPass). */
-export const AUX_GLOW_MASK = 4;
-const AUX_NAMES = ['face', 'ids', 'gbuf', 'glow', 'glowMask'];
-const AUX_ENTRIES = ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragGlow', 'mainFragGlowMask'];
+export const AUX_UNSHADED = 3;
+/** E-457: the unshaded mask, the quads of the instances that can be unshaded in the stencil, where the unshaded pass draws. */
+export const AUX_UNSHADED_MASK = 4;
+const AUX_NAMES = ['face', 'ids', 'gbuf', 'unshaded', 'unshadedMask'];
+const AUX_ENTRIES = ['mainFragFace', 'mainFragIds', 'mainFragGbuf', 'mainFragUnshaded', 'mainFragUnshadedMask'];
 /** Pixi's STENCIL_MODES (the bundle does not export them): off, a mask drawn (equal to the reference, +1), a mask in use. */
 const STENCIL_OFF = 0;
 const STENCIL_MASK_ADD = 1;
 const STENCIL_MASK_ACTIVE = 2;
 
 /**
- * E-457: the glow pass's stencil between its meshes, run by Pixi's custom render pipe as a RenderContainer is (the bundle
+ * E-457: the unshaded pass's stencil between its meshes, run by Pixi's custom render pipe as a RenderContainer is (the bundle
  * exports ViewContainer, not RenderContainer): the stencil mode, its reference and the colour mask for the meshes after it.
  * The mask is not popped: the target's next render clears the stencil, and the last step turns the test off.
  */
-class GlowStencilStep extends ViewContainer {
+class UnshadedStencilStep extends ViewContainer {
   constructor(mode, reference, colorMask) {
-    super({ label: 'weed-glow-stencil' });
+    super({ label: 'weed-unshaded-stencil' });
     this.renderPipeId = 'customRender';
     this.batched = false;
     this.cullable = false;
@@ -632,18 +633,16 @@ export class InstancedSpriteBatch {
     this.keyedCasters = false;
     this._keyedCasterShaders = [null, null];
     // DX-FACES, DX-GBUF: the batch's passes over its own instances for the light (AUX_FACE: the face map; AUX_IDS: the
-    // entity ids map; AUX_GBUF: both in one pass, MRT; AUX_GLOW: the self-glowing colour; AUX_GLOW_MASK: where it is,
+    // entity ids map; AUX_GBUF: both in one pass, MRT; AUX_UNSHADED: the unshaded colour; AUX_UNSHADED_MASK: where it is,
     // E-457): each kind's programs (plain, indexed, by row), its state and a mesh per geometry this batch draws (_auxMesh).
     this._aux = AUX_NAMES.map(() => ({ meshes: [], state: null, shader: null, indexed: null, row: null }));
     this._auxShaderList = [];
-    // E-457: the glow pass's hosts, one a glow mesh (a geometry): { glow, host }, the host holding the glow mask and the
-    // glow mesh it masks (glowPass).
-    this._glowPasses = [];
-    // E-457: 1 while a sheet of the atlas glows by itself (setGlowSheets): the glow pass then draws unmasked.
-    this._glowSheets = 0;
-    // DX-EMISSIVE v2 (F10): the glow pass draws the glowing pixels (glowMesh), so the G-buffer's passes leave them out;
-    // false: the face map's glow code (v1). Set by the caller before a light pass is first drawn.
-    this.emissiveGlow = false;
+    // E-457: the unshaded pass's hosts, one an unshaded mesh (a geometry): { mesh, host }, the host holding the unshaded mask
+    // and the unshaded mesh it masks (unshadedPass).
+    this._unshadedPasses = [];
+    // DX-UNSHADED: the unshaded pass draws the unshaded pixels (unshadedMesh), so the G-buffer's passes leave them out;
+    // false: the face map's code for them. Set by the caller before a light pass is first drawn.
+    this.unshadedOn = false;
     this._keyedCasterGeometries = null;
     this._ixGen = 0;
     this._ixRows = -1;
@@ -706,7 +705,7 @@ export class InstancedSpriteBatch {
     this._alphaCut = cut;
     const atlas = atlasSource || Texture.WHITE.source;
     const lut = lutSource || dummyLutSource(useWebGpu);
-    // DX-DEPTH (F5 v2): the edge pass's programs (the soft and glowing pixels, depth tested, not written), a twin of each
+    // DX-DEPTH (F5 v2): the edge pass's programs (the soft and unshaded pixels, depth tested, not written), a twin of each
     // colour program (plain, indexed, by row) made with it; and its mesh, right after the batch's own (edgeMesh).
     this._edgeShader = null;
     this._edgeIndexedShader = null;
@@ -2107,49 +2106,41 @@ export class InstancedSpriteBatch {
   }
 
   /**
-   * DX-EMISSIVE v2 (plan §6.9, F10): this batch's instances for the glow target (faceMap.js faceGlowFragment), the
-   * canvas's size: a glowing pixel's colour times its glow, any other black with its alpha, normal blending. Needs words.
+   * DX-UNSHADED (was DX-EMISSIVE v2, plan §6.9, F10): this batch's instances for the unshaded target (faceMap.js
+   * faceUnshadedFragment), the canvas's size: an unshaded pixel's colour, any other black with its alpha, normal blending.
+   * Needs words.
    * @returns {Mesh|null}
    */
-  glowMesh(heightScaleY, groundScaleY, maps) {
-    return this.gbuf ? this._auxMesh(AUX_GLOW, heightScaleY, groundScaleY, maps) : null;
+  unshadedMesh(heightScaleY, groundScaleY, maps) {
+    return this.gbuf ? this._auxMesh(AUX_UNSHADED, heightScaleY, groundScaleY, maps) : null;
   }
 
   /**
-   * E-457: the glow pass over this frame's geometry, a host of the glow mask (the quads of the instances that can glow,
-   * marked in the stencil: faceGlowMaskFragment) and the glow mesh drawn where they are (every instance, as before), the
-   * stencil set between them (GlowStencilStep). Elsewhere no instance adds anything to the glow's colour, so the target
-   * holds what the glow mesh alone drew, for the fill of the glowing quads: the rest were 0.81 ms of fill in Predator
-   * ?light3d=1. The glow mesh alone while a sheet glows (setGlowSheets: any instance may), or where the mask cannot be
-   * made. Needs words.
+   * E-457: the unshaded pass over this frame's geometry, a host of the unshaded mask (the quads of the instances that can be
+   * unshaded, marked in the stencil: faceUnshadedMaskFragment) and the unshaded mesh drawn where they are (every instance,
+   * as before), the stencil set between them (UnshadedStencilStep). Elsewhere no instance adds anything to its colour, so
+   * the target holds what the unshaded mesh alone drew, for the fill of the unshaded quads: the rest were 0.81 ms of fill
+   * in Predator ?light3d=1. DX-UNSHADED: an unshaded sheet's instances are marked too (the maps table's mark), so the mask
+   * holds whatever is unshaded. The unshaded mesh alone where the mask cannot be made. Needs words.
    * @returns {Container|Mesh|null}
    */
-  glowPass(heightScaleY, groundScaleY, maps) {
-    const glow = this.glowMesh(heightScaleY, groundScaleY, maps);
-    if (glow === null || this._glowSheets !== 0) return glow;
-    const passes = this._glowPasses;
+  unshadedPass(heightScaleY, groundScaleY, maps) {
+    const mesh = this.unshadedMesh(heightScaleY, groundScaleY, maps);
+    if (mesh === null) return null;
+    const passes = this._unshadedPasses;
     for (let i = 0; i < passes.length; i++) {
-      if (passes[i].glow === glow) return passes[i].host;
+      if (passes[i].mesh === mesh) return passes[i].host;
     }
-    const mask = this._auxMesh(AUX_GLOW_MASK, heightScaleY, groundScaleY, maps);
-    if (mask === null) return glow;
+    const mask = this._auxMesh(AUX_UNSHADED_MASK, heightScaleY, groundScaleY, maps);
+    if (mask === null) return mesh;
     const host = new Container();
-    host.addChild(new GlowStencilStep(STENCIL_MASK_ADD, 0, 0));
+    host.addChild(new UnshadedStencilStep(STENCIL_MASK_ADD, 0, 0));
     host.addChild(mask);
-    host.addChild(new GlowStencilStep(STENCIL_MASK_ACTIVE, 1, 15));
-    host.addChild(glow);
-    host.addChild(new GlowStencilStep(STENCIL_OFF, 0, 15));
-    passes.push({ glow, host });
+    host.addChild(new UnshadedStencilStep(STENCIL_MASK_ACTIVE, 1, 15));
+    host.addChild(mesh);
+    host.addChild(new UnshadedStencilStep(STENCIL_OFF, 0, 15));
+    passes.push({ mesh, host });
     return host;
-  }
-
-  /**
-   * E-457: whether a sheet of the atlas glows by itself (its twin page's emissive code: the atlas's meta.emissive). Any
-   * instance may then glow, and the glow pass draws unmasked (glowPass).
-   * @param {boolean} on
-   */
-  setGlowSheets(on) {
-    this._glowSheets = on ? 1 : 0;
   }
 
   /**
@@ -2198,10 +2189,10 @@ export class InstancedSpriteBatch {
     const name = `${this._label}-${AUX_NAMES[kind]}`;
     // DX-GBUF: with words, each entity's sprite as its normals and surface say (faceMap.frag.glsl's GBUF block); every kind
     // past the face map reads them.
-    const gbuf = { gbuf: kind === AUX_FACE ? this.gbuf : true, glow: this.emissiveGlow, glowMask: kind === AUX_GLOW_MASK };
+    const gbuf = { gbuf: kind === AUX_FACE ? this.gbuf : true, unshaded: this.unshadedOn, unshadedMask: kind === AUX_UNSHADED_MASK };
     const entry = AUX_ENTRIES[kind];
-    // E-457: the glow mask's vertex shader leaves out the instances that cannot glow.
-    const vertexOf = (source) => (kind === AUX_GLOW_MASK ? glowMaskVertex(faceMapVertex(source, gbuf)) : faceMapVertex(source, gbuf));
+    // E-457: the unshaded mask's vertex shader leaves out the instances that cannot be unshaded.
+    const vertexOf = (source) => (kind === AUX_UNSHADED_MASK ? unshadedMaskVertex(faceMapVertex(source, gbuf)) : faceMapVertex(source, gbuf));
     const frag = this._useWebGpu ? null : this._auxFragment(kind);
     if (this._useWebGpu) {
       const source = faceMapWgsl(this._twoStreams ? shaders.spritePose : shaders.sprite, gbuf);
@@ -2246,8 +2237,9 @@ export class InstancedSpriteBatch {
       });
     }
     const state = new State();
-    // The G-buffer's targets hold codes: written as they are. The glow is a colour, blended as the sprites are (PMA).
-    state.blendMode = kind === AUX_GLOW ? 'normal' : 'none';
+    // The G-buffer's targets hold codes: written as they are. The unshaded target is a colour, blended as the sprites are
+    // (PMA).
+    state.blendMode = kind === AUX_UNSHADED ? 'normal' : 'none';
     state.depthTest = false;
     state.depthMask = false;
     state.culling = false;
@@ -2258,12 +2250,12 @@ export class InstancedSpriteBatch {
   /** DX-GBUF: a pass kind's fragment shader on WebGL. */
   _auxFragment(kind) {
     const shaders = this._engineShaders;
-    const glow = this.emissiveGlow;
-    if (kind === AUX_IDS) return faceIdsFragment({ glow });
-    if (kind === AUX_GBUF) return faceGbufFragment(shaders.faceFrag, { glow });
-    if (kind === AUX_GLOW) return faceGlowFragment();
-    if (kind === AUX_GLOW_MASK) return faceGlowMaskFragment();
-    return faceFragmentGlsl(shaders.faceFrag, { gbuf: this.gbuf, glow });
+    const unshaded = this.unshadedOn;
+    if (kind === AUX_IDS) return faceIdsFragment({ unshaded });
+    if (kind === AUX_GBUF) return faceGbufFragment(shaders.faceFrag, { unshaded });
+    if (kind === AUX_UNSHADED) return faceUnshadedFragment();
+    if (kind === AUX_UNSHADED_MASK) return faceUnshadedMaskFragment();
+    return faceFragmentGlsl(shaders.faceFrag, { gbuf: this.gbuf, unshaded });
   }
 
   /** DX-GBUF: every program of the batch's passes for the light, for the atlas and LUT setters. */

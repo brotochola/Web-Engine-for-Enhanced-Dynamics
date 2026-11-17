@@ -278,7 +278,7 @@ const KEYS_TEXT = [
   'B         the selected\'s shadows off / back',
   'N         the selected\'s normals: auto, map, height, flat',
   'V         the selected\'s self-shadow: auto, on, off',
-  'I         the selected glows (emissive) or not',
+  'I         the selected is unshaded or not',
   'J         next hour (10, 16, 18:30, 22)   Z / X  hour -/+',
   'Space     the day cycle on / off',
   'K         lamps on / off',
@@ -712,7 +712,7 @@ export class LightBenchScene extends Scene {
     }
     if (Keyboard.isPressed('n')) this._setLook(s, { normals: NORMALS[(NORMALS.indexOf(s.look.normals) + 1) % NORMALS.length] });
     if (Keyboard.isPressed('v')) this._setLook(s, { self: SELF_SHADOWS[(SELF_SHADOWS.indexOf(s.look.self) + 1) % SELF_SHADOWS.length] });
-    if (Keyboard.isPressed('i')) this._setLook(s, { emissive: !s.look.emissive });
+    if (Keyboard.isPressed('i')) this._setLook(s, { unshaded: !s.look.unshaded });
   }
 
   // ---------------------------------------------------------------------------------------------------------------------
@@ -1040,9 +1040,9 @@ export class LightBenchScene extends Scene {
       onChange: (v) => this._setLook(t, { opacity: v }),
     });
     s.toggle({
-      label: 'Emissive', value: look.emissive,
-      note: 'spriteRenderer.emissive: it glows, no night or shadow darkens it, and what stands in front still hides it. [I]',
-      onChange: (v) => this._setLook(t, { emissive: v }),
+      label: 'Unshaded', value: look.unshaded,
+      note: 'spriteRenderer.unshaded: no light, night or shadow touches it, and what stands in front still hides it. [I]',
+      onChange: (v) => this._setLook(t, { unshaded: v }),
     });
     s.buttons([
       { label: "Its sheet's way", onClick: () => this._setLook(t, defaultLook(t.sheet)) },

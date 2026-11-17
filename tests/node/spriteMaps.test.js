@@ -8,7 +8,7 @@ import {
   HEIGHT_UNITS, decodeOctahedral, encodeOctahedral, fixOutline, frameTwinTexels, normalsFromHeight, readHeights,
 } from '../../src/render/spriteMaps.js';
 import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
-import { MAPS_HEIGHTS, MAPS_TWIN, TWIN_PAD, mapsTableLayout, packMapsTable } from '../../src/render/mapsTable.js';
+import { MAPS_HEIGHTS, MAPS_TWIN, MAPS_UNSHADED, TWIN_PAD, mapsTableLayout, packMapsTable } from '../../src/render/mapsTable.js';
 import { twinPresent } from '../../src/render/twinTexel.js';
 
 const close = (a, b, eps = 0.02) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
@@ -229,6 +229,11 @@ test('the maps table gives each frame its window\'s offset and marks, nothing to
   // A bake from before E-496: its twin page is the atlas's layout, every frame read at offset 0.
   const old = packMapsTable([{ frame: { x: 5, y: 5 } }], true);
   assert.deepEqual(Array.from(old.data), [0, 0, MAPS_TWIN | MAPS_HEIGHTS, 0]);
+  // DX-UNSHADED: an unshaded sheet's frame is marked without a window (no twin page for it), or beside its window.
+  const u = packMapsTable([{ frame: { x: 3, y: 3 }, weedUnshaded: true }, { frame: { x: 3, y: 3 }, weedMaps: { x: 9, y: 9 }, weedUnshaded: true }]);
+  assert.deepEqual(Array.from(u.data.subarray(0, 4)), [0, 0, MAPS_UNSHADED, 0]);
+  assert.deepEqual(Array.from(u.data.subarray(4, 8)), [6, 6, MAPS_UNSHADED | MAPS_TWIN, 0]);
+  assert.equal(u.mapped, 1, 'only the window counts as mapped');
   // N-111's fold: past the most rows, each row holds several.
   assert.deepEqual(mapsTableLayout(5000, 2048), { width: 3, height: 1667 });
   assert.deepEqual(mapsTableLayout(0), { width: 1, height: 1 });

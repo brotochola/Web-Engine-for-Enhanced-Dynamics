@@ -3,21 +3,21 @@ import WEED from '/src/index.js';
 const { GameObject, SpriteRenderer, LightEmitter } = WEED;
 
 /**
- * Whether this engine has spriteRenderer.emissive (DX-EMISSIVE v2, plan §5.4): a column of SpriteRenderer, or an accessor
- * of its own. The same on every thread (the class is the engine's).
+ * Whether this engine has spriteRenderer.unshaded (DX-UNSHADED, was DX-EMISSIVE): a column of SpriteRenderer, or an
+ * accessor of its own. The same on every thread (the class is the engine's).
  */
-export const ENTITY_EMISSIVE = Object.hasOwn(SpriteRenderer.ARRAY_SCHEMA || {}, 'emissive')
-  || Object.getOwnPropertyDescriptor(SpriteRenderer.prototype, 'emissive') !== undefined;
+export const ENTITY_UNSHADED = Object.hasOwn(SpriteRenderer.ARRAY_SCHEMA || {}, 'unshaded')
+  || Object.getOwnPropertyDescriptor(SpriteRenderer.prototype, 'unshaded') !== undefined;
 
 /**
- * A fire (demos/img/fuego: 15 frames of flame) on the floor. With `emissive` it glows on its own (spriteRenderer.emissive):
- * the night does not darken it, and whoever walks in front covers it, glow and all, as much as their alpha says (plan §6.9).
- * Each burns at its own speed, so they do not flicker together.
+ * A fire (demos/img/fuego: 15 frames of flame) on the floor. With `unshaded` no light touches it (spriteRenderer.unshaded):
+ * the night does not darken it, and whoever walks in front covers it as much as their alpha says (plan §6.9). Each burns
+ * at its own speed, so they do not flicker together.
  */
 export class Fire extends GameObject {
   static components = [SpriteRenderer];
 
-  onSpawned({ x = 0, y = 0, scale = 0.5, rate = 0.3, flip = false, emissive = false } = {}) {
+  onSpawned({ x = 0, y = 0, scale = 0.5, rate = 0.3, flip = false, unshaded = false } = {}) {
     this.setSpritesheet('fire');
     this.setScale(flip ? -scale : scale, scale);
     this.spriteRenderer.anchorX = 0.5;
@@ -26,7 +26,7 @@ export class Fire extends GameObject {
     this.y = y;
     this.setAnimation('fire');
     this.setAnimationSpeed(rate);
-    if (emissive && ENTITY_EMISSIVE) this.spriteRenderer.emissive = true;
+    if (unshaded && ENTITY_UNSHADED) this.spriteRenderer.unshaded = true;
   }
 }
 

@@ -1,15 +1,15 @@
 import WEED from '/src/index.js';
 import { PICTURES } from './checkShapes.js';
-import { EMISSIVE as L } from './layouts.js';
+import { UNSHADED as L } from './layouts.js';
 import { CheckLamp, anchorAtFoot, checkConfig, sheet } from './checkScene.js';
 
 const { Scene, Camera, GameObject, SpriteRenderer } = WEED;
 
 /**
- * emissiveCheck's still scene (DX-EMISSIVE, plan §6.9, §8.2): at night a lamp lights the white floor behind a flame
- * that glows by itself (spriteRenderer.emissive): an opaque core in a glow of alpha 128. A white person stands in front
- * of the flame's right edge. What is seen through the glow keeps its own light; the core keeps its colour; whoever
- * passes in front covers both. `?backend=webgpu`.
+ * unshadedCheck's still scene (DX-UNSHADED, was DX-EMISSIVE, plan §6.9, §8.2): at night a lamp lights the white floor
+ * behind a flame no light touches (spriteRenderer.unshaded): an opaque core in a glow of alpha 128. A white person stands
+ * in front of the flame's right edge. What is seen through the glow keeps its own light; the core keeps its colour;
+ * whoever passes in front covers both. `?backend=webgpu`.
  */
 class Flame extends GameObject {
   static components = [SpriteRenderer];
@@ -18,7 +18,7 @@ class Flame extends GameObject {
     this.setSpritesheet('flame');
     this.setAnimation('flame');
     anchorAtFoot(this, PICTURES.flame);
-    this.spriteRenderer.emissive = true;
+    this.spriteRenderer.unshaded = true;
   }
 }
 
@@ -32,13 +32,13 @@ class Blocker extends GameObject {
   }
 }
 
-export class EmissiveScene extends Scene {
+export class UnshadedScene extends Scene {
   static config = checkConfig({
     lighting: {
       baseAmbient: L.ambient,
       shadowsEnabled: false,
-      // spriteRenderer.emissive glows where the sprites carry their G-buffer words: no maps or shadow maps here.
-      emissive: true,
+      // spriteRenderer.unshaded works where the sprites carry their G-buffer words: no maps or shadow maps here.
+      unshaded: true,
       sun: { enabled: false },
     },
   });

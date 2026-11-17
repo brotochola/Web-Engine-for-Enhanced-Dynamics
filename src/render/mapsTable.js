@@ -10,7 +10,7 @@
  * files: their trims differ). The texture table's `width / 3` stays as every other reader has it.
  *
  * The atlas's json gives each frame with maps its window (`frames[name].maps`: { x, y, heights?, relief? }, the twin
- * page's texel of the frame's top left). A baked atlas from before E-496 gives none: its twin page has the atlas's size
+ * page's texel of the frame's top left), and each frame of an unshaded sheet `frames[name].unshaded`. A baked atlas from before E-496 gives none: its twin page has the atlas's size
  * and rectangles, so every frame reads at its atlas texel (offset 0), as it always did.
  */
 
@@ -18,6 +18,8 @@
 export const MAPS_TWIN = 1;
 /** Its sheet has a height map: the twin's heights are the pixels' heights above the floor. */
 export const MAPS_HEIGHTS = 2;
+/** DX-UNSHADED: its sheet is unshaded (no light touches its pixels): a mark without a window. */
+export const MAPS_UNSHADED = 8;
 
 /** Texels of zeros around each rectangle of the twin page: 1 for the Sobel's taps, 2 and even for E-497's half resolution. */
 export const TWIN_PAD = 2;
@@ -45,25 +47,26 @@ export function mapsTableLayout(count, maxRows = MAPS_TABLE_MAX_ROWS) {
  * @param {Float32Array} out
  * @param {number} at the texel's first float
  * @param {boolean} [atlasLayout] a twin page with the atlas's layout (a bake from before E-496): every frame at offset 0
+ * @param {boolean} [unshaded] DX-UNSHADED: the frame's sheet is unshaded
  */
-export function writeMapsTexel(maps, frame, out, at, atlasLayout = false) {
+export function writeMapsTexel(maps, frame, out, at, atlasLayout = false, unshaded = false) {
   out[at] = 0;
   out[at + 1] = 0;
-  out[at + 2] = 0;
+  out[at + 2] = unshaded ? MAPS_UNSHADED : 0;
   out[at + 3] = 0;
   if (maps && frame && Number.isFinite(maps.x) && Number.isFinite(maps.y)) {
     out[at] = maps.x - frame.x;
     out[at + 1] = maps.y - frame.y;
-    out[at + 2] = MAPS_TWIN | (maps.heights === true ? MAPS_HEIGHTS : 0);
+    out[at + 2] += MAPS_TWIN | (maps.heights === true ? MAPS_HEIGHTS : 0);
   } else if (atlasLayout) {
-    out[at + 2] = MAPS_TWIN | MAPS_HEIGHTS;
+    out[at + 2] += MAPS_TWIN | MAPS_HEIGHTS;
   }
 }
 
 /**
- * The table's texels for `textures` (flatTextures: a Pixi texture a textureId, with `weedMaps` from the atlas's json and
- * its `frame`), at the layout mapsTableLayout gives; the slots past them stay 0.
- * @param {Array<{ weedMaps?: object, frame?: { x: number, y: number } } | null>} textures
+ * The table's texels for `textures` (flatTextures: a Pixi texture a textureId, with `weedMaps` and `weedUnshaded` from the
+ * atlas's json and its `frame`), at the layout mapsTableLayout gives; the slots past them stay 0.
+ * @param {Array<{ weedMaps?: object, weedUnshaded?: boolean, frame?: { x: number, y: number } } | null>} textures
  * @param {boolean} [atlasLayout] the twin page has the atlas's layout (writeMapsTexel)
  * @returns {{ data: Float32Array, width: number, height: number, mapped: number }} mapped: the textureIds with a window
  */
@@ -75,8 +78,8 @@ export function packMapsTable(textures, atlasLayout = false) {
   for (let i = 0; i < n; i++) {
     const t = textures[i];
     if (!t) continue;
-    writeMapsTexel(t.weedMaps, t.frame, data, i * 4, atlasLayout);
-    if (data[i * 4 + 2] !== 0) mapped++;
+    writeMapsTexel(t.weedMaps, t.frame, data, i * 4, atlasLayout, t.weedUnshaded === true);
+    if ((data[i * 4 + 2] & MAPS_TWIN) !== 0) mapped++;
   }
   return { data, width, height, mapped };
 }

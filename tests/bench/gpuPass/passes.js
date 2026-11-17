@@ -21,7 +21,7 @@
  *   lightUntiled, light3dUntiled, selfShadowUntiled  the same passes looping over every light at every pixel (the
  *                shader without TILES): the same image, so their hashes match the tiled ones'
  *   multiply     today's composition of the light layer: the light texture over the colour, MULTIPLY
- *   compose      DX-EMISSIVE's composition (§6.9): lit colour x light + self glow, one full-resolution pass reading
+ *   compose      DX-UNSHADED's composition (§6.9, was DX-EMISSIVE): lit colour x light + own colour, one full-resolution pass reading
  *                three textures (the bench's shader: the engine has none yet)
  */
 
@@ -163,7 +163,7 @@ uniform sampler2D uLitTex;
 uniform sampler2D uGlowTex;
 uniform sampler2D uLightTex;
 out vec4 finalColor;
-// DX-EMISSIVE (plan §6.9): what receives light times the light, plus what glows by itself.
+// DX-UNSHADED (plan §6.9, was DX-EMISSIVE): what receives light times the light, plus what no light touches.
 void main() {
   vec4 lit = texture(uLitTex, vUv);
   vec4 glow = texture(uGlowTex, vUv);
@@ -201,7 +201,7 @@ fn mainVert(@location(0) aPosition: vec2<f32>) -> ComposeOut {
   return o;
 }
 
-// DX-EMISSIVE (plan §6.9): what receives light times the light, plus what glows by itself.
+// DX-UNSHADED (plan §6.9, was DX-EMISSIVE): what receives light times the light, plus what no light touches.
 @fragment
 fn mainFrag(in: ComposeOut) -> @location(0) vec4<f32> {
   let lit = textureSample(uLitTex, uLinear, in.uv);
@@ -584,7 +584,7 @@ export function buildFrame(p, sh, sc, backend) {
     },
   }));
   add('compose', () => ({
-    label: `emissive composition (lit x light + glow, the bench's shader), ${W}x${H}`,
+    label: `unshaded composition (lit x light + own colour, the bench's shader), ${W}x${H}`,
     spec: {
       name: 'compose',
       glsl: { vertex: COMPOSE_VERTEX, fragment: COMPOSE_FRAGMENT },

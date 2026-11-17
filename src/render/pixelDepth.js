@@ -10,7 +10,7 @@
  *
  * Only opaque pixels write it (alpha 0.5 and up), every pixel compares. One pass cannot choose per pixel whether to write
  * depth, so the entities draw in two (F5 v2): the opaque pass (the batch's own mesh) draws the opaque pixels, writing
- * depth; the edge pass (its edge mesh, right after it, the same instances) draws the soft edges and the glowing pixels,
+ * depth; the edge pass (its edge mesh, right after it, the same instances) draws the soft edges and the unshaded pixels,
  * testing depth without writing it, blended over what is there in painter order. A soft edge of a sprite behind is then
  * hidden by an opaque one in front whatever the painter's order, and one in front blends over it.
  *
@@ -61,7 +61,7 @@ export function pixelDepthValue(band, u, instance) {
 /**
  * H-EDGE: whether this instance's frame is plain (vPlain 1.0, GLSL): its soft-or-glow bit clear in its row's flags texel
  * (frameBase.js TEX_LUT_SOFT_OR_GLOW), read after the vertex shader's own LUT read (its tid, lutSize and lutPerRow), and
- * with `gbuf` no emissive level in its word. A table without the texel, or a slot past it, reads as not plain.
+ * with `gbuf` no unshaded bit in its word (DX-UNSHADED). A table without the texel, or a slot past it, reads as not plain.
  */
 function plainGlsl(gbuf) {
   return `
@@ -74,7 +74,7 @@ function plainGlsl(gbuf) {
       float weedF = weedC == 0 ? weedFlags.x : (weedC == 1 ? weedFlags.y : (weedC == 2 ? weedFlags.z : weedFlags.w));
       if (((uint(weedF) >> uint(weedSlot - ${TEX_LUT_FLAG_BITS} * weedC)) & 1u) == 0u) vPlain = 1.0;
     }
-  }${gbuf ? '\n  if (((uint(aInstGbuf.x + 0.5) >> 19u) & 7u) != 0u) vPlain = 0.0;' : ''}`;
+  }${gbuf ? '\n  if (((uint(aInstGbuf.x + 0.5) >> 21u) & 1u) != 0u) vPlain = 0.0;' : ''}`;
 }
 
 /**
@@ -108,7 +108,7 @@ export function pixelDepthVertex(source, { gbuf = false } = {}) {
  * edge pass draws a pixel of alpha 0 as nothing: its colour is premultiplied 0 (the atlas's alpha is premultiplied on
  * upload, and the tint's alpha scales the colour too), it writes no depth, and a zero blends to the pixel under it. Nor
  * does it draw a solid one (alpha 0.5 and up) unless it glows, which an instance of a plain frame (`plain`, the vertex
- * stage's vPlain: no soft or glowing texel, no emissive word) never does.
+ * stage's vPlain: no soft texel, no unshaded sheet or word) never does.
  */
 const EARLY_DISCARD = (edge, plain = 'vPlain') => (edge ? `ad <= 0.0 || (ad >= 0.5 && ${plain} > 0.5)` : 'ad < 0.5');
 
@@ -131,12 +131,13 @@ function depthBodyGlsl({ edge, gbuf }) {
     if (${EARLY_DISCARD(edge)}) discard;
     vec4 md = twinTexel(uvd, vMapsWin);
     float zd = twinZ(md) * vPainter.y;
-    bool glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
+    // DX-UNSHADED: an unshaded sheet's pixel (the maps table's mark) or entity's writes no depth: the edge pass draws it.
+    bool glow = twinUnshaded(vMapsWin);
     float band = 0.0;
     float floorY = vFootFloor;
 ${gbuf
     ? `    uint dw = uint(vDepthWord.x + 0.5);
-    glow = glow || ((dw >> 19u) & 7u) != 0u;
+    glow = glow || ((dw >> 21u) & 1u) != 0u;
     band = min(vDepthWord.y, ${PIXEL_DEPTH_BANDS - 1}.0);
     if ((dw & 65535u) != 0u && ((dw >> 18u) & 1u) != 0u) floorY = vWorld.y * uDepth.x;
 `
@@ -144,7 +145,7 @@ ${gbuf
     float u = clamp((floorY - uDepth.z) * uDepth.w, 0.0, 1.0);
     float painter = vPainter.x;
     gl_FragDepth = (${DEPTH_FORMULA};
-    // F5 v2: only opaque pixels write depth; the edge pass draws the soft and the glowing ones, testing it.
+    // F5 v2: only opaque pixels write depth; the edge pass draws the soft and the unshaded ones, testing it.
     bool solid = ad >= 0.5 && !glow;
     if (${edge ? 'solid' : '!solid'}) discard;
   }
@@ -193,12 +194,12 @@ fn weedPixelDepth(in: VertexOut, edge: bool) -> vec2<f32> {
   if (select(${EARLY_DISCARD(false)}, ${EARLY_DISCARD(true, 'in.vPlain')}, edge)) { discard; }
   let md = twinTexel(uvd, in.vMapsWin);
   let zd = twinZ(md) * in.vDepthFoot.z;
-  var glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
+  var glow = twinUnshaded(in.vMapsWin);
   var band = 0.0;
   var floorY = in.vDepthFoot.x;
 ${gbuf
     ? `  let dw = u32(in.vDepthWord.x + 0.5);
-  glow = glow || ((dw >> 19u) & 7u) != 0u;
+  glow = glow || ((dw >> 21u) & 1u) != 0u;
   band = min(in.vDepthWord.y, ${PIXEL_DEPTH_BANDS - 1}.0);
   if ((dw & 65535u) != 0u && ((dw >> 18u) & 1u) != 0u) { floorY = in.vWorld.y * uniforms.uDepth.x; }
 `
@@ -224,7 +225,7 @@ function plainWgsl(gbuf) {
       if (((u32(weedF) >> u32(weedSlot - ${TEX_LUT_FLAG_BITS} * weedC)) & 1u) == 0u) { out.vPlain = 1.0; }
     }
   }
-${gbuf ? '  if (((u32(aInstGbuf.x + 0.5) >> 19u) & 7u) != 0u) { out.vPlain = 0.0; }\n' : ''}`;
+${gbuf ? '  if (((u32(aInstGbuf.x + 0.5) >> 21u) & 1u) != 0u) { out.vPlain = 0.0; }\n' : ''}`;
 }
 
 /**

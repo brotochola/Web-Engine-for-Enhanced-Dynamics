@@ -475,7 +475,7 @@ void main() {
 // #endif PIXELART
 // #if FACES
   vec4 face = textureLod(uFaceMap, gl_FragCoord.xy / uViewport, 0.0);
-  // DX-EMISSIVE (F10): a glowing pixel keeps its own colour (the face pass's (1/255, 0)).
+  // DX-UNSHADED: an unshaded pixel keeps its own colour (the face pass's (1/255, 0)).
   if (face.r > 0.0 && face.g < 0.5 / 255.0) {
     finalColor = vec4(1.0);
     return;

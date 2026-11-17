@@ -103,7 +103,7 @@ export const PICTURES = {
       stand_right: [[18, 10, 30, 90, 255]],
     },
   },
-  // emissiveCheck: a flame, an opaque core in a half-transparent glow (alpha 128).
+  // unshadedCheck: a flame, an opaque core in a half-transparent glow (alpha 128).
   flame: { w: 64, h: 96, footX: 32, footY: 92, color: [255, 150, 60], frames: { flame: [[12, 20, 52, 92, 128], [22, 40, 42, 82, 255]] } },
 };
 

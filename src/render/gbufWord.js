@@ -5,7 +5,7 @@
  * x, the sprite's word:
  * - bits 0-15: its entity's id in the G-buffer, (entity % 65535) + 1; 0 for a row that is no entity (a decoration, a
  *   particle) or a frame whose rows were not matched to their entities: such a row is lit as it always was;
- * - bits 16-21: SpriteRenderer.gbufFlags (normals, surface, emissive: GBUF_FLAGS);
+ * - bits 16-21: SpriteRenderer.gbufFlags (normals, surface, unshaded: GBUF_FLAGS);
  * - bits 22-23: ShadowCaster.selfShadow (0 the asset's way, 1 on, 2 off).
  *
  * y, the row's place: its zIndex band (DX-DEPTH, plan §6.5: the rank of its zIndex among the frame's, in draw order,
@@ -19,62 +19,49 @@
  * gpuPackSplitGbuf.test.js hold them equal.
  */
 
-/** SpriteRenderer.gbufFlags: normals in bits 0-1, the surface in bit 2, the emissive level in bits 3-5. */
+/**
+ * SpriteRenderer.gbufFlags: normals in bits 0-1, the surface in bit 2, unshaded in bit 5 (DX-UNSHADED; bits 3-4 free). Bit 5
+ * was the top bit of DX-EMISSIVE's level, so a save from before reads a sprite's `emissive = true` (level 4) as unshaded.
+ */
 export const GBUF_FLAGS = Object.freeze({
   NORMALS_MASK: 3,
   FLOOR: 4,
-  EMISSIVE_SHIFT: 3,
-  EMISSIVE_MASK: 7 << 3,
+  UNSHADED: 32,
 });
 
 /** SpriteRenderer.normals: where a sprite's normals come from (plan §5.4). */
 export const SPRITE_NORMALS = Object.freeze({ AUTO: 0, MAP: 1, HEIGHT: 2, FLAT: 3 });
 export const SPRITE_NORMALS_NAMES = Object.freeze(['auto', 'map', 'height', 'flat']);
 
-/** The emissive level that `emissive = true` writes: a quarter of the glow a step, 4 is the sprite's own colour. */
-export const EMISSIVE_LEVEL_ON = 4;
-export const EMISSIVE_LEVEL_MAX = 7;
-
 /** Word bits (the shaders decode them the same way). */
 export const GBUF_ID_MASK = 0xffff;
 export const GBUF_FLAGS_SHIFT = 16;
 export const GBUF_SELF_SHIFT = 22;
+/** DX-UNSHADED: the word's unshaded bit (GBUF_FLAGS.UNSHADED's): the shaders read `(word >> 21u) & 1u`. */
+export const GBUF_UNSHADED_BIT = 21;
 /** The most zIndex bands the depth holds (plan §6.5's bands, 3 bits of it). */
 export const GBUF_MAX_BANDS = 8;
 
 /**
  * Whether a scene's Pixi worker runs the G-buffer pass, so its sprite instances carry words: lit (not raycasted), with
- * faces, a sheet with maps, or a shadow map (the maps keep their highest caster's entity, which a sprite's pixels compare
- * with their own: a caster's own shadow never paints its own sprite). Pre-render and Pixi decide it the same way.
+ * faces, a sheet with maps or an unshaded sheet, a shadow map (the maps keep their highest caster's entity, which a
+ * sprite's pixels compare with their own: a caster's own shadow never paints its own sprite), or lighting.unshaded (a
+ * sprite's own spriteRenderer.unshaded). Pre-render and Pixi decide it the same way.
  * @param {object} config the scene's config
- * @param {boolean} atlasMaps the atlas has a twin page (its json's meta.maps)
+ * @param {boolean|{ maps?: boolean, unshaded?: boolean }} atlas the atlas's json meta (meta.maps: it has a twin page;
+ *   meta.unshaded: an unshaded sheet), or whether it has a twin page
  */
-export function gbufWanted(config, atlasMaps) {
+export function gbufWanted(config, atlas) {
   const lighting = config?.lighting;
   if (!lighting || !lighting.enabled || lighting.raycasted) return false;
-  return lighting.faces?.enabled === true || atlasMaps === true || lighting.sunShadows === 'map' || lighting.lampShadows === 'map'
-    || lighting.emissive === true;
+  const atlasMaps = atlas === true || (atlas !== null && typeof atlas === 'object' && (atlas.maps === true || atlas.unshaded === true));
+  return lighting.faces?.enabled === true || atlasMaps || lighting.sunShadows === 'map' || lighting.lampShadows === 'map'
+    || lighting.unshaded === true;
 }
 
 /** An entity's id in the G-buffer: 1 to 65535, never 0 (0 is "no entity"). */
 export function gbufEntityId(entity) {
   return (entity % 65535) + 1;
-}
-
-/** The emissive level a value of `SpriteRenderer.emissive` stores: false/0 off, true the sprite's colour, a number its glow. */
-export function emissiveLevel(value) {
-  if (value === true) return EMISSIVE_LEVEL_ON;
-  const v = +value;
-  if (!(v > 0)) return 0;
-  const level = Math.round(v * EMISSIVE_LEVEL_ON);
-  return level < 1 ? 1 : level > EMISSIVE_LEVEL_MAX ? EMISSIVE_LEVEL_MAX : level;
-}
-
-/** What `SpriteRenderer.emissive` reads back for a level. */
-export function emissiveValue(level) {
-  if (level === 0) return false;
-  if (level === EMISSIVE_LEVEL_ON) return true;
-  return level / EMISSIVE_LEVEL_ON;
 }
 
 /**
@@ -88,14 +75,14 @@ export function gbufWord(entity, flags, selfShadow) {
   return gbufEntityId(entity) + (flags & 63) * 65536 + (selfShadow & 3) * 4194304;
 }
 
-/** The word's parts, for tests: { id, normals, floor, emissive, selfShadow }. */
+/** The word's parts, for tests: { id, normals, floor, unshaded, selfShadow }. */
 export function decodeGbufWord(word) {
   const w = word >>> 0;
   return {
     id: w & GBUF_ID_MASK,
     normals: (w >>> GBUF_FLAGS_SHIFT) & 3,
     floor: ((w >>> GBUF_FLAGS_SHIFT) & GBUF_FLAGS.FLOOR) !== 0,
-    emissive: (w >>> (GBUF_FLAGS_SHIFT + GBUF_FLAGS.EMISSIVE_SHIFT)) & 7,
+    unshaded: ((w >>> GBUF_UNSHADED_BIT) & 1) !== 0,
     selfShadow: (w >>> GBUF_SELF_SHIFT) & 3,
   };
 }
