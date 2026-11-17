@@ -5,6 +5,7 @@ import { ensureDecorationFacade, evictDecorationFacade } from '../util/decoratio
 import { DECORATION_INNER_Z_MIN, DECORATION_INNER_Z_MAX } from '../util/configDefaults.js';
 import { DecorationSpatial } from './decorationSpatial.js';
 import { DecorationPool, decorationNoParent } from './decorationPool.js';
+import { decodeFaceHeight, decodeFaceNormal, encodeFaceHeight, encodeFaceNormal } from '../render/faceMap.js';
 import { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE, skewMarkerC } from '../util/decorationSway.js';
 
 export { SWAY_OFF, SWAY_LOOP, SWAY_LOOP_SKEW, SWAY_IMPULSE } from '../util/decorationSway.js';
@@ -176,12 +177,57 @@ export class Decoration {
   set innerZ(v) {
     if (!this._isCurrent()) return;
     const z = v | 0;
-    DecorationComponent.innerZ[this.index] =
-      z < DECORATION_INNER_Z_MIN
-        ? DECORATION_INNER_Z_MIN
-        : z > DECORATION_INNER_Z_MAX
-          ? DECORATION_INNER_Z_MAX
-          : z;
+    const clamped = z < DECORATION_INNER_Z_MIN ? DECORATION_INNER_Z_MIN : z > DECORATION_INNER_Z_MAX ? DECORATION_INNER_Z_MAX : z;
+    const i = this.index;
+    DecorationComponent.innerZ[i] = clamped;
+    // N-263: a face's innerZ is also its depth's tie on a shared plane (DX-FACEDEPTH), in its height's top bits.
+    if (DecorationComponent.faceOct[i] !== 0) {
+      DecorationComponent.faceZ[i] = encodeFaceHeight(decodeFaceHeight(DecorationComponent.faceZ[i]).height, clamped);
+    }
+  }
+
+  /** DX-FACES: whether this decoration is a face (it carries a normal, set at spawn or with setFaceNormal). */
+  get isFace() {
+    return this._isCurrent() && DecorationComponent.faceOct[this.index] !== 0;
+  }
+
+  /**
+   * DX-FACES: makes this decoration a flat face looking along (x, y, z), in the floor's space (x along the screen, y
+   * towards the camera, z up), lit as a surface; (0, 0, 0) makes it a sprite again. The normal is stored octahedral (a
+   * few thousandths off). The first face turns the G-buffer on.
+   */
+  setFaceNormal(x, y, z) {
+    if (!this._isCurrent()) return;
+    const i = this.index;
+    const oct = encodeFaceNormal(x, y, z);
+    DecorationComponent.faceOct[i] = oct;
+    if (oct !== 0) DecorationPool._markFacesInUse();
+  }
+
+  /**
+   * DX-FACES: this face's normal into `out` (unit length; 0, 0, 0 when it is no face).
+   * @param {number[]|Float32Array|Float64Array} [out]
+   */
+  getFaceNormal(out = [0, 0, 0]) {
+    const code = this._isCurrent() ? DecorationComponent.faceOct[this.index] : 0;
+    if (code === 0) {
+      out[0] = 0;
+      out[1] = 0;
+      out[2] = 0;
+      return out;
+    }
+    decodeFaceNormal(code, out);
+    return out;
+  }
+
+  /** DX-FACES: px above the floor of the face at this decoration's position (0 to 1023.875, in steps of 1/8). */
+  get faceHeight() {
+    return this._isCurrent() ? decodeFaceHeight(DecorationComponent.faceZ[this.index]).height : 0;
+  }
+  set faceHeight(v) {
+    if (!this._isCurrent()) return;
+    const i = this.index;
+    DecorationComponent.faceZ[i] = encodeFaceHeight(+v || 0, DecorationComponent.innerZ[i]);
   }
 
   get textureId() {

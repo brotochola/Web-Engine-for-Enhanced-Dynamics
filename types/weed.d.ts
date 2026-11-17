@@ -4846,8 +4846,21 @@ export declare class Decoration {
   set localY(v: number);
   get anchorX(): number;
   set anchorX(v: number);
+  /** Its order among decorations on the same sort line; for a face also its depth's tie on a shared plane (0 to 7). */
   get innerZ(): number;
   set innerZ(v: number);
+  /** Whether it is a flat face (it carries a normal: spawn's faceNormalX… or {@link setFaceNormal}). */
+  get isFace(): boolean;
+  /**
+   * Makes it a flat face looking along (x, y, z) in the floor's space (x along the screen, y towards the camera, z up),
+   * lit as a surface; (0, 0, 0) makes it a sprite again. The first face turns the G-buffer on.
+   */
+  setFaceNormal(x: number, y: number, z: number): void;
+  /** Its face's unit normal into `out` (0, 0, 0 when it is no face). */
+  getFaceNormal<T extends ArrayLike<number> & { [i: number]: number }>(out?: T): T;
+  /** Px above the floor of its face at its position (0 to 1023.875, in eighths). */
+  get faceHeight(): number;
+  set faceHeight(v: number);
   get textureId(): number;
   set textureId(v: number);
   get offsetX(): number;
@@ -5090,6 +5103,7 @@ export interface WeedNamespace extends WeedEnums {
   Decal: typeof Decal;
   Query: typeof Query;
   Decoration: typeof Decoration;
+  DecorationPool: typeof DecorationPool;
   DecorationComponent: typeof DecorationComponent;
   DecorationSpatial: typeof DecorationSpatial;
   SWAY_OFF: 0;

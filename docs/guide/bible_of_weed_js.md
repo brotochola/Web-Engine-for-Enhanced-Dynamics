@@ -1867,6 +1867,8 @@ create() {
 
 The normal is in the floor's space: x along the screen, y across the floor towards the camera, z up. It need not be unit length. `faceHeight` is the height, in px (0 to 1023.875), of the point of the face at the decoration's position; the rest of the sprite follows from the plane, so a pitched roof takes one number, and so does a wall sheared with `skewX` and `skewY`. Leave `faceNormalX` out and the decoration is no face. `spawnMany` takes all four, and `innerZ`, as arrays.
 
+After the spawn, `Decoration.get(i)` reaches the same things: `setFaceNormal(x, y, z)` (0, 0, 0 makes it a sprite again), `getFaceNormal(out)`, `faceHeight`, `isFace`, and `innerZ`, which on a face is also its order among the pieces of its plane.
+
 - `lighting.sun.skyLight` (0 to 1, default 0.4) is the share of the sun's light that comes from the sky and lights every face alike; the rest depends on where a face looks. `Sun.skyLight` changes it at run time. It lights sprites with maps the same way.
 - The light comes from `LightEmitter.elevation`: a face above it gets none. That height also shapes the pool on the floor. A light's `brightness` is its strength on a face as on the floor.
 - A face takes the place of its sprite's light, not of its colour: its texture should hold no light of its own.

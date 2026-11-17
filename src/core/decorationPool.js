@@ -130,6 +130,14 @@ export class DecorationPool extends SharedAtomicPool {
     return lock !== null && lock.length > DECORATION_FACES_IN_USE && Atomics.load(lock, DECORATION_FACES_IN_USE) !== 0;
   }
 
+  /** DX-BARRIOS: a decoration carries a face's normal: faces are in use, for good (a store the first time only). */
+  static _markFacesInUse() {
+    const lock = this._activeListLock;
+    if (lock !== null && lock.length > DECORATION_FACES_IN_USE && lock[DECORATION_FACES_IN_USE] === 0) {
+      Atomics.store(lock, DECORATION_FACES_IN_USE, 1);
+    }
+  }
+
   /** E-179c: one more change of the active list, under its lock (a reader that saw the old count copies it again). */
   static _countListChange() {
     const lock = this._activeListLock;
@@ -561,11 +569,8 @@ export class DecorationPool extends SharedAtomicPool {
       const oct = encodeFaceNormal(config.faceNormalX, config.faceNormalY, config.faceNormalZ);
       DecorationComponent.faceOct[i] = oct;
       DecorationComponent.faceZ[i] = encodeFaceHeight(config.faceHeight ?? 0, innerZClamped);
-      // DX-BARRIOS: faces in use, for good (the G-buffer turns on by itself). A store only the first time.
-      const lock = this._activeListLock;
-      if (oct !== 0 && lock !== null && lock.length > DECORATION_FACES_IN_USE && lock[DECORATION_FACES_IN_USE] === 0) {
-        Atomics.store(lock, DECORATION_FACES_IN_USE, 1);
-      }
+      // DX-BARRIOS: faces in use, for good (the G-buffer turns on by itself).
+      if (oct !== 0) this._markFacesInUse();
     }
 
     // Visual properties

@@ -29,7 +29,7 @@ const MAIN_THREAD_ONLY = [
 test('worker WEED has every WEED name except the main-thread-only ones', () => {
   const missing = Object.keys(WEED).filter((k) => !(k in WORKER_WEED));
   assert.deepEqual(missing.sort(), [...MAIN_THREAD_ONLY].sort());
-  assert.deepEqual(Object.keys(WORKER_WEED).filter((k) => !(k in WEED)), ['DecorationPool']);
+  assert.deepEqual(Object.keys(WORKER_WEED).filter((k) => !(k in WEED)), [], 'no worker-only names (N-263: DecorationPool is on both)');
   assert.deepEqual(Object.keys(WORKER_WEED.enums), Object.keys(WEED.enums));
 });
 
