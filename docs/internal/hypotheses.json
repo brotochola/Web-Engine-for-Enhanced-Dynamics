@@ -11613,7 +11613,35 @@
       ],
       "records": [
         "R-0854",
-        "R-1244"
+        "R-1244",
+        "R-1249",
+        "R-1250"
+      ]
+    },
+    {
+      "id": "DX-IGPUWARN",
+      "title": "An integrated GPU, recognised by its name, reported to the game (a warning the developer handles)",
+      "status": "open",
+      "statusText": "Owner-approved idea (2026-11-17), not built",
+      "date": "2026-11-17",
+      "result": "",
+      "next": "Read the GPU the page got (WEBGL_debug_renderer_info, WebGPU adapter.info), tell whether it is integrated by its name, expose it to the game with one console warning; no engine UI and no benchmark at run time.",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-IGPUWARN"
+      ],
+      "aliases": [
+        "integrated GPU",
+        "iGPU",
+        "Optimus",
+        "powerPreference",
+        "WEBGL_debug_renderer_info",
+        "adapter.info",
+        "dual GPU"
+      ],
+      "records": [
+        "R-1249"
       ]
     },
     {
@@ -16799,7 +16827,8 @@
         "R-1226",
         "R-1231",
         "R-1238",
-        "R-1244"
+        "R-1244",
+        "R-1250"
       ]
     },
     {
@@ -18758,7 +18787,8 @@
         "R-1201",
         "R-1236",
         "R-1238",
-        "R-1244"
+        "R-1244",
+        "R-1250"
       ],
       "rank": 5
     },
@@ -33290,6 +33320,24 @@
       "title": "spatialRebuildWasmMicrobench's C copy is stale: its checksum no longer matches rebuildOwnedRows after seven JS changes (never shipped)",
       "verdict": "note",
       "text": "**spatialRebuildWasmMicrobench's `wasm` variant is stale: runKernelVariants rejects it on its checksum, because the C copy (wasm/test/spatialRebuild.c, 1a03f8ce, 2026-10-23) predates the JS rebuild's later changes.** Not a correctness issue in the product: the C rebuild was screened and never shipped. Its +23.3 % on the ASUS (Node, 4 rounds, 2026-11-17 00:08) measures a different computation.\n\nrebuildOwnedRows changed after the copy in E-126, E-136, E-176b, E-268, E-299, E-471 and E-472. Before using this kernel again, port those changes to the C or drop the variant."
+    },
+    {
+      "id": "R-1249",
+      "date": "2026-11-17",
+      "time": "01:25",
+      "timeFrom": "recorded",
+      "title": "ASUS: Chrome gives pages only the Intel HD 620 (WebGL and WebGPU, any powerPreference); the GeForce MX110, forced in Windows, draws 32-47 % cheaper and frees the CPU; WebGPU's renderer costs x1.5-2.6 WebGL's CPU",
+      "verdict": "note",
+      "text": "**On the ASUS (Intel HD 620 + GeForce MX110, Optimus), Chrome 157 gives pages the Intel for WebGL and for WebGPU, whatever powerPreference asks, and the GeForce, forced for chrome.exe through Windows' graphics settings, draws the same scenes 32 to 47 % cheaper on the renderer and leaves the CPU workers cheaper too. WebGPU costs the renderer x1.5 to x2.6 the CPU time of WebGL on both GPUs.**\n\n- GPU probe (01:06), Windows' default choice for Chrome: WebGL with `powerPreference: 'high-performance'` ANGLE Intel HD 620; WebGPU adapter for default, low-power and high-performance: `intel gen-9` each; two devices on the low-power and the high-performance adapters were both created, both on the Intel. No JS API lists the GPUs, so a page cannot know the GeForce exists.\n- WebGL (A) against WebGPU (B), light3dCompareScene and volumeStressScene, 2 pairs each, per GPU, each run checking the GPU it used (01:14 to 01:25; a scratch CDP driver, `?src=1`, detailed stats off). Own times in ms:\n  - Intel, light3d: renderer 0.89 (WebGL) / 2.35 (WebGPU); with WebGPU every worker dearer (spatial +58 %, logic +37 %, preRender +44 %). Volume: renderer 3.98 / 6.90; presented 53.1 and 59.9 on WebGL, 60.1 on WebGPU.\n  - GeForce, light3d: renderer 0.60 / 1.22; other workers within 12 %. Volume: renderer 2.10 / about 3.0.\n  - Intel against GeForce on WebGL: light3d renderer 0.89 -> 0.60 (-32 %), preRender 0.98 -> 0.66 (-33 %), logic 2.27 -> 1.90 (-16 %); volume renderer 3.98 -> 2.10 (-47 %). The integrated GPU shares the 15 W package with the CPU, so moving the drawing off it frees the CPU as well.\n- GPU timestamps read 0: this Chrome lacked the runner's `--enable-webgpu-developer-features`. The GPU-side comparison (against E-465 and E-466's on the GTX 1650) is queued with them, 4 pairs."
+    },
+    {
+      "id": "R-1250",
+      "date": "2026-11-17",
+      "time": "01:14",
+      "timeFrom": "recorded",
+      "title": "8 pairs overturn R-1244: on the ASUS 3 Box2D threads make ballsScene's physics 12.7 % slower (1/8, A/A 2 %); in Predator 2 threads read far cheaper (2 pairs): the count depends on the scene's worker demand",
+      "verdict": "note",
+      "text": "**8 pairs with their own A/A overturn R-1244's saturated reading: on the ASUS, ballsScene with 3 Box2D threads is 12.7 % slower in physics than with 4 (B cheaper 1/8, A/A spread about 2 %), with more long frames and no gain for the other workers. R-1244's 4-pair sitting was noise. In Predator, whose many workers oversubscribe the 4 hardware threads, 2 threads read far cheaper for every worker (2 pairs, a map): the count Box2D should get depends on the scene's whole worker demand, not on the core count alone.**\n\nSame setup as R-1244 (ASUS i7-7500U 2C/4T, Chrome 157, `?src=1`, the laptop's dev server, AB BA, 20 s between runs, 10 s + 10 s), run from the laptop's job queue.\n\n- **A/A, 9 000 balls, 4 threads both sides, 8 pairs (00:40 to 00:54):** physics -1.9 % (5/8), preRender +0.5 %, spatial +2.5 %. The first three runs read physics 18.5 to 24.9 ms with 200+ long frames (something else on the laptop at the start); the rest sit within about 2 %.\n- **A/B, 9 000 balls, A = 4 threads, B = 3, 8 pairs (00:54 to 01:06):** physics 13.03 -> 14.59 ms (+12.7 %, B cheaper 1/8); physics long frames, median per run, 11.5 -> 18.5; p95 15.1 -> 15.7; preRender +5.6 % (3/8), spatial +4.7 % (2/8).\n- **Predator, crowd 0.5, 2 pairs each (01:08 to 01:14):** the laptop cannot carry it (physics 30 to 140 ms a step). Against 4 threads, 3 read physics 47.3 -> 59.0 ms (+31 %, 1/2) with the rest level; 2 read physics 106 -> 32 ms (-68 %), spatial -49 %, logic -40 % and -52 %, preRender -24 %, renderer -30 % (2/2 each; one A run read physics 138 ms, an outlier).\n\nMethod: on this laptop 4 pairs do not decide; its scene sittings run 8 pairs with an A/A. Next: Predator at crowd 0.25, A/A and 4 against 2 and 3, 8 pairs each (queued)."
     }
   ],
   "leads": [
