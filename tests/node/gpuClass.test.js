@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  GPU_DISCRETE, GPU_INTEGRATED, GPU_SOFTWARE, GPU_TILED, GPU_UNKNOWN, gpuClassOf, gpuVendorOf, webglRendererName,
+  GPU_DISCRETE, GPU_INTEGRATED, GPU_SOFTWARE, GPU_TILED, GPU_UNKNOWN, gpuClassOf, gpuClassOfAdapter, gpuVendorOf,
+  webglRendererName, webgpuAdapterName, webgpuGpu,
 } from '../../src/render/gpuClass.js';
 import { opaquePassOn, opaquePassSuits } from '../../src/render/opaquePass.js';
 import { DEBUG_DEFAULTS } from '../../src/util/configDefaults.js';
@@ -144,4 +145,95 @@ test('debug.opaquePass: auto follows the GPU, true and false force it', () => {
       assert.equal(opaquePassOn(false, gpuClass, vendor), false, name);
     }
   }
+});
+
+// DX-IGPUWARN: a WebGPU adapter's class from its info (Chrome gives vendor and architecture, the description only with
+// its developer features on).
+test('gpuClassOfAdapter reads the class from a WebGPU adapter info', () => {
+  const cases = [
+    [{ vendor: 'intel', architecture: 'gen-9', device: '', description: '' }, GPU_INTEGRATED],
+    [{ vendor: 'intel', architecture: 'gen-12lp', description: '' }, GPU_INTEGRATED],
+    [{ vendor: 'intel', architecture: 'xe-lpg', description: '' }, GPU_INTEGRATED],
+    [{ vendor: 'intel', architecture: 'xe-hpg', description: '' }, GPU_DISCRETE],
+    [{ vendor: 'nvidia', architecture: 'turing', description: '' }, GPU_DISCRETE],
+    [{ vendor: 'amd', architecture: 'rdna-2', description: '' }, GPU_UNKNOWN],
+    [{ vendor: 'amd', architecture: 'gcn-5', description: 'AMD Radeon(TM) Vega 8 Graphics' }, GPU_INTEGRATED],
+    [{ vendor: 'amd', architecture: 'rdna-2', description: 'AMD Radeon RX 6600 XT' }, GPU_DISCRETE],
+    [{ vendor: 'apple', architecture: 'metal-3', description: '' }, GPU_TILED],
+    [{ vendor: 'qualcomm', architecture: '', description: '' }, GPU_TILED],
+    [{ vendor: 'arm', architecture: 'valhall', description: '' }, GPU_TILED],
+    [{ vendor: 'google', architecture: 'swiftshader', description: '' }, GPU_SOFTWARE],
+    [{ vendor: 'microsoft', architecture: '', description: '' }, GPU_SOFTWARE],
+    [{ vendor: 'nvidia', architecture: 'ampere', isFallbackAdapter: true }, GPU_SOFTWARE],
+    [{ vendor: '', architecture: '', description: '' }, GPU_UNKNOWN],
+  ];
+  for (const [info, gpuClass] of cases) assert.equal(gpuClassOfAdapter(info), gpuClass, JSON.stringify(info));
+  assert.equal(gpuClassOfAdapter(null), GPU_UNKNOWN);
+});
+
+test('webgpuAdapterName joins the parts the adapter gives', () => {
+  assert.equal(webgpuAdapterName({ vendor: 'intel', architecture: 'gen-9', device: '', description: '' }), 'intel gen-9');
+  assert.equal(webgpuAdapterName({ vendor: 'nvidia', architecture: 'turing', device: '0x1f99', description: 'GTX 1650' }),
+    'nvidia turing 0x1f99 GTX 1650');
+  assert.equal(webgpuAdapterName(null), '');
+});
+
+test('scene.gpu takes the renderer worker\'s GPU and warns once a page on an integrated one', async () => {
+  const { Scene } = await import('../../src/core/scene.js');
+  const warnings = [];
+  const warn = console.warn;
+  console.warn = (message) => warnings.push(String(message));
+  try {
+    const gtx = Object.create(Scene.prototype);
+    const gpuInfo = (name, kind) => ({
+      data: { msg: 'gpuInfo', backend: 'webgl', name, vendor: gpuVendorOf(name), kind },
+      currentTarget: { name: 'pixi' },
+    });
+    gtx.handleMessageFromWorker(gpuInfo(NAMES[GPU_DISCRETE][0], GPU_DISCRETE));
+    assert.deepEqual({ ...gtx.gpu }, {
+      backend: 'webgl', name: NAMES[GPU_DISCRETE][0], vendor: 'nvidia', kind: GPU_DISCRETE,
+    });
+    assert.ok(Object.isFrozen(gtx.gpu));
+    assert.equal(warnings.length, 0);
+
+    const hd620 = Object.create(Scene.prototype);
+    hd620.handleMessageFromWorker(gpuInfo(NAMES[GPU_INTEGRATED][0], GPU_INTEGRATED));
+    assert.equal(hd620.gpu.kind, GPU_INTEGRATED);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /integrated GPU \(ANGLE \(Intel, Intel\(R\) HD Graphics 620/);
+
+    // A second scene on the same page: scene.gpu set, no second warning.
+    const again = Object.create(Scene.prototype);
+    again.handleMessageFromWorker(gpuInfo(NAMES[GPU_INTEGRATED][0], GPU_INTEGRATED));
+    assert.equal(again.gpu.kind, GPU_INTEGRATED);
+    assert.equal(warnings.length, 1);
+  } finally {
+    console.warn = warn;
+  }
+});
+
+test('webgpuGpu reads a WebGL name only when the adapter does not tell, and takes it for the same vendor', () => {
+  let reads = 0;
+  const apu = 'ANGLE (AMD, AMD Radeon(TM) Graphics (0x00001636) Direct3D11 vs_5_0 ps_5_0, D3D11)';
+  const read = (name) => () => {
+    reads++;
+    return name;
+  };
+  assert.deepEqual(webgpuGpu({ vendor: 'nvidia', architecture: 'turing' }, read('unused')), {
+    name: 'nvidia turing', vendor: 'nvidia', kind: GPU_DISCRETE,
+  });
+  assert.equal(reads, 0);
+  // This PC's AMD APU through WebGPU: "amd gcn-5" alone is unknown, the WebGL name says integrated.
+  assert.deepEqual(webgpuGpu({ vendor: 'amd', architecture: 'gcn-5' }, read(apu)), {
+    name: apu, vendor: 'amd', kind: GPU_INTEGRATED,
+  });
+  assert.equal(reads, 1);
+  // A WebGL name from another vendor (another GPU) is not taken.
+  assert.deepEqual(webgpuGpu({ vendor: 'amd', architecture: 'rdna-2' }, read(NAMES[GPU_DISCRETE][0])), {
+    name: 'amd rdna-2', vendor: 'amd', kind: GPU_UNKNOWN,
+  });
+  assert.deepEqual(webgpuGpu({ vendor: 'amd', architecture: 'rdna-2' }, read('')), {
+    name: 'amd rdna-2', vendor: 'amd', kind: GPU_UNKNOWN,
+  });
+  assert.deepEqual(webgpuGpu(null, read(apu)), { name: '', vendor: '', kind: GPU_UNKNOWN });
 });
