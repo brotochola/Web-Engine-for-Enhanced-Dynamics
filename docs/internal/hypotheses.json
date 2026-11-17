@@ -22416,6 +22416,26 @@
       "date": "2026-11-17",
       "title": "By night the people's shadows from a street lamp never reached the barrio's walls: a house's volume, taller than its lamp, was drawn into the lamp's map by its vertices, whose interpolation is the projection only within the reach (the pano compresses the ring past it, and a vertex above the lamp is drawn at the stretch's cap), so the inside of its front's triangles got depths far nearer the lamp than the front, won the texels of the people in front, and its walls, which skip their own house's texels (N-273), stood lit",
       "statusText": "reported 2026-11-17 by the owner (\"the LPC people's shadows by night do not fall on the walls, check it\"); wallShadowScene: with the house's volume and its owned walls the shadows vanished from the wall; without the house, or with a lamp above it and the house within its reach, they were there"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "light banding",
+        "lamp falloff rings",
+        "8-bit light target"
+      ],
+      "records": [
+        "R-1329"
+      ],
+      "result": "",
+      "id": "N-277",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "A lamp's dim falloff shows rings on a plain surface at night, each a step of the light target's 8 bits (RGBA8, the light clamped to 1), a little tinted where the lamp's channels step at different places",
+      "statusText": "seen 2026-11-17 in wallShadowScene (a plain wall 200 px from a lamp: concentric rings, the same with lampShadows 'sprite', so no shadow's); in the barrio the bricks and tiles hide it",
+      "next": "Low priority. Cheap: dither the light pass's output by half a step (a hash of the pixel), which changes every lit scene's pictures a little; or an rgba16float light target (twice its bandwidth). Ask the owner which look he wants before either."
     }
   ],
   "records": [
@@ -35588,6 +35608,13 @@
       "commits": [
         "1adaf04a"
       ]
+    },
+    {
+      "id": "R-1329",
+      "date": "2026-11-17",
+      "title": "Wall rings at night are the light target's 8-bit steps, not shadows; the people's wide wall shadows from a side lamp are their lamp-facing cards, as a body casts",
+      "verdict": "note",
+      "text": "wallShadowScene, people=0, lamp 200 px away: concentric rings on the wall, identical with lampShadows 'map' and 'sprite' (0 px differ), so the light's quantization (RGBA8, light up to 1), not a shadow. The flat-topped wide shadows of the people beside the lamp on the wall stay with a 1500 px reach (not the pano's ring): each person casts as a card turned to its lamp (lampMapVertex), a body's silhouette, which an oblique wall stretches."
     }
   ],
   "leads": [
