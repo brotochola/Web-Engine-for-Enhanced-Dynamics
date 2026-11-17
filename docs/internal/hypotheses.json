@@ -16057,7 +16057,8 @@
         "R-1296",
         "R-1297",
         "R-1298",
-        "R-1301"
+        "R-1301",
+        "R-1302"
       ]
     },
     {
@@ -34691,6 +34692,15 @@
       "title": "The barrio's two stage entity draws on the HD 620 are ~80 % fill (vertex ~0.3 ms each of ~1.45 ms); the four light composites take 2.08 ms a drawn frame",
       "verdict": "note",
       "text": "**The barrio's two stage entity draws on the Intel HD 620 are mostly fill, about 80 %.** glFrameRecorder `--gpu-draws` on main 9b053e9b (E-507, E-508 in), Parque Chas at `hour=22&dayMinutes=0`, camera still. Then again with `--probe-scissor` on the stage's [uTexLut,uMapsLut,uTexture(,uMaps)] draws, 2026-11-17 10:18 (job 0872). The scissored run drew more instances a draw (Pixi drew in 0.7–0.9 of the main frames there, against 0.5), so the vertex side is read per instance.\n\n| Draw | As is | Under a 1 px scissor | Per instance | Vertex side | Fill |\n|---|---|---|---|---|---|\n| 5, heights [..,uMaps] | 1.460 ms, 5 954 instances | 0.574 ms, 10 935 instances | 52 ns | ~0.31 ms | ~79 % |\n| 3, flat and vertex depth [uTexLut,uMapsLut,uTexture] | 1.451 ms, 5 564 instances | 0.420 ms, 8 369 instances | 50 ns | ~0.28 ms | ~81 % |\n| 4, prog#27 [..,uMaps] | 0.389 ms, 5 954 instances | — | 55 ns | ~0.33 ms | mostly vertex |\n\nFor E-500: partitioning the instances by kind would halve each big draw's vertex walk, roughly 0.15 ms each, about 0.3 ms a drawn frame on the HD 620. Most of what those draws cost is pixels.\n\nThe four light composites in the run without the probe, ms a drawn frame:\n\n| Draw | ms |\n|---|---|\n| [uLight], draw 9 | 0.610 |\n| [uLight], draw 10 | 0.595 |\n| [uLight,uUnshaded], draw 11 | 0.458 |\n| [uLight,uUnshaded], draw 12 | 0.415 |\n| total | 2.08 |\n| the 3D light pass, for comparison | 2.974 |\n\nAll draws: 16.6 ms a drawn frame."
+    },
+    {
+      "id": "R-1302",
+      "date": "2026-11-17",
+      "time": "10:42",
+      "timeFrom": "recorded",
+      "title": "E-509 on the HD 620: the unshaded composites 0.87 -> 0.34 ms a drawn frame, drawn +4.5 % (3/4); the CPU workers' +4-11 % is the laptop's shared power",
+      "verdict": "note",
+      "text": "**E-509 on the Intel HD 620: the unshaded composites drop from 0.87 to 0.34 ms a drawn frame, and the GPU draws 4.5 % more frames.** The barrio session's perf/e509-unshaded-discard (3e3fe990): the unshaded halves of the light composites discard where the unshaded target is black. Main bae9c742 (A) against it (B), Parque Chas at `hour=22&dayMinutes=0`, camera still, 4 pairs, `--full-rev`, ASUS laptop, 2026-11-17 10:29 to 10:42 (asus-e509).\n\n| | Main | E-509 | Change |\n|---|---|---|---|\n| drawn | 27.7 fps | 28.7 fps | +4.5 %, 3/4 (30.1, 28.7, 28.8 and 28.0 against 27.3–28.3) |\n| [uLight,uUnshaded] draw 11 | 0.458 ms | 0.203 ms | |\n| [uLight,uUnshaded] draw 12 | 0.415 ms | 0.132 ms | |\n| both | 0.873 ms | 0.335 ms | −62 % |\n| [uLight] halves | 0.61 / 0.60 ms (R-1301) | 0.64 / 0.63 ms | none |\n| all draws | | 16.47 ms a drawn frame | |\n\nThe CPU workers read 4 to 11 % dearer with E-509 (logic, physics, pre-render and renderer, 4/4), so the runner says REGRESSION. It is the laptop effect seen with E-504 (R-1285): more frames drawn, so the integrated GPU and Chrome's GPU process take more of the 4 logical CPUs and the shared 15 W. The discard adds no CPU work."
     }
   ],
   "leads": [
