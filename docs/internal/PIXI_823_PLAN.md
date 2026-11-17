@@ -205,9 +205,10 @@ October 2026, not merged: sprites, particles, spawn, startup, a UI tree).
 - **DX-BACKENDDEFAULT:** decide the default backend with numbers after DX-PIXI823.
 - **DX-AGENTEVAL:** an eval of agents building WeedJS games, as PixiJS 3D's creation-evals (a recipe-style skill cut
   the cost per working result from $0.23 to $0.14).
-- **DX-STATICSGEN:** one statics generation per sprite instead of `renderDirty` and `keyedDirty` (PixiJS 3D's
-  DirtyId with a watermark per consumer), which closes N-103's trap, removes E-436's shared writes and allows a debug
-  check for statics written without a mark.
+- **DX-STATICSGEN** (low priority), in order: a debug check that warns when a sprite's statics change without
+  `renderDirty` or `keyedDirty` (N-103's trap, caught with today's flags); then E-436 measured; then, only if that
+  pays, one statics generation per sprite (PixiJS 3D's DirtyId with a watermark per consumer), so one mark replaces
+  two and pre-render stops writing the shared column.
 
 **Different on purpose, not to copy:** PixiJS 3D does not validate misuse ("trust the caller"), where the engine
 chose guards (DX-GUARDS) for game developers and agents; its internal comments hold only guards and the story goes in
