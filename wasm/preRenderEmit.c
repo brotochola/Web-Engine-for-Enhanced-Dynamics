@@ -964,6 +964,7 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
   const double scale = ownRadius ? glowRadius / GRADIENT_RADIUS
     : (((double)or0(e->lRadius[idx]) / 10.0) * GLOW_RADIUS_SCALE) / GRADIENT_RADIUS;
   const double glowAlpha = (double)e->lGlow[idx] * (double)e->lBright[idx];
+  double anchorY = 0.5;
   if (scale < (ownRadius ? 0.01 : 0.1) || glowAlpha < 0.001) {
     hide_row(e, out);
   } else {
@@ -971,8 +972,11 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
     const double oy = (double)e->lOffY[idx];
     const double c = (double)e->tRc[idx];
     const double s = (double)e->tRs[idx];
+    /* DX-GLOWRADIUS: at its light's foot, so its pixel depth is its lamp's (a person just behind the lamp stays behind
+       its halo); glowOffsetY lifts the picture through its anchor (the quad is 2 * GRADIENT_RADIUS * scale tall). */
     e->qX[out] = (float)((double)e->tX[idx] + ox * c - oy * s);
-    e->qY[out] = (float)((double)e->tY[idx] + ox * s + oy * c + (double)or0(e->lGlowOff[idx]));
+    e->qY[out] = (float)((double)e->tY[idx] + ox * s + oy * c);
+    anchorY = 0.5 - (double)or0(e->lGlowOff[idx]) / (2.0 * GRADIENT_RADIUS * scale);
     e->qScaleX[out] = (float)scale;
     e->qScaleY[out] = (float)scale;
     e->qAlpha[out] = (float)glowAlpha;
@@ -982,7 +986,7 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
   e->qRotS[out] = 0.0f;
   e->qTexture[out] = (uint16_t)e->lGradientTex;
   e->qAnchorX[out] = 0.5f;
-  e->qAnchorY[out] = 0.5f;
+  e->qAnchorY[out] = (float)anchorY;
   if (e->qType) e->qType[out] = 3;
   if (e->qKey) e->qKey[out] = KEY_NONE;
 }

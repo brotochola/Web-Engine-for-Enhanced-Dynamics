@@ -600,6 +600,7 @@ function emitSpriteQueue(deltaTime, source) {
             const ownRadius = glowRadius[idx] > 0;
             const scale = ownRadius ? glowRadius[idx] / LIGHT_GRADIENT_TEXTURE_RADIUS : lightGlowScale(lightRadius[idx] / 10);
             const glowAlpha = glowSprite[idx] * lightBrightness[idx];
+            let anchorY = 0.5;
 
             if (scale < (ownRadius ? 0.01 : 0.1) || glowAlpha < 0.001) {
                 rqAlpha[out] = 0;
@@ -609,7 +610,10 @@ function emitSpriteQueue(deltaTime, source) {
                 rqY[out] = -10000;
             } else {
                 rqX[out] = entityX[idx] + lightOffsetX[idx] * entityRotC[idx] - lightOffsetY[idx] * entityRotS[idx];
-                rqY[out] = entityY[idx] + lightOffsetX[idx] * entityRotS[idx] + lightOffsetY[idx] * entityRotC[idx] + (glowOffsetY[idx] || 0);
+                // DX-GLOWRADIUS: at its light's foot (its pixel depth is its lamp's); glowOffsetY lifts the picture
+                // through its anchor.
+                rqY[out] = entityY[idx] + lightOffsetX[idx] * entityRotS[idx] + lightOffsetY[idx] * entityRotC[idx];
+                anchorY = 0.5 - (glowOffsetY[idx] || 0) / (2 * LIGHT_GRADIENT_TEXTURE_RADIUS * scale);
                 rqScaleX[out] = scale;
                 rqScaleY[out] = scale;
                 rqAlpha[out] = glowAlpha;
@@ -619,7 +623,7 @@ function emitSpriteQueue(deltaTime, source) {
             rqRotS[out] = 0;
             rqTextureId[out] = lightGradientTextureId;
             rqAnchorX[out] = 0.5;
-            rqAnchorY[out] = 0.5;
+            rqAnchorY[out] = anchorY;
             if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;
             this._setQueueType(ref, out, 3, idx);
         }
