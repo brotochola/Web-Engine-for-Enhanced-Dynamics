@@ -17,9 +17,9 @@ import { META } from './fixtures/barrioMini/meta.js';
 const near = (actual, expected, message, tolerance = 1e-9) =>
   assert.ok(Math.abs(actual - expected) <= tolerance, `${message}: ${actual} is not ${expected}`);
 
-/** The old barrio camera (sheared) and the new one (the standard art's): the rules hold for both. */
+/** The editor's old camera (sheared: north shifts K east on the screen) and the barrio's now (no shear): the rules hold for both. */
 const SHEARED = { SF: 18, K: 0.16, SYN: 0.5, MH: 950 };
-const STANDARD = { SF: 18, K: 0, SYN: 0.736, MH: 45 };
+const UNSHEARED = { SF: 18, K: 0, SYN: 0.5, MH: 45 };
 
 test("a crossing's two streets are never green together, and each gets 17 s green, 3 amber, 20 red", () => {
   const seconds = { 0: [0, 0, 0], 1: [0, 0, 0] };
@@ -56,8 +56,8 @@ test('a traffic cell code holds the speed limit, the zone and the crossing', () 
   assert.equal(crossingZone(3), ZONE.OPEN_ROAD);
 });
 
-test("the projection: world px to floor metres and back, for the old camera and the standard art's", () => {
-  for (const geometry of [SHEARED, STANDARD]) {
+test('the projection: world px to floor metres and back, with a shear and without', () => {
+  for (const geometry of [SHEARED, UNSHEARED]) {
     const floor = worldToFloorMetres(geometry, 500, 300, { x: 0, y: 0 });
     // Back to the world: x = SF·(east + K·north), y = (MH − north)·SF·SYN.
     near(geometry.SF * (floor.x + geometry.K * floor.y), 500, 'x');
@@ -67,7 +67,7 @@ test("the projection: world px to floor metres and back, for the old camera and 
     near(north.y, -geometry.SYN, 'north is up the screen, SYN as tall');
     near(metresPerWorldPx(geometry, 1, 0), 1 / geometry.SF, 'a px across');
   }
-  near(metresPerWorldPx(STANDARD, 0, -1), 1 / (STANDARD.SF * STANDARD.SYN), 'a px up the screen, without a shear');
+  near(metresPerWorldPx(UNSHEARED, 0, -1), 1 / (UNSHEARED.SF * UNSHEARED.SYN), 'a px up the screen, without a shear');
 });
 
 test("the traffic grid's cell under a world point", () => {
