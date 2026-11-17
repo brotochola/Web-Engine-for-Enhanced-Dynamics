@@ -23,6 +23,7 @@
  */
 
 import { TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW } from './frameBase.js';
+import { TWIN_GLSL, TWIN_WGSL } from './twinTexel.js';
 
 /** The floor span's margin past the view, floor px: a tall object's top in view stands this far past its floor place. */
 export const PIXEL_DEPTH_MARGIN = 1024;
@@ -129,7 +130,7 @@ function depthBodyGlsl({ edge, gbuf }) {
     float ad = texture(uTexture, uvd).a * vColor.a;
     if (${EARLY_DISCARD(edge)}) discard;
     vec4 md = texelFetch(uMaps, ivec2(uvd * vec2(textureSize(uMaps, 0))), 0);
-    float zd = (floor(md.r * 255.0 + 0.5) * 256.0 + floor(md.g * 255.0 + 0.5)) / 64.0 * vPainter.y;
+    float zd = twinZ(md) * vPainter.y;
     bool glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
     float band = 0.0;
     float floorY = vFootFloor;
@@ -139,7 +140,7 @@ ${gbuf
     band = min(vDepthWord.y, ${PIXEL_DEPTH_BANDS - 1}.0);
     if ((dw & 65535u) != 0u && ((dw >> 18u) & 1u) != 0u) floorY = vWorld.y * uDepth.x;
 `
-    : ''}    if (md.b + md.a > 0.0 && !glow) floorY = (vWorld.y + uDepth.y * zd) * uDepth.x;
+    : ''}    if (twinPresent(md) && !glow) floorY = (vWorld.y + uDepth.y * zd) * uDepth.x;
     float u = clamp((floorY - uDepth.z) * uDepth.w, 0.0, 1.0);
     float painter = vPainter.x;
     gl_FragDepth = (${DEPTH_FORMULA};
@@ -165,7 +166,7 @@ export function pixelDepthFragment(source, { edge = false, gbuf = false } = {}) 
   return source
     .replace(
       decl,
-      () => `${decl}uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\nflat in vec2 vPainter;\n${edge ? 'flat in float vPlain;\n' : ''}${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}`,
+      () => `${decl}uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\nflat in vec2 vPainter;\n${edge ? 'flat in float vPlain;\n' : ''}${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}${TWIN_GLSL}`,
     )
     .replace(main, () => `${main}${depthBodyGlsl({ edge, gbuf })}`);
 }
@@ -176,6 +177,7 @@ const depthWgsl = ({ gbuf }) => `
 // DX-DEPTH: the atlas's twin page (spriteMaps.js), read where the colour is (pixelDepth.js).
 @group(2) @binding(5) var uMaps: texture_2d<f32>;
 
+${TWIN_WGSL}
 struct WeedDepthOut {
   @location(0) color: vec4<f32>,
   @builtin(frag_depth) depth: f32,
@@ -189,7 +191,7 @@ fn weedPixelDepth(in: VertexOut, edge: bool) -> vec2<f32> {
   let ad = textureSample(uTexture, uSampler, uvd).a * in.vColor.a;
   if (select(${EARLY_DISCARD(false)}, ${EARLY_DISCARD(true, 'in.vPlain')}, edge)) { discard; }
   let md = textureLoad(uMaps, vec2<i32>(uvd * vec2<f32>(textureDimensions(uMaps, 0))), 0);
-  let zd = (floor(md.r * 255.0 + 0.5) * 256.0 + floor(md.g * 255.0 + 0.5)) / 64.0 * in.vDepthFoot.z;
+  let zd = twinZ(md) * in.vDepthFoot.z;
   var glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
   var band = 0.0;
   var floorY = in.vDepthFoot.x;
@@ -199,7 +201,7 @@ ${gbuf
   band = min(in.vDepthWord.y, ${PIXEL_DEPTH_BANDS - 1}.0);
   if ((dw & 65535u) != 0u && ((dw >> 18u) & 1u) != 0u) { floorY = in.vWorld.y * uniforms.uDepth.x; }
 `
-    : ''}  if (md.b + md.a > 0.0 && !glow) { floorY = (in.vWorld.y + uniforms.uDepth.y * zd) * uniforms.uDepth.x; }
+    : ''}  if (twinPresent(md) && !glow) { floorY = (in.vWorld.y + uniforms.uDepth.y * zd) * uniforms.uDepth.x; }
   let u = clamp((floorY - uniforms.uDepth.z) * uniforms.uDepth.w, 0.0, 1.0);
   let painter = in.vDepthFoot.y;
   let depth = (${DEPTH_FORMULA};

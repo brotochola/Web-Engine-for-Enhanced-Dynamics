@@ -10,12 +10,18 @@ import {
   decodeFaceNormal,
   encodeFaceHeight,
   encodeFaceNormal,
+  faceFragmentGlsl,
   faceMapVertex,
   faceMapWgsl,
   resolveFaces,
   shaderWithFlag,
 } from '../../src/render/faceMap.js';
 import { spriteIndexedVertex, spriteIndexedWgsl } from '../../src/render/spriteIndexed.js';
+import { TWIN_GLSL, TWIN_WGSL, twinPresent, twinZ } from '../../src/render/twinTexel.js';
+import { encodeOctahedral, twinTexels } from '../../src/render/spriteMaps.js';
+import { pixelDepthFragment, pixelDepthWgsl } from '../../src/render/pixelDepth.js';
+import { sunMapColumnsVertex, sunMapColumnsWgsl } from '../../src/render/sunShadowMap.js';
+import { lampMapColumnsVertex, lampMapColumnsWgsl } from '../../src/render/lampShadowMap.js';
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { DecorationPool } from '../../src/core/decorationPool.js';
 import { buildPoolScene } from '../helpers/poolScene.mjs';
@@ -104,9 +110,11 @@ test('the height scale of the shaders is the encoder\'s', () => {
   const code = encodeFaceHeight(100);
   assert.ok(Math.abs((code / 65535) * scale - 100) < 1e-3);
   assert.match(shader('faceMap.frag.glsl'), /clamp\(z \* 8\.0/);
-  // DX-MAPS: a twin texel's height is in spriteMaps.js's units (N-194: times the sprite's scale where it is written).
-  assert.match(shader('faceMap.frag.glsl'), new RegExp(`\\) / ${HEIGHT_UNITS}\\.0( \\* vMapScale)?;`));
-  assert.match(faceMapWgsl(shader('instancedSprite.wgsl')), new RegExp(`\\) / ${HEIGHT_UNITS}\\.0 \\* in\\.vMapScale;`));
+  // DX-MAPS: a twin texel's height is in spriteMaps.js's units (twinTexel.js twinZ; N-194: times the sprite's scale where
+  // it is written).
+  for (const twin of [TWIN_GLSL, TWIN_WGSL]) assert.match(twin, new RegExp(`\\) / ${HEIGHT_UNITS}\\.0;`));
+  assert.match(faceFragmentGlsl(shader('faceMap.frag.glsl')), /z = twinZ\(m\) \* vMapScale;/);
+  assert.match(faceMapWgsl(shader('instancedSprite.wgsl')), /z = twinZ\(m\) \* in\.vMapScale;/);
   assert.match(shader('lightingBasic.frag.glsl'), /\/ 8\.0;/);
 });
 
@@ -262,4 +270,37 @@ test('the glow mask leaves out the instances that cannot glow, in every sprite f
   const wcut = /out\.position = vec4<f32>\(2\.0, 2\.0, 2\.0, 1\.0\)/;
   assert.match(spriteIndexedWgsl(faceMapWgsl(shader('instancedSprite.wgsl'), { gbuf: true, glowMask: true })), wcut);
   assert.doesNotMatch(faceMapWgsl(shader('instancedSprite.wgsl'), { glowMask: true }), wcut, 'no words, no mask');
+});
+
+// DX-MAPS: one twinPresent (twinTexel.js) says "this twin texel holds a map" for every reader, in both languages, and it
+// agrees with the texels spriteMaps.js writes: a mapped texel's normal bytes are 1..253, an unmapped texel is all zeros.
+test('every reader of the twin page asks twinTexel.js whether a texel holds a map, and the texels agree', () => {
+  const height = new Float32Array([0, 12.5, 40]);
+  const normals = new Float32Array([0, 0, 1, 0.3, 0.2, 0.9, -1, 0, 0]);
+  const texels = twinTexels(height, normals, new Uint8Array([1, 1, 0]), 3, 1);
+  assert.equal(twinPresent(texels, 0), true, 'a height-0 opaque texel still holds a map (its normal)');
+  assert.equal(twinPresent(texels, 4), true);
+  assert.equal(twinPresent(texels, 8), false, 'a transparent pixel holds none');
+  assert.equal(twinZ(texels, 4), 12.5);
+  const oct = [0, 0];
+  encodeOctahedral(0, 0, -1, oct, 0);
+  assert.ok(oct[0] > 0 || oct[1] > 0, 'no normal encodes to two zero bytes');
+  const sh = (n) => shader(n);
+  const readers = {
+    face: faceFragmentGlsl(sh('faceMap.frag.glsl'), { gbuf: true }),
+    faceWgsl: faceMapWgsl(sh('instancedSprite.wgsl'), { gbuf: true }),
+    depth: pixelDepthFragment(sh('instancedSprite.frag.glsl'), { gbuf: true }),
+    depthWgsl: pixelDepthWgsl(sh('instancedSprite.wgsl'), { gbuf: true }),
+    sun: sunMapColumnsVertex(sh('instancedSpriteShadow.vert.glsl')),
+    sunWgsl: sunMapColumnsWgsl(sh('instancedSpriteShadow.wgsl')),
+    lamp: lampMapColumnsVertex(sh('instancedSpriteShadow.vert.glsl')),
+    lampWgsl: lampMapColumnsWgsl(sh('instancedSpriteShadow.wgsl')),
+  };
+  for (const [name, src] of Object.entries(readers)) {
+    const defs = src.split(name.endsWith('Wgsl') ? 'fn twinPresent(' : 'bool twinPresent(').length - 1;
+    assert.equal(defs, 1, `${name}: one twinPresent`);
+    assert.ok(src.split('twinPresent(').length - 1 >= 2, `${name}: reads it`);
+    const own = src.split(TWIN_GLSL).join('').split(TWIN_WGSL).join('');
+    assert.doesNotMatch(own, /\.b \+ m?d?\.a [<>]/, `${name}: no presence test of its own`);
+  }
 });

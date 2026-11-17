@@ -17,6 +17,7 @@
 
 /** Height steps a px. 16 bits hold 8 191 px. */
 import { resolveHeightScaleY } from '../util/cameraView.js';
+import { TWIN_WGSL, withTwinGlsl } from './twinTexel.js';
 
 export const FACE_Z_UNITS = 8;
 
@@ -124,12 +125,13 @@ ${glow ? '  if (glowOf(vGbuf, uv) > 0.0) discard;\n' : ''}  finalColor = idsTexe
 
 /**
  * faceMap.frag.glsl with its blocks for a batch's options: GBUF (the words: normals and surface) and GLOW / !GLOW
- * (DX-EMISSIVE v2: a glowing pixel writes nothing, the glow pass draws it; v1: the face map's glow code).
+ * (DX-EMISSIVE v2: a glowing pixel writes nothing, the glow pass draws it; v1: the face map's glow code), and the twin
+ * texel's helpers (twinTexel.js) at its "// weed:twin" line.
  * @param {string} faceFrag
  * @param {{ gbuf?: boolean, glow?: boolean }} [opts]
  */
 export function faceFragmentGlsl(faceFrag, { gbuf = false, glow = false } = {}) {
-  return shaderWithFlag(shaderWithFlag(shaderWithFlag(faceFrag, 'GBUF', gbuf), 'GLOW', glow), '!GLOW', !glow);
+  return withTwinGlsl(shaderWithFlag(shaderWithFlag(shaderWithFlag(faceFrag, 'GBUF', gbuf), 'GLOW', glow), '!GLOW', !glow));
 }
 
 /**
@@ -494,7 +496,7 @@ const FACE_GBUF_HELPERS_WGSL = `
 // DX-GBUF: a twin texel's height (px), or \`here\` where it has no map (faceMap.frag.glsl twinHeight).
 fn faceTwinHeight(c: vec2<i32>, here: f32) -> f32 {
   let m = textureLoad(uMaps, c, 0);
-  return select(here, (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0, m.b + m.a > 0.0);
+  return select(here, twinZ(m), twinPresent(m));
 }
 
 // DX-GBUF: normals 'height', the Sobel of the heights around texel c (faceMap.frag.glsl heightNormal).
@@ -528,8 +530,8 @@ export function faceFunctionsWgsl({ gbuf = false, glow = false } = {}) {
 ${glow ? '  // DX-EMISSIVE v2: an entity that glows by itself writes nothing here.\n  if (((word >> 19u) & 7u) != 0u) { discard; }\n' : ''}  if (noFace && (word & 65535u) != 0u) {
     let flags = (word >> 16u) & 63u;
     let normals = flags & 3u;
-    if (m.b + m.a > 0.0) {
-      let zm = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0;
+    if (twinPresent(m)) {
+      let zm = twinZ(m);
       if (normals == 3u) { return faceTexel(${flat}, zm * in.vMapScale, false); }
       var n = faceOctDecode(floor(m.ba * 255.0 + 0.5));
       // The Sobel reads the frame's own heights: a scale stretches the heights and the texels alike.
@@ -547,6 +549,7 @@ ${glow ? '  // DX-EMISSIVE v2: an entity that glows by itself writes nothing her
 // DX-MAPS: the atlas's twin page (spriteMaps.js). Binding 5: the indexed program takes 4.
 @group(2) @binding(5) var uMaps: texture_2d<f32>;
 
+${TWIN_WGSL}
 fn faceOctDecode(bytes: vec2<f32>) -> vec3<f32> {
   let f = (bytes - 127.0) / 126.0;
   var n = vec3<f32>(f, 1.0 - abs(f.x) - abs(f.y));
@@ -587,10 +590,10 @@ fn weedFace(in: VertexOut) -> vec4<f32> {
     ${glow ? 'discard;' : 'return vec4<f32>(1.0 / 255.0, 0.0, 0.0, 0.0);'}
   }
   let sc = normalize(vec2<f32>(uniforms.uFaceSpace.y, uniforms.uFaceSpace.x));
-${gbufBlock}  if (noFace && m.b + m.a > 0.0) {
+${gbufBlock}  if (noFace && twinPresent(m)) {
     let n = faceOctDecode(floor(m.ba * 255.0 + 0.5));
     oct = faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x));
-    z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * in.vMapScale;
+    z = twinZ(m) * in.vMapScale;
   }
   return faceTexel(oct, z, false);
 }

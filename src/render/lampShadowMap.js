@@ -17,6 +17,7 @@
  */
 
 import { CASTER_ID_GLSL, CASTER_ID_WGSL, MAP_TEXEL_WGSL } from './sunShadowMap.js';
+import { TWIN_GLSL, TWIN_WGSL } from './twinTexel.js';
 
 /** The highest height a tile's 8 bits spanned, as the sun map's (2 px a step); N-211: the volumes' fragment scale. */
 export const LAMP_MAP_ZMAX = 512;
@@ -379,12 +380,12 @@ export function lampMapColumnsVertex(source, cells = LAMP_MAP_COLUMNS) {
   }
   const top = head
     .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nin vec4 aBlock; // E-379: this instance\'s block of its frame (x, y) and the blocks a side (z, 0 or 1: one)\nvec2 aQuad;\nuniform sampler2D uTexture;\nuniform sampler2D uMaps;\n')
-    .replace(main, `${main}  float blocks = max(aBlock.z, 1.0);\n  aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
+    .replace(main, `${TWIN_GLSL}${main}  float blocks = max(aBlock.z, 1.0);\n  aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
   return `${top}  vec2 uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
   vec4 m = texelFetch(uMaps, ivec2(uvc * vec2(textureSize(uMaps, 0))), 0);
   float cellAlpha = texelFetch(uTexture, ivec2(uvc * vec2(textureSize(uTexture, 0))), 0).a;
-  float z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * height * abs(aInstScale.y);
-${lampTileGlsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBase.x >= 0.0) || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5 || (uTileWorld.z > 0.5 && z <= lamp.z)')}  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
+  float z = twinZ(m) * height * abs(aInstScale.y);
+${lampTileGlsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBase.x >= 0.0) || !twinPresent(m) || cellAlpha < 0.5 || z < 0.5 || (uTileWorld.z > 0.5 && z <= lamp.z)')}  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
   vec2 pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   vec2 base = vec2(pix.x, (pix.y + uSunK.w * z) * uGroundInvScaleY);
   // The column runs from the lamp's way (radially), its width across.
@@ -566,13 +567,14 @@ export function lampMapColumnsWgsl(source, cells = LAMP_MAP_COLUMNS) {
       // uFoot is declared though no lamp column reads it: the program's layout names binding 7 (sunShadowGpuProgram with
       // maps), and Pixi files a resource by the WGSL's declarations. Undeclared, it went to a spare group and group 2
       // had no binding 7, which Pixi reports as "the resource bound as 'uFoot' was destroyed".
-      "@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n// DX-SHADOW3D: the renders' footprints (the layout's binding 7; unread here).\n@group(2) @binding(7) var uFoot: texture_2d<f32>;\n",
+      () => "@group(2) @binding(6) var uLampTiles: texture_2d<f32>;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n" +
+        `${TWIN_WGSL}// DX-SHADOW3D: the renders' footprints (the layout's binding 7; unread here).\n@group(2) @binding(7) var uFoot: texture_2d<f32>;\n`,
     );
   return `${head}  let uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
   let m = textureLoad(uMaps, vec2<i32>(uvc * vec2<f32>(textureDimensions(uMaps, 0))), 0);
   let cellAlpha = textureLoad(uTexture, vec2<i32>(uvc * vec2<f32>(textureDimensions(uTexture, 0))), 0).a;
-  let z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * height * abs(aInstScale.y);
-${lampTileWgsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBase.x >= 0.0) || m.b + m.a <= 0.0 || cellAlpha < 0.5 || z < 0.5 || (uniforms.uTileWorld.z > 0.5 && z <= lamp.z)')}  let content = aInstTrim.xy + aQuad * aInstTrim.zw;
+  let z = twinZ(m) * height * abs(aInstScale.y);
+${lampTileWgsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBase.x >= 0.0) || !twinPresent(m) || cellAlpha < 0.5 || z < 0.5 || (uniforms.uTileWorld.z > 0.5 && z <= lamp.z)')}  let content = aInstTrim.xy + aQuad * aInstTrim.zw;
   let pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   let base = vec2<f32>(pix.x, (pix.y + uniforms.uSunK.w * z) * uniforms.uGroundInvScaleY);
   let fromLamp = base - lamp.xy;

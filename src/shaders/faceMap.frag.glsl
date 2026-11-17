@@ -21,6 +21,8 @@ uniform sampler2D uMaps;
 uniform vec4 uFaceSpace; // heightScaleY, groundScaleY
 out vec4 finalColor;
 
+// weed:twin
+
 vec2 weedUv() {
   vec2 t = vLocal;
   if (vTileInv.x > 0.0) t.x = fract(vWorld.x * vTileInv.x + vTileOff.x);
@@ -60,7 +62,7 @@ vec4 faceTexel(vec2 oct, float z, bool k) {
 // DX-GBUF: a twin texel's height (px), or `here` where the texel has no map (a transparent pixel of the frame).
 float twinHeight(ivec2 c, float here) {
   vec4 m = texelFetch(uMaps, c, 0);
-  return m.b + m.a > 0.0 ? (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 : here;
+  return twinPresent(m) ? twinZ(m) : here;
 }
 
 // DX-GBUF: normals 'height': the twin page's heights around texel c through spriteMaps.js normalsFromHeight's Sobel, in
@@ -115,8 +117,8 @@ void main() {
     if ((word & 65535u) != 0u) {
       uint flags = (word >> 16u) & 63u;
       uint normals = flags & 3u;
-      if (m.b + m.a > 0.0) {
-        float zm = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0;
+      if (twinPresent(m)) {
+        float zm = twinZ(m);
         if (normals == 3u) {
           finalColor = faceTexel(vec2(254.0 / 255.0), zm * vMapScale, false);
           return;
@@ -134,10 +136,10 @@ void main() {
       return;
     }
 // #endif GBUF
-    if (m.b + m.a > 0.0) {
+    if (twinPresent(m)) {
       vec3 n = octDecode(floor(m.ba * 255.0 + 0.5));
       oct = octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x));
-      z = (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / 64.0 * vMapScale;
+      z = twinZ(m) * vMapScale;
     }
   }
   finalColor = faceTexel(oct, z, false);

@@ -158,7 +158,8 @@ test('a caster with a height map casts columns: each cell where it is in 3D, the
   // second float); a picture of one view, maps or not, its card.
   // DX-CASTER: a caster's own kind first (2 its solid), else its sheet's (a render's contact, no card flag).
   assert.match(src, /bool solid = sunKind == 2 \|\| \(sunKind == 0 && aInstBase\.x < 0\.0 && aInstBase\.y >= 0\.0\);/);
-  assert.match(src, /if \(!solid \|\| m\.b \+ m\.a <= 0\.0/);
+  // A cell without a map (twinTexel.js twinPresent) casts no column.
+  assert.match(src, /if \(!solid \|\| !twinPresent\(m\)/);
   assert.ok(
     sunMapVertex(shader('instancedSpriteShadow.vert.glsl')).includes(
       'if (sunKind >= 3 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {',
