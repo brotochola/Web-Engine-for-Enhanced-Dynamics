@@ -1249,46 +1249,65 @@ class ParticleWorker extends AbstractWorker {
     const poseY = this._poseY;
     const poseRotC = this._poseRotC;
     const poseRotS = this._poseRotS;
+    const noParent = this._noParent;
 
     const swayBaseAngle = this.accumulatedTime * SWAY_ANGLE_PER_MS;
+    let moved = false;
+    // E-507: a parent's pose is read once for each run of decorations that hang from it (a tree's branches hang when it
+    // spawns, together in the list), and its place is written only where it changes: a still tree's decorations write
+    // none (each write to the shared columns dirtied lines the other workers read).
+    let runParent = -1;
+    let px = 0;
+    let py = 0;
+    let pc = 1;
+    let ps = 0;
 
     for (let idx = 0; idx < activeCount; idx++) {
       const i = activeData[idx];
       if (!active[i]) continue;
       const p = parentEntityIndex[i];
-      if (p === this._noParent) continue;
+      if (p === noParent) continue;
 
-      if (!tActive[p]) {
-        DecorationPool.despawn(i);
-        continue;
+      if (p !== runParent) {
+        if (!tActive[p]) {
+          DecorationPool.despawn(i);
+          continue;
+        }
+        const usePose = poseX && rbActive && rbActive[p];
+        px = usePose ? poseX[p] : tx[p];
+        py = usePose ? poseY[p] : ty[p];
+        pc = usePose && poseRotC ? poseRotC[p] : tRotC ? tRotC[p] : 1;
+        ps = usePose && poseRotS ? poseRotS[p] : tRotS ? tRotS[p] : 0;
+        runParent = p;
       }
-
-      const usePose = poseX && rbActive && rbActive[p];
-      const px = usePose ? poseX[p] : tx[p];
-      const py = usePose ? poseY[p] : ty[p];
-      const pc = usePose && poseRotC ? poseRotC[p] : tRotC ? tRotC[p] : 1;
-      const ps = usePose && poseRotS ? poseRotS[p] : tRotS ? tRotS[p] : 0;
       const lx = localX[i];
       const ly = localY[i];
       const bc = baseRotC[i];
       const bs = baseRotS[i];
-      const ox = x[i];
-      const oy = y[i];
 
+      let nx;
+      let ny;
       let wc;
       let ws;
       if (inherit[i]) {
-        x[i] = px + pc * lx - ps * ly;
-        y[i] = py + ps * lx + pc * ly;
+        nx = Math.fround(px + pc * lx - ps * ly);
+        ny = Math.fround(py + ps * lx + pc * ly);
         wc = pc * bc - ps * bs;
         ws = ps * bc + pc * bs;
       } else {
-        x[i] = px + lx;
-        y[i] = py + ly;
+        nx = Math.fround(px + lx);
+        ny = Math.fround(py + ly);
         wc = bc;
         ws = bs;
       }
-      if (x[i] !== ox || y[i] !== oy) this._decoAttachedMoved = true;
+      if (nx !== x[i]) {
+        x[i] = nx;
+        moved = true;
+      }
+      if (ny !== y[i]) {
+        y[i] = ny;
+        moved = true;
+      }
 
       // E-196. Off screen last frame (the screen test runs after this pass, on the position placed above): its facing
       // without the sway and no sine, an impulse holding its phase, as the world-owned sway skips those. The frame it
@@ -1328,6 +1347,7 @@ class ParticleWorker extends AbstractWorker {
         rotS[i] = ws;
       }
     }
+    if (moved) this._decoAttachedMoved = true;
   }
 
   /**
