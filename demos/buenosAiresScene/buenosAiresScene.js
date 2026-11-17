@@ -54,6 +54,11 @@ const FLOOR_CACHE = WEED.params?.get('floorCache') !== '0';
  * engine's default: lighting.lampMapCache). `?lampCache=0` draws them every frame, to compare.
  */
 const LAMP_CACHE = WEED.params?.get('lampCache') !== '0';
+/**
+ * A lid's shadow on its own box, an arm's on its body (lighting.selfShadow): the light pass walks each pixel's ray toward
+ * the sun and every lamp over the faces' heights. `?selfShadow=0` turns it off, to weigh it.
+ */
+const SELF_SHADOW = WEED.params?.get('selfShadow') !== '0';
 /** `?pan=40`: the camera drifts right that many world px a second by itself, to measure a view that never holds. */
 const PAN_DRIFT = param('pan', 0);
 const CORES = globalThis.navigator?.hardwareConcurrency || 4;
@@ -211,7 +216,7 @@ export class BuenosAiresScene extends Scene {
       sunShadows: 'map',
       lampShadows: 'map',
       ...(LAMP_CACHE ? {} : { lampMapCache: false }),
-      selfShadow: true,
+      selfShadow: SELF_SHADOW,
       maxShadowCastingLights: 16,
       maxShadowsPerLight: 64,
       maxShadowsPerEntity: 2,
