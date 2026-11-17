@@ -1,7 +1,9 @@
 # Scene start up time (plan)
 
 **Opened:** 2026-11-17, planned in a chat session with the owner. **Status:** a plan, not started;
-nothing in it is measured yet. **Registry:** `DX-STARTUP` and its items `SST-0` to `SST-10` in
+nothing in it is measured yet. **Estimate:** about 9 to 10 hours of work in a row for everything but
+SST-9, 4 to 5 hours with agents in parallel; SST-9 another 3 to 5 hours, in a session of its own
+(section 4). **Registry:** `DX-STARTUP` and its items `SST-0` to `SST-10` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: every scene starts sooner, for the player opening a game and for the developer reloading
@@ -19,9 +21,11 @@ work in parallel, earlier and once, never from leaving it for later. So:
 **For the agent executing this plan:**
 - Read `CLAUDE.md`, `docs/internal/HOW_WE_MEASURE.md` and this whole file before the first commit.
 - Work on a branch (`dx/startup`). One item per commit; measurement tools in their own commit before
-  the change they measure; the node suite (and `test:demos` where a game can see it) green before
-  each code commit.
+  the change they measure.
+- **The light protocol (the owner, 2026-11-17), section 2:** the suites on every commit, one quick
+  first-frame number per item, no sittings per item; the full matrix once, at the end, for the total.
 - SST-0 comes first: no item is started before the waterfall can show what it changes.
+- With agents in parallel, partition by files (section 4): never two writers on one file.
 - Tick the item here (`[x]` plus the commit hash) in the commit that finishes it, add anything new
   under "Found while building", update its row in `hypotheses.json` and write its record (then
   `node scripts/buildHypothesesPage.mjs`).
@@ -90,29 +94,42 @@ the atlas. What is known already:
 ## 2. How load time is measured
 
 `HOW_WE_MEASURE.md` judges speed by `STEP_MS`; load work is judged on time to the first frame (W21e's
-record said so). SST-0 adds a "Load time" section there when the tool lands. The plan's protocol:
+record said so). SST-0 adds a short "Load time" section there when the tool lands.
 
-- **Primary:** time from the `game.loadScene` call to the renderer's first drawn frame (not the first
-  published one: in a GPU-bound scene the two differ). From navigation too, which adds the page's modules
-  (`tests/bench/isolationLoadTime.mjs` measures navigation to the first published frame and is the base
-  to extend).
+**The light protocol (the owner, 2026-11-17).** These changes run once, at the start, outside every
+frame; when they pay, they pay seconds anyone can see. So no item gets a sitting of its own:
+
+- **On every commit: the suites.** `npm run test:node` (about 15 s) and `npm run test:demos`, and the
+  scenes still boot. The start is shared by every scene: a mistake there breaks all of them, not one.
+  The delicate items get a test of their own: the message order (SST-1), the scripts' evaluation order
+  (SST-3), the same atlas (SST-5: the hash of its pixels and of its JSON, as N-124 and R-0852 checked),
+  a fresh load equal to a reloaded one (SST-9).
+- **Per item: one quick number.** Time to the first drawn frame before and after, on the scene the
+  item targets, a few runs, with the waterfall (SST-0) to see which bar moved. It goes in the commit
+  message and the item's record. An item that moves nothing is said so, and dropped or kept as
+  hygiene by judgment.
+- **Once, at the end: the full matrix,** the base commit against the campaign's last commit, both from
+  worktrees: the total for the record and the README.
+
+The measures:
+- **Time to the first frame:** from the `game.loadScene` call to the renderer's first drawn frame (not
+  the first published one: in a GPU-bound scene the two differ). From navigation too, which adds the
+  page's modules (`tests/bench/isolationLoadTime.mjs` measures navigation to the first published frame
+  and is the base to extend).
 - **Must not get worse:** the longest frame in the first 5 s after the start (everything ready means no
-  hitch after it), and the steady `STEP_MS` of every worker (a change that touches per-frame code also
-  follows `HOW_WE_MEASURE`). The main thread's longest task during the load is reported (the loading
-  screen's smoothness), not judged.
-- **Scenes:** `buenosAiresScene` (packs its atlas from many sheets, big floor shader),
-  `predatorScene` with `?light3d=1&hour=22` (baked atlas, physics, the most programs), `bunnyMarkScene`
-  (few assets: the fixed cost of starting), and one scene change (menu → scene) for SST-9.
+  hitch after it). The main thread's longest task during the load is reported (the loading screen's
+  smoothness), not judged. Steady `STEP_MS` is not run per item: none of these touches per-frame code;
+  an item that does follows `HOW_WE_MEASURE`.
+
+The final matrix:
+- **Scenes:** `buenosAiresScene` (packs its atlas from many sheets, big floor shader), `predatorScene`
+  with `?light3d=1&hour=22` (baked atlas, physics, the most programs), `bunnyMarkScene` (few assets:
+  the fixed cost of starting), and one scene change (menu → scene) when SST-9 is done.
 - **Conditions:** source build and prod bundle; cold (a fresh profile, empty caches) and warm (the
-  second visit, same profile); WebGL, and WebGPU for the GPU items. The baseline fills the whole
-  matrix once; each item then runs only the cells it can change.
-- **Machines:** the main machine, and the ASUS test laptop (2 cores, HDD) for the slow-machine numbers,
-  which is where load time hurts most.
+  second visit, same profile); WebGL and WebGPU.
+- **Machines:** the main machine, and the ASUS test laptop (2 cores, HDD), where load time hurts most.
 - **Runs:** a fresh browser context per run, headed, 5 runs a side alternating A and B, medians with
-  p25–p75; one A/A per sitting gives the detection limit.
-- **Keep:** the median moves past the A/A's limit in the cells the change targets and no cell gets
-  worse past it; the image is identical (`compareCaptures`); atlas work keeps the same atlas (hash of
-  its pixels and of its JSON, as N-124 and R-0852 checked).
+  p25–p75, the image identical (`compareCaptures`).
 
 ---
 
@@ -133,8 +150,9 @@ Marks for every phase on one clock (`performance.timeOrigin + performance.now()`
 - the renderer's first drawn frame, and the longest frame in the first 5 s.
 
 A runner collects them and prints a table and a timeline that names the chain ending last (the
-critical path of the load). Marks cost nothing measurable at load; none runs per frame. Then the
-baseline: the matrix of section 2 on both machines, one record.
+critical path of the load). Marks cost nothing measurable at load; none runs per frame. Then one
+quick waterfall of each of the three scenes (source build, warm, the main machine), to order the
+items; the full matrix waits for the end (section 2).
 
 ### SST-1 — Workers start before the assets: boot, then configure
 
@@ -295,17 +313,33 @@ The smaller repeats, each only if SST-0 shows it:
 
 ## 4. Order
 
-1. SST-0, and its baseline.
-2. SST-2, then SST-1 (the boot message carries the module).
-3. SST-4.
-4. SST-3.
-5. SST-7, with E-494.
-6. SST-5, then SST-6.
-7. SST-8.
-8. SST-10, from what is left on the waterfall.
-9. SST-9, as a project of its own.
+With the estimate of each (2026-11-17, before any measurement; each one includes its suites and its
+quick number):
 
-The baseline can reorder this: the item whose bar ends last goes first.
+1. SST-0, the waterfall and the three quick waterfalls: about 45 min.
+2. SST-2, then SST-1 (the boot message carries the module): about 30 min and 1.5 h.
+3. SST-4: about 45 min.
+4. SST-3: about 45 min.
+5. SST-7, with E-494: about 1 h.
+6. SST-5, then SST-6: about 1.5 to 2 h and 1 h.
+7. SST-8: about 1 h.
+8. SST-10, from what is left on the waterfall: about 30 min.
+9. The full matrix (section 2): about 1 h, mostly the machine's.
+10. SST-9, in a session of its own: about 3 to 5 h.
+
+In a row, everything but SST-9 takes about 9 to 10 hours. With agents in parallel, about 4 to 5 hours
+of clock time, partitioned by files:
+- **one agent** for SST-2, SST-1 and SST-4: they share `src/core/scene.js`,
+  `src/util/sceneWorkerBootstrap.js`, `src/workers/abstractWorker.js` and `src/util/wasmKernel.js`;
+- **the atlas** (SST-5, then SST-6): `src/core/spriteSheetRegistry.js` and the atlas methods of
+  `scene.js`, which the first agent leaves alone (agree the seam before starting);
+- **Pixi** (SST-7): `src/workers/pixiWorker.js` and the Pixi patches;
+- **the bundle** (SST-8): `scripts/buildBundle.js` and the build scripts;
+- **the scripts** (SST-3): the script loader in `src/util/utils.js`.
+
+SST-0 lands before the agents start. The quick waterfalls can reorder the items: the bar that ends
+last goes first. Surprises (a demo that stops booting) add time; an item the waterfall shows to weigh
+nothing is skipped.
 
 ## 5. Open decisions (the owner's, when we get there)
 
