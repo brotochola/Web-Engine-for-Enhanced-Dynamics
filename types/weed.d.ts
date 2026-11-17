@@ -1964,6 +1964,15 @@ export declare class Decal {
   static stamp(config: Record<string, unknown>): void;
 }
 
+/** The GPU a scene draws on ({@link Scene.gpu}). */
+export interface SceneGpu {
+  readonly backend: 'webgl' | 'webgpu';
+  readonly name: string;
+  /** The maker in WebGPU's spelling: 'intel', 'amd', 'nvidia', 'apple', 'arm', 'qualcomm', … or ''. */
+  readonly vendor: string;
+  readonly kind: 'discrete' | 'integrated' | 'tiled' | 'software' | 'unknown';
+}
+
 export declare class Scene {
   static WORKER_INDICES: Readonly<Record<string, number>>;
   static config: SceneConfig;
@@ -1997,6 +2006,14 @@ export declare class Scene {
   /** Proxied view of `config.physics`; writes forward to workers via {@link Scene.updatePhysicsConfig}. */
   physics: Record<string, unknown>;
   workerReadyStates: Record<string, boolean>;
+  /**
+   * The GPU the browser gave the page, set before `preload()` and `create()` run (null until then). `name` is the
+   * browser's name for it (WebGL's renderer string, or the WebGPU adapter's vendor and architecture), `vendor` its
+   * maker; `kind` is read from that name: 'integrated' (shares the CPU's memory: Intel HD/UHD/Iris, AMD APUs),
+   * 'discrete', 'tiled' (Apple, mobile), 'software' (drawn by the CPU) or 'unknown'. On an integrated GPU the engine
+   * also warns once in the console; what to tell players is the game's choice.
+   */
+  readonly gpu: SceneGpu | null;
   numberOfSpatialWorkers: number;
   totalWorkers: number;
   buffers: SceneBuffers;

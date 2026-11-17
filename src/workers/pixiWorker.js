@@ -375,7 +375,9 @@ import { createStaticsScatterGpu, scatterStaticsGpu } from '../render/webgpu/sta
 import { createPrivateArena } from '../render/sharedCopy.js';
 import { GpuFramePacer } from '../render/gpuFramePacer.js';
 import { OPAQUE_POSE_TEXELS, opaquePassOn } from '../render/opaquePass.js';
-import { GPU_UNKNOWN, gpuClassOf, gpuVendorOf, webglRendererName } from '../render/gpuClass.js';
+import {
+  GPU_UNKNOWN, gpuClassOf, gpuVendorOf, offscreenWebglRendererName, webglRendererName, webgpuGpu,
+} from '../render/gpuClass.js';
 
 // Bundles embed the engine shaders (WEED.EngineShaders, posted at init): an npm
 // install has no /src/shaders to fetch. Source builds fetch them.
@@ -10318,6 +10320,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           this.reportError('WebGPU device lost', new Error(`${reason}: ${message}`));
         });
         this._bindWebGpuSwapchain();
+        // DX-IGPUWARN: the adapter's GPU, for scene.gpu (a throwaway WebGL context's name where the adapter's is unclear).
+        const gpu = webgpuGpu(this.pixiApp.renderer.gpu.adapter?.info ?? null, offscreenWebglRendererName);
+        this._gpuRendererName = gpu.name;
+        this._gpuVendor = gpu.vendor;
+        this._gpuClass = gpu.kind;
       } else {
         if (this.pixiApp.renderer.type !== PIXI.RendererType.WEBGL) {
           throw errorPixiTypeMismatch(backend, actualName);
@@ -10334,6 +10341,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this._opaqueOn = opaquePassOn(this.config?.debug?.opaquePass, this._gpuClass, this._gpuVendor);
         debugWorkerLog(`PIXI WORKER: GPU "${this._gpuRendererName}" (${this._gpuClass}), opaque pass ${this._opaqueOn}`);
       }
+      // DX-IGPUWARN: the GPU the page got, to the scene (scene.gpu) before this worker reports ready.
+      self.postMessage({
+        msg: 'gpuInfo',
+        backend: this._useWebGpu ? 'webgpu' : 'webgl',
+        name: this._gpuRendererName,
+        vendor: this._gpuVendor,
+        kind: this._gpuClass,
+      });
     } catch (error) {
       this.reportError('PIXI Initialization Failed', error);
       return;

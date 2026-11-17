@@ -164,6 +164,8 @@ import {
 
 /** `wasm` keys a scene set that are not switches, already warned about (once per key per page). */
 const warnedWasmKeys = new Set();
+/** DX-IGPUWARN: the integrated GPU's warning, said once a page. */
+let warnedIntegratedGpu = false;
 
 /**
  * A file named beside another asset: `name` in the folder of `url` (its query and hash left out). An absolute URL or a
@@ -570,6 +572,9 @@ class Scene {
     this.animationFrameId = null; // Store RAF ID so we can cancel it
     // E-219: the frame chain (Int32Array, null without one): main adds one at [1] once a frame's inputs are in.
     this._inputChain = null;
+    // DX-IGPUWARN: the GPU the browser gave the page ({ backend, name, vendor, kind }, gpuClass.js), from the renderer worker
+    // before it reports ready, so it is set by preload() and create(); null before.
+    this.gpu = null;
 
     // Initialization promise
     this.readyPromise = new Promise((resolve) => {
@@ -2139,6 +2144,8 @@ class Scene {
     } else if (e.data.msg === 'workerReady') {
       debugWorkerLog(`[Scene] 📬 Received 'workerReady' message from ${e.currentTarget.name}`);
       this.handleWorkerReady(e.currentTarget.name);
+    } else if (e.data.msg === 'gpuInfo') {
+      this._takeGpuInfo(e.data);
     } else if (e.data.msg === 'error') {
       const { title, message, stack } = e.data;
       const workerName = e.currentTarget.name;
@@ -2427,6 +2434,28 @@ class Scene {
     `;
 
     overlay.innerHTML = errorHtml;
+  }
+
+  /**
+   * DX-IGPUWARN: the renderer worker's GPU (backend, name, vendor, kind) into scene.gpu, and one warning a page when the kind is
+   * integrated. A laptop with two GPUs gives the page the integrated one unless the system's settings say otherwise;
+   * no JS API lists a machine's GPUs, so the warning says how to check rather than that a faster one exists.
+   * @param {{ backend: string, name: string, vendor: string, kind: string }} data
+   */
+  _takeGpuInfo(data) {
+    this.gpu = Object.freeze({
+      backend: String(data.backend),
+      name: String(data.name),
+      vendor: String(data.vendor),
+      kind: String(data.kind),
+    });
+    if (this.gpu.kind !== 'integrated' || warnedIntegratedGpu) return;
+    warnedIntegratedGpu = true;
+    console.warn(
+      `WeedJS: the browser gave this page an integrated GPU (${this.gpu.name || 'unnamed'}). If the machine has a ` +
+        'dedicated GPU too, the system\'s graphics settings can give the browser that one (Windows: Settings > System > ' +
+        'Display > Graphics). scene.gpu tells the game which GPU it got.',
+    );
   }
 
   handleWorkerReady(workerName) {

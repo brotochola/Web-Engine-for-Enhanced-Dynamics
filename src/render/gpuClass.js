@@ -18,7 +18,8 @@
  * - 'unknown': an empty or masked name, or one the rules do not know.
  *
  * E-502 reads the class and the maker (gpuVendorOf) to keep E-448's opaque pass off where the hardware does not gain
- * from it (opaquePass.js opaquePassSuits).
+ * from it (opaquePass.js opaquePassSuits). DX-IGPUWARN hands them to the game as scene.gpu, with one warning on an
+ * integrated GPU.
  */
 
 export const GPU_DISCRETE = 'discrete';
@@ -98,4 +99,73 @@ export function webglRendererName(gl) {
   if (typeof unmasked === 'string' && unmasked !== '') return unmasked;
   const plain = gl.getParameter(gl.RENDERER);
   return typeof plain === 'string' ? plain : '';
+}
+
+/**
+ * The name of a WebGPU adapter (GPUAdapterInfo): those of its vendor, architecture, device and description it gives,
+ * e.g. "intel gen-9". Chrome leaves the description empty unless its developer features are on.
+ * @param {{ vendor?: string, architecture?: string, device?: string, description?: string }|null|undefined} info
+ * @returns {string}
+ */
+export function webgpuAdapterName(info) {
+  if (!info) return '';
+  const parts = [info.vendor, info.architecture, info.device, info.description];
+  return parts.filter((part) => typeof part === 'string' && part !== '').join(' ');
+}
+
+// WebGPU adapters' vendors (GPUAdapterInfo.vendor, lower case) whose GPUs draw in tiles.
+const ADAPTER_TILED = /^(?:apple|arm|qualcomm|imagination|img-tec|broadcom)$/;
+// Intel's discrete architectures: Xe-HPG (Arc A), Xe2-HPG (Arc B), Xe-HP.
+const ADAPTER_INTEL_CARD = /hpg|12hp/;
+
+/**
+ * The class of a WebGPU adapter's GPU (GPU_* above): from its description when that names one, else from its vendor
+ * and architecture. AMD's APUs and cards share architectures (RDNA 2 is both a 680M and an RX 6600), so an AMD adapter
+ * without a description is unknown.
+ * @param {{ vendor?: string, architecture?: string, description?: string, isFallbackAdapter?: boolean }|null|undefined} info
+ * @returns {'discrete'|'integrated'|'tiled'|'software'|'unknown'}
+ */
+export function gpuClassOfAdapter(info) {
+  if (!info) return GPU_UNKNOWN;
+  if (info.isFallbackAdapter === true) return GPU_SOFTWARE;
+  const byDescription = gpuClassOf(info.description);
+  if (byDescription !== GPU_UNKNOWN) return byDescription;
+  const vendor = typeof info.vendor === 'string' ? info.vendor.toLowerCase() : '';
+  const architecture = typeof info.architecture === 'string' ? info.architecture.toLowerCase() : '';
+  if (architecture === 'swiftshader' || vendor === 'microsoft') return GPU_SOFTWARE;
+  if (vendor === 'intel') return ADAPTER_INTEL_CARD.test(architecture) ? GPU_DISCRETE : GPU_INTEGRATED;
+  if (vendor === 'nvidia') return GPU_DISCRETE;
+  if (ADAPTER_TILED.test(vendor)) return GPU_TILED;
+  return GPU_UNKNOWN;
+}
+
+/**
+ * The name, maker and class of a WebGPU adapter's GPU. Where its info does not tell the class (an AMD adapter without a
+ * description: GCN and RDNA are APUs and cards alike), the name a WebGL context gives is read instead (`readWebglName`,
+ * called only then) and taken when it names the adapter's vendor.
+ * @param {{ vendor?: string, architecture?: string, device?: string, description?: string }|null|undefined} info
+ * @param {() => string} readWebglName
+ * @returns {{ name: string, vendor: string, kind: string }}
+ */
+export function webgpuGpu(info, readWebglName) {
+  const name = webgpuAdapterName(info);
+  const kind = gpuClassOfAdapter(info);
+  const vendor = typeof info?.vendor === 'string' ? info.vendor.toLowerCase() : '';
+  if (kind !== GPU_UNKNOWN || vendor === '') return { name, vendor, kind };
+  const webglName = readWebglName();
+  if (typeof webglName !== 'string' || !webglName.toLowerCase().includes(vendor)) return { name, vendor, kind };
+  return { name: webglName, vendor, kind: gpuClassOf(webglName) };
+}
+
+/**
+ * The renderer name of a throwaway WebGL 2 context on an OffscreenCanvas, lost at once ('' without one).
+ * @returns {string}
+ */
+export function offscreenWebglRendererName() {
+  if (typeof OffscreenCanvas !== 'function') return '';
+  const gl = new OffscreenCanvas(1, 1).getContext('webgl2');
+  if (!gl) return '';
+  const name = webglRendererName(gl);
+  gl.getExtension('WEBGL_lose_context')?.loseContext();
+  return name;
 }
