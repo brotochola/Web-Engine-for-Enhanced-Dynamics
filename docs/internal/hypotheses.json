@@ -16788,7 +16788,8 @@
         "R-1219",
         "R-1223",
         "R-1226",
-        "R-1231"
+        "R-1231",
+        "R-1238"
       ]
     },
     {
@@ -16891,7 +16892,8 @@
         "R-1101",
         "R-1219",
         "R-1231",
-        "R-1236"
+        "R-1236",
+        "R-1238"
       ],
       "rank": 2
     },
@@ -16985,7 +16987,8 @@
       ],
       "records": [
         "R-1101",
-        "R-1219"
+        "R-1219",
+        "R-1238"
       ]
     },
     {
@@ -18742,7 +18745,8 @@
       "records": [
         "R-1184",
         "R-1201",
-        "R-1236"
+        "R-1236",
+        "R-1238"
       ],
       "rank": 5
     },
@@ -20016,7 +20020,8 @@
         "R-1226",
         "R-1233",
         "R-1236",
-        "R-1237"
+        "R-1237",
+        "R-1239"
       ],
       "rank": 10
     },
@@ -20533,6 +20538,43 @@
         "buildBundle in worktrees"
       ],
       "records": []
+    },
+    {
+      "id": "E-493",
+      "title": "E-298's idle spin calls b2SchedulerHasPending every turn, which scans every enqueued task's status atomic (12-byte slots, about 5 a cache line, up to 256): the three spinning pool threads keep pulling the lines the claiming and completing threads write",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the physics agent reading box2d/src/scheduler.c",
+      "date": "2026-11-16",
+      "area": "physics",
+      "kind": "speed",
+      "result": "At Predator crowd 2.5 the pool threads spin about 275 ms/s each (R-1100) and physics gates 80 % of the frames (R-1237).",
+      "next": "Poll one padded pending counter or generation word instead; both builds; the crowd harness, then Predator crowd 2.5 with physics as owner and the LiquidFun gates.",
+      "refs": [],
+      "aliases": [
+        "spin polls every task slot"
+      ],
+      "records": [
+        "R-1238"
+      ]
+    },
+    {
+      "id": "N-252",
+      "title": "Worker replay: record a scene worker's inputs once, replay them into the real worker in Node or d8, so a change to that worker is timed in minutes on identical inputs",
+      "status": "kept-hygiene",
+      "statusText": "built 2026-11-16 by the replay agent (tools/replay, merged e884d645)",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "tools",
+      "result": "Spatial done: deterministic, Node and d8 publish identical rows; a 4-pair comparison takes about 4 minutes. E-476 on replay: tail halved, own work unchanged (R-1239).",
+      "next": "Snapshot the worker's state at record start (the cold start makes a 31-frame artefact); a second thread reading the rows; pre-render replay.",
+      "refs": [],
+      "aliases": [
+        "worker replay",
+        "deterministic replay"
+      ],
+      "records": [
+        "R-1239"
+      ]
     }
   ],
   "records": [
@@ -32717,6 +32759,28 @@
       "text": "**E-223 built: tests/bench/criticalPath.mjs reads the frame clock's per-frame steps (runFramePhase's samples.json, and runFramePhase now prints it) and says which worker gates each frame. First reading, Predator crowd 2.5 by night: physics gates 80 % of the frames but within budget, and spatial causes 53 of the 64 frames over 16.7 ms.** Each step goes to the frame whose bell came last before it started. stampStep writes the generation seen at the step's end, so a step longer than a frame carries a later frame's number. A worker with no step starting in a frame was still busy with an earlier one: it skipped that frame.\n\nThe series of R-1226 (600 frames, crowd=2.5 zoom=0.216 light3d=1 hour=22, main of 2026-11-16 18:54, the file's time):\n\n| worker | gates | lead over the next, p50 | finish p50 | p95 | p99 | frames over 16.7 ms | skipped |\n| --- | --- | --- | --- | --- | --- | --- | --- |\n| physics | 480 (80 %) | 4.89 ms | 13.99 | 15.63 | 27.22 | 9 | 7 |\n| spatial0 | 108 (18 %) | 2.49 | 8.93 | 29.46 | 39.30 | 53 | 55 |\n| renderer | 5 | 0.94 | 5.70 | 7.42 | 13.28 | 0 | 4 |\n| particle | 3 | 3.26 | 0.73 | 1.03 | 1.22 | 3 | 10 |\n| preRender | 3 | 3.03 | 8.58 | 11.14 | 11.94 | 0 | 3 |\n| logic0, logic1 | 0 | | 6.91, 5.19 | 8.81, 7.53 | 9.44, 8.50 | 0 | 3 |\n\nThe critical path: p50 14.14 ms, p95 29.41, p99 39.30; 64 frames over budget. Physics is the long pole for capacity: about 2.7 ms of headroom at its median, 1 ms at its p95. Spatial is the long pole for hitches (E-476).",
       "commits": [
         "9a9b1d7c"
+      ]
+    },
+    {
+      "id": "R-1238",
+      "date": "2026-11-16",
+      "time": "22:44",
+      "timeFrom": "recorded",
+      "title": "Physics front, first night: E-298's spin a runtime knob (built on branches, not measured, LiquidFun gates owed); E-322's Morton order screened at -5.8 % of the step in the crowd harness (-15 % in the first 2 s)",
+      "verdict": "screened",
+      "text": "**The physics front's first night: E-298's spin is now a runtime knob (built, not measured), and E-322's Morton-order ceiling screened at -5.8 % of the step in the Node crowd harness (2 rounds, front-loaded: -15 % in the first 2 s after the sort).** Not merged: the knob's Box2D binary comes from a branch, and the LiquidFun gates have not run. The physics agent, 2026-11-16, its lock holds 22:21 to 22:44.\n\nBuilt and committed:\n- Box2D `weedjs/e319-spin` b09af9f: `b2SetSchedulerStepSpin(ms)`, exported as `set_worker_spin_ms`. Infinity (the default) spins through the whole step as shipped; 0.05 sleeps after one spin (before E-298). Both builds pass (SIMD, and no-SIMD with its SSE2 check).\n- WeedJS `opt/physics-budget`: `physics.workerSpinMs` validated, passed at init and on config updates (04e52193, with the knob's box2dWasm). Predator takes `?physicsSpinMs` (67d5b8be). runMultiArm `--arm-queries` (11df89f0, on main as 77db3c26). Suites: node 2919/2921 (the two worktree pixi tests), demos 101/101.\n- Box2D `weedjs/e322-order` 561bd1a (on origin/wasm-crowd-harness): the crowd harness spawns its walkers in spawn or Morton order, and reports each window's step and the id distance of pairs in contact.\n\nE-322 screen (38 000 walkers, 4 workers, 840 steps after 120 of warm-up, orders alternated, 22:43-22:44):\n\n| | spawn order | Morton order |\n| --- | --- | --- |\n| mean step | 11.88 ms | 11.19 ms (-5.8 %; solve -7.8 %, collide -2.6 %) |\n| window 1 (120 steps) | 11.69 | 9.97 (-15 %) |\n| window 2 | 11.57 | 10.82 (-6.5 %) |\n| windows 3-6 | 11.54 to 12.69 | 11.46 to 11.82 |\n| contact pairs within 64 ids at the end | 0.31 % | 42 % |\n\nBodies stay close in id after the step gain fades. That suggests the solve gain comes from the contact and colour order, which drifts faster than the body order. A re-sort every ~2 s might hold -10 to -15 %, at an estimated 1-2 ms per sort.\n\nNext:\n- The 2x2 (threads 3 or 4, spin on or off) at crowd 2.5, plain and by night: `runMultiArm --vs 67d5b8be --arm-queries \"physicsSpinMs=0.05;physicsWorkers=3;physicsWorkers=3&physicsSpinMs=0.05\" --labels spinoff,t3,t3spinoff --owner physics --pairs 4 --pool --query \"crowd=2.5&zoom=0.216\"`, judged on every worker's mean and tail; then the LiquidFun gates.\n- E-322: the harness at 4+ rounds, then `b2World_ReorderAwakeBodies` every N steps. It permutes the bodySims and bodyStates, remaps encodedBodySimA/B in the contact sims, colours, overflow and joints, and sorts each colour's contacts by body.\n- Found: the idle spin's b2SchedulerHasPending scans every task slot's status each turn (E-493). Box2D builds fail from Git Bash: run build_for_weed.bat from PowerShell."
+    },
+    {
+      "id": "R-1239",
+      "date": "2026-11-16",
+      "time": "22:38",
+      "timeFrom": "recorded",
+      "title": "Worker replay built: spatial recorded from Predator and replayed in Node or d8; E-476 on replay halves spatial's slow frames with its own work unchanged, so the scene's mean rise comes from outside the worker",
+      "verdict": "note",
+      "text": "**A spatial worker's inputs recorded from a scene and replayed into the real worker in Node or d8 (tests/bench/replayWorker.mjs, merged e884d645). On replay, E-476's spread halves spatial's slow frames and leaves its own work unchanged: the scene's mean rise (+7.7 to +11.5 %) comes from outside the worker.** The replay agent, 2026-11-16, its replays 22:31 to 22:38 (the result files).\n\nThe tool:\n- Recording: Playwright's worker.evaluate wraps the live spatial worker's update(), with no src/ hook. Each frame it stores what changed in the inputs the worker reads: the Transform, Collider, SpriteRenderer and RigidBody columns (LightEmitter under raycasted lighting), the readers, the active list, logic 0's frame number, the query version and physics' moved list.\n- Replay: fresh real SpatialWorkers, timed frame by frame. A check pass hashes the published rows. `--vs` alternates ABAB against a revision.\n- Node and d8 publish identical rows on all 600 frames. Predator crowd 2.5 by night: 600 frames of 57 600 entities, 207 MB (not committed).\n\nE-476 on replay, frames 60 on, main 528130e2 against opt/e476-spread c5743006:\n\n| run | mean | pairs | p95 / p99 | frames over 2x p50 |\n| --- | --- | --- | --- | --- |\n| Node, 4 pairs x 2 rounds | 6.934 -> 7.023 ms (+1.3 %) | +10.8, -0.6, -0.1, -1.2 % | +1.8 / +2.1 % | 97 -> 49 |\n| A/A main, Node, 2 pairs | 6.822 -> 6.738 (-1.2 %) | -0.9, -1.0 % | | 98 -> 97 |\n| d8 16, 1 pair | 7.781 -> 7.610 (-2.2 %) | | | 115 -> 51 |\n\nTotal work over 540 frames: 3745 against 3793 ms. The frames at 6.5-16 ms on main move to 2-4 ms with the spread. Spatial's own work on the same inputs does not grow. The scene's every-function-20 %-slower profile (R-1233) points at what one thread lacks: cross-core traffic with logic and physics, sharing a core, or the clock. Not yet told apart. The hardware-counter capture meant to separate them (m56, WPR per function, 21:55-22:19) failed as an instrument: the spatial thread's functions were mixed with Pixi's, and main's refill capture held 8 000 samples against 125 000.\n\nCaveats:\n- The replay starts cold: every list is built at frame 0, so the 30-frame reuse cap expires together every 31 frames (about 80 ms frames that the scene does not have).\n- Replay frames run at about 54 % of the live time.\n\nNext:\n- Snapshot the worker's per-entity state at record start.\n- A replay with a second thread reading the published rows, to test the cross-core hypothesis.\n- Pre-render replay.",
+      "commits": [
+        "d452bbd2",
+        "e884d645"
       ]
     }
   ],
