@@ -326,7 +326,13 @@ function applyComputeTexSizeUniform(cl) {
 import { pinGpuTexture, writeRgba32Float, writeRgba8 } from '../render/webgpu/pinGpuTexture.js';
 import { bindDecalPremultiply, premultiplyDecalTile } from '../render/decalPremultiplyClient.js';
 import { createSharedTextureSource, createWorldRectMesh } from '../render/worldTextureMesh.js';
-import { createWorldRectCache, readsFrameTime, worldRectCacheStale } from '../render/worldRectCache.js';
+import {
+  createWorldRectCache,
+  readsFrameTime,
+  worldRectCacheStep,
+  WORLD_RECT_DIRECT,
+  WORLD_RECT_SHOW,
+} from '../render/worldRectCache.js';
 import { uploadSharedImage } from '../render/sharedTextureUpload.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { lightingGpuProgram, lookGpuProgram, gpuProgramFromWgsl, isWgslSource } from '../render/webgpu/pixiMeshWgsl.js';
@@ -10494,9 +10500,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * E-504. A cached worldRect layer's target, drawn again when what the layer shows changed since it was (the camera,
-   * the canvas' size, its uniforms or pictures, or every frame for a shader that reads the frame's time), with the
-   * camera placed on its mesh as the stage would (_placeWorldCamera), so the target holds what the mesh would draw.
+   * E-504. A cached worldRect layer this frame (worldRectCacheStep): its target shown as painted, painted again when
+   * what the layer shows changed (the camera, the canvas' size, its uniforms or pictures, every frame for a shader that
+   * reads the frame's time), with the camera placed on the paint mesh as the stage places the stage mesh
+   * (_placeWorldCamera), so the target holds what the stage mesh would draw; or, while the view keeps changing, the stage
+   * mesh drawn instead.
    */
   _drawWorldRectCache(cl, changed) {
     const zoom = this._renderZoom;
@@ -10505,15 +10513,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const rot = this._renderCameraRot || 0;
     const w = Math.max(1, this.canvasWidth | 0);
     const h = Math.max(1, this.canvasHeight | 0);
-    const resized = cl.worldCache.w !== w || cl.worldCache.h !== h;
-    if (!worldRectCacheStale(cl.worldCache, zoom, x, y, rot, w, h, changed || cl.worldEveryFrame)) return;
-    if (resized && (cl.worldRt.width !== w || cl.worldRt.height !== h)) {
+    const step = worldRectCacheStep(cl.worldCache, zoom, x, y, rot, w, h, changed || cl.worldEveryFrame);
+    if (step === WORLD_RECT_SHOW) return;
+    if (step === WORLD_RECT_DIRECT) {
+      if (!cl.worldMesh.visible) {
+        cl.worldMesh.visible = true;
+        cl.displaySprite.visible = false;
+      }
+      return;
+    }
+    if (cl.worldMesh.visible) {
+      cl.worldMesh.visible = false;
+      cl.displaySprite.visible = true;
+    }
+    if (cl.worldRt.width !== w || cl.worldRt.height !== h) {
       const old = cl.worldRt;
       cl.worldRt = PIXI.RenderTexture.create({ width: w, height: h });
       cl.displaySprite.texture = cl.worldRt;
       old.destroy(true);
     }
-    this._placeWorldCamera(cl.worldMesh, zoom, x, y, rot);
+    this._placeWorldCamera(cl.worldPaintMesh, zoom, x, y, rot);
     const o = this._rtRenderOpts;
     o.container = cl.worldRoot;
     o.target = cl.worldRt;
@@ -10571,18 +10590,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     cl.uniformStore = built.shader.resources?.customUniforms?.uniforms || null;
     cl.uniformEntries = config.uniformMap ? Object.entries(config.uniformMap) : null;
     if (config.shaderCache === true) {
-      // E-504: drawn into a target the canvas' size when what it shows changes (_drawWorldRectCache); the target's
-      // sprite, 1:1 on the screen, is the layer.
+      // E-504: painted into a target the canvas' size when what it shows changes (_drawWorldRectCache), by a mesh on the
+      // same geometry and shader; the target's sprite, 1:1 on the screen, shows it. A view that keeps changing draws the
+      // stage mesh instead (worldRectCacheStep). Both in one holder, which is the layer.
       cl.worldRt = PIXI.RenderTexture.create({ width: Math.max(1, this.canvasWidth | 0), height: Math.max(1, this.canvasHeight | 0) });
+      cl.worldPaintMesh = new PIXI.Mesh({ geometry: built.mesh.geometry, shader: built.shader });
+      cl.worldPaintMesh.eventMode = 'none';
+      cl.worldPaintMesh.cullable = false;
       cl.worldRoot = new PIXI.Container();
-      cl.worldRoot.addChild(built.mesh);
+      cl.worldRoot.addChild(cl.worldPaintMesh);
       cl.worldCache = createWorldRectCache();
       cl.worldEveryFrame = readsFrameTime(fragment);
       cl.displaySprite = new PIXI.Sprite(cl.worldRt);
       cl.displaySprite.anchor.set(0, 0);
       cl.displaySprite.position.set(0, 0);
-      this._registerLayerDisplayObject(cl.layerName, cl.displaySprite, cl.containerBlendSet);
-      this.pixiApp.stage.addChild(cl.displaySprite);
+      built.mesh.visible = false;
+      cl.worldHolder = new PIXI.Container();
+      cl.worldHolder.addChild(built.mesh);
+      cl.worldHolder.addChild(cl.displaySprite);
+      this._registerLayerDisplayObject(cl.layerName, cl.worldHolder, cl.containerBlendSet);
+      this.pixiApp.stage.addChild(cl.worldHolder);
     } else {
       this._registerLayerDisplayObject(cl.layerName, built.mesh, cl.containerBlendSet);
       this.pixiApp.stage.addChild(built.mesh);
@@ -10643,9 +10670,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const prev = this._customLayerList || [];
     for (let i = 0; i < prev.length; i++) {
       const old = prev[i];
+      // E-504: the paint mesh shares the stage mesh's geometry and shader, which the stage mesh's destroy takes.
+      if (old && old.worldPaintMesh) old.worldPaintMesh.destroy(false);
       if (old && old.worldMesh) old.worldMesh.destroy(true);
       if (old && old.worldRt) {
         old.displaySprite?.destroy();
+        old.worldHolder?.destroy({ children: false });
         old.worldRt.destroy(true);
       }
       if (old && old.gpu) old.gpu.destroy();
@@ -10861,11 +10891,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         shaderMesh: null,
         shader: null,
         displaySprite: null,
-        // E-504: a worldRect layer's mesh, and with shader.cache its target, the container it is drawn from, what the
-        // target was drawn for, and whether its shader reads the frame's time (drawn every frame then).
+        // E-504: a worldRect layer's mesh (on the stage), and with its cache the target, the mesh that paints it (the
+        // same geometry and shader) and the container it is painted from, the holder of the stage mesh and the target's
+        // sprite (the layer), what the target was painted for, and whether its shader reads the frame's time.
         worldMesh: null,
         worldRt: null,
+        worldPaintMesh: null,
         worldRoot: null,
+        worldHolder: null,
         worldCache: null,
         worldEveryFrame: false,
         uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,

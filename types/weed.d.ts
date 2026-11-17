@@ -3017,7 +3017,8 @@ export interface LayerSceneConfigEntry {
     worldRect?: { width: number; height: number };
     /**
      * With `worldRect`: paint the layer into a canvas-sized texture, again only when the camera, the canvas size, its
-     * uniforms or its pictures change (a shader that declares `uTime` or `uDt` is painted every frame). Default false.
+     * uniforms or its pictures change; a view that keeps changing (a moving camera, a picture updated every frame, a
+     * shader that reads `uTime` or `uDt`) draws to the screen until it holds. Default true; false paints every frame.
      */
     cache?: boolean;
   };

@@ -54,9 +54,9 @@ const sunSpec = (key) => {
 };
 /** Moves the lamps down, for a picture to hold `?lampOffset=` against. */
 export const LAMP_SHIFT = queryNumber('lampShift', 0);
-/** `?worldFloor=1`: a procedural floor (a worldRect layer) over the ground; `?worldFloorCache=1` caches it (E-504). */
+/** `?worldFloor=1`: a procedural floor (a worldRect layer) over the ground; `?worldFloorCache=0` paints it every frame (E-504). */
 export const WORLD_FLOOR = queryNumber('worldFloor', 0) === 1;
-export const WORLD_FLOOR_CACHE = queryNumber('worldFloorCache', 0) === 1;
+export const WORLD_FLOOR_CACHE = queryNumber('worldFloorCache', 1) === 1;
 export const stressSceneConfig = {
   requested: {
     hour: HOUR,

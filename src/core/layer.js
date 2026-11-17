@@ -1722,8 +1722,9 @@ export class Layer {
                 maxParticles: layer._compute?.maxParticles || 0,
                 resource: typeof config.resource === 'string' ? config.resource : null,
                 worldRect: worldRectOf(config.shader),
-                // E-504: the worldRect drawn into a target of its own when what it shows changes (worldRectCache.js).
-                shaderCache: !!worldRectOf(config.shader) && config.shader.cache === true,
+                // E-504: the worldRect painted into a target of its own when what it shows changes (worldRectCache.js);
+                // the default, shader.cache false paints every frame.
+                shaderCache: !!worldRectOf(config.shader) && config.shader.cache !== false,
                 shaderTextures: shaderTextureList(config.shader),
                 // LAYER_KIND.GPU_PARTICLES: the rings are GpuParticles' (gpuParticles.js); these are the draw options.
                 gpuParticles: layer._kind === LAYER_KIND.GPU_PARTICLES
