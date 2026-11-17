@@ -1,5 +1,6 @@
 // DX-MAPS on real code: the octahedral bytes the shaders decode, a heightMap's two encodings, the outline fix the light
-// bench found, normals from heights, and the twin page: each frame's maps land at its own rectangle of the atlas.
+// bench found, normals from heights, and the twin page (E-496): each frame's maps in a window of its own, shared by
+// sheets with the same map files, and the maps table that says where.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -7,6 +8,8 @@ import {
   HEIGHT_UNITS, decodeOctahedral, encodeOctahedral, fixOutline, frameTwinTexels, normalsFromHeight, readHeights,
 } from '../../src/render/spriteMaps.js';
 import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
+import { MAPS_HEIGHTS, MAPS_TWIN, TWIN_PAD, mapsTableLayout, packMapsTable } from '../../src/render/mapsTable.js';
+import { twinPresent } from '../../src/render/twinTexel.js';
 
 const close = (a, b, eps = 0.02) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
 
@@ -117,7 +120,8 @@ function image(w, h, fill) {
   return { width: w, height: h, data };
 }
 
-test('the twin page puts each frame\'s maps at its rectangle of the atlas', () => {
+/** Runs fn with the in-memory canvas standing in for OffscreenCanvas and ImageData. */
+function withMemCanvas(fn) {
   const savedOC = globalThis.OffscreenCanvas;
   const savedID = globalThis.ImageData;
   globalThis.OffscreenCanvas = MemCanvas;
@@ -127,6 +131,18 @@ test('the twin page puts each frame\'s maps at its rectangle of the atlas', () =
     }
   };
   try {
+    return fn();
+  } finally {
+    globalThis.OffscreenCanvas = savedOC;
+    globalThis.ImageData = savedID;
+  }
+}
+
+// E-496: the twin page holds the frames with maps alone, each in a window of its own, TWIN_PAD texels from every other
+// rectangle and from the page's edges, at even texels; the texels in a window are what the frame's own rectangle of the
+// atlas-sized page held.
+test('the twin page holds each frame\'s maps in a window of its own, padded and even, not at its atlas rectangle', () => {
+  withMemCanvas(() => {
     // A sheet of two 4 × 2 frames side by side; frame b is trimmed to its right half. Heights: frame a 2 px, frame b 5 px.
     const sheet = image(8, 2, (x) => [255, 255, 255, x < 4 || x >= 6 ? 255 : 0]);
     const heights = image(8, 2, (x) => {
@@ -134,21 +150,86 @@ test('the twin page puts each frame\'s maps at its rectangle of the atlas', () =
       return [z >> 8, z & 255, 0, 255];
     });
     const maps = { heightImg: heights, normalImg: null, gray: 0 };
-    const page = SpriteSheetRegistry._paintMapsPage([
-      { sourceImg: sheet, sourceRect: { x: 0, y: 0, w: 4, h: 2 }, rect: { x: 10, y: 3, width: 4, height: 2 }, maps },
-      { sourceImg: sheet, sourceRect: { x: 6, y: 0, w: 2, h: 2 }, rect: { x: 1, y: 8, width: 2, height: 2 }, maps },
+    const frames = [
+      { sourceImg: sheet, sourceRect: { x: 0, y: 0, w: 4, h: 2 }, frameRect: { x: 0, y: 0, w: 4, h: 2 }, rect: { x: 10, y: 3, width: 4, height: 2 }, maps },
+      { sourceImg: sheet, sourceRect: { x: 6, y: 0, w: 2, h: 2 }, frameRect: { x: 4, y: 0, w: 4, h: 2 }, sourceX: 2, rect: { x: 1, y: 8, width: 2, height: 2 }, maps },
       { sourceImg: sheet, sourceRect: null, rect: { x: 0, y: 0, width: 1, height: 1 }, maps: null },
-    ], 16, 12);
-    const at = (x, y) => Array.from(page.data.subarray((y * 16 + x) * 4, (y * 16 + x) * 4 + 4));
+    ];
+    const twin = SpriteSheetRegistry._paintMapsPage(frames, 64, 64, true);
+    const { width, texels } = twin;
+    assert.equal(twin.canvas.width, width);
+    assert.equal(width % 2, 0, 'an even width');
+    assert.equal(twin.height % 2, 0, 'an even height');
+    assert.ok(width * twin.height < 16 * 12, 'smaller than the atlas: only the frames with maps');
+    const at = (x, y) => Array.from(texels.subarray((y * width + x) * 4, (y * width + x) * 4 + 4));
     const heightAt = (x, y) => ((at(x, y)[0] << 8) | at(x, y)[1]) / HEIGHT_UNITS;
-    for (let y = 3; y < 5; y++) for (let x = 10; x < 14; x++) assert.equal(heightAt(x, y), 2, `frame a at ${x},${y}`);
-    for (let y = 8; y < 10; y++) for (let x = 1; x < 3; x++) assert.equal(heightAt(x, y), 5, `frame b at ${x},${y}`);
-    assert.deepEqual(at(0, 0), [0, 0, 0, 0], 'a texture without maps leaves its rectangle empty');
-    assert.deepEqual(at(9, 3), [0, 0, 0, 0], 'outside every frame');
-    assert.deepEqual(at(10, 3).slice(2), [127, 127], 'flat heights: the normal faces the camera');
+    const [a, b, none] = frames;
+    assert.equal(none.mapsAt, undefined, 'a texture without maps has no window');
+    for (const [d, z, w, h] of [[a, 2, 4, 2], [b, 5, 2, 2]]) {
+      assert.ok(d.mapsAt.x >= TWIN_PAD && d.mapsAt.y >= TWIN_PAD, 'padded from the page\'s edges');
+      assert.equal(d.mapsAt.x % 2, 0, 'at an even texel');
+      assert.equal(d.mapsAt.y % 2, 0);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) assert.equal(heightAt(d.mapsAt.x + x, d.mapsAt.y + y), z);
+      // TWIN_PAD texels of nothing all round it.
+      for (let k = 1; k <= TWIN_PAD; k++) {
+        assert.deepEqual(at(d.mapsAt.x - k, d.mapsAt.y), [0, 0, 0, 0]);
+        assert.deepEqual(at(d.mapsAt.x, d.mapsAt.y - k), [0, 0, 0, 0]);
+      }
+    }
+    assert.deepEqual(at(a.mapsAt.x, a.mapsAt.y).slice(2), [127, 127], 'flat heights: the normal faces the camera');
     assert.equal(SpriteSheetRegistry._paintMapsPage([{ sourceImg: sheet, sourceRect: { x: 0, y: 0, w: 4, h: 2 }, rect: { x: 0, y: 0, width: 4, height: 2 } }], 8, 8), null);
-  } finally {
-    globalThis.OffscreenCanvas = savedOC;
-    globalThis.ImageData = savedID;
-  }
+  });
+});
+
+// E-496: sheets naming the same map files share one rectangle a frame (the union of their trims), each frame's window its
+// own trim in it; the opaque pixels it holds maps for are every sharing frame's.
+test('sheets with the same map files share one rectangle of the twin page, each frame at its own trim', () => {
+  withMemCanvas(() => {
+    // Two 6 × 2 sheets over one height map (3 px everywhere): sheet p is opaque in columns 0-3, sheet q in 2-5.
+    const heights = image(6, 2, () => [0, 3 * HEIGHT_UNITS, 0, 255]);
+    const p = image(6, 2, (x) => [255, 0, 0, x <= 3 ? 255 : 0]);
+    const q = image(6, 2, (x) => [0, 0, 255, x >= 2 ? 255 : 0]);
+    const shared = (key) => ({ heightImg: heights, normalImg: null, gray: 0, key });
+    const fr = { x: 0, y: 0, w: 6, h: 2 };
+    const fp = { sourceImg: p, sourceRect: { x: 0, y: 0, w: 4, h: 2 }, frameRect: fr, sourceX: 0, rect: { x: 0, y: 0, width: 4, height: 2 }, maps: shared('body') };
+    const fq = { sourceImg: q, sourceRect: { x: 2, y: 0, w: 4, h: 2 }, frameRect: fr, sourceX: 2, rect: { x: 8, y: 0, width: 4, height: 2 }, maps: shared('body') };
+    const twin = SpriteSheetRegistry._paintMapsPage([fp, fq], 64, 64, true);
+    assert.equal(fq.mapsAt.x - fp.mapsAt.x, 2, 'q\'s window is its trim\'s offset into the shared rectangle');
+    assert.equal(fq.mapsAt.y, fp.mapsAt.y);
+    const present = (x, y) => twinPresent(twin.texels, (y * twin.width + x) * 4);
+    for (let x = 0; x < 6; x++) assert.equal(present(fp.mapsAt.x + x, fp.mapsAt.y), true, `the union of their opaque pixels, column ${x}`);
+    // Other files: rectangles of their own.
+    const fp2 = { ...fp, mapsAt: undefined };
+    const fq2 = { ...fq, maps: shared('other'), mapsAt: undefined };
+    const apart = SpriteSheetRegistry._paintMapsPage([fp2, fq2], 64, 64, true);
+    assert.ok(apart.width * apart.height > twin.width * twin.height, 'two rectangles take more room than one');
+    const sameRect = fq2.mapsAt.x - fp2.mapsAt.x === 2 && fq2.mapsAt.y === fp2.mapsAt.y;
+    assert.equal(sameRect, false, 'q is not in p\'s rectangle');
+    // Its own rectangle holds q's opaque pixels alone: p's columns 0-1 are not in it.
+    const at = (x, y) => (y * apart.width + x) * 4;
+    assert.equal(twinPresent(apart.texels, at(fq2.mapsAt.x, fq2.mapsAt.y)), true);
+    assert.equal(twinPresent(apart.texels, at(fq2.mapsAt.x - 1, fq2.mapsAt.y)), false, 'padding before it');
+  });
+});
+
+// E-496: the maps table, a texel a textureId: the window's offset from the frame's atlas rectangle, and its marks.
+test('the maps table gives each frame its window\'s offset and marks, nothing to a frame without maps', () => {
+  const textures = [
+    { frame: { x: 10, y: 3 }, weedMaps: { x: 4, y: 2, heights: true } },
+    { frame: { x: 1, y: 8 }, weedMaps: { x: 2, y: 6 } },
+    { frame: { x: 0, y: 0 } },
+    null,
+  ];
+  const t = packMapsTable(textures);
+  assert.deepEqual([t.width, t.height], [1, 4]);
+  assert.equal(t.mapped, 2);
+  assert.deepEqual(Array.from(t.data.subarray(0, 4)), [-6, -1, MAPS_TWIN | MAPS_HEIGHTS, 0]);
+  assert.deepEqual(Array.from(t.data.subarray(4, 8)), [1, -2, MAPS_TWIN, 0]);
+  assert.deepEqual(Array.from(t.data.subarray(8, 16)), [0, 0, 0, 0, 0, 0, 0, 0]);
+  // A bake from before E-496: its twin page is the atlas's layout, every frame read at offset 0.
+  const old = packMapsTable([{ frame: { x: 5, y: 5 } }], true);
+  assert.deepEqual(Array.from(old.data), [0, 0, MAPS_TWIN | MAPS_HEIGHTS, 0]);
+  // N-111's fold: past the most rows, each row holds several.
+  assert.deepEqual(mapsTableLayout(5000, 2048), { width: 3, height: 1667 });
+  assert.deepEqual(mapsTableLayout(0), { width: 1, height: 1 });
 });

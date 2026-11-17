@@ -113,14 +113,14 @@ test('the twin page marks each frame it paints: glowing, or not', () => {
       { name: 'b', sourceImg: img(soft), sourceRect: { x: 0, y: 0, w: W, h: H }, rect: { x: 8, y: 0, width: W, height: H }, maps: { heightImg: hm, normalImg: null, gray: 0 } },
       { name: 'c', sourceImg: img(binary), sourceRect: { x: 0, y: 0, w: W, h: H }, rect: { x: 0, y: 6, width: W, height: H }, maps: { heightImg: null, normalImg: null, gray: 0, emissive: true } },
     ];
-    assert.notEqual(SpriteSheetRegistry._paintMapsPage(frames, 16, 12), null);
+    assert.notEqual(SpriteSheetRegistry._paintMapsPage(frames, 64, 64), null);
     assert.deepEqual(frames.map((d) => d.glow), [false, false, true]);
   } finally {
     [globalThis.OffscreenCanvas, globalThis.ImageData] = saved;
   }
 });
 
-test('each frame\'s json base says what its texels hold; with no padding, every frame may glow once one does', () => {
+test('each frame\'s json base says what its texels hold, and only a glowing frame glows', () => {
   const json = () => ({ a: { base: { cx: 3, rx: 2, ry: 1.2 } }, b: {}, c: {}, d: {} });
   const packed = [
     { name: 'a', texels: 0, glow: false },
@@ -130,19 +130,14 @@ test('each frame\'s json base says what its texels hold; with no padding, every 
     { name: 'gone', texels: 0, glow: true },
   ];
   const f = json();
-  SpriteSheetRegistry._markFrameTexels(f, packed, 2);
+  SpriteSheetRegistry._markFrameTexels(f, packed);
   assert.deepEqual(f.a.base, { cx: 3, rx: 2, ry: 1.2, texels: 0 }, 'binary, its stand base kept');
   assert.deepEqual(f.b.base, { texels: FRAME_SOFT });
   assert.deepEqual(f.c.base, { texels: FRAME_HALF | FRAME_GLOW });
   assert.equal(f.d.base, undefined, 'a frame no scan read keeps no key');
   assert.equal(f.gone, undefined, 'only the json\'s frames');
-  // The page's read can reach a texel past a frame's border, the next frame's when nothing pads them.
-  const g = json();
-  SpriteSheetRegistry._markFrameTexels(g, packed, 0);
-  assert.deepEqual([g.a.base.texels, g.b.base.texels], [FRAME_GLOW, FRAME_SOFT | FRAME_GLOW]);
-  const h = json();
-  SpriteSheetRegistry._markFrameTexels(h, packed.slice(0, 2), 0);
-  assert.deepEqual([h.a.base.texels, h.b.base.texels], [0, FRAME_SOFT], 'no glowing frame: none may glow');
+  // E-496: the twin page pads its rectangles, so a frame's read never reaches another's: no frame glows by its neighbour.
+  assert.deepEqual([f.a.base.texels, f.b.base.texels], [0, FRAME_SOFT], 'not glowing with c');
   // A base that only says what its texels hold stands nowhere: the shadow passes read it as no base, and a sheet with it
   // casts no solid.
   const out = [7, 7];

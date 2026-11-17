@@ -1,6 +1,8 @@
 /**
- * DX-MAPS: a sheet's height and normal maps, packed into the atlas's twin page. The twin page has the atlas's size and the
- * same rectangles: where a frame's colour is in the atlas, its maps are in the twin, so a shader samples both with one UV.
+ * DX-MAPS: a sheet's height and normal maps, packed into the atlas's twin page. E-496: the twin page holds only the frames
+ * with maps, each in a window of its own (spriteSheetRegistry.js _paintMapsPage), and the maps table (mapsTable.js) says
+ * where each frame's window is: a shader reads a frame's twin texel at its atlas texel plus that window's offset
+ * (twinTexel.js). Sheets that name the same map files share one rectangle of it.
  *
  * What a twin texel holds (RGBA8):
  * - R, G: the height above the floor of what the pixel shows, R·256 + G in 1/HEIGHT_UNITS px (up to 1023.98 px);
@@ -208,7 +210,18 @@ export function opaqueMask(rgba, w, h, threshold = 127) {
  */
 export function frameTwinTexels({ color, height, normal, w, h, gray = 0, strength = 1, emissive = false }) {
   if (height === null && normal === null && !emissive) return null;
-  const opaque = opaqueMask(color, w, h);
+  return maskTwinTexels({ opaque: opaqueMask(color, w, h), height, normal, w, h, gray, strength, emissive });
+}
+
+/**
+ * frameTwinTexels over an opaque mask instead of a colour (E-496: the twin page's rectangle that several sheets share, the
+ * union of their frames' opaque pixels).
+ * @param {{ opaque: Uint8Array, height: Uint8ClampedArray|null, normal: Uint8ClampedArray|null, w: number, h: number,
+ *   gray?: number, strength?: number, emissive?: boolean }} frame
+ * @returns {Uint8ClampedArray|null} null when the frame has no map
+ */
+export function maskTwinTexels({ opaque, height, normal, w, h, gray = 0, strength = 1, emissive = false }) {
+  if (height === null && normal === null && !emissive) return null;
   if (height === null && normal === null) return emissiveTexels(null, opaque, w, h);
   let heights = null;
   if (height !== null) {

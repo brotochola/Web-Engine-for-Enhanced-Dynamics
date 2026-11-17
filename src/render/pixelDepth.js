@@ -23,7 +23,7 @@
  */
 
 import { TEX_LUT_FLAG_BITS, TEX_LUT_FLAGS_PER_ROW } from './frameBase.js';
-import { TWIN_GLSL, TWIN_WGSL } from './twinTexel.js';
+import { MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, TWIN_GLSL, TWIN_WGSL } from './twinTexel.js';
 
 /** The floor span's margin past the view, floor px: a tall object's top in view stands this far past its floor place. */
 export const PIXEL_DEPTH_MARGIN = 1024;
@@ -94,10 +94,10 @@ export function pixelDepthVertex(source, { gbuf = false } = {}) {
     : '';
   // N-194: vPainter's y is the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
   return source
-    .replace(decl, () => `${decl}out float vFootFloor;\nflat out vec2 vPainter;\nflat out float vPlain;\nuniform vec4 uDepth;\n${words}`)
+    .replace(decl, () => `${decl}out float vFootFloor;\nflat out vec2 vPainter;\nflat out float vPlain;\nflat out vec4 vMapsWin;\nuniform vec4 uDepth;\n${words}${MAPS_TABLE_GLSL}`)
     .replace(
       pos,
-      () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n  vPainter = vec2(float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1}), abs(aInstScale.y));` +
+      () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n  vPainter = vec2(float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1}), abs(aInstScale.y));\n  vMapsWin = twinWindow(tid);` +
         (gbuf ? '\n  vDepthWord = aInstGbuf;' : '') + plainGlsl(gbuf),
     );
 }
@@ -129,7 +129,7 @@ function depthBodyGlsl({ edge, gbuf }) {
     vec2 uvd = weedUv();
     float ad = texture(uTexture, uvd).a * vColor.a;
     if (${EARLY_DISCARD(edge)}) discard;
-    vec4 md = texelFetch(uMaps, ivec2(uvd * vec2(textureSize(uMaps, 0))), 0);
+    vec4 md = twinTexel(uvd, vMapsWin);
     float zd = twinZ(md) * vPainter.y;
     bool glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
     float band = 0.0;
@@ -166,7 +166,7 @@ export function pixelDepthFragment(source, { edge = false, gbuf = false } = {}) 
   return source
     .replace(
       decl,
-      () => `${decl}uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\nflat in vec2 vPainter;\n${edge ? 'flat in float vPlain;\n' : ''}${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}${TWIN_GLSL}`,
+      () => `${decl}uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\nflat in vec2 vPainter;\n${edge ? 'flat in float vPlain;\n' : ''}${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}flat in vec4 vMapsWin;\n${TWIN_GLSL}`,
     )
     .replace(main, () => `${main}${depthBodyGlsl({ edge, gbuf })}`);
 }
@@ -178,6 +178,7 @@ const depthWgsl = ({ gbuf }) => `
 @group(2) @binding(5) var uMaps: texture_2d<f32>;
 
 ${TWIN_WGSL}
+${MAPS_TABLE_WGSL}
 struct WeedDepthOut {
   @location(0) color: vec4<f32>,
   @builtin(frag_depth) depth: f32,
@@ -190,7 +191,7 @@ fn weedPixelDepth(in: VertexOut, edge: bool) -> vec2<f32> {
   let uvd = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
   let ad = textureSample(uTexture, uSampler, uvd).a * in.vColor.a;
   if (select(${EARLY_DISCARD(false)}, ${EARLY_DISCARD(true, 'in.vPlain')}, edge)) { discard; }
-  let md = textureLoad(uMaps, vec2<i32>(uvd * vec2<f32>(textureDimensions(uMaps, 0))), 0);
+  let md = twinTexel(uvd, in.vMapsWin);
   let zd = twinZ(md) * in.vDepthFoot.z;
   var glow = md.b < 0.5 / 255.0 && md.a > 254.5 / 255.0;
   var band = 0.0;
@@ -253,7 +254,7 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false } = {})
     '  @location(5) vTileOff: vec2<f32>,\n',
     '  @location(8) @interpolate(flat) vDepthFoot: vec3<f32>,\n' +
       (gbuf ? '  @location(13) @interpolate(flat) vDepthWord: vec2<f32>,\n' : '') +
-      '  @location(14) @interpolate(flat) vPlain: f32,\n',
+      '  @location(14) @interpolate(flat) vPlain: f32,\n  @location(15) @interpolate(flat) vMapsWin: vec4<f32>,\n',
     'vTileOff',
   );
   out = once(out, '  @location(1) aInstXY: vec2<f32>,\n', '  @builtin(instance_index) weedInstance: u32,\n', 'aInstXY');
@@ -262,7 +263,7 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false } = {})
     '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
     // N-194: z, the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
     `  out.vDepthFoot = vec3<f32>(aInstXY.y * uniforms.uDepth.x, f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u), abs(aInstScale.y));\n` +
-      (gbuf ? '  out.vDepthWord = aInstGbuf;\n' : '') + plainWgsl(gbuf),
+      (gbuf ? '  out.vDepthWord = aInstGbuf;\n' : '') + '  out.vMapsWin = twinWindow(tid);\n' + plainWgsl(gbuf),
     'out.position',
   );
   const entries = [];

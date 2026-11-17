@@ -202,10 +202,12 @@ async function main() {
         }
 
         const size = packed.json.meta.size;
+        // E-496: the twin page has its own size (meta.mapsSize; each frame's window is in its json frame's `maps`).
+        const mapsSize = packed.json.meta.mapsSize ?? size;
         return {
           json: packed.json,
           pngDataUrl: packed.canvas.toDataURL('image/png'),
-          mapsPngDataUrl: packed.mapsTexels ? await encodeRgbaPng(size.w, size.h, packed.mapsTexels) : null,
+          mapsPngDataUrl: packed.mapsTexels ? await encodeRgbaPng(mapsSize.w, mapsSize.h, packed.mapsTexels) : null,
           size,
           proxyCount: Object.keys(packed.json.meta.proxySheets).length,
           frameCount: Object.keys(packed.json.frames).length,

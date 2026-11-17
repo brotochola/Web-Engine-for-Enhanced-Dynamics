@@ -58,7 +58,7 @@ test('H-EDGE: each pass leaves before the twin page and the depth for the pixels
       const at = src.indexOf(early);
       assert.ok(at > 0, `edge ${edge}, gbuf ${gbuf}: ${early}`);
       assert.ok(at > src.indexOf('float ad = texture(uTexture, uvd).a * vColor.a;'), 'after the alpha');
-      assert.ok(at < src.indexOf('texelFetch(uMaps'), 'before the twin page');
+      assert.ok(at < src.indexOf('twinTexel(uvd, vMapsWin)'), 'before the twin page (E-496: through its window)');
       assert.ok(at < src.indexOf('gl_FragDepth ='), 'before the depth');
       assert.match(src, /bool solid = ad >= 0\.5 && !glow;/, 'the pass keeps its pixels as before');
       assert.equal(src.split('texture(uTexture, uvd)').length, 2, 'the alpha read once in the depth body');
@@ -67,7 +67,7 @@ test('H-EDGE: each pass leaves before the twin page and the depth for the pixels
   const wgsl = pixelDepthWgsl(shader('instancedSprite.wgsl'), { gbuf: true });
   const early = wgsl.indexOf('if (select(ad < 0.5, ad <= 0.0 || (ad >= 0.5 && in.vPlain > 0.5), edge)) { discard; }');
   assert.ok(early > wgsl.indexOf('let ad = textureSample(uTexture, uSampler, uvd).a * in.vColor.a;'), 'after the alpha');
-  assert.ok(early < wgsl.indexOf('textureLoad(uMaps'), 'before the twin page');
+  assert.ok(early < wgsl.indexOf('twinTexel(uvd, in.vMapsWin)'), 'before the twin page (E-496: through its window)');
   assert.match(wgsl, /fn mainFrag\(in: VertexOut\) -> WeedDepthOut \{[^}]*weedPixelDepth\(in, false\)/);
   assert.match(wgsl, /fn mainFragEdge\(in: VertexOut\) -> WeedDepthOut \{[^}]*weedPixelDepth\(in, true\)/);
   // The colour's textureSample still comes first, in uniform control flow.

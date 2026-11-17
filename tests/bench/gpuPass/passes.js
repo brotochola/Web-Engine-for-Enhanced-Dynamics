@@ -34,6 +34,7 @@ import {
 import { lampCardStrip, lampMapFragment, lampMapVertex, lampMapWgsl } from '../../../src/render/lampShadowMap.js';
 import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from '../../../src/render/pixelDepth.js';
 import { FOOTPRINT_TEXELS } from '../../../src/render/frameBase.js';
+import { packMapsTable } from '../../../src/render/mapsTable.js';
 import {
   LightTiles, TILE_CAM_COS, TILE_CAM_FULL_H, TILE_CAM_FULL_W, TILE_CAM_GROUND_INV_Y, TILE_CAM_SIN, TILE_CAM_X, TILE_CAM_Y,
   TILE_CAM_ZOOM, binLightTiles, layoutLightTiles, writeLightTileUniforms,
@@ -283,8 +284,12 @@ export function buildFrame(p, sh, sc, backend) {
   const tileWords = new Float32Array(4);
   writeLightTileUniforms(lightTiles, tileGrid, tileWords);
 
+  // E-496: this bench's twin page has its atlas's layout, so its maps table reads every textureId at its atlas texel.
+  const lutIds = Math.max(sc.lutSize[0] / 3 * sc.lutSize[1], sc.lutMixedSize[0] / 3 * sc.lutMixedSize[1]) | 0;
+  const mapsTable = packMapsTable(Array.from({ length: lutIds }, () => ({})), true);
   const textures = {
     atlas: { kind: 'bitmap', bitmap: sc.atlas, premultiply: true, filter: 'linear' },
+    mapsTable: { kind: 'data', format: 'rgba32f', width: mapsTable.width, height: mapsTable.height, data: mapsTable.data },
     twin: { kind: 'data', format: 'rgba8', width: sc.atlasSize[0], height: sc.atlasSize[1], data: sc.twin, filter: 'nearest' },
     lutCard: { kind: 'data', format: 'rgba32f', width: sc.lutSize[0], height: sc.lutSize[1], data: sc.lutCard },
     lutRender: { kind: 'data', format: 'rgba32f', width: sc.lutSize[0], height: sc.lutSize[1], data: sc.lutRender },
@@ -336,7 +341,7 @@ export function buildFrame(p, sh, sc, backend) {
     uSunPerp: [px, py, 0, 0],
     ...extra,
   });
-  const spriteTextures = { uTexture: 'atlas', uTexLut: 'lutCard', uMaps: 'twin' };
+  const spriteTextures = { uTexture: 'atlas', uTexLut: 'lutCard', uMaps: 'twin', uMapsLut: 'mapsTable' };
   const maxLights = String(sc.maxLights);
 
   const lightPass = (name, flags, label) => {
@@ -512,7 +517,7 @@ export function buildFrame(p, sh, sc, backend) {
       wgsl: { code: sunMapColumnsWgsl(sh.shadowWgsl), vertexEntry: 'mainVert', fragmentEntry: 'mainFragMap' },
       vertex: grid,
       instances: p.cards > 0 ? sc.columnRows : sc.renders,
-      textures: { uTexture: 'atlas', uTexLut: p.cards > 0 ? 'lutMixed' : 'lutRender', uMaps: 'twin', uFoot: 'foot' },
+      textures: { uTexture: 'atlas', uTexLut: p.cards > 0 ? 'lutMixed' : 'lutRender', uMaps: 'twin', uMapsLut: 'mapsTable', uFoot: 'foot' },
       uniforms: shadowUniforms(),
       targets: ['sunMap'],
       // As the engine draws it (mapDepthState): the highest caster point by a depth test, no blending.

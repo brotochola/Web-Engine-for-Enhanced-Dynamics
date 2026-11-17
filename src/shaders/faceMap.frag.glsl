@@ -10,6 +10,8 @@ flat in vec2 vFaceOct;
 in float vFaceZ;
 // N-194: the sprite's |scale y|: its twin's heights (frame px) times this are its world heights.
 flat in float vMapScale;
+// E-496: the frame's window in the twin page and its marks (the maps table, mapsTable.js).
+flat in vec4 vMapsWin;
 // #if GBUF
 // DX-GBUF: the instance's words (gbufWord.js: its entity's id, normals, surface, ...) and its foot's world y.
 flat in vec2 vGbuf;
@@ -91,8 +93,8 @@ void main() {
   vec2 oct = vFaceOct;
   float z = vFaceZ;
   if (oct == vec2(0.0)) {
-    ivec2 tc = ivec2(uv * vec2(textureSize(uMaps, 0)));
-    vec4 m = texelFetch(uMaps, tc, 0);
+    ivec2 tc = twinCoord(uv, vMapsWin);
+    vec4 m = vMapsWin.z > 0.5 ? texelFetch(uMaps, tc, 0) : vec4(0.0);
     // DX-EMISSIVE: a glowing pixel (normal bytes 0, 255). F10 v1: (1/255, 0) in the face map, the light pass lights it
     // fully. v2 (GLOW: the glow pass draws its glow): it writes nothing here, and what is behind it is lit.
     if (m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0) {

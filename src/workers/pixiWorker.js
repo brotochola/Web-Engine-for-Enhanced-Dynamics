@@ -59,6 +59,7 @@ import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
 import { lightingSource, resolveFaces, shaderWithFlag } from '../render/faceMap.js';
+import { packMapsTable } from '../render/mapsTable.js';
 import {
   LightTiles,
   TILE_CAM_COS,
@@ -734,6 +735,14 @@ class PixiRenderer extends AbstractWorker {
     this._footSource = null;
     this._footRgba = new Float32Array(0);
     this._footRows = 1;
+    // E-496: the maps table (src/render/mapsTable.js), each frame's window in the twin page and its marks, a texel a
+    // textureId, uploaded with the LUT; a texel of nothing before the atlas, so its readers always have the texture.
+    this._mapsTableSource = null;
+    this._mapsTableRgba = new Float32Array(0);
+    this._mapsTableWidth = 1;
+    this._mapsTableHeight = 1;
+    // A baked atlas from before E-496: its twin page has the atlas's layout, so every frame reads at its atlas texel.
+    this._mapsAtlasLayout = false;
     // GPU particle layers (LAYER_KIND.GPU_PARTICLES): animation index -> atlas lookup id, as RGBA32F (red).
     this._gpuAnimStartSource = null;
     this._gpuAnimStartRgba = new Float32Array(0);
@@ -2341,11 +2350,17 @@ class PixiRenderer extends AbstractWorker {
         'weed-tex-lut'
       );
       if (this._footSource) writeRgba32Float(renderer, this._footSource, this._footRgba, FOOTPRINT_TEXELS, this._footRows, 'weed-footprints');
+      if (this._mapsTableSource) {
+        writeRgba32Float(renderer, this._mapsTableSource, this._mapsTableRgba, this._mapsTableWidth, this._mapsTableHeight, 'weed-maps-table');
+      }
       this._texLutNeedsGpuUpload = false;
       return;
     }
     this._uploadRgba32FloatGl(source, data, this._texLutWidth, this._texLutHeight);
     if (this._footSource) this._uploadRgba32FloatGl(this._footSource, this._footRgba, FOOTPRINT_TEXELS, this._footRows);
+    if (this._mapsTableSource) {
+      this._uploadRgba32FloatGl(this._mapsTableSource, this._mapsTableRgba, this._mapsTableWidth, this._mapsTableHeight);
+    }
     this._texLutNeedsGpuUpload = false;
   }
 
@@ -2403,6 +2418,55 @@ class PixiRenderer extends AbstractWorker {
       if (c && c.shader && c.shader.resources.uFoot !== source) c.shader.resources.uFoot = source;
       if (c && c.shaderCeil && c.shaderCeil.resources.uFoot !== source) c.shaderCeil.resources.uFoot = source;
     }
+  }
+
+  /**
+   * E-496: the maps table (src/render/mapsTable.js packMapsTable) of flatTextures: each frame's window in the twin page (its
+   * texture's weedMaps, from the atlas's json) and its marks. One source while its size holds, its texels uploaded with the
+   * LUT; a new one re-points every program that binds it (uMapsLut), as the footprints do.
+   */
+  _buildMapsTable() {
+    const packed = packMapsTable(this.flatTextures || [], this._mapsAtlasLayout && this.atlasMapsSource !== null);
+    this._mapsTableRgba = packed.data;
+    this._texLutNeedsGpuUpload = true;
+    if (this._mapsTableSource !== null && this._mapsTableWidth === packed.width && this._mapsTableHeight === packed.height) return;
+    this._mapsTableWidth = packed.width;
+    this._mapsTableHeight = packed.height;
+    const old = this._mapsTableSource;
+    this._mapsTableSource = PIXI.TextureSource.from({
+      resource: packed.data,
+      width: packed.width,
+      height: packed.height,
+      format: 'rgba32float',
+      scaleMode: 'nearest',
+      addressMode: 'clamp-to-edge',
+      autoGenerateMipmaps: false,
+    });
+    this._mapsTableSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
+    this._mapsTableSource.autoGarbageCollect = false;
+    this._pointMapsTablePrograms();
+    if (old !== null) old.destroy();
+  }
+
+  /** E-496: the maps table, or a texel of nothing before the atlas made it (uploaded with the LUT). */
+  _mapsTableSourceOrEmpty() {
+    if (this._mapsTableSource === null) {
+      this._buildMapsTable();
+      this._texLutNeedsGpuUpload = true;
+    }
+    return this._mapsTableSource;
+  }
+
+  /** E-496: every program that binds the maps table (uMapsLut) on the current source: the columns', the entities'. */
+  _pointMapsTablePrograms() {
+    const source = this._mapsTableSource;
+    const holders = [this._sunSolids && this._sunSolids.columns, this._sunMapColumns, this._lampMapColumns];
+    for (let i = 0; i < holders.length; i++) {
+      const c = holders[i];
+      if (c && c.shader && c.shader.resources.uMapsLut !== undefined) c.shader.resources.uMapsLut = source;
+      if (c && c.shaderCeil && c.shaderCeil.resources.uMapsLut !== undefined) c.shaderCeil.resources.uMapsLut = source;
+    }
+    if (this.entitiesBatch) this.entitiesBatch.setMapsTable(source);
   }
 
   _uploadRgba32FloatGl(source, data, width, height) {
@@ -2493,6 +2557,8 @@ class PixiRenderer extends AbstractWorker {
     const fallback = this.textures?.['_white'] || PIXI.Texture.WHITE;
     // Before the table: its rows name each render's footprint row.
     this._buildFootprintTexture();
+    // E-496: each frame's window in the twin page.
+    this._buildMapsTable();
     this._texLut = buildTextureLut(this.flatTextures || [], fallback);
     this._texLutCount = this.flatTextures?.length || 0;
     // N-111: one textureId a row would pass MAX_TEXTURE_SIZE with a big atlas (9 020 frames drew nothing on
@@ -3028,6 +3094,8 @@ class PixiRenderer extends AbstractWorker {
       keyed,
       posesByRow: this._keyedPosesByRow,
       pixelDepth,
+      // E-496: each frame's window in the twin page, for every program of the batch that reads it.
+      mapsTable: this._mapsTableSourceOrEmpty(),
       // DX-GBUF (plan §6.4): each instance's G-buffer words (gbufWord.js), where the G-buffer pass runs (faces, a sheet
       // with maps, a shadow map: gbufWanted, as pre-render decides it).
       gbuf: gbufWanted(this.config, this.atlasMapsSource !== null),
@@ -6789,6 +6857,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             uSampler: r.uSampler,
             uTexLut: r.uTexLut,
             uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
+            uMapsLut: this._mapsTableSourceOrEmpty(),
             uFoot: this._footSourceOrEmpty(),
             uniforms: this._sunMapUniforms,
           },
@@ -7189,6 +7258,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           uSampler: r.uSampler,
           uTexLut: r.uTexLut,
           uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
+          uMapsLut: this._mapsTableSourceOrEmpty(),
           uFoot: this._footSourceOrEmpty(),
           uLampTiles: this._lampTileSource,
           uniforms,
@@ -7545,7 +7615,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         columns: {
           shader: new PIXI.Shader({
             ...this._sunShadowProgram('columns'),
-            resources: { ...resources(), uMaps: this.atlasMapsSource ?? this._emptyMapsSource(), uFoot: this._footSourceOrEmpty() },
+            resources: {
+              ...resources(),
+              uMaps: this.atlasMapsSource ?? this._emptyMapsSource(),
+              uMapsLut: this._mapsTableSourceOrEmpty(),
+              uFoot: this._footSourceOrEmpty(),
+            },
           }),
           grid: new Buffer({ data: sunMapColumnGrid(), usage: BufferUsage.VERTEX }),
           index: sunMapColumnIndex(SUN_MAP_COLUMNS),
@@ -7815,6 +7890,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           const texture = new PIXI.Texture(textureOptions);
           // DX-SHADOW3D: where the frame stands (frameBase.js); writeLutSlot puts it in the texture table's spare floats.
           if (frameData.base) texture.weedBase = frameData.base;
+          // E-496: its window in the twin page (the maps table, _buildMapsTable).
+          if (frameData.maps) texture.weedMaps = frameData.maps;
           // A render's footprint: its solid sweeps north to it (_buildFootprintTexture).
           if (frameData.footprint) texture.weedFootprint = frameData.footprint;
           frameTextures[frameName] = texture;
@@ -7845,6 +7922,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           // no premultiplied alpha. The G-buffer pass samples it with the colour's UV.
           // DX-EMISSIVE: a sheet of the atlas glows by itself (spriteSheetRegistry createBigAtlas's meta.emissive).
           this._atlasEmissive = jsonData.meta?.emissive === true;
+          // E-496: a twin page without frame windows is a bake's from before them, laid out as the atlas.
+          this._mapsAtlasLayout = jsonData.meta?.maps === true && !Object.values(jsonData.frames).some((f) => f && f.maps);
           if (data.mapsBitmap) {
             this.atlasMapsSource = new PIXI.ImageSource({
               resource: data.mapsBitmap,

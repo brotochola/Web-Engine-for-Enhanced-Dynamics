@@ -16,7 +16,7 @@
  */
 
 import { FOOTPRINT_MAX_VERTICES } from './frameBase.js';
-import { TWIN_GLSL, TWIN_WGSL } from './twinTexel.js';
+import { MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, TWIN_GLSL, TWIN_WGSL } from './twinTexel.js';
 
 /** Height (px) that the map's 8 bits span: 2 px a step. */
 export const SUN_MAP_ZMAX = 512;
@@ -262,9 +262,10 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
   const head = card
     .slice(0, card.indexOf(after))
     .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nin vec4 aBlock; // E-379: this instance\'s block of its frame (x, y) and the blocks a side (z, 0 or 1: one)\nvec2 aQuad;\nuniform sampler2D uTexture;\n')
-    .replace(main, `${FOOTPRINT_GLSL}${TWIN_GLSL}${main}  float blocks = max(aBlock.z, 1.0);\n  aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
+    .replace(main, `${FOOTPRINT_GLSL}${TWIN_GLSL}${MAPS_TABLE_GLSL}${main}  float blocks = max(aBlock.z, 1.0);\n  aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
   return `${head}  vec2 uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
-  vec4 m = texelFetch(uMaps, ivec2(uvc * vec2(textureSize(uMaps, 0))), 0);
+  // E-496: the cell's twin texel, through its frame's window (the maps table).
+  vec4 m = twinTexel(uvc, twinWindow(tid));
   float cellAlpha = texelFetch(uTexture, ivec2(uvc * vec2(textureSize(uTexture, 0))), 0).a;
   float z = twinZ(m) * height * abs(aInstScale.y);
   bool solid = sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0);
@@ -442,7 +443,8 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
     .replace(quad, "  @location(0) aCell: vec4<f32>, // the cell's centre in the frame, t (floor 0, top 1), side\n  @location(12) aBlock: vec4<f32>, // E-379: this instance's block of its frame (x, y) and the blocks a side (z)\n")
     .replace(body, `${body}  let blocks = max(aBlock.z, 1.0);\n  let aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
   const columns = `  let uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
-  let m = textureLoad(uMaps, vec2<i32>(uvc * vec2<f32>(textureDimensions(uMaps, 0))), 0);
+  // E-496: the cell's twin texel, through its frame's window (the maps table).
+  let m = twinTexel(uvc, twinWindow(tid));
   let cellAlpha = textureLoad(uTexture, vec2<i32>(uvc * vec2<f32>(textureDimensions(uTexture, 0))), 0).a;
   let z = twinZ(m) * height * abs(aInstScale.y);
   let solid = sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0);
@@ -491,7 +493,7 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
 `;
   return `${head}${columns}${card.slice(to + end.length)}`.replace(
     '@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n',
-    `@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n${TWIN_WGSL}${FOOTPRINT_WGSL}`,
+    `@group(2) @binding(3) var<uniform> uniforms: ShadowUniforms;\n// DX-MAPS: the atlas's twin page (a column's height).\n@group(2) @binding(5) var uMaps: texture_2d<f32>;\n${TWIN_WGSL}${MAPS_TABLE_WGSL}${FOOTPRINT_WGSL}`,
   );
 }
 

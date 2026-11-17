@@ -17,7 +17,7 @@
 
 /** Height steps a px. 16 bits hold 8 191 px. */
 import { resolveHeightScaleY } from '../util/cameraView.js';
-import { TWIN_WGSL, withTwinGlsl } from './twinTexel.js';
+import { MAPS_TABLE_GLSL, MAPS_TABLE_WGSL, TWIN_GLSL, TWIN_WGSL, withTwinGlsl } from './twinTexel.js';
 
 export const FACE_Z_UNITS = 8;
 
@@ -83,7 +83,7 @@ const IDS_TEXEL_GLSL = `vec4 idsTexel(vec2 gbuf, bool isRender) {
 const GLOW_OF_GLSL = `float glowOf(vec2 gbuf, vec2 uv) {
   uint level = (uint(gbuf.x + 0.5) >> 19u) & 7u;
   if (level != 0u) return float(level) / 4.0;
-  vec4 m = texelFetch(uMaps, ivec2(uv * vec2(textureSize(uMaps, 0))), 0);
+  vec4 m = twinTexel(uv, vMapsWin);
   return m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0 ? 1.0 : 0.0;
 }`;
 
@@ -104,12 +104,14 @@ in vec2 vTileInv;
 in vec2 vTileOff;
 flat in vec2 vGbuf;
 flat in float vRender;
+flat in vec4 vMapsWin;
 uniform sampler2D uTexture;
 uniform sampler2D uMaps;
 out vec4 finalColor;
 
 ${WEED_UV_GLSL}
 
+${TWIN_GLSL}
 ${IDS_TEXEL_GLSL}
 
 ${GLOW_OF_GLSL}
@@ -151,12 +153,14 @@ in vec4 vAtlasUV;
 in vec2 vTileInv;
 in vec2 vTileOff;
 flat in vec2 vGbuf;
+flat in vec4 vMapsWin;
 uniform sampler2D uTexture;
 uniform sampler2D uMaps;
 out vec4 finalColor;
 
 ${WEED_UV_GLSL}
 
+${TWIN_GLSL}
 ${GLOW_OF_GLSL}
 
 void main() {
@@ -306,7 +310,7 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
     .replace(
       main,
       'uniform vec4 uFaceSpace; // heightScaleY, groundScaleY\nflat out vec2 vFaceOct;\nout float vFaceZ;\nflat out float vMapScale;\n' +
-        gbufDecl + '\n' + main,
+        'flat out vec4 vMapsWin;\n' + MAPS_TABLE_GLSL + gbufDecl + '\n' + main,
     )
     .replace(
       end,
@@ -317,6 +321,8 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
   vFaceZ = 0.0;
   // N-194: a sprite drawn at a scale stands that much taller, so its twin's heights (frame px) scale with it.
   vMapScale = abs(aInstScale.y);
+  // E-496: where its frame's maps are in the twin page.
+  vMapsWin = twinWindow(int(aInstTexId + 0.5));
   if (faceCode != 0u && aInstTileInv == vec2(0.0)) {
     vec2 faceBytes = vec2(float(faceCode >> 8u), float(faceCode & 255u));
     vFaceOct = faceBytes / 255.0;
@@ -359,16 +365,16 @@ ${gbuf ? faceIdsEntryWgsl({ glow }) : ''}`;
  */
 const faceIdsEntryWgsl = ({ glow }) => `
 // DX-EMISSIVE v2: how much a pixel glows by itself (faceMap.js GLOW_OF_GLSL), 0 for one that does not.
-fn glowOf(gbuf: vec2<f32>, uv: vec2<f32>) -> f32 {
+fn glowOf(gbuf: vec2<f32>, uv: vec2<f32>, win: vec4<f32>) -> f32 {
   let level = (u32(gbuf.x + 0.5) >> 19u) & 7u;
   if (level != 0u) { return f32(level) / 4.0; }
-  let m = textureLoad(uMaps, vec2<i32>(uv * vec2<f32>(textureDimensions(uMaps, 0))), 0);
+  let m = twinTexel(uv, win);
   return select(0.0, 1.0, m.b < 0.5 / 255.0 && m.a > 254.5 / 255.0);
 }
 ${FACE_IDS_ENTRY_WGSL.replace(
     '  if (t.a * in.vColor.a < 0.5) { discard; }\n  return idsTexel(',
     glow
-      ? '  if (t.a * in.vColor.a < 0.5) { discard; }\n  if (glowOf(in.vGbuf, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff)) > 0.0) { discard; }\n  return idsTexel('
+      ? '  if (t.a * in.vColor.a < 0.5) { discard; }\n  if (glowOf(in.vGbuf, weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff), in.vMapsWin) > 0.0) { discard; }\n  return idsTexel('
       : '  if (t.a * in.vColor.a < 0.5) { discard; }\n  return idsTexel(',
   )}
 // DX-EMISSIVE v2 (faceGlowFragment): a glowing pixel's colour times its glow, any other black with its alpha.
@@ -376,7 +382,7 @@ ${FACE_IDS_ENTRY_WGSL.replace(
 fn mainFragGlow(in: VertexOut) -> @location(0) vec4<f32> {
   let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
   let t = textureSample(uTexture, uSampler, uv);
-  let s = glowOf(in.vGbuf, uv);
+  let s = glowOf(in.vGbuf, uv, in.vMapsWin);
   return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, t.a * in.vColor.a);
 }
 // E-457 (faceGlowMaskFragment): the quad of an instance that can glow, marked in the stencil, no colour.
@@ -438,7 +444,7 @@ export function faceVertexWgsl(source, { gbuf = false, glowMask = false } = {}) 
     out,
     '  @location(5) vTileOff: vec2<f32>,\n',
     '  @location(6) @interpolate(flat) vFaceOct: vec2<f32>,\n  @location(7) vFaceZ: f32,\n' +
-      '  @location(12) @interpolate(flat) vMapScale: f32,\n' +
+      '  @location(12) @interpolate(flat) vMapScale: f32,\n  @location(15) @interpolate(flat) vMapsWin: vec4<f32>,\n' +
       (gbuf
         ? '  @location(9) @interpolate(flat) vGbuf: vec2<f32>,\n  @location(10) vFootY: f32,\n' +
           '  @location(11) @interpolate(flat) vRender: f32,\n'
@@ -466,6 +472,8 @@ export function faceVertexWgsl(source, { gbuf = false, glowMask = false } = {}) 
   out.vFaceZ = 0.0;
   // N-194: a scaled sprite's twin heights scale with it (faceMapVertex).
   out.vMapScale = abs(aInstScale.y);
+  // E-496: where its frame's maps are in the twin page.
+  out.vMapsWin = twinWindow(tid);
   if (faceCode != 0u && all(aInstTileInv == vec2<f32>(0.0))) {
     let faceBytes = vec2<f32>(f32(faceCode >> 8u), f32(faceCode & 255u));
     out.vFaceOct = faceBytes / 255.0;
@@ -550,6 +558,7 @@ ${glow ? '  // DX-EMISSIVE v2: an entity that glows by itself writes nothing her
 @group(2) @binding(5) var uMaps: texture_2d<f32>;
 
 ${TWIN_WGSL}
+${MAPS_TABLE_WGSL}
 fn faceOctDecode(bytes: vec2<f32>) -> vec3<f32> {
   let f = (bytes - 127.0) / 126.0;
   var n = vec3<f32>(f, 1.0 - abs(f.x) - abs(f.y));
@@ -579,8 +588,8 @@ ${gbuf ? FACE_GBUF_HELPERS_WGSL : ''}
 fn weedFace(in: VertexOut) -> vec4<f32> {
   let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
   let t = textureSample(uTexture, uSampler, uv);
-  let tc = vec2<i32>(uv * vec2<f32>(textureDimensions(uMaps, 0)));
-  let m = textureLoad(uMaps, tc, 0);
+  let tc = twinCoord(uv, in.vMapsWin);
+  let m = twinTexel(uv, in.vMapsWin);
   if (t.a * in.vColor.a < 0.5) { discard; }
   var oct = in.vFaceOct;
   var z = in.vFaceZ;

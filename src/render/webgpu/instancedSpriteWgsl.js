@@ -1,4 +1,5 @@
 import { gpuStageF, gpuStageVF } from './pixiMeshWgsl.js';
+import { MAPS_TABLE_BINDING } from '../twinTexel.js';
 
 export function instancedSpriteShadowGpuProgram(GpuProgram, source, name) {
   if (!source) {
@@ -51,6 +52,8 @@ export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps 
     group2.uMaps = 5;
     // DX-SHADOW3D: the renders' footprints, which the columns sweep north to (sunShadowMap.js FOOTPRINT_WGSL).
     group2.uFoot = 7;
+    // E-496: the maps table, each frame's window in the twin page (twinTexel.js MAPS_TABLE_WGSL).
+    group2.uMapsLut = MAPS_TABLE_BINDING;
   }
   if (lampTiles) group2.uLampTiles = 6;
   return GpuProgram.from({
@@ -83,6 +86,7 @@ export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps 
         ...(maps
           ? [{ binding: 7, visibility: vf, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
           : []),
+        ...(maps ? [mapsTableBinding(vf)] : []),
       ],
     ],
   });
@@ -130,6 +134,11 @@ function mapsBinding(f) {
   return { binding: 5, visibility: f, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } };
 }
 
+/** E-496: the maps table as group 2's MAPS_TABLE_BINDING, read in the vertex stage (twinTexel.js twinWindow). */
+function mapsTableBinding(vf) {
+  return { binding: MAPS_TABLE_BINDING, visibility: vf, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } };
+}
+
 /**
  * The sprite program. With `maps`, the face pass's form (faceMap.js faceMapWgsl): the atlas's twin page as group 2's
  * binding 5, which an explicit layout must name or the pipeline fails its validation.
@@ -143,7 +152,10 @@ export function instancedSpriteGpuProgram(GpuProgram, source, fragEntry, name, {
   const vf = gpuStageVF();
   const f = gpuStageF();
   const group2 = { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3 };
-  if (maps) group2.uMaps = 5;
+  if (maps) {
+    group2.uMaps = 5;
+    group2.uMapsLut = MAPS_TABLE_BINDING;
+  }
   return GpuProgram.from({
     name,
     vertex: { source, entryPoint: 'mainVert' },
@@ -165,7 +177,7 @@ export function instancedSpriteGpuProgram(GpuProgram, source, fragEntry, name, {
           texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false },
         },
         { binding: 3, visibility: vf, buffer: { type: 'uniform' } },
-        ...(maps ? [mapsBinding(f)] : []),
+        ...(maps ? [mapsBinding(f), mapsTableBinding(vf)] : []),
       ],
     ],
   });
@@ -182,7 +194,10 @@ export function instancedSpriteIndexedGpuProgram(GpuProgram, source, fragEntry, 
   const vf = gpuStageVF();
   const f = gpuStageF();
   const group2 = { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3, uStatics: 4 };
-  if (maps) group2.uMaps = 5;
+  if (maps) {
+    group2.uMaps = 5;
+    group2.uMapsLut = MAPS_TABLE_BINDING;
+  }
   return GpuProgram.from({
     name,
     vertex: { source, entryPoint: 'mainVert' },
@@ -205,7 +220,7 @@ export function instancedSpriteIndexedGpuProgram(GpuProgram, source, fragEntry, 
         },
         { binding: 3, visibility: vf, buffer: { type: 'uniform' } },
         { binding: 4, visibility: vf, buffer: { type: 'read-only-storage' } },
-        ...(maps ? [mapsBinding(f)] : []),
+        ...(maps ? [mapsBinding(f), mapsTableBinding(vf)] : []),
       ],
     ],
   });

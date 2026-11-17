@@ -432,6 +432,9 @@ export class InstancedSpriteBatch {
    *   depth buffer
    * @param {boolean} [opts.staticBuffers=false] - the vertex buffers made with a static usage hint on WebGL, which ANGLE
    *   binds directly instead of copying each draw's attributes; for a batch that uploads once a frame
+   * @param {import('../vendor/pixi.min.js').TextureSource|null} [opts.mapsTable] - E-496: the maps table (mapsTable.js),
+   *   each frame's window in the twin page, which every program that reads the twin page reads (pixel depth, the passes
+   *   for the light); setMapsTable changes it
    */
   constructor({
     capacity,
@@ -459,6 +462,7 @@ export class InstancedSpriteBatch {
     gbuf = false,
     opaquePass = null,
     staticBuffers = false,
+    mapsTable = null,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     // The vertex buffers' usage. ANGLE's D3D11 backend binds a buffer made with DYNAMIC_DRAW to no draw directly: it copies
@@ -692,6 +696,8 @@ export class InstancedSpriteBatch {
     // frag_depth on WebGPU), tested. On WebGPU every target this batch draws into needs a depth attachment.
     this._pixelDepth = pixelDepth && pixelDepth.maps ? pixelDepth : null;
     this.pixelDepthOn = this._pixelDepth !== null;
+    // E-496: the maps table every reader of the twin page binds (uMapsLut); an empty texture reads as no maps.
+    this._mapsTable = mapsTable || Texture.EMPTY.source;
     this._depthTerms = new Float32Array([1, 1, 0, 0]);
 
     this._tileWorld = new Float32Array(4);
@@ -1101,7 +1107,10 @@ export class InstancedSpriteBatch {
       uStatics: this._staticsSource,
       uPoses: this._poseSource,
     };
-    if (this._pixelDepth) resources.uMaps = this._pixelDepth.maps;
+    if (this._pixelDepth) {
+      resources.uMaps = this._pixelDepth.maps;
+      resources.uMapsLut = this._mapsTable;
+    }
     const shader = new Shader({ glProgram, resources });
     if (this._pixelDepth) {
       this._edgeRowShader = new Shader({
@@ -1173,7 +1182,10 @@ export class InstancedSpriteBatch {
       uTexLut: lut,
       uniforms,
     };
-    if (this._pixelDepth) resources.uMaps = this._pixelDepth.maps;
+    if (this._pixelDepth) {
+      resources.uMaps = this._pixelDepth.maps;
+      resources.uMapsLut = this._mapsTable;
+    }
     let fragEntry = 'mainFragAdd';
     if (this._premultiplyAlpha) {
       fragEntry = 'mainFrag';
@@ -1238,7 +1250,10 @@ export class InstancedSpriteBatch {
   _edgeResources(shader, statics) {
     const r = shader.resources;
     const out = { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uniforms: r.uniforms };
-    if (this._pixelDepth) out.uMaps = this._pixelDepth.maps;
+    if (this._pixelDepth) {
+      out.uMaps = this._pixelDepth.maps;
+      out.uMapsLut = this._mapsTable;
+    }
     if (statics !== null) {
       out.uStatics = statics;
       if (r.uPoses) out.uPoses = r.uPoses;
@@ -1276,7 +1291,10 @@ export class InstancedSpriteBatch {
       uniforms: r.uniforms,
       uStatics: this._staticsSource,
     };
-    if (this._pixelDepth) resources.uMaps = this._pixelDepth.maps;
+    if (this._pixelDepth) {
+      resources.uMaps = this._pixelDepth.maps;
+      resources.uMapsLut = this._mapsTable;
+    }
     const shader = new Shader({ glProgram, resources });
     if (this._pixelDepth && indexedVertex) {
       this._edgeIndexedShader = new Shader({
@@ -1320,7 +1338,10 @@ export class InstancedSpriteBatch {
       uniforms: r.uniforms,
       uStatics: this._staticsSource,
     };
-    if (depth) resources.uMaps = this._pixelDepth.maps;
+    if (depth) {
+      resources.uMaps = this._pixelDepth.maps;
+      resources.uMapsLut = this._mapsTable;
+    }
     const shader = new Shader({ gpuProgram, resources });
     if (depth) {
       this._edgeIndexedShader = new Shader({
@@ -1645,6 +1666,23 @@ export class InstancedSpriteBatch {
     for (const edge of [this._edgeShader, this._edgeIndexedShader, this._edgeRowShader, this._opShader, this._opRowShader]) {
       if (edge !== null) edge.resources.uTexLut = source;
     }
+  }
+
+  /**
+   * E-496: the maps table (mapsTable.js) for every program of the batch that reads the twin page: the colour programs and
+   * their edge twins with pixel depth, the passes for the light.
+   * @param {import('../vendor/pixi.min.js').TextureSource} source
+   */
+  setMapsTable(source) {
+    if (!source || source === this._mapsTable) return;
+    this._mapsTable = source;
+    const list = [this.shader, this._indexedShader, this._rowShader, this._edgeShader, this._edgeIndexedShader, this._edgeRowShader];
+    for (let i = 0; i < list.length; i++) {
+      const sh = list[i];
+      if (sh && sh.resources.uMapsLut !== undefined) sh.resources.uMapsLut = source;
+    }
+    const aux = this._auxShaders();
+    for (let i = 0; i < aux.length; i++) aux[i].resources.uMapsLut = source;
   }
 
   /** Match `_beginUpload` tileWorld when committing pre-packed rows. */
@@ -2156,7 +2194,7 @@ export class InstancedSpriteBatch {
       if (this._twoStreams) uniforms.uPoseAlpha = { value: 1, type: 'f32' };
     }
     const r = this.shader.resources;
-    const resources = { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: maps, uniforms };
+    const resources = { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uMaps: maps, uMapsLut: this._mapsTable, uniforms };
     const name = `${this._label}-${AUX_NAMES[kind]}`;
     // DX-GBUF: with words, each entity's sprite as its normals and surface say (faceMap.frag.glsl's GBUF block); every kind
     // past the face map reads them.
