@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-17",
+  "updated": "2026-11-16",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -20697,7 +20697,7 @@
       "id": "DX-DECO1M",
       "title": "Pools up to 1 048 575 slots: a million decorations (FL4 with a 20-bit index)",
       "status": "kept",
-      "statusText": "built 2026-11-13 on deco/1m, not merged",
+      "statusText": "built 2026-11-13 on deco/1m; merged into main 2026-11-16 (d77de12c, R-1243) for DX-BARRIOS",
       "date": "2026-11-13",
       "area": "core",
       "kind": "dx",
@@ -20713,7 +20713,8 @@
         "maxDecorations"
       ],
       "records": [
-        "R-0973"
+        "R-0973",
+        "R-1243"
       ]
     },
     {
@@ -33225,6 +33226,18 @@
       "commits": [
         "5b5842bf",
         "241dc605"
+      ]
+    },
+    {
+      "id": "R-1243",
+      "date": "2026-11-16",
+      "time": "23:51",
+      "timeFrom": "recorded",
+      "title": "DX-DECO1M merged into main: pools up to 1 048 575 slots; suites green on main",
+      "verdict": "kept",
+      "text": "**DX-DECO1M merged into main** (`d77de12c`, 2026-11-16 23:51), asked by the owner within DX-BARRIOS (Parque Chas\nneeds about 534 000 decorations with today's 8 px wall columns; main capped pools at 524 287).\n\nThe branch's four `src/` files (`atomicFreeList.js`, `poolSlotWidth.js`, `entityIdWidth.js`, `particleLightSplat.js`) had\nnot changed on main since it left, so it merged clean; its register rows came in by key (R-0973, DX-DECO1M).\n\nAfter the merge, on main: `test:node` 2963 of 2963, `test:demos` 101 of 101. No new sitting: R-0973 measured the change\non its branch (a million decorations drawn at 60 fps), and nothing on main touched the pools since.\n\nThe bundles were not rebuilt: the owner stopped that build, so `dist/` stays the bundles of `81a45b45` (aa4317f0) until\nthe next bundle rebuild or the release.",
+      "commits": [
+        "d77de12c"
       ]
     }
   ],
