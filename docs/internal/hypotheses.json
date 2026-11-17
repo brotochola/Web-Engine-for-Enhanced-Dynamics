@@ -21767,6 +21767,40 @@
       "statusText": "found 2026-11-17 by the barrio's second CPU trace: after E-505 the free sway took the same time, which was its scan of 335 000 active decorations (walls, faces) for the few thousand that sway",
       "result": "Buenos Aires 22 h: particle 1.990 -> 0.785 ms (-60.6 %, 4/4, under the floor); the sway kernels write the same bytes. Merged 532f3590.",
       "next": ""
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "attached pass",
+        "branches pass"
+      ],
+      "records": [],
+      "result": "",
+      "id": "E-507",
+      "kind": "speed",
+      "area": "particle",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "The attached decorations' pass (resolveAttachedDecorations) places and turns every attached decoration every frame, the off-screen branches of trees that never move too",
+      "statusText": "found 2026-11-17 by the barrio's third CPU trace: after E-506 it is 45 % of the particle worker (~0.4 ms a frame of ~0.9)",
+      "next": "Runs of one parent (the attached list is made at the snapshot's copy, E-334): read the parent's pose once a run; a parent that did not move leaves its decorations' positions, and an off-screen one its facing, so only on-screen swaying ones need their sine. Mind what a skip can miss: the facade's writes to localX, localY, inheritParentRotation or the base rotation of a decoration whose parent holds (an epoch, as E-506's), and E-196's rule that a decoration coming on screen is drawn unswayed the first frame (attachedSwayOffScreen.test.js). Measure in the barrio's particle worker."
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "lamp map cache",
+        "static shadow cache"
+      ],
+      "records": [],
+      "result": "",
+      "id": "E-508",
+      "kind": "gpu",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "The lamps' shadow maps are drawn whole every frame: the static casters (houses, trees, props) into a cached map per lamp, the moving ones (people, cars) over it",
+      "statusText": "found 2026-11-17 reading the barrio's GPU at 22 h (GTX 1650): the 16 lamps' panorama maps (a 4096 x 2048 atlas) 0.84 ms of 5.9, for casters that almost all stand still",
+      "next": "Step 0: the HD 620's draw by draw on the barrio (the other session's), to know whether the lamps' maps weigh there. Then: the stamp's rows split by caster kind (a body that is static or no body, decorations, against the rest); a lamp's static part drawn into its own tile when the lamp turns on, moves or its static casters change (an epoch), and each frame that tile copied (or the max blend started from it) before the moving casters; captures identical; glFrameRecorder per draw on both GPUs."
     }
   ],
   "records": [
