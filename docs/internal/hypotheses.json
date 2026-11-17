@@ -16058,7 +16058,8 @@
         "R-1297",
         "R-1298",
         "R-1301",
-        "R-1302"
+        "R-1302",
+        "R-1303"
       ]
     },
     {
@@ -21839,7 +21840,9 @@
         "lamp shadow reach",
         "shadowRange in the lamps map"
       ],
-      "records": [],
+      "records": [
+        "R-1303"
+      ],
       "result": "",
       "next": "",
       "id": "E-510",
@@ -34754,6 +34757,15 @@
       "title": "E-509 on the HD 620: the unshaded composites 0.87 -> 0.34 ms a drawn frame, drawn +4.5 % (3/4); the CPU workers' +4-11 % is the laptop's shared power",
       "verdict": "note",
       "text": "**E-509 on the Intel HD 620: the unshaded composites drop from 0.87 to 0.34 ms a drawn frame, and the GPU draws 4.5 % more frames.** The barrio session's perf/e509-unshaded-discard (3e3fe990): the unshaded halves of the light composites discard where the unshaded target is black. Main bae9c742 (A) against it (B), Parque Chas at `hour=22&dayMinutes=0`, camera still, 4 pairs, `--full-rev`, ASUS laptop, 2026-11-17 10:29 to 10:42 (asus-e509).\n\n| | Main | E-509 | Change |\n|---|---|---|---|\n| drawn | 27.7 fps | 28.7 fps | +4.5 %, 3/4 (30.1, 28.7, 28.8 and 28.0 against 27.3–28.3) |\n| [uLight,uUnshaded] draw 11 | 0.458 ms | 0.203 ms | |\n| [uLight,uUnshaded] draw 12 | 0.415 ms | 0.132 ms | |\n| both | 0.873 ms | 0.335 ms | −62 % |\n| [uLight] halves | 0.61 / 0.60 ms (R-1301) | 0.64 / 0.63 ms | none |\n| all draws | | 16.47 ms a drawn frame | |\n\nThe CPU workers read 4 to 11 % dearer with E-509 (logic, physics, pre-render and renderer, 4/4), so the runner says REGRESSION. It is the laptop effect seen with E-504 (R-1285): more frames drawn, so the integrated GPU and Chrome's GPU process take more of the 4 logical CPUs and the shared 15 W. The discard adds no CPU work."
+    },
+    {
+      "id": "R-1303",
+      "date": "2026-11-17",
+      "time": "11:01",
+      "timeFrom": "recorded",
+      "title": "E-510 on the HD 620: drawn +25.5 % (27.6 -> 34.5 fps, 4/4); the lamps' atlas 3.84 -> 1.44 ms, the light pass 2.97 -> 2.26 ms",
+      "verdict": "note",
+      "text": "**E-510 on the Intel HD 620: drawn +25.5 % (4/4), the lamps' atlas 3.84 → 1.44 ms, the light pass 2.97 → 2.26 ms.** The barrio session's perf/e510-lamp-shadow-reach (d02c9161): the lamps' map honours LightEmitter.shadowRange (the street lamps: 260 of a 690 px radius), so a tile spans 260 and the atlas shrinks from 4096x2048 to 4096x512. Main bae9c742 (A) against it (B). Parque Chas at `hour=22&dayMinutes=0`, camera still, 4 pairs, `--full-rev`, ASUS laptop, 2026-11-17 10:49 to 11:05 (asus-e510, job 0874).\n\n**Drawn: 27.1–28.5 → 33.9–34.7 fps, +25.5 %, 0/4 worse.**\n\nThe runner says FAIL (load) on GPU_CASTERS −8.8 % and GPU_SHADOW_LIGHTS −9.0 %. That is the change itself: fewer casters and lights inside the shorter reach. Visible entities, decorations and the render queue are identical.\n\nThe CPU workers are within noise, except physics +11.4 % (3/4): the laptop's shared power with more frames drawn (R-1285, R-1302). Spatial −9.5 %, the renderer −2.9 %.\n\n`--gpu-draws` on B, ms a drawn frame:\n\n| | Before | E-510 |\n|---|---|---|\n| the lamps' atlas pass (4096x512) | 3.84 (R-1298, on 4096x2048) | 1.435 |\n| its clear | 0.742 | 0.089 |\n| the cache copy | 1.42 | 0.005, in few frames |\n| the cache's fill (4096x256) | — | 0.108, in the frames that redraw it |\n| the 3D light pass | 2.974 (R-1301) | 2.255 |\n| all draws | 16.6 (R-1301) | 15.72 |"
     }
   ],
   "leads": [
