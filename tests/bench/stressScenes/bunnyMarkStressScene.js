@@ -48,13 +48,22 @@ const SHARED = {
   lighting: { enabled: false },
 };
 
+/** `?still=1`: the bunnies spawn at rest, so every frame is the same picture (image comparisons). */
+const STILL = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get('still') === '1';
+  } catch {
+    return false;
+  }
+})();
+
 function spawnBunnies(scene, EntityClass, n) {
   const rng = globalThis.rng;
   for (let i = 0; i < n; i++) {
-    EntityClass.spawn({
-      x: WORLD_W * rng(),
-      y: WORLD_H * rng(),
-    });
+    const x = WORLD_W * rng();
+    const y = WORLD_H * rng();
+    // An xy-only config rides the spawn ring; `still` travels in create()'s extras, only when asked for.
+    EntityClass.spawn(STILL ? { x, y, still: true } : { x, y });
   }
   Camera.setZoom(1);
   Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.5);

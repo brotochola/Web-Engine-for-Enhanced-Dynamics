@@ -70,7 +70,8 @@ function setup() {
   const entitiesMesh = standIn.rings[0].meshes[0];
   entitiesMesh.visible = true;
   entitiesMesh.geometry.instanceCount = 3;
-  const entitiesBatch = { mesh: entitiesMesh };
+  // E-448: drawn in chunks, the batch draws no opaque pass (the stand-in counts the drops).
+  const entitiesBatch = { mesh: entitiesMesh, opaqueDrops: 0, dropOpaquePass() { this.opaqueDrops++; } };
   const entitiesRoot = new Container();
   entitiesRoot.addChild(entitiesMesh);
   const layerId = Layer.get('smoke').id;
@@ -112,6 +113,7 @@ function setup() {
   return {
     ctx,
     batch,
+    entitiesBatch,
     layerId,
     displaySprite,
     entitiesMesh,
@@ -127,7 +129,7 @@ function setup() {
 }
 
 test('Pixi puts each group between the entities it sorts between, under the entities root', { concurrency: false }, () => {
-  const { ctx, batch, entitiesMesh, entitiesRoot, restore } = setup();
+  const { ctx, batch, entitiesBatch, entitiesMesh, entitiesRoot, restore } = setup();
   try {
     ParticleEmitter.emitGpu({ layer: 'smoke', count: 4, x: 0, y: 0, lifespan: 5000, sortY: 200 });
     ParticleEmitter.emitGpu({ layer: 'smoke', count: 4, x: 0, y: 0, lifespan: 5000, sortY: 400 });
@@ -146,6 +148,9 @@ test('Pixi puts each group between the entities it sorts between, under the enti
     assert.deepEqual([kids[3].geometry.weedFirstInstance, kids[3].geometry.instanceCount], [4, 4]);
     assert.deepEqual([kids[4].geometry.weedFirstInstance, kids[4].geometry.instanceCount], [2, 1]);
     assert.ok(!kids.includes(entitiesMesh), 'the batch\'s own mesh is replaced by its chunks');
+    // E-448: no opaque pass while the chunks draw: this frame's dropped, the next ones' not allowed.
+    assert.equal(entitiesBatch.opaqueDrops, 1);
+    assert.equal(ctx._entityChunksActive, true);
   } finally {
     restore();
   }
