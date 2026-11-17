@@ -374,7 +374,8 @@ import { poseBlockFloats } from '../render/spriteIndexed.js';
 import { createStaticsScatterGpu, scatterStaticsGpu } from '../render/webgpu/staticsScatterGpu.js';
 import { createPrivateArena } from '../render/sharedCopy.js';
 import { GpuFramePacer } from '../render/gpuFramePacer.js';
-import { OPAQUE_POSE_TEXELS } from '../render/opaquePass.js';
+import { OPAQUE_POSE_TEXELS, opaquePassOn } from '../render/opaquePass.js';
+import { GPU_UNKNOWN, gpuClassOf, gpuVendorOf, webglRendererName } from '../render/gpuClass.js';
 
 // Bundles embed the engine shaders (WEED.EngineShaders, posted at init): an npm
 // install has no /src/shaders to fetch. Source builds fetch them.
@@ -727,6 +728,12 @@ class PixiRenderer extends AbstractWorker {
     // E-448: whether the last frame drew the entities in chunks around GPU particle groups (_applyProxies), which the
     // opaque pass cannot.
     this._entityChunksActive = false;
+    // E-502: the WebGL renderer's name, its class and maker (gpuClass.js), read at GL init, and whether the opaque pass
+    // may draw on it (opaquePass.js opaquePassOn, with debug.opaquePass).
+    this._gpuRendererName = '';
+    this._gpuClass = GPU_UNKNOWN;
+    this._gpuVendor = '';
+    this._opaqueOn = true;
     this._lightGlowAdd = true;
     // _refusePackedFrame said its reason.
     this._refusedFrameWarned = false;
@@ -2190,10 +2197,8 @@ class PixiRenderer extends AbstractWorker {
 
     // E-448: the opaque pass needs the canvas's depth and the entities drawn in one piece: not through a SCREEN layer
     // (the stage's target there has no depth on WebGL), nor in chunks around GPU particle groups (last frame's).
-    // debug.opaquePass false never draws it (E-502's benches).
-    this.entitiesBatch.setOpaqueAllowed(
-      this.config.debug?.opaquePass !== false && !this._entityChunksActive && !this._screenLayersShown(),
-    );
+    // E-502: nor on Intel's integrated or tile-based GPUs, unless debug.opaquePass forces it (_opaqueOn, set at GL init).
+    this.entitiesBatch.setOpaqueAllowed(this._opaqueOn && !this._entityChunksActive && !this._screenLayersShown());
     // And it draws when its rows cover enough of the canvas at the camera's zoom to pay for their second vertex pass.
     this.entitiesBatch.setOpaqueView(this._renderZoom || 1, this.canvasWidth * this.canvasHeight);
 
@@ -10322,6 +10327,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             'WeedJS: This scene requested renderer.backend "webgl", but the WebGL context is missing.'
           );
         }
+        // E-502: E-448's opaque pass stays off on Intel's integrated and tile-based GPUs, unless debug.opaquePass says.
+        this._gpuRendererName = webglRendererName(this.pixiApp.renderer.gl);
+        this._gpuClass = gpuClassOf(this._gpuRendererName);
+        this._gpuVendor = gpuVendorOf(this._gpuRendererName);
+        this._opaqueOn = opaquePassOn(this.config?.debug?.opaquePass, this._gpuClass, this._gpuVendor);
+        debugWorkerLog(`PIXI WORKER: GPU "${this._gpuRendererName}" (${this._gpuClass}), opaque pass ${this._opaqueOn}`);
       }
     } catch (error) {
       this.reportError('PIXI Initialization Failed', error);

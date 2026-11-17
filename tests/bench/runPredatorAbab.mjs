@@ -56,6 +56,10 @@
  * the same code with and without Maglev). Both sides then run the installed Chrome (the bench runs a side with V8 flags
  * in Playwright's Chromium otherwise), and like --query-a/-b they need --vs (one build).
  *
+ * --channel chromium: both sides in Playwright's Chromium instead of the installed Chrome. On a laptop with two GPUs it
+ * may get the other one: on the owner's PC the installed Chrome draws on the GTX 1650 and Playwright's Chromium on the
+ * AMD APU, a second integrated GPU for a GPU A/B (E-502).
+ *
  * Verdict per kind: median of the paired deltas (B−A)/A. REGRESSION if any
  * kind is ≥ +3 % and its cv is ≤ 10 % (or it is the owner kind), if the frames
  * the page presents (main-thread FPS) drop ≥ 3 % in ≥ 75 % of the pairs, or a
@@ -861,6 +865,9 @@ async function main() {
       ...(args.browser ? ['--browser', String(args.browser)] : []),
       // E-197: --input-every <ms> moves the mouse that often in each run, so each side's renderer reports INPUT_LAG_MS.
       ...(args['input-every'] ? ['--input-every', String(Number(args['input-every']))] : []),
+      // --channel chromium: both sides in Playwright's Chromium, which on a laptop with two GPUs may draw on the other
+      // one (the owner's PC: the AMD APU, where the installed Chrome gets the GTX 1650; E-502).
+      ...(args.channel ? ['--channel', String(args.channel)] : []),
     ],
   };
   const scene = resolveScene(args);
@@ -955,7 +962,7 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
       const query = side === 'A' ? opts.queryA : opts.queryB;
       const sideFlags = side === 'A' ? opts.jsFlagsA : opts.jsFlagsB;
       const extraArgs = opts.jsFlagsA || opts.jsFlagsB
-        ? [...opts.extraArgs, ...(sideFlags ? ['--js-flags', sideFlags] : []), '--channel', 'chrome']
+        ? [...opts.extraArgs, ...(sideFlags ? ['--js-flags', sideFlags] : []), ...(args.channel ? [] : ['--channel', 'chrome'])]
         : opts.extraArgs;
       const res = runIntegratedWithRetry(scene, path.join(outDir, `${side}-p${p}.json`), { ...opts, root, query, extraArgs });
       if (!res.ok) throw new Error(`${side} p${p}: ${res.error}`);

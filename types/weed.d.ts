@@ -479,10 +479,12 @@ export type SceneConfig = Record<string, unknown> & {
      */
     gpuTimestampsInsidePasses?: boolean;
     /**
-     * The opaque pass for binary sprites (default true): their solid pixels drawn first, nearest first, with the depth
-     * test, wherever it spares more fill than it costs. false never draws it, to time a GPU with and without it.
+     * The opaque pass for binary sprites: their solid pixels drawn first, nearest first, with the depth test, wherever
+     * it spares more fill than it costs. 'auto' (default) draws it on every GPU but Intel's integrated ones and
+     * tile-based ones (Apple, mobile), read from the renderer's name: those draw slower with it. true draws it on every
+     * GPU, false on none, to time a GPU with and without it.
      */
-    opaquePass?: boolean;
+    opaquePass?: boolean | 'auto';
   };
   preRender?: Record<string, unknown> & {
     /**
