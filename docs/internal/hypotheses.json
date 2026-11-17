@@ -21713,16 +21713,17 @@
       "records": [
         "R-1280",
         "R-1284",
-        "R-1285"
+        "R-1285",
+        "R-1290"
       ],
-      "result": "GTX 1650, the barrio held: the floor draw (1.91 ms) becomes a 0.17 ms copy; captures byte-identical cached and not (WebGL, WebGPU); the GPU then lowers its clock (total ms a frame 5.94 -> 5.92) and even at 4K draws 60 either way: not GPU-bound here. Merged 9d483258.",
-      "next": "HD 620 read (R-1285): the barrio draws 16.6 -> 21.2 fps with the cache (+27.7 %, 4/4). Next: an adaptive default (after a few redraws in a row the layer draws straight on the stage, back to the cache once the camera holds), then on for every worldRect layer that does not read the frame's time; a world-space tile cache for a camera that pans.",
+      "result": "GTX 1650, the barrio held: the floor draw (1.91 ms) becomes a 0.17 ms copy; Intel HD 620: 16.6 -> 21.2 fps drawn (+27.7 %, R-1285). Default since e0b831ff: after 2 changed frames the layer draws on the stage, 2 held frames bring the target back; captures identical (WebGL, WebGPU).",
+      "next": "A moving camera's cost against main on the HD 620 (by construction main's draw after two frames). A world-space tile cache, so a camera that pans re-paints only the strip that comes into view.",
       "id": "E-504",
       "kind": "gpu",
       "area": "render",
       "status": "kept",
       "date": "2026-11-17",
-      "title": "A worldRect shader layer is painted again only when what it shows changes (the camera, the canvas, its uniforms or pictures), not every frame: layers.X.shader.cache",
+      "title": "A worldRect shader layer is painted again only when what it shows changes (the camera, the canvas, its uniforms or pictures), not every frame; the default, adapting to a view that keeps changing",
       "statusText": "found by the barrio's final pass 2026-11-17 (the floor's procedural shader, 1.92 of 5.92 ms of GPU a frame at 22 h); kept 2026-11-17, opt-in, the barrio's floor on"
     },
     {
@@ -34498,6 +34499,17 @@
       "title": "Predator crowd 0.5 on the ASUS: main's crowd sleeps 10 to 15 s later than v0.14.0's (20-40 s against 10-20 s); settled, physics is close (3.4-4.3 against 2.4-3.5 ms)",
       "verdict": "note",
       "text": "**How long Predator crowd 0.5's crowd takes to sleep on the ASUS: main settles about 10 to 15 s later than v0.14.0.** v0.14.0 against main (6d7bf4a0, E-501 and N-264 in), each side its whole revision, a 10 s window after the warm-up (asus-settle-20 and asus-settle-30, 2026-11-17 07:57 to 08:10; with R-1278 and R-1279).\n\n| Warm-up | v0.14.0 | main |\n|---|---|---|\n| 10 s | 7/8 runs end settled (~800 awake) | 0/8 (~4 000) |\n| 20 s | 2/2 settled: ~380 awake on average, 3 ms a step | 1/2: 743 awake, 5.3 ms; the other 3 775, 18 ms, 411 physics frames |\n| 30 s | 2/2: 62 and 326 awake, 2.4–3.5 ms | 2/2: 78 and 338 awake, 3.4–4.3 ms |\n| 50 s | — | 0–46 awake, 2–3 ms |\n\nSettled, the two are close (2 pairs: no claim at that size). The cost is the start: on this laptop main spends 20 to 40 s at 30 Hz physics before the crowd sleeps, v0.14.0 about 10 to 20 s.\n\nNext (N-264's): what keeps main's crowd moving longer while physics is slow. Logic steers on poses that come half as often, and E-434 writes sleeping = 0 on every acceleration."
+    },
+    {
+      "id": "R-1290",
+      "date": "2026-11-17",
+      "title": "E-504's adaptive default: worldRect layers cached by default, a view that keeps changing drawn on the stage; captures identical",
+      "verdict": "kept",
+      "text": "**E-504's adaptive default: every worldRect layer is cached, and a view that keeps changing draws on the stage instead.**\n\n- **Why**: on the HD 620 the cache drew the barrio 16.6 -> 21.2 fps (R-1285), but opt-in it helps only the scenes that ask,\n  and on by default a camera that follows something would pay a copy (and the paint into the target) every frame.\n- **Change** (`d9bf2261`, merged `e0b831ff`, dist `d7f5e1cd`): `worldRectCacheStep` (worldRectCache.js) answers show,\n  paint or direct: a changed view paints; WORLD_RECT_DIRECT_AFTER (2) changes in a row and the layer's own mesh draws on the\n  stage, the target hidden; WORLD_RECT_HOLD_FRAMES (2) frames of the same view paint the target again and show it. The\n  layer is a holder with the stage mesh and the target's sprite; a second mesh on the same geometry and shader paints the\n  target. `shader.cache` defaults to true; false paints every frame. Guide, types; dxCaptureScene's `?worldFloorCache=0`.\n- **Checked**: `worldRectCache.test.js` (the transitions: moving, stopping, one change, changes every frame); captures\n  byte-identical cached against `?worldFloorCache=0` and against main, WebGL and WebGPU; the barrio panned with D held\n  and still (shots: the floor in place under the houses both ways); planet, landing and Blastforge (worldRect layers,\n  now cached by default) draw with no page error. test:node 3010, test:demos 121, the bundles' suites.\n- **Not measured**: a moving camera's cost against main. By construction it is main's draw after two frames, plus the\n  view compare; the target (a canvas-sized RGBA texture, 8 MB at 1080p) stays allocated.",
+      "commits": [
+        "d9bf2261",
+        "e0b831ff"
+      ]
     }
   ],
   "leads": [
