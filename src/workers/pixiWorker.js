@@ -4618,6 +4618,7 @@ LIGHTING SYSTEM SETUP
   }
   `,
         fragment: lightingSrc,
+        name: 'lighting-basic',
       });
       this.lightingShader = new PIXI.Shader({ glProgram, resources: lightingResources });
     }
