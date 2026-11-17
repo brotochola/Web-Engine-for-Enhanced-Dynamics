@@ -91,8 +91,45 @@ const HALF = 1;
 const CENTER_Y = 2;
 
 /** travelExtent's input [p0, v0, a, d, T] and output [min, max]. */
-const TRAVEL = new Float64Array(5);
+const TRAVEL = new Float64Array(6);
 const EXTENT = new Float64Array(2);
+// E-486: sin and cos of one angle together, inline: SC[0] holds the angle in, [sin, cos] out (doubles stay in the
+// array: _emit may not inline a callee, and a double passed or returned would be boxed). One Cody-Waite reduction by
+// pi/2, then fdlibm's kernels (musl's __sin and __cos), so the results match Math.sin and Math.cos to about an ulp of
+// a double; the records are float32. Math.sin and Math.cos are two C calls TurboFan does not inline.
+const SC = new Float64Array(2);
+const INV_PIO2 = 6.36619772367581382433e-1;
+const PIO2_1 = 1.57079632673412561417e0;
+const PIO2_1T = 6.07710050650619224932e-11;
+function sincos() {
+  const x = SC[0];
+  let y0 = x;
+  let y1 = 0;
+  let n = 0;
+  if (!(x > -0.7853981633974483 && x < 0.7853981633974483)) {
+    const fn = Math.round(x * INV_PIO2);
+    const r = x - fn * PIO2_1;
+    const w = fn * PIO2_1T;
+    y0 = r - w;
+    y1 = r - y0 - w;
+    n = fn & 3;
+  }
+  const z = y0 * y0;
+  const ww = z * z;
+  const rs = 8.33333333332248946124e-3 + z * (-1.98412698298579493134e-4 + z * 2.75573137070700676789e-6) +
+    z * ww * (-2.50507602534068634195e-8 + z * 1.58969099521155010221e-10);
+  const v = z * y0;
+  const s = y0 - (z * (0.5 * y1 - v * rs) - y1 - v * -1.66666666666666324348e-1);
+  const rc = z * (4.16666666666666019037e-2 + z * (-1.38888888888741095749e-3 + z * 2.48015872894767294178e-5)) +
+    ww * ww * (-2.75573143513906633035e-7 + z * (2.0875723212981748279e-9 + z * -1.13596475577881948265e-11));
+  const hz = 0.5 * z;
+  const wc = 1 - hz;
+  const c = wc + (1 - wc - hz + (z * rc - y0 * y1));
+  if (n === 0) { SC[0] = s; SC[1] = c; }
+  else if (n === 1) { SC[0] = c; SC[1] = -s; }
+  else if (n === 2) { SC[0] = -s; SC[1] = -c; }
+  else { SC[0] = -c; SC[1] = s; }
+}
 
 /** randomRange(value, def) as sampler `s`. Returns the numbers it draws per particle. */
 function setSampler(s, value, def) {
@@ -174,7 +211,7 @@ function setCenterY(v) {
 }
 
 /**
- * Min and max over [0, T] frames of the position from TRAVEL = [p0, v0, a, d, T], into EXTENT: the ends, and the
+ * Min and max over [0, T] frames of the position from TRAVEL = [p0, v0, a, d, T, 1 - exp(-d T)], into EXTENT: the ends, and the
  * turning point when it is inside.
  */
 function travelExtent() {
@@ -192,7 +229,7 @@ function travelExtent() {
     if (a !== 0) tStar = -v0 / a - 0.5;
   } else {
     const terminal = a / d;
-    end = p0 + terminal * T + ((v0 - terminal) * (1 - Math.exp(-d * T))) / d;
+    end = p0 + terminal * T + ((v0 - terminal) * TRAVEL[5]) / d;
     const den = terminal - v0;
     if (den !== 0) {
       const ratio = terminal / den;
@@ -564,8 +601,10 @@ export class GpuParticles {
             if (spreadByValue) ang = (RND[r++] * 2 - 1) * spreadValue;
             else ang = KIND[S.SPREAD] ? LO[S.SPREAD] + RND[r++] * SPAN[S.SPREAD] : LO[S.SPREAD];
             if (ang !== 0) {
-              const c = Math.cos(ang);
-              const s = Math.sin(ang);
+              SC[0] = ang;
+              sincos(); // E-486
+              const s = SC[0];
+              const c = SC[1];
               const rdx = dx * c - dy * s;
               dy = dx * s + dy * c;
               dx = rdx;
@@ -576,8 +615,10 @@ export class GpuParticles {
         } else if (mode === BY_ANGLE) {
           const angle = ((KIND[S.ANGLE] ? LO[S.ANGLE] + RND[r++] * SPAN[S.ANGLE] : LO[S.ANGLE]) * Math.PI) / 180;
           const speed = KIND[S.SPEED] ? LO[S.SPEED] + RND[r++] * SPAN[S.SPEED] : LO[S.SPEED];
-          vx = speed * Math.cos(angle);
-          vy = speed * Math.sin(angle);
+          SC[0] = angle;
+          sincos(); // E-486
+          vx = speed * SC[1];
+          vy = speed * SC[0];
         } else {
           vx = KIND[S.VX] ? LO[S.VX] + RND[r++] * SPAN[S.VX] : LO[S.VX];
           vy = KIND[S.VY] ? LO[S.VY] + RND[r++] * SPAN[S.VY] : LO[S.VY];
@@ -676,6 +717,8 @@ export class GpuParticles {
         TRAVEL[2] = 0;
         TRAVEL[3] = drag;
         TRAVEL[4] = T;
+        // E-486: the travel's exp once a particle (every axis has its drag and T), not once an axis.
+        TRAVEL[5] = drag < 1e-5 ? 0 : 1 - Math.exp(-drag * T);
         travelExtent();
         if (EXTENT[0] - pad < minX) minX = EXTENT[0] - pad;
         if (EXTENT[1] + pad > maxX) maxX = EXTENT[1] + pad;
