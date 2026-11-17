@@ -15948,7 +15948,7 @@
       "area": "render",
       "kind": "speed",
       "result": "",
-      "next": "Split the opaque pass: maps-less sprites' depth from the vertices (early depth test), the others' from the fragment; why WebGPU pays three times more. gpuPassBench color/colorDepth, depthSortCheck.",
+      "next": "Split the opaque pass: maps-less sprites' depth from the vertices (early depth test), the others' from the fragment; why WebGPU pays three times more. gpuPassBench color/colorDepth, depthSortCheck. DX-FACEDEPTH (DX_BARRIOS_DESIGN.md) takes it: map-less sprites' depth from the vertex, as the faces' plane depth.",
       "refs": [
         "EXECUTION_PLAN.md#E-378"
       ],
@@ -15963,16 +15963,21 @@
     },
     {
       "id": "DX-BARRIOS",
-      "title": "Editor de barrios: the buenos-aires repo becomes the neighbourhood editor, exporting houses and above all the floor as WeedJS sheets with height maps, normal maps and pixel depth instead of simplified 3D models; WeedJS's import workarounds for those models go",
-      "status": "blocked",
-      "statusText": "approved by the owner 2026-11-15; starts once dx/light3d is merged to main",
+      "title": "Editor de barrios: the buenos-aires repo becomes the barrio editor, exporting a package (a format-1 scene file with prefabs, palettes and parent, its atlas and binaries) that demos/buenosAiresScene shows (Parque Chas) with light3d and the standard people, cars and objects; the engine pieces it needs",
+      "status": "open",
+      "statusText": "approved by the owner 2026-11-15 (\"cuando terminemos esto y dx/light3d este mergeado a main, ahi vamos a editar esa escena, el otro repo, y las partes del codigo q tienen q ver con eso\"); rewritten 2026-11-16 with the owner: houses stay faces (height or normal maps for 8 721 houses would need gigabytes of atlas), the floor stays the shader; dx/light3d merged 2026-11-15, so it starts",
       "date": "2026-11-15",
       "area": "demos",
       "kind": "feature",
       "result": "",
-      "refs": [],
-      "aliases": [],
-      "next": "After the dx/light3d merge: rename the buenos-aires repo (where the neighbourhood editor lives) to \"editor de barrios\"; export from it houses and mainly the floor as standard sheets (colour, height map, normal map: DX-MAPS) lit by the standard lighting (DX-GBUF, DX-SHADOW3D, pixel depth DX-DEPTH) instead of the simplified 3D models WeedJS reads today; remove the engine code that only exists to import those models and their maps (the workarounds), and edit demos/buenosAiresScene to the new exports. Owner, 2026-11-15: \"cuando terminemos esto y dx/light3d este mergeado a main, ahi vamos a editar esa escena, el otro repo, y las partes del codigo q tienen q ver con eso\".",
+      "refs": [
+        "DX_BARRIOS_DESIGN.md#DX-BARRIOS"
+      ],
+      "aliases": [
+        "editor de barrios",
+        "barrio package"
+      ],
+      "next": "Groups R (render and maps), P (Transform.parent), O (objects), E (the editor) and D (the demo) in parallel, one owner a file (DX_BARRIOS_DESIGN.md); the suites when merging; then the mandatory final pass of every trace and the optimization.",
       "records": []
     },
     {
@@ -20678,7 +20683,7 @@
       "area": "pixi",
       "kind": "refactor",
       "result": "Not started. The plan: whole subsystems as classes (not mixins), pure moves, the shape rules in every class, hot paths kept with their data, one phase at a time with Pixi frozen meanwhile; items PW-1 to PW-12.",
-      "next": "Phase 1 (PW-1 asset loading, PW-2 initialize in steps, PW-5 scenery and tilemap): pure moves, suites, compareCaptures, workerShape extended; then phases 2 to 4; one Pixi-owner sitting per two phases (hygiene keep). preRenderWorker.js (6 277 lines) after, by the same rules.",
+      "next": "Phase 1 (PW-1 asset loading, PW-2 initialize in steps, PW-5 scenery and tilemap): pure moves, suites, compareCaptures, workerShape extended; then phases 2 to 4; one Pixi-owner sitting per two phases (hygiene keep). preRenderWorker.js (6 277 lines) after, by the same rules. DX-BARRIOS's group R changes pixiWorker.js (G-buffer, maps table, unshaded): it lands before PW-1 starts.",
       "refs": [
         "PIXI_WORKER_SPLIT_PLAN.md"
       ],
@@ -20710,6 +20715,234 @@
       "records": [
         "R-0973"
       ]
+    },
+    {
+      "id": "DX-PARENT",
+      "title": "Transform.parent: an entity follows another (pose = the parent's + a local offset turned by its rotation); physics writes the children after its step; v1 parents with a body; a child with a body is refused with a warning; children despawn with the parent",
+      "status": "open",
+      "statusText": "approved by the owner 2026-11-16 instead of several lights per entity (LuzAuto stays, as the car's child); it changes VISUAL_EDITOR_PLAN.md's \"No parent/child transforms in the engine\" (branch visual_editor, updated when that branch resumes)",
+      "date": "2026-11-16",
+      "area": "core",
+      "kind": "feature",
+      "result": "",
+      "refs": [
+        "DX_BARRIOS_DESIGN.md#DX-PARENT"
+      ],
+      "aliases": [
+        "entity parent",
+        "parent transform"
+      ],
+      "next": "Group P of DX-BARRIOS. Later: body-less parents; kinematic bodies (DX-KINEMATIC).",
+      "records": []
+    },
+    {
+      "id": "DX-UNSHADED",
+      "title": "emissive becomes unshaded (Godot 2D's word), yes or no: the sheet's mark leaves the twin page for the per-frame maps table (an unshaded sheet builds no twin page and turns no pixel depth on); the strength up to 1.75 goes",
+      "status": "open",
+      "statusText": "approved by the owner 2026-11-16 (\"Unshaded me gusta!\")",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "dx",
+      "result": "",
+      "refs": [
+        "DX_BARRIOS_DESIGN.md#DX-UNSHADED"
+      ],
+      "aliases": [
+        "emissive rename",
+        "unshaded sprites"
+      ],
+      "next": "Group R of DX-BARRIOS, with E-496's table.",
+      "records": []
+    },
+    {
+      "id": "DX-STDOBJECTS",
+      "title": "The barrio's loose objects (20 sheets, 447 frames: plants, pots, trash, lamps, the fountain) as standard demo assets with height maps in demos/img/objetos, like the MinZiin cars and the LPC people",
+      "status": "open",
+      "statusText": "approved by the owner 2026-11-16 (height maps only: the owner prefers normals from heights)",
+      "date": "2026-11-16",
+      "area": "demos",
+      "kind": "feature",
+      "result": "",
+      "refs": [
+        "DX_BARRIOS_DESIGN.md#DX-STDOBJECTS"
+      ],
+      "aliases": [
+        "standard objects"
+      ],
+      "next": "Group O of DX-BARRIOS: npm run maps -- <sheet> --profile prop --no-normal; objetos/index.js; credits.",
+      "records": []
+    },
+    {
+      "id": "DX-FACEDEPTH",
+      "title": "Faces write the depth of their plane, from the vertex (with E-378's foot depth for map-less sprites); pieces on a shared plane tie by innerZ·16 carried in the row; pixel depth turns on with faces; lighting.faces goes (sunDirect becomes Sun.skyLight)",
+      "status": "open",
+      "statusText": "approved by the owner 2026-11-16: houses stay faces and walls go whole, no 8 px columns",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "feature",
+      "result": "",
+      "refs": [
+        "DX_BARRIOS_DESIGN.md#DX-FACEDEPTH"
+      ],
+      "aliases": [
+        "face plane depth"
+      ],
+      "next": "Group R of DX-BARRIOS; a face-only gate (faceLightScene) in the final pass.",
+      "records": []
+    },
+    {
+      "id": "DX-RELIEF",
+      "title": "reliefMap: a relief (bump) map gives normals and the height comes from surface; with N-257 and N-258, the height and normal maps' fixes",
+      "status": "open",
+      "statusText": "approved by the owner 2026-11-16; normal maps stay in OpenGL's convention only (no DirectX option)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "feature",
+      "result": "",
+      "refs": [
+        "DX_BARRIOS_DESIGN.md#DX-RELIEF"
+      ],
+      "aliases": [
+        "relief map",
+        "bump map"
+      ],
+      "next": "Group R of DX-BARRIOS.",
+      "records": []
+    },
+    {
+      "id": "N-257",
+      "title": "A sprite with a normal map and no height map sits at height 0, as if painted on the floor: with an oblique camera a standing sprite takes its lamps' distance from the floor, the floor's shadow behind it in the sun map, and pixel depth as a decal",
+      "status": "open",
+      "statusText": "found reading the code 2026-11-16 (faceMap.frag.glsl's GBUF block takes the twin's R,G = 0 as the height; pixelDepth.js does the same); not seen in a scene yet; the fix approved by the owner the same day",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "bug",
+      "result": "",
+      "refs": [
+        "DX_BARRIOS_DESIGN.md#DX-RELIEF"
+      ],
+      "aliases": [],
+      "next": "Without a height map the height comes from surface (the standing card, or the floor for a decal) in the G-buffer, pixel depth and the shadow maps.",
+      "records": []
+    },
+    {
+      "id": "N-258",
+      "title": "Normals do not flip with flipX/flipY nor turn with a rotated sprite: the G-buffer pass decodes them in the frame's own space, so a lamp on the left would light a mirrored car's right side (the standard cars mirror half their headings)",
+      "status": "open",
+      "statusText": "suspected from the code 2026-11-16 (preRenderEmit.c makes a flip a negative scale; faceMap.frag.glsl decodes the normal without it); to confirm on the light bench first (a mirrored car with a lamp at its side)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "bug",
+      "result": "",
+      "refs": [
+        "DX_BARRIOS_DESIGN.md#DX-RELIEF"
+      ],
+      "aliases": [],
+      "next": "Flip and turn the decoded normal (and the Sobel's) in the G-buffer pass, GLSL and WGSL.",
+      "records": []
+    },
+    {
+      "id": "E-496",
+      "title": "The twin page has the whole atlas's size even when one sheet has maps, and sheets with the same body paint their own copies: a per-frame maps table (each frame's window and marks) lets the twin cover only the mapped sheets and share maps (the 54 standard cars are about 31 shapes; the LPC people one body)",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 within DX-BARRIOS (the owner asked to try shared maps)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "refs": [
+        "DX_BARRIOS_DESIGN.md#E-496"
+      ],
+      "aliases": [
+        "twin page only for maps",
+        "shared maps"
+      ],
+      "next": "Group R of DX-BARRIOS; measured in the final pass (GPU memory, load time).",
+      "records": []
+    },
+    {
+      "id": "E-497",
+      "title": "The twin's format: A today (RGBA8, height and the stored normal), B heights only (2 bytes a texel, normals from the shader's Sobel), C heights plus normals at half resolution (the owner's idea), chosen by GPU memory, load time, the G-buffer pass and the look",
+      "status": "open",
+      "statusText": "proposed 2026-11-16 within DX-BARRIOS",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "refs": [
+        "DX_BARRIOS_DESIGN.md#E-497"
+      ],
+      "aliases": [
+        "twin format tournament",
+        "half resolution normals"
+      ],
+      "next": "Built behind a config key by group R; decided in the final pass (gpuPassBench, the demo).",
+      "records": []
+    },
+    {
+      "id": "DX-FLOORNORMALS",
+      "title": "The floor writes the G-buffer (a height and a normal per pixel: curbs, cobbles), so lamps show its relief",
+      "status": "open",
+      "statusText": "nice to have, backlog (owner 2026-11-16)",
+      "date": "2026-11-16",
+      "area": "render",
+      "kind": "feature",
+      "result": "",
+      "refs": [],
+      "aliases": [
+        "floor normals"
+      ],
+      "next": "",
+      "records": []
+    },
+    {
+      "id": "DX-CURBS",
+      "title": "Buenos Aires demo: the curb's shadow strip and the cobbles' relief by the sun, drawn in the floor shader with the sun through Layer.setUniform (no engine change)",
+      "status": "open",
+      "statusText": "backlog (owner 2026-11-16: \"si es muy caro no\"; not in the first version)",
+      "date": "2026-11-16",
+      "area": "demos",
+      "kind": "feature",
+      "result": "",
+      "refs": [],
+      "aliases": [
+        "curb shadow",
+        "cobble relief"
+      ],
+      "next": "",
+      "records": []
+    },
+    {
+      "id": "DX-KINEMATIC",
+      "title": "Kinematic bodies: Box2D has them, WeedJS's RigidBody.static holds dynamic, static and chain only; with them a child with a body could follow a parent (DX-PARENT)",
+      "status": "open",
+      "statusText": "backlog, from DX-PARENT's design (2026-11-16)",
+      "date": "2026-11-16",
+      "area": "physics",
+      "kind": "feature",
+      "result": "",
+      "refs": [],
+      "aliases": [
+        "kinematic rigid body"
+      ],
+      "next": "",
+      "records": []
+    },
+    {
+      "id": "N-259",
+      "title": "GPU particles with sortWithEntities: true drew nothing, not even what stands above the fountain (the buenos-aires game's water layer, bundle fa59073a, Chromium without a GPU): the water goes over the entities",
+      "status": "open",
+      "statusText": "reported in the game's BACKLOG (2026-11-12); not reproduced on main yet",
+      "date": "2026-11-16",
+      "area": "particle",
+      "kind": "bug",
+      "result": "",
+      "refs": [],
+      "aliases": [
+        "gpu particles sorted with entities"
+      ],
+      "next": "Reproduce with a small scene on main; then the fountain's water can sort with the trees.",
+      "records": []
     }
   ],
   "records": [
