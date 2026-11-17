@@ -3140,6 +3140,7 @@ class PreRenderWorker extends AbstractWorker {
                 const leActive = LightEmitter.active;
                 const leGlow = LightEmitter.glow;
                 const leRadius = LightEmitter.radius;
+                const leGlowRadius = LightEmitter.glowRadius;
                 // H-19, same hoist as collectVisibleEntities, and worse here:
                 // `SpriteRenderer.boundsHalfW?.[i]` was a static property lookup
                 // plus an optional chain PER LIGHT, not just a truthiness test.
@@ -3160,8 +3161,10 @@ class PreRenderWorker extends AbstractWorker {
                         const sx = (x[i] + ox * glowRotC[i] - oy * glowRotS[i]) * camZoom - cameraOffsetX;
                         const sy = (y[i] + ox * glowRotS[i] + oy * glowRotC[i] + (glowScreenY[i] || 0)) * camZoom - cameraOffsetY;
                         // N-150: the halo's own size (it was the sprite's, or the visualRange: a big halo on a small
-                        // sprite popped in at the screen's edge), at least the sprite's.
-                        let halfExtent = leRadius[i] * LIGHT_GLOW_EXTENT;
+                        // sprite popped in at the screen's edge), at least the sprite's. DX-GLOWRADIUS: its glowRadius,
+                        // or 0.85 of the light's radius.
+                        const ownRadius = leGlowRadius[i];
+                        let halfExtent = ownRadius > 0 ? ownRadius : leRadius[i] * LIGHT_GLOW_EXTENT;
                         const halfW = glowHalfW ? (glowHalfW[i] ?? 0) : 0;
                         const halfH = glowHalfH ? (glowHalfH[i] ?? 0) : 0;
                         if (halfW > halfExtent) halfExtent = halfW;
@@ -3172,7 +3175,7 @@ class PreRenderWorker extends AbstractWorker {
                             sy < screenMinY - extent || sy > screenMaxY + extent
                         ) continue;
                     }
-                    COLLECT_Y[0] = y[i] * Y_SORT_K + ENTITY_GLOW_SORT_BIAS;
+                    this._storeGlowSortY(i, COLLECT_Y);
                     this.collectRenderable(3, i);
                 }
             }
@@ -3377,6 +3380,21 @@ class PreRenderWorker extends AbstractWorker {
         const ctl = this.visibleBulletsCtl;
         if (ctl.length === 0) return this.visibleBulletsData;
         return this.visibleBulletsCopies[takePublishedList(ctl)];
+    }
+
+    /**
+     * DX-GLOWRADIUS: the key a light's halo sorts at, into out[0]: right after its entity's sprite, on that sprite's sort
+     * line (_storeEntitySortY on the drawn pose: its picture's bottom edge when it is not feet-anchored, so a lamp whose
+     * anchor sits above its foot no longer draws over its own halo), or the drawn y rounded when it has no sprite, plus
+     * the glow's bias. The zIndex band is the emit's (order_key), as for the sprite.
+     */
+    _storeGlowSortY(i, out) {
+        const pose = this._displayPoseOut;
+        this._displayPose(i, pose);
+        const sr = SpriteRenderer;
+        if (sr.active && sr.active[i]) this._storeEntitySortY(0, i, pose, out, 0);
+        else out[0] = spriteYSortKey(pose[1], Y_SORT_K);
+        out[0] += ENTITY_GLOW_SORT_BIAS;
     }
 
     /**

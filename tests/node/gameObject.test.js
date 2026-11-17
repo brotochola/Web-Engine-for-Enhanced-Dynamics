@@ -82,6 +82,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
   const previousLightEmitterElevation = LightEmitter.elevation;
   const previousLightEmitterGlowOffsetY = LightEmitter.glowOffsetY;
   const previousLightEmitterGlow = LightEmitter.glow;
+  const previousLightEmitterGlowRadius = LightEmitter.glowRadius;
   const previousLightEmitterGlowLayerId = LightEmitter.glowLayerId;
   const previousLightEmitterOffsetX = LightEmitter.offsetX;
   const previousLightEmitterOffsetY = LightEmitter.offsetY;
@@ -108,6 +109,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
   LightEmitter.elevation = new Float32Array([7, 1, 9]);
   LightEmitter.glowOffsetY = new Float32Array([3, 2, 8]);
   LightEmitter.glow = new Float32Array([0, 1, 0]);
+  LightEmitter.glowRadius = new Float32Array([12, 7, 30]);
   LightEmitter.glowLayerId = new Uint8Array([4, 5, 6]);
   LightEmitter.offsetX = new Float32Array([2, 4, 6]);
   LightEmitter.offsetY = new Float32Array([1, 3, 5]);
@@ -153,6 +155,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
     assert.deepEqual(Array.from(LightEmitter.elevation), [0, 1, 0]);
     assert.deepEqual(Array.from(LightEmitter.glowOffsetY), [0, 2, 0]);
     assert.deepEqual(Array.from(LightEmitter.glow), [0, 1, 0]);
+    assert.deepEqual(Array.from(LightEmitter.glowRadius), [0, 7, 0]);
     assert.deepEqual(Array.from(LightEmitter.glowLayerId), [0, 5, 0]);
     assert.deepEqual(Array.from(LightEmitter.offsetX), [0, 4, 0]);
     assert.deepEqual(Array.from(LightEmitter.offsetY), [0, 3, 0]);
@@ -175,6 +178,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
     LightEmitter.elevation = previousLightEmitterElevation;
     LightEmitter.glowOffsetY = previousLightEmitterGlowOffsetY;
     LightEmitter.glow = previousLightEmitterGlow;
+    LightEmitter.glowRadius = previousLightEmitterGlowRadius;
     LightEmitter.glowLayerId = previousLightEmitterGlowLayerId;
     LightEmitter.offsetX = previousLightEmitterOffsetX;
     LightEmitter.offsetY = previousLightEmitterOffsetY;
@@ -201,6 +205,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
   const previousLightEmitterElevation = LightEmitter.elevation;
   const previousLightEmitterGlowOffsetY = LightEmitter.glowOffsetY;
   const previousLightEmitterGlow = LightEmitter.glow;
+  const previousLightEmitterGlowRadius = LightEmitter.glowRadius;
   const previousLightEmitterGlowLayerId = LightEmitter.glowLayerId;
   const previousLightEmitterOffsetX = LightEmitter.offsetX;
   const previousLightEmitterOffsetY = LightEmitter.offsetY;
@@ -222,6 +227,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
   LightEmitter.elevation = new Float32Array([13]);
   LightEmitter.glowOffsetY = new Float32Array([4]);
   LightEmitter.glow = new Float32Array([0]);
+  LightEmitter.glowRadius = new Float32Array([25]);
   LightEmitter.glowLayerId = new Uint8Array([9]);
   LightEmitter.offsetX = new Float32Array([8]);
   LightEmitter.offsetY = new Float32Array([9]);
@@ -258,6 +264,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
     assert.deepEqual(Array.from(LightEmitter.elevation), [0]);
     assert.deepEqual(Array.from(LightEmitter.glowOffsetY), [0]);
     assert.deepEqual(Array.from(LightEmitter.glow), [0]);
+    assert.deepEqual(Array.from(LightEmitter.glowRadius), [0]);
     assert.deepEqual(Array.from(LightEmitter.glowLayerId), [0]);
     assert.deepEqual(Array.from(LightEmitter.offsetX), [0]);
     assert.deepEqual(Array.from(LightEmitter.offsetY), [0]);
@@ -278,6 +285,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
     LightEmitter.elevation = previousLightEmitterElevation;
     LightEmitter.glowOffsetY = previousLightEmitterGlowOffsetY;
     LightEmitter.glow = previousLightEmitterGlow;
+    LightEmitter.glowRadius = previousLightEmitterGlowRadius;
     LightEmitter.glowLayerId = previousLightEmitterGlowLayerId;
     LightEmitter.offsetX = previousLightEmitterOffsetX;
     LightEmitter.offsetY = previousLightEmitterOffsetY;
@@ -307,6 +315,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   const previousLightEmitterElevation = LightEmitter.elevation;
   const previousLightEmitterGlowOffsetY = LightEmitter.glowOffsetY;
   const previousLightEmitterGlow = LightEmitter.glow;
+  const previousLightEmitterGlowRadius = LightEmitter.glowRadius;
   const previousLightEmitterGlowLayerId = LightEmitter.glowLayerId;
   const previousLightEmitterOffsetX = LightEmitter.offsetX;
   const previousLightEmitterOffsetY = LightEmitter.offsetY;
@@ -331,6 +340,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   LightEmitter.elevation = new Float32Array([17]);
   LightEmitter.glowOffsetY = new Float32Array([6]);
   LightEmitter.glow = new Float32Array([0]);
+  LightEmitter.glowRadius = new Float32Array([25]);
   LightEmitter.glowLayerId = new Uint8Array([7]);
   LightEmitter.offsetX = new Float32Array([8]);
   LightEmitter.offsetY = new Float32Array([9]);
@@ -380,6 +390,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
     assert.deepEqual(Array.from(LightEmitter.elevation), [0]);
     assert.deepEqual(Array.from(LightEmitter.glowOffsetY), [0]);
     assert.deepEqual(Array.from(LightEmitter.glow), [0]);
+    assert.deepEqual(Array.from(LightEmitter.glowRadius), [0]);
     assert.deepEqual(Array.from(LightEmitter.glowLayerId), [0]);
     assert.deepEqual(Array.from(LightEmitter.offsetX), [0]);
     assert.deepEqual(Array.from(LightEmitter.offsetY), [0]);
@@ -405,6 +416,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
     LightEmitter.elevation = previousLightEmitterElevation;
     LightEmitter.glowOffsetY = previousLightEmitterGlowOffsetY;
     LightEmitter.glow = previousLightEmitterGlow;
+    LightEmitter.glowRadius = previousLightEmitterGlowRadius;
     LightEmitter.glowLayerId = previousLightEmitterGlowLayerId;
     LightEmitter.offsetX = previousLightEmitterOffsetX;
     LightEmitter.offsetY = previousLightEmitterOffsetY;

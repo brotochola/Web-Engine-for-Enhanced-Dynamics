@@ -73,9 +73,10 @@ async function main() {
 
     const result = await page.evaluate(
       async ({ sceneModule, sceneExport }) => {
-        const [{ SpriteSheetRegistry }, sceneExports] = await Promise.all([
+        const [{ SpriteSheetRegistry }, sceneExports, { unshadedGlowsOf }] = await Promise.all([
           import('/src/index.js'),
           import(sceneModule),
+          import('/src/util/configDefaults.js'),
         ]);
         const SceneClass = sceneExports[sceneExport];
         if (!SceneClass) {
@@ -117,6 +118,8 @@ async function main() {
           camera: scene.config?.camera ?? null,
           // E-497: the twin page's format.
           twinFormat: assetsConfig.twinFormat ?? 'A',
+          // DX-GLOWRADIUS: halos that join the entities are unshaded.
+          unshadedGlows: unshadedGlowsOf(scene.config?.lighting),
         });
 
         if (!packed.json?.meta?.proxySheets) {

@@ -98,6 +98,7 @@ import {
   PRE_RENDER_DEFAULTS,
   AUDIO_DEFAULTS,
   LIGHTING_DEFAULTS,
+  unshadedGlowsOf,
   LAYER_KIND,
   VOLUME_LAYER,
   VOLUME_LAYER_Z,
@@ -1743,7 +1744,13 @@ class Scene {
     // and the twin page holds a normal's second byte in A (about 55 to 61 on standing sprites), so R, the height's high
     // byte, came back rounded by a few steps (several px of height).
     // DX-MAPCAMERA: the scene's camera, so a sheet drawn for another one (its artCamera) has its heights scaled to it.
-    const packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, { ...options, keepMapsTexels: true, camera: this.config?.camera ?? null });
+    // DX-GLOWRADIUS: halos that join the entities are unshaded (the light gradient's frame carries the mark).
+    const packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, {
+      ...options,
+      keepMapsTexels: true,
+      camera: this.config?.camera ?? null,
+      unshadedGlows: unshadedGlowsOf(this.config?.lighting),
+    });
     const maps = packed.mapsCanvas;
     const exact = maps && packed.mapsTexels ? new ImageData(packed.mapsTexels, maps.width, maps.height) : null;
     const [imageBitmap, mapsBitmap] = await Promise.all([

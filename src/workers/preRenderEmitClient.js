@@ -64,6 +64,8 @@ export const EMIT_SLOTS = [
   'kChange', 'dChange', 'lfChange', 'kFrame', 'kSince',
   // E-312 step 2: 1 when nothing reads an unmarked keyed sprite row's statics this frame (a value).
   'kSkip',
+  // DX-GLOWRADIUS: the glow rows' halo radius (LightEmitter.glowRadius).
+  'lGlowRadius',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -127,6 +129,7 @@ export const EMIT_BULLET_COLUMNS = [
 export const EMIT_GLOW_COLUMNS = [
   ['lColor', 'color'], ['lBrightness', 'brightness'], ['lRadius', 'radius'],
   ['lGlowOffset', 'glowOffsetY'], ['lGlow', 'glow'], ['lOffsetX', 'offsetX'], ['lOffsetY', 'offsetY'],
+  ['lGlowRadius', 'glowRadius'],
 ];
 /** The particle rows' ParticleComponent columns, by slot; flat and viewMode may be missing (emitSpriteQueue tests them). */
 export const EMIT_PARTICLE_COLUMNS = [

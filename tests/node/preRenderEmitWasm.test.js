@@ -326,6 +326,8 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     const radius = i % 11 === 0 ? 0 : i % 13 === 0 ? (i & 1 ? 5 : 11) : 70 + rl() * 1400;
     le.radius[i] = i % 17 === 0 ? NaN : i % 19 === 0 ? -0 : radius;
     le.glow[i] = [0, 0.4, 1.2, 0.0005][i % 4];
+    // DX-GLOWRADIUS: some halos with their own radius (one under 1 px, hidden; NaN and -0 read as none).
+    le.glowRadius[i] = i % 6 === 0 ? (i % 12 === 0 ? 0.5 : 8 + (i % 90)) : i % 29 === 0 ? NaN : i % 31 === 0 ? -0 : 0;
     le.brightness[i] = i % 5 === 0 ? 0.5 : 1;
     le.glowOffsetY[i] = i % 7 === 0 ? NaN : i % 9 === 0 ? -0 : rl() * 60 - 50;
     le.color[i] = (rl() * 0xffffffff) >>> 0;
@@ -585,6 +587,14 @@ async function runCase(t, opts) {
       else seen.add(i % 7 === 0 ? 'drawn, NaN offset' : i % 9 === 0 ? 'drawn, -0 offset' : 'drawn');
     }
     assert.deepEqual([...seen].sort(), ['drawn', 'drawn, -0 offset', 'drawn, NaN offset', 'no scale or no glow', 'too faint']);
+    // DX-GLOWRADIUS: some of them carry their own radius, one of those under 1 px.
+    const own = new Set();
+    for (let r = 0; r < n; r++) {
+      if (types[r] !== 3) continue;
+      const radius = LightEmitter.glowRadius[k.indices[r]];
+      if (radius > 0) own.add(radius < 1 ? 'under 1 px' : 'own radius');
+    }
+    assert.deepEqual([...own].sort(), ['own radius', 'under 1 px']);
   }
   if (k.bullets) {
     // The bullet and trail rows reach every case the kernel copies (setup's bullet slots).

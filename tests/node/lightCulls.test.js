@@ -11,6 +11,8 @@ import { FlashComponent } from '../../src/components/flashComponent.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Query } from '../../src/core/query.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
+import { DECORATION_Y_SORT_SCALE, ENTITY_GLOW_SORT_BIAS } from '../../src/util/configDefaults.js';
+import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
 
 const N = 6;
 
@@ -120,4 +122,43 @@ test('N-150: a light whose entity is off screen still has its glow collected whe
     SpriteRenderer.boundsHalfH = savedHalfH;
   }
   assert.deepEqual(collected, [[3, 0]]);
+});
+
+test("DX-GLOWRADIUS: a halo sorts right after its entity's sprite, on the sprite's own sort line", async () => {
+  // Entity 0 has a sprite anchored above its foot (anchorY 0.75 of a 64 px frame): it sorts 16 px below its pose, so a
+  // halo on the pose drew under it. Entity 1 has no sprite: its halo sorts on its pose.
+  bind([100, 200, 0, 0, 0, 0], [300, 300, 0, 0, 0, 0]);
+  const names = ['active', 'anchorX', 'anchorY', 'scaleX', 'scaleY', 'inheritTransformRotation', 'spriteRotC', 'spriteRotS'];
+  const saved = names.map((name) => SpriteRenderer[name]);
+  SpriteRenderer.active = Uint8Array.of(1, 0, 0, 0, 0, 0);
+  SpriteRenderer.anchorX = new Float32Array(N).fill(0.5);
+  SpriteRenderer.anchorY = Float32Array.of(0.75, 1, 1, 1, 1, 1);
+  SpriteRenderer.scaleX = new Float32Array(N).fill(1);
+  SpriteRenderer.scaleY = new Float32Array(N).fill(1);
+  SpriteRenderer.inheritTransformRotation = new Uint8Array(N).fill(1);
+  SpriteRenderer.spriteRotC = new Float32Array(N).fill(1);
+  SpriteRenderer.spriteRotS = new Float32Array(N);
+  try {
+    const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+    pre._spriteSortArrays = null;
+    pre._displayPose = (i, out) => {
+      out[0] = Transform.x[i];
+      out[1] = Transform.y[i];
+      out[2] = 1;
+      out[3] = 0;
+    };
+    pre._entityTextureIdOrResolve = () => 0;
+    pre.frameWidth = Float32Array.of(32);
+    pre.frameHeight = Float32Array.of(64);
+    const halo = new Float64Array(1);
+    const sprite = new Float64Array(1);
+    pre._storeGlowSortY(0, halo);
+    pre._storeEntitySortY(0, 0, Float64Array.of(100, 300, 1, 0), sprite, 0);
+    assert.equal(sprite[0], spriteYSortKey(316, DECORATION_Y_SORT_SCALE), "the sprite's line: its picture's bottom edge");
+    assert.equal(halo[0], sprite[0] + ENTITY_GLOW_SORT_BIAS, 'its halo right after it');
+    pre._storeGlowSortY(1, halo);
+    assert.equal(halo[0], spriteYSortKey(300, DECORATION_Y_SORT_SCALE) + ENTITY_GLOW_SORT_BIAS, 'no sprite: its pose');
+  } finally {
+    names.forEach((name, k) => { SpriteRenderer[name] = saved[k]; });
+  }
 });

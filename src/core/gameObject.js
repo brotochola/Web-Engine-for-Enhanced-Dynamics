@@ -667,6 +667,7 @@ function resetLightEmitterRow(i) {
   LightEmitter.brightness[i] = 1;
   LightEmitter.elevation[i] = 0;
   LightEmitter.glow[i] = 0;
+  LightEmitter.glowRadius[i] = 0;
   LightEmitter.glowOffsetY[i] = 0;
   LightEmitter.glowLayerId[i] = 0;
   LightEmitter.offsetX[i] = 0;

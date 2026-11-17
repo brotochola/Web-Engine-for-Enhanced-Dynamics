@@ -895,6 +895,8 @@ class SpriteSheetRegistry {
    * @param {'A'|'B'|'C'} [options.twinFormat] - E-497: the twin page's format (twinTexel.js; assets.twinFormat, default 'A')
    * @param {object} [options.camera] - DX-MAPCAMERA: the scene's camera (config.camera): a sheet drawn for another camera
    *   (its artCamera) has its heights scaled to it at load (spriteMaps.js artCameraHeightScale); without it, none is
+   * @param {boolean} [options.unshadedGlows] - DX-GLOWRADIUS: the light gradient's frame is unshaded (configDefaults.js
+   *   unshadedGlowsOf: a lit scene whose halos join the entities), so the night does not darken a light's halo
    * @returns {Promise<Object>} - { canvas, mapsCanvas, mapsTexels, json, proxySheets }
    *
    * @example
@@ -921,6 +923,7 @@ class SpriteSheetRegistry {
       heuristic = ASSETS_DEFAULTS.heuristic,
       keepMapsTexels = false,
       camera = null,
+      unshadedGlows = false,
       twinFormat = ASSETS_DEFAULTS.twinFormat,
     } = options;
     // DX-MAPCAMERA: the scene's heightScaleY, to which a sheet drawn for another camera has its heights scaled.
@@ -1228,10 +1231,12 @@ class SpriteSheetRegistry {
     });
     debugWorkerLog(`  ✅ Generated built-in: _empty (1x1 transparent)`);
 
-    // Light glow gradient (200px diameter white radial gradient)
+    // Light glow gradient (200px diameter white radial gradient). DX-GLOWRADIUS: unshaded where the halos join the
+    // entities (unshadedGlows), as an unshaded sheet's frames are: the maps table's mark.
     const lightGradientCanvas = createCircularGradientCanvas(LIGHT_GRADIENT_TEXTURE_RADIUS, 0xffffff);
     imagesToPack.push({
       name: '_lightGradient',
+      unshaded: unshadedGlows === true,
       sourceImg: lightGradientCanvas,
       sourceRect: null,
       width: lightGradientCanvas.width,

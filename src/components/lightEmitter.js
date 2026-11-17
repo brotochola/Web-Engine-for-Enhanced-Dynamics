@@ -22,9 +22,12 @@ const FULL_TURN = Math.PI * 2;
  * - `color` is 0xRRGGBB.
  * - `elevation` lifts the source off the floor without moving its pool: the falloff becomes I / (I + h² + d²), a wider,
  *   flatter pool with the same reach (a lamp post rather than a torch on the ground).
- * - `glow` is the alpha of the halo drawn on the bulb (0, the default, draws none). The halo is about 0.85 of the radius
- *   wide; `glowOffsetY` moves it on the screen (negative is up: put it on the bulb), `glowLayer` puts it on one layer
- *   (a layer name; null keeps the entity's layers).
+ * - `glow` is the alpha of the halo drawn on the bulb (0, the default, draws none). `glowRadius` is the halo's radius in
+ *   px; 0, the default, makes it 0.85 of the light's radius (a spark's big soft flash), so a lamp that lights a whole
+ *   street gives its bulb a small one. `glowOffsetY` moves it on the screen (negative is up: put it on the bulb),
+ *   `glowLayer` puts it on one layer (a layer name; null keeps the entity's layers). With lighting.lightGlow 'sprite'
+ *   the halo is drawn right after its entity's sprite (over it, and under whatever stands in front of it) and unshaded:
+ *   the night does not darken it.
  * - `offsetX` / `offsetY` move the light off the entity's centre, in local px: the entity's rotation turns them, and
  *   the pool, glow, shadows and culling follow.
  * - `castShadows` (1 by default): 0 lights the scene and casts nothing, which costs less (no shadow stamp in basic
@@ -63,6 +66,8 @@ export class LightEmitter extends Component {
     coneCos: Float32Array, // cos(coneHalf), or NO_CONE: what the frame compares against
     coneInvSpan: Float32Array, // 1 / (cos of the inner edge - coneCos), the soft edge without a divide
     followFlip: Uint8Array, // 1 = offsetX and direction mirror with the entity's flipX
+    // DX-GLOWRADIUS, appended (append, don't move):
+    glowRadius: Float32Array, // px, the halo's radius; 0 = 0.85 of the light's radius
   };
 
   /**
@@ -80,6 +85,16 @@ export class LightEmitter extends Component {
   set glow(value) {
     const v = +value;
     LightEmitter.glow[this.index] = v > 0 ? v : 0;
+  }
+
+  /** The halo's radius in px, at least 0 (0: 0.85 of the light's radius). */
+  get glowRadius() {
+    return LightEmitter.glowRadius[this.index];
+  }
+
+  set glowRadius(value) {
+    const v = +value;
+    LightEmitter.glowRadius[this.index] = v > 0 ? v : 0;
   }
 
   /** The layer the halo is drawn on, by name; null when it follows the entity's layers. */
