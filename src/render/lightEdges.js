@@ -127,7 +127,7 @@ ${unshaded ? 'uniform sampler2D uUnshaded;\n' : ''}out vec4 finalColor;
 ${edgeLightGlsl(kindClass(kind))}
 void main() {
 ${unshaded
-    ? '  // DX-UNSHADED, as unshadedComposite.js: the unshaded colour where the light is short of it, added.\n  vec3 unshaded = texture(uUnshaded, vUV).rgb;\n  finalColor = vec4(unshaded * (vec3(1.0) - min(edgeLight(vUV), vec3(1.0))), 0.0);'
+    ? '  // DX-UNSHADED, as unshadedComposite.js: the unshaded colour where the light is short of it, added. E-509: none here\n  // adds nothing, so the pixel reads no light and blends nothing.\n  vec3 unshaded = texture(uUnshaded, vUV).rgb;\n  if (unshaded.r + unshaded.g + unshaded.b <= 0.0) discard;\n  finalColor = vec4(unshaded * (vec3(1.0) - min(edgeLight(vUV), vec3(1.0))), 0.0);'
     : '  // Multiplied over the canvas, as the stretched light was (alpha 1).\n  finalColor = vec4(edgeLight(vUV), 1.0);'}
 }
 ` };
@@ -145,9 +145,13 @@ export function lightEdgesWgsl(kind) {
     ? ''
     : `@group(2) @binding(0) var uLight: texture_2d<f32>;
 ${unshaded ? '@group(2) @binding(1) var uUnshaded: texture_2d<f32>;\n@group(2) @binding(2) var uUnshadedSampler: sampler;\n' : ''}`;
+  // E-509: an unshaded half reads its colour first; none there adds nothing, so the pixel reads no light and blends nothing.
+  const unshadedFirst = unshaded
+    ? '  let unshaded = textureSample(uUnshaded, uUnshadedSampler, in.vUV).rgb;\n  if (unshaded.r + unshaded.g + unshaded.b <= 0.0) {\n    discard;\n  }\n'
+    : '';
   const body = mark
     ? '  return vec4<f32>(0.0);'
-    : `  let size = vec2<i32>(textureDimensions(uLight));
+    : `${unshadedFirst}  let size = vec2<i32>(textureDimensions(uLight));
   let p = in.vUV * vec2<f32>(size) - 0.5;
   let b = floor(p);
   let f = p - b;
@@ -166,7 +170,7 @@ ${unshaded ? '@group(2) @binding(1) var uUnshaded: texture_2d<f32>;\n@group(2) @
   }
   let light = (t00.rgb * own.x + t10.rgb * own.y + t01.rgb * own.z + t11.rgb * own.w) / sum;
 ${unshaded
-    ? '  let unshaded = textureSample(uUnshaded, uUnshadedSampler, in.vUV).rgb;\n  return vec4<f32>(unshaded * (vec3<f32>(1.0) - min(light, vec3<f32>(1.0))), 0.0);'
+    ? '  return vec4<f32>(unshaded * (vec3<f32>(1.0) - min(light, vec3<f32>(1.0))), 0.0);'
     : '  return vec4<f32>(light, 1.0);'}`;
   return `struct GlobalUniforms {
   uProjectionMatrix: mat3x3<f32>,

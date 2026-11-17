@@ -34,10 +34,12 @@ uniform sampler2D uUnshaded;
 uniform sampler2D uLight;
 out vec4 finalColor;
 
-// DX-UNSHADED: the unshaded colour where the light is short of it (unshadedComposite.js), added.
+// DX-UNSHADED: the unshaded colour where the light is short of it (unshadedComposite.js), added. E-509: none here adds
+// nothing, so the pixel reads no light and blends nothing (the light read at level 0: the target has no other).
 void main() {
   vec3 unshaded = texture(uUnshaded, vUV).rgb;
-  vec3 light = texture(uLight, vUV).rgb;
+  if (unshaded.r + unshaded.g + unshaded.b <= 0.0) discard;
+  vec3 light = textureLod(uLight, vUV, 0.0).rgb;
   finalColor = vec4(unshaded * (vec3(1.0) - min(light, vec3(1.0))), 0.0);
 }
 `;
@@ -80,7 +82,11 @@ fn mainVert(@location(0) aPosition: vec2<f32>, @location(1) aUV: vec2<f32>) -> V
 @fragment
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let unshaded = textureSample(uUnshaded, uUnshadedSampler, in.vUV).rgb;
-  let light = textureSample(uLight, uLightSampler, in.vUV).rgb;
+  // E-509: none here adds nothing (the GLSL's twin); the light read at level 0 after the discard.
+  if (unshaded.r + unshaded.g + unshaded.b <= 0.0) {
+    discard;
+  }
+  let light = textureSampleLevel(uLight, uLightSampler, in.vUV, 0.0).rgb;
   return vec4<f32>(unshaded * (vec3<f32>(1.0) - min(light, vec3<f32>(1.0))), 0.0);
 }
 `;
