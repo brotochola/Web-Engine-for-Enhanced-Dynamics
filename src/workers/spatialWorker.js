@@ -885,7 +885,8 @@ class SpatialWorker extends AbstractWorker {
    * E-503. A frame on the rewrite's path into its moving averages, per moved body and whole (a latch costs about a
    * rebuild, so a sample counts up to 8× the average); a frame physics did not publish, or without its list, says
    * nothing of the cost per body. After MOVERS_RETIME_FRAMES rewrites (times a rebuild's cost over these frames', up
-   * to MOVERS_RETIME_STRETCH, so a world that sleeps pays little for it), a full rebuild is timed again; a lower time replaces the average (a stale one, or the load's), a higher one joins it.
+   * to MOVERS_RETIME_STRETCH, so a world that sleeps pays little for it), a full rebuild is timed again; a lower time
+   * replaces the average (a stale one, or the load's), a higher one joins it.
    */
   _timeMovers(ms, moved, rewrote) {
     if (moved > 0) {
