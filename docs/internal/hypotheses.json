@@ -11246,7 +11246,8 @@
         "R-0854",
         "R-0925",
         "R-0927",
-        "R-1218"
+        "R-1218",
+        "R-1270"
       ]
     },
     {
@@ -11619,7 +11620,8 @@
         "R-1249",
         "R-1250",
         "R-1252",
-        "R-1254"
+        "R-1254",
+        "R-1271"
       ]
     },
     {
@@ -12235,7 +12237,8 @@
         "timer resolution"
       ],
       "records": [
-        "R-0928"
+        "R-0928",
+        "R-1270"
       ]
     },
     {
@@ -17492,13 +17495,13 @@
     {
       "id": "E-345",
       "title": "Logic zeroes every ticked RigidBody's accelerations each frame (rbAx = 0 at five sites), dirtying lines physics reads even when they already hold zero",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-17 (R-1272): the kernel on the i7-7500U and the Ryzen; the reader never gained",
       "date": "2026-11-15",
       "area": "logic",
       "kind": "speed",
-      "result": "Read 2026-11-14 (R-1100): logicWorker.js writes rbAx[entityIndex] = 0 (and ay, aa) in the tick paths; E-140 skips types without a RigidBody, not zero rows; physics reads every body's accelerations each step.",
-      "next": "Count nonzero-to-zero writes in Predator; if most are zero already, write only when nonzero (a test on a line already loaded); tickLoopKernel, then crowd 2.5 logic and physics.",
+      "result": "Storing only when the value changed: the reader unchanged on both CPUs; the writer slower except Ryzen accel across its two core complexes (-19 %), where workers spend only part of the time (E-427).",
+      "next": "Nothing pending; reopen only with a reader that measures slower on lines another core wrote (not a sequential pass).",
       "refs": [
         "EXECUTION_PLAN.md#E-345"
       ],
@@ -17508,7 +17511,8 @@
       ],
       "records": [
         "R-1100",
-        "R-1188"
+        "R-1188",
+        "R-1272"
       ]
     },
     {
@@ -19004,25 +19008,27 @@
         "sleeping store on every acceleration"
       ],
       "records": [
-        "R-1188"
+        "R-1188",
+        "R-1272"
       ]
     },
     {
       "id": "E-435",
       "title": "The particle worker stores RigidBody.speed of every opted-in body every frame, also when it did not change (sleeping and still bodies), into lines logic reads at each tick: an estimated 5 000 line transfers a frame at crowd 2.5",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-17 (R-1272): the kernel on the i7-7500U and the Ryzen; the reader never gained",
       "date": "2026-11-16",
       "area": "particle",
       "kind": "speed",
-      "result": "Candidate 3: src/workers/particleWorker.js (the unconditional store), demos/predatorScene/gameObjects/person.js (deriveSpeed, the read); 2 502 lines written a frame. Related: E-178 (the derive pass), E-353 (computing it in Box2D).",
-      "next": "Store only when the value changed; if E-353 moves the store into the finalize, keep it slot-partitioned (the finalize row above).",
+      "result": "Storing only when the value changed: the reader unchanged on both CPUs; the writer slower except Ryzen accel across its two core complexes (-19 %), where workers spend only part of the time (E-427).",
+      "next": "Nothing pending; reopen only with a reader that measures slower on lines another core wrote (not a sequential pass).",
       "refs": [],
       "aliases": [
         "speed store on change"
       ],
       "records": [
-        "R-1188"
+        "R-1188",
+        "R-1272"
       ]
     },
     {
@@ -20429,7 +20435,8 @@
         "spawn bookkeeping atomics"
       ],
       "records": [
-        "R-1229"
+        "R-1229",
+        "R-1273"
       ]
     },
     {
@@ -21582,6 +21589,53 @@
       "date": "2026-11-17",
       "title": "Faces' vertex-depth opaque pre-pass (DX-FACEDEPTH) only where it pays: with many small faces and little overdraw it costs more than the early depth it buys",
       "statusText": "found by DX-FACESBENCH 2026-11-17"
+    },
+    {
+      "id": "E-501",
+      "title": "Box2D's pool threads spin through a step only where every engine thread has a logical CPU: E-298's spin starved a 2-core laptop",
+      "status": "kept",
+      "statusText": "kept 2026-11-17 (R-1268), merged in ddcfaa20",
+      "date": "2026-11-17",
+      "result": "Kept (ddcfaa20): ASUS i7-7500U Predator crowd 0.5 physics 133.7 -> 41.2 ms (-70.4 %, 6/8), logic -28 %, pre-render -17 %, renderer -14 %; balls -0.7 %; no change at 16 logical CPUs",
+      "next": "On 8-thread machines the rule turns the spin off for Predator (10 engine threads): measure one before calling the threshold tuned.",
+      "area": "physics",
+      "kind": "speed",
+      "refs": [],
+      "aliases": [
+        "step spin",
+        "Box2D spin",
+        "oversubscription",
+        "hardwareConcurrency",
+        "weak laptop",
+        "2-core"
+      ],
+      "records": [
+        "R-1268",
+        "R-1271"
+      ]
+    },
+    {
+      "id": "N-264",
+      "title": "Physics' catch-up steps spiral where one step costs more than half the stable dt: Predator crowd 0.5 fell to 16 to 388 physics frames in 10 s on a 2-core laptop",
+      "status": "kept",
+      "statusText": "kept 2026-11-17 (R-1269), merged in ddcfaa20",
+      "date": "2026-11-17",
+      "result": "Kept (ddcfaa20): the catch-up spiral (11/12 runs on main on the ASUS) breaks: with E-501, physics 102.6 -> 30.6 ms (-72 %, 4/4), physics frames 62-129 -> 260-344; lockstep untouched",
+      "next": "The scene is still bistable on the ASUS: ~800 awake bodies (60 Hz, 7 ms a step) or ~4 000 (30 Hz, 20 ms). A slow physics may keep the civilians steering on stale poses, so they never sleep (E-434 writes sleeping = 0 on every acceleration): read awake counts frame by frame on a run that tips over.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [],
+      "aliases": [
+        "spiral of death",
+        "catch-up steps",
+        "frame steps",
+        "B7",
+        "awake bodies"
+      ],
+      "records": [
+        "R-1269",
+        "R-1271"
+      ]
     }
   ],
   "records": [
@@ -34112,6 +34166,68 @@
       "title": "E-497 answered: twin page format A stays",
       "verdict": "note",
       "text": "Linked from R-1265 (DX-MAPSBENCH): the barrio at 22 h ties on the GPU (A 5.92, B 5.88, C 5.44 ms with the clock); B and C change the picture on still maps (57 % of pixels, up to 181 of 255). A stays; B and C to remove with assets.twinFormat."
+    },
+    {
+      "id": "R-1268",
+      "date": "2026-11-17",
+      "time": "05:35",
+      "timeFrom": "recorded",
+      "title": "E-501 kept: Box2D's pool spins through a step only where every engine thread has a logical CPU; ASUS Predator crowd 0.5 physics -70 % (6/8)",
+      "verdict": "kept",
+      "text": "**Kept (77d32445, merged in ddcfaa20; Box2D 3cb91dd, merged in 37cdfd4).** E-298 made Box2D's pool threads spin through the whole step. That pays on the 16-thread Ryzen, but on the 2-core / 4-thread ASUS laptop the spinners took the CPUs from the other workers and from the physics thread itself. The world now has a step-spin switch (`b2World_SetStepSpin`, export `world_set_step_spin`, on by default). The physics host turns it off when `navigator.hardwareConcurrency` is under the engine's threads: spatial + logic + renderer + particle + pre-render + Box2D's threads (`stepSpinPays`, physicsConfigImpl.js). Every demo has 13 threads or fewer, so nothing changes on the Ryzen.\n\n- ASUS i7-7500U (4 logical CPUs; Predator's 10 threads), Predator crowd 0.5, main ef81812d against the branch, 8 pairs, `--full-rev`, 2026-11-17 04:41 to 05:15 (asus-e298auto-pred05):\n  - physics 133.7 → 41.2 ms (−70.4 %, 6/8; the A/A's limit 39.1 %);\n  - logic −28.0 %, pre-render −17.0 %, renderer −14.1 % (7/8).\n- ballsScene: physics −0.7 % (4 pairs, limit 16.2 %). Its default thread count has no pool spin.\n- Tests: test:node 3003/3003, test:demos 121/121, bundles smoked (b49e6f0d).\n- Open: on 8-thread machines the rule turns the spin off for Predator (10 threads). Measure one before calling the threshold tuned.",
+      "commits": [
+        "77d32445",
+        "ddcfaa20"
+      ]
+    },
+    {
+      "id": "R-1269",
+      "date": "2026-11-17",
+      "time": "05:35",
+      "timeFrom": "recorded",
+      "title": "N-264 kept: no catch-up steps while one step costs over half the stable dt; with E-501, ASUS Predator crowd 0.5 physics -72 % (4/4), no spiral",
+      "verdict": "kept",
+      "text": "**Kept (971c82f0, merged in ddcfaa20).** On the variable-rate path a frame longer than 1/30 s is several stable steps (B7). When one step costs more than 16.7 ms those steps do not fit in a frame either: the next frame comes as long, takes as many steps again, and physics never gets back.\n\n- On the ASUS laptop Predator crowd 0.5 fell into it in 11 of 12 runs on main: 16 to 388 physics frames in 10 s, against ~560 on v0.14.0, which tipped over in 1 of 16.\n- Past that cost the frame now takes one stable step, and the world runs slower than the clock until a step is cheap again. The rule reads the last frame's own time a step, so it does not flap. Lockstep (fixedFps) keeps its steps on every machine.\n- ASUS, Predator crowd 0.5, 4 pairs each, `--full-rev`, 2026-11-17 05:15 to 05:24:\n  - N-264 on top of E-501 (asus-n264-pred05): physics 31.0 → 22.1 ms (−59.4 %, 3/4; limit 55.4 %). Runs under 400 physics frames 4/4 → 2/4; two runs were back at v0.14.0's 552 and 469 frames with ~800 awake bodies.\n  - Both against main ef81812d (asus-e298n264-pred05, KEPT by the runner): physics 102.6 → 30.6 ms (−72.0 %, 4/4), logic −20.5 % (4/4). Physics frames 62 to 129 → 260 to 344: one step a frame at 30 Hz, no spiral.\n- How it was found: the bisect on physics' mean STEP_MS gave split verdicts, because each run either tips over or not. Read by runs under 400 physics frames, it is a threshold rather than one commit: v0.14.0 1/16, mid-November commits about half, main 11/12.\n- Still open: the scene is bistable there. ~800 awake bodies at 60 Hz and 7 ms a step, or ~4 000 at 30 Hz and 20 ms (the row's `next`).",
+      "commits": [
+        "971c82f0",
+        "ddcfaa20"
+      ]
+    },
+    {
+      "id": "R-1270",
+      "date": "2026-11-17",
+      "time": "05:35",
+      "timeFrom": "recorded",
+      "title": "The ASUS's ballsScene renderer +46 % since v0.14.0 bisects to N-146 but is scheduling, not work: bunnyMark's renderer -7.2 % with N-146",
+      "verdict": "note",
+      "text": "**The ASUS's renderer \"+46 %\" in ballsScene is not renderer work.**\n\n- The bisect over main's 102 first-parent src commits (v0.14.0 against each, 3 pairs a step, 2026-11-17 04:10 to 04:41) named 7ce76e8c (N-146: physics sleeps on the frame chain's bell). The renderer went from 0.30–0.34 to 0.42–0.50 ms, and N-146 changed no renderer code.\n- N-146 against its parent directly, 4 pairs each (balls): renderer +13 % median with mixed pairs, both with the processor's idle states off (IDLEDISABLE 1, asus-n146-idleoff) and on (asus-n146-idleon). It cannot be told apart at 0.4 ms with this spread, and the parent (E-198's chain) already reads a little above v0.14.0.\n- Where the renderer owns the frame (bunnyMark, 100 000 bunnies, src only, asus-bunny-n146): renderer 8.90 → 8.68 ms (−7.2 %, 3/4).\n- So it is scheduling around the frame chain's waits, the price of not spinning a core while physics waits for logic. Closed."
+    },
+    {
+      "id": "R-1271",
+      "date": "2026-11-17",
+      "time": "05:35",
+      "timeFrom": "recorded",
+      "title": "ASUS: v0.14.0 against main in balls, boids, Predator crowd 0.5 and bunnyMark: spatial -31 to -45 %, logic -40 %; Predator's physics spiral; the HD 620 draws bunnyMark 29.5 % slower",
+      "verdict": "note",
+      "text": "**ASUS laptop (i7-7500U, 2 cores / 4 threads, HD 620), v0.14.0 against main 85c52b16, each side its whole revision, 8 pairs, each scene with its own A/A (job 081, 2026-11-17 03:17 to 04:10).**\n\n- ballsScene (9 000): physics −1.3 % (within ±11.5 %), spatial −31 % (8/8), logic −40 % (7/8), renderer +46 % (8/8, 0.33 → 0.47 ms: N-146's scheduling, see the N-146 record).\n- boidsScene (40 000 bodies; physics at 178 % load, so its A/A failed on load and these are indicative): spatial −45.5 %, physics −50.6 % (0/8 worse).\n- Predator crowd 0.5: physics 5–12 ms on v0.14.0 against 62–75 ms on main, with steps up to 10 s. That is the catch-up spiral (N-264), made likelier by E-298's spin (E-501). Both are fixed in ddcfaa20.\n- bunnyMark 100 000 bunnies (src only, asus-bunny-v014): pre-render −33.6 %, renderer +1.1 %, but the HD 620 draws 12.2 → 8.5 fps (−29.5 %, 4/4). The suspect is E-448's opaque pass on an integrated GPU (job 0856)."
+    },
+    {
+      "id": "R-1272",
+      "date": "2026-11-17",
+      "time": "05:35",
+      "timeFrom": "recorded",
+      "title": "Store-if-changed does not pay: the reader never gains (Intel, Ryzen); the writer loses except Ryzen accel across core complexes (-19 %)",
+      "verdict": "note",
+      "text": "**Not pursued: storing only when the value changed does not pay on either CPU.** Kernel `storeIfChangedCrossCoreMicrobench.mjs` (scratch, not in the repo): a writer and a reader take turns each frame over 24 800 bodies, 10 % changing, under Windows affinity masks.\n\n- The reader is unchanged everywhere: Intel accel 2.62 vs 2.83 ns a body, speed 1.52 vs 1.50; Ryzen accel 1.26 vs 1.32, speed 0.76 vs 0.76.\n- The writer pays for the test:\n  - Intel, two cores: accel 2.41 → 5.42 ns; total 5.03 → 8.25.\n  - Ryzen, one core complex: accel total 3.44 → 4.63 (+35 %).\n- The one case that pays: Ryzen accel across the two complexes (CPUs 0 and 8), 6.22 → 5.06 (−19 %). There the unconditional zero stores invalidated the reader complex's copies.\n- Speed (E-435): no difference on any mask.\n- The workers move between the complexes 24 to 50 times a second (E-427), so the conditional zeroing would win only part of the time and lose the rest. The audit's estimates overstate the cost of sequential reads of lines another core wrote: the L3 and the prefetcher hide it."
+    },
+    {
+      "id": "R-1273",
+      "date": "2026-11-17",
+      "time": "05:35",
+      "timeFrom": "recorded",
+      "title": "E-487 is a design change, not a kernel: each spawn is its own window and the epoch is publishPose's seqlock",
+      "verdict": "note",
+      "text": "**Read 2026-11-17: not a kernel yet, a design change.** Each spawn makes four atomic read-modify-writes: the slot's generation, the global `bodyGenEpoch`, the slot's dirty flags and the slot's half-word bit.\n\n- Batching \"per window\" saves nothing: each spawn already opens and closes its own window (`beginBodyDirtyDeferred` and `endBodyDirtyDeferred` around one spawn, E-92).\n- The epoch cannot move to the frame's end. It is pose publishing's seqlock (`weedjsPost.js` publishPose, N-86, N-214): the fast path trusts \"nobody respawned\" when the epoch did not move between its two reads. A generation advance that bumps the epoch only later lets a publish write the old body's pose over the invalidated slot for a frame.\n- The flags need their `Atomics.or`, because physics clears them. A single-writer `Atomics.store` of the generation costs the same as the add on x86 (an xchg).\n\nThe shape that could pay: logic defers its spawns' generation advances and LIFECYCLE publishes to the end of its tick, then makes one epoch add after them, all before the frame's bell. Physics already picks up a mid-tick LIFECYCLE on its next step at the earliest, so bodies should not come later. It needs a test of a respawn during publishPose, then spawnStorm's logic. Ceiling: the bookkeeping's 45 ms/s (about 0.75 ms a frame) if all of it went."
     }
   ],
   "leads": [
