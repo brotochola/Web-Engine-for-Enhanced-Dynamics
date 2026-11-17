@@ -21901,7 +21901,8 @@
         "lamp post ghost"
       ],
       "records": [
-        "R-1326"
+        "R-1326",
+        "R-1330"
       ],
       "id": "N-266",
       "kind": "bug",
@@ -22211,7 +22212,8 @@
         "selfShadow clamp"
       ],
       "records": [
-        "R-1327"
+        "R-1327",
+        "R-1330"
       ],
       "result": "",
       "next": "Skip the steps past the face map in GLSL as the WGSL does (one line), film the drift with ?selfShadow=0 against on, WebGL against WebGPU. Left after it: a self-shadow from a part of the house that has left the screen is lost (the face map covers the view only); a face map with a margin on the sun's side would keep it.",
@@ -22342,7 +22344,8 @@
       ],
       "records": [
         "R-1322",
-        "R-1328"
+        "R-1328",
+        "R-1330"
       ],
       "result": "",
       "next": "Merge fix/decoration-owner with fix/gbuffer-depth once measured. Later, the editor could export volumes as levels (body + tank: addLevel) instead of a convex hull, for truer ground shadows too.",
@@ -22363,7 +22366,8 @@
       ],
       "records": [
         "R-1322",
-        "R-1328"
+        "R-1328",
+        "R-1330"
       ],
       "result": "",
       "next": "Merge with N-275 once measured; then the unshaded pass (N-266) the same way, and E-463's cost read again (early depth for the frames without heights).",
@@ -22384,7 +22388,8 @@
       ],
       "records": [
         "R-1322",
-        "R-1328"
+        "R-1328",
+        "R-1330"
       ],
       "result": "",
       "next": "Merge with N-274 once measured; the HD 620 drawn frames with the words at three floats.",
@@ -22405,7 +22410,8 @@
       ],
       "records": [
         "R-1323",
-        "R-1328"
+        "R-1328",
+        "R-1330"
       ],
       "result": "",
       "next": "Merge with the N-273..N-275 stack; Predator gate and the HD 620 drawn frames.",
@@ -35615,6 +35621,18 @@
       "title": "Wall rings at night are the light target's 8-bit steps, not shadows; the people's wide wall shadows from a side lamp are their lamp-facing cards, as a body casts",
       "verdict": "note",
       "text": "wallShadowScene, people=0, lamp 200 px away: concentric rings on the wall, identical with lampShadows 'map' and 'sprite' (0 px differ), so the light's quantization (RGBA8, light up to 1), not a shadow. The flat-topped wide shadows of the people beside the lamp on the wall stay with a 1500 px reach (not the pano's ring): each person casts as a card turned to its lamp (lampMapVertex), a body's silhouette, which an oblique wall stretches."
+    },
+    {
+      "id": "R-1330",
+      "date": "2026-11-17",
+      "time": "20:55",
+      "timeFrom": "recorded",
+      "title": "HD 620: the stack draws 8.7 % fewer frames in the barrio at night (the gate fails); the merge waits for the per-pass split",
+      "verdict": "fail",
+      "text": "ASUS job 0887 (the other session's), HD 620, 20:44-20:55: main bd82c1be against fix/gbuffer-depth 023c4264, Buenos Aires hour=22&dayMinutes=0, camera still, src, 4 pairs. Drawn 36.8 -> 33.9 fps (-8.7 %, 4/4 pairs, cv 2/3 %), presented 57.3 -> 54.1. Renderer CPU 7.83 -> 7.57 ms, physics -14.6 %, logic -4.7 % (fewer frames: shared power). Load keys equal; GPU_CASTERS and GPU_SHADOW_LIGHTS +4.9 % on B, but at equal casters B still draws 8 % fewer, so the stack's GPU cost. Suspects: the G-buffer pass writing gl_FragDepth for every texel (N-274: no early depth test there; the colour pass keeps it with E-378's vertex depth), N-266's unshaded pass the same, N-276's per-fragment lamp rays. On the GTX each read cheap. A per-pass split on the ASUS is queued.",
+      "commits": [
+        "023c4264"
+      ]
     }
   ],
   "leads": [
