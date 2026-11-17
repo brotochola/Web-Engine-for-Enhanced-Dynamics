@@ -37,7 +37,7 @@ const POOLS = [ParticleEmitter, DecorationPool, BulletPool];
 
 test('poolSlotWidth: 16-bit up to 65 535 slots, 32-bit past it, up to the FL4 ceiling', () => {
   assert.equal(MAX_POOL_SLOTS_U16, 65535);
-  assert.equal(MAX_POOL_SLOTS, 524287);
+  assert.equal(MAX_POOL_SLOTS, 1048575);
   for (const [n, wide] of [[0, false], [1, false], [65535, false], [65536, true], [200000, true], [MAX_POOL_SLOTS, true]]) {
     assert.equal(poolSlotWide(n), wide, `${n}`);
     assert.equal(PoolSlotArray(n), wide ? Uint32Array : Uint16Array);

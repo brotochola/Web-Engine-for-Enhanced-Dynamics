@@ -206,6 +206,57 @@ test('200 000 decorations: 32-bit slots through the pool, the hash, attachments,
   assert.deepEqual([byDefault._swayWasm.slotBytes, byDefault._swayWasm.f32], [4, true]);
 });
 
+// DX-DECO1M: a million decorations. FL4's 20-bit index hands out every slot once (19 bits stopped at 524 287); the
+// hash finds, moves and drops slots past 2^19; freed slots come back; the worker culls slots past 2^19 into view.
+test('1 000 000 decorations: every slot once through FL4\'s 20-bit index, the hash and culling past 2^19', async (t) => {
+  const n = 1000000;
+  const scene = buildPoolScene({ decorations: n, maxAttached: 4, swayBuckets: K, world: [16384, 16384] });
+  assert.ok(DecorationPool.freeList instanceof Uint32Array && DecorationPool._popSlot === popFl4);
+  const r = mulberry32(0xdec01);
+  const seen = new Uint8Array(n);
+  for (let k = 0; k < n; k++) {
+    const i = DecorationPool.spawn({ x: r() * 16000, y: r() * 16000 });
+    if (!(i >= 0 && !seen[i])) assert.fail(`spawn ${k}: slot ${i}`);
+    seen[i] = 1;
+  }
+  assert.equal(DecorationPool.getActiveCount(), n);
+  assert.equal(DecorationPool.spawn({ x: 1, y: 1 }) < 0, true, 'the pool is full');
+  const out = new Uint32Array(256);
+  const near = (x, y) => Array.from(out.subarray(0, DecorationSpatial.queryCircle(x, y, 1, out)));
+  for (const slot of [524287, 524288, 999999]) {
+    assert.ok(near(D.x[slot], D.y[slot]).includes(slot), `queryCircle finds slot ${slot}`);
+  }
+  DecorationSpatial.move(999999, 10, 10);
+  assert.ok(near(10, 10).includes(999999), 'moved');
+  // Free the top 1000 slots and slot 524 288; the next spawns take exactly those back.
+  const freed = [524288];
+  for (let i = n - 1000; i < n; i++) freed.push(i);
+  for (const i of freed) assert.ok(DecorationPool.despawn(i), `despawn ${i}`);
+  assert.ok(!near(10, 10).includes(999999), 'a despawned decoration leaves the hash');
+  const again = [];
+  for (let k = 0; k < freed.length; k++) again.push(DecorationPool.spawn({ x: 20, y: 20 }));
+  assert.deepEqual(again.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)), freed.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)));
+  assert.equal(DecorationPool.spawn({ x: 1, y: 1 }) < 0, true, 'full again');
+
+  const worker = await bootWorker(scene);
+  const cam = new Float32Array(new SharedArrayBuffer(Camera.FLOAT_COUNT * 4));
+  Camera.initialize(cam, 1920, 1080);
+  cam[0] = 0.12;
+  cam[5] = 0.12;
+  worker.canvasWidth = 1920;
+  worker.canvasHeight = 1080;
+  worker.cameraData = cam;
+  worker._frameCamValid = false;
+  worker.refreshActiveDecorationSnapshot();
+  assert.equal(worker._activeDecorationSnapshotCount, n);
+  worker.updateDecorationScreenVisibility();
+  const visible = worker.visibleDecorationsData;
+  let pastHalf = 0;
+  for (let k = 1; k <= visible[0]; k++) if (visible[k] > 524287) pastHalf++;
+  assert.ok(visible[0] > 1000 && pastHalf > 100, `${visible[0]} in view, ${pastHalf} of them past slot 524 287`);
+  t.diagnostic(`${visible[0]} in view, ${pastHalf} past slot 524 287`);
+});
+
 test('the scene refuses a decoration pool past MAX_POOL_SLOTS', () => {
-  assert.throws(() => buildPoolScene({ decorations: MAX_POOL_SLOTS + 1 }), /decoration\.maxDecorations must be an integer in \[0, 524287\]/);
+  assert.throws(() => buildPoolScene({ decorations: MAX_POOL_SLOTS + 1 }), /decoration\.maxDecorations must be an integer in \[0, 1048575\]/);
 });

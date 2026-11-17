@@ -7,8 +7,6 @@ const { Scene, Camera, Decoration } = WEED;
 const SEED = 0xdec0f1;
 const WORLD_W = 4000;
 const WORLD_H = 3000;
-const MAX_DECORATIONS = 65535;
-const PLANT = 64000;
 
 /** A number from the page's query, or `fallback`. */
 function queryNumber(key, fallback) {
@@ -28,6 +26,13 @@ function queryNumber(key, fallback) {
  * `?zoom=` (default 1.5): the zoom it holds or swings around; 0.8 puts about 24 000 of the 64 000 in the culled view,
  * 0.55 about 41 000.
  */
+/**
+ * `?maxDecorations=` (default 65 535) and `?plant=` (default 64 000): the pool and how many it plants (DX-DECO1M: a
+ * million draws past slot 524 287).
+ */
+const MAX_DECORATIONS = queryNumber('maxDecorations', 65535);
+const PLANT = Math.min(queryNumber('plant', 64000), MAX_DECORATIONS);
+
 export const PAN = queryNumber('pan', 0) === 1 ? 1 : 0;
 export const ZOOM = queryNumber('zoom', 1.5);
 

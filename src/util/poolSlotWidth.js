@@ -2,12 +2,12 @@
 // maximum (particle.maxParticles, decoration.maxDecorations, bullet.maxBullets), once: where the scene makes its
 // buffers (sceneSharedBuffers.js) and where each worker binds them, since every worker is given the maximum. Up
 // to 65 535 slots the ids are 16-bit: the arrays, buffers and code the pools have always had. Past that they are
-// 32-bit, up to MAX_POOL_SLOTS, the ceiling of the FL4 free list's 19-bit index (atomicFreeList.js). Bind-time
+// 32-bit, up to MAX_POOL_SLOTS, the ceiling of the FL4 free list's 20-bit index (atomicFreeList.js). Bind-time
 // helpers only: a hot loop gets the array it was handed, never a width test.
 
 export const MAX_POOL_SLOTS_U16 = 65535;
-/** The FL4 free list's 19-bit (index + 1): 524 287 slots. */
-export const MAX_POOL_SLOTS = (1 << 19) - 1;
+/** The FL4 free list's 20-bit (index + 1): 1 048 575 slots (DX-DECO1M; 524 287 with 19 bits before). */
+export const MAX_POOL_SLOTS = (1 << 20) - 1;
 
 /** Whether a pool of `maxSlots` takes 32-bit slot ids. */
 export function poolSlotWide(maxSlots) {
