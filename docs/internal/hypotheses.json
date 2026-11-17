@@ -16052,7 +16052,8 @@
       ],
       "next": "Groups R (render and maps), P (Transform.parent), O (objects), E (the editor) and D (the demo) in parallel, one owner a file (DX_BARRIOS_DESIGN.md); the suites when merging; then the mandatory final pass of every trace and the optimization.",
       "records": [
-        "R-1258"
+        "R-1258",
+        "R-1280"
       ]
     },
     {
@@ -21517,10 +21518,11 @@
         "twin format bench"
       ],
       "records": [
-        "R-1265"
+        "R-1265",
+        "R-1281"
       ],
       "result": "",
-      "next": "Left: each map kind's cost (heightMap, normalMap, reliefMap, normals at half size) and DX-MAPCAMERA's rescale at load.",
+      "next": "Left: the relief map (spriteMapsStressScene ?maps=relief, tool 74b90c44, against ?maps=height on the GPU draw by draw) and DX-MAPCAMERA's rescale at load. The kinds (R-1281): no maps 3.15 ms of GPU, height 5.89, normal 5.80, both 5.83: the pixel depth and the G-buffer they turn on cost, not the kind.",
       "id": "DX-MAPSBENCH",
       "kind": "tools",
       "area": "bench",
@@ -21675,6 +21677,65 @@
         "R-1274",
         "R-1277"
       ]
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "movers crossover",
+        "timed movers"
+      ],
+      "records": [
+        "R-1280",
+        "R-1282"
+      ],
+      "result": "Buenos Aires 22 h, 5 000 people: spatial 3.109 -> 2.152 ms (-30.8 %, 4/4); 15 000 people +2.1 % (noise); Predator crowd 2.5 NEUTRAL (+0.9 %); kernel 20 % circles +34 %. Merged 9d483258.",
+      "next": "The latch is 2.5 rebuilds and the rewrite gives up in full cells: a rewrite that keeps going past a full cell (a spill list) would widen where it wins.",
+      "id": "E-503",
+      "kind": "speed",
+      "area": "spatial",
+      "status": "kept",
+      "date": "2026-11-17",
+      "title": "Spatial takes E-126's grid rewrite up to where the two paths' timed costs tie, not a fixed 20 % of movers",
+      "statusText": "found by the barrio's final pass 2026-11-17 (Buenos Aires moves 21.7 % of its active entities, so spatial rebuilt its grid in full every frame); kept 2026-11-17 after six versions"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "floor cache",
+        "shader layer cache"
+      ],
+      "records": [
+        "R-1280",
+        "R-1284"
+      ],
+      "result": "GTX 1650, the barrio held: the floor draw (1.91 ms) becomes a 0.17 ms copy; captures byte-identical cached and not (WebGL, WebGPU); the GPU then lowers its clock (total ms a frame 5.94 -> 5.92) and even at 4K draws 60 either way: not GPU-bound here. Merged 9d483258.",
+      "next": "Read the gain where the GPU is the limit: the ASUS's HD 620 (the barrio, ?floorCache=0 against 1, drawn frames). Then a world-space tile cache for a camera that pans (re-paint only the strip that comes into view), and the default on for worldRect layers that do not read the frame's time.",
+      "id": "E-504",
+      "kind": "gpu",
+      "area": "render",
+      "status": "kept",
+      "date": "2026-11-17",
+      "title": "A worldRect shader layer is painted again only when what it shows changes (the camera, the canvas, its uniforms or pictures), not every frame: layers.X.shader.cache",
+      "statusText": "found by the barrio's final pass 2026-11-17 (the floor's procedural shader, 1.92 of 5.92 ms of GPU a frame at 22 h); kept 2026-11-17, opt-in, the barrio's floor on"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "sway f32 free"
+      ],
+      "records": [
+        "R-1280",
+        "R-1283"
+      ],
+      "result": "Kernel (the barrio's branches, 10 081 on screen) +199.9 % (5 rounds); decorationSwayStressScene ?buckets=0 particle 1.556 -> 1.291 ms (-17.0 %, 4/4, under the floor). Merged 9d483258.",
+      "next": "The frequency grid's range as a config (min, max), so the barrio's 0.4 to 0.85 Hz could take the bucketed kernel too; measure the barrio's particle worker with it.",
+      "id": "E-505",
+      "kind": "speed",
+      "area": "particle",
+      "status": "kept-kernel",
+      "date": "2026-11-17",
+      "title": "The free sway (sway_free, sway_free_u32: no frequency grid, the default) in float32, four branches at a time",
+      "statusText": "found by the barrio's final pass 2026-11-17 (sway_free_u32 70 % of the particle worker's 2.2 ms, an fdlibm sine a branch); kept on the kernel 2026-11-17"
     }
   ],
   "records": [
@@ -34324,6 +34385,69 @@
       "title": "Given 50 s, main's Predator crowd sleeps on the ASUS (0 to 46 awake, physics 2-3 ms): R-1278's gap is a slower settle in the start-up window, not a trap",
       "verdict": "note",
       "text": "**With a 50 s warm-up instead of 10, main's crowd does sleep on the ASUS.** Main 1835b772, Predator crowd 0.5, one build both sides, 2 pairs, 50 s warm-up then a 10 s window (asus-pred05-longwarm, 2026-11-17 07:28): awake bodies 0 to 46 at the end (2 to 46 on average), 600 physics frames, 2–3 ms a step.\n\nSo R-1278's \"never sleeps\" is a slower settle, not a trap. Main needs more than the standard window's first 10 s on this laptop; v0.14.0 mostly settles inside it, ending at 800–1 030 awake. The +213 % physics against v0.14.0 is measured in that start-up transient, while the scene's steady state is fast on both. It still costs a player the first tens of seconds at 30 Hz physics.\n\nFor sittings on the ASUS, Predator crowd 0.5 needs a warm-up of 50 s or more to measure steady state, or the transient has to be the thing measured.\n\nNext: time to settle (awake under 1 000) per build, from a run's start, on v0.14.0 and main."
+    },
+    {
+      "id": "R-1280",
+      "date": "2026-11-17",
+      "time": "05:23",
+      "timeFrom": "recorded",
+      "title": "The barrio's final pass: heap, CPU, deopts and GPU at 22 h, what each worker spends and what to take",
+      "verdict": "note",
+      "text": "**The barrio's final pass, first part: heap, CPU and deopts at 22 h (main ddcfaa20, 5 000 people, 47 692 slots, 21 401 active).**\n\n- **Heap** (`heapSampleWorkers`, 35 s warm-up, 8 s): logic workers 1.25 to 3.4 MB/s, almost all the demo's\n  (`walkers.js` tick, animate, keepApart; `cars.js` drive: doubles passed to engine calls that are not inlined),\n  yet GC is 4 to 9 ms in 8 s (about 1 ms/s): not worth unreadable demo code. Engine: `Sun.intensity`'s getter\n  boxes its double where a car's tick reads it (~50 KB/s a logic worker), `syncMassFromCollider` from the cars'\n  collider width/height (5 KB/s), pre-render's halo sort key (`_storeGlowSortY` → `_storeEntitySortY` →\n  `spriteSortFootY` returned boxed: 17 KB/s, ~13 heap numbers a frame), Pixi 298 KB/s inside Pixi (bind, push, the\n  ring's geometry swap re-adding listeners: ~40 KB/s). Spatial, particle, physics under 20 KB/s. Nothing worth a change\n  on its own; written down here.\n- **CPU** (headed trace, 8 s): spatial 3.4 ms (STEP_MS), its `rebuildOwnedRows` half of it and `getColliderBounds`\n  15 % (4 429 house polygons, their vertices walked every frame): the full rebuild every frame, since 21.7 % of the\n  active entities move, over E-126's fixed 20 % (→ E-503). Particle 2.2 ms, 70 % `sway_free_u32` (fdlibm sines for the\n  branches: the frequency grid only covers 1 to 3 Hz, the barrio's are 0.4 to 0.85). Physics 3.8 ms (wait 1.7).\n  Pre-render 5.8 (wait 3.7): `emit_rows`, `pack_sprites_general`, `collect_sprites`. Logic 1.5 ms each:\n  `requestVectorFromStaticFlowfield` 20 %.\n- **Deopts** (`--log-deopt`): the top sites (pre-render's 4648, weedjsPost 665) fire during the load (8 to 19 s), none in\n  the steady state.\n- **GPU** (E-497's capture, 22 h, 5.92 ms): the floor's procedural shader 1.92 ms (the whole screen, every frame, for a\n  picture that only changes with the camera → E-504), the light pass 0.87, the lamps' shadow maps 0.84, the entity\n  passes 0.28 + 0.31 + edges 0.08."
+    },
+    {
+      "id": "R-1281",
+      "date": "2026-11-17",
+      "time": "05:16",
+      "timeFrom": "recorded",
+      "title": "DX-MAPSBENCH, the map kinds: a map's cost is the pixel depth it turns on, not its kind",
+      "verdict": "note",
+      "text": "**DX-MAPSBENCH, the map kinds: what a map costs is the pixel depth that comes with it, not its kind.**\n\nspriteMapsStressScene, 3 000 shapes on screen at 22 h, 12 lamps, resolution 0.5, WebGL, `glFrameRecorder --gpu-draws`\n(GTX 1650), GPU a frame: no maps 3.15 ms; heightMap 5.89; normalMap 5.80; both 5.83. Any map turns on the pixel depth and\nthe G-buffer for the sheet: the main entity pass 1.28 → 2.41 ms (it reads the twin and writes depth by the pixel), an edge\npass 0.43 → 1.73 (the twin's edges blended over the depth-tested picture), the G-buffer 0.77 ms that the scene without maps\ndoes not draw. Which map the sheet brings does not move it (5.80 to 5.89, within one run's spread). So the cost to\nattack is the depth machinery (E-500 for the faces' share, the edge pass), not the map kinds; and the twin page's format\ndoes not matter on this GPU (E-497)."
+    },
+    {
+      "id": "R-1282",
+      "date": "2026-11-17",
+      "time": "07:16",
+      "timeFrom": "recorded",
+      "title": "E-503 kept: spatial's movers choice by timed cost, six versions; the barrio's spatial -30.8 %, Predator neutral",
+      "verdict": "kept",
+      "text": "**E-503, the movers choice by timed cost: built in six steps on perf/barrio-pass, each step from what a sitting showed.**\n\n- **Why:** Buenos Aires (22 h, 5 000 people) moves 21.7 % of its 21 401 active entities, over E-126's fixed 20 %, so\n  spatial rebuilt its grid in full every frame (GRID_MOVERS 0); its 4 429 house polygons make a rebuild dear per\n  entity (vertices walked, several cells each) while the movers are circles, so the rewrite wins far past the circle\n  kernel's 23 % crossover. One run with the limit at 30 %: spatial 3.37 → 2.21 ms.\n- **v1** (`ed2ad9a5`, the limit where the timed costs tie, timing only the rewrites that held): the barrio at 15 000\n  people (spatial over the floor) **+15.5 %, REGRESSION** (3/4): a crowd's full cells make the rewrite give up, which\n  that timing never counted, and the rebuild had been timed while the page loaded (16 ms against a warm ~3.5).\n- **v2-v3** (`5dddf2d5`, `36042f49`): the whole grid step timed (a give-up and the latch after it count against the\n  rewrite), the rebuild retimed in every run of rewrites (stretched by how far apart the costs are). 15 000 people:\n  spatial +3.2 % (3/4), physics +2.1 % (3/4, unreachable): drift-sized. Default load: spatial 3.23 → 2.72 ms\n  (−16 %, under the floor); its last two pairs, the clean ones, **3.19 → 2.39 and 3.12 → 2.10 ms (−25 %, −33 %)**;\n  the first two had every other worker 40-120 % slower on B (the machine busy).\n- **v5** (`0ed8aeae`): enter under 0.8 of the limit, a latch the choice made is not a cost per moved body, a lost probe\n  doubles the gap. Kernel (`spatialGridMoversMicrobench`, fixed against auto, 3 rounds): 0 % movers −77 % (0.16 → 0.69 µs a\n  frame: retimes, absolute nothing), 5 % TIE, 20 % **+34 %** (circles: the rebuild is cheaper there and the timed\n  choice takes it, the fixed 20 % took the rewrite), 35 % and 100 % TIE. Predator crowd 2.5: spatial +5.1 % (3/4)\n  against the A/As' ±4.9 %, physics +4.3 % (within ±5.4 %): the drift again, plus a cost found by instrumenting it:\n  frames whose moved list was short (physics not stepping) latched Predator's grid for nothing, 3 to 13 ms a time, a few\n  every 240 frames, and probes that gave up never spaced the next.\n- **v6** (`126f2a90`): entry also takes the moved count's recent average under it; any probe that does not win spaces the\n  next. Instrumented Predator: no latch in the battle; after it (4 to 200 moved) the rewrite, 0.03 to 0.12 ms against\n  1.5 for the rebuild.\n- **Verdict on v6** (`126f2a90`; sittings with both sides in worktrees, main against it, 4 pairs, headed, detailed stats off):\n  - Buenos Aires 22 h, 5 000 people (spatial under the 6 ms floor, so the runner does not judge it; the owner's real\n    load): spatial **3.109 → 2.152 ms (−30.8 %, 4/4 pairs, each −30 to −35 %)**, physics −4.9 %, logic +2.1 %: the\n    rewrite every frame (instrumented: 1.3 ms against a rebuild's ~3), retimed every ~700 frames.\n  - Predator crowd 2.5 (`e503b-predator`): spatial +0.9 % (2/4) within the A/As' ±4.9 %, physics −1.9 %: NEUTRAL.\n  - Kernel: as v5 (20 % circles +34 %, the rest TIE; 0 % movers 0.16 → 0.7 µs a frame of retimes).",
+      "commits": [
+        "ed2ad9a5",
+        "5dddf2d5",
+        "36042f49",
+        "0ed8aeae",
+        "126f2a90",
+        "9d483258"
+      ]
+    },
+    {
+      "id": "R-1283",
+      "date": "2026-11-17",
+      "time": "07:01",
+      "timeFrom": "recorded",
+      "title": "E-505 kept on the kernel: the free sway in float32, four branches at a time, +199.9 %; the sway scene's particle -17 %",
+      "verdict": "kept-kernel",
+      "text": "**E-505 kept (kernel): the free sway in float32, four branches at a time, ×3.0 in its kernel; the sway scene's particle −18 %.**\n\n- **Change** (`d8d7df22`): `sway_free_f32x4` and `_u32` in `wasm/decorationSway.c`, bound in sway_free's place with\n  `wasm.decorationSwayF32` (default on). Four list entries at once when all four are loop or skew decorations: the argument\n  `baseAngle * frequency + i * 0.1` in double and reduced to [-pi, pi] in double, its sine in float32 (an odd degree-9\n  polynomial with the slope at 0 kept at 1, fitted minimax by Lawson's iteration: 4.6e-9 in double, 1.1e-7 with float32's\n  roundings, emulated over 400 001 points), the amplitude's product and a loop's small-angle rotation in float32. An impulse,\n  a mode the JS does not sway, an angle of 0.08 rad or more, or an argument past fdlibm's medium reduction (2^20 pi/2) takes\n  the scalar step (sway_free_one, kept out of line: engine.wasm +12 KB, +2.1 KB gzip, where inlining it four times cost 38 KB).\n- **Tolerance** (`decorationSwayWasm.test.js`): 80 frames against sway_free on the worker path (the random frames through\n  every branch, then the barrio's branches), within compareSwayStates' slack, at most 18 % of it, none across the 0.08 rad\n  step. The test caught two bugs before they shipped: a mode 9 decoration taken for a skew one (the odd-mode test), and a\n  frequency of 1e300 whose argument no reduction defines.\n- **Kernel** (`decorationSwayWasmMicrobench --free`, tool `571a2f2d`: 20 000 of the barrio's branches, 10 081 on screen,\n  no frequency grid; `runKernelVariants`, 5 alternating rounds): sway_free 3 152.6 → sway_free_f32x4 **9 455.7 ops/s\n  (+199.9 %)**, checksums equal (each frame within the tolerance of the shipped one).\n- **Scene** (decorationSwayStressScene `?buckets=0&decorations=200000`, `--camera-zoom min`, both sides in worktrees,\n  `126f2a90` against `d8d7df22`, 4 pairs, 06:56-07:01): particle **1.556 → 1.291 ms (−17.0 %, 4/4)** (a first sitting, which another runner overlapped by mistake, read the same: 1.562 → 1.283), under the 6 ms floor (the scene\n  culls to the screen: 200 000 decorations give 1.5 ms); every other worker idle and unchanged. A kernel keep: the kernel's\n  win, the scene not worse. In the barrio sway_free was 70 % of the particle worker's 2.2 ms.",
+      "commits": [
+        "571a2f2d",
+        "d8d7df22",
+        "9d483258"
+      ]
+    },
+    {
+      "id": "R-1284",
+      "date": "2026-11-17",
+      "time": "07:28",
+      "timeFrom": "recorded",
+      "title": "E-504 kept (opt-in): cached worldRect layers; the barrio's floor 1.91 ms becomes a 0.17 ms copy while held, pictures identical",
+      "verdict": "kept",
+      "text": "**E-504 kept (opt-in): a worldRect layer with `shader.cache: true` is painted again only when what it shows changes; the barrio's floor stops costing 1.9 ms a frame while the camera holds.**\n\n- **Change** (`6ce252d8`, tool `b48367d4`): `src/render/worldRectCache.js` decides when to paint again (the camera's\n  position, zoom and roll, the canvas size, a uniform or a picture that changed, or every frame for a shader whose\n  source reads uTime or uDt; the source, since the engine adds its frame uniforms to every look's map, read or not: the\n  first build painted every frame for that). pixiWorker paints the mesh into a canvas-sized target with the camera placed\n  as the stage places it, and the target's sprite, 1:1, is the layer. Opt in per layer; Buenos Aires turns it on for its\n  floor (`?floorCache=0` paints every frame). Guide and types.\n- **Pictures**: dxCaptureScene `?worldFloor=1` (a procedural checker floor), `--query-b worldFloorCache=1`: 0 of 921 600\n  pixels differ, WebGL and WebGPU (07:17).\n- **GPU** (glFrameRecorder `--gpu-draws`, the barrio at 22 h held, GTX 1650, 07:22-07:23): without the cache the floor's\n  draw is 1.911 ms; with it the floor is not drawn and its copy is 0.170 ms. The total stays 5.94 -> 5.92 ms: every other\n  pass reads ~1.5x longer, the GPU lowering its clock for the lighter frame (E-497 saw the same). At 3840 x 2160\n  (07:24-07:28, 2 runs each) the renderer draws 462-472 of 480 frames with and without: this GPU is not the limit even\n  there, so no frame-rate claim here; the HD 620 is where to read it.",
+      "commits": [
+        "b48367d4",
+        "6ce252d8",
+        "9d483258"
+      ]
     }
   ],
   "leads": [
