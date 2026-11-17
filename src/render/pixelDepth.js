@@ -20,8 +20,8 @@
  * the words every band is 0.
  *
  * DX-FACEDEPTH: where faces are on (a decoration carries a normal), a face writes the depth of its plane, worked out in the
- * vertex (a plane is linear on the screen), and its painter step is its innerZ · 16 (the wall 0, what is stuck on it 1 to
- * 7), carried in its row. Every depth is then continuous (no floor() of the floor place), so a face and a height map's
+ * vertex (a plane is linear on the screen), brought nearer by its innerZ · FACE_INNER_Z_TIE floor px (the wall 0, what is
+ * stuck on it 1 to 7, carried in its row; N-271), and its painter step is 0. Every depth is then continuous (no floor() of the floor place), so a face and a height map's
  * pixel meet on one scale. The opaque pass is two programs over the same instances: the frames with heights write their
  * pixels' depth (gl_FragDepth), every other instance the depth its vertices wrote, so its fragments keep the early depth
  * test (E-378). The batch draws the vertex-depth one first (InstancedSpriteBatch's vdepthMesh).
@@ -40,10 +40,13 @@ export const PIXEL_DEPTH_FLOOR_STEPS = 8192;
 export const PIXEL_DEPTH_BANDS = 8;
 export const PIXEL_DEPTH_PAINTER_STEPS = 128;
 /**
- * DX-FACEDEPTH: what a wall's things stacked on it (innerZ 1..7) are apart in the painter's 7 bits: 16 steps (32 units of a
- * 24-bit depth buffer), above interpolation error and under a floor step.
+ * DX-FACEDEPTH, N-271: how much nearer each step of innerZ (a wall's things stacked on it: 1 to 7) brings a face, in floor
+ * px. It was 16 of the painter's 128 steps, 0.05 floor px at zoom 1.2 and less zoomed in, under the plane's own rounding:
+ * a piece anchored apart on its wall lands up to ~0.07 floor px off it with exact data (faceMap.js's 24-bit codes). At
+ * innerZ 7 a piece stands 1.75 floor px off its wall, under a px of the world: nothing that is not stuck on the wall
+ * stands that close to it.
  */
-export const FACE_PAINTER_STEP = 16;
+export const FACE_INNER_Z_TIE = 0.25;
 
 /** The terms the programs read (uDepth): 1 / floorScaleY, heightScaleY, the view's nearest-to-north floor y, 1 / range. */
 export function pixelDepthTerms(out, floorScaleY, heightScaleY, viewTopY, viewHeight, margin = PIXEL_DEPTH_MARGIN) {
@@ -60,7 +63,7 @@ export function pixelDepthTerms(out, floorScaleY, heightScaleY, viewTopY, viewHe
 /**
  * A pixel's depth as the programs write it (for tests): band (0 back to 7 front), the floor place's u (0 north of the
  * view's span, 1 south), the painter step (an instance index). DX-FACEDEPTH: with `faces`, the continuous form (no floor()
- * of the floor place) and the painter step as given (a face's innerZ · FACE_PAINTER_STEP).
+ * of the floor place) and the painter step as given (a face's is 0; its innerZ is in u: FACE_INNER_Z_TIE).
  */
 export function pixelDepthValue(band, u, instance, faces = false) {
   const b = Math.min(Math.max(band, 0), PIXEL_DEPTH_BANDS - 1);
@@ -107,7 +110,8 @@ const DEPTH_FORMULA_FACES = `((${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPT
 
 /**
  * DX-FACEDEPTH (GLSL, in the vertex after its place): a face's floor place at this vertex, from its plane (the face map's
- * vFaceZ: faceMap.js faceMapVertex), and its painter step, innerZ · FACE_PAINTER_STEP (the face height's top bits). A
+ * vFaceZ: faceMap.js faceMapVertex) brought nearer by innerZ · FACE_INNER_Z_TIE (the face height's top bits), and its
+ * painter step 0. A
  * sprite that is no face keeps its foot's place, or with `gbuf` its own when it lies on the floor (surface 'floor'). All of
  * these are linear on the screen: the vertex writes them, the fragment interpolates them (vDepthFloor).
  */
@@ -129,8 +133,8 @@ function facesDepthGlsl(gbuf) {
       float dfSlope = dfN.z + dfN.y * uDepth.y * uDepth.x;
       float dfDz = abs(dfSlope) > 0.02 ? -(dfN.x * dfD.x + dfN.y * dfD.y * uDepth.x) / dfSlope : 0.0;
       float dfZ = float(dfHeight & ${FACE_Z_HEIGHT_MAX_CODE}u) / ${FACE_ROW_Z_UNITS}.0 + dfDz;
-      depthFloor = (world.y + uDepth.y * dfZ) * uDepth.x;
-      depthPainter = dfInner * ${FACE_PAINTER_STEP}.0;
+      depthFloor = (world.y + uDepth.y * dfZ) * uDepth.x + dfInner * ${FACE_INNER_Z_TIE.toFixed(4)};
+      depthPainter = 0.0;
     }${gbuf ? ` else {
       uint dfw = uint(aInstGbuf.x + 0.5);
       if ((dfw & 65535u) != 0u && ((dfw >> 18u) & 1u) != 0u) depthFloor = world.y * uDepth.x;
@@ -372,8 +376,8 @@ function facesDepthWgsl(gbuf, cull) {
     var dfDz = 0.0;
     if (abs(dfSlope) > 0.02) { dfDz = -(dfN.x * dfD.x + dfN.y * dfD.y * uniforms.uDepth.x) / dfSlope; }
     let dfZ = f32(dfHeight & ${FACE_Z_HEIGHT_MAX_CODE}u) / ${FACE_ROW_Z_UNITS}.0 + dfDz;
-    depthFloor = (world.y + uniforms.uDepth.y * dfZ) * uniforms.uDepth.x;
-    depthPainter = dfInner * ${FACE_PAINTER_STEP}.0;
+    depthFloor = (world.y + uniforms.uDepth.y * dfZ) * uniforms.uDepth.x + dfInner * ${FACE_INNER_Z_TIE.toFixed(4)};
+    depthPainter = 0.0;
   }${gbuf ? ` else {
     let dfw = u32(aInstGbuf.x + 0.5);
     if ((dfw & 65535u) != 0u && ((dfw >> 18u) & 1u) != 0u) { depthFloor = world.y * uniforms.uDepth.x; }

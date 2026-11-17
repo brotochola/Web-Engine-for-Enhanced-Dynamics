@@ -79,7 +79,7 @@ test('H-EDGE: each pass leaves before the twin page and the depth for the pixels
 // floor() of the floor place; the opaque pass in two programs, the frames with heights writing gl_FragDepth and every other
 // instance the depth its vertices wrote (E-378), in both languages. Without faces, the programs are as they were.
 test('faces: the plane depth comes from the vertex, innerZ breaks ties, and only frames with heights write their depth', async () => {
-  const { FACE_PAINTER_STEP } = await import('../../src/render/pixelDepth.js');
+  const { FACE_INNER_Z_TIE } = await import('../../src/render/pixelDepth.js');
   const { encodeFaceHeight, encodeFaceNormal } = await import('../../src/render/faceMap.js');
   const vert = shader('instancedSprite.vert.glsl');
   const frag = shader('instancedSpriteBlend.frag.glsl');
@@ -88,7 +88,8 @@ test('faces: the plane depth comes from the vertex, innerZ breaks ties, and only
     assert.doesNotMatch(pixelDepthVertex(vert, { gbuf }), /vDepthFloor|dfCode/);
     const v = pixelDepthVertex(vert, { gbuf, faces: true, cull: 'flat' });
     assert.match(v, /out float vDepthFloor;/);
-    assert.match(v, /depthPainter = dfInner \* 16\.0;/);
+    // N-271: innerZ brings a face nearer by FACE_INNER_Z_TIE floor px a step; its painter step is 0.
+    assert.match(v, /depthFloor = \(world\.y \+ uDepth\.y \* dfZ\) \* uDepth\.x \+ dfInner \* 0\.2500;\n\s*depthPainter = 0\.0;/);
     assert.match(v, /if \(!twinHeights\(vMapsWin\)\) gl_Position = vec4\(2\.0, 2\.0, 2\.0, 1\.0\);/);
     const vd = pixelDepthVertex(vert, { gbuf, faces: true, cull: 'heights' });
     assert.match(vd, /gl_Position\.z = \(/);
@@ -105,6 +106,7 @@ test('faces: the plane depth comes from the vertex, innerZ breaks ties, and only
   for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
     const w = pixelDepthWgsl(shader(name), { gbuf: true, faces: true, cull: 'flat' });
     assert.match(w, /@location\(6\) vDepthFloor: f32,/, name);
+    assert.match(w, /depthFloor = \(world\.y \+ uniforms\.uDepth\.y \* dfZ\) \* uniforms\.uDepth\.x \+ dfInner \* 0\.2500;/, name);
     assert.match(w, /fn mainFragEdge\(in: VertexOut\) -> WeedDepthOut/, name);
     const wd = pixelDepthWgsl(shader(name), { gbuf: true, faces: true, cull: 'heights' });
     assert.match(wd, /out\.position\.z = /, name);
@@ -114,14 +116,15 @@ test('faces: the plane depth comes from the vertex, innerZ breaks ties, and only
     const locs = [...out.matchAll(/@location\((\d+)\)/g)].map((m) => +m[1]);
     assert.ok(Math.max(...locs) <= 15 && new Set(locs).size === locs.length, `${name}: within 16 outputs, each its own`);
   }
-  // The values: a wall (innerZ 0) and a poster on it (innerZ 2) at the same floor place: the poster in front by 32 steps of
-  // a 24-bit depth buffer (2 of the 23 bits' painter units a 16-step), under a floor step.
-  const wall = pixelDepthValue(0, 0.5, 0, true);
-  const poster = pixelDepthValue(0, 0.5, 2 * FACE_PAINTER_STEP, true);
-  const step = 1 / (8 * 8192 * 128);
-  assert.ok(poster < wall, 'the poster is nearer');
-  assert.ok(Math.abs((wall - poster) / step - 2 * FACE_PAINTER_STEP) < 1e-6);
-  assert.ok(wall - pixelDepthValue(0, 0.5 + 1 / 8191, 0, true) > (wall - poster), 'a floor step outweighs innerZ 2');
+  // The values (N-271): a face's floor place is its plane's plus innerZ · FACE_INNER_Z_TIE. In a view whose depth spans
+  // 3300 floor px (zoom 1.2, 720 px: pixelDepthTerms' view / floorScaleY + 2048), a poster (innerZ 1) whose plane rounds
+  // 0.07 floor px behind its wall's is in front of it, and a thing 2 floor px in front of a wall is in front of what is
+  // stuck on it at innerZ 7 (1.75 floor px).
+  assert.equal(FACE_INNER_Z_TIE, 0.25);
+  const range = 3300;
+  const face = (floorPx, innerZ) => pixelDepthValue(0, (2000 + floorPx + innerZ * FACE_INNER_Z_TIE) / range, 0, true);
+  assert.ok(face(-0.07, 1) < face(0, 0), 'the poster is nearer than its wall');
+  assert.ok(face(0, 7) > face(2, 0), 'a thing 2 floor px in front of the wall is nearer than its trim');
   // The row carries innerZ in its height's top bits; the normal is any face's.
   assert.equal(encodeFaceHeight(10, 2) >>> 21, 2);
   assert.ok(encodeFaceNormal(0, 1, 0) > 0);
