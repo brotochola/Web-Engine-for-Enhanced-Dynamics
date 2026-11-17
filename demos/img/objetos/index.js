@@ -28,8 +28,9 @@
 //                  collides with. COLR gives it per kind of object (the editor's roles: u_farola, pl_malvon...); a
 //                  frame several kinds place takes the largest, as the export did
 //   bulbs          lamps only: each bulb's [x, y], fractions of the frame (the editor's luz)
-//   bulbHeightM    lamps only: the bulbs' height above the floor in metres, measured from the solid anchor (the
-//                  export's META.lamparas z), for the standard art's camera: (solid anchor y - bulb y) * scale / (CZ * SF)
+//                  A bulb's height depends on the scene's camera (the light must sit where the bulb is drawn), so the
+//                  scene works it out: (solid anchor y - bulb y) * scale / camera.heightScaleY world px of height, the
+//                  solid anchor as above (the barrio export's META.lamparas z, in metres: divide by SF)
 //   lit            lamps only: the frame to show while the lamp is on (the editor's on)
 //   spout          the fountain only: [x, y] where its water leaves and the y of the water in its cup, drawing px of
 //                  the frame (the editor's chorro). The export gave the water's start dx = (x - anchor x) * scale world
@@ -256,8 +257,8 @@ export const OBJECTS = {
   plm_z_plantas18: { sheet: 'lpc_revised_recortado', frame: 'plantas_18_30_0', size: [32, 58], anchor: [0.5, 0.9655], scale: 0.6, sway: true, solidRadiusM: 0 },
   plm_z_plantas23: { sheet: 'lpc_revised_recortado', frame: 'plantas_23_0_0', size: [87, 52], anchor: [0.4943, 0.9615], scale: 0.6, sway: true, solidRadiusM: 0 },
   // The street lamp. The editor shows u_farol_hierro_on (its glass lit) while its light is on.
-  u_farol_hierro: { sheet: 'lpc_revised_recortado', frame: 'faroles_02_0_0', size: [18, 80], anchor: [0.5, 0.975], scale: 0.6, sway: false, solidRadiusM: 0.14, bulbs: [[0.5, 0.25]], bulbHeightM: 2.48, lit: 'u_farol_hierro_on' },
-  u_farol_hierro_on: { sheet: 'lpc_revised_recortado', frame: 'faroles_01_0_0', size: [18, 80], anchor: [0.5, 0.975], scale: 0.6, sway: false, solidRadiusM: 0.14, bulbs: [[0.5, 0.25]], bulbHeightM: 2.48 },
+  u_farol_hierro: { sheet: 'lpc_revised_recortado', frame: 'faroles_02_0_0', size: [18, 80], anchor: [0.5, 0.975], scale: 0.6, sway: false, solidRadiusM: 0.14, bulbs: [[0.5, 0.25]], lit: 'u_farol_hierro_on' },
+  u_farol_hierro_on: { sheet: 'lpc_revised_recortado', frame: 'faroles_01_0_0', size: [18, 80], anchor: [0.5, 0.975], scale: 0.6, sway: false, solidRadiusM: 0.14, bulbs: [[0.5, 0.25]] },
   yy_z_flores34: { sheet: 'lpc_revised_recortado', frame: 'flores_34_0_0', size: [16, 21], anchor: [0.5, 0.9048], scale: 0.6, sway: true, solidRadiusM: 0 },
   yy_z_flores35: { sheet: 'lpc_revised_recortado', frame: 'flores_35_0_0', size: [16, 21], anchor: [0.5, 0.9048], scale: 0.6, sway: true, solidRadiusM: 0 },
   yy_z_flores36: { sheet: 'lpc_revised_recortado', frame: 'flores_36_0_0', size: [16, 21], anchor: [0.5, 0.9048], scale: 0.6, sway: true, solidRadiusM: 0 },
