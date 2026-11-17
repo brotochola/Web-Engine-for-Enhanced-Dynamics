@@ -21935,7 +21935,9 @@
         "split pack nearest",
         "pose snapping split kernel"
       ],
-      "records": [],
+      "records": [
+        "R-1310"
+      ],
       "result": "",
       "next": "A painter-sorted scene (the barrio: people move, so the order moves every frame) keeps its statics stable only on E-162's indexed path (statics in row order in a texture, per frame the pose and slot streams, about 24 bytes an instance), not the plain split (its statics follow the painter's order and upload again). Both refuse pixel snapping (gpuPackClient.js packSplitRowsWasm / packIndexedRowsWasm: o.pixelSnap), and Pixi turns split off for 'nearest' (pixiWorker's batch options), pre-render's _resetGpuPackOpts sets pixelSnap from the atlas. Plan: a snap state the client sets before the pack (an export with snapX, snapY, zoom) and, in gpuPack.c, the split and indexed loops copied with snapping as a constant (as withGbuf is), snap_world on the pose's x and y; renderer.indexedSprites on in the barrio; check the pixel-depth, edge, G-buffer and unshaded programs' indexed forms; byte-identical captures against today on nearest scenes (depthPairScene, the barrio's still frames); then bytesBuffer, gpuProcessTrace --decoder (glDrawElementsInstanced, PutChanged) and the HD 620's drawn frames. E-512's lesson: keep the per-frame streams DYNAMIC (a STATIC rewrite stalls the GPU); the statics live in a texture, not a vertex stream.",
       "id": "E-513",
@@ -34907,6 +34909,13 @@
         "b4d710fd",
         "ec9a83c6"
       ]
+    },
+    {
+      "id": "R-1310",
+      "date": "2026-11-17",
+      "title": "E-513 step 0: the barrio on the indexed path (a linear atlas, for the trial) takes 14 % off Chrome's GPU process main thread",
+      "verdict": "note",
+      "text": "**E-513 step 0: the barrio on the indexed path (its atlas linear for the trial, a local knob) takes 14 % off Chrome's GPU process main thread on the GTX machine.**\n\n- gpuProcessTrace --decoder, the barrio at 22 h (main 108b40dd): CrGpuMain 173.2 -> 148.8 ms/s; glDrawElementsInstanced's\n  self time 44.1 -> 18.3 ms/s (ANGLE's per-draw copy of the instance streams), glBufferSubData 6.5 -> 3.7, the decoder's\n  own about the same (38.8 -> 38.9).\n- glFrameRecorder: buffer bytes a frame 894 773 -> 430 149; texture bytes 38 217 -> 628 257 (the statics texture\n  uploaded whole each frame: the people's animation frames move the queue's statics generation), 22 draws both.\n- So snapping in the split and indexed packs (E-513's plan) is worth doing for nearest atlases; the statics texture's\n  whole uploads are a next step (scatter only the rows whose statics changed)."
     }
   ],
   "leads": [
