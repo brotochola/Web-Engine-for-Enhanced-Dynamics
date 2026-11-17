@@ -27,7 +27,9 @@ const FEET_ANCHOR_Y = 62 / 64;
 export const PERSON_RADIUS = 4.5;
 /** A car faster than this (px/s) is one a person waits for. */
 const MOVING_CAR_SPEED = 20;
-/** How far (px) a person looks for a car before stepping onto the street. */
+/** How far a person sees its neighbours, px (Collider.visualRange: the game's 52, about 3 m across). */
+const PERSON_SIGHT_PX = 52;
+/** A car further than this (px) is not one to wait for. */
 const LOOK_FOR_CARS_PX = 160;
 /** A person checks whether its next 1.2 m (on the floor) are street. */
 const KERB_LOOKAHEAD_M = 1.2;
@@ -57,7 +59,7 @@ export class Persona extends GameObject {
     this.rigidBody.linearDamping = 3;
     this.setFixedRotation(1);
     this.collider.radius = PERSON_RADIUS;
-    this.collider.visualRange = 52;
+    this.collider.visualRange = PERSON_SIGHT_PX;
     const state = this.personaState;
     state.person = 1;
     state.field = Math.floor(rng() * WALK_FIELDS.length);
