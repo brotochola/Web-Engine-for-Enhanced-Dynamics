@@ -21936,17 +21936,34 @@
         "pose snapping split kernel"
       ],
       "records": [
-        "R-1310"
+        "R-1310",
+        "R-1311"
       ],
-      "result": "",
+      "result": "kept: the barrio's buffer uploads 895 -> 430 KB a frame, CrGpuMain 173 -> 154 ms/s (GTX machine); captures identical; pre-render +4.7 % under the floor",
       "next": "A painter-sorted scene (the barrio: people move, so the order moves every frame) keeps its statics stable only on E-162's indexed path (statics in row order in a texture, per frame the pose and slot streams, about 24 bytes an instance), not the plain split (its statics follow the painter's order and upload again). Both refuse pixel snapping (gpuPackClient.js packSplitRowsWasm / packIndexedRowsWasm: o.pixelSnap), and Pixi turns split off for 'nearest' (pixiWorker's batch options), pre-render's _resetGpuPackOpts sets pixelSnap from the atlas. Plan: a snap state the client sets before the pack (an export with snapX, snapY, zoom) and, in gpuPack.c, the split and indexed loops copied with snapping as a constant (as withGbuf is), snap_world on the pose's x and y; renderer.indexedSprites on in the barrio; check the pixel-depth, edge, G-buffer and unshaded programs' indexed forms; byte-identical captures against today on nearest scenes (depthPairScene, the barrio's still frames); then bytesBuffer, gpuProcessTrace --decoder (glDrawElementsInstanced, PutChanged) and the HD 620's drawn frames. E-512's lesson: keep the per-frame streams DYNAMIC (a STATIC rewrite stalls the GPU); the statics live in a texture, not a vertex stream.",
       "id": "E-513",
       "kind": "speed",
       "area": "pixi",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-17",
       "title": "A nearest-sampled atlas keeps the sprite batch on full 15-float rows, every frame, because the split pack does not snap poses: with snapping in the split kernel, a pixel-art scene would upload a 16-byte pose a sprite and its statics only when they change",
       "statusText": "found 2026-11-17 in the barrio (atlasScaleMode 'nearest'): about 680 KB of instance rows uploaded a frame for 11 620 rows that mostly never change, and ANGLE copies each draw's attributes from a DYNAMIC_DRAW buffer (glDrawElementsInstanced 44 ms/s of the GPU process's main thread on the GTX machine, which is saturated on the HD 620 laptop)"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "indexed statics partial upload"
+      ],
+      "records": [],
+      "id": "E-514",
+      "kind": "speed",
+      "area": "pixi",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "The indexed path uploads its statics texture whole whenever the queue's statics generation moves (every frame in the barrio, its people's animation frames): upload only the rows whose statics changed",
+      "statusText": "found 2026-11-17 measuring E-513: the barrio's texture uploads 38 KB -> 629 KB a frame on the indexed path",
+      "result": "",
+      "next": "pre-render knows which rows changed (the emit marks them, as E-177's keyed path does with KEY_CHANGED): pass dirty row ranges with the frame and upload those texel rows only (texSubImage2D per range, or the keyed scatter E-187 uses on WebGPU). Measure bytesTexture and gpuProcessTrace in the barrio. Also: E-513's snap in C instead of JS (pre-render +4.7 %)."
     }
   ],
   "records": [
@@ -34916,6 +34933,17 @@
       "title": "E-513 step 0: the barrio on the indexed path (a linear atlas, for the trial) takes 14 % off Chrome's GPU process main thread",
       "verdict": "note",
       "text": "**E-513 step 0: the barrio on the indexed path (its atlas linear for the trial, a local knob) takes 14 % off Chrome's GPU process main thread on the GTX machine.**\n\n- gpuProcessTrace --decoder, the barrio at 22 h (main 108b40dd): CrGpuMain 173.2 -> 148.8 ms/s; glDrawElementsInstanced's\n  self time 44.1 -> 18.3 ms/s (ANGLE's per-draw copy of the instance streams), glBufferSubData 6.5 -> 3.7, the decoder's\n  own about the same (38.8 -> 38.9).\n- glFrameRecorder: buffer bytes a frame 894 773 -> 430 149; texture bytes 38 217 -> 628 257 (the statics texture\n  uploaded whole each frame: the people's animation frames move the queue's statics generation), 22 draws both.\n- So snapping in the split and indexed packs (E-513's plan) is worth doing for nearest atlases; the statics texture's\n  whole uploads are a next step (scatter only the rows whose statics changed)."
+    },
+    {
+      "id": "R-1311",
+      "date": "2026-11-17",
+      "title": "E-513 kept: nearest atlases take the split and indexed packs; the barrio's buffer uploads 895 -> 430 KB, GPU process main thread -11 %",
+      "verdict": "kept",
+      "text": "**E-513 kept: a nearest atlas's sprites go through the split and indexed packs; the barrio's buffer uploads 895 -> 430 KB a frame and Chrome's GPU process main thread -11 % (GTX machine).**\n\n- **Change** (`582cf530`, merged `7be8dfb9`): packSplitRowsWasm and packIndexedRowsWasm take the pixel snap, applied to the\n  pose stream after the kernel (gpuPackClient.js snapPoseRows, pack_general's snap_world in JS); Pixi's entity batch is\n  split whatever the atlas's sampling.\n- **Measured**: depthPairScene ?step=2 against main identical (WebGL, WebGPU). The barrio at 22 h, GTX 1650: buffer bytes\n  a frame 895 126 -> 430 411, texture bytes 38 KB -> 629 KB (the indexed statics texture whole, E-514), GPU frame 3.885\n  -> 3.631 ms; gpuProcessTrace --decoder: CrGpuMain 173.2 -> 154.3 ms/s (glDrawElementsInstanced 44.1 -> 18.8). The barrio's\n  ABAB (main `dd1c257c` against `582cf530`, 4 pairs): NEUTRAL under the floor, renderer 1.049 -> 1.081 ms, pre-render\n  1.853 -> 1.941 (+4.7 %: the JS snap over 11 600 rows, a C version would take it back; logic, which it cannot reach,\n  +5.6 %). The HD 620 laptop, its target, is offline. test:node 3023, test:demos 121, the bundles' suites.",
+      "commits": [
+        "582cf530",
+        "7be8dfb9"
+      ]
     }
   ],
   "leads": [
