@@ -6641,6 +6641,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightConeInvSpan = LightEmitter.coneInvSpan;
     const lightDirC = LightEmitter.dirC;
     const lightDirS = LightEmitter.dirS;
+    // E-510: how far each light's shadows reach (0: its radius).
+    const lightShadowRange = LightEmitter.shadowRange;
     let coneSlot = 0;
     let pointSlot = coneCount;
     for (let i = 0; i < countToRender; i++) {
@@ -6676,6 +6678,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lightData[i0 + 3] = range * range;
       const i3 = row3 + i0;
       lightData[i3] = 1;
+      lightData[i3 + 1] = 0;
       if (entityIndex < tileOf.length) {
         const tile = tileOf[entityIndex];
         // DX-GBUF: with the ids map, -(tile + 1 + 256 · its entity's id), so a pixel of its own entity does not shade from
@@ -6684,6 +6687,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           if (!ids) lightData[i0 + 3] = -(tile + 1);
           else if (tile < 256) lightData[i0 + 3] = -(tile + 1 + 256 * gbufEntityId(entityIndex));
           if (entityIndex < fadeOf.length) lightData[i3] = fadeOf[entityIndex];
+          // E-510: how far its shadows reach, where its shadowRange is under its radius (its tile spans that).
+          const shadowRange = lightShadowRange[entityIndex];
+          if (shadowRange > 0 && shadowRange < rad) lightData[i3 + 1] = shadowRange;
         }
       }
       const i1 = row1 + i0;
@@ -7320,7 +7326,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const x = worldX[id] + ox * rotC[id] - oy * rotS[id];
       const y = (worldY[id] + ox * rotS[id] + oy * rotC[id]) * groundInvY;
       const elevation = LightEmitter.elevation[id];
-      const reach = LightEmitter.radius[id];
+      // E-510: the tile spans how far its shadows reach: its shadowRange where that is under its radius (the light
+      // data's fourth row carries the same, for the light pass).
+      const radius = LightEmitter.radius[id];
+      const shadowRange = LightEmitter.shadowRange[id];
+      const reach = shadowRange > 0 && shadowRange < radius ? shadowRange : radius;
       writeLampTile(data, t, x, y, elevation, reach);
       writeLampTileOwner(data, width, t, id);
       if (elevation > 0 && reach > maxReach) maxReach = reach;

@@ -226,11 +226,14 @@ fn lampTap(c: vec2<i32>, lo: vec2<i32>, hi: vec2<i32>, bound: f32, selfId: f32) 
 // li: the light's column in the light data, whose fourth row holds its fade at the cut (N-212; lightingBasic.frag.glsl).
 fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, selfId: f32, li: i32) -> f32 {
   if (tag >= 0.0 || e <= 0.0) { return 1.0; }
-  let reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
-  // DX-LAMPPANO: past the reach on the floor the lamp gives no light (reachWindow), so nothing to read.
+  // E-510: the fade at the cut and the shadows' reach (lightingBasic.frag.glsl says how).
+  let cut = textureLoad(uLightData, vec2<i32>(li, 3), 0);
+  let reach = select(10.0 * sqrt(max(intensity - e * e, 0.0)), cut.y, cut.y > 0.0);
+  // DX-LAMPPANO: past the reach on the floor the lamp casts nothing, so nothing to read.
   let fromLamp = p.xy - l;
-  if (reach <= 0.0 || dot(fromLamp, fromLamp) >= reach * reach) { return 1.0; }
-  let fade = textureLoad(uLightData, vec2<i32>(li, 3), 0).x;
+  let farSq = dot(fromLamp, fromLamp);
+  if (reach <= 0.0 || farSq >= reach * reach) { return 1.0; }
+  let fade = select(cut.x, cut.x * clamp(5.0 * (1.0 - sqrt(farSq) / reach), 0.0, 1.0), cut.y > 0.0);
   if (fade <= 0.0) { return 1.0; }
   // DX-LAMPPANO: a point higher than the lamp reads the ceiling's half, landing as its mirror (2E - z) does.
   let upper = p.z > e;
@@ -267,11 +270,13 @@ fn lampVisibility(p: vec3<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, 
 // says why it has its own body).
 fn lampVisibilityFloor(p: vec2<f32>, l: vec2<f32>, e: f32, tag: f32, intensity: f32, li: i32) -> f32 {
   if (tag >= 0.0 || e <= 0.0) { return 1.0; }
-  let reach = 10.0 * sqrt(max(intensity - e * e, 0.0));
+  // N-212, E-510: its fade at the cut and its shadows' reach.
+  let cut = textureLoad(uLightData, vec2<i32>(li, 3), 0);
+  let reach = select(10.0 * sqrt(max(intensity - e * e, 0.0)), cut.y, cut.y > 0.0);
   let fromLamp = p - l;
-  if (reach <= 0.0 || dot(fromLamp, fromLamp) >= reach * reach) { return 1.0; }
-  // N-212: its fade at the cut.
-  let fade = textureLoad(uLightData, vec2<i32>(li, 3), 0).x;
+  let farSq = dot(fromLamp, fromLamp);
+  if (reach <= 0.0 || farSq >= reach * reach) { return 1.0; }
+  let fade = select(cut.x, cut.x * clamp(5.0 * (1.0 - sqrt(farSq) / reach), 0.0, 1.0), cut.y > 0.0);
   if (fade <= 0.0) { return 1.0; }
   let uv = lampPanoUv(fromLamp, reach);
   let tile = lampTile(tag);
@@ -452,10 +457,14 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     // Only inside the lamp's radius (its tile's reach: I' = (radius / 10)² + h²): past it the lamp gives under
     // 1 % of its light and its map casts nothing, while the steps cost what they cost near it (E-365: with 32 lamps they were
     // 96 % of the pass).
-    let fromLamp = p.xy - posInt.xy;
-    let lampNear = dot(fromLamp, fromLamp) < 100.0 * max(posInt.z - col.a * col.a, 0.0);
-    if (posInt.w < 0.0 && selfOn && !lampOwn && !isFlat && lampNear && cosine * shade > 0.05) {
-      lampSelf = selfShadowToward(p, toLight / max(d, 0.001), d, selfId);
+    // E-510: within its shadows' reach, when its shadowRange is under its radius (the fourth row's y).
+    if (posInt.w < 0.0 && selfOn && !lampOwn && !isFlat && cosine * shade > 0.05) {
+      let fromLamp = p.xy - posInt.xy;
+      let shadowReach = textureLoad(uLightData, vec2<i32>(i, 3), 0).y;
+      let nearSq = select(100.0 * max(posInt.z - col.a * col.a, 0.0), shadowReach * shadowReach, shadowReach > 0.0);
+      if (dot(fromLamp, fromLamp) < nearSq) {
+        lampSelf = selfShadowToward(p, toLight / max(d, 0.001), d, selfId);
+      }
     }
     let flatShade = shade * lampSelf;
     if (cosine * shade > 0.05) { shade *= lampSelf; }
