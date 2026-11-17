@@ -174,7 +174,10 @@ export class BuenosAiresScene extends Scene {
     physics: { gravity: { x: 0, y: 0 }, sleeping: true, subStepCount: 0, commandRingCapacity: 65536 },
     particle: { maxParticles: 0, decals: false },
     decoration: { maxDecorations: DECORATIONS, maxAttachedDecorationsPerEntity: 32 },
-    renderer: { backend: BACKEND, ySort: true },
+    // The barrio is pixel art: its atlas is sampled nearest, so a sprite's edge is its own pixel or none. Sampled linear,
+    // a scaled sprite's outline came out half transparent, and those pixels took the light of what stood behind them (a
+    // bright rim round a head in shade).
+    renderer: { backend: BACKEND, ySort: true, atlasScaleMode: 'nearest' },
     // The houses are decorations: they do not fade out as the camera goes back.
     preRender: { startFadingDecorationsAtZoom: 0.2, hideDecorationsAtZoom: 0.1, cullingRatio: 0.3 },
     // The barrio's camera, the standard art's (people, cars, objects): the floor drawn SYN as tall as it is wide, a px
