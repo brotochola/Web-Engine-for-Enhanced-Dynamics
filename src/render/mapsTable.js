@@ -18,6 +18,11 @@
 export const MAPS_TWIN = 1;
 /** Its sheet has a height map: the twin's heights are the pixels' heights above the floor. */
 export const MAPS_HEIGHTS = 2;
+/**
+ * DX-RELIEF: its sheet has a relief map and no height map: the twin's heights are how far the shape bulges (its normals
+ * come from them), and its height above the floor is its surface's (a card standing on its foot, or the floor).
+ */
+export const MAPS_RELIEF = 4;
 /** DX-UNSHADED: its sheet is unshaded (no light touches its pixels): a mark without a window. */
 export const MAPS_UNSHADED = 8;
 
@@ -57,7 +62,7 @@ export function writeMapsTexel(maps, frame, out, at, atlasLayout = false, unshad
   if (maps && frame && Number.isFinite(maps.x) && Number.isFinite(maps.y)) {
     out[at] = maps.x - frame.x;
     out[at + 1] = maps.y - frame.y;
-    out[at + 2] += MAPS_TWIN | (maps.heights === true ? MAPS_HEIGHTS : 0);
+    out[at + 2] += MAPS_TWIN | (maps.heights === true ? MAPS_HEIGHTS : 0) | (maps.relief === true ? MAPS_RELIEF : 0);
   } else if (atlasLayout) {
     out[at + 2] += MAPS_TWIN | MAPS_HEIGHTS;
   }

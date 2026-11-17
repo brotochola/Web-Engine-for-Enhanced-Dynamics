@@ -12,6 +12,8 @@ in float vFaceZ;
 flat in float vMapScale;
 // E-496: the frame's window in the twin page and its marks (the maps table, mapsTable.js).
 flat in vec4 vMapsWin;
+// N-258: how the sprite turns its frame's normals: its rotation's cosine and sine, the signs of its scale (a flip).
+flat in vec4 vNormalTurn;
 // #if GBUF
 // DX-GBUF: the instance's words (gbufWord.js: its entity's id, normals, surface, ...) and its foot's world y.
 flat in vec2 vGbuf;
@@ -58,6 +60,13 @@ vec2 octEncode(vec3 n) {
 vec4 faceTexel(vec2 oct, float z, bool k) {
   float q = floor(clamp(z * 8.0, 0.0, 32767.0)) + (k ? 32768.0 : 0.0);
   return vec4(oct, floor(q / 256.0) / 255.0, mod(q, 256.0) / 255.0);
+}
+
+// N-258: a frame's normal (its own camera space: x right, y up) as its sprite draws it: mirrored where its scale is
+// negative (flipX, flipY), then turned with it (the screen's rotation, y down, is the opposite turn with y up).
+vec3 turnNormal(vec3 n) {
+  vec2 f = n.xy * vNormalTurn.zw;
+  return vec3(f.x * vNormalTurn.x + f.y * vNormalTurn.y, f.y * vNormalTurn.x - f.x * vNormalTurn.y, n.z);
 }
 
 // #if GBUF
@@ -122,13 +131,19 @@ void main() {
       uint normals = flags & 3u;
       if (twinPresent(m)) {
         float zm = twinZ(m);
+        // N-257: a frame without heights (a normal or a relief map alone) stands as its surface says, as a sprite without
+        // maps does: a card on its foot, or the floor.
+        float zw = twinHeights(vMapsWin) ? zm * vMapScale
+          : ((flags & 4u) == 0u ? max(vFootY - vWorld.y, 0.0) / uFaceSpace.x : 0.0);
         if (normals == 3u) {
-          finalColor = faceTexel(vec2(254.0 / 255.0), zm * vMapScale, false);
+          finalColor = faceTexel(vec2(254.0 / 255.0), zw, false);
           return;
         }
-        // The Sobel reads the frame's own heights: a scale stretches the heights and the texels alike.
-        vec3 n = normals == 2u ? heightNormal(tc, zm) : octDecode(floor(m.ba * 255.0 + 0.5));
-        finalColor = faceTexel(octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zm * vMapScale, true);
+        // The Sobel reads the frame's own heights, or its relief (DX-RELIEF): a scale stretches the heights and the texels
+        // alike. A normal map alone has none to read: its own normals.
+        bool sobel = normals == 2u && (twinHeights(vMapsWin) || twinRelief(vMapsWin));
+        vec3 n = turnNormal(sobel ? heightNormal(tc, zm) : octDecode(floor(m.ba * 255.0 + 0.5)));
+        finalColor = faceTexel(octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zw, true);
         return;
       }
       if ((flags & 4u) == 0u) {
@@ -140,9 +155,10 @@ void main() {
     }
 // #endif GBUF
     if (twinPresent(m)) {
-      vec3 n = octDecode(floor(m.ba * 255.0 + 0.5));
+      vec3 n = turnNormal(octDecode(floor(m.ba * 255.0 + 0.5)));
       oct = octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x));
-      z = twinZ(m) * vMapScale;
+      // N-257: without words a frame without heights lies on the floor, as a decoration without maps does.
+      z = twinHeights(vMapsWin) ? twinZ(m) * vMapScale : 0.0;
     }
   }
   finalColor = faceTexel(oct, z, false);

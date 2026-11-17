@@ -141,7 +141,8 @@ ${gbuf
     band = min(vDepthWord.y, ${PIXEL_DEPTH_BANDS - 1}.0);
     if ((dw & 65535u) != 0u && ((dw >> 18u) & 1u) != 0u) floorY = vWorld.y * uDepth.x;
 `
-    : ''}    if (twinPresent(md) && !glow) floorY = (vWorld.y + uDepth.y * zd) * uDepth.x;
+    : ''}    // N-257: a frame without heights (a normal or relief map alone) keeps its surface's place, as one without maps.
+    if (twinPresent(md) && twinHeights(vMapsWin) && !glow) floorY = (vWorld.y + uDepth.y * zd) * uDepth.x;
     float u = clamp((floorY - uDepth.z) * uDepth.w, 0.0, 1.0);
     float painter = vPainter.x;
     gl_FragDepth = (${DEPTH_FORMULA};
@@ -203,7 +204,7 @@ ${gbuf
   band = min(in.vDepthWord.y, ${PIXEL_DEPTH_BANDS - 1}.0);
   if ((dw & 65535u) != 0u && ((dw >> 18u) & 1u) != 0u) { floorY = in.vWorld.y * uniforms.uDepth.x; }
 `
-    : ''}  if (twinPresent(md) && !glow) { floorY = (in.vWorld.y + uniforms.uDepth.y * zd) * uniforms.uDepth.x; }
+    : ''}  if (twinPresent(md) && twinHeights(in.vMapsWin) && !glow) { floorY = (in.vWorld.y + uniforms.uDepth.y * zd) * uniforms.uDepth.x; }
   let u = clamp((floorY - uniforms.uDepth.z) * uniforms.uDepth.w, 0.0, 1.0);
   let painter = in.vDepthFoot.y;
   let depth = (${DEPTH_FORMULA};

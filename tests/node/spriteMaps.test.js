@@ -5,10 +5,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  HEIGHT_UNITS, decodeOctahedral, encodeOctahedral, fixOutline, frameTwinTexels, normalsFromHeight, readHeights,
+  HEIGHT_UNITS, RELIEF_STRENGTH, decodeOctahedral, encodeOctahedral, fixOutline, frameTwinTexels, normalsFromHeight, readHeights,
 } from '../../src/render/spriteMaps.js';
 import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
-import { MAPS_HEIGHTS, MAPS_TWIN, MAPS_UNSHADED, TWIN_PAD, mapsTableLayout, packMapsTable } from '../../src/render/mapsTable.js';
+import { MAPS_HEIGHTS, MAPS_RELIEF, MAPS_TWIN, MAPS_UNSHADED, TWIN_PAD, mapsTableLayout, packMapsTable } from '../../src/render/mapsTable.js';
 import { twinPresent } from '../../src/render/twinTexel.js';
 
 const close = (a, b, eps = 0.02) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
@@ -237,4 +237,26 @@ test('the maps table gives each frame its window\'s offset and marks, nothing to
   // N-111's fold: past the most rows, each row holds several.
   assert.deepEqual(mapsTableLayout(5000, 2048), { width: 3, height: 1667 });
   assert.deepEqual(mapsTableLayout(0), { width: 1, height: 1 });
+});
+
+// DX-RELIEF: a greyscale relief map gives the normals (a Sobel of how far the shape bulges) and goes where heights go,
+// marked relief (not heights) in the atlas's json, so the shaders take the frame's height from its surface (N-257).
+test('a relief map gives normals from its bulge and is marked relief, not heights', () => {
+  withMemCanvas(() => {
+    // A 4 x 1 frame bulging to the right: grey 0, 85, 170, 255 (white 12 px).
+    const relief = image(4, 1, (x) => [x * 85, x * 85, x * 85, 255]);
+    const color = image(4, 1, () => [255, 255, 255, 255]);
+    const maps = { heightImg: null, normalImg: null, reliefImg: relief, gray: 0, reliefStrength: 12, key: 'r' };
+    const frame = { sourceImg: color, sourceRect: { x: 0, y: 0, w: 4, h: 1 }, frameRect: { x: 0, y: 0, w: 4, h: 1 }, rect: { x: 0, y: 0, width: 4, height: 1 }, maps };
+    const twin = SpriteSheetRegistry._paintMapsPage([frame], 64, 64, true);
+    const at = (x) => ((frame.mapsAt.y * twin.width) + frame.mapsAt.x + x) * 4;
+    const n = decodeOctahedral(twin.texels[at(1) + 2], twin.texels[at(1) + 3]);
+    assert.ok(n[0] < -0.2, `it rises to the right, so it faces left: ${n}`);
+    assert.ok(Math.abs(((twin.texels[at(3)] << 8) | twin.texels[at(3) + 1]) / HEIGHT_UNITS - 12) < 0.02, 'the relief where heights go');
+  });
+  const t = frameTwinTexels({ color: image(2, 1, () => [0, 0, 0, 255]).data, height: null, normal: null, relief: image(2, 1, () => [128, 0, 0, 255]).data, w: 2, h: 1 });
+  assert.notEqual(t, null, 'a relief map alone is a map');
+  assert.equal(RELIEF_STRENGTH > 0, true);
+  const table = packMapsTable([{ frame: { x: 0, y: 0 }, weedMaps: { x: 2, y: 2, relief: true } }]);
+  assert.equal(table.data[2], MAPS_TWIN | MAPS_RELIEF, 'relief, not heights');
 });

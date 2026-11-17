@@ -2,7 +2,7 @@
 // Provides string->index mapping for animations without runtime overhead
 // String lookups happen ONCE at setup, game loop uses fast numeric indices
 
-import { maskTwinTexels, opaqueMask, readHeights } from '../render/spriteMaps.js';
+import { RELIEF_STRENGTH, maskTwinTexels, opaqueMask, readHeights } from '../render/spriteMaps.js';
 import { evenTexels, TWIN_PAD } from '../render/mapsTable.js';
 import {
   FRAME_GLOW, FRAME_HALF, FRAME_SOFT, frameAlphaKinds, frameSolidTexels, isRenderDirections, measureLowestContact,
@@ -1441,7 +1441,11 @@ class SpriteSheetRegistry {
     if (twin !== null) {
       for (const d of imagesToPack) {
         if (!d.mapsAt || !frames[d.name]) continue;
-        frames[d.name].maps = d.maps.heightImg ? { x: d.mapsAt.x, y: d.mapsAt.y, heights: true } : { x: d.mapsAt.x, y: d.mapsAt.y };
+        // Its marks: heights (a height map), relief (DX-RELIEF: a relief map and no height map).
+        const at = { x: d.mapsAt.x, y: d.mapsAt.y };
+        if (d.maps.heightImg) at.heights = true;
+        else if (d.maps.reliefImg) at.relief = true;
+        frames[d.name].maps = at;
       }
     }
     // DX-UNSHADED: an unshaded sheet's frames say so in their json frame (the maps table's mark), without a twin page.
@@ -1611,9 +1615,11 @@ class SpriteSheetRegistry {
         opaque,
         height: g.maps.heightImg ? cut(pixelsOf(g.maps.heightImg), src) : null,
         normal: g.maps.normalImg ? cut(pixelsOf(g.maps.normalImg), src) : null,
+        relief: g.maps.reliefImg ? cut(pixelsOf(g.maps.reliefImg), src) : null,
         w: gw,
         h: gh,
         gray: g.maps.gray,
+        reliefStrength: g.maps.reliefStrength,
       });
       if (g.texels !== null) placed.push(g);
     }
@@ -1869,12 +1875,16 @@ class SpriteSheetRegistry {
     // DX-GUARDS C6: a 404 used to reach .json() and read "Unexpected token '<'".
     const heightSpec = config.heightMap;
     const heightUrl = typeof heightSpec === 'string' ? heightSpec : heightSpec?.png;
-    const [jsonData, img, heightImg, normalImg] = await Promise.all([
+    // DX-RELIEF: a greyscale relief map, `{ png, strength }` (or its url): its normals, its surface's height.
+    const reliefSpec = config.reliefMap;
+    const reliefUrl = typeof reliefSpec === 'string' ? reliefSpec : reliefSpec?.png;
+    const [jsonData, img, heightImg, normalImg, reliefImg] = await Promise.all([
       fetchAssetJson(config.json, `spritesheet "${name}" JSON`),
       this._loadImage(config.png),
       // DX-MAPS: the sheet's twins, same frames in the same places.
       heightUrl ? this._loadImage(heightUrl) : null,
       config.normalMap ? this._loadImage(config.normalMap) : null,
+      reliefUrl ? this._loadImage(reliefUrl) : null,
     ]);
     // DX-UNSHADED: a sheet no light touches (its assets config or its json's meta): a mark a frame in the maps table, no
     // twin page. `emissive`, its old name, is said once and read as it.
@@ -1882,9 +1892,10 @@ class SpriteSheetRegistry {
     const unshaded = config.unshaded === true || jsonData?.meta?.unshaded === true
       || config.emissive === true || jsonData?.meta?.emissive === true;
     const gray = Number(heightSpec?.gray) > 0 ? Number(heightSpec.gray) : 0;
+    const reliefStrength = Number(reliefSpec?.strength) > 0 ? Number(reliefSpec.strength) : RELIEF_STRENGTH;
     // E-496: which map files these are: sheets with the same key share the twin page's rectangles (_paintMapsPage).
-    const key = JSON.stringify([heightUrl || '', config.normalMap || '', gray]);
-    const maps = heightImg || normalImg ? { heightImg, normalImg, gray, key } : null;
+    const key = JSON.stringify([heightUrl || '', config.normalMap || '', gray, reliefUrl || '', reliefUrl ? reliefStrength : 0]);
+    const maps = heightImg || normalImg || reliefImg ? { heightImg, normalImg, reliefImg, gray, reliefStrength, key } : null;
     return { img, jsonData, maps, unshaded };
   }
 

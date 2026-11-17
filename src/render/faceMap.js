@@ -308,7 +308,7 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
     .replace(
       main,
       'uniform vec4 uFaceSpace; // heightScaleY, groundScaleY\nflat out vec2 vFaceOct;\nout float vFaceZ;\nflat out float vMapScale;\n' +
-        'flat out vec4 vMapsWin;\n' + MAPS_MARKS_GLSL + MAPS_TABLE_GLSL + gbufDecl + '\n' + main,
+        'flat out vec4 vMapsWin;\nflat out vec4 vNormalTurn;\n' + MAPS_MARKS_GLSL + MAPS_TABLE_GLSL + gbufDecl + '\n' + main,
     )
     .replace(
       end,
@@ -321,6 +321,8 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
   vMapScale = abs(aInstScale.y);
   // E-496: where its frame's maps are in the twin page.
   vMapsWin = twinWindow(int(aInstTexId + 0.5));
+  // N-258: its normals turn with it and mirror with a negative scale (a shear turns none: DX-DECOSKEW's marker).
+  vNormalTurn = vec4(isShear ? 1.0 : c, isShear ? 0.0 : s, aInstScale.x < 0.0 ? -1.0 : 1.0, aInstScale.y < 0.0 ? -1.0 : 1.0);
   if (faceCode != 0u && aInstTileInv == vec2(0.0)) {
     vec2 faceBytes = vec2(float(faceCode >> 8u), float(faceCode & 255u));
     vFaceOct = faceBytes / 255.0;
@@ -442,6 +444,7 @@ export function faceVertexWgsl(source, { gbuf = false, unshadedMask = false } = 
     '  @location(5) vTileOff: vec2<f32>,\n',
     '  @location(6) @interpolate(flat) vFaceOct: vec2<f32>,\n  @location(7) vFaceZ: f32,\n' +
       '  @location(12) @interpolate(flat) vMapScale: f32,\n  @location(15) @interpolate(flat) vMapsWin: vec4<f32>,\n' +
+      '  @location(13) @interpolate(flat) vNormalTurn: vec4<f32>,\n' +
       (gbuf
         ? '  @location(9) @interpolate(flat) vGbuf: vec2<f32>,\n  @location(10) vFootY: f32,\n' +
           '  @location(11) @interpolate(flat) vRender: f32,\n'
@@ -471,6 +474,8 @@ export function faceVertexWgsl(source, { gbuf = false, unshadedMask = false } = 
   out.vMapScale = abs(aInstScale.y);
   // E-496: where its frame's maps are in the twin page.
   out.vMapsWin = twinWindow(tid);
+  // N-258: its normals turn with it and mirror with a negative scale (faceMapVertex).
+  out.vNormalTurn = vec4<f32>(select(c, 1.0, isShear), select(s, 0.0, isShear), select(1.0, -1.0, aInstScale.x < 0.0), select(1.0, -1.0, aInstScale.y < 0.0));
   if (faceCode != 0u && all(aInstTileInv == vec2<f32>(0.0))) {
     let faceBytes = vec2<f32>(f32(faceCode >> 8u), f32(faceCode & 255u));
     out.vFaceOct = faceBytes / 255.0;
@@ -537,11 +542,16 @@ ${unshaded ? '  // DX-UNSHADED: an unshaded entity writes nothing here.\n  if ((
     let normals = flags & 3u;
     if (twinPresent(m)) {
       let zm = twinZ(m);
-      if (normals == 3u) { return faceTexel(${flat}, zm * in.vMapScale, false); }
+      // N-257: a frame without heights stands as its surface says (faceMap.frag.glsl).
+      var zw = 0.0;
+      if (twinHeights(in.vMapsWin)) { zw = zm * in.vMapScale; }
+      else if ((flags & 4u) == 0u) { zw = max(in.vFootY - in.vWorld.y, 0.0) / uniforms.uFaceSpace.x; }
+      if (normals == 3u) { return faceTexel(${flat}, zw, false); }
       var n = faceOctDecode(floor(m.ba * 255.0 + 0.5));
-      // The Sobel reads the frame's own heights: a scale stretches the heights and the texels alike.
-      if (normals == 2u) { n = faceHeightNormal(tc, zm); }
-      return faceTexel(faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zm * in.vMapScale, true);
+      // The Sobel reads the frame's own heights or relief (DX-RELIEF); a normal map alone keeps its own normals.
+      if (normals == 2u && (twinHeights(in.vMapsWin) || twinRelief(in.vMapsWin))) { n = faceHeightNormal(tc, zm); }
+      n = turnNormal(n, in.vNormalTurn);
+      return faceTexel(faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zw, true);
     }
     if ((flags & 4u) == 0u) {
       return faceTexel(${flat}, max(in.vFootY - in.vWorld.y, 0.0) / uniforms.uFaceSpace.x, false);
@@ -580,6 +590,12 @@ fn faceTexel(oct: vec2<f32>, z: f32, k: bool) -> vec4<f32> {
   let q = floor(clamp(z * ${FACE_Z_UNITS}.0, 0.0, ${FACE_Z_MAX_CODE}.0)) + select(0.0, ${FACE_K_BIT}.0, k);
   return vec4<f32>(oct, floor(q / 256.0) / 255.0, (q % 256.0) / 255.0);
 }
+
+// N-258: a frame's normal as its sprite draws it, mirrored and turned (faceMap.frag.glsl turnNormal; t: vNormalTurn).
+fn turnNormal(n: vec3<f32>, t: vec4<f32>) -> vec3<f32> {
+  let f = n.xy * t.zw;
+  return vec3<f32>(f.x * t.x + f.y * t.y, f.y * t.x - f.x * t.y, n.z);
+}
 ${gbuf ? FACE_GBUF_HELPERS_WGSL : ''}
 // DX-FACES (faceMap.frag.glsl): what this pixel is, in painter order, or a discard where the sprite is not opaque.
 fn weedFace(in: VertexOut) -> vec4<f32> {
@@ -598,9 +614,10 @@ fn weedFace(in: VertexOut) -> vec4<f32> {
   let noFace = all(oct == vec2<f32>(0.0));
   let sc = normalize(vec2<f32>(uniforms.uFaceSpace.y, uniforms.uFaceSpace.x));
 ${gbufBlock}  if (noFace && twinPresent(m)) {
-    let n = faceOctDecode(floor(m.ba * 255.0 + 0.5));
+    let n = turnNormal(faceOctDecode(floor(m.ba * 255.0 + 0.5)), in.vNormalTurn);
     oct = faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x));
-    z = twinZ(m) * in.vMapScale;
+    // N-257: without words a frame without heights lies on the floor (faceMap.frag.glsl).
+    z = select(0.0, twinZ(m) * in.vMapScale, twinHeights(in.vMapsWin));
   }
   return faceTexel(oct, z, false);
 }
@@ -671,6 +688,26 @@ export function decodeFaceNormal(code, out) {
   out[0] = x / len;
   out[1] = y / len;
   out[2] = (z = z / len);
+  return out;
+}
+
+/**
+ * N-258: the face pass's turnNormal in JS (faceMap.frag.glsl, faceFunctionsWgsl), for tests: a frame's normal (its own
+ * camera space, x right, y up) as a sprite with rotation (cos, sin) and scale signs (sx, sy) draws it: mirrored where its
+ * scale is negative, then turned with it (the screen's rotation, y down, is the opposite turn with y up).
+ * @param {[number, number, number]|Float32Array} n
+ * @param {number} c the sprite's rotation's cosine (1 for a shear: DX-DECOSKEW turns no normal)
+ * @param {number} s its sine (0 for a shear)
+ * @param {number} sx -1 for a negative scale x (flipX), else 1
+ * @param {number} sy -1 for a negative scale y (flipY), else 1
+ * @param {number[]|Float32Array} out
+ */
+export function turnFrameNormal(n, c, s, sx, sy, out) {
+  const fx = n[0] * sx;
+  const fy = n[1] * sy;
+  out[0] = fx * c + fy * s;
+  out[1] = fy * c - fx * s;
+  out[2] = n[2];
   return out;
 }
 

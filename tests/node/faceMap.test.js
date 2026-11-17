@@ -113,8 +113,10 @@ test('the height scale of the shaders is the encoder\'s', () => {
   // DX-MAPS: a twin texel's height is in spriteMaps.js's units (twinTexel.js twinZ; N-194: times the sprite's scale where
   // it is written).
   for (const twin of [TWIN_GLSL, TWIN_WGSL]) assert.match(twin, new RegExp(`\\) / ${HEIGHT_UNITS}\\.0;`));
-  assert.match(faceFragmentGlsl(shader('faceMap.frag.glsl')), /z = twinZ\(m\) \* vMapScale;/);
-  assert.match(faceMapWgsl(shader('instancedSprite.wgsl')), /z = twinZ\(m\) \* in\.vMapScale;/);
+  // N-257: a frame's own heights where it has them (twinHeights), its surface's or the floor's where it does not.
+  assert.match(faceFragmentGlsl(shader('faceMap.frag.glsl')), /z = twinHeights\(vMapsWin\) \? twinZ\(m\) \* vMapScale : 0\.0;/);
+  assert.match(faceMapWgsl(shader('instancedSprite.wgsl')), /z = select\(0\.0, twinZ\(m\) \* in\.vMapScale, twinHeights\(in\.vMapsWin\)\);/);
+  assert.match(faceFragmentGlsl(shader('faceMap.frag.glsl'), { gbuf: true }), /float zw = twinHeights\(vMapsWin\) \? zm \* vMapScale/);
   assert.match(shader('lightingBasic.frag.glsl'), /\/ 8\.0;/);
 });
 
@@ -308,4 +310,53 @@ test('every reader of the twin page asks twinTexel.js whether a texel holds a ma
     const own = src.split(TWIN_GLSL).join('').split(TWIN_WGSL).join('');
     assert.doesNotMatch(own, /\.b \+ m?d?\.a [<>]/, `${name}: no presence test of its own`);
   }
+});
+
+// N-258: a mirrored or rotated sprite's normals turn with it in the G-buffer pass. A mirrored car (flipX, a negative scale
+// x) lit by a lamp on its left: its frame's normal that faces right must face left on the screen, as its pixels do.
+test('a sprite\'s normals mirror with a negative scale and turn with its rotation, in both languages', async () => {
+  const { turnFrameNormal } = await import('../../src/render/faceMap.js');
+  const out = [0, 0, 0];
+  assert.deepEqual(turnFrameNormal([0.6, 0.3, 0.74], 1, 0, 1, 1, out), [0.6, 0.3, 0.74], 'unturned: the same bits');
+  assert.deepEqual(turnFrameNormal([0.6, 0.3, 0.74], 1, 0, -1, 1, out), [-0.6, 0.3, 0.74], 'flipX mirrors x');
+  assert.deepEqual(turnFrameNormal([0.6, 0.3, 0.74], 1, 0, 1, -1, out), [0.6, -0.3, 0.74], 'flipY mirrors y');
+  // A quarter turn on the screen (y down: x goes to screen down) takes a right-facing normal to camera-space down (y up).
+  turnFrameNormal([1, 0, 0], 0, 1, 1, 1, out);
+  assert.ok(Math.abs(out[0]) < 1e-12 && Math.abs(out[1] + 1) < 1e-12, `a quarter turn: ${out}`);
+  // The vertex stage's local x axis under that turn, as instancedSprite.vert.glsl spins it, lands where the normal points.
+  const c = 0;
+  const s = 1;
+  const spun = [1 * c - 0 * s, 1 * s + 0 * c];
+  assert.deepEqual([spun[0], -spun[1]], [0, -1], 'screen down is camera-space down');
+  const vert = faceMapVertex(shader('instancedSprite.vert.glsl'), { gbuf: true });
+  assert.match(vert, /vNormalTurn = vec4\(isShear \? 1\.0 : c, isShear \? 0\.0 : s, aInstScale\.x < 0\.0 \? -1\.0 : 1\.0, aInstScale\.y < 0\.0 \? -1\.0 : 1\.0\);/);
+  const frag = faceFragmentGlsl(shader('faceMap.frag.glsl'), { gbuf: true });
+  assert.match(frag, /vec3 n = turnNormal\(sobel \? heightNormal\(tc, zm\) : octDecode/, 'the map\'s normal and the Sobel\'s alike');
+  assert.match(frag, /vec3 n = turnNormal\(octDecode\(floor\(m\.ba/, 'without words too');
+  for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
+    const w = faceMapWgsl(shader(name), { gbuf: true });
+    assert.match(w, /@location\(13\) @interpolate\(flat\) vNormalTurn: vec4<f32>,/, name);
+    assert.match(w, /n = turnNormal\(n, in\.vNormalTurn\);/, name);
+    assert.match(w, /let n = turnNormal\(faceOctDecode\(floor\(m\.ba \* 255\.0 \+ 0\.5\)\), in\.vNormalTurn\);/, name);
+    // Within WebGPU's 16 vertex outputs (locations 0..15), none used twice.
+    const out = w.slice(w.indexOf('struct VertexOut {'), w.indexOf('}', w.indexOf('struct VertexOut {')));
+    const locs = [...out.matchAll(/@location\((\d+)\)/g)].map((m) => +m[1]);
+    assert.ok(Math.max(...locs) <= 15, name);
+    assert.equal(new Set(locs).size, locs.length, `${name}: each output its own location`);
+  }
+});
+
+// N-257: a sprite with a normal map and no height map (or a relief map) stands as its surface says in the G-buffer, pixel
+// depth and the shadow maps: its frame's heights are read only where the maps table marks heights.
+test('a frame without heights takes its surface\'s height in the G-buffer, depth and the columns', async () => {
+  const frag = faceFragmentGlsl(shader('faceMap.frag.glsl'), { gbuf: true });
+  assert.match(frag, /float zw = twinHeights\(vMapsWin\) \? zm \* vMapScale\s*: \(\(flags & 4u\) == 0u \? max\(vFootY - vWorld\.y, 0\.0\) \/ uFaceSpace\.x : 0\.0\);/);
+  assert.match(frag, /bool sobel = normals == 2u && \(twinHeights\(vMapsWin\) \|\| twinRelief\(vMapsWin\)\);/);
+  const depth = pixelDepthFragment(shader('instancedSprite.frag.glsl'), { gbuf: true });
+  assert.match(depth, /if \(twinPresent\(md\) && twinHeights\(vMapsWin\) && !glow\) floorY = /);
+  assert.match(pixelDepthWgsl(shader('instancedSprite.wgsl'), { gbuf: true }), /if \(twinPresent\(md\) && twinHeights\(in\.vMapsWin\) && !glow\)/);
+  assert.match(sunMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl')), /float z = twinHeights\(win\) \? twinZ\(m\)/);
+  assert.match(lampMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl')), /float z = twinHeights\(win\) \? twinZ\(m\)/);
+  assert.match(sunMapColumnsWgsl(shader('instancedSpriteShadow.wgsl')), /let z = select\(0\.0, twinZ\(m\) \* height \* abs\(aInstScale\.y\), twinHeights\(win\)\);/);
+  assert.match(lampMapColumnsWgsl(shader('instancedSpriteShadow.wgsl')), /let z = select\(0\.0, twinZ\(m\) \* height \* abs\(aInstScale\.y\), twinHeights\(win\)\);/);
 });

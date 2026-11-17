@@ -13,7 +13,7 @@
  */
 
 import { HEIGHT_UNITS } from './spriteMaps.js';
-import { MAPS_HEIGHTS, MAPS_TWIN, MAPS_UNSHADED } from './mapsTable.js';
+import { MAPS_HEIGHTS, MAPS_RELIEF, MAPS_TWIN, MAPS_UNSHADED } from './mapsTable.js';
 
 /** The maps table's binding in a WGSL program's group 2 (the twin page is 5; the shadow programs take 6 and 7). */
 export const MAPS_TABLE_BINDING = 8;
@@ -22,12 +22,15 @@ export const MAPS_TABLE_BINDING = 8;
  * E-496: a frame's marks in GLSL 300 (twinWindow's z: mapsTable.js MAPS_*): a window in the twin page, heights,
  * unshaded. TWIN_GLSL holds them; a stage that reads no twin texel takes them alone.
  */
-export const MAPS_MARKS_GLSL = `// E-496: a frame's marks (twinWindow's z: mapsTable.js MAPS_*): a window in the twin page, heights, unshaded.
+export const MAPS_MARKS_GLSL = `// E-496: a frame's marks (twinWindow's z: mapsTable.js MAPS_*): a window in the twin page, heights, relief, unshaded.
 bool twinHas(vec4 win) {
   return (uint(win.z + 0.5) & ${MAPS_TWIN}u) != 0u;
 }
 bool twinHeights(vec4 win) {
   return (uint(win.z + 0.5) & ${MAPS_HEIGHTS}u) != 0u;
+}
+bool twinRelief(vec4 win) {
+  return (uint(win.z + 0.5) & ${MAPS_RELIEF}u) != 0u;
 }
 bool twinUnshaded(vec4 win) {
   return (uint(win.z + 0.5) & ${MAPS_UNSHADED}u) != 0u;
@@ -63,12 +66,15 @@ fn twinPresent(m: vec4<f32>) -> bool {
 fn twinZ(m: vec4<f32>) -> f32 {
   return (floor(m.r * 255.0 + 0.5) * 256.0 + floor(m.g * 255.0 + 0.5)) / ${HEIGHT_UNITS}.0;
 }
-// E-496: a frame's marks (twinWindow's z: mapsTable.js MAPS_*): a window in the twin page, heights, unshaded.
+// E-496: a frame's marks (twinWindow's z: mapsTable.js MAPS_*): a window in the twin page, heights, relief, unshaded.
 fn twinHas(win: vec4<f32>) -> bool {
   return (u32(win.z + 0.5) & ${MAPS_TWIN}u) != 0u;
 }
 fn twinHeights(win: vec4<f32>) -> bool {
   return (u32(win.z + 0.5) & ${MAPS_HEIGHTS}u) != 0u;
+}
+fn twinRelief(win: vec4<f32>) -> bool {
+  return (u32(win.z + 0.5) & ${MAPS_RELIEF}u) != 0u;
 }
 fn twinUnshaded(win: vec4<f32>) -> bool {
   return (u32(win.z + 0.5) & ${MAPS_UNSHADED}u) != 0u;

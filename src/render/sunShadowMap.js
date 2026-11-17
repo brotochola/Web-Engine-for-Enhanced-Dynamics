@@ -264,10 +264,11 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
     .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nin vec4 aBlock; // E-379: this instance\'s block of its frame (x, y) and the blocks a side (z, 0 or 1: one)\nvec2 aQuad;\nuniform sampler2D uTexture;\n')
     .replace(main, `${FOOTPRINT_GLSL}${TWIN_GLSL}${MAPS_TABLE_GLSL}${main}  float blocks = max(aBlock.z, 1.0);\n  aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
   return `${head}  vec2 uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
-  // E-496: the cell's twin texel, through its frame's window (the maps table).
-  vec4 m = twinTexel(uvc, twinWindow(tid));
+  // E-496: the cell's twin texel, through its frame's window (the maps table). N-257: only heights stand a column.
+  vec4 win = twinWindow(tid);
+  vec4 m = twinTexel(uvc, win);
   float cellAlpha = texelFetch(uTexture, ivec2(uvc * vec2(textureSize(uTexture, 0))), 0).a;
-  float z = twinZ(m) * height * abs(aInstScale.y);
+  float z = twinHeights(win) ? twinZ(m) * height * abs(aInstScale.y) : 0.0;
   bool solid = sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0);
   if (!solid || !twinPresent(m) || cellAlpha < 0.5 || z < 0.5) {
     gl_Position = vec4(2.0, 2.0, 0.0, 1.0);${heights ? '\n    vSunZ = 0.0;' : '\n    vColor = vec4(0.0);'}
@@ -443,10 +444,11 @@ export function sunMapColumnsWgsl(source, cells = SUN_MAP_COLUMNS, { heights = t
     .replace(quad, "  @location(0) aCell: vec4<f32>, // the cell's centre in the frame, t (floor 0, top 1), side\n  @location(12) aBlock: vec4<f32>, // E-379: this instance's block of its frame (x, y) and the blocks a side (z)\n")
     .replace(body, `${body}  let blocks = max(aBlock.z, 1.0);\n  let aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
   const columns = `  let uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
-  // E-496: the cell's twin texel, through its frame's window (the maps table).
-  let m = twinTexel(uvc, twinWindow(tid));
+  // E-496: the cell's twin texel, through its frame's window (the maps table). N-257: only heights stand a column.
+  let win = twinWindow(tid);
+  let m = twinTexel(uvc, win);
   let cellAlpha = textureLoad(uTexture, vec2<i32>(uvc * vec2<f32>(textureDimensions(uTexture, 0))), 0).a;
-  let z = twinZ(m) * height * abs(aInstScale.y);
+  let z = select(0.0, twinZ(m) * height * abs(aInstScale.y), twinHeights(win));
   let solid = sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0);
   if (!solid || !twinPresent(m) || cellAlpha < 0.5 || z < 0.5) {
     clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);

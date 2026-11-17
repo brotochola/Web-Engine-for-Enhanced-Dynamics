@@ -382,10 +382,11 @@ export function lampMapColumnsVertex(source, cells = LAMP_MAP_COLUMNS) {
     .replace(quad, 'in vec4 aCell; // the cell\'s centre in the frame, t (floor 0, top 1), side\nin vec4 aBlock; // E-379: this instance\'s block of its frame (x, y) and the blocks a side (z, 0 or 1: one)\nvec2 aQuad;\nuniform sampler2D uTexture;\nuniform sampler2D uMaps;\n')
     .replace(main, `${TWIN_GLSL}${MAPS_TABLE_GLSL}${main}  float blocks = max(aBlock.z, 1.0);\n  aQuad = (aBlock.xy + aCell.xy) / blocks;\n`);
   return `${top}  vec2 uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
-  // E-496: the cell's twin texel, through its frame's window (the maps table).
-  vec4 m = twinTexel(uvc, twinWindow(tid));
+  // E-496: the cell's twin texel, through its frame's window (the maps table). N-257: only heights stand a column.
+  vec4 win = twinWindow(tid);
+  vec4 m = twinTexel(uvc, win);
   float cellAlpha = texelFetch(uTexture, ivec2(uvc * vec2(textureSize(uTexture, 0))), 0).a;
-  float z = twinZ(m) * height * abs(aInstScale.y);
+  float z = twinHeights(win) ? twinZ(m) * height * abs(aInstScale.y) : 0.0;
 ${lampTileGlsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBase.x >= 0.0) || !twinPresent(m) || cellAlpha < 0.5 || z < 0.5 || (uTileWorld.z > 0.5 && z <= lamp.z)')}  vec2 content = aInstTrim.xy + aQuad * aInstTrim.zw;
   vec2 pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   vec2 base = vec2(pix.x, (pix.y + uSunK.w * z) * uGroundInvScaleY);
@@ -572,10 +573,11 @@ export function lampMapColumnsWgsl(source, cells = LAMP_MAP_COLUMNS) {
         `${TWIN_WGSL}${MAPS_TABLE_WGSL}// DX-SHADOW3D: the renders' footprints (the layout's binding 7; unread here).\n@group(2) @binding(7) var uFoot: texture_2d<f32>;\n`,
     );
   return `${head}  let uvc = mix(aInstUV.xy, aInstUV.zw, aQuad);
-  // E-496: the cell's twin texel, through its frame's window (the maps table).
-  let m = twinTexel(uvc, twinWindow(tid));
+  // E-496: the cell's twin texel, through its frame's window (the maps table). N-257: only heights stand a column.
+  let win = twinWindow(tid);
+  let m = twinTexel(uvc, win);
   let cellAlpha = textureLoad(uTexture, vec2<i32>(uvc * vec2<f32>(textureDimensions(uTexture, 0))), 0).a;
-  let z = twinZ(m) * height * abs(aInstScale.y);
+  let z = select(0.0, twinZ(m) * height * abs(aInstScale.y), twinHeights(win));
 ${lampTileWgsl(' || lampKind >= 3 || lampKind == 1 || (lampKind == 0 && aInstBase.x >= 0.0) || !twinPresent(m) || cellAlpha < 0.5 || z < 0.5 || (uniforms.uTileWorld.z > 0.5 && z <= lamp.z)')}  let content = aInstTrim.xy + aQuad * aInstTrim.zw;
   let pix = aInstXY + (content - anchor * aInstSize) * aInstScale;
   let base = vec2<f32>(pix.x, (pix.y + uniforms.uSunK.w * z) * uniforms.uGroundInvScaleY);
