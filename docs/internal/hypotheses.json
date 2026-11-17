@@ -21622,7 +21622,8 @@
         "R-1271",
         "R-1275",
         "R-1276",
-        "R-1278"
+        "R-1278",
+        "R-1279"
       ]
     },
     {
@@ -21632,7 +21633,7 @@
       "statusText": "kept 2026-11-17 (R-1269), merged in ddcfaa20",
       "date": "2026-11-17",
       "result": "Kept (ddcfaa20): the catch-up spiral (11/12 runs on main on the ASUS) breaks: with E-501, physics 102.6 -> 30.6 ms (-72 %, 4/4), physics frames 62-129 -> 260-344; lockstep untouched",
-      "next": "The trap itself (R-1278): every run starts with ~4 000 awake bodies; where physics takes them in under 16.7 ms the crowd settles to ~800 and sleeps, where it does not (main on the ASUS: ~20 ms, the frame around it heavier) physics runs at 30 Hz and the crowd never sleeps (8/8 runs). Read awake bodies and logic's steering frame by frame on a run that stays high against one that settles; candidates: steering on predicted poses, a cheaper start. E-434 writes sleeping = 0 on every acceleration.",
+      "next": "Main settles Predator crowd 0.5 slower than v0.14.0 on the ASUS (R-1278, R-1279): its crowd sleeps after more than 10 s (0 to 46 awake after 50 s, physics 2-3 ms), v0.14.0 mostly within 10 s. Measure the time to settle (awake under 1 000) from a run's start per build; then what keeps the crowd moving while physics runs at 30 Hz (logic steering on poses that come half as often; E-434 writes sleeping = 0 on every acceleration). ASUS sittings of Predator crowd 0.5 need 50 s of warm-up for steady state.",
       "area": "physics",
       "kind": "bug",
       "refs": [],
@@ -21647,7 +21648,8 @@
         "R-1269",
         "R-1271",
         "R-1276",
-        "R-1278"
+        "R-1278",
+        "R-1279"
       ]
     },
     {
@@ -34313,6 +34315,15 @@
       "title": "After the fixes, main against v0.14.0 on the ASUS: physics +213 % (8/8) because the crowd never sleeps (8/8 runs end at ~4 000 awake, v0.14.0 1/8): a bistable loop the fixes contain but do not leave",
       "verdict": "note",
       "text": "**After E-501 and N-264, main (1835b772) against v0.14.0 on the ASUS, Predator crowd 0.5, 8 pairs, each side its whole revision (asus-pred05-v014-fixed, 2026-11-17 07:16 to 07:25):**\n\n| Worker | v0.14.0 | main | Change |\n|---|---|---|---|\n| physics | 9.9 ms | 31.0 ms | +213 %, 8/8 |\n| spatial | | | +30 %, 8/8 |\n| pre-render | | | +33 %, 8/8 |\n| renderer | 4.8 ms | 5.5 ms | |\n| drawn | 38.4 fps | 55.0 fps | +43 % |\n\n**The crowd's sleep is the difference, and it is bistable.** Every run starts with ~4 000 awake bodies, the crowd just spawned.\n- On v0.14.0, 7 of 8 runs end at 800–1 030 awake: the crowd settled and slept, and physics stayed at 7–9 ms.\n- On main, 8 of 8 end at 3 890–4 116 and stay there: 154 to 450 physics frames in 10 s, 17 to 40 ms a step.\n- The commits between them (Nov 13 to 16) ended high in about half their runs.\n\nThe likely loop: 4 000 awake bodies fit v0.14.0's 16.7 ms on this laptop (~9–11 ms), and the crowd settles. On main the frame around physics is heavier (spatial and pre-render +2 ms each), so the same bodies cost ~20 ms. Physics runs at 30 Hz, logic steers on poses that come half as often, and the civilians never stop. E-501 and N-264 keep that state from collapsing (1–13 Hz before them), but they do not leave it.\n\nNext (N-264's): read awake bodies and logic's steering frame by frame on a run that stays high, against one that settles. Ways out to test there: steer on predicted poses, or make the start cheap enough to settle."
+    },
+    {
+      "id": "R-1279",
+      "date": "2026-11-17",
+      "time": "07:34",
+      "timeFrom": "recorded",
+      "title": "Given 50 s, main's Predator crowd sleeps on the ASUS (0 to 46 awake, physics 2-3 ms): R-1278's gap is a slower settle in the start-up window, not a trap",
+      "verdict": "note",
+      "text": "**With a 50 s warm-up instead of 10, main's crowd does sleep on the ASUS.** Main 1835b772, Predator crowd 0.5, one build both sides, 2 pairs, 50 s warm-up then a 10 s window (asus-pred05-longwarm, 2026-11-17 07:28): awake bodies 0 to 46 at the end (2 to 46 on average), 600 physics frames, 2–3 ms a step.\n\nSo R-1278's \"never sleeps\" is a slower settle, not a trap. Main needs more than the standard window's first 10 s on this laptop; v0.14.0 mostly settles inside it, ending at 800–1 030 awake. The +213 % physics against v0.14.0 is measured in that start-up transient, while the scene's steady state is fast on both. It still costs a player the first tens of seconds at 30 Hz physics.\n\nFor sittings on the ASUS, Predator crowd 0.5 needs a warm-up of 50 s or more to measure steady state, or the transient has to be the thing measured.\n\nNext: time to settle (awake under 1 000) per build, from a run's start, on v0.14.0 and main."
     }
   ],
   "leads": [
