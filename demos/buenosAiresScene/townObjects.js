@@ -67,7 +67,9 @@ export class Casa extends GameObject {
     const light = this.lightEmitter;
     light.color = LAMP_COLOR;
     light.glowOffsetY = -7 * HEIGHT_PX_PER_M;
-    light.glow = hasLamp ? 0.066 : 0;
+    // Its halo, as a street lamp's (LAMP_GLOW, LAMP_GLOW_RADIUS).
+    light.glow = hasLamp ? LAMP_GLOW : 0;
+    light.glowRadius = LAMP_GLOW_RADIUS;
     light.elevation = hasLamp ? 50 : 0;
     light.radius = hasLamp ? 574 : 0;
     light.shadowRange = 260;
@@ -138,8 +140,14 @@ export class PropState extends Component {
 
 /** A street lamp reaches about 63 m: 10·√(1800·2.2) px, the game's pool from a raised bulb. */
 const LAMP_RADIUS = 10 * Math.sqrt(1800 * 2.2);
-/** Its halo on the bulb, as bright as the game's: radius² / 100 · 0.55 / 25 000. */
-const LAMP_GLOW = ((LAMP_RADIUS * LAMP_RADIUS) / 100) * (0.55 / 25000);
+/**
+ * Its halo on the bulb (LightEmitter.glow and glowRadius). The scene's halos join the entities (lightGlow 'sprite'): each
+ * is drawn right after its lamp, so it shines over the lamp and a tree or a house in front of the lamp covers it, and
+ * it is unshaded, so the night does not darken it. The engine's gradient halves its alpha every 2 % of its radius, so a
+ * 220 px radius shows about 20 px of glow around the glass: a bulb's glow, not a haze over the street the lamp lights.
+ */
+const LAMP_GLOW = 0.6;
+const LAMP_GLOW_RADIUS = 220;
 /** A lamp's shadows (the lamps' shadow map) reach 260 px: cheaper than its whole pool. */
 const LAMP_SHADOW_RANGE = 260;
 
@@ -194,6 +202,7 @@ export class Prop extends GameObject {
     light.glowOffsetY = -bulbHeight * META.CZ;
     light.radius = LAMP_RADIUS * (1 + 0.2 * (object.bulbs.length - 1));
     light.glow = LAMP_GLOW;
+    light.glowRadius = LAMP_GLOW_RADIUS;
     light.shadowRange = LAMP_SHADOW_RANGE;
     light.active = 1;
     lightBorn(this, OFF.LAMPS, x, y);
