@@ -21593,16 +21593,17 @@
         "face depth prepass"
       ],
       "records": [
-        "R-1287"
+        "R-1287",
+        "R-1291"
       ],
       "result": "",
-      "next": "Step 0 done (R-1287): the pre-pass costs about the main pass and spares it nothing in the barrio too (0.43 ms), and it is part of the picture: drawn without it the frame is black. Next, a design change on the batch: face rows write their own plane depth in the main pass (depthMask on for them, the vertex depth the pre-pass computes) and the pre-pass goes; or the pre-pass only for faces that cover a share of the screen. Captures against main identical where nothing stands behind a face.",
+      "next": "R-1291: the vertex-depth draw is the flat instances' colour, not an extra pass; what costs is both draws running the vertex shader over every instance (faceLightScene town=80000: +2.1 ms of GPU). Partition the instances by kind when packed (flat, then heights), each draw over its own range (an instance offset per draw); byte-identical pictures; glFrameRecorder on faceLightScene town=80000 and the barrio.",
       "id": "E-500",
       "kind": "gpu",
       "area": "render",
       "status": "open",
       "date": "2026-11-17",
-      "title": "Faces' vertex-depth opaque pre-pass (DX-FACEDEPTH) only where it pays: with many small faces and little overdraw it costs more than the early depth it buys",
+      "title": "Faces on, the batch draws its instances twice (the flat ones at their plane's depth, the ones with heights at their pixels'), each draw walking every instance: partition them so each walks its own",
       "statusText": "found by DX-FACESBENCH 2026-11-17"
     },
     {
@@ -21714,7 +21715,8 @@
         "R-1280",
         "R-1284",
         "R-1285",
-        "R-1290"
+        "R-1290",
+        "R-1292"
       ],
       "result": "GTX 1650, the barrio held: the floor draw (1.91 ms) becomes a 0.17 ms copy; Intel HD 620: 16.6 -> 21.2 fps drawn (+27.7 %, R-1285). Default since e0b831ff: after 2 changed frames the layer draws on the stage, 2 held frames bring the target back; captures identical (WebGL, WebGPU).",
       "next": "A moving camera's cost against main on the HD 620 (by construction main's draw after two frames). A world-space tile cache, so a camera that pans re-paints only the strip that comes into view.",
@@ -34510,6 +34512,22 @@
         "d9bf2261",
         "e0b831ff"
       ]
+    },
+    {
+      "id": "R-1291",
+      "date": "2026-11-17",
+      "title": "E-500 corrected: the vertex-depth draw is the flat instances' colour (R-1287 misread it); the cost is two draws walking every instance",
+      "verdict": "note",
+      "text": "**E-500, corrected (R-1287 misread it): the \"pre-pass\" is the flat instances' opaque draw, and the cost is that both draws walk every instance.**\n\n- With faces on, the batch's colour program is made with the depth vertex's `cull: 'flat'` (instancedSpriteBatch.js\n  `_rebuildDepthPrograms`): it keeps the instances whose frame has heights and sends the others' vertices away. The\n  vertex-depth twin (`_vdepthTwin`, `cull: 'heights'`) draws the rest: faces and sprites without maps, their opaque pixels\n  at the depth of their plane or foot, written early. So the 0.434 ms R-1287 called the pre-pass is the flat instances'\n  colour, and the 0.419 ms \"main\" draw the ones with heights; leaving the first out leaves the faces undrawn, which is the\n  black frame R-1287 saw, not a depth the rest needs.\n- What costs is that each of the two draws runs the vertex shader over every instance and discards about half: in\n  faceLightScene town=80000 (DX-FACESBENCH, R-1263) the GPU went 5.79 -> 7.92 ms with DX-BARRIOS, the vertex-depth draw\n  1.58 of it; in the barrio (11 610 instances) it is small.\n- **Next**: partition the instances by kind when they are packed (flat first, heights after, or two lists), so each\n  draw covers its own range (an instance offset per draw, WebGL's drawArraysInstancedBaseInstance where there is one, a\n  base offset in the pose buffer otherwise); the picture stays byte-identical, the vertex work halves. Measure with\n  glFrameRecorder on faceLightScene town=80000 and the barrio."
+    },
+    {
+      "id": "R-1292",
+      "date": "2026-11-17",
+      "time": "08:22",
+      "timeFrom": "recorded",
+      "title": "E-504's adaptive default with a moving camera (pan=40) on the HD 620: the cache off draws ~4 % more frames (3 clean pairs), small next to its +27.7 % with a still camera",
+      "verdict": "note",
+      "text": "**E-504's adaptive default with the camera moving on the Intel HD 620.** Parque Chas at `hour=22&pan=40` (the camera drifts 40 world px a second), main 0ea0ee8d, one build: the default (A) against `?floorCache=0` (B). 4 pairs, `--full-rev`, 2026-11-17 08:05 to 08:13 (asus-e504-adaptive-pan).\n\n- Drawn: A 16.2–16.6 fps against B 17.0–17.2 in three pairs, so the cache off drew ~4 % more frames each time.\n- The fourth pair's B run had a one-off hitch (5.7 fps, renderer 297 ms) and is left out. The runner's paired median, with it in: +3.6 % for B, fewer 1/4.\n- Renderer: −0.3 % with it, 6.09–6.82 against 5.89–6.43 ms in the clean pairs.\n- Logic, spatial, physics and pre-render are within noise.\n\nSo it is not quite a tie on this GPU: about 4 % of the drawn frames go to the adaptive path with a camera that never holds. It is the holder, the per-frame view compare, or the frames before it switches to drawing straight on the stage. That is small next to the +27.7 % the cache gives a still camera (R-1285)."
     }
   ],
   "leads": [
