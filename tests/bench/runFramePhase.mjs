@@ -23,6 +23,7 @@ import { parseArgs } from './microbenchHelpers.mjs';
 import { median as benchMedian } from './benchMath.js';
 import { summarizePhase } from './framePhaseSummary.mjs';
 import { benchWindowArgs, rememberBenchWindow } from './benchWindow.mjs';
+import { criticalPathSummary, formatCriticalPath } from './criticalPath.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const args = parseArgs(process.argv.slice(2));
@@ -118,6 +119,8 @@ try {
 
   const summary = summarizePhase(samples);
   const table = phaseTable(samples);
+  // E-223: which worker gates each frame (criticalPath.mjs).
+  const criticalPath = criticalPathSummary(samples);
   const payload = {
     scene: sceneExport,
     query: extraQuery,
@@ -128,6 +131,7 @@ try {
     captureMs,
     summary,
     workers: table,
+    criticalPath,
   };
   await fs.mkdir(outDir, { recursive: true });
   await fs.writeFile(path.join(outDir, 'summary.json'), JSON.stringify(payload, null, 2) + '\n');
@@ -136,6 +140,7 @@ try {
   await fs.writeFile(path.join(outDir, 'samples.json'), JSON.stringify(samples) + '\n');
   console.log(JSON.stringify({ verdict: summary.verdict, spreadMs: summary.spreadMs, samples: summary.samples, reason: summary.reason, broken: summary.broken }, null, 2));
   console.log(JSON.stringify(table, null, 2));
+  console.log(formatCriticalPath(criticalPath));
   console.log(`wrote ${path.join(outDir, 'summary.json')}`);
 } finally {
   await browser.close();
