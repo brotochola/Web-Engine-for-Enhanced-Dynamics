@@ -21963,7 +21963,7 @@
       "title": "The indexed path uploads its statics texture whole whenever the queue's statics generation moves (every frame in the barrio, its people's animation frames): upload only the rows whose statics changed",
       "statusText": "found 2026-11-17 measuring E-513: the barrio's texture uploads 38 KB -> 629 KB a frame on the indexed path",
       "result": "",
-      "next": "pre-render knows which rows changed (the emit marks them, as E-177's keyed path does with KEY_CHANGED): pass dirty row ranges with the frame and upload those texel rows only (texSubImage2D per range, or the keyed scatter E-187 uses on WebGPU). Measure bytesTexture and gpuProcessTrace in the barrio. Also: E-513's snap in C instead of JS (pre-render +4.7 %)."
+      "next": "WebGL already scatters statics rows into a texture (render/webgl/staticsScatterGl.js, the keyed path's _scatterStaticsGl). Plan: pre-render's indexed kernel compares each row's new statics with what its queue buffer slot held (two frames back, a superset of last frame's changes) and lists the rows that differ; Pixi scatters those rows into its statics texture instead of uploading it whole. The double buffer's catch: Pixi must know its texture holds the statics the list is relative to (a skipped frame, a resume): the frame carries the generation the list starts from, and Pixi uploads whole when its own differs. Measure bytesTexture and gpuProcessTrace in the barrio, and the HD 620's drawn frames (the laptop's CrGpuMain is the target). Also: E-513's snap in C instead of JS (pre-render +4.7 % under the floor)."
     }
   ],
   "records": [
