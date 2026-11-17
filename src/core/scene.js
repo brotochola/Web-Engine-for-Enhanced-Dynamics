@@ -1742,7 +1742,8 @@ class Scene {
     // DX-MAPS: the twin page's texels as computed, not read back from its canvas: a 2D canvas keeps premultiplied alpha,
     // and the twin page holds a normal's second byte in A (about 55 to 61 on standing sprites), so R, the height's high
     // byte, came back rounded by a few steps (several px of height).
-    const packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, { ...options, keepMapsTexels: true });
+    // DX-MAPCAMERA: the scene's camera, so a sheet drawn for another one (its artCamera) has its heights scaled to it.
+    const packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, { ...options, keepMapsTexels: true, camera: this.config?.camera ?? null });
     const maps = packed.mapsCanvas;
     const exact = maps && packed.mapsTexels ? new ImageData(packed.mapsTexels, maps.width, maps.height) : null;
     const [imageBitmap, mapsBitmap] = await Promise.all([
