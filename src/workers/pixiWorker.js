@@ -9083,7 +9083,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * sprite or a look mesh composes the layer's picture, which its batches drew with the container blend: blendMode.
    */
   _customLayerForcesContainerBlend(cl, displayObject) {
-    const onePass = displayObject === cl.batch?.mesh || displayObject === cl.fillBatch?.mesh || displayObject === cl.worldMesh;
+    const onePass = displayObject === cl.batch?.mesh || displayObject === cl.fillBatch?.mesh || displayObject === cl.worldMesh
+      || displayObject === cl.worldHolder;
     return onePass && cl.containerBlendSet === true;
   }
 
@@ -10516,13 +10517,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const step = worldRectCacheStep(cl.worldCache, zoom, x, y, rot, w, h, changed || cl.worldEveryFrame);
     if (step === WORLD_RECT_SHOW) return;
     if (step === WORLD_RECT_DIRECT) {
-      if (!cl.worldMesh.visible) {
+      if (!cl.worldMesh.visible || cl.displaySprite.visible) {
         cl.worldMesh.visible = true;
         cl.displaySprite.visible = false;
       }
       return;
     }
-    if (cl.worldMesh.visible) {
+    if (cl.worldMesh.visible || !cl.displaySprite.visible) {
       cl.worldMesh.visible = false;
       cl.displaySprite.visible = true;
     }
@@ -11511,7 +11512,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     else if (this.lightingMesh) this._registerLayerDisplayObject('lighting', this.lightingMesh);
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
-      const displayObject = cl.displaySprite || cl.shaderMesh || cl.batch?.mesh || cl.fillBatch?.mesh;
+      // E-504: a cached worldRect layer is its holder (the stage mesh and the target's sprite, one of them shown), not
+      // the sprite: the layer's visibility, applied every frame, would show the sprite under the mesh drawn on the stage.
+      const displayObject = cl.worldHolder || cl.displaySprite || cl.shaderMesh || cl.batch?.mesh || cl.fillBatch?.mesh;
       if (!displayObject) continue;
       this._registerLayerDisplayObject(cl.layerName, displayObject, this._customLayerForcesContainerBlend(cl, displayObject));
     }
