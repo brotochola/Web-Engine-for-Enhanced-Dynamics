@@ -20045,7 +20045,8 @@
         "typed refresh phases"
       ],
       "records": [
-        "R-1226"
+        "R-1226",
+        "R-1233"
       ]
     },
     {
@@ -32642,6 +32643,15 @@
         "11cfeb16",
         "2c183763"
       ]
+    },
+    {
+      "id": "R-1233",
+      "date": "2026-11-16",
+      "time": "21:14",
+      "timeFrom": "recorded",
+      "title": "E-476's two sittings: the spread halves spatial's long frames but raises its mean (+7.7 % interleaved, +11.5 % by blocks, 4/4 worse); not merged; the owner wants both gains",
+      "verdict": "note",
+      "text": "**E-476's two sittings: spreading spatial's typed refresh over the period halves its frames of 16 ms or more but raises its mean: interleaved +7.7 % (4/4 worse), by contiguous blocks +11.5 % (4/4 worse). Not merged (opt/e476-spread).** Predator crowd=2.5 zoom=0.216 light3d=1 hour=22, 4 pairs each, the branch with main merged in, spatial owner, through the bench lock; the first ended 20:46, the second 21:14 (the owner's game still open in the second).\n\n| sitting | spatial mean | paired | frames >= 16 ms a run, main | with the spread |\n| --- | --- | --- | --- | --- |\n| e476 (interleaved) | 13.469 -> 14.314 ms | +7.7 % | 106, 137, 123, 138 | 57, 52, 106, 59 |\n| e476b (blocks) | 11.897 -> 13.099 ms | +11.5 % | 121, 83, 101, 93 | 82, 57, 42, 38 |\n\nThe other workers moved within their noise (logic +7.2 % in e476b, 3/4 worse, with the game open). The blocks did not bring the mean back, so the slots' own memory order is not the cause. Lead: a burst of a quarter of the civilians' gathers shares a warm grid (their cells and candidate rows stay in cache across the burst's queries; gather_batch is the largest cache-refill site, R-1231), and spread thin each frame's gathers start colder. The owner asked to keep both gains (2026-11-16): next, variants that keep gathers in bursts but split them (2 tick occurrences instead of 4), or group a frame's refreshes by place (cell rows) so they share the grid, judged on the mean and the tail together."
     }
   ],
   "leads": [
