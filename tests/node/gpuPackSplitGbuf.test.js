@@ -112,6 +112,13 @@ async function setup(seed) {
   const twice = alloc(Uint32Array, N);
   twice.set(order);
   twice[N - 1] = twice[0];
+  // N-273: the decorations' owners (an entity + 1, 0 none), shorter than the rows' decoration indices reach, some past the
+  // entity count: a type-2 row whose decoration has an owner carries the owner's id.
+  const decoOwner = alloc(Uint32Array, ENTITIES - 100);
+  for (let d = 0; d < decoOwner.length; d++) {
+    const r = rng();
+    decoOwner[d] = r < 0.3 ? 0 : r < 0.9 ? 1 + ((rng() * ENTITIES) | 0) : ENTITIES + 1 + ((rng() * 50) | 0);
+  }
   const pose = alloc(Float32Array, N * GPU_POSE_FLOATS);
   const stat = alloc(Float32Array, N * GPU_STATIC_FLOATS);
   const slots = alloc(Float32Array, N * GPU_INDEXED_SLOT_FLOATS);
@@ -129,6 +136,7 @@ async function setup(seed) {
   const b = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte });
   return {
     rng, q, b, order, zOrder, twice, rowType, rowEntity, flags, selfShadow, zIndex, pose, stat, slots, rowStat, gbufOut,
+    decoOwner,
   };
 }
 
@@ -175,7 +183,7 @@ function countCalls(b) {
  * rows, and the export `via` (gpuPackClient's binding name) that wrote them. `self` and `z`, the columns the pack and
  * writeGbufWords take (null: none); `kernelZ` what the pack is handed for no bands (null or an empty column).
  */
-function checkWords(s, calls, label, { kind = 'split', opts, cap = N, statics = true, self, z, kernelZ = z, via }) {
+function checkWords(s, calls, label, { kind = 'split', opts, cap = N, statics = true, self, z, kernelZ = z, via, owner = null }) {
   const plain = pack(s, kind, opts, cap, statics, null);
   const count = opts.indices ? opts.indexCount : N;
   assert.equal(plain.n, Math.min(count, cap), `${label}: rows`);
@@ -184,7 +192,7 @@ function checkWords(s, calls, label, { kind = 'split', opts, cap = N, statics = 
   s.gbufOut.fill(-7);
   for (const k of Object.keys(calls)) calls[k] = 0;
   const gbuf = {
-    out: s.gbufOut, flags: s.flags, self, z: kernelZ, types: s.rowType, entities: s.rowEntity, written: false,
+    out: s.gbufOut, flags: s.flags, self, z: kernelZ, types: s.rowType, entities: s.rowEntity, owner, written: false,
   };
   const withWords = pack(s, kind, opts, cap, statics, gbuf);
   assert.equal(withWords.n, n, `${label}: rows with the words`);
@@ -192,7 +200,7 @@ function checkWords(s, calls, label, { kind = 'split', opts, cap = N, statics = 
   assert.ok(calls[via] > 0, `${label}: through ${via} (${JSON.stringify(calls)})`);
   assert.deepEqual(packOutput(s, n, kind, statics, withWords.ctx), want, `${label}: the rest of the output as without them`);
   const words = new Float32Array(n * GPU_GBUF_FLOATS);
-  writeGbufWords(words, n, opts.indices || null, s.rowType, s.rowEntity, null, s.flags.length, s.flags, self, z);
+  writeGbufWords(words, n, opts.indices || null, s.rowType, s.rowEntity, null, s.flags.length, s.flags, self, z, owner);
   const got = u32(s.gbufOut, n * GPU_GBUF_FLOATS);
   const wantBits = u32(words, n * GPU_GBUF_FLOATS);
   for (let w = 0; w < n * GPU_GBUF_FLOATS; w++) {
@@ -266,7 +274,12 @@ test('the split and indexed packs write writeGbufWords\' words and bands, bit fo
       k('an empty selfShadow', { opts: painter, self: new Uint8Array(0), z: s.zIndex });
       k('selfShadow shorter than the flags, no bands', { opts: painter, self: selfShort(s), z: null });
       k('capacity under count', { opts: painter, cap: 4500, self: s.selfShadow, z: s.zIndex });
+      k('decoration owners, bands', { opts: zFirst, self: s.selfShadow, z: s.zIndex, owner: s.decoOwner });
     }
+    // N-273: decorations with owners carry their owners' ids on every form.
+    const owned = c('no list, decoration owners', { opts: none, self: s.selfShadow, z: s.zIndex, owner: s.decoOwner, via: 'spritesSplitGbuf' });
+    assert.ok(owned.entityRows > plain.entityRows, `owned decorations add rows with an id (${owned.entityRows} > ${plain.entityRows})`);
+    c('split scatter, decoration owners', { opts: painter, self: s.selfShadow, z: s.zIndex, owner: s.decoOwner, via: 'spritesSplitScatterGbuf' });
   }
 });
 

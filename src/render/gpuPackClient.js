@@ -450,6 +450,11 @@ function splitGbufByte(b, gbuf, n, rows) {
   const at = b.paramsByte >> 2;
   b.u32[at + 6] = types.byteOffset;
   b.u32[at + 7] = entities.byteOffset;
+  // N-273: the decorations' owners (gpuPack.c GB_DECO_OWNER), none when the column is not in the memory.
+  const owner = gbuf.owner;
+  const owned = owner && owner.length > 0 && owner.buffer === b.buffer && owner.BYTES_PER_ELEMENT === 4;
+  b.u32[at + 8] = owned ? owner.byteOffset : 0;
+  b.u32[at + 9] = owned ? owner.length : 0;
   return b.paramsByte;
 }
 

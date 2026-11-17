@@ -73,10 +73,17 @@ export {
 /** The spawn config keys spawnMany also takes as arrays, one value per decoration. */
 const PER_DECORATION_KEYS = Object.freeze([
   'x', 'y', 'texture', 'scaleX', 'scaleY', 'rotation', 'alpha', 'tint', 'sortOffsetY', 'skewX', 'skewY',
-  'faceNormalX', 'faceNormalY', 'faceNormalZ', 'faceHeight', 'innerZ',
+  'faceNormalX', 'faceNormalY', 'faceNormalZ', 'faceHeight', 'innerZ', 'owner',
 ]);
 
 const isValueList = (value) => Array.isArray(value) || ArrayBuffer.isView(value);
+
+/** N-273: DecorationComponent.owner's value for a spawn's `owner` (a GameObject or an entity index): its index + 1, 0 none. */
+function ownerSlot(owner) {
+  if (owner === undefined || owner === null) return 0;
+  const index = typeof owner === 'number' ? owner : owner.index;
+  return Number.isInteger(index) && index >= 0 ? index + 1 : 0;
+}
 
 /** Whether a spawnMany config gives any key one value per decoration. */
 function hasPerDecorationValues(config) {
@@ -590,6 +597,8 @@ export class DecorationPool extends SharedAtomicPool {
       // DX-BARRIOS: faces in use, for good (the G-buffer turns on by itself).
       if (oct !== 0) this._markFacesInUse();
     }
+    // N-273: the entity it is part of (a slot from the pool must not keep the last one's).
+    DecorationComponent.owner[i] = ownerSlot(config.owner);
 
     // Visual properties
     scaleX[i] = randomRange(config.scaleX, 1);

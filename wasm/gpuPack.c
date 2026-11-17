@@ -166,8 +166,10 @@ INLINE uint32_t pack_scatter(const uint32_t *t, uint32_t indices, uint32_t count
    block at G, GB_WORDS u32: the words' destination, the gbufFlags column, the selfShadow column (0: none) and its length,
    the zIndex column (0: no bands), the entity count; E-444: then the collector's row types (u8) and entities (i32) by
    queue row, which pre-render's split and indexed packs read the entities from instead of the key column (gbuf_cols).
-   The keyed pack does not read those two. */
-enum { GB_DST, GB_FLAGS, GB_SELF, GB_SELF_N, GB_ZINDEX, GB_ENTITIES, GB_ROW_TYPE, GB_ROW_ENTITY, GB_WORDS };
+   The keyed pack does not read those two. N-273: then DecorationComponent.owner (u32, an entity + 1; 0: none) and its
+   length, for the collector's decoration rows (gbuf_row_word). */
+enum { GB_DST, GB_FLAGS, GB_SELF, GB_SELF_N, GB_ZINDEX, GB_ENTITIES, GB_ROW_TYPE, GB_ROW_ENTITY, GB_DECO_OWNER, GB_DECO_N,
+       GB_WORDS };
 #define GBUF_FLOATS 2
 #define GBUF_MAX_BANDS 8
 
@@ -180,7 +182,8 @@ typedef struct {
   const uint8_t *flags, *self, *rowType;
   const int32_t *rowEntity;
   const int16_t *z;
-  uint32_t selfN, entities;
+  const uint32_t *decoOwner;
+  uint32_t selfN, entities, decoN;
 } GbufCols;
 
 INLINE void gbuf_cols(const uint32_t *G, GbufCols *c, const int withBands) {
@@ -192,11 +195,19 @@ INLINE void gbuf_cols(const uint32_t *G, GbufCols *c, const int withBands) {
   c->entities = G[GB_ENTITIES];
   c->rowType = (const uint8_t *)(uintptr_t)G[GB_ROW_TYPE];
   c->rowEntity = (const int32_t *)(uintptr_t)G[GB_ROW_ENTITY];
+  c->decoOwner = (const uint32_t *)(uintptr_t)G[GB_DECO_OWNER];
+  c->decoN = c->decoOwner ? G[GB_DECO_N] : 0;
 }
 
 /* Queue row i's word; with withBands its entity's zIndex in *z (left as it is for a row that is no entity). */
 INLINE uint32_t gbuf_row_word(const GbufCols *c, uint32_t i, int32_t *z, const int withBands) {
-  if (c->rowType[i] != 0) return 0;
+  if (c->rowType[i] != 0) {
+    /* N-273: a decoration with an owner (a house's wall) carries the owner's id, its other bits 0, zIndex as none. */
+    if (c->rowType[i] != 2) return 0;
+    const uint32_t d = (uint32_t)c->rowEntity[i];
+    const uint32_t owner = d < c->decoN ? c->decoOwner[d] : 0u;
+    return owner != 0u && owner <= c->entities ? (owner - 1u) % 65535u + 1u : 0u;
+  }
   const uint32_t e = (uint32_t)c->rowEntity[i];
   if (e >= c->entities) return 0;
   if (withBands) *z = c->z[e];

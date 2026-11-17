@@ -1235,6 +1235,11 @@ export interface DecorationSpawnConfig {
   faceNormalZ?: number;
   /** Px above the floor of the face at this decoration's position, 0 to 32767 (kept in 64ths of a px). Default 0. */
   faceHeight?: number;
+  /**
+   * The entity this decoration is part of (a house's walls and roofs), or its index: the light takes its pixels as that
+   * entity's, so the entity's own shadow volume does not fall on them. Default none.
+   */
+  owner?: GameObject | number | null;
   sway?: boolean;
   /** Shear the sway instead of turning the sprite (it then ignores `rotation` and the parent's). */
   swaySkew?: boolean;
@@ -1259,14 +1264,14 @@ export interface DecorationSpawnConfig {
 
 /**
  * spawnMany's config: spawn()'s, where x, y, texture, scaleX, scaleY, rotation, alpha, tint, sortOffsetY, skewX, skewY,
- * faceNormalX, faceNormalY, faceNormalZ, faceHeight and innerZ may also be arrays (or typed arrays) with one value per
- * decoration. count then defaults to the first array's length.
+ * faceNormalX, faceNormalY, faceNormalZ, faceHeight, innerZ and owner may also be arrays (or typed arrays) with one value
+ * per decoration. count then defaults to the first array's length.
  */
 export interface DecorationSpawnManyConfig
   extends Omit<
     DecorationSpawnConfig,
     | 'x' | 'y' | 'texture' | 'scaleX' | 'scaleY' | 'rotation' | 'alpha' | 'tint' | 'sortOffsetY' | 'skewX' | 'skewY'
-    | 'faceNormalX' | 'faceNormalY' | 'faceNormalZ' | 'faceHeight' | 'innerZ'
+    | 'faceNormalX' | 'faceNormalY' | 'faceNormalZ' | 'faceHeight' | 'innerZ' | 'owner'
   > {
   count?: number;
   x?: WeedNumOrRange | ArrayLike<number>;
@@ -1285,6 +1290,7 @@ export interface DecorationSpawnManyConfig
   faceNormalZ?: number | ArrayLike<number>;
   faceHeight?: number | ArrayLike<number>;
   innerZ?: number | ArrayLike<number>;
+  owner?: GameObject | number | null | ArrayLike<GameObject | number | null>;
   /** With per-decoration arrays: receives each spawned decoration's pool index, in order. */
   out?: Int32Array | Uint32Array | number[];
 }

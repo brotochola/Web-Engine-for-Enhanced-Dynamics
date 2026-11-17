@@ -4,7 +4,9 @@
  *
  * x, the sprite's word:
  * - bits 0-15: its entity's id in the G-buffer, (entity % 65535) + 1; 0 for a row that is no entity (a decoration, a
- *   particle) or a frame whose rows were not matched to their entities: such a row is lit as it always was;
+ *   particle) or a frame whose rows were not matched to their entities: such a row is lit as it always was. N-273: a
+ *   decoration with an owner (DecorationComponent.owner: a house's walls) carries its owner's id, its other bits 0, so
+ *   the owner's own shadow volume leaves its pixels lit, as an entity's own sprite;
  * - bits 16-21: SpriteRenderer.gbufFlags (normals, surface, unshaded: GBUF_FLAGS);
  * - bits 22-23: ShadowCaster.selfShadow (0 the asset's way, 1 on, 2 off).
  *
@@ -104,8 +106,10 @@ export function decodeGbufWord(word) {
  * @param {Uint8Array} flags SpriteRenderer.gbufFlags
  * @param {Uint8Array|null} selfShadow ShadowCaster.selfShadow
  * @param {Int16Array|null} zIndex SpriteRenderer.zIndex, when the order is the painter's
+ * @param {Uint32Array|null} [decorationOwner] N-273: DecorationComponent.owner, for the collector's decoration rows (type 2)
  */
-export function writeGbufWords(out, n, order, rowType, rowEntity, rowKey, entities, flags, selfShadow, zIndex) {
+export function writeGbufWords(out, n, order, rowType, rowEntity, rowKey, entities, flags, selfShadow, zIndex,
+  decorationOwner = null) {
   let band = 0;
   let lastZ = -32769;
   const selfN = selfShadow !== null ? selfShadow.length : 0;
@@ -127,6 +131,10 @@ export function writeGbufWords(out, n, order, rowType, rowEntity, rowKey, entiti
     if (e >= 0) {
       word = (e % 65535) + 1 + (flags[e] & 63) * 65536 + (e < selfN ? (selfShadow[e] & 3) * 4194304 : 0);
       if (zIndex !== null) z = zIndex[e];
+    } else if (rowKey === null && decorationOwner !== null && rowType[row] === 2) {
+      const d = rowEntity[row];
+      const owner = d >= 0 && d < decorationOwner.length ? decorationOwner[d] : 0;
+      if (owner !== 0 && owner <= entities) word = (owner - 1) % 65535 + 1;
     }
     if (zIndex !== null && z !== lastZ) {
       if (lastZ !== -32769 && band < GBUF_MAX_BANDS - 1) band++;
