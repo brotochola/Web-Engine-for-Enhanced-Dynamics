@@ -95,3 +95,22 @@ test('clearUnusedLightDataTexels with liveCount 0 zeros the whole buffer', () =>
   clearUnusedLightDataTexels(data, maxLights, 0);
   assert.deepEqual(Array.from(data), new Array(lightDataTextureFloatCount(maxLights)).fill(0));
 });
+
+test('E-511: clearUnusedLightDataTexels clears only up to last frame\'s lights, the texels the upload then sends', () => {
+  const maxLights = 8;
+  const data = new Float32Array(lightDataTextureFloatCount(maxLights));
+  for (let i = 0; i < 5; i++) packLightDataTexel(data, maxLights, i, i + 1, i + 2, 1000, 1, 1, 1);
+  // A texel past last frame's 5 lights holds a stray value: up to 5 is cleared, past it is not touched.
+  data[6 * 4] = 42;
+  clearUnusedLightDataTexels(data, maxLights, 2, 5);
+  for (let row = 0; row < LIGHT_DATA_TEX_HEIGHT; row++) {
+    for (let i = 2; i < 5; i++) {
+      for (let c = 0; c < 4; c++) assert.equal(data[(row * maxLights + i) * 4 + c], 0, `row ${row} light ${i}`);
+    }
+  }
+  assert.equal(data[6 * 4], 42, 'past the last frame\'s lights: left alone');
+  assert.equal(readLightDataTexel(data, maxLights, 1).x, 2, 'the lights now: kept');
+  // Without upTo, every texel past the lights, as before.
+  clearUnusedLightDataTexels(data, maxLights, 2);
+  assert.equal(data[6 * 4], 0);
+});

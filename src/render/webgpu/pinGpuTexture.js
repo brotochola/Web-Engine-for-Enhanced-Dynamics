@@ -9,8 +9,8 @@ const RGBA8_BYTES = 4;
 let _padBuf = null;
 let _padU8 = null;
 
-/** WebGPU writeTexture bytesPerRow must be a multiple of 256. */
-export function writeRgba32Float(renderer, source, data, width, height, label) {
+/** WebGPU writeTexture of rgba32float, bytesPerRow padded to 256; E-511: `columns` under `width` writes only each row's first texels. */
+export function writeRgba32Float(renderer, source, data, width, height, label, columns = width) {
   const device = renderer?.gpu?.device;
   if (!device || !source || !data || width < 1 || height < 1) return;
   const uid = renderer.uid;
@@ -23,6 +23,14 @@ export function writeRgba32Float(renderer, source, data, width, height, label) {
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.COPY_SRC,
     });
     pinGpuTexture(renderer, source, gpuTex);
+  }
+  if (columns < width) {
+    // E-511: only each row's first `columns` texels changed: queue.writeTexture takes the rows as they lie, any bytesPerRow.
+    const cols = columns > 0 ? columns | 0 : 0;
+    if (cols > 0) {
+      device.queue.writeTexture({ texture: gpuTex }, data, { bytesPerRow: width * RGBA32_BYTES, rowsPerImage: height }, { width: cols, height });
+    }
+    return;
   }
   const unpadded = width * RGBA32_BYTES;
   const bytesPerRow = Math.ceil(unpadded / 256) * 256;
