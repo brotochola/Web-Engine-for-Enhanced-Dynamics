@@ -1,5 +1,7 @@
 # DX-NORMALS: light by the way a surface faces
 
+> Superseded: built differently by DX-LIGHT3D ([`DX_LIGHT3D_PLAN.md`](../DX_LIGHT3D_PLAN.md)) and DX-BARRIOS ([`DX_BARRIOS_DESIGN.md`](../DX_BARRIOS_DESIGN.md)); kept as a report for its history.
+
 A design for the owner to decide on, written 2026-11-05 on `dx/sun-lights-meshes`. Normal maps are not built. What was
 built for flat faces, without them, is **DX-FACES**: see [the last section](#what-was-built-dx-faces).
 
@@ -87,7 +89,7 @@ A prototype in a small scene, at the owner's word:
 
 The owner asked, 2026-11-05, for a lamp that lights the wall it faces, on Conurbano's houses, and for the game to be the
 tester. A house is flat faces, and the editor knows each one's normal: no normal map is needed, so nothing above about
-the atlas applies. [`src/render/faceMap.js`](../../src/render/faceMap.js) holds the format.
+the atlas applies. [`src/render/faceMap.js`](../../../src/render/faceMap.js) holds the format.
 
 - A decoration says where its face looks and how high it is (`Decoration.spawn`: `faceNormalX/Y/Z`, `faceHeight`): two u16
   columns that reach the GPU in the row's tile offsets, which a decoration does not use. No row format changed. Rows are

@@ -1,7 +1,9 @@
 # DX-VOLLIGHTS: lamps and headlights cast a volume's shadow
 
+> Superseded: built differently by DX-LIGHT3D ([`DX_LIGHT3D_PLAN.md`](../DX_LIGHT3D_PLAN.md)) and DX-BARRIOS ([`DX_BARRIOS_DESIGN.md`](../DX_BARRIOS_DESIGN.md)); kept as a report for its history.
+
 A plan, not built. Written 2026-11-11, after the owner asked whether Sun Street's raycasted lamps see its volumes (they do
-not). It is the design of [`DX_VOLUME_DESIGN.md`](./DX_VOLUME_DESIGN.md)'s phase 3, worked out: what a game writes, what
+not). It is the design of [`DX_VOLUME_DESIGN.md`](../DX_VOLUME_DESIGN.md)'s phase 3, worked out: what a game writes, what
 the picture shows, and how each lighting mode draws it. Its decisions are the owner's (the table at the end). It goes with
 [`DX_SUNMASK_DESIGN.md`](./DX_SUNMASK_DESIGN.md) and [`DX_NORMALS_DESIGN.md`](./DX_NORMALS_DESIGN.md).
 

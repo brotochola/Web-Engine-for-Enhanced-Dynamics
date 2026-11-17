@@ -134,7 +134,7 @@ With `renderer.ySort`, heighted and flat particles sort by their **ground row**,
 
 | Key | Role |
 | --- | --- |
-| `maxParticles` | Pool size, up to 524287. Past 65535 particle slot ids are 32-bit (the lists, the free list and the WebAssembly kernels follow); up to 65535 they are 16-bit |
+| `maxParticles` | Pool size, up to 1048575. Past 65535 particle slot ids are 32-bit (the lists, the free list and the WebAssembly kernels follow); up to 65535 they are 16-bit |
 | `decals` / `decalsTileSize` / `decalsResolution` | Floor stamp tilemap |
 | `zenithalMaxHeight` | Reference height for full zenithal scale boost |
 | `zenithalScaleFactor` | How hard scale grows with height |

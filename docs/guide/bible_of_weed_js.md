@@ -8,7 +8,7 @@ Engine-focused notes for the current `src/` architecture.
 |---|---|
 | Entity indices | `config.entityIdWidth` **'auto'** (default): `Uint16` (`0..65534`) while the scene's pools hold at most 65535 entities, `Uint32` past that, ceiling **500000**. `16` or `32` forces one |
 | Total pooled entities | `65535` at 16-bit ids, `500000` at 32. A scene with `physics.enabled` (the default) throws if `totalEntityCount > 65535` |
-| Particle / decoration / bullet pools | `particle.maxParticles`, `decoration.maxDecorations`, `bullet.maxBullets`, each up to **524287**. A pool of at most 65535 keeps `Uint16` slot ids (`0..65534`); past that it takes `Uint32` ones, decided per pool from its own maximum, whatever `entityIdWidth` is |
+| Particle / decoration / bullet pools | `particle.maxParticles`, `decoration.maxDecorations`, `bullet.maxBullets`, each up to **1048575**. A pool of at most 65535 keeps `Uint16` slot ids (`0..65534`); past that it takes `Uint32` ones, decided per pool from its own maximum, whatever `entityIdWidth` is |
 | QuerySystem component mask width | `64` components |
 | QuerySystem entity-type mask width | `64` entity types |
 | Spatial grid cells | No 65535 cap. The neighbor-cell cache is `Uint16` until `totalCells > 65535`, then `Uint32` |
@@ -186,6 +186,41 @@ Lifecycle hooks:
 - `isCollidingWith(other)` -- requires at least one entity type in the scene to have `CollisionListener` (see Collision Filtering)
 - `onScreenEnter/Exit()` -- requires `CameraInOutListener` component
 - `onDespawned()` before returning to pool
+
+### An entity that follows another (`transform.parent`)
+
+An entity can ride on another: a car's second headlight, a police car's beacon, a lamp on a cart. Set its `transform.parent` to that entity (or its index), and its place in the parent's frame with `transform.localX`, `localY` (px) and `localRotation` (radians). After each step, physics puts it at the parent's position plus that offset, turned by the parent's rotation, with the parent's rotation plus `localRotation`; pre-render draws it where its parent is drawn, in the same frame.
+
+```javascript
+const { GameObject, RigidBody, Collider, SpriteRenderer, LightEmitter } = WEED;
+
+// A headlight with no body of its own.
+class CarLight extends GameObject {
+  static components = [LightEmitter];
+  onSpawned() {
+    Object.assign(this.lightEmitter, { radius: 420, color: 0xfff1c4, coneAngle: Math.PI / 3, coneSoftness: 0.3 });
+  }
+}
+
+class Car extends GameObject {
+  static components = [RigidBody, Collider, SpriteRenderer];
+  onSpawned() {
+    this.setSprite('car'); // drawn facing +x
+    // Two headlights at the front bumper, 12 px each side of the middle: they turn with the car.
+    CarLight.spawn({ parent: this, localX: 50, localY: -12 });
+    CarLight.spawn({ parent: this, localX: 50, localY: 12 });
+  }
+}
+```
+
+- The spawn keys `parent`, `localX`, `localY` and `localRotation` are applied after the other keys and before `onSpawned`. A parent's `onSpawned` may spawn its children with `parent: this`: the link waits until the parent is live.
+- `this.transform.parent` reads the parent's index (`GameObject.get(index)` gives the entity), or `null`. `this.transform.parent = null` unlinks it, and it stays where it is.
+- For now the parent needs a body (`RigidBody` or `Collider`): a body-less entity moves in logic, which runs before physics on another worker. The child must have none: a class that lists `RigidBody` or `Collider` is refused, since a body's position belongs to physics (join two bodies with a joint: `Joint.addWeld`, `Joint.addRevolute`). The scene needs physics (`physics.enabled`, the default). Each refusal warns once per class and links nothing.
+- A child's pose is its parent's: a write to its `x`, `y` or `rotation`, or `setPosition`, is ignored with a warning. Move it with `localX`, `localY` and `localRotation`.
+- A child never outlives its parent by more than a frame: when the parent despawns, physics finds the child orphaned and logic0 despawns it. It never follows the next entity in its parent's slot.
+- A saved game remaps `parent` as any entity id ([SAVE_GAME.md](./SAVE_GAME.md)).
+- An entity without a parent pays nothing for this, and while no link exists nothing does.
+- One light off an entity's centre needs no child: `LightEmitter.offsetX` / `offsetY` place it (Lights and shadows, below). A child is for a second light, or one that turns on its own.
 
 ### Attached decorations (`addDecoration`)
 
@@ -619,7 +654,7 @@ Which blend a layer draws with depends on how many passes it takes. `blendMode` 
 
 So `fx: { blendMode: BLEND_MODES.ADD }` is an additive sprite layer, and `shader: { containerBlend }` is only for the pass into a render texture. (Up to 0.14, a layer drawn in one pass ignored `blendMode` and drew with `containerBlend`, normal by default.)
 
-The entities list sorts by `SpriteRenderer.zIndex` (larger is in front). `renderer.ySort` (default false) orders by Y inside the same zIndex. With both off and every zIndex at 0, the queue stays in emit order. `lighting.lightGlow` (`'add'` default) keeps glows on the ADD mesh; `'sprite'` leaves them in the entity list. With `'add'`, `lighting.lightGlowResolution` (default 0.5) is the size of the target the glows are drawn into against the canvas, added to the frame once: a halo is smooth, and half the size costs a quarter of its fill. 1 draws them onto the frame; `Layer.get('lightGlows').resolution` changes it at run time.
+The entities list sorts by `SpriteRenderer.zIndex` (larger is in front). `renderer.ySort` (default false) orders by Y inside the same zIndex. With both off and every zIndex at 0, the queue stays in emit order. `lighting.lightGlow` (`'add'` default) keeps glows on the ADD mesh, over everything; `'sprite'` puts each in the entity list right after its entity's sprite, so what stands in front covers it, and unshaded, so the night does not darken it (it turns the G-buffer and the unshaded pass on). With `'add'`, `lighting.lightGlowResolution` (default 0.5) is the size of the target the glows are drawn into against the canvas, added to the frame once: a halo is smooth, and half the size costs a quarter of its fill. 1 draws them onto the frame; `Layer.get('lightGlows').resolution` changes it at run time.
 
 ### Full-screen passes (`LAYER_KIND.SCREEN`)
 
@@ -1298,6 +1333,9 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | A lamp | `this.lightEmitter.radius = 300` (px it reaches) and `color = 0xffcc88` |
 | A dimmer or an overbright light | `brightness = 0.5` (default 1; it scales the colour and the halo, and under 1 lightens its sprite shadows too) |
 | A halo on the bulb | `glow = 0.6` (default 0: none), `glowOffsetY = -40` (40 px up the screen), `glowLayer = 'glows'` |
+| A small halo on a lamp that lights a whole street | `glowRadius = 20` (px; default 0: 0.85 of the light's radius) |
+| Halos hidden by what stands in front of their lamp, and not darkened at night | `lighting.lightGlow: 'sprite'` (each halo drawn right after its entity's sprite, unshaded) |
+| Two lights on one entity (a car's headlights, a police beacon) | a child entity with a `LightEmitter`: `CarLight.spawn({ parent: this, localX: 50, localY: 12 })` (`transform.parent`, above) |
 | A lamp post's even pool | `elevation = 110` (the bulb's height above the floor: a wider, flatter pool, same reach) |
 | The light ahead of the entity (headlights) | `offsetX = 60` (local px, turned with the entity) |
 | A cone (headlights, a flashlight) | `coneAngle = Math.PI / 3` (the whole aperture; default 2π: round), `coneSoftness = 0.3`, `direction = 0` (radians from where the entity faces) |
@@ -1314,21 +1352,24 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | No shadow | `this.shadowCaster.clear()` |
 | Particles or liquid that light the floor | `lightRadius` on an emit (`lighting.particleLights`), or on `LiquidFun.emit` |
 | Shadows that fall on sprites and leave the other lights lit (an oblique view) | `lighting.sunShadows: 'map'` and `lighting.lampShadows: 'map'` (the 3D light mode, below) |
-| A sprite lit as the surface it shows | `heightMap` / `normalMap` on its sheet |
+| A sprite lit as the surface it shows | `heightMap` / `normalMap` on its sheet, or `reliefMap` (a bump map from a 2D tool) |
+| A sheet drawn for another camera than the scene's | `artCamera: { floorScaleY, heightScaleY }` on its sheet (or in its json's `meta`) |
+| Walls and roofs that light as the faces of a volume | decorations with `faceNormalX`, `faceNormalY`, `faceNormalZ` and `faceHeight` (no switch) |
+| More or less of the sun on every surface alike (sky light) | `lighting.sun.skyLight` (0 to 1, default 0.4), or `Sun.skyLight` |
 | A fence's or a wall's shadow along it | `this.shadowCaster.setSprite({ orient: 'fixed' })` |
 | The sun's shadow only, none from the lamps | `this.shadowCaster.lamps.clear()` |
 | A paler shadow (a thin tree, a net), a wall that lets light through | `this.shadowCaster.opacity = 0.5` |
 | A base of another size than the one measured | `this.shadowCaster.baseRadius = 6` (px) |
 | What a thing casts | `this.shadowCaster.type`: `'sprite'`, `'heightMap'`, `'box'`, `'hull'`, `'wall'` or `'none'` |
-| A fire or a lit window that keeps its colour at night | `emissive: true` on its sheet |
-| One sprite that glows, the rest of its sheet not (a lit torch, a hot coal) | `this.spriteRenderer.emissive = true` (or a strength up to 1.75, in quarters); in a scene without maps, `lighting.faces` or a shadow map, also `lighting.emissive: true` |
+| A fire or a lit window that keeps its colour at night | `unshaded: true` on its sheet |
+| One sprite unshaded, the rest of its sheet not (a lit torch, a hot coal) | `this.spriteRenderer.unshaded = true`; in a scene without a sheet with maps, an unshaded sheet or a shadow map, also `lighting.unshaded: true` |
 | A sprite lit as drawn, its normal map ignored, or its normals from its height alone | `this.spriteRenderer.normals = 'flat'` or `'height'` (`'auto'` by default: the map, else the height, else flat) |
 | A sprite without a height map lit as a card standing on its foot, or as part of the floor | `this.spriteRenderer.surface = 'standing'` (entities) or `'floor'` (a rug, a decal) |
-| A person in front of or behind each part of a table | pixel depth: on by itself with an oblique camera and height maps (`renderer.pixelDepth`) |
+| A person in front of or behind each part of a table, or of a wall | pixel depth: on by itself with an oblique camera and height maps or faces (`renderer.pixelDepth`) |
 
 The Headlights demo (`demos/headlightsScene/`) puts most of this table on one street at night, under raycasted lighting: cone headlights on carScene's cars, round lamps, houses with a volume for the sun and a wall for the beams, and a key for each field. The light bench (`demos/lightBenchScene/`) does the same for the 3D light mode: a farm of props rendered from 32 directions, cars, trees, a person you walk with WASD and lamps, each piece on a key to compare.
 
-A light's falloff is `I / (I + d²)` with `I = (radius / 10)²`, on the floor, times `(1 - (d / radius)⁴)²`: full at its centre, nothing at its radius and past it, where it is culled; its shadows fade out with it. The camera picks what stops a lamp. Any camera but a flat one (no `pitch`, or an oblique one) lights with basic lighting: the sprite shadows of `ShadowCaster`s, stamped for the `lighting.maxShadowCastingLights` lights nearest the camera (or drawn into each one's shadow map with `lighting.lampShadows: 'map'`). A flat view, `camera.pitch` 90 (straight down) or 0 (from the side), lights with raycasted lighting: the walls (`shadowCaster.setWall()`) cut a visibility polygon for each light (no sprite shadows from lamps, and no `lighting.faces`).
+A light's falloff is `I / (I + d²)` with `I = (radius / 10)²`, on the floor, times `(1 - (d / radius)⁴)²`: full at its centre, nothing at its radius and past it, where it is culled; its shadows fade out with it. The camera picks what stops a lamp. Any camera but a flat one (no `pitch`, or an oblique one) lights with basic lighting: the sprite shadows of `ShadowCaster`s, stamped for the `lighting.maxShadowCastingLights` lights nearest the camera (or drawn into each one's shadow map with `lighting.lampShadows: 'map'`). A flat view, `camera.pitch` 90 (straight down) or 0 (from the side), lights with raycasted lighting: the walls (`shadowCaster.setWall()`) cut a visibility polygon for each light (no sprite shadows from lamps, and no faces).
 
 ```javascript
 class StreetLamp extends GameObject {
@@ -1342,6 +1383,7 @@ class StreetLamp extends GameObject {
     light.elevation = 110;     // the bulb's height: an even pool under it
     light.glow = 0.5;
     light.glowOffsetY = -110;  // the halo on the bulb
+    light.glowRadius = 24;     // a small one (left at 0 it would be 0.85 of the 900 px radius)
     light.shadowRange = 500;   // its sprite shadows stop at 500 px
   }
 }
@@ -1360,7 +1402,7 @@ A light reaches `LightEmitter.radius` px. Its falloff is `I / (I + d²)` with `I
 | `heightScaleY` | screen px that a px of height rises (faces, height maps, the shadow maps, pixel depth) | `cos(pitch)`, or `1` without a pitch |
 | `yaw` | degrees the view turns about the vertical (45 for an isometric diamond); read by nothing yet | `0` |
 
-`floorScaleY` and `heightScaleY` are keys of their own because pictures do not always follow the trigonometry: LPC characters and carScene's cars are drawn with a floor of `0.736` and heights of `0.752`. Write `pitch` alone when your pictures follow it, the two scales when they do not.
+`floorScaleY` and `heightScaleY` are keys of their own because pictures do not always follow the trigonometry: LPC characters and carScene's cars are drawn with a floor of `0.736` and heights of `0.752`. Write `pitch` alone when your pictures follow it, the two scales when they do not. A sheet drawn for another camera than the scene's says so with its `artCamera` (Sprites lit as surfaces, below), and its heights are scaled to the scene's camera when it loads.
 
 A flat view, `pitch` 90 or 0 with lighting on, lights with raycasted lighting (the walls of `shadowCaster.setWall()`, below). A side view's lights pool on the backdrop, which faces the camera, not on a floor seen edge on: such a scene writes `camera: { pitch: 0, floorScaleY: 1 }`, or its pools would be `sin(0)` tall (the 0.05 clamp). A top-down one writes `camera: { pitch: 90 }`.
 
@@ -1377,7 +1419,7 @@ It is read when the scene loads. Values are clamped to `[0.05, 1]`; anything tha
 `LightEmitter.elevation` (default `0`, world px) is how high the source sits above the floor. The falloff becomes `I / (I + h² + d²)`: the pool keeps its centre and its reach, but it is flatter, like a lamp post rather than a torch on the ground. A floor light is at full strength at its foot; a raised one peaks at `I / (I + h²)` (a radius of 20h gives 0.8), so raise the radius when the foot gets too dim. Where things go:
 
 - `offsetX` / `offsetY` move the whole light, pool included (local px, turned by the entity).
-- `glowOffsetY` moves only the halo on the screen (negative is up: put it on the bulb).
+- `glowOffsetY` moves only the halo on the screen (negative is up: put it on the bulb), and `glowRadius` sizes it (px; 0, the default, is 0.85 of the radius, a big soft flash for a spark, so give a lamp that lights a whole street a small one).
 - `elevation` lifts the source without moving anything.
 
 ```javascript
@@ -1400,12 +1442,13 @@ With an oblique camera, sheets that bring a height map, and the two shadow maps,
 | Piece | What turns it on |
 | --- | --- |
 | The camera | `config.camera.pitch` (or `floorScaleY` and `heightScaleY`), above |
-| Sprites lit as the surfaces they show | `heightMap` / `normalMap` on a sheet |
+| Sprites lit as the surfaces they show | `heightMap` / `normalMap` / `reliefMap` on a sheet |
+| Walls and roofs lit as the faces of a volume | decorations with a face's normal (`faceNormalX`…): no switch |
 | The sun's shadows on everything that has height | `lighting.sunShadows: 'map'` |
 | Each lamp's own shadows | `lighting.lampShadows: 'map'` |
-| A surface's shade on itself | `lighting.selfShadow: true` |
-| Depth that corrects the painter | on by itself with an oblique camera and maps (`renderer.pixelDepth`) |
-| Sprites that glow | `emissive: true` on a sheet, or `spriteRenderer.emissive` on one sprite (without maps or a shadow map, with `lighting.emissive: true`) |
+| A surface's self-shadow | `lighting.selfShadow: true` |
+| Depth that corrects the painter | on by itself with an oblique camera and maps or faces (`renderer.pixelDepth`) |
+| Sprites no light touches | `unshaded: true` on a sheet, or `spriteRenderer.unshaded` on one sprite (without a sheet with maps, an unshaded sheet or a shadow map, with `lighting.unshaded: true`) |
 | Normals and height per sprite | `spriteRenderer.normals` and `spriteRenderer.surface` |
 | The G-buffer a pass a target instead of one pass with two | `lighting.gbuffer: 'pass'` (the same picture; `'mrt'`, the default, costs about a third less) |
 | How each thing casts | its sheet's data; `ShadowCaster`'s setters change it |
@@ -1458,7 +1501,7 @@ class LampPost extends GameObject {
   }
 }
 
-// A fire: its sheet is emissive, so it keeps its colour at night. Its light on the ground is a LightEmitter.
+// A fire: its sheet is unshaded, so it keeps its colour at night. Its light on the ground is a LightEmitter.
 class Fire extends GameObject {
   static components = [SpriteRenderer, LightEmitter];
   onSpawned() {
@@ -1495,7 +1538,7 @@ export class FarmScene extends Scene {
       },
       fence: { json: 'fence.json', png: 'fence.png' },
       civil7: { json: 'civil7.json', png: 'civil7.png', heightMap: 'civil7_h.png' },
-      fire: { json: 'fire.json', png: 'fire.png', emissive: true },
+      fire: { json: 'fire.json', png: 'fire.png', unshaded: true },
     },
     textures: { lamppost: 'lamppost.png' },
   };
@@ -1512,15 +1555,38 @@ export class FarmScene extends Scene {
 }
 ```
 
-The sections below take each piece in turn. Raycasted lighting (a flat camera, `pitch` 90 or 0) turns off the lighting by maps, emissive sheets and both shadow maps, with a warning.
+The sections below take each piece in turn. Raycasted lighting (a flat camera, `pitch` 90 or 0) turns off the lighting by maps (with a warning), faces, unshaded sprites and both shadow maps (with a warning).
 
-### Sprites lit as surfaces: `heightMap` and `normalMap`
+### Surfaces: faces, maps and cards
 
-A spritesheet can bring two twins of itself, same frames in the same places: how high each pixel is above the floor, and which way it looks. With lighting on, its sprites are then lit as those surfaces: the side of a barrel away from a lamp stays dark, a crate's lid and its front take different light, and the sun shades them by the hour.
+In an oblique view the light pass meets three kinds of surface. Each says where its pixels are in 3D and which way they look, and the light, the shadow maps and pixel depth all read that:
+
+| Surface | What it is | Where its pixels are | Which way they look |
+| --- | --- | --- | --- |
+| A face | a decoration with `faceNormalX`, `faceNormalY`, `faceNormalZ` and `faceHeight`: a flat piece of a volume (a wall, a roof) | on its plane | its normal |
+| A sprite with maps | a sprite whose sheet brings a `heightMap`, a `normalMap` or a `reliefMap` | at each pixel's height (`heightMap`); without one, as a card | its maps' normals, else the heights' |
+| A card | any other sprite | standing on its foot (`spriteRenderer.surface = 'standing'`, the default) or lying on the floor (`'floor'`) | flat: lit as drawn |
+
+Faces and maps need no switch: the scene's first face, or a sheet with maps, turns the G-buffer (the pass that keeps every pixel's surface) on by itself, as a shadow map does, and a scene with none of them pays nothing for it.
+
+The words this guide uses for light on surfaces:
+
+| Word | Meaning |
+| --- | --- |
+| shadow | what a thing blocks of a light, landing on something else: a card, a height map's solid, a volume (a cast shadow) |
+| self-shadow | a shadow a thing casts on itself, such as a lid's edge over its front (`lighting.selfShadow`); still a shadow |
+| shading | a surface turned away from a light is darker, by its normal; nothing stands in the way |
+| unshaded | no light touches it: no shading, no shadows, no night (`unshaded`, below) |
+| `heightMap` | how high above the floor what each pixel shows is: a person's head at 60 px |
+| `reliefMap` | how far the shape bulges, not how high it is: it only gives normals (a bump map) |
+
+### Sprites lit as surfaces: `heightMap`, `normalMap` and `reliefMap`
+
+A spritesheet can bring twins of itself, same frames in the same places: how high each pixel is above the floor, and which way it looks. With lighting on, its sprites are then lit as those surfaces: the side of a barrel away from a lamp stays dark, a crate's lid and its front take different light, and the sun shades them by the hour.
 
 ```javascript
 static config = {
-  camera: { pitch: 45 },               // how the pictures were drawn (or floorScaleY / heightScaleY)
+  camera: { pitch: 45 },               // the scene's camera (or floorScaleY / heightScaleY)
   lighting: { enabled: true },
 };
 static assets = {
@@ -1528,17 +1594,29 @@ static assets = {
     props: {
       json: 'props.json', png: 'props.png',
       heightMap: 'props_h.png',         // R·256 + G in 1/64 px above the floor; or { png: 'props_h.png', gray: 120 }
-      normalMap: 'props_n.png',         // optional: RGB in the camera's space, x right, y up, z out of the screen
+      normalMap: 'props_n.png',         // optional: RGB in the camera's space, x right, y up (green up), z out of the screen
+    },
+    crates: {
+      json: 'crates.json', png: 'crates.png',
+      reliefMap: { png: 'crates_bump.png', strength: 6 }, // a bump map: white bulges 6 px; it gives the normals only
+    },
+    cars: {
+      json: 'cars.json', png: 'cars.png', heightMap: 'cars_h.png',
+      artCamera: { floorScaleY: 0.736, heightScaleY: 0.752 }, // the camera its pictures and maps were drawn for
     },
   },
 };
 ```
 
-- Without `normalMap` the normals come from the heights (a Sobel gradient): good for relief, rougher on outlines.
-- With `normalMap` alone the pixels are lit by their normal at floor height.
-- The maps are packed into a second page the atlas's size, at each frame's own rectangle (one more texture on the GPU), with the outline pixels a height map mixed with the background raised to the surface they border.
-- The normals are turned from the camera's space into the floor's with `config.camera`: give it the pitch the pictures were drawn at.
-- They go through the same pass as `lighting.faces` (which a sheet with maps turns on). A prebaked `assets.bigAtlas` does not carry them yet, and raycasted lighting lights them flat.
+- `heightMap` is WeedJS's 16 bits, R·256 + G in 1/64 px (what `npm run maps` writes), or an 8-bit greyscale picture with `{ png, gray }`, `gray` the px that white stands for (a 16-bit greyscale PNG loses its low byte in the browser).
+- `normalMap` is standard RGB in OpenGL's convention, green up; a DirectX map (green down) is not supported, so flip its green channel first. The normals mirror and turn with the sprite (`flipX`, `flipY`, its rotation).
+- `reliefMap` is a greyscale picture of how far the shape bulges, not how high it is above the floor: what many 2D tools give as a bump or depth map. White bulges `strength` px (default 8). It gives the normals only; a `normalMap`'s win over it.
+- Without `normalMap` or `reliefMap` the normals come from the heights (a Sobel gradient): good for relief, rougher on outlines.
+- Without `heightMap` (a `normalMap` or a `reliefMap` alone) the pixels stand where `spriteRenderer.surface` puts them: a card standing on its foot, or the floor for a rug or a decal.
+- `artCamera` is the camera the pictures and maps were drawn for, `{ floorScaleY, heightScaleY }` (or `"artCamera"` in the json's `meta`; the assets entry wins). Its heights are scaled when the sheet loads, by its `heightScaleY` over the scene's, so a pixel rises on the scene's screen as much as in the picture: a sheet drawn for 0.752 in a scene of 0.866 gets its heights times 0.868. Without it, the sheet is taken as drawn for the scene's camera. `SpriteSheetRegistry.artCameraOf(sheet)` reads it on any worker.
+- The normals are turned from the camera's space into the floor's with `config.camera`; `artCamera` scales the heights only.
+- The maps are packed into a second page, the twin page, that holds only the frames with maps (one more texture on the GPU): each frame has its own window in it, and sheets that name the same map files share one. The outline pixels a height map mixes with the background are raised to the surface they border. `config.assets.twinFormat` picks its format: `'A'` (the default) a height and a normal a texel, `'B'` heights alone at 2 bytes a texel with the normals worked out from them in the shader (when a sheet brings a `normalMap` the page stays `'A'`, with a warning), `'C'` B's heights and the normals at half resolution.
+- They go through the G-buffer pass, which a sheet with maps turns on. A prebaked `assets.bigAtlas` carries them (`npm run bake:atlas` writes `bigAtlas_maps.png` beside it; `assets.bigAtlas.maps` names another file), and raycasted lighting lights them flat.
 - `tests/bench/stressScenes/maps/makeShapes.mjs` writes a sheet and both maps from shapes it ray-traces: a model of what an exporter writes.
 
 ### The sun's shadows: `lighting.sunShadows`
@@ -1678,32 +1756,33 @@ Object.assign(this.lightEmitter, { radius: 330, color: 0xffcf8a, elevation: 75, 
 - In both modes a lamp casts the frame of a `DirectionalSprite` that it sees, a card turned towards it or a render's solid as the caster says (above), and a lamp is not shaded by its own entity: a car's headlights are not stopped by the car, and a post does not shade its own lamp.
 - WebGL and WebGPU. Not with raycasted lighting (it warns and keeps the visibility polygons).
 
-### A surface's shade on itself: `lighting.selfShadow`
+### A surface's self-shadow: `lighting.selfShadow`
 
-`lighting.selfShadow: true` adds the shade a surface casts on itself and its neighbours: a face or a sprite with a height map looks towards the sun over the heights around it, and what rises above that line takes the sun out (an arm over a body, a crate's lid over its front). With `lampShadows: 'map'` it does the same towards each lamp that has a tile, where that lamp's light still counts. It reads every height around a pixel, not only its own entity's. It works with either `sunShadows`, costs a few lookups a lit pixel that has a height, on WebGL and WebGPU.
+`lighting.selfShadow: true` adds the shadow a surface casts on itself and its neighbours: a face or a sprite with a height map looks towards the sun over the heights around it, and what rises above that line takes the sun out (an arm over a body, a crate's lid over its front). With `lampShadows: 'map'` it does the same towards each lamp that has a tile, where that lamp's light still counts. It reads every height around a pixel, not only its own entity's. It works with either `sunShadows`, costs a few lookups a lit pixel that has a height, on WebGL and WebGPU.
 
 ### Depth that corrects the painter: `renderer.pixelDepth`
 
-The painter draws the entities back to front by their feet, so a long object is all in front of a person or all behind. With pixel depth each pixel of a sprite with a height map stands at its own place on the floor, `(screen y + heightScaleY × height) / floorScaleY`, every other pixel at its sprite's foot, and a pixel that stands behind one already drawn is not drawn: a person walking around a table turned 45°, or past a barn's corner, is in front of or behind each part of it. The painter's order still breaks ties, so sprites without maps draw as before.
+The painter draws the entities back to front by their feet, so a long object is all in front of a person or all behind. With pixel depth each pixel of a sprite with a height map stands at its own place on the floor, `(screen y + heightScaleY × height) / floorScaleY`, each pixel of a face at its plane's, every other pixel at its sprite's foot, and a pixel that stands behind one already drawn is not drawn: a person walking around a table turned 45°, past a barn's corner or along a long wall, is in front of or behind each part of it. The painter's order still breaks ties, so sprites without maps draw as before.
 
 ```javascript
 static config = {
   renderer: { ySort: true }, // the painter
-  camera: { pitch: 47 },     // oblique: pixel depth turns on when a sheet has maps
+  camera: { pitch: 47 },     // oblique: pixel depth turns on when a sheet has maps or a decoration is a face
 };
 ```
 
-- It turns on by itself with an oblique camera (`floorScaleY` under 1) when at least one sheet has a `heightMap`, a `normalMap` or `emissive`. `renderer.pixelDepth: false` turns it off; `true` turns it on with any camera, still only with such a sheet.
-- WebGL only for now: on WebGPU the painter alone orders the entities.
-- An emissive pixel stands at its sprite's foot.
+- It turns on by itself with an oblique camera (`floorScaleY` under 1) when at least one sheet has a `heightMap`, a `normalMap` or a `reliefMap`, or once a decoration carries a face's normal. `renderer.pixelDepth: false` turns it off; `true` turns it on with any camera, still only with maps or faces.
+- A face writes its plane's depth, so a wall goes whole: no need to cut it into columns for the painter. Pieces stuck on a wall, on its plane (a window, its lit pane, a poster), say their order on it with `innerZ`: 0 the wall, 1 to 7 what lies on it, in stacking order.
+- WebGL and WebGPU.
+- An unshaded pixel writes no depth, and an unshaded sheet does not turn pixel depth on.
 
-### Sprites that glow: `emissive`
+### Sprites no light touches: `unshaded`
 
-A sheet with `emissive: true` in its assets entry (or `"emissive": true` in its json's `meta`) glows: each opaque pixel keeps its own colour whatever the light, at night and in the shadows, and it is still drawn in the painter's order with the other entities, so a person passing in front of a fire hides it. It lights nothing around it: give the entity a `LightEmitter` for the light it throws.
+A sheet with `unshaded: true` in its assets entry (or `"unshaded": true` in its json's `meta`) is unshaded: no light touches its pixels, so no shading, no shadows and no night. Each opaque pixel keeps its own colour whatever the light, and it is still drawn in the painter's order with the other entities, so a person passing in front of a fire hides it. It lights nothing around it: give the entity a `LightEmitter` for the light it throws.
 
 ```javascript
 static assets = {
-  spritesheets: { fire: { json: 'fire.json', png: 'fire.png', emissive: true } },
+  spritesheets: { fire: { json: 'fire.json', png: 'fire.png', unshaded: true } },
 };
 
 class Fire extends GameObject {
@@ -1714,30 +1793,42 @@ class Fire extends GameObject {
     Object.assign(this.lightEmitter, { radius: 220, color: 0xff9944, elevation: 12 });
   }
 }
+
+// One sprite of a sheet that is not unshaded: a torch while it burns.
+class Torch extends GameObject {
+  static components = [SpriteRenderer];
+  onSpawned() {
+    this.setSprite('torch');
+  }
+  light() {
+    this.spriteRenderer.unshaded = true;
+  }
+  putOut() {
+    this.spriteRenderer.unshaded = false;
+  }
+}
 ```
 
-- The whole sheet glows, so give a lit window or a bulb a sheet of its own. Its normals give way to the glow.
-- It needs lighting (not raycasted) and the entities layer: the sheet turns the faces' pass on, as a sheet with maps does.
-- Not yet: a glow brighter than its picture, and `emissive` for one entity rather than a sheet.
+- `spriteRenderer.unshaded` is `true` or `false` (the default) for one sprite. The sprites carry the G-buffer words it needs in a scene with a sheet with maps, an unshaded sheet, `lighting.lightGlow: 'sprite'` or a shadow map; in any other scene set `lighting.unshaded: true` too (a warning says so when a sprite asks and nothing carries it). A spawn sets it back to `false`.
+- By day it looks as drawn and at night it keeps its colour: its lit colour is the light's like any sprite's, and its own colour comes on top where the light is short of it. It writes neither the G-buffer nor depth, so what is behind it is lit.
+- A whole sheet is unshaded or not, so give a lit window or a bulb a sheet of its own, or set the sprite's own `unshaded`.
+- With `lighting.lightGlow: 'sprite'` the lights' halos are unshaded too.
+- It needs lighting (not raycasted) and the entities layer.
+- Not yet: a sprite brighter than its picture.
 
-### Faces that light as surfaces: `lighting.faces`
+### Faces that light as surfaces
 
-In an oblique or isometric view a wall is a sprite, and the light pass reads each pixel as the floor under it: a lamp's pool climbs every wall alike, and a roof lights up when a lamp stands behind the house. With `lighting.faces` a decoration can say it is a flat face of a volume: where it looks and how high it is. Each of its pixels is then lit as that point in 3D. A lamp lights the wall that looks at it and not the one past the corner, a wall no light reaches stays dark, a roof above the lamp stays dark, and the sun lights each face by its own angle as the day goes by.
+In an oblique or isometric view a wall is a sprite, and the light pass reads each pixel as the floor under it: a lamp's pool climbs every wall alike, and a roof lights up when a lamp stands behind the house. A decoration can say it is a flat face of a volume instead: where it looks and how high it is. Each of its pixels is then lit as that point in 3D. A lamp lights the wall that looks at it and not the one past the corner, a wall no light reaches stays dark, a roof above the lamp stays dark, and the sun lights each face by its own angle as the day goes by. There is no switch: the scene's first face turns faces on, for good.
 
 ```javascript
 static config = {
   camera: { floorScaleY: 0.5, heightScaleY: 0.866 }, // or camera: { pitch: 30 }
   lighting: {
     enabled: true,
-    faces: {
-      enabled: true,
-      wrap: 0.15,          // a lamp's light past the terminator: 0 stops hard, 1 is half-Lambert. Default 0.
-      gain: 1.3,           // a lamp's strength on a face against the floor's. Default 1.
-      sunDirect: 0.5,      // how much of the sun's light depends on where a face looks; the rest is sky. Default 0.6.
-    },
     sun: {
       enabled: true,
       dayCycle: { enabled: true, dayDurationMinutes: 8 },
+      skyLight: 0.4,        // the sun's share that comes from the sky, the same on every face. Default 0.4.
       shadowAngleOffset: 0, // the sun on the camera's side: with the default a camera only ever sees walls against the light
       maxElevation: 60,     // degrees at noon on a day cycle. Default 90: overhead, and no wall gets any sun then.
     },
@@ -1751,18 +1842,26 @@ create() {
     faceNormalX: 0, faceNormalY: 1, faceNormalZ: 0, // it looks across the floor, towards the camera
     faceHeight: 40,                                 // the height of the wall at x, y
   });
+  // A poster on that wall: the same plane, drawn over it.
+  Decoration.spawn({
+    x: 300, y: 400 - 40 * 0.866, texture: 'poster', anchorX: 0.5, anchorY: 0.5,
+    faceNormalX: 0, faceNormalY: 1, faceNormalZ: 0, faceHeight: 40,
+    innerZ: 1,                                      // 0 is the wall, 1 to 7 what is stuck on it
+  });
 }
 ```
 
-The normal is in the floor's space: x along the screen, y across the floor towards the camera, z up. It need not be unit length. `faceHeight` is the height, in px, of the point of the face at the decoration's position; the rest of the sprite follows from the plane, so a pitched roof takes one number, and so does a wall sheared with `skewX` and `skewY`. Leave `faceNormalX` out and the decoration is no face. `spawnMany` takes all four as arrays.
+The normal is in the floor's space: x along the screen, y across the floor towards the camera, z up. It need not be unit length. `faceHeight` is the height, in px (0 to 1023.875), of the point of the face at the decoration's position; the rest of the sprite follows from the plane, so a pitched roof takes one number, and so does a wall sheared with `skewX` and `skewY`. Leave `faceNormalX` out and the decoration is no face. `spawnMany` takes all four, and `innerZ`, as arrays.
 
-- The light comes from `LightEmitter.elevation`: a face above it gets none. That height also shapes the pool on the floor.
+- `lighting.sun.skyLight` (0 to 1, default 0.4) is the share of the sun's light that comes from the sky and lights every face alike; the rest depends on where a face looks. `Sun.skyLight` changes it at run time. It lights sprites with maps the same way.
+- The light comes from `LightEmitter.elevation`: a face above it gets none. That height also shapes the pool on the floor. A light's `brightness` is its strength on a face as on the floor.
 - A face takes the place of its sprite's light, not of its colour: its texture should hold no light of its own.
 - Faces need the entities layer. Decorations on other layers are lit as the floor, and a sprite that is no face in front of a wall, like a person, takes the wall's place where it covers it, and is lit as before.
-- Light does not stop at a volume: a lamp behind a house lights nothing on the side you see (those walls look away from it), but one wall does not shadow another. The floor keeps its shadows.
+- A face casts no shadow: a lamp behind a house lights nothing on the side you see (those walls look away from it), but one wall does not shadow another. What casts is a `ShadowCaster` (a house's volume, `shadowCaster.setBox` or `setHull`), and with the shadow maps its shadow falls on faces.
+- With an oblique camera faces turn pixel depth on: each face writes its plane's depth (above).
 - The picture of the faces has the light pass's size, so `lighting.resolution` also sets how sharp the edge between two faces is.
-- Raycasted lighting (a flat camera) turns faces off, with a warning.
-- Without `lighting.faces` the light pass is the same shader as ever, and a frame costs one test. With it, the entities batch draws once more at the light pass's size and each decoration row writes two more numbers: on a scene with 20 000 faces, 56 lamps and the light pass at full size, 0.05 ms of the renderer's time and 0.1 ms of pre-render's, no frame lost.
+- Raycasted lighting (a flat camera) lights faces as the floor.
+- A scene without faces pays nothing for them: the light pass is the same shader as ever. Once a face is spawned, the entities batch draws once more at the light pass's size and each decoration row carries two more numbers.
 
 ### A light off its entity's centre: `offsetX` and `offsetY`
 

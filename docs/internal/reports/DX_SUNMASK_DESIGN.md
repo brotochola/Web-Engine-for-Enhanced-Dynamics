@@ -1,5 +1,7 @@
 # DX-SUNMASK: the sun's shadow inside the light sum
 
+> Superseded: built differently by DX-LIGHT3D ([`DX_LIGHT3D_PLAN.md`](../DX_LIGHT3D_PLAN.md)) and DX-BARRIOS ([`DX_BARRIOS_DESIGN.md`](../DX_BARRIOS_DESIGN.md)); kept as a report for its history.
+
 A design for the owner to decide on. Nothing here is built. Written 2026-11-05 on `dx/sun-lights-meshes`, after
 DX-SUNNIGHT, DX-LAYERSUN and DX-SUNMESH.
 
