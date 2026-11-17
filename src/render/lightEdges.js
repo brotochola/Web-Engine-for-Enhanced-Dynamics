@@ -297,6 +297,43 @@ function variantMesh(env, kind, geometry, resources) {
   return mesh;
 }
 
+/** A colour mask for what follows (Pixi's ColorMaskSystem), as a step of the custom render pipe. */
+class ColorMaskStep extends ViewContainer {
+  constructor(mask) {
+    super({ label: 'weed-colour-mask' });
+    this.renderPipeId = 'customRender';
+    this.batched = false;
+    this.cullable = false;
+    this._mask = mask;
+  }
+
+  updateBounds() {
+    this._bounds.clear();
+  }
+
+  render(renderer) {
+    renderer.colorMask.setMask(this._mask);
+  }
+}
+
+/**
+ * A light splat's host (particle and LiquidFun lights, drawn into the light pass's target): the mesh in RGB alone, so
+ * the target's alpha stays what the light pass wrote (the floor's mark). Pixi hands the same number to WebGL's colorMask
+ * (red 8, green 4, blue 2, alpha 1) and to WebGPU's writeMask (red 1, green 2, blue 4, alpha 8): RGB is 14 on one and 7
+ * on the other.
+ * @param {Mesh} mesh
+ * @param {boolean} useWebGpu
+ * @returns {Container}
+ */
+export function rgbOnlyHost(mesh, useWebGpu) {
+  const host = new Container();
+  host.label = 'weed-rgb-only';
+  host.addChild(new ColorMaskStep(useWebGpu ? 7 : 14));
+  host.addChild(mesh);
+  host.addChild(new ColorMaskStep(15));
+  return host;
+}
+
 /**
  * The lighting layer's display with edges: the mark, the floor's light, the entities' light, the stencil test off.
  * @param {{ GpuProgram: Function, GlProgram: Function, useWebGpu: boolean }} env

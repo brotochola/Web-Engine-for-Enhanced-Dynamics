@@ -81,7 +81,7 @@ import {
 } from '../render/lightTiles.js';
 import { gbufEntityId, gbufWanted, writeGbufWords } from '../render/gbufWord.js';
 import { UNSHADED_COMPOSITE_FRAG, UNSHADED_COMPOSITE_VERT, unshadedCompositeGpuProgram, unshadedQuadPositions } from '../render/unshadedComposite.js';
-import { lightEdgesHost, lightEdgesQuad, unshadedEdgesHost } from '../render/lightEdges.js';
+import { lightEdgesHost, lightEdgesQuad, rgbOnlyHost, unshadedEdgesHost } from '../render/lightEdges.js';
 import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
 import {
   SUN_MAP_COLUMNS,
@@ -4952,6 +4952,8 @@ LIGHTING SYSTEM SETUP
       },
     });
     splat.mesh.blendMode = 'add';
+    // DX-LIGHTEDGES: in RGB alone, so the light target's alpha keeps the light pass's floor mark.
+    splat.lightHost = rgbOnlyHost(splat.mesh, this._useWebGpu);
     return splat;
   }
 
@@ -4975,7 +4977,7 @@ LIGHTING SYSTEM SETUP
       }
     }
     const rtOpts = this._rtRenderOptsNoClear;
-    rtOpts.container = splat.mesh;
+    rtOpts.container = splat.lightHost !== null ? splat.lightHost : splat.mesh;
     rtOpts.target = this.lightingRT;
     this._submitRender(rtOpts);
   }

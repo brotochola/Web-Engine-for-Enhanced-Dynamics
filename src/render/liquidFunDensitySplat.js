@@ -40,6 +40,8 @@ export class LiquidFunDensitySplat {
    */
   constructor({ capacity, label, blendMode = 'add', useWebGpu = true, shaders = null, shaderResources = null }) {
     this.capacity = Math.max(1, capacity | 0);
+    // DX-LIGHTEDGES: a light splat's host that draws it in RGB alone (pixiWorker _createLightSplat); null for another use.
+    this.lightHost = null;
     this.data = new Float32Array(this.capacity * LF_SPLAT_FLOATS);
     this.dataU32 = new Uint32Array(this.data.buffer);
     this.buffer = new Buffer({

@@ -7,9 +7,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import {
-  LIGHT_EDGES_ENTITY, LIGHT_EDGES_FLOOR, LIGHT_EDGES_KINDS, LIGHT_EDGES_MARK_DEPTH, edgeLightAt, lightEdgesGlsl, lightEdgesWgsl,
+  LIGHT_EDGES_ENTITY, LIGHT_EDGES_FLOOR, LIGHT_EDGES_KINDS, LIGHT_EDGES_MARK_DEPTH, edgeLightAt, lightEdgesGlsl, lightEdgesWgsl, rgbOnlyHost,
 } from '../../src/render/lightEdges.js';
 import { lightingSource } from '../../src/render/faceMap.js';
+import { Container } from '../../src/vendor/pixi.min.js';
 
 const shader = (name) => fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
 
@@ -70,4 +71,15 @@ test("the light pass's EDGES: the floor's texels leave alpha 0 with it, 1 withou
   assert.match(lightingSource(wgsl, flags), /return vec4<f32>\(totalLight, 1\.0\);/);
   // A face's texel keeps alpha 1 either way.
   assert.match(lightingSource(glsl, { ...flags, edges: true }), /finalColor = vec4\(min\(faceLight\(fragWorld, face, selfId, selfOn\), vec3\(1\.0\)\), 1\.0\);/);
+});
+
+test("a light splat's host draws it in RGB alone: Pixi's colour mask is 14 on WebGL (red 8 ... alpha 1), 7 on WebGPU's writeMask", () => {
+  for (const [useWebGpu, rgb] of [[false, 14], [true, 7]]) {
+    const calls = [];
+    const renderer = { colorMask: { setMask: (m) => calls.push(m) } };
+    const host = rgbOnlyHost(new Container(), useWebGpu);
+    const steps = host.children.filter((c) => typeof c.render === 'function');
+    steps.forEach((s) => s.render(renderer));
+    assert.deepEqual(calls, [rgb, 15], useWebGpu ? 'WebGPU' : 'WebGL');
+  }
 });
