@@ -1,0 +1,319 @@
+# Scene start up time (plan)
+
+**Opened:** 2026-11-17, planned in a chat session with the owner. **Status:** a plan, not started;
+nothing in it is measured yet. **Registry:** `DX-STARTUP` and its items `SST-0` to `SST-10` in
+[`hypotheses.json`](./hypotheses.json).
+
+The goal: every scene starts sooner, for the player opening a game and for the developer reloading
+one, on any scene (not one demo), without anything getting worse once it runs.
+
+**The owner's rule (2026-11-17): the game starts with everything ready.** Every asset is loaded and
+decoded before the first frame, audio included; every texture is on the GPU and every program or
+pipeline is built. Nothing loads, decodes or compiles after the start. The time comes from doing the
+work in parallel, earlier and once, never from leaving it for later. So:
+- starting with sounds still loading was proposed and **rejected** ("no me gusta la idea de arrancar
+  el juego sin audio, tenemos que tener todo listo para arrancar");
+- making something lazy is allowed only when it is never needed by the first frames (an inspector, a
+  debug view); work a frame will need is made faster, not postponed.
+
+**For the agent executing this plan:**
+- Read `CLAUDE.md`, `docs/internal/HOW_WE_MEASURE.md` and this whole file before the first commit.
+- Work on a branch (`dx/startup`). One item per commit; measurement tools in their own commit before
+  the change they measure; the node suite (and `test:demos` where a game can see it) green before
+  each code commit.
+- SST-0 comes first: no item is started before the waterfall can show what it changes.
+- Tick the item here (`[x]` plus the commit hash) in the commit that finishes it, add anything new
+  under "Found while building", update its row in `hypotheses.json` and write its record (then
+  `node scripts/buildHypothesesPage.mjs`).
+- Before any browser run: no other session benchmarking, the laptop on AC power.
+
+---
+
+## 1. How a scene starts today
+
+From `GameEngine.loadScene` (`src/core/gameEngine.js`) to the first drawn frame, as read in the code on
+2026-11-17:
+
+```
+main      import the scene module → new Scene → Scene.init:
+            audio worklet → entity scripts → (Adobe) → reserveBox2dBlock → shared buffers
+            → createSceneWorkers: new Worker × N, then preloadAssets
+                (atlas ∥ tilemaps ∥ flowfields ∥ shader sources ∥ audio fetch and decode)
+            → texture metadata, init data → 'init' to every worker → await readyPromise
+            → config.layers content → preload() → create() → createNewGame() → spawn barrier → start
+workers   module evaluated at new Worker … idle until 'init' … then each one:
+            common buffers, entity scripts, engine.wasm compile, kernel binds, its own setup → ready
+renderer  first draw: Pixi uploads the atlas and tilesets, links what was not linked ahead
+```
+
+Almost everything runs in a row, and the workers spend the first half of the load idle, waiting for
+the atlas. What is known already:
+
+- **The atlas.** `SpriteSheetRegistry.createBigAtlas` (`src/core/spriteSheetRegistry.js`) runs on the main
+  thread: it fetches and decodes every image and sheet, reads each sheet's pixels once (trim, standing
+  base, texels), packs with `MaxRectsPacker`, draws everything into a 2D canvas of up to 4096², paints
+  the maps page, copies the canvas to an `ImageBitmap` and transfers it to Pixi. N-124 took the pack
+  from 17 873 to 177 ms for the Buenos Aires demo's 4 386 frames; the whole `createBigAtlas` there was
+  about 1.25 s after R-0852. Scenes with a baked atlas (Predator, littleCity) skip it, but
+  `Scene._loadBakedBigAtlas` still draws the whole atlas into a 2D canvas on the main thread (for
+  decals and the inspector).
+- **Buenos Aires, 2026-11-10 (R-0849):** first drawn frame 6.1 s after `loadScene` on WebGL, 4.6 s on
+  WebGPU. Not measured since.
+- **engine.wasm (337 KB)** is fetched and compiled by every worker that uses it (spatial × N, particle,
+  pre-render, Pixi: `compileWasmKernel` in `src/util/wasmKernel.js`), with `WebAssembly.compile(bytes)`,
+  and only after 'init'. Inside a worker the kernel binds are awaited one after another (pre-render 9 in
+  a row, particle 6, Pixi 5, spatial 2). R-0640 found posting a compiled module "not needed" for the
+  step times of the first 2 s; load time was not measured. Box2D uses `instantiateStreaming` and starts
+  early (`reserveBox2dBlock`).
+- **Game scripts in the bundle.** Blob workers cannot `import()`: `expandBlobEntityScripts`
+  (`src/util/utils.js`) walks the dependencies with one awaited fetch per file, then `loadSingleScript`
+  fetches each file again; every worker and the main thread repeat it. In source builds the workers
+  import the scene module and the browser fetches its graph in parallel.
+- **Logic waits for physics.** With physics, logic reports ready only after `box2dReady`, and then runs
+  `createGameObjectInstances`'s per-class setup.
+- **Pixi.** In source builds the engine shaders are fetched after 'init'; `requestWeedGpu` and then
+  `pixiApp.init` come after that wait; the atlas and tilesets are uploaded at the first draw;
+  `loadSpritesheets` builds one `PIXI.Texture` per atlas frame; tilemap pages are built when
+  `preload()` sends `setLayerContent`. E-475 links the WebGL programs ahead, before ready (Predator by
+  night: 0.54 s blocked on links); E-494 (open) finds about 620 ms more in the second frame, from
+  programs made on first use. On WebGPU nothing is built ahead.
+- **Scene changes.** `loadScene` destroys the scene, terminates every worker and makes new ones (and a
+  new canvas, since `transferControlToOffscreen` happens once): parsed code, compiled wasm, the GPU
+  context and linked programs are thrown away between a menu and a game, or between two levels.
+- **Smaller repeats.** Every spatial worker computes the same circle patterns into the same shared
+  table; every worker deserializes the sprite and Adobe registries and registers each static
+  flowfield; per-pool fills and allocations in every worker (E-209 measured such work at a few ms per
+  100 000 slots).
+
+---
+
+## 2. How load time is measured
+
+`HOW_WE_MEASURE.md` judges speed by `STEP_MS`; load work is judged on time to the first frame (W21e's
+record said so). SST-0 adds a "Load time" section there when the tool lands. The plan's protocol:
+
+- **Primary:** time from the `game.loadScene` call to the renderer's first drawn frame (not the first
+  published one: in a GPU-bound scene the two differ). From navigation too, which adds the page's modules
+  (`tests/bench/isolationLoadTime.mjs` measures navigation to the first published frame and is the base
+  to extend).
+- **Must not get worse:** the longest frame in the first 5 s after the start (everything ready means no
+  hitch after it), and the steady `STEP_MS` of every worker (a change that touches per-frame code also
+  follows `HOW_WE_MEASURE`). The main thread's longest task during the load is reported (the loading
+  screen's smoothness), not judged.
+- **Scenes:** `buenosAiresScene` (packs its atlas from many sheets, big floor shader),
+  `predatorScene` with `?light3d=1&hour=22` (baked atlas, physics, the most programs), `bunnyMarkScene`
+  (few assets: the fixed cost of starting), and one scene change (menu → scene) for SST-9.
+- **Conditions:** source build and prod bundle; cold (a fresh profile, empty caches) and warm (the
+  second visit, same profile); WebGL, and WebGPU for the GPU items. The baseline fills the whole
+  matrix once; each item then runs only the cells it can change.
+- **Machines:** the main machine, and the ASUS test laptop (2 cores, HDD) for the slow-machine numbers,
+  which is where load time hurts most.
+- **Runs:** a fresh browser context per run, headed, 5 runs a side alternating A and B, medians with
+  p25–p75; one A/A per sitting gives the detection limit.
+- **Keep:** the median moves past the A/A's limit in the cells the change targets and no cell gets
+  worse past it; the image is identical (`compareCaptures`); atlas work keeps the same atlas (hash of
+  its pixels and of its JSON, as N-124 and R-0852 checked).
+
+---
+
+## 3. Items
+
+Each item says what changes, where, why it should pay, and how it is checked. Gains are not estimated
+until SST-0's baseline: the order below is a bet from reading the code.
+
+### SST-0 — The load waterfall (measurement tool)
+
+- [ ] not started
+
+Marks for every phase on one clock (`performance.timeOrigin + performance.now()` on each thread):
+- main: each `Scene.init` step, each branch of `preloadAssets`, and inside the atlas: fetch and decode,
+  pixel readback, pack, draw, maps page, bitmap;
+- every worker: module evaluated, 'init' received, common buffers, entity scripts, engine.wasm compile,
+  each kernel bind, Pixi's GPU device and `pixiApp.init`, shader fetches, link ahead, ready;
+- the renderer's first drawn frame, and the longest frame in the first 5 s.
+
+A runner collects them and prints a table and a timeline that names the chain ending last (the
+critical path of the load). Marks cost nothing measurable at load; none runs per frame. Then the
+baseline: the matrix of section 2 on both machines, one record.
+
+### SST-1 — Workers start before the assets: boot, then configure
+
+- [ ] not started
+
+Split each worker's start in two messages:
+- **'boot'**, sent right after `new Worker`, with what depends on neither assets nor buffers: the
+  config, the worker's role, engine.wasm (SST-2), the engine shader sources, Pixi's `OffscreenCanvas`.
+  The worker starts at once:
+  - the game scripts (SST-3);
+  - its kernels' compile;
+  - Pixi: the GPU device, `pixiApp.init`, the engine programs and their links (the passes a scene uses
+    are known from its config).
+- **'init'** (configure) then only binds the shared buffers, the atlas metadata and the textures.
+
+The main thread creates the workers at the top of `Scene.init`. `abstractWorker`'s message queue
+already orders messages that arrive early. Expected: the workers' own start (wasm, Pixi, links)
+overlaps the asset load instead of following it. Checked by SST-0 (the workers' bars move under the
+atlas's), all suites, every demo booting (`test:demos`, the scene smoke).
+
+### SST-2 — engine.wasm compiled once, on the main thread, and shared
+
+- [ ] not started
+
+- The main thread starts `WebAssembly.compileStreaming(fetch(engineWasmUrl))` as `loadScene` begins;
+  in the bundle it inflates the data URL once.
+- It posts the `WebAssembly.Module` with 'boot'; `compileWasmKernel` takes a posted module instead of
+  compiling its own.
+- Streaming compile from an HTTP response lets Chrome cache the compiled code between visits (source
+  builds, and any build that serves the .wasm as a file: SST-8).
+- Inside each worker, the kernel binds that do not depend on each other go through one `Promise.all`.
+
+Checked by SST-0 (compile bars: one instead of four or more), the WASM node tests, every scene booting
+in Chrome and Firefox.
+
+### SST-3 — Game scripts fetched once and in parallel (bundle)
+
+- [ ] not started
+
+- The main thread fetches the scene's script graph once, all files at the same time, and parses each
+  file's imports as it arrives.
+- It posts `{ url → text }` with 'boot'. Workers evaluate from those texts in today's dependency
+  order, with no fetch of their own and no second fetch.
+- Source builds keep `import()`; only check that the main thread's own load does not hold up anything
+  that does not need it (SST-4).
+
+Checked by a test that compares the evaluation order with today's walk on a graph with a shared
+dependency, the bundle smokes, SST-0 on the prod bundle.
+
+### SST-4 — The main thread's start in parallel
+
+- [ ] not started
+
+Today `Scene.init` awaits in a row: the audio worklet, the entity scripts, Adobe,
+`reserveBox2dBlock`, the buffers, the workers, then the assets. Start everything that does not depend
+on the rest at the top of `init` (or in `loadScene`, right after the scene module's import):
+- every asset fetch and decode: atlas sources or the baked atlas, tilemaps, flowfields, shader sources,
+  audio fetch and decode;
+- the audio worklet;
+- the workers (SST-1) and engine.wasm (SST-2).
+
+Each result is awaited where it is consumed, and everything is still awaited before the start, audio
+included (the owner's rule). First list each step's real inputs (does `reserveBox2dBlock` need the
+entity scripts, through the entity count?). Also check `transitionCooldown` (100 ms awaited at the
+end of `loadScene`): it delays `loadScene`'s promise, so a loading screen that waits on it stays
+100 ms longer.
+
+### SST-5 — The atlas: its layout apart from its pixels, off the main thread
+
+- [ ] not started
+
+1. **Layout first.** The layout (rectangles, trims, bases, texels, proxy sheets: the JSON) is all the
+   main thread and the workers need to configure. The pixels are needed only by the renderer, which
+   waits for them before it reports ready.
+2. **Off the main thread.** An atlas worker, or the per-sheet work (decode, readback, trim, texels)
+   spread over a few short-lived workers, with the pack in one (it is sequential, and cheap since
+   N-124). The main thread stays free, so the loading screen stays smooth.
+3. **Pixels composed on the GPU.** The renderer receives the sheets as `ImageBitmap`s and draws each
+   frame into the atlas texture at its packed rectangle, instead of a CPU 2D canvas, a 64 MB copy and a
+   64 MB upload. The main thread's users of the CPU atlas (`extractDecalTextures`, `BigAtlasInspector`,
+   the bake script) read from the source sheets or get the atlas on demand.
+4. **The baked path.** `Scene._loadBakedBigAtlas` stops drawing the whole atlas into a 2D canvas on the
+   main thread when only decals need some of it.
+
+Checked by the same atlas (pixel and JSON hashes), `atlasTrim.test.js`, decals drawing the same, SST-0
+on Buenos Aires.
+
+### SST-6 — The atlas cached automatically (an automatic bake)
+
+- [ ] not started
+
+- **Key:** a hash of the inputs: each source's URL with its bytes' hash (or its validators), the atlas
+  options, the atlas format's version.
+- **Hit:** the atlas loads as a baked one (pixels and JSON) from Cache Storage or OPFS.
+- **Miss:** it is packed, then written in the background without delaying the start.
+
+The developer iterating and the returning player skip the trim, the pack and the draw. The
+invalidation must be exact: a changed sheet changes the key. `config.assets` gets a switch to turn it
+off, and old entries are cleared. Compare storing a PNG with storing the raw texels (no encode or
+decode). Checked by tests on the key (a changed byte, a changed option, a new engine version each miss)
+and SST-0 warm against cold.
+
+### SST-7 — The GPU ready before the first frame
+
+- [ ] not started
+
+1. Upload the atlas, the maps page and the tilesets during init, not at the first draw.
+2. The programs made on first use, built and linked at init: that is **E-494**, which stays the row for
+   it.
+3. WebGPU: build the pipelines a scene will use during init, asynchronously
+   (`createRenderPipelineAsync`); E-475's link ahead covers WebGL only.
+4. Pixi's one `Texture` per atlas frame (4 386 in Buenos Aires): measure it. If it costs, build them
+   more cheaply, not lazily.
+
+Checked by the longest frame in the first 5 s and the first drawn frame (SST-0), and the image identical
+on both backends.
+
+### SST-8 — The workers' code: parsed once, cached between visits
+
+- [ ] not started
+
+- **Source builds:** every worker imports the whole `src/` tree by itself: hundreds of requests times 7
+  or 8 workers.
+- **The bundle:** its workers are blobs, which get no V8 code cache, so every visit parses every
+  worker's code again, Pixi included. engine.wasm inlined as a data URL gets no wasm code cache either.
+
+Options:
+- a bundle mode that writes the worker files and engine.wasm beside the bundle, which gets the code
+  cache and streaming compile; the single-file bundle stays for embeds;
+- for source builds, one pre-bundled file per worker role, or preloading.
+
+Measure cold and warm on the ASUS first: this is where it shows.
+
+### SST-9 — Workers kept across scene changes
+
+- [ ] not started
+
+`loadScene` terminates every worker, so the next scene starts from zero: code, wasm, GPU context,
+programs, Box2D's memory. With a pool instead, a scene's teardown leaves the workers alive and resets
+their state, and the next scene configures them again. The canvas stays with its Pixi worker. This is
+the biggest change in the plan: every worker's reset must be complete. Tests load A, then B, then A
+again, and A must match a fresh load (state, image). Measured on menu → scene and level → level.
+
+### SST-10 — What the waterfall shows is left
+
+- [ ] not started
+
+The smaller repeats, each only if SST-0 shows it:
+- circle patterns computed once, not by every spatial worker;
+- the sprite and Adobe registries and the static flowfields handed over ready instead of rebuilt in
+  every worker;
+- logic's per-class setup done while physics boots, not after `box2dReady`;
+- per-pool fills and allocations;
+- Pixi's tilemap pages built during boot instead of at `preload()`'s `setLayerContent`, when a scene
+  declares them in its config.
+
+---
+
+## 4. Order
+
+1. SST-0, and its baseline.
+2. SST-2, then SST-1 (the boot message carries the module).
+3. SST-4.
+4. SST-3.
+5. SST-7, with E-494.
+6. SST-5, then SST-6.
+7. SST-8.
+8. SST-10, from what is left on the waterfall.
+9. SST-9, as a project of its own.
+
+The baseline can reorder this: the item whose bar ends last goes first.
+
+## 5. Open decisions (the owner's, when we get there)
+
+- SST-6: is the automatic cache on by default, in source builds and in the bundle?
+- SST-8: does the bundle get a mode with separate files, and is it the default for deploys?
+- SST-9: keeping workers changes what a scene's teardown means for a game (anything a game left in a
+  worker). Settle what a game may rely on before building it.
+
+## 6. Found while building
+
+(Nothing yet.)
