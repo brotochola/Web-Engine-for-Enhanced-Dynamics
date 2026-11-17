@@ -1286,6 +1286,20 @@ uint32_t pack_casters_general(uint32_t table, uint32_t indices, uint32_t count, 
                       (const double *)(uintptr_t)paramsByte, 1);
 }
 
+/* E-513, E-515: a nearest atlas's pixel snap on `n` rows of a pose stream at poseByte (POSE_FLOATS a row: x, y, then the
+   turn), pack_general's snap_world on x and y, after the split or indexed pack wrote the rows: the two streams then carry
+   what the 15-float rows did. */
+__attribute__((export_name("snap_poses")))
+void snap_poses(uint32_t poseByte, uint32_t n, double camX, double camY, double zoom) {
+  if (!(zoom > 0)) return;
+  float *pose = (float *)(uintptr_t)poseByte;
+  for (uint32_t k = 0; k < n; k++) {
+    float *p = pose + k * POSE_FLOATS;
+    p[0] = (float)snap_world((double)p[0], camX, zoom);
+    p[1] = (float)snap_world((double)p[1], camY, zoom);
+  }
+}
+
 /* W9e. A pose batch's streams (renderer.interpolation: instancedSpriteBatch.js _packPoseOnly and
    _packPoseAndStatics). Per row the pose x, y, rotC, rotS and the previous x, y (POSE_DYN_FLOATS, 6), and, unless
    stat is 0, the statics in E-82's order (sprite_static's, the scale in screen units). The previous pose is read
