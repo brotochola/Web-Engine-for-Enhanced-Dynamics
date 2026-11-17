@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 import { mulberry32 } from '../benchMath.js';
-import { StressLamp, StressWalker } from './lampShadow/lampShadowEntities.js';
+import { StressBlock, StressLamp, StressWalker } from './lampShadow/lampShadowEntities.js';
 
 const { Scene, Camera, LAYER_KIND } = WEED;
 
@@ -13,6 +13,8 @@ const { Scene, Camera, LAYER_KIND } = WEED;
  * `?lamps=` (default 48), `?walkers=` (default 2000), `?lampShadows=map|sprite`, `?tile=` (lighting.lampShadowTile,
  * default 256), `?sway=0` (the lamps still), `?elevation=` (px, default 70), `?backend=webgpu`. `?still=1`: nothing moves
  * (the walkers stand where their loops start, the lamps do not sway), for byte-for-byte captures (compareCaptures.mjs).
+ * `?volumes=` (default 0): still blocks that cast box volumes, as the barrio's houses (the lamps' map draws every volume
+ * once a lamp); `?lampCache=0`: lighting.lampMapCache off (E-508: still lamps' volumes drawn every frame).
  */
 const WORLD_W = 2400;
 const WORLD_H = 1400;
@@ -40,11 +42,13 @@ export const STILL = queryNumber('still', 0) === 1;
 export const SWAY = queryNumber('sway', 1) !== 0 && !STILL;
 export const ELEVATION = queryNumber('elevation', 70);
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+export const VOLUMES = Math.max(0, Math.floor(queryNumber('volumes', 0)));
+export const LAMP_CACHE = query('lampCache') !== '0';
 
 export const stressSceneConfig = {
   requested: {
     lamps: LAMPS, walkers: WALKERS, lampShadows: LAMP_SHADOWS, tile: TILE, sway: SWAY ? 1 : 0, elevation: ELEVATION, backend: BACKEND,
-    still: STILL ? 1 : 0,
+    still: STILL ? 1 : 0, volumes: VOLUMES, lampCache: LAMP_CACHE ? 1 : 0,
   },
 };
 
@@ -70,6 +74,9 @@ export class LampShadowStressScene extends Scene {
       maxShadowCastingLights: LAMPS,
       lampShadows: LAMP_SHADOWS,
       lampShadowTile: TILE,
+      // A key an older engine does not know is never written: only when it is off.
+      ...(LAMP_CACHE ? {} : { lampMapCache: false }),
+      ...(VOLUMES > 0 ? { maxVolumes: VOLUMES + 16 } : {}),
       sun: { enabled: false },
     },
   };
@@ -82,6 +89,7 @@ export class LampShadowStressScene extends Scene {
   static entities = [
     [StressLamp, 256],
     [StressWalker, 20000],
+    [StressBlock, Math.max(1, VOLUMES)],
   ];
 
   create() {
@@ -110,6 +118,17 @@ export class LampShadowStressScene extends Scene {
         phase: rng() * 6.283,
         scale: 0.35 + rng() * 0.3,
         still: STILL,
+      });
+    }
+    // The blocks after the walkers, from their own seed: the walkers stand where they did without them.
+    const blockRng = mulberry32(SEED ^ 0x5eed);
+    for (let i = 0; i < VOLUMES; i++) {
+      StressBlock.spawn({
+        x: blockRng() * WORLD_W,
+        y: blockRng() * WORLD_H,
+        width: 30 + blockRng() * 50,
+        depth: 20 + blockRng() * 40,
+        height: 30 + blockRng() * 60,
       });
     }
     Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.5);

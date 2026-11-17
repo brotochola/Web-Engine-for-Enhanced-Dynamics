@@ -814,6 +814,12 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   lampShadowTile: 'auto',
   /**
+   * E-508: with lampShadows 'map', a lamp that stays still (a street lamp) draws its volumes (VolumeShadowCaster) into its
+   * tile once, into a cache, and copies them each frame, until it or a volume moves; a moving one (a car's headlights)
+   * draws them every frame. The volumes' draw ran every vertex of every volume once a lamp each frame.
+   */
+  lampMapCache: true,
+  /**
    * DX-PIXELSHADOW: pixel-art lighting. The light pass shades each world pixel whole, at its centre, and reads the sun's and
    * the lamps' maps with one tap, so light and shadows fall crisply on the art's pixel grid (as a pixel-art picture scaled
    * up with nearest is) instead of smoothly at the screen's. Best with lighting.resolution 1 and an atlas drawn 'nearest'.

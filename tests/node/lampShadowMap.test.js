@@ -112,9 +112,13 @@ test('E-389, E-453: the volumes go into every lamp tile in one draw, an instance
   // instance a tile in use, so each triangle reaches each tile with the same vertices, tile after tile.
   const glsl = volumeLampVertex(fs.readFileSync(new URL('../../src/shaders/meshUvFill.vert.glsl', import.meta.url), 'utf8'));
   const wgsl = volumeLampWgsl(fs.readFileSync(new URL('../../src/shaders/meshUvFill.wgsl', import.meta.url), 'utf8'));
-  // The tile from the instance's number; no vertex number, no corner.
-  assert.ok(glsl.includes('int lampTile = gl_InstanceID;') && !/aLampVertex|lampCorner|gl_VertexID|aTri\b/.test(glsl));
-  assert.ok(wgsl.includes('@builtin(instance_index) lampInstance: u32,') && wgsl.includes('let lampTile = i32(lampInstance);'));
+  // The tile from the instance's entry in its draw's list (E-508: the tiles' texture's row 2, from uLampVolume.x), the
+  // half tile it draws into beside it; no vertex number, no corner.
+  assert.ok(glsl.includes('ivec2(int(uLampVolume.x + 0.5) + gl_InstanceID, 2)') && glsl.includes('int lampTile = int(lampEntry.x + 0.5);'));
+  assert.ok(glsl.includes('vec2 lampPx = (lampEntry.yz + lampUv) * uLampVolume.z;'));
+  assert.ok(!/aLampVertex|lampCorner|gl_VertexID|aTri\b/.test(glsl));
+  assert.ok(wgsl.includes('@builtin(instance_index) lampInstance: u32,') && wgsl.includes('i32(lampInstance), 2)'));
+  assert.ok(wgsl.includes('let lampTile = i32(lampEntry.x + 0.5);') && wgsl.includes('let lampPx = (lampEntry.yz + lampUv)'));
   assert.ok(!/aLampVertex|lampCorner|vertex_index|aTri\b/.test(wgsl));
   // The cull reads the mesh's reach, the same in each of its vertices, so a triangle is kept or left out whole.
   assert.ok(glsl.includes('float lampPad = aInstReach * ') && wgsl.includes('let lampPad = aInstReach * '));
@@ -132,7 +136,7 @@ test('E-389, E-453: the volumes go into every lamp tile in one draw, an instance
   writeLampTileOwner(data, width, 1, 4242);
   assert.deepEqual(Array.from(data.subarray(4, 8)), [10, 20, 30, 40]);
   assert.deepEqual(Array.from(data.subarray((width + 1) * 4, (width + 2) * 4)), [4242, 0, 0, 0]);
-  // The draw's terms: the tiles in use (no tile of its own any more), written only when they change.
+  // The draw's terms: its list's first entry (no tile of its own any more), written only when they change.
   const sun = new Float32Array(4);
   const lamp = new Float32Array(4);
   const scales = new Float64Array([0.5, 2]);
