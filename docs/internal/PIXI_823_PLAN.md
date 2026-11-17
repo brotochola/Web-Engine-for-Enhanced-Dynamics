@@ -179,6 +179,40 @@ still patches (E-475's parallel links, the pass-garbage patches) would spare por
 fine in the engine: the scripts of bundled workers run with `'use strict'` and the compiled accessors use only
 their parameters, so #12326's implicit globals cannot happen there.
 
+## 5. From the longer read: Pixi since November 2023, and how PixiJS 3D works
+
+Pixi's commits from November 2023 to 8.20.1 (about 1 400; the 500 on rendering, GPU, buffers, GC and speed read one
+by one) and PixiJS 3D's working files (`AGENTS.md`, `CODING_STANDARDS.md`, `docs/skills.md`, `bench/`,
+`tests/README.md`). Before 2025 the messages are short ("fix X"); the reasons with numbers come in 2025 and 2026.
+
+**The story.** v8 shipped in March 2024 and a month later WebGL went back to being the default (#10367), as it still
+is in 8.23. 2024 brought ParticleContainer, render groups and a renderable GC; 2025 a hunt for leaks (September,
+November), a unified GC and multiple render targets (December); 2026 the WebGPU features PixiJS 3D needed (July, in
+slices with a last one only to harden them), then 8.21 to 8.23. Next in the core: a `benchy` bench suite (a branch of
+October 2026, not merged: sprites, particles, spawn, startup, a UI tree).
+
+**What it adds to the backlog:**
+
+- **M15** gets its second case: the colour target count aliased `depthReadOnly` in July 2026 (#12093).
+- **M17:** a test that shader names avoid words reserved in WGSL or GLSL (a failed WebGPU pipeline can take the tab
+  down; PixiJS 3D lints for it).
+- **M18:** measure on Apple GPUs and on a phone once per campaign (tile-based GPUs, Apple's branches, iOS's ANGLE and
+  Safari's WGSL each changed a Pixi decision).
+- **DOC9:** a resource-lifetime rule in `CLAUDE.md` (PixiJS 3D: whatever you create ships with its release and a
+  test of it).
+- **DOC10:** `CLAUDE.md` as a short router, as PixiJS 3D's 21-line `AGENTS.md` (an idea for the owner).
+- **DX-PIXIUPSTREAM:** send the remaining patches to Pixi (E-475, the pass garbage, the WebGL sync stub).
+- **DX-BACKENDDEFAULT:** decide the default backend with numbers after DX-PIXI823.
+- **DX-AGENTEVAL:** an eval of agents building WeedJS games, as PixiJS 3D's creation-evals (a recipe-style skill cut
+  the cost per working result from $0.23 to $0.14).
+- **DX-STATICSGEN:** one statics generation per sprite instead of `renderDirty` and `keyedDirty` (PixiJS 3D's
+  DirtyId with a watermark per consumer), which closes N-103's trap, removes E-436's shared writes and allows a debug
+  check for statics written without a mark.
+
+**Different on purpose, not to copy:** PixiJS 3D does not validate misuse ("trust the caller"), where the engine
+chose guards (DX-GUARDS) for game developers and agents; its internal comments hold only guards and the story goes in
+the pull request, where the engine keeps it in the register.
+
 ## Sources
 
 - [Introducing PixiJS 3D](https://pixijs.com/blog/pixi-3d-open-beta), [pixijs/3d](https://github.com/pixijs/3d).
