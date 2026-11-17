@@ -1023,6 +1023,8 @@ class PixiRenderer extends AbstractWorker {
     // as colour targets (made once they are, remade with them); 'pass' (default): a pass each.
     this._gbufMrt = false;
     this._gbufTarget = null;
+    // N-274: whether the G-buffer's target has its depth attachment (the batch's gbufDepthOn when it was made).
+    this._gbufTargetDepth = false;
     // DX-UNSHADED (was DX-EMISSIVE v2, plan §6.9, F10): two colours a pixel. Where the entities carry their words, the
     // unshaded pass draws their unshaded pixels into a target the canvas's size (unshadedRT) and the unshaded layer adds them
     // over the lighting layer where the light is short of them (unshadedComposite.js); a pass a frame while a sheet
@@ -4102,13 +4104,19 @@ class PixiRenderer extends AbstractWorker {
    * cannot be made (the passes then draw a target each).
    */
   _ensureGbufTarget() {
-    if (this._gbufTarget !== null) return this._gbufTarget;
+    // N-274: with pixel depth the one pass tests and writes depth: a target with a depth attachment, made again if that changed.
+    const depth = !!this.entitiesBatch?.gbufDepthOn;
+    if (this._gbufTarget !== null && this._gbufTargetDepth === depth) return this._gbufTarget;
+    if (this._gbufTarget !== null) this._releaseGbufTarget();
     const RenderTargetClass = this.pixiApp?.renderer?.view?.renderTarget?.constructor;
     if (typeof RenderTargetClass !== 'function' || this.faceRT === null || this.faceIdsRT === null) {
       this._gbufMrt = false;
       return null;
     }
-    this._gbufTarget = new RenderTargetClass({ colorTextures: [this.faceRT, this.faceIdsRT], label: 'weed-gbuffer' });
+    this._gbufTarget = new RenderTargetClass({
+      colorTextures: [this.faceRT, this.faceIdsRT], depthStencilTexture: depth, label: 'weed-gbuffer',
+    });
+    this._gbufTargetDepth = depth;
     return this._gbufTarget;
   }
 
