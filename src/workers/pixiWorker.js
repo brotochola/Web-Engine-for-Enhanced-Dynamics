@@ -3159,7 +3159,7 @@ class PixiRenderer extends AbstractWorker {
       data: this._pixiInstanceRows,
       gpuPack: this._pixiGpuPack,
       // E-82b: the plain sprites in two streams, the statics uploaded when they change. E-513: a nearest atlas too (its
-      // pixel snap goes on the poses after the split and indexed packs: gpuPackClient.js snapPoseRows).
+      // pixel snap goes on the poses after the split and indexed packs: gpuPack.c snap_poses).
       split: !this._queueInterp,
       // E-162: with the queue's indexed frames (renderer.indexedSprites), where their statics go: a texture through the
       // record texture helper (WebGL), or a storage buffer within the device's binding size (WebGPU), which a keyed
