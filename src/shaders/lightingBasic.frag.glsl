@@ -584,5 +584,11 @@ void main() {
     totalLight *= (1.0 - sh.a);
   }
   totalLight = min(totalLight, vec3(1.0));
+// #if EDGES
+  // DX-LIGHTEDGES: alpha says the floor lit this texel (0); a G-buffer entry's texels keep 1 (lightEdges.js).
+  finalColor = vec4(totalLight, 0.0);
+// #endif EDGES
+// #if !EDGES
   finalColor = vec4(totalLight, 1.0);
+// #endif !EDGES
 }

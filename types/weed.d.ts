@@ -347,6 +347,8 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    * renderer.atlasScaleMode 'nearest'. Default false.
    */
   pixelArt?: boolean;
+  /** DX-LIGHTEDGES: the light at a share of the canvas shown without crossing the floor's edges where the entities write depth (default true). */
+  lightEdges?: boolean;
   /**
    * A render with footprints in its sheet's json (meta.footprints) casts its solid swept north to them at each cell's own
    * height (light under a table) instead of columns down to the floor. Default true; false keeps the columns.
