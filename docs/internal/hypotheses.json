@@ -10759,8 +10759,8 @@
     {
       "id": "DX-SUNMASK",
       "title": "The sun's shadow inside the light sum",
-      "status": "open",
-      "statusText": "A design for the owner to decide on: docs/internal/reports/DX_SUNMASK_DESIGN.md",
+      "status": "superseded",
+      "statusText": "superseded by DX-LIGHT3D (merged 2026-11-15) and DX-BARRIOS; the design is in docs/internal/reports/ since 2026-11-17",
       "date": "2026-11-05",
       "result": "",
       "next": "",
@@ -10777,8 +10777,8 @@
     {
       "id": "DX-NORMALS",
       "title": "Light by the way a surface faces",
-      "status": "open",
-      "statusText": "A design for the owner to decide on: docs/internal/reports/DX_NORMALS_DESIGN.md",
+      "status": "superseded",
+      "statusText": "superseded by DX-LIGHT3D (merged 2026-11-15) and DX-BARRIOS; the design is in docs/internal/reports/ since 2026-11-17",
       "date": "2026-11-05",
       "result": "",
       "next": "",
@@ -11778,8 +11778,8 @@
     {
       "id": "DX-VOLLIGHTS",
       "title": "Lamps and headlights cast a VolumeShadowCaster's shadow, in basic and raycasted lighting",
-      "status": "open",
-      "statusText": "A plan for the owner to decide (reports/DX_VOLLIGHTS_DESIGN.md), not built",
+      "status": "superseded",
+      "statusText": "superseded by DX-LIGHT3D (merged 2026-11-15) and DX-BARRIOS; the design is in docs/internal/reports/ since 2026-11-17",
       "date": "2026-11-11",
       "result": "",
       "next": "Decisions first (eight, in the design). Then step 0 (volumeStressScene ?castsLights= ?raycast=, a reference outline, vertices × casting lights at Sun Street's and Conurbano's sizes), basic lighting into shadowRT, raycasted lighting as a mask on each fan, receivers, Sun Street without LightOccluder.",
@@ -16030,7 +16030,7 @@
       "id": "DX-BARRIOS",
       "title": "Editor de barrios: the buenos-aires repo becomes the barrio editor, exporting a package (a format-1 scene file with prefabs, palettes and parent, its atlas and binaries) that demos/buenosAiresScene shows (Parque Chas) with light3d and the standard people, cars and objects; the engine pieces it needs",
       "status": "open",
-      "statusText": "approved by the owner 2026-11-15 (\"cuando terminemos esto y dx/light3d este mergeado a main, ahi vamos a editar esa escena, el otro repo, y las partes del codigo q tienen q ver con eso\"); rewritten 2026-11-16 with the owner: houses stay faces (height or normal maps for 8 721 houses would need gigabytes of atlas), the floor stays the shader; dx/light3d merged 2026-11-15, so it starts",
+      "statusText": "approved by the owner 2026-11-15 (\"cuando terminemos esto y dx/light3d este mergeado a main, ahi vamos a editar esa escena, el otro repo, y las partes del codigo q tienen q ver con eso\"); rewritten 2026-11-16 with the owner: houses stay faces (height or normal maps for 8 721 houses would need gigabytes of atlas), the floor stays the shader; dx/light3d merged 2026-11-15, so it starts; merged into main 2026-11-17 (Parque Chas on light3d, the editor apart); left: the final pass of traces and optimization, E-497's tournament, N-258 on the light bench, DX-BARRIOSTREETS",
       "date": "2026-11-15",
       "area": "demos",
       "kind": "feature",
@@ -16043,7 +16043,9 @@
         "barrio package"
       ],
       "next": "Groups R (render and maps), P (Transform.parent), O (objects), E (the editor) and D (the demo) in parallel, one owner a file (DX_BARRIOS_DESIGN.md); the suites when merging; then the mandatory final pass of every trace and the optimization.",
-      "records": []
+      "records": [
+        "R-1258"
+      ]
     },
     {
       "id": "N-194",
@@ -20795,8 +20797,8 @@
     {
       "id": "DX-PARENT",
       "title": "Transform.parent: an entity follows another (pose = the parent's + a local offset turned by its rotation); physics writes the children after its step; v1 parents with a body; a child with a body is refused with a warning; children despawn with the parent",
-      "status": "open",
-      "statusText": "approved by the owner 2026-11-16 instead of several lights per entity (LuzAuto stays, as the car's child); it changes VISUAL_EDITOR_PLAN.md's \"No parent/child transforms in the engine\" (branch visual_editor, updated when that branch resumes)",
+      "status": "kept",
+      "statusText": "approved by the owner 2026-11-16 instead of several lights per entity (LuzAuto stays, as the car's child); it changes VISUAL_EDITOR_PLAN.md's \"No parent/child transforms in the engine\" (branch visual_editor, updated when that branch resumes); built on dx/barrios, merged into main 2026-11-17",
       "date": "2026-11-16",
       "area": "core",
       "kind": "feature",
@@ -20814,8 +20816,8 @@
     {
       "id": "DX-UNSHADED",
       "title": "emissive becomes unshaded (Godot 2D's word), yes or no: the sheet's mark leaves the twin page for the per-frame maps table (an unshaded sheet builds no twin page and turns no pixel depth on); the strength up to 1.75 goes",
-      "status": "open",
-      "statusText": "approved by the owner 2026-11-16 (\"Unshaded me gusta!\")",
+      "status": "kept",
+      "statusText": "approved by the owner 2026-11-16 (\"Unshaded me gusta!\"); built on dx/barrios, merged into main 2026-11-17",
       "date": "2026-11-16",
       "area": "render",
       "kind": "dx",
@@ -20833,8 +20835,8 @@
     {
       "id": "DX-STDOBJECTS",
       "title": "The barrio's loose objects (20 sheets, 447 frames: plants, pots, trash, lamps, the fountain) as standard demo assets with height maps in demos/img/objetos, like the MinZiin cars and the LPC people",
-      "status": "open",
-      "statusText": "approved by the owner 2026-11-16 (height maps only: the owner prefers normals from heights)",
+      "status": "kept",
+      "statusText": "approved by the owner 2026-11-16 (height maps only: the owner prefers normals from heights); built on dx/barrios, merged into main 2026-11-17",
       "date": "2026-11-16",
       "area": "demos",
       "kind": "feature",
@@ -20851,8 +20853,8 @@
     {
       "id": "DX-FACEDEPTH",
       "title": "Faces write the depth of their plane, from the vertex (with E-378's foot depth for map-less sprites); pieces on a shared plane tie by innerZ·16 carried in the row; pixel depth turns on with faces; lighting.faces goes (sunDirect becomes Sun.skyLight)",
-      "status": "open",
-      "statusText": "approved by the owner 2026-11-16: houses stay faces and walls go whole, no 8 px columns",
+      "status": "kept",
+      "statusText": "approved by the owner 2026-11-16: houses stay faces and walls go whole, no 8 px columns; built on dx/barrios, merged into main 2026-11-17",
       "date": "2026-11-16",
       "area": "render",
       "kind": "feature",
@@ -20869,8 +20871,8 @@
     {
       "id": "DX-RELIEF",
       "title": "reliefMap: a relief (bump) map gives normals and the height comes from surface; with N-257 and N-258, the height and normal maps' fixes",
-      "status": "open",
-      "statusText": "approved by the owner 2026-11-16; normal maps stay in OpenGL's convention only (no DirectX option)",
+      "status": "kept",
+      "statusText": "approved by the owner 2026-11-16; normal maps stay in OpenGL's convention only (no DirectX option); built on dx/barrios, merged into main 2026-11-17",
       "date": "2026-11-16",
       "area": "render",
       "kind": "feature",
@@ -20888,8 +20890,8 @@
     {
       "id": "N-257",
       "title": "A sprite with a normal map and no height map sits at height 0, as if painted on the floor: with an oblique camera a standing sprite takes its lamps' distance from the floor, the floor's shadow behind it in the sun map, and pixel depth as a decal",
-      "status": "open",
-      "statusText": "found reading the code 2026-11-16 (faceMap.frag.glsl's GBUF block takes the twin's R,G = 0 as the height; pixelDepth.js does the same); not seen in a scene yet; the fix approved by the owner the same day",
+      "status": "kept",
+      "statusText": "found reading the code 2026-11-16 (faceMap.frag.glsl's GBUF block takes the twin's R,G = 0 as the height; pixelDepth.js does the same); not seen in a scene yet; the fix approved by the owner the same day; built on dx/barrios, merged into main 2026-11-17",
       "date": "2026-11-16",
       "area": "render",
       "kind": "bug",
@@ -20920,8 +20922,8 @@
     {
       "id": "E-496",
       "title": "The twin page has the whole atlas's size even when one sheet has maps, and sheets with the same body paint their own copies: a per-frame maps table (each frame's window and marks) lets the twin cover only the mapped sheets and share maps (the 54 standard cars are about 31 shapes; the LPC people one body)",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 within DX-BARRIOS (the owner asked to try shared maps)",
+      "status": "kept",
+      "statusText": "proposed 2026-11-16 within DX-BARRIOS (the owner asked to try shared maps); built on dx/barrios, merged into main 2026-11-17",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
@@ -21293,6 +21295,230 @@
       "records": [
         "R-1251"
       ]
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "glow radius",
+        "halo size",
+        "lamp glow"
+      ],
+      "records": [
+        "R-1259"
+      ],
+      "result": "Buenos Aires 22 h: a lamp's cap 53.8 -> 116.1 (of 255) under its halo; a tree in front covers it; byte-identical captures vs main (dxCaptureScene, WebGL and WebGPU, 7 variants)",
+      "next": "Flash has no glowRadius (sparks keep 0.85 of the radius).",
+      "id": "DX-GLOWRADIUS",
+      "kind": "feature",
+      "area": "render",
+      "status": "kept",
+      "date": "2026-11-17",
+      "title": "A light's halo: LightEmitter.glowRadius gives it its own size (px; 0 keeps 0.85 of the light's radius), and in lightGlow 'sprite' it is drawn right after its entity's sprite, at its light's foot (the lamp's pixel depth), unshaded",
+      "statusText": "built 2026-11-17 on dx/barrios for the barrio's lamps (owner's design: an unshaded sprite just over the lamp, which a tree in front still covers)"
+    },
+    {
+      "refs": [],
+      "aliases": [],
+      "records": [],
+      "result": "",
+      "next": "",
+      "id": "N-260",
+      "kind": "bug",
+      "area": "render",
+      "status": "kept-hygiene",
+      "date": "2026-11-17",
+      "title": "pixelDepth: DEPTH_FORMULA and DEPTH_FORMULA_FACES relied on the call site's opening parenthesis; the render merge wrapped them, every pixel-depth shader failed to compile and no entity was drawn",
+      "statusText": "found integrating DX-BARRIOS (Parque Chas drew its floor only), fixed 2026-11-17 (1cba9a5c) with a node test that every depth variant the batch builds is balanced"
+    },
+    {
+      "refs": [],
+      "aliases": [],
+      "records": [],
+      "result": "",
+      "next": "",
+      "id": "N-261",
+      "kind": "bug",
+      "area": "render",
+      "status": "kept-hygiene",
+      "date": "2026-11-17",
+      "title": "A 'sprite' halo sorted on its light's pose while its entity's sprite, not feet-anchored, sorted on its picture's bottom edge (spriteSortFootY): a lamp whose anchor sits above its foot covered its own halo",
+      "statusText": "fixed 2026-11-17 with DX-GLOWRADIUS (_storeGlowSortY: the halo takes its sprite's sort line plus the glow bias)"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "bilateral upsample",
+        "depth-aware upsample",
+        "light rim",
+        "edge-aware light"
+      ],
+      "records": [],
+      "result": "",
+      "next": "Why not cheaper: WebGL cannot read the canvas depth; a full-resolution G-buffer for the key costs ~4 x its 1.3 ms in Predator by night (E-463), as much as the light at resolution 1; Pixi compares depth with less only, so entity pixels cannot be picked by depth: the stencil (as E-457's unshaded pass). Pack the floor/entity mark in the light texture's alpha (4 reads a pixel, not 8). Estimate 4-6 h with both backends; expected +0.1-0.3 ms GPU a frame at 1080p (GTX 1650) against +4.4 ms for the light at resolution 1. Measure per draw (glFrameRecorder --gpu-draws), Predator light3d and the barrio. Entity-against-entity edges stay bilinear (the colour pass would have to write ids).",
+      "id": "DX-LIGHTEDGES",
+      "kind": "feature",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "Light at reduced resolution stretched without crossing edges: the entities mark the stencil, and the light is shown in two passes (floor pixels take floor texels' light, entity pixels entity texels'), so a head in front of a shaded floor gets no rim of its own light",
+      "statusText": "approved by the owner 2026-11-17, next after DX-BARRIOS' merge (he keeps the light at 0.5 or 0.25, not 1)"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "heightmap depth interleave"
+      ],
+      "records": [],
+      "result": "",
+      "next": "Idea: a pixel never nearer than its own footprint's front (its foot plus frameBase's ry, scaled); cars have pixels well in front of their centre, so the clamp needs each frame's footprint. Or better height maps for the LPC people.",
+      "id": "N-262",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "Pixel depth from approximate height maps: two objects 3-4 px apart interleave pixel by pixel (a person just behind a lamp shows through the lamp's head)",
+      "statusText": "seen 2026-11-17 in Parque Chas at night (the owner's catch)"
+    },
+    {
+      "refs": [],
+      "aliases": [],
+      "records": [],
+      "result": "",
+      "next": "",
+      "id": "N-263",
+      "kind": "bug",
+      "area": "core",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "Public API gaps the DX-BARRIOS docs pass found: DecorationPool is declared in weed.d.ts but not exported (facesInUse unreachable); Decoration.get(i).innerZ changes the sort key only, not a face's depth tie; no facade for a face's normal or height",
+      "statusText": "listed 2026-11-17 by the docs pass of DX-BARRIOS; not fixed"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "tree heightmaps"
+      ],
+      "records": [],
+      "result": "",
+      "next": "",
+      "id": "DX-TREEHEIGHTS",
+      "kind": "feature",
+      "area": "render",
+      "status": "parked",
+      "date": "2026-11-17",
+      "title": "The Editor de Barrios' 3D trees export real height maps for trunk and branches (their light and shadows follow the branches); the engine needs a per-decoration base height (as faceHeight) for pieces hung up a trunk",
+      "statusText": "the owner's idea 2026-11-17, after this round"
+    },
+    {
+      "refs": [],
+      "aliases": [],
+      "records": [],
+      "result": "",
+      "next": "",
+      "id": "DX-BARRIOSTREETS",
+      "kind": "feature",
+      "area": "demo",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "The Editor de Barrios lays streets only in the directions the standard cars are drawn in (their frames' screen angles at 30 deg, no shear), so a car always lines up with its street",
+      "statusText": "the owner's rule 2026-11-17 (not an engine change: the assets are as they are, the editor adapts); Parque Chas' real streets are in real_*.js (snapped to the old K=0.16 headings)"
+    },
+    {
+      "refs": [],
+      "aliases": [],
+      "records": [],
+      "result": "",
+      "next": "",
+      "id": "DX-PIXELARTCAM",
+      "kind": "feature",
+      "area": "render",
+      "status": "parked",
+      "date": "2026-11-17",
+      "title": "A pixel-art camera mode: whole-number zoom, the camera snapped to world pixels, the light resolution tied to the zoom (one light texel a world pixel) with lighting.pixelArt",
+      "statusText": "talked over 2026-11-17: a style (crisp light, no shadow crawl), not the fix for the light rim (the barrio's sprites are not 1:1 with the world grid); DX-LIGHTEDGES is that fix"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "entity hierarchy",
+        "scene graph",
+        "nested children"
+      ],
+      "records": [],
+      "result": "",
+      "next": "Design first: who writes a body-less parent's pose (logic, before physics publishes) and a deep child's (one pass in depth order after the step, or pre-render's composition); the link lists by depth; despawn of a subtree; save remap; the cost of an entity with no link stays one read. Then DX-PARENTBENCH decides.",
+      "id": "DX-PARENTTREE",
+      "kind": "feature",
+      "area": "core",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "Entity hierarchies as a game engine has them: an entity with N children, children with children to any depth, parents with or without a body; each pose composed down the tree once a frame (parents before children)",
+      "statusText": "approved by the owner 2026-11-17 for the backlog, not now: \"the best version of this feature\", tested and measured to the end (DX-PARENTBENCH). v1 (DX-PARENT) has one level: the parent needs a body, the child has none, so a child is never a parent"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "parent stress scene"
+      ],
+      "records": [],
+      "result": "",
+      "next": "",
+      "id": "DX-PARENTBENCH",
+      "kind": "tools",
+      "area": "bench",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "A stress scene for Transform.parent: thousands of parents that move and turn, K children each (sprites and lights; depth D once DX-PARENTTREE lands), a knob that unlinks them and moves the children from logic instead; physics' and pre-render's STEP_MS a thousand children, ABAB against the same scene without children",
+      "statusText": "approved by the owner 2026-11-17 for the backlog, not now: DX-PARENT is tested (14 tests on the shipped workers) but not measured with many children"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "faces gate"
+      ],
+      "records": [],
+      "result": "",
+      "next": "",
+      "id": "DX-FACESBENCH",
+      "kind": "tools",
+      "area": "bench",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "Faces measured: DX-FACEDEPTH made a scene with faces and no map sheet pay pixel depth and the edge pass; the gate of faceLightScene against main (every worker's STEP_MS and the GPU per draw), and Parque Chas' ~335 000 faces by day and night (the G-buffer pass with faces: E-463)",
+      "statusText": "listed 2026-11-17 with the owner: a feature of DX-BARRIOS tested but not measured"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "maps cost",
+        "twin format bench"
+      ],
+      "records": [],
+      "result": "",
+      "next": "",
+      "id": "DX-MAPSBENCH",
+      "kind": "tools",
+      "area": "bench",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "Maps measured: what each kind costs in the G-buffer pass and in memory (heightMap, normalMap, DX-RELIEF's reliefMap, normal maps at half size), the twin page's formats A/B/C (E-497's tournament), E-496's saving (a twin only for mapped sheets, shared rectangles: memory and load time) and DX-MAPCAMERA's height rescale at load",
+      "statusText": "listed 2026-11-17 with the owner: features of DX-BARRIOS tested but not measured; E-497 is the tournament's own row"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "halo bench"
+      ],
+      "records": [],
+      "result": "",
+      "next": "",
+      "id": "DX-GLOWBENCH",
+      "kind": "tools",
+      "area": "bench",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "Halos measured: thousands of lights with a halo in lightGlow 'sprite' (DX-GLOWRADIUS: a sort key a halo, the unshaded pass on) against 'add', pre-render's STEP_MS and the GPU per draw",
+      "statusText": "listed 2026-11-17 with the owner: DX-GLOWRADIUS is tested and checked in captures, not measured with many halos"
     }
   ],
   "records": [
@@ -33698,6 +33924,34 @@
       "title": "E-327 not pursued now: the rotation skip's ceiling is about 2 % of the physics thread, under every scene's detection limit",
       "verdict": "note",
       "text": "**Not pursued now (judgment, no code).** Skipping unchanged rotations saves at most the rotation half of publishPose, about 2 % of the physics thread (R-1100: publishPose is 4.2 %). That is under the detection limit of every scene that could measure it: the main PC's 3 % bar, and the ASUS reads ±2–4 % at 8 pairs. Reopen it when publishPose grows (more bodies a step), or bundle it with the copy as a pool task, which is the larger half of the idea."
+    },
+    {
+      "id": "R-1258",
+      "date": "2026-11-17",
+      "time": "04:07",
+      "timeFrom": "recorded",
+      "title": "DX-BARRIOS merged into main: captures byte-identical, Predator crowd=2.5 and light3d night gates NEUTRAL",
+      "verdict": "note",
+      "text": "**DX-BARRIOS merged into main (700d9650, dist fb505e00): no regression against main.**\n\n- Captures byte-identical against main's src (compareCaptures --vs main), dxCaptureScene: hour 12 and 22 on WebGL and\n  WebGPU, raycast=1, deco=1, lampCone=40: 0 of 921 600 pixels differ in each.\n- Predator crowd=2.5, 4 pairs (--vs main --hyp-rev dx/barrios, pool): logic 6.65 -> 6.41 ms (paired +0.1 %), spatial\n  10.54 -> 9.95 (-1.8 %), physics 14.44 -> 13.83 (+0.7 %), pre-render 6.28 -> 6.13 (+1.1 %); renderer 3.2 -> 3.5 ms under\n  the 6 ms floor, not judged (particle, unreached, moved as much). NEUTRAL.\n- Predator crowd=2.5 light3d=1 hour=22, 4 pairs, every worker moved together (drift); against the others: renderer\n  6.85 -> 6.43 ms (-0.3 %), pre-render 11.12 -> 10.38 (-3.5 %), physics +1.5 %, logic +2.2 %, spatial +2.7 %. NEUTRAL.\n- A first Predator gate at its default load had every worker under the 6 ms floor and whole pairs moving +20..+50 % and\n  -15..-25 % on every worker alike: no reading (the crowd=2.5 rows replace it).\n- Suites on main after the merge: test:node 2994/2994, test:demos 121/121, check:types green; bundles: check:dist fresh,\n  test:bundle 8/8, test:node:bundle 322/322.",
+      "commits": [
+        "700d9650",
+        "fb505e00"
+      ]
+    },
+    {
+      "id": "R-1259",
+      "date": "2026-11-17",
+      "time": "04:07",
+      "timeFrom": "recorded",
+      "title": "Lamp halos over their lamp, unshaded, under what stands in front (glowRadius, the sort line, the foot)",
+      "verdict": "kept",
+      "text": "**DX-GLOWRADIUS built for the barrio's lamps (the owner's design: an unshaded sprite just over its lamp).**\n\nLightEmitter.glowRadius (px; 0 keeps 0.85 of the radius); 'sprite' halos sort on their entity's sprite line (N-261: a lamp\nanchored above its foot drew over its halo), stand at their light's foot with the anchor lifting the picture (a person\njust behind the lamp no longer hid it and showed it through their soft edge), and are unshaded (the gradient's frame\nmarked). Buenos Aires 22 h, one lamp (10 x 8 px box on its cap, of 255): no halo 53.8, the old halo 52.4 (0.087), glow 0.6\nbefore the fixes 68.2, after 116.1; a tree in front covers the halo. Tried and dropped on the way: a lead in front of the\nfoot (2 px changed nothing, 40 px made the halo vanish, unexplained), the halo on a layer above (the owner: a tree in\nfront must cover it). The demo also samples its atlas nearest: a scaled sprite's half-transparent outline took the light\nof what stood behind it (a bright rim round a head in shade). The rim the half-resolution light leaves at edges is\nDX-LIGHTEDGES (not a regression: main has it).",
+      "commits": [
+        "4d24daaf",
+        "fdc84490",
+        "09b7a57d",
+        "05dcb7b4"
+      ]
     }
   ],
   "leads": [
