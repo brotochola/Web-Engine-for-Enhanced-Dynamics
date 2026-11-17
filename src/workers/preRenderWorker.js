@@ -4565,6 +4565,9 @@ class PreRenderWorker extends AbstractWorker {
         const lightBrightness = LightEmitter.brightness;
         const lightDirC = LightEmitter.dirC;
         const lightDirS = LightEmitter.dirS;
+        // N-265: with the lamps' shadow map, a light at the floor's height casts nothing there (lampCasts): it takes no
+        // tile and no slot of maxShadowCastingLights, and nothing is stamped for it.
+        const lightElevation = this.config.lighting?.lampShadows === 'map' ? LightEmitter.elevation : null;
         // DX-SPOT: a cone is measured on the floor (y over groundScaleY).
         const invG = 1 / cameraFloorScaleY(this.config);
         const offsetX = LightEmitter.offsetX;
@@ -4592,6 +4595,7 @@ class PreRenderWorker extends AbstractWorker {
             if (!lightEnabled[id] || !lightCasts[id]) continue;
             const influence = lightRadius[id];
             if (!(influence > 0)) continue;
+            if (lightElevation !== null && !(lightElevation[id] > 0)) continue;
             const ox = offsetX[id];
             const oy = offsetY[id];
             const x = worldX[id] + ox * rotC[id] - oy * rotS[id];
