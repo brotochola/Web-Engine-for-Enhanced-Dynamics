@@ -2249,7 +2249,7 @@ class PreRenderWorker extends AbstractWorker {
                 } catch (err) {
                     throw new Error(`[PRE_RENDER] gpuPack.wasm did not load: ${err?.message ?? err}`, { cause: err });
                 }
-                // E-82b: plain sprites in two streams (a nearest atlas, which snaps every pose, keeps 15-float rows).
+                // E-82b: plain sprites in two streams (E-513: a nearest atlas too, its pixel snap on the poses).
                 this._gpuSplit = true;
                 this._gpuStaticGen.fill(0);
                 this._gpuIndexed = !!caps.indexedSprites;

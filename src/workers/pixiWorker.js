@@ -3158,9 +3158,9 @@ class PixiRenderer extends AbstractWorker {
       poseInterp: this._queueInterp,
       data: this._pixiInstanceRows,
       gpuPack: this._pixiGpuPack,
-      // E-82b: the plain sprites in two streams, the statics uploaded when they change. A nearest atlas snaps every
-      // pose, which the split kernel does not pack, so it keeps 15-float rows.
-      split: !this._queueInterp && this.atlasScaleMode !== 'nearest',
+      // E-82b: the plain sprites in two streams, the statics uploaded when they change. E-513: a nearest atlas too (its
+      // pixel snap goes on the poses after the split and indexed packs: gpuPackClient.js snapPoseRows).
+      split: !this._queueInterp,
       // E-162: with the queue's indexed frames (renderer.indexedSprites), where their statics go: a texture through the
       // record texture helper (WebGL), or a storage buffer within the device's binding size (WebGPU), which a keyed
       // batch's compute pass scatters into (E-187).
