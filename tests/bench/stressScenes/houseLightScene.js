@@ -126,7 +126,8 @@ export class HouseLightScene extends Scene {
     worldHeight: H,
     seed: 0x1a5,
     spatial: { numberOfSpatialWorkers: 1, cellSize: 64, maxNeighbors: 8, maxEntitiesPerCell: 64 },
-    logic: { numberOfLogicWorkers: 1 },
+    // The barrio's Casa ticks every 30 frames (its post lamp's hours), as the barrio runs it.
+    logic: { numberOfLogicWorkers: 1, staggeredUpdates: true },
     physics: { subStepCount: 1, gravity: { x: 0, y: 0 } },
     particle: { maxParticles: 0, decals: false },
     decoration: { maxDecorations: 4096 },
