@@ -63,6 +63,10 @@ const SELF_SHADOW = WEED.params?.get('selfShadow') !== '0';
 const PAN_DRIFT = param('pan', 0);
 /** `?panY=-60`: the same drift up or down the screen (negative: north), to film what a vertical pan does to walls. */
 const PAN_DRIFT_Y = param('panY', 0);
+/** `?focus=14668,5252&zoom=4`: the camera starts with that world point in the middle of the view, at that zoom, to film or
+ * capture one place again (the overlay's cam is the view's top-left corner: add half the canvas over the zoom). */
+const START_FOCUS = (WEED.params?.get('focus') || '').split(',').map(Number);
+const START_ZOOM = param('zoom', 0);
 const CORES = globalThis.navigator?.hardwareConcurrency || 4;
 /**
  * `?physicsWorkers=N`: Box2D's solver threads (physics.numberOfPhysicsWorkers; the engine's default, 4, without it), to
@@ -354,6 +358,11 @@ export class BuenosAiresScene extends Scene {
       this.focusX = META.inicio[0];
       this.focusY = META.inicio[1];
     }
+    if (START_FOCUS.length === 2 && START_FOCUS.every(Number.isFinite)) {
+      this.focusX = START_FOCUS[0];
+      this.focusY = START_FOCUS[1];
+    }
+    if (START_ZOOM > 0) this.zoomTarget = START_ZOOM;
   }
 
   /** The floor's baked data, into shared memory, into the floor layer's textures (pisoPartes: where each part starts). */
