@@ -10,7 +10,9 @@
  *   lamp's ray at
  *   L + (P - L) · E / (E - z) (DX-LAMPPANO: compressed into the floor's half of the tile out to the horizon, the stretch
  *   drawn at most LAMP_MAP_MAX_STRETCH), in the tile, drawn with w = (E - z) / E so the
- *   heights spread over the shadow as the rays carry them, cut to the tile by the fragment. The tile's lamp is the tiles'
+ *   heights spread over the shadow as the rays carry them, cut to the tile by the fragment. N-276: each fragment then takes
+ *   its texel and its depth from where its own ray meets the volume's face (lampVolumeRayT), since the vertices'
+ *   interpolation is the projection only within the reach. The tile's lamp is the tiles'
  *   texture's row 0 (writeLampTile: its floor point, height and reach). A mesh whose floor footprint (its anchor, give or
  *   take its reach: the farthest of its vertices, MESH_UV_VERT.REACH) lies past one edge of the tile is left out in its
  *   vertices, every one of them alike: its landing lies further past it. So is one of the lamp's own entity (the tiles'
@@ -19,7 +21,9 @@
  */
 
 import { MAP_TEXEL_WGSL, SUN_MAP_ZMAX } from './sunShadowMap.js';
-import { LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX, LAMP_PANO_GLSL, LAMP_PANO_WGSL, lampClipZGlsl, lampClipZWgsl } from './lampShadowMap.js';
+import {
+  LAMP_MAP_MAX_STRETCH, LAMP_MAP_ZMAX, LAMP_PANO_GLSL, LAMP_PANO_INNER, LAMP_PANO_WGSL, lampClipZGlsl, lampClipZWgsl, lampPanoLanding,
+} from './lampShadowMap.js';
 import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
 
 /** The source with `add` after its one `find`, or a clear error. */
@@ -81,9 +85,9 @@ const LAMP_GLSL = `
   // DX-SHADOW3D (F7): towards this vertex's lamp (volumeShadowMap.js): the floor point under the vertex lands along the
   // lamp's ray, in its tile, drawn with w = 1 / its stretch. A mesh past an edge of the tile is left out.
 ${VOLUME_ID_GLSL}
-  vSunZ = 0.0;
+  vLampP = vec3(0.0);
   vTileUvW = vec3(-1.0, -1.0, 1.0);
-  vLampE = 1.0;
+  vLamp = vec4(0.0, 0.0, 1.0, 1.0);
   // E-389, E-453: one draw for every tile, an instance a tile. E-508: the instance's entry in its draw's list (the tiles'
   // texture's row 2, from uLampVolume.x): the tile whose lamp it lands towards, and the half tile it draws into.
   vec4 lampEntry = texelFetch(uLampTiles, ivec2(int(uLampVolume.x + 0.5) + gl_InstanceID, 2), 0);
@@ -110,14 +114,15 @@ ${VOLUME_ID_GLSL}
   vec3 lampClip = mvp * vec3(lampPx, 1.0);
   gl_Position = vec4(lampClip.xy * lampW, ${lampClipZGlsl('lampW')}, lampW);
   vTileUvW = vec3(lampUv * lampW, lampW);
-  vSunZ = lampZ;
-  vLampE = lamp.z;`;
+  // N-276: the vertex's point in 3D (floor x, y; height) and its lamp (floor x, y; height; reach), for the fragment's ray.
+  vLampP = vec3(world.x, world.y * uLampVolume.w, lampZ);
+  vLamp = lamp;`;
 
 /**
  * The lamps' map's vertex shader for the volumes (WebGL): meshUvFill.vert.glsl landing each vertex towards the lamp of
  * its tile, the instance (E-389, E-453: the batch's vertices drawn once a tile in use), the tile's lamp and owner read
  * from the tiles' texture (uLampVolume: the draw's list's first entry (E-508: lampVolumeCache.js), tiles a row, a tile's
- * texels, 1 / groundScaleY; uSunShadow: 0, 0, 1 for the volumes' floor, 1 / heightScaleY), its height out (vSunZ) and the
+ * texels, 1 / groundScaleY; uSunShadow: 0, 0, 1 for the volumes' floor, 1 / heightScaleY), its point in 3D and its lamp out (vLampP, vLamp: N-276) and the
  * tile's own coordinates for the fragment's clip.
  * @param {string} source meshUvFill.vert.glsl
  * @returns {string}
@@ -125,7 +130,7 @@ ${VOLUME_ID_GLSL}
 export function volumeLampVertex(source) {
   const what = "the lamps' map's volumes";
   const decl =
-    'out float vSunZ;\nout vec3 vTileUvW;\nflat out float vSunId;\nflat out float vLampE;\n' +
+    'out vec3 vLampP;\nout vec3 vTileUvW;\nflat out float vSunId;\nflat out vec4 vLamp;\n' +
     "// DX-SHADOW3D (F7): uLampVolume: the list's first entry, tiles a row, a tile's texels, 1 / groundScaleY; uLampTiles:\n" +
     "// the tiles' lamps (row 0), their owners (row 1: the entity whose own volume casts nothing for the lamp) and the\n" +
     "// draws' lists (row 2, E-508: an instance's tile and the half tile it draws into).\n" +
@@ -135,23 +140,82 @@ export function volumeLampVertex(source) {
 }
 
 /**
+ * N-276: where a lamps' map texel's own ray meets a volume's face, as its place t along the ray (0 at the lamp, 1 on the
+ * floor; the point's height E (1 - t)). The ray runs from the lamp (floor x, y, height E) to the floor point the texel's
+ * place (u, v) in its half tile stands for (lampPanoLanding); the face is the plane through q with normal n. Edge-on (the
+ * ray in the plane), q's own. A texel then keeps 1 / (1 + t) (lampRayDepth) at the depth (S - 1 / t) / (S - 1), S the
+ * stretch's cap (lampClipZGlsl's). The shaders' lampVolumeT, which take n from their point's screen derivatives.
+ *
+ * Why: the vertices' interpolation is the projection only within the reach. The pano compresses the ring past it, and a
+ * vertex above the lamp is drawn at the stretch's cap, so the inside of a triangle with a vertex there (a house's front,
+ * taller than its lamp) got depths far nearer the lamp than its face is, won the texels of what stood in front of it (a
+ * person's), and its walls, which skip their own house's texels (N-273), stood lit where the person's shadow fell.
+ * @returns {number} t; 0 or less where the plane meets the ray at or above the lamp
+ */
+export function lampVolumeRayT(qx, qy, qz, nx, ny, nz, u, v, lampX, lampY, elevation, reach) {
+  const off = lampPanoLanding(u, v, reach, RAY_OFF);
+  const dx = off[0];
+  const dy = off[1];
+  const dz = -elevation;
+  const den = nx * dx + ny * dy + nz * dz;
+  const nLen = Math.sqrt(nx * nx + ny * ny + nz * nz);
+  const dLen = Math.sqrt(dx * dx + dy * dy + dz * dz);
+  if (Math.abs(den) <= 1e-4 * nLen * dLen) return (elevation - qz) / elevation;
+  return (nx * (qx - lampX) + ny * (qy - lampY) + nz * (qz - elevation)) / den;
+}
+const RAY_OFF = new Float64Array(2);
+
+const INNER = LAMP_PANO_INNER.toFixed(2);
+const OUTER = (1 - LAMP_PANO_INNER).toFixed(2);
+const MIN_T = (1 / LAMP_MAP_MAX_STRETCH).toFixed(6);
+const STRETCH = LAMP_MAP_MAX_STRETCH.toFixed(1);
+const STRETCH_LESS = (LAMP_MAP_MAX_STRETCH - 1).toFixed(1);
+
+// N-276: lampVolumeRayT in GLSL, its normal from the point's screen derivatives (q lies on its triangle wherever the
+// triangle was drawn, so its steps across the screen lie in the face's plane).
+const LAMP_VOLUME_T_GLSL = `
+float lampVolumeT(vec3 q, vec3 dqx, vec3 dqy, vec2 tuv, vec4 lamp) {
+  vec3 n = cross(dqx, dqy);
+  vec2 d = tuv - 0.5;
+  float c = 2.0 * length(d);
+  float k = c <= ${INNER} ? c / ${INNER} : ${OUTER} / max(1.0 - c, 1e-4);
+  vec3 dir = vec3(c > 1e-6 ? d * (2.0 * k * lamp.w / c) : vec2(0.0), -lamp.z);
+  float den = dot(n, dir);
+  if (abs(den) <= 1e-4 * length(n) * length(dir)) return (lamp.z - q.z) / lamp.z;
+  return dot(n, q - lamp.xyz) / den;
+}
+`;
+
+// The lamps' map volumes' fragment's body (WebGL): the texel's ray against the face (lampVolumeT), discarded past the tile
+// or at or above the lamp (nothing for the floor's half), its depth written (N-276: no longer the vertices').
+const VOLUME_LAMP_BODY_GLSL = `  vec3 dqx = dFdx(vLampP);
+  vec3 dqy = dFdy(vLampP);
+  vec2 tuv = vTileUvW.xy / vTileUvW.z;
+  if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) discard;
+  float t = lampVolumeT(vLampP, dqx, dqy, tuv, vLamp);
+  if (t <= 0.0) discard;
+  t = clamp(t, ${MIN_T}, 1.0);
+  float depth = (${STRETCH} - 1.0 / t) / ${STRETCH_LESS};
+  gl_FragDepth = depth;
+  // N-211: the point's place along its lamp's ray (lampShadowMap.js lampRayDepth), not its height.
+  float h = 1.0 / (1.0 + t);
+  int id = int(vSunId + 0.5);
+  finalColor = vec4(h, 1.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);`;
+
+/**
  * The volumes' fragment in the lamps' map (WebGL): the height and the volume's entity, cut to the draw's tile; the depth
- * that keeps the highest comes from the vertex (lampClipZGlsl).
+ * that keeps the highest, from where the texel's own ray meets the face (N-276: lampVolumeRayT).
  */
 export const VOLUME_LAMP_FRAGMENT = `#version 300 es
 precision highp float;
-in float vSunZ;
+in vec3 vLampP;
 in vec3 vTileUvW;
 flat in float vSunId;
-flat in float vLampE;
+flat in vec4 vLamp;
 out vec4 finalColor;
+${LAMP_VOLUME_T_GLSL}
 void main() {
-  vec2 tuv = vTileUvW.xy / vTileUvW.z;
-  if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) discard;
-  // N-211: the point's place along its lamp's ray (lampShadowMap.js lampRayDepth), not its height.
-  float h = clamp(1.0 / (1.0 + abs(vLampE - vSunZ) / max(vLampE, 1e-3)), 0.0, 1.0);
-  int id = int(vSunId + 0.5);
-  finalColor = vec4(h, 1.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
+${VOLUME_LAMP_BODY_GLSL}
 }
 `;
 
@@ -162,19 +226,16 @@ void main() {
 export const VOLUME_LAMP_CACHE_FRAGMENT = `#version 300 es
 precision highp float;
 precision highp int;
-in float vSunZ;
+in vec3 vLampP;
 in vec3 vTileUvW;
 flat in float vSunId;
-flat in float vLampE;
+flat in vec4 vLamp;
 layout(location = 0) out vec4 finalColor;
 layout(location = 1) out vec4 depthBits;
+${LAMP_VOLUME_T_GLSL}
 void main() {
-  vec2 tuv = vTileUvW.xy / vTileUvW.z;
-  if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) discard;
-  float h = clamp(1.0 / (1.0 + abs(vLampE - vSunZ) / max(vLampE, 1e-3)), 0.0, 1.0);
-  int id = int(vSunId + 0.5);
-  finalColor = vec4(h, 1.0, float(id >> 8) / 255.0, float(id & 255) / 255.0);
-  uint b = floatBitsToUint(gl_FragCoord.z);
+${VOLUME_LAMP_BODY_GLSL}
+  uint b = floatBitsToUint(depth);
   depthBits = vec4(float(b >> 24u), float((b >> 16u) & 255u), float((b >> 8u) & 255u), float(b & 255u)) / 255.0;
 }
 `;
@@ -207,20 +268,56 @@ ${VOLUME_ID_WGSL}  out.vTileUvW = vec3<f32>(-1.0, -1.0, 1.0);
   let lampClip = mvp * vec3<f32>(lampPx, 1.0);
   out.position = vec4<f32>(lampClip.xy * lampW, ${lampClipZWgsl('lampW')}, lampW);
   out.vTileUvW = vec3<f32>(lampUv * lampW, lampW);
-  out.vSunZ = lampZ;
-  out.vLampE = lamp.z;
+  // N-276: the vertex's point in 3D and its lamp, for the fragment's ray (LAMP_GLSL).
+  out.vLampP = vec3<f32>(world.x, world.y * lampInvG, lampZ);
+  out.vLamp = lamp;
 `;
 
 const LAMP_FRAGMENT_WGSL = `
 ${MAP_TEXEL_WGSL}
-// DX-SHADOW3D (F7): a volume's height where its lamp's ray lands, in that lamp's tile, the highest kept by its depth
-// (which its vertices write: lampClipZWgsl) with the volume's entity.
-@fragment
-fn mainFragLamp(in: VertexOut) -> @location(0) vec4<f32> {
+// N-276: lampVolumeRayT in WGSL (LAMP_VOLUME_T_GLSL), its normal from the point's screen derivatives.
+fn lampVolumeT(q: vec3<f32>, dqx: vec3<f32>, dqy: vec3<f32>, tuv: vec2<f32>, lamp: vec4<f32>) -> f32 {
+  let n = cross(dqx, dqy);
+  let d = tuv - 0.5;
+  let c = 2.0 * length(d);
+  let k = select(${OUTER} / max(1.0 - c, 1e-4), c / ${INNER}, c <= ${INNER});
+  var off = vec2<f32>(0.0);
+  if (c > 1e-6) { off = d * (2.0 * k * lamp.w / c); }
+  let dir = vec3<f32>(off, -lamp.z);
+  let den = dot(n, dir);
+  if (abs(den) <= 1e-4 * length(n) * length(dir)) { return (lamp.z - q.z) / lamp.z; }
+  return dot(n, q - lamp.xyz) / den;
+}
+
+// A volume's texel in its lamp's tile (x: 1 / (1 + t)) and its depth (y), from where the texel's own ray meets the face
+// (N-276); w < 0 for none (past the tile, or at or above the lamp).
+fn lampVolumeTexel(in: VertexOut) -> vec4<f32> {
+  let dqx = dpdx(in.vLampP);
+  let dqy = dpdy(in.vLampP);
   let tuv = in.vTileUvW.xy / in.vTileUvW.z;
-  if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) { discard; }
+  if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) { return vec4<f32>(-1.0); }
+  let t0 = lampVolumeT(in.vLampP, dqx, dqy, tuv, in.vLamp);
+  if (t0 <= 0.0) { return vec4<f32>(-1.0); }
+  let t = clamp(t0, ${MIN_T}, 1.0);
+  return vec4<f32>(1.0 / (1.0 + t), (${STRETCH} - 1.0 / t) / ${STRETCH_LESS}, 0.0, 1.0);
+}
+
+struct LampVolumeOut {
+  @location(0) color: vec4<f32>,
+  @builtin(frag_depth) depth: f32,
+}
+
+// DX-SHADOW3D (F7): a volume's place where its lamp's ray lands, in that lamp's tile, the nearest the lamp kept by its
+// depth with the volume's entity.
+@fragment
+fn mainFragLamp(in: VertexOut) -> LampVolumeOut {
+  let texel = lampVolumeTexel(in);
+  if (texel.w < 0.0) { discard; }
+  var o: LampVolumeOut;
   // N-211: the point's place along its lamp's ray (lampRayDepth).
-  return weedMapTexel(${LAMP_MAP_ZMAX}.0 / (1.0 + abs(in.vLampE - in.vSunZ) / max(in.vLampE, 1e-3)), in.vSunId, 1.0);
+  o.color = weedMapTexel(${LAMP_MAP_ZMAX}.0 * texel.x, in.vSunId, 1.0);
+  o.depth = texel.y;
+  return o;
 }
 
 // E-508: mainFragLamp for the lamps' volumes' cache, a target of two colours: the texel, and its depth's float as four
@@ -228,15 +325,17 @@ fn mainFragLamp(in: VertexOut) -> @location(0) vec4<f32> {
 struct LampCacheOut {
   @location(0) color: vec4<f32>,
   @location(1) depthBits: vec4<f32>,
+  @builtin(frag_depth) depth: f32,
 }
 
 @fragment
 fn mainFragLampCache(in: VertexOut) -> LampCacheOut {
-  let tuv = in.vTileUvW.xy / in.vTileUvW.z;
-  if (tuv.x < 0.0 || tuv.y < 0.0 || tuv.x >= 1.0 || tuv.y >= 1.0) { discard; }
+  let texel = lampVolumeTexel(in);
+  if (texel.w < 0.0) { discard; }
   var o: LampCacheOut;
-  o.color = weedMapTexel(${LAMP_MAP_ZMAX}.0 / (1.0 + abs(in.vLampE - in.vSunZ) / max(in.vLampE, 1e-3)), in.vSunId, 1.0);
-  let b = bitcast<u32>(in.position.z);
+  o.color = weedMapTexel(${LAMP_MAP_ZMAX}.0 * texel.x, in.vSunId, 1.0);
+  o.depth = texel.y;
+  let b = bitcast<u32>(texel.y);
   o.depthBits = vec4<f32>(f32(b >> 24u), f32((b >> 16u) & 255u), f32((b >> 8u) & 255u), f32(b & 255u)) / 255.0;
   return o;
 }
@@ -269,7 +368,7 @@ export function volumeLampWgsl(source) {
   out = after(
     out,
     '  @location(7) vMeshUV: vec2<f32>,\n',
-    '  @location(8) vSunZ: f32,\n  @location(9) vTileUvW: vec3<f32>,\n  @location(10) @interpolate(flat) vSunId: f32,\n  @location(11) @interpolate(flat) vLampE: f32,\n',
+    '  @location(8) vLampP: vec3<f32>,\n  @location(9) vTileUvW: vec3<f32>,\n  @location(10) @interpolate(flat) vSunId: f32,\n  @location(11) @interpolate(flat) vLamp: vec4<f32>,\n',
     what,
   );
   // E-389, E-453: the instance's number (its entry in the draw's list, E-508), after the record's four vec4.

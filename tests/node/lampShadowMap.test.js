@@ -5,9 +5,11 @@ import assert from 'node:assert/strict';
 
 import {
   LAMP_MAP_MAX_STRETCH, LAMP_MAP_MAX_TEXELS, LAMP_PANO_INNER, autoLampTileSize, lampColumnGrid, lampColumnIndex,
-  lampLanding, lampPanoTexel, lampPanoUv, lampTileLayout, writeLampTile, writeLampTileOwner,
+  lampLanding, lampPanoLanding, lampPanoTexel, lampPanoUv, lampTileLayout, writeLampTile, writeLampTileOwner,
 } from '../../src/render/lampShadowMap.js';
-import { volumeLampVertex, volumeLampWgsl, writeVolumeLampTerms } from '../../src/render/volumeShadowMap.js';
+import {
+  VOLUME_LAMP_CACHE_FRAGMENT, VOLUME_LAMP_FRAGMENT, lampVolumeRayT, volumeLampVertex, volumeLampWgsl, writeVolumeLampTerms,
+} from '../../src/render/volumeShadowMap.js';
 import fs from 'node:fs';
 
 const close = (a, b, eps = 1e-9) => assert.ok(Math.abs(a - b) < eps, `${a} ≈ ${b}`);
@@ -54,6 +56,48 @@ test('DX-LAMPPANO: a landing goes linearly into its half within the reach, the r
   assert.ok(Math.abs(at(300.001) - at(299.999)) < 1e-5);
   assert.ok(at(600) > at(300) && at(6000) > at(600) && at(1e9) < 1);
   close(at(600), 0.5 + 0.5 * (LAMP_PANO_INNER + (1 - LAMP_PANO_INNER) * 0.5), 1e-12);
+});
+
+test('N-276: a place in a half tile gives its landing back, within the reach and in the ring', () => {
+  const uv = new Float64Array(2);
+  const back = new Float64Array(2);
+  for (const [dx, dy] of [[30, -40], [0, 0], [-250, 10], [600, 900], [-5000, 20]]) {
+    lampPanoUv(dx, dy, 260, uv);
+    lampPanoLanding(uv[0], uv[1], 260, back);
+    close(back[0], dx, 1e-7 * Math.max(1, Math.abs(dx)));
+    close(back[1], dy, 1e-7 * Math.max(1, Math.abs(dy)));
+  }
+});
+
+test('N-276: a volume\'s texel is where its own ray meets the face, whatever point of the face the fragment stood for', () => {
+  // A house's front (the plane y = 400) under a lamp at (410, 460), 50 px up, its reach 260; the house is taller than the
+  // lamp, so its top vertices are drawn at the stretch's cap and its front's inside was interpolated far nearer the lamp
+  // than the front is. Each texel's ray meets the front where lampLanding lands the front's point there, inside the reach
+  // and in the ring past it, from any point of the face (one above the lamp too) and its normal.
+  const uv = new Float64Array(2);
+  const land = new Float64Array(2);
+  for (const z of [0, 5, 25, 45, 49]) {
+    lampLanding(330, 400, z, 410, 460, 50, land);
+    lampPanoUv(land[0] - 410, land[1] - 460, 260, uv);
+    const t = lampVolumeRayT(500, 400, 70, 0, 1, 0, uv[0], uv[1], 410, 460, 50, 260);
+    close(50 * (1 - t), z, 1e-6);
+  }
+  // A roof above the lamp meets every ray behind the lamp: nothing for the floor's half. One under it: where the ray
+  // comes down to its height.
+  lampPanoUv(-30, -100, 260, uv);
+  assert.ok(lampVolumeRayT(400, 380, 80, 0, 0, 1, uv[0], uv[1], 410, 460, 50, 260) <= 0);
+  close(lampVolumeRayT(400, 380, 20, 0, 0, 1, uv[0], uv[1], 410, 460, 50, 260), 0.6, 1e-9);
+  // Edge-on (the ray in the face's plane: a wall along the ray), the point's own place.
+  close(lampVolumeRayT(410, 300, 30, 1, 0, 0, 0.5, 0.25, 410, 460, 50, 260), 0.4, 1e-12);
+  // The shaders write that depth and that place, not the vertices': WebGL and WebGPU, the map and its cache (E-508).
+  for (const glsl of [VOLUME_LAMP_FRAGMENT, VOLUME_LAMP_CACHE_FRAGMENT]) {
+    assert.ok(glsl.includes('float t = lampVolumeT(vLampP, dqx, dqy, tuv, vLamp);') && glsl.includes('gl_FragDepth = depth;'));
+    assert.ok(glsl.indexOf('dFdx(vLampP)') < glsl.indexOf('discard'), 'the derivatives before any discard');
+  }
+  assert.ok(VOLUME_LAMP_CACHE_FRAGMENT.includes('floatBitsToUint(depth)'), 'the cache keeps the depth written');
+  const wgsl = volumeLampWgsl(fs.readFileSync(new URL('../../src/shaders/meshUvFill.wgsl', import.meta.url), 'utf8'));
+  assert.equal(wgsl.split('@builtin(frag_depth) depth: f32,').length, 3, 'both lamp entries write their depth');
+  assert.ok(wgsl.includes('let b = bitcast<u32>(texel.y);'));
 });
 
 test('DX-LAMPPANO: a point higher than the lamp reads the ceiling, where a taller caster nearer the lamp lands with it', () => {

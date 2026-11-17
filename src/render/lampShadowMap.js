@@ -99,6 +99,23 @@ export function lampPanoUv(dx, dy, reach, out) {
 }
 
 /**
+ * N-276: lampPanoUv backwards: the landing (its offset to the lamp on the floor) a place (u, v) in a half tile stands for.
+ * Past the half's edge (its square's corners) it stays at 1 / 1e-4 of the reach's ring. The volumes' fragments' ray
+ * (volumeShadowMap.js lampVolumeRayT).
+ * @param {Float64Array|number[]} out dx, dy
+ */
+export function lampPanoLanding(u, v, reach, out) {
+  const du = u - 0.5;
+  const dv = v - 0.5;
+  const c = 2 * Math.sqrt(du * du + dv * dv);
+  const q = c <= LAMP_PANO_INNER ? c / LAMP_PANO_INNER : (1 - LAMP_PANO_INNER) / Math.max(1 - c, 1e-4);
+  const k = c > 1e-6 ? (2 * q * reach) / c : 0;
+  out[0] = du * k;
+  out[1] = dv * k;
+  return out;
+}
+
+/**
  * DX-LAMPPANO: where a world point reads a lamp's tile: its half (0 the floor, lower than the lamp; 1 the ceiling, higher)
  * and its place there (lampPanoUv of its landing). The light pass's lookup, in JS.
  * @returns {{ half: number, u: number, v: number }}
