@@ -16893,7 +16893,8 @@
         "R-1219",
         "R-1231",
         "R-1236",
-        "R-1238"
+        "R-1238",
+        "R-1240"
       ],
       "rank": 2
     },
@@ -20021,7 +20022,8 @@
         "R-1233",
         "R-1236",
         "R-1237",
-        "R-1239"
+        "R-1239",
+        "R-1240"
       ],
       "rank": 10
     },
@@ -20574,6 +20576,60 @@
       ],
       "records": [
         "R-1239"
+      ]
+    },
+    {
+      "id": "N-253",
+      "title": "A scene with physics cannot boot more than 65 535 entities: physicsHostImpl bootWorld throws when the total entity count passes Box2D MAX_BODIES (65 535), counting every entity, not bodies, so 32-bit entity ids do not lift it",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the capacity agent (boids at 130 000 with ?ids=32)",
+      "date": "2026-11-16",
+      "area": "physics",
+      "kind": "bug",
+      "result": "Boids at 130 000: \"Physics: totalEntityCount 130000 exceeds Box2D MAX_BODIES 65535\" (src/box2d/physicsHostImpl.js bootWorld). Boids at 65 000 held 60 fps with every p99 <= 12.4 ms, so the cap, not the engine speed, set its capacity.",
+      "next": "Check whether Box2D needs one body slot per entity (the pose and moved lists index bodies by entity) or only per body: count bodies, or map entity to body past 65 535; the capacity search on boids past the pool then.",
+      "refs": [],
+      "aliases": [
+        "physics 65535 entity cap"
+      ],
+      "records": [
+        "R-1240"
+      ]
+    },
+    {
+      "id": "N-254",
+      "title": "A scene that fails while booting makes runIntegratedWorkerBenchmark wait out its 318 s watchdog instead of exiting, and measureLib retries once: about 5 minutes of the bench queue lost per failed boot",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the capacity agent",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "Seen at bunnyMark ?bunnies=500000 (500 001 entities with the spawner) and boids past 65 535 with physics.",
+      "next": "Exit as soon as the page reports a boot error (pageerror or the scene failing to start), with the error in the result; no retry on a boot error.",
+      "refs": [],
+      "aliases": [
+        "bench boot failure watchdog"
+      ],
+      "records": [
+        "R-1240"
+      ]
+    },
+    {
+      "id": "N-255",
+      "title": "pruneTestResults (run by runPredatorAbab) deletes anything in tests/results untouched for 7 days, the capacity history included: a week without nightly runs loses it",
+      "status": "open",
+      "statusText": "found 2026-11-16 by the capacity agent",
+      "date": "2026-11-16",
+      "area": "tools",
+      "kind": "bug",
+      "result": "nightlyCapacity writes tests/results/capacity-history.jsonl by default.",
+      "next": "Skip *history.jsonl in the pruner, or default the history outside tests/results; tonight's is in D:/claude/weed-capacity-history.jsonl.",
+      "refs": [],
+      "aliases": [
+        "capacity history pruned"
+      ],
+      "records": [
+        "R-1240"
       ]
     }
   ],
@@ -32781,6 +32837,21 @@
       "commits": [
         "d452bbd2",
         "e884d645"
+      ]
+    },
+    {
+      "id": "R-1240",
+      "date": "2026-11-16",
+      "time": "22:55",
+      "timeFrom": "recorded",
+      "title": "Capacity metric built and baselined: Predator 24 800 (crowd 1.55, spatial's tail breaks first), keyedPack 265 000, bunnyMark 499 999 and boids 65 000 at engine ceilings",
+      "verdict": "note",
+      "text": "**The capacity metric built (runCapacity, nightlyCapacity, merged 30f478e8 and 3e258cbc) and its first baseline: Predator holds 24 800 civilians and soldiers (crowd 1.55) at 60 fps with every worker's p99 in budget, breaking first on spatial's tail; keyedPack 265 000 sprites; bunnyMark and boids sit at engine ceilings (499 999 entities, 65 535 with physics).** The capacity agent, 2026-11-16, its sittings 22:45 to 22:55 (main's engine at 9fbd6d46), AC power, warm-up 8 s, window 10 s, 6 % resolution.\n\nA run passes when:\n- the page presents at least 59 fps;\n- the renderer draws at least 59 frames a second;\n- every worker's frameTotals p99 is at most 16.7 ms.\n\nThe search grows the knob geometrically, bisects in log space and re-runs the edge. The capacity is the largest load that passed every run, at least two. nightlyCapacity measures main's tip in ../weed-ab/pool-capacity and appends a line a scene to a history file. Tonight's history is copied to D:/claude/weed-capacity-history.jsonl: pass it with --history, since tests/results is pruned after 7 days.\n\n| scene | capacity | what breaks first | at capacity |\n| --- | --- | --- | --- |\n| Predator zoom 0.216 | crowd 1.55 = 24 800 | crowd 1.6: spatial0 p99 17.5 ms; crowd 1.75: physics p99 23.8 ms; at crowd 2.1 spatial's p99 is 27.1 ms | spatial0 p99 14.0 ms; physics mean 8.4, p95 11.7 |\n| keyedPack | 265 000 sprites | 280 000: drawn 58.8 fps, tails fine (pre-render p99 10.8 ms) | pre-render p99 14.5 ms (9.9 in the other run) |\n| bunnyMark | 499 999 bunnies (the engine's 500 000 with the spawner) | nothing | pre-render p99 13.4 ms, renderer 12.5 ms |\n| boids | 65 000 (its pool; one probe at 21:47) | nothing: a physics scene cannot boot past 65 535 entities (N-253) | spatial0 p99 12.4 ms |\n\nWhat this says: Predator's capacity is set by spatial's tail before physics' mean (E-476 first, then the physics front). keyedPack's edge is dropped frames near 59 drawn a second, which may be noise; a longer window or a 58.5 threshold for drawn frames is to decide.\n\nFound:\n- N-253, the physics entity cap.\n- A scene that fails while booting makes runIntegratedWorkerBenchmark wait out its 318 s watchdog instead of exiting, and measureLib retries once: about 5 minutes lost (N-254).\n- pruneTestResults deletes the capacity history after 7 days without a run (N-255).\n\nThe nightly task is not scheduled; it needs the owner. The command and the schtasks line are in the agent's report: daily at 04:00, /IT, through the bench lock, about 12-15 minutes a night. Not run yet: Predator by night (light3d=1&hour=22, in the catalog), and boids' own search.",
+      "commits": [
+        "7395dc28",
+        "9fbd6d46",
+        "0081822b",
+        "3e258cbc"
       ]
     }
   ],
