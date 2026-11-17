@@ -20941,12 +20941,12 @@
     {
       "id": "E-497",
       "title": "The twin's format: A today (RGBA8, height and the stored normal), B heights only (2 bytes a texel, normals from the shader's Sobel), C heights plus normals at half resolution (the owner's idea), chosen by GPU memory, load time, the G-buffer pass and the look",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 within DX-BARRIOS",
+      "status": "answered",
+      "statusText": "proposed 2026-11-16 within DX-BARRIOS; decided 2026-11-17: A stays",
       "date": "2026-11-16",
       "area": "render",
       "kind": "speed",
-      "result": "",
+      "result": "Buenos Aires 22 h: GPU ties (A 5.92, B 5.88, C 5.44 ms with the clock); B halves the twin page (15.9 -> 7.9 MB) but B and C change the picture (spriteMapsStressScene still: 57 % of pixels, up to 181 of 255)",
       "refs": [
         "DX_BARRIOS_DESIGN.md#E-497"
       ],
@@ -20954,8 +20954,10 @@
         "twin format tournament",
         "half resolution normals"
       ],
-      "next": "Built behind a config key by group R; decided in the final pass (gpuPassBench, the demo).",
-      "records": []
+      "next": "Remove B and C with assets.twinFormat (one format), or fix B's normals first if the memory ever matters.",
+      "records": [
+        "R-1267"
+      ]
     },
     {
       "id": "DX-FLOORNORMALS",
@@ -21352,16 +21354,18 @@
         "light rim",
         "edge-aware light"
       ],
-      "records": [],
-      "result": "",
+      "records": [
+        "R-1263"
+      ],
+      "result": "Buenos Aires 22 h: the rim between a head and its shadow gone (WebGL and WebGPU); +0.05 to +0.13 ms of GPU a frame; byte-identical to main where it stays off",
       "next": "Why not cheaper: WebGL cannot read the canvas depth; a full-resolution G-buffer for the key costs ~4 x its 1.3 ms in Predator by night (E-463), as much as the light at resolution 1; Pixi compares depth with less only, so entity pixels cannot be picked by depth: the stencil (as E-457's unshaded pass). Pack the floor/entity mark in the light texture's alpha (4 reads a pixel, not 8). Estimate 4-6 h with both backends; expected +0.1-0.3 ms GPU a frame at 1080p (GTX 1650) against +4.4 ms for the light at resolution 1. Measure per draw (glFrameRecorder --gpu-draws), Predator light3d and the barrio. Entity-against-entity edges stay bilinear (the colour pass would have to write ids).",
       "id": "DX-LIGHTEDGES",
       "kind": "feature",
       "area": "render",
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-17",
       "title": "Light at reduced resolution stretched without crossing edges: the entities mark the stencil, and the light is shown in two passes (floor pixels take floor texels' light, entity pixels entity texels'), so a head in front of a shaded floor gets no rim of its own light",
-      "statusText": "approved by the owner 2026-11-17, next after DX-BARRIOS' merge (he keeps the light at 0.5 or 0.25, not 1)"
+      "statusText": "approved by the owner 2026-11-17, next after DX-BARRIOS' merge (he keeps the light at 0.5 or 0.25, not 1); built 2026-11-17 (lightEdges.js), the light splats drawn in RGB alone so they keep the floor's mark"
     },
     {
       "refs": [],
@@ -21460,13 +21464,15 @@
       "aliases": [
         "parent stress scene"
       ],
-      "records": [],
-      "result": "",
+      "records": [
+        "R-1260"
+      ],
+      "result": "linked children cost about a fifth of moving them from logic: 32 000 children, physics +0.65 ms, pre-render +1.0 ms, against logic +7.7 ms",
       "next": "",
       "id": "DX-PARENTBENCH",
       "kind": "tools",
       "area": "bench",
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-17",
       "title": "A stress scene for Transform.parent: thousands of parents that move and turn, K children each (sprites and lights; depth D once DX-PARENTTREE lands), a knob that unlinks them and moves the children from logic instead; physics' and pre-render's STEP_MS a thousand children, ABAB against the same scene without children",
       "statusText": "approved by the owner 2026-11-17 for the backlog, not now: DX-PARENT is tested (14 tests on the shipped workers) but not measured with many children"
@@ -21476,13 +21482,15 @@
       "aliases": [
         "faces gate"
       ],
-      "records": [],
-      "result": "",
+      "records": [
+        "R-1264"
+      ],
+      "result": "faceLightScene town=80000 since DX-BARRIOS: pre-render -7.7 %, GPU +2.1 ms (the depth pre-pass and the edge pass) -> E-500",
       "next": "",
       "id": "DX-FACESBENCH",
       "kind": "tools",
       "area": "bench",
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-17",
       "title": "Faces measured: DX-FACEDEPTH made a scene with faces and no map sheet pay pixel depth and the edge pass; the gate of faceLightScene against main (every worker's STEP_MS and the GPU per draw), and Parque Chas' ~335 000 faces by day and night (the G-buffer pass with faces: E-463)",
       "statusText": "listed 2026-11-17 with the owner: a feature of DX-BARRIOS tested but not measured"
@@ -21493,32 +21501,87 @@
         "maps cost",
         "twin format bench"
       ],
-      "records": [],
+      "records": [
+        "R-1265"
+      ],
       "result": "",
-      "next": "",
+      "next": "Left: each map kind's cost (heightMap, normalMap, reliefMap, normals at half size) and DX-MAPCAMERA's rescale at load.",
       "id": "DX-MAPSBENCH",
       "kind": "tools",
       "area": "bench",
       "status": "open",
       "date": "2026-11-17",
       "title": "Maps measured: what each kind costs in the G-buffer pass and in memory (heightMap, normalMap, DX-RELIEF's reliefMap, normal maps at half size), the twin page's formats A/B/C (E-497's tournament), E-496's saving (a twin only for mapped sheets, shared rectangles: memory and load time) and DX-MAPCAMERA's height rescale at load",
-      "statusText": "listed 2026-11-17 with the owner: features of DX-BARRIOS tested but not measured; E-497 is the tournament's own row"
+      "statusText": "listed 2026-11-17 with the owner: features of DX-BARRIOS tested but not measured; E-497 is the tournament's own row; first part 2026-11-17: E-496's saving and E-497's tournament"
     },
     {
       "refs": [],
       "aliases": [
         "halo bench"
       ],
-      "records": [],
-      "result": "",
+      "records": [
+        "R-1261"
+      ],
+      "result": "2000 halos: 'sprite' 16.4 ms of GPU against 'add' 5.6 (fill of transparent texels) -> E-498: 4.6 and 3.5",
       "next": "",
       "id": "DX-GLOWBENCH",
       "kind": "tools",
       "area": "bench",
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-17",
       "title": "Halos measured: thousands of lights with a halo in lightGlow 'sprite' (DX-GLOWRADIUS: a sort key a halo, the unshaded pass on) against 'add', pre-render's STEP_MS and the GPU per draw",
       "statusText": "listed 2026-11-17 with the owner: DX-GLOWRADIUS is tested and checked in captures, not measured with many halos"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "compact glow",
+        "halo fill"
+      ],
+      "records": [
+        "R-1262"
+      ],
+      "result": "glowStressScene 2000 halos, GPU a frame: 'sprite' 16.41 -> 4.58 ms, 'add' 5.64 -> 3.54 (GTX 1650); the barrio's lamp looks the same at 35 against 220",
+      "next": "",
+      "id": "E-498",
+      "kind": "gpu",
+      "area": "render",
+      "status": "kept",
+      "date": "2026-11-17",
+      "title": "Halos with their own size draw a compact glow (the light gradient's inner 16 % over the whole texture), so the quad is no bigger than the glow; glowRadius is the radius one sees",
+      "statusText": "found by DX-GLOWBENCH 2026-11-17: a 440 px quad for ~20 px of glow, 99 % of its fill transparent"
+    },
+    {
+      "refs": [],
+      "aliases": [],
+      "records": [
+        "R-1266"
+      ],
+      "result": "parentStressScene 7000 x 8: pre-render 4.26 -> 4.33 ms (+1.8 %); reverted (e674a796)",
+      "next": "If many children ever weigh: the composition in WASM whole.",
+      "id": "E-499",
+      "kind": "speed",
+      "area": "pre-render",
+      "status": "dropped",
+      "date": "2026-11-17",
+      "title": "pre-render's children composition (DX-PARENT) poses a parent once for each run of its children in the list",
+      "statusText": "tried 2026-11-17 after DX-PARENTBENCH (pre-render 1 ms for 32 000 children)"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "face depth prepass"
+      ],
+      "records": [],
+      "result": "",
+      "next": "faceLightScene town=80000: the GPU frame 5.79 -> 7.92 ms since DX-BARRIOS, the pre-pass 1.58 of it. Measure the barrio too (walls stacked: the pre-pass likely pays there) before choosing a rule (overdraw estimate, faces' share, a knob); per draw before and after, the picture identical.",
+      "id": "E-500",
+      "kind": "gpu",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "Faces' vertex-depth opaque pre-pass (DX-FACEDEPTH) only where it pays: with many small faces and little overdraw it costs more than the early depth it buys",
+      "statusText": "found by DX-FACESBENCH 2026-11-17"
     }
   ],
   "records": [
@@ -33952,6 +34015,103 @@
         "09b7a57d",
         "05dcb7b4"
       ]
+    },
+    {
+      "id": "R-1260",
+      "date": "2026-11-17",
+      "time": "05:13",
+      "timeFrom": "recorded",
+      "title": "Transform.parent measured: 32 000 children, physics +0.65 ms and pre-render +1.0 ms linked, logic +7.7 ms moved from logic",
+      "verdict": "note",
+      "text": "**DX-PARENTBENCH: Transform.parent costs about a fifth of what moving the children from logic does; pre-render's\ncomposition is the part to take further.**\n\nparentStressScene (47457a78), 8000 parents that drift and spin (dynamic bodies, no gravity, full bounce), 4 sprite\nchildren each (32 000), runMultiArm --vs HEAD with the arms as runtime switches, 4 rounds, worker time without waits\n(each arm's 4 rounds within a few %):\n\n| worker | linked (link=1) | moved from logic (link=0) | no children |\n| --- | --- | --- | --- |\n| logic | 0.48 ms | 8.16 ms | 0.18 ms |\n| physics | 3.38 ms | 2.73 ms | 2.53 ms |\n| pre-render | 2.65 ms | 1.62 ms | 0.46 ms |\n| renderer | 1.64 ms | 1.45 ms | 0.45 ms |\n\nThe link adds ~0.65 ms to physics (its children's poses after the step, ~20 ns a child) and ~1.0 ms to pre-render (their\ncomposition from the parents' drawn poses, ~32 ns a child); moving them from logic instead costs 7.7 ms there. Every\nworker but logic in the moved arm sits under the 6 ms floor: a characterisation, not a keep. Next: pre-render's\ncomposition pass in WASM (E-499).",
+      "commits": [
+        "47457a78"
+      ]
+    },
+    {
+      "id": "R-1261",
+      "date": "2026-11-17",
+      "time": "05:13",
+      "timeFrom": "recorded",
+      "title": "2000 halos: 'sprite' 16.4 ms of GPU against 'add' 5.6, fill of transparent texels",
+      "verdict": "note",
+      "text": "**DX-GLOWBENCH: 2000 halos cost the GPU 16.4 ms a frame in lightGlow 'sprite' against 5.6 in 'add', almost all of it\nfill of transparent texels; E-498 took it to 4.6 and 3.5.**\n\nglowStressScene (2000 lamps with a halo, drifting, night), glFrameRecorder --gpu-draws, GTX 1650, 1920 x 1080:\n'sprite' 16.41 ms (unshaded pass 7.65, colour pass 6.86, unshaded mask 0.93, light 0.80); 'add' 5.64 ms (the halos'\ntarget at half size 3.68, light 1.65). The halos were 440 px quads (glowRadius 220) for ~20 px of glow: the gradient\nhalves its alpha every 2 % of its radius. With E-498's compact glow (glowRadius 35, the same look): 'sprite' 4.58 ms\n(unshaded pass 1.24, colour 1.21), 'add' 3.54 ms (target 0.65). Pre-render's CPU barely differs between the modes (1.35\nand 1.33 ms at 2000 halos): one sort key a halo is not where the cost is.",
+      "commits": [
+        "47457a78"
+      ]
+    },
+    {
+      "id": "R-1262",
+      "date": "2026-11-17",
+      "time": "05:13",
+      "timeFrom": "recorded",
+      "title": "Compact glow for halos with their own size: GPU 'sprite' 16.41 -> 4.58 ms, 'add' 5.64 -> 3.54",
+      "verdict": "kept",
+      "text": "**E-498 kept: the compact glow for halos with their own size, GPU -72 % ('sprite') and -37 % ('add') with 2000 halos.**\n\n_lightGlow holds the light gradient's inner 16 % (where it falls under 1 %) over its whole radius; a halo with\nglowRadius draws it, and glowRadius is the radius one sees. glowStressScene, glFrameRecorder --gpu-draws, GTX 1650:\n'sprite' 16.41 -> 4.58 ms a frame, 'add' 5.64 -> 3.54. Buenos Aires' lamp at 35 against 220 before: 69.4 and 68.6 of 255\nround the bulb (the same glow). Kernel and reference byte-equal (preRenderEmitWasm.test.js).",
+      "commits": [
+        "a02bd918",
+        "6518d801"
+      ]
+    },
+    {
+      "id": "R-1263",
+      "date": "2026-11-17",
+      "time": "05:13",
+      "timeFrom": "recorded",
+      "title": "Light without crossing the floor's edges: the head's rim gone, +0.05 to +0.13 ms of GPU",
+      "verdict": "kept",
+      "text": "**DX-LIGHTEDGES kept: the light at half size no longer leaves a rim of a head's light on the shaded floor behind it;\n+0.05 to +0.13 ms of GPU a frame.**\n\nBuenos Aires 22 h, a person just behind a lamp, lightEdges on against off (the demo's ?lightEdges=0), WebGL and WebGPU:\nthe light band between the head and its shadow is gone, a trunk's edge no longer blends with the floor. glFrameRecorder\n--gpu-draws in the same view: the mark, the two light halves and the two unshaded halves 0.087 ms against 0.034 for the\nstretched light and the unshaded composite (+0.05 ms); the frame's GPU total 6.05 against 5.93 ms (+0.13, two runs with\nthe people moving). Scenes without pixel depth keep the stretch: dxCaptureScene byte-identical to main at 22 h on WebGL\nand WebGPU. No Pixi patch (Pixi compares depth with less only: the floor's mark by depth, the entities' half by the\nstencil). test:node 2997/2997.",
+      "commits": [
+        "7f6cae4a",
+        "a47149f2"
+      ]
+    },
+    {
+      "id": "R-1264",
+      "date": "2026-11-17",
+      "time": "05:13",
+      "timeFrom": "recorded",
+      "title": "faceLightScene since DX-BARRIOS: pre-render -7.7 %, GPU +2.1 ms (depth pre-pass and edges)",
+      "verdict": "note",
+      "text": "**DX-FACESBENCH: since DX-BARRIOS a faces-only scene costs pre-render 7.7 % less and the GPU 2.1 ms more (the faces'\ndepth pre-pass and edge pass).**\n\nfaceLightScene town=80000 (80 000 faces, no map sheet), main before the merge (b01087b1) against after (ef81812d), each\nside its own scene (--full-rev: the old one turns faces on with lighting.faces), 4 pairs: pre-render 7.70 -> 7.10 ms\n(paired -7.7 %, better in 4/4, cv 2/1 %), renderer 1.91 -> 1.52 (under the floor, better in 4/4). NEUTRAL (no regression).\nGPU per frame (glFrameRecorder --gpu-draws, each worktree serving itself, GTX 1650): 5.79 -> 7.92 ms. The colour pass went\nfrom one draw (2.55 ms) to three: the vertex-depth opaque pre-pass 1.58, the colour pass with depth 2.57, the edges 0.30;\nthe G-buffer 2.68 -> 2.93. The price of the faces' plane depth (DX-FACEDEPTH); with many small faces and little overdraw\nthe pre-pass costs more than its early depth saves: E-500.",
+      "commits": [
+        "700d9650"
+      ]
+    },
+    {
+      "id": "R-1265",
+      "date": "2026-11-17",
+      "time": "05:13",
+      "timeFrom": "recorded",
+      "title": "E-496 saved ~37 MB in the barrio; E-497: A stays (B and C tie on the GPU but change the picture)",
+      "verdict": "note",
+      "text": "**DX-MAPSBENCH (first part) and E-497's tournament: the twin page stays format A; E-496 saved ~37 MB in the barrio.**\n\n- E-496: Buenos Aires' twin page is 970 x 4096 (15.9 MB at 4 bytes a texel) against the atlas' 3281 x 4094 it was before\n  (53.7 MB): a twin page for the mapped frames alone, about 37 MB less GPU memory (glFrameRecorder's texture list).\n- E-497, the barrio at 22 h, glFrameRecorder --gpu-draws: A 970 x 4096, 5.92 ms a frame; B 485 x 4096 (7.9 MB), 5.88 ms; C\n  485 x 6144 (11.9 MB), 5.44 ms (that run's floor pass, which no format touches, also 10 % faster: the clock). The GPU\n  ties; B and C save memory. But they change the picture: spriteMapsStressScene ?still=1 ?maps=height (deterministic, A\n  against A 0 pixels), A against B 529 125 of 921 600 pixels differ (max 181), A against C 532 753 (max 181): B's Sobel\n  over 2-byte heights does not give A's normals (cut, darker shading on round shapes). Verdict: A stays; B and C to\n  remove with assets.twinFormat, or fixed first if the memory matters.\n- Left in DX-MAPSBENCH: each map kind's cost (heightMap, normalMap, reliefMap, normals at half size) and DX-MAPCAMERA's\n  rescale at load.",
+      "commits": [
+        "ee0dcc41",
+        "2f668379"
+      ]
+    },
+    {
+      "id": "R-1266",
+      "date": "2026-11-17",
+      "time": "05:13",
+      "timeFrom": "recorded",
+      "title": "E-499 dropped: posing a parent once per run of children, pre-render +1.8 %",
+      "verdict": "dropped",
+      "text": "**E-499 dropped: posing a parent once for each run of its children did not pay.**\n\nparentStressScene parents=7000 children=8 (56 000 children), --vs 5568cd36 --hyp-rev e0129d18, 4 pairs: pre-render 4.26 ->\n4.33 ms (+1.8 %, slightly worse in 3/4, under the 6 ms floor), renderer 2.06 -> 1.82 (noise, 2 pairs). Without\ninterpolation a parent's drawn pose is a few reads; the composition's cost is elsewhere (the walk, the writes). Reverted\n(e674a796). If children ever weigh, the composition goes to WASM whole.",
+      "commits": [
+        "e0129d18",
+        "e674a796"
+      ]
+    },
+    {
+      "id": "R-1267",
+      "date": "2026-11-17",
+      "time": "05:14",
+      "timeFrom": "recorded",
+      "title": "E-497 answered: twin page format A stays",
+      "verdict": "note",
+      "text": "Linked from R-1265 (DX-MAPSBENCH): the barrio at 22 h ties on the GPU (A 5.92, B 5.88, C 5.44 ms with the clock); B and C change the picture on still maps (57 % of pixels, up to 181 of 255). A stays; B and C to remove with assets.twinFormat."
     }
   ],
   "leads": [
