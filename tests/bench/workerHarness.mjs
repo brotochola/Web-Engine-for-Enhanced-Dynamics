@@ -11,18 +11,15 @@
  * Fields the kernel does not set are absent, so the instance can have fewer
  * properties than in a full scene; kernels that measure named access on
  * `this` say so in their report.
+ *
+ * No node: module here: the replay (spatialReplay.mjs) loads it natively in d8 as well as in Node.
  */
-import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-
 import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
 import { Collider } from '../../src/components/collider.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { entityIdBytes, EntityIdArray } from '../../src/util/entityIdWidth.js';
 import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
-
-const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
 const posted = [];
 
@@ -60,7 +57,9 @@ export async function quietly(fn) {
  */
 export async function loadWorker(file, selfKey) {
   const self = installSelf();
-  await quietly(() => import(pathToFileURL(path.join(repoRoot, 'src/workers', file)).href));
+  // A relative specifier in a variable: resolved against this module in Node and d8, and left alone by a bundler.
+  const specifier = `../../src/workers/${file}`;
+  await quietly(() => import(specifier));
   const worker = self[selfKey];
   if (!worker) throw new Error(`${file} did not set self.${selfKey}`);
   return worker;
