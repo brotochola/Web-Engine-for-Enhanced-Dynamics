@@ -25,11 +25,12 @@ const { ShapeType } = enums;
 const DEG = Math.PI / 180;
 
 /**
- * The standard cars are drawn with the standard art's camera, the barrio's (META): the floor SYN as tall as it is wide,
- * a px of height rising CZ px. Their footprints and light bars are measured in those pictures.
+ * The standard cars are drawn with the standard art's camera (the LPC people's and the light bench's): the floor 0.736 as
+ * tall as it is wide, a px of height rising 0.752 px. Their footprints and light bars are measured in those pictures,
+ * whatever the scene's camera (the engine fits their height maps to it: DX-MAPCAMERA).
  */
-const PICTURE_FLOOR_SCALE = META.SYN;
-const PICTURE_HEIGHT_SCALE = META.CZ;
+const PICTURE_FLOOR_SCALE = 0.7364193217154872;
+const PICTURE_HEIGHT_SCALE = 0.7516549042792687;
 
 // Headlights: two cones from the front corners of the footprint (HEADLIGHT_SIDE of its half width out), measured on the
 // floor. They reach about 65 m (900 px; half the light 6.7 m out), each 44° wide, fading over the outer half of each side,
