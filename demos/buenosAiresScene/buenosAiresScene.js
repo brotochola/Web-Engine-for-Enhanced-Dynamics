@@ -62,6 +62,11 @@ const SELF_SHADOW = WEED.params?.get('selfShadow') !== '0';
 /** `?pan=40`: the camera drifts right that many world px a second by itself, to measure a view that never holds. */
 const PAN_DRIFT = param('pan', 0);
 const CORES = globalThis.navigator?.hardwareConcurrency || 4;
+/**
+ * `?physicsWorkers=N`: Box2D's solver threads (physics.numberOfPhysicsWorkers; the engine's default, 4, without it), to
+ * weigh them on a machine with few cores, where every thread of the engine shares them.
+ */
+const PHYSICS_WORKERS = param('physicsWorkers', 0);
 /** The night's own blue light (lighting.sun.night), on the N key. */
 const NIGHT_LIGHT = 0.25;
 /** Hours the clock moves a frame while Z or X is held. */
@@ -191,7 +196,10 @@ export class BuenosAiresScene extends Scene {
     assets: { maxAtlasWidth: 8192, maxAtlasHeight: 4096, twinFormat: ['A', 'B', 'C'].includes(WEED.params?.get('twinFormat')) ? WEED.params.get('twinFormat') : 'A' },
     spatial: { cellSize: 64, maxNeighbors: 48, maxEntitiesPerCell: 192, numberOfSpatialWorkers: CORES >= 6 ? 2 : 1 },
     logic: { numberOfLogicWorkers: CORES >= 8 ? 3 : 2, staggeredUpdates: true },
-    physics: { gravity: { x: 0, y: 0 }, sleeping: true, subStepCount: 0, commandRingCapacity: 65536 },
+    physics: {
+      gravity: { x: 0, y: 0 }, sleeping: true, subStepCount: 0, commandRingCapacity: 65536,
+      ...(PHYSICS_WORKERS > 0 ? { numberOfPhysicsWorkers: PHYSICS_WORKERS } : {}),
+    },
     particle: { maxParticles: 0, decals: false },
     decoration: { maxDecorations: DECORATIONS, maxAttachedDecorationsPerEntity: 32 },
     // The barrio is pixel art: its atlas is sampled nearest, so a sprite's edge is its own pixel or none. Sampled linear,
