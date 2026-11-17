@@ -16054,7 +16054,8 @@
       "records": [
         "R-1258",
         "R-1280",
-        "R-1296"
+        "R-1296",
+        "R-1297"
       ]
     },
     {
@@ -21792,7 +21793,9 @@
         "lamp map cache",
         "static shadow cache"
       ],
-      "records": [],
+      "records": [
+        "R-1297"
+      ],
       "result": "",
       "id": "E-508",
       "kind": "gpu",
@@ -34626,6 +34629,15 @@
       "title": "The barrio's GPU frame on the Intel HD 620: 16.6 ms, the lamps' shadow atlas 7.9 ms (one draw of 6 instances 6.9 ms), the stage 4.9, the light pass 2.2; timer queries are exposed there",
       "verdict": "note",
       "text": "**Where the Intel HD 620's frame goes in Parque Chas.** glFrameRecorder on main 038af4a5, `hour=22&dayMinutes=0`, camera still, a 20 s warm-up and a 3 s window, ASUS laptop, Chrome 157, 2026-11-17 09:07 (job 0869; the barrio session asked).\n\n`EXT_disjoint_timer_query_webgl2` is exposed there: 0 disjoint, 0 unread. Pixi draws in 0.4 of the main frames (~21 fps); the times are a drawn frame's.\n\n- By pass (`--gpu-passes`), 16.6 ms of GPU:\n\n| Pass | ms |\n|---|---|\n| the lamps' shadow atlas 4096x2048 (fbo#9) | 7.93 |\n| the stage (entities and composites) | 4.90 |\n| the 3D light pass | 2.19 |\n| the 960x540 G-buffer | 0.65 |\n| a 1920x1080 pass | 0.62 |\n| a 960x540 pass of 6 instances | 0.30 |\n\n- By draw (`--gpu-draws`), 18.6 ms in draws, the top ten:\n\n| # | ms | Draw |\n|---|---|---|\n| 1 | 6.94 | lamp atlas draw 5: prog#15 [uTexLut,uPoseTable,uLampTiles], 6 instances |\n| 2 | 2.25 | light pass (prog#21) |\n| 3 | 1.22 | stage entities, draw 3 (4 597 instances) |\n| 4 | 1.16 | stage entities with maps, draw 5 |\n| 5 | 0.85 | stage composite of a 1920x1080 texture |\n| 6 | 0.77 | G-buffer entities |\n| 7 | 0.60 | the 4096x2048 atlas's clear |\n| 8 | 0.51 | lamp atlas draw 1 (106 instances) |\n| 9 | 0.48 | stage light composite (prog#32) |\n| 10 | 0.46 | stage light composite (prog#33) |\n\nAgainst the GTX 1650's 5.9 ms (light pass 0.87, the 16 lamps' shadow maps 0.84, entity draws 0.43 + 0.42): the lamps' shadow atlas is ~10x dearer on the HD 620, nearly all of it one draw of 6 instances. Those look like large volumes or columns rasterised over the 8 Mpx atlas, fill-bound on that GPU. The atlas's clear alone is 0.6 ms. The light pass is ~2.5x and the entity draws ~2.7x."
+    },
+    {
+      "id": "R-1297",
+      "date": "2026-11-17",
+      "time": "09:16",
+      "timeFrom": "recorded",
+      "title": "The barrio's lamp-volume draw on the HD 620 is vertex-bound: 6.01 of its 6.94 ms stay under a 1 px scissor",
+      "verdict": "note",
+      "text": "**The lamps' volume draw on the Intel HD 620 is vertex work, not fill.** `_drawVolumesInLampMap`: every house volume once per lamp tile in use, 6 tiles; prog [uTexLut,uPoseTable,uLampTiles]. glFrameRecorder `--gpu-draws --probe-scissor uTexLut,uPoseTable,uLampTiles`, same tree and setup as R-1296 (main 038af4a5, Parque Chas at `hour=22&dayMinutes=0`, camera still), 2026-11-17 09:14 (job 0870).\n\n- Under a 1 px scissor the draw still takes 6.01 ms of a drawn frame, against 6.94 ms drawn whole (R-1296). About 87 % of it is the vertex side, about 0.9 ms its pixels.\n- For E-508: a cache that skips the redraw wins nearly all of it; smaller tiles or a scissor would win little. With a moving camera, what counts is whether the lamps in use, and with them the tiles, change: per-tile caching keeps the redraws to the tiles that changed."
     }
   ],
   "leads": [
