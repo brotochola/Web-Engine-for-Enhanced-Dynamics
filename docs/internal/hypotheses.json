@@ -21656,7 +21656,8 @@
         "R-1271",
         "R-1276",
         "R-1278",
-        "R-1279"
+        "R-1279",
+        "R-1289"
       ]
     },
     {
@@ -34488,6 +34489,15 @@
       "title": "DX-MAPSBENCH answered: a relief map costs what a height map does; DX-MAPCAMERA's rescale is 3.3 ms once at load",
       "verdict": "answered",
       "text": "**DX-MAPSBENCH, the relief map: it costs what a height map costs.**\n\nspriteMapsStressScene `?n=3000` at 22 h, 12 lamps, resolution 0.5, WebGL, glFrameRecorder `--gpu-draws` (GTX 1650, main\n`6d7bf4a0`, tool `74b90c44`): `?maps=relief` (the heights picture as a relief map, strength 1: normals from its Sobel,\nheights from the sheet's surface) 5.83 ms of GPU a frame against `?maps=height` 5.78; pass by pass the same (the entity pass\n2.374 against 2.360 ms, the edge pass 1.729 against 1.694, the G-buffer 0.754 against 0.757). With R-1281 (no maps 3.15,\nheight 5.89, normal 5.80, both 5.83): every kind costs the pixel depth and G-buffer it turns on and nothing of its own.\nDX-MAPCAMERA's rescale at load (scaleHeights in spriteMaps.js: one multiply a height texel, once) over the barrio's whole twin page, 970 x 4096 = 3 973 120 texels, takes 3.3 ms in Node 22 (20 passes after 5 to warm): an upper bound, since only the mapped frames are scaled, against a load of about 30 s. DX-MAPSBENCH is answered: no map kind and no load step costs on its own; the pixel depth they turn on is the cost (E-500, the edge pass)."
+    },
+    {
+      "id": "R-1289",
+      "date": "2026-11-17",
+      "time": "08:04",
+      "timeFrom": "recorded",
+      "title": "Predator crowd 0.5 on the ASUS: main's crowd sleeps 10 to 15 s later than v0.14.0's (20-40 s against 10-20 s); settled, physics is close (3.4-4.3 against 2.4-3.5 ms)",
+      "verdict": "note",
+      "text": "**How long Predator crowd 0.5's crowd takes to sleep on the ASUS: main settles about 10 to 15 s later than v0.14.0.** v0.14.0 against main (6d7bf4a0, E-501 and N-264 in), each side its whole revision, a 10 s window after the warm-up (asus-settle-20 and asus-settle-30, 2026-11-17 07:57 to 08:10; with R-1278 and R-1279).\n\n| Warm-up | v0.14.0 | main |\n|---|---|---|\n| 10 s | 7/8 runs end settled (~800 awake) | 0/8 (~4 000) |\n| 20 s | 2/2 settled: ~380 awake on average, 3 ms a step | 1/2: 743 awake, 5.3 ms; the other 3 775, 18 ms, 411 physics frames |\n| 30 s | 2/2: 62 and 326 awake, 2.4–3.5 ms | 2/2: 78 and 338 awake, 3.4–4.3 ms |\n| 50 s | — | 0–46 awake, 2–3 ms |\n\nSettled, the two are close (2 pairs: no claim at that size). The cost is the start: on this laptop main spends 20 to 40 s at 30 Hz physics before the crowd sleeps, v0.14.0 about 10 to 20 s.\n\nNext (N-264's): what keeps main's crowd moving longer while physics is slow. Logic steers on poses that come half as often, and E-434 writes sleeping = 0 on every acceleration."
     }
   ],
   "leads": [
