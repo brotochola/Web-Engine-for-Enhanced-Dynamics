@@ -25,8 +25,10 @@
 //   ?pitch= ?floor= ?height=  camera.pitch, floorScaleY, heightScaleY (default 47, 0.736, 0.752, the art's; floor=auto
 //                 and height=auto leave them to the pitch: sin and cos)
 //   ?walls=1      lighting.walls: the lamps' 'wall' kind (shadowCaster.lamps.setWall) stops them, with any camera
-//   ?normalSun= ?normalLamps=  lighting.normalStrength: how much a sprite's own normals count under the sun and under the
-//                 lamps, each 0 (lit as drawn) to 1 (lit by its normals); without them the engine's default (0 and 1)
+//   ?normalSun= ?normalLamps=  lighting.normalShading's strength for the sun and for the lamps: how much of the shading a
+//                 sprite's own normals cause counts, 0 (lit as drawn) to 1; without them the engine's default (0 and 1)
+//   ?subtractSun= ?subtractLamps=  its subtract: the shading taken off first (a face shaded less than that is lit as
+//                 drawn), 0 to 1; without them the engine's default (0 and 0)
 //   ?ambient=     lighting.baseAmbient (default 0.12)
 //   ?depth=1|0    renderer.pixelDepth on or off (default: on by itself, an oblique camera with maps)
 //   ?res=         lighting.resolution and shadowResolution (default 1: the canvas's own size)
@@ -46,14 +48,24 @@ const { Scene, GameObject, Collider, DirectionalSprite, ShadowCaster, LightEmitt
 const { ShapeType } = enums;
 
 const param = (k) => WEED.params?.get(k) ?? null;
-/** lighting.normalStrength from the page: only the numbers given, so the engine's default stands for the rest. */
-const NORMAL_STRENGTH = (() => {
-  const strength = {};
-  for (const [key, name] of [['sun', 'normalSun'], ['lamps', 'normalLamps']]) {
-    const text = param(name);
-    if (text !== null && text !== '' && Number.isFinite(Number(text))) strength[key] = Number(text);
-  }
-  return strength;
+/** A number from 0 to 1 given in the page's address, or null when it is not there. */
+const unitParam = (name) => {
+  const text = param(name);
+  return text !== null && text !== '' && Number.isFinite(Number(text)) ? Math.min(1, Math.max(0, Number(text))) : null;
+};
+// What the page asks of lighting.normalShading (null: not asked). A light's shading on a pixel is what the sprite's own
+// normal takes from it; `subtract` comes off it first, then `strength` multiplies the rest.
+const SUN_NORMAL_STRENGTH = unitParam('normalSun');
+const SUN_NORMAL_SUBTRACT = unitParam('subtractSun');
+const LAMP_NORMAL_STRENGTH = unitParam('normalLamps');
+const LAMP_NORMAL_SUBTRACT = unitParam('subtractLamps');
+/** lighting.normalShading with only the numbers the page gave, so the engine's default stands for the rest. */
+const NORMAL_SHADING = (() => {
+  const given = (strength, subtract) => ({
+    ...(strength !== null ? { strength } : {}),
+    ...(subtract !== null ? { subtract } : {}),
+  });
+  return { sun: given(SUN_NORMAL_STRENGTH, SUN_NORMAL_SUBTRACT), lamps: given(LAMP_NORMAL_STRENGTH, LAMP_NORMAL_SUBTRACT) };
 })();
 const MAPS = param('maps') !== '0';
 const SUN_MAP = param('sun') !== 'layer';
@@ -344,7 +356,7 @@ export class LightBenchScene extends Scene {
       lampShadows: LAMP_MAP ? 'map' : 'layer',
       // ?walls=1: the 'wall' kind's walls stop the lamps (the walls' sweep, whatever the pitch).
       walls: WALLS,
-      normalStrength: NORMAL_STRENGTH,
+      normalShading: NORMAL_SHADING,
       selfShadow: SELF,
       // Each world pixel lit whole, the maps read with one tap: the shadows crisp on the art's pixels, as the prototype's.
       pixelArt: PIXEL_ART,
@@ -781,6 +793,11 @@ export class LightBenchScene extends Scene {
       sunMap: SUN_MAP,
       lampMap: LAMP_MAP,
       walls: WALLS,
+      // The engine's defaults where the page asked nothing: the sun's strength 0, the lamps' 1, nothing subtracted.
+      sunNormalStrength: SUN_NORMAL_STRENGTH ?? 0,
+      sunNormalSubtract: SUN_NORMAL_SUBTRACT ?? 0,
+      lampNormalStrength: LAMP_NORMAL_STRENGTH ?? 1,
+      lampNormalSubtract: LAMP_NORMAL_SUBTRACT ?? 0,
       self: SELF,
       sweep: SWEEP,
       maps: MAPS,
@@ -858,6 +875,30 @@ export class LightBenchScene extends Scene {
       note: "lighting.walls: an element whose lamps' shadow is 'wall' (shadowCaster.lamps.setWall) stops the lamps at its " +
         'outline, with any camera; off, setWall warns and changes nothing.',
       onChange: (v) => this._reload('walls', v ? '1' : '0'),
+    });
+    // lighting.normalShading: the shading a sprite's own normals cause, the sun's and the lamps' apart.
+    scene.range({
+      label: "Sun's shading: strength", min: 0, max: 1, step: 0.05, value: SUN_NORMAL_STRENGTH ?? 0, format: pct,
+      note: 'lighting.normalShading.sun.strength: how much of the shading a sprite\'s own normals cause under the sun ' +
+        'counts. 0 lights it as drawn; 1 by its normals.',
+      onChange: (v) => this._reload('normalSun', v),
+    });
+    scene.range({
+      label: "Sun's shading: subtract", min: 0, max: 0.6, step: 0.02, value: SUN_NORMAL_SUBTRACT ?? 0, format: pct,
+      note: 'lighting.normalShading.sun.subtract: taken off the shading before the strength. A face shaded less than this ' +
+        'stays as drawn, so only what turns away from the sun darkens (the sun\'s shading runs from 0 to 0.6).',
+      onChange: (v) => this._reload('subtractSun', v),
+    });
+    scene.range({
+      label: "Lamps' shading: strength", min: 0, max: 1, step: 0.05, value: LAMP_NORMAL_STRENGTH ?? 1, format: pct,
+      note: 'lighting.normalShading.lamps.strength: the same under each lamp. 1 by default: the relief shows at night.',
+      onChange: (v) => this._reload('normalLamps', v),
+    });
+    scene.range({
+      label: "Lamps' shading: subtract", min: 0, max: 1, step: 0.05, value: LAMP_NORMAL_SUBTRACT ?? 0, format: pct,
+      note: 'lighting.normalShading.lamps.subtract: taken off each lamp\'s shading before the strength (a lamp\'s shading ' +
+        'runs from 0 to 1).',
+      onChange: (v) => this._reload('subtractLamps', v),
     });
     scene.toggle({
       label: 'Self-shadow', value: SELF,

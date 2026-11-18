@@ -39,8 +39,9 @@ struct LightingUniforms {
   // 1 / the soft edge's width); they loop apart, so a point light runs the loop it always ran. A float (see pixiWorker).
   uConeCount: f32,
 // #if FACES
-  uFaceLight: vec4<f32>, // heightScaleY, a sprite's normals' strength for the sun and for the lamps (OL-2), the sun's direct share (1 - Sun.skyLight)
+  uFaceLight: vec4<f32>, // heightScaleY, 0, 0, the sun's direct share (1 - Sun.skyLight)
   uFaceSun: vec4<f32>, // towards the sun in the floor's space; w: 1 / its height, so a flat surface reads as the floor
+  uNormalShade: vec4<f32>, // OL-6 (lighting.normalShading): the sun's strength and subtract, the lamps' strength and subtract
 // #endif FACES
 // #if SUNMAP
   uSunMapK: vec4<f32>, // kx, ky (a px of height's landing shift on the floor), groundScaleY, the shadow's opacity
@@ -400,8 +401,8 @@ fn selfShadow(p: vec3<f32>, selfId: f32) -> f32 {
 }
 // #endif SELFSHADOW
 
-// DX-GBUF (plan §5.4): a face's normal, a FLAT pixel lit as drawn, a sprite's own normal by lighting.normalStrength
-// (OL-2; lightingBasic.frag.glsl's faceLight says how).
+// DX-GBUF (plan §5.4): a face's normal, a FLAT pixel lit as drawn, a sprite's own normal as drawn less its shading
+// (OL-6, lighting.normalShading; lightingBasic.frag.glsl's faceLight says how).
 fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> vec3<f32> {
   let q = floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5);
   let kRule = q >= 32768.0;
@@ -443,8 +444,10 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
 // #endif SELFSHADOW
   var total = vec3<f32>(uniforms.uBaseAmbient) + vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB);
   total += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * (1.0 - lit.w + lit.w * sunDirect);
-  // The lamps lit as drawn (cosine 1), for FLAT pixels and the normals' strength.
-  var lampFlat = vec3<f32>(0.0);
+  // The lamps on a pixel lit as drawn (cosine 1): a FLAT pixel's. OL-6: on a sprite's own normal each lamp loses its
+  // shading, 1 - cosine, less the amount subtracted, times the strength (uNormalShade.w and .z).
+  var lampDrawn = vec3<f32>(0.0);
+  let lampShading = select(uniforms.uNormalShade.z, 0.0, isFlat);
   let nLights = uniforms.uLightCount;
   let nCones = i32(uniforms.uConeCount);
   let texW = i32(uniforms.uLightTexWidth);
@@ -491,7 +494,10 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
     if (cosine > 0.0) {
       total += col.rgb * cosine * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
-    if (both) { lampFlat += col.rgb * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled); }
+    if (both) {
+      lampDrawn += col.rgb * (cone * (1.0 - max(1.0 - max(cosine, 0.0) - uniforms.uNormalShade.w, 0.0) * lampShading))
+        * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    }
 // #if !TILES
   }
   for (var j = 0; j < MAX_LIGHTS; j++) {
@@ -551,23 +557,24 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
       lampShade = flatShade * win;
 // #endif SELFSHADOW
 // #endif LAMPMAP
-      lampFlat += col.rgb * lampShade * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+      lampDrawn += col.rgb * (lampShade * (1.0 - max(1.0 - max(cosine, 0.0) - uniforms.uNormalShade.w, 0.0) * lampShading))
+        * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
 // #if TILES
     }
 // #endif TILES
   }
   if (!both) { return total; }
-  let totalFlat = vec3<f32>(uniforms.uBaseAmbient) + vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB)
-    + vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * sunFlat + lampFlat;
-  if (isFlat) { return totalFlat; }
-  // OL-2 (lighting.normalStrength): a sprite's own normal counts as the developer says, for the sun (lit.y) and for the
-  // lamps (lit.z) apart (lightingBasic.frag.glsl's faceLight says how).
-  let baseLight = vec3<f32>(uniforms.uBaseAmbient) + vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB);
-  let sunColour = vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity;
-  let sunByNormal = sunColour * (1.0 - lit.w + lit.w * sunDirect);
-  let lampsByNormal = max(total - baseLight - sunByNormal, vec3<f32>(0.0));
-  return baseLight + mix(sunColour * sunFlat, sunByNormal, lit.y) + mix(lampFlat, lampsByNormal, lit.z);
+  // A FLAT pixel gets the sun as drawn (sunFlat). OL-6: on a sprite's own normal, less the sun's shading (what the
+  // normal takes from that, less the amount subtracted, times the strength), or plus its gain by the strength alone
+  // (lightingBasic.frag.glsl's faceLight says how). The lamps lost their shading in their loops (lampDrawn).
+  var sunLit = sunFlat;
+  if (!isFlat) {
+    let sunByNormal = 1.0 - lit.w + lit.w * sunDirect;
+    sunLit += (max(sunByNormal - sunFlat, 0.0) - max(sunFlat - sunByNormal - uniforms.uNormalShade.y, 0.0)) * uniforms.uNormalShade.x;
+  }
+  return vec3<f32>(uniforms.uBaseAmbient) + vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB)
+    + vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * sunLit + lampDrawn;
 }
 // #endif FACES
 

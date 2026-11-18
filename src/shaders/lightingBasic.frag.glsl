@@ -326,7 +326,8 @@ float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, float intensity, i
 // #if FACES
 // DX-FACES: this pixel's face, in the face map, drawn at this pass's size.
 uniform sampler2D uFaceMap;
-uniform vec4 uFaceLight; // heightScaleY, a sprite's normals' strength for the sun and for the lamps (OL-2), the sun's direct share (1 - Sun.skyLight)
+uniform vec4 uFaceLight; // heightScaleY, 0, 0, the sun's direct share (1 - Sun.skyLight)
+uniform vec4 uNormalShade; // OL-6 (lighting.normalShading): the sun's strength and subtract, the lamps' strength and subtract
 uniform vec4 uFaceSun; // towards the sun in the floor's space; w: 1 / its height, so a flat surface reads as the floor
 // #if IDS
 // DX-GBUF (plan §6.4): the G-buffer's entity ids (faceMap.js FACE_IDS_SELF), drawn with the face map.
@@ -374,8 +375,9 @@ float selfShadow(vec3 p, float selfId) {
 
 // DX-GBUF (plan §5.4): a pixel with a face's normal is lit by it (DX-FACES, as always); a FLAT one (faceMap.js
 // FACE_FLAT_CODE: a standing card, normals 'flat') as drawn, every light at full cosine, at its place in 3D; a sprite's
-// own normal (its height's FACE_K_BIT) counts as much as lighting.normalStrength says, for the sun and for the lamps
-// apart (OL-2), between the light as drawn and the light by the normal.
+// own normal (its height's FACE_K_BIT) as drawn, less its shading: what the normal takes from the sun, and from each
+// lamp, less the amount subtracted (never under 0), times the strength (OL-6: lighting.normalShading, for the sun and
+// for the lamps apart). Strength 0 is as drawn; strength 1 with nothing subtracted is by the normal.
 vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
   float q = floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5);
   bool kRule = q >= 32768.0;
@@ -419,8 +421,11 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
 // #endif SELFSHADOW
   vec3 total = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB);
   total += vec3(uSunR, uSunG, uSunB) * uSunIntensity * (1.0 - uFaceLight.w + uFaceLight.w * sunDirect);
-  // The lamps lit as drawn (cosine 1), for FLAT pixels and the normals' strength.
-  vec3 lampFlat = vec3(0.0);
+  // The lamps on a pixel lit as drawn (cosine 1): a FLAT pixel's. OL-6: on a sprite's own normal each lamp loses its
+  // shading, 1 - cosine, less the amount subtracted (a face under it is lit by that lamp as drawn), times the strength
+  // (uNormalShade.w and .z).
+  vec3 lampDrawn = vec3(0.0);
+  float lampShading = isFlat ? 0.0 : uNormalShade.z;
   const float DISTANCE_SCALE = 1.0 / 1024.0;
   // The cones first, then every other light as before.
   int coneCount = int(uConeCount);
@@ -466,7 +471,10 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
       total += col.rgb * cosine * cone * intensityScaled
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
-    if (both) lampFlat += col.rgb * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    if (both) {
+      lampDrawn += col.rgb * (cone * (1.0 - max(1.0 - max(cosine, 0.0) - uNormalShade.w, 0.0) * lampShading))
+        * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    }
 // #if !TILES
   }
   for (int j = 0; j < MAX_LIGHTS; j++) {
@@ -483,6 +491,8 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     float d = length(toLight);
     float cosine = dot(n, toLight) / max(d, 0.001);
     if (cosine <= 0.0 && !both) continue;
+    // OL-6: the face's own cosine, before the lamp's map and the pixel's own shade scale it.
+    float facing = max(cosine, 0.0);
     // The source's height is folded into I' and the colour (I' = I + h²): I / (I + d²) = k I' / (I' - h² + d²).
     float scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     float intensityScaled = posInt.z * scaled;
@@ -518,23 +528,27 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
       total += col.rgb * cosine * win * intensityScaled
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
-    if (both) lampFlat += col.rgb * (lampVis * lampSelf * win) * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    if (both) {
+      lampDrawn += col.rgb * (lampVis * lampSelf * win * (1.0 - max(1.0 - facing - uNormalShade.w, 0.0) * lampShading))
+        * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    }
 // #if TILES
     }
 // #endif TILES
   }
   if (!both) return total;
-  vec3 totalFlat = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB) + vec3(uSunR, uSunG, uSunB) * uSunIntensity * sunFlat
-    + lampFlat;
-  if (isFlat) return totalFlat;
-  // OL-2 (lighting.normalStrength): how much a sprite's own normal counts is the developer's, for the sun and for the
-  // lamps apart (uFaceLight.y and .z: 0 as drawn, 1 by its normal). total is the light by the normal; without the
-  // ambient and the sun, what is left of it is the lamps'.
-  vec3 baseLight = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB);
-  vec3 sunColour = vec3(uSunR, uSunG, uSunB) * uSunIntensity;
-  vec3 sunByNormal = sunColour * (1.0 - uFaceLight.w + uFaceLight.w * sunDirect);
-  vec3 lampsByNormal = max(total - baseLight - sunByNormal, vec3(0.0));
-  return baseLight + mix(sunColour * sunFlat, sunByNormal, uFaceLight.y) + mix(lampFlat, lampsByNormal, uFaceLight.z);
+  // A FLAT pixel gets the sun as drawn (sunFlat). OL-6: on a sprite's own normal the sun's shading is what the normal
+  // takes from that, in shares of the sun (by the normal a face gets the sky's share and the direct share by its
+  // cosine): the amount subtracted comes off it first, so a face under it stays as drawn, and the strength scales the
+  // rest (uNormalShade.y and .x). A face that looks at the sun more than the floor does gains instead, by the strength
+  // alone. The lamps lost their shading in their loops (lampDrawn).
+  float sunLit = sunFlat;
+  if (!isFlat) {
+    float sunByNormal = 1.0 - uFaceLight.w + uFaceLight.w * sunDirect;
+    sunLit += (max(sunByNormal - sunFlat, 0.0) - max(sunFlat - sunByNormal - uNormalShade.y, 0.0)) * uNormalShade.x;
+  }
+  return vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB) + vec3(uSunR, uSunG, uSunB) * uSunIntensity * sunLit
+    + lampDrawn;
 }
 // #endif FACES
 

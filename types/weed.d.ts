@@ -373,11 +373,18 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    */
   selfShadow?: boolean;
   /**
-   * How much a sprite's own normals count (its normal map's, or the ones its height map gives), for the sun and for the
-   * lamps apart: 0 lights the sprite as it is drawn, 1 by its normals. Default `{ sun: 0, lamps: 1 }`: the picture as
-   * drawn by day, its relief under a lamp. Faces and sprites without maps do not read it.
+   * The shading a sprite's own normals cause (its normal map's, or the ones its height map gives), for the sun and for
+   * the lamps apart. A light's shading on a pixel is what the normal takes from it (0: lit as drawn; 1: no light).
+   * `subtract` comes off it first (what falls under 0 stays 0, so a face shaded less than that is lit as drawn), then
+   * `strength` multiplies the rest: 0 lights the sprite as it is drawn, 1 with nothing subtracted by its normals. All
+   * four from 0 to 1; the sun's shading runs up to `1 - sun.skyLight` (0.6 by default), a lamp's up to 1. Default
+   * `{ sun: { strength: 0, subtract: 0 }, lamps: { strength: 1, subtract: 0 } }`: the picture as drawn by day, its
+   * relief under a lamp. Faces and sprites without maps do not read it.
    */
-  normalStrength?: { sun?: number; lamps?: number };
+  normalShading?: {
+    sun?: { strength?: number; subtract?: number };
+    lamps?: { strength?: number; subtract?: number };
+  };
   /**
    * Walls (default false). true: an entity's `shadowCaster.setWall()` stops lamps and headlights (point and cone lights)
    * at its Collider's outline, as tall as the world, with any camera; each light that casts shadows sweeps the walls in

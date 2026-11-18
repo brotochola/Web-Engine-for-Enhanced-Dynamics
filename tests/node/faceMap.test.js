@@ -265,7 +265,7 @@ test('the light pass reads a FLAT pixel and the k bit in both languages, and mas
     const on = lightingSource(shader(name), { faces: true, sunMap: true, selfShadow: true, lampMap: true });
     assert.match(on, /253\.5 \/ 255\.0/, `${name}: the FLAT code`);
     assert.match(on, /32768\.0/, `${name}: the k bit`);
-    assert.match(on, /lampFlat/, `${name}: the lamps lit as drawn`);
+    assert.match(on, /lampDrawn/, `${name}: the lamps lit as drawn`);
   }
 });
 

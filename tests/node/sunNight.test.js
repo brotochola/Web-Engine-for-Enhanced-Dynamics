@@ -157,19 +157,19 @@ test('both lighting shaders add the night term, and the WGSL struct lists what t
   const flags = (source, on) =>
     ['FACES', 'SUNMAP', 'SELFSHADOW', 'LAMPMAP', 'TILES', 'WALLS'].reduce((s, name) => shaderWithFlag(s, name, on), source);
   const names = fields(flags(wgsl, false));
-  // lighting.faces adds its two at the end of the group, then the sun map's terms, self-shadow's, the lamps' map's
+  // lighting.faces adds its three at the end of the group (OL-6: uNormalShade), then the sun map's terms, self-shadow's, the lamps' map's
   // (DX-SHADOW3D F7), the light tiles' (E-205) and the walls' (OL-4), as the worker does.
   const facesOnly = flags(shaderWithFlag(wgsl, 'FACES', true), false);
-  assert.deepEqual(fields(facesOnly), [...names, 'uFaceLight', 'uFaceSun']);
+  assert.deepEqual(fields(facesOnly), [...names, 'uFaceLight', 'uFaceSun', 'uNormalShade']);
   assert.deepEqual(
     fields(flags(wgsl, true)),
-    [...names, 'uFaceLight', 'uFaceSun', 'uSunMapK', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords', 'uWalls'],
+    [...names, 'uFaceLight', 'uFaceSun', 'uNormalShade', 'uSunMapK', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords', 'uWalls'],
   );
   const end = pixi.indexOf('...this._lightingShadowResources()');
   const start = pixi.lastIndexOf('uCameraPos:', end);
   const declared = [...pixi.slice(start, end).matchAll(/^\s*(u\w+):/gm)].map((m) => m[1]);
   assert.deepEqual(declared, names, 'Pixi lays the buffer out in the group order');
-  const added = ['uFaceLight', 'uFaceSun', 'uSunMapK', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords', 'uWalls'].map((name) =>
+  const added = ['uFaceLight', 'uFaceSun', 'uNormalShade', 'uSunMapK', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords', 'uWalls'].map((name) =>
     pixi.indexOf(`lightingResources.uniforms.${name} =`),
   );
   assert.ok(added.every((at, k) => at > end && (k === 0 || at > added[k - 1])), 'the worker adds the optional ones in that order');

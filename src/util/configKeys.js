@@ -88,7 +88,10 @@ export const SCENE_CONFIG_SCHEMA = Object.freeze({
     // lighting.walls and debug.lightFans (Scene._applyConfigDefaults) for the code that reads it.
     ...keys(LIGHTING_DEFAULTS, ['directionalCasters', 'wallFans']),
     particleLights: keys(LIGHTING_DEFAULTS.particleLights),
-    normalStrength: keys(LIGHTING_DEFAULTS.normalStrength),
+    normalShading: {
+      sun: keys(LIGHTING_DEFAULTS.normalShading.sun),
+      lamps: keys(LIGHTING_DEFAULTS.normalShading.lamps),
+    },
     sun: {
       ...keys(SUN_DEFAULTS),
       dayCycle: keys(SUN_DEFAULTS.dayCycle),

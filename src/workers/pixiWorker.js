@@ -46,7 +46,7 @@ import {
   LAYER_KIND,
   LAYER_SCALE_MODE,
   PARTICLE_DEFAULTS,
-  normalStrengthOf,
+  normalShadingOf,
   resolveZenithalMaxHeight,
 } from '../util/configDefaults.js';
 import {
@@ -1155,14 +1155,16 @@ class PixiRenderer extends AbstractWorker {
     this._noMapsSource = null; // DX-MAPS: its stand-in when none has (_emptyMapsSource)
     // DX-BARRIOS: faces have no switch. Whether the light pass reads the face map, whether the faces-in-use word was acted
     // on (_useFaces), whether this scene's light can take faces (lit, not by the old fan pass); the px a px of height rises (the
-    // camera's); the faces' light terms (uFaceLight: heightScaleY, lighting.normalStrength's sun and lamps (OL-2), the sun's
-    // direct share 1 - Sun.skyLight).
+    // camera's); the faces' light terms (uFaceLight: heightScaleY, 0, 0, the sun's direct share 1 - Sun.skyLight) and what a
+    // sprite's own normals take (uNormalShade, OL-6: lighting.normalShading's strength and subtract for the sun, then
+    // for the lamps).
     this._facesOn = false;
     this._facesUsed = false;
     this._facesWatch = false;
     this._heightScaleY = NaN;
     this._faceLight = new Float32Array(4);
     this._faceSun = new Float32Array(4); // towards the sun, once a frame
+    this._normalShade = new Float32Array(4);
     this._faceRtLayer = { resolution: 1 }; // _writeCameraRtTransform's layer for the face map
     this._faceRtTransform = new Matrix();
     this._faceCamera = new Float64Array(4).fill(NaN); // the camera _faceRtTransform was written for
@@ -4885,17 +4887,24 @@ LIGHTING SYSTEM SETUP
     const facesOn = this._facesOn;
     if (facesOn) {
       // DX-BARRIOS: no wrap or gain any more; the sun's direct share follows Sun.skyLight (_writeFaceSun, each frame).
-      // OL-2: how much a sprite's own normals count for the sun and for the lamps (lighting.normalStrength).
       const faceLight = this._faceLight;
-      const normalStrength = normalStrengthOf(this.config.lighting);
       // OL-4: 0 where the camera shows no height (straight down, or from the side): a pixel's height then moves it nowhere
       // on the screen. 1 only where the camera has not been read.
       faceLight[0] = this._heightScaleY >= 0 ? this._heightScaleY : 1;
-      faceLight[1] = normalStrength.sun;
-      faceLight[2] = normalStrength.lamps;
+      faceLight[1] = 0;
+      faceLight[2] = 0;
       faceLight[3] = 1 - Sun.skyLight;
       lightingResources.uniforms.uFaceLight = { value: faceLight, type: 'vec4<f32>' };
       lightingResources.uniforms.uFaceSun = { value: this._faceSun, type: 'vec4<f32>' };
+      // OL-6 (lighting.normalShading): what a sprite's own normals take from the sun and from each lamp, less the
+      // amount subtracted, times the strength. After uFaceSun, as the WGSL's struct has it.
+      const shading = normalShadingOf(this.config.lighting);
+      const normalShade = this._normalShade;
+      normalShade[0] = shading.sun.strength;
+      normalShade[1] = shading.sun.subtract;
+      normalShade[2] = shading.lamps.strength;
+      normalShade[3] = shading.lamps.subtract;
+      lightingResources.uniforms.uNormalShade = { value: normalShade, type: 'vec4<f32>' };
       lightingResources.uFaceMap = PIXI.Texture.EMPTY.source;
     }
     if (this._sunMapOn) {

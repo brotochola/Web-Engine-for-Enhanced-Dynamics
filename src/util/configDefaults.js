@@ -845,12 +845,18 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   selfShadow: false,
   /**
-   * OL-2: how much a sprite's own normals count (its normal map's, or the ones its height map gives), for the sun and for
-   * the lamps apart: 0 lights the sprite as it is drawn, at its place in 3D; 1 lights it by its normals; between them, a
-   * mix. Faces (decorations with a normal) and sprites without maps do not read it. The default keeps the picture as
-   * drawn by day and shows its relief under a lamp. normalStrengthOf reads it.
+   * OL-6: the shading a sprite's own normals cause (its normal map's, or the ones its height map gives), for the sun and
+   * for the lamps apart. A light's shading on a pixel is what the normal takes from it: 0 where the pixel gets what it
+   * gets as drawn, 1 where it gets nothing. `subtract` comes off it first (what falls under 0 stays 0: a face shaded
+   * less than that is lit as drawn), then `strength` multiplies what is left: 0 lights the sprite as it is drawn, 1
+   * with nothing subtracted lights it by its normals. The sun's shading runs from 0 to 1 - lighting.sun.skyLight (0.6
+   * by default), a lamp's from 0 to 1. Faces (decorations with a normal) and sprites without maps do not read it. The
+   * default keeps the picture as drawn by day and shows its relief under a lamp. normalShadingOf reads it.
    */
-  normalStrength: Object.freeze({ sun: 0, lamps: 1 }),
+  normalShading: Object.freeze({
+    sun: Object.freeze({ strength: 0, subtract: 0 }),
+    lamps: Object.freeze({ strength: 1, subtract: 0 }),
+  }),
   /**
    * OL-4: walls. true: an entity's `shadowCaster.setWall()` stops lamps and headlights at its Collider's outline, as tall
    * as the world: each light sweeps the walls in its reach (the spatial worker's neighbour lists, pre-render's visibility
@@ -923,19 +929,23 @@ export function lightGlowResolutionOf(lighting) {
 }
 
 /**
- * OL-2: a scene's lighting.normalStrength, each of its two numbers in 0..1; the default's for one that is missing or not
- * a number (a scene may write one of the two).
+ * OL-6: a scene's lighting.normalShading, each of its four numbers in 0..1; the default's for one that is missing or not
+ * a number (a scene may write any of them).
  * @param {object|undefined} lighting config.lighting
- * @returns {{ sun: number, lamps: number }}
+ * @returns {{ sun: { strength: number, subtract: number }, lamps: { strength: number, subtract: number } }}
  */
-export function normalStrengthOf(lighting) {
-  const given = lighting?.normalStrength;
-  const one = (key) => {
-    const v = given !== null && typeof given === 'object' ? given[key] : undefined;
-    if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.normalStrength[key];
+export function normalShadingOf(lighting) {
+  const given = lighting?.normalShading;
+  const one = (light, key) => {
+    const of = given !== null && typeof given === 'object' ? given[light] : undefined;
+    const v = of !== null && typeof of === 'object' ? of[key] : undefined;
+    if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.normalShading[light][key];
     return v < 0 ? 0 : v > 1 ? 1 : v;
   };
-  return { sun: one('sun'), lamps: one('lamps') };
+  return {
+    sun: { strength: one('sun', 'strength'), subtract: one('sun', 'subtract') },
+    lamps: { strength: one('lamps', 'strength'), subtract: one('lamps', 'subtract') },
+  };
 }
 
 // ============================================================================
