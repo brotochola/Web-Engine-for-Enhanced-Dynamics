@@ -21908,7 +21908,8 @@
       "records": [
         "R-1326",
         "R-1330",
-        "R-1333"
+        "R-1333",
+        "R-1336"
       ],
       "id": "N-266",
       "kind": "bug",
@@ -22220,7 +22221,8 @@
       "records": [
         "R-1327",
         "R-1330",
-        "R-1333"
+        "R-1333",
+        "R-1336"
       ],
       "result": "",
       "next": "Skip the steps past the face map in GLSL as the WGSL does (one line), film the drift with ?selfShadow=0 against on, WebGL against WebGPU. Left after it: a self-shadow from a part of the house that has left the screen is lost (the face map covers the view only); a face map with a margin on the sun's side would keep it.",
@@ -22354,7 +22356,8 @@
         "R-1328",
         "R-1330",
         "R-1331",
-        "R-1333"
+        "R-1333",
+        "R-1336"
       ],
       "result": "",
       "next": "Merge fix/decoration-owner with fix/gbuffer-depth once measured. Later, the editor could export volumes as levels (body + tank: addLevel) instead of a convex hull, for truer ground shadows too.",
@@ -22378,7 +22381,8 @@
         "R-1328",
         "R-1330",
         "R-1331",
-        "R-1333"
+        "R-1333",
+        "R-1336"
       ],
       "result": "",
       "next": "Merge with N-275 once measured; then the unshaded pass (N-266) the same way, and E-463's cost read again (early depth for the frames without heights).",
@@ -22402,7 +22406,8 @@
         "R-1328",
         "R-1330",
         "R-1331",
-        "R-1333"
+        "R-1333",
+        "R-1336"
       ],
       "result": "",
       "next": "Merge with N-274 once measured; the HD 620 drawn frames with the words at three floats.",
@@ -22425,7 +22430,8 @@
         "R-1323",
         "R-1328",
         "R-1330",
-        "R-1333"
+        "R-1333",
+        "R-1336"
       ],
       "result": "",
       "next": "Merge with the N-273..N-275 stack; Predator gate and the HD 620 drawn frames.",
@@ -35786,6 +35792,16 @@
       "commits": [
         "78bf9941",
         "3280bf06"
+      ]
+    },
+    {
+      "id": "R-1336",
+      "date": "2026-11-17",
+      "title": "HD 620: the stack with N-272 rewritten (no per-step test) and main's N-262 still 6.9 % behind main",
+      "verdict": "fail",
+      "text": "ASUS job 0892d (the other session's), HD 620, main dfc1afd5 against fix/gbuffer-depth e0c49f6a, barrio hour=22&dayMinutes=0, camera still, 4 pairs, --full-rev: drawn A [49] 377 373 370 | B 344 347 347 352 (one A run froze), clean means 373 against 348, -6.9 % (runner -5.9 % paired, 3/4). CPU workers level or lower. The rewrite of N-272 recovered little of the 4.5 points its arm showed (exp/no-n272, -2.9 % on the old base); queued: the new base without N-272 (exp/no-n272-v2 b2aebcc2) and a per-pass GPU split.",
+      "commits": [
+        "e0c49f6a"
       ]
     }
   ],
