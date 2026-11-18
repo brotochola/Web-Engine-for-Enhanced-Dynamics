@@ -22540,6 +22540,23 @@
       "records": [
         "R-1340"
       ]
+    },
+    {
+      "id": "E-519",
+      "title": "The twin page packed by the maps a sheet brings: a height map alone in 2 bytes a texel (normals from the shader's Sobel, E-497's B), a normal map alone in 2 (its normal, the height from surface), both in today's 4 (A)",
+      "status": "open",
+      "statusText": "the owner, 2026-11-18: \"todo bien con tener un formato propio de weedjs con normal maps y height maps, pero muchos devs van a tener solo uno de esos, y quiero q weedjs los soporte bien. poner uno, el otro, ambos separados; si dps weedjs lo empaqueta diferente, ahi esta bien testear y medir cual es la mejor forma\". Today every kind (heightMap, normalMap, both, reliefMap) is accepted and packed in A; E-497 chose A on sprites that bring both maps (B changed their picture: the tool's stored normals against the Sobel's). With one map only, B (or a normal-only format) should give A's picture in half the memory",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "First the support itself: spriteMapsStressScene ?maps=height|normal|both|relief captured on WebGL and WebGPU, each looking right (N-258, normals flipped and turned with the sprite, belongs here: a mirrored car with a normal map is lit on the wrong side). Then per kind: A against its own packing, the same picture (compareCaptures), twin page MB, load time, the G-buffer pass's ms on the four GPUs (GTX 1650, Radeon, HD 620, MX110).",
+      "area": "render",
+      "kind": "speed",
+      "refs": [],
+      "aliases": [
+        "twin packing by map kind",
+        "maps input kinds"
+      ],
+      "records": []
     }
   ],
   "records": [
