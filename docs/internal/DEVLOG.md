@@ -64,6 +64,58 @@ same at every frame. Not built.
 Both backends draw the same picture, to the pixel. Nothing else in the bench moved: the trees, the person, the barn and
 the props cast as they did.
 
+## Wednesday 18 November 2026 (night to afternoon) — One Light for Every Camera
+
+It started with a question from the owner: now that the engine has normal maps, height maps and a G-buffer, what does
+"self lit" still do? The answer was a second light system. A flat camera (`camera.pitch` 90 or 0: the top-down demos,
+the flashlights, the landing scene) lit with raycasted lighting, a pass of its own from the spatial worker to three pairs
+of shaders, where normal maps, height maps, `unshaded` and the shadow maps did nothing, and a lamp could cast walls and
+nothing else. To light a wall's own pixels it painted a "self-lit" fill and invented a sphere normal for it. About 5 000
+lines, and 3 500 of tests, that no other camera used. The plan, DX-ONELIGHT, was written on Tuesday; it was built the
+next night, in the owner's order: the code first, the measuring after.
+
+**Walls are something the developer asks for, not something a camera angle implies.** `lighting.walls: true`, whatever
+the pitch. Pre-render still sweeps each lamp's visibility polygon on the CPU, as it did, and publishes one row a lamp:
+the polygon and, for each edge, which wall made it and how much light that wall lets through. The one light pass reads
+the row inside its loop over the lamps: it finds the edge in the pixel's direction and tests which side the pixel is on.
+Inside, full light. Outside, a pixel of the wall that stopped the light is lit by the rule the shadow maps already had
+(a pixel skips its own entity), which replaced the self-lit fill and its made-up normal; anything else gets what the
+wall lets through. So a flat view now has what an oblique one has: normal and height maps, `unshaded`, the sun's and the
+lamps' shadow maps, particle lights, the dither. The surprise went the other way too: the sweep works on any floor
+scale, so oblique cameras got walls.
+
+**Two things the engine decided by itself are options now.** How much a sprite's own normals show is
+`lighting.normalShading`, for the sun and the lamps apart; the automatic strength nobody chose is gone. The owner's eye
+on the first pictures: at full strength the sun's normals darken everything too much, a fifth of the view losing 43 % of
+its light, because every upright face that does not look at the sun loses up to 60 % on a picture that already carries
+its painted light. What he wanted was not less of it but a different shape: almost nothing shaded, and that little,
+dark. So the shading has a `subtract` (0.5 comes off before anything shows) and a `strength` that goes past 1 (what is
+left darkens faster): `min(max(shading - subtract, 0) * strength, shading)`. He named the knob: `wrap` was rejected,
+`subtract` says what it does. And the shadow modes say what they are: `'layer'` and `'sorted'`, where both said
+`'sprite'`.
+
+**The pictures showed two faults before he accepted it.** A rim of bright pixels round the houses: the light pass runs
+at a quarter of the resolution, and a light tile that straddles a wall's outline lit the floor beside it. "Ante la duda,
+que queden oscuros": the walls' edges now use the entities' depth per pixel, as the sprites' edges did. And the cars'
+bonnets went dark under a sun behind them, which was the art's maps and not the light: the tool that fits a body to each
+car's silhouette had put the windscreen over the bonnet and sloped half of every bonnet. It now measures the cabin on
+the side view's glass and holds the nose to 3 px. 27 sheets were redone; a hatchback's bonnet went from 88 to 183 of 183.
+
+**Then the old pass was deleted.** It had stayed behind a debug knob to compare against. The owner accepted the pictures
+and the numbers and asked for the lines to go: Pixi's fans, self-lit fills and wedges with nine shader files,
+pre-render's published polygons and self-lit queue, their config keys. `src/` is 2 783 lines shorter for the deletion
+and 1 529 shorter for the whole branch, which added a feature. What proved that nothing moved: a real pre-render worker
+before and after, 1 856 of 1 856 rows bit for bit over eight configurations, and the still scenes 0 px apart on both
+backends. The timing: 360 moving lamps, pre-render 2.934 to 2.938 ms; Predator's gate at two and a half times its
+crowd, no regression; the bundle against the source with 720 moving lamps, 5.501 to 5.518 ms. The shaders run on the
+four GPUs here.
+
+**What is left.** A wall's shadow keeps a third of the lamp, as the old pass had it: the owner kept it. A wall with no
+sprite of its own reads dark inside its outline, where the old pass drew a lit block. Near a compound solid a lamp's row
+can miss a wall seen only between two rays (N-300), and the bright rim still shows in flat views, which have no depth
+per pixel (N-299). The sweep stays on the CPU and the lamps' shadow maps stay an option of their own: the owner asked
+whether he had to choose between them, and he did not.
+
 ## Tuesday 17 November 2026 — Instruments That See What the Machine Actually Does
 
 Chrome's profiler says which function took the time. It does not say why: whether the CPU waited on memory, whether
