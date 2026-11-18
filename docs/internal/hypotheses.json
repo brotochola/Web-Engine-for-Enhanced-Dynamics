@@ -22988,6 +22988,27 @@
       "date": "2026-11-18",
       "title": "Houses do not move: draw them once into a cached layer (their colour, and their G-buffer data: face normals, heights, ids) and redraw it only when the view changes, as E-504 caches the floor",
       "statusText": "proposed 2026-11-18 and chosen by the owner, from the ASUS's faces-against-maps sitting: the faces' cost is the count of pieces (pre-render, Intel by day), not the format"
+    },
+    {
+      "refs": [
+        "REVIEW_PLAN.md#DX-LIGHTTICK"
+      ],
+      "aliases": [
+        "lighting tick interval",
+        "light at 30 fps",
+        "lighting update interval",
+        "light decimation"
+      ],
+      "records": [],
+      "result": "",
+      "next": "Design: which passes the knob covers and what a skipped frame reuses (see the plan row); then measure on the main PC: the barrio and Predator ?light3d=1 at interval 1 and 2 (GPU per pass, drawn frames, every worker), and look at moving lights (headlights, flashlights) in motion.",
+      "id": "DX-LIGHTTICK",
+      "kind": "feature",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "A tick interval for the whole lighting system (a dev knob): the light pass, the shadow maps and the shading recomputed every N frames (30 fps at N = 2) while everything else draws at 60; today only the sprites' cast shadows have one (lighting.shadowUpdateInterval)",
+      "statusText": "the owner's idea, 2026-11-18; not designed or built"
     }
   ],
   "records": [
