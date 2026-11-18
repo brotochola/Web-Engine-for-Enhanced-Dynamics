@@ -22243,10 +22243,10 @@
       "id": "DX-ONELIGHT",
       "title": "One light system for every camera: a flat view (camera.pitch 90 or 0) gets the same lighting options as any other camera (normal and height maps, unshaded, the shadow maps, sprite and height map shadows from the lamps), raycasted lighting stops being a pass of its own, and the engine stops inventing what the developer did not bring (the self-lit fill's sphere normal, the automatic strength of a sprite's normals)",
       "status": "open",
-      "statusText": "Owner-approved plan (2026-11-17), not started: \"agregá esto al backlog, bien detallado\"; to be built by a session of its own, from the plan alone. Decided with the owner: what casts (the sprite or the height map) and where shadows are drawn (the layer or a map) stay the developer's options; removing the painted (layer) mode was proposed and rejected (\"los sprites estampados quedan bien, son opciones que los devs tienen\")",
+      "statusText": "Owner-approved plan (2026-11-17), being built since 2026-11-18 on dx/one-light (the owner's order that day: all the code first, with the suites and one capture an item, measuring and optimizing after it; OL-4 as final B, picked by eye): \"agregá esto al backlog, bien detallado\"; to be built by a session of its own, from the plan alone. Decided with the owner: what casts (the sprite or the height map) and where shadows are drawn (the layer or a map) stay the developer's options; removing the painted (layer) mode was proposed and rejected (\"los sprites estampados quedan bien, son opciones que los devs tienen\")",
       "date": "2026-11-17",
       "result": "",
-      "next": "OL-1 (the names) and OL-2 (the normals' option) stand alone; OL-3 (the race) decides how OL-4 is built; nothing is deleted before OL-4's pictures and numbers are accepted. Estimate: about 16 to 23 h in a row. The owner's open decisions are in the plan's section 5.",
+      "next": "Built in this order: OL-1 (the names), OL-2 (the normals' option), OL-4 (final B); then OL-3 (the race, with final B's pass as one more arm) and every other measurement; nothing is deleted before OL-4's pictures and numbers are accepted. The owner's open decisions are in the plan's section 5.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22258,7 +22258,8 @@
         "raycasted lighting retired"
       ],
       "records": [
-        "R-1317"
+        "R-1317",
+        "R-1350"
       ],
       "rank": 20
     },
@@ -22266,7 +22267,7 @@
       "id": "OL-1",
       "title": "Names: the shadows' painted mode is lighting.sunShadows / lampShadows 'layer' (was 'sprite') and a halo drawn among the entities is lighting.lightGlow 'sorted' (was 'sprite'); 'sprite' keeps meaning the sprite that casts (setSprite, shadowCast.sun) or cuts (setWall's shape)",
       "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), not started; the owner approved both names. The word cost the planning chat an hour: \"sprite shadows\" was read as the sprite that casts",
+      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), being built since 2026-11-18 on dx/one-light; the owner approved both names. The word cost the planning chat an hour: \"sprite shadows\" was read as the sprite that casts",
       "date": "2026-11-17",
       "result": "",
       "next": "Two commits (the shadows' value, the glow's). No code compares the shadow modes with 'sprite' (everything asks === 'map'): the two defaults, a check that warns once on any other value, the six reads of lightGlow, then types, guide, demos, stress scenes, checks and tests (the plan lists them). No aliases. No picture changes, so no sitting: the suites and check:types.",
@@ -22281,17 +22282,18 @@
         "shadow mode names"
       ],
       "records": [
-        "R-1317"
+        "R-1317",
+        "R-1350"
       ]
     },
     {
       "id": "OL-2",
       "title": "A sprite's normals under the sun and under the lamps as the developer's option (lighting.normalStrength { sun, lamps } recommended), instead of the light pass's automatic blend by the lamps' share of the light (k = lamps / (lamps + ambient + sun): by day as drawn, at night by the normals)",
       "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), not started; the owner asked for the option (\"estas cuestiones automáticas que hace weedjs no me copan tanto\") and picks its default from pictures",
+      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), being built since 2026-11-18 on dx/one-light; the owner asked for the option (\"estas cuestiones automáticas que hace weedjs no me copan tanto\") and picks its default from pictures",
       "date": "2026-11-17",
       "result": "",
-      "next": "faceLight in lightingBasic (GLSL and WGSL): each kind of light mixes \"as drawn\" and \"by its normal\" by its own strength, no k; normalLightCheck and faceLightCheck updated; captures of the light bench at noon, dusk and night and of Predator ?light3d=1 by night, old against new, for the owner (recommended default sun 0, lamps 1: today's picture at both ends of the old blend); every variant still links on WebGL; gpuPassBench on both backends and the Predator gate once.",
+      "next": "faceLight in lightingBasic (GLSL and WGSL): each kind of light mixes \"as drawn\" and \"by its normal\" by its own strength, no k; normalLightCheck and faceLightCheck updated; captures of the light bench at noon, dusk and night and of Predator ?light3d=1 by night, old against new, for the owner (recommended default sun 0, lamps 1: today's picture at both ends of the old blend); every variant still links on WebGL; gpuPassBench on both backends and the Predator gate once. One reading on the ASUS's HD 620 for the record, not a condition.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22303,17 +22305,18 @@
         "automatic normal strength"
       ],
       "records": [
-        "R-1317"
+        "R-1317",
+        "R-1350"
       ]
     },
     {
       "id": "OL-3",
-      "title": "The race: one flat stress scene on raycasted lighting (the CPU sweep) against the lamps' shadow maps (walls as volumes taller than the lamps), at 8 to 128 casting lights, on the main machine and on the ASUS: what should stop the lamps in a flat view",
+      "title": "The race: one flat stress scene on raycasted lighting (the CPU sweep drawn as fans) against the lamps' shadow maps (walls as volumes taller than the lamps), the common pass alone and final B's pass, at 8 to 128 casting lights; the main machine decides: what should stop the lamps in a flat view",
       "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), not started; a measurement, nothing changes in src/",
+      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), revised 2026-11-18: it runs after OL-4's code (the owner's order: the code first, measurements after); a measurement, nothing changes in src/",
       "date": "2026-11-17",
       "result": "",
-      "next": "A knob on visPolyStressScene for the maps' arm (no pitch, lampShadows 'map', each occluder a volume taller than the lamps, lamps with an elevation), a capture showing the two arms' shadows match, then R M R M pairs: pre-render's and Pixi's STEP_MS − WAIT_MS on both arms, the GPU's time a frame, the frames drawn on the ASUS, and a shadow's edge zoomed in for the owner. Proposed rule: final A (the maps, the sweep deleted) when the maps are within the detection limit at 32 and 64 lamps on both machines and the owner accepts the edges; else final B (the sweep stays and feeds the common light pass). The planner's guess, unmeasured: B (the maps hold 64 lamps at 256 texels and run on the GPU, which limits the ASUS; the sweep ran 720 lights).",
+      "next": "Knobs on visPolyStressScene for the arms (R: the old fans, behind debug.lightFans; M: no pitch, lampShadows 'map', each occluder a volume taller than the lamps, lamps with an elevation; C: the common pass alone, the G-buffer on, nothing stopping the lamps; B: final B's pass), a capture showing the arms' shadows match, then R M C B rounds on the main machine: pre-render's and Pixi's STEP_MS − WAIT_MS, the GPU's time a frame, and a shadow's edge zoomed in for the owner. One reading on the ASUS at 32 lamps for the record (frames drawn), not a condition. Proposed rule: final A (the maps, the sweep deleted) when the maps are within the detection limit of the fans at 32 and 64 lamps on the main machine and the owner accepts the edges; else final B. If the common pass alone already loses clearly to the fans, the owner hears it before choosing. The planner's guess, unmeasured: B, with less confidence since the ASUS left the rule (what is left: the casting lamps that move, the edges).",
       "area": "render",
       "kind": "speed",
       "refs": [
@@ -22324,17 +22327,18 @@
         "raycast against lamp maps"
       ],
       "records": [
-        "R-1317"
+        "R-1317",
+        "R-1350"
       ]
     },
     {
       "id": "OL-4",
       "title": "The flat view on the common light pass: lighting.raycasted no longer picks the pass, a wall stops a lamp through the lamps' maps (final A) or through the sweep's result read by the light pass (final B), and the fans, the self-lit fills, the wedges and their shaders are deleted (about 2 000 lines in final B; about 5 000 and 3 500 of tests in final A)",
       "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), not started; waits for OL-3 and the owner's choice of final",
+      "statusText": "Being built since 2026-11-18 on dx/one-light as final B, picked by eye before the race (the owner's order: the code first, with the suites and a capture an item; measuring and optimizing after it)",
       "date": "2026-11-17",
       "result": "",
-      "next": "Pitch 90 first, then pitch 0 (neither has run on the common pass). A wall's own pixels are lit by the maps' rule (the pixel's entity is the caster's) instead of self-lit's made-up sphere, so the look of every raycast scene changes: captures and films for the owner, who also decides how a wall's own sprite is lit (whole, or to a depth from the edge the lamp sees: N-38's fix). Then the 8 demos and 7 stress scenes moved, the owner scenes (visPoly, compoundVisPoly, flashlight) and the Predator gate, and only then the deletion. Closes N-38 and N-163 by deletion.",
+      "next": "Final B: the scene asks for walls with lighting.walls (not the pitch: lighting.raycasted goes); pre-render publishes a row a lamp (its visibility polygon, each edge's wall and opacity, an index by direction) and the light pass reads it (a WALLS variant): inside the polygon the light; outside it the light for the wall's own pixels (the maps' own-entity rule, instead of self-lit's made-up sphere) and the light times one minus the wall's opacity for the rest (the wedges). Pitch 90 first, then pitch 0 (neither has run on the common pass). The flat view also gets particle lights, LiquidFun's light field, pixelArt, selfShadow, dither and the light edges. The old pass stays behind debug.lightFans until the pictures and numbers are accepted: captures and films for the owner, who also decides how a wall's own sprite is lit (whole, or to a depth from the edge the lamp sees: N-38's fix). Then the gate: the owner scenes (visPoly, compoundVisPoly, flashlight) by their owner worker and by the GPU's time a frame and their frames drawn (STEP_MS − WAIT_MS does not see the common pass's fill), the Predator gate, and only then the deletion. Walls with a floor scale other than 1 are a follow-up. Closes N-38 and N-163 by deletion.",
       "area": "render",
       "kind": "feature",
       "refs": [
@@ -22346,7 +22350,8 @@
         "raycast pass deleted"
       ],
       "records": [
-        "R-1317"
+        "R-1317",
+        "R-1350"
       ]
     },
     {
@@ -35899,6 +35904,15 @@
       "commits": [
         "d74a5d7e"
       ]
+    },
+    {
+      "id": "R-1350",
+      "date": "2026-11-18",
+      "time": "02:19",
+      "timeFrom": "recorded",
+      "title": "The one-light plan revised against main at 4f60d4bd and its building started: the code first, final B by eye, the race after",
+      "verdict": "note",
+      "text": "**The one-light plan (DX-ONELIGHT, `ONE_LIGHT_PLAN.md`) read again against main at 4f60d4bd, revised, and its building started on `dx/one-light`; nothing run or measured.** Nothing of OL-1 to OL-4 had been built. Since the plan's first reading (1951de51) the light's code took N-262, N-266, N-273 to N-276, E-502, E-508 to E-511 and `lighting.dither` (N-277); N-272 is still on branches.\n\n- **Changed in the plan.** The race (OL-3) is decided on the main machine: its first rule asked for the ASUS too, and the owner said on 2026-11-18 that the HD 620 is not the yardstick (one low-end reading there, no condition). Two more arms: the common pass alone (the floor of what either final costs on the GPU) and final B's own pass. OL-4's gate reads the GPU's time a frame and the frames drawn, since Pixi's `STEP_MS − WAIT_MS` does not see the fill a full-screen pass adds over the fans. In final B the sweep is asked for with a key (`lighting.walls`), not by the pitch. Section 2 brought up to date: the flat view also lacks particle lights, LiquidFun's light field, `pixelArt`, `selfShadow`, `dither` and the light edges; the lamps' map after N-276 (R-1147's 0.69 ms is older than it and than E-508's cache).\n- **The owner's order.** All the code first, with the suites and one capture an item; measuring and optimizing after it. So OL-4 is built before the race, as final B, picked by eye (if the race says A, the row the light pass reads is thrown away, 2 to 3 h of code); the old pass stays behind `debug.lightFans` until the pictures and numbers are accepted; the deletion comes last."
     }
   ],
   "leads": [
