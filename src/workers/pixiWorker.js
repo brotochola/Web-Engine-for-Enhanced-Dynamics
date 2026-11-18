@@ -360,6 +360,7 @@ import {
   WEBGPU_DEFAULT_STORAGE_BINDING,
 } from '../render/rendererBackend.js';
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
+import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
 import { GPU_KEYED_ROW_WORDS, bindGpuPack } from '../render/gpuPackClient.js';
 import { createStaticsScatterGl, scatterStaticsGl } from '../render/webgl/staticsScatterGl.js';
@@ -652,6 +653,8 @@ class PixiRenderer extends AbstractWorker {
     this._proxiesOn = false;
     this._rqIdxEntity = null;
     this._rqIdxGlow = null;
+    /** SST-0: true until the first frame drawn once the game runs posts this worker's load marks. */
+    this._loadMarksOpen = true;
     /** @type {Array<{kind:string, displayObject:*, parallaxX:number, parallaxY:number, cover?:object, tilemap?:object}|null>} */
     this._scenery = [];
     this._tilemapGidProgramOpts = null;
@@ -4120,7 +4123,15 @@ class PixiRenderer extends AbstractWorker {
   _submitRender(opts) {
     if (!this._gpuLive()) return false;
     this.pixiApp.renderer.render(opts);
+    if (this._loadMarksOpen && !this.isPaused) this._postFirstDrawMarks();
     return true;
+  }
+
+  /** SST-0: the first frame drawn once the game runs ends the load waterfall: its marks go to the page. */
+  _postFirstDrawMarks() {
+    this._loadMarksOpen = false;
+    loadMark('first draw');
+    self.postMessage({ msg: 'loadMarks', marks: takeLoadMarks() });
   }
 
   pause() {
@@ -8728,6 +8739,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
     await Promise.all(shaderFetches);
+    loadMark('shaders fetched');
     this._initTilemapGidProgram();
 
     // Initialize stats buffer for writing metrics
@@ -8859,7 +8871,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Create PIXI application (PixiJS 8 uses async init)
     try {
       this.pixiApp = new PIXI.Application();
+      loadMark('gpu device');
       const weedGpu = this._useWebGpu ? await requestWeedGpu('high-performance') : null;
+      loadMark('pixi init');
       await this.pixiApp.init({
         width: this.canvasWidth,
         height: this.canvasHeight,
@@ -8944,6 +8958,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.setupWebGLHooks();
 
     this.reportLog('finished initializing pixi app');
+    loadMark('pixi init end');
     // Load simple textures
     this.loadTextures(data.textures);
     this.reportLog('finished loading textures');
@@ -8951,6 +8966,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Load spritesheets (synchronous now - manually parsed)
     this.loadSpritesheets(data.spritesheets, data.bigAtlasProxySheets);
     this.reportLog('finished loading spritesheets');
+    loadMark('spritesheets');
 
     // Load tileset textures (tile data comes from TileMap SAB via AbstractWorker)
     this.loadTilesetBitmaps(data.tilesetBitmaps);
@@ -9214,8 +9230,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // LAYER REFERENCES MAP - For debug UI control
     // ========================================
     this.buildLayerRefsMap();
+    loadMark('custom layers');
 
     await this._linkProgramsAhead();
+    loadMark('programs linked');
 
     debugWorkerLog('PIXI WORKER: Initialization complete, waiting for start signal...');
     debugWorkerLog(

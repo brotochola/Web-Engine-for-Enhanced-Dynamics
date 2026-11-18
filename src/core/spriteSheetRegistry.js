@@ -24,6 +24,7 @@ import {
 import { ASSETS_DEFAULTS } from '../util/configDefaults.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { fetchAssetJson, fetchAssetRead, imageLoadError } from '../util/fetchAsset.js';
+import { loadMark } from '../util/loadMarks.js';
 
 /**
  * MaxRectsPacker - Rectangle packing algorithm for texture atlas generation
@@ -1206,6 +1207,8 @@ class SpriteSheetRegistry {
 
     // Wait for all assets to load
     await Promise.all([...individualImagePromises, ...spritesheetPromises]);
+    // SST-0: every source fetched, decoded and read back (trim, base, texels).
+    loadMark('atlas sources');
 
     // Loads finish in network order; ids and indices must not (see orderAtlasByDeclaration).
     orderAtlasByDeclaration(assetsConfig, imagesToPack, animations, proxySheets);
@@ -1400,6 +1403,7 @@ class SpriteSheetRegistry {
     // We now store references to source images and draw directly to final atlas.
 
     debugWorkerLog(`🎨 Packing ${imagesToPack.length} images into atlas...`);
+    loadMark('atlas pack');
 
     // Pack all images
     let actualWidth = 0;
@@ -1451,6 +1455,7 @@ class SpriteSheetRegistry {
 
     // Create canvas and draw packed atlas
     // willReadFrequently: first getContext locks attrs; extractDecalTextures reads via getImageData
+    loadMark('atlas draw');
     const canvas = create2dCanvas(actualWidth, actualHeight);
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
@@ -1484,6 +1489,7 @@ class SpriteSheetRegistry {
     // DX-MAPS: the twin page, when a sheet has maps; the bake asks for its texels too (keepMapsTexels). E-496: the page
     // holds the frames with maps alone, each frame's window in its json frame (`maps`), its size in meta.mapsSize.
     const format = this._twinFormatFor(twinFormat, imagesToPack);
+    loadMark('atlas maps');
     const twinA = this._paintMapsPage(imagesToPack, maxWidth, maxHeight, keepMapsTexels || format !== 'A');
     // E-497: the page in its format (the windows stay in full-resolution texels; the shaders read through the format).
     const twin = twinA !== null && format !== 'A' ? this._twinPageIn(twinA, format, keepMapsTexels) : twinA;
@@ -1560,6 +1566,7 @@ class SpriteSheetRegistry {
         `✅ BigAtlas created: ${actualWidth}x${actualHeight} with ${frameCount} frames, ${animCount} animations`
       );
     }
+    loadMark('atlas built');
 
     return {
       canvas: canvas,

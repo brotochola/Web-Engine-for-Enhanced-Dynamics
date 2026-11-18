@@ -13,6 +13,8 @@
 // (scripts/buildBundle.js), because a blob worker has no directory to fetch from; a gzipped one
 // (data:application/gzip), which DecompressionStream inflates, as the bundle's Box2D loader does.
 
+import { loadMark } from './loadMarks.js';
+
 const compiled = new Map();
 // The instances of each module (by URL), one per memory.
 const instances = new Map();
@@ -49,7 +51,15 @@ export function compileWasmKernel(name, url) {
   const href = String(url);
   let module = compiled.get(href);
   if (!module) {
-    module = loadBytes(name, url).then((bytes) => WebAssembly.compile(bytes));
+    // SST-0: once a worker, the module's fetch (or inflate) and its compile.
+    loadMark('wasm fetch');
+    module = loadBytes(name, url).then((bytes) => {
+      loadMark('wasm compile');
+      return WebAssembly.compile(bytes);
+    }).then((m) => {
+      loadMark('wasm compiled');
+      return m;
+    });
     // A failed load is not cached: the next caller tries again.
     module.catch(() => compiled.delete(href));
     compiled.set(href, module);
@@ -96,6 +106,7 @@ export async function loadWasmKernel(name, url, memory, exportNames) {
   } catch (err) {
     throw named(err);
   }
+  loadMark(`kernel ${name}`);
   const out = {};
   for (const exportName of exportNames) {
     const fn = instance.exports[exportName];

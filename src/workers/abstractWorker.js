@@ -41,6 +41,7 @@ import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
 import { resetWaitMeter, waitMeterMs } from '../util/waitMeter.js';
 import { bindFrameClock, stampStep, TIME_ORIGIN } from '../util/frameClock.js';
+import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 import { addFrame, bindFrameTotals } from '../util/frameTotals.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { DebugDraw } from '../core/debug/debugDraw.js';
@@ -97,12 +98,16 @@ import { setDevChecks } from '../core/debug/devChecks.js';
 import { delayTo, nextFixedDeadline } from '../util/fixedRate.js';
 import { bindLatencyStamp } from '../util/latencyStamp.js';
 
+// SST-0: the engine's modules are evaluated (this one runs after everything it imports).
+loadMark('modules');
+
 /**
  * AbstractWorker - Base class for all game engine workers
  * Handles common worker functionality like frame timing, FPS tracking, and message handling
  */
 export class AbstractWorker {
   constructor(selfRef) {
+    loadMark('constructed');
     this.self = selfRef;
 
     // Explicit queue preserves ordering without building a promise chain per message.
@@ -1306,6 +1311,7 @@ export class AbstractWorker {
 
     switch (msg) {
       case 'init':
+        loadMark('init');
         debugWorkerLog(`[${this.constructor.name}] Received 'init' message, starting initialization...`);
         if (e.data.pageOrigin) {
           self.__weedPageOrigin = e.data.pageOrigin;
@@ -1317,10 +1323,12 @@ export class AbstractWorker {
         this.isPaused = true; // Keep paused until "start" message
         debugWorkerLog(`[${this.constructor.name}] Initializing common buffers...`);
         await this.initializeCommonBuffers(e.data);
+        loadMark('common buffers');
         debugWorkerLog(`[${this.constructor.name}] Common buffers initialized, setting up worker ports...`);
         this.initializeWorkerPorts(e.data.workerPorts); // Initialize direct worker communication
         debugWorkerLog(`[${this.constructor.name}] Worker ports initialized, calling worker-specific initialize()...`);
         await this.initialize(e.data);
+        loadMark('initialized');
         debugWorkerLog(`[${this.constructor.name}] Worker-specific initialize() completed`);
         // Logic defers reportReady until box2dReady (hot fields bound before onSpawned).
         if (this.shouldReportReadyAfterInit()) {
@@ -1442,7 +1450,9 @@ export class AbstractWorker {
   reportReady() {
     this.reportLog('initialization complete, signaling ready');
     debugWorkerLog(`${this.constructor.name}: Sending workerReady message`);
-    self.postMessage({ msg: 'workerReady', worker: this.constructor.name });
+    loadMark('ready');
+    // SST-0: this worker's load marks go to the page with its ready message.
+    self.postMessage({ msg: 'workerReady', worker: this.constructor.name, loadMarks: takeLoadMarks() });
   }
 
   /**

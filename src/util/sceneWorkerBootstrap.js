@@ -15,6 +15,7 @@ import { SoundManager } from '../core/soundManager.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { collectWorkerScriptsToLoad } from './sceneScript.js';
 import { frameClockSlot } from './frameClock.js';
+import { loadMark } from './loadMarks.js';
 import { definesBelow } from './listenerTags.js';
 import { GameObject } from '../core/gameObject.js';
 import { box2dMemoryPages } from '../box2d/box2dMemory.js';
@@ -710,6 +711,7 @@ export async function reserveBox2dBlock(scene) {
     scene._showFatalErrorMessage('physics', 'Physics worker failed to start', e.message || String(e));
   };
   scene.workers.physics = worker;
+  loadMark('physics made');
   scene.box2dBlock = box2dBlockParts(await requestBox2dBlock(worker, plan.bytes), plan);
   return scene.box2dBlock;
 }
@@ -721,10 +723,12 @@ export async function createSceneWorkers(scene) {
   const makeWorker = createSceneWorkerFactory(useInlineWorkers, cacheBust);
   createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBust);
   attachEarlyWorkerErrorHandlers(scene);
+  loadMark('workers made');
 
   const spritesheetConfigs = scene.imageUrls.spritesheets || {};
   // preloadAssets overlaps atlas ∥ audio ∥ tilemaps ∥ flowfields ∥ shaders
   await scene.preloadAssets(scene.imageUrls, spritesheetConfigs, scene.audioUrls);
+  loadMark('assets');
   // W26: the decal tiles in a memory of their own, with the stamp kernel's scratch and the decal textures, now
   // that the textures are loaded and before any worker binds the tiles.
   installDecalMemory(scene);
@@ -738,6 +742,8 @@ export async function createSceneWorkers(scene) {
   const sharedBuffers = buildSceneSharedBuffers(scene);
   const initData = buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad);
 
+  loadMark('init data');
   initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts);
   attachSceneWorkerRuntimeHandlers(scene);
+  loadMark('init sent');
 }

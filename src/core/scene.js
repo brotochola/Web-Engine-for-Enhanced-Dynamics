@@ -73,6 +73,7 @@ import {
 import { createSceneSharedBuffers, sceneEntitySlots, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
 import { bindEntityIdWidth, resolveEntityIdWidth, declaredEntityCount, EntityIdArray } from '../util/entityIdWidth.js';
 import { createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
+import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 import {
   bindFrameClock,
   publishFrame,
@@ -225,6 +226,11 @@ class Scene {
     this._loadStepsDone = 0;
     /** loadScene's { onProgress }, set by GameEngine; null when none. */
     this._onProgressOption = null;
+    /**
+     * SST-0: the load waterfall's marks, flat [name, wall ms, …] lists: the page's (`main`) and each worker's by its
+     * name, posted with its ready message (Pixi's again after its first drawn frame). tests/bench/loadWaterfall.mjs.
+     */
+    this._loadMarks = { main: [], workers: {} };
 
     // Merge static config with any runtime config
     this.config = { ...this.constructor.config };
@@ -1182,6 +1188,7 @@ class Scene {
 
   // Initialize everything
   async init() {
+    loadMark('scene init');
     debugWorkerLog(`🎬 Scene ${this.constructor.name}: Initializing...`);
 
     // Check SharedArrayBuffer support: on the page too, a blank canvas says nothing
@@ -1224,6 +1231,7 @@ class Scene {
     // Phase 4: with physics, the physics worker starts here and reserves a block of Box2D's memory, so the
     // render-queue regions the shared buffers make are laid in it.
     await reserveBox2dBlock(this);
+    loadMark('box2d block');
 
     this._warnSmallWorld();
 
@@ -1246,16 +1254,19 @@ class Scene {
 
     // Scenery declared in config.layers (cover / tiling / tilemap) before preload().
     await Layer.applyConfiguredContent();
+    loadMark('layers content');
 
     // LIFECYCLE PHASE 1: preload()
     // Scene infrastructure setup (camera, nav grid, dynamic scenery overrides).
     // Messages sent here are processed by workers while they are still paused,
     // so the renderer can build the tilemap and warm up the GPU before the first frame.
     await this.preload(this.data);
+    loadMark('preload');
 
     // LIFECYCLE PHASE 2: create()
     // Static / always-on world setup (runs for new game AND save load).
     await this.create(this.data);
+    loadMark('create');
 
     // LIFECYCLE PHASE 2b: new game vs save restore
     // Restore awaits logic0 restoreSaveComplete so entities are in the scene
@@ -1287,6 +1298,23 @@ class Scene {
       this.startMainLoop();
       this.startAllWorkers();
     }
+    loadMark('start');
+    this._takeMainLoadMarks();
+  }
+
+  /** SST-0: the page's load marks so far onto the scene (more come at the end of loadScene). */
+  _takeMainLoadMarks() {
+    const taken = takeLoadMarks();
+    const main = this._loadMarks.main;
+    for (let i = 0; i < taken.length; i++) main.push(taken[i]);
+  }
+
+  /** SST-0: a worker's load marks (its ready message, or Pixi's after its first drawn frame). */
+  _takeWorkerLoadMarks(workerName, marks) {
+    if (!Array.isArray(marks) || marks.length === 0) return;
+    const byWorker = this._loadMarks.workers;
+    const list = byWorker[workerName] || (byWorker[workerName] = []);
+    for (let i = 0; i < marks.length; i++) list.push(marks[i]);
   }
 
   /**
@@ -1491,6 +1519,7 @@ class Scene {
 
   /** @internal One load step finished: scene hook, then loadScene's onProgress. */
   _loadStep(stage) {
+    loadMark(stage);
     const done = ++this._loadStepsDone;
     const total = Scene.LOAD_STEPS.length;
     try {
@@ -1709,8 +1738,11 @@ class Scene {
       fetchAssetRead(bigAtlasAsset.png, 'baked bigAtlas PNG', (r) => r.blob()),
       mapsPromise,
     ]);
+    loadMark('atlas fetched');
     const imageBitmap = await createImageBitmap(pngResponse.body);
+    loadMark('atlas decoded');
     const canvas = this._canvasFromImageBitmap(imageBitmap);
+    loadMark('atlas canvas');
     // H-EDGE (E-448): a bake from before H-EDGE wrote no frame texels; read them from the atlas's pixels, once.
     fillFrameTexels(json, () => ({
       data: canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height).data,
@@ -2144,7 +2176,11 @@ class Scene {
       }
     } else if (e.data.msg === 'workerReady') {
       debugWorkerLog(`[Scene] 📬 Received 'workerReady' message from ${e.currentTarget.name}`);
+      loadMark(`ready ${e.currentTarget.name}`);
+      this._takeWorkerLoadMarks(e.currentTarget.name, e.data.loadMarks);
       this.handleWorkerReady(e.currentTarget.name);
+    } else if (e.data.msg === 'loadMarks') {
+      this._takeWorkerLoadMarks(e.currentTarget.name, e.data.marks);
     } else if (e.data.msg === 'gpuInfo') {
       this._takeGpuInfo(e.data);
     } else if (e.data.msg === 'error') {
