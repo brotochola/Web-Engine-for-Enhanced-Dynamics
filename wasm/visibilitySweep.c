@@ -70,6 +70,12 @@ enum {
   T_CIRC_DX, T_CIRC_DY, T_CIRC_DD, T_CIRC_R2,
   T_OCC_F32,
   T_RESULTS,
+  /* OL-4: optional (0: not asked for). T_OUT_OCC: for each vertex of the polygon, what its ray hit: the occluder's index
+     in the light's list, -1 for a free ray (the vertex past the radius), -2 - entity for a compound solid's boundary
+     (the polar bins' owner). T_RAY_OCC: the merge's scratch for it, a word a ray. Last, so the slots before keep
+     their numbers. */
+  T_OUT_OCC,
+  T_RAY_OCC,
   SLOT_COUNT
 };
 
@@ -426,6 +432,7 @@ typedef struct {
   float *ffx, *ffy, *fex, *fey, *ftn;
   double *cdx, *cdy, *cdd, *cr2;
   uint8_t *occF32; /* MODE_F32: 1 when the polygon's float32 terms hold the gate (see sweep_polygon) */
+  int32_t *outOcc; /* OL-4: what each vertex's ray hit (T_OUT_OCC), or null */
 } Sweep;
 
 /* emitVertex: one sample along the unit direction (dirX, dirY) over the active occluders. */
@@ -466,6 +473,7 @@ INLINE int32_t emit_vertex(const Sweep *s, int32_t activeCount, double dirX, dou
   }
   s->outX[n] = (float)vx;
   s->outY[n] = (float)vy;
+  if (s->outOcc) s->outOcc[n] = minDist < s->R - EPSILON ? hitOcc : -1;
   return n + 1;
 }
 
@@ -499,6 +507,7 @@ INLINE int32_t full_circle(const Sweep *s) {
   for (int32_t i = 0; i < segments; i++) {
     s->outX[i] = (float)(s->lx + s->fullC[i] * s->R);
     s->outY[i] = (float)(s->ly + s->fullS[i] * s->R);
+    if (s->outOcc) s->outOcc[i] = -1;
   }
   return segments;
 }
@@ -783,6 +792,9 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
   const float *xs = s->outX;
   const float *ys = s->outY;
   const int32_t edges = n >= 3 ? n : 0;
+  /* OL-4: what each ray hit, when the caller asked (the edge that set its distance, or the bins' owner). */
+  int32_t *outOcc = s->outOcc;
+  int32_t *rayOcc = outOcc ? (int32_t *)(uintptr_t)t[T_RAY_OCC] : 0;
 
   if (edges > 0) {
     for (int32_t k = 0; k < count; k++) {
@@ -793,6 +805,7 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
       rayCos[k] = polarCos[m];
       raySin[k] = polarSin[m];
       rayBest[k] = radius;
+      if (rayOcc) rayOcc[k] = -1;
     }
   }
   for (int32_t i = 0; i < edges; i++) {
@@ -842,26 +855,45 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
         k1 = first_ray_after(rayAng, count, hi);
       }
     }
+    /* An edge lies on what its end vertex's ray hit (lampWallRow.js reads the polygon the same way). */
+    const int32_t edgeOcc = outOcc ? outOcc[j] : -1;
     for (int32_t k = k0; k < k1; k++) {
       const double tt = ray_seg_t(lx, ly, rayCos[k], raySin[k], ax, ay, bx, by);
-      if (tt < rayBest[k]) rayBest[k] = tt;
+      if (tt < rayBest[k]) {
+        rayBest[k] = tt;
+        if (rayOcc) rayOcc[k] = edgeOcc;
+      }
     }
     for (int32_t k = 0; k < k2; k++) {
       const double tt = ray_seg_t(lx, ly, rayCos[k], raySin[k], ax, ay, bx, by);
-      if (tt < rayBest[k]) rayBest[k] = tt;
+      if (tt < rayBest[k]) {
+        rayBest[k] = tt;
+        if (rayOcc) rayOcc[k] = edgeOcc;
+      }
     }
   }
+  const int32_t *binOwner = (const int32_t *)(uintptr_t)t[T_POLAR_OWNER];
   for (int32_t k = 0; k < count; k++) {
     const int32_t b0 = k * group;
     const int32_t b1 = b0 + group < bins ? b0 + group : bins;
     double d = polarDist[b0];
+    int32_t nearest = b0;
     for (int32_t b = b0 + 1; b < b1; b++) {
-      if (polarDist[b] < d) d = polarDist[b];
+      if (polarDist[b] < d) {
+        d = polarDist[b];
+        nearest = b;
+      }
     }
-    if (edges > 0 && rayBest[k] < d) d = rayBest[k];
+    /* The bins' owner where a solid's boundary is the nearest thing on the ray; free at the radius. */
+    int32_t occ = d < radius - EPSILON && binOwner[nearest] >= 0 ? -2 - binOwner[nearest] : -1;
+    if (edges > 0 && rayBest[k] < d) {
+      d = rayBest[k];
+      occ = rayOcc ? rayOcc[k] : -1;
+    }
     const int32_t m = b0 + b1;
     s->outX[k] = (float)(lx + polarCos[m] * d);
     s->outY[k] = (float)(ly + polarSin[m] * d);
+    if (outOcc) outOcc[k] = occ;
   }
   s->res[R_MERGE_COUNT] = (uint32_t)count;
   s->res[R_MERGE_GROUP] = (uint32_t)group;
@@ -943,6 +975,7 @@ INLINE int32_t sweep_light(uint32_t table, double lx, double ly, double maxRadiu
   s.cdd = (double *)(uintptr_t)t[T_CIRC_DD];
   s.cr2 = (double *)(uintptr_t)t[T_CIRC_R2];
   s.occF32 = (uint8_t *)(uintptr_t)t[T_OCC_F32];
+  s.outOcc = (int32_t *)(uintptr_t)t[T_OUT_OCC];
 
   /* N-39's stamp: one per call, the seen array cleared when it wraps. */
   uint32_t stamp = s.res[R_STAMP] + 1;

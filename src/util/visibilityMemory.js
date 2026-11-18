@@ -24,7 +24,7 @@ import { NULL_GUARD_BYTES, alignToLine, layoutRegions } from './wasmMemoryMap.js
 // The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
 const WASM_MAX_PAGES = 32768;
 /** visibilitySweep.c's table slots and result words (visibilitySweepClient.js names them). */
-export const VISIBILITY_SWEEP_TABLE_SLOTS = 58;
+export const VISIBILITY_SWEEP_TABLE_SLOTS = 60;
 export const VISIBILITY_SWEEP_RESULT_WORDS = 11;
 /** Doubles at the sweep's consts region. */
 const SWEEP_CONSTS = 3;
@@ -88,6 +88,8 @@ export function visibilityMemoryRegions({ maxOccluders, poolVerts, maxVerts, ent
   add('vertsY', pool * 4);
   add('outX', out * 4);
   add('outY', out * 4);
+  // OL-4: what each vertex's ray hit (an occluder of the light's list, a compound solid's entity, or nothing).
+  add('outOcc', out * 4);
   // The polar bins (angularSweep.js' _polarDist / _polarOwner) and the seen stamps (_selfLitSeen).
   add('polarDist', POLAR_BINS * 4);
   add('polarOwner', POLAR_BINS * 4);
@@ -108,6 +110,7 @@ export function visibilityMemoryRegions({ maxOccluders, poolVerts, maxVerts, ent
   add('rayCos', POLAR_BINS * 8);
   add('raySin', POLAR_BINS * 8);
   add('rayBest', POLAR_BINS * 8);
+  add('rayOcc', POLAR_BINS * 4);
   for (const name of ['edgeFx', 'edgeFy', 'edgeEx', 'edgeEy', 'edgeTn']) add(name, pool * 8);
   for (const name of ['edge32Fx', 'edge32Fy', 'edge32Ex', 'edge32Ey', 'edge32Tn']) add(name, pool * 4);
   for (const name of ['circDx', 'circDy', 'circDd', 'circR2']) add(name, occ * 8);
@@ -183,6 +186,7 @@ export function createVisibilityMemory(opts, place = null) {
       vertsY: view(Float32Array, 'vertsY', pool),
       outX: view(Float32Array, 'outX', out),
       outY: view(Float32Array, 'outY', out),
+      outOcc: view(Int32Array, 'outOcc', out),
       polarDist: view(Float32Array, 'polarDist', POLAR_BINS),
       polarOwner: view(Int32Array, 'polarOwner', POLAR_BINS),
       ownerSeen: view(Uint32Array, 'ownerSeen', owners),

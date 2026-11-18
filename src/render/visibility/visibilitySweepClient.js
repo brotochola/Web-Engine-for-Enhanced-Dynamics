@@ -27,6 +27,8 @@ export const SWEEP_SLOTS = [
   'circDx', 'circDy', 'circDd', 'circR2',
   'occF32',
   'results',
+  // OL-4: what each vertex's ray hit (lampWallRow.js makes a lamp's row of it), and the merge's scratch for it.
+  'outOcc', 'rayOcc',
 ];
 if (SWEEP_SLOTS.length !== VISIBILITY_SWEEP_TABLE_SLOTS) throw new Error('visibilitySweep: the table and its region disagree');
 /** wasm/visibilitySweep.c's result words. */
