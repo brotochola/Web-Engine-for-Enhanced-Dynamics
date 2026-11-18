@@ -89,10 +89,12 @@ export const GBUF = WEED.params?.get('gbuf') === '0' ? 0 : 1;
  * With `?arm=maps`: `?castLights=` (lighting.maxShadowCastingLights: the lamps with a tile; default the lights, at most
  * 64, what the map holds at 256 texels a tile), `?tile=` (lighting.lampShadowTile; default the engine's 'auto') and
  * `?lampCache=0` (lighting.lampMapCache off).
+ * With walls: `?wallCache=0` (lighting.wallCache off: every lamp swept every frame, as before OL-9).
  */
 export const CAST_LIGHTS = Number(WEED.params?.get('castLights')) > 0 ? Math.floor(Number(WEED.params.get('castLights'))) : Math.min(LIGHTS, 64);
 export const TILE = Number(WEED.params?.get('tile')) > 0 ? Math.floor(Number(WEED.params.get('tile'))) : 0;
 export const LAMP_CACHE = WEED.params?.get('lampCache') === '0' ? 0 : 1;
+export const WALL_CACHE = WEED.params?.get('wallCache') === '0' ? 0 : 1;
 /** The lamps' height and the volumes' with `?arm=maps`: a wall is taller than any lamp. */
 export const LAMP_HEIGHT = 40;
 export const WALL_HEIGHT = 400;
@@ -110,7 +112,7 @@ export const LIGHT_RES = Number(WEED.params?.get('lightRes')) > 0 ? Math.min(1, 
 export const stressSceneConfig = {
   requested: {
     occluderShape: OCCLUDER_SHAPE, selfLit: SELF_LIT, block: BLOCK, lights: LIGHTS, mask: SPRITE_MASK ? 'sprite' : 'collider', backend: BACKEND,
-    arm: ARM, gbuf: GBUF, castLights: CAST_LIGHTS, tile: TILE, lampCache: LAMP_CACHE, move: MOVE, zoom: ZOOM, lightRes: LIGHT_RES,
+    arm: ARM, gbuf: GBUF, castLights: CAST_LIGHTS, tile: TILE, lampCache: LAMP_CACHE, wallCache: WALL_CACHE, move: MOVE, zoom: ZOOM, lightRes: LIGHT_RES,
   },
 };
 
@@ -145,6 +147,8 @@ export class VisPolyStressScene extends Scene {
       enabled: true,
       // OL-4: the occluders are walls (shadowCaster.setWall): each light sweeps the ones in its reach.
       walls: ARM_WALLS,
+      // OL-9: a still lamp among still walls keeps its row (?wallCache=0: every lamp swept every frame).
+      wallCache: WALL_CACHE === 1,
       ...(ARM === 'maps'
         ? {
             lampShadows: 'map',
