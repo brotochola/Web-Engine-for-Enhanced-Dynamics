@@ -227,7 +227,7 @@ Reads visibility lists, advances animations, builds the render queues that pixi 
 9. Write to alternating double buffer (`renderQueueFrame % 2`)
 10. Signal pixi via `Atomics.store` + `Atomics.notify` on `renderQueueSync`
 
-Visibility polygon generation uses bounded event/active pools. If those caps overflow, the engine now falls back to full-circle visibility for that light instead of emitting a silently corrupted polygon.
+With walls (`lighting.walls`), pre-render sweeps each light's walls into a visibility polygon and publishes it as a row the light pass reads. The sweep uses bounded event/active pools. If those caps overflow, that light falls back to full-circle visibility (no wall stops it), with a one-time warning, instead of a corrupted polygon.
 
 **URL parameters in a scene.** Inside a worker `location` is the worker script's URL, not the page's: a scene that reads `location.search` works on the main thread and reads nothing in `tick`. Use `WEED.params`, a `URLSearchParams` that is the same on every thread and already set when a module's top level runs:
 

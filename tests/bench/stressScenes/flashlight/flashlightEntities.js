@@ -48,7 +48,7 @@ export class FlashlightWalker extends GameObject {
   }
 }
 
-/** A crate that blocks raycasted light: a wall. */
+/** A crate that blocks the light: a wall (the scene's lighting.walls). */
 export class FlashlightCrate extends GameObject {
   static components = [RigidBody, Collider, ShadowCaster];
 

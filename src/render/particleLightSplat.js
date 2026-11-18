@@ -10,22 +10,22 @@ import { LIGHT_INFLUENCE_RADIUS_SCALE } from '../util/utils.js';
 export const PARTICLE_LIGHT_FLOATS = 4;
 
 /**
- * Whether particle lights run, and their cap. Raycasted visibility lighting
- * builds its own field and never draws them (as with the liquid light field),
- * so they are switched off there, with a warning, rather than allocating a
- * splat and forcing a lighting render texture nobody draws into.
+ * Whether particle lights run, and their cap. The old fan pass (debug.lightFans,
+ * OL-4) builds its own field and never draws them (as with the liquid light
+ * field), so they are switched off there, with a warning, rather than allocating
+ * a splat and forcing a lighting render texture nobody draws into.
  * @param {{ enabled?: boolean, max?: number }|undefined} particleLights lighting.particleLights
- * @param {boolean} raycasted visibilityPolygons.enabled
+ * @param {boolean} fans lighting.wallFans: the old fan pass lights the scene
  * @returns {{ enabled: boolean, max: number, warning: string|null }}
  */
-export function resolveParticleLights(particleLights, raycasted) {
+export function resolveParticleLights(particleLights, fans) {
   const cfg = particleLights || LIGHTING_DEFAULTS.particleLights;
   if (!cfg.enabled) return { enabled: false, max: 0, warning: null };
-  if (raycasted) {
+  if (fans) {
     return {
       enabled: false,
       max: 0,
-      warning: 'lighting.particleLights is ignored with raycasted lighting (visibilityPolygons): it is not drawn there',
+      warning: 'lighting.particleLights is ignored with debug.lightFans (the old fan pass): it is not drawn there',
     };
   }
   const max = cfg.max != null ? cfg.max | 0 : LIGHTING_DEFAULTS.particleLights.max;

@@ -4,6 +4,10 @@
 // config.camera = { pitch, yaw, floorScaleY, heightScaleY }:
 // - pitch: degrees from the horizon, 90 straight down (zenithal), 0 from the side. Unset: the picture WeedJS always
 //   drew, a floor that is not foreshortened and heights that rise as many px as they measure.
+//   A flat view is pitch 90 or pitch 0. In both, the plane that faces the camera is what the engine calls the floor
+//   (the ground seen from above; from the side, the backdrop the lights pool on), drawn as it is (floorScaleY 1), and
+//   what it calls height points at the camera, so it rises no px (heightScaleY 0): a sprite lies in that plane, and a
+//   height map's heights come towards the viewer (OL-4).
 // - floorScaleY: how tall the floor is drawn against its width, in (0, 1]: sin(pitch) unless set. A circle on the
 //   floor is that many times as tall as it is wide (light pools, cones, volumes).
 // - heightScaleY: screen px that a px of height rises: cos(pitch) unless set (faces, height maps, volumes).
@@ -30,21 +34,24 @@ export function resolvePitch(value) {
 }
 
 /**
- * The floor's foreshortening: camera.floorScaleY, else sin(pitch), else 1; in [GROUND_SCALE_Y_MIN, 1].
+ * The floor's foreshortening: camera.floorScaleY, else sin(pitch) (1 at pitch 0, a flat view from the side), else 1; in
+ * [GROUND_SCALE_Y_MIN, 1].
  * @param {object|null|undefined} camera config.camera, resolved or as the game wrote it
  */
 export function resolveFloorScaleY(camera) {
   let v = camera?.floorScaleY;
   if (!finite(v)) {
     const pitch = resolvePitch(camera?.pitch);
-    v = pitch === null ? 1 : Math.sin(pitch * DEG);
+    // From the side (pitch 0) the floor is the plane that faces the camera, as from above.
+    v = pitch === null || pitch === 0 ? 1 : Math.sin(pitch * DEG);
   }
   if (!(v > 0)) return GROUND_SCALE_Y_MIN;
   return v > 1 ? 1 : v < GROUND_SCALE_Y_MIN ? GROUND_SCALE_Y_MIN : v;
 }
 
 /**
- * Screen px a px of height rises: camera.heightScaleY, else cos(pitch), else 1; in [0, HEIGHT_SCALE_Y_MAX].
+ * Screen px a px of height rises: camera.heightScaleY, else cos(pitch) (0 at pitch 0, a flat view from the side, as at
+ * 90), else 1; in [0, HEIGHT_SCALE_Y_MAX].
  * @param {object|null|undefined} camera config.camera, resolved or as the game wrote it
  */
 export function resolveHeightScaleY(camera) {
@@ -52,6 +59,8 @@ export function resolveHeightScaleY(camera) {
   if (!finite(v)) {
     const pitch = resolvePitch(camera?.pitch);
     if (pitch === null) return 1;
+    // From the side, as from above, height points at the camera.
+    if (pitch === 0) return 0;
     v = Math.cos(pitch * DEG);
     // cos(90°) in doubles is 6e-17: a camera straight down sees no height.
     if (v < 1e-9) v = 0;

@@ -14,10 +14,11 @@
  *   (wallAngle, unwrapped so it only rises) and the code of the edge that starts at it; then the first vertex again, a
  *   whole turn later, to close the polygon.
  *
- * An edge's code: 0 for an edge that stops nothing (the far boundary of a free direction), else the wall's G-buffer id
- * times 256 plus its opacity in 1..255 (ShadowCaster.opacity: what the transmit wedges drew). Beyond a wall's edge its
- * own pixels (the id the G-buffer wrote for the pixel) stay lit, which is what the self-lit fills did, and every other
- * pixel keeps WALL_UMBRA of the lamp plus what the wall lets through.
+ * An edge's code: 0 for an edge that stops nothing (the far boundary, between two free rays), else the wall's G-buffer id
+ * times 256 plus its opacity in 1..255 (ShadowCaster.opacity: what the transmit wedges drew). Beyond a wall's edge a
+ * pixel keeps WALL_UMBRA of the lamp plus what the wall lets through, and the wall itself is lit, which is what the
+ * self-lit fills did: its own pixels whole (the id the G-buffer wrote for the pixel) or, with lighting.wallDepth, whatever
+ * lies within that depth of the edge the lamp reaches, fading (a wall drawn by a mesh has no id).
  */
 
 /** Directions a row indexes. A power of two, four a texel. */
@@ -30,10 +31,38 @@ export const WALL_VERT0 = 1 + WALL_BIN_TEXELS;
 export const WALL_WALK = 16;
 /** The share of a lamp's light a wall's shadow keeps (the old pass's UMBRA_FLOOR: its shadows were never black). */
 export const WALL_UMBRA = 0.33;
+/**
+ * The most vertices a row holds, whatever lighting.maxPolygonVertices is (a scene may set that in the thousands, and a
+ * row is as wide as its cap): a polygon with more is thinned to fit (pre-render keeps one vertex in every few).
+ */
+export const WALL_ROW_MAX_VERTS = 512;
+
+/**
+ * writeWallRow's lamp (x, y, in the polygon's world px) and 1 / the floor's scale (camera.floorScaleY): doubles in a typed
+ * array, since a double in an argument is boxed when the call is not inlined (E-85), and this runs once a lamp a frame.
+ * The row is written in the floor's terms (y over the floor's scale), where the light pass works: the map is affine, so
+ * the polygon's edges stay the sight lines they are and its vertices keep their order around the lamp.
+ */
+export const WALL_ROW_ARGS = new Float64Array([0, 0, 1]);
 
 /** Texels a row takes for polygons of up to `maxVerts` vertices (the closing vertex included). */
 export function wallRowTexels(maxVerts) {
   return WALL_VERT0 + (maxVerts | 0) + 1;
+}
+
+/**
+ * The shared buffer a scene's rows are published in (pre-render writes it, Pixi reads it): the rows written and each
+ * row's lamp (its entity), as int32, then the rows' floats from `rowsByte`.
+ * @param {number} maxLights rows it holds (lighting.maxLights)
+ * @param {number} maxVerts lighting.maxPolygonVertices; a row holds at most WALL_ROW_MAX_VERTS of them (`rowVerts`)
+ */
+export function wallRowsLayout(maxLights, maxVerts) {
+  const rowVerts = Math.max(3, Math.min(maxVerts | 0, WALL_ROW_MAX_VERTS));
+  const rowTexels = wallRowTexels(rowVerts);
+  const rowFloats = 4 * rowTexels;
+  const lights = Math.max(1, maxLights | 0);
+  const rowsByte = (4 * (1 + lights) + 15) & ~15;
+  return { rowVerts, rowTexels, rowFloats, lights, rowsByte, bytes: rowsByte + lights * rowFloats * 4 };
 }
 
 /**
@@ -63,31 +92,32 @@ export function writeEmptyWallRow(out, o) {
 }
 
 /**
- * Write a lamp's row from its visibility polygon.
+ * Write a lamp's row from its visibility polygon. The lamp and the floor's scale are WALL_ROW_ARGS.
  * @param {Float32Array} out the rows
  * @param {number} o the row's first float
- * @param {number} lx the lamp on the floor
- * @param {number} ly
  * @param {Float32Array} xs the polygon's vertices (world px), in the sweep's order (rising atan2 around the lamp)
  * @param {Float32Array} ys
  * @param {Float32Array} codes each vertex's own code: 0 where its ray hit nothing, else the wall it hit (wallEdgeCode)
  * @param {number} n vertices (at most the maxVerts the row was sized for)
  * @returns {number} the vertices written (0: the row stops nothing)
  */
-export function writeWallRow(out, o, lx, ly, xs, ys, codes, n) {
+export function writeWallRow(out, o, xs, ys, codes, n) {
   if (n < 3) {
     writeEmptyWallRow(out, o);
     return 0;
   }
+  const lx = WALL_ROW_ARGS[0];
+  const ly = WALL_ROW_ARGS[1];
+  const floorInv = WALL_ROW_ARGS[2];
   const v0 = o + 4 * WALL_VERT0;
   const x0 = Math.fround(xs[0] - lx);
-  const y0 = Math.fround(ys[0] - ly);
+  const y0 = Math.fround((ys[0] - ly) * floorInv);
   const ang0 = wallAngle(x0, y0);
   let prevRaw = ang0;
   let turned = 0;
   for (let i = 0; i < n; i++) {
     const rx = Math.fround(xs[i] - lx);
-    const ry = Math.fround(ys[i] - ly);
+    const ry = Math.fround((ys[i] - ly) * floorInv);
     if (i > 0) {
       // Unwrapped: each vertex turns on from the one before it, never back (two vertices on one ray may read an ulp apart).
       const raw = wallAngle(rx, ry);
@@ -102,9 +132,12 @@ export function writeWallRow(out, o, lx, ly, xs, ys, codes, n) {
     out[v] = rx;
     out[v + 1] = ry;
     out[v + 2] = ang0 + turned;
-    // The edge from this vertex to the next lies on the wall the next vertex hit. A vertex on a free ray ends a wall's
-    // edge with a step along its own ray (no width), and starts the far boundary.
-    out[v + 3] = codes[i + 1 < n ? i + 1 : 0];
+    // The edge from this vertex to the next lies on the wall the next vertex hit, or, where that ray is free, on the wall
+    // this one hit: an edge stops nothing only when both its ends are free rays (the far boundary). A wall's last hit
+    // and the free ray after it are usually one ray (an edge with no width); in a merged polygon (a compound solid in
+    // reach: a vertex a polar bin) they are a bin apart, and the edge between them is the wall's shadow line.
+    const next = codes[i + 1 < n ? i + 1 : 0];
+    out[v + 3] = next !== 0 ? next : codes[i];
   }
   const close = v0 + 4 * n;
   out[close] = x0;
@@ -124,7 +157,7 @@ export function writeWallRow(out, o, lx, ly, xs, ys, codes, n) {
   out[o] = n;
   out[o + 1] = ang0;
   out[o + 2] = lx;
-  out[o + 3] = ly;
+  out[o + 3] = ly * floorInv;
   return n;
 }
 
@@ -136,9 +169,10 @@ export function writeWallRow(out, o, lx, ly, xs, ys, codes, n) {
  * @param {number} px the floor point
  * @param {number} py
  * @param {number} selfId the G-buffer id of the entity whose sprite covers the pixel (0: none)
+ * @param {number} [depth] lighting.wallDepth: px the light enters a wall from the edge it reaches (0: its own pixels, whole)
  * @returns {number} 0..1
  */
-export function wallRowLight(rows, o, px, py, selfId) {
+export function wallRowLight(rows, o, px, py, selfId, depth = 0) {
   const n = rows[o] | 0;
   if (n < 3) return 1;
   const ang0 = rows[o + 1];
@@ -170,6 +204,14 @@ export function wallRowLight(rows, o, px, py, selfId) {
   if (lit < 0) lit = 0;
   const owner = Math.floor(code / 256);
   const opacity = (code - owner * 256) / 255;
-  const beyond = selfId > 0.5 && Math.abs(owner - selfId) < 0.5 ? 1 : WALL_UMBRA + (1 - WALL_UMBRA) * (1 - opacity);
+  let beyond = WALL_UMBRA + (1 - WALL_UMBRA) * (1 - opacity);
+  if (depth > 0) {
+    let into = 1 + inside / depth;
+    if (into < 0) into = 0;
+    else if (into > 1) into = 1;
+    beyond += (1 - beyond) * into * into * (3 - 2 * into);
+  } else if (selfId > 0.5 && Math.abs(owner - selfId) < 0.5) {
+    beyond = 1;
+  }
   return beyond + (1 - beyond) * lit;
 }

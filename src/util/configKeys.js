@@ -84,9 +84,9 @@ export const SCENE_CONFIG_SCHEMA = Object.freeze({
   renderer: keys(RENDERER_DEFAULTS),
   preRender: keys(PRE_RENDER_DEFAULTS),
   lighting: {
-    // directionalCasters: the scene sets it (sceneWorkerBootstrap), from its classes. raycasted: the scene derives it from
-    // camera.pitch (Scene._applyConfigDefaults) for the code that reads it; a scene that writes it is told it is retired.
-    ...keys(LIGHTING_DEFAULTS, ['directionalCasters', 'raycasted']),
+    // directionalCasters: the scene sets it (sceneWorkerBootstrap), from its classes. wallFans: the scene derives it from
+    // lighting.walls and debug.lightFans (Scene._applyConfigDefaults) for the code that reads it.
+    ...keys(LIGHTING_DEFAULTS, ['directionalCasters', 'wallFans']),
     particleLights: keys(LIGHTING_DEFAULTS.particleLights),
     normalStrength: keys(LIGHTING_DEFAULTS.normalStrength),
     sun: {
@@ -113,8 +113,8 @@ export const RETIRED_CONFIG_KEYS = Object.freeze({
     '(DX-BARRIOS)',
   'lighting.emissive': 'it is config.lighting.unshaded now, yes or no (DX-UNSHADED)',
   'lighting.raycasted':
-    'raycasted lighting is on when config.camera.pitch is 90 or 0, a flat view, and lighting is enabled; a side view whose ' +
-    'lights pool on the backdrop also writes camera.floorScaleY: 1 (DX-CASTER)',
+    'walls are config.lighting.walls now: a scene asks for them, whatever its camera\'s pitch, and the one light pass reads ' +
+    'them (OL-4)',
 });
 
 /** Optimal string alignment distance, letters compared without case. */

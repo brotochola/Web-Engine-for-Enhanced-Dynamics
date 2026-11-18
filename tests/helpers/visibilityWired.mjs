@@ -1,11 +1,14 @@
 // Pre-render's visibility pass on a real worker (tests/bench/workerHarness.mjs), for the wired tests of the
-// visibility kernels (E-76 W2a, W1): the worker initialized through its own init path with raycasted lighting
+// visibility kernels (E-76 W2a, W1): the worker initialized through its own init path with walls (lighting.walls)
 // and a config's wasm switches, a scene of lights, boxes, circles, convex polygons and compound rings (the
 // fixture pool) written into the component arrays and the neighbour rows, one buildVisibilityPolygons, and
 // what it published: every light's polygon slot and the self-lit list. makeScene's `ringSegments` may be a
 // list (one entry per ring, cycled).
 //
-// Users: tests/node/visibilityKernelsWired.test.js.
+// OL-4: with `rows: true` the worker publishes the walls' rows the light pass reads (lampWallRow.js) instead of the
+// polygons and the self-lit list, as in a scene without debug.lightFans; runFrame returns them.
+//
+// Users: tests/node/visibilityKernelsWired.test.js, tests/node/lampWallsWired.test.js.
 import { Collider } from '../../src/components/collider.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { LightOccluder } from '../../src/components/lightOccluder.js';
@@ -15,6 +18,7 @@ import { ColliderFixture } from '../../src/core/colliderFixture.js';
 import { Grid } from '../../src/core/grid.js';
 import { MAX_POLYGON_VERTICES } from '../../src/util/configDefaults.js';
 import { visibilityMemoryBytes, visibilityMemoryOpts } from '../../src/util/visibilityMemory.js';
+import { wallRowsLayout } from '../../src/render/visibility/lampWallRow.js';
 import { mulberry32 } from '../bench/benchMath.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker, spatialBuffers } from '../bench/workerHarness.mjs';
 import { FLIP_AREA_TOLERANCE, MAX_FLIP_SHARE, comparePolygons } from './visibilitySweepKernel.mjs';
@@ -102,10 +106,11 @@ function bounce(x0, v, t, lo, hi) {
 /**
  * The worker, initialized for `scene` with `wasm` (merged over the defaults the worker reads: a switch left
  * out is on). `maxVerts` is lighting.maxPolygonVertices; `maxNeighbors` the neighbour rows' width;
- * `fixtureSlack` fixtures past the scene's in the pool; `fixtures: false` no fixture pool at all.
+ * `fixtureSlack` fixtures past the scene's in the pool; `fixtures: false` no fixture pool at all; `walls: false` a
+ * scene that asks for no walls; `rows` the light pass's rows published instead of the fan pass's polygons.
  */
 export async function bootPreRender(scene, {
-  wasm = {}, maxVerts = 512, maxNeighbors = 256, selfLit = 4096, raycasted = true, fixtureSlack = 16, fixtures: withPool = true,
+  wasm = {}, maxVerts = 512, maxNeighbors = 256, selfLit = 4096, walls = true, rows = false, fixtureSlack = 16, fixtures: withPool = true,
 } = {}) {
   const N = scene.entities;
   const maxLights = Math.max(1, scene.lights);
@@ -133,6 +138,7 @@ export async function bootPreRender(scene, {
     selfLitDataA: new SharedArrayBuffer(4 + selfLit * SELF_LIT_ITEM_BYTES),
     selfLitDataB: new SharedArrayBuffer(4 + selfLit * SELF_LIT_ITEM_BYTES),
     maxOccluderSelfLit: selfLit,
+    ...rowBuffers(rows, maxLights, maxVerts),
   };
   const fixtures = {
     enabled: true,
@@ -147,19 +153,26 @@ export async function bootPreRender(scene, {
     config: {
       worldWidth: WORLD_W,
       worldHeight: WORLD_H,
-      lighting: { enabled: true, raycasted, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false, maxOccluderSelfLit: selfLit },
+      lighting: { enabled: true, walls, wallFans: walls && !rows, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false, maxOccluderSelfLit: selfLit },
       physics: { maxFixturePoolSize: withPool ? fixturePool : 0 },
       wasm,
     },
     globalEntityCount: N,
     buffers,
     gridMetadata,
-    extra: { visibilityPolygons: raycasted ? vp : null, fixtures: withPool ? fixtures : null },
+    extra: { visibilityPolygons: walls ? vp : null, fixtures: withPool ? fixtures : null },
   });
   bindPoseColumns(N);
   // The frame loop's selectWriteBuffers picks the write slots; a first init leaves the self-lit one unset.
   if (pre._selfLitBuffers) pre._selfLitWriteBuffer = pre._selfLitBuffers[0];
   return { pre, scene, maxVerts, maxNeighbors, slotBytes };
+}
+
+/** The init data's rows (OL-4): the fan pass's flag, or the two buffers the light pass's rows are published in. */
+function rowBuffers(rows, maxLights, maxVerts) {
+  if (!rows) return { fans: true };
+  const bytes = wallRowsLayout(maxLights, maxVerts).bytes;
+  return { fans: false, rowsA: new SharedArrayBuffer(bytes), rowsB: new SharedArrayBuffer(bytes) };
 }
 
 /**
@@ -170,7 +183,7 @@ export async function bootPreRender(scene, {
  */
 export async function bootPreRenderGather(scene, {
   wasm = {}, maxVerts = 512, maxNeighbors = 256, selfLit = 4096, fixtureSlack = 16, fixtures: withPool = true,
-  groundScaleY = 1,
+  groundScaleY = 1, rows = false,
 } = {}) {
   const N = scene.entities;
   const maxLights = Math.max(1, scene.lights);
@@ -224,6 +237,7 @@ export async function bootPreRenderGather(scene, {
     selfLitDataA: new SharedArrayBuffer(4 + selfLit * SELF_LIT_ITEM_BYTES),
     selfLitDataB: new SharedArrayBuffer(4 + selfLit * SELF_LIT_ITEM_BYTES),
     maxOccluderSelfLit: selfLit,
+    ...rowBuffers(rows, maxLights, maxVerts),
   };
   const fixtureData = {
     enabled: true,
@@ -239,7 +253,7 @@ export async function bootPreRenderGather(scene, {
       worldWidth: WORLD_W,
       worldHeight: WORLD_H,
       lighting: {
-        enabled: true, raycasted: true, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false,
+        enabled: true, walls: true, wallFans: !rows, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false,
         maxOccluderSelfLit: selfLit,
       },
       camera: { floorScaleY: groundScaleY },
@@ -407,7 +421,14 @@ export function runFrame(boot, { js = false } = {}) {
     const at = (4 + q * SELF_LIT_ITEM_BYTES) >> 2;
     selfLit.push(`${sl.i32[at]}@${sl.i32[at + 1]}`);
   }
-  return { lights, selfLit };
+  // OL-4: the rows, when the worker publishes them: each row's lamp (its entity) and where its floats start.
+  const rb = pre._wallRowsWrite;
+  const rows = rb === null ? null : {
+    f32: rb.f32,
+    rowFloats: pre._wallRowFloats,
+    lamps: Array.from(rb.header.subarray(1, 1 + rb.header[0])),
+  };
+  return { lights, selfLit, rows };
 }
 
 /** The self-lit items of each light, in list order. */

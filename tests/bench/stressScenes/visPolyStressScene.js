@@ -63,11 +63,24 @@ export const BLOCK = (() => {
   }
 })();
 
+/**
+ * `?fans=1` (OL-4): the old pass, which draws each light's visibility polygon as a fan (debug.lightFans), to compare with
+ * the light pass reading the walls' rows (the default).
+ */
+export const FANS = WEED.params?.get('fans') === '1' ? 1 : 0;
+
+/** `?zoom=` (default 0.35, the whole field) and `?lightRes=` (lighting.resolution, default the engine's): a closer look at the shadows' edges. */
+export const ZOOM = Number(WEED.params?.get('zoom')) > 0 ? Number(WEED.params.get('zoom')) : 0.35;
+export const LIGHT_RES = Number(WEED.params?.get('lightRes')) > 0 ? Math.min(1, Number(WEED.params.get('lightRes'))) : 0;
+
 export const stressSceneConfig = {
-  requested: { occluderShape: OCCLUDER_SHAPE, selfLit: SELF_LIT, block: BLOCK, lights: LIGHTS, mask: SPRITE_MASK ? 'sprite' : 'collider', backend: BACKEND },
+  requested: {
+    occluderShape: OCCLUDER_SHAPE, selfLit: SELF_LIT, block: BLOCK, lights: LIGHTS, mask: SPRITE_MASK ? 'sprite' : 'collider', backend: BACKEND,
+    fans: FANS, zoom: ZOOM, lightRes: LIGHT_RES,
+  },
 };
 
-/** Bench scene: raycasted lights + occluders (camera pitch 90: a flat view). Predator default leaves this path off. */
+/** Bench scene: lights among walls (lighting.walls, in a view straight down). Predator default leaves this path off. */
 export class VisPolyStressScene extends Scene {
   static config = {
     worldWidth: 4000,
@@ -89,10 +102,14 @@ export class VisPolyStressScene extends Scene {
       packGpuSprites: 'pixi',
       sortSprites: 'pixi',
     },
-    // Straight down: a flat view lights by raycasting, with the floor of 1 the scene had without a camera.
+    // Straight down: the floor of 1 the scene had without a camera, and no height on the screen.
     camera: { pitch: 90 },
+    debug: { lightFans: FANS === 1 },
     lighting: {
       enabled: true,
+      // OL-4: the occluders are walls (shadowCaster.setWall): each light sweeps the ones in its reach.
+      walls: true,
+      ...(LIGHT_RES > 0 ? { resolution: LIGHT_RES } : {}),
       baseAmbient: 0.2,
       maxLights: LIGHTS,
       shadowsEnabled: true,
@@ -140,6 +157,6 @@ export class VisPolyStressScene extends Scene {
       });
     }
     Camera.centerOn(w * 0.5, h * 0.5);
-    Camera.setZoom(0.35);
+    Camera.setZoom(ZOOM);
   }
 }

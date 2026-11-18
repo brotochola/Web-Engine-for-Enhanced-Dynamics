@@ -776,11 +776,12 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   shadowUpdateInterval: 1,
   /** Scale shadow caster budget per light dynamically based on on-screen light radius when zoomed out. */
   adaptiveShadowBudget: true,
-  // No `raycasted` here: raycasted lighting (a visibility polygon a light) is on exactly when config.camera.pitch is 90 or 0
-  // (a flat view) and lighting is enabled. Scene._applyConfigDefaults writes lighting.raycasted from that, for the workers.
-  /** Under raycasted lighting: the vertices of a light's visibility polygon. */
+  /** With lighting.walls: the most vertices of a light's visibility polygon (what its sweep of the walls leaves). */
   maxPolygonVertices: 128,
-  /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
+  /**
+   * With lighting.walls: the walls a light's sweep can name (their own pixels stay lit beyond their edge). With the old fan
+   * pass (debug.lightFans), the cap of its self-lit fills a frame.
+   */
   maxOccluderSelfLit: 512,
   /**
    * E-191's keyed caster paths (the casters' rows by key, read from the sprites' statics). A frame whose casters ask for
@@ -850,6 +851,19 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * drawn by day and shows its relief under a lamp. normalStrengthOf reads it.
    */
   normalStrength: Object.freeze({ sun: 0, lamps: 1 }),
+  /**
+   * OL-4: walls. true: an entity's `shadowCaster.setWall()` stops lamps and headlights at its Collider's outline, as tall
+   * as the world: each light sweeps the walls in its reach (the spatial worker's neighbour lists, pre-render's visibility
+   * sweep) and the light pass lights only what the light sees, the wall's own sprite included, whatever the camera. false
+   * (the default): no sweep, and setWall warns.
+   */
+  walls: false,
+  /**
+   * OL-4: how a wall itself is lit where a lamp reaches its edge. 0 (the default): its own sprite, whole, as drawn (a wall
+   * with no sprite of its own, a mesh or a tilemap, stays in its shadow). Above 0: the light enters every wall that many
+   * px from the edge and fades out there, whatever is drawn in it (a rock lit along its rim), and no sprite is lit whole.
+   */
+  wallDepth: 0,
   /**
    * DX-GBUF: how the G-buffer passes draw. 'mrt' (default): the face map and the entity ids map in one pass with two
    * colour targets (WebGL2 drawBuffers, WebGPU two targets); 'pass': a pass each. Same picture; one pass costs about a
@@ -935,7 +949,7 @@ export function normalStrengthOf(lighting) {
  *   heightScaleY = cos(pitch) unless they are set.
  * - floorScaleY: how tall the floor is drawn against its width, in (0, 1]. Light pools are measured on the floor, so a
  *   light reaches R across and R * floorScaleY up and down: an ellipse. 1 = straight down (round pools), ~0.7 = a 3/4
- *   top-down view, 0.5 = 2:1 isometric. Point, raycasted, particle and LiquidFun lights, cones, point-light shadows and
+ *   top-down view, 0.5 = 2:1 isometric. Point, particle and LiquidFun lights, cones, point-light shadows and
  *   the default floorScaleY of a ShadowCaster's volume read it.
  * - heightScaleY: screen px that a px of height rises (faces, height maps, volumes).
  * - yaw: degrees the view turns about the vertical (45 for an isometric diamond). Read by nothing yet.
@@ -1073,6 +1087,13 @@ export const DEBUG_DEFAULTS = Object.freeze({
    * draws it on every GPU, false on none: benches time a GPU with and without it.
    */
   opaquePass: 'auto',
+  /**
+   * OL-4, to compare with while it is judged: with lighting.walls, true lights the scene with the old pass, which draws
+   * each light's visibility polygon as a fan (and the walls' own fills) instead of reading it in the light pass. That pass
+   * knows no maps, no `unshaded`, no shadow maps and no particle lights. It goes when OL-4's pictures and numbers are
+   * accepted.
+   */
+  lightFans: false,
   /**
    * Init / worker console.log spam (Scene bootstrap, pool init, atlas bake).
    * Independent of collectDetailedStats. Default off.

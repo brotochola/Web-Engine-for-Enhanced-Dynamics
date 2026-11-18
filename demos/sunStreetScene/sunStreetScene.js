@@ -10,8 +10,8 @@
 //   shadowCaster.setBox    houses and cars say what they are (setBox, addLevel: volumes, with room in lighting.maxVolumes),
 //                          and the GPU moves their shadows with the sun; trees and people cast their sprite, and the
 //                          shadows agree
-//   lamps.setWall          R: houses and cars stop the lamps and headlights (walls, under the raycasted lighting of
-//                          camera.pitch 90; ?raycast=0 sets no pitch and no walls); R sets their shadowCaster.opacity
+//   lamps.setWall          R: houses and cars stop the lamps and headlights (walls: lighting.walls; ?walls=0 asks for
+//                          none); R sets their shadowCaster.opacity
 //   LightEmitter.offsetX   the headlights sit ahead of the car and turn with it (O); the cars are carScene's
 //   setSprite({ frame })   T: the trees cast another tree's silhouette, their sprite stays
 //   mesh range uploads     the flag rewrites its vertices every frame and the still tufts are not sent again: the
@@ -20,7 +20,7 @@
 //   LAYER_KIND.SCREEN      P: two passes over the whole frame, a grading by the hour (warm at dusk, cool at night)
 //                          and a vignette, their uniforms set from update with Layer.x.setUniform
 //
-// URL: ?hour=20 (start hour), ?paused=1, ?dayMinutes=1 (a whole day), ?cars=6, ?carSpeed=4, ?tufts=60000, ?raycast=0, ?backend=webgpu.
+// URL: ?hour=20 (start hour), ?paused=1, ?dayMinutes=1 (a whole day), ?cars=6, ?carSpeed=4, ?tufts=60000, ?walls=0, ?backend=webgpu.
 // WASD or arrows pan, the wheel zooms, H hides the panel.
 
 import WEED from '/src/index.js';
@@ -38,7 +38,7 @@ const DAY_MINUTES = param('dayMinutes', 1);
 const CARS = Math.max(0, Math.floor(param('cars', 6)));
 const TUFTS = Math.max(1, Math.floor(param('tufts', 60000)));
 const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
-const RAYCAST = param('raycast', 1) === 1;
+const WALLS = param('walls', 1) === 1;
 
 const NIGHT_INTENSITY = 0.14;
 const ECLIPSE_INTENSITY = 0.02;
@@ -111,11 +111,10 @@ export class SunStreetScene extends Scene {
         shader: { fragment: 'streetVignette', uniforms: { uAmount: { value: VIGNETTE, type: 'f32' } } },
       },
     },
-    // Pitch 90, a flat view, lights by raycasting (the walls); ?raycast=0 sets none, basic lighting. The floor is 1 either
-    // way, as without a camera.
-    camera: RAYCAST ? { pitch: 90 } : {},
     lighting: {
       enabled: true,
+      // The houses and the cars are walls that stop the lamps and the headlights (streetSprites.js); ?walls=0 sets none.
+      walls: WALLS,
       baseAmbient: 0.06,
       maxLights: 32,
       shadowsEnabled: true,
@@ -372,7 +371,7 @@ export class SunStreetScene extends Scene {
     panel.show('n', this._nightOn ? 'on' : 'off');
     panel.show('e', this._eclipse ? 'on' : 'off');
     panel.show('o', this._headlightsAhead ? `${HEADLIGHT_OFFSET} px ahead` : 'on the car');
-    panel.show('r', !RAYCAST ? 'needs ?raycast=1 (camera pitch 90)' : this._occluders ? 'on' : 'off');
+    panel.show('r', !WALLS ? 'needs ?walls=1 (lighting.walls)' : this._occluders ? 'on' : 'off');
     panel.show('t', this._treeShadows ? 'a big tree' : "the sprite's");
     panel.show('l', this._faded ? String(FADED_ALPHA) : '1');
     panel.show('p', this._post ? 'on' : 'off');

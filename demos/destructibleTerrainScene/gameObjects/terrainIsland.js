@@ -62,10 +62,9 @@ export class TerrainIsland extends GameObject {
     this.rigidBody.linearDamping = spawnConfig.isStatic ? 0 : 0.4;
     this.rigidBody.angularDamping = spawnConfig.isStatic ? 0 : 0.8;
     if (spawnConfig.isStatic) this.collider.collisionLayer = LAYER_STATIC;
-    // In a flat view (planetPhysicsScene's camera, pitch 90 or 0) the lights are raycasted and the rock is a wall that stops
-    // them; the destructible landscape's lights are not, so it is no wall there.
-    const pitch = this.config.camera?.pitch;
-    if (pitch === 90 || pitch === 0) this.shadowCaster.setWall();
+    // In a scene that asks for walls (planetPhysicsScene: lighting.walls) the rock is a wall that stops the lights; the
+    // destructible landscape asks for none, so it is no wall there (setWall would only warn).
+    if (this.config.lighting?.walls === true) this.shadowCaster.setWall();
 
     // A loaded save: the components (tint, tiling, body) are restored, and the
     // save writes the fixtures after this. Only what is not a component field.

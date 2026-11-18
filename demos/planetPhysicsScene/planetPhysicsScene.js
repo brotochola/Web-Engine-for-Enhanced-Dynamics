@@ -104,17 +104,21 @@ export class PlanetPhysicsScene extends Scene {
       noLimitFPS: false,
     },
 
-    // A side view: raycasted lighting, the rock a wall (TerrainIsland's shadowCaster.setWall). The lights pool on the
-    // backdrop, seen face on: a floor of 1, not sin(0).
+    // A side view. The lights pool on the backdrop, seen face on: a floor of 1, not sin(0).
     camera: { pitch: 0, floorScaleY: 1 },
     lighting: {
       enabled: true,
+      // Walls: the rock (TerrainIsland's shadowCaster.setWall) stops the lights.
+      walls: true,
+      // The rock is a mesh (MeshRenderer), with no sprite of its own to light whole: the light enters it 40 px from its edge.
+      wallDepth: 40,
       shadowsEnabled: false,
       baseAmbient: 0,
       maxLights: 40,
       maxPolygonVertices: 5000,
       maxOccluderSelfLit: 1024,
-      // No particleLights: raycasted lighting does not draw them.
+      // No particleLights: they were left out when the old wall pass could not draw them. The light pass with walls
+      // draws them now; turning them on is still to be tried here.
       sun: { enabled: false },
     },
 

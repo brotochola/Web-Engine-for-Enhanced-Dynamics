@@ -644,9 +644,9 @@ class Scene {
     if (lighting.shadowsEnabled) {
       this._ensureComponentPool(ShadowCaster);
     }
-    if (lighting.raycasted) {
+    if (lighting.walls) {
+      // OL-4: the walls' columns (shadowCaster.setWall writes them), and the lights the sweep runs for.
       this._ensureComponentPool(LightOccluder);
-      // Raycasted lighting needs LightEmitter for light sources
       this._ensureComponentPool(LightEmitter);
     }
     // DX-CASTER: the ShadowCasters' volumes keep their floor scale in VolumeShadowCaster's one column (no class lists it).
@@ -991,11 +991,15 @@ class Scene {
     const cameraProblems = [];
     this.config.camera = resolveCamera(this.config.camera, cameraProblems);
     for (const text of cameraProblems) warnOnce(`${sceneName}.config.${text}`, 'camera', `${sceneName}.config.${text}`);
-    // DX-CASTER (plan §5.1, §6.11): a flat view, straight down or from the side, lights by the 2D sweep of the ShadowCasters'
-    // walls (raycasted lighting, visibility polygons); any other camera by the 3D system. Derived here, once, for the code
-    // that reads lighting.raycasted (the pools, the buffers, the workers); a scene that wrote the key was told it is retired.
-    const pitch = this.config.camera.pitch;
-    this.config.lighting.raycasted = this.config.lighting.enabled === true && (pitch === 90 || pitch === 0);
+    // OL-4 (ONE_LIGHT_PLAN.md): walls (shadowCaster.setWall: the 2D sweep that stops lamps and headlights) are the scene's to
+    // ask for, lighting.walls, and the light pass reads what the sweep finds; the camera's pitch no longer picks a light
+    // pass. Resolved here, once, for the code that reads lighting.walls (the pools, the buffers, the workers). Any
+    // camera: the sweep runs on the world as the screen shows it, where sight lines are straight whatever the floor's scale.
+    const walls = this.config.lighting.enabled === true && this.config.lighting.walls === true;
+    this.config.lighting.walls = walls;
+    // Derived: the old pass that draws the sweep's polygons as fans (debug.lightFans), kept to compare with until OL-4's
+    // pictures and numbers are accepted.
+    this.config.lighting.wallFans = walls && this.config.debug?.lightFans === true;
 
     // Navigation defaults from centralized config
     this.config.navigation = {

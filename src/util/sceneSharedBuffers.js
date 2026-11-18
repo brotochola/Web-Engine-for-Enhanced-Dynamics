@@ -105,6 +105,7 @@ import { MAX_POOL_SLOTS, PoolSlotArray, poolFreeListTopBytes, poolSlotBytes } fr
 import { impactRingBytes } from './impactRing.js';
 import { createPublishedList } from './publishedList.js';
 import { visibilityMemoryBytes, visibilityMemoryOpts } from './visibilityMemory.js';
+import { wallRowsLayout } from '../render/visibility/lampWallRow.js';
 import { Messages } from '../core/messages.js';
 import { bindInputStamp, createLatencyStampBuffer } from './latencyStamp.js';
 
@@ -621,8 +622,8 @@ export function renderQueueMemorySpec(scene) {
     : null;
   // W2b: the visibility gather reads LightOccluder, Transform, Collider, the bodies' poses (with physics) and the
   // neighbour rows in the engine block and packs into pre-render's visibility regions placed there (so it needs W2a's
-  // sweep): with raycasted lighting.
-  const visibility = inBlock && lighting.enabled && lighting.raycasted
+  // sweep): with walls (lighting.walls, OL-4).
+  const visibility = inBlock && lighting.enabled && lighting.walls
     && Boolean(pools.LightOccluder?.ComponentClass) && Boolean(pools.Collider?.ComponentClass)
     && spatialPublishSpec(scene) !== null
     ? visibilityGatherSpec(scene)
@@ -872,7 +873,7 @@ function initializeLightingAndRenderBuffers(scene) {
     scene.maxShadowRenderItems = maxShadowSprites + maxLights;
   }
 
-  if (config.lighting.enabled && config.lighting.raycasted) {
+  if (config.lighting.enabled && config.lighting.walls) {
     const maxPolyVerts = config.lighting.maxPolygonVertices || 128;
     const lightSlotBytes = 4 + 8 + 4 + maxPolyVerts * 4 * 2;
     const visPolyBufferSize = 4 + maxLights * lightSlotBytes;
@@ -889,6 +890,14 @@ function initializeLightingAndRenderBuffers(scene) {
     buffers.occluderSelfLitDataA = new SharedArrayBuffer(selfLitBufferSize);
     buffers.occluderSelfLitDataB = new SharedArrayBuffer(selfLitBufferSize);
     scene.maxOccluderSelfLit = maxSelfLit;
+
+    // OL-4: the walls' rows the light pass reads (lampWallRow.js), a row a lamp; not with the old fan pass, which draws
+    // the polygons above instead (debug.lightFans).
+    if (!config.lighting.wallFans) {
+      const rowsBytes = wallRowsLayout(maxLights, maxPolyVerts).bytes;
+      buffers.wallRowsDataA = new SharedArrayBuffer(rowsBytes);
+      buffers.wallRowsDataB = new SharedArrayBuffer(rowsBytes);
+    }
   }
 
   if (config.particle.decals) {

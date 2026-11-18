@@ -45,7 +45,7 @@ export class BurningBox extends GameObject {
     this.setFeedBits(this.getFeedBits() & ~HEAT);
     this.lightEmitter.radius = 0;
     this.lightEmitter.active = 0;
-    // A wall again: it stops the lights of the boxes that burn (the scene's flat camera lights by raycasting).
+    // A wall again: it stops the lights of the boxes that burn (the scene asks for walls: lighting.walls).
     this.shadowCaster.setWall();
     return this;
   }

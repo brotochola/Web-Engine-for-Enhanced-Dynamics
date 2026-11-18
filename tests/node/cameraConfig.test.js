@@ -41,7 +41,7 @@ test('no camera draws what WeedJS always drew: a floor of 1, heights of 1, a fla
   assert.equal(cameraHeightScaleY({}), 1);
 });
 
-test('pitch gives the floor sin(pitch) and heights cos(pitch); 90 is straight down, 0 from the side', () => {
+test('pitch gives the floor sin(pitch) and heights cos(pitch); 90 straight down and 0 from the side are flat views', () => {
   const c = resolveCamera({ pitch: 47 });
   close(c.floorScaleY, Math.sin((47 * Math.PI) / 180));
   close(c.heightScaleY, Math.cos((47 * Math.PI) / 180));
@@ -50,9 +50,21 @@ test('pitch gives the floor sin(pitch) and heights cos(pitch); 90 is straight do
   assert.equal(down.floorScaleY, 1);
   assert.equal(down.heightScaleY, 0);
   assert.equal(down.oblique, false, 'straight down is flat');
+  // OL-4: from the side the plane that faces the camera is the floor (the backdrop the lights pool on), drawn as it is,
+  // and height points at the camera, as from above.
   const side = resolveCamera({ pitch: 0 });
-  assert.equal(side.floorScaleY, GROUND_SCALE_Y_MIN, 'a floor seen edge-on keeps the smallest scale');
-  assert.equal(side.heightScaleY, 1);
+  assert.equal(side.floorScaleY, 1, 'the backdrop is not foreshortened');
+  assert.equal(side.heightScaleY, 0, 'a height rises no px');
+  assert.equal(side.oblique, false, 'from the side is flat');
+  assert.equal(cameraFloorScaleY({ camera: { pitch: 0 } }), 1, 'the same from a config as the game wrote it');
+  assert.equal(cameraHeightScaleY({ camera: { pitch: 0 } }), 0);
+  const kept = resolveCamera({ pitch: 0, floorScaleY: 0.5, heightScaleY: 0.25 });
+  assert.equal(kept.floorScaleY, 0.5, 'a side view that sets the keys keeps them');
+  assert.equal(kept.heightScaleY, 0.25);
+  // Only 0 itself: a degree off the side is the trigonometry again, the floor at its smallest scale.
+  const nearSide = resolveCamera({ pitch: 1 });
+  assert.equal(nearSide.floorScaleY, GROUND_SCALE_Y_MIN, 'sin(1°) is below the smallest floor scale');
+  close(nearSide.heightScaleY, Math.cos(Math.PI / 180));
   assert.equal(isObliqueCamera({ pitch: 30 }), true);
 });
 
@@ -114,39 +126,86 @@ test('a scene resolves its camera once and names what it fixed', () => {
   assert.deepEqual(warningsOf(() => new Plain({})), []);
 });
 
-/** lighting.raycasted as the scene derives it, for a camera and lighting on or off. */
-function raycastedFor(camera, enabled = true) {
+/**
+ * OL-4: config.lighting.walls and wallFans as the scene resolves them, for a camera, lighting on or off, the scene's
+ * lighting.walls (left out when null) and its debug.lightFans (left out when undefined); with the warnings it gave
+ * and its component pools.
+ */
+function wallsFor(camera, { enabled = true, walls = true, lightFans } = {}) {
   class Lit extends Scene {
     static entities = [[Crate, 4]];
-    static config = { worldWidth: 2000, worldHeight: 2000, camera, lighting: { enabled, baseAmbient: 0.5 } };
+    static config = {
+      worldWidth: 2000,
+      worldHeight: 2000,
+      camera,
+      lighting: { enabled, baseAmbient: 0.5, ...(walls === null ? {} : { walls }) },
+      ...(lightFans === undefined ? {} : { debug: { lightFans } }),
+    };
   }
   let scene = null;
-  warningsOf(() => {
+  const lines = warningsOf(() => {
     scene = new Lit({});
   });
-  return scene.config.lighting.raycasted;
+  const { lighting } = scene.config;
+  return { walls: lighting.walls, wallFans: lighting.wallFans, lines, pools: scene.componentPools };
 }
 
-test('raycasted lighting is a flat view\'s: camera.pitch 90 or 0 with lighting on, and nothing else', () => {
-  assert.equal(raycastedFor({ pitch: 90 }), true, 'straight down');
-  assert.equal(raycastedFor({ pitch: 0, floorScaleY: 1 }), true, 'from the side, lights on the backdrop');
-  assert.equal(raycastedFor({ pitch: 47 }), false, 'oblique: the 3D system');
-  assert.equal(raycastedFor({ floorScaleY: 0.7 }), false, 'no pitch: today\'s scene');
-  assert.equal(raycastedFor(undefined), false);
-  assert.equal(raycastedFor({ pitch: 90 }, false), false, 'no lighting, no light pass');
-  assert.equal(raycastedFor({ pitch: 120 }), true, 'clamped to 90');
+test('walls are the scene\'s to ask for (lighting.walls), with lighting on, whatever its camera', () => {
+  const down = wallsFor({ pitch: 90 });
+  assert.equal(down.walls, true, 'straight down');
+  assert.deepEqual(down.lines, []);
+  assert.ok(down.pools.LightOccluder, 'the walls\' columns are pooled');
+  assert.ok(down.pools.LightEmitter, 'and the lights the sweep runs for');
+  // The sweep runs on the world as the screen shows it, where sight lines are straight whatever the floor's scale.
+  for (const camera of [{ pitch: 0 }, undefined, { pitch: 47 }, { pitch: 45 }, { floorScaleY: 0.7 }, { pitch: 47, floorScaleY: 0.736, heightScaleY: 0.752 }]) {
+    const name = JSON.stringify(camera);
+    const lit = wallsFor(camera);
+    assert.equal(lit.walls, true, name);
+    assert.ok(lit.pools.LightOccluder, `${name}: the columns are pooled`);
+    assert.deepEqual(lit.lines, [], `${name}: nothing to warn about`);
+  }
+  assert.equal(wallsFor({ pitch: 120 }).walls, true, 'clamped to 90');
+
+  const unasked = wallsFor({ pitch: 90 }, { walls: null });
+  assert.equal(unasked.walls, false, 'a flat camera alone asks for no walls');
+  assert.equal(unasked.pools.LightOccluder, undefined, 'and pools no columns');
+  assert.deepEqual(unasked.lines, []);
+  assert.equal(wallsFor({ pitch: 90 }, { walls: false }).walls, false);
+  const unlit = wallsFor({ pitch: 90 }, { enabled: false });
+  assert.equal(unlit.walls, false, 'no lighting, no walls');
+  assert.equal(unlit.pools.LightOccluder, undefined);
+  assert.deepEqual(unlit.lines, [], 'and nothing to warn about');
+  assert.equal(wallsFor({ pitch: 47 }, { walls: 'yes' }).walls, false, 'true asks for them, nothing else does');
 });
 
-test('a scene that still writes lighting.raycasted is told where it went, and the camera decides', () => {
+test('the old fan pass (lighting.wallFans) follows debug.lightFans, and only in a scene that has walls', () => {
+  assert.equal(wallsFor({ pitch: 90 }, { lightFans: true }).wallFans, true, 'walls and debug.lightFans: the old pass');
+  assert.equal(wallsFor({ pitch: 90 }).wallFans, false, 'walls alone: the light pass reads them');
+  assert.equal(wallsFor({ pitch: 90 }, { lightFans: false }).wallFans, false);
+  assert.equal(wallsFor({ pitch: 90 }, { walls: null, lightFans: true }).wallFans, false, 'no walls, no fans');
+  assert.equal(wallsFor({ pitch: 90 }, { enabled: false, lightFans: true }).wallFans, false, 'no lighting, no fans');
+  const tilted = wallsFor({ floorScaleY: 0.7 }, { lightFans: true });
+  assert.equal(tilted.walls, true);
+  assert.equal(tilted.wallFans, true, 'on a foreshortened floor too');
+});
+
+test('a scene that still writes lighting.raycasted is told it is retired, and it asks for no walls', () => {
   class Old extends Scene {
     static entities = [[Crate, 4]];
-    static config = { worldWidth: 2000, worldHeight: 2000, lighting: { enabled: true, baseAmbient: 0.5, raycasted: true } };
+    static config = {
+      worldWidth: 2000,
+      worldHeight: 2000,
+      camera: { pitch: 90 },
+      lighting: { enabled: true, baseAmbient: 0.5, raycasted: true },
+    };
   }
   let scene = null;
   const lines = warningsOf(() => {
     scene = new Old({});
   });
-  assert.equal(scene.config.lighting.raycasted, false, 'no flat camera: not raycasted');
+  assert.equal(scene.config.lighting.walls, false, 'neither the old key nor a flat camera asks for walls');
+  assert.equal(scene.config.lighting.wallFans, false);
+  assert.equal(scene.componentPools.LightOccluder, undefined, 'no walls\' columns');
   assert.equal(lines.length, 1, lines.join(' | '));
-  assert.match(lines[0], /^WeedJS: Old\.config\.lighting\.raycasted does nothing any more \(.*config\.camera\.pitch is 90 or 0.*\)\. Remove it\.$/);
+  assert.match(lines[0], /^WeedJS: Old\.config\.lighting\.raycasted does nothing any more \(walls are config\.lighting\.walls now.*\)\. Remove it\.$/);
 });

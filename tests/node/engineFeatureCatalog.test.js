@@ -98,11 +98,11 @@ test('box2d / balls-equivalent load includes BODY_COUNT', () => {
   assert.equal(row.scene.exportName, 'BallsScene');
 });
 
-test('visPoly scene is the raycasted bench, not Predator', () => {
+test('visPoly scene is the walls bench, not Predator', () => {
   const row = getFeature('visPoly');
   assert.match(row.scene.path, /visPolyStressScene/);
   const src = fs.readFileSync(path.join(root, 'tests/bench/stressScenes/visPolyStressScene.js'), 'utf8');
-  assert.match(src, /camera:\s*\{\s*pitch:\s*90\s*\}/, 'a flat view: raycasted lighting');
+  assert.match(src, /lighting:\s*\{[^}]*walls:\s*true/, 'the scene asks for walls (lighting.walls)');
   assert.match(src, /seed:/);
 });
 

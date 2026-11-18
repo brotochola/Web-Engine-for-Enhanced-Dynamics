@@ -1,5 +1,5 @@
 /**
- * Moving compound occluders and moving raycasted lights.
+ * Moving compound occluders (walls: lighting.walls) and moving lights they stop.
  * Not a scoreboard row. Primary: preRender STEP_MS.
  */
 import WEED from '/src/index.js';
@@ -60,8 +60,14 @@ export const BOXES = (() => {
   }
 })();
 
+/**
+ * `?fans=1` (OL-4): the old pass, which draws each light's visibility polygon as a fan (debug.lightFans), to compare with
+ * the light pass reading the walls' rows (the default).
+ */
+export const FANS = WEED.params?.get('fans') === '1' ? 1 : 0;
+
 export const stressSceneConfig = {
-  requested: { remeshEvery: REMESH_EVERY, ringSegments: RING_SEGMENTS, boxes: BOXES },
+  requested: { remeshEvery: REMESH_EVERY, ringSegments: RING_SEGMENTS, boxes: BOXES, fans: FANS },
 };
 const TRIS = RING_SEGMENTS * 2;
 const WORLD_W = 2400;
@@ -90,10 +96,13 @@ export class CompoundVisPolyStressScene extends Scene {
     particle: { maxParticles: 0, decals: false },
     renderer: { backend: 'webgl', noLimitFPS: false, maxVisibleRenderables: 4000 },
     preRender: { noLimitFPS: false },
-    // Straight down: a flat view lights by raycasting, with the floor of 1 the scene had without a camera.
+    // Straight down: the floor of 1 the scene had without a camera, and no height on the screen.
     camera: { pitch: 90 },
+    debug: { lightFans: FANS === 1 },
     lighting: {
       enabled: true,
+      // OL-4: the islands (and the ?boxes= boxes) are walls (shadowCaster.setWall): each light sweeps the ones in its reach.
+      walls: true,
       baseAmbient: 0.15,
       maxLights: 32,
       shadowsEnabled: false,

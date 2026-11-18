@@ -1,6 +1,6 @@
 // DX-CASTER (DX_LIGHT3D_PLAN.md §5.5) on real code: a class lists ShadowCaster alone, and its setters give the entity a volume
 // (shadowCaster.setBox, addLevel, setHull: the internal VolumeShadowCaster) where the scene keeps room for volumes, and a wall
-// (setWall: the internal LightOccluder's columns) where the scene has raycasted lighting.
+// (setWall: the internal LightOccluder's columns) where the scene has walls (config.lighting.walls, OL-4).
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -24,8 +24,8 @@ import { DEFAULT_LAYERS, LAYER_KIND, VOLUME_LAYER, VOLUME_LAYER_Z } from '../../
 const ENTITIES = 6;
 
 /**
- * The columns a scene with room for volumes binds (`volumes` false: one without, lighting.maxVolumes 0), and with raycasted
- * lighting LightOccluder's (`walls`).
+ * The columns a scene with room for volumes binds (`volumes` false: one without, lighting.maxVolumes 0), and in a scene with
+ * walls (config.lighting.walls) LightOccluder's (`walls`).
  */
 function setup({ volumes = true, walls = false } = {}) {
   if (walls) {
@@ -159,7 +159,7 @@ test('a refused shape warns and leaves the kinds as they were', () => {
   assert.equal(holdsVolume(1), false);
 });
 
-test('setWall with ShadowCaster alone listed, under raycasted lighting: the wall on, its shape, the caster\'s opacity', () => {
+test('setWall with ShadowCaster alone listed, in a scene with walls: the wall on, its shape, the caster\'s opacity', () => {
   setup({ walls: true });
   const c = caster(1);
   c.opacity = 0.6;
@@ -192,14 +192,18 @@ test('lamps.setWall keeps the sun\'s shadow; a later setter that leaves no wall 
   assert.equal(holdsVolume(2), true);
 });
 
-test('setWall without raycasted lighting warns once and changes nothing; the sun casts no wall', () => {
+test('setWall in a scene without walls warns once and changes nothing; the sun casts no wall', () => {
   const c = caster(1);
   const seen = warnings(() => {
     c.setWall();
     c.lamps.setWall({ shape: 'sprite' });
   });
   assert.equal(seen.length, 1, seen.join(' | '));
-  assert.match(seen[0], /raycasted lighting/);
+  assert.equal(
+    seen[0],
+    'WeedJS: shadowCaster.setWall: a wall stops lamps and headlights in a scene that asks for walls (config.lighting.walls: ' +
+      'true, with lighting enabled), which this scene does not; the entity casts as it did',
+  );
   assert.equal(ShadowCaster.sunKind[1], CAST_KIND.AUTO);
   assert.equal(ShadowCaster.lampKind[1], CAST_KIND.AUTO);
   setup({ walls: true });

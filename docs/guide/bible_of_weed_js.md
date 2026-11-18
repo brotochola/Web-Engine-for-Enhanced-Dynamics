@@ -174,7 +174,7 @@ With compression 1 the cells are one gzip stream (write it with `CompressionStre
   - `this.neighborCount`
   - `this.getNeighbor(i)`
   - `this.getAllNeighborIds()`
-  - Lists are built only for classes whose code reads them (and for lights, whose occluders come from theirs). The first read of a class turns its lists on: that read and the next frame or two see none. A class that reads only now and then still gets its lists every frame from then on.
+  - Lists are built only for classes whose code reads them (and, in a scene with walls, for lights, whose walls come from theirs). The first read of a class turns its lists on: that read and the next frame or two see none. A class that reads only now and then still gets its lists every frame from then on.
 
 Lifecycle hooks:
 
@@ -296,7 +296,7 @@ Some lifecycle callbacks are expensive to check every frame for every entity. Th
 
 Tag components have no `ARRAY_SCHEMA` and allocate no `SharedArrayBuffer`. They exist purely as a declaration in `static components`. The logic worker reads this once at startup and stores per-type flags. The hot loop checks these flags -- not per-entity, but per-type -- so the branch predictor handles it with near-zero overhead.
 
-**Collision:** if no type in the scene has `CollisionListener`, `processCollisionCallbacks()` is skipped entirely (zero Set operations, zero iteration — including `isCollidingWith()`). When at least one type has the tag, logic drains the Box2D **contact ring** (begin/end + sensors), keys every live pair (Cantor `min,max`) into a per-worker Set so `isCollidingWith()` works during `tick()`, and dispatches enter/stay/exit only when at least one side listens (`collisionListenerByType`). Callback ownership is partitioned by `minEntity % totalLogicWorkers`; Set population is not. Entities need an active `Collider` (Box2D body with a shape) to show up in the ring — Collider-only entities get an **implicit static** body; RigidBody-only (shapeless) bodies never generate contacts. Toggle at runtime with `this.collider.active` / `this.rigidBody.active` (see [PHYSICS.md](./PHYSICS.md#rigidbody--collider-composition)). Compound extras use `Collider.replacePolygons` / `replacePolygonsFlat` and `physics.maxFixturePoolSize`. Contacts stay entity-keyed. Raycasted light occluders walk the fixtures too (see Raycasted lighting with compound occluders).
+**Collision:** if no type in the scene has `CollisionListener`, `processCollisionCallbacks()` is skipped entirely (zero Set operations, zero iteration — including `isCollidingWith()`). When at least one type has the tag, logic drains the Box2D **contact ring** (begin/end + sensors), keys every live pair (Cantor `min,max`) into a per-worker Set so `isCollidingWith()` works during `tick()`, and dispatches enter/stay/exit only when at least one side listens (`collisionListenerByType`). Callback ownership is partitioned by `minEntity % totalLogicWorkers`; Set population is not. Entities need an active `Collider` (Box2D body with a shape) to show up in the ring — Collider-only entities get an **implicit static** body; RigidBody-only (shapeless) bodies never generate contacts. Toggle at runtime with `this.collider.active` / `this.rigidBody.active` (see [PHYSICS.md](./PHYSICS.md#rigidbody--collider-composition)). Compound extras use `Collider.replacePolygons` / `replacePolygonsFlat` and `physics.maxFixturePoolSize`. Contacts stay entity-keyed. Walls (`shadowCaster.setWall()`) walk the fixtures too (see Walls of compound bodies).
 
 **Forced logic worker:** `static forceProcessOnLogicWorker = 1` (or the spawn field) makes `tick` / callbacks / `onSpawned` run only on that worker so a `SharedResource` has one writer. SoA is `GameObject.forceProcessOnLogicWorker` (`Int16`, −1 = stride). Not `this.logicWorker` (the API object).
 
@@ -1340,7 +1340,7 @@ What a turned camera changes:
 
 ### Lights and shadows: what you want, what you write
 
-Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and what the camera is, `config.camera` (`pitch`, `floorScaleY`, `heightScaleY`); the camera also picks how lamps are stopped (below). Each light is an entity with `LightEmitter` in its `static components`; a light turns and moves with its entity. Each thing that casts a shadow lists `ShadowCaster`, and its setters say how it casts: its sprite (the default), its height map, a volume or a wall.
+Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and what the camera is, `config.camera` (`pitch`, `floorScaleY`, `heightScaleY`); walls that stop lamps are `lighting.walls`, with any camera (below). Each light is an entity with `LightEmitter` in its `static components`; a light turns and moves with its entity. Each thing that casts a shadow lists `ShadowCaster`, and its setters say how it casts: its sprite (the default), its height map, a volume or a wall.
 
 | You want | You write |
 | --- | --- |
@@ -1361,7 +1361,8 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | A longer or a shorter shadow | `this.shadowCaster.setSprite({ heightScale: 1.5 })` |
 | Another silhouette than the sprite (a tree whose branches are decorations) | `this.shadowCaster.setSprite({ frame: 'treeSilhouette' })` |
 | A box, a house or a car that casts its shadow | `this.shadowCaster.setBox(w, d, h)`, `addLevel(outline, bottom, top)` or `setHull(points)`, with `lighting.maxVolumes` |
-| A wall that stops lamps (a top-down or side view) | `this.shadowCaster.setWall()` and a `Collider`, with `camera.pitch` 90 or 0 |
+| A wall that stops lamps and headlights (any camera) | `this.shadowCaster.setWall()` and a `Collider`, with `lighting: { enabled: true, walls: true }` |
+| Walls lit along their rim instead of their own sprite lit whole | `lighting.wallDepth: 16` (px the light enters a wall; default 0) |
 | A render with a height map cast pixel by pixel | `this.shadowCaster.setHeightMap()` |
 | No shadow | `this.shadowCaster.clear()` |
 | Particles or liquid that light the floor | `lightRadius` on an emit (`lighting.particleLights`), or on `LiquidFun.emit` |
@@ -1382,9 +1383,9 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | A sprite without a height map lit as a card standing on its foot, or as part of the floor | `this.spriteRenderer.surface = 'standing'` (entities) or `'floor'` (a rug, a decal) |
 | A person in front of or behind each part of a table, or of a wall | pixel depth: on by itself with an oblique camera and height maps or faces (`renderer.pixelDepth`) |
 
-The Headlights demo (`demos/headlightsScene/`) puts most of this table on one street at night, under raycasted lighting: cone headlights on carScene's cars, round lamps, houses with a volume for the sun and a wall for the beams, and a key for each field. The light bench (`demos/lightBenchScene/`) does the same for the 3D light mode: a farm of props rendered from 32 directions, cars, trees, a person you walk with WASD and lamps, each piece on a key to compare.
+The Headlights demo (`demos/headlightsScene/`) puts most of this table on one street at night, with walls (`lighting.walls`): cone headlights on carScene's cars, round lamps, houses with a volume for the sun and a wall for the beams, and a key for each field. The light bench (`demos/lightBenchScene/`) does the same for the 3D light mode: a farm of props rendered from 32 directions, cars, trees, a person you walk with WASD and lamps, each piece on a key to compare.
 
-A light's falloff is `I / (I + d²)` with `I = (radius / 10)²`, on the floor, times `(1 - (d / radius)⁴)²`: full at its centre, nothing at its radius and past it, where it is culled; its shadows fade out with it. The camera picks what stops a lamp. Any camera but a flat one (no `pitch`, or an oblique one) lights with basic lighting: the layer shadows of `ShadowCaster`s, stamped for the `lighting.maxShadowCastingLights` lights nearest the camera (or drawn into each one's shadow map with `lighting.lampShadows: 'map'`). A flat view, `camera.pitch` 90 (straight down) or 0 (from the side), lights with raycasted lighting: the walls (`shadowCaster.setWall()`) cut a visibility polygon for each light (no layer shadows from lamps, and no faces).
+A light's falloff is `I / (I + d²)` with `I = (radius / 10)²`, on the floor, times `(1 - (d / radius)⁴)²`: full at its centre, nothing at its radius and past it, where it is culled; its shadows fade out with it. Every camera has the same light pass, and two things stop a lamp in it: the shadows of `ShadowCaster`s, stamped on the layer for the `lighting.maxShadowCastingLights` lights nearest the camera (or drawn into each one's shadow map with `lighting.lampShadows: 'map'`), and, in a scene with `lighting.walls: true`, the walls (`shadowCaster.setWall()`), which cut each light that casts shadows at their outline ("A wall", below).
 
 ```javascript
 class StreetLamp extends GameObject {
@@ -1413,23 +1414,24 @@ A light reaches `LightEmitter.radius` px. Its falloff is `I / (I + d²)` with `I
 | Key | What it is | Default |
 | --- | --- | --- |
 | `pitch` | degrees from the horizon: `90` straight down, `0` from the side | unset |
-| `floorScaleY` | how much the floor is foreshortened vertically on screen | `sin(pitch)`, or `1` without a pitch |
-| `heightScaleY` | screen px that a px of height rises (faces, height maps, the shadow maps, pixel depth) | `cos(pitch)`, or `1` without a pitch |
+| `floorScaleY` | how much the floor is foreshortened vertically on screen | `sin(pitch)` (`1` at pitch 0), or `1` without a pitch |
+| `heightScaleY` | screen px that a px of height rises (faces, height maps, the shadow maps, pixel depth) | `cos(pitch)` (`0` at pitch 0), or `1` without a pitch |
 | `yaw` | degrees the view turns about the vertical (45 for an isometric diamond); read by nothing yet | `0` |
 
 `floorScaleY` and `heightScaleY` are keys of their own because pictures do not always follow the trigonometry: LPC characters and carScene's cars are drawn with a floor of `0.736` and heights of `0.752`. Write `pitch` alone when your pictures follow it, the two scales when they do not. A sheet drawn for another camera than the scene's says so with its `artCamera` (Sprites lit as surfaces, below), and its heights are scaled to the scene's camera when it loads.
 
-A flat view, `pitch` 90 or 0 with lighting on, lights with raycasted lighting (the walls of `shadowCaster.setWall()`, below). A side view's lights pool on the backdrop, which faces the camera, not on a floor seen edge on: such a scene writes `camera: { pitch: 0, floorScaleY: 1 }`, or its pools would be `sin(0)` tall (the 0.05 clamp). A top-down one writes `camera: { pitch: 90 }`.
+Pitch 90 (straight down) and pitch 0 (from the side) are the two flat views. In both, the plane that faces the camera is the floor the lights pool on (the ground seen from above, the backdrop seen from the side), drawn as it is (`floorScaleY` 1), and height points at the camera (`heightScaleY` 0). A sprite without a height map lies in that plane: there are no standing cards in a flat view, since a card stands only where the camera shows height. A top-down game writes `camera: { pitch: 90 }`, a side view `camera: { pitch: 0 }`. The pitch decides nothing else about the light: walls are `lighting.walls` with any camera, and the maps, `unshaded`, the shadow maps and particle lights work in a flat view as in any other.
 
 A circle on the floor is drawn `floorScaleY` times as tall as it is wide, so a light reaches `R` across and `R * floorScaleY` up and down: an ellipse.
 
 | View | `floorScaleY` |
 | --- | --- |
 | Straight down (zenithal) | `1` (round pools, the old behaviour) |
+| From the side (`pitch: 0`), pools on the backdrop | `1` |
 | 3/4 top-down (people and walls drawn from the front) | about `0.7` |
 | 2:1 isometric / dimetric | `0.5` |
 
-It is read when the scene loads. Values are clamped to `[0.05, 1]`; anything that is not a positive number gives `1`. It applies to every light that draws a pool: point lights, raycasted lights (a flat camera), LiquidFun and particle lights, the cookies of shadow-casting lights, and the fade and reach of point-light shadows. The reach `R` (the radius) and every cull built on it do not change (the ellipse fits inside the circle). Glow sprites stay round: they are the bulb, not the floor.
+It is read when the scene loads. Values are clamped to `[0.05, 1]`; anything that is not a positive number gives `1`. It applies to every light that draws a pool: point and cone lights, LiquidFun and particle lights, the cookies of shadow-casting lights, and the fade and reach of point-light shadows. The reach `R` (the radius) and every cull built on it do not change (the ellipse fits inside the circle). Glow sprites stay round: they are the bulb, not the floor.
 
 `LightEmitter.elevation` (default `0`, world px) is how high the source sits above the floor. The falloff becomes `I / (I + h² + d²)`: the pool keeps its centre and its reach, but it is flatter, like a lamp post rather than a torch on the ground. A floor light is at full strength at its foot; a raised one peaks at `I / (I + h²)` (a radius of 20h gives 0.8), so raise the radius when the foot gets too dim. Where things go:
 
@@ -1448,7 +1450,7 @@ this.lightEmitter.glow = 0.6;            // a halo on the bulb...
 this.lightEmitter.glowOffsetY = -110;    // ...110 px up the screen
 ```
 
-Costs: `floorScaleY` is one multiply per pixel in the lighting pass (none per light) and smaller quads for raycasted lights and splats. `elevation` is folded into the intensity and colour each light is uploaded with, so the shaders do no extra work. Both are worth knowing about for upright sprites: the lighting pass treats every pixel as floor, so the top of a tall sprite north of a light is lit as the floor further north. A smaller `floorScaleY` makes that gradient steeper; an `elevation` flattens it.
+Costs: `floorScaleY` is one multiply per pixel in the lighting pass (none per light) and smaller quads for splats. `elevation` is folded into the intensity and colour each light is uploaded with, so the shaders do no extra work. Both are worth knowing about for upright sprites: the lighting pass treats every pixel as floor, so the top of a tall sprite north of a light is lit as the floor further north. A smaller `floorScaleY` makes that gradient steeper; an `elevation` flattens it.
 
 ### Sprites lit and shadowed in 3D: the 3D light mode
 
@@ -1468,7 +1470,7 @@ With an oblique camera, sheets that bring a height map, and the two shadow maps,
 | The G-buffer a pass a target instead of one pass with two | `lighting.gbuffer: 'pass'` (the same picture; `'mrt'`, the default, costs about a third less) |
 | How each thing casts | its sheet's data; `ShadowCaster`'s setters change it |
 
-A thing never takes its own shadow from a map: each map keeps which entity cast each of its texels, so a house is not darkened by its own box, while a tree's shadow still climbs it. A sprite without a height map is a card standing on its foot (`surface`), so another thing's shadow covers it only as high as it reaches.
+A thing never takes its own shadow from a map: each map keeps which entity cast each of its texels, so a house is not darkened by its own box, while a tree's shadow still climbs it. A sprite without a height map is a card standing on its foot (`surface`), so another thing's shadow covers it only as high as it reaches; in a flat view it lies on the floor (above).
 
 A whole scene (the light bench, `demos/lightBenchScene/`, is the same farm with its assets):
 
@@ -1570,7 +1572,7 @@ export class FarmScene extends Scene {
 }
 ```
 
-The sections below take each piece in turn. Raycasted lighting (a flat camera, `pitch` 90 or 0) turns off the lighting by maps (with a warning), faces, unshaded sprites and both shadow maps (with a warning).
+The sections below take each piece in turn. They work in a scene with walls (`lighting.walls`) as in any other, and in a flat view too, where pixel depth stays off unless `renderer.pixelDepth: true` asks for it.
 
 ### Surfaces: faces, maps and cards
 
@@ -1582,7 +1584,7 @@ In an oblique view the light pass meets three kinds of surface. Each says where 
 | A sprite with maps | a sprite whose sheet brings a `heightMap`, a `normalMap` or a `reliefMap` | at each pixel's height (`heightMap`); without one, as a card | its maps' normals, else the heights' |
 | A card | any other sprite | standing on its foot (`spriteRenderer.surface = 'standing'`, the default) or lying on the floor (`'floor'`) | flat: lit as drawn |
 
-Faces and maps need no switch: the scene's first face, or a sheet with maps, turns the G-buffer (the pass that keeps every pixel's surface) on by itself, as a shadow map does, and a scene with none of them pays nothing for it.
+Faces and maps need no switch: the scene's first face, or a sheet with maps, turns the G-buffer (the pass that keeps every pixel's surface) on by itself, as a shadow map and `lighting.walls` do, and a scene with none of them pays nothing for it.
 
 The words this guide uses for light on surfaces:
 
@@ -1632,7 +1634,7 @@ static assets = {
 - `artCamera` is the camera the pictures and maps were drawn for, `{ floorScaleY, heightScaleY }` (or `"artCamera"` in the json's `meta`; the assets entry wins). Its heights are scaled when the sheet loads, by its `heightScaleY` over the scene's, so a pixel rises on the scene's screen as much as in the picture: a sheet drawn for 0.752 in a scene of 0.866 gets its heights times 0.868. Without it, the sheet is taken as drawn for the scene's camera. `SpriteSheetRegistry.artCameraOf(sheet)` reads it on any worker.
 - The normals are turned from the camera's space into the floor's with `config.camera`; `artCamera` scales the heights only.
 - The maps are packed into a second page, the twin page, that holds only the frames with maps (one more texture on the GPU): each frame has its own window in it, and sheets that name the same map files share one. The outline pixels a height map mixes with the background are raised to the surface they border. `config.assets.twinFormat` picks its format: `'A'` (the default) a height and a normal a texel, `'B'` heights alone at 2 bytes a texel with the normals worked out from them in the shader (when a sheet brings a `normalMap` the page stays `'A'`, with a warning), `'C'` B's heights and the normals at half resolution.
-- They go through the G-buffer pass, which a sheet with maps turns on. A prebaked `assets.bigAtlas` carries them (`npm run bake:atlas` writes `bigAtlas_maps.png` beside it; `assets.bigAtlas.maps` names another file), and raycasted lighting lights them flat.
+- They go through the G-buffer pass, which a sheet with maps turns on. A prebaked `assets.bigAtlas` carries them (`npm run bake:atlas` writes `bigAtlas_maps.png` beside it; `assets.bigAtlas.maps` names another file).
 - `tests/bench/stressScenes/maps/makeShapes.mjs` writes a sheet and both maps from shapes it ray-traces: a model of what an exporter writes.
 
 ### The sun's shadows: `lighting.sunShadows`
@@ -1658,7 +1660,7 @@ static config = {
 
 In both modes a picture of one view casts a card: the picture standing on its base, facing the sun, cut out by its alpha. The base is measured from the frame when the atlas is packed: the lowest opaque row (the feet, the foot of a trunk), or, for a render that casts its card, its contact nearest the light (the wheels, the legs). The card falls along the sun's ray with the sun's real elevation, no longer than `shadowMaxLengthRatio` times its height. A render with a height map casts its solid: each pixel where it is in 3D, so a barn's shadow is the barn's, not its picture's. A `DirectionalSprite` casts the frame the sun sees: a person walking towards the camera with the sun to its side casts the shadow of its profile. A solid keeps the view the camera sees, since it is already the object in 3D. What casts which, and how to change it, is the next section.
 
-A ShadowCaster's volume (`setBox`, `addLevel`, `setHull`) casts into the map. Map mode does not work with raycasted lighting (it warns and keeps `'layer'`).
+A ShadowCaster's volume (`setBox`, `addLevel`, `setHull`) casts into the map.
 
 ### How each asset casts, and how an entity changes it: `ShadowCaster`
 
@@ -1726,15 +1728,26 @@ this.shadowCaster.addLevel(CABIN, 13, 27, ROOF);
 - The volume takes the entity's `alpha` and `visible`, so a car that fades takes its shadow along; its `tint` does not reach it. An entity holding a volume has no mesh of its own: its `MeshRenderer`, if it has one, refuses `setMesh` and the like with a warning.
 - A call that cannot make a volume warns once for each kind of mistake and leaves the volume as it was.
 
-**A wall.** In a flat view (`camera.pitch` 90 or 0, lighting on) the lamps and headlights are raycasted, and what stops them is a wall:
+**A wall.** A wall stops lamps and headlights (point and cone lights) at its outline, with any camera: top-down, from the side, oblique, or no `config.camera` at all. A scene asks for walls, and each wall is an entity with a `Collider`:
 
 ```javascript
-this.shadowCaster.setWall();                    // cut by its Collider (the fastest); the sun casts nothing from it
-this.shadowCaster.lamps.setWall({ shape: 'sprite' }); // cut by its sprite's alpha, for the lamps alone: the sun keeps its shadow
-this.shadowCaster.opacity = 0.5;                // the wall lets half the light through
+static config = { lighting: { enabled: true, walls: true } };
+
+// In a wall's onSpawned (its class lists Collider and ShadowCaster):
+this.shadowCaster.setWall();          // its Collider's outline stops the lamps; the sun casts nothing from it
+// or
+this.shadowCaster.lamps.setWall();    // a wall for the lamps alone: the sun keeps its shadow
+this.shadowCaster.opacity = 0.5;      // a paler shadow: half of what the wall stops gets through
 ```
 
-The entity needs a `Collider` (its light finds it through the spatial grid). Any other camera has no walls: `setWall` warns once and changes nothing. More in "Raycasted lighting occluders", below.
+- The wall is the `Collider`'s outline (a circle, a box, a convex polygon, or the outline of a compound body made with `Collider.replacePolygons`), as tall as the world. A light finds it through the spatial grid.
+- Behind a wall a light's shadow keeps a third of that light. `opacity` under 1 lets `1 - opacity` of the rest through; 0 stops nothing.
+- The wall itself, where a light reaches its edge: its own sprite is lit whole, as drawn. A wall with no sprite of its own (drawn by a `MeshRenderer`, a tilemap) stays in its own shadow.
+- `lighting.wallDepth: N` (px, default 0) lights walls the other way: the light enters every wall N px from the edge it reaches and fades out there, whatever is drawn in it (a rock lit along its rim). No sprite is then lit whole.
+- `setWall`'s `shape` option (`'collider'`, the default, or `'sprite'`) changes nothing in the light pass: a wall's own pixels are told by its entity.
+- A scene without `lighting.walls: true` has no walls: `setWall` warns once and changes nothing.
+
+More in "Walls: which ones stop a light", below.
 
 **Coming from the old components.** They left with no stand-in:
 
@@ -1744,8 +1757,8 @@ The entity needs a `Collider` (its light finds it through the spatial grid). Any
 | `shadowCaster.heightMultiplier = h` | `setSprite({ heightScale: h })` |
 | `shadowCaster.anchorOffsetX` / `anchorOffsetY` | `baseRadius`, or `setSprite({ anchorX, anchorY })` |
 | `VolumeShadowCaster` in the components, `volumeShadowCaster.setBox / addLevel / setHull` | `shadowCaster.setBox / addLevel / setHull`, with `lighting.maxVolumes` |
-| `LightOccluder` in the components (`maskMode`, `block`) | `shadowCaster.setWall({ shape: 'collider' \| 'sprite' })`, `opacity` |
-| `lighting.raycasted: true` | `camera.pitch` 90 or 0 (a side view adds `floorScaleY: 1`) |
+| `LightOccluder` in the components (`maskMode`, `block`) | `shadowCaster.setWall()`, `opacity`, in a scene with `lighting.walls: true` |
+| `lighting.raycasted: true` | `lighting.walls: true` (any camera) |
 
 The old members warn once, saying what replaces them, and do nothing; `lighting.raycasted` is named as a retired key.
 
@@ -1772,7 +1785,7 @@ Object.assign(this.lightEmitter, { radius: 330, color: 0xffcf8a, elevation: 75, 
 - `lighting.dither: true` adds half a step of noise to the light before it is stored (8 bits a channel), so a lamp's dim falloff on a plain dark wall does not show rings; no pixel moves more than one level, and with `pixelArt` each art pixel keeps one colour. Off by default (on an Intel HD 620 it cost about 4 % of the frames).
 - `lighting.pixelArt: true` lights each world pixel whole, at its centre, and reads the sun's and the lamps' maps with one tap: in a pixel-art game the light and the shadows fall crisply on the art's pixel grid instead of smoothly at the screen's. Use it with `lighting.resolution: 1` and `renderer.atlasScaleMode: 'nearest'`.
 - In both modes a lamp casts the frame of a `DirectionalSprite` that it sees, a card turned towards it or a render's solid as the caster says (above), and a lamp is not shaded by its own entity: a car's headlights are not stopped by the car, and a post does not shade its own lamp.
-- WebGL and WebGPU. Not with raycasted lighting (it warns and keeps the visibility polygons).
+- WebGL and WebGPU.
 
 ### A surface's self-shadow: `lighting.selfShadow`
 
@@ -1829,11 +1842,11 @@ class Torch extends GameObject {
 }
 ```
 
-- `spriteRenderer.unshaded` is `true` or `false` (the default) for one sprite. The sprites carry the G-buffer words it needs in a scene with a sheet with maps, an unshaded sheet, `lighting.lightGlow: 'sorted'` or a shadow map; in any other scene set `lighting.unshaded: true` too (a warning says so when a sprite asks and nothing carries it). A spawn sets it back to `false`.
+- `spriteRenderer.unshaded` is `true` or `false` (the default) for one sprite. The sprites carry the G-buffer words it needs in a scene with a sheet with maps, an unshaded sheet, `lighting.lightGlow: 'sorted'`, a shadow map or walls (`lighting.walls`); in any other scene set `lighting.unshaded: true` too (a warning says so when a sprite asks and nothing carries it). A spawn sets it back to `false`.
 - By day it looks as drawn and at night it keeps its colour: its lit colour is the light's like any sprite's, and its own colour comes on top where the light is short of it. It writes neither the G-buffer nor depth, so what is behind it is lit.
 - A whole sheet is unshaded or not, so give a lit window or a bulb a sheet of its own, or set the sprite's own `unshaded`.
 - With `lighting.lightGlow: 'sorted'` the lights' halos are unshaded too.
-- It needs lighting (not raycasted) and the entities layer.
+- It needs lighting and the entities layer.
 - Not yet: a sprite brighter than its picture.
 
 ### Faces that light as surfaces
@@ -1882,12 +1895,11 @@ After the spawn, `Decoration.get(i)` reaches the same things: `setFaceNormal(x, 
 - A face casts no shadow: a lamp behind a house lights nothing on the side you see (those walls look away from it), but one wall does not shadow another. What casts is a `ShadowCaster` (a house's volume, `shadowCaster.setBox` or `setHull`), and with the shadow maps its shadow falls on faces.
 - With an oblique camera faces turn pixel depth on: each face writes its plane's depth (above).
 - The picture of the faces has the light pass's size, so `lighting.resolution` also sets how sharp the edge between two faces is.
-- Raycasted lighting (a flat camera) lights faces as the floor.
 - A scene without faces pays nothing for them: the light pass is the same shader as ever. Once a face is spawned, the entities batch draws once more at the light pass's size and each decoration row carries two more numbers.
 
 ### A light off its entity's centre: `offsetX` and `offsetY`
 
-`LightEmitter.offsetX` / `offsetY` (default 0, local px) move a light off its entity's centre, and the entity's rotation turns them: a car's headlights stay ahead of it through a bend, with no second entity. The pool, the glow, the shadows, the raycast sweep and every cull follow it. Its shadows reach `shadowRange` (0: its radius) from the light, the offset included.
+`LightEmitter.offsetX` / `offsetY` (default 0, local px) move a light off its entity's centre, and the entity's rotation turns them: a car's headlights stay ahead of it through a bend, with no second entity. The pool, the glow, the shadows, the walls' sweep and every cull follow it. Its shadows reach `shadowRange` (0: its radius) from the light, the offset included.
 
 ```javascript
 onSpawned() {
@@ -1935,7 +1947,7 @@ class Hero extends GameObject {
 }
 ```
 
-In basic lighting a cone light stamps layer shadows only from the `ShadowCaster`s inside its cone (fainter on its soft edge), so a car's headlights cast nothing behind it. Under raycasted lighting the walls cut the cone as they cut a round light, and the light on the walls themselves follows the cone too. The halo (`glow`) stays round: it is the bulb, not the beam.
+A cone light stamps layer shadows only from the `ShadowCaster`s inside its cone (fainter on its soft edge), so a car's headlights cast nothing behind it. Walls (`lighting.walls`) cut the cone as they cut a round light, and the light on the walls themselves follows the cone too. The halo (`glow`) stays round: it is the bulb, not the beam.
 
 ### The sun and the night
 
@@ -1959,38 +1971,42 @@ static config = {
 
 `Sun.nightFactor` reads 0 by day and 1 by night, for glows, layers or music; `Sun.nightIntensity` and `Sun.nightColor` change the light at run time. The main thread writes the sun on its own copy and publishes it once a frame, after `update`, so a scene that overrides the day cycle in `update` never shows the cycle's value: workers read what you left there, one frame later than the write.
 
-### Raycasted lighting occluders
+### Walls: which ones stop a light
 
-With a flat camera (`camera.pitch` 90 or 0) and lighting on, each visible light gets a visibility polygon. A body blocks a light only if both are true:
+In a scene with `lighting: { enabled: true, walls: true }`, each light in view that casts shadows sweeps the walls in its reach, and the light pass lights only what that light sees: its visibility polygon. A wall stops a light only if both are true:
 
-1. Its `ShadowCaster` is a wall (`this.shadowCaster.setWall()`, or `lamps.setWall()`) and it has an active `Collider`. The wall takes out its `opacity` of the light (1 at spawn); an opacity of 0 blocks nothing.
-2. The body is within the light's `LightEmitter.shadowRange` (0, the default, is its radius), counted from the light entity, plus the light's offset.
+1. Its `ShadowCaster` is a wall (`this.shadowCaster.setWall()`, or `lamps.setWall()`) and it has an active `Collider`. An `opacity` of 0 stops nothing.
+2. The wall is within the light's `LightEmitter.shadowRange` (0, the default, is its radius), counted from the light entity, plus the light's offset.
 
-The light finds those bodies by itself: there is no `Collider.visualRange` to set for it. It needs to be in the spatial grid, which an entity with a sprite or a `Collider` is; a light with neither finds no occluders. A light with `castShadows = 0` gathers none at all (its polygon is the full circle), which costs least.
+The light finds those walls by itself: there is no `Collider.visualRange` to set for it. It needs to be in the spatial grid, which an entity with a sprite or a `Collider` is; a light with neither finds no walls. A light with `castShadows = 0` gathers none: no wall stops it.
 
-One exception: a light on an entity whose class reads its neighbours (`this.neighborCount`, `this.getNeighbor(i)`). That list is the entity's own, and the light's reach would change what its code sees (a hero with a 1500 px flashlight would find enemies 1500 px away). So it stays what the entity's `visualRange` gives, and the light finds its occluders within it: give such an entity a `visualRange` as long as its light should cast, or carry the light on an entity of its own.
+One exception: a light on an entity whose class reads its neighbours (`this.neighborCount`, `this.getNeighbor(i)`). That list is the entity's own, and the light's reach would change what its code sees (a hero with a 1500 px flashlight would find enemies 1500 px away). So it stays what the entity's `visualRange` gives, and the light finds its walls within it: give such an entity a `visualRange` as long as its light should cast, or carry the light on an entity of its own.
 
 ```javascript
+// In a lamp's onSpawned, in a scene with walls:
 this.lightEmitter.radius = 1183;
-this.lightEmitter.shadowRange = 600; // optional: occluders farther than 600 px do not stop it (cheaper)
+this.lightEmitter.shadowRange = 600; // optional: walls farther than 600 px do not stop it
 ```
 
-A shorter `shadowRange` means a shorter neighbour list and fewer occluders per light. Each light takes at most 1024 occluders (a one-time warning says when that is hit).
+Limits:
+- A shorter `shadowRange` means a shorter neighbour list and fewer walls per light. Each light takes at most 1024 walls (a one-time warning says when that is hit).
+- `lighting.maxPolygonVertices` (default 128) is the most vertices of a light's visibility polygon. Above 512 the light pass keeps one vertex in every few.
+- `lighting.maxOccluderSelfLit` (default 512) is how many walls one light's sweep can name. A wall past it still stops that light, but its own sprite is not lit whole; a compound body is always named.
+- At most `lighting.maxLights` lights are swept a frame (a one-time warning says when more are in view).
 
-### Raycasted lighting with compound occluders
+### Walls of compound bodies
 
-A body whose shape was set with `Collider.replacePolygons` (or `replacePolygonsFlat`; both need `physics.maxFixturePoolSize > 0`) is a compound body. As an occluder it needs a wall (`shadowCaster.setWall()`) and the same neighbor list as above. Then:
+A body whose shape was set with `Collider.replacePolygons` (or `replacePolygonsFlat`; both need `physics.maxFixturePoolSize > 0`) is a compound body. As a wall it needs `shadowCaster.setWall()` and the same neighbour list as above. Then:
 
-- It blocks light through its outline. Edges shared by two fixtures are dropped, so a hole or canyon in the body stays open and light passes through it.
+- It stops light at its outline. Edges shared by two fixtures are dropped, so a hole or canyon in the body stays open and light passes through it.
 - Only outline edges that face the light cast. Edges facing away from it are not used.
-- With a wall's shape `'collider'` (the default) pixi draws a self-lit fill of the polygons, so the side facing the light is lit and the far side stays dark. With `setWall({ shape: 'sprite' })` the fill uses the sprite's alpha instead.
+- Where a light reaches its outline, its own sprite is lit whole, as any wall's. A body drawn by a `MeshRenderer` (a rock, a terrain) has no sprite of its own and stays in its shadow: give such a scene `lighting.wallDepth: 40`, say, and the light enters the body 40 px from the outline it reaches and fades out there, so the side facing the light is lit along its rim and the far side stays dark.
 - The outline is cached, not rebuilt every frame. It is rebuilt when any fixture in the scene changes (the cache key is pool-wide).
 
 Limits:
 - A compound body is skipped for a light when its center is farther than the light's influence radius plus half the diagonal of its `Collider.width` x `height`. `replacePolygons` sets that width and height to the bounding box of the pieces.
 - Only edges within the influence radius of the light count.
-- A body shaped with `setChain` is never an occluder.
-- Self-lit fills are capped per frame by `lighting.maxOccluderSelfLit` (default 512).
+- A body shaped with `setChain` is never a wall.
 
 ### Audio buses
 
@@ -2170,7 +2186,7 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
 - Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
 - Entity pools (`static entities`) and the joint pool are finite too. A spawn into a full pool returns `null` (a joint returns `-1`); the first one warns once per scene, from whichever thread hit it, and the rest are counted in `getPoolStats(Type).dropped`.
 - Flash pool is finite (`lighting.maxFlashes`). Flashes also compete for `lighting.maxLights`; persistent lights win when the list is capped. Short muzzle flashes should use `Flash.spawn({ castShadows: false })` so they light without point-shadow grid work.
-- Rendering caps are finite too. One-shot pre-render warnings for visible lights, shadow casters, shadow sprites, and visibility polygon occluders mean the scene is truncating work. Tune `lighting.maxLights`, `lighting.maxFlashes`, `lighting.maxShadowCastingLights`, `lighting.maxShadowsPerLight`, `lighting.maxShadowSprites`, or reduce light/occluder density.
+- Rendering caps are finite too. One-shot pre-render warnings for visible lights, shadow casters, shadow sprites, and the walls one light sweeps mean the scene is truncating work. Tune `lighting.maxLights`, `lighting.maxFlashes`, `lighting.maxShadowCastingLights`, `lighting.maxShadowsPerLight`, `lighting.maxShadowSprites`, or reduce light/wall density.
 - Sound slots are finite (default 128). One-shot SFX are cheap; don't forget `stop()` on loops. A full bus drops or steals a voice on that bus; `droppedCount` counts plays that found no slot.
 - Spatial sound culls anything a full viewport-width outside the camera. Keep that in mind for ambient loops.
 - Only add `CollisionListener` / `CameraInOutListener` to entity types that actually use the callbacks or `isCollidingWith()`. Without `CollisionListener` anywhere in the scene, the engine skips the entire collision callback/query pass.

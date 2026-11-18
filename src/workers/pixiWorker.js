@@ -82,6 +82,7 @@ import {
   writeLightTileUniforms,
 } from '../render/lightTiles.js';
 import { gbufEntityId, gbufWanted, writeGbufWords } from '../render/gbufWord.js';
+import { WALL_VERT0, wallRowsLayout } from '../render/visibility/lampWallRow.js';
 import { UNSHADED_COMPOSITE_FRAG, UNSHADED_COMPOSITE_VERT, unshadedCompositeGpuProgram, unshadedQuadPositions } from '../render/unshadedComposite.js';
 import { lightEdgesHost, lightEdgesQuad, rgbOnlyHost, unshadedEdgesHost } from '../render/lightEdges.js';
 import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
@@ -1153,7 +1154,7 @@ class PixiRenderer extends AbstractWorker {
     this._sunMapClear = false;
     this._noMapsSource = null; // DX-MAPS: its stand-in when none has (_emptyMapsSource)
     // DX-BARRIOS: faces have no switch. Whether the light pass reads the face map, whether the faces-in-use word was acted
-    // on (_useFaces), whether this scene's light can take faces (lit, not raycasted); the px a px of height rises (the
+    // on (_useFaces), whether this scene's light can take faces (lit, not by the old fan pass); the px a px of height rises (the
     // camera's); the faces' light terms (uFaceLight: heightScaleY, lighting.normalStrength's sun and lamps (OL-2), the sun's
     // direct share 1 - Sun.skyLight).
     this._facesOn = false;
@@ -1357,7 +1358,7 @@ class PixiRenderer extends AbstractWorker {
       target: null,
       clear: false,
     };
-    // N-158: the raycasted light pass's render options and clear colour (ambient, sun and night), kept: they were a new
+    // N-158: the old fan pass's (debug.lightFans) render options and clear colour (ambient, sun and night), kept: they were a new
     // object and array every frame. Its own object, so no other pass inherits its clear colour.
     this._visClearColor = [0.5, 0.5, 0.5, 1]; // doubles from the start
     this._visRenderOpts = {
@@ -1376,7 +1377,8 @@ class PixiRenderer extends AbstractWorker {
     // RAYCASTED LIGHT OCCLUSION (visibility polygons)
     // ========================================
     this._visPolyEnabled = false;
-    // N-134: raycasted lighting draws the sun's casters alone into the casted shadows (no cookies, no lamp stamps).
+    // N-134: the old fan pass (debug.lightFans) draws the sun's casters alone into the casted shadows (no cookies, no lamp
+    // stamps).
     this._castedShadowsSunOnly = false;
     this._visPolyBuffers = [null, null]; // Double-buffered typed views + header pairs
     this._visPolyMaxVerts = 128;
@@ -1397,6 +1399,21 @@ class PixiRenderer extends AbstractWorker {
     this._visPolyRT = null;          // RenderTexture for visibility lighting
     this._visPolyDisplaySprite = null; // Sprite displaying the RT with multiply blend
     this._selfLitBuffers = [null, null];
+    // OL-4: the walls' rows the light pass reads (pre-render's, lampWallRow.js): the pair of shared buffers, a row's floats
+    // and texels, this worker's copy of the rows and its texture, each lamp's row this frame (by entity, row + 1; 0: none)
+    // and the lamps given one last frame (to clear them).
+    this._wallRowsOn = false;
+    this._wallRowBuffers = [null, null];
+    this._wallRowFloats = 0;
+    this._wallRowTexels = 0;
+    this._wallRowsData = new Float32Array(0);
+    this._wallRowsSource = null;
+    this._wallRowOf = new Int16Array(0);
+    this._wallRowLamps = new Int32Array(0);
+    this._wallRowLampCount = 0;
+    this._wallRowsWarned = false;
+    // lighting.wallDepth, in the light pass's uWalls (x).
+    this._wallTerms = new Float32Array(4);
     this._selfLitItemBytes = 28;
     // E-96b. Every light's self-lit fills and transmit wedges in one mesh, drawn in the light pass:
     // { mesh, geometry, vbuf, data, indices, uniforms, vertCap, idxCap, idxUsed, gpuReady }.
@@ -2542,8 +2559,9 @@ class PixiRenderer extends AbstractWorker {
   /**
    * @param {number} [columns] E-511: only each row's first `columns` texels changed (the rows of `data` stay `width`
    *   long); a texture this source already holds gets just those
+   * @param {number} [rows] OL-4: only the first `rows` rows changed
    */
-  _uploadRgba32FloatGl(source, data, width, height, columns = width) {
+  _uploadRgba32FloatGl(source, data, width, height, columns = width, rows = height) {
     const renderer = this.pixiApp?.renderer;
     const gl = renderer?.gl;
     if (!gl || !source || !data || !renderer?.texture) return;
@@ -2557,7 +2575,8 @@ class PixiRenderer extends AbstractWorker {
       const current = typeof texSys0.getGlSource === 'function' ? texSys0.getGlSource(source) : null;
       if (current && current.texture === held.texture) {
         const cols = columns < width ? (columns > 0 ? columns | 0 : 0) : width;
-        if (cols === 0) return;
+        const high = rows < height ? (rows > 0 ? rows | 0 : 0) : height;
+        if (cols === 0 || high === 0) return;
         const prevHeld = gl.getParameter(gl.TEXTURE_BINDING_2D);
         gl.bindTexture(held.target, held.texture);
         gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
@@ -2566,10 +2585,10 @@ class PixiRenderer extends AbstractWorker {
         if (cols < width) {
           // E-511: the rows' first texels, read from rows `width` long.
           gl.pixelStorei(gl.UNPACK_ROW_LENGTH, width);
-          gl.texSubImage2D(held.target, 0, 0, 0, cols, height, gl.RGBA, gl.FLOAT, data);
+          gl.texSubImage2D(held.target, 0, 0, 0, cols, high, gl.RGBA, gl.FLOAT, data);
           gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
         } else {
-          gl.texSubImage2D(held.target, 0, 0, 0, width, height, gl.RGBA, gl.FLOAT, data);
+          gl.texSubImage2D(held.target, 0, 0, 0, width, high, gl.RGBA, gl.FLOAT, data);
         }
         gl.bindTexture(held.target, prevHeld);
         return;
@@ -4869,7 +4888,9 @@ LIGHTING SYSTEM SETUP
       // OL-2: how much a sprite's own normals count for the sun and for the lamps (lighting.normalStrength).
       const faceLight = this._faceLight;
       const normalStrength = normalStrengthOf(this.config.lighting);
-      faceLight[0] = this._heightScaleY > 0 ? this._heightScaleY : 1;
+      // OL-4: 0 where the camera shows no height (straight down, or from the side): a pixel's height then moves it nowhere
+      // on the screen. 1 only where the camera has not been read.
+      faceLight[0] = this._heightScaleY >= 0 ? this._heightScaleY : 1;
       faceLight[1] = normalStrength.sun;
       faceLight[2] = normalStrength.lamps;
       faceLight[3] = 1 - Sun.skyLight;
@@ -4891,8 +4912,16 @@ LIGHTING SYSTEM SETUP
       lightingResources.uLampMap = this.lampMapRT ? this.lampMapRT.source : PIXI.Texture.EMPTY.source;
     }
     // DX-GBUF: the entity ids map, where the entities carry their words and something reads ids (self-shadow, a map).
-    this._faceIdsOn = facesOn && !!this.entitiesBatch?.gbuf && (this._selfShadowOn || this._sunMapOn || this._lampMapOn);
+    this._faceIdsOn = facesOn && !!this.entitiesBatch?.gbuf
+      && (this._selfShadowOn || this._sunMapOn || this._lampMapOn || this._wallRowsOn);
     if (this._faceIdsOn) lightingResources.uFaceIds = PIXI.Texture.EMPTY.source;
+    // OL-4: the walls' rows, where the pass knows whose each pixel is (a wall's own pixels stay lit beyond its edge).
+    const wallsOn = this._wallRowsOn && this._faceIdsOn;
+    if (wallsOn) lightingResources.uWallRows = this._wallRowsSource;
+    else if (this._wallRowsOn && !this._wallRowsWarned) {
+      this._wallRowsWarned = true;
+      console.warn('WeedJS: lighting.walls is on but the entities carry no G-buffer words, so the walls stop no light');
+    }
     if (this._lightTilesOn) {
       // E-205: the lights by tile (lightTiles.js), after every other uniform (the WGSL struct's order); updateLighting lays
       // the grid out at the pass's size and fills the texture before the pass draws.
@@ -4914,6 +4943,12 @@ LIGHTING SYSTEM SETUP
       lightingResources.uniforms.uTileGrid = { value: new Float32Array(4), type: 'vec4<f32>' };
       lightingResources.uniforms.uTileWords = { value: new Float32Array(4), type: 'vec4<f32>' };
     }
+    if (wallsOn) {
+      // OL-4: after every other uniform (the WGSL struct's order): how deep the light enters a wall (lighting.wallDepth).
+      const depth = Number(this.config?.lighting?.wallDepth);
+      this._wallTerms[0] = depth > 0 && Number.isFinite(depth) ? depth : 0;
+      lightingResources.uniforms.uWalls = { value: this._wallTerms, type: 'vec4<f32>' };
+    }
     // DX-LIGHTEDGES: the light at a share of the canvas over entities that write depth (pixel depth) is shown without
     // crossing the floor's edges; lighting.lightEdges false stretches it as a plain texture.
     this._lightEdgesOn = this.lightingResolution < 1 && !!this.entitiesBatch?.pixelDepthOn && !this._visPolyEnabled
@@ -4930,6 +4965,7 @@ LIGHTING SYSTEM SETUP
       // N-277: half a step of noise on the light, against the 8-bit target's rings (off by default: on an Intel iGPU it
       // cost 4 % of the drawn frames).
       dither: this.config?.lighting?.dither === true,
+      walls: wallsOn,
     }).replace(
       /MAX_LIGHTS/g,
       String(this.maxLights | 0 || 64)
@@ -4939,7 +4975,7 @@ LIGHTING SYSTEM SETUP
         throw new Error('WeedJS: Failed to compile look shader "lighting_basic" for layer "LIGHTING" on WebGPU: lighting_basic.wgsl is missing.');
       }
       const makeProgram = (Gp) => lightingGpuProgram(
-        Gp, lightingSrc, 'lighting-basic', facesOn, this._sunMapOn, this._lampMapOn, this._faceIdsOn,
+        Gp, lightingSrc, 'lighting-basic', facesOn, this._sunMapOn, this._lampMapOn, this._faceIdsOn, wallsOn,
       );
       // E-205: with the tiles, their texture at binding 8 of the pass's group.
       const gpuProgram = this._lightTilesOn ? lightTilesGpuProgram(GpuProgram, makeProgram) : makeProgram(GpuProgram);
@@ -5226,8 +5262,8 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     // light cookies multiply on top and crush umbra to pitch black (cookies clear
     // to black outside the gradient; soft shadow sprites used ~0.33 alpha), and the
     // fans are the lamps' shadows. N-134: the sun's casters still draw there (they
-    // used to go with the rest, so trees and people cast nothing under raycasted
-    // lighting); the cookies and the lamps' stamps do not.
+    // used to go with the rest, so trees and people cast nothing under this
+    // pass); the cookies and the lamps' stamps do not.
     this._castedShadowsSunOnly = true;
 
     if (this._useWebGpu) {
@@ -6620,6 +6656,84 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
   }
 
   /**
+   * OL-4: the walls' rows pre-render published for this frame (lampWallRow.js: a row a lamp with walls in its reach) and
+   * their texture. Rows a frame does not use are left as they were: no lamp's tag points at them.
+   * @param {{ maxLights: number, maxPolygonVertices: number, rowsA: SharedArrayBuffer, rowsB: SharedArrayBuffer }} vp
+   */
+  _initWallRows(vp) {
+    const layout = wallRowsLayout(vp.maxLights, vp.maxPolygonVertices);
+    const sabs = [vp.rowsA, vp.rowsB];
+    for (let b = 0; b < 2; b++) {
+      this._wallRowBuffers[b] = {
+        header: new Int32Array(sabs[b], 0, 1 + layout.lights),
+        f32: new Float32Array(sabs[b], layout.rowsByte, layout.lights * layout.rowFloats),
+      };
+    }
+    this._wallRowFloats = layout.rowFloats;
+    this._wallRowTexels = layout.rowTexels;
+    this._wallRowsData = new Float32Array(layout.lights * layout.rowFloats);
+    this._wallRowLamps = new Int32Array(layout.lights);
+    this._wallRowLampCount = 0;
+    this._wallRowsSource = PIXI.TextureSource.from({
+      resource: this._wallRowsData,
+      width: layout.rowTexels,
+      height: layout.lights,
+      format: 'rgba32float',
+      scaleMode: 'nearest',
+      addressMode: 'clamp-to-edge',
+      autoGenerateMipmaps: false,
+      label: 'weed-wall-rows',
+    });
+    this._wallRowsSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
+    this._wallRowsOn = true;
+  }
+
+  /**
+   * OL-4: this frame's rows: which lamp has which (for _packLightData's tags), and the rows in use copied and sent up.
+   */
+  _readWallRows() {
+    const syncFrame = this.renderQueueSync ? Atomics.load(this.renderQueueSync, 0) : 0;
+    const buf = this._wallRowBuffers[syncFrame > 0 ? (syncFrame - 1) & 1 : 0];
+    if (buf === null) return;
+    const entities = Transform.x ? Transform.x.length : 0;
+    if (this._wallRowOf.length !== entities) this._wallRowOf = new Int16Array(entities);
+    const rowOf = this._wallRowOf;
+    const lamps = this._wallRowLamps;
+    for (let i = 0; i < this._wallRowLampCount; i++) {
+      const lamp = lamps[i];
+      if (lamp >= 0 && lamp < entities) rowOf[lamp] = 0;
+    }
+    const header = buf.header;
+    let count = header[0];
+    if (count > lamps.length) count = lamps.length;
+    if (count < 0) count = 0;
+    const rowFloats = this._wallRowFloats;
+    const src = buf.f32;
+    const dst = this._wallRowsData;
+    for (let r = 0; r < count; r++) {
+      const lamp = header[1 + r];
+      lamps[r] = lamp;
+      if (lamp >= 0 && lamp < entities) rowOf[lamp] = r + 1;
+      // The row's floats in use: its header, its directions and its vertices with the closing one.
+      const o = r * rowFloats;
+      const n = src[o] | 0;
+      const used = n >= 3 ? 4 * (WALL_VERT0 + n + 1) : 4;
+      for (let f = 0; f < used; f++) dst[o + f] = src[o + f];
+    }
+    this._wallRowLampCount = count;
+    if (count === 0) return;
+    const source = this._wallRowsSource;
+    const width = this._wallRowTexels;
+    const height = lamps.length;
+    if (this._useWebGpu) {
+      const renderer = this.pixiApp?.renderer;
+      if (renderer?.gpu?.device) writeRgba32Float(renderer, source, dst, width, height, 'weed-wall-rows', width, count);
+    } else {
+      this._uploadRgba32FloatGl(source, dst, width, height, width, count);
+    }
+  }
+
+  /**
    * Pack path mutates _lightDataFloats in place. Pin RGBA32F GPUTexture (no RENDER_ATTACHMENT).
    */
   _uploadLightDataTexture(columns = this.maxLights) {
@@ -6661,6 +6775,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const fadeOf = this._lampFadeOf;
     const row3 = row2 + row2 - row1;
     const ids = this._faceIdsOn;
+    // OL-4: each lamp's row of the walls' texture, + 1 (0: nothing stops it), in its fourth row's z.
+    const wallRowOf = this._wallRowOf;
     const worldX = Transform.x;
     const worldY = Transform.y;
     const lightColor = LightEmitter.color;
@@ -6712,6 +6828,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const i3 = row3 + i0;
       lightData[i3] = 1;
       lightData[i3 + 1] = 0;
+      lightData[i3 + 2] = entityIndex < wallRowOf.length ? wallRowOf[entityIndex] : 0;
       if (entityIndex < tileOf.length) {
         const tile = tileOf[entityIndex];
         // DX-GBUF: with the ids map, -(tile + 1 + 256 · its entity's id), so a pixel of its own entity does not shade from
@@ -6857,6 +6974,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       coneCosSeen[i] = seen;
       if (seen > -1) coneCount++;
     }
+    // OL-4: which lamp has which row of the walls' texture this frame, before the pack tags them.
+    if (this._wallRowsOn) this._readWallRows();
     // E-311: the per-light pack in its own method (see _packLightData).
     this._packLightData(countToRender, visibleLights, coneCosSeen, coneCount, lightData, row1, row2, groundInvY, vr);
 
@@ -6874,7 +6993,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     uniformGroup.uniforms.uLightCount = countToRender;
     uniformGroup.uniforms.uConeCount = coneCount;
 
-    // E-205: the frame's lights by tile, for the camera stamped above (the raycasted path draws no light pass).
+    // E-205: the frame's lights by tile, for the camera stamped above (the old fan pass draws no light pass).
     if (this._lightTilesSource !== null && !this._visPolyEnabled) this._updateLightTiles(uniformGroup.uniforms, countToRender);
 
     // ========================================
@@ -10097,7 +10216,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         })
       );
     }
-    if (data.visibilityPolygons && data.visibilityPolygons.enabled) {
+    if (data.visibilityPolygons && data.visibilityPolygons.enabled && data.visibilityPolygons.fans === true) {
       if (this._useWebGpu) {
         shaderFetches.push(
           fetchEngineShader('/src/shaders/visibilityPolygonBatch.wgsl').then((s) => {
@@ -10547,9 +10666,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         : null;
       this.lightingResolution = lightingConfig.resolution || 1.0;
       // DX-BARRIOS: a px of height rises the camera's heightScaleY; faces have no switch: the light pass reads the face map
-      // with maps or a shadow map (below), or once a decoration carries a normal (_useFaces). Not with raycasted lighting.
+      // with maps or a shadow map (below), or once a decoration carries a normal (_useFaces). Not with the old fan pass
+      // (debug.lightFans, OL-4).
       this._heightScaleY = cameraHeightScaleY(this.config);
-      this._facesWatch = !lightingConfig.raycasted;
+      this._facesWatch = !lightingConfig.wallFans;
       this._facesOn = this._facesWatch && DecorationPool.facesInUse();
       // DX-SHADOW3D: the sun's shadows on the shadows' layer ('layer', the default) or from a shadow map, the sun's term
       // alone (WebGL and WebGPU). OL-1: any other value (the old 'sprite' among them) warns and draws on the layer.
@@ -10558,8 +10678,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         console.warn(`WeedJS: lighting.sunShadows is 'layer' or 'map', not ${JSON.stringify(sunShadows)}: the sun's shadows are drawn on the layer`);
       }
       if (sunShadows === 'map') {
-        if (lightingConfig.raycasted) {
-          console.warn(`WeedJS: lighting.sunShadows 'map' does not work with raycasted lighting yet: the sun's shadows stay on the layer`);
+        if (lightingConfig.wallFans) {
+          console.warn(`WeedJS: lighting.sunShadows 'map' does not work with debug.lightFans (the old fan pass): the sun's shadows stay on the layer`);
         } else {
           this._sunMapOn = true;
         }
@@ -10584,8 +10704,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         console.warn(`WeedJS: lighting.lampShadows is 'layer' or 'map', not ${JSON.stringify(lampShadows)}: the lamps' shadows are stamped on the layer`);
       }
       if (lampShadows === 'map') {
-        if (lightingConfig.raycasted) {
-          console.warn(`WeedJS: lighting.lampShadows 'map' does not work with raycasted lighting: the lamps' shadows are the fans`);
+        if (lightingConfig.wallFans) {
+          console.warn(`WeedJS: lighting.lampShadows 'map' does not work with debug.lightFans (the old fan pass): the lamps' shadows are the fans`);
         } else {
           this._lampMapOn = true;
           // N-196: 'auto' (the default) sizes the tile by the casting lamps' reach and lighting.shadowResolution.
@@ -10600,11 +10720,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // is every entity's in the shadow maps' modes (a card standing on its foot, plan §5.4): the maps keep their highest
       // caster's entity, and a caster's own shadow never paints its own sprite.
       if ((this.atlasMapsSource !== null || this._sunMapOn || this._lampMapOn) && !this._facesOn) {
-        if (lightingConfig.raycasted) {
-          console.warn('WeedJS: sprites with height or normal maps are lit flat with raycasted lighting');
+        if (lightingConfig.wallFans) {
+          console.warn('WeedJS: sprites with height or normal maps are lit flat with debug.lightFans (the old fan pass)');
         } else {
           this._facesOn = true;
         }
+      }
+      // OL-4: walls (lighting.walls) read by this pass, unless the old fan pass is asked for: pre-render's rows and their
+      // texture, and the G-buffer, since a wall's own pixels are told by their entity's id.
+      const wallRows = data.visibilityPolygons;
+      if (wallRows && wallRows.enabled && wallRows.fans !== true && wallRows.rowsA && wallRows.rowsB) {
+        this._initWallRows(wallRows);
+        this._facesOn = true;
       }
       // baseAmbient is the night/minimum light level (when sun is down)
       this.baseAmbient = lightingConfig.baseAmbient !== undefined ? lightingConfig.baseAmbient : 0.05;
@@ -10629,7 +10756,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.liquidFunMaxCount = data.liquidFunMaxCount | 0;
       const particleLights = resolveParticleLights(
         lightingConfig.particleLights,
-        !!(data.visibilityPolygons && data.visibilityPolygons.enabled),
+        lightingConfig.wallFans === true,
       );
       if (particleLights.warning) console.warn(`PIXI WORKER: ${particleLights.warning}`);
       this._particleLightsEnabled = particleLights.enabled;
@@ -10648,9 +10775,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // ========================================
-    // RAYCASTED LIGHT OCCLUSION - Initialize
+    // THE OLD FAN PASS (debug.lightFans, OL-4) - Initialize
     // ========================================
-    if (data.visibilityPolygons && data.visibilityPolygons.enabled) {
+    if (data.visibilityPolygons && data.visibilityPolygons.enabled && data.visibilityPolygons.fans === true) {
       this.initVisibilityPolygonSystem(data.visibilityPolygons);
     }
 

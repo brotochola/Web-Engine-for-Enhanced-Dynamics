@@ -24,7 +24,8 @@ import { LightOccluder as LightOccluderImport, LIGHT_OCCLUDER_MASK_SPRITE } from
 import { AbstractWorker } from './abstractWorker.js';
 import { poseRotationLive } from '../box2d/box2dBodySync.js';
 import { resolveFaces } from '../render/faceMap.js';
-import { gbufWanted, writeGbufWords } from '../render/gbufWord.js';
+import { gbufEntityId, gbufWanted, writeGbufWords } from '../render/gbufWord.js';
+import { WALL_ROW_ARGS, wallEdgeCode, wallRowsLayout, writeWallRow } from '../render/visibility/lampWallRow.js';
 import { Camera } from '../core/camera.js';
 import { takePublishedList } from '../util/publishedList.js';
 import { Query as QueryImport } from '../core/query.js';
@@ -1531,7 +1532,7 @@ class PreRenderWorker extends AbstractWorker {
         this._casterScanTick = 0;
         this._casterCode = new Int32Array(0);
         // DX-FACES: decoration rows carry their face in the tile offsets, this frame (the faces-in-use word, once a
-        // decoration got a normal), in a lit scene that is not raycasted (_facesWatch).
+        // decoration got a normal), in a lit scene the old fan pass does not light (_facesWatch).
         this._faces = false;
         this._facesWatch = false;
         // DX-GBUF (plan §6.4): the sprite rows' G-buffer words go with the GPU queue (gbufWord.js): a lit scene whose Pixi
@@ -1757,6 +1758,17 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTileMulY = EMPTY_F32;
         this._vpWriteBuffer = null;
         this._selfLitWriteBuffer = null;
+        // OL-4: the walls' rows for the light pass (lampWallRow.js), published in place of the polygons unless the old fan
+        // pass draws them (visibilityPolygons.fans): the pair of buffers, the one being written, a row's floats, and a
+        // light's scratch (what each vertex's ray hit, each vertex's code, each packed occluder's entity).
+        this._wallFansOn = false;
+        this._wallRowBuffers = [null, null];
+        this._wallRowsWrite = null;
+        this._wallRowFloats = 0;
+        this._wallRowVerts = 0;
+        this._wallCodes = EMPTY_F32;
+        this._wallOccEntity = EMPTY_I32;
+        this._vpOutOcc = EMPTY_I32;
         // N-19: per self-lit item, 1 if it is a compound solid; per entity, the
         // stamp of the last light whose polygon showed that solid. N-39: per
         // simple item, its occluder index in this light's sweep.
@@ -1765,7 +1777,7 @@ class PreRenderWorker extends AbstractWorker {
         this._selfLitSeen = EMPTY_U32;
         this._selfLitSeenStamp = 0;
         // W2a: the per-light sweep in visibilitySweep.wasm (bindVisibilitySweep's binding), on the visibility
-        // memory pre-render makes for it; null before an init with raycasted lighting.
+        // memory pre-render makes for it; null before an init with walls (lighting.walls).
         this._visSweep = null;
         this._visMemory = null;
         // buildVisibilityPolygons said the sweep is missing.
@@ -2413,7 +2425,7 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         // ========================================
-        // VISIBILITY POLYGONS - Initialize (raycasted light occlusion)
+        // VISIBILITY POLYGONS - Initialize (the walls' sweep: lighting.walls)
         // ========================================
         this.visibilityPolygonsEnabled = false;
         // W2a: a previous scene's visibility memory goes, and the polar bins are angularSweep.js' own until the
@@ -2422,6 +2434,10 @@ class PreRenderWorker extends AbstractWorker {
         this._visMemory = null;
         this._visCollectSolid = collectSolidRefused;
         this._visGather = null;
+        this._wallFansOn = false;
+        this._wallRowBuffers[0] = null;
+        this._wallRowBuffers[1] = null;
+        this._wallRowsWrite = null;
         unbindSolidSegments();
         bindPolarBins(null, null);
         if (
@@ -2477,6 +2493,24 @@ class PreRenderWorker extends AbstractWorker {
             // Output scratch for polygon vertices
             this._vpOutX = vm.outX;
             this._vpOutY = vm.outY;
+            // OL-4: what each vertex's ray hit, and the rows the light pass reads, unless the old fan pass is asked for.
+            this._vpOutOcc = vm.outOcc;
+            this._wallFansOn = data.visibilityPolygons.fans === true;
+            const rowSabs = [data.visibilityPolygons.rowsA, data.visibilityPolygons.rowsB];
+            if (!this._wallFansOn && rowSabs[0] && rowSabs[1]) {
+                const rows = wallRowsLayout(maxLts, maxVerts);
+                for (let b = 0; b < 2; b++) {
+                    this._wallRowBuffers[b] = {
+                        header: new Int32Array(rowSabs[b], 0, 1 + rows.lights),
+                        f32: new Float32Array(rowSabs[b], rows.rowsByte, rows.lights * rows.rowFloats),
+                    };
+                }
+                this._wallRowsWrite = this._wallRowBuffers[0];
+                this._wallRowFloats = rows.rowFloats;
+                this._wallRowVerts = rows.rowVerts;
+                this._wallCodes = new Float32Array(rows.rowVerts);
+                this._wallOccEntity = new Int32Array(maxOccluders);
+            }
 
             // Self-lit queue (entity under own occluder fill)
             this._selfLitMax = data.visibilityPolygons.maxOccluderSelfLit || 512;
@@ -2533,7 +2567,7 @@ class PreRenderWorker extends AbstractWorker {
         }
         if (!vm) {
             throw new Error('[PRE_RENDER] the visibility memory could not be made (a shared WebAssembly.Memory was refused): '
-                + 'raycasted lighting needs it');
+                + 'lighting.walls needs it');
         }
         let sweep;
         try {
@@ -2684,6 +2718,7 @@ class PreRenderWorker extends AbstractWorker {
             if (this._selfLitBuffers) {
                 this._selfLitWriteBuffer = this._selfLitBuffers[writeBufferIndex];
             }
+            if (this._wallRowBuffers[0] !== null) this._wallRowsWrite = this._wallRowBuffers[writeBufferIndex];
         }
     }
 
@@ -5199,9 +5234,10 @@ class PreRenderWorker extends AbstractWorker {
             this._republishGpuShadows(dst, res);
             return res;
         }
-        // N-134: under raycasted lighting the fans are the lamps' shadows and Pixi draws the sun's casters alone, so
-        // the lamps' stamps and cookies are not made.
-        const stamp = this.visibilityPolygonsEnabled ? 0 : this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
+        // N-134: with the old fan pass (debug.lightFans) the fans are the lamps' shadows and Pixi draws the sun's casters
+        // alone, so the lamps' stamps and cookies are not made. OL-4: with walls read by the light pass they are, as in
+        // any scene.
+        const stamp = this._wallFansOn ? 0 : this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
         // DX-SHADOW3D: a lamp's silhouettes in the direction that lamp sees (full rows; keyed ones keep the sun's).
         if (stamp > 0 && this._stampLights && dst.stampLightIdx) {
             // A lamp is not shaded by its own entity (a car's headlights by the car); a directional caster shows it the frame
@@ -5213,7 +5249,7 @@ class PreRenderWorker extends AbstractWorker {
                 else dropOwnStampsInto(dst.stamp, stamp, dst.stampLightIdx, this._stampLights);
             }
         }
-        const cookie = this.visibilityPolygonsEnabled ? 0 : this._packGpuCookies(dst);
+        const cookie = this._wallFansOn ? 0 : this._packGpuCookies(dst);
         res.sun = sunN;
         res.stamp = stamp;
         res.cookie = cookie;
@@ -5639,7 +5675,7 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * LightEmitter list → visibleLightsData SAB (cookie shadows not required).
-     * Independent of cookie ShadowCaster queue (raycasted lighting still needs this).
+     * Independent of cookie ShadowCaster queue (the walls' sweep still needs this).
      */
     _collectVisibleLights() {
         const lightEntities = this._sortedLightEntities;
@@ -5752,7 +5788,7 @@ class PreRenderWorker extends AbstractWorker {
         if (this._visSweep === null) {
             if (!this._visRefusedWarned) {
                 this._visRefusedWarned = true;
-                console.error('[PRE_RENDER] raycasted lighting has no visibility sweep bound: the lights get no polygon');
+                console.error('[PRE_RENDER] lighting.walls has no visibility sweep bound: the lights get no polygon');
             }
             return;
         }
@@ -5768,6 +5804,15 @@ class PreRenderWorker extends AbstractWorker {
     _buildVisibilityPolygonsSwept() {
         const buf = this._vpWriteBuffer;
         if (!buf) { return; }
+        // OL-4: the rows this frame publishes (null with the old fan pass); none until the loop writes them.
+        const rowsBuf = this._wallRowsWrite;
+        if (rowsBuf !== null) rowsBuf.header[0] = 0;
+        const outOcc = this._vpOutOcc;
+        const wallCodes = this._wallCodes;
+        const wallOccEntity = this._wallOccEntity;
+        const rowFloats = this._wallRowFloats;
+        const rowCap = this._wallRowVerts;
+        let rowsWritten = 0;
 
         const selfLitBuf = this._selfLitWriteBuffer;
         if (selfLitBuf) selfLitBuf.header[0] = 0;
@@ -5865,7 +5910,7 @@ class PreRenderWorker extends AbstractWorker {
         if (lightCount > maxLts) {
             this._warnOnce(
                 '_warnedVisibilityPolygonLightCap',
-                `[PRE_RENDER] visibility polygon light cap reached (${maxLts}). Increase lighting.maxLights or reduce raycasted visible lights.`
+                `[PRE_RENDER] visibility polygon light cap reached (${maxLts}). Increase lighting.maxLights or reduce the lights in view.`
             );
         }
 
@@ -6230,6 +6275,53 @@ class PreRenderWorker extends AbstractWorker {
             if (sweepResults[SWEEP_R_SEEN_VALID] === 0) {
                 warnSweepOverflow(sweepResults[SWEEP_R_EVENT_OVERFLOW] !== 0, occCount);
             }
+            if (rowsBuf !== null) {
+                // OL-4: the lamp's row for the light pass, from the polygon as the sweep left it (a cone's whole turn: the
+                // light pass cuts the cone itself). A lamp with nothing in reach gets no row: nothing stops it.
+                if ((occCount > 0 || polarActive) && vertCount >= 3 && rowsWritten < maxLts) {
+                    // Each packed occluder's entity, from the light's self-lit candidates (the gather names them there).
+                    for (let o = 0; o < occCount; o++) wallOccEntity[o] = -1;
+                    if (selfLitI32 !== null) {
+                        for (let q = selfLitStart; q < selfLitCount; q++) {
+                            if (selfLitSolid[q] === 0) wallOccEntity[selfLitOcc[q]] = selfLitI32[(4 + q * selfLitItemBytes) >> 2];
+                        }
+                    }
+                    let rowVerts = vertCount < maxVerts ? vertCount : maxVerts;
+                    if (rowVerts > rowCap) {
+                        // More vertices than a row holds (WALL_ROW_MAX_VERTS): one in every few, in place (the sweep's
+                        // scratch is this light's alone). The shadows' edges are then chords of the polygon's.
+                        const every = Math.ceil(rowVerts / rowCap);
+                        let kept = 0;
+                        for (let v = 0; v < rowVerts; v += every) {
+                            outX[kept] = outX[v];
+                            outY[kept] = outY[v];
+                            outOcc[kept] = outOcc[v];
+                            kept++;
+                        }
+                        rowVerts = kept;
+                    }
+                    for (let v = 0; v < rowVerts; v++) {
+                        const hit = outOcc[v];
+                        let code = 0;
+                        if (hit !== -1) {
+                            // A compound solid's boundary names its entity; a packed occluder, its place in the list. One the
+                            // candidates' list had no room to name still stops the light (no id: nothing of its own is lit).
+                            const wall = hit >= 0 ? wallOccEntity[hit] : -2 - hit;
+                            code = wall >= 0 ? wallEdgeCode(gbufEntityId(wall), occluderBlock[wall]) : 255;
+                        }
+                        wallCodes[v] = code;
+                    }
+                    WALL_ROW_ARGS[0] = lx;
+                    WALL_ROW_ARGS[1] = ly;
+                    WALL_ROW_ARGS[2] = groundInvY;
+                    writeWallRow(rowsBuf.f32, rowsWritten * rowFloats, outX, outY, wallCodes, rowVerts);
+                    rowsBuf.header[1 + rowsWritten] = lightIdx;
+                    rowsWritten++;
+                }
+                // The candidates were this light's scratch: the fills they fed are the old pass's.
+                selfLitCount = selfLitStart;
+                continue;
+            }
             // N-19 / N-39: an occluder is self-lit where this light sees it, not
             // wherever it is in range (rock behind rock, a box behind a box stay dark).
             if (selfLitCount > selfLitStart) {
@@ -6313,6 +6405,7 @@ class PreRenderWorker extends AbstractWorker {
 
         buf.header[0] = lightsWritten;
         if (selfLitBuf) selfLitBuf.header[0] = selfLitCount;
+        if (rowsBuf !== null) rowsBuf.header[0] = rowsWritten;
     }
 
     /**

@@ -95,7 +95,7 @@ If TallLights / lamps flicker under heavy fire, raise `maxLights` and/or `maxFla
 
 For each visible light that casts point shadows:
 
-- A light with `LightEmitter.castShadows[i] === 0` (a flash spawned with `castShadows: false`, or any light) is left out of the stamp: no cookie, no shadow sprites. Under raycasted lighting it gathers no occluders and its polygon is the full circle.
+- A light with `LightEmitter.castShadows[i] === 0` (a flash spawned with `castShadows: false`, or any light) is left out of the stamp: no cookie, no shadow sprites. In a scene with walls (`lighting.walls`) it gathers none, and no wall stops it.
 - The flash remains in the visible-lights / lighting texture path.
 
 So `castShadows: false` is “light without shadow cost,” not “invisible flash.”

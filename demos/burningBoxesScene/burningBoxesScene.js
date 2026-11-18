@@ -53,11 +53,12 @@ export class BurningBoxesScene extends WEED.Scene {
       ySort: false,
       // maxVisibleRenderables: 4000,
     },
-    // A side view: raycasted lighting, its walls the boxes and the floors (shadowCaster.setWall). The lights pool on the
-    // backdrop, seen face on: a floor of 1, not sin(0).
+    // A side view. The lights pool on the backdrop, seen face on: a floor of 1, not sin(0).
     camera: { pitch: 0, floorScaleY: 1 },
     lighting: {
       enabled: true,
+      // Walls: the boxes and the floors (shadowCaster.setWall) stop the burning boxes' lights.
+      walls: true,
       baseAmbient: 0,
       maxLights: 256,
       shadowsEnabled: false,

@@ -49,19 +49,21 @@ export const GBUF_UNSHADED_BIT = 21;
 export const GBUF_MAX_BANDS = 8;
 
 /**
- * Whether a scene's sprite instances carry G-buffer words: lit (not raycasted), with a sheet with maps or an unshaded sheet, a shadow map (the maps keep their highest caster's entity, which a
+ * Whether a scene's sprite instances carry G-buffer words: lit (not by the old fan pass, debug.lightFans), with a sheet with maps or an unshaded sheet, a shadow map (the maps keep their highest caster's entity, which a
  * sprite's pixels compare with their own: a caster's own shadow never paints its own sprite), or lighting.unshaded (a
- * sprite's own spriteRenderer.unshaded). Pre-render and Pixi decide it the same way.
+ * sprite's own spriteRenderer.unshaded), or walls (OL-4, lighting.walls: a wall's own pixels stay lit beyond its edge, so
+ * the light pass must know whose each pixel is). Pre-render and Pixi decide it the same way.
  * @param {object} config the scene's config
  * @param {boolean|{ maps?: boolean, unshaded?: boolean }} atlas the atlas's json meta (meta.maps: it has a twin page;
  *   meta.unshaded: an unshaded sheet), or whether it has a twin page
  */
 export function gbufWanted(config, atlas) {
   const lighting = config?.lighting;
-  if (!lighting || !lighting.enabled || lighting.raycasted) return false;
+  if (!lighting || !lighting.enabled || lighting.wallFans) return false;
   const atlasMaps = atlas === true || (atlas !== null && typeof atlas === 'object' && (atlas.maps === true || atlas.unshaded === true));
   // DX-BARRIOS: faces need no words (a decoration is no entity); they turn the G-buffer pass on by themselves.
-  return atlasMaps || lighting.sunShadows === 'map' || lighting.lampShadows === 'map' || lighting.unshaded === true;
+  return atlasMaps || lighting.sunShadows === 'map' || lighting.lampShadows === 'map' || lighting.unshaded === true
+    || lighting.walls === true;
 }
 
 /** An entity's id in the G-buffer: 1 to 65535, never 0 (0 is "no entity"). */

@@ -155,21 +155,21 @@ test('both lighting shaders add the night term, and the WGSL struct lists what t
   assert.match(wgsl, /totalLight \+= vec3<f32>\(uniforms\.uNightR, uniforms\.uNightG, uniforms\.uNightB\)/);
   const fields = (source) => [...source.match(/struct LightingUniforms \{([^}]*)\}/)[1].matchAll(/^\s*(u\w+):/gm)].map((m) => m[1]);
   const flags = (source, on) =>
-    ['FACES', 'SUNMAP', 'SELFSHADOW', 'LAMPMAP', 'TILES'].reduce((s, name) => shaderWithFlag(s, name, on), source);
+    ['FACES', 'SUNMAP', 'SELFSHADOW', 'LAMPMAP', 'TILES', 'WALLS'].reduce((s, name) => shaderWithFlag(s, name, on), source);
   const names = fields(flags(wgsl, false));
   // lighting.faces adds its two at the end of the group, then the sun map's terms, self-shadow's, the lamps' map's
-  // (DX-SHADOW3D F7) and the light tiles' (E-205), as the worker does.
+  // (DX-SHADOW3D F7), the light tiles' (E-205) and the walls' (OL-4), as the worker does.
   const facesOnly = flags(shaderWithFlag(wgsl, 'FACES', true), false);
   assert.deepEqual(fields(facesOnly), [...names, 'uFaceLight', 'uFaceSun']);
   assert.deepEqual(
     fields(flags(wgsl, true)),
-    [...names, 'uFaceLight', 'uFaceSun', 'uSunMapK', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords'],
+    [...names, 'uFaceLight', 'uFaceSun', 'uSunMapK', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords', 'uWalls'],
   );
   const end = pixi.indexOf('...this._lightingShadowResources()');
   const start = pixi.lastIndexOf('uCameraPos:', end);
   const declared = [...pixi.slice(start, end).matchAll(/^\s*(u\w+):/gm)].map((m) => m[1]);
   assert.deepEqual(declared, names, 'Pixi lays the buffer out in the group order');
-  const added = ['uFaceLight', 'uFaceSun', 'uSunMapK', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords'].map((name) =>
+  const added = ['uFaceLight', 'uFaceSun', 'uSunMapK', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords', 'uWalls'].map((name) =>
     pixi.indexOf(`lightingResources.uniforms.${name} =`),
   );
   assert.ok(added.every((at, k) => at > end && (k === 0 || at > added[k - 1])), 'the worker adds the optional ones in that order');

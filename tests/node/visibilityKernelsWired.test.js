@@ -146,15 +146,15 @@ test('the active cap: the kernel gives up on the light as the JS does, with the 
   assert.ok(js[0].selfLit.length >= 300, `${js[0].selfLit.length} self-lit items`);
 });
 
-test('a scene without raycasted lighting binds no visibility kernel, and the bins go back to angularSweep.js', async () => {
+test('a scene without walls binds no visibility kernel, and the bins go back to angularSweep.js', async () => {
   const scene = makeScene(0x0b1d, { lights: 6, boxes: 30, circles: 10, polygons: 5, rings: 1 });
   // A kernel scene first: its memory and bins must not outlive it.
   const on = await bootPreRender(scene);
   assert.ok(on.pre._visSweep, 'the kernel scene binds the sweep');
   assert.equal(polarBinArrays().own, false);
 
-  // Without raycasted lighting there is no visibility pass and no memory.
-  const dark = await bootPreRender(scene, { raycasted: false });
+  // Without walls (lighting.walls) there is no visibility pass and no memory.
+  const dark = await bootPreRender(scene, { walls: false });
   assert.equal(dark.pre._visSweep, null);
   assert.equal(dark.pre._visMemory, null);
   assert.ok(polarBinArrays().own);

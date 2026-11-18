@@ -95,6 +95,69 @@ bool ownTexel(vec4 m, float selfId) {
   return selfId > 0.5 && abs(floor(m.b * 255.0 + 0.5) * 256.0 + floor(m.a * 255.0 + 0.5) - selfId) < 0.5;
 }
 
+// #if WALLS
+// OL-4: the walls' rows (lampWallRow.js), a row a lamp with walls in its reach: its visibility polygon as the sweep left
+// it. Texel 0: the vertex count, the first vertex's angle, the lamp's floor point; then the directions' index, four a
+// texel; from WALL_VERT0 the vertices (their offset to the lamp, their angle, the code of the edge that starts there).
+uniform sampler2D uWallRows;
+uniform vec4 uWalls; // lighting.wallDepth (px the light enters a wall from the edge it reaches; 0: its own sprite, whole)
+// lampWallRow.js's numbers (tests/node/lampWallRow.test.js holds the two copies together).
+const int WALL_BINS = 256;
+const int WALL_VERT0 = 65;
+const int WALL_WALK = 16;
+const float WALL_UMBRA = 0.33;
+
+// A direction's place around the lamp, 0..4, rising with atan2 (lampWallRow.js wallAngle).
+float wallAngle(vec2 v) {
+  float t = v.x / max(abs(v.x) + abs(v.y), 1e-6);
+  return v.y >= 0.0 ? 1.0 - t : 3.0 + t;
+}
+
+// The share of a lamp's light that reaches floor point p past the walls (lampWallRow.js wallRowLight): 1 on the lamp's
+// side of the polygon's edge that covers p's direction. Beyond a wall's edge, WALL_UMBRA plus what the wall lets
+// through; and the wall itself is lit: its own pixels whole (selfId: the G-buffer's id at the pixel), or, with
+// lighting.wallDepth, whatever lies within that depth of the edge, fading. tag: the lamp's row + 1 (its light data's
+// fourth row, z), 0 for a lamp nothing stops.
+float wallVisibility(vec2 p, float tag, float selfId) {
+  if (tag < 0.5) return 1.0;
+  int row = int(tag + 0.5) - 1;
+  vec4 head = texelFetch(uWallRows, ivec2(0, row), 0);
+  int n = int(head.x + 0.5);
+  if (n < 3) return 1.0;
+  vec2 v = p - head.zw;
+  float a = wallAngle(v);
+  if (a < head.y) a += 4.0;
+  int b = clamp(int((a - head.y) * (float(WALL_BINS) * 0.25)), 0, WALL_BINS - 1);
+  vec4 starts = texelFetch(uWallRows, ivec2(1 + (b >> 2), row), 0);
+  int slot = b & 3;
+  int e = int((slot == 0 ? starts.x : slot == 1 ? starts.y : slot == 2 ? starts.z : starts.w) + 0.5);
+  vec4 v0 = texelFetch(uWallRows, ivec2(WALL_VERT0 + e, row), 0);
+  vec4 v1 = texelFetch(uWallRows, ivec2(WALL_VERT0 + e + 1, row), 0);
+  for (int s = 0; s < WALL_WALK; s++) {
+    if (e + 1 >= n || v1.z > a) break;
+    e++;
+    v0 = v1;
+    v1 = texelFetch(uWallRows, ivec2(WALL_VERT0 + e + 1, row), 0);
+  }
+  if (v0.w < 0.5) return 1.0;
+  vec2 edge = v1.xy - v0.xy;
+  vec2 rel = v - v0.xy;
+  // The vertices turn with rising atan2 around the lamp, so the lamp's side of an edge is where this cross is positive.
+  float inside = (edge.x * rel.y - edge.y * rel.x) / max(length(edge), 1e-4);
+  float lit = clamp(inside + 0.5, 0.0, 1.0);
+  if (lit >= 1.0) return 1.0;
+  float owner = floor(v0.w / 256.0);
+  float opacity = (v0.w - owner * 256.0) / 255.0;
+  float beyond = WALL_UMBRA + (1.0 - WALL_UMBRA) * (1.0 - opacity);
+  if (uWalls.x > 0.0) {
+    float into = clamp(1.0 + inside / uWalls.x, 0.0, 1.0);
+    beyond += (1.0 - beyond) * into * into * (3.0 - 2.0 * into);
+  } else if (selfId > 0.5 && abs(owner - selfId) < 0.5) {
+    beyond = 1.0;
+  }
+  return mix(beyond, 1.0, lit);
+}
+// #endif WALLS
 // #if SUNMAP
 // DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the castedShadows layer is.
 uniform sampler2D uSunMap;
@@ -395,6 +458,10 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
 // #if LAMPMAP
     cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
 // #endif LAMPMAP
+// #if WALLS
+    // OL-4: a wall between the lamp and the pixel's floor point (its own entity's wall leaves it lit).
+    if (cone > 0.0) cone *= wallVisibility(p.xy, texelFetch(uLightData, ivec2(i, 3), 0).z, selfId);
+// #endif WALLS
     if (cosine > 0.0) {
       total += col.rgb * cosine * cone * intensityScaled
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
@@ -443,6 +510,10 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
 // #endif LAMPMAP
     // The light ends at its radius (reachWindow), and its shadows fade out with it.
     float win = reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
+// #if WALLS
+    // OL-4: a wall between the lamp and the pixel's floor point (its own entity's wall leaves it lit).
+    if (win > 0.0) win *= wallVisibility(p.xy, texelFetch(uLightData, ivec2(i, 3), 0).z, selfId);
+// #endif WALLS
     if (cosine > 0.0) {
       total += col.rgb * cosine * win * intensityScaled
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
@@ -534,6 +605,12 @@ void main() {
   totalLight += sunColor * uSunIntensity;
 // #endif !SUNMAP
   totalLight += vec3(uNightR, uNightG, uNightB);
+// #if WALLS
+  // OL-4: whose pixel this is (the G-buffer's id: a sprite lying on the floor writes no face, but its entity). A wall's
+  // own pixels stay lit beyond its edge.
+  vec4 wallIds = textureLod(uFaceIds, gl_FragCoord.xy / uViewport, 0.0);
+  float wallSelf = floor(wallIds.r * 255.0 + 0.5) * 256.0 + floor(wallIds.g * 255.0 + 0.5);
+// #endif WALLS
 
   // The cones first (each times its cone), then every other light as before.
   int coneCount = int(uConeCount);
@@ -574,6 +651,9 @@ void main() {
 // #if LAMPMAP
     attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z, i);
 // #endif LAMPMAP
+// #if WALLS
+    if (attenuation > 0.0) attenuation *= wallVisibility(fragWorld, texelFetch(uLightData, ivec2(i, 3), 0).z, wallSelf);
+// #endif WALLS
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
 // #if !TILES
   }
@@ -603,6 +683,9 @@ void main() {
 // #if LAMPMAP
       attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity, i);
 // #endif LAMPMAP
+// #if WALLS
+      if (attenuation > 0.0) attenuation *= wallVisibility(fragWorld, texelFetch(uLightData, ivec2(i, 3), 0).z, wallSelf);
+// #endif WALLS
       totalLight += color * attenuation;
     }
 // #if TILES

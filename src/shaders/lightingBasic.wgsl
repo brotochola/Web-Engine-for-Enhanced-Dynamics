@@ -55,6 +55,9 @@ struct LightingUniforms {
   uTileGrid: vec4<f32>, // E-205: a tile's px, the border's tiles, the grid's columns and rows (border included)
   uTileWords: vec4<f32>, // words in use, texel rows a word's band (the grid's rows + 1)
 // #endif TILES
+// #if WALLS
+  uWalls: vec4<f32>, // OL-4: lighting.wallDepth (px the light enters a wall from the edge it reaches; 0: its own sprite, whole)
+// #endif WALLS
 }
 @group(2) @binding(0) var uLightData: texture_2d<f32>;
 @group(2) @binding(1) var<uniform> uniforms: LightingUniforms;
@@ -80,6 +83,10 @@ struct LightingUniforms {
 // E-205: the lights by tile (src/render/lightTiles.js; lightingBasic.frag.glsl says how they are read).
 @group(2) @binding(8) var uLightTiles: texture_2d<u32>;
 // #endif TILES
+// #if WALLS
+// OL-4: the walls' rows (src/render/visibility/lampWallRow.js), a row a lamp with walls in its reach.
+@group(2) @binding(9) var uWallRows: texture_2d<f32>;
+// #endif WALLS
 
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
@@ -101,6 +108,60 @@ fn weedScreenToWorld(screenPos: vec2<f32>) -> vec2<f32> {
     -rot.y * sxy.x + rot.x * sxy.y,
   ) / uniforms.uZoom;
 }
+
+// #if WALLS
+// OL-4: the walls' rows (lampWallRow.js; lightingBasic.frag.glsl says how a row is laid out). lampWallRow.js's numbers.
+const WALL_BINS: i32 = 256;
+const WALL_VERT0: i32 = 65;
+const WALL_WALK: i32 = 16;
+const WALL_UMBRA: f32 = 0.33;
+
+// A direction's place around the lamp, 0..4, rising with atan2 (lampWallRow.js wallAngle).
+fn wallAngle(v: vec2<f32>) -> f32 {
+  let t = v.x / max(abs(v.x) + abs(v.y), 1e-6);
+  return select(3.0 + t, 1.0 - t, v.y >= 0.0);
+}
+
+// The share of a lamp's light that reaches floor point p past the walls (lightingBasic.frag.glsl's wallVisibility).
+fn wallVisibility(p: vec2<f32>, tag: f32, selfId: f32) -> f32 {
+  if (tag < 0.5) { return 1.0; }
+  let row = i32(tag + 0.5) - 1;
+  let head = textureLoad(uWallRows, vec2<i32>(0, row), 0);
+  let n = i32(head.x + 0.5);
+  if (n < 3) { return 1.0; }
+  let v = p - head.zw;
+  var a = wallAngle(v);
+  if (a < head.y) { a += 4.0; }
+  let b = clamp(i32((a - head.y) * (f32(WALL_BINS) * 0.25)), 0, WALL_BINS - 1);
+  let starts = textureLoad(uWallRows, vec2<i32>(1 + b / 4, row), 0);
+  var e = i32(starts[b % 4] + 0.5);
+  var v0 = textureLoad(uWallRows, vec2<i32>(WALL_VERT0 + e, row), 0);
+  var v1 = textureLoad(uWallRows, vec2<i32>(WALL_VERT0 + e + 1, row), 0);
+  for (var s = 0; s < WALL_WALK; s++) {
+    if (e + 1 >= n || v1.z > a) { break; }
+    e++;
+    v0 = v1;
+    v1 = textureLoad(uWallRows, vec2<i32>(WALL_VERT0 + e + 1, row), 0);
+  }
+  if (v0.w < 0.5) { return 1.0; }
+  let edge = v1.xy - v0.xy;
+  let rel = v - v0.xy;
+  let inside = (edge.x * rel.y - edge.y * rel.x) / max(length(edge), 1e-4);
+  let lit = clamp(inside + 0.5, 0.0, 1.0);
+  if (lit >= 1.0) { return 1.0; }
+  let owner = floor(v0.w / 256.0);
+  let opacity = (v0.w - owner * 256.0) / 255.0;
+  var beyond = WALL_UMBRA + (1.0 - WALL_UMBRA) * (1.0 - opacity);
+  let depth = uniforms.uWalls.x;
+  if (depth > 0.0) {
+    let into = clamp(1.0 + inside / depth, 0.0, 1.0);
+    beyond += (1.0 - beyond) * into * into * (3.0 - 2.0 * into);
+  } else if (selfId > 0.5 && abs(owner - selfId) < 0.5) {
+    beyond = 1.0;
+  }
+  return mix(beyond, 1.0, lit);
+}
+// #endif WALLS
 
 // DX-SPOT: how far inside its cone a point at floor offset delta from the light is: 1 inside, 0 outside, smooth across
 // the soft edge. At the light itself, 1.
@@ -423,6 +484,10 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
 // #if LAMPMAP
     cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
 // #endif LAMPMAP
+// #if WALLS
+    // OL-4: a wall between the lamp and the pixel's floor point (its own entity's wall leaves it lit).
+    if (cone > 0.0) { cone *= wallVisibility(p.xy, textureLoad(uLightData, vec2<i32>(i, 3), 0).z, selfId); }
+// #endif WALLS
     if (cosine > 0.0) {
       total += col.rgb * cosine * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
@@ -471,7 +536,11 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
 // #endif SELFSHADOW
 // #endif LAMPMAP
     // The light ends at its radius (reachWindow), and its shadows fade out with it.
-    let win = reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
+    var win = reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
+// #if WALLS
+    // OL-4: a wall between the lamp and the pixel's floor point (its own entity's wall leaves it lit).
+    if (win > 0.0) { win *= wallVisibility(p.xy, textureLoad(uLightData, vec2<i32>(i, 3), 0).z, selfId); }
+// #endif WALLS
     if (cosine > 0.0) {
       total += col.rgb * cosine * shade * win * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
@@ -559,6 +628,11 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   totalLight += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity;
 // #endif !SUNMAP
   totalLight += vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB);
+// #if WALLS
+  // OL-4: whose pixel this is (the G-buffer's id: a sprite lying on the floor writes no face, but its entity).
+  let wallIds = textureLoad(uFaceIds, vec2<i32>(in.position.xy), 0);
+  let wallSelf = floor(wallIds.r * 255.0 + 0.5) * 256.0 + floor(wallIds.g * 255.0 + 0.5);
+// #endif WALLS
   let nLights = uniforms.uLightCount;
   let nCones = i32(uniforms.uConeCount);
   let texW = i32(uniforms.uLightTexWidth);
@@ -601,6 +675,9 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
 // #if LAMPMAP
     attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z, i);
 // #endif LAMPMAP
+// #if WALLS
+    if (attenuation > 0.0) { attenuation *= wallVisibility(fragWorld, textureLoad(uLightData, vec2<i32>(i, 3), 0).z, wallSelf); }
+// #endif WALLS
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
 // #if !TILES
   }
@@ -625,6 +702,9 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
 // #if LAMPMAP
       attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity, i);
 // #endif LAMPMAP
+// #if WALLS
+      if (attenuation > 0.0) { attenuation *= wallVisibility(fragWorld, textureLoad(uLightData, vec2<i32>(i, 3), 0).z, wallSelf); }
+// #endif WALLS
       totalLight += col.rgb * attenuation;
     }
 // #if TILES

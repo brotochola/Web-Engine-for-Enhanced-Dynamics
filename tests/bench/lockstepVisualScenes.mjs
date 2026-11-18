@@ -81,7 +81,8 @@ export const LOCKSTEP_VISUAL_SCENES = [
     match: 'exact',
   },
   {
-    // Raycasted lighting: 360 lights' visibility fans and self-lit occluder fills (E-96, E-96b).
+    // Walls (lighting.walls): 360 lights' sweeps among 700 walls, read by the light pass (E-96, E-96b; ?fans=1 is the
+    // old pass's fans and self-lit fills).
     id: 'vispoly',
     module: '/tests/bench/stressScenes/visPolyStressScene.js',
     exportName: 'VisPolyStressScene',
@@ -96,7 +97,7 @@ export const LOCKSTEP_VISUAL_SCENES = [
     match: 'exact',
   },
   {
-    // Raycasted lighting through compound occluders: fills from the fixture outline (E-96b).
+    // Walls (lighting.walls) from compound occluders: each wall's outline from its fixtures (E-96b).
     id: 'compoundvis',
     module: '/tests/bench/stressScenes/compoundVisPolyStressScene.js',
     exportName: 'CompoundVisPolyStressScene',

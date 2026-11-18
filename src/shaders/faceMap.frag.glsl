@@ -130,9 +130,10 @@ void main() {
       if (twinPresent(m)) {
         float zm = twinZ(m);
         // N-257: a frame without heights (a normal or a relief map alone) stands as its surface says, as a sprite without
-        // maps does: a card on its foot, or the floor.
+        // maps does: a card on its foot, or the floor. OL-4: where the camera shows no height (heightScaleY 0: straight
+        // down, or from the side) nothing stands: it lies on the floor.
         float zw = twinHeights(vMapsWin) ? zm * vMapScale
-          : ((flags & 4u) == 0u ? max(vFootY - vWorld.y, 0.0) / uFaceSpace.x : 0.0);
+          : ((flags & 4u) == 0u && uFaceSpace.x > 0.0 ? max(vFootY - vWorld.y, 0.0) / uFaceSpace.x : 0.0);
         if (normals == 3u) {
           finalColor = faceTexel(vec2(254.0 / 255.0), zw, false);
           return;
@@ -145,7 +146,7 @@ void main() {
         finalColor = faceTexel(octEncode(vec3(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zw, true);
         return;
       }
-      if ((flags & 4u) == 0u) {
+      if ((flags & 4u) == 0u && uFaceSpace.x > 0.0) {
         finalColor = faceTexel(vec2(254.0 / 255.0), max(vFootY - vWorld.y, 0.0) / uFaceSpace.x, false);
         return;
       }

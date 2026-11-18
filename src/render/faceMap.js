@@ -577,7 +577,7 @@ ${unshaded ? '  // DX-UNSHADED: an unshaded entity writes nothing here.\n  if ((
       // N-257: a frame without heights stands as its surface says (faceMap.frag.glsl).
       var zw = 0.0;
       if (twinHeights(in.vMapsWin)) { zw = zm * in.vMapScale; }
-      else if ((flags & 4u) == 0u) { zw = max(in.vFootY - in.vWorld.y, 0.0) / uniforms.uFaceSpace.x; }
+      else if ((flags & 4u) == 0u && uniforms.uFaceSpace.x > 0.0) { zw = max(in.vFootY - in.vWorld.y, 0.0) / uniforms.uFaceSpace.x; }
       if (normals == 3u) { return faceTexel(${flat}, zw, false); }
       var n = twinStoredNormal(m, tc);
       // The Sobel reads the frame's own heights or relief (DX-RELIEF); a normal map alone keeps its own normals. E-497:
@@ -586,7 +586,8 @@ ${unshaded ? '  // DX-UNSHADED: an unshaded entity writes nothing here.\n  if ((
       n = turnNormal(n, in.vNormalTurn);
       return faceTexel(faceOctEncode(vec3<f32>(n.x, n.z * sc.y - n.y * sc.x, n.y * sc.y + n.z * sc.x)), zw, true);
     }
-    if ((flags & 4u) == 0u) {
+    // OL-4: where the camera shows no height (heightScaleY 0) nothing stands: the sprite lies on the floor.
+    if ((flags & 4u) == 0u && uniforms.uFaceSpace.x > 0.0) {
       return faceTexel(${flat}, max(in.vFootY - in.vWorld.y, 0.0) / uniforms.uFaceSpace.x, false);
     }
     return vec4<f32>(0.0);
@@ -674,28 +675,35 @@ export function shaderWithFlag(source, name, on) {
  * its centre, the maps read with one tap). E-205: TILES / !TILES (a pixel loops over its tile's lights, src/render/
  * lightTiles.js, instead of every light). DX-LIGHTEDGES: EDGES / !EDGES (the floor's texels leave alpha 0, the rest 1,
  * for lightEdges.js; without it every texel's alpha is 1). N-277: DITHER / !DITHER (lighting.dither: half an 8-bit step of
- * noise on the light's output; without it, the light as it is).
+ * noise on the light's output; without it, the light as it is). OL-4: WALLS (lighting.walls: each lamp's light times what
+ * its row of the walls' texture lets through, src/render/visibility/lampWallRow.js; with FACES and IDS, since a wall's own
+ * pixels are told by their id).
  * @param {string} source lightingBasic.frag.glsl or lightingBasic.wgsl
  * @param {{ faces: boolean, sunMap: boolean, selfShadow?: boolean, lampMap?: boolean, ids?: boolean, pixelArt?: boolean,
- *   tiles?: boolean, edges?: boolean, dither?: boolean }} flags
+ *   tiles?: boolean, edges?: boolean, dither?: boolean, walls?: boolean }} flags
  */
-export function lightingSource(source, { faces, sunMap, selfShadow = false, lampMap = false, ids = false, pixelArt = false, tiles = false, edges = false, dither = false }) {
+export function lightingSource(source, {
+  faces, sunMap, selfShadow = false, lampMap = false, ids = false, pixelArt = false, tiles = false, edges = false, dither = false,
+  walls = false,
+}) {
   const withSun = shaderWithFlag(shaderWithFlag(shaderWithFlag(source, 'FACES', faces), 'SUNMAP', sunMap), '!SUNMAP', !sunMap);
   const withLamps = shaderWithFlag(shaderWithFlag(withSun, 'SELFSHADOW', faces && selfShadow), 'LAMPMAP', lampMap);
   const withIds = shaderWithFlag(shaderWithFlag(withLamps, 'IDS', faces && ids), '!IDS', !(faces && ids));
   const withTiles = shaderWithFlag(shaderWithFlag(withIds, 'TILES', tiles), '!TILES', !tiles);
   const withEdges = shaderWithFlag(shaderWithFlag(withTiles, 'EDGES', edges), '!EDGES', !edges);
-  const withDither = shaderWithFlag(shaderWithFlag(withEdges, 'DITHER', dither), '!DITHER', !dither);
+  const withWalls = shaderWithFlag(withEdges, 'WALLS', walls && faces && ids);
+  const withDither = shaderWithFlag(shaderWithFlag(withWalls, 'DITHER', dither), '!DITHER', !dither);
   return shaderWithFlag(shaderWithFlag(withDither, 'PIXELART', pixelArt), '!PIXELART', !pixelArt);
 }
 
 /**
- * Whether a scene's light can take faces (lit, not raycasted: `enabled`) and the px a px of height rises (the camera's).
+ * Whether a scene's light can take faces (lit, and not by the old fan pass of debug.lightFans: `enabled`) and the px a px
+ * of height rises (the camera's).
  * DX-BARRIOS: no lighting.faces any more; whether faces are in use is DecorationPool.facesInUse().
  */
 export function resolveFaces(lighting, camera = null) {
   const heightScaleY = resolveHeightScaleY(camera);
-  return { enabled: !!(lighting && lighting.enabled && !lighting.raycasted), heightScaleY };
+  return { enabled: !!(lighting && lighting.enabled && !lighting.wallFans), heightScaleY };
 }
 
 /**

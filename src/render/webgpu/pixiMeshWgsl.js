@@ -36,7 +36,7 @@ function meshUniformGroups(vf) {
  * The light pass (lightingBasic.wgsl). `faces`: the face map at binding 4 (DX-FACES, DX-MAPS); `sunMap`: the sun's shadow
  * map at binding 5 (DX-SHADOW3D), both read with textureLoad.
  */
-export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunMap = false, lampMap = false, ids = false) {
+export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunMap = false, lampMap = false, ids = false, walls = false) {
   const vf = gpuStageVF();
   const f = gpuStageF();
   return GpuProgram.from({
@@ -57,6 +57,8 @@ export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunM
         ...(lampMap ? { uLampMap: 6 } : {}),
         // DX-GBUF: the G-buffer's entity ids map (faceMap.js FACE_IDS_SELF), with the faces.
         ...(faces && ids ? { uFaceIds: 7 } : {}),
+        // OL-4: the walls' rows (lampWallRow.js); binding 8 is the light tiles' (lightTiles.js).
+        ...(faces && ids && walls ? { uWallRows: 9 } : {}),
       },
     },
     gpuLayout: [
@@ -81,6 +83,9 @@ export function lightingGpuProgram(GpuProgram, source, name, faces = false, sunM
           : []),
         ...(faces && ids
           ? [{ binding: 7, visibility: f, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
+          : []),
+        ...(faces && ids && walls
+          ? [{ binding: 9, visibility: f, texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } }]
           : []),
       ],
     ],

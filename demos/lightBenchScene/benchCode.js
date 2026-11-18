@@ -43,7 +43,7 @@ const KIND_COMMENT = {
   heightMap: 'each pixel where it is in 3D (its height map)',
   box: 'width, depth (floor px), height (screen px)',
   hull: 'the convex volume around its points',
-  wall: 'stops the lamps as a wall (flat view: pitch 90 or 0)',
+  wall: 'stops the lamps as a wall (lighting.walls: true)',
   none: 'no shadow',
 };
 
@@ -179,16 +179,18 @@ export function lampCode(lamp) {
 /**
  * The scene's code: its config and the sun.
  * @param {object} s the bench's settings: pitch, floorScaleY and heightScaleY (null: from the pitch), backend, depth
- *   (null|true|false), ambient, resolution, sunMap, lampMap, self, sweep, maps, hour, sunHeight, sunTurn, intensity, cycle
+ *   (null|true|false), ambient, resolution, sunMap, lampMap, walls, self, sweep, maps, hour, sunHeight, sunTurn, intensity,
+ *   cycle
  */
 export function sceneCode(s) {
   const out = [];
   out.push('static config = {');
   const floor = s.floorScaleY === null ? '' : `, floorScaleY: ${num(s.floorScaleY, 3)}`;
   const height = s.heightScaleY === null ? '' : `, heightScaleY: ${num(s.heightScaleY, 3)}`;
+  // Straight down or from the side: the floor as drawn, and no height on the screen (the pitch says nothing of walls).
   const flat = s.pitch === 90 || s.pitch === 0;
   out.push(line(2, `camera: { pitch: ${num(s.pitch, 1)}${floor}${height} },`,
-    flat ? 'a flat view: the 2D sweep, walls stop the lamps' : floor || height ? 'how the pictures were drawn' : 'floor sin(pitch), heights cos(pitch)'));
+    floor || height ? 'how the pictures were drawn' : flat ? 'a flat view: floor 1, no height' : 'floor sin(pitch), heights cos(pitch)'));
   const depth = s.depth === null ? '' : `, pixelDepth: ${s.depth}`;
   out.push(line(2, `renderer: { backend: '${s.backend}', ySort: true${depth} },`,
     s.depth === null ? 'pixel depth: on by itself (oblique, maps)' : s.depth ? 'depth corrects the painter' : 'the painter alone'));
@@ -197,6 +199,7 @@ export function sceneCode(s) {
   out.push(line(4, `resolution: ${num(s.resolution)}, shadowResolution: ${num(s.resolution)},`, 'the light pass and the shadows, × canvas'));
   out.push(line(4, `sunShadows: '${s.sunMap ? 'map' : 'layer'}',`, s.sunMap ? 'the sun\'s shadow map: it takes out the sun alone' : 'cards on the shadows\' layer'));
   out.push(line(4, `lampShadows: '${s.lampMap ? 'map' : 'layer'}',`, s.lampMap ? 'a shadow map a lamp' : 'stamps on the shadows\' layer'));
+  if (s.walls) out.push(line(4, 'walls: true,', 'shadowCaster.setWall: walls stop the lamps'));
   out.push(line(4, `selfShadow: ${s.self},`, 'what has height shades itself'));
   if (!s.sweep) out.push(line(4, 'footprintSolids: false,', 'solids as columns down to the floor'));
   out.push(line(4, 'sun: { enabled: true, shadowAlpha: 0.7, shadowStretchAlphaFactor: 0 },'));

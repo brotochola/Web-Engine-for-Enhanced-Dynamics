@@ -1118,7 +1118,7 @@ export function buildVisibilityPolygonsJs(pre) {
     if (lightCount > maxLts) {
         pre._warnOnce(
             '_warnedVisibilityPolygonLightCap',
-            `[PRE_RENDER] visibility polygon light cap reached (${maxLts}). Increase lighting.maxLights or reduce raycasted visible lights.`
+            `[PRE_RENDER] visibility polygon light cap reached (${maxLts}). Increase lighting.maxLights or reduce the lights in view.`
         );
     }
 

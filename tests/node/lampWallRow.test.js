@@ -1,10 +1,13 @@
 // OL-4: a lamp's row (lampWallRow.js) against the polygon it was made from: a point is lit, in a wall's shadow or of the
 // wall itself exactly where the sweep's polygon says, whatever the polygon's shape.
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import test from 'node:test';
 
+import { lightingSource } from '../../src/render/faceMap.js';
 import {
-  WALL_BINS, WALL_UMBRA, WALL_VERT0, WALL_WALK, wallAngle, wallEdgeCode, wallRowLight, wallRowTexels, writeEmptyWallRow, writeWallRow,
+  WALL_BINS, WALL_ROW_ARGS, WALL_UMBRA, WALL_VERT0, WALL_WALK, wallAngle, wallEdgeCode, wallRowLight, wallRowTexels, wallRowsLayout,
+  writeEmptyWallRow, writeWallRow,
 } from '../../src/render/visibility/lampWallRow.js';
 
 function rng(seed) {
@@ -82,7 +85,9 @@ test('a row says what its polygon says, for every point around the lamp', () => 
     const poly = sectorPolygon(rand, { lx, ly, radius, sectors, wallShare: 0.6 });
     assert.ok(poly.n <= maxVerts, `the polygon fits (${poly.n})`);
     const o = 4 * wallRowTexels(maxVerts) * (round % 3);
-    assert.equal(writeWallRow(rows, o, lx, ly, poly.xs, poly.ys, poly.codes, poly.n), poly.n);
+    WALL_ROW_ARGS[0] = lx;
+    WALL_ROW_ARGS[1] = ly;
+    assert.equal(writeWallRow(rows, o, poly.xs, poly.ys, poly.codes, poly.n), poly.n);
     for (let k = 0; k < 400; k++) {
       const a = (rand() * 2 - 1) * Math.PI;
       const d = radius * (0.02 + 1.2 * rand());
@@ -97,6 +102,44 @@ test('a row says what its polygon says, for every point around the lamp', () => 
     }
   }
   assert.ok(checked > 15000, `points compared (${checked})`);
+});
+
+test('on a foreshortened floor the row is the same polygon, in the floor\'s terms', () => {
+  // The polygon is in world px (the colliders'), drawn on a floor 0.7 as tall as it is wide; the light pass asks in floor
+  // px (world y / 0.7). Sight lines stay straight, so a point is lit or shaded as on the flat floor.
+  const rand = rng(77);
+  const floor = 0.7;
+  const rows = new Float32Array(4 * wallRowTexels(128));
+  let checked = 0;
+  for (let round = 0; round < 20; round++) {
+    const lx = (rand() - 0.5) * 4000;
+    const ly = (rand() - 0.5) * 4000;
+    const radius = 100 + rand() * 500;
+    const poly = sectorPolygon(rand, { lx, ly, radius, sectors: 4 + Math.floor(rand() * 14), wallShare: 0.6 });
+    WALL_ROW_ARGS[0] = lx;
+    WALL_ROW_ARGS[1] = ly;
+    WALL_ROW_ARGS[2] = 1 / floor;
+    writeWallRow(rows, 0, poly.xs, poly.ys, poly.codes, poly.n);
+    WALL_ROW_ARGS[2] = 1;
+    for (let k = 0; k < 300; k++) {
+      const a = (rand() * 2 - 1) * Math.PI;
+      const d = radius * (0.05 + rand());
+      const px = lx + Math.cos(a) * d;
+      const py = ly + Math.sin(a) * d;
+      const want = truth(poly, lx, ly, px, py, 0);
+      if (want === null) continue;
+      // Away from an edge by more than the ramp, in floor px too (the floor's scale stretches distances by up to 1 / 0.7).
+      const got = wallRowLight(rows, 0, px, py / floor, 0);
+      if (Math.abs(got - want) > 1e-3) {
+        const near = truth(poly, lx, ly, px + 2.5 * Math.cos(a), py + 2.5 * Math.sin(a), 0) !== want
+          || truth(poly, lx, ly, px - 2.5 * Math.cos(a), py - 2.5 * Math.sin(a), 0) !== want;
+        assert.ok(near, `round ${round}: point (${px}, ${py}) reads ${got} on the scaled floor, the polygon says ${want}`);
+        continue;
+      }
+      checked++;
+    }
+  }
+  assert.ok(checked > 3500, `points compared (${checked})`);
 });
 
 test('many vertices in one direction bin are still found (up to the walk)', () => {
@@ -131,7 +174,9 @@ test('many vertices in one direction bin are still found (up to the walk)', () =
   push(Math.PI - 1e-5, far, 0);
   const n = xs.length;
   const rows = new Float32Array(4 * wallRowTexels(128));
-  writeWallRow(rows, 0, lx, ly, Float32Array.from(xs), Float32Array.from(ys), Float32Array.from(codes), n);
+  WALL_ROW_ARGS[0] = lx;
+  WALL_ROW_ARGS[1] = ly;
+  writeWallRow(rows, 0, Float32Array.from(xs), Float32Array.from(ys), Float32Array.from(codes), n);
   for (let w = 0; w < walls; w++) {
     const mid = base + (binWidth * 0.5 * (w + 0.3)) / walls;
     const gap = base + (binWidth * 0.5 * (w + 0.8)) / walls;
@@ -147,7 +192,9 @@ test('an empty row and a row of too few vertices stop nothing', () => {
   writeEmptyWallRow(rows, 0);
   assert.equal(wallRowLight(rows, 0, 5, 5, 0), 1);
   rows.fill(9);
-  assert.equal(writeWallRow(rows, 0, 0, 0, new Float32Array([1, 2]), new Float32Array([0, 1]), new Float32Array(2), 2), 0);
+  WALL_ROW_ARGS[0] = 0;
+  WALL_ROW_ARGS[1] = 0;
+  assert.equal(writeWallRow(rows, 0, new Float32Array([1, 2]), new Float32Array([0, 1]), new Float32Array(2), 2), 0);
   assert.equal(wallRowLight(rows, 0, 50, 5, 3), 1);
 });
 
@@ -160,12 +207,66 @@ test('the layout: a header, the directions, the vertices and the closing one', (
   assert.equal(wallAngle(-1, 0), 2);
   assert.equal(wallAngle(0, -1), 3);
   assert.equal(wallEdgeCode(5, 0), 5 * 256 + 1, 'a wall is never read as free');
+  const layout = wallRowsLayout(128, 128);
+  assert.deepEqual(layout, { rowVerts: 128, rowTexels: 194, rowFloats: 776, lights: 128, rowsByte: 528, bytes: 528 + 128 * 776 * 4 });
+  assert.equal(wallRowsLayout(8, 5000).rowVerts, 512, 'a row is no wider than WALL_ROW_MAX_VERTS, whatever the polygons cap is');
+  assert.equal(layout.rowsByte % 16, 0, 'the rows start on a float boundary');
   const xs = new Float32Array([-10, 0, 10, 0]);
   const ys = new Float32Array([0, -10, 0, 10]);
   const rows = new Float32Array(4 * wallRowTexels(4));
-  writeWallRow(rows, 0, 0, 0, xs, ys, new Float32Array(4), 4);
+  WALL_ROW_ARGS[0] = 0;
+  WALL_ROW_ARGS[1] = 0;
+  writeWallRow(rows, 0, xs, ys, new Float32Array(4), 4);
   const v = 4 * WALL_VERT0;
   assert.deepEqual([rows[0], rows[1], rows[2], rows[3]], [4, 2, 0, 0]);
   assert.deepEqual([rows[v + 2], rows[v + 6], rows[v + 10], rows[v + 14], rows[v + 18]], [2, 3, 4, 5, 6], 'angles only rise, the closing vertex a turn on');
   assert.deepEqual([rows[v + 16], rows[v + 17]], [-10, 0], 'the closing vertex is the first');
+});
+
+test('the light pass reads rows by the module\'s numbers, in the WALLS variant alone', () => {
+  for (const name of ['lightingBasic.frag.glsl', 'lightingBasic.wgsl']) {
+    const source = fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+    const on = lightingSource(source, { faces: true, sunMap: false, ids: true, tiles: true, walls: true });
+    const number = (id) => Number(on.match(new RegExp(`const (?:int |float )?${id}(?:: (?:i32|f32))? = ([0-9.]+);`))[1]);
+    assert.equal(number('WALL_BINS'), WALL_BINS, `${name}: WALL_BINS`);
+    assert.equal(number('WALL_VERT0'), WALL_VERT0, `${name}: WALL_VERT0`);
+    assert.equal(number('WALL_WALK'), WALL_WALK, `${name}: WALL_WALK`);
+    assert.equal(number('WALL_UMBRA'), WALL_UMBRA, `${name}: WALL_UMBRA`);
+    // Each lamp loop's body asks the walls: the cones' and the points', for the floor and for a face.
+    assert.equal(on.split('wallVisibility(').length - 1, 5, `${name}: the function and its four calls`);
+    assert.ok(!on.includes('#if') && !on.includes('#endif'), `${name}: no block left open`);
+    // Without walls, or without the ids a wall's own pixels are told by, nothing of it is left.
+    for (const flags of [{ faces: true, sunMap: false, ids: true, tiles: true }, { faces: true, sunMap: false, ids: false, tiles: true, walls: true }]) {
+      const off = lightingSource(source, flags);
+      assert.ok(!off.includes('uWallRows') && !off.includes('wallVisibility') && !off.includes('uWalls'), `${name}: the walls are out`);
+    }
+  }
+});
+
+test('lighting.wallDepth: the light enters a wall that far from its edge and fades out, whatever is drawn there', () => {
+  // A wall straight across in front of the lamp, 100 px away, from 45 degrees left to 45 right; free elsewhere.
+  const far = 300 * Math.SQRT2;
+  const pts = [[-Math.PI, far, 0], [-Math.PI / 2, far, 0], [-Math.PI / 4, far, 0], [-Math.PI / 4, 100 * Math.SQRT2, 1], [Math.PI / 4, 100 * Math.SQRT2, 1],
+    [Math.PI / 4, far, 0], [Math.PI / 2, far, 0], [Math.PI - 1e-5, far, 0]];
+  const code = wallEdgeCode(9, 1);
+  const xs = Float32Array.from(pts, ([a, d]) => Math.cos(a) * d);
+  const ys = Float32Array.from(pts, ([a, d]) => Math.sin(a) * d);
+  const codes = Float32Array.from(pts, ([, , wall]) => (wall ? code : 0));
+  const rows = new Float32Array(4 * wallRowTexels(16));
+  WALL_ROW_ARGS[0] = 0;
+  WALL_ROW_ARGS[1] = 0;
+  writeWallRow(rows, 0, xs, ys, codes, pts.length);
+  const at = (x, selfId, depth) => wallRowLight(rows, 0, x, 0, selfId, depth);
+  // The wall's face is the line x = 100.
+  assert.equal(at(90, 0, 0), 1, 'in front of the wall');
+  assert.ok(Math.abs(at(120, 0, 0) - WALL_UMBRA) < 1e-6, 'behind it, without a depth: the shadow');
+  assert.equal(at(120, 9, 0), 1, 'the wall\'s own pixel, without a depth: lit whole');
+  // With a depth of 40 px: full at the edge, the shadow from 40 px in, falling all the way between, for any pixel.
+  assert.ok(at(101, 0, 40) > 0.99, 'just inside the edge');
+  const mid = at(120, 0, 40);
+  assert.ok(mid > WALL_UMBRA + 0.2 && mid < 0.9, `half way in (${mid})`);
+  assert.ok(at(110, 0, 40) > mid && mid > at(130, 0, 40), 'it only falls');
+  assert.ok(Math.abs(at(140, 0, 40) - WALL_UMBRA) < 1e-6, 'at the depth: the shadow');
+  assert.ok(Math.abs(at(180, 0, 40) - WALL_UMBRA) < 1e-6, 'and past it');
+  assert.equal(at(120, 9, 40), mid, 'the wall\'s own pixel is lit as any other there: no sprite is lit whole');
 });

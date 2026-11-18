@@ -24,6 +24,7 @@
 //   ?sweep=0      the heightmap casters' solids as columns down to the floor, not swept north to their footprints
 //   ?pitch= ?floor= ?height=  camera.pitch, floorScaleY, heightScaleY (default 47, 0.736, 0.752, the art's; floor=auto
 //                 and height=auto leave them to the pitch: sin and cos)
+//   ?walls=1      lighting.walls: the lamps' 'wall' kind (shadowCaster.lamps.setWall) stops them, with any camera
 //   ?ambient=     lighting.baseAmbient (default 0.12)
 //   ?depth=1|0    renderer.pixelDepth on or off (default: on by itself, an oblique camera with maps)
 //   ?res=         lighting.resolution and shadowResolution (default 1: the canvas's own size)
@@ -60,6 +61,8 @@ const FULL_ROWS = param('fullRows') === '1';
 const SWEEP = param('sweep') !== '0';
 // ?lampMap=0: the lamps' shadows as stamps on the shadows' layer, instead of the lamps' shadow map (lighting.lampShadows).
 const LAMP_MAP = param('lampMap') !== '0';
+// ?walls=1: lighting.walls, so an element whose lamps' kind is 'wall' stops the lamps (without it setWall only warns).
+const WALLS = param('walls') === '1';
 const wanted = (sheet) => ONLY === null || ONLY.has(sheet);
 const HOUR = Number(param('hour')) || 16;
 const HOURS = [10, 16, 18.5, 22];
@@ -328,6 +331,8 @@ export class LightBenchScene extends Scene {
       sunShadows: SUN_MAP ? 'map' : 'layer',
       footprintSolids: SWEEP,
       lampShadows: LAMP_MAP ? 'map' : 'layer',
+      // ?walls=1: the 'wall' kind's walls stop the lamps (the walls' sweep, whatever the pitch).
+      walls: WALLS,
       selfShadow: SELF,
       // Each world pixel lit whole, the maps read with one tap: the shadows crisp on the art's pixels, as the prototype's.
       pixelArt: PIXEL_ART,
@@ -763,6 +768,7 @@ export class LightBenchScene extends Scene {
       resolution: RES,
       sunMap: SUN_MAP,
       lampMap: LAMP_MAP,
+      walls: WALLS,
       self: SELF,
       sweep: SWEEP,
       maps: MAPS,
@@ -784,8 +790,8 @@ export class LightBenchScene extends Scene {
     const scene = p.section('Scene (each change reloads)', { open: false });
     scene.range({
       label: 'Camera pitch', min: 0, max: 90, step: 1, value: PITCH, format: (v) => `${v}°`,
-      note: 'camera.pitch: degrees from the horizon. 90 or 0 is a flat view (the 2D sweep: walls stop the lamps); anything ' +
-        'between is oblique, the 3D light of this plan.',
+      note: 'camera.pitch: degrees from the horizon. 90 is straight down and 0 from the side (flat views: no height on the ' +
+        'screen); anything between is oblique. Walls are not the pitch\'s: the Walls switch below.',
       onChange: (v) => this._reload('pitch', v),
     });
     scene.range({
@@ -834,6 +840,12 @@ export class LightBenchScene extends Scene {
       note: "lighting.lampShadows: 'map' gives each lamp that casts a tile of its own: two lamps light each other's " +
         "shadows, and the height of the lamp (elevation) is in the shadow's length. [L]",
       onChange: (v) => this._reload('lampMap', v === 'map' ? '1' : '0'),
+    });
+    scene.toggle({
+      label: 'Walls', value: WALLS,
+      note: "lighting.walls: an element whose lamps' shadow is 'wall' (shadowCaster.lamps.setWall) stops the lamps at its " +
+        'outline, with any camera; off, setWall warns and changes nothing.',
+      onChange: (v) => this._reload('walls', v ? '1' : '0'),
     });
     scene.toggle({
       label: 'Self-shadow', value: SELF,
@@ -997,8 +1009,8 @@ export class LightBenchScene extends Scene {
     });
     const lampSel = s.select({
       label: 'Shadow with lamps', value: look.lamps, options: kindOptions(LAMP_KINDS),
-      note: 'shadowCaster.lamps.*: the same for the lamps and headlights. A wall (setWall) stops them in a flat view ' +
-        '(pitch 90 or 0). One volume an entity: a box and a hull share it.',
+      note: 'shadowCaster.lamps.*: the same for the lamps and headlights. A wall (setWall) stops them in a scene with ' +
+        'lighting.walls (the Walls switch). One volume an entity: a box and a hull share it.',
       onChange: (v) => this._setLook(t, { lamps: v }),
     });
     for (const sel of [sunSel, lampSel]) {

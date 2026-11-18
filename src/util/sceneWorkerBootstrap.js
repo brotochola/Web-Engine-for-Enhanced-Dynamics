@@ -436,9 +436,14 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           maxRenderItems: scene.maxShadowRenderItems,
         }
       : null,
-    visibilityPolygons: scene.config.lighting.raycasted
+    // OL-4: the walls' sweep (lighting.walls). fans: the old pass draws its polygons (debug.lightFans); else the light pass
+    // reads its rows (rowsA / rowsB).
+    visibilityPolygons: scene.config.lighting.walls
       ? {
           enabled: true,
+          fans: scene.config.lighting.wallFans === true,
+          rowsA: scene.buffers.wallRowsDataA || null,
+          rowsB: scene.buffers.wallRowsDataB || null,
           maxPolygonVertices: scene.config.lighting.maxPolygonVertices || 128,
           maxLights: scene.config.lighting.maxLights || 128,
           dataA: scene.buffers.visibilityPolygonDataA,

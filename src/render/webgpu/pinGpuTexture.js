@@ -9,8 +9,11 @@ const RGBA8_BYTES = 4;
 let _padBuf = null;
 let _padU8 = null;
 
-/** WebGPU writeTexture of rgba32float, bytesPerRow padded to 256; E-511: `columns` under `width` writes only each row's first texels. */
-export function writeRgba32Float(renderer, source, data, width, height, label, columns = width) {
+/**
+ * WebGPU writeTexture of rgba32float, bytesPerRow padded to 256; E-511: `columns` under `width` writes only each row's first
+ * texels; OL-4: `rows` under `height` only the first rows.
+ */
+export function writeRgba32Float(renderer, source, data, width, height, label, columns = width, rows = height) {
   const device = renderer?.gpu?.device;
   if (!device || !source || !data || width < 1 || height < 1) return;
   const uid = renderer.uid;
@@ -24,11 +27,12 @@ export function writeRgba32Float(renderer, source, data, width, height, label, c
     });
     pinGpuTexture(renderer, source, gpuTex);
   }
-  if (columns < width) {
+  if (columns < width || rows < height) {
     // E-511: only each row's first `columns` texels changed: queue.writeTexture takes the rows as they lie, any bytesPerRow.
-    const cols = columns > 0 ? columns | 0 : 0;
-    if (cols > 0) {
-      device.queue.writeTexture({ texture: gpuTex }, data, { bytesPerRow: width * RGBA32_BYTES, rowsPerImage: height }, { width: cols, height });
+    const cols = columns < width ? (columns > 0 ? columns | 0 : 0) : width;
+    const high = rows < height ? (rows > 0 ? rows | 0 : 0) : height;
+    if (cols > 0 && high > 0) {
+      device.queue.writeTexture({ texture: gpuTex }, data, { bytesPerRow: width * RGBA32_BYTES, rowsPerImage: height }, { width: cols, height: high });
     }
     return;
   }
