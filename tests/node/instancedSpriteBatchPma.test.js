@@ -97,8 +97,8 @@ test('empty instanced meshes stay hidden and are not RT roots (WebGPU instanceCo
 });
 
 test('particles share the painter list; glow stays ADD; no second particle batch', () => {
-  assert.match(packLayer, /typeArr\[idxE\[k\]\] === 1/);
-  assert.match(packLayer, /fillQueueIndices\(typeArr, count, 3, -1, idxG\)/);
+  // E-456: one pass splits the glows out and counts the particles (packSpriteLayer.test.js checks its lists).
+  assert.match(packLayer, /splitGlowQueueIndices\(typeArr, count, idxE, idxG, splitCounts\)/);
   assert.match(packLayer, /opts\.indices = idxG/);
   assert.match(pixiSrc, /splitGlow/);
   assert.match(pixiSrc, /_packGlowBatch\.upload\(this\._packQ, packOpts\)/);
