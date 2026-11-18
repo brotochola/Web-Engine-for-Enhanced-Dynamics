@@ -22226,17 +22226,18 @@
         "R-1330",
         "R-1333",
         "R-1336",
-        "R-1337"
+        "R-1337",
+        "R-1340"
       ],
       "result": "",
-      "next": "Skip the steps past the face map in GLSL as the WGSL does (one line), film the drift with ?selfShadow=0 against on, WebGL against WebGPU. Left after it: a self-shadow from a part of the house that has left the screen is lost (the face map covers the view only); a face map with a margin on the sun's side would keep it.",
+      "next": "Captures: a house cut by the screen's bottom edge with the sun from the south, WebGL and WebGPU, main (bug) against exp/n272-branchfree (v2) against v3 (v3 must match v2 but for the 1-px border); then the barrio at night on the four GPUs (GTX 1650, Radeon, HD 620, MX110), main against v3. Later: WebGPU's march could drop its per-step bounds test too (the ring does it).",
       "id": "N-272",
       "kind": "bug",
       "area": "render",
-      "status": "open",
+      "status": "running",
       "date": "2026-11-17",
       "title": "WebGL's self-shadow march reads the face map's edge texel, clamped, for every step past the screen: near the edge the sun's side looks at (the bottom, with the sun in the south), pixels take shadows from whatever wall stands at the edge, and they slide as the camera moves; WebGPU's march skips those steps",
-      "statusText": "seen 2026-11-17 by the owner while the barrio's camera drifted north (shadows on houses against the bottom edge looked wrong); the volumes are not culled (meshUvFillBatch draws them all), so the sun's map is whole: the self-shadow march (lightingBasic.frag.glsl selfShadowToward, textureLod with clamp) is the part that leaves the screen"
+      "statusText": "v3 built 2026-11-18 on exp/n272-ring (d74a5d7e): the face map drawn a texel inside its edges (Pixi's frame, the transform a texel back), so the clamp-to-edge reads past the screen land on the empty ring; the march is main's (both earlier fixes, a per-step test and the exit worked out before the loop, cost the HD 620 about 4.5 %, R-1337); the light pass reads a pixel's own face and id a texel inside. Not browser-checked or measured yet"
     },
     {
       "id": "DX-ONELIGHT",
@@ -22461,17 +22462,18 @@
       "records": [
         "R-1329",
         "R-1332",
-        "R-1334"
+        "R-1334",
+        "R-1339"
       ],
-      "result": "",
+      "result": "lighting.dither (boolean, off by default): half an 8-bit step of noise on the light pass output; GTX 1650 inside the noise, Intel HD 620 -4.3 % of drawn frames (R-1332), hence off",
       "id": "N-277",
       "kind": "bug",
       "area": "render",
-      "status": "parked",
+      "status": "kept-hygiene",
       "date": "2026-11-17",
       "title": "A lamp's dim falloff shows rings on a plain surface at night, each a step of the light target's 8 bits (RGBA8, the light clamped to 1), a little tinted where the lamp's channels step at different places",
-      "statusText": "seen 2026-11-17 in wallShadowScene (a plain wall 200 px from a lamp: concentric rings, the same with lampShadows 'sprite', so no shadow's); in the barrio the bricks and tiles hide it",
-      "next": "Low priority. Cheap: dither the light pass's output by half a step (a hash of the pixel), which changes every lit scene's pictures a little; or an rgba16float light target (twice its bandwidth). Ask the owner which look he wants before either."
+      "statusText": "merged into main 2026-11-18 as lighting.dither, off by default (the owner chose the look and asked for it as a config option)",
+      "next": "Nothing; an rgba16float light target stays the other way if banding ever matters with dither off."
     },
     {
       "refs": [
@@ -22519,6 +22521,25 @@
       "date": "2026-11-17",
       "title": "A sleeping body pushed with addAcceleration could stay asleep, its acceleration lost: logic stored RigidBody.sleeping = 0 before physics' turn, and bodies_apply_accelerations wakes only where the paint still says asleep",
       "statusText": "found 2026-11-17 while building E-434 (the false-sharing audit's sleeping store); proven on real wasm; fixed the same day"
+    },
+    {
+      "id": "E-518",
+      "title": "Pre-render picks the lamps that stamp shadows by whether their light's radius touches the view, not their shadows' reach: a car's headlight 900 px off the screen takes one of maxShadowCastingLights' slots (16 in the barrio) though its shadows reach 160 px",
+      "status": "open",
+      "statusText": "found 2026-11-18 reading _collectStampLights (preRenderWorker.js) while the barrio's headlights got an elevation (they now cast lamp-map shadows); the slot it takes is a street lamp's that loses its shadows; not measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Cull and sort the stamp lights by min(radius, shadowRange) against the view (the light itself still lights out to its radius); then the barrio at night with many cars on screen: GPU_SHADOW_LIGHTS, how many street lamps keep their shadows, the lamp atlas's ms; captures, since a far headlight's shadow that did reach the screen must stay.",
+      "area": "render",
+      "kind": "speed",
+      "refs": [],
+      "aliases": [
+        "stamp lights by shadow range",
+        "headlight shadow slots"
+      ],
+      "records": [
+        "R-1340"
+      ]
     }
   ],
   "records": [
@@ -35840,6 +35861,27 @@
       "title": "E-509 and E-510 confirmed on the GTX 1650: E-510 GPU frame 4.72 -> 4.26 ms (lamps' atlas -47 %), E-509 unshaded halves 0.16 -> 0.09 ms (-45 %)",
       "verdict": "kept",
       "text": "**E-509 and E-510 confirmed on the GTX 1650.** The owner asked whether changes kept on the HD 620's numbers win on the main PC too. These two had only single GTX runs at mixed clocks (the barrio session's notes). The base was main c0150efb against main with each merge reverted (`git revert -m 1`: E-509 a79a202b, E-510 3063c42e), the barrio at `hour=22&dayMinutes=0`, camera still, glFrameRecorder, 2026-11-18 01:23 to 01:36.\n\n**E-510** (the lamps' map honours shadowRange), `--gpu-passes`, 3 rotated rounds, GPU ms a frame, without → with:\n\n| Pass | Without E-510 (3 rounds) | With E-510 (3 rounds) | Means | Change |\n|---|---|---|---|---|\n| Lamps' atlas | 1.212, 1.086, 1.068 | 0.592, 0.580, 0.599 | 1.12 → 0.59 | −47 % |\n| Light pass | 1.109, 0.986, 1.038 | 0.843, 0.717, 0.986 | 1.04 → 0.85 | −19 % |\n| GPU frame | 4.965, 4.548, 4.641 | 4.271, 4.038, 4.481 | 4.72 → 4.26 | −10 % |\n\nWithout E-510 the atlas target is 4096 × 2048, against 4096 × 512 with it.\n\n**E-509** (the unshaded composite discards where nothing is unshaded), `--gpu-draws`, A B A B, the unshaded halves (the uLight + uUnshaded draws 11 and 12):\n\n| | Run 1 | Run 2 |\n|---|---|---|\n| Without E-509 | 0.161 ms | 0.166 ms |\n| With E-509 | 0.095 ms | 0.084 ms |\n\nThat is −45 %, about 0.07 ms a frame. The light-only halves beside them are unchanged (0.084, 0.071 against 0.087, 0.078). In `--gpu-passes` the change hides inside the 1.7 ms canvas pass.\n\nBoth stay kept on the main PC's own numbers."
+    },
+    {
+      "id": "R-1339",
+      "date": "2026-11-18",
+      "title": "lighting.dither merged into main, off by default; with it, the Buenos Aires headlights at 12 px of height (they cast lamp-map shadows)",
+      "verdict": "kept-hygiene",
+      "text": "fix/light-pass merged into main: 06ab1598 lighting.dither (the shaders' DITHER / !DITHER blocks; without it weedDither is the identity, so the light pass is as before), ebd1265d the barrio's headlights at elevation 12 (0.65 m; a light at the floor's height casts nothing into the lamps' map, N-265). Off by default because the HD 620 lost 4.3 % of its drawn frames with it (R-1332); GTX 1650 inside the noise. test:node and test:demos green on the merge, bundles rebuilt. The headlights' GPU cost in the barrio at night is not measured: at most maxShadowCastingLights (16) lamps cast, the nearest the view's centre, so headlights now take street lamps' slots (E-518).",
+      "commits": [
+        "06ab1598",
+        "ebd1265d"
+      ]
+    },
+    {
+      "id": "R-1340",
+      "date": "2026-11-18",
+      "title": "N-272 v3 built: an empty ring around the face map instead of any code in the self-shadow march; E-518 found (stamp lights culled by their light's radius, not their shadows' reach)",
+      "verdict": "note",
+      "text": "exp/n272-ring d74a5d7e (on fix/light-pass): pixiWorker draws the face map with frame (1, 1, W-2, H-2) and its transform moved a texel back, so every pixel lands where it did and the ring keeps the clear's empty texels; the GLSL and WGSL marches are main's; the light pass reads its own face and id clamped a texel inward (faceAt). tests/node/selfShadowRing.test.js; test:node 3054/3054, test:demos 121/121. Unmeasured, not yet seen in a browser. Reading the stamp lights' cull for the headlights: E-518.",
+      "commits": [
+        "d74a5d7e"
+      ]
     }
   ],
   "leads": [
