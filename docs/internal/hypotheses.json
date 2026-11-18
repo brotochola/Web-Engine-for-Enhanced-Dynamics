@@ -22942,14 +22942,15 @@
       ],
       "records": [
         "R-1349",
-        "R-1361"
+        "R-1361",
+        "R-1362"
       ],
-      "result": "ASUS scoreboard 0895: logic0 STEP_MS +6.0 %, kernel +0.7 % (FAIL row)",
+      "result": "not a regression: loaded to casts=12288 on the ASUS, v0.14.0 -> main logic -0.5 % (HD 620) and -2.5 % (MX110), both NEUTRAL; the +6 % was read under the step floor",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
       "id": "N-296",
       "kind": "speed",
       "area": "logic",
-      "status": "open",
+      "status": "dropped",
       "date": "2026-11-18",
       "title": "rayStressScene's logic costs 6 % more than v0.14.0's on the ASUS (the grid ray DDA kernel itself is level)",
       "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
@@ -23031,6 +23032,25 @@
         "gbuffer access"
       ],
       "records": []
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "scoreboard load per machine",
+        "stress load knob",
+        "step floor rows",
+        "scoreboard calibration"
+      ],
+      "records": [],
+      "result": "",
+      "next": "A `query` per catalog row (engineFeatureCatalog.mjs) and a calibration pass in runScoreboard that raises it until the baseline's primary worker passes the floor on the machine at hand. Load knobs for the scenes that have none: stationarySpatialScene (spatial) and queryAabbStressScene (queryAabb, N-295). The ASUS's values from job 0896e are a start: ray casts=12288, bullets=65000, spawn storm=6000.",
+      "id": "DX-SCORELOAD",
+      "kind": "tool",
+      "area": "tools",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "The scoreboard's stress rows run at loads chosen for the main PC, so on a slower machine many fall under the 6 ms floor and read FAIL: a load per row, calibrated per machine, and knobs for the scenes that have none (spatial, queryAabb)",
+      "statusText": "raised by the owner on 2026-11-18 from the ASUS scoreboards (R-1349, R-1361): about half the stress rows read FAIL there"
     }
   ],
   "records": [
@@ -36426,6 +36446,13 @@
       "title": "The ASUS scoreboard on the MX110: textureUpload (+188 %), audioSlots (-74 %), meshFillMoving (+122 %) and queryAabb (+13 %) hold on the second GPU; ray flips sign (noise)",
       "verdict": "note",
       "text": "**The engine scoreboard again, on the ASUS's GeForce MX110** (Chrome's per-app GPU preference), main 70ba822b against v0.14.0, `--full-rev`, `--skip-node`, job 0896c2, 2026-11-18 03:47 to about 05:15. It is an extra low-end reading, as R-1349's on the HD 620 was.\n\n**The five rows R-1349 found on the HD 620, on the MX110:**\n\n| Row | HD 620 | MX110 | Reading |\n|---|---|---|---|\n| N-292 textureUpload | pixi +117 % | pixi +187.7 % (kernel −5.7 %), WORSE | holds |\n| N-293 audioSlots | kernel −52.8 % | kernel −74.1 %, WORSE | holds |\n| N-294 meshFillMoving | pixi +29 % | pixi +122.0 % (kernel +35.3 %) | holds |\n| N-295 queryAabb | logic +21.6 % | logic +13.2 % | holds; under the step floor in both |\n| N-296 ray | logic +6.0 % | logic −6.6 % | flips sign: likely noise |\n\n**Faster on main here too:**\n- spatialMax −70.6 %\n- LiquidFun physics −14.9 % (couple −4.7 %)\n- box2dRayJs logic −10.6 %\n- Kernels: publishPose ×7.7, shadowStamp +43 %, gameObjectAccess +43 %, attachedWalls +24 %, decorationCollect +20 %\n\n**Kernel noise on this laptop.** Node kernels that use no GPU moved between the two sittings by −13 to +30 % (painterRadix +1.6 % then −13.4 %, attachedSway +29.9 % then −11.0 %, decalPremultiply +18.5 % then −10.1 %). A kernel delta under about 30 % on the ASUS is noise. audioSlots and publishPose are far past it.\n\nWith the MX110 the CPU workers ran lighter than on the HD 620 (the shared-power effect), so more stress rows fell under the 6 ms floor. Job 0896e calibrates the load knobs (ray casts, bullets, spawn storm) so those rows can be judged."
+    },
+    {
+      "id": "R-1362",
+      "date": "2026-11-18",
+      "title": "The ASUS's under-floor stress rows loaded past the floor: ray neutral on both GPUs (N-296 dropped), bullets -7 % on the HD 620, spawn level per body",
+      "verdict": "dropped",
+      "text": "**The scoreboard's under-floor stress rows, loaded past the floor on the ASUS** (the owner's point: raise each scene's own knob until the measured worker passes 6 ms).\n\n**Calibration** (job 0896e, main 70ba822b, single runs, headless). The measured worker, from the default load up:\n\n| Scene (worker) | HD 620 | MX110 |\n|---|---|---|\n| ray `casts` 3072 / 6144 / 12288 / 24576 (logic) | 3.7 / 8.4 / 14.8 / 31.2 ms | 4.1 / 8.1 / 16.9 / 34.3 ms |\n| bullets 40 000 / 52 000 / 65 000 (particle) | 5.0 / 6.9 / 9.0 ms | 5.2 / 7.1 / 9.8 ms |\n| spawn `storm` 1800 / 3600 / 6000 (logic) | 4.3 / 6.9 / 10.2 ms | 3.9 / 7.6 / 12.5 ms |\n\n**A/B** (job 0896f, 2026-11-18 05:5x to 06:3x). v0.14.0 (A) against main 70ba822b (B), each its whole revision, 4 pairs, at casts=12288, bullets=65000 and storm=6000:\n\n| Row | HD 620 | MX110 |\n|---|---|---|\n| ray (logic) | 14.23 → 14.54 ms, −0.5 % paired (1/4 worse, cv 6/5 %), NEUTRAL | 16.01 → 15.61 ms, −2.5 % (0/4), NEUTRAL |\n| bullets (particle) | 9.66 → 9.15 ms, −7.1 % (0/4 worse), KEPT | 9.31 → 9.15 ms, −2.7 %, NEUTRAL |\n| spawn (logic) | 9.44 → 9.60 ms, +2.1 % (3/4) | 10.18 → 10.77 ms, +1.2 % (4/4) |\n\nspawn reads FAIL (load) because main keeps 15 to 24 % more bodies alive (BODY_COUNT 452 → 561 on the HD 620, 560 → 645 on the MX110): per body it is cheaper.\n\nN-296 (ray's logic +6 %, read under the floor) is not a regression: dropped. spatial and queryAabb (N-295) have no load knob in their scenes; DX-SCORELOAD asks for one, and a load per machine in the catalog."
     }
   ],
   "leads": [
