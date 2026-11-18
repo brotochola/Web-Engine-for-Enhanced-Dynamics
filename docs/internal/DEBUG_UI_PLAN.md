@@ -2,7 +2,7 @@
 
 **Opened:** 2026-11-18, from the owner's report in a chat session. **Status:** a plan, not started;
 nothing in it is built, run or measured (the owner asked for reading only: no tests, no benchmarks).
-**Estimate:** about 25 to 36 hours of work in a row (section 5). **Registry:** `DX-DEBUGUI` and its
+**Estimate:** about 15 to 23 hours of work in a row (section 5). **Registry:** `DX-DEBUGUI` and its
 items `DBG-1` to `DBG-12` in [`hypotheses.json`](./hypotheses.json). **Who builds it:** a session of
 its own, from this plan alone.
 
@@ -68,8 +68,8 @@ So the plan has three parts:
   Intel's integrated GPUs (`config.debug.opaquePass`).
 - **Light tiles:** E-205's bins (`src/render/lightTiles.js`): the light pass's target cut into
   16 px tiles (`LIGHT_TILE_PX`, doubled while the texture would pass 4 096 rows) with 4 tiles of
-  border, each tile holding one bit per light whose reach meets it. This is what this plan calls
-  the lighting grid (section 6 asks the owner to confirm).
+  border, each tile holding one bit per light whose reach meets it. This is the lighting grid
+  (section 6, decision 1).
 
 ## 2. How the debug UI works today
 
@@ -224,7 +224,7 @@ instead of being forgotten again.
   it names, in motion, on WebGL and WebGPU, and ticking it back restores it the same frame.
 - **Test:** node through `workerHarness.mjs` with `sunShadows: 'map'`: a hidden `castedShadows`
   leaves `_sunMapK[3]` at 0; hidden entities add no caster rows.
-- **Estimate:** 1.5 to 2 h.
+- **Estimate:** 1 to 1.5 h.
 
 ### DBG-2 — Blend modes change, and stay changed
 
@@ -240,14 +240,14 @@ instead of being forgotten again.
 - **Lighting with `lightEdges`:** decide what a blend on the lighting layer means (its meshes need
   multiply and add to be correct). Proposed: the lighting layer's select offers only what keeps it
   correct, or is disabled with a tip.
-- **The list:** the selects (and `BLEND_MODES` in the config) offer only the modes that draw, unless
-  the owner wants the advanced ones (section 6, decision 4).
+- **The list is trimmed** (section 6, decision 4): the selects, `BLEND_MODES` and
+  `Layer._BLEND_MODE_STRINGS` keep only the modes that draw; `types/weed.d.ts` and the guide follow.
 - **Done when:** each mode in the list visibly changes each layer that can take it, survives a
   shader swap and an alpha change, and a game reading `layer.blendMode` sees the panel's value.
 - **Test:** node through `workerHarness.mjs`: set `layer.blendMode = 'add'` on `entities`, run a
   frame, assert the batch mesh's `groupBlendMode`; force a re-registration and assert it stays.
   `test:demos` too: games see the Layer API.
-- **Estimate:** 1.5 to 2 h.
+- **Estimate:** 1 to 1.5 h.
 
 ### DBG-3 — Alpha fades on every render path
 
@@ -271,7 +271,7 @@ instead of being forgotten again.
 - **Measuring:** a bug fix (hygiene keep). The lightEdges shader gains one `mix` per pixel at
   alpha 1: if the lightEdges owner scene's drawn frames move on the GTX 1650, run it per
   HOW_WE_MEASURE; otherwise the suites decide.
-- **Estimate:** 1.5 to 2.5 h.
+- **Estimate:** 1 to 1.5 h.
 
 ### DBG-4 — The Layers panel lists every layer and says what it is
 
@@ -295,7 +295,7 @@ instead of being forgotten again.
   used) shows a row per layer, and each control follows a change made by game code.
 - **Test:** a node test with a DOM shim where the panel is built against a fake `Layer` table
   (the existing `audioPanel.test.js` and `debugFlags.test.js` show the style); no browser needed.
-- **Estimate:** 2 to 3 h.
+- **Estimate:** 1 to 1.5 h.
 
 ### DBG-5 — Render views: see the buffers the frame is made of
 
@@ -333,7 +333,7 @@ buffer the current scene has, greyed with the config it needs when it does not e
   a run without the debug UI.
 - **Test:** node, through `workerHarness.mjs`: the message sets the field; no stage object exists
   while the view is Final. Browser: the owner's eyes, on the GTX 1650 and one integrated GPU.
-- **Estimate:** 6 to 9 h (two backends, about ten decode shaders, the readiness list).
+- **Estimate:** 4 to 6 h (two backends, about ten decode shaders, the list of views the scene has).
 
 ### DBG-6 — A sheet's height and normal maps, from the debug UI
 
@@ -353,7 +353,7 @@ The owner wants to see the maps "desde ahí". Two places:
   all three) shows each frame's maps and they match the PNGs the sheet named.
 - **Test:** node: the decode functions on hand-made texels (a known octahedral normal, a known
   height) give the expected colours.
-- **Estimate:** 2 to 3 h.
+- **Estimate:** 1.5 to 2 h.
 
 ### DBG-7 — The lighting grid: the light tiles, with how many lights each one holds
 
@@ -374,7 +374,7 @@ The owner wants to see the maps "desde ahí". Two places:
   lamps whose reach covers it.
 - **Test:** node: the bit-count of a hand-filled `LightTiles` (via `layoutLightTiles` and its
   binning) matches the lights placed.
-- **Estimate:** 2 to 3 h.
+- **Estimate:** 1 to 1.5 h.
 
 ### DBG-8 — A Light tab: the sun, the lamps and the light pass's options
 
@@ -385,8 +385,8 @@ The owner wants to see the maps "desde ahí". Two places:
 - **The light pass, read-only:** the scene's lighting options as the renderer resolved them
   (`sunShadows`, `lampShadows`, `lampShadowTile`, `lampMapCache`, `gbuffer`, `lightEdges`,
   `pixelArt`, `dither`, `selfShadow`, `unshaded`, `lightGlow`, `resolution`, `maxLights`, the
-  opaque pass on or off and why, the backend and GPU from `scene.gpu`). Options fixed when the
-  worker builds its programs stay read-only (section 6 asks whether to make some live).
+  opaque pass on or off and why, the backend and GPU from `scene.gpu`). All of them read-only
+  (section 6, decision 2).
 - **Lamps:** a list (id, kind, radius, brightness, elevation, cone, castShadows, whether it holds a
   shadow tile this frame, whether it was culled by `maxLights`); clicking one selects its entity in
   the inspector.
@@ -395,7 +395,7 @@ The owner wants to see the maps "desde ahí". Two places:
 - **Done when:** the sliders move the sun in the barrio demo; the list matches the lamps on screen.
 - **Test:** node with a DOM shim: each slider calls the Sun setter with the value; the options
   table renders every key of `LIGHTING_DEFAULTS` (DBG-12 keeps it so).
-- **Estimate:** 3 to 4 h.
+- **Estimate:** 1.5 to 2.5 h.
 
 ### DBG-9 — Camera: what the projection is doing
 
@@ -403,7 +403,7 @@ The owner wants to see the maps "desde ahí". Two places:
   exists and is not wired to the UI), shake; read-only `pitch`, `yaw`, `floorScaleY`,
   `heightScaleY` and whether the scene lights in the flat view (`camera.pitch` 90 or 0).
 - Lives in the Scene tab or a small Camera section; no worker change.
-- **Estimate:** 1 to 1.5 h.
+- **Estimate:** 0.5 to 1 h.
 
 ### DBG-10 — The inspector says what the numbers mean
 
@@ -417,7 +417,7 @@ The owner wants to see the maps "desde ahí". Two places:
   volume).
 - Done generically where possible: a per-field formatter table keyed by component and field, so a
   new field shows raw until it gets a formatter (DBG-12 lists the ones without).
-- **Estimate:** 2 to 3 h.
+- **Estimate:** 1.5 to 2 h.
 
 ### DBG-11 — The renderer's counters in the Performance tab
 
@@ -426,7 +426,7 @@ The owner wants to see the maps "desde ahí". Two places:
   `NEW_QUEUE` (check each against `performancePanel.js` first; some may be shown already).
 - Add the GPU's name, the backend, and the opaque pass's state to the panel's header.
 - No new counters in the worker: only what is already published.
-- **Estimate:** 1 h.
+- **Estimate:** 0.5 h.
 
 ### DBG-12 — Keep the debug UI from falling behind
 
@@ -437,21 +437,32 @@ The owner wants to see the maps "desde ahí". Two places:
 - The same for the render views: a new render target in the Pixi worker that a view could show is
   listed in DBG-5's table or in `NOT_SHOWN`. (This one is a convention, written in the module's
   header, not a test: render targets are not in a table today.)
-- **Estimate:** 1 to 1.5 h.
+- **Estimate:** 0.5 to 1 h.
 
 ## 5. Order and estimates
 
 | Step | Items | Why this order | Hours |
 |---|---|---|---|
-| 1 | DBG-1, DBG-2, DBG-3 | what the owner hit; they share the layer presentation code | 4.5 to 6.5 |
-| 2 | DBG-4 | the same panel, while it is open | 2 to 3 |
-| 3 | DBG-5, then DBG-7 | the render view machinery first; the light tiles are one more view | 8 to 12 |
-| 4 | DBG-6 | main thread only; can run beside step 3 in another session (separate files) | 2 to 3 |
-| 5 | DBG-8, DBG-9 | new tabs on existing setters | 4 to 5.5 |
-| 6 | DBG-10, DBG-11 | inspector and counters | 3 to 4 |
-| 7 | DBG-12 | last, when the panels it checks exist | 1 to 1.5 |
+| 1 | DBG-1, DBG-2, DBG-3 | what the owner hit; they share the layer presentation code | 3 to 4.5 |
+| 2 | DBG-4 | the same panel, while it is open | 1 to 1.5 |
+| 3 | DBG-5, then DBG-7 | the render view machinery first; the light tiles are one more view | 5 to 7.5 |
+| 4 | DBG-6 | main thread only; can run beside step 3 in another session (separate files) | 1.5 to 2 |
+| 5 | DBG-8, DBG-9 | new tabs on existing setters | 2 to 3.5 |
+| 6 | DBG-10, DBG-11 | inspector and counters | 2 to 2.5 |
+| 7 | DBG-12 | last, when the panels it checks exist | 0.5 to 1 |
 
-About 25 to 36 hours in all. Steps 1 and 2 are worth shipping on their own.
+About 15 to 23 hours in all. Steps 1 and 2 are worth shipping on their own.
+
+**Where the hours go** (re-estimated 2026-11-18, after the owner asked why so long; the first
+figure, 25 to 36 h, summed the top of every range and gave each item a browser check of its own).
+Writing the code is the smaller part. Each bug has three to five causes in different places (a layer
+is drawn by several objects, and the fix must reach all of them); every shader change is written
+twice (GLSL and WGSL); what a layer does depends on the GPU and the config (the opaque pass on or
+off, `lightEdges`, the shadows' layer or map mode), so each fix is looked at on those paths; a fade
+or a render view is proved on screen in motion, not by reading, and headless Chromium draws a lit
+scene at a few frames a second. DBG-5 is new code (about ten decode shaders, twice, and binding each
+render target in both backends), not a fix: it is the largest item. Checks are batched: one browser
+pass after DBG-1 to DBG-3, one after DBG-5 and DBG-7.
 
 **Measuring.** Debug code off the hot path: the suites decide (CLAUDE.md, HOW_WE_MEASURE "Judgment
 first"), plus `test:demos` because games see the Layer API (DBG-2's setter). No sitting, unless an
@@ -459,21 +470,21 @@ item ends up touching a per-entity loop, which none of them should: then it is m
 change there. The production bundle must not grow by the debug code: `npm run check:dist` after a
 bundle build shows it.
 
-## 6. Open decisions (the owner's)
+## 6. Decisions (the owner's, 2026-11-18)
 
-1. **"La grilla de iluminación":** this plan reads it as the light tiles (DBG-7). If it means the
-   light buffer's texels (`lighting.resolution`, default 0.25), DBG-5's Light buffer view, drawn
-   nearest, shows them; say if it is something else.
-2. **Live light options:** `dither`, `pixelArt`, `lightEdges`, `selfShadow`, the shadow modes are
-   fixed when the worker builds its programs. Read-only in the panel (this plan), or an
-   "apply and restart the scene" button that reloads it with the new options (cheap, generic), or
-   truly live (engine work per option)? Recommended: read-only now, the restart button next.
-3. **Do the Layers panel's changes outlive a scene restart?** This plan: no, a restart takes the
-   scene's config again.
-4. **Blend modes:** 33 names are offered and about 11 draw (section 3.2.4). Trim the list (and the
-   config's `BLEND_MODES`) to the ones that draw, or register Pixi's advanced blend modes (Pixi draws
-   each of those as a filter pass over a copy of what is under the layer: costly, and more bundle)?
-   Recommended: trim now, add the advanced ones when a game asks for one.
+1. **"La grilla de iluminación" is the light tiles** (DBG-7). The owner did not know which it was
+   ("sé que hay light cells o algo así … ¿o es el gbuffer?") and left it to the planner. The code has
+   no "light cells"; the only grid in the light is E-205's tiles. The G-buffer is not a grid (one
+   normal and height per pixel): it gets its own views in DBG-5.
+2. **Light options stay read-only** in the Light tab: nothing that is fixed when the worker builds
+   its programs becomes live or restartable from the debug UI for now.
+3. **The Layers panel's changes do not outlive a scene restart:** a restart takes the scene's
+   config again.
+4. **The blend list is trimmed** to the modes that draw (section 3.2.4), in the panel's selects and
+   in the config's `BLEND_MODES` (with `Layer._BLEND_MODE_STRINGS`, whose indices the SAB stores:
+   both change together). A config naming a removed mode fails with a clear error (one API, no
+   aliases). Nothing in `src/`, `demos/`, `tests/`, `docs/guide/` or `types/` used a removed mode on
+   2026-11-18. Pixi's advanced blend modes wait until a game asks for one.
 
 ## 7. Not in this plan
 
