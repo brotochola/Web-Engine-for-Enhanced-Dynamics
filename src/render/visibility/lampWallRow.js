@@ -45,6 +45,9 @@ export const WALL_ROW_MAX_VERTS = 512;
  */
 export const WALL_ROW_ARGS = new Float64Array([0, 0, 1]);
 
+/** writeWallRow's scratch: how many vertices each bin is the first to see, and one more slot for those no bin sees. */
+const BIN_MARKS = new Int32Array(WALL_BINS + 1);
+
 /** Texels a row takes for polygons of up to `maxVerts` vertices (the closing vertex included). */
 export function wallRowTexels(maxVerts) {
   return WALL_VERT0 + (maxVerts | 0) + 1;
@@ -115,6 +118,17 @@ export function writeWallRow(out, o, xs, ys, codes, n) {
   const ang0 = wallAngle(x0, y0);
   let prevRaw = ang0;
   let turned = 0;
+  // The directions' index (OL-8): for each bin, the vertex before the last one at or under the bin's start (one early,
+  // so a direction the shader rounds into the bin before still finds its edge by walking on). Counted: a vertex is at
+  // or under bin b's start, ang0 + b / 64, from bin ceil(64 * (its angle - ang0)) on (the angles are float32 and under
+  // 8, so that difference and its product are exact); each vertex marks that bin, and the running count of the marks
+  // is how many vertices each bin sees, in integers, with no branch a bin. It was a walk of the 256 bins against the
+  // vertices' angles, a comparison a bin and a branch that ends on a different vertex each time. Two other forms were
+  // slower (wallRowMicrobench, 2026-11-18): filling the bins by runs as the vertices go by wins under 32 vertices and
+  // loses 18 % at 128 (its inner loop ends on a different bin each vertex), and counting in the row's own floats
+  // carries the count through a float each bin.
+  const marks = BIN_MARKS;
+  for (let b = 0; b <= WALL_BINS; b++) marks[b] = 0;
   for (let i = 0; i < n; i++) {
     const rx = Math.fround(xs[i] - lx);
     const ry = Math.fround((ys[i] - ly) * floorInv);
@@ -127,6 +141,10 @@ export function writeWallRow(out, o, xs, ys, codes, n) {
       if (step > 0) turned += step;
       if (turned > 4) turned = 4;
       prevRaw = raw;
+      // The first bin that starts at or over this vertex's angle; a whole turn on, none (the scratch's last slot).
+      let reach = Math.ceil(64 * (Math.fround(ang0 + turned) - ang0)) | 0;
+      if (reach > WALL_BINS) reach = WALL_BINS;
+      marks[reach]++;
     }
     const v = v0 + 4 * i;
     out[v] = rx;
@@ -145,14 +163,12 @@ export function writeWallRow(out, o, xs, ys, codes, n) {
   out[close + 2] = ang0 + 4;
   out[close + 3] = 0;
 
-  // The directions' index: for each bin, the vertex before the last one at or under the bin's start (one early, so a
-  // direction the shader rounds into the bin before still finds its edge by walking on).
+  // The running count: the vertices after the first that a bin's start is at or over; the one before the last of them.
   const bins = o + 4;
-  let i = 0;
+  let seen = 0;
   for (let b = 0; b < WALL_BINS; b++) {
-    const start = ang0 + (4 * b) / WALL_BINS;
-    while (i + 1 < n && out[v0 + 4 * (i + 1) + 2] <= start) i++;
-    out[bins + b] = i > 0 ? i - 1 : 0;
+    seen += marks[b];
+    out[bins + b] = seen > 1 ? seen - 1 : 0;
   }
   out[o] = n;
   out[o + 1] = ang0;
