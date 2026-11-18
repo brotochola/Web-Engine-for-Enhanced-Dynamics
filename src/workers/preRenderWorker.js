@@ -1782,6 +1782,10 @@ class PreRenderWorker extends AbstractWorker {
         this._wallLampY = EMPTY_F64;
         this._wallLampR = EMPTY_F64;
         this._wallRowsKept = 0;
+        // OL-10: where a rows' header holds the frame's signature, and the count that signs a frame with a row of no
+        // signature (never two alike).
+        this._wallSignatureAt = 0;
+        this._wallFrameNonce = 0;
         // N-19: per self-lit item, 1 if it is a compound solid; per entity, the
         // stamp of the last light whose polygon showed that solid. N-39: per
         // simple item, its occluder index in this light's sweep.
@@ -2521,7 +2525,7 @@ class PreRenderWorker extends AbstractWorker {
                 const lampSlots = vm.ownerSeen.length;
                 for (let b = 0; b < 2; b++) {
                     this._wallRowBuffers[b] = {
-                        header: new Int32Array(rowSabs[b], 0, 1 + rows.lights),
+                        header: new Int32Array(rowSabs[b], 0, rows.headerInts),
                         f32: new Float32Array(rowSabs[b], rows.rowsByte, rows.lights * rows.rowFloats),
                         sigLo: new Uint32Array(lampSlots),
                         sigHi: new Uint32Array(lampSlots),
@@ -2530,6 +2534,7 @@ class PreRenderWorker extends AbstractWorker {
                     };
                 }
                 this._wallCacheOn = this.config?.lighting?.wallCache !== false;
+                this._wallSignatureAt = rows.signatureAt;
                 this._vpWords = bindWallSignature(vm);
                 this._vpPolarOwner = vm.polarOwner;
                 this._wallLampX = new Float64Array(lampSlots).fill(NaN);
@@ -5844,7 +5849,20 @@ class PreRenderWorker extends AbstractWorker {
         if (!buf) { return; }
         // OL-4: the rows this frame publishes (null with the old fan pass); none until the loop writes them.
         const rowsBuf = this._wallRowsWrite;
-        if (rowsBuf !== null) rowsBuf.header[0] = 0;
+        // OL-10: the frame's signature, for Pixi: its lamps in order and the signature each row was written from. Two
+        // frames that sign alike hold the same rows, and Pixi sends the second nowhere. A row written without a
+        // signature (its lamp moved, or lighting.wallCache is off) leaves the frame unsigned: a count, second word 0.
+        const signatureAt = this._wallSignatureAt;
+        let frameLo = 0x243f6a88;
+        let frameHi = 0x13198a2e;
+        let frameSigned = true;
+        if (rowsBuf !== null) {
+            rowsBuf.header[0] = 0;
+            // Until the loop's end says otherwise (the early returns below publish no row): unsigned.
+            this._wallFrameNonce = (this._wallFrameNonce + 1) | 0;
+            rowsBuf.header[signatureAt] = this._wallFrameNonce;
+            rowsBuf.header[signatureAt + 1] = 0;
+        }
         const outOcc = this._vpOutOcc;
         const wallCodes = this._wallCodes;
         const wallOccCode = this._wallOccCode;
@@ -6346,6 +6364,9 @@ class PreRenderWorker extends AbstractWorker {
                             rowsBuf.lampAt[rowsWritten] = lightIdx;
                             rowsBuf.place[lightIdx] = rowsWritten;
                             rowsBuf.header[1 + rowsWritten] = lightIdx;
+                            frameLo = Math.imul(frameLo ^ lightIdx, 0x9e3779b1);
+                            frameLo = Math.imul(frameLo ^ (frameLo >>> 15) ^ rowSigLo, 0x9e3779b1);
+                            frameHi = Math.imul(((frameHi << 5) | (frameHi >>> 27)) ^ rowSigHi ^ lightIdx, 0x85ebca77);
                             rowsWritten++;
                             rowsKept++;
                             selfLitCount = selfLitStart;
@@ -6418,6 +6439,13 @@ class PreRenderWorker extends AbstractWorker {
                     rowsBuf.sigLo[lightIdx] = rowSigLo;
                     rowsBuf.sigHi[lightIdx] = rowSigHi;
                     rowsBuf.header[1 + rowsWritten] = lightIdx;
+                    if (rowSigHi === 0) {
+                        frameSigned = false;
+                    } else {
+                        frameLo = Math.imul(frameLo ^ lightIdx, 0x9e3779b1);
+                        frameLo = Math.imul(frameLo ^ (frameLo >>> 15) ^ rowSigLo, 0x9e3779b1);
+                        frameHi = Math.imul(((frameHi << 5) | (frameHi >>> 27)) ^ rowSigHi ^ lightIdx, 0x85ebca77);
+                    }
                     rowsWritten++;
                 }
                 // The candidates were this light's scratch: the fills they fed are the old pass's.
@@ -6510,6 +6538,10 @@ class PreRenderWorker extends AbstractWorker {
         if (rowsBuf !== null) {
             rowsBuf.header[0] = rowsWritten;
             this._wallRowsKept = rowsKept;
+            if (frameSigned) {
+                rowsBuf.header[signatureAt] = frameLo ^ rowsWritten;
+                rowsBuf.header[signatureAt + 1] = frameHi | 1;
+            }
         }
     }
 

@@ -1414,6 +1414,12 @@ class PixiRenderer extends AbstractWorker {
     this._wallRowLamps = new Int32Array(0);
     this._wallRowLampCount = 0;
     this._wallRowsWarned = false;
+    // OL-10: where a rows' header holds the frame's signature, the signature of the rows last sent up, and the frames
+    // whose rows were those again (nothing copied, nothing uploaded).
+    this._wallSignatureAt = 0;
+    this._wallSentLo = 0;
+    this._wallSentHi = 0;
+    this._wallRowsSkipped = 0;
     // lighting.wallDepth, in the light pass's uWalls (x).
     this._wallTerms = new Float32Array(4);
     this._selfLitItemBytes = 28;
@@ -6674,10 +6680,13 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     const sabs = [vp.rowsA, vp.rowsB];
     for (let b = 0; b < 2; b++) {
       this._wallRowBuffers[b] = {
-        header: new Int32Array(sabs[b], 0, 1 + layout.lights),
+        header: new Int32Array(sabs[b], 0, layout.headerInts),
         f32: new Float32Array(sabs[b], layout.rowsByte, layout.lights * layout.rowFloats),
       };
     }
+    this._wallSignatureAt = layout.signatureAt;
+    this._wallSentLo = 0;
+    this._wallSentHi = 0;
     this._wallRowFloats = layout.rowFloats;
     this._wallRowTexels = layout.rowTexels;
     this._wallRowsData = new Float32Array(layout.lights * layout.rowFloats);
@@ -6705,6 +6714,17 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     const buf = this._wallRowBuffers[syncFrame > 0 ? (syncFrame - 1) & 1 : 0];
     if (buf === null) return;
     const entities = Transform.x ? Transform.x.length : 0;
+    // OL-10: pre-render signs a frame's rows (its lamps in order, each row's inputs). The same signature as the rows
+    // last sent up: the same lamps hold the same rows, the texture has them and the lamps' tags stand. A second word
+    // of 0 is no signature (a lamp moved, or lighting.wallCache is off).
+    const sigLo = buf.header[this._wallSignatureAt];
+    const sigHi = buf.header[this._wallSignatureAt + 1];
+    if (sigHi !== 0 && sigLo === this._wallSentLo && sigHi === this._wallSentHi && this._wallRowOf.length === entities) {
+      this._wallRowsSkipped++;
+      return;
+    }
+    this._wallSentLo = sigLo;
+    this._wallSentHi = sigHi;
     if (this._wallRowOf.length !== entities) this._wallRowOf = new Int16Array(entities);
     const rowOf = this._wallRowOf;
     const lamps = this._wallRowLamps;

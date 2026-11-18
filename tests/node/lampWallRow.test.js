@@ -208,7 +208,10 @@ test('the layout: a header, the directions, the vertices and the closing one', (
   assert.equal(wallAngle(0, -1), 3);
   assert.equal(wallEdgeCode(5, 0), 5 * 256 + 1, 'a wall is never read as free');
   const layout = wallRowsLayout(128, 128);
-  assert.deepEqual(layout, { rowVerts: 128, rowTexels: 194, rowFloats: 776, lights: 128, rowsByte: 528, bytes: 528 + 128 * 776 * 4 });
+  // The header: the rows written, a lamp a row, and the frame's signature (OL-10: two words).
+  assert.deepEqual(layout, {
+    rowVerts: 128, rowTexels: 194, rowFloats: 776, lights: 128, headerInts: 131, signatureAt: 129, rowsByte: 528, bytes: 528 + 128 * 776 * 4,
+  });
   assert.equal(wallRowsLayout(8, 5000).rowVerts, 512, 'a row is no wider than WALL_ROW_MAX_VERTS, whatever the polygons cap is');
   assert.equal(layout.rowsByte % 16, 0, 'the rows start on a float boundary');
   const xs = new Float32Array([-10, 0, 10, 0]);

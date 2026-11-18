@@ -54,8 +54,9 @@ export function wallRowTexels(maxVerts) {
 }
 
 /**
- * The shared buffer a scene's rows are published in (pre-render writes it, Pixi reads it): the rows written and each
- * row's lamp (its entity), as int32, then the rows' floats from `rowsByte`.
+ * The shared buffer a scene's rows are published in (pre-render writes it, Pixi reads it): `headerInts` int32 (the rows
+ * written, each row's lamp (its entity), and at `signatureAt` the frame's signature, two words: OL-10), then the rows'
+ * floats from `rowsByte`. A signature whose second word is 0 says nothing (the frame is not known to be any other's).
  * @param {number} maxLights rows it holds (lighting.maxLights)
  * @param {number} maxVerts lighting.maxPolygonVertices; a row holds at most WALL_ROW_MAX_VERTS of them (`rowVerts`)
  */
@@ -64,8 +65,10 @@ export function wallRowsLayout(maxLights, maxVerts) {
   const rowTexels = wallRowTexels(rowVerts);
   const rowFloats = 4 * rowTexels;
   const lights = Math.max(1, maxLights | 0);
-  const rowsByte = (4 * (1 + lights) + 15) & ~15;
-  return { rowVerts, rowTexels, rowFloats, lights, rowsByte, bytes: rowsByte + lights * rowFloats * 4 };
+  const signatureAt = 1 + lights;
+  const headerInts = signatureAt + 2;
+  const rowsByte = (4 * headerInts + 15) & ~15;
+  return { rowVerts, rowTexels, rowFloats, lights, headerInts, signatureAt, rowsByte, bytes: rowsByte + lights * rowFloats * 4 };
 }
 
 /**
