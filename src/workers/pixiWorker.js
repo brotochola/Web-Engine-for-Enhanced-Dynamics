@@ -46,6 +46,7 @@ import {
   LAYER_KIND,
   LAYER_SCALE_MODE,
   PARTICLE_DEFAULTS,
+  normalStrengthOf,
   resolveZenithalMaxHeight,
 } from '../util/configDefaults.js';
 import {
@@ -1153,7 +1154,8 @@ class PixiRenderer extends AbstractWorker {
     this._noMapsSource = null; // DX-MAPS: its stand-in when none has (_emptyMapsSource)
     // DX-BARRIOS: faces have no switch. Whether the light pass reads the face map, whether the faces-in-use word was acted
     // on (_useFaces), whether this scene's light can take faces (lit, not raycasted); the px a px of height rises (the
-    // camera's); the faces' light terms (uFaceLight: heightScaleY, 0, 0, the sun's direct share 1 - Sun.skyLight).
+    // camera's); the faces' light terms (uFaceLight: heightScaleY, lighting.normalStrength's sun and lamps (OL-2), the sun's
+    // direct share 1 - Sun.skyLight).
     this._facesOn = false;
     this._facesUsed = false;
     this._facesWatch = false;
@@ -4864,10 +4866,12 @@ LIGHTING SYSTEM SETUP
     const facesOn = this._facesOn;
     if (facesOn) {
       // DX-BARRIOS: no wrap or gain any more; the sun's direct share follows Sun.skyLight (_writeFaceSun, each frame).
+      // OL-2: how much a sprite's own normals count for the sun and for the lamps (lighting.normalStrength).
       const faceLight = this._faceLight;
+      const normalStrength = normalStrengthOf(this.config.lighting);
       faceLight[0] = this._heightScaleY > 0 ? this._heightScaleY : 1;
-      faceLight[1] = 0;
-      faceLight[2] = 0;
+      faceLight[1] = normalStrength.sun;
+      faceLight[2] = normalStrength.lamps;
       faceLight[3] = 1 - Sun.skyLight;
       lightingResources.uniforms.uFaceLight = { value: faceLight, type: 'vec4<f32>' };
       lightingResources.uniforms.uFaceSun = { value: this._faceSun, type: 'vec4<f32>' };

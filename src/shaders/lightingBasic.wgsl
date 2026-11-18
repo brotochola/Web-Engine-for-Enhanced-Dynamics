@@ -39,7 +39,7 @@ struct LightingUniforms {
   // 1 / the soft edge's width); they loop apart, so a point light runs the loop it always ran. A float (see pixiWorker).
   uConeCount: f32,
 // #if FACES
-  uFaceLight: vec4<f32>, // heightScaleY, 0, 0, the sun's direct share (1 - Sun.skyLight)
+  uFaceLight: vec4<f32>, // heightScaleY, a sprite's normals' strength for the sun and for the lamps (OL-2), the sun's direct share (1 - Sun.skyLight)
   uFaceSun: vec4<f32>, // towards the sun in the floor's space; w: 1 / its height, so a flat surface reads as the floor
 // #endif FACES
 // #if SUNMAP
@@ -65,7 +65,7 @@ struct LightingUniforms {
 @group(2) @binding(4) var uFaceMap: texture_2d<f32>;
 // #endif FACES
 // #if SUNMAP
-// DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the sprite shadows' layer is.
+// DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the castedShadows layer is.
 @group(2) @binding(5) var uSunMap: texture_2d<f32>;
 // #endif SUNMAP
 // #if LAMPMAP
@@ -339,8 +339,8 @@ fn selfShadow(p: vec3<f32>, selfId: f32) -> f32 {
 }
 // #endif SELFSHADOW
 
-// DX-GBUF (plan §5.4): a face's normal, a FLAT pixel lit as drawn, a sprite's own normal by the lamps' share of its light
-// (lightingBasic.frag.glsl's faceLight says how).
+// DX-GBUF (plan §5.4): a face's normal, a FLAT pixel lit as drawn, a sprite's own normal by lighting.normalStrength
+// (OL-2; lightingBasic.frag.glsl's faceLight says how).
 fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> vec3<f32> {
   let q = floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5);
   let kRule = q >= 32768.0;
@@ -492,8 +492,13 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
   let totalFlat = vec3<f32>(uniforms.uBaseAmbient) + vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB)
     + vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * sunFlat + lampFlat;
   if (isFlat) { return totalFlat; }
-  let k = clamp(dot(lampFlat, vec3<f32>(1.0)) / max(dot(totalFlat, vec3<f32>(1.0)), 0.0001), 0.0, 1.0);
-  return mix(totalFlat, total, k);
+  // OL-2 (lighting.normalStrength): a sprite's own normal counts as the developer says, for the sun (lit.y) and for the
+  // lamps (lit.z) apart (lightingBasic.frag.glsl's faceLight says how).
+  let baseLight = vec3<f32>(uniforms.uBaseAmbient) + vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB);
+  let sunColour = vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity;
+  let sunByNormal = sunColour * (1.0 - lit.w + lit.w * sunDirect);
+  let lampsByNormal = max(total - baseLight - sunByNormal, vec3<f32>(0.0));
+  return baseLight + mix(sunColour * sunFlat, sunByNormal, lit.y) + mix(lampFlat, lampsByNormal, lit.z);
 }
 // #endif FACES
 

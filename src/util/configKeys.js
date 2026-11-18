@@ -88,6 +88,7 @@ export const SCENE_CONFIG_SCHEMA = Object.freeze({
     // camera.pitch (Scene._applyConfigDefaults) for the code that reads it; a scene that writes it is told it is retired.
     ...keys(LIGHTING_DEFAULTS, ['directionalCasters', 'raycasted']),
     particleLights: keys(LIGHTING_DEFAULTS.particleLights),
+    normalStrength: keys(LIGHTING_DEFAULTS.normalStrength),
     sun: {
       ...keys(SUN_DEFAULTS),
       dayCycle: keys(SUN_DEFAULTS.dayCycle),

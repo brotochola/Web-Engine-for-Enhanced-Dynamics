@@ -844,6 +844,13 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   selfShadow: false,
   /**
+   * OL-2: how much a sprite's own normals count (its normal map's, or the ones its height map gives), for the sun and for
+   * the lamps apart: 0 lights the sprite as it is drawn, at its place in 3D; 1 lights it by its normals; between them, a
+   * mix. Faces (decorations with a normal) and sprites without maps do not read it. The default keeps the picture as
+   * drawn by day and shows its relief under a lamp. normalStrengthOf reads it.
+   */
+  normalStrength: Object.freeze({ sun: 0, lamps: 1 }),
+  /**
    * DX-GBUF: how the G-buffer passes draw. 'mrt' (default): the face map and the entity ids map in one pass with two
    * colour targets (WebGL2 drawBuffers, WebGPU two targets); 'pass': a pass each. Same picture; one pass costs about a
    * third less (E-377: 0.51 against 0.80 ms at the light's resolution 0.5, 1.65 against 2.46 at 1, GTX 1650, WebGL; the
@@ -899,6 +906,22 @@ export function lightGlowResolutionOf(lighting) {
   const v = Number(lighting?.lightGlowResolution);
   if (!(v > 0) || !Number.isFinite(v)) return LIGHTING_DEFAULTS.lightGlowResolution;
   return Math.min(1, Math.max(1 / 16, v));
+}
+
+/**
+ * OL-2: a scene's lighting.normalStrength, each of its two numbers in 0..1; the default's for one that is missing or not
+ * a number (a scene may write one of the two).
+ * @param {object|undefined} lighting config.lighting
+ * @returns {{ sun: number, lamps: number }}
+ */
+export function normalStrengthOf(lighting) {
+  const given = lighting?.normalStrength;
+  const one = (key) => {
+    const v = given !== null && typeof given === 'object' ? given[key] : undefined;
+    if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.normalStrength[key];
+    return v < 0 ? 0 : v > 1 ? 1 : v;
+  };
+  return { sun: one('sun'), lamps: one('lamps') };
 }
 
 // ============================================================================

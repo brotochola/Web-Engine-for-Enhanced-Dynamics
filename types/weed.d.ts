@@ -371,6 +371,12 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    */
   selfShadow?: boolean;
   /**
+   * How much a sprite's own normals count (its normal map's, or the ones its height map gives), for the sun and for the
+   * lamps apart: 0 lights the sprite as it is drawn, 1 by its normals. Default `{ sun: 0, lamps: 1 }`: the picture as
+   * drawn by day, its relief under a lamp. Faces and sprites without maps do not read it.
+   */
+  normalStrength?: { sun?: number; lamps?: number };
+  /**
    * DX-GBUF: 'mrt' (default) draws the face map and the entity ids map in one pass with two colour targets; 'pass' a
    * pass each. Same picture; one pass costs about a third less.
    */

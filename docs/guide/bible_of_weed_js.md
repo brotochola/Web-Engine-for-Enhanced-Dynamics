@@ -1378,6 +1378,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | A fire or a lit window that keeps its colour at night | `unshaded: true` on its sheet |
 | One sprite unshaded, the rest of its sheet not (a lit torch, a hot coal) | `this.spriteRenderer.unshaded = true`; in a scene without a sheet with maps, an unshaded sheet or a shadow map, also `lighting.unshaded: true` |
 | A sprite lit as drawn, its normal map ignored, or its normals from its height alone | `this.spriteRenderer.normals = 'flat'` or `'height'` (`'auto'` by default: the map, else the height, else flat) |
+| Sprites' normals to count more or less under the sun, or under the lamps | `lighting: { normalStrength: { sun: 1, lamps: 1 } }` (each 0 to 1; `{ sun: 0, lamps: 1 }` by default: as drawn by day, relief under a lamp) |
 | A sprite without a height map lit as a card standing on its foot, or as part of the floor | `this.spriteRenderer.surface = 'standing'` (entities) or `'floor'` (a rug, a decal) |
 | A person in front of or behind each part of a table, or of a wall | pixel depth: on by itself with an oblique camera and height maps or faces (`renderer.pixelDepth`) |
 
@@ -1596,7 +1597,7 @@ The words this guide uses for light on surfaces:
 
 ### Sprites lit as surfaces: `heightMap`, `normalMap` and `reliefMap`
 
-A spritesheet can bring twins of itself, same frames in the same places: how high each pixel is above the floor, and which way it looks. With lighting on, its sprites are then lit as those surfaces: the side of a barrel away from a lamp stays dark, a crate's lid and its front take different light, and the sun shades them by the hour.
+A spritesheet can bring twins of itself, same frames in the same places: how high each pixel is above the floor, and which way it looks. With lighting on, its sprites are then lit as those surfaces: the side of a barrel away from a lamp stays dark, and a crate's lid and its front take different light. Whether the sun shades them by the hour too is `lighting.normalStrength` (below).
 
 ```javascript
 static config = {
@@ -1627,6 +1628,7 @@ static assets = {
 - `reliefMap` is a greyscale picture of how far the shape bulges, not how high it is above the floor: what many 2D tools give as a bump or depth map. White bulges `strength` px (default 8). It gives the normals only; a `normalMap`'s win over it.
 - Without `normalMap` or `reliefMap` the normals come from the heights (a Sobel gradient): good for relief, rougher on outlines.
 - Without `heightMap` (a `normalMap` or a `reliefMap` alone) the pixels stand where `spriteRenderer.surface` puts them: a card standing on its foot, or the floor for a rug or a decal.
+- How much the normals count is yours to say, for the sun and for the lamps apart: `config.lighting.normalStrength: { sun, lamps }`, each from 0 (the sprite lit as it is drawn, at its place in 3D) to 1 (lit by its normals). The default, `{ sun: 0, lamps: 1 }`, keeps the picture as drawn by day and shows its relief under a lamp; `{ sun: 1, lamps: 1 }` lets the sun shade it by the hour too. Faces do not read it: a face is always lit by its normal.
 - `artCamera` is the camera the pictures and maps were drawn for, `{ floorScaleY, heightScaleY }` (or `"artCamera"` in the json's `meta`; the assets entry wins). Its heights are scaled when the sheet loads, by its `heightScaleY` over the scene's, so a pixel rises on the scene's screen as much as in the picture: a sheet drawn for 0.752 in a scene of 0.866 gets its heights times 0.868. Without it, the sheet is taken as drawn for the scene's camera. `SpriteSheetRegistry.artCameraOf(sheet)` reads it on any worker.
 - The normals are turned from the camera's space into the floor's with `config.camera`; `artCamera` scales the heights only.
 - The maps are packed into a second page, the twin page, that holds only the frames with maps (one more texture on the GPU): each frame has its own window in it, and sheets that name the same map files share one. The outline pixels a height map mixes with the background are raised to the surface they border. `config.assets.twinFormat` picks its format: `'A'` (the default) a height and a normal a texel, `'B'` heights alone at 2 bytes a texel with the normals worked out from them in the shader (when a sheet brings a `normalMap` the page stays `'A'`, with a warning), `'C'` B's heights and the normals at half resolution.

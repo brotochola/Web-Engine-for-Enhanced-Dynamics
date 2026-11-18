@@ -96,7 +96,7 @@ bool ownTexel(vec4 m, float selfId) {
 }
 
 // #if SUNMAP
-// DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the sprite shadows' layer is.
+// DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the castedShadows layer is.
 uniform sampler2D uSunMap;
 uniform vec4 uSunMapK; // kx, ky (a px of height's landing shift on the floor), groundScaleY, the shadow's opacity
 
@@ -263,7 +263,7 @@ float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, float intensity, i
 // #if FACES
 // DX-FACES: this pixel's face, in the face map, drawn at this pass's size.
 uniform sampler2D uFaceMap;
-uniform vec4 uFaceLight; // heightScaleY, 0, 0, the sun's direct share (1 - Sun.skyLight)
+uniform vec4 uFaceLight; // heightScaleY, a sprite's normals' strength for the sun and for the lamps (OL-2), the sun's direct share (1 - Sun.skyLight)
 uniform vec4 uFaceSun; // towards the sun in the floor's space; w: 1 / its height, so a flat surface reads as the floor
 // #if IDS
 // DX-GBUF (plan §6.4): the G-buffer's entity ids (faceMap.js FACE_IDS_SELF), drawn with the face map.
@@ -311,8 +311,8 @@ float selfShadow(vec3 p, float selfId) {
 
 // DX-GBUF (plan §5.4): a pixel with a face's normal is lit by it (DX-FACES, as always); a FLAT one (faceMap.js
 // FACE_FLAT_CODE: a standing card, normals 'flat') as drawn, every light at full cosine, at its place in 3D; a sprite's
-// own normal (its height's FACE_K_BIT) shows as much as the lamps' share of its light, k = lamps / (lamps + ambient + sun),
-// worked out from the flat light: by day the sprite looks as drawn, at night by a lamp its normals show.
+// own normal (its height's FACE_K_BIT) counts as much as lighting.normalStrength says, for the sun and for the lamps
+// apart (OL-2), between the light as drawn and the light by the normal.
 vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
   float q = floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5);
   bool kRule = q >= 32768.0;
@@ -456,8 +456,14 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
   vec3 totalFlat = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB) + vec3(uSunR, uSunG, uSunB) * uSunIntensity * sunFlat
     + lampFlat;
   if (isFlat) return totalFlat;
-  float k = clamp(dot(lampFlat, vec3(1.0)) / max(dot(totalFlat, vec3(1.0)), 0.0001), 0.0, 1.0);
-  return mix(totalFlat, total, k);
+  // OL-2 (lighting.normalStrength): how much a sprite's own normal counts is the developer's, for the sun and for the
+  // lamps apart (uFaceLight.y and .z: 0 as drawn, 1 by its normal). total is the light by the normal; without the
+  // ambient and the sun, what is left of it is the lamps'.
+  vec3 baseLight = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB);
+  vec3 sunColour = vec3(uSunR, uSunG, uSunB) * uSunIntensity;
+  vec3 sunByNormal = sunColour * (1.0 - uFaceLight.w + uFaceLight.w * sunDirect);
+  vec3 lampsByNormal = max(total - baseLight - sunByNormal, vec3(0.0));
+  return baseLight + mix(sunColour * sunFlat, sunByNormal, uFaceLight.y) + mix(lampFlat, lampsByNormal, uFaceLight.z);
 }
 // #endif FACES
 
