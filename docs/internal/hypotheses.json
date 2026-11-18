@@ -12954,12 +12954,12 @@
     {
       "id": "N-167",
       "title": "Demos start with warnings: the Box2D command ring overflows in 9 of them, and pools run out in Constraint Boxes, Blastforge and Predator",
-      "status": "open",
-      "statusText": "found 2026-11-13 in the same run; owner: the demos come configured so they start without warnings; backlog",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-18 but for Predator's pools (kept) and the baked built-ins (SST-5)",
       "date": "2026-11-13",
       "area": "demos",
       "kind": "bug",
-      "result": "Box2dCommandRing full (capacity 4096), commands dropped in the first seconds: Boids 281 526, Predator 48 584, Ants 27 104, Little City 23 659, Balls 13 912, Gear Chain 5 906, Water & Boxes 3 916, Oriented Boxes 1 112, Constraint Boxes 912. Constraint Boxes: joint pool full (physics.maxJoints 4096). Blastforge: Prop pool full (220 slots). Predator: Flash pool full (32 slots) and ParticleEmitter.emit pool exhausted (particle.maxParticles). Gear Chain: Ball's field myColor first written after onSpawned. Oriented Boxes with physics.commandRingCapacity 65536 started without its warning (a check in the scratch clone, nothing committed).",
+      "result": "Kept 2026-11-18 (R-1449): no ring overflow in any demo; Blastforge, Gear Chain, Constraint Boxes clean; Predator's pool warnings stay (its pools fill by design); the baked atlases' missing built-ins go with SST-5.",
       "next": "Per demo: physics.commandRingCapacity, physics.maxJoints, the pool counts and particle.maxParticles sized to what the scene does (or its spawns spread over frames), and myColor declared in Ball's constructor; a run of every demo that fails on any warning keeps it that way. An engine question first: whether a full ring should keep dropping commands after one warning (what they carried is lost) or grow or wait.",
       "refs": [
         "REVIEW_PLAN.md#N-167"
@@ -12974,7 +12974,8 @@
         "maxParticles"
       ],
       "records": [
-        "R-1049"
+        "R-1049",
+        "R-1449"
       ]
     },
     {
@@ -16821,12 +16822,12 @@
     {
       "id": "E-317",
       "title": "Spatial's neighbour rows are 2 050 bytes apart (Predator maxNeighbors 1024): at crowd 2.5 the rows and cand regions are 118 MB each, and each entity's row head costs a TLB walk plus a DRAM read-for-ownership, exposed once per entity",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "rejected",
+      "statusText": "rejected 2026-11-18",
       "date": "2026-11-15",
       "area": "spatial",
       "kind": "speed",
-      "result": "Verified (R-1100): predatorScene.js sets maxNeighbors 1024, two rows per 4 KB page. E-307 found the publish's cost is writing these rows; gather_batch + publish_batch are 69 % of spatial at crowd 2.5 and the largest refills in Chrome (19.3 + 4.9 % of all, R-1100; E-295). The candidate loop fills the reorder buffer before the next entity's row head is asked for (R-1104); wasm has no prefetch instruction. Estimate spatial -5 to -15 %.",
+      "result": "Rejected 2026-11-18 (R-1448): volatile early loads of entity n+D's row heads; publish 4 to 8 % slower at D = 4, 8, 16 (0 of 9 pairs), the whole spatial frame a tie; a wasm load holds the reorder buffer as E-314 found. Branch opt/e317-row-heads kept, not merged.",
       "next": "Load entity n+8's row and cand heads into an unused local in the publish (and the gather) so the misses overlap: spatialPublishWasmMicrobench --n 57600 with and without (same rows). Then the structural one, E-15's packed rows (prefix-sum offsets, one region per worker: 2.5-3.6x in its kernel at 17 500 entities), or a smaller maxNeighbors where the scene allows it.",
       "refs": [
         "EXECUTION_PLAN.md#E-317"
@@ -16842,9 +16843,9 @@
         "R-1104",
         "R-1219",
         "R-1231",
-        "R-1236"
-      ],
-      "rank": 9
+        "R-1236",
+        "R-1448"
+      ]
     },
     {
       "id": "E-318",
@@ -23690,6 +23691,20 @@
       "area": "load",
       "date": "2026-11-18",
       "statusText": "found 2026-11-18 by SST-0's first waterfalls (SCENE_STARTUP_TIME_PLAN section 6)"
+    },
+    {
+      "records": [
+        "R-1449",
+        "R-1450"
+      ],
+      "refs": [],
+      "id": "N-310",
+      "title": "Box2D's joint table is fixed at 4 096 (MAX_JOINTS in box2d/src/wasm_wrapper.c) while physics.maxJoints accepts any count: joints past it fail at create",
+      "status": "open",
+      "kind": "bug",
+      "area": "physics",
+      "date": "2026-11-18",
+      "statusText": "found 2026-11-18 by N-167 in Constraint Boxes (500 boxes x 10 joints)"
     }
   ],
   "records": [
@@ -37615,6 +37630,46 @@
         "b4af7157",
         "6ac8033b"
       ]
+    },
+    {
+      "id": "R-1448",
+      "date": "2026-11-18",
+      "time": "18:45",
+      "timeFrom": "recorded",
+      "title": "E-317 rejected in the kernel: early loads of the row heads, publish -4 to -8 % (0 of 9 pairs), the spatial frame a tie",
+      "verdict": "rejected",
+      "text": "**E-317 rejected in the kernel: early loads of the neighbour-row heads make spatial's publish 4 to 8 % slower and the\nwhole spatial frame a tie (branch opt/e317-row-heads, bfb8748f and 6180b5b2, not merged).** An agent built both kernels\n(publish_batch, gather_batch and their _u32 forms) with volatile loads of entity n+D's candidate-row and neighbour-row\nheads (kept by clang, wasm-opt and V8's TurboFan: a movzxwl whose register nothing reads), D selectable per call, D = 0\nthe old loop; checksums equal for every D at n 2 000 and 57 600; tests/node/spatialRowAhead.test.js; node 3091, demos\n121.\n\nTiming, Node 22, Predator crowd 2.5's shape (57 600 entities, 1 worker, 32 a cell, the predator types, cell order,\nmaxNeighbors 1024), 2026-11-18 18:43 to 18:45 (four agents' processes were alive; every comparison alternates in one\nprocess or across processes):\n- publish alone, `--ahead 0,4,8,16 --rounds 9`: 40 ops/s at D = 0; D = 4 -8.0 %, D = 8 -6.8 %, D = 16 -4.2 %, each\n  SLOWER in 0 of 9 pairs.\n- the whole spatial frame (runKernelVariants, ordered@D on both kernels, 4 rounds): D = 4 -2.3 %, D = 8 +0.4 %,\n  D = 16 +0.1 %: ties.\nWhy, as E-314 (R-1109) found in Box2D: a wasm load is not a prefetch; it cannot retire until its line arrives, so it\nholds the reorder buffer instead of overlapping the next entity's work. Left: the agent's other variant (touch the heads\nof a group of entities together every few entities, so their misses run in parallel), or E-15's packed rows, which\nremove the 2 050-byte stride; reopen with one of those.",
+      "commits": [
+        "bfb8748f",
+        "6180b5b2"
+      ]
+    },
+    {
+      "id": "R-1449",
+      "date": "2026-11-18",
+      "time": "19:05",
+      "timeFrom": "recorded",
+      "title": "N-167 mostly done: every demo's command ring holds its spawn burst; Constraint Boxes at 400 boxes; Predator's pools kept (they fill by design)",
+      "verdict": "kept-hygiene",
+      "text": "**N-167 mostly done: the demos' Box2D command rings sized to their spawn bursts, Boids' flock spawned 1 000 a frame,\nBlastforge's Prop pool, Constraint Boxes' joints, Ball and Box declaring myColor (fix/n167-demo-warnings, an agent, then\n293756bc and 41137d9b).** demoWarnings over the 36 demos (Playwright's Chromium, here the AMD iGPU, so every demo also\nprints DX-IGPUWARN's integrated-GPU line, allowed with `--allow \"integrated GPU\"`): no command ring overflows any more.\nRings: Predator, Ants (bichos), Little City 65 536; Balls 32 768; Boids, Gear Chain, Water & Boxes 16 384; Oriented\nBoxes, Constraint Boxes 8 192 (each a power of two at least 20 % over R-1049's peak; Boids' over one frame's burst).\nBlastforge's Prop pool 220 -> 13 500 (spawnProps places 13 409, its seeded loop replayed). Constraint Boxes: 400\nboxes (4 000 joints) instead of 500: Box2D's wasm_wrapper.c holds MAX_JOINTS 4096 whatever physics.maxJoints says, so\nthe last hundred boxes had no joints (N-310); with 400, demoWarnings clean.\n\nLeft, on purpose or elsewhere:\n- Predator fills its flash and particle pools in a fight at 32 and 10 000 and at 128 and 30 000 alike: its pools stay\n  as they were (a larger pool only adds load to the engine's reference scene), so its two pool warnings stay; the owner\n  may decide otherwise.\n- littleCity and Predator: \"animationNameToIndex missing _lightGlow\" (and _lightGradientHalf in Predator): their baked\n  atlases predate those built-ins; handed to SST-5's atlas work (a baked atlas gets the built-ins it lacks at load).",
+      "commits": [
+        "8e3c3233",
+        "00facc9d",
+        "817cb43e",
+        "c3853e0e",
+        "043bcf6b",
+        "293756bc",
+        "41137d9b"
+      ]
+    },
+    {
+      "id": "R-1450",
+      "date": "2026-11-18",
+      "time": "19:06",
+      "timeFrom": "recorded",
+      "title": "N-310 filed: Box2D's joint table fixed at 4 096 whatever physics.maxJoints says",
+      "verdict": "note",
+      "text": "**N-310 filed: Box2D's joint table is fixed at 4 096 (MAX_JOINTS in box2d/src/wasm_wrapper.c, static arrays g_joints and\ng_joint_free_stack) while physics.maxJoints accepts any count:** joints past 4 096 fail at create with \"WASM joint table\nfull\", one warning. Found by N-167 in Constraint Boxes (500 boxes x 10 joints). The fix is in Box2D (the table sized\nfrom maxJoints at bind_game_buffers, or a larger static cap), both builds and the LiquidFun gates; until then the config\nshould refuse or clamp a maxJoints over the wrapper's get_joint_capacity()."
     }
   ],
   "leads": [
