@@ -6,6 +6,7 @@ import fs from 'node:fs';
 
 import { SUN_MAP_ZMAX, sunMapLanding, sunMapTerms, sunMapVertex } from '../../src/render/sunShadowMap.js';
 import { shaderWithFlag } from '../../src/render/faceMap.js';
+import { HEIGHT_PER_ROW_CODES, HEIGHT_PER_ROW_STEPS } from '../../src/render/frameBase.js';
 import { LIGHTING_DEFAULTS } from '../../src/util/configDefaults.js';
 import { unknownConfigKeys } from '../../src/util/configKeys.js';
 
@@ -52,19 +53,33 @@ test('the layer shadows\' sun card stands on the frame\'s lowest opaque row, not
   const src = shader('instancedSpriteShadow.vert.glsl');
   // The trim's bottom (the lowest opaque row): heights count up from it, and the foot is where it is drawn.
   assert.match(src, /float bottom = aInstTrim\.y \+ aInstTrim\.w;/);
-  assert.match(src, /float sunZ = max\(bottom - content\.y, 0\.0\) \* abs\(aInstScale\.y\) \/ uSunK\.w \* height;/);
+  // A row above the foot is height, a picture of one view standing upright (N-297: a render's rows are part depth).
+  assert.match(src, /float rows = \(bottom - content\.y\) \* abs\(aInstScale\.y\);/);
+  assert.match(src, /float rowDepth = 0\.0;\n    float rowHeight = height \/ uSunK\.w;/);
+  assert.match(src, /float sunZ = rows \* rowHeight;/);
   assert.match(src, /vec2 foot = vec2\(aInstXY\.x, \(aInstXY\.y \+ \(bottom - aInstAnchor\.y \* aInstSize\.y\) \* aInstScale\.y\) \* uGroundInvScaleY\);/);
   // Its columns run along sunPerp: the sun's perpendicular, or a fixed card's axis (DX-CASTER).
   assert.match(src, /vec2 sunPerp = uSunPerp\.xy;/);
-  assert.match(src, /vec2 land = foot \+ \(content\.x - footCol\) \* aInstScale\.x \* sunPerp - sunZ \* uSunK\.xy;/);
+  assert.match(src, /vec2 land = foot \+ \(content\.x - footCol\) \* aInstScale\.x \* sunPerp - toView \* \(rows \* rowDepth\) - sunZ \* uSunK\.xy;/);
   // A base in the texture table's spare floats moves the foot: an ellipse's edge, or a render's lowest contact.
   assert.match(src, /aInstBase = t2\.zw;/);
   assert.match(src, /foot \+= toSun \* sqrt\(rx \* rx \* toSun\.x \* toSun\.x \+ ry \* ry \* toSun\.y \* toSun\.y\);/);
-  assert.match(src, /foot = vec2\(aInstXY\.x, aInstXY\.y \* uGroundInvScaleY\) \+ toSun \* reach;/);
+  assert.match(src, /foot = vec2\(aInstXY\.x, aInstXY\.y \* uGroundInvScaleY\) \+ toView \* reach;/);
+  // N-297: a render's card leans back by its frame's height per row (the base's first float's fraction, frameBase.js
+  // HEIGHT_PER_ROW_CODES and _STEPS) and turns by its frame's turn from the sun (the texture float's fraction, 128ths).
+  assert.match(src, /float contactRow = floor\(packed\) \+ 0\.5;/);
+  assert.match(src, new RegExp(`float perRowCode = floor\\(fract\\(packed\\) \\* ${HEIGHT_PER_ROW_CODES}\\.0 \\+ 0\\.5\\);`));
+  assert.match(src, new RegExp(`float heightShare = clamp\\(\\(perRowCode - 1\\.0\\) / ${HEIGHT_PER_ROW_STEPS}\\.0 \\* uSunK\\.w, 0\\.0, 1\\.0\\);`));
+  assert.match(src, /rowDepth = \(1\.0 - heightShare\) \* uGroundInvScaleY;\n        rowHeight = heightShare \* height \/ uSunK\.w;/);
+  assert.match(src, /float turnCode = floor\(fract\(aInstTexId\) \* 128\.0 \+ 0\.5\);/);
   // The old skewed sprite (stretched by shadowLengthRatio, turned on the screen) is gone from the sun's branch.
   assert.doesNotMatch(src, /uSun\.z/);
   const wgsl = shader('instancedSpriteShadow.wgsl');
-  assert.match(wgsl, /let sunZ = max\(bottom - content\.y, 0\.0\) \* abs\(aInstScale\.y\) \/ uniforms\.uSunK\.w \* height;/);
+  assert.match(wgsl, /let sunZ = rows \* rowHeight;/);
+  assert.match(wgsl, new RegExp(`let perRowCode = floor\\(fract\\(packed\\) \\* ${HEIGHT_PER_ROW_CODES}\\.0 \\+ 0\\.5\\);`));
+  assert.match(wgsl, new RegExp(`let heightShare = clamp\\(\\(perRowCode - 1\\.0\\) / ${HEIGHT_PER_ROW_STEPS}\\.0 \\* uniforms\\.uSunK\\.w, 0\\.0, 1\\.0\\);`));
+  assert.match(wgsl, /let turnCode = floor\(fract\(aInstTexId\) \* 128\.0 \+ 0\.5\);/);
+  assert.match(wgsl, /let land = foot \+ \(content\.x - footCol\) \* aInstScale\.x \* sunPerp - toView \* \(rows \* rowDepth\) - sunZ \* uniforms\.uSunK\.xy;/);
   assert.match(wgsl, /uSunK: vec4<f32>,\n  uSunPerp: vec4<f32>,\n\}/);
   assert.doesNotMatch(wgsl, /uSun\.z/);
 });
@@ -86,7 +101,7 @@ test('the map\'s vertex shader is the layer shadows\' with the same sun card, it
   assert.match(src, /out float vSunZ;/);
   // Its columns run along sunPerp: the sun's perpendicular, or a fixed card's axis (DX-CASTER).
   assert.match(src, /vec2 sunPerp = uSunPerp\.xy;/);
-  assert.match(src, /vec2 land = foot \+ \(content\.x - footCol\) \* aInstScale\.x \* sunPerp - sunZ \* uSunK\.xy;/);
+  assert.match(src, /vec2 land = foot \+ \(content\.x - footCol\) \* aInstScale\.x \* sunPerp - toView \* \(rows \* rowDepth\) - sunZ \* uSunK\.xy;/);
   assert.match(src, /vSunZ = sunZ;/);
   // DX-CASTER: the caster's opacity rides in vColor.g into the map's texel (its G); DX-GBUF: its entity (the row's tint
   // float), which the map keeps with its highest caster by the depth test.

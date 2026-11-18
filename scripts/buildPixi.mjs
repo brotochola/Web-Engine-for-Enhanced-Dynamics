@@ -350,7 +350,8 @@ function patchPixiDrawGarbage() {
           file,
         );
       });
-      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gpu[\\/]pipeline[\\/]PipelineSystem\.mjs$/, (src, file) =>
+      // SST-7: and the pipelines built ahead (pipelinesAhead), in this onLoad: esbuild takes the first one that answers.
+      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gpu[\\/]pipeline[\\/]PipelineSystem\.mjs$/, (src, file) => pipelinesAhead(
         replaceOnce(
           src,
           '    let pipeline = this._pipeCache.get(key);\n    if (!pipeline) {\n' +
@@ -365,7 +366,8 @@ function patchPixiDrawGarbage() {
             '    return pipeline;\n',
           file,
         ),
-      );
+        file,
+      ));
       patchModule(build, /[\\/]rendering[\\/]renderers[\\/]shared[\\/]geometry[\\/]Geometry\.mjs$/, (src, file) =>
         replaceOnce(
           src,
@@ -526,6 +528,76 @@ function patchPixiParallelLinks() {
       });
     },
   };
+}
+
+/**
+ * SST-7 step 3 (E-495): Pixi makes a WebGPU render pipeline the first time it draws with it, with the synchronous
+ * createRenderPipeline: Dawn compiles it on the GPU process's thread and the frames wait. So:
+ * - _createPipeline comes in two halves: _weedPipelineDescriptor builds the descriptor, _createPipeline makes it as before.
+ * - PipelineSystem.weedPipelineAhead(geometry, program, state, topology, renderTarget) builds, with
+ *   createRenderPipelineAsync, the pipeline getPipeline would make for that draw into `renderTarget` (its formats, sample
+ *   count, depth and flip; the colour mask whole and the stencil off, as a pass starts), and puts it in the cache
+ *   getPipeline reads, under the same key, once built. The system's own target state is left as it was.
+ */
+const PIPELINE_AHEAD = `    return descriptor;
+  }
+  /** WeedJS (SST-7): getPipeline's pipeline for this draw into renderTarget, built ahead, asynchronously; null if it has one. */
+  weedPipelineAhead(geometry, program, state, topology, renderTarget) {
+    const saved = [this._multisampleCount, this._colorTargetCount, this._colorFormat, this._colorFormatId,
+      this._depthStencilFormat, this._depthStencilFormatData, this._depthReadOnly, this._invertFrontFace];
+    const colorMask = this._colorMask;
+    const stencilMode = this._stencilMode;
+    this._colorMask = 15;
+    this.setStencilMode(STENCIL_MODES.DISABLED);
+    this.setRenderTarget(renderTarget);
+    let built = null;
+    try {
+      if (!geometry._layoutKey) {
+        ensureAttributes(geometry, program.attributeData);
+        this._generateBufferKey(geometry);
+      }
+      topology || (topology = geometry.topology);
+      const key = getGraphicsStateKey(
+        geometry._layoutKey, program._layoutKey, state.data, state._blendModeId, topologyStringToId[topology], emptyOverrides.id
+      );
+      const cache = this._pipeCache;
+      this._weedBuilding || (this._weedBuilding = /* @__PURE__ */ new WeakMap());
+      let building = this._weedBuilding.get(cache);
+      if (!building) this._weedBuilding.set(cache, building = /* @__PURE__ */ new Set());
+      if (!cache.has(key) && !building.has(key)) {
+        building.add(key);
+        const descriptor = this._weedPipelineDescriptor(geometry, program, state, topology, emptyOverrides);
+        built = this._gpu.device.createRenderPipelineAsync(descriptor).then((pipeline) => {
+          building.delete(key);
+          if (!cache.has(key)) cache.set(key, pipeline);
+        }, (error) => {
+          building.delete(key);
+          throw error;
+        });
+      }
+    } finally {
+      [this._multisampleCount, this._colorTargetCount, this._colorFormat, this._colorFormatId,
+        this._depthStencilFormat, this._depthStencilFormatData, this._depthReadOnly, this._invertFrontFace] = saved;
+      this._colorMask = colorMask;
+      this.setStencilMode(stencilMode);
+      this._updatePipeHash();
+    }
+    return built;
+  }
+`;
+
+/** SST-7: PipelineSystem's source with the pipelines built ahead (applied in patchPixiDrawGarbage's onLoad of it). */
+function pipelinesAhead(src, file) {
+  src = replaceOnce(
+    src,
+    '  _createPipeline(geometry, program, state, topology, overrides) {\n    const device = this._gpu.device;\n',
+    '  _createPipeline(geometry, program, state, topology, overrides) {\n' +
+      '    return this._gpu.device.createRenderPipeline(this._weedPipelineDescriptor(geometry, program, state, topology, overrides));\n' +
+      '  }\n' +
+      '  _weedPipelineDescriptor(geometry, program, state, topology, overrides) {\n',
+    file,
+  );
+  return replaceOnce(src, '    const pipeline = device.createRenderPipeline(descriptor);\n    return pipeline;\n  }\n', PIPELINE_AHEAD, file);
 }
 
 const result = await esbuild.build({

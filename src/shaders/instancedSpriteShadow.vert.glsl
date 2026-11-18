@@ -134,12 +134,20 @@ void main() {
     // per px of height is uSunK.xy, all in the floor's terms (y over floorScaleY).
     alpha = sunKind >= 3 ? 0.0 : uSun.w * castOpacity;
     float bottom = aInstTrim.y + aInstTrim.w;
-    float sunZ = max(bottom - content.y, 0.0) * abs(aInstScale.y) / uSunK.w * height;
+    // The picture's rows above the card's foot (screen px), and what a row is: px of depth on the floor, away from where
+    // the picture is seen from, and px of height. A picture of one view stands upright: every row is height.
+    float rows = (bottom - content.y) * abs(aInstScale.y);
+    float rowDepth = 0.0;
+    float rowHeight = height / uSunK.w;
     // The picture's column at the card's foot, and the foot: under the lowest row, unless the frame's base says more.
     float footCol = anchor.x * aInstSize.x;
     vec2 foot = vec2(aInstXY.x, (aInstXY.y + (bottom - aInstAnchor.y * aInstSize.y) * aInstScale.y) * uGroundInvScaleY);
     float kLen = length(uSunK.xy);
     vec2 toSun = kLen > 1e-6 ? uSunK.xy / kLen : vec2(0.0);
+    // The floor direction towards where the picture is seen from (the sun, unless a render's frame says otherwise), and
+    // the one its columns run along.
+    vec2 toView = toSun;
+    vec2 sunPerp = uSunPerp.xy;
     if (aInstBase.x >= 1.0) {
       // One view: the base is an ellipse on the floor (the feet; a trunk, round), its centre one radius north of the
       // lowest row. The card stands on its edge towards the sun, so the whole base lies on its own shadow.
@@ -157,17 +165,49 @@ void main() {
     } else if (aInstBase.x < 0.0) {
       // A render: this frame is the view from the sun (the sun where the camera is), so its contact nearest the sun is
       // its lowest one. The card stands there, that far from the anchor towards the sun.
-      float reach = (-aInstBase.x - 1.0 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uGroundInvScaleY;
-      foot = vec2(aInstXY.x, aInstXY.y * uGroundInvScaleY) + toSun * reach;
+      // N-297: the base's first float keeps the contact's whole row and, in its fraction, how much height a row of the
+      // picture is (frameBase.js lutBaseFloats; 0: not measured).
+      float packed = -aInstBase.x - 1.0;
+      float contactRow = floor(packed) + 0.5;
+      float perRowCode = floor(fract(packed) * 512.0 + 0.5);
+      // N-297: the frame is the direction nearest the sun's, up to half a step of the sheet's directions to a side
+      // (6 degrees for a car's sheet), and a card that faced the sun turned the whole picture by that much: the shadow
+      // turned with the sun and jumped back at each new frame. Pre-render says how far the frame's own view is from the
+      // sun's, in the row's texture float's fraction (preRenderWorker.js sunFrameTurnCode: 128ths, 0 none, else 32 is no
+      // turn and a step 0.75 degrees): the picture's floor stays where the object is, and only its heights fall along the
+      // sun's ray.
+      float turnCode = floor(fract(aInstTexId) * 128.0 + 0.5);
+      if (turnCode > 0.5) {
+        float turn = (turnCode - 32.0) * 0.01308996939;
+        float tc = cos(turn);
+        float ts = sin(turn);
+        toView = vec2(toSun.x * tc - toSun.y * ts, toSun.x * ts + toSun.y * tc);
+        sunPerp = vec2(sunPerp.x * tc - sunPerp.y * ts, sunPerp.x * ts + sunPerp.y * tc);
+      }
+      float reach = (contactRow - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uGroundInvScaleY;
+      foot = vec2(aInstXY.x, aInstXY.y * uGroundInvScaleY) + toView * reach;
+      rows = (contactRow - content.y) * abs(aInstScale.y);
+      // N-297: that frame is drawn from the camera's pitch, so a row above the contact is part depth on the floor and
+      // part height. Every row taken for height was right only for a sun as high as the camera looks down (44 degrees
+      // on the light bench): a higher sun pulled the far side's shadow under the object, a lower one stretched it. The
+      // card leans back instead, by the frame's own measure: its top edge lands where the object's far top edge does.
+      if (perRowCode > 0.5) {
+        float heightShare = clamp((perRowCode - 1.0) / 256.0 * uSunK.w, 0.0, 1.0);
+        rowDepth = (1.0 - heightShare) * uGroundInvScaleY;
+        rowHeight = heightShare * height / uSunK.w;
+      }
     }
-    vec2 sunPerp = uSunPerp.xy;
     if (castFixed) {
-      // DX-CASTER: a fixed card stands along the object through its anchor (the frame shows it face on).
+      // DX-CASTER: a fixed card stands along the object through its anchor (the frame shows it face on), upright.
       foot = vec2(aInstXY.x, aInstXY.y * uGroundInvScaleY);
       footCol = aInstAnchor.x * aInstSize.x;
       sunPerp = castAxis;
+      rows = (bottom - content.y) * abs(aInstScale.y);
+      rowDepth = 0.0;
+      rowHeight = height / uSunK.w;
     }
-    vec2 land = foot + (content.x - footCol) * aInstScale.x * sunPerp - sunZ * uSunK.xy;
+    float sunZ = rows * rowHeight;
+    vec2 land = foot + (content.x - footCol) * aInstScale.x * sunPerp - toView * (rows * rowDepth) - sunZ * uSunK.xy;
     world = vec2(land.x, land.y / uGroundInvScaleY);
     // weed:sunOut
   }

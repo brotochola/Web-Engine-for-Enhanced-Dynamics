@@ -311,6 +311,35 @@ const SUN_TURN = new Float64Array(1);
 const LAMP_TURN = new Float64Array(1);
 /** N-197: a caster's kind for a light that casts its card (CAST_KIND.SPRITE, shadowCaster.js). */
 const CARD_KIND = 1;
+/**
+ * N-297: the turn of the frame sunFrameFor last gave, as the fraction its row's sun frame carries (a double the frame
+ * passes read, not one they are handed): 0 for none, else a code in 128ths, 32 no turn and a step CARD_TURN_STEP
+ * (instancedSpriteShadow.vert.glsl reads it). A render's card shows the direction nearest the sun's view, up to half a
+ * step of its sheet's directions to a side (6 degrees for a car's sheet, whose frames are not drawn at even turns); a
+ * card that faced the sun turned the whole picture by that much, so the shadow turned with the sun and jumped back at
+ * each new frame. With the turn the picture's floor stays where the object is. Only a sheet that stands on a contact (a
+ * render with a height map) carries one: a picture of one view is a wall that faces the sun.
+ */
+const SUN_FRAME_TURN = new Float64Array(1);
+const CARD_TURN_STEP = (0.75 * Math.PI) / 180;
+const CARD_TURN_CODES = 128;
+const CARD_TURN_ZERO = 32;
+const CARD_TURN_MOST = 31;
+const TURN_WHOLE = 2 * Math.PI;
+
+/**
+ * N-297: SUN_FRAME_TURN for a card that shows table t's direction d to a light turned SUN_TURN from the camera, the
+ * object drawn at direction cur: how far the frame's own view is from the light's (their headings' difference, wrapped,
+ * in steps; past CARD_TURN_MOST steps a side it is held there).
+ */
+function sunFrameTurnCode(t, cur, d) {
+    let a = t.angles[cur] + SUN_TURN[0] - t.angles[d];
+    a -= TURN_WHOLE * Math.round(a / TURN_WHOLE);
+    let c = Math.round(a / CARD_TURN_STEP);
+    if (c > CARD_TURN_MOST) c = CARD_TURN_MOST;
+    else if (c < -CARD_TURN_MOST) c = -CARD_TURN_MOST;
+    SUN_FRAME_TURN[0] = (c + CARD_TURN_ZERO) / CARD_TURN_CODES;
+}
 
 /**
  * N-203: whether directional caster e casts its card for a light kind (`lamps` false: the sun). Its kind for that light
@@ -351,6 +380,9 @@ export function prepareSunFrames(tables, proxy, starts, counts, shift, shiftTurn
  * sun, 1) as every card does; only its solid keeps the camera's frame (its columns are built from it). N-203: and so does
  * any caster whose kind for the sun is not a card (castsCard), whatever its sheet: a height map asked of a car's sheet,
  * which casts its card by default, is built from the camera's frame too.
+ * N-297: and SUN_FRAME_TURN, the frame's turn from the sun's view for a sheet that stands on a contact (0 for any other),
+ * which the frame passes add to the row's frame. Such a sheet's frame is the direction nearest the one drawn turned by
+ * the sun, not the facing: the shadow belongs to the picture on the screen.
  */
 function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds) {
     if (active[e] !== 1 || mode[e] !== 1 || (casts !== null && casts[e] !== 1)) return 0;
@@ -360,6 +392,7 @@ function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables
     const fixed = orients !== null && orients[e] === 1;
     const cur = dirs[e];
     let d = 0;
+    SUN_FRAME_TURN[0] = 0;
     if (fixed) {
         // DX-CASTER: a fixed card shows the object face on whatever the light (its axis rides in its code).
         d = t.front;
@@ -368,7 +401,18 @@ function sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables
         let f = frames !== null ? frames[e] | 0 : 0;
         if (f < 0 || f >= t.maxFrames) f = 0;
         const g = anims[e];
+        if (t.contact) {
+            let shown = cur + shift[sheet];
+            if (shown >= t.count) shown -= t.count;
+            sunFrameTurnCode(t, cur, shown);
+        }
         return t.frameOf[(cur * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
+    } else if (t.contact && cur < t.count) {
+        // N-297: the direction nearest the drawn one turned by the sun.
+        PICK_ARGS[0] = t.angles[cur] + SUN_TURN[0];
+        PICK_ARGS[1] = 0;
+        d = pickDirectionArgs(t, 255);
+        sunFrameTurnCode(t, cur, d);
     } else {
         d = sunFrameDirection(t, e, SUN_TURN);
     }
@@ -410,7 +454,7 @@ export function applySunFramesFor(rows, sunN, casters, types, entities, active, 
         rows[at + GPU_ROW_TINT] = e;
         const v = sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
         if (v === 0) continue;
-        rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
+        rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1 + SUN_FRAME_TURN[0];
         const sx = scaleX[row];
         if ((v < 0) !== (sx < 0)) rows[at + GPU_ROW_SCALE_X] = -sx;
     }
@@ -430,7 +474,7 @@ function applySunFramesReadBack(rows, sunN, casters, types, entities, active, mo
         rows[at + GPU_ROW_TINT] = e;
         const v = sunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
         if (v === 0) continue;
-        rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
+        rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1 + SUN_FRAME_TURN[0];
         const sx = rows[at + GPU_ROW_SCALE_X];
         if ((v < 0) !== (sx < 0)) rows[at + GPU_ROW_SCALE_X] = -sx;
     }
@@ -440,6 +484,7 @@ function applySunFramesReadBack(rows, sunN, casters, types, entities, active, mo
  * DX-SHADOW3D (plan §17.2): the keyed caster rows' sun frames. The kernel wrote a keyed row for each queue row it found
  * casting (type 3 left out, a shadow height above 0), in queue order, with 0 in its fourth float; this walks the queue the
  * same way and writes there the entity's sun frame (sunFrameFor, worked out here: E-368; prepareSunFrames ran).
+ * N-297: with a render's card's turn in the frame's fraction (SUN_FRAME_TURN), as the full rows' texture float has it.
  */
 export function applyKeyedSunFramesFor(rows, keyedN, count, qType, shadowH, types, entities, active, mode, casts, sheets,
     dirs, anims, frames, tables, shift, orients, kinds = null) {
@@ -450,7 +495,7 @@ export function applyKeyedSunFramesFor(rows, keyedN, count, qType, shadowH, type
         const k = n++;
         if (types[i] !== 0) continue;
         const v = sunFrameFor(entities[i], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
-        if (v !== 0) rows[k * GPU_KEYED_CASTER_FLOATS + 3] = v;
+        if (v !== 0) rows[k * GPU_KEYED_CASTER_FLOATS + 3] = v < 0 ? v - SUN_FRAME_TURN[0] : v + SUN_FRAME_TURN[0];
     }
 }
 
@@ -463,7 +508,7 @@ export function applyListedSunFramesFor(rows, list, listed, active, mode, casts,
     orients, kinds) {
     for (let m = 0; m < listed; m++) {
         const v = sunFrameFor(list[2 * m + 1], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
-        if (v !== 0) rows[list[2 * m] * GPU_KEYED_CASTER_FLOATS + 3] = v;
+        if (v !== 0) rows[list[2 * m] * GPU_KEYED_CASTER_FLOATS + 3] = v < 0 ? v - SUN_FRAME_TURN[0] : v + SUN_FRAME_TURN[0];
     }
 }
 
@@ -478,7 +523,7 @@ export function applyListedFullSunFramesFor(rows, list, listed, active, mode, ca
         const v = sunFrameFor(list[2 * m + 1], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
         if (v === 0) continue;
         const at = list[2 * m] * GPU_CASTER_FLOATS;
-        rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
+        rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1 + SUN_FRAME_TURN[0];
         const sx = rows[at + GPU_ROW_SCALE_X];
         if ((v < 0) !== (sx < 0)) rows[at + GPU_ROW_SCALE_X] = -sx;
     }
@@ -530,14 +575,18 @@ export function syncKeyedSunTables(sun, tables) {
         if (t === undefined) continue;
         const w = sheet * KEYED_SUN_SHEET_WORDS;
         const size = t.count * t.groups * t.maxFrames;
-        const need = t.uniform ? 2 * size : size;
+        // N-297: a uniform table on a contact has only its frames by direction copied (its turn's frames stay with the JS).
+        const need = t.uniform && !t.contact ? 2 * size : size;
         let flags = KEYED_SUN_TABLE | (t.solid ? KEYED_SUN_SOLID : 0) | (t.contact ? KEYED_SUN_CONTACT : 0);
         if (size > 0 && t.front >= 0 && t.front < t.count && t.frameAt.length >= size
             && (!t.uniform || t.frameOf.length >= size) && at + need <= pool.length) {
             desc[w + KEYED_SUN_SHEET.FRAME_AT] = sun.poolByte + at * 4;
             for (let k = 0; k < size; k++) pool[at + k] = t.frameAt[k];
             at += size;
-            if (t.uniform) {
+            // N-297: a sheet that stands on a contact has its sun frames left to the JS (sunFrameFor), which gives each
+            // its turn (SUN_FRAME_TURN): the scan resolves a uniform table's frames with none. The lamps' frames do not
+            // read this flag.
+            if (t.uniform && !t.contact) {
                 flags |= KEYED_SUN_UNIFORM;
                 desc[w + KEYED_SUN_SHEET.FRAME_OF] = sun.poolByte + at * 4;
                 for (let k = 0; k < size; k++) pool[at + k] = t.frameOf[k];
@@ -2170,30 +2219,40 @@ class PreRenderWorker extends AbstractWorker {
                 throw new Error('[PRE_RENDER] the render queue has no emit regions in the render-queue memory '
                     + '(renderQueueLayout.emit for this entity count): the emit kernel has nothing to run on');
             }
-            try {
-                this._emitWasm = await bindPreRenderEmit(data.renderQueueMemory, emitLayout);
-                this._keyedFrames = emitLayout.keyHeaderByte >= 0;
-                if (this._keyedFrames) {
-                    this._keyedHeader = new Uint32Array(data.renderQueueMemory.buffer, emitLayout.keyHeaderByte, PIXI_KEYED_HEADER_WORDS);
-                    this._keyedKeyBase = data.renderQueueLayout.pixiKeyBase | 0;
-                    this._keyedTexUpdates = (data.renderQueueLayout.pixiKeyTexUpdatesByte ?? -1) > 0;
-                }
-            } catch (err) {
-                throw new Error(`[PRE_RENDER] preRenderEmit.wasm did not load: ${err?.message ?? err}`, { cause: err });
+            // SST-2: every kernel on the render-queue memory bound side by side (none needs another's), each one's
+            // result taken below where it was awaited alone: the emit, the sprite collect (W4b), and with a GPU queue
+            // the painter sort (W10), the pack (E-76 W9) and the shadow stamp (E-114).
+            const collectLayout = data.renderQueueLayout?.collect || null;
+            const gpuQueueOn = !!(data.gpuQueue && data.gpuQueue.dataA && data.gpuQueue.dataB && data.gpuQueue.caps);
+            const painterLayout = gpuQueueOn ? data.renderQueueLayout?.preRenderPainter || null : null;
+            const painterOn = gpuQueueOn && this._ySort && !!data.renderQueueMemory && painterLayout !== null;
+            if (painterOn && painterLayout.rows < maxItems) {
+                throw new Error(`[PRE_RENDER] the painter state holds ${painterLayout.rows} rows for a queue of ${maxItems}`);
+            }
+            const packOn = gpuQueueOn && !!data.renderQueueMemory && !!data.renderQueueLayout;
+            const stampOn = packOn && !!data.renderQueueLayout.stamp;
+            const notLoaded = (name) => (err) => {
+                throw new Error(`[PRE_RENDER] ${name}.wasm did not load: ${err?.message ?? err}`, { cause: err });
+            };
+            const [emitBound, collectBound, painterBound, packBound, stampBound] = await Promise.all([
+                bindPreRenderEmit(data.renderQueueMemory, emitLayout).catch(notLoaded('preRenderEmit')),
+                collectLayout ? bindPreRenderCollect(data.renderQueueMemory, collectLayout).catch(notLoaded('preRenderCollect')) : null,
+                painterOn ? bindPainterRadix(data.renderQueueMemory, painterLayout).catch(notLoaded('painterRadix')) : null,
+                packOn ? bindGpuPack(data.renderQueueMemory, data.renderQueueLayout).catch(notLoaded('gpuPack')) : null,
+                stampOn ? bindShadowStamp(data.renderQueueMemory, data.renderQueueLayout.stamp) : null,
+            ]);
+            this._emitWasm = emitBound;
+            this._keyedFrames = emitLayout.keyHeaderByte >= 0;
+            if (this._keyedFrames) {
+                this._keyedHeader = new Uint32Array(data.renderQueueMemory.buffer, emitLayout.keyHeaderByte, PIXI_KEYED_HEADER_WORDS);
+                this._keyedKeyBase = data.renderQueueLayout.pixiKeyBase | 0;
+                this._keyedTexUpdates = (data.renderQueueLayout.pixiKeyTexUpdatesByte ?? -1) > 0;
             }
             // W27: the Adobe roots too, from a copy of the registry's assets (deserialized before initialize).
             if (bindEmitAdobe(this._emitWasm, emitLayout)) this._copyEmitAdobeAssets();
             // W4b: the sprite collect runs only in preRenderCollect.wasm, on Transform, its pose and Collider in the
             // memory (the scene lays them out whenever the emit reads sprites or glows).
-            this._collectWasm = null;
-            const collectLayout = data.renderQueueLayout?.collect || null;
-            if (collectLayout) {
-                try {
-                    this._collectWasm = await bindPreRenderCollect(data.renderQueueMemory, collectLayout);
-                } catch (err) {
-                    throw new Error(`[PRE_RENDER] preRenderCollect.wasm did not load: ${err?.message ?? err}`, { cause: err });
-                }
-            }
+            this._collectWasm = collectBound;
             // W27: the pose stash in the memory too when the emit kernel expands Adobe roots (the collect writes
             // the poses there on a frame with one, _bindCollectPoses).
             const stashIn = emitLayout !== null && emitLayout.persistRows === maxItems && emitLayout.stashXByte >= 0;
@@ -2233,19 +2292,9 @@ class PreRenderWorker extends AbstractWorker {
                 ];
                 // W10: the painter sort is painterRadix.wasm on pre-render's painter state, next to the keys it
                 // writes, when pre-render sorts (the scene lays the state out then); the slot lists it sorts are
-                // regions there too.
-                this._gpuPainterWasm = null;
-                const painterLayout = data.renderQueueLayout?.preRenderPainter || null;
-                if (this._ySort && data.renderQueueMemory && painterLayout) {
-                    if (painterLayout.rows < maxItems) {
-                        throw new Error(`[PRE_RENDER] the painter state holds ${painterLayout.rows} rows for a queue of ${maxItems}`);
-                    }
-                    try {
-                        this._gpuPainterWasm = await bindPainterRadix(data.renderQueueMemory, painterLayout);
-                    } catch (err) {
-                        throw new Error(`[PRE_RENDER] painterRadix.wasm did not load: ${err?.message ?? err}`, { cause: err });
-                    }
-                } else if (this._ySort && this._sortSprites === SORT_SPRITES_PRERENDER
+                // regions there too. Bound above with the emit.
+                this._gpuPainterWasm = painterBound;
+                if (!painterOn && this._ySort && this._sortSprites === SORT_SPRITES_PRERENDER
                     && this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER) {
                     console.error('[PRE_RENDER] pre-render sorts the sprites (preRender.sortSprites), but the render-queue '
                         + 'memory has no painter state for it: they are drawn unsorted');
@@ -2267,11 +2316,7 @@ class PreRenderWorker extends AbstractWorker {
                 if (!data.renderQueueMemory || !data.renderQueueLayout) {
                     throw new Error('[PRE_RENDER] the GPU queue has no render-queue memory: gpuPack.wasm has nothing to pack');
                 }
-                try {
-                    this._gpuPackWasm = await bindGpuPack(data.renderQueueMemory, data.renderQueueLayout);
-                } catch (err) {
-                    throw new Error(`[PRE_RENDER] gpuPack.wasm did not load: ${err?.message ?? err}`, { cause: err });
-                }
+                this._gpuPackWasm = packBound;
                 // E-82b: plain sprites in two streams (E-513: a nearest atlas too, its pixel snap on the poses).
                 this._gpuSplit = true;
                 this._gpuStaticGen.fill(0);
@@ -2279,12 +2324,8 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuIndexedGen.fill(0);
                 // E-114: the shadow stamp in WASM, where its scratch and light table are stamp regions (made with
                 // shadows and sun casters; without them nothing is stamped).
-                this._stampWasm = null;
-                this._stampScan = null;
-                if (data.renderQueueMemory && data.renderQueueLayout?.stamp) {
-                    this._stampWasm = await bindShadowStamp(data.renderQueueMemory, data.renderQueueLayout.stamp);
-                    this._stampScan = stampScanTarget(this._stampWasm);
-                }
+                this._stampWasm = stampBound;
+                this._stampScan = stampBound !== null ? stampScanTarget(stampBound) : null;
                 const cookieN = Math.max(1, caps.maxCookie | 0);
                 if (cookieN > 0) {
                     // A render queue of the cookies' rows: in the stamp's regions of the render-queue memory when it
@@ -2556,29 +2597,20 @@ class PreRenderWorker extends AbstractWorker {
             throw new Error('[PRE_RENDER] the visibility memory could not be made (a shared WebAssembly.Memory was refused): '
                 + 'lighting.walls needs it');
         }
-        let sweep;
-        try {
-            sweep = await bindVisibilitySweep(vm, { maxVerts, f32: this.config?.wasm?.visibilitySweepF32 !== false });
-        } catch (err) {
-            throw new Error(`[PRE_RENDER] visibilitySweep.wasm did not load: ${err?.message ?? err}`, { cause: err });
-        }
+        const notLoaded = (name) => (err) => {
+            throw new Error(`[PRE_RENDER] ${name}.wasm did not load: ${err?.message ?? err}`, { cause: err });
+        };
+        // SST-2: the sweep, the solids' raster and the gather bound side by side (none needs another's).
+        const [sweep, solid, gather] = await Promise.all([
+            bindVisibilitySweep(vm, { maxVerts, f32: this.config?.wasm?.visibilitySweepF32 !== false }).catch(notLoaded('visibilitySweep')),
+            vm.layout.solidBytes > 0 ? bindSolidSegments(vm).catch(notLoaded('solidSegments')) : null,
+            place ? bindVisibilityGather(memory, v, vm).catch(notLoaded('visibilityGather')) : null,
+        ]);
         this._visSweep = sweep;
         this._visMemory = vm.memory;
         bindPolarBins(vm.views.polarDist, vm.views.polarOwner);
-        if (vm.layout.solidBytes > 0) {
-            try {
-                if (await bindSolidSegments(vm)) this._visCollectSolid = collectSolidWasm;
-            } catch (err) {
-                throw new Error(`[PRE_RENDER] solidSegments.wasm did not load: ${err?.message ?? err}`, { cause: err });
-            }
-        }
-        if (place) {
-            try {
-                this._visGather = await bindVisibilityGather(memory, v, vm);
-            } catch (err) {
-                throw new Error(`[PRE_RENDER] visibilityGather.wasm did not load: ${err?.message ?? err}`, { cause: err });
-            }
-        }
+        if (solid) this._visCollectSolid = collectSolidWasm;
+        if (place) this._visGather = gather;
         return vm.views;
     }
 

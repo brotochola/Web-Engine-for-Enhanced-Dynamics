@@ -34,6 +34,10 @@
 //   ?depth=1|0    renderer.pixelDepth on or off (default: on by itself, an oblique camera with maps)
 //   ?res=         lighting.resolution and shadowResolution (default 1: the canvas's own size)
 //   ?cycle=       the day cycle, in hours a second (default 0: the hour stays)
+//   ?carFacing= ?sunTurn= ?carSun=sprite|heightmap  for captures of the cars' shadows: every car's facing (world
+//                 degrees) in place of the farm's turns, the sun's Direction to start at (degrees), and what the
+//                 cars cast with the sun (their silhouette, or their height map) in place of their sheet's way
+//   ?carEven=1    the cars' frames taken as even 7.5° turns (frame number × 7.5), not the headings their sheets keep
 
 import WEED from '/src/index.js';
 import { BENCH_ASSETS, benchSheetSpec, nextCarFacing, sheetScale } from './benchAssets.js';
@@ -96,6 +100,10 @@ const LAMP_MAP = param('lampMap') !== '0';
 const WALLS = param('walls') === '1';
 const wanted = (sheet) => ONLY === null || ONLY.has(sheet);
 const HOUR = Number(param('hour')) || 16;
+// For captures of the cars' shadows: every car's facing, the sun's turn to start at, what the cars cast with the sun.
+const CAR_FACING = param('carFacing') === null || param('carFacing') === '' ? null : Number(param('carFacing'));
+const SUN_TURN = Number(param('sunTurn')) || 0;
+const CAR_SUN = param('carSun') === 'sprite' ? 'sprite' : param('carSun') === 'heightmap' ? 'heightMap' : null;
 const HOURS = [10, 16, 18.5, 22];
 const W = 1500;
 const H = 960;
@@ -127,7 +135,7 @@ const RES = numberParam('res', 1, 0.1, 2);
 const CYCLE = numberParam('cycle', 0, 0, 24);
 
 const spritesheets = {};
-for (const name of Object.keys(BENCH_ASSETS)) spritesheets[name] = benchSheetSpec(name, MAPS);
+for (const name of Object.keys(BENCH_ASSETS)) spritesheets[name] = benchSheetSpec(name, MAPS, param('carEven') === '1');
 
 /** The anchor each sheet's cells share (every frame's foot there) and its scale next to the bench's art. */
 function anchorOn(go, sheet) {
@@ -393,7 +401,7 @@ export class LightBenchScene extends Scene {
   _hour = HOUR;
   _cycle = CYCLE;
   _sunHeight = 90;
-  _sunTurn = 0;
+  _sunTurn = SUN_TURN;
   _intensity = 1;
   /** Elements: { kind: 'prop'|'car'|'tree'|'char', sheet, anim, index, x, y, facing, look, off } */
   _elements = [];
@@ -428,7 +436,8 @@ export class LightBenchScene extends Scene {
       // The prototype's turn is counter-clockwise on the floor; a facing is the world's angle (clockwise, y down). A car's
       // turn is its heading; a prop's frame k is its model turned k steps, frame 0 at facing 90° (its sheet's stand table).
       const turn = Math.floor(rnd() * 360);
-      const facing = (BENCH_ASSETS[sheet].kind === 'car' ? -turn : 90 - turn) * DEG;
+      const isCar = BENCH_ASSETS[sheet].kind === 'car';
+      const facing = isCar && CAR_FACING !== null ? CAR_FACING * DEG : (isCar ? -turn : 90 - turn) * DEG;
       if (!wanted(sheet)) continue;
       this._addElement(BENCH_ASSETS[sheet].kind === 'car' ? 'car' : 'prop', sheet, null, x, y, facing);
     }
@@ -504,6 +513,7 @@ export class LightBenchScene extends Scene {
 
   _addElement(kind, sheet, anim, x, y, facing) {
     const el = { kind, sheet, anim, index: -1, x, y, facing, look: defaultLook(sheet), off: null };
+    if (kind === 'car' && CAR_SUN !== null) el.look.sun = CAR_SUN;
     this._elements.push(el);
     this._spawnElement(el);
     return el;

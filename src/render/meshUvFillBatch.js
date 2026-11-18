@@ -26,6 +26,18 @@ import { colliderFillGlProgram } from './webgl/colliderFillGlsl.js';
 import { dummyLutSource } from './instancedSpriteBatch.js';
 import { MESH_UV_VERT_FLOATS, MESH_UV_VERT_STRIDE, writeMeshPoseTable } from './colliderFillBatch.js';
 
+/**
+ * The batch's program as a Shader's options. On WebGL it comes from GlProgram.from, one program for every layer's batch
+ * (the first one's name): E-494 makes it at the renderer's init, and a batch made on a layer's first UV mesh finds it linked.
+ * @param {boolean} useWebGpu
+ * @param {object|null} shaders the engine shaders (meshUvFill, or meshUvFillVert and meshUvFillFrag)
+ * @param {string} name
+ */
+export function meshUvFillProgram(useWebGpu, shaders, name) {
+  if (useWebGpu) return { gpuProgram: colliderFillGpuProgram(GpuProgram, shaders?.meshUvFill, name, true) };
+  return { glProgram: colliderFillGlProgram(GlProgram, shaders?.meshUvFillVert, shaders?.meshUvFillFrag, name) };
+}
+
 /** The vec4 attributes a vertex record is read as (aVert0..aVert3): MESH_UV_VERT_FLOATS / 4. */
 export const MESH_UV_VERT_VEC4 = MESH_UV_VERT_FLOATS / 4;
 
@@ -143,18 +155,7 @@ export class MeshUvFillBatch {
     };
 
     const name = label || 'mesh-uv-fill';
-    if (useWebGpu) {
-      const gpuProgram = colliderFillGpuProgram(GpuProgram, shaders?.meshUvFill, name, true);
-      this.shader = new Shader({ gpuProgram, resources });
-    } else {
-      const glProgram = colliderFillGlProgram(
-        GlProgram,
-        shaders?.meshUvFillVert,
-        shaders?.meshUvFillFrag,
-        name,
-      );
-      this.shader = new Shader({ glProgram, resources });
-    }
+    this.shader = new Shader({ ...meshUvFillProgram(useWebGpu, shaders, name), resources });
 
     const state = new State();
     state.blend = true;

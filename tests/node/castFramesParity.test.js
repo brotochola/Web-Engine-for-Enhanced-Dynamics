@@ -8,6 +8,10 @@
 // E-393: the lamps' frames of the keyed and full stamp rows written by gpuPack.wasm's lamp_frames, and the rows it leaves
 // to the JS, against the JS passes (applyKeyedLampFramesInto, applyLampFramesInto) and the reference. E-394: the full sun
 // rows' frames written by the caster pack itself (its framed gather and scatter), and the rows it leaves to the JS.
+// N-297: the sun's frames of a sheet that stands on a contact are no longer what they were: the row's frame carries the
+// frame's turn from the sun's view in its fraction, and an uneven table shows the direction nearest the drawn one turned by
+// the sun. The reference has its own copy of that rule, written from it and not taken from the worker, so the sun's rows
+// are still held to one reference bit for bit; the lamps' rows are held to the passes as they were.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -29,7 +33,9 @@ const GPU_ROW_TINT = 9;
 const GPU_ROW_TEXTURE = 10;
 
 // ---------------------------------------------------------------------------------------------------------------------
-// The reference: preRenderWorker.js's frame passes at bdcca2e7, verbatim but for the names.
+// The reference: preRenderWorker.js's frame passes at bdcca2e7, verbatim but for the names, plus N-297's rule for the
+// sun's frames of a sheet that stands on a contact (REF_SUN_FRAME_TURN, refSunFrameTurnCode and the lines marked N-297),
+// which is this file's own copy of the rule. The lamps' passes are verbatim.
 
 function refSunFrameTables(byId) {
   if (!byId) return null;
@@ -115,6 +121,26 @@ const REF_SUN_TURN = new Float64Array(1);
 const REF_LAMP_TURN = new Float64Array(1);
 const REF_LAMP_RAY = new Float64Array(2);
 const CARD_KIND = 1;
+// N-297: the turn of the frame refSunFrameFor last gave, as the fraction its row's frame carries: 0 for none, else a code
+// in 128ths, 32 for no turn, a step of 0.75 degrees and 31 steps a side at most (so a code is 1 to 63, below a half).
+const REF_SUN_FRAME_TURN = new Float64Array(1);
+const REF_CARD_TURN_STEP = (0.75 * Math.PI) / 180;
+const REF_CARD_TURN_CODES = 128;
+const REF_CARD_TURN_ZERO = 32;
+const REF_CARD_TURN_MOST = 31;
+
+/**
+ * N-297: REF_SUN_FRAME_TURN for a card that shows table t's direction d, its object drawn at direction cur: how far the
+ * sun's view (the drawn direction turned by the sun) is from the frame's own, wrapped to half a turn a side, in steps.
+ */
+function refSunFrameTurnCode(t, cur, d) {
+  let a = t.angles[cur] + REF_SUN_TURN[0] - t.angles[d];
+  a -= 2 * Math.PI * Math.round(a / (2 * Math.PI));
+  let c = Math.round(a / REF_CARD_TURN_STEP);
+  if (c > REF_CARD_TURN_MOST) c = REF_CARD_TURN_MOST;
+  else if (c < -REF_CARD_TURN_MOST) c = -REF_CARD_TURN_MOST;
+  REF_SUN_FRAME_TURN[0] = (c + REF_CARD_TURN_ZERO) / REF_CARD_TURN_CODES;
+}
 
 function refCastsCard(t, kinds, e, lamps) {
   const k = kinds !== null ? kinds[e] : 0;
@@ -145,13 +171,28 @@ function refSunFrameFor(e, active, mode, casts, sheets, dirs, anims, frames, tab
   const fixed = orients !== null && orients[e] === 1;
   const cur = dirs[e];
   let d = 0;
+  // N-297: no turn, unless the sheet stands on a contact and the card is not a fixed one (below).
+  REF_SUN_FRAME_TURN[0] = 0;
   if (fixed) {
     d = t.front;
   } else if (t.uniform && cur < t.count) {
     let f = frames !== null ? frames[e] | 0 : 0;
     if (f < 0 || f >= t.maxFrames) f = 0;
     const g = anims[e];
+    if (t.contact) {
+      // N-297: the frame is the same; the direction it shows is the one drawn turned by the table's whole steps.
+      let shown = cur + shift[sheet];
+      if (shown >= t.count) shown -= t.count;
+      refSunFrameTurnCode(t, cur, shown);
+    }
     return t.frameOf[(cur * t.groups + (g < t.groups ? g : 0)) * t.maxFrames + f];
+  } else if (t.contact && cur < t.count) {
+    // N-297: an uneven table on a contact shows the direction nearest the one drawn turned by the sun, not the one
+    // nearest the facing: the shadow belongs to the picture on the screen.
+    PICK_ARGS[0] = t.angles[cur] + REF_SUN_TURN[0];
+    PICK_ARGS[1] = 0;
+    d = pickDirectionArgs(t, 255);
+    refSunFrameTurnCode(t, cur, d);
   } else {
     d = refSunFrameDirection(t, e, REF_SUN_TURN);
   }
@@ -173,7 +214,8 @@ function refApplySunFramesFor(rows, sunN, casters, types, entities, active, mode
     const v = refSunFrameFor(entities[row], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
     if (v === 0) continue;
     const at = k * GPU_CASTER_FLOATS;
-    rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1;
+    // N-297: the texture, and the frame's turn in its fraction.
+    rows[at + GPU_ROW_TEXTURE] = (v < 0 ? -v : v) - 1 + REF_SUN_FRAME_TURN[0];
     const sx = rows[at + GPU_ROW_SCALE_X];
     rows[at + GPU_ROW_SCALE_X] = (v < 0) === (sx < 0) ? sx : -sx;
   }
@@ -196,8 +238,42 @@ function refApplyKeyedSunFramesFor(rows, keyedN, count, qType, shadowH, types, e
     const k = n++;
     if (types[i] !== 0) continue;
     const v = refSunFrameFor(entities[i], active, mode, casts, sheets, dirs, anims, frames, tables, shift, orients, kinds);
-    if (v !== 0) rows[k * GPU_KEYED_CASTER_FLOATS + 3] = v;
+    // N-297: the frame's turn in its fraction, away from 0 on either side (the sign is still the mirror).
+    if (v !== 0) rows[k * GPU_KEYED_CASTER_FLOATS + 3] = v < 0 ? v - REF_SUN_FRAME_TURN[0] : v + REF_SUN_FRAME_TURN[0];
   }
+}
+
+/**
+ * N-297: whether caster e shows the sun a card, not a fixed one, of a uniform table that stands on a contact, with a
+ * direction drawn (refSunFrameFor's tests, in its order). gpuPack.wasm wrote such a caster's frame itself until N-297
+ * (where the region held its sheet) and now always leaves it to the JS, which gives it its turn. The tests of what the
+ * kernel lists count these rows apart, so what they asked of the other rows listed is asked of them still.
+ */
+function refTurnedOnUniform(e, active, mode, casts, sheets, dirs, tables, orients, kinds) {
+  if (active[e] !== 1 || mode[e] !== 1 || (casts !== null && casts[e] !== 1)) return false;
+  const t = tables[sheets[e]];
+  if (t === undefined || !refCastsCard(t, kinds, e, false)) return false;
+  if (orients !== null && orients[e] === 1) return false;
+  return t.uniform && t.contact && dirs[e] < t.count;
+}
+
+/**
+ * N-297: the keyed rows of refTurnedOnUniform's casters, walked as refApplyKeyedSunFramesFor walks the queue: the pairs
+ * (keyed row, entity) the scan's list holds for them, in its order.
+ */
+function refKeyedRowsTurned(keyedN, count, qType, shadowH, types, entities, active, mode, casts, sheets, dirs, tables,
+  orients, kinds) {
+  const out = [];
+  let n = 0;
+  for (let i = 0; i < count && n < keyedN; i++) {
+    if (qType && qType[i] === 3) continue;
+    if (!(shadowH[i] > 0)) continue;
+    const k = n++;
+    if (types[i] !== 0) continue;
+    const e = entities[i];
+    if (refTurnedOnUniform(e, active, mode, casts, sheets, dirs, tables, orients, kinds)) out.push(k, e);
+  }
+  return out;
 }
 
 function refFastAtan2(y, x) {
@@ -1163,7 +1239,9 @@ function scanColumns(mem, variant) {
  * The queue in sm scanned twice: without the frames, then the keyed rows' pass before E-372 (the reference copy, on its
  * prepared tables); and with them (the shipped tables synced into the region), then the rows the scan listed. The same
  * rows bit for bit.
- * @returns {{ framed: number, listed: number }} the rows whose frame the scan wrote (not 0) and the rows it listed
+ * @returns {{ framed: number, listed: number, list: number[], turned: number[] }} the rows whose frame the scan wrote
+ *   (not 0), the rows it listed, their pairs (keyed row, entity) as far as the list holds them, and the pairs of the rows
+ *   N-297 took from the scan (refKeyedRowsTurned), all of which it lists
  */
 function scanBoth(m, sm, refTables, refShift, newTables, newShift, variant, typed, cap, label) {
   const { q, mem, b } = sm;
@@ -1182,11 +1260,14 @@ function scanBoth(m, sm, refTables, refShift, newTables, newShift, variant, type
   framedWithXy(sm, qq, count, cap, variant, keyedN, sun.listed, label);
   let framed = 0;
   for (let k = 0; k < keyedN; k++) if (mem.got[k * GPU_KEYED_CASTER_FLOATS + 3] !== 0) framed++;
+  const list = Array.from(b.keyedSun.list.subarray(0, 2 * Math.min(sun.listed, b.keyedSun.listCap)));
+  const turned = refKeyedRowsTurned(keyedN, count, qq.type, qq.shadowH, mem.types, mem.entities, mem.active, mem.mode,
+    sun.casts, mem.sheets, mem.dirs, refTables, sun.orients, sun.kinds);
   m.applyListedSunFramesFor(mem.got, b.keyedSun.list, sun.listed, mem.active, mem.mode, sun.casts, mem.sheets, mem.dirs,
     mem.anims, sun.frames, newTables, newShift, sun.orients, sun.kinds);
   const floats = keyedN * GPU_KEYED_CASTER_FLOATS;
   sameBits(mem.ref.subarray(0, floats), mem.got.subarray(0, floats), label, GPU_KEYED_CASTER_FLOATS);
-  return { framed, listed: sun.listed };
+  return { framed, listed: sun.listed, list, turned };
 }
 
 /**
@@ -1231,13 +1312,18 @@ function framedWithXy(sm, qq, count, cap, variant, keyedN, listed, label) {
   assert.deepEqual([...mem.bounds], [minX, minY, maxX, maxY, nan, keyedN], `${label}: the bounds`);
 }
 
-/** Random scenes' frames through scanBoth: the sun's turn, the columns' variant, the type column and the cap change. */
+/**
+ * Random scenes' frames through scanBoth: the sun's turn, the columns' variant, the type column and the cap change.
+ * @returns {{ framed: number, listed: number, turned: number }} over every frame: the rows whose frame the scan wrote,
+ *   the rows it listed, and among those the rows N-297 took from it (scanBoth's `turned`); `adjust.frame`, when there is
+ *   one, is handed each frame's own
+ */
 async function scanScenes(seeds, frames, adjust = null) {
   const m = await worker();
   const n = 1500;
   let framed = 0;
   let listed = 0;
-  let mostListed = 0;
+  let turned = 0;
   for (const seed of seeds) {
     const s = makeScene(seed, n);
     if (adjust) adjust.scene(s);
@@ -1260,25 +1346,31 @@ async function scanScenes(seeds, frames, adjust = null) {
       m.prepareSunFrames(newTables, proxy, s.starts, s.counts, newShift, newShiftTurn, turn);
       m.syncKeyedSunTables(sm.b.keyedSun, newTables);
       if (adjust) adjust.synced(sm, newTables);
-      const got = scanBoth(m, sm, refTables, refShift, newTables, newShift, variant, frame !== 2, frame & 1 ? 1500 : 600,
-        `seed ${seed} frame ${frame}`);
+      const label = `seed ${seed} frame ${frame}`;
+      const cap = frame & 1 ? 1500 : 600;
+      const got = scanBoth(m, sm, refTables, refShift, newTables, newShift, variant, frame !== 2, cap, label);
       framed += got.framed;
       listed += got.listed;
-      if (got.listed > mostListed) mostListed = got.listed;
+      turned += got.turned.length / 2;
+      if (adjust && adjust.frame) adjust.frame(got, label);
       stepScene(s);
       if (adjust) adjust.scene(s);
     }
   }
-  return { framed, listed, mostListed };
+  return { framed, listed, turned };
 }
 
 test('E-372: the keyed caster scan writes the keyed rows\' sun frames as before, the JS the rows it lists', async () => {
-  const { framed, listed } = await scanScenes([31, 32, 33, 34], 8);
-  assert.ok(framed > 4000, `the scan wrote frames (${framed})`);
-  assert.ok(listed > 100, `and listed rows for the JS: uneven tables, no direction drawn (${listed})`);
+  const { framed, listed, turned } = await scanScenes([31, 32, 33, 34], 8);
+  // N-297 took the casters of the uniform sheets on a contact from the scan (it wrote over 4000 frames here before):
+  // they are counted apart, so the rows listed for the old reasons are still seen to be there.
+  assert.ok(framed > 2500, `the scan wrote frames (${framed})`);
+  assert.ok(turned > 1500, `and listed the casters of uniform sheets on a contact for the JS to turn (${turned})`);
+  const others = listed - turned;
+  assert.ok(others > 100, `and the other rows it leaves to the JS: uneven tables, no direction drawn (${others})`);
 });
 
-test('E-372: on uniform tables every caster with a direction drawn takes its frame from the scan, none from the JS', async () => {
+test('E-372: on uniform tables the scan frames every caster with a direction drawn but those on a contact (N-297)', async () => {
   // Only the uniform tables, and each caster's direction one of its table's.
   const uniformOnly = (s) => {
     for (const id of Object.keys(s.sources)) if (!s.sources[id].uniform) delete s.sources[id];
@@ -1287,9 +1379,23 @@ test('E-372: on uniform tables every caster with a direction drawn takes its fra
       if (src) s.e.dirs[i] %= src.count;
     }
   };
-  const { framed, mostListed } = await scanScenes([41, 42], 6, { scene: uniformOnly, tables() {}, synced() {} });
-  assert.ok(framed > 2000, `the scan wrote frames (${framed})`);
-  assert.equal(mostListed, 0, 'no row left to the JS');
+  let frames = 0;
+  const adjust = {
+    scene: uniformOnly,
+    tables() {},
+    synced() {},
+    // N-297: the scan no longer decides every row here. What it leaves to the JS is each caster of a sheet that stands
+    // on a contact, row for row, and nothing else: any other caster listed, or one of those not listed, fails this.
+    frame(got, label) {
+      frames++;
+      assert.deepEqual(got.list, got.turned, `${label}: the rows left to the JS are the casters of the sheets on a contact`);
+    },
+  };
+  const { framed, turned } = await scanScenes([41, 42], 6, adjust);
+  assert.equal(frames, 12, 'every frame\'s list was read');
+  // Both kinds of sheet are in these scenes (the scan wrote over 2000 frames here before N-297 took the second kind).
+  assert.ok(framed > 800, `the scan wrote frames (${framed})`);
+  assert.ok(turned > 1200, `and left the casters of the sheets on a contact to the JS (${turned})`);
 });
 
 test('E-372: a sheet whose frames the region cannot hold, or whose front is no direction, goes to the JS as before', async () => {
@@ -1316,9 +1422,10 @@ test('E-372: a sheet whose frames the region cannot hold, or whose front is no d
       if (n > deferred) deferred = n;
     },
   };
-  const { framed, listed } = await scanScenes([51, 52], 6, adjust);
+  const { framed, listed, turned } = await scanScenes([51, 52], 6, adjust);
   assert.ok(deferred >= 3, `sheets left to the JS (${deferred})`);
-  assert.ok(framed > 200 && listed > 300, `the scan wrote frames (${framed}) and listed rows (${listed})`);
+  // N-297's rows (the casters of uniform sheets on a contact, listed whatever the pool holds) are not counted here.
+  assert.ok(framed > 200 && listed - turned > 300, `the scan wrote frames (${framed}) and listed rows (${listed - turned})`);
 });
 
 test('E-372: _packGpuSun keyed on the real worker, the scan writing the frames: the keyed rows as before', async () => {
@@ -1900,7 +2007,9 @@ function sunPackOpts(q, list, n) {
 /**
  * Random scenes' full sun rows packed twice: the plain pack, then applySunFramesFor with the queue's scales (the worker's
  * old path); and the framed pack (its tables synced into the region), then finishFullSunFrames. The same rows bit for bit.
- * @returns {{ framed: number, listed: number, scatter: number, gather: number }}
+ * @returns {{ framed: number, listed: number, turned: number, scatter: number, gather: number }} the rows the pack
+ *   framed and the rows it listed, among those the rows N-297 took from it (refTurnedOnUniform's casters), and the calls
+ *   of each pack
  */
 async function fullSunScenes(seeds, frames, rows, adjust = null) {
   const m = await worker();
@@ -1908,11 +2017,13 @@ async function fullSunScenes(seeds, frames, rows, adjust = null) {
   const n = 1500;
   let framed = 0;
   let listed = 0;
+  let turned = 0;
   let scatter = 0;
   let gather = 0;
   for (const seed of seeds) {
     const s = makeScene(seed, n);
     bindDirectionalSprite(s.ds);
+    const refTables = refSunFrameTables(s.sources);
     const fm = await fullSunMemory(rows, n);
     const { q, mem, b } = fm;
     const realScatter = b.castersScatterFramed;
@@ -1954,18 +2065,28 @@ async function fullSunScenes(seeds, frames, rows, adjust = null) {
       m.finishFullSunFrames(mem.got, nGot, sun, b.keyedSun, list, mem.types, mem.entities, tables, shift, q.scaleX);
       const floats = nRef * GPU_CASTER_FLOATS;
       sameBits(mem.ref.subarray(0, floats), mem.got.subarray(0, floats), `seed ${seed} frame ${frame}`);
-      if (sun.framed) framed += nGot - Math.min(sun.listed, nGot);
+      if (sun.framed) {
+        framed += nGot - Math.min(sun.listed, nGot);
+        for (let k = 0; k < nGot; k++) {
+          const row = list[k];
+          if (mem.types[row] === 0 && refTurnedOnUniform(mem.entities[row], mem.active, mem.mode, sun.casts, mem.sheets,
+            mem.dirs, refTables, sun.orients, sun.kinds)) turned++;
+        }
+      }
       stepScene(s);
     }
   }
-  return { framed, listed, scatter, gather };
+  return { framed, listed, turned, scatter, gather };
 }
 
 test('E-394: full sun rows from the framed pack, gathered: the same rows as the pack and applySunFramesFor', async () => {
-  const { framed, listed, gather, scatter } = await fullSunScenes([121, 122, 123], 6, 1500);
+  const { framed, listed, turned, gather, scatter } = await fullSunScenes([121, 122, 123], 6, 1500);
   assert.ok(gather > 0 && scatter === 0, `the gather took these lists (${gather}, ${scatter})`);
   assert.ok(framed > 3000, `rows framed by the pack (${framed})`);
-  assert.ok(listed > 30, `rows left to the JS: uneven tables, no direction drawn, NaN scales (${listed})`);
+  // N-297: the casters of uniform sheets on a contact are the JS's too now, counted apart from the rows left before it.
+  assert.ok(turned > 1000, `rows of uniform sheets on a contact left to the JS, which turns them (${turned})`);
+  const others = listed - turned;
+  assert.ok(others > 30, `the other rows left to the JS: uneven tables, no direction drawn, NaN scales (${others})`);
 });
 
 test('E-394: full sun rows from the framed pack, scattered: the same rows as the pack and applySunFramesFor', async () => {
@@ -1980,8 +2101,9 @@ test('E-394: more rows for the JS than the list holds: applySunFramesFor writes 
       fm.b.keyedSun.listCap = 3;
     },
   };
-  const { listed } = await fullSunScenes([126, 127], 4, 1500, adjust);
-  assert.ok(listed > 3 * 8, `rows listed past the list (${listed})`);
+  const { listed, turned } = await fullSunScenes([126, 127], 4, 1500, adjust);
+  // Without N-297's rows (the casters of uniform sheets on a contact), as it was: the others alone outrun the list.
+  assert.ok(listed - turned > 3 * 8, `rows listed past the list (${listed - turned})`);
 });
 
 test('E-394: a pool that holds few sheets, or no region: the JS writes their frames, as before', async () => {
@@ -1992,8 +2114,9 @@ test('E-394: a pool that holds few sheets, or no region: the JS writes their fra
       fm.b.keyedSun = region;
     },
   };
-  const { listed } = await fullSunScenes([128], 4, 1500, small);
-  assert.ok(listed > 100, `rows of the sheets the pool does not hold left to the JS (${listed})`);
+  const { listed, turned } = await fullSunScenes([128], 4, 1500, small);
+  // Without N-297's rows (the casters of uniform sheets on a contact, the JS's whatever the pool holds).
+  assert.ok(listed - turned > 100, `rows of the sheets the pool does not hold left to the JS (${listed - turned})`);
   const none = {
     framed: false,
     tables(tables, fm) {
@@ -2150,4 +2273,142 @@ test('E-394: _packGpuSun full rows on the real worker, the pack writing the fram
     Object.assign(ShadowCaster, saved);
     Sun.unbind();
   }
+});
+
+// ---------------------------------------------------------------------------------------------------------------------
+// N-297: the turn a full sun row carries, read as the shadow's vertex shader reads it: the fraction of the row's texture
+// float, in 128ths. The tests above hold the passes to the reference bit for bit; this one says what the bits mean, with
+// two turns worked out by hand, so a rule misread the same way in the worker and in the reference would still fail.
+
+/** A direction table as the scene sends it, made by hand: one group, an animation a direction, no mirror, on a contact. */
+function contactSheet(degrees, uniform) {
+  const angles = degrees.map((d) => (d * Math.PI) / 180);
+  const count = angles.length;
+  return {
+    count,
+    uniform,
+    start: angles[0],
+    step: TWO_PI / count,
+    angles,
+    anim: Array.from({ length: count }, (_, k) => k),
+    flip: new Array(count).fill(0),
+    groups: ['g0'],
+    solid: false,
+    contact: true,
+  };
+}
+
+test('N-297: a full sun row carries its frame\'s turn from the sun when its sheet stands on a contact, else none', async () => {
+  const m = await worker();
+  const n = 900;
+  const rows = 1200;
+  const s = makeScene(141, n);
+  bindDirectionalSprite(s.ds);
+  const { e } = s;
+  // Two sheets on a contact beside the scene's own, their directions chosen so a turn can be worked out by hand: four a
+  // quarter turn apart, and five uneven. Each direction is one texture: 9000 and up, 9100 and up.
+  const EVEN = SHEET_IDS;
+  const UNEVEN = SHEET_IDS + 1;
+  const addSheet = (id, src, firstTexture) => {
+    s.sources[id] = src;
+    const map = {};
+    for (let a = 0; a < src.count; a++) {
+      map[a] = s.starts.length;
+      s.starts.push(firstTexture + a);
+      s.counts.push(1);
+    }
+    s.proxy[id] = map;
+  };
+  addSheet(EVEN, contactSheet([0, 90, 180, 270], true), 9000);
+  addSheet(UNEVEN, contactSheet([10, 60, 75, 230, 320], false), 9100);
+  // A fifth of the scene's casters stand on them, at any of their directions.
+  for (let i = 0; i < n; i += 5) {
+    e.sheets[i] = i % 2 ? EVEN : UNEVEN;
+    e.dirs[i] = Math.floor(s.r() * s.sources[e.sheets[i]].count);
+  }
+  // The two hand-worked casters: drawn at direction 1, their kind left to their sheet (a card), not a fixed one.
+  const stand = (i, sheet) => {
+    e.active[i] = 1;
+    e.mode[i] = 1;
+    e.casts[i] = 1;
+    e.sheets[i] = sheet;
+    e.sunKind[i] = 0;
+    e.orients[i] = 0;
+    e.dirs[i] = 1;
+    e.anims[i] = 0;
+    e.frames[i] = 0;
+  };
+  stand(0, EVEN);
+  stand(1, UNEVEN);
+  const refTables = refSunFrameTables(s.sources);
+  const tables = m.sunFrameTables(s.sources);
+  const refShift = new Int16Array(256);
+  const refShiftTurn = new Float64Array(256).fill(NaN);
+  const shift = new Int16Array(256);
+  const shiftTurn = new Float64Array(256).fill(NaN);
+  // Every queue row casts, so sun row k is queue row k.
+  const casters = Uint32Array.from({ length: rows }, (_, i) => i);
+  const texture = (sunRows, k) => sunRows[k * GPU_CASTER_FLOATS + GPU_ROW_TEXTURE];
+  let even = 0;
+  let uneven = 0;
+  let plain = 0;
+  let short = 0;
+  let past = 0;
+  const turns = [(12 * Math.PI) / 180, -2.2, 0.31, 3.9];
+  for (let frame = 0; frame < turns.length; frame++) {
+    const q = makeQueue(s, rows);
+    // The first two rows are the hand-worked casters'.
+    q.types[0] = 0;
+    q.entities[0] = 0;
+    q.types[1] = 0;
+    q.entities[1] = 1;
+    refPrepareSunFrames(refTables, s.proxy, s.starts, s.counts, refShift, refShiftTurn, turns[frame]);
+    m.prepareSunFrames(tables, s.proxy, s.starts, s.counts, shift, shiftTurn, turns[frame]);
+    const got = Float32Array.from({ length: rows * GPU_CASTER_FLOATS }, () => rowFloat(s.r));
+    for (let k = 0; k < rows; k++) got[k * GPU_CASTER_FLOATS + GPU_ROW_SCALE_X] = q.scaleX[k];
+    m.applySunFramesFor(got, rows, casters, q.types, q.entities, e.active, e.mode, e.casts, e.sheets, e.dirs, e.anims,
+      e.frames, tables, shift, e.orients, e.sunKind, q.scaleX);
+    if (frame === 0) {
+      // The sun 12 degrees round from the camera. Four even directions turn by whole quarter turns, none for 12 degrees:
+      // the frame is the one drawn (direction 1, texture 9001) and the sun's view is 12 degrees past it, 16 steps of
+      // 0.75: code 32 + 16. Of the uneven five, the one drawn (60 degrees) turned by the sun is a view from 72: the
+      // nearest frame is 75 degrees' (direction 2, texture 9102), and the sun's view is 3 degrees short of it, 4 steps:
+      // code 32 - 4.
+      assert.equal(texture(got, 0), 9001 + 48 / 128, 'four even directions, the sun 12 degrees past the frame');
+      assert.equal(texture(got, 1), 9102 + 28 / 128, 'five uneven directions, the sun 3 degrees short of the frame');
+    }
+    for (let k = 0; k < rows; k++) {
+      if (q.types[k] !== 0) continue;
+      const ent = q.entities[k];
+      const v = refSunFrameFor(ent, e.active, e.mode, e.casts, e.sheets, e.dirs, e.anims, e.frames, refTables, refShift,
+        e.orients, e.sunKind);
+      // No frame for the sun: the row keeps the texture the pack gave it.
+      if (v === 0) continue;
+      const want = REF_SUN_FRAME_TURN[0];
+      const what = `turn ${frame} row ${k}`;
+      const x = texture(got, k);
+      const frac = x - Math.floor(x);
+      assert.equal(Math.floor(x), Math.abs(v) - 1, `${what}: its texture`);
+      const t = refTables[e.sheets[ent]];
+      if (!t.contact) {
+        assert.equal(frac, 0, `${what}: a sheet on no contact carries no turn`);
+        plain++;
+        continue;
+      }
+      // On a contact: a turn when the card is not a fixed one and a direction is drawn, and only then.
+      const drawn = e.orients[ent] !== 1 && e.dirs[ent] < t.count;
+      assert.equal(frac !== 0, drawn, `${what}: a turn, or none`);
+      assert.equal(frac, want, `${what}: the reference's turn`);
+      if (!drawn) continue;
+      const code = Math.round(frac * 128);
+      assert.ok(code >= 1 && code <= 63 && code / 128 === frac, `${what}: a code of 1 to 63 in 128ths (${frac})`);
+      if (t.uniform) even++;
+      else uneven++;
+      if (code < 32) short++;
+      else if (code > 32) past++;
+    }
+  }
+  assert.ok(even > 100 && uneven > 100, `rows with a turn, of uniform tables (${even}) and of uneven ones (${uneven})`);
+  assert.ok(short > 50 && past > 50, `turns to either side of the frame's view (${short}, ${past})`);
+  assert.ok(plain > 300, `rows of sheets on no contact, with no turn (${plain})`);
 });

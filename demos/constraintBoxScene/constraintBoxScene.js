@@ -34,8 +34,9 @@ export class ConstraintBoxScene extends WEED.Scene {
         physics: {
             subStepCount: 5,
             noLimitFPS: false,
-            // 500 boxes, 10 distance joints each (4 sides and diagonals, 4 spokes): 5 000 joints.
-            maxJoints: 6144,
+            // 400 boxes, 10 distance joints each (4 sides and diagonals, 4 spokes): 4 000 joints, under Box2D's own
+            // table of 4 096 (MAX_JOINTS in its wasm_wrapper.c, N-310): at 500 boxes the last hundred had none.
+            maxJoints: 4096,
             // The spawn burst queues about 5 000 commands at once: 8 192 holds them.
             commandRingCapacity: 8192,
             sleeping: false,
@@ -59,14 +60,14 @@ export class ConstraintBoxScene extends WEED.Scene {
     };
 
     static entities = [
-        [BoxPart, 3000], // 500 boxes × 5 parts
+        [BoxPart, 2400], // 400 boxes × 5 parts, and spares
         [ConstraintBox, 600],
         [Floor, 16],
     ];
 
     constructor(game) {
         super(game);
-        this.numberOfBoxes = 500;
+        this.numberOfBoxes = 400;
         this._dragIdx = null;
         this._dragOffX = 0;
         this._dragOffY = 0;

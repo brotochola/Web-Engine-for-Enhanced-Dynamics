@@ -43,12 +43,18 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** The page's milestones the summary prints, in load order (a missing one prints as a dash). */
 export const MILESTONES = [
+  'engine wasm',
+  'engine wasm compiled',
   'scene init',
+  'workers made',
+  'boot sent',
+  'wasm module posted',
+  'scripts fetched',
+  'assets started',
   'audio',
   'scripts',
   'box2d block',
   'buffers',
-  'workers made',
   'atlas',
   'tilemaps',
   'flowfields',
