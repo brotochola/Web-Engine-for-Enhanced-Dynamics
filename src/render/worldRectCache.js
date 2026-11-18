@@ -17,6 +17,24 @@ export const WORLD_RECT_EVERY_FRAME_UNIFORMS = Object.freeze(['uTime', 'uDt']);
 export const WORLD_RECT_DIRECT_AFTER = 2;
 /** Frames of the same view, drawn on the stage, before the target is painted again and shown. */
 export const WORLD_RECT_HOLD_FRAMES = 2;
+/**
+ * N-292: frames in a row with a picture uploaded after which the layer gives its cache up for good (worldRectGivesUp).
+ * A picture written every frame can never be held, and the cached layout (a holder of the stage mesh and the target's
+ * sprite) cost textureUploadStressScene's renderer 2.8 times the plain mesh's frame even while it drew directly.
+ */
+export const WORLD_RECT_UPLOADS_GIVE_UP = 30;
+
+/**
+ * N-292: count a frame's picture upload against the cache; true once the layer has uploaded a picture
+ * WORLD_RECT_UPLOADS_GIVE_UP frames in a row, when it should leave its cache for the plain stage mesh. A frame without an
+ * upload starts the count again, so a picture written now and then (a terrain, a fog of war) keeps its cache.
+ * @param {ReturnType<typeof createWorldRectCache>} c
+ * @param {boolean} uploaded whether a picture of the layer went up this frame
+ */
+export function worldRectGivesUp(c, uploaded) {
+  c.uploadRun = uploaded ? c.uploadRun + 1 : 0;
+  return c.uploadRun >= WORLD_RECT_UPLOADS_GIVE_UP;
+}
 
 /** worldRectCacheStep's answers: what the layer does this frame. */
 export const WORLD_RECT_SHOW = 0; // the target shows, as painted
@@ -26,10 +44,10 @@ export const WORLD_RECT_DIRECT = 2; // the mesh draws on the stage, the target h
 /**
  * What the target was last painted for, and the adaptive state. Doubles start as NaN, so the first frame paints.
  * @returns {{ drawn: boolean, zoom: number, x: number, y: number, rot: number, w: number, h: number,
- *   direct: boolean, staleRun: number, held: number }}
+ *   direct: boolean, staleRun: number, held: number, uploadRun: number }}
  */
 export function createWorldRectCache() {
-  return { drawn: false, zoom: NaN, x: NaN, y: NaN, rot: NaN, w: 0, h: 0, direct: false, staleRun: 0, held: 0 };
+  return { drawn: false, zoom: NaN, x: NaN, y: NaN, rot: NaN, w: 0, h: 0, direct: false, staleRun: 0, held: 0, uploadRun: 0 };
 }
 
 /**

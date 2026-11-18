@@ -337,6 +337,7 @@ import {
   createWorldRectCache,
   readsFrameTime,
   worldRectCacheStep,
+  worldRectGivesUp,
   WORLD_RECT_DIRECT,
   WORLD_RECT_SHOW,
 } from '../render/worldRectCache.js';
@@ -9690,7 +9691,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * (_placeWorldCamera), so the target holds what the stage mesh would draw; or, while the view keeps changing, the stage
    * mesh drawn instead.
    */
-  _drawWorldRectCache(cl, changed) {
+  _drawWorldRectCache(cl, changed, uploaded) {
+    // N-292: a picture uploaded frame after frame never holds; the layer leaves its cache for the plain stage mesh.
+    if (worldRectGivesUp(cl.worldCache, uploaded)) {
+      this._dropWorldRectCache(cl);
+      return;
+    }
     const zoom = this._renderZoom;
     const x = this._renderCameraX;
     const y = this._renderCameraY;
@@ -9699,7 +9705,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const h = Math.max(1, this.canvasHeight | 0);
     const step = worldRectCacheStep(cl.worldCache, zoom, x, y, rot, w, h, changed || cl.worldEveryFrame);
     if (step === WORLD_RECT_SHOW) return;
-    if (step === WORLD_RECT_DIRECT) {
+    // N-292: never paint the target in a frame a picture went up: painting a just-uploaded picture into the target made
+    // every later upload of it slow, for good (textureUploadStressScene's renderer 12 -> 40 ms, its cache given up or
+    // not). The mesh draws on the stage this frame; the view is marked unpainted, so the next frame without an upload
+    // paints.
+    if (step === WORLD_RECT_DIRECT || uploaded) {
+      if (uploaded) cl.worldCache.drawn = false;
       if (!cl.worldMesh.visible || cl.displaySprite.visible) {
         cl.worldMesh.visible = true;
         cl.displaySprite.visible = false;
@@ -9725,6 +9736,39 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     o.transform = null;
     this._submitRender(o);
     this._worldRectDraws++;
+  }
+
+  /**
+   * N-292: a cached worldRect layer back to the layout it has without a cache (shader.cache false): its mesh on the stage
+   * where the holder was, registered as the layer, the target, its sprite and the paint mesh gone. The custom-layer loop
+   * then treats it as an uncached worldRect layer (cl.worldRt null), its camera placed on the mesh every frame.
+   */
+  _dropWorldRectCache(cl) {
+    const holder = cl.worldHolder;
+    const mesh = cl.worldMesh;
+    const parent = holder ? holder.parent : null;
+    const at = parent ? parent.getChildIndex(holder) : -1;
+    if (holder) holder.removeChild(mesh);
+    mesh.visible = true;
+    if (parent) {
+      parent.addChildAt(mesh, at);
+      parent.removeChild(holder);
+    } else {
+      this.pixiApp.stage.addChild(mesh);
+    }
+    this._registerLayerDisplayObject(cl.layerName, mesh, cl.containerBlendSet);
+    // The paint mesh shares the stage mesh's geometry and shader, which stay with the stage mesh.
+    if (cl.worldPaintMesh) cl.worldPaintMesh.destroy(false);
+    if (cl.displaySprite) cl.displaySprite.destroy();
+    if (holder) holder.destroy({ children: false });
+    if (cl.worldRt) cl.worldRt.destroy(true);
+    cl.worldRt = null;
+    cl.worldPaintMesh = null;
+    cl.worldRoot = null;
+    cl.worldHolder = null;
+    cl.displaySprite = null;
+    cl.worldCache = null;
+    this._syncLayerRefsFromRuntime();
   }
 
   _initWorldTextureLayer(cl, config) {
@@ -10333,7 +10377,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       applyEngineLookUniforms(cl, frameUniforms);
       // E-504: a cached worldRect layer draws its target when what it shows changed; nothing else of it runs here.
       if (cl.worldRt !== null) {
-        this._drawWorldRectCache(cl, uploaded > 0 || uniformsChanged);
+        this._drawWorldRectCache(cl, uploaded > 0 || uniformsChanged, uploaded > 0);
         continue;
       }
 
