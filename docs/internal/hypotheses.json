@@ -22745,17 +22745,18 @@
         "light bench cars shadow"
       ],
       "records": [
-        "R-1355"
+        "R-1355",
+        "R-1409"
       ],
       "result": "",
-      "next": "Read what the cars cast in lightBenchScene (their volume against their picture) and why a high sun leaves only a corner of it outside the body: a volume narrower or lower than the drawn car, or its shadow drawn under the sprite. Captures at 10:00, 12:00 and 14:00, before and after; the trees and the barn at the same hours as the reference (theirs read right).",
+      "next": "With ?maps=0 (the cars cast their silhouette) the shadows fall down and to the left of each car, as the sun asks; with their height maps the shadow shows only as a wedge at the car's left side, and neither the sun's map against the layer (?sun=layer), nor the footprints' sweep (?sweep=0), nor self shadow (?self=0) changes it. First suspect: the cars' sheets draw half a turn and mirror the rest, and both cars in the capture face a mirrored way: check a height-map caster on a mirrored frame against the same car turned to an unmirrored one (Q / E in the bench), then the columns' x in the caster rows. Captures at 10:00, 12:00 and 14:00 before and after; the trees and the barn as the reference.",
       "id": "N-297",
       "kind": "bug",
       "area": "render",
       "status": "open",
       "date": "2026-11-18",
       "title": "The light bench's cars at a high sun (10:00, 78°) cast a dark wedge at one corner instead of a shadow around the body",
-      "statusText": "Seen by the owner 2026-11-18 on a capture of dx/one-light; main draws the same wedges (compareCaptures --vs main --full-rev, lightBenchScene ?hour=10), so it is older than DX-ONELIGHT. Not looked into"
+      "statusText": "Seen by the owner 2026-11-18 on a capture of dx/one-light; main draws the same wedges, so it is older than DX-ONELIGHT. Narrowed the same day by captures at 10:00 (R-1409): it is the cars' height-map shadow; not fixed"
     },
     {
       "id": "E-518",
@@ -36890,6 +36891,18 @@
       "text": "**OL-13 kept: Pixi copies a wall's row out in one set(). With every lamp moving at 720 lights, Pixi 1.391 -> 1.232 ms (-11.6 %, 4 of 4 pairs; under the floor: read). The walls against the old fan pass with every lamp moving are now +13.1 % in pre-render and +13.1 % in Pixi (they were +18.9 % and +19.4 %); still, they are 42 to 45 % cheaper (R-1403).**\n\n- **What it was:** in a frame whose rows changed, `_readWallRows` copied each row in use a float at a time: 250 ms of 8 s in the profile of 720 moving lamps, 0.5 ms a frame.\n- **The change (c4e57fb6):** one `set()` a row from a view of it, the shortest of 512, 1024, 2048 ... floats that holds what is in use, never past the row's width; the views are made once.\n- **Sittings** (visPolyStressScene `?lights=720&move=40`, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs each; every row under the 6 ms floor on its base side):\n\n| sitting | worker | A | B | paired | each pair |\n| --- | --- | --- | --- | --- | --- |\n| dx/one-light bd58813b against c4e57fb6, walls (08:38 to 08:43) | Pixi | 1.391 ms | 1.232 ms | -11.6 % | -9.6, -12.3, -10.8, -12.3 |\n| | pre-render (OL-11, OL-12 again) | 5.751 ms | 5.395 ms | -5.6 % | -5.3, -5.9, -9.6, -4.1 |\n| `?arm=fans` against `?arm=walls`, c4e57fb6 (08:44 to 08:48) | pre-render | 4.782 ms | 5.365 ms | +13.1 % | +11.9, +6.3, +14.7, +14.2 |\n| | Pixi | 1.130 ms | 1.264 ms | +13.1 % | +10.7, +15.4, +15.1, +11.0 |\n\n- **Where the walls stand against the old pass** (720 lights, this session): with the lamps still, pre-render -41.6 % and Pixi -44.9 % (R-1403, before OL-11 to OL-13, which took another 7 % off pre-render there); with every lamp moving, +13 % in both. What is left of that is `wall_row` (0.59 ms a frame, R-1407) and the rows' upload.\n- `tests/node/wallRowsUpload.test.js` (rows of 3 to 512 vertices arrive whole, the row after the last untouched); browser with `?wallCache=0` against bd58813b, 0 px on WebGL and WebGPU.",
       "commits": [
         "c4e57fb6"
+      ]
+    },
+    {
+      "id": "R-1409",
+      "date": "2026-11-18",
+      "time": "08:53",
+      "timeFrom": "recorded",
+      "title": "N-297 narrowed: the wedge beside the light bench's cars at a high sun is their height-map shadow (with ?maps=0 the shadow falls where the sun puts it); the sun's map, the sweep and self shadow change nothing",
+      "verdict": "note",
+      "text": "**N-297 narrowed, not fixed: the wedge beside the light bench's cars at a high sun is their height-map shadow. Captures at 10:00 (sun 78° high), dx/one-light at 50b645d7, one knob changed at a time.**\n\n| knob | the cars' shadows |\n| --- | --- |\n| the default (height maps, the sun's map, the footprints' sweep, self shadow) | a dark wedge at each car's left side |\n| `?sweep=0` (solids as columns, no sweep to the footprint) | the same wedge |\n| `?sun=layer` (cards on the shadows' layer, no map) | the same wedge |\n| `?self=0` (no self shadow) | the same wedge |\n| `?maps=0` (no height or normal maps: the cars cast their silhouette) | a shadow down and to the left of each car, where the sun puts it |\n\n- So it is neither the sun's map, nor the sweep, nor self shadow: it is what a car's height map casts. With the silhouette the shadow falls on the other side of where the wedge is.\n- **First suspect, not checked:** the cars' sheets draw half a turn and mirror the rest; both cars in the capture face a mirrored way. A height-map caster on a mirrored frame may cast its columns unmirrored.\n- Main draws the same wedges (R-1355): not DX-ONELIGHT's.",
+      "commits": [
+        "50b645d7"
       ]
     }
   ],
