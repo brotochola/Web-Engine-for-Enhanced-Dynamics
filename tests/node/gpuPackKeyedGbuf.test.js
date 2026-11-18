@@ -183,8 +183,8 @@ function checkWords(s, label, { opts, cap = N, byRow = false, shadow = false, te
   let entityRows = 0;
   let maxBand = 0;
   for (let k = 0; k < n; k++) {
-    if (want[2 * k] !== 0) entityRows++;
-    if (want[2 * k + 1] > maxBand) maxBand = want[2 * k + 1];
+    if (want[3 * k] !== 0) entityRows++;
+    if (want[3 * k + 1] > maxBand) maxBand = want[3 * k + 1];
   }
   return { n, entityRows, maxBand };
 }

@@ -116,6 +116,16 @@ const DEPTH_FORMULA_FACES = `((${PIXEL_DEPTH_BANDS - 1}.0 - band) * ${PIXEL_DEPT
  * these are linear on the screen: the vertex writes them, the fragment interpolates them (vDepthFloor).
  */
 function facesDepthGlsl(gbuf) {
+  return `${facesDepthCoreGlsl(gbuf)}
+  vDepthFloor = depthFloor;
+  vPainter.x = depthPainter;`;
+}
+
+/**
+ * facesDepthGlsl's work without its outputs (GLSL, in a sprite vertex after its place): the locals depthFloor and
+ * depthPainter, from uDepth (x: 1 / floorScaleY, y: heightScaleY; a uniform, or a local of that name).
+ */
+function facesDepthCoreGlsl(gbuf) {
   return `
   float depthFloor = aInstXY.y * uDepth.x;
   float depthPainter = float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1});
@@ -139,9 +149,7 @@ function facesDepthGlsl(gbuf) {
       uint dfw = uint(aInstGbuf.x + 0.5);
       if ((dfw & 65535u) != 0u && ((dfw >> 18u) & 1u) != 0u) depthFloor = world.y * uDepth.x;
     }` : ''}
-  }
-  vDepthFloor = depthFloor;
-  vPainter.x = depthPainter;`;
+  }`;
 }
 
 /**
@@ -179,7 +187,7 @@ export function pixelDepthVertex(source, { gbuf = false, faces = false, cull = '
     if (source.split(mark).length !== 2) throw new Error(`WeedJS: pixel depth needs the sprite vertex shader (${mark.trim()})`);
   }
   const words = gbuf
-    ? `${source.includes('in vec2 aInstGbuf;') ? '' : 'in vec2 aInstGbuf;\n'}flat out vec2 vDepthWord;\n`
+    ? `${source.includes('in vec3 aInstGbuf;') ? '' : 'in vec3 aInstGbuf;\n'}flat out vec2 vDepthWord;\n`
     : '';
   const facesDecl = faces ? `out float vDepthFloor;\n${MAPS_MARKS_GLSL}` : '';
   // N-194: vPainter's y is the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
@@ -191,7 +199,7 @@ export function pixelDepthVertex(source, { gbuf = false, faces = false, cull = '
     .replace(
       pos,
       () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n${FOOT_RY_GLSL}\n  vPainter = vec2(float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1}), abs(aInstScale.y));\n  vMapsWin = twinWindow(tid);` +
-        (gbuf ? '\n  vDepthWord = aInstGbuf;' : '') + plainGlsl(gbuf) + (faces ? facesDepthGlsl(gbuf) + cullGlsl(cull, gbuf) : ''),
+        (gbuf ? '\n  vDepthWord = aInstGbuf.xy;' : '') + plainGlsl(gbuf) + (faces ? facesDepthGlsl(gbuf) + cullGlsl(cull, gbuf) : ''),
     );
 }
 
@@ -219,6 +227,12 @@ const FOOT_RY_WGSL = `  let footLut = vec2<i32>(textureDimensions(uTexLut));
   }
   let footRy = select(0.0, 0.6 * footBase.y * abs(aInstScale.x), footBase.x > 0.0 && footBase.y > 0.0);
 `;
+
+/** N-262 for the G-buffer's depth: FOOT_RY_GLSL into a local (gbufFootRy) instead of the colour pass's output. */
+const GBUF_FOOT_RY_GLSL = FOOT_RY_GLSL
+  .replace('  {\n', '  float gbufFootRy = 0.0;\n  {\n')
+  .replace('    vFootRy = ', '    gbufFootRy = ');
+if (!GBUF_FOOT_RY_GLSL.includes('gbufFootRy = footBase')) throw new Error('WeedJS: GBUF_FOOT_RY_GLSL lost its anchor');
 
 /**
  * H-EDGE: the pixels a pass draws nothing for, known from the texture's alpha times the tint's (`ad`, GLSL and WGSL alike),
@@ -394,6 +408,14 @@ function facesDepthWgsl(gbuf, cull) {
   }
 `
       : '';
+  return `${facesDepthCoreWgsl(gbuf)}
+  out.vDepthFloor = depthFloor;
+  out.vDepthFoot.y = depthPainter;
+${keep}`;
+}
+
+/** facesDepthCoreGlsl in WGSL: the locals depthFloor and depthPainter, from uniforms.uDepth (after the sprite's place). */
+function facesDepthCoreWgsl(gbuf) {
   return `  var depthFloor = aInstXY.y * uniforms.uDepth.x;
   var depthPainter = f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u);
   let dfCode = u32(aInstTileOff.x * ${FACE_CODE_SCALE}.0 + 0.5);
@@ -415,10 +437,7 @@ function facesDepthWgsl(gbuf, cull) {
   }${gbuf ? ` else {
     let dfw = u32(aInstGbuf.x + 0.5);
     if ((dfw & 65535u) != 0u && ((dfw >> 18u) & 1u) != 0u) { depthFloor = world.y * uniforms.uDepth.x; }
-  }` : ''}
-  out.vDepthFloor = depthFloor;
-  out.vDepthFoot.y = depthPainter;
-${keep}`;
+  }` : ''}`;
 }
 
 /**
@@ -461,7 +480,7 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false, faces 
     '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
     // N-194: z, the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
     `${FOOT_RY_WGSL}  out.vDepthFoot = vec4<f32>(aInstXY.y * uniforms.uDepth.x, f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u), abs(aInstScale.y), footRy);\n` +
-      (gbuf ? '  out.vDepthWord = aInstGbuf;\n' : '') + '  out.vMapsWin = twinWindow(tid);\n' + plainWgsl(gbuf) +
+      (gbuf ? '  out.vDepthWord = aInstGbuf.xy;\n' : '') + '  out.vMapsWin = twinWindow(tid);\n' + plainWgsl(gbuf) +
       (faces ? facesDepthWgsl(gbuf, cull) : ''),
     'out.position',
   );
@@ -501,4 +520,156 @@ fn ${entry}(in: VertexOut) -> WeedDepthOut {
     }
   }
   return out + depthWgsl({ gbuf, faces }) + wrappers;
+}
+
+/**
+ * N-274: the G-buffer's one pass (faceMap.js's MRT: the face map and the ids map) takes the depth the colour pass takes, in
+ * a depth attachment of its own at its size, tested (less) and written: each texel describes the surface the canvas
+ * shows there, whatever order the painter drew them in. Before, the pass drew back to front with no depth, and where
+ * pixel depth put a house in front of a wall the painter drew later, the light pass lit and shadowed the hidden wall over
+ * the house. Its depth terms ride in uFaceSpace (x heightScaleY, y floorScaleY, z the view's top floor place, w 1 / its
+ * span: pixelDepthTerms' third and fourth). N-266: with the colour pass's formula too: DEPTH_FORMULA_FACES (continuous) when
+ * the batch's depth reads faces, else DEPTH_FORMULA, whose floor place goes in steps and leaves a tie within a step to the
+ * painter's order; with the continuous one a near tie went the other way in rows, as the canvas never did (a lamp post
+ * 3 px before a person, depthPairScene).
+ */
+const GBUF_DEPTH_TERMS_GLSL = 'vec4 uDepth = vec4(1.0 / uFaceSpace.y, uFaceSpace.x, uFaceSpace.z, uFaceSpace.w);';
+const GBUF_DEPTH_TERMS_WGSL = 'let weedDepth = vec4<f32>(1.0 / uniforms.uFaceSpace.y, uniforms.uFaceSpace.x, uniforms.uFaceSpace.z, uniforms.uFaceSpace.w);';
+
+/** `find` once in `text`, `add` after it; a source without it (or with two) throws. */
+function gbufOnce(text, find, add, what) {
+  if (text.split(find).length !== 2) throw new Error(`WeedJS: the G-buffer's depth needs the face map's shader (${what})`);
+  return text.replace(find, () => find + add);
+}
+
+/**
+ * N-274: the G-buffer's vertex shader (faceMap.js faceMapVertex with words) with each vertex's floor place and painter step
+ * (vGbufFloor, vGbufPainter), as the colour pass's depth has them (facesDepthCoreGlsl).
+ * @param {string} source
+ * @returns {string}
+ */
+export function gbufDepthVertex(source) {
+  const main = 'void main() {\n';
+  if (source.split(main).length !== 2) throw new Error('WeedJS: the G-buffer\'s depth needs the face map\'s shader (main)');
+  const out = source.replace(main, () => `out float vGbufFloor;\nflat out vec3 vGbufPainter;\n${main}`);
+  return gbufOnce(
+    out,
+    'vTileOff = aInstTileOff;\n',
+    `  {\n    ${GBUF_DEPTH_TERMS_GLSL}${facesDepthCoreGlsl(true)}\n${GBUF_FOOT_RY_GLSL}\n    vGbufFloor = depthFloor;\n    // N-262: the painter step, the sprite's foot on the floor and its feet's half depth (the colour pass's clamp)\n    vGbufPainter = vec3(depthPainter, aInstXY.y * uDepth.x, gbufFootRy);\n  }\n`,
+    'vTileOff',
+  );
+}
+
+/**
+ * N-274: the G-buffer's fragment shader (faceMap.js faceGbufFragment) writing that depth for every texel it keeps: the
+ * floor place its vertex wrote, or its own height where its frame has a height map, the zIndex band of its words.
+ * @param {string} source
+ * @param {{ faces?: boolean }} [opts] whether the batch's depth reads faces (the colour pass's formula, N-266)
+ * @returns {string}
+ */
+export function gbufDepthFragment(source, { faces = true } = {}) {
+  const main = 'void main() {\n';
+  const cut = '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n';
+  if (source.split(main).length !== 2) throw new Error('WeedJS: the G-buffer\'s depth needs the face map\'s fragment (main)');
+  const depth = `in float vGbufFloor;
+flat in vec3 vGbufPainter;
+
+// N-274: this texel's depth, as the colour pass's (pixelDepth.js depthBodyGlsl with faces).
+float weedGbufDepth(vec2 uv) {
+  ${GBUF_DEPTH_TERMS_GLSL}
+  vec4 md = twinTexel(uv, vMapsWin);
+  uint dw = uint(vGbuf.x + 0.5);
+  bool glow = twinUnshaded(vMapsWin) || ((dw >> 21u) & 1u) != 0u;
+  float floorY = vGbufFloor;
+  if (twinPresent(md) && twinHeights(vMapsWin) && !glow) {
+    floorY = (vWorld.y + uDepth.y * twinZ(md) * vMapScale) * uDepth.x;
+    // N-262: within its feet's footprint, as the colour pass's.
+    if (vGbufPainter.z > 0.0) floorY = clamp(floorY, vGbufPainter.y - vGbufPainter.z, vGbufPainter.y + vGbufPainter.z);
+  }
+  float band = min(vGbuf.y, ${PIXEL_DEPTH_BANDS - 1}.0);
+  float u = clamp((floorY - uDepth.z) * uDepth.w, 0.0, 1.0);
+  float painter = vGbufPainter.x;
+  return ${faces ? DEPTH_FORMULA_FACES : DEPTH_FORMULA};
+}
+
+`;
+  return gbufOnce(source.replace(main, () => depth + main), cut, '  gl_FragDepth = weedGbufDepth(uv);\n', 'its alpha cut');
+}
+
+/** The unshaded pass's entry in a face module with words (faceMap.js faceIdsEntryWgsl), as N-266 replaces it. */
+const UNSHADED_ENTRY_WGSL = `fn mainFragUnshaded(in: VertexOut) -> @location(0) vec4<f32> {
+  let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
+  let t = textureSample(uTexture, uSampler, uv);
+  let s = unshadedOf(in.vGbuf, in.vMapsWin);
+  return vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, t.a * in.vColor.a);
+}
+`;
+
+/** N-266: the unshaded pass's entry with the colour pass's depth (faceMap.js faceUnshadedFragment with depth). */
+const UNSHADED_DEPTH_ENTRY_WGSL = `fn mainFragUnshaded(in: VertexOut) -> WeedUnshadedOut {
+  let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
+  let t = textureSample(uTexture, uSampler, uv);
+  if (t.a * in.vColor.a < 0.5) { discard; }
+  let s = unshadedOf(in.vGbuf, in.vMapsWin);
+  var o: WeedUnshadedOut;
+  o.color = vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, t.a * in.vColor.a);
+  o.depth = weedGbufDepth(in);
+  return o;
+}
+
+struct WeedUnshadedOut {
+  @location(0) color: vec4<f32>,
+  @builtin(frag_depth) depth: f32,
+}
+`;
+
+/**
+ * N-274: gbufDepthVertex and gbufDepthFragment in WGSL, over faceMap.js faceMapWgsl with words (indexed or not): the
+ * floor place and painter step out of the vertex (locations 8 and 14, free in the face map's), and the one pass's entry
+ * (mainFragGbuf) writing the depth (@builtin(frag_depth)).
+ * @param {string} source
+ * @param {{ faces?: boolean }} [opts] whether the batch's depth reads faces (the colour pass's formula, N-266)
+ * @returns {string}
+ */
+export function gbufDepthWgsl(source, { faces = true } = {}) {
+  let out = gbufOnce(
+    source,
+    '  @location(5) vTileOff: vec2<f32>,\n',
+    '  @location(8) vGbufFloor: f32,\n  @location(14) @interpolate(flat) vGbufPainter: vec3<f32>,\n',
+    'vTileOff',
+  );
+  if (!out.includes('@builtin(instance_index) weedInstance: u32')) {
+    out = gbufOnce(out, '  @location(1) aInstXY: vec2<f32>,\n', '  @builtin(instance_index) weedInstance: u32,\n', 'aInstXY');
+  }
+  out = gbufOnce(
+    out,
+    '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
+    `  {\n    ${GBUF_DEPTH_TERMS_WGSL}\n${facesDepthCoreWgsl(true).split('uniforms.uDepth').join('weedDepth')}\n${FOOT_RY_WGSL}    out.vGbufFloor = depthFloor;\n    // N-262: the painter step, the foot and its feet's half depth (the colour pass's clamp).\n    out.vGbufPainter = vec3<f32>(depthPainter, aInstXY.y * weedDepth.x, footRy);\n  }\n`,
+    'out.position',
+  );
+  out = gbufOnce(out, '  @location(1) ids: vec4<f32>,\n', '  @builtin(frag_depth) depth: f32,\n', 'the one pass\'s outputs');
+  out = gbufOnce(out, 'fn mainFragGbuf(in: VertexOut) -> WeedGbufOut {\n  var o: WeedGbufOut;\n', '  o.depth = weedGbufDepth(in);\n', 'mainFragGbuf');
+  // N-266: the unshaded pass's entry, where the module has one, writes the same depth (a texel under half covered cut).
+  if (out.split(UNSHADED_ENTRY_WGSL).length === 2) out = out.replace(UNSHADED_ENTRY_WGSL, () => UNSHADED_DEPTH_ENTRY_WGSL);
+  return `${out}
+// N-274: this texel's depth, as the colour pass's (pixelDepth.js weedPixelDepth with faces).
+fn weedGbufDepth(in: VertexOut) -> f32 {
+  ${GBUF_DEPTH_TERMS_WGSL}
+  let uvd = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
+  let md = twinTexel(uvd, in.vMapsWin);
+  let dw = u32(in.vGbuf.x + 0.5);
+  let glow = twinUnshaded(in.vMapsWin) || ((dw >> 21u) & 1u) != 0u;
+  var floorY = in.vGbufFloor;
+  if (twinPresent(md) && twinHeights(in.vMapsWin) && !glow) {
+    floorY = (in.vWorld.y + weedDepth.y * twinZ(md) * in.vMapScale) * weedDepth.x;
+    // N-262: within its feet's footprint, as the colour pass's.
+    let gp = in.vGbufPainter;
+    if (gp.z > 0.0) { floorY = clamp(floorY, gp.y - gp.z, gp.y + gp.z); }
+  }
+  let band = min(in.vGbuf.y, ${PIXEL_DEPTH_BANDS - 1}.0);
+  let u = clamp((floorY - weedDepth.z) * weedDepth.w, 0.0, 1.0);
+  let painter = in.vGbufPainter.x;
+  return ${faces ? DEPTH_FORMULA_FACES : DEPTH_FORMULA};
+}
+`;
 }

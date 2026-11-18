@@ -20,7 +20,7 @@ export function project(p, groundScaleY, heightScaleY) {
   return [p[0], p[1] * groundScaleY - p[2] * heightScaleY];
 }
 
-function face(name, origin, edgeU, edgeV, groundScaleY, heightScaleY) {
+export function face(name, origin, edgeU, edgeV, groundScaleY, heightScaleY) {
   const center = [0, 1, 2].map((i) => origin[i] + edgeU[i] * 0.5 + edgeV[i] * 0.5);
   const [cx, cy] = project(center, groundScaleY, heightScaleY);
   const p0 = project(origin, groundScaleY, heightScaleY);

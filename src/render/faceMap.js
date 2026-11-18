@@ -153,10 +153,16 @@ export function faceFragmentGlsl(faceFrag, { gbuf = false, unshaded = false } = 
  * DX-UNSHADED (was DX-EMISSIVE v2, plan §6.9, F10): the unshaded pass's fragment shader (WebGL), over faceMapVertex's
  * outputs with words: an unshaded pixel writes its colour, any other black with its alpha, both premultiplied and blended
  * normally in painter order, so a sprite in front of a flame covers it in proportion to its alpha. The unshaded layer adds
- * it where the light is short (unshadedComposite.js).
+ * it where the light is short (unshadedComposite.js). N-266: with `depth` (the batch's pixel depth) a texel under half
+ * covered is cut and the rest test and write the colour pass's depth (pixelDepth.js gbufDepthFragment), so the target keeps
+ * the surface the canvas shows: a lit sprite in front of an unshaded one covers it there, whichever the painter drew last.
+ * One pass gives what the canvas's two give (its opaque pass writing, its edge pass, where the unshaded texels are, testing):
+ * an unshaded texel in front of a lit one wins either way, behind it loses either way.
+ * @param {{ depth?: boolean }} [opts]
  * @returns {string}
  */
-export function faceUnshadedFragment() {
+export function faceUnshadedFragment({ depth = false } = {}) {
+  const cut = depth ? '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n' : '';
   return `#version 300 es
 precision highp float;
 in vec2 vLocal;
@@ -167,7 +173,7 @@ in vec2 vTileInv;
 in vec2 vTileOff;
 flat in vec2 vGbuf;
 flat in vec4 vMapsWin;
-uniform sampler2D uTexture;
+${depth ? 'flat in float vMapScale;\nuniform vec4 uFaceSpace;\n' : ''}uniform sampler2D uTexture;
 uniform sampler2D uMaps;
 out vec4 finalColor;
 
@@ -179,7 +185,7 @@ ${UNSHADED_OF_GLSL}
 void main() {
   vec2 uv = weedUv();
   vec4 t = texture(uTexture, uv);
-  float s = unshadedOf(vGbuf);
+${cut}  float s = unshadedOf(vGbuf);
   finalColor = vec4(t.rgb * vColor.rgb * vColor.a * s, t.a * vColor.a);
 }
 `;
@@ -249,7 +255,7 @@ export function faceGbufFragment(faceFrag, { unshaded = false } = {}) {
 }
 
 /** The words' input of a sprite WGSL's mainVert (DX-GBUF, gbufWord.js): a free location, read or not. */
-const GBUF_ATTRIBUTE_WGSL = '  @location(12) aInstGbuf: vec2<f32>,\n';
+const GBUF_ATTRIBUTE_WGSL = '  @location(12) aInstGbuf: vec3<f32>,\n';
 
 /**
  * DX-GBUF: a sprite WGSL (instancedSprite.wgsl, its pose form, or either after faceMapWgsl) taking the G-buffer words'
@@ -274,14 +280,14 @@ export function gbufAttributeWgsl(source) {
  * @returns {string}
  */
 export function gbufAttributeGlsl(source) {
-  if (source.includes('in vec2 aInstGbuf;')) return source;
+  if (source.includes('in vec3 aInstGbuf;')) return source;
   const main = 'void main() {\n';
   const at = '  gl_Position = vec4(clip.xy, aInstDepth, 1.0);\n';
   if (source.split(main).length !== 2 || source.split(at).length !== 2) {
     throw new Error('WeedJS: the G-buffer words need the sprite vertex shader (main, its gl_Position)');
   }
   return source
-    .replace(main, () => `in vec2 aInstGbuf;\n${main}`)
+    .replace(main, () => `in vec3 aInstGbuf;\n${main}`)
     .replace(at, () => `${at}  if (aInstGbuf.x < -1.0) gl_Position.x += aInstGbuf.y;\n`);
 }
 
@@ -302,12 +308,14 @@ export function faceMapVertex(source, { gbuf = false } = {}) {
   if (source.split(main).length !== 2 || source.split(end).length !== 2) {
     throw new Error('WeedJS: the face map needs one main and one vTileOff in the sprite vertex shader');
   }
-  const gbufDecl = gbuf ? 'in vec2 aInstGbuf;\nflat out vec2 vGbuf;\nout float vFootY;\nflat out float vRender;\n' : '';
+  const gbufDecl = gbuf ? 'in vec3 aInstGbuf;\nflat out vec2 vGbuf;\nout float vFootY;\nflat out float vRender;\n' : '';
   // vRender: the frame is a render (its base a contact, frameBase.js lutBaseFloats: the table's third texel's z below 0),
   // whose selfShadow the asset's way is on (plan §5.5).
   const gbufOut = gbuf
-    ? `  vGbuf = aInstGbuf;
-  vFootY = world.y - (isShear ? sheared.y : spun.y) + (aInstTrim.y + aInstTrim.w - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y);
+    ? `  vGbuf = aInstGbuf.xy;
+  // N-275: a decoration that is part of an entity stands on the entity's foot (the words' z), as a card rising from it.
+  vFootY = aInstGbuf.z > -1.0e29 ? aInstGbuf.z
+    : world.y - (isShear ? sheared.y : spun.y) + (aInstTrim.y + aInstTrim.w - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y);
   vRender = 0.0;
   {
     int gbufTid = int(aInstTexId + 0.5);
@@ -469,9 +477,10 @@ export function faceVertexWgsl(source, { gbuf = false, unshadedMask = false } = 
   );
   if (gbuf) out = gbufAttributeWgsl(out);
   const gbufOut = gbuf
-    ? `  out.vGbuf = aInstGbuf;
-  out.vFootY = world.y - select(spun, sheared, isShear).y
-    + (aInstTrim.y + aInstTrim.w - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y);
+    ? `  out.vGbuf = aInstGbuf.xy;
+  // N-275: a decoration that is part of an entity stands on the entity's foot (the words' z: faceMapVertex).
+  out.vFootY = select(world.y - select(spun, sheared, isShear).y
+    + (aInstTrim.y + aInstTrim.w - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y), aInstGbuf.z, aInstGbuf.z > -1.0e29);
   // A render (its base a contact: faceMapVertex says why).
   out.vRender = 0.0;
   if (tid >= 0 && tid < lutPerRow * i32(lutSize.y)) {

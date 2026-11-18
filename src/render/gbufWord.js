@@ -4,12 +4,18 @@
  *
  * x, the sprite's word:
  * - bits 0-15: its entity's id in the G-buffer, (entity % 65535) + 1; 0 for a row that is no entity (a decoration, a
- *   particle) or a frame whose rows were not matched to their entities: such a row is lit as it always was;
+ *   particle) or a frame whose rows were not matched to their entities: such a row is lit as it always was. N-273: a
+ *   decoration with an owner (DecorationComponent.owner: a house's walls) carries its owner's id, its other bits 0, so
+ *   the owner's own shadow volume leaves its pixels lit, as an entity's own sprite;
  * - bits 16-21: SpriteRenderer.gbufFlags (normals, surface, unshaded: GBUF_FLAGS);
  * - bits 22-23: ShadowCaster.selfShadow (0 the asset's way, 1 on, 2 off).
  *
  * y, the row's place: its zIndex band (DX-DEPTH, plan §6.5: the rank of its zIndex among the frame's, in draw order,
  * which the painter sorts zIndex first), bits 0-7.
+ *
+ * z (N-275), the foot it stands on: for a decoration that is part of an entity (DecorationComponent.owner: an attached
+ * one's parent), the entity's Transform y, so the face map stands its pixels on the entity's foot (a tree's branches on its
+ * trunk's base) instead of lighting each as the floor under it; GBUF_FOOT_NONE for any other row (its own foot).
  *
  * Pre-render writes them for the rows it packs (the GPU queue's gbuf region, GPU_FLAG_GBUF); Pixi for the rows it packs,
  * from the queue's key column (the entity of a sprite row). E-387: on Pixi's keyed frames the keyed pack writes them
@@ -104,8 +110,14 @@ export function decodeGbufWord(word) {
  * @param {Uint8Array} flags SpriteRenderer.gbufFlags
  * @param {Uint8Array|null} selfShadow ShadowCaster.selfShadow
  * @param {Int16Array|null} zIndex SpriteRenderer.zIndex, when the order is the painter's
+ * @param {Uint32Array|null} [decorationOwner] N-273: DecorationComponent.owner, for the collector's decoration rows (type 2)
+ * @param {Float32Array|null} [ownerY] N-275: Transform.y, the owners' feet (none: GBUF_FOOT_NONE for every row)
  */
-export function writeGbufWords(out, n, order, rowType, rowEntity, rowKey, entities, flags, selfShadow, zIndex) {
+/** N-275: the words' third float for a row that stands on its own foot (no owner's): under every world y. */
+export const GBUF_FOOT_NONE = -(2 ** 100);
+
+export function writeGbufWords(out, n, order, rowType, rowEntity, rowKey, entities, flags, selfShadow, zIndex,
+  decorationOwner = null, ownerY = null) {
   let band = 0;
   let lastZ = -32769;
   const selfN = selfShadow !== null ? selfShadow.length : 0;
@@ -124,15 +136,24 @@ export function writeGbufWords(out, n, order, rowType, rowEntity, rowKey, entiti
     }
     let word = 0;
     let z = 0;
+    let foot = GBUF_FOOT_NONE;
     if (e >= 0) {
       word = (e % 65535) + 1 + (flags[e] & 63) * 65536 + (e < selfN ? (selfShadow[e] & 3) * 4194304 : 0);
       if (zIndex !== null) z = zIndex[e];
+    } else if (rowKey === null && decorationOwner !== null && rowType[row] === 2) {
+      const d = rowEntity[row];
+      const owner = d >= 0 && d < decorationOwner.length ? decorationOwner[d] : 0;
+      if (owner !== 0 && owner <= entities) {
+        word = (owner - 1) % 65535 + 1;
+        if (ownerY !== null && owner <= ownerY.length) foot = ownerY[owner - 1];
+      }
     }
     if (zIndex !== null && z !== lastZ) {
       if (lastZ !== -32769 && band < GBUF_MAX_BANDS - 1) band++;
       lastZ = z;
     }
-    out[2 * k] = word;
-    out[2 * k + 1] = band;
+    out[3 * k] = word;
+    out[3 * k + 1] = band;
+    out[3 * k + 2] = foot;
   }
 }

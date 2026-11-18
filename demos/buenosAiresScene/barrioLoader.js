@@ -331,7 +331,7 @@ function spawnSettings(classSettings, ownSettings = null) {
  * for a class that resolves its names itself (perTexture: each object has its own anchor and scale); or one spawn a
  * decoration when the record holds what spawnMany cannot take as arrays (anchors, sway). Returns how many were spawned.
  */
-function spawnWorldRecord(record, classSettings, offsetX, offsetY, load) {
+function spawnWorldRecord(record, classSettings, offsetX, offsetY, load, owner = -1) {
   if (record.x.length === 0) return 0;
   const palette = paletteOf(record, classSettings);
   if (palette.length === 0) {
@@ -347,13 +347,13 @@ function spawnWorldRecord(record, classSettings, offsetX, offsetY, load) {
         load.warnOnce(`decoration class ${record.class}: "${name}" is not one it knows; those decorations are skipped`);
         continue;
       }
-      spawned += spawnGroup(record, spawnSettings(classSettings, ownSettings), positions, offsetX, offsetY, load, classSettings);
+      spawned += spawnGroup(record, spawnSettings(classSettings, ownSettings), positions, offsetX, offsetY, load, classSettings, owner);
     }
     return spawned;
   }
   const settings = spawnSettings(classSettings);
   settings.texture = textureNamesOf(record, classSettings, palette, load);
-  return spawnGroup(record, settings, null, offsetX, offsetY, load, classSettings);
+  return spawnGroup(record, settings, null, offsetX, offsetY, load, classSettings, owner);
 }
 
 /** Each decoration's atlas name (computed once a record: a prefab's records serve every entity of the prefab). */
@@ -381,10 +381,13 @@ function groupsByPaletteEntry(record, load) {
 }
 
 /** The decorations at `positions` of a record (null: all of them), spawned with `settings` (their texture included). */
-function spawnGroup(record, settings, positions, offsetX, offsetY, load, classSettings) {
+function spawnGroup(record, settings, positions, offsetX, offsetY, load, classSettings, owner) {
   const count = positions === null ? record.x.length : positions.length;
   const select = (list) => (positions === null ? list : positions.map((position) => list[position]));
   const config = { ...settings, count };
+  // The entity these decorations are part of (a house's walls and roofs): the light pass then takes their pixels as the
+  // house's, so its own shadow volume does not fall on them (DecorationPool owner).
+  if (owner >= 0) config.owner = owner;
   config.x = new Float64Array(count);
   config.y = new Float64Array(count);
   for (let n = 0; n < count; n++) {
@@ -655,7 +658,7 @@ function spawnEntityRecord(entity, x, y, link, load) {
   const index = typeof returned === 'number' && returned >= 0 ? returned : -1;
   if (index >= 0) load.entities++;
   if (entity.name) load.byName.set(entity.name, index);
-  for (const { record, classSettings } of world) load.decorations += spawnWorldRecord(record, classSettings, x, y, load);
+  for (const { record, classSettings } of world) load.decorations += spawnWorldRecord(record, classSettings, x, y, load, index);
   spawnChildren(entity, x, y, index, load);
   return index;
 }

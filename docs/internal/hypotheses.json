@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-17",
+  "updated": "2026-11-18",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -16073,7 +16073,9 @@
         "R-1303",
         "R-1307",
         "R-1312",
-        "R-1314"
+        "R-1314",
+        "R-1324",
+        "R-1335"
       ]
     },
     {
@@ -21903,7 +21905,12 @@
         "unshaded ghost",
         "lamp post ghost"
       ],
-      "records": [],
+      "records": [
+        "R-1326",
+        "R-1330",
+        "R-1333",
+        "R-1336"
+      ],
       "id": "N-266",
       "kind": "bug",
       "area": "render",
@@ -22191,7 +22198,8 @@
         "face plane precision"
       ],
       "records": [
-        "R-1316"
+        "R-1316",
+        "R-1325"
       ],
       "result": "fixed: flicker while panning 197/209 hot tiles a film -> 1; stuck pieces +-0.045 floor px off their walls (was +-1.06 from the engine's rounding, +-0.4 from the data); barrio NEUTRAL",
       "next": "Film the barrio panning on the HD 620 laptop, where the owner saw it (the ASUS session).",
@@ -22210,7 +22218,13 @@
         "shadows at the screen edge",
         "selfShadow clamp"
       ],
-      "records": [],
+      "records": [
+        "R-1327",
+        "R-1330",
+        "R-1333",
+        "R-1336",
+        "R-1337"
+      ],
       "result": "",
       "next": "Skip the steps past the face map in GLSL as the WGSL does (one line), film the drift with ?selfShadow=0 against on, WebGL against WebGPU. Left after it: a self-shadow from a part of the house that has left the screen is lost (the face map covers the view only); a face map with a margin on the sun's side would keep it.",
       "id": "N-272",
@@ -22330,6 +22344,127 @@
       "records": [
         "R-1317"
       ]
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "roofs in their own shadow",
+        "decoration owner",
+        "own volume shades roof"
+      ],
+      "records": [
+        "R-1322",
+        "R-1328",
+        "R-1330",
+        "R-1331",
+        "R-1333",
+        "R-1336"
+      ],
+      "result": "",
+      "next": "Merge fix/decoration-owner with fix/gbuffer-depth once measured. Later, the editor could export volumes as levels (body + tank: addLevel) instead of a convex hull, for truer ground shadows too.",
+      "id": "N-273",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "A house's shadow volume shades its own roofs: its walls and roofs are decorations with G-buffer id 0, so the light pass cannot skip the house's own volume for them, and a convex hull with a parapet or a tank tops the roof",
+      "statusText": "reported 2026-11-17 by the owner (\"shadows on top of everything\": dull grey roofs at noon); captures with the houses' volumes dropped (a temporary ?hulls=0) lit every roof and changed nothing else of the houses"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "G-buffer depth",
+        "hidden wall shading leaks",
+        "shadows on top of everything"
+      ],
+      "records": [
+        "R-1322",
+        "R-1328",
+        "R-1330",
+        "R-1331",
+        "R-1333",
+        "R-1336"
+      ],
+      "result": "",
+      "next": "Merge with N-275 once measured; then the unshaded pass (N-266) the same way, and E-463's cost read again (early depth for the frames without heights).",
+      "id": "N-274",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "The G-buffer (face map + ids, lighting.gbuffer 'mrt') is drawn back to front with no depth while the canvas orders by pixel depth: where the painter drew a wall after a house in front of it, the light pass lit and shadowed the hidden wall over the house",
+      "statusText": "reported 2026-11-17 by the owner (a diagonal band of shading on a facade, shadows on things in front); E-463 had noted the pass had no depth test, for its cost"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "tree crown in shadow",
+        "decoration foot",
+        "attached decoration owner"
+      ],
+      "records": [
+        "R-1322",
+        "R-1328",
+        "R-1330",
+        "R-1331",
+        "R-1333",
+        "R-1336"
+      ],
+      "result": "",
+      "next": "Merge with N-274 once measured; the HD 620 drawn frames with the words at three floats.",
+      "id": "N-275",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "A decoration with no face and no height map (a tree's branches) is lit as the floor under each of its pixels, which for a crown high on the screen lies behind the tree: the shadows of the house behind it and of the tree itself fall on the crown",
+      "statusText": "reported 2026-11-17 by the owner (\"the tree's shadow on the building behind it is drawn on top of the tree\"), the barrio at 15:58 on the black house"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "people shadows on walls",
+        "volume lamp map interpolation",
+        "lamp map ring depth"
+      ],
+      "records": [
+        "R-1323",
+        "R-1328",
+        "R-1330",
+        "R-1333",
+        "R-1336"
+      ],
+      "result": "",
+      "next": "Merge with the N-273..N-275 stack; Predator gate and the HD 620 drawn frames.",
+      "id": "N-276",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-17",
+      "title": "By night the people's shadows from a street lamp never reached the barrio's walls: a house's volume, taller than its lamp, was drawn into the lamp's map by its vertices, whose interpolation is the projection only within the reach (the pano compresses the ring past it, and a vertex above the lamp is drawn at the stretch's cap), so the inside of its front's triangles got depths far nearer the lamp than the front, won the texels of the people in front, and its walls, which skip their own house's texels (N-273), stood lit",
+      "statusText": "reported 2026-11-17 by the owner (\"the LPC people's shadows by night do not fall on the walls, check it\"); wallShadowScene: with the house's volume and its owned walls the shadows vanished from the wall; without the house, or with a lamp above it and the house within its reach, they were there"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "light banding",
+        "lamp falloff rings",
+        "8-bit light target"
+      ],
+      "records": [
+        "R-1329",
+        "R-1332",
+        "R-1334"
+      ],
+      "result": "",
+      "id": "N-277",
+      "kind": "bug",
+      "area": "render",
+      "status": "parked",
+      "date": "2026-11-17",
+      "title": "A lamp's dim falloff shows rings on a plain surface at night, each a step of the light target's 8 bits (RGBA8, the light clamped to 1), a little tinted where the lamp's channels step at different places",
+      "statusText": "seen 2026-11-17 in wallShadowScene (a plain wall 200 px from a lamp: concentric rings, the same with lampShadows 'sprite', so no shadow's); in the barrio the bricks and tiles hide it",
+      "next": "Low priority. Cheap: dither the light pass's output by half a step (a hash of the pixel), which changes every lit scene's pictures a little; or an rgba16float light target (twice its bandwidth). Ask the owner which look he wants before either."
     },
     {
       "refs": [
@@ -35466,6 +35601,110 @@
       "text": "**E-502's rule on the Intel HD 620 it was made for: `auto` reads the GPU as integrated Intel and leaves the pass off.** ASUS laptop, job 0885, 2026-11-17 18:27 to 18:36, one build (perf/e502-opaque-igpu 7b69be48, whose rule gives the same answer for Intel as the merged one), side A forced the pass on (`?opaquePass=1`), side B `auto`, src, 4 pairs.\n\n- GPU names Chrome gives a page there: the installed Chrome, headed and headless, and Playwright's Chromium headed: \"ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)\" → integrated. Playwright's Chromium headless: SwiftShader → software.\n\n| Scene | drawn fps, forced on → auto | Other workers |\n|---|---|---|\n| bunnyMarkStress (asus-e502b-bunnystress) | 34.8 → 60.1 (+72.3 %, 4/4, cv 1/0 %) | below the floor |\n| bunnyMark 100 000 (asus-e502b-bunny) | 7.9 → 11.9 (+51.9 %, 4/4, cv 2/3 %) | renderer 10.33 → 9.30 ms (−8.9 %, 0/4 worse); pre-render 6.64 → 6.73 ms (+4.3 % paired, 3/4, cv 5/3 %) |\n\nThe runner called bunnyMark REGRESSION from pre-render's +4.3 %. Pre-render's code does not change with the pass (only the renderer's draw does): it is the laptop's shared 15 W budget, where drawing half again as many frames makes the CPU dearer, as in the earlier HD 620 sittings. It matches R-1277's on/off (+53.5 %, +77.8 %): the rule is wired and reads this GPU right."
     },
     {
+      "id": "R-1322",
+      "date": "2026-11-17",
+      "time": "17:54",
+      "timeFrom": "recorded",
+      "title": "Owned decorations, G-buffer depth and the owner's foot: the owner's three light bugs of the afternoon, fixed; barrio ABAB NEUTRAL",
+      "verdict": "kept-hygiene",
+      "text": "The owner's three reports of 2026-11-17 afternoon, fixed on fix/decoration-owner and fix/gbuffer-depth.\n\n- N-273 (ac6bc0ff, 84190dbc): DecorationComponent.owner; an owned decoration carries its owner's G-buffer id, so the light pass skips the owner's own volume for its pixels. The barrio's loader gives each house's walls and roofs their house. Roofs lit at noon again.\n- N-274 (89d38817): the G-buffer's MRT pass draws with its own depth attachment and the colour pass's depth formula. A hidden wall no longer lights or shadows the house in front of it; WebGL and WebGPU.\n- N-275 (1c8e29df): the G-buffer words carry a third float, the owner's foot (Transform.y); an attached decoration's owner defaults to its parent. A tree's crown is lit as a card on its trunk's foot, not as the floor behind it.\n\nBuenos Aires ABAB, the stack against main (4 pairs, headed Chrome, GTX): NEUTRAL. Every worker under the 6 ms floor; renderer 1.270 -> 1.308 ms (+3 %, about 0.04 ms, likely the extra 4 B an instance), the others drifted down. Hygiene keep; Predator's gate and the HD 620 drawn frames still to come before the merge.",
+      "commits": [
+        "ac6bc0ff",
+        "84190dbc",
+        "89d38817",
+        "1c8e29df"
+      ]
+    },
+    {
+      "id": "R-1323",
+      "date": "2026-11-17",
+      "time": "18:30",
+      "timeFrom": "recorded",
+      "title": "Volumes take each lamp-map texel from their texel's own ray: the people's shadows climb the walls again; +0.03 ms GPU with the lamp cache off",
+      "verdict": "kept-hygiene",
+      "text": "Fixed on fix/gbuffer-depth (965cf163; its scene b45ac4cc). Each fragment of the volumes' draw into the lamps' map intersects its texel's ray (lamp to the floor point its pano place stands for, lampPanoLanding) with its face's plane (from the screen derivatives of its interpolated 3D point) and writes that point's place along the ray and its depth; a plane met at or above the lamp is discarded. WebGL and WebGPU, map and E-508 cache.\n\nwallShadowScene (the barrio's case: house with its hull and owned walls, lamp 60 px in front, people 25 px from the wall): the people's shadows are back on the wall; WebGL and WebGPU equal (18 px differ, max 5). Barrio at 22:00 against HEAD: the same picture but for a strip of sidewalk at a house's foot the volume had wrongly darkened.\n\nCost: Buenos Aires at 22:00 with ?lampCache=0 (the volumes drawn every frame), GTX, glFrameRecorder --gpu-draws, one run each: the volumes' draw 1.053 -> 1.086 ms GPU a frame (+0.03 ms). With the cache on, a still lamp redraws them only when something moves. Hygiene keep.",
+      "commits": [
+        "b45ac4cc",
+        "965cf163"
+      ]
+    },
+    {
+      "id": "R-1324",
+      "date": "2026-11-17",
+      "time": "18:48",
+      "timeFrom": "recorded",
+      "title": "Houses as faces against one sprite with maps each: by day the sprites look flat (lit as drawn, the k rule); with k = 1 they match the faces",
+      "verdict": "answered",
+      "text": "The owner asked how a house looks lit as faces (what the Editor de Barrios exports) against one sprite a house with a height map and a normal map. houseLightScene (81342edc) places casa_125 and casa_168 both ways, baked by the editor from the same design, turn and textures (editor 4799339, e80a396: R3 render with maps, herramientas/casas_mapas.js), same hull, trees, people and lamp; captures at 10 h, 15 h and 22 h, WebGL.\n\n- By day the sprites look flat: a sprite with maps is lit as drawn by day and by its normals only for the lamps' share of its light (the light pass's k), so its walls turned from the sun keep their light where a face's go into shade.\n- By night the k rule lets the lamp light the sprites' roofs above it, which the faces keep dark.\n- With k forced to 1 (a local experiment, not committed) the sprites look like the faces at every hour, the tree's shadow on a front a little fainter.\n- The rest matches: shadows cast and received, self-shadow on parapets.\n\nTo use maps for houses the engine would need a way to light a sprite by its normals at every hour (k = 1 for its sheet); asked of the owner.",
+      "commits": [
+        "81342edc"
+      ]
+    },
+    {
+      "id": "R-1325",
+      "date": "2026-11-17",
+      "title": "The owner confirmed it on the ASUS: no texture flicker left while the camera pans",
+      "verdict": "kept-hygiene",
+      "text": "The owner, on the HD 620 laptop, after the merge (266230d9): no more flicker of the walls' textures while moving the camera."
+    },
+    {
+      "id": "R-1326",
+      "date": "2026-11-17",
+      "time": "19:34",
+      "timeFrom": "recorded",
+      "title": "The unshaded pass takes the canvas's pixel depth in one draw: the lamp post's ghost through a person is gone, no measurable cost",
+      "verdict": "kept-hygiene",
+      "text": "Fixed on fix/gbuffer-depth (79c3bac8, af0c21de). With pixel depth the unshaded pass tests and writes the canvas's depth past its alpha cut (gbufDepthFragment / gbufDepthWgsl, the unshaded entry), in one draw. The G-buffer's and the unshaded passes now take the canvas's own formula: DEPTH_FORMULA_FACES with faces, the stepped DEPTH_FORMULA without them. With the continuous one alone a 3 px tie split into rows the canvas never had (depthPairScene); that also fixes N-274's pass in scenes without faces.\n\ndepthPairScene, lamps lit: the half-strength ghost is gone at gaps 1 and 2, and the post stays whole in front from gap 3 on; WebGL and WebGPU equal. A two-pass form (opaque writing, edges testing, as the canvas) gave the same picture (0 px differ) for about +0.06 ms GPU, so one pass stays.\n\nCost, Buenos Aires at 22:00, GTX, glFrameRecorder --gpu-draws, all runs at P0: the unshaded pass's draws 0.091 and 0.093 ms against 0.083 and 0.097 ms before; against an unchanged draw of the same frame, 0.81 and 0.89 against 0.79 and 0.91. spriteMapsStressScene against HEAD within its own A/A. Hygiene keep.",
+      "commits": [
+        "79c3bac8",
+        "af0c21de"
+      ]
+    },
+    {
+      "id": "R-1327",
+      "date": "2026-11-17",
+      "time": "19:40",
+      "timeFrom": "recorded",
+      "title": "WebGL's self-shadow march skips the steps past the face map, as WebGPU's: merged into fix/gbuffer-depth",
+      "verdict": "kept-hygiene",
+      "text": "Parity fix (two lines): WebGL's march read the face map's edge texel for every step past the screen; WebGPU's skipped them. Merged into the stack. houseLightScene at 15 h (nothing at the screen's edge) against the commit before: 0 px differ; the node suite green. Its owner's sighting (shadows on the houses against the bottom edge) was mostly N-274's hidden walls; this keeps the edge from adding its own.",
+      "commits": [
+        "755af901",
+        "bf9bc79a"
+      ]
+    },
+    {
+      "id": "R-1328",
+      "date": "2026-11-17",
+      "time": "18:59",
+      "timeFrom": "recorded",
+      "title": "Predator's gate for the stack (main against fix/gbuffer-depth): NEUTRAL",
+      "verdict": "tie",
+      "text": "runPredatorAbab --vs main --hyp-rev 1adaf04a, 4 pairs, headed Chrome, GTX, AC power: NEUTRAL. Every worker under the 6 ms floor (logic 2.11 -> 2.15, spatial 3.48 -> 3.77, physics 3.33 -> 4.03, renderer 1.37 -> 1.49, pre-render 1.92 -> 2.04 ms): all moved up together, physics most, which no change in the stack reaches, so drift. Presented 60.0 both, load keys within 0.5 %.",
+      "commits": [
+        "1adaf04a"
+      ]
+    },
+    {
+      "id": "R-1329",
+      "date": "2026-11-17",
+      "title": "Wall rings at night are the light target's 8-bit steps, not shadows; the people's wide wall shadows from a side lamp are their lamp-facing cards, as a body casts",
+      "verdict": "note",
+      "text": "wallShadowScene, people=0, lamp 200 px away: concentric rings on the wall, identical with lampShadows 'map' and 'sprite' (0 px differ), so the light's quantization (RGBA8, light up to 1), not a shadow. The flat-topped wide shadows of the people beside the lamp on the wall stay with a 1500 px reach (not the pano's ring): each person casts as a card turned to its lamp (lampMapVertex), a body's silhouette, which an oblique wall stretches."
+    },
+    {
+      "id": "R-1330",
+      "date": "2026-11-17",
+      "time": "20:55",
+      "timeFrom": "recorded",
+      "title": "HD 620: the stack draws 8.7 % fewer frames in the barrio at night (the gate fails); the merge waits for the per-pass split",
+      "verdict": "fail",
+      "text": "ASUS job 0887 (the other session's), HD 620, 20:44-20:55: main bd82c1be against fix/gbuffer-depth 023c4264, Buenos Aires hour=22&dayMinutes=0, camera still, src, 4 pairs. Drawn 36.8 -> 33.9 fps (-8.7 %, 4/4 pairs, cv 2/3 %), presented 57.3 -> 54.1. Renderer CPU 7.83 -> 7.57 ms, physics -14.6 %, logic -4.7 % (fewer frames: shared power). Load keys equal; GPU_CASTERS and GPU_SHADOW_LIGHTS +4.9 % on B, but at equal casters B still draws 8 % fewer, so the stack's GPU cost. Suspects: the G-buffer pass writing gl_FragDepth for every texel (N-274: no early depth test there; the colour pass keeps it with E-378's vertex depth), N-266's unshaded pass the same, N-276's per-fragment lamp rays. On the GTX each read cheap. A per-pass split on the ASUS is queued.",
+      "commits": [
+        "023c4264"
+      ]
+    },
+    {
       "id": "R-1341",
       "date": "2026-11-17",
       "time": "21:06",
@@ -35485,6 +35724,30 @@
       ]
     },
     {
+      "id": "R-1331",
+      "date": "2026-11-17",
+      "title": "Caveat on R-1322's barrio ABAB: its main side ran the stack's demos/buenosAiresScene (no --full-rev, N-278)",
+      "verdict": "note",
+      "text": "The barrio sitting behind R-1322 (n275-barrio, --vs main --hyp-rev 1c8e29df, no --full-rev) served both sides the main folder's demos/buenosAiresScene, then the stack's: main's engine ran the stack's barrioLoader (which passes each wall its owner; main's pool ignores the key). The A side was main's engine on the new loader, close to main, not main itself. Predator's gate (R-1328) is unaffected (its scene is not in the stack). The HD 620 sittings (R-1330, job 0891) use --full-rev."
+    },
+    {
+      "id": "R-1332",
+      "date": "2026-11-17",
+      "title": "The light pass dithers its output by half a step (owner-approved look); on the GTX its cost is inside the noise, the HD 620 decides",
+      "verdict": "note",
+      "text": "fix/light-dither 4849639a (from main 57044bd1): interleaved gradient noise of half an 8-bit step on both outputs of the light pass, GLSL and WGSL; with pixelArt the art pixel's. The owner chose the look from wallShadowScene and houseLightScene captures (with and without; no pixel moved more than one level). GTX, Buenos Aires at 22:00, glFrameRecorder --gpu-draws, the light pass's draw, three pairs at mixed clocks (840-975 MHz, P0/P3): without 1.033, 0.689, 0.848 ms; with 0.913, 0.807, 0.733 ms. Inside the noise (the first pair overlapped another session's suites). The HD 620's drawn frames are queued (ASUS 0892b).",
+      "commits": [
+        "4849639a"
+      ]
+    },
+    {
+      "id": "R-1333",
+      "date": "2026-11-17",
+      "title": "HD 620, the stack with one suspect off (N-276, N-274's depth, N-266): each still 5 to 6.5 % behind main",
+      "verdict": "note",
+      "text": "ASUS job 0891 (the other session's), each arm against main bd82c1be, barrio hour=22&dayMinutes=0, camera still, 4 pairs, --full-rev, drawn frames a 10 s window. no-n276 (54cb7bbf): A 366 366 366 363 | B 343 345 353 343, -5.6 % 4/4. no-gbufdepth (f5c66158): A 374 379 383 372 | B 352 363 78 356 (one B run froze, the laptop's known renderer stall), about -5.3 % without it. no-unshadeddepth (3d831eca): A 374 375 379 368 | B 345 107 349 355 (one froze), about -6.5 % without it. The full stack read -8.7 % (R-1330): N-276 about 3 points, the G-buffer's depth about 3, the unshaded depth 1 to 2; the rest in N-273, N-275 or N-272, queued as the next arms."
+    },
+    {
       "id": "R-1343",
       "date": "2026-11-17",
       "time": "22:46",
@@ -35498,6 +35761,30 @@
       ]
     },
     {
+      "id": "R-1334",
+      "date": "2026-11-17",
+      "time": "23:15",
+      "timeFrom": "recorded",
+      "title": "The dither costs the HD 620 4.3 % of its drawn frames in the barrio at night: dropped (the owner: no dither if it costs)",
+      "verdict": "dropped",
+      "text": "ASUS job 0892b (the other session's), HD 620, main 57044bd1 against fix/light-dither 4849639a, barrio hour=22&dayMinutes=0, camera still, 4 pairs, --full-rev: drawn 37.4 -> 36.0 fps (-4.3 %, 4/4, cv 1/1 %), A 378 373 375 371 | B 361 361 359 354; CPU workers level or lower (fewer frames). About 1.2 ms a frame for interleaved gradient noise (no sin) on a 960 x 540 light target: not the ALU; likely the noise defeating Intel's render-target compression of the light target. The owner's rule was no dither if it costs, so the branch stays unmerged; N-277 parked (the rings show on plain dark surfaces only, the barrio's textures hide them).",
+      "commits": [
+        "4849639a"
+      ]
+    },
+    {
+      "id": "R-1335",
+      "date": "2026-11-17",
+      "time": "23:10",
+      "timeFrom": "recorded",
+      "title": "The houses' outer outline (editor a34b8d0, 8847610): HD 620 drawn -1.5 %, pre-render +16 % with 15 % more decorations; the owner decides",
+      "verdict": "note",
+      "text": "The owner asked for the houses' outlines as on a map sprite: the faces' inner borders stay, and a strip 1.2 world px outside each house's screen silhouette (in the plane of its face, the dark of its colour). Parque Chas re-exported on exp/barrio-outline: first 453 994 decorations (+119k), then without posts and runs under 2.5 px 386 267 (+51k, +15 %). GTX ABAB of the first: pre-render 4.24 -> 5.08 ms, renderer 1.90 -> 2.04. HD 620 (ASUS 0892 and 0892bd, 8 pairs, the trimmed package against the stack 94d7c826): drawn -1.5 % (5/8 fewer, clean pairs -2.8 to +0.3 %), pre-render 16.2 -> 19.3 ms (+16 %, 7/8). Not in main; the owner weighs the look against it.",
+      "commits": [
+        "753958ea"
+      ]
+    },
+    {
       "id": "R-1344",
       "date": "2026-11-17",
       "title": "N-290 merged (E-434 with it): addAcceleration no longer clears the sleeping paint; neutral on the GTX and the ASUS",
@@ -35506,6 +35793,26 @@
       "commits": [
         "78bf9941",
         "3280bf06"
+      ]
+    },
+    {
+      "id": "R-1336",
+      "date": "2026-11-17",
+      "title": "HD 620: the stack with N-272 rewritten (no per-step test) and main's N-262 still 6.9 % behind main",
+      "verdict": "fail",
+      "text": "ASUS job 0892d (the other session's), HD 620, main dfc1afd5 against fix/gbuffer-depth e0c49f6a, barrio hour=22&dayMinutes=0, camera still, 4 pairs, --full-rev: drawn A [49] 377 373 370 | B 344 347 347 352 (one A run froze), clean means 373 against 348, -6.9 % (runner -5.9 % paired, 3/4). CPU workers level or lower. The rewrite of N-272 recovered little of the 4.5 points its arm showed (exp/no-n272, -2.9 % on the old base); queued: the new base without N-272 (exp/no-n272-v2 b2aebcc2) and a per-pass GPU split.",
+      "commits": [
+        "e0c49f6a"
+      ]
+    },
+    {
+      "id": "R-1337",
+      "date": "2026-11-18",
+      "title": "N-272 out of the stack: its edge handling cost the HD 620 about 4.5 % of its drawn frames in either form",
+      "verdict": "dropped",
+      "text": "ASUS job 0894 (the other session's), HD 620, against main dfc1afd5, barrio hour=22&dayMinutes=0, camera still, --full-rev: the stack's tip without N-272 (exp/no-n272-v2 b2aebcc2) clean A 369 372 | B 363 357 364 363, about -2.4 %, against -6.9 % with it rewritten (R-1336). Per pass, main against the tip with it (--gpu-passes, two runs a side): the light pass 1.68, 1.79 | 2.94, 2.68 ms (+1.08), the G-buffer +0.26, the canvas pass -0.92. A per-step test (755af901) and the map's exit worked out before the loop (e0c49f6a) cost about the same, so the cost is any code added to a loop the light pass inlines for the sun and each lamp. Reverted on fix/gbuffer-depth (f8484515). Still open: WebGL's march reads the face map's edge texel past the screen; next, an empty ring at the face map's edge (the G-buffer drawn a texel inside it), which needs no shader code.",
+      "commits": [
+        "f8484515"
       ]
     }
   ],

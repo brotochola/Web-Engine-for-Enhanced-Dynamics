@@ -52,7 +52,9 @@ import {
   OPAQUE_KEYED_ROW_FLOATS, OPAQUE_MAX_ROWS, OPAQUE_POSE_TEXELS, OPAQUE_ROW_FLOATS, buildOpaqueKeyedRows, buildOpaqueRows,
   opaqueFragment, opaquePassPays, opaquePoseTextureRows, opaqueRowVertex, opaqueVertex,
 } from './opaquePass.js';
-import { pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl } from './pixelDepth.js';
+import {
+  gbufDepthFragment, gbufDepthVertex, gbufDepthWgsl, pixelDepthFragment, pixelDepthTerms, pixelDepthVertex, pixelDepthWgsl,
+} from './pixelDepth.js';
 import {
   POSE_ROW_FLOATS, POSE_TEX_TEXELS, STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, poseBlockFloats, spriteIndexedVertex,
   spriteIndexedWgsl, staticsTextureHeight,
@@ -709,6 +711,10 @@ export class InstancedSpriteBatch {
     this._vdepthRowShader = null;
     this.vdepthMesh = null;
     this._depthTerms = new Float32Array([1, 1, 0, 0]);
+    // The light's passes' uFaceSpace: heightScaleY, floorScaleY, and N-274's G-buffer depth's view terms (the third and
+    // fourth of _depthTerms), one array for every pass's group.
+    this._faceSpace = new Float32Array([1, 1, 0, 0]);
+    this._faceGroups = [];
 
     this._tileWorld = new Float32Array(4);
     this._tileWorld[2] = 1;
@@ -924,7 +930,7 @@ export class InstancedSpriteBatch {
     if (this._gbufBuffers === null) return geometry;
     geometry.addAttribute('aInstGbuf', {
       buffer: this._gbufBuffers[ring],
-      format: 'float32x2',
+      format: 'float32x3',
       stride: GPU_GBUF_FLOATS * 4,
       offset: 0,
       instance: true,
@@ -1210,6 +1216,9 @@ export class InstancedSpriteBatch {
 
   /** DX-FACEDEPTH: the colour programs (plain, indexed, by row) made again as the depth now asks, the meshes on them. */
   _rebuildDepthPrograms() {
+    // N-274, N-266: the G-buffer's and the unshaded passes are made again on their next use, with the depth or without.
+    this._aux[AUX_GBUF] = { meshes: [], state: null, shader: null, indexed: null, row: null };
+    this._aux[AUX_UNSHADED] = { meshes: [], state: null, shader: null, indexed: null, row: null };
     const r = this.shader.resources;
     const wasRow = this._rowShader !== null && this.mesh.shader === this._rowShader;
     const wasIndexed = this._indexedShader !== null && this.mesh.shader === this._indexedShader;
@@ -1281,6 +1290,23 @@ export class InstancedSpriteBatch {
     pixelDepthTerms(this._depthTerms, floorScaleY, heightScaleY, viewTopY, viewHeight);
     const group = this.shader && this.shader.resources && this.shader.resources.uniforms;
     if (group && typeof group.update === 'function') group.update();
+    // N-274: the G-buffer's depth reads the view's terms from uFaceSpace.
+    const faceSpace = this._faceSpace;
+    if (faceSpace[2] !== this._depthTerms[2] || faceSpace[3] !== this._depthTerms[3]) {
+      faceSpace[2] = this._depthTerms[2];
+      faceSpace[3] = this._depthTerms[3];
+      const groups = this._faceGroups;
+      for (let i = 0; i < groups.length; i++) groups[i].update();
+    }
+  }
+
+  /**
+   * N-274: whether the G-buffer's one pass (gbufMesh) tests and writes pixel depth, as the colour pass does: its render
+   * target needs a depth attachment then.
+   * @returns {boolean}
+   */
+  get gbufDepthOn() {
+    return this._pixelDepth !== null;
   }
 
   /**
@@ -2351,9 +2377,11 @@ export class InstancedSpriteBatch {
       // Pixi made the face map's group from its object: every kind shares it.
       uniforms = face.shader.resources.uniforms;
     } else {
+      this._faceSpace[0] = heightScaleY;
+      this._faceSpace[1] = groundScaleY;
       uniforms = {
         uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
-        uFaceSpace: { value: new Float32Array([heightScaleY, groundScaleY, 0, 0]), type: 'vec4<f32>' },
+        uFaceSpace: { value: this._faceSpace, type: 'vec4<f32>' },
       };
       if (this._twoStreams) uniforms.uPoseAlpha = { value: 1, type: 'f32' };
     }
@@ -2364,11 +2392,20 @@ export class InstancedSpriteBatch {
     // past the face map reads them.
     const gbuf = { gbuf: kind === AUX_FACE ? this.gbuf : true, unshaded: this.unshadedOn, unshadedMask: kind === AUX_UNSHADED_MASK };
     const entry = AUX_ENTRIES[kind];
+    // N-274: the G-buffer's one pass takes the colour pass's depth (pixelDepth.js gbufDepthVertex, gbufDepthFragment,
+    // gbufDepthWgsl), so it keeps the surface the canvas shows at each texel; N-266: so does the unshaded pass, so a lit
+    // sprite in front of an unshaded one covers it there as on the canvas, whichever the painter drew last.
+    const depth = (kind === AUX_GBUF || kind === AUX_UNSHADED) && this._pixelDepth !== null;
+    // N-266: the colour pass's formula, stepped without faces.
+    const depthOpts = { faces: this._depthFaces };
+    const depthWgsl = (source) => (depth ? gbufDepthWgsl(source, depthOpts) : source);
     // E-457: the unshaded mask's vertex shader leaves out the instances that cannot be unshaded.
-    const vertexOf = (source) => (kind === AUX_UNSHADED_MASK ? unshadedMaskVertex(faceMapVertex(source, gbuf)) : faceMapVertex(source, gbuf));
-    const frag = this._useWebGpu ? null : this._auxFragment(kind);
+    const vertexOf = (source) => (kind === AUX_UNSHADED_MASK
+      ? unshadedMaskVertex(faceMapVertex(source, gbuf))
+      : depth ? gbufDepthVertex(faceMapVertex(source, gbuf)) : faceMapVertex(source, gbuf));
+    const frag = this._useWebGpu ? null : depth ? gbufDepthFragment(this._auxFragment(kind, true), depthOpts) : this._auxFragment(kind, false);
     if (this._useWebGpu) {
-      const source = faceMapWgsl(this._twoStreams ? shaders.spritePose : shaders.sprite, gbuf);
+      const source = depthWgsl(faceMapWgsl(this._twoStreams ? shaders.spritePose : shaders.sprite, gbuf));
       aux.shader = new Shader({ gpuProgram: instancedSpriteGpuProgram(GpuProgram, source, entry, name, { maps: true }), resources });
     } else {
       const vertex = vertexOf(this._twoStreams ? shaders.spriteVertPose : shaders.spriteVert);
@@ -2376,6 +2413,8 @@ export class InstancedSpriteBatch {
     }
     // The shared group, for the kinds made after this one.
     if (kind === AUX_FACE) resources.uniforms = aux.shader.resources.uniforms;
+    const group = aux.shader.resources.uniforms;
+    if (group && typeof group.update === 'function' && !this._faceGroups.includes(group)) this._faceGroups.push(group);
     if (this._indexedShader !== null) {
       const indexedResources = { ...resources, uStatics: this._indexedShader.resources.uStatics };
       const indexedName = `${name}-indexed`;
@@ -2384,7 +2423,7 @@ export class InstancedSpriteBatch {
           ? {
               gpuProgram: instancedSpriteIndexedGpuProgram(
                 GpuProgram,
-                spriteIndexedWgsl(faceMapWgsl(shaders.sprite, gbuf)),
+                depthWgsl(spriteIndexedWgsl(faceMapWgsl(shaders.sprite, gbuf))),
                 entry,
                 indexedName,
                 { maps: true },
@@ -2413,20 +2452,21 @@ export class InstancedSpriteBatch {
     // The G-buffer's targets hold codes: written as they are. The unshaded target is a colour, blended as the sprites are
     // (PMA).
     state.blendMode = kind === AUX_UNSHADED ? 'normal' : 'none';
-    state.depthTest = false;
-    state.depthMask = false;
+    // N-274, N-266: the G-buffer's and the unshaded passes test and write the depth (less) in their target's depth attachment.
+    state.depthTest = depth;
+    state.depthMask = depth;
     state.culling = false;
     aux.state = state;
     return true;
   }
 
-  /** DX-GBUF: a pass kind's fragment shader on WebGL. */
-  _auxFragment(kind) {
+  /** DX-GBUF: a pass kind's fragment shader on WebGL (`depth`: N-266's unshaded pass with pixel depth). */
+  _auxFragment(kind, depth) {
     const shaders = this._engineShaders;
     const unshaded = this.unshadedOn;
     if (kind === AUX_IDS) return faceIdsFragment({ unshaded });
     if (kind === AUX_GBUF) return faceGbufFragment(shaders.faceFrag, { unshaded });
-    if (kind === AUX_UNSHADED) return faceUnshadedFragment();
+    if (kind === AUX_UNSHADED) return faceUnshadedFragment({ depth });
     if (kind === AUX_UNSHADED_MASK) return faceUnshadedMaskFragment();
     return faceFragmentGlsl(shaders.faceFrag, { gbuf: this.gbuf, unshaded });
   }

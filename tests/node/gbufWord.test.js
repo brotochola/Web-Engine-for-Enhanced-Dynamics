@@ -11,8 +11,7 @@ import {
   gbufEntityId,
   gbufWanted,
   gbufWord,
-  writeGbufWords,
-} from '../../src/render/gbufWord.js';
+  writeGbufWords, GBUF_FOOT_NONE } from '../../src/render/gbufWord.js';
 
 test('a word holds its entity, flags and selfShadow, and every word is an exact float32', () => {
   for (const e of [0, 1, 65534, 65535, 70000, 1 << 20]) {
@@ -63,24 +62,25 @@ test('the words follow the draw order, rows without an entity read 0, and zIndex
   const z = new Int16Array(10);
   z[7] = 4;
   z[3] = 4;
-  const out = new Float32Array(8);
+  const out = new Float32Array(12);
   writeGbufWords(out, 4, Uint32Array.from([1, 0, 2, 3]), rowType, rowEntity, null, 10, flags, self, z);
   assert.equal(out[0], 0, 'a decoration row');
-  assert.equal(out[2], gbufWord(5, SPRITE_NORMALS.HEIGHT, 0));
-  assert.equal(out[4], gbufWord(7, GBUF_FLAGS.FLOOR, 0));
-  assert.equal(out[6], gbufWord(3, 0, 1));
-  assert.deepEqual([out[1], out[3], out[5], out[7]], [0, 0, 1, 1], 'zIndex 0, 0, 4, 4');
+  assert.equal(out[3], gbufWord(5, SPRITE_NORMALS.HEIGHT, 0));
+  assert.equal(out[6], gbufWord(7, GBUF_FLAGS.FLOOR, 0));
+  assert.equal(out[9], gbufWord(3, 0, 1));
+  assert.deepEqual([out[1], out[4], out[7], out[10]], [0, 0, 1, 1], 'zIndex 0, 0, 4, 4');
+  assert.deepEqual([out[2], out[5], out[8], out[11]], new Array(4).fill(GBUF_FOOT_NONE), 'N-275: every row on its own foot');
 });
 
 test('from the queue\'s keys: a key past the entities (a decoration\'s) is no entity, the flag bits are not the entity', () => {
   const keys = Uint32Array.from([0x80000000 | 4, 0xffffffff, 12, 2]);
   const flags = new Uint8Array(10).fill(SPRITE_NORMALS.FLAT);
-  const out = new Float32Array(8);
+  const out = new Float32Array(12);
   writeGbufWords(out, 4, null, null, null, keys, 10, flags, null, null);
   assert.equal(out[0], gbufWord(4, SPRITE_NORMALS.FLAT, 0));
-  assert.equal(out[2], 0);
-  assert.equal(out[4], 0);
-  assert.equal(out[6], gbufWord(2, SPRITE_NORMALS.FLAT, 0));
+  assert.equal(out[3], 0);
+  assert.equal(out[6], 0);
+  assert.equal(out[9], gbufWord(2, SPRITE_NORMALS.FLAT, 0));
 });
 
 // E-444: as from the keys, a collector row whose entity is at or past the entity count is no entity: the word 0 and zIndex
@@ -92,14 +92,14 @@ test('from the collector: a sprite row whose entity is at or past the entity cou
   const self = new Uint8Array(16).fill(1);
   const z = new Int16Array(16).fill(5);
   z[4] = 0;
-  const out = new Float32Array(10);
+  const out = new Float32Array(15);
   writeGbufWords(out, 5, null, rowType, rowEntity, null, 10, flags, self, z);
   assert.equal(out[0], gbufWord(3, GBUF_FLAGS.FLOOR, 1));
-  assert.equal(out[2], 0, 'the entity count itself');
-  assert.equal(out[4], gbufWord(4, GBUF_FLAGS.FLOOR, 1));
-  assert.equal(out[6], 0, 'past the count, though the selfShadow and zIndex columns are longer');
-  assert.equal(out[8], 0, 'a negative entity');
-  assert.deepEqual([out[1], out[3], out[5], out[7], out[9]], [0, 1, 1, 1, 1], 'zIndex 5, 0, 0, 0, 0');
+  assert.equal(out[3], 0, 'the entity count itself');
+  assert.equal(out[6], gbufWord(4, GBUF_FLAGS.FLOOR, 1));
+  assert.equal(out[9], 0, 'past the count, though the selfShadow and zIndex columns are longer');
+  assert.equal(out[12], 0, 'a negative entity');
+  assert.deepEqual([out[1], out[4], out[7], out[10], out[13]], [0, 1, 1, 1, 1], 'zIndex 5, 0, 0, 0, 0');
 });
 
 test('bands stop at the most the depth holds', () => {
@@ -107,7 +107,7 @@ test('bands stop at the most the depth holds', () => {
   const rowType = new Uint8Array(n);
   const rowEntity = Int32Array.from({ length: n }, (_, i) => i);
   const z = Int16Array.from({ length: n }, (_, i) => i);
-  const out = new Float32Array(2 * n);
+  const out = new Float32Array(3 * n);
   writeGbufWords(out, n, null, rowType, rowEntity, null, n, new Uint8Array(n), null, z);
-  assert.equal(out[2 * (n - 1) + 1], GBUF_MAX_BANDS - 1);
+  assert.equal(out[3 * (n - 1) + 1], GBUF_MAX_BANDS - 1);
 });

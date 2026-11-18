@@ -72,6 +72,10 @@ export class DecorationComponent extends Component {
     // of its position above the floor, in 1/FACE_ROW_Z_UNITS px, innerZ above it (src/render/faceMap.js).
     faceOct: Uint32Array,
     faceZ: Uint32Array,
+    // N-273: the entity this decoration is part of, + 1 (0: none): a house's walls and roofs, whose own shadow volume must
+    // not fall on them. Its rows carry that entity's G-buffer id (gbufWord.js), so the light pass takes its pixels as the
+    // entity's.
+    owner: Uint32Array,
 
     // === Place in the active list (E-273) ===
     // DecorationPool's activeDecorationsData row this decoration sits in, plus 1 (0: not listed), so a despawn swaps it
