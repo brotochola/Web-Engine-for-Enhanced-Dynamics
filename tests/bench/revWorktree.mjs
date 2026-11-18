@@ -130,12 +130,47 @@ function overlayWorkingTree(root, includeSrc = false) {
 }
 
 /**
+ * N-278: of the paths that differ between the runner's HEAD and a revision, those a page can load from outside src/
+ * (scenes and their data under demos/ and tests/bench/stressScenes/, the bundles in dist/). A srcOnly worktree takes
+ * src/ from the revision and these from HEAD, so the revision's own copies of them are not what runs.
+ * @param {string[]} changed
+ * @returns {string[]}
+ */
+export function servedOutsideSrc(changed) {
+  return changed.filter((p) => p.startsWith('demos/') || p.startsWith('dist/') || p.startsWith('tests/bench/stressScenes/'));
+}
+
+/**
+ * N-278: whether srcOnly sides may run a scene. A side whose revision differs from the runner's HEAD inside the
+ * scene's own folder, or in dist/ when the query asks for a bundle (weedBundle), would run the runner's copy of it:
+ * those are refused. Other served differences are only reported (another demo's files).
+ * @param {Array<{ label: string, srcOnlyGaps?: string[] }>} sides
+ * @param {string} scenePath the scene module as the page imports it, e.g. /demos/buenosAiresScene/buenosAiresScene.js
+ * @param {string} query every side's scene parameters, joined
+ * @returns {{ refuse: string[], warn: string[] }} "label: path" lines
+ */
+export function srcOnlyGapCheck(sides, scenePath, query) {
+  const folder = String(scenePath).replace(/^\/+/, '').replace(/[^/]*$/, '');
+  const bundle = /(^|&)weedBundle=/.test(String(query));
+  const refuse = [];
+  const warn = [];
+  for (const side of sides) {
+    for (const p of side.srcOnlyGaps || []) {
+      const own = (folder !== '' && p.startsWith(folder)) || (bundle && p.startsWith('dist/'));
+      (own ? refuse : warn).push(`${side.label}: ${p}`);
+    }
+  }
+  return { refuse, warn };
+}
+
+/**
  * Create (or refresh) the baseline worktree for `rev`.
  * @param {string} rev
  * @param {{ srcOnly?: boolean, workloadCounts?: boolean, tag?: string, pool?: string }} [opts] `tag` names a second
  *   worktree of the same revision (runPredatorAbab's --hyp-rev side), so the two sides of an A/A are two directories;
  *   `pool` checks the revision out in the fixed tree ../weed-ab/pool-<pool> instead (kept after the run)
- * @returns {{ root: string, rev: string, sha: string, headSha: string, overlay: string[], countsPatched: boolean }}
+ * @returns {{ root: string, rev: string, sha: string, headSha: string, overlay: string[], countsPatched: boolean,
+ *   srcOnlyGaps: string[] }} `srcOnlyGaps`: servedOutsideSrc of HEAD against the revision (srcOnly worktrees only)
  */
 export function ensureRevWorktree(rev, opts = {}) {
   const srcOnly = opts.srcOnly !== false;
@@ -170,10 +205,13 @@ export function ensureRevWorktree(rev, opts = {}) {
 
   if (srcOnly && sha !== headSha) checkoutSrcFromRev(root, sha);
   const overlay = srcOnly ? overlayWorkingTree(root, false) : [];
+  const srcOnlyGaps = srcOnly && sha !== headSha ? servedOutsideSrc(lines(git(['diff', '--name-only', headSha, sha]))) : [];
   linkNodeModules(root);
   const countsPatched = opts.workloadCounts === false ? false : applyWorkloadCounts(root);
 
-  const info = { root, rev, sha, headSha, srcOnly, overlay, countsPatched, createdAt: new Date().toISOString() };
+  const info = {
+    root, rev, sha, headSha, srcOnly, overlay, srcOnlyGaps, countsPatched, createdAt: new Date().toISOString(),
+  };
   fs.writeFileSync(path.join(root, STAMP), JSON.stringify(info, null, 2) + '\n');
   holdRevWorktree(root);
   return info;
