@@ -8671,15 +8671,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
   }
 
+  /** SST-1: the renderer's part of boot (AbstractWorker's boot took the config, engine.wasm and the page's origin). */
   async _bootRenderer(data) {
-    loadMark('boot');
     const config = data.config || {};
     const rendererConfig = config.renderer || {};
     const backend = normalizeRendererBackend(rendererConfig.backend);
     this._rendererBackend = backend;
     this._useWebGpu = backend === RENDERER_BACKEND_WEBGPU;
-    // Blob workers have an opaque origin: a source shader's root-relative path resolves against the page's.
-    if (data.pageOrigin) self.__weedPageOrigin = data.pageOrigin;
     // Bundles embed the engine shaders and post them; source builds fetch them.
     embeddedEngineShaders = data.engineShaders || null;
     if (!data.canvas) throw new Error("WeedJS: the renderer's 'boot' message carries no canvas");
