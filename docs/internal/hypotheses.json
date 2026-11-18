@@ -23009,6 +23009,23 @@
       "date": "2026-11-18",
       "title": "A tick interval for the whole lighting system (a dev knob): the light pass, the shadow maps and the shading recomputed every N frames (30 fps at N = 2) while everything else draws at 60; today only the sprites' cast shadows have one (lighting.shadowUpdateInterval)",
       "statusText": "the owner's idea, 2026-11-18; not designed or built"
+    },
+    {
+      "id": "DX-GBUFSHADER",
+      "title": "A game's own shader can read the G-buffer: custom shader layers (LAYER_KIND.SCREEN passes and the others) get each pixel's normal, height, entity and depth, so a game writes effects that know the scene (an outline, corner shading, a cartoon look)",
+      "status": "open",
+      "statusText": "the owner, 2026-11-18: \"lo que sí vale la pena agregar al backlog es la siguiente idea: poder usar el gbuffer en un shader propio. solo eso\". It came from looking at the Editor de Barrios' screen-space outline (editor/js/gfx.js: lines where the box id or the depth changes, corner shading from depth). Only the access: no built-in outline or effect",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Hand custom shader layers the face map (normal, height), the ids map and the pixel depth as named textures, in GLSL and WGSL, with their size: they are drawn at the light's resolution (0.25 by default, 0.5 in the barrio), so a texel covers several canvas pixels, and a shader must know that. Document their encoding (faceMap.js FACE_*, the ids words) in the guide with a small example (an outline). Decide whether a layer that asks for them turns the G-buffer on, and what it reads in a scene without one.",
+      "area": "render",
+      "kind": "feature",
+      "refs": [],
+      "aliases": [
+        "g-buffer in custom shaders",
+        "gbuffer access"
+      ],
+      "records": []
     }
   ],
   "records": [
