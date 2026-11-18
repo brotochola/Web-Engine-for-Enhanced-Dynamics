@@ -31,6 +31,7 @@ import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
 import { MeshGeometry } from '../core/meshGeometry.js';
 import { MeshUvFillBatch, meshUvFillProgram } from '../render/meshUvFillBatch.js';
+import { proxyTexturesByPrefix } from '../render/atlasProxyTextures.js';
 import { Sun } from '../core/sun.js';
 
 import {
@@ -7029,18 +7030,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (source.style) source.style.scaleMode = this.atlasScaleMode;
         const jsonData = data.json;
 
-        // Manually create textures for each frame
+        // Manually create textures for each frame. SST-7 step 4: one frame rectangle and one options object for all of
+        // them (a Texture copies its frame; orig and trim it keeps, a Rectangle each).
         const frameTextures = {};
-        for (const [frameName, frameData] of Object.entries(jsonData.frames)) {
+        const frameRect = new PIXI.Rectangle();
+        const textureOptions = { source, frame: frameRect, orig: undefined, trim: undefined };
+        for (const frameName in jsonData.frames) {
+          const frameData = jsonData.frames[frameName];
           const frame = frameData.frame;
           const sourceSize = frameData.sourceSize;
           const spriteSourceSize = frameData.spriteSourceSize;
-
-          // Build texture options
-          const textureOptions = {
-            source,
-            frame: new PIXI.Rectangle(frame.x, frame.y, frame.w, frame.h),
-          };
+          frameRect.x = frame.x;
+          frameRect.y = frame.y;
+          frameRect.width = frame.w;
+          frameRect.height = frame.h;
 
           // If frame is trimmed, add orig and trim for proper anchor handling
           // PixiJS uses these to offset the sprite so anchors work relative to original size
@@ -7051,6 +7054,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               spriteSourceSize.x, spriteSourceSize.y,
               spriteSourceSize.w, spriteSourceSize.h
             );
+          } else {
+            textureOptions.orig = undefined;
+            textureOptions.trim = undefined;
           }
 
           const texture = new PIXI.Texture(textureOptions);
@@ -7147,8 +7153,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }
 
           debugWorkerLog(`✅ Built flat texture array: ${this.flatTextures.length} textures, ${animNames.length} animations`);
+          loadMark('atlas textures');
 
           this.rebuildInstancedTextureLut();
+          loadMark('texture lut');
         }
 
         // console.log(
@@ -7171,12 +7179,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         return;
       }
 
+      const texturesByPrefix = proxyTexturesByPrefix(bigAtlas.textures, proxySheets);
       for (const [proxyName, proxyData] of Object.entries(proxySheets)) {
-        const prefix = proxyData.prefix;
-
         // Extract animations from bigAtlas that match this proxy's prefix
         const proxyAnimations = {};
-        const proxyTextures = {};
+        const proxyTextures = texturesByPrefix.get(proxyData.prefix);
 
         for (const [animName, animInfo] of Object.entries(proxyData.animations)) {
           const prefixedName = animInfo.prefixedName;
@@ -7187,14 +7194,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             console.warn(
               `⚠️ Proxy "${proxyName}": Animation "${animName}" (${prefixedName}) not found in bigAtlas`
             );
-          }
-        }
-
-        // Also extract frame textures with this prefix
-        for (const [frameName, texture] of Object.entries(bigAtlas.textures)) {
-          if (frameName.startsWith(prefix)) {
-            const unprefixedName = frameName.substring(prefix.length);
-            proxyTextures[unprefixedName] = texture;
           }
         }
 
@@ -7215,6 +7214,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // console.log("PIXI WORKER: Finished loading all spritesheets");
+    loadMark('proxy sheets');
   }
 
   /**
