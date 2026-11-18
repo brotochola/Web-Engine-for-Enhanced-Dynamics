@@ -66,6 +66,7 @@ import { startAssetWorker } from './assetWorkerClient.js';
 import { loadBakedAtlas } from './atlas/bakedAtlas.js';
 import { loadPackedAtlas } from './atlas/packedAtlas.js';
 import { decalTexturesFrom } from './atlas/atlasFrames.js';
+import { buildTextureMetadata } from './atlas/textureMetadata.js';
 import { Camera } from './camera.js';
 import { Time, simClockStepMs } from './timeScale.js';
 import { Tween } from './tween.js';
@@ -2031,87 +2032,11 @@ class Scene {
   }
 
   /**
-   * Build texture metadata for render queue system
-   * Creates lookup tables so particle_worker can compute globalTextureId
-   * and pixi_worker can do O(1) texture lookup
+   * Build texture metadata for render queue system (atlas/textureMetadata.js): the tables particle_worker computes
+   * globalTextureId with and pixi_worker finds a texture with.
    */
   buildTextureMetadata() {
-    const bigAtlas = SpriteSheetRegistry.spritesheets.get('bigAtlas');
-    if (!bigAtlas) {
-      console.warn('[Scene] bigAtlas not found, texture metadata not built');
-      return null;
-    }
-
-    // Build animation frame offsets
-    // animationFrameStart[animIdx] = starting index in flat texture array
-    // animationFrameCount[animIdx] = number of frames
-    const animationFrameStart = [];
-    const animationFrameCount = [];
-    let currentOffset = 0;
-
-    const animCount = bigAtlas.totalAnimations;
-    for (let animIdx = 0; animIdx < animCount; animIdx++) {
-      const animName = bigAtlas.indexToName[animIdx];
-      const animData = bigAtlas.animations[animName];
-      const frameCount = animData ? animData.frameCount : 1;
-
-      animationFrameStart[animIdx] = currentOffset;
-      animationFrameCount[animIdx] = frameCount;
-      currentOffset += frameCount;
-    }
-
-    // Get frame dimension arrays from SpriteSheetRegistry
-    const frameDimensions = SpriteSheetRegistry.buildFrameDimensionArrays();
-
-    // Build proxy sheet mapping: proxyToGlobalAnim[sheetId][localAnimIdx] = globalAnimIdx
-    // This maps (spritesheetId, animationState) → bigAtlas animation index
-    const proxyToGlobalAnim = {};
-    const spritesheetNames = SpriteSheetRegistry.spritesheetNames;
-
-    for (let sheetId = 0; sheetId < spritesheetNames.length; sheetId++) {
-      const sheetName = spritesheetNames[sheetId];
-      if (!sheetName) continue;
-
-      const sheet = SpriteSheetRegistry.spritesheets.get(sheetName);
-      if (!sheet) continue;
-
-      if (sheet.isProxy) {
-        // Proxy sheet - map local animation indices to bigAtlas indices
-        proxyToGlobalAnim[sheetId] = {};
-        for (const [animName, animInfo] of Object.entries(sheet.animations)) {
-          const localIdx = animInfo.index;
-          const prefixedName = animInfo.prefixedName;
-          // Look up the global index in bigAtlas
-          const globalAnimData = bigAtlas.animations[prefixedName];
-          if (globalAnimData) {
-            proxyToGlobalAnim[sheetId][localIdx] = globalAnimData.index;
-          }
-        }
-      } else if (sheetName === 'bigAtlas') {
-        // bigAtlas itself - direct 1:1 mapping
-        proxyToGlobalAnim[sheetId] = {};
-        for (let i = 0; i < animCount; i++) {
-          proxyToGlobalAnim[sheetId][i] = i;
-        }
-      }
-    }
-
-    // Build animation name → index lookup (for direct texture lookups like _lightGradient)
-    const animationNameToIndex = {};
-    for (let animIdx = 0; animIdx < animCount; animIdx++) {
-      const animName = bigAtlas.indexToName[animIdx];
-      animationNameToIndex[animName] = animIdx;
-    }
-
-    return {
-      animationFrameStart,
-      animationFrameCount,
-      proxyToGlobalAnim,
-      animationNameToIndex,
-      totalFrames: currentOffset,
-      frameWidth: frameDimensions?.frameWidth,   // Uint16Array[textureId] → pixel width
-      frameHeight: frameDimensions?.frameHeight, // Uint16Array[textureId] → pixel height
-    };
+    return buildTextureMetadata(SpriteSheetRegistry);
   }
 
   setupWorkerCommunication() {
