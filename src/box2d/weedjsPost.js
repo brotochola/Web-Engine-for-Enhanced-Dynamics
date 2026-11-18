@@ -3347,7 +3347,8 @@
         `bindBuffers: maxBodies ${maxBodies} exceeds max slots ${slots}`,
       );
     }
-    world.bindBuffers(maxBodies);
+    // N-310: Box2D's joint table holds the scene's physics.maxJoints (0 without joints).
+    world.bindBuffers(maxBodies, data.maxJoints | 0);
 
     bodyApplyForceCenterFn = Module.cwrap('body_apply_force_center', null, [
       'number',
