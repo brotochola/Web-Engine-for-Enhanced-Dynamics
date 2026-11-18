@@ -6,6 +6,8 @@ import { PhysicsDebugRenderer } from './physicsDebugRenderer.js';
 import { MeshDebugRenderer } from './meshDebugRenderer.js';
 import { bindBox2dHotFields, isBox2dHotFieldsBound } from '../../../box2d/box2dHotFields.js';
 import { createRenderQueueCameraViews, readQueueCamera } from '../../../render/renderQueueLayout.js';
+import { wallRowsLayout } from '../../../render/visibility/lampWallRow.js';
+import { cameraFloorScaleY } from '../../../util/cameraView.js';
 import { Mouse } from '../../mouse.js';
 
 /**
@@ -38,10 +40,11 @@ export class DebugCanvas {
     this.physics = new PhysicsDebugRenderer();
     this.meshes = new MeshDebugRenderer();
 
+    // The walls' rows (lighting.walls: a row a lamp, pre-render's, lampWallRow.js), for the lights' polygons.
     this._vpBuf = [null, null];
-    this._vpMaxVerts = 0;
-    this._vpSlotBytes = 0;
-    this._visPolyScratch = { buf: null, lightCount: 0, maxVerts: 0, slotBytes: 0 };
+    this._vpRowFloats = 0;
+    this._vpFloorScaleY = 1;
+    this._visPolyScratch = { buf: null, lightCount: 0, rowFloats: 0, floorScaleY: 1 };
 
     this._fpsHist = new Float32Array(120);
     this._fpsHistI = 0;
@@ -183,18 +186,23 @@ export class DebugCanvas {
 
   _bindVisPoly(scene) {
     const buffers = scene?.buffers;
-    const a = buffers?.visibilityPolygonDataA;
-    const b = buffers?.visibilityPolygonDataB;
+    const a = buffers?.wallRowsDataA;
+    const b = buffers?.wallRowsDataB;
     if (!a || !b) {
       this._vpBuf[0] = null;
       this._vpBuf[1] = null;
       return;
     }
     const maxVerts = scene.maxPolygonVertices || scene.config?.lighting?.maxPolygonVertices || 128;
-    this._vpMaxVerts = maxVerts;
-    this._vpSlotBytes = 16 + maxVerts * 8;
-    this._vpBuf[0] = { header: new Int32Array(a, 0, 1), i32: new Int32Array(a), f32: new Float32Array(a) };
-    this._vpBuf[1] = { header: new Int32Array(b, 0, 1), i32: new Int32Array(b), f32: new Float32Array(b) };
+    const rows = wallRowsLayout(scene.config?.lighting?.maxLights || 128, maxVerts);
+    this._vpRowFloats = rows.rowFloats;
+    this._vpFloorScaleY = cameraFloorScaleY(scene.config);
+    const views = (sab) => ({
+      header: new Int32Array(sab, 0, rows.headerInts),
+      f32: new Float32Array(sab, rows.rowsByte, rows.lights * rows.rowFloats),
+    });
+    this._vpBuf[0] = views(a);
+    this._vpBuf[1] = views(b);
   }
 
   /**
@@ -407,8 +415,8 @@ export class DebugCanvas {
     const scratch = this._visPolyScratch;
     scratch.buf = null;
     scratch.lightCount = 0;
-    scratch.maxVerts = this._vpMaxVerts;
-    scratch.slotBytes = this._vpSlotBytes;
+    scratch.rowFloats = this._vpRowFloats;
+    scratch.floorScaleY = this._vpFloorScaleY;
     if (!this._vpBuf[0] || !this._rqSync) return scratch;
     const ready = Atomics.load(this._rqSync, 0);
     if (!(ready > 0)) return scratch;

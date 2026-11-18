@@ -81,8 +81,7 @@ export const LOCKSTEP_VISUAL_SCENES = [
     match: 'exact',
   },
   {
-    // Walls (lighting.walls): 360 lights' sweeps among 700 walls, read by the light pass (E-96, E-96b; ?fans=1 is the
-    // old pass's fans and self-lit fills).
+    // Walls (lighting.walls): 360 lights' sweeps among 700 walls, read by the light pass.
     id: 'vispoly',
     module: '/tests/bench/stressScenes/visPolyStressScene.js',
     exportName: 'VisPolyStressScene',

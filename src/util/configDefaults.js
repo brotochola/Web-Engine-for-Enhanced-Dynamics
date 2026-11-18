@@ -787,11 +787,6 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   /** With lighting.walls: the most vertices of a light's visibility polygon (what its sweep of the walls leaves). */
   maxPolygonVertices: 128,
   /**
-   * With lighting.walls: the walls a light's sweep can name (their own pixels stay lit beyond their edge). With the old fan
-   * pass (debug.lightFans), the cap of its self-lit fills a frame.
-   */
-  maxOccluderSelfLit: 512,
-  /**
    * E-191's keyed caster paths (the casters' rows by key, read from the sprites' statics). A frame whose casters ask for
    * their own way (setSprite({ frame }), a kind) takes the full rows by itself (N-188); false sends the full rows always,
    * a diagnostic to compare the two (the same picture, more work).
@@ -1133,13 +1128,6 @@ export const DEBUG_DEFAULTS = Object.freeze({
    * draws it on every GPU, false on none: benches time a GPU with and without it.
    */
   opaquePass: 'auto',
-  /**
-   * OL-4, to compare with while it is judged: with lighting.walls, true lights the scene with the old pass, which draws
-   * each light's visibility polygon as a fan (and the walls' own fills) instead of reading it in the light pass. That pass
-   * knows no maps, no `unshaded`, no shadow maps and no particle lights. It goes when OL-4's pictures and numbers are
-   * accepted.
-   */
-  lightFans: false,
   /**
    * Init / worker console.log spam (Scene bootstrap, pool init, atlas bake).
    * Independent of collectDetailedStats. Default off.

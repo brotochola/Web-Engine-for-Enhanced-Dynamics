@@ -29,12 +29,11 @@ import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
  * OL-14: whether a scene's walls ask for the entities' depth (pixel depth, with an oblique camera). A wall's own picture
  * is lit where the floor behind it is in its shadow; with the light drawn at a share of the canvas and stretched as a plain
  * texture, the wall's light spilled a texel or two onto the shaded floor round its outline. The edges above need the
- * entities' depth to tell the two apart. Not with the old fan pass, nor where the scene turned the edges off.
+ * entities' depth to tell the two apart. Not where the scene turned the edges off.
  * @param {object} [lighting] config.lighting, its defaults applied
- * @param {object} [debug] config.debug
  */
-export function wallEdgesWanted(lighting, debug) {
-  if (!lighting || lighting.enabled !== true || lighting.walls !== true || debug?.lightFans === true) return false;
+export function wallEdgesWanted(lighting) {
+  if (!lighting || lighting.enabled !== true || lighting.walls !== true) return false;
   const resolution = Number(lighting.resolution);
   return resolution > 0 && resolution < 1 && lighting.lightEdges !== false;
 }

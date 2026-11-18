@@ -51,16 +51,13 @@ test('unshaded is one bit of the flags, the top one of the old emissive level', 
   }
 });
 
-// OL-4: walls the light pass reads want the words (a wall's own pixels stay lit beyond its edge, so the pass must know
-// whose each pixel is); the old fan pass (debug.lightFans: lighting.wallFans) reads none, whatever else asks for them.
-test('walls want the words; the old fan pass wants none', () => {
+// OL-4: walls want the words (a wall's own pixels stay lit beyond its edge, so the light pass must know whose each
+// pixel is).
+test('walls want the words', () => {
   for (const [lighting, atlas, want] of [
-    [{ enabled: true, walls: true, wallFans: false }, false, true],
+    [{ enabled: true, walls: true }, false, true],
     [{ enabled: false, walls: true }, false, false],
     [{ enabled: true, walls: false }, false, false],
-    [{ enabled: true, walls: true, wallFans: true }, false, false],
-    [{ enabled: true, unshaded: true, walls: true, wallFans: true }, { maps: true }, false],
-    [{ enabled: true, sunShadows: 'map', lampShadows: 'map', walls: true, wallFans: true }, false, false],
     // A scene may still carry the retired key (it is told so, and it stays in its config): nothing reads it.
     [{ enabled: true, raycasted: true }, false, false],
     [{ enabled: true, unshaded: true, raycasted: true }, false, true],

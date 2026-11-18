@@ -93,7 +93,8 @@ export function visibilityMemoryRegions({ maxOccluders, poolVerts, maxVerts, ent
   add('outY', out * 4);
   // OL-4: what each vertex's ray hit (an occluder of the light's list, a compound solid's entity, or nothing).
   add('outOcc', out * 4);
-  // The polar bins (angularSweep.js' _polarDist / _polarOwner) and the seen stamps (_selfLitSeen).
+  // The polar bins (angularSweep.js' _polarDist / _polarOwner) and the seen stamps (the sweep's kernel writes them when
+  // asked to; pre-render no longer asks, OL-15).
   add('polarDist', POLAR_BINS * 4);
   add('polarOwner', POLAR_BINS * 4);
   add('ownerSeen', owners * 4);

@@ -35,7 +35,7 @@ function frame(boot, f) {
 
 test('OL-10: pre-render signs still frames alike in both buffers, and a moved wall or lamp changes the signature', async () => {
   const scene = stillScene(0x1010);
-  const boot = await bootPreRender(scene, { rows: true, maxNeighbors: 512 });
+  const boot = await bootPreRender(scene, { maxNeighbors: 512 });
   const sigs = [];
   for (let f = 0; f < 6; f++) sigs.push(frame(boot, f));
   // Frame 0's lamps have no frame before them to stand still against: no signature (second word 0).
@@ -72,7 +72,7 @@ test('OL-10: pre-render signs still frames alike in both buffers, and a moved wa
 });
 
 test('OL-10: with lighting.wallCache off no frame is signed, and no two unsigned frames read alike', async () => {
-  const boot = await bootPreRender(stillScene(0x1011), { rows: true, maxNeighbors: 512, wallCache: false });
+  const boot = await bootPreRender(stillScene(0x1011), { maxNeighbors: 512, wallCache: false });
   const seen = new Set();
   for (let f = 0; f < 5; f++) {
     const sig = frame(boot, f);

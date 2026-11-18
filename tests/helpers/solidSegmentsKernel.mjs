@@ -189,10 +189,10 @@ export function ringTriangles(segments, outerR, innerR) {
   return tris;
 }
 
-/** ensureCompoundSolid for a body from trianglesCompound (segments only, as pre-render asks). */
+/** ensureCompoundSolid for a body from trianglesCompound. */
 export function buildSolid(entity, revision, body) {
   return ensureCompoundSolid(
-    entity, revision, body.head, body.next, body.active, body.vertCount, body.vx, body.vy, 0, body.fixtures, false,
+    entity, revision, body.head, body.next, body.active, body.vertCount, body.vx, body.vy, 0, body.fixtures,
   );
 }
 

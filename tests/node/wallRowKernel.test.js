@@ -113,7 +113,7 @@ const SCENE = { lights: 24, boxes: 150, circles: 50, polygons: 30, rings: 5, blo
 async function playFrames(bootWorker, wallRow, frames) {
   const { bootPreRender, bootPreRenderGather, makeScene, runFrame, writeFrame } = await import('../helpers/visibilityWired.mjs');
   const boot = bootWorker === 'gather' ? bootPreRenderGather : bootPreRender;
-  const b = await boot(makeScene(0x0a11, SCENE), { rows: true, wallCache: false, maxNeighbors: 512, wasm: { wallRow } });
+  const b = await boot(makeScene(0x0a11, SCENE), { wallCache: false, maxNeighbors: 512, wasm: { wallRow } });
   const kernel = b.pre._visSweep;
   const row = kernel.row;
   let calls = 0;
@@ -125,7 +125,7 @@ async function playFrames(bootWorker, wallRow, frames) {
   for (let f = 0; f < frames; f++) {
     writeFrame(b, f * 0.05);
     b.pre._wallRowsWrite = b.pre._wallRowBuffers[f & 1];
-    const rows = runFrame(b).rows;
+    const rows = runFrame(b);
     out.push(rows.lamps.map((lamp, r) => {
       const o = r * rows.rowFloats;
       const used = 4 * (WALL_VERT0 + rows.f32[o] + 1);

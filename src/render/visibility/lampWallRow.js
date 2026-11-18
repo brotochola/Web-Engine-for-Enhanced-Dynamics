@@ -15,9 +15,9 @@
  *   whole turn later, to close the polygon.
  *
  * An edge's code: 0 for an edge that stops nothing (the far boundary, between two free rays), else the wall's G-buffer id
- * times 256 plus its opacity in 1..255 (ShadowCaster.opacity: what the transmit wedges drew). Beyond a wall's edge a
+ * times 256 plus its opacity in 1..255 (ShadowCaster.opacity). Beyond a wall's edge a
  * pixel keeps lighting.lightBehindWalls of the lamp plus what the wall lets through, and the wall itself is lit, which is what the
- * self-lit fills did: its own pixels whole (the id the G-buffer wrote for the pixel) or, with lighting.wallDepth, whatever
+ * old pass's fills did: its own pixels whole (the id the G-buffer wrote for the pixel) or, with lighting.wallDepth, whatever
  * lies within that depth of the edge the lamp reaches, fading (a wall drawn by a mesh has no id).
  */
 

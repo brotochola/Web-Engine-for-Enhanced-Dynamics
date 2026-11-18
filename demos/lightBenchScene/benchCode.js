@@ -62,7 +62,7 @@ function castLine(who, kind, el, look) {
     return line(4, `${who}.setBox(${num(box.width, 1)}, ${num(box.depth, 1)}, ${num(box.height, 1)}${opts});`, KIND_COMMENT.box);
   }
   if (kind === 'hull') return line(4, `${who}.setHull(HULL);`, KIND_COMMENT.hull);
-  if (kind === 'wall') return line(4, `${who}.setWall({ shape: 'sprite' });`, KIND_COMMENT.wall);
+  if (kind === 'wall') return line(4, `${who}.setWall();`, KIND_COMMENT.wall);
   if (kind === 'none') return line(4, `${who}.clear();`, KIND_COMMENT.none);
   return null;
 }

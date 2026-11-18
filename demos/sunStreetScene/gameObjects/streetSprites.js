@@ -51,7 +51,7 @@ export class StreetHouse extends GameObject {
     this.shadowCaster.setBox(HOUSE_WIDTH, HOUSE_DEPTH, HOUSE_HEIGHT, { offsetY: -HOUSE_DEPTH / 2 });
     this.shadowCaster.addLevel(TANK, HOUSE_HEIGHT, TANK_HEIGHT);
     // A wall only where the scene asks for walls (sunStreetScene.js: ?walls=0 asks for none, and setWall would warn).
-    if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall({ shape: 'sprite' });
+    if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall();
   }
 }
 
@@ -144,7 +144,7 @@ export class StreetCar extends GameObject {
     this.lightEmitter.radius = 0;
     this.lightEmitter.offsetX = config.offset;
     // A wall only where the scene asks for walls (lighting.walls), as the houses.
-    if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall({ shape: 'sprite' });
+    if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall();
   }
 
   tick(dtRatio) {

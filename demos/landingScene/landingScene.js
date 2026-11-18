@@ -118,7 +118,6 @@ export class LandingScene extends Scene {
       baseAmbient: 0,
       maxLights: 16,
       maxPolygonVertices: 4096,
-      maxOccluderSelfLit: 512,
       resolution: 0.5,
       sun: { enabled: true, intensity: 1 },
     },

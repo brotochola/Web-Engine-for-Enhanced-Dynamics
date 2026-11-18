@@ -2,8 +2,9 @@
 // block), where the scene keeps every column one light's neighbour walk reads (Transform, Collider, LightOccluder,
 // RigidBody and the published poses, Grid's neighbour rows) and pre-render's visibility regions it packs into
 // (visibilityMemory.js, placed there). gather_light does _buildVisibilityPolygonsSwept's neighbour loop for one
-// light; the compound solids and the self-lit candidates come back as event records, in neighbour order, for the
-// JS (the W1 raster and the self-lit list).
+// light; the compound solids come back as event records, in neighbour order, for the JS (the W1 raster). The kernel
+// can also send an event a packed occluder (the old fan pass's self-lit candidates, `selfLit`): pre-render no longer
+// asks for them (OL-15), and the branch goes with the kernel's next build.
 
 import { loadWasmKernel } from '../../util/wasmKernel.js';
 import { GATHER_EVENT_BYTES, GATHER_TABLE_SLOTS } from '../../util/wasmMemoryMap.js';

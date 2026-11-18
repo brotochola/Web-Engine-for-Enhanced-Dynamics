@@ -121,7 +121,6 @@ export class PlanetPhysicsScene extends Scene {
       baseAmbient: 0,
       maxLights: 40,
       maxPolygonVertices: 5000,
-      maxOccluderSelfLit: 1024,
       // No particleLights: they were left out when the old wall pass could not draw them. The light pass with walls
       // draws them now; turning them on is still to be tried here.
       sun: { enabled: false },

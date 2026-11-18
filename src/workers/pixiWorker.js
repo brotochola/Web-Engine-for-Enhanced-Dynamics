@@ -25,7 +25,6 @@ import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
 import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 
 import { LightEmitter } from '../components/lightEmitter.js';
-import { LightOccluder, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
 import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
@@ -39,8 +38,6 @@ import {
   RENDERER_DEFAULTS,
   PRE_RENDER_DEFAULTS,
   LIGHTING_DEFAULTS,
-  ShapeType,
-  MAX_POLYGON_VERTICES,
   LAYER_DENSITY_SOURCE,
   LAYER_FEEDER_KIND,
   LAYER_KIND,
@@ -50,17 +47,10 @@ import {
   normalShadingOf,
   resolveZenithalMaxHeight,
 } from '../util/configDefaults.js';
-import {
-  ensureCompoundSolid,
-  segmentDistSq,
-  segmentFacesPoint,
-  writeOrientedBoxVerts,
-  writePolygonVerts,
-} from '../render/visibility/angularSweep.js';
 import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
-import { lightingSource, shaderWithFlag } from '../render/faceMap.js';
+import { lightingSource } from '../render/faceMap.js';
 import { applyPixelSnap } from '../render/pixelSnap.js';
 import { packMapsTable } from '../render/mapsTable.js';
 import { setTwinFormat } from '../render/twinTexel.js';
@@ -483,156 +473,10 @@ function mapDepthState() {
 /** E-404: the glows' bounds' seed (a module constant: CLAUDE.md, the global Infinity in a branch boxes its doubles). */
 const GLOW_BOUND_INF = Infinity;
 
-/** Umbra floor. Matches ShadowCaster pointShadowAlphaScale so a hard block is not pitch black. */
-const UMBRA_FLOOR = 0.33;
-/** Rest of the radial, added by the visibility fan and by the lit face. */
-const VIS_REST = 1 - UMBRA_FLOOR;
-/** E-96. Floats per vertex of the light batch: x, y; the light's x, y, intensity, radius; r, g, b, attenuation scale. */
-const VIS_BATCH_FLOATS = 10;
-const WEDGE_MAX_QUADS = 256;
-/**
- * E-96b. Floats per vertex of the self-lit batch: x, y; the light's x, y, intensity, radius; r, g, b,
- * attenuation scale; the occluder's centre and radius (the facing term).
- */
-const SELF_LIT_BATCH_FLOATS = 13;
-/** A transmit wedge's radius in the self-lit batch: past any light's distance, so its facing term is 1. */
-const SELF_LIT_NO_FACING = 1e30;
-/**
- * DX-SPOT. Floats per vertex of a cone light batch's second buffer: the cone's direction on the floor (x, y), the cosine
- * of its half aperture, 1 / its soft edge's width (the shaders' CONE variant reads them as aCone).
- */
-const CONE_FLOATS = 4;
 /** DX-LAMPPANO: how many of the stamp batch's geometries keep a lamp card strip of their own (its ring's slots, then some). */
 const LAMP_STRIP_SOURCES = 8;
 /** DX-SHADOW3D (F7): the volumes' lamp terms' scales, 1 / heightScaleY and 1 / groundScaleY (writeVolumeLampTerms). */
 const VOLUME_LAMP_SCALES = new Float64Array(2);
-/**
- * E-260. Floats per vertex of a sprite-masked self-lit batch: x, y; u, v; the light's x, y, intensity and the body's
- * radius; the light's r, g, b and the attenuation scale; the body's centre; the light's cone (as CONE_FLOATS).
- */
-const SELF_LIT_SPRITE_FLOATS = 18;
-/**
- * E-96c. The transmit wedge's doubles. Neither _emitTransmitWedge nor _pushWedge inlines into the
- * self-lit batch, so each double passed to them was a heap number (6.5 MB/s with every occluder
- * calling, even at block 1). The caller writes them here and passes the entity.
- * 0 light x, 1 light y, 2 light radius, 3–4 pose x y, 5–6 pose cos sin, 7–8 collider offset, 9 block;
- * then for _pushWedge: 10 scale, 11–14 the edge a, b.
- */
-const WEDGE_IN = new Float64Array(15);
-// E-260: a self-lit sprite mask's four corners and UVs, written and read per item (they were two arrays per item a frame).
-const MASK_CORNERS = new Float64Array(8);
-const MASK_UVS = new Float64Array(8);
-
-function crossOrigin(ox, oy, ax, ay, bx, by) {
-  return (ax - ox) * (by - oy) - (ay - oy) * (bx - ox);
-}
-
-function pointInConvex(px, py, xs, ys, count) {
-  let sign = 0;
-  for (let i = 0; i < count; i++) {
-    const i1 = i + 1 < count ? i + 1 : 0;
-    const c = crossOrigin(xs[i], ys[i], xs[i1], ys[i1], px, py);
-    if (c === 0) continue;
-    const s = c > 0 ? 1 : -1;
-    if (sign === 0) sign = s;
-    else if (s !== sign) return false;
-  }
-  return sign !== 0;
-}
-
-/**
- * Tangent points from an external light to the collider circle of `entityIdx`, the light and the pose in
- * WEDGE_IN (E-96c). Writes t0x,t0y,t1x,t1y into out. False if the light is inside.
- */
-function circleTangentPoints(entityIdx, out) {
-  const lx = WEDGE_IN[0];
-  const ly = WEDGE_IN[1];
-  const cx = WEDGE_IN[3] + WEDGE_IN[7];
-  const cy = WEDGE_IN[4] + WEDGE_IN[8];
-  const r = Collider.radius[entityIdx];
-  const dx = cx - lx;
-  const dy = cy - ly;
-  const d2 = dx * dx + dy * dy;
-  const r2 = r * r;
-  if (!(d2 > r2)) return false;
-  const base = Math.atan2(dy, dx);
-  const ang = Math.asin(r / Math.sqrt(d2));
-  const touch = Math.sqrt(d2 - r2);
-  const a0 = base - ang;
-  const a1 = base + ang;
-  out[0] = lx + Math.cos(a0) * touch;
-  out[1] = ly + Math.sin(a0) * touch;
-  out[2] = lx + Math.cos(a1) * touch;
-  out[3] = ly + Math.sin(a1) * touch;
-  return true;
-}
-
-/** The silhouette's tangent corners from the light in WEDGE_IN (E-96c). False if the light is inside. */
-function polyTangentPoints(xs, ys, count, out) {
-  if (count < 3) return false;
-  const lx = WEDGE_IN[0];
-  const ly = WEDGE_IN[1];
-  if (pointInConvex(lx, ly, xs, ys, count)) return false;
-  let iLeft = 0;
-  let iRight = 0;
-  for (let i = 1; i < count; i++) {
-    if (crossOrigin(lx, ly, xs[iRight], ys[iRight], xs[i], ys[i]) > 0) iRight = i;
-    if (crossOrigin(lx, ly, xs[iLeft], ys[iLeft], xs[i], ys[i]) < 0) iLeft = i;
-  }
-  out[0] = xs[iLeft];
-  out[1] = ys[iLeft];
-  out[2] = xs[iRight];
-  out[3] = ys[iRight];
-  return true;
-}
-
-/**
- * writeOrientedBoxVerts for the wedge emitter: the pose from WEDGE_IN and the size from the collider, so
- * no double crosses the call (E-96c). The same arithmetic, term for term.
- */
-function wedgeBoxVerts(outX, outY, entityIdx) {
-  const entityX = WEDGE_IN[3];
-  const entityY = WEDGE_IN[4];
-  const c = WEDGE_IN[5];
-  const s = WEDGE_IN[6];
-  const offsetX = WEDGE_IN[7];
-  const offsetY = WEDGE_IN[8];
-  const hw = Collider.width[entityIdx] * 0.5;
-  const hh = Collider.height[entityIdx] * 0.5;
-  const wx = entityX + c * offsetX - s * offsetY;
-  const wy = entityY + s * offsetX + c * offsetY;
-
-  // CCW: BL, BR, TR, TL.
-  outX[0] = wx + c * -hw - s * -hh;
-  outY[0] = wy + s * -hw + c * -hh;
-  outX[1] = wx + c * hw - s * -hh;
-  outY[1] = wy + s * hw + c * -hh;
-  outX[2] = wx + c * hw - s * hh;
-  outY[2] = wy + s * hw + c * hh;
-  outX[3] = wx + c * -hw - s * hh;
-  outY[3] = wy + s * -hw + c * hh;
-}
-
-/** writePolygonVerts for the wedge emitter, as wedgeBoxVerts (E-96c). */
-function wedgePolygonVerts(outX, outY, entityIdx, count) {
-  const entityX = WEDGE_IN[3];
-  const entityY = WEDGE_IN[4];
-  const c = WEDGE_IN[5];
-  const s = WEDGE_IN[6];
-  const offsetX = WEDGE_IN[7];
-  const offsetY = WEDGE_IN[8];
-  const localX = Collider.polyVertexX;
-  const localY = Collider.polyVertexY;
-  const localBase = entityIdx * MAX_POLYGON_VERTICES;
-  const wx = entityX + c * offsetX - s * offsetY;
-  const wy = entityY + s * offsetX + c * offsetY;
-  for (let i = 0; i < count; i++) {
-    const lx = localX[localBase + i];
-    const ly = localY[localBase + i];
-    outX[i] = wx + c * lx - s * ly;
-    outY[i] = wy + s * lx + c * ly;
-  }
-}
 
 // Create PIXI-like namespace for compatibility with existing code patterns
 const PIXI = Object.freeze({
@@ -1155,7 +999,7 @@ class PixiRenderer extends AbstractWorker {
     this._sunMapClear = false;
     this._noMapsSource = null; // DX-MAPS: its stand-in when none has (_emptyMapsSource)
     // DX-BARRIOS: faces have no switch. Whether the light pass reads the face map, whether the faces-in-use word was acted
-    // on (_useFaces), whether this scene's light can take faces (lit, not by the old fan pass); the px a px of height rises (the
+    // on (_useFaces), whether this scene's light can take faces (lit); the px a px of height rises (the
     // camera's); the faces' light terms (uFaceLight: heightScaleY, 0, 0, the sun's direct share 1 - Sun.skyLight) and what a
     // sprite's own normals take (uNormalShade, OL-6: lighting.normalShading's strength and subtract for the sun, then
     // for the lamps).
@@ -1361,47 +1205,13 @@ class PixiRenderer extends AbstractWorker {
       target: null,
       clear: false,
     };
-    // N-158: the old fan pass's (debug.lightFans) render options and clear colour (ambient, sun and night), kept: they were a new
-    // object and array every frame. Its own object, so no other pass inherits its clear colour.
-    this._visClearColor = [0.5, 0.5, 0.5, 1]; // doubles from the start
-    this._visRenderOpts = {
-      container: null,
-      target: null,
-      // Pixi's render() fills in the container's transform when none is given: null each frame, so it does again.
-      transform: null,
-      clear: true,
-      clearColor: this._visClearColor,
-    };
 
     // OPTIMIZED: Preallocated RGB object to avoid allocation per light per frame
     this._rgbResult = { r: 0, g: 0, b: 0 };
 
-    // ========================================
-    // RAYCASTED LIGHT OCCLUSION (visibility polygons)
-    // ========================================
-    this._visPolyEnabled = false;
-    // N-134: the old fan pass (debug.lightFans) draws the sun's casters alone into the casted shadows (no cookies, no lamp
-    // stamps).
-    this._castedShadowsSunOnly = false;
-    this._visPolyBuffers = [null, null]; // Double-buffered typed views + header pairs
-    this._visPolyMaxVerts = 128;
-    this._visPolyMaxLights = 10;
-    this._visPolySlotBytes = 0;
-    this._visPolyContainer = null;   // Container for light meshes
-    // E-96. Every light's umbra disc and visibility fan in one mesh: { mesh, geometry, vbuf, data,
-    // indices, uniforms, vertCap, idxCap, idxUsed, gpuReady }. Two draws per light were ~60 % of
-    // Pixi in visPolyStressScene, most of it Pixi's per-draw binding and buffer bookkeeping.
-    this._visBatch = null;
-    // DX-SPOT. The cone lights' umbra discs and fans: the light batch's layout and a second buffer of CONE_FLOATS a
-    // vertex (cbuf, coneData), drawn with the shader's CONE variant, so a point light pays nothing for cones.
-    this._visConeBatch = null;
-    // DX-SPOT: each light's coneCos as this frame read it, once (the logic worker may write the column meanwhile): the
-    // fans' slots (renderVisibilityLighting) and the visible lights (updateLighting). Grown, never per frame.
-    this._visConeCosSeen = new Float32Array(0);
+    // DX-SPOT: each visible light's coneCos as this frame read it, once (the logic worker may write the column meanwhile).
+    // Grown, never per frame.
     this._lightConeCosSeen = new Float32Array(0);
-    this._visPolyRT = null;          // RenderTexture for visibility lighting
-    this._visPolyDisplaySprite = null; // Sprite displaying the RT with multiply blend
-    this._selfLitBuffers = [null, null];
     // OL-4: the walls' rows the light pass reads (pre-render's, lampWallRow.js): the pair of shared buffers, a row's floats
     // and texels, this worker's copy of the rows and its texture, each lamp's row this frame (by entity, row + 1; 0: none)
     // and the lamps given one last frame (to clear them).
@@ -1423,34 +1233,6 @@ class PixiRenderer extends AbstractWorker {
     this._wallRowsSkipped = 0;
     // lighting.wallDepth and lighting.lightBehindWalls, in the light pass's uWalls (x, y).
     this._wallTerms = new Float32Array(4);
-    this._selfLitItemBytes = 28;
-    // E-96b. Every light's self-lit fills and transmit wedges in one mesh, drawn in the light pass:
-    // { mesh, geometry, vbuf, data, indices, uniforms, vertCap, idxCap, idxUsed, gpuReady }.
-    this._selfLitBatch = null;
-    // DX-SPOT. The cone lights' self-lit fills and wedges, as _visConeBatch is to _visBatch.
-    this._selfLitConeBatch = null;
-    // E-260. The sprite-masked self-lit fills, a batch per texture source ({ mesh, geometry, vbuf, data, cbuf: null,
-    // indices, uniforms, vertCap, idxCap, idxUsed, gpuReady, source, quads }), and the same batches in a list.
-    this._selfLitSpriteBatches = new Map();
-    this._selfLitSpriteBatchList = [];
-    this._selfLitCircleSegs = 16;
-    // The circle fan's fixed angles, cos/sin built with the loop's own expression
-    // so a lookup is the same double as the call it replaces (E-60).
-    this._selfLitCircleCos = new Float64Array(this._selfLitCircleSegs);
-    this._selfLitCircleSin = new Float64Array(this._selfLitCircleSegs);
-    for (let si = 0; si < this._selfLitCircleSegs; si++) {
-      const a = (si / this._selfLitCircleSegs) * Math.PI * 2;
-      this._selfLitCircleCos[si] = Math.cos(a);
-      this._selfLitCircleSin[si] = Math.sin(a);
-    }
-    this._selfLitPosScratch = null;
-    this._selfLitIdxScratch = null;
-    this._selfLitBoxScratchX = new Float32Array(8);
-    this._selfLitBoxScratchY = new Float32Array(8);
-    this._wedgePolyX = new Float32Array(MAX_POLYGON_VERTICES);
-    this._wedgePolyY = new Float32Array(MAX_POLYGON_VERTICES);
-    this._wedgeTan = new Float32Array(4);
-    this._wedgeVerts = 0;
     this._colliderFillViews = null;
     this._colliderFillMeshBitsCached = 0;
     this._colliderFillLayerCount = -1;
@@ -1470,8 +1252,8 @@ class PixiRenderer extends AbstractWorker {
     this._meshRtTransform = new PIXI.Matrix();
 
     // Everything later paths write, declared here (N-32, as in pre-render). A
-    // field first written after the loop starts (first pause, first decal, first
-    // self-lit occluder, a missing texture) changes this object's hidden class
+    // field first written after the loop starts (first pause, first decal, a
+    // missing texture) changes this object's hidden class
     // and V8 drops every optimized method that checked the old one. Values have
     // the kind of the first write: a double field must start as a double, or
     // its first fractional write moves the object to a new map anyway.
@@ -1511,16 +1293,6 @@ class PixiRenderer extends AbstractWorker {
     this._decalCopyBuffers = null;
     /** W21c: the decal premultiply kernel, on the decal memory the tiles live in. */
     this._decalPremultiply = null;
-    this._visBatchProgramOpts = null;
-    this._selfLitSpriteProgramOpts = null;
-    this._selfLitBatchProgramOpts = null;
-    // DX-SPOT: the batches' programs with their CONE blocks on.
-    this._visConeProgramOpts = null;
-    this._selfLitConeProgramOpts = null;
-    this._selfLitMaxFillVerts = 0;
-    this._wedgePositions = null;
-    this._wedgeScales = null;
-    this._missingTextureWarns = null;
     this.shadowUpdateInterval = 1;
     this._shadowUpdateTick = 0;
     this.gpuCasterBatch = null;
@@ -3173,7 +2945,7 @@ class PixiRenderer extends AbstractWorker {
     // depth programs then read them: a face's plane depth, its innerZ in the ties, the opaque pass in two programs.
     const facesDepth = this._faceDepthWanted();
     // OL-14: so do walls whose light is drawn under the canvas's size: the light's edges need the entities' depth.
-    const wallsDepth = wallEdgesWanted(this.config?.lighting, this.config?.debug);
+    const wallsDepth = wallEdgesWanted(this.config?.lighting);
     const pixelDepth = (this.atlasMapsSource !== null || facesDepth || wallsDepth)
       && (wantDepth === true || (wantDepth !== false && oblique))
       ? { maps: this.atlasMapsSource ?? this._emptyMapsSource() }
@@ -3547,9 +3319,7 @@ class PixiRenderer extends AbstractWorker {
           'config.lighting.unshaded = true (maps, an unshaded sheet or a shadow map turn it on too).',
       );
     }
-    if (this._visPolyEnabled) {
-      this.renderVisibilityLighting();
-    } else if (this.lightingRT && this.lightingMesh && layerIsVisible(Layer.lighting?.id)) {
+    if (this.lightingRT && this.lightingMesh && layerIsVisible(Layer.lighting?.id)) {
       if (this.faceRT !== null) this._renderFaceMap();
       const renderOptions = this._rtRenderOpts;
       renderOptions.transform = null;
@@ -4972,7 +4742,7 @@ LIGHTING SYSTEM SETUP
     }
     // DX-LIGHTEDGES: the light at a share of the canvas over entities that write depth (pixel depth) is shown without
     // crossing the floor's edges; lighting.lightEdges false stretches it as a plain texture.
-    this._lightEdgesOn = this.lightingResolution < 1 && !!this.entitiesBatch?.pixelDepthOn && !this._visPolyEnabled
+    this._lightEdgesOn = this.lightingResolution < 1 && !!this.entitiesBatch?.pixelDepthOn
       && this.config?.lighting?.lightEdges !== false;
     const lightingSrc = lightingSource(this._engineShaders?.lightingFrag || '', {
       faces: facesOn,
@@ -5129,7 +4899,7 @@ LIGHTING SYSTEM SETUP
 
   _renderLiquidFunLightingField() {
     const splat = this._lfLightSplat;
-    if (!splat || !this.lightingRT || this._visPolyEnabled) return;
+    if (!splat || !this.lightingRT) return;
     const views = LiquidFun.getViews();
     const groups = LiquidFun.getGroupViews();
     const o = this._lfLightOpts;
@@ -5158,7 +4928,7 @@ LIGHTING SYSTEM SETUP
 
   _renderParticleLightingField() {
     const splat = this._particleLightSplat;
-    if (!splat || !this.lightingRT || this._visPolyEnabled) return;
+    if (!splat || !this.lightingRT) return;
     const active = this._takeActiveParticles();
     const lightSqrt = ParticleComponent.lightSqrt;
     if (!active || !(active[0] > 0) || !lightSqrt) return;
@@ -5200,345 +4970,6 @@ LIGHTING SYSTEM SETUP
     this._drawLightSplat(splat, o.resolution);
   }
 
-  /* =====================
-RAYCASTED LIGHT OCCLUSION (visibility polygon system)
-===================== */
-
-  /**
-   * WebGL keeps the typed array (Pixi wraps it). WebGPU needs COPY_DST or WriteBuffer throws
-   * and the shadow mesh sticks on the first upload.
-   */
-  _dynBuf(data, usage) {
-    if (!this._useWebGpu) return data;
-    return new Buffer({
-      data,
-      usage: usage | BufferUsage.COPY_DST,
-      shrinkToFit: false,
-    });
-  }
-
-  /**
-   * Initialize the visibility polygon rendering system.
-   * Creates a Container, RenderTexture, and display sprite for rendering
-   * light visibility polygons with additive blending.
-   */
-  initVisibilityPolygonSystem(vpConfig) {
-    this._visPolyEnabled = true;
-    this._visPolyMaxVerts = vpConfig.maxPolygonVertices;
-    this._visPolyMaxLights = vpConfig.maxLights;
-    this._visPolySlotBytes = 16 + this._visPolyMaxVerts * 8;
-
-    const sabs = [vpConfig.dataA, vpConfig.dataB];
-    for (let b = 0; b < 2; b++) {
-      this._visPolyBuffers[b] = {
-        header: new Int32Array(sabs[b], 0, 1),
-        i32: new Int32Array(sabs[b]),
-        f32: new Float32Array(sabs[b]),
-      };
-    }
-
-    // Self-lit queue (collider / sprite fill under occluders)
-    // Layout: entityIdx, lightIdx, x,y,rotC,rotS, texId, maskMode, pad = 28
-    this._selfLitItemBytes = 28;
-    const selfLitSabs = [vpConfig.selfLitDataA, vpConfig.selfLitDataB];
-    if (selfLitSabs[0] && selfLitSabs[1]) {
-      for (let b = 0; b < 2; b++) {
-        const sab = selfLitSabs[b];
-        this._selfLitBuffers[b] = {
-          header: new Int32Array(sab, 0, 1),
-          i32: new Int32Array(sab),
-          f32: new Float32Array(sab),
-          u16: new Uint16Array(sab),
-          u8: new Uint8Array(sab),
-        };
-      }
-    }
-
-    // Container for all light meshes (additive blend)
-    this._visPolyContainer = new PIXI.Container();
-
-    // RenderTexture for the visibility-polygon lighting
-    const res = this.lightingResolution || 1.0;
-    const rtW = Math.max(1, Math.floor(this.canvasWidth * res));
-    const rtH = Math.max(1, Math.floor(this.canvasHeight * res));
-    this._visPolyRT = PIXI.RenderTexture.create({ width: rtW, height: rtH });
-
-    // Display sprite with multiply blend (same as existing LIGHTING layer)
-    this._visPolyDisplaySprite = new PIXI.Sprite(this._visPolyRT);
-    this._visPolyDisplaySprite.anchor.set(0, 0);
-    this._visPolyDisplaySprite.position.set(0, 0);
-    this._visPolyDisplaySprite.scale.set(1.0 / res);
-
-    // Replace the existing lighting display on the LIGHTING layer
-    if (this._lightEdges !== null) this.pixiApp.stage.removeChild(this._lightEdges.host);
-    if (this.lightingDisplaySprite) {
-      this.pixiApp.stage.removeChild(this.lightingDisplaySprite);
-    } else if (this.lightingMesh) {
-      this.pixiApp.stage.removeChild(this.lightingMesh);
-    }
-    this._registerLayerDisplayObject('lighting', this._visPolyDisplaySprite);
-    this.pixiApp.stage.addChild(this._visPolyDisplaySprite);
-
-    // Visibility polygons already do attenuation + occlusion. CASTED_SHADOWS
-    // light cookies multiply on top and crush umbra to pitch black (cookies clear
-    // to black outside the gradient; soft shadow sprites used ~0.33 alpha), and the
-    // fans are the lamps' shadows. N-134: the sun's casters still draw there (they
-    // used to go with the rest, so trees and people cast nothing under this
-    // pass); the cookies and the lamps' stamps do not.
-    this._castedShadowsSunOnly = true;
-
-    if (this._useWebGpu) {
-      // DX-SPOT: each batch shader in two variants, its CONE blocks cut (the point lights' program, the source as it was)
-      // and kept (the cone lights').
-      this._visBatchProgramOpts = {
-        gpuProgram: gpuFromWgsl(shaderWithFlag(this._visBatchWgsl, 'CONE', false), 'visibility-polygon-batch'),
-      };
-      this._visConeProgramOpts = {
-        gpuProgram: gpuFromWgsl(shaderWithFlag(this._visBatchWgsl, 'CONE', true), 'visibility-polygon-cone'),
-      };
-      if (this._selfLitSpriteWgsl) {
-        this._selfLitSpriteProgramOpts = {
-          gpuProgram: gpuFromWgsl(this._selfLitSpriteWgsl, 'occluder-self-lit-sprite'),
-        };
-      }
-      this._selfLitBatchProgramOpts = {
-        gpuProgram: gpuFromWgsl(shaderWithFlag(this._selfLitBatchWgsl, 'CONE', false), 'occluder-self-lit-batch'),
-      };
-      this._selfLitConeProgramOpts = {
-        gpuProgram: gpuFromWgsl(shaderWithFlag(this._selfLitBatchWgsl, 'CONE', true), 'occluder-self-lit-cone'),
-      };
-    } else {
-      this._visBatchProgramOpts = {
-        glProgram: new PIXI.GlProgram({
-          vertex: shaderWithFlag(this._visBatchVertexShader, 'CONE', false),
-          fragment: shaderWithFlag(this._visBatchFragmentShader, 'CONE', false),
-        }),
-      };
-      this._visConeProgramOpts = {
-        glProgram: new PIXI.GlProgram({
-          vertex: shaderWithFlag(this._visBatchVertexShader, 'CONE', true),
-          fragment: shaderWithFlag(this._visBatchFragmentShader, 'CONE', true),
-        }),
-      };
-      if (this._selfLitSpriteVertShader && this._selfLitSpriteFragShader) {
-        this._selfLitSpriteProgramOpts = {
-          glProgram: new PIXI.GlProgram({
-            vertex: this._selfLitSpriteVertShader,
-            fragment: this._selfLitSpriteFragShader,
-          }),
-        };
-      }
-      this._selfLitBatchProgramOpts = {
-        glProgram: new PIXI.GlProgram({
-          vertex: shaderWithFlag(this._selfLitBatchVertexShader, 'CONE', false),
-          fragment: shaderWithFlag(this._selfLitBatchFragmentShader, 'CONE', false),
-        }),
-      };
-      this._selfLitConeProgramOpts = {
-        glProgram: new PIXI.GlProgram({
-          vertex: shaderWithFlag(this._selfLitBatchVertexShader, 'CONE', true),
-          fragment: shaderWithFlag(this._selfLitBatchFragmentShader, 'CONE', true),
-        }),
-      };
-    }
-
-    // The most collider-fill vertices one light writes into the self-lit batch.
-    this._selfLitMaxFillVerts = 256 * 20;
-
-    this._initTransmitWedge();
-
-    debugWorkerLog(`PIXI WORKER: Visibility polygon system initialized (${this._visPolyMaxLights} lights, ${this._visPolyMaxVerts} verts, RT: ${rtW}x${rtH})`);
-  }
-
-  /**
-   * Get or create a PIXI.Mesh for rendering a light's visibility polygon.
-   * Meshes are pooled and reused across frames.
-   */
-  /**
-   * E-96. The light batch, with room for `verts` vertices and `idx` indices. It grows to a quarter past
-   * the need and stays there: Pixi draws the whole index buffer, so the tail past this frame's triangles
-   * is zeros (degenerate), as few as the high-water mark leaves. DX-SPOT: `cone` is the cone lights' batch
-   * (_visConeBatch), with its second buffer and the shader's CONE variant.
-   */
-  _ensureVisBatch(verts, idx, cone) {
-    const old = cone ? this._visConeBatch : this._visBatch;
-    if (old && verts <= old.vertCap && idx <= old.idxCap) return old;
-    const vertCap = Math.ceil(Math.max(verts, old ? old.vertCap : 0, 64) * 1.25);
-    const idxCap = Math.ceil(Math.max(idx, old ? old.idxCap : 0, 192) * 1.25);
-    const data = new Float32Array(vertCap * VIS_BATCH_FLOATS);
-    const indices = new Uint32Array(idxCap);
-    const vbuf = new Buffer({
-      data,
-      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
-      shrinkToFit: false,
-    });
-    const stride = VIS_BATCH_FLOATS * 4;
-    const attributes = {
-      aPosition: { buffer: vbuf, format: 'float32x2', stride, offset: 0 },
-      aLight: { buffer: vbuf, format: 'float32x4', stride, offset: 8 },
-      aColor: { buffer: vbuf, format: 'float32x4', stride, offset: 24 },
-    };
-    const coneData = cone ? new Float32Array(vertCap * CONE_FLOATS) : null;
-    const cbuf = cone ? new Buffer({ data: coneData, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST, shrinkToFit: false }) : null;
-    if (cone) attributes.aCone = { buffer: cbuf, format: 'float32x4', stride: CONE_FLOATS * 4, offset: 0 };
-    const geometry = new PIXI.Geometry({
-      attributes,
-      indexBuffer: this._dynBuf(indices, BufferUsage.INDEX),
-    });
-    // The camera only, in the WGSL struct's order.
-    const resources = {
-      uniforms: {
-        uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-        uZoom: { value: 1.0, type: 'f32' },
-        uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
-        uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
-        uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
-      },
-    };
-    const shader = new PIXI.Shader({ ...(cone ? this._visConeProgramOpts : this._visBatchProgramOpts), resources });
-    const mesh = new PIXI.Mesh({ geometry, shader });
-    mesh.blendMode = 'add';
-    if (old) {
-      if (old.mesh.parent) old.mesh.parent.removeChild(old.mesh);
-      old.mesh.destroy();
-      old.geometry.destroy();
-    }
-    const batch = {
-      mesh,
-      geometry,
-      vbuf,
-      data,
-      cbuf,
-      coneData,
-      indices,
-      uniforms: shader.resources.uniforms.uniforms,
-      vertCap,
-      idxCap,
-      idxUsed: 0,
-      gpuReady: false,
-    };
-    if (cone) this._visConeBatch = batch;
-    else this._visBatch = batch;
-    return batch;
-  }
-
-  /**
-   * E-96b. The self-lit batch, with room for `verts` vertices and `idx` indices, grown like the light
-   * batch. It may grow in the middle of a frame: the first `keepVerts` vertices and `keepIdx` indices
-   * written so far are copied into the new buffers. DX-SPOT: `cone` is the cone lights' batch
-   * (_selfLitConeBatch), with its second buffer and the shader's CONE variant.
-   */
-  _ensureSelfLitBatch(verts, idx, keepVerts, keepIdx, cone) {
-    const old = cone ? this._selfLitConeBatch : this._selfLitBatch;
-    if (old && verts <= old.vertCap && idx <= old.idxCap) return old;
-    const vertCap = Math.ceil(Math.max(verts, old ? old.vertCap : 0, 64) * 1.25);
-    const idxCap = Math.ceil(Math.max(idx, old ? old.idxCap : 0, 192) * 1.25);
-    const data = new Float32Array(vertCap * SELF_LIT_BATCH_FLOATS);
-    const indices = new Uint32Array(idxCap);
-    const coneData = cone ? new Float32Array(vertCap * CONE_FLOATS) : null;
-    if (old) {
-      data.set(old.data.subarray(0, keepVerts * SELF_LIT_BATCH_FLOATS));
-      indices.set(old.indices.subarray(0, keepIdx));
-      if (cone) coneData.set(old.coneData.subarray(0, keepVerts * CONE_FLOATS));
-    }
-    const vbuf = new Buffer({
-      data,
-      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
-      shrinkToFit: false,
-    });
-    const stride = SELF_LIT_BATCH_FLOATS * 4;
-    const attributes = {
-      aPosition: { buffer: vbuf, format: 'float32x2', stride, offset: 0 },
-      aLight: { buffer: vbuf, format: 'float32x4', stride, offset: 8 },
-      aColor: { buffer: vbuf, format: 'float32x4', stride, offset: 24 },
-      aCenterRadius: { buffer: vbuf, format: 'float32x3', stride, offset: 40 },
-    };
-    const cbuf = cone ? new Buffer({ data: coneData, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST, shrinkToFit: false }) : null;
-    if (cone) attributes.aCone = { buffer: cbuf, format: 'float32x4', stride: CONE_FLOATS * 4, offset: 0 };
-    const geometry = new PIXI.Geometry({
-      attributes,
-      indexBuffer: this._dynBuf(indices, BufferUsage.INDEX),
-    });
-    // The camera only, in the WGSL struct's order.
-    const resources = {
-      uniforms: {
-        uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-        uZoom: { value: 1.0, type: 'f32' },
-        uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
-        uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
-        uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
-      },
-    };
-    const shader = new PIXI.Shader({ ...(cone ? this._selfLitConeProgramOpts : this._selfLitBatchProgramOpts), resources });
-    const mesh = new PIXI.Mesh({ geometry, shader });
-    mesh.blendMode = 'add';
-    if (old) {
-      if (old.mesh.parent) old.mesh.parent.removeChild(old.mesh);
-      old.mesh.destroy();
-      old.geometry.destroy();
-    }
-    const batch = {
-      mesh,
-      geometry,
-      vbuf,
-      data,
-      cbuf,
-      coneData,
-      indices,
-      uniforms: shader.resources.uniforms.uniforms,
-      vertCap,
-      idxCap,
-      // The new index buffer is zero past what was copied: nothing of an earlier frame to clear.
-      idxUsed: keepIdx,
-      gpuReady: false,
-    };
-    if (cone) this._selfLitConeBatch = batch;
-    else this._selfLitBatch = batch;
-    return batch;
-  }
-
-  /**
-   * A light batch's frame (E-96, E-96b): its tail past this frame's indices back to 0 (Pixi draws the whole index
-   * buffer), its vertices uploaded, the camera set, and it shown in the light container (at its start when `first`:
-   * the point lights' fans), or hidden when it drew nothing. `floats` per vertex in its first buffer.
-   */
-  _finishLightBatch(batch, vtx, iCount, floats, first) {
-    const mesh = batch.mesh;
-    // N-162: a frame that draws nothing only hides the mesh. Its buffers and idxUsed stay as they are, so the next frame
-    // that draws zeroes and uploads the whole tail the last drawn frame left: with idxUsed at 0 it uploaded only its own
-    // indices, and the GPU kept every earlier light's triangles past them.
-    if (iCount === 0) {
-      mesh.visible = false;
-      return;
-    }
-    const indices = batch.indices;
-    const prevIdx = batch.idxUsed;
-    if (iCount < prevIdx) indices.fill(0, iCount, prevIdx);
-    batch.idxUsed = iCount;
-    const indexBuffer = batch.geometry.indexBuffer;
-    const cbuf = batch.cbuf;
-    if (!batch.gpuReady) {
-      batch.vbuf.update();
-      if (cbuf !== null) cbuf.update();
-      indexBuffer.update();
-      batch.gpuReady = true;
-    } else {
-      batch.vbuf.update(vtx * floats * 4);
-      if (cbuf !== null) cbuf.update(vtx * CONE_FLOATS * 4);
-      indexBuffer.update((iCount > prevIdx ? iCount : prevIdx) * 4);
-    }
-    const uniforms = batch.uniforms;
-    this._stampLightCamera(uniforms, this._renderCameraX, this._renderCameraY, this._renderZoom);
-    uniforms.uCanvasSize[0] = this.canvasWidth;
-    uniforms.uCanvasSize[1] = this.canvasHeight;
-    const container = this._visPolyContainer;
-    if (mesh.parent !== container) {
-      if (first) container.addChildAt(mesh, 0);
-      else container.addChild(mesh);
-    }
-    mesh.visible = true;
-  }
-
   _stampLightCamera(uniforms, cameraX, cameraY, zoom) {
     uniforms.uCameraPos[0] = cameraX;
     uniforms.uCameraPos[1] = cameraY;
@@ -5548,1038 +4979,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const rot = this._renderCameraRot || 0;
     rc[0] = Math.cos(rot);
     rc[1] = Math.sin(rot);
-  }
-
-  /**
-   * Shadow wedges for block < 1: one light's quads, staged until its fills are in the self-lit batch
-   * (E-96b), with each quad's scale, (1-block)*VIS_REST.
-   */
-  _initTransmitWedge() {
-    this._wedgePositions = new Float32Array(WEDGE_MAX_QUADS * 8);
-    this._wedgeScales = new Float32Array(WEDGE_MAX_QUADS);
-    this._wedgeVerts = 0;
-  }
-
-  /** One wedge from the light past edge a–b, its terms in WEDGE_IN (E-96c). */
-  _pushWedge() {
-    const n = this._wedgeVerts;
-    if (n + 4 > WEDGE_MAX_QUADS * 4) return;
-    const lx = WEDGE_IN[0];
-    const ly = WEDGE_IN[1];
-    const lightR = WEDGE_IN[2];
-    const scale = WEDGE_IN[10];
-    const ax = WEDGE_IN[11];
-    const ay = WEDGE_IN[12];
-    const bx = WEDGE_IN[13];
-    const by = WEDGE_IN[14];
-    let dx = ax - lx;
-    let dy = ay - ly;
-    // H-03: sqrt, not Math.hypot - the overflow/underflow guard is wasted here.
-    // Measured ~16x cheaper (5/5 counterbalanced rounds, 1e-3..1e7). NOT
-    // bit-identical to hypot: it agrees on ~64% of in-range pairs and differs by
-    // a few ulps on the rest, because hypot is deliberately the more accurate of
-    // the two. That is ~1e-16 relative, far under the Float32 this value is
-    // stored into. Overflow is unreachable (Float64 squares overflow past ~1.34e154).
-    // Do not reintroduce hypot here without measuring it again.
-    let len = Math.sqrt(dx * dx + dy * dy);
-    if (!(len > 1e-4)) return;
-    const e0x = lx + (dx / len) * lightR;
-    const e0y = ly + (dy / len) * lightR;
-    dx = bx - lx;
-    dy = by - ly;
-    // H-03: sqrt, not Math.hypot - the overflow/underflow guard is wasted here.
-    // Measured ~16x cheaper (5/5 counterbalanced rounds, 1e-3..1e7). NOT
-    // bit-identical to hypot: it agrees on ~64% of in-range pairs and differs by
-    // a few ulps on the rest, because hypot is deliberately the more accurate of
-    // the two. That is ~1e-16 relative, far under the Float32 this value is
-    // stored into. Overflow is unreachable (Float64 squares overflow past ~1.34e154).
-    // Do not reintroduce hypot here without measuring it again.
-    len = Math.sqrt(dx * dx + dy * dy);
-    if (!(len > 1e-4)) return;
-    const e1x = lx + (dx / len) * lightR;
-    const e1y = ly + (dy / len) * lightR;
-    const p = this._wedgePositions;
-    const s = this._wedgeScales;
-    const o = n * 2;
-    p[o] = ax;
-    p[o + 1] = ay;
-    p[o + 2] = e0x;
-    p[o + 3] = e0y;
-    p[o + 4] = e1x;
-    p[o + 5] = e1y;
-    p[o + 6] = bx;
-    p[o + 7] = by;
-    s[n >> 2] = scale;
-    this._wedgeVerts = n + 4;
-  }
-
-  // transmit-wedge-start
-  _emitTransmitWedge(entityIdx) {
-    const lx = WEDGE_IN[0];
-    const ly = WEDGE_IN[1];
-    const lightR = WEDGE_IN[2];
-    const ex = WEDGE_IN[3];
-    const ey = WEDGE_IN[4];
-    const c = WEDGE_IN[5];
-    const s = WEDGE_IN[6];
-    const ox = WEDGE_IN[7];
-    const oy = WEDGE_IN[8];
-    const block = WEDGE_IN[9];
-    if (!(block < 1)) return;
-    const scale = (1 - block) * VIS_REST;
-    if (!(scale > 0)) return;
-    const tan = this._wedgeTan;
-    const shape = Collider.shapeType[entityIdx];
-    if (shape === ShapeType.Chain) return;
-    const nFixtures = Collider.fixtureCount ? (Collider.fixtureCount[entityIdx] | 0) : 0;
-    if (nFixtures > 0 && ColliderFixture.head && entityIdx < ColliderFixture.head.length) {
-      const solid = ensureCompoundSolid(
-        entityIdx,
-        ColliderFixture.revision ? ColliderFixture.revision[0] : 0,
-        ColliderFixture.head, ColliderFixture.next, ColliderFixture.active,
-        ColliderFixture.vertCount, ColliderFixture.vertexX, ColliderFixture.vertexY,
-        ColliderFixture.head[entityIdx], ColliderFixture.maxCount | 0
-      );
-      const seg = solid.seg;
-      const radiusSq = lightR * lightR;
-      const originX = ex + c * ox - s * oy;
-      const originY = ey + s * ox + c * oy;
-      for (let i = 0; i < solid.segCount; i++) {
-        const o = i * 4;
-        const x0 = originX + c * seg[o] - s * seg[o + 1];
-        const y0 = originY + s * seg[o] + c * seg[o + 1];
-        const x1 = originX + c * seg[o + 2] - s * seg[o + 3];
-        const y1 = originY + s * seg[o + 2] + c * seg[o + 3];
-        // Light-facing edges only: a ray behind the solid crosses its outline
-        // twice (more if concave), so a wedge per edge stacked the transmitted
-        // light (block 0.5 let all of it through). Same as the silhouette wedge
-        // of a single shape.
-        if (!segmentFacesPoint(x0, y0, x1, y1, lx, ly)) continue;
-        if (segmentDistSq(lx, ly, x0, y0, x1, y1) > radiusSq) continue;
-        WEDGE_IN[10] = scale;
-        WEDGE_IN[11] = x0;
-        WEDGE_IN[12] = y0;
-        WEDGE_IN[13] = x1;
-        WEDGE_IN[14] = y1;
-        this._pushWedge();
-      }
-      return;
-    }
-    let ok = false;
-    if (shape === ShapeType.Circle) {
-      const r = Collider.radius[entityIdx];
-      if (!(r > 0)) return;
-      ok = circleTangentPoints(entityIdx, tan);
-    } else {
-      const xs = this._wedgePolyX;
-      const ys = this._wedgePolyY;
-      let count = 0;
-      if (shape === ShapeType.Box) {
-        const w = Collider.width[entityIdx];
-        const h = Collider.height[entityIdx];
-        if (!(w > 0) || !(h > 0)) return;
-        wedgeBoxVerts(xs, ys, entityIdx);
-        count = 4;
-      } else {
-        const pc = Collider.polyCount[entityIdx] | 0;
-        if (pc >= 3 && pc <= xs.length) {
-          wedgePolygonVerts(xs, ys, entityIdx, pc);
-          count = pc;
-        } else {
-          const w = Collider.width[entityIdx];
-          const h = Collider.height[entityIdx];
-          if (!(w > 0) || !(h > 0)) return;
-          wedgeBoxVerts(xs, ys, entityIdx);
-          count = 4;
-        }
-      }
-      ok = polyTangentPoints(xs, ys, count, tan);
-    }
-    if (!ok) return;
-    WEDGE_IN[10] = scale;
-    WEDGE_IN[11] = tan[0];
-    WEDGE_IN[12] = tan[1];
-    WEDGE_IN[13] = tan[2];
-    WEDGE_IN[14] = tan[3];
-    this._pushWedge();
-  }
-  // transmit-wedge-end
-
-  /**
-   * Render visibility polygon meshes for all visible lights.
-   * Reads polygon data from the SAB, builds triangle-fan meshes,
-   * renders to the visibility RT with additive blending over an ambient base.
-   */
-  renderVisibilityLighting() {
-    if (!this._visPolyEnabled) return;
-
-    const syncFrame = this.renderQueueSync ? Atomics.load(this.renderQueueSync, 0) : 0;
-    const readBufferIdx = syncFrame > 0 ? (syncFrame - 1) & 1 : 0;
-    const buf = this._visPolyBuffers[readBufferIdx];
-    if (!buf) return;
-
-    const lightCount = buf.header[0];
-    const i32 = buf.i32;
-    const f32 = buf.f32;
-    const maxVerts = this._visPolyMaxVerts;
-    const slotBytes = this._visPolySlotBytes;
-    const res = this.lightingResolution || 1.0;
-
-    const container = this._visPolyContainer;
-
-    // LightEmitter data for color
-    const lightColor = LightEmitter.color;
-    const lightRadius = LightEmitter.radius;
-    const lightBrightness = LightEmitter.brightness;
-    const lightElevation = LightEmitter.elevation;
-    // The pool is R across and R * groundScaleY tall: the umbra quad needs no more rows than that.
-    const groundY = this._groundScaleY || 1;
-
-    // E-96. Each light's umbra disc, then its visibility fan (the order the per-light meshes were
-    // added to the container in, so the additive blend sums in the same sequence), into one mesh.
-    // DX-SPOT: a cone light's go into the cone batch (the CONE shader, its cone's terms in a second buffer), in
-    // their own sequence; with no cone light the cone batch is hidden and the frame is the one it was.
-    const lightConeCos = LightEmitter.coneCos;
-    const lightConeInvSpan = LightEmitter.coneInvSpan;
-    const lightDirC = LightEmitter.dirC;
-    const lightDirS = LightEmitter.dirS;
-    const rotC = Transform.rotC;
-    const rotS = Transform.rotS;
-    const groundInvY = this._groundInvScaleY || 1;
-    let needVerts = 0;
-    let needIdx = 0;
-    let coneVerts = 0;
-    let coneIdx = 0;
-    // Each slot's coneCos, read once: the count and the write below must agree on which batch a light takes, or a
-    // light the logic worker turns into a cone in between lands in a batch sized without it.
-    if (this._visConeCosSeen.length < lightCount) this._visConeCosSeen = new Float32Array(Math.max(lightCount, this._visPolyMaxLights | 0));
-    const coneCosSeen = this._visConeCosSeen;
-    for (let li = 0; li < lightCount; li++) {
-      const base = (4 + li * slotBytes) >> 2;
-      const vc = i32[base + 3];
-      const seen = lightConeCos[i32[base]];
-      coneCosSeen[li] = seen;
-      if (vc < 3) continue;
-      if (seen > -1) {
-        coneVerts += vc + 5;
-        coneIdx += vc * 3 + 6;
-      } else {
-        needVerts += vc + 5;
-        needIdx += vc * 3 + 6;
-      }
-    }
-    const pointBatch = this._ensureVisBatch(needVerts, needIdx, false);
-    const coneBatch = coneVerts > 0 ? this._ensureVisBatch(coneVerts, coneIdx, true) : this._visConeBatch;
-    let batch = pointBatch;
-    let data = batch.data;
-    let indices = batch.indices;
-    let vtx = 0;
-    let iCount = 0;
-    // The other batch's cursors while this one is written.
-    let otherVtx = 0;
-    let otherICount = 0;
-    let inCone = false;
-
-    for (let li = 0; li < lightCount; li++) {
-      const baseIndex = (4 + li * slotBytes) >> 2;
-      const lightIdx = i32[baseIndex];
-      const lx = f32[baseIndex + 1];
-      const ly = f32[baseIndex + 2];
-      const vertCount = i32[baseIndex + 3];
-
-      if (vertCount < 3) continue;
-      const coneCos = coneCosSeen[li];
-      const cone = coneCos > -1;
-      if (cone !== inCone) {
-        const v = vtx;
-        const c = iCount;
-        vtx = otherVtx;
-        iCount = otherICount;
-        otherVtx = v;
-        otherICount = c;
-        inCone = cone;
-        batch = cone ? coneBatch : pointBatch;
-        data = batch.data;
-        indices = batch.indices;
-      }
-
-      const xStart = baseIndex + 4;
-      const yStart = xStart + maxVerts;
-      const lightY = ly;
-      // The reach stays the floor-level light's (elevation only lowers the pool): culls and the rim use it.
-      const radius = lightRadius[lightIdx];
-      // elevation as in updateLighting: I' = I + h², the colour times brightness · I / I'.
-      let intensity = (radius * radius) / 100;
-      let colorScale = lightBrightness[lightIdx];
-      const h = lightElevation[lightIdx];
-      if (h > 0) {
-        const raised = intensity + h * h;
-        colorScale = (intensity / raised) * colorScale;
-        intensity = raised;
-      }
-      const color = lightColor[lightIdx];
-      const r = (((color >> 16) & 0xff) / 255) * colorScale;
-      const g = (((color >> 8) & 0xff) / 255) * colorScale;
-      const b = ((color & 0xff) / 255) * colorScale;
-      const radiusY = radius * groundY;
-
-      // The umbra disc: a quad around the light at the umbra floor.
-      const disc = vtx;
-      for (let c = 0; c < 4; c++) {
-        const o = (vtx++) * VIS_BATCH_FLOATS;
-        data[o] = c === 0 || c === 3 ? lx - radius : lx + radius;
-        data[o + 1] = c < 2 ? lightY - radiusY : lightY + radiusY;
-        data[o + 2] = lx;
-        data[o + 3] = lightY;
-        data[o + 4] = intensity;
-        data[o + 5] = radius;
-        data[o + 6] = r;
-        data[o + 7] = g;
-        data[o + 8] = b;
-        data[o + 9] = UMBRA_FLOOR;
-      }
-      indices[iCount++] = disc;
-      indices[iCount++] = disc + 1;
-      indices[iCount++] = disc + 2;
-      indices[iCount++] = disc;
-      indices[iCount++] = disc + 2;
-      indices[iCount++] = disc + 3;
-
-      // The visibility fan: the light, then the polygon boundary.
-      const center = vtx;
-      for (let v = -1; v < vertCount; v++) {
-        const o = (vtx++) * VIS_BATCH_FLOATS;
-        data[o] = v < 0 ? lx : f32[xStart + v];
-        data[o + 1] = v < 0 ? lightY : f32[yStart + v];
-        data[o + 2] = lx;
-        data[o + 3] = lightY;
-        data[o + 4] = intensity;
-        data[o + 5] = radius;
-        data[o + 6] = r;
-        data[o + 7] = g;
-        data[o + 8] = b;
-        data[o + 9] = VIS_REST;
-      }
-      // Triangle fan: (center, v, v+1) for each boundary pair, then back to the first.
-      for (let v = 1; v < vertCount; v++) {
-        indices[iCount++] = center;
-        indices[iCount++] = center + v;
-        indices[iCount++] = center + v + 1;
-      }
-      indices[iCount++] = center;
-      indices[iCount++] = center + vertCount;
-      indices[iCount++] = center + 1;
-
-      if (cone) {
-        // The cone's terms on its disc and fan: the entity's facing turns the light's own direction, then on the
-        // floor (y over groundScaleY), unit length; as updateLighting writes them.
-        const dc = lightDirC[lightIdx];
-        const ds = lightDirS[lightIdx];
-        const rc = rotC[lightIdx];
-        const rs = rotS[lightIdx];
-        const wx = rc * dc - rs * ds;
-        const wy = (rs * dc + rc * ds) * groundInvY;
-        const len = Math.sqrt(wx * wx + wy * wy);
-        const fx = len > 0 ? wx / len : 1;
-        const fy = len > 0 ? wy / len : 0;
-        const invSpan = lightConeInvSpan[lightIdx];
-        const cd = batch.coneData;
-        for (let v = disc; v < vtx; v++) {
-          const o = v * CONE_FLOATS;
-          cd[o] = fx;
-          cd[o + 1] = fy;
-          cd[o + 2] = coneCos;
-          cd[o + 3] = invSpan;
-        }
-      }
-    }
-
-    // Each batch's frame: the point lights' first in the container, as they always were.
-    const pointVtx = inCone ? otherVtx : vtx;
-    const pointIdx = inCone ? otherICount : iCount;
-    this._finishLightBatch(pointBatch, pointVtx, pointIdx, VIS_BATCH_FLOATS, true);
-    if (coneBatch !== null) {
-      this._finishLightBatch(coneBatch, inCone ? vtx : otherVtx, inCone ? iCount : otherICount, VIS_BATCH_FLOATS, false);
-    }
-
-    // Render to the visibility RT
-    // Clear with base ambient + sun (same as what the full-screen shader starts with)
-    const sunOn = Sun.isInitialized && Sun.enabled;
-    const sunIntensity = sunOn ? Sun.intensity : 0;
-    const ambient = this.baseAmbient + sunIntensity;
-    const night = this._nightRGB;
-    if (sunOn) Sun.nightLightRGB(night);
-    else night.fill(0);
-    const clearColor = this._visClearColor;
-    clearColor[0] = Math.min(ambient + night[0], 1.0);
-    clearColor[1] = Math.min(ambient + night[1], 1.0);
-    clearColor[2] = Math.min(ambient + night[2], 1.0);
-
-    // Restore unoccluded light under occluder footprints (no self-darken), after the fans; then the sprite-masked
-    // occluders' (E-260: in the same pass, after them, as their pass per light drew after it).
-    const spriteMasks = this._buildSelfLitBatch(readBufferIdx);
-    this._buildSelfLitSpriteBatches(spriteMasks ? readBufferIdx : -1);
-
-    const renderOptions = this._visRenderOpts;
-    renderOptions.transform = null;
-    renderOptions.container = container;
-    renderOptions.target = this._visPolyRT;
-    this._submitRender(renderOptions);
-  }
-
-  /**
-   * E-96b. ADD unoccluded light attenuation into the lighting RT under each occluder (default: the
-   * Collider footprint): every light's fills, then its transmit wedges (the order its two meshes drew
-   * in when each light was a pass of its own), into one mesh the light pass draws after the fans. A
-   * pass per light was 46 % of Pixi in visPolyStressScene, most of it Pixi's setup per render.
-   * Returns whether an occluder uses its sprite's alpha as the mask (maskMode=sprite), whose fills
-   * _buildSelfLitSpriteBatches writes.
-   */
-  _buildSelfLitBatch(readBufferIdx) {
-    const buf = this._selfLitBuffers[readBufferIdx];
-    const count = buf ? buf.header[0] | 0 : 0;
-    if (count <= 0 || !this._visPolyRT || !LightOccluder.active || !Collider.active || !this._selfLitBatchProgramOpts) {
-      if (this._selfLitBatch) this._selfLitBatch.mesh.visible = false;
-      if (this._selfLitConeBatch) this._selfLitConeBatch.mesh.visible = false;
-      return false;
-    }
-
-    const i32 = buf.i32;
-    const f32 = buf.f32;
-    const u8 = buf.u8;
-    const itemBytes = this._selfLitItemBytes;
-    const lightRadius = LightEmitter.radius;
-    const lightColor = LightEmitter.color;
-    const lightBrightness = LightEmitter.brightness;
-    const lightElevation = LightEmitter.elevation;
-    const offsetX = LightEmitter.offsetX;
-    const offsetY = LightEmitter.offsetY;
-    const rotC = Transform.rotC;
-    const rotS = Transform.rotS;
-    const maxVerts = this._selfLitMaxFillVerts;
-    const segs = this._selfLitCircleSegs;
-    const fanCos = this._selfLitCircleCos;
-    const fanSin = this._selfLitCircleSin;
-    const boxX = this._selfLitBoxScratchX;
-    const boxY = this._selfLitBoxScratchY;
-    const occluderBlock = LightOccluder.block;
-    const wedgePos = this._wedgePositions;
-    const wedgeScale = this._wedgeScales;
-    // The most one light writes: its fills, then its wedges. E-135: a compound's fill is indexed, so it can take
-    // more than three indices a vertex; every shape stops the light at either budget.
-    const maxIdx = maxVerts * 3;
-    const lightVerts = maxVerts + WEDGE_MAX_QUADS * 4;
-    const lightIndices = maxIdx + WEDGE_MAX_QUADS * 6;
-    let batch = this._ensureSelfLitBatch(lightVerts, lightIndices, 0, 0, false);
-    let data = batch.data;
-    let indices = batch.indices;
-    let vtx = 0;
-    let iCount = 0;
-    let spriteMasks = false;
-    // DX-SPOT: a cone light's runs go into the cone batch, as in renderVisibilityLighting; the other batch's cursors
-    // while one is written.
-    const lightConeCos = LightEmitter.coneCos;
-    const lightConeInvSpan = LightEmitter.coneInvSpan;
-    const lightDirC = LightEmitter.dirC;
-    const lightDirS = LightEmitter.dirS;
-    const groundInvY = this._groundInvScaleY || 1;
-    let otherVtx = 0;
-    let otherICount = 0;
-    let inCone = false;
-
-    // Process contiguous runs sharing the same lightIdx (collector writes per-light)
-    let i = 0;
-    while (i < count) {
-      const light = i32[((4 + i * itemBytes) >> 2) + 1];
-      let j = i;
-      while (j < count) {
-        const b = 4 + j * itemBytes;
-        if (i32[(b >> 2) + 1] !== light) break;
-        if (u8[b + 26] === LIGHT_OCCLUDER_MASK_SPRITE) spriteMasks = true;
-        j++;
-      }
-
-      // Light center: baked into visibility poly; here Transform is fine (lights rarely have RB)
-      const ox = offsetX[light];
-      const oy = offsetY[light];
-      const lx = Transform.x[light] + ox * rotC[light] - oy * rotS[light];
-      const ly = Transform.y[light] + ox * rotS[light] + oy * rotC[light];
-      // elevation as in updateLighting: I' = I + h², the colour times brightness · I / I'.
-      const lightR = lightRadius[light];
-      let intensity = (lightR * lightR) / 100;
-      let colorScale = lightBrightness[light];
-      const srcH = lightElevation[light];
-      if (srcH > 0) {
-        const raised = intensity + srcH * srcH;
-        colorScale = (intensity / raised) * colorScale;
-        intensity = raised;
-      }
-      const color = lightColor[light];
-      const cr = (((color >> 16) & 0xff) / 255) * colorScale;
-      const cg = (((color >> 8) & 0xff) / 255) * colorScale;
-      const cb = ((color & 0xff) / 255) * colorScale;
-
-      // Its coneCos, read once for the batch and the terms (the logic worker may write it meanwhile).
-      const runConeCos = lightConeCos[light];
-      const cone = runConeCos > -1;
-      if (cone !== inCone) {
-        const v = vtx;
-        const c = iCount;
-        vtx = otherVtx;
-        iCount = otherICount;
-        otherVtx = v;
-        otherICount = c;
-        inCone = cone;
-        batch = cone ? this._selfLitConeBatch : this._selfLitBatch;
-        if (batch === null) batch = this._ensureSelfLitBatch(lightVerts, lightIndices, 0, 0, true);
-        data = batch.data;
-        indices = batch.indices;
-      }
-      if (vtx + lightVerts > batch.vertCap || iCount + lightIndices > batch.idxCap) {
-        batch = this._ensureSelfLitBatch(vtx + lightVerts, iCount + lightIndices, vtx, iCount, cone);
-        data = batch.data;
-        indices = batch.indices;
-      }
-      // This light's vertices start here; its fills stop at maxVerts of them, as its own mesh did.
-      const lightBase = vtx;
-      const lightIdxBase = iCount;
-      this._wedgeVerts = 0;
-
-      for (let e = i; e < j; e++) {
-        const byteOff = 4 + e * itemBytes;
-        const maskMode = u8[byteOff + 26];
-        const i32Off = byteOff >> 2;
-        const entityIdx = i32[i32Off];
-        if (!Transform.active[entityIdx] || !Collider.active[entityIdx]) continue;
-
-        const shape = Collider.shapeType[entityIdx];
-        const ox = Collider.offsetX[entityIdx] || 0;
-        const oy = Collider.offsetY[entityIdx] || 0;
-        // Baked display pose from pre_render (same as sprite / umbra)
-        const ex = f32[i32Off + 2];
-        const ey = f32[i32Off + 3];
-        const c = f32[i32Off + 4];
-        const s = f32[i32Off + 5];
-        const block = occluderBlock ? occluderBlock[entityIdx] : 1;
-        if (block < 1) {
-          WEDGE_IN[0] = lx;
-          WEDGE_IN[1] = ly;
-          WEDGE_IN[2] = lightR;
-          WEDGE_IN[3] = ex;
-          WEDGE_IN[4] = ey;
-          WEDGE_IN[5] = c;
-          WEDGE_IN[6] = s;
-          WEDGE_IN[7] = ox;
-          WEDGE_IN[8] = oy;
-          WEDGE_IN[9] = block;
-          this._emitTransmitWedge(entityIdx);
-        }
-        if (maskMode === LIGHT_OCCLUDER_MASK_SPRITE) continue;
-
-        const nFixtures = Collider.fixtureCount ? (Collider.fixtureCount[entityIdx] | 0) : 0;
-        if (nFixtures > 0 && shape !== ShapeType.Chain && ColliderFixture.head && entityIdx < ColliderFixture.head.length) {
-          const solid = ensureCompoundSolid(
-            entityIdx,
-            ColliderFixture.revision ? ColliderFixture.revision[0] : 0,
-            ColliderFixture.head, ColliderFixture.next, ColliderFixture.active,
-            ColliderFixture.vertCount, ColliderFixture.vertexX, ColliderFixture.vertexY,
-            ColliderFixture.head[entityIdx], ColliderFixture.maxCount | 0
-          );
-          // E-135: the shared vertices once, then the soup's triangles by index.
-          const pts = solid.fillPts;
-          const fillIdx = solid.fillIdx;
-          const m = solid.fillPtCount | 0;
-          const n = solid.fillVerts | 0;
-          const lcx = Collider.polyCentroidX ? Collider.polyCentroidX[entityIdx] : 0;
-          const lcy = Collider.polyCentroidY ? Collider.polyCentroidY[entityIdx] : 0;
-          const bodyCx = ex + c * (ox + lcx) - s * (oy + lcy);
-          const bodyCy = ey + s * (ox + lcx) + c * (oy + lcy);
-          const originX = ex + c * ox - s * oy;
-          const originY = ey + s * ox + c * oy;
-          if (vtx - lightBase + m > maxVerts || iCount - lightIdxBase + n > maxIdx) break;
-          const baseV = vtx;
-          for (let p = 0; p < m; p++) {
-            const lxocal = pts[p * 2];
-            const lyocal = pts[p * 2 + 1];
-            const o = vtx * SELF_LIT_BATCH_FLOATS;
-            data[o] = originX + c * lxocal - s * lyocal;
-            data[o + 1] = originY + s * lxocal + c * lyocal;
-            data[o + 9] = VIS_REST;
-            data[o + 10] = bodyCx;
-            data[o + 11] = bodyCy;
-            data[o + 12] = 0;
-            vtx++;
-          }
-          for (let v = 0; v < n; v++) indices[iCount++] = baseV + fillIdx[v];
-          continue;
-        }
-
-        if (shape === ShapeType.Circle) {
-          const r = Collider.radius[entityIdx];
-          if (!(r > 0)) continue;
-          const cx = ex + ox;
-          const cy = ey + oy;
-          const ldx = lx - cx;
-          const ldy = ly - cy;
-          if (ldx * ldx + ldy * ldy <= r * r) continue;
-          if (vtx - lightBase + segs + 1 > maxVerts || iCount - lightIdxBase + segs * 3 > maxIdx) break;
-          const center = vtx;
-          for (let si = -1; si < segs; si++) {
-            const o = vtx * SELF_LIT_BATCH_FLOATS;
-            data[o] = si < 0 ? cx : cx + fanCos[si] * r;
-            data[o + 1] = si < 0 ? cy : cy + fanSin[si] * r;
-            data[o + 9] = VIS_REST;
-            data[o + 10] = cx;
-            data[o + 11] = cy;
-            data[o + 12] = r;
-            vtx++;
-          }
-          for (let si = 0; si < segs; si++) {
-            indices[iCount++] = center;
-            indices[iCount++] = center + 1 + si;
-            indices[iCount++] = center + 1 + ((si + 1) % segs);
-          }
-        } else if (shape === ShapeType.Chain) {
-          continue;
-        } else {
-          let vc = 0;
-          if (shape === ShapeType.Box) {
-            const w = Collider.width[entityIdx];
-            const h = Collider.height[entityIdx];
-            if (!(w > 0) || !(h > 0)) continue;
-            writeOrientedBoxVerts(boxX, boxY, 0, ex, ey, w, h, c, s, ox, oy);
-            vc = 4;
-          } else {
-            const pc = Collider.polyCount[entityIdx] | 0;
-            if (pc >= 3) {
-              const base = entityIdx * MAX_POLYGON_VERTICES;
-              writePolygonVerts(
-                boxX, boxY, 0, ex, ey, c, s, ox, oy,
-                Collider.polyVertexX, Collider.polyVertexY, base, pc
-              );
-              vc = pc;
-            } else {
-              const w = Collider.width[entityIdx];
-              const h = Collider.height[entityIdx];
-              if (!(w > 0) || !(h > 0)) continue;
-              writeOrientedBoxVerts(boxX, boxY, 0, ex, ey, w, h, c, s, ox, oy);
-              vc = 4;
-            }
-          }
-          if (pointInConvex(lx, ly, boxX, boxY, vc)) continue;
-          if (vtx - lightBase + vc > maxVerts || iCount - lightIdxBase + (vc - 2) * 3 > maxIdx) break;
-          const baseV = vtx;
-          const bodyCx = ex + ox;
-          const bodyCy = ey + oy;
-          // H-03: sqrt, not Math.hypot - the overflow/underflow guard is wasted
-          // on a collider's half-extent. Measured ~16x cheaper (5/5
-          // counterbalanced rounds, 1e-3..1e7). NOT bit-identical to hypot: it
-          // agrees on ~64% of in-range pairs and differs by a few ulps on the
-          // rest, which is ~1e-16 relative and far under the Float32 this feeds.
-          // Hoisted into locals so the Collider loads happen once, not twice.
-          const bodyHalfW = (Collider.width[entityIdx] || 0) * 0.5;
-          const bodyHalfH = (Collider.height[entityIdx] || 0) * 0.5;
-          const bodyR = Math.sqrt(bodyHalfW * bodyHalfW + bodyHalfH * bodyHalfH);
-          for (let v = 0; v < vc; v++) {
-            const o = vtx * SELF_LIT_BATCH_FLOATS;
-            data[o] = boxX[v];
-            data[o + 1] = boxY[v];
-            data[o + 9] = VIS_REST;
-            data[o + 10] = bodyCx;
-            data[o + 11] = bodyCy;
-            data[o + 12] = bodyR;
-            vtx++;
-          }
-          for (let v = 1; v < vc - 1; v++) {
-            indices[iCount++] = baseV;
-            indices[iCount++] = baseV + v;
-            indices[iCount++] = baseV + v + 1;
-          }
-        }
-      }
-
-      // Then its wedges, which have no facing term.
-      const wedgeVerts = this._wedgeVerts;
-      for (let w = 0; w < wedgeVerts; w += 4) {
-        const scale = wedgeScale[w >> 2];
-        const baseV = vtx;
-        for (let k = 0; k < 4; k++) {
-          const o = vtx * SELF_LIT_BATCH_FLOATS;
-          data[o] = wedgePos[(w + k) * 2];
-          data[o + 1] = wedgePos[(w + k) * 2 + 1];
-          data[o + 9] = scale;
-          data[o + 10] = 0;
-          data[o + 11] = 0;
-          data[o + 12] = SELF_LIT_NO_FACING;
-          vtx++;
-        }
-        indices[iCount++] = baseV;
-        indices[iCount++] = baseV + 1;
-        indices[iCount++] = baseV + 2;
-        indices[iCount++] = baseV;
-        indices[iCount++] = baseV + 2;
-        indices[iCount++] = baseV + 3;
-      }
-
-      // The light's terms on every vertex it wrote.
-      const r = cr;
-      const g = cg;
-      const b = cb;
-      for (let v = lightBase; v < vtx; v++) {
-        const o = v * SELF_LIT_BATCH_FLOATS;
-        data[o + 2] = lx;
-        data[o + 3] = ly;
-        data[o + 4] = intensity;
-        data[o + 5] = lightR;
-        data[o + 6] = r;
-        data[o + 7] = g;
-        data[o + 8] = b;
-      }
-      if (cone) {
-        // The cone's terms, as renderVisibilityLighting writes them.
-        const dc = lightDirC[light];
-        const ds = lightDirS[light];
-        const wx = rotC[light] * dc - rotS[light] * ds;
-        const wy = (rotS[light] * dc + rotC[light] * ds) * groundInvY;
-        const len = Math.sqrt(wx * wx + wy * wy);
-        const fx = len > 0 ? wx / len : 1;
-        const fy = len > 0 ? wy / len : 0;
-        const invSpan = lightConeInvSpan[light];
-        const cd = batch.coneData;
-        for (let v = lightBase; v < vtx; v++) {
-          const o = v * CONE_FLOATS;
-          cd[o] = fx;
-          cd[o + 1] = fy;
-          cd[o + 2] = runConeCos;
-          cd[o + 3] = invSpan;
-        }
-      }
-
-      i = j;
-    }
-
-    // After the light batch, which is the container's first child; the cone lights' after the point lights'.
-    this._finishLightBatch(this._selfLitBatch, inCone ? otherVtx : vtx, inCone ? otherICount : iCount, SELF_LIT_BATCH_FLOATS, false);
-    if (this._selfLitConeBatch !== null) {
-      this._finishLightBatch(this._selfLitConeBatch, inCone ? vtx : otherVtx, inCone ? iCount : otherICount, SELF_LIT_BATCH_FLOATS, false);
-    }
-    return spriteMasks;
-  }
-
-  /**
-   * E-260. The self-lit fills of occluders whose sprite's alpha is the mask (maskMode=sprite): every light's quads in one
-   * mesh per texture source, drawn in the light pass after the collider fills, in the order the pass per light drew
-   * them. The light's and the body's terms are vertex attributes. Each was a Pixi mesh with its own uniforms, two buffer
-   * uploads and a render per light (Sun Street: 168 draws and 329 uploads a frame; visPolyStressScene ?mask=sprite
-   * &selfLit=20000: Pixi 1.3 ms with collider masks, 10.3 ms with sprite masks). `readBufferIdx` -1: none this frame.
-   */
-  _buildSelfLitSpriteBatches(readBufferIdx) {
-    const list = this._selfLitSpriteBatchList;
-    for (let b = 0; b < list.length; b++) list[b].quads = 0;
-    const buf = readBufferIdx >= 0 && this._selfLitSpriteProgramOpts ? this._selfLitBuffers[readBufferIdx] : null;
-    const count = buf ? buf.header[0] | 0 : 0;
-    if (count > 0) this._writeSelfLitSpriteQuads(buf, count);
-    for (let b = 0; b < list.length; b++) {
-      const batch = list[b];
-      this._finishLightBatch(batch, batch.quads * 4, batch.quads * 6, SELF_LIT_SPRITE_FLOATS, false);
-    }
-  }
-
-  /** E-260. _buildSelfLitSpriteBatches' quads: per light run, each sprite-masked occluder it lights from outside. */
-  _writeSelfLitSpriteQuads(buf, count) {
-    const i32 = buf.i32;
-    const f32 = buf.f32;
-    const u16 = buf.u16;
-    const u8 = buf.u8;
-    const itemBytes = this._selfLitItemBytes;
-    const lightRadius = LightEmitter.radius;
-    const lightColor = LightEmitter.color;
-    const lightBrightness = LightEmitter.brightness;
-    const lightElevation = LightEmitter.elevation;
-    const offsetX = LightEmitter.offsetX;
-    const offsetY = LightEmitter.offsetY;
-    const rotC = Transform.rotC;
-    const rotS = Transform.rotS;
-    const lightConeCos = LightEmitter.coneCos;
-    const lightConeInvSpan = LightEmitter.coneInvSpan;
-    const lightDirC = LightEmitter.dirC;
-    const lightDirS = LightEmitter.dirS;
-    const groundInvY = this._groundInvScaleY || 1;
-    const textures = this.flatTextures;
-    const spriteActive = SpriteRenderer.active;
-    const boxX = this._selfLitBoxScratchX;
-    const boxY = this._selfLitBoxScratchY;
-    const corners = MASK_CORNERS;
-    const uvArr = MASK_UVS;
-
-    let i = 0;
-    while (i < count) {
-      const lightIdx = i32[((4 + i * itemBytes) >> 2) + 1];
-      let j = i + 1;
-      while (j < count) {
-        const b = 4 + j * itemBytes;
-        if (i32[(b >> 2) + 1] !== lightIdx) break;
-        j++;
-      }
-
-      const lox = offsetX[lightIdx];
-      const loy = offsetY[lightIdx];
-      const lx = Transform.x[lightIdx] + lox * rotC[lightIdx] - loy * rotS[lightIdx];
-      const ly = Transform.y[lightIdx] + lox * rotS[lightIdx] + loy * rotC[lightIdx];
-      // elevation as in updateLighting: I' = I + h², the colour times brightness · I / I'.
-      const lightR = lightRadius[lightIdx];
-      let intensity = (lightR * lightR) / 100;
-      let colorScale = lightBrightness[lightIdx];
-      const srcH = lightElevation[lightIdx];
-      if (srcH > 0) {
-        const raised = intensity + srcH * srcH;
-        colorScale = (intensity / raised) * colorScale;
-        intensity = raised;
-      }
-      const color = lightColor[lightIdx];
-      const cr = (((color >> 16) & 0xff) / 255) * colorScale;
-      const cg = (((color >> 8) & 0xff) / 255) * colorScale;
-      const cb = ((color & 0xff) / 255) * colorScale;
-      // DX-SPOT: its cone, as renderVisibilityLighting writes it (coneCos -2: none, the shader skips it).
-      const coneCos = lightConeCos[lightIdx];
-      let coneX = 1;
-      let coneY = 0;
-      if (coneCos > -1) {
-        const dc = lightDirC[lightIdx];
-        const ds = lightDirS[lightIdx];
-        const wx = rotC[lightIdx] * dc - rotS[lightIdx] * ds;
-        const wy = (rotS[lightIdx] * dc + rotC[lightIdx] * ds) * groundInvY;
-        const len = Math.sqrt(wx * wx + wy * wy);
-        if (len > 0) {
-          coneX = wx / len;
-          coneY = wy / len;
-        }
-      }
-      const coneInvSpan = coneCos > -1 ? lightConeInvSpan[lightIdx] : 0;
-
-      for (let e = i; e < j; e++) {
-        const byteOff = 4 + e * itemBytes;
-        if (u8[byteOff + 26] !== LIGHT_OCCLUDER_MASK_SPRITE) continue;
-
-        const i32Off = byteOff >> 2;
-        const entityIdx = i32[i32Off];
-        const texId = u16[(byteOff >> 1) + 12];
-        if (texId === 0xFFFF || !textures || !textures[texId]) {
-          this._warnMissingSelfLitTexture(texId, entityIdx);
-          continue;
-        }
-        if (!Transform.active[entityIdx] || !spriteActive?.[entityIdx]) continue;
-
-        // The body: its centre and radius for the facing term, and whether the light is inside it (no fill then).
-        const ox = f32[i32Off + 2];
-        const oy = f32[i32Off + 3];
-        const bodyCx = ox + (Collider.offsetX[entityIdx] || 0);
-        const bodyCy = oy + (Collider.offsetY[entityIdx] || 0);
-        // H-03: sqrt, not Math.hypot.
-        const ubw = (Collider.width[entityIdx] || 0) * 0.5;
-        const ubh = (Collider.height[entityIdx] || 0) * 0.5;
-        let bodyR = Math.sqrt(ubw * ubw + ubh * ubh);
-        let lightInside = false;
-        if (Collider.shapeType[entityIdx] === ShapeType.Circle) {
-          const circleR = Collider.radius[entityIdx];
-          if (circleR > 0) bodyR = circleR;
-          const sdx = lx - bodyCx;
-          const sdy = ly - bodyCy;
-          lightInside = sdx * sdx + sdy * sdy <= bodyR * bodyR;
-        } else {
-          const bw = Collider.width[entityIdx];
-          const bh = Collider.height[entityIdx];
-          if (bw > 0 && bh > 0) {
-            writeOrientedBoxVerts(
-              boxX, boxY, 0,
-              ox, oy, bw, bh, f32[i32Off + 4], f32[i32Off + 5],
-              Collider.offsetX[entityIdx] || 0, Collider.offsetY[entityIdx] || 0
-            );
-            lightInside = pointInConvex(lx, ly, boxX, boxY, 4);
-          }
-        }
-        if (lightInside) continue;
-
-        // The sprite's quad, rotated and placed as the pass per light placed its mesh.
-        const tex = textures[texId];
-        const sx = SpriteRenderer.scaleX[entityIdx];
-        const sy = SpriteRenderer.scaleY[entityIdx];
-        const ax = SpriteRenderer.anchorX[entityIdx];
-        const ay = SpriteRenderer.anchorY[entityIdx];
-        let c;
-        let s;
-        if (SpriteRenderer.inheritTransformRotation[entityIdx]) {
-          c = f32[i32Off + 4];
-          s = f32[i32Off + 5];
-        } else {
-          c = SpriteRenderer.spriteRotC[entityIdx];
-          s = SpriteRenderer.spriteRotS[entityIdx];
-        }
-        const orig = tex.orig;
-        const ow = (orig && orig.width) || tex.width || 0;
-        const oh = (orig && orig.height) || tex.height || 0;
-        const hw = ow * sx;
-        const hh = oh * sy;
-        const x0 = -ax * hw;
-        const y0 = -ay * hh;
-        const x1 = (1 - ax) * hw;
-        const y1 = (1 - ay) * hh;
-        corners[0] = x0;
-        corners[1] = y0;
-        corners[2] = x1;
-        corners[3] = y0;
-        corners[4] = x1;
-        corners[5] = y1;
-        corners[6] = x0;
-        corners[7] = y1;
-        const uvs = tex.uvs;
-        if (uvs) {
-          uvArr[0] = uvs.x0;
-          uvArr[1] = uvs.y0;
-          uvArr[2] = uvs.x1 !== undefined ? uvs.x1 : uvs.x2;
-          uvArr[3] = uvs.y0;
-          uvArr[4] = uvs.x2;
-          uvArr[5] = uvs.y2;
-          uvArr[6] = uvs.x3 !== undefined ? uvs.x3 : uvs.x0;
-          uvArr[7] = uvs.y3 !== undefined ? uvs.y3 : uvs.y2;
-        } else {
-          uvArr[0] = 0;
-          uvArr[1] = 0;
-          uvArr[2] = 1;
-          uvArr[3] = 0;
-          uvArr[4] = 1;
-          uvArr[5] = 1;
-          uvArr[6] = 0;
-          uvArr[7] = 1;
-        }
-
-        const batch = this._selfLitSpriteBatchFor(tex.source);
-        const q = batch.quads;
-        const data = batch.data;
-        let o = q * 4 * SELF_LIT_SPRITE_FLOATS;
-        for (let v = 0; v < 4; v++) {
-          const lxo = corners[v * 2];
-          const lyo = corners[v * 2 + 1];
-          data[o] = ox + c * lxo - s * lyo;
-          data[o + 1] = oy + s * lxo + c * lyo;
-          data[o + 2] = uvArr[v * 2];
-          data[o + 3] = uvArr[v * 2 + 1];
-          data[o + 4] = lx;
-          data[o + 5] = ly;
-          data[o + 6] = intensity;
-          data[o + 7] = bodyR;
-          data[o + 8] = cr;
-          data[o + 9] = cg;
-          data[o + 10] = cb;
-          data[o + 11] = VIS_REST;
-          data[o + 12] = bodyCx;
-          data[o + 13] = bodyCy;
-          data[o + 14] = coneX;
-          data[o + 15] = coneY;
-          data[o + 16] = coneCos;
-          data[o + 17] = coneInvSpan;
-          o += SELF_LIT_SPRITE_FLOATS;
-        }
-        const indices = batch.indices;
-        const base = q * 4;
-        const k = q * 6;
-        indices[k] = base;
-        indices[k + 1] = base + 1;
-        indices[k + 2] = base + 2;
-        indices[k + 3] = base;
-        indices[k + 4] = base + 2;
-        indices[k + 5] = base + 3;
-        batch.quads = q + 1;
-      }
-
-      i = j;
-    }
-  }
-
-  /** E-260. The batch of a texture source with room for one more quad (made, or grown keeping its quads). */
-  _selfLitSpriteBatchFor(source) {
-    const batch = this._selfLitSpriteBatches.get(source);
-    if (batch !== undefined && batch.quads < batch.quadCap) return batch;
-    return this._ensureSelfLitSpriteBatch(source, batch === undefined ? 0 : batch.quads);
-  }
-
-  _ensureSelfLitSpriteBatch(source, keepQuads) {
-    const old = this._selfLitSpriteBatches.get(source);
-    const quadCap = Math.ceil(Math.max(keepQuads + 1, old ? old.quadCap : 0, 64) * 1.25);
-    const data = new Float32Array(quadCap * 4 * SELF_LIT_SPRITE_FLOATS);
-    const indices = new Uint32Array(quadCap * 6);
-    if (old) {
-      data.set(old.data.subarray(0, keepQuads * 4 * SELF_LIT_SPRITE_FLOATS));
-      indices.set(old.indices.subarray(0, keepQuads * 6));
-    }
-    const vbuf = new Buffer({ data, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST, shrinkToFit: false });
-    const stride = SELF_LIT_SPRITE_FLOATS * 4;
-    const geometry = new PIXI.Geometry({
-      attributes: {
-        aPosition: { buffer: vbuf, format: 'float32x2', stride, offset: 0 },
-        aUV: { buffer: vbuf, format: 'float32x2', stride, offset: 8 },
-        aLight: { buffer: vbuf, format: 'float32x4', stride, offset: 16 },
-        aColor: { buffer: vbuf, format: 'float32x4', stride, offset: 32 },
-        aBody: { buffer: vbuf, format: 'float32x2', stride, offset: 48 },
-        aCone: { buffer: vbuf, format: 'float32x4', stride, offset: 56 },
-      },
-      indexBuffer: this._dynBuf(indices, BufferUsage.INDEX),
-    });
-    // The camera and the texture, in the WGSL struct's order.
-    const shader = new PIXI.Shader({
-      ...this._selfLitSpriteProgramOpts,
-      resources: {
-        uniforms: {
-          uCameraPos: { value: new Float32Array([0, 0]), type: 'vec2<f32>' },
-          uZoom: { value: 1.0, type: 'f32' },
-          uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
-          uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
-          uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
-        },
-        uTexture: source,
-        uSampler: source.style,
-      },
-    });
-    const mesh = new PIXI.Mesh({ geometry, shader });
-    mesh.blendMode = 'add';
-    const batch = {
-      mesh,
-      geometry,
-      vbuf,
-      data,
-      cbuf: null,
-      coneData: null,
-      indices,
-      uniforms: shader.resources.uniforms.uniforms,
-      vertCap: quadCap * 4,
-      idxCap: quadCap * 6,
-      // The new index buffer is zero past what was copied: nothing of an earlier frame to clear.
-      idxUsed: keepQuads * 6,
-      gpuReady: false,
-      source,
-      quads: keepQuads,
-      quadCap,
-    };
-    const list = this._selfLitSpriteBatchList;
-    if (old) {
-      list[list.indexOf(old)] = batch;
-      if (old.mesh.parent) old.mesh.parent.removeChild(old.mesh);
-      old.mesh.destroy();
-      old.geometry.destroy();
-    } else {
-      list.push(batch);
-    }
-    this._selfLitSpriteBatches.set(source, batch);
-    return batch;
-  }
-
-  /** One warning per texture id for a sprite-masked occluder whose texture is missing. Error path only. */
-  _warnMissingSelfLitTexture(texId, entityIdx) {
-    if (!this._missingTextureWarns) this._missingTextureWarns = new Set();
-    const key = `selfLit:${texId}`;
-    if (this._missingTextureWarns.has(key)) return;
-    this._missingTextureWarns.add(key);
-    console.warn(`[PIXI] self-lit occluder missing textureId=${texId} (entity=${entityIdx}); skipping`);
   }
 
   /* =====================
@@ -6639,7 +5038,7 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
       if (!(lightRadius[i] > 0)) continue;
 
       // World-space light position from Transform SAB, same source as
-      // updateLighting/updateShadowSprites/renderVisibilityLighting use.
+      // updateLighting/updateShadowSprites use.
       const ox = offsetX[i];
       const oy = offsetY[i];
       const x = worldX[i] + ox * rotC[i] - oy * rotS[i];
@@ -7049,8 +5448,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     uniformGroup.uniforms.uLightCount = countToRender;
     uniformGroup.uniforms.uConeCount = coneCount;
 
-    // E-205: the frame's lights by tile, for the camera stamped above (the old fan pass draws no light pass).
-    if (this._lightTilesSource !== null && !this._visPolyEnabled) this._updateLightTiles(uniformGroup.uniforms, countToRender);
+    // E-205: the frame's lights by tile, for the camera stamped above.
+    if (this._lightTilesSource !== null) this._updateLightTiles(uniformGroup.uniforms, countToRender);
 
     // ========================================
     // SUN UNIFORMS
@@ -8475,7 +6874,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     u.uPointScale = pointScale;
     u.uGroundInvScaleY = this._groundInvScaleY || 1;
 
-    if (cookieN > 0 && !this._castedShadowsSunOnly && this.shadowBatch && gpu.cookie) {
+    if (cookieN > 0 && this.shadowBatch && gpu.cookie) {
       const screenScale = zoom * res;
       this.shadowBatch.setTargetSpace(true, this._renderCameraX, this._renderCameraY, screenScale);
       if (this._commitPackedBatch(this.shadowBatch, gpu.cookie, cookieN, GPU_SPRITE_FLOATS)) {
@@ -8490,10 +6889,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     this._lampMapDrew = false;
-    if (stampN > 0 && !this._castedShadowsSunOnly && this._lampMapOn && !keyedRows) {
+    if (stampN > 0 && this._lampMapOn && !keyedRows) {
       // DX-SHADOW3D (F7): each lamp's casters into its tile of the lamps' map; the light pass takes each lamp out alone.
       this._lampMapDrew = this._drawLampMap(batch, gpu, stampN);
-    } else if (stampN > 0 && !this._castedShadowsSunOnly) {
+    } else if (stampN > 0) {
       u.uLight[0] = 0;
       u.uLight[1] = 0;
       u.uLight[2] = 0;
@@ -8505,7 +6904,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this._commitPackedBatch(batch, gpu.stamp, stampN, GPU_CASTER_FLOATS);
         this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
       }
-    } else if (stampN <= 0 && this._lampMapOn && !this._castedShadowsSunOnly && (this._lampTileCount | 0) > 0) {
+    } else if (stampN <= 0 && this._lampMapOn && (this._lampTileCount | 0) > 0) {
       // OL-5: lamps with tiles and no stamp row (no sprite caster in any lamp's reach): the volumes alone.
       this._lampMapDrew = this._drawLampMapVolumes(gpu);
     }
@@ -9740,17 +8139,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (this.sunMapRT) this._createSunMap(sw, sh);
     }
 
-    if (this._visPolyRT) {
-      const res = this.lightingResolution || 1.0;
-      this._visPolyRT = this._replaceRT(
-        this._visPolyRT,
-        Math.max(1, Math.floor(width * res)),
-        Math.max(1, Math.floor(height * res)),
-        this._visPolyDisplaySprite,
-        1.0 / res
-      );
-    }
-
     // E-404: the lightGlows target follows the canvas.
     if (this._glowLayerRT !== null) this._resizeGlowLayerTarget(this._glowLayerRes, width, height);
 
@@ -10300,42 +8688,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         })
       );
     }
-    if (data.visibilityPolygons && data.visibilityPolygons.enabled && data.visibilityPolygons.fans === true) {
-      if (this._useWebGpu) {
-        shaderFetches.push(
-          fetchEngineShader('/src/shaders/visibilityPolygonBatch.wgsl').then((s) => {
-            this._visBatchWgsl = s;
-          }),
-          fetchEngineShader('/src/shaders/occluderSelfLitSprite.wgsl').then((s) => {
-            this._selfLitSpriteWgsl = s;
-          }),
-          fetchEngineShader('/src/shaders/occluderSelfLitBatch.wgsl').then((s) => {
-            this._selfLitBatchWgsl = s;
-          })
-        );
-      } else {
-        shaderFetches.push(
-          fetchEngineShader('/src/shaders/visibilityPolygonBatch.vert.glsl').then((s) => {
-            this._visBatchVertexShader = s;
-          }),
-          fetchEngineShader('/src/shaders/visibilityPolygonBatch.frag.glsl').then((s) => {
-            this._visBatchFragmentShader = s;
-          }),
-          fetchEngineShader('/src/shaders/occluderSelfLitSprite.vert.glsl').then((s) => {
-            this._selfLitSpriteVertShader = s;
-          }),
-          fetchEngineShader('/src/shaders/occluderSelfLitSprite.frag.glsl').then((s) => {
-            this._selfLitSpriteFragShader = s;
-          }),
-          fetchEngineShader('/src/shaders/occluderSelfLitBatch.vert.glsl').then((s) => {
-            this._selfLitBatchVertexShader = s;
-          }),
-          fetchEngineShader('/src/shaders/occluderSelfLitBatch.frag.glsl').then((s) => {
-            this._selfLitBatchFragmentShader = s;
-          })
-        );
-      }
-    }
     // GPU particle layers (LAYER_KIND.GPU_PARTICLES): their programs, only in a scene that has one.
     if (data.gpuParticles?.layers?.length) {
       // A look layer drawn among the entities draws its finished target in regions (gpuParticleChunks.js).
@@ -10750,24 +9102,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         : null;
       this.lightingResolution = lightingConfig.resolution || 1.0;
       // DX-BARRIOS: a px of height rises the camera's heightScaleY; faces have no switch: the light pass reads the face map
-      // with maps or a shadow map (below), or once a decoration carries a normal (_useFaces). Not with the old fan pass
-      // (debug.lightFans, OL-4).
+      // with maps or a shadow map (below), or once a decoration carries a normal (_useFaces).
       this._heightScaleY = cameraHeightScaleY(this.config);
-      this._facesWatch = !lightingConfig.wallFans;
-      this._facesOn = this._facesWatch && DecorationPool.facesInUse();
+      this._facesWatch = true;
+      this._facesOn = DecorationPool.facesInUse();
       // DX-SHADOW3D: the sun's shadows on the shadows' layer ('layer', the default) or from a shadow map, the sun's term
       // alone (WebGL and WebGPU). OL-1: any other value (the old 'sprite' among them) warns and draws on the layer.
       const sunShadows = lightingConfig.sunShadows ?? LIGHTING_DEFAULTS.sunShadows;
       if (sunShadows !== 'layer' && sunShadows !== 'map') {
         console.warn(`WeedJS: lighting.sunShadows is 'layer' or 'map', not ${JSON.stringify(sunShadows)}: the sun's shadows are drawn on the layer`);
       }
-      if (sunShadows === 'map') {
-        if (lightingConfig.wallFans) {
-          console.warn(`WeedJS: lighting.sunShadows 'map' does not work with debug.lightFans (the old fan pass): the sun's shadows stay on the layer`);
-        } else {
-          this._sunMapOn = true;
-        }
-      }
+      if (sunShadows === 'map') this._sunMapOn = true;
       // DX-SELFSHADOW: faces and sprites with maps shade themselves from the sun (screen-space steps over the face map).
       if (lightingConfig.selfShadow === true) this._selfShadowOn = true;
       // DX-PIXELSHADOW: each world pixel lit whole, the maps read with one tap (lighting.pixelArt).
@@ -10788,32 +9133,22 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         console.warn(`WeedJS: lighting.lampShadows is 'layer' or 'map', not ${JSON.stringify(lampShadows)}: the lamps' shadows are stamped on the layer`);
       }
       if (lampShadows === 'map') {
-        if (lightingConfig.wallFans) {
-          console.warn(`WeedJS: lighting.lampShadows 'map' does not work with debug.lightFans (the old fan pass): the lamps' shadows are the fans`);
-        } else {
-          this._lampMapOn = true;
-          // N-196: 'auto' (the default) sizes the tile by the casting lamps' reach and lighting.shadowResolution.
-          const tile = lightingConfig.lampShadowTile;
-          this._lampTileAuto = tile === undefined || tile === null || tile === 'auto';
-          this._lampTileSize = this._lampTileAuto ? 256 : Math.max(32, Math.min(1024, (tile | 0) || 256));
-          // E-508: a still lamp's volumes drawn once into a cache and copied each frame (default on).
-          this._lampCacheOn = lightingConfig.lampMapCache !== false;
-        }
+        this._lampMapOn = true;
+        // N-196: 'auto' (the default) sizes the tile by the casting lamps' reach and lighting.shadowResolution.
+        const tile = lightingConfig.lampShadowTile;
+        this._lampTileAuto = tile === undefined || tile === null || tile === 'auto';
+        this._lampTileSize = this._lampTileAuto ? 256 : Math.max(32, Math.min(1024, (tile | 0) || 256));
+        // E-508: a still lamp's volumes drawn once into a cache and copied each frame (default on).
+        this._lampCacheOn = lightingConfig.lampMapCache !== false;
       }
       // DX-MAPS: a sprite with height and normal maps is lit as the surface they say, through the faces' pass. DX-GBUF: so
       // is every entity's in the shadow maps' modes (a card standing on its foot, plan §5.4): the maps keep their highest
       // caster's entity, and a caster's own shadow never paints its own sprite.
-      if ((this.atlasMapsSource !== null || this._sunMapOn || this._lampMapOn) && !this._facesOn) {
-        if (lightingConfig.wallFans) {
-          console.warn('WeedJS: sprites with height or normal maps are lit flat with debug.lightFans (the old fan pass)');
-        } else {
-          this._facesOn = true;
-        }
-      }
-      // OL-4: walls (lighting.walls) read by this pass, unless the old fan pass is asked for: pre-render's rows and their
-      // texture, and the G-buffer, since a wall's own pixels are told by their entity's id.
+      if (this.atlasMapsSource !== null || this._sunMapOn || this._lampMapOn) this._facesOn = true;
+      // OL-4: walls (lighting.walls) read by this pass: pre-render's rows and their texture, and the G-buffer, since a
+      // wall's own pixels are told by their entity's id.
       const wallRows = data.visibilityPolygons;
-      if (wallRows && wallRows.enabled && wallRows.fans !== true && wallRows.rowsA && wallRows.rowsB) {
+      if (wallRows && wallRows.enabled && wallRows.rowsA && wallRows.rowsB) {
         this._initWallRows(wallRows);
         this._facesOn = true;
       }
@@ -10838,10 +9173,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           ? lightingConfig.maxShadowsPerEntity
           : LIGHTING_DEFAULTS.maxShadowsPerEntity;
       this.liquidFunMaxCount = data.liquidFunMaxCount | 0;
-      const particleLights = resolveParticleLights(
-        lightingConfig.particleLights,
-        lightingConfig.wallFans === true,
-      );
+      const particleLights = resolveParticleLights(lightingConfig.particleLights);
       if (particleLights.warning) console.warn(`PIXI WORKER: ${particleLights.warning}`);
       this._particleLightsEnabled = particleLights.enabled;
       this._particleLightMax = particleLights.max;
@@ -10856,13 +9188,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       `PIXI WORKER: Lighting system enabled (baseAmbient: ${this.baseAmbient}, maxLights: ${this.maxLights}, shadowLights: ${this.maxShadowCastingLights}, resolution: ${this.lightingResolution}, shadowResolution: ${this.shadowResolution})`
     );
 
-    }
-
-    // ========================================
-    // THE OLD FAN PASS (debug.lightFans, OL-4) - Initialize
-    // ========================================
-    if (data.visibilityPolygons && data.visibilityPolygons.enabled && data.visibilityPolygons.fans === true) {
-      this.initVisibilityPolygonSystem(data.visibilityPolygons);
     }
 
     // ========================================
@@ -12062,8 +10387,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._registerLayerDisplayObject('lightGlows', this.spriteGlowMesh);
       if (!this._lightGlowAdd) this.spriteGlowMesh.visible = false;
     }
-    if (this._visPolyDisplaySprite) this._registerLayerDisplayObject('lighting', this._visPolyDisplaySprite);
-    else if (this._lightEdges !== null) this._registerLayerDisplayObject('lighting', this._lightEdges.host);
+    if (this._lightEdges !== null) this._registerLayerDisplayObject('lighting', this._lightEdges.host);
     else if (this.lightingDisplaySprite) this._registerLayerDisplayObject('lighting', this.lightingDisplaySprite);
     else if (this.lightingMesh) this._registerLayerDisplayObject('lighting', this.lightingMesh);
     for (let i = 0; i < this._customLayerList.length; i++) {

@@ -1,14 +1,17 @@
 // Pre-render's visibility pass on a real worker (tests/bench/workerHarness.mjs), for the wired tests of the
-// visibility kernels (E-76 W2a, W1): the worker initialized through its own init path with walls (lighting.walls)
-// and a config's wasm switches, a scene of lights, boxes, circles, convex polygons and compound rings (the
-// fixture pool) written into the component arrays and the neighbour rows, one buildVisibilityPolygons, and
-// what it published: every light's polygon slot and the self-lit list. makeScene's `ringSegments` may be a
-// list (one entry per ring, cycled).
+// visibility kernels (E-76 W2a, W1) and of the walls' rows (OL-4): the worker initialized through its own init path
+// with walls (lighting.walls) and a config's wasm switches, a scene of lights, boxes, circles, convex polygons and
+// compound rings (the fixture pool) written into the component arrays and the neighbour rows, one
+// buildVisibilityPolygons, and what it published: the rows the light pass reads (lampWallRow.js), one for each lamp
+// with something in its reach. makeScene's `ringSegments` may be a list (one entry per ring, cycled).
 //
-// OL-4: with `rows: true` the worker publishes the walls' rows the light pass reads (lampWallRow.js) instead of the
-// polygons and the self-lit list, as in a scene without debug.lightFans; runFrame returns them.
+// OL-15: the rows are all pre-render publishes (each light's polygon and the self-lit list went with the fan pass).
+// The JS light loop the kernels replaced (tests/reference/visibilitySweepJs.mjs) still writes both, into buffers this
+// harness owns (runFrameJs): the truth a worker's rows are held to (compareFrames), since a row is its lamp's polygon
+// and the walls it names are walls the lamp sees. Two workers are compared by their rows, bit for bit (compareRows).
 //
-// Users: tests/node/visibilityKernelsWired.test.js, tests/node/lampWallsWired.test.js.
+// Users: tests/node/visibilityKernelsWired.test.js, visibilityGatherWired.test.js, visibilityConeWired.test.js,
+// lampWallsWired.test.js, wallRowCache.test.js, wallRowKernel.test.js, wallRowsUpload.test.js.
 import { Collider } from '../../src/components/collider.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { LightOccluder } from '../../src/components/lightOccluder.js';
@@ -16,9 +19,11 @@ import { Transform } from '../../src/components/transform.js';
 import { ShapeType } from '../../src/box2d/box2dConstants.js';
 import { ColliderFixture } from '../../src/core/colliderFixture.js';
 import { Grid } from '../../src/core/grid.js';
+import { gbufEntityId } from '../../src/render/gbufWord.js';
 import { MAX_POLYGON_VERTICES } from '../../src/util/configDefaults.js';
 import { visibilityMemoryBytes, visibilityMemoryOpts } from '../../src/util/visibilityMemory.js';
-import { wallRowsLayout } from '../../src/render/visibility/lampWallRow.js';
+import { POLAR_BINS } from '../../src/render/visibility/angularSweep.js';
+import { WALL_VERT0, wallEdgeCode, wallRowsLayout } from '../../src/render/visibility/lampWallRow.js';
 import { mulberry32 } from '../bench/benchMath.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker, spatialBuffers } from '../bench/workerHarness.mjs';
 import { FLIP_AREA_TOLERANCE, MAX_FLIP_SHARE, comparePolygons } from './visibilitySweepKernel.mjs';
@@ -26,7 +31,8 @@ import { buildVisibilityPolygonsJs } from '../reference/visibilitySweepJs.mjs';
 
 const V = MAX_POLYGON_VERTICES;
 const NONE = 0xffff;
-const SELF_LIT_ITEM_BYTES = 28;
+// An item of the JS light loop's list of the walls each light sees, as pre-render published it for the fan pass.
+const SEEN_ITEM_BYTES = 28;
 
 export const WORLD_W = 2400;
 export const WORLD_H = 1800;
@@ -107,10 +113,11 @@ function bounce(x0, v, t, lo, hi) {
  * The worker, initialized for `scene` with `wasm` (merged over the defaults the worker reads: a switch left
  * out is on). `maxVerts` is lighting.maxPolygonVertices; `maxNeighbors` the neighbour rows' width;
  * `fixtureSlack` fixtures past the scene's in the pool; `fixtures: false` no fixture pool at all; `walls: false` a
- * scene that asks for no walls; `rows` the light pass's rows published instead of the fan pass's polygons.
+ * scene that asks for no walls (no rows, no kernel); `wallCache` is lighting.wallCache. `ref` in what it returns are
+ * the JS light loop's buffers (runFrameJs).
  */
 export async function bootPreRender(scene, {
-  wasm = {}, maxVerts = 512, maxNeighbors = 256, selfLit = 4096, walls = true, rows = false, fixtureSlack = 16, fixtures: withPool = true,
+  wasm = {}, maxVerts = 512, maxNeighbors = 256, walls = true, fixtureSlack = 16, fixtures: withPool = true,
   wallCache = true,
 } = {}) {
   const N = scene.entities;
@@ -129,18 +136,7 @@ export async function bootPreRender(scene, {
     },
     visibleLightsData: new SharedArrayBuffer(2 + maxLights * 2),
   });
-  const slotBytes = 16 + maxVerts * 8;
-  const vp = {
-    enabled: true,
-    maxPolygonVertices: maxVerts,
-    maxLights,
-    dataA: new SharedArrayBuffer(4 + maxLights * slotBytes),
-    dataB: new SharedArrayBuffer(4 + maxLights * slotBytes),
-    selfLitDataA: new SharedArrayBuffer(4 + selfLit * SELF_LIT_ITEM_BYTES),
-    selfLitDataB: new SharedArrayBuffer(4 + selfLit * SELF_LIT_ITEM_BYTES),
-    maxOccluderSelfLit: selfLit,
-    ...rowBuffers(rows, maxLights, maxVerts),
-  };
+  const vp = { enabled: true, maxPolygonVertices: maxVerts, maxLights, ...rowBuffers(maxLights, maxVerts) };
   const fixtures = {
     enabled: true,
     maxFixturePoolSize: fixturePool,
@@ -154,10 +150,7 @@ export async function bootPreRender(scene, {
     config: {
       worldWidth: WORLD_W,
       worldHeight: WORLD_H,
-      lighting: {
-        enabled: true, walls, wallFans: walls && !rows, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false, maxOccluderSelfLit: selfLit,
-        wallCache,
-      },
+      lighting: { enabled: true, walls, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false, wallCache },
       physics: { maxFixturePoolSize: withPool ? fixturePool : 0 },
       wasm,
     },
@@ -167,27 +160,50 @@ export async function bootPreRender(scene, {
     extra: { visibilityPolygons: walls ? vp : null, fixtures: withPool ? fixtures : null },
   });
   bindPoseColumns(N);
-  // The frame loop's selectWriteBuffers picks the write slots; a first init leaves the self-lit one unset.
-  if (pre._selfLitBuffers) pre._selfLitWriteBuffer = pre._selfLitBuffers[0];
-  return { pre, scene, maxVerts, maxNeighbors, slotBytes };
+  return { pre, scene, maxVerts, maxNeighbors, ref: referenceBuffers(maxLights, maxVerts, maxNeighbors, N) };
 }
 
-/** The init data's rows (OL-4): the fan pass's flag, or the two buffers the light pass's rows are published in. */
-function rowBuffers(rows, maxLights, maxVerts) {
-  if (!rows) return { fans: true };
+/** The init data's rows (OL-4): the two buffers the light pass's rows are published in, a frame each in turns. */
+function rowBuffers(maxLights, maxVerts) {
   const bytes = wallRowsLayout(maxLights, maxVerts).bytes;
-  return { fans: false, rowsA: new SharedArrayBuffer(bytes), rowsB: new SharedArrayBuffer(bytes) };
+  return { rowsA: new SharedArrayBuffer(bytes), rowsB: new SharedArrayBuffer(bytes) };
+}
+
+/**
+ * What the JS light loop writes (buildVisibilityPolygonsJs' `out`, under the names pre-render held them by): a slot
+ * a light for its polygon, whether that polygon is the polar merge's, and the list of the walls each light sees with
+ * its scratch. The list has room for every neighbour of every light, so it never fills.
+ */
+function referenceBuffers(maxLights, maxVerts, maxNeighbors, entities) {
+  const slotBytes = 16 + maxVerts * 8;
+  const polygons = new ArrayBuffer(4 + maxLights * slotBytes);
+  const items = maxLights * maxNeighbors;
+  const list = new ArrayBuffer(4 + items * SEEN_ITEM_BYTES);
+  return {
+    _vpSlotBytes: slotBytes,
+    _vpWriteBuffer: { header: new Int32Array(polygons, 0, 1), i32: new Int32Array(polygons), f32: new Float32Array(polygons) },
+    _vpMerged: new Uint8Array(maxLights),
+    _selfLitWriteBuffer: {
+      header: new Int32Array(list, 0, 1), i32: new Int32Array(list), f32: new Float32Array(list), u8: new Uint8Array(list),
+    },
+    _selfLitMax: items,
+    _selfLitItemBytes: SEEN_ITEM_BYTES,
+    _selfLitSolid: new Uint8Array(items),
+    _selfLitOcc: new Int32Array(items),
+    _selfLitSeen: new Uint32Array(entities),
+    _selfLitSeenStamp: 0,
+  };
 }
 
 /**
  * W2b: bootPreRender with what the gather kernel reads in one shared memory, as Phase 4 lays it in Box2D's block:
  * Transform (its block and its pose columns), Collider, LightOccluder, the neighbour rows, the visibility regions
  * and the gather's table, results and events (renderQueueLayout.collect.visibility). With `pre._visGather` set to null
- * after it, the worker gathers in JS on the same memory.
+ * after it, the worker gathers in JS on the same memory. `groundScaleY` is camera.floorScaleY.
  */
 export async function bootPreRenderGather(scene, {
-  wasm = {}, maxVerts = 512, maxNeighbors = 256, selfLit = 4096, fixtureSlack = 16, fixtures: withPool = true,
-  groundScaleY = 1, rows = false, wallCache = true,
+  wasm = {}, maxVerts = 512, maxNeighbors = 256, fixtureSlack = 16, fixtures: withPool = true,
+  groundScaleY = 1, wallCache = true,
 } = {}) {
   const N = scene.entities;
   const maxLights = Math.max(1, scene.lights);
@@ -231,18 +247,7 @@ export async function bootPreRenderGather(scene, {
     componentDataByte: { Transform: at.transform, Collider: at.collider, LightOccluder: at.lightOccluder },
     visibleLightsData: new SharedArrayBuffer(2 + maxLights * 2),
   });
-  const slotBytes = 16 + maxVerts * 8;
-  const vp = {
-    enabled: true,
-    maxPolygonVertices: maxVerts,
-    maxLights,
-    dataA: new SharedArrayBuffer(4 + maxLights * slotBytes),
-    dataB: new SharedArrayBuffer(4 + maxLights * slotBytes),
-    selfLitDataA: new SharedArrayBuffer(4 + selfLit * SELF_LIT_ITEM_BYTES),
-    selfLitDataB: new SharedArrayBuffer(4 + selfLit * SELF_LIT_ITEM_BYTES),
-    maxOccluderSelfLit: selfLit,
-    ...rowBuffers(rows, maxLights, maxVerts),
-  };
+  const vp = { enabled: true, maxPolygonVertices: maxVerts, maxLights, ...rowBuffers(maxLights, maxVerts) };
   const fixtureData = {
     enabled: true,
     maxFixturePoolSize: fixturePool,
@@ -256,10 +261,7 @@ export async function bootPreRenderGather(scene, {
     config: {
       worldWidth: WORLD_W,
       worldHeight: WORLD_H,
-      lighting: {
-        enabled: true, walls: true, wallFans: !rows, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false,
-        maxOccluderSelfLit: selfLit, wallCache,
-      },
+      lighting: { enabled: true, walls: true, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false, wallCache },
       camera: { floorScaleY: groundScaleY },
       physics: { maxFixturePoolSize: withPool ? fixturePool : 0 },
       wasm: { ...wasm },
@@ -294,8 +296,7 @@ export async function bootPreRenderGather(scene, {
   LightOccluder.initializeArrays(memory.buffer, N, at.lightOccluder);
   ['x', 'y', 'rotC', 'rotS'].forEach((k, c) => { Transform[k] = new Float32Array(memory.buffer, at.pose + c * N * 4, N); });
   bindPoseColumns(N);
-  if (pre._selfLitBuffers) pre._selfLitWriteBuffer = pre._selfLitBuffers[0];
-  return { pre, scene, maxVerts, maxNeighbors, slotBytes, memory };
+  return { pre, scene, maxVerts, maxNeighbors, memory, ref: referenceBuffers(maxLights, maxVerts, maxNeighbors, N) };
 }
 
 /**
@@ -338,7 +339,6 @@ export function writeFrame(boot, t, { scene = boot.scene, revision = 7 } = {}) {
     }
     LightOccluder.active[i] = 1;
     LightOccluder.block[i] = e.block;
-    LightOccluder.maskMode[i] = 0;
     Collider.active[i] = 1;
     Collider.offsetX[i] = e.offX;
     Collider.offsetY[i] = e.offY;
@@ -403,95 +403,216 @@ export function writeFrame(boot, t, { scene = boot.scene, revision = 7 } = {}) {
   visible[0] = lights;
 }
 
-/** One visibility pass and what it published. */
-/** One visibility pass on the worker (`js`: the JS light loop it replaced, tests/reference), as published. */
-export function runFrame(boot, { js = false } = {}) {
-  const { pre, maxVerts, slotBytes } = boot;
-  if (js) buildVisibilityPolygonsJs(pre);
-  else pre.buildVisibilityPolygons();
-  const buf = pre._vpWriteBuffer;
-  const lights = [];
-  for (let l = 0; l < buf.header[0]; l++) {
-    const base = (4 + l * slotBytes) >> 2;
-    const n = buf.i32[base + 3];
-    lights.push({
-      idx: buf.i32[base], lx: buf.f32[base + 1], ly: buf.f32[base + 2], n,
-      x: buf.f32.slice(base + 4, base + 4 + n), y: buf.f32.slice(base + 4 + maxVerts, base + 4 + maxVerts + n),
-    });
-  }
-  const sl = pre._selfLitWriteBuffer;
-  const selfLit = [];
-  for (let q = 0; q < sl.header[0]; q++) {
-    const at = (4 + q * SELF_LIT_ITEM_BYTES) >> 2;
-    selfLit.push(`${sl.i32[at]}@${sl.i32[at + 1]}`);
-  }
-  // OL-4: the rows, when the worker publishes them: each row's lamp (its entity) and where its floats start.
+/**
+ * One visibility pass on the worker and the rows it published, copied (the worker writes the next frame over them):
+ * `lamps`, each row's lamp (its entity) in the rows' order, and `f32`, the rows' floats, `rowFloats` a row. A lamp
+ * with nothing in its reach has no row. null from a worker without walls.
+ */
+export function runFrame(boot) {
+  const { pre } = boot;
+  pre.buildVisibilityPolygons();
   const rb = pre._wallRowsWrite;
-  const rows = rb === null ? null : {
-    f32: rb.f32,
-    rowFloats: pre._wallRowFloats,
-    lamps: Array.from(rb.header.subarray(1, 1 + rb.header[0])),
-  };
-  return { lights, selfLit, rows };
-}
-
-/** The self-lit items of each light, in list order. */
-function selfLitByLight(frame) {
-  const by = new Map();
-  for (const item of frame.selfLit) {
-    const light = item.slice(item.indexOf('@') + 1);
-    if (!by.has(light)) by.set(light, []);
-    by.get(light).push(item);
-  }
-  return by;
+  if (rb === null) return null;
+  const count = rb.header[0];
+  const rowFloats = pre._wallRowFloats;
+  return { lamps: Array.from(rb.header.subarray(1, 1 + count)), rowFloats, f32: rb.f32.slice(0, count * rowFloats) };
 }
 
 /**
- * Frame b against frame a (the JS's), with the sweep kernel's gate (tests/node/visibilitySweepWasm.test.js):
- * the same lights in the same slots; each polygon with the same count and every vertex within its allowance
- * (comparePolygons; `relative` for the float32 sweep), or a flip (an event tie or a sample on a threshold went
- * the other way, or a merge ray grazing a radial edge of the sweep polygon) that keeps the area within
- * FLIP_AREA_TOLERANCE and the count within 4. A light's self-lit items must be the JS's unless its polygon
- * flipped, and the list must hold the lights in the same order. `bad` lists what failed; `flips` the flips.
+ * The same pass through the JS light loop pre-render ran before the kernels (tests/reference), on the worker's
+ * scratch and into the harness's buffers: every light's polygon in world px (a light nothing stops too: the plain
+ * 32-gon), its reach, whether the polygon is the polar merge's (`merged`: a compound solid in reach stamped a bin),
+ * and `walls`, the entities the loop kept as seen from it (N-19, N-39: what the fan pass drew self-lit; every wall
+ * in range when the sweep gave up), with the code a row's edge on each one carries (`wallCodes`: its G-buffer id and
+ * its opacity as the frame has it) and the compound solids among them (`solids`).
  */
-export function compareFrames(a, b, { relative = false } = {}) {
-  const out = { lights: a.lights.length, vertices: 0, exact: 0, flips: [], bad: [], selfLit: a.selfLit.length };
-  if (a.lights.length !== b.lights.length) {
-    out.bad.push(`${a.lights.length} lights, then ${b.lights.length}`);
-    return out;
+export function runFrameJs(boot) {
+  const { pre, maxVerts, ref } = boot;
+  buildVisibilityPolygonsJs(pre, ref);
+  const buf = ref._vpWriteBuffer;
+  const lights = [];
+  const byEntity = new Map();
+  for (let l = 0; l < buf.header[0]; l++) {
+    const base = (4 + l * ref._vpSlotBytes) >> 2;
+    const idx = buf.i32[base];
+    const n = buf.i32[base + 3];
+    const light = {
+      idx, lx: buf.f32[base + 1], ly: buf.f32[base + 2], radius: LightEmitter.radius[idx], n,
+      x: buf.f32.slice(base + 4, base + 4 + n), y: buf.f32.slice(base + 4 + maxVerts, base + 4 + maxVerts + n),
+      merged: ref._vpMerged[l] !== 0, walls: [], wallCodes: [], solids: [],
+    };
+    lights.push(light);
+    byEntity.set(idx, light);
   }
-  const flipped = new Set();
-  a.lights.forEach((L, i) => {
-    const K = b.lights[i];
-    if (L.idx !== K.idx || L.lx !== K.lx || L.ly !== K.ly) {
-      out.bad.push(`slot ${i}: light ${L.idx} then ${K.idx}`);
-      return;
+  const list = ref._selfLitWriteBuffer;
+  for (let q = 0; q < list.header[0]; q++) {
+    const at = (4 + q * SEEN_ITEM_BYTES) >> 2;
+    const wall = list.i32[at];
+    const light = byEntity.get(list.i32[at + 1]);
+    light.walls.push(wall);
+    light.wallCodes.push(wallEdgeCode(gbufEntityId(wall), LightOccluder.block[wall]));
+    if (ref._selfLitSolid[q] !== 0) light.solids.push(wall);
+  }
+  return { lights };
+}
+
+/**
+ * A row's own floats as bits: its header, its bins and its vertices with the closing one. What lies past them in the
+ * buffer is whatever an older, longer row left there.
+ */
+export function rowBits(rows, r) {
+  const o = r * rows.rowFloats;
+  return new Uint32Array(rows.f32.slice(o, o + 4 * (WALL_VERT0 + rows.f32[o] + 1)).buffer);
+}
+
+/**
+ * A row as the polygon it was written from: the lamp's point plus each vertex's offset, and each edge's code (0: it
+ * stops nothing). For a worker whose floor scale is 1: a row is in the floor's terms (y over camera.floorScaleY).
+ * A row's offsets are float32, so a vertex is the sweep's own or, where the offset has more bits than a float holds
+ * (a lamp near the world's origin, a vertex far from it), half the offset's ulp from it: 2^-15 px at most in these
+ * scenes, a third of the 1e-4 px the gate starts from.
+ */
+export function rowPolygon(rows, r) {
+  const o = r * rows.rowFloats;
+  const n = rows.f32[o];
+  const lx = rows.f32[o + 2];
+  const ly = rows.f32[o + 3];
+  const x = new Float64Array(n);
+  const y = new Float64Array(n);
+  const codes = new Float32Array(n);
+  for (let v = 0; v < n; v++) {
+    const at = o + 4 * (WALL_VERT0 + v);
+    x[v] = lx + rows.f32[at];
+    y[v] = ly + rows.f32[at + 1];
+    codes[v] = rows.f32[at + 3];
+  }
+  return { n, lx, ly, x, y, codes };
+}
+
+/**
+ * The walls a row names: its edges' codes (lampWallRow.js: a wall's G-buffer id times 256 plus its opacity in
+ * 1..255), each once. An edge that stops nothing (code 0) names none.
+ */
+export function rowWalls(rows, r) {
+  const o = r * rows.rowFloats;
+  const codes = new Set();
+  for (let v = 0; v < rows.f32[o]; v++) {
+    const code = rows.f32[o + 4 * (WALL_VERT0 + v) + 3];
+    if (code !== 0) codes.add(code);
+  }
+  return codes;
+}
+
+/**
+ * Two workers' rows of one frame, bit for bit: the same lamps in the same order, and every float of each row.
+ * Returns what differs (nothing: the same rows).
+ */
+export function compareRows(a, b) {
+  const bad = [];
+  if (a.lamps.join() !== b.lamps.join()) {
+    bad.push(`the lamps with a row: ${a.lamps.join()}, then ${b.lamps.join()}`);
+    return bad;
+  }
+  for (let r = 0; r < a.lamps.length; r++) {
+    const x = rowBits(a, r);
+    const y = rowBits(b, r);
+    if (x.length !== y.length) {
+      bad.push(`lamp ${a.lamps[r]}: ${a.f32[r * a.rowFloats]} vertices, then ${b.f32[r * b.rowFloats]}`);
+      continue;
+    }
+    for (let i = 0; i < x.length; i++) {
+      if (x[i] === y[i]) continue;
+      bad.push(`lamp ${a.lamps[r]}: float ${i} differs`);
+      break;
+    }
+  }
+  return bad;
+}
+
+/**
+ * A frame's rows (the worker's, runFrame) against the JS light loop's frame (runFrameJs), with the sweep kernel's
+ * gate (tests/node/visibilitySweepWasm.test.js). Each light the loop published has a row or none:
+ * - a row: at the light's own point, and its polygon (rowPolygon) is the light's: the same count and every vertex
+ *   within its allowance (comparePolygons; `relative` for the float32 sweep), or a flip (an event tie or a sample on
+ *   a threshold went the other way, or a merge ray grazing a radial edge of the sweep polygon) that keeps the area
+ *   within FLIP_AREA_TOLERANCE and the count within 4. Unless it flipped, its walls are compared (below).
+ * - none: nothing stops the lamp, so the loop's polygon shows no wall: no vertex nearer than the light's reach, and
+ *   no wall seen.
+ * The rows come in the lights' order, and none is of a light the loop left out.
+ *
+ * The walls (what the self-lit list was to the fan pass): every wall a row's edges name, by its id and its opacity,
+ * must be one the loop saw from that light. The other way round holds where the loop's list and the row say the
+ * same thing: `comparable` counts the walls of a plain sweep's polygon, and the compound solids of a merge with a
+ * vertex a bin; `unnamed` lists those the row does not name. It is the caller's to judge: the loop also counts a
+ * wall whose only vertices the sweep dropped as doubles of their neighbours, which is rare. Not comparable: a
+ * merge's simple walls (the loop saw them before the merge, which keeps a vertex a bin: one hidden by a solid, or
+ * seen between two rays, is not on the polygon), a grouped merge's solids (a vertex is the nearest of its group's
+ * bins, and the loop counts a solid seen in any of them), and the walls of a sweep that gave up (the loop then
+ * counts all in range).
+ *
+ * `bad` lists what failed, `flips` the flips; `named` counts the walls the rows name, `seen` those the loop saw.
+ */
+export function compareFrames(ref, rows, { relative = false } = {}) {
+  const out = {
+    lights: ref.lights.length, rows: rows.lamps.length, vertices: 0, exact: 0, flips: [], bad: [],
+    named: 0, seen: 0, comparable: 0, unnamed: [],
+  };
+  const rowOf = new Map(rows.lamps.map((lamp, r) => [lamp, r]));
+  if (rowOf.size !== rows.lamps.length) out.bad.push('a lamp has two rows');
+  let last = -1;
+  for (const L of ref.lights) {
+    const r = rowOf.get(L.idx);
+    // A polygon shows a wall where a vertex is nearer than the light's reach (a free ray's is past it).
+    let nearest = Infinity;
+    for (let v = 0; v < L.n; v++) nearest = Math.min(nearest, Math.sqrt((L.x[v] - L.lx) ** 2 + (L.y[v] - L.ly) ** 2));
+    const showsWall = nearest < L.radius * (1 - 1e-3);
+    if (r === undefined) {
+      if (showsWall || L.walls.length > 0) {
+        out.bad.push(`light ${L.idx} has no row, and its polygon shows a wall (${nearest} px from it, its reach ${L.radius}; ${L.walls.length} seen)`);
+      }
+      continue;
+    }
+    rowOf.delete(L.idx);
+    if (r < last) out.bad.push(`light ${L.idx}: its row comes before an earlier light's`);
+    last = r;
+    const K = rowPolygon(rows, r);
+    if (K.lx !== L.lx || K.ly !== L.ly) {
+      out.bad.push(`light ${L.idx}: its row is at (${K.lx}, ${K.ly}), the light at (${L.lx}, ${L.ly})`);
+      continue;
     }
     out.vertices += L.n;
     let exact = L.n === K.n;
     for (let v = 0; exact && v < L.n; v++) exact = L.x[v] === K.x[v] && L.y[v] === K.y[v];
     if (exact) {
       out.exact++;
-      return;
-    }
-    const c = comparePolygons(L.x, L.y, L.n, K.x, K.y, K.n, { lx: L.lx, ly: L.ly, relative });
-    if (c.ok) return;
-    const what = `light ${L.idx}: ${L.n} -> ${K.n} vertices, first move at ${c.first} (${c.maxAbs.toExponential(2)}), area ${c.areaRel.toExponential(2)}`;
-    if (c.areaRel <= FLIP_AREA_TOLERANCE && Math.abs(c.countDelta) <= 4) {
-      out.flips.push(what);
-      flipped.add(String(L.idx));
     } else {
-      out.bad.push(what);
+      const c = comparePolygons(L.x, L.y, L.n, K.x, K.y, K.n, { lx: L.lx, ly: L.ly, relative });
+      if (!c.ok) {
+        const what = `light ${L.idx}: ${L.n} -> ${K.n} vertices, first move at ${c.first} (${c.maxAbs.toExponential(2)}), area ${c.areaRel.toExponential(2)}`;
+        // A flip's walls are not compared: the vertex that went the other way may be a wall's only one.
+        if (c.areaRel <= FLIP_AREA_TOLERANCE && Math.abs(c.countDelta) <= 4) out.flips.push(what);
+        else out.bad.push(what);
+        continue;
+      }
     }
-  });
-  const sa = selfLitByLight(a);
-  const sb = selfLitByLight(b);
-  if ([...sa.keys()].join() !== [...sb.keys()].join()) out.bad.push('the self-lit list holds other lights');
-  for (const [light, items] of sa) {
-    const other = sb.get(light) || [];
-    if (flipped.has(light)) continue;
-    if (items.join() !== other.join()) out.bad.push(`light ${light}: self-lit ${items.length} items, then ${other.length}`);
+    const named = rowWalls(rows, r);
+    const seen = new Set(L.wallCodes);
+    out.seen += seen.size;
+    for (const code of named) {
+      if (seen.has(code)) out.named++;
+      else out.bad.push(`light ${L.idx}: its row names id ${Math.floor(code / 256)} with opacity ${code % 256}, no wall the JS loop saw from it`);
+    }
+    // A sweep that gave up shows no wall, and the loop then counts every wall in range: nothing to compare.
+    if (!showsWall) continue;
+    const solids = new Set(L.solids);
+    const vertexPerBin = L.n === POLAR_BINS;
+    L.walls.forEach((wall, w) => {
+      if (L.merged && !(vertexPerBin && solids.has(wall))) return;
+      out.comparable++;
+      if (!named.has(L.wallCodes[w])) out.unnamed.push(`light ${L.idx}: wall ${wall}`);
+    });
   }
+  for (const lamp of rowOf.keys()) out.bad.push(`a row for light ${lamp}, which the JS loop left out`);
   return out;
 }
 

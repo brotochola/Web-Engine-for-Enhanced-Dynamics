@@ -875,29 +875,11 @@ function initializeLightingAndRenderBuffers(scene) {
 
   if (config.lighting.enabled && config.lighting.walls) {
     const maxPolyVerts = config.lighting.maxPolygonVertices || 128;
-    const lightSlotBytes = 4 + 8 + 4 + maxPolyVerts * 4 * 2;
-    const visPolyBufferSize = 4 + maxLights * lightSlotBytes;
-
-    buffers.visibilityPolygonDataA = new SharedArrayBuffer(visPolyBufferSize);
-    buffers.visibilityPolygonDataB = new SharedArrayBuffer(visPolyBufferSize);
     scene.maxPolygonVertices = maxPolyVerts;
-
-    const maxSelfLit = config.lighting.maxOccluderSelfLit || 512;
-    // header(4) + entries: entityIdx, lightIdx, x,y,rotC,rotS (display pose), texId, maskMode, pad = 28
-    // Pose baked at write so pixi stays frame-locked with sprites (not live Transform).
-    const selfLitItemBytes = 28;
-    const selfLitBufferSize = 4 + maxSelfLit * selfLitItemBytes;
-    buffers.occluderSelfLitDataA = new SharedArrayBuffer(selfLitBufferSize);
-    buffers.occluderSelfLitDataB = new SharedArrayBuffer(selfLitBufferSize);
-    scene.maxOccluderSelfLit = maxSelfLit;
-
-    // OL-4: the walls' rows the light pass reads (lampWallRow.js), a row a lamp; not with the old fan pass, which draws
-    // the polygons above instead (debug.lightFans).
-    if (!config.lighting.wallFans) {
-      const rowsBytes = wallRowsLayout(maxLights, maxPolyVerts).bytes;
-      buffers.wallRowsDataA = new SharedArrayBuffer(rowsBytes);
-      buffers.wallRowsDataB = new SharedArrayBuffer(rowsBytes);
-    }
+    // OL-4: the walls' rows the light pass reads (lampWallRow.js), a row a lamp.
+    const rowsBytes = wallRowsLayout(maxLights, maxPolyVerts).bytes;
+    buffers.wallRowsDataA = new SharedArrayBuffer(rowsBytes);
+    buffers.wallRowsDataB = new SharedArrayBuffer(rowsBytes);
   }
 
   if (config.particle.decals) {

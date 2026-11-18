@@ -697,13 +697,12 @@ export function lightingSource(source, {
 }
 
 /**
- * Whether a scene's light can take faces (lit, and not by the old fan pass of debug.lightFans: `enabled`) and the px a px
- * of height rises (the camera's).
+ * Whether a scene's light can take faces (lit: `enabled`) and the px a px of height rises (the camera's).
  * DX-BARRIOS: no lighting.faces any more; whether faces are in use is DecorationPool.facesInUse().
  */
 export function resolveFaces(lighting, camera = null) {
   const heightScaleY = resolveHeightScaleY(camera);
-  return { enabled: !!(lighting && lighting.enabled && !lighting.wallFans), heightScaleY };
+  return { enabled: !!(lighting && lighting.enabled), heightScaleY };
 }
 
 /**

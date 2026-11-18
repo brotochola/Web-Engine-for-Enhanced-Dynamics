@@ -10,7 +10,7 @@ import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
 import { MeshRenderer } from '../../src/components/meshRenderer.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Transform } from '../../src/components/transform.js';
-import { LightOccluder, LIGHT_OCCLUDER_MASK_COLLIDER, LIGHT_OCCLUDER_MASK_SPRITE } from '../../src/components/lightOccluder.js';
+import { LightOccluder } from '../../src/components/lightOccluder.js';
 import {
   CAST_KIND,
   ShadowCaster,
@@ -159,13 +159,12 @@ test('a refused shape warns and leaves the kinds as they were', () => {
   assert.equal(holdsVolume(1), false);
 });
 
-test('setWall with ShadowCaster alone listed, in a scene with walls: the wall on, its shape, the caster\'s opacity', () => {
+test('setWall with ShadowCaster alone listed, in a scene with walls: the wall on, the caster\'s opacity', () => {
   setup({ walls: true });
   const c = caster(1);
   c.opacity = 0.6;
   assert.deepEqual(warnings(() => c.setWall()), []);
   assert.equal(LightOccluder.active[1], 1);
-  assert.equal(LightOccluder.maskMode[1], LIGHT_OCCLUDER_MASK_COLLIDER);
   assert.equal(LightOccluder.block[1], Math.fround(0.6));
   assert.equal(ShadowCaster.sunKind[1], CAST_KIND.WALL);
   assert.equal(ShadowCaster.lampKind[1], CAST_KIND.WALL);
@@ -179,9 +178,8 @@ test('setWall with ShadowCaster alone listed, in a scene with walls: the wall on
 test('lamps.setWall keeps the sun\'s shadow; a later setter that leaves no wall turns it off', () => {
   setup({ walls: true });
   const c = caster(2);
-  c.lamps.setWall({ shape: 'sprite' });
+  c.lamps.setWall();
   assert.equal(LightOccluder.active[2], 1);
-  assert.equal(LightOccluder.maskMode[2], LIGHT_OCCLUDER_MASK_SPRITE);
   assert.equal(ShadowCaster.sunKind[2], CAST_KIND.AUTO);
   assert.equal(ShadowCaster.active[2], 1, 'the sun still casts its sprite');
   c.setSprite();
@@ -196,7 +194,7 @@ test('setWall in a scene without walls warns once and changes nothing; the sun c
   const c = caster(1);
   const seen = warnings(() => {
     c.setWall();
-    c.lamps.setWall({ shape: 'sprite' });
+    c.lamps.setWall();
   });
   assert.equal(seen.length, 1, seen.join(' | '));
   assert.equal(
@@ -215,11 +213,11 @@ test('setWall in a scene without walls warns once and changes nothing; the sun c
 test('a spawn drops the wall of the slot\'s last entity, and a restored save brings back the one its kinds say', () => {
   setup({ walls: true });
   const c = caster(3);
-  c.setWall({ shape: 'sprite' });
+  c.opacity = 0.25;
+  c.setWall();
   resetCasterWall(3);
   assert.equal(LightOccluder.active[3], 0);
-  assert.equal(LightOccluder.maskMode[3], LIGHT_OCCLUDER_MASK_COLLIDER);
-  assert.equal(LightOccluder.block[3], 1);
+  assert.equal(LightOccluder.block[3], 1, 'blocking all the light again');
   // onSpawned set a wall; the save says the box was burning (clear) when it was saved, at opacity 0.5.
   c.setWall();
   ShadowCaster.sunKind[3] = CAST_KIND.NONE;

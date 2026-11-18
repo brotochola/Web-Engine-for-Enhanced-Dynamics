@@ -997,9 +997,6 @@ class Scene {
     // camera: the sweep runs on the world as the screen shows it, where sight lines are straight whatever the floor's scale.
     const walls = this.config.lighting.enabled === true && this.config.lighting.walls === true;
     this.config.lighting.walls = walls;
-    // Derived: the old pass that draws the sweep's polygons as fans (debug.lightFans), kept to compare with until OL-4's
-    // pictures and numbers are accepted.
-    this.config.lighting.wallFans = walls && this.config.debug?.lightFans === true;
 
     // Navigation defaults from centralized config
     this.config.navigation = {

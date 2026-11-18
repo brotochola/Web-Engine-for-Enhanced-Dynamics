@@ -73,14 +73,13 @@ test('a height is kept in 64ths of a px in 21 bits, the face\'s innerZ in the to
   assert.ok(encodeFaceHeight(1e6, 7) < 1 << 24, 'a code is exact in a float32');
 });
 
-// DX-BARRIOS: no lighting.faces: a scene's light can take faces where it is lit and not by the old fan pass (OL-4:
-// debug.lightFans, lighting.wallFans) (whether any decoration carries a normal is DecorationPool.facesInUse); no wrap,
-// gain or sunDirect (Sun.skyLight).
-test('resolveFaces: a lit scene\'s light takes faces, walls or not; the old fan pass or an unlit one does not; no wrap, gain or sunDirect', () => {
+// DX-BARRIOS: no lighting.faces: a scene's light can take faces where it is lit (whether any decoration carries a
+// normal is DecorationPool.facesInUse); no wrap, gain or sunDirect (Sun.skyLight).
+test('resolveFaces: a lit scene\'s light takes faces, walls or not; an unlit one does not; no wrap, gain or sunDirect', () => {
   assert.deepEqual(resolveFaces(null), { ...FACE_DEFAULTS });
   assert.equal(resolveFaces({ enabled: false }).enabled, false);
-  assert.equal(resolveFaces({ enabled: true, walls: true, wallFans: true }).enabled, false, 'the old fan pass knows no faces');
-  assert.equal(resolveFaces({ enabled: true, walls: true, wallFans: false }).enabled, true, 'walls the light pass reads keep them');
+  assert.equal(resolveFaces({ enabled: true }).enabled, true);
+  assert.equal(resolveFaces({ enabled: true, walls: true }).enabled, true, 'a scene with walls keeps them');
   // A scene may still carry the retired key (it is told so, and it stays in its config): nothing reads it.
   assert.equal(resolveFaces({ enabled: true, raycasted: true }).enabled, true, 'lighting.raycasted is not read');
   const on = resolveFaces({ enabled: true, faces: { enabled: false, wrap: 0.5 } });

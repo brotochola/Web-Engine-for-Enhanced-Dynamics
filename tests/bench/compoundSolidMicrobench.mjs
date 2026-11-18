@@ -60,15 +60,14 @@ export function gridCompound(cols, rows, cell, seed) {
   return { head: new Uint16Array([0]), next, active, vertCount, vx, vy, fixtures: n };
 }
 
-function rebuildCase(label, body, wantFill) {
+function rebuildCase(label, body) {
   let revision = 1;
   const call = () => ensureCompoundSolid(
-    0, revision++, body.head, body.next, body.active, body.vertCount, body.vx, body.vy, 0, body.fixtures, wantFill,
+    0, revision++, body.head, body.next, body.active, body.vertCount, body.vx, body.vy, 0, body.fixtures,
   );
   const s = call();
-  const checksum = checksumFloats(s.seg, s.segCount * 4) ^ (wantFill ? checksumFloats(s.fill, s.fillVerts * 2) : 0);
-  // The cases share one function and flip wantFill; let it re-optimize for
-  // this mode before timing, or the cheap cases time the deopt (bimodal runs).
+  const checksum = checksumFloats(s.seg, s.segCount * 4);
+  // Warm up before timing, so the timed calls run optimized code.
   for (let k = 0; k < 5000; k++) call();
   const timed = timeIt(label, (iters) => {
     for (let k = 0; k < iters; k++) call();
@@ -94,7 +93,7 @@ function rebuildCase(label, body, wantFill) {
  */
 function collectCase(label, body, entity) {
   const solid = ensureCompoundSolid(
-    entity, 1, body.head, body.next, body.active, body.vertCount, body.vx, body.vy, 0, body.fixtures, false,
+    entity, 1, body.head, body.next, body.active, body.vertCount, body.vx, body.vy, 0, body.fixtures,
   );
   const lights = [];
   for (let k = 0; k < 8; k++) {
@@ -133,8 +132,7 @@ async function main() {
   const cases = {};
   for (const [name, cols, rows] of [['small', 4, 2], ['island', 16, 8], ['large', 48, 24]]) {
     const body = gridCompound(cols, rows, 10, 7 + cols);
-    cases[`${name}Outline`] = await rebuildCase(`${name} outline (${body.fixtures} tris)`, body, false);
-    cases[`${name}Fill`] = await rebuildCase(`${name} outline+fill (${body.fixtures} tris)`, body, true);
+    cases[`${name}Outline`] = await rebuildCase(`${name} outline (${body.fixtures} tris)`, body);
   }
   cases.islandCollect = collectCase('island collect, 8 lights', gridCompound(16, 8, 10, 23), 900);
   cases.largeCollect = collectCase('large collect, 8 lights', gridCompound(48, 24, 10, 55), 901);

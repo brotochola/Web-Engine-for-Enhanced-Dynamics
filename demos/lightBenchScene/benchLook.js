@@ -138,7 +138,7 @@ function cast(side, kind, sheet, look, hull) {
   } else if (kind === 'hull') {
     if (hull !== null && hull.length >= 12) side.setHull(hull);
   } else if (kind === 'wall') {
-    side.setWall({ shape: 'sprite' });
+    side.setWall();
   } else if (kind === 'none') {
     side.clear();
   }

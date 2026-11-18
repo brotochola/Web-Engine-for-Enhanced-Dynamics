@@ -87,7 +87,7 @@ function pixiScene(backend) {
       bullet: { maxBullets: 0 },
       physics: { maxJoints: 0 },
       spatial: { cellSize: 100, maxNeighbors: 8, maxEntitiesPerCell: 64, rowsPerBlock: 2, numberOfSpatialWorkers: 1 },
-      lighting: { enabled: false, maxLights: 10, shadowsEnabled: false, maxFlashes: 0, raycasted: false },
+      lighting: { enabled: false, maxLights: 10, shadowsEnabled: false, maxFlashes: 0 },
       logic: { staggeredUpdates: false },
       debug: { maxDebugDrawEntries: 1 },
       navigation: { enabled: false },

@@ -41,7 +41,7 @@ function published(rows) {
  */
 async function play(boot, seed, steps, wallCache) {
   const scene = stillScene(seed);
-  const b = await boot(scene, { rows: true, wallCache, maxNeighbors: 512 });
+  const b = await boot(scene, { wallCache, maxNeighbors: 512 });
   const kernel = b.pre._visSweep;
   const sweep = kernel.sweep;
   let calls = 0;
@@ -58,7 +58,7 @@ async function play(boot, seed, steps, wallCache) {
     // The frame loop's turn of the two buffers (selectWriteBuffers).
     b.pre._wallRowsWrite = b.pre._wallRowBuffers[f & 1];
     calls = 0;
-    frames.push(published(runFrame(b).rows));
+    frames.push(published(runFrame(b)));
     sweeps.push(calls);
   }
   return { frames, sweeps };

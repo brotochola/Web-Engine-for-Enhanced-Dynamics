@@ -127,11 +127,10 @@ test('a scene resolves its camera once and names what it fixed', () => {
 });
 
 /**
- * OL-4: config.lighting.walls and wallFans as the scene resolves them, for a camera, lighting on or off, the scene's
- * lighting.walls (left out when null) and its debug.lightFans (left out when undefined); with the warnings it gave
- * and its component pools.
+ * OL-4: config.lighting.walls as the scene resolves it, for a camera, lighting on or off and the scene's
+ * lighting.walls (left out when null); with the warnings it gave and its component pools.
  */
-function wallsFor(camera, { enabled = true, walls = true, lightFans } = {}) {
+function wallsFor(camera, { enabled = true, walls = true } = {}) {
   class Lit extends Scene {
     static entities = [[Crate, 4]];
     static config = {
@@ -139,15 +138,13 @@ function wallsFor(camera, { enabled = true, walls = true, lightFans } = {}) {
       worldHeight: 2000,
       camera,
       lighting: { enabled, baseAmbient: 0.5, ...(walls === null ? {} : { walls }) },
-      ...(lightFans === undefined ? {} : { debug: { lightFans } }),
     };
   }
   let scene = null;
   const lines = warningsOf(() => {
     scene = new Lit({});
   });
-  const { lighting } = scene.config;
-  return { walls: lighting.walls, wallFans: lighting.wallFans, lines, pools: scene.componentPools };
+  return { walls: scene.config.lighting.walls, lines, pools: scene.componentPools };
 }
 
 test('walls are the scene\'s to ask for (lighting.walls), with lighting on, whatever its camera', () => {
@@ -178,15 +175,34 @@ test('walls are the scene\'s to ask for (lighting.walls), with lighting on, what
   assert.equal(wallsFor({ pitch: 47 }, { walls: 'yes' }).walls, false, 'true asks for them, nothing else does');
 });
 
-test('the old fan pass (lighting.wallFans) follows debug.lightFans, and only in a scene that has walls', () => {
-  assert.equal(wallsFor({ pitch: 90 }, { lightFans: true }).wallFans, true, 'walls and debug.lightFans: the old pass');
-  assert.equal(wallsFor({ pitch: 90 }).wallFans, false, 'walls alone: the light pass reads them');
-  assert.equal(wallsFor({ pitch: 90 }, { lightFans: false }).wallFans, false);
-  assert.equal(wallsFor({ pitch: 90 }, { walls: null, lightFans: true }).wallFans, false, 'no walls, no fans');
-  assert.equal(wallsFor({ pitch: 90 }, { enabled: false, lightFans: true }).wallFans, false, 'no lighting, no fans');
-  const tilted = wallsFor({ floorScaleY: 0.7 }, { lightFans: true });
-  assert.equal(tilted.walls, true);
-  assert.equal(tilted.wallFans, true, 'on a foreshortened floor too');
+test('OL-15: a scene that still writes the old fan pass\'s keys is told so, and its walls are the light pass\'s', () => {
+  // The cap of the old pass's fills is retired with its reason; debug.lightFans, which asked for that pass, is no key.
+  const items = unknownConfigKeys({ lighting: { walls: true, maxOccluderSelfLit: 512 }, debug: { lightFans: true } });
+  assert.deepEqual(items.map((i) => i.path), ['lighting.maxOccluderSelfLit', 'debug.lightFans']);
+  assert.match(unknownConfigKeyText('Town', items[0]), /^Town\.config\.lighting\.maxOccluderSelfLit does nothing any more \(.+\)\. Remove it\.$/);
+  assert.equal(items[1].retired, undefined, 'no alias and no retired note: unknown, as any key the engine does not read');
+  assert.match(unknownConfigKeyText('Town', items[1]), /^Town\.config\.debug\.lightFans is not a config key, so it does nothing\./);
+
+  class Old extends Scene {
+    static entities = [[Crate, 4]];
+    static config = {
+      worldWidth: 2000,
+      worldHeight: 2000,
+      camera: { pitch: 90 },
+      lighting: { enabled: true, baseAmbient: 0.5, walls: true, maxOccluderSelfLit: 2048 },
+      debug: { lightFans: true },
+    };
+  }
+  let scene = null;
+  const lines = warningsOf(() => {
+    scene = new Old({});
+  });
+  assert.equal(lines.length, 2, lines.join(' | '));
+  assert.match(lines[0], /^WeedJS: Old\.config\.lighting\.maxOccluderSelfLit does nothing any more \(.+\)\. Remove it\.$/);
+  assert.match(lines[1], /^WeedJS: Old\.config\.debug\.lightFans is not a config key, so it does nothing\./);
+  assert.equal(scene.config.lighting.walls, true, 'the walls it asked for');
+  assert.equal(Object.hasOwn(scene.config.lighting, 'wallFans'), false, 'and no key derived for another pass');
+  assert.ok(scene.componentPools.LightOccluder, 'the walls\' columns are pooled');
 });
 
 test('a scene that still writes lighting.raycasted is told it is retired, and it asks for no walls', () => {
@@ -204,7 +220,6 @@ test('a scene that still writes lighting.raycasted is told it is retired, and it
     scene = new Old({});
   });
   assert.equal(scene.config.lighting.walls, false, 'neither the old key nor a flat camera asks for walls');
-  assert.equal(scene.config.lighting.wallFans, false);
   assert.equal(scene.componentPools.LightOccluder, undefined, 'no walls\' columns');
   assert.equal(lines.length, 1, lines.join(' | '));
   assert.match(lines[0], /^WeedJS: Old\.config\.lighting\.raycasted does nothing any more \(walls are config\.lighting\.walls now.*\)\. Remove it\.$/);

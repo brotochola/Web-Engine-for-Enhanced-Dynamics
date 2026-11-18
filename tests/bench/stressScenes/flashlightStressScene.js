@@ -11,8 +11,7 @@ const { Scene, Camera, LAYER_KIND } = WEED;
  * default) leaves the same lights round: the arm to measure a cone's cost (and its sweep's saving) against.
  *
  * `?lights=` (default 120), `?crates=` (default 160), `?cone=`, `?aperture=`, `?softness=`, `?backend=webgpu`,
- * `?glowRes=` (lighting.lightGlowResolution, E-404: the halos' target against the canvas; left out, the engine's default),
- * `?fans=1`.
+ * `?glowRes=` (lighting.lightGlowResolution, E-404: the halos' target against the canvas; left out, the engine's default).
  */
 const WORLD_W = 1280;
 const WORLD_H = 720;
@@ -39,15 +38,10 @@ export const APERTURE = (queryNumber('aperture', 50) * Math.PI) / 180;
 export const SOFTNESS = queryNumber('softness', 0.25);
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 export const GLOW_RES = queryNumber('glowRes', NaN);
-/**
- * `?fans=1` (OL-4): the old pass, which draws each light's visibility polygon as a fan (debug.lightFans), to compare with
- * the light pass reading the walls' rows (the default).
- */
-export const FANS = WEED.params?.get('fans') === '1' ? 1 : 0;
 
 export const stressSceneConfig = {
   requested: {
-    lights: LIGHTS, crates: CRATES, cone: CONE ? 1 : 0, aperture: APERTURE, softness: SOFTNESS, backend: BACKEND, fans: FANS,
+    lights: LIGHTS, crates: CRATES, cone: CONE ? 1 : 0, aperture: APERTURE, softness: SOFTNESS, backend: BACKEND,
   },
 };
 
@@ -66,7 +60,6 @@ export class FlashlightStressScene extends Scene {
     },
     // A side view. The lights pool on the backdrop, seen face on: a floor of 1.
     camera: { pitch: 0, floorScaleY: 1 },
-    debug: { lightFans: FANS === 1 },
     lighting: {
       enabled: true,
       // OL-4: the crates are walls (shadowCaster.setWall): each light sweeps the ones in its reach.
@@ -75,7 +68,6 @@ export class FlashlightStressScene extends Scene {
       shadowsEnabled: false,
       maxLights: LIGHTS,
       maxPolygonVertices: 5000,
-      maxOccluderSelfLit: 1024,
       ...(Number.isFinite(GLOW_RES) ? { lightGlowResolution: GLOW_RES } : {}),
       sun: { enabled: false },
     },

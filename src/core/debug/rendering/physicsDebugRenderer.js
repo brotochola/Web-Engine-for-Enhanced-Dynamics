@@ -19,6 +19,7 @@ import { DEBUG_FLAGS } from '../debugFlags.js';
 import { distanceSq2D } from '../../../util/utils.js';
 import { viewWorldBounds } from '../../../util/viewBounds.js';
 import { ShapeType } from '../../../util/configDefaults.js';
+import { WALL_VERT0 } from '../../../render/visibility/lampWallRow.js';
 import { getColliderBounds, _boundsResult } from '../../../util/colliderUtils.js';
 import { SpriteSheetRegistry } from '../../spriteSheetRegistry.js';
 
@@ -1222,24 +1223,26 @@ export class PhysicsDebugRenderer {
       }
     }
 
+    // What each lamp sees past the walls (lighting.walls): its row's polygon (lampWallRow.js: the lamp's floor point,
+    // then each vertex's offset from it, in floor px). A lamp with no wall in reach has no row.
     if (!visPoly || !visPoly.buf || visPoly.lightCount < 1) return;
     const f32 = visPoly.buf.f32;
-    const i32 = visPoly.buf.i32;
-    const maxVerts = visPoly.maxVerts;
-    const slotBytes = visPoly.slotBytes;
+    const rowFloats = visPoly.rowFloats;
+    const floorScaleY = visPoly.floorScaleY;
     const lightCount = visPoly.lightCount;
     ctx.strokeStyle = 'rgba(255, 180, 40, 0.85)';
     ctx.lineWidth = 1.5;
     for (let li = 0; li < lightCount; li++) {
-      const baseIndex = (4 + li * slotBytes) >> 2;
-      const vertCount = i32[baseIndex + 3];
+      const row = li * rowFloats;
+      const vertCount = f32[row] | 0;
       if (vertCount < 3) continue;
-      const xStart = baseIndex + 4;
-      const yStart = xStart + maxVerts;
+      const lampX = f32[row + 2];
+      const lampFloorY = f32[row + 3];
+      const first = row + 4 * WALL_VERT0;
       ctx.beginPath();
       for (let v = 0; v < vertCount; v++) {
-        const wx = (f32[xStart + v] - camera.x) * zoom;
-        const wy = (f32[yStart + v] - camera.y) * zoom;
+        const wx = (lampX + f32[first + 4 * v] - camera.x) * zoom;
+        const wy = ((lampFloorY + f32[first + 4 * v + 1]) * floorScaleY - camera.y) * zoom;
         if (v === 0) ctx.moveTo(wx, wy);
         else ctx.lineTo(wx, wy);
       }

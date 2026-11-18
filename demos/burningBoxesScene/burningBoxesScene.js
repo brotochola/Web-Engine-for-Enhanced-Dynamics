@@ -63,7 +63,6 @@ export class BurningBoxesScene extends WEED.Scene {
       maxLights: 256,
       shadowsEnabled: false,
       maxPolygonVertices: 512,
-      maxOccluderSelfLit: 512,
       resolution: 0.5,
       sun: { enabled: false },
     },

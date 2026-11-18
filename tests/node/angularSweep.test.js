@@ -7,20 +7,18 @@ import {
   writeOrientedBoxVerts,
   writePolygonVerts,
 } from '../../src/render/visibility/angularSweep.js';
-import {
-  LightOccluder,
-  LIGHT_OCCLUDER_MASK_COLLIDER,
-  LIGHT_OCCLUDER_MASK_SPRITE,
-} from '../../src/components/lightOccluder.js';
+import * as lightOccluderModule from '../../src/components/lightOccluder.js';
 import { buildVisibilityPolygon } from '../reference/visibilitySweepJs.mjs';
 
-test('LightOccluder schema has maskMode and block, no radius', () => {
+const { LightOccluder } = lightOccluderModule;
+
+test('LightOccluder schema has active and block, no radius and no mask (OL-15)', () => {
   assert.ok(LightOccluder.ARRAY_SCHEMA.active);
-  assert.ok(LightOccluder.ARRAY_SCHEMA.maskMode);
   assert.equal(LightOccluder.ARRAY_SCHEMA.block, Float32Array);
   assert.equal(LightOccluder.ARRAY_SCHEMA.radius, undefined);
-  assert.equal(LIGHT_OCCLUDER_MASK_COLLIDER, 0);
-  assert.equal(LIGHT_OCCLUDER_MASK_SPRITE, 1);
+  // OL-15: a wall has one shape, its Collider's outline; the column that chose what cut the old pass's fill is gone.
+  assert.deepEqual(Object.keys(LightOccluder.ARRAY_SCHEMA), ['active', 'block']);
+  assert.deepEqual(Object.keys(lightOccluderModule), ['LightOccluder'], 'and its two constants with it');
 });
 
 test('AngularSweep: no occluders yields full circle', () => {

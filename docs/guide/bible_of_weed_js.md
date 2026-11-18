@@ -1744,7 +1744,6 @@ this.shadowCaster.opacity = 0.5;      // a paler shadow: half of what the wall s
 - Behind a wall a light's shadow keeps a third of that light: `lighting.lightBehindWalls` (0 to 1, default 0.33; 0 for shadows that keep nothing of the lamp, only the ambient and the other lights). `opacity` under 1 lets `1 - opacity` of the rest through; 0 stops nothing.
 - The wall itself, where a light reaches its edge: its own sprite is lit whole, as drawn. A wall with no sprite of its own (drawn by a `MeshRenderer`, a tilemap) stays in its own shadow.
 - `lighting.wallDepth: N` (px, default 0) lights walls the other way: the light enters every wall N px from the edge it reaches and fades out there, whatever is drawn in it (a rock lit along its rim). No sprite is then lit whole.
-- `setWall`'s `shape` option (`'collider'`, the default, or `'sprite'`) changes nothing in the light pass: a wall's own pixels are told by its entity.
 - A light that stands still among walls that stand still costs little: its walls are gathered each frame, and when they are what they were the light is not swept again (`lighting.wallCache`, on by default; `false` sweeps every light every frame). A light that moves, or one with a wall moving in its reach, is swept that frame.
 - A scene without `lighting.walls: true` has no walls: `setWall` warns once and changes nothing.
 
@@ -1758,10 +1757,11 @@ More in "Walls: which ones stop a light", below.
 | `shadowCaster.heightMultiplier = h` | `setSprite({ heightScale: h })` |
 | `shadowCaster.anchorOffsetX` / `anchorOffsetY` | `baseRadius`, or `setSprite({ anchorX, anchorY })` |
 | `VolumeShadowCaster` in the components, `volumeShadowCaster.setBox / addLevel / setHull` | `shadowCaster.setBox / addLevel / setHull`, with `lighting.maxVolumes` |
-| `LightOccluder` in the components (`maskMode`, `block`) | `shadowCaster.setWall()`, `opacity`, in a scene with `lighting.walls: true` |
+| `LightOccluder` in the components (`block`) | `shadowCaster.setWall()`, `opacity`, in a scene with `lighting.walls: true` |
+| `lightOccluder.maskMode`, `lighting.maxOccluderSelfLit` | Nothing to set: a wall's own sprite is lit whole where a light reaches its edge (or, with `lighting.wallDepth`, that many px in from it) |
 | `lighting.raycasted: true` | `lighting.walls: true` (any camera) |
 
-The old members warn once, saying what replaces them, and do nothing; `lighting.raycasted` is named as a retired key.
+The old members warn once, saying what replaces them, and do nothing; `lighting.raycasted` and `lighting.maxOccluderSelfLit` are named as retired keys.
 
 A render whose json carries a floor polygon a frame around its anchor (`meta.footprints`, or `meta.light3d.footprints`) casts its solid swept north to it, each cell at its own height, as a 3D object does (light passes under a table). It is on by default; `lighting.footprintSolids: false` turns it off.
 
@@ -1993,7 +1993,6 @@ this.lightEmitter.shadowRange = 600; // optional: walls farther than 600 px do n
 Limits:
 - A shorter `shadowRange` means a shorter neighbour list and fewer walls per light. Each light takes at most 1024 walls (a one-time warning says when that is hit).
 - `lighting.maxPolygonVertices` (default 128) is the most vertices of a light's visibility polygon. Above 512 the light pass keeps one vertex in every few.
-- `lighting.maxOccluderSelfLit` (default 512) is how many walls one light's sweep can name. A wall past it still stops that light, but its own sprite is not lit whole; a compound body is always named.
 - At most `lighting.maxLights` lights are swept a frame (a one-time warning says when more are in view).
 
 ### Walls of compound bodies

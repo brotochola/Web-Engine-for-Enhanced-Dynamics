@@ -536,12 +536,6 @@ export type SceneConfig = Record<string, unknown> & {
      * GPU, false on none, to time a GPU with and without it.
      */
     opaquePass?: boolean | 'auto';
-    /**
-     * Temporary, not for games (default false): with lighting.walls, lights the scene with the old pass that draws each
-     * light's visibility polygon as a fan, so captures can compare it with the light pass. That pass has no maps, no
-     * `unshaded`, no shadow maps and no particle lights. It will be removed.
-     */
-    lightFans?: boolean;
   };
   preRender?: Record<string, unknown> & {
     /**
@@ -4476,7 +4470,7 @@ export interface ShadowCasterLightSide {
    * `lamps.setWall`: a wall for the lamps and headlights alone, the sun's shadow kept (as ShadowCaster.setWall, in a
    * scene with lighting.walls). The sun casts no wall: `sun.setWall` warns.
    */
-  setWall(options?: { shape?: 'collider' | 'sprite' }): ShadowCaster;
+  setWall(): ShadowCaster;
 }
 
 /**
@@ -4544,10 +4538,9 @@ export declare class ShadowCaster extends Component {
    * Collider's outline, as tall as the world; the entity needs a Collider. Behind it a light keeps a third of its
    * strength, and `opacity` under 1 lets `1 - opacity` of the rest through. Its own sprite is lit whole where a light
    * reaches its edge (or, with lighting.wallDepth, the first wallDepth px inside it). The sun casts nothing from it
-   * (`lamps.setWall` keeps the sun's shadow). `shape` changes nothing in the light pass: a wall's own pixels are told by
-   * its entity. A scene without walls warns once and changes nothing.
+   * (`lamps.setWall` keeps the sun's shadow). A scene without walls warns once and changes nothing.
    */
-  setWall(options?: { shape?: 'collider' | 'sprite' }): this;
+  setWall(): this;
   /**
    * Whether the object shades itself: true, false or 'auto' (the default: a render with a footprint does, one view does
    * not). Kept for the 3D shadows (DX-SELFSHADOW).

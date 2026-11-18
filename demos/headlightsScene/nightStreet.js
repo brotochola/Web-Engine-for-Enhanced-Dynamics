@@ -59,7 +59,7 @@ const roadAt = new Float64Array(3); // roadPoint's x, y and heading, reused ever
  * - lamps.setWall + Collider: what stops the lamps and the headlights (the scene's lighting.walls). Lights work on the
  *   floor, and in this view the house's walls and roof are drawn over the floor behind it, so the Collider covers the
  *   whole picture (not only the footprint): the light stops at its outline, and the house's own picture is lit where a
- *   beam reaches it. ({ shape: 'sprite' } is what cuts the old fan pass's fill, debug.lightFans: the picture's outline.)
+ *   beam reaches it.
  */
 export class House extends GameObject {
   static components = [Collider, SpriteRenderer, ShadowCaster];
@@ -76,7 +76,7 @@ export class House extends GameObject {
 
     this.shadowCaster.setBox(HOUSE_WIDTH, HOUSE_DEPTH, HOUSE_HEIGHT, { offsetY: -HOUSE_DEPTH / 2 });
     // A wall only where the scene asks for walls (headlightsScene.js: ?walls=0 asks for none, and setWall would warn).
-    if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall({ shape: 'sprite' });
+    if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall();
   }
 }
 
@@ -121,7 +121,7 @@ export class Car extends GameObject {
     this.collider.shapeType = ShapeType.Box;
     const front = setUpStreetCar(this, config.sheet);
     // A wall only where the scene asks for walls (lighting.walls), as the houses.
-    if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall({ shape: 'sprite' });
+    if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall();
 
     const light = this.lightEmitter;
     light.radius = HEADLIGHT.radius;

@@ -1,16 +1,17 @@
 // OL-4: the walls' rows, from a real pre-render worker to what the light pass will read. The worker (tests/helpers/
 // visibilityWired.mjs) gathers each light's walls, sweeps them in visibilitySweep.wasm and publishes a row a lamp
-// (src/render/visibility/lampWallRow.js) instead of the polygon the old pass drew as a fan. Here the same frames run
-// both ways on the same scene: the polygons are the truth, and every row must say what its light's polygon says, through
-// wallRowLight (the shaders' lookup in JS): a point inside the polygon is lit, a point behind a wall keeps what the wall
-// lets through, and a wall's own pixels (the entity an edge names) are lit beyond its edge.
+// (src/render/visibility/lampWallRow.js) where the old pass drew the sweep's polygon as a fan. OL-15: the worker
+// publishes no polygon now, so the truth is the JS light loop's (tests/reference: each light's polygon and the walls
+// it sees), run on the same worker and frame. Every row must say what its light's polygon says, through wallRowLight
+// (the shaders' lookup in JS): a point inside the polygon is lit, a point behind a wall keeps what the wall lets
+// through, and a wall's own pixels (the entity an edge names) are lit beyond its edge.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { gbufEntityId } from '../../src/render/gbufWord.js';
 import { WALL_UMBRA, WALL_VERT0, wallRowLight } from '../../src/render/visibility/lampWallRow.js';
 import { mulberry32 } from '../bench/benchMath.js';
-import { bootPreRender, bootPreRenderGather, makeScene, runFrame, writeFrame } from '../helpers/visibilityWired.mjs';
+import { bootPreRender, bootPreRenderGather, makeScene, runFrame, runFrameJs, writeFrame } from '../helpers/visibilityWired.mjs';
 
 const SCENE = { lights: 24, boxes: 150, circles: 50, polygons: 30, rings: 5, blockHalf: 0.25 };
 
@@ -63,36 +64,34 @@ function outsideBy(e, x, y, px, py, angle) {
 async function compare(t, boot) {
   const sc = scene(20261118);
   const frames = [0, 0.9, 2.3];
-  const fans = await boot(sc, { rows: false });
-  const polygons = frames.map((time) => {
-    writeFrame(fans, time);
-    return runFrame(fans);
-  });
-  const rowsBoot = await boot(sc, { rows: true });
+  const worker = await boot(sc);
   const rand = mulberry32(99);
   const totals = { lights: 0, rows: 0, lit: 0, shaded: 0, owned: 0, outlines: 0 };
   frames.forEach((time, f) => {
-    writeFrame(rowsBoot, time);
-    const out = runFrame(rowsBoot);
-    assert.ok(out.rows, 'the worker publishes rows');
-    assert.equal(out.lights.length, 0, 'and no polygon for a fan');
-    assert.equal(out.selfLit.length, 0, 'nor a self-lit list');
-    const rowOf = new Map(out.rows.lamps.map((lamp, r) => [lamp, r]));
-    assert.equal(rowOf.size, out.rows.lamps.length, 'a lamp has one row');
-    for (const light of polygons[f].lights) {
+    writeFrame(worker, time);
+    // The JS light loop first (it sweeps on the worker's scratch), then the worker's own pass on the same frame.
+    const truth = runFrameJs(worker);
+    const out = runFrame(worker);
+    assert.ok(out, 'the worker publishes rows');
+    const rowOf = new Map(out.lamps.map((lamp, r) => [lamp, r]));
+    assert.equal(rowOf.size, out.lamps.length, 'a lamp has one row');
+    for (const light of truth.lights) {
       totals.lights++;
       const ent = sc.ents[light.idx];
       const radius = ent.sqrtI * 10;
       // A light the sweep gave nothing to stop (no walls in reach, or it casts no shadow) is the plain 32-gon, and has no row.
-      const seen = polygons[f].selfLit.filter((item) => item.endsWith(`@${light.idx}`)).map((item) => Number(item.split('@')[0]));
+      const seen = light.walls;
       if (!rowOf.has(light.idx)) {
         assert.equal(seen.length, 0, `light ${light.idx} has no row, so its polygon shows no wall`);
+        assert.equal(light.n, 32, `light ${light.idx} has no row: the plain 32-gon`);
         continue;
       }
       totals.rows++;
-      const o = rowOf.get(light.idx) * out.rows.rowFloats;
-      const rows = out.rows.f32;
-      assert.equal(rows[o], light.n, `light ${light.idx}: the row holds its polygon's vertices`);
+      const o = rowOf.get(light.idx) * out.rowFloats;
+      const rows = out.f32;
+      // The JS sweep's count, or a few off it where an event tie went the other way in the kernel (a flip:
+      // visibilityKernelsWired.test.js holds the vertices to the JS's and bounds the flips).
+      assert.ok(Math.abs(rows[o] - light.n) <= 4, `light ${light.idx}: the row holds its polygon's vertices (${rows[o]}, the JS ${light.n})`);
       assert.ok(Math.abs(rows[o + 2] - light.lx) < 1e-3 && Math.abs(rows[o + 3] - light.ly) < 1e-3, 'at its lamp');
 
       // 1. Lit and shaded as the polygon says.
@@ -119,12 +118,13 @@ async function compare(t, boot) {
       //    what the wall lets through. With one end on it, it is the wall's shadow line, out to the next ray.
       const seenIds = new Set(seen.map((e) => gbufEntityId(e)));
       const v0 = o + 4 * WALL_VERT0;
-      for (let i = 0; i < light.n; i++) {
+      const edges = rows[o];
+      for (let i = 0; i < edges; i++) {
         const code = rows[v0 + 4 * i + 3];
         if (code < 0.5) continue;
         const id = Math.floor(code / 256);
         const opacity = (code - id * 256) / 255;
-        assert.ok(seenIds.has(id), `frame ${f} light ${light.idx}: edge ${i} names wall ${id}, which the light's fan pass lit too`);
+        assert.ok(seenIds.has(id), `frame ${f} light ${light.idx}: edge ${i} names wall ${id}, which the JS loop saw from this light too`);
         const ax = rows[v0 + 4 * i];
         const ay = rows[v0 + 4 * i + 1];
         const bx = rows[v0 + 4 * i + 4];
@@ -138,7 +138,7 @@ async function compare(t, boot) {
         // Boxes and circles: the shapes whose outline is easy to say. Not in a merged polygon (a compound solid in reach:
         // a vertex a polar bin, 512 of them): there a vertex is where its bin's ray meets the swept polygon, anywhere
         // along one of its edges, and an edge between two walls that overlap is named for the one it ends on.
-        if (len < 6 || light.n >= 500 || (wall.kind !== 'box' && wall.kind !== 'circle')) continue;
+        if (len < 6 || edges >= 500 || (wall.kind !== 'box' && wall.kind !== 'circle')) continue;
         const x = boundX(wall, time);
         const y = boundY(wall, time);
         const angle = (wall.angle || 0) + (wall.spin || 0) * time;
@@ -189,9 +189,13 @@ const boundX = (e, t) => Math.fround(bounce(e.x, e.vx, t, 20, 2400 - 20));
 const boundY = (e, t) => Math.fround(bounce(e.y, e.vy, t, 20, 1800 - 20));
 
 test('the rows say what the polygons say (the JS gather)', async (t) => {
-  await compare(t, (sc, opts) => bootPreRender(sc, { ...opts, maxNeighbors: 512 }));
+  await compare(t, (sc) => bootPreRender(sc, { maxNeighbors: 512 }));
 });
 
 test('the rows say what the polygons say (the gather in visibilityGather.wasm)', async (t) => {
-  await compare(t, (sc, opts) => bootPreRenderGather(sc, { ...opts, maxNeighbors: 512 }));
+  await compare(t, async (sc) => {
+    const worker = await bootPreRenderGather(sc, { maxNeighbors: 512 });
+    assert.ok(worker.pre._visGather, 'the gather kernel is bound');
+    return worker;
+  });
 });

@@ -104,12 +104,31 @@ function randomCompound(seed, cols, rows, opts = {}) {
 }
 
 let revision = 1;
-function outline(f, entity, wantFill) {
+function outline(f, entity) {
   const s = ensureCompoundSolid(
-    entity, revision++, f.head, f.next, f.active, f.vertCount, f.vx, f.vy, f.headIdx, f.poolMax, wantFill,
+    entity, revision++, f.head, f.next, f.active, f.vertCount, f.vx, f.vy, f.headIdx, f.poolMax,
   );
-  return { seg: s.seg.slice(0, s.segCount * 4), segCount: s.segCount, fillVerts: s.fillVerts };
+  return { seg: s.seg.slice(0, s.segCount * 4), segCount: s.segCount };
 }
+
+test('a square of two triangles: four outline segments, the shared diagonal is interior', () => {
+  const vx = new Float32Array(2 * V);
+  const vy = new Float32Array(2 * V);
+  const tri = (f, pts) => pts.forEach(([x, y], i) => { vx[f * V + i] = x; vy[f * V + i] = y; });
+  tri(0, [[0, 0], [10, 0], [10, 10]]);
+  tri(1, [[0, 0], [10, 10], [0, 10]]);
+  const square = {
+    headIdx: 0, poolMax: 2, head: new Uint16Array([0]), next: new Uint16Array([1, NONE]),
+    active: new Uint8Array([1, 1]), vertCount: new Uint8Array([3, 3]), vx, vy,
+  };
+  const got = outline(square, 500);
+  assert.equal(got.segCount, 4);
+  // First seen, each with its fixture's direction: the first triangle's two outer edges, then the second's.
+  assert.deepEqual(Array.from(got.seg), [0, 0, 10, 0, 10, 0, 10, 10, 10, 10, 0, 10, 0, 10, 0, 0]);
+  // OL-15: the outline is all a solid holds (the triangles the old fan pass filled it with are gone).
+  const solid = ensureCompoundSolid(500, revision++, square.head, square.next, square.active, square.vertCount, vx, vy, 0, 2);
+  assert.equal(Object.keys(solid).some((key) => key.toLowerCase().includes('fill')), false);
+});
 
 test('the outline matches the Map version: count, order and ends', () => {
   const shapes = [
@@ -123,19 +142,17 @@ test('the outline matches the Map version: count, order and ends', () => {
   for (const [seed, cols, rows, opts] of shapes) {
     const f = randomCompound(seed, cols, rows, opts);
     const want = referenceOutline(f);
-    for (const wantFill of [false, true]) {
-      const got = outline(f, seed, wantFill);
-      assert.equal(got.segCount * 4, want.length, `seed ${seed} fill ${wantFill}: segment count`);
-      assert.deepEqual(Array.from(got.seg), Array.from(want), `seed ${seed} fill ${wantFill}: segments`);
-    }
+    const got = outline(f, seed);
+    assert.equal(got.segCount * 4, want.length, `seed ${seed}: segment count`);
+    assert.deepEqual(Array.from(got.seg), Array.from(want), `seed ${seed}: segments`);
   }
 });
 
 test('a small body after a large one starts from an empty table', () => {
   const big = randomCompound(11, 40, 30, {});
-  outline(big, 100, false);
+  outline(big, 100);
   const small = randomCompound(12, 2, 1, {});
-  const got = outline(small, 101, false);
+  const got = outline(small, 101);
   assert.deepEqual(Array.from(got.seg), Array.from(referenceOutline(small)));
 });
 
@@ -144,7 +161,7 @@ test('bodies far apart in the entity pool each keep their own cached outline', (
   // packed array; a null slot must still read as "no outline yet".
   const f = randomCompound(21, 6, 4, {});
   const call = (entity, rev) => ensureCompoundSolid(
-    entity, rev, f.head, f.next, f.active, f.vertCount, f.vx, f.vy, f.headIdx, f.poolMax, true,
+    entity, rev, f.head, f.next, f.active, f.vertCount, f.vx, f.vy, f.headIdx, f.poolMax,
   );
   const far = call(9000, 50);
   const mid = call(4500, 50);

@@ -11,7 +11,7 @@
 // state and the radius it fills to are this module's: clearPolarBins, skipPolarBins and bindPolarBins here are
 // angularSweep.js' with that state reset, as they did when it lived there.
 import { Collider } from '../../src/components/collider.js';
-import { LIGHT_OCCLUDER_MASK_SPRITE, LightOccluder } from '../../src/components/lightOccluder.js';
+import { LightOccluder } from '../../src/components/lightOccluder.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { Transform } from '../../src/components/transform.js';
 import { ColliderFixture } from '../../src/core/colliderFixture.js';
@@ -1027,20 +1027,26 @@ export function rasterBoundarySegment(x0, y0, x1, y1, lx, ly, owner = -1) {
   writePolarSegment(x0, y0, x1, y1, lx, ly, owner);
 }
 
-// As in preRenderWorker.js (that module installs its worker when it is imported, so it is not imported here).
-const INVALID_TEXTURE_ID = 0xFFFF;
-
 /**
  * buildVisibilityPolygons' JS light loop, as pre-render ran it with no visibility kernel: the gather, the sweep
  * (buildVisibilityPolygon), the compound raster (collectSolidSegments), the clip and the seen owners (dropUnseenJs),
- * on `pre`'s scratch and buffers. The kernels' wired parity tests run it on the same worker as their reference.
+ * on `pre`'s scratch. The kernels' wired parity tests run it on the same worker as their reference.
+ *
+ * OL-15: what it publishes goes to `out`, the caller's: pre-render held these fields while it published each light's
+ * polygon and the self-lit list for the fan pass (it publishes the walls' rows alone now), and they keep its names:
+ * _vpWriteBuffer ({ header, i32, f32 }) and _vpSlotBytes for the polygons; _selfLitWriteBuffer ({ header, i32, f32,
+ * u8 }), _selfLitMax and _selfLitItemBytes for the list of the walls each light sees; _selfLitSolid, _selfLitOcc,
+ * _selfLitSeen (a stamp an entity) and _selfLitSeenStamp, the scratch dropUnseenJs keeps that list with. An item of
+ * the list is the wall's entity, the light's and the wall's pose; the texture and the mask the fan pass's fill read
+ * after them are not written (LightOccluder.maskMode went with the fill). _vpMerged, if given, takes a byte a light:
+ * 1 where its polygon is the polar merge's.
  */
-export function buildVisibilityPolygonsJs(pre) {
+export function buildVisibilityPolygonsJs(pre, out) {
     if (!pre.visibilityPolygonsEnabled) return;
-    const buf = pre._vpWriteBuffer;
+    const buf = out._vpWriteBuffer;
     if (!buf) { return; }
 
-    const selfLitBuf = pre._selfLitWriteBuffer;
+    const selfLitBuf = out._selfLitWriteBuffer;
     if (selfLitBuf) selfLitBuf.header[0] = 0;
 
     // Optional SoA may be absent when scene never registered LightEmitter / LightOccluder
@@ -1051,7 +1057,6 @@ export function buildVisibilityPolygonsJs(pre) {
 
     const transformActive = Transform.active;
     const occluderActive = LightOccluder.active;
-    const occluderMaskMode = LightOccluder.maskMode;
     const occluderBlock = LightOccluder.block;
     const colliderActive = Collider.active;
     const shapeType = Collider.shapeType;
@@ -1083,7 +1088,7 @@ export function buildVisibilityPolygonsJs(pre) {
 
     const maxVerts = pre._vpMaxVerts;
     const maxLts = pre._vpMaxLights;
-    const slotBytes = pre._vpSlotBytes;
+    const slotBytes = out._vpSlotBytes;
     const kind = pre._vpOccKind;
     const cX = pre._vpCircleX;
     const cY = pre._vpCircleY;
@@ -1099,16 +1104,13 @@ export function buildVisibilityPolygonsJs(pre) {
     const f32 = buf.f32;
     const pose = pre._displayPoseOut;
 
-    const entityLastTextureId = pre.entityLastTextureId;
-    const maxSelfLit = pre._selfLitMax || 0;
+    const maxSelfLit = out._selfLitMax || 0;
     let selfLitCount = 0;
     const selfLitI32 = selfLitBuf ? selfLitBuf.i32 : null;
     const selfLitF32 = selfLitBuf ? selfLitBuf.f32 : null;
-    const selfLitU16 = selfLitBuf ? selfLitBuf.u16 : null;
-    const selfLitU8 = selfLitBuf ? selfLitBuf.u8 : null;
-    const selfLitItemBytes = pre._selfLitItemBytes || 28;
-    const selfLitSolid = pre._selfLitSolid;
-    const selfLitOcc = pre._selfLitOcc;
+    const selfLitItemBytes = out._selfLitItemBytes || 28;
+    const selfLitSolid = out._selfLitSolid;
+    const selfLitOcc = out._selfLitOcc;
 
     const visibleLights = pre.visibleLightsData;
     if (!visibleLights) { buf.header[0] = 0; return; }
@@ -1186,8 +1188,7 @@ export function buildVisibilityPolygonsJs(pre) {
                         fixtureRevision ? fixtureRevision[0] : 0,
                         fixtureHead, fixtureNext, fixtureActiveArr,
                         fixtureVertCount, fixtureVertX, fixtureVertY,
-                        fixtureHead[nIdx], fixturePoolMax,
-                        false // segments only: the fill is pixi's (self-lit)
+                        fixtureHead[nIdx], fixturePoolMax
                     );
                     const hit = collectSolidSegments(
                         solid, wx, wy, c, s, ox, oy,
@@ -1202,14 +1203,6 @@ export function buildVisibilityPolygonsJs(pre) {
                         selfLitF32[i32Off + 3] = wy;
                         selfLitF32[i32Off + 4] = c;
                         selfLitF32[i32Off + 5] = s;
-                        const u16Off = byteOff >> 1;
-                        let texId = entityLastTextureId ? entityLastTextureId[nIdx] : INVALID_TEXTURE_ID;
-                        if (texId === INVALID_TEXTURE_ID && (occluderMaskMode[nIdx] | 0) === LIGHT_OCCLUDER_MASK_SPRITE) {
-                            texId = pre._resolveEntitySpriteTextureId(nIdx);
-                        }
-                        selfLitU16[u16Off + 12] = texId;
-                        selfLitU8[byteOff + 26] = occluderMaskMode[nIdx] | 0;
-                        selfLitU8[byteOff + 27] = 0;
                         selfLitSolid[selfLitCount] = 1;
                         solidsLit++;
                         selfLitCount++;
@@ -1306,14 +1299,6 @@ export function buildVisibilityPolygonsJs(pre) {
                     selfLitF32[i32Off + 3] = wy;
                     selfLitF32[i32Off + 4] = c;
                     selfLitF32[i32Off + 5] = s;
-                    const u16Off = byteOff >> 1;
-                    let texId = entityLastTextureId ? entityLastTextureId[nIdx] : INVALID_TEXTURE_ID;
-                    if (texId === INVALID_TEXTURE_ID && (occluderMaskMode[nIdx] | 0) === LIGHT_OCCLUDER_MASK_SPRITE) {
-                        texId = pre._resolveEntitySpriteTextureId(nIdx);
-                    }
-                    selfLitU16[u16Off + 12] = texId; // after 6×i32/f32 = 24 bytes
-                    selfLitU8[byteOff + 26] = occluderMaskMode[nIdx] | 0;
-                    selfLitU8[byteOff + 27] = 0;
                     selfLitSolid[selfLitCount] = 0;
                     selfLitOcc[selfLitCount] = occCount;
                     selfLitCount++;
@@ -1343,7 +1328,7 @@ export function buildVisibilityPolygonsJs(pre) {
         // N-19 / N-39: an occluder is self-lit where this light sees it, not
         // wherever it is in range (rock behind rock, a box behind a box stay dark).
         if (selfLitCount > selfLitStart) {
-            selfLitCount = dropUnseenJs(pre, selfLitBuf, selfLitStart, selfLitCount, solidsLit > 0 && polarActive);
+            selfLitCount = dropUnseenJs(out, selfLitBuf, selfLitStart, selfLitCount, solidsLit > 0 && polarActive);
         }
 
         // Layout: [lightIdx:i32, lightX:f32, lightY:f32, vertexCount:i32, x[N]:f32, y[N]:f32]
@@ -1362,6 +1347,8 @@ export function buildVisibilityPolygonsJs(pre) {
             f32[xStart + v] = outX[v];
             f32[yStart + v] = outY[v];
         }
+        // OL-15: whether the polygon is the polar merge's (a compound solid stamped a bin), for a caller that asks.
+        if (out._vpMerged) out._vpMerged[lightsWritten] = polarActive ? 1 : 0;
 
         lightsWritten++;
     }
@@ -1375,19 +1362,20 @@ export function buildVisibilityPolygonsJs(pre) {
  * polygon shows: a solid when one of its polar bins is on it
  * (markSeenPolarOwners; no bin at all means none is), a simple occluder
  * when a sweep vertex landed on it (sweepSawOccluder). Returns the new count.
+ * `out` holds the list's scratch (see buildVisibilityPolygonsJs).
  */
-export function dropUnseenJs(pre, buf, start, end, polarActive) {
-    let stamp = (pre._selfLitSeenStamp + 1) >>> 0;
+export function dropUnseenJs(out, buf, start, end, polarActive) {
+    let stamp = (out._selfLitSeenStamp + 1) >>> 0;
     if (stamp === 0) {
-        pre._selfLitSeen.fill(0);
+        out._selfLitSeen.fill(0);
         stamp = 1;
     }
-    pre._selfLitSeenStamp = stamp;
-    const seen = pre._selfLitSeen;
+    out._selfLitSeenStamp = stamp;
+    const seen = out._selfLitSeen;
     const solidsKnown = !polarActive || markSeenPolarOwners(seen, stamp) >= 0;
-    const solid = pre._selfLitSolid;
-    const occ = pre._selfLitOcc;
-    const itemBytes = pre._selfLitItemBytes;
+    const solid = out._selfLitSolid;
+    const occ = out._selfLitOcc;
+    const itemBytes = out._selfLitItemBytes;
     const i32 = buf.i32;
     const u8 = buf.u8;
     let w = start;

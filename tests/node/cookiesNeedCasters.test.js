@@ -17,7 +17,6 @@ async function worker({ sunCasters, stamps }) {
   pre.shadowsEnabled = true;
   pre.gpuQueueCaps = caps;
   pre.shadowUpdateInterval = 1;
-  pre._wallFansOn = false;
   const calls = { cookies: 0 };
   pre._packGpuSun = () => sunCasters;
   pre._stampAgainstSun = () => stamps;
@@ -48,13 +47,4 @@ test('OL-7: a sun caster on the layer keeps the cookies, with or without a stamp
     assert.equal(res.cookie, 3, `stamps ${stamps}`);
     assert.equal(calls.cookies, 1);
   }
-});
-
-test('OL-7: under the old fan pass (debug.lightFans) no cookie is packed, as before', async () => {
-  const { pre, dst, calls } = await worker({ sunCasters: 2, stamps: 5 });
-  pre._wallFansOn = true;
-  const res = pre._packGpuShadows(dst, null);
-  assert.equal(res.cookie, 0);
-  assert.equal(res.stamp, 0, 'nor a stamp');
-  assert.equal(calls.cookies, 0);
 });

@@ -84,9 +84,8 @@ export const SCENE_CONFIG_SCHEMA = Object.freeze({
   renderer: keys(RENDERER_DEFAULTS),
   preRender: keys(PRE_RENDER_DEFAULTS),
   lighting: {
-    // directionalCasters: the scene sets it (sceneWorkerBootstrap), from its classes. wallFans: the scene derives it from
-    // lighting.walls and debug.lightFans (Scene._applyConfigDefaults) for the code that reads it.
-    ...keys(LIGHTING_DEFAULTS, ['directionalCasters', 'wallFans']),
+    // directionalCasters: the scene sets it (sceneWorkerBootstrap), from its classes.
+    ...keys(LIGHTING_DEFAULTS, ['directionalCasters']),
     particleLights: keys(LIGHTING_DEFAULTS.particleLights),
     normalShading: {
       sun: keys(LIGHTING_DEFAULTS.normalShading.sun),
@@ -118,6 +117,9 @@ export const RETIRED_CONFIG_KEYS = Object.freeze({
   'lighting.raycasted':
     'walls are config.lighting.walls now: a scene asks for them, whatever its camera\'s pitch, and the one light pass reads ' +
     'them (OL-4)',
+  'lighting.maxOccluderSelfLit':
+    'it capped the fills the old raycast pass drew over its walls; the light pass lights a wall\'s own pixels itself now, ' +
+    'and every wall a light reaches is named, without a cap (OL-15)',
 });
 
 /** Optimal string alignment distance, letters compared without case. */

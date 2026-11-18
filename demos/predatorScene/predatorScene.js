@@ -267,11 +267,9 @@ export class PredatorScene extends WEED.Scene {
       // (the lamps light each other's shadows, the bulbs' heights in the shadows' lengths), and self-shadow.
       // maxVolumes: the houses' boxes (shadowCaster.setBox) need their room, one a house of the pool.
       ...(LIGHT3D ? { sunShadows: 'map', lampShadows: 'map', selfShadow: true, maxVolumes: 2000 } : {}),
-      // No walls here (nothing calls shadowCaster.setWall). With walls: true, any camera, the walls' sweep and its budgets:
+      // No walls here (nothing calls shadowCaster.setWall). With walls: true, any camera, the walls' sweep and its budget:
       // walls: true,
       // maxPolygonVertices: 128,
-      // /** The walls a light's sweep can name (their own sprites lit beyond their edge). */
-      // maxOccluderSelfLit: 512,
       // Sun/directional light configuration
       sun: {
         enabled: true, // Must be explicitly enabled

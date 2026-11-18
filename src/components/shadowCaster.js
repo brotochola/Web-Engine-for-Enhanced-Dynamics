@@ -10,7 +10,7 @@
 
 import { Component } from '../core/component.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
-import { LightOccluder, LIGHT_OCCLUDER_MASK_COLLIDER, LIGHT_OCCLUDER_MASK_SPRITE } from './lightOccluder.js';
+import { LightOccluder } from './lightOccluder.js';
 import { MESH_NO_TEXTURE, resolveMeshTextureId } from './meshRenderer.js';
 import { SpriteRenderer } from './spriteRenderer.js';
 import { VolumeShadowCaster, holdsVolume } from './volumeShadowCaster.js';
@@ -113,11 +113,10 @@ export function restoreCasterWall(i) {
   if (wall) LightOccluder.block[i] = ShadowCaster.opacity[i];
 }
 
-/** A spawned slot: no wall, its shape the collider's, blocking all the light (setWall writes them again). */
+/** A spawned slot: no wall, blocking all the light (setWall writes them again). */
 export function resetCasterWall(i) {
   if (!wallsOn()) return;
   LightOccluder.active[i] = 0;
-  LightOccluder.maskMode[i] = LIGHT_OCCLUDER_MASK_COLLIDER;
   LightOccluder.block[i] = 1;
 }
 
@@ -225,10 +224,9 @@ function castHull(caster, sun, lamps, points, options) {
 /**
  * A wall that stops lamps and headlights (a scene with config.lighting.walls): the entity's occluder, its Collider's outline,
  * as tall as the world, taking out the caster's opacity of the light; the wall's own sprite stays lit where the light
- * reaches its edge. `shape` is the old fan pass's (debug.lightFans): what cuts its fill, the Collider or the sprite's
- * alpha. A scene without walls warns once and changes nothing.
+ * reaches its edge. A scene without walls warns once and changes nothing.
  */
-function castWall(caster, sun, lamps, { shape = 'collider' } = {}) {
+function castWall(caster, sun, lamps) {
   if (!lamps) {
     warnOnce('shadowCaster.sun.setWall: the sun casts no wall (a wall stops lamps and headlights); shadowCaster.lamps.setWall');
     return caster;
@@ -240,9 +238,7 @@ function castWall(caster, sun, lamps, { shape = 'collider' } = {}) {
     );
     return caster;
   }
-  if (shape !== 'collider' && shape !== 'sprite') warnOnce(`shadowCaster.setWall: shape is 'collider' or 'sprite', not '${shape}'`);
   const i = caster.index;
-  LightOccluder.maskMode[i] = shape === 'sprite' ? LIGHT_OCCLUDER_MASK_SPRITE : LIGHT_OCCLUDER_MASK_COLLIDER;
   LightOccluder.block[i] = ShadowCaster.opacity[i];
   writeKinds(caster, sun, lamps, CAST_KIND.WALL);
   LightOccluder.active[i] = 1;

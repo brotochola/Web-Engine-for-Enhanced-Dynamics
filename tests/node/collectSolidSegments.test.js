@@ -33,7 +33,7 @@ function fnv(xs, ys, n) {
 test('collectSolidSegments: same polar output and hit flag as before the reorder', () => {
   const body = gridCompound(12, 6, 10, 31);
   const solid = ensureCompoundSolid(
-    77, 1, body.head, body.next, body.active, body.vertCount, body.vx, body.vy, 0, body.fixtures, false,
+    77, 1, body.head, body.next, body.active, body.vertCount, body.vx, body.vy, 0, body.fixtures,
   );
   const ox = new Float32Array(POLAR_BINS);
   const oy = new Float32Array(POLAR_BINS);

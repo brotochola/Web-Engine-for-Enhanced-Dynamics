@@ -436,21 +436,14 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           maxRenderItems: scene.maxShadowRenderItems,
         }
       : null,
-    // OL-4: the walls' sweep (lighting.walls). fans: the old pass draws its polygons (debug.lightFans); else the light pass
-    // reads its rows (rowsA / rowsB).
+    // OL-4: the walls' sweep (lighting.walls): pre-render publishes a row a lamp (rowsA / rowsB), the light pass reads it.
     visibilityPolygons: scene.config.lighting.walls
       ? {
           enabled: true,
-          fans: scene.config.lighting.wallFans === true,
           rowsA: scene.buffers.wallRowsDataA || null,
           rowsB: scene.buffers.wallRowsDataB || null,
           maxPolygonVertices: scene.config.lighting.maxPolygonVertices || 128,
           maxLights: scene.config.lighting.maxLights || 128,
-          dataA: scene.buffers.visibilityPolygonDataA,
-          dataB: scene.buffers.visibilityPolygonDataB,
-          selfLitDataA: scene.buffers.occluderSelfLitDataA,
-          selfLitDataB: scene.buffers.occluderSelfLitDataB,
-          maxOccluderSelfLit: scene.maxOccluderSelfLit || scene.config.lighting.maxOccluderSelfLit || 512,
         }
       : null,
     sunData: scene.buffers.sunData || null,
