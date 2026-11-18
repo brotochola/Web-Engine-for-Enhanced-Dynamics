@@ -888,7 +888,8 @@ export async function createSceneWorkers(scene) {
   ensurePhysicsWorker(scene, useInlineWorkers, cacheBust);
 
   const spritesheetConfigs = scene.imageUrls.spritesheets || {};
-  // preloadAssets overlaps atlas ∥ audio ∥ tilemaps ∥ flowfields ∥ shaders
+  // preloadAssets overlaps atlas ∥ audio ∥ tilemaps ∥ flowfields ∥ shaders (SST-4: started at the top of Scene.init,
+  // awaited and installed here)
   await scene.preloadAssets(scene.imageUrls, spritesheetConfigs, scene.audioUrls);
   loadMark('assets');
   // W26: the decal tiles in a memory of their own, with the stamp kernel's scratch and the decal textures, now
