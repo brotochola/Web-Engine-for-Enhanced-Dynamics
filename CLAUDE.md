@@ -29,6 +29,9 @@ of `docs/internal/` (≈13k lines); follow the linked documents for detail.
   by key, never by line (`EXECUTION_PLAN.md#E-82b`); a node test fails when a key finds no row or several.
   `HYPOTHESIS_LOG.md` is only a pointer now: its rows are records. Branches merge the register by key
   (`scripts/mergeRegister.mjs`, the merge driver `.gitattributes` names; define it once per clone, as that file says).
+- **Naming items to the owner:** every backlog item or hypothesis id you mention gets its title or a short description in
+  parentheses ("E-502 (the opaque pass off on Intel's integrated GPUs)"); the code alone is not enough (owner, 2026-11-18).
+  Messages between agents may use bare ids.
 - **Plans and open items:** `docs/internal/EXECUTION_PLAN.md` (speed hypotheses E-xx),
   `docs/internal/WASM_HYPOTHESES.md` (the WASM migration), `docs/internal/REVIEW_PLAN.md` (review items
   B/M/D/R/G/V/N/DOC). New findings go there. `docs/internal/README.md` indexes every internal doc;
