@@ -38,6 +38,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { MAX_ENTITIES_U32 } from '../../src/util/entityIdWidth.js';
 import { repoRoot, runIntegratedWithRetry } from './measureLib.mjs';
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
 
@@ -109,10 +110,11 @@ export const CAPACITY_SCENES = Object.freeze({
     path: '/demos/bunnyMarkScene/bunnyMarkScene.js',
     exportName: 'BunnyMarkScene',
     knob: 'bunnies',
-    // The engine's ceiling is 500 000 entities (32-bit ids, src/util/entityIdWidth.js), and the spawner is one of them.
+    // The engine's ceiling is 1 048 575 entities (32-bit ids, src/util/entityIdWidth.js MAX_ENTITIES_U32; 500 000 until
+    // DX-ENT1M), and the spawner is one of them. 499 999 held (R-1240), so the search starts at 500 000.
     min: 10000,
-    max: 499999,
-    start: 250000,
+    max: MAX_ENTITIES_U32 - 1,
+    start: 500000,
     step: 5000,
     query: '',
     entities: (n) => n,
@@ -595,7 +597,7 @@ export function resolveCapacityScene(args) {
       exportName: String(args['scene-export'] || path.basename(p, '.js')),
       knob: String(args.knob),
       min: 1,
-      max: 500000,
+      max: MAX_ENTITIES_U32,
       start: undefined,
       step: 0,
       query: '',

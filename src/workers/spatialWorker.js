@@ -169,7 +169,7 @@ class SpatialWorker extends AbstractWorker {
 
     // O(1) duplicate detection for multi-cell entities
     // processedMarker[entityB] = (frameStamp | entityA) encodes both frame and source entity
-    // Top 13 bits = frame counter, low 19 bits = entityA (packSpatialPairStamp). Avoids fill() every frame.
+    // Top 12 bits = frame counter, low 20 bits = entityA (packSpatialPairStamp). Avoids fill() every frame.
     this.processedMarker = null; // Int32Array
     this._processedFrameCounter = 0;
     // E-268: per entity, the frame (mod 254) this worker last kept its row clear; see _findNeighbors.
@@ -387,11 +387,10 @@ class SpatialWorker extends AbstractWorker {
         ? new Float32Array(data.buffers.entityPosData, posByte, this.globalEntityCount * 4)
         : new Float32Array(data.buffers.entityPosData);
     }
-    // Initialize duplicate detection marker for neighbors (entityB)
-    // Uint32Array: upper 16 bits = frame counter, lower 16 bits = entityA
-    // Int32Array, as packSpatialPairStamp is an int32: from stamp frame 4096 its top bit is set,
+    // Initialize duplicate detection marker for neighbors (entityB): 12 frame bits over 20 id bits.
+    // Int32Array, as packSpatialPairStamp is an int32: from stamp frame 2048 its top bit is set,
     // and a Uint32Array element read back as unsigned never equalled it, so the dedup failed for
-    // half of every 8191-frame cycle and candidates in several cells were appended once per cell.
+    // half of every frame cycle and candidates in several cells were appended once per cell.
     this.processedMarker = new Int32Array(this.globalEntityCount);
     this._clearHeld = new Uint8Array(this.globalEntityCount);
 

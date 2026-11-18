@@ -9,9 +9,13 @@
 // number from every load and exchange, ~14 ns per op (E-87). Tag window 32768 ops.
 //
 // Entities: popEntity / pushEntity / resetEntity, bound once in bindEntityIdWidth.
-// Width 16 uses the same u16 Treiber. Width 32 uses FL4: one Int32 CAS,
-// 20-bit (local+1) + 12-bit tag. The wide pools go up to 1 048 575 slots (poolSlotWidth.js, DX-DECO1M: a million
-// decorations); entities stop at 500000. Tag window is 4096 ops (it was 8192 with 19 index bits).
+// Width 16 uses the same u16 Treiber. Width 32 uses FL4: one Int32 CAS, a 20-bit (local+1) and an 11-bit tag (bits
+// 20..30) with bit 31 a copy of bit 30, as the u16 head does: the head is always a Smi (E-263). With a 12-bit tag over
+// bit 31 half the heads were past 2^30, and in Chrome every Atomics.load and compareExchange of such a head returned a
+// heap number (E-87). The 20-bit index holds 1 048 575 slots: the wide pools' MAX_POOL_SLOTS (poolSlotWidth.js) and
+// the 32-bit entity ids' MAX_ENTITIES_U32 (entityIdWidth.js) stay within it. Tag window 2048 ops: a pop goes wrong only when its thread is held between its
+// load and its exchange while other threads pop and push a multiple of 2048 times and leave the same slot on top
+// (it was 4096 with the 12-bit tag, 8192 with 19 index bits and 13).
 //
 // top u16: Int32Array[2] over 8 bytes. [0]=packed head, [1]=free count.
 // top u32: Int32Array[4] over 16 bytes. [0]=FL4 head, [2]=free count.
@@ -19,7 +23,8 @@
 
 const FL4_INDEX_BITS = 20;
 const FL4_INDEX_MASK = (1 << FL4_INDEX_BITS) - 1;
-const FL4_TAG_MASK = 0xfff;
+/** One step of FL4's tag. The head after a step is ((((head + FL4_TAG_ONE) << 1) >> 1) & ~FL4_INDEX_MASK) | next. */
+const FL4_TAG_ONE = 1 << FL4_INDEX_BITS;
 
 function chainLinks(links, count, interleaveFactor) {
   let headPlusOne = 0;
@@ -100,8 +105,7 @@ export function popFl4(top, links, startIndex = 0) {
     if (plusOne === 0) return -1;
     const local = plusOne - 1;
     const next = links[local] >>> 0;
-    const tag = ((head >>> FL4_INDEX_BITS) + 1) & FL4_TAG_MASK;
-    const newHead = (tag << FL4_INDEX_BITS) | (next & FL4_INDEX_MASK);
+    const newHead = ((((head + FL4_TAG_ONE) << 1) >> 1) & ~FL4_INDEX_MASK) | (next & FL4_INDEX_MASK);
     if (Atomics.compareExchange(top, 0, head, newHead) === head) {
       Atomics.sub(top, 2, 1);
       return startIndex + local;
@@ -122,8 +126,7 @@ export function popIndicesFl4(top, links, maxToPop, outArray, outOffset = 0, sta
       cur = links[cur - 1] >>> 0;
       popped++;
     }
-    const tag = ((head >>> FL4_INDEX_BITS) + 1) & FL4_TAG_MASK;
-    const newHead = (tag << FL4_INDEX_BITS) | (cur & FL4_INDEX_MASK);
+    const newHead = ((((head + FL4_TAG_ONE) << 1) >> 1) & ~FL4_INDEX_MASK) | (cur & FL4_INDEX_MASK);
     if (Atomics.compareExchange(top, 0, head, newHead) === head) {
       Atomics.sub(top, 2, popped);
       return popped;
@@ -136,8 +139,7 @@ export function pushFl4(top, links, index, startIndex = 0) {
   for (;;) {
     const head = Atomics.load(top, 0);
     links[local] = head & FL4_INDEX_MASK;
-    const tag = ((head >>> FL4_INDEX_BITS) + 1) & FL4_TAG_MASK;
-    const newHead = (tag << FL4_INDEX_BITS) | ((local + 1) & FL4_INDEX_MASK);
+    const newHead = ((((head + FL4_TAG_ONE) << 1) >> 1) & ~FL4_INDEX_MASK) | ((local + 1) & FL4_INDEX_MASK);
     if (Atomics.compareExchange(top, 0, head, newHead) === head) {
       Atomics.add(top, 2, 1);
       return;

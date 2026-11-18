@@ -129,8 +129,8 @@ INLINE uint32_t gather(
   const uint32_t stride = 1u + maxNeighbors;
   const int32_t maxRow = gridHeight - 1;
   const int32_t maxCol = gridWidth - 1;
-  /* packSpatialPairStamp: 13 frame bits over 19 id bits. */
-  const uint32_t frameBits = (stampFrame & 0x1fffu) << 19;
+  /* packSpatialPairStamp: 12 frame bits over 20 id bits (entityIdWidth.js SPATIAL_STAMP_*), every id to 2^20 - 1. */
+  const uint32_t frameBits = (stampFrame & 0xfffu) << 20;
   uint32_t cellsChecked = 0;
 
   for (uint32_t n = 0; n < batchCount; n++) {
@@ -144,7 +144,7 @@ INLINE uint32_t gather(
     const double searchRange = myVisualRange + 2.0 * skin;
     int32_t cellRadius = trunc_cells(searchRange * invCellSize) + 1;
     if (cellRadius > maxCellRadius) cellRadius = maxCellRadius;
-    const uint32_t stampedA = frameBits | (entityA & 0x7ffffu);
+    const uint32_t stampedA = frameBits | (entityA & 0xfffffu);
     const uint32_t candBase = entityA * stride;
     const int32_t first = patternIndex[cellRadius * 2];
     const int32_t pairs = patternIndex[cellRadius * 2 + 1];

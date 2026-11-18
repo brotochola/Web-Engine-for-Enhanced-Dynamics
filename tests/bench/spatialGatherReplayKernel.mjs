@@ -17,7 +17,8 @@
  * candidate rows differ (a float32 range test may keep or drop a candidate on the edge: spatialGatherTolerance.mjs).
  */
 
-const STAMP_MASK = 0x1fff;
+/** The stamp frames the kernel keeps (entityIdWidth.js SPATIAL_STAMP_FRAME_MASK: 12 bits over 20 id bits). */
+const STAMP_MASK = 0xfff;
 /** gather_batch's argument slots (wasm/spatialGather.c GATHER_ARGS). */
 const ARG = Object.freeze({ batchCount: 0, listByte: 1, candByte: 4, maxNeighbors: 5, stampFrame: 18 });
 
