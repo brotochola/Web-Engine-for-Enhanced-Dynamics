@@ -6685,6 +6685,9 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
       this._wallRowBuffers[b] = {
         header: new Int32Array(sabs[b], 0, layout.headerInts),
         f32: new Float32Array(sabs[b], layout.rowsByte, layout.lights * layout.rowFloats),
+        // OL-13: each row as views of 512, 1024, 2048 ... floats (a row's width at most), made the first time a row of
+        // that length is read: a row is copied out with one set() of the shortest that holds it.
+        views: [],
       };
     }
     this._wallSignatureAt = layout.signatureAt;
@@ -6742,6 +6745,7 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     const rowFloats = this._wallRowFloats;
     const src = buf.f32;
     const dst = this._wallRowsData;
+    const views = buf.views || (buf.views = []);
     // The widest row in use, in texels: the upload sends that many columns of each row, not the row's whole width (a
     // row is as wide as lighting.maxPolygonVertices allows, a polygon usually a tenth of it).
     let usedTexels = 1;
@@ -6753,7 +6757,20 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
       const o = r * rowFloats;
       const n = src[o] | 0;
       const used = n >= 3 ? 4 * (WALL_VERT0 + n + 1) : 4;
-      for (let f = 0; f < used; f++) dst[o + f] = src[o + f];
+      // OL-13: one set() from a view of the row, the shortest of 512, 1024 ... floats that holds what is in use (a
+      // float at a time it was 0.5 ms a frame for 720 rows, the lamps moving).
+      let c = 0;
+      let len = 512;
+      while (len < used) {
+        len *= 2;
+        c++;
+      }
+      if (len > rowFloats) len = rowFloats;
+      let ofLength = views[c];
+      if (ofLength === undefined) ofLength = views[c] = [];
+      let view = ofLength[r];
+      if (view === undefined) view = ofLength[r] = new Float32Array(src.buffer, src.byteOffset + o * 4, len);
+      dst.set(view, o);
       if (used > 4 * usedTexels) usedTexels = used >> 2;
     }
     this._wallRowLampCount = count;

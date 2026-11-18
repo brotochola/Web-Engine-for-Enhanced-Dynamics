@@ -186,3 +186,51 @@ test('OL-10: more entities than the tags were made for: the frame is read again 
   assert.equal(px._wallRowOf.length, 64);
   assert.equal(px._wallRowOf[4], 1);
 });
+
+// OL-13: Pixi copies a row out with one set() from a view of it, the shortest of 512, 1024 ... floats that holds what
+// is in use and never past the row's own width (a float at a time it was 0.5 ms a frame for 720 rows). Rows of every
+// length arrive whole, and a row's copy leaves the next row's floats as they were read.
+test('OL-13: rows of every length are copied whole, each within its own width', async () => {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const layout = wallRowsLayout(6, 512);
+  const sab = new SharedArrayBuffer(layout.bytes);
+  const buf = {
+    header: new Int32Array(sab, 0, layout.headerInts),
+    f32: new Float32Array(sab, layout.rowsByte, layout.lights * layout.rowFloats),
+  };
+  px._wallRowBuffers = [buf, buf];
+  px._wallSignatureAt = layout.signatureAt;
+  px._wallRowFloats = layout.rowFloats;
+  px._wallRowTexels = layout.rowTexels;
+  px._wallRowsData = new Float32Array(layout.lights * layout.rowFloats).fill(-5);
+  px._wallRowLamps = new Int32Array(layout.lights);
+  px._wallRowLampCount = 0;
+  px._wallRowsSource = {};
+  px._useWebGpu = false;
+  px.renderQueueSync = new Int32Array(new SharedArrayBuffer(8));
+  px._uploadRgba32FloatGl = () => {};
+  Transform.x = new Float32Array(32);
+  // Five rows of 3, 40, 100, 300 and 512 vertices: every float in use is its own index in the buffer.
+  const sizes = [3, 40, 100, 300, 512];
+  buf.header[0] = sizes.length;
+  sizes.forEach((n, r) => {
+    buf.header[1 + r] = r + 1;
+    const o = r * layout.rowFloats;
+    const used = 4 * (WALL_VERT0 + n + 1);
+    for (let f = 1; f < used; f++) buf.f32[o + f] = o + f;
+    buf.f32[o] = n;
+  });
+  buf.header[layout.signatureAt + 1] = 0;
+  px.renderQueueSync[0] = 1;
+  px._readWallRows();
+  sizes.forEach((n, r) => {
+    const o = r * layout.rowFloats;
+    const used = 4 * (WALL_VERT0 + n + 1);
+    assert.equal(px._wallRowsData[o], n, `row ${r}: its vertex count`);
+    for (let f = 1; f < used; f++) {
+      if (px._wallRowsData[o + f] !== o + f) assert.fail(`row ${r} (${n} vertices): float ${f} of ${used} was not copied`);
+    }
+  });
+  // The row after the last one read was never touched.
+  assert.equal(px._wallRowsData[sizes.length * layout.rowFloats], -5);
+});
