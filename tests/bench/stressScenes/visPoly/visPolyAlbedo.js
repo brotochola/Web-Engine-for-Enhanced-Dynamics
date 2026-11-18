@@ -19,5 +19,8 @@ export class VisPolyAlbedo extends GameObject {
     this.setScale(width / ow, height / oh);
     this.setAnchor(0.5, 0.5);
     this.setTint(0xffffff);
+    // It is the floor: where the camera shows height (the race's maps arm) a sprite would otherwise stand as a card on
+    // its foot, this one 3000 px tall.
+    this.spriteRenderer.surface = 'floor';
   }
 }
