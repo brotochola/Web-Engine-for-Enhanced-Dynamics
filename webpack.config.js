@@ -3,7 +3,6 @@ import os from 'os';
 import { fileURLToPath } from 'url';
 import webpack from 'webpack';
 import TerserPlugin from 'terser-webpack-plugin';
-import WebpackObfuscator from 'webpack-obfuscator';
 import { MINIFY_RESERVED_NAMES } from './scripts/minifyReservedNames.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,6 +26,8 @@ const workerEntries = {
 
 // Check if we should obfuscate
 const shouldObfuscate = process.env.OBFUSCATE === 'true';
+// N-250: webpack-obfuscator's import alone took about 46 s of every build; load it only for an obfuscated one.
+const WebpackObfuscator = shouldObfuscate ? (await import('webpack-obfuscator')).default : null;
 
 // Production mode: swap debug modules with no-op stubs
 const isProd = process.env.WEED_PROD === 'true';
