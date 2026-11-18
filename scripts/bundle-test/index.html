@@ -133,6 +133,11 @@ export class Floor extends GameObject {
       'weed.bundle.esm.compressed.min.js',
       'weed.prod.bundle.compressed.min.js',
       'weed.prod.bundle.esm.compressed.min.js',
+      // The file mode (buildBundle.js --files): the bundle starts its workers from files beside it.
+      'files/weed.bundle.min.js',
+      'files/weed.bundle.esm.min.js',
+      'files/weed.prod.bundle.min.js',
+      'files/weed.prod.bundle.esm.min.js',
     ]);
     const params = new URLSearchParams(location.search);
     const requested = params.get('bundle') || 'weed.bundle.min.js';

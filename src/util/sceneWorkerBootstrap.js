@@ -34,26 +34,6 @@ let engineWasmCompile = null;
 /** The module once that compile ended (null before, or when it could not be made): what a 'boot' message carries. */
 let engineWasmModule = null;
 
-/**
- * The data URL a bundle inlined engine.wasm as (gzipped), or null: WEED.EngineWasmUrl when the bundle names it, else
- * the one string literal scripts/buildBundle.js (inlineWorkerWasmAssets) wrote into the workers' common code.
- */
-function bundleEngineWasmHref() {
-  const weed = window.WEED;
-  if (typeof weed.EngineWasmUrl === 'string') return weed.EngineWasmUrl;
-  const prefix = 'data:application/gzip;base64,';
-  for (const source of [weed.WorkerCommonSource, ...Object.values(weed.WorkerSources || {})]) {
-    if (typeof source !== 'string') continue;
-    const at = source.indexOf(prefix);
-    if (at < 1) continue;
-    const quote = source[at - 1];
-    if (quote !== '"' && quote !== "'") continue;
-    const end = source.indexOf(quote, at);
-    if (end > at) return source.slice(at, end);
-  }
-  return null;
-}
-
 async function inflateDataUrl(href) {
   const binary = atob(href.slice(href.indexOf(',') + 1));
   const bytes = new Uint8Array(binary.length);
@@ -63,10 +43,13 @@ async function inflateDataUrl(href) {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-/** engine.wasm compiled from its file (source builds): streamed when the server says it is wasm. */
-async function compileEngineWasmFile() {
-  // The workers' engineWasmUrl (src/wasm/engine.js): source workers are served from /src (createSceneWorkerFactory).
-  const response = await fetch(`${window.location.origin}/src/wasm/engine.wasm`);
+/**
+ * engine.wasm compiled from its file (source builds; the bundle's file mode, SST-8): streamed when the server says it
+ * is wasm. By default the workers' engineWasmUrl (src/wasm/engine.js): source workers are served from /src
+ * (createSceneWorkerFactory).
+ */
+async function compileEngineWasmFile(url = `${window.location.origin}/src/wasm/engine.wasm`) {
+  const response = await fetch(url);
   if (!response.ok) throw new Error(`engine.wasm: HTTP ${response.status}`);
   const type = response.headers.get('content-type') || '';
   if (typeof WebAssembly.compileStreaming === 'function' && type.startsWith('application/wasm')) {
@@ -76,10 +59,11 @@ async function compileEngineWasmFile() {
 }
 
 /**
- * SST-2: compile engine.wasm on the page, once a page (GameEngine.loadScene starts it): source builds stream it from its
- * file (Chrome keeps the compiled code between visits), the bundle inflates the data URL it carries. Each worker gets
- * the module with its 'boot' message (wasmKernel.js useEngineWasmModule) instead of compiling its own. Resolves to
- * null where it cannot (no page, an error): the workers then compile their own.
+ * SST-2: compile engine.wasm on the page, once a page (GameEngine.loadScene starts it): source builds and the bundle's
+ * file mode stream it from its file (Chrome keeps the compiled code between visits), the single-file bundle inflates
+ * the data URL it carries (WEED.EngineWasmUrl). Each worker gets the module with its 'boot' message (wasmKernel.js
+ * useEngineWasmModule) instead of compiling its own. Resolves to null where it cannot (no page, an error): the workers
+ * then compile their own.
  * @returns {Promise<WebAssembly.Module|null>}
  */
 export function compileEngineWasm() {
@@ -90,9 +74,12 @@ export function compileEngineWasm() {
     let module;
     if (window.WEED?.BUNDLE_MODE) {
       if (typeof window.WEED.ensureEmbeddedSources === 'function') await window.WEED.ensureEmbeddedSources();
-      const href = bundleEngineWasmHref();
-      if (!href) return null;
-      module = await WebAssembly.compile(await inflateDataUrl(href));
+      // The single-file bundle names it by the gzipped data URL its workers carry, the file mode by its file.
+      const href = window.WEED.EngineWasmUrl;
+      if (typeof href !== 'string') return null;
+      module = href.startsWith('data:')
+        ? await WebAssembly.compile(await inflateDataUrl(href))
+        : await compileEngineWasmFile(href);
     } else {
       module = await compileEngineWasmFile();
     }
