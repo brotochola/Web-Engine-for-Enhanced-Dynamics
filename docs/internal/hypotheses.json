@@ -23065,7 +23065,8 @@
       ],
       "records": [
         "R-1363",
-        "R-1364"
+        "R-1364",
+        "R-1365"
       ],
       "result": "",
       "next": "Find the feature that sets it off. 32 runs per arm on the HD 620, each run's Chrome log kept (CHROME_LOG_FILE plus --dumpio); the log's ProduceSkia or \"GPU state invalid\" lines mark a frozen run. Arms: the barrio by day (hour=12); at night with its lamps off; with shadows off; with the G-buffer off. Then a smaller scene with the suspect alone. Also try WebGPU on the HD 620, and the Radeon iGPU here when this PC is free.",
@@ -36494,6 +36495,15 @@
       "title": "Barrio freeze arms on the HD 620: day 2 of 32, no people 3 of 31, WebGPU 0 of 32; not the lamps or the people, WebGL suspected",
       "verdict": "note",
       "text": "**Three arms on the HD 620** (job 0896r, 2026-11-18 09:45 to 11:26). Buenos Aires, src, main 70ba822b, `runIntegratedWorkerBenchmark --warmup-ms 5000 --duration-ms 10000 --no-collect-detailed-stats`, 32 starts per arm, each with its own browser and its own Chrome log.\n\n| Arm | Query | Frozen |\n|---|---|---|\n| day | `hour=12&dayMinutes=0` (no lamps or headlights, 2.7 GPU passes against 6.0 at night) | 2 of 32 |\n| no people | `hour=22&dayMinutes=0&people=0` | 3 of 31 (one start failed to load: `ERR_NETWORK_CHANGED`) |\n| WebGPU | `hour=22&dayMinutes=0&backend=webgpu` | 0 of 32 |\n\nA frozen start reads the same as before: the page's rAF at 1.8 to 2.8 fps and the renderer at no frames. Four of the five frozen starts logged ProduceSkia or \"GPU state invalid\" as the browser closed. One (no people, run 12) logged neither, so the log line marks most frozen runs but not all of them.\n\n**What it says:**\n- The night's lamps, lamp shadows and headlights are not the trigger, and neither are the people.\n- WebGPU stayed clean. With WebGL on the HD 620 at 15 frozen in 175 (8.6 %), 0 in 32 comes out by chance about 1 time in 18, so the result points at the WebGL path (ANGLE on D3D11, Intel's driver) without settling it.\n- WebGPU on the HD 620 draws about 265 renderer frames in the window, against about 435 on WebGL by day and 380 at night.\n\n**Next:** a lab driver outside the repo (`C:\\weedlab\\freezeProbe.mjs`, the bench page with Chrome flags per arm; the runner takes none). It interleaves the arms: ANGLE on D3D11 (the control), `--use-angle=gl`, `--use-angle=d3d11on12`, `--disable-gpu-shader-disk-cache`, and WebGPU again."
+    },
+    {
+      "id": "R-1365",
+      "date": "2026-11-18",
+      "time": "14:19",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze vs Chrome flags on the HD 620: the rate drifts from about 9 % in the morning to 3.6 % in the afternoon, so no flag settles it; WebGPU 0 of 64 against WebGL's 22 of 367",
+      "verdict": "note",
+      "text": "**Chrome flags and the runner on the HD 620** (jobs 0896s to 0896u, 2026-11-18 11:32 to 14:19). Buenos Aires at night, src, main 70ba822b. The bench runner takes no Chrome flags, so `C:\\weedlab\\freezeProbe.mjs`, a lab driver outside the repo, opens the same bench page with flags per arm, the arms interleaved run by run. A run counts as frozen when the page's rAF over 10 s is under 20 fps; frozen runs read 1.9 to 2.9.\n\n| Job | Arm | Frozen |\n|---|---|---|\n| 0896t | probe, default flags (ANGLE D3D11) | 0 of 32 |\n| 0896t | `--use-angle=d3d11on12` | 0 of 32 |\n| 0896t | `--disable-gpu-shader-disk-cache` | 5 of 32 |\n| 0896t | WebGPU | 0 of 32 |\n| 0896u | the bench runner, as in 0896m to 0896r | 0 of 32 |\n| 0896u | probe, its renderer-string WebGL context made before the scene (0896t's default) | 2 of 32 |\n| 0896u | probe, that context made after the measurement | 0 of 32 |\n| 0896u | `--disable-gpu-shader-disk-cache` | 0 of 32 |\n\nTwo flags did not run at all: `--use-angle=gl` fails Pixi's init in the worker, and `--use-angle=vulkan` falls to SwiftShader.\n\n**The rate drifts through the day.** The same runner froze 13 of 143 in the morning (0896m to 0896r, about 9 %) and 0 of 32 at 13:07. WebGL on D3D11 in the afternoon pools 7 of 192 (3.6 %), and runs got shorter: the runner averaged 63 s in 0896r and 33 s in 0896u. So a one-job gap like 5 against 0 is within that drift, and no flag is shown to cause the freeze or to cure it. 0896t's slow no-disk-cache runs (80 to 97 s for its first 11) did not freeze; frozen ones were both short and long.\n\n**What holds:**\n- WebGPU on the HD 620 froze 0 of 64 starts, where WebGL on D3D11 froze 22 of 367 all day (6 %). Chance gives 0 of 64 about 1 time in 50.\n- `d3d11on12` (0 of 32) and the context made after the measurement (0 of 32) are not settled.\n- The teardown log line marks some frozen runs, not all of them, and it showed once on a WebGPU run that drew normally (0896t run 10). It is a hint, not a test.\n\n**Next:** catch the freeze itself. On a frozen run the probe takes a 5 s Chrome trace with the GPU categories, then measures rAF again 60 s later to see whether it recovers."
     }
   ],
   "leads": [
