@@ -9,6 +9,8 @@ const { Scene, Camera } = WEED;
 // `?boids=<n>`: the flock spawned (40 000 by default, the pool's 65 000 at most), a load knob for spatial sittings:
 // 40 000 boids run each spatial worker about 5 ms, under the 6 ms floor a STEP_MS verdict needs.
 const POOL = 65000;
+// The flock spawns over several frames: all 40 000 at once queued 286 000 Box2D commands in a 4 096 ring.
+const BOIDS_PER_FRAME = 1000;
 const BOIDS = Math.max(0, Math.min(POOL, Number(WEED.params?.get('boids') ?? 40000) | 0));
 
 export class BoidsScene extends Scene {
@@ -47,6 +49,8 @@ export class BoidsScene extends Scene {
       subStepCount: 0,
       noLimitFPS: false,
       sleeping: false,
+      // The flock spawns BOIDS_PER_FRAME a frame (7 commands a boid, so 7 000 a frame): 16 384 holds a frame's burst.
+      commandRingCapacity: 16384,
       gravity: { x: 0, y: 0 },
     },
 
@@ -78,6 +82,7 @@ export class BoidsScene extends Scene {
 
   constructor(game) {
     super(game);
+    this.boidsSpawned = 0;
   }
 
   create() {
@@ -89,10 +94,15 @@ export class BoidsScene extends Scene {
   }
 
   createNewGame() {
-    this.spawnBoids(BOIDS);
+    this.boidsSpawned = 0;
   }
 
   update(dtRatio, deltaTime, accumulatedTime, frameNumber) {
+    if (this.boidsSpawned < BOIDS) {
+      const batch = Math.min(BOIDS_PER_FRAME, BOIDS - this.boidsSpawned);
+      this.spawnBoids(batch);
+      this.boidsSpawned += batch;
+    }
   }
 
   spawnBoids(count) {

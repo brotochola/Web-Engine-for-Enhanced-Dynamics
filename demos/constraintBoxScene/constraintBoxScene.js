@@ -34,7 +34,10 @@ export class ConstraintBoxScene extends WEED.Scene {
         physics: {
             subStepCount: 5,
             noLimitFPS: false,
-            maxJoints: 4096,
+            // 500 boxes, 10 distance joints each (4 sides and diagonals, 4 spokes): 5 000 joints.
+            maxJoints: 6144,
+            // The spawn burst queues about 5 000 commands at once: 8 192 holds them.
+            commandRingCapacity: 8192,
             sleeping: false,
             gravity: { x: 0, y: 1800 },
         },

@@ -30,6 +30,8 @@ export class OrientedBoxScene extends WEED.Scene {
 
         physics: {
             subStepCount: 5,
+            // The spawn burst queues about 5 200 commands at once: 8 192 holds them.
+            commandRingCapacity: 8192,
             noLimitFPS: false,
             gravity: { x: 0, y: 1980 },
             sleeping: false,
