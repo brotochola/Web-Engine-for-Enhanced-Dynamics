@@ -200,3 +200,34 @@ test('GameObject forwards the four calls and chains; a body without RigidBody ig
   assert.equal(RigidBody.ax[2], 0);
   assert.equal(RigidBody.angularAccel[2], 0);
 });
+
+// N-290 (E-434): addAcceleration leaves RigidBody.sleeping to physics. The byte is physics' paint of Box2D's sleep;
+// physics wakes a sleeping body that has an acceleration only where the paint still says asleep
+// (bodyAccelerationsWake.wasm.test.js), so the 0 logic used to store there kept the body asleep.
+test('addAcceleration adds the acceleration and leaves the sleeping paint unwritten', () => {
+  setup();
+  const real = RigidBody.sleeping;
+  const writes = [];
+  const bytes = new Uint8Array(N);
+  RigidBody.sleeping = new Proxy(bytes, {
+    get: (t, k) => t[k],
+    set: (t, k, v) => {
+      writes.push([Number(k), v]);
+      t[k] = v;
+      return true;
+    },
+  });
+  try {
+    const go = Object.create(GameObject.prototype);
+    go.index = 1;
+    go._hasComponents = { RigidBody: true };
+    bytes[1] = 1;
+    go.addAcceleration(3, 4).addAcceleration(1, 1);
+    assert.equal(bytes[1], 1, 'the paint stays as physics left it: physics wakes the body itself');
+    assert.deepEqual(writes, []);
+    assert.equal(RigidBody.ax[1], 4);
+    assert.equal(RigidBody.ay[1], 5);
+  } finally {
+    RigidBody.sleeping = real;
+  }
+});
