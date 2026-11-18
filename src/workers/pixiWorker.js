@@ -7206,6 +7206,31 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
+   * SST-7 step 1: the textures the init message brought (the atlas and its maps page, the loose textures, the tilesets)
+   * made and uploaded on the GPU here, through Pixi's texture system as a first draw would (initSource: the GL texture or
+   * the GPUTexture, and the image's upload), instead of in the first frame that draws each. Each source once.
+   */
+  _uploadAssetTextures() {
+    const textures = this.pixiApp?.renderer?.texture;
+    if (!textures || typeof textures.initSource !== 'function') return;
+    const sources = new Set();
+    for (const name in this.spritesheets) {
+      const sheet = this.spritesheets[name];
+      if (sheet && sheet.source) sources.add(sheet.source);
+    }
+    if (this.atlasMapsSource !== null) sources.add(this.atlasMapsSource);
+    for (const name in this.textures) {
+      const texture = this.textures[name];
+      if (texture && texture.source) sources.add(texture.source);
+    }
+    for (const id in this.tilemaps) {
+      const tileset = this.tilemaps[id]?.tilesetTexture;
+      if (tileset && tileset.source) sources.add(tileset.source);
+    }
+    for (const source of sources) textures.initSource(source);
+  }
+
+  /**
    * Load tileset bitmaps and create PIXI Textures for tilemap rendering.
    * Tile data is accessed via TileMap static class (SAB-backed, initialized by AbstractWorker).
    */
@@ -9159,6 +9184,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Load tileset textures (tile data comes from TileMap SAB via AbstractWorker)
     this.loadTilesetBitmaps(data.tilesetBitmaps);
     this.reportLog('finished loading tileset textures');
+    // SST-7: on the GPU now, while the programs link, not at the first frame that draws them.
+    this._uploadAssetTextures();
+    loadMark('textures uploaded');
 
     // ========================================
     // BLOOD DECAL SPLAT GRID - Initialize (SAB tiles, not TileMap background)
