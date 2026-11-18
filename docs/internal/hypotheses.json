@@ -22331,7 +22331,8 @@
       ],
       "records": [
         "R-1317",
-        "R-1350"
+        "R-1350",
+        "R-1352"
       ]
     },
     {
@@ -22357,6 +22358,25 @@
         "R-1350",
         "R-1351"
       ]
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "lamp tiles without sprite casters",
+        "volumes only cast no lamp shadow"
+      ],
+      "records": [
+        "R-1352"
+      ],
+      "result": "",
+      "next": "In pre-render's _writeStampLightIds, publish the casting lamps' ids also when the scene's lamps cast into a map and it has volumes (lighting.lampShadows 'map' with lighting.maxVolumes above 0), not only when a stamp row exists; a node test on a real pre-render worker (lamps, volumes, no sprite caster: the ids are there); captures of visPolyStressScene ?arm=maps against ?arm=walls (the shadows must match before the race times them) and of the barrio by night (no change expected: it always has sprite casters); the Predator gate with the rest of the branch.",
+      "id": "OL-5",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "With lampShadows 'map', the lamps get their tiles only in a frame with a stamp row: a scene whose only casters in the lamps' reach are volumes (houses with nobody near) draws no lamp shadow at all",
+      "statusText": "Found 2026-11-18 building OL-3's maps arm (visPolyStressScene ?arm=maps: the lamps draw, the volumes cast nothing) and read in the code: preRenderWorker's _writeStampLightIds returns 0 unless stampN > 0, and Pixi gives a lamp a tile from those ids (_readLampTiles). Not fixed: it blocks the maps arm of the race and final A, not final B"
     },
     {
       "refs": [],
@@ -35934,6 +35954,15 @@
         "e57d6659",
         "94e31445"
       ]
+    },
+    {
+      "id": "R-1352",
+      "date": "2026-11-18",
+      "time": "04:04",
+      "timeFrom": "recorded",
+      "title": "lampShadows 'map' gives lamps their tiles only with a stamp row: volumes alone cast no lamp shadow (OL-5), which keeps the race's maps arm from running",
+      "verdict": "note",
+      "text": "**Found, not fixed: with `lampShadows: 'map'` a scene whose only casters are volumes draws no lamp shadow (OL-5).** Seen building the race's maps arm: visPolyStressScene `?arm=maps` (64 lamps 40 px high, 700 occluders as `setBox` volumes 400 px high, no sprite caster) draws the lamps and no shadow, with or without a pitch, with pre-render or Pixi packing the sprites (0 of 921 600 px differ between the two).\n\n- **Why (read in the code, not run apart):** Pixi gives a lamp its tile in the lamps' map from the ids pre-render publishes (`_readLampTiles`), and `preRenderWorker._writeStampLightIds(dst, stampN)` returns 0 unless `stampN > 0`: the ids go out only in a frame where at least one sprite caster was stamped for a lamp. The volumes are then drawn into no tile.\n- **Who it reaches:** a street of houses with nobody near its lamps; not the barrio as it runs (it always has people), nor lampShadowStressScene (20 000 walkers).\n- **The race:** the knobs are on visPolyStressScene (`?arm=walls|fans|plain|maps`, `?move=`, `?castLights=`, `?tile=`, `?lampCache=0`); walls, fans and plain draw; the maps arm waits for this fix."
     }
   ],
   "leads": [
