@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-17",
+  "updated": "2026-11-18",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -22222,7 +22222,8 @@
         "R-1327",
         "R-1330",
         "R-1333",
-        "R-1336"
+        "R-1336",
+        "R-1337"
       ],
       "result": "",
       "next": "Skip the steps past the face map in GLSL as the WGSL does (one line), film the drift with ?selfShadow=0 against on, WebGL against WebGPU. Left after it: a self-shadow from a part of the house that has left the screen is lost (the face map covers the view only); a face map with a margin on the sun's side would keep it.",
@@ -35802,6 +35803,16 @@
       "text": "ASUS job 0892d (the other session's), HD 620, main dfc1afd5 against fix/gbuffer-depth e0c49f6a, barrio hour=22&dayMinutes=0, camera still, 4 pairs, --full-rev: drawn A [49] 377 373 370 | B 344 347 347 352 (one A run froze), clean means 373 against 348, -6.9 % (runner -5.9 % paired, 3/4). CPU workers level or lower. The rewrite of N-272 recovered little of the 4.5 points its arm showed (exp/no-n272, -2.9 % on the old base); queued: the new base without N-272 (exp/no-n272-v2 b2aebcc2) and a per-pass GPU split.",
       "commits": [
         "e0c49f6a"
+      ]
+    },
+    {
+      "id": "R-1337",
+      "date": "2026-11-18",
+      "title": "N-272 out of the stack: its edge handling cost the HD 620 about 4.5 % of its drawn frames in either form",
+      "verdict": "dropped",
+      "text": "ASUS job 0894 (the other session's), HD 620, against main dfc1afd5, barrio hour=22&dayMinutes=0, camera still, --full-rev: the stack's tip without N-272 (exp/no-n272-v2 b2aebcc2) clean A 369 372 | B 363 357 364 363, about -2.4 %, against -6.9 % with it rewritten (R-1336). Per pass, main against the tip with it (--gpu-passes, two runs a side): the light pass 1.68, 1.79 | 2.94, 2.68 ms (+1.08), the G-buffer +0.26, the canvas pass -0.92. A per-step test (755af901) and the map's exit worked out before the loop (e0c49f6a) cost about the same, so the cost is any code added to a loop the light pass inlines for the sun and each lamp. Reverted on fix/gbuffer-depth (f8484515). Still open: WebGL's march reads the face map's edge texel past the screen; next, an empty ring at the face map's edge (the G-buffer drawn a texel inside it), which needs no shader code.",
+      "commits": [
+        "f8484515"
       ]
     }
   ],
