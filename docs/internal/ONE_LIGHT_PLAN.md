@@ -580,6 +580,14 @@ the sun's term by the normal: under the sun the automatic rule gave `k` 0.
 - the sun's colour reaches the scene (the old pass cleared with the ambient plus the sun's intensity, grey);
 - with `shadowsEnabled`, the lamps stamp their sprite shadows on the layer, as in any other scene.
 
+**OL-3's knobs** are on visPolyStressScene: `?arm=walls` (the default, final B), `fans` (the old pass), `plain` (the
+light pass alone; `?gbuf=0` without the G-buffer) and `maps`, with `?castLights=`, `?tile=`, `?lampCache=0` and
+`?move=` (the lights circle their place). The first three draw. **The maps' arm is not ready:** its lamps draw, but
+the occluders' volumes (`setBox`, 400 px high, lamps at 40) cast nothing in the lamps' map in that scene, with or
+without a pitch, while lampShadowStressScene's blocks, set the same way, do. To find before the race runs it. With a
+pitch of 90 the scene's white floor sprite lies flat; with heights on the screen it stood as a card 3000 px tall and
+no light reached it, so it is `surface: 'floor'` now.
+
 **To measure, when the measuring starts:** the rows' upload (194 texels a lamp at the default 128 vertices: 3.1 KB
 a lamp a frame, every frame, unchanged rows included); pre-render's row build, in JS, once a lamp with walls; the
 sweep's kernel with its one more store a vertex; the light pass's lookups (a header, an index and two vertices a
