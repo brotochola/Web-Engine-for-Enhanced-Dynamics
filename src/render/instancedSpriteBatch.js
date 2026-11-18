@@ -2627,6 +2627,18 @@ export class InstancedSpriteBatch {
    * @param {{ shadow: boolean, casterRows?: boolean, light?: boolean }} opts
    * @param {string} name
    */
+  /**
+   * SST-7 step 3: what the batch's mesh draws with, a frame's kind each (plain, indexed, by row): its program and a geometry
+   * of that layout (both ring slots share it), for building the render pipelines ahead.
+   * @returns {{ shader: Shader, geometry: Geometry }[]}
+   */
+  drawVariants() {
+    const out = [{ shader: this.shader, geometry: this._geometries[0] }];
+    if (this._indexedShader !== null) out.push({ shader: this._indexedShader, geometry: this._indexedGeometries[0] });
+    if (this._rowShader !== null) out.push({ shader: this._rowShader, geometry: this._rowGeometries[0] });
+    return out;
+  }
+
   /** E-191: the keyed sun pass's program (E-201: a by-row batch's keyed frames are drawn by queue row, and so is it). */
   _keyedSunProgram() {
     return this._keyedShadowProgram(

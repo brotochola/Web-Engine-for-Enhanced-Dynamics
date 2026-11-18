@@ -395,6 +395,18 @@ function fetchEngineShader(path) {
   });
 }
 
+/**
+ * The blend mode Pixi draws a mesh with as a child: its own, or the nearest parent's where it inherits (Pixi's
+ * groupBlendMode); normal at the top.
+ */
+function drawnBlendMode(container) {
+  for (let c = container; c; c = c.parent) {
+    const mode = c.localBlendMode;
+    if (mode && mode !== 'inherit') return mode;
+  }
+  return 'normal';
+}
+
 // OPTIMIZED: Pre-defined comparator function for light sorting (avoids closure allocation per frame)
 function sortPrefixByDistSq(arr, count) {
   const n = count | 0;
@@ -8855,6 +8867,47 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
+   * SST-7 step 3 (E-495): on WebGPU, the render pipelines of the passes every frame draws, built here with
+   * createRenderPipelineAsync (Pixi's PipelineSystem.weedPipelineAhead, scripts/buildPixi.mjs) under the keys Pixi's draws
+   * look them up by, instead of by Pixi's createRenderPipeline in the first frames (Dawn compiles each on the GPU process's
+   * thread, and the frames wait): the entities' batch in each of its programs (plain, indexed) on the canvas, the halos'
+   * batch where it is added over them, the light pass into its target. The worker reports ready once they are built.
+   */
+  async _buildPipelinesAhead() {
+    const renderer = this.pixiApp.renderer;
+    const pipelines = renderer.pipeline;
+    if (!this._useWebGpu || typeof pipelines?.weedPipelineAhead !== 'function') return;
+    const builds = [];
+    const ahead = (mesh, shader, geometry, surface, blendMode) => {
+      if (!mesh || !shader?.gpuProgram || !geometry || !surface) return;
+      const target = renderer.renderTarget.getRenderTarget(surface);
+      // As a pass's start makes it (GpuRenderTargetAdaptor.startRenderPass): the depth is part of the pipeline's key.
+      if ((target.stencil || target.depth) && !target.depthStencilAttachment) target.ensureDepthStencilTexture();
+      // Pixi's mesh pipe sets the state's blend mode from the mesh's (its parents' where it inherits) at each draw.
+      mesh.state.blendMode = blendMode;
+      const built = pipelines.weedPipelineAhead(geometry, shader.gpuProgram, mesh.state, undefined, target);
+      if (built !== null) builds.push(built);
+    };
+    const canvas = renderer.view?.renderTarget ?? null;
+    const glowOnCanvas = this._lightGlowAdd && this.spriteGlowMesh !== null && this.spriteGlowMesh.parent === this.pixiApp.stage;
+    for (const batch of [this.entitiesBatch, glowOnCanvas ? this.entitiesGlowBatch : null]) {
+      if (batch === null || !batch.mesh) continue;
+      const blendMode = drawnBlendMode(batch.mesh);
+      const variants = batch.drawVariants();
+      for (let i = 0; i < variants.length; i++) ahead(batch.mesh, variants[i].shader, variants[i].geometry, canvas, blendMode);
+    }
+    // The light pass draws its mesh as the render's root (normal blending) into its target.
+    if (this.lightingMesh && this.lightingRT) {
+      ahead(this.lightingMesh, this.lightingMesh.shader, this.lightingMesh.geometry, this.lightingRT, 'normal');
+    }
+    try {
+      await Promise.all(builds);
+    } catch (error) {
+      console.warn('WeedJS: a render pipeline built ahead failed; Pixi makes it when it first draws with it', error);
+    }
+  }
+
+  /**
    * E-494: `shader`'s WebGL program left out of the links ahead (a program no mesh draws with), unless one of `keep`
    * (shaders that are drawn) has the same program.
    */
@@ -9452,6 +9505,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     loadMark('first-use programs');
     await this._linkProgramsAhead();
     loadMark('programs linked');
+    await this._buildPipelinesAhead();
+    loadMark('pipelines built');
 
     debugWorkerLog('PIXI WORKER: Initialization complete, waiting for start signal...');
     debugWorkerLog(
