@@ -20,7 +20,7 @@ import { fetchAssetJson, fetchAssetRead, imageLoadError } from '../../util/fetch
 import { loadMark } from '../../util/loadMarks.js';
 import { MaxRectsPacker } from './maxRectsPacker.js';
 import { makeCanvas2d } from './canvas2d.js';
-import { decalTexturesFrom } from './atlasFrames.js';
+import { cutPixels, decalTexturesFrom } from './atlasFrames.js';
 
 /**
  * Put the atlas inputs back in the order the scene declares its assets. Loads
@@ -334,6 +334,9 @@ export async function buildBigAtlas(
               // E-496: the frame's rectangle in its sheet, untrimmed: sheets naming the same map files share the twin's
               // rectangle of a frame at the same place (_paintMapsPage).
               frameRect: frame,
+              // The sheet's pixels the trim read (null without a trim): the twin page cuts the frame's colour from them
+              // instead of reading the sheet back again.
+              sheetPixels: maps ? sheetPixels : null,
               // DX-UNSHADED: no light touches the sheet's pixels (its json frame's `unshaded`, the maps table's mark);
               // H-EDGE: its frames may draw their solid pixels in DX-DEPTH's edge pass (FRAME_GLOW).
               unshaded,
@@ -664,24 +667,10 @@ export function paintMapsPage(imagesToPack, maxWidth, maxHeight, keep = false, w
     if (px === undefined) read.set(img, (px = readImagePixels(img)));
     return px;
   };
-  const cut = (px, sr) => {
-    const out = new Uint8ClampedArray(sr.w * sr.h * 4);
-    for (let y = 0; y < sr.h; y++) {
-      const sy = sr.y + y - px.y;
-      if (sy < 0 || sy >= px.height) continue;
-      for (let x = 0; x < sr.w; x++) {
-        const sx = sr.x + x - px.x;
-        if (sx < 0 || sx >= px.width) continue;
-        const s = (sy * px.width + sx) * 4;
-        const d = (y * sr.w + x) * 4;
-        out[d] = px.data[s];
-        out[d + 1] = px.data[s + 1];
-        out[d + 2] = px.data[s + 2];
-        out[d + 3] = px.data[s + 3];
-      }
-    }
-    return out;
-  };
+  // A rectangle of read pixels, a row at a time; outside them transparent.
+  const cut = (px, sr) => cutPixels(px, sr.x, sr.y, sr.w, sr.h);
+  // A frame's colour: from the pixels its sheet's trim read (they hold every frame it keeps), else its sheet read back.
+  const colourPixelsOf = (d) => d.sheetPixels || pixelsOf(d.sourceImg);
   // A sheet's maps say which files they are (_loadSpritesheet's key); maps without one are their own.
   const ids = new Map();
   const keyOf = (maps) => {
@@ -720,7 +709,7 @@ export function paintMapsPage(imagesToPack, maxWidth, maxHeight, keep = false, w
     const opaque = new Uint8Array(gw * gh);
     for (const d of g.members) {
       const sr = d.sourceRect;
-      const color = cut(pixelsOf(d.sourceImg), sr);
+      const color = cut(colourPixelsOf(d), sr);
       colours.set(d, color);
       const mask = opaqueMask(color, sr.w, sr.h);
       const ox = (d.sourceX | 0) - g.x0;
