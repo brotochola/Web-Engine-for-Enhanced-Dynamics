@@ -22348,7 +22348,7 @@
         "R-1322",
         "R-1328",
         "R-1330",
-        "R-1343"
+        "R-1331"
       ],
       "result": "",
       "next": "Merge fix/decoration-owner with fix/gbuffer-depth once measured. Later, the editor could export volumes as levels (body + tank: addLevel) instead of a convex hull, for truer ground shadows too.",
@@ -22371,7 +22371,7 @@
         "R-1322",
         "R-1328",
         "R-1330",
-        "R-1343"
+        "R-1331"
       ],
       "result": "",
       "next": "Merge with N-275 once measured; then the unshaded pass (N-266) the same way, and E-463's cost read again (early depth for the frames without heights).",
@@ -22394,7 +22394,7 @@
         "R-1322",
         "R-1328",
         "R-1330",
-        "R-1343"
+        "R-1331"
       ],
       "result": "",
       "next": "Merge with N-274 once measured; the HD 620 drawn frames with the words at three floats.",
@@ -35682,7 +35682,7 @@
       ]
     },
     {
-      "id": "R-1343",
+      "id": "R-1331",
       "date": "2026-11-17",
       "title": "Caveat on R-1322's barrio ABAB: its main side ran the stack's demos/buenosAiresScene (no --full-rev, N-278)",
       "verdict": "note",
