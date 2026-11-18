@@ -66,6 +66,8 @@ export class BichosScene extends WEED.Scene {
     // Physics configuration
     physics: {
       subStepCount: 3,
+      // The spawn burst queues about 31 200 commands at once: 40 960 would do, 65 536 is the next power of two.
+      commandRingCapacity: 65536,
       noLimitFPS: false,
       gravity: { x: 0, y: 0 },
     },
