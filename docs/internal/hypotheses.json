@@ -21912,7 +21912,8 @@
         "R-1330",
         "R-1333",
         "R-1336",
-        "R-1338"
+        "R-1338",
+        "R-1346"
       ],
       "id": "N-266",
       "kind": "bug",
@@ -35898,6 +35899,16 @@
       "text": "exp/n272-ring d74a5d7e (on fix/light-pass): pixiWorker draws the face map with frame (1, 1, W-2, H-2) and its transform moved a texel back, so every pixel lands where it did and the ring keeps the clear's empty texels; the GLSL and WGSL marches are main's; the light pass reads its own face and id clamped a texel inward (faceAt). tests/node/selfShadowRing.test.js; test:node 3054/3054, test:demos 121/121. Unmeasured, not yet seen in a browser. Reading the stamp lights' cull for the headlights: E-518.",
       "commits": [
         "d74a5d7e"
+      ]
+    },
+    {
+      "id": "R-1346",
+      "date": "2026-11-18",
+      "title": "N-266's unshaded pass back to two passes: the one-pass form cut every unshaded texel under half alpha, and the barrio's lamp halos shrank to their core",
+      "verdict": "kept-hygiene",
+      "text": "**N-266's unshaded pass back to two passes: the one-pass form cut every unshaded texel under half alpha, and the barrio's lamp halos shrank to their core.**\n\nThe owner saw it in the barrio at 23:14 (localhost:8000, src): the street lamps' halos were a small tight dot. They are\n'sprite' halos (DX-GLOWRADIUS: unshaded, glow 0.6, E-498's compact gradient), drawn in the unshaded pass. N-266's one-pass\nform (af0c21de) discarded every texel under alpha 0.5 there, so a soft unshaded texel never reached the unshaded target;\ndepthPairScene, its check, has nothing soft that is unshaded, so its 0 px against the two-pass form hid it. Reverted to the\ntwo-pass form (79c3bac8, as the canvas draws): the opaque pass keeps the solid lit texels, black, writing the depth; the edge\npass draws the soft and the unshaded ones, testing it. The halos are whole again (the owner looked: \"si!\"), still unshaded\nand covered by what stands in front; the soft edges of any unshaded sprite come back too. Its cost, measured when the two\nforms were compared (Buenos Aires 22:00, GTX 1650, glFrameRecorder --gpu-draws): about +0.06 ms of GPU a frame, the second\ndraw's vertex work over every instance. test:node and test:demos green; bundles rebuilt.",
+      "commits": [
+        "e0acd281"
       ]
     }
   ],
