@@ -491,17 +491,6 @@ deletion.
 
 ---
 
-**OL-6, as built** (`2696eafe`). The four numbers go in one new uniform, `uNormalShade`, after `uFaceSun` in both
-languages (`uFaceLight`'s two middle numbers are 0 again). The sun's shading is measured against the sun the pixel
-gets as drawn (`sunFlat`, which holds its map's shade and its own), so a cast shadow is not shading; the gain of a
-face that looks at the sun stays, times the strength. A lamp's is taken where the lamp is added, a lamp at a time,
-from the face's own cosine (before the lamp's map and the pixel's own shade scale it); the pass no longer works
-the lamps out twice and mixes them. `normalLightCheck` takes `--subtract` and holds the new rule: worst 4.0 of 255
-on both backends at four settings, the maps' own steps as before. The default picture is the same (dxCaptureScene
-at noon and by night: 0 px). Light bench at 16:00, the view's pixels that change and the light they lose: full
-strength 20.3 % and 43.5 %; strength 0.8 with 0.2 subtracted 16.5 % and 24.0 %; strength 1 with 0.3 subtracted
-16.3 % and 21.8 %.
-
 ### OL-6 — The shading a sprite's normals cause: a strength, and an amount subtracted
 
 - [x] `lighting.normalShading: { sun: { strength, subtract }, lamps: { strength, subtract } }` in place of
@@ -671,6 +660,37 @@ no light reached it, so it is `surface: 'floor'` now.
 a lamp a frame, every frame, unchanged rows included); pre-render's row build, in JS, once a lamp with walls; the
 sweep's kernel with its one more store a vertex; the light pass's lookups (a header, an index and two vertices a
 lamp a pixel, more where vertices crowd one direction); the G-buffer pass, on in every scene with walls.
+
+**OL-6, as built** (`2696eafe`). The four numbers go in one new uniform, `uNormalShade`, after `uFaceSun` in both
+languages (`uFaceLight`'s two middle numbers are 0 again). The sun's shading is measured against the sun the pixel
+gets as drawn (`sunFlat`, which holds its map's shade and its own), so a cast shadow is not shading; the gain of a
+face that looks at the sun stays, times the strength. A lamp's is taken where the lamp is added, a lamp at a time,
+from the face's own cosine (before the lamp's map and the pixel's own shade scale it); the pass no longer works
+the lamps out twice and mixes them. `normalLightCheck` takes `--subtract` and holds the new rule: worst 4.0 of 255
+on both backends at four settings, the maps' own steps as before. The default picture is the same (dxCaptureScene
+at noon and by night: 0 px). Light bench at 16:00, the view's pixels that change and the light they lose: full
+strength 20.3 % and 43.5 %; strength 0.8 with 0.2 subtracted 16.5 % and 24.0 %; strength 1 with 0.3 subtracted
+16.3 % and 21.8 %.
+
+**After the code: what the first readings led to (2026-11-18).** The owner's order was the code first and the
+measuring after. The first readings (R-1353, R-1354, R-1400) put the walls in the light pass above the old fan
+pass on its own scene (visPolyStressScene, 720 lights: pre-render +21.9 %, Pixi +16.1 %), so four changes
+followed, each in the register with its sitting:
+
+| item | what | read |
+| --- | --- | --- |
+| OL-7 | no cookies in a frame with nothing on the shadows' layer | a 960x540 GPU pass of 0.34 ms gone, the picture the same |
+| OL-8 | a lamp's row counts its 256 directions' index instead of walking it | pre-render 6.415 -> 6.062 ms (-5.8 %); the kernel -9 to -21 % |
+| OL-9 | a lamp's row kept while what goes into its sweep is the same (`lighting.wallCache`) | pre-render 6.061 -> 2.982 ms with the lamps still (-51.4 %); +2.5 % with all moving (inside the limit) |
+| OL-10 | Pixi does not copy or upload rows it already sent (pre-render signs each frame's rows) | Pixi 1.601 -> 0.626 ms (-61.1 %, under the floor: read) |
+
+After them, the old fan pass against the walls on a still scene, one build (R-1403): pre-render 5.117 -> 2.959 ms
+(-41.6 %), Pixi 1.207 -> 0.662 ms (-44.9 %). With every lamp moving nothing is kept and the walls stay about 20 %
+over the fans in pre-render: the row is still built in JS (about 22 ns a vertex), and the sweep's kernel writing it
+is what is left for those. Main is merged into the branch (`02f319b3`); an early look at Predator at its default
+load shows nothing past its A/A (R-1401), the gate itself runs at `crowd=2.5` before the merge. The shaders pass
+on the four GPUs (the ASUS's jobs 0896d to 0896k; two blank captures on the HD 620 were pages that had drawn
+nothing, and `normalLightCheck` now waits for a frame and says NOFRAME otherwise).
 
 ## 8. Revisions
 
