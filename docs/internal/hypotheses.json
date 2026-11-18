@@ -21904,7 +21904,8 @@
       ],
       "records": [
         "R-1326",
-        "R-1330"
+        "R-1330",
+        "R-1333"
       ],
       "id": "N-266",
       "kind": "bug",
@@ -22215,7 +22216,8 @@
       ],
       "records": [
         "R-1327",
-        "R-1330"
+        "R-1330",
+        "R-1333"
       ],
       "result": "",
       "next": "Skip the steps past the face map in GLSL as the WGSL does (one line), film the drift with ?selfShadow=0 against on, WebGL against WebGPU. Left after it: a self-shadow from a part of the house that has left the screen is lost (the face map covers the view only); a face map with a margin on the sun's side would keep it.",
@@ -22348,7 +22350,8 @@
         "R-1322",
         "R-1328",
         "R-1330",
-        "R-1331"
+        "R-1331",
+        "R-1333"
       ],
       "result": "",
       "next": "Merge fix/decoration-owner with fix/gbuffer-depth once measured. Later, the editor could export volumes as levels (body + tank: addLevel) instead of a convex hull, for truer ground shadows too.",
@@ -22371,7 +22374,8 @@
         "R-1322",
         "R-1328",
         "R-1330",
-        "R-1331"
+        "R-1331",
+        "R-1333"
       ],
       "result": "",
       "next": "Merge with N-275 once measured; then the unshaded pass (N-266) the same way, and E-463's cost read again (early depth for the frames without heights).",
@@ -22394,7 +22398,8 @@
         "R-1322",
         "R-1328",
         "R-1330",
-        "R-1331"
+        "R-1331",
+        "R-1333"
       ],
       "result": "",
       "next": "Merge with N-274 once measured; the HD 620 drawn frames with the words at three floats.",
@@ -22416,7 +22421,8 @@
       "records": [
         "R-1323",
         "R-1328",
-        "R-1330"
+        "R-1330",
+        "R-1333"
       ],
       "result": "",
       "next": "Merge with the N-273..N-275 stack; Predator gate and the HD 620 drawn frames.",
@@ -22436,7 +22442,8 @@
         "8-bit light target"
       ],
       "records": [
-        "R-1329"
+        "R-1329",
+        "R-1332"
       ],
       "result": "",
       "id": "N-277",
@@ -35687,6 +35694,23 @@
       "title": "Caveat on R-1322's barrio ABAB: its main side ran the stack's demos/buenosAiresScene (no --full-rev, N-278)",
       "verdict": "note",
       "text": "The barrio sitting behind R-1322 (n275-barrio, --vs main --hyp-rev 1c8e29df, no --full-rev) served both sides the main folder's demos/buenosAiresScene, then the stack's: main's engine ran the stack's barrioLoader (which passes each wall its owner; main's pool ignores the key). The A side was main's engine on the new loader, close to main, not main itself. Predator's gate (R-1328) is unaffected (its scene is not in the stack). The HD 620 sittings (R-1330, job 0891) use --full-rev."
+    },
+    {
+      "id": "R-1332",
+      "date": "2026-11-17",
+      "title": "The light pass dithers its output by half a step (owner-approved look); on the GTX its cost is inside the noise, the HD 620 decides",
+      "verdict": "note",
+      "text": "fix/light-dither 4849639a (from main 57044bd1): interleaved gradient noise of half an 8-bit step on both outputs of the light pass, GLSL and WGSL; with pixelArt the art pixel's. The owner chose the look from wallShadowScene and houseLightScene captures (with and without; no pixel moved more than one level). GTX, Buenos Aires at 22:00, glFrameRecorder --gpu-draws, the light pass's draw, three pairs at mixed clocks (840-975 MHz, P0/P3): without 1.033, 0.689, 0.848 ms; with 0.913, 0.807, 0.733 ms. Inside the noise (the first pair overlapped another session's suites). The HD 620's drawn frames are queued (ASUS 0892b).",
+      "commits": [
+        "4849639a"
+      ]
+    },
+    {
+      "id": "R-1333",
+      "date": "2026-11-17",
+      "title": "HD 620, the stack with one suspect off (N-276, N-274's depth, N-266): each still 5 to 6.5 % behind main",
+      "verdict": "note",
+      "text": "ASUS job 0891 (the other session's), each arm against main bd82c1be, barrio hour=22&dayMinutes=0, camera still, 4 pairs, --full-rev, drawn frames a 10 s window. no-n276 (54cb7bbf): A 366 366 366 363 | B 343 345 353 343, -5.6 % 4/4. no-gbufdepth (f5c66158): A 374 379 383 372 | B 352 363 78 356 (one B run froze, the laptop's known renderer stall), about -5.3 % without it. no-unshadeddepth (3d831eca): A 374 375 379 368 | B 345 107 349 355 (one froze), about -6.5 % without it. The full stack read -8.7 % (R-1330): N-276 about 3 points, the G-buffer's depth about 3, the unshaded depth 1 to 2; the rest in N-273, N-275 or N-272, queued as the next arms."
     }
   ],
   "leads": [
