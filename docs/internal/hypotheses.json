@@ -22347,7 +22347,8 @@
       "records": [
         "R-1322",
         "R-1328",
-        "R-1330"
+        "R-1330",
+        "R-1343"
       ],
       "result": "",
       "next": "Merge fix/decoration-owner with fix/gbuffer-depth once measured. Later, the editor could export volumes as levels (body + tank: addLevel) instead of a convex hull, for truer ground shadows too.",
@@ -22369,7 +22370,8 @@
       "records": [
         "R-1322",
         "R-1328",
-        "R-1330"
+        "R-1330",
+        "R-1343"
       ],
       "result": "",
       "next": "Merge with N-275 once measured; then the unshaded pass (N-266) the same way, and E-463's cost read again (early depth for the frames without heights).",
@@ -22391,7 +22393,8 @@
       "records": [
         "R-1322",
         "R-1328",
-        "R-1330"
+        "R-1330",
+        "R-1343"
       ],
       "result": "",
       "next": "Merge with N-274 once measured; the HD 620 drawn frames with the words at three floats.",
@@ -35677,6 +35680,13 @@
       "commits": [
         "8066e84a"
       ]
+    },
+    {
+      "id": "R-1343",
+      "date": "2026-11-17",
+      "title": "Caveat on R-1322's barrio ABAB: its main side ran the stack's demos/buenosAiresScene (no --full-rev, N-278)",
+      "verdict": "note",
+      "text": "The barrio sitting behind R-1322 (n275-barrio, --vs main --hyp-rev 1c8e29df, no --full-rev) served both sides the main folder's demos/buenosAiresScene, then the stack's: main's engine ran the stack's barrioLoader (which passes each wall its owner; main's pool ignores the key). The A side was main's engine on the new loader, close to main, not main itself. Predator's gate (R-1328) is unaffected (its scene is not in the stack). The HD 620 sittings (R-1330, job 0891) use --full-rev."
     }
   ],
   "leads": [
