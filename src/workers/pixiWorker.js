@@ -7444,7 +7444,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _readLampTiles() {
     const gpu = this._gpuQueueRead;
     const ids = gpu && gpu.stampLightIds ? gpu.stampLightIds : null;
-    const n = ids && gpu.header ? Math.min(gpu.header[GPU_HDR_STAMP_LIGHTS] | 0, ids.length) : 0;
+    let n = ids && gpu.header ? Math.min(gpu.header[GPU_HDR_STAMP_LIGHTS] | 0, ids.length) : 0;
+    // OL-5: pre-render names the casting lamps in a frame with no stamp row too. They take tiles then only when volumes
+    // are there to draw into them: every pixel of a lamp reads its tile, and an empty one is read for nothing.
+    if (n > 0 && (gpu.header[GPU_HDR_STAMP] | 0) <= 0 && !this._volumesCast()) n = 0;
     const entities = Transform.x ? Transform.x.length : 0;
     if (this._lampTileOf.length !== entities) this._lampTileOf = new Int16Array(entities).fill(-1);
     if (this._lampFadeOf.length !== entities) this._lampFadeOf = new Float32Array(entities).fill(1);
@@ -7748,6 +7751,28 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._submitRender(rtOpts);
       this._gpuPassesThisFrame++;
     }
+    this._drawVolumesInLampMap(rtOpts);
+    rtOpts.target = this.shadowRT;
+    this._lampMapClear = false;
+    return true;
+  }
+
+  /**
+   * OL-5: the lamps' map in a frame whose lamps have tiles and no stamp row: cleared, and the volumes drawn into it as
+   * _drawLampMap draws them after its cards. Without it a street of houses with nobody near its lamps cast no lamp
+   * shadow at all: the map was drawn only in a frame with a sprite caster in some lamp's reach.
+   * @returns {boolean} whether it drew
+   */
+  _drawLampMapVolumes(gpu) {
+    if (!this._volumesCast() || !this._ensureLampMap(gpu)) return false;
+    if (this._lampTileSource === null) this._uploadLampTiles();
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.container = this._rtEmptyContainer;
+    rtOpts.target = this.lampMapRT;
+    rtOpts.clear = true;
+    rtOpts.clearColor = this._clearTransparent;
+    this._submitRender(rtOpts);
+    this._gpuPassesThisFrame++;
     this._drawVolumesInLampMap(rtOpts);
     rtOpts.target = this.shadowRT;
     this._lampMapClear = false;
@@ -8428,6 +8453,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this._commitPackedBatch(batch, gpu.stamp, stampN, GPU_CASTER_FLOATS);
         this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
       }
+    } else if (stampN <= 0 && this._lampMapOn && !this._castedShadowsSunOnly && (this._lampTileCount | 0) > 0) {
+      // OL-5: lamps with tiles and no stamp row (no sprite caster in any lamp's reach): the volumes alone.
+      this._lampMapDrew = this._drawLampMapVolumes(gpu);
     }
 
     if (this._lampMapOn && !this._lampMapDrew) this._clearLampMapIfEmpty();

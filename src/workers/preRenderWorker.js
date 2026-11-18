@@ -1839,6 +1839,9 @@ class PreRenderWorker extends AbstractWorker {
         this._stampLights = null;
         this._stampLightCount = 0;
         this._stampSortLights = false;
+        // OL-5: the lamps cast into their map (lighting.lampShadows 'map', not under the old fan pass): the casting lamps
+        // are ordered and named every frame, a stamp row or none, since the volumes are drawn into their tiles too.
+        this._lampMapCasts = false;
         this._stampRangeSpec = null;
         this._gpuLightVec = null;
         this._gpuStampTmp = null;
@@ -2377,6 +2380,7 @@ class PreRenderWorker extends AbstractWorker {
             data.buffers?.componentData?.ShadowCaster
         ) {
             this.shadowsEnabled = true;
+            this._lampMapCasts = this.config?.lighting?.lampShadows === 'map' && this.config?.lighting?.wallFans !== true;
             this._keyedCastersAllowed = this.config?.lighting?.keyedCasters !== false;
             this._sunFrameTables = sunFrameTables(data.directionTables);
             this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
@@ -5034,7 +5038,9 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     _stampAgainstSun(dst, sun, sunN, stampBase, lightBegin, lightStride) {
-        this._stampSortLights = (sunN | 0) > 0;
+        // OL-5: with the lamps' map the lights are ordered, and faded at the cut, without a sun caster too: each one kept
+        // takes a tile, where the volumes are drawn.
+        this._stampSortLights = (sunN | 0) > 0 || this._lampMapCasts;
         // E-29. A SUB-TIMER of SHADOW_Q_MS, not a peer of it. `_stampAgainstSun` is
         // reached from `_packGpuShadows`, inside the window SHADOW_Q_MS measures, so this
         // time is already counted there. It gets its own slot because that window was the
@@ -5261,12 +5267,15 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * DX-SHADOW3D (F7): the entity of each light this frame's stamps went to, in the order a stamp row's stampLightIdx
-     * counts them (the stamp kernel's light table): a lamp's tile in the lamps' shadow map is that index.
+     * counts them (the stamp kernel's light table): a lamp's tile in the lamps' shadow map is that index. OL-5: with the
+     * lamps' map they are named in a frame without a stamp row too (a street of houses with nobody near its lamps: no
+     * lamp had a tile, and the houses cast no lamp shadow); Pixi gives them tiles then only for volumes.
      * @returns {number} how many
      */
     _writeStampLightIds(dst, stampN) {
         const ids = dst.stampLightIds;
-        if (!ids || ids.length === 0 || !(stampN > 0) || !this._stampLights) return 0;
+        if (!ids || ids.length === 0 || !this._stampLights) return 0;
+        if (!(stampN > 0) && !this._lampMapCasts) return 0;
         const n = Math.min(this._stampLightCount | 0, ids.length);
         const lights = this._stampLights;
         for (let i = 0; i < n; i++) ids[i] = lights[i].id;
