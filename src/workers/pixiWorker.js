@@ -30,7 +30,7 @@ import { ShadowCaster } from '../components/shadowCaster.js';
 import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
 import { MeshGeometry } from '../core/meshGeometry.js';
-import { MeshUvFillBatch } from '../render/meshUvFillBatch.js';
+import { MeshUvFillBatch, meshUvFillProgram } from '../render/meshUvFillBatch.js';
 import { Sun } from '../core/sun.js';
 
 import {
@@ -5572,6 +5572,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     });
     if (this.gpuCasterBatch.shadowShader && this.gpuCasterBatch.mesh) {
       this.gpuCasterBatch.mesh.shader = this.gpuCasterBatch.shadowShader;
+      // E-494: its sprite program is never drawn (the batch draws casters only): not linked ahead, unless another batch's
+      // is the same program (GlProgram.from).
+      this._leaveOutOfLinksAhead(this.gpuCasterBatch.shader, [this.shadowBatch.shader]);
     }
 
     this.shadowDisplaySprite = new PIXI.Sprite(this.shadowRT);
@@ -5817,6 +5820,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return false;
   }
 
+  /** DX-SHADOW3D: the sun map's volumes' program as a Shader's options (GlProgram.from: one program for every layer). */
+  _sunMapVolumeProgram() {
+    const shaders = this._engineShaders;
+    if (this._useWebGpu) {
+      return { gpuProgram: volumeMapGpuProgram(GpuProgram, volumeMapWgsl(shaders.meshUvFill), 'mainFragMap', 'sun-map-volumes') };
+    }
+    return {
+      glProgram: PIXI.GlProgram.from({
+        vertex: volumeMapVertex(shaders.meshUvFillVert),
+        fragment: VOLUME_MAP_FRAGMENT,
+        name: 'sun-map-volumes',
+      }),
+    };
+  }
+
   _drawVolumesInSunMap(rtOpts, screenScale) {
     const shaders = this._engineShaders;
     if (!(this._useWebGpu ? shaders?.meshUvFill : shaders?.meshUvFillVert)) return;
@@ -5834,17 +5852,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (entry === null) {
         const r = batch.shader.resources;
         const terms = new Float32Array(4);
-        const program = this._useWebGpu
-          ? { gpuProgram: volumeMapGpuProgram(GpuProgram, volumeMapWgsl(shaders.meshUvFill), 'mainFragMap', 'sun-map-volumes') }
-          : {
-              glProgram: PIXI.GlProgram.from({
-                vertex: volumeMapVertex(shaders.meshUvFillVert),
-                fragment: VOLUME_MAP_FRAGMENT,
-                name: 'sun-map-volumes',
-              }),
-            };
         const shader = new PIXI.Shader({
-          ...program,
+          ...this._sunMapVolumeProgram(),
           resources: {
             uTexture: r.uTexture,
             uSampler: r.uSampler,
@@ -6467,6 +6476,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (typeof target.destroy === 'function') target.destroy();
   }
 
+  /** E-508: the cache's copy's program as a Shader's options (volumeShadowMap.js LAMP_CACHE_COPY_*). */
+  _lampCacheCopyProgram() {
+    if (this._useWebGpu) return { gpuProgram: lampCacheCopyGpuProgram(GpuProgram, 'lamp-map-volume-copy') };
+    return {
+      glProgram: PIXI.GlProgram.from({
+        vertex: LAMP_CACHE_COPY_VERTEX,
+        fragment: LAMP_CACHE_COPY_FRAGMENT,
+        name: 'lamp-map-volume-copy',
+      }),
+    };
+  }
+
   /**
    * E-508: the copy's mesh (made once): a quad an instance (a cached lamp), its program (volumeShadowMap.js
    * LAMP_CACHE_COPY_*), the tiles' texture, the cache's two colours and its terms (lampCopy: uLampVolume), the depth test
@@ -6474,15 +6495,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   _lampCacheCopyMesh() {
     if (this._lampCacheCopy !== null) return this._lampCacheCopy;
-    const program = this._useWebGpu
-      ? { gpuProgram: lampCacheCopyGpuProgram(GpuProgram, 'lamp-map-volume-copy') }
-      : {
-          glProgram: PIXI.GlProgram.from({
-            vertex: LAMP_CACHE_COPY_VERTEX,
-            fragment: LAMP_CACHE_COPY_FRAGMENT,
-            name: 'lamp-map-volume-copy',
-          }),
-        };
+    const program = this._lampCacheCopyProgram();
     const quad = new Buffer({ data: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), usage: BufferUsage.VERTEX, label: 'lamp-cache-quad' });
     const geometry = new PIXI.Geometry({
       attributes: { aPosition: { buffer: quad, format: 'float32x2', stride: 8, offset: 0 } },
@@ -6548,6 +6561,34 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * cache's paint's (two colours). The programs and state are made once.
    */
   _volumeLampMesh(batch, host, geometry, cache) {
+    this._makeVolumeLampPrograms();
+    const r = batch.shader.resources;
+    const shader = new PIXI.Shader({
+      ...(cache ? this._volumeLampCacheProgram : this._volumeLampProgram),
+      resources: {
+        uTexture: r.uTexture,
+        uSampler: r.uSampler,
+        uTexLut: r.uTexLut,
+        uPoseTable: r.uPoseTable,
+        uLampTiles: this._lampTileSource,
+        // No tile in use until the frame writes this mesh's terms (writeVolumeLampTerms).
+        sunShadow: {
+          uSunShadow: { value: new Float32Array(4), type: 'vec4<f32>' },
+          uLampVolume: { value: new Float32Array(4), type: 'vec4<f32>' },
+        },
+      },
+    });
+    const label = cache ? 'lamp-map-volume-cache' : 'lamp-map-volumes';
+    const mesh = new PIXI.Mesh({ geometry, shader, state: this._volumeLampState, label });
+    // A depth test keeps the highest point and its entity; a mesh's blend mode holds only as a child (the sun map's host
+    // says why).
+    mesh.blendMode = 'none';
+    host.addChild(mesh);
+    return mesh;
+  }
+
+  /** DX-SHADOW3D (F7), E-508: the lamps' map volumes' programs (direct, and the cache's paint) and their state, made once. */
+  _makeVolumeLampPrograms() {
     if (this._volumeLampProgram === null) {
       const shaders = this._engineShaders;
       this._volumeLampProgram = this._useWebGpu
@@ -6578,29 +6619,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           };
       this._volumeLampState = mapDepthState();
     }
-    const r = batch.shader.resources;
-    const shader = new PIXI.Shader({
-      ...(cache ? this._volumeLampCacheProgram : this._volumeLampProgram),
-      resources: {
-        uTexture: r.uTexture,
-        uSampler: r.uSampler,
-        uTexLut: r.uTexLut,
-        uPoseTable: r.uPoseTable,
-        uLampTiles: this._lampTileSource,
-        // No tile in use until the frame writes this mesh's terms (writeVolumeLampTerms).
-        sunShadow: {
-          uSunShadow: { value: new Float32Array(4), type: 'vec4<f32>' },
-          uLampVolume: { value: new Float32Array(4), type: 'vec4<f32>' },
-        },
-      },
-    });
-    const label = cache ? 'lamp-map-volume-cache' : 'lamp-map-volumes';
-    const mesh = new PIXI.Mesh({ geometry, shader, state: this._volumeLampState, label });
-    // A depth test keeps the highest point and its entity; a mesh's blend mode holds only as a child (the sun map's host
-    // says why).
-    mesh.blendMode = 'none';
-    host.addChild(mesh);
-    return mesh;
   }
 
   /** DX-SHADOW3D (F7): a frame with no stamp rows clears the lamps' map (once). */
@@ -8623,8 +8641,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const backend = normalizeRendererBackend(rendererConfig.backend);
     this._rendererBackend = backend;
     this._useWebGpu = backend === RENDERER_BACKEND_WEBGPU;
-    // E-475: every WebGL program made from here to the end of initialize is linked ahead, all together.
-    if (!this._useWebGpu) PIXI.GlProgram.weedMade = this._madePrograms;
     // Blob workers have an opaque origin: a source shader's root-relative path resolves against the page's.
     if (data.pageOrigin) self.__weedPageOrigin = data.pageOrigin;
     // Bundles embed the engine shaders and post them; source builds fetch them.
@@ -8677,6 +8693,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       throw new Error('PIXI.Application.init() succeeded but renderer is null');
     }
     this.pixiApp = app;
+    // E-475: every WebGL program made from here to the end of initialize is linked ahead, all together. E-494: not Pixi's
+    // own, made inside its init (its default mesh's, its back buffer's): the engine draws with none of them.
+    if (!this._useWebGpu) PIXI.GlProgram.weedMade = this._madePrograms;
 
     const actualName = pixiRendererTypeName(app.renderer.type, PIXI.RendererType);
     if (this._useWebGpu) {
@@ -8733,6 +8752,93 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     this.reportLog('finished initializing pixi app');
     loadMark('pixi init end');
+  }
+
+  /**
+   * E-494: the programs the engine made the first time a pass drew, so that its first frames waited for their links (the
+   * second frame, 620 ms at Predator crowd 2.5 by night: the G-buffer's and the unshaded passes' over the entities, the
+   * lamps' map, its volumes, the UV meshes, the statics scatter), made here instead, where the config says the pass runs,
+   * by the calls the passes make: _linkProgramsAhead then links them with the rest, and a pass's first draw finds its
+   * program linked (GlProgram.from hands back the program made here; the batches keep the ones they made). WebGL's
+   * programs; on WebGPU the statics scatter's pipelines, the one thing made there on first use outside Pixi.
+   */
+  _makeFirstUsePrograms() {
+    const renderer = this.pixiApp.renderer;
+    const batch = this.entitiesBatch;
+    if (this._useWebGpu) {
+      // E-187: the keyed statics scatter's compute pipelines (_scatterStaticsGpu).
+      if (batch !== null && batch.keyed && renderer.gpu?.device) this._staticsScatterGpu = createStaticsScatterGpu(renderer.gpu.device);
+      return;
+    }
+    const shaders = this._engineShaders;
+    // E-177: the keyed statics scatter's program (_scatterStaticsGl; compiled and linked here, as on its first call).
+    if (batch !== null && batch.keyed && renderer.gl) this._staticsScatterGl = createStaticsScatterGl(renderer.gl);
+    // DX-FACES, DX-GBUF, DX-UNSHADED: the light's passes over the entities (_renderFaceMap, _renderUnshaded).
+    if (batch !== null && this.lightingEnabled) {
+      const maps = this.atlasMapsSource ?? this._emptyMapsSource();
+      const heightScaleY = this._heightScaleY;
+      const groundScaleY = this._groundScaleY || 1;
+      if (this.faceRT !== null) {
+        const mrt = this._gbufMrt && this.faceIdsRT !== null ? this._ensureGbufTarget() : null;
+        if (mrt !== null) {
+          batch.gbufMesh(heightScaleY, groundScaleY, maps);
+        } else {
+          batch.faceMesh(heightScaleY, groundScaleY, maps);
+          if (this.faceIdsRT !== null) batch.idsMesh(heightScaleY, groundScaleY, maps);
+        }
+      }
+      // Drawn while a sheet or a sprite is unshaded: a sprite can turn so while the game runs.
+      if (this._unshadedComposite !== null && this.unshadedRT !== null) batch.unshadedPass(heightScaleY, groundScaleY, maps);
+    }
+    const casters = this.gpuCasterBatch;
+    if (casters && shaders.shadowVert && shaders.sunMapFrag) {
+      // DX-SHADOW3D: the sun's map (_drawSunMap), else a scene with height maps casts its solids (_drawSunSolids).
+      if (this._sunMapOn) {
+        this._sunShadowProgram('map');
+        this._sunShadowProgram('mapColumns');
+      } else if (this._sunSolidsOn()) {
+        this._sunShadowProgram('cards');
+        this._sunShadowProgram('columns');
+      }
+      // DX-SHADOW3D (F7): the lamps' map's cards and columns (_drawLampMap).
+      if (this._lampMapOn) {
+        this._lampMapProgram(false);
+        this._lampMapProgram(true);
+      }
+      // E-191: the sun pass over the entities' keyed instances (_keyedSunFor) and over pre-render's keyed caster rows
+      // (_ensureKeyedCasters), where those can run.
+      if (batch !== null && batch.keyed) {
+        const keyedSun = this.config?.lighting?.keyedCasters !== false && this.config?.lighting?.directionalCasters !== true;
+        const keyedRows = !(this._sunMapOn || this._lampMapOn || this._sunSolidsOn());
+        batch.makeKeyedShadowPrograms(keyedSun, keyedRows);
+      }
+    }
+    // E-453: a MESH layer's UV meshes (_ensureMeshUvBatch: one program for every layer's batch, the first layer's name);
+    // DX-SHADOW3D: a sun-projected layer's volumes in the sun's map and the lamps' (_drawVolumesInSunMap,
+    // _drawVolumesInLampMap), E-508: the lamps' cache's copy.
+    const uvLayers = this._customLayerList.filter((cl) => (cl.uvVertCapacity | 0) > 0 && (cl.uvIndexCapacity | 0) >= 3);
+    if (uvLayers.length > 0 && shaders.meshUvFillVert && shaders.meshUvFillFrag) {
+      meshUvFillProgram(false, shaders, `mesh-uv-${uvLayers[0].layerId}`);
+      if (casters && uvLayers.some((cl) => cl.sunProjected)) {
+        if (this._sunMapOn) this._sunMapVolumeProgram();
+        if (this._lampMapOn) {
+          this._makeVolumeLampPrograms();
+          if (this._lampCacheOn) this._lampCacheCopyProgram();
+        }
+      }
+    }
+  }
+
+  /**
+   * E-494: `shader`'s WebGL program left out of the links ahead (a program no mesh draws with), unless one of `keep`
+   * (shaders that are drawn) has the same program.
+   */
+  _leaveOutOfLinksAhead(shader, keep) {
+    const program = shader?.glProgram;
+    if (!program) return;
+    for (let i = 0; i < keep.length; i++) if (keep[i]?.glProgram === program) return;
+    const at = this._madePrograms.indexOf(program);
+    if (at >= 0) this._madePrograms.splice(at, 1);
   }
 
   /**
@@ -9314,6 +9420,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.buildLayerRefsMap();
     loadMark('custom layers');
 
+    this._makeFirstUsePrograms();
+    loadMark('first-use programs');
     await this._linkProgramsAhead();
     loadMark('programs linked');
 
