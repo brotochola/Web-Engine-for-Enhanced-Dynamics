@@ -22262,7 +22262,8 @@
         "R-1317",
         "R-1350",
         "R-1351",
-        "R-1401"
+        "R-1401",
+        "R-1404"
       ],
       "rank": 20
     },
@@ -22370,7 +22371,8 @@
         "R-1359",
         "R-1400",
         "R-1402",
-        "R-1403"
+        "R-1403",
+        "R-1404"
       ]
     },
     {
@@ -36762,6 +36764,18 @@
       "text": "**OL-10 kept: Pixi neither copies nor uploads a frame's rows when they are the rows it sent last. With OL-9, a still scene of walls now costs less than the old fan pass in both workers: pre-render 5.117 -> 2.959 ms (-41.6 %) and Pixi 1.207 -> 0.662 ms (-44.9 %) at 720 lights. Pixi's rows are under the 6 ms floor: read, not judged.**\n\n- **What it was:** R-1400 read Pixi at +16.1 % over the fans: every row in use copied and uploaded each frame, a still scene's included (644 KB a frame at 360 lights, R-1354).\n- **The change (fef43402):** pre-render signs each frame's rows in the rows' header (its lamps in order and the signature each row was written from, OL-9's; a frame with a row of no signature carries a count, second word 0). Pixi returns from `_readWallRows` when the signature is that of the rows it sent last.\n- **Uploaded a frame** (`glFrameRecorder`, visPolyStressScene `?lights=360&arm=walls`, 180 frames): 770.3 KB of textures with `?wallCache=0` (643.6 KB of it the rows), 127.5 KB with the cache: no row goes up.\n- **Sittings** (visPolyStressScene `?lights=720`, one build fef43402, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs each; pre-render's detection limit 4.6 % from the session's A/A, R-1359):\n\n| sitting | worker | A | B | paired | each pair |\n| --- | --- | --- | --- | --- | --- |\n| walls, `?wallCache=0` against the default (06:41 to 06:46) | pre-render | 6.093 ms | 2.865 ms | -53.4 % | -52.6, -54.2, -51.9, -54.6 |\n| | Pixi | 1.601 ms | 0.626 ms | -61.1 % | -59.3, -63.0, -59.1, -65.7 |\n| `?arm=fans` against `?arm=walls` (06:47 to 06:52) | pre-render | 5.117 ms | 2.959 ms | -41.6 % | -44.0, -40.3, -42.2, -41.0 |\n| | Pixi | 1.207 ms | 0.662 ms | -44.9 % | -55.5, -43.2, -46.3, -43.6 |\n\n  Spatial, which neither knob reaches, reads -0.9 % and +1.4 %.\n- **How to read it:** Pixi's rows are under the 6 ms floor on both sides, and so is pre-render's fans side (5.1 ms): the tool judges neither. The pairs agree to a few points, the mechanism is counted (644 KB a frame no longer uploaded), and a heavier load could not turn -61 % into a loss: kept without the heavier run.\n- **Against R-1400** (the same two arms before OL-9 and OL-10: pre-render +21.9 %, Pixi +16.1 %): the walls went from dearer than the fans to cheaper, on a still scene. With every lamp moving nothing is kept and R-1400's reading stands (OL-9's moving sitting: +2.5 % over the uncached path, inside the limit).\n- **Correctness:** `tests/node/wallRowsUpload.test.js` (real workers: still frames sign alike in both buffers; a moved wall, a moved lamp and the cache off change or drop the signature; Pixi uploads once for frames that sign alike). Browser: `?wallCache=0` against the default, 0 of 921 600 px on WebGL and WebGPU.",
       "commits": [
         "fef43402"
+      ]
+    },
+    {
+      "id": "R-1404",
+      "date": "2026-11-18",
+      "time": "07:16",
+      "timeFrom": "recorded",
+      "title": "The Predator gate for dx/one-light at crowd=2.5: no regression (two sittings of 4 pairs and an A/A; the first's even +2.8 % on every worker did not come back)",
+      "verdict": "passed",
+      "text": "**The Predator gate for dx/one-light, at `crowd=2.5`: no regression. Two sittings of 4 pairs against main and an A/A: every judged row inside its detection limit; the first sitting's even +2.8 % on every worker did not come back in the second.**\n\n`runPredatorAbab --vs main --hyp-rev HEAD --full-rev --query crowd=2.5`, headed Chrome, GTX 1650 on AC, 38 400 bodies, 48 shadow lights. The branch at 991939b8 (first) and e581706b (second: a comment in a bench tool apart), main at e45a482a. Each worker's `STEP_MS - WAIT_MS`, paired:\n\n| worker | first, 06:55 to 07:00 | each pair | second, 07:11 to 07:16 | each pair | the A/A, 07:01 to 07:06 |\n| --- | --- | --- | --- | --- | --- |\n| spatial (judged, limit 3.9 %) | 9.236 -> 9.546 ms, +2.9 % | +1.7, +2.1, +6.1, +3.7 | 9.260 -> 9.198 ms, -0.1 % | -4.4, -0.7, +1.2, +0.4 | -1.7 % |\n| physics (judged, limit 2.7 %) | 12.517 -> 12.866 ms, +2.8 % | +1.6, +2.0, +6.1, +3.6 | 12.425 -> 12.398 ms, -0.2 % | +0.1, -1.9, -0.5, 0.0 | 0.0 % |\n| pre-render (under the floor) | 5.563 -> 5.925 ms, +5.0 % | +2.9, +6.7, +12.9, +3.2 | 5.486 -> 5.466 ms, -1.6 % | -4.4, -9.1, +1.1, +1.4 | -0.8 % |\n| Pixi (under the floor) | 3.164 -> 3.182 ms, -1.6 % | -4.9, +7.4, +1.7, -6.6 | 3.258 -> 3.116 ms, -6.8 % | -10.5, -7.0, -6.6, -0.8 | -2.4 % |\n| logic (under the floor) | 5.843 -> 6.220 ms, +7.9 % | +5.5, -5.5, +12.2, +10.2 | 5.596 -> 5.493 ms, +0.7 % | -3.6, -0.1, +1.5, +4.1 | -1.0 % |\n\n- Presented frames 60.0 on both sides in both sittings; load keys within 0.1 %.\n- **The first sitting** read every worker about 3 % dearer on the branch's side, spatial and physics included, which the branch does not reach (Predator has no walls: its path in pre-render is main's but for one comparison). Its third pair was disturbed (+6 to +13 % on every worker). That is the shape of drift, and the second sitting says so: the same two revisions, spatial -0.1 %, physics -0.2 %, pre-render -1.6 %.\n- **Ruled out on the way:** the rebuilt `engine.wasm` (`buildWasm --check`: every module identical to a rebuild; only the sweep's kernel differs from main's).\n- **Not pooled by the tool:** `--append` refused the second four pairs (the runner's tree had moved by a comment between them), so they are a sitting of their own. Over the eight pairs: spatial +1.3 %, physics +1.4 %, pre-render +1.8 %, Pixi -3.4 % (means).\n- **Verdict:** NEUTRAL twice; a hygiene keep for the branch's Predator path. The branch's own claims are its owner scene's (R-1359, R-1402, R-1403).",
+      "commits": [
+        "991939b8"
       ]
     }
   ],
