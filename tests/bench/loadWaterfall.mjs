@@ -18,7 +18,12 @@
  *
  *   node tests/bench/loadWaterfall.mjs --scene /demos/predatorScene/predatorScene.js --scene-export PredatorScene
  *     [--query "light3d=1&hour=22"] [--runs 3] [--visits cold,warm] [--settle-ms 5000] [--bundle] [--headless]
- *     [--canvas 1920x1080] [--output report.json]
+ *     [--weed-bundle files/weed.prod.bundle.esm.min.js] [--http-cache] [--canvas 1920x1080] [--output report.json]
+ *
+ * --weed-bundle names the dist ESM bundle (implies --bundle; files/… is the file mode, buildBundle.js --files).
+ * --http-cache serves like a static host (ETag, 304), so a later visit can reuse scripts, wasm and their compiled
+ * code; V8 makes a script's code cache on its second load and uses it from the third, so time code caching with
+ * --visits cold,warm,hot.
  *
  * --visits: `cold` is a fresh browser context (empty HTTP and code caches); `warm` is a second load of the same page in
  * that context (its caches filled by the cold visit). Each run makes the visits in that order. Medians over runs are
@@ -267,9 +272,16 @@ async function main() {
   const visits = String(args.visits || 'cold').split(',');
   const headed = !args.headless;
   const qs = [];
-  if (!args.bundle) qs.push('src=1');
+  // --weed-bundle <dist ESM bundle> (implies --bundle): weed.prod.bundle.esm.min.js, or the file mode's
+  // files/weed.prod.bundle.esm.min.js (scripts/buildBundle.js --files).
+  const weedBundle = typeof args['weed-bundle'] === 'string' ? args['weed-bundle'] : '';
+  const bundleRun = Boolean(args.bundle || weedBundle);
+  if (!bundleRun) qs.push('src=1');
+  if (weedBundle) qs.push(`weedBundle=${encodeURIComponent(weedBundle)}`);
   if (typeof args.query === 'string' && args.query) qs.push(args.query.replace(/^\?/, ''));
-  const server = await createStaticBenchmarkServer(repoRoot, 0);
+  // --http-cache: the server revalidates with ETags like a static host, so the warm visits keep scripts, wasm and
+  // their compiled code; without it every .js is no-store and every warm visit downloads and compiles it again.
+  const server = await createStaticBenchmarkServer(repoRoot, 0, { httpCache: Boolean(args['http-cache']) });
   const url = `${server.baseUrl ?? `http://127.0.0.1:${server.port}`}/tests/bench/integratedWorkerBenchmark.html${qs.length ? `?${qs.join('&')}` : ''}`;
   const browser = await chromium.launch({
     channel: 'chrome',
@@ -308,7 +320,8 @@ async function main() {
 
   for (const visit of visits) {
     const rs = results.filter((x) => x.visit === visit);
-    console.log(`\n== ${opts.sceneExport} ${args.query || ''} ${args.bundle ? 'bundle' : 'src'}, ${visit}, ${rs.length} runs: median ms after loadScene ==`);
+    const build = weedBundle || (bundleRun ? 'bundle' : 'src');
+    console.log(`\n== ${opts.sceneExport} ${args.query || ''} ${build}${args['http-cache'] ? ' (http cache)' : ''}, ${visit}, ${rs.length} runs: median ms after loadScene ==`);
     const last = rs[rs.length - 1].waterfall;
     console.log('page:');
     for (const name of MILESTONES) {
@@ -343,7 +356,9 @@ async function main() {
     }
   }
   if (args.output) {
-    fs.writeFileSync(String(args.output), JSON.stringify({ scene: opts, query: args.query || '', bundle: !!args.bundle, results }, null, 2));
+    fs.writeFileSync(String(args.output), JSON.stringify({
+      scene: opts, query: args.query || '', bundle: bundleRun, weedBundle, httpCache: Boolean(args['http-cache']), results,
+    }, null, 2));
     console.log(`\nwrote ${args.output}`);
   }
 }

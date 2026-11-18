@@ -43,10 +43,14 @@ const ISOLATION_HEADERS = {
  *   (e.g. '/weed-sw.js' → the source of the isolation service worker)
  * @param {Record<string, (body: string) => unknown>} [options.routes] URL path → handler for a POST to it, given the
  *   request body; what it returns (or resolves to) goes back as JSON (stockFirefox.mjs)
+ * @param {boolean} [options.httpCache] serve like a static host (Vercel, Netlify): every file revalidates
+ *   (Cache-Control: no-cache) with an ETag, and an unchanged one answers 304. A browser then keeps scripts and wasm
+ *   between visits, with their compiled code (V8's code cache, wasm's), which the default no-store never allows.
  */
 export async function createStaticBenchmarkServer(rootDirectory, preferredPort = 0, options = {}) {
   const normalizedRoot = path.resolve(rootDirectory);
   const isolationHeaders = options.isolationHeaders !== false ? ISOLATION_HEADERS : null;
+  const httpCache = options.httpCache === true;
   const files = options.files || {};
   const routes = options.routes || {};
 
@@ -85,10 +89,31 @@ export async function createStaticBenchmarkServer(rootDirectory, preferredPort =
         filePath = path.join(filePath, 'index.html');
       }
 
-      const content = await fs.readFile(filePath);
       const ext = path.extname(filePath).toLowerCase();
       const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
+      if (httpCache) {
+        const fileStat = await fs.stat(filePath);
+        const etag = `"${fileStat.size.toString(16)}-${Math.floor(fileStat.mtimeMs).toString(16)}"`;
+        const headers = {
+          'Content-Type': contentType,
+          ...isolationHeaders,
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache',
+          ETag: etag,
+          'Last-Modified': fileStat.mtime.toUTCString(),
+        };
+        if (req.headers['if-none-match'] === etag) {
+          res.writeHead(304, headers);
+          res.end();
+          return;
+        }
+        res.writeHead(200, headers);
+        res.end(await fs.readFile(filePath));
+        return;
+      }
+
+      const content = await fs.readFile(filePath);
       res.writeHead(200, {
         'Content-Type': contentType,
         ...isolationHeaders,
