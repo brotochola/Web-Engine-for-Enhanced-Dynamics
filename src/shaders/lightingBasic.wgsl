@@ -311,34 +311,17 @@ fn faceHeight(face: vec4<f32>) -> f32 {
 
 // Towards unit direction l, no further than reach (a lamp's distance; the sun's is unbounded). DX-GBUF: with the ids
 // map, only the heights of the pixel's own entity (selfId) count; a pixel of no entity counts every height.
-// N-272: where on the face map (0..1) the march's point q falls (selfShadowTexel in lightingBasic.frag.glsl).
-fn selfShadowTexel(q: vec3<f32>, s: f32) -> vec2<f32> {
-  let nc = weedWorldToNorm(vec2<f32>(q.x, q.y * s - q.z * uniforms.uFaceLight.x));
-  return vec2<f32>(nc.x, select(nc.y, 1.0 - nc.y, uniforms.uFlipY > 0.5));
-}
-
-// N-272: the march's t at which a map coordinate c0 + dc t leaves 0..1 (it starts inside), or never.
-fn mapExit(c0: f32, dc: f32) -> f32 {
-  if (dc > 1e-9) { return (1.0 - c0) / dc; }
-  if (dc < -1e-9) { return -c0 / dc; }
-  return 1e9;
-}
-
 fn selfShadowToward(p: vec3<f32>, l: vec3<f32>, reach: f32, selfId: f32) -> f32 {
   let s = 1.0 / uniforms.uGroundInvScaleY;
   let size = vec2<f32>(textureDimensions(uFaceMap, 0));
-  // N-272: the march is a straight line on the screen, so it leaves the face map once: the steps from tEnd on are past its
-  // edge and know nothing (a load there reads nothing). Worked out before the loop, which keeps one
-  // exit test: a test inside it cost the HD 620 about 5 % of its drawn frames (a branch on the data in a dynamic loop).
-  let fc0 = selfShadowTexel(p, s);
-  let dfc = selfShadowTexel(p + l, s) - fc0;
-  let tEnd = min(reach, min(mapExit(fc0.x, dfc.x), mapExit(fc0.y, dfc.y)));
   for (var i = 2; i <= 9; i++) {
     if (f32(i) > uniforms.uSelfShadow.y + 1.0) { break; }
     let t = f32(i) * uniforms.uSelfShadow.x;
-    if (t >= tEnd) { break; }
+    if (t >= reach) { break; }
     let q = p + l * t;
-    let fc = fc0 + dfc * t;
+    let nc = weedWorldToNorm(vec2<f32>(q.x, q.y * s - q.z * uniforms.uFaceLight.x));
+    let fc = vec2<f32>(nc.x, select(nc.y, 1.0 - nc.y, uniforms.uFlipY > 0.5));
+    if (any(fc < vec2<f32>(0.0)) || any(fc >= vec2<f32>(1.0))) { continue; }
     let f = textureLoad(uFaceMap, vec2<i32>(fc * size), 0);
 // #if IDS
     if (selfId > 0.5) {
