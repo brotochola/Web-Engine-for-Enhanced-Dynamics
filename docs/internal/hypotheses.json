@@ -22363,7 +22363,8 @@
         "R-1353",
         "R-1354",
         "R-1355",
-        "R-1358"
+        "R-1358",
+        "R-1359"
       ]
     },
     {
@@ -22427,6 +22428,26 @@
       "date": "2026-11-18",
       "title": "The lamps' cookies are not packed in a frame with no sun caster and no stamp: they lighten what the casters drew on the shadows' layer, and on an empty layer they were a pass that changed no pixel (every scene of walls since OL-4)",
       "statusText": "Kept as hygiene 2026-11-18 on dx/one-light: the pass is gone and the picture is byte for byte the same; not merged"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "wall row bins",
+        "writeWallRow index",
+        "row directions index"
+      ],
+      "records": [
+        "R-1359"
+      ],
+      "result": "visPolyStressScene ?lights=720&arm=walls: pre-render 6.415 -> 6.062 ms, -5.8 % (4 of 4 pairs, detection limit 4.6 % from the A/A). Kernel (wallRowMicrobench): -21 % at 16 vertices, -18 % at 48, -9.5 % at 128. The row is the same bit for bit.",
+      "next": "Merged with dx/one-light. What is left of the rows' cost is the vertex loop (22 ns a vertex): the sweep's kernel writing the row, or a still lamp's row not rebuilt.",
+      "id": "OL-8",
+      "kind": "speed",
+      "area": "preRender",
+      "status": "kept",
+      "date": "2026-11-18",
+      "title": "A lamp's row for the light pass counts its 256 directions' index (a mark a vertex, a running count in integers) instead of walking the bins against the vertices' angles, which was half a row's time",
+      "statusText": "Kept 2026-11-18 on dx/one-light (d0b2d0c5): the kernel and the scene; not merged"
     },
     {
       "refs": [],
@@ -36104,6 +36125,20 @@
       "text": "**OL-7 kept as hygiene on dx/one-light: no cookies in a frame with nothing on the shadows' layer. The 960x540 pass R-1354 pointed at (1 draw, 20 instances) is gone: 0.339 ms of GPU a frame before, no draw after; the picture is the same (0 px).**\n\n- **What it was:** R-1354's reading of the walls in the light pass showed a pass the old fan pass did not have, 0.44 ms at 960x540 with 20 instances. It is the lamps' cookies: each lightens what the casters drew on the shadows' layer inside its lamp's pool (N-154), and this scene draws nothing there. Under the old pass they were not made (N-134); since OL-4 a scene of walls makes them as any scene does.\n- **The change:** `_packGpuShadows` packs the cookies only when a sun caster or a stamp went out. Engine-wide: any scene with casting lamps and no caster in view stops drawing them.\n- **Read** (visPolyStressScene `?lights=360&arm=walls`, GTX 1650 on AC, `glFrameRecorder --gpu-passes`, 5 s + 3 s, two runs a side in turn, 05:11 to 05:13, the GPU at P5 in all four):\n\n| | before | after |\n| --- | --- | --- |\n| the 960x540 pass | 0.339, 0.339 ms (1 draw, 20 instances) | 0.008, 0.009 ms (no draw) |\n| the frame's GPU time | 3.654, 3.885 ms | 2.036, 3.412 ms |\n\n- **How to read it:** the pass's own time is steady and is the result. The frame's total moves from run to run by more than the pass (a TIME_ELAPSED range counts the GPU's idle gaps), so it is a reading: no percentage is claimed for the frame.\n- **Same picture:** before against after 0 of 921 600 px on WebGL and on WebGPU; dxCaptureScene at noon and by night (casters there, the cookies stay) 0 px. node 3076, demos 121; `tests/node/cookiesNeedCasters.test.js` fails on the old code.\n- **Left of R-1354's list:** the G-buffer pass (the ids a wall's own pixels need), the rows' upload (644 KB a frame at 360 lights) and pre-render's row build in JS (+0.65 ms).",
       "commits": [
         "7ea867fa"
+      ]
+    },
+    {
+      "id": "R-1359",
+      "date": "2026-11-18",
+      "time": "05:42",
+      "timeFrom": "recorded",
+      "title": "OL-8 kept: a lamp's row counts its directions' index; pre-render on visPoly with walls at 720 lights 6.415 -> 6.062 ms (-5.8 %, 4 of 4 pairs, limit 4.6 %), the kernel -9 to -21 %",
+      "verdict": "kept",
+      "text": "**OL-8 kept: a lamp's row counts its directions' index instead of walking it. Pre-render on visPolyStressScene with walls at 720 lights 6.415 -> 6.062 ms (-5.8 %, 4 of 4 pairs, detection limit 4.6 %); the kernel -9 to -21 %; the row the same bit for bit.**\n\n- **What it was:** R-1353 read the walls' rows at +0.65 ms of pre-render over the old fan pass at 360 lights, in `writeWallRow` (JS, once a lamp with walls a frame). The kernel showed where: about half a row's time was its 256 directions' index, a walk of the bins against the vertices' angles (a comparison a bin, and a branch that ends on a different vertex each time).\n- **The change (d0b2d0c5):** each vertex marks the first bin that starts at or over its angle (`ceil(64 * (angle - ang0))`, exact on float32 angles) in an integer scratch, and the running count of the marks is what each bin sees. `tests/node/wallRowParity.test.js` holds the shipped writer against the plain one (`tests/reference/wallRowJs.mjs`) on 4 500 polygons, bit for bit.\n- **Kernel** (`wallRowMicrobench`, Node 22, TurboFan normal compile, ns a row; before two runs, after three):\n\n| vertices | before | after | |\n| --- | --- | --- | --- |\n| 16 | 999, 1025 | 819, 798, 793 | -21 % |\n| 48 | 1801, 1838 | 1497, 1500, 1501 | -18 % |\n| 128 | 3614, 3629 | 3262, 3264, 3296 | -9.5 % |\n\n- **Scene** (visPolyStressScene `?lights=720&arm=walls`, both sides from worktrees, dc4aac46 against d0b2d0c5, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs, 05:31 to 05:36): pre-render `STEP_MS - WAIT_MS` **6.415 -> 6.062 ms, paired -5.8 %**, each pair -4.8, -5.7, -6.0, -6.2 %, cv 0 and 1 %. Every other worker is under the 6 ms floor and not judged (Pixi 1.59 -> 1.62 ms, its pairs +12.6, -8.9, +7.8, -3.5 %: noise). Load keys equal.\n- **The session's A/A of this scene** (d0b2d0c5 on both sides, 4 pairs, 05:37 to 05:42): pre-render 6.300 -> 6.262 ms, paired +0.3 %, pairs +2.9, +4.8, -2.3, -2.4 %. Detection limit for 4 pairs: **4.6 %**. The keep clears it, not by much; its four pairs agree with each other far better than the A/A's.\n- **Two forms that lost in the kernel** (not kept, said in the code): filling the bins by runs as the vertices go by, -35 % at 16 vertices and +18 % at 128 (its inner loop ends on a different bin each vertex); counting in the row's own floats, +35 % at 16 vertices (the count crossed a float each bin). Storing each vertex's index and taking a running highest was slower than the count too (+5 to +10 %).\n- **What is left of the rows' cost:** the vertex loop itself, about 22 ns a vertex in the shipped function (12 in a bare copy: the angle's unwrapping is half of it). The next steps are the sweep's kernel writing the row (C, no float32 round trips), or not rebuilding a still lamp's row at all.",
+      "commits": [
+        "c9e374b1",
+        "dc4aac46",
+        "d0b2d0c5"
       ]
     }
   ],
