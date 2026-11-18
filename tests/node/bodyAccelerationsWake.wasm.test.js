@@ -43,10 +43,11 @@ function setup() {
   const cap = fn('get_body_capacity')();
   const state = (ch, i) => new Float32Array(memory.buffer)[(stateByte >> 2) + ch * cap + i];
   const sleeping = (i) => new Uint8Array(memory.buffer, sleepingByte, cap)[i];
+  const sleepingBytes = () => new Uint8Array(memory.buffer, sleepingByte, cap);
   const apply = () =>
     fn('bodies_apply_accelerations')(listByte, N, bytes.ax, bytes.ay, bytes.aa, bytes.mass, bytes.inertia, staticByte, fixedByte);
   const step = () => fn('step_world')(worldId, 1 / 60, 4);
-  return { fn, col, bytes, state, sleeping, apply, step };
+  return { fn, col, bytes, state, sleeping, sleepingBytes, apply, step };
 }
 
 test('E-288: a body that fell asleep wakes and moves in the step its acceleration is applied', () => {
@@ -79,4 +80,26 @@ test('E-288: a body body_set_awake put to sleep wakes again for its acceleration
   w.step();
   assert.equal(w.sleeping(2), 0, 'woken by its acceleration');
   assert.ok(w.state(CH_VX, 2) < 0, 'and moved along -x in that step');
+});
+
+test('N-290: a 0 stored in the sleeping paint before the batch keeps a sleeping body asleep, its acceleration lost', () => {
+  // What logic's addAcceleration did before N-290: the acceleration and the paint set to 0 before physics' turn.
+  const w = setup();
+  for (let f = 0; f < 120; f++) {
+    w.apply();
+    w.step();
+  }
+  assert.equal(w.sleeping(0), 1);
+  assert.equal(w.sleeping(1), 1);
+  const paint = w.sleepingBytes();
+  w.col(w.bytes.ax)[0] = 3;
+  paint[0] = 0;
+  w.col(w.bytes.ax)[1] = 3;
+  for (let f = 0; f < 3; f++) {
+    w.apply();
+    w.step();
+    paint[0] = 0;
+  }
+  assert.equal(w.state(CH_VX, 0), 0, 'the body whose paint was cleared never woke');
+  assert.ok(w.state(CH_VX, 1) > 0.1, 'the one whose paint was left woke and moved');
 });

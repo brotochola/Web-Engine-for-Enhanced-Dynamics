@@ -2336,7 +2336,10 @@ export class GameObject {
    */
   addAcceleration(x, y) {
     if (this._hasComponents.RigidBody) {
-      RigidBody.sleeping[this.index] = 0;
+      // N-290: RigidBody.sleeping is physics' paint of Box2D's sleep, not a request. Physics wakes a sleeping body that
+      // has an acceleration only where its paint still says asleep (bodies_apply_accelerations), so the 0 this stored
+      // before physics' turn kept the body asleep and its acceleration was lost. Physics paints and clears the byte
+      // every step on its own core, so the store also took the line from it every call (E-434).
       RigidBody.ax[this.index] += x;
       RigidBody.ay[this.index] += y;
     }
