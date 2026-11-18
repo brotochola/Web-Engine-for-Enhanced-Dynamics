@@ -1,11 +1,20 @@
 /**
- * Offline smoke: all 8 dist artifacts, wasm gzip, Box2D sibling remap, worker embed mode.
+ * Offline smoke: all 8 dist artifacts, wasm gzip, Box2D sibling remap, worker embed mode; the file mode's folder when built.
  */
 import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
-import { BUNDLE_ARTIFACTS, extractImportScriptNames, rewriteWorkerCommonImportScripts } from './buildBundle.js';
+import {
+  BUNDLE_ARTIFACTS,
+  FILE_MODE_ARTIFACTS,
+  FILE_MODE_DIR,
+  FILE_MODE_FOLDER_GLOBAL,
+  WORKER_NAMES,
+  extractImportScriptNames,
+  rewriteWorkerCommonImportScripts,
+  wasmAssetNames,
+} from './buildBundle.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
@@ -152,7 +161,47 @@ for (const name of BUNDLE_ARTIFACTS) {
   );
 }
 
+// The file mode (SST-8, buildBundle.js --files), when built: each page bundle names its folder, which holds every
+// worker, the shared chunk under the name the workers load it by, the wasm assets they name with the committed
+// engine kernels' bytes, and Box2D's script (its siblings inside, its wasm beside it).
+const fileModeDir = path.join(dist, FILE_MODE_DIR);
+let fileModeChecked = 0;
+if (fs.existsSync(fileModeDir)) {
+  for (const name of FILE_MODE_ARTIFACTS) {
+    const s = fs.readFileSync(path.join(fileModeDir, name), 'utf8');
+    assert(s.includes('BUNDLE_WORKER_FILES'), `files/${name}: missing BUNDLE_WORKER_FILES`);
+    const folders = [...new Set([...s.matchAll(/"((?:debug|prod)-[0-9a-f]{10})\/workers\//g)].map((m) => m[1]))];
+    assert(folders.length === 1, `files/${name}: names ${folders.length} worker folders (${folders.join(', ')})`);
+    assert(folders[0].startsWith(name.includes('.prod.') ? 'prod-' : 'debug-'), `files/${name}: ${folders[0]} is the other build's`);
+    const folder = path.join(fileModeDir, folders[0]);
+    const named = [];
+    for (const worker of [...WORKER_NAMES, 'worker_common']) {
+      const file = path.join(folder, 'workers', `${worker}.min.js`);
+      assert(fs.existsSync(file), `files/${folders[0]}: missing workers/${worker}.min.js`);
+      const code = fs.readFileSync(file, 'utf8');
+      if (worker !== 'worker_common') {
+        // Its public path from the starting blob's folder, its shared chunk by name from there.
+        assert(code.includes(`.p=self.${FILE_MODE_FOLDER_GLOBAL}||`), `files/${folders[0]}/workers/${worker}.min.js: public path not the folder's`);
+        assert(code.includes('"workers/worker_common.min.js"'), `files/${folders[0]}/workers/${worker}.min.js: shared chunk renamed`);
+      }
+      named.push(...wasmAssetNames(code));
+    }
+    assert(named.length > 0, `files/${folders[0]}: no worker names a wasm asset`);
+    const wasmFiles = [...new Set(named)].map((rel) => fs.readFileSync(path.join(folder, rel)));
+    for (const mod of kernelModules) {
+      assert(wasmFiles.some((bytes) => bytes.equals(mod.bytes)), `files/${folders[0]}: kernel ${mod.name} is not beside the workers`);
+    }
+    assert(fs.readFileSync(path.join(folder, 'box2d', 'box2dWasm.wasm')).equals(box2dWasmBytes), `files/${folders[0]}: box2dWasm.wasm differs`);
+    const box2dJs = fs.readFileSync(path.join(folder, 'box2d', 'box2dWasm.js'), 'utf8');
+    for (const sib of siblingNames) assert(box2dJs.includes(sib), `files/${folders[0]}/box2d: missing sibling ${sib}`);
+    assert(!box2dJs.includes('__weedWasmGzipB64'), `files/${folders[0]}/box2d: the wasm is embedded, not streamed`);
+    console.log(`  files/${name}: raw ${Buffer.byteLength(s)} bytes, its workers in files/${folders[0]}/`);
+    fileModeChecked++;
+  }
+}
+
 console.log('smoke-bundle-embed OK');
+console.log(`  file mode: ${fileModeChecked ? `${fileModeChecked} bundles` : 'not built (buildBundle.js --files)'}`);
 console.log(`  artifacts: ${BUNDLE_ARTIFACTS.length}`);
 console.log(`  siblings: ${siblingNames.join(', ')}`);
 console.log(`  kernels: ${kernelModules.map((m) => m.name).join(', ')}`);

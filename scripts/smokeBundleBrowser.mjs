@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
-import { BUNDLE_ARTIFACTS } from './buildBundle.js';
+import { BUNDLE_ARTIFACTS, FILE_MODE_ARTIFACTS, FILE_MODE_DIR, WORKER_NAMES } from './buildBundle.js';
 import { createStaticBenchmarkServer } from '../tests/helpers/createStaticBenchmarkServer.mjs';
 import { analyzePng, captureCanvasPng } from '../tests/helpers/visualPngCompare.mjs';
 import { BOX2D_MEMORY_MB_DEFAULT } from '../src/box2d/box2dMemory.js';
@@ -37,14 +37,29 @@ if (missing.length) {
   process.exit(1);
 }
 
+// The file mode (SST-8), when this dist/ was built with it (buildBundle.js --files): the same scene, its workers
+// started from the files beside the bundle.
+const fileModeBundles = fs.existsSync(path.join(dist, FILE_MODE_DIR))
+  ? FILE_MODE_ARTIFACTS.map((name) => `${FILE_MODE_DIR}/${name}`)
+  : [];
+const missingFileMode = fileModeBundles.filter((name) => !fs.existsSync(path.join(dist, name)));
+if (missingFileMode.length) {
+  console.error(`dist/${FILE_MODE_DIR}/ lacks ${missingFileMode.join(', ')}: run node scripts/buildBundle.js --files.`);
+  process.exit(1);
+}
+if (!fileModeBundles.length) console.log(`dist/${FILE_MODE_DIR}/ not built (node scripts/buildBundle.js --files): file mode skipped`);
+
 const server = await createStaticBenchmarkServer(root);
 const browser = await chromium.launch({ headless: true });
 let failed = false;
 
 try {
-  for (const bundle of BUNDLE_ARTIFACTS) {
+  for (const bundle of [...BUNDLE_ARTIFACTS, ...fileModeBundles]) {
     const errors = [];
     const page = await browser.newPage();
+    const workerUrls = [];
+    page.on('worker', (w) => workerUrls.push(w.url()));
+    const fileModeRequests = [];
     page.on('pageerror', (e) => errors.push(String(e)));
     page.on('console', (msg) => {
       if (msg.type() === 'error') errors.push(msg.text());
@@ -54,6 +69,7 @@ try {
     page.on('request', (r) => {
       const p = new URL(r.url()).pathname;
       if (p.startsWith('/src/')) srcRequests.push(p);
+      if (p.startsWith(`/dist/${FILE_MODE_DIR}/`)) fileModeRequests.push(p);
     });
 
     const url = `http://127.0.0.1:${server.port}/dist/index.html?bundle=${encodeURIComponent(bundle)}`;
@@ -152,6 +168,29 @@ try {
 
     await page.close();
 
+    // The file mode loads every worker's code, Box2D and both wasm modules from its folder over HTTP (cacheable);
+    // the single-file bundle makes them all from its strings. Its engine workers are blobs that importScripts
+    // their files; Box2D starts from its file.
+    if (result?.ok && bundle.startsWith(`${FILE_MODE_DIR}/`)) {
+      const needed = [
+        ...WORKER_NAMES.map((name) => `/workers/${name}.min.js`),
+        '/workers/worker_common.min.js',
+        '/box2d/box2dWasm.js',
+        '/box2d/box2dWasm.wasm',
+      ];
+      const notLoaded = needed.filter((suffix) => !fileModeRequests.some((p) => p.endsWith(suffix)));
+      const engineWasm = fileModeRequests.some((p) => p.endsWith('.wasm') && !p.endsWith('/box2dWasm.wasm'));
+      if (!engineWasm) notLoaded.push('the engine wasm');
+      const box2dWorker = workerUrls.some((u) => u.endsWith('/box2d/box2dWasm.js'));
+      if (notLoaded.length || !box2dWorker) {
+        result.ok = false;
+        result.text = `${result.text || ''} (file mode: not loaded ${notLoaded.join(', ') || 'none'}; `
+          + `Box2D worker ${box2dWorker ? 'from its file' : 'missing'}; workers ${workerUrls.join(', ')})`;
+      } else {
+        console.log(`  file mode: ${fileModeRequests.length} requests to dist/${FILE_MODE_DIR}/, ${workerUrls.length} workers`);
+      }
+    }
+
     if (srcRequests.length && result) {
       result.ok = false;
       result.text = `${result.text || ''} (fetched ${srcRequests.length} file(s) from /src/, e.g. ${srcRequests[0]})`;
@@ -207,8 +246,9 @@ try {
   }
 
   // N-115: the scene above draws no decoration. Here the only sprites are decorations attached to entities, so a
-  // bundle that loses them reads black. Through the bench page, which maps /src/index.js to a dist ESM bundle.
-  for (const bundle of BUNDLE_ARTIFACTS.filter((name) => name.includes('.esm.'))) {
+  // bundle that loses them reads black. Through the bench page, which maps /src/index.js to a dist ESM bundle (the
+  // file mode's too: loadWaterfall --weed-bundle files/… loads it this way).
+  for (const bundle of [...BUNDLE_ARTIFACTS, ...fileModeBundles].filter((name) => name.includes('.esm.'))) {
     const page = await browser.newPage();
     const url = `http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html?weedBundle=${encodeURIComponent(bundle)}`;
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
@@ -240,5 +280,5 @@ if (failed) {
   console.error('bundle browser smoke failed');
   process.exitCode = 1;
 } else {
-  console.log('smoke-bundle-browser OK (all 8)');
+  console.log(`smoke-bundle-browser OK (all 8${fileModeBundles.length ? `, and the file mode's ${fileModeBundles.length}` : ''})`);
 }

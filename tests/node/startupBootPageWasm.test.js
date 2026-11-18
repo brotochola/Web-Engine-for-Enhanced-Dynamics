@@ -1,6 +1,7 @@
 // SST-2 (SCENE_STARTUP_TIME_PLAN.md), the page's side: compileEngineWasm compiles engine.wasm once a page, from its
-// file in source builds (streamed when the server says application/wasm) and from the data URL a bundle inlined in its
-// workers' code, and resolves to null where it cannot (the workers then compile their own).
+// file in source builds (streamed when the server says application/wasm) and from WEED.EngineWasmUrl in a bundle (the
+// data URL its workers carry, or the file mode's file), and resolves to null where it cannot (the workers then compile
+// their own).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -61,7 +62,7 @@ test('a missing file resolves to null (each worker compiles its own), with a war
   }
 });
 
-test('bundle: the gzipped data URL inlined in the workers\' common code, inflated once and compiled', async () => {
+test('single-file bundle: WEED.EngineWasmUrl, the gzipped data URL its workers carry, inflated once and compiled', async () => {
   const gz = zlib.gzipSync(bytes, { level: 9 }).toString('base64');
   let ensured = 0;
   const WEED = {
@@ -69,9 +70,8 @@ test('bundle: the gzipped data URL inlined in the workers\' common code, inflate
     ensureEmbeddedSources: async () => {
       ensured++;
     },
-    // As scripts/buildBundle.js leaves it: the URL as a string literal in a minified worker chunk.
-    WorkerCommonSource: `var a=1;const u=new URL("data:application/gzip;base64,${gz}",self.location.href);export{u};`,
-    WorkerSources: { spatialWorker: 'importScripts(x)' },
+    // scripts/buildBundle.js reads it from the workers' common code (startupBundleEngineWasmUrl.test.js).
+    EngineWasmUrl: `data:application/gzip;base64,${gz}`,
   };
   const fetched = [];
   const page = await onPage({ location: { origin: 'http://h' }, WEED }, async (url) => {
@@ -85,13 +85,23 @@ test('bundle: the gzipped data URL inlined in the workers\' common code, inflate
   assert.deepEqual(fetched, []);
 });
 
-test('bundle: WEED.EngineWasmUrl, when the bundle names it, is used as is', async () => {
-  const gz = zlib.gzipSync(bytes).toString('base64');
-  const WEED = { BUNDLE_MODE: true, EngineWasmUrl: `data:application/gzip;base64,${gz}`, WorkerCommonSource: '' };
-  const page = await onPage({ location: { origin: 'http://h' }, WEED }, async () => {
-    throw new Error('no fetch');
+test("the bundle's file mode (SST-8): engine.wasm's file beside the bundle, streamed once", async () => {
+  const url = 'http://h/dist/files/prod-0123456789/0a1b2c.wasm';
+  const WEED = { BUNDLE_MODE: true, BUNDLE_WORKER_FILES: true, ensureEmbeddedSources: async () => {}, EngineWasmUrl: url };
+  const fetched = [];
+  const page = await onPage({ location: { origin: 'http://h' }, WEED }, async (u) => {
+    fetched.push(String(u));
+    return new Response(bytes, { headers: { 'content-type': 'application/wasm' } });
   });
   assert.deepEqual(WebAssembly.Module.exports(await page.compileEngineWasm()), engineExports);
+  assert.deepEqual(fetched, [url]);
+});
+
+test('a bundle that names no engine.wasm: null (each worker compiles its own)', async () => {
+  const page = await onPage({ location: { origin: 'http://h' }, WEED: { BUNDLE_MODE: true } }, async () => {
+    throw new Error('no fetch');
+  });
+  assert.equal(await page.compileEngineWasm(), null);
 });
 
 test('no page (a worker, Node): null at once', async () => {
