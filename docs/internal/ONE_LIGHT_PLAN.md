@@ -583,8 +583,11 @@ the sun's term by the normal: under the sun the automatic rule gave `k` 0.
 **OL-3's knobs** are on visPolyStressScene: `?arm=walls` (the default, final B), `fans` (the old pass), `plain` (the
 light pass alone; `?gbuf=0` without the G-buffer) and `maps`, with `?castLights=`, `?tile=`, `?lampCache=0` and
 `?move=` (the lights circle their place). The first three draw. **The maps' arm is not ready:** its lamps draw, but
-the occluders' volumes (`setBox`, 400 px high, lamps at 40) cast nothing in the lamps' map in that scene, with or
-without a pitch, while lampShadowStressScene's blocks, set the same way, do. To find before the race runs it. With a
+the occluders' volumes (`setBox`, 400 px high, lamps at 40) cast nothing in the lamps' map. The cause is the
+engine's (**OL-5**, in the register): Pixi gives a lamp its tile from the ids pre-render publishes, and
+`_writeStampLightIds` publishes them only in a frame with a sprite caster's stamp row; this scene has volumes alone
+(lampShadowStressScene has 20 000 walkers). A street of houses with nobody near its lamps is the same case. It
+holds up the maps' arm and final A, not final B. With a
 pitch of 90 the scene's white floor sprite lies flat; with heights on the screen it stood as a card 3000 px tall and
 no light reached it, so it is `surface: 'floor'` now.
 
