@@ -69,8 +69,8 @@ test("the light pass's EDGES: the floor's texels leave alpha 0 with it, 1 withou
   assert.doesNotMatch(lightingSource(glsl, flags), /finalColor = vec4\(totalLight, 0\.0\);/);
   assert.match(lightingSource(wgsl, { ...flags, edges: true }), /return vec4<f32>\(totalLight, 0\.0\);/);
   assert.match(lightingSource(wgsl, flags), /return vec4<f32>\(totalLight, 1\.0\);/);
-  // A face's texel keeps alpha 1 either way.
-  assert.match(lightingSource(glsl, { ...flags, edges: true }), /finalColor = vec4\(min\(faceLight\(fragWorld, face, selfId, selfOn\), vec3\(1\.0\)\), 1\.0\);/);
+  // A face's texel keeps alpha 1 either way (its light dithered, N-277).
+  assert.match(lightingSource(glsl, { ...flags, edges: true }), /finalColor = vec4\(weedDither\(min\(faceLight\(fragWorld, face, selfId, selfOn\), vec3\(1\.0\)\), ditherAt\), 1\.0\);/);
 });
 
 test("a light splat's host draws it in RGB alone: Pixi's colour mask is 14 on WebGL (red 8 ... alpha 1), 7 on WebGPU's writeMask", () => {

@@ -497,6 +497,18 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
 }
 // #endif FACES
 
+// N-277 (lighting.dither): half an 8-bit step of noise on the light before its 8-bit target stores it (lightingBasic.frag.glsl
+// says how). Without DITHER, the light as it is.
+fn weedDither(c: vec3<f32>, p: vec2<f32>) -> vec3<f32> {
+// #if DITHER
+  let n = fract(52.9829189 * fract(dot(p, vec2<f32>(0.06711056, 0.00583715))));
+  return c + (n - 0.5) / 255.0;
+// #endif DITHER
+// #if !DITHER
+  return c;
+// #endif !DITHER
+}
+
 @fragment
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   // Framebuffer origin is top-left (WebGPU + Pixi Y-down). Same as GLSL
@@ -510,6 +522,10 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
 // #if PIXELART
   // DX-PIXELSHADOW (lighting.pixelArt): every term at the art pixel's centre (lightingBasic.frag.glsl says why).
   fragWorld = floor(fragWorld) + 0.5;
+// #endif PIXELART
+  var ditherAt = in.position.xy;
+// #if PIXELART
+  ditherAt = fragWorld;
 // #endif PIXELART
 // #if FACES
   let face = textureLoad(uFaceMap, vec2<i32>(in.position.xy), 0);
@@ -526,7 +542,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     selfId = floor(ids.r * 255.0 + 0.5) * 256.0 + floor(ids.g * 255.0 + 0.5);
     selfOn = selfId < 0.5 || (floor(ids.b * 255.0 + 0.5) % 2.0) > 0.5;
 // #endif IDS
-    return vec4<f32>(min(faceLight(fragWorld, face, selfId, selfOn), vec3<f32>(1.0)), 1.0);
+    return vec4<f32>(weedDither(min(faceLight(fragWorld, face, selfId, selfOn), vec3<f32>(1.0)), ditherAt), 1.0);
   }
 // #endif FACES
   fragWorld.y *= uniforms.uGroundInvScaleY;
@@ -615,7 +631,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     let sh = textureSampleLevel(uShadowMap, uShadowSampler, normCoord, 0.0);
     totalLight *= (1.0 - sh.a);
   }
-  totalLight = min(totalLight, vec3<f32>(1.0));
+  totalLight = weedDither(min(totalLight, vec3<f32>(1.0)), ditherAt);
 // #if EDGES
   // DX-LIGHTEDGES: alpha says the floor lit this texel (0); a G-buffer entry's texels keep 1 (lightEdges.js).
   return vec4<f32>(totalLight, 0.0);

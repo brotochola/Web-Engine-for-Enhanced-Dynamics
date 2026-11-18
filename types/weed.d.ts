@@ -352,6 +352,11 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    * renderer.atlasScaleMode 'nearest'. Default false.
    */
   pixelArt?: boolean;
+  /**
+   * Dither the light by half an 8-bit step, so a lamp's dim falloff does not band into rings on a plain dark surface (no pixel
+   * moves more than one level). Default false: on an Intel HD 620 it cost about 4 % of the drawn frames.
+   */
+  dither?: boolean;
   /** DX-LIGHTEDGES: the light at a share of the canvas shown without crossing the floor's edges where the entities write depth (default true). */
   lightEdges?: boolean;
   /**
