@@ -558,6 +558,12 @@ class PixiRenderer extends AbstractWorker {
     // E-475: the WebGL programs made while the worker starts (GlProgram.weedMade), linked together before it reports
     // ready (_linkProgramsAhead).
     this._madePrograms = [];
+    // SST-1: the backend (rendererBackend.js) and the engine shaders' sources by key, from boot; an error boot met, which
+    // initialize reports (null: none).
+    this._rendererBackend = '';
+    this._useWebGpu = false;
+    this._engineShaders = {};
+    this._bootError = null;
     // The glow batch's rows in the render-queue memory (pixi pack mode), or null.
     this._pixiGlowRows = null;
     // W30. The batches Pixi fills from the render-queue memory keep their arrays in private WebAssembly.Memories, copied
@@ -8582,7 +8588,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     PIXI.GlProgram.weedMade = null;
     const shaders = this._useWebGpu ? null : this.pixiApp?.renderer?.shader;
     if (shaders && typeof shaders.weedLinkAhead === 'function') {
-      for (let i = 0; i < made.length; i++) shaders.weedLinkAhead(made[i]);
+      // SST-1: boot's programs started linking at boot; the rest start now.
+      this._startLinksAhead();
       const deadline = performance.now() + LINK_AHEAD_WAIT_MS;
       while (shaders.weedLinksRunning() > 0 && performance.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 4));
@@ -8592,18 +8599,155 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * Initialize the PIXI renderer with provided data
+   * SST-1: the renderer's start that needs neither the assets nor the shared buffers, from the page's 'boot' message (posted
+   * right after `new Worker`, before the page loads any asset; AbstractWorker keeps its promise in _bootPromise): the
+   * engine shaders' fetches and, at the same time, the GPU device and pixiApp.init on the page's canvas; then the programs
+   * made so far start linking (E-475). initialize awaits it and does what needs the assets. An error waits for
+   * initialize, which reports it as it did when all this ran there.
+   * @param {{ config: object, canvas: OffscreenCanvas, canvasWidth: number, canvasHeight: number,
+   *   engineShaders?: Object<string, string>|null, pageOrigin?: string }} data
    */
-  async initialize(data) {
-    const backend = normalizeRendererBackend(
-      data.config?.renderer?.backend ?? this.config?.renderer?.backend
-    );
+  async boot(data) {
+    try {
+      await super.boot(data);
+      await this._bootRenderer(data);
+    } catch (error) {
+      this._bootError = error;
+    }
+  }
+
+  async _bootRenderer(data) {
+    loadMark('boot');
+    const config = data.config || {};
+    const rendererConfig = config.renderer || {};
+    const backend = normalizeRendererBackend(rendererConfig.backend);
     this._rendererBackend = backend;
     this._useWebGpu = backend === RENDERER_BACKEND_WEBGPU;
     // E-475: every WebGL program made from here to the end of initialize is linked ahead, all together.
     if (!this._useWebGpu) PIXI.GlProgram.weedMade = this._madePrograms;
-
+    // Blob workers have an opaque origin: a source shader's root-relative path resolves against the page's.
+    if (data.pageOrigin) self.__weedPageOrigin = data.pageOrigin;
+    // Bundles embed the engine shaders and post them; source builds fetch them.
     embeddedEngineShaders = data.engineShaders || null;
+    if (!data.canvas) throw new Error("WeedJS: the renderer's 'boot' message carries no canvas");
+    this.canvasView = data.canvas;
+    this.canvasWidth = (data.canvasWidth ?? data.canvas.width) | 0;
+    this.canvasHeight = (data.canvasHeight ?? data.canvas.height) | 0;
+    // From renderer.atlasScaleMode: the atlas's and the loose textures' sampling, both sprite passes'.
+    const atlasScaleMode = rendererConfig.atlasScaleMode;
+    this.atlasScaleMode =
+      atlasScaleMode === 'nearest' || atlasScaleMode === 'linear' ? atlasScaleMode : RENDERER_DEFAULTS.atlasScaleMode;
+
+    const shadersFetched = this._fetchEngineShaders().then(() => loadMark('shaders fetched'));
+    await Promise.all([shadersFetched, this._initPixiApp(config, backend)]);
+
+    // N-271: a nearest atlas snaps each sprite's origin to the pixel grid in its vertex shader (pixelSnap.js), before any
+    // sprite program is made from these sources; the packs leave the poses as they are.
+    if (this.atlasScaleMode === 'nearest') applyPixelSnap(this._engineShaders, this._useWebGpu);
+    this._initTilemapGidProgram();
+    // E-475: what boot made links on the driver's threads while the page loads the assets; initialize waits for it.
+    this._startLinksAhead();
+    loadMark('booted');
+  }
+
+  /**
+   * SST-1: the GPU device (WebGPU) and pixiApp.init on the boot's canvas, and the renderer's own setup that needs no
+   * asset: the backend's checks, the GPU's name and class, the present, the context's hooks. this.pixiApp is set once Pixi
+   * is up, so a resize before that leaves it alone (and is applied here).
+   */
+  async _initPixiApp(config, backend) {
+    loadMark('gpu device');
+    const weedGpu = this._useWebGpu ? await requestWeedGpu('high-performance') : null;
+    loadMark('pixi init');
+    const app = new PIXI.Application();
+    await app.init({
+      width: this.canvasWidth,
+      height: this.canvasHeight,
+      resolution: 1,
+      canvas: this.canvasView, // v8 uses 'canvas' instead of 'view'
+      backgroundColor: 0x000000,
+      depth: true, // root present clears color and depth (Pixi clear defaults to ALL)
+      // Performance optimizations
+      powerPreference: 'high-performance',
+      preference: backend,
+      ...(weedGpu ? { gpu: { adapter: weedGpu.adapter, device: weedGpu.device } } : {}),
+    });
+
+    if (!app.renderer) {
+      throw new Error('PIXI.Application.init() succeeded but renderer is null');
+    }
+    this.pixiApp = app;
+
+    const actualName = pixiRendererTypeName(app.renderer.type, PIXI.RendererType);
+    if (this._useWebGpu) {
+      if (app.renderer.type !== PIXI.RendererType.WEBGPU) {
+        throw errorPixiTypeMismatch(backend, actualName);
+      }
+      if (!app.renderer.gpu?.device) {
+        throw errorMissingGpuDevice();
+      }
+      const device = app.renderer.gpu.device;
+      device.addEventListener('uncapturederror', (ev) => {
+        console.error('WebGPU uncapturederror:', ev.error?.message || String(ev.error));
+      });
+      device.lost.then((info) => {
+        if (info && info.reason === 'destroyed') return;
+        const reason = info?.reason || 'unknown';
+        const message = info?.message || 'GPU device was lost';
+        this.reportError('WebGPU device lost', new Error(`${reason}: ${message}`));
+      });
+      this._bindWebGpuSwapchain();
+      // DX-IGPUWARN: the adapter's GPU, for scene.gpu (a throwaway WebGL context's name where the adapter's is unclear).
+      const gpu = webgpuGpu(app.renderer.gpu.adapter?.info ?? null, offscreenWebglRendererName);
+      this._gpuRendererName = gpu.name;
+      this._gpuVendor = gpu.vendor;
+      this._gpuClass = gpu.kind;
+    } else {
+      if (app.renderer.type !== PIXI.RendererType.WEBGL) {
+        throw errorPixiTypeMismatch(backend, actualName);
+      }
+      if (!app.renderer.gl) {
+        throw new Error(
+          'WeedJS: This scene requested renderer.backend "webgl", but the WebGL context is missing.'
+        );
+      }
+      // E-502: E-448's opaque pass stays off on Intel's integrated and tile-based GPUs, unless debug.opaquePass says.
+      this._gpuRendererName = webglRendererName(app.renderer.gl);
+      this._gpuClass = gpuClassOf(this._gpuRendererName);
+      this._gpuVendor = gpuVendorOf(this._gpuRendererName);
+      this._opaqueOn = opaquePassOn(config.debug?.opaquePass, this._gpuClass, this._gpuVendor);
+      debugWorkerLog(`PIXI WORKER: GPU "${this._gpuRendererName}" (${this._gpuClass}), opaque pass ${this._opaqueOn}`);
+    }
+
+    this._takePresentOwnership();
+
+    // Enable z-index based sorting on the stage
+    app.stage.sortableChildren = true;
+
+    // Hook into WebGL context for draw call monitoring and context loss
+    this.setupWebGLHooks();
+
+    // A 'resize' while Pixi started (AbstractWorker kept its size): the canvas at that size.
+    if (app.renderer.width !== this.canvasWidth || app.renderer.height !== this.canvasHeight) {
+      this._applyResize(this.canvasWidth, this.canvasHeight);
+    }
+    this.reportLog('finished initializing pixi app');
+    loadMark('pixi init end');
+  }
+
+  /**
+   * E-475, SST-1: start the links of the programs made so far (GlProgram.weedMade), without waiting; a program already
+   * started or linked is left as it is. _linkProgramsAhead starts the rest and waits for all of them.
+   */
+  _startLinksAhead() {
+    const shaders = this._useWebGpu ? null : this.pixiApp?.renderer?.shader;
+    if (!shaders || typeof shaders.weedLinkAhead !== 'function') return;
+    const made = this._madePrograms;
+    for (let i = 0; i < made.length; i++) shaders.weedLinkAhead(made[i]);
+  }
+
+  /** SST-1: the engine shaders this backend's passes read, fetched at boot (a bundle's come embedded in the boot message). */
+  _fetchEngineShaders() {
     this._engineShaders = {};
     const sh = this._engineShaders;
     const shaderFetches = [];
@@ -8704,6 +8848,35 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         })
       );
     }
+    return Promise.all(shaderFetches);
+  }
+
+  /**
+   * Initialize the PIXI renderer with provided data: what needs the assets and the shared buffers, once boot is done
+   * (SST-1).
+   */
+  async initialize(data) {
+    if (this._bootPromise == null) throw new Error("WeedJS: the renderer got 'init' without 'boot' (its canvas comes with boot)");
+    await this._bootPromise;
+    if (this._bootError !== null) {
+      this.reportError('PIXI Initialization Failed', this._bootError);
+      return;
+    }
+    // DX-IGPUWARN: the GPU the page got, to the scene (scene.gpu) before this worker reports ready.
+    self.postMessage({
+      msg: 'gpuInfo',
+      backend: this._useWebGpu ? 'webgpu' : 'webgl',
+      name: this._gpuRendererName,
+      vendor: this._gpuVendor,
+      kind: this._gpuClass,
+    });
+    if (this.config?.manualStep && this.pixiApp.ticker) {
+      this.pixiApp.ticker.autoStart = false;
+      this.pixiApp.ticker.stop();
+    }
+
+    const sh = this._engineShaders;
+    const shaderFetches = [];
     // GPU particle layers (LAYER_KIND.GPU_PARTICLES): their programs, only in a scene that has one.
     if (data.gpuParticles?.layers?.length) {
       // A look layer drawn among the entities draws its finished target in regions (gpuParticleChunks.js).
@@ -8742,10 +8915,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           );
         }
       }
+      await Promise.all(shaderFetches);
+      loadMark('particle shaders fetched');
     }
-    await Promise.all(shaderFetches);
-    loadMark('shaders fetched');
-    this._initTilemapGidProgram();
 
     // Initialize stats buffer for writing metrics
     if (data.buffers.rendererStats) {
@@ -8758,7 +8930,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.worldHeight = data.config.worldHeight;
     this.canvasWidth = data.config.canvasWidth;
     this.canvasHeight = data.config.canvasHeight;
-    this.canvasView = data.view;
+    // The canvas came with boot at the page's size then; the page's size now, if it changed since.
+    const renderer = this.pixiApp.renderer;
+    if (renderer.width !== this.canvasWidth || renderer.height !== this.canvasHeight) {
+      this._applyResize(this.canvasWidth, this.canvasHeight);
+    }
     this._presentingFlag = data.presentingFlag || null;
     this.physicsWorkerIndex = data.config.spatial.numberOfSpatialWorkers;
 
@@ -8801,15 +8977,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       rendererConfig.autoGenerateMipmaps !== undefined
         ? !!rendererConfig.autoGenerateMipmaps
         : RENDERER_DEFAULTS.autoGenerateMipmaps;
-
-    const atlasScaleMode = rendererConfig.atlasScaleMode;
-    this.atlasScaleMode =
-      atlasScaleMode === 'nearest' || atlasScaleMode === 'linear'
-        ? atlasScaleMode
-        : RENDERER_DEFAULTS.atlasScaleMode;
-    // N-271: a nearest atlas snaps each sprite's origin to the pixel grid in its vertex shader (pixelSnap.js), before any
-    // sprite program is made from these sources; the packs leave the poses as they are.
-    if (this.atlasScaleMode === 'nearest') applyPixelSnap(this._engineShaders, this._useWebGpu);
+    // atlasScaleMode and N-271's pixel snap: read at boot, before any program was made.
 
     this.decorationFadeStartZoom =
       preCfg.startFadingDecorationsAtZoom !== undefined
@@ -8873,97 +9041,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // );
     }
 
-    // Create PIXI application (PixiJS 8 uses async init)
-    try {
-      this.pixiApp = new PIXI.Application();
-      loadMark('gpu device');
-      const weedGpu = this._useWebGpu ? await requestWeedGpu('high-performance') : null;
-      loadMark('pixi init');
-      await this.pixiApp.init({
-        width: this.canvasWidth,
-        height: this.canvasHeight,
-        resolution: 1,
-        canvas: this.canvasView, // v8 uses 'canvas' instead of 'view'
-        backgroundColor: 0x000000,
-        depth: true, // root present clears color and depth (Pixi clear defaults to ALL)
-        // Performance optimizations
-        powerPreference: 'high-performance',
-        preference: backend,
-        ...(weedGpu ? { gpu: { adapter: weedGpu.adapter, device: weedGpu.device } } : {}),
-      });
-
-      if (!this.pixiApp.renderer) {
-        throw new Error('PIXI.Application.init() succeeded but renderer is null');
-      }
-
-      const actualName = pixiRendererTypeName(this.pixiApp.renderer.type, PIXI.RendererType);
-      if (this._useWebGpu) {
-        if (this.pixiApp.renderer.type !== PIXI.RendererType.WEBGPU) {
-          throw errorPixiTypeMismatch(backend, actualName);
-        }
-        if (!this.pixiApp.renderer.gpu?.device) {
-          throw errorMissingGpuDevice();
-        }
-        const device = this.pixiApp.renderer.gpu.device;
-        device.addEventListener('uncapturederror', (ev) => {
-          console.error('WebGPU uncapturederror:', ev.error?.message || String(ev.error));
-        });
-        device.lost.then((info) => {
-          if (info && info.reason === 'destroyed') return;
-          const reason = info?.reason || 'unknown';
-          const message = info?.message || 'GPU device was lost';
-          this.reportError('WebGPU device lost', new Error(`${reason}: ${message}`));
-        });
-        this._bindWebGpuSwapchain();
-        // DX-IGPUWARN: the adapter's GPU, for scene.gpu (a throwaway WebGL context's name where the adapter's is unclear).
-        const gpu = webgpuGpu(this.pixiApp.renderer.gpu.adapter?.info ?? null, offscreenWebglRendererName);
-        this._gpuRendererName = gpu.name;
-        this._gpuVendor = gpu.vendor;
-        this._gpuClass = gpu.kind;
-      } else {
-        if (this.pixiApp.renderer.type !== PIXI.RendererType.WEBGL) {
-          throw errorPixiTypeMismatch(backend, actualName);
-        }
-        if (!this.pixiApp.renderer.gl) {
-          throw new Error(
-            'WeedJS: This scene requested renderer.backend "webgl", but the WebGL context is missing.'
-          );
-        }
-        // E-502: E-448's opaque pass stays off on Intel's integrated and tile-based GPUs, unless debug.opaquePass says.
-        this._gpuRendererName = webglRendererName(this.pixiApp.renderer.gl);
-        this._gpuClass = gpuClassOf(this._gpuRendererName);
-        this._gpuVendor = gpuVendorOf(this._gpuRendererName);
-        this._opaqueOn = opaquePassOn(this.config?.debug?.opaquePass, this._gpuClass, this._gpuVendor);
-        debugWorkerLog(`PIXI WORKER: GPU "${this._gpuRendererName}" (${this._gpuClass}), opaque pass ${this._opaqueOn}`);
-      }
-      // DX-IGPUWARN: the GPU the page got, to the scene (scene.gpu) before this worker reports ready.
-      self.postMessage({
-        msg: 'gpuInfo',
-        backend: this._useWebGpu ? 'webgpu' : 'webgl',
-        name: this._gpuRendererName,
-        vendor: this._gpuVendor,
-        kind: this._gpuClass,
-      });
-    } catch (error) {
-      this.reportError('PIXI Initialization Failed', error);
-      return;
-    }
-
-    this._takePresentOwnership();
-
-    if (this.config?.manualStep && this.pixiApp.ticker) {
-      this.pixiApp.ticker.autoStart = false;
-      this.pixiApp.ticker.stop();
-    }
-
-    // Enable z-index based sorting on the stage
-    this.pixiApp.stage.sortableChildren = true;
-
-    // Hook into WebGL context for draw call monitoring and context loss
-    this.setupWebGLHooks();
-
-    this.reportLog('finished initializing pixi app');
-    loadMark('pixi init end');
     // Load simple textures
     this.loadTextures(data.textures);
     this.reportLog('finished loading textures');
