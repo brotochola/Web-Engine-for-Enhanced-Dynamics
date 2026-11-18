@@ -11,7 +11,7 @@
 // nothing is). The keys, listed in the panel, switch a part on and off to compare.
 //
 //   ?maps=0       no height or normal maps (lit as the floor, as before)
-//   ?sun=sprite   the sun's shadows as sprites on the shadows' layer, instead of its shadow map
+//   ?sun=layer    the sun's shadows painted on the shadows' layer (lighting.sunShadows 'layer'), instead of its shadow map
 //   ?self=0       no self-shadow
 //   ?pixel=0      smooth light and shadows (lighting.pixelArt off): each world pixel is lit whole by default
 //   ?hour=        the sun's hour (default 16)
@@ -44,7 +44,7 @@ const { ShapeType } = enums;
 
 const param = (k) => WEED.params?.get(k) ?? null;
 const MAPS = param('maps') !== '0';
-const SUN_MAP = param('sun') !== 'sprite';
+const SUN_MAP = param('sun') !== 'layer';
 const SELF = param('self') !== '0';
 const PIXEL_ART = param('pixel') !== '0';
 const STILL = param('still') === '1';
@@ -311,7 +311,7 @@ export class LightBenchScene extends Scene {
       ...(FLOOR !== null ? { floorScaleY: FLOOR } : {}),
       ...(HEIGHT !== null ? { heightScaleY: HEIGHT } : {}),
     },
-    // The grass under the sprite shadows' layer (zIndex 2), so both kinds of sun shadow show on it.
+    // The grass under the shadows' layer (zIndex 2), so both kinds of sun shadow show on it.
     layers: { ground: { kind: LAYER_KIND.TILING, texture: 'pasto', tileScale: 1, parallax: 1, zIndex: 0 } },
     lighting: {
       enabled: true,
@@ -325,9 +325,9 @@ export class LightBenchScene extends Scene {
       resolution: RES,
       shadowResolution: RES,
       shadowsEnabled: true,
-      sunShadows: SUN_MAP ? 'map' : 'sprite',
+      sunShadows: SUN_MAP ? 'map' : 'layer',
       footprintSolids: SWEEP,
-      lampShadows: LAMP_MAP ? 'map' : 'sprite',
+      lampShadows: LAMP_MAP ? 'map' : 'layer',
       selfShadow: SELF,
       // Each world pixel lit whole, the maps read with one tap: the shadows crisp on the art's pixels, as the prototype's.
       pixelArt: PIXEL_ART,
@@ -408,7 +408,7 @@ export class LightBenchScene extends Scene {
 
   update(dtRatio, dt) {
     if (Keyboard.isPressed('m')) this._reload('maps', MAPS ? '0' : '1');
-    if (Keyboard.isPressed('u')) this._reload('sun', SUN_MAP ? 'sprite' : 'map');
+    if (Keyboard.isPressed('u')) this._reload('sun', SUN_MAP ? 'layer' : 'map');
     if (Keyboard.isPressed('o')) this._reload('self', SELF ? '0' : '1');
     if (Keyboard.isPressed('l')) this._reload('lampMap', LAMP_MAP ? '0' : '1');
     if (Keyboard.isPressed('p')) this._reload('depth', DEPTH === false ? '1' : '0');
@@ -822,15 +822,15 @@ export class LightBenchScene extends Scene {
       onChange: (v) => this._reload('res', v),
     });
     scene.select({
-      label: "Sun's shadows", value: SUN_MAP ? 'map' : 'sprite',
-      options: [['map', 'shadow map'], ['sprite', 'cards (sprites)']],
-      note: "lighting.sunShadows: 'map' takes out the sun alone and falls on what has height; 'sprite' draws cards on the " +
+      label: "Sun's shadows", value: SUN_MAP ? 'map' : 'layer',
+      options: [['map', 'shadow map'], ['layer', 'cards on the layer']],
+      note: "lighting.sunShadows: 'map' takes out the sun alone and falls on what has height; 'layer' paints cards on the " +
         "shadows' layer, darkening every light. [U]",
       onChange: (v) => this._reload('sun', v),
     });
     scene.select({
-      label: "Lamps' shadows", value: LAMP_MAP ? 'map' : 'sprite',
-      options: [['map', 'shadow map a lamp'], ['sprite', 'stamps']],
+      label: "Lamps' shadows", value: LAMP_MAP ? 'map' : 'layer',
+      options: [['map', 'shadow map a lamp'], ['layer', 'stamps on the layer']],
       note: "lighting.lampShadows: 'map' gives each lamp that casts a tile of its own: two lamps light each other's " +
         "shadows, and the height of the lamp (elevation) is in the shadow's length. [L]",
       onChange: (v) => this._reload('lampMap', v === 'map' ? '1' : '0'),

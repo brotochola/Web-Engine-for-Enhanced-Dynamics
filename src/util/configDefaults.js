@@ -789,18 +789,19 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   keyedCasters: true,
   /**
-   * DX-SHADOW3D: how the sun casts the ShadowCasters' shadows. 'sprite' (default): each caster's card on the shadows'
-   * layer, darkening every light. 'map': a shadow map in the floor's terms (src/render/sunShadowMap.js) that takes out the
-   * sun alone, falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit.
+   * DX-SHADOW3D: where the sun's ShadowCaster shadows are drawn. 'layer' (default): each caster's card painted on the
+   * shadows' layer, darkening every light. 'map': a shadow map in the floor's terms (src/render/sunShadowMap.js) that takes
+   * out the sun alone, falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit. Any other
+   * value warns (Pixi's lighting set-up) and draws on the layer.
    */
-  sunShadows: 'sprite',
+  sunShadows: 'layer',
   /**
-   * DX-SHADOW3D (F7): how the lamps cast them. 'sprite' (default): each caster stamped on the shadows' layer, stretched
-   * away from its lamp. 'map': a shadow map a lamp in the floor's terms (src/render/lampShadowMap.js, one tile each in an
-   * atlas, the lights maxShadowCastingLights picks) that takes out that lamp's light alone, with the caster's height and
-   * the lamp's (LightEmitter.elevation) in the shadow's length.
+   * DX-SHADOW3D (F7): where the lamps' shadows are drawn. 'layer' (default): each caster stamped on the shadows' layer,
+   * stretched away from its lamp. 'map': a shadow map a lamp in the floor's terms (src/render/lampShadowMap.js, one tile
+   * each in an atlas, the lights maxShadowCastingLights picks) that takes out that lamp's light alone, with the caster's
+   * height and the lamp's (LightEmitter.elevation) in the shadow's length. Any other value warns and stamps on the layer.
    */
-  lampShadows: 'sprite',
+  lampShadows: 'layer',
   /**
    * DX-SHADOW3D: a render with a footprint in its sheet's json (meta.footprints) casts its solid swept north to it at
    * each cell's own height, as the light bench's heightmap did (light under a table), instead of columns down to the

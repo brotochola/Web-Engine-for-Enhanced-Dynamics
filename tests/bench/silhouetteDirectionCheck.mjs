@@ -8,7 +8,7 @@
  * its middle is the base's centre, one ellipse radius north of the lowest row. The control faces the person east,
  * towards the sun, which then sees the front: 30 px.
  *
- *   node tests/bench/silhouetteDirectionCheck.mjs [--backend webgl|webgpu|both] [--tolerance 1.5] [--sun-shadows map|sprite]
+ *   node tests/bench/silhouetteDirectionCheck.mjs [--backend webgl|webgpu|both] [--tolerance 1.5] [--sun-shadows map|layer]
  *     [--save dir] [--headless] [--wait-ms 3000] [--query k=v]
  *
  * Measured on the floor west of the person, column by column (the median over the columns), with the formula's two
@@ -21,7 +21,7 @@ import { FLOOR_SCALE_Y as G, HEIGHT_SCALE_Y as C, PICTURES, pictureBase, picture
 import { SILHOUETTE as L } from './checks/layouts.js';
 import { captureStill, parseCheckCli, queryOf, sunGeometry, sunRgb, verdict, withCheckBrowser } from './checks/checkLib.mjs';
 
-const USAGE = 'node tests/bench/silhouetteDirectionCheck.mjs [--backend webgl|webgpu|both] [--tolerance 1.5] [--sun-shadows map|sprite] [--save dir] [--headless]';
+const USAGE = 'node tests/bench/silhouetteDirectionCheck.mjs [--backend webgl|webgpu|both] [--tolerance 1.5] [--sun-shadows map|layer] [--save dir] [--headless]';
 
 /** The frame each facing shows the sun in the east: south shows it the side, east the front. */
 const CASES = [

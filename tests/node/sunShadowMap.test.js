@@ -1,5 +1,5 @@
 // DX-SHADOW3D (the sun's map) on real code: the sun's terms, where a caster's picture point lands, the map's vertex
-// shader made from the sprite shadows' one, and the light pass's blocks for it.
+// shader made from the layer shadows' one, and the light pass's blocks for it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -48,7 +48,7 @@ test('the sun\'s shift stops at the longest shadow it is given (Sun.shadowMaxLen
   close(high[0], 1, 1e-6, 'a shadow shorter than the cap keeps its length');
 });
 
-test('the sprite shadows\' sun card stands on the frame\'s lowest opaque row, not on the anchor', () => {
+test('the layer shadows\' sun card stands on the frame\'s lowest opaque row, not on the anchor', () => {
   const src = shader('instancedSpriteShadow.vert.glsl');
   // The trim's bottom (the lowest opaque row): heights count up from it, and the foot is where it is drawn.
   assert.match(src, /float bottom = aInstTrim\.y \+ aInstTrim\.w;/);
@@ -80,7 +80,7 @@ test('a picture point lands its height times the terms away, on the floor drawn 
   close(side.x, 106, 1e-9);
 });
 
-test('the map\'s vertex shader is the sprite shadows\' with the same sun card, its height passed on', () => {
+test('the map\'s vertex shader is the layer shadows\' with the same sun card, its height passed on', () => {
   const src = sunMapVertex(shader('instancedSpriteShadow.vert.glsl'));
   assert.match(src, /uniform vec4 uSunK;/);
   assert.match(src, /out float vSunZ;/);
@@ -114,8 +114,9 @@ test('the light pass keeps its old sun term without the map and takes the map\'s
   assert.doesNotMatch(on, /totalLight \+= sunColor \* uSunIntensity;/);
 });
 
-test('lighting.sunShadows is a key, sprite by default', () => {
-  assert.equal(LIGHTING_DEFAULTS.sunShadows, 'sprite');
+test('lighting.sunShadows and lampShadows are keys, the layer by default', () => {
+  assert.equal(LIGHTING_DEFAULTS.sunShadows, 'layer');
+  assert.equal(LIGHTING_DEFAULTS.lampShadows, 'layer');
   assert.deepEqual(unknownConfigKeys({ lighting: { sunShadows: 'map' } }), []);
 });
 
@@ -165,13 +166,13 @@ test('a caster with a height map casts columns: each cell where it is in 3D, the
       'if (sunKind >= 3 || sunKind == 2 || (sunKind == 0 && aInstBase.x < 0.0 && aInstBase.y >= 0.0)) {',
     ),
   );
-  // Drawn on the sprite shadows' layer: the shadow's colour and opacity, no height.
+  // Drawn on the shadows' layer: the shadow's colour and opacity, no height.
   const flat = sunMapColumnsVertex(shader('instancedSpriteShadow.vert.glsl'), SUN_MAP_COLUMNS, { heights: false });
   assert.match(flat, /vColor = vec4\(0\.0, 0\.0, 0\.0, uSun\.w \* castOpacity\);/);
   assert.doesNotMatch(flat, /vSunZ/);
 });
 
-test('WebGPU: the map\'s and the solids\' WGSL come from the sprite shadows\' WGSL as the GLSL ones do', async () => {
+test('WebGPU: the map\'s and the solids\' WGSL come from the layer shadows\' WGSL as the GLSL ones do', async () => {
   const { SUN_MAP_COLUMNS, sunMapWgsl, sunMapColumnsWgsl } = await import('../../src/render/sunShadowMap.js');
   const { sunShadowGpuProgram } = await import('../../src/render/webgpu/instancedSpriteWgsl.js');
   const { lightingGpuProgram } = await import('../../src/render/webgpu/pixiMeshWgsl.js');

@@ -239,7 +239,7 @@ export const ENGINE_FEATURES = [
   },
   {
     id: 'spotLights',
-    name: 'Headlights (cone lights, sprite shadows)',
+    name: 'Headlights (cone lights, layer shadows)',
     module: 'src/workers/pixiWorker.js',
     scene: {
       key: 'spotLights',

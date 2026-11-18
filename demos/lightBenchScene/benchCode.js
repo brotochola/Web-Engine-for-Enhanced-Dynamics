@@ -195,8 +195,8 @@ export function sceneCode(s) {
   out.push('  lighting: {');
   out.push(line(4, `enabled: true, shadowsEnabled: true, baseAmbient: ${num(s.ambient)},`));
   out.push(line(4, `resolution: ${num(s.resolution)}, shadowResolution: ${num(s.resolution)},`, 'the light pass and the shadows, × canvas'));
-  out.push(line(4, `sunShadows: '${s.sunMap ? 'map' : 'sprite'}',`, s.sunMap ? 'the sun\'s shadow map: it takes out the sun alone' : 'cards on the shadows\' layer'));
-  out.push(line(4, `lampShadows: '${s.lampMap ? 'map' : 'sprite'}',`, s.lampMap ? 'a shadow map a lamp' : 'stamps on the shadows\' layer'));
+  out.push(line(4, `sunShadows: '${s.sunMap ? 'map' : 'layer'}',`, s.sunMap ? 'the sun\'s shadow map: it takes out the sun alone' : 'cards on the shadows\' layer'));
+  out.push(line(4, `lampShadows: '${s.lampMap ? 'map' : 'layer'}',`, s.lampMap ? 'a shadow map a lamp' : 'stamps on the shadows\' layer'));
   out.push(line(4, `selfShadow: ${s.self},`, 'what has height shades itself'));
   if (!s.sweep) out.push(line(4, 'footprintSolids: false,', 'solids as columns down to the floor'));
   out.push(line(4, 'sun: { enabled: true, shadowAlpha: 0.7, shadowStretchAlphaFactor: 0 },'));

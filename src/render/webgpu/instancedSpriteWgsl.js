@@ -39,7 +39,7 @@ export function instancedSpriteShadowGpuProgram(GpuProgram, source, name) {
  * `maps`, the atlas's twin page as binding 5 (a column's height); with `lampTiles` (F7, the lamps' map, lampShadowMap.js)
  * the tiles' lamps as binding 6.
  * @param {string} fragEntry 'mainFragMap' (the map: the height), 'mainFragLamp' (the lamps' map) or 'mainFrag' (the
- *   sprite shadows' layer)
+ *   shadows' layer)
  */
 export function sunShadowGpuProgram(GpuProgram, source, fragEntry, name, { maps = false, lampTiles = false } = {}) {
   if (!source) {

@@ -77,7 +77,7 @@ test('N-212: the adaptive budget is the stamps\' only, not the lamps\' map\'s', 
   const { adaptiveStampBudget } = await load();
   assert.equal(adaptiveStampBudget({}), true, 'on by default');
   assert.equal(adaptiveStampBudget(undefined), true);
-  assert.equal(adaptiveStampBudget({ lampShadows: 'sprite' }), true);
+  assert.equal(adaptiveStampBudget({ lampShadows: 'layer' }), true);
   assert.equal(adaptiveStampBudget({ adaptiveShadowBudget: false }), false);
   assert.equal(adaptiveStampBudget({ lampShadows: 'map' }), false, 'the map\'s tiles keep their size whatever the zoom');
 });

@@ -1345,7 +1345,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | You want | You write |
 | --- | --- |
 | A lamp | `this.lightEmitter.radius = 300` (px it reaches) and `color = 0xffcc88` |
-| A dimmer or an overbright light | `brightness = 0.5` (default 1; it scales the colour and the halo, and under 1 lightens its sprite shadows too) |
+| A dimmer or an overbright light | `brightness = 0.5` (default 1; it scales the colour and the halo, and under 1 lightens its layer shadows too) |
 | A halo on the bulb | `glow = 0.6` (default 0: none), `glowOffsetY = -40` (40 px up the screen), `glowLayer = 'glows'` |
 | A small halo on a lamp that lights a whole street | `glowRadius = 30` (px, the glow you see; default 0: the light's wide gradient at 0.85 of its radius) |
 | Halos hidden by what stands in front of their lamp, and not darkened at night | `lighting.lightGlow: 'sprite'` (each halo drawn right after its entity's sprite, unshaded) |
@@ -1383,7 +1383,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 
 The Headlights demo (`demos/headlightsScene/`) puts most of this table on one street at night, under raycasted lighting: cone headlights on carScene's cars, round lamps, houses with a volume for the sun and a wall for the beams, and a key for each field. The light bench (`demos/lightBenchScene/`) does the same for the 3D light mode: a farm of props rendered from 32 directions, cars, trees, a person you walk with WASD and lamps, each piece on a key to compare.
 
-A light's falloff is `I / (I + d²)` with `I = (radius / 10)²`, on the floor, times `(1 - (d / radius)⁴)²`: full at its centre, nothing at its radius and past it, where it is culled; its shadows fade out with it. The camera picks what stops a lamp. Any camera but a flat one (no `pitch`, or an oblique one) lights with basic lighting: the sprite shadows of `ShadowCaster`s, stamped for the `lighting.maxShadowCastingLights` lights nearest the camera (or drawn into each one's shadow map with `lighting.lampShadows: 'map'`). A flat view, `camera.pitch` 90 (straight down) or 0 (from the side), lights with raycasted lighting: the walls (`shadowCaster.setWall()`) cut a visibility polygon for each light (no sprite shadows from lamps, and no faces).
+A light's falloff is `I / (I + d²)` with `I = (radius / 10)²`, on the floor, times `(1 - (d / radius)⁴)²`: full at its centre, nothing at its radius and past it, where it is culled; its shadows fade out with it. The camera picks what stops a lamp. Any camera but a flat one (no `pitch`, or an oblique one) lights with basic lighting: the layer shadows of `ShadowCaster`s, stamped for the `lighting.maxShadowCastingLights` lights nearest the camera (or drawn into each one's shadow map with `lighting.lampShadows: 'map'`). A flat view, `camera.pitch` 90 (straight down) or 0 (from the side), lights with raycasted lighting: the walls (`shadowCaster.setWall()`) cut a visibility polygon for each light (no layer shadows from lamps, and no faces).
 
 ```javascript
 class StreetLamp extends GameObject {
@@ -1398,7 +1398,7 @@ class StreetLamp extends GameObject {
     light.glow = 0.5;
     light.glowOffsetY = -110;  // the halo on the bulb
     light.glowRadius = 24;     // a glow 24 px round the bulb (left at 0, the wide gradient at 0.85 of the 900 px radius)
-    light.shadowRange = 500;   // its sprite shadows stop at 500 px
+    light.shadowRange = 500;   // its layer shadows stop at 500 px
   }
 }
 ```
@@ -1635,11 +1635,11 @@ static assets = {
 
 ### The sun's shadows: `lighting.sunShadows`
 
-By default (`'sprite'`) a ShadowCaster's sun shadow is drawn on the `castedShadows` layer, under the entities, and it darkens every light by `Sun.shadowOpacity`: the sun's `shadowAlpha`, times its intensity, and lighter for a long shadow by `shadowStretchAlphaFactor`. With `sunShadows: 'map'` the sun draws its casters into a shadow map instead, and the light pass looks each pixel up in it:
+By default (`'layer'`) a ShadowCaster's sun shadow is drawn on the `castedShadows` layer, under the entities, and it darkens every light by `Sun.shadowOpacity`: the sun's `shadowAlpha`, times its intensity, and lighter for a long shadow by `shadowStretchAlphaFactor`. With `sunShadows: 'map'` the sun draws its casters into a shadow map instead, and the light pass looks each pixel up in it:
 
 - the sun's shadow takes out the sun alone: a lamp still lights the ground inside it;
 - it falls on what has height where that is: the shadow of a pillar climbs a crate's front and stops at its lid, if the crate is a face or has a height map;
-- it takes out `Sun.shadowAlpha` (0 to 1) of the sun's light, the same share at every hour and for a long shadow as for a short one; the light bench uses `shadowAlpha: 0.7`, with `shadowStretchAlphaFactor: 0` so that long shadows are not lighter in `'sprite'` mode either;
+- it takes out `Sun.shadowAlpha` (0 to 1) of the sun's light, the same share at every hour and for a long shadow as for a short one; the light bench uses `shadowAlpha: 0.7`, with `shadowStretchAlphaFactor: 0` so that long shadows are not lighter in `'layer'` mode either;
 - it costs one map a frame whatever the number of casters, at `lighting.shadowResolution` of the canvas.
 
 ```javascript
@@ -1656,7 +1656,7 @@ static config = {
 
 In both modes a picture of one view casts a card: the picture standing on its base, facing the sun, cut out by its alpha. The base is measured from the frame when the atlas is packed: the lowest opaque row (the feet, the foot of a trunk), or, for a render that casts its card, its contact nearest the light (the wheels, the legs). The card falls along the sun's ray with the sun's real elevation, no longer than `shadowMaxLengthRatio` times its height. A render with a height map casts its solid: each pixel where it is in 3D, so a barn's shadow is the barn's, not its picture's. A `DirectionalSprite` casts the frame the sun sees: a person walking towards the camera with the sun to its side casts the shadow of its profile. A solid keeps the view the camera sees, since it is already the object in 3D. What casts which, and how to change it, is the next section.
 
-A ShadowCaster's volume (`setBox`, `addLevel`, `setHull`) casts into the map. Map mode does not work with raycasted lighting (it warns and keeps `'sprite'`).
+A ShadowCaster's volume (`setBox`, `addLevel`, `setHull`) casts into the map. Map mode does not work with raycasted lighting (it warns and keeps `'layer'`).
 
 ### How each asset casts, and how an entity changes it: `ShadowCaster`
 
@@ -1698,7 +1698,7 @@ class Hedge extends GameObject {
 - `setSprite(options)` casts its card, `setHeightMap()` its solid (it needs the sheet's `heightMap`), `clear()` nothing. The same three are on `shadowCaster.sun` and `shadowCaster.lamps`, with `sun.setBox` (a volume for the sun alone) and `lamps.setWall` (a wall for the lamps alone), below.
 - `setSprite`'s options shape the card, for every light that casts it: `heightScale` its height, times (1 by default, 0 casts none); `frame` another frame of the atlas as the silhouette, with `scaleX` / `scaleY` its scale and `anchorX` / `anchorY` its own anchor (left out, the sprite's); while a caster uses one, the shadows come from pre-render's full caster rows (a pass over them, the keyed paths off those frames); without a frame, `anchorX` / `anchorY` move the card's foot from the sprite's anchor, in fractions of the sprite, a rare case since the base is measured.
 - `setSprite({ orient: 'fixed' })` stands the card along the object through its anchor and shows the object face on, for every light: a fence or a wall, whose card turned to face the light is right only when the light is across it. The card runs across where the entity faces (a DirectionalSprite's `facing` turned a quarter; along the screen without one). `orient: 'light'` turns it back. It is one value for the entity, kept until set again.
-- `opacity` (0 to 1, 1 at spawn) is how much light it takes out. The sprite shadows read it (the sun's in `'sprite'` mode, the lamps' stamps), and so does a wall; the shadow maps do not yet.
+- `opacity` (0 to 1, 1 at spawn) is how much light it takes out. The layer shadows read it (the sun's in `'layer'` mode, the lamps' stamps), and so does a wall; the shadow maps do not yet.
 - `baseRadius` (px, 0 at spawn: the base measured from the frame) corrects the base its card stands on, and `selfShadow` (`true`, `false` or `'auto'`, the asset's way) whether it shades itself. Both are kept for the 3D shadows.
 - `type` reads what the sun casts: `'sprite'`, `'heightMap'`, `'box'`, `'hull'`, `'wall'` or `'none'`. With nothing set it is the sheet's way: `'heightMap'` for a render that casts its solid, else `'sprite'`.
 - `CAST_KIND` (`AUTO`, `SPRITE`, `HEIGHT_MAP`, `BOX`, `HULL`, `WALL`, `NONE`) holds the values of the columns `ShadowCaster.sunKind` and `ShadowCaster.lampKind`, for code that reads them in bulk. A spawn sets both to `AUTO`, the sheet's way.
@@ -1751,7 +1751,7 @@ A render whose json carries a floor polygon a frame around its anchor (`meta.foo
 
 ### The lamps' shadows from a shadow map: `lighting.lampShadows: 'map'`
 
-By default a lamp stamps each caster's shadow on the `castedShadows` layer, stretched away from it, and the stamp darkens every light. With `lampShadows: 'map'` each lamp that casts gets a shadow map of its own, a square tile in an atlas, and the light pass takes out that lamp's light alone where something stands between it and the pixel: two lamps light each other's shadows, the sun's shadow does not dim a lamp, and a lamp's shadow falls on what has height.
+By default (`'layer'`) a lamp stamps each caster's shadow on the `castedShadows` layer, stretched away from it, and the stamp darkens every light. With `lampShadows: 'map'` each lamp that casts gets a shadow map of its own, a square tile in an atlas, and the light pass takes out that lamp's light alone where something stands between it and the pixel: two lamps light each other's shadows, the sun's shadow does not dim a lamp, and a lamp's shadow falls on what has height.
 
 ```javascript
 static config = {
@@ -1933,7 +1933,7 @@ class Hero extends GameObject {
 }
 ```
 
-In basic lighting a cone light stamps sprite shadows only from the `ShadowCaster`s inside its cone (fainter on its soft edge), so a car's headlights cast nothing behind it. Under raycasted lighting the walls cut the cone as they cut a round light, and the light on the walls themselves follows the cone too. The halo (`glow`) stays round: it is the bulb, not the beam.
+In basic lighting a cone light stamps layer shadows only from the `ShadowCaster`s inside its cone (fainter on its soft edge), so a car's headlights cast nothing behind it. Under raycasted lighting the walls cut the cone as they cut a round light, and the light on the walls themselves follows the cone too. The halo (`glow`) stays round: it is the bulb, not the beam.
 
 ### The sun and the night
 

@@ -81,7 +81,7 @@ export class HeadlightsScene extends Scene {
       baseAmbient: 0.05,
       maxLights: 32, // 7 lamps and up to 25 cars in view
       maxVolumes: HOUSES + CARS, // each house's box and each car's body and cabin
-      shadowsEnabled: true, // the sun's shadows (the volumes), and the lamps' sprite shadows with ?raycast=0
+      shadowsEnabled: true, // the sun's shadows (the volumes), and the lamps' layer shadows with ?raycast=0
       sun: {
         enabled: true,
         dayCycle: { enabled: false }, // the hour only moves with N (create sets it)
@@ -270,7 +270,7 @@ export class HeadlightsScene extends Scene {
     panel.show('v', deg(APERTURES[this._aperture]));
     panel.show('f', String(SOFTNESS[this._softness]));
     panel.show('b', String(BRIGHTNESS[this._brightness]));
-    panel.show('k', !RAYCAST ? (this._castShadows ? 'on (sprite shadows)' : 'off') : this._castShadows ? 'on' : 'off');
+    panel.show('k', !RAYCAST ? (this._castShadows ? 'on (layer shadows)' : 'off') : this._castShadows ? 'on' : 'off');
     panel.show('r', SHADOW_RANGES[this._shadowRange] === 0 ? 'the radius' : `${SHADOW_RANGES[this._shadowRange]} px`);
     panel.show('g', this._lampGlow ? String(LAMP.glow) : '0');
     panel.show('n', `${Math.floor(Sun.hour)}:00`);

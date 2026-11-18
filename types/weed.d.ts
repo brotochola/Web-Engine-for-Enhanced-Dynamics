@@ -325,20 +325,21 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   /** shadowCaster.setSprite({ frame }) works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
   keyedCasters?: boolean;
   /**
-   * DX-SHADOW3D: how the sun casts. 'sprite' (default): each caster's shadow on the shadows' layer, darkening every light
-   * by Sun.shadowOpacity. 'map': a shadow map in the floor's terms that takes out the sun's light alone (Sun.shadowAlpha
-   * of it), falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit; a ShadowCaster's
-   * volume (setBox, setHull) casts into it. Either mode: a picture of one view casts its card, a render with a height map
-   * its solid (the sheet and the entity can say otherwise: ShadowCaster).
+   * DX-SHADOW3D: where the sun's shadows are drawn. 'layer' (default): each caster's shadow painted on the shadows' layer,
+   * darkening every light by Sun.shadowOpacity. 'map': a shadow map in the floor's terms that takes out the sun's light
+   * alone (Sun.shadowAlpha of it), falls on what has height (faces, sprites with maps) where it is, and leaves the lamps
+   * lit; a ShadowCaster's volume (setBox, setHull) casts into it. Either mode: a picture of one view casts its card, a
+   * render with a height map its solid (the sheet and the entity can say otherwise: ShadowCaster).
    */
-  sunShadows?: 'sprite' | 'map';
+  sunShadows?: 'layer' | 'map';
   /**
-   * DX-SHADOW3D (F7): how the lamps cast. 'sprite' (default): each caster stamped on the shadows' layer, stretched away from
-   * its lamp. 'map': a shadow map a lamp (a square tile each in an atlas, for the maxShadowCastingLights lamps nearest the
-   * camera) that takes out that lamp's light alone; the caster's height and the lamp's LightEmitter.elevation make the
-   * shadow's length, and a lamp at elevation 0 casts none. WebGL and WebGPU; not with raycasted lighting.
+   * DX-SHADOW3D (F7): where the lamps' shadows are drawn. 'layer' (default): each caster stamped on the shadows' layer,
+   * stretched away from its lamp. 'map': a shadow map a lamp (a square tile each in an atlas, for the
+   * maxShadowCastingLights lamps nearest the camera) that takes out that lamp's light alone; the caster's height and the
+   * lamp's LightEmitter.elevation make the shadow's length, and a lamp at elevation 0 casts none. WebGL and WebGPU; not
+   * with raycasted lighting.
    */
-  lampShadows?: 'sprite' | 'map';
+  lampShadows?: 'layer' | 'map';
   /** Texels a side of a lamp's tile in the lamps' map, 32 to 1024 (default 256). The tile spans the lamp's radius. */
   lampShadowTile?: number | 'auto';
   /**
@@ -4228,7 +4229,7 @@ export declare class LightEmitter extends Component {
    */
   static radius: Float32Array;
   /**
-   * Times the colour and the glow. 1 by default. Under 1 its sprite shadows (basic lighting) are that much lighter too:
+   * Times the colour and the glow. 1 by default. Under 1 its layer shadows (basic lighting) are that much lighter too:
    * a light at 0.5 casts shadows of half the darkness.
    */
   static brightness: Float32Array;
@@ -4254,12 +4255,12 @@ export declare class LightEmitter extends Component {
   static offsetX: Float32Array;
   static offsetY: Float32Array;
   /**
-   * 1 (the default) casts point shadows: sprite shadows in basic lighting, occluders under raycast. 0 lights the scene
+   * 1 (the default) casts point shadows: layer shadows in basic lighting, occluders under raycast. 0 lights the scene
    * and casts nothing, which costs less.
    */
   static castShadows: Uint8Array;
   /**
-   * How far its shadows reach, in px; 0 (the default) is its radius. Sprite shadows in basic lighting, occluders under
+   * How far its shadows reach, in px; 0 (the default) is its radius. Layer shadows in basic lighting, occluders under
    * raycast (the light finds them itself: no Collider.visualRange to set, unless its class reads its neighbours, whose
    * list stays what its visualRange gives; the light's occluders are then within it), and with lighting.lampShadows
    * 'map' the span of its tile: past it the lamp lights without shadows, which fade out over the last fifth. A shorter
@@ -4443,8 +4444,8 @@ export declare class ShadowCaster extends Component {
   /** The setters for the lamps (and headlights) alone. */
   readonly lamps: ShadowCasterLightSide;
   /**
-   * How much light it takes out, 0 to 1 (1 at spawn); a wall takes that much out of a lamp. The sprite shadows read it
-   * (the sun's in 'sprite' mode, the lamps' stamps); the shadow maps do not yet.
+   * How much light it takes out, 0 to 1 (1 at spawn); a wall takes that much out of a lamp. The layer shadows read it
+   * (the sun's in 'layer' mode, the lamps' stamps); the shadow maps do not yet.
    */
   get opacity(): number;
   set opacity(value: number);

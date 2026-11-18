@@ -1142,8 +1142,8 @@ class PixiRenderer extends AbstractWorker {
     // its own; as a child it draws with max.
     this._sunMapHost = null;
     this._sunMapColumns = null; // { shader, grid, meshes: one a caster geometry } (sunMapColumnsVertex)
-    // DX-SHADOW3D: sprite shadows in a scene with height maps (WebGL): cards that skip mapped frames, and the columns of
-    // the mapped ones on the sprite shadows' layer (max blending). { cards, columns } once made (_drawSunSolids).
+    // DX-SHADOW3D: layer shadows in a scene with height maps (WebGL): cards that skip mapped frames, and the columns of
+    // the mapped ones on the shadows' layer (max blending). { cards, columns } once made (_drawSunSolids).
     this._sunSolids = null;
     this._sunMapUniforms = null;
     this._sunMapTerms = new Float32Array(4);
@@ -2475,7 +2475,7 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * DX-SHADOW3D: every program that binds the footprints (uFoot) on the current source: the sprite shadows' columns, the
+   * DX-SHADOW3D: every program that binds the footprints (uFoot) on the current source: the layer shadows' columns, the
    * sun map's and the lamps' map's (their layouts name binding 7 whether or not their WGSL reads it).
    */
   _pointFootPrograms() {
@@ -7080,7 +7080,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return mesh;
   }
 
-  /** DX-SHADOW3D: the sun's shadow map, the size of the sprite shadows' layer, bound to the light pass. */
+  /** DX-SHADOW3D: the sun's shadow map, the size of the shadows' layer, bound to the light pass. */
   _createSunMap(width, height) {
     if (this.sunMapRT) this.sunMapRT.destroy(true);
     this.sunMapRT = PIXI.RenderTexture.create({ width, height, scaleMode: 'nearest' });
@@ -8047,7 +8047,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     const geometry = new PIXI.Geometry({ attributes, indexBuffer: columns.index });
     const mesh = new PIXI.Mesh({ geometry, shader: columns.shader, state: columns.state, label: columns.label });
-    // Max blending (the sprite shadows' solids), so overlapping columns are one shadow; the maps' columns keep their
+    // Max blending (the layer shadows' solids), so overlapping columns are one shadow; the maps' columns keep their
     // highest by a depth test instead (columns.blendMode 'none'). A mesh's own blend mode holds only as a child.
     mesh.blendMode = columns.blendMode || 'max';
     const host = new PIXI.Container();
@@ -8072,15 +8072,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     };
   }
 
-  /** DX-SHADOW3D: whether the sprite shadows cast solids: the atlas has height maps (and the backend's shadow source). */
+  /** DX-SHADOW3D: whether the layer shadows cast solids: the atlas has height maps (and the backend's shadow source). */
   _sunSolidsOn() {
     return this.atlasMapsSource !== null && Boolean(this._useWebGpu ? this._engineShaders?.shadowWgsl : this._engineShaders?.shadowVert);
   }
 
   /**
    * DX-SHADOW3D: a sun shadow pass's program as a Shader's options: 'map' (the sun map's cards: heights), 'mapColumns'
-   * (a render's columns into the map), 'cards' (the sprite shadows' cards, a render's frames skipped) or 'columns' (a
-   * render's solid on the sprite shadows' layer). GLSL on WebGL (sunMapVertex / sunMapColumnsVertex), WGSL on WebGPU
+   * (a render's columns into the map), 'cards' (the layer shadows' cards, a render's frames skipped) or 'columns' (a
+   * render's solid on the shadows' layer). GLSL on WebGL (sunMapVertex / sunMapColumnsVertex), WGSL on WebGPU
    * (sunMapWgsl / sunMapColumnsWgsl).
    * @param {'map'|'mapColumns'|'cards'|'columns'} kind
    */
@@ -8103,7 +8103,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * DX-SHADOW3D: the sun's sprite shadows in a scene with height maps, as the light bench cast them: a frame with a height
+   * DX-SHADOW3D: the sun's layer shadows in a scene with height maps, as the light bench cast them: a frame with a height
    * map casts its solid (the columns of sunMapColumnsVertex, max blending, so overlapping columns are one shadow), every
    * other frame its card. Both read the committed full rows and the sun pass's own uniforms.
    */
@@ -8238,7 +8238,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     batch.setTargetSpace(false, 0, 0, 1);
     this._sunMapDrew = false;
     if (this._sunMapOn) {
-      // DX-SHADOW3D: the sun's rows go to its shadow map, not to the sprite shadows' layer.
+      // DX-SHADOW3D: the sun's rows go to its shadow map, not to the shadows' layer.
       if (u.uSun[3] > 0 && (sunN > 0 || this._volumesCast()) && this._drawSunMap(batch, gpu, sunN, zoom * res)) {
         this._sunMapDrew = true;
       }
@@ -10541,10 +10541,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._heightScaleY = cameraHeightScaleY(this.config);
       this._facesWatch = !lightingConfig.raycasted;
       this._facesOn = this._facesWatch && DecorationPool.facesInUse();
-      // DX-SHADOW3D: the sun's shadows from a shadow map, the sun's term alone (WebGL and WebGPU).
-      if (lightingConfig.sunShadows === 'map') {
+      // DX-SHADOW3D: the sun's shadows on the shadows' layer ('layer', the default) or from a shadow map, the sun's term
+      // alone (WebGL and WebGPU). OL-1: any other value (the old 'sprite' among them) warns and draws on the layer.
+      const sunShadows = lightingConfig.sunShadows ?? LIGHTING_DEFAULTS.sunShadows;
+      if (sunShadows !== 'layer' && sunShadows !== 'map') {
+        console.warn(`WeedJS: lighting.sunShadows is 'layer' or 'map', not ${JSON.stringify(sunShadows)}: the sun's shadows are drawn on the layer`);
+      }
+      if (sunShadows === 'map') {
         if (lightingConfig.raycasted) {
-          console.warn(`WeedJS: lighting.sunShadows 'map' does not work with raycasted lighting yet: the sun's shadows are sprites`);
+          console.warn(`WeedJS: lighting.sunShadows 'map' does not work with raycasted lighting yet: the sun's shadows stay on the layer`);
         } else {
           this._sunMapOn = true;
         }
@@ -10562,8 +10567,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         console.warn(`WeedJS: lighting.gbuffer is 'pass' or 'mrt', not ${JSON.stringify(gbufMode)}: the G-buffer draws a pass a target`);
       }
       this._gbufMrt = gbufMode === 'mrt';
-      // DX-SHADOW3D (F7): the lamps' shadows from a map a lamp, each lamp's own light alone (WebGL and WebGPU).
-      if (lightingConfig.lampShadows === 'map') {
+      // DX-SHADOW3D (F7): the lamps' shadows stamped on the shadows' layer ('layer', the default) or from a map a lamp, each
+      // lamp's own light alone (WebGL and WebGPU). OL-1: any other value warns and stamps on the layer.
+      const lampShadows = lightingConfig.lampShadows ?? LIGHTING_DEFAULTS.lampShadows;
+      if (lampShadows !== 'layer' && lampShadows !== 'map') {
+        console.warn(`WeedJS: lighting.lampShadows is 'layer' or 'map', not ${JSON.stringify(lampShadows)}: the lamps' shadows are stamped on the layer`);
+      }
+      if (lampShadows === 'map') {
         if (lightingConfig.raycasted) {
           console.warn(`WeedJS: lighting.lampShadows 'map' does not work with raycasted lighting: the lamps' shadows are the fans`);
         } else {

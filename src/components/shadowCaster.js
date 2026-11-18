@@ -456,7 +456,7 @@ export const CASTER_METHODS = {
     return side != null ? side : (this._lampSide = new CastSide(this, false, true));
   },
 
-  /** How much light it takes out, 0 to 1: the sprite shadows read it, and a wall (setWall) takes that much out of a lamp. */
+  /** How much light it takes out, 0 to 1: the layer shadows read it, and a wall (setWall) takes that much out of a lamp. */
   get opacity() {
     return ShadowCaster.opacity[this.index];
   },

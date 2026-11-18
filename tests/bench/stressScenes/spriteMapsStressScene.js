@@ -27,8 +27,8 @@ export const RES = queryNumber('res', 0.5);
 /** `?hour=`: the sun's hour (default 22, night: the lamps show the normals). */
 export const HOUR = queryNumber('hour', 22);
 const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
-/** `?sunShadows=map`: the sun's shadows from its shadow map (DX-SHADOW3D); default 'sprite'. */
-export const SUN_SHADOWS = WEED.params?.get('sunShadows') === 'map' ? 'map' : 'sprite';
+/** `?sunShadows=map`: the sun's shadows from its shadow map (DX-SHADOW3D); default 'layer'. */
+export const SUN_SHADOWS = WEED.params?.get('sunShadows') === 'map' ? 'map' : 'layer';
 /** `?selfShadow=1`: lighting.selfShadow (DX-SELFSHADOW). */
 export const SELF_SHADOW = WEED.params?.get('selfShadow') === '1';
 /** `?gbuffer=pass|mrt`: lighting.gbuffer (the face map and the entity ids map a pass each, or both in one); left out, the default. */
