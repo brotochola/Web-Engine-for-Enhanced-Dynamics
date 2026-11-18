@@ -11,13 +11,14 @@ import { loadBakedAtlas, siblingAssetUrl } from '../../src/core/atlas/bakedAtlas
 import { AssetWorker, runJobOrHere } from '../../src/core/assetWorkerClient.js';
 import { runAtlasJob } from '../../src/workers/atlasWorker.js';
 import { fillFrameTexels } from '../../src/render/frameBase.js';
+import { BUILTIN_TEXTURES } from '../../src/core/atlas/atlasBuiltins.js';
 import {
   MemCanvas, canvasOfImage, decalHashes, extractDecalTexturesReference, fakeWorker, hashBytes, hashJson, memPng, randomImage, rng,
   withFetch, withMemCanvas,
 } from './startupAtlasFixtures.mjs';
 
 /** A baked atlas: a random image and a json of frames placed on it, animations of them (some empty, one naming no frame). */
-function bakedAtlas(seed, { texels = false } = {}) {
+function bakedAtlas(seed, { texels = false, lacks = [] } = {}) {
   const r = rng(seed);
   const W = 64 + ((r() * 64) | 0);
   const H = 48 + ((r() * 48) | 0);
@@ -37,6 +38,12 @@ function bakedAtlas(seed, { texels = false } = {}) {
   animations.empty = [];
   animations.ghost = ['nope'];
   animations.again = ['f5'];
+  // The engine's built-ins, as a bake has them (one it lacks is added at load: startupAtlasBuiltins.test.js).
+  for (const { name } of BUILTIN_TEXTURES) {
+    if (name === '_empty' || lacks.includes(name)) continue;
+    frames[name] = { frame: { x: (r() * (W - 9)) | 0, y: (r() * (H - 9)) | 0, w: 8, h: 8 }, ...(texels ? { base: { texels: 0, solidTexels: 64 } } : {}) };
+    animations[name] = [name];
+  }
   return { image, json: { frames, animations, meta: { size: { w: W, h: H } } } };
 }
 

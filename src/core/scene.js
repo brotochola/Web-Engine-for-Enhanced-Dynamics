@@ -1759,7 +1759,8 @@ class Scene {
 
   /**
    * SST-5 step 4: a baked atlas, never drawn into a 2D canvas here. The browser decodes its PNG for the renderer; the
-   * atlas worker reads the decal textures and the texels a bake from before H-EDGE lacks (atlas/bakedAtlas.js).
+   * atlas worker reads the decal textures and the texels a bake from before H-EDGE lacks, and draws in the built-ins a
+   * bake from before them lacks (atlas/bakedAtlas.js).
    */
   async _loadBakedBigAtlas(bigAtlasAsset) {
     const worker = await startAssetWorker('atlasWorker');
@@ -1768,6 +1769,9 @@ class Scene {
         decals: Boolean(this.config.particle.decals),
         sceneName: this.constructor.name,
         worker,
+        // The built-ins a stale bake gets: unshaded glows (DX-GLOWRADIUS), placed at the scene's padding.
+        unshadedGlows: unshadedGlowsOf(this.config?.lighting),
+        padding: this.config.assets?.atlasPadding ?? ASSETS_DEFAULTS.atlasPadding,
       });
     } finally {
       this._finishAssetWorker('atlas', worker);

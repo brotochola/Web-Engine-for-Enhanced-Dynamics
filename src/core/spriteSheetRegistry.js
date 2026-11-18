@@ -11,16 +11,8 @@ import {
   FRAME_GLOW, FRAME_HALF, FRAME_SOFT, frameAlphaKinds, frameSolidTexels, isRenderDirections, measureHeightPerRow, measureLowestContact,
   measureStandingBase, readFootprint,
 } from '../render/frameBase.js';
-import {
-  create2dCanvas,
-  createCircularGradientCanvas,
-  createHalfCircularGradientCanvas,
-  createMetaballCanvas,
-  createBulletTrailCanvas,
-  LIGHT_GLOW_COMPACT_SPAN,
-  LIGHT_GRADIENT_TEXTURE_RADIUS,
-  METABALL_TEXTURE_RADIUS,
-} from '../util/utils.js';
+import { create2dCanvas } from '../util/utils.js';
+import { drawBuiltinTextures } from './atlas/atlasBuiltins.js';
 import { ASSETS_DEFAULTS } from '../util/configDefaults.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { fetchAssetJson, fetchAssetRead, imageLoadError } from '../util/fetchAsset.js';
@@ -1046,169 +1038,27 @@ class SpriteSheetRegistry {
     // Loads finish in network order; ids and indices must not (see orderAtlasByDeclaration).
     orderAtlasByDeclaration(assetsConfig, imagesToPack, animations, proxySheets);
 
-    // ========================================
-    // INJECT BUILT-IN TEXTURES
-    // ========================================
-    // Empty transparent pixel - reserved as animation index 0 so accidental
-    // textureId=0 fallbacks render invisibly instead of showing a real asset.
-    const emptyCanvas = create2dCanvas(1, 1);
-    const emptyCtx = emptyCanvas.getContext('2d');
-    emptyCtx.clearRect(0, 0, 1, 1);
-    imagesToPack.push({
-      name: '_empty',
-      sourceImg: emptyCanvas,
+    // The built-in textures (atlasBuiltins.js), after the scene's assets: _empty is animation index 0, so an accidental
+    // textureId 0 draws nothing; DX-GLOWRADIUS: the glows unshaded where the halos join the entities (unshadedGlows).
+    const builtins = drawBuiltinTextures({ unshadedGlows });
+    const builtinEntry = (b) => ({
+      name: b.name,
+      ...(b.unshaded !== undefined ? { unshaded: b.unshaded } : {}),
+      sourceImg: b.canvas,
       sourceRect: null,
-      width: 1,
-      height: 1,
+      width: b.canvas.width,
+      height: b.canvas.height,
       sourceX: 0,
       sourceY: 0,
-      sourceWidth: 1,
-      sourceHeight: 1,
+      sourceWidth: b.canvas.width,
+      sourceHeight: b.canvas.height,
       isSpritesheetFrame: false,
     });
-    debugWorkerLog(`  ✅ Generated built-in: _empty (1x1 transparent)`);
-
-    // Light glow gradient (200px diameter white radial gradient). DX-GLOWRADIUS: unshaded where the halos join the
-    // entities (unshadedGlows), as an unshaded sheet's frames are: the maps table's mark.
-    const lightGradientCanvas = createCircularGradientCanvas(LIGHT_GRADIENT_TEXTURE_RADIUS, 0xffffff);
-    imagesToPack.push({
-      name: '_lightGradient',
-      unshaded: unshadedGlows === true,
-      sourceImg: lightGradientCanvas,
-      sourceRect: null,
-      width: lightGradientCanvas.width,
-      height: lightGradientCanvas.height,
-      sourceX: 0,
-      sourceY: 0,
-      sourceWidth: lightGradientCanvas.width,
-      sourceHeight: lightGradientCanvas.height,
-      isSpritesheetFrame: false,
-    });
-    animations['_lightGradient'] = ['_lightGradient'];
-    // E-498: the compact glow, the halos with their own size (glowRadius): the same curve, its visible part over the
-    // whole texture; unshaded with the gradient (DX-GLOWRADIUS).
-    const lightGlowCanvas = createCircularGradientCanvas(LIGHT_GRADIENT_TEXTURE_RADIUS, 0xffffff, LIGHT_GLOW_COMPACT_SPAN);
-    imagesToPack.push({
-      name: '_lightGlow',
-      unshaded: unshadedGlows === true,
-      sourceImg: lightGlowCanvas,
-      sourceRect: null,
-      width: lightGlowCanvas.width,
-      height: lightGlowCanvas.height,
-      sourceX: 0,
-      sourceY: 0,
-      sourceWidth: lightGlowCanvas.width,
-      sourceHeight: lightGlowCanvas.height,
-      isSpritesheetFrame: false,
-    });
-    animations['_lightGlow'] = ['_lightGlow'];
-    debugWorkerLog(
-      `  ✅ Generated built-in: _lightGradient (${lightGradientCanvas.width}x${lightGradientCanvas.height})`
-    );
-
-    // Fluid / metaball density splat (64px, alpha = 1 - d²)
-    const metaballCanvas = createMetaballCanvas(METABALL_TEXTURE_RADIUS, 0xffffff);
-    imagesToPack.push({
-      name: '_metaball',
-      sourceImg: metaballCanvas,
-      sourceRect: null,
-      width: metaballCanvas.width,
-      height: metaballCanvas.height,
-      sourceX: 0,
-      sourceY: 0,
-      sourceWidth: metaballCanvas.width,
-      sourceHeight: metaballCanvas.height,
-      isSpritesheetFrame: false,
-    });
-    animations['_metaball'] = ['_metaball'];
-    debugWorkerLog(
-      `  ✅ Generated built-in: _metaball (${metaballCanvas.width}x${metaballCanvas.height})`
-    );
-
-    // Bullet trail line (10x1 white with gradient alpha: prev→curr)
-    const bulletTrailCanvas = createBulletTrailCanvas(10, 1, 0xffffff);
-    imagesToPack.push({
-      name: '_bulletTrail',
-      sourceImg: bulletTrailCanvas,
-      sourceRect: null,
-      width: bulletTrailCanvas.width,
-      height: bulletTrailCanvas.height,
-      sourceX: 0,
-      sourceY: 0,
-      sourceWidth: bulletTrailCanvas.width,
-      sourceHeight: bulletTrailCanvas.height,
-      isSpritesheetFrame: false,
-    });
-    animations['_bulletTrail'] = ['_bulletTrail'];
-    debugWorkerLog(
-      `  ✅ Generated built-in: _bulletTrail (${bulletTrailCanvas.width}x${bulletTrailCanvas.height})`
-    );
-
-    // White square (8x8 solid white - used as default/background texture)
-    const whiteSquareCanvas = create2dCanvas(8, 8);
-    const whiteCtx = whiteSquareCanvas.getContext('2d');
-    whiteCtx.fillStyle = '#ffffff';
-    whiteCtx.fillRect(0, 0, 8, 8);
-    imagesToPack.push({
-      name: '_white',
-      sourceImg: whiteSquareCanvas,
-      sourceRect: null,
-      width: 8,
-      height: 8,
-      sourceX: 0,
-      sourceY: 0,
-      sourceWidth: 8,
-      sourceHeight: 8,
-      isSpritesheetFrame: false,
-    });
-    animations['_white'] = ['_white'];
-    debugWorkerLog(`  ✅ Generated built-in: _white (8x8)`);
-
-    // White circle (radius 4px - used for particles, bullets, etc.)
-    const whiteCircleCanvas = create2dCanvas(8, 8);
-    const whiteCircleCtx = whiteCircleCanvas.getContext('2d');
-    whiteCircleCtx.fillStyle = '#ffffff';
-    whiteCircleCtx.beginPath();
-    whiteCircleCtx.arc(4, 4, 4, 0, Math.PI * 2);
-    whiteCircleCtx.fill();
-    imagesToPack.push({
-      name: '_whiteCircle',
-      sourceImg: whiteCircleCanvas,
-      sourceRect: null,
-      width: 8,
-      height: 8,
-      sourceX: 0,
-      sourceY: 0,
-      sourceWidth: 8,
-      sourceHeight: 8,
-      isSpritesheetFrame: false,
-    });
-    animations['_whiteCircle'] = ['_whiteCircle'];
-
-    debugWorkerLog(`  ✅ Generated built-in: _whiteCircle (8x8, radius 4px)`);
-
-    /// bigger white circle:
-
-    // White circle filling the 64x64 frame (used when a larger centered circle is needed)
-    const biggerwhiteCircleCanvas = create2dCanvas(64, 64);
-    const biggerwhiteCircleCtx = biggerwhiteCircleCanvas.getContext('2d');
-    biggerwhiteCircleCtx.fillStyle = '#ffffff';
-    biggerwhiteCircleCtx.beginPath();
-    biggerwhiteCircleCtx.arc(32, 32, 32, 0, Math.PI * 2);
-    biggerwhiteCircleCtx.fill();
-    imagesToPack.push({
-      name: '_whiteCircle_64x64',
-      sourceImg: biggerwhiteCircleCanvas,
-      sourceRect: null,
-      width: 64,
-      height: 64,
-      sourceX: 0,
-      sourceY: 0,
-      sourceWidth: 64,
-      sourceHeight: 64,
-      isSpritesheetFrame: false,
-    });
-    animations['_whiteCircle_64x64'] = ['_whiteCircle_64x64'];
+    for (const b of builtins) {
+      if (b.afterSort) continue;
+      imagesToPack.push(builtinEntry(b));
+      if (b.name !== '_empty') animations[b.name] = [b.name];
+    }
 
     // Sort images by size (largest first) for better packing
     imagesToPack.sort((a, b) => Math.max(b.width, b.height) - Math.max(a.width, a.height));
@@ -1217,20 +1067,11 @@ class SpriteSheetRegistry {
     // moves in the atlas, and its animation is the last built-in, so every earlier one keeps its index. The atlas
     // with it still samples a few hundred pixels of a scene 1/255 differently (any frame added does: dxCaptureScene
     // 389 to 519 of 921 600), the price of the frame.
-    const lightGradientHalfCanvas = createHalfCircularGradientCanvas(LIGHT_GRADIENT_TEXTURE_RADIUS, 0xffffff);
-    imagesToPack.push({
-      name: '_lightGradientHalf',
-      sourceImg: lightGradientHalfCanvas,
-      sourceRect: null,
-      width: lightGradientHalfCanvas.width,
-      height: lightGradientHalfCanvas.height,
-      sourceX: 0,
-      sourceY: 0,
-      sourceWidth: lightGradientHalfCanvas.width,
-      sourceHeight: lightGradientHalfCanvas.height,
-      isSpritesheetFrame: false,
-    });
-    animations['_lightGradientHalf'] = ['_lightGradientHalf'];
+    for (const b of builtins) {
+      if (!b.afterSort) continue;
+      imagesToPack.push(builtinEntry(b));
+      animations[b.name] = [b.name];
+    }
 
     // No need to wait for intermediate images anymore!
     // We now store references to source images and draw directly to final atlas.

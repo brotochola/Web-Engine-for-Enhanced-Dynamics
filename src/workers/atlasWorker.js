@@ -4,7 +4,8 @@
 // where `marks` are its SST-0 load marks (the page files them under the worker 'atlas'). Its imports stay few (no
 // utils.js, no GameObject): a module worker evaluates its whole graph before its first message.
 
-import { readAtlasPixels, decalTextureBuffers } from '../core/atlas/atlasFrames.js';
+import { decalTextureBuffers } from '../core/atlas/atlasFrames.js';
+import { completeBakedPixels } from '../core/atlas/bakedPixels.js';
 import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 
 const makeCanvas = (w, h) => new OffscreenCanvas(w, h);
@@ -15,17 +16,24 @@ const makeCanvas = (w, h) => new OffscreenCanvas(w, h);
  */
 const JOBS = {
   /**
-   * A baked atlas's pixels for the page (SST-5 step 4): its decal textures and the texels a bake from before H-EDGE
-   * lacks, from its PNG, decoded here.
-   * msg: { png: Blob, json: { frames, animations, meta }, decals: boolean }
+   * A baked atlas's pixels for the page (SST-5 step 4), from its PNG, decoded here: the built-ins it lacks drawn in (then
+   * the completed atlas is the renderer's bitmap), its decal textures, and the texels a bake from before H-EDGE lacks.
+   * msg: { png: Blob, json: { frames, animations, meta }, decals: boolean,
+   *   builtins: Array<{ name, image: ImageBitmap, unshaded }>, padding: number }
    */
   async bakedPixels(msg) {
     const image = await createImageBitmap(msg.png);
     loadMark('atlas worker decoded');
-    const read = readAtlasPixels(image, msg.json, { decals: msg.decals === true, makeCanvas });
+    const builtins = msg.builtins || [];
+    const read = await completeBakedPixels({
+      image, json: msg.json, decals: msg.decals === true, builtins, padding: msg.padding, makeCanvas,
+    });
     image.close();
+    for (const b of builtins) b.image.close?.();
     loadMark('atlas worker read');
-    return { result: read, transfer: read.decals ? decalTextureBuffers(read.decals.textures) : [] };
+    const transfer = read.decals ? decalTextureBuffers(read.decals.textures) : [];
+    if (read.bitmap) transfer.push(read.bitmap);
+    return { result: read, transfer };
   },
 };
 
