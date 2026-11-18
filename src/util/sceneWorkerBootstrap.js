@@ -1,6 +1,6 @@
 import { DirectionalSprite } from '../components/directionalSprite.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
-import { getPortTransferables, postWorkerInitMessage } from './utils.js';
+import { fetchScriptGraph, getPortTransferables, postWorkerInitMessage } from './utils.js';
 import { debugWorkerLog } from './debugLog.js';
 import { sceneParams } from '../core/sceneParams.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
@@ -396,18 +396,19 @@ function bootedWorkers(scene) {
  * SST-1: each engine worker's 'boot', posted as soon as it is made: what depends on neither the assets nor the shared
  * buffers. The config, the worker's name, engine.wasm compiled (SST-2; null until the page's compile ends, and then an
  * 'engineWasm' message follows), the game scripts to start on (the page's params, which a scene module may read at
- * its top level), and to the renderer the canvas (transferred: an OffscreenCanvas moves once), its size and the engine
- * shaders a bundle carries. 'init' (createSceneWorkers) then carries what depends on the assets and the buffers.
+ * its top level; in the bundle their texts, SST-3), and to the renderer the canvas (transferred: an OffscreenCanvas
+ * moves once), its size and the engine shaders a bundle carries. 'init' (createSceneWorkers) then carries what depends
+ * on the assets and the buffers.
  */
-function postBootMessages(scene, workers) {
-  const pageOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+function postBootMessages(scene, workers, pageOrigin, scriptsToLoad, scriptTexts) {
   const engineWasm = engineWasmModule;
   const boot = {
     msg: 'boot',
     pageOrigin,
     config: scene.config,
     sceneParams: sceneParams().toString(),
-    scriptsToLoad: bootScriptsToLoad(scene, pageOrigin),
+    scriptsToLoad,
+    scriptTexts,
     engineWasm,
   };
   const renderer = scene.workers.renderer;
@@ -867,7 +868,16 @@ export async function reserveBox2dBlock(scene) {
  * else createSceneWorkers).
  */
 export async function bootSceneWorkers(scene) {
-  const { useInlineWorkers, cacheBust } = await workerMode();
+  const pageOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const scriptsToLoad = bootScriptsToLoad(scene, pageOrigin);
+  // SST-3: a bundle's workers are blobs, which cannot import(): the page fetches the scripts' graph once, every file at
+  // once while the embedded sources inflate, and each worker evaluates from those texts. Source builds import().
+  const blobWorkers = typeof window !== 'undefined' && window.WEED?.BUNDLE_MODE && window.WEED?.WorkerSources;
+  const [{ useInlineWorkers, cacheBust }, scriptTexts] = await Promise.all([
+    workerMode(),
+    blobWorkers && scriptsToLoad.length > 0 ? fetchScriptGraph(scriptsToLoad) : null,
+  ]);
+  if (scriptTexts) loadMark('scripts fetched');
   if (useInlineWorkers) debugWorkerLog('[Scene] Using inline workers (single-file bundle mode)');
   createSceneWorkerInstances(scene, createSceneWorkerFactory(useInlineWorkers, cacheBust));
   attachEarlyWorkerErrorHandlers(scene);
@@ -878,7 +888,7 @@ export async function bootSceneWorkers(scene) {
     };
   }
   loadMark('workers made');
-  postBootMessages(scene, workers);
+  postBootMessages(scene, workers, pageOrigin, scriptsToLoad, scriptTexts);
   loadMark('boot sent');
 }
 

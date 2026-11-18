@@ -1311,11 +1311,12 @@ export class AbstractWorker {
 
   /**
    * SST-1: the worker's start, from the scene's 'boot' message, sent right after the worker was made and before any
-   * asset loads: { workerName, config, engineWasm, pageOrigin, sceneParams, scriptsToLoad } (the renderer's also
-   * carries its canvas). This default hands engine.wasm to the kernel loader (SST-2), keeps the config (init's replaces
+   * asset loads: { workerName, config, engineWasm, pageOrigin, sceneParams, scriptsToLoad, scriptTexts } (the
+   * renderer's also carries its canvas). This default hands engine.wasm to the kernel loader (SST-2), keeps the config (init's replaces
    * it) and starts the game scripts, so their import or evaluation runs while the page loads the assets: the engine
-   * names on self first, and the page's params (a scene module may read WEED.params at its top level). It does not wait
-   * for them: init does (_loadGameScripts). A subclass that starts more calls super.boot(data) first.
+   * names on self first, and the page's params (a scene module may read WEED.params at its top level). A bundle's
+   * worker evaluates them from the texts the page fetched (scriptTexts, SST-3). It does not wait for them: init does
+   * (_loadGameScripts). A subclass that starts more calls super.boot(data) first.
    * @param {object} data the 'boot' message
    */
   async boot(data) {
@@ -1327,7 +1328,7 @@ export class AbstractWorker {
     setSceneParams(data.sceneParams);
     this.registerCoreClasses();
     this._bootScriptList = scripts.slice();
-    this._bootScripts = loadEntityScripts(this._bootScriptList).then(() => {
+    this._bootScripts = loadEntityScripts(this._bootScriptList, null, null, data.scriptTexts || null).then(() => {
       loadMark('boot scripts');
     });
     // Init reports its failure (_loadGameScripts).

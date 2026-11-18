@@ -1526,15 +1526,77 @@ export async function expandBlobEntityScripts(entryUrls, fetchText = fetch) {
 }
 
 /**
+ * SST-3: expandBlobEntityScripts' order from texts already fetched (fetchScriptGraph's { url → text }): the same DFS
+ * post-order, imported files before their importer, with no fetch. A URL with no text is a leaf, as one whose fetch
+ * failed is there.
+ * @param {string[]} entryUrls
+ * @param {Record<string, string>} texts
+ * @returns {string[]}
+ */
+export function orderBlobEntityScripts(entryUrls, texts) {
+  const ordered = [];
+  const seen = new Set();
+  const visit = (url) => {
+    if (seen.has(url)) return;
+    seen.add(url);
+    const text = texts[url];
+    if (typeof text === 'string') {
+      const deps = collectBlobScriptDeps(text, url);
+      for (let i = 0; i < deps.length; i++) visit(deps[i]);
+    }
+    ordered.push(url);
+  };
+  for (let i = 0; i < entryUrls.length; i++) visit(entryUrls[i]);
+  return ordered;
+}
+
+/**
+ * SST-3: a bundled scene's game scripts for its blob workers, fetched once by the page: every file of the graph at
+ * the same time, each file's imports (collectBlobScriptDeps) read as soon as it arrives and fetched then. A file that
+ * does not load is left out (the worker's loader reports it).
+ * @param {string[]} entryUrls
+ * @param {typeof fetch} [fetchText]
+ * @returns {Promise<Record<string, string>>} { url → text }
+ */
+export async function fetchScriptGraph(entryUrls, fetchText = fetch) {
+  const texts = {};
+  const started = new Set();
+  const fetches = [];
+  const visit = (url) => {
+    if (started.has(url)) return;
+    started.add(url);
+    fetches.push((async () => {
+      let text = null;
+      try {
+        const response = await fetchText(url);
+        if (response && response.ok) text = await response.text();
+      } catch {
+        /* loadSingleScript reports fetch failures */
+      }
+      if (text === null) return;
+      texts[url] = text;
+      const deps = collectBlobScriptDeps(text, url);
+      for (let i = 0; i < deps.length; i++) visit(deps[i]);
+    })());
+  };
+  for (let i = 0; i < entryUrls.length; i++) visit(entryUrls[i]);
+  // Each file's fetch starts its imports' (a cycle too, without waiting on itself): done when no fetch is left.
+  for (let i = 0; i < fetches.length; i++) await fetches[i];
+  return texts;
+}
+
+/**
  * Load entity scripts dynamically and register them globally
  * Unified function used by both main thread and workers
  *
  * @param {Array<string>} scriptsToLoad - Array of script paths to load
  * @param {Object} globalContext - Global context to register classes (window for main thread, self for workers)
  * @param {boolean} verbose - Whether to log detailed information (optional)
+ * @param {Record<string, string>|null} [scriptTexts] - SST-3: the scripts' texts the page fetched (a bundled worker
+ *   evaluates from them, with no fetch of its own; a script missing there is fetched as before)
  * @returns {Promise<Object>} - Object mapping class names to classes
  */
-export async function loadEntityScripts(scriptsToLoad, globalContext = null, verbose = null) {
+export async function loadEntityScripts(scriptsToLoad, globalContext = null, verbose = null, scriptTexts = null) {
   const loadedClasses = {};
 
   if (!scriptsToLoad || scriptsToLoad.length === 0) {
@@ -1562,10 +1624,13 @@ export async function loadEntityScripts(scriptsToLoad, globalContext = null, ver
     debugWorkerLog(`📦 ${contextName}: Loading ${scriptsToLoad.length} entity scripts...`);
   }
 
-  // Blob: DFS then retry (Function eval, missing sibling on globalThis).
+  // Blob: DFS then retry (Function eval, missing sibling on globalThis); from the page's texts when it sent them.
   // Module import() failures stick in the module map — retry cannot unpoison.
+  const texts = isBlobWorker && scriptTexts ? scriptTexts : null;
   let pendingScripts = isBlobWorker
-    ? await expandBlobEntityScripts(scriptsToLoad)
+    ? texts
+      ? orderBlobEntityScripts(scriptsToLoad, texts)
+      : await expandBlobEntityScripts(scriptsToLoad)
     : [...scriptsToLoad];
 
   if (!isBlobWorker) {
@@ -1594,7 +1659,8 @@ export async function loadEntityScripts(scriptsToLoad, globalContext = null, ver
           globalContext,
           isBlobWorker,
           contextName,
-          verbose
+          verbose,
+          texts
         );
         if (!success) {
           failedScripts.push(scriptPath);
@@ -1763,18 +1829,22 @@ export function unresolvedImportText(error, scriptPath) {
   );
 }
 
-async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlobWorker, contextName, verbose) {
+async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlobWorker, contextName, verbose, texts = null) {
   try {
     let module;
 
     if (isBlobWorker) {
       // In Blob-based workers, use fetch + evaluation instead of import()
       // This handles the case where workers are created from bundled strings
-      const response = await fetch(scriptPath);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      // SST-3: the text the page fetched for every worker, else a fetch of its own.
+      let scriptText = texts !== null ? texts[scriptPath] : undefined;
+      if (typeof scriptText !== 'string') {
+        const response = await fetch(scriptPath);
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        scriptText = await response.text();
       }
-      const scriptText = await response.text();
 
       module = evaluateBlobModule(scriptText, scriptPath, globalContext);
       blobModules.set(scriptPath, module);
