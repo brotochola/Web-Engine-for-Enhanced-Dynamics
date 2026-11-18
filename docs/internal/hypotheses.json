@@ -22243,10 +22243,10 @@
       "id": "DX-ONELIGHT",
       "title": "One light system for every camera: a flat view (camera.pitch 90 or 0) gets the same lighting options as any other camera (normal and height maps, unshaded, the shadow maps, sprite and height map shadows from the lamps), raycasted lighting stops being a pass of its own, and the engine stops inventing what the developer did not bring (the self-lit fill's sphere normal, the automatic strength of a sprite's normals)",
       "status": "open",
-      "statusText": "Owner-approved plan (2026-11-17), being built since 2026-11-18 on dx/one-light (the owner's order that day: all the code first, with the suites and one capture an item, measuring and optimizing after it; OL-4 as final B, picked by eye): \"agregá esto al backlog, bien detallado\"; to be built by a session of its own, from the plan alone. Decided with the owner: what casts (the sprite or the height map) and where shadows are drawn (the layer or a map) stay the developer's options; removing the painted (layer) mode was proposed and rejected (\"los sprites estampados quedan bien, son opciones que los devs tienen\")",
+      "statusText": "Owner-approved plan (2026-11-17), revised and built from 2026-11-18 on dx/one-light: OL-1, OL-2 and OL-4 (final B, by eye) are written, with the suites and captures; nothing is timed (the owner's order: the code first, measuring and optimizing after); not merged",
       "date": "2026-11-17",
       "result": "",
-      "next": "Built in this order: OL-1 (the names), OL-2 (the normals' option), OL-4 (final B); then OL-3 (the race, with final B's pass as one more arm) and every other measurement; nothing is deleted before OL-4's pictures and numbers are accepted. The owner's open decisions are in the plan's section 5.",
+      "next": "The owner's pictures; OL-3 (the race) and every other measurement; the optimizing; the deletion of the old pass. The owner's open decisions are in the plan's section 5, what was found in its section 7.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22259,7 +22259,8 @@
       ],
       "records": [
         "R-1317",
-        "R-1350"
+        "R-1350",
+        "R-1351"
       ],
       "rank": 20
     },
@@ -22267,10 +22268,10 @@
       "id": "OL-1",
       "title": "Names: the shadows' painted mode is lighting.sunShadows / lampShadows 'layer' (was 'sprite') and a halo drawn among the entities is lighting.lightGlow 'sorted' (was 'sprite'); 'sprite' keeps meaning the sprite that casts (setSprite, shadowCast.sun) or cuts (setWall's shape)",
       "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), being built since 2026-11-18 on dx/one-light; the owner approved both names. The word cost the planning chat an hour: \"sprite shadows\" was read as the sprite that casts",
+      "statusText": "Written 2026-11-18 on dx/one-light (69f0eb38, 1bcdf08d), suites green; not merged",
       "date": "2026-11-17",
-      "result": "",
-      "next": "Two commits (the shadows' value, the glow's). No code compares the shadow modes with 'sprite' (everything asks === 'map'): the two defaults, a check that warns once on any other value, the six reads of lightGlow, then types, guide, demos, stress scenes, checks and tests (the plan lists them). No aliases. No picture changes, so no sitting: the suites and check:types.",
+      "result": "sunShadows / lampShadows 'layer' and lightGlow 'sorted'; an unknown value warns once and falls to the default; every demo, scene, test, type and guide page moved. No picture changes, nothing to time.",
+      "next": "Merge with the rest of dx/one-light when the owner accepts OL-4's pictures.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22283,17 +22284,18 @@
       ],
       "records": [
         "R-1317",
-        "R-1350"
+        "R-1350",
+        "R-1351"
       ]
     },
     {
       "id": "OL-2",
       "title": "A sprite's normals under the sun and under the lamps as the developer's option (lighting.normalStrength { sun, lamps } recommended), instead of the light pass's automatic blend by the lamps' share of the light (k = lamps / (lamps + ambient + sun): by day as drawn, at night by the normals)",
       "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), being built since 2026-11-18 on dx/one-light; the owner asked for the option (\"estas cuestiones automáticas que hace weedjs no me copan tanto\") and picks its default from pictures",
+      "statusText": "Written 2026-11-18 on dx/one-light (89e2afcb), suites green; the owner has not picked the default; not timed; not merged",
       "date": "2026-11-17",
-      "result": "",
-      "next": "faceLight in lightingBasic (GLSL and WGSL): each kind of light mixes \"as drawn\" and \"by its normal\" by its own strength, no k; normalLightCheck and faceLightCheck updated; captures of the light bench at noon, dusk and night and of Predator ?light3d=1 by night, old against new, for the owner (recommended default sun 0, lamps 1: today's picture at both ends of the old blend); every variant still links on WebGL; gpuPassBench on both backends and the Predator gate once. One reading on the ASUS's HD 620 for the record, not a condition.",
+      "result": "lighting.normalStrength { sun, lamps } in uFaceLight's two free numbers, default { sun: 0, lamps: 1 }; the automatic k is gone. normalLightCheck, WebGL and WebGPU: 0.5,0.5 worst 2.1 of 255; full strength worst 3.4 (lamp) and 4.0 (sun), p99 2.4, mean 0.6.",
+      "next": "Captures of the light bench at noon, dusk and night and of Predator ?light3d=1 by night, old against new, for the owner to pick the default; gpuPassBench on both backends and the Predator gate once, with the rest of the branch. One reading on the ASUS's HD 620 for the record, not a condition.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22306,7 +22308,8 @@
       ],
       "records": [
         "R-1317",
-        "R-1350"
+        "R-1350",
+        "R-1351"
       ]
     },
     {
@@ -22335,10 +22338,10 @@
       "id": "OL-4",
       "title": "The flat view on the common light pass: lighting.raycasted no longer picks the pass, a wall stops a lamp through the lamps' maps (final A) or through the sweep's result read by the light pass (final B), and the fans, the self-lit fills, the wedges and their shaders are deleted (about 2 000 lines in final B; about 5 000 and 3 500 of tests in final A)",
       "status": "open",
-      "statusText": "Being built since 2026-11-18 on dx/one-light as final B, picked by eye before the race (the owner's order: the code first, with the suites and a capture an item; measuring and optimizing after it)",
+      "statusText": "Written 2026-11-18 on dx/one-light as final B, picked by eye (9186550f, e57d6659, 94e31445), suites green, every moved scene drawing; the owner has seen the first captures; not timed; the old pass still behind debug.lightFans; not merged",
       "date": "2026-11-17",
-      "result": "",
-      "next": "Final B: the scene asks for walls with lighting.walls (not the pitch: lighting.raycasted goes); pre-render publishes a row a lamp (its visibility polygon, each edge's wall and opacity, an index by direction) and the light pass reads it (a WALLS variant): inside the polygon the light; outside it the light for the wall's own pixels (the maps' own-entity rule, instead of self-lit's made-up sphere) and the light times one minus the wall's opacity for the rest (the wedges). Pitch 90 first, then pitch 0 (neither has run on the common pass). The flat view also gets particle lights, LiquidFun's light field, pixelArt, selfShadow, dither and the light edges. The old pass stays behind debug.lightFans until the pictures and numbers are accepted: captures and films for the owner, who also decides how a wall's own sprite is lit (whole, or to a depth from the edge the lamp sees: N-38's fix). Then the gate: the owner scenes (visPoly, compoundVisPoly, flashlight) by their owner worker and by the GPU's time a frame and their frames drawn (STEP_MS − WAIT_MS does not see the common pass's fill), the Predator gate, and only then the deletion. Walls with a floor scale other than 1 are a follow-up. Closes N-38 and N-163 by deletion.",
+      "result": "lighting.walls asks for walls whatever the camera; pre-render publishes a row a lamp (lampWallRow.js) and the light pass reads it (WALLS variant, WebGL and WebGPU: 19 of 921 600 px differ, by 3 of 255 at most). A wall's own sprite is lit whole (the G-buffer's id) or, with lighting.wallDepth, the light enters every wall that many px (a wall drawn by a mesh has no id). Walls work on any floor scale, so oblique cameras have them too. Pitch 0 is a flat view by itself.",
+      "next": "The owner's eye on the pictures (a wall lit whole or to a depth; the third of the lamp a wall's shadow keeps; walls with no sprite of their own now dark inside). Then the measuring: the race (OL-3) with this pass as an arm, the owner scenes by their worker and by the GPU's time a frame, the Predator gate; the optimizing (the rows' upload, 3.1 KB a lamp a frame; the row build in JS); and only then the deletion. Closes N-38 and N-163 by deletion.",
       "area": "render",
       "kind": "feature",
       "refs": [
@@ -22351,7 +22354,8 @@
       ],
       "records": [
         "R-1317",
-        "R-1350"
+        "R-1350",
+        "R-1351"
       ]
     },
     {
@@ -35913,6 +35917,23 @@
       "title": "The one-light plan revised against main at 4f60d4bd and its building started: the code first, final B by eye, the race after",
       "verdict": "note",
       "text": "**The one-light plan (DX-ONELIGHT, `ONE_LIGHT_PLAN.md`) read again against main at 4f60d4bd, revised, and its building started on `dx/one-light`; nothing run or measured.** Nothing of OL-1 to OL-4 had been built. Since the plan's first reading (1951de51) the light's code took N-262, N-266, N-273 to N-276, E-502, E-508 to E-511 and `lighting.dither` (N-277); N-272 is still on branches.\n\n- **Changed in the plan.** The race (OL-3) is decided on the main machine: its first rule asked for the ASUS too, and the owner said on 2026-11-18 that the HD 620 is not the yardstick (one low-end reading there, no condition). Two more arms: the common pass alone (the floor of what either final costs on the GPU) and final B's own pass. OL-4's gate reads the GPU's time a frame and the frames drawn, since Pixi's `STEP_MS − WAIT_MS` does not see the fill a full-screen pass adds over the fans. In final B the sweep is asked for with a key (`lighting.walls`), not by the pitch. Section 2 brought up to date: the flat view also lacks particle lights, LiquidFun's light field, `pixelArt`, `selfShadow`, `dither` and the light edges; the lamps' map after N-276 (R-1147's 0.69 ms is older than it and than E-508's cache).\n- **The owner's order.** All the code first, with the suites and one capture an item; measuring and optimizing after it. So OL-4 is built before the race, as final B, picked by eye (if the race says A, the row the light pass reads is thrown away, 2 to 3 h of code); the old pass stays behind `debug.lightFans` until the pictures and numbers are accepted; the deletion comes last."
+    },
+    {
+      "id": "R-1351",
+      "date": "2026-11-18",
+      "time": "03:42",
+      "timeFrom": "recorded",
+      "title": "OL-1, OL-2 and OL-4 (final B) written on dx/one-light: the names, the normals' option, walls read by the one light pass; nothing timed yet",
+      "verdict": "note",
+      "text": "**OL-1, OL-2 and OL-4 (final B) are written on `dx/one-light`, with the suites and captures; nothing is timed yet (the owner's order: the code first).** Suites at the end: node 3068, demos 121, types.\n\n- **OL-1** (69f0eb38, 1bcdf08d): `sunShadows` / `lampShadows` `'layer'`, `lightGlow` `'sorted'`; an unknown value warns once. No picture changes.\n- **OL-2** (89e2afcb): `lighting.normalStrength { sun, lamps }`, default `{ sun: 0, lamps: 1 }` until the owner picks from pictures; the automatic `k` is gone. normalLightCheck on WebGL and WebGPU: at 0.5,0.5 worst 2.1 of 255; at full strength worst 3.4 (lamp) and 4.0 (sun), p99 2.4, mean 0.6 (the maps' own steps; its tolerance is 5 now).\n- **OL-4** (9186550f, e57d6659, 94e31445): walls are asked for with `lighting.walls`, whatever the camera; pre-render publishes a row a lamp (its visibility polygon, each edge's wall and opacity) and the light pass reads it (WALLS variant). The old fan pass stays behind `debug.lightFans`; nothing deleted. visPolyStressScene, WebGL against WebGPU: 19 of 921 600 px differ, by 3 of 255 at most. Every moved scene draws without a page error.\n- **Found.** Walls work on any floor scale (the plan said only at 1: the sweep runs in world px, and the Headlights demo already ran it at 0.7), so oblique cameras have walls too. The sweep did not say which wall made an edge: `visibilitySweep.c` now does (engine.wasm 351 269 -> 352 493 B). A wall drawn by a mesh has no id in the G-buffer, so `lighting.wallDepth` (the light enters a wall N px from its edge) was needed for planetPhysicsScene's rock. A wall's shadow keeps the old pass's third of the lamp (`WALL_UMBRA`). Pitch 0 resolves to a flat view by itself.\n- **Open for the owner, from pictures:** the default of `normalStrength`; a wall lit whole or to a depth; the third of the lamp in a wall's shadow; a wall with no sprite of its own now reads dark inside its outline (the old pass drew a lit block).\n- **Next:** the race's knobs and the measuring (OL-3, the gates), the optimizing, then the deletion.",
+      "commits": [
+        "69f0eb38",
+        "1bcdf08d",
+        "89e2afcb",
+        "9186550f",
+        "e57d6659",
+        "94e31445"
+      ]
     }
   ],
   "leads": [
