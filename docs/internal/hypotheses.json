@@ -21909,12 +21909,13 @@
         "R-1326",
         "R-1330",
         "R-1333",
-        "R-1336"
+        "R-1336",
+        "R-1338"
       ],
       "id": "N-266",
       "kind": "bug",
       "area": "render",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-17",
       "title": "Where an unshaded sprite and a lit one are about as deep, the unshaded one shows half through the other: the canvas and the unshaded target disagree on which is in front",
       "statusText": "seen 2026-11-17 in depthPairScene (a lit lamp, a person 1 to 2 px behind it): the post shows over the person's chest at about half strength, pinkish",
@@ -22358,14 +22359,15 @@
         "R-1330",
         "R-1331",
         "R-1333",
-        "R-1336"
+        "R-1336",
+        "R-1338"
       ],
       "result": "",
       "next": "Merge fix/decoration-owner with fix/gbuffer-depth once measured. Later, the editor could export volumes as levels (body + tank: addLevel) instead of a convex hull, for truer ground shadows too.",
       "id": "N-273",
       "kind": "bug",
       "area": "render",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-17",
       "title": "A house's shadow volume shades its own roofs: its walls and roofs are decorations with G-buffer id 0, so the light pass cannot skip the house's own volume for them, and a convex hull with a parapet or a tank tops the roof",
       "statusText": "reported 2026-11-17 by the owner (\"shadows on top of everything\": dull grey roofs at noon); captures with the houses' volumes dropped (a temporary ?hulls=0) lit every roof and changed nothing else of the houses"
@@ -22383,14 +22385,15 @@
         "R-1330",
         "R-1331",
         "R-1333",
-        "R-1336"
+        "R-1336",
+        "R-1338"
       ],
       "result": "",
       "next": "Merge with N-275 once measured; then the unshaded pass (N-266) the same way, and E-463's cost read again (early depth for the frames without heights).",
       "id": "N-274",
       "kind": "bug",
       "area": "render",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-17",
       "title": "The G-buffer (face map + ids, lighting.gbuffer 'mrt') is drawn back to front with no depth while the canvas orders by pixel depth: where the painter drew a wall after a house in front of it, the light pass lit and shadowed the hidden wall over the house",
       "statusText": "reported 2026-11-17 by the owner (a diagonal band of shading on a facade, shadows on things in front); E-463 had noted the pass had no depth test, for its cost"
@@ -22408,14 +22411,15 @@
         "R-1330",
         "R-1331",
         "R-1333",
-        "R-1336"
+        "R-1336",
+        "R-1338"
       ],
       "result": "",
       "next": "Merge with N-274 once measured; the HD 620 drawn frames with the words at three floats.",
       "id": "N-275",
       "kind": "bug",
       "area": "render",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-17",
       "title": "A decoration with no face and no height map (a tree's branches) is lit as the floor under each of its pixels, which for a crown high on the screen lies behind the tree: the shadows of the house behind it and of the tree itself fall on the crown",
       "statusText": "reported 2026-11-17 by the owner (\"the tree's shadow on the building behind it is drawn on top of the tree\"), the barrio at 15:58 on the black house"
@@ -22432,14 +22436,15 @@
         "R-1328",
         "R-1330",
         "R-1333",
-        "R-1336"
+        "R-1336",
+        "R-1338"
       ],
       "result": "",
       "next": "Merge with the N-273..N-275 stack; Predator gate and the HD 620 drawn frames.",
       "id": "N-276",
       "kind": "bug",
       "area": "render",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-17",
       "title": "By night the people's shadows from a street lamp never reached the barrio's walls: a house's volume, taller than its lamp, was drawn into the lamp's map by its vertices, whose interpolation is the projection only within the reach (the pano compresses the ring past it, and a vertex above the lamp is drawn at the stretch's cap), so the inside of its front's triangles got depths far nearer the lamp than the front, won the texels of the people in front, and its walls, which skip their own house's texels (N-273), stood lit",
       "statusText": "reported 2026-11-17 by the owner (\"the LPC people's shadows by night do not fall on the walls, check it\"); wallShadowScene: with the house's volume and its owned walls the shadows vanished from the wall; without the house, or with a lamp above it and the house within its reach, they were there"
@@ -35813,6 +35818,16 @@
       "text": "ASUS job 0894 (the other session's), HD 620, against main dfc1afd5, barrio hour=22&dayMinutes=0, camera still, --full-rev: the stack's tip without N-272 (exp/no-n272-v2 b2aebcc2) clean A 369 372 | B 363 357 364 363, about -2.4 %, against -6.9 % with it rewritten (R-1336). Per pass, main against the tip with it (--gpu-passes, two runs a side): the light pass 1.68, 1.79 | 2.94, 2.68 ms (+1.08), the G-buffer +0.26, the canvas pass -0.92. A per-step test (755af901) and the map's exit worked out before the loop (e0c49f6a) cost about the same, so the cost is any code added to a loop the light pass inlines for the sun and each lamp. Reverted on fix/gbuffer-depth (f8484515). Still open: WebGL's march reads the face map's edge texel past the screen; next, an empty ring at the face map's edge (the G-buffer drawn a texel inside it), which needs no shader code.",
       "commits": [
         "f8484515"
+      ]
+    },
+    {
+      "id": "R-1338",
+      "date": "2026-11-18",
+      "title": "Merged into main with bundles: the stack level with main on the HD 620 without N-272",
+      "verdict": "kept-hygiene",
+      "text": "fix/gbuffer-depth merged into main (d30be522), dist rebuilt (check:dist fresh, test:bundle 8/8, test:node:bundle 323/323; test:node 3048, test:demos 121). Final gate, ASUS 0894u (the other session's), HD 620, main 939b6adf against f8484515, barrio hour=22&dayMinutes=0, camera still, 4 pairs, --full-rev: drawn 35.6 -> 36.4 fps paired (+2.7 %, KEPT), clean runs 362 against 365 (+0.8 %; pair 2 froze on both sides, the laptop's own stall). Predator (GTX) NEUTRAL earlier (R-1328). N-272 left out (R-1337), still open. Not pushed: the owner's word.",
+      "commits": [
+        "d30be522"
       ]
     }
   ],
