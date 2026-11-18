@@ -183,7 +183,7 @@ WEED.Time.scale = 1;
 
 1. **Box2D step** — classic WASM host advances bodies in-process (`weedjsDoStep`); hot pose/vel (`Transform.x/y/rotation/rotC/rotS`, `RigidBody.vx/vy/angularVelocity/sleeping`) live on HEAP. World `maximumLinearSpeed` clamps in the solver. Body damping: `linearDamping` / `angularDamping`. Before `world.step`, physics snapshots prev pose into `RigidBody.px/py/pRotation`. After the step, it **publishes** live `Transform.x/y/rotC/rotS` for dense bodies into double-buffered `poseDataA/B` and bumps `poseSync[readyFrame]` (same Atomics idiom as the render queue).
 2. **Contacts** — Box2D owns narrowphase; fixture μ from `Collider.friction`.
-3. **Joints** — Weed `Joint` SAB (`addDistance` / `addRevolute` / `addPrismatic` / `addWeld` with body-local anchors) syncs to Box2D joints each step (`weedjsPost.syncJoints`). A prismatic joint does not spin: `axisAngle` is stored in the weld `linearHertz` column, translation limits reuse `lowerAngle` / `upperAngle`, and `maxMotorForce` reuses `maxMotorTorque`. The host calls `createPrismaticJointLocal`, which turns body A's pose plus the local anchor into the world anchor WASM already accepts. Cap: WASM `MAX_JOINTS` (4096). Wheels stay `addRevolute` plus `motorSpeed`.
+3. **Joints** — Weed `Joint` SAB (`addDistance` / `addRevolute` / `addPrismatic` / `addWeld` with body-local anchors) syncs to Box2D joints each step (`weedjsPost.syncJoints`). A prismatic joint does not spin: `axisAngle` is stored in the weld `linearHertz` column, translation limits reuse `lowerAngle` / `upperAngle`, and `maxMotorForce` reuses `maxMotorTorque`. The host calls `createPrismaticJointLocal`, which turns body A's pose plus the local anchor into the world anchor WASM already accepts. Cap: `physics.maxJoints`, 65535 at most (the Joint lists hold 16-bit indices); Box2D's joint table is sized from it. Wheels stay `addRevolute` plus `motorSpeed`.
 4. **Stats** — write counters and timing into `physicsStats`.
 
 The worker does **not** build the spatial grid and it does **not** read `neighborData`. Spatial lists are visual range for logic, lights, and `Ray`. Box2D owns contacts.
@@ -397,7 +397,7 @@ Physics sync iterates the dense active list (`activeIndices` / `activeCount`), n
 
 **Thread safety:** atomic free list + short spin lock on add/remove.
 
-**Capacity:** Weed `maxJoints` should stay ≤ WASM `MAX_JOINTS` (4096).
+**Capacity:** `maxJoints` up to 65535; Box2D's joint table is sized from it (N-310).
 
 ### Sync
 

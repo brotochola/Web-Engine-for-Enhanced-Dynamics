@@ -31,7 +31,7 @@ assets: {
 }
 ```
 
-The engine loads the Tiled JSON + tileset PNG during `preloadAssets()`, then calls `TileMap.initializeFromLoaded()` to create SABs. Workers receive the SAB references at init time via `AbstractWorker`.
+The engine loads each tilemap off the page's main thread while the scene starts: the JSON is fetched as bytes and a tilemap worker parses it and lays its tile layers out in a SharedArrayBuffer (`TileMap.buffersFromTiled`), while the tileset PNG is fetched and decoded; the page then builds its TileMaps over those buffers (`TileMap.initializeFromBuffers`), as the workers do. Workers receive the SAB references at init time via `AbstractWorker`.
 
 ---
 
@@ -187,8 +187,8 @@ Each `TileMapLayer.data` is an `Int32Array` view into the corresponding region. 
 
 | Phase                   | Thread      | What Happens                                                                                |
 | ----------------------- | ----------- | ------------------------------------------------------------------------------------------- |
-| Scene `preloadAssets()` | Main        | Loads Tiled JSON + tileset PNG                                                              |
-| After loading           | Main        | `TileMap.initializeFromLoaded(loadedTilemaps)` creates SABs, copies tile data               |
+| Scene start             | Tilemap worker | Parses the Tiled JSON, lays the tile layers out in a SAB (`TileMap.buffersFromTiled`)    |
+| Scene start             | Main        | Decodes the tileset PNG; `TileMap.initializeFromBuffers` builds the page's TileMaps        |
 | Worker init             | All workers | `TileMap.initializeFromBuffers(data.tilemapData)` creates Int32Array views over shared SABs |
 | Runtime                 | Any thread  | `TileMap.myTilemap.grass.getTileId(x, y)` reads directly from SAB                           |
 | Scene `destroy()`       | Main        | `TileMap.reset()` clears registry and releases SAB references                               |
@@ -202,7 +202,8 @@ Each `TileMapLayer.data` is an `Int32Array` view into the corresponding region. 
 | `TileMap.get(name)`                            | Get tilemap by name (dictionary lookup)                  |
 | `TileMap.getById(id)`                          | Get tilemap by numeric ID                                |
 | `TileMap.getAll()`                             | Get all registered tilemaps                              |
-| `TileMap.initializeFromLoaded(loadedTilemaps)` | Main thread: create SABs from Tiled JSON                 |
+| `TileMap.buffersFromTiled(json, id, index)`    | Any thread: a Tiled map's tile layers in one SAB, and their metadata |
+| `TileMap.initializeFromLoaded(loadedTilemaps)` | Main thread: the same from Tiled JSON already parsed (no worker) |
 | `TileMap.initializeFromBuffers(data)`          | Workers: create views over shared SABs                   |
 | `TileMap.getSerializableData()`                | Main thread: package SABs + metadata for worker transfer |
 | `TileMap.reset()`                              | Scene cleanup: clear registry, release SAB references    |
