@@ -10,6 +10,7 @@ uniform vec2 uTexelSize;     // 1/rtWidth, 1/rtHeight (injected by pixi_worker)
 
 const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
 const int STACKBLUR_MAX_R = 8;
+const int PAIR_TAPS = 4; // STACKBLUR_MAX_R / 2: texel pairs each side of the centre
 
 vec2 texelStep() {
     if (uTexelSize.x > 1e-6 && uTexelSize.y > 1e-6) {
@@ -39,30 +40,37 @@ float triWeight(float i, float rad) {
     return max(rad + 1.0 - abs(i), 0.0);
 }
 
-// Horizontal pass (processImageDataRGB row pass)
-vec3 stackBlurH(vec2 uv, vec2 px, float rad) {
-    vec3 acc = vec3(0.0);
-    float wsum = 0.0;
-    for (int i = -STACKBLUR_MAX_R; i <= STACKBLUR_MAX_R; i++) {
-        float fi = float(i);
-        float w = triWeight(fi, rad);
-        if (w <= 0.0) continue;
-        acc += brightAt(uv + vec2(fi, 0.0) * px) * w;
-        wsum += w;
-    }
-    return acc / max(wsum, 0.001);
+// One of the 9 taps that cover a 17-texel row of the kernel: tap 0 is the centre texel; tap k (1 to 4 each side)
+// reads texels 2k-1 and 2k at once, at the point between them where their weights split, so the texture's linear
+// filter returns their weighted average in one fetch. Returns (weight, offset in texels).
+vec2 pairTap(float k, float rad) {
+    float ak = abs(k);
+    if (ak < 0.5) return vec2(rad + 1.0, 0.0);
+    float a = 2.0 * ak - 1.0;
+    float b = 2.0 * ak;
+    float wa = triWeight(a, rad);
+    float wb = triWeight(b, rad);
+    float w = wa + wb;
+    float o = w > 0.0 ? (a * wa + b * wb) / w : 0.0;
+    return vec2(w, sign(k) * o);
 }
 
-// Vertical pass on horizontal result (full separable StackBlur)
+// The whole 2D triangular kernel ((2 x 8 + 1)^2 = 289 texels) in 9 x 9 = 81 bilinear fetches (E-450: the 289-fetch
+// loop took 11 ms of GPU a frame at 1080p). The colour of each 2 x 2 group is exact; the bright extract then runs on
+// the group's average instead of on each texel, which a blur this wide does not show.
 vec3 stackBlurHV(vec2 uv, vec2 px, float rad) {
     vec3 acc = vec3(0.0);
     float wsum = 0.0;
-    for (int j = -STACKBLUR_MAX_R; j <= STACKBLUR_MAX_R; j++) {
-        float fj = float(j);
-        float w = triWeight(fj, rad);
-        if (w <= 0.0) continue;
-        acc += stackBlurH(uv + vec2(0.0, fj) * px, px, rad) * w;
-        wsum += w;
+    for (int j = -PAIR_TAPS; j <= PAIR_TAPS; j++) {
+        vec2 ty = pairTap(float(j), rad);
+        if (ty.x <= 0.0) continue;
+        for (int i = -PAIR_TAPS; i <= PAIR_TAPS; i++) {
+            vec2 tx = pairTap(float(i), rad);
+            if (tx.x <= 0.0) continue;
+            float w = tx.x * ty.x;
+            acc += brightAt(uv + vec2(tx.y, ty.y) * px) * w;
+            wsum += w;
+        }
     }
     return acc / max(wsum, 0.001);
 }
