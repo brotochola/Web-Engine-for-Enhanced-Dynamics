@@ -25,6 +25,8 @@
 //   ?pitch= ?floor= ?height=  camera.pitch, floorScaleY, heightScaleY (default 47, 0.736, 0.752, the art's; floor=auto
 //                 and height=auto leave them to the pitch: sin and cos)
 //   ?walls=1      lighting.walls: the lamps' 'wall' kind (shadowCaster.lamps.setWall) stops them, with any camera
+//   ?normalSun= ?normalLamps=  lighting.normalStrength: how much a sprite's own normals count under the sun and under the
+//                 lamps, each 0 (lit as drawn) to 1 (lit by its normals); without them the engine's default (0 and 1)
 //   ?ambient=     lighting.baseAmbient (default 0.12)
 //   ?depth=1|0    renderer.pixelDepth on or off (default: on by itself, an oblique camera with maps)
 //   ?res=         lighting.resolution and shadowResolution (default 1: the canvas's own size)
@@ -44,6 +46,15 @@ const { Scene, GameObject, Collider, DirectionalSprite, ShadowCaster, LightEmitt
 const { ShapeType } = enums;
 
 const param = (k) => WEED.params?.get(k) ?? null;
+/** lighting.normalStrength from the page: only the numbers given, so the engine's default stands for the rest. */
+const NORMAL_STRENGTH = (() => {
+  const strength = {};
+  for (const [key, name] of [['sun', 'normalSun'], ['lamps', 'normalLamps']]) {
+    const text = param(name);
+    if (text !== null && text !== '' && Number.isFinite(Number(text))) strength[key] = Number(text);
+  }
+  return strength;
+})();
 const MAPS = param('maps') !== '0';
 const SUN_MAP = param('sun') !== 'layer';
 const SELF = param('self') !== '0';
@@ -333,6 +344,7 @@ export class LightBenchScene extends Scene {
       lampShadows: LAMP_MAP ? 'map' : 'layer',
       // ?walls=1: the 'wall' kind's walls stop the lamps (the walls' sweep, whatever the pitch).
       walls: WALLS,
+      normalStrength: NORMAL_STRENGTH,
       selfShadow: SELF,
       // Each world pixel lit whole, the maps read with one tap: the shadows crisp on the art's pixels, as the prototype's.
       pixelArt: PIXEL_ART,

@@ -32,6 +32,10 @@ const {
 
 const WORLD = N * CELL;
 
+// ?wallDepth= (px, default 40): how far the lamps' light enters the rock from the edge it reaches (lighting.wallDepth).
+const WALL_DEPTH_PARAM = Number(WEED.params?.get('wallDepth'));
+const WALL_DEPTH = WALL_DEPTH_PARAM >= 0 && WEED.params?.get('wallDepth') != null ? WALL_DEPTH_PARAM : 40;
+
 // The manager runs in the logic workers and every worker imports this scene
 // module, so the disk must be configured at module scope — a create()-only
 // assignment only reaches the main thread and the workers would seed the flat
@@ -110,8 +114,9 @@ export class PlanetPhysicsScene extends Scene {
       enabled: true,
       // Walls: the rock (TerrainIsland's shadowCaster.setWall) stops the lights.
       walls: true,
-      // The rock is a mesh (MeshRenderer), with no sprite of its own to light whole: the light enters it 40 px from its edge.
-      wallDepth: 40,
+      // The rock is a mesh (MeshRenderer), with no sprite of its own to light whole: the light enters it 40 px from its edge
+      // (?wallDepth= tries another depth; 0 leaves the rock in its own shadow).
+      wallDepth: WALL_DEPTH,
       shadowsEnabled: false,
       baseAmbient: 0,
       maxLights: 40,

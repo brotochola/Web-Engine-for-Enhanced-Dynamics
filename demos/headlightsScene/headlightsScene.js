@@ -13,6 +13,7 @@
 // The road, its meshes and the panel are Sun Street's: this scene is about the lights.
 //
 // URL: ?hour=22 (15 is day), ?cars=6, ?carSpeed=3, ?walls=0 (no walls: the lamps cast layer shadows instead),
+// ?wallDepth=24 (the light enters each house 24 px from the edge it reaches, instead of lighting its picture whole),
 // ?backend=webgpu.
 // WASD or arrows pan, the wheel zooms, H hides the panel.
 
@@ -27,6 +28,8 @@ const { Scene, Camera, Keyboard, Sun, Transform, LAYER_KIND } = WEED;
 const param = (key, fallback) => Number(WEED.params?.get(key) ?? fallback);
 const CARS = Math.max(0, Math.floor(param('cars', 6)));
 const WALLS = param('walls', 1) === 1;
+// lighting.wallDepth: 0 (the default) lights a wall's own picture whole; above 0 the light fades into it that many px.
+const WALL_DEPTH = Math.max(0, param('wallDepth', 0)) || 0;
 const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 
 const NIGHT_HOUR = 22;
@@ -80,6 +83,7 @@ export class HeadlightsScene extends Scene {
       enabled: true,
       // The houses and the cars are walls that stop the lamps and the headlights (nightStreet.js); ?walls=0 sets none.
       walls: WALLS,
+      wallDepth: WALL_DEPTH,
       baseAmbient: 0.05,
       maxLights: 32, // 7 lamps and up to 25 cars in view
       maxVolumes: HOUSES + CARS, // each house's box and each car's body and cabin
