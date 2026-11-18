@@ -8,7 +8,13 @@
  *   node scripts/bakeBigAtlas.mjs \
  *     --scene /demos/predatorScene/predatorScene.js \
  *     --export PredatorScene \
- *     --out demos/img/baked/PredatorScene
+ *     --out demos/img/baked/PredatorScene \
+ *     [--via page|worker]
+ *
+ * --via: where the atlas is packed. 'page' (default): SpriteSheetRegistry.createBigAtlas on the page's thread. 'worker'
+ * (SST-5): in the atlas worker, as a scene packs it (src/core/atlas/packedAtlas.js, the atlas cache off), its bitmap drawn
+ * into a canvas here for the PNG: two bakes of one scene, one each way, give the same files when the worker packs the
+ * page's atlas (its sources decoded with createImageBitmap there, <img> here).
  */
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -44,6 +50,8 @@ async function main() {
   const sceneModule = args.scene || '/demos/predatorScene/predatorScene.js';
   const sceneExport = args.export || args['scene-export'] || 'PredatorScene';
   const outRel = args.out || 'demos/img/baked/PredatorScene';
+  const via = args.via || 'page';
+  if (via !== 'page' && via !== 'worker') throw new Error(`--via is page or worker, not ${via}`);
   const outDir = path.resolve(repoRoot, outRel);
   const headed = Boolean(args.headed);
 
@@ -72,11 +80,13 @@ async function main() {
     });
 
     const result = await page.evaluate(
-      async ({ sceneModule, sceneExport }) => {
-        const [{ SpriteSheetRegistry }, sceneExports, { unshadedGlowsOf }] = await Promise.all([
+      async ({ sceneModule, sceneExport, via }) => {
+        const [{ SpriteSheetRegistry }, sceneExports, { unshadedGlowsOf }, { loadPackedAtlas }, { startAssetWorker }] = await Promise.all([
           import('/src/index.js'),
           import(sceneModule),
           import('/src/util/configDefaults.js'),
+          import('/src/core/atlas/packedAtlas.js'),
+          import('/src/core/assetWorkerClient.js'),
         ]);
         const SceneClass = sceneExports[sceneExport];
         if (!SceneClass) {
@@ -105,22 +115,43 @@ async function main() {
           spritesheets,
         };
 
-        const packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, {
+        const packOptions = {
           maxAtlasWidth: assetsConfig.maxAtlasWidth ?? 4096,
           maxAtlasHeight: assetsConfig.maxAtlasHeight ?? 4096,
           atlasPadding: assetsConfig.atlasPadding ?? 2,
           trimImages: assetsConfig.trimImages ?? true,
           trimAlphaThreshold: assetsConfig.trimAlphaThreshold ?? 0,
           heuristic: 'best-short-side',
-          // DX-MAPS: the twin page's texels as they are; its canvas would premultiply them.
-          keepMapsTexels: true,
-          // DX-MAPCAMERA: a sheet drawn for another camera has its heights scaled to the scene's.
-          camera: scene.config?.camera ?? null,
           // E-497: the twin page's format.
           twinFormat: assetsConfig.twinFormat ?? 'A',
-          // DX-GLOWRADIUS: halos that join the entities are unshaded.
-          unshadedGlows: unshadedGlowsOf(scene.config?.lighting),
-        });
+        };
+        // DX-MAPCAMERA: a sheet drawn for another camera has its heights scaled to the scene's.
+        const camera = scene.config?.camera ?? null;
+        // DX-GLOWRADIUS: halos that join the entities are unshaded.
+        const unshadedGlows = unshadedGlowsOf(scene.config?.lighting);
+        let packed;
+        if (via === 'worker') {
+          // SST-5: packed in the atlas worker; the bake's PNG from its bitmap, drawn into a canvas as the page's was.
+          const worker = await startAssetWorker('atlasWorker');
+          if (!worker) throw new Error('--via worker: no atlas worker here');
+          const atlas = await loadPackedAtlas(assetsToLoad, {
+            options: { ...packOptions, atlasCache: false }, camera, unshadedGlows, decals: false, worker, withMapsTexels: true,
+          });
+          worker.close();
+          const canvas = document.createElement('canvas');
+          canvas.width = atlas.imageBitmap.width;
+          canvas.height = atlas.imageBitmap.height;
+          canvas.getContext('2d').drawImage(atlas.imageBitmap, 0, 0);
+          packed = { json: atlas.json, canvas, mapsTexels: atlas.mapsTexels };
+        } else {
+          packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, {
+            ...packOptions,
+            // DX-MAPS: the twin page's texels as they are; its canvas would premultiply them.
+            keepMapsTexels: true,
+            camera,
+            unshadedGlows,
+          });
+        }
 
         if (!packed.json?.meta?.proxySheets) {
           throw new Error('createBigAtlas did not write meta.proxySheets');
@@ -220,7 +251,7 @@ async function main() {
           frameCount: Object.keys(packed.json.frames).length,
         };
       },
-      { sceneModule, sceneExport }
+      { sceneModule, sceneExport, via }
     );
 
     await fs.mkdir(outDir, { recursive: true });
@@ -238,7 +269,7 @@ async function main() {
     else await fs.rm(mapsPath, { force: true });
 
     console.log(
-      `Baked bigAtlas → ${outRel}\n` +
+      `Baked bigAtlas (packed on the ${via === 'worker' ? 'atlas worker' : 'page'}) → ${outRel}\n` +
         `  ${result.size.w}x${result.size.h}, ${result.frameCount} frames, ` +
         `${result.proxyCount} proxy sheets` +
         (result.mapsPngDataUrl ? `, maps page ${MAPS_FILE}` : '')

@@ -47,7 +47,7 @@ test('the asset loads start at the top of init, run under the Box2D block and th
     scene.config.canvasHeight = 360;
     // The atlas pack and install need a page (a 2D canvas, the registries' sheets): stand-ins that record when.
     const atlas = { json: { frames: {}, animations: {}, meta: {} } };
-    scene._packBigAtlasOnMainThread = async () => {
+    scene._packBigAtlas = async () => {
       loadMark('test atlas packed');
       return atlas;
     };
