@@ -23260,14 +23260,15 @@
       ],
       "records": [
         "R-1349",
-        "R-1361"
+        "R-1361",
+        "R-1362"
       ],
-      "result": "ASUS scoreboard 0895: logic0 STEP_MS +6.0 %, kernel +0.7 % (FAIL row)",
+      "result": "not a regression: loaded to casts=12288 on the ASUS, v0.14.0 -> main logic -0.5 % (HD 620) and -2.5 % (MX110), both NEUTRAL; the +6 % was read under the step floor",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
       "id": "N-296",
       "kind": "speed",
       "area": "logic",
-      "status": "open",
+      "status": "dropped",
       "date": "2026-11-18",
       "title": "rayStressScene's logic costs 6 % more than v0.14.0's on the ASUS (the grid ray DDA kernel itself is level)",
       "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
@@ -23349,6 +23350,51 @@
         "gbuffer access"
       ],
       "records": []
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "scoreboard load per machine",
+        "stress load knob",
+        "step floor rows",
+        "scoreboard calibration"
+      ],
+      "records": [],
+      "result": "",
+      "next": "A `query` per catalog row (engineFeatureCatalog.mjs) and a calibration pass in runScoreboard that raises it until the baseline's primary worker passes the floor on the machine at hand. Load knobs for the scenes that have none: stationarySpatialScene (spatial) and queryAabbStressScene (queryAabb, N-295). The ASUS's values from job 0896e are a start: ray casts=12288, bullets=65000, spawn storm=6000.",
+      "id": "DX-SCORELOAD",
+      "kind": "tool",
+      "area": "tools",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "The scoreboard's stress rows run at loads chosen for the main PC, so on a slower machine many fall under the 6 ms floor and read FAIL: a load per row, calibrated per machine, and knobs for the scenes that have none (spatial, queryAabb)",
+      "statusText": "raised by the owner on 2026-11-18 from the ASUS scoreboards (R-1349, R-1361): about half the stress rows read FAIL there"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "barrio freeze",
+        "renderer stall",
+        "ASUS stall",
+        "ProduceSkia",
+        "GPU state invalid",
+        "Intel GPU hang",
+        "page freezes at start"
+      ],
+      "records": [
+        "R-1363",
+        "R-1364",
+        "R-1365"
+      ],
+      "result": "",
+      "next": "Find the feature that sets it off. 32 runs per arm on the HD 620, each run's Chrome log kept (CHROME_LOG_FILE plus --dumpio); the log's ProduceSkia or \"GPU state invalid\" lines mark a frozen run. Arms: the barrio by day (hour=12); at night with its lamps off; with shadows off; with the G-buffer off. Then a smaller scene with the suspect alone. Also try WebGPU on the HD 620, and the Radeon iGPU here when this PC is free.",
+      "id": "N-298",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "Buenos Aires at night freezes in about 1 start in 10 on the Intel HD 620. After WebGL init the page's rAF falls to 1 to 3 fps, the renderer draws nothing, the machine idles, and there is no page error or context loss: a hang in Chrome's GPU process. It does not happen on the MX110, and it happens with the prod bundle too",
+      "statusText": "found on the ASUS 2026-11-18 (jobs 0896m to 0896q): the \"renderer stall\" of 2026-11-17 caught with Chrome's own log"
     }
   ],
   "records": [
@@ -37023,6 +37069,38 @@
       "commits": [
         "27efbf1a"
       ]
+    },
+    {
+      "id": "R-1362",
+      "date": "2026-11-18",
+      "title": "The ASUS's under-floor stress rows loaded past the floor: ray neutral on both GPUs (N-296 dropped), bullets -7 % on the HD 620, spawn level per body",
+      "verdict": "dropped",
+      "text": "**The scoreboard's under-floor stress rows, loaded past the floor on the ASUS** (the owner's point: raise each scene's own knob until the measured worker passes 6 ms).\n\n**Calibration** (job 0896e, main 70ba822b, single runs, headless). The measured worker, from the default load up:\n\n| Scene (worker) | HD 620 | MX110 |\n|---|---|---|\n| ray `casts` 3072 / 6144 / 12288 / 24576 (logic) | 3.7 / 8.4 / 14.8 / 31.2 ms | 4.1 / 8.1 / 16.9 / 34.3 ms |\n| bullets 40 000 / 52 000 / 65 000 (particle) | 5.0 / 6.9 / 9.0 ms | 5.2 / 7.1 / 9.8 ms |\n| spawn `storm` 1800 / 3600 / 6000 (logic) | 4.3 / 6.9 / 10.2 ms | 3.9 / 7.6 / 12.5 ms |\n\n**A/B** (job 0896f, 2026-11-18 05:5x to 06:3x). v0.14.0 (A) against main 70ba822b (B), each its whole revision, 4 pairs, at casts=12288, bullets=65000 and storm=6000:\n\n| Row | HD 620 | MX110 |\n|---|---|---|\n| ray (logic) | 14.23 → 14.54 ms, −0.5 % paired (1/4 worse, cv 6/5 %), NEUTRAL | 16.01 → 15.61 ms, −2.5 % (0/4), NEUTRAL |\n| bullets (particle) | 9.66 → 9.15 ms, −7.1 % (0/4 worse), KEPT | 9.31 → 9.15 ms, −2.7 %, NEUTRAL |\n| spawn (logic) | 9.44 → 9.60 ms, +2.1 % (3/4) | 10.18 → 10.77 ms, +1.2 % (4/4) |\n\nspawn reads FAIL (load) because main keeps 15 to 24 % more bodies alive (BODY_COUNT 452 → 561 on the HD 620, 560 → 645 on the MX110): per body it is cheaper.\n\nN-296 (ray's logic +6 %, read under the floor) is not a regression: dropped. spatial and queryAabb (N-295) have no load knob in their scenes; DX-SCORELOAD asks for one, and a load per machine in the catalog."
+    },
+    {
+      "id": "R-1363",
+      "date": "2026-11-18",
+      "title": "The barrio freeze caught on the ASUS: 8 of 80 starts on the HD 620, 0 of 32 on the MX110, 2 of 32 with the prod bundle; Chrome's GPU process hangs",
+      "verdict": "note",
+      "text": "**The barrio freeze, caught on the ASUS** (jobs 0896m to 0896q, 2026-11-18 07:02 to about 10:10). Buenos Aires at night (`hour=22&dayMinutes=0`), headless, main 70ba822b, `runIntegratedWorkerBenchmark --warmup-ms 5000 --duration-ms 10000`, each run its own browser.\n\n| Arm | Runs | Frozen |\n|---|---|---|\n| HD 620, src (0896m, n, o, p) | 80 | 8 (3, 1, 0, 4), plus about 4 half-frozen (163 to 309 frames against about 365) |\n| MX110, src (0896q) | 32 | 0 |\n| HD 620, prod bundle (`weedBundle`, 0896q) | 32 | 2 |\n\n**What a frozen run looks like:**\n- The integrated-GPU warning prints, so WebGL is up.\n- The page's main thread then runs at 1.0 to 3.1 fps with 0.3 ms of work per frame.\n- The renderer draws no frame in the measured window.\n- typeperf has total CPU at 3 to 14 % and a quiet disk.\n- No page error is logged, and no context loss.\n\n**Chrome's log** (`CHROME_LOG_FILE` per run, `--dumpio`, `--v=1`) holds, only in frozen runs, one of two errors as the browser closes:\n- `SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox` (twice);\n- `GPU state invalid after WaitForGetOffsetInRange`.\n\nNo normal run logs either. In 0896q, the two logs with these lines were exactly the two frozen runs. It is a hang in Chrome's GPU process under ANGLE/D3D11 on the Intel driver. The prod bundle hits it too, so a player on such a laptop can.\n\n**Also:** every barrio start on the HD 620 saturates the HDD for 13 to 52 s (disk queue 150 to 186, typeperf misses samples). Runs average 80 s on the HD 620 and 33 s on the MX110, so the storm looks like the Intel side's, perhaps its driver's shader cache. The freeze comes after the storm, with the disk quiet.\n\nSimple scenes did not freeze on the HD 620: 0 in 30 normalLightCheck runs (0896l) and 0 in 20 capacity Predator runs (0896a)."
+    },
+    {
+      "id": "R-1364",
+      "date": "2026-11-18",
+      "time": "11:26",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze arms on the HD 620: day 2 of 32, no people 3 of 31, WebGPU 0 of 32; not the lamps or the people, WebGL suspected",
+      "verdict": "note",
+      "text": "**Three arms on the HD 620** (job 0896r, 2026-11-18 09:45 to 11:26). Buenos Aires, src, main 70ba822b, `runIntegratedWorkerBenchmark --warmup-ms 5000 --duration-ms 10000 --no-collect-detailed-stats`, 32 starts per arm, each with its own browser and its own Chrome log.\n\n| Arm | Query | Frozen |\n|---|---|---|\n| day | `hour=12&dayMinutes=0` (no lamps or headlights, 2.7 GPU passes against 6.0 at night) | 2 of 32 |\n| no people | `hour=22&dayMinutes=0&people=0` | 3 of 31 (one start failed to load: `ERR_NETWORK_CHANGED`) |\n| WebGPU | `hour=22&dayMinutes=0&backend=webgpu` | 0 of 32 |\n\nA frozen start reads the same as before: the page's rAF at 1.8 to 2.8 fps and the renderer at no frames. Four of the five frozen starts logged ProduceSkia or \"GPU state invalid\" as the browser closed. One (no people, run 12) logged neither, so the log line marks most frozen runs but not all of them.\n\n**What it says:**\n- The night's lamps, lamp shadows and headlights are not the trigger, and neither are the people.\n- WebGPU stayed clean. With WebGL on the HD 620 at 15 frozen in 175 (8.6 %), 0 in 32 comes out by chance about 1 time in 18, so the result points at the WebGL path (ANGLE on D3D11, Intel's driver) without settling it.\n- WebGPU on the HD 620 draws about 265 renderer frames in the window, against about 435 on WebGL by day and 380 at night.\n\n**Next:** a lab driver outside the repo (`C:\\weedlab\\freezeProbe.mjs`, the bench page with Chrome flags per arm; the runner takes none). It interleaves the arms: ANGLE on D3D11 (the control), `--use-angle=gl`, `--use-angle=d3d11on12`, `--disable-gpu-shader-disk-cache`, and WebGPU again."
+    },
+    {
+      "id": "R-1365",
+      "date": "2026-11-18",
+      "time": "14:19",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze vs Chrome flags on the HD 620: the rate drifts from about 9 % in the morning to 3.6 % in the afternoon, so no flag settles it; WebGPU 0 of 64 against WebGL's 22 of 367",
+      "verdict": "note",
+      "text": "**Chrome flags and the runner on the HD 620** (jobs 0896s to 0896u, 2026-11-18 11:32 to 14:19). Buenos Aires at night, src, main 70ba822b. The bench runner takes no Chrome flags, so `C:\\weedlab\\freezeProbe.mjs`, a lab driver outside the repo, opens the same bench page with flags per arm, the arms interleaved run by run. A run counts as frozen when the page's rAF over 10 s is under 20 fps; frozen runs read 1.9 to 2.9.\n\n| Job | Arm | Frozen |\n|---|---|---|\n| 0896t | probe, default flags (ANGLE D3D11) | 0 of 32 |\n| 0896t | `--use-angle=d3d11on12` | 0 of 32 |\n| 0896t | `--disable-gpu-shader-disk-cache` | 5 of 32 |\n| 0896t | WebGPU | 0 of 32 |\n| 0896u | the bench runner, as in 0896m to 0896r | 0 of 32 |\n| 0896u | probe, its renderer-string WebGL context made before the scene (0896t's default) | 2 of 32 |\n| 0896u | probe, that context made after the measurement | 0 of 32 |\n| 0896u | `--disable-gpu-shader-disk-cache` | 0 of 32 |\n\nTwo flags did not run at all: `--use-angle=gl` fails Pixi's init in the worker, and `--use-angle=vulkan` falls to SwiftShader.\n\n**The rate drifts through the day.** The same runner froze 13 of 143 in the morning (0896m to 0896r, about 9 %) and 0 of 32 at 13:07. WebGL on D3D11 in the afternoon pools 7 of 192 (3.6 %), and runs got shorter: the runner averaged 63 s in 0896r and 33 s in 0896u. So a one-job gap like 5 against 0 is within that drift, and no flag is shown to cause the freeze or to cure it. 0896t's slow no-disk-cache runs (80 to 97 s for its first 11) did not freeze; frozen ones were both short and long.\n\n**What holds:**\n- WebGPU on the HD 620 froze 0 of 64 starts, where WebGL on D3D11 froze 22 of 367 all day (6 %). Chance gives 0 of 64 about 1 time in 50.\n- `d3d11on12` (0 of 32) and the context made after the measurement (0 of 32) are not settled.\n- The teardown log line marks some frozen runs, not all of them, and it showed once on a WebGPU run that drew normally (0896t run 10). It is a hint, not a test.\n\n**Next:** catch the freeze itself. On a frozen run the probe takes a 5 s Chrome trace with the GPU categories, then measures rAF again 60 s later to see whether it recovers."
     }
   ],
   "leads": [
