@@ -149,7 +149,8 @@ export function validateSceneSharedBufferConfig(scene) {
   assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_POOL_SLOTS);
   assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_POOL_SLOTS);
   assertIntegerInRange('tween.maxTweens', config.tween?.maxTweens ?? 0, 0, 1 << 20);
-  assertIntegerInRange('physics.maxJoints', config.physics.maxJoints || 0, 0, maxEnt);
+  // N-253: the Joint component's lists hold 16-bit joint indices (0xffff is none): 65 535 joints at most.
+  assertIntegerInRange('physics.maxJoints', config.physics.maxJoints || 0, 0, Math.min(maxEnt, 65535));
   assertIntegerInRange(
     'physics.maxFixturePoolSize',
     config.physics.maxFixturePoolSize || config.physics.maxFixtures || 0,
