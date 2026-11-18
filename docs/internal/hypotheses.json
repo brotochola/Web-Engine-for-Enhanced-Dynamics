@@ -22332,7 +22332,8 @@
       "records": [
         "R-1317",
         "R-1350",
-        "R-1352"
+        "R-1352",
+        "R-1353"
       ]
     },
     {
@@ -22356,7 +22357,8 @@
       "records": [
         "R-1317",
         "R-1350",
-        "R-1351"
+        "R-1351",
+        "R-1353"
       ]
     },
     {
@@ -35963,6 +35965,18 @@
       "title": "lampShadows 'map' gives lamps their tiles only with a stamp row: volumes alone cast no lamp shadow (OL-5), which keeps the race's maps arm from running",
       "verdict": "note",
       "text": "**Found, not fixed: with `lampShadows: 'map'` a scene whose only casters are volumes draws no lamp shadow (OL-5).** Seen building the race's maps arm: visPolyStressScene `?arm=maps` (64 lamps 40 px high, 700 occluders as `setBox` volumes 400 px high, no sprite caster) draws the lamps and no shadow, with or without a pitch, with pre-render or Pixi packing the sprites (0 of 921 600 px differ between the two).\n\n- **Why (read in the code, not run apart):** Pixi gives a lamp its tile in the lamps' map from the ids pre-render publishes (`_readLampTiles`), and `preRenderWorker._writeStampLightIds(dst, stampN)` returns 0 unless `stampN > 0`: the ids go out only in a frame where at least one sprite caster was stamped for a lamp. The volumes are then drawn into no tile.\n- **Who it reaches:** a street of houses with nobody near its lamps; not the barrio as it runs (it always has people), nor lampShadowStressScene (20 000 walkers).\n- **The race:** the knobs are on visPolyStressScene (`?arm=walls|fans|plain|maps`, `?move=`, `?castLights=`, `?tile=`, `?lampCache=0`); walls, fans and plain draw; the maps arm waits for this fix."
+    },
+    {
+      "id": "R-1353",
+      "date": "2026-11-18",
+      "time": "04:12",
+      "timeFrom": "recorded",
+      "title": "A first reading, not a sitting: the walls in the light pass against the old fan pass at 360 lights, pre-render +0.65 ms, Pixi +0.2 ms after the rows upload only their columns in use",
+      "verdict": "note",
+      "text": "**A first reading of what the walls cost in the light pass against the old fan pass, not a sitting: pre-render +0.6 to 0.7 ms (about +22 %), Pixi +0.2 ms (about +22 %) at 360 lights; no A/A, the GPU not read.** visPolyStressScene `?lights=360`, `?arm=fans` against `?arm=walls`, one build (dx/one-light), GTX 1650 on AC, headed, `--src`, detailed stats off, 3 s warm-up and 8 s, four runs a side in turn (04:05 to 04:09, the result files' times). Each worker's `STEP_MS - WAIT_MS`, exact frames:\n\n| | fans (old pass) | walls (light pass) |\n| --- | --- | --- |\n| pre-render | 3.04, 2.87, 2.99, 2.96 | 3.69, 3.69, 3.55, 3.66 |\n| Pixi, rows uploaded whole | 0.89, 0.91 | 1.31, 1.33 |\n| Pixi, the columns in use only (the commit after) | 0.91, 0.78 | 1.05, 1.04 |\n\n- **Pre-render's +0.65 ms** is the rows' build, in JS, once a lamp with walls (360 a frame here): the candidate for the sweep's kernel.\n- **Pixi's** cost was the upload: this scene sets `maxPolygonVertices` 5000, so a row was 578 texels wide and went up whole; sending the columns in use took 0.28 ms off (1.32 -> 1.04). What is left over the fans is the copy and the upload of the rows in use, every frame, unchanged rows included.\n- **Not read:** the GPU's time a frame (the light pass shades every pixel and the G-buffer pass is on; the fans drew only where a light reaches), which is where this change may cost most; a sitting with an A/A and the baseline over 6 ms (`?lights=720`).\n- Every worker stays far under a frame (pre-render 23 % load, Pixi's own work about 1 ms), 60 fps on both arms.",
+      "commits": [
+        "f56792f2"
+      ]
     }
   ],
   "leads": [
