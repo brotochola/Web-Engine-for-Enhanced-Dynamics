@@ -593,7 +593,9 @@ float weedGbufDepth(vec2 uv) {
 }
 
 `;
-  return gbufOnce(source.replace(main, () => depth + main), cut, '  gl_FragDepth = weedGbufDepth(uv);\n', 'its alpha cut');
+  // N-266: the unshaded pass's edge fragment has its own cut, and a marker where the depth goes.
+  const at = source.includes(cut) ? cut : '  // weed:depth\n';
+  return gbufOnce(source.replace(main, () => depth + main), at, '  gl_FragDepth = weedGbufDepth(uv);\n', 'its alpha cut');
 }
 
 /** The unshaded pass's entry in a face module with words (faceMap.js faceIdsEntryWgsl), as N-266 replaces it. */
@@ -605,14 +607,31 @@ const UNSHADED_ENTRY_WGSL = `fn mainFragUnshaded(in: VertexOut) -> @location(0) 
 }
 `;
 
-/** N-266: the unshaded pass's entry with the colour pass's depth (faceMap.js faceUnshadedFragment with depth). */
+/**
+ * N-266: the unshaded pass's two entries with the colour pass's depth (faceMap.js faceUnshadedFragment with depth): the
+ * opaque one (the solid pixels that are not unshaded, black, writing it) and the edge one (the soft and the unshaded ones,
+ * testing it).
+ */
 const UNSHADED_DEPTH_ENTRY_WGSL = `fn mainFragUnshaded(in: VertexOut) -> WeedUnshadedOut {
   let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
   let t = textureSample(uTexture, uSampler, uv);
-  if (t.a * in.vColor.a < 0.5) { discard; }
   let s = unshadedOf(in.vGbuf, in.vMapsWin);
+  if (t.a * in.vColor.a < 0.5 || s > 0.0) { discard; }
   var o: WeedUnshadedOut;
-  o.color = vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, t.a * in.vColor.a);
+  o.color = vec4<f32>(0.0, 0.0, 0.0, t.a * in.vColor.a);
+  o.depth = weedGbufDepth(in);
+  return o;
+}
+
+@fragment
+fn mainFragUnshadedEdge(in: VertexOut) -> WeedUnshadedOut {
+  let uv = weedUv(in.vLocal, in.vWorld, in.vAtlasUV, in.vTileInv, in.vTileOff);
+  let t = textureSample(uTexture, uSampler, uv);
+  let s = unshadedOf(in.vGbuf, in.vMapsWin);
+  let ad = t.a * in.vColor.a;
+  if (ad <= 0.0 || (ad >= 0.5 && s <= 0.0)) { discard; }
+  var o: WeedUnshadedOut;
+  o.color = vec4<f32>(t.rgb * in.vColor.rgb * in.vColor.a * s, ad);
   o.depth = weedGbufDepth(in);
   return o;
 }

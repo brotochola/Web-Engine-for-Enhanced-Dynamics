@@ -91,17 +91,24 @@ test('N-266: the G-buffer\'s and the unshaded passes take the colour pass\'s for
   assert.ok(pixelDepthValue(0, u + step * 0.2, 2, true) < pixelDepthValue(0, u + step * 0.1, 9, true), 'continuous: the place');
 });
 
-test('N-266: with pixel depth the unshaded pass keeps the canvas\'s front surface: its texels past the cut test and write the depth', () => {
+test('N-266: with pixel depth the unshaded pass is the colour pass\'s two passes, opaque writing and edges testing', () => {
   // Without depth, as before: every texel, its colour if unshaded, black with its alpha if not.
   assert.doesNotMatch(faceUnshadedFragment(), /discard/);
-  const f = gbufDepthFragment(faceUnshadedFragment({ depth: true }));
-  const cut = f.indexOf('  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n');
-  const write = f.indexOf('  gl_FragDepth = weedGbufDepth(uv);\n');
-  assert.ok(cut > 0 && write > cut, 'right after the cut');
-  assert.match(f, /flat in float vMapScale;\nuniform vec4 uFaceSpace;/);
-  assert.match(f, /finalColor = vec4\(t\.rgb \* vColor\.rgb \* vColor\.a \* s, t\.a \* vColor\.a\);/, 'its colour as before');
-  // WGSL: the one pass's entry and the unshaded pass's write frag_depth.
-  const w = gbufDepthWgsl(faceMapWgsl(gbufAttributeWgsl(shader('instancedSprite.wgsl')), { gbuf: true, unshaded: true }));
+  // The opaque one: the solid texels that are not unshaded, black, writing the depth after the cut.
+  const opaque = gbufDepthFragment(faceUnshadedFragment({ depth: true }));
+  const cut = opaque.indexOf('  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n');
+  const write = opaque.indexOf('  gl_FragDepth = weedGbufDepth(uv);\n');
+  const notUnshaded = opaque.indexOf('  if (unshadedOf(vGbuf) > 0.0) discard;\n');
+  assert.ok(cut > 0 && write > cut && notUnshaded > write);
+  assert.match(opaque, /flat in float vMapScale;\nuniform vec4 uFaceSpace;/);
+  // The edge one: the soft texels and the unshaded ones, the depth written for its test (the state writes none).
+  const edge = gbufDepthFragment(faceUnshadedFragment({ depth: true, edge: true }));
+  const edgeCut = edge.indexOf('  if (ad <= 0.0 || (ad >= 0.5 && unshadedOf(vGbuf) <= 0.0)) discard;\n');
+  assert.ok(edgeCut > 0 && edge.indexOf('  gl_FragDepth = weedGbufDepth(uv);\n') > edgeCut);
+  // WGSL: the one pass and both unshaded entries write frag_depth.
+  const words = gbufAttributeWgsl(shader('instancedSprite.wgsl'));
+  const w = gbufDepthWgsl(faceMapWgsl(words, { gbuf: true, unshaded: true }));
   assert.match(w, /fn mainFragUnshaded\(in: VertexOut\) -> WeedUnshadedOut \{/);
-  assert.equal(count(w, 'o.depth = weedGbufDepth(in);'), 2);
+  assert.match(w, /@fragment\nfn mainFragUnshadedEdge\(in: VertexOut\) -> WeedUnshadedOut \{/);
+  assert.equal(count(w, 'o.depth = weedGbufDepth(in);'), 3, 'the one pass and the two unshaded entries');
 });
