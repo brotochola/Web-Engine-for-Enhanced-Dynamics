@@ -91,12 +91,10 @@ export const CAPACITY_SCENES = Object.freeze({
     path: '/demos/boidsScene/boidsScene.js',
     exportName: 'BoidsScene',
     knob: 'boids',
-    // The pool's 65 000 is the most the scene holds: with physics on, the physics host refuses a scene of more than
-    // 65 535 entities (Box2D's MAX_BODIES, physicsHostImpl.js), and every boid is a body. 65 000 held 60 fps with every
-    // p99 under 12.4 ms on 2026-11-16, so this scene reads as capped (a guard for spatial and logic, three runs) until
-    // that limit moves.
+    // N-253: physics scenes take up to 1 048 575 entities (Box2D's tables sized from the scene), and `?boids=` past
+    // 65 000 grows the scene's pool and Box2D's memory; 65 000 held 60 fps with every p99 under 12.4 ms on 2026-11-16.
     min: 5000,
-    max: 65000,
+    max: 400000,
     start: 40000,
     step: 1000,
     query: '',
@@ -127,9 +125,9 @@ export const CAPACITY_SCENES = Object.freeze({
     path: '/tests/bench/stressScenes/keyedPackStressScene.js',
     exportName: 'KeyedPackStressScene',
     knob: 'n',
-    // The scene's cap, 499 998 (the engine's 500 000 less two entities a mix can add).
+    // The scene's cap, 1 048 573 (the engine's 1 048 575 less two entities a mix can add: DX-ENT1M).
     min: 10000,
-    max: 499998,
+    max: 1048573,
     start: 150000,
     step: 5000,
     query: '',
