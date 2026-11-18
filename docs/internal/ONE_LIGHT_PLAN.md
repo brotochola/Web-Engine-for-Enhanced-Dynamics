@@ -508,12 +508,17 @@ measurement, then the deletion (section 8).
 
 ## 5. Open decisions (the owner's, when we get there)
 
-- OL-2: the default of `normalStrength` (recommended `{ sun: 0, lamps: 1 }`), from the pictures; and
-  whether the option is the scene's alone or a sprite's too.
+- OL-2: the default of `normalStrength`. **Decided 2026-11-18: `{ sun: 0, lamps: 1 }` stays.** At full strength the
+  owner likes the barn's roof and not the rest ("todo se oscurece mucho": in the light bench at 16:00 a fifth of the
+  view changes and loses 43.5 % of its light there; 26.1 % at 0.6, 15.3 % at 0.35). Open: a softer shape for the
+  sun's normals, which the owner raised and wants to talk through before anything is designed; and whether the
+  option is the scene's alone or a sprite's too.
 - OL-3: final A or final B, from the table and the captures.
 - OL-4: how a wall's own sprite is lit once self-lit is gone. Whole, as drawn (the maps' rule), or
   only to a depth from the edge the lamp sees (final B knows the hit's distance; it is N-38's fix and
-  needs no G-buffer in a scene without maps). Show both on a top-down house and on a side-view rock.
+  needs no G-buffer in a scene without maps). **Decided 2026-11-18: to a depth looks better, on the top-down
+  houses and on the side-view rocks, and both looks stay as the dev's knobs** (`lighting.wallDepth`: 0, the
+  engine's default, lights it whole; Headlights now asks 24 px, planetPhysics 40).
 - OL-4, final A: what `setWall({ shape: 'sprite' })` becomes.
 - OL-4, final B: the names of the keys (`lighting.walls`, `lighting.wallDepth`; the builder's picks).
 - OL-4, final B: whether a wall's shadow keeps a third of the lamp, as the old pass's did (`WALL_UMBRA`), or
