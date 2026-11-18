@@ -9,7 +9,8 @@
 //   cars.js           the cars; carModels.js which model each car is; walkers.js the people; traffic.js the law;
 //   litWindows.js     the windows at dusk; standardObjects.js the objects' index, as the classes need it
 //
-// URL: ?hour=17.5, ?dayMinutes=8 (0 stops the clock), ?people=5000, ?resolution=0.5, ?backend=webgpu, ?floorCache=0
+// URL: ?hour=17.5, ?dayMinutes=8 (0 stops the clock), ?people=5000 (default 5000, 2000 on 4 logical cores or fewer),
+// ?resolution=0.5, ?backend=webgpu, ?floorCache=0
 // (paint the floor every frame), ?pan=40 (the camera drifts right by itself, world px a second).
 // Drag, the wheel or WASD move the camera; Z and X move the hour while held; H hides the panel.
 
@@ -69,6 +70,12 @@ const START_FOCUS = (WEED.params?.get('focus') || '').split(',').map(Number);
 const START_ZOOM = param('zoom', 0);
 const CORES = globalThis.navigator?.hardwareConcurrency || 4;
 /**
+ * How many people walk when the URL does not say: 5000, or 2000 on a machine with 4 logical cores or fewer (a 2-core
+ * laptop). There every engine thread, the GPU driver and Chrome's GPU process share the same few cores, and the barrio
+ * ran short of CPU with 5000 (physics took 35 ms a step on the Intel HD 620 laptop). `?people=` sets it either way.
+ */
+const DEFAULT_PEOPLE = CORES <= 4 ? 2000 : 5000;
+/**
  * `?physicsWorkers=N`: Box2D's solver threads (physics.numberOfPhysicsWorkers; the engine's default, 4, without it), to
  * weigh them on a machine with few cores, where every thread of the engine shares them.
  */
@@ -106,7 +113,7 @@ const POOLS_BUT_PEOPLE =
   HOUSES + 8 + TREES + 8 + OBJECTS_PLACED + 64 + TRAFFIC_LIGHTS + 8 + 4 * (TRAFFIC_LIGHTS + 8) + FOUNTAINS + 4 +
   DRIVING_CARS + 8 + PARKED_CARS + 8 + DRIVING_CARS + 2 * POLICE_CARS + 16;
 const PEOPLE_MAX = Math.max(0, ENTITY_LIMIT - POOLS_BUT_PEOPLE - 64);
-const PEOPLE = Math.max(0, Math.min(PEOPLE_MAX, Math.floor(param('people', 5000))));
+const PEOPLE = Math.max(0, Math.min(PEOPLE_MAX, Math.floor(param('people', DEFAULT_PEOPLE))));
 /** Decorations: what the package places (its count, else the sum of its kinds), and room for the beacons' dots. */
 const DECORATIONS = Math.min(
   1048575,
