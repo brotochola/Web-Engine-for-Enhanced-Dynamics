@@ -491,11 +491,23 @@ deletion.
 
 ---
 
+**OL-6, as built** (`2696eafe`). The four numbers go in one new uniform, `uNormalShade`, after `uFaceSun` in both
+languages (`uFaceLight`'s two middle numbers are 0 again). The sun's shading is measured against the sun the pixel
+gets as drawn (`sunFlat`, which holds its map's shade and its own), so a cast shadow is not shading; the gain of a
+face that looks at the sun stays, times the strength. A lamp's is taken where the lamp is added, a lamp at a time,
+from the face's own cosine (before the lamp's map and the pixel's own shade scale it); the pass no longer works
+the lamps out twice and mixes them. `normalLightCheck` takes `--subtract` and holds the new rule: worst 4.0 of 255
+on both backends at four settings, the maps' own steps as before. The default picture is the same (dxCaptureScene
+at noon and by night: 0 px). Light bench at 16:00, the view's pixels that change and the light they lose: full
+strength 20.3 % and 43.5 %; strength 0.8 with 0.2 subtracted 16.5 % and 24.0 %; strength 1 with 0.3 subtracted
+16.3 % and 21.8 %.
+
 ### OL-6 — The shading a sprite's normals cause: a strength, and an amount subtracted
 
-- [ ] `lighting.normalShading: { sun: { strength, subtract }, lamps: { strength, subtract } }` in place of
-  `lighting.normalStrength`, in both shaders.
-- [ ] The light bench's knobs, and the captures from which the owner picks the sun's two numbers.
+- [x] `lighting.normalShading: { sun: { strength, subtract }, lamps: { strength, subtract } }` in place of
+  `lighting.normalStrength`, in both shaders. (`2696eafe`)
+- [ ] The light bench's knobs, and the captures from which the owner picks the sun's two numbers. (The knobs
+  and the first captures are there, `2696eafe`; the owner has not picked.)
 
 **Why** (the owner, 2026-11-18, from OL-2's first pictures). At full strength the sun's normals do what the
 owner likes to the barn's roof and darken everything else too much: in the light bench at 16:00 a fifth of the
@@ -647,7 +659,11 @@ the occluders' volumes (`setBox`, 400 px high, lamps at 40) cast nothing in the 
 engine's (**OL-5**, in the register): Pixi gives a lamp its tile from the ids pre-render publishes, and
 `_writeStampLightIds` publishes them only in a frame with a sprite caster's stamp row; this scene has volumes alone
 (lampShadowStressScene has 20 000 walkers). A street of houses with nobody near its lamps is the same case. It
-holds up the maps' arm and final A, not final B. With a
+held up the maps' arm and final A, not final B. **Fixed** (`13c69176`): pre-render orders, fades at the cut and
+names the casting lamps without a stamp row when the lamps cast into their map; Pixi gives them tiles for a stamp
+row or a casting volume (none with neither) and, with tiles and no stamp row, clears the map and draws the volumes
+alone. The arm draws its shadows now: before against after 139 473 of 921 600 px, WebGL against WebGPU 0 px, and
+a frame with a stamp row runs as before (dxCaptureScene by night: 0 px). With a
 pitch of 90 the scene's white floor sprite lies flat; with heights on the screen it stood as a card 3000 px tall and
 no light reached it, so it is `surface: 'floor'` now.
 
