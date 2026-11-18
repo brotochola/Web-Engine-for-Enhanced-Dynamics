@@ -192,7 +192,7 @@ export class BlastforgeScene extends Scene {
 
   static entities = [
     [Detonator, 1],
-    [Prop, 220],
+    [Prop, 13500], // spawnProps places 13 409: a third of the 214 x 192 cells of the world, and the two trees
     [FrameGuide, 1],
   ];
 
