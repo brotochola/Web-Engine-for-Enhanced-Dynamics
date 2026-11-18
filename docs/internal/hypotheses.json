@@ -11658,7 +11658,8 @@
         "R-1249",
         "R-1254",
         "R-1274",
-        "R-1319"
+        "R-1319",
+        "R-1341"
       ]
     },
     {
@@ -21708,7 +21709,8 @@
         "R-1274",
         "R-1277",
         "R-1318",
-        "R-1321"
+        "R-1321",
+        "R-1341"
       ]
     },
     {
@@ -35413,6 +35415,15 @@
       "title": "E-502 checked on the HD 620: auto reads it as integrated Intel and leaves the pass off; drawn frames +72 % bunnyMarkStress, +52 % bunnyMark 100 000 against the pass forced on",
       "verdict": "kept",
       "text": "**E-502's rule on the Intel HD 620 it was made for: `auto` reads the GPU as integrated Intel and leaves the pass off.** ASUS laptop, job 0885, 2026-11-17 18:27 to 18:36, one build (perf/e502-opaque-igpu 7b69be48, whose rule gives the same answer for Intel as the merged one), side A forced the pass on (`?opaquePass=1`), side B `auto`, src, 4 pairs.\n\n- GPU names Chrome gives a page there: the installed Chrome, headed and headless, and Playwright's Chromium headed: \"ANGLE (Intel, Intel(R) HD Graphics 620 (0x00005916) Direct3D11 vs_5_0 ps_5_0, D3D11)\" → integrated. Playwright's Chromium headless: SwiftShader → software.\n\n| Scene | drawn fps, forced on → auto | Other workers |\n|---|---|---|\n| bunnyMarkStress (asus-e502b-bunnystress) | 34.8 → 60.1 (+72.3 %, 4/4, cv 1/0 %) | below the floor |\n| bunnyMark 100 000 (asus-e502b-bunny) | 7.9 → 11.9 (+51.9 %, 4/4, cv 2/3 %) | renderer 10.33 → 9.30 ms (−8.9 %, 0/4 worse); pre-render 6.64 → 6.73 ms (+4.3 % paired, 3/4, cv 5/3 %) |\n\nThe runner called bunnyMark REGRESSION from pre-render's +4.3 %. Pre-render's code does not change with the pass (only the renderer's draw does): it is the laptop's shared 15 W budget, where drawing half again as many frames makes the CPU dearer, as in the earlier HD 620 sittings. It matches R-1277's on/off (+53.5 %, +77.8 %): the rule is wired and reads this GPU right."
+    },
+    {
+      "id": "R-1341",
+      "date": "2026-11-17",
+      "time": "21:06",
+      "timeFrom": "recorded",
+      "title": "E-502 on the ASUS's GeForce MX110: the opaque pass holds bunnyMark 100 000 at 60 fps, 16.5 without (-72 %), so discrete keeps it; scene.gpu reads both of the ASUS's GPUs right",
+      "verdict": "kept",
+      "text": "**E-502's \"discrete keeps the pass\" holds on a weak discrete GPU, and scene.gpu reads both of the ASUS's GPUs right.** ASUS laptop, job 0888, 2026-11-17 20:55 to 21:06.\n\n**Setup.** Chrome was put on the GeForce MX110 through Windows' graphics preference for chrome.exe (GpuPreference=2) and set back to the Intel (GpuPreference=1) at the end. One build, main bd82c1be. Side A forced the pass on (`?opaquePass=1`), side B forced it off (`?opaquePass=0`). src, 4 pairs.\n\n**Opaque pass on the MX110, which `auto` leaves on as discrete:**\n\n| Scene | drawn fps, on → off | CPU, on → off |\n|---|---|---|\n| bunnyMark 100 000 | 60.0 → 16.5 (−72.5 %, 4/4, cv 0/0 %) | renderer 5.48 → 2.69 ms, pre-render 5.04 → 2.33 ms, logic 3.04 → 1.33 ms |\n| bunnyMarkStress | 60.1 → 60.0 | below the floor |\n\n- With the pass the MX110 holds the 60 fps cap. That is at least 3.6 times what it draws without it, and five times the HD 620's 11.9 fps without it (R-1321). The CPU workers run cheaper on side B only because it draws fewer frames.\n- One run hit \"Failed to fetch dynamically imported module\" and was retried by the runner.\n\n**scene.gpu (DX-IGPUWARN), sceneGpuProbe, ballsScene (WebGL) and gearChainScene (WebGPU):**\n- **Chrome on the GeForce:** WebGL `{ name: \"ANGLE (NVIDIA, NVIDIA GeForce MX110 (0x0000174E) …)\", vendor: \"nvidia\", kind: \"discrete\" }`, WebGPU `{ name: \"nvidia maxwell\", kind: \"discrete\" }`, no warning.\n- **Playwright's Chromium**, which the preference does not cover: the HD 620, `{ vendor: \"intel\", kind: \"integrated\" }`, with one warning, WebGL and WebGPU (\"intel gen-9\").\n- **Chrome back on the Intel:** HD 620, integrated, one warning, WebGL and WebGPU."
     }
   ],
   "leads": [
