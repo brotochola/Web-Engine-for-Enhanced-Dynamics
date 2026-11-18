@@ -23426,7 +23426,9 @@
       "records": [
         "R-1363",
         "R-1364",
-        "R-1365"
+        "R-1365",
+        "R-1435",
+        "R-1436"
       ],
       "result": "",
       "next": "Find the feature that sets it off. 32 runs per arm on the HD 620, each run's Chrome log kept (CHROME_LOG_FILE plus --dumpio); the log's ProduceSkia or \"GPU state invalid\" lines mark a frozen run. Arms: the barrio by day (hour=12); at night with its lamps off; with shadows off; with the G-buffer off. Then a smaller scene with the suspect alone. Also try WebGPU on the HD 620, and the Radeon iGPU here when this PC is free.",
@@ -37494,6 +37496,24 @@
         "d91c953c",
         "23044ddd"
       ]
+    },
+    {
+      "id": "R-1435",
+      "date": "2026-11-18",
+      "time": "16:38",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze on the HD 620 under Windows' counters: for 15 to 18 s from the scene's start nobody works (GPU 3D engine 0 %, GPU process about 10 % of a core, no paging), then it goes on by itself",
+      "verdict": "note",
+      "text": "ASUS lab job 0896w (15:30-16:38), freezeProbe v4: Windows counters (typeperf, 1 s) from before the scene loads, and a\n5 s Chrome trace once a freeze is found. Buenos Aires at night (hour=22, dayMinutes=0), HD 620, WebGL D3D11, src at\nmain 70ba822b, 48 interleaved rounds.\n\n- Frozen: default flags 1 of 48, --disable-gpu-shader-disk-cache 2 of 48 (plus 1 run lost: its 54 MB trace did not\n  finish writing in 60 s on the HDD). All three recovered by themselves within 60 s.\n- The counters of the three frozen runs agree: from the scene's start, for about 15 to 18 s, the GPU's 3D engine sits\n  at 0 %, Chrome's GPU process uses about 10 % of a core and the page about 5 %, nothing pages, about 1.6 GB stay free.\n  Meanwhile the GPU's shared memory climbs slowly, about 450 to 650 MB. Then a burst of paging and disk, and the run\n  goes on normally (3D engine about 98 %).\n- Reading: nobody works during the stall, neither CPU nor GPU; uploads still go in, but slowly. The trace taken after\n  detection (5 s) came too late to show the start."
+    },
+    {
+      "id": "R-1436",
+      "date": "2026-11-18",
+      "time": "19:07",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze traced from the start: every shader link on Chrome's GPU main thread waits about 1 s with no traced work, then compiles in 3 to 13 ms; about 30 links in a row make the stall",
+      "verdict": "note",
+      "text": "ASUS lab job 0896x (16:38-19:07, stopped by hand after round 31 of 48: it had what it was for), freezeProbe v5: a\nChrome trace from before the scene loads to the end of the measurement, with the GPU process's and ANGLE's categories.\nBuenos Aires at night, HD 620, WebGL D3D11, src at main 70ba822b. Arms interleaved: traced (no shader disk cache, traced\nfrom start), nodiskcache (untraced), default (untraced).\n\n- Frozen: traced 2 of 31 (runs 15 and 19), nodiskcache 1 of 31, default 0 of 30 (1 page load failed). The traced arm's\n  29 normal runs lost their traces: about 90 MB did not finish writing within 90 s on the HDD. All 3 freezes recovered\n  by themselves within 60 s.\n- Both frozen start traces show one pattern on CrGpuMain: from some point on (run 15 at +2.1 s, in the browser's own\n  raster flush, which then took 8.1 s; run 19 at +12.9 s, in the page's raster), every shader program link takes about\n  1.0 s, whoever links: Skia's FinishPaintRenderPass, the raster flushes, and WebGL's DoLinkProgram (1001 ms) alike. In\n  each, about 1000 ms pass with no traced work, then ANGLE posts the D3DCompile to the thread pool, which takes 3 to\n  13 ms. About 30 links in a row make the stall (run 15: from +2.1 s to past +42 s).\n- Reading: a timed wait of 1 s, once per link, somewhere under ANGLE (ANGLE, D3D11 or the Intel driver,\n  27.20.100.8682 from 2020-09); nobody works while it holds. Chrome's trace cannot see inside it. Next, 0896y: Windows'\n  recorder (WPR: context-switch stacks, GPU queues) in memory, kept for frozen runs."
     }
   ],
   "leads": [
