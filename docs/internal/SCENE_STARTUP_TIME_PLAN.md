@@ -157,7 +157,7 @@ items; the full matrix waits for the end (section 2).
 
 ### SST-1 — Workers start before the assets: boot, then configure
 
-- [ ] not started
+- [x] 67d5c707 (the page and the workers), 4450ca64 (the renderer), d78908f6 (merged): R-1451
 
 Split each worker's start in two messages:
 - **'boot'**, sent right after `new Worker`, with what depends on neither assets nor buffers: the
@@ -176,7 +176,7 @@ atlas's), all suites, every demo booting (`test:demos`, the scene smoke).
 
 ### SST-2 — engine.wasm compiled once, on the main thread, and shared
 
-- [ ] not started
+- [x] b1750d20: R-1451
 
 - The main thread starts `WebAssembly.compileStreaming(fetch(engineWasmUrl))` as `loadScene` begins;
   in the bundle it inflates the data URL once.
@@ -191,7 +191,7 @@ in Chrome and Firefox.
 
 ### SST-3 — Game scripts fetched once and in parallel (bundle)
 
-- [ ] not started
+- [x] 3ce60f3f, built; bundle only, not timed yet
 
 - The main thread fetches the scene's script graph once, all files at the same time, and parses each
   file's imports as it arrives.
@@ -205,7 +205,7 @@ dependency, the bundle smokes, SST-0 on the prod bundle.
 
 ### SST-4 — The main thread's start in parallel
 
-- [ ] not started
+- [x] d4bee501: R-1451 (the asset branches start at 8 ms; the page thread stays the critical path, SST-5)
 
 Today `Scene.init` awaits in a row: the audio worklet, the entity scripts, Adobe,
 `reserveBox2dBlock`, the buffers, the workers, then the assets. Start everything that does not depend
@@ -258,7 +258,7 @@ and SST-0 warm against cold.
 
 ### SST-7 — The GPU ready before the first frame
 
-- [ ] not started
+- [x] 8a21a209 (step 1), 228bb256 (step 2, E-494), 67bead52 (step 3, WebGPU), 3157f110 (step 4): R-1451, the renderer's longest step after the start 109 -> 36 ms
 
 1. Upload the atlas, the maps page and the tilesets during init, not at the first draw.
 2. The programs made on first use, built and linked at init: that is **E-494**, which stays the row for
