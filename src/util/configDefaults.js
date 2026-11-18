@@ -303,6 +303,8 @@ export const ASSETS_DEFAULTS = Object.freeze({
   atlasPadding: 2,
   /** Bin-pack heuristic: best-short-side | best-long-side | best-area */
   heuristic: 'best-short-side',
+  /** SST-6: a packed atlas kept in Cache Storage by a hash of its inputs, loaded from there next time; false packs each load */
+  atlasCache: true,
 });
 
 // ============================================================================

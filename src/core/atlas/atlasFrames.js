@@ -139,14 +139,15 @@ export function applyFrameTexels(json, texels) {
  * frames cut from it, else each frame is read where it is.
  * @param {CanvasImageSource & { width: number, height: number }} image the decoded atlas (an ImageBitmap)
  * @param {{ frames: object, animations: object, meta?: object }} json
- * @param {{ decals: boolean, makeCanvas: (w: number, h: number) => { getContext: Function } }} opts
+ * @param {{ decals: boolean, texels?: boolean, makeCanvas: (w: number, h: number) => { getContext: Function } }} opts
+ *   texels: false reads no texels whatever the json lacks (a packed atlas's built-ins have none, as packed)
  * @returns {{ decals: ReturnType<typeof decalTexturesFrom> | null, texels: Record<string, [number, number]> | null }}
  */
-export function readAtlasPixels(image, json, { decals, makeCanvas }) {
-  if (!decals && !needsFrameTexels(json)) return { decals: null, texels: null };
+export function readAtlasPixels(image, json, { decals, texels = true, makeCanvas }) {
+  if (!decals && !(texels && needsFrameTexels(json))) return { decals: null, texels: null };
   const ctx = makeCanvas(image.width, image.height).getContext('2d', { willReadFrequently: true });
   ctx.drawImage(image, 0, 0);
-  return readCanvasPixels(ctx, image.width, image.height, json, { decals });
+  return readCanvasPixels(ctx, image.width, image.height, json, { decals, texels });
 }
 
 /**
@@ -155,10 +156,10 @@ export function readAtlasPixels(image, json, { decals, makeCanvas }) {
  * @param {number} width
  * @param {number} height
  * @param {{ frames: object, animations: object, meta?: object }} json
- * @param {{ decals: boolean }} opts
+ * @param {{ decals: boolean, texels?: boolean }} opts
  */
-export function readCanvasPixels(ctx, width, height, json, { decals }) {
-  const texelsNeeded = needsFrameTexels(json);
+export function readCanvasPixels(ctx, width, height, json, { decals, texels = true }) {
+  const texelsNeeded = texels && needsFrameTexels(json);
   if (!decals && !texelsNeeded) return { decals: null, texels: null };
   if (texelsNeeded) {
     const pixels = { data: ctx.getImageData(0, 0, width, height).data, x: 0, y: 0, width, height };

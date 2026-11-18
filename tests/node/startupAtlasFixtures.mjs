@@ -129,6 +129,11 @@ export class MemCanvas {
     for (let y = 0; y < this.height; y++) for (let x = 0; x < this.width; x++) img.data.set(this._straightAt(x, y), (y * this.width + x) * 4);
     return img;
   }
+
+  /** A PNG of it: its pixels as getImageData reads them (un-premultiplied), copied now. */
+  convertToBlob() {
+    return Promise.resolve(memPng(this.transferToImageBitmap()));
+  }
 }
 
 /** A PNG in memory: a Blob whose bytes name an image the fake createImageBitmap decodes. */
@@ -294,7 +299,8 @@ export function fakeWorker({ loads = true } = {}) {
 export function withFetch(files, fn) {
   const saved = globalThis.fetch;
   globalThis.fetch = async (url) => {
-    const body = files[url];
+    // An absolute URL of the test's origin is its path (the worker gets URLs resolved against the page).
+    const body = files[String(url).replace(/^https?:\/\/[^/]+/, '')];
     if (body === undefined) return new Response('missing', { status: 404 });
     return new Response(body, { status: 200 });
   };
@@ -374,4 +380,39 @@ export function packScene(seed) {
 /** The store of a canvas (its premultiplied pixels) or an image's bytes, hashed. */
 export function hashPixels(source) {
   return hashBytes(source.store ?? source.data);
+}
+
+/** Cache Storage in memory (open, match, put, keys, delete), its entries' bodies kept as their bytes. */
+export class MemCacheStorage {
+  constructor() {
+    this.caches = new Map();
+    this.opened = 0;
+  }
+
+  async open(name) {
+    this.opened++;
+    let entries = this.caches.get(name);
+    if (!entries) this.caches.set(name, (entries = new Map()));
+    const urlOf = (r) => (typeof r === 'string' ? r : r.url);
+    return {
+      async match(request) {
+        const e = entries.get(urlOf(request));
+        return e ? new Response(e.body.slice(0), { headers: e.headers }) : undefined;
+      },
+      async put(request, response) {
+        entries.set(urlOf(request), { body: await response.arrayBuffer(), headers: Object.fromEntries(response.headers) });
+      },
+      async keys() {
+        return [...entries.keys()].map((url) => ({ url }));
+      },
+      async delete(request) {
+        return entries.delete(urlOf(request));
+      },
+    };
+  }
+
+  /** The URLs of the entries in one cache. */
+  urls(name) {
+    return [...(this.caches.get(name)?.keys() || [])];
+  }
 }

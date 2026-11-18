@@ -2,21 +2,20 @@
 // fetches and decodes every source, reads each sheet's pixels once (trim, standing base, texels), packs, draws the atlas
 // (atlasBuild.js), reads the decal textures from it and hands back the json, the renderer's bitmaps and the decal
 // textures; the page only draws the built-in textures (small canvases, utils.js's) and registers the ids. Where there is
-// no worker the page does the same on its own thread (SpriteSheetRegistry.createBigAtlas): the same atlas.
+// no worker the page does the same on its own thread: the same atlas. SST-6: either loads it from the atlas cache
+// (atlasCache.js) when the same scene packed it before (config.assets.atlasCache, on unless false).
 
 import { resolvedAssetUrl } from '../../util/fetchAsset.js';
+import { resolveAssetUrls } from './atlasCache.js';
 import { resolveHeightScaleY } from '../../util/cameraView.js';
 import { loadMark } from '../../util/loadMarks.js';
+import { ASSETS_DEFAULTS } from '../../util/configDefaults.js';
+import { debugWorkerLog } from '../../util/debugLog.js';
 import { SpriteSheetRegistry } from '../spriteSheetRegistry.js';
 import { drawBuiltinTextures } from './atlasBuiltins.js';
-import { buildBigAtlas } from './atlasBuild.js';
 import { runJobOrHere } from '../assetWorkerClient.js';
-import { packedBitmaps } from './packedBitmaps.js';
-
-/** A spritesheet config's fields that name files: the worker resolves URLs against its own script, so they go absolute. */
-const SHEET_URL_FIELDS = ['json', 'png', 'normalMap'];
-/** Fields that are a URL or an object with a `png` URL (DX-MAPS heightMap, DX-RELIEF reliefMap). */
-const SHEET_PNG_FIELDS = ['heightMap', 'reliefMap'];
+import { makeCanvas2d } from './canvas2d.js';
+import { packAtlas } from './atlasPackJob.js';
 
 /**
  * The atlas's assets as the worker gets them: every URL resolved against the page, an Adobe sheet's decoded image as an
@@ -26,28 +25,15 @@ const SHEET_PNG_FIELDS = ['heightMap', 'reliefMap'];
  * @returns {Promise<{ assets: object, transfer: Transferable[] }>}
  */
 export async function assetsForWorker(assetsToLoad, resolve = resolvedAssetUrl) {
-  const assets = {};
+  const assets = resolveAssetUrls(assetsToLoad, resolve);
   const transfer = [];
-  for (const [name, value] of Object.entries(assetsToLoad || {})) {
-    if (name === 'spritesheets') continue;
-    assets[name] = typeof value === 'string' ? resolve(value) : value;
-  }
-  const sheets = {};
-  for (const [name, config] of Object.entries(assetsToLoad?.spritesheets || {})) {
-    const c = { ...config };
-    for (const k of SHEET_URL_FIELDS) if (typeof c[k] === 'string') c[k] = resolve(c[k]);
-    for (const k of SHEET_PNG_FIELDS) {
-      if (typeof c[k] === 'string') c[k] = resolve(c[k]);
-      else if (c[k] && typeof c[k] === 'object' && typeof c[k].png === 'string') c[k] = { ...c[k], png: resolve(c[k].png) };
-    }
+  for (const c of Object.values(assets.spritesheets || {})) {
     // An Adobe Animate sheet comes decoded (Scene.prepareAdobeAnimateAssets): its image as a bitmap the worker can draw.
     if (c.img && typeof ImageBitmap !== 'undefined' && !(c.img instanceof ImageBitmap)) {
       c.img = await createImageBitmap(c.img);
       transfer.push(c.img);
     }
-    sheets[name] = c;
   }
-  if (assetsToLoad && 'spritesheets' in assetsToLoad) assets.spritesheets = sheets;
   return { assets, transfer };
 }
 
@@ -56,8 +42,8 @@ export async function assetsForWorker(assetsToLoad, resolve = resolvedAssetUrl) 
  * @param {object} assetsToLoad images by name, plus { spritesheets } (the scene's and its Adobe Animate ones)
  * @param {{ options: object, camera?: object | null, unshadedGlows?: boolean, decals: boolean,
  *   worker: import('../assetWorkerClient.js').AssetWorker | null }} opts
- *   options: config.assets (the packer's options); camera: config.camera (DX-MAPCAMERA); unshadedGlows: DX-GLOWRADIUS;
- *   decals: read the decal textures
+ *   options: config.assets (the packer's options, and atlasCache: false keeps the atlas cache out); camera: config.camera
+ *   (DX-MAPCAMERA); unshadedGlows: DX-GLOWRADIUS; decals: read the decal textures
  * @returns {Promise<{ json: object, imageBitmap: ImageBitmap, mapsBitmap: ImageBitmap | null,
  *   decals: { textures: object, frameNameToId: object } | null, inspect: () => Promise<HTMLCanvasElement | OffscreenCanvas> }>}
  */
@@ -67,6 +53,11 @@ export async function loadPackedAtlas(assetsToLoad, { options = {}, camera = nul
   const builtins = drawBuiltinTextures({ unshadedGlows });
   // DX-MAPS: the twin page's texels as computed (keepMapsTexels), its bitmap made from them, not from a canvas.
   const packOptions = { ...options, keepMapsTexels: true, mapsCanvas: false, sceneHeightScaleY, decals: decals === true };
+  // SST-6: the atlas cache, unless the scene turns it off; a bundle's code is named by the engine's version.
+  const cache = {
+    enabled: (options.atlasCache ?? ASSETS_DEFAULTS.atlasCache ?? true) !== false,
+    bundle: typeof window !== 'undefined' && window.WEED?.BUNDLE_MODE === true,
+  };
   let job = null;
   if (worker) {
     const forWorker = await assetsForWorker(assetsToLoad);
@@ -76,19 +67,24 @@ export async function loadPackedAtlas(assetsToLoad, { options = {}, camera = nul
         assets: forWorker.assets,
         options: packOptions,
         builtins: builtins.map((b, i) => ({ name: b.name, image: bitmaps[i], unshaded: b.unshaded, afterSort: b.afterSort })),
+        cache,
       },
       transfer: [...forWorker.transfer, ...bitmaps],
     };
   }
   const packed = await runJobOrHere(worker, 'pack', job?.args, job?.transfer ?? [], async () => {
-    const built = await buildBigAtlas(assetsToLoad, {
-      ...packOptions,
+    // On this thread: the cache's key from the page's own URLs; a miss's write runs on after the atlas is handed over.
+    const { result } = await packAtlas({
+      assets: assetsToLoad,
+      options: packOptions,
       builtins: builtins.map((b) => ({ name: b.name, image: b.canvas, unshaded: b.unshaded, afterSort: b.afterSort })),
+      cache,
+      makeCanvas: makeCanvas2d,
     });
-    const bitmaps = await packedBitmaps(built);
-    return { json: built.json, ...bitmaps, decals: built.decals };
+    return result;
   });
-  loadMark('atlas packed');
+  loadMark(packed.cache === 'hit' ? 'atlas from cache' : 'atlas packed');
+  if (packed.cache === 'hit') debugWorkerLog('[Scene] bigAtlas loaded from the atlas cache');
   // The individual textures' spritesheet ids, before bigAtlas's (as createBigAtlas registered them while it packed).
   SpriteSheetRegistry.registerPackedAtlasIds(packed.json);
   return {
