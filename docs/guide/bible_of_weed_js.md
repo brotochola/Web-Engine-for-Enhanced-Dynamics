@@ -1741,7 +1741,7 @@ this.shadowCaster.opacity = 0.5;      // a paler shadow: half of what the wall s
 ```
 
 - The wall is the `Collider`'s outline (a circle, a box, a convex polygon, or the outline of a compound body made with `Collider.replacePolygons`), as tall as the world. A light finds it through the spatial grid.
-- Behind a wall a light's shadow keeps a third of that light. `opacity` under 1 lets `1 - opacity` of the rest through; 0 stops nothing.
+- Behind a wall a light's shadow keeps a third of that light: `lighting.lightBehindWalls` (0 to 1, default 0.33; 0 for shadows that keep nothing of the lamp, only the ambient and the other lights). `opacity` under 1 lets `1 - opacity` of the rest through; 0 stops nothing.
 - The wall itself, where a light reaches its edge: its own sprite is lit whole, as drawn. A wall with no sprite of its own (drawn by a `MeshRenderer`, a tilemap) stays in its own shadow.
 - `lighting.wallDepth: N` (px, default 0) lights walls the other way: the light enters every wall N px from the edge it reaches and fades out there, whatever is drawn in it (a rock lit along its rim). No sprite is then lit whole.
 - `setWall`'s `shape` option (`'collider'`, the default, or `'sprite'`) changes nothing in the light pass: a wall's own pixels are told by its entity.

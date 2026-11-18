@@ -871,6 +871,13 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   wallDepth: 0,
   /**
+   * OL-4: the share of a lamp's light that still reaches the floor behind a wall, 0 to 1. 0.33 (the default, the look
+   * the old pass had: a wall's shadow is a third as bright as the lamp's light beside it); 0 leaves a wall's shadow
+   * with the scene's ambient and the other lights alone; 1 and walls stop nothing. A wall's `shadowCaster.opacity`
+   * under 1 lets that much more of the rest through. lightBehindWallsOf reads it.
+   */
+  lightBehindWalls: 0.33,
+  /**
    * OL-9: with lighting.walls, a lamp's walls kept from frame to frame. Pre-render gathers each lamp's walls every
    * frame; where the lamp, the walls in its reach and their opacity are what they were (a street lamp among houses),
    * it keeps the row the light pass reads and sweeps nothing. false sweeps every lamp every frame (to measure, or to
@@ -933,6 +940,17 @@ export function lightGlowResolutionOf(lighting) {
   const v = Number(lighting?.lightGlowResolution);
   if (!(v > 0) || !Number.isFinite(v)) return LIGHTING_DEFAULTS.lightGlowResolution;
   return Math.min(1, Math.max(1 / 16, v));
+}
+
+/**
+ * OL-4: a scene's lighting.lightBehindWalls in 0..1; the default's when it is missing or not a number.
+ * @param {object|undefined} lighting config.lighting
+ * @returns {number}
+ */
+export function lightBehindWallsOf(lighting) {
+  const v = lighting?.lightBehindWalls;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.lightBehindWalls;
+  return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
 /**

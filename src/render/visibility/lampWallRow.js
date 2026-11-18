@@ -16,7 +16,7 @@
  *
  * An edge's code: 0 for an edge that stops nothing (the far boundary, between two free rays), else the wall's G-buffer id
  * times 256 plus its opacity in 1..255 (ShadowCaster.opacity: what the transmit wedges drew). Beyond a wall's edge a
- * pixel keeps WALL_UMBRA of the lamp plus what the wall lets through, and the wall itself is lit, which is what the
+ * pixel keeps lighting.lightBehindWalls of the lamp plus what the wall lets through, and the wall itself is lit, which is what the
  * self-lit fills did: its own pixels whole (the id the G-buffer wrote for the pixel) or, with lighting.wallDepth, whatever
  * lies within that depth of the edge the lamp reaches, fading (a wall drawn by a mesh has no id).
  */
@@ -29,7 +29,10 @@ export const WALL_BIN_TEXELS = WALL_BINS / 4;
 export const WALL_VERT0 = 1 + WALL_BIN_TEXELS;
 /** Steps the search may take from a direction's start vertex (the vertices that may share one direction's bin). */
 export const WALL_WALK = 16;
-/** The share of a lamp's light a wall's shadow keeps (the old pass's UMBRA_FLOOR: its shadows were never black). */
+/**
+ * The share of a lamp's light a wall's shadow keeps where lighting.lightBehindWalls says nothing (the old pass's
+ * UMBRA_FLOOR: its shadows were never black).
+ */
 export const WALL_UMBRA = 0.33;
 /**
  * The most vertices a row holds, whatever lighting.maxPolygonVertices is (a scene may set that in the thousands, and a
@@ -189,9 +192,10 @@ export function writeWallRow(out, o, xs, ys, codes, n) {
  * @param {number} py
  * @param {number} selfId the G-buffer id of the entity whose sprite covers the pixel (0: none)
  * @param {number} [depth] lighting.wallDepth: px the light enters a wall from the edge it reaches (0: its own pixels, whole)
+ * @param {number} [behind] lighting.lightBehindWalls: the share of the lamp's light a wall's shadow keeps
  * @returns {number} 0..1
  */
-export function wallRowLight(rows, o, px, py, selfId, depth = 0) {
+export function wallRowLight(rows, o, px, py, selfId, depth = 0, behind = WALL_UMBRA) {
   const n = rows[o] | 0;
   if (n < 3) return 1;
   const ang0 = rows[o + 1];
@@ -223,7 +227,7 @@ export function wallRowLight(rows, o, px, py, selfId, depth = 0) {
   if (lit < 0) lit = 0;
   const owner = Math.floor(code / 256);
   const opacity = (code - owner * 256) / 255;
-  let beyond = WALL_UMBRA + (1 - WALL_UMBRA) * (1 - opacity);
+  let beyond = behind + (1 - behind) * (1 - opacity);
   if (depth > 0) {
     let into = 1 + inside / depth;
     if (into < 0) into = 0;

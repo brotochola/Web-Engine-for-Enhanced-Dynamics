@@ -402,6 +402,11 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    */
   wallDepth?: number;
   /**
+   * With `walls`, the share of a lamp's light that still reaches the floor behind a wall, 0 to 1 (default 0.33: a
+   * wall's shadow a third as bright as the light beside it). 0: a wall's shadow keeps nothing of that lamp.
+   */
+  lightBehindWalls?: number;
+  /**
    * With `walls`, a lamp's walls kept from frame to frame (default true): a lamp whose walls did not move, and that did
    * not move itself, is not swept again. false sweeps every lamp every frame.
    */

@@ -100,12 +100,13 @@ bool ownTexel(vec4 m, float selfId) {
 // it. Texel 0: the vertex count, the first vertex's angle, the lamp's floor point; then the directions' index, four a
 // texel; from WALL_VERT0 the vertices (their offset to the lamp, their angle, the code of the edge that starts there).
 uniform sampler2D uWallRows;
-uniform vec4 uWalls; // lighting.wallDepth (px the light enters a wall from the edge it reaches; 0: its own sprite, whole)
+// lighting.wallDepth (px the light enters a wall from the edge it reaches; 0: its own sprite, whole) and
+// lighting.lightBehindWalls (the share of a lamp's light a wall's shadow keeps).
+uniform vec4 uWalls;
 // lampWallRow.js's numbers (tests/node/lampWallRow.test.js holds the two copies together).
 const int WALL_BINS = 256;
 const int WALL_VERT0 = 65;
 const int WALL_WALK = 16;
-const float WALL_UMBRA = 0.33;
 
 // A direction's place around the lamp, 0..4, rising with atan2 (lampWallRow.js wallAngle).
 float wallAngle(vec2 v) {
@@ -114,7 +115,7 @@ float wallAngle(vec2 v) {
 }
 
 // The share of a lamp's light that reaches floor point p past the walls (lampWallRow.js wallRowLight): 1 on the lamp's
-// side of the polygon's edge that covers p's direction. Beyond a wall's edge, WALL_UMBRA plus what the wall lets
+// side of the polygon's edge that covers p's direction. Beyond a wall's edge, lighting.lightBehindWalls plus what the wall lets
 // through; and the wall itself is lit: its own pixels whole (selfId: the G-buffer's id at the pixel), or, with
 // lighting.wallDepth, whatever lies within that depth of the edge, fading. tag: the lamp's row + 1 (its light data's
 // fourth row, z), 0 for a lamp nothing stops.
@@ -148,7 +149,7 @@ float wallVisibility(vec2 p, float tag, float selfId) {
   if (lit >= 1.0) return 1.0;
   float owner = floor(v0.w / 256.0);
   float opacity = (v0.w - owner * 256.0) / 255.0;
-  float beyond = WALL_UMBRA + (1.0 - WALL_UMBRA) * (1.0 - opacity);
+  float beyond = uWalls.y + (1.0 - uWalls.y) * (1.0 - opacity);
   if (uWalls.x > 0.0) {
     float into = clamp(1.0 + inside / uWalls.x, 0.0, 1.0);
     beyond += (1.0 - beyond) * into * into * (3.0 - 2.0 * into);

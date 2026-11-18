@@ -57,7 +57,7 @@ struct LightingUniforms {
   uTileWords: vec4<f32>, // words in use, texel rows a word's band (the grid's rows + 1)
 // #endif TILES
 // #if WALLS
-  uWalls: vec4<f32>, // OL-4: lighting.wallDepth (px the light enters a wall from the edge it reaches; 0: its own sprite, whole)
+  uWalls: vec4<f32>, // OL-4: lighting.wallDepth (px the light enters a wall from its edge; 0: its own sprite, whole), lighting.lightBehindWalls
 // #endif WALLS
 }
 @group(2) @binding(0) var uLightData: texture_2d<f32>;
@@ -115,7 +115,6 @@ fn weedScreenToWorld(screenPos: vec2<f32>) -> vec2<f32> {
 const WALL_BINS: i32 = 256;
 const WALL_VERT0: i32 = 65;
 const WALL_WALK: i32 = 16;
-const WALL_UMBRA: f32 = 0.33;
 
 // A direction's place around the lamp, 0..4, rising with atan2 (lampWallRow.js wallAngle).
 fn wallAngle(v: vec2<f32>) -> f32 {
@@ -152,7 +151,8 @@ fn wallVisibility(p: vec2<f32>, tag: f32, selfId: f32) -> f32 {
   if (lit >= 1.0) { return 1.0; }
   let owner = floor(v0.w / 256.0);
   let opacity = (v0.w - owner * 256.0) / 255.0;
-  var beyond = WALL_UMBRA + (1.0 - WALL_UMBRA) * (1.0 - opacity);
+  let behind = uniforms.uWalls.y;
+  var beyond = behind + (1.0 - behind) * (1.0 - opacity);
   let depth = uniforms.uWalls.x;
   if (depth > 0.0) {
     let into = clamp(1.0 + inside / depth, 0.0, 1.0);

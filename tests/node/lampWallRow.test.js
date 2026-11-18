@@ -234,7 +234,9 @@ test('the light pass reads rows by the module\'s numbers, in the WALLS variant a
     assert.equal(number('WALL_BINS'), WALL_BINS, `${name}: WALL_BINS`);
     assert.equal(number('WALL_VERT0'), WALL_VERT0, `${name}: WALL_VERT0`);
     assert.equal(number('WALL_WALK'), WALL_WALK, `${name}: WALL_WALK`);
-    assert.equal(number('WALL_UMBRA'), WALL_UMBRA, `${name}: WALL_UMBRA`);
+    // What a wall's shadow keeps is lighting.lightBehindWalls, the walls' second number, not a constant of the pass.
+    assert.ok(!/WALL_UMBRA/.test(on), `${name}: no fixed share behind a wall`);
+    assert.match(on, /uWalls.y/, `${name}: the share behind a wall is the uniform's`);
     // Each lamp loop's body asks the walls: the cones' and the points', for the floor and for a face.
     assert.equal(on.split('wallVisibility(').length - 1, 5, `${name}: the function and its four calls`);
     assert.ok(!on.includes('#if') && !on.includes('#endif'), `${name}: no block left open`);

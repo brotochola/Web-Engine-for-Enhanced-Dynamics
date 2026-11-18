@@ -46,6 +46,7 @@ import {
   LAYER_KIND,
   LAYER_SCALE_MODE,
   PARTICLE_DEFAULTS,
+  lightBehindWallsOf,
   normalShadingOf,
   resolveZenithalMaxHeight,
 } from '../util/configDefaults.js';
@@ -1420,7 +1421,7 @@ class PixiRenderer extends AbstractWorker {
     this._wallSentLo = 0;
     this._wallSentHi = 0;
     this._wallRowsSkipped = 0;
-    // lighting.wallDepth, in the light pass's uWalls (x).
+    // lighting.wallDepth and lighting.lightBehindWalls, in the light pass's uWalls (x, y).
     this._wallTerms = new Float32Array(4);
     this._selfLitItemBytes = 28;
     // E-96b. Every light's self-lit fills and transmit wedges in one mesh, drawn in the light pass:
@@ -4959,9 +4960,11 @@ LIGHTING SYSTEM SETUP
       lightingResources.uniforms.uTileWords = { value: new Float32Array(4), type: 'vec4<f32>' };
     }
     if (wallsOn) {
-      // OL-4: after every other uniform (the WGSL struct's order): how deep the light enters a wall (lighting.wallDepth).
+      // OL-4: after every other uniform (the WGSL struct's order): how deep the light enters a wall (lighting.wallDepth)
+      // and how much of a lamp's light a wall's shadow keeps (lighting.lightBehindWalls).
       const depth = Number(this.config?.lighting?.wallDepth);
       this._wallTerms[0] = depth > 0 && Number.isFinite(depth) ? depth : 0;
+      this._wallTerms[1] = lightBehindWallsOf(this.config?.lighting);
       lightingResources.uniforms.uWalls = { value: this._wallTerms, type: 'vec4<f32>' };
     }
     // DX-LIGHTEDGES: the light at a share of the canvas over entities that write depth (pixel depth) is shown without
