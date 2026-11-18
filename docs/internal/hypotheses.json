@@ -22580,10 +22580,10 @@
       "id": "DX-DEBUGUI",
       "title": "The debug UI catches up with the engine: the Layers panel's Vis, blend and alpha work on every render path (they do not today), render views of the buffers the frame is made of (G-buffer normals and heights, light buffer, shadow maps), a sheet's height and normal maps, the lighting grid (light tiles), and panels for the sun, the light pass, the camera and the renderer's counters",
       "status": "open",
-      "statusText": "Owner-asked plan (2026-11-18), not started: \"los layers no se hacen invisibles, no puedo cambiar el modo de blending, el alpha … es como si fuera binario … me gustaría poder ver los height maps, o normal maps … y ver la grilla de iluminación\"; planned by reading only (the owner asked for no tests or benchmarks)",
+      "statusText": "Owner-asked plan (2026-11-18), not started: \"los layers no se hacen invisibles, no puedo cambiar el modo de blending, el alpha … es como si fuera binario … me gustaría poder ver los height maps, o normal maps … y ver la grilla de iluminación\"; planned by reading only (the owner asked for no tests or benchmarks). Decided with the owner (2026-11-18): the lighting grid is the light tiles (the G-buffer has its own views); light options stay read-only; panel changes do not outlive a restart; the blend list is trimmed",
       "date": "2026-11-18",
       "result": "",
-      "next": "DBG-1 to DBG-3 (the bugs the owner hit) first, then DBG-4 (the same panel); DBG-5 builds the render views that DBG-7 uses; DBG-6 is main-thread only and can run beside them. Estimate: about 25 to 36 h in a row. The owner's open decisions are in the plan's section 6.",
+      "next": "DBG-1 to DBG-3 (the bugs the owner hit) first, then DBG-4 (the same panel); DBG-5 builds the render views that DBG-7 uses; DBG-6 is main-thread only and can run beside them. Estimate: about 15 to 23 h in a row (re-estimated: the first 25 to 36 h summed every range's top). The owner's decisions are in the plan's section 6.",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -22596,7 +22596,8 @@
         "render views"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1348"
       ],
       "rank": 21
     },
@@ -22628,7 +22629,7 @@
       "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
       "date": "2026-11-18",
       "result": "",
-      "next": "Confirm section 3.2; layer.blendMode / containerBlendMode setters applied to every object of the layer; setLayerProps loses its blend fields (no aliases); the owner decides between trimming the list and registering the advanced modes (section 6); test:demos too, games see the Layer API.",
+      "next": "Confirm section 3.2; layer.blendMode / containerBlendMode setters applied to every object of the layer; setLayerProps loses its blend fields (no aliases); the list is trimmed to the modes that draw (BLEND_MODES and _BLEND_MODE_STRINGS together; the owner, 2026-11-18; nothing used a removed mode); test:demos too, games see the Layer API.",
       "area": "tools",
       "kind": "bug",
       "refs": [
@@ -22639,7 +22640,8 @@
         "blend select"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1348"
       ]
     },
     {
@@ -22732,7 +22734,7 @@
       "id": "DBG-7",
       "title": "The lighting grid: E-205's light tiles drawn over the screen, each tile tinted by how many lights reach it, with a hover readout of its lights and the grid's numbers (tilePx, cols x rows, wordsUsed)",
       "status": "open",
-      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured; the owner left \"the lighting grid\" to the planner: it is these tiles (the code has no light cells; the G-buffer is DBG-5)",
       "date": "2026-11-18",
       "result": "",
       "next": "One more render view (DBG-5): its shader bit-counts the R32UI tiles texture the light pass binds; the hover readout from LightTiles.bits at the debug UI's interval; a node test on a hand-filled LightTiles.",
@@ -22746,7 +22748,8 @@
         "light tiles view"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1348"
       ]
     },
     {
@@ -22756,7 +22759,7 @@
       "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
       "date": "2026-11-18",
       "result": "",
-      "next": "Sun setters already work at run time; options fixed at program build stay read-only (section 6 asks about making them live).",
+      "next": "Sun setters already work at run time; every light pass option is read-only (the owner, 2026-11-18: nothing fixed at program build becomes live for now).",
       "area": "tools",
       "kind": "dx",
       "refs": [
@@ -22767,7 +22770,8 @@
         "lighting panel"
       ],
       "records": [
-        "R-1347"
+        "R-1347",
+        "R-1348"
       ]
     },
     {
@@ -36211,6 +36215,15 @@
       "title": "The debug UI's catch-up planned (DX-DEBUGUI, DBG-1 to DBG-12): the Layers panel's Vis, blend and alpha fixed on every render path, render views, a sheet's maps, the lighting grid, panels for the sun, light pass and camera; nothing built or measured",
       "verdict": "note",
       "text": "**The debug UI's catch-up planned (DX-DEBUGUI, DBG-1 to DBG-12, `DEBUG_UI_PLAN.md`): a reading of the code only; nothing built, run or measured (the owner asked for no tests or benchmarks).** The owner: the Layers panel's Vis does not hide, the blend selects do nothing, alpha looks on or off; they want to see height and normal maps and the lighting grid from the debug UI, and say many newer features have no counterpart there.\n\n- **What the reading found (main at 702e6842), to be confirmed before fixing.** Vis: `castedShadows` in map mode only stops redrawing the sun and lamp maps, which the light pass keeps sampling (frozen shadows); hidden entities still cast (pre-render never reads `Layer._visible`); hidden lighting leaves the unshaded composite. Blend: the entities' meshes and the lightEdges meshes set their own blend, so the container's is never inherited; Cont Blend reaches custom layers only; a re-registration restores the config's value (the panel never writes the SAB); about 22 of the 33 names draw as normal (no advanced blend modes registered). Alpha: the entities' opaque pass (E-448 / E-502) is dropped for a blend other than normal but not for alpha below 1, so solid pixels stay opaque until alpha 0, when Pixi skips the container: on or off; the lightEdges and lightingMesh shaders never read `uColor`; worldRect stage meshes ignore alpha while the camera moves.\n- **Why the rest is missing.** The debug UI reaches the renderer through one message (`setLayerProps`) and a main-thread 2D canvas, so no GPU texture can be shown: render views (DBG-5) need a worker-side quad and decode shaders, stubbed out of the production bundle and free when off. The lighting grid is read as E-205's light tiles (DBG-7, a bit-count view of the R32UI texture; the owner to confirm). The twin page's texels are on the main thread already, so a sheet's maps viewer (DBG-6) needs no worker change.\n- **Order and size.** DBG-1 to DBG-3 first, then DBG-4; DBG-5 before DBG-7; about 25 to 36 h in a row. Four decisions for the owner in the plan's section 6 (what \"grilla\" means, live light options, persistence, trimming the blend list)."
+    },
+    {
+      "id": "R-1348",
+      "date": "2026-11-18",
+      "time": "02:52",
+      "timeFrom": "recorded",
+      "title": "DX-DEBUGUI's open points decided by the owner (lighting grid = light tiles, light options read-only, no persistence, blend list trimmed) and the plan re-estimated at 15 to 23 h",
+      "verdict": "note",
+      "text": "**The owner decided DX-DEBUGUI's four open points (DEBUG_UI_PLAN.md section 6), and the plan was re-estimated; nothing built or run.**\n\n- **The lighting grid** is E-205's light tiles (DBG-7): the owner did not know which it was (\"sé que hay light cells o algo así … ¿o es el gbuffer?\") and left it to the planner; the code has no light cells, and the G-buffer (one normal and height per pixel, not a grid) has its own views in DBG-5.\n- **Light options stay read-only** in the Light tab (DBG-8); **panel changes do not outlive a scene restart**; **the blend list is trimmed** to the modes that draw (DBG-2), BLEND_MODES and Layer._BLEND_MODE_STRINGS together. Nothing in src, demos, tests, the guide or the types used a removed mode.\n- **Re-estimated at 15 to 23 h** (was 25 to 36 h, which summed the top of every range and gave each item its own browser check). The bugs DBG-1 to DBG-3 are 3 to 4.5 h of it. The hours go to the three to five causes per bug, every shader written in GLSL and WGSL, the GPU and config paths (opaque pass, lightEdges, shadow modes), and checking fades and views on screen in motion. The checks are batched, and DBG-5 (new render views) is the largest item."
     }
   ],
   "leads": [
