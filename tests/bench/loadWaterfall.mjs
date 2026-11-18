@@ -32,6 +32,11 @@ import { chromium } from 'playwright';
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
 import { benchWindowArgs, rememberBenchWindow } from './benchWindow.mjs';
 import { parseArgs } from './microbenchHelpers.mjs';
+import { SLOT_BYTES } from '../../src/util/frameTotals.js';
+import { FRAME_CLOCK_SLOTS } from '../../src/util/frameClock.js';
+
+/** frameTotals' `frames` (f64) of the renderer's slot: the first frame it draws is the first it counts. */
+const RENDERER_FRAMES_F64 = (FRAME_CLOCK_SLOTS.renderer * SLOT_BYTES) / 8 + 1;
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -109,8 +114,12 @@ export function waterfall(marks) {
       if (!slowestPhase || d > slowestPhase.ms) slowestPhase = { from: list[i - 1].name, to: list[i].name, ms: d };
     }
   }
-  const firstDraw = rel(at(workers.renderer || [], 'first draw'));
+  // The renderer's first counted frame (frameTotals, seen by the page on its next animation frame); Pixi's own mark when
+  // the page's watch did not run (a waterfall from saved marks).
+  const pixiFirstDraw = rel(at(workers.renderer || [], 'first draw'));
+  const firstDraw = Number.isFinite(marks.firstFrameAt) ? marks.firstFrameAt - t0 : pixiFirstDraw;
   return {
+    pixiFirstDraw,
     t0,
     main: main.map((m) => ({ name: m.name, ms: m.t - t0 })),
     workers: Object.fromEntries(Object.entries(workers).map(([n, l]) => [n, l.map((m) => ({ name: m.name, ms: m.t - t0 }))])),
@@ -134,12 +143,17 @@ const median = (xs) => {
 };
 const fmt = (x) => (Number.isFinite(x) ? x.toFixed(0).padStart(6) : '     -');
 
-/** In the page: the load marks once the renderer's first draw is in, else null. */
+/** In the page: the load marks once the renderer has counted its first frame, else null. */
 function readMarks() {
   const s = window.game && window.game.currentScene;
   const lm = s && s._loadMarks;
-  if (!lm || !lm.workers.renderer || !lm.workers.renderer.includes('first draw')) return null;
-  return { main: lm.main.slice(), workers: JSON.parse(JSON.stringify(lm.workers)), pageOrigin: performance.timeOrigin };
+  if (!lm || !window.__weedFirstFrameAt) return null;
+  return {
+    main: lm.main.slice(),
+    workers: JSON.parse(JSON.stringify(lm.workers)),
+    pageOrigin: performance.timeOrigin,
+    firstFrameAt: window.__weedFirstFrameAt,
+  };
 }
 
 /** In the page: each frame-clock slot's frames and longest own step so far (frameTotals' histogram). */
@@ -175,9 +189,29 @@ async function readLongestSteps() {
   return out;
 }
 
+/**
+ * In the page, before the load: on every animation frame, whether the renderer has counted its first frame in
+ * frameTotals (as isolationLoadTime.mjs reads it); its time, on the marks' clock, goes in window.__weedFirstFrameAt.
+ * This is the first frame whatever path Pixi drew it by; Pixi's own 'first draw' mark is read beside it.
+ */
+function watchFirstFrame(framesIndex) {
+  window.__weedFirstFrameAt = null;
+  const look = () => {
+    const s = window.game && window.game.currentScene;
+    const sab = s && s.buffers && s.buffers.frameTotals;
+    if (sab && new Float64Array(sab)[framesIndex] >= 1) {
+      window.__weedFirstFrameAt = performance.timeOrigin + performance.now();
+      return;
+    }
+    requestAnimationFrame(look);
+  };
+  requestAnimationFrame(look);
+}
+
 async function visitOnce(page, url, opts) {
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, { timeout: 60000 });
+  await page.evaluate(watchFirstFrame, RENDERER_FRAMES_F64);
   await page.evaluate(
     (o) => window.__WEED_BENCHMARK__.prepare(o),
     {
@@ -191,7 +225,16 @@ async function visitOnce(page, url, opts) {
   const deadline = Date.now() + 120000;
   let marks = null;
   while (!marks) {
-    if (Date.now() > deadline) throw new Error('no first draw within 120 s of the load');
+    if (Date.now() > deadline) {
+      const seen = await page.evaluate(() => {
+        const s = window.game && window.game.currentScene;
+        const lm = s && s._loadMarks;
+        if (!lm) return 'no scene or no _loadMarks';
+        const names = (flat) => flat.filter((_, i) => i % 2 === 0).join(', ');
+        return Object.entries(lm.workers).map(([w, l]) => `${w}: ${names(l)}`).join(' | ') + ` | main: ${names(lm.main)}`;
+      });
+      throw new Error(`no first draw within 120 s of the load; marks seen: ${seen}`);
+    }
     await sleep(100);
     marks = await page.evaluate(readMarks);
   }
@@ -281,7 +324,10 @@ async function main() {
       `  workers: the last ready ${last.lastWorker?.name} at ${fmt(last.lastWorker?.t)}`
       + (last.lastWorkerSlowest ? `, its longest phase ${last.lastWorkerSlowest.from} -> ${last.lastWorkerSlowest.to} ${last.lastWorkerSlowest.ms.toFixed(0)} ms` : ''),
     );
-    console.log(`  start ${fmt(last.start)}; renderer first draw ${fmt(last.firstDraw)}; loadScene resolved ${fmt(last.loadSceneEnd)}`);
+    console.log(
+      `  start ${fmt(last.start)}; renderer first frame ${fmt(last.firstDraw)} (Pixi's mark ${fmt(last.pixiFirstDraw)}); `
+      + `loadScene resolved ${fmt(last.loadSceneEnd)}`,
+    );
     console.log(`longest own step from the start to ${opts.settleMs} ms after the first draw (median over runs, ms):`);
     const names = Object.keys(rs[0].steps || {});
     for (const n of names) {
