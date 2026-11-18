@@ -22863,7 +22863,8 @@
         "textureUploadStressScene"
       ],
       "records": [
-        "R-1349"
+        "R-1349",
+        "R-1361"
       ],
       "result": "ASUS scoreboard 0895: pixi STEP_MS 45.79 -> 99.24 ms (cv 4.0/0.2 %), logic 0.12 -> 0.39 ms; kernel textureUploadMicrobench 535 687 -> 508 758 ops/s (-5.0 %)",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -22882,7 +22883,8 @@
         "SoundManager slot claim"
       ],
       "records": [
-        "R-1349"
+        "R-1349",
+        "R-1361"
       ],
       "result": "ASUS scoreboard 0895: audioSlotMicrobench occ100x3 23 446 -> 11 070 ops/s (-52.8 %), WORSE",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -22900,7 +22902,8 @@
         "meshFillMoving regression"
       ],
       "records": [
-        "R-1349"
+        "R-1349",
+        "R-1361"
       ],
       "result": "ASUS scoreboard 0895: pixi STEP_MS +29.3 %, kernel +46.0 % (FAIL row)",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -22918,7 +22921,8 @@
         "queryAabb regression"
       ],
       "records": [
-        "R-1349"
+        "R-1349",
+        "R-1361"
       ],
       "result": "ASUS scoreboard 0895: logic0 STEP_MS +21.6 % (FAIL row), load OK",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -22937,7 +22941,8 @@
         "ray DDA"
       ],
       "records": [
-        "R-1349"
+        "R-1349",
+        "R-1361"
       ],
       "result": "ASUS scoreboard 0895: logic0 STEP_MS +6.0 %, kernel +0.7 % (FAIL row)",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -36414,6 +36419,13 @@
       "verdict": "note",
       "text": "**Houses as faces against houses as height-mapped sprites, on the ASUS, both GPUs** (the owner's question, never measured before). Jobs 0896b and 0896b2, 2026-11-18 03:2x to 03:5x. houseLightScene `?bench=faces` (A) against `?bench=maps` (B): one build (main 70ba822b), the default 12 × 8 grid of two alternating house designs, by day (hour=15) and by night (hour=22). ABAB, 4 pairs each, `--full-rev`. The runner's \"FAIL (load)\" only means the sides differ by design: 7 825 decorations against 96 sprites.\n\n| GPU, hour | Drawn fps, faces → maps |\n|---|---|\n| HD 620, day | 40.7 → 46.3 (+13.8 %, 4/4, cv 0/1 %) |\n| HD 620, night | 24.9 → 25.2 (+0.6 %) |\n| MX110, day | 59.7 → 60.0 (both at the cap) |\n| MX110, night | 34.9 → 35.2 (+0.9 %) |\n\nCPU, all under the 6 ms floor:\n- **Pre-render** is about 2 ms dearer with faces: 2.8 → 0.7 ms on the HD 620 by day, 2.3 → 0.3 on the MX110.\n- **Renderer** is dearer with maps on the MX110: 0.7 → 1.4 ms by day, 0.9 → 1.6 by night.\n\nSingle `--gpu-passes` runs (0896b) agree: by night faces and maps are equal; by day maps are 2 to 9 % cheaper.\n\n**Reading.**\n- The faces' cost is the count of pieces (pre-render's rows, the GPU's instances), not the format.\n- Maps per house do not scale to the barrio. Each house is unique, and about 260 KB of height and normal maps per house at 170 × 190 px comes to some 2 GB for 8 560 houses, against a few MB of shared face textures.\n- So the faces stay. The owner chose to make them cheaper: E-520 (a house's faces as one instance) and E-521 (static houses cached in a layer, as E-504 caches the floor).\n- Measured on the ASUS only: an extra reading. The main PC decides.\n",
       "timeFrom": "recorded"
+    },
+    {
+      "id": "R-1361",
+      "date": "2026-11-18",
+      "title": "The ASUS scoreboard on the MX110: textureUpload (+188 %), audioSlots (-74 %), meshFillMoving (+122 %) and queryAabb (+13 %) hold on the second GPU; ray flips sign (noise)",
+      "verdict": "note",
+      "text": "**The engine scoreboard again, on the ASUS's GeForce MX110** (Chrome's per-app GPU preference), main 70ba822b against v0.14.0, `--full-rev`, `--skip-node`, job 0896c2, 2026-11-18 03:47 to about 05:15. It is an extra low-end reading, as R-1349's on the HD 620 was.\n\n**The five rows R-1349 found on the HD 620, on the MX110:**\n\n| Row | HD 620 | MX110 | Reading |\n|---|---|---|---|\n| N-292 textureUpload | pixi +117 % | pixi +187.7 % (kernel −5.7 %), WORSE | holds |\n| N-293 audioSlots | kernel −52.8 % | kernel −74.1 %, WORSE | holds |\n| N-294 meshFillMoving | pixi +29 % | pixi +122.0 % (kernel +35.3 %) | holds |\n| N-295 queryAabb | logic +21.6 % | logic +13.2 % | holds; under the step floor in both |\n| N-296 ray | logic +6.0 % | logic −6.6 % | flips sign: likely noise |\n\n**Faster on main here too:**\n- spatialMax −70.6 %\n- LiquidFun physics −14.9 % (couple −4.7 %)\n- box2dRayJs logic −10.6 %\n- Kernels: publishPose ×7.7, shadowStamp +43 %, gameObjectAccess +43 %, attachedWalls +24 %, decorationCollect +20 %\n\n**Kernel noise on this laptop.** Node kernels that use no GPU moved between the two sittings by −13 to +30 % (painterRadix +1.6 % then −13.4 %, attachedSway +29.9 % then −11.0 %, decalPremultiply +18.5 % then −10.1 %). A kernel delta under about 30 % on the ASUS is noise. audioSlots and publishPose are far past it.\n\nWith the MX110 the CPU workers ran lighter than on the HD 620 (the shared-power effect), so more stress rows fell under the 6 ms floor. Job 0896e calibrates the load knobs (ray casts, bullets, spawn storm) so those rows can be judged."
     }
   ],
   "leads": [
