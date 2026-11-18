@@ -14,6 +14,8 @@ import vm from 'node:vm';
 import { fileURLToPath } from 'node:url';
 
 import {
+  ASSET_WORKER_NAMES,
+  SCENE_WORKER_NAMES,
   WORKER_NAMES,
   buildBox2dWorkerSource,
   wasmAssetNames,
@@ -43,8 +45,12 @@ const FAKE_ENGINE_WASM = Buffer.from([0, 97, 115, 109, 1, 0, 0, 0]);
 
 function fakeWorkerBuild(dir, { wasmBytes = FAKE_ENGINE_WASM } = {}) {
   fs.mkdirSync(path.join(dir, 'workers'), { recursive: true });
-  for (const name of WORKER_NAMES) {
+  for (const name of SCENE_WORKER_NAMES) {
     fs.writeFileSync(path.join(dir, 'workers', `${name}.min.js`), `/*${name}*/${ENTRY_RUNTIME}`);
+  }
+  // An asset worker is one file with no chunk or asset to load: no public path at all.
+  for (const name of ASSET_WORKER_NAMES) {
+    fs.writeFileSync(path.join(dir, 'workers', `${name}.min.js`), `/*${name}*/self.onmessage=()=>{};`);
   }
   fs.writeFileSync(path.join(dir, 'workers', 'worker_common.min.js'), 'self.engineWasmUrl=new URL(i.p+"0a1b2c3d4e5f.wasm").href;');
   fs.writeFileSync(path.join(dir, '0a1b2c3d4e5f.wasm'), wasmBytes);
@@ -68,9 +74,12 @@ test('the file mode folder: the worker build as webpack laid it out, Box2D besid
     assert.equal(first.box2dWorkerFile, `${first.dirName}/box2d/box2dWasm.js`);
     assert.deepEqual(Object.keys(first.workerFiles), WORKER_NAMES);
 
-    for (const name of WORKER_NAMES) {
+    for (const name of SCENE_WORKER_NAMES) {
       const code = fs.readFileSync(path.join(out, first.workerFiles[name]), 'utf8');
       assert.match(code, /\.p=self\.__weedWorkerFolder\|\|e\+"\.\.\/"/, name);
+    }
+    for (const name of ASSET_WORKER_NAMES) {
+      assert.equal(fs.readFileSync(path.join(out, first.workerFiles[name]), 'utf8'), `/*${name}*/self.onmessage=()=>{};`);
     }
     const folder = path.join(out, first.dirName);
     assert.equal(fs.readFileSync(path.join(folder, 'box2d', 'box2dWasm.js'), 'utf8'), '/* box2d */');
@@ -157,6 +166,8 @@ function runFileModeEntry({ bundleFolderUrl, pageOrigin, folder = 'prod-abc' }) 
         this.url = url;
         created.push({ url, options, script: blobs.get(url) ?? null });
       }
+
+      terminate() {}
     },
   });
   vm.runInContext(lines.join('\n'), context);
@@ -262,6 +273,34 @@ test('the file mode entry loaded from another origin evaluates, and stops only w
   assert.throws(() => WEED.createWorker('spatialWorker'), /page's own origin/);
   assert.throws(() => WEED.getBox2dWorkerUrl(), /page's own origin/);
   assert.equal(created.length, 0);
+});
+
+test("the scene's asset workers (atlas, tilemap) start from the file mode bundle, as the page asks for them", async () => {
+  const { startAssetWorker } = await import('../../src/core/assetWorkerClient.js');
+  const { WEED, created } = runFileModeEntry({ bundleFolderUrl: 'https://game.test/dist/files/', pageOrigin: 'https://game.test' });
+  const hadWindow = 'window' in globalThis;
+  const originalWindow = globalThis.window;
+  const hadOffscreen = 'OffscreenCanvas' in globalThis;
+  const hadWorker = 'Worker' in globalThis;
+  globalThis.window = { WEED };
+  if (!hadOffscreen) globalThis.OffscreenCanvas = class {};
+  if (!hadWorker) globalThis.Worker = class {}; // startAssetWorker asks whether the page has workers at all
+  try {
+    for (const name of ASSET_WORKER_NAMES) {
+      const worker = await startAssetWorker(name);
+      assert.ok(worker, name);
+      worker.close();
+    }
+  } finally {
+    if (hadWindow) globalThis.window = originalWindow;
+    else delete globalThis.window;
+    if (!hadOffscreen) delete globalThis.OffscreenCanvas;
+    if (!hadWorker) delete globalThis.Worker;
+  }
+  assert.deepEqual(
+    created.map((c) => c.script.match(/importScripts\("([^"]+)"\)/)[1]),
+    ASSET_WORKER_NAMES.map((n) => `https://game.test/dist/files/prod-abc/workers/${n}.min.js`),
+  );
 });
 
 test("the engine's physics worker starts on the file mode's Box2D file, its memory size in its name", () => {

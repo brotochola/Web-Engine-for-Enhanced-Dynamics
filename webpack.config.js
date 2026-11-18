@@ -23,7 +23,11 @@ const workerEntries = {
     'workers/spatialWorker': './src/workers/spatialWorker.js',
     'workers/particleWorker': './src/workers/particleWorker.js',
     'workers/preRenderWorker': './src/workers/preRenderWorker.js',
+    // The asset workers (src/core/assetWorkerClient.js): short-lived, each one file of its own (see workerCommon).
+    'workers/atlasWorker': './src/workers/atlasWorker.js',
+    'workers/tilemapWorker': './src/workers/tilemapWorker.js',
 };
+const ASSET_WORKER_CHUNKS = new Set(['workers/atlasWorker', 'workers/tilemapWorker']);
 
 // Check if we should obfuscate
 const shouldObfuscate = process.env.OBFUSCATE === 'true';
@@ -196,6 +200,9 @@ const workersConfig = {
                 workerCommon: {
                     name: 'workers/worker_common',
                     test: /[\\/]src[\\/]/,
+                    // The asset workers stay whole: an atlas pack or a tilemap parse should not start by loading
+                    // the scene workers' 600 KB of common code for the few modules it shares with them.
+                    chunks: (chunk) => !ASSET_WORKER_CHUNKS.has(chunk.name),
                     minChunks: 2,
                     priority: 10,
                     reuseExistingChunk: true,

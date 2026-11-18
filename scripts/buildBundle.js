@@ -33,13 +33,21 @@ const webpackCli = path.join(rootDir, 'node_modules', 'webpack-cli', 'bin', 'cli
 if (process.argv.includes('--obfuscate')) process.env.OBFUSCATE = 'true';
 const shouldObfuscate = process.env.OBFUSCATE === 'true';
 
-export const WORKER_NAMES = [
+/** The scene's workers (sceneWorkerBootstrap.js), which share workers/worker_common.min.js. */
+export const SCENE_WORKER_NAMES = [
     'spatialWorker',
     'logicWorker',
     'pixiWorker',
     'particleWorker',
     'preRenderWorker',
 ];
+/**
+ * The short-lived workers a scene's load starts for its assets (src/core/assetWorkerClient.js: the atlas pack, the
+ * tilemap parse; SST-5, SST-11). Each is one self-contained file (webpack.config.js keeps them out of the shared
+ * chunk): their graphs are small, and they should not parse the scene workers' common code to start.
+ */
+export const ASSET_WORKER_NAMES = ['atlasWorker', 'tilemapWorker'];
+export const WORKER_NAMES = [...SCENE_WORKER_NAMES, ...ASSET_WORKER_NAMES];
 
 /**
  * Marker written next to the bundles recording which engine they were built
@@ -623,7 +631,10 @@ export function writeFileModeFolder({
             continue;
         }
         const { code, count } = rewriteWorkerPublicPathForFileMode(fs.readFileSync(abs, 'utf8'));
-        if (count !== 1) {
+        // An entry that loads the shared chunk (or names an asset) has one public path; a self-contained one (an
+        // asset worker) may have none.
+        const needsPublicPath = code.includes('importScripts(') || wasmAssetNames(code).length > 0;
+        if (count > 1 || (count === 0 && needsPublicPath)) {
             throw new Error(`${rel}: ${count} public paths (scriptUrl + "../") to point at the file mode's folder, expected 1`);
         }
         files.set(rel, Buffer.from(code, 'utf8'));

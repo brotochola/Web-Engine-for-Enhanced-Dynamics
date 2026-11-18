@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { chromium } from 'playwright';
-import { BUNDLE_ARTIFACTS, FILE_MODE_ARTIFACTS, FILE_MODE_DIR, WORKER_NAMES } from './buildBundle.js';
+import { BUNDLE_ARTIFACTS, FILE_MODE_ARTIFACTS, FILE_MODE_DIR, SCENE_WORKER_NAMES } from './buildBundle.js';
 import { createStaticBenchmarkServer } from '../tests/helpers/createStaticBenchmarkServer.mjs';
 import { analyzePng, captureCanvasPng } from '../tests/helpers/visualPngCompare.mjs';
 import { BOX2D_MEMORY_MB_DEFAULT } from '../src/box2d/box2dMemory.js';
@@ -173,7 +173,7 @@ try {
     // their files; Box2D starts from its file.
     if (result?.ok && bundle.startsWith(`${FILE_MODE_DIR}/`)) {
       const needed = [
-        ...WORKER_NAMES.map((name) => `/workers/${name}.min.js`),
+        ...SCENE_WORKER_NAMES.map((name) => `/workers/${name}.min.js`),
         '/workers/worker_common.min.js',
         '/box2d/box2dWasm.js',
         '/box2d/box2dWasm.wasm',
@@ -187,7 +187,8 @@ try {
         result.text = `${result.text || ''} (file mode: not loaded ${notLoaded.join(', ') || 'none'}; `
           + `Box2D worker ${box2dWorker ? 'from its file' : 'missing'}; workers ${workerUrls.join(', ')})`;
       } else {
-        console.log(`  file mode: ${fileModeRequests.length} requests to dist/${FILE_MODE_DIR}/, ${workerUrls.length} workers`);
+        const assetWorkers = fileModeRequests.filter((p) => /\/workers\/(atlas|tilemap)Worker\.min\.js$/.test(p)).length;
+        console.log(`  file mode: ${fileModeRequests.length} requests to dist/${FILE_MODE_DIR}/, ${workerUrls.length} workers, ${assetWorkers} asset worker file(s)`);
       }
     }
 

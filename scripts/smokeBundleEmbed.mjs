@@ -179,8 +179,9 @@ if (fs.existsSync(fileModeDir)) {
       const file = path.join(folder, 'workers', `${worker}.min.js`);
       assert(fs.existsSync(file), `files/${folders[0]}: missing workers/${worker}.min.js`);
       const code = fs.readFileSync(file, 'utf8');
-      if (worker !== 'worker_common') {
-        // Its public path from the starting blob's folder, its shared chunk by name from there.
+      if (worker !== 'worker_common' && code.includes('importScripts(')) {
+        // Its public path from the starting blob's folder, its shared chunk by name from there (an asset worker is
+        // one file and loads neither).
         assert(code.includes(`.p=self.${FILE_MODE_FOLDER_GLOBAL}||`), `files/${folders[0]}/workers/${worker}.min.js: public path not the folder's`);
         assert(code.includes('"workers/worker_common.min.js"'), `files/${folders[0]}/workers/${worker}.min.js: shared chunk renamed`);
       }
