@@ -76,6 +76,12 @@ enum {
      their numbers. */
   T_OUT_OCC,
   T_RAY_OCC,
+  /* OL-11: wall_row's. T_OCC_CODE: each occluder of the light's list as the row names it (its entity's id and its
+     opacity: lampWallRow.js wallEdgeCode), an int32 each. T_ROW_OUT: the row, floats. T_ROW_MARKS: its scratch,
+     ROW_BINS + 1 int32. */
+  T_OCC_CODE,
+  T_ROW_OUT,
+  T_ROW_MARKS,
   SLOT_COUNT
 };
 
@@ -1007,4 +1013,96 @@ int32_t sweep_light_f32(uint32_t table, double lx, double ly, double maxRadius, 
 __attribute__((export_name("sweep_light_simd")))
 int32_t sweep_light_simd(uint32_t table, double lx, double ly, double maxRadius, int32_t occCount, int32_t polar) {
   return sweep_light(table, lx, ly, maxRadius, occCount, polar, MODE_SIMD);
+}
+
+/* OL-11: a lamp's row for the light pass, from the polygon the sweep left at T_OUT_X / T_OUT_Y / T_OUT_OCC:
+   src/render/visibility/lampWallRow.js writeWallRow, bit for bit (tests/node/wallRowKernel.test.js holds the two
+   together), for a light with no compound solid in reach (its vertices name occluders of the list or nothing).
+   The row: float 0 the vertex count, 1 the first vertex's angle, 2 and 3 the lamp on the floor; 4 .. 4 + ROW_BINS
+   the directions' index; from 4 * ROW_VERT0 a vertex every four floats (its offset to the lamp in the floor's
+   terms, its angle unwrapped, the code of the edge that starts at it), then the first vertex again a turn later.
+   JS computes in doubles and rounds where it says Math.fround; so does this, step for step. Returns the floats
+   written. */
+enum { ROW_BINS = 256, ROW_VERT0 = 65 };
+
+/* lampWallRow.js wallAngle: a direction's place around the lamp, 0..4, rising with atan2. */
+INLINE float row_angle(float x, float y) {
+  const float sum = __builtin_fabsf(x) + __builtin_fabsf(y);
+  const double den = (double)sum > 1e-6 ? (double)sum : 1e-6;
+  const float t = (float)((double)x / den);
+  return y >= 0.0f ? 1.0f - t : 3.0f + t;
+}
+
+__attribute__((export_name("wall_row")))
+int32_t wall_row(uint32_t table, double lx, double ly, double floorInv, int32_t n) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const float *xs = (const float *)(uintptr_t)t[T_OUT_X];
+  const float *ys = (const float *)(uintptr_t)t[T_OUT_Y];
+  const int32_t *hits = (const int32_t *)(uintptr_t)t[T_OUT_OCC];
+  const int32_t *occCode = (const int32_t *)(uintptr_t)t[T_OCC_CODE];
+  float *row = (float *)(uintptr_t)t[T_ROW_OUT];
+  int32_t *marks = (int32_t *)(uintptr_t)t[T_ROW_MARKS];
+  if (n < 3) {
+    row[0] = 0.0f;
+    row[1] = 0.0f;
+    row[2] = 0.0f;
+    row[3] = 0.0f;
+    return 4;
+  }
+  for (int32_t b = 0; b <= ROW_BINS; b++) marks[b] = 0;
+  const float x0 = (float)((double)xs[0] - lx);
+  const float y0 = (float)(((double)ys[0] - ly) * floorInv);
+  const float ang0 = row_angle(x0, y0);
+  float prevRaw = ang0;
+  double turned = 0.0;
+  /* Each vertex's own code: the occluder its ray hit, 0 for a free ray. An edge takes the next vertex's, or this
+     one's where the next ray is free. */
+  const int32_t first = hits[0] >= 0 ? occCode[hits[0]] : 0;
+  int32_t cur = first;
+  float *v = row + 4 * ROW_VERT0;
+  for (int32_t i = 0; i < n; i++, v += 4) {
+    const float rx = (float)((double)xs[i] - lx);
+    const float ry = (float)(((double)ys[i] - ly) * floorInv);
+    if (i > 0) {
+      /* Unwrapped: each vertex turns on from the one before it, never back. */
+      const float raw = row_angle(rx, ry);
+      double step = (double)raw - (double)prevRaw;
+      if (step < -2.0) step += 4.0;
+      else if (step > 2.0) step -= 4.0;
+      if (step > 0.0) turned += step;
+      if (turned > 4.0) turned = 4.0;
+      prevRaw = raw;
+      /* The first bin that starts at or over this vertex's angle; a whole turn on, none (the last mark). */
+      int32_t reach = (int32_t)__builtin_ceil(64.0 * ((double)(float)((double)ang0 + turned) - (double)ang0));
+      if (reach > ROW_BINS) reach = ROW_BINS;
+      marks[reach]++;
+    }
+    int32_t next = first;
+    if (i + 1 < n) {
+      const int32_t hit = hits[i + 1];
+      next = hit >= 0 ? occCode[hit] : 0;
+    }
+    v[0] = rx;
+    v[1] = ry;
+    v[2] = (float)((double)ang0 + turned);
+    v[3] = (float)(next != 0 ? next : cur);
+    cur = next;
+  }
+  v[0] = x0;
+  v[1] = y0;
+  v[2] = (float)((double)ang0 + 4.0);
+  v[3] = 0.0f;
+  /* The running count of the marks: the vertices after the first that a bin's start is at or over; the one before
+     the last of them goes in the row. */
+  int32_t seen = 0;
+  float *bins = row + 4;
+  for (int32_t b = 0; b < ROW_BINS; b++) {
+    seen += marks[b];
+    bins[b] = (float)(seen > 1 ? seen - 1 : 0);
+  }
+  row[0] = (float)n;
+  row[1] = ang0;
+  row[2] = (float)lx;
+  row[3] = (float)(ly * floorInv);
+  return 4 * (ROW_VERT0 + n + 1);
 }

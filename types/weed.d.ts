@@ -566,6 +566,8 @@ export type SceneConfig = Record<string, unknown> & {
     particleListsF32?: boolean;
     /** The sweep in float32 (default) or, false, in double precision. */
     visibilitySweepF32?: boolean;
+    /** With lighting.walls, each lamp's row written by the sweep's kernel (default) or, false, in JavaScript: the same row. */
+    wallRow?: boolean;
     /**
      * The decoration sway in float32 (default true): faster; a sway rotation within a float32 rounding or so of the
      * double one. false: the double sway, the JavaScript sway's results exactly.

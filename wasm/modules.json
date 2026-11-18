@@ -127,6 +127,7 @@
         "reinsert_simd_inplace",
         "sweep_light_f32",
         "sweep_light_simd",
+        "wall_row",
         "collect_solid_f32x4",
         "gather_light",
         "gather_light_u32",
@@ -446,7 +447,8 @@
       "output": "tests/fixtures/wasm/visibilitySweep.wasm",
       "exports": [
         "sweep_light_f32",
-        "sweep_light_simd"
+        "sweep_light_simd",
+        "wall_row"
       ],
       "maxMemoryPages": 32768,
       "test": true,

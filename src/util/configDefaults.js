@@ -490,6 +490,12 @@ export const WASM_DEFAULTS = Object.freeze({
    * vertex's distance from the light); false runs its double SIMD export instead.
    */
   visibilitySweepF32: true,
+  /**
+   * OL-11: with lighting.walls, a lamp's row for the light pass written by the sweep's kernel from the polygon it just
+   * left (the same row bit for bit, a quarter of the time); false writes every row in JavaScript, as a lamp with a
+   * compound solid in reach always is.
+   */
+  wallRow: true,
 });
 
 // ============================================================================

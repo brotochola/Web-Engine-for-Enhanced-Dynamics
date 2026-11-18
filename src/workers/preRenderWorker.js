@@ -1776,6 +1776,10 @@ class PreRenderWorker extends AbstractWorker {
         // memory as words and the polar bins' owners (the signature reads them), each lamp's place and reach the frame
         // before (a lamp that moved needs no signature), and how many rows this frame kept.
         this._wallCacheOn = false;
+        // OL-11: the row the sweep's kernel writes, as views of rising length on the visibility memory: the shortest
+        // that holds a row is copied into the frame's buffer.
+        this._wallRowCopies = [];
+        this._wallRowKernelOn = false;
         this._vpWords = EMPTY_U32;
         this._vpPolarOwner = EMPTY_I32;
         this._wallLampX = EMPTY_F64;
@@ -2544,7 +2548,15 @@ class PreRenderWorker extends AbstractWorker {
                 this._wallRowFloats = rows.rowFloats;
                 this._wallRowVerts = rows.rowVerts;
                 this._wallCodes = new Float32Array(rows.rowVerts);
-                this._wallOccCode = new Int32Array(maxOccluders);
+                // OL-11: the occluders' codes where the kernel reads them, and its row as views of 16, 32, 64 ... vertices
+                // up to a row's own width (a copy takes the shortest that holds the row, never past a row's floats).
+                this._wallOccCode = vm.occCode;
+                this._wallRowKernelOn = this.config?.wasm?.wallRow !== false;
+                this._wallRowCopies = [];
+                for (let verts = 16; verts < rows.rowVerts; verts *= 2) {
+                    this._wallRowCopies.push(new Float32Array(vm.rowOut.buffer, vm.rowOut.byteOffset, 4 * (WALL_VERT0 + verts + 1)));
+                }
+                this._wallRowCopies.push(new Float32Array(vm.rowOut.buffer, vm.rowOut.byteOffset, rows.rowFloats));
             }
 
             // Self-lit queue (entity under own occluder fill)
@@ -5867,6 +5879,8 @@ class PreRenderWorker extends AbstractWorker {
         const wallCodes = this._wallCodes;
         const wallOccCode = this._wallOccCode;
         const wallCacheOn = this._wallCacheOn;
+        const rowCopies = this._wallRowCopies;
+        const rowKernelOn = this._wallRowKernelOn;
         const vpWords = this._vpWords;
         const polarOwner = this._vpPolarOwner;
         const lampX = this._wallLampX;
@@ -6399,7 +6413,32 @@ class PreRenderWorker extends AbstractWorker {
             if (rowsBuf !== null) {
                 // OL-4: the lamp's row for the light pass, from the polygon as the sweep left it (a cone's whole turn: the
                 // light pass cuts the cone itself). A lamp with nothing in reach gets no row: nothing stops it.
-                if (vertCount >= 3) {
+                if (rowKernelOn && vertCount >= 3 && !polarActive && vertCount <= rowCap) {
+                    // OL-11: the kernel writes the row from the polygon it just left (no compound solid in reach: its
+                    // vertices name occluders of the list, whose codes are in the memory), and the row's floats go to
+                    // the frame's buffer in one copy.
+                    const used = sweepK.row(sweepTableByte, lx, ly, groundInvY, vertCount);
+                    let c = 0;
+                    while (rowCopies[c].length < used) c++;
+                    rowsBuf.f32.set(rowCopies[c], rowsWritten * rowFloats);
+                    const was = rowsBuf.lampAt[rowsWritten];
+                    if (was !== lightIdx && was >= 0 && rowsBuf.place[was] === rowsWritten) rowsBuf.place[was] = -1;
+                    rowsBuf.lampAt[rowsWritten] = lightIdx;
+                    rowsBuf.place[lightIdx] = rowsWritten;
+                    rowsBuf.sigLo[lightIdx] = rowSigLo;
+                    rowsBuf.sigHi[lightIdx] = rowSigHi;
+                    rowsBuf.header[1 + rowsWritten] = lightIdx;
+                    if (rowSigHi === 0) {
+                        frameSigned = false;
+                    } else {
+                        frameLo = Math.imul(frameLo ^ lightIdx, 0x9e3779b1);
+                        frameLo = Math.imul(frameLo ^ (frameLo >>> 15) ^ rowSigLo, 0x9e3779b1);
+                        frameHi = Math.imul(((frameHi << 5) | (frameHi >>> 27)) ^ rowSigHi ^ lightIdx, 0x85ebca77);
+                    }
+                    rowsWritten++;
+                } else if (vertCount >= 3) {
+                    // A compound solid in reach (a vertex may name its entity, which the kernel cannot look up), or more
+                    // vertices than a row holds: the row written here.
                     let rowVerts = vertCount < maxVerts ? vertCount : maxVerts;
                     if (rowVerts > rowCap) {
                         // More vertices than a row holds (WALL_ROW_MAX_VERTS): one in every few, in place (the sweep's
