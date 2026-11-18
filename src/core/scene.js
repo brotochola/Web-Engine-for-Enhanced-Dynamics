@@ -66,6 +66,7 @@ import { startAssetWorker } from './assetWorkerClient.js';
 import { loadBakedAtlas } from './atlas/bakedAtlas.js';
 import { loadPackedAtlas } from './atlas/packedAtlas.js';
 import { decalTexturesFrom } from './atlas/atlasFrames.js';
+import { loadTilemaps } from './tileMapLoad.js';
 import { buildTextureMetadata } from './atlas/textureMetadata.js';
 import { Camera } from './camera.js';
 import { Time, simClockStepMs } from './timeScale.js';
@@ -155,7 +156,7 @@ import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawn
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { unknownConfigKeys, unknownConfigKeyText } from '../util/configKeys.js';
 import { warnOnce } from '../util/dxWarn.js';
-import { fetchAssetJson, fetchAssetRead } from '../util/fetchAsset.js';
+import { fetchAssetJson } from '../util/fetchAsset.js';
 import { duplicateEntityClassText, warnEntityClassMistakes } from '../util/classGuards.js';
 import { darkLightingText, smallWorldText } from '../util/sceneGuards.js';
 import { checkFirstInstance, setDevChecks } from './debug/devChecks.js';
@@ -1800,29 +1801,11 @@ class Scene {
     }
   }
 
+  /** SST-11: each tilemap's JSON parsed and laid out in a tilemap worker (tileMapLoad.js); TileMap built over it. */
   async _loadTilemapsParallel(tilemaps) {
-    if (!tilemaps) return;
-    const entries = Object.entries(tilemaps);
-    await Promise.all(
-      entries.map(async ([tilemapId, tilemapConfig]) => {
-        try {
-          const tilemapData = await fetchAssetJson(tilemapConfig.json, `tilemap "${tilemapId}" JSON`);
-          const tileset = await fetchAssetRead(tilemapConfig.png, `tilemap "${tilemapId}" tileset`, (r) => r.blob());
-          const tilesetBitmap = await createImageBitmap(tileset.body);
-
-          this.loadedTilemaps[tilemapId] = {
-            data: tilemapData,
-            tilesetBitmap,
-          };
-        } catch (error) {
-          console.error(`❌ Failed to load tilemap "${tilemapId}":`, error);
-        }
-      })
-    );
-
-    if (Object.keys(this.loadedTilemaps).length > 0) {
-      TileMap.initializeFromLoaded(this.loadedTilemaps);
-    }
+    const { loaded, marks } = await loadTilemaps(tilemaps);
+    Object.assign(this.loadedTilemaps, loaded);
+    this._takeWorkerLoadMarks('tilemap', marks);
   }
 
   async _loadShaderSources(imageUrls) {
