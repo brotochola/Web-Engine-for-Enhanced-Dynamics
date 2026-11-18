@@ -860,10 +860,12 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * less than that is lit as drawn), then `strength` multiplies what is left: 0 lights the sprite as it is drawn, 1
    * with nothing subtracted lights it by its normals. The sun's shading runs from 0 to 1 - lighting.sun.skyLight (0.6
    * by default), a lamp's from 0 to 1. Faces (decorations with a normal) and sprites without maps do not read it. The
-   * default keeps the picture as drawn by day and shows its relief under a lamp. normalShadingOf reads it.
+   * default (the owner's, 2026-11-18): under the sun, strength 1 with 0.5 subtracted, so only what turns well away from
+   * the sun darkens, and by a tenth of the sun's light at most (a tree keeps its painted light, a roof's far slope
+   * shows); under a lamp, the relief whole. normalShadingOf reads it.
    */
   normalShading: Object.freeze({
-    sun: Object.freeze({ strength: 0, subtract: 0 }),
+    sun: Object.freeze({ strength: 1, subtract: 0.5 }),
     lamps: Object.freeze({ strength: 1, subtract: 0 }),
   }),
   /**

@@ -7,9 +7,9 @@ import assert from 'node:assert/strict';
 import { LIGHTING_DEFAULTS, normalShadingOf } from '../../src/util/configDefaults.js';
 import { unknownConfigKeys } from '../../src/util/configKeys.js';
 
-const DEFAULT = { sun: { strength: 0, subtract: 0 }, lamps: { strength: 1, subtract: 0 } };
+const DEFAULT = { sun: { strength: 1, subtract: 0.5 }, lamps: { strength: 1, subtract: 0 } };
 
-test('the default keeps a sprite as drawn under the sun and by its normals under a lamp, nothing subtracted', () => {
+test('the default: under the sun strength 1 with 0.5 subtracted, under a lamp strength 1 with nothing subtracted', () => {
   assert.deepEqual(JSON.parse(JSON.stringify(LIGHTING_DEFAULTS.normalShading)), DEFAULT);
   assert.deepEqual(normalShadingOf(undefined), DEFAULT);
   assert.deepEqual(normalShadingOf({}), DEFAULT);
@@ -24,11 +24,11 @@ test('a scene may write any of the four numbers', () => {
   );
   assert.deepEqual(
     normalShadingOf({ normalShading: { lamps: { subtract: 0.25 } } }),
-    { sun: { strength: 0, subtract: 0 }, lamps: { strength: 1, subtract: 0.25 } },
+    { sun: { strength: 1, subtract: 0.5 }, lamps: { strength: 1, subtract: 0.25 } },
   );
   assert.deepEqual(
     normalShadingOf({ normalShading: { sun: { strength: 1 }, lamps: { strength: 0 } } }),
-    { sun: { strength: 1, subtract: 0 }, lamps: { strength: 0, subtract: 0 } },
+    { sun: { strength: 1, subtract: 0.5 }, lamps: { strength: 0, subtract: 0 } },
   );
 });
 

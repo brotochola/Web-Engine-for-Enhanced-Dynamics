@@ -200,8 +200,9 @@ export function sceneCode(s) {
   out.push(line(4, `sunShadows: '${s.sunMap ? 'map' : 'layer'}',`, s.sunMap ? 'the sun\'s shadow map: it takes out the sun alone' : 'cards on the shadows\' layer'));
   out.push(line(4, `lampShadows: '${s.lampMap ? 'map' : 'layer'}',`, s.lampMap ? 'a shadow map a lamp' : 'stamps on the shadows\' layer'));
   if (s.walls) out.push(line(4, 'walls: true,', 'shadowCaster.setWall: walls stop the lamps'));
-  // Written only where it is not the engine's default (the sun's strength 0, the lamps' 1, nothing subtracted).
-  if (s.sunNormalStrength !== 0 || s.sunNormalSubtract !== 0 || s.lampNormalStrength !== 1 || s.lampNormalSubtract !== 0) {
+  // Written only where it is not the engine's default (the sun's strength 1 with 0.5 subtracted, the lamps' 1 with
+  // nothing subtracted).
+  if (s.sunNormalStrength !== 1 || s.sunNormalSubtract !== 0.5 || s.lampNormalStrength !== 1 || s.lampNormalSubtract !== 0) {
     out.push(line(4, 'normalShading: {', 'what a sprite\'s own normals take: minus subtract, times strength'));
     out.push(line(6, `sun: { strength: ${num(s.sunNormalStrength)}, subtract: ${num(s.sunNormalSubtract)} },`));
     out.push(line(6, `lamps: { strength: ${num(s.lampNormalStrength)}, subtract: ${num(s.lampNormalSubtract)} },`));

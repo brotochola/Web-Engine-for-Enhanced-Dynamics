@@ -13,8 +13,9 @@ const { Scene, GameObject, SpriteRenderer, ShadowCaster, LightEmitter, Camera, S
  * anchors at each house's foot in houseLight/anclas.json). Each side has the same two trees from the barrio, two LPC
  * people and a street lamp, at the same places. Both houses cast the same volume (the package's hull), so what differs is
  * how their surfaces take the light: the faces' planes against the maps' pixels.
- * A sprite with maps is lit as drawn by day and by its normals as far as the lamps' share of its light goes (the light
- * pass's k): the map houses' walls turned from the sun keep their light by day, where a face's go into its shade.
+ * A sprite with maps takes lighting.normalShading (by the engine's default, by day only what turns well away from the sun
+ * darkens, and little; under a lamp its normals shade it whole): the map houses' walls turned from the sun keep most of
+ * their light by day, where a face's go into its shade.
  *
  * The barrio's camera and lighting (sun and lamp shadow maps, self-shadow, the sky light). Nothing moves: for side-by-side
  * pictures and compareCaptures.mjs.

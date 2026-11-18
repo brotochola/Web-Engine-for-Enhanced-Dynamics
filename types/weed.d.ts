@@ -378,8 +378,9 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    * `subtract` comes off it first (what falls under 0 stays 0, so a face shaded less than that is lit as drawn), then
    * `strength` multiplies the rest: 0 lights the sprite as it is drawn, 1 with nothing subtracted by its normals. All
    * four from 0 to 1; the sun's shading runs up to `1 - sun.skyLight` (0.6 by default), a lamp's up to 1. Default
-   * `{ sun: { strength: 0, subtract: 0 }, lamps: { strength: 1, subtract: 0 } }`: the picture as drawn by day, its
-   * relief under a lamp. Faces and sprites without maps do not read it.
+   * `{ sun: { strength: 1, subtract: 0.5 }, lamps: { strength: 1, subtract: 0 } }`: by day only what turns well away
+   * from the sun darkens, and by a tenth of the sun's light at most; under a lamp, the relief whole. Faces and sprites
+   * without maps do not read it.
    */
   normalShading?: {
     sun?: { strength?: number; subtract?: number };

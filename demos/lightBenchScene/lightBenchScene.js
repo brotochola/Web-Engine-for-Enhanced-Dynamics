@@ -26,9 +26,9 @@
 //                 and height=auto leave them to the pitch: sin and cos)
 //   ?walls=1      lighting.walls: the lamps' 'wall' kind (shadowCaster.lamps.setWall) stops them, with any camera
 //   ?normalSun= ?normalLamps=  lighting.normalShading's strength for the sun and for the lamps: how much of the shading a
-//                 sprite's own normals cause counts, 0 (lit as drawn) to 1; without them the engine's default (0 and 1)
+//                 sprite's own normals cause counts, 0 (lit as drawn) to 1; without them the engine's default (1 and 1)
 //   ?subtractSun= ?subtractLamps=  its subtract: the shading taken off first (a face shaded less than that is lit as
-//                 drawn), 0 to 1; without them the engine's default (0 and 0)
+//                 drawn), 0 to 1; without them the engine's default (0.5 for the sun, 0 for the lamps)
 //   ?ambient=     lighting.baseAmbient (default 0.12)
 //   ?depth=1|0    renderer.pixelDepth on or off (default: on by itself, an oblique camera with maps)
 //   ?res=         lighting.resolution and shadowResolution (default 1: the canvas's own size)
@@ -59,6 +59,9 @@ const SUN_NORMAL_STRENGTH = unitParam('normalSun');
 const SUN_NORMAL_SUBTRACT = unitParam('subtractSun');
 const LAMP_NORMAL_STRENGTH = unitParam('normalLamps');
 const LAMP_NORMAL_SUBTRACT = unitParam('subtractLamps');
+// The engine's default for the sun (lighting.normalShading.sun): what the sliders and the code box show when the page
+// asked nothing.
+const SUN_SHADING_DEFAULT = { strength: 1, subtract: 0.5 };
 /** lighting.normalShading with only the numbers the page gave, so the engine's default stands for the rest. */
 const NORMAL_SHADING = (() => {
   const given = (strength, subtract) => ({
@@ -793,9 +796,10 @@ export class LightBenchScene extends Scene {
       sunMap: SUN_MAP,
       lampMap: LAMP_MAP,
       walls: WALLS,
-      // The engine's defaults where the page asked nothing: the sun's strength 0, the lamps' 1, nothing subtracted.
-      sunNormalStrength: SUN_NORMAL_STRENGTH ?? 0,
-      sunNormalSubtract: SUN_NORMAL_SUBTRACT ?? 0,
+      // The engine's defaults where the page asked nothing: the sun's strength 1 with 0.5 subtracted, the lamps' 1 with
+      // nothing subtracted.
+      sunNormalStrength: SUN_NORMAL_STRENGTH ?? SUN_SHADING_DEFAULT.strength,
+      sunNormalSubtract: SUN_NORMAL_SUBTRACT ?? SUN_SHADING_DEFAULT.subtract,
       lampNormalStrength: LAMP_NORMAL_STRENGTH ?? 1,
       lampNormalSubtract: LAMP_NORMAL_SUBTRACT ?? 0,
       self: SELF,
@@ -878,13 +882,13 @@ export class LightBenchScene extends Scene {
     });
     // lighting.normalShading: the shading a sprite's own normals cause, the sun's and the lamps' apart.
     scene.range({
-      label: "Sun's shading: strength", min: 0, max: 1, step: 0.05, value: SUN_NORMAL_STRENGTH ?? 0, format: pct,
+      label: "Sun's shading: strength", min: 0, max: 1, step: 0.05, value: SUN_NORMAL_STRENGTH ?? SUN_SHADING_DEFAULT.strength, format: pct,
       note: 'lighting.normalShading.sun.strength: how much of the shading a sprite\'s own normals cause under the sun ' +
         'counts. 0 lights it as drawn; 1 by its normals.',
       onChange: (v) => this._reload('normalSun', v),
     });
     scene.range({
-      label: "Sun's shading: subtract", min: 0, max: 0.6, step: 0.02, value: SUN_NORMAL_SUBTRACT ?? 0, format: pct,
+      label: "Sun's shading: subtract", min: 0, max: 0.6, step: 0.02, value: SUN_NORMAL_SUBTRACT ?? SUN_SHADING_DEFAULT.subtract, format: pct,
       note: 'lighting.normalShading.sun.subtract: taken off the shading before the strength. A face shaded less than this ' +
         'stays as drawn, so only what turns away from the sun darkens (the sun\'s shading runs from 0 to 0.6).',
       onChange: (v) => this._reload('subtractSun', v),
