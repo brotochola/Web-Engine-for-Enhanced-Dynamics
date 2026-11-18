@@ -21412,14 +21412,15 @@
         "heightmap depth interleave"
       ],
       "records": [
-        "R-1306"
+        "R-1306",
+        "R-1343"
       ],
-      "result": "",
+      "result": "fixed (102a334f): a pixel's floor place from its height map kept within its frame's feet; gates neutral on the GTX (Predator light3d) and the HD 620 (barrio drawn 37.0 -> 37.0 fps)",
       "next": "Idea: a pixel never nearer than its own footprint's front (its foot plus frameBase's ry, scaled); cars have pixels well in front of their centre, so the clamp needs each frame's footprint. Or better height maps for the LPC people.",
       "id": "N-262",
       "kind": "bug",
       "area": "render",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-17",
       "title": "Pixel depth from approximate height maps: two objects 3-4 px apart interleave pixel by pixel (a person just behind a lamp shows through the lamp's head)",
       "statusText": "seen 2026-11-17 in Parque Chas at night (the owner's catch)"
@@ -35711,6 +35712,19 @@
       "title": "HD 620, the stack with one suspect off (N-276, N-274's depth, N-266): each still 5 to 6.5 % behind main",
       "verdict": "note",
       "text": "ASUS job 0891 (the other session's), each arm against main bd82c1be, barrio hour=22&dayMinutes=0, camera still, 4 pairs, --full-rev, drawn frames a 10 s window. no-n276 (54cb7bbf): A 366 366 366 363 | B 343 345 353 343, -5.6 % 4/4. no-gbufdepth (f5c66158): A 374 379 383 372 | B 352 363 78 356 (one B run froze, the laptop's known renderer stall), about -5.3 % without it. no-unshadeddepth (3d831eca): A 374 375 379 368 | B 345 107 349 355 (one froze), about -6.5 % without it. The full stack read -8.7 % (R-1330): N-276 about 3 points, the G-buffer's depth about 3, the unshaded depth 1 to 2; the rest in N-273, N-275 or N-272, queued as the next arms."
+    },
+    {
+      "id": "R-1343",
+      "date": "2026-11-17",
+      "time": "22:46",
+      "timeFrom": "recorded",
+      "title": "N-262 merged: both gates neutral (Predator light3d on the GTX; the barrio's drawn frames on the HD 620, 37.0 -> 37.0 fps)",
+      "verdict": "kept",
+      "text": "**N-262 merged** (102a334f; dist 6b6635e9). The owner approved the fix by eye (\"se ve todo bien\", relayed by the barrio session). The fix keeps a pixel's floor place from its height map within its frame's feet. It adds one texture-table fetch a vertex and one clamp a pixel with heights. Both gates are neutral, run on one build pair: main 57044bd1 against main + N-262 (meas/n262-on-main 6bd9f9b6).\n\n- **This PC (GTX 1650), Predator `?light3d=1&hour=22`** (pixel depth runs only with light3d there), 4 pairs, `--full-rev`: NEUTRAL. Every worker is under the 6 ms floor and lower on B (renderer 2.81 → 2.22 ms, pre-render 3.60 → 2.74). Drawn 59.9 → 60.0. Load keys within 1 % (visible 13 887 / 13 851).\n- **The ASUS (HD 620), the barrio `hour=22&dayMinutes=0`, camera still**, 4 pairs, `--full-rev` (job 0892): NEUTRAL. Drawn 37.0 → 37.0 fps (+0.2 %, cv 1/1 %; runs A 368 370 373 370, B 378 370 370 371). Renderer −1.1 %. Physics +2.6 % (4/4, cv 2/3 %); a shader change cannot reach it, so this is the laptop's shared power. Load equal.\n\nSuites on the merge: node 3036/3036, demos 121/121. Bundles: test:bundle 8/8, test:node:bundle 323/323, check:dist fresh.",
+      "commits": [
+        "102a334f",
+        "6b6635e9"
+      ]
     }
   ],
   "leads": [
