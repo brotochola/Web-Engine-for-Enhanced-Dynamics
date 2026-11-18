@@ -146,7 +146,12 @@ export function decodePng(buf) {
  * @param {{ browser: object, server: object }} ctx
  * @param {{ scene: string, sceneExport: string, query: Record<string, string|number>, waitMs: number, save?: string|null }} o
  */
-export async function captureStill({ browser, server }, { scene, sceneExport, query, waitMs, save = null }) {
+/**
+ * `drawn(pixels, sun)`, when given, says whether a capture has a frame in it: one that has none is taken again every
+ * half second, up to `ceilingMs` after the page was prepared (a machine whose build takes longer than `waitMs` to its
+ * first frame). The result's `drawn` is the last answer and `waitedMs` how long the capture came after the prepare.
+ */
+export async function captureStill({ browser, server }, { scene, sceneExport, query, waitMs, save = null, drawn = null, ceilingMs = 15000 }) {
   const page = await browser.newPage({ viewport: VIEWPORT });
   const errors = [];
   page.on('pageerror', (err) => errors.push(String(err)));
@@ -172,7 +177,7 @@ export async function captureStill({ browser, server }, { scene, sceneExport, qu
       { scene, sceneExport, waitMs, size: VIEWPORT },
     );
     await page.waitForTimeout(waitMs);
-    const sun = await page.evaluate(async () => {
+    const readSun = () => page.evaluate(async () => {
       const { default: WEED } = await import('/src/index.js');
       const S = WEED.Sun;
       const night = [0, 0, 0];
@@ -189,12 +194,24 @@ export async function captureStill({ browser, server }, { scene, sceneExport, qu
         night: Array.from(night),
       };
     });
-    const png = await captureCanvasPng(page);
+    let sun = await readSun();
+    let png = await captureCanvasPng(page);
+    let pixels = decodePng(png);
+    let waitedMs = waitMs;
+    let hasFrame = drawn === null || drawn(pixels, sun);
+    while (!hasFrame && waitedMs < ceilingMs) {
+      await page.waitForTimeout(500);
+      waitedMs += 500;
+      sun = await readSun();
+      png = await captureCanvasPng(page);
+      pixels = decodePng(png);
+      hasFrame = drawn(pixels, sun);
+    }
     if (save) {
       fs.mkdirSync(path.dirname(path.resolve(save)), { recursive: true });
       fs.writeFileSync(save, png);
     }
-    return { pixels: decodePng(png), sun, errors };
+    return { pixels, sun, errors, drawn: hasFrame, waitedMs };
   } finally {
     await page.close();
   }
@@ -208,6 +225,21 @@ export function queryOf(opts, base = {}) {
     out[at < 0 ? pair : pair.slice(0, at)] = at < 0 ? '' : pair.slice(at + 1);
   }
   return out;
+}
+
+/**
+ * A capture that is one colour from edge to edge (every `step`-th pixel reads the first one's channels): the page
+ * before its first frame, or a frame that drew one flat colour. Its [r, g, b], or null when anything differs.
+ */
+export function flatColour(pixels, step = 8) {
+  const d = pixels.data;
+  for (let y = 0; y < pixels.height; y += step) {
+    for (let x = 0; x < pixels.width; x += step) {
+      const o = (y * pixels.width + x) * 4;
+      if (d[o] !== d[0] || d[o + 1] !== d[1] || d[o + 2] !== d[2]) return null;
+    }
+  }
+  return [d[0], d[1], d[2]];
 }
 
 /** A pixel's channels 0..255. */

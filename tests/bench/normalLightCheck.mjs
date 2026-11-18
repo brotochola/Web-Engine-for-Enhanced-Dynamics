@@ -20,14 +20,20 @@
  * with nothing subtracted is the formula above; the scene takes the same four numbers. --strength 1,1 checks the full
  * normals; --strength 1,1 --subtract 0.2,0.3 the subtract. --inset: px left out at the ball's rim
  * (grazing normals and the soft edge). Exit 0 when every compared pixel is within --tolerance of 255 on every backend
- * and part. The tolerance is the maps' own steps at full strength: on this ball the worst pixel read 3.4 of 255 under the
+ * and part. The capture waits for a drawn frame, not only --wait-ms: one that is a single colour from edge to edge, and
+ * not the floor's, has no frame in it yet (a build that takes longer than the wait to its first frame: on the ASUS
+ * the src build takes 3.3 to 3.9 s and a blank page read as a failed shader, 2026-11-18) and is taken again every half
+ * second, up to 15 s. Past that the line reads NOFRAME and the exit code is 2: no verdict on the shading.
+ * The tolerance is the maps' own steps at full strength: on this ball the worst pixel read 3.4 of 255 under the
  * lamp and 4.0 under the sun (p99 2.4, mean 0.6; 2026-11-18), half that at strength 0.5.
  */
 import path from 'node:path';
 
 import { FLOOR_SCALE_Y as G, SOLIDS, rayHit } from './checks/checkShapes.js';
 import { NORMAL_LIGHT as L } from './checks/layouts.js';
-import { captureStill, parseCheckCli, percentile, queryOf, rgbAt, sunGeometry, sunRgb, verdict, withCheckBrowser } from './checks/checkLib.mjs';
+import {
+  captureStill, flatColour, parseCheckCli, percentile, queryOf, rgbAt, sunGeometry, sunRgb, verdict, withCheckBrowser,
+} from './checks/checkLib.mjs';
 
 const USAGE = 'node tests/bench/normalLightCheck.mjs [--backend webgl|webgpu|both] [--part sun|lamp|both] [--tolerance 5] [--strength 0,1] [--subtract 0,0] [--inset 3] [--save dir] [--headless]';
 
@@ -113,14 +119,7 @@ async function main() {
           subtractSun: String(subtract.sun), subtractLamps: String(subtract.lamps),
         });
         const save = opts.save ? path.join(opts.save, `normalLight-${part}-${backend}.png`) : null;
-        const { pixels, sun, errors } = await captureStill(ctx, {
-          scene: '/tests/bench/checks/normalLightScene.js',
-          sceneExport: 'NormalLightScene',
-          query,
-          waitMs: opts.waitMs,
-          save,
-        });
-        const env = {
+        const envOf = (sun) => ({
           ambient: L.ambient,
           night: part === 'sun' && sun.enabled ? sun.night : [0, 0, 0],
           sun: part === 'sun' ? { ...sunGeometry(sun, G), rgb: sunRgb(sun), intensity: sun.intensity } : null,
@@ -128,10 +127,33 @@ async function main() {
           lamps: part === 'lamp' ? [L.lamp] : [],
           strength,
           subtract,
-        };
+        });
         const ball = SOLIDS.ball;
         const cx = L.ball.x;
         const cy = L.ball.y - ball.radius * Math.SQRT1_2;
+        // A capture with a frame in it: anything but one colour from edge to edge, unless that colour is the floor's own
+        // beside the ball (the sun on a ball lit as drawn: white on white, a whole frame of one colour).
+        const hasFrame = (pixels, sun) => {
+          const flat = flatColour(pixels);
+          if (flat === null) return true;
+          const want = floorAt(cx + ball.radius + 20.5, cy + 0.5, envOf(sun));
+          return want.every((w, c) => Math.abs(flat[c] - w * 255) <= opts.tolerance);
+        };
+        const { pixels, sun, errors, drawn, waitedMs } = await captureStill(ctx, {
+          scene: '/tests/bench/checks/normalLightScene.js',
+          sceneExport: 'NormalLightScene',
+          query,
+          waitMs: opts.waitMs,
+          save,
+          drawn: hasFrame,
+        });
+        if (waitedMs > opts.waitMs) console.log(`${backend} ${part}: no frame after ${opts.waitMs} ms; the capture is from ${waitedMs} ms`);
+        if (!drawn) {
+          console.log(`NOFRAME normalLight ${backend} ${part}: the capture is still one colour (${flatColour(pixels).join(', ')}) ${waitedMs} ms after the scene was prepared: nothing was drawn, so this says nothing of the shading`);
+          if (!process.exitCode) process.exitCode = 2;
+          continue;
+        }
+        const env = envOf(sun);
         const inner = ball.radius - opts.inset;
         const samples = [];
         const floor = [];
