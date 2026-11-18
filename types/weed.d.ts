@@ -376,8 +376,10 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    * The shading a sprite's own normals cause (its normal map's, or the ones its height map gives), for the sun and for
    * the lamps apart. A light's shading on a pixel is what the normal takes from it (0: lit as drawn; 1: no light).
    * `subtract` comes off it first (what falls under 0 stays 0, so a face shaded less than that is lit as drawn), then
-   * `strength` multiplies the rest: 0 lights the sprite as it is drawn, 1 with nothing subtracted by its normals. All
-   * four from 0 to 1; the sun's shading runs up to `1 - sun.skyLight` (0.6 by default), a lamp's up to 1. Default
+   * `strength` multiplies the rest: 0 lights the sprite as it is drawn, 1 with nothing subtracted by its normals. Each
+   * `subtract` from 0 to 1, each `strength` from 0 to 100: over 1 it darkens what is left faster, up to the whole
+   * shading and never past it (a high subtract with a high strength shades few faces, and those fully). The sun's
+   * shading runs up to `1 - sun.skyLight` (0.6 by default), a lamp's up to 1. Default
    * `{ sun: { strength: 1, subtract: 0.5 }, lamps: { strength: 1, subtract: 0 } }`: by day only what turns well away
    * from the sun darkens, and by a tenth of the sun's light at most; under a lamp, the relief whole. Faces and sprites
    * without maps do not read it.

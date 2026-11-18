@@ -473,7 +473,7 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
     if (both) {
-      lampDrawn += col.rgb * (cone * (1.0 - max(1.0 - max(cosine, 0.0) - uNormalShade.w, 0.0) * lampShading))
+      lampDrawn += col.rgb * (cone * (1.0 - min(max(1.0 - max(cosine, 0.0) - uNormalShade.w, 0.0) * lampShading, 1.0 - max(cosine, 0.0))))
         * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
 // #if !TILES
@@ -530,7 +530,7 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
     if (both) {
-      lampDrawn += col.rgb * (lampVis * lampSelf * win * (1.0 - max(1.0 - facing - uNormalShade.w, 0.0) * lampShading))
+      lampDrawn += col.rgb * (lampVis * lampSelf * win * (1.0 - min(max(1.0 - facing - uNormalShade.w, 0.0) * lampShading, 1.0 - facing)))
         * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
 // #if TILES
@@ -546,7 +546,11 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
   float sunLit = sunFlat;
   if (!isFlat) {
     float sunByNormal = 1.0 - uFaceLight.w + uFaceLight.w * sunDirect;
-    sunLit += (max(sunByNormal - sunFlat, 0.0) - max(sunFlat - sunByNormal - uNormalShade.y, 0.0)) * uNormalShade.x;
+    // A strength over 1 darkens what is left after the subtraction faster, up to the whole shading and never past it
+    // (few faces shaded, and those dark); a gain keeps at most its own size.
+    float sunShade = max(sunFlat - sunByNormal, 0.0);
+    sunLit += max(sunByNormal - sunFlat, 0.0) * min(uNormalShade.x, 1.0)
+      - min(max(sunShade - uNormalShade.y, 0.0) * uNormalShade.x, sunShade);
   }
   return vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB) + vec3(uSunR, uSunG, uSunB) * uSunIntensity * sunLit
     + lampDrawn;

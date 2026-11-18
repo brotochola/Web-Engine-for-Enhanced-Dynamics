@@ -853,7 +853,9 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * for the lamps apart. A light's shading on a pixel is what the normal takes from it: 0 where the pixel gets what it
    * gets as drawn, 1 where it gets nothing. `subtract` comes off it first (what falls under 0 stays 0: a face shaded
    * less than that is lit as drawn), then `strength` multiplies what is left: 0 lights the sprite as it is drawn, 1
-   * with nothing subtracted lights it by its normals. The sun's shading runs from 0 to 1 - lighting.sun.skyLight (0.6
+   * with nothing subtracted lights it by its normals. A strength over 1 (up to 100) darkens what is left faster, up to
+   * the whole shading and never past it: a high subtract with a high strength shades few faces, and those fully
+   * (0.5 subtracted and strength 6 leave the sun's shading untouched under 0.5 and whole at 0.6). The sun's shading runs from 0 to 1 - lighting.sun.skyLight (0.6
    * by default), a lamp's from 0 to 1. Faces (decorations with a normal) and sprites without maps do not read it. The
    * default (the owner's, 2026-11-18): under the sun, strength 1 with 0.5 subtracted, so only what turns well away from
    * the sun darkens, and by a tenth of the sun's light at most (a tree keeps its painted light, a roof's far slope
@@ -959,9 +961,12 @@ export function lightBehindWallsOf(lighting) {
   return v < 0 ? 0 : v > 1 ? 1 : v;
 }
 
+/** The most a normalShading strength is taken as (a slope: past it a threshold is a step already). */
+export const NORMAL_SHADING_STRENGTH_MAX = 100;
+
 /**
- * OL-6: a scene's lighting.normalShading, each of its four numbers in 0..1; the default's for one that is missing or not
- * a number (a scene may write any of them).
+ * OL-6: a scene's lighting.normalShading: each subtract in 0..1, each strength in 0..NORMAL_SHADING_STRENGTH_MAX; the
+ * default's for one that is missing or not a number (a scene may write any of them).
  * @param {object|undefined} lighting config.lighting
  * @returns {{ sun: { strength: number, subtract: number }, lamps: { strength: number, subtract: number } }}
  */
@@ -971,7 +976,8 @@ export function normalShadingOf(lighting) {
     const of = given !== null && typeof given === 'object' ? given[light] : undefined;
     const v = of !== null && typeof of === 'object' ? of[key] : undefined;
     if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.normalShading[light][key];
-    return v < 0 ? 0 : v > 1 ? 1 : v;
+    const top = key === 'strength' ? NORMAL_SHADING_STRENGTH_MAX : 1;
+    return v < 0 ? 0 : v > top ? top : v;
   };
   return {
     sun: { strength: one('sun', 'strength'), subtract: one('sun', 'subtract') },

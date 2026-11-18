@@ -495,7 +495,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
       total += col.rgb * cosine * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
     if (both) {
-      lampDrawn += col.rgb * (cone * (1.0 - max(1.0 - max(cosine, 0.0) - uniforms.uNormalShade.w, 0.0) * lampShading))
+      lampDrawn += col.rgb * (cone * (1.0 - min(max(1.0 - max(cosine, 0.0) - uniforms.uNormalShade.w, 0.0) * lampShading, 1.0 - max(cosine, 0.0))))
         * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
 // #if !TILES
@@ -557,7 +557,7 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
       lampShade = flatShade * win;
 // #endif SELFSHADOW
 // #endif LAMPMAP
-      lampDrawn += col.rgb * (lampShade * (1.0 - max(1.0 - max(cosine, 0.0) - uniforms.uNormalShade.w, 0.0) * lampShading))
+      lampDrawn += col.rgb * (lampShade * (1.0 - min(max(1.0 - max(cosine, 0.0) - uniforms.uNormalShade.w, 0.0) * lampShading, 1.0 - max(cosine, 0.0))))
         * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
 // #if TILES
@@ -571,7 +571,11 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
   var sunLit = sunFlat;
   if (!isFlat) {
     let sunByNormal = 1.0 - lit.w + lit.w * sunDirect;
-    sunLit += (max(sunByNormal - sunFlat, 0.0) - max(sunFlat - sunByNormal - uniforms.uNormalShade.y, 0.0)) * uniforms.uNormalShade.x;
+    // A strength over 1 darkens what is left after the subtraction faster, up to the whole shading and never past it;
+    // a gain keeps at most its own size.
+    let sunShade = max(sunFlat - sunByNormal, 0.0);
+    sunLit += max(sunByNormal - sunFlat, 0.0) * min(uniforms.uNormalShade.x, 1.0)
+      - min(max(sunShade - uniforms.uNormalShade.y, 0.0) * uniforms.uNormalShade.x, sunShade);
   }
   return vec3<f32>(uniforms.uBaseAmbient) + vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB)
     + vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * sunLit + lampDrawn;

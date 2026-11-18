@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LIGHTING_DEFAULTS, normalShadingOf } from '../../src/util/configDefaults.js';
+import { LIGHTING_DEFAULTS, NORMAL_SHADING_STRENGTH_MAX, normalShadingOf } from '../../src/util/configDefaults.js';
 import { unknownConfigKeys } from '../../src/util/configKeys.js';
 
 const DEFAULT = { sun: { strength: 1, subtract: 0.5 }, lamps: { strength: 1, subtract: 0 } };
@@ -32,11 +32,16 @@ test('a scene may write any of the four numbers', () => {
   );
 });
 
-test('a number outside 0..1 is cut to it, and what is not a number reads as the default', () => {
+test('a subtract is cut to 0..1 and a strength to 0..100 (over 1 it darkens what is left faster); what is not a number reads as the default', () => {
   assert.deepEqual(
     normalShadingOf({ normalShading: { sun: { strength: 3, subtract: -1 }, lamps: { strength: -2, subtract: 7 } } }),
-    { sun: { strength: 1, subtract: 0 }, lamps: { strength: 0, subtract: 1 } },
+    { sun: { strength: 3, subtract: 0 }, lamps: { strength: 0, subtract: 1 } },
   );
+  assert.deepEqual(
+    normalShadingOf({ normalShading: { sun: { strength: 500, subtract: 0.5 }, lamps: { strength: 6, subtract: 0.25 } } }),
+    { sun: { strength: NORMAL_SHADING_STRENGTH_MAX, subtract: 0.5 }, lamps: { strength: 6, subtract: 0.25 } },
+  );
+  assert.equal(NORMAL_SHADING_STRENGTH_MAX, 100);
   assert.deepEqual(normalShadingOf({ normalShading: { sun: { strength: 'full', subtract: NaN } } }), DEFAULT);
   assert.deepEqual(normalShadingOf({ normalShading: { sun: 0.5, lamps: 0.5 } }), DEFAULT, 'one number a light is not the key');
 });

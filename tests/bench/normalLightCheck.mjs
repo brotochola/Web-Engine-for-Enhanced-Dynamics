@@ -27,7 +27,9 @@
  * It is taken again every half second, up to 15 s; past that the line reads NOFRAME and the exit code is 2: no verdict
  * on the shading.
  * The tolerance is the maps' own steps at full strength: on this ball the worst pixel read 3.4 of 255 under the
- * lamp and 4.0 under the sun (p99 2.4, mean 0.6; 2026-11-18), half that at strength 0.5.
+ * lamp and 4.0 under the sun (p99 2.4, mean 0.6; 2026-11-18), half that at strength 0.5. A strength over 1 multiplies
+ * those steps as it multiplies the shading, so the ball's tolerance is --tolerance times the part's strength there (the
+ * sun read 7.7 at strength 2 and 16.8 at 6, the same on WebGL and WebGPU, the mean still 0.7).
  */
 import path from 'node:path';
 
@@ -39,10 +41,11 @@ import {
 
 const USAGE = 'node tests/bench/normalLightCheck.mjs [--backend webgl|webgpu|both] [--part sun|lamp|both] [--tolerance 5] [--strength 0,1] [--subtract 0,0] [--inset 3] [--save dir] [--headless]';
 
-/** --strength's or --subtract's two numbers, each in 0..1: { sun, lamps }. */
+/** --strength's or --subtract's two numbers: { sun, lamps }; a subtract in 0..1, a strength in 0..100. */
 function parsePair(flag, text) {
   const [sun, lamps] = String(text).split(',').map(Number);
-  if (!(sun >= 0 && sun <= 1 && lamps >= 0 && lamps <= 1)) throw new Error(`--${flag} is <sun>,<lamps>, each 0 to 1, not ${text}`);
+  const top = flag === 'strength' ? 100 : 1;
+  if (!(sun >= 0 && sun <= top && lamps >= 0 && lamps <= top)) throw new Error(`--${flag} is <sun>,<lamps>, each 0 to ${top}, not ${text}`);
   return { sun, lamps };
 }
 
@@ -61,7 +64,9 @@ function lightAt(p, n, env) {
     const ratio = Math.min(Math.max(0, n[0] * S[0] + n[1] * S[1] + n[2] * S[2]) * env.sun.w, 1.6);
     // By the normal, in shares of the sun as drawn (1: the scene casts no shadow).
     const byNormal = env.skyLight + (1 - env.skyLight) * ratio;
-    const share = 1 + (Math.max(byNormal - 1, 0) - Math.max(1 - byNormal - subtract.sun, 0)) * strength.sun;
+    // A strength over 1 darkens what is left after the subtract faster, never past the whole shading; a gain keeps its size.
+    const shade = Math.max(1 - byNormal, 0);
+    const share = 1 + Math.max(byNormal - 1, 0) * Math.min(strength.sun, 1) - Math.min(Math.max(shade - subtract.sun, 0) * strength.sun, shade);
     for (let c = 0; c < 3; c++) sunLit[c] = env.sun.rgb[c] * env.sun.intensity * share;
   }
   for (const lamp of env.lamps) {
@@ -74,7 +79,7 @@ function lightAt(p, n, env) {
     const fall = (lamp.brightness * I) / (I + d2);
     const cosine = Math.max(0, (n[0] * lx + n[1] * ly + n[2] * lz) / d);
     const rgb = [(lamp.color >> 16) & 255, (lamp.color >> 8) & 255, lamp.color & 255].map((v) => v / 255);
-    const share = 1 - Math.max(1 - cosine - subtract.lamps, 0) * strength.lamps;
+    const share = 1 - Math.min(Math.max(1 - cosine - subtract.lamps, 0) * strength.lamps, 1 - cosine);
     for (let c = 0; c < 3; c++) lampsLit[c] += rgb[c] * fall * share;
   }
   return base.map((v, c) => Math.min(1, v + sunLit[c] + lampsLit[c]));
@@ -178,11 +183,13 @@ async function main() {
         console.log(`${backend} ${part}: ball ${b.count} px, worst ${b.worst.delta.toFixed(1)} at ${at(b.worst)}, p99 ${b.p99.toFixed(1)}, mean ${b.mean.toFixed(2)}`);
         console.log(`${backend} ${part}: floor ${f.count} px, worst ${f.worst.delta.toFixed(1)} at ${at(f.worst)}`);
         if (errors.length) console.log(`${backend} ${part}: page errors: ${errors.slice(0, 3).join(' | ')}`);
+        // The maps' steps grow with a strength over 1 (the header says how much).
+        const ballTolerance = opts.tolerance * Math.max(1, part === 'sun' ? strength.sun : strength.lamps);
         const sunNote = env.sun ? `sun ${sun.intensity.toFixed(3)} at ${sun.elevation.toFixed(1)} deg` : 'lamp only';
         verdict(
           `normalLight ${backend} ${part}`,
-          errors.length === 0 && b.count > 0 && b.worst.delta <= opts.tolerance && f.worst.delta <= opts.tolerance,
-          `ball worst ${b.worst.delta.toFixed(1)}, floor worst ${f.worst.delta.toFixed(1)} of 255 (tolerance ${opts.tolerance}, strength ${opts.strength}, subtract ${opts.subtract}, ${sunNote})`,
+          errors.length === 0 && b.count > 0 && b.worst.delta <= ballTolerance && f.worst.delta <= opts.tolerance,
+          `ball worst ${b.worst.delta.toFixed(1)}, floor worst ${f.worst.delta.toFixed(1)} of 255 (tolerance ${ballTolerance} on the ball, ${opts.tolerance} on the floor, strength ${opts.strength}, subtract ${opts.subtract}, ${sunNote})`,
         );
       }
     }
