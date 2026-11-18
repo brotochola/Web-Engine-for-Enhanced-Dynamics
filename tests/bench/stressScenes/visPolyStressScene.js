@@ -69,8 +69,9 @@ export const BLOCK = (() => {
  * - `fans`: the same walls drawn by the old pass, a fan a light (debug.lightFans). `?fans=1` asks for it too.
  * - `maps`: no walls. Each occluder is a volume taller than the lamps (shadowCaster.setBox), the lamps stand
  *   LAMP_HEIGHT px high, and the lamps' shadows are lighting.lampShadows 'map' (OL-4's final A, as far as it exists).
- *   NOT READY (2026-11-18): the lamps draw, but the volumes cast no shadow in their map here, with or without a
- *   pitch; lampShadowStressScene's blocks, set the same way, do. To find before the race runs this arm.
+ *   NOT READY (2026-11-18): the lamps draw, but the volumes cast no shadow. The lamps get their tiles in the map only
+ *   in a frame with a sprite caster's stamp row, and this scene has volumes alone (OL-5, an engine bug: to fix before
+ *   the race runs this arm).
  * - `plain`: the light pass alone, nothing stopping a lamp: the floor of what either final costs. With the G-buffer on
  *   (lighting.unshaded), as walls and maps both have it; `?gbuf=0` leaves it off.
  */
