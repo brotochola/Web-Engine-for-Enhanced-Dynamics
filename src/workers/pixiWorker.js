@@ -9244,6 +9244,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // ========================================
     // BLOOD DECAL SPLAT GRID - Initialize (SAB tiles, not TileMap background)
     // ========================================
+    // Its kernel binds with the others, below.
+    let decalBind = null;
     if (data.decals && data.decals.enabled) {
       this.decalsEnabled = true;
       this.decalsTileSize = data.decals.tileSize; // World units per tile
@@ -9259,7 +9261,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         data.decals.tilesRGBA, 0, data.decals.totalTiles * data.decals.tilePixelSize * data.decals.tilePixelSize * 4);
       // W21c: dirty tiles premultiplied by decalPremultiply.wasm, on the decal memory the tiles live in.
       if (!data.decals.memory || !data.decals.memoryLayout) throw new Error('decals without the decal memory (installDecalMemory)');
-      this._decalPremultiply = await bindDecalPremultiply(data.decals.memory, data.decals.memoryLayout);
+      decalBind = bindDecalPremultiply(data.decals.memory, data.decals.memoryLayout).then((kernel) => {
+        this._decalPremultiply = kernel;
+      });
       this.decalsTilesDirty = new Uint8Array(data.decals.tilesDirty);
       this._decalDirtyWords = new Uint32Array(data.decals.tilesDirty, 0, data.decals.tilesDirty.byteLength >> 2);
 
@@ -9344,10 +9348,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._renderQueueMemory = data.renderQueueMemory || null;
     this.createCastedShadowsSystem(data);
 
+    // The worker's kernels, which do not depend on each other, bound together (SST-2): the decals' premultiply, the entity
+    // batch's pack and sort, the MESH layers' corners (initializeCustomLayers takes this bind). loadMark: each bind's
+    // 'kernel' marks come from wasmKernel.js.
+    await Promise.all([
+      decalBind,
+      this.renderQueueEnabled ? this._bindPixiGpuPack(data) : null,
+      this.renderQueueEnabled ? this._bindPainterRadix(data) : null,
+      this._bindMeshMemory(data),
+    ]);
+    loadMark('kernels bound');
+
     // ENTITIES always render through the instanced Mesh (no ParticleContainer path)
     if (this.renderQueueEnabled) {
-      await this._bindPixiGpuPack(data);
-      await this._bindPainterRadix(data);
       this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
       this._entitiesRoot = new Container();
       this._entitiesRoot.label = 'entities-root';
@@ -9493,7 +9506,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // ========================================
     // CUSTOM LAYER RENDERING INFRASTRUCTURE
     // ========================================
-    await this.initializeCustomLayers(data);
+    await this.initializeCustomLayers(data, true);
 
     // ========================================
     // LAYER REFERENCES MAP - For debug UI control
@@ -9839,7 +9852,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return null;
   }
 
-  async initializeCustomLayers(data) {
+  /**
+   * @param {object} data the init message (or its layers' part)
+   * @param {boolean} [meshMemoryBound] initialize bound the mesh memory with its other kernels (_bindMeshMemory)
+   */
+  async initializeCustomLayers(data, meshMemoryBound = false) {
     const prev = this._customLayerList || [];
     for (let i = 0; i < prev.length; i++) {
       const old = prev[i];
@@ -9864,7 +9881,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._destroyScreenLayers();
     this._customLayers = {};
     this._gpuParticleBatches = [];
-    await this._bindMeshMemory(data);
+    if (!meshMemoryBound) await this._bindMeshMemory(data);
     if (!data.layerData) return;
 
     const metadata = data.layerData.metadata;
