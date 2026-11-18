@@ -22558,6 +22558,23 @@
         "maps input kinds"
       ],
       "records": []
+    },
+    {
+      "id": "N-291",
+      "title": "Moving the camera changes the shading of things near the screen's right edge, as it did near the bottom edge: likely N-272's (the self-shadow march reads the face map's edge texel past the screen) with the sun's march toward that edge",
+      "status": "open",
+      "statusText": "seen by the owner 2026-11-18 in the barrio (localhost:8000, main 702e6842): near the right edge the shading changes as the camera moves; the bottom edge did the same (N-272's sighting). N-272's fix is not on main (v3 on exp/n272-ring, unmeasured), so main's WebGL march still reads the edge texel; the sun's direction decides which edge shows it. Not checked: added at the owner's ask, nothing touched",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Pan the barrio by day with the sun's march toward the right edge (film the drift), main against exp/n272-ring (N-272 v3, the empty ring), WebGL and WebGPU. If v3 fixes both edges, close it with N-272; if not, find what else reads past the screen on that side (the light tiles, lightEdges, the half-resolution light pass).",
+      "area": "render",
+      "kind": "bug",
+      "refs": [],
+      "aliases": [
+        "right edge shading",
+        "screen edge shading drifts"
+      ],
+      "records": []
     }
   ],
   "records": [
