@@ -32,7 +32,7 @@ async function fromEntry(hit, decals, makeCanvas) {
   loadMark('atlas cache decoded');
   // Its frames' texels are in its json (a pack scans them; its built-ins it leaves unscanned): none read here.
   const read = decals ? readAtlasPixels(imageBitmap, hit.json, { decals: true, texels: false, makeCanvas }) : { decals: null };
-  return { json: hit.json, imageBitmap, mapsBitmap, decals: read.decals, cache: 'hit' };
+  return { json: hit.json, imageBitmap, mapsBitmap, mapsTexels: hit.maps, decals: read.decals, cache: 'hit' };
 }
 
 /**
@@ -48,7 +48,8 @@ async function fromEntry(hit, decals, makeCanvas) {
  * }} p options: buildBigAtlas's (keepMapsTexels true, mapsCanvas false, decals); cache.bundle: the code is a bundle's
  *   (the engine's version names it); cacheEnv, cacheKeyOptions: tests give their own Cache Storage, fetch and version
  * @returns {Promise<{ result: { json: object, imageBitmap: ImageBitmap, mapsBitmap: ImageBitmap | null,
- *   decals: object | null, cache: 'hit' | 'miss' | 'off' }, background: Promise<void> | null }>}
+ *   mapsTexels: Uint8ClampedArray | null, decals: object | null, cache: 'hit' | 'miss' | 'off' }, background: Promise<void> | null }>}
+ *   mapsTexels: the twin page's texels as computed (the bake writes them; the renderer gets mapsBitmap)
  */
 export async function packAtlas({ assets, options, builtins, cache, makeCanvas, cacheEnv, cacheKeyOptions = {} }) {
   const env = cache?.enabled ? (cacheEnv !== undefined ? cacheEnv : atlasCacheHere()) : null;
@@ -73,7 +74,9 @@ export async function packAtlas({ assets, options, builtins, cache, makeCanvas, 
   const packed = await buildBigAtlas(assets, { ...options, keepMapsTexels: true, builtins });
   const png = entry ? pngOf(packed.canvas) : null;
   const { imageBitmap, mapsBitmap } = await packedBitmaps(packed);
-  const result = { json: packed.json, imageBitmap, mapsBitmap, decals: packed.decals, cache: entry ? 'miss' : 'off' };
+  const result = {
+    json: packed.json, imageBitmap, mapsBitmap, mapsTexels: packed.mapsTexels, decals: packed.decals, cache: entry ? 'miss' : 'off',
+  };
   const background = entry
     ? (async () => {
       await writeAtlasCache(env.storage, env.origin, entry.slot, entry.key, { json: packed.json, png: await png, maps: packed.mapsTexels });

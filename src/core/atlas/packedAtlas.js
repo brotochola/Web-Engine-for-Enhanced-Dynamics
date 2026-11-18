@@ -41,13 +41,14 @@ export async function assetsForWorker(assetsToLoad, resolve = resolvedAssetUrl) 
  * Pack a scene's atlas.
  * @param {object} assetsToLoad images by name, plus { spritesheets } (the scene's and its Adobe Animate ones)
  * @param {{ options: object, camera?: object | null, unshadedGlows?: boolean, decals: boolean,
- *   worker: import('../assetWorkerClient.js').AssetWorker | null }} opts
+ *   worker: import('../assetWorkerClient.js').AssetWorker | null, withMapsTexels?: boolean }} opts
  *   options: config.assets (the packer's options, and atlasCache: false keeps the atlas cache out); camera: config.camera
- *   (DX-MAPCAMERA); unshadedGlows: DX-GLOWRADIUS; decals: read the decal textures
- * @returns {Promise<{ json: object, imageBitmap: ImageBitmap, mapsBitmap: ImageBitmap | null,
+ *   (DX-MAPCAMERA); unshadedGlows: DX-GLOWRADIUS; decals: read the decal textures; withMapsTexels: the twin page's
+ *   texels too, as computed (the bake writes them)
+ * @returns {Promise<{ json: object, imageBitmap: ImageBitmap, mapsBitmap: ImageBitmap | null, mapsTexels: Uint8ClampedArray | null,
  *   decals: { textures: object, frameNameToId: object } | null, inspect: () => Promise<HTMLCanvasElement | OffscreenCanvas> }>}
  */
-export async function loadPackedAtlas(assetsToLoad, { options = {}, camera = null, unshadedGlows = false, decals, worker }) {
+export async function loadPackedAtlas(assetsToLoad, { options = {}, camera = null, unshadedGlows = false, decals, worker, withMapsTexels = false }) {
   // DX-MAPCAMERA: the scene's heightScaleY, to which a sheet drawn for another camera has its heights scaled.
   const sceneHeightScaleY = camera ? resolveHeightScaleY(camera) : NaN;
   const builtins = drawBuiltinTextures({ unshadedGlows });
@@ -68,6 +69,7 @@ export async function loadPackedAtlas(assetsToLoad, { options = {}, camera = nul
         options: packOptions,
         builtins: builtins.map((b, i) => ({ name: b.name, image: bitmaps[i], unshaded: b.unshaded, afterSort: b.afterSort })),
         cache,
+        withMapsTexels,
       },
       transfer: [...forWorker.transfer, ...bitmaps],
     };
@@ -91,6 +93,7 @@ export async function loadPackedAtlas(assetsToLoad, { options = {}, camera = nul
     json: packed.json,
     imageBitmap: packed.imageBitmap,
     mapsBitmap: packed.mapsBitmap,
+    mapsTexels: withMapsTexels ? packed.mapsTexels ?? null : null,
     decals: packed.decals ?? null,
     // The inspector and the download, on demand: the atlas packed again on this thread (a debug view: lazy is allowed).
     inspect: async () => (await SpriteSheetRegistry.createBigAtlas(assetsToLoad, { ...options, camera, unshadedGlows })).canvas,

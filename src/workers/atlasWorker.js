@@ -43,7 +43,8 @@ const JOBS = {
    * drawn (SST-5 steps 1-2, atlasBuild.js), the decal textures read from it, the renderer's bitmaps made; a miss writes
    * its cache entry after answering.
    * msg: { assets (URLs absolute), options (buildBigAtlas's, sceneHeightScaleY a number),
-   *   builtins: Array<{ name, image: ImageBitmap, unshaded, afterSort }>, cache: { enabled, bundle } | null }
+   *   builtins: Array<{ name, image: ImageBitmap, unshaded, afterSort }>, cache: { enabled, bundle } | null,
+   *   withMapsTexels: boolean (the twin page's texels too: the bake) }
    */
   async pack(msg) {
     const { result, background } = await packAtlas({
@@ -55,6 +56,13 @@ const JOBS = {
     const transfer = [result.imageBitmap];
     if (result.mapsBitmap) transfer.push(result.mapsBitmap);
     if (result.decals) transfer.push(...decalTextureBuffers(result.decals.textures));
+    if (msg.withMapsTexels && result.mapsTexels) {
+      // A cache write still needs its own: the page gets a copy then.
+      if (background) result.mapsTexels = result.mapsTexels.slice();
+      transfer.push(result.mapsTexels.buffer);
+    } else {
+      result.mapsTexels = null;
+    }
     return { result, transfer, background };
   },
 };
