@@ -22,6 +22,8 @@ const PX_PER_FRAME = 60;
 const SPLASH_SPEED_MIN = 350;
 /** Relative speed that maps to full splash intensity (px/s). */
 const SPLASH_SPEED_FULL = 3500;
+/** How much of `_lightGradient`'s radius `_lightGlow` stretches over its whole texture (the engine's compact glow span). */
+const GLOW_SPAN = 0.16;
 
 class WaterBall extends GameObject {
   static instances = [];
@@ -34,7 +36,11 @@ class WaterBall extends GameObject {
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 0.5;
 
-    this.setSprite('_lightGradient');
+    // The density blob is the engine's compact glow, not `_lightGradient`: the same falloff, but `_lightGradient`'s
+    // visible part is only the inner 16 % of its radius, so at the old scale each drop filled a 2 000 px square of
+    // nearly transparent texels (7.8 ms of GPU a frame for 4 000 drops, E-449). `_lightGlow` spreads that same curve
+    // over its whole texture, so it is drawn GLOW_SPAN times as wide.
+    this.setSprite('_lightGlow');
     this.setLayer('water');
     this.setTint(BASE_WATER_TINT);
     this.setAlpha(0.9);
@@ -49,7 +55,7 @@ class WaterBall extends GameObject {
     RigidBody.mass[this.index] *= 0.1;
     RigidBody.invMass[this.index] = 1 / (RigidBody.mass[this.index] || 1);
 
-    this.setScale(this.collider.radius * 0.5);
+    this.setScale(this.collider.radius * 0.5 * GLOW_SPAN);
     this.setAlpha(0.33)
     this.setTint(BASE_WATER_TINT)
   }
