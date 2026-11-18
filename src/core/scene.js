@@ -64,6 +64,7 @@ import { Flash } from './flash.js';
 import { BigAtlasInspector } from './bigAtlasInspector.js';
 import { startAssetWorker } from './assetWorkerClient.js';
 import { loadBakedAtlas } from './atlas/bakedAtlas.js';
+import { loadPackedAtlas } from './atlas/packedAtlas.js';
 import { decalTexturesFrom } from './atlas/atlasFrames.js';
 import { Camera } from './camera.js';
 import { Time, simClockStepMs } from './timeScale.js';
@@ -1778,29 +1779,24 @@ class Scene {
     }
   }
 
-  async _packBigAtlasOnMainThread(assetsToLoad, options) {
-    // DX-MAPS: the twin page's texels as computed, not read back from its canvas: a 2D canvas keeps premultiplied alpha,
-    // and the twin page holds a normal's second byte in A (about 55 to 61 on standing sprites), so R, the height's high
-    // byte, came back rounded by a few steps (several px of height).
-    // DX-MAPCAMERA: the scene's camera, so a sheet drawn for another one (its artCamera) has its heights scaled to it.
-    // DX-GLOWRADIUS: halos that join the entities are unshaded (the light gradient's frame carries the mark).
-    const packed = await SpriteSheetRegistry.createBigAtlas(assetsToLoad, {
-      ...options,
-      keepMapsTexels: true,
-      camera: this.config?.camera ?? null,
-      unshadedGlows: unshadedGlowsOf(this.config?.lighting),
-    });
-    const maps = packed.mapsCanvas;
-    const exact = maps && packed.mapsTexels ? new ImageData(packed.mapsTexels, maps.width, maps.height) : null;
-    const [imageBitmap, mapsBitmap] = await Promise.all([
-      createImageBitmap(packed.canvas),
-      // DX-MAPS: the twin page goes to the renderer as data: no premultiplied alpha, no colour space.
-      exact
-        ? createImageBitmap(exact, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
-        : maps ? createImageBitmap(maps, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }) : null,
-    ]);
-    const decals = this.config.particle.decals ? decalTexturesOfCanvas(packed.canvas, packed.json) : null;
-    return { json: packed.json, imageBitmap, mapsBitmap, decals, inspect: async () => packed.canvas };
+  /**
+   * SST-5 steps 1-2: the atlas packed in the atlas worker, off this thread (atlas/packedAtlas.js), its decal textures
+   * read there. DX-MAPS: the twin page goes to the renderer from its texels as computed; DX-MAPCAMERA: the scene's
+   * camera scales the heights of a sheet drawn for another one; DX-GLOWRADIUS: halos that join the entities are unshaded.
+   */
+  async _packBigAtlas(assetsToLoad, options) {
+    const worker = await startAssetWorker('atlasWorker');
+    try {
+      return await loadPackedAtlas(assetsToLoad, {
+        options,
+        camera: this.config?.camera ?? null,
+        unshadedGlows: unshadedGlowsOf(this.config?.lighting),
+        decals: Boolean(this.config.particle.decals),
+        worker,
+      });
+    } finally {
+      this._finishAssetWorker('atlas', worker);
+    }
   }
 
   async _loadTilemapsParallel(tilemaps) {
@@ -1959,7 +1955,7 @@ class Scene {
           ...textures,
           spritesheets,
         };
-        return await this._packBigAtlasOnMainThread(assetsToLoad, atlasOptions);
+        return await this._packBigAtlas(assetsToLoad, atlasOptions);
       } catch (error) {
         console.error('❌ Failed to generate BigAtlas:', error);
         throw error;

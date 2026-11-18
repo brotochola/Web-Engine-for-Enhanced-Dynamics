@@ -302,3 +302,76 @@ export function withFetch(files, fn) {
     globalThis.fetch = saved;
   });
 }
+
+/** An image of w × h, transparent, with `blobs` random rectangles of colour (soft, half and solid alphas). */
+export function blobImage(r, w, h, blobs = 6) {
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let b = 0; b < blobs; b++) {
+    const x0 = (r() * w) | 0;
+    const y0 = (r() * h) | 0;
+    const x1 = Math.min(w, x0 + 1 + ((r() * w) / 3) | 0);
+    const y1 = Math.min(h, y0 + 1 + ((r() * h) / 3) | 0);
+    const k = r();
+    const a = k < 0.5 ? 255 : (1 + r() * 254) | 0;
+    const rgb = [(r() * 256) | 0, (r() * 256) | 0, (r() * 256) | 0];
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) data.set([...rgb, a], (y * w + x) * 4);
+  }
+  return new MemImage(w, h, data);
+}
+
+/**
+ * A scene's atlas sources, served by withFetch: two textures, two sheets on one json (as Predator's civilians), one with
+ * an excluded animation, and a sheet with height and normal maps (a twin page).
+ * @returns {{ files: Record<string, string | Blob>, assets: object }}
+ */
+export function packScene(seed) {
+  const r = rng(seed);
+  const files = {};
+  const png = (url, image) => {
+    files[url] = memPng(image);
+    return url;
+  };
+  const grid = (cols, rows, size, anims) => {
+    const frames = {};
+    const animations = {};
+    let k = 0;
+    for (const [name, count] of anims) {
+      animations[name] = [];
+      for (let i = 0; i < count; i++, k++) {
+        const fname = `${name}_${i}`;
+        frames[fname] = { frame: { x: (k % cols) * size, y: ((k / cols) | 0) * size, w: size, h: size } };
+        animations[name].push(fname);
+      }
+    }
+    return { frames, animations };
+  };
+  const walkerJson = grid(4, 3, 16, [['walk', 4], ['run', 4], ['hurt', 2]]);
+  files['/s/walker.json'] = JSON.stringify(walkerJson);
+  const farmJson = grid(2, 2, 24, [['a', 2], ['b', 2]]);
+  files['/s/farm.json'] = JSON.stringify(farmJson);
+  // Heights in R·256 + G (1/64 px), normals as colours: anything, the twin page carries them.
+  const heights = new MemImage(48, 48);
+  for (let p = 0; p < 48 * 48; p++) heights.data.set([0, (r() * 255) | 0, 0, 255], p * 4);
+  return {
+    files,
+    assets: {
+      rock: png('/s/rock.png', blobImage(r, 30, 20, 3)),
+      bg: png('/s/bg.png', randomImage(r, 12, 9)),
+      spritesheets: {
+        walkerA: { json: '/s/walker.json', png: png('/s/walkerA.png', blobImage(r, 64, 48, 30)), excludeAnimations: ['hurt'] },
+        walkerB: { json: '/s/walker.json', png: png('/s/walkerB.png', blobImage(r, 64, 48, 30)), excludeAnimations: ['hurt'] },
+        farm: {
+          json: '/s/farm.json',
+          png: png('/s/farm.png', blobImage(r, 48, 48, 12)),
+          heightMap: png('/s/farm_h.png', heights),
+          normalMap: png('/s/farm_n.png', randomImage(r, 48, 48)),
+        },
+      },
+    },
+  };
+}
+
+/** The store of a canvas (its premultiplied pixels) or an image's bytes, hashed. */
+export function hashPixels(source) {
+  return hashBytes(source.store ?? source.data);
+}

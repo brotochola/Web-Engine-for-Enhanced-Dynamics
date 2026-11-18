@@ -6,6 +6,8 @@
 
 import { decalTextureBuffers } from '../core/atlas/atlasFrames.js';
 import { completeBakedPixels } from '../core/atlas/bakedPixels.js';
+import { buildBigAtlas } from '../core/atlas/atlasBuild.js';
+import { packedBitmaps } from '../core/atlas/packedBitmaps.js';
 import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 
 const makeCanvas = (w, h) => new OffscreenCanvas(w, h);
@@ -34,6 +36,24 @@ const JOBS = {
     const transfer = read.decals ? decalTextureBuffers(read.decals.textures) : [];
     if (read.bitmap) transfer.push(read.bitmap);
     return { result: read, transfer };
+  },
+
+  /**
+   * A packed atlas (SST-5 steps 1-2): every source fetched and decoded here, read back, packed and drawn
+   * (atlasBuild.js), the decal textures read from it, the renderer's bitmaps made.
+   * msg: { assets (URLs absolute), options (buildBigAtlas's, sceneHeightScaleY a number),
+   *   builtins: Array<{ name, image: ImageBitmap, unshaded, afterSort }> }
+   */
+  async pack(msg) {
+    const packed = await buildBigAtlas(msg.assets, { ...msg.options, builtins: msg.builtins || [] });
+    const { imageBitmap, mapsBitmap } = await packedBitmaps(packed);
+    for (const b of msg.builtins || []) b.image.close?.();
+    for (const sheet of Object.values(msg.assets?.spritesheets || {})) sheet?.img?.close?.();
+    loadMark('atlas worker bitmaps');
+    const transfer = [imageBitmap];
+    if (mapsBitmap) transfer.push(mapsBitmap);
+    if (packed.decals) transfer.push(...decalTextureBuffers(packed.decals.textures));
+    return { result: { json: packed.json, imageBitmap, mapsBitmap, decals: packed.decals }, transfer };
   },
 };
 
