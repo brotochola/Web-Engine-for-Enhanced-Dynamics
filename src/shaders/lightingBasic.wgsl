@@ -650,7 +650,10 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   ditherAt = fragWorld;
 // #endif PIXELART
 // #if FACES
-  let face = textureLoad(uFaceMap, vec2<i32>(in.position.xy), 0);
+  // N-272: the face map's edge ring is empty (lightingBasic.frag.glsl says why): a pixel on the screen's edge reads its
+  // neighbour inside.
+  let faceAt = vec2<i32>(clamp(in.position.xy, vec2<f32>(1.5), vec2<f32>(textureDimensions(uFaceMap, 0)) - 1.5));
+  let face = textureLoad(uFaceMap, faceAt, 0);
   // DX-UNSHADED: an unshaded pixel keeps its own colour (the face pass's (1/255, 0)).
   if (face.r > 0.0 && face.g < 0.5 / 255.0) {
     return vec4<f32>(1.0);
@@ -660,7 +663,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     var selfId = 0.0;
     var selfOn = true;
 // #if IDS
-    let ids = textureLoad(uFaceIds, vec2<i32>(in.position.xy), 0);
+    let ids = textureLoad(uFaceIds, faceAt, 0);
     selfId = floor(ids.r * 255.0 + 0.5) * 256.0 + floor(ids.g * 255.0 + 0.5);
     selfOn = selfId < 0.5 || (floor(ids.b * 255.0 + 0.5) % 2.0) > 0.5;
 // #endif IDS

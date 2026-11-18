@@ -633,7 +633,10 @@ void main() {
   ditherAt = fragWorld;
 // #endif PIXELART
 // #if FACES
-  vec4 face = textureLod(uFaceMap, gl_FragCoord.xy / uViewport, 0.0);
+  // N-272: the face map's edge ring is empty (pixiWorker draws it a texel inside its edges, so the self-shadow march reads
+  // nothing past the screen): a pixel on the screen's edge reads its neighbour inside.
+  vec2 faceAt = clamp(gl_FragCoord.xy, vec2(1.5), uViewport - 1.5) / uViewport;
+  vec4 face = textureLod(uFaceMap, faceAt, 0.0);
   // DX-UNSHADED: an unshaded pixel keeps its own colour (the face pass's (1/255, 0)).
   if (face.r > 0.0 && face.g < 0.5 / 255.0) {
     finalColor = vec4(1.0);
@@ -644,7 +647,7 @@ void main() {
     float selfId = 0.0;
     bool selfOn = true;
 // #if IDS
-    vec4 ids = textureLod(uFaceIds, gl_FragCoord.xy / uViewport, 0.0);
+    vec4 ids = textureLod(uFaceIds, faceAt, 0.0);
     selfId = floor(ids.r * 255.0 + 0.5) * 256.0 + floor(ids.g * 255.0 + 0.5);
     selfOn = selfId < 0.5 || mod(floor(ids.b * 255.0 + 0.5), 2.0) > 0.5;
 // #endif IDS
