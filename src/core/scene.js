@@ -72,7 +72,7 @@ import {
 } from '../util/sceneBufferMemory.js';
 import { createSceneSharedBuffers, sceneEntitySlots, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
 import { bindEntityIdWidth, resolveEntityIdWidth, declaredEntityCount, EntityIdArray } from '../util/entityIdWidth.js';
-import { createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
+import { bootSceneWorkers, createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
 import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 import {
   bindFrameClock,
@@ -237,6 +237,8 @@ class Scene {
     this.imageUrls = { ...this.constructor.assets };
     /** The Adobe Animate assets init fetched and compiled (prepareAdobeAnimateAssets), until preloadAssets takes them. */
     this._preparedAdobeAssets = null;
+    /** SST-4: the asset loads init started at its top (_startAssetLoads), until preloadAssets takes them; null else. */
+    this._assetLoads = null;
     this.audioUrls = this.constructor.audios || [];
     this.loadedAudioNames = [];
 
@@ -1200,21 +1202,38 @@ class Scene {
       throw new Error(isolationError);
     }
 
+    // SST-4: every piece of the start that needs nothing from the rest begins here, side by side, and each is awaited
+    // where it is consumed; all of it before the start, the sounds included. engine.wasm is compiling already
+    // (GameEngine.loadScene, SST-2).
+    // SST-1: the engine workers, each booted at once (sceneWorkerBootstrap.js bootSceneWorkers): their own start
+    // (modules, game scripts, engine.wasm, the renderer's GPU) runs while this thread loads the assets.
+    const workersBooted = bootSceneWorkers(this);
+    // Awaited before the init messages; a failure is reported there.
+    workersBooted.catch(() => {});
+
     // N-73: the Adobe Animate assets are fetched and compiled from here, alongside the audio and the scripts, and
     // awaited before the render queue is sized: its auto size counts each character's largest frame of pieces.
     const adobePrepare = this.prepareAdobeAnimateAssets(this.imageUrls?.AdobeAnimateAnimations || {});
 
     // Initialize AudioWorklet mixer and autoplay gate
     const audioConfig = this.config.audio || {};
-    await SoundManager.initializeAudioWorklet(
+    const audioReady = SoundManager.initializeAudioWorklet(
       audioConfig.maxSlots,
       audioConfig.mixGain,
       audioConfig.masterVolume,
       audioConfig.channels,
       audioConfig.compressor
-    );
-    SoundManager.initializeAutoplayGate();
-    this._loadStep('audio');
+    ).then(() => {
+      SoundManager.initializeAutoplayGate();
+      this._loadStep('audio');
+    });
+    audioReady.catch(() => {});
+
+    // Every asset's fetch and decode (the atlas waits for the Adobe sheets it packs, the sounds for the worklet that
+    // decodes them); installed by preloadAssets once the shared buffers exist, as before. They need neither the
+    // Box2D block nor the buffers, and those need nothing from them: the render queue's size counts the Adobe
+    // assets' pieces (adobePrepare), not the atlas.
+    this._assetLoads = this._startAssetLoads(this.imageUrls, this.audioUrls, adobePrepare, audioReady);
 
     // Load entity scripts dynamically in main thread (like workers do)
 
@@ -1229,7 +1248,8 @@ class Scene {
     this.totalEntityCount = sceneEntitySlots(this.totalEntityCount);
 
     // Phase 4: with physics, the physics worker starts here and reserves a block of Box2D's memory, so the
-    // render-queue regions the shared buffers make are laid in it.
+    // render-queue regions the shared buffers make are laid in it. Its size needs the entity count (the classes the
+    // constructor registered, not the scripts above) and the Adobe assets' pieces.
     await reserveBox2dBlock(this);
     loadMark('box2d block');
 
@@ -1240,8 +1260,9 @@ class Scene {
     this.createSharedBuffers();
     this._loadStep('buffers');
 
-    // Create workers
-
+    // The workers' init: once they are booted, the worklet is up (its buffers go in init) and the assets are loaded.
+    await workersBooted;
+    await audioReady;
     await this.createWorkers();
 
     // Wait for all workers to be ready (workers stay paused until we send 'start')
@@ -1891,7 +1912,38 @@ class Scene {
     });
   }
 
+  /**
+   * Load every asset and install it: the atlas into the sprite registries, the sounds' names. Scene.init started the
+   * loads at its top (SST-4, _startAssetLoads); called on its own, it starts them now.
+   */
   async preloadAssets(imageUrls, spritesheetConfigs = {}, audioManifest = null) {
+    let loads = this._assetLoads;
+    this._assetLoads = null;
+    if (loads === null) {
+      // Prepared in init (N-73), else here.
+      const adobePrepare = this._preparedAdobeAssets
+        ? Promise.resolve(this._preparedAdobeAssets)
+        : this.prepareAdobeAnimateAssets(imageUrls?.AdobeAnimateAnimations || {});
+      loads = this._startAssetLoads(imageUrls, audioManifest, adobePrepare, Promise.resolve());
+    }
+    const { atlas, audioNames, preparedAdobeAssets } = await loads;
+    this._preparedAdobeAssets = null;
+    this._installBigAtlas(atlas, preparedAdobeAssets.compiledAssets);
+    this.loadedAudioNames = audioNames;
+  }
+
+  /**
+   * SST-4: every asset's fetch and decode, started at once and side by side: the atlas (baked, or packed once the Adobe
+   * assets' sheets are in), the tilemaps, the flowfields, the shader sources and the sounds (once the audio worklet,
+   * whose context decodes them, is up). Nothing is installed: preloadAssets does that.
+   * @param {object} imageUrls the scene's assets
+   * @param {Array|object|null} audioManifest the sounds (null: the scene's)
+   * @param {Promise<{ compiledAssets: object, spritesheetConfigs: object }>} adobePrepare prepareAdobeAnimateAssets
+   * @param {Promise<unknown>} audioReady the audio worklet's initialization
+   * @returns {Promise<{ atlas: object, audioNames: string[], preparedAdobeAssets: object }>}
+   */
+  _startAssetLoads(imageUrls, audioManifest, adobePrepare, audioReady) {
+    loadMark('assets started');
     this.loadedTextures = {};
     this.loadedSpritesheets = {};
     this.loadedTilemaps = {};
@@ -1899,11 +1951,10 @@ class Scene {
 
     const textures = imageUrls?.textures || {};
     const sceneSpritesheets = imageUrls?.spritesheets || {};
-    const adobeAnimateAnimations = imageUrls?.AdobeAnimateAnimations || {};
-    // Prepared in init (N-73), else here.
-    const preparedAdobeAssets = this._preparedAdobeAssets || await this.prepareAdobeAnimateAssets(adobeAnimateAnimations);
-    this._preparedAdobeAssets = null;
-    this._loadStep('adobe');
+    const adobe = adobePrepare.then((prepared) => {
+      this._loadStep('adobe');
+      return prepared;
+    });
     const step = (stage) => (value) => {
       this._loadStep(stage);
       return value;
@@ -1917,6 +1968,8 @@ class Scene {
           debugWorkerLog('[Scene] Loading prebaked bigAtlas...');
           return await this._loadBakedBigAtlas(bakedBigAtlas);
         }
+        // The pack takes the Adobe assets' sheets too.
+        const preparedAdobeAssets = await adobe;
         const spritesheets = {
           ...sceneSpritesheets,
           ...preparedAdobeAssets.spritesheetConfigs,
@@ -1940,20 +1993,21 @@ class Scene {
       )
       : Promise.resolve();
 
-    const audioPromise = this.preloadAudios(
+    const audioPromise = audioReady.then(() => this.preloadAudios(
       audioManifest !== null && audioManifest !== undefined ? audioManifest : this.audioUrls
-    );
+    ));
 
-    const [atlasResult, , , , loadedAudioNames] = await Promise.all([
+    const loads = Promise.all([
       atlasPromise.then(step('atlas')),
       this._loadTilemapsParallel(imageUrls?.tilemaps).then(step('tilemaps')),
       flowfieldsPromise.then(step('flowfields')),
       this._loadShaderSources(imageUrls).then(step('shaders')),
       audioPromise.then(step('sounds')),
-    ]);
-
-    this._installBigAtlas(atlasResult, preparedAdobeAssets.compiledAssets);
-    this.loadedAudioNames = loadedAudioNames;
+      adobe,
+    ]).then(([atlas, , , , audioNames, preparedAdobeAssets]) => ({ atlas, audioNames, preparedAdobeAssets }));
+    // preloadAssets awaits it: an error before then is reported there, not as an unhandled rejection.
+    loads.catch(() => {});
+    return loads;
   }
 
   async preloadAudios(audioManifest) {
