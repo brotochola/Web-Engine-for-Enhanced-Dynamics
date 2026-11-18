@@ -19,7 +19,7 @@ function createPhysicsApi(Module) {
     "number",
   ]);
   const worldSetStepSpin = wrap("world_set_step_spin", null, ["number", "number"]);
-  const bindGameBuffers = wrap("bind_game_buffers", "number", ["number"]);
+  const bindGameBuffers = wrap("bind_game_buffers", "number", ["number", "number"]);
   const createBodyBox = wrap("create_body_box", "number", [
     "number",
     "number",
@@ -979,17 +979,24 @@ function createPhysicsApi(Module) {
       worldSetStepSpin(this.worldId, enable ? 1 : 0);
     }
 
-    bindBuffers(maxBodies) {
+    /**
+     * Box2D's tables for the scene (wasm_wrapper.c bind_game_buffers): a body slot per entity (maxBodies) and a joint
+     * handle per joint (maxJoints, physics.maxJoints; 0: no joint can be made). N-253, N-310.
+     */
+    bindBuffers(maxBodies, maxJoints = 0) {
       const maxSlots = getMaxBodySlots();
       if (maxBodies <= 0 || maxBodies > maxSlots) {
         throw new Error(
           `bindBuffers failed: maxBodies ${maxBodies} out of range (1..${maxSlots})`,
         );
       }
-      this._buffersBound = bindGameBuffers(maxBodies) === 1;
+      if (!(maxJoints >= 0)) {
+        throw new Error(`bindBuffers failed: maxJoints ${maxJoints} is not a count`);
+      }
+      this._buffersBound = bindGameBuffers(maxBodies, maxJoints) === 1;
       if (!this._buffersBound) {
         throw new Error(
-          `bindBuffers failed: WASM malloc for ${maxBodies} bodies (rebuild box2dWasm after source changes)`,
+          `bindBuffers failed: Box2D refused ${maxBodies} bodies and ${maxJoints} joints (rebuild box2dWasm after source changes)`,
         );
       }
       bindQueryViews(this);
