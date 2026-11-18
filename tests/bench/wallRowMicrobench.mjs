@@ -2,7 +2,9 @@
 // pre-render once a lamp with walls a frame. Imports the shipped function. Does not patch src/.
 //
 // A polygon is what the sweep leaves: vertices in rising angle around the lamp, each with its own code (0 where its ray
-// hit nothing). Three sizes, since a row's cost has a part a vertex and a part a row (its 256 directions' index):
+// hit nothing), four a wall in sight: what lies behind the wall's first corner, the wall there, the wall at its last
+// corner and what lies behind that, two rays in all (a row's branches then repeat as a scene's do; codes drawn a vertex
+// at a time made every one a coin toss, and the kernel read 25 ns a vertex). Three sizes, since a row's cost has a part a vertex and a part a row (its 256 directions' index):
 // 16 vertices (a lamp with two or three walls in reach), 48 (visPolyStressScene's widest at 360 lights was 51) and 128
 // (lighting.maxPolygonVertices' default).
 //
@@ -21,27 +23,36 @@ const POLYGONS = 256;
 const SIZES = [16, 48, 128];
 const ROW_FLOATS = 4 * wallRowTexels(WALL_ROW_MAX_VERTS);
 
-/** `count` polygons of `n` vertices each around lamps scattered over a field, a third of the rays free. */
+/** `count` polygons of `n` vertices each (n / 4 walls) around lamps scattered over a field; behind a wall, nothing or another wall. */
 function makePolygons(rng, n, count) {
   const xs = new Float32Array(count * n);
   const ys = new Float32Array(count * n);
   const codes = new Float32Array(count * n);
   const lamps = new Float64Array(count * 2);
-  const angles = new Float64Array(n);
   for (let p = 0; p < count; p++) {
     const lx = 200 + rng() * 2000;
     const ly = 200 + rng() * 1400;
     lamps[p * 2] = lx;
     lamps[p * 2 + 1] = ly;
     const radius = 150 + rng() * 300;
-    // Rising atan2 from -PI, as the sweep emits them; hits come in pairs on one ray now and then (a wall's corner).
-    for (let v = 0; v < n; v++) angles[v] = -Math.PI + ((v + rng() * 0.9) / n) * 2 * Math.PI;
-    for (let v = 0; v < n; v++) {
-      const free = rng() < 0.33;
-      const r = free ? radius * 1.414 : radius * (0.15 + rng() * 0.8);
-      xs[p * n + v] = lx + Math.cos(angles[v]) * r;
-      ys[p * n + v] = ly + Math.sin(angles[v]) * r * 0.7;
-      codes[p * n + v] = free ? 0 : wallEdgeCode(1 + ((rng() * 4000) | 0), rng() < 0.2 ? 128 : 255);
+    // Rising atan2 from -PI, as the sweep emits them: each wall takes a slot of the turn, its two corners' rays in it.
+    const walls = n >> 2;
+    for (let w = 0; w < walls; w++) {
+      const a1 = -Math.PI + ((w + 0.1 + rng() * 0.3) / walls) * 2 * Math.PI;
+      const a2 = -Math.PI + ((w + 0.5 + rng() * 0.4) / walls) * 2 * Math.PI;
+      const near = radius * (0.15 + rng() * 0.6);
+      const wall = wallEdgeCode(1 + ((rng() * 4000) | 0), rng() < 0.2 ? 128 : 255);
+      for (let k = 0; k < 4; k++) {
+        const v = p * n + w * 4 + k;
+        const onWall = k === 1 || k === 2;
+        // Behind a corner: the far boundary (a free ray), or one time in three another wall.
+        const behind = rng() < 0.33 ? wallEdgeCode(1 + ((rng() * 4000) | 0), 255) : 0;
+        const r = onWall ? near : behind !== 0 ? radius * 0.9 : radius * 1.414;
+        const a = k < 2 ? a1 : a2;
+        xs[v] = lx + Math.cos(a) * r;
+        ys[v] = ly + Math.sin(a) * r * 0.7;
+        codes[v] = onWall ? wall : behind;
+      }
     }
   }
   // Each polygon's own views, made once: the timed loop allocates nothing, as the worker's call (whole arrays) does not.
