@@ -22264,7 +22264,8 @@
         "R-1351",
         "R-1401",
         "R-1404",
-        "R-1411"
+        "R-1411",
+        "R-1413"
       ],
       "rank": 20
     },
@@ -37101,6 +37102,18 @@
       "title": "Barrio freeze vs Chrome flags on the HD 620: the rate drifts from about 9 % in the morning to 3.6 % in the afternoon, so no flag settles it; WebGPU 0 of 64 against WebGL's 22 of 367",
       "verdict": "note",
       "text": "**Chrome flags and the runner on the HD 620** (jobs 0896s to 0896u, 2026-11-18 11:32 to 14:19). Buenos Aires at night, src, main 70ba822b. The bench runner takes no Chrome flags, so `C:\\weedlab\\freezeProbe.mjs`, a lab driver outside the repo, opens the same bench page with flags per arm, the arms interleaved run by run. A run counts as frozen when the page's rAF over 10 s is under 20 fps; frozen runs read 1.9 to 2.9.\n\n| Job | Arm | Frozen |\n|---|---|---|\n| 0896t | probe, default flags (ANGLE D3D11) | 0 of 32 |\n| 0896t | `--use-angle=d3d11on12` | 0 of 32 |\n| 0896t | `--disable-gpu-shader-disk-cache` | 5 of 32 |\n| 0896t | WebGPU | 0 of 32 |\n| 0896u | the bench runner, as in 0896m to 0896r | 0 of 32 |\n| 0896u | probe, its renderer-string WebGL context made before the scene (0896t's default) | 2 of 32 |\n| 0896u | probe, that context made after the measurement | 0 of 32 |\n| 0896u | `--disable-gpu-shader-disk-cache` | 0 of 32 |\n\nTwo flags did not run at all: `--use-angle=gl` fails Pixi's init in the worker, and `--use-angle=vulkan` falls to SwiftShader.\n\n**The rate drifts through the day.** The same runner froze 13 of 143 in the morning (0896m to 0896r, about 9 %) and 0 of 32 at 13:07. WebGL on D3D11 in the afternoon pools 7 of 192 (3.6 %), and runs got shorter: the runner averaged 63 s in 0896r and 33 s in 0896u. So a one-job gap like 5 against 0 is within that drift, and no flag is shown to cause the freeze or to cure it. 0896t's slow no-disk-cache runs (80 to 97 s for its first 11) did not freeze; frozen ones were both short and long.\n\n**What holds:**\n- WebGPU on the HD 620 froze 0 of 64 starts, where WebGL on D3D11 froze 22 of 367 all day (6 %). Chance gives 0 of 64 about 1 time in 50.\n- `d3d11on12` (0 of 32) and the context made after the measurement (0 of 32) are not settled.\n- The teardown log line marks some frozen runs, not all of them, and it showed once on a WebGPU run that drew normally (0896t run 10). It is a hint, not a test.\n\n**Next:** catch the freeze itself. On a frozen run the probe takes a 5 s Chrome trace with the GPU categories, then measures rAF again 60 s later to see whether it recovers."
+    },
+    {
+      "id": "R-1413",
+      "date": "2026-11-18",
+      "time": "15:09",
+      "timeFrom": "recorded",
+      "title": "dx/one-light's bundles before the merge: built from 01b9e99b, tests pass; the prod bundle against src: walls with 720 moving lamps pre-render 5.501 -> 5.518 ms (0.0 %), Predator equal or faster in every worker (under the floor: read)",
+      "verdict": "note",
+      "text": "**dx/one-light's bundles, before its merge: built from 01b9e99b (main merged in), their tests pass, and the production bundle is as fast as the sources where the branch works (walls, 720 moving lamps: pre-render 5.501 -> 5.518 ms, 0.0 % paired) and equal or faster on Predator. Every row is under the 6 ms floor: read, not judged.**\n\n- **Built and tested (14:49 to 14:53, b64d5cd3):** `make_bundle`, `check:dist` (inputs 81be1fa13eeed9ca), `test:bundle` (the embed smoke and the browser's 8), `test:node:bundle` (323 tests on each of the 8 bundles). The production ESM bundle is 3 803 362 bytes (main's: 3 835 624).\n- **Sittings** (one build both sides, `--vs HEAD` with `?weedBundle=weed.prod.bundle.esm.min.js` on side B, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs each):\n\n| scene | worker | src | bundle | paired | each pair |\n| --- | --- | --- | --- | --- | --- |\n| visPolyStressScene `?lights=720&move=40` (14:55 to 15:01) | pre-render | 5.501 ms | 5.518 ms | 0.0 % | -0.2, +2.1, -1.8, +0.3 |\n| | Pixi | 1.206 ms | 1.234 ms | -1.5 % | -19.3, +8.8, -1.1, -1.9 |\n| | spatial | 2.586 ms | 2.626 ms | -0.2 % | -3.2, +3.2, -1.0, +0.5 |\n| | physics | 1.449 ms | 1.461 ms | +0.5 % | -2.9, +11.2, -3.2, +3.8 |\n| | logic | 0.390 ms | 0.410 ms | +4.0 % | +3.4, +4.6, +1.4, +5.6 |\n| Predator, its default load (15:03 to 15:09) | logic | 2.156 ms | 1.892 ms | -14.0 % | -14.6, -13.4, -9.5, -14.6 |\n| | spatial | 3.616 ms | 3.409 ms | -5.4 % | -0.3, -6.8, -4.6, -6.2 |\n| | physics | 3.730 ms | 3.321 ms | -16.6 % | -2.5, -18.1, -15.1, -21.4 |\n| | Pixi | 1.516 ms | 1.306 ms | -12.2 % | +0.3, -11.4, -23.0, -13.0 |\n| | pre-render | 1.985 ms | 1.826 ms | -9.0 % | +0.2, -3.4, -14.6, -14.6 |\n\n- **Reading:** the walls' new modules (the rows, their cache and signature) cost nothing through the bundle: pre-render is the same to a hundredth of a ms. Logic's +0.02 ms on the walls scene is in every pair and tiny. Predator reads the bundle faster in every worker, more than earlier sittings did (R-0764: logic -3 to -6 %); bodies moved and casters are the same on both sides (-0.1 %), so it is not load. Predator alone read the same code -3 to +10 % before, so the size of it is not claimed: no worker is slower.\n- **Not run:** painterMove and Boids (the standing set's other two). The branch does not touch the painter's sort or the spatial worker; the walls scene took their place as the scene the branch changes.",
+      "commits": [
+        "b64d5cd3"
+      ]
     }
   ],
   "leads": [
