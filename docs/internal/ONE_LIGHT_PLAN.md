@@ -257,6 +257,12 @@ Counted by method and file on 2026-11-17; approximate.
 | `wasm/visibilityGather.c`, `wasm/visibilitySweep.c` | about 1 330 | final A only |
 | Node tests of the above (`tests/node/`: the sweep, the polar bins, solid segments, self-lit fill, wedges, the kernels' wiring) | about 3 500 | A: all; B: the self-lit and wedge ones |
 
+**What the deletion took (OL-15, 2026-11-18, final B), by git:** `src/` 2 783 lines (`pixiWorker.js` 1 676,
+`preRenderWorker.js` 347, the nine shader files 605, `angularSweep.js` 102, the rest in the scene's set-up) and 639
+lines of tests, net of what was rewritten onto the rows. The sweep and its kernels stay, as the table says for B;
+two branches of the kernels are dead and go with their next build (section 7). The whole branch against main after
+it: `src/` 1 529 lines shorter.
+
 ---
 
 ## 3. Items
@@ -403,9 +409,9 @@ built as final B on this guess, and the race then says whether it stays.
 - [x] The flat view runs the common pass (pitch 90, then pitch 0). (`94e31445`)
 - [x] What stops a lamp there (final A or B). (Final B, by eye: `9186550f`, `e57d6659`, `94e31445`; the race has not
   run.)
-- [ ] The demos and the stress scenes moved; the pictures accepted. (Moved, `94e31445`; the owner has seen the
-  first captures and has not accepted them yet.)
-- [ ] The deletion.
+- [x] The demos and the stress scenes moved; the pictures accepted. (Moved, `94e31445`; accepted by the owner on
+  2026-11-18, with two asks: the sun's default, and the bright rim round a lit wall, OL-14.)
+- [x] The deletion. (OL-15, `27efbf1a`.)
 
 **In both finals:**
 
@@ -560,29 +566,33 @@ parallel. OL-3 needs the machine quiet. OL-4 waits for OL-3 and for the owner's 
 
 Since 2026-11-18 the order built is OL-1, OL-2, OL-4 (final B, by eye), then OL-5 (the bug found on the way,
 section 7) and OL-6 (the owner's ask from the first pictures), then OL-3 with every other measurement, then
-the deletion (section 8).
+the deletion (section 8): OL-14 and OL-15, on 2026-11-18, once the owner accepted.
 
 ## 5. Open decisions (the owner's, when we get there)
 
 - OL-2: the default of `normalStrength`. **Decided 2026-11-18: `{ sun: 0, lamps: 1 }` stays.** At full strength the
   owner likes the barn's roof and not the rest ("todo se oscurece mucho": in the light bench at 16:00 a fifth of the
   view changes and loses 43.5 % of its light there; 26.1 % at 0.6, 15.3 % at 0.35). The softer shape the
-  owner raised became OL-6 the same day (a strength and an amount subtracted). Open: OL-6's two numbers for the
-  sun, from its pictures; and whether the option is the scene's alone or a sprite's too.
-- OL-3: final A or final B, from the table and the captures.
+  owner raised became OL-6 the same day (a strength and an amount subtracted). **Decided 2026-11-18, from OL-6's
+  pictures: the sun's default is strength 1 with 0.5 subtracted** (`34f09c20`; he liked strength 1 with 0.3 subtracted
+  and wanted the trees shaded less). Still open: whether the option is the scene's alone or a sprite's too.
+- OL-3: final A or final B, from the table and the captures. **Final B stands (2026-11-18):** the race read B
+  (R-1405); the owner asked what the two were and, told, asked for nothing else. Both techniques stay the
+  developer's: walls by the sweep (`lighting.walls`), the lamps' maps by `lighting.lampShadows: 'map'`, in one
+  scene if wanted. A is worth another look only if the maps lose their ceiling of 64 casting lamps and their cost.
 - OL-4: how a wall's own sprite is lit once self-lit is gone. Whole, as drawn (the maps' rule), or
   only to a depth from the edge the lamp sees (final B knows the hit's distance; it is N-38's fix and
   needs no G-buffer in a scene without maps). **Decided 2026-11-18: to a depth looks better, on the top-down
   houses and on the side-view rocks, and both looks stay as the dev's knobs** (`lighting.wallDepth`: 0, the
   engine's default, lights it whole; Headlights now asks 24 px, planetPhysics 40).
-- OL-4, final A: what `setWall({ shape: 'sprite' })` becomes.
+- OL-4, final A: what `setWall({ shape: 'sprite' })` becomes. (Not needed: final B.)
 - OL-4, final B: the names of the keys (`lighting.walls`, `lighting.wallDepth`; the builder's picks).
 - OL-4, final B: whether a wall's shadow keeps a third of the lamp, as the old pass's did, or nothing, or what a key
   says. **Built as a key, 2026-11-18: `lighting.lightBehindWalls`** (0 to 1, default 0.33, the old look; `d42628bd`),
-  since the owner asked for the looks to stay the developer's knobs. Open: its default, from Headlights with a third
-  against none (`?behindWalls=0`).
-- OL-4: `shadowCaster.setWall({ shape })`. Only the old pass reads `shape` now (its fills' mask); it goes with
-  the deletion unless the owner wants a wall cut by its sprite's alpha, which the sweep does not do.
+  since the owner asked for the looks to stay the developer's knobs. He saw Headlights with a third against none
+  (`?behindWalls=0`) on 2026-11-18 and changed nothing: 0.33 stays the default.
+- OL-4: `shadowCaster.setWall({ shape })`. Only the old pass read `shape` (its fills' mask). **Gone with the
+  deletion (OL-15):** `setWall()` takes no options.
 
 ## 6. Not in this plan
 
@@ -643,9 +653,10 @@ the sun's term by the normal: under the sun the automatic rule gave `k` 0.
 - the sun's colour reaches the scene (the old pass cleared with the ambient plus the sun's intensity, grey);
 - with `shadowsEnabled`, the lamps stamp their sprite shadows on the layer, as in any other scene.
 
-**OL-3's knobs** are on visPolyStressScene: `?arm=walls` (the default, final B), `fans` (the old pass), `plain` (the
+**OL-3's knobs** are on visPolyStressScene: `?arm=walls` (the default, final B), `plain` (the
 light pass alone; `?gbuf=0` without the G-buffer) and `maps`, with `?castLights=`, `?tile=`, `?lampCache=0` and
-`?move=` (the lights circle their place). The first three draw. **The maps' arm is not ready:** its lamps draw, but
+`?move=` (the lights circle their place); a `fans` arm drew the old pass until OL-15 deleted it, and `?mask=sprite`
+is `?occluderSprite=1` since. All but the maps' draw. **The maps' arm is not ready:** its lamps draw, but
 the occluders' volumes (`setBox`, 400 px high, lamps at 40) cast nothing in the lamps' map. The cause is the
 engine's (**OL-5**, in the register): Pixi gives a lamp its tile from the ids pre-render publishes, and
 `_writeStampLightIds` publishes them only in a frame with a sprite caster's stamp row; this scene has volumes alone
@@ -687,6 +698,8 @@ followed, each in the register with its sitting:
 | OL-10 | Pixi does not copy or upload rows it already sent (pre-render signs each frame's rows) | Pixi 1.601 -> 0.626 ms (-61.1 %, under the floor: read) |
 | OL-11, OL-12 | the kernels write a swept lamp's row and its walls' codes; no shadow lights without casters | pre-render 5.813 -> 5.386 ms with every lamp moving (-8.1 %), 2.938 -> 2.681 ms still (-7.3 %) |
 | OL-13 | Pixi copies a row out in one `set()`, not a float at a time | Pixi 1.391 -> 1.232 ms with every lamp moving (-11.6 %, under the floor: read) |
+| OL-14 | walls with an oblique camera turn pixel depth on, so the light's edges keep a lit wall's light off the dark floor round it | Headlights: Pixi 0.536 -> 0.575 ms (under the floor: read); the rim gone |
+| OL-15 | the old fan pass deleted | `src/` 2 783 lines shorter; rows bit for bit and still scenes pixel for pixel the same; 360 moving lamps: pre-render 2.934 -> 2.938 ms, Pixi 0.770 -> 0.738 ms (under the floor: read) |
 
 After them, the old fan pass against the walls on a still scene, one build (R-1403): pre-render 5.117 -> 2.959 ms
 (-41.6 %), Pixi 1.207 -> 0.662 ms (-44.9 %). With every lamp moving nothing is kept: the walls read +18.9 % and
@@ -696,6 +709,17 @@ upload. Main is merged into the branch (`02f319b3`); an early look at Predator a
 load shows nothing past its A/A (R-1401), the gate itself runs at `crowd=2.5` before the merge. The shaders pass
 on the four GPUs (the ASUS's jobs 0896d to 0896k; two blank captures on the HD 620 were pages that had drawn
 nothing, and `normalLightCheck` now waits for a frame and says NOFRAME otherwise).
+
+**After the owner's acceptance (2026-11-18): OL-14 and OL-15.** Two things were found on the way and are rows of
+their own in the register. **N-299:** a flat view (pitch 90 or 0) keeps the rim OL-14 removes, since nothing writes
+entity depth there; `lighting.resolution: 1` has none, and forcing pixel depth reorders overlapping sprites by
+their foot. **N-300:** near a compound solid a lamp's row is the 512-bin merge, and a simple wall seen only
+between two bin rays is on no vertex, so its own pixels are not lit beyond its edge (the rows name 1 622 of 2 014
+such walls in the wired tests' scene); not a capture yet. The deletion left two dead branches in the kernels
+(`visibilityGather.c` sends an event a packed occluder when asked, `visibilitySweep.c` marks the owners a polygon
+shows): pre-render asks for neither, `engine.wasm` is byte for byte what it was, and they go with the kernels' next
+build (OL-11's variants pass). The debug overlay's light polygons read the walls' rows since: the polygons'
+buffers were the old pass's. N-38 and N-163 are superseded: their code is gone.
 
 ## 8. Revisions
 
@@ -726,3 +750,13 @@ been built. What changed here, and why:
   `lighting.normalStrength`). OL-2's default stays; its two numbers for the sun are picked from OL-6's pictures.
 - **A wall lit to a depth** is the owner's pick for the houses and the rocks; both looks stay as knobs (section 5).
 - **OL-5 is built before the race**, since the race's maps arm needs it.
+
+**2026-11-18, the owner's acceptance** ("ok!"), after the pictures and the numbers, with three asks:
+
+- **The sun's default** for `lighting.normalShading`: strength 1 with 0.5 subtracted, for every scene (section 5).
+- **The bright pixels round a lit house** on Headlights: "ante la duda queden oscuros". It was the light drawn at a
+  quarter of the canvas and stretched; the light's edges already told a sprite's outline from the floor, but only
+  with entity depth. OL-14 turns pixel depth on for walls with an oblique camera.
+- **"Remove the 5 000 lines":** the branch stood at +5 050 lines against main with the old pass still behind
+  `debug.lightFans`. OL-15 deletes it; `src/` is 1 529 lines shorter than main's, the tests and the guide longer.
+- He asked what final A and B were: told, with their costs, and that both techniques stay (section 5).
