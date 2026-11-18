@@ -13,7 +13,7 @@
 // The road, its meshes and the panel are Sun Street's: this scene is about the lights.
 //
 // URL: ?hour=22 (15 is day), ?cars=6, ?carSpeed=3, ?walls=0 (no walls: the lamps cast layer shadows instead),
-// ?wallDepth=24 (the light enters each house 24 px from the edge it reaches, instead of lighting its picture whole),
+// ?wallDepth=24 (the default: the light enters each house 24 px from the edge it reaches; 0 lights its picture whole),
 // ?backend=webgpu.
 // WASD or arrows pan, the wheel zooms, H hides the panel.
 
@@ -28,8 +28,9 @@ const { Scene, Camera, Keyboard, Sun, Transform, LAYER_KIND } = WEED;
 const param = (key, fallback) => Number(WEED.params?.get(key) ?? fallback);
 const CARS = Math.max(0, Math.floor(param('cars', 6)));
 const WALLS = param('walls', 1) === 1;
-// lighting.wallDepth: 0 (the default) lights a wall's own picture whole; above 0 the light fades into it that many px.
-const WALL_DEPTH = Math.max(0, param('wallDepth', 0)) || 0;
+// lighting.wallDepth: the light fades into a wall that many px from the edge it reaches (the owner's pick for the houses,
+// 2026-11-18); 0 lights a wall's own picture whole instead.
+const WALL_DEPTH = Math.max(0, param('wallDepth', 24)) || 0;
 const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 
 const NIGHT_HOUR = 22;
