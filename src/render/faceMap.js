@@ -669,18 +669,20 @@ export function shaderWithFlag(source, name, on) {
  * the GLSL and the WGSL alike. DX-PIXELSHADOW: PIXELART / !PIXELART (lighting.pixelArt: each world pixel shaded whole at
  * its centre, the maps read with one tap). E-205: TILES / !TILES (a pixel loops over its tile's lights, src/render/
  * lightTiles.js, instead of every light). DX-LIGHTEDGES: EDGES / !EDGES (the floor's texels leave alpha 0, the rest 1,
- * for lightEdges.js; without it every texel's alpha is 1).
+ * for lightEdges.js; without it every texel's alpha is 1). N-277: DITHER / !DITHER (lighting.dither: half an 8-bit step of
+ * noise on the light's output; without it, the light as it is).
  * @param {string} source lightingBasic.frag.glsl or lightingBasic.wgsl
  * @param {{ faces: boolean, sunMap: boolean, selfShadow?: boolean, lampMap?: boolean, ids?: boolean, pixelArt?: boolean,
- *   tiles?: boolean, edges?: boolean }} flags
+ *   tiles?: boolean, edges?: boolean, dither?: boolean }} flags
  */
-export function lightingSource(source, { faces, sunMap, selfShadow = false, lampMap = false, ids = false, pixelArt = false, tiles = false, edges = false }) {
+export function lightingSource(source, { faces, sunMap, selfShadow = false, lampMap = false, ids = false, pixelArt = false, tiles = false, edges = false, dither = false }) {
   const withSun = shaderWithFlag(shaderWithFlag(shaderWithFlag(source, 'FACES', faces), 'SUNMAP', sunMap), '!SUNMAP', !sunMap);
   const withLamps = shaderWithFlag(shaderWithFlag(withSun, 'SELFSHADOW', faces && selfShadow), 'LAMPMAP', lampMap);
   const withIds = shaderWithFlag(shaderWithFlag(withLamps, 'IDS', faces && ids), '!IDS', !(faces && ids));
   const withTiles = shaderWithFlag(shaderWithFlag(withIds, 'TILES', tiles), '!TILES', !tiles);
   const withEdges = shaderWithFlag(shaderWithFlag(withTiles, 'EDGES', edges), '!EDGES', !edges);
-  return shaderWithFlag(shaderWithFlag(withEdges, 'PIXELART', pixelArt), '!PIXELART', !pixelArt);
+  const withDither = shaderWithFlag(shaderWithFlag(withEdges, 'DITHER', dither), '!DITHER', !dither);
+  return shaderWithFlag(shaderWithFlag(withDither, 'PIXELART', pixelArt), '!PIXELART', !pixelArt);
 }
 
 /**

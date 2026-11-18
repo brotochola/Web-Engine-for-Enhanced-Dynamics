@@ -43,6 +43,11 @@ const HEADLIGHT_BRIGHTNESS = 0.7;
 const HEADLIGHT_SIDE = 0.62;
 /** The shadows its headlights cast reach 160 px: cheaper than the whole beam. */
 const HEADLIGHT_SHADOW_RANGE = 160;
+/**
+ * How high the headlights are, px of height: about 0.65 m (the pictures' 18 px a metre). A light on the floor (elevation
+ * 0) casts nothing into the lamp shadow map, so without a height the headlights cast no shadows of people, cars or posts.
+ */
+const HEADLIGHT_HEIGHT = 12;
 /** Each car's lights come on when Sun.intensity drops under its own threshold, drawn in this range: not all at once. */
 const DARKNESS_MIN = 0.25;
 const DARKNESS_SPREAD = 0.3;
@@ -112,6 +117,7 @@ function aimHeadlight(light) {
   light.glow = 0;
   light.radius = 0;
   light.brightness = HEADLIGHT_BRIGHTNESS;
+  light.elevation = HEADLIGHT_HEIGHT;
   light.shadowRange = HEADLIGHT_SHADOW_RANGE;
   light.coneAngle = HEADLIGHT_CONE;
   light.coneSoftness = HEADLIGHT_SOFTNESS;

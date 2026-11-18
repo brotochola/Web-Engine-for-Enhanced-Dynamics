@@ -4923,6 +4923,9 @@ LIGHTING SYSTEM SETUP
       pixelArt: this._pixelArtLight,
       tiles: this._lightTilesOn,
       edges: this._lightEdgesOn,
+      // N-277: half a step of noise on the light, against the 8-bit target's rings (off by default: on an Intel iGPU it
+      // cost 4 % of the drawn frames).
+      dither: this.config?.lighting?.dither === true,
     }).replace(
       /MAX_LIGHTS/g,
       String(this.maxLights | 0 || 64)

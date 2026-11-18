@@ -826,6 +826,12 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   pixelArt: false,
   /**
+   * N-277: dither the light by half an 8-bit step (a noise of each pixel, of each art pixel with pixelArt), so a lamp's dim
+   * falloff does not band into rings on a plain dark surface; no pixel moves more than one level. Off by default: it is a
+   * few operations a light pixel, but on an Intel HD 620 it cost about 4 % of the drawn frames.
+   */
+  dither: false,
+  /**
    * DX-LIGHTEDGES (lightEdges.js): the light, computed at a share of the canvas (resolution under 1), shown without crossing
    * the floor's edges where the entities write depth (pixel depth): a head in front of shaded floor keeps no rim of its own
    * light. false shows it stretched as a plain texture.

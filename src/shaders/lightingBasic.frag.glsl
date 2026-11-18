@@ -470,6 +470,19 @@ vec2 weedScreenToWorld(vec2 screenPos) {
   ) / uZoom;
 }
 
+// N-277 (lighting.dither): half an 8-bit step of noise on the light before its 8-bit target stores it (interleaved gradient
+// noise of the pixel; with PIXELART of the art pixel, so each stays one colour): a lamp's dim falloff no longer bands into
+// rings on a plain surface, and no pixel moves more than one level. Without DITHER, the light as it is.
+vec3 weedDither(vec3 c, vec2 p) {
+// #if DITHER
+  float n = fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+  return c + (n - 0.5) / 255.0;
+// #endif DITHER
+// #if !DITHER
+  return c;
+// #endif !DITHER
+}
+
 void main() {
   float y = gl_FragCoord.y;
   if (uFlipY > 0.5) y = uViewport.y - y;
@@ -480,6 +493,10 @@ void main() {
   // DX-PIXELSHADOW (lighting.pixelArt): every term at the art pixel's centre, so a pixel of the world is lit or shaded
   // whole and the shadows follow the art's grid, as a pixel-art picture scaled up with nearest is.
   fragWorld = floor(fragWorld) + 0.5;
+// #endif PIXELART
+  vec2 ditherAt = gl_FragCoord.xy;
+// #if PIXELART
+  ditherAt = fragWorld;
 // #endif PIXELART
 // #if FACES
   vec4 face = textureLod(uFaceMap, gl_FragCoord.xy / uViewport, 0.0);
@@ -497,7 +514,7 @@ void main() {
     selfId = floor(ids.r * 255.0 + 0.5) * 256.0 + floor(ids.g * 255.0 + 0.5);
     selfOn = selfId < 0.5 || mod(floor(ids.b * 255.0 + 0.5), 2.0) > 0.5;
 // #endif IDS
-    finalColor = vec4(min(faceLight(fragWorld, face, selfId, selfOn), vec3(1.0)), 1.0);
+    finalColor = vec4(weedDither(min(faceLight(fragWorld, face, selfId, selfOn), vec3(1.0)), ditherAt), 1.0);
     return;
   }
 // #endif FACES
@@ -591,7 +608,7 @@ void main() {
     vec4 sh = textureLod(uShadowMap, normCoord, 0.0);
     totalLight *= (1.0 - sh.a);
   }
-  totalLight = min(totalLight, vec3(1.0));
+  totalLight = weedDither(min(totalLight, vec3(1.0)), ditherAt);
 // #if EDGES
   // DX-LIGHTEDGES: alpha says the floor lit this texel (0); a G-buffer entry's texels keep 1 (lightEdges.js).
   finalColor = vec4(totalLight, 0.0);
