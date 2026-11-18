@@ -135,7 +135,9 @@ export class PredatorScene extends WEED.Scene {
 
     particle: {
       noLimitFPS: predatorNoLimitFPS,
-      maxParticles: 30000,
+      // Predator fills its pools on purpose (a fight emits more than any cap): a larger pool only adds load to the
+      // engine's reference scene, so the warnings it prints stay (N-167).
+      maxParticles: 10000,
       decals: true,
       decalsTileSize: 256,
       decalsResolution: 0.5,
@@ -260,7 +262,7 @@ export class PredatorScene extends WEED.Scene {
       maxShadowsPerEntity: 3,
       maxLights: 256,
       maxShadowSprites: 30000,
-      maxFlashes: 128, // every shot, blast and lamp flash takes one for 18 to 100 ms: 32 ran out in a fight
+      maxFlashes: 32, // full in a fight at 32 and at 128 alike: kept at the reference scene's load (N-167)
       // ?light3d=1: the light pass and the shadow maps at half the canvas (the sun's map is sharper).
       resolution: predatorPositiveParam('lightingRes', LIGHT3D ? 0.5 : 0.25),
       shadowResolution: predatorPositiveParam('shadowRes', LIGHT3D ? 0.5 : 0.25),
