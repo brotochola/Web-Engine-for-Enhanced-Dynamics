@@ -22854,6 +22854,100 @@
       "records": [
         "R-1347"
       ]
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "textureUpload regression",
+        "shared picture upload",
+        "textureUploadStressScene"
+      ],
+      "records": [
+        "R-1349"
+      ],
+      "result": "ASUS scoreboard 0895: pixi STEP_MS 45.79 -> 99.24 ms (cv 4.0/0.2 %), logic 0.12 -> 0.39 ms; kernel textureUploadMicrobench 535 687 -> 508 758 ops/s (-5.0 %)",
+      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "id": "N-292",
+      "kind": "speed",
+      "area": "pixi",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "textureUploadStressScene's renderer costs twice v0.14.0's on the ASUS (45.8 -> 99.2 ms a frame, +117 %, HD 620, headless): the shared picture upload path (sharedTextureUpload.js) got slower somewhere since the release",
+      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "audioSlots regression",
+        "SoundManager slot claim"
+      ],
+      "records": [
+        "R-1349"
+      ],
+      "result": "ASUS scoreboard 0895: audioSlotMicrobench occ100x3 23 446 -> 11 070 ops/s (-52.8 %), WORSE",
+      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "id": "N-293",
+      "kind": "speed",
+      "area": "audio",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "The SoundManager slot claim kernel runs at half v0.14.0's speed on the ASUS's CPU (23 446 -> 11 070 ops/s, -52.8 %): a CPU-side change, so it likely shows on the main PC too",
+      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "meshFillMoving regression"
+      ],
+      "records": [
+        "R-1349"
+      ],
+      "result": "ASUS scoreboard 0895: pixi STEP_MS +29.3 %, kernel +46.0 % (FAIL row)",
+      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "id": "N-294",
+      "kind": "speed",
+      "area": "pixi",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "meshFillMovingScene's renderer costs 29 % more than v0.14.0's on the ASUS, though its kernel got 46 % faster",
+      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "queryAabb regression"
+      ],
+      "records": [
+        "R-1349"
+      ],
+      "result": "ASUS scoreboard 0895: logic0 STEP_MS +21.6 % (FAIL row), load OK",
+      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "id": "N-295",
+      "kind": "speed",
+      "area": "logic",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "queryAabbStressScene's logic costs 22 % more than v0.14.0's on the ASUS",
+      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "grid ray regression",
+        "ray DDA"
+      ],
+      "records": [
+        "R-1349"
+      ],
+      "result": "ASUS scoreboard 0895: logic0 STEP_MS +6.0 %, kernel +0.7 % (FAIL row)",
+      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "id": "N-296",
+      "kind": "speed",
+      "area": "logic",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "rayStressScene's logic costs 6 % more than v0.14.0's on the ASUS (the grid ray DDA kernel itself is level)",
+      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
     }
   ],
   "records": [
@@ -36224,6 +36318,14 @@
       "title": "DX-DEBUGUI's open points decided by the owner (lighting grid = light tiles, light options read-only, no persistence, blend list trimmed) and the plan re-estimated at 15 to 23 h",
       "verdict": "note",
       "text": "**The owner decided DX-DEBUGUI's four open points (DEBUG_UI_PLAN.md section 6), and the plan was re-estimated; nothing built or run.**\n\n- **The lighting grid** is E-205's light tiles (DBG-7): the owner did not know which it was (\"sé que hay light cells o algo así … ¿o es el gbuffer?\") and left it to the planner; the code has no light cells, and the G-buffer (one normal and height per pixel, not a grid) has its own views in DBG-5.\n- **Light options stay read-only** in the Light tab (DBG-8); **panel changes do not outlive a scene restart**; **the blend list is trimmed** to the modes that draw (DBG-2), BLEND_MODES and Layer._BLEND_MODE_STRINGS together. Nothing in src, demos, tests, the guide or the types used a removed mode.\n- **Re-estimated at 15 to 23 h** (was 25 to 36 h, which summed the top of every range and gave each item its own browser check). The bugs DBG-1 to DBG-3 are 3 to 4.5 h of it. The hours go to the three to five causes per bug, every shader written in GLSL and WGSL, the GPU and config paths (opaque pass, lightEdges, shadow modes), and checking fades and views on screen in motion. The checks are batched, and DBG-5 (new render views) is the largest item."
+    },
+    {
+      "id": "R-1349",
+      "date": "2026-11-18",
+      "time": "01:46",
+      "title": "The ASUS scoreboard, main against v0.14.0 (59 rows): spatial, Box2D and LiquidFun faster; five rows worse there, to check on the main PC (N-292 to N-296)",
+      "verdict": "note",
+      "text": "**The engine scoreboard on the ASUS** (i7-7500U, 2 cores and 4 threads; Intel HD 620): main 57044bd1 against v0.14.0, each side its whole revision (`--full-rev`, `--skip-node`; the lockstep visual gate passed). Job 0895, 2026-11-18 00:13 to 01:46. Gameplay scenes run headed, stress scenes headless, both on the HD 620.\n\nThis is an extra low-end reading (the owner, 2026-11-18): a row worse here is a lead to check on the main PC, not a verdict.\n\n**Faster on main:**\n- spatial: spatialMax STEP_MS −69.2 %, kernel +14.4 %\n- Box2D (balls): physics −16.9 %\n- LiquidFun: physics −13.6 % (couple −10.3 %)\n- Ray vs Box2D: logic −12.3 %, kernel +21.8 % less work\n- box2dRayJs: logic −14.8 %\n- Kernels: publishPose ×7.2, gameObjectAccess ×2.1, shadowStamp +32.5 %, attachedSway +29.9 %, decorations +20.0 %, tilemap +19.4 %, decalPremultiply +18.5 %\n\n**Worse on main here (new backlog rows, to check on the main PC):**\n- N-292 textureUpload: pixi STEP_MS 45.8 → 99.2 ms (+117 %)\n- N-293 audioSlots: kernel −52.8 % (CPU side)\n- N-294 meshFillMoving: pixi +29.3 %\n- N-295 queryAabb: logic +21.6 %\n- N-296 ray: logic +6.0 %\n\n**FAIL rows (about 30):** a protocol ceiling (the scene too light for the 3 ms floor, or its load cv too high), or a scene or kernel v0.14.0 does not have. These are not regressions.\n\nThe report (`tests/results/scoreboard/report.md` on the ASUS) is not kept in the repo. A copy is in the ASUS session's scratch.\n"
     }
   ],
   "leads": [
