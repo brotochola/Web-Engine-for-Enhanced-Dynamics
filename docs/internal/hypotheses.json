@@ -23488,20 +23488,66 @@
     },
     {
       "id": "E-526",
-      "title": "Let the FSM run under static tickAll, with no per-entity tick() call: a logic worker then takes its FSM types through _runTickAllTypes (one call a type, a list of ids) instead of a tick() a frame for each entity, which should leave Predator's logic workers freer",
+      "title": "FSMs under static tickAll with no per-entity tick(): the engine builds the tickAll of a type that has FSM components and no tick, groups the entities by state in one pass and runs each state over its ids (a state class may override static updateAll(ids, n, dt)); a logic worker should end freer in Predator",
       "status": "open",
-      "statusText": "proposed 2026-11-18 by the owner; not measured, nothing built. The hypothesis is the owner's: FSM-driven types are kept out of the tickAll path today, and that is what holds the logic workers back in Predator",
+      "statusText": "proposed 2026-11-18 by the owner, architecture agreed the same day (E-527 decimation and E-528 instance-free hooks come first); not measured, nothing built. Owner: the entity classes keep no instance properties, so a state needs no instance",
       "date": "2026-11-18",
       "result": "",
-      "next": "Read how logicWorker.js sorts a type (needsTick against typeHasTickAll, around the tickAllTypes push) and what an FSM type needs from tick(dt) today (fsm.js: FSM.tick(dt, entity)), then design a static tick over the id list that runs each entity's FSM (the state's onUpdate through the hooks arrays E-146 and E-301 store) with no per-entity instance call. Predator's civilian and predator FSMs are the first users. Kernel for the batch tick against the per-entity tick, then the owner scene (Predator's logic STEP_MS − WAIT_MS), then Predator as a regression guard. Related: E-253 (the FSM tick is 7 to 9 % of a logic worker, parked), E-218 (tickAll reads a view of the active list), E-281 (BunnyMark's tickAll allocates 1.5 MB/s), E-292 (hot functions that stay in Maglev).",
+      "next": "After E-527 (tickAll with tickInterval) and E-528 (static hooks by entityType). Layer 0: FSM.tickAll(list, n, dt, EntityClass); the engine wires it for a type with FSM components, no tick() and no tickAll (components order; a type that wants its own code writes static tickAll and calls FSM.tickAll in it); states keep onUpdate(owner, i, dt, ms) with the owner taken from EntityClass.instances[i] (made on demand), so no state is rewritten. Layer 1: tickAll counting-sorts the ids by state in one pass and calls State.updateAll(ids, n, dt) per state; the default updateAll loops over that state's own onUpdate (a monomorphic call TurboFan may inline, where fsm.tick reads a megamorphic _onUpdates[...] a call, E-146, E-253); pending transitions run in a pass before it and are the only place onExit and onEnter ask for an instance. Layer 2 (optional): a state overrides static updateAll(ids, n, dt) against the component arrays (Transform.x[i], no owner). To decide with the owner: the order changes (by state, then by id, not by id), so Predator's states must not read what another state writes in the same frame; several FSMs on one entity run in components order; time in state uses the type's constant ms per tick (16.67 x tickInterval). Kernel first (batch against per-entity tick), then Predator logic STEP_MS − WAIT_MS; E-253 puts the dispatch at 7 to 9 % of a logic worker, so a bigger win must come from the states' own cost (E-292). Related: E-218, E-281.",
       "area": "logic",
       "kind": "speed",
-      "refs": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-526"
+      ],
       "aliases": [
         "fsm tickAll",
         "fsm without tick",
-        "state machine batch tick"
+        "state machine batch tick",
+        "fsm batch",
+        "updateAll",
+        "group by state"
       ],
+      "records": []
+    },
+    {
+      "id": "E-528",
+      "title": "Every entity hook has a static form with no instance, resolved once per entityType: static onCollisionEnter(i, other), onCollisionStay, onCollisionExit, onCollisionHit, onGotShot(i, damage, …), onSpawned(i, cfg), onDespawned(i), onScreenEnter(i), onScreenExit(i), onMessage, onAnimationEnd, onJointBreak; the worker keeps a handlers[entityType] table (function or null) and a type with only static hooks never makes an instance",
+      "status": "open",
+      "statusText": "proposed 2026-11-18 by the owner, design agreed the same day (the owner: the entity classes keep no instance properties, so the static form loses nothing); not measured, nothing built. Rejected for now: one shared cursor instance rebound per call (a nested callback overwrites it, component getters keep their own index)",
+      "next": "One table of hooks in the engine (name, argument shape, who dispatches it) that drives the dispatch, weed.d.ts, the guide and the tests, so a hook is not added by hand in four places. The static form wins over the instance method of the same name (a static is inherited down the extends chain like a prototype method); the worker resolves handlers[entityType] when it registers a type, and dispatch is an array load where it is now gameObjects[a] ?? _makeInstance(a). typeNeedsLogicTick and needsScreenCallbacks also read the static hooks, so a type with static onScreenEnter can stay on tickAll. Batch forms for the events that come many a frame (onSpawnedAll(ids, n), onScreenEnterAll) are the owner's open question; collisions and shots stay one call each. Measure: a collision stress scene (logic STEP_MS) and the memory of a type that never makes an instance. Second step of E-526.",
+      "refs": [
+        "EXECUTION_PLAN.md#E-526"
+      ],
+      "aliases": [
+        "static hooks",
+        "instance-free callbacks",
+        "static onCollisionStart",
+        "no instances"
+      ],
+      "date": "2026-11-18",
+      "result": "",
+      "area": "logic",
+      "kind": "dx",
+      "records": []
+    },
+    {
+      "id": "E-527",
+      "title": "tickAll with tickInterval: a type with a static tickAll and tickInterval above 1 gets only the entities of the frame's bucket, in a copied loop of its own, and the same scaled dt that tick() gets; interval 1 keeps the zero-copy view of E-218 unchanged",
+      "status": "open",
+      "statusText": "proposed 2026-11-18 by the owner, design agreed; not measured, nothing built. Today _runTickAllTypes ignores tickInterval (only the tick() path has the buckets)",
+      "next": "Read how the tick() path scales dt and builds its buckets (_tickIntervalBucket, _rebuildTickBuckets in logicWorker.js), then add the bucketed loop for tickInterval above 1 as its own copy of the loop (no loop-invariant branch in the interval 1 loop, CLAUDE.md hot loops). A node test through workerHarness: a type with tickAll and tickInterval 4 sees each entity once in 4 frames, with dt x 4. Interval 1 must stay bit-identical and keep its view (E-218): kernel or Predator gate only if its loop changes. First step of E-526 (FSMs under tickAll).",
+      "refs": [
+        "EXECUTION_PLAN.md#E-526"
+      ],
+      "aliases": [
+        "tickAll decimation",
+        "tickAll tickInterval",
+        "staggered tickAll"
+      ],
+      "date": "2026-11-18",
+      "result": "",
+      "area": "logic",
+      "kind": "speed",
       "records": []
     },
     {
