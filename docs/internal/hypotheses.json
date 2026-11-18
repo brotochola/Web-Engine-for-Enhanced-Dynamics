@@ -22429,17 +22429,18 @@
       ],
       "records": [
         "R-1357",
-        "R-1411"
+        "R-1411",
+        "R-1433"
       ],
       "result": "lighting.normalShading { sun: { strength, subtract }, lamps: { strength, subtract } } replaces lighting.normalStrength: shading' = max(0, shading - subtract) * strength, for the sun and for each lamp. Light bench at 16:00, the view that changes and the light lost there: full strength 20.3 % and 43.5 %; strength 0.8 with 0.2 subtracted 16.5 % and 24.0 %; strength 1 with 0.3 subtracted 16.3 % and 21.8 %. normalLightCheck on both backends at four settings: worst 4.0 of 255. The default picture is the same (0 px).",
-      "next": "Merged (85ca7900).",
+      "next": "The owner picks the sun's default from the light bench now that the cars' maps are right (N-304): today strength 1 with 0.5 subtracted; he asked for few faces shaded and those dark (a higher strength).",
       "id": "OL-6",
       "kind": "dx",
       "area": "render",
       "status": "kept-hygiene",
       "date": "2026-11-18",
       "title": "The shading a sprite's normals cause takes an amount subtracted (never under 0) and a strength, for the sun and for the lamps apart (lighting.normalShading), so only the faces turned away from a light darken: the owner's ask, from OL-2's pictures",
-      "statusText": "Asked by the owner and written 2026-11-18 on dx/one-light (2696eafe); the owner's default for the sun the same day: strength 1 with 0.5 subtracted (34f09c20); not timed (two numbers of a uniform); merged to main 2026-11-18 (85ca7900), not pushed"
+      "statusText": "Asked by the owner and written 2026-11-18 on dx/one-light (2696eafe); the owner's default for the sun the same day: strength 1 with 0.5 subtracted (34f09c20); not timed (two numbers of a uniform); merged to main 2026-11-18 (85ca7900), not pushed; a strength over 1 (to 100) since d7ca9690, at the owner's ask"
     },
     {
       "refs": [],
@@ -22813,7 +22814,7 @@
         "R-1409"
       ],
       "result": "",
-      "next": "With ?maps=0 (the cars cast their silhouette) the shadows fall down and to the left of each car, as the sun asks; with their height maps the shadow shows only as a wedge at the car's left side, and neither the sun's map against the layer (?sun=layer), nor the footprints' sweep (?sweep=0), nor self shadow (?self=0) changes it. First suspect: the cars' sheets draw half a turn and mirror the rest, and both cars in the capture face a mirrored way: check a height-map caster on a mirrored frame against the same car turned to an unmirrored one (Q / E in the bench), then the columns' x in the caster rows. Captures at 10:00, 12:00 and 14:00 before and after; the trees and the barn as the reference.",
+      "next": "With ?maps=0 (the cars cast their silhouette) the shadows fall down and to the left of each car, as the sun asks; with their height maps the shadow shows only as a wedge at the car's left side, and neither the sun's map against the layer (?sun=layer), nor the footprints' sweep (?sweep=0), nor self shadow (?self=0) changes it. First suspect: the cars' sheets draw half a turn and mirror the rest, and both cars in the capture face a mirrored way: check a height-map caster on a mirrored frame against the same car turned to an unmirrored one (Q / E in the bench), then the columns' x in the caster rows. Captures at 10:00, 12:00 and 14:00 before and after; the trees and the barn as the reference. The shading on the cars' bodies was another fault, fixed apart (N-304, 2026-11-18): this row is the shadow on the floor alone.",
       "id": "N-297",
       "kind": "bug",
       "area": "render",
@@ -22857,6 +22858,29 @@
       "status": "open",
       "title": "Near a compound solid a lamp's row is the 512-bin merge, and a simple wall seen only between two bin rays is on no vertex: its own pixels are not lit beyond its edge (about a fifth of such walls)",
       "statusText": "open (render, low): found 2026-11-18 adapting the wired tests to the rows (OL-15); not caused by the deletion"
+    },
+    {
+      "refs": [],
+      "records": [
+        "R-1432"
+      ],
+      "date": "2026-11-18",
+      "aliases": [
+        "car bonnet dark",
+        "hood shaded",
+        "cabin from glass",
+        "nm-core cabin",
+        "bakeCarSheet remap",
+        "cars windscreen over bonnet"
+      ],
+      "result": "27 of the 54 car sheets remapped (14 by their own glass, 13 by their model's in another colour): on the light bench at 16:00 with the sun's shading at strength 6 and 0.5 subtracted the hatchback's bonnet reads 183 of 183 (red channel) where it read 88; the owner saw the captures: fine.",
+      "next": "The models whose glass gave no measure keep the old fit and may carry the same fault (17 sheets: compacto, jeep, limusina, micro, monovolumen, rural, suv, utilitario): measure their cabin another way (the roof's outline in the top view, or by hand a model), then --remap.",
+      "id": "N-304",
+      "kind": "bug",
+      "area": "demos",
+      "status": "kept-hygiene",
+      "title": "The cars' fitted body put the windscreen over the bonnet and sloped half of every bonnet, so a sun behind a car darkened its bonnet once the sun shaded by normals: the cabin is measured on the drawing's glass and the nose runs 3 px",
+      "statusText": "Fixed 2026-11-18 on main (fca49d15) for the models that could be measured; 17 sheets of 8 models left"
     },
     {
       "id": "E-518",
@@ -37390,6 +37414,30 @@
       "title": "Full-screen passes: fused where pointwise, two targets a chain (three.js's RenderPipeline, Phaser 4's filters)",
       "verdict": "note",
       "text": "**Full-screen passes in three.js and Phaser 4: fused where they only map a colour, two targets for a chain. Read in their sources and commits, not measured here.**\n\n- **three.js on WebGPU** (RenderPipeline, src/renderers/common/RenderPipeline.js, renamed from PostProcessing in r183): the TSL output graph compiles into one fragment shader on a QuadMesh; an effect that reads neighbours calls convertToTexture(), which inserts an RTTNode only when its input is not a texture already (RTTNode.js 365-370), so pointwise effects fuse into the final shader; kernels such as GaussianBlurNode own their targets. Its MSAA rules: no multisampling of full-screen passes (72288c8c, #33936), one resolve (d9eec4fc, #31743), post targets made lazily and single-sampled (1d6e89cb, #34030); the full-screen pass is one triangle from vertexIndex (6f583581, #33917).\n- **three.js on WebGL** (EffectComposer): one full-screen draw a pass, two targets swapped (needsSwap), nothing merged.\n- **Phaser 4** filters: targets from a pool by size (DrawingContextPool; idle ones reused after 1 s); the last filter of a chain draws straight into its destination when its size and alpha allow (renderNodes/Camera.js 376-394), as DX-POST's last pass draws onto the canvas.\n- **For WeedJS:** each SCREEN pass draws into a target of its own (DX_POST_DESIGN.md), so a chain of N passes at one resolution holds N targets where two suffice (E-525), and every pass costs a full-screen read and write even when it only maps a colour (DX-POSTFUSE). E-468 is the same fusion inside the engine: one composite for light, shadows and glow, about 0.10 ms of GPU saved a pass at full clock on the GTX 1650."
+    },
+    {
+      "id": "R-1432",
+      "date": "2026-11-18",
+      "time": "16:16",
+      "timeFrom": "recorded",
+      "title": "N-304 fixed for 27 car sheets: the cabin measured on the drawing's glass and a 3 px nose; the hatchback's bonnet under a sun behind it reads 183 of 183 where it read 88",
+      "verdict": "kept-hygiene",
+      "text": "**N-304 fixed for 27 of the 54 car sheets (fca49d15): the cars' fitted body put the windscreen over the bonnet and sloped half of every bonnet, so a sun behind a car darkened its bonnet. The cabin is now measured on the drawing's glass and the nose's drop runs 3 px. On the light bench at 16:00 with the sun's shading at strength 6 and 0.5 subtracted, the hatchback's bonnet reads 183 of 183 (red channel) where it read 88.**\n\n- **Seen by the owner** (2026-11-18) once the sun shaded sprites by their normals: \"el capot de los autos está quedando oscurecido\", and the light and shade of the bench's two cars looked the wrong way round.\n- **Not the roof's shadow:** with self shadow off (`?self=0`) the bonnet read the same 88. The light pass took the bonnet for a face turned about 88 degrees from the sun.\n- **Cause, in the maps** (`demos/tools/bakeCarSheet.mjs`, nm-core): the body fitted to the silhouettes. On `hatch_rojo`'s side view the glass runs from 22 % to 63 % of the length; the fitted cabin ran from 6 % to 80 %, its windscreen's slope on the picture's bonnet. And the nose's drop (`cf`) ran 9 to 11 px on every body: half a bonnet lit as a slope (the pickup's too, whose cabin was placed right).\n- **The change:** `cabinFromGlass` measures the cabin's ends on the side view (the grey of the picture that is not the body's colour, above the wheels); a white, grey or black car takes its model's in another colour; both ends and a 3 px nose are held through the fit (nm-core's new `opts.fijos`). `--remap` writes baked sheets' maps again in place, each frame from the heading its sheet keeps (a first try numbered the wrecks' few frames as headings and broke their maps: the owner saw it in the diff).\n- **Result:** 27 sheets remapped (14 by their own glass, 13 by their model's), fit IoU 0.93 to 0.95 on the bench's two; `meta.light3d.zmax` moved on 21 sheets by 0.1 to 2.2 px. Captures at 6x (as drawn, old maps, new maps) shown to the owner: \"estos dos están bien ahora\". node 3087, demos 121, types.\n- **Left:** the models whose glass gave no measure keep the old fit and may carry the same fault: compacto, jeep, limusina, micro, monovolumen, rural, suv, utilitario (17 sheets). The trucks, buses and motorhomes have no such cabin.\n- **N-297** (the cars' shadow on the floor falls as a wedge on one side) is a different fault and stays open: this one was the shading on the body.",
+      "commits": [
+        "fca49d15"
+      ]
+    },
+    {
+      "id": "R-1433",
+      "date": "2026-11-18",
+      "time": "16:16",
+      "timeFrom": "recorded",
+      "title": "lighting.normalShading takes a strength over 1 (to 100): what is left after the subtract darkens faster, never past the whole shading; the same on WebGL and WebGPU",
+      "verdict": "kept-hygiene",
+      "text": "**`lighting.normalShading`: a strength over 1, at the owner's ask (d7ca9690). What is left of a light's shading after the subtract is multiplied by the strength, up to the whole shading and never past it, so a high subtract with a high strength shades few faces and those fully. Not timed: the same shader, a `min` more a light.**\n\n- **The ask** (2026-11-18, from the light bench's strip): \"quiero que casi nada esté shaded con el sol, y solo algunas partes, bien oscuras\"; \"le restamos 0.5 y multiplicamos por 2, pero no se puede poner normalSun=2\".\n- **The rule:** `shading' = min(max(shading - subtract, 0) * strength, shading)`, the sun and each lamp; a face that gains from its normal keeps its gain times `min(strength, 1)`. A strength runs from 0 to 100 (it was cut to 1). Under 1 nothing changes: the default (strength 1 with 0.5 subtracted) draws the same picture.\n- **Light bench at 16:00**, the view that changes and the light it loses there against as drawn: strength 1 with 0.5 subtracted 13.3 % and 7.2 %; strength 3, 13.7 % and 23.6 %; strength 6, 13.8 % and 48.2 %; strength 3 with 0.4 subtracted, 16.0 % and 43.4 %. The same faces, darker.\n- **Checked:** `normalLightCheck` on WebGL and WebGPU at strength 6,3 with 0.5,0.4 subtracted: worst 16.8 of 255 under the sun and 9.6 under the lamp, the same on both backends, mean 0.7 (the maps' steps times the strength: 4.0 at strength 1, 7.7 at 2); its tolerance on the ball now grows with the strength. node 3087, demos 121, types.\n- **The default stays** strength 1 with 0.5 subtracted until the owner picks from the bench with the cars' maps fixed (N-304: their bonnets soiled the comparison).",
+      "commits": [
+        "d7ca9690"
+      ]
     }
   ],
   "leads": [
