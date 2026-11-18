@@ -148,13 +148,20 @@ fn mainVert(
     // DX-SHADOW3D: the sun's card (instancedSpriteShadow.vert.glsl says how): standing on the frame's lowest opaque row,
     // its columns across the sun, each point landing on the floor along the sun's ray.
     let bottom = aInstTrim.y + aInstTrim.w;
-    let sunZ = max(bottom - content.y, 0.0) * abs(aInstScale.y) / uniforms.uSunK.w * height;
+    // The picture's rows above the card's foot, and what a row is: px of depth on the floor and px of height
+    // (instancedSpriteShadow.vert.glsl says how). A picture of one view stands upright: every row is height.
+    var rows = (bottom - content.y) * abs(aInstScale.y);
+    var rowDepth = 0.0;
+    var rowHeight = height / uniforms.uSunK.w;
     // The picture's column at the card's foot, and the foot: under the lowest row, unless the frame's base says more.
     var footCol = anchor.x * aInstSize.x;
     var foot = vec2<f32>(aInstXY.x, (aInstXY.y + (bottom - aInstAnchor.y * aInstSize.y) * aInstScale.y) * uniforms.uGroundInvScaleY);
     let kLen = length(uniforms.uSunK.xy);
     var toSun = vec2<f32>(0.0);
     if (kLen > 1e-6) { toSun = uniforms.uSunK.xy / kLen; }
+    // Towards where the picture is seen from (the sun, unless a render's frame says otherwise), and its columns' direction.
+    var toView = toSun;
+    var sunPerp = uniforms.uSunPerp.xy;
     if (aInstBase.x >= 1.0) {
       // One view: an ellipse (the feet; a trunk, round), the card on its edge towards the sun.
       var rx = abs(aInstBase.y) * abs(aInstScale.x);
@@ -169,18 +176,40 @@ fn mainVert(
       foot.y -= ry;
       foot += toSun * sqrt(rx * rx * toSun.x * toSun.x + ry * ry * toSun.y * toSun.y);
     } else if (aInstBase.x < 0.0) {
-      // A render: the view from the sun, its lowest contact the one nearest the sun.
-      let reach = (-aInstBase.x - 1.0 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uniforms.uGroundInvScaleY;
-      foot = vec2<f32>(aInstXY.x, aInstXY.y * uniforms.uGroundInvScaleY) + toSun * reach;
+      // A render: the view from the sun, its lowest contact the one nearest the sun. N-297 (the GLSL says how): the
+      // base's first float keeps the contact's whole row and the frame's height per row; the row's texture float's
+      // fraction, how far the frame's own view is from the sun's; the card leans back by the one and turns by the other.
+      let packed = -aInstBase.x - 1.0;
+      let contactRow = floor(packed) + 0.5;
+      let perRowCode = floor(fract(packed) * 512.0 + 0.5);
+      let turnCode = floor(fract(aInstTexId) * 128.0 + 0.5);
+      if (turnCode > 0.5) {
+        let turn = (turnCode - 32.0) * 0.01308996939;
+        let tc = cos(turn);
+        let ts = sin(turn);
+        toView = vec2<f32>(toSun.x * tc - toSun.y * ts, toSun.x * ts + toSun.y * tc);
+        sunPerp = vec2<f32>(sunPerp.x * tc - sunPerp.y * ts, sunPerp.x * ts + sunPerp.y * tc);
+      }
+      let reach = (contactRow - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uniforms.uGroundInvScaleY;
+      foot = vec2<f32>(aInstXY.x, aInstXY.y * uniforms.uGroundInvScaleY) + toView * reach;
+      rows = (contactRow - content.y) * abs(aInstScale.y);
+      if (perRowCode > 0.5) {
+        let heightShare = clamp((perRowCode - 1.0) / 256.0 * uniforms.uSunK.w, 0.0, 1.0);
+        rowDepth = (1.0 - heightShare) * uniforms.uGroundInvScaleY;
+        rowHeight = heightShare * height / uniforms.uSunK.w;
+      }
     }
-    var sunPerp = uniforms.uSunPerp.xy;
     if (castFixed) {
-      // DX-CASTER: a fixed card stands along the object through its anchor.
+      // DX-CASTER: a fixed card stands along the object through its anchor, upright.
       foot = vec2<f32>(aInstXY.x, aInstXY.y * uniforms.uGroundInvScaleY);
       footCol = aInstAnchor.x * aInstSize.x;
       sunPerp = castAxis;
+      rows = (bottom - content.y) * abs(aInstScale.y);
+      rowDepth = 0.0;
+      rowHeight = height / uniforms.uSunK.w;
     }
-    let land = foot + (content.x - footCol) * aInstScale.x * sunPerp - sunZ * uniforms.uSunK.xy;
+    let sunZ = rows * rowHeight;
+    let land = foot + (content.x - footCol) * aInstScale.x * sunPerp - toView * (rows * rowDepth) - sunZ * uniforms.uSunK.xy;
     world = vec2<f32>(land.x, land.y / uniforms.uGroundInvScaleY);
     // weed:sunOut
   }

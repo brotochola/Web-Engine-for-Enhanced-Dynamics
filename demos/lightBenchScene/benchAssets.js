@@ -75,12 +75,29 @@ BENCH_ASSETS.civil7 = {
   excludeAnimations: LPC_UNUSED,
 };
 
-/** assets.spritesheets' entry for a bench sheet, with its height and normal maps unless `maps` is false. */
-export function benchSheetSpec(name, maps = true) {
+/** The cars' frames: the pack numbers 48 of them a turn, and a sheet keeps the half that faces right (the rest mirrored). */
+const CAR_FRAME_NUMBERS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47];
+
+/**
+ * A car sheet's directions with every frame taken as an even 7.5° turn (its number × 7.5), in place of the headings its
+ * json keeps (nm-core's measures): the bench's ?carEven=1, to compare the two under the sun.
+ */
+function evenCarDirections(name) {
+  const drive = { mirrorX: true };
+  for (const k of CAR_FRAME_NUMBERS) drive[String(k * 7.5)] = `${name}_${String(k).padStart(2, '0')}`;
+  return { drive };
+}
+
+/**
+ * assets.spritesheets' entry for a bench sheet, with its height and normal maps unless `maps` is false; `evenCars`
+ * gives a car's sheet even directions (evenCarDirections).
+ */
+export function benchSheetSpec(name, maps = true, evenCars = false) {
   const a = BENCH_ASSETS[name];
   const spec = { json: a.json, png: a.png };
   if (maps && a.maps) Object.assign(spec, { heightMap: a.heightMap, normalMap: a.normalMap });
   if (a.excludeAnimations) spec.excludeAnimations = a.excludeAnimations;
+  if (evenCars && a.kind === 'car') spec.directions = evenCarDirections(name);
   return spec;
 }
 

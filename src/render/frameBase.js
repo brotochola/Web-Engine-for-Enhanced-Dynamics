@@ -217,6 +217,48 @@ export function measureLowestContact(opaque, heightAt, w, h) {
   return null;
 }
 
+/**
+ * How much of a render's picture is height, for the card it casts (N-297): the px of height a row of the picture rises
+ * above its contact row, along its top edge (each column's highest opaque pixel), by least squares. The frame is the
+ * view from the light at the camera's pitch, so a row above the contact is part depth on the floor (away from the light)
+ * and part height. A card that takes every row for height is right only for a light as high as the camera looks down:
+ * under a higher one the far side's shadow fell short (a pickup's bed cast none at 13:30), under a lower one it ran
+ * long. With this number the card leans back from its contact: a row is this much height and the rest depth, so its top
+ * edge lands where the object's far top edge does, whatever the light's height (the far edge of a car's shadow against
+ * the exact one from its height map: 25 px off before, 2 with this, mean of every frame, the sun at 67 degrees).
+ * @param {(i: number, j: number) => boolean} opaque
+ * @param {(i: number, j: number) => number} heightAt px of height
+ * @param {number} w
+ * @param {number} h
+ * @param {number} contact the frame's lowest contact row (measureLowestContact)
+ * @returns {number} px of height a row; 0 for a frame with nothing above its contact
+ */
+export function measureHeightPerRow(opaque, heightAt, w, h, contact) {
+  let zu = 0;
+  let uu = 0;
+  for (let i = 0; i < w; i++) {
+    for (let j = 0; j < h; j++) {
+      if (!opaque(i, j)) continue;
+      const u = contact - (j + 0.5);
+      if (u > 0) {
+        zu += heightAt(i, j) * u;
+        uu += u * u;
+      }
+      break;
+    }
+  }
+  return uu > 0 && zu > 0 ? zu / uu : 0;
+}
+
+/**
+ * A render's contact float in the texture table keeps its height per row too (lutBaseFloats): the contact is a pixel's
+ * centre, so its whole rows go in the whole part and, in the fraction, a code in HEIGHT_PER_ROW_CODES-ths: 0 not
+ * measured (a json from before N-297: every row is height), else 1 + the height per row in HEIGHT_PER_ROW_STEPS-ths of
+ * a px. Whole numbers a float32 holds exactly beside a row under 4 096.
+ */
+export const HEIGHT_PER_ROW_CODES = 512;
+export const HEIGHT_PER_ROW_STEPS = 256;
+
 /** A group spec's keys that are no direction (spriteDirections.js). */
 const GROUP_KEYS = new Set(['count', 'startAngle', 'clockwise', 'anims', 'mirrorX']);
 
@@ -240,11 +282,12 @@ export function isRenderDirections(spec) {
 /**
  * A frame's base as the texture table's two spare floats (instancedSpriteBatch.js writeLutSlot), read by the shadow
  * shaders: [0, 0] none; an ellipse [cx + 1, rx] (feet, ry = 0.6 rx) or [cx + 1, -rx] (a round trunk); a render
- * [-(1 + its lowest contact row), 0], or -0.5 in the second when it casts its card for the sun (base.card: the sheet's
- * shadowCast.sun 'sprite'). writeLutSlot then puts its footprint row there, + 1, with that sign. H-EDGE: a base also says
+ * [-(1 + its lowest contact's whole row + its height per row's code / HEIGHT_PER_ROW_CODES), 0] (N-297: the contact is
+ * that row's centre; base.heightPerRow, measureHeightPerRow), or -0.5 in the second when it casts its card for the sun
+ * (base.card: the sheet's shadowCast.sun 'sprite'). writeLutSlot then puts its footprint row there, + 1, with that sign. H-EDGE: a base also says
  * what its frame's texels hold (base.texels, FRAME_SOFT...), which the texture table keeps apart (buildTextureLut); a
  * base of that alone floats as none.
- * @param {{ cx?: number, rx?: number, ry?: number, contact?: number, texels?: number } | null | undefined} base
+ * @param {{ cx?: number, rx?: number, ry?: number, contact?: number, heightPerRow?: number, texels?: number } | null | undefined} base
  * @param {Float32Array|number[]} out
  * @param {number} at
  */
@@ -253,7 +296,9 @@ export function lutBaseFloats(base, out, at) {
   out[at + 1] = 0;
   if (!base) return;
   if (base.contact >= 0) {
-    out[at] = -(1 + base.contact);
+    const perRow = base.heightPerRow;
+    const code = perRow >= 0 ? 1 + Math.min(Math.round(perRow * HEIGHT_PER_ROW_STEPS), HEIGHT_PER_ROW_CODES - 2) : 0;
+    out[at] = -(1 + Math.floor(base.contact) + code / HEIGHT_PER_ROW_CODES);
     if (base.card === true) out[at + 1] = -0.5;
   } else if (base.rx > 0 && base.cx >= 0) {
     out[at] = base.cx + 1;
