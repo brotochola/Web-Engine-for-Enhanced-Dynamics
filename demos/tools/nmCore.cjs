@@ -215,7 +215,7 @@ function framesFrom(atlas, W, json) {
   return fr.sort((a, b) => a.ang - b.ang);
 }
 
-function fitGlobal(frames, tipo, extra, p0, prog) {
+function fitGlobal(frames, tipo, extra, p0, prog, fijos = []) {
   const T = TIPOS[tipo], keys = T.keys;
   const cov = new Float32Array(CAN * CAN);
   const score = v => {
@@ -226,7 +226,9 @@ function fitGlobal(frames, tipo, extra, p0, prog) {
     return -tot / frames.length;
   };
   const x0 = keys.map(k => p0[k]);
-  const lo = keys.map(k => p0[k] * .6), hi = keys.map(k => p0[k] * 1.5 + (k === 'gf' ? .2 : 0));
+  // WeedJS patch: a parameter the caller measured (opts.fijos: the cabin's ends, read off the drawing's glass) stays put.
+  const lo = keys.map(k => fijos.includes(k) ? p0[k] : p0[k] * .6);
+  const hi = keys.map(k => fijos.includes(k) ? p0[k] : p0[k] * 1.5 + (k === 'gf' ? .2 : 0));
   let n = 0;
   const res = coordSearch(v => { const r = score(v); if (++n % 20 === 0) prog && prog(Math.min(n / 400, 1), -r); return r; },
                           x0, keys.map(k => STEPS[k]), { maxEvals: 400, lo, hi });
@@ -390,7 +392,7 @@ function nearestFill(valid, w, h) {
 // ------------------------------------------------------------- PROCESO COMPLETO
 /**
  * atlas: Uint8ClampedArray RGBA (W x H), json: { frames, animations }
- * opts: { nombre, tipo, extra, ajustarMedidas, calidad (1..3), p0 }
+ * opts: { nombre, tipo, extra, ajustarMedidas, calidad (1..3), p0, fijos (WeedJS patch: keys of p0 the fit leaves alone) }
  * prog(fase, frac, info)
  * -> { normal: Uint8ClampedArray, height: Uint8ClampedArray, luz, params }
  */
@@ -404,7 +406,7 @@ function process(atlas, W, H, json, opts = {}, prog = () => {}) {
 
   let p = p0, fitInfo = null;
   if (doFit) {
-    fitInfo = fitGlobal(frames, tipo, extra, p0, (f, iou) => prog('ajuste', f, { iou }));
+    fitInfo = fitGlobal(frames, tipo, extra, p0, (f, iou) => prog('ajuste', f, { iou }), opts.fijos || []);
     p = fitInfo.p;
   }
   prog('ajuste', 1, fitInfo ? { iou: fitInfo.iou } : {});

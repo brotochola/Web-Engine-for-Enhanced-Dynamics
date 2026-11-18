@@ -3,11 +3,15 @@
 // every 7.5°, the right-facing half only) as a WeedJS spritesheet with its height and normal maps:
 //
 //   node demos/tools/bakeCarSheet.mjs <car .json or folder> [more ...] [--out demos/img/autos] [--quality 2] [--type t]
+//   node demos/tools/bakeCarSheet.mjs --remap <baked sheet .json or folder> [more ...] [--quality 2]
+//       (a sheet this tool wrote: its _h.png and _n.png made again in place, its picture and frames untouched)
 //
 // The maps come from nm-core (nmCore.cjs, the "Luz 2.5D" generator): a prism model of the car fitted to every frame's
 // silhouette, each frame's own heading found, an SDF ray-marched for the height and normal of each pixel, the drawing's
 // fine detail added. The model's body (sedan, hatch, pickup, colectivo, camion) comes from the name: nm-core's guess when
-// the name says one, the pack's other models by kind below (a coupe is a sedan, an SUV a hatch, a dump truck a camion:
+// the name says one (the cabin's two ends are not fitted: a silhouette from above says little about where the glass is, and the
+// fit left a hatchback's windscreen over its bonnet, which then lit as a windscreen; they are measured on the side view's
+// glass, cabinFromGlass), the pack's other models by kind below (a coupe is a sedan, an SUV a hatch, a dump truck a camion:
 // the body that fits the silhouettes best is not always the shape, and a box fitted to a sports car lights like a box),
 // and for a name neither knows, every body fitted and the best match kept; --type forces one. Each frame goes into a cell of one size with the car's centre on the floor at the same point (the
 // entity's anchor), so <name>.png, <name>_h.png (height, R·256 + G in 1/64 px) and <name>_n.png (normals: R +x, G +y up,
@@ -34,12 +38,14 @@ let out = path.resolve(here, '../img/autos');
 let quality = 2;
 let forcedType = null;
 let indexOnly = false;
+let remap = false;
 const inputs = [];
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === '--out') out = path.resolve(argv[++i]);
   else if (argv[i] === '--quality') quality = Math.max(1, Math.min(3, Number(argv[++i]) | 0));
   else if (argv[i] === '--type') forcedType = argv[++i];
   else if (argv[i] === '--index') indexOnly = true;
+  else if (argv[i] === '--remap') remap = true;
   else inputs.push(argv[i]);
 }
 if ((inputs.length === 0 && !indexOnly) || (forcedType && !NM.TIPOS[forcedType])) {
@@ -56,6 +62,158 @@ const BODY_BY_MODEL = [
   [/utilitario|monovolumen|rural|suv|jeep|micro|compacto/i, 'hatch'],
   [/coupe|deportivo|muscle|lujo|superauto|limusina/i, 'sedan'],
 ];
+
+/**
+ * Where the cabin starts and ends along the car, as shares of its length from the rear (nm-core's gr and gf), measured on
+ * the drawing: the side view (heading 0, the car looking right) shows the near side's windows, and the glass is the grey
+ * of the picture that is not the body's colour, above the wheels. null where the picture does not say it clearly (a grey
+ * or black car, a body with no cabin of this kind): the body's own numbers stand.
+ * @param {{ data: Uint8Array, width: number }} png the sheet's picture
+ * @param {{ x: number, y: number, w: number, h: number }} f the side view's cell
+ * @param {string} tipo the body fitted
+ */
+function cabinFromGlass(png, f, tipo) {
+  if (tipo !== 'sedan' && tipo !== 'hatch' && tipo !== 'pickup') return null;
+  const at = (x, y) => ((f.y + y) * png.width + f.x + x) * 4;
+  // The car's columns, and each one's top and bottom.
+  let x0 = -1;
+  let x1 = -1;
+  const top = new Int32Array(f.w).fill(-1);
+  const bottom = new Int32Array(f.w).fill(-1);
+  const lums = [];
+  let coloured = 0;
+  let opaque = 0;
+  for (let x = 0; x < f.w; x++) {
+    for (let y = 0; y < f.h; y++) {
+      const o = at(x, y);
+      if (png.data[o + 3] < 128) continue;
+      if (top[x] < 0) top[x] = y;
+      bottom[x] = y;
+      const r = png.data[o];
+      const g = png.data[o + 1];
+      const b = png.data[o + 2];
+      opaque++;
+      if (Math.max(r, g, b) - Math.min(r, g, b) >= 60) coloured++;
+      lums.push(0.299 * r + 0.587 * g + 0.114 * b);
+    }
+    if (top[x] >= 0) {
+      if (x0 < 0) x0 = x;
+      x1 = x;
+    }
+  }
+  if (x0 < 0 || x1 - x0 < 20) return null;
+  lums.sort((a, b) => a - b);
+  const bodyLum = lums[Math.floor(lums.length * 0.6)];
+  const colourBody = coloured > opaque * 0.2;
+  // A car with a grey body: its glass is what is clearly darker than it. A dark one says nothing.
+  if (!colourBody && bodyLum < 110) return null;
+  const glass = new Uint8Array(f.w);
+  for (let x = x0; x <= x1; x++) {
+    const upper = top[x] + Math.round((bottom[x] - top[x]) * 0.62);
+    let n = 0;
+    for (let y = top[x]; y <= upper; y++) {
+      const o = at(x, y);
+      if (png.data[o + 3] < 128) continue;
+      const r = png.data[o];
+      const g = png.data[o + 1];
+      const b = png.data[o + 2];
+      const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+      const grey = Math.max(r, g, b) - Math.min(r, g, b) < 45;
+      if (grey && lum > 35 && (colourBody ? lum < 175 : lum < bodyLum * 0.72)) n++;
+    }
+    glass[x] = n >= 2 ? 1 : 0;
+  }
+  // The longest run of glass columns, a pillar's width forgiven.
+  let best = null;
+  let start = -1;
+  let last = -1;
+  for (let x = x0; x <= x1 + 1; x++) {
+    if (x <= x1 && glass[x]) {
+      if (start < 0 || x - last > 5) start = x;
+      last = x;
+      if (!best || last - start > best[1] - best[0]) best = [start, last];
+    }
+  }
+  if (!best) return null;
+  const len = x1 - x0 + 1;
+  const gr = (best[0] - x0) / len;
+  const gf = (best[1] + 1 - x0) / len;
+  const ok = tipo === 'pickup'
+    ? gr >= 0.2 && gr <= 0.6 && gf >= 0.55 && gf <= 0.85 && gf - gr >= 0.12
+    : gr >= 0.04 && gr <= 0.45 && gf >= 0.5 && gf <= 0.82 && gf - gr >= 0.25;
+  return ok ? { gr: Math.round(gr * 1000) / 1000, gf: Math.round(gf * 1000) / 1000 } : null;
+}
+
+// The run of the nose's drop, floor px. The fit gave it 9 to 11 px (the silhouette's rounded front), so the front half of a
+// bonnet lit as a slope; on the drawings a bonnet is flat to the bumper.
+const NOSE_RUN = 3;
+
+/** A sheet's model: its name without the colour ("hatch_rojo": hatch), a wreck's the body it was ("quemado_coupe": coupe). */
+function modelOf(name) {
+  // The taxi is the sedan with a sign on its roof.
+  if (name === 'taxi') return 'sedan';
+  const cut = name.indexOf('_');
+  if (cut < 0) return name;
+  const head = name.slice(0, cut);
+  return head === 'abandonado' || head === 'quemado' ? name.slice(cut + 1) : head;
+}
+
+/** The side view's frame of a sheet: the pack's heading 0, or this tool's frame 00. */
+function sideFrame(json, name) {
+  const byHeading = json.animations?.['0']?.[0];
+  if (byHeading && json.frames[byHeading]) return byHeading;
+  if (json.frames[`${name}_00`]) return `${name}_00`;
+  return Object.keys(json.frames)[0];
+}
+
+// The cabins measured on a folder's sheets, by model: { gr, gf } averaged over the colours that said it.
+const folderCabins = new Map();
+function cabinsOfFolder(dir) {
+  if (folderCabins.has(dir)) return folderCabins.get(dir);
+  const byModel = new Map();
+  for (const file of fs.readdirSync(dir)) {
+    if (!file.endsWith('.json')) continue;
+    const name = path.basename(file, '.json');
+    let json;
+    try {
+      json = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+    } catch {
+      continue;
+    }
+    if (!json.frames || !json.animations) continue;
+    const pngPath = path.join(dir, json.meta?.image || `${name}.png`);
+    if (!fs.existsSync(pngPath)) continue;
+    const body = json.meta?.light3d?.fit?.type ?? NM.guessType(name).tipo;
+    const cabin = cabinFromGlass(decodePng(fs.readFileSync(pngPath)), json.frames[sideFrame(json, name)].frame, body);
+    if (!cabin) continue;
+    const key = `${modelOf(name)}|${body}`;
+    const sum = byModel.get(key) ?? { gr: 0, gf: 0, n: 0 };
+    sum.gr += cabin.gr;
+    sum.gf += cabin.gf;
+    sum.n++;
+    byModel.set(key, sum);
+  }
+  folderCabins.set(dir, byModel);
+  return byModel;
+}
+
+/**
+ * nm-core's options for a sheet: the body, and the cabin's ends where the drawing's glass gave them, on this sheet or on
+ * the same model in another colour (a white, grey or black car's glass does not stand out; the model is the same).
+ */
+function fitOptions(png, json, name, tipo, dir) {
+  const body = tipo ?? NM.guessType(name).tipo;
+  let cabin = cabinFromGlass(png, json.frames[sideFrame(json, name)].frame, body);
+  let from = 'its glass';
+  if (!cabin) {
+    const sum = cabinsOfFolder(dir).get(`${modelOf(name)}|${body}`);
+    if (sum) {
+      cabin = { gr: Math.round((sum.gr / sum.n) * 1000) / 1000, gf: Math.round((sum.gf / sum.n) * 1000) / 1000 };
+      from = "the same model's glass in another colour";
+    }
+  }
+  return cabin ? { p0: { ...cabin, cf: NOSE_RUN }, fijos: ['gr', 'gf', 'cf'], cabin, from } : { cabin: null, from: null };
+}
 
 /** The body to fit: the forced one, nm-core's guess for a name that says it (undefined), the model's, else the best fit. */
 function chooseType(atlas, W, H, json, name) {
@@ -95,7 +253,9 @@ function bake(jsonPath) {
   const t0 = Date.now();
   const chosen = chooseType(atlas, W, H, json, name);
   if (chosen.tried) console.log(`${name}: bodies tried (mean frame IoU): ${chosen.tried}`);
-  const r = NM.process(atlas, W, H, json, { nombre: name, calidad: quality, tipo: chosen.tipo });
+  const fit = fitOptions(png, json, name, chosen.tipo, path.dirname(jsonPath));
+  const r = NM.process(atlas, W, H, json, { nombre: name, calidad: quality, tipo: chosen.tipo, p0: fit.p0, fijos: fit.fijos });
+  console.log(`${name}: cabin ${fit.cabin ? `from ${fit.from}, ${fit.cabin.gr} to ${fit.cabin.gf} of the length` : "the body's own"}`);
   // Each frame by its heading in the pack (the animations' keys), with nm-core's own heading and anchor for it.
   const frames = [];
   for (const [deg, names] of Object.entries(json.animations)) {
@@ -216,7 +376,61 @@ function bake(jsonPath) {
     `fit IoU ${r.params.fit ? r.params.fit.iou.toFixed(3) : 'none'}, frames' IoU ${meanIou.toFixed(3)}, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 }
 
-for (const j of jsons) bake(j);
+/**
+ * --remap: a sheet this tool wrote, its height and normal maps made again in place (the same cells: nm-core writes each
+ * frame's maps where its picture is). Its picture, frames, headings, anchors and footprints stay; meta.light3d.zmax follows
+ * the new heights. Each frame is fitted from the heading the sheet keeps for it (meta.light3d.headings: a wreck has a few
+ * frames at headings of its own, so a frame's number does not say its heading).
+ */
+function remapSheet(jsonPath) {
+  const name = path.basename(jsonPath, '.json');
+  const sheet = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+  const l3 = sheet.meta?.light3d;
+  if (!l3 || l3.kind !== 'car') return;
+  const dir = path.dirname(jsonPath);
+  const png = decodePng(fs.readFileSync(path.join(dir, sheet.meta.image || `${name}.png`)));
+  const W = png.width;
+  const H = png.height;
+  const atlas = new Uint8ClampedArray(png.data.buffer, png.data.byteOffset, png.data.length);
+  const animations = {};
+  for (const fname of Object.keys(sheet.frames)) {
+    const heading = l3.headings?.[fname];
+    if (!Number.isFinite(heading)) throw new Error(`${name}: no heading kept for frame ${fname}`);
+    animations[String(heading)] = [fname];
+  }
+  const json = { frames: sheet.frames, animations };
+  const tipo = forcedType ?? l3.fit?.type;
+  const t0 = Date.now();
+  const fit = fitOptions(png, json, name, tipo, dir);
+  if (!fit.cabin) {
+    console.log(`${name}: ${tipo}, cabin the body's own: left as it is`);
+    return;
+  }
+  const r = NM.process(atlas, W, H, json, { nombre: name, calidad: quality, tipo, p0: fit.p0, fijos: fit.fijos });
+  const height = new Uint8Array(W * H * 4);
+  const normal = new Uint8Array(W * H * 4);
+  let zmax = 0;
+  for (let s = 0; s < W * H; s++) {
+    if (png.data[s * 4 + 3] === 0) continue;
+    for (let c = 0; c < 4; c++) normal[s * 4 + c] = r.normal[s * 4 + c];
+    const z = r.heightF[s];
+    if (z > zmax) zmax = z;
+    const q = Math.max(0, Math.min(65535, Math.round(z * 64)));
+    height[s * 4] = q >> 8;
+    height[s * 4 + 1] = q & 255;
+    height[s * 4 + 3] = 255;
+  }
+  fs.writeFileSync(path.join(dir, `${name}_h.png`), encodePng(W, H, height));
+  fs.writeFileSync(path.join(dir, `${name}_n.png`), encodePng(W, H, normal));
+  if (r1(zmax) !== l3.zmax) {
+    l3.zmax = r1(zmax);
+    fs.writeFileSync(jsonPath, JSON.stringify(sheet));
+  }
+  console.log(`${name}: ${r.params.tipo}, cabin ${fit.cabin ? `from ${fit.from} ${fit.cabin.gr} to ${fit.cabin.gf}` : "the body's own"}, ` +
+    `zmax ${r1(zmax)} px, fit IoU ${r.params.fit ? r.params.fit.iou.toFixed(3) : 'none'}, ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+}
+
+for (const j of jsons) (remap ? remapSheet : bake)(j);
 
 // index.js: every sheet in the folder (its cell, tallest point, box, anchor and the heading each direction is drawn at).
 const index = {};

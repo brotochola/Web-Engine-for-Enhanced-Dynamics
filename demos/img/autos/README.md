@@ -21,3 +21,14 @@ needs them before the sheets load (turning a volume with the car, stepping a car
 The maps come from `demos/tools/bakeCarSheet.mjs` (nm-core, `demos/tools/nmCore.cjs`: a body model fitted to every
 frame's silhouette, each frame's own heading found, an SDF ray-marched for the heights and normals, the drawing's detail
 added): `node demos/tools/bakeCarSheet.mjs <the game's img/autos folder> --out demos/img/autos`.
+
+Two things the fit does not decide (2026-11-18), since a silhouette from above says little about them and the light showed
+it: where the cabin starts and ends along the car is measured on the side view's glass (a white, grey or black car, whose
+glass does not stand out, takes the same model's in another colour), and the nose's drop runs 3 px. Before, a hatchback's
+windscreen lay over its bonnet and half of every bonnet sloped, so under a sun behind the car the bonnet went dark. The
+models whose glass gave no measure keep the body's own numbers: compacto, jeep, limusina, micro, monovolumen, rural, suv,
+utilitario (and the trucks and buses, which have no such cabin).
+
+`node demos/tools/bakeCarSheet.mjs --remap demos/img/autos` writes the height and normal maps of the sheets here again, in
+place, from their own pictures (the pictures, frames, headings and anchors stay; a sheet with no measured cabin is left as
+it is).
