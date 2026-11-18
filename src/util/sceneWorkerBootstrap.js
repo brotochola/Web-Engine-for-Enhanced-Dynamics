@@ -13,7 +13,7 @@ import { TileMap } from '../core/tileMap.js';
 import { NavGrid } from '../core/navGrid.js';
 import { SoundManager } from '../core/soundManager.js';
 import { SharedResource } from '../core/sharedResource.js';
-import { collectWorkerScriptsToLoad } from './sceneScript.js';
+import { bootScriptsToLoad, collectWorkerScriptsToLoad } from './sceneScript.js';
 import { frameClockSlot } from './frameClock.js';
 import { loadMark } from './loadMarks.js';
 import { definesBelow } from './listenerTags.js';
@@ -31,6 +31,8 @@ const WORKER_CACHE_BUST = `?v=${Date.now()}`;
 
 /** SST-2: the page's one compile of engine.wasm (a Promise of the WebAssembly.Module, or of null), for every scene. */
 let engineWasmCompile = null;
+/** The module once that compile ended (null before, or when it could not be made): what a 'boot' message carries. */
+let engineWasmModule = null;
 
 /**
  * The data URL a bundle inlined engine.wasm as (gzipped), or null: WEED.EngineWasmUrl when the bundle names it, else
@@ -101,6 +103,7 @@ export function compileEngineWasm() {
     return module;
   })().then(
     (module) => {
+      engineWasmModule = module;
       loadMark('engine wasm compiled');
       return module;
     },
@@ -139,7 +142,8 @@ export function createPhysicsWorker(useInlineWorkers, cacheBust, physicsConfig, 
   return new Worker(`/src/box2d/box2dWasm.js${cacheBust}`, options);
 }
 
-function createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBust) {
+/** The engine workers (every one but physics), made at once (SST-1). */
+function createSceneWorkerInstances(scene, makeWorker) {
   const numberOfSpatialWorkers = scene.config.spatial.numberOfSpatialWorkers;
   for (let i = 0; i < numberOfSpatialWorkers; i++) {
     const spatialWorker = makeWorker('spatialWorker');
@@ -153,16 +157,6 @@ function createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBu
     scene.workers.logicWorkers.push(logicWorker);
   }
 
-  // Boot: no box2dWasm.js when config.physics.enabled === false. Phase 4 started it already (reserveBox2dBlock).
-  if (scene._physicsEnabled) {
-    if (!scene.workers.physics) {
-      scene.workers.physics = createPhysicsWorker(useInlineWorkers, cacheBust, scene.config.physics);
-    }
-    // Main-side label for step waiters and logs; the worker's own name is set above.
-    scene.workers.physics.name = 'physics';
-  } else {
-    scene.workers.physics = null;
-  }
   scene.workers.renderer = makeWorker('pixiWorker');
   scene.workers.particle = makeWorker('particleWorker');
   const preRenderWorker = makeWorker('preRenderWorker');
@@ -173,26 +167,44 @@ function createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBu
   scene.workers.particle.name = 'particle';
 }
 
-function attachEarlyWorkerErrorHandlers(scene) {
-  const earlyErrorHandler = (workerName) => (e) => {
-    console.error(
-      `❌ EARLY ERROR in ${workerName} worker (module load failed):\n`,
-      `Message: ${e.message}\n`,
-      `File: ${e.filename}:${e.lineno}:${e.colno}`,
-      e
-    );
-  };
-
-  if (scene.workers.physics) {
-    // The glue's pre-js throws while the script loads when Box2D's memory cannot be made (a size
-    // out of range, or more than the browser will reserve). That happens before onmessage is
-    // attached, so the error event is the only way it reaches the page: show it.
-    const logPhysicsError = earlyErrorHandler('physics');
-    scene.workers.physics.onerror = (e) => {
-      logPhysicsError(e);
-      scene._showFatalErrorMessage('physics', 'Physics worker failed to start', e.message || String(e));
-    };
+/**
+ * The physics worker, when the scene has physics and Phase 4 did not start it (reserveBox2dBlock reserved no block).
+ * Boot: no box2dWasm.js when config.physics.enabled === false.
+ */
+function ensurePhysicsWorker(scene, useInlineWorkers, cacheBust) {
+  if (!scene._physicsEnabled) {
+    scene.workers.physics = null;
+    return;
   }
+  if (!scene.workers.physics) {
+    scene.workers.physics = createPhysicsWorker(useInlineWorkers, cacheBust, scene.config.physics);
+    attachPhysicsErrorHandler(scene);
+  }
+  // Main-side label for step waiters and logs; the worker's own name is set above.
+  scene.workers.physics.name = 'physics';
+}
+
+const earlyErrorHandler = (workerName) => (e) => {
+  console.error(
+    `❌ EARLY ERROR in ${workerName} worker (module load failed):\n`,
+    `Message: ${e.message}\n`,
+    `File: ${e.filename}:${e.lineno}:${e.colno}`,
+    e
+  );
+};
+
+function attachPhysicsErrorHandler(scene) {
+  // The glue's pre-js throws while the script loads when Box2D's memory cannot be made (a size
+  // out of range, or more than the browser will reserve). That happens before onmessage is
+  // attached, so the error event is the only way it reaches the page: show it.
+  const logPhysicsError = earlyErrorHandler('physics');
+  scene.workers.physics.onerror = (e) => {
+    logPhysicsError(e);
+    scene._showFatalErrorMessage('physics', 'Physics worker failed to start', e.message || String(e));
+  };
+}
+
+function attachEarlyWorkerErrorHandlers(scene) {
   scene.workers.renderer.onerror = earlyErrorHandler('renderer');
   scene.workers.particle.onerror = earlyErrorHandler('particle');
   for (let i = 0; i < scene.workers.preRenderWorkers.length; i++) {
@@ -374,7 +386,57 @@ function bundleEngineShaders() {
   return window.WEED.EngineShaders || null;
 }
 
-function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad, engineWasm = null) {
+/** The engine workers a 'boot' message goes to (all but physics, a classic script with a path of its own). */
+function bootedWorkers(scene) {
+  const w = scene.workers;
+  return [...w.spatialWorkers, ...w.logicWorkers, w.renderer, w.particle, ...w.preRenderWorkers].filter(Boolean);
+}
+
+/**
+ * SST-1: each engine worker's 'boot', posted as soon as it is made: what depends on neither the assets nor the shared
+ * buffers. The config, the worker's name, engine.wasm compiled (SST-2; null until the page's compile ends, and then an
+ * 'engineWasm' message follows), the game scripts to start on (the page's params, which a scene module may read at
+ * its top level), and to the renderer the canvas (transferred: an OffscreenCanvas moves once), its size and the engine
+ * shaders a bundle carries. 'init' (createSceneWorkers) then carries what depends on the assets and the buffers.
+ */
+function postBootMessages(scene, workers) {
+  const pageOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+  const engineWasm = engineWasmModule;
+  const boot = {
+    msg: 'boot',
+    pageOrigin,
+    config: scene.config,
+    sceneParams: sceneParams().toString(),
+    scriptsToLoad: bootScriptsToLoad(scene, pageOrigin),
+    engineWasm,
+  };
+  const renderer = scene.workers.renderer;
+  for (const worker of workers) {
+    if (worker !== renderer) worker.postMessage({ ...boot, workerName: worker.name });
+  }
+  const canvas = scene.canvas.transferControlToOffscreen();
+  renderer.postMessage(
+    {
+      ...boot,
+      workerName: renderer.name,
+      canvas,
+      canvasWidth: scene.config.canvasWidth,
+      canvasHeight: scene.config.canvasHeight,
+      engineShaders: bundleEngineShaders(),
+    },
+    [canvas],
+  );
+  if (engineWasm === null) {
+    // Still compiling (or no page): the module follows, long before any 'init' needs it.
+    compileEngineWasm().then((module) => {
+      if (module === null) return;
+      for (const worker of workers) worker.postMessage({ msg: 'engineWasm', engineWasm: module });
+      loadMark('wasm module posted');
+    });
+  }
+}
+
+function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
   if (scene.config.physics) {
     scene.config.physics.publishContactRing = scene._anyCollisionListener === true;
   }
@@ -605,8 +667,6 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad, engineWas
     // W14: the navigation memory (the nav buffer and the flowfield's scratch), for the particle worker.
     navigationMemory: scene.navigationMemory?.memory || null,
     navigationLayout: scene.navigationMemory?.layout || null,
-    // SST-2: engine.wasm as the page compiled it (compileEngineWasm), or null: each worker compiles its own then.
-    engineWasm,
   };
 }
 
@@ -652,8 +712,6 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
   if (scene.workers.physics) {
     debugWorkerLog('[Scene]   → Initializing physics worker...');
     const physicsExtra = {
-      // Box2D's own module, not the engine's kernels.
-      engineWasm: null,
       workerPorts: workerPorts.physics,
       frameRateIndex: physicsIndex,
       frameClockSlot: frameClockSlot('physics'),
@@ -703,14 +761,13 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
   });
 
   debugWorkerLog('[Scene]   → Initializing renderer worker...');
-  const offscreenCanvas = scene.canvas.transferControlToOffscreen();
+  // SST-1: the canvas went with the renderer's boot.
   const tilesetBitmaps = {};
   for (const [id, loaded] of Object.entries(scene.loadedTilemaps || {})) {
     tilesetBitmaps[id] = loaded.tilesetBitmap;
   }
 
   const transferables = [
-    offscreenCanvas,
     ...Object.values(scene.loadedTextures),
     ...Object.values(scene.loadedSpritesheets).map((sheet) => sheet.imageBitmap),
     ...Object.values(scene.loadedSpritesheets).map((sheet) => sheet.mapsBitmap).filter(Boolean),
@@ -722,7 +779,6 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     scene.workers.renderer,
     initData,
     {
-      view: offscreenCanvas,
       textures: scene.loadedTextures,
       spritesheets: scene.loadedSpritesheets,
       tilesetBitmaps,
@@ -731,6 +787,7 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
       frameClockSlot: frameClockSlot('renderer'),
       workerPorts: workerPorts.renderer,
       presentingFlag: scene.game?._presentingFlag || null,
+      // Also in its boot (SST-1); here until the renderer reads them there.
       engineShaders: bundleEngineShaders(),
     },
     transferables
@@ -803,14 +860,32 @@ export async function reserveBox2dBlock(scene) {
   return scene.box2dBlock;
 }
 
-export async function createSceneWorkers(scene) {
+/**
+ * SST-1: make the engine workers and post each its 'boot' (postBootMessages) at once, at the top of Scene.init: their
+ * own start (modules, game scripts, kernels, the renderer's GPU) runs while the page loads the assets. Their messages
+ * reach the scene from now on (an error in a boot shows). The physics worker keeps its own path (reserveBox2dBlock,
+ * else createSceneWorkers).
+ */
+export async function bootSceneWorkers(scene) {
   const { useInlineWorkers, cacheBust } = await workerMode();
   if (useInlineWorkers) debugWorkerLog('[Scene] Using inline workers (single-file bundle mode)');
-
-  const makeWorker = createSceneWorkerFactory(useInlineWorkers, cacheBust);
-  createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBust);
+  createSceneWorkerInstances(scene, createSceneWorkerFactory(useInlineWorkers, cacheBust));
   attachEarlyWorkerErrorHandlers(scene);
+  const workers = bootedWorkers(scene);
+  for (const worker of workers) {
+    worker.onmessage = (e) => {
+      scene.handleMessageFromWorker(e);
+    };
+  }
   loadMark('workers made');
+  postBootMessages(scene, workers);
+  loadMark('boot sent');
+}
+
+export async function createSceneWorkers(scene) {
+  if (!scene.workers.renderer) await bootSceneWorkers(scene);
+  const { useInlineWorkers, cacheBust } = await workerMode();
+  ensurePhysicsWorker(scene, useInlineWorkers, cacheBust);
 
   const spritesheetConfigs = scene.imageUrls.spritesheets || {};
   // preloadAssets overlaps atlas ∥ audio ∥ tilemaps ∥ flowfields ∥ shaders
@@ -827,9 +902,7 @@ export async function createSceneWorkers(scene) {
   const scriptsToLoad = collectWorkerScriptsToLoad(scene, origin);
   const workerPorts = scene.setupWorkerCommunication();
   const sharedBuffers = buildSceneSharedBuffers(scene);
-  // SST-2: started by GameEngine.loadScene, long done by now.
-  const engineWasm = await compileEngineWasm();
-  const initData = buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad, engineWasm);
+  const initData = buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad);
 
   loadMark('init data');
   initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts);

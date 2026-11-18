@@ -20,7 +20,7 @@ import {
 
 const names = (marks) => marks.filter((_, i) => i % 2 === 0);
 
-/** A spatial worker initialized as the scene does, with `engineWasm` posted to it (null: none). */
+/** A spatial worker booted and initialized as the scene does, `engineWasm` in its boot (null: none). */
 async function initSpatialWorker(engineWasm) {
   const first = await loadWorker('spatialWorker.js', 'spatialWorker');
   const worker = await quietly(() => new first.constructor(globalThis.self));
@@ -31,12 +31,14 @@ async function initSpatialWorker(engineWasm) {
   buffers.componentData = coreComponentData(n);
   takeLoadMarks();
   postedMessages().length = 0;
+  const config = { worldWidth: spatial.worldWidth, worldHeight: spatial.worldHeight, spatial, entityIdWidth: 16 };
+  await quietly(() => worker.handleMessage({ data: { msg: 'boot', workerName: 'spatial0', config, engineWasm } }));
   await initWorker(worker, {
-    config: { worldWidth: spatial.worldWidth, worldHeight: spatial.worldHeight, spatial, entityIdWidth: 16 },
+    config,
     globalEntityCount: n,
     buffers,
     gridMetadata,
-    extra: { workerIndex: 0, totalSpatialWorkers: 1, spatialPublishMemory: mem.memory, engineWasm },
+    extra: { workerIndex: 0, totalSpatialWorkers: 1, spatialPublishMemory: mem.memory },
   });
   // Its marks went to the page with its ready message; any after it are still here.
   const ready = postedMessages().filter((m) => m.msg === 'workerReady').pop();

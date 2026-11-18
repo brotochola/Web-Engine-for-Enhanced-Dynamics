@@ -72,7 +72,7 @@ import {
 } from '../util/sceneBufferMemory.js';
 import { createSceneSharedBuffers, sceneEntitySlots, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
 import { bindEntityIdWidth, resolveEntityIdWidth, declaredEntityCount, EntityIdArray } from '../util/entityIdWidth.js';
-import { createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
+import { bootSceneWorkers, createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
 import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
 import {
   bindFrameClock,
@@ -1199,6 +1199,10 @@ class Scene {
       }
       throw new Error(isolationError);
     }
+
+    // SST-1: the engine workers first, each booted at once (sceneWorkerBootstrap.js bootSceneWorkers): their own start
+    // (modules, game scripts, engine.wasm, the renderer's GPU) runs while this thread loads the assets.
+    await bootSceneWorkers(this);
 
     // N-73: the Adobe Animate assets are fetched and compiled from here, alongside the audio and the scripts, and
     // awaited before the render queue is sized: its auto size counts each character's largest frame of pieces.
