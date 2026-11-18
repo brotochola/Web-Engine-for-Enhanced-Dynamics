@@ -1,4 +1,4 @@
-// SST-5 step 4: a baked atlas (config.assets.bigAtlas: the PNG and JSON scripts/bakeBigAtlas.mjs wrote) loaded without
+// SST-5 step 4: a baked atlas (a scene's assets.bigAtlas, the PNG and JSON the bake wrote) loaded without
 // drawing it into a 2D canvas on the page. The renderer gets the PNG decoded by the browser (createImageBitmap decodes
 // off the main thread); the pixels the page needs besides (the decal textures, and the frame texels a bake from before
 // H-EDGE lacks) are read in the atlas worker from the same PNG, or on the page when there is no worker.
