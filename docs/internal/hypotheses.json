@@ -21848,7 +21848,8 @@
       ],
       "records": [
         "R-1302",
-        "R-1304"
+        "R-1304",
+        "R-1345"
       ],
       "result": "kept: on the Intel HD 620 the unshaded halves 0.873 -> 0.335 ms a drawn frame, drawn +4.5 % (R-1302); captures identical",
       "next": "",
@@ -21868,7 +21869,8 @@
       ],
       "records": [
         "R-1303",
-        "R-1305"
+        "R-1305",
+        "R-1345"
       ],
       "result": "kept: Buenos Aires on the Intel HD 620 27.8 -> 34.3 drawn fps (+25.5 %, R-1303); identical where no light sets a shorter shadowRange",
       "next": "",
@@ -35829,6 +35831,15 @@
       "commits": [
         "d30be522"
       ]
+    },
+    {
+      "id": "R-1345",
+      "date": "2026-11-18",
+      "time": "01:36",
+      "timeFrom": "recorded",
+      "title": "E-509 and E-510 confirmed on the GTX 1650: E-510 GPU frame 4.72 -> 4.26 ms (lamps' atlas -47 %), E-509 unshaded halves 0.16 -> 0.09 ms (-45 %)",
+      "verdict": "kept",
+      "text": "**E-509 and E-510 confirmed on the GTX 1650.** The owner asked whether changes kept on the HD 620's numbers win on the main PC too. These two had only single GTX runs at mixed clocks (the barrio session's notes). The base was main c0150efb against main with each merge reverted (`git revert -m 1`: E-509 a79a202b, E-510 3063c42e), the barrio at `hour=22&dayMinutes=0`, camera still, glFrameRecorder, 2026-11-18 01:23 to 01:36.\n\n**E-510** (the lamps' map honours shadowRange), `--gpu-passes`, 3 rotated rounds, GPU ms a frame, without → with:\n\n| Pass | Without E-510 (3 rounds) | With E-510 (3 rounds) | Means | Change |\n|---|---|---|---|---|\n| Lamps' atlas | 1.212, 1.086, 1.068 | 0.592, 0.580, 0.599 | 1.12 → 0.59 | −47 % |\n| Light pass | 1.109, 0.986, 1.038 | 0.843, 0.717, 0.986 | 1.04 → 0.85 | −19 % |\n| GPU frame | 4.965, 4.548, 4.641 | 4.271, 4.038, 4.481 | 4.72 → 4.26 | −10 % |\n\nWithout E-510 the atlas target is 4096 × 2048, against 4096 × 512 with it.\n\n**E-509** (the unshaded composite discards where nothing is unshaded), `--gpu-draws`, A B A B, the unshaded halves (the uLight + uUnshaded draws 11 and 12):\n\n| | Run 1 | Run 2 |\n|---|---|---|\n| Without E-509 | 0.161 ms | 0.166 ms |\n| With E-509 | 0.095 ms | 0.084 ms |\n\nThat is −45 %, about 0.07 ms a frame. The light-only halves beside them are unchanged (0.084, 0.071 against 0.087, 0.078). In `--gpu-passes` the change hides inside the 1.7 ms canvas pass.\n\nBoth stay kept on the main PC's own numbers."
     }
   ],
   "leads": [
