@@ -22362,7 +22362,8 @@
         "R-1351",
         "R-1353",
         "R-1354",
-        "R-1355"
+        "R-1355",
+        "R-1358"
       ]
     },
     {
@@ -22406,6 +22407,26 @@
       "date": "2026-11-18",
       "title": "The shading a sprite's normals cause takes an amount subtracted (never under 0) and a strength, for the sun and for the lamps apart (lighting.normalShading), so only the faces turned away from a light darken: the owner's ask, from OL-2's pictures",
       "statusText": "Asked by the owner and written 2026-11-18 on dx/one-light (2696eafe), suites green, the formula checked on both backends; the owner has not picked the numbers; not timed; not merged"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "cookies without casters",
+        "empty shadow layer cookies",
+        "cookie pass walls"
+      ],
+      "records": [
+        "R-1358"
+      ],
+      "result": "visPolyStressScene ?lights=360&arm=walls (GTX 1650): the 960x540 cookie pass 0.339 ms of GPU a frame before, no draw after; the picture the same (0 px, WebGL and WebGPU). The frame's GPU total 3.65 and 3.89 ms before, 2.04 and 3.41 after (a reading: it moves by more than the pass).",
+      "next": "Its place in the branch's sitting (the owner scenes with an A/A, the Predator gate: Predator always has casters, so its cookies stay).",
+      "id": "OL-7",
+      "kind": "speed",
+      "area": "render",
+      "status": "kept-hygiene",
+      "date": "2026-11-18",
+      "title": "The lamps' cookies are not packed in a frame with no sun caster and no stamp: they lighten what the casters drew on the shadows' layer, and on an empty layer they were a pass that changed no pixel (every scene of walls since OL-4)",
+      "statusText": "Kept as hygiene 2026-11-18 on dx/one-light: the pass is gone and the picture is byte for byte the same; not merged"
     },
     {
       "refs": [],
@@ -36071,6 +36092,18 @@
       "text": "**OL-6 asked by the owner and built the same day (2696eafe): `lighting.normalShading { sun: { strength, subtract }, lamps: { strength, subtract } }` replaces `lighting.normalStrength`. Not timed; the owner has not picked the sun's two numbers.**\n\n- **The ask (2026-11-18, in conversation):** full strength on the sun darkens everything; instead of only attenuating the shading the normals cause, take a fixed amount off it (what falls under 0 stays 0) and let the strength multiply it, for the sun and for the lamps. `wrap` was found unclear as a name; the owner asked for a descriptive one.\n- **The rule built:** `shading' = max(0, shading - subtract) * strength`. The subtraction first (the owner wrote the product first): so `subtract` alone says from how much shading a face shows any. The sun's shading is measured against the sun the pixel gets as drawn, in shares of the sun (0 to `1 - sun.skyLight`); a face that gains from its normal keeps its gain, by the strength alone, so strength 1 with nothing subtracted is the old full strength. A lamp's is `1 - cosine`, a lamp at a time.\n- **The name:** the path says what is shaded and by what, the leaves say the arithmetic. `lighting.normalStrength` goes without a retired text (it never left the branch).\n- **Light bench at 16:00** (sun 45° high), the view's pixels that change and the light they lose there, against as drawn:\n\n| sun | view that changes | light lost there |\n| --- | --- | --- |\n| strength 1, nothing subtracted (the old full strength) | 20.3 % | 43.5 % |\n| strength 0.8, subtract 0.2 (the owner's first numbers) | 16.5 % | 24.0 % |\n| strength 1, subtract 0.3 | 16.3 % | 21.8 % |\n\n  The barn's roof keeps its dark slope; trees, cars and people stay near as drawn.\n- **Checked:** `normalLightCheck` (it takes `--subtract` now) on WebGL and WebGPU, sun and lamp, at strength 0,1; 1,1; 1,1 with 0.2,0.3 subtracted; 0.8,0.6 with 0.2,0.1 subtracted: worst 4.0 of 255, the maps' own steps as before. dxCaptureScene at noon and by night against the commit before: 0 of 921 600 px. node 3073, demos 121, types.\n- **Next:** the owner picks the sun's two numbers from the bench (its Scene section has the four knobs); the light pass's time on both backends and the Predator gate with the branch.",
       "commits": [
         "2696eafe"
+      ]
+    },
+    {
+      "id": "R-1358",
+      "date": "2026-11-18",
+      "time": "05:13",
+      "timeFrom": "recorded",
+      "title": "OL-7 kept as hygiene: no cookies in a frame with nothing on the shadows' layer; the 960x540 pass 0.339 ms of GPU before, no draw after, the picture the same (0 px)",
+      "verdict": "kept-hygiene",
+      "text": "**OL-7 kept as hygiene on dx/one-light: no cookies in a frame with nothing on the shadows' layer. The 960x540 pass R-1354 pointed at (1 draw, 20 instances) is gone: 0.339 ms of GPU a frame before, no draw after; the picture is the same (0 px).**\n\n- **What it was:** R-1354's reading of the walls in the light pass showed a pass the old fan pass did not have, 0.44 ms at 960x540 with 20 instances. It is the lamps' cookies: each lightens what the casters drew on the shadows' layer inside its lamp's pool (N-154), and this scene draws nothing there. Under the old pass they were not made (N-134); since OL-4 a scene of walls makes them as any scene does.\n- **The change:** `_packGpuShadows` packs the cookies only when a sun caster or a stamp went out. Engine-wide: any scene with casting lamps and no caster in view stops drawing them.\n- **Read** (visPolyStressScene `?lights=360&arm=walls`, GTX 1650 on AC, `glFrameRecorder --gpu-passes`, 5 s + 3 s, two runs a side in turn, 05:11 to 05:13, the GPU at P5 in all four):\n\n| | before | after |\n| --- | --- | --- |\n| the 960x540 pass | 0.339, 0.339 ms (1 draw, 20 instances) | 0.008, 0.009 ms (no draw) |\n| the frame's GPU time | 3.654, 3.885 ms | 2.036, 3.412 ms |\n\n- **How to read it:** the pass's own time is steady and is the result. The frame's total moves from run to run by more than the pass (a TIME_ELAPSED range counts the GPU's idle gaps), so it is a reading: no percentage is claimed for the frame.\n- **Same picture:** before against after 0 of 921 600 px on WebGL and on WebGPU; dxCaptureScene at noon and by night (casters there, the cookies stay) 0 px. node 3076, demos 121; `tests/node/cookiesNeedCasters.test.js` fails on the old code.\n- **Left of R-1354's list:** the G-buffer pass (the ids a wall's own pixels need), the rows' upload (644 KB a frame at 360 lights) and pre-render's row build in JS (+0.65 ms).",
+      "commits": [
+        "7ea867fa"
       ]
     }
   ],
