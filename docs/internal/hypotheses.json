@@ -22244,10 +22244,10 @@
       "id": "DX-ONELIGHT",
       "title": "One light system for every camera: a flat view (camera.pitch 90 or 0) gets the same lighting options as any other camera (normal and height maps, unshaded, the shadow maps, sprite and height map shadows from the lamps), raycasted lighting stops being a pass of its own, and the engine stops inventing what the developer did not bring (the self-lit fill's sphere normal, the automatic strength of a sprite's normals)",
       "status": "open",
-      "statusText": "Owner-approved plan (2026-11-17), revised and built from 2026-11-18 on dx/one-light: OL-1, OL-2, OL-4 (final B, by eye), OL-5 and OL-6 are written, with the suites and captures; the owner has seen the first pictures (sun normals off by default, walls lit to a depth preferred, both as knobs; OL-6 asked for); only first readings are timed (the owner's order: the code first, measuring and optimizing after); not merged",
+      "statusText": "Owner-approved plan (2026-11-17), revised and built from 2026-11-18 on dx/one-light: OL-1, OL-2, OL-4 (final B, by eye), OL-5 and OL-6 are written and OL-7 to OL-10 optimized the walls (a still scene now cheaper than the old fan pass in pre-render and in Pixi); main merged in (02f319b3); the owner has seen the first pictures; the shaders pass on the four GPUs (the ASUS's jobs 0896d to 0896k); not merged",
       "date": "2026-11-17",
       "result": "",
-      "next": "To merge: the optimizing the first readings ask for (the walls' rows built in JS, +0.65 ms of pre-render at 360 lights; a 960x540 pass of 0.44 ms on the GPU with nothing casting), the owner scenes timed with an A/A and the Predator gate, main merged in, the bundles. After it or before: OL-3 (the race) and the deletion of the old pass. The owner's open decisions are in the plan's section 5, what was found in its section 7.",
+      "next": "To merge: the owner's OK on pictures and numbers, his two numbers for the sun's normals (OL-6) and the third a wall's shadow keeps (OL-4); the Predator gate at crowd=2.5 with its A/A; the bundles. After the merge or before: OL-3 (the race), the sweep's kernel writing a moving lamp's row, the deletion of the old pass.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22345,10 +22345,10 @@
       "id": "OL-4",
       "title": "The flat view on the common light pass: lighting.raycasted no longer picks the pass, a wall stops a lamp through the lamps' maps (final A) or through the sweep's result read by the light pass (final B), and the fans, the self-lit fills, the wedges and their shaders are deleted (about 2 000 lines in final B; about 5 000 and 3 500 of tests in final A)",
       "status": "open",
-      "statusText": "Written 2026-11-18 on dx/one-light as final B, picked by eye (9186550f, e57d6659, 94e31445, f56792f2), suites green, every moved scene drawing; the owner prefers a wall lit to a depth (houses and rocks), both looks kept as knobs; first readings only (pre-render +0.65 ms, Pixi +0.2 ms, GPU +0.24 ms a frame at 360 lights, no sitting); the old pass still behind debug.lightFans; not merged",
+      "statusText": "Written 2026-11-18 on dx/one-light as final B, picked by eye, then optimized the same day (OL-7 to OL-10): on a still scene of walls it costs less than the old fan pass in both workers (pre-render -41.6 %, Pixi -44.9 % at 720 lights), with every lamp moving about +20 % in pre-render; the owner prefers a wall lit to a depth, both looks as knobs; the old pass still behind debug.lightFans; not merged",
       "date": "2026-11-17",
       "result": "lighting.walls asks for walls whatever the camera; pre-render publishes a row a lamp (lampWallRow.js) and the light pass reads it (WALLS variant, WebGL and WebGPU: 19 of 921 600 px differ, by 3 of 255 at most). A wall's own sprite is lit whole (the G-buffer's id) or, with lighting.wallDepth, the light enters every wall that many px (a wall drawn by a mesh has no id). Walls work on any floor scale, so oblique cameras have them too. Pitch 0 is a flat view by itself.",
-      "next": "The owner's last decision here (the third of the lamp a wall's shadow keeps). Then the measuring: the race (OL-3) with this pass as an arm, the owner scenes by their worker and by the GPU's time a frame (A/A, ?lights=720, both backends), the Predator gate; the optimizing (the rows' build in JS, +0.65 ms; the rows' upload, 644 KB a frame at 360 lights; a 960x540 pass of 0.44 ms that looks like the lamps' cookies with nothing casting); and only then the deletion. Closes N-38 and N-163 by deletion.",
+      "next": "The owner's last decision here (the third of the lamp a wall's shadow keeps) and his OK on pictures and numbers. The Predator gate at a load over the floor (crowd=2.5) with its A/A, the bundles, the merge. After it or before: the race (OL-3), the sweep's kernel writing a moving lamp's row, the deletion of the old pass. Closes N-38 and N-163 by deletion.",
       "area": "render",
       "kind": "feature",
       "refs": [
@@ -22369,7 +22369,8 @@
         "R-1358",
         "R-1359",
         "R-1400",
-        "R-1402"
+        "R-1402",
+        "R-1403"
       ]
     },
     {
@@ -22463,7 +22464,8 @@
         "sweep skipped"
       ],
       "records": [
-        "R-1402"
+        "R-1402",
+        "R-1403"
       ],
       "result": "visPolyStressScene ?lights=720&arm=walls, ?wallCache=0 against the default: pre-render 6.061 -> 2.982 ms with the lamps still (-51.4 %, 4 of 4 pairs, limit 4.6 %), 5.581 -> 5.784 ms with every lamp moving (+2.5 %, inside the limit). The rows are the same bit for bit (a real worker, both gathers, every kind of change).",
       "next": "Merged with dx/one-light. Then Pixi: a frame whose rows are all kept need not read or upload them (its +16 % over the fans, R-1400); and the sweep's kernel writing a moving lamp's row.",
@@ -22474,6 +22476,26 @@
       "date": "2026-11-18",
       "title": "A lamp's row is kept while what goes into its sweep is the same (lighting.wallCache): a signature of the lamp, its walls and their codes after the gather; a still lamp among still walls is not swept and its row is not rebuilt",
       "statusText": "Kept 2026-11-18 on dx/one-light (f37e693d): the scene, and the rows bit for bit against the uncached path; not merged"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "wall rows upload skipped",
+        "frame signature rows",
+        "rows not uploaded"
+      ],
+      "records": [
+        "R-1403"
+      ],
+      "result": "visPolyStressScene ?lights=720&arm=walls, ?wallCache=0 against the default: Pixi 1.601 -> 0.626 ms (-61.1 %, 4 of 4 pairs; under the 6 ms floor, read not judged), no row uploaded (770 -> 127.5 KB of textures a frame at 360 lights). With OL-9, fans against walls on a still scene: pre-render 5.117 -> 2.959 ms (-41.6 %), Pixi 1.207 -> 0.662 ms (-44.9 %).",
+      "next": "Merged with dx/one-light.",
+      "id": "OL-10",
+      "kind": "speed",
+      "area": "pixi",
+      "status": "kept",
+      "date": "2026-11-18",
+      "title": "Pixi neither copies nor uploads a frame's rows when they are the rows it sent last: pre-render signs each frame's rows (its lamps in order, each row's signature) in the rows' header",
+      "statusText": "Kept 2026-11-18 on dx/one-light (fef43402): the pairs agree and the upload is gone; Pixi is under the 6 ms floor, so the tool does not judge it; not merged"
     },
     {
       "refs": [],
@@ -36728,6 +36750,18 @@
       "commits": [
         "f37e693d",
         "efef1f5e"
+      ]
+    },
+    {
+      "id": "R-1403",
+      "date": "2026-11-18",
+      "time": "06:52",
+      "timeFrom": "recorded",
+      "title": "OL-10 kept: Pixi does not upload a frame's rows it already sent; with OL-9 a still scene of walls beats the fans: pre-render 5.117 -> 2.959 ms (-41.6 %), Pixi 1.207 -> 0.662 ms (-44.9 %) at 720 lights",
+      "verdict": "kept",
+      "text": "**OL-10 kept: Pixi neither copies nor uploads a frame's rows when they are the rows it sent last. With OL-9, a still scene of walls now costs less than the old fan pass in both workers: pre-render 5.117 -> 2.959 ms (-41.6 %) and Pixi 1.207 -> 0.662 ms (-44.9 %) at 720 lights. Pixi's rows are under the 6 ms floor: read, not judged.**\n\n- **What it was:** R-1400 read Pixi at +16.1 % over the fans: every row in use copied and uploaded each frame, a still scene's included (644 KB a frame at 360 lights, R-1354).\n- **The change (fef43402):** pre-render signs each frame's rows in the rows' header (its lamps in order and the signature each row was written from, OL-9's; a frame with a row of no signature carries a count, second word 0). Pixi returns from `_readWallRows` when the signature is that of the rows it sent last.\n- **Uploaded a frame** (`glFrameRecorder`, visPolyStressScene `?lights=360&arm=walls`, 180 frames): 770.3 KB of textures with `?wallCache=0` (643.6 KB of it the rows), 127.5 KB with the cache: no row goes up.\n- **Sittings** (visPolyStressScene `?lights=720`, one build fef43402, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs each; pre-render's detection limit 4.6 % from the session's A/A, R-1359):\n\n| sitting | worker | A | B | paired | each pair |\n| --- | --- | --- | --- | --- | --- |\n| walls, `?wallCache=0` against the default (06:41 to 06:46) | pre-render | 6.093 ms | 2.865 ms | -53.4 % | -52.6, -54.2, -51.9, -54.6 |\n| | Pixi | 1.601 ms | 0.626 ms | -61.1 % | -59.3, -63.0, -59.1, -65.7 |\n| `?arm=fans` against `?arm=walls` (06:47 to 06:52) | pre-render | 5.117 ms | 2.959 ms | -41.6 % | -44.0, -40.3, -42.2, -41.0 |\n| | Pixi | 1.207 ms | 0.662 ms | -44.9 % | -55.5, -43.2, -46.3, -43.6 |\n\n  Spatial, which neither knob reaches, reads -0.9 % and +1.4 %.\n- **How to read it:** Pixi's rows are under the 6 ms floor on both sides, and so is pre-render's fans side (5.1 ms): the tool judges neither. The pairs agree to a few points, the mechanism is counted (644 KB a frame no longer uploaded), and a heavier load could not turn -61 % into a loss: kept without the heavier run.\n- **Against R-1400** (the same two arms before OL-9 and OL-10: pre-render +21.9 %, Pixi +16.1 %): the walls went from dearer than the fans to cheaper, on a still scene. With every lamp moving nothing is kept and R-1400's reading stands (OL-9's moving sitting: +2.5 % over the uncached path, inside the limit).\n- **Correctness:** `tests/node/wallRowsUpload.test.js` (real workers: still frames sign alike in both buffers; a moved wall, a moved lamp and the cache off change or drop the signature; Pixi uploads once for frames that sign alike). Browser: `?wallCache=0` against the default, 0 of 921 600 px on WebGL and WebGPU.",
+      "commits": [
+        "fef43402"
       ]
     }
   ],
