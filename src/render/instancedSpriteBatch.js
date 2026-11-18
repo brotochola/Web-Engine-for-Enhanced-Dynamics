@@ -2540,11 +2540,7 @@ export class InstancedSpriteBatch {
    */
   makeKeyedSunShader(sun) {
     if (!this.keyedShadows || !sun) return null;
-    // E-201: a by-row batch's keyed frames are drawn by queue row, and so is their sun pass.
-    const program = this._keyedShadowProgram(
-      this.posesByRow ? { shadow: true, poseBlock: this._poseBlock } : { shadow: true },
-      `${this._label}-keyed-sun`
-    );
+    const program = this._keyedSunProgram();
     if (program === null) return null;
     if (this._keyedSunShader === null) {
       const r = sun.resources;
@@ -2575,10 +2571,7 @@ export class InstancedSpriteBatch {
     if (!this.keyed || !sun) return null;
     const i = light ? 1 : 0;
     if (this._keyedCasterShaders[i] === null) {
-      const program = this._keyedShadowProgram(
-        { shadow: true, casterRows: true, light },
-        `${this._label}-keyed-${light ? 'stamp' : 'sun'}-rows`
-      );
+      const program = this._keyedCasterProgram(light);
       if (program === null) return null;
       const r = sun.resources;
       this._keyedCasterShaders[i] = new Shader({
@@ -2634,6 +2627,49 @@ export class InstancedSpriteBatch {
    * @param {{ shadow: boolean, casterRows?: boolean, light?: boolean }} opts
    * @param {string} name
    */
+  /**
+   * SST-7 step 3: what the batch's mesh draws with, a frame's kind each (plain, indexed, by row): its program and a geometry
+   * of that layout (both ring slots share it), for building the render pipelines ahead.
+   * @returns {{ shader: Shader, geometry: Geometry }[]}
+   */
+  drawVariants() {
+    const out = [{ shader: this.shader, geometry: this._geometries[0] }];
+    if (this._indexedShader !== null) out.push({ shader: this._indexedShader, geometry: this._indexedGeometries[0] });
+    if (this._rowShader !== null) out.push({ shader: this._rowShader, geometry: this._rowGeometries[0] });
+    return out;
+  }
+
+  /** E-191: the keyed sun pass's program (E-201: a by-row batch's keyed frames are drawn by queue row, and so is it). */
+  _keyedSunProgram() {
+    return this._keyedShadowProgram(
+      this.posesByRow ? { shadow: true, poseBlock: this._poseBlock } : { shadow: true },
+      `${this._label}-keyed-sun`
+    );
+  }
+
+  /** E-191 step 2: the keyed caster rows' program, the sun's or (`light`) the stamps'. */
+  _keyedCasterProgram(light) {
+    return this._keyedShadowProgram(
+      { shadow: true, casterRows: true, light },
+      `${this._label}-keyed-${light ? 'stamp' : 'sun'}-rows`
+    );
+  }
+
+  /**
+   * E-494: the programs the sun pass makes on its first use over this batch's keyed instances, made now with the same
+   * sources and names (GlProgram.from on WebGL), so the caller links them before the first frame: `sun`, the keyed sun
+   * pass's (where enableKeyedShadows can turn it on); `casters`, the keyed caster rows' two (makeKeyedCasterShader).
+   * @param {boolean} sun
+   * @param {boolean} casters
+   */
+  makeKeyedShadowPrograms(sun, casters) {
+    if (sun && this.keyed && this._sharedShadow.length > 0) this._keyedSunProgram();
+    if (casters && this.keyed) {
+      this._keyedCasterProgram(false);
+      this._keyedCasterProgram(true);
+    }
+  }
+
   _keyedShadowProgram(opts, name) {
     const shaders = this._engineShaders;
     if (this._useWebGpu) {

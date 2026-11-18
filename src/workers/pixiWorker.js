@@ -30,7 +30,8 @@ import { ShadowCaster } from '../components/shadowCaster.js';
 import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
 import { MeshGeometry } from '../core/meshGeometry.js';
-import { MeshUvFillBatch } from '../render/meshUvFillBatch.js';
+import { MeshUvFillBatch, meshUvFillProgram } from '../render/meshUvFillBatch.js';
+import { proxyTexturesByPrefix } from '../render/atlasProxyTextures.js';
 import { Sun } from '../core/sun.js';
 
 import {
@@ -395,6 +396,18 @@ function fetchEngineShader(path) {
   });
 }
 
+/**
+ * The blend mode Pixi draws a mesh with as a child: its own, or the nearest parent's where it inherits (Pixi's
+ * groupBlendMode); normal at the top.
+ */
+function drawnBlendMode(container) {
+  for (let c = container; c; c = c.parent) {
+    const mode = c.localBlendMode;
+    if (mode && mode !== 'inherit') return mode;
+  }
+  return 'normal';
+}
+
 // OPTIMIZED: Pre-defined comparator function for light sorting (avoids closure allocation per frame)
 function sortPrefixByDistSq(arr, count) {
   const n = count | 0;
@@ -558,6 +571,12 @@ class PixiRenderer extends AbstractWorker {
     // E-475: the WebGL programs made while the worker starts (GlProgram.weedMade), linked together before it reports
     // ready (_linkProgramsAhead).
     this._madePrograms = [];
+    // SST-1: the backend (rendererBackend.js) and the engine shaders' sources by key, from boot; an error boot met, which
+    // initialize reports (null: none).
+    this._rendererBackend = '';
+    this._useWebGpu = false;
+    this._engineShaders = {};
+    this._bootError = null;
     // The glow batch's rows in the render-queue memory (pixi pack mode), or null.
     this._pixiGlowRows = null;
     // W30. The batches Pixi fills from the render-queue memory keep their arrays in private WebAssembly.Memories, copied
@@ -4123,11 +4142,14 @@ class PixiRenderer extends AbstractWorker {
   _submitRender(opts) {
     if (!this._gpuLive()) return false;
     this.pixiApp.renderer.render(opts);
-    if (this._loadMarksOpen && !this.isPaused) this._postFirstDrawMarks();
     return true;
   }
 
-  /** SST-0: the first frame drawn once the game runs ends the load waterfall: its marks go to the page. */
+  /**
+   * SST-0: the first frame drawn once the game runs ends the load waterfall: its marks go to the page. Tested once a frame,
+   * after the stage's present (_presentStage): a scene without passes into targets (bunnyMark) presents through Pixi's own
+   * render (_pixiPresent), which never goes through _submitRender.
+   */
   _postFirstDrawMarks() {
     this._loadMarksOpen = false;
     loadMark('first draw');
@@ -4155,15 +4177,17 @@ class PixiRenderer extends AbstractWorker {
   _presentStage() {
     if (!this._gpuLive()) return;
     // DX-POST: one test a frame without SCREEN layers; the present as before.
-    if (this._screenLayers.length > 0 && this._presentThroughScreenLayers()) return;
-    const present = this._pixiPresent;
-    if (present) {
-      present();
-      return;
+    const throughScreenLayers = this._screenLayers.length > 0 && this._presentThroughScreenLayers();
+    if (!throughScreenLayers) {
+      if (this._pixiPresent !== null) {
+        this._pixiPresent();
+      } else {
+        const app = this.pixiApp;
+        if (!app?.renderer || !app.stage) return;
+        this._submitRender(app.stage);
+      }
     }
-    const app = this.pixiApp;
-    if (!app?.renderer || !app.stage) return;
-    this._submitRender(app.stage);
+    if (this._loadMarksOpen && !this.isPaused) this._postFirstDrawMarks();
   }
 
   _takePresentOwnership() {
@@ -5561,6 +5585,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     });
     if (this.gpuCasterBatch.shadowShader && this.gpuCasterBatch.mesh) {
       this.gpuCasterBatch.mesh.shader = this.gpuCasterBatch.shadowShader;
+      // E-494: its sprite program is never drawn (the batch draws casters only): not linked ahead, unless another batch's
+      // is the same program (GlProgram.from).
+      this._leaveOutOfLinksAhead(this.gpuCasterBatch.shader, [this.shadowBatch.shader]);
     }
 
     this.shadowDisplaySprite = new PIXI.Sprite(this.shadowRT);
@@ -5806,6 +5833,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return false;
   }
 
+  /** DX-SHADOW3D: the sun map's volumes' program as a Shader's options (GlProgram.from: one program for every layer). */
+  _sunMapVolumeProgram() {
+    const shaders = this._engineShaders;
+    if (this._useWebGpu) {
+      return { gpuProgram: volumeMapGpuProgram(GpuProgram, volumeMapWgsl(shaders.meshUvFill), 'mainFragMap', 'sun-map-volumes') };
+    }
+    return {
+      glProgram: PIXI.GlProgram.from({
+        vertex: volumeMapVertex(shaders.meshUvFillVert),
+        fragment: VOLUME_MAP_FRAGMENT,
+        name: 'sun-map-volumes',
+      }),
+    };
+  }
+
   _drawVolumesInSunMap(rtOpts, screenScale) {
     const shaders = this._engineShaders;
     if (!(this._useWebGpu ? shaders?.meshUvFill : shaders?.meshUvFillVert)) return;
@@ -5823,17 +5865,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (entry === null) {
         const r = batch.shader.resources;
         const terms = new Float32Array(4);
-        const program = this._useWebGpu
-          ? { gpuProgram: volumeMapGpuProgram(GpuProgram, volumeMapWgsl(shaders.meshUvFill), 'mainFragMap', 'sun-map-volumes') }
-          : {
-              glProgram: PIXI.GlProgram.from({
-                vertex: volumeMapVertex(shaders.meshUvFillVert),
-                fragment: VOLUME_MAP_FRAGMENT,
-                name: 'sun-map-volumes',
-              }),
-            };
         const shader = new PIXI.Shader({
-          ...program,
+          ...this._sunMapVolumeProgram(),
           resources: {
             uTexture: r.uTexture,
             uSampler: r.uSampler,
@@ -6456,6 +6489,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (typeof target.destroy === 'function') target.destroy();
   }
 
+  /** E-508: the cache's copy's program as a Shader's options (volumeShadowMap.js LAMP_CACHE_COPY_*). */
+  _lampCacheCopyProgram() {
+    if (this._useWebGpu) return { gpuProgram: lampCacheCopyGpuProgram(GpuProgram, 'lamp-map-volume-copy') };
+    return {
+      glProgram: PIXI.GlProgram.from({
+        vertex: LAMP_CACHE_COPY_VERTEX,
+        fragment: LAMP_CACHE_COPY_FRAGMENT,
+        name: 'lamp-map-volume-copy',
+      }),
+    };
+  }
+
   /**
    * E-508: the copy's mesh (made once): a quad an instance (a cached lamp), its program (volumeShadowMap.js
    * LAMP_CACHE_COPY_*), the tiles' texture, the cache's two colours and its terms (lampCopy: uLampVolume), the depth test
@@ -6463,15 +6508,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   _lampCacheCopyMesh() {
     if (this._lampCacheCopy !== null) return this._lampCacheCopy;
-    const program = this._useWebGpu
-      ? { gpuProgram: lampCacheCopyGpuProgram(GpuProgram, 'lamp-map-volume-copy') }
-      : {
-          glProgram: PIXI.GlProgram.from({
-            vertex: LAMP_CACHE_COPY_VERTEX,
-            fragment: LAMP_CACHE_COPY_FRAGMENT,
-            name: 'lamp-map-volume-copy',
-          }),
-        };
+    const program = this._lampCacheCopyProgram();
     const quad = new Buffer({ data: new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), usage: BufferUsage.VERTEX, label: 'lamp-cache-quad' });
     const geometry = new PIXI.Geometry({
       attributes: { aPosition: { buffer: quad, format: 'float32x2', stride: 8, offset: 0 } },
@@ -6537,6 +6574,34 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * cache's paint's (two colours). The programs and state are made once.
    */
   _volumeLampMesh(batch, host, geometry, cache) {
+    this._makeVolumeLampPrograms();
+    const r = batch.shader.resources;
+    const shader = new PIXI.Shader({
+      ...(cache ? this._volumeLampCacheProgram : this._volumeLampProgram),
+      resources: {
+        uTexture: r.uTexture,
+        uSampler: r.uSampler,
+        uTexLut: r.uTexLut,
+        uPoseTable: r.uPoseTable,
+        uLampTiles: this._lampTileSource,
+        // No tile in use until the frame writes this mesh's terms (writeVolumeLampTerms).
+        sunShadow: {
+          uSunShadow: { value: new Float32Array(4), type: 'vec4<f32>' },
+          uLampVolume: { value: new Float32Array(4), type: 'vec4<f32>' },
+        },
+      },
+    });
+    const label = cache ? 'lamp-map-volume-cache' : 'lamp-map-volumes';
+    const mesh = new PIXI.Mesh({ geometry, shader, state: this._volumeLampState, label });
+    // A depth test keeps the highest point and its entity; a mesh's blend mode holds only as a child (the sun map's host
+    // says why).
+    mesh.blendMode = 'none';
+    host.addChild(mesh);
+    return mesh;
+  }
+
+  /** DX-SHADOW3D (F7), E-508: the lamps' map volumes' programs (direct, and the cache's paint) and their state, made once. */
+  _makeVolumeLampPrograms() {
     if (this._volumeLampProgram === null) {
       const shaders = this._engineShaders;
       this._volumeLampProgram = this._useWebGpu
@@ -6567,29 +6632,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           };
       this._volumeLampState = mapDepthState();
     }
-    const r = batch.shader.resources;
-    const shader = new PIXI.Shader({
-      ...(cache ? this._volumeLampCacheProgram : this._volumeLampProgram),
-      resources: {
-        uTexture: r.uTexture,
-        uSampler: r.uSampler,
-        uTexLut: r.uTexLut,
-        uPoseTable: r.uPoseTable,
-        uLampTiles: this._lampTileSource,
-        // No tile in use until the frame writes this mesh's terms (writeVolumeLampTerms).
-        sunShadow: {
-          uSunShadow: { value: new Float32Array(4), type: 'vec4<f32>' },
-          uLampVolume: { value: new Float32Array(4), type: 'vec4<f32>' },
-        },
-      },
-    });
-    const label = cache ? 'lamp-map-volume-cache' : 'lamp-map-volumes';
-    const mesh = new PIXI.Mesh({ geometry, shader, state: this._volumeLampState, label });
-    // A depth test keeps the highest point and its entity; a mesh's blend mode holds only as a child (the sun map's host
-    // says why).
-    mesh.blendMode = 'none';
-    host.addChild(mesh);
-    return mesh;
   }
 
   /** DX-SHADOW3D (F7): a frame with no stamp rows clears the lamps' map (once). */
@@ -6988,18 +7030,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (source.style) source.style.scaleMode = this.atlasScaleMode;
         const jsonData = data.json;
 
-        // Manually create textures for each frame
+        // Manually create textures for each frame. SST-7 step 4: one frame rectangle and one options object for all of
+        // them (a Texture copies its frame; orig and trim it keeps, a Rectangle each).
         const frameTextures = {};
-        for (const [frameName, frameData] of Object.entries(jsonData.frames)) {
+        const frameRect = new PIXI.Rectangle();
+        const textureOptions = { source, frame: frameRect, orig: undefined, trim: undefined };
+        for (const frameName in jsonData.frames) {
+          const frameData = jsonData.frames[frameName];
           const frame = frameData.frame;
           const sourceSize = frameData.sourceSize;
           const spriteSourceSize = frameData.spriteSourceSize;
-
-          // Build texture options
-          const textureOptions = {
-            source,
-            frame: new PIXI.Rectangle(frame.x, frame.y, frame.w, frame.h),
-          };
+          frameRect.x = frame.x;
+          frameRect.y = frame.y;
+          frameRect.width = frame.w;
+          frameRect.height = frame.h;
 
           // If frame is trimmed, add orig and trim for proper anchor handling
           // PixiJS uses these to offset the sprite so anchors work relative to original size
@@ -7010,6 +7054,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               spriteSourceSize.x, spriteSourceSize.y,
               spriteSourceSize.w, spriteSourceSize.h
             );
+          } else {
+            textureOptions.orig = undefined;
+            textureOptions.trim = undefined;
           }
 
           const texture = new PIXI.Texture(textureOptions);
@@ -7106,8 +7153,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           }
 
           debugWorkerLog(`✅ Built flat texture array: ${this.flatTextures.length} textures, ${animNames.length} animations`);
+          loadMark('atlas textures');
 
           this.rebuildInstancedTextureLut();
+          loadMark('texture lut');
         }
 
         // console.log(
@@ -7130,12 +7179,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         return;
       }
 
+      const texturesByPrefix = proxyTexturesByPrefix(bigAtlas.textures, proxySheets);
       for (const [proxyName, proxyData] of Object.entries(proxySheets)) {
-        const prefix = proxyData.prefix;
-
         // Extract animations from bigAtlas that match this proxy's prefix
         const proxyAnimations = {};
-        const proxyTextures = {};
+        const proxyTextures = texturesByPrefix.get(proxyData.prefix);
 
         for (const [animName, animInfo] of Object.entries(proxyData.animations)) {
           const prefixedName = animInfo.prefixedName;
@@ -7146,14 +7194,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             console.warn(
               `⚠️ Proxy "${proxyName}": Animation "${animName}" (${prefixedName}) not found in bigAtlas`
             );
-          }
-        }
-
-        // Also extract frame textures with this prefix
-        for (const [frameName, texture] of Object.entries(bigAtlas.textures)) {
-          if (frameName.startsWith(prefix)) {
-            const unprefixedName = frameName.substring(prefix.length);
-            proxyTextures[unprefixedName] = texture;
           }
         }
 
@@ -7174,6 +7214,32 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
 
     // console.log("PIXI WORKER: Finished loading all spritesheets");
+    loadMark('proxy sheets');
+  }
+
+  /**
+   * SST-7 step 1: the textures the init message brought (the atlas and its maps page, the loose textures, the tilesets)
+   * made and uploaded on the GPU here, through Pixi's texture system as a first draw would (initSource: the GL texture or
+   * the GPUTexture, and the image's upload), instead of in the first frame that draws each. Each source once.
+   */
+  _uploadAssetTextures() {
+    const textures = this.pixiApp?.renderer?.texture;
+    if (!textures || typeof textures.initSource !== 'function') return;
+    const sources = new Set();
+    for (const name in this.spritesheets) {
+      const sheet = this.spritesheets[name];
+      if (sheet && sheet.source) sources.add(sheet.source);
+    }
+    if (this.atlasMapsSource !== null) sources.add(this.atlasMapsSource);
+    for (const name in this.textures) {
+      const texture = this.textures[name];
+      if (texture && texture.source) sources.add(texture.source);
+    }
+    for (const id in this.tilemaps) {
+      const tileset = this.tilemaps[id]?.tilesetTexture;
+      if (tileset && tileset.source) sources.add(tileset.source);
+    }
+    for (const source of sources) textures.initSource(source);
   }
 
   /**
@@ -8577,7 +8643,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     PIXI.GlProgram.weedMade = null;
     const shaders = this._useWebGpu ? null : this.pixiApp?.renderer?.shader;
     if (shaders && typeof shaders.weedLinkAhead === 'function') {
-      for (let i = 0; i < made.length; i++) shaders.weedLinkAhead(made[i]);
+      // SST-1: boot's programs started linking at boot; the rest start now.
+      this._startLinksAhead();
       const deadline = performance.now() + LINK_AHEAD_WAIT_MS;
       while (shaders.weedLinksRunning() > 0 && performance.now() < deadline) {
         await new Promise((resolve) => setTimeout(resolve, 4));
@@ -8587,18 +8654,282 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * Initialize the PIXI renderer with provided data
+   * SST-1: the renderer's start that needs neither the assets nor the shared buffers, from the page's 'boot' message (posted
+   * right after `new Worker`, before the page loads any asset; AbstractWorker keeps its promise in _bootPromise): the
+   * engine shaders' fetches and, at the same time, the GPU device and pixiApp.init on the page's canvas; then the programs
+   * made so far start linking (E-475). initialize awaits it and does what needs the assets. An error waits for
+   * initialize, which reports it as it did when all this ran there.
+   * @param {{ config: object, canvas: OffscreenCanvas, canvasWidth: number, canvasHeight: number,
+   *   engineShaders?: Object<string, string>|null, pageOrigin?: string }} data
    */
-  async initialize(data) {
-    const backend = normalizeRendererBackend(
-      data.config?.renderer?.backend ?? this.config?.renderer?.backend
-    );
+  async boot(data) {
+    try {
+      await super.boot(data);
+      await this._bootRenderer(data);
+    } catch (error) {
+      this._bootError = error;
+    }
+  }
+
+  /** SST-1: the renderer's part of boot (AbstractWorker's boot took the config, engine.wasm and the page's origin). */
+  async _bootRenderer(data) {
+    const config = data.config || {};
+    const rendererConfig = config.renderer || {};
+    const backend = normalizeRendererBackend(rendererConfig.backend);
     this._rendererBackend = backend;
     this._useWebGpu = backend === RENDERER_BACKEND_WEBGPU;
-    // E-475: every WebGL program made from here to the end of initialize is linked ahead, all together.
+    // Bundles embed the engine shaders and post them; source builds fetch them.
+    embeddedEngineShaders = data.engineShaders || null;
+    if (!data.canvas) throw new Error("WeedJS: the renderer's 'boot' message carries no canvas");
+    this.canvasView = data.canvas;
+    this.canvasWidth = (data.canvasWidth ?? data.canvas.width) | 0;
+    this.canvasHeight = (data.canvasHeight ?? data.canvas.height) | 0;
+    // From renderer.atlasScaleMode: the atlas's and the loose textures' sampling, both sprite passes'.
+    const atlasScaleMode = rendererConfig.atlasScaleMode;
+    this.atlasScaleMode =
+      atlasScaleMode === 'nearest' || atlasScaleMode === 'linear' ? atlasScaleMode : RENDERER_DEFAULTS.atlasScaleMode;
+
+    const shadersFetched = this._fetchEngineShaders().then(() => loadMark('shaders fetched'));
+    await Promise.all([shadersFetched, this._initPixiApp(config, backend)]);
+
+    // N-271: a nearest atlas snaps each sprite's origin to the pixel grid in its vertex shader (pixelSnap.js), before any
+    // sprite program is made from these sources; the packs leave the poses as they are.
+    if (this.atlasScaleMode === 'nearest') applyPixelSnap(this._engineShaders, this._useWebGpu);
+    this._initTilemapGidProgram();
+    // E-475: what boot made links on the driver's threads while the page loads the assets; initialize waits for it.
+    this._startLinksAhead();
+    loadMark('booted');
+  }
+
+  /**
+   * SST-1: the GPU device (WebGPU) and pixiApp.init on the boot's canvas, and the renderer's own setup that needs no
+   * asset: the backend's checks, the GPU's name and class, the present, the context's hooks. this.pixiApp is set once Pixi
+   * is up, so a resize before that leaves it alone (and is applied here).
+   */
+  async _initPixiApp(config, backend) {
+    loadMark('gpu device');
+    const weedGpu = this._useWebGpu ? await requestWeedGpu('high-performance') : null;
+    loadMark('pixi init');
+    const app = new PIXI.Application();
+    await app.init({
+      width: this.canvasWidth,
+      height: this.canvasHeight,
+      resolution: 1,
+      canvas: this.canvasView, // v8 uses 'canvas' instead of 'view'
+      backgroundColor: 0x000000,
+      depth: true, // root present clears color and depth (Pixi clear defaults to ALL)
+      // Performance optimizations
+      powerPreference: 'high-performance',
+      preference: backend,
+      ...(weedGpu ? { gpu: { adapter: weedGpu.adapter, device: weedGpu.device } } : {}),
+    });
+
+    if (!app.renderer) {
+      throw new Error('PIXI.Application.init() succeeded but renderer is null');
+    }
+    this.pixiApp = app;
+    // E-475: every WebGL program made from here to the end of initialize is linked ahead, all together. E-494: not Pixi's
+    // own, made inside its init (its default mesh's, its back buffer's): the engine draws with none of them.
     if (!this._useWebGpu) PIXI.GlProgram.weedMade = this._madePrograms;
 
-    embeddedEngineShaders = data.engineShaders || null;
+    const actualName = pixiRendererTypeName(app.renderer.type, PIXI.RendererType);
+    if (this._useWebGpu) {
+      if (app.renderer.type !== PIXI.RendererType.WEBGPU) {
+        throw errorPixiTypeMismatch(backend, actualName);
+      }
+      if (!app.renderer.gpu?.device) {
+        throw errorMissingGpuDevice();
+      }
+      const device = app.renderer.gpu.device;
+      device.addEventListener('uncapturederror', (ev) => {
+        console.error('WebGPU uncapturederror:', ev.error?.message || String(ev.error));
+      });
+      device.lost.then((info) => {
+        if (info && info.reason === 'destroyed') return;
+        const reason = info?.reason || 'unknown';
+        const message = info?.message || 'GPU device was lost';
+        this.reportError('WebGPU device lost', new Error(`${reason}: ${message}`));
+      });
+      this._bindWebGpuSwapchain();
+      // DX-IGPUWARN: the adapter's GPU, for scene.gpu (a throwaway WebGL context's name where the adapter's is unclear).
+      const gpu = webgpuGpu(app.renderer.gpu.adapter?.info ?? null, offscreenWebglRendererName);
+      this._gpuRendererName = gpu.name;
+      this._gpuVendor = gpu.vendor;
+      this._gpuClass = gpu.kind;
+    } else {
+      if (app.renderer.type !== PIXI.RendererType.WEBGL) {
+        throw errorPixiTypeMismatch(backend, actualName);
+      }
+      if (!app.renderer.gl) {
+        throw new Error(
+          'WeedJS: This scene requested renderer.backend "webgl", but the WebGL context is missing.'
+        );
+      }
+      // E-502: E-448's opaque pass stays off on Intel's integrated and tile-based GPUs, unless debug.opaquePass says.
+      this._gpuRendererName = webglRendererName(app.renderer.gl);
+      this._gpuClass = gpuClassOf(this._gpuRendererName);
+      this._gpuVendor = gpuVendorOf(this._gpuRendererName);
+      this._opaqueOn = opaquePassOn(config.debug?.opaquePass, this._gpuClass, this._gpuVendor);
+      debugWorkerLog(`PIXI WORKER: GPU "${this._gpuRendererName}" (${this._gpuClass}), opaque pass ${this._opaqueOn}`);
+    }
+
+    this._takePresentOwnership();
+
+    // Enable z-index based sorting on the stage
+    app.stage.sortableChildren = true;
+
+    // Hook into WebGL context for draw call monitoring and context loss
+    this.setupWebGLHooks();
+
+    // A 'resize' while Pixi started (AbstractWorker kept its size): the canvas at that size.
+    if (app.renderer.width !== this.canvasWidth || app.renderer.height !== this.canvasHeight) {
+      this._applyResize(this.canvasWidth, this.canvasHeight);
+    }
+    this.reportLog('finished initializing pixi app');
+    loadMark('pixi init end');
+  }
+
+  /**
+   * E-494: the programs the engine made the first time a pass drew, so that its first frames waited for their links (the
+   * second frame, 620 ms at Predator crowd 2.5 by night: the G-buffer's and the unshaded passes' over the entities, the
+   * lamps' map, its volumes, the UV meshes, the statics scatter), made here instead, where the config says the pass runs,
+   * by the calls the passes make: _linkProgramsAhead then links them with the rest, and a pass's first draw finds its
+   * program linked (GlProgram.from hands back the program made here; the batches keep the ones they made). WebGL's
+   * programs; on WebGPU the statics scatter's pipelines, the one thing made there on first use outside Pixi.
+   */
+  _makeFirstUsePrograms() {
+    const renderer = this.pixiApp.renderer;
+    const batch = this.entitiesBatch;
+    if (this._useWebGpu) {
+      // E-187: the keyed statics scatter's compute pipelines (_scatterStaticsGpu).
+      if (batch !== null && batch.keyed && renderer.gpu?.device) this._staticsScatterGpu = createStaticsScatterGpu(renderer.gpu.device);
+      return;
+    }
+    const shaders = this._engineShaders;
+    // E-177: the keyed statics scatter's program (_scatterStaticsGl; compiled and linked here, as on its first call).
+    if (batch !== null && batch.keyed && renderer.gl) this._staticsScatterGl = createStaticsScatterGl(renderer.gl);
+    // DX-FACES, DX-GBUF, DX-UNSHADED: the light's passes over the entities (_renderFaceMap, _renderUnshaded).
+    if (batch !== null && this.lightingEnabled) {
+      const maps = this.atlasMapsSource ?? this._emptyMapsSource();
+      const heightScaleY = this._heightScaleY;
+      const groundScaleY = this._groundScaleY || 1;
+      if (this.faceRT !== null) {
+        const mrt = this._gbufMrt && this.faceIdsRT !== null ? this._ensureGbufTarget() : null;
+        if (mrt !== null) {
+          batch.gbufMesh(heightScaleY, groundScaleY, maps);
+        } else {
+          batch.faceMesh(heightScaleY, groundScaleY, maps);
+          if (this.faceIdsRT !== null) batch.idsMesh(heightScaleY, groundScaleY, maps);
+        }
+      }
+      // Drawn while a sheet or a sprite is unshaded: a sprite can turn so while the game runs.
+      if (this._unshadedComposite !== null && this.unshadedRT !== null) batch.unshadedPass(heightScaleY, groundScaleY, maps);
+    }
+    const casters = this.gpuCasterBatch;
+    if (casters && shaders.shadowVert && shaders.sunMapFrag) {
+      // DX-SHADOW3D: the sun's map (_drawSunMap), else a scene with height maps casts its solids (_drawSunSolids).
+      if (this._sunMapOn) {
+        this._sunShadowProgram('map');
+        this._sunShadowProgram('mapColumns');
+      } else if (this._sunSolidsOn()) {
+        this._sunShadowProgram('cards');
+        this._sunShadowProgram('columns');
+      }
+      // DX-SHADOW3D (F7): the lamps' map's cards and columns (_drawLampMap).
+      if (this._lampMapOn) {
+        this._lampMapProgram(false);
+        this._lampMapProgram(true);
+      }
+      // E-191: the sun pass over the entities' keyed instances (_keyedSunFor) and over pre-render's keyed caster rows
+      // (_ensureKeyedCasters), where those can run.
+      if (batch !== null && batch.keyed) {
+        const keyedSun = this.config?.lighting?.keyedCasters !== false && this.config?.lighting?.directionalCasters !== true;
+        const keyedRows = !(this._sunMapOn || this._lampMapOn || this._sunSolidsOn());
+        batch.makeKeyedShadowPrograms(keyedSun, keyedRows);
+      }
+    }
+    // E-453: a MESH layer's UV meshes (_ensureMeshUvBatch: one program for every layer's batch, the first layer's name);
+    // DX-SHADOW3D: a sun-projected layer's volumes in the sun's map and the lamps' (_drawVolumesInSunMap,
+    // _drawVolumesInLampMap), E-508: the lamps' cache's copy.
+    const uvLayers = this._customLayerList.filter((cl) => (cl.uvVertCapacity | 0) > 0 && (cl.uvIndexCapacity | 0) >= 3);
+    if (uvLayers.length > 0 && shaders.meshUvFillVert && shaders.meshUvFillFrag) {
+      meshUvFillProgram(false, shaders, `mesh-uv-${uvLayers[0].layerId}`);
+      if (casters && uvLayers.some((cl) => cl.sunProjected)) {
+        if (this._sunMapOn) this._sunMapVolumeProgram();
+        if (this._lampMapOn) {
+          this._makeVolumeLampPrograms();
+          if (this._lampCacheOn) this._lampCacheCopyProgram();
+        }
+      }
+    }
+  }
+
+  /**
+   * SST-7 step 3 (E-495): on WebGPU, the render pipelines of the passes every frame draws, built here with
+   * createRenderPipelineAsync (Pixi's PipelineSystem.weedPipelineAhead, scripts/buildPixi.mjs) under the keys Pixi's draws
+   * look them up by, instead of by Pixi's createRenderPipeline in the first frames (Dawn compiles each on the GPU process's
+   * thread, and the frames wait): the entities' batch in each of its programs (plain, indexed) on the canvas, the halos'
+   * batch where it is added over them, the light pass into its target. The worker reports ready once they are built.
+   */
+  async _buildPipelinesAhead() {
+    const renderer = this.pixiApp.renderer;
+    const pipelines = renderer.pipeline;
+    if (!this._useWebGpu || typeof pipelines?.weedPipelineAhead !== 'function') return;
+    const builds = [];
+    const ahead = (mesh, shader, geometry, surface, blendMode) => {
+      if (!mesh || !shader?.gpuProgram || !geometry || !surface) return;
+      const target = renderer.renderTarget.getRenderTarget(surface);
+      // As a pass's start makes it (GpuRenderTargetAdaptor.startRenderPass): the depth is part of the pipeline's key.
+      if ((target.stencil || target.depth) && !target.depthStencilAttachment) target.ensureDepthStencilTexture();
+      // Pixi's mesh pipe sets the state's blend mode from the mesh's (its parents' where it inherits) at each draw.
+      mesh.state.blendMode = blendMode;
+      const built = pipelines.weedPipelineAhead(geometry, shader.gpuProgram, mesh.state, undefined, target);
+      if (built !== null) builds.push(built);
+    };
+    const canvas = renderer.view?.renderTarget ?? null;
+    const glowOnCanvas = this._lightGlowAdd && this.spriteGlowMesh !== null && this.spriteGlowMesh.parent === this.pixiApp.stage;
+    for (const batch of [this.entitiesBatch, glowOnCanvas ? this.entitiesGlowBatch : null]) {
+      if (batch === null || !batch.mesh) continue;
+      const blendMode = drawnBlendMode(batch.mesh);
+      const variants = batch.drawVariants();
+      for (let i = 0; i < variants.length; i++) ahead(batch.mesh, variants[i].shader, variants[i].geometry, canvas, blendMode);
+    }
+    // The light pass draws its mesh as the render's root (normal blending) into its target.
+    if (this.lightingMesh && this.lightingRT) {
+      ahead(this.lightingMesh, this.lightingMesh.shader, this.lightingMesh.geometry, this.lightingRT, 'normal');
+    }
+    try {
+      await Promise.all(builds);
+    } catch (error) {
+      console.warn('WeedJS: a render pipeline built ahead failed; Pixi makes it when it first draws with it', error);
+    }
+  }
+
+  /**
+   * E-494: `shader`'s WebGL program left out of the links ahead (a program no mesh draws with), unless one of `keep`
+   * (shaders that are drawn) has the same program.
+   */
+  _leaveOutOfLinksAhead(shader, keep) {
+    const program = shader?.glProgram;
+    if (!program) return;
+    for (let i = 0; i < keep.length; i++) if (keep[i]?.glProgram === program) return;
+    const at = this._madePrograms.indexOf(program);
+    if (at >= 0) this._madePrograms.splice(at, 1);
+  }
+
+  /**
+   * E-475, SST-1: start the links of the programs made so far (GlProgram.weedMade), without waiting; a program already
+   * started or linked is left as it is. _linkProgramsAhead starts the rest and waits for all of them.
+   */
+  _startLinksAhead() {
+    const shaders = this._useWebGpu ? null : this.pixiApp?.renderer?.shader;
+    if (!shaders || typeof shaders.weedLinkAhead !== 'function') return;
+    const made = this._madePrograms;
+    for (let i = 0; i < made.length; i++) shaders.weedLinkAhead(made[i]);
+  }
+
+  /** SST-1: the engine shaders this backend's passes read, fetched at boot (a bundle's come embedded in the boot message). */
+  _fetchEngineShaders() {
     this._engineShaders = {};
     const sh = this._engineShaders;
     const shaderFetches = [];
@@ -8699,6 +9030,35 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         })
       );
     }
+    return Promise.all(shaderFetches);
+  }
+
+  /**
+   * Initialize the PIXI renderer with provided data: what needs the assets and the shared buffers, once boot is done
+   * (SST-1).
+   */
+  async initialize(data) {
+    if (this._bootPromise == null) throw new Error("WeedJS: the renderer got 'init' without 'boot' (its canvas comes with boot)");
+    await this._bootPromise;
+    if (this._bootError !== null) {
+      this.reportError('PIXI Initialization Failed', this._bootError);
+      return;
+    }
+    // DX-IGPUWARN: the GPU the page got, to the scene (scene.gpu) before this worker reports ready.
+    self.postMessage({
+      msg: 'gpuInfo',
+      backend: this._useWebGpu ? 'webgpu' : 'webgl',
+      name: this._gpuRendererName,
+      vendor: this._gpuVendor,
+      kind: this._gpuClass,
+    });
+    if (this.config?.manualStep && this.pixiApp.ticker) {
+      this.pixiApp.ticker.autoStart = false;
+      this.pixiApp.ticker.stop();
+    }
+
+    const sh = this._engineShaders;
+    const shaderFetches = [];
     // GPU particle layers (LAYER_KIND.GPU_PARTICLES): their programs, only in a scene that has one.
     if (data.gpuParticles?.layers?.length) {
       // A look layer drawn among the entities draws its finished target in regions (gpuParticleChunks.js).
@@ -8737,10 +9097,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           );
         }
       }
+      await Promise.all(shaderFetches);
+      loadMark('particle shaders fetched');
     }
-    await Promise.all(shaderFetches);
-    loadMark('shaders fetched');
-    this._initTilemapGidProgram();
 
     // Initialize stats buffer for writing metrics
     if (data.buffers.rendererStats) {
@@ -8753,7 +9112,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.worldHeight = data.config.worldHeight;
     this.canvasWidth = data.config.canvasWidth;
     this.canvasHeight = data.config.canvasHeight;
-    this.canvasView = data.view;
+    // The canvas came with boot at the page's size then; the page's size now, if it changed since.
+    const renderer = this.pixiApp.renderer;
+    if (renderer.width !== this.canvasWidth || renderer.height !== this.canvasHeight) {
+      this._applyResize(this.canvasWidth, this.canvasHeight);
+    }
     this._presentingFlag = data.presentingFlag || null;
     this.physicsWorkerIndex = data.config.spatial.numberOfSpatialWorkers;
 
@@ -8796,15 +9159,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       rendererConfig.autoGenerateMipmaps !== undefined
         ? !!rendererConfig.autoGenerateMipmaps
         : RENDERER_DEFAULTS.autoGenerateMipmaps;
-
-    const atlasScaleMode = rendererConfig.atlasScaleMode;
-    this.atlasScaleMode =
-      atlasScaleMode === 'nearest' || atlasScaleMode === 'linear'
-        ? atlasScaleMode
-        : RENDERER_DEFAULTS.atlasScaleMode;
-    // N-271: a nearest atlas snaps each sprite's origin to the pixel grid in its vertex shader (pixelSnap.js), before any
-    // sprite program is made from these sources; the packs leave the poses as they are.
-    if (this.atlasScaleMode === 'nearest') applyPixelSnap(this._engineShaders, this._useWebGpu);
+    // atlasScaleMode and N-271's pixel snap: read at boot, before any program was made.
 
     this.decorationFadeStartZoom =
       preCfg.startFadingDecorationsAtZoom !== undefined
@@ -8868,97 +9223,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // );
     }
 
-    // Create PIXI application (PixiJS 8 uses async init)
-    try {
-      this.pixiApp = new PIXI.Application();
-      loadMark('gpu device');
-      const weedGpu = this._useWebGpu ? await requestWeedGpu('high-performance') : null;
-      loadMark('pixi init');
-      await this.pixiApp.init({
-        width: this.canvasWidth,
-        height: this.canvasHeight,
-        resolution: 1,
-        canvas: this.canvasView, // v8 uses 'canvas' instead of 'view'
-        backgroundColor: 0x000000,
-        depth: true, // root present clears color and depth (Pixi clear defaults to ALL)
-        // Performance optimizations
-        powerPreference: 'high-performance',
-        preference: backend,
-        ...(weedGpu ? { gpu: { adapter: weedGpu.adapter, device: weedGpu.device } } : {}),
-      });
-
-      if (!this.pixiApp.renderer) {
-        throw new Error('PIXI.Application.init() succeeded but renderer is null');
-      }
-
-      const actualName = pixiRendererTypeName(this.pixiApp.renderer.type, PIXI.RendererType);
-      if (this._useWebGpu) {
-        if (this.pixiApp.renderer.type !== PIXI.RendererType.WEBGPU) {
-          throw errorPixiTypeMismatch(backend, actualName);
-        }
-        if (!this.pixiApp.renderer.gpu?.device) {
-          throw errorMissingGpuDevice();
-        }
-        const device = this.pixiApp.renderer.gpu.device;
-        device.addEventListener('uncapturederror', (ev) => {
-          console.error('WebGPU uncapturederror:', ev.error?.message || String(ev.error));
-        });
-        device.lost.then((info) => {
-          if (info && info.reason === 'destroyed') return;
-          const reason = info?.reason || 'unknown';
-          const message = info?.message || 'GPU device was lost';
-          this.reportError('WebGPU device lost', new Error(`${reason}: ${message}`));
-        });
-        this._bindWebGpuSwapchain();
-        // DX-IGPUWARN: the adapter's GPU, for scene.gpu (a throwaway WebGL context's name where the adapter's is unclear).
-        const gpu = webgpuGpu(this.pixiApp.renderer.gpu.adapter?.info ?? null, offscreenWebglRendererName);
-        this._gpuRendererName = gpu.name;
-        this._gpuVendor = gpu.vendor;
-        this._gpuClass = gpu.kind;
-      } else {
-        if (this.pixiApp.renderer.type !== PIXI.RendererType.WEBGL) {
-          throw errorPixiTypeMismatch(backend, actualName);
-        }
-        if (!this.pixiApp.renderer.gl) {
-          throw new Error(
-            'WeedJS: This scene requested renderer.backend "webgl", but the WebGL context is missing.'
-          );
-        }
-        // E-502: E-448's opaque pass stays off on Intel's integrated and tile-based GPUs, unless debug.opaquePass says.
-        this._gpuRendererName = webglRendererName(this.pixiApp.renderer.gl);
-        this._gpuClass = gpuClassOf(this._gpuRendererName);
-        this._gpuVendor = gpuVendorOf(this._gpuRendererName);
-        this._opaqueOn = opaquePassOn(this.config?.debug?.opaquePass, this._gpuClass, this._gpuVendor);
-        debugWorkerLog(`PIXI WORKER: GPU "${this._gpuRendererName}" (${this._gpuClass}), opaque pass ${this._opaqueOn}`);
-      }
-      // DX-IGPUWARN: the GPU the page got, to the scene (scene.gpu) before this worker reports ready.
-      self.postMessage({
-        msg: 'gpuInfo',
-        backend: this._useWebGpu ? 'webgpu' : 'webgl',
-        name: this._gpuRendererName,
-        vendor: this._gpuVendor,
-        kind: this._gpuClass,
-      });
-    } catch (error) {
-      this.reportError('PIXI Initialization Failed', error);
-      return;
-    }
-
-    this._takePresentOwnership();
-
-    if (this.config?.manualStep && this.pixiApp.ticker) {
-      this.pixiApp.ticker.autoStart = false;
-      this.pixiApp.ticker.stop();
-    }
-
-    // Enable z-index based sorting on the stage
-    this.pixiApp.stage.sortableChildren = true;
-
-    // Hook into WebGL context for draw call monitoring and context loss
-    this.setupWebGLHooks();
-
-    this.reportLog('finished initializing pixi app');
-    loadMark('pixi init end');
     // Load simple textures
     this.loadTextures(data.textures);
     this.reportLog('finished loading textures');
@@ -8971,10 +9235,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Load tileset textures (tile data comes from TileMap SAB via AbstractWorker)
     this.loadTilesetBitmaps(data.tilesetBitmaps);
     this.reportLog('finished loading tileset textures');
+    // SST-7: on the GPU now, while the programs link, not at the first frame that draws them.
+    this._uploadAssetTextures();
+    loadMark('textures uploaded');
 
     // ========================================
     // BLOOD DECAL SPLAT GRID - Initialize (SAB tiles, not TileMap background)
     // ========================================
+    // Its kernel binds with the others, below.
+    let decalBind = null;
     if (data.decals && data.decals.enabled) {
       this.decalsEnabled = true;
       this.decalsTileSize = data.decals.tileSize; // World units per tile
@@ -8990,7 +9259,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         data.decals.tilesRGBA, 0, data.decals.totalTiles * data.decals.tilePixelSize * data.decals.tilePixelSize * 4);
       // W21c: dirty tiles premultiplied by decalPremultiply.wasm, on the decal memory the tiles live in.
       if (!data.decals.memory || !data.decals.memoryLayout) throw new Error('decals without the decal memory (installDecalMemory)');
-      this._decalPremultiply = await bindDecalPremultiply(data.decals.memory, data.decals.memoryLayout);
+      decalBind = bindDecalPremultiply(data.decals.memory, data.decals.memoryLayout).then((kernel) => {
+        this._decalPremultiply = kernel;
+      });
       this.decalsTilesDirty = new Uint8Array(data.decals.tilesDirty);
       this._decalDirtyWords = new Uint32Array(data.decals.tilesDirty, 0, data.decals.tilesDirty.byteLength >> 2);
 
@@ -9075,10 +9346,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._renderQueueMemory = data.renderQueueMemory || null;
     this.createCastedShadowsSystem(data);
 
+    // The worker's kernels, which do not depend on each other, bound together (SST-2): the decals' premultiply, the entity
+    // batch's pack and sort, the MESH layers' corners (initializeCustomLayers takes this bind). loadMark: each bind's
+    // 'kernel' marks come from wasmKernel.js.
+    await Promise.all([
+      decalBind,
+      this.renderQueueEnabled ? this._bindPixiGpuPack(data) : null,
+      this.renderQueueEnabled ? this._bindPainterRadix(data) : null,
+      this._bindMeshMemory(data),
+    ]);
+    loadMark('kernels bound');
+
     // ENTITIES always render through the instanced Mesh (no ParticleContainer path)
     if (this.renderQueueEnabled) {
-      await this._bindPixiGpuPack(data);
-      await this._bindPainterRadix(data);
       this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
       this._entitiesRoot = new Container();
       this._entitiesRoot.label = 'entities-root';
@@ -9224,7 +9504,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // ========================================
     // CUSTOM LAYER RENDERING INFRASTRUCTURE
     // ========================================
-    await this.initializeCustomLayers(data);
+    await this.initializeCustomLayers(data, true);
 
     // ========================================
     // LAYER REFERENCES MAP - For debug UI control
@@ -9232,8 +9512,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this.buildLayerRefsMap();
     loadMark('custom layers');
 
+    this._makeFirstUsePrograms();
+    loadMark('first-use programs');
     await this._linkProgramsAhead();
     loadMark('programs linked');
+    await this._buildPipelinesAhead();
+    loadMark('pipelines built');
 
     debugWorkerLog('PIXI WORKER: Initialization complete, waiting for start signal...');
     debugWorkerLog(
@@ -9566,7 +9850,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return null;
   }
 
-  async initializeCustomLayers(data) {
+  /**
+   * @param {object} data the init message (or its layers' part)
+   * @param {boolean} [meshMemoryBound] initialize bound the mesh memory with its other kernels (_bindMeshMemory)
+   */
+  async initializeCustomLayers(data, meshMemoryBound = false) {
     const prev = this._customLayerList || [];
     for (let i = 0; i < prev.length; i++) {
       const old = prev[i];
@@ -9591,7 +9879,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._destroyScreenLayers();
     this._customLayers = {};
     this._gpuParticleBatches = [];
-    await this._bindMeshMemory(data);
+    if (!meshMemoryBound) await this._bindMeshMemory(data);
     if (!data.layerData) return;
 
     const metadata = data.layerData.metadata;
