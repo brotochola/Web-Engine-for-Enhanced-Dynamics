@@ -760,3 +760,7 @@ been built. What changed here, and why:
 - **"Remove the 5 000 lines":** the branch stood at +5 050 lines against main with the old pass still behind
   `debug.lightFans`. OL-15 deletes it; `src/` is 1 529 lines shorter than main's, the tests and the guide longer.
 - He asked what final A and B were: told, with their costs, and that both techniques stay (section 5).
+
+**2026-11-18, merged:** `dx/one-light` went into main as `85ca7900`, with main merged into it first, its bundles
+rebuilt, tested and timed against the sources (R-1413). Not pushed: main held other sessions' unpushed commits,
+and the push is the owner's word.

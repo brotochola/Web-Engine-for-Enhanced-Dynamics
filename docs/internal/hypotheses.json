@@ -22243,11 +22243,11 @@
     {
       "id": "DX-ONELIGHT",
       "title": "One light system for every camera: a flat view (camera.pitch 90 or 0) gets the same lighting options as any other camera (normal and height maps, unshaded, the shadow maps, sprite and height map shadows from the lamps), raycasted lighting stops being a pass of its own, and the engine stops inventing what the developer did not bring (the self-lit fill's sphere normal, the automatic strength of a sprite's normals)",
-      "status": "open",
-      "statusText": "Owner-approved plan (2026-11-17), revised and built on 2026-11-18 on dx/one-light: OL-1 to OL-15. One light pass for every camera: walls are lighting.walls, read by the light pass (final B); the old fan pass is deleted (OL-15, 27efbf1a); the owner accepted the pictures and the numbers on 2026-11-18 with his defaults; the Predator gate at crowd=2.5 passes (R-1404); the shaders pass on the four GPUs; not merged",
+      "status": "kept",
+      "statusText": "Owner-approved plan (2026-11-17), revised and built on 2026-11-18 on dx/one-light: OL-1 to OL-15. One light pass for every camera: walls are lighting.walls, read by the light pass (final B); the old fan pass is deleted (OL-15, 27efbf1a); the owner accepted the pictures and the numbers on 2026-11-18 with his defaults; the Predator gate at crowd=2.5 passes (R-1404); the shaders pass on the four GPUs; merged to main 2026-11-18 (85ca7900), not pushed",
       "date": "2026-11-17",
       "result": "",
-      "next": "To merge: the owner's OK on pictures and numbers, his two numbers for the sun's normals (OL-6) and the third a wall's shadow keeps (OL-4); the Predator gate at crowd=2.5 with its A/A; the bundles. After the merge or before: OL-3 (the race), the sweep's kernel writing a moving lamp's row, the deletion of the old pass.",
+      "next": "Done. What is left has rows of its own: wall_row's variants pass and the rows' upload for moving lamps (OL-11, OL-4), the kernels' dead branches (OL-15), N-297, N-299, N-300.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22266,14 +22266,13 @@
         "R-1404",
         "R-1411",
         "R-1413"
-      ],
-      "rank": 20
+      ]
     },
     {
       "id": "OL-1",
       "title": "Names: the shadows' painted mode is lighting.sunShadows / lampShadows 'layer' (was 'sprite') and a halo drawn among the entities is lighting.lightGlow 'sorted' (was 'sprite'); 'sprite' keeps meaning the sprite that casts (setSprite, shadowCast.sun) or cuts (setWall's shape)",
-      "status": "open",
-      "statusText": "Written 2026-11-18 on dx/one-light (69f0eb38, 1bcdf08d), suites green; not merged",
+      "status": "kept-hygiene",
+      "statusText": "Written 2026-11-18 on dx/one-light (69f0eb38, 1bcdf08d), suites green; merged to main 2026-11-18 (85ca7900), not pushed",
       "date": "2026-11-17",
       "result": "sunShadows / lampShadows 'layer' and lightGlow 'sorted'; an unknown value warns once and falls to the default; every demo, scene, test, type and guide page moved. No picture changes, nothing to time.",
       "next": "Merge with the rest of dx/one-light when the owner accepts OL-4's pictures.",
@@ -22297,7 +22296,7 @@
       "id": "OL-2",
       "title": "A sprite's normals under the sun and under the lamps as the developer's option (lighting.normalStrength { sun, lamps } recommended), instead of the light pass's automatic blend by the lamps' share of the light (k = lamps / (lamps + ambient + sun): by day as drawn, at night by the normals)",
       "status": "kept-hygiene",
-      "statusText": "Written 2026-11-18 on dx/one-light (89e2afcb); its key became OL-6's lighting.normalShading the same day, where the owner picked the sun's numbers; not merged",
+      "statusText": "Written 2026-11-18 on dx/one-light (89e2afcb); its key became OL-6's lighting.normalShading the same day, where the owner picked the sun's numbers; merged to main 2026-11-18 (85ca7900), not pushed",
       "date": "2026-11-17",
       "result": "lighting.normalStrength { sun, lamps } in uFaceLight's two free numbers, default { sun: 0, lamps: 1 }; the automatic k is gone. normalLightCheck, WebGL and WebGPU: 0.5,0.5 worst 2.1 of 255; full strength worst 3.4 (lamp) and 4.0 (sun), p99 2.4, mean 0.6.",
       "next": "Nothing of its own.",
@@ -22322,7 +22321,7 @@
       "id": "OL-3",
       "title": "The race: one flat stress scene on raycasted lighting (the CPU sweep drawn as fans) against the lamps' shadow maps (walls as volumes taller than the lamps), the common pass alone and final B's pass, at 8 to 128 casting lights; the main machine decides: what should stop the lamps in a flat view",
       "status": "answered",
-      "statusText": "Run 2026-11-18 after the code (the owner's order), on dx/one-light: final B stays. The owner asked what A and B were, was told (both techniques stay: the sweep for walls, the lamps' maps as lighting.lampShadows 'map'), and the deletion of the old pass went ahead on B",
+      "statusText": "Run 2026-11-18 after the code (the owner's order), on dx/one-light: final B stays. The owner asked what A and B were, was told (both techniques stay: the sweep for walls, the lamps' maps as lighting.lampShadows 'map'), and the deletion of the old pass went ahead on B; merged to main 2026-11-18 (85ca7900), not pushed",
       "date": "2026-11-17",
       "result": "visPolyStressScene at 64 lamps (the maps' ceiling): the maps cost 4.3 ms of GPU a frame against the walls' 1.9 (the fans 1.7 to 2.4, the pass alone 1.3 to 1.6); they save pre-render 0.3 ms still and 0.7 ms moving, and cost Pixi +12 to +32 %. The walls ran 720 lamps the same day (pre-render 2.9 ms still). All under the 6 ms floor: readings.",
       "next": "Reopen if the lamps' maps lose their 64 lamps' ceiling and their cost: visPolyStressScene ?arm=maps runs the race again.",
@@ -22349,10 +22348,10 @@
       "id": "OL-4",
       "title": "The flat view on the common light pass: lighting.raycasted no longer picks the pass, a wall stops a lamp through the lamps' maps (final A) or through the sweep's result read by the light pass (final B), and the fans, the self-lit fills, the wedges and their shaders are deleted (about 2 000 lines in final B; about 5 000 and 3 500 of tests in final A)",
       "status": "kept",
-      "statusText": "Written 2026-11-18 on dx/one-light as final B and optimized the same day (OL-7 to OL-13); the owner accepted the pictures and the numbers, and the old pass is deleted (OL-15, 27efbf1a). On a still scene of walls it costs less than the old fan pass did (pre-render -41.6 %, Pixi -44.9 % at 720 lights); with every lamp moving +13.1 % in both; not merged",
+      "statusText": "Written 2026-11-18 on dx/one-light as final B and optimized the same day (OL-7 to OL-13); the owner accepted the pictures and the numbers, and the old pass is deleted (OL-15, 27efbf1a). On a still scene of walls it costs less than the old fan pass did (pre-render -41.6 %, Pixi -44.9 % at 720 lights); with every lamp moving +13.1 % in both; merged to main 2026-11-18 (85ca7900), not pushed",
       "date": "2026-11-17",
       "result": "lighting.walls asks for walls whatever the camera; pre-render publishes a row a lamp (lampWallRow.js) and the light pass reads it (WALLS variant, WebGL and WebGPU: 19 of 921 600 px differ, by 3 of 255 at most). A wall's own sprite is lit whole (the G-buffer's id) or, with lighting.wallDepth, the light enters every wall that many px (a wall drawn by a mesh has no id). Walls work on any floor scale, so oblique cameras have them too. Pitch 0 is a flat view by itself.",
-      "next": "Merged with dx/one-light. After it: wall_row's variants pass (OL-11) and the rows' upload for moving lamps, the two that are left of the +13 %.",
+      "next": "Merged (85ca7900). After it: wall_row's variants pass (OL-11) and the rows' upload for moving lamps, the two that are left of the +13 %.",
       "area": "render",
       "kind": "feature",
       "refs": [
@@ -22397,10 +22396,10 @@
       "id": "OL-5",
       "kind": "bug",
       "area": "render",
-      "status": "running",
+      "status": "kept",
       "date": "2026-11-18",
       "title": "With lampShadows 'map', the lamps get their tiles only in a frame with a stamp row: a scene whose only casters in the lamps' reach are volumes (houses with nobody near) draws no lamp shadow at all",
-      "statusText": "Fixed 2026-11-18 on dx/one-light (13c69176), suites green, captures before and after; not timed (a hygiene keep, with the branch's sitting); not merged"
+      "statusText": "Fixed 2026-11-18 on dx/one-light (13c69176), suites green, captures before and after; not timed (a hygiene keep, with the branch's sitting); merged to main 2026-11-18 (85ca7900), not pushed"
     },
     {
       "refs": [
@@ -22416,14 +22415,14 @@
         "R-1411"
       ],
       "result": "lighting.normalShading { sun: { strength, subtract }, lamps: { strength, subtract } } replaces lighting.normalStrength: shading' = max(0, shading - subtract) * strength, for the sun and for each lamp. Light bench at 16:00, the view that changes and the light lost there: full strength 20.3 % and 43.5 %; strength 0.8 with 0.2 subtracted 16.5 % and 24.0 %; strength 1 with 0.3 subtracted 16.3 % and 21.8 %. normalLightCheck on both backends at four settings: worst 4.0 of 255. The default picture is the same (0 px).",
-      "next": "Merged with dx/one-light.",
+      "next": "Merged (85ca7900).",
       "id": "OL-6",
       "kind": "dx",
       "area": "render",
       "status": "kept-hygiene",
       "date": "2026-11-18",
       "title": "The shading a sprite's normals cause takes an amount subtracted (never under 0) and a strength, for the sun and for the lamps apart (lighting.normalShading), so only the faces turned away from a light darken: the owner's ask, from OL-2's pictures",
-      "statusText": "Asked by the owner and written 2026-11-18 on dx/one-light (2696eafe); the owner's default for the sun the same day: strength 1 with 0.5 subtracted (34f09c20); not timed (two numbers of a uniform); not merged"
+      "statusText": "Asked by the owner and written 2026-11-18 on dx/one-light (2696eafe); the owner's default for the sun the same day: strength 1 with 0.5 subtracted (34f09c20); not timed (two numbers of a uniform); merged to main 2026-11-18 (85ca7900), not pushed"
     },
     {
       "refs": [],
@@ -22443,7 +22442,7 @@
       "status": "kept-hygiene",
       "date": "2026-11-18",
       "title": "The lamps' cookies are not packed in a frame with no sun caster and no stamp: they lighten what the casters drew on the shadows' layer, and on an empty layer they were a pass that changed no pixel (every scene of walls since OL-4)",
-      "statusText": "Kept as hygiene 2026-11-18 on dx/one-light: the pass is gone and the picture is byte for byte the same; not merged"
+      "statusText": "Kept as hygiene 2026-11-18 on dx/one-light: the pass is gone and the picture is byte for byte the same; merged to main 2026-11-18 (85ca7900), not pushed"
     },
     {
       "refs": [],
@@ -22456,14 +22455,14 @@
         "R-1359"
       ],
       "result": "visPolyStressScene ?lights=720&arm=walls: pre-render 6.415 -> 6.062 ms, -5.8 % (4 of 4 pairs, detection limit 4.6 % from the A/A). Kernel (wallRowMicrobench): -21 % at 16 vertices, -18 % at 48, -9.5 % at 128. The row is the same bit for bit.",
-      "next": "Merged with dx/one-light. What is left of the rows' cost is the vertex loop (22 ns a vertex): the sweep's kernel writing the row, or a still lamp's row not rebuilt.",
+      "next": "Merged (85ca7900). What is left of the rows' cost is the vertex loop (22 ns a vertex): the sweep's kernel writing the row, or a still lamp's row not rebuilt.",
       "id": "OL-8",
       "kind": "speed",
       "area": "preRender",
       "status": "kept",
       "date": "2026-11-18",
       "title": "A lamp's row for the light pass counts its 256 directions' index (a mark a vertex, a running count in integers) instead of walking the bins against the vertices' angles, which was half a row's time",
-      "statusText": "Kept 2026-11-18 on dx/one-light (d0b2d0c5): the kernel and the scene; not merged"
+      "statusText": "Kept 2026-11-18 on dx/one-light (d0b2d0c5): the kernel and the scene; merged to main 2026-11-18 (85ca7900), not pushed"
     },
     {
       "refs": [],
@@ -22478,14 +22477,14 @@
         "R-1403"
       ],
       "result": "visPolyStressScene ?lights=720&arm=walls, ?wallCache=0 against the default: pre-render 6.061 -> 2.982 ms with the lamps still (-51.4 %, 4 of 4 pairs, limit 4.6 %), 5.581 -> 5.784 ms with every lamp moving (+2.5 %, inside the limit). The rows are the same bit for bit (a real worker, both gathers, every kind of change).",
-      "next": "Merged with dx/one-light. Then Pixi: a frame whose rows are all kept need not read or upload them (its +16 % over the fans, R-1400); and the sweep's kernel writing a moving lamp's row.",
+      "next": "Merged (85ca7900). Then Pixi: a frame whose rows are all kept need not read or upload them (its +16 % over the fans, R-1400); and the sweep's kernel writing a moving lamp's row.",
       "id": "OL-9",
       "kind": "speed",
       "area": "preRender",
       "status": "kept",
       "date": "2026-11-18",
       "title": "A lamp's row is kept while what goes into its sweep is the same (lighting.wallCache): a signature of the lamp, its walls and their codes after the gather; a still lamp among still walls is not swept and its row is not rebuilt",
-      "statusText": "Kept 2026-11-18 on dx/one-light (f37e693d): the scene, and the rows bit for bit against the uncached path; not merged"
+      "statusText": "Kept 2026-11-18 on dx/one-light (f37e693d): the scene, and the rows bit for bit against the uncached path; merged to main 2026-11-18 (85ca7900), not pushed"
     },
     {
       "refs": [],
@@ -22498,14 +22497,14 @@
         "R-1403"
       ],
       "result": "visPolyStressScene ?lights=720&arm=walls, ?wallCache=0 against the default: Pixi 1.601 -> 0.626 ms (-61.1 %, 4 of 4 pairs; under the 6 ms floor, read not judged), no row uploaded (770 -> 127.5 KB of textures a frame at 360 lights). With OL-9, fans against walls on a still scene: pre-render 5.117 -> 2.959 ms (-41.6 %), Pixi 1.207 -> 0.662 ms (-44.9 %).",
-      "next": "Merged with dx/one-light.",
+      "next": "Merged (85ca7900).",
       "id": "OL-10",
       "kind": "speed",
       "area": "pixi",
       "status": "kept",
       "date": "2026-11-18",
       "title": "Pixi neither copies nor uploads a frame's rows when they are the rows it sent last: pre-render signs each frame's rows (its lamps in order, each row's signature) in the rows' header",
-      "statusText": "Kept 2026-11-18 on dx/one-light (fef43402): the pairs agree and the upload is gone; Pixi is under the 6 ms floor, so the tool does not judge it; not merged"
+      "statusText": "Kept 2026-11-18 on dx/one-light (fef43402): the pairs agree and the upload is gone; Pixi is under the 6 ms floor, so the tool does not judge it; merged to main 2026-11-18 (85ca7900), not pushed"
     },
     {
       "refs": [],
@@ -22525,7 +22524,7 @@
       "area": "preRender",
       "status": "kept-kernel",
       "title": "The sweep's kernel writes a swept lamp's row for the light pass (wall_row, wasm.wallRow) from the polygon it left, where pre-render built it in JS",
-      "statusText": "Kept 2026-11-18 on dx/one-light (6d52e156) as a kernel that is faster and a scene that barely moved by itself (-2.4 %); merged into the branch with OL-12; not merged to main"
+      "statusText": "Kept 2026-11-18 on dx/one-light (6d52e156) as a kernel that is faster and a scene that barely moved by itself (-2.4 %); merged into the branch with OL-12; merged to main 2026-11-18 (85ca7900), not pushed"
     },
     {
       "refs": [],
@@ -22541,12 +22540,12 @@
         "stamp lights without casters"
       ],
       "result": "With OL-11, against dx/one-light bd58813b on visPolyStressScene with walls at 720 lights: pre-render 5.813 -> 5.386 ms with every lamp moving (-8.1 %) and 2.938 -> 2.681 ms with them still (-7.3 %), 4 of 4 pairs each, limit 4.6 %. The light loop's JS self time 384 -> 226 ms of 8 s; wall_row did not move.",
-      "next": "Merged with dx/one-light.",
+      "next": "Merged (85ca7900).",
       "id": "OL-12",
       "area": "preRender",
       "status": "kept",
       "title": "For the walls' rows the gather's kernel writes each packed occluder's code and sends no event for it (pre-render walked a self-lit candidate an occluder to work it out), and the shadow lights are not gathered in a frame with no sun caster",
-      "statusText": "Kept 2026-11-18 on dx/one-light (0219a64d), from a profile of 720 moving lamps; not merged to main"
+      "statusText": "Kept 2026-11-18 on dx/one-light (0219a64d), from a profile of 720 moving lamps; merged to main 2026-11-18 (85ca7900), not pushed"
     },
     {
       "refs": [],
@@ -22561,12 +22560,12 @@
         "row copy a float at a time"
       ],
       "result": "visPolyStressScene ?lights=720&arm=walls&move=40, dx/one-light bd58813b against c4e57fb6: Pixi 1.391 -> 1.232 ms (-11.6 %, 4 of 4 pairs; under the floor: read). Fans against walls with every lamp moving: +13.1 % in pre-render and in Pixi (they were +18.9 % and +19.4 %).",
-      "next": "Merged with dx/one-light.",
+      "next": "Merged (85ca7900).",
       "id": "OL-13",
       "area": "pixi",
       "status": "kept",
       "title": "Pixi copies a wall's row out of the shared buffer in one set() from a view of it, not a float at a time (0.5 ms a frame for 720 rows that changed)",
-      "statusText": "Kept 2026-11-18 on dx/one-light (c4e57fb6); Pixi is under the 6 ms floor, so the tool does not judge it; not merged to main"
+      "statusText": "Kept 2026-11-18 on dx/one-light (c4e57fb6); Pixi is under the 6 ms floor, so the tool does not judge it; merged to main 2026-11-18 (85ca7900), not pushed"
     },
     {
       "refs": [],
@@ -22581,13 +22580,13 @@
         "pixel depth with walls"
       ],
       "result": "Headlights, 4 pairs, 41c0aed9 against 0284f1a5: Pixi 0.536 -> 0.575 ms and pre-render 0.372 -> 0.382 ms, both far under the 6 ms floor (read, not judged), 60 of 60 frames drawn. The rim is gone on WebGL and WebGPU (30 251 and 30 151 of 921 600 px differ, all on outlines).",
-      "next": "Merged with dx/one-light. A flat view keeps the rim: N-299.",
+      "next": "Merged (85ca7900). A flat view keeps the rim: N-299.",
       "id": "OL-14",
       "kind": "bug",
       "area": "pixi",
       "status": "kept-hygiene",
       "title": "With lighting.walls and an oblique camera, pixel depth turns on, so the light's edges keep a lit wall's light off the dark floor round its outline (the bright rim the owner saw round Headlights' houses)",
-      "statusText": "Kept 2026-11-18 on dx/one-light (0284f1a5) as a fix, at the owner's ask; not merged to main"
+      "statusText": "Kept 2026-11-18 on dx/one-light (0284f1a5) as a fix, at the owner's ask; merged to main 2026-11-18 (85ca7900), not pushed"
     },
     {
       "refs": [],
@@ -22604,13 +22603,13 @@
         "setWall shape removed"
       ],
       "result": "src 2 783 lines shorter (pixiWorker.js 1 676, preRenderWorker.js 347, nine shader files 605); the branch against main: src -1 529 lines. Pre-render's rows before against after: 1 856 of 1 856 bit for bit over 8 configurations; the still scenes draw the same picture.",
-      "next": "Merged with dx/one-light. The kernels' dead branches (visibilityGather.c's packed-occluder events, visibilitySweep.c's seen-owner marks) go with their next build, in OL-11's variants pass.",
+      "next": "Merged (85ca7900). The kernels' dead branches (visibilityGather.c's packed-occluder events, visibilitySweep.c's seen-owner marks) go with their next build, in OL-11's variants pass.",
       "id": "OL-15",
       "kind": "refactor",
       "area": "render",
       "status": "kept-hygiene",
       "title": "The old fan pass goes: Pixi's fans, self-lit fills and wedges with their nine shader files, pre-render's published polygons and self-lit queue, debug.lightFans, lighting.maxOccluderSelfLit, setWall's shape; the debug overlay's light polygons read the walls' rows",
-      "statusText": "Kept 2026-11-18 on dx/one-light (27efbf1a) as a deletion, once the owner accepted the pictures and the numbers; not merged to main"
+      "statusText": "Kept 2026-11-18 on dx/one-light (27efbf1a) as a deletion, once the owner accepted the pictures and the numbers; merged to main 2026-11-18 (85ca7900), not pushed"
     },
     {
       "refs": [],
