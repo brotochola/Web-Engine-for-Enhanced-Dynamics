@@ -1381,7 +1381,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | A sprite lit as drawn, its normal map ignored, or its normals from its height alone | `this.spriteRenderer.normals = 'flat'` or `'height'` (`'auto'` by default: the map, else the height, else flat) |
 | Sprites' normals to shade more or less under the sun, or under the lamps | `lighting: { normalShading: { sun: { strength: 0.8, subtract: 0.2 }, lamps: { strength: 1, subtract: 0 } } }` (each 0 to 1; by default the sun's strength is 0 and the lamps' 1: as drawn by day, relief under a lamp) |
 | A sprite without a height map lit as a card standing on its foot, or as part of the floor | `this.spriteRenderer.surface = 'standing'` (entities) or `'floor'` (a rug, a decal) |
-| A person in front of or behind each part of a table, or of a wall | pixel depth: on by itself with an oblique camera and height maps or faces (`renderer.pixelDepth`) |
+| A person in front of or behind each part of a table, or of a wall | pixel depth: on by itself with an oblique camera and height maps, faces or walls (`renderer.pixelDepth`) |
 
 The Headlights demo (`demos/headlightsScene/`) puts most of this table on one street at night, with walls (`lighting.walls`): cone headlights on carScene's cars, round lamps, houses with a volume for the sun and a wall for the beams, and a key for each field. The light bench (`demos/lightBenchScene/`) does the same for the 3D light mode: a farm of props rendered from 32 directions, cars, trees, a person you walk with WASD and lamps, each piece on a key to compare.
 
@@ -1464,7 +1464,7 @@ With an oblique camera, sheets that bring a height map, and the two shadow maps,
 | The sun's shadows on everything that has height | `lighting.sunShadows: 'map'` |
 | Each lamp's own shadows | `lighting.lampShadows: 'map'` |
 | A surface's self-shadow | `lighting.selfShadow: true` |
-| Depth that corrects the painter | on by itself with an oblique camera and maps or faces (`renderer.pixelDepth`) |
+| Depth that corrects the painter | on by itself with an oblique camera and maps, faces or walls (`renderer.pixelDepth`) |
 | Sprites no light touches | `unshaded: true` on a sheet, or `spriteRenderer.unshaded` on one sprite (without a sheet with maps, an unshaded sheet or a shadow map, with `lighting.unshaded: true`) |
 | Normals and height per sprite | `spriteRenderer.normals` and `spriteRenderer.surface` |
 | The G-buffer a pass a target instead of one pass with two | `lighting.gbuffer: 'pass'` (the same picture; `'mrt'`, the default, costs about a third less) |
@@ -1804,6 +1804,7 @@ static config = {
 ```
 
 - It turns on by itself with an oblique camera (`floorScaleY` under 1) when at least one sheet has a `heightMap`, a `normalMap` or a `reliefMap`, or once a decoration carries a face's normal. `renderer.pixelDepth: false` turns it off; `true` turns it on with any camera, still only with maps or faces.
+- Walls turn it on too (`lighting.walls` with an oblique camera) while the light is drawn under the canvas's size (`lighting.resolution` under 1, the default) and `lighting.lightEdges` is not `false`: a lit house stands in front of its own shadow, and the light's edges need each entity's depth to keep the house's light off the dark floor round its outline. A flat view has no such depth, so there the rim stays while the light is under the canvas's size (`lighting.resolution: 1` has none); `renderer.pixelDepth: true` turns the depth on there too, but it also orders overlapping sprites by their foot, which a flat scene may not want.
 - A face writes its plane's depth, so a wall goes whole: no need to cut it into columns for the painter. Pieces stuck on a wall, on its plane (a window, its lit pane, a poster), say their order on it with `innerZ`: 0 the wall, 1 to 7 what lies on it, in stacking order. Each step brings a piece a quarter of a floor px nearer than its wall, more than the plane's rounding and less than anything standing in front of the wall, so a window stays on its wall however the camera moves; give it the wall's normal and the height of the wall's plane at its own position.
 - A house whose walls and roofs are decorations and whose shadow is a volume on the house entity (`shadowCaster.setHull`, `addLevel`): spawn the decorations with `owner: house` (an entity or its index; `spawnMany` takes one or an array). The light then takes their pixels as the house's, so its own volume does not darken its roof; without it, a roof inside a parapet, or under a tank's convex hull, stays in the volume's shadow.
 - An attached decoration (a tree's branches, a car's lights) is part of its parent the same way, unless its spawn names another `owner`: one without a face or a height map stands, for the light, on the parent's foot, a card rising from it, so a tree's crown is lit where the tree stands, not as the floor behind it (where its own shadow and the house behind it would fall on it).

@@ -85,7 +85,7 @@ import {
 import { gbufEntityId, gbufWanted, writeGbufWords } from '../render/gbufWord.js';
 import { WALL_VERT0, wallRowsLayout } from '../render/visibility/lampWallRow.js';
 import { UNSHADED_COMPOSITE_FRAG, UNSHADED_COMPOSITE_VERT, unshadedCompositeGpuProgram, unshadedQuadPositions } from '../render/unshadedComposite.js';
-import { lightEdgesHost, lightEdgesQuad, rgbOnlyHost, unshadedEdgesHost } from '../render/lightEdges.js';
+import { lightEdgesHost, lightEdgesQuad, rgbOnlyHost, unshadedEdgesHost, wallEdgesWanted } from '../render/lightEdges.js';
 import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
 import {
   SUN_MAP_COLUMNS,
@@ -3164,7 +3164,7 @@ class PixiRenderer extends AbstractWorker {
     // too since E-187: the scatter a compute pass).
     const keyed = this._pixiKeyed !== null && this._pixiInstanceRows !== null ? this._pixiKeyed : null;
     const indexed = !!(gpuCaps && gpuCaps.indexedSprites) || keyed !== null;
-    // DX-DEPTH (F5): an oblique camera with a maps page: each pixel's floor depth corrects the painter, on WebGL and
+    // DX-DEPTH (F5): an oblique camera with a maps page, faces or walls: each pixel's floor depth corrects the painter, on WebGL and
     // WebGPU (renderer.pixelDepth true or false forces it). WebGPU tests it in the canvas's depth, or the SCREEN passes'
     // frame's (_ensureTargetDepth).
     const wantDepth = this.config?.renderer?.pixelDepth;
@@ -3172,7 +3172,10 @@ class PixiRenderer extends AbstractWorker {
     // DX-FACEDEPTH: faces turn it on too, without a map sheet (an empty twin page: no frame has a window in it), and the
     // depth programs then read them: a face's plane depth, its innerZ in the ties, the opaque pass in two programs.
     const facesDepth = this._faceDepthWanted();
-    const pixelDepth = (this.atlasMapsSource !== null || facesDepth) && (wantDepth === true || (wantDepth !== false && oblique))
+    // OL-14: so do walls whose light is drawn under the canvas's size: the light's edges need the entities' depth.
+    const wallsDepth = wallEdgesWanted(this.config?.lighting, this.config?.debug);
+    const pixelDepth = (this.atlasMapsSource !== null || facesDepth || wallsDepth)
+      && (wantDepth === true || (wantDepth !== false && oblique))
       ? { maps: this.atlasMapsSource ?? this._emptyMapsSource() }
       : null;
     this.entitiesBatch = new InstancedSpriteBatch({

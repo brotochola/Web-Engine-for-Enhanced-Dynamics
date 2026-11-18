@@ -651,7 +651,9 @@ export const RENDERER_DEFAULTS = Object.freeze({
   maxVisibleRenderables: null,
   /**
    * DX-DEPTH (F5): each entity pixel's floor place corrects the painter (pixelDepth.js). null: on with an oblique camera
-   * and maps (heights, normals or relief) or faces, on WebGL and WebGPU; true or false forces it.
+   * and maps (heights, normals or relief), faces, or walls whose light is drawn under the canvas's size (OL-14: the
+   * light's edges need it, lighting.lightEdges), on WebGL and WebGPU; true or false forces it (true still needs one of
+   * the three).
    */
   pixelDepth: null,
   maxDecalTileUploadsPerFrame: 32,
@@ -842,7 +844,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   /**
    * DX-LIGHTEDGES (lightEdges.js): the light, computed at a share of the canvas (resolution under 1), shown without crossing
    * the floor's edges where the entities write depth (pixel depth): a head in front of shaded floor keeps no rim of its own
-   * light. false shows it stretched as a plain texture.
+   * light. false shows it stretched as a plain texture. OL-14: with lighting.walls and an oblique camera it is what turns
+   * pixel depth on (a lit wall in front of its own shadow has that rim), so false leaves pixel depth off there too.
    */
   lightEdges: true,
   /**

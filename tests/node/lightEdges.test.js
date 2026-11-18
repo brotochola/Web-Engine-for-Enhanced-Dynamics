@@ -8,6 +8,7 @@ import fs from 'node:fs';
 
 import {
   LIGHT_EDGES_ENTITY, LIGHT_EDGES_FLOOR, LIGHT_EDGES_KINDS, LIGHT_EDGES_MARK_DEPTH, edgeLightAt, lightEdgesGlsl, lightEdgesWgsl, rgbOnlyHost,
+  wallEdgesWanted,
 } from '../../src/render/lightEdges.js';
 import { lightingSource } from '../../src/render/faceMap.js';
 import { Container } from '../../src/vendor/pixi.min.js';
@@ -71,6 +72,20 @@ test("the light pass's EDGES: the floor's texels leave alpha 0 with it, 1 withou
   assert.match(lightingSource(wgsl, flags), /return vec4<f32>\(totalLight, 1\.0\);/);
   // A face's texel keeps alpha 1 either way (its light dithered, N-277).
   assert.match(lightingSource(glsl, { ...flags, edges: true }), /finalColor = vec4\(weedDither\(min\(faceLight\(fragWorld, face, selfId, selfOn\), vec3\(1\.0\)\), ditherAt\), 1\.0\);/);
+});
+
+test("OL-14: walls ask for the entities' depth where the light is under the canvas's size and its edges are on", () => {
+  const walls = { enabled: true, walls: true, resolution: 0.25 };
+  assert.equal(wallEdgesWanted(walls, {}), true, 'walls, the default resolution');
+  assert.equal(wallEdgesWanted(walls, undefined), true, 'no debug block');
+  assert.equal(wallEdgesWanted({ ...walls, resolution: 0.5 }, {}), true);
+  assert.equal(wallEdgesWanted({ ...walls, resolution: 1 }, {}), false, "at the canvas's size nothing is stretched");
+  assert.equal(wallEdgesWanted({ ...walls, resolution: undefined }, {}), false, "no resolution is the canvas's size");
+  assert.equal(wallEdgesWanted({ ...walls, lightEdges: false }, {}), false, 'the scene turned the edges off');
+  assert.equal(wallEdgesWanted({ ...walls, walls: false }, {}), false, 'no walls');
+  assert.equal(wallEdgesWanted({ ...walls, enabled: false }, {}), false, 'no lighting');
+  assert.equal(wallEdgesWanted(walls, { lightFans: true }), false, 'the old fan pass draws no edges');
+  assert.equal(wallEdgesWanted(undefined, undefined), false);
 });
 
 test("a light splat's host draws it in RGB alone: Pixi's colour mask is 14 on WebGL (red 8 ... alpha 1), 7 on WebGPU's writeMask", () => {

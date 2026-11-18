@@ -449,7 +449,9 @@ export interface SceneRendererConfig extends Record<string, unknown> {
    * DX-DEPTH: each entity pixel's place on the floor corrects the painter: a pixel with a height map at its own height,
    * a face (a decoration with a normal) at its plane's depth, every other pixel at its sprite's foot, the painter breaking
    * ties. Unset (the default), on with an oblique camera (floorScaleY under 1) when a sheet has maps (heightMap, normalMap
-   * or reliefMap) or a decoration carries a face's normal; true or false forces it (true still needs maps or faces).
+   * or reliefMap), a decoration carries a face's normal, or the scene has walls (lighting.walls) and its light is drawn
+   * under the canvas's size (lighting.resolution under 1, lighting.lightEdges not false: the light's edges need the
+   * entities' depth); true or false forces it (true still needs maps, faces or such walls).
    * WebGL and WebGPU.
    */
   pixelDepth?: boolean;
