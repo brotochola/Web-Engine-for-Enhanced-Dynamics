@@ -283,17 +283,31 @@ float faceHeight(vec4 face) {
 // resolution, so a steep surface's own texels next door read a few px higher (the bench's freckles).
 // Towards unit direction l, no further than reach (a lamp's distance; the sun's is unbounded). DX-GBUF: with the ids
 // map, only the heights of the pixel's own entity (selfId) count; a pixel of no entity counts every height.
+// N-272: where on the face map (0..1) the march's point q falls (s: 1 / the floor's scale).
+vec2 selfShadowTexel(vec3 q, float s) {
+  vec2 nc = weedWorldToNorm(vec2(q.x, q.y * s - q.z * uFaceLight.x));
+  return vec2(nc.x, uFlipY > 0.5 ? 1.0 - nc.y : nc.y);
+}
+
+// N-272: the march's t at which a map coordinate c0 + dc t leaves 0..1 (it starts inside), or never.
+float mapExit(float c0, float dc) {
+  return dc > 1e-9 ? (1.0 - c0) / dc : dc < -1e-9 ? -c0 / dc : 1e9;
+}
+
 float selfShadowToward(vec3 p, vec3 l, float reach, float selfId) {
   float s = 1.0 / uGroundInvScaleY;
+  // N-272: the march is a straight line on the screen, so it leaves the face map once: the steps from tEnd on are past its
+  // edge and know nothing (the sampler would repeat the edge's texel there). Worked out before the loop, which keeps one
+  // exit test: a test inside it cost the HD 620 about 5 % of its drawn frames (a branch on the data in a dynamic loop).
+  vec2 fc0 = selfShadowTexel(p, s);
+  vec2 dfc = selfShadowTexel(p + l, s) - fc0;
+  float tEnd = min(reach, min(mapExit(fc0.x, dfc.x), mapExit(fc0.y, dfc.y)));
   for (int i = 2; i <= 9; i++) {
     if (float(i) > uSelfShadow.y + 1.0) break;
     float t = float(i) * uSelfShadow.x;
-    if (t >= reach) break;
+    if (t >= tEnd) break;
     vec3 q = p + l * t;
-    vec2 nc = weedWorldToNorm(vec2(q.x, q.y * s - q.z * uFaceLight.x));
-    vec2 fc = vec2(nc.x, uFlipY > 0.5 ? 1.0 - nc.y : nc.y);
-    // N-272: a step past the map's edge knows nothing (the sampler would repeat the edge's texel there).
-    if (any(lessThan(fc, vec2(0.0))) || any(greaterThanEqual(fc, vec2(1.0)))) continue;
+    vec2 fc = fc0 + dfc * t;
     vec4 f = textureLod(uFaceMap, fc, 0.0);
 // #if IDS
     if (selfId > 0.5) {
