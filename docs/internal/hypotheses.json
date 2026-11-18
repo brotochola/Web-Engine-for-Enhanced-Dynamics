@@ -22243,10 +22243,10 @@
       "id": "DX-ONELIGHT",
       "title": "One light system for every camera: a flat view (camera.pitch 90 or 0) gets the same lighting options as any other camera (normal and height maps, unshaded, the shadow maps, sprite and height map shadows from the lamps), raycasted lighting stops being a pass of its own, and the engine stops inventing what the developer did not bring (the self-lit fill's sphere normal, the automatic strength of a sprite's normals)",
       "status": "open",
-      "statusText": "Owner-approved plan (2026-11-17), revised and built from 2026-11-18 on dx/one-light: OL-1, OL-2 and OL-4 (final B, by eye) are written, with the suites and captures; the owner has seen the first pictures (sun normals stay off by default, walls lit to a depth preferred, both as knobs); only first readings are timed (the owner's order: the code first, measuring and optimizing after); not merged",
+      "statusText": "Owner-approved plan (2026-11-17), revised and built from 2026-11-18 on dx/one-light: OL-1, OL-2, OL-4 (final B, by eye), OL-5 and OL-6 are written, with the suites and captures; the owner has seen the first pictures (sun normals off by default, walls lit to a depth preferred, both as knobs; OL-6 asked for); only first readings are timed (the owner's order: the code first, measuring and optimizing after); not merged",
       "date": "2026-11-17",
       "result": "",
-      "next": "The owner's pictures; OL-3 (the race) and every other measurement; the optimizing; the deletion of the old pass. The owner's open decisions are in the plan's section 5, what was found in its section 7.",
+      "next": "To merge: the optimizing the first readings ask for (the walls' rows built in JS, +0.65 ms of pre-render at 360 lights; a 960x540 pass of 0.44 ms on the GPU with nothing casting), the owner scenes timed with an A/A and the Predator gate, main merged in, the bundles. After it or before: OL-3 (the race) and the deletion of the old pass. The owner's open decisions are in the plan's section 5, what was found in its section 7.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22292,10 +22292,10 @@
       "id": "OL-2",
       "title": "A sprite's normals under the sun and under the lamps as the developer's option (lighting.normalStrength { sun, lamps } recommended), instead of the light pass's automatic blend by the lamps' share of the light (k = lamps / (lamps + ambient + sun): by day as drawn, at night by the normals)",
       "status": "open",
-      "statusText": "Written 2026-11-18 on dx/one-light (89e2afcb), suites green; the owner saw it: the default stays { sun: 0, lamps: 1 }, full strength on the sun darkens everything too much; a softer shape for the sun is in conversation; not timed; not merged",
+      "statusText": "Written 2026-11-18 on dx/one-light (89e2afcb), suites green; the owner saw it: the default stays as drawn under the sun and by the normals under a lamp; its key became OL-6's lighting.normalShading the same day (2696eafe); not timed; not merged",
       "date": "2026-11-17",
       "result": "lighting.normalStrength { sun, lamps } in uFaceLight's two free numbers, default { sun: 0, lamps: 1 }; the automatic k is gone. normalLightCheck, WebGL and WebGPU: 0.5,0.5 worst 2.1 of 255; full strength worst 3.4 (lamp) and 4.0 (sun), p99 2.4, mean 0.6.",
-      "next": "The owner's word on a softer shape for the sun's normals (the roof's effect without the rest going dark), then build it or close the item as it is; gpuPassBench on both backends and the Predator gate once, with the rest of the branch. One reading on the ASUS's HD 620 for the record, not a condition.",
+      "next": "Nothing of its own: the sun's numbers are picked in OL-6, and the light pass is timed with the rest of the branch (both backends, the Predator gate). One reading on the ASUS's HD 620 for the record, not a condition.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22372,17 +22372,40 @@
         "volumes only cast no lamp shadow"
       ],
       "records": [
-        "R-1352"
+        "R-1352",
+        "R-1356"
       ],
-      "result": "",
-      "next": "In pre-render's _writeStampLightIds, publish the casting lamps' ids also when the scene's lamps cast into a map and it has volumes (lighting.lampShadows 'map' with lighting.maxVolumes above 0), not only when a stamp row exists; a node test on a real pre-render worker (lamps, volumes, no sprite caster: the ids are there); captures of visPolyStressScene ?arm=maps against ?arm=walls (the shadows must match before the race times them) and of the barrio by night (no change expected: it always has sprite casters); the Predator gate with the rest of the branch.",
+      "result": "Pre-render names the casting lamps without a stamp row when the lamps cast into their map, and Pixi then draws the volumes alone into their tiles (tiles for a stamp row or a casting volume, none with neither). visPolyStressScene ?arm=maps before against after: 139 473 of 921 600 px (no shadow before); WebGL against WebGPU 0 px; a frame with a stamp row as before (0 px).",
+      "next": "Its time with the branch's sitting (the Predator gate, the owner scenes); OL-3's maps arm can run.",
       "id": "OL-5",
       "kind": "bug",
       "area": "render",
-      "status": "open",
+      "status": "running",
       "date": "2026-11-18",
       "title": "With lampShadows 'map', the lamps get their tiles only in a frame with a stamp row: a scene whose only casters in the lamps' reach are volumes (houses with nobody near) draws no lamp shadow at all",
-      "statusText": "Found 2026-11-18 building OL-3's maps arm (visPolyStressScene ?arm=maps: the lamps draw, the volumes cast nothing) and read in the code: preRenderWorker's _writeStampLightIds returns 0 unless stampN > 0, and Pixi gives a lamp a tile from those ids (_readLampTiles). Not fixed: it blocks the maps arm of the race and final A, not final B"
+      "statusText": "Fixed 2026-11-18 on dx/one-light (13c69176), suites green, captures before and after; not timed (a hygiene keep, with the branch's sitting); not merged"
+    },
+    {
+      "refs": [
+        "ONE_LIGHT_PLAN.md#OL-6"
+      ],
+      "aliases": [
+        "normalShading",
+        "normals subtract",
+        "sun normals threshold"
+      ],
+      "records": [
+        "R-1357"
+      ],
+      "result": "lighting.normalShading { sun: { strength, subtract }, lamps: { strength, subtract } } replaces lighting.normalStrength: shading' = max(0, shading - subtract) * strength, for the sun and for each lamp. Light bench at 16:00, the view that changes and the light lost there: full strength 20.3 % and 43.5 %; strength 0.8 with 0.2 subtracted 16.5 % and 24.0 %; strength 1 with 0.3 subtracted 16.3 % and 21.8 %. normalLightCheck on both backends at four settings: worst 4.0 of 255. The default picture is the same (0 px).",
+      "next": "The owner picks the sun's two numbers from the light bench (its Scene section has the four knobs); the light pass's time on both backends and the Predator gate, with the rest of the branch.",
+      "id": "OL-6",
+      "kind": "dx",
+      "area": "render",
+      "status": "running",
+      "date": "2026-11-18",
+      "title": "The shading a sprite's normals cause takes an amount subtracted (never under 0) and a strength, for the sun and for the lamps apart (lighting.normalShading), so only the faces turned away from a light darken: the owner's ask, from OL-2's pictures",
+      "statusText": "Asked by the owner and written 2026-11-18 on dx/one-light (2696eafe), suites green, the formula checked on both backends; the owner has not picked the numbers; not timed; not merged"
     },
     {
       "refs": [],
@@ -36024,6 +36047,30 @@
       "text": "**The owner's eye on the first pictures (2026-11-18): the sun's normals at full strength darken everything too much (the default stays 0); a wall lit to a depth looks better than lit whole, for houses and for rocks, and both stay as the dev's knobs.**\n\n- **OL-2, the sun's normals.** Light bench at 16:00 (sun 45° high), `normalStrength.sun` 0 against 1: the owner likes what it does to the barn's roof and not what it does to the rest (\"todo se oscurece mucho en general, demasiado\"). Measured on the captures (the scene's 908 x 720 px, luminance): a fifth of the view changes (20.3 %), and there the light drops 43.5 % at strength 1, 26.1 % at 0.6 and 15.3 % at 0.35. Why, from the shader: by its normal a face gets the sky's share (`sun.skyLight`, 0.4) plus the direct share times its cosine, and the reference is the floor; every upright face that does not look at the sun loses up to 60 %, on a picture that already carries its painted light. **The default stays `{ sun: 0, lamps: 1 }`.** A plain strength lowers the roof's effect as much as the rest: the owner is thinking about a softer shape for it (in conversation, nothing designed or written).\n- **OL-4, a wall's own picture.** With depth (`lighting.wallDepth`) for the houses (Headlights, 24 px) and for the rocks (planetPhysics, 40 px). The engine's default stays 0 (lit whole): both looks are knobs. Headlights' default moved to 24 px (712553ca).\n- **Still the owner's:** whether a wall's shadow keeps a third of the lamp (`WALL_UMBRA`).\n- **Found on the way, N-297:** in the same bench at 10:00 (sun 78° high) the cars' shadows are a dark wedge at one corner of the car. Captured against main (`compareCaptures --vs main --full-rev --query hour=10`): main draws the same wedges, so it is not this branch's.",
       "commits": [
         "712553ca"
+      ]
+    },
+    {
+      "id": "R-1356",
+      "date": "2026-11-18",
+      "time": "04:39",
+      "timeFrom": "recorded",
+      "title": "OL-5 fixed: with lampShadows 'map' the volumes cast their lamp shadows in a frame with no stamp row (visPoly ?arm=maps: 139 473 px change, WebGL against WebGPU 0 px); not timed",
+      "verdict": "note",
+      "text": "**OL-5 fixed on dx/one-light (13c69176): with `lampShadows: 'map'`, volumes cast their lamp shadows in a frame with no stamp row. Not timed.**\n\n- **What it was, in two halves:** pre-render published the casting lamps' ids only in a frame with a stamp row (`_writeStampLightIds`), and Pixi drew the lamps' map only then too (`_drawLampMap` returned before the volumes when it had no stamp row).\n- **What changed:** pre-render orders, fades at the cut and names the casting lamps without a stamp row when the lamps cast into their map (`_lampMapCasts`). Pixi gives them tiles for a stamp row or a casting volume, none with neither (an empty tile is read by every pixel of its lamp), and with tiles and no stamp row clears the map and draws the volumes alone (`_drawLampMapVolumes`). A frame with a stamp row runs as before.\n- **Checked:** visPolyStressScene `?arm=maps` before against after: 139 473 of 921 600 px differ (no shadow before; the 64 nearest lamps' after, the cap of `maxShadowCastingLights`); `?lights=40&zoom=1` WebGL against WebGPU 0 px; dxCaptureScene `?hour=22` before against after 0 px. The light bench by night is not a still scene (the same code twice: 2 016 and 3 960 px), so it proves nothing here. node 3072, demos 121.\n- **Next:** the race's maps arm is ready (OL-3); the fix is timed with the branch's sitting (a hygiene keep: it stays unless a worker gets 3 % worse).",
+      "commits": [
+        "13c69176"
+      ]
+    },
+    {
+      "id": "R-1357",
+      "date": "2026-11-18",
+      "time": "04:59",
+      "timeFrom": "recorded",
+      "title": "OL-6 asked by the owner and built: lighting.normalShading (an amount subtracted, then a strength); light bench at 16:00 loses 24.0 % where it changes at 0.8 / 0.2 against 43.5 % at full strength; not timed",
+      "verdict": "note",
+      "text": "**OL-6 asked by the owner and built the same day (2696eafe): `lighting.normalShading { sun: { strength, subtract }, lamps: { strength, subtract } }` replaces `lighting.normalStrength`. Not timed; the owner has not picked the sun's two numbers.**\n\n- **The ask (2026-11-18, in conversation):** full strength on the sun darkens everything; instead of only attenuating the shading the normals cause, take a fixed amount off it (what falls under 0 stays 0) and let the strength multiply it, for the sun and for the lamps. `wrap` was found unclear as a name; the owner asked for a descriptive one.\n- **The rule built:** `shading' = max(0, shading - subtract) * strength`. The subtraction first (the owner wrote the product first): so `subtract` alone says from how much shading a face shows any. The sun's shading is measured against the sun the pixel gets as drawn, in shares of the sun (0 to `1 - sun.skyLight`); a face that gains from its normal keeps its gain, by the strength alone, so strength 1 with nothing subtracted is the old full strength. A lamp's is `1 - cosine`, a lamp at a time.\n- **The name:** the path says what is shaded and by what, the leaves say the arithmetic. `lighting.normalStrength` goes without a retired text (it never left the branch).\n- **Light bench at 16:00** (sun 45° high), the view's pixels that change and the light they lose there, against as drawn:\n\n| sun | view that changes | light lost there |\n| --- | --- | --- |\n| strength 1, nothing subtracted (the old full strength) | 20.3 % | 43.5 % |\n| strength 0.8, subtract 0.2 (the owner's first numbers) | 16.5 % | 24.0 % |\n| strength 1, subtract 0.3 | 16.3 % | 21.8 % |\n\n  The barn's roof keeps its dark slope; trees, cars and people stay near as drawn.\n- **Checked:** `normalLightCheck` (it takes `--subtract` now) on WebGL and WebGPU, sun and lamp, at strength 0,1; 1,1; 1,1 with 0.2,0.3 subtracted; 0.8,0.6 with 0.2,0.1 subtracted: worst 4.0 of 255, the maps' own steps as before. dxCaptureScene at noon and by night against the commit before: 0 of 921 600 px. node 3073, demos 121, types.\n- **Next:** the owner picks the sun's two numbers from the bench (its Scene section has the four knobs); the light pass's time on both backends and the Predator gate with the branch.",
+      "commits": [
+        "2696eafe"
       ]
     }
   ],
