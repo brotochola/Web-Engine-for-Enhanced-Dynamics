@@ -23600,6 +23600,30 @@
         "R-1422",
         "R-1429"
       ]
+    },
+    {
+      "id": "N-303",
+      "title": "Less code in src/ without losing speed: about 5 000 to 6 500 of its 97 517 code lines go and about 1 000 test-only lines move to tests/; cold removals as hygiene keeps, hot copies measured, no backwards compatibility, the public API kept whole except its deprecated aliases",
+      "status": "open",
+      "statusText": "planned 2026-11-18 at the owner's ask (CODE_REDUCTION_PLAN.md), the owner's decisions the same day",
+      "date": "2026-11-18",
+      "area": "engine",
+      "kind": "refactor",
+      "result": "Not started. The audit of main e3283426 and the owner's decisions are its records. The plan: items CR-0 to CR-39 in phases 0 (a size ruler), A (dead and no-op code, with the decided removals of old saves and deprecated aliases), B (cold duplicates), C (hot copies, each through its kernel and owner scene), D (what the owner decides; the public API stays whole) and E (physics as a module worker).",
+      "next": "CR-0 (scripts/codeSize.mjs and the baseline record), then phase A with CR-33 (old saves) and CR-34 (deprecated aliases), both decided. Phase A also has CR-1 (the cwrap type lists), CR-2 (the physicsApi surface), CR-3 (the write-only query buffers, with the 65-query test first) … CR-12 (test-only code to tests/), and one Predator gate for the batch. CR-4 and CR-7 land before N-256's PW-1; CR-17 follows N-256 subsystem by subsystem. Still open for the owner: CR-37 (the untiled light path) and CR-38 (pre-render's JS visibility gather).",
+      "refs": [
+        "CODE_REDUCTION_PLAN.md",
+        "REVIEW_PLAN.md#N-303"
+      ],
+      "aliases": [
+        "code reduction",
+        "less code",
+        "reduce code"
+      ],
+      "records": [
+        "R-1430",
+        "R-1431"
+      ]
     }
   ],
   "records": [
@@ -37390,6 +37414,24 @@
       "title": "Full-screen passes: fused where pointwise, two targets a chain (three.js's RenderPipeline, Phaser 4's filters)",
       "verdict": "note",
       "text": "**Full-screen passes in three.js and Phaser 4: fused where they only map a colour, two targets for a chain. Read in their sources and commits, not measured here.**\n\n- **three.js on WebGPU** (RenderPipeline, src/renderers/common/RenderPipeline.js, renamed from PostProcessing in r183): the TSL output graph compiles into one fragment shader on a QuadMesh; an effect that reads neighbours calls convertToTexture(), which inserts an RTTNode only when its input is not a texture already (RTTNode.js 365-370), so pointwise effects fuse into the final shader; kernels such as GaussianBlurNode own their targets. Its MSAA rules: no multisampling of full-screen passes (72288c8c, #33936), one resolve (d9eec4fc, #31743), post targets made lazily and single-sampled (1d6e89cb, #34030); the full-screen pass is one triangle from vertexIndex (6f583581, #33917).\n- **three.js on WebGL** (EffectComposer): one full-screen draw a pass, two targets swapped (needsSwap), nothing merged.\n- **Phaser 4** filters: targets from a pool by size (DrawingContextPool; idle ones reused after 1 s); the last filter of a chain draws straight into its destination when its size and alpha allow (renderNodes/Camera.js 376-394), as DX-POST's last pass draws onto the canvas.\n- **For WeedJS:** each SCREEN pass draws into a target of its own (DX_POST_DESIGN.md), so a chain of N passes at one resolution holds N targets where two suffice (E-525), and every pass costs a full-screen read and write even when it only maps a colour (DX-POSTFUSE). E-468 is the same fusion inside the engine: one composite for light, shadows and glow, about 0.10 ms of GPU saved a pass at full clock on the GTX 1650."
+    },
+    {
+      "id": "R-1430",
+      "date": "2026-11-18",
+      "time": "18:00",
+      "timeFrom": "recorded",
+      "title": "Code-size audit of main e3283426: 98 992 code lines in src/, 6 000 to 7 500 can go without losing speed (plus ~1 300 test-only lines to tests/); the plan CR-0 to CR-39",
+      "verdict": "note",
+      "text": "**The code-size audit of main e3283426: where `src/` can shrink without losing speed. Nothing changed, nothing timed. Filed on main at fa12bc91, after DX-ONELIGHT; the plan says what that merge already removed.**\n\n**What was counted.** Without the generated files (box2dWasm.js, wasm/engine.js, vendor/pixi.min.js):\n\n| | lines |\n| --- | --- |\n| `src/` code | 98 992 |\n| `src/` comments | 24 187 |\n| `src/` blank | 10 469 |\n| `tests/` code | 159 781 (`tests/bench` 77 102 in 509 files) |\n\n| bytes | |\n| --- | --- |\n| `engine.wasm` | 351 269 |\n| `box2dWasm.wasm` | 419 229 |\n| prod bundle, minified | 3 832 896 |\n| prod bundle, gzip -9 | 1 218 729 |\n\n**How it was found.**\n\n- A clone scan (windows of 6 normalized code lines) found 122 pairs of 12 lines or more, about 2 200 lines in all.\n- A reference scan of every export over src, demos, tests, scripts and types:\n  - 194 exports used nowhere outside their file, 27 of them used nowhere at all;\n  - 284 exports used outside their file only by tests, 69 of them not even inside it;\n  - 28 methods named only where they are defined.\n- Of the 99 exports of `engine.wasm`, the workers bind none of the 14 losing painter-radix exports or `premultiply_scalar`, and only `bullet_tick_lean` of the 4 bullet-tick variants.\n- Six read-throughs, one per area.\n\n**Checked by hand.**\n\n- The `cwrap` lists: Emscripten returns the raw export when every type is a number. physicsApi.js holds 447 lines of a bare `\"number\",`.\n- `instancedSpriteBlend.frag.glsl` has the same md5 as `instancedSprite.frag.glsl`.\n- The two query SABs are written by QuerySystem; workers only test that they are present.\n- `'REBUILD'` has no sender.\n- `Ray.castDir` has no caller.\n- pixiWorker fields with only their declaration and one write: `physicsWorkerIndex`, `_gpuParticleLiveRecords`, `_rqPrevCount`, `_lightGradientTexId`. `entityLastTextureId` has 22 references and is not counted as dead.\n\n**The estimate.** 6 000 to 7 500 code lines out of `src/`, plus about 1 300 moved into `tests/`. Phase E adds about 700.\n\nThe volume is structural:\n\n- dead and no-op code, ~2 200;\n- cold duplicates (layouts by hand, name lists, shader variants, init boilerplate, debug and save), ~4 400;\n- hot copies, ~700, each measured;\n- public API and compatibility, ~900, the owner decides.\n\n**Already settled, so not re-proposed.**\n\n- The light-splat setup was measured and kept as copies (R8, the review's repeated-code item: 10 to 30 % when it was shared).\n- The light-term preamble was inlined on purpose (E-109, E-311).\n- The deliberate hot-loop copies stay.\n\n**Bugs found on the way.** Not reproduced.\n\n- A scene with more than 64 precomputed queries throws a RangeError, because the cache SAB is sized for 64.\n- Per-frame literals gain fields after the loop starts: `makeBatchViews`, `_computePose`, the mesh-fill skip literal and `_uploadCtx`.\n- WebGL's draw-call wrappers run on every draw with detailed stats off.\n- The prod stub of DebugFlags leaves `selectedEntity` at 0, where the debug build has -1.\n- `DECORATION_NO_PARENT` is `0xffff`, which is wrong with 32-bit entity ids.\n\nThe plan: CODE_REDUCTION_PLAN.md."
+    },
+    {
+      "id": "R-1431",
+      "date": "2026-11-18",
+      "time": "18:45",
+      "timeFrom": "recorded",
+      "title": "N-303 phase D decided by the owner: no backwards compatibility (old saves and deprecated aliases go now), nothing else of the public API is deleted",
+      "verdict": "note",
+      "text": "**The owner's decisions on N-303's phase D, 2026-11-18.**\n\n- **CR-33, old saves: they go.** The older formats were the owner's own test saves; there is no backwards compatibility. All of the legacy save reading goes: the tags 8 to 11 and 14, the old tween layouts, `feedLayerId` with `Layer.maskFromLegacy`, `buildLayoutHint`. When the bytes change the format goes to 6, and older saves are refused with the existing version error. It moves into phase A as a hygiene removal.\n- **CR-34, deprecated aliases: they go now**, with no notice period. That means what the code marks `@deprecated` or \"alias\": `physics.maxFixtures`, `box2dWorkerCount`, Mouse's 13 aliases, `loadStaticFlowfieldsFromJSON`, `getParticleViews`, `getParticleGroups`, `DECORATION_NO_PARENT`, and the internal ones. It moves into phase A. `Ray.castDir` and `Ray.getLineOfSightInfo` are documented in `RAYCASTING.md` and are not aliases, so they stay.\n- **CR-35 and CR-36, the public API: nothing of it is deleted**, whether this repository calls it or not (\"quizá algún dev la usa\"). \"Public\" means exported by `index.js` or `workerWeed.js`, typed in `types/`, or shown in `docs/guide/`.\n  - What remains of CR-35: a behavioural test for each method nobody calls, and the missing types of LiquidFun's range wrappers.\n  - The `config.wasm.*F32` switches stay.\n  - Utils typed in `utils.d.ts` but not exported by `index.js` stay, and the owner chooses between fixing the types and adding the export.\n- **The estimate becomes 5 000 to 6 500 code lines out of `src/`**, plus about 1 000 moved into `tests/`. Before these decisions it was 6 000 to 7 500 and 1 300. Main at fa12bc91 (DX-ONELIGHT merged) already lost the self-lit and visibility-polygon batches that CR-14, CR-17 and CR-28 listed.\n\nNew plan rules 8 and 9 in `CODE_REDUCTION_PLAN.md`."
     }
   ],
   "leads": [
