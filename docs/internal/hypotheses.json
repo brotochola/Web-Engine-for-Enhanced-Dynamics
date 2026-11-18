@@ -22243,7 +22243,7 @@
       "id": "DX-ONELIGHT",
       "title": "One light system for every camera: a flat view (camera.pitch 90 or 0) gets the same lighting options as any other camera (normal and height maps, unshaded, the shadow maps, sprite and height map shadows from the lamps), raycasted lighting stops being a pass of its own, and the engine stops inventing what the developer did not bring (the self-lit fill's sphere normal, the automatic strength of a sprite's normals)",
       "status": "open",
-      "statusText": "Owner-approved plan (2026-11-17), revised and built from 2026-11-18 on dx/one-light: OL-1, OL-2 and OL-4 (final B, by eye) are written, with the suites and captures; nothing is timed (the owner's order: the code first, measuring and optimizing after); not merged",
+      "statusText": "Owner-approved plan (2026-11-17), revised and built from 2026-11-18 on dx/one-light: OL-1, OL-2 and OL-4 (final B, by eye) are written, with the suites and captures; the owner has seen the first pictures (sun normals stay off by default, walls lit to a depth preferred, both as knobs); only first readings are timed (the owner's order: the code first, measuring and optimizing after); not merged",
       "date": "2026-11-17",
       "result": "",
       "next": "The owner's pictures; OL-3 (the race) and every other measurement; the optimizing; the deletion of the old pass. The owner's open decisions are in the plan's section 5, what was found in its section 7.",
@@ -22292,10 +22292,10 @@
       "id": "OL-2",
       "title": "A sprite's normals under the sun and under the lamps as the developer's option (lighting.normalStrength { sun, lamps } recommended), instead of the light pass's automatic blend by the lamps' share of the light (k = lamps / (lamps + ambient + sun): by day as drawn, at night by the normals)",
       "status": "open",
-      "statusText": "Written 2026-11-18 on dx/one-light (89e2afcb), suites green; the owner has not picked the default; not timed; not merged",
+      "statusText": "Written 2026-11-18 on dx/one-light (89e2afcb), suites green; the owner saw it: the default stays { sun: 0, lamps: 1 }, full strength on the sun darkens everything too much; a softer shape for the sun is in conversation; not timed; not merged",
       "date": "2026-11-17",
       "result": "lighting.normalStrength { sun, lamps } in uFaceLight's two free numbers, default { sun: 0, lamps: 1 }; the automatic k is gone. normalLightCheck, WebGL and WebGPU: 0.5,0.5 worst 2.1 of 255; full strength worst 3.4 (lamp) and 4.0 (sun), p99 2.4, mean 0.6.",
-      "next": "Captures of the light bench at noon, dusk and night and of Predator ?light3d=1 by night, old against new, for the owner to pick the default; gpuPassBench on both backends and the Predator gate once, with the rest of the branch. One reading on the ASUS's HD 620 for the record, not a condition.",
+      "next": "The owner's word on a softer shape for the sun's normals (the roof's effect without the rest going dark), then build it or close the item as it is; gpuPassBench on both backends and the Predator gate once, with the rest of the branch. One reading on the ASUS's HD 620 for the record, not a condition.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22309,7 +22309,8 @@
       "records": [
         "R-1317",
         "R-1350",
-        "R-1351"
+        "R-1351",
+        "R-1355"
       ]
     },
     {
@@ -22333,17 +22334,18 @@
         "R-1317",
         "R-1350",
         "R-1352",
-        "R-1353"
+        "R-1353",
+        "R-1354"
       ]
     },
     {
       "id": "OL-4",
       "title": "The flat view on the common light pass: lighting.raycasted no longer picks the pass, a wall stops a lamp through the lamps' maps (final A) or through the sweep's result read by the light pass (final B), and the fans, the self-lit fills, the wedges and their shaders are deleted (about 2 000 lines in final B; about 5 000 and 3 500 of tests in final A)",
       "status": "open",
-      "statusText": "Written 2026-11-18 on dx/one-light as final B, picked by eye (9186550f, e57d6659, 94e31445), suites green, every moved scene drawing; the owner has seen the first captures; not timed; the old pass still behind debug.lightFans; not merged",
+      "statusText": "Written 2026-11-18 on dx/one-light as final B, picked by eye (9186550f, e57d6659, 94e31445, f56792f2), suites green, every moved scene drawing; the owner prefers a wall lit to a depth (houses and rocks), both looks kept as knobs; first readings only (pre-render +0.65 ms, Pixi +0.2 ms, GPU +0.24 ms a frame at 360 lights, no sitting); the old pass still behind debug.lightFans; not merged",
       "date": "2026-11-17",
       "result": "lighting.walls asks for walls whatever the camera; pre-render publishes a row a lamp (lampWallRow.js) and the light pass reads it (WALLS variant, WebGL and WebGPU: 19 of 921 600 px differ, by 3 of 255 at most). A wall's own sprite is lit whole (the G-buffer's id) or, with lighting.wallDepth, the light enters every wall that many px (a wall drawn by a mesh has no id). Walls work on any floor scale, so oblique cameras have them too. Pitch 0 is a flat view by itself.",
-      "next": "The owner's eye on the pictures (a wall lit whole or to a depth; the third of the lamp a wall's shadow keeps; walls with no sprite of their own now dark inside). Then the measuring: the race (OL-3) with this pass as an arm, the owner scenes by their worker and by the GPU's time a frame, the Predator gate; the optimizing (the rows' upload, 3.1 KB a lamp a frame; the row build in JS); and only then the deletion. Closes N-38 and N-163 by deletion.",
+      "next": "The owner's last decision here (the third of the lamp a wall's shadow keeps). Then the measuring: the race (OL-3) with this pass as an arm, the owner scenes by their worker and by the GPU's time a frame (A/A, ?lights=720, both backends), the Predator gate; the optimizing (the rows' build in JS, +0.65 ms; the rows' upload, 644 KB a frame at 360 lights; a 960x540 pass of 0.44 ms that looks like the lamps' cookies with nothing casting); and only then the deletion. Closes N-38 and N-163 by deletion.",
       "area": "render",
       "kind": "feature",
       "refs": [
@@ -22358,7 +22360,9 @@
         "R-1317",
         "R-1350",
         "R-1351",
-        "R-1353"
+        "R-1353",
+        "R-1354",
+        "R-1355"
       ]
     },
     {
@@ -22552,6 +22556,26 @@
       "date": "2026-11-17",
       "title": "A sleeping body pushed with addAcceleration could stay asleep, its acceleration lost: logic stored RigidBody.sleeping = 0 before physics' turn, and bodies_apply_accelerations wakes only where the paint still says asleep",
       "statusText": "found 2026-11-17 while building E-434 (the false-sharing audit's sleeping store); proven on real wasm; fixed the same day"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "car shadow wedge",
+        "high sun shadow sliver",
+        "light bench cars shadow"
+      ],
+      "records": [
+        "R-1355"
+      ],
+      "result": "",
+      "next": "Read what the cars cast in lightBenchScene (their volume against their picture) and why a high sun leaves only a corner of it outside the body: a volume narrower or lower than the drawn car, or its shadow drawn under the sprite. Captures at 10:00, 12:00 and 14:00, before and after; the trees and the barn at the same hours as the reference (theirs read right).",
+      "id": "N-297",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "The light bench's cars at a high sun (10:00, 78°) cast a dark wedge at one corner instead of a shadow around the body",
+      "statusText": "Seen by the owner 2026-11-18 on a capture of dx/one-light; main draws the same wedges (compareCaptures --vs main --full-rev, lightBenchScene ?hour=10), so it is older than DX-ONELIGHT. Not looked into"
     },
     {
       "id": "E-518",
@@ -35976,6 +36000,30 @@
       "text": "**A first reading of what the walls cost in the light pass against the old fan pass, not a sitting: pre-render +0.6 to 0.7 ms (about +22 %), Pixi +0.2 ms (about +22 %) at 360 lights; no A/A, the GPU not read.** visPolyStressScene `?lights=360`, `?arm=fans` against `?arm=walls`, one build (dx/one-light), GTX 1650 on AC, headed, `--src`, detailed stats off, 3 s warm-up and 8 s, four runs a side in turn (04:05 to 04:09, the result files' times). Each worker's `STEP_MS - WAIT_MS`, exact frames:\n\n| | fans (old pass) | walls (light pass) |\n| --- | --- | --- |\n| pre-render | 3.04, 2.87, 2.99, 2.96 | 3.69, 3.69, 3.55, 3.66 |\n| Pixi, rows uploaded whole | 0.89, 0.91 | 1.31, 1.33 |\n| Pixi, the columns in use only (the commit after) | 0.91, 0.78 | 1.05, 1.04 |\n\n- **Pre-render's +0.65 ms** is the rows' build, in JS, once a lamp with walls (360 a frame here): the candidate for the sweep's kernel.\n- **Pixi's** cost was the upload: this scene sets `maxPolygonVertices` 5000, so a row was 578 texels wide and went up whole; sending the columns in use took 0.28 ms off (1.32 -> 1.04). What is left over the fans is the copy and the upload of the rows in use, every frame, unchanged rows included.\n- **Not read:** the GPU's time a frame (the light pass shades every pixel and the G-buffer pass is on; the fans drew only where a light reaches), which is where this change may cost most; a sitting with an A/A and the baseline over 6 ms (`?lights=720`).\n- Every worker stays far under a frame (pre-render 23 % load, Pixi's own work about 1 ms), 60 fps on both arms.",
       "commits": [
         "f56792f2"
+      ]
+    },
+    {
+      "id": "R-1354",
+      "date": "2026-11-18",
+      "time": "04:13",
+      "timeFrom": "recorded",
+      "title": "The GPU's time a frame, fans against the walls in the light pass: 2.73 against 2.98 ms at 360 lights (GTX 1650, one run a side, a reading)",
+      "verdict": "note",
+      "text": "**The GPU's time a frame, old fan pass against the walls in the light pass: 2.73 against 2.98 ms on the GTX 1650 (+0.24 ms, +9 %), one run a side, the GPU's clock not the same in both: a reading, not a sitting.** `glFrameRecorder --gpu-passes`, visPolyStressScene `?lights=360`, `?arm=fans` against `?arm=walls`, dx/one-light at 56c845c1, WebGL, 1920x1080, 181 frames in 3 s each (04:13). Timer queries, none disjoint.\n\n| pass | fans (old) | walls (light pass) |\n| --- | --- | --- |\n| the final frame, 1920x1080 | 1.598 ms | 1.329 ms |\n| the lights: the fans' target 480x270 (2 draws) / the light pass (1 draw) | 1.079 ms | 1.036 ms |\n| a 960x540 pass | 0.049 ms (no draw) | 0.440 ms (1 draw, 20 instances) |\n| the G-buffer, 480x270 | not drawn | 0.167 ms |\n| **a frame** | **2.734 ms** | **2.977 ms** |\n| uploaded a frame | 781.9 KB of buffers, 84.5 KB of textures | 1.2 KB of buffers, 770.3 KB of textures |\n| GL calls a frame | 106.6 | 168.2 |\n| the GPU's clock (nvidia-smi) | P8 all the window, median 360 MHz | P8 47 %, P5 53 %, median 660 MHz |\n\n- **The light pass itself costs what the fans cost** (1.04 against 1.08 ms): reading a lamp's row per pixel is not the expense feared.\n- **What the walls add is two passes the fans did not have:** the G-buffer (0.17 ms, the ids a wall's own pixels need) and a 960x540 pass of 20 instances (0.44 ms). The second looks like the lamps' cookies, drawn here though nothing in the scene casts into them: to confirm, and a candidate to skip. Without it the walls would be level with the fans.\n- **The upload changes kind, not size:** the fans sent 770 KB of vertices a frame, the walls send 643.6 KB of rows (117 x 354 texels) plus 42.2 KB of light tiles. Still the first thing to cut (only the rows that changed).\n- **Not settled:** one run a side, and the walls' run had the GPU at a higher clock half the time, which flatters it. The sitting (A/A, `?lights=720`, both backends) is owed.",
+      "commits": [
+        "f56792f2"
+      ]
+    },
+    {
+      "id": "R-1355",
+      "date": "2026-11-18",
+      "time": "04:27",
+      "timeFrom": "recorded",
+      "title": "The owner on the first pictures: the sun's normals stay off by default (full strength darkens too much), walls lit to a depth preferred, both looks as knobs; the cars' shadow wedges are main's too",
+      "verdict": "note",
+      "text": "**The owner's eye on the first pictures (2026-11-18): the sun's normals at full strength darken everything too much (the default stays 0); a wall lit to a depth looks better than lit whole, for houses and for rocks, and both stay as the dev's knobs.**\n\n- **OL-2, the sun's normals.** Light bench at 16:00 (sun 45° high), `normalStrength.sun` 0 against 1: the owner likes what it does to the barn's roof and not what it does to the rest (\"todo se oscurece mucho en general, demasiado\"). Measured on the captures (the scene's 908 x 720 px, luminance): a fifth of the view changes (20.3 %), and there the light drops 43.5 % at strength 1, 26.1 % at 0.6 and 15.3 % at 0.35. Why, from the shader: by its normal a face gets the sky's share (`sun.skyLight`, 0.4) plus the direct share times its cosine, and the reference is the floor; every upright face that does not look at the sun loses up to 60 %, on a picture that already carries its painted light. **The default stays `{ sun: 0, lamps: 1 }`.** A plain strength lowers the roof's effect as much as the rest: the owner is thinking about a softer shape for it (in conversation, nothing designed or written).\n- **OL-4, a wall's own picture.** With depth (`lighting.wallDepth`) for the houses (Headlights, 24 px) and for the rocks (planetPhysics, 40 px). The engine's default stays 0 (lit whole): both looks are knobs. Headlights' default moved to 24 px (712553ca).\n- **Still the owner's:** whether a wall's shadow keeps a third of the lamp (`WALL_UMBRA`).\n- **Found on the way, N-297:** in the same bench at 10:00 (sun 78° high) the cars' shadows are a dark wedge at one corner of the car. Captured against main (`compareCaptures --vs main --full-rev --query hour=10`): main draws the same wedges, so it is not this branch's.",
+      "commits": [
+        "712553ca"
       ]
     }
   ],
