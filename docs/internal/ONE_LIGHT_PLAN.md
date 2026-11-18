@@ -577,8 +577,10 @@ the deletion (section 8).
   engine's default, lights it whole; Headlights now asks 24 px, planetPhysics 40).
 - OL-4, final A: what `setWall({ shape: 'sprite' })` becomes.
 - OL-4, final B: the names of the keys (`lighting.walls`, `lighting.wallDepth`; the builder's picks).
-- OL-4, final B: whether a wall's shadow keeps a third of the lamp, as the old pass's did (`WALL_UMBRA`), or
-  nothing, or what a key says (section 7).
+- OL-4, final B: whether a wall's shadow keeps a third of the lamp, as the old pass's did, or nothing, or what a key
+  says. **Built as a key, 2026-11-18: `lighting.lightBehindWalls`** (0 to 1, default 0.33, the old look; `d42628bd`),
+  since the owner asked for the looks to stay the developer's knobs. Open: its default, from Headlights with a third
+  against none (`?behindWalls=0`).
 - OL-4: `shadowCaster.setWall({ shape })`. Only the old pass reads `shape` now (its fills' mask); it goes with
   the deletion unless the owner wants a wall cut by its sprite's alpha, which the sweep does not do.
 
