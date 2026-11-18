@@ -20,7 +20,9 @@
  *
  * --full-rev: the --vs and --hyp-rev worktrees check out their whole revision (its dist/, its runner and scenes)
  * instead of its src/ alone, so with weedBundle in --query one revision's shipped bundle is timed against another's
- * (`--vs <rev> --hyp-rev HEAD --full-rev --query weedBundle=weed.prod.bundle.esm.min.js`).
+ * (`--vs <rev> --hyp-rev HEAD --full-rev --query weedBundle=weed.prod.bundle.esm.min.js`). Without it a side serves
+ * the runner's demos/, stress scenes and dist/, so a sitting whose side differs from the runner's tree in its scene's
+ * folder (or in dist/ under weedBundle) stops and asks for --full-rev (N-278); other such differences are listed.
  *
  * --headless: every run without a window (headed is the protocol; see opts.headed).
  *
@@ -76,7 +78,7 @@ import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs'
 import { median, pctDelta, writeJson } from './featureTournamentLib.mjs';
 import { cv, repoRoot, runIntegratedWithRetry } from './measureLib.mjs';
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
-import { ensureOverlayWorktree, ensureRevWorktree, keepRevWorktrees } from './revWorktree.mjs';
+import { ensureOverlayWorktree, ensureRevWorktree, keepRevWorktrees, srcOnlyGapCheck } from './revWorktree.mjs';
 import { pruneTestResults } from './pruneTestResults.mjs';
 
 export const PREDATOR_SCENE = {
@@ -143,6 +145,27 @@ export function resolveScene(args) {
     kind: 'stress',
     explicit: true,
   };
+}
+
+/**
+ * N-278: stop a sitting whose srcOnly sides would run the runner's copy of their scene (revWorktree.mjs
+ * srcOnlyGapCheck), and name the other served files they take from the runner's tree.
+ * @param {Array<{ label: string, srcOnlyGaps?: string[] }>} sides
+ * @param {{ path: string }} scene
+ * @param {{ query?: string, queryA?: string, queryB?: string }} opts
+ */
+export function refuseSrcOnlyGaps(sides, scene, opts) {
+  const query = [opts.query, opts.queryA, opts.queryB].filter(Boolean).join('&');
+  const { refuse, warn } = srcOnlyGapCheck(sides, scene.path, query);
+  if (warn.length) {
+    console.log(`srcOnly sides serve these files from the runner's tree, not from their revision:\n  ${warn.join('\n  ')}`);
+  }
+  if (refuse.length) {
+    throw new Error(
+      `N-278: a side's revision differs from the runner's tree in the files its scene serves (${refuse.join(', ')}), ` +
+        'and a srcOnly side would run the runner\'s copies. Pass --full-rev: each side checks out its whole revision.',
+    );
+  }
 }
 
 import { checkProbe } from './hypothesisProbes.mjs';
@@ -911,6 +934,8 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   const hypSide = args['hyp-rev']
     ? ensureRevWorktree(String(args['hyp-rev']), { tag: 'b', srcOnly: !fullRev, ...(args.pool ? { pool: 'b' } : {}) })
     : null;
+  // N-278: a srcOnly side serves the runner's scenes and bundles, not its revision's.
+  if (!fullRev) refuseSrcOnlyGaps([{ label: 'A', ...baseline }, ...(hypSide ? [{ label: 'B', ...hypSide }] : [])], scene, opts);
   // Per-side queries without --hyp-rev: B runs A's worktree, so the two sides are one build.
   const perSide = opts.queryA !== opts.queryB || opts.jsFlagsA !== opts.jsFlagsB;
   if (perSide && !hypSide && !args.vs) {

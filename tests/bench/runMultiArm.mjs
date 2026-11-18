@@ -8,9 +8,13 @@
  *
  *   node tests/bench/runMultiArm.mjs --name batch1 --vs main --hyp-revs <rev1>,<rev2> [--labels e471,e476] \
  *     [--owner spatial | --owners spatial,logic] [--pairs 4] [--query "crowd=2.5&zoom=0.216"] [--pool]
- *     [--scene /path/scene.js --scene-export Class] [--warmup-ms N] [--duration-ms N] [--headless]
+ *     [--scene /path/scene.js --scene-export Class] [--warmup-ms N] [--duration-ms N] [--headless] [--full-rev]
  *
  * Every arm and A run from their own worktrees (revWorktree.mjs; --pool: the fixed trees pool-a, pool-b1, pool-b2 ...).
+ * Each takes src/ from its revision and the rest (demos/, stress scenes, dist/) from the runner's tree, unless
+ * --full-rev checks out each whole revision. Without it, a sitting whose arm differs from the runner's tree in its
+ * scene's folder (or in dist/ under weedBundle) stops and asks for --full-rev (N-278: the barrio's arms would have run
+ * the runner's neighbourhood).
  * Writes tests/results/predator-abab/<name>/summary.json (all rounds) and <name>-<label>/summary.json per arm, in
  * runPredatorAbab's summary format, so `runPredatorAbab --decide-only --name <name>-<label>` re-judges one arm.
  * --arm-queries "<q1>;<q2>;...": the arms are runtime switches of one build instead of revisions (E-319: Box2D's thread
@@ -28,7 +32,9 @@ import { writeJson } from './featureTournamentLib.mjs';
 import { repoRoot, runIntegratedWithRetry } from './measureLib.mjs';
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
 import { ensureRevWorktree } from './revWorktree.mjs';
-import { decideAbab, predatorMetrics, printDecision, resolveScene, sideQuery } from './runPredatorAbab.mjs';
+import {
+  decideAbab, predatorMetrics, printDecision, refuseSrcOnlyGaps, resolveScene, sideQuery,
+} from './runPredatorAbab.mjs';
 
 /**
  * The order of the arms in round `round`: `labels` rotated by the round, reversed on odd rounds.
@@ -80,13 +86,22 @@ async function main() {
     extraArgs: [],
   };
   const pool = Boolean(args.pool);
-  const roots = { A: ensureRevWorktree(String(args.vs), { srcOnly: true, ...(pool ? { pool: 'a' } : {}) }).root };
+  const fullRev = Boolean(args['full-rev']);
+  const sides = [{ label: 'A', ...ensureRevWorktree(String(args.vs), { srcOnly: !fullRev, ...(pool ? { pool: 'a' } : {}) }) }];
+  const roots = { A: sides[0].root };
   revs.forEach((rev, i) => {
-    roots[labels[i]] = armQueries ? roots.A
-      : ensureRevWorktree(rev, { tag: `b${i + 1}`, srcOnly: true, ...(pool ? { pool: `b${i + 1}` } : {}) }).root;
+    if (armQueries) {
+      roots[labels[i]] = roots.A;
+      return;
+    }
+    const side = ensureRevWorktree(rev, { tag: `b${i + 1}`, srcOnly: !fullRev, ...(pool ? { pool: `b${i + 1}` } : {}) });
+    sides.push({ label: labels[i], ...side });
+    roots[labels[i]] = side.root;
   });
   const queries = { A: opts.query };
   labels.forEach((label, i) => { queries[label] = armQueries ? sideQuery(opts.query, armQueries[i]) : opts.query; });
+  // N-278: a srcOnly arm serves the runner's scenes and bundles, not its revision's.
+  if (!fullRev) refuseSrcOnlyGaps(sides, scene, { query: Object.values(queries).join('&') });
   for (const [label, root] of Object.entries(roots)) console.log(`${label}: ${root}${armQueries ? ` ?${queries[label]}` : ''}`);
   const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   fs.mkdirSync(outDir, { recursive: true });
@@ -105,7 +120,7 @@ async function main() {
     rounds.push(round);
   }
   const protocol = {
-    ...opts, rounds: nRounds, order: 'rotated, reversed on odd rounds', vs: String(args.vs), revs, labels,
+    ...opts, rounds: nRounds, order: 'rotated, reversed on odd rounds', vs: String(args.vs), revs, labels, fullRev,
     ...(armQueries ? { armQueries: queries } : {}),
   };
   const decisions = {};
