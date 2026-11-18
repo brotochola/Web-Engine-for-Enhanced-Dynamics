@@ -24,6 +24,8 @@ const TILES_Y = Math.ceil(WORLD_H / TILE_SIZE);
 const TOTAL_TILES = TILES_X * TILES_Y;
 const BLOOD = 0;
 const LOOSE = 7; // a texture the decal memory does not hold
+/** Each texture's pixels for the JS reference stamp: the worker gets only their sizes (SST-10). */
+const referenceRgba = {};
 
 async function bootWorker() {
   const blood = bloodTexture();
@@ -34,6 +36,8 @@ async function bootWorker() {
   const dirty = new SharedArrayBuffer(TOTAL_TILES);
   const worker = await loadWorker('particleWorker.js', 'particleWorker');
   const loose = { width: 5, height: 3, rgba: Uint8ClampedArray.from({ length: 60 }, (_, i) => (i * 37) & 255).buffer };
+  referenceRgba[BLOOD] = new Uint8ClampedArray(textures[BLOOD].rgba.slice(0));
+  referenceRgba[LOOSE] = new Uint8ClampedArray(loose.rgba.slice(0));
   await initWorker(worker, {
     config: {
       worldWidth: WORLD_W,
@@ -98,7 +102,7 @@ function stampReference(worker, worldX, worldY, tint, scaleX, scaleY, textureId,
     scaleY,
     alpha,
     blendMode,
-    textureRgba: texture.rgba,
+    textureRgba: referenceRgba[textureId],
     texWidth: texture.width,
     texHeight: texture.height,
     decalsTiles: worker.decalsTilesRGBA,

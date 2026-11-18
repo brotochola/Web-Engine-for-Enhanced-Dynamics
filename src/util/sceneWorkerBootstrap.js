@@ -552,7 +552,9 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           tilesRGBA: scene.buffers.decalsTilesRGBA,
           tilesDirty: scene.buffers.decalsTilesDirty,
           stampRing: scene.buffers.decalStampRing,
-          textures: scene.decalTextureData,
+          // SST-10: each decal texture's size only: its pixels are in the decal memory (W26), and a copy of every
+          // frame's RGBA was structured-cloned into every worker's init.
+          textures: decalTextureSizes(scene.decalTextureData),
           // W26: the decal memory (the tiles are its buffer) and its regions, or none.
           memory: scene.decalMemory ? scene.decalMemory.memory : null,
           memoryLayout: scene.decalMemory ? scene.decalMemory.layout : null,
@@ -780,6 +782,14 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
   );
 
   debugWorkerLog('[Scene] ✅ All init messages sent to workers');
+}
+
+/** SST-10: { id: { width, height } } of the decal textures (their pixels stay on the page and in the decal memory). */
+function decalTextureSizes(textures) {
+  if (!textures) return null;
+  const out = {};
+  for (const id in textures) out[id] = { width: textures[id].width, height: textures[id].height };
+  return out;
 }
 
 function attachSceneWorkerRuntimeHandlers(scene) {

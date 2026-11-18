@@ -851,7 +851,6 @@ class ParticleWorker extends AbstractWorker {
           this.decalTextures[textureId] = {
             width: textureData.width,
             height: textureData.height,
-            rgba: new Uint8ClampedArray(textureData.rgba),
             // W26: the texture's copy in the decal memory, -1 without one.
             wasmByte: -1,
           };
