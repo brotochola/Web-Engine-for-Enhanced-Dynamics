@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { mulberry32 } from '../../tests/bench/benchMath.js';
+import { MAX_ENTITIES_U32 } from '../../src/util/entityIdWidth.js';
 import {
   CAPACITY_SCENES,
   REFERENCE_SET,
@@ -274,7 +275,7 @@ test('the reference set names catalogued scenes, and a run query carries the fix
   assert.ok(CAPACITY_SCENES.boids.max <= 65535);
   for (const def of Object.values(CAPACITY_SCENES)) {
     assert.ok(def.min > 0 && def.max >= def.min && def.start >= def.min && def.start <= def.max, def.key);
-    assert.ok(def.entities(def.max) <= 500000, `${def.key}: the engine holds 500 000 entities at most`);
+    assert.ok(def.entities(def.max) <= MAX_ENTITIES_U32, `${def.key}: the engine holds ${MAX_ENTITIES_U32} entities at most`);
   }
 });
 
