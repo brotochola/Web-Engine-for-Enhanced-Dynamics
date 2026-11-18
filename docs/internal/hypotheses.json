@@ -23487,6 +23487,24 @@
       ]
     },
     {
+      "id": "E-526",
+      "title": "Let the FSM run under static tickAll, with no per-entity tick() call: a logic worker then takes its FSM types through _runTickAllTypes (one call a type, a list of ids) instead of a tick() a frame for each entity, which should leave Predator's logic workers freer",
+      "status": "open",
+      "statusText": "proposed 2026-11-18 by the owner; not measured, nothing built. The hypothesis is the owner's: FSM-driven types are kept out of the tickAll path today, and that is what holds the logic workers back in Predator",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Read how logicWorker.js sorts a type (needsTick against typeHasTickAll, around the tickAllTypes push) and what an FSM type needs from tick(dt) today (fsm.js: FSM.tick(dt, entity)), then design a static tick over the id list that runs each entity's FSM (the state's onUpdate through the hooks arrays E-146 and E-301 store) with no per-entity instance call. Predator's civilian and predator FSMs are the first users. Kernel for the batch tick against the per-entity tick, then the owner scene (Predator's logic STEP_MS − WAIT_MS), then Predator as a regression guard. Related: E-253 (the FSM tick is 7 to 9 % of a logic worker, parked), E-218 (tickAll reads a view of the active list), E-281 (BunnyMark's tickAll allocates 1.5 MB/s), E-292 (hot functions that stay in Maglev).",
+      "area": "logic",
+      "kind": "speed",
+      "refs": [],
+      "aliases": [
+        "fsm tickAll",
+        "fsm without tick",
+        "state machine batch tick"
+      ],
+      "records": []
+    },
+    {
       "id": "E-522",
       "title": "The atlas is uncompressed RGBA8 without mipmaps (64 MB at 4096 x 4096, the maps' twin page besides): a KTX2/Basis atlas, baked once into SST-6's cache and transcoded in a worker to the block format each GPU takes (BC7, ASTC, ETC2), with mipmaps",
       "status": "open",
