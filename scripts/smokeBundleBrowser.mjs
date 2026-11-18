@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -26,6 +27,7 @@ async function box2dOwnBytes(page) {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
+const ENGINE_WASM_SHA256 = crypto.createHash('sha256').update(fs.readFileSync(path.join(root, 'src', 'wasm', 'engine.wasm'))).digest('hex');
 
 const missing = BUNDLE_ARTIFACTS.filter((name) => !fs.existsSync(path.join(dist, name)));
 if (missing.length) {
@@ -126,6 +128,25 @@ try {
         result.text = `${result.text || ''} (Box2D memory ${reserved / MB} MB, expected ${BOX2D_MEMORY_MB_DEFAULT})`;
       } else {
         console.log(`  Box2D memory ${BOX2D_MEMORY_MB_DEFAULT} MB OK`);
+      }
+    }
+
+    // SST-2: the page compiles engine.wasm once, from WEED.EngineWasmUrl: it must hold the committed module.
+    if (result?.ok) {
+      const digest = await page.evaluate(async () => {
+        const href = window.WEED?.EngineWasmUrl;
+        if (typeof href !== 'string') return `EngineWasmUrl is ${href}`;
+        const response = await fetch(href);
+        const bytes = href.startsWith('data:application/gzip')
+          ? await new Response(response.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer()
+          : await response.arrayBuffer();
+        return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+      }).catch((e) => `EngineWasmUrl unreadable: ${e.message}`);
+      if (digest !== ENGINE_WASM_SHA256) {
+        result.ok = false;
+        result.text = `${result.text || ''} (WEED.EngineWasmUrl: ${digest.length === 64 ? 'not engine.wasm' : digest})`;
+      } else {
+        console.log('  EngineWasmUrl holds engine.wasm');
       }
     }
 

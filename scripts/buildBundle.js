@@ -269,6 +269,20 @@ function inlineWorkerWasmAssets(source, label) {
 }
 
 /**
+ * Where engine.wasm's data URL (the one inlineWorkerWasmAssets wrote) sits in the workers' common code, so the page
+ * reads it from there (WEED.EngineWasmUrl, SST-2: the page compiles the module once) without a second copy in the
+ * bundle. The engine's module among the data URLs is the one whose bytes are `engineWasmBytes`.
+ * @returns {{ at: number, length: number }} the URL is source.slice(at, at + length)
+ */
+export function engineWasmDataUrlSpan(source, engineWasmBytes) {
+    for (const m of source.matchAll(/(["'])(data:application\/gzip;base64,[A-Za-z0-9+/=]+)\1/g)) {
+        const bytes = zlib.gunzipSync(Buffer.from(m[2].slice(m[2].indexOf(',') + 1), 'base64'));
+        if (bytes.equals(engineWasmBytes)) return { at: m.index + 1, length: m[2].length };
+    }
+    throw new Error("engine.wasm's data URL is not in the workers' common code: the page could not compile it once");
+}
+
+/**
  * Engine shaders by the path pixiWorker fetches them from (/src/shaders/…).
  * npm installs ship dist/ only, so bundles carry them.
  */
@@ -308,8 +322,12 @@ function readWorkerArtifacts() {
             'new URL(import.meta.url) would throw inside the blob workers.',
         );
     }
+    const engineWasmSpan = engineWasmDataUrlSpan(
+        workerCommon,
+        fs.readFileSync(path.join(rootDir, 'src', 'wasm', 'engine.wasm')),
+    );
 
-    return { workers, workerCommon, sizes };
+    return { workers, workerCommon, engineWasmSpan, sizes };
 }
 
 function embedPayload(text, compressed) {
@@ -334,9 +352,10 @@ export function rewriteWorkerCommonImportScripts(source, commonUrl) {
     return code;
 }
 
-function writeBundleEntry({
+export function writeBundleEntry({
     workers,
     workerCommon,
+    engineWasmSpan,
     box2dWorkerSource,
     audioWorkletSource,
     debugUICSS,
@@ -379,6 +398,9 @@ let box2dWorkerSource = ${JSON.stringify(embeddedBox2d)};
 let audioWorkletSource = ${JSON.stringify(embeddedAudio)};
 let debugUICSS = ${JSON.stringify(embeddedCss)};
 let engineShaders = Object.freeze(${JSON.stringify(embeddedShaders)});
+// engine.wasm's gzipped data URL inside workerCommonSource (once inflated): WEED.EngineWasmUrl.
+const ENGINE_WASM_URL_AT = ${engineWasmSpan.at};
+const ENGINE_WASM_URL_LENGTH = ${engineWasmSpan.length};
 
 const EMBED_COMPRESSED = ${compressed ? 'true' : 'false'};
 let embedReady = !EMBED_COMPRESSED;
@@ -444,6 +466,13 @@ const WEED = Object.freeze({
   get DebugUICSS() { return debugUICSS; },
   /** Engine shader sources by /src/shaders/… path, for the renderer worker. */
   get EngineShaders() { return engineShaders; },
+  /**
+   * engine.wasm as the gzipped data URL the workers carry, for the page to compile it once (SST-2); null until
+   * ensureEmbeddedSources() has inflated a compressed bundle.
+   */
+  get EngineWasmUrl() {
+    return embedReady ? workerCommonSource.slice(ENGINE_WASM_URL_AT, ENGINE_WASM_URL_AT + ENGINE_WASM_URL_LENGTH) : null;
+  },
   BUNDLE_MODE: true,
   EMBED_COMPRESSED,
   ensureEmbeddedSources,
@@ -498,7 +527,7 @@ function printSizeBreakdown(label, sizes, box2dSourceLen) {
     console.log(`   Box2dWorkerSource: ${kb(box2dSourceLen)}`);
 }
 
-function webpackBundle({ prod, compressed, workers, workerCommon, box2dWorkerSource, audioWorkletSource, debugUICSS, engineShaders }) {
+function webpackBundle({ prod, compressed, workers, workerCommon, engineWasmSpan, box2dWorkerSource, audioWorkletSource, debugUICSS, engineShaders }) {
     const env = makeBuildEnv(prod, compressed);
     const label = `${prod ? 'prod' : 'debug'} ${compressed ? 'compressed' : 'raw'}`;
     const bundleEntryPath = path.join(rootDir, 'src', 'index.bundle.js');
@@ -509,6 +538,7 @@ function webpackBundle({ prod, compressed, workers, workerCommon, box2dWorkerSou
         writeBundleEntry({
             workers,
             workerCommon,
+            engineWasmSpan,
             box2dWorkerSource,
             audioWorkletSource,
             debugUICSS,
@@ -541,7 +571,7 @@ function buildProdAxis({ prod, box2dWorkerSource, audioWorkletSource }) {
     runWebpack('webpack.config.js', env);
 
     console.log('\n📝 Step 2: Reading compiled workers...');
-    const { workers, workerCommon, sizes } = readWorkerArtifacts();
+    const { workers, workerCommon, engineWasmSpan, sizes } = readWorkerArtifacts();
 
     const debugUICSS = prod
         ? ''
@@ -559,6 +589,7 @@ function buildProdAxis({ prod, box2dWorkerSource, audioWorkletSource }) {
                 compressed,
                 workers,
                 workerCommon,
+                engineWasmSpan,
                 box2dWorkerSource,
                 audioWorkletSource,
                 debugUICSS,
