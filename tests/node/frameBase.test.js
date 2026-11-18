@@ -5,8 +5,11 @@ import assert from 'node:assert/strict';
 
 import {
   CONTACT_HEIGHT,
+  HEIGHT_PER_ROW_CODES,
+  HEIGHT_PER_ROW_STEPS,
   isRenderDirections,
   lutBaseFloats,
+  measureHeightPerRow,
   measureLowestContact,
   measureStandingBase,
   sheetCastsSolid,
@@ -57,6 +60,28 @@ test('a render stands on its lowest contact: pixels within 1.5 px of its lowest 
   assert.equal(measureLowestContact(() => false, () => 0, 8, 8), null, 'an empty frame');
 });
 
+test('N-297: how much of the picture of a render is height, along its top edge', () => {
+  // A box 40 px deep on the floor and 20 px tall, seen from a camera that draws the floor 0.75 as tall and a px of height
+  // 0.5 px: its far top edge is 40 * 0.75 + 20 * 0.5 = 40 rows above its near bottom edge (the contact, a row lower), at 20 px of
+  // height: half a px of height a row.
+  const w = 30;
+  const h = 60;
+  const contact = 49.5;
+  const opaque = picture(w, h, [[5, 10, 25, 50]]);
+  const heightAt = (i, j) => (j < 20 ? 20 : j < 40 ? 20 : (50 - j) * 2);
+  assert.ok(Math.abs(measureHeightPerRow(opaque, heightAt, w, h, contact) - 20 / 39) < 1e-9, "the top row (its centre 39 rows above the contact) and its height");
+  // Columns whose tops differ: least squares over them (a cabin's roof beside a lower bed).
+  const mixed = picture(w, h, [[5, 10, 15, 50], [15, 30, 25, 50]]);
+  const mixedHeight = (i, j) => (i < 15 ? 20 : 8);
+  const tall = 39;
+  const low = 19;
+  const want = (10 * 20 * tall + 10 * 8 * low) / (10 * tall * tall + 10 * low * low);
+  assert.ok(Math.abs(measureHeightPerRow(mixed, mixedHeight, w, h, contact) - want) < 1e-9);
+  assert.equal(measureHeightPerRow(opaque, () => 0, w, h, contact), 0, 'a flat picture: no height');
+  assert.equal(measureHeightPerRow(opaque, heightAt, w, h, 5.5), 0, 'nothing above the contact');
+  assert.equal(measureHeightPerRow(() => false, () => 0, 8, 8, 4.5), 0, 'an empty frame');
+});
+
 test('a render is a sheet drawn from 8 directions or more', () => {
   assert.equal(isRenderDirections(undefined), false);
   assert.equal(isRenderDirections({ walk: { up: 'a', left: 'b', down: 'c', right: 'd' } }), false, 'a person of 4');
@@ -74,8 +99,27 @@ test('the base rides in the texture table\'s last two floats', () => {
   assert.deepEqual(Array.from(out), [33, 8], 'feet');
   lutBaseFloats({ cx: 64, rx: 4, ry: 4 }, out, 0);
   assert.deepEqual(Array.from(out), [65, -4], 'a trunk');
+  // N-297: a render's contact is its row's centre, so the float keeps the whole row and, in its fraction, the height a
+  // row of the picture is (a code in 512ths: 0 not measured, else 1 + 256ths of a px), as the shadow shaders read them.
   lutBaseFloats({ contact: 39.5 }, out, 0);
-  assert.deepEqual(Array.from(out), [-40.5, 0], 'a render');
+  assert.deepEqual(Array.from(out), [-40, 0], 'a render with no measure: the whole row alone');
+  const decode = (v) => {
+    const packed = -v - 1;
+    const code = Math.round((packed - Math.floor(packed)) * HEIGHT_PER_ROW_CODES);
+    return { contact: Math.floor(packed) + 0.5, perRow: code > 0 ? (code - 1) / HEIGHT_PER_ROW_STEPS : null };
+  };
+  assert.deepEqual(decode(out[0]), { contact: 39.5, perRow: null });
+  lutBaseFloats({ contact: 39.5, heightPerRow: 0.25, card: true }, out, 0);
+  assert.deepEqual(decode(out[0]), { contact: 39.5, perRow: 0.25 });
+  assert.equal(out[1], -0.5, 'a card for the sun: the second float negative');
+  lutBaseFloats({ contact: 4095.5, heightPerRow: 0.123 }, out, 0);
+  assert.equal(decode(out[0]).contact, 4095.5, 'a row near 4 096 and its code: exact in a float32');
+  assert.ok(Math.abs(decode(out[0]).perRow - 0.123) <= 0.5 / HEIGHT_PER_ROW_STEPS);
+  assert.equal(out[1], 0, 'a solid: the second float not negative');
+  lutBaseFloats({ contact: 0.5, heightPerRow: 0 }, out, 0);
+  assert.deepEqual(decode(out[0]), { contact: 0.5, perRow: 0 }, 'a flat frame, measured: no height a row');
+  lutBaseFloats({ contact: 10.5, heightPerRow: 9 }, out, 0);
+  assert.equal(decode(out[0]).contact, 10.5, 'a measure past the codes is held under the next row');
 
   // Through the table: a texture carrying a base (the Pixi worker sets weedBase from the atlas's json).
   const tex = { orig: { width: 64, height: 64 }, uvs: { x0: 0, y0: 0, x2: 0.5, y2: 0.5 }, trim: null, width: 64, height: 64 };

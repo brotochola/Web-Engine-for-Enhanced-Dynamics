@@ -363,7 +363,8 @@ ${lampTileGlsl(' || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBas
     vec2 anchorFloor = vec2(aInstXY.x, aInstXY.y * uGroundInvScaleY);
     vec2 tl = lamp.xy - anchorFloor;
     float tlen = length(tl);
-    float reach = (-aInstBase.x - 1.0 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uGroundInvScaleY;
+    // N-297: the contact's whole row, in the float's whole part (frameBase.js lutBaseFloats): its centre.
+    float reach = (floor(-aInstBase.x - 1.0) + 0.5 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uGroundInvScaleY;
     foot = anchorFloor + (tlen > 1e-3 ? tl / tlen : vec2(0.0, -1.0)) * reach;
   }
   // Its columns run across the lamp (to the right of someone at the lamp looking at it).
@@ -547,7 +548,7 @@ ${lampTileWgsl(' || lampKind >= 3 || lampKind == 2 || (lampKind == 0 && aInstBas
     let tlen = length(tl);
     var tdir = vec2<f32>(0.0, -1.0);
     if (tlen > 1e-3) { tdir = tl / tlen; }
-    let reach = (-aInstBase.x - 1.0 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uniforms.uGroundInvScaleY;
+    let reach = (floor(-aInstBase.x - 1.0) + 0.5 - aInstAnchor.y * aInstSize.y) * abs(aInstScale.y) * uniforms.uGroundInvScaleY;
     foot = anchorFloor + tdir * reach;
   }
   if (castFixed) {

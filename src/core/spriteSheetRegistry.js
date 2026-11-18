@@ -8,7 +8,7 @@ import {
 import { resolveHeightScaleY } from '../util/cameraView.js';
 import { evenTexels, TWIN_PAD } from '../render/mapsTable.js';
 import {
-  FRAME_GLOW, FRAME_HALF, FRAME_SOFT, frameAlphaKinds, frameSolidTexels, isRenderDirections, measureLowestContact,
+  FRAME_GLOW, FRAME_HALF, FRAME_SOFT, frameAlphaKinds, frameSolidTexels, isRenderDirections, measureHeightPerRow, measureLowestContact,
   measureStandingBase, readFootprint,
 } from '../render/frameBase.js';
 import {
@@ -1508,7 +1508,7 @@ class SpriteSheetRegistry {
       const b = d.base;
       if (!b || !frames[d.name]) continue;
       frames[d.name].base = b.contact >= 0
-        ? (d.sunCard ? { contact: b.contact, card: true } : { contact: b.contact })
+        ? (d.sunCard ? { contact: b.contact, heightPerRow: b.heightPerRow, card: true } : { contact: b.contact, heightPerRow: b.heightPerRow })
         : { cx: b.cx, rx: b.rx, ry: b.ry };
       // A render with its footprint casts its solid swept north to it (the Pixi worker's footprint texture).
       if (b.contact >= 0 && d.footprint) frames[d.name].footprint = d.footprint;
@@ -1688,8 +1688,13 @@ class SpriteSheetRegistry {
         const heights = readHeights(cut(pixelsOf(g.maps.heightImg), sr), sr.w, sr.h, g.maps.gray);
         const k = g.maps.heightScale ?? 1;
         if (k !== 1) for (let p = 0; p < heights.length; p++) heights[p] *= k;
-        const lowest = measureLowestContact((i, j) => opaque[j * sr.w + i] !== 0, (i, j) => heights[j * sr.w + i], sr.w, sr.h);
-        if (lowest !== null) d.base = { contact: lowest + (d.sourceY | 0) };
+        const isOpaque = (i, j) => opaque[j * sr.w + i] !== 0;
+        const heightAt = (i, j) => heights[j * sr.w + i];
+        const lowest = measureLowestContact(isOpaque, heightAt, sr.w, sr.h);
+        // N-297: and how much of its picture is height, for the card it casts (frameBase.js measureHeightPerRow).
+        if (lowest !== null) {
+          d.base = { contact: lowest + (d.sourceY | 0), heightPerRow: measureHeightPerRow(isOpaque, heightAt, sr.w, sr.h, lowest) };
+        }
       }
     }
     if (placed.length === 0) return null;
