@@ -136,7 +136,8 @@ LiquidFun and particle light fields, and the unshaded pass.
   `LightOccluder` (`wallsOn()` in `src/components/shadowCaster.js` is that pool, and `setWall` warns
   without it), the spatial worker builds the lights' neighbour lists (`_raycastLights`), and
   `src/util/sceneSharedBuffers.js` makes the gather's regions and the polygons' and self-lit's
-  buffers. The sweep has no floor scale anywhere: it has only run where `floorScaleY` is 1.
+  buffers. The sweep has no floor scale anywhere, and needs none: it works in world px, where sight lines are
+  straight whatever the floor's scale (the Headlights demo runs it at 0.7; section 7).
 
 ### 2.3 Self-lit
 
@@ -262,8 +263,8 @@ Counted by method and file on 2026-11-17; approximate.
 
 ### OL-1 — Names: the layer mode and the sorted glow
 
-- [ ] `lighting.sunShadows` and `lighting.lampShadows`: `'layer'` (was `'sprite'`) or `'map'`.
-- [ ] `lighting.lightGlow`: `'add'` or `'sorted'` (was `'sprite'`).
+- [x] `lighting.sunShadows` and `lighting.lampShadows`: `'layer'` (was `'sprite'`) or `'map'`. (`69f0eb38`)
+- [x] `lighting.lightGlow`: `'add'` or `'sorted'` (was `'sprite'`). (`1bcdf08d`)
 
 No picture changes; two commits (the shadows' value, the glow's value).
 
@@ -302,8 +303,9 @@ rename off the hot path needs no sitting (HOW_WE_MEASURE, "Judgment first"): say
 
 ### OL-2 — A sprite's normals under the sun and under the lamps: the developer's option
 
-- [ ] The option, its default chosen by the owner from pictures.
-- [ ] The automatic rule (`k`, section 2.6) removed from both shaders.
+- [ ] The option, its default chosen by the owner from pictures. (The option is built, `89e2afcb`, with the
+  recommended default; the owner has not picked yet.)
+- [x] The automatic rule (`k`, section 2.6) removed from both shaders. (`89e2afcb`)
 
 **What it must do.** For a pixel that carries a sprite's own normal, the developer says how much that
 normal counts for the sun and how much for the lamps, apart. Faces keep `Sun.skyLight`; flat pixels
@@ -398,9 +400,11 @@ built as final B on this guess, and the race then says whether it stays.
 
 ### OL-4 — The flat view on the common light pass; raycasted lighting's own pass deleted
 
-- [ ] The flat view runs the common pass (pitch 90, then pitch 0).
-- [ ] What stops a lamp there (final A or B).
-- [ ] The demos and the stress scenes moved; the pictures accepted.
+- [x] The flat view runs the common pass (pitch 90, then pitch 0). (`94e31445`)
+- [x] What stops a lamp there (final A or B). (Final B, by eye: `9186550f`, `e57d6659`, `94e31445`; the race has not
+  run.)
+- [ ] The demos and the stress scenes moved; the pictures accepted. (Moved, `94e31445`; the owner has seen the
+  first captures and has not accepted them yet.)
 - [ ] The deletion.
 
 **In both finals:**
@@ -450,9 +454,8 @@ built as final B on this guess, and the race then says whether it stays.
 - **What turns the sweep on** (added 2026-11-18): not the pitch. `lighting.raycasted` goes, and the
   scene asks for walls with a key of its own, `lighting.walls: true`, as `lighting.maxVolumes` asks
   for volumes: Scene pools `LightOccluder`, the spatial worker builds the lights' neighbour lists and
-  the buffers are made under that key, whatever the camera. The sweep has only run where
-  `floorScaleY` is 1 (section 2.2): with another floor scale `lighting.walls` warns and stays off
-  until the sweep works in the floor's terms (a follow-up, section 5).
+  the buffers are made under that key, whatever the camera: the sweep is right on any floor scale
+  (section 7), so an oblique camera has walls too.
 - Pre-render keeps the gather and the sweep. Instead of a polygon for a fan, each casting lamp
   publishes a row the light pass can read: for each direction, how far the light gets, which entity
   stopped it and that wall's opacity.
@@ -512,9 +515,11 @@ measurement, then the deletion (section 8).
   only to a depth from the edge the lamp sees (final B knows the hit's distance; it is N-38's fix and
   needs no G-buffer in a scene without maps). Show both on a top-down house and on a side-view rock.
 - OL-4, final A: what `setWall({ shape: 'sprite' })` becomes.
-- OL-4, final B: walls with a floor scale other than 1 (an oblique camera). The sweep would run in the
-  floor's terms, as DX-SPOT's cones are measured. Recommended: an item of its own, after OL-4.
-- OL-4, final B: the name of the key that asks for walls (`lighting.walls`, the builder's pick).
+- OL-4, final B: the names of the keys (`lighting.walls`, `lighting.wallDepth`; the builder's picks).
+- OL-4, final B: whether a wall's shadow keeps a third of the lamp, as the old pass's did (`WALL_UMBRA`), or
+  nothing, or what a key says (section 7).
+- OL-4: `shadowCaster.setWall({ shape })`. Only the old pass reads `shape` now (its fills' mask); it goes with
+  the deletion unless the owner wants a wall cut by its sprite's alpha, which the sweep does not do.
 
 ## 6. Not in this plan
 
@@ -525,7 +530,60 @@ WGSL) with its light loop four times.
 
 ## 7. Found while building
 
-(Nothing yet.)
+Built on `dx/one-light` from 2026-11-18: OL-1, OL-2 and OL-4 as final B. Nothing here is timed: the owner's order
+is the code first, with the suites and a capture an item, and the measuring after (section 8).
+
+**OL-2.** `lighting.normalStrength { sun, lamps }`, in `uFaceLight`'s two free numbers (no new uniform). With the
+normals at full strength `normalLightCheck` reads the maps' own steps: worst 3.4 of 255 under the lamp and 4.0
+under the sun on its ball (p99 2.4, mean 0.6), half that at 0.5; its tolerance is 5 now. The old check never held
+the sun's term by the normal: under the sun the automatic rule gave `k` 0.
+
+**OL-4, what the plan had wrong.**
+- **Walls work with any camera.** Section 2.2 said the sweep had only run where `floorScaleY` is 1. It runs in
+  the Headlights demo at 0.7: the sweep works in world px, as the colliders are, and sight lines stay straight when
+  the floor is drawn foreshortened (the map is affine). So `lighting.walls` asks for walls whatever the camera, an
+  oblique one included; the row is written in the floor's terms (y over the floor's scale), where the light pass
+  works. Section 5's follow-up for oblique cameras is not needed.
+- **The sweep did not say which wall made an edge.** The plan's final B took it from the polar bins, which hold
+  compound solids only. `visibilitySweep.c` now writes what each vertex's ray hit (`outOcc`: the occluder's place
+  in the light's list, -1 a free ray, -2 - entity a compound solid's boundary), carried through the polar merge;
+  two table slots at the end, the others as they were (`engine.wasm` 351 269 -> 352 493 B).
+- **Not 512 distances with a pointer: the polygon itself.** A row (`src/render/visibility/lampWallRow.js`) keeps the
+  polygon's vertices, each with its angle around the lamp and the code of the edge that starts there, and an index
+  of 256 directions that says which vertex to start from; the light pass finds the edge that covers a pixel's
+  direction and takes the side of it the pixel lies on. The shadow's border is the fan's own line (WebGL against
+  WebGPU: 19 of 921 600 px differ, by 3 of 255 at most).
+- **An edge's wall is the wall its end vertex hit**, or its start's where the end is a free ray: an edge stops
+  nothing only between two free rays. In a merged polygon an edge between two walls that overlap is named for
+  the one it ends on, so a sliver of the other's own pixels reads as shadow there.
+- **The polygon cuts a lit corner.** The sweep takes a box seen corner-on from one tangent corner to the other: a
+  chord inside the box. Nothing of the floor is in that triangle, so it never showed.
+
+**OL-4, what was added to the plan's design.**
+- **`lighting.wallDepth`** (px, default 0), section 5's second way to light a wall: the light enters every wall that
+  far from the edge it reaches and fades out, whatever is drawn there. It was needed, not only offered: a wall
+  drawn by a `MeshRenderer` (the rock of planetPhysicsScene, a compound solid) writes no id in the G-buffer, so the
+  first way (the wall's own sprite, whole) leaves it in its own shadow.
+- **The shadow keeps a third of the lamp** (`WALL_UMBRA` 0.33, the old pass's `UMBRA_FLOOR`), so the scenes look as
+  they did. The owner may want it gone or as a key: one number in `lampWallRow.js` and the two shaders.
+- **Pitch 0 is a flat view by itself** (`cameraView.js`): `floorScaleY` 1 and `heightScaleY` 0 unless the scene sets
+  them. Where the camera shows no height nothing stands: a sprite without heights lies in the plane (the face
+  pass divided by `heightScaleY` there), and `uFaceLight.x` is 0, not the 1 it fell back to.
+- **A row holds at most 512 vertices** (`WALL_ROW_MAX_VERTS`): visPolyStressScene sets `maxPolygonVertices` 5000, and a
+  row is as wide as its cap; a polygon with more is thinned, one vertex in every few.
+
+**What changes in the picture of a scene that had raycasted lighting** (for the owner's eye):
+- a wall's sprite is lit evenly, as drawn: the made-up sphere's X is gone;
+- a wall with no sprite of its own is dark inside its outline, where the old pass drew a lit block (`wallDepth`);
+- a light fades to its radius by the light pass's window, `(1 - (d / R)^4)^2`, not the old pass's step over the last
+  4 % of the radius: the pool's rim is softer and a little tighter;
+- the sun's colour reaches the scene (the old pass cleared with the ambient plus the sun's intensity, grey);
+- with `shadowsEnabled`, the lamps stamp their sprite shadows on the layer, as in any other scene.
+
+**To measure, when the measuring starts:** the rows' upload (194 texels a lamp at the default 128 vertices: 3.1 KB
+a lamp a frame, every frame, unchanged rows included); pre-render's row build, in JS, once a lamp with walls; the
+sweep's kernel with its one more store a vertex; the light pass's lookups (a header, an index and two vertices a
+lamp a pixel, more where vertices crowd one direction); the G-buffer pass, on in every scene with walls.
 
 ## 8. Revisions
 
