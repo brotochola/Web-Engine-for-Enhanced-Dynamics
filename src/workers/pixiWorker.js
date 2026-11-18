@@ -6710,6 +6710,9 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     const rowFloats = this._wallRowFloats;
     const src = buf.f32;
     const dst = this._wallRowsData;
+    // The widest row in use, in texels: the upload sends that many columns of each row, not the row's whole width (a
+    // row is as wide as lighting.maxPolygonVertices allows, a polygon usually a tenth of it).
+    let usedTexels = 1;
     for (let r = 0; r < count; r++) {
       const lamp = header[1 + r];
       lamps[r] = lamp;
@@ -6719,6 +6722,7 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
       const n = src[o] | 0;
       const used = n >= 3 ? 4 * (WALL_VERT0 + n + 1) : 4;
       for (let f = 0; f < used; f++) dst[o + f] = src[o + f];
+      if (used > 4 * usedTexels) usedTexels = used >> 2;
     }
     this._wallRowLampCount = count;
     if (count === 0) return;
@@ -6727,9 +6731,9 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     const height = lamps.length;
     if (this._useWebGpu) {
       const renderer = this.pixiApp?.renderer;
-      if (renderer?.gpu?.device) writeRgba32Float(renderer, source, dst, width, height, 'weed-wall-rows', width, count);
+      if (renderer?.gpu?.device) writeRgba32Float(renderer, source, dst, width, height, 'weed-wall-rows', usedTexels, count);
     } else {
-      this._uploadRgba32FloatGl(source, dst, width, height, width, count);
+      this._uploadRgba32FloatGl(source, dst, width, height, usedTexels, count);
     }
   }
 
