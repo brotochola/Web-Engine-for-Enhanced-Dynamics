@@ -6,6 +6,64 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Wednesday 18 November 2026 (evening) — A Silhouette's Shadow, Right at Any Hour
+
+The owner was turning the sun in the light bench and the cars' shadows were wrong in two ways. At 13:30 the pickup's
+shadow was "totalmente desfasada": squeezed under the car, on the sun's side. And as the sun's direction changed, the
+shadows shook. With the cars casting their height map everything was fine. The fault was in the silhouette, the cheap way
+a sprite casts with the sun: one quad, the picture of the object as the sun sees it, laid along the sun's ray.
+
+**The first suspect was the art, and it was innocent.** The cars' sheets keep, for each frame, the heading it was drawn
+at, as a tool measured them, and those headings are uneven: frame 06 at 54°, where 48 frames a turn would put it at 45°.
+The owner did not believe it: a pack rendered from 3D models turns in even steps. So it was measured again, three ways
+that share nothing. The width of each silhouette, which the car's height cannot change in this projection, fits the kept
+headings to 2.3 px and even turns to 4.6. The long straight edges of each frame's outline give headings within 1 to 3° of
+the kept ones (frame 06: 53.8°). And the eye: frames 00 and 01 are almost the same picture. The pack's turn eases in and
+out. The experiment he asked for, the same scene with the frames taken as even 7.5° turns, made the shadows worse, not
+better: 1614 px apart from the height map's shadow against 1366, and the shadow's centre 17 px off against 1.4.
+
+**The bug was in the card.** A sprite that casts its silhouette is a card standing on the floor: each row of the picture
+above its foot is taken as that much height, and each point lands where the sun's ray through it meets the floor. For a
+person or a tree, drawn standing, that is right. A car is a render seen from the camera's pitch: a row up the picture is
+partly height and partly floor farther from the viewer. Taking it all for height is right for exactly one sun, one as
+high as the camera looks down: 44° in the bench, which is why 16:00 always looked fine. Higher, and the far half of the
+car lands at a fraction of its distance: at 13:30, at 40 % of it. At 10:00, with the sun at 78°, the whole picture
+collapsed onto the card's foot, which stands on the car's side nearest the sun: a dark wedge on the wrong side. That wedge
+was already in the backlog (N-297), blamed that morning on the cars' height map. It was the card all along. Lower than
+the camera, the shadow ran long: 85 px too long with the sun at 20°.
+
+**The card leans back.** When the atlas is made, each frame of a render now gets one more number, measured from its
+height map: how many px of height one row of its picture rises, along its top edge. The shader splits each row by it:
+that share is height, the rest is depth on the floor. The card is no longer a wall but a plane leaning away from the sun,
+from the contact nearest it to the object's far top edge, which now lands where it should at any hour. Against the exact
+shadow worked out from each frame's height map, every frame of two cars: the far edge was 25 px off with the sun at 67°
+and is 2 now; 38 px off at 30°, 2 now. The number rides in the fraction of a float the texture table already had (a
+render's contact is always a pixel's centre, so its fraction was free): no new buffer, no wider table.
+
+**And it stops turning with the sun.** That was the shaking. The card shows the frame nearest the sun's view, which on
+these sheets can be 6° to a side, and it always faced the sun: so the whole shadow turned with the sun, then jumped back
+when the next frame took over. Pre-render now tells the shader how far the frame's own view is from the sun's (a code in
+the fraction of the row's frame id), and the card stands the way its frame was drawn: the picture's floor stays where
+the car is, and only its heights fall along the sun's ray. With the sun at 45°, where the old card was at its best, a
+2.5° step of the sun moved 779 px of shadow, with jumps of 1676; now 398, with 583. The height map's shadow moves 297.
+
+**A new tool, and a reference that lied a little.** `lightBenchSunTurn.mjs` loads the bench once and turns the sun in
+place, a capture a step: the silhouette, old and new, against the height map's shadow. Its first numbers said the new
+card was still far from the reference, and part of that was the reference: the height map's solid is built of 8 px
+columns drawn wider than their cell, so its shadow is some 5 px larger all round than the object. Rebuilt with 2 px
+columns, the reference moved towards the card (1510 px apart became 1366, from 2890 before the fix), and what stayed is
+real.
+
+**What a card cannot do.** It is one plane, and a car's cabin stands over its body. Some columns of the far edge land a
+few px long or short. The floor under a diagonal car is pressed towards the sun by the share of height: 9 % of its depth
+with the sun at 64°, where the wall pressed it by half. And that share changes from a side view to an end view, which is
+the small jump left at a new frame. The exact shadow is still the height map's. A closer card exists on paper: the
+picture laid flat and read twice in the fragment, the object taken as a box of one height, so the floor is exact and the
+same at every frame. Not built.
+
+Both backends draw the same picture, to the pixel. Nothing else in the bench moved: the trees, the person, the barn and
+the props cast as they did.
+
 ## Tuesday 17 November 2026 — Instruments That See What the Machine Actually Does
 
 Chrome's profiler says which function took the time. It does not say why: whether the CPU waited on memory, whether
