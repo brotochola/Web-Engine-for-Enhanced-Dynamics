@@ -788,8 +788,6 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
       frameClockSlot: frameClockSlot('renderer'),
       workerPorts: workerPorts.renderer,
       presentingFlag: scene.game?._presentingFlag || null,
-      // Also in its boot (SST-1); here until the renderer reads them there.
-      engineShaders: bundleEngineShaders(),
     },
     transferables
   );

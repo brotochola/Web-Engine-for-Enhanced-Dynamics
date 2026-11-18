@@ -17,23 +17,6 @@ globalThis.OffscreenCanvas ??= class {
   }
 };
 
-// AbstractWorker's side of the 'boot' protocol (startup/boot, 67d5c707: it handles 'boot' as `this._bootPromise =
-// this.boot(e.data)`, not awaited; its own boot keeps the config and the page's origin and hands engine.wasm to the
-// kernels). Until that branch is merged, the same behaviour here; once it is, the real one runs and these stay out.
-if (typeof AbstractWorker.prototype.boot !== 'function') {
-  AbstractWorker.prototype.boot = async function boot(data) {
-    this.config = data.config || {};
-    if (data.pageOrigin) self.__weedPageOrigin = data.pageOrigin;
-  };
-  const handle = AbstractWorker.prototype.handleMessage;
-  AbstractWorker.prototype.handleMessage = function handleMessage(e) {
-    if (e.data && e.data.msg === 'boot') {
-      this._bootPromise = this.boot(e.data);
-      return undefined;
-    }
-    return handle.call(this, e);
-  };
-}
 
 /** A WebGL2 context with what the worker's setup reads, and Pixi's shader system with E-475's links ahead (a log). */
 function fakeRenderer(width, height) {
