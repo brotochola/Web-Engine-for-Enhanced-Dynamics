@@ -148,8 +148,8 @@ export function decodePng(buf) {
  */
 /**
  * `drawn(pixels, sun)`, when given, says whether a capture has a frame in it: one that has none is taken again every
- * half second, up to `ceilingMs` after the page was prepared (a page that has drawn nothing by then: seen on the ASUS's
- * HD 620, cause unknown). The result's `drawn` is the last answer and `waitedMs` how long the capture came after the prepare.
+ * half second, up to `ceilingMs` after the page was prepared (a page that has drawn nothing by then: the ASUS's
+ * HDD saturating while the browser starts). The result's `drawn` is the last answer and `waitedMs` how long the capture came after the prepare.
  */
 export async function captureStill({ browser, server }, { scene, sceneExport, query, waitMs, save = null, drawn = null, ceilingMs = 15000 }) {
   const page = await browser.newPage({ viewport: VIEWPORT });
