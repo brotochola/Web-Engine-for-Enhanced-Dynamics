@@ -8,7 +8,9 @@ import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { lightDataTextureFloatCount } from '../../src/util/utils.js';
-import { computeGpuQueueBufferSize, createGpuQueueViews, gpuQueueCaps, GPU_HDR_STAMP_LIGHTS } from '../../src/render/gpuQueueLayout.js';
+import {
+  computeGpuQueueBufferSize, createGpuQueueViews, gpuQueueCaps, GPU_HDR_STAMP, GPU_HDR_STAMP_LIGHTS,
+} from '../../src/render/gpuQueueLayout.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
 
 const N = 4;
@@ -57,6 +59,8 @@ test('N-212: Pixi writes a lamp\'s fade in its fourth row, 1 for a light without
   gpu.stampLightIds[0] = 1;
   gpu.stampLightFade[0] = 0.25;
   gpu.header[GPU_HDR_STAMP_LIGHTS] = 1;
+  // A caster stamped for it (OL-5: without a stamp row or a volume a lamp takes no tile).
+  gpu.header[GPU_HDR_STAMP] = 1;
   px._gpuQueueRead = gpu;
   px._uploadLampTiles = () => {};
   px._readLampTiles();
@@ -95,6 +99,7 @@ test('N-212: a light that loses its tile goes back to fade 1', async () => {
   gpu.stampLightIds[0] = 1;
   gpu.stampLightFade[0] = 0.5;
   gpu.header[GPU_HDR_STAMP_LIGHTS] = 1;
+  gpu.header[GPU_HDR_STAMP] = 1;
   px._gpuQueueRead = gpu;
   px._uploadLampTiles = () => {};
   px._readLampTiles();

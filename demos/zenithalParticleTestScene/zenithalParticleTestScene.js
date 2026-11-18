@@ -36,9 +36,11 @@ export class ZenithalParticleTestScene extends Scene {
 
     lighting: {
       enabled: true,
+      // Walls: the cars (shadowCaster.setWall) stop the lights.
+      walls: true,
       // Umbra = this floor under multiply. 0.05 reads as pitch black; soft
-      // casted-shadow sprites used ~0.33 alpha (much lighter). Raycasted path
-      // disables CASTED_SHADOWS cookies so this is the only umbra control.
+      // casted-shadow sprites used ~0.33 alpha (much lighter). The cars are
+      // walls, which cast no shadow sprites, so this is the only umbra control.
       baseAmbient: 0.15,
       maxLights: 20,
       shadowsEnabled: true,
@@ -49,7 +51,7 @@ export class ZenithalParticleTestScene extends Scene {
       // shadowResolution: 0.5,
       maxPolygonVertices: 5000,
     },
-    // Straight down: a flat view lights by raycasting, the cars its walls (shadowCaster.setWall).
+    // Straight down: the floor as drawn, and no height on the screen.
     camera: { pitch: 90 },
 
     layers: {

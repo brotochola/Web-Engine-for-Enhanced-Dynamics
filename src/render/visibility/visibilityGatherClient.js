@@ -2,8 +2,9 @@
 // block), where the scene keeps every column one light's neighbour walk reads (Transform, Collider, LightOccluder,
 // RigidBody and the published poses, Grid's neighbour rows) and pre-render's visibility regions it packs into
 // (visibilityMemory.js, placed there). gather_light does _buildVisibilityPolygonsSwept's neighbour loop for one
-// light; the compound solids and the self-lit candidates come back as event records, in neighbour order, for the
-// JS (the W1 raster and the self-lit list).
+// light; the compound solids come back as event records, in neighbour order, for the JS (the W1 raster). The kernel
+// can also send an event a packed occluder (the old fan pass's self-lit candidates, `selfLit`): pre-render no longer
+// asks for them (OL-15), and the branch goes with the kernel's next build.
 
 import { loadWasmKernel } from '../../util/wasmKernel.js';
 import { GATHER_EVENT_BYTES, GATHER_TABLE_SLOTS } from '../../util/wasmMemoryMap.js';
@@ -23,6 +24,8 @@ export const GATHER_SLOTS = [
   'bActive', 'pX', 'pY', 'pRotC', 'pRotS', 'qX', 'qY', 'qRotC', 'qRotS', 'bInterpolate',
   'vKind', 'vCx', 'vCy', 'vCr', 'vVertStart', 'vVertCount', 'vVertsX', 'vVertsY', 'vMaxOccluders',
   'eEvents', 'eSelfLit', 'results',
+  // OL-12: where each packed occluder's code for the walls' rows goes (0: not asked for).
+  'vOccCode',
 ];
 if (GATHER_SLOTS.length > GATHER_TABLE_SLOTS) throw new Error('visibilityGather: the column table outgrew its region');
 const SLOT = Object.fromEntries(GATHER_SLOTS.map((name, k) => [name, k]));
@@ -93,7 +96,7 @@ export async function bindVisibilityGather(memory, v, vm) {
  * neighbour rows' width. False when a column the gather reads is not in the memory, or a row could hold more
  * neighbours than the event records: the JS gather runs instead.
  */
-export function writeGatherColumns(b, worker, Grid, Transform, Collider, LightOccluder, ColliderFixture, selfLit) {
+export function writeGatherColumns(b, worker, Grid, Transform, Collider, LightOccluder, ColliderFixture, selfLit, occCodeByte = 0) {
   const t = b.table;
   const buffer = b.buffer;
   // A column the scene has must be in the memory; one it lacks is 0, which the kernel reads as absent.
@@ -144,5 +147,7 @@ export function writeGatherColumns(b, worker, Grid, Transform, Collider, LightOc
   ok &= putColumn(t, SLOT.qRotS, prev ? worker._prevPoseRotS : null, prev, buffer);
   t[SLOT.bInterpolate] = worker.interpolatePhysicsPose ? 1 : 0;
   t[SLOT.eSelfLit] = selfLit ? 1 : 0;
+  // OL-12: the walls' rows: the kernel writes each packed occluder's code there and sends no event for it.
+  t[SLOT.vOccCode] = occCodeByte;
   return ok === 1;
 }

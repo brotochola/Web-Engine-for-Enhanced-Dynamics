@@ -141,7 +141,7 @@ export class PropState extends Component {
 /** A street lamp reaches about 63 m: 10·√(1800·2.2) px, the game's pool from a raised bulb. */
 const LAMP_RADIUS = 10 * Math.sqrt(1800 * 2.2);
 /**
- * Its halo on the bulb (LightEmitter.glow and glowRadius). The scene's halos join the entities (lightGlow 'sprite'): each
+ * Its halo on the bulb (LightEmitter.glow and glowRadius). The scene's halos join the entities (lightGlow 'sorted'): each
  * is drawn right after its lamp, so it shines over the lamp and a tree or a house in front of the lamp covers it, and
  * it is unshaded, so the night does not darken it. glowRadius is the glow one sees round the glass (35 px: a bulb's glow,
  * not a haze over the street the lamp lights).

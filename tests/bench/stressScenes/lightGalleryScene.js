@@ -6,10 +6,11 @@ const { Scene, Camera, LAYER_KIND, BLEND_MODES } = WEED;
 /**
  * A still grid of lamps for byte-for-byte captures of the light API (DX-LIGHTAPI): each lamp sets a field the API has
  * (reach, colour, glow and its height and layer, the pool's height, the source's height, an offset on a turned entity,
- * a shadow reach shorter than the light's), with barrels that cast shadows around it, and with `?raycast=1` boxes that
- * block it. compareCaptures.mjs compares this scene written in one API against the same lamps written in another.
+ * a shadow reach shorter than the light's), with barrels that cast shadows around it, and with `?walls=1` boxes that
+ * block it (walls: lighting.walls). compareCaptures.mjs compares this scene written in one API against the same lamps
+ * written in another.
  *
- * `?raycast=1`, `?groundScaleY=` (default 1), `?backend=webgpu`, `?glowMode=sprite` (lighting.lightGlow), `?ambient=`
+ * `?walls=1`, `?groundScaleY=` (default 1), `?backend=webgpu`, `?glowMode=sorted` (lighting.lightGlow), `?ambient=`
  * (default 0.05), `?glowRes=` (lighting.lightGlowResolution, E-404; left out, the engine's default). `?cones=1` (DX-SPOT): lamp 1 takes a cone of 360 degrees (it must draw as the point light it was),
  * lamps 4, 7 and 11 real cones (a hard edge turned by `direction`, a soft one on a turned entity, a fully soft one).
  */
@@ -30,10 +31,10 @@ function queryNumber(key, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export const RAYCAST = queryNumber('raycast', 0) === 1;
+export const WALLS = queryNumber('walls', 0) === 1;
 export const GROUND_SCALE_Y = queryNumber('groundScaleY', 1);
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
-export const GLOW_MODE = query('glowMode') === 'sprite' ? 'sprite' : 'add';
+export const GLOW_MODE = query('glowMode') === 'sorted' ? 'sorted' : 'add';
 export const AMBIENT = queryNumber('ambient', 0.05);
 export const CONES = queryNumber('cones', 0) === 1;
 /** E-404: lighting.lightGlowResolution, written only when given (a revision without it ignores the key). */
@@ -70,11 +71,11 @@ export const LAMPS = [
 
 /** Barrels around each lamp (offsets from its cell's centre). */
 const PROP_OFFSETS = [[70, 30], [-60, 50], [20, -70]];
-/** Boxes around each lamp under `?raycast=1`. */
+/** Boxes around each lamp under `?walls=1`. */
 const BLOCK_OFFSETS = [[-80, -30], [90, -50]];
 
 export const stressSceneConfig = {
-  requested: { raycast: RAYCAST ? 1 : 0, groundScaleY: GROUND_SCALE_Y, backend: BACKEND, glowMode: GLOW_MODE, ambient: AMBIENT, cones: CONES ? 1 : 0 },
+  requested: { walls: WALLS ? 1 : 0, groundScaleY: GROUND_SCALE_Y, backend: BACKEND, glowMode: GLOW_MODE, ambient: AMBIENT, cones: CONES ? 1 : 0 },
 };
 
 export class LightGalleryScene extends Scene {
@@ -92,10 +93,11 @@ export class LightGalleryScene extends Scene {
       ground: { kind: LAYER_KIND.TILING, texture: 'ground', tileScale: 1, parallax: 1, zIndex: 0 },
       glows: { zIndex: 4, blendMode: BLEND_MODES.ADD, ySorting: false },
     },
-    // ?raycast=1: pitch 90, a flat view, lights by raycasting (the blocks' walls), on the same floor.
-    camera: RAYCAST ? { pitch: 90, floorScaleY: GROUND_SCALE_Y } : { floorScaleY: GROUND_SCALE_Y },
+    camera: { floorScaleY: GROUND_SCALE_Y },
     lighting: {
       enabled: true,
+      // ?walls=1: the blocks are walls (shadowCaster.setWall) that stop the lamps, on the same floor.
+      walls: WALLS,
       baseAmbient: AMBIENT,
       maxLights: 32,
       shadowsEnabled: true,
@@ -130,7 +132,7 @@ export class LightGalleryScene extends Scene {
       if (spec.bare) GalleryBareLamp.spawn(spec);
       else GalleryLamp.spawn(spec);
       for (const [dx, dy] of PROP_OFFSETS) GalleryProp.spawn({ x: cx + dx, y: cy + dy });
-      if (RAYCAST) {
+      if (WALLS) {
         for (const [dx, dy] of BLOCK_OFFSETS) GalleryBlock.spawn({ x: cx + dx, y: cy + dy });
       }
     }

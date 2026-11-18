@@ -41,6 +41,7 @@ struct LightingUniforms {
 // #if FACES
   uFaceLight: vec4<f32>, // heightScaleY, 0, 0, the sun's direct share (1 - Sun.skyLight)
   uFaceSun: vec4<f32>, // towards the sun in the floor's space; w: 1 / its height, so a flat surface reads as the floor
+  uNormalShade: vec4<f32>, // OL-6 (lighting.normalShading): the sun's strength and subtract, the lamps' strength and subtract
 // #endif FACES
 // #if SUNMAP
   uSunMapK: vec4<f32>, // kx, ky (a px of height's landing shift on the floor), groundScaleY, the shadow's opacity
@@ -55,6 +56,9 @@ struct LightingUniforms {
   uTileGrid: vec4<f32>, // E-205: a tile's px, the border's tiles, the grid's columns and rows (border included)
   uTileWords: vec4<f32>, // words in use, texel rows a word's band (the grid's rows + 1)
 // #endif TILES
+// #if WALLS
+  uWalls: vec4<f32>, // OL-4: lighting.wallDepth (px the light enters a wall from its edge; 0: its own sprite, whole), lighting.lightBehindWalls
+// #endif WALLS
 }
 @group(2) @binding(0) var uLightData: texture_2d<f32>;
 @group(2) @binding(1) var<uniform> uniforms: LightingUniforms;
@@ -65,7 +69,7 @@ struct LightingUniforms {
 @group(2) @binding(4) var uFaceMap: texture_2d<f32>;
 // #endif FACES
 // #if SUNMAP
-// DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the sprite shadows' layer is.
+// DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the castedShadows layer is.
 @group(2) @binding(5) var uSunMap: texture_2d<f32>;
 // #endif SUNMAP
 // #if LAMPMAP
@@ -80,6 +84,10 @@ struct LightingUniforms {
 // E-205: the lights by tile (src/render/lightTiles.js; lightingBasic.frag.glsl says how they are read).
 @group(2) @binding(8) var uLightTiles: texture_2d<u32>;
 // #endif TILES
+// #if WALLS
+// OL-4: the walls' rows (src/render/visibility/lampWallRow.js), a row a lamp with walls in its reach.
+@group(2) @binding(9) var uWallRows: texture_2d<f32>;
+// #endif WALLS
 
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
@@ -101,6 +109,60 @@ fn weedScreenToWorld(screenPos: vec2<f32>) -> vec2<f32> {
     -rot.y * sxy.x + rot.x * sxy.y,
   ) / uniforms.uZoom;
 }
+
+// #if WALLS
+// OL-4: the walls' rows (lampWallRow.js; lightingBasic.frag.glsl says how a row is laid out). lampWallRow.js's numbers.
+const WALL_BINS: i32 = 256;
+const WALL_VERT0: i32 = 65;
+const WALL_WALK: i32 = 16;
+
+// A direction's place around the lamp, 0..4, rising with atan2 (lampWallRow.js wallAngle).
+fn wallAngle(v: vec2<f32>) -> f32 {
+  let t = v.x / max(abs(v.x) + abs(v.y), 1e-6);
+  return select(3.0 + t, 1.0 - t, v.y >= 0.0);
+}
+
+// The share of a lamp's light that reaches floor point p past the walls (lightingBasic.frag.glsl's wallVisibility).
+fn wallVisibility(p: vec2<f32>, tag: f32, selfId: f32) -> f32 {
+  if (tag < 0.5) { return 1.0; }
+  let row = i32(tag + 0.5) - 1;
+  let head = textureLoad(uWallRows, vec2<i32>(0, row), 0);
+  let n = i32(head.x + 0.5);
+  if (n < 3) { return 1.0; }
+  let v = p - head.zw;
+  var a = wallAngle(v);
+  if (a < head.y) { a += 4.0; }
+  let b = clamp(i32((a - head.y) * (f32(WALL_BINS) * 0.25)), 0, WALL_BINS - 1);
+  let starts = textureLoad(uWallRows, vec2<i32>(1 + b / 4, row), 0);
+  var e = i32(starts[b % 4] + 0.5);
+  var v0 = textureLoad(uWallRows, vec2<i32>(WALL_VERT0 + e, row), 0);
+  var v1 = textureLoad(uWallRows, vec2<i32>(WALL_VERT0 + e + 1, row), 0);
+  for (var s = 0; s < WALL_WALK; s++) {
+    if (e + 1 >= n || v1.z > a) { break; }
+    e++;
+    v0 = v1;
+    v1 = textureLoad(uWallRows, vec2<i32>(WALL_VERT0 + e + 1, row), 0);
+  }
+  if (v0.w < 0.5) { return 1.0; }
+  let edge = v1.xy - v0.xy;
+  let rel = v - v0.xy;
+  let inside = (edge.x * rel.y - edge.y * rel.x) / max(length(edge), 1e-4);
+  let lit = clamp(inside + 0.5, 0.0, 1.0);
+  if (lit >= 1.0) { return 1.0; }
+  let owner = floor(v0.w / 256.0);
+  let opacity = (v0.w - owner * 256.0) / 255.0;
+  let behind = uniforms.uWalls.y;
+  var beyond = behind + (1.0 - behind) * (1.0 - opacity);
+  let depth = uniforms.uWalls.x;
+  if (depth > 0.0) {
+    let into = clamp(1.0 + inside / depth, 0.0, 1.0);
+    beyond += (1.0 - beyond) * into * into * (3.0 - 2.0 * into);
+  } else if (selfId > 0.5 && abs(owner - selfId) < 0.5) {
+    beyond = 1.0;
+  }
+  return mix(beyond, 1.0, lit);
+}
+// #endif WALLS
 
 // DX-SPOT: how far inside its cone a point at floor offset delta from the light is: 1 inside, 0 outside, smooth across
 // the soft edge. At the light itself, 1.
@@ -339,8 +401,8 @@ fn selfShadow(p: vec3<f32>, selfId: f32) -> f32 {
 }
 // #endif SELFSHADOW
 
-// DX-GBUF (plan §5.4): a face's normal, a FLAT pixel lit as drawn, a sprite's own normal by the lamps' share of its light
-// (lightingBasic.frag.glsl's faceLight says how).
+// DX-GBUF (plan §5.4): a face's normal, a FLAT pixel lit as drawn, a sprite's own normal as drawn less its shading
+// (OL-6, lighting.normalShading; lightingBasic.frag.glsl's faceLight says how).
 fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> vec3<f32> {
   let q = floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5);
   let kRule = q >= 32768.0;
@@ -382,8 +444,10 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
 // #endif SELFSHADOW
   var total = vec3<f32>(uniforms.uBaseAmbient) + vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB);
   total += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * (1.0 - lit.w + lit.w * sunDirect);
-  // The lamps lit as drawn (cosine 1), for FLAT pixels and the normals' strength.
-  var lampFlat = vec3<f32>(0.0);
+  // The lamps on a pixel lit as drawn (cosine 1): a FLAT pixel's. OL-6: on a sprite's own normal each lamp loses its
+  // shading, 1 - cosine, less the amount subtracted, times the strength (uNormalShade.w and .z).
+  var lampDrawn = vec3<f32>(0.0);
+  let lampShading = select(uniforms.uNormalShade.z, 0.0, isFlat);
   let nLights = uniforms.uLightCount;
   let nCones = i32(uniforms.uConeCount);
   let texW = i32(uniforms.uLightTexWidth);
@@ -423,10 +487,17 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
 // #if LAMPMAP
     cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
 // #endif LAMPMAP
+// #if WALLS
+    // OL-4: a wall between the lamp and the pixel's floor point (its own entity's wall leaves it lit).
+    if (cone > 0.0) { cone *= wallVisibility(p.xy, textureLoad(uLightData, vec2<i32>(i, 3), 0).z, selfId); }
+// #endif WALLS
     if (cosine > 0.0) {
       total += col.rgb * cosine * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
-    if (both) { lampFlat += col.rgb * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled); }
+    if (both) {
+      lampDrawn += col.rgb * (cone * (1.0 - max(1.0 - max(cosine, 0.0) - uniforms.uNormalShade.w, 0.0) * lampShading))
+        * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    }
 // #if !TILES
   }
   for (var j = 0; j < MAX_LIGHTS; j++) {
@@ -471,7 +542,11 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
 // #endif SELFSHADOW
 // #endif LAMPMAP
     // The light ends at its radius (reachWindow), and its shadows fade out with it.
-    let win = reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
+    var win = reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
+// #if WALLS
+    // OL-4: a wall between the lamp and the pixel's floor point (its own entity's wall leaves it lit).
+    if (win > 0.0) { win *= wallVisibility(p.xy, textureLoad(uLightData, vec2<i32>(i, 3), 0).z, selfId); }
+// #endif WALLS
     if (cosine > 0.0) {
       total += col.rgb * cosine * shade * win * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
@@ -482,18 +557,24 @@ fn faceLight(world: vec2<f32>, face: vec4<f32>, selfId: f32, selfOn: bool) -> ve
       lampShade = flatShade * win;
 // #endif SELFSHADOW
 // #endif LAMPMAP
-      lampFlat += col.rgb * lampShade * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+      lampDrawn += col.rgb * (lampShade * (1.0 - max(1.0 - max(cosine, 0.0) - uniforms.uNormalShade.w, 0.0) * lampShading))
+        * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
 // #if TILES
     }
 // #endif TILES
   }
   if (!both) { return total; }
-  let totalFlat = vec3<f32>(uniforms.uBaseAmbient) + vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB)
-    + vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * sunFlat + lampFlat;
-  if (isFlat) { return totalFlat; }
-  let k = clamp(dot(lampFlat, vec3<f32>(1.0)) / max(dot(totalFlat, vec3<f32>(1.0)), 0.0001), 0.0, 1.0);
-  return mix(totalFlat, total, k);
+  // A FLAT pixel gets the sun as drawn (sunFlat). OL-6: on a sprite's own normal, less the sun's shading (what the
+  // normal takes from that, less the amount subtracted, times the strength), or plus its gain by the strength alone
+  // (lightingBasic.frag.glsl's faceLight says how). The lamps lost their shading in their loops (lampDrawn).
+  var sunLit = sunFlat;
+  if (!isFlat) {
+    let sunByNormal = 1.0 - lit.w + lit.w * sunDirect;
+    sunLit += (max(sunByNormal - sunFlat, 0.0) - max(sunFlat - sunByNormal - uniforms.uNormalShade.y, 0.0)) * uniforms.uNormalShade.x;
+  }
+  return vec3<f32>(uniforms.uBaseAmbient) + vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB)
+    + vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity * sunLit + lampDrawn;
 }
 // #endif FACES
 
@@ -554,6 +635,11 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   totalLight += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity;
 // #endif !SUNMAP
   totalLight += vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB);
+// #if WALLS
+  // OL-4: whose pixel this is (the G-buffer's id: a sprite lying on the floor writes no face, but its entity).
+  let wallIds = textureLoad(uFaceIds, vec2<i32>(in.position.xy), 0);
+  let wallSelf = floor(wallIds.r * 255.0 + 0.5) * 256.0 + floor(wallIds.g * 255.0 + 0.5);
+// #endif WALLS
   let nLights = uniforms.uLightCount;
   let nCones = i32(uniforms.uConeCount);
   let texW = i32(uniforms.uLightTexWidth);
@@ -596,6 +682,9 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
 // #if LAMPMAP
     attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z, i);
 // #endif LAMPMAP
+// #if WALLS
+    if (attenuation > 0.0) { attenuation *= wallVisibility(fragWorld, textureLoad(uLightData, vec2<i32>(i, 3), 0).z, wallSelf); }
+// #endif WALLS
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
 // #if !TILES
   }
@@ -620,6 +709,9 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
 // #if LAMPMAP
       attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity, i);
 // #endif LAMPMAP
+// #if WALLS
+      if (attenuation > 0.0) { attenuation *= wallVisibility(fragWorld, textureLoad(uLightData, vec2<i32>(i, 3), 0).z, wallSelf); }
+// #endif WALLS
       totalLight += col.rgb * attenuation;
     }
 // #if TILES

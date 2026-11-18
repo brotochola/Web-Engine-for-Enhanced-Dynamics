@@ -98,11 +98,14 @@ test('box2d / balls-equivalent load includes BODY_COUNT', () => {
   assert.equal(row.scene.exportName, 'BallsScene');
 });
 
-test('visPoly scene is the raycasted bench, not Predator', () => {
+test('visPoly scene is the walls bench, not Predator', () => {
   const row = getFeature('visPoly');
   assert.match(row.scene.path, /visPolyStressScene/);
   const src = fs.readFileSync(path.join(root, 'tests/bench/stressScenes/visPolyStressScene.js'), 'utf8');
-  assert.match(src, /camera:\s*\{\s*pitch:\s*90\s*\}/, 'a flat view: raycasted lighting');
+  // The scene asks for walls (lighting.walls) unless a race arm without them is asked for (?arm=maps|plain).
+  assert.match(src, /walls:\s*ARM_WALLS/, 'lighting.walls follows the arm');
+  assert.match(src, /const ARM_WALLS = ARM === 'walls';/, 'the walls arm');
+  assert.match(src, /\? arm : 'walls';/, 'and the default arm is walls');
   assert.match(src, /seed:/);
 });
 

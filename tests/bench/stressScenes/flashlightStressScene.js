@@ -6,7 +6,7 @@ const { Scene, Camera, LAYER_KIND } = WEED;
 
 /**
  * Flashlights in a side view (DX-SPOT): walkers pacing on ledges, turning round with flipX, each aiming a light ahead of
- * it, among crates that block light (raycasted lighting). The load knob is `?lights=`; `?cone=1` turns each flashlight
+ * it, among crates that block light (walls: lighting.walls). The load knob is `?lights=`; `?cone=1` turns each flashlight
  * into a cone (`?aperture=` degrees, default 50; `?softness=`, default 0.25) that follows the flip, `?cone=0` (the
  * default) leaves the same lights round: the arm to measure a cone's cost (and its sweep's saving) against.
  *
@@ -40,7 +40,9 @@ export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 export const GLOW_RES = queryNumber('glowRes', NaN);
 
 export const stressSceneConfig = {
-  requested: { lights: LIGHTS, crates: CRATES, cone: CONE ? 1 : 0, aperture: APERTURE, softness: SOFTNESS, backend: BACKEND },
+  requested: {
+    lights: LIGHTS, crates: CRATES, cone: CONE ? 1 : 0, aperture: APERTURE, softness: SOFTNESS, backend: BACKEND,
+  },
 };
 
 export class FlashlightStressScene extends Scene {
@@ -56,15 +58,16 @@ export class FlashlightStressScene extends Scene {
     layers: {
       ground: { kind: LAYER_KIND.TILING, texture: 'ground', tileScale: 1, parallax: 1, zIndex: 0 },
     },
-    // A side view: raycasted lighting, the crates its walls. The lights pool on the backdrop, seen face on: a floor of 1.
+    // A side view. The lights pool on the backdrop, seen face on: a floor of 1.
     camera: { pitch: 0, floorScaleY: 1 },
     lighting: {
       enabled: true,
+      // OL-4: the crates are walls (shadowCaster.setWall): each light sweeps the ones in its reach.
+      walls: true,
       baseAmbient: 0.05,
       shadowsEnabled: false,
       maxLights: LIGHTS,
       maxPolygonVertices: 5000,
-      maxOccluderSelfLit: 1024,
       ...(Number.isFinite(GLOW_RES) ? { lightGlowResolution: GLOW_RES } : {}),
       sun: { enabled: false },
     },

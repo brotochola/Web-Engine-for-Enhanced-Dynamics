@@ -200,65 +200,6 @@ function edgeTableGrow() {
   }
 }
 
-// E-135. The fill's shared vertices: a soup vertex joins an earlier one only when both of its floats are the same
-// bits, so the triangles drawn from them, and every attribute Pixi computes from a vertex, are the soup's.
-// Open addressing over the bits; the slot holds a shared vertex's id, its first soup vertex says its bits.
-let _vertSlot = new Int32Array(512).fill(-1);
-let _vertFirst = new Int32Array(256);
-
-/**
- * solid.fillPts (the distinct vertices, x and y), solid.fillPtCount and solid.fillIdx (per soup vertex, its shared
- * vertex: the triangles in the soup's order) from solid.fill.
- */
-function indexFill(solid, n) {
-  const fill = solid.fill;
-  const bits = new Uint32Array(fill.buffer, fill.byteOffset, n * 2);
-  solid.fillPts = growFloats(solid.fillPts, n * 2);
-  if (solid.fillIdx.length < n) {
-    let cap = solid.fillIdx.length || 64;
-    while (cap < n) cap *= 2;
-    solid.fillIdx = new Uint32Array(cap);
-  }
-  let slots = _vertSlot.length;
-  if (slots < n * 2) {
-    while (slots < n * 2) slots *= 2;
-    _vertSlot = new Int32Array(slots);
-  }
-  if (_vertFirst.length < n) _vertFirst = new Int32Array(slots >> 1);
-  _vertSlot.fill(-1);
-  const slot = _vertSlot;
-  const first = _vertFirst;
-  const mask = slots - 1;
-  const pts = solid.fillPts;
-  const idx = solid.fillIdx;
-  let m = 0;
-  for (let v = 0; v < n; v++) {
-    const bx = bits[v * 2];
-    const by = bits[v * 2 + 1];
-    let h = Math.imul(bx, 0x9e3779b1) ^ Math.imul(by, 0x85ebca77);
-    h ^= h >>> 15;
-    h = Math.imul(h, 0x2c1b3c6d);
-    h = (h ^ (h >>> 12)) & mask;
-    let id;
-    for (;;) {
-      id = slot[h];
-      if (id < 0) {
-        id = m++;
-        slot[h] = id;
-        first[id] = v;
-        pts[id * 2] = fill[v * 2];
-        pts[id * 2 + 1] = fill[v * 2 + 1];
-        break;
-      }
-      const f = first[id];
-      if (bits[f * 2] === bx && bits[f * 2 + 1] === by) break;
-      h = (h + 1) & mask;
-    }
-    idx[v] = id;
-  }
-  solid.fillPtCount = m;
-}
-
 /**
  * Count one edge by its quantized ends, in canonical order, and return its id.
  * A new edge gets id === the count before the call; the caller stores its
@@ -291,33 +232,23 @@ function edgeCount(qax, qay, qbx, qby) {
 }
 
 /**
- * Boundary segments and solid fill for one compound body.
+ * The boundary segments of one compound body.
  * Rebuilt only when the fixture pool revision changes.
  * Edges shared by two triangles are interior and dropped, so a canyon stays a hole.
- * `wantFill` false skips the fill triangles: pre-render reads only the segments,
- * and each worker keeps its own cache (review D1).
- * With the fill, its shared vertices too (E-135): `fillPts` (x, y), `fillPtCount`, and `fillIdx`, the shared vertex of
- * each of the `fillVerts` soup vertices.
- * @returns {{ revision: number, seg: Float32Array, segCount: number, fill: Float32Array, fillVerts: number, fillPts: Float32Array, fillPtCount: number, fillIdx: Uint32Array, hasFill: boolean, chain: Int32Array, chainValid: boolean }}
+ * @returns {{ revision: number, seg: Float32Array, segCount: number }}
  */
 export function ensureCompoundSolid(
   entityIdx, revision,
   head, next, active, vertCount, vertX, vertY,
-  headIdx, poolMax, wantFill = true
+  headIdx, poolMax
 ) {
   let solid = _solids[entityIdx];
-  if (solid && solid.revision === revision && (solid.hasFill || !wantFill)) return solid;
+  if (solid && solid.revision === revision) return solid;
   if (!solid) {
     solid = {
       revision: -1,
       seg: new Float32Array(64),
       segCount: 0,
-      fill: new Float32Array(64),
-      fillVerts: 0,
-      fillPts: new Float32Array(64),
-      fillPtCount: 0,
-      fillIdx: new Uint32Array(64),
-      hasFill: false,
       // Pre-render's walk order over seg (E-61), built on its first use.
       chain: new Int32Array(64),
       chainValid: false,
@@ -336,37 +267,17 @@ export function ensureCompoundSolid(
     _solids[entityIdx] = solid;
   }
   solid.segCount = 0;
-  solid.fillVerts = 0;
-  solid.fillPtCount = 0;
   solid.chainValid = false;
   edgeTableClear();
   if (head && next && active && vertX && vertY && headIdx != null && headIdx !== FIXTURE_NONE) {
     let cur = headIdx;
     let guard = 0;
     const limit = poolMax | 0;
-    let fillN = 0;
     while (cur !== FIXTURE_NONE && guard++ < limit) {
       if (active[cur]) {
         const count = vertCount[cur] | 0;
         if (count >= 3 && count <= MAX_POLYGON_VERTICES) {
           const base = cur * MAX_POLYGON_VERTICES;
-          if (wantFill) {
-            const need = (fillN + (count - 2) * 3) * 2;
-            solid.fill = growFloats(solid.fill, need);
-            const fill = solid.fill;
-            const x0 = vertX[base];
-            const y0 = vertY[base];
-            for (let i = 1; i < count - 1; i++) {
-              const o = fillN * 2;
-              fill[o] = x0;
-              fill[o + 1] = y0;
-              fill[o + 2] = vertX[base + i];
-              fill[o + 3] = vertY[base + i];
-              fill[o + 4] = vertX[base + i + 1];
-              fill[o + 5] = vertY[base + i + 1];
-              fillN += 3;
-            }
-          }
           for (let i = 0; i < count; i++) {
             const j = i + 1 < count ? i + 1 : 0;
             const ax = vertX[base + i];
@@ -393,8 +304,6 @@ export function ensureCompoundSolid(
       }
       cur = next[cur];
     }
-    solid.fillVerts = fillN;
-    if (wantFill && fillN > 0) indexFill(solid, fillN);
     let segN = 0;
     for (let id = 0; id < _edgeCount; id++) {
       if (_edgeN[id] !== 1) continue;
@@ -410,26 +319,15 @@ export function ensureCompoundSolid(
     solid.segCount = segN;
   }
   solid.revision = revision;
-  solid.hasFill = !!wantFill;
   return solid;
 }
 
-/**
- * Whether an outline segment faces a point: the segment's outward normal
- * (dy, -dx) points to the point's side. True for CCW outlines, which is how
- * ensureCompoundSolid keeps each edge (its fixture's order).
- */
-export function segmentFacesPoint(x0, y0, x1, y1, px, py) {
-  return (y1 - y0) * (px - x0) - (x1 - x0) * (py - y0) > 0;
-}
-
 // E-61. Rastering an edge costs two atan2, one per end, and an outline's edges
-// share their ends. seg keeps the order the triangles gave (Pixi draws its
-// transmit wedges in that order), so collectSolidSegments walks solid.chain
-// instead: each edge followed, where there is one, by the edge that starts
-// exactly where it ends, and reuses the end angle it just computed as the next
-// start. The bins take a minimum, which is the same in any order, and the
-// callers read only hit > 0.
+// share their ends. seg keeps the order the triangles gave, so
+// collectSolidSegments walks solid.chain instead: each edge followed, where
+// there is one, by the edge that starts exactly where it ends, and reuses the
+// end angle it just computed as the next start. The bins take a minimum, which
+// is the same in any order, and the callers read only hit > 0.
 let _chainHead = new Int32Array(512).fill(-1); // hash slot -> an edge starting there
 let _chainNext = new Int32Array(256); // edge -> the next edge in its slot
 let _chainUsed = new Uint8Array(256);

@@ -47,7 +47,7 @@ Per entity `i`, layout is a fixed stride (see `Grid.neighborStride` / `Grid._str
 
 Visual-range neighbors only. Physics contacts come from Box2D, not this buffer.
 
-- **Lights / shadows:** in basic lighting the shadow stamp grids its casters itself and takes no neighbour list; a light's shadows reach `LightEmitter.shadowRange` (0: its radius). Under raycasted lighting a light that casts gets a neighbour list over that reach (its occluders), unless its class reads its neighbours, whose list stays what its `visualRange` gives.
+- **Lights / shadows:** the shadow stamp grids its casters itself and takes no neighbour list; a light's shadows reach `LightEmitter.shadowRange` (0: its radius). In a scene with walls (`lighting.walls`) a light that casts also gets a neighbour list over that reach (its walls), unless its class reads its neighbours, whose list stays what its `visualRange` gives.
 
 ---
 

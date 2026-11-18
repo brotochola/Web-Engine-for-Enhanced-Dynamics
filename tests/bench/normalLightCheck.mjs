@@ -11,35 +11,59 @@
  * (s = 1 - lighting.sun.skyLight, 1 in the scene: the whole sun term follows the normal), clamped at 1. The floor around
  * the ball is checked too (the floor path: ambient + sun · I, or each lamp's I_l / (I_l + h² + d²)).
  *
- *   node tests/bench/normalLightCheck.mjs [--backend webgl|webgpu|both] [--part sun|lamp|both] [--tolerance 3]
- *     [--strength full|auto] [--inset 3] [--save dir] [--headless] [--wait-ms 3000] [--query k=v]
+ *   node tests/bench/normalLightCheck.mjs [--backend webgl|webgpu|both] [--part sun|lamp|both] [--tolerance 5]
+ *     [--strength 0,1] [--subtract 0,0] [--inset 3] [--save dir] [--headless] [--wait-ms 3000] [--query k=v]
  *
- * --strength auto (default): §5.4's automatic strength of the normals (k = lamps / (lamps + ambient + sun), the drawn picture's
- * light mixed towards the normals' by k) instead of the full normals. --inset: px left out at the ball's rim (grazing
- * normals and the soft edge). Exit 0 when every compared pixel is within --tolerance of 255 on every backend and part.
+ * --strength <sun>,<lamps> (default 0,1, the engine's) and --subtract <sun>,<lamps> (default 0,0): lighting.normalShading
+ * (OL-6). A light's shading on a pixel is what the ball's normal takes from it, against the light as drawn (the formula
+ * with every cosine 1); the subtract comes off it first (never under 0), the strength multiplies the rest. Strength 1
+ * with nothing subtracted is the formula above; the scene takes the same four numbers. --strength 1,1 checks the full
+ * normals; --strength 1,1 --subtract 0.2,0.3 the subtract. --inset: px left out at the ball's rim
+ * (grazing normals and the soft edge). Exit 0 when every compared pixel is within --tolerance of 255 on every backend
+ * and part. The capture waits for a drawn frame, not only --wait-ms: one that is a single colour from edge to edge, and
+ * not the floor's, has no frame in it: a page that has drawn nothing by the time the wait ends. On the ASUS its HDD
+ * saturates while the browser starts (disk queue 17, the CPU waiting on it) and the first frame came 3.5 to 4 s after
+ * the scene loaded, in 1 run of 15 to 30 (2026-11-18, the ASUS's job 0896l); a blank page had read as a failed shader.
+ * It is taken again every half second, up to 15 s; past that the line reads NOFRAME and the exit code is 2: no verdict
+ * on the shading.
+ * The tolerance is the maps' own steps at full strength: on this ball the worst pixel read 3.4 of 255 under the
+ * lamp and 4.0 under the sun (p99 2.4, mean 0.6; 2026-11-18), half that at strength 0.5.
  */
 import path from 'node:path';
 
 import { FLOOR_SCALE_Y as G, SOLIDS, rayHit } from './checks/checkShapes.js';
 import { NORMAL_LIGHT as L } from './checks/layouts.js';
-import { captureStill, parseCheckCli, percentile, queryOf, rgbAt, sunGeometry, sunRgb, verdict, withCheckBrowser } from './checks/checkLib.mjs';
+import {
+  captureStill, flatColour, parseCheckCli, percentile, queryOf, rgbAt, sunGeometry, sunRgb, verdict, withCheckBrowser,
+} from './checks/checkLib.mjs';
 
-const USAGE = 'node tests/bench/normalLightCheck.mjs [--backend webgl|webgpu|both] [--part sun|lamp|both] [--tolerance 3] [--strength full|auto] [--inset 3] [--save dir] [--headless]';
+const USAGE = 'node tests/bench/normalLightCheck.mjs [--backend webgl|webgpu|both] [--part sun|lamp|both] [--tolerance 5] [--strength 0,1] [--subtract 0,0] [--inset 3] [--save dir] [--headless]';
 
-/** The light (0..1 a channel) at floor-space point p with normal n, as §6.7 writes it. */
+/** --strength's or --subtract's two numbers, each in 0..1: { sun, lamps }. */
+function parsePair(flag, text) {
+  const [sun, lamps] = String(text).split(',').map(Number);
+  if (!(sun >= 0 && sun <= 1 && lamps >= 0 && lamps <= 1)) throw new Error(`--${flag} is <sun>,<lamps>, each 0 to 1, not ${text}`);
+  return { sun, lamps };
+}
+
+/**
+ * The light (0..1 a channel) at floor-space point p with normal n, as §6.7 writes it, each light as drawn less its
+ * shading: what the normal takes from it, less the subtract, times the strength (OL-6: lighting.normalShading). The sun
+ * on a face that looks at it more than the floor does gains instead, by the strength alone.
+ */
 function lightAt(p, n, env) {
-  const flat = [0, 1, 2].map((c) => env.ambient + env.night[c]);
-  const lit = flat.slice();
+  const base = [0, 1, 2].map((c) => env.ambient + env.night[c]);
+  const { strength, subtract } = env;
+  const sunLit = [0, 0, 0];
+  const lampsLit = [0, 0, 0];
   if (env.sun) {
     const S = env.sun.towards;
     const ratio = Math.min(Math.max(0, n[0] * S[0] + n[1] * S[1] + n[2] * S[2]) * env.sun.w, 1.6);
-    const term = env.skyLight + (1 - env.skyLight) * ratio;
-    for (let c = 0; c < 3; c++) {
-      lit[c] += env.sun.rgb[c] * env.sun.intensity * term;
-      flat[c] += env.sun.rgb[c] * env.sun.intensity;
-    }
+    // By the normal, in shares of the sun as drawn (1: the scene casts no shadow).
+    const byNormal = env.skyLight + (1 - env.skyLight) * ratio;
+    const share = 1 + (Math.max(byNormal - 1, 0) - Math.max(1 - byNormal - subtract.sun, 0)) * strength.sun;
+    for (let c = 0; c < 3; c++) sunLit[c] = env.sun.rgb[c] * env.sun.intensity * share;
   }
-  let lampFlat = 0;
   for (const lamp of env.lamps) {
     const lx = lamp.x - p[0];
     const ly = lamp.y / G - p[1];
@@ -50,19 +74,10 @@ function lightAt(p, n, env) {
     const fall = (lamp.brightness * I) / (I + d2);
     const cosine = Math.max(0, (n[0] * lx + n[1] * ly + n[2] * lz) / d);
     const rgb = [(lamp.color >> 16) & 255, (lamp.color >> 8) & 255, lamp.color & 255].map((v) => v / 255);
-    for (let c = 0; c < 3; c++) {
-      lit[c] += rgb[c] * fall * cosine;
-      flat[c] += rgb[c] * fall;
-    }
-    lampFlat += fall;
+    const share = 1 - Math.max(1 - cosine - subtract.lamps, 0) * strength.lamps;
+    for (let c = 0; c < 3; c++) lampsLit[c] += rgb[c] * fall * share;
   }
-  if (env.strength === 'auto') {
-    // §5.4: k = lamps' light / (lamps + ambient + sun), per pixel; by day the picture as drawn, by a lamp its normals.
-    const rest = env.ambient + (env.sun ? env.sun.intensity : 0);
-    const k = lampFlat > 0 ? lampFlat / (lampFlat + rest) : 0;
-    return lit.map((v, c) => Math.min(1, flat[c] + k * (v - flat[c])));
-  }
-  return lit.map((v) => Math.min(1, v));
+  return base.map((v, c) => Math.min(1, v + sunLit[c] + lampsLit[c]));
 }
 
 /** The floor's light at screen (x, y): today's floor path (no normal), each lamp raised by its height. */
@@ -94,31 +109,53 @@ function compare(pixels, samples) {
 }
 
 async function main() {
-  const opts = parseCheckCli(process.argv.slice(2), { tolerance: 3, usage: USAGE, flags: { part: 'both', strength: 'auto', inset: 3 } });
+  const opts = parseCheckCli(process.argv.slice(2), { tolerance: 5, usage: USAGE, flags: { part: 'both', strength: '0,1', subtract: '0,0', inset: 3 } });
   const parts = opts.part === 'both' ? ['sun', 'lamp'] : [opts.part];
+  const strength = parsePair('strength', opts.strength);
+  const subtract = parsePair('subtract', opts.subtract);
   await withCheckBrowser(opts, async (ctx) => {
     for (const backend of opts.backends) {
       for (const part of parts) {
-        const query = queryOf(opts, { backend, part });
-        const save = opts.save ? path.join(opts.save, `normalLight-${part}-${backend}.png`) : null;
-        const { pixels, sun, errors } = await captureStill(ctx, {
-          scene: '/tests/bench/checks/normalLightScene.js',
-          sceneExport: 'NormalLightScene',
-          query,
-          waitMs: opts.waitMs,
-          save,
+        const query = queryOf(opts, {
+          backend, part, normalSun: String(strength.sun), normalLamps: String(strength.lamps),
+          subtractSun: String(subtract.sun), subtractLamps: String(subtract.lamps),
         });
-        const env = {
+        const save = opts.save ? path.join(opts.save, `normalLight-${part}-${backend}.png`) : null;
+        const envOf = (sun) => ({
           ambient: L.ambient,
           night: part === 'sun' && sun.enabled ? sun.night : [0, 0, 0],
           sun: part === 'sun' ? { ...sunGeometry(sun, G), rgb: sunRgb(sun), intensity: sun.intensity } : null,
           skyLight: 0,
           lamps: part === 'lamp' ? [L.lamp] : [],
-          strength: opts.strength,
-        };
+          strength,
+          subtract,
+        });
         const ball = SOLIDS.ball;
         const cx = L.ball.x;
         const cy = L.ball.y - ball.radius * Math.SQRT1_2;
+        // A capture with a frame in it: anything but one colour from edge to edge, unless that colour is the floor's own
+        // beside the ball (the sun on a ball lit as drawn: white on white, a whole frame of one colour).
+        const hasFrame = (pixels, sun) => {
+          const flat = flatColour(pixels);
+          if (flat === null) return true;
+          const want = floorAt(cx + ball.radius + 20.5, cy + 0.5, envOf(sun));
+          return want.every((w, c) => Math.abs(flat[c] - w * 255) <= opts.tolerance);
+        };
+        const { pixels, sun, errors, drawn, waitedMs } = await captureStill(ctx, {
+          scene: '/tests/bench/checks/normalLightScene.js',
+          sceneExport: 'NormalLightScene',
+          query,
+          waitMs: opts.waitMs,
+          save,
+          drawn: hasFrame,
+        });
+        if (waitedMs > opts.waitMs) console.log(`${backend} ${part}: no frame after ${opts.waitMs} ms; the capture is from ${waitedMs} ms`);
+        if (!drawn) {
+          console.log(`NOFRAME normalLight ${backend} ${part}: the capture is still one colour (${flatColour(pixels).join(', ')}) ${waitedMs} ms after the scene was prepared: nothing was drawn, so this says nothing of the shading`);
+          if (!process.exitCode) process.exitCode = 2;
+          continue;
+        }
+        const env = envOf(sun);
         const inner = ball.radius - opts.inset;
         const samples = [];
         const floor = [];
@@ -145,7 +182,7 @@ async function main() {
         verdict(
           `normalLight ${backend} ${part}`,
           errors.length === 0 && b.count > 0 && b.worst.delta <= opts.tolerance && f.worst.delta <= opts.tolerance,
-          `ball worst ${b.worst.delta.toFixed(1)}, floor worst ${f.worst.delta.toFixed(1)} of 255 (tolerance ${opts.tolerance}, strength ${opts.strength}, ${sunNote})`,
+          `ball worst ${b.worst.delta.toFixed(1)}, floor worst ${f.worst.delta.toFixed(1)} of 255 (tolerance ${opts.tolerance}, strength ${opts.strength}, subtract ${opts.subtract}, ${sunNote})`,
         );
       }
     }

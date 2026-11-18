@@ -7,8 +7,8 @@
  *   - the columns rebuildOwnedRows, _rebuildMovedRows, getColliderBounds and _findNeighbors read: Transform x, y,
  *     active, entityType, rotC and rotS (for colliders that are not circles: the circle branches never read a
  *     rotation), Collider active, shapeType, radius, width, height, offsets, visualRange and its polygon columns,
- *     SpriteRenderer.active, RigidBody.active, the LightEmitter columns under raycasted lighting (a light searches
- *     its own reach), Grid.neighborReaders (E-176) and the shared active list;
+ *     SpriteRenderer.active, RigidBody.active, the LightEmitter columns in a scene with walls (lighting.walls: a light
+ *     searches its own reach), Grid.neighborReaders (E-176) and the shared active list;
  *   - logic 0's frame number in frameRateData (E-200's typed stagger), the active-query version, and physics' moved
  *     list header (E-126: generation, count, sequence) with its entries when the movers path could read them (a count
  *     of at most half the active entities; past MOVERS_MAX_FRACTION the worker reads only the header).
@@ -334,7 +334,8 @@ export async function createSpatialReplay(meta, opts = {}) {
         spatial: meta.spatial,
         entityIdWidth: meta.entityIdBytes === 4 ? 32 : 16,
         logic: { staggeredUpdates: meta.staggeredUpdates },
-        lighting: meta.raycastLights ? { enabled: true, raycasted: true } : { enabled: false },
+        // The worker's own name for it (SpatialWorker._raycastLights) is on when the scene has walls.
+        lighting: meta.raycastLights ? { enabled: true, walls: true } : { enabled: false },
         debug: { collectDetailedStats: meta.collectDetailedStats === true },
       },
       globalEntityCount: n,

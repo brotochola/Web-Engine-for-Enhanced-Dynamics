@@ -239,7 +239,7 @@ export const ENGINE_FEATURES = [
   },
   {
     id: 'spotLights',
-    name: 'Headlights (cone lights, sprite shadows)',
+    name: 'Headlights (cone lights, layer shadows)',
     module: 'src/workers/pixiWorker.js',
     scene: {
       key: 'spotLights',
@@ -253,7 +253,7 @@ export const ENGINE_FEATURES = [
   },
   {
     id: 'flashlights',
-    name: 'Flashlights (cone lights, raycast)',
+    name: 'Flashlights (cone lights, walls)',
     module: 'src/render/visibility/angularSweep.js',
     scene: {
       key: 'flashlights',

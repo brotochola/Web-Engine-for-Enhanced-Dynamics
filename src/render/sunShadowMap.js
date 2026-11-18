@@ -2,11 +2,11 @@
  * DX-SHADOW3D (the sun, first version): a shadow map in the floor's terms. Each texel holds the height of the highest
  * caster point whose sun ray lands on the floor there; a point of the world is in the sun's shadow when the map, where
  * its own ray lands, holds something higher than it. One map for every caster, whatever their number, drawn each frame
- * with max blending from the caster rows the sprite shadows already use.
+ * with max blending from the caster rows the layer shadows already use.
  *
  * Space: the floor's (x along the screen, y across the floor towards the camera, z up). A point (x, y, z) lands at
  * (x - z·kx, y - z·ky) with (kx, ky) = the sun's horizontal direction over its height. The map is laid out on the screen
- * as the sprite shadows' layer is (that landing point drawn where the floor there is drawn), so the light pass samples it
+ * as the shadows' layer is (that landing point drawn where the floor there is drawn), so the light pass samples it
  * with the same coordinates.
  *
  * A caster without a height map is a card standing on its foot that faces the sun: its picture's columns along the floor
@@ -245,7 +245,7 @@ export function sunMapColumnIndex(cells = SUN_MAP_COLUMNS) {
  * floor point (height 0) to where the cell's sun ray lands (height z). The union of the columns is the object's solid
  * shadow, whatever way it is turned. Only a render's frames cast them (its base has a contact); transparent cells and
  * cells without a map draw nothing.
- * With `heights` (the sun's map) each column carries its height; without (the sprite shadows' layer, drawn with max
+ * With `heights` (the sun's map) each column carries its height; without (the shadows' layer, drawn with max
  * blending) it is the shadow's colour and opacity.
  * @param {string} source instancedSpriteShadow.vert.glsl
  * @param {number} [cells]
@@ -318,7 +318,7 @@ export function sunMapColumnsVertex(source, cells = SUN_MAP_COLUMNS, { heights =
  * The map's vertex shader: instancedSpriteShadow.vert.glsl with its sun card kept (the same landing points the sprite
  * shadows draw) and its height passed on (vSunZ), so the map holds the highest caster point landing at each texel. Frames
  * with a height map skip the card: they cast columns (sunMapColumnsVertex). Same inputs, same early outs. Without
- * `heights` it is the sprite shadows' own program that only skips those frames (their columns draw them).
+ * `heights` it is the layer shadows' own program that only skips those frames (their columns draw them).
  * @param {string} source instancedSpriteShadow.vert.glsl
  * @param {{ heights?: boolean }} [opts]
  */
@@ -390,7 +390,7 @@ fn mainFragMap(in: VertexOut) -> @location(0) vec4<f32> {
 /**
  * sunMapVertex's WGSL form (WebGPU): instancedSpriteShadow.wgsl with its card skipping a render's frames (its columns
  * cast it) and, with `heights`, its height passed on (vSunZ) and the map's fragment entry `mainFragMap`. Without, the
- * sprite shadows' own program that only skips those frames.
+ * layer shadows' own program that only skips those frames.
  * @param {string} source instancedSpriteShadow.wgsl
  * @param {{ heights?: boolean }} [opts]
  */
@@ -424,7 +424,7 @@ export function sunMapWgsl(source, { heights = true } = {}) {
 /**
  * sunMapColumnsVertex's WGSL form: a render's frame cast as columns, one a cell of the SUN_MAP_COLUMNS² grid (aCell
  * instead of aQuad), each where its cell is in 3D, down to the floor. With `heights` for the map (vSunZ, `mainFragMap`),
- * without for the sprite shadows' layer (the shadow's colour and opacity, the shadow program's `mainFrag`).
+ * without for the shadows' layer (the shadow's colour and opacity, the shadow program's `mainFrag`).
  * @param {string} source instancedSpriteShadow.wgsl
  * @param {number} [cells]
  * @param {{ heights?: boolean }} [opts]

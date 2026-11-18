@@ -269,7 +269,7 @@ test('W19: with physics the bodies part carries the bullet tick regions, for any
   assert.ok(l.impactsByte >= l.activeByte + (4000 + 1) * 2 && l.returnedByte >= l.impactsByte + 128 * 24);
 });
 
-test('W2b: with physics and raycasted lighting the bodies part carries LightOccluder, the visibility regions and the gather\'s', async () => {
+test('W2b: with physics and walls (lighting.walls) the bodies part carries LightOccluder, the visibility regions and the gather\'s', async () => {
   const { renderQueueMemorySpec } = await import('../../src/util/sceneSharedBuffers.js');
   const { Transform } = await import('../../src/components/transform.js');
   const { RigidBody } = await import('../../src/components/rigidBody.js');
@@ -291,7 +291,8 @@ test('W2b: with physics and raycasted lighting the bodies part carries LightOccl
       physics: { enabled: true, wasmMemoryMB: 64, maxFixturePoolSize: over.fixtures ?? 300 },
       wasm: over.wasm || {},
       renderer: { maxVisibleRenderables: 500 },
-      lighting: { enabled: true, raycasted: over.raycasted ?? true, shadowsEnabled: false, maxPolygonVertices: 256 },
+      // As Scene._applyConfigDefaults leaves it: lighting.walls resolved to a boolean (OL-4).
+      lighting: { enabled: true, walls: over.walls ?? true, shadowsEnabled: false, maxPolygonVertices: 256 },
       decoration: { maxDecorations: 0 },
       particle: {},
       preRender: {},
@@ -309,7 +310,7 @@ test('W2b: with physics and raycasted lighting the bodies part carries LightOccl
   assert.equal(v.occluderBytes, LightOccluder.getBufferSize(1000));
   assert.equal(v.events, 48, 'one record per neighbour a row holds');
   assert.equal(renderQueueMemorySpec(scene({ fixtures: 0 })).collect.visibility.opts.fixtures, 0, 'no fixture pool: no outline regions');
-  assert.equal(renderQueueMemorySpec(scene({ raycasted: false })).collect, null, 'no raycasted lighting');
+  assert.equal(renderQueueMemorySpec(scene({ walls: false })).collect, null, 'no walls');
   assert.equal(renderQueueMemorySpec(scene({ spatial: 0 })).collect, null, 'no neighbour rows');
   assert.equal(renderQueueMemorySpec(scene({ noOccluders: true })).collect, null, 'no occluders');
 

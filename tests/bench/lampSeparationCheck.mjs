@@ -9,9 +9,9 @@
  * (I_l = (radius / 10)², the lamp raised h px, d its floor distance), clamped at 1: the sun's shadow takes out the sun
  * alone, the lamp's light stays whole in it. The sun's shadow is the box's projection (the hull of its corners' landings,
  * plan §6.6), worked out here; pixels within --edge px of its outline are left out. Also printed: how much of the
- * lamp's light the shadow kept (1 is all of it; today's sprite shadows keep 1 - their alpha).
+ * lamp's light the shadow kept (1 is all of it; today's layer shadows keep 1 - their alpha).
  *
- *   node tests/bench/lampSeparationCheck.mjs [--backend webgl|webgpu|both] [--tolerance 3] [--edge 4] [--sun-shadows map|sprite]
+ *   node tests/bench/lampSeparationCheck.mjs [--backend webgl|webgpu|both] [--tolerance 3] [--edge 4] [--sun-shadows map|layer]
  *     [--save dir] [--headless] [--wait-ms 3000] [--query k=v]
  *
  * Exit 0 when every compared pixel, in the shadow and around it, is within --tolerance of 255.
@@ -25,7 +25,7 @@ import {
   verdict, withCheckBrowser,
 } from './checks/checkLib.mjs';
 
-const USAGE = 'node tests/bench/lampSeparationCheck.mjs [--backend webgl|webgpu|both] [--tolerance 3] [--edge 4] [--sun-shadows map|sprite] [--save dir] [--headless]';
+const USAGE = 'node tests/bench/lampSeparationCheck.mjs [--backend webgl|webgpu|both] [--tolerance 3] [--edge 4] [--sun-shadows map|layer] [--save dir] [--headless]';
 
 async function main() {
   const opts = parseCheckCli(process.argv.slice(2), { tolerance: 3, usage: USAGE, flags: { edge: 4, sunShadows: 'map' } });

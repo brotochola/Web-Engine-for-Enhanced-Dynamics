@@ -7,7 +7,7 @@ import { BENCH_ASSETS, drawnHeading } from './benchAssets.js';
 
 /** What the sun can cast from an element, in the panel's order: 'auto' is its sheet's way (no setter called). */
 export const SUN_KINDS = ['auto', 'sprite', 'heightMap', 'box', 'hull', 'none'];
-/** What the lamps can cast: the same, and a wall (a flat view's 2D sweep: camera.pitch 90 or 0). */
+/** What the lamps can cast: the same, and a wall (the walls' sweep, in a scene with lighting.walls: ?walls=1). */
 export const LAMP_KINDS = ['auto', 'sprite', 'heightMap', 'box', 'hull', 'wall', 'none'];
 export const KIND_NAMES = {
   auto: "its sheet's way",
@@ -15,7 +15,7 @@ export const KIND_NAMES = {
   heightMap: 'height map',
   box: 'box',
   hull: 'hull',
-  wall: 'wall (flat view)',
+  wall: 'wall (lighting.walls)',
   none: 'none',
 };
 export const ORIENTS = ['light', 'fixed'];
@@ -138,7 +138,7 @@ function cast(side, kind, sheet, look, hull) {
   } else if (kind === 'hull') {
     if (hull !== null && hull.length >= 12) side.setHull(hull);
   } else if (kind === 'wall') {
-    side.setWall({ shape: 'sprite' });
+    side.setWall();
   } else if (kind === 'none') {
     side.clear();
   }

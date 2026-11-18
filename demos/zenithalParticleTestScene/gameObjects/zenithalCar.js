@@ -19,7 +19,7 @@ export class ZenithalCar extends GameObject {
 
     this.rigidBody.linearDamping = 0.9;
     this.setAnchor(0.5, 0.5);
-    // A wall that stops the lights, cut by the collider ({ shape: 'sprite' }: by the picture's alpha).
+    // A wall that stops the lights at its collider's outline; the car's own picture stays lit where a light reaches it.
     this.shadowCaster.setWall();
   
   }

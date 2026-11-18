@@ -2,20 +2,25 @@
 // through its own init path (tests/helpers/visibilityWired.mjs), against the JS light loop it replaced
 // (tests/reference/visibilitySweepJs.mjs) on the same worker.
 //
-// The gate is the sweep kernel's (tests/node/visibilitySweepWasm.test.js, comparePolygons): each light's
-// polygon with the same vertex count and every vertex within H-06's 1e-4 world units plus a float32 ulp
-// (wasm.visibilitySweepF32 false, the double SIMD sweep) or 1e-4 of its distance from the light plus that ulp
-// (the float32 sweep, the default). The self-lit list (N-19 solids, N-39 simple occluders) must be the JS's,
-// item for item, and the lights the same, in the same slots. The scene: lights among rotated boxes, circles,
-// convex polygons, half-blocking occluders, offset colliders and compound rings (whose polar bins the JS
-// raster stamps into the memory and the kernel merges), over several frames; a small vertex cap (bins merged
-// in groups); and a light past the active cap, which gives up as the JS does, with the JS's warning once.
+// OL-15: the worker publishes a row a lamp for the light pass (lampWallRow.js) and no polygon. A row is the sweep's
+// polygon as offsets from its lamp, so each row is held to the JS loop's polygon of that light (the helper's
+// compareFrames). The gate is the sweep kernel's (tests/node/visibilitySweepWasm.test.js, comparePolygons): the
+// same vertex count and every vertex within H-06's 1e-4 world units plus a float32 ulp (wasm.visibilitySweepF32
+// false, the double SIMD sweep) or 1e-4 of its distance from the light plus that ulp (the float32 sweep, the
+// default). A lamp with no row (nothing in its reach, or it casts no shadow) must be a light whose JS polygon shows
+// no wall, and the rows come in the lights' order. The walls a row's edges name stand where the self-lit list stood
+// (N-19 solids, N-39 simple occluders): each must be one the JS loop saw from that light, and the row must name
+// every one it saw wherever the loop's list and a row say the same thing (compareFrames tells where). The scene:
+// lights among rotated boxes, circles, convex polygons, half-blocking occluders, offset colliders and compound
+// rings (whose polar bins the JS raster stamps into the memory and the kernel merges), over several frames; a small
+// vertex cap (bins merged in groups); and a light past the active cap, which gives up as the JS does, with the JS's
+// warning once.
 //
 // W1, the compound raster in solidSegments.wasm (with a fixture pool): the same frames with it and with the JS
-// raster in the swept loop publish the same polygons and self-lit lists bit for bit (a bin it stamps holds the JS's
-// distance and owner; it can differ only where a solid's end lies within ~1e-15 rad of a bin edge), also across a
-// remesh (a new fixture revision, one outline grown, one moved); the client's copies of the outlines start over
-// when their region fills, and a solid larger than the region is refused (it casts no shadow), with one error.
+// raster in the swept loop publish the same rows bit for bit (a bin it stamps holds the JS's distance and owner; it
+// can differ only where a solid's end lies within ~1e-15 rad of a bin edge), also across a remesh (a new fixture
+// revision, one outline grown, one moved); the client's copies of the outlines start over when their region
+// fills, and a solid larger than the region is refused (it casts no shadow), with one error.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -38,9 +43,12 @@ import {
   MAX_FLIP_SHARE,
   bootPreRender,
   compareFrames,
+  compareRows,
   makeScene,
   ringTriangles,
+  rowPolygon,
   runFrame,
+  runFrameJs,
   writeFrame,
 } from '../helpers/visibilityWired.mjs';
 import { bindPolarBins, clearPolarBins, collectSolidJs } from '../reference/visibilitySweepJs.mjs';
@@ -72,11 +80,11 @@ function countCalls(pre) {
   return counter;
 }
 
-/** The frames through the worker's visibility pass, or (`js`) through the JS light loop it replaced. */
+/** The frames through the worker's visibility pass (its rows), or (`js`) through the JS light loop it replaced. */
 function framesOf(boot, js = false) {
   return FRAMES.map((t) => {
     writeFrame(boot, t);
-    return runFrame(boot, { js });
+    return js ? runFrameJs(boot) : runFrame(boot);
   });
 }
 
@@ -86,22 +94,25 @@ function jsRaster(boot) {
   return boot;
 }
 
-/** Every frame within the gate, and flips at most MAX_FLIP_SHARE of the lights. */
+/**
+ * Every frame's rows within the gate of the JS loop's polygons, and flips at most MAX_FLIP_SHARE of the lights.
+ * The rows name no wall the JS loop did not see, and every wall it saw where the two say the same thing
+ * (`comparable`: compareFrames tells which). The loop also counts a wall whose only vertices the sweep dropped as
+ * doubles of their neighbours (within half a px), which is on no polygon: one wall in 2452 over these frames of
+ * makeScene(0x2b2d, { rings: 0 }), none in the scenes here, so none is allowed.
+ */
 function assertSame(js, k, label, opts) {
-  let lights = 0;
-  let vertices = 0;
-  let exact = 0;
-  const flips = [];
+  const sum = { lights: 0, rows: 0, vertices: 0, exact: 0, named: 0, seen: 0, comparable: 0, flips: [], unnamed: [] };
   js.forEach((frame, f) => {
     const c = compareFrames(frame, k[f], opts);
     assert.deepEqual(c.bad, [], `${label}, frame ${f}`);
-    lights += c.lights;
-    vertices += c.vertices;
-    exact += c.exact;
-    flips.push(...c.flips.map((s) => `frame ${f} ${s}`));
+    for (const key of ['lights', 'rows', 'vertices', 'exact', 'named', 'seen', 'comparable']) sum[key] += c[key];
+    sum.flips.push(...c.flips.map((s) => `frame ${f} ${s}`));
+    sum.unnamed.push(...c.unnamed.map((s) => `frame ${f} ${s}`));
   });
-  assert.ok(flips.length <= MAX_FLIP_SHARE * lights, `${label}: ${flips.length} flips in ${lights} lights (${flips.join('; ')})`);
-  return { lights, vertices, exact, flips };
+  assert.ok(sum.flips.length <= MAX_FLIP_SHARE * sum.lights, `${label}: ${sum.flips.length} flips in ${sum.lights} lights (${sum.flips.join('; ')})`);
+  assert.deepEqual(sum.unnamed, [], `${label}: walls the JS loop saw that the rows leave out (of ${sum.comparable})`);
+  return sum;
 }
 
 test('the active cap: the kernel gives up on the light as the JS does, with the JS sweep\'s warning once', async () => {
@@ -119,48 +130,58 @@ test('the active cap: the kernel gives up on the light as the JS does, with the 
   }
   const scene = { ents, lights: 2, entities: ents.length, fixtures: 0 };
 
-  let wasm;
+  let rows;
   let calls;
   const kernelWarnings = await warnings(async () => {
-    const boot = await bootPreRender(scene, { maxNeighbors: 512 });
+    // The cache off, so both frames sweep both lights (with it a lamp that stands keeps its row from its third frame).
+    const boot = await bootPreRender(scene, { maxNeighbors: 512, wallCache: false });
     calls = countCalls(boot.pre);
     writeFrame(boot, 0);
-    wasm = [runFrame(boot), runFrame(boot)];
+    rows = [runFrame(boot), runFrame(boot)];
   });
   const capWarnings = kernelWarnings.filter((m) => m.includes('[AngularSweep] Active occluder cap exceeded (256 max simultaneous)'));
   assert.equal(capWarnings.length, 1, `one warning over two frames (${kernelWarnings.join(' | ')})`);
   assert.equal(calls.calls, 4, 'both lights swept by the kernel, both frames');
-  assert.equal(wasm[0].lights[0].n, 32, 'the light past the cap is the full circle');
-  assert.ok(wasm[0].lights[1].n > 4, 'the other light has its polygon');
+  assert.deepEqual(rows[0].lamps, [0, 1], 'a row for each light');
+  // A sweep that gives up hides nobody: the row is the full circle and none of its edges names a wall.
+  const gaveUp = rowPolygon(rows[0], 0);
+  assert.equal(gaveUp.n, 32, 'the light past the cap is the full circle');
+  assert.ok(gaveUp.codes.every((code) => code === 0), 'which stops nothing');
+  assert.ok(rowPolygon(rows[0], 1).n > 4, 'the other light has its polygon');
+  assert.deepEqual(compareRows(rows[0], rows[1]), [], 'the second frame publishes the same rows');
 
   let js;
   const jsWarnings = await warnings(async () => {
     const boot = await bootPreRender(scene, { maxNeighbors: 512 });
     writeFrame(boot, 0);
-    js = [runFrame(boot, { js: true })];
+    js = runFrameJs(boot);
   });
   assert.equal(jsWarnings.filter((m) => m.includes('Active occluder cap')).length, 0, 'the warning is the JS sweep\'s own, given once');
-  const c = compareFrames(js[0], wasm[0], { relative: true });
-  assert.deepEqual(c.bad, [], 'a sweep that gives up hides nobody: every circle in range stays self-lit');
+  const c = compareFrames(js, rows[0], { relative: true });
+  assert.deepEqual(c.bad, [], 'both rows are the JS loop\'s polygons');
   assert.deepEqual(c.flips, []);
-  assert.ok(js[0].selfLit.length >= 300, `${js[0].selfLit.length} self-lit items`);
+  // The JS loop gave up too: its polygon is the full circle, and it counts every circle in range as seen.
+  assert.equal(js.lights[0].n, 32);
+  assert.ok(js.lights[0].walls.length >= 300, `${js.lights[0].walls.length} walls seen`);
+  assert.equal(c.named, 6, 'the other light\'s row names its six boxes');
+  assert.deepEqual([c.comparable, c.unnamed.length], [6, 0], 'the six the JS loop saw from it');
 });
 
-test('a scene without raycasted lighting binds no visibility kernel, and the bins go back to angularSweep.js', async () => {
+test('a scene without walls binds no visibility kernel, and the bins go back to angularSweep.js', async () => {
   const scene = makeScene(0x0b1d, { lights: 6, boxes: 30, circles: 10, polygons: 5, rings: 1 });
   // A kernel scene first: its memory and bins must not outlive it.
   const on = await bootPreRender(scene);
   assert.ok(on.pre._visSweep, 'the kernel scene binds the sweep');
   assert.equal(polarBinArrays().own, false);
 
-  // Without raycasted lighting there is no visibility pass and no memory.
-  const dark = await bootPreRender(scene, { raycasted: false });
+  // Without walls (lighting.walls) there is no visibility pass and no memory.
+  const dark = await bootPreRender(scene, { walls: false });
   assert.equal(dark.pre._visSweep, null);
   assert.equal(dark.pre._visMemory, null);
   assert.ok(polarBinArrays().own);
 });
 
-test('the scratch, the bins and the seen stamps are views on the visibility memory (W2a, no switch)', async () => {
+test('the scratch, the bins and the row\'s scratch are views on the visibility memory (W2a, no switch)', async () => {
   assert.equal(Object.hasOwn(WASM_DEFAULTS, 'visibilitySweep'), false, 'no switch');
   assert.equal(WASM_DEFAULTS.visibilitySweepF32, true);
   const scene = makeScene(0x5eed, { lights: 4, boxes: 10, circles: 4, polygons: 2, rings: 1 });
@@ -169,12 +190,17 @@ test('the scratch, the bins and the seen stamps are views on the visibility memo
   assert.ok(k, 'the sweep kernel is bound');
   assert.equal(k.variant, 'f32', 'the float32 export by default');
   const buffer = pre._visMemory.buffer;
+  // The gather's lists, the polygon the sweep leaves with what each vertex's ray hit, the occluders' codes and the
+  // polar bins' owners the rows are written from, and the row the kernel writes (every length it is copied by).
   for (const field of ['_vpOccKind', '_vpCircleX', '_vpCircleY', '_vpCircleR', '_vpVertStart', '_vpVertCount',
-    '_vpVertsX', '_vpVertsY', '_vpOutX', '_vpOutY', '_selfLitSeen']) {
+    '_vpVertsX', '_vpVertsY', '_vpOutX', '_vpOutY', '_vpOutOcc', '_wallOccCode', '_vpPolarOwner']) {
     assert.equal(pre[field].buffer, buffer, `${field} is in the memory`);
   }
+  assert.ok(pre._wallRowCopies.length > 1 && pre._wallRowCopies.every((row) => row.buffer === buffer), 'the kernel\'s row is in the memory');
   assert.equal(pre._vpOutX.length, 512, 'the polygon cap');
-  assert.equal(pre._selfLitSeen.length, scene.entities, 'a seen stamp per entity');
+  assert.equal(pre._vpOutOcc.length, 512, 'a hit a vertex');
+  // The cache keeps each lamp's last row by its entity (a row's place and signature, in each of the two buffers).
+  for (const rows of pre._wallRowBuffers) assert.equal(rows.place.length, scene.entities, 'a row\'s place per entity');
   const bins = polarBinArrays();
   assert.ok(!bins.own && bins.dist.buffer === buffer && bins.owner.buffer === buffer, 'the polar bins are in the memory');
 
@@ -186,19 +212,20 @@ for (const [name, wasm, relative] of [
   ['the float32 sweep (default)', {}, true],
   ['the double SIMD sweep (visibilitySweepF32 false)', { visibilitySweepF32: false }, false],
 ]) {
-  test(`${name}: every light's polygon and the self-lit list are the JS's, frame after frame`, async (t) => {
+  test(`${name}: every lamp's row is the JS's polygon and names walls the JS saw, frame after frame`, async (t) => {
     const scene = makeScene(0x2a2a);
     const boot = await bootPreRender(scene, { wasm });
     const js = framesOf(boot, true);
     const calls = countCalls(boot.pre);
     const k = framesOf(boot);
-    const lit = js.reduce((n, f) => n + f.lights.length, 0);
-    assert.equal(calls.calls, lit, 'one kernel call per light');
     const r = assertSame(js, k, name, { relative });
-    assert.ok(r.vertices > lit * 20, `real polygons (${r.vertices} vertices over ${lit} lights)`);
-    const solids = js.reduce((n, f) => n + f.selfLit.length, 0);
-    assert.ok(solids > 200, `self-lit items to tell apart (${solids})`);
-    t.diagnostic(`${r.lights} lights, ${r.vertices} vertices, ${r.exact} polygons bit for bit, ${r.flips.length} flips (${r.flips.join('; ')}), ${solids} self-lit items`);
+    // Every light drifts, so the cache keeps no row: a sweep a row. Every fifth light casts nothing and a few have
+    // nothing in reach: those have no row and are not swept.
+    assert.equal(calls.calls, r.rows, 'one kernel call per row');
+    assert.ok(r.rows > r.lights * 0.7 && r.rows < r.lights, `${r.rows} rows for ${r.lights} lights`);
+    assert.ok(r.vertices > r.rows * 20, `real polygons (${r.vertices} vertices over ${r.rows} rows)`);
+    assert.ok(r.named > 2000 && r.comparable > 500, `walls to tell apart (${r.named} named, ${r.comparable} comparable)`);
+    t.diagnostic(`${r.lights} lights, ${r.rows} rows, ${r.vertices} vertices, ${r.exact} polygons bit for bit, ${r.flips.length} flips (${r.flips.join('; ')}), ${r.named} of ${r.seen} walls named, ${r.unnamed.length} of ${r.comparable} comparable ones left out`);
   });
 }
 
@@ -209,26 +236,24 @@ test('a small vertex cap: the polar merge groups bins as the JS does', async (t)
     const js = framesOf(boot, true);
     const k = framesOf(boot);
     const r = assertSame(js, k, `maxVerts ${maxVerts}`, { relative: true });
-    t.diagnostic(`maxVerts ${maxVerts}: ${r.lights} lights, ${r.exact} bit for bit, ${r.flips.length} flips`);
+    assert.ok(r.rows > 60 && r.comparable > 100, `${r.rows} rows compared, ${r.comparable} walls`);
+    assert.ok(k.every((rows) => rows.lamps.every((lamp, row) => rows.f32[row * rows.rowFloats] <= maxVerts)), 'no row past the cap');
+    t.diagnostic(`maxVerts ${maxVerts}: ${r.lights} lights, ${r.rows} rows, ${r.exact} bit for bit, ${r.flips.length} flips, ${r.unnamed.length} of ${r.comparable} walls left out`);
   }
 });
 
 // ---- W1: the compound raster ----------------------------------------------------------------------------
 
-/** Every light's polygon and the self-lit list, bit for bit. */
+/** Every lamp's row, bit for bit: the same lamps, the same polygons, the same walls named. */
 function assertBitForBit(a, b, label) {
-  a.forEach((frame, f) => {
-    const c = compareFrames(frame, b[f]);
-    assert.deepEqual(c.bad, [], `${label}, frame ${f}`);
-    assert.deepEqual(c.flips, [], `${label}, frame ${f}`);
-    assert.equal(c.exact, c.lights, `${label}, frame ${f}: every polygon bit for bit`);
-  });
+  assert.equal(b.length, a.length);
+  a.forEach((rows, f) => assert.deepEqual(compareRows(rows, b[f]), [], `${label}, frame ${f}`));
 }
 
-/** Lights whose polygon is the polar merge's (a vertex per bin at the 512 cap). */
-const polarLights = (frames) => frames.reduce((n, f) => n + f.lights.filter((L) => L.n === POLAR_BINS).length, 0);
+/** Rows whose polygon is the polar merge's (a vertex per bin at the 512 cap). */
+const polarLights = (frames) => frames.reduce((n, rows) => n + rows.lamps.filter((lamp, r) => rows.f32[r * rows.rowFloats] === POLAR_BINS).length, 0);
 
-test('W1: compound solids raster in solidSegments.wasm, and the polygons are the JS raster\'s, bit for bit', async (t) => {
+test('W1: compound solids raster in solidSegments.wasm, and the rows are the JS raster\'s, bit for bit', async (t) => {
   assert.equal(Object.hasOwn(WASM_DEFAULTS, 'solidSegments'), false, 'no switch');
   const scene = makeScene(0x5011d, {
     lights: 20, boxes: 40, circles: 10, polygons: 10, rings: 28, ringSegments: [64, 18, 40], radius: [250, 700],
@@ -338,14 +363,19 @@ test('W1: with a fixture pool the swept loop rasters solids in solidSegments.was
   assert.equal(solidSegmentsStats().bound, false);
 });
 
-// Close-out group B: the sweep runs only in its kernel, which init binds whenever visibility polygons are on. A pass
-// with no sweep bound (a worker the harness left without one) publishes nothing new and says so once.
+// Close-out group B: the sweep runs only in its kernel, which init binds whenever the walls are on. A pass with no
+// sweep bound (a worker the harness left without one) publishes nothing new and says so once.
 test('a visibility pass with no sweep bound publishes nothing, and says so once', async () => {
   const scene = makeScene(0x0ff1, { lights: 4, boxes: 10, circles: 2, polygons: 2, rings: 0 });
   const boot = await bootPreRender(scene);
   const { pre } = boot;
   writeFrame(boot, 0);
-  pre._vpWriteBuffer.header[0] = 7;
+  // The rows' header as a frame left it: a count of rows and the frame's signature.
+  const header = pre._wallRowsWrite.header;
+  const at = pre._wallSignatureAt;
+  header[0] = 7;
+  header[at] = 0x5167;
+  header[at + 1] = 0x0a11;
   const sweep = pre._visSweep;
   const errors = [];
   const error = console.error;
@@ -359,6 +389,8 @@ test('a visibility pass with no sweep bound publishes nothing, and says so once'
     console.error = error;
     pre._visSweep = sweep;
   }
-  assert.equal(pre._vpWriteBuffer.header[0], 7, 'the buffer untouched');
+  assert.deepEqual([header[0], header[at], header[at + 1]], [7, 0x5167, 0x0a11], 'the rows untouched');
   assert.equal(errors.filter((e) => e.includes('no visibility sweep bound')).length, 1, 'said once');
+  // With the sweep back the same worker publishes rows again.
+  assert.ok(runFrame(boot).lamps.length > 0, 'and rows again once the sweep is bound');
 });

@@ -45,7 +45,22 @@ test('unshaded is one bit of the flags, the top one of the old emissive level', 
     [{ enabled: true }, { maps: false, unshaded: true }, true],
     [{ enabled: true }, { maps: true }, true],
     [{ enabled: true }, false, false],
-    [{ enabled: true, unshaded: true, raycasted: true }, false, false],
+    [{ enabled: false, unshaded: true }, false, false],
+  ]) {
+    assert.equal(gbufWanted({ lighting }, atlas), want, JSON.stringify([lighting, atlas]));
+  }
+});
+
+// OL-4: walls want the words (a wall's own pixels stay lit beyond its edge, so the light pass must know whose each
+// pixel is).
+test('walls want the words', () => {
+  for (const [lighting, atlas, want] of [
+    [{ enabled: true, walls: true }, false, true],
+    [{ enabled: false, walls: true }, false, false],
+    [{ enabled: true, walls: false }, false, false],
+    // A scene may still carry the retired key (it is told so, and it stays in its config): nothing reads it.
+    [{ enabled: true, raycasted: true }, false, false],
+    [{ enabled: true, unshaded: true, raycasted: true }, false, true],
   ]) {
     assert.equal(gbufWanted({ lighting }, atlas), want, JSON.stringify([lighting, atlas]));
   }

@@ -18,7 +18,7 @@ const FULL_TURN = Math.PI * 2;
  * - `radius` (px) is how far it reaches. Its falloff is I / (I + d²) with I = (radius / 10)², measured on the floor
  *   (config.camera.floorScaleY), times (1 - (d / radius)⁴)²: full at its centre, nearly unchanged halfway, nothing at the
  *   radius and past it, where its shadows fade out with it.
- * - `brightness` (1 by default) multiplies its colour and its glow; under 1 its sprite shadows are that much lighter.
+ * - `brightness` (1 by default) multiplies its colour and its glow; under 1 its layer shadows are that much lighter.
  * - `color` is 0xRRGGBB.
  * - `elevation` lifts the source off the floor without moving its pool: the falloff becomes I / (I + h² + d²), a wider,
  *   flatter pool with the same reach (a lamp post rather than a torch on the ground).
@@ -26,14 +26,14 @@ const FULL_TURN = Math.PI * 2;
  *   px, as it shows (E-498: a compact glow that falls to under 1 % at that radius); 0, the default, draws the light's
  *   wide gradient at 0.85 of its radius (a spark's big soft flash), so a lamp that lights a whole street gives its bulb a
  *   small one. `glowOffsetY` moves it on the screen (negative is up: put it on the bulb),
- *   `glowLayer` puts it on one layer (a layer name; null keeps the entity's layers). With lighting.lightGlow 'sprite'
+ *   `glowLayer` puts it on one layer (a layer name; null keeps the entity's layers). With lighting.lightGlow 'sorted'
  *   the halo is drawn right after its entity's sprite (over it, and under whatever stands in front of it) and unshaded:
  *   the night does not darken it.
  * - `offsetX` / `offsetY` move the light off the entity's centre, in local px: the entity's rotation turns them, and
  *   the pool, glow, shadows and culling follow.
  * - `castShadows` (1 by default): 0 lights the scene and casts nothing, which costs less (no shadow stamp in basic
  *   lighting, no occluder gather or sweep under raycast).
- * - `shadowRange` (px; 0, the default, is the radius) is how far its shadows reach: the sprite shadows it stamps in
+ * - `shadowRange` (px; 0, the default, is the radius) is how far its shadows reach: the layer shadows it stamps in
  *   basic lighting, the occluders it gathers under raycast. A shorter one costs less. Under raycast the light finds
  *   its occluders by itself (a light with a sprite or a Collider is in the spatial grid): no Collider.visualRange to
  *   set for it, unless its class reads its neighbours. That entity's neighbour list is its code's, so it stays what
@@ -50,7 +50,7 @@ export class LightEmitter extends Component {
     active: Uint8Array, // 0 = entity doesn't have this component, 1 = active
     color: Uint32Array,
     radius: Float32Array, // px: how far the light reaches
-    brightness: Float32Array, // times the colour and the glow; under 1, lighter sprite shadows
+    brightness: Float32Array, // times the colour and the glow; under 1, lighter layer shadows
     elevation: Float32Array, // the source's height above the floor: widens and flattens the pool, does not move it
     glow: Float32Array, // the halo's alpha; 0 = no halo
     glowOffsetY: Float32Array, // screen px from the light to its halo; negative is up

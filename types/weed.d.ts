@@ -320,25 +320,28 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   maxVolumes?: number;
   /** The mesh arena's vertices kept for each of maxVolumes (default 16: a box with a cabin, or a hull of 16 points). */
   maxVolumeVerts?: number;
-  /** Under raycasted lighting (config.camera.pitch 90 or 0): the vertices of a light's visibility polygon (default 128). */
+  /**
+   * With `walls`: the most vertices of a light's visibility polygon, what is left of its circle once the walls cut it
+   * (default 128). Above 512 the light pass keeps one vertex in every few.
+   */
   maxPolygonVertices?: number;
   /** shadowCaster.setSprite({ frame }) works (default false): a pass over the caster rows each frame, the keyed caster paths off. */
   keyedCasters?: boolean;
   /**
-   * DX-SHADOW3D: how the sun casts. 'sprite' (default): each caster's shadow on the shadows' layer, darkening every light
-   * by Sun.shadowOpacity. 'map': a shadow map in the floor's terms that takes out the sun's light alone (Sun.shadowAlpha
-   * of it), falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit; a ShadowCaster's
-   * volume (setBox, setHull) casts into it. Either mode: a picture of one view casts its card, a render with a height map
-   * its solid (the sheet and the entity can say otherwise: ShadowCaster).
+   * DX-SHADOW3D: where the sun's shadows are drawn. 'layer' (default): each caster's shadow painted on the shadows' layer,
+   * darkening every light by Sun.shadowOpacity. 'map': a shadow map in the floor's terms that takes out the sun's light
+   * alone (Sun.shadowAlpha of it), falls on what has height (faces, sprites with maps) where it is, and leaves the lamps
+   * lit; a ShadowCaster's volume (setBox, setHull) casts into it. Either mode: a picture of one view casts its card, a
+   * render with a height map its solid (the sheet and the entity can say otherwise: ShadowCaster).
    */
-  sunShadows?: 'sprite' | 'map';
+  sunShadows?: 'layer' | 'map';
   /**
-   * DX-SHADOW3D (F7): how the lamps cast. 'sprite' (default): each caster stamped on the shadows' layer, stretched away from
-   * its lamp. 'map': a shadow map a lamp (a square tile each in an atlas, for the maxShadowCastingLights lamps nearest the
-   * camera) that takes out that lamp's light alone; the caster's height and the lamp's LightEmitter.elevation make the
-   * shadow's length, and a lamp at elevation 0 casts none. WebGL and WebGPU; not with raycasted lighting.
+   * DX-SHADOW3D (F7): where the lamps' shadows are drawn. 'layer' (default): each caster stamped on the shadows' layer,
+   * stretched away from its lamp. 'map': a shadow map a lamp (a square tile each in an atlas, for the
+   * maxShadowCastingLights lamps nearest the camera) that takes out that lamp's light alone; the caster's height and the
+   * lamp's LightEmitter.elevation make the shadow's length, and a lamp at elevation 0 casts none. WebGL and WebGPU.
    */
-  lampShadows?: 'sprite' | 'map';
+  lampShadows?: 'layer' | 'map';
   /** Texels a side of a lamp's tile in the lamps' map, 32 to 1024 (default 256). The tile spans the lamp's radius. */
   lampShadowTile?: number | 'auto';
   /**
@@ -370,23 +373,63 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    */
   selfShadow?: boolean;
   /**
+   * The shading a sprite's own normals cause (its normal map's, or the ones its height map gives), for the sun and for
+   * the lamps apart. A light's shading on a pixel is what the normal takes from it (0: lit as drawn; 1: no light).
+   * `subtract` comes off it first (what falls under 0 stays 0, so a face shaded less than that is lit as drawn), then
+   * `strength` multiplies the rest: 0 lights the sprite as it is drawn, 1 with nothing subtracted by its normals. All
+   * four from 0 to 1; the sun's shading runs up to `1 - sun.skyLight` (0.6 by default), a lamp's up to 1. Default
+   * `{ sun: { strength: 1, subtract: 0.5 }, lamps: { strength: 1, subtract: 0 } }`: by day only what turns well away
+   * from the sun darkens, and by a tenth of the sun's light at most; under a lamp, the relief whole. Faces and sprites
+   * without maps do not read it.
+   */
+  normalShading?: {
+    sun?: { strength?: number; subtract?: number };
+    lamps?: { strength?: number; subtract?: number };
+  };
+  /**
+   * Walls (default false). true: an entity's `shadowCaster.setWall()` stops lamps and headlights (point and cone lights)
+   * at its Collider's outline, as tall as the world, with any camera; each light that casts shadows sweeps the walls in
+   * its `shadowRange`, and the light pass lights only what it sees. Behind a wall a light keeps a third of its strength,
+   * and `shadowCaster.opacity` under 1 lets `1 - opacity` of the rest through. It turns the G-buffer pass on: the light
+   * pass tells a wall's own pixels by their entity. false: setWall warns once and changes nothing. Replaces
+   * lighting.raycasted.
+   */
+  walls?: boolean;
+  /**
+   * With `walls`: how a wall itself is lit where a light reaches its edge. 0 (the default): its own sprite, whole, as
+   * drawn; a wall with no sprite of its own (a MeshRenderer, a tilemap) stays in its own shadow. Above 0: the light
+   * enters every wall that many px from the edge it reaches and fades out there, whatever is drawn in it (a rock lit
+   * along its rim), and no sprite is lit whole.
+   */
+  wallDepth?: number;
+  /**
+   * With `walls`, the share of a lamp's light that still reaches the floor behind a wall, 0 to 1 (default 0.33: a
+   * wall's shadow a third as bright as the light beside it). 0: a wall's shadow keeps nothing of that lamp.
+   */
+  lightBehindWalls?: number;
+  /**
+   * With `walls`, a lamp's walls kept from frame to frame (default true): a lamp whose walls did not move, and that did
+   * not move itself, is not swept again. false sweeps every lamp every frame.
+   */
+  wallCache?: boolean;
+  /**
    * DX-GBUF: 'mrt' (default) draws the face map and the entity ids map in one pass with two colour targets; 'pass' a
    * pass each. Same picture; one pass costs about a third less.
    */
   gbuffer?: 'pass' | 'mrt';
   /**
    * DX-UNSHADED: spriteRenderer.unshaded works in this scene even without a sheet with maps, an unshaded sheet,
-   * `lightGlow: 'sprite'` or a shadow map (which give the sprites their G-buffer words by themselves; faces do not).
+   * `lightGlow: 'sorted'`, a shadow map or `walls` (which give the sprites their G-buffer words by themselves; faces do not).
    * Default false: a scene without them pays nothing.
    */
   unshaded?: boolean;
   /**
    * How the lights' halos (LightEmitter.glow) are drawn. 'add' (default): on the lightGlows layer, added over the lighting
-   * and over everything (nothing in front covers them). 'sprite': each right after its entity's sprite, on its sort line,
+   * and over everything (nothing in front covers them). 'sorted': each right after its entity's sprite, on its sort line,
    * so what stands in front covers it, and unshaded (the night does not darken it); it turns the G-buffer and the
    * unshaded pass on.
    */
-  lightGlow?: 'add' | 'sprite';
+  lightGlow?: 'add' | 'sorted';
   /**
    * The lightGlows layer's size against the canvas, 1/16 to 1 (default 0.5): the glows are drawn into a target that size
    * and added to the frame once, filtered up; a halo is smooth, and its fill costs a quarter at 0.5. 1 draws them onto the
@@ -407,7 +450,9 @@ export interface SceneRendererConfig extends Record<string, unknown> {
    * DX-DEPTH: each entity pixel's place on the floor corrects the painter: a pixel with a height map at its own height,
    * a face (a decoration with a normal) at its plane's depth, every other pixel at its sprite's foot, the painter breaking
    * ties. Unset (the default), on with an oblique camera (floorScaleY under 1) when a sheet has maps (heightMap, normalMap
-   * or reliefMap) or a decoration carries a face's normal; true or false forces it (true still needs maps or faces).
+   * or reliefMap), a decoration carries a face's normal, or the scene has walls (lighting.walls) and its light is drawn
+   * under the canvas's size (lighting.resolution under 1, lighting.lightEdges not false: the light's edges need the
+   * entities' depth); true or false forces it (true still needs maps, faces or such walls).
    * WebGL and WebGPU.
    */
   pixelDepth?: boolean;
@@ -425,10 +470,11 @@ export type SceneConfig = Record<string, unknown> & {
    * side); `floorScaleY` (default sin(pitch), or 1 without a pitch) is how tall the floor is drawn against its width, which
    * makes light pools and cones ellipses; `heightScaleY` (default cos(pitch), or 1) is the screen px a px of height rises
    * (faces, height maps, both shadow maps, pixel depth). Give the scales when the pictures do not follow the
-   * trigonometry. An oblique camera (floorScaleY under 1) is what turns renderer.pixelDepth on by itself. A flat view,
-   * `pitch` 90 or 0, lights with raycasted lighting when lighting is enabled: a visibility polygon a light, cut by the
-   * ShadowCasters' walls (setWall), without faces, maps or shadow maps; a side view whose lights pool on the backdrop
-   * also writes `floorScaleY: 1`. Replaces lighting.groundScaleY and lighting.raycasted. A sheet whose pictures and maps
+   * trigonometry. An oblique camera (floorScaleY under 1) is what turns renderer.pixelDepth on by itself. Pitch 90 and
+   * pitch 0 are the two flat views: the plane that faces the camera (the ground from above, the backdrop the lights pool
+   * on from the side) is the floor, drawn as it is (floorScaleY 1), and height points at the camera (heightScaleY 0), so
+   * a sprite without a height map lies in that plane. The pitch picks nothing else about the light: walls are
+   * lighting.walls, with any camera. Replaces lighting.groundScaleY. A sheet whose pictures and maps
    * were drawn for another camera says so ({@link SceneSpritesheetAsset.artCamera}): its heights are scaled to this one
    * at load.
    */
@@ -517,6 +563,8 @@ export type SceneConfig = Record<string, unknown> & {
     particleListsF32?: boolean;
     /** The sweep in float32 (default) or, false, in double precision. */
     visibilitySweepF32?: boolean;
+    /** With lighting.walls, each lamp's row written by the sweep's kernel (default) or, false, in JavaScript: the same row. */
+    wallRow?: boolean;
     /**
      * The decoration sway in float32 (default true): faster; a sway rotation within a float32 rounding or so of the
      * double one. false: the double sway, the JavaScript sway's results exactly.
@@ -1235,7 +1283,7 @@ export interface DecorationSpawnConfig {
    * With faceNormalY and faceNormalZ: this sprite is a flat face that looks that way, in the floor's space (x along the
    * screen, y across the floor towards the camera, z up; need not be unit length), and lights as a surface in 3D. There
    * is no switch: the scene's first face turns the faces' G-buffer on in a lit scene, and pixel depth with an oblique
-   * camera (a face writes its plane's depth). Not with raycasted lighting. Left out: no face.
+   * camera (a face writes its plane's depth). Left out: no face.
    */
   faceNormalX?: number;
   faceNormalY?: number;
@@ -4228,7 +4276,7 @@ export declare class LightEmitter extends Component {
    */
   static radius: Float32Array;
   /**
-   * Times the colour and the glow. 1 by default. Under 1 its sprite shadows (basic lighting) are that much lighter too:
+   * Times the colour and the glow. 1 by default. Under 1 its layer shadows are that much lighter too:
    * a light at 0.5 casts shadows of half the darkness.
    */
   static brightness: Float32Array;
@@ -4240,7 +4288,7 @@ export declare class LightEmitter extends Component {
    */
   static elevation: Float32Array;
   /**
-   * The halo's alpha; 0 (the default) draws none. With lighting.lightGlow 'sprite' the halo is drawn right after its
+   * The halo's alpha; 0 (the default) draws none. With lighting.lightGlow 'sorted' the halo is drawn right after its
    * entity's sprite (over it, under what stands in front) and unshaded: the night does not darken it.
    */
   static glow: Float32Array;
@@ -4254,14 +4302,14 @@ export declare class LightEmitter extends Component {
   static offsetX: Float32Array;
   static offsetY: Float32Array;
   /**
-   * 1 (the default) casts point shadows: sprite shadows in basic lighting, occluders under raycast. 0 lights the scene
-   * and casts nothing, which costs less.
+   * 1 (the default) casts point shadows: layer shadows, and with lighting.walls it is stopped by walls. 0 lights the
+   * scene and casts nothing, and no wall stops it, which costs less.
    */
   static castShadows: Uint8Array;
   /**
-   * How far its shadows reach, in px; 0 (the default) is its radius. Sprite shadows in basic lighting, occluders under
-   * raycast (the light finds them itself: no Collider.visualRange to set, unless its class reads its neighbours, whose
-   * list stays what its visualRange gives; the light's occluders are then within it), and with lighting.lampShadows
+   * How far its shadows reach, in px; 0 (the default) is its radius. Layer shadows, the walls that stop it with
+   * lighting.walls (the light finds them itself: no Collider.visualRange to set, unless its class reads its neighbours,
+   * whose list stays what its visualRange gives; the light's walls are then within it), and with lighting.lampShadows
    * 'map' the span of its tile: past it the lamp lights without shadows, which fade out over the last fifth. A shorter
    * reach costs less.
    */
@@ -4419,10 +4467,10 @@ export interface ShadowCasterLightSide {
   /** `sun.setHull`: as ShadowCaster.setHull, for the sun alone. */
   setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): ShadowCaster;
   /**
-   * `lamps.setWall`: a wall for the lamps and headlights alone, the sun's shadow kept (as ShadowCaster.setWall). The sun
-   * casts no wall: it warns.
+   * `lamps.setWall`: a wall for the lamps and headlights alone, the sun's shadow kept (as ShadowCaster.setWall, in a
+   * scene with lighting.walls). The sun casts no wall: `sun.setWall` warns.
    */
-  setWall(options?: { shape?: 'collider' | 'sprite' }): ShadowCaster;
+  setWall(): ShadowCaster;
 }
 
 /**
@@ -4443,8 +4491,8 @@ export declare class ShadowCaster extends Component {
   /** The setters for the lamps (and headlights) alone. */
   readonly lamps: ShadowCasterLightSide;
   /**
-   * How much light it takes out, 0 to 1 (1 at spawn); a wall takes that much out of a lamp. The sprite shadows read it
-   * (the sun's in 'sprite' mode, the lamps' stamps); the shadow maps do not yet.
+   * How much light it takes out, 0 to 1 (1 at spawn); a wall under 1 lets `1 - opacity` of what it stops through. The
+   * layer shadows read it (the sun's in 'layer' mode, the lamps' stamps); the shadow maps do not yet.
    */
   get opacity(): number;
   set opacity(value: number);
@@ -4486,12 +4534,13 @@ export declare class ShadowCaster extends Component {
    */
   setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): this;
   /**
-   * In a flat view (config.camera.pitch 90 or 0, with lighting: raycasted lighting), a wall that stops lamps and
-   * headlights, cut by the entity's Collider ('collider', the default and the fastest) or by its sprite's alpha ('sprite'),
-   * taking out `opacity` of the light; the sun casts nothing from it (`lamps.setWall` keeps the sun's shadow). Another
-   * camera warns once and changes nothing.
+   * In a scene with config.lighting.walls (any camera), a wall that stops lamps and headlights at the entity's
+   * Collider's outline, as tall as the world; the entity needs a Collider. Behind it a light keeps a third of its
+   * strength, and `opacity` under 1 lets `1 - opacity` of the rest through. Its own sprite is lit whole where a light
+   * reaches its edge (or, with lighting.wallDepth, the first wallDepth px inside it). The sun casts nothing from it
+   * (`lamps.setWall` keeps the sun's shadow). A scene without walls warns once and changes nothing.
    */
-  setWall(options?: { shape?: 'collider' | 'sprite' }): this;
+  setWall(): this;
   /**
    * Whether the object shades itself: true, false or 'auto' (the default: a render with a footprint does, one view does
    * not). Kept for the 3D shadows (DX-SELFSHADOW).

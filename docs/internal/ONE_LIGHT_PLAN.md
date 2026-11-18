@@ -1,7 +1,9 @@
 # One light system for every camera (plan)
 
-**Opened:** 2026-11-17, planned in a chat session with the owner. **Status:** a plan, not started;
-nothing in it is built or measured. **Estimate:** about 16 to 23 hours of work in a row (section 4).
+**Opened:** 2026-11-17, planned in a chat session with the owner. **Revised:** 2026-11-18 against
+`main` at `4f60d4bd` (section 8 says what changed). **Status:** being built since 2026-11-18 on the
+branch `dx/one-light`, the code first and every measurement after it (the owner's order, section 8);
+nothing is measured yet. **Estimate:** about 16 to 23 hours of work in a row (section 4).
 **Registry:** `DX-ONELIGHT` and its items `OL-1` to `OL-4` in [`hypotheses.json`](./hypotheses.json).
 **Who builds it:** a session of its own (the owner asked for a plan another model can follow without
 the chat it came from, so everything it needs is here).
@@ -42,12 +44,19 @@ light pass as every other camera, and the code that only it uses is deleted.
   how the 3D light was designed, `DX_LIGHT3D_PLAN.md` sections 5 and 6 (in Spanish); for what a game
   sees, the light sections of `docs/guide/bible_of_weed_js.md` ("Lights and shadows: what you want,
   what you write" down to "Raycasted lighting with compound occluders").
-- Section 2 is a reading of `main` at `1951de51`. The code moves: check each fact against the code
-  before building on it, and correct this file when it is wrong.
-- The items are in order. OL-1 and OL-2 stand alone; OL-3 decides how OL-4 is built; nothing is
-  deleted before OL-4's pictures and numbers are accepted.
-- A branch per item (`dx/light-names`, `dx/normal-choice`, `dx/flat-race`, `dx/flat-light`). One change
-  per commit; a scene knob or a tool in its own commit before the change it measures.
+- Section 2 is a reading of `main` at `1951de51`, checked again on 2026-11-18 at `4f60d4bd`. The code
+  moves: check each fact against the code before building on it, and correct this file when it is wrong.
+- The items were planned in order, OL-3 deciding how OL-4 is built. On 2026-11-18 the owner chose to
+  write the code first and to measure after it (section 8): OL-4 is built as final B, picked by eye,
+  and OL-3 runs afterwards with the new pass as one more arm. Nothing is deleted before OL-4's pictures
+  and numbers are accepted.
+- One branch, `dx/one-light` (the plan first named a branch an item). One change per commit; a scene
+  knob or a tool in its own commit before the change it measures.
+- Verdicts come from the main machine (GTX 1650). The ASUS test laptop's HD 620 gives a low-end reading
+  to report and a second driver to compile the shaders on; it is never a condition (the owner,
+  2026-11-18: that GPU is not the yardstick).
+- N-272 (the self-shadow march at the face map's edge) is still on branches that edit
+  `selfShadowToward` in `lightingBasic`: merge `main` before touching that function.
 - Other sessions share the repository folder. Before starting, look at `git status`, the branch and
   `git worktree list`; never write a file another session has open.
 - Before any browser run: no other session benchmarking, the laptop on AC power.
@@ -123,6 +132,12 @@ LiquidFun and particle light fields, and the unshaded pass.
   `occluderSelfLitSprite.*` (GLSL and WGSL each).
 - **The API:** `shadowCaster.setWall({ shape: 'collider' | 'sprite' })` writes the internal
   `LightOccluder` columns (`src/components/lightOccluder.js`); it needs a `Collider`.
+- **What switches it on:** the pitch, through one derived key. Under `lighting.raycasted` Scene pools
+  `LightOccluder` (`wallsOn()` in `src/components/shadowCaster.js` is that pool, and `setWall` warns
+  without it), the spatial worker builds the lights' neighbour lists (`_raycastLights`), and
+  `src/util/sceneSharedBuffers.js` makes the gather's regions and the polygons' and self-lit's
+  buffers. The sweep has no floor scale anywhere, and needs none: it works in world px, where sight lines are
+  straight whatever the floor's scale (the Headlights demo runs it at 0.7; section 7).
 
 ### 2.3 Self-lit
 
@@ -142,6 +157,8 @@ fill.
 
 The shadow maps have no such pass: a map's texel keeps which entity cast it, and a pixel skips its own
 entity's texels (`ownTexel` in `lightingBasic`). That is the general rule self-lit is a special case of.
+Since N-273 a decoration with an owner (`DecorationComponent.owner`: a house's walls drawn as faces)
+carries its owner's id in the G-buffer, so the rule covers an entity made of faces too.
 
 ### 2.4 What a flat view cannot do today
 
@@ -155,6 +172,12 @@ entity's texels (`ownTexel` in `lightingBasic`). That is the general rule self-l
   `_castedShadowsSunOnly`, so only the sun's are drawn, on the layer; a lamp casts walls only.
 - **Walls with a height:** a wall is as tall as the world; a low wall cannot cast a short shadow, and a
   lamp above a fence cannot light over it.
+- **Particle lights and LiquidFun's light field:** `resolveParticleLights`
+  (`src/render/particleLightSplat.js`) switches `lighting.particleLights` off with a warning, and
+  Pixi's `_renderLiquidFunLightingField` and `_renderParticleLightingField` return at once.
+- **The light pass's own options:** `lighting.pixelArt`, `lighting.selfShadow`, `lighting.dither`
+  (N-277) and the light edges (`_lightEdgesOn`, DX-LIGHTEDGES) are variants of `lightingBasic`; the
+  raycast pass has none of them.
 
 ### 2.5 The casters' engine, and its two outputs
 
@@ -174,8 +197,9 @@ none of this.
 ### 2.6 The light pass, and the automatic rule for a sprite's normals
 
 `src/shaders/lightingBasic.frag.glsl` and `lightingBasic.wgsl` (the same pass written twice; variants
-by flags: `TILES`, `FACES`, `IDS`, `SUNMAP`, `LAMPMAP`, `SELFSHADOW`, `PIXELART`, `EDGES`). A pixel
-with no G-buffer entry is floor: every light at full, times the layer's shadows. A pixel with one goes
+by flags: `TILES`, `FACES`, `IDS`, `SUNMAP`, `LAMPMAP`, `SELFSHADOW`, `PIXELART`, `EDGES`, and
+`DITHER` since N-277). The G-buffer's pass and the unshaded pass write pixel depth since N-274 and
+N-266. A pixel with no G-buffer entry is floor: every light at full, times the layer's shadows. A pixel with one goes
 through `faceLight`, which knows three kinds:
 
 - a **face** (a decoration with a face's normal): lit by its normal; the sun's share that does not
@@ -205,10 +229,17 @@ from. Nothing says how much they count for the sun or for the lamps.
 - `lighting.lampShadowTile` (`'auto'`: at most 2 floor px a texel at resolution 1, up to 1024 a side).
   A shadow's edge is made of the map's texels read with five taps, not of a polygon.
 - A lamp at `elevation` 0 casts nothing in this mode (N-265).
-- A volume higher than its lamp stays on the floor half, drawn stretched at most 64 times
+- A volume higher than its lamp stays on the floor half, its vertices drawn stretched at most 64 times
   (`LAMP_MAP_MAX_STRETCH`): a wall 50 px from the lamp shades out to 3200 px, one 10 px away only to
-  640 px. The ceiling half takes the sprites and the height maps, not the volumes.
-- Cost on record (R-1147, GTX 1650, 48 lamps, tile 256): the floor half 0.69 ms a frame on WebGL.
+  640 px. The ceiling half takes the sprites and the height maps, not the volumes. Since N-276 each
+  fragment of a volume takes its texel and its depth from where its own ray meets the volume's face
+  (`lampVolumeT` in `src/render/volumeShadowMap.js`) and writes that depth: what the triangles cover is
+  as before, what they write inside is the true projection.
+- N-241 (open): the cull by a lamp's reach can drop a volume whose landing still falls in the tile's
+  outer band.
+- Cost on record (R-1147, GTX 1650, 48 lamps, tile 256): the floor half 0.69 ms a frame on WebGL. That
+  was before E-508's cache of a still lamp's volumes and before N-276's fragments: measure it again
+  before quoting it.
 - It runs on the GPU. The sweep of section 2.2 runs on the CPU, in pre-render and WASM, and was
   measured with 720 lights (`visPolyStressScene ?lights=720`, R-0942). On the ASUS test laptop
   (HD 620) the GPU is what limits a scene.
@@ -226,14 +257,20 @@ Counted by method and file on 2026-11-17; approximate.
 | `wasm/visibilityGather.c`, `wasm/visibilitySweep.c` | about 1 330 | final A only |
 | Node tests of the above (`tests/node/`: the sweep, the polar bins, solid segments, self-lit fill, wedges, the kernels' wiring) | about 3 500 | A: all; B: the self-lit and wedge ones |
 
+**What the deletion took (OL-15, 2026-11-18, final B), by git:** `src/` 2 783 lines (`pixiWorker.js` 1 676,
+`preRenderWorker.js` 347, the nine shader files 605, `angularSweep.js` 102, the rest in the scene's set-up) and 639
+lines of tests, net of what was rewritten onto the rows. The sweep and its kernels stay, as the table says for B;
+two branches of the kernels are dead and go with their next build (section 7). The whole branch against main after
+it: `src/` 1 529 lines shorter.
+
 ---
 
 ## 3. Items
 
 ### OL-1 — Names: the layer mode and the sorted glow
 
-- [ ] `lighting.sunShadows` and `lighting.lampShadows`: `'layer'` (was `'sprite'`) or `'map'`.
-- [ ] `lighting.lightGlow`: `'add'` or `'sorted'` (was `'sprite'`).
+- [x] `lighting.sunShadows` and `lighting.lampShadows`: `'layer'` (was `'sprite'`) or `'map'`. (`69f0eb38`)
+- [x] `lighting.lightGlow`: `'add'` or `'sorted'` (was `'sprite'`). (`1bcdf08d`)
 
 No picture changes; two commits (the shadows' value, the glow's value).
 
@@ -272,8 +309,9 @@ rename off the hot path needs no sitting (HOW_WE_MEASURE, "Judgment first"): say
 
 ### OL-2 — A sprite's normals under the sun and under the lamps: the developer's option
 
-- [ ] The option, its default chosen by the owner from pictures.
-- [ ] The automatic rule (`k`, section 2.6) removed from both shaders.
+- [ ] The option, its default chosen by the owner from pictures. (The option is built, `89e2afcb`, with the
+  recommended default; the owner has not picked yet.)
+- [x] The automatic rule (`k`, section 2.6) removed from both shaders. (`89e2afcb`)
 
 **What it must do.** For a pixel that carries a sprite's own normal, the developer says how much that
 normal counts for the sun and how much for the lamps, apart. Faces keep `Sun.skyLight`; flat pixels
@@ -297,7 +335,7 @@ stay as drawn.
 `src/render/faceMap.js`, Pixi's light uniforms, `configDefaults.js`, `types/weed.d.ts`, the guide
 ("Sprites lit as surfaces", "Surfaces: faces, maps and cards"). The pass is near what ANGLE's D3D11
 compiler takes (a larger body once failed to link, R-1147): check that every variant still links on
-WebGL and note the link time.
+WebGL and note the link time (`DITHER` is one more variant since this was planned).
 
 **Checks.** `tests/bench/normalLightCheck.mjs` and `faceLightCheck.mjs` hold the light's formula in the
 browser: update them to the new rule. Captures of `demos/lightBenchScene` at noon, at dusk and at
@@ -305,7 +343,9 @@ night, old against new, WebGL and WebGPU, and of Predator `?light3d=1` by night:
 default from them. Scenes without maps must capture byte for byte as before.
 
 **Measure.** The light pass is on every lit scene's path: `gpuPassBench` for the pass on both backends
-(expected: equal or cheaper, one accumulation less), and the Predator gate once for the batch.
+(expected: equal or cheaper, one accumulation less), and the Predator gate once for the batch. One
+reading on the ASUS's HD 620 for the record: a few operations in this pass cost it 4 to 5 % of its
+drawn frames twice (R-1334, R-1337). It holds nothing up.
 
 ### OL-3 — The race: a flat scene on raycasted lighting against the lamps' shadow maps
 
@@ -320,58 +360,75 @@ needed: the cost at the light counts games use, how many casting lamps the maps 
 owner accepts the map's shadow edges.
 
 **How, without building OL-4 first.** A scene with no `pitch` (or `floorScaleY: 1` alone) looks like a
-top-down one and takes the common light pass. So one stress scene, two arms:
+top-down one and takes the common light pass. So one stress scene, these arms:
 - **R (raycast):** `tests/bench/stressScenes/visPolyStressScene.js` as it is (`camera.pitch` 90, walls
-  by `setWall`).
+  by `setWall`); once OL-4's code exists, the old pass behind `debug.lightFans`.
 - **M (maps):** the same layout through a new knob (`?shadows=map`, say): no pitch,
   `lighting.lampShadows: 'map'`, `lighting.maxVolumes` and `maxShadowCastingLights` to fit, each
   occluder a volume (`shadowCaster.setBox(w, d, h)`, `setHull` for a circle) taller than the lamps, the
   lamps with an `elevation` above 0. Check first, in a capture against arm R, that the shadows match:
   section 2.7 says how a volume higher than its lamp is drawn (the 64 times stretch).
+- **C (the common pass alone; added 2026-11-18):** the same layout on the common pass with no walls
+  and no maps, the G-buffer on (`lighting.unshaded: true`), and one more reading with it off at 32
+  lamps. Nothing stops its lamps, so its picture is wrong on purpose: it is the floor of what either
+  final costs on the GPU, since the fans draw only where a light reaches and need no G-buffer.
+- **B (final B; added 2026-11-18, the code being written before the race):** the walls through the
+  sweep, read by the common light pass (OL-4).
 
 **The matrix.** Casting lights 8, 32, 64 and 128 (and what `visPoly` runs at 720 on arm R, for the
 record); `lampShadowTile` `'auto'` and 128; `lampMapCache` on and off (the scene's lights should move,
-or the cache hides the cost); WebGL, and WebGPU if it is cheap. The main machine (GTX 1650) and the
-ASUS test laptop (HD 620), through its job queue.
+or the cache hides the cost); WebGL, and WebGPU if it is cheap. The main machine (GTX 1650) decides.
+One reading on the ASUS test laptop (HD 620) at 32 casting lamps, every arm, its frames drawn, goes in
+the record as the low end and holds nothing up.
 
 **What to read.** Pre-render's and Pixi's `STEP_MS − WAIT_MS` (the sweep is pre-render's, the maps are
 Pixi's: report both workers on both arms), the GPU's time a frame (`tests/bench/glFrameRecorder.mjs`,
-`webgpuFrameRecorder.mjs`, `gpuPassBench`), and on the ASUS the frames drawn. The arms are two
-settings of one build, not two revisions: run them in turn (R M R M, 4 pairs, 4 more if they do not
+`webgpuFrameRecorder.mjs`, `gpuPassBench`), and on the ASUS the frames drawn. The arms are
+settings of one build, not revisions: run them in turn (R M C B, 4 rounds, 4 more if they do not
 decide), `--src`, detailed stats off, the window visible; one A/A for the detection limit; raise the
 occluders until the arm's owner worker passes 6 ms. And the same view captured on both arms, zoomed in
 on a shadow's edge, for the owner.
 
 **The rule proposed for the decision** (the owner's to confirm):
-- **Final A** (the maps everywhere; the sweep deleted) when, on both machines, at 32 and at 64 casting
-  lamps, arm M's cost is within the sitting's detection limit of arm R's or lower, and the owner
-  accepts the edges.
+- **Final A** (the maps everywhere; the sweep deleted) when, on the main machine, at 32 and at 64
+  casting lamps, arm M's cost is within the sitting's detection limit of arm R's or lower, and the
+  owner accepts the edges.
 - **Final B** (the sweep stays as each lamp's visibility, read by the common light pass) when the
-  maps lose clearly at those counts on either machine, or the owner wants hundreds of casting lights
-  in a flat view, or rejects the edges.
+  maps lose clearly at those counts there, or the owner wants hundreds of casting lights in a flat
+  view, or rejects the edges.
+- When arm C alone loses clearly to arm R, say so before the choice: one light system then costs a
+  flat scene that much in either final.
 
-**The guess before measuring** (the planner's, not a result): the maps lose on the ASUS and with
-hundreds of lights, so final B.
+**The guess before measuring** (the planner's, not a result): final B, with less confidence since the
+ASUS left the rule. What is left for it: the casting lamps that move (E-508's cache serves the still
+ones only) and the edges. On 2026-11-18 the owner chose to write the code before this race, so OL-4 is
+built as final B on this guess, and the race then says whether it stays.
 
 ### OL-4 — The flat view on the common light pass; raycasted lighting's own pass deleted
 
-- [ ] The flat view runs the common pass (pitch 90, then pitch 0).
-- [ ] What stops a lamp there (final A or B).
-- [ ] The demos and the stress scenes moved; the pictures accepted.
-- [ ] The deletion.
+- [x] The flat view runs the common pass (pitch 90, then pitch 0). (`94e31445`)
+- [x] What stops a lamp there (final A or B). (Final B, by eye: `9186550f`, `e57d6659`, `94e31445`; the race has not
+  run.)
+- [x] The demos and the stress scenes moved; the pictures accepted. (Moved, `94e31445`; accepted by the owner on
+  2026-11-18, with two asks: the sun's default, and the bright rim round a lit wall, OL-14.)
+- [x] The deletion. (OL-15, `27efbf1a`.)
 
 **In both finals:**
 
 1. `lighting.raycasted` no longer picks the light pass. A flat camera runs `lightingMesh` like any
    other; `gbufWanted`, `resolveFaces`, Pixi's three warnings and `_castedShadowsSunOnly` lose their
    raycast case. From then on normal maps, height maps, `unshaded`, the sun's map, and sprite and
-   height map shadows from the lamps work in a flat view.
+   height map shadows from the lamps work in a flat view. So do particle lights, LiquidFun's light
+   field, `pixelArt`, `selfShadow`, `dither` and the light edges (section 2.4): check each
+   (`tests/node/particleLightsRaycast.test.js` changes).
 2. **Pitch 90** first: the floor is the screen, heights point at the camera (`heightScaleY` 0). **Pitch
    0** then: the backdrop faces the camera and is what the lights pool on (such scenes write
    `floorScaleY: 1` today); say in `cameraView.js` and in the guide what "floor" and "height" mean
-   there. Neither has ever run on the common pass: expect bugs, and film both.
+   there. Neither has ever run on the common pass: expect bugs, and film both. The G-buffer's pass and
+   the unshaded pass write pixel depth (N-274, N-266) and a decoration stands on its owner's foot
+   (N-275): none of that has run at pitch 90 or 0 either.
 3. **Self-lit goes.** A wall's own pixels are lit by the rule the maps use: the pixel's entity is the
-   caster's. Without a normal or height map the wall's sprite is lit as drawn. This changes the look
+   caster's (N-273: a decoration with an owner counts as its owner). Without a normal or height map the wall's sprite is lit as drawn. This changes the look
    of every raycast scene (today: the half that faces the light): section 5 has the decision.
 4. A wall's opacity (`shadowCaster.opacity`, what the wedges do today) is the caster's opacity the
    maps already carry (the map's G channel, `1 - m.g` in `lampTap`); the guide says the maps do not
@@ -379,8 +436,12 @@ hundreds of lights, so final B.
 5. Cones (DX-SPOT) are in the common pass already (`coneFactor`); the cone batches of the raycast
    pass go with it. Check what particle lights and LiquidFun lights draw into today under raycasted
    lighting (`tests/node/particleLightsRaycast.test.js`) and that they reach the common pass's fields.
+6. While OL-4 is judged the old pass stays reachable through a measuring key, `debug.lightFans: true`,
+   so one build draws both and captures compare them; the deletion removes the key.
 
 **Final A: a wall is a volume in the lamp's tile.**
+- `lighting.maxVolumes` is 0 by default and a volume setter then warns: say whether `setWall` needs
+  the key written, as the volumes do; the scenes moved write it.
 - `setWall()` makes, from the entity's `Collider`, a volume taller than any lamp: a box, a circle as a
   polygon, a convex polygon, a compound solid by its outline (`ensureCompoundSolid` and the solid
   segments already find it). It is drawn into each lamp's tile as volumes are
@@ -396,6 +457,11 @@ hundreds of lights, so final B.
   `maxOccluderSelfLit` (named as retired keys in `src/util/configKeys.js`).
 
 **Final B: the sweep stays, its picture goes.**
+- **What turns the sweep on** (added 2026-11-18): not the pitch. `lighting.raycasted` goes, and the
+  scene asks for walls with a key of its own, `lighting.walls: true`, as `lighting.maxVolumes` asks
+  for volumes: Scene pools `LightOccluder`, the spatial worker builds the lights' neighbour lists and
+  the buffers are made under that key, whatever the camera: the sweep is right on any floor scale
+  (section 7), so an oblique camera has walls too.
 - Pre-render keeps the gather and the sweep. Instead of a polygon for a fan, each casting lamp
   publishes a row the light pass can read: for each direction, how far the light gets, which entity
   stopped it and that wall's opacity.
@@ -421,11 +487,69 @@ hundreds of lights, so final B.
 **Measure** (HOW_WE_MEASURE): the owner scenes `visPolyStressScene`, `compoundVisPolyStressScene` (the
 compound outline) and `flashlightStressScene` (cones), pre-render's and Pixi's `STEP_MS − WAIT_MS`,
 pairs from worktrees, the baseline over 6 ms; the Predator gate, since the common light pass is
-shared; one sitting for the total. No scene may get 3 % worse in its owner worker without the owner
-saying so. The guide's raycast sections are rewritten in the same work; N-38 and N-163 close with the
+shared; one sitting for the total. The fans draw only where a light reaches and need no G-buffer; the
+common pass shades every pixel of the screen, and the G-buffer's pass comes with the maps or with the
+own-entity rule. Pixi's `STEP_MS − WAIT_MS` does not see that fill, so each owner scene is also read
+by the GPU's time a frame (`gpuPassBench`, `glFrameRecorder.mjs`, `webgpuFrameRecorder.mjs`) and its
+frames drawn, old against new, as OL-3 reads its arms. No scene may get 3 % worse in its owner worker,
+or worse in the GPU's time a frame past the sitting's detection limit, without the owner saying so. The guide's raycast sections are rewritten in the same work; N-38 and N-163 close with the
 deletion.
 
 ---
+
+### OL-6 — The shading a sprite's normals cause: a strength, and an amount subtracted
+
+- [x] `lighting.normalShading: { sun: { strength, subtract }, lamps: { strength, subtract } }` in place of
+  `lighting.normalStrength`, in both shaders. (`2696eafe`)
+- [ ] The light bench's knobs, and the captures from which the owner picks the sun's two numbers. (The knobs
+  and the first captures are there, `2696eafe`; the owner has not picked.)
+
+**Why** (the owner, 2026-11-18, from OL-2's first pictures). At full strength the sun's normals do what the
+owner likes to the barn's roof and darken everything else too much: in the light bench at 16:00 a fifth of the
+view changes and loses 43.5 % of its light there. A lower strength alone lowers the roof's effect as much as
+the rest (26.1 % at 0.6, 15.3 % at 0.35). A picture already carries its painted light: what the engine adds is
+the shade of the faces turned away from the light, not a second shading of every face. The owner's idea: take a
+fixed amount off the shading (what falls under 0 stays 0), and let the strength multiply it.
+
+**What it must do.** Call *shading* what a sprite's own normal takes from a light: 0 where the pixel gets what
+it gets as drawn, 1 where it gets nothing. For the sun, and for each lamp apart:
+
+```
+shading' = max(0, shading - subtract) * strength
+```
+
+- `subtract` is taken first, so each number does one thing: `subtract` says from how much shading a face
+  shows any (and takes that much off every face that does), `strength` how much of the rest counts. A face
+  under `subtract` stays as drawn. The owner wrote it with the product first
+  (`shading * strength - subtract`), where moving the strength also moves the point shading starts at; the
+  order here is the executor's pick, said to the owner the same day.
+- **The sun.** `shading = max(0, 1 - (skyLight + (1 - skyLight) * cosine))`, the cosine the pass's own
+  (against the floor's, capped at 1.6). It runs from 0 to `1 - Sun.skyLight` (0.6 by default): `subtract`
+  does something under that. A face that looks at the sun more than the floor does gets more than as drawn
+  today (up to +36 %): that gain stays, times `strength`, and `subtract` does not touch it, so
+  `{ strength: 1, subtract: 0 }` is the picture `normalStrength.sun: 1` gave.
+- **A lamp.** `shading = 1 - cosine` of that lamp, inside the lamps' loops: the mix of two sums OL-2 wrote
+  cannot subtract a lamp at a time.
+- **Defaults** `{ sun: { strength: 0, subtract: 0 }, lamps: { strength: 1, subtract: 0 } }`: the picture of
+  `normalStrength`'s default, byte for byte.
+- Faces and flat pixels as in OL-2: a face by its normal, whole; a flat pixel as drawn.
+- One API: `lighting.normalStrength` goes (it never left this branch, so it needs no retired text).
+- The name is the executor's (the owner asked for a descriptive one and found `wrap` unclear): the path says
+  what is shaded and by what, and the two leaves say the arithmetic.
+
+**Where.** `src/shaders/lightingBasic.frag.glsl` and `lightingBasic.wgsl` (`faceLight`: the sun's term, the
+two lamp loops' `both` and `lampFlat`, the final mix), Pixi's light uniforms (two more numbers:
+`uFaceLight` is full), `configDefaults.js` (`normalStrengthOf`), `configKeys.js`, `types/weed.d.ts`, the
+guide, `demos/lightBenchScene` (`?normalSun=`, `?normalLamps=`, and two knobs for `subtract`),
+`tests/bench/normalLightCheck.mjs`, `tests/node/normalStrength.test.js`.
+
+**Checks.** The suites; `normalLightCheck` on both backends at `{ 1, 0 }` (the old full strength, the same
+tolerance) and with a `subtract`; the default captures byte for byte as before; the light bench at 16:00 with
+the owner's first numbers (`strength` 0.8, `subtract` 0.2) beside as drawn and full strength, and at night
+under a lamp.
+
+**Measure.** With the rest of the branch (the light pass on both backends, the Predator gate): one `max` and
+one subtraction a light a pixel.
 
 ## 4. Order and estimates
 
@@ -433,21 +557,42 @@ Estimated on 2026-11-17 from reading, before any measurement; each includes its 
 
 1. OL-1: 1 to 1.5 h.
 2. OL-2: 2 to 3 h, the captures for the owner included.
-3. OL-3: 3 to 4 h, plus the ASUS's queue.
+3. OL-3: 3 to 4 h with its four arms; the ASUS's reading rides its queue and holds nothing up.
 4. OL-4: 8 to 12 h in either final, then 2 to 3 h for the demos, the guide and the deletion.
+5. OL-6 (added 2026-11-18): 1 to 1.5 h, its captures included.
 
 OL-1 and OL-2 touch different files (OL-2 the light pass's shaders, OL-1 none of them) and can go in
 parallel. OL-3 needs the machine quiet. OL-4 waits for OL-3 and for the owner's decision.
 
+Since 2026-11-18 the order built is OL-1, OL-2, OL-4 (final B, by eye), then OL-5 (the bug found on the way,
+section 7) and OL-6 (the owner's ask from the first pictures), then OL-3 with every other measurement, then
+the deletion (section 8): OL-14 and OL-15, on 2026-11-18, once the owner accepted.
+
 ## 5. Open decisions (the owner's, when we get there)
 
-- OL-2: the default of `normalStrength` (recommended `{ sun: 0, lamps: 1 }`), from the pictures; and
-  whether the option is the scene's alone or a sprite's too.
-- OL-3: final A or final B, from the table and the captures.
+- OL-2: the default of `normalStrength`. **Decided 2026-11-18: `{ sun: 0, lamps: 1 }` stays.** At full strength the
+  owner likes the barn's roof and not the rest ("todo se oscurece mucho": in the light bench at 16:00 a fifth of the
+  view changes and loses 43.5 % of its light there; 26.1 % at 0.6, 15.3 % at 0.35). The softer shape the
+  owner raised became OL-6 the same day (a strength and an amount subtracted). **Decided 2026-11-18, from OL-6's
+  pictures: the sun's default is strength 1 with 0.5 subtracted** (`34f09c20`; he liked strength 1 with 0.3 subtracted
+  and wanted the trees shaded less). Still open: whether the option is the scene's alone or a sprite's too.
+- OL-3: final A or final B, from the table and the captures. **Final B stands (2026-11-18):** the race read B
+  (R-1405); the owner asked what the two were and, told, asked for nothing else. Both techniques stay the
+  developer's: walls by the sweep (`lighting.walls`), the lamps' maps by `lighting.lampShadows: 'map'`, in one
+  scene if wanted. A is worth another look only if the maps lose their ceiling of 64 casting lamps and their cost.
 - OL-4: how a wall's own sprite is lit once self-lit is gone. Whole, as drawn (the maps' rule), or
   only to a depth from the edge the lamp sees (final B knows the hit's distance; it is N-38's fix and
-  needs no G-buffer in a scene without maps). Show both on a top-down house and on a side-view rock.
-- OL-4, final A: what `setWall({ shape: 'sprite' })` becomes.
+  needs no G-buffer in a scene without maps). **Decided 2026-11-18: to a depth looks better, on the top-down
+  houses and on the side-view rocks, and both looks stay as the dev's knobs** (`lighting.wallDepth`: 0, the
+  engine's default, lights it whole; Headlights now asks 24 px, planetPhysics 40).
+- OL-4, final A: what `setWall({ shape: 'sprite' })` becomes. (Not needed: final B.)
+- OL-4, final B: the names of the keys (`lighting.walls`, `lighting.wallDepth`; the builder's picks).
+- OL-4, final B: whether a wall's shadow keeps a third of the lamp, as the old pass's did, or nothing, or what a key
+  says. **Built as a key, 2026-11-18: `lighting.lightBehindWalls`** (0 to 1, default 0.33, the old look; `d42628bd`),
+  since the owner asked for the looks to stay the developer's knobs. He saw Headlights with a third against none
+  (`?behindWalls=0`) on 2026-11-18 and changed nothing: 0.33 stays the default.
+- OL-4: `shadowCaster.setWall({ shape })`. Only the old pass read `shape` (its fills' mask). **Gone with the
+  deletion (OL-15):** `setWall()` takes no options.
 
 ## 6. Not in this plan
 
@@ -458,4 +603,160 @@ WGSL) with its light loop four times.
 
 ## 7. Found while building
 
-(Nothing yet.)
+Built on `dx/one-light` from 2026-11-18: OL-1, OL-2 and OL-4 as final B. Nothing here is timed: the owner's order
+is the code first, with the suites and a capture an item, and the measuring after (section 8).
+
+**OL-2.** `lighting.normalStrength { sun, lamps }`, in `uFaceLight`'s two free numbers (no new uniform). With the
+normals at full strength `normalLightCheck` reads the maps' own steps: worst 3.4 of 255 under the lamp and 4.0
+under the sun on its ball (p99 2.4, mean 0.6), half that at 0.5; its tolerance is 5 now. The old check never held
+the sun's term by the normal: under the sun the automatic rule gave `k` 0.
+
+**OL-4, what the plan had wrong.**
+- **Walls work with any camera.** Section 2.2 said the sweep had only run where `floorScaleY` is 1. It runs in
+  the Headlights demo at 0.7: the sweep works in world px, as the colliders are, and sight lines stay straight when
+  the floor is drawn foreshortened (the map is affine). So `lighting.walls` asks for walls whatever the camera, an
+  oblique one included; the row is written in the floor's terms (y over the floor's scale), where the light pass
+  works. Section 5's follow-up for oblique cameras is not needed.
+- **The sweep did not say which wall made an edge.** The plan's final B took it from the polar bins, which hold
+  compound solids only. `visibilitySweep.c` now writes what each vertex's ray hit (`outOcc`: the occluder's place
+  in the light's list, -1 a free ray, -2 - entity a compound solid's boundary), carried through the polar merge;
+  two table slots at the end, the others as they were (`engine.wasm` 351 269 -> 352 493 B).
+- **Not 512 distances with a pointer: the polygon itself.** A row (`src/render/visibility/lampWallRow.js`) keeps the
+  polygon's vertices, each with its angle around the lamp and the code of the edge that starts there, and an index
+  of 256 directions that says which vertex to start from; the light pass finds the edge that covers a pixel's
+  direction and takes the side of it the pixel lies on. The shadow's border is the fan's own line (WebGL against
+  WebGPU: 19 of 921 600 px differ, by 3 of 255 at most).
+- **An edge's wall is the wall its end vertex hit**, or its start's where the end is a free ray: an edge stops
+  nothing only between two free rays. In a merged polygon an edge between two walls that overlap is named for
+  the one it ends on, so a sliver of the other's own pixels reads as shadow there.
+- **The polygon cuts a lit corner.** The sweep takes a box seen corner-on from one tangent corner to the other: a
+  chord inside the box. Nothing of the floor is in that triangle, so it never showed.
+
+**OL-4, what was added to the plan's design.**
+- **`lighting.wallDepth`** (px, default 0), section 5's second way to light a wall: the light enters every wall that
+  far from the edge it reaches and fades out, whatever is drawn there. It was needed, not only offered: a wall
+  drawn by a `MeshRenderer` (the rock of planetPhysicsScene, a compound solid) writes no id in the G-buffer, so the
+  first way (the wall's own sprite, whole) leaves it in its own shadow.
+- **The shadow keeps a third of the lamp** (`WALL_UMBRA` 0.33, the old pass's `UMBRA_FLOOR`), so the scenes look as
+  they did. The owner may want it gone or as a key: one number in `lampWallRow.js` and the two shaders.
+- **Pitch 0 is a flat view by itself** (`cameraView.js`): `floorScaleY` 1 and `heightScaleY` 0 unless the scene sets
+  them. Where the camera shows no height nothing stands: a sprite without heights lies in the plane (the face
+  pass divided by `heightScaleY` there), and `uFaceLight.x` is 0, not the 1 it fell back to.
+- **A row holds at most 512 vertices** (`WALL_ROW_MAX_VERTS`): visPolyStressScene sets `maxPolygonVertices` 5000, and a
+  row is as wide as its cap; a polygon with more is thinned, one vertex in every few.
+
+**What changes in the picture of a scene that had raycasted lighting** (for the owner's eye):
+- a wall's sprite is lit evenly, as drawn: the made-up sphere's X is gone;
+- a wall with no sprite of its own is dark inside its outline, where the old pass drew a lit block (`wallDepth`);
+- a light fades to its radius by the light pass's window, `(1 - (d / R)^4)^2`, not the old pass's step over the last
+  4 % of the radius: the pool's rim is softer and a little tighter;
+- the sun's colour reaches the scene (the old pass cleared with the ambient plus the sun's intensity, grey);
+- with `shadowsEnabled`, the lamps stamp their sprite shadows on the layer, as in any other scene.
+
+**OL-3's knobs** are on visPolyStressScene: `?arm=walls` (the default, final B), `plain` (the
+light pass alone; `?gbuf=0` without the G-buffer) and `maps`, with `?castLights=`, `?tile=`, `?lampCache=0` and
+`?move=` (the lights circle their place); a `fans` arm drew the old pass until OL-15 deleted it, and `?mask=sprite`
+is `?occluderSprite=1` since. All but the maps' draw. **The maps' arm is not ready:** its lamps draw, but
+the occluders' volumes (`setBox`, 400 px high, lamps at 40) cast nothing in the lamps' map. The cause is the
+engine's (**OL-5**, in the register): Pixi gives a lamp its tile from the ids pre-render publishes, and
+`_writeStampLightIds` publishes them only in a frame with a sprite caster's stamp row; this scene has volumes alone
+(lampShadowStressScene has 20 000 walkers). A street of houses with nobody near its lamps is the same case. It
+held up the maps' arm and final A, not final B. **Fixed** (`13c69176`): pre-render orders, fades at the cut and
+names the casting lamps without a stamp row when the lamps cast into their map; Pixi gives them tiles for a stamp
+row or a casting volume (none with neither) and, with tiles and no stamp row, clears the map and draws the volumes
+alone. The arm draws its shadows now: before against after 139 473 of 921 600 px, WebGL against WebGPU 0 px, and
+a frame with a stamp row runs as before (dxCaptureScene by night: 0 px). With a
+pitch of 90 the scene's white floor sprite lies flat; with heights on the screen it stood as a card 3000 px tall and
+no light reached it, so it is `surface: 'floor'` now.
+
+**To measure, when the measuring starts:** the rows' upload (194 texels a lamp at the default 128 vertices: 3.1 KB
+a lamp a frame, every frame, unchanged rows included); pre-render's row build, in JS, once a lamp with walls; the
+sweep's kernel with its one more store a vertex; the light pass's lookups (a header, an index and two vertices a
+lamp a pixel, more where vertices crowd one direction); the G-buffer pass, on in every scene with walls.
+
+**OL-6, as built** (`2696eafe`). The four numbers go in one new uniform, `uNormalShade`, after `uFaceSun` in both
+languages (`uFaceLight`'s two middle numbers are 0 again). The sun's shading is measured against the sun the pixel
+gets as drawn (`sunFlat`, which holds its map's shade and its own), so a cast shadow is not shading; the gain of a
+face that looks at the sun stays, times the strength. A lamp's is taken where the lamp is added, a lamp at a time,
+from the face's own cosine (before the lamp's map and the pixel's own shade scale it); the pass no longer works
+the lamps out twice and mixes them. `normalLightCheck` takes `--subtract` and holds the new rule: worst 4.0 of 255
+on both backends at four settings, the maps' own steps as before. The default picture is the same (dxCaptureScene
+at noon and by night: 0 px). Light bench at 16:00, the view's pixels that change and the light they lose: full
+strength 20.3 % and 43.5 %; strength 0.8 with 0.2 subtracted 16.5 % and 24.0 %; strength 1 with 0.3 subtracted
+16.3 % and 21.8 %.
+
+**After the code: what the first readings led to (2026-11-18).** The owner's order was the code first and the
+measuring after. The first readings (R-1353, R-1354, R-1400) put the walls in the light pass above the old fan
+pass on its own scene (visPolyStressScene, 720 lights: pre-render +21.9 %, Pixi +16.1 %), so four changes
+followed, each in the register with its sitting:
+
+| item | what | read |
+| --- | --- | --- |
+| OL-7 | no cookies in a frame with nothing on the shadows' layer | a 960x540 GPU pass of 0.34 ms gone, the picture the same |
+| OL-8 | a lamp's row counts its 256 directions' index instead of walking it | pre-render 6.415 -> 6.062 ms (-5.8 %); the kernel -9 to -21 % |
+| OL-9 | a lamp's row kept while what goes into its sweep is the same (`lighting.wallCache`) | pre-render 6.061 -> 2.982 ms with the lamps still (-51.4 %); +2.5 % with all moving (inside the limit) |
+| OL-10 | Pixi does not copy or upload rows it already sent (pre-render signs each frame's rows) | Pixi 1.601 -> 0.626 ms (-61.1 %, under the floor: read) |
+| OL-11, OL-12 | the kernels write a swept lamp's row and its walls' codes; no shadow lights without casters | pre-render 5.813 -> 5.386 ms with every lamp moving (-8.1 %), 2.938 -> 2.681 ms still (-7.3 %) |
+| OL-13 | Pixi copies a row out in one `set()`, not a float at a time | Pixi 1.391 -> 1.232 ms with every lamp moving (-11.6 %, under the floor: read) |
+| OL-14 | walls with an oblique camera turn pixel depth on, so the light's edges keep a lit wall's light off the dark floor round it | Headlights: Pixi 0.536 -> 0.575 ms (under the floor: read); the rim gone |
+| OL-15 | the old fan pass deleted | `src/` 2 783 lines shorter; rows bit for bit and still scenes pixel for pixel the same; 360 moving lamps: pre-render 2.934 -> 2.938 ms, Pixi 0.770 -> 0.738 ms (under the floor: read) |
+
+After them, the old fan pass against the walls on a still scene, one build (R-1403): pre-render 5.117 -> 2.959 ms
+(-41.6 %), Pixi 1.207 -> 0.662 ms (-44.9 %). With every lamp moving nothing is kept: the walls read +18.9 % and
++19.4 % over the fans there, and +13.1 % in both workers after OL-11 to OL-13 (R-1408). A profile put what is left
+on `wall_row` (0.59 ms a frame for 720 swept lamps, its cost not understood: a variants pass is owed) and the rows'
+upload. Main is merged into the branch (`02f319b3`); an early look at Predator at its default
+load shows nothing past its A/A (R-1401), the gate itself runs at `crowd=2.5` before the merge. The shaders pass
+on the four GPUs (the ASUS's jobs 0896d to 0896k; two blank captures on the HD 620 were pages that had drawn
+nothing, and `normalLightCheck` now waits for a frame and says NOFRAME otherwise).
+
+**After the owner's acceptance (2026-11-18): OL-14 and OL-15.** Two things were found on the way and are rows of
+their own in the register. **N-299:** a flat view (pitch 90 or 0) keeps the rim OL-14 removes, since nothing writes
+entity depth there; `lighting.resolution: 1` has none, and forcing pixel depth reorders overlapping sprites by
+their foot. **N-300:** near a compound solid a lamp's row is the 512-bin merge, and a simple wall seen only
+between two bin rays is on no vertex, so its own pixels are not lit beyond its edge (the rows name 1 622 of 2 014
+such walls in the wired tests' scene); not a capture yet. The deletion left two dead branches in the kernels
+(`visibilityGather.c` sends an event a packed occluder when asked, `visibilitySweep.c` marks the owners a polygon
+shows): pre-render asks for neither, `engine.wasm` is byte for byte what it was, and they go with the kernels' next
+build (OL-11's variants pass). The debug overlay's light polygons read the walls' rows since: the polygons'
+buffers were the old pass's. N-38 and N-163 are superseded: their code is gone.
+
+## 8. Revisions
+
+**2026-11-18**, a second reading against `main` at `4f60d4bd`, in a chat with the owner. Nothing had
+been built. What changed here, and why:
+
+- **The race is decided on the main machine** (OL-3). The first rule asked for both machines; the
+  owner said the same day that the ASUS's HD 620 is not the yardstick. The ASUS gives one low-end
+  reading and compiles the shaders on a second driver.
+- **Two more arms in the race** (OL-3): the common pass alone, the floor of what either final costs on
+  the GPU; and final B itself, since its code now comes first.
+- **The GPU in OL-4's gate.** `STEP_MS − WAIT_MS` does not see the fill the common pass adds.
+- **What turns the sweep on in final B** is a key the developer writes, not the pitch (OL-4).
+- **Section 2 brought up to date:** what a flat view cannot do (particle lights, LiquidFun's field,
+  `pixelArt`, `selfShadow`, `dither`, the light edges); the lamps' map after N-276, its cost on record
+  now stale, N-241; owned decorations (N-273, N-275); pixel depth in the G-buffer's and the unshaded
+  passes (N-274, N-266); the `DITHER` variant.
+- **The order.** The owner chose to write all the code first, with the suites and one capture an item,
+  and to measure and optimize after it. So OL-4 is built before the race, as final B, picked by eye:
+  if the race says A, the row the light pass reads is the part thrown away. The old pass stays behind
+  `debug.lightFans` until the pictures and the numbers are accepted, and the deletion comes last. One
+  branch, `dx/one-light`.
+
+**2026-11-18, later**, after the owner saw the first pictures:
+
+- **OL-6 added**, at the owner's ask: the shading a sprite's normals cause takes an amount subtracted beside its
+  strength, for the sun and for the lamps, as `lighting.normalShading` (it replaces OL-2's
+  `lighting.normalStrength`). OL-2's default stays; its two numbers for the sun are picked from OL-6's pictures.
+- **A wall lit to a depth** is the owner's pick for the houses and the rocks; both looks stay as knobs (section 5).
+- **OL-5 is built before the race**, since the race's maps arm needs it.
+
+**2026-11-18, the owner's acceptance** ("ok!"), after the pictures and the numbers, with three asks:
+
+- **The sun's default** for `lighting.normalShading`: strength 1 with 0.5 subtracted, for every scene (section 5).
+- **The bright pixels round a lit house** on Headlights: "ante la duda queden oscuros". It was the light drawn at a
+  quarter of the canvas and stretched; the light's edges already told a sprite's outline from the floor, but only
+  with entity depth. OL-14 turns pixel depth on for walls with an oblique camera.
+- **"Remove the 5 000 lines":** the branch stood at +5 050 lines against main with the old pass still behind
+  `debug.lightFans`. OL-15 deletes it; `src/` is 1 529 lines shorter than main's, the tests and the guide longer.
+- He asked what final A and B were: told, with their costs, and that both techniques stay (section 5).

@@ -1,16 +1,11 @@
 import { Component } from '../core/component.js';
 
-/** Self-lit fill uses Collider footprint (default, fastest). */
-export const LIGHT_OCCLUDER_MASK_COLLIDER = 0;
-/** Self-lit fill uses sprite alpha as mask. */
-export const LIGHT_OCCLUDER_MASK_SPRITE = 1;
-
 /**
  * Internal: the columns of a ShadowCaster's wall (shadowCaster.setWall, DX-CASTER: DX_LIGHT3D_PLAN.md §5.5). No class lists
- * it: a scene with raycasted lighting pools it for every entity, the visibility sweep reads it, and ShadowCaster's setters
- * write it (setWall turns it on with its shape, a setter that leaves no light kind a wall turns it off, opacity is block).
+ * it: a scene with walls (config.lighting.walls) pools it for every entity, the visibility sweep reads it, and ShadowCaster's setters
+ * write it (setWall turns it on, a setter that leaves no light kind a wall turns it off, opacity is block).
  *
- * Light blocker for raycasted lighting.
+ * What stops a light at a wall.
  * Occlusion shape comes from the entity's Collider. One circle, rotated box, or convex
  * polygon uses that primary shape. Extra fixtures (`fixtureCount > 0`) block as one
  * solid: only the boundary edges, so a hole stays open and interior triangles are
@@ -18,20 +13,14 @@ export const LIGHT_OCCLUDER_MASK_SPRITE = 1;
  *
  * `block` is how much light this body removes. 0 blocks nothing (left out of the
  * visibility sweep). 1 blocks all. Values in between keep the hard silhouette and
- * add the missing light back inside that body's shadow wedge. A compound solid
- * adds it behind its light-facing boundary edges only, so a ray passing through
- * gets it once, as behind a single shape's silhouette.
- * A full block still leaves a 0.33 radial floor in the umbra so the shadow fades
- * near a LightEmitter, matching ShadowCaster's point-shadow scale.
- *
- * After the visibility polygon is drawn, a self-lit fill lights the side of the
- * body that faces the light (maskMode selects collider vs sprite alpha). The far
- * side stays on the umbra floor. A light inside the body keeps the plain radial.
+ * let that much of the rest through behind it (the edge the sweep names carries it
+ * to the light pass, lampWallRow.js). What a full block's shadow keeps of the lamp is
+ * the scene's lighting.lightBehindWalls, and the wall's own pixels are lit where the
+ * light reaches its edge (its sprite whole, or lighting.wallDepth px into it).
  */
 export class LightOccluder extends Component {
   static ARRAY_SCHEMA = {
     active: Uint8Array,     // 0 = inactive, 1 = blocks light
-    maskMode: Uint8Array,   // LIGHT_OCCLUDER_MASK_COLLIDER | LIGHT_OCCLUDER_MASK_SPRITE
     block: Float32Array,    // 0 = blocks nothing, 1 = blocks all
   };
 }

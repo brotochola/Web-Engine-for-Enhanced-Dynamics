@@ -318,7 +318,7 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
         { name: 'bulletResults', owner: 'particle', bytes: 16 },
       );
     }
-    // W2b: with physics and raycasted lighting, LightOccluder's block, pre-render's visibility regions (W2a's
+    // W2b: with physics and walls (lighting.walls), LightOccluder's block, pre-render's visibility regions (W2a's
     // memory, placed here: visibilityMemory.js) and the gather kernel's table, results and event records
     // (visibilityGatherClient.js), so the gather reads every column it needs in this memory.
     const v = collect.visibility;

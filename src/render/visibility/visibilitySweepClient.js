@@ -27,6 +27,10 @@ export const SWEEP_SLOTS = [
   'circDx', 'circDy', 'circDd', 'circR2',
   'occF32',
   'results',
+  // OL-4: what each vertex's ray hit (lampWallRow.js makes a lamp's row of it), and the merge's scratch for it.
+  'outOcc', 'rayOcc',
+  // OL-11: wall_row's: each occluder's code, the row it writes and its scratch.
+  'occCode', 'rowOut', 'rowMarks',
 ];
 if (SWEEP_SLOTS.length !== VISIBILITY_SWEEP_TABLE_SLOTS) throw new Error('visibilitySweep: the table and its region disagree');
 /** wasm/visibilitySweep.c's result words. */
@@ -57,7 +61,7 @@ export const SWEEP_EXPORTS = Object.freeze({ f32: 'sweep_light_f32', simd: 'swee
 export async function bindVisibilitySweep(vm, { maxVerts, f32 = true }) {
   const variant = f32 ? 'f32' : 'simd';
   const exportName = SWEEP_EXPORTS[variant];
-  const k = await loadWasmKernel('visibilitySweep', engineWasmUrl, vm.memory, [exportName]);
+  const k = await loadWasmKernel('visibilitySweep', engineWasmUrl, vm.memory, [exportName, 'wall_row']);
   const L = vm.layout;
   const buffer = vm.buffer;
   const { maxEvents, occCache, maxActive, fullCircleSegs } = SWEEP_CAPS;
@@ -94,6 +98,12 @@ export async function bindVisibilitySweep(vm, { maxVerts, f32 = true }) {
     variant,
     /** sweep_light_*(tableByte, lightX, lightY, radius, occluders, polar): the polygon's vertex count. */
     sweep: k[exportName],
+    /**
+     * OL-11. wall_row(tableByte, lampX, lampY, 1 / floorScale, vertices): the lamp's row for the light pass
+     * (lampWallRow.js) from the polygon the sweep just left, written at the memory's rowOut; the floats written.
+     * For a light with no compound solid in reach, and a polygon a row holds.
+     */
+    row: k.wall_row,
     table,
     tableByte: L.tableByte,
     results,

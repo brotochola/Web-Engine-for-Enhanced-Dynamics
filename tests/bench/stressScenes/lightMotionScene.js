@@ -7,10 +7,10 @@ const { Scene, Camera, LAYER_KIND } = WEED;
 /**
  * Lights in motion, to film (DX-LIGHTAPI): lamps that circle across the screen's edges (does a glow pop in? does a
  * pool's tail vanish when the light is culled?), flashes fired in turn (how they fade; half of them asked to cast no
- * shadow), barrels that cast shadows, and with `?raycast=1` boxes that block the light. The view is fixed on the middle
- * of a world twice its size.
+ * shadow), barrels that cast shadows, and with `?walls=1` boxes that block the light (walls: lighting.walls). The view is
+ * fixed on the middle of a world twice its size.
  *
- * `?raycast=1`, `?groundScaleY=` (default 1), `?backend=webgpu`, `?ambient=` (default 0.04).
+ * `?walls=1`, `?groundScaleY=` (default 1), `?backend=webgpu`, `?ambient=` (default 0.04).
  */
 const VIEW_W = 1280;
 const VIEW_H = 720;
@@ -32,7 +32,7 @@ function queryNumber(key, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-export const RAYCAST = queryNumber('raycast', 0) === 1;
+export const WALLS = queryNumber('walls', 0) === 1;
 export const GROUND_SCALE_Y = queryNumber('groundScaleY', 1);
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 export const AMBIENT = queryNumber('ambient', 0.04);
@@ -54,7 +54,7 @@ const LAMPS = [
 ];
 
 export const stressSceneConfig = {
-  requested: { raycast: RAYCAST ? 1 : 0, groundScaleY: GROUND_SCALE_Y, backend: BACKEND, ambient: AMBIENT },
+  requested: { walls: WALLS ? 1 : 0, groundScaleY: GROUND_SCALE_Y, backend: BACKEND, ambient: AMBIENT },
 };
 
 export class LightMotionScene extends Scene {
@@ -70,10 +70,11 @@ export class LightMotionScene extends Scene {
     layers: {
       ground: { kind: LAYER_KIND.TILING, texture: 'ground', tileScale: 1, parallax: 1, zIndex: 0 },
     },
-    // ?raycast=1: pitch 90, a flat view, lights by raycasting (the blocks' walls), on the same floor.
-    camera: RAYCAST ? { pitch: 90, floorScaleY: GROUND_SCALE_Y } : { floorScaleY: GROUND_SCALE_Y },
+    camera: { floorScaleY: GROUND_SCALE_Y },
     lighting: {
       enabled: true,
+      // ?walls=1: the blocks are walls (shadowCaster.setWall) that stop the lamps, on the same floor.
+      walls: WALLS,
       baseAmbient: AMBIENT,
       maxLights: 32,
       maxFlashes: 16,
@@ -103,7 +104,7 @@ export class LightMotionScene extends Scene {
     for (let i = 0; i < 40; i++) {
       MotionProp.spawn({ x: VX - 100 + rng() * (VIEW_W + 200), y: VY - 100 + rng() * (VIEW_H + 200) });
     }
-    if (RAYCAST) {
+    if (WALLS) {
       for (let i = 0; i < 18; i++) MotionBlock.spawn({ x: VX + rng() * VIEW_W, y: VY + rng() * VIEW_H });
     }
     // [x, y, z, castShadows]: every other one asks for no shadow, every third one is raised 30 px.

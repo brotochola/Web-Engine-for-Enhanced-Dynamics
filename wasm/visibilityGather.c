@@ -32,6 +32,9 @@ enum {
   E_EVENTS,      /* the event records */
   E_SELF_LIT,    /* a value: 1 when the light's packed occluders are self-lit candidates */
   R_RESULTS,     /* i32: [0] occluders packed, [1] vertices packed, [2] events, [3] 1 when the cap stopped the walk */
+  W_OCC_CODE,    /* OL-12: optional (0: not asked for). An int32 a packed occluder: its code for the walls' rows
+                    (lampWallRow.js wallEdgeCode: its entity's G-buffer id and its opacity). Asked for, no occluder
+                    event is sent: the rows need nothing else of a packed occluder. */
   SLOT_COUNT
 };
 
@@ -76,6 +79,7 @@ typedef struct {
   uint8_t *events;
   uint32_t selfLit;
   int32_t *res;
+  int32_t *occCode;
 } cols_t;
 
 INLINE cols_t columns(uint32_t table) {
@@ -127,6 +131,7 @@ INLINE cols_t columns(uint32_t table) {
   k.events = PTR(uint8_t, E_EVENTS);
   k.selfLit = t[E_SELF_LIT];
   k.res = PTR(int32_t, R_RESULTS);
+  k.occCode = PTR(int32_t, W_OCC_CODE);
   return k;
 }
 
@@ -320,7 +325,16 @@ INLINE int32_t gather(uint32_t table, uint32_t light, double lx, double ly, doub
     } else {
       continue;
     }
-    if (k.selfLit) put_event(&k, events++, EV_OCCLUDER, i, (int32_t)occ, p);
+    if (k.occCode) {
+      /* lampWallRow.js wallEdgeCode(gbufEntityId(i), block): the id (i % 65535) + 1, the opacity as Math.round(block *
+         255) kept in 1..255. */
+      int32_t o = k.oBlock ? (int32_t)__builtin_floor((double)k.oBlock[i] * 255.0 + 0.5) : 255;
+      if (o < 1) o = 1;
+      else if (o > 255) o = 255;
+      k.occCode[occ] = (int32_t)((i % 65535u) + 1u) * 256 + o;
+    } else if (k.selfLit) {
+      put_event(&k, events++, EV_OCCLUDER, i, (int32_t)occ, p);
+    }
     occ++;
   }
   k.res[0] = (int32_t)occ;

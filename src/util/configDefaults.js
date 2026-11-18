@@ -490,6 +490,12 @@ export const WASM_DEFAULTS = Object.freeze({
    * vertex's distance from the light); false runs its double SIMD export instead.
    */
   visibilitySweepF32: true,
+  /**
+   * OL-11: with lighting.walls, a lamp's row for the light pass written by the sweep's kernel from the polygon it just
+   * left (the same row bit for bit, a quarter of the time); false writes every row in JavaScript, as a lamp with a
+   * compound solid in reach always is.
+   */
+  wallRow: true,
 });
 
 // ============================================================================
@@ -645,7 +651,9 @@ export const RENDERER_DEFAULTS = Object.freeze({
   maxVisibleRenderables: null,
   /**
    * DX-DEPTH (F5): each entity pixel's floor place corrects the painter (pixelDepth.js). null: on with an oblique camera
-   * and maps (heights, normals or relief) or faces, on WebGL and WebGPU; true or false forces it.
+   * and maps (heights, normals or relief), faces, or walls whose light is drawn under the canvas's size (OL-14: the
+   * light's edges need it, lighting.lightEdges), on WebGL and WebGPU; true or false forces it (true still needs one of
+   * the three).
    */
   pixelDepth: null,
   maxDecalTileUploadsPerFrame: 32,
@@ -776,12 +784,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   shadowUpdateInterval: 1,
   /** Scale shadow caster budget per light dynamically based on on-screen light radius when zoomed out. */
   adaptiveShadowBudget: true,
-  // No `raycasted` here: raycasted lighting (a visibility polygon a light) is on exactly when config.camera.pitch is 90 or 0
-  // (a flat view) and lighting is enabled. Scene._applyConfigDefaults writes lighting.raycasted from that, for the workers.
-  /** Under raycasted lighting: the vertices of a light's visibility polygon. */
+  /** With lighting.walls: the most vertices of a light's visibility polygon (what its sweep of the walls leaves). */
   maxPolygonVertices: 128,
-  /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
-  maxOccluderSelfLit: 512,
   /**
    * E-191's keyed caster paths (the casters' rows by key, read from the sprites' statics). A frame whose casters ask for
    * their own way (setSprite({ frame }), a kind) takes the full rows by itself (N-188); false sends the full rows always,
@@ -789,18 +793,19 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   keyedCasters: true,
   /**
-   * DX-SHADOW3D: how the sun casts the ShadowCasters' shadows. 'sprite' (default): each caster's card on the shadows'
-   * layer, darkening every light. 'map': a shadow map in the floor's terms (src/render/sunShadowMap.js) that takes out the
-   * sun alone, falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit.
+   * DX-SHADOW3D: where the sun's ShadowCaster shadows are drawn. 'layer' (default): each caster's card painted on the
+   * shadows' layer, darkening every light. 'map': a shadow map in the floor's terms (src/render/sunShadowMap.js) that takes
+   * out the sun alone, falls on what has height (faces, sprites with maps) where it is, and leaves the lamps lit. Any other
+   * value warns (Pixi's lighting set-up) and draws on the layer.
    */
-  sunShadows: 'sprite',
+  sunShadows: 'layer',
   /**
-   * DX-SHADOW3D (F7): how the lamps cast them. 'sprite' (default): each caster stamped on the shadows' layer, stretched
-   * away from its lamp. 'map': a shadow map a lamp in the floor's terms (src/render/lampShadowMap.js, one tile each in an
-   * atlas, the lights maxShadowCastingLights picks) that takes out that lamp's light alone, with the caster's height and
-   * the lamp's (LightEmitter.elevation) in the shadow's length.
+   * DX-SHADOW3D (F7): where the lamps' shadows are drawn. 'layer' (default): each caster stamped on the shadows' layer,
+   * stretched away from its lamp. 'map': a shadow map a lamp in the floor's terms (src/render/lampShadowMap.js, one tile
+   * each in an atlas, the lights maxShadowCastingLights picks) that takes out that lamp's light alone, with the caster's
+   * height and the lamp's (LightEmitter.elevation) in the shadow's length. Any other value warns and stamps on the layer.
    */
-  lampShadows: 'sprite',
+  lampShadows: 'layer',
   /**
    * DX-SHADOW3D: a render with a footprint in its sheet's json (meta.footprints) casts its solid swept north to it at
    * each cell's own height, as the light bench's heightmap did (light under a table), instead of columns down to the
@@ -834,7 +839,8 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   /**
    * DX-LIGHTEDGES (lightEdges.js): the light, computed at a share of the canvas (resolution under 1), shown without crossing
    * the floor's edges where the entities write depth (pixel depth): a head in front of shaded floor keeps no rim of its own
-   * light. false shows it stretched as a plain texture.
+   * light. false shows it stretched as a plain texture. OL-14: with lighting.walls and an oblique camera it is what turns
+   * pixel depth on (a lit wall in front of its own shadow has that rim), so false leaves pixel depth off there too.
    */
   lightEdges: true,
   /**
@@ -842,6 +848,48 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * the face map's heights in the light pass (a crate's lid edge over its front, an arm over a body). WebGL for now.
    */
   selfShadow: false,
+  /**
+   * OL-6: the shading a sprite's own normals cause (its normal map's, or the ones its height map gives), for the sun and
+   * for the lamps apart. A light's shading on a pixel is what the normal takes from it: 0 where the pixel gets what it
+   * gets as drawn, 1 where it gets nothing. `subtract` comes off it first (what falls under 0 stays 0: a face shaded
+   * less than that is lit as drawn), then `strength` multiplies what is left: 0 lights the sprite as it is drawn, 1
+   * with nothing subtracted lights it by its normals. The sun's shading runs from 0 to 1 - lighting.sun.skyLight (0.6
+   * by default), a lamp's from 0 to 1. Faces (decorations with a normal) and sprites without maps do not read it. The
+   * default (the owner's, 2026-11-18): under the sun, strength 1 with 0.5 subtracted, so only what turns well away from
+   * the sun darkens, and by a tenth of the sun's light at most (a tree keeps its painted light, a roof's far slope
+   * shows); under a lamp, the relief whole. normalShadingOf reads it.
+   */
+  normalShading: Object.freeze({
+    sun: Object.freeze({ strength: 1, subtract: 0.5 }),
+    lamps: Object.freeze({ strength: 1, subtract: 0 }),
+  }),
+  /**
+   * OL-4: walls. true: an entity's `shadowCaster.setWall()` stops lamps and headlights at its Collider's outline, as tall
+   * as the world: each light sweeps the walls in its reach (the spatial worker's neighbour lists, pre-render's visibility
+   * sweep) and the light pass lights only what the light sees, the wall's own sprite included, whatever the camera. false
+   * (the default): no sweep, and setWall warns.
+   */
+  walls: false,
+  /**
+   * OL-4: how a wall itself is lit where a lamp reaches its edge. 0 (the default): its own sprite, whole, as drawn (a wall
+   * with no sprite of its own, a mesh or a tilemap, stays in its shadow). Above 0: the light enters every wall that many
+   * px from the edge and fades out there, whatever is drawn in it (a rock lit along its rim), and no sprite is lit whole.
+   */
+  wallDepth: 0,
+  /**
+   * OL-4: the share of a lamp's light that still reaches the floor behind a wall, 0 to 1. 0.33 (the default, the look
+   * the old pass had: a wall's shadow is a third as bright as the lamp's light beside it); 0 leaves a wall's shadow
+   * with the scene's ambient and the other lights alone; 1 and walls stop nothing. A wall's `shadowCaster.opacity`
+   * under 1 lets that much more of the rest through. lightBehindWallsOf reads it.
+   */
+  lightBehindWalls: 0.33,
+  /**
+   * OL-9: with lighting.walls, a lamp's walls kept from frame to frame. Pre-render gathers each lamp's walls every
+   * frame; where the lamp, the walls in its reach and their opacity are what they were (a street lamp among houses),
+   * it keeps the row the light pass reads and sweeps nothing. false sweeps every lamp every frame (to measure, or to
+   * rule the cache out of a wrong shadow).
+   */
+  wallCache: true,
   /**
    * DX-GBUF: how the G-buffer passes draw. 'mrt' (default): the face map and the entity ids map in one pass with two
    * colour targets (WebGL2 drawBuffers, WebGPU two targets); 'pass': a pass each. Same picture; one pass costs about a
@@ -856,10 +904,10 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   unshaded: false,
   /**
    * 'add' — type 3 glows go to the lightGlows ADD mesh: over everything, after the light (nothing in front covers them).
-   * 'sprite' — the same quads join the entity list, each right after its entity's sprite (on its sort line), so it is
+   * 'sorted' — the same quads join the entity list, each right after its entity's sprite (on its sort line), so it is
    *   drawn over its own entity and whatever stands in front covers it; unshaded (DX-GLOWRADIUS: the light gradient's
    *   frame carries DX-UNSHADED's mark), so the night does not darken a light's halo. That turns the G-buffer and the
-   *   unshaded pass on.
+   *   unshaded pass on. Any other value warns (Pixi's set-up) and draws as 'add'.
    */
   lightGlow: 'add',
   /**
@@ -879,13 +927,13 @@ export const LIGHTING_DEFAULTS = Object.freeze({
 });
 
 /**
- * DX-GLOWRADIUS: whether a scene's halos are unshaded: a lit scene whose halos join the entities (lightGlow 'sprite'). The
+ * DX-GLOWRADIUS: whether a scene's halos are unshaded: a lit scene whose halos join the entities (lightGlow 'sorted'). The
  * atlas then marks the light gradient's frame unshaded (SpriteSheetRegistry.createBigAtlas's unshadedGlows).
  * @param {object|undefined} lighting config.lighting
  * @returns {boolean}
  */
 export function unshadedGlowsOf(lighting) {
-  return lighting?.enabled === true && (lighting.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
+  return lighting?.enabled === true && (lighting.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sorted';
 }
 
 /**
@@ -900,6 +948,37 @@ export function lightGlowResolutionOf(lighting) {
   return Math.min(1, Math.max(1 / 16, v));
 }
 
+/**
+ * OL-4: a scene's lighting.lightBehindWalls in 0..1; the default's when it is missing or not a number.
+ * @param {object|undefined} lighting config.lighting
+ * @returns {number}
+ */
+export function lightBehindWallsOf(lighting) {
+  const v = lighting?.lightBehindWalls;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.lightBehindWalls;
+  return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/**
+ * OL-6: a scene's lighting.normalShading, each of its four numbers in 0..1; the default's for one that is missing or not
+ * a number (a scene may write any of them).
+ * @param {object|undefined} lighting config.lighting
+ * @returns {{ sun: { strength: number, subtract: number }, lamps: { strength: number, subtract: number } }}
+ */
+export function normalShadingOf(lighting) {
+  const given = lighting?.normalShading;
+  const one = (light, key) => {
+    const of = given !== null && typeof given === 'object' ? given[light] : undefined;
+    const v = of !== null && typeof of === 'object' ? of[key] : undefined;
+    if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.normalShading[light][key];
+    return v < 0 ? 0 : v > 1 ? 1 : v;
+  };
+  return {
+    sun: { strength: one('sun', 'strength'), subtract: one('sun', 'subtract') },
+    lamps: { strength: one('lamps', 'strength'), subtract: one('lamps', 'subtract') },
+  };
+}
+
 // ============================================================================
 // CAMERA DEFAULTS (DX-CAMERA)
 // ============================================================================
@@ -911,7 +990,7 @@ export function lightGlowResolutionOf(lighting) {
  *   heightScaleY = cos(pitch) unless they are set.
  * - floorScaleY: how tall the floor is drawn against its width, in (0, 1]. Light pools are measured on the floor, so a
  *   light reaches R across and R * floorScaleY up and down: an ellipse. 1 = straight down (round pools), ~0.7 = a 3/4
- *   top-down view, 0.5 = 2:1 isometric. Point, raycasted, particle and LiquidFun lights, cones, point-light shadows and
+ *   top-down view, 0.5 = 2:1 isometric. Point, particle and LiquidFun lights, cones, point-light shadows and
  *   the default floorScaleY of a ShadowCaster's volume read it.
  * - heightScaleY: screen px that a px of height rises (faces, height maps, volumes).
  * - yaw: degrees the view turns about the vertical (45 for an isometric diamond). Read by nothing yet.

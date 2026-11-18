@@ -1,4 +1,4 @@
-// DX-LIGHTAPI A4 and its review: under raycasted lighting a light that casts searches its own reach (shadowRange, or
+// DX-LIGHTAPI A4 and its review: in a scene with walls (lighting.walls) a light that casts searches its own reach (shadowRange, or
 // its radius, past its offset), so no Collider.visualRange has to cover it. That row is also the entity's neighbour
 // list, which its class may read: a class that reads its neighbours keeps the list its visualRange gives, as if it
 // carried no light, and only a light no code reads widens. On real spatial workers (spatialWorkerMicrobench's

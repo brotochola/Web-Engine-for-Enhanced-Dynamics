@@ -95,8 +95,72 @@ bool ownTexel(vec4 m, float selfId) {
   return selfId > 0.5 && abs(floor(m.b * 255.0 + 0.5) * 256.0 + floor(m.a * 255.0 + 0.5) - selfId) < 0.5;
 }
 
+// #if WALLS
+// OL-4: the walls' rows (lampWallRow.js), a row a lamp with walls in its reach: its visibility polygon as the sweep left
+// it. Texel 0: the vertex count, the first vertex's angle, the lamp's floor point; then the directions' index, four a
+// texel; from WALL_VERT0 the vertices (their offset to the lamp, their angle, the code of the edge that starts there).
+uniform sampler2D uWallRows;
+// lighting.wallDepth (px the light enters a wall from the edge it reaches; 0: its own sprite, whole) and
+// lighting.lightBehindWalls (the share of a lamp's light a wall's shadow keeps).
+uniform vec4 uWalls;
+// lampWallRow.js's numbers (tests/node/lampWallRow.test.js holds the two copies together).
+const int WALL_BINS = 256;
+const int WALL_VERT0 = 65;
+const int WALL_WALK = 16;
+
+// A direction's place around the lamp, 0..4, rising with atan2 (lampWallRow.js wallAngle).
+float wallAngle(vec2 v) {
+  float t = v.x / max(abs(v.x) + abs(v.y), 1e-6);
+  return v.y >= 0.0 ? 1.0 - t : 3.0 + t;
+}
+
+// The share of a lamp's light that reaches floor point p past the walls (lampWallRow.js wallRowLight): 1 on the lamp's
+// side of the polygon's edge that covers p's direction. Beyond a wall's edge, lighting.lightBehindWalls plus what the wall lets
+// through; and the wall itself is lit: its own pixels whole (selfId: the G-buffer's id at the pixel), or, with
+// lighting.wallDepth, whatever lies within that depth of the edge, fading. tag: the lamp's row + 1 (its light data's
+// fourth row, z), 0 for a lamp nothing stops.
+float wallVisibility(vec2 p, float tag, float selfId) {
+  if (tag < 0.5) return 1.0;
+  int row = int(tag + 0.5) - 1;
+  vec4 head = texelFetch(uWallRows, ivec2(0, row), 0);
+  int n = int(head.x + 0.5);
+  if (n < 3) return 1.0;
+  vec2 v = p - head.zw;
+  float a = wallAngle(v);
+  if (a < head.y) a += 4.0;
+  int b = clamp(int((a - head.y) * (float(WALL_BINS) * 0.25)), 0, WALL_BINS - 1);
+  vec4 starts = texelFetch(uWallRows, ivec2(1 + (b >> 2), row), 0);
+  int slot = b & 3;
+  int e = int((slot == 0 ? starts.x : slot == 1 ? starts.y : slot == 2 ? starts.z : starts.w) + 0.5);
+  vec4 v0 = texelFetch(uWallRows, ivec2(WALL_VERT0 + e, row), 0);
+  vec4 v1 = texelFetch(uWallRows, ivec2(WALL_VERT0 + e + 1, row), 0);
+  for (int s = 0; s < WALL_WALK; s++) {
+    if (e + 1 >= n || v1.z > a) break;
+    e++;
+    v0 = v1;
+    v1 = texelFetch(uWallRows, ivec2(WALL_VERT0 + e + 1, row), 0);
+  }
+  if (v0.w < 0.5) return 1.0;
+  vec2 edge = v1.xy - v0.xy;
+  vec2 rel = v - v0.xy;
+  // The vertices turn with rising atan2 around the lamp, so the lamp's side of an edge is where this cross is positive.
+  float inside = (edge.x * rel.y - edge.y * rel.x) / max(length(edge), 1e-4);
+  float lit = clamp(inside + 0.5, 0.0, 1.0);
+  if (lit >= 1.0) return 1.0;
+  float owner = floor(v0.w / 256.0);
+  float opacity = (v0.w - owner * 256.0) / 255.0;
+  float beyond = uWalls.y + (1.0 - uWalls.y) * (1.0 - opacity);
+  if (uWalls.x > 0.0) {
+    float into = clamp(1.0 + inside / uWalls.x, 0.0, 1.0);
+    beyond += (1.0 - beyond) * into * into * (3.0 - 2.0 * into);
+  } else if (selfId > 0.5 && abs(owner - selfId) < 0.5) {
+    beyond = 1.0;
+  }
+  return mix(beyond, 1.0, lit);
+}
+// #endif WALLS
 // #if SUNMAP
-// DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the sprite shadows' layer is.
+// DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the castedShadows layer is.
 uniform sampler2D uSunMap;
 uniform vec4 uSunMapK; // kx, ky (a px of height's landing shift on the floor), groundScaleY, the shadow's opacity
 
@@ -264,6 +328,7 @@ float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, float intensity, i
 // DX-FACES: this pixel's face, in the face map, drawn at this pass's size.
 uniform sampler2D uFaceMap;
 uniform vec4 uFaceLight; // heightScaleY, 0, 0, the sun's direct share (1 - Sun.skyLight)
+uniform vec4 uNormalShade; // OL-6 (lighting.normalShading): the sun's strength and subtract, the lamps' strength and subtract
 uniform vec4 uFaceSun; // towards the sun in the floor's space; w: 1 / its height, so a flat surface reads as the floor
 // #if IDS
 // DX-GBUF (plan §6.4): the G-buffer's entity ids (faceMap.js FACE_IDS_SELF), drawn with the face map.
@@ -311,8 +376,9 @@ float selfShadow(vec3 p, float selfId) {
 
 // DX-GBUF (plan §5.4): a pixel with a face's normal is lit by it (DX-FACES, as always); a FLAT one (faceMap.js
 // FACE_FLAT_CODE: a standing card, normals 'flat') as drawn, every light at full cosine, at its place in 3D; a sprite's
-// own normal (its height's FACE_K_BIT) shows as much as the lamps' share of its light, k = lamps / (lamps + ambient + sun),
-// worked out from the flat light: by day the sprite looks as drawn, at night by a lamp its normals show.
+// own normal (its height's FACE_K_BIT) as drawn, less its shading: what the normal takes from the sun, and from each
+// lamp, less the amount subtracted (never under 0), times the strength (OL-6: lighting.normalShading, for the sun and
+// for the lamps apart). Strength 0 is as drawn; strength 1 with nothing subtracted is by the normal.
 vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
   float q = floor(face.b * 255.0 + 0.5) * 256.0 + floor(face.a * 255.0 + 0.5);
   bool kRule = q >= 32768.0;
@@ -356,8 +422,11 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
 // #endif SELFSHADOW
   vec3 total = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB);
   total += vec3(uSunR, uSunG, uSunB) * uSunIntensity * (1.0 - uFaceLight.w + uFaceLight.w * sunDirect);
-  // The lamps lit as drawn (cosine 1), for FLAT pixels and the normals' strength.
-  vec3 lampFlat = vec3(0.0);
+  // The lamps on a pixel lit as drawn (cosine 1): a FLAT pixel's. OL-6: on a sprite's own normal each lamp loses its
+  // shading, 1 - cosine, less the amount subtracted (a face under it is lit by that lamp as drawn), times the strength
+  // (uNormalShade.w and .z).
+  vec3 lampDrawn = vec3(0.0);
+  float lampShading = isFlat ? 0.0 : uNormalShade.z;
   const float DISTANCE_SCALE = 1.0 / 1024.0;
   // The cones first, then every other light as before.
   int coneCount = int(uConeCount);
@@ -395,11 +464,18 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
 // #if LAMPMAP
     cone *= lampVisibility(p, posInt.xy, col.a, posInt.w, posInt.z, selfId, i);
 // #endif LAMPMAP
+// #if WALLS
+    // OL-4: a wall between the lamp and the pixel's floor point (its own entity's wall leaves it lit).
+    if (cone > 0.0) cone *= wallVisibility(p.xy, texelFetch(uLightData, ivec2(i, 3), 0).z, selfId);
+// #endif WALLS
     if (cosine > 0.0) {
       total += col.rgb * cosine * cone * intensityScaled
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
-    if (both) lampFlat += col.rgb * cone * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    if (both) {
+      lampDrawn += col.rgb * (cone * (1.0 - max(1.0 - max(cosine, 0.0) - uNormalShade.w, 0.0) * lampShading))
+        * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    }
 // #if !TILES
   }
   for (int j = 0; j < MAX_LIGHTS; j++) {
@@ -416,6 +492,8 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
     float d = length(toLight);
     float cosine = dot(n, toLight) / max(d, 0.001);
     if (cosine <= 0.0 && !both) continue;
+    // OL-6: the face's own cosine, before the lamp's map and the pixel's own shade scale it.
+    float facing = max(cosine, 0.0);
     // The source's height is folded into I' and the colour (I' = I + h²): I / (I + d²) = k I' / (I' - h² + d²).
     float scaled = DISTANCE_SCALE * DISTANCE_SCALE;
     float intensityScaled = posInt.z * scaled;
@@ -443,21 +521,35 @@ vec3 faceLight(vec2 world, vec4 face, float selfId, bool selfOn) {
 // #endif LAMPMAP
     // The light ends at its radius (reachWindow), and its shadows fade out with it.
     float win = reachWindow(dot(toLight.xy, toLight.xy), posInt.z, col.a);
+// #if WALLS
+    // OL-4: a wall between the lamp and the pixel's floor point (its own entity's wall leaves it lit).
+    if (win > 0.0) win *= wallVisibility(p.xy, texelFetch(uLightData, ivec2(i, 3), 0).z, selfId);
+// #endif WALLS
     if (cosine > 0.0) {
       total += col.rgb * cosine * win * intensityScaled
         / (intensityScaled + (d * d - col.a * col.a) * scaled);
     }
-    if (both) lampFlat += col.rgb * (lampVis * lampSelf * win) * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    if (both) {
+      lampDrawn += col.rgb * (lampVis * lampSelf * win * (1.0 - max(1.0 - facing - uNormalShade.w, 0.0) * lampShading))
+        * intensityScaled / (intensityScaled + (d * d - col.a * col.a) * scaled);
+    }
 // #if TILES
     }
 // #endif TILES
   }
   if (!both) return total;
-  vec3 totalFlat = vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB) + vec3(uSunR, uSunG, uSunB) * uSunIntensity * sunFlat
-    + lampFlat;
-  if (isFlat) return totalFlat;
-  float k = clamp(dot(lampFlat, vec3(1.0)) / max(dot(totalFlat, vec3(1.0)), 0.0001), 0.0, 1.0);
-  return mix(totalFlat, total, k);
+  // A FLAT pixel gets the sun as drawn (sunFlat). OL-6: on a sprite's own normal the sun's shading is what the normal
+  // takes from that, in shares of the sun (by the normal a face gets the sky's share and the direct share by its
+  // cosine): the amount subtracted comes off it first, so a face under it stays as drawn, and the strength scales the
+  // rest (uNormalShade.y and .x). A face that looks at the sun more than the floor does gains instead, by the strength
+  // alone. The lamps lost their shading in their loops (lampDrawn).
+  float sunLit = sunFlat;
+  if (!isFlat) {
+    float sunByNormal = 1.0 - uFaceLight.w + uFaceLight.w * sunDirect;
+    sunLit += (max(sunByNormal - sunFlat, 0.0) - max(sunFlat - sunByNormal - uNormalShade.y, 0.0)) * uNormalShade.x;
+  }
+  return vec3(uBaseAmbient) + vec3(uNightR, uNightG, uNightB) + vec3(uSunR, uSunG, uSunB) * uSunIntensity * sunLit
+    + lampDrawn;
 }
 // #endif FACES
 
@@ -528,6 +620,12 @@ void main() {
   totalLight += sunColor * uSunIntensity;
 // #endif !SUNMAP
   totalLight += vec3(uNightR, uNightG, uNightB);
+// #if WALLS
+  // OL-4: whose pixel this is (the G-buffer's id: a sprite lying on the floor writes no face, but its entity). A wall's
+  // own pixels stay lit beyond its edge.
+  vec4 wallIds = textureLod(uFaceIds, gl_FragCoord.xy / uViewport, 0.0);
+  float wallSelf = floor(wallIds.r * 255.0 + 0.5) * 256.0 + floor(wallIds.g * 255.0 + 0.5);
+// #endif WALLS
 
   // The cones first (each times its cone), then every other light as before.
   int coneCount = int(uConeCount);
@@ -568,6 +666,9 @@ void main() {
 // #if LAMPMAP
     attenuation *= lampVisibilityFloor(fragWorld, posInt.xy, col.a, posInt.w, posInt.z, i);
 // #endif LAMPMAP
+// #if WALLS
+    if (attenuation > 0.0) attenuation *= wallVisibility(fragWorld, texelFetch(uLightData, ivec2(i, 3), 0).z, wallSelf);
+// #endif WALLS
     totalLight += col.rgb * attenuation * coneFactor(deltaScaled, cone);
 // #if !TILES
   }
@@ -597,6 +698,9 @@ void main() {
 // #if LAMPMAP
       attenuation *= lampVisibilityFloor(fragWorld, lightWorld, col.a, posInt.w, intensity, i);
 // #endif LAMPMAP
+// #if WALLS
+      if (attenuation > 0.0) attenuation *= wallVisibility(fragWorld, texelFetch(uLightData, ivec2(i, 3), 0).z, wallSelf);
+// #endif WALLS
       totalLight += color * attenuation;
     }
 // #if TILES

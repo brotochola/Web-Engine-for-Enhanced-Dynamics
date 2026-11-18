@@ -49,7 +49,7 @@ function buildScene() {
         bullet: { maxBullets: 0 },
         physics: { maxJoints: 0 },
         spatial: { cellSize: 128, maxNeighbors: 64, maxEntitiesPerCell: 96, rowsPerBlock: 2, numberOfSpatialWorkers: 1 },
-        lighting: { enabled: false, maxLights: 10, shadowsEnabled: false, maxFlashes: 0, raycasted: false },
+        lighting: { enabled: false, maxLights: 10, shadowsEnabled: false, maxFlashes: 0 },
         logic: { staggeredUpdates: false },
         debug: { maxDebugDrawEntries: 1 },
         navigation: { enabled: false },

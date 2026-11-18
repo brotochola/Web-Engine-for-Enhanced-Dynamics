@@ -106,18 +106,18 @@ export class LandingScene extends Scene {
     spatial: { numberOfSpatialWorkers: 0, maxNeighbors: 0 },
     logic: { numberOfLogicWorkers: LOGIC_WORKERS },
     particle: { maxParticles: 0, decals: false },
-    // Ray-cast lights (the lanterns, the campfire) with shadows from the walls (shadowCaster.setWall): the side view's
-    // flat camera turns raycasted lighting on, and its lights pool on the backdrop, seen face on (a floor of 1, not
-    // sin(0)). The ambient follows the camera (chapters.js): 1 leaves the picture as drawn, lower lets the lights show.
+    // A side view: its lights (the lanterns, the campfire) pool on the backdrop, seen face on (a floor of 1, not sin(0)).
+    // The ambient follows the camera (chapters.js): 1 leaves the picture as drawn, lower lets the lights show.
     // The sun is only that ambient (Sun.intensity, written every frame): nothing casts its shadows.
     camera: { pitch: 0, floorScaleY: 1 },
     lighting: {
       enabled: true,
+      // Walls: the planks, the hung crates and the beam (ropes.js: shadowCaster.setWall) stop the lights.
+      walls: true,
       shadowsEnabled: false,
       baseAmbient: 0,
       maxLights: 16,
       maxPolygonVertices: 4096,
-      maxOccluderSelfLit: 512,
       resolution: 0.5,
       sun: { enabled: true, intensity: 1 },
     },

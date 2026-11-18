@@ -70,6 +70,18 @@ enum {
   T_CIRC_DX, T_CIRC_DY, T_CIRC_DD, T_CIRC_R2,
   T_OCC_F32,
   T_RESULTS,
+  /* OL-4: optional (0: not asked for). T_OUT_OCC: for each vertex of the polygon, what its ray hit: the occluder's index
+     in the light's list, -1 for a free ray (the vertex past the radius), -2 - entity for a compound solid's boundary
+     (the polar bins' owner). T_RAY_OCC: the merge's scratch for it, a word a ray. Last, so the slots before keep
+     their numbers. */
+  T_OUT_OCC,
+  T_RAY_OCC,
+  /* OL-11: wall_row's. T_OCC_CODE: each occluder of the light's list as the row names it (its entity's id and its
+     opacity: lampWallRow.js wallEdgeCode), an int32 each. T_ROW_OUT: the row, floats. T_ROW_MARKS: its scratch,
+     ROW_BINS + 1 int32. */
+  T_OCC_CODE,
+  T_ROW_OUT,
+  T_ROW_MARKS,
   SLOT_COUNT
 };
 
@@ -426,6 +438,7 @@ typedef struct {
   float *ffx, *ffy, *fex, *fey, *ftn;
   double *cdx, *cdy, *cdd, *cr2;
   uint8_t *occF32; /* MODE_F32: 1 when the polygon's float32 terms hold the gate (see sweep_polygon) */
+  int32_t *outOcc; /* OL-4: what each vertex's ray hit (T_OUT_OCC), or null */
 } Sweep;
 
 /* emitVertex: one sample along the unit direction (dirX, dirY) over the active occluders. */
@@ -466,6 +479,7 @@ INLINE int32_t emit_vertex(const Sweep *s, int32_t activeCount, double dirX, dou
   }
   s->outX[n] = (float)vx;
   s->outY[n] = (float)vy;
+  if (s->outOcc) s->outOcc[n] = minDist < s->R - EPSILON ? hitOcc : -1;
   return n + 1;
 }
 
@@ -499,6 +513,7 @@ INLINE int32_t full_circle(const Sweep *s) {
   for (int32_t i = 0; i < segments; i++) {
     s->outX[i] = (float)(s->lx + s->fullC[i] * s->R);
     s->outY[i] = (float)(s->ly + s->fullS[i] * s->R);
+    if (s->outOcc) s->outOcc[i] = -1;
   }
   return segments;
 }
@@ -783,6 +798,9 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
   const float *xs = s->outX;
   const float *ys = s->outY;
   const int32_t edges = n >= 3 ? n : 0;
+  /* OL-4: what each ray hit, when the caller asked (the edge that set its distance, or the bins' owner). */
+  int32_t *outOcc = s->outOcc;
+  int32_t *rayOcc = outOcc ? (int32_t *)(uintptr_t)t[T_RAY_OCC] : 0;
 
   if (edges > 0) {
     for (int32_t k = 0; k < count; k++) {
@@ -793,6 +811,7 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
       rayCos[k] = polarCos[m];
       raySin[k] = polarSin[m];
       rayBest[k] = radius;
+      if (rayOcc) rayOcc[k] = -1;
     }
   }
   for (int32_t i = 0; i < edges; i++) {
@@ -842,26 +861,45 @@ INLINE int32_t clip_polar(const uint32_t *t, Sweep *s, int32_t n) {
         k1 = first_ray_after(rayAng, count, hi);
       }
     }
+    /* An edge lies on what its end vertex's ray hit (lampWallRow.js reads the polygon the same way). */
+    const int32_t edgeOcc = outOcc ? outOcc[j] : -1;
     for (int32_t k = k0; k < k1; k++) {
       const double tt = ray_seg_t(lx, ly, rayCos[k], raySin[k], ax, ay, bx, by);
-      if (tt < rayBest[k]) rayBest[k] = tt;
+      if (tt < rayBest[k]) {
+        rayBest[k] = tt;
+        if (rayOcc) rayOcc[k] = edgeOcc;
+      }
     }
     for (int32_t k = 0; k < k2; k++) {
       const double tt = ray_seg_t(lx, ly, rayCos[k], raySin[k], ax, ay, bx, by);
-      if (tt < rayBest[k]) rayBest[k] = tt;
+      if (tt < rayBest[k]) {
+        rayBest[k] = tt;
+        if (rayOcc) rayOcc[k] = edgeOcc;
+      }
     }
   }
+  const int32_t *binOwner = (const int32_t *)(uintptr_t)t[T_POLAR_OWNER];
   for (int32_t k = 0; k < count; k++) {
     const int32_t b0 = k * group;
     const int32_t b1 = b0 + group < bins ? b0 + group : bins;
     double d = polarDist[b0];
+    int32_t nearest = b0;
     for (int32_t b = b0 + 1; b < b1; b++) {
-      if (polarDist[b] < d) d = polarDist[b];
+      if (polarDist[b] < d) {
+        d = polarDist[b];
+        nearest = b;
+      }
     }
-    if (edges > 0 && rayBest[k] < d) d = rayBest[k];
+    /* The bins' owner where a solid's boundary is the nearest thing on the ray; free at the radius. */
+    int32_t occ = d < radius - EPSILON && binOwner[nearest] >= 0 ? -2 - binOwner[nearest] : -1;
+    if (edges > 0 && rayBest[k] < d) {
+      d = rayBest[k];
+      occ = rayOcc ? rayOcc[k] : -1;
+    }
     const int32_t m = b0 + b1;
     s->outX[k] = (float)(lx + polarCos[m] * d);
     s->outY[k] = (float)(ly + polarSin[m] * d);
+    if (outOcc) outOcc[k] = occ;
   }
   s->res[R_MERGE_COUNT] = (uint32_t)count;
   s->res[R_MERGE_GROUP] = (uint32_t)group;
@@ -943,6 +981,7 @@ INLINE int32_t sweep_light(uint32_t table, double lx, double ly, double maxRadiu
   s.cdd = (double *)(uintptr_t)t[T_CIRC_DD];
   s.cr2 = (double *)(uintptr_t)t[T_CIRC_R2];
   s.occF32 = (uint8_t *)(uintptr_t)t[T_OCC_F32];
+  s.outOcc = (int32_t *)(uintptr_t)t[T_OUT_OCC];
 
   /* N-39's stamp: one per call, the seen array cleared when it wraps. */
   uint32_t stamp = s.res[R_STAMP] + 1;
@@ -974,4 +1013,100 @@ int32_t sweep_light_f32(uint32_t table, double lx, double ly, double maxRadius, 
 __attribute__((export_name("sweep_light_simd")))
 int32_t sweep_light_simd(uint32_t table, double lx, double ly, double maxRadius, int32_t occCount, int32_t polar) {
   return sweep_light(table, lx, ly, maxRadius, occCount, polar, MODE_SIMD);
+}
+
+/* OL-11: a lamp's row for the light pass, from the polygon the sweep left at T_OUT_X / T_OUT_Y / T_OUT_OCC:
+   src/render/visibility/lampWallRow.js writeWallRow, bit for bit (tests/node/wallRowKernel.test.js holds the two
+   together), for a light with no compound solid in reach (its vertices name occluders of the list or nothing).
+   The row: float 0 the vertex count, 1 the first vertex's angle, 2 and 3 the lamp on the floor; 4 .. 4 + ROW_BINS
+   the directions' index; from 4 * ROW_VERT0 a vertex every four floats (its offset to the lamp in the floor's
+   terms, its angle unwrapped, the code of the edge that starts at it), then the first vertex again a turn later.
+   JS computes in doubles and rounds where it says Math.fround; so does this, step for step. Returns the floats
+   written. */
+enum { ROW_BINS = 256, ROW_VERT0 = 65 };
+
+/* lampWallRow.js wallAngle: a direction's place around the lamp, 0..4, rising with atan2. */
+INLINE float row_angle(float x, float y) {
+  const float sum = __builtin_fabsf(x) + __builtin_fabsf(y);
+  const double den = (double)sum > 1e-6 ? (double)sum : 1e-6;
+  const float t = (float)((double)x / den);
+  return y >= 0.0f ? 1.0f - t : 3.0f + t;
+}
+
+__attribute__((export_name("wall_row")))
+int32_t wall_row(uint32_t table, double lx, double ly, double floorInv, int32_t n) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const float *xs = (const float *)(uintptr_t)t[T_OUT_X];
+  const float *ys = (const float *)(uintptr_t)t[T_OUT_Y];
+  const int32_t *hits = (const int32_t *)(uintptr_t)t[T_OUT_OCC];
+  const int32_t *occCode = (const int32_t *)(uintptr_t)t[T_OCC_CODE];
+  float *row = (float *)(uintptr_t)t[T_ROW_OUT];
+  int32_t *marks = (int32_t *)(uintptr_t)t[T_ROW_MARKS];
+  if (n < 3) {
+    row[0] = 0.0f;
+    row[1] = 0.0f;
+    row[2] = 0.0f;
+    row[3] = 0.0f;
+    return 4;
+  }
+  for (int32_t b = 0; b <= ROW_BINS; b++) marks[b] = 0;
+  const float x0 = (float)((double)xs[0] - lx);
+  const float y0 = (float)(((double)ys[0] - ly) * floorInv);
+  const float ang0 = row_angle(x0, y0);
+  float prevRaw = ang0;
+  double turned = 0.0;
+  /* Each vertex's own code: the occluder its ray hit, 0 for a free ray. An edge takes the next vertex's, or this
+     one's where the next ray is free. */
+  const int32_t first = hits[0] >= 0 ? occCode[hits[0]] : 0;
+  int32_t cur = first;
+  float *v = row + 4 * ROW_VERT0;
+  for (int32_t i = 0; i < n; i++, v += 4) {
+    const float rx = (float)((double)xs[i] - lx);
+    const float ry = (float)(((double)ys[i] - ly) * floorInv);
+    if (i > 0) {
+      /* Unwrapped: each vertex turns on from the one before it, never back. */
+      const float raw = row_angle(rx, ry);
+      double step = (double)raw - (double)prevRaw;
+      if (step < -2.0) step += 4.0;
+      else if (step > 2.0) step -= 4.0;
+      if (step > 0.0) turned += step;
+      if (turned > 4.0) turned = 4.0;
+      prevRaw = raw;
+      /* The first bin that starts at or over this vertex's angle; a whole turn on, none (the last mark). The angles
+         never turn back, so the vertices a bin sees are the first so many: each writes its own index at its bin (the
+         last one there stays), a store with nothing read back. Counting them there (marks[reach]++) read the word
+         the vertex before had just written, two vertices on one ray after the other: 0.59 ms a frame for 720 lamps. */
+      int32_t reach = (int32_t)__builtin_ceil(64.0 * ((double)(float)((double)ang0 + turned) - (double)ang0));
+      if (reach > ROW_BINS) reach = ROW_BINS;
+      marks[reach] = i;
+    }
+    int32_t next = first;
+    if (i + 1 < n) {
+      const int32_t hit = hits[i + 1];
+      next = hit >= 0 ? occCode[hit] : 0;
+    }
+    v[0] = rx;
+    v[1] = ry;
+    v[2] = (float)((double)ang0 + turned);
+    v[3] = (float)(next != 0 ? next : cur);
+    cur = next;
+  }
+  v[0] = x0;
+  v[1] = y0;
+  v[2] = (float)((double)ang0 + 4.0);
+  v[3] = 0.0f;
+  /* The running highest of the marks: the last vertex a bin's start is at or over (the count of them, the first
+     left out); the one before it goes in the row. */
+  int32_t seen = 0;
+  float *bins = row + 4;
+  for (int32_t b = 0; b < ROW_BINS; b++) {
+    const int32_t mark = marks[b];
+    seen = mark > seen ? mark : seen;
+    bins[b] = (float)(seen > 1 ? seen - 1 : 0);
+  }
+  row[0] = (float)n;
+  row[1] = ang0;
+  row[2] = (float)lx;
+  row[3] = (float)(ly * floorInv);
+  return 4 * (ROW_VERT0 + n + 1);
 }

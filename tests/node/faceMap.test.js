@@ -73,12 +73,15 @@ test('a height is kept in 64ths of a px in 21 bits, the face\'s innerZ in the to
   assert.ok(encodeFaceHeight(1e6, 7) < 1 << 24, 'a code is exact in a float32');
 });
 
-// DX-BARRIOS: no lighting.faces: a scene's light can take faces where it is lit and not raycasted (whether any decoration
-// carries a normal is DecorationPool.facesInUse); no wrap, gain or sunDirect (Sun.skyLight).
-test('resolveFaces: a lit scene\'s light takes faces, a raycasted or unlit one does not; no wrap, gain or sunDirect', () => {
+// DX-BARRIOS: no lighting.faces: a scene's light can take faces where it is lit (whether any decoration carries a
+// normal is DecorationPool.facesInUse); no wrap, gain or sunDirect (Sun.skyLight).
+test('resolveFaces: a lit scene\'s light takes faces, walls or not; an unlit one does not; no wrap, gain or sunDirect', () => {
   assert.deepEqual(resolveFaces(null), { ...FACE_DEFAULTS });
   assert.equal(resolveFaces({ enabled: false }).enabled, false);
-  assert.equal(resolveFaces({ enabled: true, raycasted: true }).enabled, false);
+  assert.equal(resolveFaces({ enabled: true }).enabled, true);
+  assert.equal(resolveFaces({ enabled: true, walls: true }).enabled, true, 'a scene with walls keeps them');
+  // A scene may still carry the retired key (it is told so, and it stays in its config): nothing reads it.
+  assert.equal(resolveFaces({ enabled: true, raycasted: true }).enabled, true, 'lighting.raycasted is not read');
   const on = resolveFaces({ enabled: true, faces: { enabled: false, wrap: 0.5 } });
   assert.equal(on.enabled, true, 'the old switch is not read');
   assert.deepEqual(Object.keys(on).sort(), ['enabled', 'heightScaleY']);
@@ -261,7 +264,7 @@ test('the light pass reads a FLAT pixel and the k bit in both languages, and mas
     const on = lightingSource(shader(name), { faces: true, sunMap: true, selfShadow: true, lampMap: true });
     assert.match(on, /253\.5 \/ 255\.0/, `${name}: the FLAT code`);
     assert.match(on, /32768\.0/, `${name}: the k bit`);
-    assert.match(on, /lampFlat/, `${name}: the lamps lit as drawn`);
+    assert.match(on, /lampDrawn/, `${name}: the lamps lit as drawn`);
   }
 });
 
@@ -378,10 +381,20 @@ test('a sprite\'s normals mirror with a negative scale and turn with its rotatio
 });
 
 // N-257: a sprite with a normal map and no height map (or a relief map) stands as its surface says in the G-buffer, pixel
-// depth and the shadow maps: its frame's heights are read only where the maps table marks heights.
-test('a frame without heights takes its surface\'s height in the G-buffer, depth and the columns', async () => {
+// depth and the shadow maps: its frame's heights are read only where the maps table marks heights. OL-4: a sprite without
+// heights stands as a card only where the camera shows height (uFaceSpace.x, heightScaleY, above 0); straight down or
+// from the side it lies on the floor (and nothing divides by that 0).
+test('a frame without heights takes its surface\'s height in the G-buffer, depth and the columns; with no height shown it lies on the floor', async () => {
   const frag = faceFragmentGlsl(shader('faceMap.frag.glsl'), { gbuf: true });
-  assert.match(frag, /float zw = twinHeights\(vMapsWin\) \? zm \* vMapScale\s*: \(\(flags & 4u\) == 0u \? max\(vFootY - vWorld\.y, 0\.0\) \/ uFaceSpace\.x : 0\.0\);/);
+  assert.match(frag, /float zw = twinHeights\(vMapsWin\) \? zm \* vMapScale\s*: \(\(flags & 4u\) == 0u && uFaceSpace\.x > 0\.0 \? max\(vFootY - vWorld\.y, 0\.0\) \/ uFaceSpace\.x : 0\.0\);/);
+  assert.match(frag, /if \(\(flags & 4u\) == 0u && uFaceSpace\.x > 0\.0\) \{\s*finalColor = faceTexel\(vec2\(254\.0 \/ 255\.0\), max\(vFootY - vWorld\.y, 0\.0\) \/ uFaceSpace\.x, false\);/, 'a sprite without maps too');
+  assert.equal(frag.split('/ uFaceSpace.x').length - 1, 2, 'no other card height that divides by heightScaleY');
+  for (const name of ['instancedSprite.wgsl', 'instancedSpritePose.wgsl']) {
+    const w = faceMapWgsl(shader(name), { gbuf: true });
+    assert.match(w, /else if \(\(flags & 4u\) == 0u && uniforms\.uFaceSpace\.x > 0\.0\) \{ zw = max\(in\.vFootY - in\.vWorld\.y, 0\.0\) \/ uniforms\.uFaceSpace\.x; \}/, name);
+    assert.match(w, /if \(\(flags & 4u\) == 0u && uniforms\.uFaceSpace\.x > 0\.0\) \{\s*return faceTexel\([^,]+, max\(in\.vFootY - in\.vWorld\.y, 0\.0\) \/ uniforms\.uFaceSpace\.x, false\);/, `${name}: without maps too`);
+    assert.equal(w.split('/ uniforms.uFaceSpace.x').length - 1, 2, `${name}: no other card height that divides by heightScaleY`);
+  }
   assert.match(frag, /bool sobel = \(normals == 2u \|\| !TWIN_NORMALS\) && \(twinHeights\(vMapsWin\) \|\| twinRelief\(vMapsWin\)\);/);
   const depth = pixelDepthFragment(shader('instancedSprite.frag.glsl'), { gbuf: true });
   assert.match(depth, /if \(twinPresent\(md\) && twinHeights\(vMapsWin\) && !glow\) \{\s*floorY = /);

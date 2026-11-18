@@ -48,7 +48,7 @@ function ringCompound(segs, r0, r1) {
 
 function build(entity, revision, body) {
   return ensureCompoundSolid(
-    entity, revision, body.head, body.next, body.active, body.vertCount, body.vx, body.vy, 0, body.fixtures, false,
+    entity, revision, body.head, body.next, body.active, body.vertCount, body.vx, body.vy, 0, body.fixtures,
   );
 }
 

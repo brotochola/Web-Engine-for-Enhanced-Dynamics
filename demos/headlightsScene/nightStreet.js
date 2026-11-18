@@ -13,8 +13,6 @@ const { ShapeType } = enums;
 
 // ?carSpeed= reaches this module on the logic worker through WEED.params (`location` there is the worker script's).
 const CAR_SPEED = Number(WEED.params?.get('carSpeed') ?? 3);
-// ?raycast=0: the scene's camera is not flat, so there are no walls (headlightsScene.js reads the same knob).
-const RAYCAST = Number(WEED.params?.get('raycast') ?? 1) === 1;
 const LANE = -28; // px inside the road's centre line
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -58,10 +56,10 @@ const roadAt = new Float64Array(3); // roadPoint's x, y and heading, reused ever
 /**
  * A house whose ShadowCaster has geometry for both kinds of shadow:
  * - setBox: the box it is (a volume), so the sun's shadow is the shadow of that box at the hour's angle.
- * - lamps.setWall + Collider: what stops the lamps and the headlights under raycasted lighting (the flat camera). Lights
- *   work on the floor, and in this view the house's walls and roof are drawn over the floor behind it, so the Collider
- *   covers the whole picture (not only the footprint) and the wall lights the house through the picture's own outline
- *   ({ shape: 'sprite' }): the wall that faces a beam is lit, the far side stays dark.
+ * - lamps.setWall + Collider: what stops the lamps and the headlights (the scene's lighting.walls). Lights work on the
+ *   floor, and in this view the house's walls and roof are drawn over the floor behind it, so the Collider covers the
+ *   whole picture (not only the footprint): the light stops at its outline, and the house's own picture is lit where a
+ *   beam reaches it.
  */
 export class House extends GameObject {
   static components = [Collider, SpriteRenderer, ShadowCaster];
@@ -77,7 +75,8 @@ export class House extends GameObject {
     this.collider.offsetY = -HOUSE_PICTURE_HEIGHT / 2; // up from the foot, over the picture
 
     this.shadowCaster.setBox(HOUSE_WIDTH, HOUSE_DEPTH, HOUSE_HEIGHT, { offsetY: -HOUSE_DEPTH / 2 });
-    if (RAYCAST) this.shadowCaster.lamps.setWall({ shape: 'sprite' });
+    // A wall only where the scene asks for walls (headlightsScene.js: ?walls=0 asks for none, and setWall would warn).
+    if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall();
   }
 }
 
@@ -121,7 +120,8 @@ export class Car extends GameObject {
     // and cabin (the roof shorter than its base) as the sun's volume.
     this.collider.shapeType = ShapeType.Box;
     const front = setUpStreetCar(this, config.sheet);
-    if (RAYCAST) this.shadowCaster.lamps.setWall({ shape: 'sprite' });
+    // A wall only where the scene asks for walls (lighting.walls), as the houses.
+    if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall();
 
     const light = this.lightEmitter;
     light.radius = HEADLIGHT.radius;

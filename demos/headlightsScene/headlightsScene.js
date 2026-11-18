@@ -1,10 +1,10 @@
 // Headlights — the light API on one street at night: the standard cars (demos/img/autos) with cone headlights, round
-// street lamps, and houses with geometry for their shadows, under raycasted lighting.
+// street lamps, and houses with geometry for their shadows, among walls that stop the lights.
 //
 //   LightEmitter            radius, color, brightness, elevation, glow, glowOffsetY, offsetX, castShadows, shadowRange
 //   cone lights             coneAngle, coneSoftness, direction: the cars' headlights (nightStreet.js, Car)
-//   camera.pitch 90         a flat view lights by raycasting: lights are stopped by walls, the houses and the cars cut
-//                           the beams (shadowCaster.lamps.setWall)
+//   lighting.walls          lights are stopped by walls: the houses and the cars cut the beams
+//                           (shadowCaster.lamps.setWall)
 //   camera.floorScaleY      the floor is drawn 0.7 as tall (the cars' pictures: 0.736), and so are pools and cones
 //   shadowCaster.setBox     the houses and cars as volumes, for the sun's shadows by day (N); lighting.maxVolumes is
 //                           their room
@@ -12,7 +12,9 @@
 // The panel's keys (C V F B K R G N) change one field of every headlight (or lamp) at a time; nothing else changes.
 // The road, its meshes and the panel are Sun Street's: this scene is about the lights.
 //
-// URL: ?hour=22 (15 is day), ?cars=6, ?carSpeed=3, ?raycast=0 (no pitch: basic lighting, no walls),
+// URL: ?hour=22 (15 is day), ?cars=6, ?carSpeed=3, ?walls=0 (no walls: the lamps cast layer shadows instead),
+// ?wallDepth=24 (the default: the light enters each house 24 px from the edge it reaches; 0 lights its picture whole),
+// ?behindWalls=0.33 (the default: a wall's shadow keeps a third of the lamp's light; 0 leaves it the ambient alone),
 // ?backend=webgpu.
 // WASD or arrows pan, the wheel zooms, H hides the panel.
 
@@ -26,7 +28,12 @@ const { Scene, Camera, Keyboard, Sun, Transform, LAYER_KIND } = WEED;
 
 const param = (key, fallback) => Number(WEED.params?.get(key) ?? fallback);
 const CARS = Math.max(0, Math.floor(param('cars', 6)));
-const RAYCAST = param('raycast', 1) === 1;
+const WALLS = param('walls', 1) === 1;
+// lighting.wallDepth: the light fades into a wall that many px from the edge it reaches (the owner's pick for the houses,
+// 2026-11-18); 0 lights a wall's own picture whole instead.
+const WALL_DEPTH = Math.max(0, param('wallDepth', 24)) || 0;
+// lighting.lightBehindWalls: how much of a lamp's light still reaches the floor behind a house or a car (0 to 1).
+const LIGHT_BEHIND_WALLS = Math.min(1, Math.max(0, param('behindWalls', 0.33)));
 const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 
 const NIGHT_HOUR = 22;
@@ -74,14 +81,18 @@ export class HeadlightsScene extends Scene {
       street: { kind: LAYER_KIND.MESH, zIndex: 0.5 },
     },
     // The floor is drawn 0.7 as tall, about as the cars' pictures draw it (0.736): the pools and cones are
-    // foreshortened the same way. Pitch 90, a flat view, lights by raycasting (the walls); without it, basic lighting.
-    camera: RAYCAST ? { pitch: 90, floorScaleY: 0.7 } : { floorScaleY: 0.7 },
+    // foreshortened the same way.
+    camera: { floorScaleY: 0.7 },
     lighting: {
       enabled: true,
+      // The houses and the cars are walls that stop the lamps and the headlights (nightStreet.js); ?walls=0 sets none.
+      walls: WALLS,
+      wallDepth: WALL_DEPTH,
+      lightBehindWalls: LIGHT_BEHIND_WALLS,
       baseAmbient: 0.05,
       maxLights: 32, // 7 lamps and up to 25 cars in view
       maxVolumes: HOUSES + CARS, // each house's box and each car's body and cabin
-      shadowsEnabled: true, // the sun's shadows (the volumes), and the lamps' sprite shadows with ?raycast=0
+      shadowsEnabled: true, // the sun's shadows (the volumes), and the lamps' layer shadows with ?walls=0
       sun: {
         enabled: true,
         dayCycle: { enabled: false }, // the hour only moves with N (create sets it)
@@ -270,7 +281,7 @@ export class HeadlightsScene extends Scene {
     panel.show('v', deg(APERTURES[this._aperture]));
     panel.show('f', String(SOFTNESS[this._softness]));
     panel.show('b', String(BRIGHTNESS[this._brightness]));
-    panel.show('k', !RAYCAST ? (this._castShadows ? 'on (sprite shadows)' : 'off') : this._castShadows ? 'on' : 'off');
+    panel.show('k', !WALLS ? (this._castShadows ? 'on (layer shadows)' : 'off') : this._castShadows ? 'on' : 'off');
     panel.show('r', SHADOW_RANGES[this._shadowRange] === 0 ? 'the radius' : `${SHADOW_RANGES[this._shadowRange]} px`);
     panel.show('g', this._lampGlow ? String(LAMP.glow) : '0');
     panel.show('n', `${Math.floor(Sun.hour)}:00`);
@@ -280,7 +291,7 @@ export class HeadlightsScene extends Scene {
     const ms = this.readWorkerStepMs();
     this._panel.readout.textContent =
       `${CARS} cars, cone headlights ${HEADLIGHT.radius} px; ${LAMPS.length} lamps ${LAMP.radius} px\n` +
-      `${RAYCAST ? 'raycasted lighting' : 'basic lighting'}   H hides this panel\n` +
+      `${WALLS ? 'walls stop the lights' : 'no walls (?walls=0)'}   H hides this panel\n` +
       `renderer ${ms.renderer.toFixed(2)} ms   pre-render ${ms.preRender.toFixed(2)} ms   logic ${ms.logic.toFixed(2)} ms`;
   }
 }

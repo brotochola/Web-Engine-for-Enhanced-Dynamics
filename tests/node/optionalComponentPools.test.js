@@ -47,7 +47,7 @@ test('Component.clearArrays nulls schema fields and sharedBuffer', () => {
   assert.equal(TempComp.globalEntityCount, 0);
 });
 
-test('ensureOptionalComponentPools only seeds from lighting/flash flags', () => {
+test('ensureOptionalComponentPools only seeds from the lighting, flash and walls flags', () => {
   const scene = Object.create(Scene.prototype);
   scene.nextComponentId = 10;
   scene.componentPools = {};
@@ -56,7 +56,7 @@ test('ensureOptionalComponentPools only seeds from lighting/flash flags', () => 
       enabled: false,
       maxFlashes: 0,
       shadowsEnabled: false,
-      raycasted: false,
+      walls: false,
     },
   };
 
@@ -69,10 +69,12 @@ test('ensureOptionalComponentPools only seeds from lighting/flash flags', () => 
   assert.equal(typeof LightEmitter.componentId, 'number');
   assert.equal(scene.componentPools.FlashComponent, undefined);
   assert.equal(scene.componentPools.ShadowCaster, undefined);
+  assert.equal(scene.componentPools.LightOccluder, undefined, 'no walls, no walls\' columns');
 
   scene.config.lighting.shadowsEnabled = true;
   scene.config.lighting.maxFlashes = 8;
-  scene.config.lighting.raycasted = true;
+  // OL-4: lighting.walls as Scene._applyConfigDefaults resolves it (asked for, with lighting on).
+  scene.config.lighting.walls = true;
   scene.ensureOptionalComponentPools();
   assert.ok(scene.componentPools.FlashComponent);
   assert.ok(scene.componentPools.ShadowCaster);
@@ -138,7 +140,7 @@ test('Balls-like scene allocates dense cores only (no optional lighting/Adobe SA
           maxLights: 10,
           shadowsEnabled: false,
           maxFlashes: 0,
-          raycasted: false,
+          walls: false,
         },
         logic: { staggeredUpdates: false },
         debug: { maxDebugDrawEntries: 1 },
@@ -230,7 +232,7 @@ test('entity-listed ShadowCaster/LightEmitter allocate when lighting flags off',
           maxLights: 10,
           shadowsEnabled: false,
           maxFlashes: 0,
-          raycasted: false,
+          walls: false,
         },
         logic: { staggeredUpdates: false },
         debug: { maxDebugDrawEntries: 1 },

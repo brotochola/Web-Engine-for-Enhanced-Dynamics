@@ -25,6 +25,19 @@
 import { Container, Geometry, Mesh, Shader, State, ViewContainer } from '../vendor/pixi.min.js';
 import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
 
+/**
+ * OL-14: whether a scene's walls ask for the entities' depth (pixel depth, with an oblique camera). A wall's own picture
+ * is lit where the floor behind it is in its shadow; with the light drawn at a share of the canvas and stretched as a plain
+ * texture, the wall's light spilled a texel or two onto the shaded floor round its outline. The edges above need the
+ * entities' depth to tell the two apart. Not where the scene turned the edges off.
+ * @param {object} [lighting] config.lighting, its defaults applied
+ */
+export function wallEdgesWanted(lighting) {
+  if (!lighting || lighting.enabled !== true || lighting.walls !== true) return false;
+  const resolution = Number(lighting.resolution);
+  return resolution > 0 && resolution < 1 && lighting.lightEdges !== false;
+}
+
 /** The depth the mark quad stands at: behind every entity pixel in the view (DX-DEPTH's values there stay under 0.96),
  * in front of the cleared 1. */
 export const LIGHT_EDGES_MARK_DEPTH = 0.999;

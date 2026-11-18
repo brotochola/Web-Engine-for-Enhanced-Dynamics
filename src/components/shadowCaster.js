@@ -4,13 +4,13 @@
 //
 // A class lists ShadowCaster alone. A volume is an internal VolumeShadowCaster's (a mesh on the volumeShadows layer, with room
 // in a scene whose config.lighting.maxVolumes is above 0), and a wall is the internal LightOccluder's columns (the visibility
-// sweep of raycasted lighting reads them, and a scene with that lighting pools them): ShadowCaster's setters drive both. The
+// sweep reads them, and a scene with config.lighting.walls pools them): ShadowCaster's setters drive both. The
 // last setter wins: the sprite rows, a volume or a wall an earlier setter gave the entity go when no light kind casts them any
 // more.
 
 import { Component } from '../core/component.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
-import { LightOccluder, LIGHT_OCCLUDER_MASK_COLLIDER, LIGHT_OCCLUDER_MASK_SPRITE } from './lightOccluder.js';
+import { LightOccluder } from './lightOccluder.js';
 import { MESH_NO_TEXTURE, resolveMeshTextureId } from './meshRenderer.js';
 import { SpriteRenderer } from './spriteRenderer.js';
 import { VolumeShadowCaster, holdsVolume } from './volumeShadowCaster.js';
@@ -20,7 +20,7 @@ import { VolumeShadowCaster, holdsVolume } from './volumeShadowCaster.js';
  * DX-CASTER (plan §5.5, F9): how an entity casts, for the sun and for the lamps apart. AUTO is its sheet's default
  * (meta.shadowCast: a render with a height map casts its solid unless the sheet says 'sprite'). AUTO, SPRITE and HEIGHT_MAP
  * are the sprite rows'; BOX and HULL the volume's (setBox, addLevel, setHull); WALL the LightOccluder's (lamps and
- * headlights, under raycasted lighting).
+ * headlights, in a scene with config.lighting.walls).
  */
 export const CAST_KIND = Object.freeze({ AUTO: 0, SPRITE: 1, HEIGHT_MAP: 2, BOX: 3, HULL: 4, WALL: 5, NONE: 6 });
 const KIND_NAMES = ['sprite', 'sprite', 'heightMap', 'box', 'hull', 'wall', 'none'];
@@ -64,7 +64,7 @@ function sheetCastsSolidAt(i) {
   return sheet != null && sheet.castsSolid === true;
 }
 
-/** Whether the scene has walls: raycasted lighting pools LightOccluder's columns, which its visibility sweep reads. */
+/** Whether the scene has walls: config.lighting.walls pools LightOccluder's columns, which the visibility sweep reads. */
 function wallsOn() {
   return LightOccluder.active != null;
 }
@@ -113,11 +113,10 @@ export function restoreCasterWall(i) {
   if (wall) LightOccluder.block[i] = ShadowCaster.opacity[i];
 }
 
-/** A spawned slot: no wall, its shape the collider's, blocking all the light (setWall writes them again). */
+/** A spawned slot: no wall, blocking all the light (setWall writes them again). */
 export function resetCasterWall(i) {
   if (!wallsOn()) return;
   LightOccluder.active[i] = 0;
-  LightOccluder.maskMode[i] = LIGHT_OCCLUDER_MASK_COLLIDER;
   LightOccluder.block[i] = 1;
 }
 
@@ -223,25 +222,23 @@ function castHull(caster, sun, lamps, points, options) {
 }
 
 /**
- * A wall that stops lamps and headlights in a flat view (raycasted lighting): the entity's occluder, cut by its Collider
- * ('collider', the fastest) or by the sprite's alpha ('sprite'), taking out the caster's opacity of the light. Another camera
- * has no walls: it warns once and changes nothing.
+ * A wall that stops lamps and headlights (a scene with config.lighting.walls): the entity's occluder, its Collider's outline,
+ * as tall as the world, taking out the caster's opacity of the light; the wall's own sprite stays lit where the light
+ * reaches its edge. A scene without walls warns once and changes nothing.
  */
-function castWall(caster, sun, lamps, { shape = 'collider' } = {}) {
+function castWall(caster, sun, lamps) {
   if (!lamps) {
     warnOnce('shadowCaster.sun.setWall: the sun casts no wall (a wall stops lamps and headlights); shadowCaster.lamps.setWall');
     return caster;
   }
   if (!wallsOn()) {
     warnOnce(
-      'shadowCaster.setWall: a wall stops lamps and headlights in a flat view (raycasted lighting: config.camera.pitch 90 ' +
-        'or 0, with lighting enabled), which this scene is not; the entity casts as it did',
+      'shadowCaster.setWall: a wall stops lamps and headlights in a scene that asks for walls (config.lighting.walls: true, ' +
+        'with lighting enabled), which this scene does not; the entity casts as it did',
     );
     return caster;
   }
-  if (shape !== 'collider' && shape !== 'sprite') warnOnce(`shadowCaster.setWall: shape is 'collider' or 'sprite', not '${shape}'`);
   const i = caster.index;
-  LightOccluder.maskMode[i] = shape === 'sprite' ? LIGHT_OCCLUDER_MASK_SPRITE : LIGHT_OCCLUDER_MASK_COLLIDER;
   LightOccluder.block[i] = ShadowCaster.opacity[i];
   writeKinds(caster, sun, lamps, CAST_KIND.WALL);
   LightOccluder.active[i] = 1;
@@ -433,7 +430,7 @@ export const CASTER_METHODS = {
   },
 
   /**
-   * Flat view (raycasted lighting): it stops lamps and headlights as a wall, and the sun casts nothing from it. `lamps.setWall`
+   * With config.lighting.walls: it stops lamps and headlights as a wall, and the sun casts nothing from it. `lamps.setWall`
    * keeps the sun's shadow. Its light finds the wall through the spatial grid, so the entity has a Collider.
    * @param {{ shape?: 'collider'|'sprite' }} [options] what cuts the light: the Collider (default) or the sprite's alpha
    */
@@ -456,7 +453,7 @@ export const CASTER_METHODS = {
     return side != null ? side : (this._lampSide = new CastSide(this, false, true));
   },
 
-  /** How much light it takes out, 0 to 1: the sprite shadows read it, and a wall (setWall) takes that much out of a lamp. */
+  /** How much light it takes out, 0 to 1: the layer shadows read it, and a wall (setWall) takes that much out of a lamp. */
   get opacity() {
     return ShadowCaster.opacity[this.index];
   },

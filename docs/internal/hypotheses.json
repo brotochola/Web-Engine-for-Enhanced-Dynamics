@@ -10057,13 +10057,13 @@
       ],
       "id": "N-38",
       "title": "A solid the light sees is lit over its whole fill: a lit chunk's square edges show inside the rock",
-      "status": "open",
-      "statusText": "open (render, low): in REVIEW_PLAN since its review, not in the register until 2026-11-01",
+      "status": "superseded",
+      "statusText": "superseded 2026-11-18 (OL-15): the fill it describes went with the old fan pass; the light pass lights a wall to a depth from the edge the lamp reaches (lighting.wallDepth), the falloff its next step asked for, and the planet demo asks 40 px",
       "date": "2026-11-01",
       "area": "render",
       "kind": "bug",
       "result": "",
-      "next": "Planet demo with the covering ranges (the chunks around the shaft). A fill lit only near its visible surface (a depth falloff from the polygon edge, in Pixi's self-lit shader) would hide the seams."
+      "next": ""
     },
     {
       "aliases": [],
@@ -14371,13 +14371,13 @@
     {
       "id": "N-163",
       "title": "WebGPU: the sprite-masked self-lit fills draw bright L-shaped edges on the occluders; WebGL fills them",
-      "status": "open",
-      "statusText": "found 2026-11-13 checking E-260 on WebGPU, not read in the code yet",
+      "status": "superseded",
+      "statusText": "superseded 2026-11-18 (OL-15): the sprite-masked self-lit fills went with the old fan pass; nothing draws them",
       "date": "2026-11-13",
       "area": "render",
       "kind": "bug",
       "result": "visPolyStressScene ?mask=sprite&selfLit=20000: WebGL against WebGPU 64 951 of 921 600 pixels differ (max 141); on WebGPU each sprite-masked occluder shows two bright edges, on WebGL none. Collider masks on WebGPU show none. The pass before E-260 and after it draw the same on WebGPU (0 pixels differ): it predates E-260.",
-      "next": "The UVs the pass writes against what the WebGPU texture source holds (a frame of the atlas, its y orientation), the sampler (clamp, filtering at the frame's edge) and the texture bound; a capture with the occluders' picture made opaque in a frame of its own.",
+      "next": "",
       "refs": [
         "REVIEW_PLAN.md#N-163"
       ],
@@ -22244,10 +22244,10 @@
       "id": "DX-ONELIGHT",
       "title": "One light system for every camera: a flat view (camera.pitch 90 or 0) gets the same lighting options as any other camera (normal and height maps, unshaded, the shadow maps, sprite and height map shadows from the lamps), raycasted lighting stops being a pass of its own, and the engine stops inventing what the developer did not bring (the self-lit fill's sphere normal, the automatic strength of a sprite's normals)",
       "status": "open",
-      "statusText": "Owner-approved plan (2026-11-17), not started: \"agregá esto al backlog, bien detallado\"; to be built by a session of its own, from the plan alone. Decided with the owner: what casts (the sprite or the height map) and where shadows are drawn (the layer or a map) stay the developer's options; removing the painted (layer) mode was proposed and rejected (\"los sprites estampados quedan bien, son opciones que los devs tienen\")",
+      "statusText": "Owner-approved plan (2026-11-17), revised and built on 2026-11-18 on dx/one-light: OL-1 to OL-15. One light pass for every camera: walls are lighting.walls, read by the light pass (final B); the old fan pass is deleted (OL-15, 27efbf1a); the owner accepted the pictures and the numbers on 2026-11-18 with his defaults; the Predator gate at crowd=2.5 passes (R-1404); the shaders pass on the four GPUs; not merged",
       "date": "2026-11-17",
       "result": "",
-      "next": "OL-1 (the names) and OL-2 (the normals' option) stand alone; OL-3 (the race) decides how OL-4 is built; nothing is deleted before OL-4's pictures and numbers are accepted. Estimate: about 16 to 23 h in a row. The owner's open decisions are in the plan's section 5.",
+      "next": "To merge: the owner's OK on pictures and numbers, his two numbers for the sun's normals (OL-6) and the third a wall's shadow keeps (OL-4); the Predator gate at crowd=2.5 with its A/A; the bundles. After the merge or before: OL-3 (the race), the sweep's kernel writing a moving lamp's row, the deletion of the old pass.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22259,7 +22259,13 @@
         "raycasted lighting retired"
       ],
       "records": [
-        "R-1317"
+        "R-1317",
+        "R-1350",
+        "R-1351",
+        "R-1401",
+        "R-1404",
+        "R-1411",
+        "R-1413"
       ],
       "rank": 20
     },
@@ -22267,10 +22273,10 @@
       "id": "OL-1",
       "title": "Names: the shadows' painted mode is lighting.sunShadows / lampShadows 'layer' (was 'sprite') and a halo drawn among the entities is lighting.lightGlow 'sorted' (was 'sprite'); 'sprite' keeps meaning the sprite that casts (setSprite, shadowCast.sun) or cuts (setWall's shape)",
       "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), not started; the owner approved both names. The word cost the planning chat an hour: \"sprite shadows\" was read as the sprite that casts",
+      "statusText": "Written 2026-11-18 on dx/one-light (69f0eb38, 1bcdf08d), suites green; not merged",
       "date": "2026-11-17",
-      "result": "",
-      "next": "Two commits (the shadows' value, the glow's). No code compares the shadow modes with 'sprite' (everything asks === 'map'): the two defaults, a check that warns once on any other value, the six reads of lightGlow, then types, guide, demos, stress scenes, checks and tests (the plan lists them). No aliases. No picture changes, so no sitting: the suites and check:types.",
+      "result": "sunShadows / lampShadows 'layer' and lightGlow 'sorted'; an unknown value warns once and falls to the default; every demo, scene, test, type and guide page moved. No picture changes, nothing to time.",
+      "next": "Merge with the rest of dx/one-light when the owner accepts OL-4's pictures.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22282,17 +22288,19 @@
         "shadow mode names"
       ],
       "records": [
-        "R-1317"
+        "R-1317",
+        "R-1350",
+        "R-1351"
       ]
     },
     {
       "id": "OL-2",
       "title": "A sprite's normals under the sun and under the lamps as the developer's option (lighting.normalStrength { sun, lamps } recommended), instead of the light pass's automatic blend by the lamps' share of the light (k = lamps / (lamps + ambient + sun): by day as drawn, at night by the normals)",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), not started; the owner asked for the option (\"estas cuestiones automáticas que hace weedjs no me copan tanto\") and picks its default from pictures",
+      "status": "kept-hygiene",
+      "statusText": "Written 2026-11-18 on dx/one-light (89e2afcb); its key became OL-6's lighting.normalShading the same day, where the owner picked the sun's numbers; not merged",
       "date": "2026-11-17",
-      "result": "",
-      "next": "faceLight in lightingBasic (GLSL and WGSL): each kind of light mixes \"as drawn\" and \"by its normal\" by its own strength, no k; normalLightCheck and faceLightCheck updated; captures of the light bench at noon, dusk and night and of Predator ?light3d=1 by night, old against new, for the owner (recommended default sun 0, lamps 1: today's picture at both ends of the old blend); every variant still links on WebGL; gpuPassBench on both backends and the Predator gate once.",
+      "result": "lighting.normalStrength { sun, lamps } in uFaceLight's two free numbers, default { sun: 0, lamps: 1 }; the automatic k is gone. normalLightCheck, WebGL and WebGPU: 0.5,0.5 worst 2.1 of 255; full strength worst 3.4 (lamp) and 4.0 (sun), p99 2.4, mean 0.6.",
+      "next": "Nothing of its own.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -22304,17 +22312,20 @@
         "automatic normal strength"
       ],
       "records": [
-        "R-1317"
+        "R-1317",
+        "R-1350",
+        "R-1351",
+        "R-1355"
       ]
     },
     {
       "id": "OL-3",
-      "title": "The race: one flat stress scene on raycasted lighting (the CPU sweep) against the lamps' shadow maps (walls as volumes taller than the lamps), at 8 to 128 casting lights, on the main machine and on the ASUS: what should stop the lamps in a flat view",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), not started; a measurement, nothing changes in src/",
+      "title": "The race: one flat stress scene on raycasted lighting (the CPU sweep drawn as fans) against the lamps' shadow maps (walls as volumes taller than the lamps), the common pass alone and final B's pass, at 8 to 128 casting lights; the main machine decides: what should stop the lamps in a flat view",
+      "status": "answered",
+      "statusText": "Run 2026-11-18 after the code (the owner's order), on dx/one-light: final B stays. The owner asked what A and B were, was told (both techniques stay: the sweep for walls, the lamps' maps as lighting.lampShadows 'map'), and the deletion of the old pass went ahead on B",
       "date": "2026-11-17",
-      "result": "",
-      "next": "A knob on visPolyStressScene for the maps' arm (no pitch, lampShadows 'map', each occluder a volume taller than the lamps, lamps with an elevation), a capture showing the two arms' shadows match, then R M R M pairs: pre-render's and Pixi's STEP_MS − WAIT_MS on both arms, the GPU's time a frame, the frames drawn on the ASUS, and a shadow's edge zoomed in for the owner. Proposed rule: final A (the maps, the sweep deleted) when the maps are within the detection limit at 32 and 64 lamps on both machines and the owner accepts the edges; else final B (the sweep stays and feeds the common light pass). The planner's guess, unmeasured: B (the maps hold 64 lamps at 256 texels and run on the GPU, which limits the ASUS; the sweep ran 720 lights).",
+      "result": "visPolyStressScene at 64 lamps (the maps' ceiling): the maps cost 4.3 ms of GPU a frame against the walls' 1.9 (the fans 1.7 to 2.4, the pass alone 1.3 to 1.6); they save pre-render 0.3 ms still and 0.7 ms moving, and cost Pixi +12 to +32 %. The walls ran 720 lamps the same day (pre-render 2.9 ms still). All under the 6 ms floor: readings.",
+      "next": "Reopen if the lamps' maps lose their 64 lamps' ceiling and their cost: visPolyStressScene ?arm=maps runs the race again.",
       "area": "render",
       "kind": "speed",
       "refs": [
@@ -22325,17 +22336,23 @@
         "raycast against lamp maps"
       ],
       "records": [
-        "R-1317"
+        "R-1317",
+        "R-1350",
+        "R-1352",
+        "R-1353",
+        "R-1354",
+        "R-1400",
+        "R-1405"
       ]
     },
     {
       "id": "OL-4",
       "title": "The flat view on the common light pass: lighting.raycasted no longer picks the pass, a wall stops a lamp through the lamps' maps (final A) or through the sweep's result read by the light pass (final B), and the fans, the self-lit fills, the wedges and their shaders are deleted (about 2 000 lines in final B; about 5 000 and 3 500 of tests in final A)",
-      "status": "open",
-      "statusText": "Planned 2026-11-17 (DX-ONELIGHT), not started; waits for OL-3 and the owner's choice of final",
+      "status": "kept",
+      "statusText": "Written 2026-11-18 on dx/one-light as final B and optimized the same day (OL-7 to OL-13); the owner accepted the pictures and the numbers, and the old pass is deleted (OL-15, 27efbf1a). On a still scene of walls it costs less than the old fan pass did (pre-render -41.6 %, Pixi -44.9 % at 720 lights); with every lamp moving +13.1 % in both; not merged",
       "date": "2026-11-17",
-      "result": "",
-      "next": "Pitch 90 first, then pitch 0 (neither has run on the common pass). A wall's own pixels are lit by the maps' rule (the pixel's entity is the caster's) instead of self-lit's made-up sphere, so the look of every raycast scene changes: captures and films for the owner, who also decides how a wall's own sprite is lit (whole, or to a depth from the edge the lamp sees: N-38's fix). Then the 8 demos and 7 stress scenes moved, the owner scenes (visPoly, compoundVisPoly, flashlight) and the Predator gate, and only then the deletion. Closes N-38 and N-163 by deletion.",
+      "result": "lighting.walls asks for walls whatever the camera; pre-render publishes a row a lamp (lampWallRow.js) and the light pass reads it (WALLS variant, WebGL and WebGPU: 19 of 921 600 px differ, by 3 of 255 at most). A wall's own sprite is lit whole (the G-buffer's id) or, with lighting.wallDepth, the light enters every wall that many px (a wall drawn by a mesh has no id). Walls work on any floor scale, so oblique cameras have them too. Pitch 0 is a flat view by itself.",
+      "next": "Merged with dx/one-light. After it: wall_row's variants pass (OL-11) and the rows' upload for moving lamps, the two that are left of the +13 %.",
       "area": "render",
       "kind": "feature",
       "refs": [
@@ -22347,8 +22364,253 @@
         "raycast pass deleted"
       ],
       "records": [
-        "R-1317"
+        "R-1317",
+        "R-1350",
+        "R-1351",
+        "R-1353",
+        "R-1354",
+        "R-1355",
+        "R-1358",
+        "R-1359",
+        "R-1400",
+        "R-1402",
+        "R-1403",
+        "R-1404",
+        "R-1405",
+        "R-1406",
+        "R-1408",
+        "R-1412"
       ]
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "lamp tiles without sprite casters",
+        "volumes only cast no lamp shadow"
+      ],
+      "records": [
+        "R-1352",
+        "R-1356"
+      ],
+      "result": "Pre-render names the casting lamps without a stamp row when the lamps cast into their map, and Pixi then draws the volumes alone into their tiles (tiles for a stamp row or a casting volume, none with neither). visPolyStressScene ?arm=maps before against after: 139 473 of 921 600 px (no shadow before); WebGL against WebGPU 0 px; a frame with a stamp row as before (0 px).",
+      "next": "Its time with the branch's sitting (the Predator gate, the owner scenes); OL-3's maps arm can run.",
+      "id": "OL-5",
+      "kind": "bug",
+      "area": "render",
+      "status": "running",
+      "date": "2026-11-18",
+      "title": "With lampShadows 'map', the lamps get their tiles only in a frame with a stamp row: a scene whose only casters in the lamps' reach are volumes (houses with nobody near) draws no lamp shadow at all",
+      "statusText": "Fixed 2026-11-18 on dx/one-light (13c69176), suites green, captures before and after; not timed (a hygiene keep, with the branch's sitting); not merged"
+    },
+    {
+      "refs": [
+        "ONE_LIGHT_PLAN.md#OL-6"
+      ],
+      "aliases": [
+        "normalShading",
+        "normals subtract",
+        "sun normals threshold"
+      ],
+      "records": [
+        "R-1357",
+        "R-1411"
+      ],
+      "result": "lighting.normalShading { sun: { strength, subtract }, lamps: { strength, subtract } } replaces lighting.normalStrength: shading' = max(0, shading - subtract) * strength, for the sun and for each lamp. Light bench at 16:00, the view that changes and the light lost there: full strength 20.3 % and 43.5 %; strength 0.8 with 0.2 subtracted 16.5 % and 24.0 %; strength 1 with 0.3 subtracted 16.3 % and 21.8 %. normalLightCheck on both backends at four settings: worst 4.0 of 255. The default picture is the same (0 px).",
+      "next": "Merged with dx/one-light.",
+      "id": "OL-6",
+      "kind": "dx",
+      "area": "render",
+      "status": "kept-hygiene",
+      "date": "2026-11-18",
+      "title": "The shading a sprite's normals cause takes an amount subtracted (never under 0) and a strength, for the sun and for the lamps apart (lighting.normalShading), so only the faces turned away from a light darken: the owner's ask, from OL-2's pictures",
+      "statusText": "Asked by the owner and written 2026-11-18 on dx/one-light (2696eafe); the owner's default for the sun the same day: strength 1 with 0.5 subtracted (34f09c20); not timed (two numbers of a uniform); not merged"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "cookies without casters",
+        "empty shadow layer cookies",
+        "cookie pass walls"
+      ],
+      "records": [
+        "R-1358"
+      ],
+      "result": "visPolyStressScene ?lights=360&arm=walls (GTX 1650): the 960x540 cookie pass 0.339 ms of GPU a frame before, no draw after; the picture the same (0 px, WebGL and WebGPU). The frame's GPU total 3.65 and 3.89 ms before, 2.04 and 3.41 after (a reading: it moves by more than the pass).",
+      "next": "Its place in the branch's sitting (the owner scenes with an A/A, the Predator gate: Predator always has casters, so its cookies stay).",
+      "id": "OL-7",
+      "kind": "speed",
+      "area": "render",
+      "status": "kept-hygiene",
+      "date": "2026-11-18",
+      "title": "The lamps' cookies are not packed in a frame with no sun caster and no stamp: they lighten what the casters drew on the shadows' layer, and on an empty layer they were a pass that changed no pixel (every scene of walls since OL-4)",
+      "statusText": "Kept as hygiene 2026-11-18 on dx/one-light: the pass is gone and the picture is byte for byte the same; not merged"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "wall row bins",
+        "writeWallRow index",
+        "row directions index"
+      ],
+      "records": [
+        "R-1359"
+      ],
+      "result": "visPolyStressScene ?lights=720&arm=walls: pre-render 6.415 -> 6.062 ms, -5.8 % (4 of 4 pairs, detection limit 4.6 % from the A/A). Kernel (wallRowMicrobench): -21 % at 16 vertices, -18 % at 48, -9.5 % at 128. The row is the same bit for bit.",
+      "next": "Merged with dx/one-light. What is left of the rows' cost is the vertex loop (22 ns a vertex): the sweep's kernel writing the row, or a still lamp's row not rebuilt.",
+      "id": "OL-8",
+      "kind": "speed",
+      "area": "preRender",
+      "status": "kept",
+      "date": "2026-11-18",
+      "title": "A lamp's row for the light pass counts its 256 directions' index (a mark a vertex, a running count in integers) instead of walking the bins against the vertices' angles, which was half a row's time",
+      "statusText": "Kept 2026-11-18 on dx/one-light (d0b2d0c5): the kernel and the scene; not merged"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "wallCache",
+        "still lamp row kept",
+        "wall row cache",
+        "sweep skipped"
+      ],
+      "records": [
+        "R-1402",
+        "R-1403"
+      ],
+      "result": "visPolyStressScene ?lights=720&arm=walls, ?wallCache=0 against the default: pre-render 6.061 -> 2.982 ms with the lamps still (-51.4 %, 4 of 4 pairs, limit 4.6 %), 5.581 -> 5.784 ms with every lamp moving (+2.5 %, inside the limit). The rows are the same bit for bit (a real worker, both gathers, every kind of change).",
+      "next": "Merged with dx/one-light. Then Pixi: a frame whose rows are all kept need not read or upload them (its +16 % over the fans, R-1400); and the sweep's kernel writing a moving lamp's row.",
+      "id": "OL-9",
+      "kind": "speed",
+      "area": "preRender",
+      "status": "kept",
+      "date": "2026-11-18",
+      "title": "A lamp's row is kept while what goes into its sweep is the same (lighting.wallCache): a signature of the lamp, its walls and their codes after the gather; a still lamp among still walls is not swept and its row is not rebuilt",
+      "statusText": "Kept 2026-11-18 on dx/one-light (f37e693d): the scene, and the rows bit for bit against the uncached path; not merged"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "wall rows upload skipped",
+        "frame signature rows",
+        "rows not uploaded"
+      ],
+      "records": [
+        "R-1403"
+      ],
+      "result": "visPolyStressScene ?lights=720&arm=walls, ?wallCache=0 against the default: Pixi 1.601 -> 0.626 ms (-61.1 %, 4 of 4 pairs; under the 6 ms floor, read not judged), no row uploaded (770 -> 127.5 KB of textures a frame at 360 lights). With OL-9, fans against walls on a still scene: pre-render 5.117 -> 2.959 ms (-41.6 %), Pixi 1.207 -> 0.662 ms (-44.9 %).",
+      "next": "Merged with dx/one-light.",
+      "id": "OL-10",
+      "kind": "speed",
+      "area": "pixi",
+      "status": "kept",
+      "date": "2026-11-18",
+      "title": "Pixi neither copies nor uploads a frame's rows when they are the rows it sent last: pre-render signs each frame's rows (its lamps in order, each row's signature) in the rows' header",
+      "statusText": "Kept 2026-11-18 on dx/one-light (fef43402): the pairs agree and the upload is gone; Pixi is under the 6 ms floor, so the tool does not judge it; not merged"
+    },
+    {
+      "refs": [],
+      "records": [
+        "R-1407"
+      ],
+      "kind": "speed",
+      "date": "2026-11-18",
+      "aliases": [
+        "wall_row",
+        "row kernel",
+        "wasm.wallRow"
+      ],
+      "result": "Alone (?wasmOff=wallRow against the default, 720 moving lamps): pre-render 5.774 -> 5.609 ms, -2.4 %, a tie; the kernel's row in Node 440 / 820 / 1730 ns at 16 / 48 / 128 vertices against the JS writer's 790 / 1495 / 3307. Kept with OL-12 (together -8.1 % moving, -7.3 % still). The same row bit for bit.",
+      "next": "Its cost is 0.59 ms a frame for 720 swept lamps and not understood: a variants pass (float32 arithmetic under a tolerance, the conversions a vertex, the division), Node to screen and Chrome to decide.",
+      "id": "OL-11",
+      "area": "preRender",
+      "status": "kept-kernel",
+      "title": "The sweep's kernel writes a swept lamp's row for the light pass (wall_row, wasm.wallRow) from the polygon it left, where pre-render built it in JS",
+      "statusText": "Kept 2026-11-18 on dx/one-light (6d52e156) as a kernel that is faster and a scene that barely moved by itself (-2.4 %); merged into the branch with OL-12; not merged to main"
+    },
+    {
+      "refs": [],
+      "records": [
+        "R-1407"
+      ],
+      "kind": "speed",
+      "date": "2026-11-18",
+      "aliases": [
+        "gather writes codes",
+        "occCode",
+        "no occluder events for rows",
+        "stamp lights without casters"
+      ],
+      "result": "With OL-11, against dx/one-light bd58813b on visPolyStressScene with walls at 720 lights: pre-render 5.813 -> 5.386 ms with every lamp moving (-8.1 %) and 2.938 -> 2.681 ms with them still (-7.3 %), 4 of 4 pairs each, limit 4.6 %. The light loop's JS self time 384 -> 226 ms of 8 s; wall_row did not move.",
+      "next": "Merged with dx/one-light.",
+      "id": "OL-12",
+      "area": "preRender",
+      "status": "kept",
+      "title": "For the walls' rows the gather's kernel writes each packed occluder's code and sends no event for it (pre-render walked a self-lit candidate an occluder to work it out), and the shadow lights are not gathered in a frame with no sun caster",
+      "statusText": "Kept 2026-11-18 on dx/one-light (0219a64d), from a profile of 720 moving lamps; not merged to main"
+    },
+    {
+      "refs": [],
+      "records": [
+        "R-1408"
+      ],
+      "kind": "speed",
+      "date": "2026-11-18",
+      "aliases": [
+        "readWallRows copy",
+        "rows set",
+        "row copy a float at a time"
+      ],
+      "result": "visPolyStressScene ?lights=720&arm=walls&move=40, dx/one-light bd58813b against c4e57fb6: Pixi 1.391 -> 1.232 ms (-11.6 %, 4 of 4 pairs; under the floor: read). Fans against walls with every lamp moving: +13.1 % in pre-render and in Pixi (they were +18.9 % and +19.4 %).",
+      "next": "Merged with dx/one-light.",
+      "id": "OL-13",
+      "area": "pixi",
+      "status": "kept",
+      "title": "Pixi copies a wall's row out of the shared buffer in one set() from a view of it, not a float at a time (0.5 ms a frame for 720 rows that changed)",
+      "statusText": "Kept 2026-11-18 on dx/one-light (c4e57fb6); Pixi is under the 6 ms floor, so the tool does not judge it; not merged to main"
+    },
+    {
+      "refs": [],
+      "records": [
+        "R-1410"
+      ],
+      "date": "2026-11-18",
+      "aliases": [
+        "bright rim round lit houses",
+        "light spill round walls",
+        "wallEdgesWanted",
+        "pixel depth with walls"
+      ],
+      "result": "Headlights, 4 pairs, 41c0aed9 against 0284f1a5: Pixi 0.536 -> 0.575 ms and pre-render 0.372 -> 0.382 ms, both far under the 6 ms floor (read, not judged), 60 of 60 frames drawn. The rim is gone on WebGL and WebGPU (30 251 and 30 151 of 921 600 px differ, all on outlines).",
+      "next": "Merged with dx/one-light. A flat view keeps the rim: N-299.",
+      "id": "OL-14",
+      "kind": "bug",
+      "area": "pixi",
+      "status": "kept-hygiene",
+      "title": "With lighting.walls and an oblique camera, pixel depth turns on, so the light's edges keep a lit wall's light off the dark floor round its outline (the bright rim the owner saw round Headlights' houses)",
+      "statusText": "Kept 2026-11-18 on dx/one-light (0284f1a5) as a fix, at the owner's ask; not merged to main"
+    },
+    {
+      "refs": [],
+      "records": [
+        "R-1412"
+      ],
+      "date": "2026-11-18",
+      "aliases": [
+        "delete the raycast pass",
+        "lightFans removed",
+        "self-lit removed",
+        "wedges removed",
+        "maxOccluderSelfLit retired",
+        "setWall shape removed"
+      ],
+      "result": "src 2 783 lines shorter (pixiWorker.js 1 676, preRenderWorker.js 347, nine shader files 605); the branch against main: src -1 529 lines. Pre-render's rows before against after: 1 856 of 1 856 bit for bit over 8 configurations; the still scenes draw the same picture.",
+      "next": "Merged with dx/one-light. The kernels' dead branches (visibilityGather.c's packed-occluder events, visibilitySweep.c's seen-owner marks) go with their next build, in OL-11's variants pass.",
+      "id": "OL-15",
+      "kind": "refactor",
+      "area": "render",
+      "status": "kept-hygiene",
+      "title": "The old fan pass goes: Pixi's fans, self-lit fills and wedges with their nine shader files, pre-render's published polygons and self-lit queue, debug.lightFans, lighting.maxOccluderSelfLit, setWall's shape; the debug overlay's light polygons read the walls' rows",
+      "statusText": "Kept 2026-11-18 on dx/one-light (27efbf1a) as a deletion, once the owner accepted the pictures and the numbers; not merged to main"
     },
     {
       "refs": [],
@@ -22522,6 +22784,63 @@
       "date": "2026-11-17",
       "title": "A sleeping body pushed with addAcceleration could stay asleep, its acceleration lost: logic stored RigidBody.sleeping = 0 before physics' turn, and bodies_apply_accelerations wakes only where the paint still says asleep",
       "statusText": "found 2026-11-17 while building E-434 (the false-sharing audit's sleeping store); proven on real wasm; fixed the same day"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "car shadow wedge",
+        "high sun shadow sliver",
+        "light bench cars shadow"
+      ],
+      "records": [
+        "R-1355",
+        "R-1409"
+      ],
+      "result": "",
+      "next": "With ?maps=0 (the cars cast their silhouette) the shadows fall down and to the left of each car, as the sun asks; with their height maps the shadow shows only as a wedge at the car's left side, and neither the sun's map against the layer (?sun=layer), nor the footprints' sweep (?sweep=0), nor self shadow (?self=0) changes it. First suspect: the cars' sheets draw half a turn and mirror the rest, and both cars in the capture face a mirrored way: check a height-map caster on a mirrored frame against the same car turned to an unmirrored one (Q / E in the bench), then the columns' x in the caster rows. Captures at 10:00, 12:00 and 14:00 before and after; the trees and the barn as the reference.",
+      "id": "N-297",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "The light bench's cars at a high sun (10:00, 78°) cast a dark wedge at one corner instead of a shadow around the body",
+      "statusText": "Seen by the owner 2026-11-18 on a capture of dx/one-light; main draws the same wedges, so it is older than DX-ONELIGHT. Narrowed the same day by captures at 10:00 (R-1409): it is the cars' height-map shadow; not fixed"
+    },
+    {
+      "refs": [],
+      "records": [],
+      "date": "2026-11-18",
+      "aliases": [
+        "rim flat view walls",
+        "light edges flat view",
+        "light spill pitch 90"
+      ],
+      "result": "",
+      "next": "A mark of the entities' pixels at the canvas's size that does not order them (the painter's own depth from an opaque pass, as E-448's rows hold it, or a stencil mark), read by lightEdges.js in a flat view. Until then lighting.resolution 1 has no rim. Forcing renderer.pixelDepth there reorders overlapping sprites by their foot (the landing scene's letters changed).",
+      "id": "N-299",
+      "kind": "bug",
+      "area": "render",
+      "status": "open",
+      "title": "A flat view (pitch 90 or 0) with walls and the light under the canvas's size: a lit wall's light spills a light texel or two onto the dark floor round its outline, since nothing writes entity depth there and the light's edges stay off",
+      "statusText": "open (render, low): found 2026-11-18 with OL-14, which covers an oblique camera"
+    },
+    {
+      "refs": [],
+      "records": [],
+      "date": "2026-11-18",
+      "aliases": [
+        "merged lamp walls not named",
+        "own pixels dark near compound solid",
+        "row names by vertex"
+      ],
+      "result": "On merged lamps the rows name 1 622 of the 2 014 simple walls the sweep saw before the merge (54 of 213 at 17 vertices a polygon), counted by the wired tests' adapter; not a capture yet.",
+      "next": "A capture first (a house beside a rock, lit from the side). Then name by bin as well as by vertex (the merge knows each bin's owner), or light a wall's own pixels by its id when any bin of the lamp names it.",
+      "id": "N-300",
+      "kind": "bug",
+      "area": "preRender",
+      "status": "open",
+      "title": "Near a compound solid a lamp's row is the 512-bin merge, and a simple wall seen only between two bin rays is on no vertex: its own pixels are not lit beyond its edge (about a fifth of such walls)",
+      "statusText": "open (render, low): found 2026-11-18 adapting the wired tests to the rows (OL-15); not caused by the deletion"
     },
     {
       "id": "E-518",
@@ -36421,6 +36740,139 @@
       ]
     },
     {
+      "id": "R-1350",
+      "date": "2026-11-18",
+      "time": "02:19",
+      "timeFrom": "recorded",
+      "title": "The one-light plan revised against main at 4f60d4bd and its building started: the code first, final B by eye, the race after",
+      "verdict": "note",
+      "text": "**The one-light plan (DX-ONELIGHT, `ONE_LIGHT_PLAN.md`) read again against main at 4f60d4bd, revised, and its building started on `dx/one-light`; nothing run or measured.** Nothing of OL-1 to OL-4 had been built. Since the plan's first reading (1951de51) the light's code took N-262, N-266, N-273 to N-276, E-502, E-508 to E-511 and `lighting.dither` (N-277); N-272 is still on branches.\n\n- **Changed in the plan.** The race (OL-3) is decided on the main machine: its first rule asked for the ASUS too, and the owner said on 2026-11-18 that the HD 620 is not the yardstick (one low-end reading there, no condition). Two more arms: the common pass alone (the floor of what either final costs on the GPU) and final B's own pass. OL-4's gate reads the GPU's time a frame and the frames drawn, since Pixi's `STEP_MS − WAIT_MS` does not see the fill a full-screen pass adds over the fans. In final B the sweep is asked for with a key (`lighting.walls`), not by the pitch. Section 2 brought up to date: the flat view also lacks particle lights, LiquidFun's light field, `pixelArt`, `selfShadow`, `dither` and the light edges; the lamps' map after N-276 (R-1147's 0.69 ms is older than it and than E-508's cache).\n- **The owner's order.** All the code first, with the suites and one capture an item; measuring and optimizing after it. So OL-4 is built before the race, as final B, picked by eye (if the race says A, the row the light pass reads is thrown away, 2 to 3 h of code); the old pass stays behind `debug.lightFans` until the pictures and numbers are accepted; the deletion comes last."
+    },
+    {
+      "id": "R-1351",
+      "date": "2026-11-18",
+      "time": "03:42",
+      "timeFrom": "recorded",
+      "title": "OL-1, OL-2 and OL-4 (final B) written on dx/one-light: the names, the normals' option, walls read by the one light pass; nothing timed yet",
+      "verdict": "note",
+      "text": "**OL-1, OL-2 and OL-4 (final B) are written on `dx/one-light`, with the suites and captures; nothing is timed yet (the owner's order: the code first).** Suites at the end: node 3068, demos 121, types.\n\n- **OL-1** (69f0eb38, 1bcdf08d): `sunShadows` / `lampShadows` `'layer'`, `lightGlow` `'sorted'`; an unknown value warns once. No picture changes.\n- **OL-2** (89e2afcb): `lighting.normalStrength { sun, lamps }`, default `{ sun: 0, lamps: 1 }` until the owner picks from pictures; the automatic `k` is gone. normalLightCheck on WebGL and WebGPU: at 0.5,0.5 worst 2.1 of 255; at full strength worst 3.4 (lamp) and 4.0 (sun), p99 2.4, mean 0.6 (the maps' own steps; its tolerance is 5 now).\n- **OL-4** (9186550f, e57d6659, 94e31445): walls are asked for with `lighting.walls`, whatever the camera; pre-render publishes a row a lamp (its visibility polygon, each edge's wall and opacity) and the light pass reads it (WALLS variant). The old fan pass stays behind `debug.lightFans`; nothing deleted. visPolyStressScene, WebGL against WebGPU: 19 of 921 600 px differ, by 3 of 255 at most. Every moved scene draws without a page error.\n- **Found.** Walls work on any floor scale (the plan said only at 1: the sweep runs in world px, and the Headlights demo already ran it at 0.7), so oblique cameras have walls too. The sweep did not say which wall made an edge: `visibilitySweep.c` now does (engine.wasm 351 269 -> 352 493 B). A wall drawn by a mesh has no id in the G-buffer, so `lighting.wallDepth` (the light enters a wall N px from its edge) was needed for planetPhysicsScene's rock. A wall's shadow keeps the old pass's third of the lamp (`WALL_UMBRA`). Pitch 0 resolves to a flat view by itself.\n- **Open for the owner, from pictures:** the default of `normalStrength`; a wall lit whole or to a depth; the third of the lamp in a wall's shadow; a wall with no sprite of its own now reads dark inside its outline (the old pass drew a lit block).\n- **Next:** the race's knobs and the measuring (OL-3, the gates), the optimizing, then the deletion.",
+      "commits": [
+        "69f0eb38",
+        "1bcdf08d",
+        "89e2afcb",
+        "9186550f",
+        "e57d6659",
+        "94e31445"
+      ]
+    },
+    {
+      "id": "R-1352",
+      "date": "2026-11-18",
+      "time": "04:04",
+      "timeFrom": "recorded",
+      "title": "lampShadows 'map' gives lamps their tiles only with a stamp row: volumes alone cast no lamp shadow (OL-5), which keeps the race's maps arm from running",
+      "verdict": "note",
+      "text": "**Found, not fixed: with `lampShadows: 'map'` a scene whose only casters are volumes draws no lamp shadow (OL-5).** Seen building the race's maps arm: visPolyStressScene `?arm=maps` (64 lamps 40 px high, 700 occluders as `setBox` volumes 400 px high, no sprite caster) draws the lamps and no shadow, with or without a pitch, with pre-render or Pixi packing the sprites (0 of 921 600 px differ between the two).\n\n- **Why (read in the code, not run apart):** Pixi gives a lamp its tile in the lamps' map from the ids pre-render publishes (`_readLampTiles`), and `preRenderWorker._writeStampLightIds(dst, stampN)` returns 0 unless `stampN > 0`: the ids go out only in a frame where at least one sprite caster was stamped for a lamp. The volumes are then drawn into no tile.\n- **Who it reaches:** a street of houses with nobody near its lamps; not the barrio as it runs (it always has people), nor lampShadowStressScene (20 000 walkers).\n- **The race:** the knobs are on visPolyStressScene (`?arm=walls|fans|plain|maps`, `?move=`, `?castLights=`, `?tile=`, `?lampCache=0`); walls, fans and plain draw; the maps arm waits for this fix."
+    },
+    {
+      "id": "R-1353",
+      "date": "2026-11-18",
+      "time": "04:12",
+      "timeFrom": "recorded",
+      "title": "A first reading, not a sitting: the walls in the light pass against the old fan pass at 360 lights, pre-render +0.65 ms, Pixi +0.2 ms after the rows upload only their columns in use",
+      "verdict": "note",
+      "text": "**A first reading of what the walls cost in the light pass against the old fan pass, not a sitting: pre-render +0.6 to 0.7 ms (about +22 %), Pixi +0.2 ms (about +22 %) at 360 lights; no A/A, the GPU not read.** visPolyStressScene `?lights=360`, `?arm=fans` against `?arm=walls`, one build (dx/one-light), GTX 1650 on AC, headed, `--src`, detailed stats off, 3 s warm-up and 8 s, four runs a side in turn (04:05 to 04:09, the result files' times). Each worker's `STEP_MS - WAIT_MS`, exact frames:\n\n| | fans (old pass) | walls (light pass) |\n| --- | --- | --- |\n| pre-render | 3.04, 2.87, 2.99, 2.96 | 3.69, 3.69, 3.55, 3.66 |\n| Pixi, rows uploaded whole | 0.89, 0.91 | 1.31, 1.33 |\n| Pixi, the columns in use only (the commit after) | 0.91, 0.78 | 1.05, 1.04 |\n\n- **Pre-render's +0.65 ms** is the rows' build, in JS, once a lamp with walls (360 a frame here): the candidate for the sweep's kernel.\n- **Pixi's** cost was the upload: this scene sets `maxPolygonVertices` 5000, so a row was 578 texels wide and went up whole; sending the columns in use took 0.28 ms off (1.32 -> 1.04). What is left over the fans is the copy and the upload of the rows in use, every frame, unchanged rows included.\n- **Not read:** the GPU's time a frame (the light pass shades every pixel and the G-buffer pass is on; the fans drew only where a light reaches), which is where this change may cost most; a sitting with an A/A and the baseline over 6 ms (`?lights=720`).\n- Every worker stays far under a frame (pre-render 23 % load, Pixi's own work about 1 ms), 60 fps on both arms.",
+      "commits": [
+        "f56792f2"
+      ]
+    },
+    {
+      "id": "R-1354",
+      "date": "2026-11-18",
+      "time": "04:13",
+      "timeFrom": "recorded",
+      "title": "The GPU's time a frame, fans against the walls in the light pass: 2.73 against 2.98 ms at 360 lights (GTX 1650, one run a side, a reading)",
+      "verdict": "note",
+      "text": "**The GPU's time a frame, old fan pass against the walls in the light pass: 2.73 against 2.98 ms on the GTX 1650 (+0.24 ms, +9 %), one run a side, the GPU's clock not the same in both: a reading, not a sitting.** `glFrameRecorder --gpu-passes`, visPolyStressScene `?lights=360`, `?arm=fans` against `?arm=walls`, dx/one-light at 56c845c1, WebGL, 1920x1080, 181 frames in 3 s each (04:13). Timer queries, none disjoint.\n\n| pass | fans (old) | walls (light pass) |\n| --- | --- | --- |\n| the final frame, 1920x1080 | 1.598 ms | 1.329 ms |\n| the lights: the fans' target 480x270 (2 draws) / the light pass (1 draw) | 1.079 ms | 1.036 ms |\n| a 960x540 pass | 0.049 ms (no draw) | 0.440 ms (1 draw, 20 instances) |\n| the G-buffer, 480x270 | not drawn | 0.167 ms |\n| **a frame** | **2.734 ms** | **2.977 ms** |\n| uploaded a frame | 781.9 KB of buffers, 84.5 KB of textures | 1.2 KB of buffers, 770.3 KB of textures |\n| GL calls a frame | 106.6 | 168.2 |\n| the GPU's clock (nvidia-smi) | P8 all the window, median 360 MHz | P8 47 %, P5 53 %, median 660 MHz |\n\n- **The light pass itself costs what the fans cost** (1.04 against 1.08 ms): reading a lamp's row per pixel is not the expense feared.\n- **What the walls add is two passes the fans did not have:** the G-buffer (0.17 ms, the ids a wall's own pixels need) and a 960x540 pass of 20 instances (0.44 ms). The second looks like the lamps' cookies, drawn here though nothing in the scene casts into them: to confirm, and a candidate to skip. Without it the walls would be level with the fans.\n- **The upload changes kind, not size:** the fans sent 770 KB of vertices a frame, the walls send 643.6 KB of rows (117 x 354 texels) plus 42.2 KB of light tiles. Still the first thing to cut (only the rows that changed).\n- **Not settled:** one run a side, and the walls' run had the GPU at a higher clock half the time, which flatters it. The sitting (A/A, `?lights=720`, both backends) is owed.",
+      "commits": [
+        "f56792f2"
+      ]
+    },
+    {
+      "id": "R-1355",
+      "date": "2026-11-18",
+      "time": "04:27",
+      "timeFrom": "recorded",
+      "title": "The owner on the first pictures: the sun's normals stay off by default (full strength darkens too much), walls lit to a depth preferred, both looks as knobs; the cars' shadow wedges are main's too",
+      "verdict": "note",
+      "text": "**The owner's eye on the first pictures (2026-11-18): the sun's normals at full strength darken everything too much (the default stays 0); a wall lit to a depth looks better than lit whole, for houses and for rocks, and both stay as the dev's knobs.**\n\n- **OL-2, the sun's normals.** Light bench at 16:00 (sun 45° high), `normalStrength.sun` 0 against 1: the owner likes what it does to the barn's roof and not what it does to the rest (\"todo se oscurece mucho en general, demasiado\"). Measured on the captures (the scene's 908 x 720 px, luminance): a fifth of the view changes (20.3 %), and there the light drops 43.5 % at strength 1, 26.1 % at 0.6 and 15.3 % at 0.35. Why, from the shader: by its normal a face gets the sky's share (`sun.skyLight`, 0.4) plus the direct share times its cosine, and the reference is the floor; every upright face that does not look at the sun loses up to 60 %, on a picture that already carries its painted light. **The default stays `{ sun: 0, lamps: 1 }`.** A plain strength lowers the roof's effect as much as the rest: the owner is thinking about a softer shape for it (in conversation, nothing designed or written).\n- **OL-4, a wall's own picture.** With depth (`lighting.wallDepth`) for the houses (Headlights, 24 px) and for the rocks (planetPhysics, 40 px). The engine's default stays 0 (lit whole): both looks are knobs. Headlights' default moved to 24 px (712553ca).\n- **Still the owner's:** whether a wall's shadow keeps a third of the lamp (`WALL_UMBRA`).\n- **Found on the way, N-297:** in the same bench at 10:00 (sun 78° high) the cars' shadows are a dark wedge at one corner of the car. Captured against main (`compareCaptures --vs main --full-rev --query hour=10`): main draws the same wedges, so it is not this branch's.",
+      "commits": [
+        "712553ca"
+      ]
+    },
+    {
+      "id": "R-1356",
+      "date": "2026-11-18",
+      "time": "04:39",
+      "timeFrom": "recorded",
+      "title": "OL-5 fixed: with lampShadows 'map' the volumes cast their lamp shadows in a frame with no stamp row (visPoly ?arm=maps: 139 473 px change, WebGL against WebGPU 0 px); not timed",
+      "verdict": "note",
+      "text": "**OL-5 fixed on dx/one-light (13c69176): with `lampShadows: 'map'`, volumes cast their lamp shadows in a frame with no stamp row. Not timed.**\n\n- **What it was, in two halves:** pre-render published the casting lamps' ids only in a frame with a stamp row (`_writeStampLightIds`), and Pixi drew the lamps' map only then too (`_drawLampMap` returned before the volumes when it had no stamp row).\n- **What changed:** pre-render orders, fades at the cut and names the casting lamps without a stamp row when the lamps cast into their map (`_lampMapCasts`). Pixi gives them tiles for a stamp row or a casting volume, none with neither (an empty tile is read by every pixel of its lamp), and with tiles and no stamp row clears the map and draws the volumes alone (`_drawLampMapVolumes`). A frame with a stamp row runs as before.\n- **Checked:** visPolyStressScene `?arm=maps` before against after: 139 473 of 921 600 px differ (no shadow before; the 64 nearest lamps' after, the cap of `maxShadowCastingLights`); `?lights=40&zoom=1` WebGL against WebGPU 0 px; dxCaptureScene `?hour=22` before against after 0 px. The light bench by night is not a still scene (the same code twice: 2 016 and 3 960 px), so it proves nothing here. node 3072, demos 121.\n- **Next:** the race's maps arm is ready (OL-3); the fix is timed with the branch's sitting (a hygiene keep: it stays unless a worker gets 3 % worse).",
+      "commits": [
+        "13c69176"
+      ]
+    },
+    {
+      "id": "R-1357",
+      "date": "2026-11-18",
+      "time": "04:59",
+      "timeFrom": "recorded",
+      "title": "OL-6 asked by the owner and built: lighting.normalShading (an amount subtracted, then a strength); light bench at 16:00 loses 24.0 % where it changes at 0.8 / 0.2 against 43.5 % at full strength; not timed",
+      "verdict": "note",
+      "text": "**OL-6 asked by the owner and built the same day (2696eafe): `lighting.normalShading { sun: { strength, subtract }, lamps: { strength, subtract } }` replaces `lighting.normalStrength`. Not timed; the owner has not picked the sun's two numbers.**\n\n- **The ask (2026-11-18, in conversation):** full strength on the sun darkens everything; instead of only attenuating the shading the normals cause, take a fixed amount off it (what falls under 0 stays 0) and let the strength multiply it, for the sun and for the lamps. `wrap` was found unclear as a name; the owner asked for a descriptive one.\n- **The rule built:** `shading' = max(0, shading - subtract) * strength`. The subtraction first (the owner wrote the product first): so `subtract` alone says from how much shading a face shows any. The sun's shading is measured against the sun the pixel gets as drawn, in shares of the sun (0 to `1 - sun.skyLight`); a face that gains from its normal keeps its gain, by the strength alone, so strength 1 with nothing subtracted is the old full strength. A lamp's is `1 - cosine`, a lamp at a time.\n- **The name:** the path says what is shaded and by what, the leaves say the arithmetic. `lighting.normalStrength` goes without a retired text (it never left the branch).\n- **Light bench at 16:00** (sun 45° high), the view's pixels that change and the light they lose there, against as drawn:\n\n| sun | view that changes | light lost there |\n| --- | --- | --- |\n| strength 1, nothing subtracted (the old full strength) | 20.3 % | 43.5 % |\n| strength 0.8, subtract 0.2 (the owner's first numbers) | 16.5 % | 24.0 % |\n| strength 1, subtract 0.3 | 16.3 % | 21.8 % |\n\n  The barn's roof keeps its dark slope; trees, cars and people stay near as drawn.\n- **Checked:** `normalLightCheck` (it takes `--subtract` now) on WebGL and WebGPU, sun and lamp, at strength 0,1; 1,1; 1,1 with 0.2,0.3 subtracted; 0.8,0.6 with 0.2,0.1 subtracted: worst 4.0 of 255, the maps' own steps as before. dxCaptureScene at noon and by night against the commit before: 0 of 921 600 px. node 3073, demos 121, types.\n- **Next:** the owner picks the sun's two numbers from the bench (its Scene section has the four knobs); the light pass's time on both backends and the Predator gate with the branch.",
+      "commits": [
+        "2696eafe"
+      ]
+    },
+    {
+      "id": "R-1358",
+      "date": "2026-11-18",
+      "time": "05:13",
+      "timeFrom": "recorded",
+      "title": "OL-7 kept as hygiene: no cookies in a frame with nothing on the shadows' layer; the 960x540 pass 0.339 ms of GPU before, no draw after, the picture the same (0 px)",
+      "verdict": "kept-hygiene",
+      "text": "**OL-7 kept as hygiene on dx/one-light: no cookies in a frame with nothing on the shadows' layer. The 960x540 pass R-1354 pointed at (1 draw, 20 instances) is gone: 0.339 ms of GPU a frame before, no draw after; the picture is the same (0 px).**\n\n- **What it was:** R-1354's reading of the walls in the light pass showed a pass the old fan pass did not have, 0.44 ms at 960x540 with 20 instances. It is the lamps' cookies: each lightens what the casters drew on the shadows' layer inside its lamp's pool (N-154), and this scene draws nothing there. Under the old pass they were not made (N-134); since OL-4 a scene of walls makes them as any scene does.\n- **The change:** `_packGpuShadows` packs the cookies only when a sun caster or a stamp went out. Engine-wide: any scene with casting lamps and no caster in view stops drawing them.\n- **Read** (visPolyStressScene `?lights=360&arm=walls`, GTX 1650 on AC, `glFrameRecorder --gpu-passes`, 5 s + 3 s, two runs a side in turn, 05:11 to 05:13, the GPU at P5 in all four):\n\n| | before | after |\n| --- | --- | --- |\n| the 960x540 pass | 0.339, 0.339 ms (1 draw, 20 instances) | 0.008, 0.009 ms (no draw) |\n| the frame's GPU time | 3.654, 3.885 ms | 2.036, 3.412 ms |\n\n- **How to read it:** the pass's own time is steady and is the result. The frame's total moves from run to run by more than the pass (a TIME_ELAPSED range counts the GPU's idle gaps), so it is a reading: no percentage is claimed for the frame.\n- **Same picture:** before against after 0 of 921 600 px on WebGL and on WebGPU; dxCaptureScene at noon and by night (casters there, the cookies stay) 0 px. node 3076, demos 121; `tests/node/cookiesNeedCasters.test.js` fails on the old code.\n- **Left of R-1354's list:** the G-buffer pass (the ids a wall's own pixels need), the rows' upload (644 KB a frame at 360 lights) and pre-render's row build in JS (+0.65 ms).",
+      "commits": [
+        "7ea867fa"
+      ]
+    },
+    {
+      "id": "R-1359",
+      "date": "2026-11-18",
+      "time": "05:42",
+      "timeFrom": "recorded",
+      "title": "OL-8 kept: a lamp's row counts its directions' index; pre-render on visPoly with walls at 720 lights 6.415 -> 6.062 ms (-5.8 %, 4 of 4 pairs, limit 4.6 %), the kernel -9 to -21 %",
+      "verdict": "kept",
+      "text": "**OL-8 kept: a lamp's row counts its directions' index instead of walking it. Pre-render on visPolyStressScene with walls at 720 lights 6.415 -> 6.062 ms (-5.8 %, 4 of 4 pairs, detection limit 4.6 %); the kernel -9 to -21 %; the row the same bit for bit.**\n\n- **What it was:** R-1353 read the walls' rows at +0.65 ms of pre-render over the old fan pass at 360 lights, in `writeWallRow` (JS, once a lamp with walls a frame). The kernel showed where: about half a row's time was its 256 directions' index, a walk of the bins against the vertices' angles (a comparison a bin, and a branch that ends on a different vertex each time).\n- **The change (d0b2d0c5):** each vertex marks the first bin that starts at or over its angle (`ceil(64 * (angle - ang0))`, exact on float32 angles) in an integer scratch, and the running count of the marks is what each bin sees. `tests/node/wallRowParity.test.js` holds the shipped writer against the plain one (`tests/reference/wallRowJs.mjs`) on 4 500 polygons, bit for bit.\n- **Kernel** (`wallRowMicrobench`, Node 22, TurboFan normal compile, ns a row; before two runs, after three):\n\n| vertices | before | after | |\n| --- | --- | --- | --- |\n| 16 | 999, 1025 | 819, 798, 793 | -21 % |\n| 48 | 1801, 1838 | 1497, 1500, 1501 | -18 % |\n| 128 | 3614, 3629 | 3262, 3264, 3296 | -9.5 % |\n\n- **Scene** (visPolyStressScene `?lights=720&arm=walls`, both sides from worktrees, dc4aac46 against d0b2d0c5, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs, 05:31 to 05:36): pre-render `STEP_MS - WAIT_MS` **6.415 -> 6.062 ms, paired -5.8 %**, each pair -4.8, -5.7, -6.0, -6.2 %, cv 0 and 1 %. Every other worker is under the 6 ms floor and not judged (Pixi 1.59 -> 1.62 ms, its pairs +12.6, -8.9, +7.8, -3.5 %: noise). Load keys equal.\n- **The session's A/A of this scene** (d0b2d0c5 on both sides, 4 pairs, 05:37 to 05:42): pre-render 6.300 -> 6.262 ms, paired +0.3 %, pairs +2.9, +4.8, -2.3, -2.4 %. Detection limit for 4 pairs: **4.6 %**. The keep clears it, not by much; its four pairs agree with each other far better than the A/A's.\n- **Two forms that lost in the kernel** (not kept, said in the code): filling the bins by runs as the vertices go by, -35 % at 16 vertices and +18 % at 128 (its inner loop ends on a different bin each vertex); counting in the row's own floats, +35 % at 16 vertices (the count crossed a float each bin). Storing each vertex's index and taking a running highest was slower than the count too (+5 to +10 %).\n- **What is left of the rows' cost:** the vertex loop itself, about 22 ns a vertex in the shipped function (12 in a bare copy: the angle's unwrapping is half of it). The next steps are the sweep's kernel writing the row (C, no float32 round trips), or not rebuilding a still lamp's row at all.",
+      "commits": [
+        "c9e374b1",
+        "dc4aac46",
+        "d0b2d0c5"
+      ]
+    },
+    {
+      "id": "R-1400",
+      "date": "2026-11-18",
+      "time": "05:50",
+      "timeFrom": "recorded",
+      "title": "After OL-7 and OL-8, walls against fans on visPoly at 720 lights, one build: pre-render +21.9 % (5.226 -> 6.280 ms), Pixi +16.1 % (1.318 -> 1.513 ms); the fans' side under the 6 ms floor",
+      "verdict": "note",
+      "text": "**After OL-7 and OL-8 the walls in the light pass still cost more than the old fan pass on its own scene: pre-render +21.9 % (5.226 -> 6.280 ms) and Pixi +16.1 % (1.318 -> 1.513 ms) at 720 lights. Both under the 6 ms floor on the fans' side, so not a judged row; the pairs agree.**\n\nvisPolyStressScene `?lights=720`, `?arm=fans` against `?arm=walls`, one build (dx/one-light at 3ab9a2ca, both sides its worktree), headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs, 05:45 to 05:50. Each worker's `STEP_MS - WAIT_MS`:\n\n| worker | fans (old pass) | walls (light pass) | paired | each pair |\n| --- | --- | --- | --- | --- |\n| pre-render | 5.226 ms | 6.280 ms | +21.9 % | +19.3, +24.5, +19.3, +24.5 |\n| Pixi | 1.318 ms | 1.513 ms | +16.1 % | +17.8, +14.3, +5.5, +27.2 |\n| spatial | 2.502 ms | 2.598 ms | +3.8 % | +0.6, +4.6, +2.9, +5.6 (the knob cannot reach it: drift) |\n\n- **Pre-render:** +1.05 ms for 720 lamps, about 1.5 us a lamp: the row (`writeWallRow`, about 22 ns a vertex after OL-8, and each vertex's code) against the old pass's copy of the polygon. The session's A/A of the walls' side read a detection limit of 4.6 % (R-1359).\n- **Pixi:** +0.2 ms: the rows read and uploaded every frame, unchanged ones included, and the G-buffer pass's submission.\n- **The scene is still** (no lamp and no wall moves): the old pass and the new one both sweep every lamp and publish it again each frame.\n- **What it asks for** (the owner's choice, both estimated): the sweep's kernel writing the row in C (3 to 4 h: brings pre-render near the fans', not under); or a still lamp whose walls did not move kept from the frame before, its sweep, its row and its upload skipped (4 to 6 h: under the fans' in any scene where most lamps stand still). To judge a row, the fans' side needs 6 ms: `?lights=900`.",
+      "commits": [
+        "3ab9a2ca"
+      ]
+    },
+    {
       "id": "R-1346",
       "date": "2026-11-18",
       "title": "N-266's unshaded pass back to two passes: the one-pass form cut every unshaded texel under half alpha, and the barrio's lamp halos shrank to their core",
@@ -36474,6 +36926,152 @@
       "text": "**The engine scoreboard again, on the ASUS's GeForce MX110** (Chrome's per-app GPU preference), main 70ba822b against v0.14.0, `--full-rev`, `--skip-node`, job 0896c2, 2026-11-18 03:47 to about 05:15. It is an extra low-end reading, as R-1349's on the HD 620 was.\n\n**The five rows R-1349 found on the HD 620, on the MX110:**\n\n| Row | HD 620 | MX110 | Reading |\n|---|---|---|---|\n| N-292 textureUpload | pixi +117 % | pixi +187.7 % (kernel −5.7 %), WORSE | holds |\n| N-293 audioSlots | kernel −52.8 % | kernel −74.1 %, WORSE | holds |\n| N-294 meshFillMoving | pixi +29 % | pixi +122.0 % (kernel +35.3 %) | holds |\n| N-295 queryAabb | logic +21.6 % | logic +13.2 % | holds; under the step floor in both |\n| N-296 ray | logic +6.0 % | logic −6.6 % | flips sign: likely noise |\n\n**Faster on main here too:**\n- spatialMax −70.6 %\n- LiquidFun physics −14.9 % (couple −4.7 %)\n- box2dRayJs logic −10.6 %\n- Kernels: publishPose ×7.7, shadowStamp +43 %, gameObjectAccess +43 %, attachedWalls +24 %, decorationCollect +20 %\n\n**Kernel noise on this laptop.** Node kernels that use no GPU moved between the two sittings by −13 to +30 % (painterRadix +1.6 % then −13.4 %, attachedSway +29.9 % then −11.0 %, decalPremultiply +18.5 % then −10.1 %). A kernel delta under about 30 % on the ASUS is noise. audioSlots and publishPose are far past it.\n\nWith the MX110 the CPU workers ran lighter than on the HD 620 (the shared-power effect), so more stress rows fell under the 6 ms floor. Job 0896e calibrates the load knobs (ray casts, bullets, spawn storm) so those rows can be judged."
     },
     {
+      "id": "R-1401",
+      "date": "2026-11-18",
+      "time": "06:06",
+      "timeFrom": "recorded",
+      "title": "Predator at its default load, main against dx/one-light: nothing past the A/A's noise, every worker under the 6 ms floor (an early look, not the gate)",
+      "verdict": "note",
+      "text": "**Predator at its default load, main against dx/one-light (02f319b3, main merged in): nothing moves past the A/A's noise; every worker is under the 6 ms floor, so no row is judged. An early look, not the branch's gate.**\n\n`runPredatorAbab --vs main --hyp-rev HEAD --full-rev`, headed Chrome, GTX 1650 on AC, 4 pairs (05:55 to 06:00), then the A/A of the branch on both sides, 4 pairs (06:01 to 06:06). Each worker's `STEP_MS - WAIT_MS`, paired:\n\n| worker | main -> branch | each pair | the A/A (same code) | each pair |\n| --- | --- | --- | --- | --- |\n| pre-render | 1.708 -> 1.708 ms, -1.2 % | -2.2, -5.0, +2.6, -0.3 | +0.1 % | -4.4, +0.2, +0.7, -0.0 |\n| Pixi | 1.337 -> 1.296 ms, -1.4 % | -14.1, +0.5, +3.9, -3.2 | -7.3 % | -7.5, -9.5, +10.8, -7.2 |\n| logic | 1.765 -> 1.818 ms, +3.0 % | +2.6, -1.5, +3.4, +5.2 | +1.1 % | +14.4, -2.6, -5.4, +4.8 |\n| spatial | 3.106 -> 3.199 ms, +2.7 % | +3.1, +0.6, +2.3, +3.9 | +2.4 % | +16.1, -6.1, +0.2, +4.6 |\n| physics | 2.970 -> 2.605 ms, +0.2 % | +1.2, +3.6, -26.4, -0.7 | +28.0 % | +37.3, -14.5, +26.8, +29.2 |\n\n- Presented frames 60.0 on both sides, load keys within 1 %.\n- **How to read it:** the two workers the branch reaches here (pre-render: the cookies' rule, the lamps' ids; Pixi: the light pass's shader) read level or a little cheaper; logic and spatial, which it cannot reach, read +3 % and the A/A moves them as much or more. Nothing here is a regression, and nothing here is a verdict.\n- **The gate itself** runs once, after the last change of the branch, at a load that puts the workers over the floor (`--query crowd=2.5`, as the earlier gates), with its own A/A.",
+      "commits": [
+        "02f319b3"
+      ]
+    },
+    {
+      "id": "R-1402",
+      "date": "2026-11-18",
+      "time": "06:31",
+      "timeFrom": "recorded",
+      "title": "OL-9 kept: a still lamp's row is kept (lighting.wallCache); pre-render on visPoly with walls at 720 still lights 6.061 -> 2.982 ms (-51.4 %, 4 of 4 pairs, limit 4.6 %); +2.5 % with every lamp moving, inside the limit",
+      "verdict": "kept",
+      "text": "**OL-9 kept: a lamp's row is kept while what goes into its sweep is the same. Pre-render on visPolyStressScene with walls at 720 still lights 6.061 -> 2.982 ms (-51.4 %, 4 of 4 pairs, limit 4.6 %); with every light moving, +2.5 % (inside the limit, the base side under the floor). The rows are the same bit for bit.**\n\n- **What it was:** after OL-7 and OL-8 the walls still cost pre-render +21.9 % over the old fan pass on a still scene (R-1400): every casting lamp was swept and its row written again each frame, a street lamp among houses included.\n- **The change (f37e693d, `lighting.wallCache`, default on):** after the gather, a signature (64 bits) of what the sweep reads: the lamp's place and reach, the floor's scale, every gathered wall's shape where the frame shows it and its code (entity and opacity), and the polar bins when a compound solid drew into them. Each of the two row buffers remembers, a lamp, the signature its row was written from and the row's place. Same signature, row still in place: no sweep, no row build (moved down within the buffer when the rows before it are fewer). A lamp that moved since the frame before skips the signature. Also: a lamp with nothing in reach is not swept in rows mode, and a packed occluder's code is worked out once a lamp, not once a vertex.\n- **Correctness:** `tests/node/wallRowCache.test.js`, on a real pre-render worker with both gathers: the same frames with the cache off and on publish the same lamps and rows bit for bit through a wall moving and turning, a lamp moving, a wall's opacity, a lamp's reach, lamps leaving the frame and returning, a compound solid moving, and 2 x 40 frames of random moves. A still scene sweeps nothing from its fourth frame; a moved wall sweeps only the lamps it reaches. In the browser: visPolyStressScene with `?wallCache=0` against the default, 0 of 921 600 px.\n- **Scene** (visPolyStressScene `?lights=720&arm=walls`, one build efef1f5e, `?wallCache=0` against the default, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs each; detection limit 4.6 % from the session's A/A, R-1359):\n\n| lamps | cache off | cache on | paired | each pair |\n| --- | --- | --- | --- | --- |\n| still (06:20 to 06:25) | 6.061 ms | 2.982 ms | **-51.4 %** | -51.7, -51.2, -48.7, -51.6 |\n| all moving, `?move=40` (06:26 to 06:31) | 5.581 ms | 5.784 ms | +2.5 % | +2.8, -1.5, +2.1, +5.2 |\n\n  Pixi (1.57 -> 1.48 ms still, 1.45 -> 1.39 moving) and spatial (+0.7 % both) are under the floor and inside their noise: the change is pre-render's alone.\n- **Against the old fan pass** (5.226 ms at 720 lights, R-1400, another sitting of the same session): a still scene's walls are now about 43 % cheaper in pre-render than the fans were; with every lamp moving they stay about where R-1400 read them.\n- **What is left:** Pixi still reads and uploads every row every frame (+16 % over the fans, R-1400): a frame whose rows are all kept can skip that. A moving lamp's row is still JS (the sweep's kernel writing it is the next step for those).",
+      "commits": [
+        "f37e693d",
+        "efef1f5e"
+      ]
+    },
+    {
+      "id": "R-1403",
+      "date": "2026-11-18",
+      "time": "06:52",
+      "timeFrom": "recorded",
+      "title": "OL-10 kept: Pixi does not upload a frame's rows it already sent; with OL-9 a still scene of walls beats the fans: pre-render 5.117 -> 2.959 ms (-41.6 %), Pixi 1.207 -> 0.662 ms (-44.9 %) at 720 lights",
+      "verdict": "kept",
+      "text": "**OL-10 kept: Pixi neither copies nor uploads a frame's rows when they are the rows it sent last. With OL-9, a still scene of walls now costs less than the old fan pass in both workers: pre-render 5.117 -> 2.959 ms (-41.6 %) and Pixi 1.207 -> 0.662 ms (-44.9 %) at 720 lights. Pixi's rows are under the 6 ms floor: read, not judged.**\n\n- **What it was:** R-1400 read Pixi at +16.1 % over the fans: every row in use copied and uploaded each frame, a still scene's included (644 KB a frame at 360 lights, R-1354).\n- **The change (fef43402):** pre-render signs each frame's rows in the rows' header (its lamps in order and the signature each row was written from, OL-9's; a frame with a row of no signature carries a count, second word 0). Pixi returns from `_readWallRows` when the signature is that of the rows it sent last.\n- **Uploaded a frame** (`glFrameRecorder`, visPolyStressScene `?lights=360&arm=walls`, 180 frames): 770.3 KB of textures with `?wallCache=0` (643.6 KB of it the rows), 127.5 KB with the cache: no row goes up.\n- **Sittings** (visPolyStressScene `?lights=720`, one build fef43402, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs each; pre-render's detection limit 4.6 % from the session's A/A, R-1359):\n\n| sitting | worker | A | B | paired | each pair |\n| --- | --- | --- | --- | --- | --- |\n| walls, `?wallCache=0` against the default (06:41 to 06:46) | pre-render | 6.093 ms | 2.865 ms | -53.4 % | -52.6, -54.2, -51.9, -54.6 |\n| | Pixi | 1.601 ms | 0.626 ms | -61.1 % | -59.3, -63.0, -59.1, -65.7 |\n| `?arm=fans` against `?arm=walls` (06:47 to 06:52) | pre-render | 5.117 ms | 2.959 ms | -41.6 % | -44.0, -40.3, -42.2, -41.0 |\n| | Pixi | 1.207 ms | 0.662 ms | -44.9 % | -55.5, -43.2, -46.3, -43.6 |\n\n  Spatial, which neither knob reaches, reads -0.9 % and +1.4 %.\n- **How to read it:** Pixi's rows are under the 6 ms floor on both sides, and so is pre-render's fans side (5.1 ms): the tool judges neither. The pairs agree to a few points, the mechanism is counted (644 KB a frame no longer uploaded), and a heavier load could not turn -61 % into a loss: kept without the heavier run.\n- **Against R-1400** (the same two arms before OL-9 and OL-10: pre-render +21.9 %, Pixi +16.1 %): the walls went from dearer than the fans to cheaper, on a still scene. With every lamp moving nothing is kept and R-1400's reading stands (OL-9's moving sitting: +2.5 % over the uncached path, inside the limit).\n- **Correctness:** `tests/node/wallRowsUpload.test.js` (real workers: still frames sign alike in both buffers; a moved wall, a moved lamp and the cache off change or drop the signature; Pixi uploads once for frames that sign alike). Browser: `?wallCache=0` against the default, 0 of 921 600 px on WebGL and WebGPU.",
+      "commits": [
+        "fef43402"
+      ]
+    },
+    {
+      "id": "R-1404",
+      "date": "2026-11-18",
+      "time": "07:16",
+      "timeFrom": "recorded",
+      "title": "The Predator gate for dx/one-light at crowd=2.5: no regression (two sittings of 4 pairs and an A/A; the first's even +2.8 % on every worker did not come back)",
+      "verdict": "passed",
+      "text": "**The Predator gate for dx/one-light, at `crowd=2.5`: no regression. Two sittings of 4 pairs against main and an A/A: every judged row inside its detection limit; the first sitting's even +2.8 % on every worker did not come back in the second.**\n\n`runPredatorAbab --vs main --hyp-rev HEAD --full-rev --query crowd=2.5`, headed Chrome, GTX 1650 on AC, 38 400 bodies, 48 shadow lights. The branch at 991939b8 (first) and e581706b (second: a comment in a bench tool apart), main at e45a482a. Each worker's `STEP_MS - WAIT_MS`, paired:\n\n| worker | first, 06:55 to 07:00 | each pair | second, 07:11 to 07:16 | each pair | the A/A, 07:01 to 07:06 |\n| --- | --- | --- | --- | --- | --- |\n| spatial (judged, limit 3.9 %) | 9.236 -> 9.546 ms, +2.9 % | +1.7, +2.1, +6.1, +3.7 | 9.260 -> 9.198 ms, -0.1 % | -4.4, -0.7, +1.2, +0.4 | -1.7 % |\n| physics (judged, limit 2.7 %) | 12.517 -> 12.866 ms, +2.8 % | +1.6, +2.0, +6.1, +3.6 | 12.425 -> 12.398 ms, -0.2 % | +0.1, -1.9, -0.5, 0.0 | 0.0 % |\n| pre-render (under the floor) | 5.563 -> 5.925 ms, +5.0 % | +2.9, +6.7, +12.9, +3.2 | 5.486 -> 5.466 ms, -1.6 % | -4.4, -9.1, +1.1, +1.4 | -0.8 % |\n| Pixi (under the floor) | 3.164 -> 3.182 ms, -1.6 % | -4.9, +7.4, +1.7, -6.6 | 3.258 -> 3.116 ms, -6.8 % | -10.5, -7.0, -6.6, -0.8 | -2.4 % |\n| logic (under the floor) | 5.843 -> 6.220 ms, +7.9 % | +5.5, -5.5, +12.2, +10.2 | 5.596 -> 5.493 ms, +0.7 % | -3.6, -0.1, +1.5, +4.1 | -1.0 % |\n\n- Presented frames 60.0 on both sides in both sittings; load keys within 0.1 %.\n- **The first sitting** read every worker about 3 % dearer on the branch's side, spatial and physics included, which the branch does not reach (Predator has no walls: its path in pre-render is main's but for one comparison). Its third pair was disturbed (+6 to +13 % on every worker). That is the shape of drift, and the second sitting says so: the same two revisions, spatial -0.1 %, physics -0.2 %, pre-render -1.6 %.\n- **Ruled out on the way:** the rebuilt `engine.wasm` (`buildWasm --check`: every module identical to a rebuild; only the sweep's kernel differs from main's).\n- **Not pooled by the tool:** `--append` refused the second four pairs (the runner's tree had moved by a comment between them), so they are a sitting of their own. Over the eight pairs: spatial +1.3 %, physics +1.4 %, pre-render +1.8 %, Pixi -3.4 % (means).\n- **Verdict:** NEUTRAL twice; a hygiene keep for the branch's Predator path. The branch's own claims are its owner scene's (R-1359, R-1402, R-1403).",
+      "commits": [
+        "991939b8"
+      ]
+    },
+    {
+      "id": "R-1405",
+      "date": "2026-11-18",
+      "time": "07:32",
+      "timeFrom": "recorded",
+      "title": "OL-3, the race: the lamps' maps cost 4.3 ms of GPU a frame against the walls' 1.9 at 64 lamps and stop there; they save pre-render 0.3 to 0.7 ms. Readings (under the floor); the builder reads final B stays",
+      "verdict": "note",
+      "text": "**OL-3, the race, run after the code (the owner's order): the walls in the light pass (final B, built) against the lamps' shadow maps (final A's way) on the same flat scene. The maps cost the GPU more than twice as much a frame (4.3 against 1.9 ms at 64 lamps) and stop at 64 casting lamps; they cost pre-render less. Readings: every worker is under the 6 ms floor at 64 lamps. The builder's reading: B stays; the owner's word is his.**\n\nvisPolyStressScene, 700 occluders, `?lights=64` (the most the lamps' map holds at its default tile), one build (dx/one-light at e2b8df7e), headed Chrome, GTX 1650 on AC.\n\n**The GPU's time a frame** (`glFrameRecorder --gpu-passes`, 5 s + 3 s, two runs an arm, 07:17 to 07:21; the GPU's clock state differs between runs, so a reading):\n\n| arm | GPU a frame | draws, instances | uploaded a frame |\n| --- | --- | --- | --- |\n| `walls` (final B) | 1.996, 1.753 ms | 5, 5 | 75 KB of textures |\n| `maps` (the lamps' shadow maps) | 4.275, 4.312 ms | 7, 65.5 | 81 KB of textures |\n| `fans` (the old pass) | 2.410, 1.745 ms | 5, 5 | 226 KB of buffers, 67 KB of textures |\n| `plain` (the light pass alone, nothing stops a lamp) | 1.294, 1.595 ms | 4, 4 | 75 KB of textures |\n\n**The workers** (`runPredatorAbab --query-a arm=walls --query-b arm=maps`, 10 s + 10 s, ABAB, 4 pairs each; `STEP_MS - WAIT_MS`, all under the floor: read, not judged):\n\n| lamps | worker | walls | maps | paired | each pair |\n| --- | --- | --- | --- | --- | --- |\n| still (07:22 to 07:27) | pre-render | 0.534 ms | 0.216 ms | -60.8 % | -60.6, -61.1, -55.5, -63.9 |\n| | Pixi | 0.411 ms | 0.553 ms | +32.2 % | +30.0, +33.0, +42.7, +31.4 |\n| | spatial | 0.097 ms | 0.038 ms | -62.2 % | -61.9, -62.6, -59.1, -63.6 |\n| all moving, `?move=40` (07:27 to 07:32) | pre-render | 0.924 ms | 0.195 ms | -78.2 % | -78.3, -80.0, -78.1, -77.9 |\n| | Pixi | 0.478 ms | 0.544 ms | +11.6 % | +9.5, +18.6, +11.7, +11.6 |\n| | spatial | 0.198 ms | 0.051 ms | -73.5 % | -74.0, -72.8, -73.0, -77.0 |\n\n- **What the maps save:** the sweep and the neighbours it asks of the spatial worker: 0.4 ms of workers' time with the lamps still, 0.8 ms with all of them moving, at 64 lamps.\n- **What the maps cost:** 2.4 ms more of GPU a frame at 64 lamps (a tile a lamp drawn and read by every pixel it lights), a little more of Pixi, and a ceiling: 64 casting lamps here, where the walls ran 720 lamps today (pre-render 2.9 ms with them still, R-1403).\n- **The planner's guess before measuring** (final B) holds, and for the reason given then: the lamps' maps do not carry hundreds of lamps, and the GPU is the short side on a weak machine. The maps keep what only they do (shadows that fall on what has height, a lamp's own height in the shadow's length): `lampShadows: 'map'` stays an option beside the walls, and the two can be on together.\n- **Not run:** the race on the ASUS (one low-end reading, not a condition), WebGPU's GPU time, and `lights` past 64 for the maps (they hold no more).",
+      "commits": [
+        "e2b8df7e"
+      ]
+    },
+    {
+      "id": "R-1406",
+      "date": "2026-11-18",
+      "time": "07:40",
+      "timeFrom": "recorded",
+      "title": "lighting.lightBehindWalls: what a wall's shadow keeps of a lamp is a key (default 0.33, the old look); the default picture is the same (0 px)",
+      "verdict": "note",
+      "text": "**The share of a lamp's light a wall's shadow keeps is a key: `lighting.lightBehindWalls` (0 to 1, default 0.33, the old pass's look). Built so the owner can pick its default from pictures; the default picture is the same (0 px).**\n\n- It was the constant `WALL_UMBRA` of both shaders. It rides the walls' uniform (`uWalls.y`): no new uniform. 0 leaves a wall's shadow the ambient and the other lights alone; 1 and walls stop nothing; a wall's opacity under 1 still lets its share of the rest through.\n- Checked (d42628bd): visPolyStressScene before against after, 0 of 921 600 px on WebGL and on WebGPU; `tests/node/lightBehindWalls.test.js`; node 3090, demos 121, types. Headlights has `?behindWalls=`; its captures with a third and with none were made for the owner.\n- Not timed: one uniform read in place of a constant.\n- Open: the default (the owner's).",
+      "commits": [
+        "d42628bd"
+      ]
+    },
+    {
+      "id": "R-1407",
+      "date": "2026-11-18",
+      "time": "08:30",
+      "timeFrom": "recorded",
+      "title": "OL-11 and OL-12 kept together: the kernels write a swept lamp's row and its walls' codes; pre-render -8.1 % with every lamp moving (5.813 -> 5.386 ms) and -7.3 % still, limit 4.6 %; OL-11 alone -2.4 %",
+      "verdict": "kept",
+      "text": "**OL-11 and OL-12 kept together: for a lamp that is swept, the sweep's kernel writes its row and the gather's kernel writes its walls' codes. Against dx/one-light at bd58813b on visPolyStressScene with walls at 720 lights: pre-render -8.1 % with every lamp moving (5.813 -> 5.386 ms) and -7.3 % with them still (2.938 -> 2.681 ms), 4 of 4 pairs each, limit 4.6 %. OL-11 alone read -2.4 %: the row was not where the time was.**\n\n- **OL-11 (6d52e156), the guess:** R-1400 put the walls' +20 % over the fans with every lamp moving on the row's build in JS. `wall_row` in the sweep's kernel writes the row bit for bit as `writeWallRow` does. Alone, `?wasmOff=wallRow` against the default, one build (07:50 to 07:55): pre-render 5.774 -> 5.609 ms, **-2.4 %** (pairs -1.7, -4.0, -2.5, -2.2): a tie by the 3 % bar. In Node the kernel's row is 440, 820 and 1730 ns at 16, 48 and 128 vertices against the JS writer's 790, 1495 and 3307: about 12 ns a vertex still.\n- **The profile** (CPU trace, pre-render's self time over 8 s, 720 moving lamps): the sweep (1190 ms) and the gather (985 ms) are the same in walls and fans. The walls' extra 1.08 ms a frame was `wall_row` 285 ms, the light loop's JS 384 ms against the fans' 188 ms, `_collectStampLights` 24 ms.\n- **OL-12 (0219a64d), what the profile asked for:** the gather's kernel writes each packed occluder's code and sends no event for it (the JS loop walked a self-lit candidate an occluder, the old pass's list, to work the code out); the shadow lights are not gathered in a frame with no sun caster unless the lamps cast into their map; and `wall_row` marks a vertex's bin with a store alone. A second profile: the light loop's JS 384 -> 226 ms; **`wall_row` did not move (286 ms)**, so the read-after-write the marks were changed for was not its cost either.\n- **Sittings** (both sides from worktrees, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs, limit 4.6 % from R-1359's A/A; the base side is under the 6 ms floor, so the tool prints NEUTRAL (below floor)):\n\n| lamps | pre-render, bd58813b | 0219a64d | paired | each pair |\n| --- | --- | --- | --- | --- |\n| all moving (08:13 to 08:18) | 5.813 ms | 5.386 ms | **-8.1 %** | -9.6, -6.2, -7.7, -8.6 |\n| still (08:25 to 08:30) | 2.938 ms | 2.681 ms | **-7.3 %** | -4.3, -6.8, -7.7, -11.9 |\n\n- **Same rows:** `tests/node/wallRowKernel.test.js` (the kernel's row against the JS writer's on 4 370 polygons; a worker's moving frames with the kernel and with `wasm.wallRow` off; a worker gathering in JS against one gathering in the kernel name the same wall on every edge). Browser against bd58813b: visPolyStressScene 0 of 921 600 px on WebGL, WebGPU and with `?wallCache=0`.\n- **Open:** `wall_row` is 0.59 ms a frame for 720 swept lamps and its cost is not understood (float to double conversions a vertex and the division are the suspects: a variants pass is owed, as every kernel's).",
+      "commits": [
+        "6d52e156",
+        "0219a64d"
+      ]
+    },
+    {
+      "id": "R-1408",
+      "date": "2026-11-18",
+      "time": "08:48",
+      "timeFrom": "recorded",
+      "title": "OL-13 kept: Pixi copies a row in one set(); Pixi -11.6 % with every lamp moving (1.391 -> 1.232 ms); walls against fans moving now +13.1 % in both workers (they were +18.9 % and +19.4 %)",
+      "verdict": "kept",
+      "text": "**OL-13 kept: Pixi copies a wall's row out in one set(). With every lamp moving at 720 lights, Pixi 1.391 -> 1.232 ms (-11.6 %, 4 of 4 pairs; under the floor: read). The walls against the old fan pass with every lamp moving are now +13.1 % in pre-render and +13.1 % in Pixi (they were +18.9 % and +19.4 %); still, they are 42 to 45 % cheaper (R-1403).**\n\n- **What it was:** in a frame whose rows changed, `_readWallRows` copied each row in use a float at a time: 250 ms of 8 s in the profile of 720 moving lamps, 0.5 ms a frame.\n- **The change (c4e57fb6):** one `set()` a row from a view of it, the shortest of 512, 1024, 2048 ... floats that holds what is in use, never past the row's width; the views are made once.\n- **Sittings** (visPolyStressScene `?lights=720&move=40`, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs each; every row under the 6 ms floor on its base side):\n\n| sitting | worker | A | B | paired | each pair |\n| --- | --- | --- | --- | --- | --- |\n| dx/one-light bd58813b against c4e57fb6, walls (08:38 to 08:43) | Pixi | 1.391 ms | 1.232 ms | -11.6 % | -9.6, -12.3, -10.8, -12.3 |\n| | pre-render (OL-11, OL-12 again) | 5.751 ms | 5.395 ms | -5.6 % | -5.3, -5.9, -9.6, -4.1 |\n| `?arm=fans` against `?arm=walls`, c4e57fb6 (08:44 to 08:48) | pre-render | 4.782 ms | 5.365 ms | +13.1 % | +11.9, +6.3, +14.7, +14.2 |\n| | Pixi | 1.130 ms | 1.264 ms | +13.1 % | +10.7, +15.4, +15.1, +11.0 |\n\n- **Where the walls stand against the old pass** (720 lights, this session): with the lamps still, pre-render -41.6 % and Pixi -44.9 % (R-1403, before OL-11 to OL-13, which took another 7 % off pre-render there); with every lamp moving, +13 % in both. What is left of that is `wall_row` (0.59 ms a frame, R-1407) and the rows' upload.\n- `tests/node/wallRowsUpload.test.js` (rows of 3 to 512 vertices arrive whole, the row after the last untouched); browser with `?wallCache=0` against bd58813b, 0 px on WebGL and WebGPU.",
+      "commits": [
+        "c4e57fb6"
+      ]
+    },
+    {
+      "id": "R-1409",
+      "date": "2026-11-18",
+      "time": "08:53",
+      "timeFrom": "recorded",
+      "title": "N-297 narrowed: the wedge beside the light bench's cars at a high sun is their height-map shadow (with ?maps=0 the shadow falls where the sun puts it); the sun's map, the sweep and self shadow change nothing",
+      "verdict": "note",
+      "text": "**N-297 narrowed, not fixed: the wedge beside the light bench's cars at a high sun is their height-map shadow. Captures at 10:00 (sun 78° high), dx/one-light at 50b645d7, one knob changed at a time.**\n\n| knob | the cars' shadows |\n| --- | --- |\n| the default (height maps, the sun's map, the footprints' sweep, self shadow) | a dark wedge at each car's left side |\n| `?sweep=0` (solids as columns, no sweep to the footprint) | the same wedge |\n| `?sun=layer` (cards on the shadows' layer, no map) | the same wedge |\n| `?self=0` (no self shadow) | the same wedge |\n| `?maps=0` (no height or normal maps: the cars cast their silhouette) | a shadow down and to the left of each car, where the sun puts it |\n\n- So it is neither the sun's map, nor the sweep, nor self shadow: it is what a car's height map casts. With the silhouette the shadow falls on the other side of where the wedge is.\n- **First suspect, not checked:** the cars' sheets draw half a turn and mirror the rest; both cars in the capture face a mirrored way. A height-map caster on a mirrored frame may cast its columns unmirrored.\n- Main draws the same wedges (R-1355): not DX-ONELIGHT's.",
+      "commits": [
+        "50b645d7"
+      ]
+    },
+    {
+      "id": "R-1410",
+      "date": "2026-11-18",
+      "time": "13:32",
+      "timeFrom": "recorded",
+      "title": "OL-14 kept as a fix: walls with an oblique camera turn pixel depth on, so the light's edges keep a lit wall's light off the dark floor round it; Headlights Pixi 0.536 -> 0.575 ms (under the floor: read)",
+      "verdict": "kept-hygiene",
+      "text": "**OL-14 kept as a fix: with `lighting.walls` and an oblique camera, pixel depth turns on, so the light's edges (DX-LIGHTEDGES) keep a lit wall's light off the dark floor round its outline. Headlights, 4 pairs: Pixi 0.536 -> 0.575 ms and pre-render 0.372 -> 0.382 ms, both far under the 6 ms floor (read, not judged), 60 of 60 frames drawn on both sides.**\n\n- **Seen by the owner** on Headlights' capture (2026-11-18): bright grass pixels round each lit house, where its shadow should be.\n- **Cause:** the light is drawn at a share of the canvas (`lighting.resolution`, 0.25 by default) and stretched. A light texel on the house's outline is lit as the house; stretched as a plain texture it spilled one or two texels (4 to 8 canvas px) onto the shaded floor. At `lighting.resolution: 1` there is no rim (capture). The engine already keeps the two apart by each sprite's own outline (`lightEdges.js`), where the entities write depth; pixel depth turned on with maps or faces alone, so a walls scene without maps had no edges. The old fan pass lit a house by its floor place, dark at its top like the grass behind it, so main's Headlights did not show it.\n- **The change (0284f1a5):** `wallEdgesWanted` (lightEdges.js): walls ask for the entities' depth while the light is under the canvas's size and `lighting.lightEdges` is not false; the pixel depth rule takes it with an oblique camera (`renderer.pixelDepth: false` still turns it off, `true` turns it on in a flat view too).\n- **Captures against 41c0aed9:** Headlights at night 30 251 of 921 600 px differ on WebGL and 30 151 on WebGPU, all on outlines, the rim gone; by day 2 278 px over 6 of 255; Sun Street at 21:00, 3 051.\n- **Sitting** (13:27 to 13:32, Headlights with its 6 cars, 41c0aed9 against 0284f1a5 from worktrees, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs): the table above; logic 0.067 -> 0.072, spatial 0.077 -> 0.076, physics 0.101 -> 0.101 ms. The GPU's time a frame was not read (26 sprites).\n- **Not covered:** a flat view (pitch 90 or 0) has no such depth, so the rim stays there while the light is under the canvas's size; forcing pixel depth there reorders overlapping sprites by their foot (the landing scene's letters changed). Its own row: N-299.\n- `tests/node/lightEdges.test.js` (the rule's cases). node 3098, demos 121, types.",
+      "commits": [
+        "0284f1a5"
+      ]
+    },
+    {
+      "id": "R-1411",
+      "date": "2026-11-18",
+      "time": "12:56",
+      "timeFrom": "recorded",
+      "title": "The owner accepts dx/one-light: the sun's normal shading defaults to strength 1 with 0.5 subtracted, a third behind walls stays, final B stands; he asks for the rim's fix (OL-14) and the old pass's deletion (OL-15)",
+      "verdict": "note",
+      "text": "**The owner accepted dx/one-light's pictures and numbers (\"ok!\", 2026-11-18, about 12:56), with his defaults and two asks. The sun's default for `lighting.normalShading` is strength 1 with 0.5 subtracted (34f09c20); 0.33 behind a wall stays; final B stands.**\n\n- **The sun's shading.** From the light bench's strip at 16:00 he liked strength 1 with 0.3 subtracted, \"pero los árboles deberían tener menos shading con el sol\": 0.5 subtracted, for every scene. Against as drawn, 13.3 % of the view changes and loses 7.2 % of its light there (strength 1 with 0.3 subtracted: 16.2 % and 21.9 %). The sun's shading runs from 0 to `1 - sun.skyLight` (0.6), so a face turned well away from the sun loses a tenth of the sun's light at most. The default and `?normalSun=1&subtractSun=0.5` draw the same picture (0 of 921 600 px). Not timed: two numbers of a uniform, the same shader.\n- **Light behind walls.** He saw Headlights with a third against none and changed nothing: `lighting.lightBehindWalls` 0.33 stays.\n- **His first ask: the bright pixels round a lit house** in that capture (\"ante la duda queden oscuros\"): OL-14 (R-1410).\n- **His second ask: \"remove the 5 000 lines\"** the branch added over main: the old fan pass, kept behind `debug.lightFans` until this acceptance, is deleted in OL-15.\n- **Final A or B.** He asked what they were. Told: A, the lamps' maps do the walls and the sweep goes (4.3 ms of GPU a frame at 64 lamps against 1.9, a ceiling of 64 casting lamps, about 3 000 lines less); B, the sweep stays and the light pass reads it. Both techniques stay the developer's (walls by `lighting.walls`, the lamps' maps by `lighting.lampShadows: 'map'`, in one scene if wanted). B stands.\n- **The merge** to main is his go-ahead; no push without his word (main holds other sessions' unpushed commits).",
+      "commits": [
+        "34f09c20"
+      ]
+    },
+    {
+      "id": "R-1412",
+      "date": "2026-11-18",
+      "time": "14:46",
+      "timeFrom": "recorded",
+      "title": "OL-15 kept as a deletion: the old fan pass is gone, src 2 783 lines shorter; the rows bit for bit and the still scenes pixel for pixel what they were; 360 moving lamps: pre-render 2.934 -> 2.938 ms, Pixi 0.770 -> 0.738 ms (under the floor: read)",
+      "verdict": "kept-hygiene",
+      "text": "**OL-15 kept as a deletion: the old fan pass is gone (27efbf1a). `src/` is 2 783 lines shorter (the whole branch against main: `src/` -1 529). On visPolyStressScene with 360 moving lamps nothing got worse: pre-render 2.934 -> 2.938 ms, Pixi 0.770 -> 0.738 ms, spatial 1.621 -> 1.593 ms, physics 0.876 -> 0.857 ms, all under the 6 ms floor (read, not judged).**\n\n- **Why now:** the pass lived behind `debug.lightFans` to compare with until the owner accepted the pictures and the numbers; he did on 2026-11-18 (R-1411) and asked for the lines the branch had added to go.\n- **What went:** Pixi's fans, self-lit fills (collider and sprite masked) and transmit wedges with their batches, programs and target (`pixiWorker.js` 1 676 lines) and their nine shader files (605); pre-render's published polygons and self-lit queue with its seen stamps (`preRenderWorker.js` 347); `debug.lightFans`, the derived `lighting.wallFans`, the polygons' and the queue's shared buffers, `lighting.maxOccluderSelfLit` (a retired key), `setWall`'s `shape` with `LightOccluder.maskMode`, the compound solid's fill and `segmentFacesPoint` (`angularSweep.js` 102). 91 files, +1 050 / -4 485; tests net -639.\n- **What changed beside the deletion:** the JS gather writes a packed occluder's code where it packs it (it named them through the self-lit list, up to its cap); a lamp that casts nothing leaves pre-render's loop at once; the rows' cap warns when the rows ran out; the debug overlay's light polygons read the walls' rows (`tests/node/debugLightPolygons.test.js`).\n- **Left on purpose:** `visibilityGather.c`'s branch that sends an event a packed occluder and `visibilitySweep.c`'s seen-owner marks are dead in the shipped path; `engine.wasm` is byte for byte what it was. They go with the kernels' next build (OL-11's variants pass).\n- **The same rows:** a real pre-render worker before (34f09c20) against after, 8 frames of two scenes (compound solids with half-opaque walls; cone lights on a floor drawn 0.6 as tall), each with the JS gather and `visibilityGather.wasm` and with the row's kernel on and off: 1 856 of 1 856 rows bit for bit.\n- **The same picture** against 34f09c20: visPolyStressScene at 24, 64 and 720 lights on WebGL and at 24 and 64 on WebGPU, and dxCaptureScene, 0 of 921 600 px; Headlights on both backends, only its panel's timings (under 300 px in one line of text). Nine scenes that move load without a page error (compound solids, flashlights with cones, Sun Street, the light bench with walls, landing, burning boxes, planet, Headlights with cars on WebGPU, visPoly with `?occluderSprite=1`).\n- **Sitting** (14:41 to 14:46, 34f09c20 against 27efbf1a, each side its whole revision from a worktree since the scene's file changed, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs): the numbers above. **It ran 360 lamps, not the 720 asked:** the runner keeps one `--query`, so `lights=720` did not reach the scene and `move=40` did (every lamp swept each frame). Not run again: a deletion stays unless a worker is 3 % worse, and no worker moved.\n- **Tests:** the wired visibility tests compare the workers' rows where they compared published polygons and self-lit lists (the JS loop of `tests/reference` is still the polygons' truth); the tests of the fills, the wedges, the fan batch and the fans' switches went with their subjects. node 3087, demos 121, types.\n- **Found on the way:** N-300 (near a compound solid a lamp's row does not name a wall seen only between two bin rays).",
+      "commits": [
+        "27efbf1a"
+      ]
+    },
+    {
       "id": "R-1362",
       "date": "2026-11-18",
       "title": "The ASUS's under-floor stress rows loaded past the floor: ray neutral on both GPUs (N-296 dropped), bullets -7 % on the HD 620, spawn level per body",
@@ -36504,6 +37102,18 @@
       "title": "Barrio freeze vs Chrome flags on the HD 620: the rate drifts from about 9 % in the morning to 3.6 % in the afternoon, so no flag settles it; WebGPU 0 of 64 against WebGL's 22 of 367",
       "verdict": "note",
       "text": "**Chrome flags and the runner on the HD 620** (jobs 0896s to 0896u, 2026-11-18 11:32 to 14:19). Buenos Aires at night, src, main 70ba822b. The bench runner takes no Chrome flags, so `C:\\weedlab\\freezeProbe.mjs`, a lab driver outside the repo, opens the same bench page with flags per arm, the arms interleaved run by run. A run counts as frozen when the page's rAF over 10 s is under 20 fps; frozen runs read 1.9 to 2.9.\n\n| Job | Arm | Frozen |\n|---|---|---|\n| 0896t | probe, default flags (ANGLE D3D11) | 0 of 32 |\n| 0896t | `--use-angle=d3d11on12` | 0 of 32 |\n| 0896t | `--disable-gpu-shader-disk-cache` | 5 of 32 |\n| 0896t | WebGPU | 0 of 32 |\n| 0896u | the bench runner, as in 0896m to 0896r | 0 of 32 |\n| 0896u | probe, its renderer-string WebGL context made before the scene (0896t's default) | 2 of 32 |\n| 0896u | probe, that context made after the measurement | 0 of 32 |\n| 0896u | `--disable-gpu-shader-disk-cache` | 0 of 32 |\n\nTwo flags did not run at all: `--use-angle=gl` fails Pixi's init in the worker, and `--use-angle=vulkan` falls to SwiftShader.\n\n**The rate drifts through the day.** The same runner froze 13 of 143 in the morning (0896m to 0896r, about 9 %) and 0 of 32 at 13:07. WebGL on D3D11 in the afternoon pools 7 of 192 (3.6 %), and runs got shorter: the runner averaged 63 s in 0896r and 33 s in 0896u. So a one-job gap like 5 against 0 is within that drift, and no flag is shown to cause the freeze or to cure it. 0896t's slow no-disk-cache runs (80 to 97 s for its first 11) did not freeze; frozen ones were both short and long.\n\n**What holds:**\n- WebGPU on the HD 620 froze 0 of 64 starts, where WebGL on D3D11 froze 22 of 367 all day (6 %). Chance gives 0 of 64 about 1 time in 50.\n- `d3d11on12` (0 of 32) and the context made after the measurement (0 of 32) are not settled.\n- The teardown log line marks some frozen runs, not all of them, and it showed once on a WebGPU run that drew normally (0896t run 10). It is a hint, not a test.\n\n**Next:** catch the freeze itself. On a frozen run the probe takes a 5 s Chrome trace with the GPU categories, then measures rAF again 60 s later to see whether it recovers."
+    },
+    {
+      "id": "R-1413",
+      "date": "2026-11-18",
+      "time": "15:09",
+      "timeFrom": "recorded",
+      "title": "dx/one-light's bundles before the merge: built from 01b9e99b, tests pass; the prod bundle against src: walls with 720 moving lamps pre-render 5.501 -> 5.518 ms (0.0 %), Predator equal or faster in every worker (under the floor: read)",
+      "verdict": "note",
+      "text": "**dx/one-light's bundles, before its merge: built from 01b9e99b (main merged in), their tests pass, and the production bundle is as fast as the sources where the branch works (walls, 720 moving lamps: pre-render 5.501 -> 5.518 ms, 0.0 % paired) and equal or faster on Predator. Every row is under the 6 ms floor: read, not judged.**\n\n- **Built and tested (14:49 to 14:53, b64d5cd3):** `make_bundle`, `check:dist` (inputs 81be1fa13eeed9ca), `test:bundle` (the embed smoke and the browser's 8), `test:node:bundle` (323 tests on each of the 8 bundles). The production ESM bundle is 3 803 362 bytes (main's: 3 835 624).\n- **Sittings** (one build both sides, `--vs HEAD` with `?weedBundle=weed.prod.bundle.esm.min.js` on side B, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs each):\n\n| scene | worker | src | bundle | paired | each pair |\n| --- | --- | --- | --- | --- | --- |\n| visPolyStressScene `?lights=720&move=40` (14:55 to 15:01) | pre-render | 5.501 ms | 5.518 ms | 0.0 % | -0.2, +2.1, -1.8, +0.3 |\n| | Pixi | 1.206 ms | 1.234 ms | -1.5 % | -19.3, +8.8, -1.1, -1.9 |\n| | spatial | 2.586 ms | 2.626 ms | -0.2 % | -3.2, +3.2, -1.0, +0.5 |\n| | physics | 1.449 ms | 1.461 ms | +0.5 % | -2.9, +11.2, -3.2, +3.8 |\n| | logic | 0.390 ms | 0.410 ms | +4.0 % | +3.4, +4.6, +1.4, +5.6 |\n| Predator, its default load (15:03 to 15:09) | logic | 2.156 ms | 1.892 ms | -14.0 % | -14.6, -13.4, -9.5, -14.6 |\n| | spatial | 3.616 ms | 3.409 ms | -5.4 % | -0.3, -6.8, -4.6, -6.2 |\n| | physics | 3.730 ms | 3.321 ms | -16.6 % | -2.5, -18.1, -15.1, -21.4 |\n| | Pixi | 1.516 ms | 1.306 ms | -12.2 % | +0.3, -11.4, -23.0, -13.0 |\n| | pre-render | 1.985 ms | 1.826 ms | -9.0 % | +0.2, -3.4, -14.6, -14.6 |\n\n- **Reading:** the walls' new modules (the rows, their cache and signature) cost nothing through the bundle: pre-render is the same to a hundredth of a ms. Logic's +0.02 ms on the walls scene is in every pair and tiny. Predator reads the bundle faster in every worker, more than earlier sittings did (R-0764: logic -3 to -6 %); bodies moved and casters are the same on both sides (-0.1 %), so it is not load. Predator alone read the same code -3 to +10 % before, so the size of it is not claimed: no worker is slower.\n- **Not run:** painterMove and Boids (the standing set's other two). The branch does not touch the painter's sort or the spatial worker; the walls scene took their place as the scene the branch changes.",
+      "commits": [
+        "b64d5cd3"
+      ]
     }
   ],
   "leads": [

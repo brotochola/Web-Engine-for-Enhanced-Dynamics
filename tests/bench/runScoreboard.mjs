@@ -413,7 +413,7 @@ export function writeReport(payload) {
   lines.push('## What we learned');
   lines.push('');
   lines.push(
-    'WORSE does not mean "Box2D is broken". It means that row\'s primary (for box2d: Balls `physics_STEP_MS`) was at least 3% more expensive on this run, with matching load. A table of signs is not enough: the report has to say which scene, which worker, both sides in ms, and whether n=1 or n=5. Artistic Predator is not a row. Vis-poly uses `visPolyStressScene` with `raycasted: true`. Stable combat uses `steadyCombatScene`. Do not claim a "better WeedJS" until every catalog row is KEPT or a tie and none is WORSE or FAIL.'
+    'WORSE does not mean "Box2D is broken". It means that row\'s primary (for box2d: Balls `physics_STEP_MS`) was at least 3% more expensive on this run, with matching load. A table of signs is not enough: the report has to say which scene, which worker, both sides in ms, and whether n=1 or n=5. Artistic Predator is not a row. Vis-poly uses `visPolyStressScene` with walls (`lighting.walls: true`). Stable combat uses `steadyCombatScene`. Do not claim a "better WeedJS" until every catalog row is KEPT or a tie and none is WORSE or FAIL.'
   );
   lines.push('');
   const md = lines.join('\n');

@@ -3,18 +3,18 @@
 // them in Box2D's block: tests/helpers/visibilityWired.mjs bootPreRenderGather), against the same worker with
 // wasm.visibilityGather false (the JS gather, on the same memory). The scene: lights among rotated boxes,
 // circles, convex polygons, half-blocking occluders, offset colliders and compound rings (W1 rasters those from
-// the kernel's events), over several frames. The kernel packs what the JS packs, in the same order, so every
-// light's polygon and the self-lit list must be the JS's bit for bit; and with a small self-lit cap too.
+// the kernel's events), over several frames. The kernel packs what the JS packs, in the same order, and names each
+// packed occluder with the code the JS works out (OL-12), so every lamp's row (OL-15: all the worker publishes) must
+// be the JS gather's bit for bit: the same lamps with a row, the same polygon, the same wall on every edge.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { LightEmitter } from '../../src/components/lightEmitter.js';
-import { bootPreRenderGather, makeScene, runFrame, writeFrame } from '../helpers/visibilityWired.mjs';
+import { bootPreRenderGather, compareRows, makeScene, rowWalls, runFrame, writeFrame } from '../helpers/visibilityWired.mjs';
 import { collectSolidJs } from '../reference/visibilitySweepJs.mjs';
 
 const TIMES = [0, 0.35, 0.9, 1.6, 2.75, 4.2];
 
-/** Run the frames on a boot; with the kernel, count its calls. */
+/** Run the frames on a boot: each frame's rows. */
 function frames(boot, scene) {
   const out = [];
   for (const t of TIMES) {
@@ -37,26 +37,17 @@ function countGather(pre) {
   return calls;
 }
 
+/** The kernel's rows are the JS gather's, bit for bit; the rows and the walls they name, counted. */
 function sameFrames(js, k, label) {
   assert.equal(k.length, js.length);
-  let lights = 0;
-  let selfLit = 0;
+  let rows = 0;
+  let walls = 0;
   for (let f = 0; f < js.length; f++) {
-    assert.equal(k[f].lights.length, js[f].lights.length, `${label} frame ${f}: lights`);
-    for (let l = 0; l < js[f].lights.length; l++) {
-      const a = js[f].lights[l];
-      const b = k[f].lights[l];
-      assert.equal(b.idx, a.idx, `${label} frame ${f} light ${l}: index`);
-      assert.equal(b.n, a.n, `${label} frame ${f} light ${a.idx}: vertex count`);
-      assert.deepEqual(Array.from(b.x), Array.from(a.x), `${label} frame ${f} light ${a.idx}: x`);
-      assert.deepEqual(Array.from(b.y), Array.from(a.y), `${label} frame ${f} light ${a.idx}: y`);
-      // A light that casts no shadow (castShadows 0) gathers nothing: only the others call the kernel.
-      if (LightEmitter.castShadows[a.idx] !== 0) lights++;
-    }
-    assert.deepEqual(k[f].selfLit, js[f].selfLit, `${label} frame ${f}: self-lit list`);
-    selfLit += js[f].selfLit.length;
+    assert.deepEqual(compareRows(js[f], k[f]), [], `${label} frame ${f}`);
+    rows += js[f].lamps.length;
+    for (let r = 0; r < js[f].lamps.length; r++) walls += rowWalls(js[f], r).size;
   }
-  return { lights, selfLit };
+  return { rows, walls };
 }
 
 async function compare(seed, sceneOpts, bootOpts, label, rasterJs = false) {
@@ -75,24 +66,25 @@ async function compare(seed, sceneOpts, bootOpts, label, rasterJs = false) {
   const calls = countGather(kBoot.pre);
   const k = frames(kBoot, scene);
   const n = sameFrames(js, k, label);
-  assert.ok(calls.n >= n.lights, `${label}: ${calls.n} kernel calls for ${n.lights} lights`);
+  // A light that casts no shadow (castShadows 0) gathers nothing: only the others call the kernel, each once a
+  // frame, whether or not it finds a wall (a lamp with nothing in reach has no row).
+  n.lights = scene.ents.filter((e) => e.kind === 'light' && e.casts !== 0).length * TIMES.length;
+  assert.equal(calls.n, n.lights, `${label}: ${calls.n} kernel calls for ${n.lights} lights`);
+  assert.ok(n.rows <= n.lights, `${label}: ${n.rows} rows for ${n.lights} lights`);
   return n;
 }
 
-test('W2b: the gather kernel publishes the JS gather\'s polygons and self-lit lists, bit for bit', async () => {
+test('W2b: the gather kernel publishes the JS gather\'s rows, bit for bit', async () => {
   const n = await compare(0x2b2b, {}, {}, 'mixed scene');
-  assert.ok(n.lights >= 200 && n.selfLit > 1000, `${n.lights} lights, ${n.selfLit} self-lit items compared`);
-});
-
-test('W2b: a small self-lit cap fills as the JS fills it', async () => {
-  const n = await compare(0x2b2c, { rings: 4 }, { selfLit: 40 }, 'self-lit cap 40');
-  assert.ok(n.selfLit >= 6 * 40, `the cap filled every frame (${n.selfLit} items)`);
+  assert.ok(n.lights >= 200 && n.rows >= 200 && n.walls > 1000, `${n.lights} lights, ${n.rows} rows naming ${n.walls} walls compared`);
 });
 
 test('W2b: a scene with no compound solid (the bins never cleared) matches too', async () => {
-  await compare(0x2b2d, { rings: 0 }, {}, 'no compound solid');
+  const n = await compare(0x2b2d, { rings: 0 }, {}, 'no compound solid');
+  assert.ok(n.rows >= 200 && n.walls > 1000, `${n.rows} rows naming ${n.walls} walls compared`);
 });
 
 test('W2b: with the JS raster in place of W1, the compound solids the kernel sends back raster in JS and match', async () => {
-  await compare(0x2b2e, { rings: 6 }, {}, 'the JS raster', true);
+  const n = await compare(0x2b2e, { rings: 6 }, {}, 'the JS raster', true);
+  assert.ok(n.rows >= 200 && n.walls > 1000, `${n.rows} rows naming ${n.walls} walls compared`);
 });

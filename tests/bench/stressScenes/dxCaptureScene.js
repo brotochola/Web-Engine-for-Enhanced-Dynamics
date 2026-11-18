@@ -10,7 +10,7 @@ const { Scene, Camera, Sun, Decoration, LAYER_KIND, BLEND_MODES } = WEED;
  * the view's centre. A revision without a knob ignores its key, so the defaults compare
  * across revisions, and a knob compares against its own absence.
  *
- * `?posesByRow=0` (renderer.keyedPosesByRow off, E-201). `?hour=` (default 12), `?lights=` (default 8), `?backend=webgpu`, `?raycast=1` (camera pitch 90: raycasted lighting), `?night=1` (lighting.sun.night),
+ * `?posesByRow=0` (renderer.keyedPosesByRow off, E-201). `?hour=` (default 12), `?lights=` (default 8), `?backend=webgpu`, `?walls=1` (lighting.walls: every light sweeps for walls, and none is there to stop it), `?night=1` (lighting.sun.night),
  * `?colors=1` (lighting.sun.colors), `?propSprite=`, `?propAlpha=` and `?propShadow=` (a frame of its own: setSprite({ frame })). `?shade=1`: overlapping black squares on a MESH layer, `?shadeLook=1` with a look
  * shader that passes its RT through, `?shadeAlpha=` (default 1) the layer's alpha, `?shadeMeshAlpha=` (default 1) each
  * mesh's, `?shadeSun=` its alphaBySun (shadow, night, or ramp for { from: 0.1, to: 0.4 }). `?deco=1`: decorations on a
@@ -38,7 +38,7 @@ function queryNumber(key, fallback) {
 export const HOUR = queryNumber('hour', 12);
 export const LIGHTS = Math.max(0, Math.floor(queryNumber('lights', 8)));
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
-export const RAYCAST = queryNumber('raycast', 0) === 1;
+export const WALLS = queryNumber('walls', 0) === 1;
 export const NIGHT = queryNumber('night', 0) === 1;
 export const COLORS = queryNumber('colors', 0) === 1;
 export const SHADE = queryNumber('shade', 0) === 1;
@@ -62,7 +62,7 @@ export const stressSceneConfig = {
     hour: HOUR,
     lights: LIGHTS,
     backend: BACKEND,
-    raycast: RAYCAST ? 1 : 0,
+    walls: WALLS ? 1 : 0,
     night: NIGHT ? 1 : 0,
     colors: COLORS ? 1 : 0,
     shade: SHADE ? 1 : 0,
@@ -129,10 +129,11 @@ export class DxCaptureScene extends Scene {
         ...(SHADE_LOOK ? { shader: { fragment: 'dxPass', containerBlend: BLEND_MODES.NORMAL } } : {}),
       },
     },
-    // ?raycast=1: straight down, a flat view lights by raycasting, with the floor of 1 the scene has without a camera.
-    ...(RAYCAST ? { camera: { pitch: 90 } } : {}),
     lighting: {
       enabled: true,
+      // ?walls=1: the walls' sweep and the light pass's walls path on, with no wall to stop a light (no prop calls
+      // setWall): a capture of that path against the scene without it.
+      ...(WALLS ? { walls: true } : {}),
       baseAmbient: 0.1,
       maxLights: 32,
       shadowsEnabled: true,

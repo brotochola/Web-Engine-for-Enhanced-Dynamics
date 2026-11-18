@@ -50,7 +50,7 @@ export class MotionProp extends GameObject {
   }
 }
 
-/** A box that blocks raycasted light: a wall (spawned with ?raycast=1 only). */
+/** A box that blocks the light: a wall (spawned with ?walls=1 only, which turns lighting.walls on). */
 export class MotionBlock extends GameObject {
   static components = [RigidBody, Collider, ShadowCaster];
 

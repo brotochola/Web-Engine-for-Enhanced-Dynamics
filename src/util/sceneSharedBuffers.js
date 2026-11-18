@@ -105,6 +105,7 @@ import { MAX_POOL_SLOTS, PoolSlotArray, poolFreeListTopBytes, poolSlotBytes } fr
 import { impactRingBytes } from './impactRing.js';
 import { createPublishedList } from './publishedList.js';
 import { visibilityMemoryBytes, visibilityMemoryOpts } from './visibilityMemory.js';
+import { wallRowsLayout } from '../render/visibility/lampWallRow.js';
 import { Messages } from '../core/messages.js';
 import { bindInputStamp, createLatencyStampBuffer } from './latencyStamp.js';
 
@@ -621,8 +622,8 @@ export function renderQueueMemorySpec(scene) {
     : null;
   // W2b: the visibility gather reads LightOccluder, Transform, Collider, the bodies' poses (with physics) and the
   // neighbour rows in the engine block and packs into pre-render's visibility regions placed there (so it needs W2a's
-  // sweep): with raycasted lighting.
-  const visibility = inBlock && lighting.enabled && lighting.raycasted
+  // sweep): with walls (lighting.walls, OL-4).
+  const visibility = inBlock && lighting.enabled && lighting.walls
     && Boolean(pools.LightOccluder?.ComponentClass) && Boolean(pools.Collider?.ComponentClass)
     && spatialPublishSpec(scene) !== null
     ? visibilityGatherSpec(scene)
@@ -776,7 +777,7 @@ export function initializeSceneLayers(scene) {
   const { config } = scene;
   const builtInLayers = {};
   const defaultYSorting = ySortEnabled(config.renderer?.ySort);
-  const glowAsSprite = (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
+  const glowAsSprite = (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sorted';
   for (const [name, defaults] of Object.entries(DEFAULT_LAYERS)) {
     if (name === 'lightGlows' && glowAsSprite) continue;
     builtInLayers[name] = {
@@ -845,7 +846,7 @@ function emitBlocks(scene) {
     customLayers: customLayerQueueSpecs().map((c) => ({ ...c, queueBytes: computeRenderQueueBufferSize(c.maxItems) })),
     // Pixi's glow batch's rows, where it packs the glow rows in pixi pack mode (additive glows).
     pixiGlowRows: config.preRender?.packGpuSprites === 'pixi'
-      && (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite'
+      && (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sorted'
       ? resolveMaxVisibleRenderables(scene) : 0,
     adobe: adobeOn ? { animBytes: AdobeAnimComponent.getBufferSize(n), tableBytes: tablesMB * 1048576 } : null,
     // E-177: the entity batch's keyed frames' table and updates, for a scene with sprites whose frames go keyed.
@@ -872,23 +873,13 @@ function initializeLightingAndRenderBuffers(scene) {
     scene.maxShadowRenderItems = maxShadowSprites + maxLights;
   }
 
-  if (config.lighting.enabled && config.lighting.raycasted) {
+  if (config.lighting.enabled && config.lighting.walls) {
     const maxPolyVerts = config.lighting.maxPolygonVertices || 128;
-    const lightSlotBytes = 4 + 8 + 4 + maxPolyVerts * 4 * 2;
-    const visPolyBufferSize = 4 + maxLights * lightSlotBytes;
-
-    buffers.visibilityPolygonDataA = new SharedArrayBuffer(visPolyBufferSize);
-    buffers.visibilityPolygonDataB = new SharedArrayBuffer(visPolyBufferSize);
     scene.maxPolygonVertices = maxPolyVerts;
-
-    const maxSelfLit = config.lighting.maxOccluderSelfLit || 512;
-    // header(4) + entries: entityIdx, lightIdx, x,y,rotC,rotS (display pose), texId, maskMode, pad = 28
-    // Pose baked at write so pixi stays frame-locked with sprites (not live Transform).
-    const selfLitItemBytes = 28;
-    const selfLitBufferSize = 4 + maxSelfLit * selfLitItemBytes;
-    buffers.occluderSelfLitDataA = new SharedArrayBuffer(selfLitBufferSize);
-    buffers.occluderSelfLitDataB = new SharedArrayBuffer(selfLitBufferSize);
-    scene.maxOccluderSelfLit = maxSelfLit;
+    // OL-4: the walls' rows the light pass reads (lampWallRow.js), a row a lamp.
+    const rowsBytes = wallRowsLayout(maxLights, maxPolyVerts).bytes;
+    buffers.wallRowsDataA = new SharedArrayBuffer(rowsBytes);
+    buffers.wallRowsDataB = new SharedArrayBuffer(rowsBytes);
   }
 
   if (config.particle.decals) {

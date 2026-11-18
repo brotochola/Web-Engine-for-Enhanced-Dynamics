@@ -15,7 +15,7 @@ const { Scene, GameObject, SpriteRenderer, ShadowCaster, LightEmitter, Camera, S
  * The barrio's camera (floor drawn 0.5 as tall as wide, a px of height 0.866 px up the screen) and lighting (shadow maps for
  * the sun and the lamps, self-shadow). Nothing moves: for side-by-side pictures and compareCaptures.mjs.
  *
- * `?hour=` (default 22); `?lampShadows=` and `?sunShadows=` (lighting's, default 'map'); `?lampX=`, `?lampY=` (the lamp's
+ * `?hour=` (default 22); `?lampShadows=` and `?sunShadows=` (lighting's: 'map', the default, or 'layer'); `?lampX=`, `?lampY=` (the lamp's
  * floor place, default 410, 460: 60 floor px in front of the wall); `?elevation=` (the bulb's height, default 50);
  * `?range=` (its radius and shadow range, default the barrio's); `?gap=` (the people's floor px in front of the wall,
  * default 25); `?zoom=` (default 3); `?house=0` (the walls alone, no volume, no owner); `?people=0` (the walls lit

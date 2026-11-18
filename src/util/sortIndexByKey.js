@@ -20,8 +20,8 @@ export function spriteYSortKey(y, ySortK) {
  * is the same local offset the sprite vertex shader uses — which means it has
  * to use the SAME rotation the sprite is drawn with. `inheritRotation[index]`
  * is that choice: truthy takes the body pose's rotation, falsy takes the
- * sprite's own facing (`spriteRotC`/`spriteRotS`). `emitSpriteQueue` and the
- * pixi self-lit path both branch on that flag; a sort line that ignores it
+ * sprite's own facing (`spriteRotC`/`spriteRotS`). `emitSpriteQueue` branches
+ * on that flag; a sort line that ignores it
  * puts a turning sprite on the wrong side of its neighbours (a car whose
  * facing lives in the frame, on a body that steers, is the live case).
  *

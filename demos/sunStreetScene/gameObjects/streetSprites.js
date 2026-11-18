@@ -9,8 +9,6 @@ const { ShapeType } = enums;
 
 // ?carSpeed= reaches this module on the logic worker through WEED.params: `location` there is the worker script's.
 const CAR_SPEED = Number(WEED.params?.get('carSpeed') ?? 4);
-// ?raycast=0: the scene's camera is not flat, so there are no walls (sunStreetScene.js reads the same knob).
-const RAYCAST = Number(WEED.params?.get('raycast') ?? 1) === 1;
 const LANE = -28; // inside of the centre line
 // The lights' reach at night; by day it shrinks with Sun.nightFactor (as √nightFactor), and their glow fades with it.
 const LAMP_RADIUS = 949;
@@ -34,8 +32,8 @@ const point = new Float64Array(3);
 /**
  * A house seen from the front, its roof going up the screen. Its sprite's silhouette would flip this picture, so its
  * ShadowCaster says what it is instead: a box with a water tank on it (setBox, addLevel: a volume).
- * It blocks lamps and headlights with its whole picture, not its footprint (lamps.setWall({ shape: 'sprite' }), under
- * raycasted lighting): lights work on the floor, and in this view a wall and a roof are drawn over the floor behind the house, so
+ * It blocks lamps and headlights with its whole picture, not its footprint (its Collider covers the picture; lamps.setWall,
+ * with the scene's lighting.walls): lights work on the floor, and in this view a wall and a roof are drawn over the floor behind the house, so
  * with the footprint the wall facing a lamp falls in the footprint's own shadow, and the wall facing away is lit.
  */
 export class StreetHouse extends GameObject {
@@ -52,7 +50,8 @@ export class StreetHouse extends GameObject {
     this.spriteRenderer.anchorY = 1;
     this.shadowCaster.setBox(HOUSE_WIDTH, HOUSE_DEPTH, HOUSE_HEIGHT, { offsetY: -HOUSE_DEPTH / 2 });
     this.shadowCaster.addLevel(TANK, HOUSE_HEIGHT, TANK_HEIGHT);
-    if (RAYCAST) this.shadowCaster.lamps.setWall({ shape: 'sprite' });
+    // A wall only where the scene asks for walls (sunStreetScene.js: ?walls=0 asks for none, and setWall would warn).
+    if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall();
   }
 }
 
@@ -144,7 +143,8 @@ export class StreetCar extends GameObject {
     this.lightEmitter.color = 0xfff1c4;
     this.lightEmitter.radius = 0;
     this.lightEmitter.offsetX = config.offset;
-    if (RAYCAST) this.shadowCaster.lamps.setWall({ shape: 'sprite' });
+    // A wall only where the scene asks for walls (lighting.walls), as the houses.
+    if (this.config.lighting?.walls === true) this.shadowCaster.lamps.setWall();
   }
 
   tick(dtRatio) {

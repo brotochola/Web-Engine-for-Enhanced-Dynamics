@@ -405,7 +405,7 @@ class SpatialWorker extends AbstractWorker {
     this._entityReuseInitialized = new Uint8Array(this.globalEntityCount);
 
     const spatialCfg = this.config?.spatial || {};
-    this._raycastLights = this.config?.lighting?.enabled === true && this.config?.lighting?.raycasted === true;
+    this._raycastLights = this.config?.lighting?.enabled === true && this.config?.lighting?.walls === true;
     this._neighborReuseSkin = Number(spatialCfg.neighborReuseSkin) > 0 ? Number(spatialCfg.neighborReuseSkin) : 0;
     // Max frames to keep a candidate list (bounds B drift). Override via spatial.neighborReuseMaxFrames.
     const maxFrames = Number(spatialCfg.neighborReuseMaxFrames);
@@ -1778,7 +1778,7 @@ class SpatialWorker extends AbstractWorker {
   _findNeighbors() {
     const visualRange = Collider.visualRange;
     const active = Transform.active;
-    // E-176: lists only for types whose code reads them, and under raycasted lighting for active lights that cast
+    // E-176: lists only for types whose code reads them, and with walls (lighting.walls) for active lights that cast
     // shadows (pre-render gathers their occluders from them; N-153: nothing reads a light's list in basic lighting).
     const readers = Grid.neighborReaders;
     const entityType = Transform.entityType;
