@@ -42,7 +42,7 @@ import { CollisionListener } from '../components/collisionListener.js';
 import { JointBreakListener } from '../components/jointBreakListener.js';
 import { Grab } from '../components/grab.js';
 import { SpriteSheetRegistry, addBigAtlasChunks } from './spriteSheetRegistry.js';
-import { fillFrameTexels, sheetCastsSolid, sheetStandsOnContact } from '../render/frameBase.js';
+import { sheetCastsSolid, sheetStandsOnContact } from '../render/frameBase.js';
 import { AdobeAnimRegistry } from './adobeAnimRegistry.js';
 import { AdobeAnimCompiler } from '../util/adobeAnimCompiler.js';
 import {
@@ -62,6 +62,9 @@ import { Gamepad } from './gamepad.js';
 import Keyboard from './keyboard.js';
 import { Flash } from './flash.js';
 import { BigAtlasInspector } from './bigAtlasInspector.js';
+import { startAssetWorker } from './assetWorkerClient.js';
+import { loadBakedAtlas } from './atlas/bakedAtlas.js';
+import { decalTexturesFrom } from './atlas/atlasFrames.js';
 import { Camera } from './camera.js';
 import { Time, simClockStepMs } from './timeScale.js';
 import { Tween } from './tween.js';
@@ -169,16 +172,13 @@ const warnedWasmKeys = new Set();
 let warnedIntegratedGpu = false;
 
 /**
- * A file named beside another asset: `name` in the folder of `url` (its query and hash left out). An absolute URL or a
- * root path is itself.
- * @param {string} url
- * @param {string} name
+ * An atlas canvas's decal textures (getImageData of each frame: atlas/atlasFrames.js decalTexturesFrom's reads).
+ * @param {HTMLCanvasElement | OffscreenCanvas} canvas
+ * @param {object} json
  */
-function siblingAssetUrl(url, name) {
-  if (/^([a-z][a-z0-9+.-]*:|\/)/i.test(name)) return name;
-  const s = String(url);
-  const cut = s.split(/[?#]/, 1)[0].lastIndexOf('/');
-  return cut >= 0 ? s.slice(0, cut + 1) + name : name;
+function decalTexturesOfCanvas(canvas, json) {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  return decalTexturesFrom(json, (x, y, w, h) => (w > 0 && h > 0 ? ctx.getImageData(x, y, w, h).data : new Uint8ClampedArray(0)));
 }
 
 class Scene {
@@ -1663,11 +1663,14 @@ class Scene {
 
   /**
    * Install a packed or prebaked bigAtlas onto the scene + registry.
-   * @param {{ json: object, imageBitmap: ImageBitmap, canvas: HTMLCanvasElement }} atlas
+   * @param {{ json: object, imageBitmap: ImageBitmap, mapsBitmap?: ImageBitmap | null,
+   *   decals?: { textures: object, frameNameToId: object } | null, inspect?: () => Promise<HTMLCanvasElement> }} atlas
+   *   decals: its decal textures, read with its pixels (SST-5: atlas/atlasFrames.js); inspect: the atlas as a canvas, on
+   *   demand (the inspector, the download)
    * @param {object} [compiledAdobeAssets]
    */
   _installBigAtlas(atlas, compiledAdobeAssets = {}) {
-    const { json, imageBitmap, canvas, mapsBitmap = null } = atlas;
+    const { json, imageBitmap, mapsBitmap = null, decals = null, inspect = null } = atlas;
     // A copy: bigAtlas's chunk sheets (ED-74) are added to it, not to the JSON a bake writes out.
     const proxySheets = { ...(json?.meta?.proxySheets || {}) };
     addBigAtlasChunks(json, proxySheets);
@@ -1719,83 +1722,56 @@ class Scene {
     this.finalizeAdobeAnimateAssets(compiledAdobeAssets);
 
     this.bigAtlasProxySheets = proxySheets;
-    this.bigAtlasCanvas = canvas;
+    this.bigAtlasInspect = inspect;
     this.bigAtlasJson = json;
 
-    if (this.config.particle.decals && canvas) {
-      this.decalTextureData = this.extractDecalTextures(canvas, json);
+    if (this.config.particle.decals && decals) {
+      this.decalTextureData = this._useDecalTextures(decals);
     }
 
     if (typeof window !== 'undefined') {
-      window.downloadBigAtlas = () => {
+      // A debug view: the atlas made into a canvas when asked (SST-5: the page keeps none).
+      window.downloadBigAtlas = async () => {
         const link = document.createElement('a');
         const size = json.meta?.size || {};
         link.download = `bigAtlas_${size.w || 0}x${size.h || 0}.png`;
-        link.href = this.bigAtlasCanvas.toDataURL();
+        link.href = (await this.bigAtlasInspect()).toDataURL();
         link.click();
       };
 
-      window.inspectBigAtlas = () => {
-        BigAtlasInspector.show(this.bigAtlasCanvas, this.bigAtlasJson);
+      window.inspectBigAtlas = async () => {
+        BigAtlasInspector.show(await this.bigAtlasInspect(), this.bigAtlasJson);
       };
     }
   }
 
-  /** @returns {HTMLCanvasElement} */
-  _canvasFromImageBitmap(imageBitmap) {
-    const canvas = document.createElement('canvas');
-    canvas.width = imageBitmap.width;
-    canvas.height = imageBitmap.height;
-    canvas.getContext('2d', { willReadFrequently: true }).drawImage(imageBitmap, 0, 0);
-    return canvas;
-  }
-
-  async _loadBakedBigAtlas(bigAtlasAsset) {
-    const jsonPromise = fetchAssetJson(bigAtlasAsset.json, 'baked bigAtlas JSON');
-    // DX-MAPS: the twin page the bake wrote beside the atlas, fetched once the JSON names it, while the atlas loads.
-    const mapsPromise = jsonPromise.then((json) => this._loadBakedMapsPage(bigAtlasAsset, json));
-    const [json, pngResponse, mapsBitmap] = await Promise.all([
-      jsonPromise,
-      fetchAssetRead(bigAtlasAsset.png, 'baked bigAtlas PNG', (r) => r.blob()),
-      mapsPromise,
-    ]);
-    loadMark('atlas fetched');
-    const imageBitmap = await createImageBitmap(pngResponse.body);
-    loadMark('atlas decoded');
-    const canvas = this._canvasFromImageBitmap(imageBitmap);
-    loadMark('atlas canvas');
-    // H-EDGE (E-448): a bake from before H-EDGE wrote no frame texels; read them from the atlas's pixels, once.
-    fillFrameTexels(json, () => ({
-      data: canvas.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height).data,
-      x: 0,
-      y: 0,
-      width: canvas.width,
-      height: canvas.height,
-    }));
-    return { json, imageBitmap, mapsBitmap, canvas };
+  /**
+   * An asset worker's job is done: its load marks filed under its name, and it is let go (it stops once its background
+   * work, the atlas cache's write, is done; marks it posts after go to the same list).
+   * @param {string} name
+   * @param {import('./assetWorkerClient.js').AssetWorker | null} worker
+   */
+  _finishAssetWorker(name, worker) {
+    if (!worker) return;
+    this._takeWorkerLoadMarks(name, worker.takeMarks());
+    worker.release((marks) => this._takeWorkerLoadMarks(name, marks));
   }
 
   /**
-   * DX-MAPS: a baked atlas's twin page (heights and normals at each frame's rectangle), as data: `assets.bigAtlas.maps`,
-   * else the file its JSON names (meta.mapsImage, beside the atlas png). Null when the atlas has no maps.
-   * @returns {Promise<ImageBitmap|null>}
+   * SST-5 step 4: a baked atlas, never drawn into a 2D canvas here. The browser decodes its PNG for the renderer; the
+   * atlas worker reads the decal textures and the texels a bake from before H-EDGE lacks (atlas/bakedAtlas.js).
    */
-  async _loadBakedMapsPage(bigAtlasAsset, json) {
-    const named = json?.meta?.mapsImage;
-    const url = typeof bigAtlasAsset.maps === 'string'
-      ? bigAtlasAsset.maps
-      : typeof named === 'string' && named !== '' ? siblingAssetUrl(bigAtlasAsset.png, named) : null;
-    if (url === null) {
-      if (json?.meta?.maps === true) {
-        warnOnce(this.constructor.name, 'baked-maps',
-          `${this.constructor.name}: its baked bigAtlas JSON says a sheet has maps but names no maps page (meta.mapsImage), so ` +
-          `the sprites are lit flat. Bake it again (npm run bake:atlas), or give assets.bigAtlas.maps.`);
-      }
-      return null;
+  async _loadBakedBigAtlas(bigAtlasAsset) {
+    const worker = await startAssetWorker('atlasWorker');
+    try {
+      return await loadBakedAtlas(bigAtlasAsset, {
+        decals: Boolean(this.config.particle.decals),
+        sceneName: this.constructor.name,
+        worker,
+      });
+    } finally {
+      this._finishAssetWorker('atlas', worker);
     }
-    const { body } = await fetchAssetRead(url, 'baked bigAtlas maps PNG', (r) => r.blob());
-    // Data, not colour, as the packed page (_packBigAtlasOnMainThread): no premultiplied alpha, no colour space.
-    return createImageBitmap(body, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' });
   }
 
   async _packBigAtlasOnMainThread(assetsToLoad, options) {
@@ -1819,7 +1795,8 @@ class Scene {
         ? createImageBitmap(exact, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' })
         : maps ? createImageBitmap(maps, { premultiplyAlpha: 'none', colorSpaceConversion: 'none' }) : null,
     ]);
-    return { json: packed.json, imageBitmap, mapsBitmap, canvas: packed.canvas };
+    const decals = this.config.particle.decals ? decalTexturesOfCanvas(packed.canvas, packed.json) : null;
+    return { json: packed.json, imageBitmap, mapsBitmap, decals, inspect: async () => packed.canvas };
   }
 
   async _loadTilemapsParallel(tilemaps) {
@@ -2036,67 +2013,21 @@ class Scene {
     return names;
   }
 
+  /**
+   * The decal textures of an atlas drawn into a canvas (every animation's first frame, then every frame: atlas/
+   * atlasFrames.js decalTexturesFrom), installed for stamping. The atlas loaders read them with the atlas's pixels.
+   * @param {HTMLCanvasElement | OffscreenCanvas} atlasCanvas
+   * @param {object} atlasJson
+   */
   extractDecalTextures(atlasCanvas, atlasJson) {
-    const ctx = atlasCanvas.getContext('2d', { willReadFrequently: true });
+    return this._useDecalTextures(decalTexturesOfCanvas(atlasCanvas, atlasJson));
+  }
 
-    const textures = {};
-    const animationNames = Object.keys(atlasJson.animations);
-
-    // First pass: Extract first frame of each animation (for animation-based stamping)
-    // textureId 0 to animationNames.length-1 = animation first frames
-    for (let textureId = 0; textureId < animationNames.length; textureId++) {
-      const animName = animationNames[textureId];
-      const frameList = atlasJson.animations[animName];
-
-      if (!frameList || frameList.length === 0) continue;
-
-      const firstFrameName = frameList[0];
-      const frameData = atlasJson.frames[firstFrameName];
-
-      if (!frameData) continue;
-
-      const frame = frameData.frame;
-      const imageData = ctx.getImageData(frame.x, frame.y, frame.w, frame.h);
-
-      textures[textureId] = {
-        width: frame.w,
-        height: frame.h,
-        rgba: imageData.data.buffer,
-      };
-    }
-
-    // Second pass: Extract ALL individual frames (for frame-specific stamping)
-    // This allows stamping any specific frame like "civil1_hurt_5" (last frame of hurt)
-    // textureIds start after animation count, using negative offsets from frame index
-    const frameNames = Object.keys(atlasJson.frames);
-    const frameNameToId = {};
-
-    // Build frame name → textureId mapping
-    // We store frames with textureIds starting at animationNames.length
-    let frameTextureId = animationNames.length;
-
-    for (const frameName of frameNames) {
-      const frameData = atlasJson.frames[frameName];
-      if (!frameData) continue;
-
-      const frame = frameData.frame;
-      const imageData = ctx.getImageData(frame.x, frame.y, frame.w, frame.h);
-
-      textures[frameTextureId] = {
-        width: frame.w,
-        height: frame.h,
-        rgba: imageData.data.buffer,
-      };
-
-      frameNameToId[frameName] = frameTextureId;
-      frameTextureId++;
-    }
-
-    // Store the frame mapping for lookup by ParticleEmitter
-    this.decalFrameNameToId = frameNameToId;
-    SpriteSheetRegistry.setDecalFrameMapping(frameNameToId);
-
-    return textures;
+  /** Decal textures installed: their frame name → textureId map on the scene and the registry (ParticleEmitter's). */
+  _useDecalTextures(decals) {
+    this.decalFrameNameToId = decals.frameNameToId;
+    SpriteSheetRegistry.setDecalFrameMapping(decals.frameNameToId);
+    return decals.textures;
   }
 
   /**
@@ -3082,7 +3013,7 @@ class Scene {
     this.decalTextureData = null;
     this.decalMemory = null;
     this.box2dBlock = null;
-    this.bigAtlasCanvas = null;
+    this.bigAtlasInspect = null;
     this.bigAtlasJson = null;
     this.bigAtlasProxySheets = null;
     this._loadedShaderSources = null;
