@@ -22575,6 +22575,281 @@
         "screen edge shading drifts"
       ],
       "records": []
+    },
+    {
+      "id": "DX-DEBUGUI",
+      "title": "The debug UI catches up with the engine: the Layers panel's Vis, blend and alpha work on every render path (they do not today), render views of the buffers the frame is made of (G-buffer normals and heights, light buffer, shadow maps), a sheet's height and normal maps, the lighting grid (light tiles), and panels for the sun, the light pass, the camera and the renderer's counters",
+      "status": "open",
+      "statusText": "Owner-asked plan (2026-11-18), not started: \"los layers no se hacen invisibles, no puedo cambiar el modo de blending, el alpha … es como si fuera binario … me gustaría poder ver los height maps, o normal maps … y ver la grilla de iluminación\"; planned by reading only (the owner asked for no tests or benchmarks)",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "DBG-1 to DBG-3 (the bugs the owner hit) first, then DBG-4 (the same panel); DBG-5 builds the render views that DBG-7 uses; DBG-6 is main-thread only and can run beside them. Estimate: about 25 to 36 h in a row. The owner's open decisions are in the plan's section 6.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md"
+      ],
+      "aliases": [
+        "debug ui",
+        "debug tools",
+        "layers panel",
+        "render views"
+      ],
+      "records": [
+        "R-1347"
+      ],
+      "rank": 21
+    },
+    {
+      "id": "DBG-1",
+      "title": "The debug UI's Layers panel: unticking Vis does not hide what the layer draws: castedShadows in map mode leaves the sun and lamp maps frozen in the light pass, hidden entities still cast, hidden lighting leaves the unshaded composite, a MESH layer's uvFill mesh ignores it (read, not yet confirmed)",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Confirm each suspect of the plan's section 3.1 (workerHarness or the browser, both backends), then apply visibility to every object that draws the layer's pixels; node test: a hidden castedShadows leaves _sunMapK[3] at 0.",
+      "area": "tools",
+      "kind": "bug",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-1"
+      ],
+      "aliases": [
+        "layer visibility",
+        "layers vis"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-2",
+      "title": "The debug UI's Layers panel: the blend selects do nothing: the entities' meshes and the lightEdges meshes set their own blend (nothing inherits the container's), Cont Blend reaches custom layers only, a re-registration restores the config's value, and about 22 of the 33 names draw as normal (no advanced blend modes registered); blendMode becomes a layer setter (SAB plus dirty flag, as alpha and visible)",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Confirm section 3.2; layer.blendMode / containerBlendMode setters applied to every object of the layer; setLayerProps loses its blend fields (no aliases); the owner decides between trimming the list and registering the advanced modes (section 6); test:demos too, games see the Layer API.",
+      "area": "tools",
+      "kind": "bug",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-2"
+      ],
+      "aliases": [
+        "layer blend mode",
+        "blend select"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-3",
+      "title": "The debug UI's Layers panel: alpha acts as on or off: the entities' opaque pass (E-448/E-502) is dropped for a blend other than normal but not for alpha below 1, so solid pixels stay opaque until alpha 0; the lightEdges and lightingMesh shaders never read uColor; worldRect stage meshes ignore it while the camera moves",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Confirm section 3.3; drop the opaque pass while the layer's alpha is below 1 (a per-frame test); the light's meshes mix by uColor.a (GLSL and WGSL); check by eye that entities under lighting fade with no jump at 0.5; hygiene keep, the suites decide unless the lightEdges scene's drawn frames move.",
+      "area": "tools",
+      "kind": "bug",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-3"
+      ],
+      "aliases": [
+        "layer alpha binary",
+        "alpha slider"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-4",
+      "title": "The debug UI's Layers panel lists every layer the scene has (volumeShadows, SCREEN, GPU particles, not only DEFAULT_LAYERS plus custom ones), shows each one's kind and metadata, and its controls follow changes made by game code",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Rows from Layer.getAll(); one read-only details line; the small defects the plan lists (Y-sort, Cont Blend refresh, sync every tick, focus lost on re-sort); a node test with a DOM shim.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-4"
+      ],
+      "aliases": [
+        "layers panel rows",
+        "layer metadata"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-5",
+      "title": "Render views: a View select that draws one of the frame's buffers decoded over the picture (G-buffer normals, heights, entity ids and flags; light buffer; unshaded; casted shadows; sun and lamp shadow maps; lamp volume cache), on WebGL and WebGPU, free when off",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "A setRenderView message, one integer field checked once a frame, a full-screen quad with a decode shader per view made on first use; the worker lists the views the scene has; worker-side debug code stubbed out of the production bundle.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-5"
+      ],
+      "aliases": [
+        "debug views",
+        "gbuffer view",
+        "normals view"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-6",
+      "title": "A sheet's height, normal and relief maps seen from the debug UI: the atlas inspector (today console-only, window.inspectBigAtlas) gets a button and height / normals / relief / maps-table modes, and the inspector shows the picked entity's frame with its maps",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Main thread only: the twin page texels are already there as data (scene.js, DX-MAPS); decode height and octahedral normals on a 2D canvas; node tests on hand-made texels.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-6"
+      ],
+      "aliases": [
+        "height map viewer",
+        "normal map viewer",
+        "twin page viewer"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-7",
+      "title": "The lighting grid: E-205's light tiles drawn over the screen, each tile tinted by how many lights reach it, with a hover readout of its lights and the grid's numbers (tilePx, cols x rows, wordsUsed)",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "One more render view (DBG-5): its shader bit-counts the R32UI tiles texture the light pass binds; the hover readout from LightTiles.bits at the debug UI's interval; a node test on a hand-filled LightTiles.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-7"
+      ],
+      "aliases": [
+        "lighting grid",
+        "light tiles view"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-8",
+      "title": "A Light tab in the debug UI: the sun's sliders (angle, elevation, intensity, colour, hour, day cycle, night) over Sun's setters, the light pass's resolved options read-only, a lamp list (shadow tile owner, culled), and cones and shadow owners in the Lights overlay",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Sun setters already work at run time; options fixed at program build stay read-only (section 6 asks about making them live).",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-8"
+      ],
+      "aliases": [
+        "sun panel",
+        "lighting panel"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-9",
+      "title": "Camera in the debug UI: zoom, position, rotation, follow, free camera (Camera.setFree, not wired) and shake as controls; pitch, yaw, floorScaleY, heightScaleY and the flat view as read-outs",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Main thread only, on existing Camera API.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-9"
+      ],
+      "aliases": [
+        "camera panel"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-10",
+      "title": "The debug UI's inspector decodes what it shows as raw numbers: gbufFlags as named bits, Transform.parent as a link with children and world vs local, light cone and elevation in units, decorations and shadow casters",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "A per-field formatter table keyed by component and field; a field without one stays raw (DBG-12 lists them).",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-10"
+      ],
+      "aliases": [
+        "inspector formatters",
+        "parent tree"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-11",
+      "title": "The debug UI's Performance tab prints the renderer counters RENDERER_STATS already publishes (GPU passes, casters, shadow lights, scenery, decal tiles) plus the GPU, the backend and the opaque pass's state",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Check which are already printed; no new counters in the worker.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-11"
+      ],
+      "aliases": [
+        "renderer counters"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-12",
+      "title": "A node test that fails when a lighting, sun or camera config key or a layer kind has no counterpart in the debug UI and no line in a NOT_SHOWN table with a reason, so new features cannot land without one",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Last, once DBG-4 and DBG-8 to DBG-10 exist.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-12"
+      ],
+      "aliases": [
+        "debug ui coverage test"
+      ],
+      "records": [
+        "R-1347"
+      ]
     }
   ],
   "records": [
@@ -35927,6 +36202,15 @@
       "commits": [
         "e0acd281"
       ]
+    },
+    {
+      "id": "R-1347",
+      "date": "2026-11-18",
+      "time": "02:42",
+      "timeFrom": "recorded",
+      "title": "The debug UI's catch-up planned (DX-DEBUGUI, DBG-1 to DBG-12): the Layers panel's Vis, blend and alpha fixed on every render path, render views, a sheet's maps, the lighting grid, panels for the sun, light pass and camera; nothing built or measured",
+      "verdict": "note",
+      "text": "**The debug UI's catch-up planned (DX-DEBUGUI, DBG-1 to DBG-12, `DEBUG_UI_PLAN.md`): a reading of the code only; nothing built, run or measured (the owner asked for no tests or benchmarks).** The owner: the Layers panel's Vis does not hide, the blend selects do nothing, alpha looks on or off; they want to see height and normal maps and the lighting grid from the debug UI, and say many newer features have no counterpart there.\n\n- **What the reading found (main at 702e6842), to be confirmed before fixing.** Vis: `castedShadows` in map mode only stops redrawing the sun and lamp maps, which the light pass keeps sampling (frozen shadows); hidden entities still cast (pre-render never reads `Layer._visible`); hidden lighting leaves the unshaded composite. Blend: the entities' meshes and the lightEdges meshes set their own blend, so the container's is never inherited; Cont Blend reaches custom layers only; a re-registration restores the config's value (the panel never writes the SAB); about 22 of the 33 names draw as normal (no advanced blend modes registered). Alpha: the entities' opaque pass (E-448 / E-502) is dropped for a blend other than normal but not for alpha below 1, so solid pixels stay opaque until alpha 0, when Pixi skips the container: on or off; the lightEdges and lightingMesh shaders never read `uColor`; worldRect stage meshes ignore alpha while the camera moves.\n- **Why the rest is missing.** The debug UI reaches the renderer through one message (`setLayerProps`) and a main-thread 2D canvas, so no GPU texture can be shown: render views (DBG-5) need a worker-side quad and decode shaders, stubbed out of the production bundle and free when off. The lighting grid is read as E-205's light tiles (DBG-7, a bit-count view of the R32UI texture; the owner to confirm). The twin page's texels are on the main thread already, so a sheet's maps viewer (DBG-6) needs no worker change.\n- **Order and size.** DBG-1 to DBG-3 first, then DBG-4; DBG-5 before DBG-7; about 25 to 36 h in a row. Four decisions for the owner in the plan's section 6 (what \"grilla\" means, live light options, persistence, trimming the blend list)."
     }
   ],
   "leads": [
