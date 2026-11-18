@@ -11658,7 +11658,8 @@
         "R-1249",
         "R-1254",
         "R-1274",
-        "R-1319"
+        "R-1319",
+        "R-1341"
       ]
     },
     {
@@ -21709,7 +21710,8 @@
         "R-1274",
         "R-1277",
         "R-1318",
-        "R-1321"
+        "R-1321",
+        "R-1341"
       ]
     },
     {
@@ -22442,6 +22444,29 @@
       "title": "A lamp's dim falloff shows rings on a plain surface at night, each a step of the light target's 8 bits (RGBA8, the light clamped to 1), a little tinted where the lamp's channels step at different places",
       "statusText": "seen 2026-11-17 in wallShadowScene (a plain wall 200 px from a lamp: concentric rings, the same with lampShadows 'sprite', so no shadow's); in the barrio the bricks and tiles hide it",
       "next": "Low priority. Cheap: dither the light pass's output by half a step (a hash of the pixel), which changes every lit scene's pictures a little; or an rgba16float light target (twice its bandwidth). Ask the owner which look he wants before either."
+    },
+    {
+      "refs": [
+        "REVIEW_PLAN.md#N-278"
+      ],
+      "aliases": [
+        "srcOnly worktree",
+        "runMultiArm full-rev",
+        "demos from the runner",
+        "bench sides wrong scene"
+      ],
+      "records": [
+        "R-1342"
+      ],
+      "result": "fixed (8066e84a): a srcOnly side whose scene folder (or dist/ under weedBundle) differs from the runner's tree stops the sitting and asks for --full-rev; runMultiArm gets --full-rev",
+      "next": "Re-read barrio sittings run on this PC without --full-rev while the main folder had a branch that changes demos/buenosAiresScene checked out: their A side ran that branch's neighbourhood.",
+      "id": "N-278",
+      "kind": "bug",
+      "area": "bench",
+      "status": "kept-hygiene",
+      "date": "2026-11-17",
+      "title": "Bench sides built srcOnly (runPredatorAbab without --full-rev, runMultiArm always) serve the runner's demos/, stress scenes and dist/, so a side whose revision changes its scene runs the runner's copy of it, A included",
+      "statusText": "found 2026-11-17 while planning the barrio stack's suspects on the ASUS (runMultiArm's arms would have run an old asus-lab neighbourhood); fixed the same day"
     }
   ],
   "records": [
@@ -35632,6 +35657,25 @@
       "text": "ASUS job 0887 (the other session's), HD 620, 20:44-20:55: main bd82c1be against fix/gbuffer-depth 023c4264, Buenos Aires hour=22&dayMinutes=0, camera still, src, 4 pairs. Drawn 36.8 -> 33.9 fps (-8.7 %, 4/4 pairs, cv 2/3 %), presented 57.3 -> 54.1. Renderer CPU 7.83 -> 7.57 ms, physics -14.6 %, logic -4.7 % (fewer frames: shared power). Load keys equal; GPU_CASTERS and GPU_SHADOW_LIGHTS +4.9 % on B, but at equal casters B still draws 8 % fewer, so the stack's GPU cost. Suspects: the G-buffer pass writing gl_FragDepth for every texel (N-274: no early depth test there; the colour pass keeps it with E-378's vertex depth), N-266's unshaded pass the same, N-276's per-fragment lamp rays. On the GTX each read cheap. A per-pass split on the ASUS is queued.",
       "commits": [
         "023c4264"
+      ]
+    },
+    {
+      "id": "R-1341",
+      "date": "2026-11-17",
+      "time": "21:06",
+      "timeFrom": "recorded",
+      "title": "E-502 on the ASUS's GeForce MX110: the opaque pass holds bunnyMark 100 000 at 60 fps, 16.5 without (-72 %), so discrete keeps it; scene.gpu reads both of the ASUS's GPUs right",
+      "verdict": "kept",
+      "text": "**E-502's \"discrete keeps the pass\" holds on a weak discrete GPU, and scene.gpu reads both of the ASUS's GPUs right.** ASUS laptop, job 0888, 2026-11-17 20:55 to 21:06.\n\n**Setup.** Chrome was put on the GeForce MX110 through Windows' graphics preference for chrome.exe (GpuPreference=2) and set back to the Intel (GpuPreference=1) at the end. One build, main bd82c1be. Side A forced the pass on (`?opaquePass=1`), side B forced it off (`?opaquePass=0`). src, 4 pairs.\n\n**Opaque pass on the MX110, which `auto` leaves on as discrete:**\n\n| Scene | drawn fps, on → off | CPU, on → off |\n|---|---|---|\n| bunnyMark 100 000 | 60.0 → 16.5 (−72.5 %, 4/4, cv 0/0 %) | renderer 5.48 → 2.69 ms, pre-render 5.04 → 2.33 ms, logic 3.04 → 1.33 ms |\n| bunnyMarkStress | 60.1 → 60.0 | below the floor |\n\n- With the pass the MX110 holds the 60 fps cap. That is at least 3.6 times what it draws without it, and five times the HD 620's 11.9 fps without it (R-1321). The CPU workers run cheaper on side B only because it draws fewer frames.\n- One run hit \"Failed to fetch dynamically imported module\" and was retried by the runner.\n\n**scene.gpu (DX-IGPUWARN), sceneGpuProbe, ballsScene (WebGL) and gearChainScene (WebGPU):**\n- **Chrome on the GeForce:** WebGL `{ name: \"ANGLE (NVIDIA, NVIDIA GeForce MX110 (0x0000174E) …)\", vendor: \"nvidia\", kind: \"discrete\" }`, WebGPU `{ name: \"nvidia maxwell\", kind: \"discrete\" }`, no warning.\n- **Playwright's Chromium**, which the preference does not cover: the HD 620, `{ vendor: \"intel\", kind: \"integrated\" }`, with one warning, WebGL and WebGPU (\"intel gen-9\").\n- **Chrome back on the Intel:** HD 620, integrated, one warning, WebGL and WebGPU."
+    },
+    {
+      "id": "R-1342",
+      "date": "2026-11-17",
+      "title": "N-278 fixed: bench runners refuse a srcOnly side whose scene differs from the runner's tree; runMultiArm --full-rev",
+      "verdict": "kept-hygiene",
+      "text": "**Bench sides served the runner's scenes, not their own.** `revWorktree.mjs` builds a srcOnly worktree from the runner's HEAD, checks out `src/` from the side's revision, and overlays the runner's working tree. `demos/`, the stress scenes and `dist/` therefore come from the runner.\n\n**Who it hit.**\n- runPredatorAbab is srcOnly unless `--full-rev`. On this PC the runner's tree is the main folder, which usually has some session's branch checked out, so side A, \"main\", ran that branch's demos.\n- runMultiArm was always srcOnly. Planning the barrio stack's suspects (the ASUS's 0891), its arms would have run the runner's neighbourhood: on the ASUS that is an old asus-lab commit, while the stack changes `demos/buenosAiresScene` (barrioLoader.js, the scene).\n\n**The fix** (8066e84a).\n- `servedOutsideSrc(paths)` lists `demos/`, `dist/` and `tests/bench/stressScenes/`.\n- `ensureRevWorktree` records `srcOnlyGaps`: HEAD against the revision, srcOnly worktrees only.\n- `srcOnlyGapCheck(sides, scene, query)` refuses a side whose gaps fall in its scene's folder, or in `dist/` when the query has `weedBundle`, and lists the rest.\n- Both runners call it unless `--full-rev`. runMultiArm gets `--full-rev`, and its protocol records `fullRev`.\n\n**Checked.** `runPredatorAbab --vs main --hyp-rev exp/no-n276` on the barrio without `--full-rev` stops before any run, naming `barrioLoader.js` and `buenosAiresScene.js`. Node suite 3036/3036 (tests in `runMultiArm.test.js`).\n\n**Still to re-read.** Barrio sittings run on this PC without `--full-rev` while the main folder had a demos-changing branch checked out: their A side was not main's neighbourhood. The ASUS jobs used `--full-rev` throughout.\n",
+      "commits": [
+        "8066e84a"
       ]
     }
   ],
