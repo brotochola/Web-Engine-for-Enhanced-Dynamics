@@ -265,7 +265,7 @@ test('joint-style u16 pack aliases entityB 65536 to 0', () => {
   assert.equal(out.b, 65536);
 });
 
-test('validateSceneSharedBufferConfig: past 65535 only with entityIdWidth 32, up to 500000', () => {
+test('validateSceneSharedBufferConfig: past 65535 only with entityIdWidth 32, up to 1 048 575', () => {
   assert.throws(
     () => validateSceneSharedBufferConfig(makeValidationScene(65536, 16)),
     /totalEntityCount must be an integer in \[0, 65535\]/,
@@ -276,12 +276,15 @@ test('validateSceneSharedBufferConfig: past 65535 only with entityIdWidth 32, up
   );
   assert.doesNotThrow(() => validateSceneSharedBufferConfig(makeValidationScene(300000, 32)));
   assert.doesNotThrow(() => validateSceneSharedBufferConfig(makeValidationScene(500000, 32)));
+  // DX-ENT1M: 2^20 - 1, FL4's index and the spatial stamp's id bits (500 000 before).
+  assert.doesNotThrow(() => validateSceneSharedBufferConfig(makeValidationScene(1048575, 32)));
   assert.throws(
-    () => validateSceneSharedBufferConfig(makeValidationScene(500001, 32)),
-    /totalEntityCount must be an integer in \[0, 500000\]/,
+    () => validateSceneSharedBufferConfig(makeValidationScene(1048576, 32)),
+    /totalEntityCount must be an integer in \[0, 1048575\]/,
   );
   assert.equal(maxEntitiesForWidth(16), MAX_ENTITIES_U16);
   assert.equal(maxEntitiesForWidth(32), MAX_ENTITIES_U32);
+  assert.equal(MAX_ENTITIES_U32, 1048575);
 });
 
 test('save codec already stores entityIndex as u32 (70000 survives)', () => {

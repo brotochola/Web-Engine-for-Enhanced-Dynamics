@@ -1,6 +1,7 @@
 /**
  * Scene entity-id width. 16 = current Uint16 lists (max 65535).
- * 32 = compose FL4 + PAIR3 + NBR1 + GRID1 + LIST-U32 (product ceiling 500000).
+ * 32 = compose FL4 + PAIR3 + NBR1 + GRID1 + LIST-U32 (product ceiling 1 048 575 = 2^20 - 1: FL4's 20-bit index and
+ * the spatial stamp's 20 id bits; 500 000 until DX-ENT1M, when the stamp had 19).
  * Bind once at SAB create / worker init. Hot loops call packPair / popEntity,
  * never `width === 32`.
  *
@@ -13,7 +14,7 @@ import { bindEntityFreeList } from './atomicFreeList.js';
 export const ENTITY_ID_WIDTH_16 = 16;
 export const ENTITY_ID_WIDTH_32 = 32;
 export const MAX_ENTITIES_U16 = 65535;
-export const MAX_ENTITIES_U32 = 500000;
+export const MAX_ENTITIES_U32 = (1 << 20) - 1;
 export const ENTITY_ID_NONE_U16 = 0xffff;
 export const ENTITY_ID_NONE_U32 = 0xffffffff;
 export const PAIR_U32_STRIDE = 4294967296;
