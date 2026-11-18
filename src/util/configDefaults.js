@@ -857,10 +857,10 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   unshaded: false,
   /**
    * 'add' — type 3 glows go to the lightGlows ADD mesh: over everything, after the light (nothing in front covers them).
-   * 'sprite' — the same quads join the entity list, each right after its entity's sprite (on its sort line), so it is
+   * 'sorted' — the same quads join the entity list, each right after its entity's sprite (on its sort line), so it is
    *   drawn over its own entity and whatever stands in front covers it; unshaded (DX-GLOWRADIUS: the light gradient's
    *   frame carries DX-UNSHADED's mark), so the night does not darken a light's halo. That turns the G-buffer and the
-   *   unshaded pass on.
+   *   unshaded pass on. Any other value warns (Pixi's set-up) and draws as 'add'.
    */
   lightGlow: 'add',
   /**
@@ -880,13 +880,13 @@ export const LIGHTING_DEFAULTS = Object.freeze({
 });
 
 /**
- * DX-GLOWRADIUS: whether a scene's halos are unshaded: a lit scene whose halos join the entities (lightGlow 'sprite'). The
+ * DX-GLOWRADIUS: whether a scene's halos are unshaded: a lit scene whose halos join the entities (lightGlow 'sorted'). The
  * atlas then marks the light gradient's frame unshaded (SpriteSheetRegistry.createBigAtlas's unshadedGlows).
  * @param {object|undefined} lighting config.lighting
  * @returns {boolean}
  */
 export function unshadedGlowsOf(lighting) {
-  return lighting?.enabled === true && (lighting.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
+  return lighting?.enabled === true && (lighting.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sorted';
 }
 
 /**

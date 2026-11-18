@@ -5,7 +5,7 @@ const { Scene, Camera, GameObject, SpriteRenderer, LightEmitter } = WEED;
 
 /**
  * DX-GLOWBENCH: lights with a halo, many of them, at night. Each lamp is a sprite with a small light and a halo on its
- * bulb, drifting slowly (its halo moves with it, so every frame re-sorts it). `?glowMode=sprite` (the default): the halos
+ * bulb, drifting slowly (its halo moves with it, so every frame re-sorts it). `?glowMode=sorted` (the default): the halos
  * join the entities, each right after its lamp's sprite, unshaded (DX-GLOWRADIUS: a sort key a halo, and the unshaded
  * pass on); `?glowMode=add`: the halos in the lightGlows layer, additive, over everything: the arm to read it against.
  *
@@ -24,7 +24,7 @@ function queryNumber(key, fallback) {
 }
 
 const LAMPS = Math.max(1, Math.floor(queryNumber('lamps', 2000)));
-const GLOW_MODE = query('glowMode') === 'add' ? 'add' : 'sprite';
+const GLOW_MODE = query('glowMode') === 'add' ? 'add' : 'sorted';
 const GLOW_RADIUS = Math.max(0, queryNumber('glowRadius', 35));
 const RADIUS = queryNumber('radius', 90);
 const RESOLUTION = queryNumber('resolution', 0.5);

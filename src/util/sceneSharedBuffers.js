@@ -776,7 +776,7 @@ export function initializeSceneLayers(scene) {
   const { config } = scene;
   const builtInLayers = {};
   const defaultYSorting = ySortEnabled(config.renderer?.ySort);
-  const glowAsSprite = (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
+  const glowAsSprite = (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sorted';
   for (const [name, defaults] of Object.entries(DEFAULT_LAYERS)) {
     if (name === 'lightGlows' && glowAsSprite) continue;
     builtInLayers[name] = {
@@ -845,7 +845,7 @@ function emitBlocks(scene) {
     customLayers: customLayerQueueSpecs().map((c) => ({ ...c, queueBytes: computeRenderQueueBufferSize(c.maxItems) })),
     // Pixi's glow batch's rows, where it packs the glow rows in pixi pack mode (additive glows).
     pixiGlowRows: config.preRender?.packGpuSprites === 'pixi'
-      && (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite'
+      && (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sorted'
       ? resolveMaxVisibleRenderables(scene) : 0,
     adobe: adobeOn ? { animBytes: AdobeAnimComponent.getBufferSize(n), tableBytes: tablesMB * 1048576 } : null,
     // E-177: the entity batch's keyed frames' table and updates, for a scene with sprites whose frames go keyed.

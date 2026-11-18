@@ -26,7 +26,7 @@ const FULL_TURN = Math.PI * 2;
  *   px, as it shows (E-498: a compact glow that falls to under 1 % at that radius); 0, the default, draws the light's
  *   wide gradient at 0.85 of its radius (a spark's big soft flash), so a lamp that lights a whole street gives its bulb a
  *   small one. `glowOffsetY` moves it on the screen (negative is up: put it on the bulb),
- *   `glowLayer` puts it on one layer (a layer name; null keeps the entity's layers). With lighting.lightGlow 'sprite'
+ *   `glowLayer` puts it on one layer (a layer name; null keeps the entity's layers). With lighting.lightGlow 'sorted'
  *   the halo is drawn right after its entity's sprite (over it, and under whatever stands in front of it) and unshaded:
  *   the night does not darken it.
  * - `offsetX` / `offsetY` move the light off the entity's centre, in local px: the entity's rotation turns them, and

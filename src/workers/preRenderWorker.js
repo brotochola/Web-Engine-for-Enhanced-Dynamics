@@ -2045,7 +2045,7 @@ class PreRenderWorker extends AbstractWorker {
         this.decorationFadeStartZoom = preCfg.startFadingDecorationsAtZoom ?? PRE_RENDER_DEFAULTS.startFadingDecorationsAtZoom;
         this.decorationHideZoom = preCfg.hideDecorationsAtZoom ?? PRE_RENDER_DEFAULTS.hideDecorationsAtZoom;
         this._decorationZoomAlpha = 1;
-        this._lightGlowAsSprite = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
+        this._lightGlowAsSprite = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sorted';
         this._ySortMode = rendererConfig.ySort;
         this._ySort = ySortEnabled(this._ySortMode);
         const spritePipe = resolveSpritePipeline({
@@ -3986,11 +3986,11 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Sprite mode does not register lightGlows. Glows stay in the entity queue.
+     * lightGlow 'sorted' does not register lightGlows. Glows stay in the entity queue.
      * Add mode: a hidden lightGlows layer skips the collect.
      */
     _syncGlowLayer() {
-        const sprite = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
+        const sprite = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sorted';
         this._lightGlowAsSprite = sprite;
         this._glowEmit = true;
         this._glowLayerAlpha = 1;

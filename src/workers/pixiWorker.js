@@ -10213,7 +10213,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     });
     this._packGpuSpritesOn = spritePipe.packGpuSprites;
     this._sortSpritesOn = spritePipe.sortSprites;
-    this._lightGlowAdd = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite';
+    // The halos added over everything ('add', the default) or sorted among the entities ('sorted'). OL-1: any other value
+    // (the old 'sprite' among them) warns and draws as 'add'.
+    const lightGlow = this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow;
+    if (lightGlow !== 'add' && lightGlow !== 'sorted') {
+      console.warn(`WeedJS: lighting.lightGlow is 'add' or 'sorted', not ${JSON.stringify(lightGlow)}: the halos are added over everything`);
+    }
+    this._lightGlowAdd = lightGlow !== 'sorted';
 
     this.autoGenerateMipmaps =
       rendererConfig.autoGenerateMipmaps !== undefined

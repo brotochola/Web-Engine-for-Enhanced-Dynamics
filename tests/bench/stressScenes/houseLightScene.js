@@ -148,7 +148,7 @@ export class HouseLightScene extends Scene {
     camera: { floorScaleY: META.SYN, heightScaleY: META.CZ },
     lighting: {
       enabled: true,
-      lightGlow: 'sprite',
+      lightGlow: 'sorted',
       baseAmbient: 0.04,
       maxLights: BENCH ? BENCH_LAMPS + 8 : 8,
       maxVolumes: BENCH ? BENCH_HOUSES + 8 : 16,

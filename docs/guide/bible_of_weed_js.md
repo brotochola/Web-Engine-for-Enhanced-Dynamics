@@ -654,7 +654,7 @@ Which blend a layer draws with depends on how many passes it takes. `blendMode` 
 
 So `fx: { blendMode: BLEND_MODES.ADD }` is an additive sprite layer, and `shader: { containerBlend }` is only for the pass into a render texture. (Up to 0.14, a layer drawn in one pass ignored `blendMode` and drew with `containerBlend`, normal by default.)
 
-The entities list sorts by `SpriteRenderer.zIndex` (larger is in front). `renderer.ySort` (default false) orders by Y inside the same zIndex. With both off and every zIndex at 0, the queue stays in emit order. `lighting.lightGlow` (`'add'` default) keeps glows on the ADD mesh, over everything; `'sprite'` puts each in the entity list right after its entity's sprite, so what stands in front covers it, and unshaded, so the night does not darken it (it turns the G-buffer and the unshaded pass on). With `'add'`, `lighting.lightGlowResolution` (default 0.5) is the size of the target the glows are drawn into against the canvas, added to the frame once: a halo is smooth, and half the size costs a quarter of its fill. 1 draws them onto the frame; `Layer.get('lightGlows').resolution` changes it at run time.
+The entities list sorts by `SpriteRenderer.zIndex` (larger is in front). `renderer.ySort` (default false) orders by Y inside the same zIndex. With both off and every zIndex at 0, the queue stays in emit order. `lighting.lightGlow` (`'add'` default) keeps glows on the ADD mesh, over everything; `'sorted'` puts each in the entity list right after its entity's sprite, so what stands in front covers it, and unshaded, so the night does not darken it (it turns the G-buffer and the unshaded pass on). With `'add'`, `lighting.lightGlowResolution` (default 0.5) is the size of the target the glows are drawn into against the canvas, added to the frame once: a halo is smooth, and half the size costs a quarter of its fill. 1 draws them onto the frame; `Layer.get('lightGlows').resolution` changes it at run time.
 
 ### Full-screen passes (`LAYER_KIND.SCREEN`)
 
@@ -1348,7 +1348,7 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, …), and 
 | A dimmer or an overbright light | `brightness = 0.5` (default 1; it scales the colour and the halo, and under 1 lightens its layer shadows too) |
 | A halo on the bulb | `glow = 0.6` (default 0: none), `glowOffsetY = -40` (40 px up the screen), `glowLayer = 'glows'` |
 | A small halo on a lamp that lights a whole street | `glowRadius = 30` (px, the glow you see; default 0: the light's wide gradient at 0.85 of its radius) |
-| Halos hidden by what stands in front of their lamp, and not darkened at night | `lighting.lightGlow: 'sprite'` (each halo drawn right after its entity's sprite, unshaded) |
+| Halos hidden by what stands in front of their lamp, and not darkened at night | `lighting.lightGlow: 'sorted'` (each halo drawn right after its entity's sprite, unshaded) |
 | Two lights on one entity (a car's headlights, a police beacon) | a child entity with a `LightEmitter`: `CarLight.spawn({ parent: this, localX: 50, localY: 12 })` (`transform.parent`, above) |
 | A lamp post's even pool | `elevation = 110` (the bulb's height above the floor: a wider, flatter pool, same reach) |
 | The light ahead of the entity (headlights) | `offsetX = 60` (local px, turned with the entity) |
@@ -1827,10 +1827,10 @@ class Torch extends GameObject {
 }
 ```
 
-- `spriteRenderer.unshaded` is `true` or `false` (the default) for one sprite. The sprites carry the G-buffer words it needs in a scene with a sheet with maps, an unshaded sheet, `lighting.lightGlow: 'sprite'` or a shadow map; in any other scene set `lighting.unshaded: true` too (a warning says so when a sprite asks and nothing carries it). A spawn sets it back to `false`.
+- `spriteRenderer.unshaded` is `true` or `false` (the default) for one sprite. The sprites carry the G-buffer words it needs in a scene with a sheet with maps, an unshaded sheet, `lighting.lightGlow: 'sorted'` or a shadow map; in any other scene set `lighting.unshaded: true` too (a warning says so when a sprite asks and nothing carries it). A spawn sets it back to `false`.
 - By day it looks as drawn and at night it keeps its colour: its lit colour is the light's like any sprite's, and its own colour comes on top where the light is short of it. It writes neither the G-buffer nor depth, so what is behind it is lit.
 - A whole sheet is unshaded or not, so give a lit window or a bulb a sheet of its own, or set the sprite's own `unshaded`.
-- With `lighting.lightGlow: 'sprite'` the lights' halos are unshaded too.
+- With `lighting.lightGlow: 'sorted'` the lights' halos are unshaded too.
 - It needs lighting (not raycasted) and the entities layer.
 - Not yet: a sprite brighter than its picture.
 

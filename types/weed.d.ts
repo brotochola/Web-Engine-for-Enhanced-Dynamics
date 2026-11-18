@@ -377,17 +377,17 @@ export interface SceneLightingConfig extends Record<string, unknown> {
   gbuffer?: 'pass' | 'mrt';
   /**
    * DX-UNSHADED: spriteRenderer.unshaded works in this scene even without a sheet with maps, an unshaded sheet,
-   * `lightGlow: 'sprite'` or a shadow map (which give the sprites their G-buffer words by themselves; faces do not).
+   * `lightGlow: 'sorted'` or a shadow map (which give the sprites their G-buffer words by themselves; faces do not).
    * Default false: a scene without them pays nothing.
    */
   unshaded?: boolean;
   /**
    * How the lights' halos (LightEmitter.glow) are drawn. 'add' (default): on the lightGlows layer, added over the lighting
-   * and over everything (nothing in front covers them). 'sprite': each right after its entity's sprite, on its sort line,
+   * and over everything (nothing in front covers them). 'sorted': each right after its entity's sprite, on its sort line,
    * so what stands in front covers it, and unshaded (the night does not darken it); it turns the G-buffer and the
    * unshaded pass on.
    */
-  lightGlow?: 'add' | 'sprite';
+  lightGlow?: 'add' | 'sorted';
   /**
    * The lightGlows layer's size against the canvas, 1/16 to 1 (default 0.5): the glows are drawn into a target that size
    * and added to the frame once, filtered up; a halo is smooth, and its fill costs a quarter at 0.5. 1 draws them onto the
@@ -4241,7 +4241,7 @@ export declare class LightEmitter extends Component {
    */
   static elevation: Float32Array;
   /**
-   * The halo's alpha; 0 (the default) draws none. With lighting.lightGlow 'sprite' the halo is drawn right after its
+   * The halo's alpha; 0 (the default) draws none. With lighting.lightGlow 'sorted' the halo is drawn right after its
    * entity's sprite (over it, under what stands in front) and unshaded: the night does not darken it.
    */
   static glow: Float32Array;

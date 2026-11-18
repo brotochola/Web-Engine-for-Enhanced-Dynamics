@@ -9,7 +9,7 @@ const { Scene, Camera, LAYER_KIND, BLEND_MODES } = WEED;
  * a shadow reach shorter than the light's), with barrels that cast shadows around it, and with `?raycast=1` boxes that
  * block it. compareCaptures.mjs compares this scene written in one API against the same lamps written in another.
  *
- * `?raycast=1`, `?groundScaleY=` (default 1), `?backend=webgpu`, `?glowMode=sprite` (lighting.lightGlow), `?ambient=`
+ * `?raycast=1`, `?groundScaleY=` (default 1), `?backend=webgpu`, `?glowMode=sorted` (lighting.lightGlow), `?ambient=`
  * (default 0.05), `?glowRes=` (lighting.lightGlowResolution, E-404; left out, the engine's default). `?cones=1` (DX-SPOT): lamp 1 takes a cone of 360 degrees (it must draw as the point light it was),
  * lamps 4, 7 and 11 real cones (a hard edge turned by `direction`, a soft one on a turned entity, a fully soft one).
  */
@@ -33,7 +33,7 @@ function queryNumber(key, fallback) {
 export const RAYCAST = queryNumber('raycast', 0) === 1;
 export const GROUND_SCALE_Y = queryNumber('groundScaleY', 1);
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
-export const GLOW_MODE = query('glowMode') === 'sprite' ? 'sprite' : 'add';
+export const GLOW_MODE = query('glowMode') === 'sorted' ? 'sorted' : 'add';
 export const AMBIENT = queryNumber('ambient', 0.05);
 export const CONES = queryNumber('cones', 0) === 1;
 /** E-404: lighting.lightGlowResolution, written only when given (a revision without it ignores the key). */
