@@ -428,13 +428,30 @@ class SpatialWorker extends AbstractWorker {
     if (!data.spatialPublishMemory || !data.gridMetadata?.candByte || !data.gridMetadata?.patternByte) {
       throw new Error('spatial worker without the spatial publish memory and its gather regions (createSpatialPublishMemory)');
     }
-    this._wasmPub = await bindSpatialPublish(
-      data.spatialPublishMemory,
-      data.gridMetadata,
-      this.workerId | 0,
-      this.globalEntityCount,
-      Grid.maxNeighbors,
-    );
+    // Precompute circle patterns for all possible cellRadius values (0 to maxCellRadius): the gather's table.
+    this._precomputeCirclePatterns();
+
+    // E-78: the candidate gather in WASM, on the publish memory's grid, markers, flags and lists, bound with the
+    // publish (SST-2: neither needs the other). Its marker and flags are the ones the worker reads (the fill on stamp
+    // wrap, _canReuseNeighbors).
+    const [wasmPub, wasmGather] = await Promise.all([
+      bindSpatialPublish(
+        data.spatialPublishMemory,
+        data.gridMetadata,
+        this.workerId | 0,
+        this.globalEntityCount,
+        Grid.maxNeighbors,
+      ),
+      bindSpatialGather(
+        data.spatialPublishMemory,
+        data.gridMetadata,
+        this.workerId | 0,
+        this.globalEntityCount,
+        this._circlePatterns,
+        this._maxCellRadius,
+      ),
+    ]);
+    this._wasmPub = wasmPub;
     this._wasmMeta = data.gridMetadata;
     this._neighborCandidateData = this._wasmPub.cand;
     this._candidateCountOf = new (EntityIdArray())(this.globalEntityCount);
@@ -451,19 +468,7 @@ class SpatialWorker extends AbstractWorker {
     this._rowPoseGen = new Int32Array(this.globalEntityCount).fill(POSE_GEN_NONE);
     this._poseChanged = false;
 
-    // Precompute circle patterns for all possible cellRadius values (0 to maxCellRadius)
-    this._precomputeCirclePatterns();
-
-    // E-78: the candidate gather in WASM, on the publish memory's grid, markers, flags and lists.
-    // Its marker and flags are the ones the worker reads (the fill on stamp wrap, _canReuseNeighbors).
-    this._wasmGather = await bindSpatialGather(
-      data.spatialPublishMemory,
-      data.gridMetadata,
-      this.workerId | 0,
-      this.globalEntityCount,
-      this._circlePatterns,
-      this._maxCellRadius,
-    );
+    this._wasmGather = wasmGather;
     this.processedMarker = this._wasmGather.marker;
     this._neighborCandidateTruncated = this._wasmGather.truncated;
 

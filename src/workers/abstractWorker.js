@@ -42,6 +42,7 @@ import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
 import { resetWaitMeter, waitMeterMs } from '../util/waitMeter.js';
 import { bindFrameClock, stampStep, TIME_ORIGIN } from '../util/frameClock.js';
 import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
+import { useEngineWasmModule } from '../util/wasmKernel.js';
 import { addFrame, bindFrameTotals } from '../util/frameTotals.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { DebugDraw } from '../core/debug/debugDraw.js';
@@ -1313,6 +1314,8 @@ export class AbstractWorker {
       case 'init':
         loadMark('init');
         debugWorkerLog(`[${this.constructor.name}] Received 'init' message, starting initialization...`);
+        // SST-2: the page's compile of engine.wasm, for every kernel this worker binds (null: it compiles its own).
+        useEngineWasmModule(e.data.engineWasm);
         if (e.data.pageOrigin) {
           self.__weedPageOrigin = e.data.pageOrigin;
         }

@@ -2170,30 +2170,40 @@ class PreRenderWorker extends AbstractWorker {
                 throw new Error('[PRE_RENDER] the render queue has no emit regions in the render-queue memory '
                     + '(renderQueueLayout.emit for this entity count): the emit kernel has nothing to run on');
             }
-            try {
-                this._emitWasm = await bindPreRenderEmit(data.renderQueueMemory, emitLayout);
-                this._keyedFrames = emitLayout.keyHeaderByte >= 0;
-                if (this._keyedFrames) {
-                    this._keyedHeader = new Uint32Array(data.renderQueueMemory.buffer, emitLayout.keyHeaderByte, PIXI_KEYED_HEADER_WORDS);
-                    this._keyedKeyBase = data.renderQueueLayout.pixiKeyBase | 0;
-                    this._keyedTexUpdates = (data.renderQueueLayout.pixiKeyTexUpdatesByte ?? -1) > 0;
-                }
-            } catch (err) {
-                throw new Error(`[PRE_RENDER] preRenderEmit.wasm did not load: ${err?.message ?? err}`, { cause: err });
+            // SST-2: every kernel on the render-queue memory bound side by side (none needs another's), each one's
+            // result taken below where it was awaited alone: the emit, the sprite collect (W4b), and with a GPU queue
+            // the painter sort (W10), the pack (E-76 W9) and the shadow stamp (E-114).
+            const collectLayout = data.renderQueueLayout?.collect || null;
+            const gpuQueueOn = !!(data.gpuQueue && data.gpuQueue.dataA && data.gpuQueue.dataB && data.gpuQueue.caps);
+            const painterLayout = gpuQueueOn ? data.renderQueueLayout?.preRenderPainter || null : null;
+            const painterOn = gpuQueueOn && this._ySort && !!data.renderQueueMemory && painterLayout !== null;
+            if (painterOn && painterLayout.rows < maxItems) {
+                throw new Error(`[PRE_RENDER] the painter state holds ${painterLayout.rows} rows for a queue of ${maxItems}`);
+            }
+            const packOn = gpuQueueOn && !!data.renderQueueMemory && !!data.renderQueueLayout;
+            const stampOn = packOn && !!data.renderQueueLayout.stamp;
+            const notLoaded = (name) => (err) => {
+                throw new Error(`[PRE_RENDER] ${name}.wasm did not load: ${err?.message ?? err}`, { cause: err });
+            };
+            const [emitBound, collectBound, painterBound, packBound, stampBound] = await Promise.all([
+                bindPreRenderEmit(data.renderQueueMemory, emitLayout).catch(notLoaded('preRenderEmit')),
+                collectLayout ? bindPreRenderCollect(data.renderQueueMemory, collectLayout).catch(notLoaded('preRenderCollect')) : null,
+                painterOn ? bindPainterRadix(data.renderQueueMemory, painterLayout).catch(notLoaded('painterRadix')) : null,
+                packOn ? bindGpuPack(data.renderQueueMemory, data.renderQueueLayout).catch(notLoaded('gpuPack')) : null,
+                stampOn ? bindShadowStamp(data.renderQueueMemory, data.renderQueueLayout.stamp) : null,
+            ]);
+            this._emitWasm = emitBound;
+            this._keyedFrames = emitLayout.keyHeaderByte >= 0;
+            if (this._keyedFrames) {
+                this._keyedHeader = new Uint32Array(data.renderQueueMemory.buffer, emitLayout.keyHeaderByte, PIXI_KEYED_HEADER_WORDS);
+                this._keyedKeyBase = data.renderQueueLayout.pixiKeyBase | 0;
+                this._keyedTexUpdates = (data.renderQueueLayout.pixiKeyTexUpdatesByte ?? -1) > 0;
             }
             // W27: the Adobe roots too, from a copy of the registry's assets (deserialized before initialize).
             if (bindEmitAdobe(this._emitWasm, emitLayout)) this._copyEmitAdobeAssets();
             // W4b: the sprite collect runs only in preRenderCollect.wasm, on Transform, its pose and Collider in the
             // memory (the scene lays them out whenever the emit reads sprites or glows).
-            this._collectWasm = null;
-            const collectLayout = data.renderQueueLayout?.collect || null;
-            if (collectLayout) {
-                try {
-                    this._collectWasm = await bindPreRenderCollect(data.renderQueueMemory, collectLayout);
-                } catch (err) {
-                    throw new Error(`[PRE_RENDER] preRenderCollect.wasm did not load: ${err?.message ?? err}`, { cause: err });
-                }
-            }
+            this._collectWasm = collectBound;
             // W27: the pose stash in the memory too when the emit kernel expands Adobe roots (the collect writes
             // the poses there on a frame with one, _bindCollectPoses).
             const stashIn = emitLayout !== null && emitLayout.persistRows === maxItems && emitLayout.stashXByte >= 0;
@@ -2233,19 +2243,9 @@ class PreRenderWorker extends AbstractWorker {
                 ];
                 // W10: the painter sort is painterRadix.wasm on pre-render's painter state, next to the keys it
                 // writes, when pre-render sorts (the scene lays the state out then); the slot lists it sorts are
-                // regions there too.
-                this._gpuPainterWasm = null;
-                const painterLayout = data.renderQueueLayout?.preRenderPainter || null;
-                if (this._ySort && data.renderQueueMemory && painterLayout) {
-                    if (painterLayout.rows < maxItems) {
-                        throw new Error(`[PRE_RENDER] the painter state holds ${painterLayout.rows} rows for a queue of ${maxItems}`);
-                    }
-                    try {
-                        this._gpuPainterWasm = await bindPainterRadix(data.renderQueueMemory, painterLayout);
-                    } catch (err) {
-                        throw new Error(`[PRE_RENDER] painterRadix.wasm did not load: ${err?.message ?? err}`, { cause: err });
-                    }
-                } else if (this._ySort && this._sortSprites === SORT_SPRITES_PRERENDER
+                // regions there too. Bound above with the emit.
+                this._gpuPainterWasm = painterBound;
+                if (!painterOn && this._ySort && this._sortSprites === SORT_SPRITES_PRERENDER
                     && this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER) {
                     console.error('[PRE_RENDER] pre-render sorts the sprites (preRender.sortSprites), but the render-queue '
                         + 'memory has no painter state for it: they are drawn unsorted');
@@ -2267,11 +2267,7 @@ class PreRenderWorker extends AbstractWorker {
                 if (!data.renderQueueMemory || !data.renderQueueLayout) {
                     throw new Error('[PRE_RENDER] the GPU queue has no render-queue memory: gpuPack.wasm has nothing to pack');
                 }
-                try {
-                    this._gpuPackWasm = await bindGpuPack(data.renderQueueMemory, data.renderQueueLayout);
-                } catch (err) {
-                    throw new Error(`[PRE_RENDER] gpuPack.wasm did not load: ${err?.message ?? err}`, { cause: err });
-                }
+                this._gpuPackWasm = packBound;
                 // E-82b: plain sprites in two streams (E-513: a nearest atlas too, its pixel snap on the poses).
                 this._gpuSplit = true;
                 this._gpuStaticGen.fill(0);
@@ -2279,12 +2275,8 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuIndexedGen.fill(0);
                 // E-114: the shadow stamp in WASM, where its scratch and light table are stamp regions (made with
                 // shadows and sun casters; without them nothing is stamped).
-                this._stampWasm = null;
-                this._stampScan = null;
-                if (data.renderQueueMemory && data.renderQueueLayout?.stamp) {
-                    this._stampWasm = await bindShadowStamp(data.renderQueueMemory, data.renderQueueLayout.stamp);
-                    this._stampScan = stampScanTarget(this._stampWasm);
-                }
+                this._stampWasm = stampBound;
+                this._stampScan = stampBound !== null ? stampScanTarget(stampBound) : null;
                 const cookieN = Math.max(1, caps.maxCookie | 0);
                 if (cookieN > 0) {
                     // A render queue of the cookies' rows: in the stamp's regions of the render-queue memory when it
@@ -2556,29 +2548,20 @@ class PreRenderWorker extends AbstractWorker {
             throw new Error('[PRE_RENDER] the visibility memory could not be made (a shared WebAssembly.Memory was refused): '
                 + 'lighting.walls needs it');
         }
-        let sweep;
-        try {
-            sweep = await bindVisibilitySweep(vm, { maxVerts, f32: this.config?.wasm?.visibilitySweepF32 !== false });
-        } catch (err) {
-            throw new Error(`[PRE_RENDER] visibilitySweep.wasm did not load: ${err?.message ?? err}`, { cause: err });
-        }
+        const notLoaded = (name) => (err) => {
+            throw new Error(`[PRE_RENDER] ${name}.wasm did not load: ${err?.message ?? err}`, { cause: err });
+        };
+        // SST-2: the sweep, the solids' raster and the gather bound side by side (none needs another's).
+        const [sweep, solid, gather] = await Promise.all([
+            bindVisibilitySweep(vm, { maxVerts, f32: this.config?.wasm?.visibilitySweepF32 !== false }).catch(notLoaded('visibilitySweep')),
+            vm.layout.solidBytes > 0 ? bindSolidSegments(vm).catch(notLoaded('solidSegments')) : null,
+            place ? bindVisibilityGather(memory, v, vm).catch(notLoaded('visibilityGather')) : null,
+        ]);
         this._visSweep = sweep;
         this._visMemory = vm.memory;
         bindPolarBins(vm.views.polarDist, vm.views.polarOwner);
-        if (vm.layout.solidBytes > 0) {
-            try {
-                if (await bindSolidSegments(vm)) this._visCollectSolid = collectSolidWasm;
-            } catch (err) {
-                throw new Error(`[PRE_RENDER] solidSegments.wasm did not load: ${err?.message ?? err}`, { cause: err });
-            }
-        }
-        if (place) {
-            try {
-                this._visGather = await bindVisibilityGather(memory, v, vm);
-            } catch (err) {
-                throw new Error(`[PRE_RENDER] visibilityGather.wasm did not load: ${err?.message ?? err}`, { cause: err });
-            }
-        }
+        if (solid) this._visCollectSolid = collectSolidWasm;
+        if (place) this._visGather = gather;
         return vm.views;
     }
 

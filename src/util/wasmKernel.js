@@ -12,12 +12,30 @@
 // src/wasm/engine.js: webpack emits the asset only for that pattern, and the bundle rewrites it to a data URL
 // (scripts/buildBundle.js), because a blob worker has no directory to fetch from; a gzipped one
 // (data:application/gzip), which DecompressionStream inflates, as the bundle's Box2D loader does.
+//
+// SST-2: the page compiles engine.wasm once and posts the WebAssembly.Module to every worker (AbstractWorker hands it
+// here, useEngineWasmModule): the engine module is then compiled nowhere else. A worker that got none (Node tests, a
+// page that could not compile it) fetches and compiles its own, as before.
 
 import { loadMark } from './loadMarks.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
 const compiled = new Map();
 // The instances of each module (by URL), one per memory.
 const instances = new Map();
+
+/**
+ * SST-2: use `module`, the engine module the page compiled (src/wasm/engine.js' engineWasmUrl), for every kernel this
+ * worker binds from now on, instead of fetching and compiling it here. A kernel already bound keeps its instance.
+ * @param {WebAssembly.Module | null | undefined} module
+ * @returns {boolean} whether a module was taken
+ */
+export function useEngineWasmModule(module) {
+  if (!(module instanceof WebAssembly.Module)) return false;
+  compiled.set(String(engineWasmUrl), Promise.resolve(module));
+  loadMark('wasm module');
+  return true;
+}
 
 function bytesFromDataUrl(href) {
   const binary = atob(href.slice(href.indexOf(',') + 1));
@@ -46,7 +64,7 @@ async function loadBytes(name, url) {
   return new Uint8Array(await response.arrayBuffer());
 }
 
-/** The compiled module for `url`, compiled on first use in this worker. */
+/** The compiled module for `url`: the page's (useEngineWasmModule), else compiled on first use in this worker. */
 export function compileWasmKernel(name, url) {
   const href = String(url);
   let module = compiled.get(href);

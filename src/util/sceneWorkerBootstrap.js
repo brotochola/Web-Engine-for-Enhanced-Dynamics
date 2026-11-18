@@ -29,6 +29,89 @@ export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 // compiled-module caches instead of re-fetching + re-compiling every worker.
 const WORKER_CACHE_BUST = `?v=${Date.now()}`;
 
+/** SST-2: the page's one compile of engine.wasm (a Promise of the WebAssembly.Module, or of null), for every scene. */
+let engineWasmCompile = null;
+
+/**
+ * The data URL a bundle inlined engine.wasm as (gzipped), or null: WEED.EngineWasmUrl when the bundle names it, else
+ * the one string literal scripts/buildBundle.js (inlineWorkerWasmAssets) wrote into the workers' common code.
+ */
+function bundleEngineWasmHref() {
+  const weed = window.WEED;
+  if (typeof weed.EngineWasmUrl === 'string') return weed.EngineWasmUrl;
+  const prefix = 'data:application/gzip;base64,';
+  for (const source of [weed.WorkerCommonSource, ...Object.values(weed.WorkerSources || {})]) {
+    if (typeof source !== 'string') continue;
+    const at = source.indexOf(prefix);
+    if (at < 1) continue;
+    const quote = source[at - 1];
+    if (quote !== '"' && quote !== "'") continue;
+    const end = source.indexOf(quote, at);
+    if (end > at) return source.slice(at, end);
+  }
+  return null;
+}
+
+async function inflateDataUrl(href) {
+  const binary = atob(href.slice(href.indexOf(',') + 1));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  if (!href.startsWith('data:application/gzip')) return bytes;
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** engine.wasm compiled from its file (source builds): streamed when the server says it is wasm. */
+async function compileEngineWasmFile() {
+  // The workers' engineWasmUrl (src/wasm/engine.js): source workers are served from /src (createSceneWorkerFactory).
+  const response = await fetch(`${window.location.origin}/src/wasm/engine.wasm`);
+  if (!response.ok) throw new Error(`engine.wasm: HTTP ${response.status}`);
+  const type = response.headers.get('content-type') || '';
+  if (typeof WebAssembly.compileStreaming === 'function' && type.startsWith('application/wasm')) {
+    return WebAssembly.compileStreaming(response);
+  }
+  return WebAssembly.compile(await response.arrayBuffer());
+}
+
+/**
+ * SST-2: compile engine.wasm on the page, once a page (GameEngine.loadScene starts it): source builds stream it from its
+ * file (Chrome keeps the compiled code between visits), the bundle inflates the data URL it carries. Each worker gets
+ * the module with its 'boot' message (wasmKernel.js useEngineWasmModule) instead of compiling its own. Resolves to
+ * null where it cannot (no page, an error): the workers then compile their own.
+ * @returns {Promise<WebAssembly.Module|null>}
+ */
+export function compileEngineWasm() {
+  if (engineWasmCompile) return engineWasmCompile;
+  if (typeof window === 'undefined' || typeof WebAssembly === 'undefined') return Promise.resolve(null);
+  loadMark('engine wasm');
+  engineWasmCompile = (async () => {
+    let module;
+    if (window.WEED?.BUNDLE_MODE) {
+      if (typeof window.WEED.ensureEmbeddedSources === 'function') await window.WEED.ensureEmbeddedSources();
+      const href = bundleEngineWasmHref();
+      if (!href) return null;
+      module = await WebAssembly.compile(await inflateDataUrl(href));
+    } else {
+      module = await compileEngineWasmFile();
+    }
+    // A kernel module imports the shared memory and nothing else (wasmKernel.js holds the workers to it).
+    for (const imp of WebAssembly.Module.imports(module)) {
+      if (imp.module !== 'env' || imp.name !== 'memory') return null;
+    }
+    return module;
+  })().then(
+    (module) => {
+      loadMark('engine wasm compiled');
+      return module;
+    },
+    (error) => {
+      console.warn('WeedJS: engine.wasm could not be compiled on the page; each worker compiles its own.', error);
+      return null;
+    },
+  );
+  return engineWasmCompile;
+}
+
 function createSceneWorkerFactory(useInlineWorkers, cacheBust) {
   return (workerName) => {
     if (useInlineWorkers) {
@@ -291,7 +374,7 @@ function bundleEngineShaders() {
   return window.WEED.EngineShaders || null;
 }
 
-function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
+function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad, engineWasm = null) {
   if (scene.config.physics) {
     scene.config.physics.publishContactRing = scene._anyCollisionListener === true;
   }
@@ -522,6 +605,8 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     // W14: the navigation memory (the nav buffer and the flowfield's scratch), for the particle worker.
     navigationMemory: scene.navigationMemory?.memory || null,
     navigationLayout: scene.navigationMemory?.layout || null,
+    // SST-2: engine.wasm as the page compiled it (compileEngineWasm), or null: each worker compiles its own then.
+    engineWasm,
   };
 }
 
@@ -567,6 +652,8 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
   if (scene.workers.physics) {
     debugWorkerLog('[Scene]   → Initializing physics worker...');
     const physicsExtra = {
+      // Box2D's own module, not the engine's kernels.
+      engineWasm: null,
       workerPorts: workerPorts.physics,
       frameRateIndex: physicsIndex,
       frameClockSlot: frameClockSlot('physics'),
@@ -740,7 +827,9 @@ export async function createSceneWorkers(scene) {
   const scriptsToLoad = collectWorkerScriptsToLoad(scene, origin);
   const workerPorts = scene.setupWorkerCommunication();
   const sharedBuffers = buildSceneSharedBuffers(scene);
-  const initData = buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad);
+  // SST-2: started by GameEngine.loadScene, long done by now.
+  const engineWasm = await compileEngineWasm();
+  const initData = buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad, engineWasm);
 
   loadMark('init data');
   initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts);
