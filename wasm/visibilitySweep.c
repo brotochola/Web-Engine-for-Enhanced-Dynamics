@@ -1072,10 +1072,13 @@ int32_t wall_row(uint32_t table, double lx, double ly, double floorInv, int32_t 
       if (step > 0.0) turned += step;
       if (turned > 4.0) turned = 4.0;
       prevRaw = raw;
-      /* The first bin that starts at or over this vertex's angle; a whole turn on, none (the last mark). */
+      /* The first bin that starts at or over this vertex's angle; a whole turn on, none (the last mark). The angles
+         never turn back, so the vertices a bin sees are the first so many: each writes its own index at its bin (the
+         last one there stays), a store with nothing read back. Counting them there (marks[reach]++) read the word
+         the vertex before had just written, two vertices on one ray after the other: 0.59 ms a frame for 720 lamps. */
       int32_t reach = (int32_t)__builtin_ceil(64.0 * ((double)(float)((double)ang0 + turned) - (double)ang0));
       if (reach > ROW_BINS) reach = ROW_BINS;
-      marks[reach]++;
+      marks[reach] = i;
     }
     int32_t next = first;
     if (i + 1 < n) {
@@ -1092,12 +1095,13 @@ int32_t wall_row(uint32_t table, double lx, double ly, double floorInv, int32_t 
   v[1] = y0;
   v[2] = (float)((double)ang0 + 4.0);
   v[3] = 0.0f;
-  /* The running count of the marks: the vertices after the first that a bin's start is at or over; the one before
-     the last of them goes in the row. */
+  /* The running highest of the marks: the last vertex a bin's start is at or over (the count of them, the first
+     left out); the one before it goes in the row. */
   int32_t seen = 0;
   float *bins = row + 4;
   for (int32_t b = 0; b < ROW_BINS; b++) {
-    seen += marks[b];
+    const int32_t mark = marks[b];
+    seen = mark > seen ? mark : seen;
     bins[b] = (float)(seen > 1 ? seen - 1 : 0);
   }
   row[0] = (float)n;

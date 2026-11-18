@@ -1780,6 +1780,8 @@ class PreRenderWorker extends AbstractWorker {
         // that holds a row is copied into the frame's buffer.
         this._wallRowCopies = [];
         this._wallRowKernelOn = false;
+        // OL-12: where the occluders' codes are in the gather's memory (0: the gather's kernel is not asked for them).
+        this._wallOccCodeByte = 0;
         this._vpWords = EMPTY_U32;
         this._vpPolarOwner = EMPTY_I32;
         this._wallLampX = EMPTY_F64;
@@ -2551,6 +2553,7 @@ class PreRenderWorker extends AbstractWorker {
                 // OL-11: the occluders' codes where the kernel reads them, and its row as views of 16, 32, 64 ... vertices
                 // up to a row's own width (a copy takes the shortest that holds the row, never past a row's floats).
                 this._wallOccCode = vm.occCode;
+                this._wallOccCodeByte = vm.occCode.byteOffset;
                 this._wallRowKernelOn = this.config?.wasm?.wallRow !== false;
                 this._wallRowCopies = [];
                 for (let verts = 16; verts < rows.rowVerts; verts *= 2) {
@@ -5286,7 +5289,11 @@ class PreRenderWorker extends AbstractWorker {
         // N-134: with the old fan pass (debug.lightFans) the fans are the lamps' shadows and Pixi draws the sun's casters
         // alone, so the lamps' stamps and cookies are not made. OL-4: with walls read by the light pass they are, as in
         // any scene.
-        const stamp = this._wallFansOn ? 0 : this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
+        // OL-12: with no sun caster there is nothing to stamp, and the shadow lights are gathered for nothing (720
+        // lamps: 0.05 ms a frame) unless the lamps cast into their map, where each one gathered takes a tile (OL-5).
+        const stamp = this._wallFansOn || (sunN <= 0 && !this._lampMapCasts)
+            ? 0
+            : this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
         // DX-SHADOW3D: a lamp's silhouettes in the direction that lamp sees (full rows; keyed ones keep the sun's).
         if (stamp > 0 && this._stampLights && dst.stampLightIdx) {
             // A lamp is not shaded by its own entity (a car's headlights by the car); a directional caster shows it the frame
@@ -5998,7 +6005,10 @@ class PreRenderWorker extends AbstractWorker {
         // back as events, in neighbour order.
         const gk = this._visGather;
         const gatherOn = gk !== null
-            && writeGatherColumns(gk, this, Grid, Transform, Collider, LightOccluder, ColliderFixture, selfLitI32 !== null);
+            // OL-12: for the walls' rows the kernel writes each packed occluder's code itself and sends no event for it
+            // (the self-lit candidates were the old pass's, and the only use the rows had for them was this code).
+            && writeGatherColumns(gk, this, Grid, Transform, Collider, LightOccluder, ColliderFixture,
+                rowsBuf === null && selfLitI32 !== null, rowsBuf !== null ? this._wallOccCodeByte : 0);
         const gatherRes = gatherOn ? gk.results : null;
         const evI32 = gatherOn ? gk.eventsI32 : null;
         const evF64 = gatherOn ? gk.eventsF64 : null;
@@ -6344,10 +6354,11 @@ class PreRenderWorker extends AbstractWorker {
                     selfLitCount = selfLitStart;
                     continue;
                 }
-                // Each packed occluder's code, from the light's self-lit candidates (the gather names its entity there).
-                // One the candidates' list had no room to name still stops the light (no id: nothing of its own is lit).
-                for (let o = 0; o < occCount; o++) wallOccCode[o] = 255;
-                if (selfLitI32 !== null) {
+                // Each packed occluder's code. The gather's kernel wrote them (OL-12); the JS gather names each one's
+                // entity in the light's self-lit candidates, and one that list had no room to name still stops the light
+                // (no id: nothing of its own is lit).
+                if (!gatherOn) for (let o = 0; o < occCount; o++) wallOccCode[o] = 255;
+                if (!gatherOn && selfLitI32 !== null) {
                     for (let q = selfLitStart; q < selfLitCount; q++) {
                         if (selfLitSolid[q] !== 0) continue;
                         const wall = selfLitI32[(4 + q * selfLitItemBytes) >> 2];

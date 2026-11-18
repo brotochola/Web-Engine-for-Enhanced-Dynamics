@@ -153,3 +153,29 @@ for (const gather of ['js', 'gather']) {
     }
   });
 }
+
+// OL-12: with the walls' rows the gather's kernel writes each packed occluder's code itself (its entity's G-buffer id
+// and its opacity), where the JS gather names the entity and pre-render works the code out. The same frames on a worker
+// that gathers in JS and on one that gathers in visibilityGather.wasm: every row names the same wall, of the same
+// opacity, on every edge.
+test('OL-12: the gather kernel\'s codes are the ones pre-render works out from the JS gather', async () => {
+  const js = await playFrames('js', true, 8);
+  const wasm = await playFrames('gather', true, 8);
+  let edges = 0;
+  let walls = 0;
+  for (let f = 0; f < js.out.length; f++) {
+    assert.deepEqual(wasm.out[f].map((r) => r.lamp), js.out[f].map((r) => r.lamp), `frame ${f}: the lamps with a row`);
+    for (let r = 0; r < js.out[f].length; r++) {
+      const a = new Float32Array(js.out[f][r].bits.buffer);
+      const k = new Float32Array(wasm.out[f][r].bits.buffer);
+      assert.equal(k[0], a[0], `frame ${f} lamp ${js.out[f][r].lamp}: the vertices`);
+      for (let v = 0; v < a[0]; v++) {
+        const at = 4 * (WALL_VERT0 + v) + 3;
+        assert.equal(k[at], a[at], `frame ${f} lamp ${js.out[f][r].lamp} vertex ${v}: the edge's code`);
+        edges++;
+        if (a[at] !== 0) walls++;
+      }
+    }
+  }
+  assert.ok(walls > 500 && walls < edges, `${walls} of ${edges} edges name a wall`);
+});
