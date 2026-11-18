@@ -871,6 +871,13 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   wallDepth: 0,
   /**
+   * OL-9: with lighting.walls, a lamp's walls kept from frame to frame. Pre-render gathers each lamp's walls every
+   * frame; where the lamp, the walls in its reach and their opacity are what they were (a street lamp among houses),
+   * it keeps the row the light pass reads and sweeps nothing. false sweeps every lamp every frame (to measure, or to
+   * rule the cache out of a wrong shadow).
+   */
+  wallCache: true,
+  /**
    * DX-GBUF: how the G-buffer passes draw. 'mrt' (default): the face map and the entity ids map in one pass with two
    * colour targets (WebGL2 drawBuffers, WebGPU two targets); 'pass': a pass each. Same picture; one pass costs about a
    * third less (E-377: 0.51 against 0.80 ms at the light's resolution 0.5, 1.65 against 2.46 at 1, GTX 1650, WebGL; the

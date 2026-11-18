@@ -25,7 +25,8 @@ import { AbstractWorker } from './abstractWorker.js';
 import { poseRotationLive } from '../box2d/box2dBodySync.js';
 import { resolveFaces } from '../render/faceMap.js';
 import { gbufEntityId, gbufWanted, writeGbufWords } from '../render/gbufWord.js';
-import { WALL_ROW_ARGS, wallEdgeCode, wallRowsLayout, writeWallRow } from '../render/visibility/lampWallRow.js';
+import { WALL_ROW_ARGS, WALL_VERT0, wallEdgeCode, wallRowsLayout, writeWallRow } from '../render/visibility/lampWallRow.js';
+import { WALL_SIG, WALL_SIG_F64, bindWallSignature, wallInputsSignature } from '../render/visibility/wallRowCache.js';
 import { Camera } from '../core/camera.js';
 import { takePublishedList } from '../util/publishedList.js';
 import { Query as QueryImport } from '../core/query.js';
@@ -35,6 +36,7 @@ import {
     ensureCompoundSolid,
     OCC_CIRCLE,
     OCC_POLY,
+    POLAR_BINS,
     polarBinsActive,
     skipPolarBins,
     warnSweepOverflow,
@@ -1143,6 +1145,7 @@ const EMPTY_U8 = new Uint8Array(0);
 const EMPTY_U16 = new Uint16Array(0);
 const EMPTY_U32 = new Uint32Array(0);
 const EMPTY_I32 = new Int32Array(0);
+const EMPTY_F64 = new Float64Array(0);
 const EMPTY_I16 = new Int16Array(0);
 // A caster row's terms DX-SHADOWTEX changes, by float: the sprite row of wasm/gpuPack.c sprite_row.
 const GPU_ROW_SCALE_X = 2;
@@ -1767,8 +1770,18 @@ class PreRenderWorker extends AbstractWorker {
         this._wallRowFloats = 0;
         this._wallRowVerts = 0;
         this._wallCodes = EMPTY_F32;
-        this._wallOccEntity = EMPTY_I32;
+        this._wallOccCode = EMPTY_I32;
         this._vpOutOcc = EMPTY_I32;
+        // OL-9 (lighting.wallCache): a lamp's row kept while what goes into its sweep is the same. The visibility
+        // memory as words and the polar bins' owners (the signature reads them), each lamp's place and reach the frame
+        // before (a lamp that moved needs no signature), and how many rows this frame kept.
+        this._wallCacheOn = false;
+        this._vpWords = EMPTY_U32;
+        this._vpPolarOwner = EMPTY_I32;
+        this._wallLampX = EMPTY_F64;
+        this._wallLampY = EMPTY_F64;
+        this._wallLampR = EMPTY_F64;
+        this._wallRowsKept = 0;
         // N-19: per self-lit item, 1 if it is a compound solid; per entity, the
         // stamp of the last light whose polygon showed that solid. N-39: per
         // simple item, its occluder index in this light's sweep.
@@ -2503,17 +2516,30 @@ class PreRenderWorker extends AbstractWorker {
             const rowSabs = [data.visibilityPolygons.rowsA, data.visibilityPolygons.rowsB];
             if (!this._wallFansOn && rowSabs[0] && rowSabs[1]) {
                 const rows = wallRowsLayout(maxLts, maxVerts);
+                // OL-9: beside each buffer, what its rows hold: the signature of the row a lamp wrote there last (0 and 0:
+                // none), the row's place (-1: overwritten since), and each place's lamp.
+                const lampSlots = vm.ownerSeen.length;
                 for (let b = 0; b < 2; b++) {
                     this._wallRowBuffers[b] = {
                         header: new Int32Array(rowSabs[b], 0, 1 + rows.lights),
                         f32: new Float32Array(rowSabs[b], rows.rowsByte, rows.lights * rows.rowFloats),
+                        sigLo: new Uint32Array(lampSlots),
+                        sigHi: new Uint32Array(lampSlots),
+                        place: new Int32Array(lampSlots).fill(-1),
+                        lampAt: new Int32Array(rows.lights).fill(-1),
                     };
                 }
+                this._wallCacheOn = this.config?.lighting?.wallCache !== false;
+                this._vpWords = bindWallSignature(vm);
+                this._vpPolarOwner = vm.polarOwner;
+                this._wallLampX = new Float64Array(lampSlots).fill(NaN);
+                this._wallLampY = new Float64Array(lampSlots).fill(NaN);
+                this._wallLampR = new Float64Array(lampSlots).fill(NaN);
                 this._wallRowsWrite = this._wallRowBuffers[0];
                 this._wallRowFloats = rows.rowFloats;
                 this._wallRowVerts = rows.rowVerts;
                 this._wallCodes = new Float32Array(rows.rowVerts);
-                this._wallOccEntity = new Int32Array(maxOccluders);
+                this._wallOccCode = new Int32Array(maxOccluders);
             }
 
             // Self-lit queue (entity under own occluder fill)
@@ -5821,7 +5847,14 @@ class PreRenderWorker extends AbstractWorker {
         if (rowsBuf !== null) rowsBuf.header[0] = 0;
         const outOcc = this._vpOutOcc;
         const wallCodes = this._wallCodes;
-        const wallOccEntity = this._wallOccEntity;
+        const wallOccCode = this._wallOccCode;
+        const wallCacheOn = this._wallCacheOn;
+        const vpWords = this._vpWords;
+        const polarOwner = this._vpPolarOwner;
+        const lampX = this._wallLampX;
+        const lampY = this._wallLampY;
+        const lampR = this._wallLampR;
+        let rowsKept = 0;
         const rowFloats = this._wallRowFloats;
         const rowCap = this._wallRowVerts;
         let rowsWritten = 0;
@@ -6270,6 +6303,61 @@ class PreRenderWorker extends AbstractWorker {
             // on the memory the gather above packed (the _vp* scratch are its views). A light with self-lit items
             // takes a new N-19 stamp, and the kernel marks the solids its polygon shows with it.
             const polarActive = polarBinsActive();
+            // OL-9: this lamp's signature, once taken (0 and 0: not taken, and a row written under it is never kept).
+            let rowSigLo = 0;
+            let rowSigHi = 0;
+            if (rowsBuf !== null) {
+                // OL-4: a lamp with nothing in reach gets no row (nothing stops it), and with no row to write, no sweep.
+                if (!(occCount > 0 || polarActive) || rowsWritten >= maxLts) {
+                    selfLitCount = selfLitStart;
+                    continue;
+                }
+                // Each packed occluder's code, from the light's self-lit candidates (the gather names its entity there).
+                // One the candidates' list had no room to name still stops the light (no id: nothing of its own is lit).
+                for (let o = 0; o < occCount; o++) wallOccCode[o] = 255;
+                if (selfLitI32 !== null) {
+                    for (let q = selfLitStart; q < selfLitCount; q++) {
+                        if (selfLitSolid[q] !== 0) continue;
+                        const wall = selfLitI32[(4 + q * selfLitItemBytes) >> 2];
+                        wallOccCode[selfLitOcc[q]] = wallEdgeCode(gbufEntityId(wall), occluderBlock[wall]);
+                    }
+                }
+                if (wallCacheOn) {
+                    if (lampX[lightIdx] === lx && lampY[lightIdx] === ly && lampR[lightIdx] === influenceRadius) {
+                        // OL-9: a lamp that stands where it stood. If the row it left in this buffer was written from the
+                        // same inputs, and no row written since took its place, it is this frame's row: no sweep.
+                        WALL_SIG_F64[0] = lx;
+                        WALL_SIG_F64[1] = ly;
+                        WALL_SIG_F64[2] = influenceRadius;
+                        WALL_SIG_F64[3] = groundInvY;
+                        wallInputsSignature(vpWords, vertCountArr, vertStart, occCount, wallOccCode, polarActive, polarOwner,
+                            occluderBlock || null, POLAR_BINS);
+                        rowSigLo = WALL_SIG[0];
+                        rowSigHi = WALL_SIG[1];
+                        const at = rowsBuf.place[lightIdx];
+                        if (at >= rowsWritten && rowsBuf.sigLo[lightIdx] === rowSigLo && rowsBuf.sigHi[lightIdx] === rowSigHi) {
+                            if (at > rowsWritten) {
+                                // The rows before it are fewer this frame: it moves down, its own floats alone.
+                                const from = at * rowFloats;
+                                rowsBuf.f32.copyWithin(rowsWritten * rowFloats, from, from + 4 * (WALL_VERT0 + rowsBuf.f32[from] + 1));
+                            }
+                            const was = rowsBuf.lampAt[rowsWritten];
+                            if (was !== lightIdx && was >= 0 && rowsBuf.place[was] === rowsWritten) rowsBuf.place[was] = -1;
+                            rowsBuf.lampAt[rowsWritten] = lightIdx;
+                            rowsBuf.place[lightIdx] = rowsWritten;
+                            rowsBuf.header[1 + rowsWritten] = lightIdx;
+                            rowsWritten++;
+                            rowsKept++;
+                            selfLitCount = selfLitStart;
+                            continue;
+                        }
+                    } else {
+                        lampX[lightIdx] = lx;
+                        lampY[lightIdx] = ly;
+                        lampR[lightIdx] = influenceRadius;
+                    }
+                }
+            }
             if (selfLitCount > selfLitStart) {
                 let stamp = (this._selfLitSeenStamp + 1) >>> 0;
                 if (stamp === 0) {
@@ -6290,14 +6378,7 @@ class PreRenderWorker extends AbstractWorker {
             if (rowsBuf !== null) {
                 // OL-4: the lamp's row for the light pass, from the polygon as the sweep left it (a cone's whole turn: the
                 // light pass cuts the cone itself). A lamp with nothing in reach gets no row: nothing stops it.
-                if ((occCount > 0 || polarActive) && vertCount >= 3 && rowsWritten < maxLts) {
-                    // Each packed occluder's entity, from the light's self-lit candidates (the gather names them there).
-                    for (let o = 0; o < occCount; o++) wallOccEntity[o] = -1;
-                    if (selfLitI32 !== null) {
-                        for (let q = selfLitStart; q < selfLitCount; q++) {
-                            if (selfLitSolid[q] === 0) wallOccEntity[selfLitOcc[q]] = selfLitI32[(4 + q * selfLitItemBytes) >> 2];
-                        }
-                    }
+                if (vertCount >= 3) {
                     let rowVerts = vertCount < maxVerts ? vertCount : maxVerts;
                     if (rowVerts > rowCap) {
                         // More vertices than a row holds (WALL_ROW_MAX_VERTS): one in every few, in place (the sweep's
@@ -6315,11 +6396,13 @@ class PreRenderWorker extends AbstractWorker {
                     for (let v = 0; v < rowVerts; v++) {
                         const hit = outOcc[v];
                         let code = 0;
-                        if (hit !== -1) {
-                            // A compound solid's boundary names its entity; a packed occluder, its place in the list. One the
-                            // candidates' list had no room to name still stops the light (no id: nothing of its own is lit).
-                            const wall = hit >= 0 ? wallOccEntity[hit] : -2 - hit;
-                            code = wall >= 0 ? wallEdgeCode(gbufEntityId(wall), occluderBlock[wall]) : 255;
+                        if (hit >= 0) {
+                            // A packed occluder, by its place in the list.
+                            code = wallOccCode[hit];
+                        } else if (hit !== -1) {
+                            // A compound solid's boundary names its entity.
+                            const wall = -2 - hit;
+                            code = wallEdgeCode(gbufEntityId(wall), occluderBlock[wall]);
                         }
                         wallCodes[v] = code;
                     }
@@ -6327,6 +6410,13 @@ class PreRenderWorker extends AbstractWorker {
                     WALL_ROW_ARGS[1] = ly;
                     WALL_ROW_ARGS[2] = groundInvY;
                     writeWallRow(rowsBuf.f32, rowsWritten * rowFloats, outX, outY, wallCodes, rowVerts);
+                    // OL-9: the row's place and what it was written from; the lamp whose row stood here has none now.
+                    const was = rowsBuf.lampAt[rowsWritten];
+                    if (was !== lightIdx && was >= 0 && rowsBuf.place[was] === rowsWritten) rowsBuf.place[was] = -1;
+                    rowsBuf.lampAt[rowsWritten] = lightIdx;
+                    rowsBuf.place[lightIdx] = rowsWritten;
+                    rowsBuf.sigLo[lightIdx] = rowSigLo;
+                    rowsBuf.sigHi[lightIdx] = rowSigHi;
                     rowsBuf.header[1 + rowsWritten] = lightIdx;
                     rowsWritten++;
                 }
@@ -6417,7 +6507,10 @@ class PreRenderWorker extends AbstractWorker {
 
         buf.header[0] = lightsWritten;
         if (selfLitBuf) selfLitBuf.header[0] = selfLitCount;
-        if (rowsBuf !== null) rowsBuf.header[0] = rowsWritten;
+        if (rowsBuf !== null) {
+            rowsBuf.header[0] = rowsWritten;
+            this._wallRowsKept = rowsKept;
+        }
     }
 
     /**

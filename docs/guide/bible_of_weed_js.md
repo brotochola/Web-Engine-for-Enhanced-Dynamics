@@ -1745,6 +1745,7 @@ this.shadowCaster.opacity = 0.5;      // a paler shadow: half of what the wall s
 - The wall itself, where a light reaches its edge: its own sprite is lit whole, as drawn. A wall with no sprite of its own (drawn by a `MeshRenderer`, a tilemap) stays in its own shadow.
 - `lighting.wallDepth: N` (px, default 0) lights walls the other way: the light enters every wall N px from the edge it reaches and fades out there, whatever is drawn in it (a rock lit along its rim). No sprite is then lit whole.
 - `setWall`'s `shape` option (`'collider'`, the default, or `'sprite'`) changes nothing in the light pass: a wall's own pixels are told by its entity.
+- A light that stands still among walls that stand still costs little: its walls are gathered each frame, and when they are what they were the light is not swept again (`lighting.wallCache`, on by default; `false` sweeps every light every frame). A light that moves, or one with a wall moving in its reach, is swept that frame.
 - A scene without `lighting.walls: true` has no walls: `setWall` warns once and changes nothing.
 
 More in "Walls: which ones stop a light", below.

@@ -402,6 +402,11 @@ export interface SceneLightingConfig extends Record<string, unknown> {
    */
   wallDepth?: number;
   /**
+   * With `walls`, a lamp's walls kept from frame to frame (default true): a lamp whose walls did not move, and that did
+   * not move itself, is not swept again. false sweeps every lamp every frame.
+   */
+  wallCache?: boolean;
+  /**
    * DX-GBUF: 'mrt' (default) draws the face map and the entity ids map in one pass with two colour targets; 'pass' a
    * pass each. Same picture; one pass costs about a third less.
    */

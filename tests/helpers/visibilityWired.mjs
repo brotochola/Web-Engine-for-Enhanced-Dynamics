@@ -111,6 +111,7 @@ function bounce(x0, v, t, lo, hi) {
  */
 export async function bootPreRender(scene, {
   wasm = {}, maxVerts = 512, maxNeighbors = 256, selfLit = 4096, walls = true, rows = false, fixtureSlack = 16, fixtures: withPool = true,
+  wallCache = true,
 } = {}) {
   const N = scene.entities;
   const maxLights = Math.max(1, scene.lights);
@@ -153,7 +154,10 @@ export async function bootPreRender(scene, {
     config: {
       worldWidth: WORLD_W,
       worldHeight: WORLD_H,
-      lighting: { enabled: true, walls, wallFans: walls && !rows, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false, maxOccluderSelfLit: selfLit },
+      lighting: {
+        enabled: true, walls, wallFans: walls && !rows, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false, maxOccluderSelfLit: selfLit,
+        wallCache,
+      },
       physics: { maxFixturePoolSize: withPool ? fixturePool : 0 },
       wasm,
     },
@@ -183,7 +187,7 @@ function rowBuffers(rows, maxLights, maxVerts) {
  */
 export async function bootPreRenderGather(scene, {
   wasm = {}, maxVerts = 512, maxNeighbors = 256, selfLit = 4096, fixtureSlack = 16, fixtures: withPool = true,
-  groundScaleY = 1, rows = false,
+  groundScaleY = 1, rows = false, wallCache = true,
 } = {}) {
   const N = scene.entities;
   const maxLights = Math.max(1, scene.lights);
@@ -254,7 +258,7 @@ export async function bootPreRenderGather(scene, {
       worldHeight: WORLD_H,
       lighting: {
         enabled: true, walls: true, wallFans: !rows, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false,
-        maxOccluderSelfLit: selfLit,
+        maxOccluderSelfLit: selfLit, wallCache,
       },
       camera: { floorScaleY: groundScaleY },
       physics: { maxFixturePoolSize: withPool ? fixturePool : 0 },
