@@ -4610,19 +4610,23 @@ class PreRenderWorker extends AbstractWorker {
             const oy = offsetY[id];
             const x = worldX[id] + ox * rotC[id] - oy * rotS[id];
             const y = worldY[id] + ox * rotS[id] + oy * rotC[id];
+            // DX-LIGHTAPI: how far its shadows reach (0: its radius).
+            const shadowRange = lightShadowRange[id];
+            const range = shadowRange > 0 ? shadowRange : influence;
+            // E-518: a light's shadows end at min(shadowRange, radius) in both modes (the stamp's casters and the lamps'
+            // tile), so a light whose shadow disc misses the view takes no slot of maxShadowCastingLights: a headlight
+            // 900 px off screen with a 160 px reach no longer takes a street lamp's shadows. Its light is drawn either way.
+            const reach = range < influence ? range : influence;
             if (
-                x + influence < viewLeft ||
-                x - influence > viewRight ||
-                y + influence < viewTop ||
-                y - influence > viewBottom
+                x + reach < viewLeft ||
+                x - reach > viewRight ||
+                y + reach < viewTop ||
+                y - reach > viewBottom
             ) {
                 continue;
             }
             const dx = x - cx;
             const dy = y - cy;
-            // DX-LIGHTAPI: how far its shadows reach (0: its radius).
-            const shadowRange = lightShadowRange[id];
-            const range = shadowRange > 0 ? shadowRange : influence;
             const slot = out[n];
             if (!slot) break;
             slot.id = id;
