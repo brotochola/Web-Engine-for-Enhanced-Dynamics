@@ -5255,7 +5255,10 @@ class PreRenderWorker extends AbstractWorker {
                 else dropOwnStampsInto(dst.stamp, stamp, dst.stampLightIdx, this._stampLights);
             }
         }
-        const cookie = this._wallFansOn ? 0 : this._packGpuCookies(dst);
+        // OL-7: a cookie lightens what the casters drew on the shadows' layer inside its lamp's pool (N-154). A frame
+        // with no sun caster and no stamp leaves that layer empty, and the cookies were a pass over half the canvas that
+        // changed no pixel (a flat scene of walls: every lamp's, each frame).
+        const cookie = this._wallFansOn || (sunN <= 0 && stamp <= 0) ? 0 : this._packGpuCookies(dst);
         res.sun = sunN;
         res.stamp = stamp;
         res.cookie = cookie;
