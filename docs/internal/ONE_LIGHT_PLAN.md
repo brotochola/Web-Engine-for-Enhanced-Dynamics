@@ -491,6 +491,59 @@ deletion.
 
 ---
 
+### OL-6 — The shading a sprite's normals cause: a strength, and an amount subtracted
+
+- [ ] `lighting.normalShading: { sun: { strength, subtract }, lamps: { strength, subtract } }` in place of
+  `lighting.normalStrength`, in both shaders.
+- [ ] The light bench's knobs, and the captures from which the owner picks the sun's two numbers.
+
+**Why** (the owner, 2026-11-18, from OL-2's first pictures). At full strength the sun's normals do what the
+owner likes to the barn's roof and darken everything else too much: in the light bench at 16:00 a fifth of the
+view changes and loses 43.5 % of its light there. A lower strength alone lowers the roof's effect as much as
+the rest (26.1 % at 0.6, 15.3 % at 0.35). A picture already carries its painted light: what the engine adds is
+the shade of the faces turned away from the light, not a second shading of every face. The owner's idea: take a
+fixed amount off the shading (what falls under 0 stays 0), and let the strength multiply it.
+
+**What it must do.** Call *shading* what a sprite's own normal takes from a light: 0 where the pixel gets what
+it gets as drawn, 1 where it gets nothing. For the sun, and for each lamp apart:
+
+```
+shading' = max(0, shading - subtract) * strength
+```
+
+- `subtract` is taken first, so each number does one thing: `subtract` says from how much shading a face
+  shows any (and takes that much off every face that does), `strength` how much of the rest counts. A face
+  under `subtract` stays as drawn. The owner wrote it with the product first
+  (`shading * strength - subtract`), where moving the strength also moves the point shading starts at; the
+  order here is the executor's pick, said to the owner the same day.
+- **The sun.** `shading = max(0, 1 - (skyLight + (1 - skyLight) * cosine))`, the cosine the pass's own
+  (against the floor's, capped at 1.6). It runs from 0 to `1 - Sun.skyLight` (0.6 by default): `subtract`
+  does something under that. A face that looks at the sun more than the floor does gets more than as drawn
+  today (up to +36 %): that gain stays, times `strength`, and `subtract` does not touch it, so
+  `{ strength: 1, subtract: 0 }` is the picture `normalStrength.sun: 1` gave.
+- **A lamp.** `shading = 1 - cosine` of that lamp, inside the lamps' loops: the mix of two sums OL-2 wrote
+  cannot subtract a lamp at a time.
+- **Defaults** `{ sun: { strength: 0, subtract: 0 }, lamps: { strength: 1, subtract: 0 } }`: the picture of
+  `normalStrength`'s default, byte for byte.
+- Faces and flat pixels as in OL-2: a face by its normal, whole; a flat pixel as drawn.
+- One API: `lighting.normalStrength` goes (it never left this branch, so it needs no retired text).
+- The name is the executor's (the owner asked for a descriptive one and found `wrap` unclear): the path says
+  what is shaded and by what, and the two leaves say the arithmetic.
+
+**Where.** `src/shaders/lightingBasic.frag.glsl` and `lightingBasic.wgsl` (`faceLight`: the sun's term, the
+two lamp loops' `both` and `lampFlat`, the final mix), Pixi's light uniforms (two more numbers:
+`uFaceLight` is full), `configDefaults.js` (`normalStrengthOf`), `configKeys.js`, `types/weed.d.ts`, the
+guide, `demos/lightBenchScene` (`?normalSun=`, `?normalLamps=`, and two knobs for `subtract`),
+`tests/bench/normalLightCheck.mjs`, `tests/node/normalStrength.test.js`.
+
+**Checks.** The suites; `normalLightCheck` on both backends at `{ 1, 0 }` (the old full strength, the same
+tolerance) and with a `subtract`; the default captures byte for byte as before; the light bench at 16:00 with
+the owner's first numbers (`strength` 0.8, `subtract` 0.2) beside as drawn and full strength, and at night
+under a lamp.
+
+**Measure.** With the rest of the branch (the light pass on both backends, the Predator gate): one `max` and
+one subtraction a light a pixel.
+
 ## 4. Order and estimates
 
 Estimated on 2026-11-17 from reading, before any measurement; each includes its suites.
@@ -499,20 +552,22 @@ Estimated on 2026-11-17 from reading, before any measurement; each includes its 
 2. OL-2: 2 to 3 h, the captures for the owner included.
 3. OL-3: 3 to 4 h with its four arms; the ASUS's reading rides its queue and holds nothing up.
 4. OL-4: 8 to 12 h in either final, then 2 to 3 h for the demos, the guide and the deletion.
+5. OL-6 (added 2026-11-18): 1 to 1.5 h, its captures included.
 
 OL-1 and OL-2 touch different files (OL-2 the light pass's shaders, OL-1 none of them) and can go in
 parallel. OL-3 needs the machine quiet. OL-4 waits for OL-3 and for the owner's decision.
 
-Since 2026-11-18 the order built is OL-1, OL-2, OL-4 (final B, by eye), then OL-3 with every other
-measurement, then the deletion (section 8).
+Since 2026-11-18 the order built is OL-1, OL-2, OL-4 (final B, by eye), then OL-5 (the bug found on the way,
+section 7) and OL-6 (the owner's ask from the first pictures), then OL-3 with every other measurement, then
+the deletion (section 8).
 
 ## 5. Open decisions (the owner's, when we get there)
 
 - OL-2: the default of `normalStrength`. **Decided 2026-11-18: `{ sun: 0, lamps: 1 }` stays.** At full strength the
   owner likes the barn's roof and not the rest ("todo se oscurece mucho": in the light bench at 16:00 a fifth of the
-  view changes and loses 43.5 % of its light there; 26.1 % at 0.6, 15.3 % at 0.35). Open: a softer shape for the
-  sun's normals, which the owner raised and wants to talk through before anything is designed; and whether the
-  option is the scene's alone or a sprite's too.
+  view changes and loses 43.5 % of its light there; 26.1 % at 0.6, 15.3 % at 0.35). The softer shape the
+  owner raised became OL-6 the same day (a strength and an amount subtracted). Open: OL-6's two numbers for the
+  sun, from its pictures; and whether the option is the scene's alone or a sprite's too.
 - OL-3: final A or final B, from the table and the captures.
 - OL-4: how a wall's own sprite is lit once self-lit is gone. Whole, as drawn (the maps' rule), or
   only to a depth from the edge the lamp sees (final B knows the hit's distance; it is N-38's fix and
@@ -622,3 +677,11 @@ been built. What changed here, and why:
   if the race says A, the row the light pass reads is the part thrown away. The old pass stays behind
   `debug.lightFans` until the pictures and the numbers are accepted, and the deletion comes last. One
   branch, `dx/one-light`.
+
+**2026-11-18, later**, after the owner saw the first pictures:
+
+- **OL-6 added**, at the owner's ask: the shading a sprite's normals cause takes an amount subtracted beside its
+  strength, for the sun and for the lamps, as `lighting.normalShading` (it replaces OL-2's
+  `lighting.normalStrength`). OL-2's default stays; its two numbers for the sun are picked from OL-6's pictures.
+- **A wall lit to a depth** is the owner's pick for the houses and the rocks; both looks stay as knobs (section 5).
+- **OL-5 is built before the race**, since the race's maps arm needs it.
