@@ -23064,7 +23064,8 @@
         "page freezes at start"
       ],
       "records": [
-        "R-1363"
+        "R-1363",
+        "R-1364"
       ],
       "result": "",
       "next": "Find the feature that sets it off. 32 runs per arm on the HD 620, each run's Chrome log kept (CHROME_LOG_FILE plus --dumpio); the log's ProduceSkia or \"GPU state invalid\" lines mark a frozen run. Arms: the barrio by day (hour=12); at night with its lamps off; with shadows off; with the G-buffer off. Then a smaller scene with the suspect alone. Also try WebGPU on the HD 620, and the Radeon iGPU here when this PC is free.",
@@ -36484,6 +36485,15 @@
       "title": "The barrio freeze caught on the ASUS: 8 of 80 starts on the HD 620, 0 of 32 on the MX110, 2 of 32 with the prod bundle; Chrome's GPU process hangs",
       "verdict": "note",
       "text": "**The barrio freeze, caught on the ASUS** (jobs 0896m to 0896q, 2026-11-18 07:02 to about 10:10). Buenos Aires at night (`hour=22&dayMinutes=0`), headless, main 70ba822b, `runIntegratedWorkerBenchmark --warmup-ms 5000 --duration-ms 10000`, each run its own browser.\n\n| Arm | Runs | Frozen |\n|---|---|---|\n| HD 620, src (0896m, n, o, p) | 80 | 8 (3, 1, 0, 4), plus about 4 half-frozen (163 to 309 frames against about 365) |\n| MX110, src (0896q) | 32 | 0 |\n| HD 620, prod bundle (`weedBundle`, 0896q) | 32 | 2 |\n\n**What a frozen run looks like:**\n- The integrated-GPU warning prints, so WebGL is up.\n- The page's main thread then runs at 1.0 to 3.1 fps with 0.3 ms of work per frame.\n- The renderer draws no frame in the measured window.\n- typeperf has total CPU at 3 to 14 % and a quiet disk.\n- No page error is logged, and no context loss.\n\n**Chrome's log** (`CHROME_LOG_FILE` per run, `--dumpio`, `--v=1`) holds, only in frozen runs, one of two errors as the browser closes:\n- `SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox` (twice);\n- `GPU state invalid after WaitForGetOffsetInRange`.\n\nNo normal run logs either. In 0896q, the two logs with these lines were exactly the two frozen runs. It is a hang in Chrome's GPU process under ANGLE/D3D11 on the Intel driver. The prod bundle hits it too, so a player on such a laptop can.\n\n**Also:** every barrio start on the HD 620 saturates the HDD for 13 to 52 s (disk queue 150 to 186, typeperf misses samples). Runs average 80 s on the HD 620 and 33 s on the MX110, so the storm looks like the Intel side's, perhaps its driver's shader cache. The freeze comes after the storm, with the disk quiet.\n\nSimple scenes did not freeze on the HD 620: 0 in 30 normalLightCheck runs (0896l) and 0 in 20 capacity Predator runs (0896a)."
+    },
+    {
+      "id": "R-1364",
+      "date": "2026-11-18",
+      "time": "11:26",
+      "timeFrom": "recorded",
+      "title": "Barrio freeze arms on the HD 620: day 2 of 32, no people 3 of 31, WebGPU 0 of 32; not the lamps or the people, WebGL suspected",
+      "verdict": "note",
+      "text": "**Three arms on the HD 620** (job 0896r, 2026-11-18 09:45 to 11:26). Buenos Aires, src, main 70ba822b, `runIntegratedWorkerBenchmark --warmup-ms 5000 --duration-ms 10000 --no-collect-detailed-stats`, 32 starts per arm, each with its own browser and its own Chrome log.\n\n| Arm | Query | Frozen |\n|---|---|---|\n| day | `hour=12&dayMinutes=0` (no lamps or headlights, 2.7 GPU passes against 6.0 at night) | 2 of 32 |\n| no people | `hour=22&dayMinutes=0&people=0` | 3 of 31 (one start failed to load: `ERR_NETWORK_CHANGED`) |\n| WebGPU | `hour=22&dayMinutes=0&backend=webgpu` | 0 of 32 |\n\nA frozen start reads the same as before: the page's rAF at 1.8 to 2.8 fps and the renderer at no frames. Four of the five frozen starts logged ProduceSkia or \"GPU state invalid\" as the browser closed. One (no people, run 12) logged neither, so the log line marks most frozen runs but not all of them.\n\n**What it says:**\n- The night's lamps, lamp shadows and headlights are not the trigger, and neither are the people.\n- WebGPU stayed clean. With WebGL on the HD 620 at 15 frozen in 175 (8.6 %), 0 in 32 comes out by chance about 1 time in 18, so the result points at the WebGL path (ANGLE on D3D11, Intel's driver) without settling it.\n- WebGPU on the HD 620 draws about 265 renderer frames in the window, against about 435 on WebGL by day and 380 at night.\n\n**Next:** a lab driver outside the repo (`C:\\weedlab\\freezeProbe.mjs`, the bench page with Chrome flags per arm; the runner takes none). It interleaves the arms: ANGLE on D3D11 (the control), `--use-angle=gl`, `--use-angle=d3d11on12`, `--disable-gpu-shader-disk-cache`, and WebGPU again."
     }
   ],
   "leads": [
