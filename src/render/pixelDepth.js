@@ -186,14 +186,39 @@ export function pixelDepthVertex(source, { gbuf = false, faces = false, cull = '
   return source
     .replace(
       decl,
-      () => `${decl}out float vFootFloor;\nflat out vec2 vPainter;\nflat out float vPlain;\nflat out vec4 vMapsWin;\nuniform vec4 uDepth;\n${words}${MAPS_TABLE_GLSL}${facesDecl}`,
+      () => `${decl}out float vFootFloor;\nflat out float vFootRy;\nflat out vec2 vPainter;\nflat out float vPlain;\nflat out vec4 vMapsWin;\nuniform vec4 uDepth;\n${words}${MAPS_TABLE_GLSL}${facesDecl}`,
     )
     .replace(
       pos,
-      () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n  vPainter = vec2(float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1}), abs(aInstScale.y));\n  vMapsWin = twinWindow(tid);` +
+      () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n${FOOT_RY_GLSL}\n  vPainter = vec2(float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1}), abs(aInstScale.y));\n  vMapsWin = twinWindow(tid);` +
         (gbuf ? '\n  vDepthWord = aInstGbuf;' : '') + plainGlsl(gbuf) + (faces ? facesDepthGlsl(gbuf) + cullGlsl(cull, gbuf) : ''),
     );
 }
+
+/**
+ * N-262: how far, on the floor, a pixel with heights may stand in front of or behind its sprite's foot: half its frame's
+ * feet's depth (frameBase.js lutBaseFloats: the texture table's third texel's zw, [cx + 1, rx] in frame px for feet, whose
+ * ellipse is 0.6 as deep as wide; a round trunk's rx is negative and a render's first float, so neither is held: a tree's
+ * crown does stand past its trunk), times the sprite's |scale x|. 0: none (the floor place as the height map says).
+ */
+const FOOT_RY_GLSL = `  {
+    ivec2 footLut = textureSize(uTexLut, 0);
+    int footPer = footLut.x / 3;
+    vec2 footBase = tid >= 0 && tid < footPer * footLut.y
+      ? texelFetch(uTexLut, ivec2(3 * (tid % footPer) + 2, tid / footPer), 0).zw
+      : vec2(0.0);
+    vFootRy = footBase.x > 0.0 && footBase.y > 0.0 ? 0.6 * footBase.y * abs(aInstScale.x) : 0.0;
+  }`;
+
+/** N-262: FOOT_RY_GLSL in WGSL (the vertex's `footRy`). */
+const FOOT_RY_WGSL = `  let footLut = vec2<i32>(textureDimensions(uTexLut));
+  let footPer = footLut.x / 3;
+  var footBase = vec2<f32>(0.0);
+  if (tid >= 0 && tid < footPer * footLut.y) {
+    footBase = textureLoad(uTexLut, vec2<i32>(3 * (tid % footPer) + 2, tid / footPer), 0).zw;
+  }
+  let footRy = select(0.0, 0.6 * footBase.y * abs(aInstScale.x), footBase.x > 0.0 && footBase.y > 0.0);
+`;
 
 /**
  * H-EDGE: the pixels a pass draws nothing for, known from the texture's alpha times the tint's (`ad`, GLSL and WGSL alike),
@@ -231,7 +256,12 @@ ${gbuf
     band = min(vDepthWord.y, ${PIXEL_DEPTH_BANDS - 1}.0);
 ${surface}`
     : ''}    // N-257: a frame without heights (a normal or relief map alone) keeps its surface's place, as one without maps.
-    if (twinPresent(md) && twinHeights(vMapsWin) && !glow) floorY = (vWorld.y + uDepth.y * zd) * uDepth.x;
+    if (twinPresent(md) && twinHeights(vMapsWin) && !glow) {
+      floorY = (vWorld.y + uDepth.y * zd) * uDepth.x;
+      // N-262: within its feet's footprint (vFootRy floor px either side of its foot, FOOT_RY_GLSL): a height map's error
+      // put a person's head in front of a lamp they stood just behind.
+      if (vFootRy > 0.0) floorY = clamp(floorY, vFootFloor - vFootRy, vFootFloor + vFootRy);
+    }
     float u = clamp((floorY - uDepth.z) * uDepth.w, 0.0, 1.0);
     float painter = vPainter.x;
     gl_FragDepth = (${faces ? DEPTH_FORMULA_FACES : DEPTH_FORMULA});
@@ -274,7 +304,7 @@ export function pixelDepthFragment(source, { edge = false, gbuf = false, faces =
       .replace(decl, () => `${decl}uniform sampler2D uMaps;\n${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}flat in vec4 vMapsWin;\n${twinGlsl()}`)
       .replace(main, () => `${main}${vertexDepthBodyGlsl(gbuf)}`);
   }
-  const inputs = `uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\n${faces ? 'in float vDepthFloor;\n' : ''}flat in vec2 vPainter;\n`
+  const inputs = `uniform sampler2D uMaps;\nuniform vec4 uDepth;\nin float vFootFloor;\nflat in float vFootRy;\n${faces ? 'in float vDepthFloor;\n' : ''}flat in vec2 vPainter;\n`
     + `${edge ? 'flat in float vPlain;\n' : ''}${gbuf ? 'flat in vec2 vDepthWord;\n' : ''}flat in vec4 vMapsWin;\n`;
   return source
     .replace(decl, () => `${decl}${inputs}${twinGlsl()}`)
@@ -312,7 +342,11 @@ ${gbuf
   glow = glow || ((dw >> 21u) & 1u) != 0u;
   band = min(in.vDepthWord.y, ${PIXEL_DEPTH_BANDS - 1}.0);
 ${faces ? '' : '  if ((dw & 65535u) != 0u && ((dw >> 18u) & 1u) != 0u) { floorY = in.vWorld.y * uniforms.uDepth.x; }\n'}`
-    : ''}  if (twinPresent(md) && twinHeights(in.vMapsWin) && !glow) { floorY = (in.vWorld.y + uniforms.uDepth.y * zd) * uniforms.uDepth.x; }
+    : ''}  if (twinPresent(md) && twinHeights(in.vMapsWin) && !glow) {
+    floorY = (in.vWorld.y + uniforms.uDepth.y * zd) * uniforms.uDepth.x;
+    // N-262: within its feet's footprint (the GLSL's twin).
+    if (in.vDepthFoot.w > 0.0) { floorY = clamp(floorY, in.vDepthFoot.x - in.vDepthFoot.w, in.vDepthFoot.x + in.vDepthFoot.w); }
+  }
   let u = clamp((floorY - uniforms.uDepth.z) * uniforms.uDepth.w, 0.0, 1.0);
   let painter = in.vDepthFoot.y;
   let depth = (${faces ? DEPTH_FORMULA_FACES : DEPTH_FORMULA});
@@ -415,7 +449,7 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false, faces 
   out = once(
     out,
     '  @location(5) vTileOff: vec2<f32>,\n',
-    '  @location(8) @interpolate(flat) vDepthFoot: vec3<f32>,\n' +
+    '  @location(8) @interpolate(flat) vDepthFoot: vec4<f32>,\n' +
       (gbuf ? '  @location(13) @interpolate(flat) vDepthWord: vec2<f32>,\n' : '') +
       '  @location(14) @interpolate(flat) vPlain: f32,\n  @location(15) @interpolate(flat) vMapsWin: vec4<f32>,\n' +
       (faces ? '  @location(6) vDepthFloor: f32,\n' : ''),
@@ -426,7 +460,7 @@ export function pixelDepthWgsl(source, { poseAlpha = false, gbuf = false, faces 
     out,
     '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
     // N-194: z, the sprite's |scale y|, by which its twin's heights (frame px) become world heights.
-    `  out.vDepthFoot = vec3<f32>(aInstXY.y * uniforms.uDepth.x, f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u), abs(aInstScale.y));\n` +
+    `${FOOT_RY_WGSL}  out.vDepthFoot = vec4<f32>(aInstXY.y * uniforms.uDepth.x, f32(weedInstance & ${PIXEL_DEPTH_PAINTER_STEPS - 1}u), abs(aInstScale.y), footRy);\n` +
       (gbuf ? '  out.vDepthWord = aInstGbuf;\n' : '') + '  out.vMapsWin = twinWindow(tid);\n' + plainWgsl(gbuf) +
       (faces ? facesDepthWgsl(gbuf, cull) : ''),
     'out.position',
