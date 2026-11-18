@@ -22261,7 +22261,8 @@
       "records": [
         "R-1317",
         "R-1350",
-        "R-1351"
+        "R-1351",
+        "R-1401"
       ],
       "rank": 20
     },
@@ -36681,6 +36682,18 @@
       "title": "The ASUS scoreboard on the MX110: textureUpload (+188 %), audioSlots (-74 %), meshFillMoving (+122 %) and queryAabb (+13 %) hold on the second GPU; ray flips sign (noise)",
       "verdict": "note",
       "text": "**The engine scoreboard again, on the ASUS's GeForce MX110** (Chrome's per-app GPU preference), main 70ba822b against v0.14.0, `--full-rev`, `--skip-node`, job 0896c2, 2026-11-18 03:47 to about 05:15. It is an extra low-end reading, as R-1349's on the HD 620 was.\n\n**The five rows R-1349 found on the HD 620, on the MX110:**\n\n| Row | HD 620 | MX110 | Reading |\n|---|---|---|---|\n| N-292 textureUpload | pixi +117 % | pixi +187.7 % (kernel −5.7 %), WORSE | holds |\n| N-293 audioSlots | kernel −52.8 % | kernel −74.1 %, WORSE | holds |\n| N-294 meshFillMoving | pixi +29 % | pixi +122.0 % (kernel +35.3 %) | holds |\n| N-295 queryAabb | logic +21.6 % | logic +13.2 % | holds; under the step floor in both |\n| N-296 ray | logic +6.0 % | logic −6.6 % | flips sign: likely noise |\n\n**Faster on main here too:**\n- spatialMax −70.6 %\n- LiquidFun physics −14.9 % (couple −4.7 %)\n- box2dRayJs logic −10.6 %\n- Kernels: publishPose ×7.7, shadowStamp +43 %, gameObjectAccess +43 %, attachedWalls +24 %, decorationCollect +20 %\n\n**Kernel noise on this laptop.** Node kernels that use no GPU moved between the two sittings by −13 to +30 % (painterRadix +1.6 % then −13.4 %, attachedSway +29.9 % then −11.0 %, decalPremultiply +18.5 % then −10.1 %). A kernel delta under about 30 % on the ASUS is noise. audioSlots and publishPose are far past it.\n\nWith the MX110 the CPU workers ran lighter than on the HD 620 (the shared-power effect), so more stress rows fell under the 6 ms floor. Job 0896e calibrates the load knobs (ray casts, bullets, spawn storm) so those rows can be judged."
+    },
+    {
+      "id": "R-1401",
+      "date": "2026-11-18",
+      "time": "06:06",
+      "timeFrom": "recorded",
+      "title": "Predator at its default load, main against dx/one-light: nothing past the A/A's noise, every worker under the 6 ms floor (an early look, not the gate)",
+      "verdict": "note",
+      "text": "**Predator at its default load, main against dx/one-light (02f319b3, main merged in): nothing moves past the A/A's noise; every worker is under the 6 ms floor, so no row is judged. An early look, not the branch's gate.**\n\n`runPredatorAbab --vs main --hyp-rev HEAD --full-rev`, headed Chrome, GTX 1650 on AC, 4 pairs (05:55 to 06:00), then the A/A of the branch on both sides, 4 pairs (06:01 to 06:06). Each worker's `STEP_MS - WAIT_MS`, paired:\n\n| worker | main -> branch | each pair | the A/A (same code) | each pair |\n| --- | --- | --- | --- | --- |\n| pre-render | 1.708 -> 1.708 ms, -1.2 % | -2.2, -5.0, +2.6, -0.3 | +0.1 % | -4.4, +0.2, +0.7, -0.0 |\n| Pixi | 1.337 -> 1.296 ms, -1.4 % | -14.1, +0.5, +3.9, -3.2 | -7.3 % | -7.5, -9.5, +10.8, -7.2 |\n| logic | 1.765 -> 1.818 ms, +3.0 % | +2.6, -1.5, +3.4, +5.2 | +1.1 % | +14.4, -2.6, -5.4, +4.8 |\n| spatial | 3.106 -> 3.199 ms, +2.7 % | +3.1, +0.6, +2.3, +3.9 | +2.4 % | +16.1, -6.1, +0.2, +4.6 |\n| physics | 2.970 -> 2.605 ms, +0.2 % | +1.2, +3.6, -26.4, -0.7 | +28.0 % | +37.3, -14.5, +26.8, +29.2 |\n\n- Presented frames 60.0 on both sides, load keys within 1 %.\n- **How to read it:** the two workers the branch reaches here (pre-render: the cookies' rule, the lamps' ids; Pixi: the light pass's shader) read level or a little cheaper; logic and spatial, which it cannot reach, read +3 % and the A/A moves them as much or more. Nothing here is a regression, and nothing here is a verdict.\n- **The gate itself** runs once, after the last change of the branch, at a load that puts the workers over the floor (`--query crowd=2.5`, as the earlier gates), with its own A/A.",
+      "commits": [
+        "02f319b3"
+      ]
     }
   ],
   "leads": [
