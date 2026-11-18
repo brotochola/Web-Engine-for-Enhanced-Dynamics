@@ -12,7 +12,8 @@
 // URL: ?hour=17.5, ?dayMinutes=8 (0 stops the clock), ?people=5000 (default 5000, 2000 on 4 logical cores or fewer),
 // ?resolution=0.5, ?backend=webgpu, ?floorCache=0
 // (paint the floor every frame), ?pan=40 (the camera drifts right by itself, world px a second).
-// Drag, the wheel or WASD move the camera; Z and X move the hour while held; H hides the panel.
+// The camera is WeedJS's free camera (WASD or the arrows, the wheel toward the pointer; the barrio always fills the screen), plus
+// dragging and pinching; Z and X move the hour while held; H hides the panel.
 
 import WEED from '/src/index.js';
 import { SunPanel } from '../sunStreetScene/sunPanel.js';
@@ -175,7 +176,6 @@ export const DECORATION_CLASSES = {
 export class FloorData extends SharedResource {}
 
 const f32 = (value) => ({ value, type: 'f32' });
-const _view = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
 const _floor = { x: 0, y: 0 };
 const _way = { x: 0, y: 0 };
 
@@ -320,10 +320,12 @@ export class BuenosAiresScene extends Scene {
     [Persona, PEOPLE + 16],
   ];
 
+  /** Where the camera starts, and then where a drag (or ?pan's drift) holds the free camera's target. */
   focusX = META.WW / 2;
   focusY = META.WH / 2;
+  /** The zoom the camera starts at. */
   zoomTarget = 1.2;
-  /** Where the pointer was last frame while dragging (canvas px), NaN when not dragging: no array a frame. */
+  /** Where the pointer was when a drag started (canvas px), NaN when not dragging: no array a frame. */
   dragX = NaN;
   dragY = NaN;
   panel = null;
@@ -462,9 +464,12 @@ export class BuenosAiresScene extends Scene {
   create() {
     // The sun at the hour also with the clock stopped (?dayMinutes=0): sun.startHour sets it only on a day cycle.
     Sun.setTimeOfDay(START_HOUR);
-    Camera.setFree(false);
+    // WeedJS's free camera: WASD or the arrows pan, the wheel zooms toward the pointer, and the view never leaves the barrio (the
+    // map is a rectangle on the screen: the editor's projection has no shear)
+    Camera.setFree(true, { arrows: true, panSpeed: 12, maxZoom: 4 });
     Camera.setZoom(this.zoomTarget);
     Camera.centerOn(this.focusX, this.focusY);
+    Camera.setFreeTarget(this.focusX, this.focusY);
     for (let which = 0; which < 4; which++) TownSwitches.off.store(0, which);
     this.panel = new SunPanel([
       { key: ' ', keyName: 'Space', label: 'Clock', note: 'Z and X move the hour while held', press: () => this.togglePause() },
@@ -487,7 +492,7 @@ export class BuenosAiresScene extends Scene {
   update(dtRatio = 1) {
     this.updateLoadingScreen();
     this.readKeys(dtRatio);
-    this.moveCamera(dtRatio);
+    this.dragCamera(dtRatio);
     const now = performance.now();
     this.windows?.update(Sun.hour, now);
     if (now >= this.nextReadout) {
@@ -520,34 +525,33 @@ export class BuenosAiresScene extends Scene {
     if (Keyboard.x) Sun.setTimeOfDay((Sun.hour + SCRUB_HOURS * dtRatio) % 24);
   }
 
-  /** The free camera: drag, pinch, the wheel, WASD or the arrows. */
-  moveCamera(dtRatio) {
-    const zoom = Camera.zoom || 1;
+  /**
+   * What WeedJS's free camera does not do itself: a drag (the mouse or one finger) moves its target from where the view was when
+   * the drag started; two fingers pinch the zoom; ?pan and ?panY drift the target by themselves (a view that never holds, to measure).
+   */
+  dragCamera(dtRatio) {
     if (Mouse.count === 1) {
       const canvasX = Mouse.canvasXAt(0);
       const canvasY = Mouse.canvasYAt(0);
-      if (!Number.isNaN(this.dragX)) {
-        this.focusX -= (canvasX - this.dragX) / zoom;
-        this.focusY -= (canvasY - this.dragY) / zoom;
+      if (Number.isNaN(this.dragX)) {
+        this.dragX = canvasX;
+        this.dragY = canvasY;
+        this.focusX = Camera.centerX;
+        this.focusY = Camera.centerY;
+      } else {
+        const zoom = Camera.zoom || 1;
+        Camera.setFreeTarget(this.focusX - (canvasX - this.dragX) / zoom, this.focusY - (canvasY - this.dragY) / zoom);
       }
-      this.dragX = canvasX;
-      this.dragY = canvasY;
     } else {
       this.dragX = NaN;
       this.dragY = NaN;
     }
-    if (Mouse.count >= 2) this.zoomBy(Mouse.pinchRatio());
-    if (Mouse.wheel) this.zoomBy(Math.exp(-Mouse.wheel * 0.0012));
-    const pan = (12 / zoom) * dtRatio;
-    if (Keyboard.a || Keyboard.arrowleft) this.focusX -= pan;
-    if (Keyboard.d || Keyboard.arrowright) this.focusX += pan;
-    if (Keyboard.w || Keyboard.arrowup) this.focusY -= pan;
-    if (Keyboard.s || Keyboard.arrowdown) this.focusY += pan;
-    if (PAN_DRIFT) this.focusX += (PAN_DRIFT / 60) * dtRatio;
-    if (PAN_DRIFT_Y) this.focusY += (PAN_DRIFT_Y / 60) * dtRatio;
-    this.keepInView();
-    Camera.targetZoom = this.zoomTarget;
-    Camera.follow(this.focusX, this.focusY, 0.35, dtRatio);
+    if (Mouse.count >= 2) Camera.targetZoom = Math.max(Camera.minZoom, Math.min(4, Camera.targetZoom * Mouse.pinchRatio()));
+    if (PAN_DRIFT || PAN_DRIFT_Y) {
+      this.focusX += (PAN_DRIFT / 60) * dtRatio;
+      this.focusY += (PAN_DRIFT_Y / 60) * dtRatio;
+      Camera.setFreeTarget(this.focusX, this.focusY);
+    }
   }
 
   async destroy() {
@@ -556,32 +560,6 @@ export class BuenosAiresScene extends Scene {
     this.loading = null;
     this.panel = null;
     await super.destroy();
-  }
-
-  zoomBy(factor) {
-    this.zoomTarget = Math.max(0.25, Math.min(4, this.zoomTarget * factor));
-  }
-
-  /**
-   * The whole view inside the map, which on the screen is a parallelogram (each px up shifts K/SYN px right), so the
-   * camera never shows the world's edge.
-   */
-  keepInView() {
-    const view = Camera.getViewportBounds(_view);
-    const zoom = Camera.zoom || 1;
-    const canvasWidth = view.width * zoom;
-    const canvasHeight = view.height * zoom;
-    if (!(canvasWidth > 0 && canvasHeight > 0)) return;
-    const mapWidthPx = META.MW * META.SF;
-    const shift = META.K * META.SF * META.MH;
-    const slant = META.K / META.SYN;
-    this.zoomTarget = Math.max(this.zoomTarget, canvasHeight / META.WH, (canvasWidth + slant * canvasHeight) / mapWidthPx);
-    const halfWidth = canvasWidth / (2 * this.zoomTarget);
-    const halfHeight = canvasHeight / (2 * this.zoomTarget);
-    this.focusY = Math.max(halfHeight, Math.min(META.WH - halfHeight, this.focusY));
-    const lowest = shift - slant * (this.focusY - halfHeight) + halfWidth;
-    const highest = mapWidthPx + shift - slant * (this.focusY + halfHeight) - halfWidth;
-    this.focusX = lowest <= highest ? Math.max(lowest, Math.min(highest, this.focusX)) : (lowest + highest) / 2;
   }
 
   togglePause() {

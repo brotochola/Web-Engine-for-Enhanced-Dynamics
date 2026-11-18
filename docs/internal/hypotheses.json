@@ -21912,7 +21912,8 @@
         "R-1330",
         "R-1333",
         "R-1336",
-        "R-1338"
+        "R-1338",
+        "R-1346"
       ],
       "id": "N-266",
       "kind": "bug",
@@ -22677,6 +22678,479 @@
       "aliases": [
         "twin packing by map kind",
         "maps input kinds"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-291",
+      "title": "Moving the camera changes the shading of things near the screen's right edge, as it did near the bottom edge: likely N-272's (the self-shadow march reads the face map's edge texel past the screen) with the sun's march toward that edge",
+      "status": "open",
+      "statusText": "seen by the owner 2026-11-18 in the barrio (localhost:8000, main 702e6842): near the right edge the shading changes as the camera moves; the bottom edge did the same (N-272's sighting). N-272's fix is not on main (v3 on exp/n272-ring, unmeasured), so main's WebGL march still reads the edge texel; the sun's direction decides which edge shows it. Not checked: added at the owner's ask, nothing touched",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Pan the barrio by day with the sun's march toward the right edge (film the drift), main against exp/n272-ring (N-272 v3, the empty ring), WebGL and WebGPU. If v3 fixes both edges, close it with N-272; if not, find what else reads past the screen on that side (the light tiles, lightEdges, the half-resolution light pass).",
+      "area": "render",
+      "kind": "bug",
+      "refs": [],
+      "aliases": [
+        "right edge shading",
+        "screen edge shading drifts"
+      ],
+      "records": []
+    },
+    {
+      "id": "DX-DEBUGUI",
+      "title": "The debug UI catches up with the engine: the Layers panel's Vis, blend and alpha work on every render path (they do not today), render views of the buffers the frame is made of (G-buffer normals and heights, light buffer, shadow maps), a sheet's height and normal maps, the lighting grid (light tiles), and panels for the sun, the light pass, the camera and the renderer's counters",
+      "status": "open",
+      "statusText": "Owner-asked plan (2026-11-18), not started: \"los layers no se hacen invisibles, no puedo cambiar el modo de blending, el alpha … es como si fuera binario … me gustaría poder ver los height maps, o normal maps … y ver la grilla de iluminación\"; planned by reading only (the owner asked for no tests or benchmarks). Decided with the owner (2026-11-18): the lighting grid is the light tiles (the G-buffer has its own views); light options stay read-only; panel changes do not outlive a restart; the blend list is trimmed",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "DBG-1 to DBG-3 (the bugs the owner hit) first, then DBG-4 (the same panel); DBG-5 builds the render views that DBG-7 uses; DBG-6 is main-thread only and can run beside them. Estimate: about 15 to 23 h in a row (re-estimated: the first 25 to 36 h summed every range's top). The owner's decisions are in the plan's section 6.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md"
+      ],
+      "aliases": [
+        "debug ui",
+        "debug tools",
+        "layers panel",
+        "render views"
+      ],
+      "records": [
+        "R-1347",
+        "R-1348"
+      ],
+      "rank": 21
+    },
+    {
+      "id": "DBG-1",
+      "title": "The debug UI's Layers panel: unticking Vis does not hide what the layer draws: castedShadows in map mode leaves the sun and lamp maps frozen in the light pass, hidden entities still cast, hidden lighting leaves the unshaded composite, a MESH layer's uvFill mesh ignores it (read, not yet confirmed)",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Confirm each suspect of the plan's section 3.1 (workerHarness or the browser, both backends), then apply visibility to every object that draws the layer's pixels; node test: a hidden castedShadows leaves _sunMapK[3] at 0.",
+      "area": "tools",
+      "kind": "bug",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-1"
+      ],
+      "aliases": [
+        "layer visibility",
+        "layers vis"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-2",
+      "title": "The debug UI's Layers panel: the blend selects do nothing: the entities' meshes and the lightEdges meshes set their own blend (nothing inherits the container's), Cont Blend reaches custom layers only, a re-registration restores the config's value, and about 22 of the 33 names draw as normal (no advanced blend modes registered); blendMode becomes a layer setter (SAB plus dirty flag, as alpha and visible)",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Confirm section 3.2; layer.blendMode / containerBlendMode setters applied to every object of the layer; setLayerProps loses its blend fields (no aliases); the list is trimmed to the modes that draw (BLEND_MODES and _BLEND_MODE_STRINGS together; the owner, 2026-11-18; nothing used a removed mode); test:demos too, games see the Layer API.",
+      "area": "tools",
+      "kind": "bug",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-2"
+      ],
+      "aliases": [
+        "layer blend mode",
+        "blend select"
+      ],
+      "records": [
+        "R-1347",
+        "R-1348"
+      ]
+    },
+    {
+      "id": "DBG-3",
+      "title": "The debug UI's Layers panel: alpha acts as on or off: the entities' opaque pass (E-448/E-502) is dropped for a blend other than normal but not for alpha below 1, so solid pixels stay opaque until alpha 0; the lightEdges and lightingMesh shaders never read uColor; worldRect stage meshes ignore it while the camera moves",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Confirm section 3.3; drop the opaque pass while the layer's alpha is below 1 (a per-frame test); the light's meshes mix by uColor.a (GLSL and WGSL); check by eye that entities under lighting fade with no jump at 0.5; hygiene keep, the suites decide unless the lightEdges scene's drawn frames move.",
+      "area": "tools",
+      "kind": "bug",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-3"
+      ],
+      "aliases": [
+        "layer alpha binary",
+        "alpha slider"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-4",
+      "title": "The debug UI's Layers panel lists every layer the scene has (volumeShadows, SCREEN, GPU particles, not only DEFAULT_LAYERS plus custom ones), shows each one's kind and metadata, and its controls follow changes made by game code",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Rows from Layer.getAll(); one read-only details line; the small defects the plan lists (Y-sort, Cont Blend refresh, sync every tick, focus lost on re-sort); a node test with a DOM shim.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-4"
+      ],
+      "aliases": [
+        "layers panel rows",
+        "layer metadata"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-5",
+      "title": "Render views: a View select that draws one of the frame's buffers decoded over the picture (G-buffer normals, heights, entity ids and flags; light buffer; unshaded; casted shadows; sun and lamp shadow maps; lamp volume cache), on WebGL and WebGPU, free when off",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "A setRenderView message, one integer field checked once a frame, a full-screen quad with a decode shader per view made on first use; the worker lists the views the scene has; worker-side debug code stubbed out of the production bundle.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-5"
+      ],
+      "aliases": [
+        "debug views",
+        "gbuffer view",
+        "normals view"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-6",
+      "title": "A sheet's height, normal and relief maps seen from the debug UI: the atlas inspector (today console-only, window.inspectBigAtlas) gets a button and height / normals / relief / maps-table modes, and the inspector shows the picked entity's frame with its maps",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Main thread only: the twin page texels are already there as data (scene.js, DX-MAPS); decode height and octahedral normals on a 2D canvas; node tests on hand-made texels.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-6"
+      ],
+      "aliases": [
+        "height map viewer",
+        "normal map viewer",
+        "twin page viewer"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-7",
+      "title": "The lighting grid: E-205's light tiles drawn over the screen, each tile tinted by how many lights reach it, with a hover readout of its lights and the grid's numbers (tilePx, cols x rows, wordsUsed)",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured; the owner left \"the lighting grid\" to the planner: it is these tiles (the code has no light cells; the G-buffer is DBG-5)",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "One more render view (DBG-5): its shader bit-counts the R32UI tiles texture the light pass binds; the hover readout from LightTiles.bits at the debug UI's interval; a node test on a hand-filled LightTiles.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-7"
+      ],
+      "aliases": [
+        "lighting grid",
+        "light tiles view"
+      ],
+      "records": [
+        "R-1347",
+        "R-1348"
+      ]
+    },
+    {
+      "id": "DBG-8",
+      "title": "A Light tab in the debug UI: the sun's sliders (angle, elevation, intensity, colour, hour, day cycle, night) over Sun's setters, the light pass's resolved options read-only, a lamp list (shadow tile owner, culled), and cones and shadow owners in the Lights overlay",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Sun setters already work at run time; every light pass option is read-only (the owner, 2026-11-18: nothing fixed at program build becomes live for now).",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-8"
+      ],
+      "aliases": [
+        "sun panel",
+        "lighting panel"
+      ],
+      "records": [
+        "R-1347",
+        "R-1348"
+      ]
+    },
+    {
+      "id": "DBG-9",
+      "title": "Camera in the debug UI: zoom, position, rotation, follow, free camera (Camera.setFree, not wired) and shake as controls; pitch, yaw, floorScaleY, heightScaleY and the flat view as read-outs",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Main thread only, on existing Camera API.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-9"
+      ],
+      "aliases": [
+        "camera panel"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-10",
+      "title": "The debug UI's inspector decodes what it shows as raw numbers: gbufFlags as named bits, Transform.parent as a link with children and world vs local, light cone and elevation in units, decorations and shadow casters",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "A per-field formatter table keyed by component and field; a field without one stays raw (DBG-12 lists them).",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-10"
+      ],
+      "aliases": [
+        "inspector formatters",
+        "parent tree"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-11",
+      "title": "The debug UI's Performance tab prints the renderer counters RENDERER_STATS already publishes (GPU passes, casters, shadow lights, scenery, decal tiles) plus the GPU, the backend and the opaque pass's state",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Check which are already printed; no new counters in the worker.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-11"
+      ],
+      "aliases": [
+        "renderer counters"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "id": "DBG-12",
+      "title": "A node test that fails when a lighting, sun or camera config key or a layer kind has no counterpart in the debug UI and no line in a NOT_SHOWN table with a reason, so new features cannot land without one",
+      "status": "open",
+      "statusText": "Planned 2026-11-18 (DX-DEBUGUI), not started; nothing built, run or measured",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Last, once DBG-4 and DBG-8 to DBG-10 exist.",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "DEBUG_UI_PLAN.md#DBG-12"
+      ],
+      "aliases": [
+        "debug ui coverage test"
+      ],
+      "records": [
+        "R-1347"
+      ]
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "textureUpload regression",
+        "shared picture upload",
+        "textureUploadStressScene"
+      ],
+      "records": [
+        "R-1349",
+        "R-1361"
+      ],
+      "result": "ASUS scoreboard 0895: pixi STEP_MS 45.79 -> 99.24 ms (cv 4.0/0.2 %), logic 0.12 -> 0.39 ms; kernel textureUploadMicrobench 535 687 -> 508 758 ops/s (-5.0 %)",
+      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "id": "N-292",
+      "kind": "speed",
+      "area": "pixi",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "textureUploadStressScene's renderer costs twice v0.14.0's on the ASUS (45.8 -> 99.2 ms a frame, +117 %, HD 620, headless): the shared picture upload path (sharedTextureUpload.js) got slower somewhere since the release",
+      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "audioSlots regression",
+        "SoundManager slot claim"
+      ],
+      "records": [
+        "R-1349",
+        "R-1361"
+      ],
+      "result": "ASUS scoreboard 0895: audioSlotMicrobench occ100x3 23 446 -> 11 070 ops/s (-52.8 %), WORSE",
+      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "id": "N-293",
+      "kind": "speed",
+      "area": "audio",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "The SoundManager slot claim kernel runs at half v0.14.0's speed on the ASUS's CPU (23 446 -> 11 070 ops/s, -52.8 %): a CPU-side change, so it likely shows on the main PC too",
+      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "meshFillMoving regression"
+      ],
+      "records": [
+        "R-1349",
+        "R-1361"
+      ],
+      "result": "ASUS scoreboard 0895: pixi STEP_MS +29.3 %, kernel +46.0 % (FAIL row)",
+      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "id": "N-294",
+      "kind": "speed",
+      "area": "pixi",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "meshFillMovingScene's renderer costs 29 % more than v0.14.0's on the ASUS, though its kernel got 46 % faster",
+      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "queryAabb regression"
+      ],
+      "records": [
+        "R-1349",
+        "R-1361"
+      ],
+      "result": "ASUS scoreboard 0895: logic0 STEP_MS +21.6 % (FAIL row), load OK",
+      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "id": "N-295",
+      "kind": "speed",
+      "area": "logic",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "queryAabbStressScene's logic costs 22 % more than v0.14.0's on the ASUS",
+      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "grid ray regression",
+        "ray DDA"
+      ],
+      "records": [
+        "R-1349",
+        "R-1361"
+      ],
+      "result": "ASUS scoreboard 0895: logic0 STEP_MS +6.0 %, kernel +0.7 % (FAIL row)",
+      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "id": "N-296",
+      "kind": "speed",
+      "area": "logic",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "rayStressScene's logic costs 6 % more than v0.14.0's on the ASUS (the grid ray DDA kernel itself is level)",
+      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "house faces one instance",
+        "merge faces",
+        "face batching"
+      ],
+      "records": [
+        "R-1360"
+      ],
+      "result": "",
+      "next": "Design the merged form (one mesh of the house's face quads, its texture ids and normals per vertex or per face; or the faces packed as one instance with a face table), keep the picture identical (compareCaptures), then measure on the main PC: the barrio's pre-render STEP_MS and GPU per pass, houseLightScene ?bench=faces.",
+      "id": "E-520",
+      "kind": "speed",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "A house's faces drawn as one instance (or one mesh) instead of one decoration each: fewer rows for pre-render's collect, emit and sort, and fewer instances for the GPU",
+      "statusText": "proposed 2026-11-18 and chosen by the owner, from the ASUS's faces-against-maps sitting: the faces' cost is the count of pieces (pre-render, Intel by day), not the format"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "static house cache",
+        "house layer cache",
+        "baked houses"
+      ],
+      "records": [
+        "R-1360"
+      ],
+      "result": "",
+      "next": "Follow E-504's adaptive policy (cached after held frames, drawn live while the view keeps changing). The G-buffer half is the intermediate idea of 2026-11-18 (height and normal maps made from the faces, kept for the houses in view): the face map the light pass reads, cached instead of redrawn. Measure on the main PC: GPU per pass and pre-render in the barrio, still and panning.",
+      "id": "E-521",
+      "kind": "speed",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "Houses do not move: draw them once into a cached layer (their colour, and their G-buffer data: face normals, heights, ids) and redraw it only when the view changes, as E-504 caches the floor",
+      "statusText": "proposed 2026-11-18 and chosen by the owner, from the ASUS's faces-against-maps sitting: the faces' cost is the count of pieces (pre-render, Intel by day), not the format"
+    },
+    {
+      "refs": [
+        "REVIEW_PLAN.md#DX-LIGHTTICK"
+      ],
+      "aliases": [
+        "lighting tick interval",
+        "light at 30 fps",
+        "lighting update interval",
+        "light decimation"
+      ],
+      "records": [],
+      "result": "",
+      "next": "Design: which passes the knob covers and what a skipped frame reuses (see the plan row); then measure on the main PC: the barrio and Predator ?light3d=1 at interval 1 and 2 (GPU per pass, drawn frames, every worker), and look at moving lights (headlights, flashlights) in motion.",
+      "id": "DX-LIGHTTICK",
+      "kind": "feature",
+      "area": "render",
+      "status": "open",
+      "date": "2026-11-18",
+      "title": "A tick interval for the whole lighting system (a dev knob): the light pass, the shadow maps and the shading recomputed every N frames (30 fps at N = 2) while everything else draws at 60; today only the sprites' cast shadows have one (lighting.shadowUpdateInterval)",
+      "statusText": "the owner's idea, 2026-11-18; not designed or built"
+    },
+    {
+      "id": "DX-GBUFSHADER",
+      "title": "A game's own shader can read the G-buffer: custom shader layers (LAYER_KIND.SCREEN passes and the others) get each pixel's normal, height, entity and depth, so a game writes effects that know the scene (an outline, corner shading, a cartoon look)",
+      "status": "open",
+      "statusText": "the owner, 2026-11-18: \"lo que sí vale la pena agregar al backlog es la siguiente idea: poder usar el gbuffer en un shader propio. solo eso\". It came from looking at the Editor de Barrios' screen-space outline (editor/js/gfx.js: lines where the box id or the depth changes, corner shading from depth). Only the access: no built-in outline or effect",
+      "date": "2026-11-18",
+      "result": "",
+      "next": "Hand custom shader layers the face map (normal, height), the ids map and the pixel depth as named textures, in GLSL and WGSL, with their size: they are drawn at the light's resolution (0.25 by default, 0.5 in the barrio), so a texel covers several canvas pixels, and a shader must know that. Document their encoding (faceMap.js FACE_*, the ids words) in the guide with a small example (an outline). Decide whether a layer that asks for them turns the G-buffer on, and what it reads in a scene without one.",
+      "area": "render",
+      "kind": "feature",
+      "refs": [],
+      "aliases": [
+        "g-buffer in custom shaders",
+        "gbuffer access"
       ],
       "records": []
     }
@@ -36154,6 +36628,59 @@
       "commits": [
         "3ab9a2ca"
       ]
+    },
+    {
+      "id": "R-1346",
+      "date": "2026-11-18",
+      "title": "N-266's unshaded pass back to two passes: the one-pass form cut every unshaded texel under half alpha, and the barrio's lamp halos shrank to their core",
+      "verdict": "kept-hygiene",
+      "text": "**N-266's unshaded pass back to two passes: the one-pass form cut every unshaded texel under half alpha, and the barrio's lamp halos shrank to their core.**\n\nThe owner saw it in the barrio at 23:14 (localhost:8000, src): the street lamps' halos were a small tight dot. They are\n'sprite' halos (DX-GLOWRADIUS: unshaded, glow 0.6, E-498's compact gradient), drawn in the unshaded pass. N-266's one-pass\nform (af0c21de) discarded every texel under alpha 0.5 there, so a soft unshaded texel never reached the unshaded target;\ndepthPairScene, its check, has nothing soft that is unshaded, so its 0 px against the two-pass form hid it. Reverted to the\ntwo-pass form (79c3bac8, as the canvas draws): the opaque pass keeps the solid lit texels, black, writing the depth; the edge\npass draws the soft and the unshaded ones, testing it. The halos are whole again (the owner looked: \"si!\"), still unshaded\nand covered by what stands in front; the soft edges of any unshaded sprite come back too. Its cost, measured when the two\nforms were compared (Buenos Aires 22:00, GTX 1650, glFrameRecorder --gpu-draws): about +0.06 ms of GPU a frame, the second\ndraw's vertex work over every instance. test:node and test:demos green; bundles rebuilt.",
+      "commits": [
+        "e0acd281"
+      ]
+    },
+    {
+      "id": "R-1347",
+      "date": "2026-11-18",
+      "time": "02:42",
+      "timeFrom": "recorded",
+      "title": "The debug UI's catch-up planned (DX-DEBUGUI, DBG-1 to DBG-12): the Layers panel's Vis, blend and alpha fixed on every render path, render views, a sheet's maps, the lighting grid, panels for the sun, light pass and camera; nothing built or measured",
+      "verdict": "note",
+      "text": "**The debug UI's catch-up planned (DX-DEBUGUI, DBG-1 to DBG-12, `DEBUG_UI_PLAN.md`): a reading of the code only; nothing built, run or measured (the owner asked for no tests or benchmarks).** The owner: the Layers panel's Vis does not hide, the blend selects do nothing, alpha looks on or off; they want to see height and normal maps and the lighting grid from the debug UI, and say many newer features have no counterpart there.\n\n- **What the reading found (main at 702e6842), to be confirmed before fixing.** Vis: `castedShadows` in map mode only stops redrawing the sun and lamp maps, which the light pass keeps sampling (frozen shadows); hidden entities still cast (pre-render never reads `Layer._visible`); hidden lighting leaves the unshaded composite. Blend: the entities' meshes and the lightEdges meshes set their own blend, so the container's is never inherited; Cont Blend reaches custom layers only; a re-registration restores the config's value (the panel never writes the SAB); about 22 of the 33 names draw as normal (no advanced blend modes registered). Alpha: the entities' opaque pass (E-448 / E-502) is dropped for a blend other than normal but not for alpha below 1, so solid pixels stay opaque until alpha 0, when Pixi skips the container: on or off; the lightEdges and lightingMesh shaders never read `uColor`; worldRect stage meshes ignore alpha while the camera moves.\n- **Why the rest is missing.** The debug UI reaches the renderer through one message (`setLayerProps`) and a main-thread 2D canvas, so no GPU texture can be shown: render views (DBG-5) need a worker-side quad and decode shaders, stubbed out of the production bundle and free when off. The lighting grid is read as E-205's light tiles (DBG-7, a bit-count view of the R32UI texture; the owner to confirm). The twin page's texels are on the main thread already, so a sheet's maps viewer (DBG-6) needs no worker change.\n- **Order and size.** DBG-1 to DBG-3 first, then DBG-4; DBG-5 before DBG-7; about 25 to 36 h in a row. Four decisions for the owner in the plan's section 6 (what \"grilla\" means, live light options, persistence, trimming the blend list)."
+    },
+    {
+      "id": "R-1348",
+      "date": "2026-11-18",
+      "time": "02:52",
+      "timeFrom": "recorded",
+      "title": "DX-DEBUGUI's open points decided by the owner (lighting grid = light tiles, light options read-only, no persistence, blend list trimmed) and the plan re-estimated at 15 to 23 h",
+      "verdict": "note",
+      "text": "**The owner decided DX-DEBUGUI's four open points (DEBUG_UI_PLAN.md section 6), and the plan was re-estimated; nothing built or run.**\n\n- **The lighting grid** is E-205's light tiles (DBG-7): the owner did not know which it was (\"sé que hay light cells o algo así … ¿o es el gbuffer?\") and left it to the planner; the code has no light cells, and the G-buffer (one normal and height per pixel, not a grid) has its own views in DBG-5.\n- **Light options stay read-only** in the Light tab (DBG-8); **panel changes do not outlive a scene restart**; **the blend list is trimmed** to the modes that draw (DBG-2), BLEND_MODES and Layer._BLEND_MODE_STRINGS together. Nothing in src, demos, tests, the guide or the types used a removed mode.\n- **Re-estimated at 15 to 23 h** (was 25 to 36 h, which summed the top of every range and gave each item its own browser check). The bugs DBG-1 to DBG-3 are 3 to 4.5 h of it. The hours go to the three to five causes per bug, every shader written in GLSL and WGSL, the GPU and config paths (opaque pass, lightEdges, shadow modes), and checking fades and views on screen in motion. The checks are batched, and DBG-5 (new render views) is the largest item."
+    },
+    {
+      "id": "R-1349",
+      "date": "2026-11-18",
+      "time": "01:46",
+      "title": "The ASUS scoreboard, main against v0.14.0 (59 rows): spatial, Box2D and LiquidFun faster; five rows worse there, to check on the main PC (N-292 to N-296)",
+      "verdict": "note",
+      "text": "**The engine scoreboard on the ASUS** (i7-7500U, 2 cores and 4 threads; Intel HD 620): main 57044bd1 against v0.14.0, each side its whole revision (`--full-rev`, `--skip-node`; the lockstep visual gate passed). Job 0895, 2026-11-18 00:13 to 01:46. Gameplay scenes run headed, stress scenes headless, both on the HD 620.\n\nThis is an extra low-end reading (the owner, 2026-11-18): a row worse here is a lead to check on the main PC, not a verdict.\n\n**Faster on main:**\n- spatial: spatialMax STEP_MS −69.2 %, kernel +14.4 %\n- Box2D (balls): physics −16.9 %\n- LiquidFun: physics −13.6 % (couple −10.3 %)\n- Ray vs Box2D: logic −12.3 %, kernel +21.8 % less work\n- box2dRayJs: logic −14.8 %\n- Kernels: publishPose ×7.2, gameObjectAccess ×2.1, shadowStamp +32.5 %, attachedSway +29.9 %, decorations +20.0 %, tilemap +19.4 %, decalPremultiply +18.5 %\n\n**Worse on main here (new backlog rows, to check on the main PC):**\n- N-292 textureUpload: pixi STEP_MS 45.8 → 99.2 ms (+117 %)\n- N-293 audioSlots: kernel −52.8 % (CPU side)\n- N-294 meshFillMoving: pixi +29.3 %\n- N-295 queryAabb: logic +21.6 %\n- N-296 ray: logic +6.0 %\n\n**FAIL rows (about 30):** a protocol ceiling (the scene too light for the 3 ms floor, or its load cv too high), or a scene or kernel v0.14.0 does not have. These are not regressions.\n\nThe report (`tests/results/scoreboard/report.md` on the ASUS) is not kept in the repo. A copy is in the ASUS session's scratch.\n",
+      "timeFrom": "recorded"
+    },
+    {
+      "id": "R-1360",
+      "date": "2026-11-18",
+      "time": "03:50",
+      "title": "Houses as faces against height-mapped sprites on the ASUS (both GPUs): equal by night; by day the Intel draws 14 % more frames with maps; faces cost pre-render about 2 ms (7 825 decorations against 96 sprites)",
+      "verdict": "note",
+      "text": "**Houses as faces against houses as height-mapped sprites, on the ASUS, both GPUs** (the owner's question, never measured before). Jobs 0896b and 0896b2, 2026-11-18 03:2x to 03:5x. houseLightScene `?bench=faces` (A) against `?bench=maps` (B): one build (main 70ba822b), the default 12 × 8 grid of two alternating house designs, by day (hour=15) and by night (hour=22). ABAB, 4 pairs each, `--full-rev`. The runner's \"FAIL (load)\" only means the sides differ by design: 7 825 decorations against 96 sprites.\n\n| GPU, hour | Drawn fps, faces → maps |\n|---|---|\n| HD 620, day | 40.7 → 46.3 (+13.8 %, 4/4, cv 0/1 %) |\n| HD 620, night | 24.9 → 25.2 (+0.6 %) |\n| MX110, day | 59.7 → 60.0 (both at the cap) |\n| MX110, night | 34.9 → 35.2 (+0.9 %) |\n\nCPU, all under the 6 ms floor:\n- **Pre-render** is about 2 ms dearer with faces: 2.8 → 0.7 ms on the HD 620 by day, 2.3 → 0.3 on the MX110.\n- **Renderer** is dearer with maps on the MX110: 0.7 → 1.4 ms by day, 0.9 → 1.6 by night.\n\nSingle `--gpu-passes` runs (0896b) agree: by night faces and maps are equal; by day maps are 2 to 9 % cheaper.\n\n**Reading.**\n- The faces' cost is the count of pieces (pre-render's rows, the GPU's instances), not the format.\n- Maps per house do not scale to the barrio. Each house is unique, and about 260 KB of height and normal maps per house at 170 × 190 px comes to some 2 GB for 8 560 houses, against a few MB of shared face textures.\n- So the faces stay. The owner chose to make them cheaper: E-520 (a house's faces as one instance) and E-521 (static houses cached in a layer, as E-504 caches the floor).\n- Measured on the ASUS only: an extra reading. The main PC decides.\n",
+      "timeFrom": "recorded"
+    },
+    {
+      "id": "R-1361",
+      "date": "2026-11-18",
+      "title": "The ASUS scoreboard on the MX110: textureUpload (+188 %), audioSlots (-74 %), meshFillMoving (+122 %) and queryAabb (+13 %) hold on the second GPU; ray flips sign (noise)",
+      "verdict": "note",
+      "text": "**The engine scoreboard again, on the ASUS's GeForce MX110** (Chrome's per-app GPU preference), main 70ba822b against v0.14.0, `--full-rev`, `--skip-node`, job 0896c2, 2026-11-18 03:47 to about 05:15. It is an extra low-end reading, as R-1349's on the HD 620 was.\n\n**The five rows R-1349 found on the HD 620, on the MX110:**\n\n| Row | HD 620 | MX110 | Reading |\n|---|---|---|---|\n| N-292 textureUpload | pixi +117 % | pixi +187.7 % (kernel −5.7 %), WORSE | holds |\n| N-293 audioSlots | kernel −52.8 % | kernel −74.1 %, WORSE | holds |\n| N-294 meshFillMoving | pixi +29 % | pixi +122.0 % (kernel +35.3 %) | holds |\n| N-295 queryAabb | logic +21.6 % | logic +13.2 % | holds; under the step floor in both |\n| N-296 ray | logic +6.0 % | logic −6.6 % | flips sign: likely noise |\n\n**Faster on main here too:**\n- spatialMax −70.6 %\n- LiquidFun physics −14.9 % (couple −4.7 %)\n- box2dRayJs logic −10.6 %\n- Kernels: publishPose ×7.7, shadowStamp +43 %, gameObjectAccess +43 %, attachedWalls +24 %, decorationCollect +20 %\n\n**Kernel noise on this laptop.** Node kernels that use no GPU moved between the two sittings by −13 to +30 % (painterRadix +1.6 % then −13.4 %, attachedSway +29.9 % then −11.0 %, decalPremultiply +18.5 % then −10.1 %). A kernel delta under about 30 % on the ASUS is noise. audioSlots and publishPose are far past it.\n\nWith the MX110 the CPU workers ran lighter than on the HD 620 (the shared-power effect), so more stress rows fell under the 6 ms floor. Job 0896e calibrates the load knobs (ray casts, bullets, spawn storm) so those rows can be judged."
     }
   ],
   "leads": [
