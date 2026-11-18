@@ -685,11 +685,14 @@ followed, each in the register with its sitting:
 | OL-8 | a lamp's row counts its 256 directions' index instead of walking it | pre-render 6.415 -> 6.062 ms (-5.8 %); the kernel -9 to -21 % |
 | OL-9 | a lamp's row kept while what goes into its sweep is the same (`lighting.wallCache`) | pre-render 6.061 -> 2.982 ms with the lamps still (-51.4 %); +2.5 % with all moving (inside the limit) |
 | OL-10 | Pixi does not copy or upload rows it already sent (pre-render signs each frame's rows) | Pixi 1.601 -> 0.626 ms (-61.1 %, under the floor: read) |
+| OL-11, OL-12 | the kernels write a swept lamp's row and its walls' codes; no shadow lights without casters | pre-render 5.813 -> 5.386 ms with every lamp moving (-8.1 %), 2.938 -> 2.681 ms still (-7.3 %) |
+| OL-13 | Pixi copies a row out in one `set()`, not a float at a time | Pixi 1.391 -> 1.232 ms with every lamp moving (-11.6 %, under the floor: read) |
 
 After them, the old fan pass against the walls on a still scene, one build (R-1403): pre-render 5.117 -> 2.959 ms
-(-41.6 %), Pixi 1.207 -> 0.662 ms (-44.9 %). With every lamp moving nothing is kept and the walls stay about 20 %
-over the fans in pre-render: the row is still built in JS (about 22 ns a vertex), and the sweep's kernel writing it
-is what is left for those. Main is merged into the branch (`02f319b3`); an early look at Predator at its default
+(-41.6 %), Pixi 1.207 -> 0.662 ms (-44.9 %). With every lamp moving nothing is kept: the walls read +18.9 % and
++19.4 % over the fans there, and +13.1 % in both workers after OL-11 to OL-13 (R-1408). A profile put what is left
+on `wall_row` (0.59 ms a frame for 720 swept lamps, its cost not understood: a variants pass is owed) and the rows'
+upload. Main is merged into the branch (`02f319b3`); an early look at Predator at its default
 load shows nothing past its A/A (R-1401), the gate itself runs at `crowd=2.5` before the merge. The shaders pass
 on the four GPUs (the ASUS's jobs 0896d to 0896k; two blank captures on the HD 620 were pages that had drawn
 nothing, and `normalLightCheck` now waits for a frame and says NOFRAME otherwise).
