@@ -21411,14 +21411,15 @@
         "heightmap depth interleave"
       ],
       "records": [
-        "R-1306"
+        "R-1306",
+        "R-1343"
       ],
-      "result": "",
+      "result": "fixed (102a334f): a pixel's floor place from its height map kept within its frame's feet; gates neutral on the GTX (Predator light3d) and the HD 620 (barrio drawn 37.0 -> 37.0 fps)",
       "next": "Idea: a pixel never nearer than its own footprint's front (its foot plus frameBase's ry, scaled); cars have pixels well in front of their centre, so the clamp needs each frame's footprint. Or better height maps for the LPC people.",
       "id": "N-262",
       "kind": "bug",
       "area": "render",
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-17",
       "title": "Pixel depth from approximate height maps: two objects 3-4 px apart interleave pixel by pixel (a person just behind a lamp shows through the lamp's head)",
       "statusText": "seen 2026-11-17 in Parque Chas at night (the owner's catch)"
@@ -35456,6 +35457,19 @@
       "text": "**Bench sides served the runner's scenes, not their own.** `revWorktree.mjs` builds a srcOnly worktree from the runner's HEAD, checks out `src/` from the side's revision, and overlays the runner's working tree. `demos/`, the stress scenes and `dist/` therefore come from the runner.\n\n**Who it hit.**\n- runPredatorAbab is srcOnly unless `--full-rev`. On this PC the runner's tree is the main folder, which usually has some session's branch checked out, so side A, \"main\", ran that branch's demos.\n- runMultiArm was always srcOnly. Planning the barrio stack's suspects (the ASUS's 0891), its arms would have run the runner's neighbourhood: on the ASUS that is an old asus-lab commit, while the stack changes `demos/buenosAiresScene` (barrioLoader.js, the scene).\n\n**The fix** (8066e84a).\n- `servedOutsideSrc(paths)` lists `demos/`, `dist/` and `tests/bench/stressScenes/`.\n- `ensureRevWorktree` records `srcOnlyGaps`: HEAD against the revision, srcOnly worktrees only.\n- `srcOnlyGapCheck(sides, scene, query)` refuses a side whose gaps fall in its scene's folder, or in `dist/` when the query has `weedBundle`, and lists the rest.\n- Both runners call it unless `--full-rev`. runMultiArm gets `--full-rev`, and its protocol records `fullRev`.\n\n**Checked.** `runPredatorAbab --vs main --hyp-rev exp/no-n276` on the barrio without `--full-rev` stops before any run, naming `barrioLoader.js` and `buenosAiresScene.js`. Node suite 3036/3036 (tests in `runMultiArm.test.js`).\n\n**Still to re-read.** Barrio sittings run on this PC without `--full-rev` while the main folder had a demos-changing branch checked out: their A side was not main's neighbourhood. The ASUS jobs used `--full-rev` throughout.\n",
       "commits": [
         "8066e84a"
+      ]
+    },
+    {
+      "id": "R-1343",
+      "date": "2026-11-17",
+      "time": "22:46",
+      "timeFrom": "recorded",
+      "title": "N-262 merged: both gates neutral (Predator light3d on the GTX; the barrio's drawn frames on the HD 620, 37.0 -> 37.0 fps)",
+      "verdict": "kept",
+      "text": "**N-262 merged** (102a334f; dist 6b6635e9). The owner approved the fix by eye (\"se ve todo bien\", relayed by the barrio session). The fix keeps a pixel's floor place from its height map within its frame's feet. It adds one texture-table fetch a vertex and one clamp a pixel with heights. Both gates are neutral, run on one build pair: main 57044bd1 against main + N-262 (meas/n262-on-main 6bd9f9b6).\n\n- **This PC (GTX 1650), Predator `?light3d=1&hour=22`** (pixel depth runs only with light3d there), 4 pairs, `--full-rev`: NEUTRAL. Every worker is under the 6 ms floor and lower on B (renderer 2.81 → 2.22 ms, pre-render 3.60 → 2.74). Drawn 59.9 → 60.0. Load keys within 1 % (visible 13 887 / 13 851).\n- **The ASUS (HD 620), the barrio `hour=22&dayMinutes=0`, camera still**, 4 pairs, `--full-rev` (job 0892): NEUTRAL. Drawn 37.0 → 37.0 fps (+0.2 %, cv 1/1 %; runs A 368 370 373 370, B 378 370 370 371). Renderer −1.1 %. Physics +2.6 % (4/4, cv 2/3 %); a shader change cannot reach it, so this is the laptop's shared power. Load equal.\n\nSuites on the merge: node 3036/3036, demos 121/121. Bundles: test:bundle 8/8, test:node:bundle 323/323, check:dist fresh.",
+      "commits": [
+        "102a334f",
+        "6b6635e9"
       ]
     }
   ],
