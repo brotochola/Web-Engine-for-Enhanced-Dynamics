@@ -16074,7 +16074,8 @@
         "R-1307",
         "R-1312",
         "R-1314",
-        "R-1324"
+        "R-1324",
+        "R-1335"
       ]
     },
     {
@@ -22444,13 +22445,14 @@
       ],
       "records": [
         "R-1329",
-        "R-1332"
+        "R-1332",
+        "R-1334"
       ],
       "result": "",
       "id": "N-277",
       "kind": "bug",
       "area": "render",
-      "status": "open",
+      "status": "parked",
       "date": "2026-11-17",
       "title": "A lamp's dim falloff shows rings on a plain surface at night, each a step of the light target's 8 bits (RGBA8, the light clamped to 1), a little tinted where the lamp's channels step at different places",
       "statusText": "seen 2026-11-17 in wallShadowScene (a plain wall 200 px from a lamp: concentric rings, the same with lampShadows 'sprite', so no shadow's); in the barrio the bricks and tiles hide it",
@@ -35724,6 +35726,30 @@
       "commits": [
         "102a334f",
         "6b6635e9"
+      ]
+    },
+    {
+      "id": "R-1334",
+      "date": "2026-11-17",
+      "time": "23:15",
+      "timeFrom": "recorded",
+      "title": "The dither costs the HD 620 4.3 % of its drawn frames in the barrio at night: dropped (the owner: no dither if it costs)",
+      "verdict": "dropped",
+      "text": "ASUS job 0892b (the other session's), HD 620, main 57044bd1 against fix/light-dither 4849639a, barrio hour=22&dayMinutes=0, camera still, 4 pairs, --full-rev: drawn 37.4 -> 36.0 fps (-4.3 %, 4/4, cv 1/1 %), A 378 373 375 371 | B 361 361 359 354; CPU workers level or lower (fewer frames). About 1.2 ms a frame for interleaved gradient noise (no sin) on a 960 x 540 light target: not the ALU; likely the noise defeating Intel's render-target compression of the light target. The owner's rule was no dither if it costs, so the branch stays unmerged; N-277 parked (the rings show on plain dark surfaces only, the barrio's textures hide them).",
+      "commits": [
+        "4849639a"
+      ]
+    },
+    {
+      "id": "R-1335",
+      "date": "2026-11-17",
+      "time": "23:10",
+      "timeFrom": "recorded",
+      "title": "The houses' outer outline (editor a34b8d0, 8847610): HD 620 drawn -1.5 %, pre-render +16 % with 15 % more decorations; the owner decides",
+      "verdict": "note",
+      "text": "The owner asked for the houses' outlines as on a map sprite: the faces' inner borders stay, and a strip 1.2 world px outside each house's screen silhouette (in the plane of its face, the dark of its colour). Parque Chas re-exported on exp/barrio-outline: first 453 994 decorations (+119k), then without posts and runs under 2.5 px 386 267 (+51k, +15 %). GTX ABAB of the first: pre-render 4.24 -> 5.08 ms, renderer 1.90 -> 2.04. HD 620 (ASUS 0892 and 0892bd, 8 pairs, the trimmed package against the stack 94d7c826): drawn -1.5 % (5/8 fewer, clean pairs -2.8 to +0.3 %), pre-render 16.2 -> 19.3 ms (+16 %, 7/8). Not in main; the owner weighs the look against it.",
+      "commits": [
+        "753958ea"
       ]
     }
   ],
