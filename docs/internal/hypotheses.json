@@ -22335,7 +22335,8 @@
         "R-1350",
         "R-1352",
         "R-1353",
-        "R-1354"
+        "R-1354",
+        "R-1400"
       ]
     },
     {
@@ -22364,7 +22365,8 @@
         "R-1354",
         "R-1355",
         "R-1358",
-        "R-1359"
+        "R-1359",
+        "R-1400"
       ]
     },
     {
@@ -36139,6 +36141,18 @@
         "c9e374b1",
         "dc4aac46",
         "d0b2d0c5"
+      ]
+    },
+    {
+      "id": "R-1400",
+      "date": "2026-11-18",
+      "time": "05:50",
+      "timeFrom": "recorded",
+      "title": "After OL-7 and OL-8, walls against fans on visPoly at 720 lights, one build: pre-render +21.9 % (5.226 -> 6.280 ms), Pixi +16.1 % (1.318 -> 1.513 ms); the fans' side under the 6 ms floor",
+      "verdict": "note",
+      "text": "**After OL-7 and OL-8 the walls in the light pass still cost more than the old fan pass on its own scene: pre-render +21.9 % (5.226 -> 6.280 ms) and Pixi +16.1 % (1.318 -> 1.513 ms) at 720 lights. Both under the 6 ms floor on the fans' side, so not a judged row; the pairs agree.**\n\nvisPolyStressScene `?lights=720`, `?arm=fans` against `?arm=walls`, one build (dx/one-light at 3ab9a2ca, both sides its worktree), headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs, 05:45 to 05:50. Each worker's `STEP_MS - WAIT_MS`:\n\n| worker | fans (old pass) | walls (light pass) | paired | each pair |\n| --- | --- | --- | --- | --- |\n| pre-render | 5.226 ms | 6.280 ms | +21.9 % | +19.3, +24.5, +19.3, +24.5 |\n| Pixi | 1.318 ms | 1.513 ms | +16.1 % | +17.8, +14.3, +5.5, +27.2 |\n| spatial | 2.502 ms | 2.598 ms | +3.8 % | +0.6, +4.6, +2.9, +5.6 (the knob cannot reach it: drift) |\n\n- **Pre-render:** +1.05 ms for 720 lamps, about 1.5 us a lamp: the row (`writeWallRow`, about 22 ns a vertex after OL-8, and each vertex's code) against the old pass's copy of the polygon. The session's A/A of the walls' side read a detection limit of 4.6 % (R-1359).\n- **Pixi:** +0.2 ms: the rows read and uploaded every frame, unchanged ones included, and the G-buffer pass's submission.\n- **The scene is still** (no lamp and no wall moves): the old pass and the new one both sweep every lamp and publish it again each frame.\n- **What it asks for** (the owner's choice, both estimated): the sweep's kernel writing the row in C (3 to 4 h: brings pre-render near the fans', not under); or a still lamp whose walls did not move kept from the frame before, its sweep, its row and its upload skipped (4 to 6 h: under the fans' in any scene where most lamps stand still). To judge a row, the fans' side needs 6 ms: `?lights=900`.",
+      "commits": [
+        "3ab9a2ca"
       ]
     }
   ],
