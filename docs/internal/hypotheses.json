@@ -19024,12 +19024,12 @@
     {
       "id": "E-434",
       "title": "Logic stores RigidBody.sleeping = 0 on every addAcceleration, also when it is 0, into the byte channel physics paints and clears every step: an estimated 1 250 line transfers a frame at crowd 2.5, and the cheapest of the audit's fixes",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from falseSharingAudit.mjs on Predator crowd 2.5 (an estimate from the real layouts and a writer map read from the code: nothing measured)",
+      "status": "kept-hygiene",
+      "statusText": "done 2026-11-17 as N-290's fix (the store dropped, not guarded): no speed change measured (GTX crowd 2.5 neutral, ASUS neutral)",
       "date": "2026-11-16",
       "area": "logic",
       "kind": "speed",
-      "result": "Candidate 5: src/core/gameObject.js (addAcceleration), the buckets split by logicBlockRange (logicWorker.js), E-325 (the paint writes 38 000 bytes a step, the finalize clears them); 627 lines a frame taken from physics by logic and back by the next paint.",
+      "result": "Dropped the store with N-290 (3280bf06). A guarded store (read first) read REGRESSION with every worker drifting on the GTX (R-1344); dropping it read NEUTRAL on both machines. The line transfers it saved do not show in STEP_MS.",
       "next": "`if (RigidBody.sleeping[i] !== 0) RigidBody.sleeping[i] = 0` (a read keeps the line shared; physics wakes a body whose acceleration is not zero), or drop the store; logic and physics STEP_MS at crowd 2.5, DCRefill per function to confirm.",
       "refs": [],
       "aliases": [
@@ -19037,7 +19037,8 @@
       ],
       "records": [
         "R-1188",
-        "R-1272"
+        "R-1272",
+        "R-1344"
       ]
     },
     {
@@ -22480,6 +22481,30 @@
       "date": "2026-11-17",
       "title": "Bench sides built srcOnly (runPredatorAbab without --full-rev, runMultiArm always) serve the runner's demos/, stress scenes and dist/, so a side whose revision changes its scene runs the runner's copy of it, A included",
       "statusText": "found 2026-11-17 while planning the barrio stack's suspects on the ASUS (runMultiArm's arms would have run an old asus-lab neighbourhood); fixed the same day"
+    },
+    {
+      "refs": [
+        "REVIEW_PLAN.md#N-290"
+      ],
+      "aliases": [
+        "addAcceleration sleeping",
+        "sleeping paint",
+        "body stays asleep",
+        "acceleration lost",
+        "bodies_apply_accelerations wake"
+      ],
+      "records": [
+        "R-1344"
+      ],
+      "result": "fixed (3280bf06): addAcceleration no longer stores RigidBody.sleeping = 0; a sleeping body wakes for its acceleration again; neutral on the GTX (Predator crowd 2.5) and the ASUS (Predator 0.5, balls)",
+      "next": "",
+      "id": "N-290",
+      "kind": "bug",
+      "area": "physics",
+      "status": "kept-hygiene",
+      "date": "2026-11-17",
+      "title": "A sleeping body pushed with addAcceleration could stay asleep, its acceleration lost: logic stored RigidBody.sleeping = 0 before physics' turn, and bodies_apply_accelerations wakes only where the paint still says asleep",
+      "statusText": "found 2026-11-17 while building E-434 (the false-sharing audit's sleeping store); proven on real wasm; fixed the same day"
     }
   ],
   "records": [
@@ -35750,6 +35775,17 @@
       "text": "The owner asked for the houses' outlines as on a map sprite: the faces' inner borders stay, and a strip 1.2 world px outside each house's screen silhouette (in the plane of its face, the dark of its colour). Parque Chas re-exported on exp/barrio-outline: first 453 994 decorations (+119k), then without posts and runs under 2.5 px 386 267 (+51k, +15 %). GTX ABAB of the first: pre-render 4.24 -> 5.08 ms, renderer 1.90 -> 2.04. HD 620 (ASUS 0892 and 0892bd, 8 pairs, the trimmed package against the stack 94d7c826): drawn -1.5 % (5/8 fewer, clean pairs -2.8 to +0.3 %), pre-render 16.2 -> 19.3 ms (+16 %, 7/8). Not in main; the owner weighs the look against it.",
       "commits": [
         "753958ea"
+      ]
+    },
+    {
+      "id": "R-1344",
+      "date": "2026-11-17",
+      "title": "N-290 merged (E-434 with it): addAcceleration no longer clears the sleeping paint; neutral on the GTX and the ASUS",
+      "verdict": "kept-hygiene",
+      "text": "**N-290 found while building E-434, fixed, merged** (3280bf06; dist built after).\n\n`RigidBody.sleeping` is physics' paint of Box2D's sleep: \"Writing RigidBody.sleeping alone does not change the solver\", as setAwake's doc says. `bodies_apply_accelerations` (wasm_wrapper.c) wakes a sleeping body that has an acceleration only where its paint still says asleep. `addAcceleration` stored 0 there on every call. Whenever logic's tick ran before physics' apply, the body was skipped and stayed asleep, the step repainted 1, and the next tick cleared it again. That is a race each frame in every demo that moves bodies by acceleration.\n\n**Proof on real wasm** (scratch `wakeCheck.mjs`, then `bodyAccelerationsWake.wasm.test.js`): with the 0 stored, a sleeping body's vx stayed 0.000 for three steps. With the store left out, the same body moved at 0.050, 0.100 and 0.150.\n\n**Fix:** addAcceleration adds the acceleration and leaves the paint to physics. That also drops E-434's per-call store into the line physics writes every step.\n\n**First try:** a guarded store (`if (sleeping[i] !== 0) sleeping[i] = 0`), Predator crowd 2.5 on the GTX, 4 pairs, `--full-rev`, 22:5x. The runner read REGRESSION:\n- logic +7.0 % (3/4, cv 14 %), spatial +4.8 % (4/4), physics +1.4 %;\n- the unreachable renderer +15 % and pre-render +6 %, so every worker drifted together;\n- logic against the others +4.2 %.\n\nThe guard still cleared the paint for a sleeping body, so it kept the bug. A read of a line physics keeps writing transfers it as well.\n\n**The fix measured** (78bf9941), main 57044bd1 against the branch, 4 pairs, `--full-rev`:\n\n| Sitting | Verdict | Notes |\n|---|---|---|\n| GTX, Predator crowd 2.5 (23:2x) | NEUTRAL | logic +1.5 % (2/4, cv 7/5 %), physics −5.4 % (1/4 worse), spatial −2.7 %, pre-render −3.2 %; awake 22.2–22.8k both sides |\n| ASUS, Predator crowd 0.5, 50 s warm-up (job 0892c) | NEUTRAL | crowd settled (0–54 awake), every worker under the 6 ms floor |\n| ASUS, balls (job 0892c) | NEUTRAL | physics +1.0 % (cv 9/19 %); all 9 000 always awake, so the fix has nothing to wake there |\n\nKept as hygiene: a correctness fix with no worker 3 % worse. E-434's line transfers do not show in STEP_MS on either machine.\n\n**Suites:** node 3038/3038, demos 121/121, test:bundle 8/8, test:node:bundle 323/323, dist fresh.\n",
+      "commits": [
+        "78bf9941",
+        "3280bf06"
       ]
     }
   ],
