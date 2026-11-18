@@ -14,6 +14,25 @@
 // - No Atomics needed since data is immutable after initialization
 
 /**
+ * A Tiled map's JSON from its file's bytes (SST-11: the tilemap worker parses it off the page's main thread). A body that
+ * is not JSON says so with how it starts, as fetchAssetJson does (DX-GUARDS C6: a dev server answers a missing file with
+ * its index page and a 200).
+ * @param {ArrayBuffer} bytes
+ * @param {string} what what it is, for the message ('tilemap "city" JSON')
+ * @param {string} url
+ * @returns {object}
+ */
+export function tiledFromBytes(bytes, what, url) {
+    const text = new TextDecoder().decode(bytes);
+    try {
+        return JSON.parse(text);
+    } catch {
+        const start = text.slice(0, 40).replace(/\s+/g, ' ').trim();
+        throw new Error(`WeedJS: could not load ${what} ${url}: it is not JSON (it starts "${start}"), so the URL serves something else`);
+    }
+}
+
+/**
  * A single tile layer within a TileMap.
  * Backed by an Int32Array view into a SharedArrayBuffer.
  */
@@ -281,82 +300,78 @@ export class TileMap {
     // ========================================
 
     /**
+     * A Tiled map's tile layers in one SharedArrayBuffer (an Int32Array a layer, one after another) and the metadata a
+     * thread builds its TileMap from (initializeFromBuffers). SST-11: the tilemap worker (src/workers/tilemapWorker.js)
+     * runs this off the page's main thread on the JSON it parses; initializeFromLoaded runs it on the page.
+     * @param {object} tiledData the Tiled JSON
+     * @param {string} tilemapId
+     * @param {number} id its index among the scene's tilemaps
+     * @returns {{ sab: SharedArrayBuffer, meta: { id: number, name: string, mapWidth: number, mapHeight: number,
+     *   tileWidth: number, tileHeight: number, layers: Array<{ name: string, index: number, visible: boolean, opacity: number }>,
+     *   tilesets: Array<{ firstgid: number, columns: number, tileWidth: number, tileHeight: number }> } }}
+     */
+    static buffersFromTiled(tiledData, tilemapId, id) {
+        const mapWidth = tiledData.width;
+        const mapHeight = tiledData.height;
+        const tileWidth = tiledData.tilewidth;
+        const tileHeight = tiledData.tileheight;
+        const tilesets = (tiledData.tilesets || []).map(ts => ({
+            firstgid: ts.firstgid || 1,
+            columns: ts.columns || 1,
+            tileWidth: ts.tilewidth || tileWidth,
+            tileHeight: ts.tileheight || tileHeight,
+        }));
+
+        const tileLayers = [];
+        for (let i = 0; i < tiledData.layers.length; i++) {
+            const layer = tiledData.layers[i];
+            if (layer.type !== 'tilelayer') continue;
+            if (!layer.data || layer.data.length === 0) continue;
+            tileLayers.push(layer);
+        }
+
+        const tilesPerLayer = mapWidth * mapHeight;
+        const sab = new SharedArrayBuffer(tileLayers.length * tilesPerLayer * 4);
+
+        const layerMetas = [];
+        for (let li = 0; li < tileLayers.length; li++) {
+            const layer = tileLayers[li];
+            const view = new Int32Array(sab, li * tilesPerLayer * 4, tilesPerLayer);
+
+            const src = layer.data;
+            for (let i = 0; i < tilesPerLayer; i++) {
+                view[i] = src[i];
+            }
+
+            const vis = layer.visible !== false;
+            const opa = layer.opacity !== undefined ? layer.opacity : 1;
+            layerMetas.push({ name: layer.name, index: li, visible: vis, opacity: opa });
+        }
+
+        return {
+            sab,
+            meta: {
+                id, name: tilemapId,
+                mapWidth, mapHeight, tileWidth, tileHeight,
+                layers: layerMetas, tilesets,
+            },
+        };
+    }
+
+    /**
      * Parse loaded tilemap data and create SAB-backed TileMap instances.
      * @param {Object<string, {data: Object, tilesetBitmap: ImageBitmap}>} loadedTilemaps
      */
     static initializeFromLoaded(loadedTilemaps) {
-        this._byName = {};
-        this._byId = [];
-        this._sabs = [];
-        this.count = 0;
-
-        const metadataMap = {};
-
+        const sabs = {};
+        const metadata = {};
+        let id = 0;
         for (const [tilemapId, loaded] of Object.entries(loadedTilemaps)) {
-            const tiledData = loaded.data;
-            const mapWidth = tiledData.width;
-            const mapHeight = tiledData.height;
-            const tileWidth = tiledData.tilewidth;
-            const tileHeight = tiledData.tileheight;
-            const tilesets = (tiledData.tilesets || []).map(ts => ({
-                firstgid: ts.firstgid || 1,
-                columns: ts.columns || 1,
-                tileWidth: ts.tilewidth || tileWidth,
-                tileHeight: ts.tileheight || tileHeight,
-            }));
-
-            const tileLayers = [];
-            for (let i = 0; i < tiledData.layers.length; i++) {
-                const layer = tiledData.layers[i];
-                if (layer.type !== 'tilelayer') continue;
-                if (!layer.data || layer.data.length === 0) continue;
-                tileLayers.push(layer);
-            }
-
-            const tilesPerLayer = mapWidth * mapHeight;
-            const sab = new SharedArrayBuffer(tileLayers.length * tilesPerLayer * 4);
-
-            const id = this.count++;
-            this._sabs[id] = sab;
-
-            const tilemap = new TileMap(id, tilemapId, mapWidth, mapHeight, tileWidth, tileHeight, tilesets);
-
-            const layerMetas = [];
-            for (let li = 0; li < tileLayers.length; li++) {
-                const layer = tileLayers[li];
-                const view = new Int32Array(sab, li * tilesPerLayer * 4, tilesPerLayer);
-
-                const src = layer.data;
-                for (let i = 0; i < tilesPerLayer; i++) {
-                    view[i] = src[i];
-                }
-
-                const vis = layer.visible !== false;
-                const opa = layer.opacity !== undefined ? layer.opacity : 1;
-
-                const tileLayer = new TileMapLayer(
-                    layer.name, view, mapWidth, mapHeight, tileWidth, tileHeight, vis, opa,
-                );
-
-                tilemap._layers.push(tileLayer);
-                tilemap._layersByName[layer.name] = tileLayer;
-                tilemap._layerNames.push(layer.name);
-
-                layerMetas.push({ name: layer.name, index: li, visible: vis, opacity: opa });
-            }
-
-            tilemap._finalize();
-            this._registerInstance(tilemap);
-
-            metadataMap[tilemapId] = {
-                id, name: tilemapId,
-                mapWidth, mapHeight, tileWidth, tileHeight,
-                layers: layerMetas, tilesets,
-            };
+            const built = this.buffersFromTiled(loaded.data, tilemapId, id++);
+            sabs[tilemapId] = built.sab;
+            metadata[tilemapId] = built.meta;
         }
-
-        this._metadata = metadataMap;
-        this.initialized = true;
+        this.initializeFromBuffers({ sabs, metadata });
     }
 
     // ========================================

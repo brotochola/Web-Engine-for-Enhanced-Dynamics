@@ -497,6 +497,11 @@ export type SceneConfig = Record<string, unknown> & {
     maxAtlasWidth?: number;
     /** The atlas's largest height in px (default 4096). */
     maxAtlasHeight?: number;
+    /**
+     * SST-6: a packed atlas is kept in Cache Storage, keyed by a hash of its inputs (every source file's bytes, the options,
+     * the engine), and loaded from it the next time the scene loads (default true). false packs it every load.
+     */
+    atlasCache?: boolean;
   };
   /** Scene lighting; the 3D light mode's keys are typed in {@link SceneLightingConfig}. */
   lighting?: SceneLightingConfig;
