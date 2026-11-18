@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
+import { SPATIAL_STAMP_FRAME_MASK, SPATIAL_STAMP_ID_BITS, SPATIAL_STAMP_ID_MASK } from '../../src/util/entityIdWidth.js';
+
 // E-329: gather_batch tests a candidate's range before its dedup mark, and stamps only the candidates in range. A
 // candidate out of range fails the same test in every cell it is listed in, so the rows, their order, the truncation
 // and the cells counted are those of the gather that marked every visited candidate first (the kernel until E-329,
@@ -16,7 +18,6 @@ const MAX_PER_CELL = 60;
 const MAX_NEIGHBORS = 24;
 const MAX_CELL_RADIUS = 3;
 const SKIN_FRAC = 0.1;
-const STAMP_MASK = 0x1fff;
 
 function mulberry32(seed) {
   let a = seed >>> 0;
@@ -112,7 +113,7 @@ function markFirst(f, count, stamp, marker, stats) {
   const inv = 1 / CELL;
   const rows = new Map();
   let cellsChecked = 0;
-  const frameBits = ((stamp & STAMP_MASK) << 19) >>> 0;
+  const frameBits = ((stamp & SPATIAL_STAMP_FRAME_MASK) << SPATIAL_STAMP_ID_BITS) >>> 0;
   for (let n = 0; n < count; n++) {
     const a = f.list[n];
     const myX = f.pos[a * 4];
@@ -123,7 +124,7 @@ function markFirst(f, count, stamp, marker, stats) {
     const searchRange = vr + 2 * (vr * SKIN_FRAC);
     let cellRadius = truncCells(searchRange * inv) + 1;
     if (cellRadius > MAX_CELL_RADIUS) cellRadius = MAX_CELL_RADIUS;
-    const stampedA = (frameBits | (a & 0x7ffff)) >>> 0;
+    const stampedA = (frameBits | (a & SPATIAL_STAMP_ID_MASK)) >>> 0;
     const first = f.patternIndex[cellRadius * 2];
     const pairs = f.patternIndex[cellRadius * 2 + 1];
     const row = [];

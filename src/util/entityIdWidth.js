@@ -4,8 +4,8 @@
  * Bind once at SAB create / worker init. Hot loops call packPair / popEntity,
  * never `width === 32`.
  *
- * Spatial pair stamp: 19 id bits (500000 < 2^19 = 524288).
- * Frame lives in the high 13 bits (8192 frames, then the marker buffer is cleared).
+ * Spatial pair stamp: 20 id bits (every id up to 2^20 - 1 = 1 048 575).
+ * Frame lives in the high 12 bits (4095 frames, 68 s at 60 fps, then the marker buffer is cleared).
  */
 
 import { bindEntityFreeList } from './atomicFreeList.js';
@@ -18,10 +18,15 @@ export const ENTITY_ID_NONE_U16 = 0xffff;
 export const ENTITY_ID_NONE_U32 = 0xffffffff;
 export const PAIR_U32_STRIDE = 4294967296;
 
-/** Id bits in the spatial processed-pair stamp: room for MAX_ENTITIES_U32. */
-export const SPATIAL_STAMP_ID_BITS = 19;
+/**
+ * Id bits in the spatial processed-pair stamp (wasm/spatialGather.c packs the same): room for MAX_ENTITIES_U32. The
+ * stamp is (frame << 20) | entityA, an int32 from frame 2048 on, so the marker it is compared with is an Int32Array.
+ * 20 id bits leave 12 for the frame: the spatial worker clears its marker every 4095 frames (19 and 13 until DX-ENT1M:
+ * 8191 frames and ids under 524 288).
+ */
+export const SPATIAL_STAMP_ID_BITS = 20;
 export const SPATIAL_STAMP_ID_MASK = (1 << SPATIAL_STAMP_ID_BITS) - 1;
-export const SPATIAL_STAMP_FRAME_MASK = 0x1fff;
+export const SPATIAL_STAMP_FRAME_MASK = 0xfff;
 
 let width = ENTITY_ID_WIDTH_16;
 let bytes = 2;

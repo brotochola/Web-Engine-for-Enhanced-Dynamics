@@ -374,10 +374,14 @@ test('wide pair helper follows bound width', () => {
   }
 });
 
-test('spatial stamp 16 aliases 1 and 65537; 19-bit stamp does not', () => {
+test('spatial stamp 16 aliases 1 and 65537; the 20-bit stamp does not, nor 1 and 524 289', () => {
   assert.equal(packSpatialPairStamp16(5, 1), packSpatialPairStamp16(5, 65537));
   assert.notEqual(packSpatialPairStamp(5, 1), packSpatialPairStamp(5, 65537));
   assert.equal(packSpatialPairStamp(5, 299999) & 0x7ffff, 299999);
+  // DX-ENT1M: 19 id bits aliased ids 2^19 apart; 20 tell every id up to 1 048 575 apart.
+  assert.notEqual(packSpatialPairStamp(5, 1), packSpatialPairStamp(5, 524289));
+  assert.equal(packSpatialPairStamp(5, 1048575) & 0xfffff, 1048575);
+  assert.equal(packSpatialPairStamp(4095, 1048575), -1, 'the last frame and id: every bit set, an int32');
   assert.notEqual(packSpatialPairStamp(5, 1), packSpatialPairStamp(6, 1));
 
   function visits(pack, entityA, entityB, marker) {
