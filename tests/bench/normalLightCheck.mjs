@@ -21,9 +21,10 @@
  * normals; --strength 1,1 --subtract 0.2,0.3 the subtract. --inset: px left out at the ball's rim
  * (grazing normals and the soft edge). Exit 0 when every compared pixel is within --tolerance of 255 on every backend
  * and part. The capture waits for a drawn frame, not only --wait-ms: one that is a single colour from edge to edge, and
- * not the floor's, has no frame in it yet (a build that takes longer than the wait to its first frame: on the ASUS
- * the src build takes 3.3 to 3.9 s and a blank page read as a failed shader, 2026-11-18) and is taken again every half
- * second, up to 15 s. Past that the line reads NOFRAME and the exit code is 2: no verdict on the shading.
+ * not the floor's, has no frame in it: a page that has drawn nothing several seconds after its scene loaded (the
+ * ASUS's HD 620, 2 of about 15 runs on 2026-11-18, cause unknown; the wait starts once the scene is loaded, so it is
+ * not a slow start; a blank page read as a failed shader). It is taken again every half second, up to 15 s; past that
+ * the line reads NOFRAME and the exit code is 2: no verdict on the shading.
  * The tolerance is the maps' own steps at full strength: on this ball the worst pixel read 3.4 of 255 under the
  * lamp and 4.0 under the sun (p99 2.4, mean 0.6; 2026-11-18), half that at strength 0.5.
  */
