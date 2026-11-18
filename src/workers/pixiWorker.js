@@ -4123,11 +4123,14 @@ class PixiRenderer extends AbstractWorker {
   _submitRender(opts) {
     if (!this._gpuLive()) return false;
     this.pixiApp.renderer.render(opts);
-    if (this._loadMarksOpen && !this.isPaused) this._postFirstDrawMarks();
     return true;
   }
 
-  /** SST-0: the first frame drawn once the game runs ends the load waterfall: its marks go to the page. */
+  /**
+   * SST-0: the first frame drawn once the game runs ends the load waterfall: its marks go to the page. Tested once a frame,
+   * after the stage's present (_presentStage): a scene without passes into targets (bunnyMark) presents through Pixi's own
+   * render (_pixiPresent), which never goes through _submitRender.
+   */
   _postFirstDrawMarks() {
     this._loadMarksOpen = false;
     loadMark('first draw');
@@ -4155,15 +4158,17 @@ class PixiRenderer extends AbstractWorker {
   _presentStage() {
     if (!this._gpuLive()) return;
     // DX-POST: one test a frame without SCREEN layers; the present as before.
-    if (this._screenLayers.length > 0 && this._presentThroughScreenLayers()) return;
-    const present = this._pixiPresent;
-    if (present) {
-      present();
-      return;
+    const throughScreenLayers = this._screenLayers.length > 0 && this._presentThroughScreenLayers();
+    if (!throughScreenLayers) {
+      if (this._pixiPresent !== null) {
+        this._pixiPresent();
+      } else {
+        const app = this.pixiApp;
+        if (!app?.renderer || !app.stage) return;
+        this._submitRender(app.stage);
+      }
     }
-    const app = this.pixiApp;
-    if (!app?.renderer || !app.stage) return;
-    this._submitRender(app.stage);
+    if (this._loadMarksOpen && !this.isPaused) this._postFirstDrawMarks();
   }
 
   _takePresentOwnership() {
