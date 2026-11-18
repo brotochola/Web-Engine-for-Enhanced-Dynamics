@@ -1,5 +1,6 @@
 import path from 'path';
 import os from 'os';
+import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
 import webpack from 'webpack';
 import TerserPlugin from 'terser-webpack-plugin';
@@ -27,7 +28,9 @@ const workerEntries = {
 // Check if we should obfuscate
 const shouldObfuscate = process.env.OBFUSCATE === 'true';
 // N-250: webpack-obfuscator's import alone took about 46 s of every build; load it only for an obfuscated one.
-const WebpackObfuscator = shouldObfuscate ? (await import('webpack-obfuscator')).default : null;
+// Required, not awaited at the top: webpack-cli 5 require()s a .js config, and Node 22 refuses to require() an
+// ES module with a top-level await (ERR_REQUIRE_ASYNC_MODULE), so no bundle built at all.
+const WebpackObfuscator = shouldObfuscate ? createRequire(import.meta.url)('webpack-obfuscator') : null;
 
 // Production mode: swap debug modules with no-op stubs
 const isProd = process.env.WEED_PROD === 'true';
