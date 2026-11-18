@@ -17,10 +17,13 @@ test('N-274: the G-buffer\'s vertex passes on the floor place and painter step t
   for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
     const v = gbufDepthVertex(faceMapVertex(shader(name), { gbuf: true }));
     assert.equal(count(v, 'out float vGbufFloor;'), 1, name);
-    assert.equal(count(v, 'flat out float vGbufPainter;'), 1, name);
+    // N-262: the painter step, the foot and its feet's half depth in one flat vec3.
+    assert.equal(count(v, 'flat out vec3 vGbufPainter;'), 1, name);
     assert.match(v, /vec4 uDepth = vec4\(1\.0 \/ uFaceSpace\.y, uFaceSpace\.x, uFaceSpace\.z, uFaceSpace\.w\);/, name);
     assert.match(v, /depthFloor = \(world\.y \+ uDepth\.y \* dfZ\) \* uDepth\.x \+ dfInner \* 0\.2500;/, `${name}: a face's plane and its innerZ tie`);
-    assert.match(v, /vGbufFloor = depthFloor;\n\s*vGbufPainter = depthPainter;/, name);
+    assert.match(v, /gbufFootRy = footBase\.x > 0\.0 && footBase\.y > 0\.0 \? 0\.6 \* footBase\.y \* abs\(aInstScale\.x\) : 0\.0;/, name);
+    assert.match(v, /vGbufFloor = depthFloor;/, name);
+    assert.match(v, /vGbufPainter = vec3\(depthPainter, aInstXY\.y \* uDepth\.x, gbufFootRy\);/, name);
   }
   // The indexed form keeps it (its pose comes from the statics; the depth reads the same names).
   const indexed = spriteIndexedVertex(gbufDepthVertex(faceMapVertex(shader('instancedSprite.vert.glsl'), { gbuf: true })));
@@ -37,7 +40,9 @@ test('N-274: the G-buffer\'s fragment writes that depth for every texel past its
     // Before any other way out of main (the unshaded texel's early return, the discards past the cut).
     const main = f.indexOf('void main() {');
     assert.ok(f.indexOf('return;', main) < 0 || f.indexOf('return;', main) > write, 'before any return');
-    assert.match(f, /if \(twinPresent\(md\) && twinHeights\(vMapsWin\) && !glow\) floorY = \(vWorld\.y \+ uDepth\.y \* twinZ\(md\) \* vMapScale\) \* uDepth\.x;/);
+    assert.match(f, /if \(twinPresent\(md\) && twinHeights\(vMapsWin\) && !glow\) \{\n {4}floorY = \(vWorld\.y \+ uDepth\.y \* twinZ\(md\) \* vMapScale\) \* uDepth\.x;/);
+    // N-262: within the feet's footprint, as the colour pass's (the foot and its half depth in vGbufPainter's y, z).
+    assert.match(f, /if \(vGbufPainter\.z > 0\.0\) floorY = clamp\(floorY, vGbufPainter\.y - vGbufPainter\.z, vGbufPainter\.y \+ vGbufPainter\.z\);/);
     assert.equal(count(f, 'gl_FragDepth'), 1);
   }
 });
@@ -53,6 +58,9 @@ test('N-274: the G-buffer\'s WGSL writes frag_depth from the one pass\'s entry, 
     assert.match(w, /@builtin\(frag_depth\) depth: f32,/);
     assert.match(w, /fn mainFragGbuf\(in: VertexOut\) -> WeedGbufOut \{\n {2}var o: WeedGbufOut;\n {2}o\.depth = weedGbufDepth\(in\);/);
     assert.equal(count(w, '@builtin(instance_index) weedInstance: u32'), 1);
+    // N-262: the foot clamp, its terms in vGbufPainter's y, z (no new output: the 16 are taken).
+    assert.ok(w.includes('out.vGbufPainter = vec3<f32>(depthPainter, aInstXY.y * weedDepth.x, footRy);'));
+    assert.ok(w.includes('if (gp.z > 0.0) { floorY = clamp(floorY, gp.y - gp.z, gp.y + gp.z); }'));
     const out = w.slice(w.indexOf('struct VertexOut {'), w.indexOf('}', w.indexOf('struct VertexOut {')));
     const locations = [...out.matchAll(/@location\((\d+)\)/g)].map((m) => +m[1]);
     assert.ok(Math.max(...locations) <= 15 && new Set(locations).size === locations.length, `within 16 outputs, each its own: ${locations}`);

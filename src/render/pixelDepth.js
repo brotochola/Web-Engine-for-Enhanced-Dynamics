@@ -228,6 +228,12 @@ const FOOT_RY_WGSL = `  let footLut = vec2<i32>(textureDimensions(uTexLut));
   let footRy = select(0.0, 0.6 * footBase.y * abs(aInstScale.x), footBase.x > 0.0 && footBase.y > 0.0);
 `;
 
+/** N-262 for the G-buffer's depth: FOOT_RY_GLSL into a local (gbufFootRy) instead of the colour pass's output. */
+const GBUF_FOOT_RY_GLSL = FOOT_RY_GLSL
+  .replace('  {\n', '  float gbufFootRy = 0.0;\n  {\n')
+  .replace('    vFootRy = ', '    gbufFootRy = ');
+if (!GBUF_FOOT_RY_GLSL.includes('gbufFootRy = footBase')) throw new Error('WeedJS: GBUF_FOOT_RY_GLSL lost its anchor');
+
 /**
  * H-EDGE: the pixels a pass draws nothing for, known from the texture's alpha times the tint's (`ad`, GLSL and WGSL alike),
  * so they leave before the twin page and the depth. The opaque pass keeps none under 0.5 (whether it glows or not). The
@@ -545,11 +551,11 @@ function gbufOnce(text, find, add, what) {
 export function gbufDepthVertex(source) {
   const main = 'void main() {\n';
   if (source.split(main).length !== 2) throw new Error('WeedJS: the G-buffer\'s depth needs the face map\'s shader (main)');
-  const out = source.replace(main, () => `out float vGbufFloor;\nflat out float vGbufPainter;\n${main}`);
+  const out = source.replace(main, () => `out float vGbufFloor;\nflat out vec3 vGbufPainter;\n${main}`);
   return gbufOnce(
     out,
     'vTileOff = aInstTileOff;\n',
-    `  {\n    ${GBUF_DEPTH_TERMS_GLSL}${facesDepthCoreGlsl(true)}\n    vGbufFloor = depthFloor;\n    vGbufPainter = depthPainter;\n  }\n`,
+    `  {\n    ${GBUF_DEPTH_TERMS_GLSL}${facesDepthCoreGlsl(true)}\n${GBUF_FOOT_RY_GLSL}\n    vGbufFloor = depthFloor;\n    // N-262: the painter step, the sprite's foot on the floor and its feet's half depth (the colour pass's clamp)\n    vGbufPainter = vec3(depthPainter, aInstXY.y * uDepth.x, gbufFootRy);\n  }\n`,
     'vTileOff',
   );
 }
@@ -566,7 +572,7 @@ export function gbufDepthFragment(source, { faces = true } = {}) {
   const cut = '  if (texture(uTexture, uv).a * vColor.a < 0.5) discard;\n';
   if (source.split(main).length !== 2) throw new Error('WeedJS: the G-buffer\'s depth needs the face map\'s fragment (main)');
   const depth = `in float vGbufFloor;
-flat in float vGbufPainter;
+flat in vec3 vGbufPainter;
 
 // N-274: this texel's depth, as the colour pass's (pixelDepth.js depthBodyGlsl with faces).
 float weedGbufDepth(vec2 uv) {
@@ -575,10 +581,14 @@ float weedGbufDepth(vec2 uv) {
   uint dw = uint(vGbuf.x + 0.5);
   bool glow = twinUnshaded(vMapsWin) || ((dw >> 21u) & 1u) != 0u;
   float floorY = vGbufFloor;
-  if (twinPresent(md) && twinHeights(vMapsWin) && !glow) floorY = (vWorld.y + uDepth.y * twinZ(md) * vMapScale) * uDepth.x;
+  if (twinPresent(md) && twinHeights(vMapsWin) && !glow) {
+    floorY = (vWorld.y + uDepth.y * twinZ(md) * vMapScale) * uDepth.x;
+    // N-262: within its feet's footprint, as the colour pass's.
+    if (vGbufPainter.z > 0.0) floorY = clamp(floorY, vGbufPainter.y - vGbufPainter.z, vGbufPainter.y + vGbufPainter.z);
+  }
   float band = min(vGbuf.y, ${PIXEL_DEPTH_BANDS - 1}.0);
   float u = clamp((floorY - uDepth.z) * uDepth.w, 0.0, 1.0);
-  float painter = vGbufPainter;
+  float painter = vGbufPainter.x;
   return ${faces ? DEPTH_FORMULA_FACES : DEPTH_FORMULA};
 }
 
@@ -625,7 +635,7 @@ export function gbufDepthWgsl(source, { faces = true } = {}) {
   let out = gbufOnce(
     source,
     '  @location(5) vTileOff: vec2<f32>,\n',
-    '  @location(8) vGbufFloor: f32,\n  @location(14) @interpolate(flat) vGbufPainter: f32,\n',
+    '  @location(8) vGbufFloor: f32,\n  @location(14) @interpolate(flat) vGbufPainter: vec3<f32>,\n',
     'vTileOff',
   );
   if (!out.includes('@builtin(instance_index) weedInstance: u32')) {
@@ -634,7 +644,7 @@ export function gbufDepthWgsl(source, { faces = true } = {}) {
   out = gbufOnce(
     out,
     '  out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);\n',
-    `  {\n    ${GBUF_DEPTH_TERMS_WGSL}\n${facesDepthCoreWgsl(true).split('uniforms.uDepth').join('weedDepth')}\n    out.vGbufFloor = depthFloor;\n    out.vGbufPainter = depthPainter;\n  }\n`,
+    `  {\n    ${GBUF_DEPTH_TERMS_WGSL}\n${facesDepthCoreWgsl(true).split('uniforms.uDepth').join('weedDepth')}\n${FOOT_RY_WGSL}    out.vGbufFloor = depthFloor;\n    // N-262: the painter step, the foot and its feet's half depth (the colour pass's clamp).\n    out.vGbufPainter = vec3<f32>(depthPainter, aInstXY.y * weedDepth.x, footRy);\n  }\n`,
     'out.position',
   );
   out = gbufOnce(out, '  @location(1) ids: vec4<f32>,\n', '  @builtin(frag_depth) depth: f32,\n', 'the one pass\'s outputs');
@@ -650,10 +660,15 @@ fn weedGbufDepth(in: VertexOut) -> f32 {
   let dw = u32(in.vGbuf.x + 0.5);
   let glow = twinUnshaded(in.vMapsWin) || ((dw >> 21u) & 1u) != 0u;
   var floorY = in.vGbufFloor;
-  if (twinPresent(md) && twinHeights(in.vMapsWin) && !glow) { floorY = (in.vWorld.y + weedDepth.y * twinZ(md) * in.vMapScale) * weedDepth.x; }
+  if (twinPresent(md) && twinHeights(in.vMapsWin) && !glow) {
+    floorY = (in.vWorld.y + weedDepth.y * twinZ(md) * in.vMapScale) * weedDepth.x;
+    // N-262: within its feet's footprint, as the colour pass's.
+    let gp = in.vGbufPainter;
+    if (gp.z > 0.0) { floorY = clamp(floorY, gp.y - gp.z, gp.y + gp.z); }
+  }
   let band = min(in.vGbuf.y, ${PIXEL_DEPTH_BANDS - 1}.0);
   let u = clamp((floorY - weedDepth.z) * weedDepth.w, 0.0, 1.0);
-  let painter = in.vGbufPainter;
+  let painter = in.vGbufPainter.x;
   return ${faces ? DEPTH_FORMULA_FACES : DEPTH_FORMULA};
 }
 `;
