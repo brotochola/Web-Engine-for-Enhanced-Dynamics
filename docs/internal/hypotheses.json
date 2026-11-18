@@ -11362,7 +11362,7 @@
       "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
       "date": "2026-11-10",
       "result": "",
-      "next": "Sway is amp·sin(t·freq + phase) and an impulse the same with a t0: closed forms. The row carries them, the shader computes the facing, decorations become static keyed rows and decorationSway.wasm goes (about 23 % of Predator's particle worker by the review). Attached ones (E-196) are a step of their own. Owner: Predator's particle worker. From Phaser 4 (R-1349): SpriteGPULayer's encoding, a vec4 a property (base, amplitude, duration, ease and delay) evaluated at uTime - t0; since E-505 and E-506 the gain is 0.3 to 1 ms of the particle worker plus the swaying rows, not 23 %.",
+      "next": "Sway is amp·sin(t·freq + phase) and an impulse the same with a t0: closed forms. The row carries them, the shader computes the facing, decorations become static keyed rows and decorationSway.wasm goes (about 23 % of Predator's particle worker by the review). Attached ones (E-196) are a step of their own. Owner: Predator's particle worker. From Phaser 4 (R-1424): SpriteGPULayer's encoding, a vec4 a property (base, amplitude, duration, ease and delay) evaluated at uTime - t0; since E-505 and E-506 the gain is 0.3 to 1 ms of the particle worker plus the swaying rows, not 23 %.",
       "area": "particle",
       "kind": "gpu",
       "refs": [
@@ -11376,7 +11376,7 @@
       ],
       "records": [
         "R-0854",
-        "R-1349"
+        "R-1424"
       ]
     },
     {
@@ -11386,7 +11386,7 @@
       "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
       "date": "2026-11-10",
       "result": "",
-      "next": "No entry yet on mipmaps, overdraw or the light loop; autoGenerateMipmaps is off and never measured zoomed out. In BunnyMark: GPU time per pass by timestamp query and overdraw, at zoom 1 and zoomed out; then atlas mipmaps zoomed out by GPU time and frames drawn. R-1353: a mipmapped atlas needs gutters of 2^levels px; E-522 (a compressed atlas) shares this step 0.",
+      "next": "No entry yet on mipmaps, overdraw or the light loop; autoGenerateMipmaps is off and never measured zoomed out. In BunnyMark: GPU time per pass by timestamp query and overdraw, at zoom 1 and zoomed out; then atlas mipmaps zoomed out by GPU time and frames drawn. R-1428: a mipmapped atlas needs gutters of 2^levels px; E-522 (a compressed atlas) shares this step 0.",
       "area": "render",
       "kind": "gpu",
       "refs": [
@@ -11402,7 +11402,7 @@
       "records": [
         "R-0854",
         "R-1174",
-        "R-1353"
+        "R-1428"
       ]
     },
     {
@@ -11697,7 +11697,7 @@
       "statusText": "merged 2026-11-12 (8f2e1346, R-0915)",
       "date": "2026-11-10",
       "result": "merged 2026-11-12 (8f2e1346): full-screen passes; identity exact on WebGL and WebGPU; post=0 ties main; one pass +0.065 ms (WebGL) / +0.19 ms (WebGPU) of renderer CPU",
-      "next": "Phase 2: a pass that reads another layer's picture; phase 3: layers drawn over the post (DX_POST_DESIGN.md). R-1354 and DX-POSTFUSE: pointwise passes fused into one shader (three.js's RenderPipeline); E-521: two targets a chain.",
+      "next": "Phase 2: a pass that reads another layer's picture; phase 3: layers drawn over the post (DX_POST_DESIGN.md). R-1429 and DX-POSTFUSE: pointwise passes fused into one shader (three.js's RenderPipeline); E-525: two targets a chain.",
       "area": "render",
       "kind": "dx",
       "refs": [
@@ -11715,7 +11715,7 @@
       "records": [
         "R-0858",
         "R-0915",
-        "R-1354"
+        "R-1429"
       ]
     },
     {
@@ -14221,7 +14221,7 @@
       "area": "pixi",
       "kind": "speed",
       "result": "CPU sweep: decalStampStressScene's Pixi spends 173 ms in _uploadDecalRgba8 (89 % on its texSubImage2D of the whole tile) and 157 ms in premultiplyDecalTile (100 % on dst.set(b.scratch)); decalBlitStressScene 415 ms in the upload (68 %).",
-      "next": "Upload from the premultiplied scratch (no copy), and only the rows (or rect) a stamp touched; the decal kernels and the two decal stress scenes' Pixi STEP_MS. From three.js (R-1352): upload only the stamp's rectangle with UNPACK_ROW_LENGTH, UNPACK_SKIP_PIXELS and UNPACK_SKIP_ROWS (#30998).",
+      "next": "Upload from the premultiplied scratch (no copy), and only the rows (or rect) a stamp touched; the decal kernels and the two decal stress scenes' Pixi STEP_MS. From three.js (R-1427): upload only the stamp's rectangle with UNPACK_ROW_LENGTH, UNPACK_SKIP_PIXELS and UNPACK_SKIP_ROWS (#30998).",
       "refs": [
         "EXECUTION_PLAN.md#E-270"
       ],
@@ -14232,7 +14232,7 @@
         "dirty rect"
       ],
       "records": [
-        "R-1352"
+        "R-1427"
       ]
     },
     {
@@ -17960,7 +17960,7 @@
       "area": "render",
       "kind": "gpu",
       "result": "Keyed frames (E-201, E-312) send a row only when its key changed; Predator's walkers animate all the time and call setAnimationSpeed every tick (N-170), so animation likely drives most marked keys (R-1100). R-0190 (\"Animation frame in the shader\") was dropped on September's architecture.",
-      "next": "Count marked keys a frame by cause (animation, pose, statics) at crowd 2.5; if animation leads, frame = base + floor((t - t0) x speed) mod count in the vertex shader, with t0, speed and count in the row's statics. From Phaser 4 (R-1349): the same encoding for the frame; it pays only for speeds that hold.",
+      "next": "Count marked keys a frame by cause (animation, pose, statics) at crowd 2.5; if animation leads, frame = base + floor((t - t0) x speed) mod count in the vertex shader, with t0, speed and count in the row's statics. From Phaser 4 (R-1424): the same encoding for the frame; it pays only for speeds that hold.",
       "refs": [
         "EXECUTION_PLAN.md#E-361"
       ],
@@ -17970,7 +17970,7 @@
       ],
       "records": [
         "R-1100",
-        "R-1349"
+        "R-1424"
       ]
     },
     {
@@ -18004,7 +18004,7 @@
       "area": "pixi",
       "kind": "speed",
       "result": "Kept 2026-11-16 (R-1205): the lamps' map volumes in one draw; Predator light3d uniform1i 132 -> 40 a frame, redundant calls 167.5 -> 75.6. glFrameRecorder, Predator zoom 0.3, 3 s after 12 s: plain 17.6 uniform1i a frame (16.9 redundant); ?light3d=1 by day 132.8 (132.1), by night 130.7 (130.2).",
-      "next": "Find which programs set them (the light3d passes, Pixi's sampler sync) and skip a same-value uniform1i; the recorder and Pixi's CPU per function before and after. Check (R-1350): a uniform cache that compares with !== sends NaN every frame (Phaser 0ae001de).",
+      "next": "Find which programs set them (the light3d passes, Pixi's sampler sync) and skip a same-value uniform1i; the recorder and Pixi's CPU per function before and after. Check (R-1425): a uniform cache that compares with !== sends NaN every frame (Phaser 0ae001de).",
       "refs": [],
       "aliases": [
         "redundant uniform1i",
@@ -18017,7 +18017,7 @@
         "R-1193",
         "R-1205",
         "R-1206",
-        "R-1350"
+        "R-1425"
       ]
     },
     {
@@ -18519,7 +18519,7 @@
       "area": "render",
       "kind": "speed",
       "result": "angleHlslDump link times 2026-11-16 04:36 (headed Chrome, GTX 1650): plain 27 ms, flat 96, light3d without lamps 231, pixel art 373, light3d 594.",
-      "next": "List when the engine builds light pass variants after start (hour changes, lamps' map on, pixel art, a light count past MAX_LIGHTS) with the recorder's linkProgram calls; build them at load or with KHR_parallel_shader_compile; split the uber-shader (E-408) so each piece links fast. From Phaser 4 (R-1348): link the new variant in the background and keep drawing with the one it replaces until COMPLETION_STATUS_KHR answers (Phaser's skipUnreadyShaders skips the batch instead).",
+      "next": "List when the engine builds light pass variants after start (hour changes, lamps' map on, pixel art, a light count past MAX_LIGHTS) with the recorder's linkProgram calls; build them at load or with KHR_parallel_shader_compile; split the uber-shader (E-408) so each piece links fast. From Phaser 4 (R-1423): link the new variant in the background and keep drawing with the one it replaces until COMPLETION_STATUS_KHR answers (Phaser's skipUnreadyShaders skips the batch instead).",
       "refs": [],
       "aliases": [
         "light pass link time",
@@ -18528,7 +18528,7 @@
       "records": [
         "R-1177",
         "R-1230",
-        "R-1348"
+        "R-1423"
       ]
     },
     {
@@ -18637,14 +18637,14 @@
       "area": "render",
       "kind": "speed",
       "result": "light3d day glBindTexture 8.92 ms/s, 8 522 a second; glActiveTexture 3.87 ms/s; glUniform1i 3 578 a second (E-389: 132 of 133 a frame redundant on the page side); plain glBindTexture 5 543 a second.",
-      "next": "Pin each program's samplers to fixed units and skip binding a texture already on its unit (Pixi's texture system patched, or our raw passes); the recorder's redundant binds and the decoder trace before and after. From Phaser 4 and three.js (R-1350): one shadow of the units for Pixi and the raw passes, samplers pinned to fixed units, outside GL code between a rebind and a yield that resync the state.",
+      "next": "Pin each program's samplers to fixed units and skip binding a texture already on its unit (Pixi's texture system patched, or our raw passes); the recorder's redundant binds and the decoder trace before and after. From Phaser 4 and three.js (R-1425): one shadow of the units for Pixi and the raw passes, samplers pinned to fixed units, outside GL code between a rebind and a yield that resync the state.",
       "refs": [],
       "aliases": [
         "texture rebinding"
       ],
       "records": [
         "R-1181",
-        "R-1350"
+        "R-1425"
       ]
     },
     {
@@ -19345,14 +19345,14 @@
       "area": "demos",
       "kind": "speed",
       "result": "platformerGameScene: fbo#7 one draw, one instance, the bloom layer's shader [uTexture]: 11.006 ms of 11.412 a frame. demos/shaders/bloom.frag: two nested loops over ±STACKBLUR_MAX_R; BLOOM_RESOLUTION 1; uBlurSize 12.",
-      "next": "A separable blur (two passes of 2R + 1 taps, or a downsampled chain), or the layer at resolution 0.5 or 0.25 (a bloom is smooth); the recorder before and after. A demo change; an engine helper for two-pass layer shaders would let games do it without writing it. From three.js (R-1352): separable, taps merged in pairs into bilinear fetches (#34479), half resolution; about 0.3 to 0.6 ms (an estimate).",
+      "next": "A separable blur (two passes of 2R + 1 taps, or a downsampled chain), or the layer at resolution 0.5 or 0.25 (a bloom is smooth); the recorder before and after. A demo change; an engine helper for two-pass layer shaders would let games do it without writing it. From three.js (R-1427): separable, taps merged in pairs into bilinear fetches (#34479), half resolution; about 0.3 to 0.6 ms (an estimate).",
       "refs": [],
       "aliases": [
         "platformer bloom 11 ms"
       ],
       "records": [
         "R-1195",
-        "R-1352"
+        "R-1427"
       ]
     },
     {
@@ -19821,7 +19821,7 @@
       "area": "render",
       "kind": "speed",
       "result": "Predator light3d night: 5.88 ms of passes in a 7.74 ms span; light3dCompare 5.93 in 10.09; Predator crowd 2.5 3.34 in 9.56 (its clock lower). WebGPU makes 302 calls a frame there against WebGL's 706.",
-      "next": "Fold the uniform copy into the render call's own encoder (one submit per render call, or one a frame); Pixi's STEP_MS, the GPU process's CPU (gpuProcessTrace) and the frame span before and after. Pixi 8.23 does this upstream (#12345: the shifted buffer written with queue.writeBuffer, no submit of its own), so DX-PIXI823 closes it; a backport patch if the upgrade waits. R-1351: three.js makes one encoder and one submit a render call and reuses the submit array (#33513).",
+      "next": "Fold the uniform copy into the render call's own encoder (one submit per render call, or one a frame); Pixi's STEP_MS, the GPU process's CPU (gpuProcessTrace) and the frame span before and after. Pixi 8.23 does this upstream (#12345: the shifted buffer written with queue.writeBuffer, no submit of its own), so DX-PIXI823 closes it; a backport patch if the upgrade waits. R-1426: three.js makes one encoder and one submit a render call and reuses the submit array (#33513).",
       "refs": [],
       "aliases": [
         "webgpu double submit",
@@ -19830,7 +19830,7 @@
       "records": [
         "R-1215",
         "R-1315",
-        "R-1351"
+        "R-1426"
       ]
     },
     {
@@ -19896,14 +19896,14 @@
       "area": "render",
       "kind": "speed",
       "result": "WebGPU per draw: the composites 0.10 ms each at 1785 MHz; WebGL the same order (R-1212: three composites 0.447 ms at 660 MHz).",
-      "next": "One pass sampling the light, shadow and glow layers (both backends), the image identical; per draw before and after. R-1354: three.js compiles its whole output graph into one fragment shader and inserts a target only where an effect samples neighbours.",
+      "next": "One pass sampling the light, shadow and glow layers (both backends), the image identical; per draw before and after. R-1429: three.js compiles its whole output graph into one fragment shader and inserts a target only where an effect samples neighbours.",
       "refs": [],
       "aliases": [
         "one composite pass"
       ],
       "records": [
         "R-1215",
-        "R-1354"
+        "R-1429"
       ]
     },
     {
@@ -20438,14 +20438,14 @@
       "area": "pixi",
       "kind": "speed",
       "result": "Parked by the 2026-11-16 triage (expected gain 6-13 KB/frame, WebGPU; Allocation-only): reopen when the code moves or a scene shows it. Heap pass on the WebGPU demos.",
-      "next": "Patch Pixi (small, marked, as E-152): reuse the bind group lookups and descriptors, no Promise or Object.create per frame; heap pass before and after. R-1351: three.js's list of the WebGPU allocations it removed from 2024 to 2026, a checklist for Pixi's.",
+      "next": "Patch Pixi (small, marked, as E-152): reuse the bind group lookups and descriptors, no Promise or Object.create per frame; heap pass before and after. R-1426: three.js's list of the WebGPU allocations it removed from 2024 to 2026, a checklist for Pixi's.",
       "refs": [],
       "aliases": [
         "pixi webgpu garbage"
       ],
       "records": [
         "R-1229",
-        "R-1351"
+        "R-1426"
       ]
     },
     {
@@ -20778,14 +20778,14 @@
       "area": "pixi",
       "kind": "speed",
       "result": "Made in InstancedSpriteBatch._makeAux, _lampMapProgram, _volumeLampMesh, _ensureMeshUvBatch and the statics scatter's first call.",
-      "next": "Make them at init when the config says the pass will run, so _linkProgramsAhead links them with the rest; stop linking the 10 programs made at init that are never bound. programLinkProbe before and after. R-1348: how Phaser 4 and three.js keep frames from waiting on programs that are not ready.",
+      "next": "Make them at init when the config says the pass will run, so _linkProgramsAhead links them with the rest; stop linking the 10 programs made at init that are never bound. programLinkProbe before and after. R-1423: how Phaser 4 and three.js keep frames from waiting on programs that are not ready.",
       "refs": [],
       "aliases": [
         "first-use program links"
       ],
       "records": [
         "R-1241",
-        "R-1348"
+        "R-1423"
       ]
     },
     {
@@ -20797,14 +20797,14 @@
       "area": "pixi",
       "kind": "speed",
       "result": "Read in PipelineSystem.getPipeline, not measured.",
-      "next": "Warm the pipelines a scene will use with createRenderPipelineAsync (Pixi's key: geometry layout, program, state, blend, topology, targets, depth/stencil, MSAA); a WebGPU scene's first seconds before and after. From three.js (R-1348): compileAsync's scheduler (at most 16 pipelines in flight, a yield after 8 ms through rAF then setTimeout(0), objects skipped until ready, the shared descriptor reset before the await), and a check that equal programs generate equal WGSL.",
+      "next": "Warm the pipelines a scene will use with createRenderPipelineAsync (Pixi's key: geometry layout, program, state, blend, topology, targets, depth/stencil, MSAA); a WebGPU scene's first seconds before and after. From three.js (R-1423): compileAsync's scheduler (at most 16 pipelines in flight, a yield after 8 ms through rAF then setTimeout(0), objects skipped until ready, the shared descriptor reset before the await), and a check that equal programs generate equal WGSL.",
       "refs": [],
       "aliases": [
         "webgpu pipelines on first use"
       ],
       "records": [
         "R-1241",
-        "R-1348"
+        "R-1423"
       ]
     },
     {
@@ -21712,7 +21712,7 @@
       "statusText": "found 2026-11-17 on the ASUS laptop (v0.14.0 against main, then E-448 against its parent)",
       "date": "2026-11-17",
       "result": "Kept (b033d7a9): debug.opaquePass 'auto' leaves E-448's opaque pass off on Intel's integrated GPUs (HD 620 drew bunnyMark 100 000 +53 % and bunnyMarkStress +78 % frames without it, R-1277) and on tile-based ones (vendor guidance, not measured); AMD's APUs keep it (Ryzen 4800H Radeon: bunnyMark 100 000 43.6 fps with it, 32.0 without). Class and maker read from the WebGL renderer name (gpuClass.js).",
-      "next": "Decide the policy: the gate by GPU class (integrated and tile-based off unless far past break-even, from the renderer string DX-IGPUWARN reads) or a gate that follows the frame pacer (E-479). To know which part of the pass the HD 620 pays (vertex texture fetch, discard with depth writes, depth traffic): Intel GPA on the laptop, or shader variants behind debug switches. R-1353: E-520's phone sitting can measure the 'tiled' case.",
+      "next": "Decide the policy: the gate by GPU class (integrated and tile-based off unless far past break-even, from the renderer string DX-IGPUWARN reads) or a gate that follows the frame pacer (E-479). To know which part of the pass the HD 620 pays (vertex texture fetch, discard with depth writes, depth traffic): Intel GPA on the laptop, or shader variants behind debug switches. R-1428: E-524's phone sitting can measure the 'tiled' case.",
       "area": "render",
       "kind": "speed",
       "refs": [],
@@ -21730,7 +21730,7 @@
         "R-1318",
         "R-1321",
         "R-1341",
-        "R-1353"
+        "R-1428"
       ]
     },
     {
@@ -22086,7 +22086,7 @@
       "statusText": "found 2026-11-17 reading PixiJS 3D's code (renderForwardBatchesGpu.ts, ShadowRenderPassGpu.ts: bundles replayed, recorded again when stale); not measured",
       "date": "2026-11-17",
       "result": "",
-      "next": "Count the encoder calls a pass makes (webgpuFrameRecorder); after DX-PIXI823 (8.21's bundles stamped with their baked state), one pass as a bundle with drawIndirect; the Pixi worker's STEP_MS on WebGPU ABAB in Predator ?light3d=1 (1.4 -> 3.0 ms of Pixi CPU with light3d). WebGPU only. R-1351: in three.js a bundle saves the encoding only (uniform writes still run per object), holds no occlusion query and is not culled.",
+      "next": "Count the encoder calls a pass makes (webgpuFrameRecorder); after DX-PIXI823 (8.21's bundles stamped with their baked state), one pass as a bundle with drawIndirect; the Pixi worker's STEP_MS on WebGPU ABAB in Predator ?light3d=1 (1.4 -> 3.0 ms of Pixi CPU with light3d). WebGPU only. R-1426: in three.js a bundle saves the encoding only (uniform writes still run per object), holds no occlusion query and is not culled.",
       "area": "pixi",
       "kind": "speed",
       "refs": [
@@ -22101,7 +22101,7 @@
       ],
       "records": [
         "R-1315",
-        "R-1351"
+        "R-1426"
       ]
     },
     {
@@ -22577,10 +22577,10 @@
       "records": []
     },
     {
-      "id": "E-520",
+      "id": "E-524",
       "title": "No sitting in the register on a tile-based phone GPU: Chrome on Android (Mali, Adreno), where Phaser's history shows the upload patterns WeedJS uses collapsing (the Mac sitting comes later; Safari is not supported)",
       "status": "open",
-      "statusText": "proposed 2026-11-18 from reading Phaser 4.2.1's and three.js's histories (R-1347, R-1353); the owner the same day: Safari is not supported, the Mac sitting comes later",
+      "statusText": "proposed 2026-11-18 from reading Phaser 4.2.1's and three.js's histories (R-1422, R-1428); the owner the same day: Safari is not supported, the Mac sitting comes later",
       "date": "2026-11-18",
       "result": "",
       "next": "One sitting on a mid-range Android phone (Chrome, WebGL and WebGPU), bunnyMark and Predator: presented frames and GPU time per pass (glFrameRecorder --gpu-passes, webgpuFrameRecorder). What to read, each from Phaser's or three.js's history: (1) the instance buffers' upload: each sized to the batch's capacity (maxVisibleRenderables), a ring of two, a prefix bufferSubData every frame (Phaser 3.50 -> 3.60: a bufferSubData per flush took the iPhone SE from 5 248 to 192 texture binds at 60 fps and an M1 iMac from 15 872 to 2 560, f0d3588f; v4 RC4 dropped a 16 MB shared vertex buffer, 'large buffers update very badly on mobile', 40f2f706, up to 16x in filter scenes on phones); (2) Pixi's batcher and its sixteen declared samplers (Phaser compiles a variant per texture count in use and forces one unit on iOS and Android, autoMobileTextures); (3) E-502's 'auto' for tiled GPUs, vendor guidance not measured; (4) E-523's store ops; (5) the console for 'Attribute 0 is disabled' (three.js binds position to location 0 against that penalty, #33841). Each finding becomes its own row.",
@@ -22596,15 +22596,15 @@
         "adreno"
       ],
       "records": [
-        "R-1347",
-        "R-1353"
+        "R-1422",
+        "R-1428"
       ]
     },
     {
-      "id": "E-521",
+      "id": "E-525",
       "title": "Every look shader layer keeps a pass-1 target and an rtOut of its own at canvas x resolution (8.3 MB each at 1080p, resolution 1), and every SCREEN pass a target of its own: share the pass-1 targets of sprite and density look layers of one size, and run the SCREEN chain over two targets a resolution",
       "status": "open",
-      "statusText": "proposed 2026-11-18 from Phaser 4's DrawingContextPool and three.js's EffectComposer (R-1354); not measured; a memory change, speed judged as hygiene",
+      "statusText": "proposed 2026-11-18 from Phaser 4's DrawingContextPool and three.js's EffectComposer (R-1429); not measured; a memory change, speed judged as hygiene",
       "date": "2026-11-18",
       "result": "",
       "next": "Count the targets and their bytes in Predator, Sun Street and a three-pass SCREEN stack (a probe over pixiWorker's RenderTexture.create calls). What can be shared: a sprite or density look layer's cl.rt is cleared and consumed by its look in the same pass, so layers of one size can take turns on one; rtOut must persist (frames with no new queue present it again); a MESH layer's cl.rt is a cache, redrawn only when it changed, and stays its own; SCREEN passes run in zIndex order, each reading the one before, so two targets a resolution suffice (the last pass draws onto the canvas, as now). Judged by VRAM and the pictures byte-identical on both backends; speed as hygiene (no worker 3 % worse). Phaser 3.86 hit out-of-memory errors on phones with full-canvas effect buffers (509de6ae); its docs count 4 MB a megapixel a target.",
@@ -22618,18 +22618,18 @@
         "ping-pong targets"
       ],
       "records": [
-        "R-1347",
-        "R-1354"
+        "R-1422",
+        "R-1429"
       ]
     },
     {
       "id": "E-522",
       "title": "The atlas is uncompressed RGBA8 without mipmaps (64 MB at 4096 x 4096, the maps' twin page besides): a KTX2/Basis atlas, baked once into SST-6's cache and transcoded in a worker to the block format each GPU takes (BC7, ASTC, ETC2), with mipmaps",
       "status": "open",
-      "statusText": "proposed 2026-11-18 from three.js's KTX2Loader (R-1347, R-1353); not measured; requestGpuDevice.js already requests texture-compression-bc, -astc and -etc2 and nothing uses them",
+      "statusText": "proposed 2026-11-18 from three.js's KTX2Loader (R-1422, R-1428); not measured; requestGpuDevice.js already requests texture-compression-bc, -astc and -etc2 and nothing uses them",
       "date": "2026-11-18",
       "result": "",
-      "next": "Step 0 is E-204's: the colour pass's GPU time in Predator at zoom 0.216 to 0.3 (E-400: 5.9 ms at crowd 2.5 zoom 0.216) and at zoom 1, with the atlas mipmapped and not (mipmaps need gutters of 2^levels px between frames, or frames bleed into each other); E-405 reads the pixel shaders waiting on fetch latency, which mipmaps and block compression both shorten. If it pays: UASTC (or ETC1S) KTX2 written where SST-6 caches the atlas, transcoded in a worker (three.js's KTX2Loader: the Basis transcoder in a WorkerPool, the buffer transferred), the target picked per device (UASTC: ASTC, then BC7, then ETC2; ETC1S: ETC2, then BC7, then BC1/BC3; RGBA8 last), ASTC and ETC off on Linux other than Android (Mesa emulates them on the CPU, on the main thread: three.js #31871, #33697). Compressed data cannot be flipped or premultiplied at upload, so the bake does both. Expected, an estimate: VRAM 4x (8 bpp) to 8x (4 bpp) less, sure; the colour pass zoomed out 0 to 30 % on desktop, unknown; more on phones (E-520).",
+      "next": "Step 0 is E-204's: the colour pass's GPU time in Predator at zoom 0.216 to 0.3 (E-400: 5.9 ms at crowd 2.5 zoom 0.216) and at zoom 1, with the atlas mipmapped and not (mipmaps need gutters of 2^levels px between frames, or frames bleed into each other); E-405 reads the pixel shaders waiting on fetch latency, which mipmaps and block compression both shorten. If it pays: UASTC (or ETC1S) KTX2 written where SST-6 caches the atlas, transcoded in a worker (three.js's KTX2Loader: the Basis transcoder in a WorkerPool, the buffer transferred), the target picked per device (UASTC: ASTC, then BC7, then ETC2; ETC1S: ETC2, then BC7, then BC1/BC3; RGBA8 last), ASTC and ETC off on Linux other than Android (Mesa emulates them on the CPU, on the main thread: three.js #31871, #33697). Compressed data cannot be flipped or premultiplied at upload, so the bake does both. Expected, an estimate: VRAM 4x (8 bpp) to 8x (4 bpp) less, sure; the colour pass zoomed out 0 to 30 % on desktop, unknown; more on phones (E-524).",
       "area": "render",
       "kind": "gpu",
       "refs": [],
@@ -22644,18 +22644,18 @@
         "atlas mipmaps"
       ],
       "records": [
-        "R-1347",
-        "R-1353"
+        "R-1422",
+        "R-1428"
       ]
     },
     {
       "id": "E-523",
       "title": "Every render pass stores its depth and stencil (Pixi's storeOp 'store'; nothing calls invalidateFramebuffer on WebGL), also the depth of the opaque pass and of pixel depth that no later pass reads: on tile-based GPUs each such pass writes a whole depth buffer to memory",
       "status": "open",
-      "statusText": "proposed 2026-11-18 from three.js (depthStoreOp and stencilStoreOp 'discard', a5b4ce6d, #33946; invalidateFramebuffer kept to the Oculus Browser since 2022, #23692, #30606) (R-1353); not measured; pays only on tile-based GPUs",
+      "statusText": "proposed 2026-11-18 from three.js (depthStoreOp and stencilStoreOp 'discard', a5b4ce6d, #33946; invalidateFramebuffer kept to the Oculus Browser since 2022, #23692, #30606) (R-1428); not measured; pays only on tile-based GPUs",
       "date": "2026-11-18",
       "result": "",
-      "next": "List the passes whose depth or stencil no later pass reads (the frame recorders). WebGPU: depthStoreOp and stencilStoreOp 'discard' on those. WebGL: gl.invalidateFramebuffer for their depth and stencil attachments after the last draw that tests them, only where gpuClass says 'tiled' (three.js has kept its invalidate to one tile-based browser for four years, which suggests no gain, or a cost, elsewhere). Owner: E-520's phone sitting; on the GTX 1650 and the HD 620 it should tie (immediate-mode GPUs). Expected, an estimate from bandwidth: about 0.1 to 0.4 ms a frame a depth target at 1080p on a phone.",
+      "next": "List the passes whose depth or stencil no later pass reads (the frame recorders). WebGPU: depthStoreOp and stencilStoreOp 'discard' on those. WebGL: gl.invalidateFramebuffer for their depth and stencil attachments after the last draw that tests them, only where gpuClass says 'tiled' (three.js has kept its invalidate to one tile-based browser for four years, which suggests no gain, or a cost, elsewhere). Owner: E-524's phone sitting; on the GTX 1650 and the HD 620 it should tie (immediate-mode GPUs). Expected, an estimate from bandwidth: about 0.1 to 0.4 ms a frame a depth target at 1080p on a phone.",
       "area": "pixi",
       "kind": "gpu",
       "refs": [],
@@ -22667,22 +22667,22 @@
         "tile-based bandwidth"
       ],
       "records": [
-        "R-1347",
-        "R-1353"
+        "R-1422",
+        "R-1428"
       ]
     },
     {
-      "id": "N-291",
+      "id": "N-301",
       "title": "After a lost WebGL context or a lost WebGPU device the game stays black: webglcontextlost is prevented and reported, webglcontextrestored only resets the pacer and logs, device.lost only reports; nothing rebuilds the engine's GPU resources",
       "status": "open",
-      "statusText": "found 2026-11-18 reading pixiWorker.js against Phaser's history (R-1347); not reproduced",
+      "statusText": "found 2026-11-18 reading pixiWorker.js against Phaser's history (R-1422); not reproduced",
       "date": "2026-11-18",
       "result": "",
-      "next": "Reproduce with WEBGL_lose_context (loseContext, then restoreContext) and device.destroy() on WebGPU; list what Pixi 8 restores on its own and what the engine's raw resources lose. Then rebuild only the Pixi worker's GPU side (the simulation lives in shared memory and does not notice) and mark every key changed; the frame after the restore byte-identical to one before. Plan in REVIEW_PLAN.md#N-291.",
+      "next": "Reproduce with WEBGL_lose_context (loseContext, then restoreContext) and device.destroy() on WebGPU; list what Pixi 8 restores on its own and what the engine's raw resources lose. Then rebuild only the Pixi worker's GPU side (the simulation lives in shared memory and does not notice) and mark every key changed; the frame after the restore byte-identical to one before. Plan in REVIEW_PLAN.md#N-301.",
       "area": "pixi",
       "kind": "bug",
       "refs": [
-        "REVIEW_PLAN.md#N-291"
+        "REVIEW_PLAN.md#N-301"
       ],
       "aliases": [
         "context loss",
@@ -22693,21 +22693,21 @@
         "black screen after context loss"
       ],
       "records": [
-        "R-1347"
+        "R-1422"
       ]
     },
     {
-      "id": "N-292",
+      "id": "N-302",
       "title": "Pixel snap (atlasScaleMode nearest) rounds each sprite's origin on its own at any zoom: at a fractional zoom two sprites placed edge to edge may open a 1 px seam or cover a column of each other (to confirm)",
       "status": "open",
-      "statusText": "suspected 2026-11-18 from Phaser's history (3.86 snaps only at an integer zoom, against 'black lines between tightly grouped sprites or tiles', 79de922e) (R-1347); not reproduced",
+      "statusText": "suspected 2026-11-18 from Phaser's history (3.86 snaps only at an integer zoom, against 'black lines between tightly grouped sprites or tiles', 79de922e) (R-1422); not reproduced",
       "date": "2026-11-18",
       "result": "",
-      "next": "A capture of edge-to-edge pieces at zoom 1.3 and 1.5, the camera panning slowly, counting background pixels between them. If they show: snap only at an integer zoom, or round the quad's edges so neighbours share theirs; aInstXY keeps the true place (N-271). REVIEW_PLAN.md#N-292.",
+      "next": "A capture of edge-to-edge pieces at zoom 1.3 and 1.5, the camera panning slowly, counting background pixels between them. If they show: snap only at an integer zoom, or round the quad's edges so neighbours share theirs; aInstXY keeps the true place (N-271). REVIEW_PLAN.md#N-302.",
       "area": "render",
       "kind": "bug",
       "refs": [
-        "REVIEW_PLAN.md#N-292"
+        "REVIEW_PLAN.md#N-302"
       ],
       "aliases": [
         "pixel snap seams",
@@ -22715,14 +22715,14 @@
         "fractional zoom seams"
       ],
       "records": [
-        "R-1347"
+        "R-1422"
       ]
     },
     {
       "id": "DX-BACKENDAUTO",
       "title": "renderer.backend 'auto': WebGPU where an adapter exists and every custom shader of the scene has a WGSL version, WebGL otherwise with one warning; today a page without WebGPU does not start",
       "status": "open",
-      "statusText": "proposed 2026-11-18 from three.js's WebGPURenderer (WebGPU first, its WebGL2 backend as the fallback; featureLevel 'compatibility' since #32762) (R-1347); not built",
+      "statusText": "proposed 2026-11-18 from three.js's WebGPURenderer (WebGPU first, its WebGL2 backend as the fallback; featureLevel 'compatibility' since #32762) (R-1422); not built",
       "date": "2026-11-18",
       "result": "",
       "next": "Build 'auto' as REVIEW_PLAN.md#DX-BACKENDAUTO designs it (adapter in compatibility mode, WGSL for every look, fill and compute, else WebGL and a warning naming why, compute requires WebGPU, scene.gpu.backend reports the choice). The owner decides whether it becomes the default, and whether it prefers WebGL while E-467 stands.",
@@ -22738,14 +22738,14 @@
         "featureLevel compatibility"
       ],
       "records": [
-        "R-1347"
+        "R-1422"
       ]
     },
     {
       "id": "DX-POSTFUSE",
       "title": "SCREEN passes that only map their pixel's colour fused into one shader (an opt-in pointwise contract), as three.js's RenderPipeline fuses every effect that samples no neighbours: each fused pass saves a full-screen read and write",
       "status": "open",
-      "statusText": "proposed 2026-11-18 from three.js's RenderPipeline (convertToTexture inserts a target only where an effect samples neighbours) (R-1354); an API decision for the owner; not built",
+      "statusText": "proposed 2026-11-18 from three.js's RenderPipeline (convertToTexture inserts a target only where an effect samples neighbours) (R-1429); an API decision for the owner; not built",
       "date": "2026-11-18",
       "result": "",
       "next": "Contract and generation as REVIEW_PLAN.md#DX-POSTFUSE describes (shader.pointwise with a weedPass(color, uv) function, consecutive pointwise passes generated into one fragment, uniforms renamed by layer). Judged by GPU per pass (the recorders) on a three-pass grading stack, the picture identical on both backends; goes with DX-POST's phase 2.",
@@ -22760,8 +22760,8 @@
         "fused screen passes"
       ],
       "records": [
-        "R-1347",
-        "R-1354"
+        "R-1422",
+        "R-1429"
       ]
     }
   ],
@@ -36117,16 +36117,16 @@
       ]
     },
     {
-      "id": "R-1347",
+      "id": "R-1422",
       "date": "2026-11-18",
       "time": "06:30",
       "timeFrom": "recorded",
-      "title": "Phaser 4.2.1 and three.js r188-dev read against main: eight rows filed (E-520 to E-523, N-291, N-292, DX-BACKENDAUTO, DX-POSTFUSE), sixteen annotated",
+      "title": "Phaser 4.2.1 and three.js r188-dev read against main: eight rows filed (E-524 to E-523, N-301, N-302, DX-BACKENDAUTO, DX-POSTFUSE), sixteen annotated",
       "verdict": "note",
-      "text": "**Phaser 4.2.1 (02d8931, with its CHANGELOG-v4.3) and three.js r188-dev (43678c0, 2026-11-17) read against main (702e684): their sources, Phaser's 20 972 commits and changelogs (3.1 to 4.3), three.js's 48 610 commits (its release notes are its pull requests' titles). Eight rows filed, sixteen open or kept rows annotated (R-1348 to R-1354). Nothing measured: every gain below is an estimate.** The owner asked for the engine improved as far as it goes (2026-11-18). The owner the same day: Safari is not supported; the Mac sitting comes later.\n\n- **What they are.** Both run on one thread: no SharedArrayBuffer, no workers but their loaders' pools (three.js's KTX2Loader, DRACOLoader), no WASM in their cores. Phaser 4 is WebGL1 with extensions; it recomputes every sprite's matrix on the CPU each frame with no dirty flag, culls no sprite (`Camera.cull` exists and nothing calls it), and bulk-loads Arcade's rbush every step. three.js recomposes every object's matrix every frame unless `matrixAutoUpdate` is off, culls object by object by bounding sphere in JS, and on WebGPU gives each drawn object a uniform buffer and a bind group of its own. On the CPU side there is nothing to take.\n- **Already in WeedJS:** a frame table in a texture, three texels a frame (Phaser's SpriteGPULayer; `uTexLut`); a tile layer that looks its tiles up in the fragment shader (TilemapGPULayer; `tilemapGid`, E-432); static instance data uploaded only where it changed (keyed frames, E-82, E-177); KHR_parallel_shader_compile (E-475); an FPS limit that keeps the remainder (N-128's deadlines); lights culled and binned by screen tile (E-205); opaque sprites front to back with early depth (E-448); a GPU frame pacer that never awaits the GPU (three.js added an `await onSubmittedWorkDone()` to its loop and reverted it in eight days, 3df50b76); a WebGPU draw path with no garbage (E-152); render bundles filed (E-516, from PixiJS 3D).\n- **Filed:**\n  - E-520: a sitting on a tile-based phone GPU, Chrome on Android;\n  - E-521: shared pass-1 targets for look layers and two targets for the SCREEN chain (VRAM);\n  - E-522: a compressed, mipmapped atlas (KTX2/Basis);\n  - E-523: depth and stencil not stored where nothing reads them (tile-based GPUs);\n  - N-291: the game stays black after a lost context or device;\n  - N-292: pixel-snap seams at a fractional zoom (to confirm);\n  - DX-BACKENDAUTO: `renderer.backend: 'auto'` with a WebGL fallback;\n  - DX-POSTFUSE: pointwise SCREEN passes fused into one shader.\n- **Annotated:** E-411, E-494, E-495 (stalls after start, R-1348); E-203, E-361 (animation in the vertex shader, R-1349); E-417, E-389 (one owner for texture units, R-1350); E-464, E-485, E-516 (the WebGPU backend, R-1351); E-270, E-450 (sub-rectangle uploads, a cheap blur, R-1352); E-204, E-502 (mipmaps, discard on tile-based GPUs, R-1353); DX-POST, E-468 (fusion, R-1354).\n- **Not taken:** delta smoothing (Phaser's ten-frame average: per-worker clocks would drift apart, and `renderer.interpolation` exists; Phaser itself tried render interpolation in 2016 and reverted it the next day); multi-texture batching (one atlas; if a game ever needs more pages, a `sampler2DArray`, not Phaser's if/else chain over sixteen samplers, which its own history says costs on phones); BatchedMesh and multi-draw; the scene-graph patterns; three.js's per-object uniform buffers on WebGPU.\n- **Expected, the estimates of 2026-11-18 (none measured):**\n  - the stalls go to about 0: E-494's about 620 ms at the second frame, E-411's 594 ms at a variant's first use, E-495's unmeasured on WebGPU (E-475's order on WebGL: blocked 2.0 -> 0.54 s);\n  - E-450's bloom 11.0 -> about 0.3 to 0.6 ms of GPU (289 fetches a pixel -> about 4.5);\n  - a fused SCREEN pass about 0.10 ms of GPU on the GTX 1650, 0.5 to 0.8 ms on the HD 620;\n  - E-270's path -60 to -85 % in decalStampStressScene, about 0 in Predator;\n  - E-203: 0.3 to 1 ms of the particle worker in real scenes (E-505 and E-506 took most of the sway already);\n  - E-417: about 0.1 ms a frame of Chrome's GPU process;\n  - E-464: 0.1 to 0.3 ms of Pixi's CPU on WebGPU; E-516: up to 1 ms of it with light3d;\n  - E-522: VRAM 4 to 8 times less; the colour pass zoomed out 0 to 30 % (unknown);\n  - E-521: 8.3 MB of VRAM a shared target at 1080p; N-291, N-292 and DX-BACKENDAUTO are not speed.\n  - None of them reaches Predator's long pole (physics 13 to 14 ms, then spatial: R-1236)."
+      "text": "**Phaser 4.2.1 (02d8931, with its CHANGELOG-v4.3) and three.js r188-dev (43678c0, 2026-11-17) read against main (702e684): their sources, Phaser's 20 972 commits and changelogs (3.1 to 4.3), three.js's 48 610 commits (its release notes are its pull requests' titles). Eight rows filed, sixteen open or kept rows annotated (R-1423 to R-1429). Nothing measured: every gain below is an estimate.** The owner asked for the engine improved as far as it goes (2026-11-18). The owner the same day: Safari is not supported; the Mac sitting comes later.\n\n- **What they are.** Both run on one thread: no SharedArrayBuffer, no workers but their loaders' pools (three.js's KTX2Loader, DRACOLoader), no WASM in their cores. Phaser 4 is WebGL1 with extensions; it recomputes every sprite's matrix on the CPU each frame with no dirty flag, culls no sprite (`Camera.cull` exists and nothing calls it), and bulk-loads Arcade's rbush every step. three.js recomposes every object's matrix every frame unless `matrixAutoUpdate` is off, culls object by object by bounding sphere in JS, and on WebGPU gives each drawn object a uniform buffer and a bind group of its own. On the CPU side there is nothing to take.\n- **Already in WeedJS:** a frame table in a texture, three texels a frame (Phaser's SpriteGPULayer; `uTexLut`); a tile layer that looks its tiles up in the fragment shader (TilemapGPULayer; `tilemapGid`, E-432); static instance data uploaded only where it changed (keyed frames, E-82, E-177); KHR_parallel_shader_compile (E-475); an FPS limit that keeps the remainder (N-128's deadlines); lights culled and binned by screen tile (E-205); opaque sprites front to back with early depth (E-448); a GPU frame pacer that never awaits the GPU (three.js added an `await onSubmittedWorkDone()` to its loop and reverted it in eight days, 3df50b76); a WebGPU draw path with no garbage (E-152); render bundles filed (E-516, from PixiJS 3D).\n- **Filed:**\n  - E-524: a sitting on a tile-based phone GPU, Chrome on Android;\n  - E-525: shared pass-1 targets for look layers and two targets for the SCREEN chain (VRAM);\n  - E-522: a compressed, mipmapped atlas (KTX2/Basis);\n  - E-523: depth and stencil not stored where nothing reads them (tile-based GPUs);\n  - N-301: the game stays black after a lost context or device;\n  - N-302: pixel-snap seams at a fractional zoom (to confirm);\n  - DX-BACKENDAUTO: `renderer.backend: 'auto'` with a WebGL fallback;\n  - DX-POSTFUSE: pointwise SCREEN passes fused into one shader.\n- **Annotated:** E-411, E-494, E-495 (stalls after start, R-1423); E-203, E-361 (animation in the vertex shader, R-1424); E-417, E-389 (one owner for texture units, R-1425); E-464, E-485, E-516 (the WebGPU backend, R-1426); E-270, E-450 (sub-rectangle uploads, a cheap blur, R-1427); E-204, E-502 (mipmaps, discard on tile-based GPUs, R-1428); DX-POST, E-468 (fusion, R-1429).\n- **Not taken:** delta smoothing (Phaser's ten-frame average: per-worker clocks would drift apart, and `renderer.interpolation` exists; Phaser itself tried render interpolation in 2016 and reverted it the next day); multi-texture batching (one atlas; if a game ever needs more pages, a `sampler2DArray`, not Phaser's if/else chain over sixteen samplers, which its own history says costs on phones); BatchedMesh and multi-draw; the scene-graph patterns; three.js's per-object uniform buffers on WebGPU.\n- **Expected, the estimates of 2026-11-18 (none measured):**\n  - the stalls go to about 0: E-494's about 620 ms at the second frame, E-411's 594 ms at a variant's first use, E-495's unmeasured on WebGPU (E-475's order on WebGL: blocked 2.0 -> 0.54 s);\n  - E-450's bloom 11.0 -> about 0.3 to 0.6 ms of GPU (289 fetches a pixel -> about 4.5);\n  - a fused SCREEN pass about 0.10 ms of GPU on the GTX 1650, 0.5 to 0.8 ms on the HD 620;\n  - E-270's path -60 to -85 % in decalStampStressScene, about 0 in Predator;\n  - E-203: 0.3 to 1 ms of the particle worker in real scenes (E-505 and E-506 took most of the sway already);\n  - E-417: about 0.1 ms a frame of Chrome's GPU process;\n  - E-464: 0.1 to 0.3 ms of Pixi's CPU on WebGPU; E-516: up to 1 ms of it with light3d;\n  - E-522: VRAM 4 to 8 times less; the colour pass zoomed out 0 to 30 % (unknown);\n  - E-525: 8.3 MB of VRAM a shared target at 1080p; N-301, N-302 and DX-BACKENDAUTO are not speed.\n  - None of them reaches Predator's long pole (physics 13 to 14 ms, then spatial: R-1236)."
     },
     {
-      "id": "R-1348",
+      "id": "R-1423",
       "date": "2026-11-18",
       "time": "06:31",
       "timeFrom": "recorded",
@@ -36135,7 +36135,7 @@
       "text": "**Phaser 4 and three.js both keep a frame from waiting on a program or a pipeline that is not ready. Read in their sources and commits, not measured here.**\n\n- **Phaser 4** (`skipUnreadyShaders`, Config.js:456, default false): with KHR_parallel_shader_compile, `createResource` compiles and links without asking for the status (WebGLProgramWrapper.js:234-288); `getCurrentProgramSuite` polls COMPLETION_STATUS_KHR and returns null until the program is ready, and the batch or object is skipped that frame (pop-in rather than a freeze). Phaser 3.60 (ab04cb6c) replaced the N light-shader variants it compiled at boot with one shader and a `uLightCount` uniform: fewer variants, fewer links.\n- **three.js on WebGL** (WebGLProgram.js 810-965): `linkProgram` is never checked synchronously; the uniform and attribute reflection and the info log wait for the first use (da475225, #19745); LINK_STATUS is checked and the shader logs fetched only on a failure (84cd768c, #27055); `checkFramebufferStatus` was removed as \"a perf hit\" (6f1caec4, #23770).\n- **three.js on WebGPU** (Renderer.js 47-118 and 1019-1265; 16499145, #34816): `compileAsync` makes pipelines with createRenderPipelineAsync, at most 16 in flight (\"too many pipelines in flight stall the rendering of new frames\"), and yields after 8 ms of work through requestAnimationFrame then setTimeout(0) (scheduler.yield() alone is not enough: its continuations run before the browser renders), with a 100 ms timeout for hidden pages. An object whose pipeline is not ready is skipped (`isReady`). Two traps from its history: reset a shared pipeline descriptor before awaiting createRenderPipelineAsync, since another compile can take it while the first is suspended (b6e7df7e, #33794); and the shader text must be deterministic, or nothing is shared: buffer names built from node ids made every instanced mesh's WGSL unique (8f82d1ef, #34872; ead726c4, #35007).\n- **For WeedJS:**\n  - E-494 (programs made at a pass's first draw): make them at init when the config says the pass runs, as filed.\n  - E-411 (a variant first used while the game runs: an hour change, the lamps' map, pixel art): link it in the background and keep drawing with the variant it replaces until COMPLETION_STATUS_KHR answers. Skipping the pass, as Phaser does, would draw a frame without its light.\n  - E-495 (WebGPU, the default backend, where E-475 does not reach): three.js's scheduler as it is, plus a check that the WGSL WeedJS generates (spriteIndexed.js's rewrites, each layer's look) carries no layer name or id that makes two equal programs differ: count distinct shader modules against distinct programs in Predator."
     },
     {
-      "id": "R-1349",
+      "id": "R-1424",
       "date": "2026-11-18",
       "time": "06:32",
       "timeFrom": "recorded",
@@ -36144,7 +36144,7 @@
       "text": "**Phaser 4's SpriteGPULayer animates up to a million quads with one draw and no CPU work a frame but its uniforms; its encoding fits E-203 as it is and E-361 with a limit. Read in its source, not measured here.**\n\n- **Layout** (SubmitterSpriteGPULayer.js:206-275): one STATIC_DRAW instance buffer, 168 B a member: eight animated properties (x, y, rotation, scaleX, scaleY, alpha, frame, tintBlend), a vec4 each; four corner tints, 4 x u8 each; origin, tint mode and creation time in one vec4; the scroll factor in a vec2. A 4-byte vertex buffer (0..3) and one drawArraysInstanced(TRIANGLE_STRIP, 0, 4, count) a layer.\n- **Encoding** (SpriteGPULayer.vert:65, `animate(vec4)`): x the base value, y the amplitude, |z| the duration (its sign: yoyo), |w| the ease code plus the delay as a fraction x 0.5 (its sign: loop); the time is (uTime - creationTime) / duration - delay. Gravity packs a velocity in the integer part and a gravity factor in the fraction (d = v·t + ½·a·t²). Each ease sits behind `#ifdef FEATURE_<EASE>`, turned on the first time a member uses it (SpriteGPULayer.js:1426-1469); its changelog warns that low-end devices may fail to compile many at once. `uTime` wraps every hour for float precision (ElapseTimer.js). The frame is animated like any property and looked up in a frame texture, three texels a frame, which is what WeedJS's `uTexLut` is already.\n- **Edits** mark one of 24 segments in a bitmask (24, not 32, because of JS's signed bitwise operations); at render, one bufferSubData a dirty segment, or one whole upload when every occupied segment is dirty. A member is removed by setting its scale and alpha to 0, not by splicing.\n- **No culling and no sort** in Phaser: instance order is draw order. WeedJS keeps both on the CPU; the shader takes only the animation.\n- **E-203** (decoration sway): the sway is a closed form already (amp·sin(t·freq + phase), the impulse the same with a t0), so a decoration's row carries amplitude, frequency, phase and t0; the vertex shader composes the facing (and the skew of a sheared one); decorations become static keyed rows (E-188 keys them by pool slot) and decorationSway.wasm's work goes. Since E-505 and E-506 the sway costs the particle worker 0.3 to 1 ms in real scenes (the barrio 1.990 -> 0.785 ms, R-1295) and 4.2 ms with a million decorations (R-0973): the gain is that time plus the swaying decorations' rows each frame, not the 23 % R-0854 estimated. Attached decorations (E-196) stay a step of their own.\n- **E-361** (walkers' frames): frame = base + floor((t - t0) · speed) mod count, with t0, speed, base and count in the statics. It pays for animations whose speed holds: a speed that changes needs a new t0 and a mark each time (since N-170, setting the same speed again marks nothing). E-189 already sends a moved frame as an 8-byte texture word (renderer -10.7 % at crowd 1.5), so what is left is smaller; count the marks by cause first, as filed. R-0190 dropped a shader frame on September's architecture, before keyed frames."
     },
     {
-      "id": "R-1350",
+      "id": "R-1425",
       "date": "2026-11-18",
       "time": "06:33",
       "timeFrom": "recorded",
@@ -36153,7 +36153,7 @@
       "text": "**Phaser 4 and three.js both keep a shadow of what each texture unit holds and bind only on a change, and Phaser makes every outside renderer go through a node that resyncs the whole GL state. Read in their sources and commits, not measured here.**\n\n- **Phaser 4:** WebGLTextureUnitsWrapper.js:112-146 keeps each unit's texture and calls bindTexture only when it differs; `bindUnits(textures)` binds textures[i] to unit i. WebGLGlobalWrapper.js:68-130 shadows every parameter (blend, scissor, viewport, stencil, colour mask, framebuffer) and skips the calls that change nothing. Outside GL code runs between RebindContext and YieldContext nodes, which force-reset all state and unbind every unit; its docs forbid raw gl calls. From its history: after another renderer it unbinds every unit (609d3641, cecc069c) and binds a null VAO (1e9bb686); a texture left bound when it was made caused framebuffer feedback errors (3cd756db); UNPACK_PREMULTIPLY_ALPHA leaked between uploads (809b8a41); its uniform cache compared with !== and so uploaded NaN (and undefined) values every frame (0ae001de, 2025-03-05).\n- **three.js:** WebGLState.js 903-957 caches activeTexture and {type, texture} per slot; every uniform setter compares against its cache before gl.uniform* (WebGLUniforms.js), sampler units included (setValueT1).\n- **For WeedJS:**\n  - E-417 (144 binds and 64 unit switches a frame with light3d): the engine's raw passes bind textures beside Pixi's texture system, the desync N-94 fixed by putting each unit's binding back after a raw upload. One shadow of the units that Pixi's texture system and the raw passes both go through (Pixi's, patched, or a thin wrapper the raw passes call), with each program's samplers pinned to fixed units, turns most of those binds into no-ops. Chrome's GPU process spends 8.92 ms a second on glBindTexture and 3.87 on glActiveTexture there (E-417), about 0.2 ms a frame, so the gain is about 0.1 ms a frame of that process (an estimate).\n  - E-389 (sampler uniforms set to the unit they hold): check that every uniform cache in the engine's passes takes NaN as equal to NaN; a !== cache sends a NaN every frame."
     },
     {
-      "id": "R-1351",
+      "id": "R-1426",
       "date": "2026-11-18",
       "time": "06:34",
       "timeFrom": "recorded",
@@ -36162,7 +36162,7 @@
       "text": "**three.js's WebGPU backend went through the problems E-464, E-485 and E-516 name; its commits are a checklist. Read in its commits and source, not measured here.**\n\n- **Submits (E-464: Pixi submits twice a render call):** three.js makes one command encoder and one queue.submit a render call and a compute call (Renderer.js, finishRender), and reuses the one-element array it submits (cb1a3780, #33513). Pixi 8.23 drops the extra submit upstream (#12345, DX-PIXI823).\n- **Garbage (E-485: Pixi allocates 6 to 13 KB a frame on WebGPU):**\n  - descriptor objects at module scope, reset() after each use (f85aef5c, #33525; 52d84fb7, #33529);\n  - update-range objects pooled (3d970983, #33427);\n  - typed-array views cached instead of a new Int32Array(buf) on each update (1d898594, #35440);\n  - cache keys built from an integer scratch array (f480849e, #35120);\n  - no subarray() per vertex when padding attributes (a861c00a, #35439);\n  - key arrays reused, cleared slot by slot to null rather than with length = 0 (dcb73dd3, #32833).\n- **Commands:** set calls skipped when the pipeline or bind group is the one bound (6b74981b, #29256), compared by the native GPUBindGroup handle rather than a logical id (24b04d76, #34276); uniform groups ordered by update frequency, the frame and render groups shared and first, the object group last, so a draw changes only the last slot (4b9c621f, #28705; UniformGroupNode.js 158-174); one writeBuffer a merged run of changed uniforms (da3acc60, #33813); getPreferredCanvasFormat() cached, after it was called for every render object's key (6209b17b, #33800); a resize needs no context.configure (1d91edaf, #35568).\n- **Bundles (E-516):** a static BundleGroup is recorded once and again when its version changes (1c92c7b6, #29239). On replay every object still runs its refresh check and its uniform writes (Renderer.js 1723-1817): a bundle saves the encoding only. Bundles cannot hold occlusion queries (5343fdd5, #34286), are keyed by render context and attachment formats (a6ef8f57, #33335), and their contents are not frustum-culled. WeedJS's passes are a few instanced draws each, so E-516's first step (count the encoder calls a pass makes) decides whether there is encoding to save.\n- **Not to copy:** three.js still gives each drawn object its own uniform buffer and bind group, and allocates in needsRenderUpdate (getCurrentColorFormats().join() per object per frame). WeedJS's instancing avoids that whole class."
     },
     {
-      "id": "R-1352",
+      "id": "R-1427",
       "date": "2026-11-18",
       "time": "06:35",
       "timeFrom": "recorded",
@@ -36171,22 +36171,22 @@
       "text": "**A sub-rectangle texture upload and a cheap blur, both from three.js. Read in its commits and source, not measured here.**\n\n- **E-270** (decal tiles premultiplied into a scratch and uploaded whole for any stamp): three.js uploads a DataTexture's changed ranges with UNPACK_ROW_LENGTH, UNPACK_SKIP_PIXELS and UNPACK_SKIP_ROWS, one row span a range, ranges merged within a row (f8959047, #30998; WebGLTextures.js 859-958). WeedJS already sets UNPACK_ROW_LENGTH in sharedTextureUpload.js. A stamp's dirty rectangle can go up straight from the tile buffer, premultiplied over that rectangle only. decalStampStressScene's Pixi spent 173 ms in _uploadDecalRgba8 (89 % its texSubImage2D of the whole tile) and 157 ms in the scratch copy (E-270): an estimate of -60 to -85 % of that path where stamps cover a small part of a 256 px tile.\n- **E-450** (the platformer demo's bloom, a 2D stack blur at full resolution: 11.0 of 11.4 ms of GPU): demo work, not the engine's. A separable blur (two passes of 2R + 1 taps instead of (2R + 1)²), adjacent taps merged in pairs into one bilinear fetch at the weighted offset (99416850, #34479; constant weights, 35c664fd, #33923), at half resolution. With STACKBLUR_MAX_R = 8 that is 289 fetches a pixel down to about 18 over a quarter of the pixels: an estimate of about 0.3 to 0.6 ms."
     },
     {
-      "id": "R-1353",
+      "id": "R-1428",
       "date": "2026-11-18",
       "time": "06:36",
       "timeFrom": "recorded",
       "title": "Fill on tile-based GPUs and zoomed out: mipmaps, discard, store ops (Phaser, three.js)",
       "verdict": "note",
-      "text": "**Fill on tile-based GPUs and zoomed out, from Phaser's and three.js's histories: mipmaps, discard and store ops. Read, not measured here.**\n\n- **E-204** (fill rate, overdraw and mipmaps zoomed out): a mipmapped atlas needs gutters of 2^levels px between frames (Phaser's docs ask for 1 px against linear bleed at level 0). Phaser never mipmaps framebuffers (4.1, 991e45aa: regenerating them costs on every change) and turned mipmaps off by default in 3.60 for VRAM. Predator plays at zoom 0.216 to 0.3, where a screen pixel covers about 20 atlas texels, and E-405 reads the pixel shaders waiting on fetch latency: the colour pass (E-400, 5.9 ms at crowd 2.5 zoom 0.216) is where mipmaps can pay. E-522 (a compressed atlas) shares this step 0.\n- **E-502** (the opaque pass off on integrated and tile-based GPUs): Phaser's docs call discard-based alpha \"inefficient\" on tile-based GPUs (it defeats their hidden-surface removal), which agrees with E-502's vendor guidance for 'tiled'; E-520's phone sitting can turn the guidance into a measurement.\n- **E-523** (depth and stencil not stored): three.js discards multisampled depth and stencil (depthStoreOp and stencilStoreOp 'discard', a5b4ce6d, #33946; c9d769dd, #33974) and has called invalidateFramebuffer only on the Oculus Browser since 2022 (41407673, #23692; 82cbd32a, #30606); measured in E-520's sitting.\n- **E-520** (the phone sitting) reads, from Phaser: a bufferSubData per flush took the iPhone SE from 5 248 to 192 texture binds at 60 fps and an M1 iMac from 15 872 to 2 560 between 3.50 and 3.60 (f0d3588f), and v4 RC4 removed a 16 MB shared vertex buffer because \"large buffers update very badly on mobile\" (40f2f706). The Mac sitting comes later (owner, 2026-11-18); Safari is not supported."
+      "text": "**Fill on tile-based GPUs and zoomed out, from Phaser's and three.js's histories: mipmaps, discard and store ops. Read, not measured here.**\n\n- **E-204** (fill rate, overdraw and mipmaps zoomed out): a mipmapped atlas needs gutters of 2^levels px between frames (Phaser's docs ask for 1 px against linear bleed at level 0). Phaser never mipmaps framebuffers (4.1, 991e45aa: regenerating them costs on every change) and turned mipmaps off by default in 3.60 for VRAM. Predator plays at zoom 0.216 to 0.3, where a screen pixel covers about 20 atlas texels, and E-405 reads the pixel shaders waiting on fetch latency: the colour pass (E-400, 5.9 ms at crowd 2.5 zoom 0.216) is where mipmaps can pay. E-522 (a compressed atlas) shares this step 0.\n- **E-502** (the opaque pass off on integrated and tile-based GPUs): Phaser's docs call discard-based alpha \"inefficient\" on tile-based GPUs (it defeats their hidden-surface removal), which agrees with E-502's vendor guidance for 'tiled'; E-524's phone sitting can turn the guidance into a measurement.\n- **E-523** (depth and stencil not stored): three.js discards multisampled depth and stencil (depthStoreOp and stencilStoreOp 'discard', a5b4ce6d, #33946; c9d769dd, #33974) and has called invalidateFramebuffer only on the Oculus Browser since 2022 (41407673, #23692; 82cbd32a, #30606); measured in E-524's sitting.\n- **E-524** (the phone sitting) reads, from Phaser: a bufferSubData per flush took the iPhone SE from 5 248 to 192 texture binds at 60 fps and an M1 iMac from 15 872 to 2 560 between 3.50 and 3.60 (f0d3588f), and v4 RC4 removed a 16 MB shared vertex buffer because \"large buffers update very badly on mobile\" (40f2f706). The Mac sitting comes later (owner, 2026-11-18); Safari is not supported."
     },
     {
-      "id": "R-1354",
+      "id": "R-1429",
       "date": "2026-11-18",
       "time": "06:37",
       "timeFrom": "recorded",
       "title": "Full-screen passes: fused where pointwise, two targets a chain (three.js's RenderPipeline, Phaser 4's filters)",
       "verdict": "note",
-      "text": "**Full-screen passes in three.js and Phaser 4: fused where they only map a colour, two targets for a chain. Read in their sources and commits, not measured here.**\n\n- **three.js on WebGPU** (RenderPipeline, src/renderers/common/RenderPipeline.js, renamed from PostProcessing in r183): the TSL output graph compiles into one fragment shader on a QuadMesh; an effect that reads neighbours calls convertToTexture(), which inserts an RTTNode only when its input is not a texture already (RTTNode.js 365-370), so pointwise effects fuse into the final shader; kernels such as GaussianBlurNode own their targets. Its MSAA rules: no multisampling of full-screen passes (72288c8c, #33936), one resolve (d9eec4fc, #31743), post targets made lazily and single-sampled (1d6e89cb, #34030); the full-screen pass is one triangle from vertexIndex (6f583581, #33917).\n- **three.js on WebGL** (EffectComposer): one full-screen draw a pass, two targets swapped (needsSwap), nothing merged.\n- **Phaser 4** filters: targets from a pool by size (DrawingContextPool; idle ones reused after 1 s); the last filter of a chain draws straight into its destination when its size and alpha allow (renderNodes/Camera.js 376-394), as DX-POST's last pass draws onto the canvas.\n- **For WeedJS:** each SCREEN pass draws into a target of its own (DX_POST_DESIGN.md), so a chain of N passes at one resolution holds N targets where two suffice (E-521), and every pass costs a full-screen read and write even when it only maps a colour (DX-POSTFUSE). E-468 is the same fusion inside the engine: one composite for light, shadows and glow, about 0.10 ms of GPU saved a pass at full clock on the GTX 1650."
+      "text": "**Full-screen passes in three.js and Phaser 4: fused where they only map a colour, two targets for a chain. Read in their sources and commits, not measured here.**\n\n- **three.js on WebGPU** (RenderPipeline, src/renderers/common/RenderPipeline.js, renamed from PostProcessing in r183): the TSL output graph compiles into one fragment shader on a QuadMesh; an effect that reads neighbours calls convertToTexture(), which inserts an RTTNode only when its input is not a texture already (RTTNode.js 365-370), so pointwise effects fuse into the final shader; kernels such as GaussianBlurNode own their targets. Its MSAA rules: no multisampling of full-screen passes (72288c8c, #33936), one resolve (d9eec4fc, #31743), post targets made lazily and single-sampled (1d6e89cb, #34030); the full-screen pass is one triangle from vertexIndex (6f583581, #33917).\n- **three.js on WebGL** (EffectComposer): one full-screen draw a pass, two targets swapped (needsSwap), nothing merged.\n- **Phaser 4** filters: targets from a pool by size (DrawingContextPool; idle ones reused after 1 s); the last filter of a chain draws straight into its destination when its size and alpha allow (renderNodes/Camera.js 376-394), as DX-POST's last pass draws onto the canvas.\n- **For WeedJS:** each SCREEN pass draws into a target of its own (DX_POST_DESIGN.md), so a chain of N passes at one resolution holds N targets where two suffice (E-525), and every pass costs a full-screen read and write even when it only maps a colour (DX-POSTFUSE). E-468 is the same fusion inside the engine: one composite for light, shadows and glow, about 0.10 ms of GPU saved a pass at full clock on the GTX 1650."
     }
   ],
   "leads": [
