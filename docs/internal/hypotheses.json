@@ -22368,7 +22368,8 @@
         "R-1355",
         "R-1358",
         "R-1359",
-        "R-1400"
+        "R-1400",
+        "R-1402"
       ]
     },
     {
@@ -22452,6 +22453,27 @@
       "date": "2026-11-18",
       "title": "A lamp's row for the light pass counts its 256 directions' index (a mark a vertex, a running count in integers) instead of walking the bins against the vertices' angles, which was half a row's time",
       "statusText": "Kept 2026-11-18 on dx/one-light (d0b2d0c5): the kernel and the scene; not merged"
+    },
+    {
+      "refs": [],
+      "aliases": [
+        "wallCache",
+        "still lamp row kept",
+        "wall row cache",
+        "sweep skipped"
+      ],
+      "records": [
+        "R-1402"
+      ],
+      "result": "visPolyStressScene ?lights=720&arm=walls, ?wallCache=0 against the default: pre-render 6.061 -> 2.982 ms with the lamps still (-51.4 %, 4 of 4 pairs, limit 4.6 %), 5.581 -> 5.784 ms with every lamp moving (+2.5 %, inside the limit). The rows are the same bit for bit (a real worker, both gathers, every kind of change).",
+      "next": "Merged with dx/one-light. Then Pixi: a frame whose rows are all kept need not read or upload them (its +16 % over the fans, R-1400); and the sweep's kernel writing a moving lamp's row.",
+      "id": "OL-9",
+      "kind": "speed",
+      "area": "preRender",
+      "status": "kept",
+      "date": "2026-11-18",
+      "title": "A lamp's row is kept while what goes into its sweep is the same (lighting.wallCache): a signature of the lamp, its walls and their codes after the gather; a still lamp among still walls is not swept and its row is not rebuilt",
+      "statusText": "Kept 2026-11-18 on dx/one-light (f37e693d): the scene, and the rows bit for bit against the uncached path; not merged"
     },
     {
       "refs": [],
@@ -36693,6 +36715,19 @@
       "text": "**Predator at its default load, main against dx/one-light (02f319b3, main merged in): nothing moves past the A/A's noise; every worker is under the 6 ms floor, so no row is judged. An early look, not the branch's gate.**\n\n`runPredatorAbab --vs main --hyp-rev HEAD --full-rev`, headed Chrome, GTX 1650 on AC, 4 pairs (05:55 to 06:00), then the A/A of the branch on both sides, 4 pairs (06:01 to 06:06). Each worker's `STEP_MS - WAIT_MS`, paired:\n\n| worker | main -> branch | each pair | the A/A (same code) | each pair |\n| --- | --- | --- | --- | --- |\n| pre-render | 1.708 -> 1.708 ms, -1.2 % | -2.2, -5.0, +2.6, -0.3 | +0.1 % | -4.4, +0.2, +0.7, -0.0 |\n| Pixi | 1.337 -> 1.296 ms, -1.4 % | -14.1, +0.5, +3.9, -3.2 | -7.3 % | -7.5, -9.5, +10.8, -7.2 |\n| logic | 1.765 -> 1.818 ms, +3.0 % | +2.6, -1.5, +3.4, +5.2 | +1.1 % | +14.4, -2.6, -5.4, +4.8 |\n| spatial | 3.106 -> 3.199 ms, +2.7 % | +3.1, +0.6, +2.3, +3.9 | +2.4 % | +16.1, -6.1, +0.2, +4.6 |\n| physics | 2.970 -> 2.605 ms, +0.2 % | +1.2, +3.6, -26.4, -0.7 | +28.0 % | +37.3, -14.5, +26.8, +29.2 |\n\n- Presented frames 60.0 on both sides, load keys within 1 %.\n- **How to read it:** the two workers the branch reaches here (pre-render: the cookies' rule, the lamps' ids; Pixi: the light pass's shader) read level or a little cheaper; logic and spatial, which it cannot reach, read +3 % and the A/A moves them as much or more. Nothing here is a regression, and nothing here is a verdict.\n- **The gate itself** runs once, after the last change of the branch, at a load that puts the workers over the floor (`--query crowd=2.5`, as the earlier gates), with its own A/A.",
       "commits": [
         "02f319b3"
+      ]
+    },
+    {
+      "id": "R-1402",
+      "date": "2026-11-18",
+      "time": "06:31",
+      "timeFrom": "recorded",
+      "title": "OL-9 kept: a still lamp's row is kept (lighting.wallCache); pre-render on visPoly with walls at 720 still lights 6.061 -> 2.982 ms (-51.4 %, 4 of 4 pairs, limit 4.6 %); +2.5 % with every lamp moving, inside the limit",
+      "verdict": "kept",
+      "text": "**OL-9 kept: a lamp's row is kept while what goes into its sweep is the same. Pre-render on visPolyStressScene with walls at 720 still lights 6.061 -> 2.982 ms (-51.4 %, 4 of 4 pairs, limit 4.6 %); with every light moving, +2.5 % (inside the limit, the base side under the floor). The rows are the same bit for bit.**\n\n- **What it was:** after OL-7 and OL-8 the walls still cost pre-render +21.9 % over the old fan pass on a still scene (R-1400): every casting lamp was swept and its row written again each frame, a street lamp among houses included.\n- **The change (f37e693d, `lighting.wallCache`, default on):** after the gather, a signature (64 bits) of what the sweep reads: the lamp's place and reach, the floor's scale, every gathered wall's shape where the frame shows it and its code (entity and opacity), and the polar bins when a compound solid drew into them. Each of the two row buffers remembers, a lamp, the signature its row was written from and the row's place. Same signature, row still in place: no sweep, no row build (moved down within the buffer when the rows before it are fewer). A lamp that moved since the frame before skips the signature. Also: a lamp with nothing in reach is not swept in rows mode, and a packed occluder's code is worked out once a lamp, not once a vertex.\n- **Correctness:** `tests/node/wallRowCache.test.js`, on a real pre-render worker with both gathers: the same frames with the cache off and on publish the same lamps and rows bit for bit through a wall moving and turning, a lamp moving, a wall's opacity, a lamp's reach, lamps leaving the frame and returning, a compound solid moving, and 2 x 40 frames of random moves. A still scene sweeps nothing from its fourth frame; a moved wall sweeps only the lamps it reaches. In the browser: visPolyStressScene with `?wallCache=0` against the default, 0 of 921 600 px.\n- **Scene** (visPolyStressScene `?lights=720&arm=walls`, one build efef1f5e, `?wallCache=0` against the default, headed Chrome, GTX 1650 on AC, 10 s + 10 s, ABAB, 4 pairs each; detection limit 4.6 % from the session's A/A, R-1359):\n\n| lamps | cache off | cache on | paired | each pair |\n| --- | --- | --- | --- | --- |\n| still (06:20 to 06:25) | 6.061 ms | 2.982 ms | **-51.4 %** | -51.7, -51.2, -48.7, -51.6 |\n| all moving, `?move=40` (06:26 to 06:31) | 5.581 ms | 5.784 ms | +2.5 % | +2.8, -1.5, +2.1, +5.2 |\n\n  Pixi (1.57 -> 1.48 ms still, 1.45 -> 1.39 moving) and spatial (+0.7 % both) are under the floor and inside their noise: the change is pre-render's alone.\n- **Against the old fan pass** (5.226 ms at 720 lights, R-1400, another sitting of the same session): a still scene's walls are now about 43 % cheaper in pre-render than the fans were; with every lamp moving they stay about where R-1400 read them.\n- **What is left:** Pixi still reads and uploads every row every frame (+16 % over the fans, R-1400): a frame whose rows are all kept can skip that. A moving lamp's row is still JS (the sweep's kernel writing it is the next step for those).",
+      "commits": [
+        "f37e693d",
+        "efef1f5e"
       ]
     }
   ],
