@@ -2,9 +2,11 @@
 /**
  * E-141: neighbour reads from game code, as entities' own ticks do them, over several entity classes.
  *
- *   node tests/bench/neighborAccessMicrobench.mjs [--entities 2000] [--neighbors 12] [--output path]
+ *   node tests/bench/neighborAccessMicrobench.mjs [--entities 2000] [--neighbors 12] [--classes 5] [--output path]
  *
- * shipped:  this.neighborCount and this.getNeighbor(k) (gameObject.js), on five classes.
+ * shipped:  this.neighborCount and this.getNeighbor(k) (gameObject.js), on five classes; `--classes N` (N-319) adds
+ *           subclasses of three of them up to N classes, as a scene of many types has (each class compiles its own
+ *           reads, E-289).
  * row:      the call-free read of the entity's row of Grid's neighbour memory, in a local loop (count at the row's
  *           start, ids after it), with the engine's private fields.
  * Each tick also does a little work per neighbour (a sum), as game code would. Reports ops/s (one op = every entity's
@@ -15,7 +17,7 @@ import { GameObject } from '../../src/core/gameObject.js';
 import { Transform } from '../../src/components/transform.js';
 import { isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 
-function makeClasses() {
+function makeClasses(count = 5) {
   class Soldier extends GameObject {
     sumShipped() {
       let s = 0;
@@ -62,10 +64,16 @@ function makeClasses() {
       return s;
     }
   }
-  return [Soldier, Civilian, Boid, Car, Ant];
+  const classes = [Soldier, Civilian, Boid, Car, Ant];
+  const bases = [Soldier, Boid, Ant];
+  while (classes.length < count) {
+    const Base = bases[classes.length % bases.length];
+    classes.push(class extends Base {});
+  }
+  return classes;
 }
 
-export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12 } = {}) {
+export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12, classCount = 5 } = {}) {
   const stride = 1 + 32;
   const data = new Uint16Array(new SharedArrayBuffer(entities * stride * 2));
   for (let e = 0; e < entities; e++) {
@@ -78,16 +86,16 @@ export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12 } 
   Grid._neighborData = data;
   // Every entity has a type, as in a scene.
   Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(entities)), entities);
-  for (let e = 0; e < entities; e++) Transform.entityType[e] = 1 + (e % 5);
+  for (let e = 0; e < entities; e++) Transform.entityType[e] = 1 + (e % classCount);
   const savedDescriptor = Object.getOwnPropertyDescriptor(Grid, 'neighborData');
   Object.defineProperty(Grid, 'neighborData', { get: () => data, configurable: true });
   try {
-    const classes = makeClasses();
+    const classes = makeClasses(classCount);
     for (const C of classes) GameObject._assignComponentClassMap(C);
     const ents = [];
     // Worker instances, as entities' ticks run on (a page instance is frozen and reads by another path).
     for (let i = 0; i < entities; i++) ents.push(new classes[i % classes.length](i, {}, null));
-    for (let e = 0; e < entities; e++) Transform.entityType[e] = 1 + (e % 5);
+    for (let e = 0; e < entities; e++) Transform.entityType[e] = 1 + (e % classCount);
     const shipped = (list) => {
       let s = 0;
       for (let i = 0; i < list.length; i++) s += list[i].sumShipped();
@@ -109,7 +117,7 @@ export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12 } 
     const nsPerRead = (c) => (c.ms / c.iterations / (entities * neighbors)) * 1e6;
     for (const [name, c] of Object.entries(cases)) console.log(`${name.padEnd(8)} ~${nsPerRead(c).toFixed(2)} ns a neighbour read`);
     console.log(`checksum ${checksum}`);
-    return { feature: 'neighbor-access', entities, neighbors, checksum, cases };
+    return { feature: 'neighbor-access', entities, neighbors, classes: classCount, checksum, cases };
   } finally {
     if (savedDescriptor) Object.defineProperty(Grid, 'neighborData', savedDescriptor);
     Grid.maxNeighbors = savedMax;
@@ -118,6 +126,10 @@ export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12 } 
 
 if (isCli(import.meta.url)) {
   const args = parseArgs();
-  const report = runNeighborAccessMicrobench({ entities: Number(args.entities ?? 2000), neighbors: Number(args.neighbors ?? 12) });
+  const report = runNeighborAccessMicrobench({
+    entities: Number(args.entities ?? 2000),
+    neighbors: Number(args.neighbors ?? 12),
+    classCount: Number(args.classes ?? 5),
+  });
   if (args.output) writeReport(String(args.output), report);
 }
