@@ -24234,17 +24234,18 @@
     },
     {
       "records": [
-        "R-1557"
+        "R-1557",
+        "R-1564"
       ],
       "refs": [],
       "id": "N-319",
       "title": "V8 compiles identical new Function sources once and shares their feedback: E-289's compiledNeighborReads and E-170's fieldAccessors likely give every class (component) after the first a shared, megamorphic feedback",
-      "status": "open",
+      "status": "answered",
       "kind": "bug",
       "area": "logic speed",
       "date": "2026-11-19",
-      "statusText": "Filed 2026-11-19 from the E-526 agent's probe (R-1557); not measured in the engine",
-      "result": "",
+      "statusText": "Answered 2026-11-19 (R-1564): no measurable cost; the kernel options stay",
+      "result": "Unique sources: neighborAccessMicrobench per-class call sites 2.24-2.30 -> 2.45-2.48 ns at 12 classes, 2.84-2.87 -> 2.84-2.97 at 20 (the row 2.2-2.9); not shipped",
       "next": "Check with --log-ic and summarizeV8Deopt in Predator whether E-289's and E-170's compiled functions share feedback across classes; if they do, a unique comment a compiled source, then the kernel and Predator logic. SST-21 changed E-289's accessors (the read alone).",
       "aliases": [
         "eval cache shared feedback",
@@ -24326,6 +24327,26 @@
         "reuse cap spike",
         "stationary spatial tail",
         "lists rebuilt together"
+      ]
+    },
+    {
+      "records": [
+        "R-1565"
+      ],
+      "refs": [],
+      "id": "N-324",
+      "title": "A neighbour read from a method more than four entity classes inherit goes megamorphic at its call site: 19.6-23 ns a neighbour against the row's 2.5-2.7 (neighborAccessMicrobench --classes 20)",
+      "status": "open",
+      "kind": "bug",
+      "area": "logic speed",
+      "date": "2026-11-19",
+      "statusText": "Filed 2026-11-19 from N-319's kernel work (R-1565); not seen in Predator, whose reads are per class",
+      "result": "",
+      "next": "Make Grid's static reads fast (module-level neighbour memory and stride, no buffer test: today 6.7-7.3 ns at any class count) and point base-class code to them in the guide, or give GameObject a read that needs no per-map inlining; then the kernel at --classes 20 and a scene with a shared base class.",
+      "aliases": [
+        "megamorphic neighborCount",
+        "inherited neighbour read cliff",
+        "base class neighbour reads"
       ]
     }
   ],
@@ -39684,6 +39705,26 @@
       "commits": [
         "546c5afc"
       ]
+    },
+    {
+      "id": "R-1564",
+      "date": "2026-11-19",
+      "time": "20:58",
+      "timeFrom": "recorded",
+      "title": "N-319 answered: unique compiled sources change nothing (per-class call sites 2.2-2.9 ns either way); TurboFan types the inlined loads from the call site's map. Not shipped",
+      "verdict": "answered",
+      "text": "**N-319 answered: V8's eval cache may share the compiled copies' feedback, but it costs nothing measurable here.** With\nneighborAccessMicrobench's new options (29571d44 `--classes N`, 82ca17ab `--own-methods`), each source given a unique\ncomment against main's identical sources (Node, 2 runs each): per-class call sites (`--own-methods`) read 2.24-2.30 ns a\nneighbour at 12 classes and 2.84-2.87 at 20 on main, 2.45-2.48 and 2.84-2.97 with unique sources, the bare row 2.2-2.9\nin both. TurboFan inlines a copy at a monomorphic call site and types its loads from the receiver's map there, so a\nshared feedback vector does not reach the inlined loads. Inherited call sites (a base class's method, `--classes`\nwithout `--own-methods`) read the same either way: 20 classes 22.97 -> 22.01 ns. Not shipped. E-170's field accessors\ntake the same path (inlined at their call sites); left as they are.\n\nA copy per family (on the class right under GameObject) instead of per class was also tried: inherited call sites at\n12 classes 3.85 -> 2.43 ns, at 20 classes 22.5 -> 19.6, but Predator's per-class call sites (its FSMs, each for one\nclass) would read a family getter whose loads see every Lootable (megamorphic), which E-289 removed. Not shipped; the\ncliff past four classes is N-324.",
+      "commits": [
+        "29571d44",
+        "82ca17ab"
+      ]
+    },
+    {
+      "id": "R-1565",
+      "date": "2026-11-19",
+      "title": "N-324 filed: past four classes a base class's neighbour reads go megamorphic, 19.6-23 ns a neighbour; Grid's statics flat at 6.7-7.3",
+      "verdict": "note",
+      "text": "**N-324 filed: a neighbour read from a method more than four classes inherit costs 8 times the row.** neighborAccessMicrobench\n--classes 20 (three base classes' methods, each inherited by about 7 classes): `this.neighborCount` and\n`this.getNeighbor(k)` read 19.6 to 23 ns a neighbour, the bare row 2.5 to 2.7; at 12 classes (4 a family) 3.8 ns. Past\nfour receiver maps a call site's accessor and method loads go megamorphic and V8 stops inlining them, whoever wrote the\ngetter (E-289's copies, a family copy or GameObject's). Grid's statics from the same methods\n(`Grid.getNeighborCount(this.index)`, `Grid.getNeighbor(this.index, k)`, an ad hoc variant of the kernel) read 6.7 to\n7.3 ns at 5 and at 20 classes alike: no cliff, but slow, since each call reloads Grid's static fields\n(`_neighborData`, `_stride`) and tests the buffer."
     }
   ],
   "leads": [
