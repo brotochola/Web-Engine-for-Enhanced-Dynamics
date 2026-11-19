@@ -584,6 +584,17 @@
     );
   }
 
+  /**
+   * SST-17: the ring's write position now (every command claimed so far is below it). A producer writes the columns a
+   * command carries before it claims the command's slot, so a reader that loads this and then reads those columns sees
+   * at least what every command below it carries.
+   * @param {Int32Array} i32
+   * @returns {number}
+   */
+  function commandRingWritePosition(i32) {
+    return i32 ? Atomics.load(i32, HDR_WRITE) | 0 : 0;
+  }
+
   function drainCommandRing(i32, f32, handlers) {
     if (!i32 || !f32 || !handlers) return 0;
     var cap = i32[HDR_CAP] | 0;
@@ -604,7 +615,8 @@
       var d = f32[base + 6];
       switch (op) {
         case BOX2D_CMD.SET_TRANSFORM:
-          if (handlers.setTransform) handlers.setTransform(entity, a, b, c, d);
+          // The command's ring position last (SST-17: weedjsPost skips the ones a body made since already reflects).
+          if (handlers.setTransform) handlers.setTransform(entity, a, b, c, d, read);
           break;
         case BOX2D_CMD.SET_VELOCITY:
           if (handlers.setVelocity) handlers.setVelocity(entity, a, b);
@@ -804,5 +816,6 @@
     enqueueSetParticleUserDataList: enqueueSetParticleUserDataList,
     drainCommandRing: drainCommandRing,
     readCommandRingOverflow: readCommandRingOverflow,
+    commandRingWritePosition: commandRingWritePosition,
   };
 })(typeof globalThis !== 'undefined' ? globalThis : self);
