@@ -23302,7 +23302,8 @@
         "R-1453",
         "R-1458",
         "R-1472",
-        "R-1492"
+        "R-1492",
+        "R-1546"
       ],
       "result": "Fixed 2026-11-18 (7a4cdafe, R-1453): bisected to E-504 (d9bf2261); painting a just-uploaded picture into the cache's target slowed its later uploads for good; renderer 40.3 -> 12.7 ms, the barrio's cached floor kept.",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -23326,7 +23327,8 @@
         "R-1445",
         "R-1481",
         "R-1478",
-        "R-1492"
+        "R-1492",
+        "R-1546"
       ],
       "result": "Not a regression (R-1481): the kernel's contended case times worker start-up when main's workers, loading a bigger module graph, take over its fixed 300 ms to start; with all 3 ready main claims at v0.14.0's speed (-3 %). The harness should wait for a ready count.",
       "next": "Make audioSlotMicrobench's contended case wait until all its workers report ready (a shared ready count) instead of a fixed 300 ms (tests/bench only), then read the scoreboard row again.",
@@ -23349,7 +23351,8 @@
         "R-1445",
         "R-1482",
         "R-1472",
-        "R-1492"
+        "R-1492",
+        "R-1546"
       ],
       "result": "Not a regression (R-1482): on the ASUS the renderer's own work fell 1.426 -> 0.910 ms and frames drawn rose 30 -> 42 fps; the scoreboard judged raw STEP_MS, which holds the queue wait (N-311).",
       "next": "Nothing for the engine. The scoreboard reading STEP - WAIT (N-311) clears the row.",
@@ -23372,7 +23375,8 @@
         "R-1445",
         "R-1472",
         "R-1483",
-        "R-1492"
+        "R-1492",
+        "R-1546"
       ],
       "result": "Not a regression (R-1483): logic's own work 0.068 -> 0.063 ms on the ASUS; the scoreboard judged raw STEP_MS, which holds the wait (N-311). The row does about 0.07 ms of work a frame, far under any floor.",
       "next": "Nothing for the engine. N-311 (the scoreboard reads STEP - WAIT) clears the row; raising its load knob would let it judge QueryAABB at all.",
@@ -39077,6 +39081,15 @@
       "title": "The ASUS scoreboard of main 8c310e43 against v0.14.0 (new Intel driver, lockstep skipped: balls drifts by SST-15's prime collide): physics -15 to -20 %, the four rows of 2026-11-18 clear; tweenPool's kernel -23.5 % is a lead",
       "verdict": "note",
       "text": "ASUS lab jobs 0898y and 0898z (06:47-08:08): the engine scoreboard of local main 8c310e43 (0.14.46: the night's\nmerges, E-316, E-528, N-218's fix, E-527, N-315, the startup plan) against v0.14.0, --full-rev --skip-node, HD 620 on\nIntel 31.0.101.2145. Main was brought over as a git bundle (branch pcmain19), nothing pushed.\n\n- **0898y stopped at the lockstep gate.** balls read \"CPU MISMATCH, 582718 of 921600 pixels differ\"; liquidfun,\n  particles and lfstress were exact. The backlog session reads it as SST-15's prime collide (210adbb9): a dt-0 collide\n  before the start changes the next manifolds by rounding, and balls is chaotic. That is deliberate, so an exact\n  balls match against v0.14.0 cannot come back. Whether the gate keeps that baseline is the owner's call.\n- **0898z ran every row with --skip-lockstep** (speed only).\n\n**Kept or faster on main** (v0.14.0 -> main):\n- box2d physics -20.4 %; liquidfun -15.0 %; liquidfunCouple -7.8 %\n- bullets particle -15.8 %; decalBlit pixi -4.1 %\n- ray logic -22.0 %; rayVsBox2d -15.3 %; box2dRayJs -27.4 %\n- spatial spatialMax -65.1 %\n- Kernels: publishPose x5.6, gameObjectAccess +63.9 %, shadowStamp +58.6 %, painterRadix +19.8 %,\n  decorationCollect +18.6 %, attachedSway +19.5 %, preRenderWorker +14.0 %\n\n**The rows the 2026-11-18 ASUS scoreboard (R-1349) flagged:**\n\n| Row | 0898l (57044bd1) | 0898z (8c310e43) | Item |\n|---|---|---|---|\n| textureUpload pixi | +128.4 % | +1.1 % | N-292, fixed |\n| meshFillMoving pixi | +17.3 % | -25.7 % | N-294 |\n| queryAabb logic | +72.5 % | -2.5 % | N-295 |\n| audioSlots kernel | -44.0 % | +84.1 % | N-293's harness fix |\n\nAll four are clear now.\n\n**Worse on main:**\n- tweenPool kernel -23.5 %. It read +0.1 % in 0898l, so this is a lead for a change since 57044bd1. Kernels on this\n  laptop move up to about 30 % between sittings (R-1361), so it needs a check on a steadier machine.\n- decorationCollectYSort kernel -4.4 % (noise-sized here).\n\nRows marked FAIL have no judged primary (under the floor, or the scene is not in v0.14.0), as in 0895 and 0898l."
+    },
+    {
+      "id": "R-1546",
+      "date": "2026-11-19",
+      "time": "08:13",
+      "timeFrom": "recorded",
+      "title": "tweenPool's kernel, the ASUS scoreboard's lead (R-1492), checked on the main PC: a tie (about +3 % for main), its code unchanged since 57044bd1",
+      "verdict": "tie",
+      "text": "**tweenPool's kernel, the lead of the ASUS's scoreboard (R-1492: -23.5 % from 57044bd1 to 8c310e43), checked on the main\nPC: a tie.** The kernel's code (src/core/tween.js, spriteRenderer.js, component.js) did not change between 57044bd1 and\nmain (only entityIdWidth's MAX_ENTITIES_U32, and a spatial gather stamp, which it does not run). tweenPoolMicrobench from\n57044bd1's sources (git archive) and from main, 4 rounds alternated, 2026-11-19 to 08:13: tween65535 medians 745, 749,\n756, 849 against 792, 762, 754, 783 ops/s (about +2.7 % for main), tween65535Scattered 725, 733, 734, 813 against 747,\n709, 786, 761 (about +2.9 %). The ASUS reading was its kernels' sitting-to-sitting swing; nothing to bisect."
     }
   ],
   "leads": [
