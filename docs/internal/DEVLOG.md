@@ -6,6 +6,36 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Wednesday 18 November 2026 (late night) — Spatial's Long Frames, Spread Out
+
+The start-up work left two scenes breaking on the same thing: spatial's tail. Predator's capacity was not set by
+spatial's average frame but by its periodic long ones, and a capacity is judged on the 99th percentile of every
+worker's frame. Two days earlier the frame-by-frame samples had shown why: logic's staggered updates give each class
+of entity only a few phases inside spatial's refresh period, so a whole class asked for its neighbour lists on the same
+few frames of every period. Predator's civilians refreshed on 4 frames of 16; by night at crowd 2.5 spatial ran 3 ms on
+some frames and 28 to 46 ms on others.
+
+**Spreading the refresh.** Each class's slots now take their turn by blocks of entity ids, one block per tick of the
+period, so every frame refreshes a slice of the class and every list still arrives two frames before its tick. A second
+cycle hid under the first: lists kept by reuse (an entity that did not move) all reached the reuse cap together and were
+rebuilt together, every 31 frames, whatever the spread did. Those lists now wait for their own refresh frame. In
+Predator at crowd 2.5 spatial's 99th percentile went from 16.1 to 8.7 ms and its long frames from 5 to 14 a window to
+none; the scene holds crowd 2.4 (38 400 civilians and soldiers) where it held 1.6 (25 600), and physics is now what
+breaks first. It is the default.
+
+**Starting spatial when logic is done** was the other idea: let the neighbour search run in the part of the frame logic
+leaves free. In Predator it cut spatial's own work 17 %, and with the spread its 99th percentile reached 6.9 ms. In Boids,
+whose logic frame is long, it did the opposite: 70 000 boids instead of 91 000. So it is a setting, off by default, and the
+guide says when to try it.
+
+**Smaller things the night turned up.** The barrio's page took 205 ms to send its ten workers their init, because each
+message carried its own copy of the flowfields; they now live in shared memory once, and it takes 53 ms. The physics
+worker spends most of a second of a source start loading its scripts one by one, but it now ends together with the atlas
+and the workers' own scripts: in a source build every worker evaluates the page's whole engine graph through the scene
+module, about a megabyte more each, and that is the floor to lower next. Two "regressions" the laptop's scoreboard had
+reported were the instruments: the scoreboard counted a worker's waits as work, and an audio kernel's bench timed its
+workers' start-up when a slower disk outlasted its fixed 300 ms wait. Both tools are fixed.
+
 ## Wednesday 18 November 2026 (night) — Scenes That Start Sooner, and Room for a Million
 
 The owner asked a plain question of the backlog: of everything left, what would help most, what is short and worth it,
