@@ -18456,7 +18456,8 @@
         "R-1203",
         "R-1236",
         "R-1446",
-        "R-1459"
+        "R-1459",
+        "R-1488"
       ],
       "rank": 16
     },
@@ -38607,6 +38608,15 @@
       "title": "The ASUS scoreboard on the new Intel driver against 0895 on the old one, same code (57044bd1 vs v0.14.0): no broad shift on the HD 620; renderer own work within about 5 % where both sides ran",
       "verdict": "note",
       "text": "ASUS lab job 0898l (01:39-03:04): the 0895 scoreboard again, unchanged (main 57044bd1 against v0.14.0, --full-rev,\n--skip-node), on the new Intel driver 31.0.101.2145 (R-1485), to read the driver's effect on the HD 620 with the same\ncode. Each side's per-run worker lines are compared with 0895's, whose sitting ran on 27.20.100.8682 the night before.\nThe comparison takes the median over runs of each worker's STEP_MS and its own work (exact-frame step minus wait). A\ndriver effect moves both sides the same way; a move on one side only is the laptop's night-to-night drift. A\nscratch tool reads the two logs (lab compareScoreboards.mjs).\n\n- Only one worker moved at least 10 % the same way on both sides: box2d's physics, own work -16.7 % (v0.14.0) and\n  -13.4 % (57044bd1). That is CPU work, so it is drift between the nights, not the GPU driver.\n- The renderer's own work held within about +-5 % where both sides ran: textureUpload -4.4 / +3.3 %,\n  meshFillMoving +1.5 / -1.5 %, bullets +0.5 / +0.2 %, decalBlit +2.6 % (v0.14.0).\n- Three lighting rows exist on main only: sunShadowMap, unshaded and flashlights. There the renderer's own work read\n  about 20 % lower (-21.7, -20.8, -19.9 %). That may be the driver, or the 10 to 15 % night-to-night noise; it was not\n  confirmed.\n- Raw STEP_MS on main's side moved a lot either way (spawn +111 %, meshFillMoving -45 %, liquidfun -39 %): those are\n  waits inside the step (N-294, N-311), not work.\n- Reading: the new driver does not shift the HD 620's rows broadly. Older ASUS numbers stay comparable within the\n  laptop's usual cross-sitting noise. Note the driver for any HD 620 number from 2026-11-19 on."
+    },
+    {
+      "id": "R-1488",
+      "date": "2026-11-19",
+      "time": "03:25",
+      "timeFrom": "recorded",
+      "title": "N-218 on the ASUS, STEP - WAIT: keyedPack n=250000 churn=0.05 gbuf=1, logic's own work 17.2 -> 27.2 ms from bdcca2e7 to origin/main (+50.5 %, 4 of 4): work, not wait",
+      "verdict": "note",
+      "text": "ASUS lab job 0898n (03:05-03:25), runPredatorAbab on keyedPackStressScene ?n=250000&churn=0.05&gbuf=1, bdcca2e7 (A)\nagainst origin/main 29e233c3 (B), each side its src/ only (the scene is not in bdcca2e7; it comes from the runner tree,\nas kp-e387-gbuf ran; 0898m with --full-rev failed on that), 4 pairs, headless, owner logic. HD 620 on Intel\n31.0.101.2145, i7-7500U 2 cores.\n\n| Pair | bdcca2e7 logic step / wait / own (ms) | main logic step / wait / own (ms) |\n|---|---|---|\n| 1 | 11.054 / 0.464 / 10.59 | 28.393 / 0.023 / 28.37 |\n| 2 | 19.839 / 0.094 / 19.75 | 26.533 / 0.051 / 26.48 |\n| 3 | 15.013 / 0.263 / 14.75 | 24.242 / 0.048 / 24.19 |\n| 4 | 20.444 / 0.060 / 20.38 | 27.987 / 0.064 / 27.92 |\n\n- REGRESSION: logic's own work 17.247 -> 27.203 ms. Paired +50.5 %, worse in 4 of 4 pairs, +64.2 % against the other\n  workers.\n- Main's frames ran long (346 to 398 of 600 exact frames, logic load 141 to 176 %). bdcca2e7's held 470 to 598.\n- Unlike N-294 and N-295, this is work: main's logic waits only 0.02 to 0.06 ms a frame. N-218's raw +43 % on the\n  main PC is mostly or all logic's own work.\n- Next: job 0898o splits gbuf=1 from churn=0.05 at both ends (n=150000), then bisects origin/main's first-parent line\n  with the configuration that regresses most."
     }
   ],
   "leads": [
