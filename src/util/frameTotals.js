@@ -29,6 +29,17 @@ export const HEADER_BYTES = 64;
 export const HIST_BINS = 1024;
 /** 1/8 ms: the bin index is `(work * 8) | 0`, exact in binary. Covers 0 to 128 ms. */
 export const HIST_BIN_MS = 0.125;
+/**
+ * The last bin's lower edge: that bin holds every frame from here up, however long, so a percentile or a longest frame
+ * that lands in it reads as this value and means "at least this" (formatHistMs prints it with a ≥).
+ */
+export const HIST_CEILING_MS = (HIST_BINS - 1) * HIST_BIN_MS;
+
+/** A window's ms (totalsWindow) for a report: two decimals, or "≥127.9" at the histogram's ceiling (HIST_CEILING_MS). */
+export function formatHistMs(ms, digits = 2) {
+  if (typeof ms !== 'number' || !Number.isFinite(ms)) return String(ms);
+  return ms >= HIST_CEILING_MS ? `≥${HIST_CEILING_MS.toFixed(1)}` : ms.toFixed(digits);
+}
 export const SLOT_BYTES = HEADER_BYTES + HIST_BINS * 4;
 export const FRAME_TOTALS_BYTES = SLOT_COUNT * SLOT_BYTES;
 
@@ -101,20 +112,26 @@ export function readTotals(view, slot) {
 }
 
 function percentile(hist, total, q) {
-  // The frame at rank q·total, placed linearly inside its bin.
+  // The frame at rank q·total, placed linearly inside its bin; in the last bin, which holds every longer frame too,
+  // only its lower edge is known (HIST_CEILING_MS: at least that).
   const rank = q * total;
+  const last = hist.length - 1;
   let below = 0;
-  for (let b = 0; b < hist.length; b++) {
+  for (let b = 0; b < last; b++) {
     const n = hist[b];
     if (n > 0 && below + n >= rank) return (b + (rank - below) / n) * HIST_BIN_MS;
     below += n;
   }
-  return hist.length * HIST_BIN_MS;
+  return HIST_CEILING_MS;
 }
 
-/** The upper edge of the highest bin that holds a frame (the longest frame, to within a bin); 0 when empty. */
+/**
+ * The upper edge of the highest bin that holds a frame (the longest frame, to within a bin); HIST_CEILING_MS (at least
+ * that) when the last bin holds one; 0 when empty.
+ */
 function maxBinEdge(hist) {
-  for (let b = hist.length - 1; b >= 0; b--) if (hist[b] > 0) return (b + 1) * HIST_BIN_MS;
+  if (hist[hist.length - 1] > 0) return HIST_CEILING_MS;
+  for (let b = hist.length - 2; b >= 0; b--) if (hist[b] > 0) return (b + 1) * HIST_BIN_MS;
   return 0;
 }
 

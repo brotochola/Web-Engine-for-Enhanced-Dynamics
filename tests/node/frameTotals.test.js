@@ -14,7 +14,9 @@ import {
   HEADER_BYTES,
   HIST_BINS,
   HIST_BIN_MS,
+  HIST_CEILING_MS,
   SLOT_BYTES,
+  formatHistMs,
   FRAME_TOTALS_BYTES,
   createFrameTotalsBuffer,
   bindFrameTotals,
@@ -93,9 +95,26 @@ test('steps past the histogram land in its last bin; extra time is summed apart'
   assert.equal(w.frames, 10);
   assert.equal(w.stepMs, 500);
   assert.equal(w.extraMs, 2);
-  assert.ok(w.p95Ms >= (HIST_BINS - 1) * HIST_BIN_MS);
-  assert.equal(w.maxMs, HIST_BINS * HIST_BIN_MS);
+  // The last bin holds them all, however long: the tail reads its lower edge, and a report prints "at least".
+  assert.equal(w.p95Ms, HIST_CEILING_MS);
+  assert.equal(w.p99Ms, HIST_CEILING_MS);
+  assert.equal(w.maxMs, HIST_CEILING_MS);
+  assert.equal(HIST_CEILING_MS, (HIST_BINS - 1) * HIST_BIN_MS);
+  assert.equal(formatHistMs(w.p99Ms), '≥127.9');
+  assert.equal(formatHistMs(127.874), '127.87');
   assert.equal(w.longFrames, 10);
+});
+
+test('a tail just under the ceiling keeps its value; one frame past it moves only the max', () => {
+  const view = bindFrameTotals(createFrameTotalsBuffer());
+  const slot = frameClockSlot('physics');
+  const start = readTotals(view, slot);
+  for (let i = 0; i < 199; i++) addFrame(view, slot, 100, 0, 0);
+  addFrame(view, slot, 300, 0, 0);
+  const w = totalsWindow(start, readTotals(view, slot));
+  assert.ok(w.p99Ms >= 100 && w.p99Ms <= 100 + HIST_BIN_MS, `p99 ${w.p99Ms}`);
+  assert.equal(w.maxMs, HIST_CEILING_MS);
+  assert.equal(formatHistMs(w.maxMs), '≥127.9');
 });
 
 test('long frames count the frames whose work reached 16 ms, at the bin edge', () => {
