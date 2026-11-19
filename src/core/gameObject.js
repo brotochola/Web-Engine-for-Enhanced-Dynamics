@@ -88,6 +88,7 @@ import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from './messages.js';
 import { Tween } from './tween.js';
+import { definesMethodBelow } from './entityHooks.js';
 
 // E-474: the setters' hot reads as module consts, not imports. TurboFan folds a module const (and the typed arrays its
 // class holds); an import is a cell it loads and hole-checks at each use (R-1222: setXFromArgs, before E-459, did 6 cell
@@ -2957,18 +2958,27 @@ export class GameObject {
       GameObject.despawn(this.index);
       return;
     }
-    const i = this.index;
+    GameObject._despawnAt(this.constructor, this.index, this);
+  }
+
+  /**
+   * The despawn of EntityClass's entity i on this thread (despawn(), static despawn). E-528: `instance` is its instance
+   * here, or null: a type whose onDespawned is static (or that has none) needs none to despawn.
+   * @param {Function} EntityClass
+   * @param {number} i
+   * @param {GameObject|null} instance
+   */
+  static _despawnAt(EntityClass, i, instance) {
     // Claim the slot once: of two despawns at once (logic0's of an orphaned child and its own on another worker, or
     // two workers) one runs, and the other finds ACTIVE_DESPAWNING, as does a despawn from inside onDespawned. A plain
     // read let both through, and the free list then had the slot twice.
     // 0 = inactive: during spawn, onSpawned may reject before activate.
     const activeState = Atomics.compareExchange(Transform.active, i, 1, ACTIVE_DESPAWNING);
     if (activeState !== 1) {
-      if (activeState === 0) this._spawnAborted = true;
+      if (activeState === 0 && instance !== null) instance._spawnAborted = true;
       return;
     }
 
-    const EntityClass = this.constructor;
     const entityType = EntityClass.entityType;
     const hadPhysicsBody =
       !!(RigidBody.active?.[i] || Collider.active?.[i]);
@@ -2978,9 +2988,10 @@ export class GameObject {
     // ========================================
     // LIFECYCLE: Call onDespawned() BEFORE deactivating
     // This allows cleanup, saving state, triggering effects, etc.
-    if (this.onDespawned) {
-      this.onDespawned();
-    }
+    // E-528: its static form (the entity's index, `this` the class) wins over the method.
+    const onDespawned = EntityClass.onDespawned;
+    if (typeof onDespawned === 'function') onDespawned.call(EntityClass, i);
+    else if (instance !== null && instance.onDespawned) instance.onDespawned();
 
     GameObject._releaseSlotResources(i);
     GameObject._deactivateSlotComponents(i);
@@ -3039,11 +3050,27 @@ export class GameObject {
       return true;
     }
 
-    if (Transform.active[i] !== 1) return false;
     const C = GameObject.classByType[types[i]];
-    const instance = C !== undefined ? GameObject._instanceOf(C, i) : undefined;
-    if (instance === undefined || instance === null) return false;
-    instance.despawn();
+    if (C === undefined) return false;
+    if (Transform.active[i] !== 1) {
+      // E-528: in its own spawn on this worker (an onSpawned that despawns its entity by index: a static one has no
+      // `this`), the spawn is called off, as this.despawn() calls it off.
+      if (Transform.active[i] !== 0 || !isSpawningHere(i)) return false;
+      const spawning = GameObject._instanceOf(C, i);
+      if (spawning === undefined || spawning === null) return false;
+      spawning._spawnAborted = true;
+      return true;
+    }
+    // E-528: the instance despawns the entity when there is one, or when an onDespawned method needs one; a type
+    // whose onDespawned is static, or that has none, makes none.
+    let instance = C.instances[i - C.startIndex];
+    if ((instance === undefined || instance === null) && typeof C.onDespawned !== 'function' &&
+      definesMethodBelow(C, GameObject, 'onDespawned')) {
+      instance = GameObject._instanceOf(C, i);
+      if (instance === undefined || instance === null) return false;
+    }
+    if (instance !== undefined && instance !== null) instance.despawn();
+    else GameObject._despawnAt(C, i, null);
     return true;
   }
 
@@ -3747,9 +3774,12 @@ export class GameObject {
 
       // A hot reload puts the entity back as it was: its saved components already
       // hold what onSpawned did, and onSpawned again would spawn children twice.
-      if (instance.onSpawned && spawnConfig._hotRestore !== true) {
+      // E-528: its static form (the entity's index and the config, `this` the class) wins over the method.
+      const onSpawned = EntityClass.onSpawned;
+      if (spawnConfig._hotRestore !== true) {
         try {
-          instance.onSpawned(spawnConfig);
+          if (typeof onSpawned === 'function') onSpawned.call(EntityClass, i, spawnConfig);
+          else if (instance.onSpawned) instance.onSpawned(spawnConfig);
         } catch (error) {
           // In a worker, report it and finish the spawn (Unity keeps an object
           // whose Awake threw); elsewhere (tests, tools) keep throwing.
@@ -3939,6 +3969,10 @@ export class GameObject {
     const endIndex = (EntityClass.endIndex !== undefined)
       ? EntityClass.endIndex
       : (startIndex + EntityClass.poolSize);
+    // E-528: onDespawned's static form (no instance), else the method on the instance; a type with neither makes none.
+    const onDespawned = EntityClass.onDespawned;
+    const staticDespawned = typeof onDespawned === 'function' ? onDespawned : null;
+    const despawnedMethod = staticDespawned === null && definesMethodBelow(EntityClass, GameObject, 'onDespawned');
 
     // Phase 1: Collect all active indices and call lifecycle hooks
     // Using Set for O(1) lookup in batch removal methods
@@ -3976,11 +4010,14 @@ export class GameObject {
       if (isAnyComponentActive) {
         const hadPhysicsBody =
           !!(rigidBodyActive?.[i] || colliderActive?.[i]);
-        const instance = GameObject._instanceOf(EntityClass, i);
 
         // Call lifecycle hook (same as individual despawn)
-        if (instance?.onDespawned) {
-          instance.onDespawned();
+        if (staticDespawned !== null) {
+          staticDespawned.call(EntityClass, i);
+        } else {
+          const made = EntityClass.instances[i - startIndex];
+          const instance = made !== undefined && made !== null ? made : despawnedMethod ? GameObject._instanceOf(EntityClass, i) : null;
+          if (instance?.onDespawned) instance.onDespawned();
         }
 
         GameObject._releaseSlotResources(i);

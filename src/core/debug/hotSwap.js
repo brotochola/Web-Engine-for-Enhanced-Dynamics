@@ -20,6 +20,7 @@
 
 import { isEngineAccessor } from '../engineAccessors.js';
 import { ENGINE_INSTANCE_KEYS } from '../save/instanceFields.js';
+import { ENTITY_HOOKS } from '../entityHooks.js';
 
 /** Statics the engine writes on registered classes; the running class keeps them. */
 const ENGINE_STATICS = new Set([
@@ -65,20 +66,8 @@ const SHAPE_STATICS = [
   'forceProcessOnLogicWorker',
 ];
 
-/** Hooks whose presence the engine reads once (tick lists, listener gates, inboxes). */
-const SHAPE_HOOKS = [
-  'tick',
-  'onCollisionEnter',
-  'onCollisionStay',
-  'onCollisionExit',
-  'onCollisionHit',
-  'onScreenEnter',
-  'onScreenExit',
-  'onJointBreak',
-  'onMessage',
-  'onAnimationEnd',
-  'onGotShot',
-];
+/** Hooks whose presence the engine reads once (tick lists, listener gates, inboxes): tick and the hook table's. */
+const SHAPE_HOOKS = ['tick', ...ENTITY_HOOKS.filter((hook) => hook.presenceReadOnce).map((hook) => hook.name)];
 
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
 
@@ -149,9 +138,11 @@ export function shapeChange(old, fresh) {
     const b = hasOwn(fresh, key) ? shapeOf(fresh[key]) : 'none';
     if (a !== b) return `${old.name}.${key} changed`;
   }
+  // E-528: a hook's static form counts as its method does; moving a hook from one form to the other swaps in place.
+  const definesOwn = (C, hook) => hasOwn(C.prototype, hook) || hasOwn(C, hook);
   for (const hook of SHAPE_HOOKS) {
-    if (hasOwn(old.prototype, hook) !== hasOwn(fresh.prototype, hook)) {
-      return `${old.name}: ${hook}() was ${hasOwn(fresh.prototype, hook) ? 'added' : 'removed'}`;
+    if (definesOwn(old, hook) !== definesOwn(fresh, hook)) {
+      return `${old.name}: ${hook}() was ${definesOwn(fresh, hook) ? 'added' : 'removed'}`;
     }
   }
   if ((typeof old.tickAll === 'function') !== (typeof fresh.tickAll === 'function')) {
@@ -221,6 +212,11 @@ export function patchClass(old, fresh) {
     if (typeof key === 'string' && (ENGINE_STATICS.has(key) || SHAPE_STATICS.includes(key))) continue;
     if (key === Symbol.hasInstance) continue;
     Object.defineProperty(old, key, Object.getOwnPropertyDescriptor(fresh, key));
+  }
+  // E-528: a static hook the new version no longer has (it moved to a method) leaves the running class, or it would
+  // keep winning over the method.
+  for (const hook of ENTITY_HOOKS) {
+    if (hasOwn(old, hook.name) && !hasOwn(fresh, hook.name)) delete old[hook.name];
   }
 
   // The new class stands for the running one.

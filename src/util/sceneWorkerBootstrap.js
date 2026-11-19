@@ -16,7 +16,7 @@ import { SharedResource } from '../core/sharedResource.js';
 import { bootScriptsToLoad, collectWorkerScriptsToLoad } from './sceneScript.js';
 import { frameClockSlot } from './frameClock.js';
 import { loadMark } from './loadMarks.js';
-import { definesBelow } from './listenerTags.js';
+import { definesHook } from '../core/entityHooks.js';
 import { GameObject } from '../core/gameObject.js';
 import { box2dMemoryPages } from '../box2d/box2dMemory.js';
 import { GpuParticles } from '../core/gpuParticles.js';
@@ -335,7 +335,7 @@ function buildRegisteredClassesInfo(scene) {
     entityType: r.entityType,
     deriveSpeed: r.class.deriveSpeed === true,
     isStatic: r.class.isStatic === true,
-    animationEnd: definesBelow(r.class, GameObject, 'onAnimationEnd'),
+    animationEnd: definesHook(r.class, GameObject, 'onAnimationEnd'),
     // E-200: the spatial worker gives a class that ticks every few frames its lists before its ticks.
     tickInterval: r.class.tickInterval == null ? 1 : r.class.tickInterval | 0,
     ticks: GameObject.typeNeedsLogicTick(r.class),

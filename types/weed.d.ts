@@ -1673,31 +1673,96 @@ export declare class GameObject {
   getJoints(): number[];
   markDirty(): void;
 
-  // Lifecycle hooks (override). The collision / screen / joint ones need their tag
-  // component in static components; the scene warns at load when one is missing.
+  // Lifecycle hooks (override). The collision, screen, joint and direction ones need their component in static
+  // components; the scene warns at load when one is missing.
+  // BEGIN entity hooks: scripts/syncEntityHooks.mjs writes them from src/core/entityHooks.js (edit the table).
+  // Each entity hook as a method and in its static form (E-528): the static one takes the entity's index first, runs
+  // with the class as `this` and no instance, wins over the method of the same name and is inherited like one.
   /**
-   * Each spawn from the pool; spawnConfig keys were applied first. The config is the object `Type.spawn` was given
-   * (a SpawnConfig, `{}` when none): typed any so a subclass declares the keys it reads, `onSpawned({ x, y })`.
+   * Each spawn from the pool, after its spawn config keys (it may override them). The config is the object Type.spawn
+   * was given ({} when none), typed any so a subclass declares the keys it reads. Runs on the thread that sets the
+   * spawn up.
    */
   onSpawned(spawnConfig: any): void;
-  /** Before the entity returns to the pool. */
+  static onSpawned?(entityIndex: number, spawnConfig: any): void;
+  /** Before the entity returns to the pool. Runs on the thread that despawns the entity. */
   onDespawned(): void;
-  /** Needs CollisionListener. */
+  static onDespawned?(entityIndex: number): void;
+  /** Needs CollisionListener. The first frame this entity touches another. Runs on a logic worker, before the ticks. */
   onCollisionEnter(otherIndex: number): void;
-  /** Needs CollisionListener. */
+  static onCollisionEnter?(entityIndex: number, otherIndex: number): void;
+  /** Needs CollisionListener. Each later frame it still touches the other. Runs on a logic worker, before the ticks. */
   onCollisionStay(otherIndex: number): void;
-  /** Needs CollisionListener. */
+  static onCollisionStay?(entityIndex: number, otherIndex: number): void;
+  /**
+   * Needs CollisionListener. The first frame it no longer touches the other. Runs on a logic worker, before the ticks.
+   */
   onCollisionExit(otherIndex: number): void;
-  /** Needs CollisionListener and Collider.enableHitEvents. Normal points from this entity to the other. */
+  static onCollisionExit?(entityIndex: number, otherIndex: number): void;
+  /**
+   * Needs CollisionListener. A hard impact above the world's hit threshold (Collider.enableHitEvents on): the contact
+   * point, the normal from this entity to the other, the approach speed. Runs on a logic worker, before the ticks.
+   */
   onCollisionHit(otherIndex: number, px: number, py: number, nx: number, ny: number, approachSpeed: number): void;
-  /** Needs JointBreakListener. */
+  static onCollisionHit?(
+    entityIndex: number,
+    otherIndex: number,
+    px: number,
+    py: number,
+    nx: number,
+    ny: number,
+    approachSpeed: number,
+  ): void;
+  /**
+   * Needs JointBreakListener. A joint on this entity went past its force or torque threshold and was destroyed. Runs on
+   * a logic worker, before the ticks.
+   */
   onJointBreak(jointIndex: number, entityA: number, entityB: number): void;
-  /** Needs CameraInOutListener. */
+  static onJointBreak?(entityIndex: number, jointIndex: number, entityA: number, entityB: number): void;
+  /**
+   * Needs CameraInOutListener. The camera's view now holds the entity. Runs on a logic worker, after its tick (after
+   * the ticks for a type without tick()).
+   */
   onScreenEnter(): void;
-  /** Needs CameraInOutListener. */
+  static onScreenEnter?(entityIndex: number): void;
+  /**
+   * Needs CameraInOutListener. The camera's view no longer holds it. Runs on a logic worker, after its tick (after the
+   * ticks for a type without tick()).
+   */
   onScreenExit(): void;
-  /** A BulletPool bullet hit this entity. */
+  static onScreenExit?(entityIndex: number): void;
+  /**
+   * A BulletPool bullet hit this entity: the damage, where, the shooter and its entity type. Runs on a logic worker, at
+   * the start of its frame.
+   */
   onGotShot(damage: number, hitX: number, hitY: number, ownerId: number, shooterEntityType: number): void;
+  static onGotShot?(
+    entityIndex: number,
+    damage: number,
+    hitX: number,
+    hitY: number,
+    ownerId: number,
+    shooterEntityType: number,
+  ): void;
+  /**
+   * A message from sendTo or scene.sendToEntity (the scene lists its name in static messages); from is the sender's
+   * index, -1 for the scene. Runs on a logic worker, the frame after it was sent, before the ticks.
+   */
+  onMessage(name: string, from: number, a: number, b: number, c: number, d: number): void;
+  static onMessage?(entityIndex: number, name: string, from: number, a: number, b: number, c: number, d: number): void;
+  /**
+   * A play-once animation (setAnimation(name, false)) or an Adobe clip played without loop finished. Animations advance
+   * while drawn, so an off-screen one waits. Runs on a logic worker, the frame after, before the ticks.
+   */
+  onAnimationEnd(name: string): void;
+  static onAnimationEnd?(entityIndex: number, name: string): void;
+  /**
+   * Needs DirectionalSprite. The direction its DirectionalSprite draws changed (and once when it draws its first): the
+   * sheet's name of it. Runs on a logic worker, after the ticks.
+   */
+  onDirectionChanged(direction: string): void;
+  static onDirectionChanged?(entityIndex: number, direction: string): void;
+  // END entity hooks
 
   // Transform and physics
   setPosition(x: number, y: number): this;
@@ -1836,19 +1901,6 @@ export declare class GameObject {
   sendTo(other: number | GameObject, name: string, a?: number, b?: number, c?: number, d?: number): boolean;
   /** Tell the main thread: scene.on(name, fn) gets fn(data, entityIndex, className). Structured-cloned. */
   emit(name: string, data?: unknown): boolean;
-  /**
-   * A play-once animation finished (setAnimation(name, false) after its last frame showed, or an
-   * Adobe clip played without loop). Runs the frame after, on the owning logic worker. Animations
-   * advance while drawn, so an off-screen one waits.
-   */
-  onAnimationEnd(name: string): void;
-  /**
-   * DX-DIRSPRITE: the direction a DirectionalSprite draws changed (and once for its first), after the frame's ticks on a
-   * logic worker. For what follows a direction: a collider, an anchor, a light on the front.
-   */
-  onDirectionChanged(direction: string): void;
-  /** Override to receive sendTo / scene.sendToEntity messages. from = -1 for the scene. */
-  onMessage(name: string, from: number, a: number, b: number, c: number, d: number): void;
   /** Is this entity an EntityClass or a subclass? Another entity: GameObject.is(index, EntityClass). */
   is(EntityClass: Function): boolean;
   /** Does this entity's type list ComponentClass? Another entity: GameObject.hasComponent(index, ComponentClass). */
