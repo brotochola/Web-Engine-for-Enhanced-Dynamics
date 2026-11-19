@@ -18463,7 +18463,8 @@
         "R-1236",
         "R-1446",
         "R-1459",
-        "R-1488"
+        "R-1488",
+        "R-1489"
       ],
       "rank": 16
     },
@@ -38789,6 +38790,15 @@
         "06d05824",
         "b8c0d786"
       ]
+    },
+    {
+      "id": "R-1489",
+      "date": "2026-11-19",
+      "time": "07:26",
+      "timeFrom": "recorded",
+      "title": "N-218 bisected on the ASUS: only at n=250000 (no regression at 150000 in any gbuf or churn mix), first-parent to 700d9650 Merge dx/barrios, then to Transform.parent: 5d48642f (a parent read in every pose write) and 82240fc8",
+      "verdict": "note",
+      "text": "ASUS lab jobs 0898o to 0898s (06:18-07:26), keyedPackStressScene, logic's own work (exact-frame step minus wait). Each\nrevision swaps its src/ into the worktree C:\\weed-k218, which keeps asus-lab's runner and scenes, as the ABAB did. HD 620\non Intel 31.0.101.2145, i7-7500U.\n\n**Where it shows (0898o and 0898p, bdcca2e7 against origin/main 29e233c3, 2 runs a side):**\n\n| n | gbuf, churn | bdcca2e7 | main | Change |\n|---|---|---|---|---|\n| 150 000 | 1, 0.05 | 5.7 / 7.0 | 6.3 / 6.5 | -8 % |\n| 150 000 | 0, 0.05 | 8.1 / 8.7 | 7.9 / 9.5 | +8 % |\n| 150 000 | 1, 0 | 5.4 / 5.4 | 5.1 / 5.2 | -5 % |\n| 150 000 | 0, 0 | 6.8 / 7.1 | 7.1 / 5.7 | 0 % |\n| 250 000 | 1, 0.05 | 10.8 / 15.5 | 24.6 / 27.3 | +76 % |\n| 250 000 | 0, 0.05 | 17.3 / 17.9 | 27.2 / 26.5 | +51 % |\n| 250 000 | 1, 0 | 17.3 / 18.3 | 23.1 / 23.1 | +26 % |\n| 250 000 | 0, 0 | 22.6 / 22.6 | 26.0 / 23.4 | +15 % |\n\nThe regression needs neither gbuf nor churn; it needs the entity count. At 150 000 logic fits its frame and nothing\nmoves; at 250 000 the per-entity arrays outgrow the laptop's 4 MB L3.\n\n**The first-parent bisect** (gbuf=1, churn=0.05, n=250000, 0898p) ended at **700d9650**, Merge dx/barrios (48\ncommits). Good through b01087b1 (19.0 ms), bad from it on.\n\n**The staircase through the merge** (0898r, 4 runs each, medians in ms):\n- b01087b1 19.0, ddbc02cb 18.1\n- **cec01ae4 (Merge dx/barrios-parent: Transform.parent) 23.5**\n- 80a0ba23 20.9, da211082 24.2, 0e157f7f 25.9, f01e5a85 24.4, 87a37dcd 22.0, 700d9650 24.8\n\nBefore cec01ae4 the 8 runs read 16 to 19.2 ms; from it on, 28 runs read 19.9 to 26.3. The in-branch bisect (0898q)\nread in-between values and wrongly blamed a demo merge.\n\n**The staircase inside dx/barrios-parent** (0898s, 4 runs each, medians in ms):\n- fork c80e7946 19.0, 462ff20a 17.8, 7c5c938e 18.7, ceeeb1ab 16.5, 350180f2 18.9, 1ad06d1b 18.7\n- **5d48642f 20.8**\n- **82240fc8 23.1**\n- 9eab7f5f 23.4, 976b4d8a 23.0\n\n**Reading:**\n- **5d48642f** (GameObject: transform.parent; a child's pose writes are ignored) adds a read of Transform.parent[i]\n  to every pose write: poseMoved (body-less movers), setPositionFromArgs, set rotation and setRotationCS. At 250 000\n  entities that column (1 MB more) misses the cache on every moving entity.\n- **82240fc8** (logic0's orphan drain) adds one call a frame, two reads when nothing is queued. A step there would be\n  a code-shape effect on logic's frame path (TurboFan's inlining budget), not its own work.\n- 0898t (8 runs of each) confirms both steps."
     }
   ],
   "leads": [
