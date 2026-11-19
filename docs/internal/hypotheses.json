@@ -39059,7 +39059,7 @@
     {
       "id": "R-1545",
       "date": "2026-11-19",
-      "time": "07:55",
+      "time": "07:53"
       "timeFrom": "recorded",
       "title": "SST-21's prime needs the neighbour readers known before the start; E-176 learns them at run time (logic's first frame): a static declaration on the class, or every type with a visualRange counted as a reader until logic's first frame; the owner's call",
       "verdict": "note",
