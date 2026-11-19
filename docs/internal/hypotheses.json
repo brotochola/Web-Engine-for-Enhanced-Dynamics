@@ -23493,7 +23493,7 @@
         "R-1484"
       ],
       "result": "Cause found 2026-11-18 (R-1461, R-1462, R-1480): the Intel D3D11 driver (27.20.100.8682) takes a file lock on Chrome's shader cache file (LocalLow/Intel/ShaderCache) in its worker threads; when the lock breaks, every later shader compile waits its 1 s timeout and the GPU main thread waits for it, about 30 compiles in a row. With no cache file allowed, 0 freezes of 23 against 10 of 23 with a fresh one.",
-      "next": "Decide with the owner: the ASUS lab denies Chrome's Intel cache file for its benches (the driver never reuses it: it grows 200 KB a run); try a current Intel driver on the HD 620 with a fresh cache; whether the engine should shorten the freeze (fewer programs at start) or prefer WebGPU on Intel Gen9; whether to report it to Intel or Chromium.",
+      "next": "Decide with the owner: the ASUS lab denies Chrome's Intel cache file for its benches (the driver never reuses it: it grows 200 KB a run); try a current Intel driver on the HD 620 with a fresh cache; whether the engine should shorten the freeze (fewer programs at start) or prefer WebGPU on Intel Gen9 (rarer, not cured: 2 of 15 against WebGL 8 of 15 under load, R-1484); whether to report it to Intel or Chromium.",
       "id": "N-298",
       "kind": "bug",
       "area": "render",
