@@ -499,6 +499,7 @@ class GameEngine {
       scene._showFatalErrorMessage('renderer', 'GPU lost again', 'The GPU was lost again right after the game restarted.');
       return;
     }
+    loadMark('gpu lost');
     const save = this._captureGpuLossSave(scene);
     save.catch(() => {}); // a failed capture is reported by the restart that awaits it, or by nobody if none comes
     this._gpuLoss = { scene, backend, save, timer: 0 };
@@ -522,7 +523,9 @@ class GameEngine {
   async _captureGpuLossSave(scene) {
     const m = await import('./save/saveGame.js');
     const payload = await m.captureSavePayload(scene, { allEntities: true, instanceFields: true, staysPaused: true });
-    return m.decodeSaveUncompressed(m.encodeSaveUncompressed(payload));
+    const coded = m.decodeSaveUncompressed(m.encodeSaveUncompressed(payload));
+    loadMark('save coded');
+    return coded;
   }
 
   /** N-301: the browser restored the WebGL context: restart the scene from the save taken at the loss. */

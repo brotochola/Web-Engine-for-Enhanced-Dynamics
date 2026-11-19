@@ -1313,6 +1313,7 @@ class Scene {
       const { applySavePayloadToScene } = await import('./save/saveGame.js');
       // A hot reload's save holds every entity: replace them all, at their own indices.
       await applySavePayloadToScene(this, payload, { allTypes: this._restoreAllTypes === true });
+      loadMark('restore applied');
       await this.onLoadGame(payload);
       await this._flushCreateSpawns();
     } else {

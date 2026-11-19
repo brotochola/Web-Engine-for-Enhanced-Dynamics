@@ -26,6 +26,7 @@ import { Decal } from '../decal.js';
 import { GameObject } from '../gameObject.js';
 import { Transform } from '../../components/transform.js';
 import { VERSION } from '../../version.js';
+import { loadMark } from '../../util/loadMarks.js';
 import {
   applySharedResources,
   applyTime,
@@ -182,6 +183,7 @@ export async function captureSavePayload(scene, options = {}) {
   const settle =
     !scene.config?.manualStep && !scene.state?.pause && typeof scene.pauseAndSettle === 'function';
   if (settle) await scene.pauseAndSettle();
+  loadMark('save settled');
   let payload;
   let liquidFun = null;
   try {
@@ -194,20 +196,24 @@ export async function captureSavePayload(scene, options = {}) {
         console.warn('[SaveGame] LiquidFun snapshot failed:', err);
       }
     }
+    loadMark('save liquidFun');
     let decals = null;
     try {
       decals = await Decal.packSnapshot(scene);
     } catch (err) {
       console.warn('[SaveGame] Decal snapshot failed:', err);
     }
+    loadMark('save decals');
     const globals = {};
     if (liquidFun) globals.liquidFun = liquidFun;
     if (decals) globals.decals = decals;
     if (options.instanceFields === true) {
       const fields = await requestInstanceFields(scene);
       globals.instanceFields = { perWorker: fields ? fields.perWorker : [], forced: readForcedWorkers() };
+      loadMark('save instance fields');
     }
     payload = buildSavePayload(scene, globals, { allEntities: options.allEntities === true });
+    loadMark('save built');
   } finally {
     if (settle && options.staysPaused !== true) scene.resume();
   }

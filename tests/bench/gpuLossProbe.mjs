@@ -98,7 +98,12 @@ async function probe(browser, port, backend) {
     await fs.mkdir(outDir, { recursive: true });
     await fs.writeFile(path.join(outDir, `${label}-${backend}-before.png`), before);
     await fs.writeFile(path.join(outDir, `${label}-${backend}-after.png`), after);
-    return { restartMs, overlay, lit, moving, againstBefore, messages: messages.slice(lostAt) };
+    // The page's load marks of the restart (the save's parts, then the load's), from the loss on.
+    const marks = await page.evaluate(() => {
+      const scene = window.__weedGpuLossOld?.game?.currentScene;
+      return scene && scene !== window.__weedGpuLossOld ? scene._loadMarks.main.slice() : [];
+    });
+    return { restartMs, overlay, lit, moving, againstBefore, marks, messages: messages.slice(lostAt) };
   } finally {
     await page.close();
   }
@@ -125,6 +130,14 @@ try {
         `lit before/after ${r.lit[0].nonBlack}/${r.lit[1].nonBlack} of ${r.lit[0].pixels}, ` +
         `changed over the next second ${pct(r.moving)}, against before the loss ${pct(r.againstBefore)} -> ${back ? 'BACK' : 'NOT BACK'}`
     );
+    const from = r.marks.indexOf('gpu lost');
+    if (from >= 0) {
+      const steps = [];
+      for (let i = from + 2; i < r.marks.length; i += 2) {
+        steps.push(`${r.marks[i]} +${Math.round(r.marks[i + 1] - r.marks[i - 1])}`);
+      }
+      console.log(`  restart marks (ms since the previous): ${steps.join(', ')}`);
+    }
     for (const m of r.messages.slice(0, 12)) console.log(`  ${m}`);
   }
 } finally {
