@@ -57,7 +57,9 @@ of `docs/internal/` (≈13k lines); follow the linked documents for detail.
   scene knobs) go in their own commit before the change they measure.
 - **No AI attribution trailers** (no `Co-authored-by`, no "Made with"). Commits belong to the human
   author configured in git; the commit-msg hook strips Cursor's old trailers.
-- Commits leave the version alone. Only `npm run release -- patch|minor` changes it: it builds
+- Every commit bumps the patch version (pre-commit hook `scripts/git-hooks/pre-commit` runs
+  `scripts/bumpPatchVersion.js`: 0.14.1, 0.14.2, ...), whoever commits. `npm run release -- patch|minor`
+  sets the release version (the hook skips that commit): it builds
   and checks the bundles, commits and tags `vX.Y.Z`, publishes to npm and pushes. `dist/` is
   fresh when it was built from the working tree's sources (`npm run check:dist`, a hash in
   `dist/.build-inputs`), whatever the version.

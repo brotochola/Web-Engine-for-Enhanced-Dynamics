@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 import { nextVersion } from '../../scripts/release.mjs';
 
-// The version changes only in `npm run release`; commits leave it alone (no pre-commit bump).
+// Every commit bumps the patch version (pre-commit hook); the release commit skips the hook's bump.
 
 test('release computes patch, minor, major or an explicit version', () => {
   assert.equal(nextVersion('0.12.209', 'patch'), '0.12.210');
@@ -15,7 +15,9 @@ test('release computes patch, minor, major or an explicit version', () => {
   assert.equal(nextVersion('0.12.209', undefined), null);
 });
 
-test('no git hook changes the version', () => {
-  assert.equal(fs.existsSync(new URL('../../scripts/git-hooks/pre-commit', import.meta.url)), false);
-  assert.equal(fs.existsSync(new URL('../../scripts/bumpPatchVersion.js', import.meta.url)), false);
+test('the pre-commit hook bumps the patch version and skips the release commit', () => {
+  const hook = fs.readFileSync(new URL('../../scripts/git-hooks/pre-commit', import.meta.url), 'utf8');
+  assert.ok(hook.includes('bumpPatchVersion.js'));
+  assert.ok(hook.includes('WEED_RELEASE'));
+  assert.ok(fs.existsSync(new URL('../../scripts/bumpPatchVersion.js', import.meta.url)));
 });
