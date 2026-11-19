@@ -129,6 +129,23 @@ test('the light pass keeps its old sun term without the map and takes the map\'s
   assert.doesNotMatch(on, /totalLight \+= sunColor \* uSunIntensity;/);
 });
 
+// N-317: the map holds the screen alone. A roof near the screen's bottom lands its sun ray below the map; read there, the
+// texture's clamp gave it the edge row's shade, stretched up the roof in vertical bands as the camera moved.
+test('a sun ray that lands past the map\'s edge reads nothing there: lit, in both languages, before any tap', async () => {
+  const { lightingSource } = await import('../../src/render/faceMap.js');
+  for (const [name, check, tap] of [
+    ['lightingBasic.frag.glsl', 'if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 1.0;', 'lit += sunTap('],
+    ['lightingBasic.wgsl', 'if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0))) { return 1.0; }', 'lit += sunMapLit('],
+  ]) {
+    const on = lightingSource(shader(name), { faces: true, sunMap: true, ids: true });
+    const body = on.slice(on.search(/(float|fn) sunVisibility\(/));
+    const at = body.indexOf(check);
+    assert.ok(at > 0, `${name}: the bounds check`);
+    assert.ok(at < body.indexOf(tap), `${name}: before the taps`);
+    assert.ok(body.indexOf('weedWorldToNorm(') < at, `${name}: on the ray's landing point`);
+  }
+});
+
 test('lighting.sunShadows and lampShadows are keys, the layer by default', () => {
   assert.equal(LIGHTING_DEFAULTS.sunShadows, 'layer');
   assert.equal(LIGHTING_DEFAULTS.lampShadows, 'layer');

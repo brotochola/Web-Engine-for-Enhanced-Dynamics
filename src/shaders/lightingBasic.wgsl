@@ -228,6 +228,8 @@ fn sunVisibility(p: vec3<f32>, selfId: f32) -> f32 {
   let k = uniforms.uSunMapK;
   let land = p.xy - p.z * k.xy;
   let uv = weedWorldToNorm(vec2<f32>(land.x, land.y * k.z));
+  // N-317: a ray that lands past the map's edge (the screen's) has nothing to read: lit (lightingBasic.frag.glsl says why).
+  if (any(uv < vec2<f32>(0.0)) || any(uv > vec2<f32>(1.0))) { return 1.0; }
   let size = vec2<i32>(textureDimensions(uSunMap, 0));
   let c = vec2<i32>(floor(uv * vec2<f32>(size)));
   // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with

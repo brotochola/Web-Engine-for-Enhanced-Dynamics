@@ -176,6 +176,9 @@ float sunTap(vec2 uv, float above, float selfId) {
 float sunVisibility(vec3 p, float selfId) {
   vec2 land = p.xy - p.z * uSunMapK.xy;
   vec2 uv = weedWorldToNorm(vec2(land.x, land.y * uSunMapK.z));
+  // N-317: the map holds the screen alone, so a ray that lands past its edge has nothing to read: lit. Read at the edge
+  // (the texture clamps), the edge row's shade ran up the roofs near the screen's bottom in vertical bands.
+  if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 1.0;
   vec2 texel = 1.0 / uViewport;
   // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
