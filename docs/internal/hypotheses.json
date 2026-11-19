@@ -19051,7 +19051,8 @@
         "R-1190",
         "R-1195",
         "R-1205",
-        "R-1206"
+        "R-1206",
+        "R-1589"
       ]
     },
     {
@@ -23832,7 +23833,8 @@
       ],
       "records": [
         "R-1422",
-        "R-1429"
+        "R-1429",
+        "R-1589"
       ]
     },
     {
@@ -39374,6 +39376,15 @@
       "title": "Box2D's thread count does not raise Predator's capacity on the ASUS (2: crowd 0.15, 3 and 4: 0.2); drawn frames set the edge at 0.25, every worker's p99 under 11.5 ms",
       "verdict": "note",
       "text": "ASUS lab job 0899n (18:05-18:20): Predator's capacity with Box2D on 2, 3 and 4 threads. runCapacity at main b190651d,\n`?physicsWorkers=n` (Predator's default 4, the engine's too), start 0.25, floor 0.1, headed, --src. i7-7500U 2C/4T,\nHD 620.\n\n| Box2D threads | capacity | crowd 0.25 | crowd 0.2 |\n|---|---|---|---|\n| 2 | 0.15 (2 400) | FAIL, drawn 57.37 fps | FAIL, drawn 58.39 fps |\n| 3 | 0.2 (3 200) | FAIL, drawn 57.59 fps | PASS twice |\n| 4 | 0.2 (3 200) | FAIL, drawn 55.87 fps | PASS twice |\n\n- **The thread count does not raise Predator's capacity on the 2-core laptop.** 3 and 4 tie at crowd 0.2, and 2 is a\n  step lower. That step is one run at 58.4 fps against the 59 bar, so possibly noise.\n- **At the edge the drawn frames set the limit, not physics.** Every crowd-0.25 run failed on drawn fps (55.9 to\n  57.6), while every worker's p99 stayed between 7.8 and 11.5 ms. Physics's p99 breaks only from crowd 0.3 (R-1587).\n- **For DX-ELASTIC and DX-AUTOQUALITY:** no case here for fewer Box2D threads on 4 logical CPUs. The engine's fixed\n  default of 4 is fine at the capacity edge. R-1275's \"2 threads take the bad tails away\" was at crowd 0.5, past this\n  laptop's capacity.\n- The next limit to read is the HD 620's frame time at crowd 0.25 in daylight."
+    },
+    {
+      "id": "R-1589",
+      "date": "2026-11-19",
+      "time": "18:26",
+      "timeFrom": "recorded",
+      "title": "Predator by day on the HD 620: GPU 12-14.6 ms a frame at crowd 0.15 and 0.25; the tilemap's 7 layers 4.3 ms, three full-screen composites 2.4 ms, the entities 2.2 ms",
+      "verdict": "note",
+      "text": "ASUS lab job 0899o (18:23-18:26): where the HD 620's frame goes in Predator by day at the laptop's capacity edge\n(R-1588: crowd 0.25 drew 55.9 to 57.6 fps with every worker's p99 under 11.5 ms). glFrameRecorder at main 57a0d4ac\n(E-514 in), --src, zoom 0.216, 1920x1080, Intel 31.0.101.2145, 3 s recorded after 15 s.\n\n- **The GPU takes 12 to 14.6 ms a frame and barely moves with the crowd.** By pass: 14.59 ms at crowd 0.25 and\n  14.47 ms at 0.15. The per-draw timer queries read 12.07 ms. Only about 2 ms are left before a missed vsync, so any\n  hitch drops a frame: the drawn 56 to 57.6 fps.\n- **The costliest draws at crowd 0.25 (ms a frame):**\n\n  | what | ms |\n  |---|---|\n  | the tilemap, 7 full-screen [uGid,uTileset] draws (1.59, 0.90, 0.90, 0.28, 0.26, 0.22, 0.17) | 4.3 |\n  | full-screen composites of the low-resolution buffers (prog [uTextures]: 480x270 1.34 and 0.55, 960x540 0.53) | 2.4 |\n  | the entities, one instanced draw of 5 891 | 2.2 |\n  | the 960x540 pass (98 instances) | 1.5 |\n  | the light pass (480x270 tiles) | 0.48 |\n\n- **E-432's next on a weak GPU:** E-432 drew each layer over its chunks with tiles (GTX 1650: 1.10 -> 0.73 ms). Here\n  the same 7 draws cost 4.3 ms, about a third of the frame. Its next, one pass over the tilemap's layers (front to\n  back, stopping at the first opaque texel), would turn up to 7 rasterized and blended layers into one per pixel. On\n  this GPU, pixels drawn are the cost (R-1584).\n- **The three full-screen composites (2.4 ms)** each read a low-resolution buffer and blend it over the 1080p frame.\n  One composite sampling all three would save two full-screen passes, in the spirit of DX-POSTFUSE. Not measured."
     }
   ],
   "leads": [
