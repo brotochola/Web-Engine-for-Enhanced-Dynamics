@@ -515,8 +515,10 @@ class GameEngine {
   }
 
   /**
-   * N-301: the running world's save, every entity as a hot reload keeps it, the world left paused; through the codec,
-   * as a stored save would come back.
+   * N-301: the running world's save, every entity as a hot reload keeps it, the world left paused. N-314: kept as
+   * built, not passed through the codec (1.2 s in Predator): for the entities the codec only normalizes values (NaN
+   * and strings to null, booleans to numbers) and groups them by type, which a restore at exact indices does not
+   * depend on. The scene's own data and the instance fields, JSON in a stored save, go through JSON as there.
    * @param {object} scene
    * @returns {Promise<object>}
    */
@@ -528,9 +530,10 @@ class GameEngine {
       staysPaused: true,
       decalsAsPng: false,
     });
-    const coded = m.decodeSaveUncompressed(m.encodeSaveUncompressed(payload));
-    loadMark('save coded');
-    return coded;
+    if (payload.custom !== undefined) payload.custom = JSON.parse(JSON.stringify(payload.custom));
+    if (payload.instanceFields) payload.instanceFields = JSON.parse(JSON.stringify(payload.instanceFields));
+    loadMark('save copied');
+    return payload;
   }
 
   /** N-301: the browser restored the WebGL context: restart the scene from the save taken at the loss. */
