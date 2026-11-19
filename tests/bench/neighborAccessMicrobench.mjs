@@ -2,11 +2,13 @@
 /**
  * E-141: neighbour reads from game code, as entities' own ticks do them, over several entity classes.
  *
- *   node tests/bench/neighborAccessMicrobench.mjs [--entities 2000] [--neighbors 12] [--classes 5] [--output path]
+ *   node tests/bench/neighborAccessMicrobench.mjs [--entities 2000] [--neighbors 12] [--classes 5] [--own-methods]
+ *     [--output path]
  *
  * shipped:  this.neighborCount and this.getNeighbor(k) (gameObject.js), on five classes; `--classes N` (N-319) adds
  *           subclasses of three of them up to N classes, as a scene of many types has (each class compiles its own
- *           reads, E-289).
+ *           reads, E-289); with `--own-methods` each added class reads from methods of its own (each compiled from
+ *           its own source), so every call site sees one class, as a game whose classes tick themselves.
  * row:      the call-free read of the entity's row of Grid's neighbour memory, in a local loop (count at the row's
  *           start, ids after it), with the engine's private fields.
  * Each tick also does a little work per neighbour (a sum), as game code would. Reports ops/s (one op = every entity's
@@ -17,7 +19,31 @@ import { GameObject } from '../../src/core/gameObject.js';
 import { Transform } from '../../src/components/transform.js';
 import { isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 
-function makeClasses(count = 5) {
+/** A subclass of `Base` with reading methods of its own: a unique source each, so no two share a call site's feedback. */
+function withOwnMethods(Base, k) {
+  return new Function(
+    'Base',
+    'Grid',
+    `// class ${k}
+return class extends Base {
+  sumShipped() {
+    let s = 0;
+    const n = this.neighborCount;
+    for (let j = 0; j < n; j++) s += this.getNeighbor(j);
+    return s + 1;
+  }
+  sumRow() {
+    const nd = Grid._neighborData;
+    const o = this._neighborOffset;
+    let s = 0;
+    for (let j = o + 1, end = o + 1 + nd[o]; j < end; j++) s += nd[j];
+    return s + 1;
+  }
+};`,
+  )(Base, Grid);
+}
+
+function makeClasses(count = 5, ownMethods = false) {
   class Soldier extends GameObject {
     sumShipped() {
       let s = 0;
@@ -68,12 +94,12 @@ function makeClasses(count = 5) {
   const bases = [Soldier, Boid, Ant];
   while (classes.length < count) {
     const Base = bases[classes.length % bases.length];
-    classes.push(class extends Base {});
+    classes.push(ownMethods ? withOwnMethods(Base, classes.length) : class extends Base {});
   }
   return classes;
 }
 
-export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12, classCount = 5 } = {}) {
+export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12, classCount = 5, ownMethods = false } = {}) {
   const stride = 1 + 32;
   const data = new Uint16Array(new SharedArrayBuffer(entities * stride * 2));
   for (let e = 0; e < entities; e++) {
@@ -90,7 +116,7 @@ export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12, c
   const savedDescriptor = Object.getOwnPropertyDescriptor(Grid, 'neighborData');
   Object.defineProperty(Grid, 'neighborData', { get: () => data, configurable: true });
   try {
-    const classes = makeClasses(classCount);
+    const classes = makeClasses(classCount, ownMethods);
     for (const C of classes) GameObject._assignComponentClassMap(C);
     const ents = [];
     // Worker instances, as entities' ticks run on (a page instance is frozen and reads by another path).
@@ -117,7 +143,7 @@ export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12, c
     const nsPerRead = (c) => (c.ms / c.iterations / (entities * neighbors)) * 1e6;
     for (const [name, c] of Object.entries(cases)) console.log(`${name.padEnd(8)} ~${nsPerRead(c).toFixed(2)} ns a neighbour read`);
     console.log(`checksum ${checksum}`);
-    return { feature: 'neighbor-access', entities, neighbors, classes: classCount, checksum, cases };
+    return { feature: 'neighbor-access', entities, neighbors, classes: classCount, ownMethods, checksum, cases };
   } finally {
     if (savedDescriptor) Object.defineProperty(Grid, 'neighborData', savedDescriptor);
     Grid.maxNeighbors = savedMax;
@@ -130,6 +156,7 @@ if (isCli(import.meta.url)) {
     entities: Number(args.entities ?? 2000),
     neighbors: Number(args.neighbors ?? 12),
     classCount: Number(args.classes ?? 5),
+    ownMethods: Boolean(args['own-methods']),
   });
   if (args.output) writeReport(String(args.output), report);
 }
