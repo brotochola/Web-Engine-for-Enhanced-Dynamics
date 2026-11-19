@@ -17095,12 +17095,12 @@
     {
       "id": "E-326",
       "title": "Box2D's pool sleeps between steps and wakes on the step's first enqueue (up to ~1.5 ms here), so the pair phase may run on the physics thread alone",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "rejected",
+      "statusText": "rejected 2026-11-19 (R-1536)",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "result": "Read (R-1101): E-298 spins only inside b2World_Step; the first parallel-for of each step (the pair tasks) wakes the workers from the semaphore. Estimate 0-1 ms, physics STEP 0 to -7 %.",
+      "result": "Rejected 2026-11-19 (R-1536): the early wake made the pool spin through the host's prelude and took cores from spatial, pre-render and logic (REGRESSION at Predator crowd 2.5); the step_world-entry form gave -1.0 % in the harness.",
       "next": "Signal the sleepers and set stepping at step_world's entry, before the sleep paint and b2GatherMovedSiblings; if that lead is too short, a prewake export called from doStep after waitForLogic, with a timeout. First a counted build logging the time from the step's first enqueue to the first pool claim (or WPR's ready-to-run times); mind the spin's cost on shared cores (E-319).",
       "refs": [
         "EXECUTION_PLAN.md#E-326"
@@ -17112,7 +17112,8 @@
       "records": [
         "R-1101",
         "R-1219",
-        "R-1238"
+        "R-1238",
+        "R-1536"
       ]
     },
     {
@@ -38889,6 +38890,15 @@
         "14110014",
         "e43bc41a"
       ]
+    },
+    {
+      "id": "R-1536",
+      "date": "2026-11-19",
+      "time": "06:05",
+      "timeFrom": "recorded",
+      "title": "E-326 rejected: waking Box2D's pool at step_world's start reads -1.0 % in the harness; waking it at the physics frame's start costs the others (Predator crowd 2.5: spatial +2.9 % 4/4, pre-render +3.5 %, physics +1.2 %)",
+      "verdict": "rejected",
+      "text": "**E-326 rejected: waking Box2D's pool before the step costs the other workers more than it saves physics.** Box2D\nb2World_WakeWorkers (stepping set, every sleeping worker signalled; nothing with the spin off) and the export\nworld_wake_workers. First form, step_world wakes the pool as it begins (crowd harness, weed mode, 6 rounds against main,\n05:48): b2World_Step -1.0 % (5/6), hashes identical, under the bar: the lead (the sleep paint, the step's serial prelude)\nis short. Second form, the physics host's doStep wakes it right after its wait for logic, before draining commands and\napplying accelerations, and step_world as well (WeedJS on dx/startup 7d9bc966): runPredatorAbab e326-predator,\n`crowd=2.5&zoom=0.216`, physics owner, 4 pairs, to 06:05: REGRESSION, physics 13.830 -> 14.067 ms (+1.2 %, worse 3/4),\nspatial +2.9 % (4/4), pre-render +3.5 % (3/4), logic +2.9 % (3/4): three pool threads spinning through the host's\nprelude take cores the other workers use. ballsHeavy (06:09): NEUTRAL, physics -1.5 % (2/4). Dropped; both patches are\nin the session's scratchpad (e326-patch/)."
     }
   ],
   "leads": [
