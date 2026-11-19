@@ -16085,7 +16085,8 @@
         "R-1312",
         "R-1314",
         "R-1324",
-        "R-1335"
+        "R-1335",
+        "R-1494"
       ]
     },
     {
@@ -22354,7 +22355,8 @@
         "R-1401",
         "R-1404",
         "R-1411",
-        "R-1413"
+        "R-1413",
+        "R-1494"
       ]
     },
     {
@@ -39090,6 +39092,15 @@
       "title": "R-1492's tweenPool lead dismissed: interleaved on the ASUS, its kernel reads v0.14.0 609.3, 57044bd1 604.2, 8c310e43 605.6 ops/s; the scoreboard's -23.5 % was one-shot noise",
       "verdict": "note",
       "text": "ASUS lab job 0899a (11:0x-11:14) checked R-1492's lead, Node only: tweenPoolMicrobench (cases.tick.opsPerSec) at\nv0.14.0, 57044bd1 and 8c310e43 (branch pcmain19). Each revision ran its own kernel (git archive of package.json, src and\ntests/bench), 6 rounds interleaved, with a new lab driver, kab.mjs.\n\n| Revision | Median ops/s | Runs |\n|---|---|---|\n| v0.14.0 | 609.3 | 592 608 614 612 609 607 |\n| 57044bd1 | 604.2 (-0.8 %) | 604 597 603 593 607 611 |\n| 8c310e43 | 605.6 (-0.6 %) | 609 593 612 606 605 566 |\n\n- No regression. 0898z's -23.5 % was that sitting's one-shot kernel noise. No tween file or kernel changed between\n  57044bd1 and 8c310e43 either.\n- A single scoreboard kernel row on this laptop is not evidence by itself. Check a WORSE kernel row interleaved like\n  this before calling it."
+    },
+    {
+      "id": "R-1494",
+      "date": "2026-11-19",
+      "time": "11:45",
+      "timeFrom": "recorded",
+      "title": "The barrio at night on the HD 620, end of the barrio pass (69d1a10f) against main 8c310e43, new Intel driver: logic -58 %, spatial -63 %, physics -75 %, pre-render -50 %, but drawn 35.2 -> 32.2 fps (GPU-bound; the scene's load changed too)",
+      "verdict": "note",
+      "text": "ASUS lab job 0899b (11:20-11:45): Buenos Aires at night (hour=22, dayMinutes=0) on the HD 620. 69d1a10f (end of the\nbarrio pass: R-1307's hyp side, 35.9 drawn fps on the old Intel driver) against main 8c310e43 (0.14.46, brought over as a\nbundle). Both sides ran on Intel 31.0.101.2145, headed, 4 pairs, whole revisions, the pool worktrees, owner renderer.\n\n| Worker | 69d1a10f | 8c310e43 | Paired | Pairs worse |\n|---|---|---|---|---|\n| logic | 10.738 ms | 4.254 ms | -58.2 % | 0 of 4 |\n| spatial | 23.624 ms | 7.971 ms | -63.5 % | 0 of 4 |\n| physics | 28.299 ms | 6.573 ms | -74.7 % | 0 of 4 |\n| preRender | 17.214 ms | 7.359 ms | -50.1 % | 0 of 4 |\n| renderer | 7.032 ms | 6.942 ms | +1.1 % | 2 of 4 |\n| drawn | 35.2 fps | 32.2 fps | -8.9 % | 4 of 4 fewer |\n| presented | 58.6 fps | 59.7 fps | (reported) | |\n\nVerdict FAIL (load). The barrio itself changed between the two revisions:\n\n| Load key | 69d1a10f | 8c310e43 | Change |\n|---|---|---|---|\n| BODY_COUNT | 20 094 | 17 094 | -14.9 % |\n| VISIBLE_ENTITIES | 386 | 290 | -24.8 % |\n| GPU_CASTERS | 354 | 278 | -21.5 % |\n| GPU_SHADOW_LIGHTS | 15.1 | 16.0 | +5.8 % |\n\n- **CPU:** every CPU worker fell far more than the 15 % fewer bodies. Logic -58 %, spatial -63 %, physics -75 %,\n  pre-render -50 %: the engine's gain since the barrio pass, on a 2-core laptop. The CPU now has room to spare.\n- **GPU:** the HD 620 draws 8.9 % fewer frames with fewer visible entities and casters. The light pass costs more per\n  frame since 69d1a10f (DX-ONELIGHT's one light system, normal shading, the lamps' halos, the cars' maps), so the\n  barrio is GPU-bound on this iGPU.\n- R-1307 was read on the old driver. The new driver moved no row broadly (R-1487), so the GPU-side cost growth is the\n  scene's."
     }
   ],
   "leads": [
