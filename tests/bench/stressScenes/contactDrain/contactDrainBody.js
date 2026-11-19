@@ -76,3 +76,47 @@ export class ContactDrainBodyNoStay extends GameObject {
     this._exits++;
   }
 }
+
+// E-528's knob (?hooks=static): the same bodies with the static forms of the collision hooks, which run with no
+// instance and count per worker here instead of per instance.
+let staticEnters = 0;
+let staticStays = 0;
+let staticExits = 0;
+
+/** ContactDrainBody with static hooks. */
+export class ContactDrainBodyStatic extends GameObject {
+  static components = [RigidBody, Collider, SpriteRenderer, CollisionListener];
+
+  onSpawned(opts) {
+    setUpContactDrainBody(this, opts);
+  }
+
+  static onCollisionEnter() {
+    staticEnters++;
+  }
+
+  static onCollisionStay() {
+    staticStays++;
+  }
+
+  static onCollisionExit() {
+    staticExits++;
+  }
+}
+
+/** ContactDrainBodyNoStay with static hooks (?hooks=static&stay=0). */
+export class ContactDrainBodyStaticNoStay extends GameObject {
+  static components = [RigidBody, Collider, SpriteRenderer, CollisionListener];
+
+  onSpawned(opts) {
+    setUpContactDrainBody(this, opts);
+  }
+
+  static onCollisionEnter() {
+    staticEnters++;
+  }
+
+  static onCollisionExit() {
+    staticExits++;
+  }
+}

@@ -1,13 +1,23 @@
 import WEED from '/src/index.js';
-import { ContactDrainBody, ContactDrainBodyNoStay } from './contactDrain/contactDrainBody.js';
+import {
+  ContactDrainBody,
+  ContactDrainBodyNoStay,
+  ContactDrainBodyStatic,
+  ContactDrainBodyStaticNoStay,
+} from './contactDrain/contactDrainBody.js';
 
 const { Scene, Camera } = WEED;
 
 const SEED = 0xc0a7;
 // ?balls=N: the pile's size (2048). ?stay=0: bodies without onCollisionStay, as in Predator, so the logic worker
-// keeps no stay walk (E-302's owner scene).
+// keeps no stay walk (E-302's owner scene). ?hooks=static: the same bodies with static collision hooks (E-528), which
+// the logic worker calls with no instance.
 const BALLS = Number(WEED.params?.get('balls')) > 0 ? Math.floor(Number(WEED.params.get('balls'))) : 2048;
-const Body = WEED.params?.get('stay') === '0' ? ContactDrainBodyNoStay : ContactDrainBody;
+const NO_STAY = WEED.params?.get('stay') === '0';
+const STATIC_HOOKS = WEED.params?.get('hooks') === 'static';
+const Body = STATIC_HOOKS
+  ? NO_STAY ? ContactDrainBodyStaticNoStay : ContactDrainBodyStatic
+  : NO_STAY ? ContactDrainBodyNoStay : ContactDrainBody;
 const WORLD_W = 2400;
 const WORLD_H = 2400;
 
