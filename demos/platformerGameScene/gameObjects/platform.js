@@ -9,7 +9,6 @@ export class Platform extends GameObject {
   onSpawned(spawnConfig = {}) {
     this.collider.shapeType = ShapeType.Box;
     this.collider.radius = 0;
-    this.collider.visualRange = 512;
     this.rigidBody.static = 1;
 
     const width = spawnConfig.width ?? 220;

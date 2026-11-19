@@ -15,7 +15,6 @@ export class RayStressBusyBall extends GameObject {
     this.rigidBody.linearDamping = 0.05;
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = radius;
-    this.collider.visualRange = radius * 3;
     // Distinct layer so ray drivers can skip busy pile if desired.
     this.collider.collisionLayer = 7;
     this.setSprite('ball');

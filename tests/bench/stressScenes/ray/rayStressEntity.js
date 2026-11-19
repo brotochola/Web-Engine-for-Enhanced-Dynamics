@@ -32,7 +32,6 @@ export class RayStressEntity extends GameObject {
       this.collider.radius = radius;
       this.setScale((radius * 2) / 14);
     }
-    this.collider.visualRange = 64;
     this.collider.collisionLayer = collisionLayer;
 
     this.setSprite('ball');

@@ -32,7 +32,6 @@ export class Ship extends GameObject {
   static noHit = { hit: false, distance: Infinity, hitX: 0, hitY: 0, entityIndex: -1 };
 
   onSpawned(spawnConfig = {}) {
-    this.collider.visualRange = 80;
     this._lastFireAt = 0;
     this._laserOn = 0;
     this._benchRemesh = 0;

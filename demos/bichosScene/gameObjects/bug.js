@@ -18,7 +18,6 @@ export class Bug extends GameObject {
 
         // Initialize Collider
         this.collider.radius = 10;
-        this.collider.visualRange = 100;
 
         // Initialize SpriteRenderer
         this.spriteRenderer.scaleX = 1;

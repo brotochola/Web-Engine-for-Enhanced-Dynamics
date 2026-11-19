@@ -137,6 +137,18 @@ test('scoreboard load gate fails when Balls-equivalent BODY_COUNT median is 0', 
   assert.ok(miss.drifts.some((d) => d.key === 'BODY_COUNT'));
 });
 
+test('N-322: scoreboard load gate fails when a key the base counts as 0 is 1 or more on the other side', async () => {
+  const { workloadOk } = await import('../bench/measureLib.mjs');
+  const none = { NEIGHBORS_REUSED: { median: 0, cv: 0 } };
+  const some = { NEIGHBORS_REUSED: { median: 4210, cv: 0.01 } };
+  const miss = workloadOk(none, some, ['NEIGHBORS_REUSED']);
+  assert.equal(miss.ok, false);
+  assert.ok(miss.drifts.some((d) => d.key === 'NEIGHBORS_REUSED'));
+  // Both 0, or a key the base does not publish (an older revision): no drift.
+  assert.equal(workloadOk(none, none, ['NEIGHBORS_REUSED']).ok, true);
+  assert.equal(workloadOk({}, some, ['NEIGHBORS_REUSED']).ok, true);
+});
+
 test('scoreboard load gate fails when a load key cv is 50% or higher', async () => {
   const { workloadOk } = await import('../bench/measureLib.mjs');
   const noisy = {

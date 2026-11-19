@@ -18,7 +18,6 @@ export class CarPart extends GameObject {
         // Configure collider
         this.collider.radius = radius;
         this.collider.isTrigger = 0; // Physical collision
-        this.collider.visualRange = radius * 3;
 
         // Cap in px/s — soft-body constraints not on Box2D yet; without cap parts fly apart
         this.rigidBody.linearDamping = 0.05;  // a bit more coast drag until joints land

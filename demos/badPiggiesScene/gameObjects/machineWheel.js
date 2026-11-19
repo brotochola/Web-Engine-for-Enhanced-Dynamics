@@ -28,7 +28,6 @@ export class MachineWheel extends GameObject {
     this.collider.isTrigger = ghost ? 1 : 0;
     this.collider.friction = 1;
     this.collider.restitution = 0.05;
-    this.collider.visualRange = radius + 200;
     this.collider.collisionLayer = LAYER_WHEEL;
     this.collider.collisionMask = ghost ? 0 : MASK_WHEEL;
 
