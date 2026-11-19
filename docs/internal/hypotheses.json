@@ -23288,17 +23288,18 @@
       "records": [
         "R-1349",
         "R-1361",
-        "R-1445"
+        "R-1445",
+        "R-1481"
       ],
-      "result": "ASUS scoreboard 0895: audioSlotMicrobench occ100x3 23 446 -> 11 070 ops/s (-52.8 %), WORSE",
-      "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
+      "result": "Not a regression (R-1481): the kernel's contended case times worker start-up when main's workers, loading a bigger module graph, take over its fixed 300 ms to start; with all 3 ready main claims at v0.14.0's speed (-3 %). The harness should wait for a ready count.",
+      "next": "Make audioSlotMicrobench's contended case wait until all its workers report ready (a shared ready count) instead of a fixed 300 ms (tests/bench only), then read the scoreboard row again.",
       "id": "N-293",
       "kind": "speed",
       "area": "audio",
-      "status": "open",
+      "status": "answered",
       "date": "2026-11-18",
       "title": "The SoundManager slot claim kernel runs at half v0.14.0's speed on the ASUS's CPU (23 446 -> 11 070 ops/s, -52.8 %): a CPU-side change, so it likely shows on the main PC too",
-      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+      "statusText": "answered on the ASUS 2026-11-18 (jobs 0898a to 0898e): a race in the kernel's contended case, not the engine"
     },
     {
       "refs": [],
@@ -38000,6 +38001,15 @@
       "title": "Barrio freeze settled: Chrome's Intel shader cache fresh froze 10 of 23, no cache file 0 of 23 (p < 0.001); the driver's file lock breaks after about 38 KB and every later compile waits its 1 s timeout",
       "verdict": "note",
       "text": "ASUS lab job 0897e (21:48-22:17, stopped by hand after round 11 of 30: settled), freezeProbe v7: Chrome's Intel shader\ncache fresh (the real file parked, the driver writes a new one) against none (no file may be created: the driver has\nno cache for Chrome), the recorder running as load plus the tracerpt loop. Buenos Aires at night, HD 620, WebGL D3D11,\nsrc at main 70ba822b. Each run waits until the last run's Chrome has exited.\n\n| Chrome's Intel cache | 0897e | with 0897d |\n|---|---|---|\n| fresh | 7 of 11 frozen | 10 of 23 |\n| none | 0 of 11 | 0 of 23 |\n| keep (0897d only) | | 0 of 12 |\n\n- 10 of 23 against 0 of 23 comes by chance less than once in 2 000 (Fisher's exact, one-sided). No cache file, no\n  freeze: the freeze is the Intel driver's lock on Chrome's shader cache file.\n- In every frozen run the fresh file stopped at 35 to 39 KB; in normal runs it reached about 195 KB. The driver writes\n  the first shaders, then its lock breaks and nothing more is written: every later compile waits the lock's 1 s timeout\n  and skips the cache. The freeze ends when the scene has no more shaders to compile.\n- The driver never reuses Chrome's cache: the real file grows about 200 KB every run (221.3 -> 223.6 MB over 0897d's\n  12 keep runs). Denying the file costs Chrome nothing it was getting.\n- The real file is back in place (223 607 862 bytes), the deny ACE removed; the copy in C:\\weedlab\\intel-shadercache-backup\n  stays.\n- What the engine can do is limited: fewer distinct programs at start shortens a freeze; WebGPU on the HD 620 never\n  froze (0 of 64, R-1365). A newer Intel driver than 27.20.100.8682 may fix the lock; untried."
+    },
+    {
+      "id": "R-1481",
+      "date": "2026-11-18",
+      "time": "22:50",
+      "timeFrom": "recorded",
+      "title": "audioSlots occ100x3 is not slower on main: its slow reps are the ones with a contender worker still starting when the 300 ms wait ends (all 3 ready: 71 635 ops/s, v0.14.0 73 907)",
+      "verdict": "note",
+      "text": "ASUS lab jobs 0898a to 0898e (22:17-22:50), Node 22 only, no browser. audioSlotMicrobench's occ100x3 case (3 worker\nthreads claiming saturated slots) at v0.14.0, E-285's parent, E-285 (9c7100bd, the only change to the slot writers\nsince v0.14.0) and origin/main. Each revision is exported with git archive and runs its own kernel, interleaved.\n\n| Job | v0.14.0 | pre-E-285 | E-285 | main |\n|---|---|---|---|---|\n| 0898a (main last in each round) | 72 207 | 70 001 | 67 011 | 38 078 |\n| 0898b (main in the middle) | 73 259 | | 70 751 | 71 630 |\n| 0898c (0898a's order, then reversed) | 72 885 / 70 326 | 72 866 / 69 189 | 69 414 / 67 369 | 57 981 / 33 560 |\n\nMedians of 6 rounds, ops/s. Main is bimodal; the others never slow.\n\n0898e counts the contender workers ready at \"go\" (a copy of each kernel: each worker adds 1 to a shared word just\nbefore it waits for go). It ran 40 reps per revision:\n\n| Revision | Workers ready at go | Median ops/s | Reps |\n|---|---|---|---|\n| v0.14.0 | 3 | 73 907 | 40 |\n| E-285 | 3 | 69 684 | 40 |\n| main | 3 | 71 635 | 23 |\n| main | 2 | 35 586 | 7 |\n| main | 1 | 41 610 | 5 |\n| main | 0 | 30 607 | 5 |\n\n- Not a regression. Every slow rep of main is one where a worker was still starting when the timer began. With all\n  three ready, main claims at v0.14.0's speed (-3 %, inside the ASUS's kernel noise).\n- Cause: the contended case waits a fixed 300 ms after starting its workers, then times about 17 ms of claims. Main's\n  workers load a bigger module graph (src/util/configDefaults.js +289 lines and utils.js +129 since E-285). On this\n  HDD laptop they sometimes take more than 300 ms to start, so the timed window holds their start-up.\n- E-285 itself: -4 % against its parent, inside the noise.\n- Fix (the measurement tool, not the engine): the contended case should wait until every worker has said it is ready\n  (a shared ready count, as the probe did), not a fixed 300 ms. Not made: no code changes on the main PC tonight (the\n  owner)."
     }
   ],
   "leads": [
