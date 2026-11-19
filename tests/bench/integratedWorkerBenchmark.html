@@ -319,6 +319,13 @@
       // a GPU with and without it (E-502); without the key the GPU's class decides ('auto').
       const opaquePassKey = new URLSearchParams(location.search).get('opaquePass');
       const opaquePassSetting = opaquePassKey === '0' ? false : opaquePassKey === '1' ? true : null;
+      // ?spatialStartOn=logicDone (or one per spatial worker: vsync,logicDone) sets spatial.startOn (E-328), and
+      // ?spatialRefreshSpread=idBlocks spatial.neighborRefreshSpread (E-476), in any scene.
+      const spatialStartOnKey = new URLSearchParams(location.search).get('spatialStartOn');
+      const spatialStartOn = spatialStartOnKey
+        ? (spatialStartOnKey.includes(',') ? spatialStartOnKey.split(',') : spatialStartOnKey)
+        : null;
+      const spatialRefreshSpread = new URLSearchParams(location.search).get('spatialRefreshSpread');
 
       // Override scene debug flags before Scene applies defaults / boots workers
       SceneClass.config = {
@@ -336,6 +343,15 @@
           : {}),
         ...(physicsMemoryMB > 0
           ? { physics: { ...(SceneClass.config.physics || {}), wasmMemoryMB: physicsMemoryMB } }
+          : {}),
+        ...(spatialStartOn || spatialRefreshSpread
+          ? {
+              spatial: {
+                ...(SceneClass.config.spatial || {}),
+                ...(spatialStartOn ? { startOn: spatialStartOn } : {}),
+                ...(spatialRefreshSpread ? { neighborRefreshSpread: spatialRefreshSpread } : {}),
+              },
+            }
           : {}),
       };
 
