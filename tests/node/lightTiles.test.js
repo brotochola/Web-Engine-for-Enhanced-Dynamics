@@ -53,11 +53,11 @@ function pack(lights, maxLights) {
   return data;
 }
 
-function binned(cam, lights, { maxLights = 64, count = lights.length, snap = 0, rowAlign = 1, margin = null } = {}) {
+function binned(cam, lights, { maxLights = 64, count = lights.length, snap = 0, rowAlign = 1, margin = null, tile = LIGHT_TILE_PX } = {}) {
   const t = new LightTiles();
   t.cam[TILE_CAM_SNAP] = snap;
   if (margin !== null) t.cam[TILE_CAM_MARGIN] = margin;
-  layoutLightTiles(t, cam.viewW, cam.viewH, maxLights, rowAlign);
+  layoutLightTiles(t, cam.viewW, cam.viewH, maxLights, rowAlign, tile);
   const c = t.cam;
   c[TILE_CAM_ZOOM] = cam.zoom;
   c[TILE_CAM_X] = cam.x;
@@ -275,6 +275,20 @@ test('the bins are tight: a light is in few tiles past those its reach touches',
   }
   assert.ok(set >= touched, 'conservative');
   assert.ok(set <= touched * 1.15 + 4 * lights.length, `on the screen ${set} tiles set where the lights touch ${touched}`);
+});
+
+test('lighting.lightTileSize: tiles of other sizes, a power of two or not, lay out their grid and stay conservative', () => {
+  const cam = camera({ x: -120, y: 60, zoom: 1.3, rot: 0.4 });
+  for (const tile of [4, 8, 24, 32, 64]) {
+    const { t } = binned(cam, [], { tile });
+    assert.equal(t.tilePx, tile, `${tile}: the size asked for`);
+    assert.equal(t.cols, Math.ceil(cam.viewW / tile) + 2 * LIGHT_TILE_BORDER, `${tile}: its columns`);
+    assertConservative(cam, scatter(14, cam, 7 + tile, { minR: 10, maxR: 120 }), { tile, margin: 0 });
+  }
+  const t = new LightTiles();
+  layoutLightTiles(t, 960, 540, 64, 1, 16);
+  assert.equal(layoutLightTiles(t, 960, 540, 64, 1, 32), true, 'a new size lays the grid out again');
+  assert.equal(t.tilePx, 32);
 });
 
 test('the layout: a word\'s band is the grid and the every-light row; WebGPU rows of 256 bytes; uniforms', () => {

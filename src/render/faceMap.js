@@ -678,13 +678,16 @@ export function shaderWithFlag(source, name, on) {
  * noise on the light's output; without it, the light as it is). OL-4: WALLS (lighting.walls: each lamp's light times what
  * its row of the walls' texture lets through, src/render/visibility/lampWallRow.js; with FACES and IDS, since a wall's own
  * pixels are told by their id).
+ * lighting.shadowSamples: the shadow maps' taps a point averages, 1 to 9 of the 3 x 3 texels around it (pixelArt takes 1),
+ * kept by SHADOW_TAP_CENTER and the pairs SHADOW_TAPS_X, _Y, _DIAGONAL and _ANTIDIAGONAL, with SHADOW_TAP_WEIGHT written
+ * as 1 over their count (shadowTapsOf says which taps each count takes).
  * @param {string} source lightingBasic.frag.glsl or lightingBasic.wgsl
  * @param {{ faces: boolean, sunMap: boolean, selfShadow?: boolean, lampMap?: boolean, ids?: boolean, pixelArt?: boolean,
- *   tiles?: boolean, edges?: boolean, dither?: boolean, walls?: boolean }} flags
+ *   tiles?: boolean, edges?: boolean, dither?: boolean, walls?: boolean, shadowSamples?: number }} flags
  */
 export function lightingSource(source, {
   faces, sunMap, selfShadow = false, lampMap = false, ids = false, pixelArt = false, tiles = false, edges = false, dither = false,
-  walls = false,
+  walls = false, shadowSamples = 5,
 }) {
   const withSun = shaderWithFlag(shaderWithFlag(shaderWithFlag(source, 'FACES', faces), 'SUNMAP', sunMap), '!SUNMAP', !sunMap);
   const withLamps = shaderWithFlag(shaderWithFlag(withSun, 'SELFSHADOW', faces && selfShadow), 'LAMPMAP', lampMap);
@@ -693,7 +696,29 @@ export function lightingSource(source, {
   const withEdges = shaderWithFlag(shaderWithFlag(withTiles, 'EDGES', edges), '!EDGES', !edges);
   const withWalls = shaderWithFlag(withEdges, 'WALLS', walls && faces && ids);
   const withDither = shaderWithFlag(shaderWithFlag(withWalls, 'DITHER', dither), '!DITHER', !dither);
-  return shaderWithFlag(shaderWithFlag(withDither, 'PIXELART', pixelArt), '!PIXELART', !pixelArt);
+  const withPixelArt = shaderWithFlag(shaderWithFlag(withDither, 'PIXELART', pixelArt), '!PIXELART', !pixelArt);
+  const taps = shadowTapsOf(pixelArt ? 1 : shadowSamples);
+  let out = shaderWithFlag(withPixelArt, 'SHADOW_TAP_CENTER', taps.center);
+  out = shaderWithFlag(out, 'SHADOW_TAPS_X', taps.x);
+  out = shaderWithFlag(out, 'SHADOW_TAPS_Y', taps.y);
+  out = shaderWithFlag(out, 'SHADOW_TAPS_DIAGONAL', taps.diagonal);
+  out = shaderWithFlag(out, 'SHADOW_TAPS_ANTIDIAGONAL', taps.antidiagonal);
+  // A literal with its point in GLSL and WGSL alike (GLSL ES has no int-to-float conversion): 1.000000000 for one tap.
+  return out.replace(/SHADOW_TAP_WEIGHT/g, (1 / taps.count).toFixed(9));
+}
+
+/**
+ * lighting.shadowSamples' taps of the 3 x 3 texels around a point, each count laid out as evenly as it can be, every one
+ * symmetric about the point: 1 the centre; 2 its left and right; 3 those and the centre; 4 the cross's arms; 5 the cross
+ * (arms and centre); 6 the arms and one diagonal pair; 7 those and the centre; 8 the ring; 9 every texel. 2, 3, 6 and 7
+ * soften an edge more along their row or diagonal than across it. A count outside 1..9 is clamped, a fraction rounded.
+ * @param {number} samples
+ * @returns {{ count: number, center: boolean, x: boolean, y: boolean, diagonal: boolean, antidiagonal: boolean }}
+ */
+export function shadowTapsOf(samples) {
+  const r = Math.round(Number(samples));
+  const n = r >= 1 ? (r <= 9 ? r : 9) : 1;
+  return { count: n, center: (n & 1) === 1, x: n >= 2, y: n >= 4, diagonal: n >= 6, antidiagonal: n >= 8 };
 }
 
 /**

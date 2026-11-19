@@ -863,6 +863,23 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   pixelArt: false,
   /**
+   * The taps of the sun's and the lamps' shadow maps a pixel of the light pass averages, 1 to 9 of the 3 x 3 texels around
+   * its point: 1 the texel alone (a hard edge, on the texels' steps), 5 a cross (soft, the default), 9 all of them (the
+   * softest). 2, 3, 6 and 7 soften an edge more along a row or a diagonal than across it (faceMap.js shadowTapsOf lays each
+   * count out). Every tap is a texture read a map a pixel: on a GTX 1650, Predator's light pass (1080p, the light at half)
+   * took 0.95, 1.03 and 1.10 ms in the afternoon with 1, 5 and 9. pixelArt takes 1. Read when the scene starts
+   * (shadowSamplesOf).
+   */
+  shadowSamples: 5,
+  /**
+   * E-205: the side, in px of the light pass's target, of the screen tiles whose lights each pixel loops over, 4 to 256
+   * (lightTileSizeOf). Smaller tiles follow the lights' reach closer (fewer lights a pixel) but the CPU bins and uploads more
+   * of them each frame; bigger, the other way. Doubled while the tiles' texture would pass 4096 rows. In Predator at night
+   * (GTX 1650) 8, 16 and 32 px drew the light pass alike; 8 px bins 200 lamps in 0.034 ms against 0.023 and its texture is
+   * 308 KB against 91. Read when the scene starts.
+   */
+  lightTileSize: 16,
+  /**
    * N-277: dither the light by half an 8-bit step (a noise of each pixel, of each art pixel with pixelArt), so a lamp's dim
    * falloff does not band into rings on a plain dark surface; no pixel moves more than one level. Off by default: it is a
    * few operations a light pixel, but on an Intel HD 620 it cost about 4 % of the drawn frames.
@@ -991,6 +1008,38 @@ export function lightBehindWallsOf(lighting) {
   const v = lighting?.lightBehindWalls;
   if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.lightBehindWalls;
   return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/** lighting.shadowSamples' range: the 3 x 3 texels around a point. */
+export const SHADOW_SAMPLES_MAX = 9;
+/** lighting.lightTileSize's range in px. */
+export const LIGHT_TILE_SIZE_MIN = 4;
+export const LIGHT_TILE_SIZE_MAX = 256;
+
+/**
+ * A scene's lighting.shadowSamples, an integer in 1..SHADOW_SAMPLES_MAX (a number outside clamped, a fraction rounded); the
+ * default's when it is missing or not a number.
+ * @param {object|undefined} lighting config.lighting
+ * @returns {number}
+ */
+export function shadowSamplesOf(lighting) {
+  const v = lighting?.shadowSamples;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.shadowSamples;
+  const n = Math.round(v);
+  return n < 1 ? 1 : n > SHADOW_SAMPLES_MAX ? SHADOW_SAMPLES_MAX : n;
+}
+
+/**
+ * A scene's lighting.lightTileSize, an integer in LIGHT_TILE_SIZE_MIN..LIGHT_TILE_SIZE_MAX px (a number outside clamped, a
+ * fraction rounded); the default's when it is missing or not a number.
+ * @param {object|undefined} lighting config.lighting
+ * @returns {number}
+ */
+export function lightTileSizeOf(lighting) {
+  const v = lighting?.lightTileSize;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return LIGHTING_DEFAULTS.lightTileSize;
+  const n = Math.round(v);
+  return n < LIGHT_TILE_SIZE_MIN ? LIGHT_TILE_SIZE_MIN : n > LIGHT_TILE_SIZE_MAX ? LIGHT_TILE_SIZE_MAX : n;
 }
 
 /** The most a normalShading strength is taken as (a slope: past it a threshold is a step already). */

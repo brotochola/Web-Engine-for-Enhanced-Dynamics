@@ -18,7 +18,10 @@
  * band and the span widened by `margin` px for the GPU's float error (and pixel art's snap of the point).
  */
 
-/** A tile's side in px of the light pass's target (doubled while the texture would pass MAX_TEXTURE_ROWS). */
+/**
+ * A tile's side in px of the light pass's target when none is asked for (a scene asks with lighting.lightTileSize, whose
+ * default is this); doubled while the texture would pass MAX_TEXTURE_ROWS.
+ */
 export const LIGHT_TILE_PX = 16;
 /** Tiles past each edge of the target, for face pixels whose floor point is off the screen. */
 export const LIGHT_TILE_BORDER = 4;

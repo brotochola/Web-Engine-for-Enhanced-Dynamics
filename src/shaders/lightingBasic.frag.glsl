@@ -171,8 +171,8 @@ float sunTap(vec2 uv, float above, float selfId) {
   return m.r * 512.0 > above && !ownTexel(m, selfId) ? 1.0 - m.g : 1.0;
 }
 
-// How much of the sun reaches floor point p (x, y on the floor, z up): 1 lit, 1 - opacity in the shade, five taps. The
-// shade of the pixel's own entity (selfId, 0 for none) does not count.
+// How much of the sun reaches floor point p (x, y on the floor, z up): 1 lit, 1 - opacity in the shade, from
+// lighting.shadowSamples' taps. The shade of the pixel's own entity (selfId, 0 for none) does not count.
 float sunVisibility(vec3 p, float selfId) {
   vec2 land = p.xy - p.z * uSunMapK.xy;
   vec2 uv = weedWorldToNorm(vec2(land.x, land.y * uSunMapK.z));
@@ -184,18 +184,30 @@ float sunVisibility(vec3 p, float selfId) {
   // wall, the sun's ray from their head meeting the wall 5 px higher). A pixel of no entity keeps the old bias.
   float bias = p.z > 0.0 ? (selfId > 0.5 ? 2.0 : 4.0 + p.z * 0.03) : 0.0;
   float above = p.z + bias;
-  float lit = sunTap(uv, above, selfId);
-// #if PIXELART
-  // DX-PIXELSHADOW: one tap at the art pixel's centre (main snapped the point), so the shade is crisp on the art's grid.
-  return 1.0 - uSunMapK.w * (1.0 - lit);
-// #endif PIXELART
-// #if !PIXELART
+  // lighting.shadowSamples: the average of the taps it takes of the 3 x 3 texels around the point (lightingSource keeps
+  // their blocks and writes SHADOW_TAP_WEIGHT, 1 over their count). DX-PIXELSHADOW: pixelArt takes the centre alone (main
+  // snapped the point to the art pixel's), so the shade is crisp on the art's grid.
+  float lit = 0.0;
+// #if SHADOW_TAP_CENTER
+  lit += sunTap(uv, above, selfId);
+// #endif SHADOW_TAP_CENTER
+// #if SHADOW_TAPS_X
   lit += sunTap(uv + vec2(texel.x, 0.0), above, selfId);
   lit += sunTap(uv - vec2(texel.x, 0.0), above, selfId);
+// #endif SHADOW_TAPS_X
+// #if SHADOW_TAPS_Y
   lit += sunTap(uv + vec2(0.0, texel.y), above, selfId);
   lit += sunTap(uv - vec2(0.0, texel.y), above, selfId);
-  return 1.0 - uSunMapK.w * (1.0 - lit * 0.2);
-// #endif !PIXELART
+// #endif SHADOW_TAPS_Y
+// #if SHADOW_TAPS_DIAGONAL
+  lit += sunTap(uv + texel, above, selfId);
+  lit += sunTap(uv - texel, above, selfId);
+// #endif SHADOW_TAPS_DIAGONAL
+// #if SHADOW_TAPS_ANTIDIAGONAL
+  lit += sunTap(uv + vec2(texel.x, -texel.y), above, selfId);
+  lit += sunTap(uv - vec2(texel.x, -texel.y), above, selfId);
+// #endif SHADOW_TAPS_ANTIDIAGONAL
+  return 1.0 - uSunMapK.w * (1.0 - lit * SHADOW_TAP_WEIGHT);
 }
 // #endif SUNMAP
 
@@ -247,7 +259,7 @@ float lampTap(vec2 cell, vec2 uv, float h, vec2 toAtlas, float bound, float self
 }
 
 // How much of the light at floor point l, height e reaches point p (x, y on the floor, z up): 1 lit, 0 in its shadow,
-// five taps. tag: the light's first row's w; intensity: its I'; selfId: the pixel's entity (its own shade skipped); li: its
+// shadowSamples' taps. tag: the light's first row's w; intensity: its I'; selfId: the pixel's entity (its own shade skipped); li: its
 // column in the light data, whose fourth row holds its fade at the cut (N-212: the shade lightens as it fades, read only
 // for a point the lamp's map covers).
 float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float selfId, int li) {
@@ -278,18 +290,28 @@ float lampVisibility(vec3 p, vec2 l, float e, float tag, float intensity, float 
   // N-211: against the point's own place along the ray (1 / (1 + |E - z| / E)), plus the texels' step and a half for a
   // pixel of an entity (its own texels skipped) or four steps for one of no entity.
   float bound = 1.0 / (1.0 + abs(e - p.z) / e) + (p.z > 0.0 ? (selfId > 0.5 ? 1.5 : 4.0) : 0.5) / 255.0;
-  float lit = lampTap(cell, uv, h, toAtlas, bound, selfId);
-// #if PIXELART
-  // DX-PIXELSHADOW: one tap at the art pixel's centre, crisp on the art's grid.
-  return 1.0 - (1.0 - lit) * fade;
-// #endif PIXELART
-// #if !PIXELART
+  // lighting.shadowSamples' taps of the 3 x 3 texels around the point, laid out as the sun's map takes them.
+  float lit = 0.0;
+// #if SHADOW_TAP_CENTER
+  lit += lampTap(cell, uv, h, toAtlas, bound, selfId);
+// #endif SHADOW_TAP_CENTER
+// #if SHADOW_TAPS_X
   lit += lampTap(cell, uv + vec2(2.0 * h, 0.0), h, toAtlas, bound, selfId);
   lit += lampTap(cell, uv - vec2(2.0 * h, 0.0), h, toAtlas, bound, selfId);
+// #endif SHADOW_TAPS_X
+// #if SHADOW_TAPS_Y
   lit += lampTap(cell, uv + vec2(0.0, 2.0 * h), h, toAtlas, bound, selfId);
   lit += lampTap(cell, uv - vec2(0.0, 2.0 * h), h, toAtlas, bound, selfId);
-  return 1.0 - (1.0 - lit * 0.2) * fade;
-// #endif !PIXELART
+// #endif SHADOW_TAPS_Y
+// #if SHADOW_TAPS_DIAGONAL
+  lit += lampTap(cell, uv + vec2(2.0 * h), h, toAtlas, bound, selfId);
+  lit += lampTap(cell, uv - vec2(2.0 * h), h, toAtlas, bound, selfId);
+// #endif SHADOW_TAPS_DIAGONAL
+// #if SHADOW_TAPS_ANTIDIAGONAL
+  lit += lampTap(cell, uv + vec2(2.0 * h, -2.0 * h), h, toAtlas, bound, selfId);
+  lit += lampTap(cell, uv - vec2(2.0 * h, -2.0 * h), h, toAtlas, bound, selfId);
+// #endif SHADOW_TAPS_ANTIDIAGONAL
+  return 1.0 - (1.0 - lit * SHADOW_TAP_WEIGHT) * fade;
 }
 
 // DX-LAMPPANO: lampVisibility for a floor point (z 0, the flat path): always under the lamp, on the floor's half, no bias.
@@ -310,17 +332,28 @@ float lampVisibilityFloor(vec2 p, vec2 l, float e, float tag, float intensity, i
   vec2 cell = vec2(mod(tile, uLampAtlas.x) * 2.0, floor(tile / uLampAtlas.x));
   vec2 toAtlas = vec2(uLampAtlas.y) / uLampAtlas.zw;
   float h = 0.5 / uLampAtlas.y;
-  float lit = lampTap(cell, uv, h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
-// #if PIXELART
-  return 1.0 - (1.0 - lit) * fade;
-// #endif PIXELART
-// #if !PIXELART
+  // lighting.shadowSamples' taps of the 3 x 3 texels around the point, laid out as the sun's map takes them.
+  float lit = 0.0;
+// #if SHADOW_TAP_CENTER
+  lit += lampTap(cell, uv, h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
+// #endif SHADOW_TAP_CENTER
+// #if SHADOW_TAPS_X
   lit += lampTap(cell, uv + vec2(2.0 * h, 0.0), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
   lit += lampTap(cell, uv - vec2(2.0 * h, 0.0), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
+// #endif SHADOW_TAPS_X
+// #if SHADOW_TAPS_Y
   lit += lampTap(cell, uv + vec2(0.0, 2.0 * h), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
   lit += lampTap(cell, uv - vec2(0.0, 2.0 * h), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
-  return 1.0 - (1.0 - lit * 0.2) * fade;
-// #endif !PIXELART
+// #endif SHADOW_TAPS_Y
+// #if SHADOW_TAPS_DIAGONAL
+  lit += lampTap(cell, uv + vec2(2.0 * h), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
+  lit += lampTap(cell, uv - vec2(2.0 * h), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
+// #endif SHADOW_TAPS_DIAGONAL
+// #if SHADOW_TAPS_ANTIDIAGONAL
+  lit += lampTap(cell, uv + vec2(2.0 * h, -2.0 * h), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
+  lit += lampTap(cell, uv - vec2(2.0 * h, -2.0 * h), h, toAtlas, 0.5 + 0.5 / 255.0, 0.0);
+// #endif SHADOW_TAPS_ANTIDIAGONAL
+  return 1.0 - (1.0 - lit * SHADOW_TAP_WEIGHT) * fade;
 }
 // #endif LAMPMAP
 
