@@ -19,11 +19,15 @@
   var MAX_POLYGON_VERTICES = 8;
   // SST-18: the prime's loop while the world spawns (primeBegin to prime), its timer, 0 when it is not running.
   var primeLoopTimer = 0;
-  function primeOnce() {
-    if (state.box2dReady && !state.box2dAborted && typeof global.weedjsPrime === 'function') global.weedjsPrime();
+  // final: the last prime before the start ('prime'), which also finds the world's contacts (weedjsPost.js weedjsPrime);
+  // the loop's primes only make bodies.
+  function primeOnce(final) {
+    if (state.box2dReady && !state.box2dAborted && typeof global.weedjsPrime === 'function') {
+      global.weedjsPrime(final === true);
+    }
   }
   function primeLoop() {
-    primeOnce();
+    primeOnce(false);
     primeLoopTimer = setTimeout(primeLoop, 1);
   }
   function stopPrimeLoop() {
@@ -1568,9 +1572,10 @@
         // step runs meanwhile; a spawn's body is made once the spawn has set its lifecycle bit, as during play.
         if (!primeLoopTimer && state.isPaused) primeLoopTimer = setTimeout(primeLoop, 0);
       } else if (data.msg === 'prime') {
-        // SST-15: the spawned world's bodies made before the start (weedjsPost.js weedjsPrime); paused, between steps.
+        // SST-15: the spawned world's bodies made before the start (weedjsPost.js weedjsPrime), and their contacts;
+        // paused, between steps.
         stopPrimeLoop();
-        primeOnce();
+        primeOnce(true);
         loadMark('primed');
         self.postMessage({ msg: 'primeDone', id: data.id | 0, loadMarks: takeLoadMarks() });
       } else if (data.msg === 'barrier') {

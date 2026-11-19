@@ -3772,13 +3772,23 @@
    * SST-15: the bodies, joints and commands the scene's spawns left, made now (before the start), so the first step
    * after it has only its own work: Predator by night made 18 248 bodies (91 ms) and drained 52 696 commands (47 ms) in
    * it. No step, no time: what the first step would do before stepping, in the same order.
+   * The final prime (final true, not SST-18's loop) also runs the step's pair update and narrow phase with no solver and
+   * no time (world.collide): in the first step every contact was new (Predator by night's first step 46 ms warm, 87 ms
+   * cold; later ones 10-15). The begin-touch events of bodies spawned touching go out now, once; moved bodies and
+   * teleports stay for the first step's publish (afterStep).
+   * @param {boolean} [final] the last prime before the start
    * @returns {number} the bodies whose state changed
    */
-  function weedjsPrime() {
+  function weedjsPrime(final) {
     if (!world) return 0;
     const changes = syncBodies(hostEntityCount | 0);
     drainCommands();
     syncJoints();
+    if (final === true) {
+      world.collide();
+      publishContactRingFromWasm();
+      publishHitsFromWasm();
+    }
     return changes;
   }
 
