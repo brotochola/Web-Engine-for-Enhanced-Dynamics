@@ -163,13 +163,13 @@ test('both lighting shaders add the night term, and the WGSL struct lists what t
   assert.deepEqual(fields(facesOnly), [...names, 'uFaceLight', 'uFaceSun', 'uNormalShade']);
   assert.deepEqual(
     fields(flags(wgsl, true)),
-    [...names, 'uFaceLight', 'uFaceSun', 'uNormalShade', 'uSunMapK', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords', 'uWalls'],
+    [...names, 'uFaceLight', 'uFaceSun', 'uNormalShade', 'uSunMapK', 'uSunMapRect', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords', 'uWalls'],
   );
   const end = pixi.indexOf('...this._lightingShadowResources()');
   const start = pixi.lastIndexOf('uCameraPos:', end);
   const declared = [...pixi.slice(start, end).matchAll(/^\s*(u\w+):/gm)].map((m) => m[1]);
   assert.deepEqual(declared, names, 'Pixi lays the buffer out in the group order');
-  const added = ['uFaceLight', 'uFaceSun', 'uNormalShade', 'uSunMapK', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords', 'uWalls'].map((name) =>
+  const added = ['uFaceLight', 'uFaceSun', 'uNormalShade', 'uSunMapK', 'uSunMapRect', 'uSelfShadow', 'uLampAtlas', 'uTileGrid', 'uTileWords', 'uWalls'].map((name) =>
     pixi.indexOf(`lightingResources.uniforms.${name} =`),
   );
   assert.ok(added.every((at, k) => at > end && (k === 0 || at > added[k - 1])), 'the worker adds the optional ones in that order');

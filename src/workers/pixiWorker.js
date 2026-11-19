@@ -85,11 +85,14 @@ import { lightEdgesHost, lightEdgesQuad, rgbOnlyHost, unshadedEdgesHost, wallEdg
 import { FOOTPRINT_TEXELS, writeFootprintRow } from '../render/frameBase.js';
 import {
   SUN_MAP_COLUMNS,
+  SUN_MAP_MARGIN_MAX,
+  SUN_MAP_ZMAX,
   compactColumnRows,
   sunMapColumnGrid,
   sunMapColumnIndex,
   sunMapColumnsVertex,
   sunMapColumnsWgsl,
+  sunMapMargins,
   sunMapTerms,
   sunMapVertex,
   sunMapWgsl,
@@ -1042,6 +1045,16 @@ class PixiRenderer extends AbstractWorker {
     this._sunMapUniforms = null;
     this._sunMapTerms = new Float32Array(4);
     this._sunMapK = new Float32Array(4);
+    // N-317: the sun map reaches past the screen so a pixel near its edge finds its ray's landing (sunMapMargins): the
+    // margins it was made with (texels: left, top, right, bottom), the ones this frame needs, the light pass's uv into it
+    // (uSunMapRect: the screen's uv times xy plus zw), the atlas's tallest frame (screen px, with the texture LUT) and the
+    // camera its passes draw from (world px, doubles).
+    this._sunMapMargins = new Int32Array(4);
+    this._sunMapNeed = new Float64Array(4);
+    this._sunMapRect = new Float32Array([1, 1, 0, 0]);
+    this._sunMapTallestPx = 0;
+    this._sunMapCamX = 0.5;
+    this._sunMapCamY = 0.5;
     this._sunMapDrew = false;
     this._sunMapClear = false;
     this._noMapsSource = null; // DX-MAPS: its stand-in when none has (_emptyMapsSource)
@@ -2503,6 +2516,14 @@ class PixiRenderer extends AbstractWorker {
     this._buildMapsTable();
     this._texLut = buildTextureLut(this.flatTextures || [], fallback);
     this._texLutCount = this.flatTextures?.length || 0;
+    // N-317: the tallest frame, which bounds how far a pixel's sun ray lands past the screen (_fitSunMap).
+    let tallest = 0;
+    const flat = this.flatTextures || [];
+    for (let i = 0; i < flat.length; i++) {
+      const h = flat[i]?.orig?.height ?? flat[i]?.frame?.height ?? 0;
+      if (h > tallest) tallest = h;
+    }
+    this._sunMapTallestPx = tallest;
     // N-111: one textureId a row would pass MAX_TEXTURE_SIZE with a big atlas (9 020 frames drew nothing on
     // SwiftShader's 8 192): past TEX_LUT_MAX_ROWS the rows hold several.
     const layout = textureLutLayout(this._texLutCount);
@@ -4761,6 +4782,8 @@ LIGHTING SYSTEM SETUP
     }
     if (this._sunMapOn) {
       lightingResources.uniforms.uSunMapK = { value: this._sunMapK, type: 'vec4<f32>' };
+      // N-317: right after uSunMapK, as the WGSL struct has it.
+      lightingResources.uniforms.uSunMapRect = { value: this._sunMapRect, type: 'vec4<f32>' };
       lightingResources.uSunMap = PIXI.Texture.EMPTY.source;
     }
     if (this._selfShadowOn && facesOn) {
@@ -5736,7 +5759,52 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return mesh;
   }
 
-  /** DX-SHADOW3D: the sun's shadow map, the size of the shadows' layer, bound to the light pass. */
+  /**
+   * N-317: the sun map reaches past the shadows' layer by the margins this frame's sun needs (sunMapMargins: the atlas's
+   * tallest frame, at most SUN_MAP_ZMAX px of height, landing by the sun's terms), so a pixel near the screen's edge finds
+   * its ray's landing in it. The map is made again only when a margin needs more than it has, or has more than twice what
+   * it needs and 64 texels besides (each made with a quarter more, rounded up to 16 texels). Sets the camera its passes
+   * draw from (moved by the top-left margins) and the light pass's uSunMapRect (the screen's uv into the map).
+   */
+  _fitSunMap(screenScale) {
+    const w = this.shadowRT.width;
+    const h = this.shadowRT.height;
+    const hs = this._heightScaleY > 0 ? this._heightScaleY : 1;
+    const s = screenScale > 0 ? screenScale : 1;
+    const tallest = Math.min(SUN_MAP_ZMAX, this._sunMapTallestPx / hs);
+    const need = sunMapMargins(this._sunMapTerms, tallest, hs, this._groundScaleY || 1, s, this._sunMapNeed);
+    // At most SUN_MAP_MARGIN_MAX of the screen's side each (a low sun throws a tall frame's ray far).
+    const capX = w * SUN_MAP_MARGIN_MAX;
+    const capY = h * SUN_MAP_MARGIN_MAX;
+    if (need[0] > capX) need[0] = capX;
+    if (need[2] > capX) need[2] = capX;
+    if (need[1] > capY) need[1] = capY;
+    if (need[3] > capY) need[3] = capY;
+    const m = this._sunMapMargins;
+    let refit = this.sunMapRT === null;
+    for (let i = 0; i < 4; i++) {
+      if (need[i] > m[i] || m[i] > 2 * need[i] + 64) refit = true;
+    }
+    if (refit) {
+      for (let i = 0; i < 4; i++) {
+        const cap = Math.ceil((i & 1 ? capY : capX) / 16) * 16;
+        const want = need[i] > 0 ? Math.ceil((need[i] * 1.25) / 16) * 16 : 0;
+        m[i] = want < cap ? want : cap;
+      }
+      this._createSunMap(w + m[0] + m[2], h + m[1] + m[3]);
+    }
+    const W = w + m[0] + m[2];
+    const H = h + m[1] + m[3];
+    const r = this._sunMapRect;
+    r[0] = w / W;
+    r[1] = h / H;
+    r[2] = m[0] / W;
+    r[3] = m[1] / H;
+    this._sunMapCamX = this._renderCameraX - m[0] / s;
+    this._sunMapCamY = this._renderCameraY - m[1] / s;
+  }
+
+  /** DX-SHADOW3D: the sun's shadow map, the size of the shadows' layer and N-317's margins, bound to the light pass. */
   _createSunMap(width, height) {
     if (this.sunMapRT) this.sunMapRT.destroy(true);
     this.sunMapRT = PIXI.RenderTexture.create({ width, height, scaleMode: 'nearest' });
@@ -5753,9 +5821,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    */
   _drawSunMap(batch, gpu, sunN, screenScale) {
     const shaders = this._engineShaders;
-    // Made here: the shadow layer is created before the lighting config is read.
-    if (!this.sunMapRT && this.shadowRT) this._createSunMap(this.shadowRT.width, this.shadowRT.height);
-    if (!this.sunMapRT || !(this._useWebGpu ? shaders?.shadowWgsl : shaders?.shadowVert && shaders?.sunMapFrag)) return false;
+    if (!this.shadowRT || !(this._useWebGpu ? shaders?.shadowWgsl : shaders?.shadowVert && shaders?.sunMapFrag)) return false;
+    // Made here (the shadow layer is created before the lighting config is read), to the margins the sun asks for now.
+    this._writeFaceSun();
+    sunMapTerms(this._faceSun, this._sunMapTerms, Sun.shadowMaxLengthRatio);
+    this._fitSunMap(screenScale);
     if (this._sunMapMesh === null) {
       const r = batch.shadowShader.resources;
       const uniforms = {
@@ -5815,10 +5885,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const mesh = this._sunMapMesh;
     mesh.geometry = batch.mesh.geometry;
     const u = this._sunMapUniforms.uniforms;
-    this._writeFaceSun();
-    sunMapTerms(this._faceSun, this._sunMapTerms, Sun.shadowMaxLengthRatio);
-    u.uCam[0] = this._renderCameraX;
-    u.uCam[1] = this._renderCameraY;
+    // N-317: from the camera moved by the map's top-left margin (_fitSunMap), so the screen sits inside the map.
+    u.uCam[0] = this._sunMapCamX;
+    u.uCam[1] = this._sunMapCamY;
     u.uCam[2] = screenScale;
     u.uSun[3] = 1;
     u.uGroundInvScaleY = this._groundInvScaleY || 1;
@@ -5935,7 +6004,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       entry.mesh.shader.resources.sunShadow.update();
       rtOpts.container = entry.host;
       rtOpts.clear = false;
-      rtOpts.transform = this._writeVolumeMapTransform(screenScale);
+      rtOpts.transform = this._writeVolumeMapTransform(screenScale, this._sunMapCamX, this._sunMapCamY);
       this._submitRender(rtOpts);
       rtOpts.transform = null;
       this._gpuPassesThisFrame++;
@@ -5956,11 +6025,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /** DX-SHADOW3D (F6): world px to the sun map's texels, (world - camera) · screenScale (sunMapVertex's uCam), no turn. */
-  _writeVolumeMapTransform(screenScale) {
+  _writeVolumeMapTransform(screenScale, cameraX, cameraY) {
     const mx = this._volumeMapTransform;
     const z = screenScale > 0 ? screenScale : 1;
-    const tx = -this._renderCameraX * z;
-    const ty = -this._renderCameraY * z;
+    const tx = -cameraX * z;
+    const ty = -cameraY * z;
     if (mx.a !== z) mx.a = z;
     if (mx.b !== 0) mx.b = 0;
     if (mx.c !== 0) mx.c = 0;
@@ -8330,7 +8399,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       );
       if (this.shadowDisplaySprite) this.shadowDisplaySprite.scale.set(width / sw, height / sh);
       this._bindLightingShadowMap();
-      if (this.sunMapRT) this._createSunMap(sw, sh);
+      // N-317: made again, its margins too, on the next sun map pass (_fitSunMap).
+      if (this.sunMapRT) {
+        this._sunMapMargins.fill(0);
+        this._createSunMap(sw, sh);
+      }
     }
 
     // E-404: the lightGlows target follows the canvas.

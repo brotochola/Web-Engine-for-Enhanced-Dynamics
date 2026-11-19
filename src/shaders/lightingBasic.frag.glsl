@@ -163,6 +163,8 @@ float wallVisibility(vec2 p, float tag, float selfId) {
 // DX-SHADOW3D: the sun's shadow map (sunShadowMap.js), laid out on the screen as the castedShadows layer is.
 uniform sampler2D uSunMap;
 uniform vec4 uSunMapK; // kx, ky (a px of height's landing shift on the floor), groundScaleY, the shadow's opacity
+// N-317: the screen's uv into the map, which reaches past the screen by margins (pixiWorker _fitSunMap): times xy, plus zw.
+uniform vec4 uSunMapRect;
 
 // One tap of the sun's map: 1 lit, under a higher caster that is not the pixel's own entity (selfId) what its opacity
 // (G, DX-CASTER) leaves.
@@ -175,11 +177,11 @@ float sunTap(vec2 uv, float above, float selfId) {
 // lighting.shadowSamples' taps. The shade of the pixel's own entity (selfId, 0 for none) does not count.
 float sunVisibility(vec3 p, float selfId) {
   vec2 land = p.xy - p.z * uSunMapK.xy;
-  vec2 uv = weedWorldToNorm(vec2(land.x, land.y * uSunMapK.z));
-  // N-317: the map holds the screen alone, so a ray that lands past its edge has nothing to read: lit. Read at the edge
-  // (the texture clamps), the edge row's shade ran up the roofs near the screen's bottom in vertical bands.
+  vec2 uv = weedWorldToNorm(vec2(land.x, land.y * uSunMapK.z)) * uSunMapRect.xy + uSunMapRect.zw;
+  // N-317: the map reaches past the screen as far as the tallest point's ray lands; a ray that lands past even that has
+  // nothing to read: lit. Read at the edge (the texture clamps), the edge row's shade ran up the roofs in vertical bands.
   if (uv.x < 0.0 || uv.y < 0.0 || uv.x > 1.0 || uv.y > 1.0) return 1.0;
-  vec2 texel = 1.0 / uViewport;
+  vec2 texel = 1.0 / vec2(textureSize(uSunMap, 0));
   // N-192: a floor point (z 0) takes no bias: the floor casts nothing, so its only shade is other casters', and with
   // the bias their bottom 4 px cast none (each shadow stood 4 |k| px off its caster's base). A pixel above the floor keeps it.
   // N-210: a pixel of an entity (its id known) skips its own entity's texels (ownTexel), so it keeps only the map's
