@@ -1,7 +1,7 @@
 // SST-6: a packed atlas kept in the browser's Cache Storage, keyed by everything that decides it, so the next load of the
 // same scene (the developer reloading, the returning player) loads it as a baked one instead of packing it again. The key
-// hashes (SHA-256) the format's version, the engine's version, in a source build the text of the modules that draw and
-// pack it, the scene's atlas assets as declared, the packer's options as they resolve, and each source file's bytes:
+// hashes (SHA-256) the format's version, the engine's version, the code that draws and packs it (in a source build its
+// modules' text, in a bundle the hash of the sources it was built from), the scene's atlas assets as declared, the packer's options as they resolve, and each source file's bytes:
 // a changed byte, option, built-in or engine misses. An entry is the json, the atlas as a PNG (its 2D canvas's own
 // encoding: the pixels getImageData reads, which premultiply back to the canvas's own) and the twin page's texels as they
 // are (data: no PNG, no colour space). A load writes its entry after it handed the atlas over, and drops the entries of
@@ -18,10 +18,17 @@ export const ATLAS_CACHE_FORMAT = 1;
 export const ATLAS_CACHE_NAME = 'weedjs-atlas';
 /** Where an entry's files are keyed, under the page's origin (Cache Storage keys are URLs; nothing fetches them). */
 const ENTRY_PATH = '/__weedjs/atlas-cache';
+/* global __WEED_BUILD_INPUTS__ */
+/**
+ * A bundle's build: the hash of the sources it was built from (scripts/distVersion.js bundleInputsHash), which
+ * buildBundle.js hands webpack's DefinePlugin; null in a source build (its key hashes the modules' text instead). A
+ * bundle built from changed atlas code under the same engine version gets another key.
+ */
+const BUNDLE_BUILD = typeof __WEED_BUILD_INPUTS__ === 'string' && __WEED_BUILD_INPUTS__ !== '' ? __WEED_BUILD_INPUTS__ : null;
 
 /**
  * The modules whose code decides a packed atlas's pixels and json, relative to this one: in a source build the key holds
- * their text's hash, since the engine's version only changes on a release. A bundle's code changes with its version.
+ * their text's hash. A bundle's key holds its build's hash (BUNDLE_BUILD).
  */
 export const ATLAS_CODE_MODULES = Object.freeze([
   './atlasBuild.js',
@@ -295,7 +302,7 @@ export async function atlasCacheKey({ assets: given, options, builtins, bundle, 
   if (urls === null || urls.length === 0) return null;
   const [sources, code, slot] = await Promise.all([
     hashAtlasSources(urls, fetchFn),
-    bundle ? null : atlasCodeHash(codeBase, fetchFn),
+    bundle ? BUNDLE_BUILD : atlasCodeHash(codeBase, fetchFn),
     atlasCacheSlot(assets),
   ]);
   const key = await sha256Hex(atlasCacheKeyText({ assets, options, builtins, sources, version, code }));

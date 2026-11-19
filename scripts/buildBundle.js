@@ -940,6 +940,9 @@ function main() {
     fs.rmSync(path.join(distDir, FILE_MODE_DIR), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     // Hashed before the build reads them: what distVersion.js compares the working tree against.
     const inputs = bundleInputsHash(rootDir);
+    // The atlas cache keys a bundle's atlas by the build it came from (src/core/atlas/atlasCache.js); webpack's
+    // DefinePlugin reads it from the environment every build below inherits (makeBuildEnv).
+    process.env.WEED_BUILD_INPUTS = inputs || '';
 
     console.log('📦 Preparing shared Box2D embed (gzip → base64)...');
     const box2dWorkerSource = buildBox2dWorkerSource();
