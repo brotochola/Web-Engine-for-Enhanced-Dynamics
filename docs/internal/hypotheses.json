@@ -23268,7 +23268,8 @@
         "R-1361",
         "R-1445",
         "R-1453",
-        "R-1458"
+        "R-1458",
+        "R-1463"
       ],
       "result": "Fixed 2026-11-18 (7a4cdafe, R-1453): bisected to E-504 (d9bf2261); painting a just-uploaded picture into the cache's target slowed its later uploads for good; renderer 40.3 -> 12.7 ms, the barrio's cached floor kept.",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
@@ -23309,17 +23310,18 @@
       "records": [
         "R-1349",
         "R-1361",
-        "R-1445"
+        "R-1445",
+        "R-1463"
       ],
       "result": "ASUS scoreboard 0895: pixi STEP_MS +29.3 %, kernel +46.0 % (FAIL row)",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
       "id": "N-294",
       "kind": "speed",
       "area": "pixi",
-      "status": "open",
+      "status": "answered",
       "date": "2026-11-18",
       "title": "meshFillMovingScene's renderer costs 29 % more than v0.14.0's on the ASUS, though its kernel got 46 % faster",
-      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+      "statusText": "answered 2026-11-18 (R-1463): waits counted in the scoreboard's raw STEP_MS (N-311)"
     },
     {
       "refs": [],
@@ -23329,17 +23331,18 @@
       "records": [
         "R-1349",
         "R-1361",
-        "R-1445"
+        "R-1445",
+        "R-1463"
       ],
       "result": "ASUS scoreboard 0895: logic0 STEP_MS +21.6 % (FAIL row), load OK",
       "next": "Check on the main PC (GTX 1650), the bar since 2026-11-18: main against v0.14.0 on this row alone (runScoreboard --only <row> --vs v0.14.0 --full-rev, or its scene with runPredatorAbab --full-rev). If it shows there too, bisect between v0.14.0 and main.",
       "id": "N-295",
       "kind": "speed",
       "area": "logic",
-      "status": "open",
+      "status": "answered",
       "date": "2026-11-18",
       "title": "queryAabbStressScene's logic costs 22 % more than v0.14.0's on the ASUS",
-      "statusText": "found 2026-11-18 by the ASUS scoreboard (job 0895, main 57044bd1 against v0.14.0, --full-rev); to check on the main PC"
+      "statusText": "answered 2026-11-18 (R-1463): waits counted in the scoreboard's raw STEP_MS (N-311)"
     },
     {
       "refs": [],
@@ -23766,6 +23769,19 @@
       "area": "load",
       "date": "2026-11-18",
       "statusText": "found 2026-11-18 by the atlas items' waterfall (R-1452)"
+    },
+    {
+      "records": [
+        "R-1463"
+      ],
+      "refs": [],
+      "id": "N-311",
+      "title": "runScoreboard judges a row's worker by its raw STEP_MS, waits included, where HOW_WE_MEASURE's primary is STEP_MS - WAIT_MS: meshFillMoving and queryAabb read as regressions against v0.14.0 that were the frame chain's waits",
+      "status": "open",
+      "kind": "bug",
+      "area": "tools",
+      "date": "2026-11-18",
+      "statusText": "found 2026-11-18 reading N-294 and N-295 (R-1463)"
     }
   ],
   "records": [
@@ -37916,6 +37932,15 @@
         "65adb15",
         "5be3556"
       ]
+    },
+    {
+      "id": "R-1463",
+      "date": "2026-11-18",
+      "time": "22:05",
+      "timeFrom": "recorded",
+      "title": "N-294 and N-295 answered: meshFillMoving's renderer and queryAabb's logic read worse against v0.14.0 by their waits, not their work (own work about 0.5 ms, as before)",
+      "verdict": "answered",
+      "text": "**N-294 and N-295 answered: the scoreboard's \"regressions\" in meshFillMoving and queryAabb are waits, not work.** On the\nmain PC (dx/startup 09b5a9d4, headless, 6 s + 6 s, 2 runs) meshFillMovingScene's renderer reads STEP_MS 5.582 and 5.448 ms\nwith WAIT_MS 4.995 and 4.930: its own work is about 0.5 ms (p50 0.49), as v0.14.0's whole step was (1.030). The renderer\nnow waits for its queue inside the step (E-198's waits, N-146), and the scoreboard rows judge the raw pixi_STEP_MS /\nlogic0_STEP_MS, waits included, where HOW_WE_MEASURE's primary is STEP_MS - WAIT_MS; queryAabb's logic0 0.187 -> 0.378 ms\nhas the same shape (its wait about 0.15 ms of a 0.18 ms step). Filed N-311 for the scoreboard."
     }
   ],
   "leads": [
