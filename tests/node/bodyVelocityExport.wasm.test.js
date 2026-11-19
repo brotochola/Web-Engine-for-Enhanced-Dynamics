@@ -32,6 +32,10 @@ test('E-305: the velocity channels hold a moving body\'s velocities with no read
   const b = { ax: malloc(8), ay: malloc(8), aa: malloc(8), mass: malloc(8), inertia: malloc(8), isStatic: malloc(2), fixed: malloc(2) };
   new Uint16Array(memory.buffer, listByte, 2).set([0, 1]);
   const col = (byte) => new Float32Array(memory.buffer, byte, 2);
+  // malloc does not zero: with E-322's spread reorder in the module, ay held a freed block's bytes (vy 4.5e-43).
+  col(b.ax).fill(0);
+  col(b.ay).fill(0);
+  col(b.aa).fill(0);
   col(b.mass).fill(2);
   col(b.inertia).fill(0.4);
   new Uint8Array(memory.buffer, b.isStatic, 2).fill(0);
