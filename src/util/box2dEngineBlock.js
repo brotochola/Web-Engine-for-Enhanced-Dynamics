@@ -111,6 +111,8 @@ export function requestBox2dBlock(worker, bytes, timeoutMs = 60000) {
     };
     const onMessage = (e) => {
       if (e.data?.msg !== 'engineBlock') return;
+      // SST-12: the physics worker's load marks ride on its answer (block.marks), with or without a block.
+      if (Array.isArray(e.data.loadMarks)) worker.__weedLoadMarks = e.data.loadMarks;
       done(e.data.memory ? { memory: e.data.memory, byte: e.data.byte | 0, bytes: e.data.bytes | 0 } : null);
     };
     const onError = () => done(null);
