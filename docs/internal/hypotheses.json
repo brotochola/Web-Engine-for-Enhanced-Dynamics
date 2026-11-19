@@ -16800,12 +16800,12 @@
     {
       "id": "E-316",
       "title": "Box2D's wide contact solver computes the second manifold point with zero masses for circle contacts, which have one: about 40 % of the contact stages' arithmetic and 192 of 592 bytes a wide constraint",
-      "status": "blocked",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested; blocked 2026-11-16: its Box2D build (origin's solver-skip-second-point) is not in the local Box2D clone, so main keeps its box2dWasm.wasm (integrate/pr12 a5a03ca3); it waits for that branch in the Box2D repo (SIMD and no-SIMD builds) and the LiquidFun gates",
+      "status": "kept",
+      "statusText": "kept 2026-11-19 (e43bc41a on dx/startup; Box2D main 2f3d4db)",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "result": "Read (R-1101): circle-circle and circle-polygon manifolds always have 1 point; every stage (prepare, warm start, solve, relax, restitution, store) still computes point 2, plus 2 divides in prepare. Estimate contact stages -20 to -30 %, physics STEP -2 to -4 %.",
+      "result": "Kept 2026-11-19 (R-1535): Box2D 2f3d4db (origin's solver-skip-second-point, its E-316 commit alone); Predator crowd 2.5 physics 14.39 -> 13.41 ms (-5.9 %, 4/4), spatial -3.2 %, pre-render -5.6 %; ballsHeavy physics -4.6 %; LiquidFun gates neutral.",
       "next": "Prepare sets a per-constraint flag from b2AnyTrueW(twoPointMask); point-2 fields go to the struct's tail, each point-2 block under that branch; store writes points[1] only when pointCount > 1. Node harness A/B and a 600-step pose hash against main (identical but for signed zeros); the no-SIMD build gets it through the scalar b2FloatW code; LiquidFun gates.",
       "refs": [
         "EXECUTION_PLAN.md#E-316"
@@ -16819,7 +16819,8 @@
         "R-1101",
         "R-1106",
         "R-1108",
-        "R-1208"
+        "R-1208",
+        "R-1535"
       ]
     },
     {
@@ -38873,6 +38874,20 @@
       "text": "**N-218 fixed: the pose writes read the parent column only while some entity has a parent; the ASUS's kernel recovers\nabout 90 % of the regression (-31 % at 250 000 entities).** The ASUS session found the cause (R-1489, R-1490: 5d48642f,\nDX-PARENT, reads Transform.parent[i] in poseMoved, setPositionFromArgs, set rotation and setRotationCS, for entities with no\nparent too; at 250 000 entities that 1 MB column misses the cache) and checked the fix 4966998a (R-1491): its\nsetterMicrobench in Node (the poseMoved path, body-less walkers), each src, 5 rounds round-robin, the moving case, median\nms a frame: 1ad06d1b (before DX-PARENT) 7.05 at n=250 000 and 4.25 at 150 000; 5d48642f 10.77 and 6.72; bb9e0cc1 (the fix's\nparent) 11.09 and 6.94; 4966998a 7.60 and 4.71: the fix -31 % and -32 % against its parent, runs not overlapping\n(128-134 against 86-97 frames a second at 250 000). The +8 to 11 % left against 1ad06d1b shows in the no-write case too\n(other changes since). The browser scene cannot judge it on the ASUS (logic and pre-render trade one physical core run to\nrun) and reads neutral on the main PC, where logic is 6.4 ms in that scene (R-1532). Kept as a kernel claim; on\ndx/startup (4966998a).",
       "commits": [
         "4966998a"
+      ]
+    },
+    {
+      "id": "R-1535",
+      "date": "2026-11-19",
+      "time": "05:44",
+      "timeFrom": "recorded",
+      "title": "E-316 kept: the wide contact solver skips the second manifold point when no lane has one; harness -8 % (6/6), Predator crowd 2.5 physics -5.9 % (4/4), ballsHeavy -4.6 %, LiquidFun neutral",
+      "verdict": "kept",
+      "text": "**E-316 kept: Box2D's wide contact solver skips the second manifold point when no lane of a constraint has one;\nPredator crowd 2.5's physics -5.9 % (4/4).** The build was waiting on origin's Box2D branch solver-skip-second-point\n(c5d1a03, made in a cloud container 2026-11-15, R-1106's sitting); fetched 2026-11-19 and cherry-picked alone (not its\nE-357 pmin/pmax commit) onto Box2D main f86d466 as weedjs/e316-skip-point2 2f3d4db, contact_solver_wide.inl only: an int\ntwoPoint per wide constraint from b2AnyTrueW(twoPointMask) in prepare, the second point's fields at the struct's tail,\nevery second-point block (prepare's gather and masses, warm start, push, solve, restitution, the store of points[1])\nunder it. A one-point lane's manifold points[1] is zero, so the skipped blocks applied +-0: results unchanged. Builds SIMD\nand no-SIMD (wasm-opt without SIMD accepts it).\n\nCrowd harness, weed mode (38 000 walkers, order 2, churn 100, idle 20, reorder every 30 steps, 960 steps), 6 rounds\nalternated against main's build, to 05:23: b2World_Step 13.38 -> 12.31 ms (-8.0 %), the step -7.8 %, 6/6 rounds, the\nsolve stage -11.2 %, collide -1.5 %; pose and export hashes identical. WeedJS 14110014 (the module), test:node green.\nrunPredatorAbab e316-predator, A 6ad93879 (dx/startup), B 14110014, `crowd=2.5&zoom=0.216`, physics owner, 4 pairs, to\n05:32: KEPT, physics 14.392 -> 13.406 ms (-5.9 %, worse 0/4; -2.4 % against the other workers, 4/4), spatial -3.2 %,\npre-render -5.6 %, logic -1.0 %. Gates, early: liquidFunStress `water=1.5` NEUTRAL (physics +0.2 %, to 05:37),\nliquidFunBodyCouple NEUTRAL (+0.3 %, to 05:39), ballsHeavy (all bodies moving) KEPT too, physics 12.073 -> 11.592 ms (-4.6 %, worse 1/4, to 05:44).\n\nThe module shipped: Box2D main fast-forwarded to 2f3d4db; its build gave another wasm than the worktree's (47 bytes of\ncode: 45 functions differ in constants, and only the solver's two against main's own base build), deterministically\n(a clean rebuild of main gave it again). Main's build in the harness, 4 rounds against the base (05:56): b2World_Step\n-8.4 %, 4/4, hashes identical; e43bc41a ships it (dx/startup).",
+      "commits": [
+        "2f3d4db",
+        "14110014",
+        "e43bc41a"
       ]
     }
   ],
