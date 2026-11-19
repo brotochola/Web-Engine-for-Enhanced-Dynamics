@@ -16716,8 +16716,8 @@
     {
       "id": "E-313",
       "title": "Box2D's circle contacts reach b2Shape and four body-sim lines to collide: b2CollideTask 24 % of the physics threads, b2CircleManifold 0.1 % (Predator crowd 2.5)",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "parked",
+      "statusText": "parked 2026-11-19 with E-323 (R-1522): the body sims' hot-first layout, about 2 % of physics; reopen when the collide's share grows",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
@@ -16736,19 +16736,19 @@
         "R-1110",
         "R-1218",
         "R-1231",
-        "R-1236"
-      ],
-      "rank": 3
+        "R-1236",
+        "R-1522"
+      ]
     },
     {
       "id": "E-314",
       "title": "Box2D's prefetch is a no-op in wasm (b2Prefetch emits nothing): the finalize's chain sim -> body -> shape -> fatAABB -> node is 4-6 dependent misses an iteration",
-      "status": "running",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "superseded",
+      "statusText": "superseded by E-322 2026-11-19 (R-1521, read, not run)",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "result": "Verified 2026-11-14 (R-1100): __builtin_prefetch compiles to nothing in wasm, so Box2D's own prefetch loops (the pair-set probes in broad_phase.c) are dead code. Box2D's hot loops are memory-bound: finalize 2.1, collide 2.0, solver 1.7 refills an instruction (R-1034, R-1041). Read (R-1101): the finalize's chain is 4-6 dependent misses inside a ~400-instruction iteration. Estimate physics STEP -3 to -7 %, more once the refit drops its fences.",
+      "result": "Superseded by E-322 2026-11-19 (R-1521): with the awake set in body id order the finalize's sim, body, shape and fat AABB reads climb; only the island and E-324's tree leaf stay random. Step 1 had read +1.75 % in the harness before E-322 (R-1109).",
       "next": "Early loads in batches of 16 with a tight first loop: the finalize in 2 stages, each 8 bodies ahead; collide the AABB tests and body-sim loads of 16 contacts; the solver the 8 body states of wide constraint i+2; the pair-set probes as real loads. Node harness A/B per loop (results unchanged; it can lose where the data already hits).",
       "refs": [
         "EXECUTION_PLAN.md#E-314"
@@ -16763,9 +16763,9 @@
         "R-1101",
         "R-1106",
         "R-1109",
-        "R-1236"
-      ],
-      "rank": 4
+        "R-1236",
+        "R-1521"
+      ]
     },
     {
       "id": "E-315",
@@ -17012,7 +17012,9 @@
         "R-1240",
         "R-1471",
         "R-1473",
-        "R-1509"
+        "R-1509",
+        "R-1520",
+        "R-1521"
       ]
     },
     {
@@ -17035,18 +17037,19 @@
       ],
       "records": [
         "R-1101",
-        "R-1231"
+        "R-1231",
+        "R-1522"
       ]
     },
     {
       "id": "E-324",
       "title": "Box2D marks moved tree nodes with an atomic OR per moved leaf in the finalize, then refits ~80 000 nodes serially and scans them again the next step",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-19 (merged into dx/startup d9cdaf13; Box2D main 71f7f73)",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "result": "Read (R-1101): ~19 000 moved leaves each do an i32.atomic.rmw.or whose result is used (a lock cmpxchg loop in V8, a full fence) on a random node; the refit scans the tree serially on the physics thread and b2GatherMovedSiblings scans it again. Estimate 0.3-0.6 ms serial, physics STEP -2 to -4 %.",
+      "result": "Kept as a kernel claim 2026-11-19 (R-1523, R-1527): Box2D's step -1.4 % in the harness (5/6), bit-identical; the physics batch's sitting found no worker 3 % worse.",
       "next": "The finalize writes only the leaf and a tree-dirty flag; the refit propagates MOVED from children while it unions the AABBs; the refit split into 8-16 DFS subtree ranges under b2ParallelFor, each emitting the moved-sibling list the next step reuses (unless API calls or bullets changed the tree). First a build without B2_COARSE_PROFILE reading the refit and pairs timers; the parallel refit bit-identical to the serial one.",
       "refs": [
         "EXECUTION_PLAN.md#E-324"
@@ -17058,19 +17061,20 @@
       ],
       "records": [
         "R-1101",
-        "R-1236"
-      ],
-      "rank": 8
+        "R-1236",
+        "R-1523",
+        "R-1527"
+      ]
     },
     {
       "id": "E-325",
       "title": "After each step the physics thread walks all ~38 000 awake bodies to export the ~19 000 moved ones, reading poses the finalize just wrote on other cores",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-19 (merged into dx/startup d9cdaf13)",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "result": "Read (R-1101): export_body_move_events reads g_still[slot] and, per moved body, x, y, rotC and rotS at a random slot (cross-core misses); step_world's own time is 1.9 % of the four threads (~1 ms a step, serial); the sleep paint before the step scans ~57 000 slots and writes 38 000 bytes the finalize clears again. A concrete form of E-298's untried \"finalize's pose copy\". Estimate 0.3-0.8 ms serial, physics STEP -2 to -6 %.",
+      "result": "Kept as a kernel claim 2026-11-19 (R-1525, R-1527): the export from the finalize, step_world -2.1 % in the harness (4/4), bit-identical; the physics batch's sitting found no worker 3 % worse (Predator physics -3.0 %, ballsHeavy +2.8 %). The incremental sleep paint was dropped.",
       "next": "Export inside the finalize after CCD (solver.c's move of 669-676 below 715), writing movedSlot[simIndex] sequentially; the serial pass becomes a sequential 160 KB compaction; bullets and bodies that fell asleep handled explicitly; the sleep flag painted incrementally. First emscripten_get_now around both loops in a scratch build, in Chrome at crowd 2.5; LiquidFun's re-export kept.",
       "refs": [
         "EXECUTION_PLAN.md#E-325"
@@ -17082,9 +17086,10 @@
       ],
       "records": [
         "R-1101",
-        "R-1236"
-      ],
-      "rank": 6
+        "R-1236",
+        "R-1525",
+        "R-1527"
+      ]
     },
     {
       "id": "E-326",
@@ -17112,12 +17117,12 @@
     {
       "id": "E-327",
       "title": "publishPose copies rotC and rotS every step though Predator's people never turn, serially on the frame's longest worker (4.2 % of the physics thread, 2.1 % of Chrome's instructions)",
-      "status": "open",
-      "statusText": "proposed 2026-11-15 from the 2026-11-14 night's traces and code reads, not tested",
+      "status": "kept",
+      "statusText": "kept 2026-11-19 (merged into dx/startup d9cdaf13)",
       "date": "2026-11-15",
       "area": "physics",
       "kind": "speed",
-      "result": "Read (R-1104): rotations are half of every publish; W15's reopen condition (the pose buffers in Box2D's block) is met, so the copy can be a task while the pool idles after the step. CPU and counters (R-1100): publishPose 4.2 % of the physics thread, 2.07 % of Chrome's instructions. Estimate physics -2 to -3 %.",
+      "result": "Kept as a kernel claim 2026-11-19 (R-1526, R-1527): rotation stamps per block of 64 slots, publishPose 176 -> 136 us with 64 bodies turning and 2 readers (-23 %, 4/4); Predator's pre-render -9.1 % (4/4) in the physics batch's sitting, ballsHeavy (all turning) physics +2.8 %.",
       "next": "Skip unchanged rotations (as E-308 did in the export); then the remaining copy as a pool task. A respawn or a teleport must write the rotation into both pose buffers. Predator crowd 2.5 physics.",
       "refs": [
         "EXECUTION_PLAN.md#E-327"
@@ -17130,9 +17135,10 @@
         "R-1100",
         "R-1104",
         "R-1236",
-        "R-1257"
-      ],
-      "rank": 7
+        "R-1257",
+        "R-1526",
+        "R-1527"
+      ]
     },
     {
       "id": "E-328",
@@ -18859,12 +18865,12 @@
     {
       "id": "E-426",
       "title": "Box2D's three pool threads stay on a CPU about 750 ms a second each (2.25 cores) through the step's spin (E-298's step 1), are preempted 126 to 143 times a second and leave the logic workers preempted 36 to 39 times a second: Predator crowd 2.5 has more runnable threads than cores at the frame's peak",
-      "status": "open",
-      "statusText": "proposed 2026-11-16 from a WPR capture with CSwitch and ReadyThread (cswitchStats.mjs, wprPmc.mjs) on Predator crowd 2.5",
+      "status": "rejected",
+      "statusText": "rejected on the main PC 2026-11-19 (R-1519); physics.stepSpin lets a scene force it",
       "date": "2026-11-16",
       "area": "physics",
       "kind": "speed",
-      "result": "Window 8.76 s: physics thread 950 ms/s on CPU (84 preemptions a second); pool threads 754, 752, 743 ms/s (WrAlertByThreadId about 62 a second: one sleep a frame; 126 to 143 preemptions a second; 45 to 50 CCX moves a second); logic 610 and 538 ms/s (39 and 36 preemptions); spatial and pre-render 708 and 572. E-298 kept the spin on ballsHeavy (physics -7.7 %) with a clean Predator gate.",
+      "result": "Rejected on the main PC 2026-11-19 (R-1519): spin off NEUTRAL (physics +1.9 %), pool of two physics +8.7 % (spatial -6.4 %) at Predator crowd 2.5; physics.stepSpin 'auto' stays the default.",
       "next": "A pool of two threads, or a spin bounded by the step's own work, measured on every worker of Predator crowd 2.5 (not only physics): the cores the spin takes may cost logic, spatial and pre-render more than the solver gains.",
       "refs": [],
       "aliases": [
@@ -18877,9 +18883,9 @@
         "R-1238",
         "R-1244",
         "R-1250",
-        "R-1252"
-      ],
-      "rank": 5
+        "R-1252",
+        "R-1519"
+      ]
     },
     {
       "id": "E-427",
@@ -23671,10 +23677,10 @@
     {
       "id": "N-301",
       "title": "After a lost WebGL context or a lost WebGPU device the game stays black: webglcontextlost is prevented and reported, webglcontextrestored only resets the pacer and logs, device.lost only reports; nothing rebuilds the engine's GPU resources",
-      "status": "open",
-      "statusText": "found 2026-11-18 reading pixiWorker.js against Phaser's history (R-1422); not reproduced",
+      "status": "kept",
+      "statusText": "kept 2026-11-19 (c598112b, on dx/startup)",
       "date": "2026-11-18",
-      "result": "",
+      "result": "Fixed 2026-11-19 (R-1524, c598112b): on a GPU loss the engine saves the world in memory as a hot reload does and loads the same scene from it; WebGL and WebGPU both come back in Predator. payload.allEntitiesRestored replaces payload.hotReload.",
       "next": "Reproduce with WEBGL_lose_context (loseContext, then restoreContext) and device.destroy() on WebGPU; list what Pixi 8 restores on its own and what the engine's raw resources lose. Then rebuild only the Pixi worker's GPU side (the simulation lives in shared memory and does not notice) and mark every key changed; the frame after the restore byte-identical to one before. Plan in REVIEW_PLAN.md#N-301.",
       "area": "pixi",
       "kind": "bug",
@@ -23690,7 +23696,9 @@
         "black screen after context loss"
       ],
       "records": [
-        "R-1422"
+        "R-1422",
+        "R-1524",
+        "R-1528"
       ]
     },
     {
@@ -24013,6 +24021,48 @@
       "date": "2026-11-19",
       "statusText": "found 2026-11-19 by DX-STARTUP's final matrix (R-1517)",
       "next": "Find which frame it is (frameTotals' per-frame times, or a CPU trace of spatial0 from the start), compare with a base window that starts at the same moment, then build the first lists before the start (the prime's way) or spread them over the first frames."
+    },
+    {
+      "records": [
+        "R-1520"
+      ],
+      "refs": [],
+      "id": "N-313",
+      "title": "E-322's reorder raises Box2D's memory peak 45 to 70 MB at Predator crowd 2.5 (548 -> 593 to 619 MB of 669, the 90 % warning fires): its gathers take new buffers before freeing the old ones",
+      "status": "open",
+      "kind": "bug",
+      "area": "physics",
+      "date": "2026-11-19",
+      "statusText": "found 2026-11-19 checking E-322's default (R-1520); the peak holds, it does not grow",
+      "next": "Keep the reorder's gather buffers between reorders (a scratch arena sized by the awake set's capacity, grown when it grows) instead of b2Alloc per pass; check the peak at Predator crowd 2.5 and the harness's pose hash."
+    },
+    {
+      "records": [
+        "R-1528"
+      ],
+      "refs": [],
+      "id": "N-314",
+      "title": "Saving and loading a crowd scene is slow: Predator's 17 500 entities take 3.7 to 5.5 s to save (captureSavePayload) and 3.8 to 8.6 s to load back, which is most of a restart after a GPU loss (N-301) and of a hot reload",
+      "status": "open",
+      "kind": "bug",
+      "area": "save",
+      "date": "2026-11-19",
+      "statusText": "in part 2026-11-19 (R-1528): the restart 3.6 s; logic0's restoreSave (1.7 s) and the load (1.5 s) left",
+      "next": "Time the save's parts (pauseAndSettle, instance fields, the decals' PNG tiles, collectSerializableEntities, the codec) and the load's (destroy, the boot, restoreSave on logic0 with allTypes, the prime) in one Predator run, then fix the largest; the restart's console line gives the two totals."
+    },
+    {
+      "records": [
+        "R-1525"
+      ],
+      "refs": [],
+      "id": "N-315",
+      "title": "A command's export writes sleeping=0 for a dynamic body that stays asleep (b2Body_SetTransform does not wake it), so until the next sleep paint bodies_apply_accelerations treats it as awake and an acceleration applied that frame is lost",
+      "status": "open",
+      "kind": "bug",
+      "area": "physics",
+      "date": "2026-11-19",
+      "statusText": "found 2026-11-19 by the E-325 agent (R-1525), not fixed",
+      "next": "In export_slot_state, flag the body asleep when b2Body_IsAwake is false (the dropped paint patch, e325-paint-dropped.patch, has the fix); a wasm test: a sleeping body teleported by a command keeps sleeping=1 and an acceleration that frame wakes it or is kept."
     }
   ],
   "records": [
@@ -38617,6 +38667,128 @@
       "title": "N-218 on the ASUS, STEP - WAIT: keyedPack n=250000 churn=0.05 gbuf=1, logic's own work 17.2 -> 27.2 ms from bdcca2e7 to origin/main (+50.5 %, 4 of 4): work, not wait",
       "verdict": "note",
       "text": "ASUS lab job 0898n (03:05-03:25), runPredatorAbab on keyedPackStressScene ?n=250000&churn=0.05&gbuf=1, bdcca2e7 (A)\nagainst origin/main 29e233c3 (B), each side its src/ only (the scene is not in bdcca2e7; it comes from the runner tree,\nas kp-e387-gbuf ran; 0898m with --full-rev failed on that), 4 pairs, headless, owner logic. HD 620 on Intel\n31.0.101.2145, i7-7500U 2 cores.\n\n| Pair | bdcca2e7 logic step / wait / own (ms) | main logic step / wait / own (ms) |\n|---|---|---|\n| 1 | 11.054 / 0.464 / 10.59 | 28.393 / 0.023 / 28.37 |\n| 2 | 19.839 / 0.094 / 19.75 | 26.533 / 0.051 / 26.48 |\n| 3 | 15.013 / 0.263 / 14.75 | 24.242 / 0.048 / 24.19 |\n| 4 | 20.444 / 0.060 / 20.38 | 27.987 / 0.064 / 27.92 |\n\n- REGRESSION: logic's own work 17.247 -> 27.203 ms. Paired +50.5 %, worse in 4 of 4 pairs, +64.2 % against the other\n  workers.\n- Main's frames ran long (346 to 398 of 600 exact frames, logic load 141 to 176 %). bdcca2e7's held 470 to 598.\n- Unlike N-294 and N-295, this is work: main's logic waits only 0.02 to 0.06 ms a frame. N-218's raw +43 % on the\n  main PC is mostly or all logic's own work.\n- Next: job 0898o splits gbuf=1 from churn=0.05 at both ends (n=150000), then bisects origin/main's first-parent line\n  with the configuration that regresses most."
+    },
+    {
+      "id": "R-1519",
+      "date": "2026-11-19",
+      "time": "02:35",
+      "timeFrom": "recorded",
+      "title": "E-426 on the main PC: the pool spin off is NEUTRAL, a two-thread pool costs physics (the limiter) 8.7 %: rejected here, 'auto' stays; physics.stepSpin added",
+      "verdict": "rejected",
+      "text": "**E-426 on the main PC (16 logical CPUs): Box2D's pool spin costs the other workers nothing measurable at Predator crowd\n2.5, and a pool of two threads costs physics, the limiter, 8.7 %: rejected here; 'auto' stays.** cbce44b5 adds\nphysics.stepSpin ('auto', E-298's rule; true or false force it) and the bench page's ?physicsSpin=0|1. runMultiArm e426,\ndx/startup with E-322 on, `crowd=2.5&zoom=0.216`, physics owner, 4 rounds, `--full-rev --pool`, to 2026-11-19 02:35:\n- spinOff (`physicsSpin=0`): NEUTRAL, physics 11.759 -> 11.805 ms (+1.9 %, 3/4 worse), spatial +1.7 %, the others under\n  the floor;\n- pool2 (`physicsWorkers=3`): REGRESSION, physics 11.759 -> 12.694 (+8.7 %, 4/4), spatial -6.4 % (0/4), logic and\n  pre-render lower under the floor;\n- both: REGRESSION, physics +5.1 % (4/4), spatial -8.1 %.\nThe cores the spin and the third pool thread take do cost spatial a little, but physics is Predator's limit (R-1509), so\nthe trade loses. Where the engine has more threads than logical CPUs, 'auto' turns the spin off already (E-298, E-501's\nASUS gain); the knob stays for scenes and machines that want to choose.",
+      "commits": [
+        "cbce44b5"
+      ]
+    },
+    {
+      "id": "R-1520",
+      "date": "2026-11-19",
+      "time": "02:56",
+      "timeFrom": "recorded",
+      "title": "E-322 on by default, checked: Box2D's memory peak +45 to 70 MB at Predator crowd 2.5 and holding; Boids 85 000 NEUTRAL (spatial -2.1 % off, physics +0.9 %)",
+      "verdict": "note",
+      "text": "**E-322 on by default, checked for what the sittings did not show: Box2D's memory peak rises 45 to 70 MB at Predator crowd\n2.5 and holds there (it does not grow over a run); Boids at 85 000 shows no change in memory and none in its frame.** The\nphysics stats of the runs (MEMORY_PEAK_KB, HEAP_USED_KB, statsEnd): Predator crowd 2.5 with the reorder off peaks at\n548 MB of 669 (heap in use 544), with it on at 593 to 619 MB (in use 543 to 555), so the engine's warning at 90 % now\nfires at that crowd (92 %); a 70 s window (2026-11-19 02:38) peaks at 619 MB as the 20 s ones did. The reorder's gathers\ntake new buffers before they free the old ones, and the break keeps the room. Boids at 85 000 (all awake, few contacts,\n02:40): peak 221 MB with the reorder, 219 without, no warning. runPredatorAbab boids-e322, `boids=85000`, B\n`awakeReorder=0` (the bench page's knob, 5f697160), spatial owner, 4 pairs, to 02:56: NEUTRAL, spatial 10.867 -> 10.468\nms with it off (-2.1 %, 1/4 worse), physics +0.9 %, spatial p99 alike. Two Boids capacity searches with the reorder on\n(02:43, 02:49; the second asked ?awakeReorder=0, which Boids did not read then) held 85 000 and 77 000: a search swings\nthat much; 91 000 at 22:44. Filed N-313 for the memory.",
+      "commits": [
+        "5f697160"
+      ]
+    },
+    {
+      "id": "R-1521",
+      "date": "2026-11-19",
+      "time": "03:06",
+      "timeFrom": "recorded",
+      "title": "E-314 closed on paper: E-322's body-id order made the finalize's chain monotonic streams the prefetcher follows; superseded",
+      "verdict": "superseded",
+      "text": "**E-314 read again now that E-322 is on by default (2026-11-19): closed, superseded by E-322; no build, no run.** A read of Box2D main 2bca804 (b2FinalizeBodiesTask) against what the row assumed.\n\n- **E-314 (early loads in the finalize, since b2Prefetch emits nothing in wasm).** Its premise was a chain of dependent\n  misses an iteration: sim -> body -> shape -> fat AABB -> tree node. E-322 now keeps the awake set in body id order\n  (re-sorted every 30 steps, spread over the workers), so the finalize walks the sims in order, `bodies + sim->bodyId`\n  climbs, a walker's one shape was made right after its body (shape ids climb with body ids) and the fat AABBs follow the\n  shape ids: monotonic streams the hardware prefetcher already follows. What stays random is the island and the tree leaf\n  of a body whose AABB left its fat one, and the leaf is E-324's. Its step 1 already read +1.75 % in the harness before\n  E-322 (R-1109). Closed as superseded by E-322; reopen if the awake order stops being kept."
+    },
+    {
+      "id": "R-1522",
+      "date": "2026-11-19",
+      "time": "03:06",
+      "timeFrom": "recorded",
+      "title": "E-313 parked on paper: what R-1110 left is the body sims' layout, about 2 % of physics, under the bar",
+      "verdict": "note",
+      "text": "**E-313 read again now that E-322 is on by default (2026-11-19): parked with E-323; no build, no run.** A read of Box2D main 2bca804 (b2CollideTask) against what the row assumed.\n\n- **E-313 (circle contacts collide from the body sims).** R-1110 showed that the ~95 % of contacts recycled each step read\n  no b2Shape line, which took the estimate's main part. What is left is the body sims' layout: a recycled contact reads\n  transform and center (bytes 0-24), invMass and invInertia (60-68), maxExtent (72-76) and flags (92-96) of each 96-byte\n  b2BodySim, so both of its lines; hot fields first would save about one line of a contact's six to seven (the contact\n  sim, two fat AABBs, two body sims), roughly 10 % of the collide stage (2.2 ms of 11.4 in the weed-mode harness at\n  38 000 walkers), about 2 % of physics: under the bar, and the struct's order reaches the snapshot and every user of the\n  sim. Parked with E-323 (hot-first b2Shape and b2Body); reopen when the collide's share grows."
+    },
+    {
+      "id": "R-1523",
+      "date": "2026-11-19",
+      "time": "03:18",
+      "timeFrom": "recorded",
+      "title": "E-324 built and screened: the refit flags the ancestors from their children, the finalize only the leaf and the root; same hashes, Box2D's step -1.4 % (5/6) in the harness",
+      "verdict": "screened",
+      "text": "**E-324 built and screened: in a DFS-ordered tree the finalize flags only the moved leaf and the root, and the refit flags\neach ancestor from its children pair as it unions them (no atomic OR per ancestor); same pose hash, Box2D's step -1.4 %\nin the harness.** Box2D branch weedjs/e324-refit (ea13812 on 2c703a1, E-325's export), dynamic_tree.c only: an unordered\ntree (unit tests) still walks the ancestors; the refit reads each internal node's children flags (branchless, a leaf reads\nits own pair) before the union, so the flags and boxes it leaves are the same as before.\nCrowd harness, weed mode (the agent's 0493b75: 38 000 walkers through the glue, order 2, reorder every 30 steps, churn\n100, idle 20, 960 steps), 6 alternating rounds against its own base build of 2c703a1, to 2026-11-19 03:18: b2World_Step\n12.18 -> 12.02 ms (-1.37 %), the whole step -1.30 % (5/6 rounds), solve -2.87 %, collide +0.8 %, pose and export hashes\nidentical. (A first run at 03:08 read -4.1 % against a base folder the E-325 agent rebuilt during the run; not used.)\nUnder the 3 % bar alone: it rides the physics batch's Predator sitting with E-325 and E-327, as a kernel claim (the scene\nmust not get worse)."
+    },
+    {
+      "id": "R-1524",
+      "date": "2026-11-19",
+      "time": "03:34",
+      "timeFrom": "recorded",
+      "title": "N-301 reproduced and fixed: a lost GPU restarts the scene from a save of the running world (both backends back, 7.5 to 14 s at 17 500 entities)",
+      "verdict": "kept-hygiene",
+      "text": "**N-301 reproduced and fixed: a lost GPU no longer ends the game; the scene restarts from a save of the running world.**\ngpuLossProbe (18f01c6d) runs a scene on the bench page and loses its GPU through the Pixi worker's loseGpuForTest\nmessage (WebGL: WEBGL_lose_context, restored 300 ms later; WebGPU: the device destroyed). Before the fix (2026-11-19\n03:20, Predator, headed Chrome, GTX 1650): on WebGL the restored context drew the floor only (Pixi restored its own\ntilemap; every engine sprite, static and light stayed gone) under the fatal error overlay; on WebGPU the last frame stayed\nfrozen under the overlay (Pixi 8 has no device restore).\n\nThe fix (c598112b) takes the road the engine already had instead of rebuilding the Pixi worker's GPU side in place:\nthe worker tells the page ('gpuLost', and 'gpuRestored' on WebGL), the engine saves the world in memory the way a hot\nreload does (captureSavePayload: every entity at its own index, plain instance fields, joints, LiquidFun, decals,\nonSaveGame; the world left paused) and loads the same scene again from that save with the same data, at once on WebGPU\n(the new renderer asks for a new device), on WebGL once the browser restores the context (10 s at most). A second loss\nwithin 10 s of a restart, a restore that never comes, or a failed restart shows the fatal error. payload.hotReload became\npayload.allEntitiesRestored with restartReason ('hotReload' or 'gpuLost'), since two paths set it (the three demos that\nread it, types, SAVE_GAME.md with a new section). tests/node/gpuLossRestart.test.js covers the orchestration.\n\nAfter the fix (03:27 and 03:34): both backends come back, no overlay, sprites and lights drawn, frames advancing; the\nrestart took 7.5 to 14 s at Predator's 17 500 entities (the save 3.7 to 5.5 s, the load 3.8 to 8.6 s), filed as N-314.\nSuites green (test:node 3 226, test:demos 121). The register's plan was a frame byte-identical after the restore; a\nrestart from a save cannot promise that (the sim goes on), and was chosen because it rebuilds everything through the\ntested load path on both backends.",
+      "commits": [
+        "18f01c6d",
+        "c598112b"
+      ]
+    },
+    {
+      "id": "R-1525",
+      "date": "2026-11-19",
+      "time": "02:59",
+      "timeFrom": "recorded",
+      "title": "E-325 built: the moved-body export from the finalize (export 0.354 -> 0.078 ms, step_world -2.1 %, 4/4, hashes identical); part 2, the incremental sleep paint, dropped",
+      "verdict": "kept-kernel",
+      "text": "**E-325 built (an agent, 2026-11-19): the moved-body export from the finalize; part 2 (the sleep flags painted\nincrementally) dropped.** Box2D weedjs/e325-export 2c703a1 (with the harness's weed mode, 0493b75): the finalize exports\nafter continuous collision and writes each awake body's slot (or -1) at its sim index, a fast bullet exports in the bullet\nstage, a body falling asleep marks its entry in b2TrySleepIsland; step_world compacts those entries into the same moved\nlist in the same order (E-181's still flags and b2BodyPoseDiffers gone; LiquidFun's velocity re-read kept). WeedJS\nfe547622 (the module) with movedFromFinalize.wasm.test.js; 7ff1df8c zeroes the acceleration columns bodyAccelerationsWake\nmallocs (it passed only because malloc returned zeros).\n\nCrowd harness, weed mode (38 000 walkers, 960 steps, order 2, churn 100, idle 20, reorder every 30 steps), 4 rounds\nalternated: the export 0.354 -> 0.078 ms a step, the glue around b2World_Step 0.486 -> 0.209 ms, b2World_Step +0.2 %\n(noise), step_world 11.858 -> 11.611 ms (-2.1 %, 4/4); the weed hash (every step's moved list in order, the fell-asleep\nflags, every slot's sleeping flag and all 8 state channels) and the pose hash identical, also at 3 000 fast walkers\n(continuous collision, bullets, teleports, spinning, 807 fell-asleep events).\n\nPart 2 dropped: the paint is only 0.08 ms a step, and b2World_Step read +1.3 and +2.35 % in two 4-round sets (the change\nfaster in 2 of 8 rounds), and it would remove the paint's guard against stray JS writes to RigidBody.sleeping\n(e325-paint-dropped.patch in the session's scratchpad). Found on the way, not fixed: a command's export writes sleeping=0\nfor a dynamic body that stays asleep, so an acceleration applied that frame is lost (N-315). Builds SIMD and no-SIMD,\nBox2D's unit tests pass on both.",
+      "commits": [
+        "0493b75",
+        "2c703a1",
+        "fe547622",
+        "7ff1df8c"
+      ]
+    },
+    {
+      "id": "R-1526",
+      "date": "2026-11-19",
+      "time": "03:20",
+      "timeFrom": "recorded",
+      "title": "E-327 built as rotation stamps: publishPose -13 to -38 % in the kernel (4/4, bit for bit); the bitwise compare form lost (+15 to +66 %) and was dropped",
+      "verdict": "kept-kernel",
+      "text": "**E-327 built (an agent, 2026-11-19) as rotation stamps; the row's first form (skip a rotation whose bits match) lost in\nthe kernel and was dropped.** Box2D weedjs/e325-export 582ef08: Box2D stamps a block of 64 slots with an epoch word\nwhenever an export writes a rotation in it (a body that turned in the step, and every whole export: commands, creation,\nfell asleep); the stamp is read before it is written, so a block is written at most once a step. WeedJS e23ef284:\npublishPose copies rotations only in blocks stamped since the buffer it writes was last published, then advances the\nepoch; N-86's repair stamps the block it zeroes; a module without stamps copies every rotation, as before.\npublishPoseRotation.test.js and rotationStamps.wasm.test.js.\n\npublishPoseMicrobench (8ebb15b2 `--stamps`; Predator's shape: 57 600 slots, 67 % bodies in 40 runs, half moving), 4 rounds\nagainst dx/startup's weedjsPost.js, us a publish: 64 turning with 2 reader threads 176.4 -> 135.9 (-22.9 %), the same\nafter a respawn 253.3 -> 210.9 (-16.7 %), none turning 177.3 -> 110.1 (-37.9 %), 64 turning with no readers 88.0 -> 76.8\n(-12.7 %), after a respawn 159.6 -> 135.7 (-15.0 %), every case 4/4, every slot of both buffers bit for bit the same.\nNot run: kernelTierAudit. The stamps cost nothing measurable in the harness (step_world -1.7 %, noise, 200 spinning\nwalkers, weed hash identical). The compare form: +15 to +66 % per publish, 0/4 in every case (the JS compare costs about\n2 ns an element, more than set()'s copy; e327-compare-variant.patch in the scratchpad). Ceiling: skipping every rotation\ncuts a publish about 40 %. Left: the x/y copy as a pool task (seenBodyGeneration and densePositions live in JS). Noted:\nTypedArray.set between SharedArrayBuffer views copies 8 bytes at a time only when both are 8-aligned (6.7x slower\notherwise; WeedJS's columns are aligned).",
+      "commits": [
+        "582ef08",
+        "8ebb15b2",
+        "e23ef284"
+      ]
+    },
+    {
+      "id": "R-1527",
+      "date": "2026-11-19",
+      "time": "04:11",
+      "timeFrom": "recorded",
+      "title": "The physics batch (E-325, E-327, E-324) in one sitting: Predator crowd 2.5 NEUTRAL (physics -3.0 %, pre-render -9.1 % 4/4), LiquidFun x2 and ballsHeavy (+2.8 %) NEUTRAL: no worker 3 % worse, the three kept as kernel claims",
+      "verdict": "kept-kernel",
+      "text": "**The physics batch in one sitting: E-325 (the moved-body export from the finalize), E-327 (publishPose's rotation stamps)\nand E-324 (the refit's moved flags from the children) together against their base, Predator crowd 2.5 and the three\nguards; no worker 3 % worse anywhere, so the three kernel claims stand (kept-kernel).** runPredatorAbab, A 99afd415 (the\nagents' branch point), B opt/e324-refit 71cd8c7d (the three, module from Box2D 71f7f73), `--pool --full-rev`, physics\nowner, 2026-11-19 03:55 to 04:11, SITTING.lock held, the main PC on AC:\n\n| scene | verdict | physics | other workers |\n|---|---|---|---|\n| Predator `crowd=2.5&zoom=0.216`, 4 pairs (to 04:01) | NEUTRAL | 12.467 -> 12.037 ms, -3.0 %, worse 2/4 | preRender -9.1 % (0/4 worse, 4/4 lower against the others), logic -7.1 %, spatial -4.0 % |\n| liquidFunStress `water=1.5`, early, 2 pairs (04:03) | NEUTRAL | 6.920 -> 6.987, +1.0 % | under the floor |\n| liquidFunBodyCouple, early, 2 pairs (04:06) | NEUTRAL | 6.353 -> 6.274, -1.2 %, worse 0/2 | under the floor |\n| ballsHeavy (every body turning: E-327's worst case), early, 4 pairs (04:11) | NEUTRAL | 11.648 -> 11.868, +2.8 %, worse 3/4 | under the floor |\n\nEvery worker moved down in Predator (physics +2.9 % against the others), so part of that is drift; pre-render's -9.1 %\nholds against it (4/4), as E-327's readers no longer find the rotation lines rewritten every frame. ballsHeavy's +2.8 %\n(3/4) is the worst case to watch: every block stamped every step and every rotation still copied. Merged into dx/startup\n(d9cdaf13); Box2D main fast-forwarded to 71f7f73, whose build gives the same wasm byte for byte (57babca6 takes its\nglue, whose include comments name the main folder).",
+      "commits": [
+        "71f7f73",
+        "71cd8c7d",
+        "d9cdaf13",
+        "57babca6"
+      ]
+    },
+    {
+      "id": "R-1528",
+      "date": "2026-11-19",
+      "time": "04:15",
+      "timeFrom": "recorded",
+      "title": "N-314 in part: a GPU loss's restart 7.9 -> 3.6 s in Predator (decal tiles raw in a save kept in memory, no codec round trip); logic0's restore (1.7 s) left",
+      "verdict": "kept",
+      "text": "**N-314 in part: a GPU loss's restart 7.9 -> 3.6 s in Predator (17 500 entities), both backends; the restore on logic0\n(1.7 s) is what is left.** 3fd598c3 puts load marks through a save's parts, the restart and a restore's apply, and\ngpuLossProbe prints them. The restart's waterfall (03:44, WebGPU): the decal tiles' PNG encode 2 557 ms, building the\nsave 228 ms, the codec's round trip 1 146 ms; in the load, the box2d block 454, the atlas pixels 644, the renderer's\nready 226, logic0's restoreSave 2 227 ms. A first restart (03:27) took 12 to 14 s, a second 7.5 s: the machine's state\nmoves these a lot.\n\n- 06d05824: a save kept in memory takes the decal tiles raw (the PNG encode is for storage): decals 2 557 -> 23 ms, the\n  save 3.98 -> 1.50 s, the restart 7.9 -> 4.8 s (03:46).\n- b8c0d786: the restart's save kept as built, not through the codec (for the entities the codec only normalizes values\n  and groups them by type; the scene's data and instance fields still go through JSON as in a stored save): the save\n  1.50 -> 0.33 s, the restart 3.56 s on WebGL and on WebGPU, no restore warning, sprites and lights back (04:15).\n\nLeft: logic0's restoreSave of every entity at its own index, 1.7 s (a _spawnAt with the components per entity, and the\nmessage with every record), and the load's own 1.5 s. A player's save still encodes its decal tiles one after another as\nPNG; not measured.",
+      "commits": [
+        "3fd598c3",
+        "06d05824",
+        "b8c0d786"
+      ]
     }
   ],
   "leads": [

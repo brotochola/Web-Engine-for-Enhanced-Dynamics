@@ -576,6 +576,8 @@ class PixiRenderer extends AbstractWorker {
     // initialize reports (null: none).
     this._rendererBackend = '';
     this._useWebGpu = false;
+    // N-301: true while loseGpuForTest's destroy() of the WebGPU device stands for a real loss.
+    this._gpuLossTest = false;
     this._engineShaders = {};
     this._bootError = null;
     // The glow batch's rows in the render-queue memory (pixi pack mode), or null.
@@ -1481,17 +1483,15 @@ class PixiRenderer extends AbstractWorker {
     const gl = this.pixiApp.renderer.gl;
     this._framePacer.bindGl(gl);
     if (gl && gl.canvas) {
+      // N-301: the page restarts the scene from a save of the running world once the context is back (the default
+      // prevented, so the browser may restore it); this worker's GPU side is not rebuilt in place.
       gl.canvas.addEventListener(
         'webglcontextlost',
         (e) => {
           e.preventDefault();
           this._framePacer.reset();
-          this.reportError(
-            'WebGL Context Lost',
-            new Error(
-              'The GPU context was lost. This usually happens due to GPU driver crashes or excessive resource usage.'
-            )
-          );
+          console.warn('[WeedJS] the WebGL context was lost (a driver reset, a GPU switch, too many contexts)');
+          self.postMessage({ msg: 'gpuLost', backend: 'webgl' });
         },
         false
       );
@@ -1500,7 +1500,7 @@ class PixiRenderer extends AbstractWorker {
         'webglcontextrestored',
         () => {
           this._framePacer.reset();
-          this.reportLog('WebGL context restored');
+          self.postMessage({ msg: 'gpuRestored', backend: 'webgl' });
         },
         false
       );
@@ -7352,6 +7352,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       return;
     }
     if (msg === 'liquidFunCleared') return;
+    if (msg === 'loseGpuForTest') {
+      this._loseGpuForTest(data.restoreAfterMs);
+      return;
+    }
     debugWorkerLog(`PIXI WORKER: handleCustomMessage called with msg: ${msg}`);
 
     if (msg === 'setLayerContent') {
@@ -7361,6 +7365,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     } else {
       debugWorkerLog(`PIXI WORKER: Unhandled message type: ${msg}`);
     }
+  }
+
+  /**
+   * N-301's test hook: lose the GPU as a driver reset would. WebGL: WEBGL_lose_context, restored after restoreAfterMs.
+   * WebGPU: the device destroyed (its lost promise then says 'destroyed', which _gpuLossTest makes count as a loss).
+   * @param {number} restoreAfterMs
+   */
+  _loseGpuForTest(restoreAfterMs) {
+    if (this._useWebGpu) {
+      const device = this.pixiApp?.renderer?.gpu?.device;
+      if (!device) return;
+      this._gpuLossTest = true;
+      device.destroy();
+      return;
+    }
+    const gl = this.pixiApp?.renderer?.gl;
+    const lose = gl && gl.getExtension('WEBGL_lose_context');
+    if (!lose) return;
+    lose.loseContext();
+    setTimeout(() => lose.restoreContext(), Math.max(0, restoreAfterMs | 0));
   }
 
   /**
@@ -8810,10 +8834,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         console.error('WebGPU uncapturederror:', ev.error?.message || String(ev.error));
       });
       device.lost.then((info) => {
-        if (info && info.reason === 'destroyed') return;
-        const reason = info?.reason || 'unknown';
-        const message = info?.message || 'GPU device was lost';
-        this.reportError('WebGPU device lost', new Error(`${reason}: ${message}`));
+        if (info && info.reason === 'destroyed' && !this._gpuLossTest) return;
+        // N-301: the page restarts the scene from a save of the running world, and its renderer asks for a new device.
+        console.warn(`[WeedJS] the WebGPU device was lost (${info?.reason || 'unknown'}: ${info?.message || ''})`);
+        self.postMessage({ msg: 'gpuLost', backend: 'webgpu' });
       });
       this._bindWebGpuSwapchain();
       // DX-IGPUWARN: the adapter's GPU, for scene.gpu (a throwaway WebGL context's name where the adapter's is unclear).

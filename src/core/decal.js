@@ -393,11 +393,12 @@ export class Decal {
 
   /**
    * Pack non-empty decal tiles from scene SharedArrayBuffer.
-   * Browser: PNG bytes per tile. Node / no OffscreenCanvas: raw RGBA bytes.
+   * Browser: PNG bytes per tile. Node / no OffscreenCanvas, or png false (a save kept in memory): raw RGBA bytes.
    * @param {object} scene
+   * @param {{ png?: boolean }} [options]
    * @returns {Promise<object|null>}
    */
-  static async packSnapshot(scene) {
+  static async packSnapshot(scene, options = {}) {
     if (!scene?.config?.particle?.decals) return null;
     const sab = scene.buffers?.decalsTilesRGBA;
     if (!sab) return null;
@@ -411,7 +412,7 @@ export class Decal {
 
     const bytesPerTile = tilePixelSize * tilePixelSize * 4;
     const rgba = new Uint8ClampedArray(sab);
-    const usePng = canEncodePng();
+    const usePng = options.png !== false && canEncodePng();
     const tiles = [];
 
     for (let i = 0; i < totalTiles; i++) {

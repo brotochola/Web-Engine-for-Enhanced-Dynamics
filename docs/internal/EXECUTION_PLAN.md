@@ -5076,6 +5076,8 @@ by the slow path, invalidated by the material setters); b2BodySim reordered {p, 
 first. First: the Node harness A/B at 38 000 walkers, b2Counters.recycledContactCount, how many Predator bodies have offset
 0. Manifolds bit-identical, B2_SNAP_VERSION bumped, preSolve and friction callbacks keep the slow path, both builds, the
 LiquidFun gates. Owner: physics.
+**Result (R-1522, parked):** with E-322 on, what R-1110 left is the body sims' hot-first layout, about 2 % of physics;
+parked with E-323.
 ### E-314 Box2D's prefetch by early loads (b2Prefetch is a no-op in wasm)
 
 **Premise (R-1100, R-1101):** Verified 2026-11-14 (R-1100): __builtin_prefetch compiles to nothing in wasm, so Box2D's own
@@ -5085,6 +5087,8 @@ inside a ~400-instruction iteration. Estimate physics STEP -3 to -7 %, more once
 loads in batches of 16 with a tight first loop: the finalize in 2 stages, each 8 bodies ahead; collide the AABB tests and
 body-sim loads of 16 contacts; the solver the 8 body states of wide constraint i+2; the pair-set probes as real loads. Node
 harness A/B per loop (results unchanged; it can lose where the data already hits). Owner: physics.
+**Result (R-1521, superseded):** E-322 keeps the awake set in body id order, so the finalize's sim, body, shape and fat
+AABB reads climb in memory; only the island and E-324's tree leaf stay random. Closed without a run.
 ### E-315 The shadow stamp's selection of each light's nearest casters
 
 **Premise (R-1100, R-1102):** CPU pass (R-1100): stamp_light_range 26.6 % and quickselect_order 12.0 %, 38.6 % of
@@ -5171,6 +5175,9 @@ only the leaf and a tree-dirty flag; the refit propagates MOVED from children wh
 into 8-16 DFS subtree ranges under b2ParallelFor, each emitting the moved-sibling list the next step reuses (unless API
 calls or bullets changed the tree). First a build without B2_COARSE_PROFILE reading the refit and pairs timers; the parallel
 refit bit-identical to the serial one. Owner: physics.
+**Result (R-1523, R-1527, kept-kernel):** the bottom-up flags without the parallel split: the finalize flags the leaf
+and the root, the refit each ancestor from its children pair (Box2D 71f7f73); Box2D's step -1.4 % in the harness (5/6),
+bit-identical; no worker 3 % worse in the physics batch's sitting. The parallel refit is not built.
 ### E-325 The moved-body export inside Box2D's finalize
 
 **Premise (R-1101):** Read (R-1101): export_body_move_events reads g_still[slot] and, per moved body, x, y, rotC and rotS at
@@ -5181,6 +5188,9 @@ after CCD (solver.c's move of 669-676 below 715), writing movedSlot[simIndex] se
 sequential 160 KB compaction; bullets and bodies that fell asleep handled explicitly; the sleep flag painted incrementally.
 First emscripten_get_now around both loops in a scratch build, in Chrome at crowd 2.5; LiquidFun's re-export kept. Owner:
 physics.
+**Result (R-1525, R-1527, kept-kernel):** the export from the finalize (Box2D 2c703a1): export 0.354 -> 0.078 ms,
+step_world -2.1 % in the harness (4/4), bit-identical; the incremental sleep paint lost (b2World_Step +1.3 to +2.35 %) and
+was dropped. Found on the way: N-315.
 ### E-326 Box2D's pool woken before the step's first parallel-for
 
 **Premise (R-1101):** Read (R-1101): E-298 spins only inside b2World_Step; the first parallel-for of each step (the pair
@@ -5195,6 +5205,10 @@ in Box2D's block) is met, so the copy can be a task while the pool idles after t
 publishPose 4.2 % of the physics thread, 2.07 % of Chrome's instructions. Estimate physics -2 to -3 %. **Plan:** Skip
 unchanged rotations (as E-308 did in the export); then the remaining copy as a pool task. A respawn or a teleport must write
 the rotation into both pose buffers. Predator crowd 2.5 physics. Owner: physics.
+**Result (R-1526, R-1527, kept-kernel):** skipping rotations by comparing bits lost in the kernel (+15 to +66 %); built
+instead as rotation stamps per block of 64 slots (Box2D 582ef08): publishPose -13 to -38 % (4/4), Predator's pre-render
+-9.1 % (4/4) in the batch, ballsHeavy (all turning) physics +2.8 % (3/4). The copy as a pool task is not built (the
+generations and dense positions live in JS).
 ### E-328 A second spatial worker started by logic's frame-end bell
 
 **Premise (R-1104):** Read (R-1104): rows are read two logic frames later and Box2D rewrites Transform only at its finalize,

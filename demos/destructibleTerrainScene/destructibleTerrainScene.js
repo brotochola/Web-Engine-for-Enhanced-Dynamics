@@ -160,9 +160,9 @@ export class DestructibleTerrainScene extends Scene {
 
   // The save holds the WorldGrid bytes and the loose (dynamic) islands; the ship,
   // the manager and the static rock are not saved: mesh the restored grid and put
-  // a fresh ship in (N-5). A hot reload brought them back already.
+  // a fresh ship in (N-5). A hot reload or a restart after a GPU loss brought them back already.
   onLoadGame(payload) {
-    if (payload?.hotReload) return;
+    if (payload?.allEntitiesRestored) return;
     this._spawnShip();
     WorldGridManager.spawn({ forceProcessOnLogicWorker: 1, resume: true });
   }

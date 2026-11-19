@@ -200,9 +200,13 @@ The console says why: `[WeedJS] hot reload: Wall: onMessage() was added; reloadi
 - **Every entity**, serializable or not, and `shouldSaveEntity` is not asked. Each goes back to its own index, with its components, its joints, chains, fixtures and meshes, and the logic worker it was pinned to.
 - **`onSpawned` does not run again**: the entity is not spawning, it continues.
 - **Plain JS fields on instances** come back too, each logic worker getting its own copies: numbers, strings, booleans, null, arrays, plain objects and typed arrays. Functions and class instances do not; create those in the constructor.
-- The scene's own state comes back through `onSaveGame` / `onLoadGame` as in any save. `onLoadGame(payload)` sees `payload.hotReload === true`: every entity is already back, so do not spawn entities there again.
+- The scene's own state comes back through `onSaveGame` / `onLoadGame` as in any save. `onLoadGame(payload)` sees `payload.allEntitiesRestored === true` (and `payload.restartReason === 'hotReload'`): every entity is already back, so do not spawn entities there again.
 
 A save that fails reloads without state, with a warning. If the saved state is gone, does not decode, or belongs to another scene class, the scene starts fresh instead, with a warning. An entity type the edit removed is skipped, and a component schema change loads best-effort, one warning per type and component.
+
+## When the GPU is lost
+
+A driver reset (Windows restarts a GPU that hangs), a laptop switching GPUs, too many WebGL contexts in one browser or a phone sending the tab to the background can take the GPU from the page. The simulation does not live on the GPU, so the engine keeps the game: it saves the running world in memory, the way a hot reload does (every entity at its own index, plain instance fields, joints, LiquidFun, decals, `onSaveGame`), and loads the same scene again from that save with the same `data`. On WebGPU that happens at once and the new renderer asks for a new device; on WebGL it waits for the browser to give the context back (up to 10 s). `onLoadGame(payload)` runs as after a hot reload, with `payload.allEntitiesRestored === true` and `payload.restartReason === 'gpuLost'`. If the browser does not give the GPU back, or it is lost again within 10 s of the restart, the engine shows its error instead.
 
 ## Debug UI
 

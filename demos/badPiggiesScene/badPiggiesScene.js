@@ -264,8 +264,8 @@ export class BadPiggiesScene extends Scene {
   onLoadGame(payload) {
     this._rebuildOccupancyFromEntities();
     this._rebuildWheelJointsFromActive();
-    if (payload?.hotReload) {
-      // A hot reload brought the ghost previews back too: find them.
+    if (payload?.allEntitiesRestored) {
+      // A hot reload (or a restart after a GPU loss) brought the ghost previews back too: find them.
       this.ghostBoxIdx = GhostMachineBox.getFirstActiveIndex() ?? -1;
       this.ghostWheelIdx = GhostMachineWheel.getFirstActiveIndex() ?? -1;
       this.ghostRocketIdx = GhostMachineRocket.getFirstActiveIndex() ?? -1;

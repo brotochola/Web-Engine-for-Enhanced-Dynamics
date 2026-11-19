@@ -26,6 +26,7 @@ import { Decal } from '../decal.js';
 import { GameObject } from '../gameObject.js';
 import { Transform } from '../../components/transform.js';
 import { VERSION } from '../../version.js';
+import { loadMark } from '../../util/loadMarks.js';
 import {
   applySharedResources,
   applyTime,
@@ -146,6 +147,35 @@ function sendInstanceFields(scene, saved, mapGet) {
  * @returns {Promise<{ meta: object, bytes: number, entityCount: number, particleCount: number }>}
  */
 export async function saveGame(scene, slotId, options = {}) {
+  const payload = await captureSavePayload(scene, options);
+  const compressed = await encodeSave(payload);
+  const id =
+    slotId ||
+    `${payload.sceneName}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
+  const entityCount = payload.entities.length;
+  const particleCount = payload.liquidFun?.count | 0;
+
+  const meta = await SaveStore.put(id, compressed, {
+    scene: payload.sceneName,
+    savedAt: new Date().toISOString(),
+    engineVersion: VERSION,
+    entityCount,
+    particleCount,
+  });
+
+  return { meta, bytes: compressed.byteLength, entityCount, particleCount };
+}
+
+/**
+ * The save of a running scene, built in memory: what saveGame encodes and stores, and what a lost GPU restarts the
+ * scene from (N-301).
+ * @param {object} scene
+ * @param {{ allEntities?: boolean, instanceFields?: boolean, staysPaused?: boolean, decalsAsPng?: boolean }} [options]
+ *   staysPaused: leave the world paused after the capture (the scene is about to be replaced); decalsAsPng false: the
+ *   decal tiles raw, for a save kept in memory (their PNG encode takes seconds in a crowd scene)
+ * @returns {Promise<object>} the payload
+ */
+export async function captureSavePayload(scene, options = {}) {
   if (!scene) throw new Error('SaveGame: no scene');
   // Capture a stopped world. Running workers write the buffers read below, so
   // a save could catch a re-mesh, a joint or a physics step half done, and the
@@ -154,6 +184,7 @@ export async function saveGame(scene, slotId, options = {}) {
   const settle =
     !scene.config?.manualStep && !scene.state?.pause && typeof scene.pauseAndSettle === 'function';
   if (settle) await scene.pauseAndSettle();
+  loadMark('save settled');
   let payload;
   let liquidFun = null;
   try {
@@ -166,39 +197,28 @@ export async function saveGame(scene, slotId, options = {}) {
         console.warn('[SaveGame] LiquidFun snapshot failed:', err);
       }
     }
+    loadMark('save liquidFun');
     let decals = null;
     try {
-      decals = await Decal.packSnapshot(scene);
+      decals = await Decal.packSnapshot(scene, { png: options.decalsAsPng !== false });
     } catch (err) {
       console.warn('[SaveGame] Decal snapshot failed:', err);
     }
+    loadMark('save decals');
     const globals = {};
     if (liquidFun) globals.liquidFun = liquidFun;
     if (decals) globals.decals = decals;
     if (options.instanceFields === true) {
       const fields = await requestInstanceFields(scene);
       globals.instanceFields = { perWorker: fields ? fields.perWorker : [], forced: readForcedWorkers() };
+      loadMark('save instance fields');
     }
     payload = buildSavePayload(scene, globals, { allEntities: options.allEntities === true });
+    loadMark('save built');
   } finally {
-    if (settle) scene.resume();
+    if (settle && options.staysPaused !== true) scene.resume();
   }
-  const compressed = await encodeSave(payload);
-  const id =
-    slotId ||
-    `${payload.sceneName}-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}`;
-  const entityCount = payload.entities.length;
-  const particleCount = liquidFun?.count | 0;
-
-  const meta = await SaveStore.put(id, compressed, {
-    scene: payload.sceneName,
-    savedAt: new Date().toISOString(),
-    engineVersion: VERSION,
-    entityCount,
-    particleCount,
-  });
-
-  return { meta, bytes: compressed.byteLength, entityCount, particleCount };
+  return payload;
 }
 
 /**

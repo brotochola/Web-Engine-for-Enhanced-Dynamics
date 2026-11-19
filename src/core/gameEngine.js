@@ -1,7 +1,7 @@
 // GameEngine.js - Lightweight scene orchestrator
 // Manages canvas, scene lifecycle, input listeners, browser hardening, and debug UI
 
-import { pageQuery, setSceneParams } from './sceneParams.js';
+import { pageQuery, sceneParams, setSceneParams } from './sceneParams.js';
 import { stampInput } from '../util/latencyStamp.js';
 import { DebugUI } from './debug/debugUi.js';
 import { HotReload } from './debug/hotReload.js';
@@ -27,6 +27,10 @@ import {
 import { isTypingTarget } from '../util/typingTarget.js';
 import { loadMark } from '../util/loadMarks.js';
 import { compileEngineWasm } from '../util/sceneWorkerBootstrap.js';
+
+// N-301: how long a lost WebGL context may take to come back, and how soon a second loss after a restart is fatal.
+const GPU_RESTORE_WAIT_MS = 10000;
+const GPU_LOSS_REPEAT_MS = 10000;
 
 const PREVENT_DEFAULT_KEYS = new Set([
   'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab',
@@ -83,6 +87,13 @@ class GameEngine {
     this.debugUI = null;
     /** SST-14: the debug overlay's load (debug: true), until it resolves into debugUI; null when off or destroyed. */
     this._debugUILoad = null;
+    /**
+     * N-301: a GPU loss being recovered: { scene, backend, save (the world's save, a promise), timer (WebGL: the wait
+     * for the context's restore) }; null otherwise.
+     */
+    this._gpuLoss = null;
+    /** N-301: when the last restart after a GPU loss ended (performance.now()), or -Infinity. */
+    this._gpuRestartEnd = -Infinity;
 
     if (this.debugEnabled) {
       const load = DebugUI.load({
@@ -403,7 +414,10 @@ class GameEngine {
         // null (gone, unreadable, another scene): start fresh, never fail the load
         restorePayload = await HotReload.readSlot(SceneClass.name);
         // onLoadGame sees it: every entity is back already, do not spawn them again.
-        if (restorePayload) restorePayload.hotReload = true;
+        if (restorePayload) {
+          restorePayload.allEntitiesRestored = true;
+          restorePayload.restartReason = 'hotReload';
+        }
       } else if (!restorePayload && options.restoreSlot) {
         const { SaveStore, decodeSave } = await import('./save/saveGame.js');
         const blob = await SaveStore.get(options.restoreSlot);
@@ -437,7 +451,8 @@ class GameEngine {
       if (typeof options.onProgress === 'function') this.currentScene._onProgressOption = options.onProgress;
       if (restorePayload) {
         this.currentScene._restorePayload = restorePayload;
-        this.currentScene._restoreAllTypes = hotRestore; // the hot save holds every entity
+        // A hot reload's or a GPU loss's save holds every entity
+        this.currentScene._restoreAllTypes = restorePayload.allEntitiesRestored === true;
       }
 
       // Engine owns canvas dimensions — inject into scene config before init
@@ -467,6 +482,93 @@ class GameEngine {
       console.error('❌ Error loading scene:', error);
       this.state = GameEngine.states.READY; // Reset state on error
       throw error;
+    }
+  }
+
+  /**
+   * N-301: the renderer lost its GPU (a driver reset, a GPU switch, too many contexts). The world is saved now, every
+   * entity as a hot reload keeps it, and the scene restarts from that save: on WebGPU at once (its renderer asks for a
+   * new device), on WebGL when the browser restores the context (10 s at most). A second loss within 10 s of a restart,
+   * or a restart that fails, shows the fatal error instead.
+   * @param {object} scene
+   * @param {'webgl'|'webgpu'} backend
+   */
+  _onGpuLost(scene, backend) {
+    if (scene !== this.currentScene || this._gpuLoss || this.state !== GameEngine.states.READY) return;
+    if (performance.now() - this._gpuRestartEnd < GPU_LOSS_REPEAT_MS) {
+      scene._showFatalErrorMessage('renderer', 'GPU lost again', 'The GPU was lost again right after the game restarted.');
+      return;
+    }
+    loadMark('gpu lost');
+    const save = this._captureGpuLossSave(scene);
+    save.catch(() => {}); // a failed capture is reported by the restart that awaits it, or by nobody if none comes
+    this._gpuLoss = { scene, backend, save, timer: 0 };
+    if (backend === 'webgpu') {
+      this._restartAfterGpuLoss();
+      return;
+    }
+    this._gpuLoss.timer = setTimeout(() => {
+      if (this._gpuLoss?.scene !== scene) return;
+      this._gpuLoss = null;
+      scene._showFatalErrorMessage('renderer', 'WebGL context lost', 'The browser did not restore the GPU context.');
+    }, GPU_RESTORE_WAIT_MS);
+  }
+
+  /**
+   * N-301: the running world's save, every entity as a hot reload keeps it, the world left paused. N-314: kept as
+   * built, not passed through the codec (1.2 s in Predator): for the entities the codec only normalizes values (NaN
+   * and strings to null, booleans to numbers) and groups them by type, which a restore at exact indices does not
+   * depend on. The scene's own data and the instance fields, JSON in a stored save, go through JSON as there.
+   * @param {object} scene
+   * @returns {Promise<object>}
+   */
+  async _captureGpuLossSave(scene) {
+    const m = await import('./save/saveGame.js');
+    const payload = await m.captureSavePayload(scene, {
+      allEntities: true,
+      instanceFields: true,
+      staysPaused: true,
+      decalsAsPng: false,
+    });
+    if (payload.custom !== undefined) payload.custom = JSON.parse(JSON.stringify(payload.custom));
+    if (payload.instanceFields) payload.instanceFields = JSON.parse(JSON.stringify(payload.instanceFields));
+    loadMark('save copied');
+    return payload;
+  }
+
+  /** N-301: the browser restored the WebGL context: restart the scene from the save taken at the loss. */
+  _onGpuRestored(scene) {
+    if (this._gpuLoss?.scene !== scene) return;
+    clearTimeout(this._gpuLoss.timer);
+    this._restartAfterGpuLoss();
+  }
+
+  async _restartAfterGpuLoss() {
+    const { scene, save } = this._gpuLoss;
+    try {
+      const t0 = performance.now();
+      const payload = await save;
+      const t1 = performance.now();
+      payload.allEntitiesRestored = true;
+      payload.restartReason = 'gpuLost';
+      await this.loadScene(scene.constructor, {
+        scriptUrl: scene.sceneScriptUrl || undefined,
+        data: scene.data,
+        params: sceneParams().toString(),
+        restorePayload: payload,
+      });
+      console.info(
+        `[WeedJS] the game restarted after a GPU loss: ${payload.entities?.length | 0} entities, the save ready ` +
+          `${Math.round(t1 - t0)} ms after the restart began, the scene back ${Math.round(performance.now() - t1)} ms later`
+      );
+    } catch (error) {
+      console.error('[WeedJS] the restart after a GPU loss failed', error);
+      if (this.currentScene) {
+        this.currentScene._showFatalErrorMessage('renderer', 'GPU lost', String(error?.message || error));
+      }
+    } finally {
+      this._gpuLoss = null;
+      this._gpuRestartEnd = performance.now();
     }
   }
 
