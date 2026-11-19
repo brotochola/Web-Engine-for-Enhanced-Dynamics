@@ -176,16 +176,26 @@ function cullGlsl(cull, gbuf) {
  * A sprite vertex shader (instancedSprite.vert.glsl, or its indexed forms) passing on its foot's floor y, its painter step
  * (the instance index's low bits), with `gbuf` its words (the zIndex band and the surface), and H-EDGE's vPlain.
  * DX-FACEDEPTH: with `faces`, each vertex's floor place (vDepthFloor: facesDepthGlsl) and a face's innerZ as its painter
- * step; `cull` ('flat', 'heights', with `faces`) one of the opaque pass's two programs (cullGlsl).
+ * step; `cull` ('flat', 'heights', with `faces`) one of the opaque pass's two programs (cullGlsl). E-378: `plainEdge`
+ * (the edge pass, with a nearest atlas and no mipmaps) leaves out the instances of plain frames at a tint alpha of 1:
+ * their texels' alphas are 0 or 128/255 and up (no FRAME_SOFT), so each pixel is the opaque pass's or nothing, and the
+ * edge pass rasterized them only to discard every pixel (H-EDGE). Under a full tint alpha a texel of 128 to 254
+ * (FRAME_HALF) falls under 0.5 and is the edge pass's, so those instances stay.
  * @param {string} source
- * @param {{ gbuf?: boolean, faces?: boolean, cull?: 'none'|'flat'|'heights' }} [opts]
+ * @param {{ gbuf?: boolean, faces?: boolean, cull?: 'none'|'flat'|'heights', plainEdge?: boolean }} [opts]
  */
-export function pixelDepthVertex(source, { gbuf = false, faces = false, cull = 'none' } = {}) {
+export function pixelDepthVertex(source, { gbuf = false, faces = false, cull = 'none', plainEdge = false } = {}) {
   const decl = 'out vec2 vTileOff;\n';
   const pos = 'gl_Position = vec4(clip.xy, aInstDepth, 1.0);';
   for (const mark of [decl, pos]) {
     if (source.split(mark).length !== 2) throw new Error(`WeedJS: pixel depth needs the sprite vertex shader (${mark.trim()})`);
   }
+  if (plainEdge && !(source.includes('float instA = ') && source.includes('uniform vec4 uColor;'))) {
+    throw new Error('WeedJS: the edge pass\'s plain cull needs the sprite vertex shader\'s instA and uColor');
+  }
+  const plainEdgeCull = plainEdge
+    ? '\n  if (vPlain > 0.5 && instA * uColor.a >= 1.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);'
+    : '';
   const words = gbuf
     ? `${source.includes('in vec3 aInstGbuf;') ? '' : 'in vec3 aInstGbuf;\n'}flat out vec2 vDepthWord;\n`
     : '';
@@ -199,7 +209,8 @@ export function pixelDepthVertex(source, { gbuf = false, faces = false, cull = '
     .replace(
       pos,
       () => `${pos}\n  vFootFloor = aInstXY.y * uDepth.x;\n${FOOT_RY_GLSL}\n  vPainter = vec2(float(gl_InstanceID & ${PIXEL_DEPTH_PAINTER_STEPS - 1}), abs(aInstScale.y));\n  vMapsWin = twinWindow(tid);` +
-        (gbuf ? '\n  vDepthWord = aInstGbuf.xy;' : '') + plainGlsl(gbuf) + (faces ? facesDepthGlsl(gbuf) + cullGlsl(cull, gbuf) : ''),
+        (gbuf ? '\n  vDepthWord = aInstGbuf.xy;' : '') + plainGlsl(gbuf) + plainEdgeCull +
+        (faces ? facesDepthGlsl(gbuf) + cullGlsl(cull, gbuf) : ''),
     );
 }
 

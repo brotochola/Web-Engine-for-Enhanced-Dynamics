@@ -1153,7 +1153,7 @@ export class InstancedSpriteBatch {
     }
     const shader = new Shader({ glProgram, resources });
     if (this._pixelDepth) {
-      const edgeRowVertex = this._depthFaces ? this._depthVertex(rowSource, 'none') : rowVertex;
+      const edgeRowVertex = this._depthFaces || this._pixelDepth.plainEdge === true ? this._depthVertex(rowSource, 'edge') : rowVertex;
       this._edgeRowShader = new Shader({
         glProgram: instancedSpriteGlProgram(GlProgram, edgeRowVertex, this._depthFragment(color, true), `${name}-rows-edge`),
         resources: this._edgeResources(shader, this._staticsSource),
@@ -1168,7 +1168,17 @@ export class InstancedSpriteBatch {
    * faces, `cull` picks the instances of one of the opaque pass's two programs (pixelDepth.js cullGlsl).
    */
   _depthVertex(source, cull = 'none') {
-    if (this._pixelDepth && source) return pixelDepthVertex(source, { gbuf: this.gbuf, faces: this._depthFaces, cull: this._depthFaces ? cull : 'none' });
+    if (this._pixelDepth && source) {
+      // E-378: 'edge' is the edge pass's (every instance, as 'none', less the plain full-alpha ones a nearest atlas lets
+      // it leave out).
+      const edge = cull === 'edge';
+      return pixelDepthVertex(source, {
+        gbuf: this.gbuf,
+        faces: this._depthFaces,
+        cull: this._depthFaces && !edge ? cull : 'none',
+        plainEdge: edge && this._pixelDepth.plainEdge === true,
+      });
+    }
     // DX-GBUF: a batch with words has every geometry carry them; the program takes them, read or not (gbufAttributeGlsl).
     return this.gbuf && source ? gbufAttributeGlsl(source) : source;
   }
@@ -1430,7 +1440,7 @@ export class InstancedSpriteBatch {
     const shader = new Shader({ glProgram, resources });
     if (depth) {
       // DX-DEPTH (F5 v2): the edge pass's twin, the same vertex shader (with faces, over every instance).
-      const edgeVert = this._depthFaces ? this._depthVertex(baseVert, 'none') : vert;
+      const edgeVert = this._depthFaces || this._pixelDepth.plainEdge === true ? this._depthVertex(baseVert, 'edge') : vert;
       this._edgeShader = new Shader({
         glProgram: instancedSpriteGlProgram(GlProgram, edgeVert, this._depthFragment(color, true), `${name}-edge`),
         resources: this._edgeResources(shader, null),
@@ -1497,7 +1507,7 @@ export class InstancedSpriteBatch {
     const shader = new Shader({ glProgram, resources });
     if (this._pixelDepth && indexedVertex) {
       this._edgeIndexedShader = new Shader({
-        glProgram: instancedSpriteGlProgram(GlProgram, this._depthVertex(indexedBase, 'none'), this._depthFragment(color, true), `${name}-indexed-edge`),
+        glProgram: instancedSpriteGlProgram(GlProgram, this._depthVertex(indexedBase, 'edge'), this._depthFragment(color, true), `${name}-indexed-edge`),
         resources: this._edgeResources(shader, this._staticsSource),
       });
       this._vdepthIndexedShader = this._vdepthTwin(indexedBase, color, shader, this._staticsSource, `${name}-indexed-vdepth`);

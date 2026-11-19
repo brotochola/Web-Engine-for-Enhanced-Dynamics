@@ -3028,7 +3028,11 @@ class PixiRenderer extends AbstractWorker {
     const wallsDepth = wallEdgesWanted(this.config?.lighting);
     const pixelDepth = (this.atlasMapsSource !== null || facesDepth || wallsDepth)
       && (wantDepth === true || (wantDepth !== false && oblique))
-      ? { maps: this.atlasMapsSource ?? this._emptyMapsSource() }
+      ? {
+        maps: this.atlasMapsSource ?? this._emptyMapsSource(),
+        // E-378: a nearest atlas without mipmaps samples texels whole, so the edge pass can leave plain frames out.
+        plainEdge: this.atlasScaleMode === 'nearest' && this.autoGenerateMipmaps !== true,
+      }
       : null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,

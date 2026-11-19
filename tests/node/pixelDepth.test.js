@@ -75,6 +75,28 @@ test('H-EDGE: each pass leaves before the twin page and the depth for the pixels
   assert.match(wgsl, /o\.color = mainFragColor\(in\);\n  let d = weedPixelDepth\(in, true\);/);
 });
 
+// E-378: with a nearest atlas (no mipmaps) a plain frame's texel alphas are 0 or 128/255 and up, so at a tint alpha of 1
+// every pixel is the opaque pass's or nothing: the edge pass leaves those instances out in the vertex, before any pixel.
+// Under 1, a texel of 128 to 254 (FRAME_HALF) falls under 0.5 and is the edge pass's: those instances stay.
+test('the edge pass leaves out a plain frame\'s instance at a tint alpha of 1 when the atlas is nearest', () => {
+  const cull = 'if (vPlain > 0.5 && instA * uColor.a >= 1.0) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);';
+  for (const name of ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl']) {
+    for (const gbuf of [false, true]) {
+      for (const faces of [false, true]) {
+        const plain = pixelDepthVertex(shader(name), { gbuf, faces });
+        assert.ok(!plain.includes(cull), `${name}: none without the option`);
+        const edge = pixelDepthVertex(shader(name), { gbuf, faces, plainEdge: true });
+        const at = edge.indexOf(cull);
+        assert.ok(at > 0, `${name}, gbuf ${gbuf}, faces ${faces}: the cull`);
+        // After vPlain is known (and, with words, after an unshaded word clears it), so a glowing instance is drawn.
+        assert.ok(at > edge.lastIndexOf('vPlain = '), 'after vPlain is final');
+      }
+    }
+  }
+  assert.throws(() => pixelDepthVertex('out vec2 vTileOff;\nvoid main() {\n  gl_Position = vec4(clip.xy, aInstDepth, 1.0);\n}\n',
+    { plainEdge: true }), /instA and uColor/);
+});
+
 // DX-FACEDEPTH: a face's plane depth from its vertices (linear on the screen), its innerZ in the painter's 7 bits, no
 // floor() of the floor place; the opaque pass in two programs, the frames with heights writing gl_FragDepth and every other
 // instance the depth its vertices wrote (E-378), in both languages. Without faces, the programs are as they were.
