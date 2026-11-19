@@ -5,6 +5,11 @@
 const noop = () => {};
 
 export class DebugUI {
+  /** SST-14: GameEngine loads the overlay through this; in production the overlay is this stub. */
+  static load() {
+    return Promise.resolve(new DebugUI());
+  }
+
   constructor() {}
   registerScenes() {}
   attach() {}
