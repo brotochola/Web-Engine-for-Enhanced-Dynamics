@@ -18,7 +18,7 @@
 import WEED from '/src/index.js';
 import { SunPanel } from '../sunStreetScene/sunPanel.js';
 import { LoadingLine } from './loadingLine.js';
-import { fetchBinary, fetchBarrioScene, loadBarrio } from './barrioLoader.js';
+import { loadBarrio, parseBarrioScene } from './barrioLoader.js';
 import {
   META, BARRIO, PX_PER_M, param, OFF, TOWN_SWITCHES, TownSwitches, TRAFFIC, TRAFFIC_RESOURCE, CROSSING_STRIDE, Traffic,
   ROUNDABOUT,
@@ -40,6 +40,16 @@ const {
 } = WEED;
 
 const SCENE_FILE = `${BARRIO}parquechas.scene.json`;
+/**
+ * The barrio's own files: its floor, its traffic (when it has crossings) and its scene file. Listed in static
+ * assets.files, the engine fetches them beside the atlas and the sounds and hands them to preload() as this.files;
+ * fetched in preload() they cost about 200 ms of every start after the workers were ready.
+ */
+const BARRIO_FILES = {
+  floor: { url: `${BARRIO}piso.bin.gz`, decompress: 'gzip' },
+  ...(TRAFFIC.n ? { traffic: { url: `${BARRIO}transito.bin.gz`, decompress: 'gzip' } } : {}),
+  scene: { url: SCENE_FILE, as: 'text' },
+};
 const START_HOUR = param('hour', 17.5);
 const DAY_MINUTES = param('dayMinutes', 8);
 const RESOLUTIONS = [0.25, 0.5, 1];
@@ -90,7 +100,8 @@ const HOURS = [12, 18.6, 22, 6.2];
 /** The engine's load steps (Scene.onLoadProgress), as the loading screen names them. */
 const STEP_NAMES = {
   audio: 'audio', scripts: 'scripts', buffers: 'shared memory', adobe: 'animations', atlas: 'sprite atlas', tilemaps: 'tile maps',
-  flowfields: 'flowfields', shaders: 'shader sources', sounds: 'sounds', workers: 'workers', world: 'the barrio',
+  flowfields: 'flowfields', files: 'the barrio\'s files', shaders: 'shader sources', sounds: 'sounds', workers: 'workers',
+  world: 'the barrio',
 };
 
 // ---- the pools, from the package's counts (meta.js) ----
@@ -290,7 +301,7 @@ export class BuenosAiresScene extends Scene {
     },
   };
 
-  static assets = { spritesheets: SHEETS, flowfields: FLOWFIELDS };
+  static assets = { spritesheets: SHEETS, flowfields: FLOWFIELDS, files: BARRIO_FILES };
 
   static decorations = DECORATION_CLASSES;
 
@@ -344,11 +355,10 @@ export class BuenosAiresScene extends Scene {
 
   async preload() {
     this.loading?.show(0.9, 'the barrio: its floor, its traffic and its scene file');
-    const [floorBytes, trafficBytes, doc] = await Promise.all([
-      fetchBinary(`${BARRIO}piso.bin.gz`),
-      TRAFFIC.n ? fetchBinary(`${BARRIO}transito.bin.gz`) : Promise.resolve(null),
-      fetchBarrioScene(SCENE_FILE),
-    ]);
+    // Fetched with the engine's assets (BARRIO_FILES): here already, gunzipped.
+    const floorBytes = new Uint8Array(this.files.floor);
+    const trafficBytes = this.files.traffic ? new Uint8Array(this.files.traffic) : null;
+    const doc = parseBarrioScene(this.files.scene, SCENE_FILE);
     this.fillFloor(floorBytes);
     this.fillTraffic(trafficBytes, doc);
     const result = await loadBarrio(doc, {

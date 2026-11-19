@@ -1084,7 +1084,23 @@ export interface SceneAssetsManifest {
    */
   flowfields?: Record<string, string>;
   shaders?: Record<string, string>;
+  /**
+   * N-312: the scene's own files (a level, a map, a binary table it reads itself), fetched with the other assets and
+   * handed over as `scene.files` before preload(): name → URL (its bytes, an ArrayBuffer), or
+   * `{ url, as: 'arrayBuffer' | 'text' | 'json', decompress: 'gzip' }` (gunzipped when the body is gzip). A file that
+   * does not load stops the scene's load with its URL.
+   */
+  files?: Record<string, string | SceneFileAsset>;
   [key: string]: unknown;
+}
+
+/** N-312: one of a scene's own files (SceneAssetsManifest.files). */
+export interface SceneFileAsset {
+  url: string;
+  /** How the body is handed over: its bytes (default), its text or its parsed JSON. */
+  as?: 'arrayBuffer' | 'text' | 'json';
+  /** 'gzip': gunzipped when the body is gzip (a server that sent it with Content-Encoding decoded it already). */
+  decompress?: 'gzip';
 }
 
 /** Single value or `{ min, max }` range (engine `randomRange`). */
@@ -2090,6 +2106,8 @@ export declare class Scene {
   sceneScriptUrl: string | null;
   config: SceneConfig;
   imageUrls: SceneAssetsManifest;
+  /** N-312: the scene's own files (static assets.files) by name, as each entry reads it; filled before preload(). */
+  files: Record<string, ArrayBuffer | string | unknown>;
   audioUrls: string[];
   loadedAudioNames: string[];
   seed: number;

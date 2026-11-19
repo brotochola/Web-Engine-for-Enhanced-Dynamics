@@ -36,7 +36,7 @@ Engine-focused notes for the current `src/` architecture.
 Every scene defines:
 
 - `static config` (engine settings)
-- `static assets` (textures/spritesheets; optional prebaked `bigAtlas`)
+- `static assets` (textures/spritesheets; optional prebaked `bigAtlas`; flowfields, shaders, tilemaps; the scene's own `files`)
 - `static audios` (optional)
 - `static entities = [[EntityClass, poolSize], ...]`
 - `static queries = [[ComponentClass, ...], ...]` (optional hot active query combinations)
@@ -139,7 +139,7 @@ static assets = {
 };
 ```
 
-The main thread fetches them all at once at boot (the `flowfields` step of `onLoadProgress`) and keeps the cells the world touches; every worker gets a copy. A file's format is read from its first bytes, not from its name.
+The main thread fetches them all at once at boot (the `flowfields` step of `onLoadProgress`) and keeps the cells the world touches, in shared memory: every worker reads the same copy. A file's format is read from its first bytes, not from its name.
 
 **Binary**, the one to ship. Little-endian: a 24-byte header, never compressed, then the cells.
 
@@ -157,6 +157,28 @@ The main thread fetches them all at once at boot (the `flowfields` step of `onLo
 With compression 1 the cells are one gzip stream (write it with `CompressionStream('gzip')`, or convert JSON fields with `node scripts/flowfieldToBinary.mjs ff_*.json` in the engine's repo; `--raw` leaves the cells uncompressed). The browser opens it with `DecompressionStream`, so the download is small whatever the server does, and the cells are then used as they are: nothing is parsed. The ten fields of the Buenos Aires demo's barrio take 3.7 MB as JSON and 116 KB in this format, and 5 to 6 ms of the main thread at boot instead of 18 to 21 (Chromium).
 
 **JSON**: `{ "metadata": { "widthCells", "heightCells", "cellSizePx" }, "data": [...] }`, where `data` holds rows of `[x, y]` or `null`. Each component becomes `Math.round(clamp(v, -1, 1) * 127)`, so a JSON field and its binary copy sample the same.
+
+### A scene's own files
+
+A scene that reads its own data (a level, a map, a table) lists the files in `static assets.files`. The engine fetches them with the atlas, the sounds and the rest, all at once (the `files` step of `onLoadProgress`), and hands them over as `this.files` before `preload()` runs, so the scene does not wait for them after the engine is ready:
+
+```javascript
+static assets = {
+  files: {
+    floor: '/game/data/floor.bin', // its bytes: an ArrayBuffer
+    level: { url: '/game/data/level1.json', as: 'json' }, // parsed
+    notes: { url: '/game/data/notes.txt', as: 'text' },
+    traffic: { url: '/game/data/traffic.bin.gz', decompress: 'gzip' }, // gunzipped: an ArrayBuffer
+  },
+};
+
+async preload() {
+  const floor = new Uint8Array(this.files.floor);
+  this.buildLevel(this.files.level, floor);
+}
+```
+
+`as` is `'arrayBuffer'` (the default), `'text'` or `'json'`. `decompress: 'gzip'` gunzips a body that is gzip and leaves alone one a server already decoded (sent with `Content-Encoding`). A file that does not load, or a JSON one that is not JSON, stops the load with its URL. The files stay on the main thread: a worker that needs their data gets it through a `SharedResource` or its entities' spawn config.
 
 ---
 

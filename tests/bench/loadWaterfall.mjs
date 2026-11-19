@@ -68,6 +68,7 @@ export const MILESTONES = [
   'atlas',
   'tilemaps',
   'flowfields',
+  'files',
   'shaders',
   'sounds',
   'assets',

@@ -80,6 +80,7 @@ import { createSceneSharedBuffers, sceneEntitySlots, teardownSceneSharedState } 
 import { bindEntityIdWidth, resolveEntityIdWidth, declaredEntityCount, EntityIdArray } from '../util/entityIdWidth.js';
 import { bootSceneWorkers, createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
 import { loadMark, takeLoadMarks } from '../util/loadMarks.js';
+import { loadSceneFiles } from '../util/sceneFiles.js';
 import {
   bindFrameClock,
   publishFrame,
@@ -188,7 +189,7 @@ class Scene {
   /** Steps onLoadProgress reports, in boot order (the asset ones overlap). */
   static LOAD_STEPS = Object.freeze([
     'audio', 'scripts', 'buffers', 'adobe', 'atlas', 'tilemaps',
-    'flowfields', 'shaders', 'sounds', 'workers', 'world',
+    'flowfields', 'files', 'shaders', 'sounds', 'workers', 'world',
   ]);
 
   // Worker index constants for FrameRate SharedArrayBuffer
@@ -244,6 +245,11 @@ class Scene {
     this._assetLoads = null;
     this.audioUrls = this.constructor.audios || [];
     this.loadedAudioNames = [];
+    /**
+     * N-312: the scene's own files (`static assets = { files }`) by name, as each entry reads it (an ArrayBuffer, a
+     * string or parsed JSON), fetched with the other assets: filled before preload().
+     */
+    this.files = {};
 
     this.state = {
       pause: false,
@@ -2000,6 +2006,10 @@ class Scene {
       )
       : Promise.resolve();
 
+    const filesPromise = loadSceneFiles(imageUrls?.files).then((files) => {
+      this.files = files;
+    });
+
     const audioPromise = audioReady.then(() => this.preloadAudios(
       audioManifest !== null && audioManifest !== undefined ? audioManifest : this.audioUrls
     ));
@@ -2011,6 +2021,7 @@ class Scene {
       this._loadShaderSources(imageUrls).then(step('shaders')),
       audioPromise.then(step('sounds')),
       adobe,
+      filesPromise.then(step('files')),
     ]).then(([atlas, , , , audioNames, preparedAdobeAssets]) => ({ atlas, audioNames, preparedAdobeAssets }));
     // preloadAssets awaits it: an error before then is reported there, not as an unhandled rejection.
     loads.catch(() => {});
