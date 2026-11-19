@@ -200,7 +200,8 @@ export class PredatorScene extends WEED.Scene {
     // Physics configuration
     physics: {
       subStepCount: 0,
-      // The spawn burst queues about 52 700 commands at once (32 bytes each, 2 MB): 65 536 holds it with 24 % to spare.
+      // The spawn burst queued about 52 700 commands at once (32 bytes each); since SST-20 its spawns send no SET_TRANSFORM
+      // and it queues about 16 200 (the fixed rotations). 65 536 leaves room for a bigger crowd.
       commandRingCapacity: 65536,
       // E-319: `?physicsWorkers=<n>` (1 to 4) sets Box2D's thread count, to weigh 3 against 4 at crowd 2.5.
       numberOfPhysicsWorkers: Math.min(4, Math.max(1, Math.trunc(predatorNumberParam('physicsWorkers', 4)))),
