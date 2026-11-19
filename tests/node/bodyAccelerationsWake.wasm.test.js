@@ -34,6 +34,10 @@ function setup() {
   const col = (byte) => new Float32Array(memory.buffer, byte, N);
   const list = new Uint16Array(memory.buffer, listByte, N);
   for (let i = 0; i < N; i++) list[i] = i;
+  // malloc's memory is not zeroed: a stale bit pattern left in an acceleration column (a denormal) wakes its body.
+  col(bytes.ax).fill(0);
+  col(bytes.ay).fill(0);
+  col(bytes.aa).fill(0);
   col(bytes.mass).fill(2);
   col(bytes.inertia).fill(0.4);
   new Uint8Array(memory.buffer, staticByte, N).fill(0);

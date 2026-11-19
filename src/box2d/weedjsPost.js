@@ -238,6 +238,15 @@
   let chainLastStart = NaN;
   let chainWaited = 0;
   let poseBuffers = [null, null]; // { x, y, rotC, rotS } Float32Array views
+  // E-327: Box2D's rotation stamps (a word per block of 1 << rotationBlockShift slots: the epoch of the last export that
+  // wrote a rotation in it), the epoch word its exports stamp with (publishPose advances it), whether Box2D stamps (else
+  // the stamps are this worker's zeros and every publish copies every rotation), and the epoch each pose buffer was last
+  // published at (-1: copy every rotation).
+  let rotationStamps = new Int32Array(0);
+  let rotationEpoch = new Int32Array(1);
+  let rotationBlockShift = 6;
+  let rotationTracked = false;
+  const poseRotationSince = new Int32Array([-1, -1]);
   let poseCapacity = 0;
   let poseFrame = 0;
   let posePublishTotal = 0;
@@ -506,6 +515,7 @@
     views.rotation = rotChan;
     views.rotC = rotCChan;
     views.rotS = rotSChan;
+    bindRotationStamps(sab, ready, n);
     views.vx = vxChan;
     views.vy = vyChan;
     views.angularVelocity = angChan;
@@ -516,8 +526,32 @@
     seedPrevPose(count);
   }
 
+  /**
+   * E-327: Box2D's rotation stamps and their epoch (getReadyPayload's rotation fields), or this worker's zeros for n slots
+   * when the module has none (every publish then copies every rotation). Either way both pose buffers copy every
+   * rotation on their next publish.
+   */
+  function bindRotationStamps(sab, ready, n) {
+    const count = ready.rotationStampCount | 0;
+    if (count > 0 && (ready.rotationStampsByteOffset | 0) > 0 && (ready.rotationEpochByteOffset | 0) > 0) {
+      rotationStamps = new Int32Array(sab, ready.rotationStampsByteOffset, count);
+      rotationEpoch = new Int32Array(sab, ready.rotationEpochByteOffset, 1);
+      rotationBlockShift = ready.rotationBlockShift | 0;
+      rotationTracked = true;
+    } else {
+      rotationBlockShift = 6;
+      rotationStamps = new Int32Array((n + 63) >> 6);
+      rotationEpoch = new Int32Array(1);
+      rotationTracked = false;
+    }
+    poseRotationSince[0] = -1;
+    poseRotationSince[1] = -1;
+  }
+
   function bindPosePublish(pose) {
     poseSync = null;
+    poseRotationSince[0] = -1;
+    poseRotationSince[1] = -1;
     poseBuffers = [null, null];
     poseCapacity = 0;
     poseFrame = 0;
@@ -631,6 +665,13 @@
   /**
    * Publish post-step Transform into double-buffered pose SAB (Atomics seq).
    * SoA: x, y, rotC, rotS.
+   * E-327: rotations only where they may have changed since the buffer written now was last written. Box2D stamps a
+   * block of slots with the epoch (rotationEpoch) whenever an export writes a rotation in it: the step's export of a body
+   * that turned, and every whole export (a command such as setRotationCS or a teleport, a body's creation at a respawn,
+   * a body that fell asleep). A block stamped after the epoch this buffer was last published at (poseRotationSince) gets
+   * its rotations copied; the others are neither read nor written, so their lines stay shared in the readers' caches
+   * (Predator's people never turn: half of every publish was rotations rewritten with the values they held). Without
+   * Box2D's stamps (rotationTracked false) the stamps stay 0, the epochs -1, and every rotation is copied every time.
    */
   function publishPose(/* entityCount */) {
     if (!poseSync || !poseBuffers[0] || !denseList) return;
@@ -646,6 +687,10 @@
     const outS = buf.rotS;
     const list = denseList;
     const n = denseCount;
+    const stamps = rotationStamps;
+    const shift = rotationBlockShift;
+    const since = poseRotationSince[writeIdx];
+    const epochNow = rotationEpoch[0] | 0;
     const epoch = poseGenEpoch ? (Atomics.load(poseGenEpoch, 0) | 0) : 0;
     // No epoch buffer: keep the per-body generation load. Matching epoch: nobody respawned.
     // A skip must not latch the epoch, or the next frame would publish the stale slot.
@@ -653,9 +698,9 @@
     let skipped = 0;
     // E-246: nobody respawned, so every body publishes: by slot when most slots hold one. After a respawn (a crowd
     // that dies and respawns does every frame) each body's generation is checked, in slot order too.
-    if (epochSame && slotsMostlyBodies()) publishPoseBySlot(x, y, rotC, rotS, outX, outY, outC, outS);
+    if (epochSame && slotsMostlyBodies()) publishPoseBySlot(x, y, rotC, rotS, outX, outY, outC, outS, since);
     else if (!epochSame && bodyGeneration && seenBodyGeneration && slotsMostlyBodies()) {
-      skipped = publishPoseBySlotChecked(x, y, rotC, rotS, outX, outY, outC, outS);
+      skipped = publishPoseBySlotChecked(x, y, rotC, rotS, outX, outY, outC, outS, since);
     } else for (let d = 0; d < n; d++) {
       const i = list[d];
       if (
@@ -669,8 +714,10 @@
       }
       outX[i] = x[i];
       outY[i] = y[i];
-      outC[i] = rotC[i];
-      outS[i] = rotS[i];
+      if (((stamps[i >> shift] - since) | 0) > 0) {
+        outC[i] = rotC[i];
+        outS[i] = rotS[i];
+      }
     }
     // N-86: the fast path checked the epoch once, before a loop that takes about a millisecond. A slot despawned and
     // respawned inside it got its old body's pose over the invalidation (rotC and rotS 0): put that back for every
@@ -686,10 +733,17 @@
         if ((seenBodyGeneration[i] | 0) === (Atomics.load(bodyGeneration, i) | 0)) continue;
         outC[i] = 0;
         outS[i] = 0;
+        // E-327: this buffer's next publish writes that rotation again (the next epoch is after this one).
+        stamps[i >> shift] = (epochNow + 1) | 0;
         skipped++;
       }
     }
     if (poseGenEpoch && skipped === 0) seenPoseGenEpoch = epoch;
+    // E-327: stamps from here on carry the next epoch, after the one this buffer now holds everything up to.
+    if (rotationTracked) {
+      poseRotationSince[writeIdx] = epochNow;
+      rotationEpoch[0] = (epochNow + 1) | 0;
+    }
     // E-197: the slot's stamp before the frame that makes it readable.
     if (poseSync.length >= 4) poseSync[2 + writeIdx] = poseStamp;
     poseFrame++;
@@ -697,10 +751,15 @@
     Atomics.notify(poseSync, 0, 1);
   }
 
-  /** E-246: publishPose's copy over the slots in order, runs of bodies copied with set(). */
-  function publishPoseBySlot(x, y, rotC, rotS, outX, outY, outC, outS) {
+  /**
+   * E-246: publishPose's copy over the slots in order, runs of bodies copied with set(). E-327: rotations only in the
+   * blocks stamped after `since`.
+   */
+  function publishPoseBySlot(x, y, rotC, rotS, outX, outY, outC, outS, since) {
     const has = densePositions;
     const slots = has.length;
+    const stamps = rotationStamps;
+    const shift = rotationBlockShift;
     let i = 0;
     while (i < slots) {
       while (i < slots && has[i] < 0) i++;
@@ -709,14 +768,15 @@
       if (i - start >= RUN_COPY_MIN) {
         outX.set(x.subarray(start, i), start);
         outY.set(y.subarray(start, i), start);
-        outC.set(rotC.subarray(start, i), start);
-        outS.set(rotS.subarray(start, i), start);
+        copyStampedRotations(start, i, rotC, rotS, outC, outS, since);
       } else {
         for (let k = start; k < i; k++) {
           outX[k] = x[k];
           outY[k] = y[k];
-          outC[k] = rotC[k];
-          outS[k] = rotS[k];
+          if (((stamps[k >> shift] - since) | 0) > 0) {
+            outC[k] = rotC[k];
+            outS[k] = rotS[k];
+          }
         }
       }
     }
@@ -726,7 +786,7 @@
    * E-246: publishPose's copy over the slots in order after a respawn: a slot whose body is not the one this worker last
    * saw (its generation moved) is skipped, as the dense list's loop skips it. Returns the slots skipped.
    */
-  function publishPoseBySlotChecked(x, y, rotC, rotS, outX, outY, outC, outS) {
+  function publishPoseBySlotChecked(x, y, rotC, rotS, outX, outY, outC, outS, since) {
     const has = densePositions;
     const slots = has.length;
     const gen = bodyGeneration;
@@ -741,31 +801,61 @@
         // the epoch with Atomics.load first, so every bump behind that epoch is visible; one landing during this loop
         // moves the epoch again and is caught on the next publish, as with Atomics.load here.
         if ((seen[i] | 0) !== (gen[i] | 0)) {
-          copyPoseRange(start, i, x, y, rotC, rotS, outX, outY, outC, outS);
+          copyPoseRange(start, i, x, y, rotC, rotS, outX, outY, outC, outS, since);
           skipped++;
           start = i + 1;
         }
         i++;
       }
-      copyPoseRange(start, i, x, y, rotC, rotS, outX, outY, outC, outS);
+      copyPoseRange(start, i, x, y, rotC, rotS, outX, outY, outC, outS, since);
     }
     return skipped;
   }
 
-  /** E-246: slots [start, end) of the pose columns into the publish buffer: with set() when the stretch is long. */
-  function copyPoseRange(start, end, x, y, rotC, rotS, outX, outY, outC, outS) {
+  /**
+   * E-246: slots [start, end) of the pose columns into the publish buffer: with set() when the stretch is long. E-327:
+   * rotations only in the blocks stamped after `since`.
+   */
+  function copyPoseRange(start, end, x, y, rotC, rotS, outX, outY, outC, outS, since) {
     if (end - start >= RUN_COPY_MIN) {
       outX.set(x.subarray(start, end), start);
       outY.set(y.subarray(start, end), start);
-      outC.set(rotC.subarray(start, end), start);
-      outS.set(rotS.subarray(start, end), start);
+      copyStampedRotations(start, end, rotC, rotS, outC, outS, since);
       return;
     }
+    const stamps = rotationStamps;
+    const shift = rotationBlockShift;
     for (let k = start; k < end; k++) {
       outX[k] = x[k];
       outY[k] = y[k];
-      outC[k] = rotC[k];
-      outS[k] = rotS[k];
+      if (((stamps[k >> shift] - since) | 0) > 0) {
+        outC[k] = rotC[k];
+        outS[k] = rotS[k];
+      }
+    }
+  }
+
+  /**
+   * E-327: the rotations of slots [start, end) into the publish buffer, in each stretch of blocks stamped after `since`
+   * (one set() per column and stretch); the other blocks are not touched.
+   */
+  function copyStampedRotations(start, end, rotC, rotS, outC, outS, since) {
+    const stamps = rotationStamps;
+    const shift = rotationBlockShift;
+    const last = (end - 1) >> shift;
+    let b = start >> shift;
+    while (b <= last) {
+      if (((stamps[b] - since) | 0) <= 0) {
+        b++;
+        continue;
+      }
+      let e = b + 1;
+      while (e <= last && ((stamps[e] - since) | 0) > 0) e++;
+      const from = b << shift > start ? b << shift : start;
+      const to = e << shift < end ? e << shift : end;
+      outC.set(rotC.subarray(from, to), from);
+      outS.set(rotS.subarray(from, to), from);
+      b = e;
     }
   }
 
@@ -4004,6 +4094,22 @@
     poseFrame = state.poseFrame | 0;
     poseGenEpoch = state.poseGenEpoch || null;
     seenPoseGenEpoch = state.seenPoseGenEpoch | 0;
+    // E-327: the bench's rotation stamps and epoch as Box2D's (state.rotationStamps, rotationEpoch, rotationBlockShift),
+    // or none: every publish copies every rotation.
+    const n = views.x ? views.x.length : 0;
+    if (state.rotationStamps && state.rotationEpoch) {
+      rotationStamps = state.rotationStamps;
+      rotationEpoch = state.rotationEpoch;
+      rotationBlockShift = state.rotationBlockShift | 0 || 6;
+      rotationTracked = true;
+    } else {
+      rotationBlockShift = 6;
+      rotationStamps = new Int32Array((n + 63) >> 6);
+      rotationEpoch = new Int32Array(1);
+      rotationTracked = false;
+    }
+    poseRotationSince[0] = -1;
+    poseRotationSince[1] = -1;
   }
 
   globalThis.weedjsPublishPose = publishPose;
