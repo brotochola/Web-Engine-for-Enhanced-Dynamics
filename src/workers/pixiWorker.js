@@ -44,9 +44,11 @@ import {
   LAYER_KIND,
   LAYER_SCALE_MODE,
   PARTICLE_DEFAULTS,
+  SHADOW_SAMPLES_MAX,
   lightBehindWallsOf,
   normalShadingOf,
   resolveZenithalMaxHeight,
+  shadowSamplesOf,
 } from '../util/configDefaults.js';
 import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
@@ -1066,6 +1068,8 @@ class PixiRenderer extends AbstractWorker {
     this._lightTilesSource = null;
     this._lightTilesUnit = 0;
     this._lightTilesMade = false;
+    /** lighting.shadowSamples: the shadow maps' taps a light pixel averages, 1 to 9 (shadowSamplesOf). */
+    this._shadowSamples = LIGHTING_DEFAULTS.shadowSamples;
     // E-259: each float data source's GL texture once allocated, and its size: later uploads are a texSubImage2D on it.
     this._floatTexHeld = new WeakMap();
     // config.camera.floorScaleY and its inverse: light falloff measures the floor distance
@@ -4799,6 +4803,7 @@ LIGHTING SYSTEM SETUP
       // cost 4 % of the drawn frames).
       dither: this.config?.lighting?.dither === true,
       walls: wallsOn,
+      shadowSamples: this._shadowSamples,
     }).replace(
       /MAX_LIGHTS/g,
       String(this.maxLights | 0 || 64)
@@ -9499,6 +9504,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       if (lightingConfig.selfShadow === true) this._selfShadowOn = true;
       // DX-PIXELSHADOW: each world pixel lit whole, the maps read with one tap (lighting.pixelArt).
       this._pixelArtLight = lightingConfig.pixelArt === true;
+      // lighting.shadowSamples: a number outside 1..9 is clamped, anything else not a number takes the default, and it says
+      // so once.
+      this._shadowSamples = shadowSamplesOf(lightingConfig);
+      if (lightingConfig.shadowSamples !== undefined && lightingConfig.shadowSamples !== this._shadowSamples) {
+        console.warn(`WeedJS: lighting.shadowSamples is a whole number from 1 to ${SHADOW_SAMPLES_MAX}, not ${JSON.stringify(lightingConfig.shadowSamples)}: the shadows take ${this._shadowSamples}`);
+      }
       // E-205: the light pass loops over the lights of each pixel's screen tile: the same picture, faster at every light
       // count gpuPassBench measured (4 to 128). The shader keeps the loop over every light for when this is false.
       this._lightTilesOn = true;
