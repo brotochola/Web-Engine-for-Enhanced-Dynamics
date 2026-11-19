@@ -6,6 +6,25 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Thursday 19 November 2026 (midday) — How Soft a Shadow Is, the Developer's Call
+
+Every pixel of the light reads the sun's shadow map and each lamp's in five texels, its own and the four around it in a
+cross, and averages them: that is what makes a shadow's edge soft. Reading one texel would save a tenth of a millisecond a
+frame on the GTX 1650 and give hard edges on the map's steps. I put the two side by side to choose, and it is not mine to
+choose: a pixel-art game wants the hard edge, a painted one the soft, and a game on a small GPU wants the tenth of a
+millisecond. So it is a knob.
+
+**`lighting.shadowSamples`, any count from 1 to 9.** Each count takes the most even layout it can of the 3 × 3 texels
+around the point, the same on both sides of it: 1 the centre, 4 the cross's arms, 5 the cross, 8 the ring, 9 all of them.
+The odd ones out are 2, 3, 6 and 7, which take a row or a diagonal more than the other way, so their edges soften more along
+it; the guide says so instead of forbidding them. In Predator the light pass took 0.95, 1.03 and 1.10 ms in the afternoon
+with 1, 5 and 9, in a GPU frame near 7 ms. The default stays 5, the cross it always read, in the same order.
+
+**`lighting.lightTileSize`.** The light sorts its lights into screen tiles and each pixel loops over its tile's lights
+only; the tiles were 16 px, fixed. A scene can now ask for its own size. In Predator at night 8, 16 and 32 px drew the
+light alike, because its lamps are big next to any of them; 8 px only made the tiles' texture more than three times bigger. A scene of many
+small lights may want smaller tiles, and now it can have them.
+
 ## Thursday 19 November 2026 (before dawn) — A Game That Survives Its GPU, and Lighter Physics and Logic
 
 A driver that resets, a laptop that switches GPUs, a phone that sends the tab away: the page loses its GPU. Until tonight
